@@ -51,6 +51,10 @@ import { SkillDiscoveryService } from '../../../../src/host/services/skills/skil
 
 async function writeSkill(baseDir: string, name: string): Promise<void> {
   const skillDir = path.join(baseDir, name);
+  await writeSkillMd(skillDir, name);
+}
+
+async function writeSkillMd(skillDir: string, name: string): Promise<void> {
   await fs.mkdir(skillDir, { recursive: true });
   await fs.writeFile(
     path.join(skillDir, 'SKILL.md'),
@@ -67,7 +71,20 @@ async function writeSkill(baseDir: string, name: string): Promise<void> {
   );
 }
 
-describe('SkillDiscoveryService Claude legacy discovery', () => {
+async function writeLibraryMeta(libraryDir: string, skillsPath: string): Promise<void> {
+  await fs.mkdir(libraryDir, { recursive: true });
+  await fs.writeFile(
+    path.join(libraryDir, '.meta.json'),
+    JSON.stringify({
+      repoId: path.basename(libraryDir),
+      repoName: `fixture/${path.basename(libraryDir)}`,
+      skillsPath,
+    }),
+    'utf-8',
+  );
+}
+
+describe('SkillDiscoveryService discovery', () => {
   let tmpRoot: string;
   let homeDir: string;
   let projectDir: string;
@@ -149,6 +166,55 @@ describe('SkillDiscoveryService Claude legacy discovery', () => {
 
     expect(service.getSkill('plugin-demo')?.source).toBe('plugin');
     expect(service.getSkill('hidden-demo')).toBeUndefined();
+  });
+
+  it('discovers a single-skill library whose SKILL.md is at skillsPath "."', async () => {
+    const libraryDir = path.join(homeDir, '.code-agent', 'skills', 'single-skill-library');
+    await writeSkillMd(libraryDir, 'single-library-skill');
+    await writeLibraryMeta(libraryDir, '.');
+
+    const service = new SkillDiscoveryService();
+    await service.initialize(projectDir);
+
+    expect(service.getAllSkills()).toEqual([
+      expect.objectContaining({
+        name: 'single-library-skill',
+        source: 'library',
+        basePath: libraryDir,
+      }),
+    ]);
+  });
+
+  it('does not hijack meta-less user skill directories as single-skill libraries', async () => {
+    // 蒸馏/用户手写 skill 与下载库共用 ~/.code-agent/skills；无 .meta.json 的
+    // 根 SKILL.md 目录必须留给 user 扫描，不得按 library 加载
+    const userSkillDir = path.join(homeDir, '.code-agent', 'skills', 'weekly-report');
+    await writeSkillMd(userSkillDir, 'weekly-report');
+
+    const service = new SkillDiscoveryService();
+    await service.initialize(projectDir);
+
+    expect(
+      service.getAllSkills().filter((skill) => skill.source === 'library')
+    ).toEqual([]);
+  });
+
+  it('keeps discovering multi-skill libraries through child directories', async () => {
+    const libraryDir = path.join(homeDir, '.code-agent', 'skills', 'multi-skill-library');
+    await writeSkill(path.join(libraryDir, 'skills'), 'first-library-skill');
+    await writeSkill(path.join(libraryDir, 'skills'), 'second-library-skill');
+    await writeLibraryMeta(libraryDir, 'skills');
+
+    const service = new SkillDiscoveryService();
+    await service.initialize(projectDir);
+
+    expect(service.getAllSkills().map((skill) => ({
+      name: skill.name,
+      source: skill.source,
+    })).sort((left, right) => left.name.localeCompare(right.name))).toEqual([
+      { name: 'first-library-skill', source: 'library' },
+      { name: 'second-library-skill', source: 'library' },
+    ]);
   });
 
   it('reuses cached metadata on the next initialize without rereading unchanged SKILL.md files', async () => {

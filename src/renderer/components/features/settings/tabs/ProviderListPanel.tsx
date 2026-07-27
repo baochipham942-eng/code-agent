@@ -27,6 +27,8 @@ interface ProviderListPanelProps {
   isAddingProvider: boolean;
   onSelect: (providerId: ModelProvider) => void;
   onOpenDoctor: () => void;
+  /** 打开全量诊断弹层（DoctorReportDialog，走 doctorStore） */
+  onOpenFullDoctor: () => void;
 }
 
 function matchRow(row: ProviderManagementRow, query: string): boolean {
@@ -153,6 +155,7 @@ export const ProviderListPanel: React.FC<ProviderListPanelProps> = ({
   isAddingProvider,
   onSelect,
   onOpenDoctor,
+  onOpenFullDoctor,
 }) => {
   const { t } = useI18n();
   const listText = t.settings.model.list;
@@ -192,6 +195,16 @@ export const ProviderListPanel: React.FC<ProviderListPanelProps> = ({
           fullWidth
         >
           {listText.doctor}
+        </Button>
+        <Button
+          size="sm"
+          variant="secondary"
+          onClick={onOpenFullDoctor}
+          leftIcon={<Stethoscope className="h-3 w-3" />}
+          fullWidth
+          data-testid="settings-open-full-doctor"
+        >
+          {t.settings.providerDoctor.openFull}
         </Button>
       </div>
 

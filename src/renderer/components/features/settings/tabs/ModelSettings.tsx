@@ -50,6 +50,7 @@ import { WebModeBanner } from '../WebModeBanner';
 import { SettingsPage, SettingsSection } from '../SettingsLayout';
 import ipcService from '../../../../services/ipcService';
 import { ProviderDoctorDialog } from '../ProviderDoctorDialog';
+import { useDoctorStore } from '../../../../stores/doctorStore';
 import {
   buildManualModelSettings,
   buildDefaultModelSettingsUpdate,
@@ -878,6 +879,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange, 
           isAddingProvider={isAddingProvider}
           onSelect={handleSelectProvider}
           onOpenDoctor={() => setIsDoctorOpen(true)}
+          onOpenFullDoctor={() => useDoctorStore.getState().openDialog()}
         />
 
         <div className="min-w-0 space-y-4">

@@ -85,6 +85,8 @@ export function createWorkbenchActions({
         return;
       }
 
+      // 打开右栏视图 = 人在会话区，二级页让位（侧栏常驻后二级页与会话区可同屏共存）。
+      get().closeSecondaryPages();
       const view = target.view;
       set((state) => {
         const taskWorkbenchOpenSource = id === 'task' || id === 'overview'

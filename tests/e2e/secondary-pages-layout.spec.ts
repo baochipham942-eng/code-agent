@@ -24,6 +24,15 @@ async function waitForAppReady(page: Page): Promise<void> {
   await page.goto('/');
   await expect(page.locator('.h-screen')).toBeVisible({ timeout: 15_000 });
   await ssePromise;
+  // 首启浮层会吃掉侧栏点击：①文件夹信任 ②连接模型 onboarding ③被 onboarding「跳过」送进的设置页
+  for (const name of ['信任并加载', '跳过，稍后在设置里配置', '返回应用']) {
+    const btn = page.getByRole('button', { name });
+    await btn.first().waitFor({ state: 'visible', timeout: 5_000 }).catch(() => {});
+    if (await btn.first().isVisible().catch(() => false)) {
+      await btn.first().click();
+      await expect(btn.first()).toBeHidden({ timeout: 10_000 });
+    }
+  }
   await expect(page.getByTestId('sidebar-capability-zone')).toBeVisible({ timeout: 15_000 });
 }
 
@@ -57,9 +66,9 @@ test('三个二级页可达，且都不接管整窗——侧栏常驻可见', as
 test('点会话回到聊天区，二级页让位', async ({ page }) => {
   await waitForAppReady(page);
 
-  const newSessionBtn = page.getByRole('button', { name: '新会话' });
-  await expect(newSessionBtn).toBeVisible({ timeout: 15_000 });
-  await newSessionBtn.click();
+  const newTaskBtn = page.getByTestId('sidebar-new-task');
+  await expect(newTaskBtn).toBeVisible({ timeout: 15_000 });
+  await newTaskBtn.click();
   const activeSession = page.locator('[data-session-id][aria-current="true"]').first();
   await expect(activeSession).toBeVisible({ timeout: 15_000 });
 

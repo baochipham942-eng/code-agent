@@ -25,7 +25,7 @@ import { isWebMode } from '../../../../utils/platform';
 import { useAppStore } from '../../../../stores/appStore';
 import { useI18n } from '../../../../hooks/useI18n';
 import { WebModeBanner } from '../WebModeBanner';
-import { invokeSkillIPC } from '../../../../services/invokeSkillIPC';
+import { describeSkillIpcError, invokeSkillIPC, invokeSkillIPCOrThrow } from '../../../../services/invokeSkillIPC';
 import { SkillsInstalledTab } from './SkillsInstalledTab';
 import type { InstalledSkill, ProjectOverrideValue } from './SkillsInstalledTab';
 import { SkillsDiscoverTab } from './SkillsDiscoverTab';
@@ -73,6 +73,7 @@ export const SkillsSettings: React.FC = () => {
   const [addSkillModalOpen, setAddSkillModalOpen] = useState(false);
   // 自定义库 staged 装前预览：stage 成功后的预览载荷，非空即弹预览弹窗
   const [stagedPreview, setStagedPreview] = useState<StageRepositoryResult | null>(null);
+  const [registryLoading, setRegistryLoading] = useState(true);
   // 「添加技能」弹窗内联错误（stage 失败在弹窗内展示）
   const [customError, setCustomError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -96,33 +97,48 @@ export const SkillsSettings: React.FC = () => {
     }
   }, [settingsCapabilityFocus?.kind, settingsCapabilityFocus?.nonce]);
 
-  // 加载数据
+  // 加载数据。分两段跑：
+  //   本地两路（仓库 / 技能列表，实测各几十 ms）决定首屏 spinner；
+  //   远端三路（推荐目录 / 云端 catalog / 签名 registry）并行在后台补齐。
+  // 原来是五路串行且整页等它们：registry 冷启实测 1.6s、热态每次仍真打网络 0.3s
+  //（货架要新鲜数据，不缓存是有意的），等于把整个技能 tab 押在最慢的一路上
+  //（2026-07-27 真机实测首屏 ~2s 空转）。
   const loadData = useCallback(async () => {
-    try {
-      setLoading(true);
-      const libs = await invokeSkillIPC(SKILL_CHANNELS.REPO_LIST);
-      const skills = await invokeSkillIPC(SKILL_CHANNELS.SKILL_LIST);
-      const repos = await invokeSkillIPC(SKILL_CHANNELS.RECOMMENDED_REPOS);
-      const remoteCatalog = await invokeSkillIPC(SKILL_CHANNELS.CATALOG);
+    const localLoad = Promise.all([
+      invokeSkillIPC(SKILL_CHANNELS.REPO_LIST),
+      invokeSkillIPC(SKILL_CHANNELS.SKILL_LIST),
+    ]).then(([libs, skills]) => {
       setLibraries(libs || []);
       setDiscoveredSkills(skills || []);
+      setLoading(false);
+      return libs || [];
+    });
+
+    const remoteLoad = Promise.all([
+      invokeSkillIPC(SKILL_CHANNELS.RECOMMENDED_REPOS),
+      invokeSkillIPC(SKILL_CHANNELS.CATALOG),
+      // 官方市场货架（签名 registry；离线/校验失败为空货架 + 原因码）
+      invokeSkillIPC(SKILL_CHANNELS.REGISTRY_LIST),
+    ]).then(async ([repos, remoteCatalog, registry]) => {
+      const libs = await localLoad;
       if (remoteCatalog) {
         setCatalog(remoteCatalog);
       }
       // 推荐列表里排除已安装的仓库
-      const installedIds = new Set((libs || []).map((l) => l.repoId));
+      const installedIds = new Set(libs.map((l) => l.repoId));
       setRecommendedRepos((repos || []).filter((r) => !installedIds.has(r.id)));
-      // 官方市场货架（签名 registry；离线/校验失败为空货架 + 原因码）
-      const registry = await invokeSkillIPC(
-        SKILL_CHANNELS.REGISTRY_LIST
-      );
       setRegistryItems(registry?.items || []);
       setRegistryError(registry?.error || null);
+    });
+
+    try {
+      await Promise.all([localLoad, remoteLoad]);
     } catch (err) {
       logger.error('Failed to load skill data', err);
       setMessage({ type: 'error', text: skillsText.loadFailed });
     } finally {
       setLoading(false);
+      setRegistryLoading(false);
     }
   }, [skillsText.loadFailed]);
 
@@ -149,14 +165,14 @@ export const SkillsSettings: React.FC = () => {
       )
     );
     try {
-      await invokeSkillIPC(
+      await invokeSkillIPCOrThrow(
         enabled ? SKILL_CHANNELS.SKILL_ENABLE : SKILL_CHANNELS.SKILL_DISABLE,
         skillName
       );
     } catch (err) {
       logger.error('Failed to toggle skill', err);
       setDiscoveredSkills(previous);
-      setMessage({ type: 'error', text: skillsText.actionFailed });
+      setMessage({ type: 'error', text: describeSkillIpcError(err, skillsText.actionFailed) });
     }
   };
 
@@ -177,14 +193,14 @@ export const SkillsSettings: React.FC = () => {
     );
     try {
       if (nextOverride === null) {
-        await invokeSkillIPC(SKILL_CHANNELS.SKILL_PROJECT_CLEAR, skillName);
+        await invokeSkillIPCOrThrow(SKILL_CHANNELS.SKILL_PROJECT_CLEAR, skillName);
       } else {
-        await invokeSkillIPC(SKILL_CHANNELS.SKILL_PROJECT_SET, skillName, nextOverride);
+        await invokeSkillIPCOrThrow(SKILL_CHANNELS.SKILL_PROJECT_SET, skillName, nextOverride);
       }
     } catch (err) {
       logger.error('Failed to change project skill override', err);
       setDiscoveredSkills(previous);
-      setMessage({ type: 'error', text: skillsText.actionFailed });
+      setMessage({ type: 'error', text: describeSkillIpcError(err, skillsText.actionFailed) });
     }
   };
 
@@ -193,7 +209,7 @@ export const SkillsSettings: React.FC = () => {
     setActionLoading(`registry-${item.entry.name}`);
     setMessage(null);
     try {
-      const result = await invokeSkillIPC(
+      const result = await invokeSkillIPCOrThrow(
         SKILL_CHANNELS.REGISTRY_INSTALL,
         item.entry.name
       );
@@ -208,7 +224,7 @@ export const SkillsSettings: React.FC = () => {
       }
     } catch (err) {
       logger.error('Failed to install from registry', err);
-      setMessage({ type: 'error', text: skillsText.installFailed });
+      setMessage({ type: 'error', text: describeSkillIpcError(err, skillsText.installFailed) });
     } finally {
       setActionLoading(null);
     }
@@ -219,7 +235,7 @@ export const SkillsSettings: React.FC = () => {
     setActionLoading(repo.id);
     setMessage(null);
     try {
-      const result = await invokeSkillIPC(
+      const result = await invokeSkillIPCOrThrow(
         SKILL_CHANNELS.REPO_DOWNLOAD,
         repo
       );
@@ -232,7 +248,7 @@ export const SkillsSettings: React.FC = () => {
       }
     } catch (err) {
       logger.error('Failed to download repo', err);
-      setMessage({ type: 'error', text: skillsText.installFailed });
+      setMessage({ type: 'error', text: describeSkillIpcError(err, skillsText.installFailed) });
     } finally {
       setActionLoading(null);
     }
@@ -260,7 +276,7 @@ export const SkillsSettings: React.FC = () => {
           failures.push(repoId);
           continue;
         }
-        const result = await invokeSkillIPC(
+        const result = await invokeSkillIPCOrThrow(
           SKILL_CHANNELS.REPO_DOWNLOAD,
           repo
         );
@@ -277,7 +293,7 @@ export const SkillsSettings: React.FC = () => {
       await loadData();
     } catch (err) {
       logger.error('Failed to install bundle', err);
-      setMessage({ type: 'error', text: skillsText.installFailed });
+      setMessage({ type: 'error', text: describeSkillIpcError(err, skillsText.installFailed) });
     } finally {
       setActionLoading(null);
     }
@@ -288,7 +304,7 @@ export const SkillsSettings: React.FC = () => {
     setActionLoading(repoId);
     setMessage(null);
     try {
-      const result = await invokeSkillIPC(
+      const result = await invokeSkillIPCOrThrow(
         SKILL_CHANNELS.REPO_UPDATE,
         repoId
       );
@@ -303,7 +319,7 @@ export const SkillsSettings: React.FC = () => {
       }
     } catch (err) {
       logger.error('Failed to update repo', err);
-      setMessage({ type: 'error', text: skillsText.updateFailed });
+      setMessage({ type: 'error', text: describeSkillIpcError(err, skillsText.updateFailed) });
     } finally {
       setActionLoading(null);
     }
@@ -315,7 +331,7 @@ export const SkillsSettings: React.FC = () => {
     setActionLoading(`remove-${repoId}`);
     setMessage(null);
     try {
-      await invokeSkillIPC(
+      await invokeSkillIPCOrThrow(
         SKILL_CHANNELS.REPO_REMOVE,
         repoId
       );
@@ -323,7 +339,7 @@ export const SkillsSettings: React.FC = () => {
       await loadData();
     } catch (err) {
       logger.error('Failed to remove repo', err);
-      setMessage({ type: 'error', text: skillsText.removeFailed });
+      setMessage({ type: 'error', text: describeSkillIpcError(err, skillsText.removeFailed) });
     } finally {
       setActionLoading(null);
     }
@@ -344,7 +360,7 @@ export const SkillsSettings: React.FC = () => {
     setActionLoading('custom');
     setCustomError(null);
     try {
-      const result = await invokeSkillIPC(
+      const result = await invokeSkillIPCOrThrow(
         SKILL_CHANNELS.REPO_STAGE,
         url
       );
@@ -360,7 +376,7 @@ export const SkillsSettings: React.FC = () => {
       }
     } catch (err) {
       logger.error('Failed to stage custom repo', err);
-      setCustomError(skillsText.addFailed);
+      setCustomError(describeSkillIpcError(err, skillsText.addFailed));
     } finally {
       setActionLoading(null);
     }
@@ -376,7 +392,7 @@ export const SkillsSettings: React.FC = () => {
     setSearchResults([]);
 
     try {
-      const result = await invokeSkillIPC(
+      const result = await invokeSkillIPCOrThrow(
         SKILL_CHANNELS.SKILLSMP_SEARCH,
         query,
         10
@@ -399,7 +415,7 @@ export const SkillsSettings: React.FC = () => {
       }
     } catch (err) {
       logger.error('SkillsMP search failed', err);
-      setSearchError(skillsText.searchServiceUnavailable);
+      setSearchError(describeSkillIpcError(err, skillsText.searchServiceUnavailable));
     } finally {
       setIsSearching(false);
     }
@@ -425,7 +441,7 @@ export const SkillsSettings: React.FC = () => {
     setMessage(null);
 
     try {
-      const result = await invokeSkillIPC(
+      const result = await invokeSkillIPCOrThrow(
         SKILL_CHANNELS.REPO_ADD_CUSTOM,
         repoUrl
       );
@@ -439,7 +455,7 @@ export const SkillsSettings: React.FC = () => {
       }
     } catch (err) {
       logger.error('Failed to install skill from SkillsMP', err);
-      setMessage({ type: 'error', text: skillsText.installFailed });
+      setMessage({ type: 'error', text: describeSkillIpcError(err, skillsText.installFailed) });
     } finally {
       setActionLoading(null);
     }
@@ -553,6 +569,7 @@ export const SkillsSettings: React.FC = () => {
         <SkillsDiscoverTab
           registryItems={registryItems}
           registryError={registryError}
+          registryLoading={registryLoading}
           onInstallRegistryEntry={handleInstallRegistryEntry}
           catalog={catalog}
           recommendedRepos={recommendedRepos}

@@ -4,7 +4,7 @@
 // ============================================================================
 
 import React from 'react';
-import { AlertCircle, CheckCircle2, Search, ShieldCheck, X } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Loader2, Search, ShieldCheck, X } from 'lucide-react';
 import type {
   RecommendedSkillEntry,
   SkillCatalogPayload,
@@ -30,6 +30,8 @@ export interface SkillsDiscoverTabProps {
   /** 官方市场货架（签名 registry；离线/校验失败时为空） */
   registryItems: SkillRegistryListItem[];
   registryError: string | null;
+  /** 货架仍在后台加载（首屏不等它；加载中要自报，别让空货架冒充「没有内容」） */
+  registryLoading: boolean;
   onInstallRegistryEntry: (item: SkillRegistryListItem) => void;
   /** 推荐目录（云端下发优先，内置兜底） */
   catalog: SkillCatalogPayload;
@@ -146,6 +148,7 @@ const RegistryEntryCard: React.FC<{
 export const SkillsDiscoverTab: React.FC<SkillsDiscoverTabProps> = ({
   registryItems,
   registryError,
+  registryLoading,
   onInstallRegistryEntry,
   catalog: rawCatalog,
   recommendedRepos,
@@ -197,6 +200,11 @@ export const SkillsDiscoverTab: React.FC<SkillsDiscoverTabProps> = ({
                 isInstalling={actionLoading === `registry-${item.entry.name}`}
               />
             ))}
+          </div>
+        ) : registryLoading ? (
+          <div className="flex items-center gap-2 rounded-lg border border-zinc-700 bg-zinc-800 p-3 text-xs text-zinc-500">
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            {t.common.loading}
           </div>
         ) : (
           registryError && (

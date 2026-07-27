@@ -45,6 +45,29 @@ function logTransportErrorThrottled(key: string, ...args: unknown[]): void {
   }
 }
 
+// 通用 invoke 对非 2xx / 异常 / `{success:false}` 一律 `return undefined`（见下方注释），
+// 调用方拿不到任何真因，最终在 UI 上退化成「操作失败」这类哑文案。改返回契约会波及
+// 全部 ~200 个 invoke 调用点，因此这里只做「记录最后一次失败」：想要 fail-loud 的调用方
+// （目前是 skill 动作路径）自己来取，其余调用方行为一字不变。
+export type TransportFailure = {
+  channel: string;
+  status: number | null;
+  message: string;
+};
+
+const lastTransportFailures = new Map<string, TransportFailure>();
+
+function recordTransportFailure(channel: string, status: number | null, message: string): void {
+  lastTransportFailures.set(channel, { channel, status, message });
+}
+
+/** 取走某通道最近一次失败原因（取走即清，避免旧失败泄漏到后续调用） */
+export function takeTransportFailure(channel: string): TransportFailure | undefined {
+  const failure = lastTransportFailures.get(channel);
+  if (failure) lastTransportFailures.delete(channel);
+  return failure;
+}
+
 const AUTH_RELOAD_ATTEMPT_KEY = 'code-agent:http-auth-token-reload-attempted';
 
 type AuthTokenRecovery = {
@@ -727,6 +750,7 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
             response.status,
             errorMessage || errorBody,
           );
+          recordTransportFailure(channel, response.status, errorMessage || errorBody);
           return undefined as ReturnType<IpcInvokeHandlers[K]>;
         }
         clearAuthTokenReloadAttempt();
@@ -740,6 +764,7 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
             if (json.success === false) {
               // 错误响应（如 NOT_FOUND）不应作为有效数据透传到前端
               console.warn(`[HttpTransport] ${channel} returned error:`, json.error);
+              recordTransportFailure(channel, response.status, parseHttpErrorMessage(JSON.stringify(json.error ?? '')));
               return undefined as ReturnType<IpcInvokeHandlers[K]>;
             }
             if ('data' in json) {
@@ -752,6 +777,7 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
         return undefined as ReturnType<IpcInvokeHandlers[K]>;
       } catch (err) {
         logTransportErrorThrottled(`${channel}:exception`, `[HttpTransport] ${channel} error:`, err);
+        recordTransportFailure(channel, null, err instanceof Error ? err.message : String(err));
         return undefined as ReturnType<IpcInvokeHandlers[K]>;
       }
     }) as CommandBridgeAPI['invoke'],

@@ -337,7 +337,11 @@ export const ExpertPanel: React.FC = () => {
         // 底色跟内容区同层（zinc-900）+ 发丝底边，不再用更深的 zinc-950 形成断层黑条。
         // 底色必须**不透明**：原来的 bg-zinc-900/95 + backdrop-blur 在滚动时把下方内容
         // 透出来，读起来像两段标题串行（2026-07-27 产品负责人第二次指出）。
-        <div className="sticky top-0 z-10 -mx-6 mb-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-zinc-800/70 bg-zinc-900 px-6 py-2">
+        // `-top-4 -mt-4 pt-4` 三件套缺一不可：sticky 的吸附基准是滚动容器的**内容盒**，
+        // 而 PageContent 带 py-4 —— 只写 top-0 会停在 padding 下沿，上方留 16px 缝隙
+        // 让卡片从标题和工具条中间穿过去（实测 sticky.top=108 vs 滚动口 92）。
+        // 负 top 把吸附点提到 padding 上沿，负 margin 让静止态也贴顶，自带 pt-4 补回内边距。
+        <div className="sticky -top-4 z-10 -mx-6 -mt-4 mb-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-zinc-800/70 bg-zinc-900 px-6 pb-2 pt-6">
           {!loading && categoryGroups.length > 0 ? (
             <div className="flex flex-wrap items-center gap-1.5" data-testid="expert-category-chips">
               {[{ key: 'all', label: text.categoryAll, count: shown.length }, ...categoryGroups.map((group) => ({ key: group.key, label: group.label, count: group.entries.length }))].map((chip) => (

@@ -146,7 +146,7 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
       data-sidebar-group-phase={expansionView.phase}
     >
       <div
-        className="group sticky top-0 z-20 flex items-center gap-1.5 w-full px-3 py-1.5 bg-zinc-900 backdrop-blur-sm text-left hover:bg-zinc-800/40 transition-colors"
+        className="group sticky top-0 z-20 flex items-center gap-1.5 w-full px-1.5 py-1.5 bg-zinc-900 backdrop-blur-sm text-left hover:bg-zinc-800/40 transition-colors"
         title={title}
       >
         {/* 分组头对齐约定(2026-07-02 拍板,2026-07-26 强化)：图标+名称左对齐、整行垂直居中；
@@ -156,7 +156,7 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
             07-28 对齐规范（数值实测，不是推算；单一真源见 Sidebar 根的横向节奏注释）：
             外框 = 根左右各让一条 --scrollbar-size(6)，右边那条给滚动条；各区块 px-2(8)；各行内 px-3(12)。
             ⇒ 左轨：图标左缘 26、文字左缘 52（26 + 图标 16 + gap 10）。分组头 px-3 同轨；
-            会话行区 ml-[14px] 使行容器落在 28，行内 pl-0 + 16px 前导槽 + gap-2 = 28+24 = 52；
+            会话行区 ml-2 使行容器落在 28，行内 pl-0 + 16px 前导槽 + gap-2 = 28+24 = 52；
             展开行没有前导槽，用 pl-6(24) 补齐到同一条 52。
             ⇒ 右轨：内容右缘 214（240-6-8-12），角标 / 状态点 / 账号箭头 / 顶行最右图标同轴。
             左右留白都是 26 —— 改任一处都要四处一起对，否则退回「三条右轨、两条左轨」。 */}
@@ -346,7 +346,7 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
         const canToggle = !hasSearchFilters && (hiddenCount > 0 || showAllRows);
         return (
           <div
-            className={`${expansionView.rowsClassName} ml-[14px]`}
+            className={`${expansionView.rowsClassName} ml-2`}
             data-sidebar-group-rows={group.key}
           >
             {group.sessions.length === 0 ? (

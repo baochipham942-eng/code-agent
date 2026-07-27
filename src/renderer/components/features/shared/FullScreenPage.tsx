@@ -23,9 +23,9 @@ import { getCurrentKeybindingPlatform } from '@shared/keybindings/defaults';
 import { useI18n } from '../../../hooks/useI18n';
 
 // overlay 页整窗接管时，macOS 红绿灯就浮在它左上角（原生标题栏已撤）——
-// 主布局靠侧栏首行 h-16 给灯让位，overlay 页没有侧栏，不让位就顶格压在灯下面
+// 主布局靠侧栏首行 h-12 给灯让位，overlay 页没有侧栏，不让位就顶格压在灯下面
 // （2026-07-27 产品负责人指出「返回应用太顶格」）。inline 页在侧栏右侧，不受影响。
-const OVERLAY_TRAFFIC_LIGHT_INSET = getCurrentKeybindingPlatform() === 'darwin' ? 'pt-10' : '';
+const OVERLAY_TRAFFIC_LIGHT_INSET = getCurrentKeybindingPlatform() === 'darwin' ? 'pt-7' : '';
 
 type FullScreenPageVariant = 'inline' | 'overlay';
 type FullScreenPageHeaderVariant = 'page' | 'bar';

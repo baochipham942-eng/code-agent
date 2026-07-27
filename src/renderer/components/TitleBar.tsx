@@ -17,9 +17,9 @@ import { useI18n } from '../hooks/useI18n';
 
 // 侧栏展开时红绿灯浮在**侧栏**顶行上，本栏不受影响；侧栏一收起，本栏就成了窗口左上角那块，
 // 灯直接压在展开按钮上（2026-07-27 产品负责人截图）。darwin 下这一档要让开灯区：
-// 灯现在摆在 x26..85.5（横纵都由 traffic_lights.rs 摆，见那里的常量），再留呼吸位 ⇒ 102。
+// 灯现在摆在 x16..75.5（横纵都由 traffic_lights.rs 摆，见那里的常量），再留呼吸位 ⇒ 92。
 // ⚠️ 灯的横向位置一改，这个数就要跟着改——它不在 CSS 节奏里，不会自己动。
-const COLLAPSED_TRAFFIC_LIGHT_INSET = getCurrentKeybindingPlatform() === 'darwin' ? 'pl-[102px]' : '';
+const COLLAPSED_TRAFFIC_LIGHT_INSET = getCurrentKeybindingPlatform() === 'darwin' ? 'pl-[92px]' : '';
 
 interface TitleBarProps {
   /** 二级页（能力中心/资料库/自动化等）在位：会话动作与右栏开关都无对象 */
@@ -42,7 +42,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({ secondaryPageActive = false 
     // 画一条横线会把右栏切成上下两段，正是要消除的读法；底色由 App 的右栏容器统一给。
     <div
       data-tauri-drag-region
-      className={`h-16 flex items-center justify-between px-4 bg-transparent relative z-30 ${sidebarCollapsed ? COLLAPSED_TRAFFIC_LIGHT_INSET : ''}`}
+      className={`h-12 flex items-center justify-between px-4 bg-transparent relative z-30 ${sidebarCollapsed ? COLLAPSED_TRAFFIC_LIGHT_INSET : ''}`}
       style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
     >
       <div className="flex items-center gap-2" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
@@ -59,7 +59,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({ secondaryPageActive = false 
         {!secondaryPageActive && <SessionActionsMenu />}
       </div>
       {/* Right: 右栏开关。**两态同住一个位置**——2026-07-27 产品负责人：「展开收起侧边栏按钮
-          为什么纵向位置会变？」根因是收起态的入口在本栏（h-16，中心 32）、展开态的收起钮在
+          为什么纵向位置会变？」根因是收起态的入口在本栏（h-12，中心 24）、展开态的收起钮在
           面板头那一行，同一个开关的两态住在两行里，一开一收就跳。改回顶栏单点：图标随状态翻，
           位置恒定。（这推翻了 2026-07-26 打磨批 D5 的「顶栏不叠一颗」——D5 去的是重复，
           代价是位移；位移比重复更伤，且现在顶栏这颗是唯一一颗，不构成重复。） */}

@@ -640,8 +640,13 @@ export const Sidebar: React.FC = () => {
   return (
     // 侧栏横向节奏的单一真源（2026-07-27 产品负责人：「内容都太靠左，而且左右 padding 不一样」）：
     //   根左右各让一条 --scrollbar-size 的带 → 右边那条给滚动条用（列表用等宽负 margin 要回去），
-    //   左边那条是纯留白，于是**外框左右等宽**；各区块统一 px-2(8)，各行内统一 px-3(12)。
-    //   ⇒ 任意行的内容左缘 26 / 右缘 214，左右留白都是 26。
+    //   左边那条是纯留白，于是**外框左右等宽**；各区块统一 px-1(4)，各行内统一 px-1.5(6)。
+    //   ⇒ 任意行的内容左缘 16 / 右缘 224，四边 padding 全等 16。
+    //   为什么是 16 而不是别的数：顶行元素在栏内垂直居中 ⇒ 栏高 = 2×padding + 图标框 16。
+    //   padding 26 会把顶栏顶成 68 高（2026-07-28 产品负责人：「标题栏长那么高？」并给了
+    //   Codex 对照——它是 11/14）。16 是唯一让栏高回到 48(h-12) 的取值，四边又同时相等。
+    //   ⚠️ 早先修左右不对称时选错了方向：把左边推到 26 去迁就被 pr-3+滚动条带撑大的右边；
+    //   正解是把右边收回来。padding 一改，栏高、灯的 x/y、收起态让位、overlay 让位全要跟着算。
     // 改这里的任何一个数，下面每一处（入口区 / 分组头 / 会话行 / 账号行 / 顶行图标）都要跟着对，
     // 否则又会退回改之前那种「三条右轨、两条左轨」的状态。
     <div className="flex-1 flex flex-col bg-transparent overflow-hidden px-[var(--scrollbar-size)]">
@@ -651,8 +656,10 @@ export const Sidebar: React.FC = () => {
           摆到中心 24（src-tauri/src/traffic_lights.rs），与本行图标同轴。
           ② 图标在本行**垂直居中**（h-16 ⇒ 中心 32），与右侧 TitleBar 的图标同一水平——
           两条顶栏的控件必须同轴（2026-07-27 产品负责人拍板），所以 TitleBar 要同高。
-          行高取 64 而不是 48，是为了让图标字形上缘 ≈26，与左右各 26 的 padding 齐
+          行高 48 + 图标框 16 居中 ⇒ 上下 padding 各 16，与左右 16 齐
           （2026-07-28 产品负责人：「红绿灯上面的 padding = 左边的 padding」）。
+          ⚠️ 对齐口径是布局框不是可见笔画：每个 lucide 图标在自己 16px 框里的内缩都不同
+          （实测开关字形右边空 3、箭头空 5、角标空 1.5），按笔画永远拉不齐，按框才能一致。
           ③ 图标**右对齐**（产品负责人 07-27 二次拍板）：`justify-end` + `pr-3` 与分组头 / 会话行
           同一个右内边距 ⇒ 最右那颗 32px 按钮的中心，正好落在分组角标 / 状态点 / 账号箭头
           那条右轨上。写 justify-end 而不是某个 pl 魔法值：图标数量随权限变化（筛选钮仅管理员可见），
@@ -664,7 +671,7 @@ export const Sidebar: React.FC = () => {
           （2026-07-27 产品负责人实测「双击标题栏没反应」）。style 保留是给 web/Electron 兜底。 */}
       <div
         data-tauri-drag-region
-        className="h-16 flex items-center justify-end gap-2 flex-shrink-0 pl-3 pr-3"
+        className="h-12 flex items-center justify-end gap-2 flex-shrink-0 px-2.5"
         style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
       >
         {/* 图标之间不留 gap：32px 按钮首尾相接 ⇒ 中心间距 32，与 Codex 顶栏一致 */}
@@ -750,7 +757,7 @@ export const Sidebar: React.FC = () => {
           一条滚动条宽的窄带 ⇒ 顶行/能力区/账号行都缩到同一条内轨；本滚动容器再用等宽负 margin
           把那条窄带"要回来"，`overflow-y-scroll` 恒定占位把滚动条正好摆进去 ⇒ 它的内容盒宽度
           回到与兄弟块相同的内轨。滚动条照常可见，且与列表溢不溢出无关。 */}
-      <div className="flex-1 overflow-y-scroll px-2 min-h-0 mr-[calc(var(--scrollbar-size)*-1)]">
+      <div className="flex-1 overflow-y-scroll px-1 min-h-0 mr-[calc(var(--scrollbar-size)*-1)]">
         {isLoading && sessions.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 gap-3">
             <Loader2 className="w-6 h-6 animate-spin text-primary-400" />
@@ -851,12 +858,12 @@ export const Sidebar: React.FC = () => {
       )}
 
       {/* Bottom: User Menu or Login */}
-      {/* 上下留白按「与顶行对称」反推，不是拍脑袋：顶行 h-16(64) 内容居中 ⇒ 中心距顶 32。
-          底部这块也做成 64 高：容器 py-3.5(14) + 行 py-2(8)*2 + 行内容 20(text-sm leading-5) = 64
-          ⇒ 中心距底 14+18 = 32，与顶部对称，四边 padding 于是全等 26。
+      {/* 上下留白按「与顶行对称」反推，不是拍脑袋：顶行 h-12(48) 内容居中 ⇒ 图标框中心距顶 24。
+          底部这块也做成 48 高：容器 py-1.5(6) + 行 py-2(8)*2 + 行内容 20(text-sm leading-5) = 48
+          ⇒ 内容中心距底 6+18 = 24，图标框下缘距底 16，与左右各 16 齐。
           注意行内容高由**最高的那个**决定（昵称 text-sm 的 20，不是头像的 16）——
           按 16 算会差 2px，实测才发现（2026-07-28）。横向仍是 8，与其他区块 px-2 同规范。 */}
-      <div className="px-2 py-3.5 relative flex-shrink-0" ref={accountMenuRef}>
+      <div className="px-1 py-1.5 relative flex-shrink-0" ref={accountMenuRef}>
         {isAuthenticated && user ? (
           <>
             <button
@@ -867,7 +874,7 @@ export const Sidebar: React.FC = () => {
                  根带 6 + 容器 p-2(8) + 行 px-3(12) = 图标左缘 26；+图标 16 +gap-2.5(10) = 昵称左缘 52，
                  与入口行/分组名/会话行标题同线；右侧同样 6+8+12 ⇒ 内容右缘 214，
                  展开箭头与分组头角标/会话行状态点同轴。左右内边距都用 px-3，不再一边 8 一边 12。 */
-              className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-white/[0.04] transition-colors"
+              className="w-full flex items-center gap-2.5 px-1.5 py-2 rounded-xl hover:bg-white/[0.04] transition-colors"
             >
               {user.avatarUrl ? (
                 <img src={user.avatarUrl} alt="" className="w-4 h-4 shrink-0 rounded-full object-cover" />

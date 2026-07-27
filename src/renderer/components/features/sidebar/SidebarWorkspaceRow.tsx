@@ -89,7 +89,7 @@ export const SidebarWorkspaceRow: React.FC = () => {
         title={effectiveWorkingDirectory || sb.selectDirectoryTitle}
         aria-label={`${sb.currentDirectory}: ${label}`}
         data-testid="sidebar-workspace-row"
-        className="group flex w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left transition-colors hover:bg-zinc-800/70"
+        className="group flex w-full items-center gap-2.5 rounded-lg px-1.5 py-1.5 text-left transition-colors hover:bg-zinc-800/70"
       >
         <FolderOpen className="h-4 w-4 flex-shrink-0 text-zinc-500" />
         <span

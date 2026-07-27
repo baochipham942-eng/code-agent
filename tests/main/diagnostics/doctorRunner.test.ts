@@ -260,6 +260,36 @@ describe('runDoctor', () => {
     expect(report.summary).toBeDefined();
   });
 
+  it('单个 check 抛异常时保留完整报告，并把该项降级为带 fix 的 fail', async () => {
+    providerHealthMock.mockImplementationOnce(() => {
+      throw new Error('health snapshot exploded');
+    });
+
+    const report = await runDoctor();
+    const failedItem = report.items.find((item) => item.name === 'Provider health');
+
+    expect(failedItem).toMatchObject({
+      category: 'provider_health',
+      status: 'fail',
+      details: 'health snapshot exploded',
+      fix: { code: 'open-provider-settings' },
+    });
+    expect(new Set(report.items.map((item) => item.category))).toEqual(
+      new Set([
+        'environment',
+        'database',
+        'config',
+        'disk',
+        'network',
+        'provider_health',
+        'mcp',
+        'hooks',
+        'version',
+      ]),
+    );
+    expect(report.summary.fail).toBe(1);
+  });
+
   it('Hook 配置解析返回 warn 时应进入 warn 计数', async () => {
     hooksMock.mockResolvedValueOnce([
       {

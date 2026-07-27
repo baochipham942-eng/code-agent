@@ -18,7 +18,8 @@ vi.mock('react', async () => {
     ...actual,
     useState: (initial: unknown) => {
       reactState.useStateCalls += 1;
-      if (reactState.useStateCalls === 3) {
+      // 第 4 个 useState = showUserMenu（批C2 在组件头部新增 isNativeFullscreen 后顺延一位）
+      if (reactState.useStateCalls === 4) {
         return [true, vi.fn()] as const;
       }
       return actual.useState(initial);

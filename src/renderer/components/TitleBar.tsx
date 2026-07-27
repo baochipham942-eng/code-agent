@@ -1,6 +1,6 @@
 // ============================================================================
 // TitleBar - 右侧顶栏
-// （目录 chip 已退役：工作目录选择并入侧栏项目组体系，入口在 SidebarWorkspaceRow。）
+// （目录 chip 已退役：目录选择并入新任务流程，入口在欢迎页目录 chip / DirectoryPickerModal。）
 //
 // 2026-07-27 审美关拍板：侧栏收起开关挪回左侧面板自己头上（SidebarHeader），
 // 这里只在**侧栏收起态**留展开入口——侧栏那时不存在，按钮得有别的落脚点。
@@ -30,8 +30,10 @@ export const TitleBar: React.FC<TitleBarProps> = ({ secondaryPageActive = false 
   return (
     // 原生标题栏已撤（tauri.conf.json titleBarStyle=Overlay），窗口得自己留拖拽区：
     // 本行整体可拖，行内控件逐个 no-drag。
+    // bg-zinc-900 与下方聊天区/右栏同色、不画下边框——顶栏与内容区打通成一整块
+    // （2026-07-27 产品负责人：黑色顶栏与下方割裂）。
     <div
-      className="h-12 flex items-center justify-between px-4 border-b border-border-muted bg-transparent backdrop-blur-sm relative z-30"
+      className="h-12 flex items-center justify-between px-4 bg-zinc-900 relative z-30"
       style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
     >
       <div className="flex items-center gap-2" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>

@@ -95,9 +95,14 @@ export const VoiceInputButton: React.FC<VoiceInputButtonProps> = ({
 
   const isRecording = status === 'recording';
   const isTranscribing = status === 'transcribing';
-  const canOpenMicrophoneSettings = errorCode === 'MICROPHONE_PERMISSION_DENIED';
-  // 没通道 / 没配 key 是配置问题，「重试」按钮对它无效——给一个真能解决问题的落点。
-  const canOpenVoiceSettings = errorCode === 'SPEECH_NO_CHANNEL' || errorCode === 'NOT_INITIALIZED';
+  // 错误卡只留一个「去解决」的落点，落到哪由错误码决定：麦克风权限 → 系统设置；
+  // 没通道 / 没配 key → 语音输入设置（这两种配置问题上「重试」是点了没用的）。
+  const fixAction: { label: string; run: () => void } | null =
+    errorCode === 'MICROPHONE_PERMISSION_DENIED'
+      ? { label: v.openSettingsButton, run: () => void openNativeDesktopSystemSettings('microphone') }
+      : errorCode === 'SPEECH_NO_CHANNEL' || errorCode === 'NOT_INITIALIZED'
+        ? { label: v.openVoiceSettingsButton, run: () => { clearError(); openSettingsTab('voiceInput'); } }
+        : null;
   const effectiveSettings = settings ?? DEFAULT_SPEECH_INPUT_SETTINGS;
 
   React.useEffect(() => {
@@ -175,22 +180,13 @@ export const VoiceInputButton: React.FC<VoiceInputButtonProps> = ({
             </div>
           </div>
           <div className="mt-3 flex items-center justify-end gap-2">
-            {canOpenMicrophoneSettings && (
+            {fixAction && (
               <button
                 type="button"
-                onClick={() => void openNativeDesktopSystemSettings('microphone')}
+                onClick={fixAction.run}
                 className="inline-flex h-7 items-center rounded-md bg-zinc-800 px-2 text-xs text-zinc-200 hover:bg-zinc-700"
               >
-                {v.openSettingsButton}
-              </button>
-            )}
-            {canOpenVoiceSettings && (
-              <button
-                type="button"
-                onClick={() => { clearError(); openSettingsTab('voiceInput'); }}
-                className="inline-flex h-7 items-center rounded-md bg-zinc-800 px-2 text-xs text-zinc-200 hover:bg-zinc-700"
-              >
-                {v.openVoiceSettingsButton}
+                {fixAction.label}
               </button>
             )}
             {canRetry && (

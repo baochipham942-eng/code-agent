@@ -185,6 +185,20 @@ describe('SkillDiscoveryService discovery', () => {
     ]);
   });
 
+  it('does not hijack meta-less user skill directories as single-skill libraries', async () => {
+    // 蒸馏/用户手写 skill 与下载库共用 ~/.code-agent/skills；无 .meta.json 的
+    // 根 SKILL.md 目录必须留给 user 扫描，不得按 library 加载
+    const userSkillDir = path.join(homeDir, '.code-agent', 'skills', 'weekly-report');
+    await writeSkillMd(userSkillDir, 'weekly-report');
+
+    const service = new SkillDiscoveryService();
+    await service.initialize(projectDir);
+
+    expect(
+      service.getAllSkills().filter((skill) => skill.source === 'library')
+    ).toEqual([]);
+  });
+
   it('keeps discovering multi-skill libraries through child directories', async () => {
     const libraryDir = path.join(homeDir, '.code-agent', 'skills', 'multi-skill-library');
     await writeSkill(path.join(libraryDir, 'skills'), 'first-library-skill');

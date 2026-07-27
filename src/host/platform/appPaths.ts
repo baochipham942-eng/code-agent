@@ -6,6 +6,7 @@ import os from 'os';
 import path from 'path';
 import { readFileSync } from 'fs';
 import { CONFIG_DIR_NEW } from '../config/configPaths';
+import type { BuildInfo } from '../../shared/contract';
 
 // ---------------------------------------------------------------------------
 // Path helpers
@@ -70,6 +71,7 @@ export function getPath(name: string): string {
 // ---------------------------------------------------------------------------
 
 let _appVersion: string | null = null;
+let _buildInfo: BuildInfo | null | undefined;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
@@ -79,6 +81,35 @@ function parsePackageVersion(content: string): string | null {
   const parsed: unknown = JSON.parse(content);
   if (!isRecord(parsed)) return null;
   return typeof parsed.version === 'string' ? parsed.version : null;
+}
+
+function nullableString(value: unknown): value is string | null {
+  return typeof value === 'string' || value === null;
+}
+
+function parseBuildInfo(content: string): BuildInfo | null {
+  const parsed: unknown = JSON.parse(content);
+  if (
+    !isRecord(parsed)
+    || typeof parsed.appName !== 'string'
+    || !nullableString(parsed.branch)
+    || !nullableString(parsed.commit)
+    || !nullableString(parsed.commitShort)
+    || (typeof parsed.dirty !== 'boolean' && parsed.dirty !== null)
+    || !nullableString(parsed.worktree)
+    || typeof parsed.builtAt !== 'string'
+  ) {
+    return null;
+  }
+  return {
+    appName: parsed.appName,
+    branch: parsed.branch,
+    commit: parsed.commit,
+    commitShort: parsed.commitShort,
+    dirty: parsed.dirty,
+    worktree: parsed.worktree,
+    builtAt: parsed.builtAt,
+  };
 }
 
 export function getAppVersion(): string {
@@ -95,6 +126,17 @@ export function getAppVersion(): string {
     }
   }
   return _appVersion;
+}
+
+export function getBuildInfo(): BuildInfo | null {
+  if (_buildInfo !== undefined) return _buildInfo;
+  try {
+    const buildInfoPath = path.resolve(__dirname, '../../build-info.json');
+    _buildInfo = parseBuildInfo(readFileSync(buildInfoPath, 'utf-8'));
+  } catch {
+    _buildInfo = null;
+  }
+  return _buildInfo;
 }
 
 export function getAppName(): string {

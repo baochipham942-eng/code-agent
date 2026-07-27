@@ -44,4 +44,3 @@ export const SidebarDoctorAlert: React.FC = () => {
   );
 };
 
-export default SidebarDoctorAlert;

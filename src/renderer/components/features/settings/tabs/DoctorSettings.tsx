@@ -116,8 +116,8 @@ const DoctorItemRow: React.FC<{
               loading={isFixing}
               onClick={() => onFix(item.fix!.code)}
               data-testid={`doctor-fix-${item.fix.code}`}
+              leftIcon={<Wrench className="w-3.5 h-3.5" />}
             >
-              <Wrench className="w-3.5 h-3.5 mr-1" />
               {fixLabel ?? item.fix.code}
             </Button>
           </span>
@@ -318,4 +318,3 @@ export const DoctorSettings: React.FC = () => {
   );
 };
 
-export default DoctorSettings;

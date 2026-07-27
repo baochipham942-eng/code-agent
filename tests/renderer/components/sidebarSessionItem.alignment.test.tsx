@@ -114,12 +114,19 @@ describe('实时语音会话标记', () => {
     expect(renderRow()).not.toContain('session-live-voice-badge');
   });
 
-  it('图标贴着标题，不占行尾那个状态槽（状态槽只讲此刻状态）', () => {
-    const html = renderRow({ hadLiveVoice: true, unread: true });
+  // 产品负责人 2026-07-27：图标要和别的行的状态点**同列居中**。
+  // 挂在标题后面会永远比它们靠左一格，所以进同一个固定宽状态槽，
+  // 按既有「内容互斥」规范排在优先级最低一档。
+  it('图标进行尾状态槽（与别的行的状态点同列）', () => {
+    const html = renderRow({ hadLiveVoice: true });
+    const slotIndex = html.lastIndexOf('w-4 shrink-0 flex items-center justify-center');
     const badgeIndex = html.indexOf('session-live-voice-badge');
-    const unreadDotIndex = html.indexOf('bg-purple-400');
-    // 语音标记排在未读点之前 = 它在标题侧，未读点仍独占行尾状态列
-    expect(badgeIndex).toBeGreaterThan(-1);
-    expect(unreadDotIndex).toBeGreaterThan(badgeIndex);
+    expect(badgeIndex).toBeGreaterThan(slotIndex);
+  });
+
+  it('未读/在跑时状态优先，语音标识让位（槽内容互斥）', () => {
+    const html = renderRow({ hadLiveVoice: true, unread: true });
+    expect(html).toContain('bg-purple-400');
+    expect(html).not.toContain('session-live-voice-badge');
   });
 });

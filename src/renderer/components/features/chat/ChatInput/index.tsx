@@ -706,11 +706,16 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   const hasContent = value.trim().length > 0 || attachments.length > 0;
   // 右侧主按钮的归属：只有「空输入框 + 没在跑 + 语音入口真能用」时才让给开通话，
   // 其余情况发送键都有事可做（发送 / 停止），不能被换掉。
+  //
+  // 刻意不看 `disabled`（2026-07-27 真机：切到新会话时底栏按钮闪变）：
+  // `disabled = isProcessing || isCreatingSession`，而 `!isProcessing` 上面已经拦了，
+  // 它多出来的只有「正在建会话」那一小段。建会话跟「有没有通话入口」无关——
+  // 拿它决定按钮存不存在，就是让底栏在每次开新会话时换一次构成。
+  // 这段窗口按钮照常在位，只是 disabled 置灰（两个按钮都真的会灰，见各自实现）。
   const liveVoiceAvailability = useVoiceLiveAvailability();
   const liveVoiceCallPhase = useVoiceCallStore((state) => state.phase);
   const liveVoiceIsPrimary = !hasContent
     && !isProcessing
-    && !disabled
     && Boolean(currentSessionId)
     && liveVoiceAvailability.enabled
     && liveVoiceAvailability.configured
@@ -1054,13 +1059,12 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
               <ModelSwitcher currentModel={modelConfig.model} />
             </div>
 
-            {/* 语音输入按钮 */}
-            {!disabled && (
-              <VoiceInputButton
-                voice={voice}
-                disabled={disabled}
-              />
-            )}
+            {/* 口述输入按钮：常驻不卸载。禁用时置灰留在原位——卸载会让底栏少一格、
+                旁边所有东西横向平移，「切会话时按钮闪一下」就是这么来的。 */}
+            <VoiceInputButton
+              voice={voice}
+              disabled={disabled}
+            />
             {/*
               右侧主按钮一个位置两种职能（2026-07-27 产品负责人拍板）：
               输入框空着时是「开通话」，打了字才变「发送」——空输入框上摆一个

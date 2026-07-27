@@ -10,17 +10,28 @@ import { describe, expect, it, vi } from 'vitest';
 // 「首次使用会请求麦克风」tooltip 被拍板文案取代；麦克风权限由首次
 // 使用时的系统授权弹窗承担说明职责）。
 
-vi.mock('../../../src/renderer/hooks/useVoiceInput', () => ({
-  useVoiceInput: () => ({
-    status: 'idle',
-    duration: 0,
-    isSupported: true,
-    isEnabled: true,
-    settings: { shortcut: '', mode: 'local-first', language: 'auto' },
-    toggle: vi.fn(),
-    error: null,
-  }),
+vi.mock('../../../src/renderer/services/nativeDesktop', () => ({
+  openNativeDesktopSystemSettings: vi.fn(),
 }));
+
+const idleVoice = {
+  status: 'idle',
+  duration: 0,
+  isSupported: true,
+  isEnabled: true,
+  settings: { shortcut: '', mode: 'local-first', language: 'auto' },
+  start: vi.fn(),
+  stop: vi.fn(),
+  toggle: vi.fn(),
+  retry: vi.fn(),
+  canRetry: false,
+  clearError: vi.fn(),
+  error: null,
+  errorCode: null,
+  lastResult: null,
+  inputLevel: 0,
+  silenceWarning: false,
+} as unknown as import('../../../src/renderer/hooks/useVoiceInput').UseVoiceInputReturn;
 
 const { VoiceInputButton } = await import('../../../src/renderer/components/features/chat/ChatInput/VoiceInputButton');
 const { zh } = await import('../../../src/renderer/i18n/zh');
@@ -30,7 +41,7 @@ describe('双语音入口 tooltip 双语义化（G3）', () => {
   it('麦克风（Dictation）tooltip = 语音转文字', () => {
     const html = renderToStaticMarkup(
       React.createElement(VoiceInputButton, {
-        onTranscript: vi.fn(),
+        voice: idleVoice,
       }),
     );
 

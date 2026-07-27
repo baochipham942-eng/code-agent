@@ -186,7 +186,8 @@ export const VoiceChrome: React.FC<{ sessionId: string | null }> = ({ sessionId 
               : 'border-zinc-600 bg-zinc-800 text-zinc-300 hover:border-zinc-500'
           }`}
         >
-          <Mic className="h-3.5 w-3.5" />
+          {/* 不放话筒图标：右边紧挨着的静音键就是话筒，两个同款图标并排纯属撞车。
+              这个按钮有文字标签，说得比图标清楚。 */}
           {store.pttCaptureOn ? t.voice.live.tapToSend : t.voice.live.tapToTalk}
         </button>
       )}

@@ -8,6 +8,8 @@ import { IPC_CHANNELS } from '@shared/ipc';
 import { createLogger } from '../../../../utils/logger';
 import { WebModeBanner } from '../WebModeBanner';
 import ipcService from '../../../../services/ipcService';
+import { fetchWebBuildInfo } from '../../../../services/persistenceHealth';
+import type { BuildInfo } from '@shared/contract';
 
 const logger = createLogger('AboutSettings');
 
@@ -18,6 +20,7 @@ const logger = createLogger('AboutSettings');
 export const AboutSettings: React.FC = () => {
   const { t } = useI18n();
   const [version, setVersion] = useState<string>('...');
+  const [buildInfo, setBuildInfo] = useState<BuildInfo | null>(null);
 
   useEffect(() => {
     const loadVersion = async () => {
@@ -28,8 +31,23 @@ export const AboutSettings: React.FC = () => {
         logger.error('Failed to load version', error);
       }
     };
-    loadVersion();
+    const loadBuildInfo = async () => {
+      try {
+        setBuildInfo(await fetchWebBuildInfo());
+      } catch (error) {
+        logger.error('Failed to load build info', error);
+      }
+    };
+    void loadVersion();
+    void loadBuildInfo();
   }, []);
+
+  const buildInfoText = buildInfo
+    ? t.about.buildInfo
+      .replace('{branch}', buildInfo.branch ?? t.about.buildUnknown)
+      .replace('{commitShort}', buildInfo.commitShort ?? t.about.buildUnknown)
+      .replace('{builtAt}', buildInfo.builtAt)
+    : null;
 
   return (
     <div className="space-y-6">
@@ -47,6 +65,9 @@ export const AboutSettings: React.FC = () => {
         </div>
         <h3 className="text-xl font-semibold text-zinc-200">Agent Neo</h3>
         <p className="text-sm text-zinc-400 mt-1">{t.about.version} {version}</p>
+        {buildInfoText && (
+          <p className="mt-1 font-mono text-xs text-zinc-500">{buildInfoText}</p>
+        )}
       </div>
 
       {/* About Description */}

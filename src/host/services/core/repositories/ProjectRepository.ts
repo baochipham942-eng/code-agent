@@ -341,6 +341,24 @@ export class ProjectRepository {
   // --- sessions ↔ project ---
 
   assignSessionProject(sessionId: string, projectId: string): void {
+    const conversationLedgerInstalled = Boolean(this.db.prepare(`
+      SELECT 1 FROM sqlite_master
+      WHERE type = 'table' AND name = 'conversation_branches'
+      LIMIT 1
+    `).get());
+    if (conversationLedgerInstalled) {
+      const branch = this.db.prepare(`
+        SELECT project_id
+        FROM conversation_branches
+        WHERE session_id = ?
+        LIMIT 1
+      `).get(sessionId) as { project_id: string | null } | undefined;
+      if (branch && branch.project_id !== projectId) {
+        throw new Error(
+          `PROJECT_BOUNDARY_IMMUTABLE: session ${sessionId} already has immutable conversation history`,
+        );
+      }
+    }
     this.db.prepare('UPDATE sessions SET project_id = ? WHERE id = ?').run(projectId, sessionId);
   }
 

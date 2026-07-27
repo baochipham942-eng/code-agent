@@ -474,6 +474,7 @@ export interface IpcInvokeHandlers {
     messageId: string
   ) => Promise<{
     success: boolean;
+    code?: 'LEGACY_FORK_RETIRED';
     filesRestored: number;
     messagesTruncated: number;
     error?: string;

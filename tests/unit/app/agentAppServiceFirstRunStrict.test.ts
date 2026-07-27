@@ -22,7 +22,11 @@ vi.mock('../../../src/host/services', () => ({
     updateSession: async () => undefined,
   }),
 }));
-vi.mock('../../../src/host/services/core/databaseService', () => ({ getDatabase: vi.fn() }));
+vi.mock('../../../src/host/services/core/databaseService', () => ({
+  getDatabase: vi.fn(() => ({
+    getSessionForkWorkspaceScope: vi.fn(() => null),
+  })),
+}));
 
 import { AgentAppServiceImpl } from '../../../src/host/app/agentAppService';
 import { getPermissionModeManager, permissionModeAutoApproves } from '../../../src/host/permissions/modes';

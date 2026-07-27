@@ -16,6 +16,7 @@ import type { RunRegistry } from '../host/runtime/runRegistry';
 import type { DurableRunRolloutPolicy } from '../host/app/durableRunRollout';
 import type { DurableRunReadService } from '../host/app/durableRunReadService';
 import type { WebRouteLogger } from './routes/routeTypes';
+import type { BuildInfo } from '../shared/contract';
 
 import { formatError } from './helpers/utils';
 import { handleTempUpload, handleScreenshot } from './helpers/upload';
@@ -63,6 +64,8 @@ export interface CreateAppDeps {
   resolveCodeAgentDataDir: () => string;
   /** 当前 shell 版本（来自 host/platform，注入以避免本模块 import 该桶）。 */
   getAppVersion: () => string;
+  /** 当前安装包的构建指纹；开发态和正式生产包为 null。 */
+  getBuildInfo: () => BuildInfo | null;
   getDurableRunRollout: () => { policy: DurableRunRolloutPolicy; ready: boolean };
   getDurableRunReadService: () => DurableRunReadService | undefined;
   registerQueuedInputStartupSweep?: (runStartupSweep: () => void) => void;
@@ -109,6 +112,7 @@ export function createApp(deps: CreateAppDeps): express.Express {
     pendingDevPermissions,
     resolveCodeAgentDataDir,
     getAppVersion,
+    getBuildInfo,
     getDurableRunRollout,
     getDurableRunReadService,
   } = deps;
@@ -133,6 +137,7 @@ export function createApp(deps: CreateAppDeps): express.Express {
   // ── Health & SSE (extracted to routes/health.ts) ────────────────────
   app.use('/api', createHealthRouter({
     handlers,
+    getBuildInfo,
     getPersistenceHealth,
     getRendererServeDecision: () => resolveRendererServeDecision(
       resolveCodeAgentDataDir(),

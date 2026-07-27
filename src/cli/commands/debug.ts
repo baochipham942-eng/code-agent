@@ -29,8 +29,12 @@ function parseOlderThan(input: string | undefined): number | undefined {
   if (!match) {
     throw new Error(`无效的 --older-than 值: ${input}（用 1d / 7d / 30d / all）`);
   }
-  const n = parseInt(match[1]!, 10);
-  const unit = match[2]!.toLowerCase();
+  const [, rawNumber, rawUnit] = match;
+  if (rawNumber === undefined || rawUnit === undefined) {
+    throw new Error(`无效的 --older-than 值: ${input}（用 1d / 7d / 30d / all）`);
+  }
+  const n = parseInt(rawNumber, 10);
+  const unit = rawUnit.toLowerCase();
   return unit === 'd' ? n * 86400_000 : unit === 'h' ? n * 3600_000 : n * 60_000;
 }
 
@@ -169,12 +173,13 @@ const contextCommand = new Command('context')
   .action(async (sessionId: string, options: { turn?: string; full?: boolean; json?: boolean }) => {
     const db = await initCLIDatabase();
     const snapshots = db.listTurnSnapshots(sessionId, 1000) as LooseSnapshot[];
-    if (snapshots.length === 0) {
+    const latestSnapshot = snapshots.at(-1);
+    if (!latestSnapshot) {
       console.error(`session ${sessionId} 没有 turn 快照`);
       process.exit(1);
     }
 
-    const targetTurn = options.turn ? parseInt(options.turn, 10) : snapshots[snapshots.length - 1]!.turnIndex;
+    const targetTurn = options.turn ? parseInt(options.turn, 10) : latestSnapshot.turnIndex;
     const snap = snapshots.find((s) => s.turnIndex === targetTurn);
     if (!snap) {
       console.error(`turn ${targetTurn} 不存在（可选: ${snapshots.map((s) => s.turnIndex).join(', ')}）`);
@@ -241,8 +246,7 @@ const contextCommand = new Command('context')
     // 6 层上下文细分（identity + 已知 XML 块）
     if (ctx?.layers?.length) {
       console.log(`System prompt layers (${ctx.layers.length}):`);
-      for (let i = 0; i < ctx.layers.length; i++) {
-        const layer = ctx.layers[i]!;
+      for (const [i, layer] of ctx.layers.entries()) {
         const sizeStr = layer.size < 1024 ? `${layer.size} B` : `${(layer.size / 1024).toFixed(1)} KB`;
         console.log(`  [${i}] ${layer.name.padEnd(22)} ${sizeStr.padStart(10)}`);
         if (layer.snippet) {
@@ -345,18 +349,21 @@ const loopTraceCommand = new Command('trace')
     // 检测「卡死信号」：连续 3 turn 调用相同工具 / 工具结果空 / token 暴涨
     const stuckSignals: string[] = [];
     for (let i = 2; i < turns.length; i++) {
-      const a = turns[i - 2]!.tools.map((t) => t.toolName).join(',');
-      const b = turns[i - 1]!.tools.map((t) => t.toolName).join(',');
-      const c = turns[i]!.tools.map((t) => t.toolName).join(',');
+      const first = turns.at(i - 2);
+      const second = turns.at(i - 1);
+      const third = turns.at(i);
+      if (!first || !second || !third) continue;
+      const a = first.tools.map((t) => t.toolName).join(',');
+      const b = second.tools.map((t) => t.toolName).join(',');
+      const c = third.tools.map((t) => t.toolName).join(',');
       if (a && a === b && b === c) {
-        stuckSignals.push(`turn ${turns[i - 2]!.snapshot.turnIndex}-${turns[i]!.snapshot.turnIndex}: 连续 3 轮相同工具序列 [${a}]`);
+        stuckSignals.push(`turn ${first.snapshot.turnIndex}-${third.snapshot.turnIndex}: 连续 3 轮相同工具序列 [${a}]`);
       }
     }
 
     console.log(`Loop trace: ${sessionId}  (${turns.length} turns, ${totalTools} tool calls)`);
     console.log('');
-    for (let i = 0; i < turns.length; i++) {
-      const { snapshot: snap, tools } = turns[i]!;
+    for (const [i, { snapshot: snap, tools }] of turns.entries()) {
       const tok = snap.tokenBreakdown as { inputTokens?: number; outputTokens?: number } | null;
       const ctx = snap.contextChunks as { messageCount?: number } | null;
       const isLast = i === turns.length - 1;
@@ -368,8 +375,7 @@ const loopTraceCommand = new Command('trace')
       if (tools.length === 0) {
         console.log(`${inner} (no tool calls — text-only response)`);
       } else {
-        for (let j = 0; j < tools.length; j++) {
-          const t = tools[j]!;
+        for (const [j, t] of tools.entries()) {
           const tBranch = j === tools.length - 1 ? '└─' : '├─';
           const ok = t.success ? '✓' : '✗';
           console.log(`${inner} ${tBranch} ${ok} ${t.toolName}`);
@@ -466,8 +472,7 @@ const compactDiffCommand = new Command('diff')
     console.log('');
     console.log(`  ${pad('IDX', 4)}  ${pad('CREATED', 21)}  ${pad('STRATEGY', 14)}  ${pad('MSGS', 12)}  ${pad('TOKENS', 18, true)}  ${pad('SAVED %', 8, true)}`);
     console.log(`  ${'-'.repeat(4)}  ${'-'.repeat(21)}  ${'-'.repeat(14)}  ${'-'.repeat(12)}  ${'-'.repeat(18)}  ${'-'.repeat(8)}`);
-    for (let i = 0; i < compactions.length; i++) {
-      const c = compactions[i]!;
+    for (const [i, c] of compactions.entries()) {
       const reduction = c.preTokens > 0 ? ((c.savedTokens / c.preTokens) * 100).toFixed(1) + '%' : '-';
       console.log(
         `  ${pad(i + 1, 4)}  ${pad(formatDate(c.createdAt), 21)}  ${pad(c.strategy ?? '-', 14)}  ${pad(`${c.preMessageCount}→${c.postMessageCount}`, 12)}  ${pad(`${c.preTokens}→${c.postTokens}`, 18, true)}  ${pad(reduction, 8, true)}`,
@@ -541,10 +546,11 @@ const replayCommand = new Command('replay')
 
     if (options.list) {
       const cases = loadAllReplayCases(options.dir);
-      const filtered = options.filter
+      const filter = options.filter;
+      const filtered = filter
         ? cases.filter((c) =>
-            c.id.includes(options.filter!) ||
-            (c.description ?? '').includes(options.filter!),
+            c.id.includes(filter) ||
+            (c.description ?? '').includes(filter),
           )
         : cases;
       if (filtered.length === 0) {
@@ -611,9 +617,9 @@ const replayCommand = new Command('replay')
     let success = true;
     try {
       const prompts = [found.prompt, ...(found.follow_up_prompts ?? [])];
-      for (let i = 0; i < prompts.length; i++) {
+      for (const [i, prompt] of prompts.entries()) {
         if (i > 0) console.log(`\n── follow-up ${i} ──`);
-        const result = await agent.run(prompts[i]!);
+        const result = await agent.run(prompt);
         if (!result.success) {
           success = false;
           console.error(`第 ${i + 1} 个 prompt 失败: ${result.error ?? 'unknown'}`);

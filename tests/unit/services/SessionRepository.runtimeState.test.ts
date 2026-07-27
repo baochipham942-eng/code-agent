@@ -69,6 +69,10 @@ function createSchema(db: BetterSqlite3.Database): void {
         files_restored INTEGER NOT NULL DEFAULT 0,
         files_deleted INTEGER NOT NULL DEFAULT 0,
         errors_json TEXT,
+        idempotency_key TEXT,
+        request_digest TEXT,
+        status TEXT NOT NULL DEFAULT 'completed',
+        restored_at INTEGER,
         created_at INTEGER NOT NULL
       );
 
@@ -111,6 +115,7 @@ function createSchema(db: BetterSqlite3.Database): void {
       session_id TEXT NOT NULL,
       source_message_id TEXT NOT NULL,
       status TEXT NOT NULL,
+      hidden_by_rewind_id TEXT,
       updated_at INTEGER NOT NULL
     );
 
@@ -294,7 +299,8 @@ describe('SessionRepository runtime recovery state', () => {
       checkpointMessageId: 'checkpoint-message',
       filesRestored: 2,
       filesDeleted: 1,
-      createdAt: 100
+      createdAt: 100,
+      ownerUserId: null,
     });
 
     expect(result.hiddenMessageIds).toEqual(['u2', 'a2']);
@@ -350,7 +356,7 @@ describe('SessionRepository runtime recovery state', () => {
       VALUES ('manifest-1', 'session-1', 'ui-1', 'approved', 50)
     `).run();
 
-    repo.applyPromptRewind('session-1', 'u2', { createdAt: 100 });
+    repo.applyPromptRewind('session-1', 'u2', { createdAt: 100, ownerUserId: null });
 
     expect(db.prepare('SELECT status FROM generative_ui_instances WHERE instance_id = ?').get('ui-1'))
       .toEqual({ status: 'hidden' });
@@ -387,8 +393,8 @@ describe('SessionRepository runtime recovery state', () => {
       repo.addMessage('session-1', message);
     }
 
-    repo.applyPromptRewind('session-1', 'u3', { createdAt: 100 });
-    repo.applyPromptRewind('session-1', 'u2', { createdAt: 200 });
+    repo.applyPromptRewind('session-1', 'u3', { createdAt: 100, ownerUserId: null });
+    repo.applyPromptRewind('session-1', 'u2', { createdAt: 200, ownerUserId: null });
 
     expect(repo.getMessages('session-1').map((message) => message.id)).toEqual(['u1', 'a1']);
     expect(
@@ -437,7 +443,7 @@ describe('SessionRepository runtime recovery state', () => {
       repo.addMessage('session-1', message);
     }
 
-    repo.applyPromptRewind('session-1', 'u2', { createdAt: 100 });
+    repo.applyPromptRewind('session-1', 'u2', { createdAt: 100, ownerUserId: null });
 
     expect(repo.getMessages('session-1').map((message) => message.id)).toEqual(['u1', 'a1']);
     expect(

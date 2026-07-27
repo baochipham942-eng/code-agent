@@ -8,8 +8,10 @@
 
 import { create } from 'zustand';
 import type { Message } from '@shared/contract';
+import type { CreateSessionForkResult } from '@shared/contract/sessionFork';
+import type { SessionForkWorkspaceMode } from '@shared/contract/sessionFork';
 import type { ConversationEnvelopeContext } from '@shared/contract/conversationEnvelope';
-import { IPC_CHANNELS } from '@shared/ipc';
+import { IPC_DOMAINS } from '@shared/ipc';
 import ipcService from '../services/ipcService';
 import { useSessionStore } from './sessionStore';
 import { toast } from '../hooks/useToast';
@@ -39,8 +41,15 @@ interface MessageActionState {
   regenerateMessage: (messageId: string) => void;
   /** Regenerate the most recent assistant message (keyboard shortcut entry, no hover needed). Returns true if one was found. */
   regenerateLast: () => boolean;
-  /** Fork from a checkpoint: rewind files + truncate messages */
-  forkFromHere: (messageId: string) => void;
+  /** Create an independent child session from a completed assistant reply. */
+  createForkFromReply: (
+    messageId: string,
+    workspaceMode?: SessionForkWorkspaceMode,
+  ) => Promise<void>;
+}
+
+function createForkIdempotencyKey(sourceSessionId: string, anchorAssistantMessageId: string): string {
+  return `fork:${sourceSessionId}:${anchorAssistantMessageId}:${crypto.randomUUID()}`;
 }
 
 export const useMessageActionStore = create<MessageActionState>((set, get) => ({
@@ -86,28 +95,33 @@ export const useMessageActionStore = create<MessageActionState>((set, get) => ({
     return false;
   },
 
-  forkFromHere: async (messageId: string) => {
-    const sessionId = useSessionStore.getState().currentSessionId;
+  createForkFromReply: async (messageId: string, workspaceMode = 'shared_current') => {
+    const sessionStore = useSessionStore.getState();
+    const sessionId = sessionStore.currentSessionId;
     if (!sessionId) return;
+    if (sessionStore.isSessionRunning(sessionId)) {
+      toast.error('任务仍在运行，停止后才能创建分支');
+      return;
+    }
 
     try {
-      const result = await ipcService.invoke(IPC_CHANNELS.CHECKPOINT_FORK, sessionId, messageId);
-      if (result.success) {
-        toast.success(`已回滚到此消息，可继续对话（恢复 ${result.filesRestored} 文件，截断 ${result.messagesTruncated} 条消息）`);
-        // Refresh messages in the store by re-switching to the same session
-        const { _getMessages } = get();
-        if (_getMessages) {
-          const messages = _getMessages();
-          const idx = messages.findIndex((m) => m.id === messageId);
-          if (idx >= 0) {
-            useSessionStore.getState().setMessages(messages.slice(0, idx + 1));
-          }
-        }
-      } else {
-        toast.error(`回滚失败: ${result.error || '未知错误'}`);
-      }
+      const result = await ipcService.invokeDomain<CreateSessionForkResult>(
+        IPC_DOMAINS.SESSION,
+        'fork',
+        {
+          sourceSessionId: sessionId,
+          anchorAssistantMessageId: messageId,
+          idempotencyKey: createForkIdempotencyKey(sessionId, messageId),
+          workspaceMode,
+        },
+      );
+      // The source task remains untouched. Refresh the list so lineage is visible,
+      // then load the independently persisted child through the normal session path.
+      await useSessionStore.getState().loadSessions({ silent: true });
+      await useSessionStore.getState().switchSession(result.childSession.id);
+      toast.success(`已创建分支任务：${result.workspaceLabel}`);
     } catch (error) {
-      toast.error(`回滚失败: ${error instanceof Error ? error.message : String(error)}`);
+      toast.error(`创建分支失败: ${error instanceof Error ? error.message : String(error)}`);
     }
   },
 }));

@@ -1,9 +1,10 @@
 // ============================================================================
-// RewindPanel - Esc+Esc 触发的检查点回退面板
+// RewindPanel - Esc+Esc 触发的独立工作区文件恢复面板
 // ============================================================================
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { IPC_CHANNELS } from '@shared/ipc';
+import type { RestoreWorkspaceFilesAtCheckpointResult } from '@shared/contract/fileRestore';
+import { IPC_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
 import { useSessionStore } from '../stores/sessionStore';
 import ipcService from '../services/ipcService';
 import { Button, Modal } from './primitives';
@@ -72,11 +73,18 @@ export const RewindPanel: React.FC<RewindPanelProps> = ({ isOpen, onClose }) => 
     setIsRewinding(true);
     setRewindError(null);
     try {
-      const result = await ipcService.invoke(IPC_CHANNELS.CHECKPOINT_REWIND, currentSessionId, selectedMessageId);
-      if (result?.success) {
+      const result = await ipcService.invokeDomain<RestoreWorkspaceFilesAtCheckpointResult>(
+        IPC_DOMAINS.SESSION,
+        'restoreWorkspaceFilesAtCheckpoint',
+        {
+          sessionId: currentSessionId,
+          checkpointMessageId: selectedMessageId,
+        },
+      );
+      if (result.success) {
         onClose();
       } else {
-        setRewindError(result?.error || r.rewindFailedRetry);
+        setRewindError(r.rewindFailedRetry);
       }
     } catch (error) {
       setRewindError(error instanceof Error ? error.message : String(error));

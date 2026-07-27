@@ -625,6 +625,8 @@ export const en: Translations = {
   about: {
     title: 'About',
     version: 'Version',
+    buildInfo: '{branch} @ {commitShort} ({builtAt})',
+    buildUnknown: 'unknown',
     description:
       'Agent Neo is an eval-driven, multi-model AI assistant for life and work tasks. It combines local execution, files and desktop control, external agent handoffs, and acceptance checks in one traceable context.',
     capabilities: 'Core Capabilities',

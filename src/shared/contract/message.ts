@@ -84,6 +84,8 @@ export interface MessageAttachment {
   name: string;
   size: number;
   mimeType: string;
+  /** Opaque payload digest used by read-only portability imports. */
+  contentDigest?: string;
   // 图片: base64 数据 URL
   // 文件: 提取的文本内容
   data?: string;

@@ -4,6 +4,7 @@
 
 import * as fs from 'fs/promises';
 import * as path from 'path';
+import { randomUUID } from 'crypto';
 import { getUserConfigDir } from '../../config/configPaths';
 import type {
   SkillRepository,
@@ -11,6 +12,9 @@ import type {
   LocalSkillInfo,
   SkillConfig,
   DownloadResult,
+  StageRepositoryResult,
+  StagedSkillPreview,
+  SkillRepoSourceType,
   UpdateResult,
 } from '@shared/contract/skillRepository';
 import {
@@ -36,6 +40,16 @@ import { createLogger } from '../infra/logger';
 import { Disposable, getServiceRegistry } from '../serviceRegistry';
 const logger = createLogger('SkillRepositoryService');
 
+interface StagedRepositoryRecord {
+  stageId: string;
+  repoId: string;
+  repoName: string;
+  sourceType: SkillRepoSourceType;
+  repository: SkillRepository;
+  localPath: string;
+  layout: RepositoryLayout;
+}
+
 // ============================================================================
 // Service Class
 // ============================================================================
@@ -46,19 +60,23 @@ const logger = createLogger('SkillRepositoryService');
  */
 class SkillRepositoryService implements Disposable {
   private skillsDir: string; // ~/.code-agent/skills/
+  private stagingDir: string; // ~/.code-agent/skills/.staging/
   private configPath: string; // ~/.code-agent/skill-config.json
   private config: SkillConfig;
   private libraries: Map<string, LocalSkillLibrary> = new Map();
+  private stagedRepositories: Map<string, StagedRepositoryRecord> = new Map();
   private initialized = false;
 
   async dispose(): Promise<void> {
     this.libraries.clear();
+    this.stagedRepositories.clear();
     this.initialized = false;
   }
 
   constructor() {
     const baseDir = getUserConfigDir();
     this.skillsDir = path.join(baseDir, 'skills');
+    this.stagingDir = path.join(this.skillsDir, '.staging');
     this.configPath = path.join(baseDir, 'skill-config.json');
     this.config = {
       repositories: [],
@@ -80,6 +98,10 @@ class SkillRepositoryService implements Disposable {
 
     // 创建目录
     await fs.mkdir(this.skillsDir, { recursive: true });
+    // Staging entries are process-local transactions. Anything left from a
+    // prior process is an orphan and must never become an installed library.
+    await fs.rm(this.stagingDir, { recursive: true, force: true });
+    await fs.mkdir(this.stagingDir, { recursive: true });
 
     // 加载配置
     await this.loadConfig();
@@ -392,6 +414,180 @@ class SkillRepositoryService implements Disposable {
     return this.downloadRepository(repo);
   }
 
+  /**
+   * Download and inspect a repository without mutating installed libraries or
+   * skill-config.json.
+   */
+  async stageRepository(url: string, name?: string): Promise<StageRepositoryResult> {
+    await this.initialize();
+
+    const parsed = parseRepoUrl(url);
+    if (!parsed) {
+      return {
+        success: false,
+        error: `Invalid repository URL: ${url}`,
+      };
+    }
+
+    const repoId = `${parsed.owner}-${parsed.repo}`.toLowerCase();
+    const repoName = name || `${parsed.owner}/${parsed.repo}`;
+    const stageId = randomUUID();
+    const stagePath = path.join(this.stagingDir, stageId);
+
+    try {
+      const result = await downloadRepository({
+        source: parsed.source,
+        owner: parsed.owner,
+        repo: parsed.repo,
+        branch: parsed.branch,
+        targetDir: stagePath,
+        modelScopeRepoType: parsed.source === 'modelscope' ? parsed.repoType : undefined,
+      });
+      if (!result.success) {
+        await fs.rm(stagePath, { recursive: true, force: true });
+        return {
+          success: false,
+          error: result.error || 'Repository staging download failed',
+        };
+      }
+
+      const layout = await detectRepositoryLayout(stagePath);
+      const skillDirectories = await this.getSkillDirectories(stagePath, layout);
+      const skills: StagedSkillPreview[] = [];
+      const warnings: string[] = [];
+
+      for (const skillDirectory of skillDirectories) {
+        const parsedSkill = await parseSkillMd(skillDirectory, 'library');
+        const skillMdContent = await fs.readFile(
+          path.join(skillDirectory, 'SKILL.md'),
+          'utf-8'
+        );
+        skills.push({
+          name: parsedSkill.name,
+          description: parsedSkill.description,
+          skillMdContent,
+        });
+        if (parsedSkill.frontmatterWarnings) {
+          warnings.push(
+            ...parsedSkill.frontmatterWarnings.map(
+              (warning) => `${parsedSkill.name}: ${warning}`
+            )
+          );
+        }
+      }
+
+      const repository: SkillRepository = {
+        id: repoId,
+        name: repoName,
+        url,
+        branch: parsed.branch,
+        skillsPath: layout.skillsPath,
+        category: 'community',
+        recommended: false,
+        author: parsed.owner,
+      };
+      this.stagedRepositories.set(stageId, {
+        stageId,
+        repoId,
+        repoName,
+        sourceType: parsed.source,
+        repository,
+        localPath: stagePath,
+        layout,
+      });
+
+      return {
+        success: true,
+        stageId,
+        repoId,
+        repoName,
+        sourceType: parsed.source,
+        layout: layout.layout,
+        skills,
+        ...(warnings.length > 0 ? { warnings } : {}),
+      };
+    } catch (error) {
+      await fs.rm(stagePath, { recursive: true, force: true });
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown staging error',
+      };
+    }
+  }
+
+  /** Confirm a staged install by atomically moving it into the installed root. */
+  async confirmStagedRepository(stageId: string): Promise<DownloadResult> {
+    await this.initialize();
+
+    const staged = this.stagedRepositories.get(stageId);
+    if (!staged) {
+      return {
+        success: false,
+        error: `Staged repository not found: ${stageId}`,
+      };
+    }
+
+    const targetPath = path.join(this.skillsDir, staged.repoId);
+    if (this.libraries.has(staged.repoId) || await this.pathExists(targetPath)) {
+      return {
+        success: false,
+        error: `Repository already exists: ${staged.repoId}`,
+      };
+    }
+
+    try {
+      const meta = await readRepoMetaAsync(staged.localPath);
+      if (meta) {
+        await saveRepoMeta(staged.localPath, {
+          ...meta,
+          skillsPath: staged.layout.skillsPath,
+        });
+      }
+
+      await fs.rename(staged.localPath, targetPath);
+      const skills = await this.scanSkillsInLibrary(targetPath, staged.layout);
+      const installedMeta = await readRepoMetaAsync(targetPath);
+      const now = Date.now();
+      const library: LocalSkillLibrary = {
+        repoId: staged.repoId,
+        repoName: staged.repoName,
+        localPath: targetPath,
+        downloadedAt: installedMeta?.downloadedAt || now,
+        lastUpdated: installedMeta?.lastUpdated || now,
+        version: installedMeta?.commitHash,
+        skills,
+      };
+
+      this.libraries.set(staged.repoId, library);
+      this.config.repositories.push(staged.repository);
+      await this.saveConfig();
+      this.stagedRepositories.delete(stageId);
+
+      return {
+        success: true,
+        localPath: targetPath,
+        library,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown confirmation error',
+      };
+    }
+  }
+
+  /** Delete staged content without changing installed state. */
+  async cancelStagedRepository(stageId: string): Promise<void> {
+    await this.initialize();
+
+    const staged = this.stagedRepositories.get(stageId);
+    if (!staged) {
+      throw new Error(`Staged repository not found: ${stageId}`);
+    }
+    await fs.rm(staged.localPath, { recursive: true, force: true });
+    this.stagedRepositories.delete(stageId);
+  }
+
   // ==========================================================================
   // Query Methods
   // ==========================================================================
@@ -659,6 +855,40 @@ class SkillRepositoryService implements Disposable {
     }
 
     return skills;
+  }
+
+  private async getSkillDirectories(
+    libraryPath: string,
+    layout: RepositoryLayout
+  ): Promise<string[]> {
+    if (layout.layout === 'single-skill') {
+      return [libraryPath];
+    }
+
+    const skillsDir = layout.skillsPath === '.'
+      ? libraryPath
+      : path.join(libraryPath, layout.skillsPath);
+    const entries = await fs.readdir(skillsDir, { withFileTypes: true });
+    const skillDirectories: string[] = [];
+    for (const entry of entries) {
+      if (!entry.isDirectory() || entry.name.startsWith('.')) {
+        continue;
+      }
+      const skillDirectory = path.join(skillsDir, entry.name);
+      if (await hasSkillMd(skillDirectory)) {
+        skillDirectories.push(skillDirectory);
+      }
+    }
+    return skillDirectories;
+  }
+
+  private async pathExists(targetPath: string): Promise<boolean> {
+    try {
+      await fs.access(targetPath);
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   /**

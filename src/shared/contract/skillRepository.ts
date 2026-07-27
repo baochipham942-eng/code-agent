@@ -259,6 +259,27 @@ export interface DownloadResult {
   error?: string;
 }
 
+/** Skill metadata and source text shown before a staged install is confirmed. */
+export interface StagedSkillPreview {
+  name: string;
+  description: string;
+  /** Complete SKILL.md text, including YAML frontmatter. */
+  skillMdContent: string;
+}
+
+/** Result returned by the non-mutating repository staging operation. */
+export interface StageRepositoryResult {
+  success: boolean;
+  error?: string;
+  stageId?: string;
+  repoId?: string;
+  repoName?: string;
+  sourceType?: SkillRepoSourceType;
+  layout?: 'single-skill' | 'library';
+  skills?: StagedSkillPreview[];
+  warnings?: string[];
+}
+
 /**
  * 仓库更新结果
  */

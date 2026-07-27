@@ -21,6 +21,12 @@ export const SKILL_CHANNELS = {
   REPO_REMOVE: 'skill:repo:remove',
   /** 添加自定义仓库 */
   REPO_ADD_CUSTOM: 'skill:repo:add-custom',
+  /** 下载到临时区并返回装前预览 */
+  REPO_STAGE: 'skill:repo:stage',
+  /** 确认安装临时区仓库 */
+  REPO_CONFIRM: 'skill:repo:confirm',
+  /** 取消临时区仓库 */
+  REPO_CANCEL: 'skill:repo:cancel',
 
   // ------------------------------------------------------------------------
   // 官方 Skill Registry（远程 marketplace）

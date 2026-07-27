@@ -9,6 +9,9 @@ import {
   resolveModelPrice,
   type PriceSource,
 } from '@shared/pricing/resolveModelPrice';
+import type { TodayCost } from '@shared/contract/turnCost';
+import { IPC_DOMAINS } from '@shared/ipc';
+import ipcService from '../services/ipcService';
 
 export type NetworkStatus = 'online' | 'offline' | 'slow';
 
@@ -127,3 +130,28 @@ export const useStatusStore = create<StatusState>((set) => ({
   setStreaming: (streaming) =>
     set({ isStreaming: streaming }),
 }));
+
+let statusStoreInitialization: Promise<void> | null = null;
+
+/** 启动时从 host DB 水合本地时区的今日费用；同一页面生命周期只发一次请求。 */
+export function initializeStatusStore(): Promise<void> {
+  if (statusStoreInitialization) return statusStoreInitialization;
+
+  const baseline = useStatusStore.getState();
+  statusStoreInitialization = ipcService
+    .invokeDomain<TodayCost>(IPC_DOMAINS.STATUS, 'getTodayCost')
+    .then((today) => {
+      useStatusStore.setState((state) => ({
+        // 请求在途期间若已有 stream_usage，保留这段增量。
+        sessionCost: today.usd + Math.max(0, state.sessionCost - baseline.sessionCost),
+        unknownCostTurns: today.unknownTurns
+          + Math.max(0, state.unknownCostTurns - baseline.unknownCostTurns),
+      }));
+    })
+    .catch((error) => {
+      statusStoreInitialization = null;
+      throw error;
+    });
+
+  return statusStoreInitialization;
+}

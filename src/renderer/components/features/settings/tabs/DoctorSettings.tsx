@@ -26,7 +26,7 @@ import {
   Stethoscope,
   Wrench,
 } from 'lucide-react';
-import { Button } from '../../../primitives';
+import { Button, IconButton } from '../../../primitives';
 import { SettingsPage } from '../SettingsLayout';
 import type { DoctorFixCode } from '@shared/constants/doctor';
 import { toast } from '../../../../hooks/useToast';
@@ -88,7 +88,7 @@ const DoctorItemRow: React.FC<{
   return (
     <div className="border border-zinc-700/50 rounded-lg overflow-hidden">
       <div className="flex items-center">
-        <button
+        <button /* ds-allow:button: 检查项全宽列表行（徽标+文案+chevron 左对齐可展开行），primitive 居中变体不兼容，同 SidebarDoctorAlert 行模式 */
           className="flex-1 min-w-0 flex items-center gap-3 px-3 py-2.5 text-left hover:bg-zinc-800/50 transition-colors"
           onClick={() => hasDetails && setExpanded(!expanded)}
           disabled={!hasDetails}
@@ -285,17 +285,17 @@ export const DoctorSettings: React.FC = () => {
                   <h3 className="text-sm font-medium text-zinc-300">
                     {doctorText.categoryLabels[category]}
                   </h3>
-                  <button
-                    type="button"
-                    className="ml-auto text-zinc-500 hover:text-zinc-300 transition-colors disabled:opacity-40"
+                  <IconButton
+                    variant="ghost"
+                    size="sm"
+                    className="ml-auto"
+                    icon={<RefreshCw className={isCategoryRunning ? 'animate-spin' : ''} />}
                     title={doctorText.recheckCategory}
                     aria-label={doctorText.recheckCategory}
                     data-testid={`doctor-recheck-${category}`}
                     disabled={isRunning}
                     onClick={() => void runCategory(category)}
-                  >
-                    <RefreshCw className={`w-3.5 h-3.5 ${isCategoryRunning ? 'animate-spin' : ''}`} />
-                  </button>
+                  />
                 </div>
                 <div className="space-y-1.5">
                   {items.map((item, idx) => (

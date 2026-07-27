@@ -47,7 +47,7 @@ export const ForkSourceHint: React.FC<ForkSourceHintProps> = ({ sessionId }) => 
     <button /* ds-allow:button: 整行可点的轻量来源提示条（图标+截断文本左对齐），Button primitive 的居中动作按钮形状不适配 */
       type="button"
       onClick={handleJumpToSource}
-      className="flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-left text-[11px] text-violet-300/80 transition-colors hover:bg-violet-500/10 hover:text-violet-200"
+      className="flex w-full items-center gap-1.5 rounded-md py-1 text-left text-[11px] text-violet-300/80 transition-colors hover:text-violet-200"
     >
       <GitFork className="h-3 w-3 shrink-0" />
       <span className="truncate">{label}</span>

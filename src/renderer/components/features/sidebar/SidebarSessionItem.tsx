@@ -212,21 +212,26 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
           </span>
         )}
 
-        {/* 分叉标记：紧跟标题右侧，仅分叉来的子会话显示，点击跳回父会话 */}
-        {forkParentSessionId && !multiSelectMode && (
-          <button /* ds-allow:button: 侧栏列表行标题旁的分叉来源小图标，Button primitive 动作按钮形状不适配列表行 */
-            type="button"
-            data-testid="fork-lineage-marker"
-            aria-label={s.forkedFrom.replace('{sessionId}', forkParentSessionId)}
-            title={s.openForkParent.replace('{sessionId}', forkParentSessionId)}
-            onClick={(event) => {
-              event.stopPropagation();
-              void handleSelectSession(forkParentSessionId);
-            }}
-            className="shrink-0 rounded p-0.5 text-violet-400 transition-colors hover:bg-violet-500/15 hover:text-violet-300 focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-violet-400"
-          >
-            <GitFork className="h-3.5 w-3.5" />
-          </button>
+        {/* 分叉标记：固定 16px 槽位、与行尾状态列同轴（不跟标题长度漂移），
+            仅分叉来的子会话显示，点击跳回父会话；hover 动作簇上来时随状态列一起让位。 */}
+        {!isRenaming && (
+          <span className="w-4 shrink-0 flex items-center justify-center transition-opacity duration-150 group-hover:opacity-0 group-focus-visible:opacity-0">
+            {forkParentSessionId && !multiSelectMode && (
+              <button /* ds-allow:button: 侧栏列表行状态轴上的分叉来源小图标，Button primitive 动作按钮形状不适配列表行 */
+                type="button"
+                data-testid="fork-lineage-marker"
+                aria-label={s.forkedFrom.replace('{sessionId}', forkParentSessionId)}
+                title={s.openForkParent.replace('{sessionId}', forkParentSessionId)}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  void handleSelectSession(forkParentSessionId);
+                }}
+                className="shrink-0 rounded p-0.5 text-violet-400 transition-colors hover:bg-violet-500/15 hover:text-violet-300 focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-violet-400"
+              >
+                <GitFork className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </span>
         )}
 
         {/* 行尾固定 16px 状态列（2026-07-27 对齐规范）：宽度恒定，内容互斥——

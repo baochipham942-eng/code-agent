@@ -5,7 +5,6 @@
 import React, { useMemo, useState } from 'react';
 import type { TraceTurn, TraceNode } from '@shared/contract/trace';
 import type { StreamRecoverySnapshot } from '@shared/contract/session';
-import type { SessionForkWorkspaceMode } from '@shared/contract/sessionFork';
 import type { TurnHookActivity, TurnSkillActivity } from '@shared/contract/turnTimeline';
 import { redactBrowserComputerInputPayloadsInValue } from '@shared/utils/browserComputerRedaction';
 import {
@@ -93,7 +92,6 @@ export const TurnCard: React.FC<TurnCardProps> = ({
     sessionId ? Boolean(state.runningSessionIds?.has(sessionId)) : false
   ));
   const [isForking, setIsForking] = useState(false);
-  const [isForkMenuOpen, setIsForkMenuOpen] = useState(false);
   const stats = useMemo(() => {
     const duration = turn.endTime ? turn.endTime - turn.startTime : null;
     const time = new Date(turn.startTime).toLocaleTimeString('zh-CN', {
@@ -207,12 +205,12 @@ export const TurnCard: React.FC<TurnCardProps> = ({
     return { messageId };
   }, [isStreaming, turn.nodes, turn.status]);
 
-  const handleFork = async (workspaceMode: SessionForkWorkspaceMode) => {
+  const handleFork = async () => {
     if (!forkAnchor || isForking || isSessionProcessing || sessionIsRunning) return;
-    setIsForkMenuOpen(false);
     setIsForking(true);
     try {
-      await createForkFromReply(forkAnchor.messageId, workspaceMode);
+      // 单击即分叉：默认「历史对话 + 当前文件」；隔离锚点工作区保留在服务层，前台不给选项
+      await createForkFromReply(forkAnchor.messageId, 'shared_current');
     } finally {
       setIsForking(false);
     }
@@ -392,57 +390,26 @@ export const TurnCard: React.FC<TurnCardProps> = ({
             它产出的文件卡之间，看起来像在给上面那一句话打分。 */}
         {(forkAnchor || feedbackAnchor) && (
           <div className="flex items-center gap-2" data-testid="turn-reply-actions">
-            {forkAnchor && (
-              <div className="relative">
-                <button /* ds-allow:button: turn 回复操作区的轻量文字触发器（图标+小字），Button primitive 无对应紧凑变体 */
-                  type="button"
-                  data-testid="turn-fork-action"
-                  aria-label={t.turnCard.createForkFromReply}
-                  aria-expanded={isForkMenuOpen}
-                  title={t.turnCard.createForkFromReply}
-                  disabled={Boolean(isSessionProcessing) || sessionIsRunning || isForking}
-                  onClick={() => setIsForkMenuOpen((open) => !open)}
-                  className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[11px] text-zinc-500 transition-colors hover:bg-violet-500/10 hover:text-violet-300 focus:outline-hidden focus-visible:ring-1 focus-visible:ring-[var(--focus-ring)] disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  {isForking
-                    ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
-                    : <GitFork className="h-3.5 w-3.5" />}
-                  <span>{isForking ? t.turnCard.forking : t.turnCard.fork}</span>
-                  {!isForking && <ChevronDown className="h-3 w-3" />}
-                </button>
-                {isForkMenuOpen && (
-                  <div
-                    role="menu"
-                    aria-label={t.turnCard.chooseWorkspace}
-                    className="absolute bottom-full left-0 z-30 mb-1 w-72 rounded-lg border border-zinc-700 bg-zinc-900 p-1.5 shadow-xl"
-                  >
-                    <button /* ds-allow:button: 工作区模式菜单项是标题+说明的双行可选行，Button primitive 的动作按钮布局不适配 */
-                      type="button"
-                      role="menuitem"
-                      onClick={() => void handleFork('shared_current')}
-                      className="block w-full rounded-md px-2.5 py-2 text-left hover:bg-zinc-800"
-                    >
-                      <span className="block text-xs text-zinc-200">{t.turnCard.sharedCurrent}</span>
-                      <span className="mt-0.5 block text-[11px] text-zinc-500">{t.turnCard.sharedCurrentDetail}</span>
-                    </button>
-                    <button /* ds-allow:button: 工作区模式菜单项是标题+说明的双行可选行，Button primitive 的动作按钮布局不适配 */
-                      type="button"
-                      role="menuitem"
-                      onClick={() => void handleFork('isolated_at_anchor')}
-                      className="block w-full rounded-md px-2.5 py-2 text-left hover:bg-violet-500/10"
-                    >
-                      <span className="block text-xs text-violet-300">{t.turnCard.isolatedAtAnchor}</span>
-                      <span className="mt-0.5 block text-[11px] text-zinc-500">{t.turnCard.isolatedAtAnchorDetail}</span>
-                    </button>
-                  </div>
-                )}
-              </div>
-            )}
             {feedbackAnchor && (
               <TurnFeedback
                 messageId={feedbackAnchor.messageId}
                 content={feedbackAnchor.content}
               />
+            )}
+            {forkAnchor && (
+              <button /* ds-allow:button: 与点赞点踩同形的回复操作小图标按钮，Button primitive 无此紧凑图标变体 */
+                type="button"
+                data-testid="turn-fork-action"
+                aria-label={t.turnCard.createForkFromReply}
+                title={t.turnCard.createForkFromReply}
+                disabled={Boolean(isSessionProcessing) || sessionIsRunning || isForking}
+                onClick={() => void handleFork()}
+                className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-zinc-700 text-zinc-500 transition-colors hover:border-violet-500/60 hover:text-violet-300 focus:outline-hidden focus-visible:ring-1 focus-visible:ring-[var(--focus-ring)] disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {isForking
+                  ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+                  : <GitFork className="h-3.5 w-3.5" />}
+              </button>
             )}
           </div>
         )}

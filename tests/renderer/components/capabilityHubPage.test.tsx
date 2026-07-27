@@ -32,21 +32,16 @@ describe('CapabilityHubPage', () => {
     expect(screen.queryByTestId('capability-hub-tab-inventory')).toBeNull();
   });
 
-  it('深链指向已隐藏的插件 tab 时回退到第一个可见 tab，不白屏', async () => {
+  it('深链指向已隐藏的插件 tab 时（普通用户）回退到第一个可见 tab，不白屏', async () => {
     useAuthStore.setState({ user: user(false) });
     useAppStore.setState({ capabilityHubTab: 'plugins' });
     render(<CapabilityHubPage />);
     await waitFor(() => expect(useAppStore.getState().capabilityHubTab).toBe('experts'));
   });
 
-  it('提示词入口仅 admin 可见（2026-07 方案 9C 从用户菜单迁入）', () => {
-    useAuthStore.setState({ user: user(false) });
-    const { unmount } = render(<CapabilityHubPage />);
-    expect(screen.queryByTestId('capability-hub-open-prompts')).toBeNull();
-    unmount();
-
+  it('不再承载提示词入口（已迁设置 → 人格）', () => {
     useAuthStore.setState({ user: user(true) });
     render(<CapabilityHubPage />);
-    expect(screen.getByTestId('capability-hub-open-prompts')).toBeTruthy();
+    expect(screen.queryByTestId('capability-hub-open-prompts')).toBeNull();
   });
 });

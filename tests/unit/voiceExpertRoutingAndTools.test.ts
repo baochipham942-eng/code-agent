@@ -34,6 +34,7 @@ const runtime = vi.hoisted(() => ({
 }));
 
 const buildRoleContextBlock = vi.hoisted(() => vi.fn(async () => '<role>全量 L0/L1 资料架</role>'));
+const voiceSettings = vi.hoisted(() => ({ value: {} as Record<string, unknown> }));
 const incompleteTasks = vi.hoisted(() => ({ value: [] as Array<{ subject: string; status: string }> }));
 const resolvedAgent = vi.hoisted(() => ({
   value: undefined as undefined | { id: string; name: string; description?: string; connectors?: Array<{ id: string; level: string }> },
@@ -50,6 +51,9 @@ vi.mock('../../src/host/task', () => ({
   }),
 }));
 vi.mock('../../src/host/services/roleAssets/roleAssetService', () => ({ buildRoleContextBlock }));
+vi.mock('../../src/host/services/core/configService', () => ({
+  getConfigService: () => ({ getSettings: () => ({ voice: { live: voiceSettings.value } }) }),
+}));
 vi.mock('../../src/host/services/planning/taskStore', () => ({
   getIncompleteTasks: () => incompleteTasks.value,
 }));
@@ -129,6 +133,7 @@ describe('A4 窄工具 / H1 指挥台', () => {
     resolvedAgent.value = undefined;
     incompleteTasks.value = [];
     workItems.value = [];
+    voiceSettings.value = {};
   });
 
   afterEach(() => {
@@ -189,6 +194,27 @@ describe('A4 窄工具 / H1 指挥台', () => {
 
     await vi.waitFor(() => expect(runtime.startTask).toHaveBeenCalled());
     expect(lastRunOptions().toolScope?.allowedConnectorIds).toContain('crm');
+  });
+
+  // H4 双脑分离（§6.1）：配了语音执行引擎就得真落到那一轮 run 的 modelSpec 上。
+  // 判据是「消费者读到了」而不是「设置存下了」——存下但没人读正是本仓的常见死法。
+  it('配了语音执行引擎时那一轮带上 modelSpec', async () => {
+    voiceSettings.value = { executionModel: { provider: 'deepseek', model: 'deepseek-chat' } };
+    bind();
+
+    await executeVoiceTool('spawn_task', JSON.stringify({ title: 'a', prompt: '干活' }));
+
+    await vi.waitFor(() => expect(runtime.startTask).toHaveBeenCalled());
+    expect(lastRunOptions().modelSpec).toEqual({ provider: 'deepseek', model: 'deepseek-chat' });
+  });
+
+  it('没配就不传 modelSpec（跟随会话默认引擎，行为与批 H 之前一致）', async () => {
+    bind();
+
+    await executeVoiceTool('spawn_task', JSON.stringify({ title: 'a', prompt: '干活' }));
+
+    await vi.waitFor(() => expect(runtime.startTask).toHaveBeenCalled());
+    expect(lastRunOptions().modelSpec).toBeUndefined();
   });
 
   // H2：批 A 只有 queued / failed 两态——run 干完了不发任何事件，条目永远停在「排队中」。

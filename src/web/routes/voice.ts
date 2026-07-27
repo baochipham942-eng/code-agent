@@ -11,6 +11,7 @@ import type { Request, Response } from 'express';
 import type { VoiceStatusResponse } from '../../shared/contract/voice';
 import { getDashscopeApiKey } from '../../host/services/media/imageGenerationService';
 import { getActiveVoiceSessionId } from '../../host/services/voice/voiceSessionService';
+import { getVoiceUsageSummary } from '../../host/services/voice/voiceUsageLedger';
 
 export function createVoiceRouter(): Router {
   const router = Router();
@@ -20,6 +21,7 @@ export function createVoiceRouter(): Router {
       provider: 'qwen-omni',
       configured: Boolean(getDashscopeApiKey()),
       active: getActiveVoiceSessionId() !== null,
+      usage: getVoiceUsageSummary(Date.now()),
     };
     res.json(payload);
   });

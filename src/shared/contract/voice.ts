@@ -69,6 +69,8 @@ export interface VoiceStatusResponse {
   configured: boolean;
   /** 全局单路互斥：当前是否有通话进行中 */
   active: boolean;
+  /** 本月通话用量（只记账不设限，方案 §5.4；设置页展示用） */
+  usage: { monthSeconds: number; monthCalls: number };
 }
 
 /** 设置页「实时通话」组保存后广播的窗口事件（对齐 VOICE_INPUT_SETTINGS_UPDATED_EVENT 先例）。 */

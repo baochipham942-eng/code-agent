@@ -17,6 +17,7 @@ import { getPermissionModeManager } from '../../permissions/modes';
 import { qwenOmniTransport } from './qwenOmniTransport';
 import { resolveVoiceRouting } from './voiceRouting';
 import { beginVoiceDispatch, endVoiceDispatch } from './voiceAgentCoordinator';
+import { recordVoiceCall } from './voiceUsageLedger';
 import { VOICE_TOOL_DEFINITIONS, executeVoiceTool } from './voiceTools';
 import type { VoiceLiveSettings } from '../../../shared/contract/settings';
 
@@ -117,6 +118,7 @@ async function teardown(reason: string): Promise<void> {
   const minutes = Math.floor(durationSec / 60);
   const seconds = durationSec % 60;
   const durationText = minutes > 0 ? `${minutes} 分 ${seconds} 秒` : `${seconds} 秒`;
+  recordVoiceCall(endedAt, durationSec);
   try {
     await getSessionManager().addMessageToSession(session.neoSessionId, {
       id: `voice-summary-${endedAt}-${Math.random().toString(36).slice(2, 8)}`,

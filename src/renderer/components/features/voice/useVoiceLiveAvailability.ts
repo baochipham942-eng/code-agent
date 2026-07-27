@@ -23,9 +23,16 @@ async function fetchVoiceStatus(): Promise<VoiceStatusResponse | null> {
   }
 }
 
-export function useVoiceLiveAvailability(): { enabled: boolean; configured: boolean } {
+const NO_USAGE: VoiceStatusResponse['usage'] = { monthSeconds: 0, monthCalls: 0 };
+
+export function useVoiceLiveAvailability(): {
+  enabled: boolean;
+  configured: boolean;
+  usage: VoiceStatusResponse['usage'];
+} {
   const [enabled, setEnabled] = useState(false);
   const [configured, setConfigured] = useState(false);
+  const [usage, setUsage] = useState<VoiceStatusResponse['usage']>(NO_USAGE);
 
   const refresh = useCallback(() => {
     let cancelled = false;
@@ -33,8 +40,12 @@ export function useVoiceLiveAvailability(): { enabled: boolean; configured: bool
       .then((settings) => { if (!cancelled) setEnabled(settings.voice?.live?.enabled === true); })
       .catch(() => { if (!cancelled) setEnabled(false); });
     void fetchVoiceStatus()
-      .then((status) => { if (!cancelled) setConfigured(status?.configured === true); })
-      .catch(() => { if (!cancelled) setConfigured(false); });
+      .then((status) => {
+        if (cancelled) return;
+        setConfigured(status?.configured === true);
+        setUsage(status?.usage ?? NO_USAGE);
+      })
+      .catch(() => { if (!cancelled) { setConfigured(false); setUsage(NO_USAGE); } });
     return () => { cancelled = true; };
   }, []);
 
@@ -47,5 +58,5 @@ export function useVoiceLiveAvailability(): { enabled: boolean; configured: bool
     return () => window.removeEventListener(VOICE_LIVE_SETTINGS_UPDATED_EVENT, handler);
   }, [refresh]);
 
-  return { enabled, configured };
+  return { enabled, configured, usage };
 }

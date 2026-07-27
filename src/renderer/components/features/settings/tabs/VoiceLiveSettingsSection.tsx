@@ -13,6 +13,7 @@ import type { AppSettings } from '@shared/contract';
 import { VOICE_LIVE_SETTINGS_UPDATED_EVENT } from '@shared/contract/voice';
 import type { VoiceLiveSettings } from '@shared/contract/settings';
 import { QWEN_OMNI_REALTIME_MODEL, QWEN_OMNI_REALTIME_VOICE_WHITELIST } from '@shared/constants/voice';
+import { PROVIDER_MODELS, PROVIDER_MODELS_MAP } from '@shared/constants/models';
 import ipcService from '../../../../services/ipcService';
 import { createLogger } from '../../../../utils/logger';
 import { useI18n } from '../../../../hooks/useI18n';
@@ -31,13 +32,14 @@ const SENSITIVITY_OPTIONS: VadSensitivity[] = ['low', 'medium', 'high'];
 export const VoiceLiveSettingsSection: React.FC = () => {
   const { t } = useI18n();
   const text = t.voice.settings;
-  const { configured } = useVoiceLiveAvailability();
+  const { configured, usage } = useVoiceLiveAvailability();
 
   const [enabled, setEnabled] = useState(false);
   const [voiceId, setVoiceId] = useState<string>(QWEN_OMNI_REALTIME_VOICE_WHITELIST[0]);
   const [language, setLanguage] = useState<NonNullable<VoiceLiveSettings['language']>>('auto');
   const [interrupt, setInterrupt] = useState<InterruptMode>('server_vad');
   const [sensitivity, setSensitivity] = useState<VadSensitivity>('medium');
+  const [executionModel, setExecutionModel] = useState<VoiceLiveSettings['executionModel']>(undefined);
 
   useEffect(() => {
     let cancelled = false;
@@ -50,6 +52,7 @@ export const VoiceLiveSettingsSection: React.FC = () => {
         setLanguage(voice?.live?.language ?? 'auto');
         setInterrupt(deriveInterruptMode(voice));
         setSensitivity(deriveVadSensitivity(voice));
+        setExecutionModel(voice?.live?.executionModel);
       })
       .catch((error) => logger.error('load voice live settings failed', error));
     return () => { cancelled = true; };
@@ -62,6 +65,7 @@ export const VoiceLiveSettingsSection: React.FC = () => {
       language,
       interrupt,
       vadSensitivity: sensitivity,
+      ...(executionModel ? { executionModel } : {}),
       ...patch,
     };
     // 应用到本地 state
@@ -85,6 +89,12 @@ export const VoiceLiveSettingsSection: React.FC = () => {
     } catch (error) {
       logger.error('save voice live settings failed', error);
     }
+  };
+
+  /** 传 undefined = 回到「跟随会话默认引擎」（把键去掉，不是写一个空值）。 */
+  const persistExecutionModel = async (next: VoiceLiveSettings['executionModel']) => {
+    setExecutionModel(next);
+    await persist({ executionModel: next });
   };
 
   const interruptText: Record<InterruptMode, { label: string; desc: string }> = {
@@ -130,6 +140,56 @@ export const VoiceLiveSettingsSection: React.FC = () => {
           </span>
         </div>
         {!configured && <p className="mt-2 text-xs text-amber-400/80">{text.providerMissingHint}</p>}
+      </div>
+
+      {/* 执行引擎（§6.1 双脑）：通话模型只负责听说，真干活是另一个模型，两者分开看分开配 */}
+      <div className="border-t border-zinc-700 pt-4">
+        <h3 className="mb-1 text-sm font-medium text-zinc-200">{text.executionModelTitle}</h3>
+        <p className="mb-3 text-xs text-zinc-500">{text.executionModelDescription}</p>
+        <div className="grid grid-cols-2 gap-4">
+          <select
+            data-testid="voice-execution-provider"
+            value={executionModel?.provider ?? ''}
+            onChange={(event) => {
+              const provider = event.target.value;
+              if (!provider) return void persistExecutionModel(undefined);
+              const first = PROVIDER_MODELS_MAP[provider]?.models[0]?.id;
+              return void persistExecutionModel(first ? { provider, model: first } : undefined);
+            }}
+            className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-primary-500"
+          >
+            <option value="">{text.executionModelFollowSession}</option>
+            {PROVIDER_MODELS.map((provider) => (
+              <option key={provider.id} value={provider.id}>{provider.name}</option>
+            ))}
+          </select>
+          <select
+            data-testid="voice-execution-model"
+            value={executionModel?.model ?? ''}
+            disabled={!executionModel}
+            onChange={(event) => {
+              if (!executionModel) return;
+              void persistExecutionModel({ provider: executionModel.provider, model: event.target.value });
+            }}
+            className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-primary-500 disabled:opacity-40"
+          >
+            {executionModel
+              ? (PROVIDER_MODELS_MAP[executionModel.provider]?.models ?? []).map((model) => (
+                <option key={model.id} value={model.id}>{model.label}</option>
+              ))
+              : <option value="">{text.executionModelFollowSession}</option>}
+          </select>
+        </div>
+      </div>
+
+      {/* 本月通话用量：只记账不设限（方案 §5.4，产品负责人 2026-07-27 拍板） */}
+      <div className="border-t border-zinc-700 pt-4">
+        <h3 className="mb-1 text-sm font-medium text-zinc-200">{text.usageTitle}</h3>
+        <p className="text-xs text-zinc-500" data-testid="voice-usage-summary">
+          {text.usageThisMonth
+            .replace('{minutes}', String(Math.round(usage.monthSeconds / 60)))
+            .replace('{calls}', String(usage.monthCalls))}
+        </p>
       </div>
 
       <div className="grid grid-cols-2 gap-4 border-t border-zinc-700 pt-4">

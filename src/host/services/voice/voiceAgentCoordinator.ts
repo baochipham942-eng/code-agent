@@ -22,6 +22,7 @@ import { createLogger } from '../infra/logger';
 import { buildRoleContextBlock } from '../roleAssets/roleAssetService';
 import { withWorkbenchTurnSystemContext } from '../../app/workbenchTurnContext';
 import { getPermissionModeManager } from '../../permissions/modes';
+import { getConfigService } from '../core/configService';
 
 const logger = createLogger('VoiceCoordinator');
 
@@ -189,9 +190,12 @@ async function buildRunOptions(state: LedgerState) {
   const roleContextBlock = state.activeAgentId
     ? await buildRoleContextBlock(state.activeAgentId).catch(() => null)
     : null;
+  // 执行引擎与通话模型分离（§6.1）：没配就不传，行为与批 H 之前完全一致。
+  const executionModel = readVoiceExecutionModel();
   // mode 在返回值里必须是确定的字面量：withWorkbenchTurnSystemContext 的返回类型把它
   // 放宽成可选，而 AgentRunOptions 要求必填。在这里一次收窄，两个调用点都不用各自补。
   return {
+    ...(executionModel ? { modelSpec: executionModel } : {}),
     ...withWorkbenchTurnSystemContext({
       mode: 'normal' as const,
       ...(state.activeAgentId ? { agentOverrideId: state.activeAgentId } : {}),
@@ -200,6 +204,16 @@ async function buildRunOptions(state: LedgerState) {
     }),
     mode: 'normal' as const,
   };
+}
+
+/** 读设置里的语音执行引擎；读不到一律 undefined（= 跟随会话默认），绝不让设置读写炸掉派活。 */
+function readVoiceExecutionModel(): { provider: string; model: string } | undefined {
+  try {
+    const configured = getConfigService().getSettings().voice?.live?.executionModel;
+    return configured?.provider && configured.model ? configured : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function newWorkItemId(): string {

@@ -7,7 +7,7 @@ import type { SessionWithMeta } from '../../../stores/sessionStore';
 import type { SessionState } from '../../../stores/taskStore';
 import { getDisplaySessionTitle, getSessionStatusPresentation } from '../../../utils/sessionPresentation';
 import { canReuseSessionWorkbench } from './sidebarPresentation';
-import { formatRelativeTime } from '../../../utils/i18nTime';
+import { localeForLanguage } from '../../../utils/i18nTime';
 import { useI18n } from '../../../hooks/useI18n';
 import { SidebarMessageHitList } from './SidebarMessageHitList';
 import type { SidebarDerivedSessions } from './useSidebarDerivedSessions';
@@ -111,7 +111,7 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
   handleSelectMessageSearchHit,
   handleArchiveSession,
 }) => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const s = t.sidebarSession;
   const isUnread = unreadSessionIds.has(session.id);
   const isSelected = currentSessionId === session.id;
@@ -142,7 +142,6 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
     backgroundSession?.backgroundedAt || 0,
   );
   const messageSearchHitGroup = searchQuery.trim() ? messageSearchHitsBySessionId[session.id] : undefined;
-  const lastActiveLabel = formatRelativeTime(t, latestActivityAt);
   const displayTitle = getDisplaySessionTitle(session.title);
   const canOpenSessionAssets = canReuseSessionWorkbench(session);
   const titleToneClass = isSelected ? 'text-zinc-100' : isUnread ? 'text-zinc-200' : 'text-zinc-400';
@@ -163,7 +162,8 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
       aria-current={isSelected && !multiSelectMode ? 'true' : undefined}
       aria-label={s.openSession.replace('{title}', displayTitle)}
       data-session-id={session.id}
-      className={`group relative px-3 py-1.5 rounded-lg cursor-pointer transition-colors duration-150 ${isSelected && !multiSelectMode ? 'bg-zinc-700/60' : isChecked ? 'bg-blue-500/10 border border-blue-500/20' : 'hover:bg-zinc-800'}`}
+      title={new Date(latestActivityAt).toLocaleString(localeForLanguage(language))}
+      className={`group relative pl-6 pr-3 py-1.5 rounded-lg cursor-pointer transition-colors duration-150 ${isSelected && !multiSelectMode ? 'bg-zinc-700/60' : isChecked ? 'bg-blue-500/10 border border-blue-500/20' : 'hover:bg-zinc-800'}`}
     >
       <div className="flex items-center gap-2">
         {/* 多选 Checkbox */}
@@ -171,10 +171,13 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
           isChecked ? <CheckSquare className="w-4 h-4 text-blue-400 shrink-0" /> : <Square className="w-4 h-4 text-zinc-500 shrink-0" />
         )}
 
-        {/* 置顶 / 未读前导标记 */}
-        {isPinned && !multiSelectMode && <Pin className="w-3 h-3 text-amber-500 shrink-0 -rotate-45" />}
-        {isUnread && !multiSelectMode && !isPinned && (
-          <span className="w-1.5 h-1.5 rounded-full bg-purple-400 shrink-0" aria-label={s.unread} />
+        {/* 前导槽：宽度恒定 16px，有没有置顶标记标题左缘都不动
+            （此前置顶 12px / 未读 6px / 无标记 0px 三档，标题左缘跟着漂移）。
+            未读点已挪到行尾状态列。 */}
+        {!multiSelectMode && (
+          <span className="w-4 shrink-0 flex items-center justify-center">
+            {isPinned && <Pin className="w-3 h-3 text-amber-500 -rotate-45" />}
+          </span>
         )}
 
         {/* 标题：重命名模式 vs 普通 */}
@@ -191,30 +194,26 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
         ) : (
           <span
             onDoubleClick={(e) => handleDoubleClick(e, session)}
-            className={`text-sm truncate flex-1 ${titleToneClass}`}
+            className={`min-w-0 flex-1 truncate text-sm ${titleToneClass}`}
           >
             {displayTitle}
           </span>
         )}
 
-        {/* 右槽：运行中 spinner / 否则 时间（hover 时淡出给操作让位） */}
+        {/* 行尾固定 16px 状态列（2026-07-27 对齐规范）：宽度恒定，内容互斥——
+            运行中 spinner / 需关注圆点 / 未读点 / 空。相对时间已撤（产品拍板：
+            新旧由排序表达，精确时间在行 title 里），右槽不再讲第二件事。 */}
         {!isRenaming && (
-          <span className="shrink-0 flex items-center gap-1.5 transition-opacity duration-150 group-hover:opacity-0 group-focus-visible:opacity-0">
+          <span className="w-4 shrink-0 flex items-center justify-center transition-opacity duration-150 group-hover:opacity-0 group-focus-visible:opacity-0">
             {surfaceExecutionSession ? (
               <SurfaceExecutionRunStatus session={surfaceExecutionSession} placement="sidebar" />
             ) : isRunning ? (
               <Loader2 className="w-3 h-3 text-emerald-400/80 animate-spin" aria-label={localizedStatusLabel} />
-            ) : (
-              <>
-                {/* 状态点与时间二选一（2026-07-26 拍板）：有状态要传达时时间让位，
-                    行尾同一时刻只讲一件事，列表更聚焦。 */}
-                {attentionDotClass ? (
-                  <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${attentionDotClass}`} aria-label={localizedStatusLabel} />
-                ) : (
-                  <span className="text-[11px] text-zinc-600 tabular-nums">{lastActiveLabel}</span>
-                )}
-              </>
-            )}
+            ) : attentionDotClass ? (
+              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${attentionDotClass}`} aria-label={localizedStatusLabel} />
+            ) : isUnread && !multiSelectMode ? (
+              <span className="w-1.5 h-1.5 rounded-full bg-purple-400 shrink-0" aria-label={s.unread} />
+            ) : null}
           </span>
         )}
       </div>
@@ -225,7 +224,7 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
           因此粘滞——鼠标移开后动作簇仍常驻；键盘 Tab 聚焦照样命中 focus-visible，
           可及性不受损。 */}
       {!multiSelectMode && !isRenaming && (
-        <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-0.5 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100">
+        <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-0.5 rounded-md bg-zinc-800 pl-2 shadow-[-8px_0_8px_-4px_rgba(24,24,27,0.95)] opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100">
           {canOpenSessionReplay && sessionHasActivity && (
             <button
               type="button"

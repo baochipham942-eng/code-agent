@@ -157,6 +157,48 @@ function publicationInput(
   };
 }
 
+function stageDurableImportGraph(database: DatabaseService): string {
+  const rawDatabase = database.getDb();
+  if (!rawDatabase) throw new Error('database fixture failed to initialize');
+  const importId = 'import-graph-1';
+  rawDatabase.prepare(`
+    INSERT INTO session_fork_portability_imports (
+      import_id, source_export_id, source_payload_digest,
+      target_owner_scope_id, target_project_id, import_namespace,
+      imported_root_session_id, plan_json, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    importId,
+    'export-1',
+    `sha256:${'7'.repeat(64)}`,
+    'owner',
+    'project-1',
+    'workspace-publication-test',
+    'imported-root',
+    JSON.stringify({
+      schema: 'neo.session-fork-import-plan',
+      version: 1,
+      result: {
+        importId,
+        sourceExportId: 'export-1',
+        rootSessionId: 'imported-root',
+        sessionIdMap: {
+          root: 'imported-root',
+          child: 'imported-child',
+          child2: 'imported-child-2',
+        },
+        messageIdMap: {},
+        forkIdMap: {},
+        importedAt: 1,
+      },
+      expectedConversationStatusBySession: {},
+      compatibilityProjectionDigestBySession: {},
+    }),
+    1,
+  );
+  return importId;
+}
+
 afterEach(async () => {
   projectState.scope = undefined;
   while (temporaryDirectories.length > 0) {
@@ -330,7 +372,9 @@ describe('DatabaseService imported isolated workspace publication', () => {
         importedSessionId: 'imported-child-2',
         importedAnchorMessageId: 'imported-a2',
       });
+      const importId = stageDurableImportGraph(setup.database);
       const graphInput = {
+        importId,
         sourceExportId: 'export-1',
         ownerUserId: 'owner',
         targetProjectId: 'project-1',

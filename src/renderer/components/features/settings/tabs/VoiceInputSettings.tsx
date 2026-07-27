@@ -11,6 +11,7 @@ import ipcService from '../../../../services/ipcService';
 import { createLogger } from '../../../../utils/logger';
 import { useI18n } from '../../../../hooks/useI18n';
 import { Toggle } from '../../../primitives/Toggle';
+import { Button } from '../../../primitives';
 
 const logger = createLogger('VoiceInputSettings');
 
@@ -112,6 +113,9 @@ export const VoiceInputSettings: React.FC = () => {
     }
   };
 
+  // 本地模型 / 线程数仅本地档（local-first / local-only）有意义，非本地档置灰
+  const isLocalMode = settings.mode === 'local-first' || settings.mode === 'local-only';
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -160,118 +164,138 @@ export const VoiceInputSettings: React.FC = () => {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-4 border-t border-zinc-700 pt-4">
-        <label className="space-y-2">
-          <span className="text-sm font-medium text-zinc-200">{voiceText.languageLabel}</span>
-          <select
-            value={settings.language}
-            onChange={(event) => persist({ language: event.target.value })}
-            className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-primary-500"
-          >
-            {LANGUAGE_OPTION_IDS.map((id) => (
-              <option key={id} value={id}>{voiceText.languages[id]}</option>
-            ))}
-          </select>
-        </label>
+      {/* 识别组：语言 + 本地模型（本地模型仅本地档有意义） */}
+      <div className="border-t border-zinc-700 pt-4">
+        <h3 className="mb-3 text-sm font-medium text-zinc-200">{voiceText.groupRecognition}</h3>
+        <div className="grid grid-cols-2 gap-4">
+          <label className="space-y-2">
+            <span className="text-sm font-medium text-zinc-200">{voiceText.languageLabel}</span>
+            <select
+              value={settings.language}
+              onChange={(event) => persist({ language: event.target.value })}
+              className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-primary-500"
+            >
+              {LANGUAGE_OPTION_IDS.map((id) => (
+                <option key={id} value={id}>{voiceText.languages[id]}</option>
+              ))}
+            </select>
+          </label>
 
-        <label className="space-y-2">
-          <span className="text-sm font-medium text-zinc-200">{voiceText.localModelLabel}</span>
-          <select
-            value={settings.localModel}
-            onChange={(event) => persist({ localModel: event.target.value })}
-            className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-primary-500"
-          >
-            {MODEL_OPTIONS.map((option) => (
-              <option key={option.id} value={option.id}>{option.label}</option>
-            ))}
-          </select>
-        </label>
+          <label className={`space-y-2${isLocalMode ? '' : ' opacity-50'}`}>
+            <span className="text-sm font-medium text-zinc-200">{voiceText.localModelLabel}</span>
+            <select
+              value={settings.localModel}
+              onChange={(event) => persist({ localModel: event.target.value })}
+              disabled={!isLocalMode}
+              className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-primary-500 disabled:cursor-not-allowed"
+            >
+              {MODEL_OPTIONS.map((option) => (
+                <option key={option.id} value={option.id}>{option.label}</option>
+              ))}
+            </select>
+          </label>
+        </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
-        <label className="space-y-2">
-          <span className="text-sm font-medium text-zinc-200">{voiceText.threadsLabel}</span>
-          <div className="flex items-center gap-3">
-            <input
-              type="range"
-              min={1}
-              max={16}
-              value={settings.threads}
-              onChange={(event) => persist({ threads: Number(event.target.value) })}
-              className="min-w-0 flex-1"
-            />
-            <span className="w-8 rounded bg-zinc-800 px-2 py-1 text-center text-xs text-zinc-300">
-              {settings.threads}
-            </span>
-          </div>
-        </label>
-
-        <label className="space-y-2">
-          <span className="text-sm font-medium text-zinc-200">{voiceText.maxDurationLabel}</span>
-          <div className="flex items-center gap-3">
-            <input
-              type="range"
-              min={15}
-              max={300}
-              step={15}
-              value={settings.maxDurationSeconds}
-              onChange={(event) => persist({ maxDurationSeconds: Number(event.target.value) })}
-              className="min-w-0 flex-1"
-            />
-            <span className="w-14 rounded bg-zinc-800 px-2 py-1 text-center text-xs text-zinc-300">
-              {settings.maxDurationSeconds}s
-            </span>
-          </div>
-        </label>
-      </div>
-
-      <div className="grid grid-cols-2 gap-4 border-t border-zinc-700 pt-4">
-        <label className="space-y-2">
-          <span className="text-sm font-medium text-zinc-200">{voiceText.shortcutLabel}</span>
-          <input
-            value={settings.shortcut || ''}
-            onChange={(event) => persist({ shortcut: event.target.value.trim() })}
-            placeholder="Mod+Shift+V"
-            className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 outline-none placeholder:text-zinc-600 focus:border-primary-500"
-          />
-        </label>
-
-        <button
-          type="button"
-          onClick={() => persist({ preserveAudioOnFailure: !settings.preserveAudioOnFailure })}
-          className={`flex items-center gap-3 rounded-lg border p-3 text-left transition-all ${
-            settings.preserveAudioOnFailure
-              ? 'border-zinc-500 bg-zinc-800/60'
-              : 'border-zinc-700 hover:border-zinc-600 hover:bg-zinc-800'
-          }`}
-        >
-          <RotateCcw className="h-4 w-4 shrink-0 text-zinc-400" />
-          <div className="min-w-0 flex-1">
-            <div className="text-sm font-medium text-zinc-200">{voiceText.preserveAudioTitle}</div>
-            <div className="mt-1 text-xs text-zinc-500">{voiceText.preserveAudioDescription}</div>
-          </div>
-          {settings.preserveAudioOnFailure && <Check className="h-4 w-4 text-zinc-200" />}
-        </button>
-
-        <button
-          type="button"
-          onClick={() => void clearRetainedAudio()}
-          disabled={clearingAudio}
-          className="flex items-center gap-3 rounded-lg border border-zinc-700 p-3 text-left transition-all hover:border-zinc-600 hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          <Trash2 className="h-4 w-4 shrink-0 text-zinc-400" />
-          <div className="min-w-0 flex-1">
-            <div className="text-sm font-medium text-zinc-200">{voiceText.clearAudioTitle}</div>
-            <div className="mt-1 text-xs text-zinc-500">
-              {clearAudioMessage || voiceText.clearAudioDescription}
+      {/* 性能组：线程数（仅本地档）+ 最长录音 */}
+      <div className="border-t border-zinc-700 pt-4">
+        <h3 className="mb-3 text-sm font-medium text-zinc-200">{voiceText.groupPerformance}</h3>
+        <div className="grid grid-cols-2 gap-4">
+          <label className={`space-y-2${isLocalMode ? '' : ' opacity-50'}`}>
+            <span className="text-sm font-medium text-zinc-200">{voiceText.threadsLabel}</span>
+            <div className="flex items-center gap-3">
+              <input
+                type="range"
+                min={1}
+                max={16}
+                value={settings.threads}
+                onChange={(event) => persist({ threads: Number(event.target.value) })}
+                disabled={!isLocalMode}
+                className="min-w-0 flex-1 disabled:cursor-not-allowed"
+              />
+              <span className="w-8 rounded bg-zinc-800 px-2 py-1 text-center text-xs text-zinc-300">
+                {settings.threads}
+              </span>
             </div>
-          </div>
-        </button>
+          </label>
 
+          <label className="space-y-2">
+            <span className="text-sm font-medium text-zinc-200">{voiceText.maxDurationLabel}</span>
+            <div className="flex items-center gap-3">
+              <input
+                type="range"
+                min={15}
+                max={300}
+                step={15}
+                value={settings.maxDurationSeconds}
+                onChange={(event) => persist({ maxDurationSeconds: Number(event.target.value) })}
+                className="min-w-0 flex-1"
+              />
+              <span className="w-14 rounded bg-zinc-800 px-2 py-1 text-center text-xs text-zinc-300">
+                {settings.maxDurationSeconds}s
+              </span>
+            </div>
+          </label>
+        </div>
+      </div>
+
+      {/* 录音组：快捷键 + 失败后保留重试（开关）+ 清理失败录音（动作，点了真删文件） */}
+      <div className="border-t border-zinc-700 pt-4">
+        <h3 className="mb-3 text-sm font-medium text-zinc-200">{voiceText.groupRecording}</h3>
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-4">
+            <label className="space-y-2">
+              <span className="text-sm font-medium text-zinc-200">{voiceText.shortcutLabel}</span>
+              <input
+                value={settings.shortcut || ''}
+                onChange={(event) => persist({ shortcut: event.target.value.trim() })}
+                placeholder="Mod+Shift+V"
+                className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 outline-none placeholder:text-zinc-600 focus:border-primary-500"
+              />
+            </label>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => persist({ preserveAudioOnFailure: !settings.preserveAudioOnFailure })}
+            className={`flex w-full items-center gap-3 rounded-lg border p-3 text-left transition-all ${
+              settings.preserveAudioOnFailure
+                ? 'border-zinc-500 bg-zinc-800/60'
+                : 'border-zinc-700 hover:border-zinc-600 hover:bg-zinc-800'
+            }`}
+          >
+            <RotateCcw className="h-4 w-4 shrink-0 text-zinc-400" />
+            <div className="min-w-0 flex-1">
+              <div className="text-sm font-medium text-zinc-200">{voiceText.preserveAudioTitle}</div>
+              <div className="mt-1 text-xs text-zinc-500">{voiceText.preserveAudioDescription}</div>
+            </div>
+            {settings.preserveAudioOnFailure && <Check className="h-4 w-4 text-zinc-200" />}
+          </button>
+
+          <div className="flex items-center gap-3">
+            <Button
+              variant="secondary"
+              size="sm"
+              leftIcon={<Trash2 />}
+              loading={clearingAudio}
+              onClick={() => void clearRetainedAudio()}
+            >
+              {voiceText.clearAudioTitle}
+            </Button>
+            <span className="text-xs text-zinc-500">
+              {clearAudioMessage || voiceText.clearAudioDescription}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* 转写后处理组 */}
+      <div className="border-t border-zinc-700 pt-4">
+        <h3 className="mb-3 text-sm font-medium text-zinc-200">{voiceText.groupPostProcessing}</h3>
         <button
           type="button"
           onClick={() => persist({ postProcessingEnabled: !settings.postProcessingEnabled })}
-          className={`col-span-2 flex items-center gap-3 rounded-lg border p-3 text-left transition-all ${
+          className={`flex w-full items-center gap-3 rounded-lg border p-3 text-left transition-all ${
             settings.postProcessingEnabled
               ? 'border-zinc-500 bg-zinc-800/60'
               : 'border-zinc-700 hover:border-zinc-600 hover:bg-zinc-800'

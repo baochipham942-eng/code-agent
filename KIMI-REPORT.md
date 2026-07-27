@@ -58,3 +58,52 @@ Worktree：`.worktrees/mcp-connectors-polish`，分支 `feat/mcp-connectors-poli
 - `499906f59` 连接器页降噪 2/2：行布局统一为开关+详情，重连/退出授权收纳进详情层
 
 未 push（按启动提示词要求）。
+
+---
+
+# 默认态与工具条合并批（2026-07-27）
+
+启动提示词：`docs/plans/2026-07-27-能力中心默认态与专家工具条合并-启动提示词.md`（private-archive）
+同一 worktree / 分支追加，未 push。
+
+## 改动清单
+
+### 1. 隐藏「插件」tab（代码保留，只下架入口）
+
+- `src/renderer/components/features/capabilityHub/CapabilityHubPage.tsx`：`visibleTabs` 无条件过滤掉 `plugins`（原逻辑是按 `canAccessSettingsTab` 门控；现该映射本就为空，等于人人可见）。`HUB_TABS` 常量、深链映射（`settingsTabs.ts` 的 `plugins: 'plugins'`）、`PluginsSettings` 懒加载与内容分支全部保留。
+- 深链兜底：现有「tab 不可见时回退第一个可见 tab」的 `useEffect` 原样兜住 `openCapabilityHub('plugins')` —— 回退到 `experts`，不崩不白屏（有测试锁死）。
+
+### 2. 默认落「发现」
+
+- `ExpertPanel.tsx`：tab state 初始值 `'mine'` → `'discover'`（新用户「我的」是空的，先给推荐视角）。
+- `MCPSettings.tsx`（连接器）：存在「已连接 / 发现连接」分段控件，初始值 `'connected'` → `'discover'`。深链聚焦（`settingsCapabilityFocus` 为 mcp/connector）仍强制切回「已连接」，不受影响。
+- 技能页默认 tab 未动（另一分支处理，`SkillsSettings.tsx` 零改动）。
+
+### 3. 专家页工具条与分类合一行
+
+- `ExpertPanel.tsx`：分类 chips 从独立行合并进 sticky 工具条——左侧 = chips（`flex-wrap`，多了自然换到第二行），右侧 = 我的/发现分段 + 刷新 + 新建专家（`ml-auto` 贴右）。
+- chips 显示条件不变（`!loading && categoryGroups.length > 0`）；chips 不显示时左侧自然塌陷，右侧靠 `ml-auto` 保持右对齐，未造占位元素。
+- sticky 定位、`bg-zinc-900/90` + `border-b border-zinc-800/70` + `backdrop-blur` 原样保留。
+
+### 4. i18n / host
+
+- 未增删 i18n key；未改 `src/host`；未改 `SkillsSettings.tsx`。
+
+## 测试
+
+- `capabilityHubPage.test.tsx`：四 tab 断言改为三 tab + 插件 tab 不渲染；新增「plugins 深链回退到第一个可见 tab」。
+- `ExpertPanel.test.tsx`：默认 tab 断言改为 discover；「我的」空态、分类 chips 两条用例先显式切回 mine；chips 用例新增「chips 与操作按钮同处一条 sticky 工具条」断言。其余用例（刷新/新建/筛选/装包同意卡等）原断言不动保持绿。
+- `mcpSettings.status.test.ts`：新增 `openConnectedTab()` 助手（startsWith 匹配「已连接 (N)」）；默认落发现的断言改为「发现目录在屏、已连接表格不渲染」；原 `renderToStaticMarkup` 静态断言全部改为 render + 切「已连接」后取 `document.body.innerHTML`（避免默认发现下的假绿）。
+
+## 验收门
+
+- `npm run typecheck`：通过（0 error）。
+- `npm run lint`：0 error（425 warning 均为存量，与上一批相同，与本次改动文件无关）。
+- 相关测试：`capabilityHubPage` + `ExpertPanel` + `mcpSettings.status` + `capabilityCenterDefaults` 4 文件 54 测试全绿。
+- 全量 `npx vitest run tests/renderer`：506 文件 / 3222 测试全绿。
+
+## Commits
+
+- 本批改动以单 commit 追加在 `feat/mcp-connectors-polish` 顶端（message：能力中心默认态与专家工具条合并……），HEAD sha 以 `git rev-parse HEAD` 为准。
+
+未 push（按启动提示词要求）。

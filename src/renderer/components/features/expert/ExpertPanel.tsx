@@ -2,10 +2,10 @@
 // ExpertPanel - 能力中心的专家 tab
 // ============================================================================
 //
-// Tab「我的」（默认）：全部持久化角色（含用户自建），带记忆条数/最近履历 +「请 TA 来」；
-// 为空时给指向「发现」的引导。
-// Tab「发现」：内置专家包卡片（花名/职业/tags/quickPrompts），点 quickPrompt
+// Tab「发现」（默认）：内置专家包卡片（花名/职业/tags/quickPrompts），点 quickPrompt
 // 直接以该句开场请 TA 来（inviteExpert 的 pendingRoleChatSeed 通道）。
+// Tab「我的」：全部持久化角色（含用户自建），带记忆条数/最近履历 +「请 TA 来」；
+// 为空时给指向「发现」的引导。新用户「我的」是空的，默认落发现视角。
 //
 // 货架卡片统一契约（专家团 / 专家 / 云货架共用一套语言，紫底渐变已退役）：
 // 容器 SHELF_CARD_CLASS（zinc 底）+ 卡片头（图标瓦片 + 名称 + 角色/来源徽标）
@@ -132,7 +132,7 @@ export const ExpertPanel: React.FC = () => {
   const text = t.expert;
   const openExpertRoleDetail = useAppStore((s) => s.openExpertRoleDetail);
 
-  const [tab, setTab] = useState<ExpertTab>('mine');
+  const [tab, setTab] = useState<ExpertTab>('discover');
   const [entries, setEntries] = useState<RolePanelEntry[]>([]);
   const [rolePacks, setRolePacks] = useState<RolePackListItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -326,63 +326,67 @@ export const ExpertPanel: React.FC = () => {
     : t.team.expertGroup.replace('{count}', String(recipe.members.length));
 
   // 滚动由能力中心的外层容器统一负责，这里只排内容；
-  // 「我的 / 发现」操作条 sticky 住，否则列表一长就被滚出视野。
+  // 工具条 sticky 住，否则列表一长就被滚出视野。
+  // 一行工具条：左侧 = 分类 chips（按角色 category 字段推导，见上方推导口径注释，
+  // 可 wrap 到第二行），右侧 = 我的/发现 + 刷新 + 新建专家；
+  // 右侧 ml-auto：chips 不显示时（无可筛分类 / 加载中）左侧自然塌陷，右侧保持右对齐，不硬造占位。
   return (
     <div data-testid="expert-panel">
       {selectedRecipe ? null : (
-          <div className="sticky top-0 z-10 -mx-6 mb-3 flex items-center justify-end gap-2 border-b border-zinc-800/70 bg-zinc-900/90 px-6 py-2 backdrop-blur">
-            <div className="flex rounded-md border border-zinc-700 p-0.5" role="tablist">
-              {(['mine', 'discover'] as const).map((key) => (
-                <button /* ds-allow:button: tab 切换胶囊（role=tab 分段控件），Button primitive 无 tab 语义变体 */
-                  key={key}
-                  type="button"
-                  role="tab"
-                  aria-selected={tab === key}
-                  data-testid={`expert-tab-${key}`}
-                  onClick={() => setTab(key)}
-                  className={`rounded px-2.5 py-1 text-xs transition-colors ${
-                    tab === key ? 'bg-zinc-700 text-zinc-100' : 'text-zinc-400 hover:text-zinc-200'
-                  }`}
-                >
-                  {key === 'mine' ? text.tabMine : text.tabDiscover}
-                </button>
-              ))}
+          <div className="sticky top-0 z-10 -mx-6 mb-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-zinc-800/70 bg-zinc-900/90 px-6 py-2 backdrop-blur">
+            {!loading && categoryGroups.length > 0 ? (
+              <div className="flex flex-wrap items-center gap-1.5" data-testid="expert-category-chips">
+                {[{ key: 'all', label: text.categoryAll }, ...categoryGroups.map((group) => ({ key: group.key, label: group.label }))].map((chip) => (
+                  <button /* ds-allow:button: 分类过滤 chip（aria-pressed 切换胶囊），Button primitive 无 chip/筛选语义变体 */
+                    key={chip.key}
+                    type="button"
+                    aria-pressed={activeCategory === chip.key}
+                    data-testid={`expert-category-chip-${chip.key}`}
+                    onClick={() => setSelectedCategory(chip.key)}
+                    className={`rounded-full border px-2.5 py-0.5 text-xs transition-colors ${
+                      activeCategory === chip.key
+                        ? 'border-zinc-500 bg-zinc-700 text-zinc-100'
+                        : 'border-zinc-700 text-zinc-400 hover:text-zinc-200'
+                    }`}
+                  >
+                    {chip.label}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+            <div className="ml-auto flex items-center gap-2">
+              <div className="flex rounded-md border border-zinc-700 p-0.5" role="tablist">
+                {(['mine', 'discover'] as const).map((key) => (
+                  <button /* ds-allow:button: tab 切换胶囊（role=tab 分段控件），Button primitive 无 tab 语义变体 */
+                    key={key}
+                    type="button"
+                    role="tab"
+                    aria-selected={tab === key}
+                    data-testid={`expert-tab-${key}`}
+                    onClick={() => setTab(key)}
+                    className={`rounded px-2.5 py-1 text-xs transition-colors ${
+                      tab === key ? 'bg-zinc-700 text-zinc-100' : 'text-zinc-400 hover:text-zinc-200'
+                    }`}
+                  >
+                    {key === 'mine' ? text.tabMine : text.tabDiscover}
+                  </button>
+                ))}
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => void load()}
+                disabled={loading}
+                leftIcon={<RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />}
+              >
+                {text.refresh}
+              </Button>
+              <Button variant="secondary" size="sm" onClick={() => void startCreateRoleChat()} data-testid="expert-create-role">
+                {text.createExpert}
+              </Button>
             </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => void load()}
-              disabled={loading}
-              leftIcon={<RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />}
-            >
-              {text.refresh}
-            </Button>
-            <Button variant="secondary" size="sm" onClick={() => void startCreateRoleChat()} data-testid="expert-create-role">
-              {text.createExpert}
-            </Button>
           </div>
       )}
-      {/* 场景分类 chips：按角色 category 字段推导（见上方推导口径注释），当前 tab 的条目集里出现的分类才上架 */}
-      {!selectedRecipe && !loading && categoryGroups.length > 0 ? (
-        <div className="mb-3 flex flex-wrap items-center gap-1.5" data-testid="expert-category-chips">
-          {[{ key: 'all', label: text.categoryAll }, ...categoryGroups.map((group) => ({ key: group.key, label: group.label }))].map((chip) => (
-            <button /* ds-allow:button: 分类过滤 chip（aria-pressed 切换胶囊），Button primitive 无 chip/筛选语义变体 */
-              key={chip.key}
-              type="button"
-              aria-pressed={activeCategory === chip.key}
-              data-testid={`expert-category-chip-${chip.key}`}
-              onClick={() => setSelectedCategory(chip.key)}
-              className={`rounded-full border px-2.5 py-0.5 text-xs transition-colors ${
-                activeCategory === chip.key
-                  ? 'border-zinc-500 bg-zinc-700 text-zinc-100'
-                  : 'border-zinc-700 text-zinc-400 hover:text-zinc-200'
-              }`}
-            >
-              {chip.label}
-            </button>
-          ))}
-        </div>
-      ) : null}
       <div>
         {selectedRecipe ? (
           <TeamRecipeDetailPage

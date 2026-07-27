@@ -1,6 +1,5 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { renderToStaticMarkup } from 'react-dom/server';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WorkbenchMcpRegistryItem } from '../../../src/renderer/utils/workbenchCapabilityRegistry';
@@ -284,6 +283,12 @@ import { MCPSettings, getMcpTrustSummary } from '../../../src/renderer/component
 describe('MCPSettings status', () => {
   const mcpText = zh.settings.mcp;
 
+  // 默认落「发现连接」；需要「已连接」表格内容的用例先切过去。
+  // tab 文案是「已连接 (N)」，用 startsWith 匹配避免硬编码计数。
+  const openConnectedTab = () => {
+    fireEvent.click(screen.getByText((content) => content.startsWith(mcpText.tabs.connectedPrefix)));
+  };
+
   beforeEach(() => {
     mcpServers = [connectedGithubServer];
     authIsAdmin = true;
@@ -301,9 +306,9 @@ describe('MCPSettings status', () => {
   });
 
   it('renders overall MCP status and server list from the shared MCP hook', () => {
-    const html = renderToStaticMarkup(
-      React.createElement(MCPSettings),
-    );
+    render(React.createElement(MCPSettings));
+    openConnectedTab();
+    const html = document.body.innerHTML;
 
     expect(html).toContain(mcpText.management.stats.overview.label);
     expect(html).toContain('github');
@@ -339,19 +344,18 @@ describe('MCPSettings status', () => {
     } as unknown as WorkbenchMcpRegistryItem;
     mcpServers = [unknownTransportServer];
 
-    const html = renderToStaticMarkup(
-      React.createElement(MCPSettings),
-    );
+    render(React.createElement(MCPSettings));
+    openConnectedTab();
 
-    expect(html).not.toContain('undefined');
+    expect(document.body.innerHTML).not.toContain('undefined');
   });
 
   it('moves reauthorization into the detail sheet for invalid MCP bearer tokens', () => {
     mcpServers = [authErrorTavilyServer];
 
-    const html = renderToStaticMarkup(
-      React.createElement(MCPSettings),
-    );
+    render(React.createElement(MCPSettings));
+    openConnectedTab();
+    const html = document.body.innerHTML;
 
     // 行尾只剩开关 + 详情：重连/重新授权不再铺在行上
     expect(html).not.toContain(mcpText.management.reconnect);
@@ -369,9 +373,9 @@ describe('MCPSettings status', () => {
   it('hides counts and moves reconnect into the detail sheet for non-auth disconnections', () => {
     mcpServers = [disconnectedSlackServer];
 
-    const html = renderToStaticMarkup(
-      React.createElement(MCPSettings),
-    );
+    render(React.createElement(MCPSettings));
+    openConnectedTab();
+    const html = document.body.innerHTML;
 
     // 未加载过就不存在计数：不显示误导性的「0 工具 / 0 资源」
     expect(html).not.toContain(`0${mcpText.management.countToolSuffix}`);
@@ -388,9 +392,9 @@ describe('MCPSettings status', () => {
   it('安保样板文案全页只出现一次（页面级说明），不逐行重复', () => {
     mcpServers = [connectedGithubServer, disconnectedSlackServer, oauthNotionServer];
 
-    const html = renderToStaticMarkup(
-      React.createElement(MCPSettings),
-    );
+    render(React.createElement(MCPSettings));
+    openConnectedTab();
+    const html = document.body.innerHTML;
 
     expect(html.split(mcpText.trustSummary.approvalNotice).length - 1).toBe(1);
     expect(html.split(mcpText.trustSummary.authMaskedHint).length - 1).toBe(1);
@@ -400,6 +404,7 @@ describe('MCPSettings status', () => {
     mcpServers = [disconnectedSlackServer];
 
     render(React.createElement(MCPSettings));
+    openConnectedTab();
     // slack fixture 当前 enabled=true，拨动开关即禁用
     fireEvent.click(screen.getByRole('switch', {
       name: `${mcpText.management.disable} slack`,
@@ -414,10 +419,16 @@ describe('MCPSettings status', () => {
     });
   });
 
-  it('默认落「已连接」，列表行头部状态点绿=connected、灰=其他态', () => {
+  it('默认落「发现连接」；切到「已连接」后列表行头部状态点绿=connected、灰=其他态', () => {
     mcpServers = [connectedGithubServer, disconnectedSlackServer];
 
     render(React.createElement(MCPSettings));
+
+    // 默认发现视角：已连接表格不渲染，发现目录（mock）在屏
+    expect(screen.getByText('mock-quick-connect')).toBeTruthy();
+    expect(screen.queryByTestId('mcp-server-status-dot-github')).toBeNull();
+
+    openConnectedTab();
 
     const githubDot = screen.getByTestId('mcp-server-status-dot-github');
     const slackDot = screen.getByTestId('mcp-server-status-dot-slack');
@@ -428,9 +439,9 @@ describe('MCPSettings status', () => {
   it('shows OAuth authorization status only for OAuth servers; sign-out lives in the detail sheet', () => {
     mcpServers = [oauthNotionServer, connectedGithubServer];
 
-    const html = renderToStaticMarkup(
-      React.createElement(MCPSettings),
-    );
+    render(React.createElement(MCPSettings));
+    openConnectedTab();
+    const html = document.body.innerHTML;
 
     expect(html).toContain(mcpText.management.oauthStatusLabel);
     expect(html).toContain(mcpText.management.oauthAuthorized);
@@ -452,6 +463,7 @@ describe('MCPSettings status', () => {
     mcpServers = [oauthNotionServer];
 
     render(React.createElement(MCPSettings));
+    openConnectedTab();
     fireEvent.click(screen.getByLabelText('查看 notion 详情'));
     fireEvent.click(screen.getByText('退出授权'));
 
@@ -463,6 +475,7 @@ describe('MCPSettings status', () => {
 
   it('passes secret keys from McpServerEditor into the addServer payload', async () => {
     render(React.createElement(MCPSettings));
+    openConnectedTab();
     fireEvent.click(screen.getByText(mcpText.management.addServer));
     fireEvent.click(screen.getByText('mock-save-secret-server'));
 
@@ -511,9 +524,9 @@ describe('MCPSettings status', () => {
   it('lets non-admin users manage MCP servers while hiding bridge diagnostics', () => {
     authIsAdmin = false;
 
-    const html = renderToStaticMarkup(
-      React.createElement(MCPSettings),
-    );
+    render(React.createElement(MCPSettings));
+    openConnectedTab();
+    const html = document.body.innerHTML;
 
     expect(html).toContain(mcpText.management.refreshFromCloud);
     expect(html).toContain(mcpText.management.addServer);

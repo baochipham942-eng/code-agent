@@ -27,12 +27,13 @@ export const CapabilityHubPage: React.FC = () => {
   const currentUser = useAuthStore((s) => s.user);
   const accessSubject = useMemo(() => createAccessSubject(currentUser), [currentUser]);
   const { capabilityHubTab, openCapabilityHub, setShowCapabilityHub, setShowPromptManager } = useAppStore();
-  const visibleTabs = useMemo(() => HUB_TABS.filter(({ key }) => (
-    key !== 'plugins' || canAccessSettingsTab('plugins', accessSubject)
-  )), [accessSubject]);
+  // 「插件」tab 暂时下架（能力未打磨好）：代码与深链常量保留，只不渲染入口；
+  // 指向 plugins 的深链由下方 useEffect 兜底回退到第一个可见 tab，不崩不白屏。
+  const visibleTabs = useMemo(() => HUB_TABS.filter(({ key }) => key !== 'plugins'), []);
   // 提示词管理（admin-only）收进能力中心 header（2026-07 方案 9C：从用户菜单迁来）
   const canOpenPromptManager = canAccessFeature('prompt.manager', accessSubject);
 
+  // tab state 指向已隐藏入口（如 plugins 深链）时，回退到第一个可见 tab。
   useEffect(() => {
     if (visibleTabs.some((tab) => tab.key === capabilityHubTab)) return;
     openCapabilityHub(visibleTabs[0].key);

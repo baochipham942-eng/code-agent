@@ -1,6 +1,7 @@
 // ============================================================================
 // MCPSettings - MCP Server Status and Configuration Tab
-// （能力中心连接器 tab；默认落「已连接」。已连接列表每行头部带连接状态点：
+// （能力中心连接器 tab；默认落「发现连接」（新用户「已连接」是空的，先给推荐视角）。
+// 已连接列表每行头部带连接状态点：
 // 绿 = connected，灰 = 其他态，扫一眼就知道哪路连接器是活的）
 // ============================================================================
 
@@ -75,7 +76,7 @@ export const MCPSettings: React.FC = () => {
   const settingsCapabilityFocus = useAppStore((s) => s.settingsCapabilityFocus);
   const clearSettingsCapabilityFocus = useAppStore((s) => s.clearSettingsCapabilityFocus);
   const canManageMcp = true;
-  const [activeTab, setActiveTab] = useState<McpViewTab>('connected');
+  const [activeTab, setActiveTab] = useState<McpViewTab>('discover');
   const {
     status: mcpStatus,
     isLoading,

@@ -6,11 +6,15 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as zlib from 'zlib';
 import { readFileSync } from 'fs';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
 import axios from 'axios';
 import { HttpsProxyAgent } from 'https-proxy-agent';
+import type { SkillRepoSourceType } from '../../../shared/contract/skillRepository';
 import { createLogger } from '../infra/logger';
 
 const logger = createLogger('GitDownloader');
+const execFileAsync = promisify(execFile);
 
 // Proxy configuration
 const PROXY_URL = process.env.HTTP_PROXY || process.env.HTTPS_PROXY;
@@ -25,17 +29,30 @@ const httpsAgent = USE_PROXY ? new HttpsProxyAgent(PROXY_URL) : undefined;
 // ============================================================================
 
 export interface GitHubRepoInfo {
+  source: 'github';
   owner: string;
   repo: string;
   branch: string;
 }
 
+export interface ModelScopeRepoInfo {
+  source: 'modelscope';
+  owner: string;
+  repo: string;
+  branch: string;
+  repoType: 'model' | 'skill';
+}
+
+export type RepoInfo = GitHubRepoInfo | ModelScopeRepoInfo;
+
 export interface DownloadOptions {
+  source?: SkillRepoSourceType;
   owner: string;
   repo: string;
   branch: string;
   targetDir: string;
   skillsPath?: string;
+  modelScopeRepoType?: 'model' | 'skill';
 }
 
 export interface DownloadResult {
@@ -46,6 +63,7 @@ export interface DownloadResult {
 }
 
 export interface RepoMeta {
+  source: SkillRepoSourceType;
   owner: string;
   repo: string;
   branch: string;
@@ -53,6 +71,7 @@ export interface RepoMeta {
   downloadedAt: number;
   lastUpdated: number;
   skillsPath?: string;
+  modelScopeRepoType?: 'model' | 'skill';
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -62,20 +81,36 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function parseRepoMeta(value: unknown): RepoMeta | null {
   if (!isRecord(value)) return null;
 
-  const { owner, repo, branch, commitHash, downloadedAt, lastUpdated, skillsPath } = value;
+  const {
+    source,
+    owner,
+    repo,
+    branch,
+    commitHash,
+    downloadedAt,
+    lastUpdated,
+    skillsPath,
+    modelScopeRepoType,
+  } = value;
   if (
+    (source !== undefined && source !== 'github' && source !== 'modelscope') ||
     typeof owner !== 'string' ||
     typeof repo !== 'string' ||
     typeof branch !== 'string' ||
     typeof commitHash !== 'string' ||
     typeof downloadedAt !== 'number' ||
     typeof lastUpdated !== 'number' ||
-    (skillsPath !== undefined && typeof skillsPath !== 'string')
+    (skillsPath !== undefined && typeof skillsPath !== 'string') ||
+    (modelScopeRepoType !== undefined &&
+      modelScopeRepoType !== 'model' &&
+      modelScopeRepoType !== 'skill')
   ) {
     return null;
   }
 
   return {
+    // Metadata written before multi-source support was GitHub-only.
+    source: source === 'modelscope' ? 'modelscope' : 'github',
     owner,
     repo,
     branch,
@@ -83,6 +118,7 @@ function parseRepoMeta(value: unknown): RepoMeta | null {
     downloadedAt,
     lastUpdated,
     ...(skillsPath ? { skillsPath } : {}),
+    ...(modelScopeRepoType ? { modelScopeRepoType } : {}),
   };
 }
 
@@ -99,7 +135,7 @@ function parseRepoMeta(value: unknown): RepoMeta | null {
  * - github.com/owner/repo
  * - owner/repo
  */
-export function parseGitHubUrl(url: string): GitHubRepoInfo | null {
+function parseGitHubUrl(url: string): GitHubRepoInfo | null {
   if (!url || typeof url !== 'string') {
     return null;
   }
@@ -117,6 +153,7 @@ export function parseGitHubUrl(url: string): GitHubRepoInfo | null {
   let match = url.match(fullUrlPattern);
   if (match) {
     return {
+      source: 'github',
       owner: match[1],
       repo: match[2],
       branch: match[3] || 'main',
@@ -126,6 +163,7 @@ export function parseGitHubUrl(url: string): GitHubRepoInfo | null {
   match = url.match(shortPattern);
   if (match) {
     return {
+      source: 'github',
       owner: match[1],
       repo: match[2],
       branch: 'main',
@@ -133,6 +171,93 @@ export function parseGitHubUrl(url: string): GitHubRepoInfo | null {
   }
 
   return null;
+}
+
+const REPO_SEGMENT_PATTERN = /^[A-Za-z0-9](?:[A-Za-z0-9_.-]*[A-Za-z0-9])?$/;
+
+function isSafeRepoSegment(value: string): boolean {
+  return REPO_SEGMENT_PATTERN.test(value) && value !== '.' && value !== '..';
+}
+
+/**
+ * Parse a supported skill repository URL.
+ *
+ * ModelScope URL forms verified against live public repositories on 2026-07-27:
+ * - https://www.modelscope.cn/ms-agent/skill_examples
+ * - https://www.modelscope.cn/models/ms-agent/skill_examples
+ * - https://www.modelscope.cn/skills/@halcyon666/write-skills
+ *
+ * Model pages map to the regular `<namespace>/<name>.git` endpoint. Skill
+ * pages currently reject that clone URL and are downloaded through the
+ * `/api/v1/skills/@<namespace>/<name>/archive/zip/<revision>` fallback.
+ */
+export function parseRepoUrl(url: string): RepoInfo | null {
+  const github = parseGitHubUrl(url);
+  if (github) {
+    return github;
+  }
+
+  if (!url || typeof url !== 'string') {
+    return null;
+  }
+
+  let parsedUrl: URL;
+  try {
+    parsedUrl = new URL(url.trim());
+  } catch {
+    return null;
+  }
+
+  if (
+    parsedUrl.protocol !== 'https:' ||
+    parsedUrl.username ||
+    parsedUrl.password ||
+    parsedUrl.port ||
+    !/^(?:www\.)?modelscope\.cn$/i.test(parsedUrl.hostname)
+  ) {
+    return null;
+  }
+
+  let segments: string[];
+  try {
+    segments = parsedUrl.pathname
+      .split('/')
+      .filter(Boolean)
+      .map((segment) => decodeURIComponent(segment));
+  } catch {
+    return null;
+  }
+
+  let repoType: ModelScopeRepoInfo['repoType'] = 'model';
+  if (segments[0]?.toLowerCase() === 'skills') {
+    repoType = 'skill';
+    segments = segments.slice(1);
+  } else if (segments[0]?.toLowerCase() === 'models') {
+    segments = segments.slice(1);
+  }
+
+  if (segments.length < 2) {
+    return null;
+  }
+
+  const owner = segments[0].replace(/^@/, '');
+  const repo = segments[1].replace(/\.git$/i, '');
+  const allowedSuffixes = new Set(['summary', 'files', 'skills']);
+  if (
+    !isSafeRepoSegment(owner) ||
+    !isSafeRepoSegment(repo) ||
+    (segments.length > 2 && !segments.slice(2).every((segment) => allowedSuffixes.has(segment)))
+  ) {
+    return null;
+  }
+
+  return {
+    source: 'modelscope',
+    owner,
+    repo,
+    branch: 'master',
+    repoType,
+  };
 }
 
 // ============================================================================
@@ -362,114 +487,320 @@ function parseOctal(buffer: Buffer, offset: number, length: number): number {
 // Download Functions
 // ============================================================================
 
-/**
- * Download a GitHub repository to a local directory
- */
+function getModelScopeCloneUrl(owner: string, repo: string): string {
+  return `https://www.modelscope.cn/${owner}/${repo}.git`;
+}
+
+function getModelScopeApiSegment(repoType: 'model' | 'skill'): string {
+  return repoType === 'skill' ? 'skills' : 'models';
+}
+
+function getModelScopeApiOwner(owner: string, repoType: 'model' | 'skill'): string {
+  return repoType === 'skill' ? `@${owner}` : owner;
+}
+
+async function getModelScopeLatestCommit(
+  owner: string,
+  repo: string,
+  branch: string,
+  repoType: 'model' | 'skill'
+): Promise<string | null> {
+  const cloneUrl = getModelScopeCloneUrl(owner, repo);
+  try {
+    const { stdout } = await execFileAsync('git', ['ls-remote', cloneUrl, 'HEAD'], {
+      timeout: 30000,
+      maxBuffer: 1024 * 1024,
+    });
+    const commitHash = stdout.trim().split(/\s+/)[0];
+    if (/^[0-9a-f]{40}$/i.test(commitHash)) {
+      return commitHash;
+    }
+  } catch (error) {
+    logger.debug('ModelScope ls-remote failed; trying repository API', {
+      cloneUrl,
+      error,
+    });
+  }
+
+  const segment = getModelScopeApiSegment(repoType);
+  const apiOwner = getModelScopeApiOwner(owner, repoType);
+  const filesUrl =
+    `https://www.modelscope.cn/api/v1/${segment}/` +
+    `${encodeURIComponent(apiOwner)}/${encodeURIComponent(repo)}/repo/files`;
+
+  try {
+    const response = await axios.get<unknown>(filesUrl, {
+      params: {
+        Revision: branch,
+        Recursive: 'true',
+      },
+      headers: { 'User-Agent': 'Code-Agent/1.0' },
+      httpsAgent,
+      timeout: 30000,
+    });
+    const data = isRecord(response.data) && isRecord(response.data.Data)
+      ? response.data.Data
+      : null;
+    const latestCommitter = data && isRecord(data.LatestCommitter)
+      ? data.LatestCommitter
+      : null;
+    const webUrl = latestCommitter?.WebURL;
+    const commitMatch = typeof webUrl === 'string'
+      ? webUrl.match(/\/commit\/([0-9a-f]{40})(?:\/|$)/i)
+      : null;
+    if (commitMatch) {
+      return commitMatch[1];
+    }
+
+    const files = data?.Files;
+    if (Array.isArray(files)) {
+      for (const file of files) {
+        if (isRecord(file) && typeof file.Revision === 'string' &&
+            /^[0-9a-f]{40}$/i.test(file.Revision)) {
+          return file.Revision;
+        }
+      }
+    }
+  } catch (error) {
+    logger.warn('Failed to resolve ModelScope repository revision', {
+      owner,
+      repo,
+      branch,
+      repoType,
+      error,
+    });
+  }
+
+  return null;
+}
+
+async function extractZipArchive(archivePath: string, destination: string): Promise<void> {
+  await fs.mkdir(destination, { recursive: true });
+  try {
+    await execFileAsync('unzip', ['-q', archivePath, '-d', destination], {
+      timeout: 120000,
+      maxBuffer: 10 * 1024 * 1024,
+    });
+    return;
+  } catch (unzipError) {
+    logger.debug('unzip failed; trying tar archive extraction', { unzipError });
+  }
+
+  await execFileAsync('tar', ['-xf', archivePath, '-C', destination], {
+    timeout: 120000,
+    maxBuffer: 10 * 1024 * 1024,
+  });
+}
+
+async function moveExtractedRepository(extractedDir: string, targetDir: string): Promise<void> {
+  const entries = await fs.readdir(extractedDir, { withFileTypes: true });
+  const visibleEntries = entries.filter((entry) => entry.name !== '__MACOSX');
+  const sourceDir = visibleEntries.length === 1 && visibleEntries[0].isDirectory()
+    ? path.join(extractedDir, visibleEntries[0].name)
+    : extractedDir;
+
+  await fs.rm(targetDir, { recursive: true, force: true });
+  await fs.mkdir(path.dirname(targetDir), { recursive: true });
+  await fs.rename(sourceDir, targetDir);
+}
+
+async function downloadModelScopeRepository(
+  options: DownloadOptions,
+  tempDir: string
+): Promise<{ commitHash: string; cloneError?: string }> {
+  const {
+    owner,
+    repo,
+    branch,
+    targetDir,
+    modelScopeRepoType = 'model',
+  } = options;
+  const cloneUrl = getModelScopeCloneUrl(owner, repo);
+  const cloneDir = path.join(tempDir, 'clone');
+  let cloneError: string | undefined;
+
+  try {
+    await execFileAsync(
+      'git',
+      ['clone', '--depth', '1', '--branch', branch, cloneUrl, cloneDir],
+      {
+        timeout: 120000,
+        maxBuffer: 10 * 1024 * 1024,
+      }
+    );
+    const { stdout } = await execFileAsync('git', ['-C', cloneDir, 'rev-parse', 'HEAD'], {
+      timeout: 30000,
+      maxBuffer: 1024 * 1024,
+    });
+    const commitHash = stdout.trim();
+    await fs.rm(path.join(cloneDir, '.git'), { recursive: true, force: true });
+    await fs.rm(targetDir, { recursive: true, force: true });
+    await fs.rename(cloneDir, targetDir);
+    return { commitHash };
+  } catch (error) {
+    cloneError = error instanceof Error ? error.message : String(error);
+    logger.warn('ModelScope git clone failed; trying archive API', {
+      cloneUrl,
+      error: cloneError,
+    });
+    await fs.rm(cloneDir, { recursive: true, force: true });
+  }
+
+  const commitHash = await getModelScopeLatestCommit(
+    owner,
+    repo,
+    branch,
+    modelScopeRepoType
+  );
+  if (!commitHash) {
+    throw new Error(
+      `ModelScope clone failed (${cloneError}) and archive revision could not be resolved`
+    );
+  }
+
+  const segment = getModelScopeApiSegment(modelScopeRepoType);
+  const apiOwner = getModelScopeApiOwner(owner, modelScopeRepoType);
+  const archiveUrl =
+    `https://www.modelscope.cn/api/v1/${segment}/` +
+    `${encodeURIComponent(apiOwner)}/${encodeURIComponent(repo)}/archive/zip/` +
+    encodeURIComponent(branch);
+  const archivePath = path.join(tempDir, 'repo.zip');
+  const extractedDir = path.join(tempDir, 'extracted');
+
+  try {
+    const response = await axios.get<ArrayBuffer>(archiveUrl, {
+      responseType: 'arraybuffer',
+      headers: { 'User-Agent': 'Code-Agent/1.0' },
+      httpsAgent,
+      timeout: 120000,
+      maxContentLength: 100 * 1024 * 1024,
+    });
+    await fs.writeFile(archivePath, Buffer.from(response.data));
+    await extractZipArchive(archivePath, extractedDir);
+    await moveExtractedRepository(extractedDir, targetDir);
+    return { commitHash, cloneError };
+  } catch (error) {
+    const archiveError = error instanceof Error ? error.message : String(error);
+    throw new Error(
+      `ModelScope clone failed (${cloneError}); archive download failed (${archiveError})`,
+      { cause: error }
+    );
+  }
+}
+
+/** Download a supported repository to a local directory. */
 export async function downloadRepository(
   options: DownloadOptions
 ): Promise<DownloadResult> {
-  const { owner, repo, branch, targetDir, skillsPath } = options;
+  const {
+    source = 'github',
+    owner,
+    repo,
+    branch,
+    targetDir,
+    skillsPath,
+    modelScopeRepoType,
+  } = options;
   const localPath = skillsPath
     ? path.join(targetDir, skillsPath)
     : targetDir;
 
-  logger.info('Downloading repository', { owner, repo, branch, targetDir });
+  logger.info('Downloading repository', { source, owner, repo, branch, targetDir });
 
-  // Create temp directory for download
-  const tempDir = path.join(targetDir, '.download-temp-' + Date.now());
+  // Keep temporary content beside the target so replacing the target cannot
+  // delete an in-progress download.
+  const tempDir = path.join(
+    path.dirname(targetDir),
+    `.${path.basename(targetDir)}.download-temp-${Date.now()}`
+  );
   const tarGzPath = path.join(tempDir, 'repo.tar.gz');
 
   try {
-    // Ensure target directory exists
-    await fs.mkdir(targetDir, { recursive: true });
+    await fs.mkdir(path.dirname(targetDir), { recursive: true });
     await fs.mkdir(tempDir, { recursive: true });
 
-    // Get latest commit hash first
-    const commitHash = await getLatestCommit(owner, repo, branch);
-    if (!commitHash) {
-      return {
-        success: false,
-        localPath,
-        error: `Could not find repository ${owner}/${repo} or branch ${branch}`,
-      };
-    }
+    let commitHash: string;
 
-    // Download tarball with retry
-    const tarballUrl = `https://codeload.github.com/${owner}/${repo}/tar.gz/${branch}`;
-    let lastError: Error | null = null;
+    if (source === 'modelscope') {
+      const result = await downloadModelScopeRepository(options, tempDir);
+      commitHash = result.commitHash;
+    } else {
+      const latestCommit = await getLatestCommit(owner, repo, branch);
+      if (!latestCommit) {
+        return {
+          success: false,
+          localPath,
+          error: `Could not find repository ${owner}/${repo} or branch ${branch}`,
+        };
+      }
+      commitHash = latestCommit;
 
-    for (let attempt = 1; attempt <= 3; attempt++) {
-      try {
-        logger.debug('Downloading tarball', { url: tarballUrl, attempt });
+      const tarballUrl = `https://codeload.github.com/${owner}/${repo}/tar.gz/${branch}`;
+      let lastError: Error | null = null;
 
-        const response = await axios.get<ArrayBuffer>(tarballUrl, {
-          responseType: 'arraybuffer',
-          headers: {
-            'User-Agent': 'Code-Agent/1.0',
-            ...(process.env.GITHUB_TOKEN
-              ? { Authorization: `token ${process.env.GITHUB_TOKEN}` }
-              : {}),
-          },
-          httpsAgent,
-          timeout: 120000, // 2 minute timeout for large repos
-          maxContentLength: 100 * 1024 * 1024, // 100MB max
-        });
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          logger.debug('Downloading tarball', { url: tarballUrl, attempt });
 
-        if (response.status !== 200) {
-          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-        }
+          const response = await axios.get<ArrayBuffer>(tarballUrl, {
+            responseType: 'arraybuffer',
+            headers: {
+              'User-Agent': 'Code-Agent/1.0',
+              ...(process.env.GITHUB_TOKEN
+                ? { Authorization: `token ${process.env.GITHUB_TOKEN}` }
+                : {}),
+            },
+            httpsAgent,
+            timeout: 120000,
+            maxContentLength: 100 * 1024 * 1024,
+          });
 
-        // Write to temp file
-        await fs.writeFile(tarGzPath, Buffer.from(response.data));
-        lastError = null;
-        break;
-      } catch (error) {
-        lastError = error instanceof Error ? error : new Error(String(error));
-        logger.warn('Download attempt failed', {
-          attempt,
-          error: lastError.message,
-        });
+          await fs.writeFile(tarGzPath, Buffer.from(response.data));
+          lastError = null;
+          break;
+        } catch (error) {
+          lastError = error instanceof Error ? error : new Error(String(error));
+          logger.warn('Download attempt failed', {
+            attempt,
+            error: lastError.message,
+          });
 
-        if (attempt < 3) {
-          // Wait before retry (exponential backoff)
-          await new Promise((resolve) =>
-            setTimeout(resolve, 1000 * Math.pow(2, attempt - 1))
-          );
+          if (attempt < 3) {
+            await new Promise((resolve) =>
+              setTimeout(resolve, 1000 * Math.pow(2, attempt - 1))
+            );
+          }
         }
       }
-    }
 
-    if (lastError) {
-      return {
-        success: false,
-        localPath,
-        error: `Download failed after 3 attempts: ${lastError.message}`,
-      };
-    }
+      if (lastError) {
+        return {
+          success: false,
+          localPath,
+          error: `Download failed after 3 attempts: ${lastError.message}`,
+        };
+      }
 
-    // Remove existing target if it exists
-    try {
       await fs.rm(localPath, { recursive: true, force: true });
-    } catch {
-      // Ignore if doesn't exist
+      logger.debug('Extracting tarball', { tarGzPath, localPath });
+      await extractTarGz(tarGzPath, localPath, 1);
     }
 
-    // Extract tarball
-    logger.debug('Extracting tarball', { tarGzPath, localPath });
-    await extractTarGz(tarGzPath, localPath, 1);
-
-    // Save metadata
     const meta: RepoMeta = {
+      source,
       owner,
       repo,
       branch,
       commitHash,
       downloadedAt: Date.now(),
       lastUpdated: Date.now(),
+      ...(skillsPath ? { skillsPath } : {}),
+      ...(modelScopeRepoType ? { modelScopeRepoType } : {}),
     };
     await saveRepoMeta(localPath, meta);
 
     logger.info('Repository downloaded successfully', {
+      source,
       owner,
       repo,
       branch,
@@ -487,6 +818,7 @@ export async function downloadRepository(
       error instanceof Error ? error.message : 'Unknown error';
     logger.error('Failed to download repository', {
       owner,
+      source,
       repo,
       branch,
       error: errorMessage,
@@ -522,7 +854,14 @@ export async function checkForUpdates(
     return { hasUpdate: false };
   }
 
-  const latestCommit = await getLatestCommit(meta.owner, meta.repo, meta.branch);
+  const latestCommit = meta.source === 'modelscope'
+    ? await getModelScopeLatestCommit(
+      meta.owner,
+      meta.repo,
+      meta.branch,
+      meta.modelScopeRepoType || 'model'
+    )
+    : await getLatestCommit(meta.owner, meta.repo, meta.branch);
   if (!latestCommit) {
     return { hasUpdate: false };
   }
@@ -563,11 +902,12 @@ export async function updateRepository(
 
   // Download fresh copy
   const result = await downloadRepository({
+    source: meta.source,
     owner: meta.owner,
     repo: meta.repo,
     branch: meta.branch,
-    targetDir: parentDir,
-    skillsPath: dirName,
+    targetDir: localPath,
+    modelScopeRepoType: meta.modelScopeRepoType,
   });
 
   // Clean up backup on success, restore on failure

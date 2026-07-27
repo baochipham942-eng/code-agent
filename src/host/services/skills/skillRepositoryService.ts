@@ -15,7 +15,7 @@ import type {
 } from '@shared/contract/skillRepository';
 import {
   downloadRepository,
-  parseGitHubUrl,
+  parseRepoUrl,
   checkForUpdates,
   updateRepository as gitUpdateRepository,
   readRepoMetaAsync,
@@ -134,21 +134,23 @@ class SkillRepositoryService implements Disposable {
 
     try {
       // 解析 URL
-      const parsed = parseGitHubUrl(repo.url);
+      const parsed = parseRepoUrl(repo.url);
       if (!parsed) {
         return {
           success: false,
-          error: `Invalid GitHub URL: ${repo.url}`,
+          error: `Invalid repository URL: ${repo.url}`,
         };
       }
 
       // 使用 gitDownloader 下载
       const result = await downloadRepository({
+        source: parsed.source,
         owner: parsed.owner,
         repo: parsed.repo,
         branch: repo.branch || parsed.branch,
         targetDir,
         skillsPath: repo.skillsPath === '.' ? undefined : repo.skillsPath,
+        modelScopeRepoType: parsed.source === 'modelscope' ? parsed.repoType : undefined,
       });
 
       if (!result.success) {
@@ -329,11 +331,11 @@ class SkillRepositoryService implements Disposable {
    */
   async addCustomRepository(url: string, name?: string): Promise<DownloadResult> {
     // 解析 URL
-    const parsed = parseGitHubUrl(url);
+    const parsed = parseRepoUrl(url);
     if (!parsed) {
       return {
         success: false,
-        error: `Invalid GitHub URL: ${url}`,
+        error: `Invalid repository URL: ${url}`,
       };
     }
 
@@ -354,7 +356,7 @@ class SkillRepositoryService implements Disposable {
       name: name || `${parsed.owner}/${parsed.repo}`,
       url,
       branch: parsed.branch,
-      skillsPath: 'skills', // 默认使用 skills 目录
+      skillsPath: parsed.source === 'modelscope' ? '.' : 'skills',
       category: 'community',
       recommended: false,
       author: parsed.owner,

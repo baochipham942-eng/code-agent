@@ -12,6 +12,9 @@
  */
 export type SkillRepositoryCategory = 'core' | 'workflow' | 'productivity' | 'community';
 
+/** Remote provider used by a skill repository. */
+export type SkillRepoSourceType = 'github' | 'modelscope';
+
 // ----------------------------------------------------------------------------
 // 推荐分类（产物导向）
 // ----------------------------------------------------------------------------

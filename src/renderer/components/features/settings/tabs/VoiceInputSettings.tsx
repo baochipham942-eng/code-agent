@@ -273,10 +273,12 @@ export const VoiceInputSettings: React.FC = () => {
           </button>
 
           <div className="flex items-center gap-3">
+            {/* 图标必须自带尺寸：Button 只给外层 span 加尺寸类，不约束里面的 svg，
+                lucide 不给 className 就按默认 24px 画，会溢出来压在文字上。 */}
             <Button
               variant="secondary"
               size="sm"
-              leftIcon={<Trash2 />}
+              leftIcon={<Trash2 className="h-3.5 w-3.5" />}
               loading={clearingAudio}
               onClick={() => void clearRetainedAudio()}
             >

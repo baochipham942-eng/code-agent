@@ -116,7 +116,7 @@ function validateSchemaNode(
 }
 
 function isMissingRequiredValue(value: unknown): boolean {
-  return value === undefined || value === null || (typeof value === 'string' && value.trim() === '');
+  return value === undefined || value === null;
 }
 
 function matchesSchemaType(value: unknown, expected: JsonSchemaType | JsonSchemaType[]): boolean {

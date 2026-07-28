@@ -9,13 +9,14 @@ const close = vi.fn(async () => undefined);
 const sendAudio = vi.fn();
 const commitMock = vi.fn();
 const updateInstructions = vi.fn();
+const injectItem = vi.fn();
 const addMessageToSession = vi.fn(async (_sessionId: string, _message: Message) => undefined);
 const patchSessionMetadata = vi.fn(async (_sessionId: string, _patch: Record<string, unknown>) => true);
 const getSession = vi.fn(async (_sessionId: string) => ({ workingDirectory: '/repo/voice-session' }));
 let lastOnEvent: ((event: VoiceEvent) => void) | null = null;
 const connect = vi.fn(async (input: Parameters<VoiceTransport['connect']>[0]) => {
   lastOnEvent = input.onEvent;
-  return { kind: 'relay', provider: 'qwen-omni', sendAudio, commit: commitMock, interrupt: vi.fn(), updateInstructions, close };
+  return { kind: 'relay', provider: 'qwen-omni', sendAudio, commit: commitMock, interrupt: vi.fn(), updateInstructions, injectItem, close };
 });
 
 vi.mock('../../src/host/services/voice/qwenOmniTransport', () => ({ qwenOmniTransport: { id: 'qwen-omni', connect } }));
@@ -23,9 +24,13 @@ vi.mock('../../src/host/services/media/imageGenerationService', () => ({ getDash
 vi.mock('../../src/host/services/infra/sessionManager', () => ({
   getSessionManager: () => ({ addMessageToSession, patchSessionMetadata, getSession }),
 }));
-vi.mock('../../src/host/services/infra/logger', () => ({
-  createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
+const voiceLogger = vi.hoisted(() => ({
+  info: vi.fn(),
+  warn: vi.fn(),
+  error: vi.fn(),
+  debug: vi.fn(),
 }));
+vi.mock('../../src/host/services/infra/logger', () => ({ createLogger: () => voiceLogger }));
 
 interface VoiceCallHookParams {
   voiceCallId: string;
@@ -59,13 +64,28 @@ vi.mock('../../src/host/hooks', () => ({
 // 准备工作——它一旦排到摘要前面，就会把摘要挤出那个窗口，刚修好的「摘要卡延迟」原样复发。
 // 所以这里只替换 flushVoiceTail 一个导出，其余走真实实现，用于记录落地顺序。
 const teardownOrder: string[] = [];
+const voiceDispatchProbe = vi.hoisted(() => ({
+  narrate: null as null | ((narration: {
+    workItemId: string;
+    status: 'done';
+    title: string;
+    summary: string;
+  }) => void),
+}));
 const flushVoiceTailSpy = vi.fn(async () => {
   teardownOrder.push('tail-flush');
   return false;
 });
 vi.mock('../../src/host/services/voice/voiceAgentCoordinator', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/host/services/voice/voiceAgentCoordinator')>();
-  return { ...actual, flushVoiceTail: flushVoiceTailSpy };
+  return {
+    ...actual,
+    beginVoiceDispatch: (binding: Parameters<typeof actual.beginVoiceDispatch>[0]) => {
+      voiceDispatchProbe.narrate = binding.onWorkNarration as typeof voiceDispatchProbe.narrate;
+      actual.beginVoiceDispatch(binding);
+    },
+    flushVoiceTail: flushVoiceTailSpy,
+  };
 });
 
 const { attachVoiceClient, getActiveVoiceSessionId, endActiveVoiceSession } = await import('../../src/host/services/voice/voiceSessionService');
@@ -97,6 +117,10 @@ describe('voiceSessionService 互斥与挂断', () => {
     sendAudio.mockClear();
     commitMock.mockClear();
     updateInstructions.mockClear();
+    injectItem.mockClear();
+    voiceLogger.info.mockClear();
+    voiceLogger.warn.mockClear();
+    voiceDispatchProbe.narrate = null;
     addMessageToSession.mockClear();
     lastOnEvent = null;
   });
@@ -302,6 +326,78 @@ describe('voiceSessionService 互斥与挂断', () => {
     }, { timeout: 4000 });
     expect(teardownOrder).toEqual(['summary', 'tail-flush']);
     addMessageToSession.mockImplementation(async () => undefined);
+  });
+});
+
+describe('终态结论节制播报', () => {
+  const narration = {
+    workItemId: 'work-1',
+    status: 'done' as const,
+    title: '建个文件',
+    summary: '已经建好 a.txt。',
+  };
+
+  beforeEach(() => {
+    injectItem.mockClear();
+    voiceLogger.info.mockClear();
+    voiceDispatchProbe.narrate = null;
+    lastOnEvent = null;
+  });
+
+  afterEach(async () => {
+    await endActiveVoiceSession();
+  });
+
+  it('用户说话时零注入，response.done 后恰好注入一条原结论', async () => {
+    const client = new FakeClient();
+    await attachVoiceClient(client as never, 'session-narration');
+
+    lastOnEvent?.({ type: 'speech.started' });
+    voiceDispatchProbe.narrate?.(narration);
+    expect(injectItem).not.toHaveBeenCalled();
+
+    lastOnEvent?.({ type: 'response.done' });
+    expect(injectItem).toHaveBeenCalledTimes(1);
+    expect(injectItem).toHaveBeenCalledWith('[BACKEND] 「建个文件」做完了。已经建好 a.txt。');
+  });
+
+  it('连续压过两个用户轮次就丢弃，并留下可诊断日志', async () => {
+    const client = new FakeClient();
+    await attachVoiceClient(client as never, 'session-stale-narration');
+
+    lastOnEvent?.({ type: 'speech.started' });
+    voiceDispatchProbe.narrate?.(narration);
+    lastOnEvent?.({ type: 'speech.started' });
+    lastOnEvent?.({ type: 'response.done' });
+
+    expect(injectItem).not.toHaveBeenCalled();
+    expect(voiceLogger.info).toHaveBeenCalledWith(
+      'narration dropped after two suppressed user turns',
+      expect.objectContaining({ workItemId: narration.workItemId }),
+    );
+  });
+
+  it('同一 workItemId 的终态重复到达也只注入一条', async () => {
+    const client = new FakeClient();
+    await attachVoiceClient(client as never, 'session-dedup-narration');
+
+    voiceDispatchProbe.narrate?.(narration);
+    voiceDispatchProbe.narrate?.({ ...narration, summary: '重复终态不该覆盖。' });
+
+    expect(injectItem).toHaveBeenCalledTimes(1);
+    expect(injectItem).toHaveBeenCalledWith('[BACKEND] 「建个文件」做完了。已经建好 a.txt。');
+  });
+
+  it('挂断清掉仍在队列里的 narration，后到 response.done 也不注入', async () => {
+    const client = new FakeClient();
+    await attachVoiceClient(client as never, 'session-hangup-narration');
+    lastOnEvent?.({ type: 'speech.started' });
+    voiceDispatchProbe.narrate?.(narration);
+
+    await endActiveVoiceSession();
+    lastOnEvent?.({ type: 'response.done' });
+
+    expect(injectItem).not.toHaveBeenCalled();
   });
 });
 

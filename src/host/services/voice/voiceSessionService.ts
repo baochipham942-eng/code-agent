@@ -68,6 +68,12 @@ interface ActiveSession {
   conversationModel: string;
   /** 用户此刻在看什么（Renderer 节流上报） */
   focus: VoiceFocusContext | null;
+  /** 终态播报只属于这通电话：压住、去重与已播记录都随 active 一起销毁。 */
+  narration: {
+    userSpeaking: boolean;
+    queue: Map<string, { narration: VoiceWorkNarration; suppressedTurns: number }>;
+    spokenWorkItemIds: Set<string>;
+  };
 }
 
 // ponytail: 单进程内一个模块级变量就是「全局单路」的全部实现（方案 §2.6）。
@@ -155,6 +161,52 @@ function formatNarration(narration: VoiceWorkNarration): string {
       + '如实告诉用户这件事失败了，绝不要说它已经完成、已经写入或已经生效。';
   }
   return `[BACKEND] ${who}「${narration.title}」做完了。${narration.summary}`.trim();
+}
+
+function injectNarration(session: ActiveSession, narration: VoiceWorkNarration): void {
+  if (session.narration.spokenWorkItemIds.has(narration.workItemId)) return;
+  const { upstream } = session;
+  if (upstream.kind !== 'relay') {
+    // WebRTC 形态媒体不经 Host，注入通道要走 Renderer 的 data channel，尚未实现。
+    // 静默 no-op = 用户永远等不到那句话且查不出为什么，必须留痕。
+    logger.warn('narration dropped: transport has no inject channel', { provider: upstream.provider });
+    return;
+  }
+  upstream.injectItem(formatNarration(narration));
+  session.narration.spokenWorkItemIds.add(narration.workItemId);
+}
+
+function enqueueOrInjectNarration(session: ActiveSession, narration: VoiceWorkNarration): void {
+  const state = session.narration;
+  if (state.spokenWorkItemIds.has(narration.workItemId) || state.queue.has(narration.workItemId)) return;
+  if (!state.userSpeaking) {
+    injectNarration(session, narration);
+    return;
+  }
+  // narration 到达前，这个 speech_started 已经发生；当前用户轮次也算压过一轮。
+  state.queue.set(narration.workItemId, { narration, suppressedTurns: 1 });
+}
+
+function markNarrationUserTurn(session: ActiveSession): void {
+  const state = session.narration;
+  state.userSpeaking = true;
+  for (const [workItemId, pending] of state.queue) {
+    pending.suppressedTurns += 1;
+    if (pending.suppressedTurns < 2) continue;
+    state.queue.delete(workItemId);
+    logger.info('narration dropped after two suppressed user turns', {
+      voiceSessionId: session.id,
+      workItemId,
+    });
+  }
+}
+
+function flushNarrationQueue(session: ActiveSession): void {
+  const state = session.narration;
+  state.userSpeaking = false;
+  const queued = [...state.queue.values()];
+  state.queue.clear();
+  for (const { narration } of queued) injectNarration(session, narration);
 }
 
 async function persistTranscript(
@@ -267,6 +319,7 @@ function beginReconnectGrace(sessionId: string): void {
 async function teardown(reason: string): Promise<void> {
   const session = active;
   if (!session) return;
+  session.narration.queue.clear();
   active = null;
   clearTimeout(session.maxDurationTimer);
   if (session.graceTimer) clearTimeout(session.graceTimer);
@@ -417,14 +470,7 @@ async function connectAndBind(
     // 注意 upstream 此刻还不存在（绑定必须早于建连），所以读 active 而不是闭包捕获。
     onWorkNarration: (narration) => {
       if (active?.id !== id) return;
-      const upstream = active.upstream;
-      if (upstream.kind !== 'relay') {
-        // WebRTC 形态媒体不经 Host，注入通道要走 Renderer 的 data channel，尚未实现。
-        // 静默 no-op = 用户永远等不到那句话且查不出为什么，必须留痕。
-        logger.warn('narration dropped: transport has no inject channel', { provider: upstream.provider });
-        return;
-      }
-      upstream.injectItem(formatNarration(narration));
+      enqueueOrInjectNarration(active, narration);
     },
     // 模型自己收线：不当场 teardown，先记一笔，等它把告别说完（response.done）再断。
     // 立刻断会把这句告别掐掉，用户听到的是电话突然没了；但也不能无限等——
@@ -451,6 +497,10 @@ async function connectAndBind(
       },
       onEvent: (event) => {
         send(clientRef.current, event);
+        if (active?.id === id) {
+          if (event.type === 'speech.started') markNarrationUserTurn(active);
+          else if (event.type === 'response.done') flushNarrationQueue(active);
+        }
         if (event.type === 'user.transcript' && event.done) void persistTranscript(neoSessionId, 'user', event.text, transcriptCounter);
         else if (event.type === 'assistant.transcript') {
           if (event.done) {
@@ -509,6 +559,11 @@ async function connectAndBind(
     personaInstructions: baseInstructions,
     conversationModel: conversationModel.id,
     focus: null,
+    narration: {
+      userSpeaking: false,
+      queue: new Map(),
+      spokenWorkItemIds: new Set(),
+    },
     maxDurationTimer: setTimeout(() => {
       logger.warn('session hit max duration, force closing', { voiceSessionId: id });
       void teardown('max-duration');

@@ -109,5 +109,50 @@ describe('modelConfigResolver', () => {
         adaptive: false,
       });
     });
+
+    // 换 provider 必须把 baseUrl/apiKey 一起换掉。继承上一个 provider 的值会导致
+    // 「拿 A 家的 key 打 B 家的端点」——既永远认证失败，也是把凭据发给第三方。
+    // 目标 provider 没单独配时留 undefined，由 providerResolution 按 provider 补默认端点。
+    const switchSettings = {
+      models: {
+        defaultProvider: 'zhipu',
+        providers: {
+          zhipu: { model: 'glm-5', baseUrl: 'https://api.0ki.cn/api/paas/v4' },
+          deepseek: { model: 'deepseek-v4-flash' }, // 没有 baseUrl
+        },
+      },
+    } as unknown as ReturnType<ConfigService['getSettings']>;
+    // 只有默认 provider 配了 key，切过去的那家没配
+    const switchConfigService = {
+      getApiKey: vi.fn((provider: string) => (provider === 'zhipu' ? 'sk-zhipu' : undefined)),
+    } as unknown as ConfigService;
+
+    it('session override 换 provider 后，不继承上一个 provider 的 baseUrl/apiKey', () => {
+      getModelSessionState().setOverride('session-switch', {
+        provider: 'deepseek',
+        model: 'deepseek-v4-flash',
+      });
+
+      const config = resolveRunModelConfig(switchConfigService, switchSettings, 'session-switch');
+
+      expect(config.provider).toBe('deepseek');
+      expect(config.baseUrl).not.toBe('https://api.0ki.cn/api/paas/v4');
+      expect(config.baseUrl).toBeUndefined();
+      expect(config.apiKey).not.toBe('sk-zhipu');
+      expect(config.apiKey).toBeUndefined();
+    });
+
+    it('explicit modelSpec 换 provider 后，同样不继承上一个 provider 的 baseUrl/apiKey', () => {
+      const config = resolveRunModelConfig(switchConfigService, switchSettings, null, {
+        provider: 'deepseek',
+        model: 'deepseek-v4-flash',
+      });
+
+      expect(config.provider).toBe('deepseek');
+      expect(config.baseUrl).not.toBe('https://api.0ki.cn/api/paas/v4');
+      expect(config.baseUrl).toBeUndefined();
+      expect(config.apiKey).not.toBe('sk-zhipu');
+      expect(config.apiKey).toBeUndefined();
+    });
   });
 });

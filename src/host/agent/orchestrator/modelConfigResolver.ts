@@ -63,6 +63,11 @@ export function resolveRunModelConfig(
   sessionId: string | null,
   explicitModelSpec?: ConversationModelSpec,
 ): ModelConfig {
+  // 换 provider 时 apiKey/baseUrl 必须跟着换，**不能沿用上一个 provider 的值**：
+  // 沿用会变成「拿 A 家的 key 打 B 家的端点」——既永远认证失败（2026-07-28 真机实测：
+  // 会话切到 deepseek，请求却打到智谱代理 api.0ki.cn，401），也是把凭据发给第三方。
+  // 目标 provider 没单独配就留 undefined，由 providerResolution（baseURL/apiKey 的
+  // 单一事实来源）按 provider 补 MODEL_API_ENDPOINTS 默认端点与 env key。
   let modelConfig = resolveModelConfig(configService, settings);
   if (explicitModelSpec) {
     const provider = explicitModelSpec.provider as ModelProvider;
@@ -71,8 +76,8 @@ export function resolveRunModelConfig(
       ...modelConfig,
       provider,
       model: explicitModelSpec.model,
-      apiKey: configService.getApiKey(provider) || modelConfig.apiKey,
-      baseUrl: providerSettings?.baseUrl || modelConfig.baseUrl,
+      apiKey: configService.getApiKey(provider),
+      baseUrl: providerSettings?.baseUrl,
       adaptive: false,
     };
   }
@@ -88,8 +93,8 @@ export function resolveRunModelConfig(
       ...modelConfig,
       provider: override.provider,
       model: override.model,
-      apiKey: configService.getApiKey(override.provider) || modelConfig.apiKey,
-      baseUrl: providerSettings?.baseUrl || modelConfig.baseUrl,
+      apiKey: configService.getApiKey(override.provider),
+      baseUrl: providerSettings?.baseUrl,
       temperature: override.temperature ?? modelConfig.temperature,
       maxTokens: override.maxTokens ?? modelConfig.maxTokens,
       adaptive: false,

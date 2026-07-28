@@ -6,6 +6,7 @@ import type { TraceProjection, TraceTurn } from '../../../src/shared/contract/tr
 import {
   ACTIVE_DISPLAY_SCROLL_INTERVAL_MS,
   USER_SCROLL_PROGRAMMATIC_PAUSE_MS,
+  USER_SCROLL_FOLLOW_REENGAGE_PAUSE_MS,
   getActiveDisplayScrollDelay,
   getActiveAssistantTextAnchor,
   getFocusedTurnIndex,
@@ -249,6 +250,19 @@ describe('TurnBasedTraceView focus helpers', () => {
 
     expect(until).toBe(now + USER_SCROLL_PROGRAMMATIC_PAUSE_MS);
     expect(isProgrammaticScrollSuppressed(until, until - 1)).toBe(true);
+    expect(isProgrammaticScrollSuppressed(until, until)).toBe(false);
+  });
+
+  // 2026-07-28 用户反馈：触控板惯性拉到最底、手停后页面快速抖几下。
+  // 跟随恢复窗口必须明显长于普通程序滚动抑制，让惯性/橡皮筋沉降干净后才钉底。
+  it('holds follow re-engagement longer than the generic scroll pause (inertia settle)', () => {
+    expect(USER_SCROLL_FOLLOW_REENGAGE_PAUSE_MS).toBeGreaterThan(USER_SCROLL_PROGRAMMATIC_PAUSE_MS * 2);
+
+    const now = 1_000;
+    const until = getUserScrollSuppressionUntil(now, USER_SCROLL_FOLLOW_REENGAGE_PAUSE_MS);
+    expect(until).toBe(now + USER_SCROLL_FOLLOW_REENGAGE_PAUSE_MS);
+    // 普通抑制（280ms）到期时，跟随恢复抑制仍在
+    expect(isProgrammaticScrollSuppressed(until, now + USER_SCROLL_PROGRAMMATIC_PAUSE_MS + 1)).toBe(true);
     expect(isProgrammaticScrollSuppressed(until, until)).toBe(false);
   });
 

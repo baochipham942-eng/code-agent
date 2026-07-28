@@ -63,6 +63,15 @@
   --shadow-lg: 0 8px 16px rgba(0, 0, 0, 0.15);
   --shadow-xl: 0 16px 32px rgba(0, 0, 0, 0.2);
 
+  /* Elevation 阶梯（2026-07-28 品质感打磨）：高对比亮色层级主要靠描边，投影可见即可 */
+  --elevation-l0: #FAFAFA;
+  --elevation-l1: #FFFFFF;
+  --elevation-l2: #FFFFFF;
+  --elevation-l3: #FFFFFF;
+  --shadow-l2: 0 8px 16px rgba(0, 0, 0, 0.15);
+  --shadow-l3: 0 4px 8px rgba(0, 0, 0, 0.15);
+  --shadow-composer: 0 4px 16px rgba(0, 0, 0, 0.15);
+
   /* Overlay */
   --overlay-backdrop: rgba(255, 255, 255, 0.9);
 

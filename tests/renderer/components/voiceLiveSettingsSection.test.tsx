@@ -156,4 +156,29 @@ describe('VoiceLiveSettingsSection', () => {
     });
     expect(screen.getByText(zh.voice.settings.echoCancellationOffDesc)).toBeTruthy();
   });
+
+  // 工单③：选不支持 tools 的模型必须当场说清代价；音色与模型强绑定，
+  // 换模型时 3.5 的音色（Tina）不能留到上一代模型上（第一次合成才 400）。
+  it('换到不支持 tools 的模型：警示行出现，音色回退到该模型第一个合法值并一起持久化', async () => {
+    settingsGet({ live: { enabled: true, voiceId: 'Tina' } });
+    render(<VoiceLiveSettingsSection />);
+    const modelSelect = await screen.findByTestId('voice-conversation-model') as HTMLSelectElement;
+    expect(modelSelect.value).toBe('qwen3.5-omni-flash-realtime');
+    expect(screen.queryByTestId('voice-model-no-tools-warning')).toBeNull();
+
+    fireEvent.change(modelSelect, { target: { value: 'qwen3-omni-flash-realtime' } });
+
+    await waitFor(() => {
+      const setCall = invokeDomainMock.mock.calls.filter(([, action]) => action === 'set').at(-1);
+      const payload = setCall![2] as { voice: { live: { conversationModel?: string; voiceId?: string } } };
+      expect(payload.voice.live.conversationModel).toBe('qwen3-omni-flash-realtime');
+      expect(payload.voice.live.voiceId).toBe('Cherry'); // Tina 是 3.5 独有，必须跟着回退
+    });
+    expect(screen.getByTestId('voice-model-no-tools-warning').textContent).toBe(zh.voice.settings.modelNoToolsWarning);
+
+    // 音色选择器的选项也跟着换成当前模型的白名单
+    const voiceSelect = screen.getByText(zh.voice.settings.voiceLabel).parentElement!.querySelector('select')!;
+    const options = Array.from(voiceSelect.querySelectorAll('option')).map((o) => o.value);
+    expect(options).toEqual(['Cherry', 'Ethan', 'Serena']);
+  });
 });

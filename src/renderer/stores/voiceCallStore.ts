@@ -7,7 +7,7 @@
 // ============================================================================
 
 import { create } from 'zustand';
-import type { VoiceWorkItem } from '@shared/contract/voice';
+import type { VoiceMessageCode, VoiceWorkItem } from '@shared/contract/voice';
 import type { VoiceLiveSettings } from '@shared/contract/settings';
 
 export type VoiceInterruptMode = NonNullable<VoiceLiveSettings['interrupt']>;
@@ -26,7 +26,8 @@ export type VoiceVisualState =
   | 'error';
 
 export interface VoiceCallError {
-  code: string;
+  code: VoiceMessageCode;
+  /** host 侧原文，仅作兜底与日志；给用户看的文案按 code 查 i18n（见 resolveVoiceMessage）。 */
   message: string;
 }
 
@@ -55,6 +56,9 @@ interface VoiceCallStoreState {
   micLevel: number;
   playbackLevel: number;
   error: VoiceCallError | null;
+  /** 通话中的一次性提示（如「当前模型不支持派活」）；不致命，不进 error 态。
+   *  存 code 而不是成品文案——文案的家在 i18n，host 只说「出了哪件事」。 */
+  notice: VoiceCallError | null;
   ttfa: { modelMs?: number; perceivedMs?: number } | null;
 
   /** 以下动作只由 voiceCallBridge 调用 */
@@ -67,6 +71,7 @@ interface VoiceCallStoreState {
     partialAssistant?: string;
     workItem?: VoiceWorkItem;
     error?: VoiceCallError | null;
+    notice?: VoiceCallError | null;
     ttfa?: { modelMs?: number; perceivedMs?: number };
   }) => void;
   levelsChanged: (mic: number, playback: number) => void;
@@ -93,6 +98,7 @@ const INITIAL = {
   micLevel: 0,
   playbackLevel: 0,
   error: null,
+  notice: null,
   ttfa: null,
 };
 
@@ -121,6 +127,7 @@ export const useVoiceCallStore = create<VoiceCallStoreState>((set) => ({
         ? [...state.workItems.filter((item) => item.id !== event.workItem!.id), event.workItem]
         : state.workItems,
       error: event.error === undefined ? state.error : event.error,
+      notice: event.notice === undefined ? state.notice : event.notice,
       ttfa: event.ttfa ?? state.ttfa,
     })),
 

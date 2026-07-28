@@ -3,7 +3,16 @@
 // 键名对齐方案附录 A 的最小状态字典；设置页「实时通话」组文案也在这里。
 // ============================================================================
 
-export const voiceZh = {
+import type { VoiceMessageCode } from '@shared/contract/voice';
+
+type WidenVoiceCopy<T> = T extends string
+  ? string
+  : { -readonly [Key in keyof T]: WidenVoiceCopy<T[Key]> };
+
+/** English is the key-shape source; Chinese must implement the same complete tree. */
+export type VoiceTranslations = WidenVoiceCopy<typeof voiceEn>;
+
+export const voiceZh: VoiceTranslations = {
   voice: {
     live: {
       start: '实时通话',
@@ -17,16 +26,19 @@ export const voiceZh = {
       confirmAction: '开始通话',
       confirmPrivacy: '通话音频实时上传至语音服务用于识别与合成，默认不保留原始录音。',
       tapToTalk: '点按说话',
-      tapToSend: '点按发送',
+      tapDone: '说完了',
       providerMissing: '未配置语音 Provider，请到设置 → 语音完成配置',
     },
     status: {
-      connecting: '连接中…',
+      connecting: '正在接通…',
       listening: '正在听',
-      speaking: '正在说',
+      speaking: '正在回答',
       working: '执行中',
       reconnecting: '重连中…',
       muted: '已静音',
+      mutedDetail: '已静音 · 它听不见你',
+      manualReady: '点一下开始说',
+      manualListening: '正在听 · 说完再点一下',
       onCall: '通话中',
       error: '通话异常',
     },
@@ -37,6 +49,20 @@ export const voiceZh = {
       micDenied: '麦克风权限被拒绝，请在系统设置中允许后重试',
       handshake: '语音服务握手失败，请稍后重试',
       reconnectFailed: '通话已断开，重连失败。请重新拨号。',
+    },
+    /** host 发来的提示/错误按 code 查这里；键集由 VoiceMessageCode 定型，少一条就 typecheck 红。 */
+    messageByCode: {
+      VOICE_SESSION_BUSY: '已有一路通话在进行中',
+      VOICE_PROVIDER_UNCONFIGURED: '还没配语音服务的 API Key，去设置里填一个就能打电话',
+      VOICE_TOOLS_DROPPED: '当前通话模型不支持在通话中派活，这通电话只能聊天',
+      VOICE_UPSTREAM_UNAVAILABLE: '连不上语音服务，稍后再试',
+      UPSTREAM_SOCKET: '通话连接断开了',
+      UPSTREAM_ERROR: '语音服务出错了，稍后再试',
+      HANDSHAKE_FAILED: '语音服务握手失败，稍后再试',
+      RECONNECT_FAILED: '通话已断开，重连失败，请重新拨号',
+      MICROPHONE_PERMISSION_DENIED: '麦克风权限被拒绝，请在系统设置中允许后重试',
+      AUDIO_CAPTURE_FAILED: '打不开麦克风，检查一下是不是被别的程序占用了',
+      NATIVE_AEC_FAILED: '系统回声消除没起来，建议戴耳机通话',
     },
     permission: {
       title: '需要确认',
@@ -49,6 +75,7 @@ export const voiceZh = {
       done: '已完成',
       cancelled: '已取消',
       failed: '失败',
+      remaining: '还有 {n} 件',
     },
     call: {
       summary: '通话摘要',
@@ -70,6 +97,7 @@ export const voiceZh = {
       providerConfigured: '已配置',
       providerMissing: '未配置 DashScope Key，实时通话不可用',
       providerMissingHint: '请到设置 → 模型配置 DashScope（qwen）API Key',
+      modelNoToolsWarning: '该模型不支持在通话里派活，选它这通电话只能聊天',
       executionModelTitle: '执行引擎',
       executionModelDescription: '通话模型只负责听和说；派出去的活由这里的模型真干。不选就跟随会话默认引擎。',
       executionModelFollowSession: '跟随会话默认',
@@ -103,6 +131,7 @@ export const voiceZh = {
       switched: '已切换到 {name}',
       invited: '已请到 {name}',
       default_assistant: '与助手通话',
+      default_name: '助手',
     },
     team: {
       command_mode: '指挥 · Lead {name} · {n} 成员',
@@ -121,7 +150,7 @@ export const voiceZh = {
   },
 };
 
-export const voiceEn: typeof voiceZh = {
+export const voiceEn = {
   voice: {
     live: {
       start: 'Live call',
@@ -135,7 +164,7 @@ export const voiceEn: typeof voiceZh = {
       confirmAction: 'Start call',
       confirmPrivacy: 'Call audio streams to the voice service for recognition and synthesis. Raw audio is not kept by default.',
       tapToTalk: 'Tap to talk',
-      tapToSend: 'Tap to send',
+      tapDone: 'Done talking',
       providerMissing: 'No voice provider configured. Finish setup in Settings → Voice',
     },
     status: {
@@ -145,6 +174,9 @@ export const voiceEn: typeof voiceZh = {
       working: 'Working',
       reconnecting: 'Reconnecting…',
       muted: 'Muted',
+      mutedDetail: "Muted · it can't hear you",
+      manualReady: 'Tap to start talking',
+      manualListening: 'Listening · tap again when done',
       onCall: 'On call',
       error: 'Call error',
     },
@@ -156,6 +188,20 @@ export const voiceEn: typeof voiceZh = {
       handshake: 'Voice service handshake failed. Please retry',
       reconnectFailed: 'Call disconnected and could not be restored. Please dial again.',
     },
+    /** host 发来的提示/错误按 code 查这里；键集由 VoiceMessageCode 定型，少一条就 typecheck 红。 */
+    messageByCode: {
+      VOICE_SESSION_BUSY: 'Another call is already in progress',
+      VOICE_PROVIDER_UNCONFIGURED: 'No API key for the voice service yet — add one in settings to start calling',
+      VOICE_TOOLS_DROPPED: 'This call model cannot run tasks during a call, so this call is chat only',
+      VOICE_UPSTREAM_UNAVAILABLE: 'Cannot reach the voice service — try again shortly',
+      UPSTREAM_SOCKET: 'The call connection dropped',
+      UPSTREAM_ERROR: 'The voice service hit an error — try again shortly',
+      HANDSHAKE_FAILED: 'Could not hand shake with the voice service — try again shortly',
+      RECONNECT_FAILED: 'The call dropped and could not reconnect — please dial again',
+      MICROPHONE_PERMISSION_DENIED: 'Microphone access was denied — allow it in System Settings and retry',
+      AUDIO_CAPTURE_FAILED: 'Could not open the microphone — check whether another app is using it',
+      NATIVE_AEC_FAILED: 'System echo cancellation did not start — headphones are recommended',
+    } satisfies Record<VoiceMessageCode, string>,
     permission: {
       title: 'Confirmation required',
     },
@@ -167,6 +213,7 @@ export const voiceEn: typeof voiceZh = {
       done: 'Done',
       cancelled: 'Cancelled',
       failed: 'Failed',
+      remaining: '{n} more',
     },
     call: {
       summary: 'Call summary',
@@ -188,6 +235,7 @@ export const voiceEn: typeof voiceZh = {
       providerConfigured: 'Configured',
       providerMissing: 'DashScope key not configured — realtime voice is unavailable',
       providerMissingHint: 'Set up a DashScope (qwen) API key in Settings → Models',
+      modelNoToolsWarning: 'This model cannot dispatch tasks during a call — with it, calls are chat-only',
       executionModelTitle: 'Execution engine',
       executionModelDescription: 'The call model only listens and speaks; dispatched work runs on this model. Leave unset to follow the session default.',
       executionModelFollowSession: 'Follow session default',
@@ -221,6 +269,7 @@ export const voiceEn: typeof voiceZh = {
       switched: 'Switched to {name}',
       invited: '{name} joined',
       default_assistant: 'On a call with assistant',
+      default_name: 'Assistant',
     },
     team: {
       command_mode: 'Command · Lead {name} · {n} members',
@@ -237,4 +286,4 @@ export const voiceEn: typeof voiceZh = {
       fallback: 'Native echo cancellation is unavailable. Headphone mode is active; speaker output may cause interruption issues',
     },
   },
-};
+} as const;

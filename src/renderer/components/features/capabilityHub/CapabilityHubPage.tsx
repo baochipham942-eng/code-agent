@@ -34,6 +34,10 @@ export const CapabilityHubPage: React.FC = () => {
   const visibleTabs = useMemo(() => HUB_TABS.filter(({ key }) => (
     key !== 'plugins' || canAccessSettingsTab('plugins', accessSubject)
   )), [accessSubject]);
+  // 提示词管理入口已移走（2026-07-27 二次拍板：它是管理员工具 ⇒ 账号菜单 admin 档，
+  // 既不在能力中心 header，也不在设置页）。
+
+  // tab state 指向已隐藏入口（如 plugins 深链）时，回退到第一个可见 tab。
   useEffect(() => {
     if (visibleTabs.some((tab) => tab.key === capabilityHubTab)) return;
     openCapabilityHub(visibleTabs[0].key);

@@ -250,6 +250,7 @@ export const SoulSettings: React.FC = () => {
           {soulText.reset}
         </button>
       </div>
+
     </div>
   );
 };

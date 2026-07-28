@@ -171,14 +171,15 @@ describe('Sidebar account menu entry planning', () => {
     expect(html).toContain('协作请求（@neo）');
     // 评测中心（2026-07 v1）：admin-only 菜单项
     expect(html).toContain('评测中心');
+    // 提示词管理（2026-07-27 拍板）：admin-only 工具，回到账号菜单与评测中心同档
+    expect(html).toContain('提示词管理');
     expect(html).toContain('高级工具');
     expect(html).toContain('设置');
     expect(html).toContain('退出登录');
     // 方案 9C 移出的入口：知识与记忆并入资料库，高级定时任务走能力区/自动化面板，
-    // 提示词进能力中心，用户管理/邀请码迁 admin-console——admin 也不该再看到
+    // 用户管理/邀请码迁 admin-console——admin 也不该再看到
     expect(html).not.toContain('知识与记忆');
     expect(html).not.toContain('高级定时任务');
-    expect(html).not.toContain('提示词');
     expect(html).not.toContain('用户管理');
     expect(html).not.toContain('邀请码管理');
     expect(html).not.toContain('模型训练');
@@ -186,6 +187,19 @@ describe('Sidebar account menu entry planning', () => {
     expect(html).not.toContain('桌面采集');
     expect(html).not.toContain('Computer Use');
     expect(html).not.toContain('In-App 验证');
+  });
+
+  it('提示词管理只对 admin 出现在账号菜单（2026-07-27 拍板：它是管理员工具，不进设置页/能力中心）', () => {
+    reactState.useStateCalls = 0;
+    authState.user.isAdmin = true;
+    authState.sessionTrustState = 'verified';
+    const adminHtml = renderToStaticMarkup(React.createElement(Sidebar));
+    expect(adminHtml).toContain('提示词管理');
+
+    reactState.useStateCalls = 0;
+    authState.user.isAdmin = false;
+    const memberHtml = renderToStaticMarkup(React.createElement(Sidebar));
+    expect(memberHtml).not.toContain('提示词管理');
   });
 
   it('keeps internal validation tools out of the account menu for admins and members', () => {

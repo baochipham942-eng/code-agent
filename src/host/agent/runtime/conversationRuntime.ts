@@ -76,6 +76,7 @@ import {
 } from './conversationRuntimeContextBootstrap';
 import { resolveStickyStrictSkillInvocation } from './conversationRuntimeStickySkill';
 import { buildStrictToolsetNotice } from '../../tools/skillBoundaryScope';
+import { extractUserRequest } from '../turnScaffold';
 
 
 const logger = createLogger('AgentLoop');
@@ -732,10 +733,15 @@ export class ConversationRuntime {
 
     this.ctx.turn.clearActiveSkill();
 
+    // 「用户想干什么」这三件事只能看用户原话，不能看拼在前面的系统上下文——
+    // 后者是我们自己塞的（角色资料 / 语音近窗字幕 / 通话钳档告知），把它算进诉求会
+    // 直接改掉执行路径：2026-07-28 真机连续 4 次被近窗字幕里的「语音」二字命中 skill
+    // 别名，派活 run 被劫持进 research-brief-and-split，复杂度也被 600 字的块顶成 complex。
+    const userRequest = extractUserRequest(userMessage);
     // Task Complexity Analysis
-    const complexityAnalysis = taskComplexityAnalyzer.analyze(userMessage);
+    const complexityAnalysis = taskComplexityAnalyzer.analyze(userRequest);
     let isSimpleTask = complexityAnalysis.complexity === 'simple';
-    const startupTaskFeatures = detectTaskFeatures(userMessage);
+    const startupTaskFeatures = detectTaskFeatures(userRequest);
     const isPureContentGenerationTask =
       startupTaskFeatures.isDocumentTask &&
       !startupTaskFeatures.isPPTTask &&
@@ -752,8 +758,8 @@ export class ConversationRuntime {
     preloadToolsForIntent(startupTaskFeatures);
     try {
       const skillInvocation =
-        await resolveSkillInvocation(userMessage, this.ctx.workingDirectory)
-        ?? await resolveStickyStrictSkillInvocation(this.ctx, userMessage);
+        await resolveSkillInvocation(userRequest, this.ctx.workingDirectory)
+        ?? await resolveStickyStrictSkillInvocation(this.ctx, userRequest);
       if (skillInvocation) {
         const skillContext = await buildSkillInvocationContext(skillInvocation, this.ctx.workingDirectory);
         this.ctx.turn.activateSkill({

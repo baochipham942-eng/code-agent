@@ -34,9 +34,13 @@ describe('elevation 四级阶梯 token（dark 主题真源）', () => {
     expect(darkCss).toContain(token);
   });
 
-  it('light.css 定义同名 token（双主题对齐，值可不同）', () => {
-    for (const name of ['--elevation-l0', '--elevation-l1', '--elevation-l2', '--elevation-l3', '--shadow-l2', '--shadow-l3', '--shadow-composer']) {
-      expect(lightCss, `light.css 缺 ${name}`).toContain(name);
+  it('其余主题定义同名 token（四套主题铺满，token-integrity 门要求）', () => {
+    const hcDark = readSrc('src/renderer/styles/themes/high-contrast-dark.css');
+    const hcLight = readSrc('src/renderer/styles/themes/high-contrast-light.css');
+    for (const [name, css] of [['light.css', lightCss], ['high-contrast-dark.css', hcDark], ['high-contrast-light.css', hcLight]] as const) {
+      for (const token of ['--elevation-l0', '--elevation-l1', '--elevation-l2', '--elevation-l3', '--shadow-l2', '--shadow-l3', '--shadow-composer']) {
+        expect(css, `${name} 缺 ${token}`).toContain(token);
+      }
     }
   });
 });

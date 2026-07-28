@@ -63,6 +63,15 @@
   --shadow-lg: 0 8px 16px rgba(0, 0, 0, 0.8);
   --shadow-xl: 0 16px 32px rgba(0, 0, 0, 0.8);
 
+  /* Elevation 阶梯（2026-07-28 品质感打磨）：高对比主题沿用 bg 阶梯 + 强描边，投影从简 */
+  --elevation-l0: #000000;
+  --elevation-l1: #111111;
+  --elevation-l2: #1A1A1A;
+  --elevation-l3: #242424;
+  --shadow-l2: 0 8px 16px rgba(0, 0, 0, 0.8);
+  --shadow-l3: 0 4px 8px rgba(0, 0, 0, 0.8);
+  --shadow-composer: 0 4px 16px rgba(0, 0, 0, 0.8);
+
   /* Overlay */
   --overlay-backdrop: rgba(0, 0, 0, 0.9);
 

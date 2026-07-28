@@ -8,7 +8,7 @@
 
 import type { WebSocket as WsSocket } from 'ws';
 import { resolveConversationModelOption, VOICE_RECONNECT_GRACE_MS, VOICE_SESSION_MAX_DURATION_MS, VOICE_TEARDOWN_DRAIN_MS } from '../../../shared/constants/voice';
-import type { VoiceClientCommand, VoiceEvent, VoiceFocusContext, VoiceTransportHandle } from '../../../shared/contract/voice';
+import type { VoiceClientCommand, VoiceEvent, VoiceFocusContext, VoiceTransportHandle, VoiceWorkItem } from '../../../shared/contract/voice';
 import { getDashscopeApiKey } from '../media/imageGenerationService';
 import { createLogger } from '../infra/logger';
 import { getConfigService } from '../core/configService';
@@ -92,6 +92,62 @@ function send(client: WsSocket, event: VoiceEvent): void {
  * 传入 counter 时，每次成功落库就 +1——挂断摘要的 transcriptCount 全靠它，
  * 漏一个调用点就会把有对话的电话报成没对话。
  */
+/**
+ * 派出去的活失败了，三件事一起做（G1，2026-07-28）：
+ *
+ * 1. **通话里的人当场知道** —— 走既有 notice 通道（同 VOICE_TOOLS_DROPPED 先例），
+ *    不新建机制。
+ * 2. **失败留痕，事后还找得到** —— notice 是通话态的一次性提示，挂断/切走就没了。
+ *    失败必须像通话摘要那样落进消息流，否则「我明明看到它失败了」第二天无从复查。
+ * 3. **告诉通话模型它派的活死了** —— 这是「报喜」的根因：brain 只在被问
+ *    （get_status）时才看账本，没人主动纠正它就会按「我派成功了」的记忆继续说。
+ *    措辞写死，不留自由发挥空间——同 spawnTask 返回值的先例（brain 会把这些
+ *    话当事实原样转述给用户）。
+ *
+ * 三件事互不依赖：任一失败都不许影响另外两件，也不许把异常抛回 onWorkItem。
+ * 通话可能已经挂断（活比通话活得久，见 endVoiceDispatch 顶注）——那时 1 和 3
+ * 无处可送，但 2 照样要做，而且那正是最需要它的场景。
+ */
+async function reportWorkFailure(
+  neoSessionId: string,
+  voiceSessionId: string,
+  clientRef: { current: WsSocket },
+  item: VoiceWorkItem,
+): Promise<void> {
+  const reason = item.detail?.trim() || '执行侧未给出原因';
+  const stillOnThisCall = active?.id === voiceSessionId;
+  logger.warn('voice work item failed', { voiceSessionId, title: item.title, reason, stillOnThisCall });
+
+  // 1. 通话里当场可见（i18n 表用 {reason} 占位，message 只送原因本身）
+  if (stillOnThisCall) {
+    send(clientRef.current, { type: 'notice', code: 'VOICE_WORK_FAILED', message: reason });
+  }
+
+  // 2. 落进消息流，挂断后仍可复查
+  try {
+    await getSessionManager().addMessageToSession(neoSessionId, {
+      id: `voice-work-failed-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      role: 'system',
+      content: `语音派出的任务「${item.title}」失败了，没有完成：${reason}`,
+      timestamp: Date.now(),
+      metadata: { source: 'voice' },
+    });
+  } catch (err) {
+    logger.warn('failed to persist work failure', { message: err instanceof Error ? err.message : 'unknown' });
+  }
+
+  // 3. 把失败事实推给上游模型，让它下一句就改口
+  if (!stillOnThisCall || !active) return;
+  try {
+    active.upstream.updateInstructions(composeVoiceInstructions(
+      `${active.personaInstructions}\n\n<work_failed_notice>\n你刚才派出去的任务「${item.title}」失败了，没有完成，原因：${reason}。\n必须如实告诉用户这件事失败了。绝对不要说它已经完成、已经写入或已经生效。\n</work_failed_notice>`,
+      active.focus,
+    ));
+  } catch (err) {
+    logger.warn('failed to push work failure to upstream', { message: err instanceof Error ? err.message : 'unknown' });
+  }
+}
+
 async function persistTranscript(
   neoSessionId: string,
   role: 'user' | 'assistant',
@@ -326,6 +382,11 @@ async function connectAndBind(
       if (active?.id === id && item.status === 'queued') active.workItemCount += 1;
       send(clientRef.current, { type: 'work.upsert', item });
     },
+    // G1（2026-07-28 真机，验收报告自评最严重）：账本早就把死掉的活标成 failed，
+    // 但没有任何人把这件事说出来——通话条只渲染 queued/running（VoiceChrome 的
+    // activeWorkItems 过滤），failed 就这么无声消失；通话模型也没人告诉它，
+    // 于是继续说「已经写好了」。第五例「建好不接电」。
+    onWorkFailed: (item) => void reportWorkFailure(neoSessionId, id, clientRef, item),
   });
   let upstream: VoiceTransportHandle;
   try {

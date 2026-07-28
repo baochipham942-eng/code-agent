@@ -13,5 +13,9 @@ import type { Translations } from '../../../i18n/zh';
 import type { VoiceCallError } from '../../../stores/voiceCallStore';
 
 export function resolveVoiceMessage(t: Translations, entry: VoiceCallError): string {
-  return t.voice.messageByCode[entry.code] ?? entry.message;
+  // `{reason}` 占位符：少数几条提示必须带上游给的真实原因（如派活失败的
+  // 「服务认证异常」）——只说「失败了」等于没说。原因文本来自上游/执行侧，
+  // 没法进 i18n 表，所以文案框架在 i18n、原因由 message 填。
+  // 同 t.voice.work.remaining 的 `{n}` 先例；没有占位符的 code 不受影响。
+  return (t.voice.messageByCode[entry.code] ?? entry.message).replace('{reason}', entry.message);
 }

@@ -363,6 +363,23 @@ pre code {
   30% { transform: translateY(-3px); }
 }
 
+@keyframes voicePresenceOrbSpin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes voicePresenceOrbBreathe {
+  0%, 100% { transform: scale(1); opacity: 0.85; }
+  50% { transform: scale(1.14); opacity: 1; }
+}
+
+.voice-presence-orb-core {
+  animation: voicePresenceOrbSpin 9s linear infinite;
+}
+
+.voice-presence-orb-glow {
+  animation: voicePresenceOrbBreathe 3.4s ease-in-out infinite;
+}
+
 .animate-fade-in {
   animation: fadeIn var(--duration-fast) var(--ease-out);
 }
@@ -439,6 +456,11 @@ pre code {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .voice-presence-orb-core,
+  .voice-presence-orb-glow {
+    animation: none;
+  }
+
   .sidebar-project-rows {
     transition: none;
   }

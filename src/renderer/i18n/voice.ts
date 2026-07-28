@@ -3,7 +3,14 @@
 // 键名对齐方案附录 A 的最小状态字典；设置页「实时通话」组文案也在这里。
 // ============================================================================
 
-export const voiceZh = {
+type WidenVoiceCopy<T> = T extends string
+  ? string
+  : { -readonly [Key in keyof T]: WidenVoiceCopy<T[Key]> };
+
+/** English is the key-shape source; Chinese must implement the same complete tree. */
+export type VoiceTranslations = WidenVoiceCopy<typeof voiceEn>;
+
+export const voiceZh: VoiceTranslations = {
   voice: {
     live: {
       start: '实时通话',
@@ -17,16 +24,19 @@ export const voiceZh = {
       confirmAction: '开始通话',
       confirmPrivacy: '通话音频实时上传至语音服务用于识别与合成，默认不保留原始录音。',
       tapToTalk: '点按说话',
-      tapToSend: '点按发送',
+      tapDone: '说完了',
       providerMissing: '未配置语音 Provider，请到设置 → 语音完成配置',
     },
     status: {
-      connecting: '连接中…',
+      connecting: '正在接通…',
       listening: '正在听',
-      speaking: '正在说',
+      speaking: '正在回答',
       working: '执行中',
       reconnecting: '重连中…',
       muted: '已静音',
+      mutedDetail: '已静音 · 它听不见你',
+      manualReady: '点一下开始说',
+      manualListening: '正在听 · 说完再点一下',
       onCall: '通话中',
       error: '通话异常',
     },
@@ -49,6 +59,7 @@ export const voiceZh = {
       done: '已完成',
       cancelled: '已取消',
       failed: '失败',
+      remaining: '还有 {n} 件',
     },
     call: {
       summary: '通话摘要',
@@ -104,6 +115,7 @@ export const voiceZh = {
       switched: '已切换到 {name}',
       invited: '已请到 {name}',
       default_assistant: '与助手通话',
+      default_name: '助手',
     },
     team: {
       command_mode: '指挥 · Lead {name} · {n} 成员',
@@ -122,7 +134,7 @@ export const voiceZh = {
   },
 };
 
-export const voiceEn: typeof voiceZh = {
+export const voiceEn = {
   voice: {
     live: {
       start: 'Live call',
@@ -136,7 +148,7 @@ export const voiceEn: typeof voiceZh = {
       confirmAction: 'Start call',
       confirmPrivacy: 'Call audio streams to the voice service for recognition and synthesis. Raw audio is not kept by default.',
       tapToTalk: 'Tap to talk',
-      tapToSend: 'Tap to send',
+      tapDone: 'Done talking',
       providerMissing: 'No voice provider configured. Finish setup in Settings → Voice',
     },
     status: {
@@ -146,6 +158,9 @@ export const voiceEn: typeof voiceZh = {
       working: 'Working',
       reconnecting: 'Reconnecting…',
       muted: 'Muted',
+      mutedDetail: "Muted · it can't hear you",
+      manualReady: 'Tap to start talking',
+      manualListening: 'Listening · tap again when done',
       onCall: 'On call',
       error: 'Call error',
     },
@@ -168,6 +183,7 @@ export const voiceEn: typeof voiceZh = {
       done: 'Done',
       cancelled: 'Cancelled',
       failed: 'Failed',
+      remaining: '{n} more',
     },
     call: {
       summary: 'Call summary',
@@ -223,6 +239,7 @@ export const voiceEn: typeof voiceZh = {
       switched: 'Switched to {name}',
       invited: '{name} joined',
       default_assistant: 'On a call with assistant',
+      default_name: 'Assistant',
     },
     team: {
       command_mode: 'Command · Lead {name} · {n} members',
@@ -239,4 +256,4 @@ export const voiceEn: typeof voiceZh = {
       fallback: 'Native echo cancellation is unavailable. Headphone mode is active; speaker output may cause interruption issues',
     },
   },
-};
+} as const;

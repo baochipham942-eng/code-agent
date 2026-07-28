@@ -1145,18 +1145,27 @@ export class MessageProcessor {
 
   /**
    * Inject steer message into conversation history.
+   *
+   * 模型面与展示面必须分开（2026-07-28 真机：语音派活把 <live_voice_permission_notice>
+   * 和 <user_request> 整块脚手架显示给了用户）。`newMessage` 是拼好 turnSystemContext
+   * 的模型面内容，只进 ctx.messages；`displayContent` 是用户/语音那句原话，落库和渲染
+   * 用它。普通 sendMessage 路径本来就是这么分的，steer 路径此前把两者合成了一条。
+   * 不传 displayContent 时行为与从前完全一致（web steer 传的就是原话）。
    */
   async injectSteerMessage(
     newMessage: string,
     clientMessageId?: string,
     attachments?: MessageAttachment[],
     metadata?: MessageMetadata,
+    displayContent?: string,
   ): Promise<void> {
+    const id = clientMessageId ?? generateMessageId();
+    const timestamp = Date.now();
     const steerMessage: Message = {
-      id: clientMessageId ?? generateMessageId(),
+      id,
       role: 'user',
       content: newMessage,
-      timestamp: Date.now(),
+      timestamp,
       attachments,
       metadata,
     };
@@ -1164,9 +1173,15 @@ export class MessageProcessor {
 
     if (process.env.CODE_AGENT_CLI_MODE === 'true') return;
 
+    // 同 id 同时间戳，只有 content 不同：渲染端拿到的是原话，模型上下文保留脚手架。
+    const persistedMessage: Message =
+      displayContent === undefined || displayContent === newMessage
+        ? steerMessage
+        : { ...steerMessage, content: displayContent };
+
     const sessionManager = getSessionManager();
     try {
-      await sessionManager.addMessageToSession(this.ctx.sessionId, steerMessage);
+      await sessionManager.addMessageToSession(this.ctx.sessionId, persistedMessage);
     } catch (err: unknown) {
       logger.error('[AgentLoop] Failed to persist steer message:', err);
       throw err;

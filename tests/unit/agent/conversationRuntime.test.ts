@@ -716,6 +716,19 @@ describe('ConversationRuntime', () => {
         'client-message-1',
         undefined,
         undefined,
+        undefined,
+      );
+    });
+
+    it('forwards the user-facing content so the steer message persists without scaffolding', () => {
+      runtime.steer('<notice/>\n\n<user_request>\n改成蓝色\n</user_request>', 'client-message-2', undefined, undefined, '改成蓝色');
+
+      expect((runtime as any).messageProcessor.injectSteerMessage).toHaveBeenCalledWith(
+        '<notice/>\n\n<user_request>\n改成蓝色\n</user_request>',
+        'client-message-2',
+        undefined,
+        undefined,
+        '改成蓝色',
       );
     });
 
@@ -1134,6 +1147,34 @@ describe('ConversationRuntime', () => {
       expect(modules.runFinalizer.finalizeRun).toHaveBeenCalled();
       expect(ctx.control.isSettled).toBe(true);
       expect(ctx.goalTracker.initialize).toHaveBeenCalledWith('hello');
+    });
+
+    // 2026-07-28 真机：语音通话的 <live_voice_permission_notice> 整块显示给了用户。
+    // 链路 = telemetry 存了模型面拼装体 → sessionManager 的 backfill 把 telemetry_turns
+    // .user_prompt 反向写回用户消息流。所以 onTurnStart 只能收到用户原话。
+    it('records the user-facing prompt in telemetry, not the assembled model input', async () => {
+      const onTurnStart = vi.fn();
+      ctx.telemetryAdapter = { onTurnStart, onTurnEnd: vi.fn() } as unknown as typeof ctx.telemetryAdapter;
+      modules.contextAssembly.inference.mockResolvedValue({ type: 'text', content: 'Done!' });
+
+      const scaffolded = '<live_voice_permission_notice>\n钳档说明\n</live_voice_permission_notice>\n\n<user_request>\n建个文件\n</user_request>';
+      await runtime.run(scaffolded, '建个文件');
+
+      expect(onTurnStart).toHaveBeenCalled();
+      const firstTurnPrompt = onTurnStart.mock.calls[0][2] as string;
+      expect(firstTurnPrompt).toBe('建个文件');
+      expect(firstTurnPrompt).not.toContain('live_voice_permission_notice');
+      expect(firstTurnPrompt).not.toContain('<user_request>');
+    });
+
+    it('falls back to the run message for telemetry when no display prompt is given', async () => {
+      const onTurnStart = vi.fn();
+      ctx.telemetryAdapter = { onTurnStart, onTurnEnd: vi.fn() } as unknown as typeof ctx.telemetryAdapter;
+      modules.contextAssembly.inference.mockResolvedValue({ type: 'text', content: 'Done!' });
+
+      await runtime.run('plain prompt');
+
+      expect(onTurnStart.mock.calls[0][2]).toBe('plain prompt');
     });
 
     it('forces a tool-free three-part summary when max iterations is reached (roadmap 1.6)', async () => {

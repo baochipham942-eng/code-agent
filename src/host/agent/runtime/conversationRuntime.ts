@@ -310,7 +310,7 @@ export class ConversationRuntime {
     return true;
   }
 
-  async run(userMessage: string): Promise<void> {
+  async run(userMessage: string, displayPrompt?: string): Promise<void> {
     // Create the run-level AbortController at acceptance time — before initializeRun.
     // Cancel during slow init (skill resolve / intent / hooks) must still abort a real
     // controller; creating it only after initializeRun made early cancels no-ops.
@@ -466,7 +466,9 @@ export class ConversationRuntime {
         }
 
         // Telemetry: record turn start (only first iteration has the real user prompt)
-        this.ctx.telemetryAdapter?.onTurnStart(this.ctx.turn.currentTurnId, iterations, iterations === 1 ? userMessage : '', iterations > 1 ? userTurnId : undefined);
+        // 存的必须是用户原话：这一列会被 sessionManager.backfillUserPromptsFromTelemetry
+        // 反向写回用户可见的消息流，存模型面拼装体等于把脚手架直接讲给用户听。
+        this.ctx.telemetryAdapter?.onTurnStart(this.ctx.turn.currentTurnId, iterations, iterations === 1 ? (displayPrompt ?? userMessage) : '', iterations > 1 ? userTurnId : undefined);
 
         // Debug snapshot: 记录 turn 起始时的 messages 快照，post-inference 直接从 response.usage 取 token
         const turnStartMessageSnapshot = this.ctx.messages.slice();
@@ -1128,12 +1130,13 @@ export class ConversationRuntime {
     clientMessageId?: string,
     attachments?: MessageAttachment[],
     metadata?: MessageMetadata,
+    displayContent?: string,
   ): Promise<void> {
     if (this.ctx.control.isSettled) {
       throw new SteerRejectedError();
     }
     this.ctx.control.abortInference();
-    const persisted = this.messageProcessor.injectSteerMessage(newMessage, clientMessageId, attachments, metadata);
+    const persisted = this.messageProcessor.injectSteerMessage(newMessage, clientMessageId, attachments, metadata, displayContent);
     this.ctx.turn.requestReinference();
     logger.info('[AgentLoop] Steer requested — message injected, will re-infer on next cycle');
     await persisted;

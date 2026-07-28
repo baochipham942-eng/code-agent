@@ -177,7 +177,7 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
           setUserToggled(true);
           setExpanded((value) => !value);
         }}
-        className={`flex w-full min-w-0 items-center gap-1.5 rounded-md text-left text-[11px] transition-colors ${
+        className={`flex w-full min-w-0 items-center gap-1.5 rounded-md text-left text-[11px] transition-colors group ${
           status === 'ok'
             ? 'px-1 py-0.5 text-zinc-600 hover:bg-surface-subtle hover:text-zinc-400'
             : 'border border-white/[0.04] bg-white/[0.015] px-2 py-1 text-zinc-500 hover:border-white/[0.08] hover:bg-white/[0.03] hover:text-zinc-300'
@@ -207,7 +207,7 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
         <span className="min-w-0 flex-1 truncate font-mono">{label}</span>
         {recoveredCount > 0 && (
           <span
-            className="flex-shrink-0 rounded bg-white/[0.03] px-1.5 py-0.5 text-[10px] text-zinc-500"
+            className="flex-shrink-0 rounded bg-white/[0.03] px-1.5 py-0.5 text-[10px] text-zinc-500 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100"
             title={t.toolGroup.recoveredTitle}
           >
             {t.toolGroup.recovered}
@@ -221,7 +221,7 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
         )}
         {totalDuration && (
           <span
-            className="flex-shrink-0 text-[10px] text-zinc-600"
+            className="flex-shrink-0 text-[10px] text-zinc-600 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100"
             title={t.toolGroup.durationTitle}
           >
             {totalDuration}

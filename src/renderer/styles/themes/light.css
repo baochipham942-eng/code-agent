@@ -78,6 +78,16 @@
   --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.1);
   --shadow-xl: 0 16px 48px rgba(0, 0, 0, 0.12);
 
+  /* Elevation 阶梯（2026-07-28 品质感打磨）：亮色下亮度差拉不开，层级主要靠投影。
+     与 dark.css 同名 token，消费方同为 global.css 的 elevation/composer 类。 */
+  --elevation-l0: #FAFAFA;
+  --elevation-l1: #FFFFFF;
+  --elevation-l2: #FFFFFF;
+  --elevation-l3: #FFFFFF;
+  --shadow-l2: 0 8px 24px rgba(0, 0, 0, 0.12);
+  --shadow-l3: 0 4px 16px rgba(0, 0, 0, 0.14);
+  --shadow-composer: 0 4px 24px rgba(0, 0, 0, 0.08);
+
   /* Overlay */
   --overlay-backdrop: rgba(0, 0, 0, 0.4);
 

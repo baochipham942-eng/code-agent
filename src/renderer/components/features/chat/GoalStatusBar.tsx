@@ -8,7 +8,7 @@
 // ============================================================================
 
 import React, { useEffect, useState } from 'react';
-import { Target, Loader2, Pause, Play } from 'lucide-react';
+import { Target, Loader2, Pause, Play, Clock } from 'lucide-react';
 import { useAppStore, type GoalRunState } from '../../../stores/appStore';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { invokeDomain } from '../../../services/ipcService';
@@ -60,7 +60,10 @@ export const GoalStatusBarView: React.FC<{ run: GoalRunState; onTogglePause: () 
       </span>
       <span className="ml-auto flex flex-shrink-0 items-center gap-2 text-zinc-400">
         {!paused && <Loader2 className="h-3 w-3 animate-spin text-sky-400" />}
-        <span title={t.goalStatusBar.elapsedTitle}>⏱ {elapsed}</span>
+        <span title={t.goalStatusBar.elapsedTitle} className="flex items-center gap-1">
+          <Clock className="h-3 w-3" />
+          {elapsed}
+        </span>
         {remainingMs !== undefined && (
           <span
             title={t.goalStatusBar.remainingTitle}

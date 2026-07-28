@@ -370,7 +370,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose 
       />
 
       {/* Modal */}
-      <div role="dialog" aria-modal="true" aria-label={t.commandPalette.ariaLabel} className="relative w-full max-w-lg bg-zinc-900 rounded-xl border border-zinc-700 shadow-2xl overflow-hidden animate-fadeIn">
+      <div role="dialog" aria-modal="true" aria-label={t.commandPalette.ariaLabel} className="relative w-full max-w-lg elevation-l2 popover-enter rounded-xl overflow-hidden">
         {/* Search input */}
         <div className="flex items-center px-4 py-3 border-b border-zinc-700">
           <Search className="w-5 h-5 text-zinc-500 shrink-0" />

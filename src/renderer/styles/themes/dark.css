@@ -78,6 +78,17 @@
   --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.6);
   --shadow-xl: 0 16px 48px rgba(0, 0, 0, 0.7);
 
+  /* Elevation 亮度阶梯（2026-07-28 品质感打磨拍板）：暗色下层级靠亮度+投影，不靠描边。
+     L0 底座 → L1 卡片 → L2 浮层（菜单/popover）→ L3 toast/浮动 pill。
+     消费方：global.css 的 .elevation-l2/.elevation-l3/.composer-elevated。 */
+  --elevation-l0: #101012;
+  --elevation-l1: #18181B;
+  --elevation-l2: #1F1F23;
+  --elevation-l3: #26262B;
+  --shadow-l2: 0 8px 24px rgba(0, 0, 0, 0.45);
+  --shadow-l3: 0 4px 16px rgba(0, 0, 0, 0.5);
+  --shadow-composer: 0 4px 24px rgba(0, 0, 0, 0.35);
+
   /* Overlay */
   --overlay-backdrop: rgba(0, 0, 0, 0.6);
 

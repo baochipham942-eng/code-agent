@@ -73,7 +73,7 @@ export const SidebarAccountMenu: React.FC<SidebarAccountMenuProps> = ({
   const canOpenPromptManager = canAccessFeature('prompt.manager', user);
 
   return (
-    <div className="absolute bottom-full left-2 right-2 z-50 max-h-[80vh] overflow-y-auto rounded-xl border border-zinc-700 bg-zinc-900 py-1 shadow-xl">
+    <div className="absolute bottom-full left-2 right-2 z-50 max-h-[80vh] overflow-y-auto rounded-xl elevation-l2 popover-enter py-1">
       <AccountMenuLabel>{sb.menuCommon}</AccountMenuLabel>
       <AccountMenuItem
         onClick={() => { setShowActivityPanel(true); onClose(); }}

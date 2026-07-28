@@ -8,8 +8,11 @@
 //
 // G1（2026-07-27 拍板）：卡片可点击/键盘展开，内联列出这通电话的字幕——
 // 用摘要的 startedAt/endedAt 时间窗 + metadata.source === 'voice' 从当前
-// 会话消息里筛，不加新 schema、不建新存储。排水窗修复（#733）之前的旧通话
-// 没有字幕落库，展开后明示「文字记录未保留」，不装死不空白。
+// 会话消息里筛，不加新 schema、不建新存储。筛不到时分三档归因，不再一律
+// 赖给「旧版本通话」（2026-07-28 工单：没说话的新通话被误报成旧通话）：
+// - summary 没有 transcriptCount 字段 → 真·旧记录，明示「未保留（旧版本通话）」；
+// - transcriptCount === 0 → 这通电话本来就没对话；
+// - transcriptCount > 0 但窗内筛不到 → 有落库但当前会话里找不到，只说「未保留」。
 // ============================================================================
 
 import React from 'react';
@@ -70,7 +73,13 @@ export const VoiceCallSummaryCard: React.FC<{ summary: VoiceCallSummary }> = ({ 
         {expanded && (
           <div className="border-t border-primary-500/15 px-3 py-2">
             {transcript.length === 0 ? (
-              <p className="text-[11px] italic text-zinc-500">{text.noTranscript}</p>
+              <p className="text-[11px] italic text-zinc-500">
+                {summary.transcriptCount === undefined
+                  ? text.noTranscriptLegacy
+                  : summary.transcriptCount === 0
+                    ? text.noTranscriptEmpty
+                    : text.noTranscriptMissing}
+              </p>
             ) : (
               <ul className="flex flex-col gap-1.5">
                 {transcript.map((m) => (

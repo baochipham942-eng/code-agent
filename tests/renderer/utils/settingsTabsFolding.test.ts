@@ -65,12 +65,13 @@ describe('Settings IA 分组 v2', () => {
     expect(COLLAPSED_SETTINGS_TAB_GROUPS.size).toBe(1);
   });
 
-  it('普通用户默认展开可见 21 项（5 组），排除高级折叠组', () => {
+  it('普通用户默认展开可见 22 项（5 组），排除高级折叠组', () => {
     const visible = SETTINGS_TAB_IDS.filter((t) => {
       const group = SETTINGS_TAB_GROUP_BY_TAB[t];
       return group !== 'advanced' && canAccessSettingsTab(t, { isAdmin: false });
     });
-    expect(visible).toHaveLength(21);
+    // T1（2026-07-28）：voiceModel 进「模型与能力」组，21 → 22
+    expect(visible).toHaveLength(22);
   });
 
   it('组标签齐全（zh/en，单一真源 i18n）且默认组序为 5 常规组 + 高级', () => {

@@ -26,6 +26,8 @@ export const enSettingsCore = {
       keybindings: 'Shortcuts',
       voiceLive: 'Live voice',
       voiceInput: 'Speech to text',
+      // T1 (2026-07-28): call model / timbre / transcription model got their own tab under Models
+      voiceModel: 'Voice models',
       doctor: 'Diagnostics',
       workspace: 'Workspace',
       automation: 'Automation',
@@ -67,6 +69,7 @@ export const enSettingsCore = {
       voiceLive: 'Live voice call',
       voiceLiveVoice: 'Live voice timbre',
       voiceLiveInterrupt: 'Interrupt mode',
+      voiceConversationModel: 'Call model',
       whisperModel: 'Whisper model',
       transcriptionLanguage: 'Transcription language',
       keybindingsConfig: 'Shortcut configuration',
@@ -624,5 +627,9 @@ export const enSettingsCore = {
         es: 'Español',
         fr: 'Français',
       },
+    },
+    voiceModel: {
+      transcriptionModelLabel: 'Transcription model',
+      transcriptionModelNote: 'Local whisper-cpp recognition model — only used by local transcription modes (Local first / Local only)',
     },
 };

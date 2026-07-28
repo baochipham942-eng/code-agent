@@ -42,14 +42,6 @@ const MODE_OPTIONS: Array<{
 
 const LANGUAGE_OPTION_IDS = ['auto', 'zh', 'en', 'ja', 'ko', 'es', 'fr'] as const;
 
-const MODEL_OPTIONS = [
-  { id: 'ggml-large-v3-turbo.bin', label: 'large-v3-turbo' },
-  { id: 'ggml-large-v3.bin', label: 'large-v3' },
-  { id: 'ggml-medium.bin', label: 'medium' },
-  { id: 'ggml-small.bin', label: 'small' },
-  { id: 'ggml-base.bin', label: 'base' },
-];
-
 function mergeSpeechSettings(value?: Partial<SpeechInputSettings>): SpeechInputSettings {
   return {
     ...DEFAULT_SPEECH_INPUT_SETTINGS,
@@ -164,37 +156,21 @@ export const VoiceInputSettings: React.FC = () => {
         </div>
       </div>
 
-      {/* 识别组：语言 + 本地模型（本地模型仅本地档有意义） */}
+      {/* 识别组：语言（本地模型已搬「模型与能力」组的「语音模型」tab，T1） */}
       <div className="border-t border-zinc-700 pt-4">
         <h3 className="mb-3 text-sm font-medium text-zinc-200">{voiceText.groupRecognition}</h3>
-        <div className="grid grid-cols-2 gap-4">
-          <label className="space-y-2">
-            <span className="text-sm font-medium text-zinc-200">{voiceText.languageLabel}</span>
-            <select
-              value={settings.language}
-              onChange={(event) => persist({ language: event.target.value })}
-              className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-primary-500"
-            >
-              {LANGUAGE_OPTION_IDS.map((id) => (
-                <option key={id} value={id}>{voiceText.languages[id]}</option>
-              ))}
-            </select>
-          </label>
-
-          <label className={`space-y-2${isLocalMode ? '' : ' opacity-50'}`}>
-            <span className="text-sm font-medium text-zinc-200">{voiceText.localModelLabel}</span>
-            <select
-              value={settings.localModel}
-              onChange={(event) => persist({ localModel: event.target.value })}
-              disabled={!isLocalMode}
-              className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-primary-500 disabled:cursor-not-allowed"
-            >
-              {MODEL_OPTIONS.map((option) => (
-                <option key={option.id} value={option.id}>{option.label}</option>
-              ))}
-            </select>
-          </label>
-        </div>
+        <label className="block space-y-2">
+          <span className="text-sm font-medium text-zinc-200">{voiceText.languageLabel}</span>
+          <select
+            value={settings.language}
+            onChange={(event) => persist({ language: event.target.value })}
+            className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-primary-500"
+          >
+            {LANGUAGE_OPTION_IDS.map((id) => (
+              <option key={id} value={id}>{voiceText.languages[id]}</option>
+            ))}
+          </select>
+        </label>
       </div>
 
       {/* 性能组：线程数（仅本地档）+ 最长录音 */}

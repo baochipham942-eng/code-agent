@@ -30,12 +30,15 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
 
   // Voice Live（实时通话）
   { tab: 'voiceLive', labelKey: 'voiceLive', keywords: ['voice', 'live voice', 'call', 'realtime', 'real-time', 'voice call', 'voice chat'] },
-  { tab: 'voiceLive', labelKey: 'voiceLiveVoice', keywords: ['timbre', 'voice id', 'speaker', 'voice'] },
   { tab: 'voiceLive', labelKey: 'voiceLiveInterrupt', keywords: ['interrupt', 'barge-in', 'vad', 'sensitivity', 'turn detection'] },
+
+  // Voice Model（语音模型：T1 收拢通话模型/音色/转写模型）
+  { tab: 'voiceModel', labelKey: 'voiceConversationModel', keywords: ['voice', 'call model', 'conversation model', 'realtime model', 'qwen omni', 'voice model'] },
+  { tab: 'voiceModel', labelKey: 'voiceLiveVoice', keywords: ['timbre', 'voice id', 'speaker', 'voice'] },
+  { tab: 'voiceModel', labelKey: 'whisperModel', keywords: ['whisper', 'model', 'asr', 'speech to text', 'local model', 'transcription model'] },
 
   // Voice Input（语音转文字）
   { tab: 'voiceInput', labelKey: 'voiceInput', keywords: ['voice', 'speech', 'mic', 'microphone', 'recording', 'transcription', 'asr', 'dictation', 'speech to text'] },
-  { tab: 'voiceInput', labelKey: 'whisperModel', keywords: ['whisper', 'model', 'asr', 'speech to text', 'local model', 'transcription model'] },
   { tab: 'voiceInput', labelKey: 'transcriptionLanguage', keywords: ['language', 'locale', 'multilingual', 'chinese', 'english'] },
 
   // Keybindings

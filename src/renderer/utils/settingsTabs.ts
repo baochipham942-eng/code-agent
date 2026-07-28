@@ -19,6 +19,7 @@ export const SETTINGS_TAB_IDS = [
   'doctor',
   'model',
   'visualModels',
+  'voiceModel',
   'agentEngine',
   'appearance',
   'soul',
@@ -119,6 +120,8 @@ export const SETTINGS_TAB_GROUP_BY_TAB: Record<SettingsTab, SettingsTabGroupId> 
   // 模型与能力
   model: 'models',
   visualModels: 'models',
+  // T1（2026-07-28）：通话模型/音色/转写模型从 voiceLive/voiceInput 收拢到独立 tab
+  voiceModel: 'models',
   search: 'models',
   soul: 'models',
   skills: 'models',

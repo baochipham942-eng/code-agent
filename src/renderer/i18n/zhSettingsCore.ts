@@ -26,6 +26,8 @@ export const zhSettingsCore = {
       keybindings: '快捷键',
       voiceLive: '实时通话',
       voiceInput: '语音转文字',
+      // T1（2026-07-28）：通话模型/音色/转写模型独立成「模型与能力」组 tab
+      voiceModel: '语音模型',
       doctor: '诊断',
       workspace: '工作区',
       automation: '自动化',
@@ -67,6 +69,7 @@ export const zhSettingsCore = {
       voiceLive: '实时通话',
       voiceLiveVoice: '通话音色',
       voiceLiveInterrupt: '打断方式',
+      voiceConversationModel: '通话模型',
       whisperModel: 'Whisper 模型',
       transcriptionLanguage: '转写语言',
       keybindingsConfig: '快捷键配置',
@@ -623,5 +626,9 @@ export const zhSettingsCore = {
         es: 'Español',
         fr: 'Français',
       },
+    },
+    voiceModel: {
+      transcriptionModelLabel: '转写模型',
+      transcriptionModelNote: '本地 whisper-cpp 识别模型，仅本地转写模式（本地优先 / 仅本地）使用',
     },
 };

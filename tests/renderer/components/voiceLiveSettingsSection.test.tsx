@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
 //
-// B5 设置 → 语音「实时通话」组：总开关/Provider 状态/音色白名单/打断三态持久化，
+// B5 设置 → 语音「实时通话」组：总开关/打断三态持久化，
 // 且 turnDetection 与 UI 三态同写不分叉（运行时真源只有 turnDetection）。
+// T1（2026-07-28）：通话模型/Provider 状态/音色白名单搬去「语音模型」tab，
+// 相关断言在 voiceModelSettings.test.tsx。
 import React from 'react';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -43,27 +45,6 @@ describe('VoiceLiveSettingsSection', () => {
     availability.configured = true;
   });
   afterEach(() => cleanup());
-
-  it('Provider 已配置显示「已配置」，未配置显示引导文案（§9.3）', async () => {
-    settingsGet(undefined);
-    const { unmount } = render(<VoiceLiveSettingsSection />);
-    await waitFor(() => expect(screen.getByTestId('voice-provider-status').textContent).toBe(zh.voice.settings.providerConfigured));
-    unmount();
-
-    availability.configured = false;
-    render(<VoiceLiveSettingsSection />);
-    await waitFor(() => expect(screen.getByTestId('voice-provider-status').textContent).toBe(zh.voice.settings.providerMissing));
-    expect(screen.getByText(zh.voice.settings.providerMissingHint)).toBeTruthy();
-  });
-
-  it('音色选择器只出实测白名单三项', async () => {
-    settingsGet(undefined);
-    render(<VoiceLiveSettingsSection />);
-    await waitFor(() => expect(invokeDomainMock).toHaveBeenCalled());
-    const select = screen.getByText(zh.voice.settings.voiceLabel).parentElement!.querySelector('select')!;
-    const options = Array.from(select.querySelectorAll('option')).map((o) => o.value);
-    expect(options).toEqual(['Tina', 'Ethan', 'Serena']);
-  });
 
   it('总开关持久化 live.enabled，并同写 turnDetection（默认 server_vad medium）', async () => {
     settingsGet(undefined);
@@ -155,30 +136,5 @@ describe('VoiceLiveSettingsSection', () => {
       expect(payload.voice.live.echoCancellation).toBe('off');
     });
     expect(screen.getByText(zh.voice.settings.echoCancellationOffDesc)).toBeTruthy();
-  });
-
-  // 工单③：选不支持 tools 的模型必须当场说清代价；音色与模型强绑定，
-  // 换模型时 3.5 的音色（Tina）不能留到上一代模型上（第一次合成才 400）。
-  it('换到不支持 tools 的模型：警示行出现，音色回退到该模型第一个合法值并一起持久化', async () => {
-    settingsGet({ live: { enabled: true, voiceId: 'Tina' } });
-    render(<VoiceLiveSettingsSection />);
-    const modelSelect = await screen.findByTestId('voice-conversation-model') as HTMLSelectElement;
-    expect(modelSelect.value).toBe('qwen3.5-omni-flash-realtime');
-    expect(screen.queryByTestId('voice-model-no-tools-warning')).toBeNull();
-
-    fireEvent.change(modelSelect, { target: { value: 'qwen3-omni-flash-realtime' } });
-
-    await waitFor(() => {
-      const setCall = invokeDomainMock.mock.calls.filter(([, action]) => action === 'set').at(-1);
-      const payload = setCall![2] as { voice: { live: { conversationModel?: string; voiceId?: string } } };
-      expect(payload.voice.live.conversationModel).toBe('qwen3-omni-flash-realtime');
-      expect(payload.voice.live.voiceId).toBe('Cherry'); // Tina 是 3.5 独有，必须跟着回退
-    });
-    expect(screen.getByTestId('voice-model-no-tools-warning').textContent).toBe(zh.voice.settings.modelNoToolsWarning);
-
-    // 音色选择器的选项也跟着换成当前模型的白名单
-    const voiceSelect = screen.getByText(zh.voice.settings.voiceLabel).parentElement!.querySelector('select')!;
-    const options = Array.from(voiceSelect.querySelectorAll('option')).map((o) => o.value);
-    expect(options).toEqual(['Cherry', 'Ethan', 'Serena']);
   });
 });

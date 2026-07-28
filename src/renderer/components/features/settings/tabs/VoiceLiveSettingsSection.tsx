@@ -1,8 +1,9 @@
 // ============================================================================
 // VoiceLiveSettingsSection —— 设置 → 语音「实时通话」组（B5，§7.6 IA）
 //
-// 总开关 / 通话模型·Provider（白名单可配 + 配置状态）/ 音色（按所选模型的白名单出项）/ 语言 /
-// 打断方式三态 + 灵敏度 / 隐私说明（§8.3）。配额说明与热键自定义本批不做。
+// 总开关 / 语言 / 打断方式三态 + 灵敏度 / 回声消除 / 通话用量 / 隐私说明（§8.3）。
+// T1（2026-07-28）：通话模型·Provider 与音色搬去「模型与能力」组的「语音模型」tab
+// （VoiceModelSettings），本 tab 只留使用偏好；persist 透传本 tab 不拥有的 live 键。
 // 独立「实时通话」tab（VoiceLiveSettings 薄壳）；口述输入在「语音转文字」tab。
 // ============================================================================
 
@@ -12,11 +13,6 @@ import { IPC_DOMAINS } from '@shared/ipc';
 import type { AppSettings } from '@shared/contract';
 import { VOICE_LIVE_SETTINGS_UPDATED_EVENT } from '@shared/contract/voice';
 import type { VoiceLiveSettings } from '@shared/contract/settings';
-import {
-  QWEN_OMNI_REALTIME_MODEL,
-  QWEN_OMNI_REALTIME_MODEL_OPTIONS,
-  resolveConversationModelOption,
-} from '@shared/constants/voice';
 import { PROVIDER_MODELS, PROVIDER_MODELS_MAP } from '@shared/constants/models';
 import ipcService from '../../../../services/ipcService';
 import { createLogger } from '../../../../utils/logger';
@@ -37,11 +33,12 @@ const SENSITIVITY_OPTIONS: VadSensitivity[] = ['low', 'medium', 'high'];
 export const VoiceLiveSettingsSection: React.FC = () => {
   const { t } = useI18n();
   const text = t.voice.settings;
-  const { configured, usage } = useVoiceLiveAvailability();
+  const { usage } = useVoiceLiveAvailability();
 
+  // baseLive 透传本 tab 不拥有的 live 键（通话模型/音色已搬「语音模型」tab），
+  // persist 时原样带回，避免整对象写入把它们抹掉。
+  const [baseLive, setBaseLive] = useState<VoiceLiveSettings>({});
   const [enabled, setEnabled] = useState(false);
-  const [conversationModel, setConversationModel] = useState<string>(QWEN_OMNI_REALTIME_MODEL);
-  const [voiceId, setVoiceId] = useState<string>(QWEN_OMNI_REALTIME_MODEL_OPTIONS[0].voices[0]);
   const [language, setLanguage] = useState<NonNullable<VoiceLiveSettings['language']>>('auto');
   const [interrupt, setInterrupt] = useState<InterruptMode>('server_vad');
   const [sensitivity, setSensitivity] = useState<VadSensitivity>('medium');
@@ -54,15 +51,8 @@ export const VoiceLiveSettingsSection: React.FC = () => {
       .then((settings) => {
         if (cancelled) return;
         const voice = settings.voice;
-        const modelOption = resolveConversationModelOption(voice?.live?.conversationModel);
+        setBaseLive(voice?.live ?? {});
         setEnabled(voice?.live?.enabled === true);
-        setConversationModel(modelOption.id);
-        // 音色与模型强绑定：存量 voiceId 不在当前模型的 voices 里就落到第一个合法值，
-        // 别把「3.5 的音色 + 上一代模型」这种组合留在 UI 上（第一次合成才 400）。
-        const storedVoiceId = voice?.live?.voiceId;
-        setVoiceId(storedVoiceId && (modelOption.voices as readonly string[]).includes(storedVoiceId)
-          ? storedVoiceId
-          : modelOption.voices[0]);
         setLanguage(voice?.live?.language ?? 'auto');
         setInterrupt(deriveInterruptMode(voice));
         setSensitivity(deriveVadSensitivity(voice));
@@ -75,9 +65,8 @@ export const VoiceLiveSettingsSection: React.FC = () => {
 
   const persist = async (patch: Partial<VoiceLiveSettings>) => {
     const nextLive: VoiceLiveSettings = {
+      ...baseLive,
       enabled,
-      conversationModel,
-      voiceId,
       language,
       interrupt,
       vadSensitivity: sensitivity,
@@ -85,10 +74,10 @@ export const VoiceLiveSettingsSection: React.FC = () => {
       echoCancellation,
       ...patch,
     };
+    // executionModel 清空 = 回到「跟随会话默认引擎」（把键去掉，不是写一个空值）
+    if (!nextLive.executionModel) delete nextLive.executionModel;
     // 应用到本地 state
     if (patch.enabled !== undefined) setEnabled(patch.enabled);
-    if (patch.conversationModel !== undefined) setConversationModel(patch.conversationModel);
-    if (patch.voiceId !== undefined) setVoiceId(patch.voiceId);
     if (patch.language !== undefined) setLanguage(patch.language);
     if (patch.interrupt !== undefined) setInterrupt(patch.interrupt);
     if (patch.vadSensitivity !== undefined) setSensitivity(patch.vadSensitivity);
@@ -104,6 +93,7 @@ export const VoiceLiveSettingsSection: React.FC = () => {
           live: nextLive,
         },
       } as Partial<AppSettings>);
+      setBaseLive(nextLive);
       window.dispatchEvent(new CustomEvent(VOICE_LIVE_SETTINGS_UPDATED_EVENT));
     } catch (error) {
       logger.error('save voice live settings failed', error);
@@ -115,18 +105,6 @@ export const VoiceLiveSettingsSection: React.FC = () => {
     setExecutionModel(next);
     await persist({ executionModel: next });
   };
-
-  /**
-   * 换通话模型必须把音色一起落回新模型的白名单——音色枚举与模型强绑定，
-   * 留下「旧模型音色 + 新模型」的组合，上游第一次真合成才 400（建连时不报）。
-   */
-  const persistConversationModel = async (nextId: string) => {
-    const option = resolveConversationModelOption(nextId);
-    const nextVoiceId = (option.voices as readonly string[]).includes(voiceId) ? voiceId : option.voices[0];
-    await persist({ conversationModel: option.id, voiceId: nextVoiceId });
-  };
-
-  const conversationModelOption = resolveConversationModelOption(conversationModel);
 
   const interruptText: Record<InterruptMode, { label: string; desc: string }> = {
     server_vad: { label: text.interruptServerVad, desc: text.interruptServerVadDesc },
@@ -151,40 +129,6 @@ export const VoiceLiveSettingsSection: React.FC = () => {
           onChange={(next) => void persist({ enabled: next })}
           aria-label={text.enableTitle}
         />
-      </div>
-
-      {/* 通话模型 / Provider：白名单可配（工单③）。不支持 tools 的模型选中时当场说清代价 */}
-      <div className="border-t border-zinc-700 pt-4">
-        <div className="flex items-center justify-between gap-4">
-          <div>
-            <h3 className="mb-1 text-sm font-medium text-zinc-200">{text.providerTitle}</h3>
-            <p className="text-xs text-zinc-500">Qwen-Omni</p>
-          </div>
-          <span
-            data-testid="voice-provider-status"
-            className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] ${
-              configured ? 'bg-emerald-500/10 text-emerald-300' : 'bg-amber-500/10 text-amber-300'
-            }`}
-          >
-            {configured ? text.providerConfigured : text.providerMissing}
-          </span>
-        </div>
-        <select
-          data-testid="voice-conversation-model"
-          value={conversationModel}
-          onChange={(event) => void persistConversationModel(event.target.value)}
-          className="mt-3 w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-primary-500"
-        >
-          {QWEN_OMNI_REALTIME_MODEL_OPTIONS.map((option) => (
-            <option key={option.id} value={option.id}>{option.id}</option>
-          ))}
-        </select>
-        {!conversationModelOption.supportsTools && (
-          <p data-testid="voice-model-no-tools-warning" className="mt-2 text-xs text-amber-400/80">
-            {text.modelNoToolsWarning}
-          </p>
-        )}
-        {!configured && <p className="mt-2 text-xs text-amber-400/80">{text.providerMissingHint}</p>}
       </div>
 
       {/* 执行引擎（§6.1 双脑）：通话模型只负责听说，真干活是另一个模型，两者分开看分开配 */}
@@ -237,22 +181,8 @@ export const VoiceLiveSettingsSection: React.FC = () => {
         </p>
       </div>
 
-      <div className="grid grid-cols-2 gap-4 border-t border-zinc-700 pt-4">
-        <label className="space-y-2">
-          <span className="text-sm font-medium text-zinc-200">{text.voiceLabel}</span>
-          <select
-            value={voiceId}
-            onChange={(event) => void persist({ voiceId: event.target.value })}
-            className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-primary-500"
-          >
-            {conversationModelOption.voices.map((id) => (
-              <option key={id} value={id}>{id}</option>
-            ))}
-          </select>
-          <p className="text-xs text-zinc-500">{text.voiceNote}</p>
-        </label>
-
-        <label className="space-y-2">
+      <div className="border-t border-zinc-700 pt-4">
+        <label className="block space-y-2">
           <span className="text-sm font-medium text-zinc-200">{text.languageLabel}</span>
           <select
             value={language}

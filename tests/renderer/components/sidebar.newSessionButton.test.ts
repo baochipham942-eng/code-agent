@@ -158,10 +158,17 @@ describe('Sidebar new session button', () => {
     expect(html).toContain('查看 Agent Neo v0.16.89 更新内容');
   });
 
+  // 账号下拉菜单 2026-07-27 抽成 SidebarAccountMenu（Sidebar 逼近 god-file 门），
+  // 断言跟着搬家：Sidebar 负责把当前会话所属项目传下去，菜单里负责发起跳转。
   it('wires the lower account menu to the project collaboration page', () => {
-    const source = readFileSync(resolve(process.cwd(), 'src/renderer/components/Sidebar.tsx'), 'utf8');
+    const sidebar = readFileSync(resolve(process.cwd(), 'src/renderer/components/Sidebar.tsx'), 'utf8');
+    const menu = readFileSync(
+      resolve(process.cwd(), 'src/renderer/components/features/sidebar/SidebarAccountMenu.tsx'),
+      'utf8',
+    );
 
-    expect(source).toContain('openProjectCollaborationPage(currentSessionProjectId)');
-    expect(source).toContain('label={sb.menuNeoCollab}');
+    expect(sidebar).toContain('currentSessionProjectId={currentSessionProjectId}');
+    expect(menu).toContain('openProjectCollaborationPage(currentSessionProjectId)');
+    expect(menu).toContain('label={sb.menuNeoCollab}');
   });
 });

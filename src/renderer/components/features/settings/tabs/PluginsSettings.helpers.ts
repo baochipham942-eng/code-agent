@@ -267,6 +267,17 @@ export function formatDate(value?: string, labels: PluginDateLabels = zh.setting
   return date.toLocaleString();
 }
 
+/**
+ * 展示用路径：把用户主目录折成 `~`，别把带真实用户名的绝对路径原样摊在设置页上
+ * （`/Users/<name>/.code-agent-dev/plugins/...` 会随截图/录屏外泄用户名）。
+ * 覆盖 macOS `/Users/x`、Linux `/home/x`、Windows `C:\Users\x` 三种主目录形态。
+ */
+export function toDisplayPath(value: string): string {
+  return value
+    .replace(/^\/(?:Users|home)\/[^/]+/, '~')
+    .replace(/^[A-Za-z]:\\Users\\[^\\]+/, '~');
+}
+
 export function getResultError(
   result?: MarketplaceResult<unknown> | PluginInstallResult,
   labels: PluginErrorLabels = zh.settings.plugins.errors,

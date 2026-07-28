@@ -31,6 +31,7 @@ import { useI18n } from "../../../hooks/useI18n";
 import { useMcpServerStates } from "../../../hooks/useMcpServerStates";
 import { resolveSessionConnectorIds } from "@shared/contract/expertConnectors";
 import { RoleIcon } from "../shared/RoleIcon";
+import { getRoleAvatarAsset } from "./roleAvatarAssets";
 import { SettingsSection } from "../settings/SettingsLayout";
 import { RoleBindingsSection } from "../settings/tabs/RoleBindingsSection";
 import { useAppStore } from "../../../stores/appStore";
@@ -746,10 +747,14 @@ export const RoleDetailPage: React.FC<RoleDetailPageProps> = ({ roleId }) => {
   useEffect(() => {
     void loadDetail();
   }, [loadDetail]);
+  // 头像资产按 roleId 查表，命中就替掉页头的 lucide 图标（未命中的自建角色仍走图标）
+  const detailAvatar = getRoleAvatarAsset(roleId);
   return (
     <FullScreenPage testId={`role-detail-page-${roleId}`} variant="inline">
       <FullScreenPageHeader
-        icon={<RoleIcon name={detail?.visual.icon} className="h-5 w-5 text-zinc-300" />}
+        icon={detailAvatar
+          ? <img src={detailAvatar} alt={detail?.visual.displayName || roleId} className="h-7 w-7 rounded-lg object-cover" />
+          : <RoleIcon name={detail?.visual.icon} className="h-5 w-5 text-zinc-300" />}
         title={detail?.visual.displayName || roleId}
         description={detail?.visual.profession || roleText.detail.subtitle}
         onClose={closeDetail}

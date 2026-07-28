@@ -25,91 +25,16 @@ const STATUS_COLOR: Record<Exclude<VoiceVisualState, 'idle'>, string> = {
   error: 'text-red-400',
 };
 
-const ORB_STYLE: Record<OrbState, {
-  core: string;
-  glow: string;
-  spinDuration: string;
-  breatheDuration: string;
-  static?: boolean;
-}> = {
-  listening: {
-    core: 'radial-gradient(38% 38% at 34% 30%, rgba(255,255,255,.5), transparent 62%), conic-gradient(from 210deg, #0f766e, #2dd4bf, #34d399, #0f766e)',
-    glow: 'radial-gradient(circle, rgba(45,212,191,.30), transparent 66%)',
-    spinDuration: '9s',
-    breatheDuration: '3.4s',
-  },
-  speaking: {
-    core: 'radial-gradient(38% 38% at 34% 30%, rgba(255,255,255,.55), transparent 62%), conic-gradient(from 40deg, #0e7490, #2dd4bf, #a5f3fc, #0e7490)',
-    glow: 'radial-gradient(circle, rgba(45,212,191,.44), transparent 66%)',
-    spinDuration: '4s',
-    breatheDuration: '1.4s',
-  },
-  working: {
-    core: 'radial-gradient(38% 38% at 34% 30%, rgba(255,255,255,.4), transparent 62%), conic-gradient(from 120deg, #92400e, #fbbf24, #fde68a, #92400e)',
-    glow: 'radial-gradient(circle, rgba(251,191,36,.32), transparent 66%)',
-    spinDuration: '9s',
-    breatheDuration: '3.4s',
-  },
-  muted: {
-    core: 'radial-gradient(38% 38% at 34% 30%, rgba(255,255,255,.14), transparent 62%), conic-gradient(from 210deg, #3f3f46, #52525b, #3f3f46)',
-    glow: 'transparent',
-    spinDuration: '24s',
-    breatheDuration: '0s',
-    static: true,
-  },
-  'manual-ready': {
-    core: 'radial-gradient(38% 38% at 34% 30%, rgba(255,255,255,.14), transparent 62%), conic-gradient(from 210deg, #3f3f46, #52525b, #3f3f46)',
-    glow: 'transparent',
-    spinDuration: '24s',
-    breatheDuration: '0s',
-    static: true,
-  },
-  connecting: {
-    core: 'radial-gradient(38% 38% at 34% 30%, rgba(255,255,255,.2), transparent 62%), conic-gradient(from 210deg, #3f3f46, #71717a, #3f3f46)',
-    glow: 'radial-gradient(circle, rgba(161,161,170,.22), transparent 66%)',
-    spinDuration: '2.2s',
-    breatheDuration: '1.1s',
-  },
-  reconnecting: {
-    core: 'radial-gradient(38% 38% at 34% 30%, rgba(255,255,255,.25), transparent 62%), conic-gradient(from 210deg, #78350f, #fbbf24, #78350f)',
-    glow: 'radial-gradient(circle, rgba(251,191,36,.28), transparent 66%)',
-    spinDuration: '2.2s',
-    breatheDuration: '1.1s',
-  },
-  error: {
-    core: 'radial-gradient(38% 38% at 34% 30%, rgba(255,255,255,.25), transparent 62%), conic-gradient(from 210deg, #7f1d1d, #f87171, #7f1d1d)',
-    glow: 'radial-gradient(circle, rgba(248,113,113,.30), transparent 66%)',
-    spinDuration: '0s',
-    breatheDuration: '0s',
-    static: true,
-  },
-};
-
 const VoicePresenceOrb: React.FC<{ state: OrbState }> = ({ state }) => {
-  const style = ORB_STYLE[state];
   return (
     <span
       data-testid="voice-presence"
       data-orb-state={state}
-      className="relative grid h-[34px] w-[34px] shrink-0 place-items-center"
+      className="voice-presence-orb relative grid h-[34px] w-[34px] shrink-0 place-items-center"
       aria-hidden
     >
-      <span
-        className="voice-presence-orb-glow absolute -inset-[18%] rounded-full"
-        style={{
-          background: style.glow,
-          animationDuration: style.breatheDuration,
-          animationName: style.static ? 'none' : undefined,
-        }}
-      />
-      <span
-        className="voice-presence-orb-core h-full w-full rounded-full"
-        style={{
-          background: style.core,
-          animationDuration: style.spinDuration,
-          animationName: style.static ? 'none' : undefined,
-        }}
-      />
+      <span className="voice-presence-orb-glow absolute -inset-[18%] rounded-full" />
+      <span className="voice-presence-orb-core h-full w-full rounded-full" />
     </span>
   );
 };
@@ -227,7 +152,7 @@ export const VoiceChrome: React.FC<{ sessionId: string | null }> = ({ sessionId 
           type="button"
           data-testid="voice-manual-commit"
           onClick={() => voiceCallBridge.manualTap()}
-          className={`flex h-[30px] items-center whitespace-nowrap rounded-[9px] border px-3 text-[11.5px] transition-colors ${
+          className={`flex h-[30px] items-center whitespace-nowrap rounded-[var(--radius-xl)] border px-3 text-[11.5px] transition-colors ${
             store.pttCaptureOn
               ? 'border-emerald-500/50 bg-emerald-500/15 text-emerald-300'
               : 'border-zinc-700 bg-zinc-800 text-zinc-400 hover:border-zinc-600 hover:text-zinc-300'
@@ -245,7 +170,7 @@ export const VoiceChrome: React.FC<{ sessionId: string | null }> = ({ sessionId 
           onClick={() => voiceCallBridge.toggleMute()}
           title={store.muted ? t.voice.live.unmute : t.voice.live.mute}
           aria-label={store.muted ? t.voice.live.unmute : t.voice.live.mute}
-          className={`flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-[9px] transition-colors ${
+          className={`flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-[var(--radius-xl)] transition-colors ${
             isConnecting
               ? 'cursor-not-allowed text-zinc-600'
               : store.muted
@@ -263,7 +188,7 @@ export const VoiceChrome: React.FC<{ sessionId: string | null }> = ({ sessionId 
         onClick={() => voiceCallBridge.hangUp()}
         title={t.voice.live.endTitle}
         aria-label={t.voice.live.endTitle}
-        className="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-[9px] bg-red-500/15 text-red-300 transition-colors hover:bg-red-500/20 hover:text-red-200"
+        className="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-[var(--radius-xl)] bg-red-500/15 text-red-300 transition-colors hover:bg-red-500/20 hover:text-red-200"
       >
         <X className="h-[15px] w-[15px]" />
       </button>

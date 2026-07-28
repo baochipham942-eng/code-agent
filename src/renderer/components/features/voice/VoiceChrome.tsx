@@ -11,6 +11,7 @@ import { selectVoiceVisualState, useVoiceCallStore, type VoiceVisualState } from
 import { voiceCallBridge } from '../../../services/voiceCallBridge';
 import { useI18n } from '../../../hooks/useI18n';
 import { useAgentRegistryStore } from '../../../stores/agentRegistryStore';
+import { useComposerInProgress } from '../../../stores/composerNoticeStore';
 import { useSessionMembers } from '../expert/SessionMemberBar';
 
 type OrbState = Exclude<VoiceVisualState, 'idle'> | 'manual-ready';
@@ -78,6 +79,7 @@ export const VoiceChrome: React.FC<{ sessionId: string | null }> = ({ sessionId 
   const visual = selectVoiceVisualState(store);
   const expertName = useActiveExpertName(sessionId);
   const duration = useCallDuration(store.startedAt);
+  const isCurrentInProgress = useComposerInProgress('voice', visual !== 'idle');
 
   const activeWorkItems = useMemo(
     () => store.workItems.filter((item) => item.status === 'queued' || item.status === 'running'),
@@ -86,7 +88,7 @@ export const VoiceChrome: React.FC<{ sessionId: string | null }> = ({ sessionId 
   const currentWorkItem = activeWorkItems.find((item) => item.status === 'running') ?? activeWorkItems[0];
   const remainingWorkCount = Math.max(0, activeWorkItems.length - (currentWorkItem ? 1 : 0));
 
-  if (visual === 'idle') return null;
+  if (visual === 'idle' || !isCurrentInProgress) return null;
 
   const isConnecting = visual === 'connecting' || visual === 'reconnecting';
   const isManualListening = visual === 'listening' && store.interruptMode === 'manual';

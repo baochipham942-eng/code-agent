@@ -7,6 +7,7 @@ import {
   useSurfaceExecutionStore,
 } from '../../../stores/surfaceExecutionStore';
 import type { RendererSurfaceSessionProjectionV1 } from '../../../utils/surfaceExecutionProjection';
+import { useComposerInProgress } from '../../../stores/composerNoticeStore';
 
 type SurfaceRunState = RendererSurfaceSessionProjectionV1['session']['state'];
 
@@ -95,5 +96,8 @@ export function SurfaceExecutionComposerStatus({
   conversationId,
 }: { conversationId: string | null }) {
   const session = useSurfaceExecutionRunSession(conversationId);
-  return session ? <SurfaceExecutionRunStatus session={session} placement="composer" /> : null;
+  const isCurrentInProgress = useComposerInProgress('surface-execution', Boolean(session));
+  return session && isCurrentInProgress
+    ? <SurfaceExecutionRunStatus session={session} placement="composer" />
+    : null;
 }

@@ -215,6 +215,7 @@ import { SteerRejectedError } from '../../src/host/agent/runtime/conversationRun
 import type { ConfigService } from '../../src/host/services/core/configService';
 import type { AgentEvent, Message, MessageAttachment } from '../../src/shared/contract';
 import type { AgentRunOptions } from '../../src/host/research/types';
+import { getAllToolDefinitions } from '../../src/host/tools/dispatch/toolDefinitions';
 
 // 部分目标是 private 方法 / 内部状态，特征测试经类型逃逸访问（测试专用）
 interface OrchestratorInternals {
@@ -1122,7 +1123,7 @@ describe('AgentOrchestrator', () => {
       expect(result).not.toContain('live_voice_permission_notice');
     });
 
-    it('通话态 run 的模型工具面拒绝 AskUserQuestion，危险操作工具不受影响', async () => {
+    it('通话态 run 静态覆盖注册表里全部需用户在场的工具，普通工具不受影响', async () => {
       getPermissionModeManager().markLiveVoiceSession(SESSION, 'call:test');
       agentLoopProbe.lastConfig = undefined;
 
@@ -1144,9 +1145,11 @@ describe('AgentOrchestrator', () => {
         SESSION,
       );
 
-      expect(lastAgentLoopConfig()?.deniedToolNames).toEqual(
-        expect.arrayContaining(['AskUserQuestion', 'ask_user_question']),
-      );
+      const requiresUserPresence = getAllToolDefinitions()
+        .filter((definition) => definition.requiresUserPresence === true)
+        .flatMap((definition) => [definition.name, ...(definition.aliases ?? [])]);
+      expect(requiresUserPresence).toEqual(expect.arrayContaining(['AskUserQuestion', 'ask_user_question']));
+      expect(lastAgentLoopConfig()?.deniedToolNames).toEqual(expect.arrayContaining(requiresUserPresence));
       expect(lastAgentLoopConfig()?.deniedToolNames).not.toContain('confirm_action');
       expect(lastAgentLoopConfig()?.deniedToolNames).not.toContain('Bash');
       expect(lastAgentLoopConfig()?.deniedToolNames).not.toContain('Write');

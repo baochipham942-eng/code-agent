@@ -59,6 +59,7 @@ import { buildRoutingResolvedEventData } from './routingResolvedEvent';
 import { buildRoutingToolDenylist } from './routingToolPolicy';
 import { queuePendingSteerMessagesOrWarn, steerOrQueue, type SteerOrQueueOutcome } from '../runtime/steerQueueFence';
 import { startRunPreferringDurable } from './orchestrator/durableRunStart';
+import { getUserPresenceToolNames } from '../tools/dispatch/toolDefinitions';
 
 // Sub-modules
 import { type AgentOrchestratorConfig, MAX_MESSAGES_IN_MEMORY } from './orchestrator/types';
@@ -88,9 +89,6 @@ import { wrapWithTurnSystemContext } from './turnScaffold';
 export type { AgentOrchestratorConfig } from './orchestrator/types';
 
 const logger = createLogger('AgentOrchestrator');
-
-/** 通话态不能暴露需要用户当场在会话区回答的工具；危险操作审批仍走原权限链。 */
-const LIVE_VOICE_INTERACTIVE_TOOL_DENYLIST = ['AskUserQuestion', 'ask_user_question'] as const;
 
 /** 归一化审批响应为「放行/拒绝」。allow_standing（B4 铸权）在放行语义上等价 allow。 */
 function isApproveResponse(response: PermissionResponse): boolean {
@@ -1213,7 +1211,7 @@ export class AgentOrchestrator {
         ]
       : (options?.deniedToolNames || []);
     const liveVoiceDeniedToolNames = getPermissionModeManager().isLiveVoiceSession(sessionId)
-      ? LIVE_VOICE_INTERACTIVE_TOOL_DENYLIST
+      ? getUserPresenceToolNames()
       : [];
     const mergedDeniedToolNames = Array.from(new Set([
       ...baseDeniedToolNames,

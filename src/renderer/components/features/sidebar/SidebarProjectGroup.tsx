@@ -273,7 +273,7 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
                   className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-zinc-400 transition-colors hover:bg-zinc-700 hover:text-zinc-200"
                 >
                   <PanelRightOpen className="h-3.5 w-3.5 shrink-0" />
-                  <span>{p.openConsole.replace('{name}', summary.displayName)}</span>
+                  <span>{p.openConsole}</span>
                 </button>
                 <button /* ds-allow:button: 下拉菜单行（图标+文字左对齐列表项），Button primitive 居中动作钮形状不适配菜单项 */
                   type="button"
@@ -288,7 +288,7 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
                   className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-zinc-400 transition-colors hover:bg-zinc-700 hover:text-zinc-200"
                 >
                   <ListChecks className="h-3.5 w-3.5 shrink-0" />
-                  <span>{(detailsExpanded ? p.collapseDetails : p.expandDetails).replace('{name}', summary.displayName)}</span>
+                  <span>{detailsExpanded ? p.collapseDetails : p.expandDetails}</span>
                 </button>
                 <button /* ds-allow:button: 下拉菜单行（图标+文字左对齐列表项），Button primitive 居中动作钮形状不适配菜单项 */
                   type="button"
@@ -300,7 +300,7 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
                   className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-zinc-400 transition-colors hover:bg-zinc-700 hover:text-zinc-200"
                 >
                   <ScrollText className="h-3.5 w-3.5 shrink-0" />
-                  <span>{p.openAssets.replace('{name}', summary.displayName)}</span>
+                  <span>{p.openAssets}</span>
                 </button>
                 {!isWebMode() && (
                   <button /* ds-allow:button: 下拉菜单行（图标+文字左对齐列表项），Button primitive 居中动作钮形状不适配菜单项 */

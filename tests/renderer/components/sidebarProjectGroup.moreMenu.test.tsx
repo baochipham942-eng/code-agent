@@ -102,7 +102,7 @@ describe('SidebarProjectGroup ⋯ 菜单 + 新建（2026-07-28 重构）', () =>
     expect(getByRole('button', { name: 'code-agent 更多操作' })).toBeTruthy();
     expect(getByRole('button', { name: '在 code-agent 新建会话' })).toBeTruthy();
     // 菜单未开时，原独立按钮不存在
-    expect(queryByRole('button', { name: '打开 code-agent 项目控制台' })).toBeNull();
+    expect(queryByRole('button', { name: '打开项目控制台' })).toBeNull();
     expect(queryByRole('menuitem')).toBeNull();
   });
 
@@ -112,9 +112,10 @@ describe('SidebarProjectGroup ⋯ 菜单 + 新建（2026-07-28 重构）', () =>
     const items = getAllByRole('menuitem').map((el) => el.textContent);
     expect(items).toEqual([
       '编辑项目',
-      '打开 code-agent 项目控制台',
-      '展开 code-agent 项目详情',
-      '打开 code-agent 产物与资产',
+      // 菜单项不带项目名（2026-07-28 拍板）：窄侧栏里会折两行，且菜单容器 aria-label 已含项目名
+      '打开项目控制台',
+      '展开项目详情',
+      '产物与资产',
       '选择工作目录',
     ]);
   });
@@ -140,7 +141,7 @@ describe('SidebarProjectGroup ⋯ 菜单 + 新建（2026-07-28 重构）', () =>
     const setProjectDrawerKey = vi.fn();
     const { getByRole, queryByRole } = renderGroup({ setProjectDrawerKey });
     fireEvent.click(getByRole('button', { name: 'code-agent 更多操作' }));
-    fireEvent.click(getByRole('menuitem', { name: '打开 code-agent 项目控制台' }));
+    fireEvent.click(getByRole('menuitem', { name: '打开项目控制台' }));
     expect(setProjectDrawerKey).toHaveBeenCalledWith('project:p1');
     expect(queryByRole('menuitem')).toBeNull();
   });

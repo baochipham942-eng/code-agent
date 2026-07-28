@@ -225,7 +225,8 @@ describe('Sidebar session metadata', () => {
     // 原控制台/详情/产物等独立 aria-label 收进 ⋯ 菜单（点击才渲染，静态标记里不出现）。
     expect(html).toContain('aria-label="code-agent 更多操作"');
     expect(html).toContain('aria-label="在 code-agent 新建会话"');
-    expect(html).not.toContain('aria-label="打开 code-agent 项目控制台"');
+    // 菜单未展开时，菜单项文案不该出现在静态标记里（文案已去项目名，2026-07-28 拍板）
+    expect(html).not.toContain('打开项目控制台');
     expect(html).toContain('aria-label="打开 Session Native Workspace 的产物与资产"');
     // 2026-07-02 分组头未完成态改为右对齐"色球+数字"(title/aria 带全文)，不再渲染"N 未完成"文字胶囊
     expect(html).toContain('1 个未完成');

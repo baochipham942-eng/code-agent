@@ -140,10 +140,13 @@ export const sidebarZh = {
     // 未分类组（无工作区的纯对话归宿）的组名
     uncategorizedGroupName: '快速对话',
     unfinishedCount: '{count} 个未完成',
-    openConsole: '打开 {name} 项目控制台',
-    collapseDetails: '收起 {name} 项目详情',
-    expandDetails: '展开 {name} 项目详情',
-    openAssets: '打开 {name} 产物与资产',
+    // ⋯ 菜单项不带项目名（2026-07-28 拍板）：244px 侧栏里带名字的长文案必折两行，
+    // 菜单高度翻倍往下盖会话行。菜单容器自身 aria-label 已是「{name} 更多操作」，
+    // 读屏进菜单先播项目名，逐项再重复一遍纯属冗余。
+    openConsole: '打开项目控制台',
+    collapseDetails: '收起项目详情',
+    expandDetails: '展开项目详情',
+    openAssets: '产物与资产',
     newSessionIn: '在 {name} 新建会话',
     moreActions: '{name} 更多操作',
     noSessions: '暂无对话',
@@ -411,10 +414,10 @@ export const sidebarEn: typeof sidebarZh = {
     plainChatTitle: 'Plain conversation, no project context',
     uncategorizedGroupName: 'Quick chats',
     unfinishedCount: '{count} unfinished',
-    openConsole: 'Open {name} project console',
-    collapseDetails: 'Collapse {name} project details',
-    expandDetails: 'Expand {name} project details',
-    openAssets: 'Open {name} artifacts & assets',
+    openConsole: 'Open project console',
+    collapseDetails: 'Collapse project details',
+    expandDetails: 'Expand project details',
+    openAssets: 'Artifacts & assets',
     newSessionIn: 'New session in {name}',
     moreActions: 'More actions for {name}',
     noSessions: 'No conversations',

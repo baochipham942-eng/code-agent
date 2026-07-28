@@ -79,7 +79,9 @@ describe('NativeVoiceAudioPipeline', () => {
     await pipeline.start();
 
     mocks.eventHandler?.({ payload: { kind: 'error', message: 'killed' } });
-    expect(onError).toHaveBeenCalledWith('NATIVE_AEC_RUNTIME_FAILED');
+    // 用户可见 code 归一成一条（四种挂法对用户是同一件事：原生回声消除没起来）；
+    // 具体是哪一步走第二参数 detail，只供排查，不进 i18n 表。
+    expect(onError).toHaveBeenCalledWith('NATIVE_AEC_FAILED', 'NATIVE_AEC_RUNTIME_FAILED');
 
     pipeline.stop();
     expect(mocks.unlisten).toHaveBeenCalledTimes(1);

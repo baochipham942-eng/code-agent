@@ -33,6 +33,8 @@ import {
   MarkdownMediaImage,
   MarkdownRenderer,
   filterSystemTags,
+  sanitizePlainTextFallback,
+  stripRawHtmlOutsideCode,
 } from './messageContentParts';
 
 /**
@@ -101,7 +103,8 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
   // then close incomplete markdown tokens for streaming-safe rendering
   const filteredContent = useMemo(() => {
     const cleaned = filterSystemTags(markdownSource);
-    const withTickets = wrapTicketsAsLinks(cleaned);
+    const noRawHtml = stripRawHtmlOutsideCode(cleaned);
+    const withTickets = wrapTicketsAsLinks(noRawHtml);
     const wrapped = wrapFilePathsInBackticks(withTickets);
     return remend(wrapped);
   }, [markdownSource]);
@@ -481,7 +484,7 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
     return (
       <div className="text-sm leading-relaxed break-words prose prose-invert prose-sm max-w-none streaming-text with-caret">
         <span className="whitespace-pre-wrap">
-          {filterSystemTags(content)}
+          {sanitizePlainTextFallback(filterSystemTags(content))}
         </span>
       </div>
     );

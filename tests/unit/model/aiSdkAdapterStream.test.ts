@@ -5,6 +5,7 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { streamText, generateText } from 'ai';
 import { inferenceViaAiSdk } from '../../../src/host/model/adapters/aiSdkAdapter';
 import { getProviderHealthMonitor } from '../../../src/host/model/providerHealthMonitor';
+import { checkProviderHealth } from '../../../src/host/diagnostics/checks/providerHealth';
 import type { StreamChunk, StreamCallback } from '../../../src/host/model/types';
 import type { ModelConfig, ToolDefinition } from '../../../src/shared/contract';
 
@@ -207,6 +208,29 @@ describe('inferenceViaAiSdk —— 流式映射', () => {
     const res = await inferenceViaAiSdk([{ role: 'user', content: 'x' }], [], CONFIG, col.onStream);
     expect(res.truncated).toBe(true);
     expect(res.finishReason).toBe('length');
+  });
+
+  it('流式请求完成后，诊断模块从同一 monitor 读到 provider 运行时数据', async () => {
+    const provider = 'ai-sdk-stream-doctor-bridge-test';
+    vi.mocked(streamText).mockReturnValue(fakeStream([
+      { type: 'text-delta', id: 't', text: 'ok' },
+      { type: 'finish', finishReason: 'stop', totalUsage: { inputTokens: 1, outputTokens: 1 } },
+    ]));
+    const col = makeCollector();
+
+    await inferenceViaAiSdk(
+      [{ role: 'user', content: 'x' }],
+      [],
+      { ...CONFIG, provider } as ModelConfig,
+      col.onStream,
+    );
+
+    expect(checkProviderHealth()).toContainEqual(expect.objectContaining({
+      category: 'provider_health',
+      name: provider,
+      status: 'pass',
+      details: expect.stringContaining(`backendPid=${process.pid}`),
+    }));
   });
 });
 

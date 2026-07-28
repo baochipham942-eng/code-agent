@@ -17,6 +17,8 @@ import { getRepoMap } from '../../../context/repoMap';
 import { getCompressionPipelineOverride } from '../../../context/compressionPipeline';
 import { buildSessionMetadataBlock } from '../../../lightMemory/sessionMetadata';
 import { appendPinnedLibraryPromptBlock, getSessionPinFingerprint } from './libraryPins';
+import { injectRuntimeModelIdentity } from './runtimeModelIdentity';
+import { buildCompressionCacheKey, cloneCompressionState, cloneTranscriptEntries } from './compressionStateUtils';
 import { buildRecentConversationsBlock } from '../../../lightMemory/recentConversations';
 import {
   getPromptForTask,
@@ -159,6 +161,7 @@ export function buildDynamicPromptCacheKey(
     String(ctx.runtime.isDefaultWorkingDirectory),
     String(ctx.runtime.turn.isSimpleTaskMode),
     String(ctx.runtime.enableToolDeferredLoading),
+    ctx.runtime.modelConfig.provider || '',
     ctx.runtime.modelConfig.model || '',
     getLastUserMessage(ctx)?.id || '',
     ctx.runtime.turn.activeSkillInvocation?.skillName || '',
@@ -208,7 +211,11 @@ async function buildCachedDynamicSystemPrompt(ctx: ContextAssemblyCtx): Promise<
   // repo map / deferred tools / append)。用于 D 风险闭环 —— custom 只替换 identity,
   // 后续层(尤其全局 memory)会渗透;fullReplace 真接管。
   if (projectSystemPrompt.fullReplace !== null) {
-    const fullPrompt = projectSystemPrompt.fullReplace;
+    const fullPrompt = injectRuntimeModelIdentity(
+      projectSystemPrompt.fullReplace,
+      ctx.runtime.modelConfig?.provider,
+      ctx.runtime.modelConfig?.model,
+    );
     const tokens = estimateTokens(fullPrompt);
     recordBasePromptLayer(ctx, fullPrompt, CONTEXT_LEDGER.BASE_SOURCE.FULL_REPLACE);
     if (tokens <= promptBudget(ctx)) {
@@ -254,6 +261,11 @@ async function buildCachedDynamicSystemPrompt(ctx: ContextAssemblyCtx): Promise<
     ctx.runtime.modelConfig?.provider,
     ctx.runtime.modelConfig?.model,
     { customBase: projectSystemPrompt.custom !== null },
+  );
+  systemPrompt = injectRuntimeModelIdentity(
+    systemPrompt,
+    ctx.runtime.modelConfig?.provider,
+    ctx.runtime.modelConfig?.model,
   );
 
   const appendedBlocks = new Map<string, string>();
@@ -731,67 +743,6 @@ ${deferredToolsSummary}
   }
 
   return { systemPrompt, turnContext };
-}
-
-function buildCompressionCacheKey(
-  ctx: ContextAssemblyCtx,
-  entries: ContextTranscriptEntry[],
-  interventions: ContextInterventionSnapshot,
-  contextWindowSize: number,
-): string {
-  const hash = createHash('sha256');
-  hash.update(ctx.runtime.sessionId);
-  hash.update('\u0000');
-  hash.update(ctx.runtime.agentId || '');
-  hash.update('\u0000');
-  hash.update(String(contextWindowSize));
-  hash.update('\u0000');
-  hash.update(JSON.stringify(interventions));
-  for (const entry of entries) {
-    hash.update('\u0000');
-    hash.update(entry.id);
-    hash.update('\u0001');
-    hash.update(entry.originMessageId);
-    hash.update('\u0001');
-    hash.update(entry.role);
-    hash.update('\u0001');
-    hash.update(String(entry.timestamp));
-    hash.update('\u0001');
-    hash.update(entry.content || '');
-    hash.update('\u0001');
-    hash.update(entry.toolCallId || '');
-    hash.update('\u0001');
-    hash.update(String(entry.toolError || false));
-    if (entry.attachments?.length) {
-      hash.update(JSON.stringify(entry.attachments.map((attachment) => ({
-        type: attachment.type,
-        name: attachment.name,
-        path: attachment.path,
-        mimeType: attachment.mimeType,
-        dataLength: attachment.data?.length || 0,
-      }))));
-    }
-    if (entry.toolCalls?.length) {
-      hash.update(JSON.stringify(entry.toolCalls.map((toolCall) => ({
-        id: toolCall.id,
-        name: toolCall.name,
-        arguments: toolCall.arguments || {},
-      }))));
-    }
-  }
-  return hash.digest('hex');
-}
-
-function cloneTranscriptEntries(entries: ContextTranscriptEntry[]): ContextTranscriptEntry[] {
-  return entries.map((entry) => ({ ...entry }));
-}
-
-function cloneCompressionState(state: CompressionState): CompressionState {
-  try {
-    return CompressionState.deserialize(state.serialize());
-  } catch {
-    return new CompressionState();
-  }
 }
 
 export async function buildModelMessages(ctx: ContextAssemblyCtx): Promise<ModelMessage[]> {

@@ -149,4 +149,32 @@ describe('createBridgeToolDispatch', () => {
     await expect(resultPromise).resolves.toBeNull();
     expect(warn).toHaveBeenCalledOnce();
   });
+
+  it('adds an actionable error when the renderer reports failure without details', async () => {
+    const runContext = createRunContext({
+      runId: 'run-bridge-empty-error',
+      sessionId: 'session-bridge-empty-error',
+      workspace: '/tmp/bridge-empty-error',
+    });
+    const pending = new Map<string, PendingLocalToolCall>();
+    const dispatch = createBridgeToolDispatch({
+      runContext,
+      pendingLocalToolCalls: pending,
+      emitSSE: vi.fn(),
+      logger: { warn: vi.fn() } as never,
+    });
+
+    const resultPromise = dispatch(
+      'system_info',
+      {},
+      toolContext(runContext.workspace, runContext.runId, runContext.sessionId),
+      { runId: runContext.runId, sessionId: runContext.sessionId },
+    );
+    pending.values().next().value?.resolve({ success: false });
+
+    await expect(resultPromise).resolves.toMatchObject({
+      success: false,
+      error: 'Tool "system_info" failed: execution backend returned failure without an error message',
+    });
+  });
 });

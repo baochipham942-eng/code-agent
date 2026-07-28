@@ -28,7 +28,7 @@ import type {
 } from '../../shared/contract';
 import type { SessionStatus, TaskManager } from '../task';
 import type { PermissionDeliveryOutcome } from '../../shared/contract/permission';
-import { orphanDeadParkedApproval } from '../agent/parkedApprovalHydration';
+import { closeDeadParkedApproval } from '../agent/parkedApprovalHydration';
 import type { ConfigService } from '../services';
 import { getSessionManager, type SessionWithMessages } from '../services';
 import { createLogger } from '../services/infra/logger';
@@ -746,16 +746,16 @@ export class AgentAppServiceImpl implements AgentApplicationService {
 
   handlePermissionResponse(requestId: string, response: PermissionResponse, sessionId?: string): PermissionDeliveryOutcome {
     // 停车审批的宿主可能已随进程重启消失（D0 根因，2026-07-27）：
-    // 找不到宿主/内存 pending 已丢时，把 DB 行标 orphaned（收件箱转灰态），
+    // 找不到宿主/内存 pending 已丢时，把 DB 行 fail-closed 拒绝收尾，
     // 返回类型化结果而不是裸抛或静默丢弃。
     let outcome: PermissionDeliveryOutcome;
     try {
       outcome = this.getOrchestratorOrThrow(sessionId).handlePermissionResponse(requestId, response);
     } catch (err) {
-      if (orphanDeadParkedApproval(requestId)) return 'no_orchestrator';
+      if (closeDeadParkedApproval(requestId)) return 'no_orchestrator';
       throw err;
     }
-    if (outcome === 'unknown_request') orphanDeadParkedApproval(requestId);
+    if (outcome === 'unknown_request') closeDeadParkedApproval(requestId);
     return outcome;
   }
 

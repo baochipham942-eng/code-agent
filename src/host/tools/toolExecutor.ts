@@ -45,6 +45,7 @@ import { type ExecutionTopology } from '../permissions';
 import { boundaryIdForRequestType } from './permissionBoundaryMapping';
 import { evaluateGuardFabricGate } from './guardFabricGate';
 import { completeArtifactLocatorGuardedWrite } from './artifacts/artifactLocatorHost';
+import { ensureFailedToolResultError } from './toolResultError';
 
 const logger = createLogger('ToolExecutor');
 
@@ -1022,14 +1023,17 @@ export class ToolExecutor {
         : null;
       const rawResult = delegatedResult
         ?? await resolver.execute(executionToolName, params, context);
-      const resultWithSurfaceProjection = await finalizeSurfaceAwareToolResult({
-        toolName: executionToolName,
-        arguments: params,
-        result: rawResult,
-        workingDirectory: this.workspaceRoot,
-        conversationId: effectiveSessionId, runId: effectiveRunId, turnId: options.turnId, agentId: options.agentId,
-        toolCallId: options.currentToolCallId || executionId, startedAt: startTime,
-      });
+      const resultWithSurfaceProjection = ensureFailedToolResultError(
+        executionToolName,
+        await finalizeSurfaceAwareToolResult({
+          toolName: executionToolName,
+          arguments: params,
+          result: rawResult,
+          workingDirectory: this.workspaceRoot,
+          conversationId: effectiveSessionId, runId: effectiveRunId, turnId: options.turnId, agentId: options.agentId,
+          toolCallId: options.currentToolCallId || executionId, startedAt: startTime,
+        }),
+      );
       const result = writeIsolationMetadata
         ? {
           ...resultWithSurfaceProjection,

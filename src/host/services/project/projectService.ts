@@ -427,7 +427,13 @@ export class ProjectService {
   /** D4 启动迁移归桶：把存量无 project_id 的 session 按 workspace 自动归桶。返回归桶数。 */
   backfillSessions(now: number): number {
     const repo = this.repo();
-    const count = repo.backfillSessions(now, (workspacePath, key) => buildProjectRow(workspacePath, key, now));
+    const count = repo.backfillSessions(
+      now,
+      (workspacePath, key) => buildProjectRow(workspacePath, key, now),
+      ({ sessionId, reason }) => {
+        logger.warn('[ProjectService] 跳过不可变边界冲突的存量会话归桶', { sessionId, reason });
+      },
+    );
     repo.backfillProjectSources(now);
     return count;
   }

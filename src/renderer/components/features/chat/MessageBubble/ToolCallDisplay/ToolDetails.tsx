@@ -359,6 +359,9 @@ export function ToolDetails({ toolCall, compact, mediaContext }: Props) {
                     </pre>
                   )}
                 </div>
+              ) : (!result.success && !result.error?.trim() && (result.output == null || result.output === '')) ? (
+                // 上游失败但没回任何错误详情（QA 2026-07-28 A2）：别让 JSON "null" / 空白糊在用户脸上
+                <div className="text-xs text-zinc-500 italic py-1">执行失败，未返回错误详情</div>
               ) : (!safeBrowserComputerResult && !result.error && result.output !== null && typeof result.output === 'object') ? (
                 // 对象/数组型 output（非字符串日志）走 JSON 语法高亮
                 <JsonHighlight code={JSON.stringify(result.output, null, 2)} error={!result.success} />

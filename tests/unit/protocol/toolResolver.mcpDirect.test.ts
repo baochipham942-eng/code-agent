@@ -129,6 +129,26 @@ describe('ToolResolver MCP direct tools', () => {
     });
   });
 
+  it('repairs MCP failures that omit error details', async () => {
+    mocks.callTool.mockResolvedValueOnce({
+      toolCallId: 'tool-call-1',
+      success: false,
+      metadata: { code: 'REMOTE_EMPTY_FAILURE' },
+    });
+    const resolver = getToolResolver();
+
+    const result = await resolver.execute(
+      'mcp__github__search_code',
+      { query: 'repo:example test' },
+      makeCtx(),
+    );
+
+    expect(result).toMatchObject({
+      success: false,
+      error: 'Tool "mcp__github__search_code" failed: execution backend returned failure (REMOTE_EMPTY_FAILURE) without an error message',
+    });
+  });
+
   it('blocks MCP dynamic tools outside the workbench MCP server scope', async () => {
     const resolver = getToolResolver();
 

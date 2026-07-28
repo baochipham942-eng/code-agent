@@ -22,6 +22,7 @@ export function loadBetterSqlite3(moduleDir: string, logger: Logger): typeof Bet
     path.join(moduleDir, '../../native/better-sqlite3'),
     path.join(process.cwd(), 'dist/native/better-sqlite3'),
   ];
+  const candidateFailures: Array<{ path: string; error: string }> = [];
   for (const nativePath of nativePaths) {
     if (!Database) {
       try {
@@ -29,7 +30,9 @@ export function loadBetterSqlite3(moduleDir: string, logger: Logger): typeof Bet
         Database = loaded as typeof BetterSqlite3;
         logger.info(`[DatabaseService] Loaded better-sqlite3 from ${nativePath}`);
       } catch (error) {
-        logger.warn(`[DatabaseService] Failed to load better-sqlite3 from ${nativePath}:`, error);
+        const message = error instanceof Error ? error.message.split('\n')[0] : String(error);
+        candidateFailures.push({ path: nativePath, error: message });
+        logger.debug(`[DatabaseService] better-sqlite3 candidate unavailable: ${nativePath}`, { error: message });
       }
     }
   }
@@ -38,10 +41,18 @@ export function loadBetterSqlite3(moduleDir: string, logger: Logger): typeof Bet
     try {
       const loaded: unknown = runtimeRequire('better-sqlite3');
       Database = loaded as typeof BetterSqlite3;
+      if (candidateFailures.length > 0) {
+        logger.warn('[DatabaseService] Loaded better-sqlite3 from package fallback', {
+          source: 'better-sqlite3',
+          failedCandidates: candidateFailures,
+        });
+      }
     } catch (error) {
       const err = error as Error;
-      console.warn('[DatabaseService] better-sqlite3 not available:', err.message?.split('\n')[0]);
-      if (err.stack) console.warn('[DatabaseService] Stack:', err.stack);
+      logger.warn('[DatabaseService] better-sqlite3 unavailable after all load attempts', {
+        failedCandidates: candidateFailures,
+        fallbackError: err.message?.split('\n')[0],
+      });
     }
   }
   return Database;

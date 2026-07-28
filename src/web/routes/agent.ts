@@ -21,6 +21,7 @@ import {
   type CachedMessage,
 } from '../helpers/sessionCache';
 import { createWebSessionStore } from '../helpers/webSessionStore';
+import { syncSupabaseSessionRow } from '../helpers/supabaseSessionSync';
 import { buildGoalContract } from '../../host/agent/goalModeController';
 import {
   ClaudeCodeAdapter,
@@ -762,15 +763,27 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
 
       // 加载历史消息 + 当前用户消息
       const cachedHistory = await sessionStore.loadSessionHistoryForRun(sessionId);
-      const history = cachedHistory.map(({ id, role, content, timestamp, attachments, metadata }) => ({
+      const history = cachedHistory.map(({
         id,
-        role: role as 'user' | 'assistant',
+        role,
+        content,
+        timestamp,
+        toolCalls,
+        toolResults,
+        attachments,
+        metadata,
+      }) => ({
+        id,
+        role,
         content: stripInlineAttachmentBlocks(content),
         timestamp,
+        toolCalls,
+        toolResults,
         attachments: sanitizeAttachmentsForPersistence(attachments),
         metadata,
       }));
       const messages = [...history, userMsg] as import('../../shared/contract').Message[];
+      const isNewSession = history.length === 0;
 
       // ── Tool Executor 选择 ──
       // webServer 本身是 Node.js 进程，默认用当前 run 独占的 executor 执行本地工具。
@@ -803,7 +816,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       }
 
       // 新会话时立即通知前端刷新列表（不等 agentLoop 完成）
-      if (history.length === 0) {
+      if (isNewSession) {
         const title = visiblePrompt.length > 30 ? visiblePrompt.substring(0, 30) + '...' : visiblePrompt;
         broadcastSSE('session:updated', { sessionId, updates: { title } });
         broadcastSSE('session:list-updated', undefined);
@@ -831,17 +844,13 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       try {
         const sb = await getSupabaseForSession();
         if (sb) {
-          const title = buildSessionTitle(visiblePrompt);
-          await sb.supabase.from('sessions').upsert({
-            id: sessionId,
-            user_id: sb.userId,
-            title,
-            model_provider: runModelConfig.provider,
-            model_name: runModelConfig.model,
-            created_at: Date.now(),
-            updated_at: Date.now(),
-            source_device_id: 'web',
-          }, { onConflict: 'id' });
+          await syncSupabaseSessionRow(sb, {
+            sessionId,
+            isNewSession,
+            title: buildSessionTitle(visiblePrompt),
+            provider: runModelConfig.provider,
+            model: runModelConfig.model,
+          });
           await sb.supabase.from('messages').insert({
             id: msgId,
             session_id: sessionId,
@@ -882,18 +891,14 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       try {
         const sb = await getSupabaseForSession();
         if (sb) {
-          const title = visiblePrompt.length > 30 ? visiblePrompt.substring(0, 30) + '...' : visiblePrompt;
-          // Upsert session
-          await sb.supabase.from('sessions').upsert({
-            id: sessionId,
-            user_id: sb.userId,
-            title,
-            model_provider: runModelConfig.provider,
-            model_name: runModelConfig.model,
-            created_at: Date.now(),
-            updated_at: Date.now(),
-            source_device_id: 'web',
-          }, { onConflict: 'id' });
+          await syncSupabaseSessionRow(sb, {
+            sessionId,
+            isNewSession,
+            title: buildSessionTitle(visiblePrompt),
+            provider: runModelConfig.provider,
+            model: runModelConfig.model,
+          });
+          const sessionsTable = sb.supabase.from('sessions');
           // Insert user message (skip if pre-persisted)
           if (!userMsgPrePersistedSupabase) {
             await sb.supabase.from('messages').insert({
@@ -923,8 +928,11 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
             });
           }
           // 更新会话标题（第一轮消息时）
-          if (history.length === 0) {
-            await sb.supabase.from('sessions').update({ title, updated_at: Date.now() }).eq('id', sessionId);
+          if (isNewSession) {
+            await sessionsTable.update({
+              title: buildSessionTitle(visiblePrompt),
+              updated_at: Date.now(),
+            }).eq('id', sessionId);
           }
         }
       } catch (sbErr) {

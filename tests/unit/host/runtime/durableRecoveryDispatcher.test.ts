@@ -145,4 +145,51 @@ describe('DurableRecoveryDispatcher', () => {
       expect.objectContaining({ phase: 'operation', status: 'unsupported', operationId: 'tool-x' }),
     ]));
   });
+
+  it('does not duplicate native model recovery with an unsupported operation result', async () => {
+    const dispatcher = new DurableRecoveryDispatcher();
+    dispatcher.registerEngineHandler(engineHandler('native'));
+    const modelOperation: PendingOperation = {
+      ...operation('native-model', 'model-1'),
+      kind: 'model_call',
+      sideEffect: false,
+    };
+    const results = await dispatcher.dispatch([
+      plan({ runId: 'native-model', engine: { kind: 'native' }, operations: [modelOperation] }),
+    ]);
+    expect(results).toEqual([
+      expect.objectContaining({ phase: 'engine', status: 'recovered' }),
+    ]);
+  });
+
+  it('lets the agent team engine own child recovery without an unsupported operation result', async () => {
+    const dispatcher = new DurableRecoveryDispatcher();
+    const recover = vi.fn(async () => ({
+      status: 'requires_review' as const,
+      reason: 'uncertain child side effect',
+    }));
+    dispatcher.registerEngineHandler(engineHandler('agent_team', recover));
+    const childOperation: PendingOperation = {
+      ...operation('team-child', 'node:swarm-agent.v1'),
+      kind: 'child_run',
+      status: 'dispatched',
+      sideEffect: false,
+    };
+    const results = await dispatcher.dispatch([
+      plan({
+        runId: 'team-child',
+        engine: { kind: 'agent_team', treeId: 'tree' },
+        operations: [childOperation],
+      }),
+    ]);
+
+    expect(recover).toHaveBeenCalledTimes(1);
+    expect(results).toEqual([
+      expect.objectContaining({
+        phase: 'engine',
+        handler: 'agent_team',
+        status: 'requires_review',
+      }),
+    ]);
+  });
 });

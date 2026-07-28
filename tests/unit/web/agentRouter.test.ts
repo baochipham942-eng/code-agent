@@ -1761,6 +1761,46 @@ describe('createAgentRouter', () => {
     }));
   });
 
+  it('does not overwrite the Supabase session title on later turns', async () => {
+    await closeServer();
+    seedSessionMessagesFromPersisted('session-supabase-existing', [
+      { id: 'old-user', role: 'user', content: '首轮问题', timestamp: 1 } as Message,
+      { id: 'old-assistant', role: 'assistant', content: '首轮回答', timestamp: 2 } as Message,
+    ]);
+    const sessionEq = vi.fn(async () => ({ error: null }));
+    const sessionsTable = {
+      upsert: vi.fn(async () => ({ error: null })),
+      update: vi.fn(() => ({ eq: sessionEq })),
+    };
+    const messagesTable = {
+      insert: vi.fn(async () => ({ error: null })),
+    };
+    const from = vi.fn((table: string) => table === 'sessions' ? sessionsTable : messagesTable);
+    mockCreateAgentLoop.mockImplementationOnce(() => ({
+      run: vi.fn(async () => undefined),
+      cancel: mockCancel,
+    }));
+    await startAgentApi({
+      getSupabaseForSession: async () => ({ supabase: { from }, userId: 'user-existing' }),
+    });
+
+    const response = await fetch(`${baseUrl}/api/run`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        prompt: '第二轮不应改标题',
+        sessionId: 'session-supabase-existing',
+      }),
+    });
+    await response.text();
+
+    expect(sessionsTable.upsert).not.toHaveBeenCalled();
+    expect(sessionsTable.update).toHaveBeenCalledTimes(2);
+    for (const [row] of sessionsTable.update.mock.calls) {
+      expect(row).not.toHaveProperty('title');
+    }
+  });
+
   it('passes image attachments from /api/run into the agent loop message history', async () => {
     mockRun.mockResolvedValueOnce(undefined);
     const imageAttachment = {
@@ -2169,8 +2209,14 @@ describe('createAgentRouter', () => {
       {
         id: 'old-tool-1',
         role: 'tool',
-        content: '工具结果只用于 UI hydrate，不直接喂给 web AgentLoop',
+        content: '工具读取失败',
         timestamp: 300,
+        toolResults: [{
+          toolCallId: 'old-call-1',
+          success: false,
+          error: 'missing file',
+          duration: 5,
+        }],
       },
     ]);
     const getSession = vi.fn(async () => ({
@@ -2210,12 +2256,14 @@ describe('createAgentRouter', () => {
     }))).toEqual([
       { id: 'old-user-1', role: 'user', content: '上一轮需求' },
       { id: 'old-assistant-1', role: 'assistant', content: '上一轮回答' },
+      { id: 'old-tool-1', role: 'tool', content: '工具读取失败' },
       expect.objectContaining({ role: 'user', content: '继续刚才那轮' }),
     ]);
 
-    expect(sessionMessages.get('persisted-session-1')?.map((message) => message.id).slice(0, 2)).toEqual([
+    expect(sessionMessages.get('persisted-session-1')?.map((message) => message.id).slice(0, 3)).toEqual([
       'old-user-1',
       'old-assistant-1',
+      'old-tool-1',
     ]);
   });
 

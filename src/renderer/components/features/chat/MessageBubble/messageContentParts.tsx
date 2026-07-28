@@ -940,6 +940,37 @@ export function filterSystemTags(text: string): string {
   return filtered.trim();
 }
 
+/**
+ * 已知 HTML 标签名单：只剥这些，避免误伤技术文本里的尖括号（如 Array<string>、a<b）。
+ */
+const RAW_HTML_TAG_PATTERN = /<\/?(?:span|div|p|br|hr|b|i|em|strong|u|s|del|ins|mark|small|sub|sup|a|img|table|thead|tbody|tr|td|th|ul|ol|li|h[1-6]|section|article|header|footer|nav|aside|main|figure|figcaption|button|input|select|option|textarea|label|form|style|script|font|center|details|summary|kbd|samp|var|abbr|cite|q|blockquote)(?:\s[^>]*)?\/?>/gi;
+
+/**
+ * 纯文本兜底通道（流式中途的 plain-text 渲染、MarkdownCore 懒加载 fallback）没有
+ * markdown/HTML 解析能力，模型偶尔输出的原始 HTML 标签（如 <span style=...>）和
+ * IACT 链接语法（[text](!add)）会被原样露出。这里做降级清洗：
+ * - IACT 链接降级为链接文字（协议在纯文本下不可点击，露出 "!add" 只会困惑）；
+ * - HTML 标签剥掉只留内部文本（与 react-markdown 默认丢弃 html 节点的行为对齐）。
+ */
+export function sanitizePlainTextFallback(text: string): string {
+  return text
+    .replace(/\[([^\]]*)\]\(![^)]*\)/g, '$1')
+    .replace(RAW_HTML_TAG_PATTERN, '');
+}
+
+/**
+ * 完成态消息兜底：历史/上游数据里 HTML 标签可能被转义成字面文本持久化（QA 2026-07-28
+ * A3 现象1：正文原样露出 `<span style="color:red">❌执行失败</span>`），react-markdown
+ * 只能丢原始 html 节点，对已经是纯文本的标签无能为力。这里在 markdown 渲染前把代码
+ * （fenced block / inline code）之外的已知 HTML 标签剥掉，只留内部文本。
+ */
+export function stripRawHtmlOutsideCode(text: string): string {
+  return text
+    .split(/(```[\s\S]*?(?:```|$)|`[^`\n]*`)/g)
+    .map((segment, index) => (index % 2 === 1 ? segment : segment.replace(RAW_HTML_TAG_PATTERN, '')))
+    .join('');
+}
+
 // IACT Copy button with copied state feedback
 export const IACTCopyButton: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [copied, setCopied] = useState(false);
@@ -1031,7 +1062,7 @@ export const MarkdownRenderer = memo(function markdownRenderer({
   });
 
   return (
-    <Suspense fallback={<div className="whitespace-pre-wrap break-words">{content}</div>}>
+    <Suspense fallback={<div className="whitespace-pre-wrap break-words">{sanitizePlainTextFallback(content)}</div>}>
       <LazyMarkdownCore
         content={content}
         gfm

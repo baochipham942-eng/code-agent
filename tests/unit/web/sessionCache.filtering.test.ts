@@ -1,5 +1,5 @@
 // ============================================================================
-// sessionCache.toCachedSessionMessages：过滤非 user/assistant、剥 inline attachment 块。
+// sessionCache.toCachedSessionMessages：保留可投影对话角色、剥 inline attachment 块。
 // sessionCache.persistence.test.ts 只测 health + 富字段保留。
 // ============================================================================
 import { describe, expect, it } from 'vitest';
@@ -7,7 +7,7 @@ import type { Message } from '../../../src/shared/contract';
 import { toCachedSessionMessages } from '../../../src/web/helpers/sessionCache';
 
 describe('toCachedSessionMessages filtering', () => {
-  it('drops tool-role messages from the cache projection', () => {
+  it('keeps tool-role results in the cache projection for the next model turn', () => {
     const cached = toCachedSessionMessages([
       {
         id: 'u1',
@@ -20,6 +20,12 @@ describe('toCachedSessionMessages filtering', () => {
         role: 'tool',
         content: 'tool output',
         timestamp: 2,
+        toolResults: [{
+          toolCallId: 'call-1',
+          success: false,
+          error: 'read failed',
+          duration: 1,
+        }],
       } as Message,
       {
         id: 'a1',
@@ -29,8 +35,11 @@ describe('toCachedSessionMessages filtering', () => {
       } as Message,
     ]);
 
-    expect(cached.map((m) => m.id)).toEqual(['u1', 'a1']);
-    expect(cached.every((m) => m.role === 'user' || m.role === 'assistant')).toBe(true);
+    expect(cached.map((m) => m.id)).toEqual(['u1', 't1', 'a1']);
+    expect(cached[1]).toMatchObject({
+      role: 'tool',
+      toolResults: [{ toolCallId: 'call-1', success: false, error: 'read failed' }],
+    });
   });
 
   it('maps empty input to empty array', () => {

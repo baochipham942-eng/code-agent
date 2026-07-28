@@ -11,6 +11,7 @@ import type { DoctorItem } from '../types';
 export function checkProviderHealth(): DoctorItem[] {
   const monitor = getProviderHealthMonitor();
   const healthMap = monitor.getHealthMap();
+  const backendProcess = `backendPid=${process.pid}`;
 
   if (healthMap.size === 0) {
     return [
@@ -18,7 +19,8 @@ export function checkProviderHealth(): DoctorItem[] {
         category: 'provider_health',
         name: 'Provider 健康监控',
         status: 'skip',
-        message: '尚无运行时数据（未发起过 API 请求）',
+        message: '当前后端进程尚无运行时数据（启动/重启后未发起过 API 请求）',
+        details: backendProcess,
       },
     ];
   }
@@ -53,7 +55,7 @@ export function checkProviderHealth(): DoctorItem[] {
       name: provider,
       status,
       message: `${health.status} · p50 ${health.latencyP50}ms · err ${errorRatePct}%`,
-      details: `consecutiveErrors=${health.consecutiveErrors}, p95=${health.latencyP95}ms`,
+      details: `consecutiveErrors=${health.consecutiveErrors}, p95=${health.latencyP95}ms, ${backendProcess}`,
       suggestion,
       fix: status === 'pass' ? undefined : { code: DOCTOR_FIX_CODES.OPEN_PROVIDER_SETTINGS },
     });

@@ -1,3 +1,5 @@
+import os from 'node:os';
+import path from 'node:path';
 import type { IpcMain } from '../platform';
 import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
 import type { AgentApplicationService } from '../../shared/contract/appService';
@@ -8,14 +10,20 @@ import {
   type FolderTrustDecisionState,
 } from '../security/folderTrustService';
 
-function resolveWorkingDirectory(
+export function resolveWorkingDirectory(
   payload: unknown,
   getAppService: () => AgentApplicationService | null,
+  env: NodeJS.ProcessEnv = process.env,
 ): string {
   const requested = payload && typeof payload === 'object'
     ? (payload as { workingDirectory?: unknown }).workingDirectory
     : undefined;
   if (typeof requested === 'string' && requested.trim()) return requested;
+  if (env.CODE_AGENT_WEB_MODE === 'true') {
+    const dataDir = env.CODE_AGENT_DATA_DIR?.trim() || path.join(os.homedir(), '.code-agent');
+    // 与 web /api/run 的 ensureDefaultWebWorkingDirectory 保持同一真相源。
+    return path.join(path.resolve(dataDir), 'work');
+  }
   const appWorkingDirectory = getAppService()?.getWorkingDirectory();
   if (appWorkingDirectory) return appWorkingDirectory;
   return process.cwd();

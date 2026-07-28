@@ -25,8 +25,18 @@ import { SendButton } from './SendButton';
 import { SuggestionBar } from './SuggestionBar';
 import { VoiceInputButton } from './VoiceInputButton';
 import { DictationRecordingBar } from './DictationRecordingBar';
+import {
+  applyDictationPartial,
+  beginDictationAnchor,
+  cancelDictationAnchor,
+  markDictationUserEdit,
+  settleDictationFinal,
+  type DictationComposerAnchor,
+} from './dictationComposerAnchor';
 import { useVoiceInput } from '../../../../hooks/useVoiceInput';
 import { LiveVoiceButton } from '../../voice/LiveVoiceButton';
+import { useVoiceLiveAvailability } from '../../voice/useVoiceLiveAvailability';
+import { useVoiceCallStore } from '../../../../stores/voiceCallStore';
 import { VoiceChrome } from '../../voice/VoiceChrome';
 import { PermissionToggle } from './PermissionToggle';
 import { ContextUsagePill } from '../ContextUsagePill';
@@ -611,8 +621,41 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   const valueRef = useRef(value);
   valueRef.current = value;
   const dictationSendAfterTranscriptRef = useRef(false);
+  const dictationAnchorRef = useRef<DictationComposerAnchor | null>(null);
+  const writeDictationValue = useCallback((next: string) => {
+    valueRef.current = next;
+    setValue(next);
+  }, [setValue]);
   const voice = useVoiceInput({
+    onStreamStart: () => {
+      dictationAnchorRef.current = beginDictationAnchor(valueRef.current);
+    },
+    onPartialTranscript: (text) => {
+      const anchor = dictationAnchorRef.current;
+      if (!anchor) return;
+      const applied = applyDictationPartial(anchor, text);
+      dictationAnchorRef.current = applied.state;
+      if (applied.value !== null) writeDictationValue(applied.value);
+    },
     onTranscript: (text, result) => {
+      const anchor = dictationAnchorRef.current;
+      if (anchor) {
+        const settled = settleDictationFinal(anchor, valueRef.current, text);
+        dictationAnchorRef.current = settled.state;
+        writeDictationValue(settled.value);
+        setVoiceInputContext({
+          anchor: text.slice(0, 64),
+          metadata: {
+            inputSource: 'voice',
+            transcriptionMode: 'cloud',
+            transcriptChars: text.length,
+            rawTranscriptChars: result?.rawText?.length,
+            postProcessed: false,
+          },
+        });
+        return;
+      }
+
       const sendAfter = dictationSendAfterTranscriptRef.current;
       dictationSendAfterTranscriptRef.current = false;
       handleVoiceTranscriptRef.current(text, result);
@@ -624,19 +667,59 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
       }
     },
   });
+  const handleDictationAwareValueChange = useCallback((newValue: string) => {
+    if (dictationAnchorRef.current) {
+      dictationAnchorRef.current = markDictationUserEdit(
+        dictationAnchorRef.current,
+        newValue,
+      );
+    }
+    valueRef.current = newValue;
+    handleValueChange(newValue);
+  }, [handleValueChange]);
   const isDictationActive = voice.status === 'recording' || voice.status === 'transcribing';
   // 录音失败（如太短）不会触发 onTranscript——滞留的 send-after 旗标必须在
   // 出错时清掉，否则下一次成功转写会被意外自动发送。
   useEffect(() => {
-    if (voice.status === 'error' || voice.status === 'idle') {
+    if (voice.status === 'error') {
+      const anchor = dictationAnchorRef.current;
+      if (anchor) {
+        writeDictationValue(cancelDictationAnchor(anchor, valueRef.current));
+        dictationAnchorRef.current = null;
+      }
       dictationSendAfterTranscriptRef.current = false;
+      return;
     }
-  }, [voice.status]);
+    if (voice.status === 'idle' && dictationAnchorRef.current) {
+      dictationAnchorRef.current = null;
+      if (dictationSendAfterTranscriptRef.current) {
+        dictationSendAfterTranscriptRef.current = false;
+        const content = valueRef.current.trim();
+        if (content) void handleSubmitRef.current(undefined, { content });
+      }
+    }
+  }, [voice.status, writeDictationValue]);
   // 累计费用已收进 ContextUsagePill 的 hover 面板（底栏收敛拍板 2026-07-26）：
   // 圆环 hover 展开时与上下文用量同面板展示，底栏不再常驻成本数字。
   // useBudgetStatus 不是定时轮询：仅在成本前进 / 流式结束时各拉一次，挂在 pill 侧。
 
   const hasContent = value.trim().length > 0 || attachments.length > 0;
+  // 右侧主按钮的归属：只有「空输入框 + 没在跑 + 语音入口真能用」时才让给开通话，
+  // 其余情况发送键都有事可做（发送 / 停止），不能被换掉。
+  //
+  // 刻意不看 `disabled`（2026-07-27 真机：切到新会话时底栏按钮闪变）：
+  // `disabled = isProcessing || isCreatingSession`，而 `!isProcessing` 上面已经拦了，
+  // 它多出来的只有「正在建会话」那一小段。建会话跟「有没有通话入口」无关——
+  // 拿它决定按钮存不存在，就是让底栏在每次开新会话时换一次构成。
+  // 这段窗口按钮照常在位，只是 disabled 置灰（两个按钮都真的会灰，见各自实现）。
+  const liveVoiceAvailability = useVoiceLiveAvailability();
+  const liveVoiceCallPhase = useVoiceCallStore((state) => state.phase);
+  const liveVoiceIsPrimary = !hasContent
+    && !isProcessing
+    && Boolean(currentSessionId)
+    && liveVoiceAvailability.enabled
+    && liveVoiceAvailability.configured
+    && liveVoiceCallPhase === 'idle';
 
   return (
     <div
@@ -899,42 +982,29 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
           )}
           {/* Neo Tag 轻量化重设计:@neo = 正常输入,composer 不再显示 "work card" 预览 chip
               (产品负责人 2026-07-02)。neoTagInvocation 仍用于压掉文件 mention 弹窗噪音。 */}
-          {/* G4：Dictation 录音中输入行换成录音条（波形 + 计时 + 停止/发送），
-              停止后文本落回输入框；InputArea 卸载不丢草稿（value 在本层 state） */}
-          {isDictationActive ? (
-            <DictationRecordingBar
-              status={voice.status}
-              duration={voice.duration}
-              inputLevel={voice.inputLevel}
-              silenceWarning={voice.silenceWarning}
-              onStop={voice.stop}
-              onSend={() => {
-                dictationSendAfterTranscriptRef.current = true;
-                voice.stop();
-              }}
-            />
-          ) : (
-            <InputArea
-              ref={inputAreaRef}
-              value={value}
-              onChange={handleValueChange}
-              onSubmit={(opts) => { void handleSubmit(undefined, opts); }}
-              onFileSelect={handleFileSelect}
-              onImagePaste={handleImagePaste}
-              disabled={disabled && !isProcessing}
-              hasAttachments={attachments.length > 0}
-              hasMessages={hasMessages}
-              isFocused={isFocused}
-              onFocusChange={setIsFocused}
-              placeholder={resolvedPlaceholder}
-              onHistoryPrev={getPreviousInput}
-              onHistoryNext={getNextInput}
-              onHistoryReset={resetInputHistoryIndex}
-              onAutocompleteKeyDown={handleAutocompleteKeyDown}
-            />
-          )}
+          <InputArea
+            ref={inputAreaRef}
+            value={value}
+            onChange={handleDictationAwareValueChange}
+            onSubmit={(opts) => { void handleSubmit(undefined, opts); }}
+            onFileSelect={handleFileSelect}
+            onImagePaste={handleImagePaste}
+            disabled={disabled && !isProcessing}
+            hasAttachments={attachments.length > 0}
+            hasMessages={hasMessages}
+            isFocused={isFocused}
+            onFocusChange={setIsFocused}
+            placeholder={resolvedPlaceholder}
+            onHistoryPrev={getPreviousInput}
+            onHistoryNext={getNextInput}
+            onHistoryReset={resetInputHistoryIndex}
+            onAutocompleteKeyDown={handleAutocompleteKeyDown}
+          />
           <RuntimeInputShortcutHint isProcessing={Boolean(isProcessing)} hasDraft={Boolean(value.trim())} />
-          {/* 底部工具栏 */}
+          {/* 底部工具栏。录音中这一行**原地变成波形条**（`+` 留在最左，波形铺中间，
+              右侧 时长 + 停止 + 发送）——不在输入框上方另悬浮一条，也就不会出现
+              两个发送键（产品负责人 2026-07-27 真机反馈，形态对齐 Codex composer）。
+              输入框本体全程可见可编辑。 */}
           <div className="flex items-center gap-1 px-3 pb-3">
             {/* "+" 二级菜单（Codex 风格 B+）— 收纳 /命令 + 上传附件 + 交互模式 */}
             <InputAddMenu
@@ -948,6 +1018,20 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
               onSelectCapability={selectWorkbenchCapabilityForCurrentTurn}
             />
 
+            {isDictationActive ? (
+              <DictationRecordingBar
+                status={voice.status}
+                duration={voice.duration}
+                inputLevel={voice.inputLevel}
+                silenceWarning={voice.silenceWarning}
+                onStop={voice.stop}
+                onSend={() => {
+                  dictationSendAfterTranscriptRef.current = true;
+                  voice.stop();
+                }}
+              />
+            ) : (
+            <>
             {/* 专家在主位：用户是在跟「人」协作，这行最该先看到的是它（带头像）。
                 权限档紧跟其后并弱一档——它是"这次对话怎么放权"，是专家的属性而不是同级的另一样东西。 */}
             <AgentChip onOpenAgentCommand={openAgentCommand} />
@@ -975,30 +1059,37 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
               <ModelSwitcher currentModel={modelConfig.model} />
             </div>
 
-            {/* 语音输入按钮 */}
-            {!disabled && (
-              <VoiceInputButton
-                voice={voice}
-                disabled={disabled}
-              />
-            )}
-            {/* 实时通话入口（与口述输入并列、职责分离，§4.2） */}
-            {!disabled && (
+            {/* 口述输入按钮：常驻不卸载。禁用时置灰留在原位——卸载会让底栏少一格、
+                旁边所有东西横向平移，「切会话时按钮闪一下」就是这么来的。 */}
+            <VoiceInputButton
+              voice={voice}
+              disabled={disabled}
+            />
+            {/*
+              右侧主按钮一个位置两种职能（2026-07-27 产品负责人拍板）：
+              输入框空着时是「开通话」，打了字才变「发送」——空输入框上摆一个
+              点了也没用的发送键，是这三个图标里最没用的那个。
+              正在跑 / 有内容 / 语音入口不可用时回退成发送键（那些状态下它有事可做）。
+            */}
+            {liveVoiceIsPrimary ? (
               <LiveVoiceButton
                 sessionId={currentSessionId ?? null}
                 hasMessages={hasMessages}
                 disabled={disabled}
+                variant="primary"
+              />
+            ) : (
+              <SendButton
+                disabled={disabled && !isProcessing}
+                isProcessing={isProcessing}
+                isInterrupting={isInterrupting}
+                hasContent={hasContent}
+                type="submit"
+                onStop={onStop}
               />
             )}
-            {/* 发送/停止/引导按钮 */}
-            <SendButton
-              disabled={disabled && !isProcessing}
-              isProcessing={isProcessing}
-              isInterrupting={isInterrupting}
-              hasContent={hasContent}
-              type="submit"
-              onStop={onStop}
-            />
+            </>
+            )}
           </div>
         </div>
       </form>

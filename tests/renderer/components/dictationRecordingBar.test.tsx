@@ -70,15 +70,20 @@ describe('DictationRecordingBar（G4）', () => {
 
   it('波形条来自真实电平采样（level prop 驱动，非假动画）', () => {
     const { rerender, props } = renderBar({ inputLevel: 0 });
-    // 初始一档 0 → 全是最低高度 12%
+    // 静默 → 最低高度 6%（细线，不是点）
     let bars = screen.getByTestId('dictation-waveform').querySelectorAll('span');
     expect(bars.length).toBe(1);
-    expect(bars[0].style.height).toBe('12%');
+    expect(bars[0].style.height).toBe('6%');
 
     rerender(<DictationRecordingBar {...props} inputLevel={0.8} />);
     bars = screen.getByTestId('dictation-waveform').querySelectorAll('span');
     expect(bars.length).toBe(2);
-    expect(bars[1].style.height).toBe('80%');
+    expect(bars[1].style.height).toBe('89%');
+
+    // 开方曲线：低电平也要被拉起来（线性 ×100 只有 9%，几乎看不出动静）
+    rerender(<DictationRecordingBar {...props} inputLevel={0.09} />);
+    bars = screen.getByTestId('dictation-waveform').querySelectorAll('span');
+    expect(bars[2].style.height).toBe('30%');
   });
 
   it('prefers-reduced-motion：退化为静态电平条（无逐档波形）', () => {
@@ -99,7 +104,7 @@ describe('DictationRecordingBar（G4）', () => {
       expect(staticBar).toBeTruthy();
       expect(screen.queryByTestId('dictation-waveform')).toBeNull();
       const fill = staticBar.querySelectorAll('div');
-      expect(fill[fill.length - 1].style.width).toBe('42%');
+      expect(fill[fill.length - 1].style.width).toBe('65%');
     } finally {
       window.matchMedia = original;
     }
@@ -129,6 +134,28 @@ describe('ChatInput Dictation 接线（G4）', () => {
     expect(source).toContain('<VoiceInputButton');
     expect(source).toContain('voice={voice}');
     expect(source).toContain('<DictationRecordingBar');
+  });
+
+  // 真机反馈（2026-07-27）：录音条悬浮在输入框上方 + 底栏主按钮各有一个发送键 = 重复。
+  // 正确形态是**底栏这一行原地变成录音条**，右下角那个位置就是唯一的发送键。
+  it('录音条长在底部工具栏内，不在输入框上方另悬浮一条', () => {
+    const barAt = source.indexOf('<DictationRecordingBar');
+    const inputAreaAt = source.indexOf('<InputArea');
+    const addMenuAt = source.indexOf('<InputAddMenu');
+    expect(barAt).toBeGreaterThan(-1);
+    // 录音条必须排在 InputArea **之后**（= 在底栏里），不能排在它前面（= 悬浮在输入框上方）
+    expect(barAt).toBeGreaterThan(inputAreaAt);
+    // 且与 `+` 菜单同在底栏那一行
+    expect(barAt).toBeGreaterThan(addMenuAt);
+  });
+
+  it('录音中整行被替换：SendButton / LiveVoiceButton 都在非录音分支里（不会出现第二个发送键）', () => {
+    const barAt = source.indexOf('<DictationRecordingBar');
+    // 三者都在底栏，但主按钮必须落在 isDictationActive 的 else 分支（源码里排在录音条之后）
+    expect(source.indexOf('<SendButton')).toBeGreaterThan(barAt);
+    expect(source.indexOf('<LiveVoiceButton')).toBeGreaterThan(barAt);
+    // 录音条自带的发送键就是那个位置本身，不能同时还渲染 VoiceInputButton 的麦克风
+    expect(source.indexOf('<VoiceInputButton')).toBeGreaterThan(barAt);
   });
 
   it('发送按钮 = 停止录音 + 转写完成后自动提交（send-after-transcript）', () => {

@@ -12,11 +12,29 @@ const ipc = vi.hoisted(() => ({
   invokeDomain: vi.fn(async (..._args: unknown[]) => ({ speech: {} })),
   transcribeSpeech: vi.fn(async (..._args: unknown[]): Promise<SpeechTranscribeResult | null> => ({ success: true, text: '你好世界' })),
 }));
+const pipeline = vi.hoisted(() => ({
+  callbacks: null as null | {
+    onFrame: (frame: Int16Array) => void;
+    onLevels?: (mic: number, playback: number) => void;
+    onError?: (code: string) => void;
+  },
+  start: vi.fn(async () => undefined),
+  stop: vi.fn(),
+}));
 vi.mock('../../../src/renderer/services/ipcService', () => ({
   default: {
     isAvailable: () => ipc.isAvailable(),
     invokeDomain: (...a: unknown[]) => ipc.invokeDomain(...a),
     transcribeSpeech: (...a: unknown[]) => ipc.transcribeSpeech(...a),
+  },
+}));
+vi.mock('../../../src/renderer/services/voiceAudioPipeline', () => ({
+  VoiceAudioPipeline: class {
+    constructor(callbacks: typeof pipeline.callbacks) {
+      pipeline.callbacks = callbacks;
+    }
+    start = pipeline.start;
+    stop = pipeline.stop;
   },
 }));
 vi.mock('../../../src/renderer/utils/logger', () => ({
@@ -93,10 +111,16 @@ beforeEach(() => {
   ipc.invokeDomain.mockResolvedValue({ speech: { enabled: true } });
   ipc.transcribeSpeech.mockResolvedValue({ success: true, text: '你好世界' });
   lastRecorder = null;
+  pipeline.callbacks = null;
+  vi.stubGlobal('fetch', vi.fn(async () => ({
+    ok: true,
+    json: async () => ({ configured: false }),
+  })));
   installMedia();
 });
 
 afterEach(() => {
+  vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
 
@@ -169,6 +193,77 @@ describe('麦克风权限错误', () => {
 });
 
 describe('录音 → 转写主链路', () => {
+  it('流式结果从 partial 演进到 final，并复用 PCM 管线', async () => {
+    class FakeWebSocket {
+      static OPEN = 1;
+      static CONNECTING = 0;
+      readyState = FakeWebSocket.CONNECTING;
+      onopen: (() => void) | null = null;
+      onmessage: ((event: { data: string }) => void) | null = null;
+      onerror: (() => void) | null = null;
+      onclose: (() => void) | null = null;
+      sent: unknown[] = [];
+      send(data: unknown) {
+        this.sent.push(data);
+      }
+      close() {
+        this.readyState = 3;
+        this.onclose?.();
+      }
+      open() {
+        this.readyState = FakeWebSocket.OPEN;
+        this.onopen?.();
+      }
+      message(data: object) {
+        this.onmessage?.({ data: JSON.stringify(data) });
+      }
+    }
+
+    const sockets: FakeWebSocket[] = [];
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ configured: true }),
+    })));
+    vi.stubGlobal('WebSocket', class extends FakeWebSocket {
+      constructor() {
+        super();
+        sockets.push(this);
+      }
+    });
+    ipc.invokeDomain.mockResolvedValue({ speech: { enabled: true, mode: 'stream' } });
+    const onTranscript = vi.fn();
+    const view = renderHook(() => useVoiceInput({ onTranscript }));
+    await waitFor(() => expect(view.result.current.settings.mode).toBe('stream'));
+
+    await act(async () => {
+      await view.result.current.start();
+    });
+    await act(async () => {
+      sockets[0].open();
+    });
+    expect(pipeline.start).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      sockets[0].message({ type: 'partial', text: '你', sentenceId: 3 });
+    });
+    expect(view.result.current.partialText).toBe('你');
+
+    act(() => {
+      sockets[0].message({ type: 'final', text: '你好', sentenceId: 3 });
+    });
+    expect(view.result.current.partialText).toBe('你好');
+    expect(onTranscript).toHaveBeenCalledWith(
+      '你好',
+      expect.objectContaining({ success: true, text: '你好' }),
+    );
+
+    act(() => {
+      view.result.current.stop();
+    });
+    expect(pipeline.stop).toHaveBeenCalled();
+    expect(sockets[0].sent).toContain(JSON.stringify({ type: 'stop' }));
+  });
+
   it('成功转写 → 回调 onTranscript，状态回 idle', async () => {
     const onTranscript = vi.fn();
     const view = renderHook(() => useVoiceInput({ onTranscript }));

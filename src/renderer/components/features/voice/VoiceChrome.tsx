@@ -10,6 +10,7 @@
 import React from 'react';
 import { Mic, MicOff, Phone } from 'lucide-react';
 import { selectVoiceVisualState, useVoiceCallStore, type VoiceVisualState } from '../../../stores/voiceCallStore';
+import type { VoiceWorkItemStatus } from '@shared/contract/voice';
 import { voiceCallBridge } from '../../../services/voiceCallBridge';
 import { useI18n } from '../../../hooks/useI18n';
 import { useAgentRegistryStore } from '../../../stores/agentRegistryStore';
@@ -18,6 +19,7 @@ import { useSessionMembers } from '../expert/SessionMemberBar';
 const STATE_COLOR: Record<VoiceVisualState, string> = {
   idle: 'text-zinc-500',
   connecting: 'text-zinc-400',
+  reconnecting: 'text-amber-400',
   listening: 'text-emerald-400',
   speaking: 'text-primary-400',
   working: 'text-amber-400',
@@ -32,11 +34,11 @@ const PresenceWave: React.FC<{ state: VoiceVisualState; level: number }> = ({ st
   if (state === 'error') {
     return <span data-testid="voice-presence" className="h-2 w-2 rounded-full bg-red-500" aria-hidden />;
   }
-  if (state === 'connecting') {
+  if (state === 'connecting' || state === 'reconnecting') {
     return (
       <span
         data-testid="voice-presence"
-        className="h-2 w-2 rounded-full bg-zinc-400 motion-safe:animate-ping"
+        className={`h-2 w-2 rounded-full motion-safe:animate-ping ${state === 'reconnecting' ? 'bg-amber-400' : 'bg-zinc-400'}`}
         aria-hidden
       />
     );
@@ -46,7 +48,9 @@ const PresenceWave: React.FC<{ state: VoiceVisualState; level: number }> = ({ st
     <span data-testid="voice-presence" className="flex h-4 items-end gap-0.5" aria-hidden>
       {Array.from({ length: BAR_COUNT }, (_, i) => {
         const factor = [0.5, 0.85, 1, 0.85, 0.5][i];
-        const height = 3 + Math.min(1, base * 3) * 13 * factor;
+        // RMS 正常说话只有 0.05~0.2，线性映射几乎看不出动静（真机反馈「动效很不明显」）。
+        // 开方压缩低端，让正常说话就吃掉大半量程。
+        const height = 3 + Math.min(1, Math.sqrt(base) * 1.6) * 13 * factor;
         return (
           <span
             key={i}
@@ -60,19 +64,6 @@ const PresenceWave: React.FC<{ state: VoiceVisualState; level: number }> = ({ st
     </span>
   );
 };
-
-const LevelMeter: React.FC<{ value: number; tone: 'mic' | 'playback'; label: string }> = ({ value, tone, label }) => (
-  <span className="flex w-14 items-center gap-1" title={label}>
-    <span className="h-1 w-full overflow-hidden rounded bg-zinc-700/70">
-      <span
-        className={`block h-1 rounded transition-[width] duration-100 motion-reduce:transition-none ${
-          tone === 'mic' ? 'bg-emerald-500' : 'bg-primary-400'
-        }`}
-        style={{ width: `${Math.min(100, Math.round(value * 400))}%` }}
-      />
-    </span>
-  </span>
-);
 
 /** 「与 {花名} 通话」/ 团会话「指挥 · Lead {花名} · N 成员」（§6.7.7）。 */
 const ActiveExpertChip: React.FC<{ sessionId: string | null }> = ({ sessionId }) => {
@@ -99,10 +90,26 @@ const ActiveExpertChip: React.FC<{ sessionId: string | null }> = ({ sessionId })
   );
 };
 
+/** 五态各自的底色。终态与在途态必须一眼可分——否则「做完了」和「还在排队」长一个样。 */
+const WORK_ITEM_TONE: Record<VoiceWorkItemStatus, string> = {
+  queued: 'border-amber-500/30 bg-amber-500/10 text-amber-300',
+  running: 'border-sky-500/30 bg-sky-500/10 text-sky-300',
+  done: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300',
+  cancelled: 'border-zinc-500/30 bg-zinc-500/10 text-zinc-400',
+  failed: 'border-red-500/30 bg-red-500/10 text-red-300',
+};
+
 const WorkStrip: React.FC = () => {
   const { t } = useI18n();
   const workItems = useVoiceCallStore((state) => state.workItems);
   if (workItems.length === 0) return null;
+  const label: Record<VoiceWorkItemStatus, string> = {
+    queued: t.voice.work.queued,
+    running: t.voice.work.running,
+    done: t.voice.work.done,
+    cancelled: t.voice.work.cancelled,
+    failed: t.voice.work.failed,
+  };
   return (
     <span className="flex min-w-0 items-center gap-1.5">
       {workItems.map((item) => (
@@ -110,13 +117,9 @@ const WorkStrip: React.FC = () => {
           key={item.id}
           data-testid={`voice-work-item-${item.status}`}
           title={item.detail ?? item.title}
-          className={`max-w-40 truncate rounded-full border px-2 py-0.5 text-[11px] ${
-            item.status === 'failed'
-              ? 'border-red-500/30 bg-red-500/10 text-red-300'
-              : 'border-amber-500/30 bg-amber-500/10 text-amber-300'
-          }`}
+          className={`max-w-40 truncate rounded-full border px-2 py-0.5 text-[11px] ${WORK_ITEM_TONE[item.status]}`}
         >
-          {item.status === 'failed' ? t.voice.work.failed : t.voice.work.queued} · {item.title}
+          {label[item.status]} · {item.title}
         </span>
       ))}
     </span>
@@ -132,7 +135,14 @@ export const VoiceChrome: React.FC<{ sessionId: string | null }> = ({ sessionId 
   const statusText =
     visual === 'error'
       ? (store.error?.message ?? t.voice.status.error)
-      : t.voice.status[visual as Exclude<VoiceVisualState, 'idle' | 'error'>];
+      // 「已静音」是麦克风的状态，长在麦克风按钮上（见下方 voice-mute）；
+      // 左侧这一栏说的是「这通电话在干什么」，静音时它就只是「通话中」。
+      : visual === 'muted'
+        ? t.voice.status.onCall
+      // 点按模式没点开时麦克风门是关的——说「正在听」是骗人的，它在等你点。
+        : visual === 'listening' && store.interruptMode === 'manual' && !store.pttCaptureOn
+          ? t.voice.live.tapToTalk
+          : t.voice.status[visual as Exclude<VoiceVisualState, 'idle' | 'error'>];
 
   const level = visual === 'speaking' ? store.playbackLevel : store.micLevel;
 
@@ -152,29 +162,6 @@ export const VoiceChrome: React.FC<{ sessionId: string | null }> = ({ sessionId 
 
       <span className="flex-1" />
 
-      {/* 双向电平：上 = 麦克风，下 = 助手 */}
-      <span className="hidden sm:flex flex-col gap-1" aria-hidden>
-        <LevelMeter value={store.micLevel} tone="mic" label={t.voice.status.listening} />
-        <LevelMeter value={store.playbackLevel} tone="playback" label={t.voice.status.speaking} />
-      </span>
-
-      {store.interruptMode === 'push_to_talk' && (
-        <button /* ds-allow:button: PTT 按住说话按钮，pointer 按住/松开语义 + 双态样式，Button primitive 不支持 */
-          type="button"
-          data-testid="voice-ptt"
-          onPointerDown={() => voiceCallBridge.pttDown()}
-          onPointerUp={() => voiceCallBridge.pttUp()}
-          onPointerLeave={() => voiceCallBridge.pttUp()}
-          className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs transition-colors select-none ${
-            store.pttCaptureOn
-              ? 'border-emerald-500/50 bg-emerald-500/15 text-emerald-300'
-              : 'border-zinc-600 bg-zinc-800 text-zinc-300 hover:border-zinc-500'
-          }`}
-        >
-          <Mic className="h-3.5 w-3.5" />
-          {store.pttCaptureOn ? t.voice.live.releaseToSend : t.voice.live.holdToTalk}
-        </button>
-      )}
       {store.interruptMode === 'manual' && (
         <button /* ds-allow:button: 点按说话按钮，双态样式与 PTT 同构，Button primitive 的居中按钮形态不适配 */
           type="button"
@@ -186,7 +173,8 @@ export const VoiceChrome: React.FC<{ sessionId: string | null }> = ({ sessionId 
               : 'border-zinc-600 bg-zinc-800 text-zinc-300 hover:border-zinc-500'
           }`}
         >
-          <Mic className="h-3.5 w-3.5" />
+          {/* 不放话筒图标：右边紧挨着的静音键就是话筒，两个同款图标并排纯属撞车。
+              这个按钮有文字标签，说得比图标清楚。 */}
           {store.pttCaptureOn ? t.voice.live.tapToSend : t.voice.live.tapToTalk}
         </button>
       )}
@@ -197,11 +185,13 @@ export const VoiceChrome: React.FC<{ sessionId: string | null }> = ({ sessionId 
         onClick={() => voiceCallBridge.toggleMute()}
         title={store.muted ? t.voice.live.unmute : t.voice.live.mute}
         aria-label={store.muted ? t.voice.live.unmute : t.voice.live.mute}
-        className={`flex h-8 w-8 items-center justify-center rounded-lg transition-colors ${
-          store.muted ? 'bg-amber-500/15 text-amber-300' : 'text-zinc-400 hover:bg-zinc-700 hover:text-zinc-200'
+        className={`flex h-8 items-center justify-center gap-1.5 rounded-lg transition-colors ${
+          store.muted ? 'bg-amber-500/15 px-2.5 text-xs text-amber-300' : 'w-8 text-zinc-400 hover:bg-zinc-700 hover:text-zinc-200'
         }`}
       >
         {store.muted ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+        {/* 状态词长在它自己的控件上：左侧那一栏说的是通话在干什么，不该替麦克风说话 */}
+        {store.muted && <span>{t.voice.status.muted}</span>}
       </button>
 
       <button /* ds-allow:button: 挂断按钮，通话 chrome 特有的红色小型形态，Button primitive 无此变体 */

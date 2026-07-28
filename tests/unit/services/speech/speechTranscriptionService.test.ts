@@ -267,6 +267,31 @@ describe('SpeechTranscriptionService', () => {
     }));
   });
 
+  it('local-first 两条通道都断时报「没有可用通道」且不可重试（不把锅记在 Groq 头上）', async () => {
+    // 真机现场：本机没装 whisper-cpp，又没配 Groq key —— 旧行为只报「未配置 Groq API Key」
+    // 并给一个点了没用的「重试」，把用户指到错的地方。
+    getConfigServiceMock.mockReturnValue({
+      getSettings: () => ({ speech: { ...DEFAULT_SPEECH_INPUT_SETTINGS, mode: 'local-first' } }),
+      getApiKey: () => undefined,
+    });
+    transcribeWithWhisperCppMock.mockRejectedValue(
+      new LocalSpeechTranscriptionError('NOT_INITIALIZED', 'whisper-cpp 未安装'),
+    );
+    const service = new SpeechTranscriptionService();
+
+    const result = await service.transcribe({
+      audioData: makeAudioData(),
+      mimeType: 'audio/webm',
+      source: 'composer',
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.code).toBe('SPEECH_NO_CHANNEL');
+    expect(result.recoverable).toBe(false);
+    expect(result.error).toContain('whisper-cpp 未安装');
+    expect(result.error).toContain('Groq API Key');
+  });
+
   it('keeps the temp audio path on recoverable local-only failure when configured', async () => {
     configureSpeech({
       mode: 'local-only',

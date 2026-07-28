@@ -7,7 +7,7 @@
 /**
  * All supported hook event types
  *
- * 19 event types covering the full lifecycle of agent interactions.
+ * 22 event types covering the full lifecycle of agent interactions.
  * Each event is annotated with a stability level:
  *
  * - **stable**: API is frozen; safe for external consumers.
@@ -40,6 +40,9 @@ export type HookEvent =
   | 'PostCompact'
   | 'StopFailure'
   | 'RoleWake'
+  | 'VoiceCallStarted'
+  | 'VoiceCallPaused'
+  | 'VoiceCallEnded'
   // internal (legacy)
   | 'Setup'
   | 'Notification';
@@ -68,6 +71,9 @@ export const HOOK_EVENT_DESCRIPTIONS: Record<HookEvent, string> = {
   PostCompact: 'Triggered after context compaction completes (observer-only).',
   StopFailure: 'Triggered when the agent stops due to an error (observer-only).',
   RoleWake: 'Triggered when a persistent role wakes up proactively (cadence/event, observer-only).',
+  VoiceCallStarted: 'Triggered when a realtime voice call goes live (observer-only).',
+  VoiceCallPaused: 'Triggered when a realtime voice call is paused — client gone, waiting to reconnect (observer-only).',
+  VoiceCallEnded: 'Triggered when a realtime voice call ends, after the call summary lands (observer-only).',
 };
 
 /**
@@ -276,6 +282,26 @@ export interface RoleWakeContext extends HookEventContext {
 /**
  * Union type of all hook contexts
  */
+/**
+ * 通话生命周期上下文。订阅方靠这些事实决定「结束后该不该问、问什么」——
+ * 策略不进 hook 本身（形态决定追问内容：头脑风暴 → 整理发散想法；
+ * 时间盒会议 → 议题×结论；自由通话 → 不问）。
+ *
+ * 硬约束：**问，本身就是说话**。追问要么落在文字流（不打断），要么过插话闸，
+ * 不能在通话收尾里直接起一段 TTS。
+ */
+export interface VoiceCallHookContext extends HookEventContext {
+  event: 'VoiceCallStarted' | 'VoiceCallPaused' | 'VoiceCallEnded';
+  /** 本通电话的 id（同一通电话三个事件共用，重连不换） */
+  voiceCallId: string;
+  /** 已进行时长（秒）。started 时为 0 */
+  durationSec: number;
+  /** 这通电话派出去多少件活（ended 才有意义） */
+  workItemCount?: number;
+  /** 结束/暂停原因：client-end / reconnect-timeout / upstream-error / max-duration … */
+  reason?: string;
+}
+
 export type AnyHookContext =
   | HookEventContext
   | ToolHookContext
@@ -292,7 +318,8 @@ export type AnyHookContext =
   | PermissionDeniedContext
   | PostCompactContext
   | StopFailureContext
-  | RoleWakeContext;
+  | RoleWakeContext
+  | VoiceCallHookContext;
 
 /**
  * Result returned by a hook execution

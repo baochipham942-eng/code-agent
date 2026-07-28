@@ -384,6 +384,8 @@ async function transcribeAudioFile(
 ): Promise<SpeechTranscribeResult> {
   const { mode, language, model, threads, keepAudioOnFailure, postProcessingEnabled } = request;
 
+  let localFailure: string | null = null;
+
   if (mode !== 'cloud-only') {
     const startedAt = Date.now();
     try {
@@ -404,9 +406,8 @@ async function transcribeAudioFile(
       if (mode === 'local-only') {
         return makeFailure(error, 'LOCAL_TRANSCRIPTION_FAILED', keepAudioOnFailure ? failureAudioPath : undefined);
       }
-      logger.warn('Local speech transcription failed, trying cloud fallback', {
-        error: error instanceof Error ? error.message : String(error),
-      });
+      localFailure = error instanceof Error ? error.message : String(error);
+      logger.warn('Local speech transcription failed, trying cloud fallback', { error: localFailure });
     }
   }
 
@@ -419,6 +420,21 @@ async function transcribeAudioFile(
       model: 'whisper-large-v3-turbo',
     }, postProcessingEnabled), keepAudioOnFailure, failureAudioPath);
   } catch (error) {
+    // 没配 key 是配置问题，不是这段音频的问题：拿同一段音频重试永远是同一个结果，
+    // 所以 recoverable=false（UI 据此收掉那个点了没用的「重试」按钮）。
+    // 「本地优先」跌到这里说明两条通道都断了——只报云端那半句会把用户指到错的地方
+    // （真机反馈：报「未配置 Groq API Key」，而本地 whisper.cpp 压根没装过）。
+    if (error instanceof LocalSpeechTranscriptionError && error.code === 'NOT_INITIALIZED') {
+      return {
+        success: false,
+        error: localFailure
+          ? `语音转文字没有可用通道：本地识别不可用（${localFailure}），云端识别未配置 Groq API Key。`
+          : error.message,
+        code: 'SPEECH_NO_CHANNEL',
+        recoverable: false,
+        audioPath: keepAudioOnFailure ? failureAudioPath : undefined,
+      };
+    }
     return makeFailure(error, 'TRANSCRIPTION_FAILED', keepAudioOnFailure ? failureAudioPath : undefined);
   }
 }

@@ -759,6 +759,15 @@ pre code {
     background-color: var(--bg-hover);
   }
 
+  /* 2026-07-28 品质感打磨④：按钮/菜单项 :active 下压，100ms 内有反馈 */
+  .btn-icon:active {
+    transform: scale(0.97);
+  }
+
+  .list-item:active {
+    transform: scale(0.98);
+  }
+
   /* ----------------------------------------
      Inputs
      ---------------------------------------- */

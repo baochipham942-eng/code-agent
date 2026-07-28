@@ -218,7 +218,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
 
   return (
     <div
-      className={`mb-2 transition-colors ${
+      className={`mb-2 transition-colors group/turncard ${
         highlightActive ? 'bg-amber-500/5' : ''
       }`}
     >
@@ -226,8 +226,9 @@ export const TurnCard: React.FC<TurnCardProps> = ({
         <div className="flex items-center gap-2 py-1.5">
           <div className="h-px flex-1 bg-zinc-800"></div>
           {/* 只说时间点。轮时长由下面折叠按钮那一处带「用时」标签地讲——
-              同一个数字在同一屏出现两次、其中一次还没有标签，正是第 17 条那个歧义。 */}
-          <span className="text-[10px] text-zinc-500 shrink-0">{stats.time}</span>
+              同一个数字在同一屏出现两次、其中一次还没有标签，正是第 17 条那个歧义。
+              2026-07-28 品质感打磨③：时间戳是工程遥测，默认隐去，hover 本卡片浮出。 */}
+          <span className="text-[10px] text-zinc-500 shrink-0 opacity-0 transition-opacity duration-150 group-hover/turncard:opacity-100">{stats.time}</span>
           <div className="h-px flex-1 bg-zinc-800"></div>
         </div>
       )}
@@ -289,8 +290,10 @@ export const TurnCard: React.FC<TurnCardProps> = ({
         {/* Middle content (folded: hide; expanded: show all except user) */}
         {!folded && (
           <>
-            {/* 一个回合内所有思考段合并成一行「思考」，不再按节点单列（产品拍板）。 */}
-            <ThinkingDigestBanner segments={thinkingSegments} />
+            {/* 一个回合内所有思考段合并成一行「思考」，不再按节点单列（产品拍板）。
+                2026-07-28 品质感打磨③：流式思考阶段由 StreamingIndicator 的扫光
+                「正在思考…」讲，digest 行让位，不与它并存成两行静态文本。 */}
+            {!isThinkingPhase && <ThinkingDigestBanner segments={thinkingSegments} />}
             {displayNodes.map((d, i) => {
               if (d.kind === 'tool_group') {
                 return (

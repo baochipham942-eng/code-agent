@@ -17,7 +17,7 @@ import { create } from 'zustand';
 type ComposerNoticeId = 'skill-draft' | 'role-draft' | 'team-recipe-draft';
 
 /** 「进行中」占用者。优先级只能由下面这张表表达，组件不得互相探测。 */
-export type ComposerInProgressId = 'voice' | 'surface-execution' | 'upload';
+type ComposerInProgressId = 'voice' | 'surface-execution' | 'upload';
 
 const COMPOSER_IN_PROGRESS_PRIORITY: readonly ComposerInProgressId[] = [
   'voice',
@@ -50,7 +50,7 @@ export const selectHasBlockingNotice = (state: ComposerNoticeState): boolean =>
   Object.values(state.notices).some(Boolean);
 
 /** 当前唯一允许显示的「进行中」占用者。顺序只在本文件定义一次。 */
-export const selectCurrentComposerInProgress = (
+const selectCurrentComposerInProgress = (
   state: ComposerNoticeState,
 ): ComposerInProgressId | null => (
   COMPOSER_IN_PROGRESS_PRIORITY.find((id) => state.inProgress[id]) ?? null
@@ -65,17 +65,14 @@ export const selectIsCurrentComposerInProgress = (
 /**
  * 占用者登记自己的显示意愿，并读取统一优先级结果。卸载时撤销登记，避免幽灵占位。
  */
-export function useComposerInProgress(
+export function useRegisterComposerInProgress(
   id: ComposerInProgressId,
   active: boolean,
-): boolean {
+): void {
   const setInProgress = useComposerNoticeStore((state) => state.setInProgress);
-  const isCurrent = useComposerNoticeStore((state) => selectIsCurrentComposerInProgress(state, id));
 
   useEffect(() => {
     setInProgress(id, active);
     return () => setInProgress(id, false);
   }, [active, id, setInProgress]);
-
-  return active && isCurrent;
 }

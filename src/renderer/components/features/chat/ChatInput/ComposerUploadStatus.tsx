@@ -1,12 +1,19 @@
 import React from 'react';
 import { useI18n } from '../../../../hooks/useI18n';
-import { useComposerInProgress } from '../../../../stores/composerNoticeStore';
+import {
+  selectIsCurrentComposerInProgress,
+  useComposerNoticeStore,
+  useRegisterComposerInProgress,
+} from '../../../../stores/composerNoticeStore';
 
 export const ComposerUploadStatus: React.FC<{ active: boolean }> = ({ active }) => {
   const { t } = useI18n();
-  const isCurrentInProgress = useComposerInProgress('upload', active);
+  useRegisterComposerInProgress('upload', active);
+  const isCurrentInProgress = useComposerNoticeStore((state) => (
+    selectIsCurrentComposerInProgress(state, 'upload')
+  ));
 
-  if (!isCurrentInProgress) return null;
+  if (!active || !isCurrentInProgress) return null;
 
   return (
     <div

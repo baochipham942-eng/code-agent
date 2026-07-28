@@ -11,7 +11,11 @@ import { selectVoiceVisualState, useVoiceCallStore, type VoiceVisualState } from
 import { voiceCallBridge } from '../../../services/voiceCallBridge';
 import { useI18n } from '../../../hooks/useI18n';
 import { useAgentRegistryStore } from '../../../stores/agentRegistryStore';
-import { useComposerInProgress } from '../../../stores/composerNoticeStore';
+import {
+  selectIsCurrentComposerInProgress,
+  useComposerNoticeStore,
+  useRegisterComposerInProgress,
+} from '../../../stores/composerNoticeStore';
 import { useSessionMembers } from '../expert/SessionMemberBar';
 
 type OrbState = Exclude<VoiceVisualState, 'idle'> | 'manual-ready';
@@ -79,7 +83,10 @@ export const VoiceChrome: React.FC<{ sessionId: string | null }> = ({ sessionId 
   const visual = selectVoiceVisualState(store);
   const expertName = useActiveExpertName(sessionId);
   const duration = useCallDuration(store.startedAt);
-  const isCurrentInProgress = useComposerInProgress('voice', visual !== 'idle');
+  useRegisterComposerInProgress('voice', visual !== 'idle');
+  const isCurrentInProgress = useComposerNoticeStore((state) => (
+    selectIsCurrentComposerInProgress(state, 'voice')
+  ));
 
   const activeWorkItems = useMemo(
     () => store.workItems.filter((item) => item.status === 'queued' || item.status === 'running'),

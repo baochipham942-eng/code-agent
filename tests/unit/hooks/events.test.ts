@@ -58,6 +58,10 @@ describe('Hook Events', () => {
         'PermissionDenied',
         'PostCompact',
         'StopFailure',
+        'RoleWake',
+        'VoiceCallStarted',
+        'VoiceCallPaused',
+        'VoiceCallEnded',
       ];
 
       for (const event of events) {
@@ -67,9 +71,11 @@ describe('Hook Events', () => {
       }
     });
 
-    it('should have 20 event types', () => {
-      // 19 + RoleWake（角色主动性醒来，docs/designs/role-proactivity.md §2.3）
-      expect(Object.keys(HOOK_EVENT_DESCRIPTIONS)).toHaveLength(20);
+    it('should have 23 event types', () => {
+      // 19 + RoleWake（角色主动性醒来）+ VoiceCall{Started,Paused,Ended}（通话生命周期）。
+      // 这条断言从 20 起就是纯计数，语音批加事件时没人改它，而 PR 门不跑 tests/unit ——
+      // 于是它在 main 上一直红着没人看见。上面的名字清单才是真判据，数量只做兜底。
+      expect(Object.keys(HOOK_EVENT_DESCRIPTIONS)).toHaveLength(23);
     });
   });
 

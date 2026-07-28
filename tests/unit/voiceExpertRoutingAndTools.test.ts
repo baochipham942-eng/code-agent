@@ -89,6 +89,7 @@ function bind(activeAgentId?: string): void {
     onWorkItem: (item) => workItems.value.push({ ...item }),
     // 失败出口的行为由 voiceWorkFailureVisible.test.ts 专门钉；这里只是补齐契约。
     onWorkFailed: () => {},
+    onEndCall: () => {},
   });
 }
 
@@ -120,7 +121,12 @@ describe('A3 通话身份解析', () => {
     expect(routing.personaInstructions).toContain('不要自称团队里的其他成员');
     // 通话 brain 拿到的必须是短人设——全量 L0/L1 只进执行 run（§6.7.3）
     expect(buildRoleContextBlock).not.toHaveBeenCalled();
-    expect(routing.personaInstructions.length).toBeLessThan(500);
+    expect(routing.personaInstructions).not.toContain('资料架');
+    // 判据钉在「人设那一段是短的」，不钉整份 instructions 的总长：基线指令会随行为约束
+    // 迭代增删（2026-07-28 分诊立场改写就把它推过了 500），拿总长当判据会把正常的
+    // prompt 迭代误报成隐私回归。
+    const personaOnly = routing.personaInstructions.replace(resolveVoiceRouting(undefined).personaInstructions, '');
+    expect(personaOnly.length).toBeLessThan(200);
   });
 });
 
@@ -144,14 +150,22 @@ describe('A4 窄工具 / H1 指挥台', () => {
     endVoiceDispatch();
   });
 
-  it('注册五个工具：两只读 + 派活/改方向/叫停，没有一个能直接改东西', () => {
+  it('注册面：只读查询 + 派活/改方向/叫停 + 收线，没有一个能直接改东西', () => {
+    // 2026-07-28 真机加了两只：`get_current_time`（此前它只会说「我看不到时间」）、
+    // `end_call`（此前它说「已挂断」但通话还开着，是第二例「说了没做」）。
     expect(VOICE_TOOL_DEFINITIONS.map((tool) => tool.name)).toEqual([
       'get_active_tasks',
       'get_current_file_summary',
       'spawn_task',
       'steer_task',
       'cancel_task',
+      'get_current_time',
+      'end_call',
     ]);
+    // D5：通话 brain 全程零写权限——注册面里不许出现能直接落盘/跑命令的参数。
+    const params = JSON.stringify(VOICE_TOOL_DEFINITIONS.map((tool) => tool.parameters));
+    expect(params).not.toContain('file_path');
+    expect(params).not.toContain('command');
   });
 
   it('get_active_tasks 报真实任务，空的时候明说没有', async () => {

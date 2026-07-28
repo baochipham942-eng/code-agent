@@ -22,7 +22,8 @@ class FakeUpstream extends EventEmitter {
 }
 
 const upstreams: FakeUpstream[] = [];
-const logger = vi.hoisted(() => ({ warn: vi.fn() }));
+let autoOpen = true;
+const logger = vi.hoisted(() => ({ info: vi.fn(), warn: vi.fn() }));
 
 vi.mock('ws', () => {
   class MockWebSocket extends FakeUpstream {
@@ -31,14 +32,14 @@ vi.mock('ws', () => {
     constructor() {
       super();
       upstreams.push(this);
-      queueMicrotask(() => this.emit('open'));
+      if (autoOpen) queueMicrotask(() => this.emit('open'));
     }
   }
   return { default: MockWebSocket };
 });
 
 vi.mock('../../../../src/host/services/infra/logger', () => ({
-  createLogger: () => ({ info: vi.fn(), warn: logger.warn, error: vi.fn(), debug: vi.fn() }),
+  createLogger: () => ({ info: logger.info, warn: logger.warn, error: vi.fn(), debug: vi.fn() }),
 }));
 
 const { connectGummyRealtime } = await import('../../../../src/host/services/speech/gummyRealtimeTransport');
@@ -50,12 +51,14 @@ function emitEvent(upstream: FakeUpstream, event: object) {
 describe('Gummy realtime transport', () => {
   beforeEach(() => {
     upstreams.length = 0;
+    autoOpen = true;
     vi.clearAllMocks();
   });
 
   it('task-started 前不推音频而是缓冲，开始后先补发再透传（别吞掉第一个字）', async () => {
     const handle = await connectGummyRealtime({
       apiKey: 'test-key',
+      streamId: 'stream-1',
       onTranscript: vi.fn(),
       onError: vi.fn(),
     });
@@ -85,6 +88,7 @@ describe('Gummy realtime transport', () => {
     try {
       const handle = await connectGummyRealtime({
         apiKey: 'test-key',
+        streamId: 'stream-2',
         onTranscript: vi.fn(),
         onError: vi.fn(),
       });
@@ -108,6 +112,7 @@ describe('Gummy realtime transport', () => {
   it('连接已断时 finish 立刻收尾，不等一帧永远不会来的 task-finished', async () => {
     const handle = await connectGummyRealtime({
       apiKey: 'test-key',
+      streamId: 'stream-3',
       onTranscript: vi.fn(),
       onError: vi.fn(),
     });
@@ -122,6 +127,7 @@ describe('Gummy realtime transport', () => {
     const onTranscript = vi.fn();
     const handle = await connectGummyRealtime({
       apiKey: 'test-key',
+      streamId: 'stream-4',
       onTranscript,
       onError: vi.fn(),
     });
@@ -147,6 +153,7 @@ describe('Gummy realtime transport', () => {
     const onError = vi.fn();
     await connectGummyRealtime({
       apiKey: 'test-key',
+      streamId: 'stream-5',
       onTranscript: vi.fn(),
       onError,
     });
@@ -163,5 +170,44 @@ describe('Gummy realtime transport', () => {
       expect.objectContaining({ code: 'COMMON_ERROR', message: '真实失败原因' }),
     );
     expect(upstream.readyState).toBe(3);
+  });
+
+  it('建连过程中收到取消信号会立即 terminate，不等握手超时', async () => {
+    autoOpen = false;
+    const abort = new AbortController();
+    const connecting = connectGummyRealtime({
+      apiKey: 'test-key',
+      streamId: 'stream-cancelled',
+      signal: abort.signal,
+      onTranscript: vi.fn(),
+      onError: vi.fn(),
+    });
+    const upstream = upstreams[0];
+    const terminate = vi.spyOn(upstream, 'terminate');
+
+    abort.abort();
+
+    await expect(connecting).rejects.toThrow('Gummy realtime connection cancelled');
+    expect(terminate).toHaveBeenCalledTimes(1);
+  });
+
+  it('上游建立与释放日志用同一个 stream id 配对', async () => {
+    const handle = await connectGummyRealtime({
+      apiKey: 'test-key',
+      streamId: 'stream-log-pair',
+      onTranscript: vi.fn(),
+      onError: vi.fn(),
+    });
+
+    handle.close();
+
+    expect(logger.info).toHaveBeenCalledWith(
+      'upstream connection established',
+      { streamId: 'stream-log-pair' },
+    );
+    expect(logger.info).toHaveBeenCalledWith(
+      'upstream connection released',
+      expect.objectContaining({ streamId: 'stream-log-pair' }),
+    );
   });
 });

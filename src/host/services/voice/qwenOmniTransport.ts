@@ -13,6 +13,8 @@ import {
   QWEN_OMNI_REALTIME_WS_URL,
   VOICE_TURN_DETECTION_DEFAULT,
   VOICE_UPSTREAM_CONNECT_TIMEOUT_MS,
+  VOICE_UPSTREAM_HEARTBEAT_INTERVAL_MS,
+  VOICE_UPSTREAM_SILENCE_TIMEOUT_MS,
 } from '../../../shared/constants/voice';
 import type { VoiceTransport, VoiceTransportHandle, VoiceTurnDetectionConfig } from '../../../shared/contract/voice';
 import { getConfigService } from '../core/configService';
@@ -122,6 +124,38 @@ export const qwenOmniTransport: VoiceTransport = {
       });
     });
 
+    let lastUpstreamSignalAt = Date.now();
+    let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+    const clearHeartbeat = () => {
+      if (!heartbeatTimer) return;
+      clearInterval(heartbeatTimer);
+      heartbeatTimer = null;
+    };
+    const markUpstreamSignal = () => {
+      lastUpstreamSignalAt = Date.now();
+    };
+
+    ws.on('pong', markUpstreamSignal);
+    heartbeatTimer = setInterval(() => {
+      if (ws.readyState !== WebSocket.OPEN) {
+        clearHeartbeat();
+        return;
+      }
+      const silenceMs = Date.now() - lastUpstreamSignalAt;
+      if (silenceMs >= VOICE_UPSTREAM_SILENCE_TIMEOUT_MS) {
+        clearHeartbeat();
+        logger.warn('upstream heartbeat timed out', { silenceMs });
+        onEvent({
+          type: 'error',
+          code: 'UPSTREAM_ERROR',
+          message: '上游连接已断开（长时间无响应）',
+        });
+        ws.terminate();
+        return;
+      }
+      ws.ping();
+    }, VOICE_UPSTREAM_HEARTBEAT_INTERVAL_MS);
+
     ws.send(
       JSON.stringify({
         type: 'session.update',
@@ -169,6 +203,8 @@ export const qwenOmniTransport: VoiceTransport = {
     // tools 被上游静默丢弃的用户可见提示：一通电话只报一次，别每条 session.updated 刷。
     let toolsDroppedNotified = false;
     ws.on('message', (raw) => {
+      // 合法事件、未知事件和偶发非 JSON 帧都证明链路仍有下行信号。
+      markUpstreamSignal();
       const event = parseEvent(raw);
       if (!event) return;
       if (event.type === 'input_audio_buffer.speech_started') {
@@ -212,9 +248,11 @@ export const qwenOmniTransport: VoiceTransport = {
         case 'session.updated': {
           // 上游到底收下了什么档：我们发 server_vad、它回 null，就是「说了没反应」
           // 的直接证据（发出去 ≠ 被采纳）。
-          const echoed = (event.session as { turn_detection?: unknown } | undefined)?.turn_detection;
+          const session = event.session as { tools?: unknown; turn_detection?: unknown } | undefined;
+          const echoed = session?.turn_detection;
           logger.info('session.updated echo', {
             turnDetection: echoed === null ? 'null(manual)' : JSON.stringify(echoed),
+            toolsLength: Array.isArray(session?.tools) ? session.tools.length : null,
           });
           // 静默降级留痕：上一代模型对 tools 是「收下不报错、回显 null」，
           // 不告警的话现场只能看到「模型死活不肯派活」，查不到根因。
@@ -267,7 +305,10 @@ export const qwenOmniTransport: VoiceTransport = {
       }
     });
 
-    ws.on('close', () => onEvent({ type: 'state', state: 'closed' }));
+    ws.on('close', () => {
+      clearHeartbeat();
+      onEvent({ type: 'state', state: 'closed' });
+    });
     ws.on('error', (err: Error) => onEvent({ type: 'error', code: 'UPSTREAM_SOCKET', message: err.message }));
 
     onEvent({ type: 'state', state: 'live' });
@@ -296,6 +337,7 @@ export const qwenOmniTransport: VoiceTransport = {
         ws.send(JSON.stringify({ type: 'response.cancel' }));
       },
       async close() {
+        clearHeartbeat();
         if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) ws.close();
       },
     };

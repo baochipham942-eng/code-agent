@@ -150,7 +150,7 @@ describe('voiceSessionService 互斥与挂断', () => {
     await attachVoiceClient(first as never, 'session-1');
     expect(getActiveVoiceSessionId()).not.toBeNull();
 
-    lastOnEvent?.({ type: 'error', code: 'COMMON_ERROR', message: '上游炸了' });
+    lastOnEvent?.({ type: 'error', code: 'UPSTREAM_ERROR', message: '上游炸了' });
     await vi.waitFor(() => expect(getActiveVoiceSessionId()).toBeNull());
     // 上游连接也要放掉，别留着继续计费（排水窗后才关，见 VOICE_TEARDOWN_DRAIN_MS）
     await vi.waitFor(() => expect(close).toHaveBeenCalled(), { timeout: 4000 });

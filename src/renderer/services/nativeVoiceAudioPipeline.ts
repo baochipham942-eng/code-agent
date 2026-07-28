@@ -165,9 +165,14 @@ export class NativeVoiceAudioPipeline implements VoiceAudioPipelineLike {
     }
   }
 
-  private fail(code: string): void {
+  /**
+   * 原生 AEC 的四种挂法（播放/控制/采集/运行时）对用户是同一件事——「原生回声消除没起来」。
+   * 所以只发一个用户可见 code，具体哪一步走 detail 供排查：给用户看四种说法没有意义，
+   * 而每种都进 i18n 表则是把内部实现细节抬成了产品文案。
+   */
+  private fail(stage: string): void {
     if (this.failed || this.stopped) return;
     this.failed = true;
-    this.callbacks.onError?.(code);
+    this.callbacks.onError?.('NATIVE_AEC_FAILED', stage);
   }
 }

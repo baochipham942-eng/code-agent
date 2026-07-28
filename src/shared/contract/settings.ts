@@ -26,6 +26,12 @@ export interface VoiceLiveSettings {
    * 换模型必须重新真机验证白名单，别让这里写成自由文本。
    */
   voiceId?: string;
+  /**
+   * 通话模型（负责听和说的实时模型）：只能是 `QWEN_OMNI_REALTIME_MODEL_OPTIONS`
+   * 白名单里的 id；未配置 / 表外 id = 回落 `QWEN_OMNI_REALTIME_MODEL`。
+   * **音色与它强绑定**：换模型时 voiceId 必须一起落到新模型的 voices 里。
+   */
+  conversationModel?: string;
   /** 通话语言；auto/未配置 = 跟随上游自动检测 */
   language?: 'auto' | 'zh' | 'en';
   /**
@@ -42,7 +48,7 @@ export interface VoiceLiveSettings {
   /**
    * 语音派活时的执行引擎（方案 §6.1 双脑：通话模型只负责听说，干活是另一个模型）。
    * 未配置 = 跟随会话默认引擎，与批 H 之前的行为完全一致。
-   * 通话模型不在这里配——它与 Provider 的实时协议和音色白名单强绑定，见 QWEN_OMNI_REALTIME_MODEL。
+   * 通话模型（听说）在上面的 conversationModel 配，白名单见 QWEN_OMNI_REALTIME_MODEL_OPTIONS。
    */
   executionModel?: { provider: string; model: string };
   /** 回声消除：auto 优先原生 AEC；off 强制走耳机模式。未配置 = auto。 */

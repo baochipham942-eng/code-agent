@@ -39,7 +39,7 @@ describe('输入框上方那一格的优先级', () => {
     invokeMock.mockResolvedValue([]);
     swarmState.activeSessionId = 'session-1';
     swarmState.agents = [agentOf('researcher', 'running'), agentOf('writer', 'completed')];
-    useComposerNoticeStore.setState({ notices: {} });
+    useComposerNoticeStore.setState({ notices: {}, inProgress: {} });
     useMemberViewStore.setState({ viewingMemberId: null });
     useComposerStore.setState({ selectedTeamRecipeId: null });
     useTeamRecipeStore.setState({ recipes: [], isLoaded: true });

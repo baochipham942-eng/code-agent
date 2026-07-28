@@ -12,6 +12,7 @@
 // 绝不在 renderer 手搓 message 塞进 sessionStore。
 // ============================================================================
 
+import type { VoiceMessageCode } from '@shared/contract/voice';
 import { VOICE_FOCUS_REPORT_MIN_INTERVAL_MS, VOICE_RECONNECT_BACKOFF_MS, VOICE_STREAM_WS_PATH } from '@shared/constants/voice';
 import type { AppSettings, Message } from '@shared/contract';
 import type { VoiceClientCommand, VoiceEvent } from '@shared/contract/voice';
@@ -294,9 +295,10 @@ class VoiceCallBridge {
         if (ws.readyState === WebSocket.OPEN) ws.send(pcm16k.buffer as ArrayBuffer);
       },
       onLevels: (mic: number, playback: number) => this.store().levelsChanged(mic, playback),
-      onError: (code: string) => {
+      onError: (code: VoiceMessageCode, detail?: string) => {
         this.store().phaseChanged('error');
-        this.store().eventApplied({ error: { code, message: getT().voice.error.micDenied } });
+        // message 只作兜底/排查；给用户看的文案由 resolveVoiceMessage 按 code 查 i18n。
+        this.store().eventApplied({ error: { code, message: detail ?? code } });
       },
     };
   }
@@ -436,6 +438,9 @@ class VoiceCallBridge {
         break;
       case 'work.upsert':
         this.store().eventApplied({ workItem: event.item });
+        break;
+      case 'notice':
+        this.store().eventApplied({ notice: { code: event.code, message: event.message } });
         break;
       case 'error':
         this.store().phaseChanged('error');

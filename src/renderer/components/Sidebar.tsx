@@ -18,22 +18,12 @@ import {
   MessageSquare,
   Loader2,
   User,
-  Settings,
   LogIn,
-  LogOut,
   ChevronDown,
   Trash2,
   Search,
   PanelLeftClose,
-  ChevronRight,
-  FlaskConical,
-  CalendarDays,
-  Monitor,
-  MonitorSmartphone,
-  Activity,
-  UsersRound,
   Download,
-  Gauge,
 } from 'lucide-react';
 import { IPC_CHANNELS } from '@shared/ipc';
 import { getCurrentKeybindingPlatform } from '@shared/keybindings/defaults';
@@ -49,7 +39,6 @@ import type { SessionAutomationSessionSummary } from '@shared/contract';
 import { sessionAutomationClient } from '../services/sessionAutomationClient';
 import { SessionReplaySummaryDialog } from './features/sidebar/SessionReplaySummaryDialog';
 import { getSessionTypeLabel } from './features/sidebar/SessionTypeFilterBar';
-import { AccountMenuItem, AccountMenuLabel } from './features/sidebar/sidebarPresentation';
 import { NeoBrandMark } from './features/sidebar/NeoBrandMark';
 import { isTauriMode } from '../utils/platform';
 import { isNativeWindowFullscreen } from '../services/tauriPluginFacade';
@@ -65,6 +54,7 @@ import { useSidebarDerivedSessions } from './features/sidebar/useSidebarDerivedS
 import { useSidebarSessionActions } from './features/sidebar/useSidebarSessionActions';
 import { useSidebarRowActions, resolveRuntimeLogsDir } from './features/sidebar/useSidebarRowActions';
 import { SidebarStatusFilterDropdown } from './features/sidebar/SidebarStatusFilterDropdown';
+import { SidebarAccountMenu } from './features/sidebar/SidebarAccountMenu';
 import { SidebarSearchDialog } from './features/sidebar/SidebarSearchDialog';
 import { SidebarNewTaskRow } from './features/sidebar/SidebarNewTaskRow';
 import {
@@ -116,22 +106,10 @@ export const Sidebar: React.FC = () => {
   const sb = t.sidebar;
   const {
     clearPlanningState,
-    setShowSettings,
     setWorkingDirectory,
     showLab,
-    setShowLab,
     showTimeCapabilityCenter,
-    setShowTimeCapabilityCenter,
     showDesktopPanel,
-    setShowDesktopPanel,
-    showActivityPanel,
-    setShowActivityPanel,
-    showLocalOpsPanel,
-    openLocalOpsPanel,
-    showProjectCollaborationPage,
-    openProjectCollaborationPage,
-    showEvalCenter,
-    openEvalCenter,
     optionalUpdateInfo,
     setShowOptionalUpdateModal,
     openWorkspacePreview,
@@ -192,14 +170,11 @@ export const Sidebar: React.FC = () => {
     isAuthenticated,
     isLoading: isAuthLoading,
     setShowAuthModal,
-    signOut,
     sessionTrustState,
     authBackendAvailable,
     hasCachedAdminClaim,
   } = useAuthStore();
   const canOpenSessionReplay = canAccessFeature('eval.replay', user);
-  // 评测中心入口门禁与菜单里其他 admin 判定同一条通路（user.isAdmin verified claim）。
-  const canOpenEvalCenter = canAccessFeature('eval.center', user);
   const isVerifiedAdmin = user?.isAdmin === true;
   const isAdminPendingVerification = !isVerifiedAdmin && hasCachedAdminClaim && sessionTrustState === 'cached';
   const adminPendingTitle =
@@ -919,111 +894,15 @@ export const Sidebar: React.FC = () => {
                 className={`w-4 h-4 text-zinc-600 transition-transform ${showUserMenu ? 'rotate-180' : ''}`}
               />
             </button>
-            {/* User Dropdown Menu */}
+            {/* User Dropdown Menu（整块已抽成 SidebarAccountMenu：Sidebar 逼近 god-file 门） */}
             {showUserMenu && (
-              <div className="absolute bottom-full left-2 right-2 z-50 max-h-[80vh] overflow-y-auto rounded-xl border border-zinc-700 bg-zinc-900 py-1 shadow-xl">
-                <AccountMenuLabel>{sb.menuCommon}</AccountMenuLabel>
-                <AccountMenuItem
-                  onClick={() => {
-                    setShowActivityPanel(true);
-                    setShowUserMenu(false);
-                  }}
-                  icon={<Activity className={`w-4 h-4 ${showActivityPanel ? 'text-cyan-400' : 'text-cyan-400/80'}`} />}
-                  label={sb.menuActivity}
-                />
-                <AccountMenuItem
-                  onClick={() => {
-                    openLocalOpsPanel('desktop');
-                    setShowUserMenu(false);
-                  }}
-                  icon={
-                    <MonitorSmartphone
-                      className={`w-4 h-4 ${showLocalOpsPanel ? 'text-cyan-400' : 'text-cyan-400/80'}`}
-                    />
-                  }
-                  label={sb.menuLocalOps}
-                />
-                <AccountMenuItem
-                  onClick={() => {
-                    openProjectCollaborationPage(currentSessionProjectId);
-                    setShowUserMenu(false);
-                  }}
-                  icon={
-                    <UsersRound
-                      className={`w-4 h-4 ${showProjectCollaborationPage ? 'text-violet-400' : 'text-violet-400/80'}`}
-                    />
-                  }
-                  label={sb.menuNeoCollab}
-                />
-                {canOpenEvalCenter && (
-                  <AccountMenuItem
-                    onClick={() => {
-                      openEvalCenter();
-                      setShowUserMenu(false);
-                    }}
-                    icon={
-                      <Gauge
-                        className={`w-4 h-4 ${showEvalCenter ? 'text-amber-400' : 'text-amber-400/80'}`}
-                      />
-                    }
-                    label={sb.menuEvalCenter}
-                  />
-                )}
-
-                <div className="my-1 border-t border-zinc-800" />
-                <button
-                  type="button"
-                  onClick={() => setShowAccountAdvancedTools((open) => !open)}
-                  className="flex w-full items-center gap-2 px-3 py-2 text-sm text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-300"
-                >
-                  <ChevronRight
-                    className={`h-3.5 w-3.5 transition-transform ${advancedToolsOpen ? 'rotate-90' : ''}`}
-                  />
-                  <span className="min-w-0 flex-1 text-left">{sb.advancedTools}</span>
-                  {hasActiveAdvancedTool && (
-                    <span className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] text-emerald-300">
-                      {sb.advancedToolsRunning}
-                    </span>
-                  )}
-                </button>
-                {advancedToolsOpen && (
-                  <div className="pb-1">
-                    <AccountMenuItem
-                      onClick={() => { setShowLab(true); setShowUserMenu(false); }}
-                      icon={<FlaskConical className={`w-4 h-4 ${showLab ? 'text-emerald-400' : 'text-emerald-400/80'}`} />}
-                      label={sb.menuModelTraining}
-                    />
-                    <AccountMenuItem
-                      onClick={() => { setShowTimeCapabilityCenter(!showTimeCapabilityCenter); setShowUserMenu(false); }}
-                      icon={<CalendarDays className={`w-4 h-4 ${showTimeCapabilityCenter ? 'text-sky-400' : 'text-sky-400/80'}`} />}
-                      label={sb.menuTimeCapability}
-                    />
-                    <AccountMenuItem
-                      onClick={() => { setShowDesktopPanel(!showDesktopPanel); setShowUserMenu(false); }}
-                      icon={<Monitor className={`w-4 h-4 ${showDesktopPanel ? 'text-cyan-400' : 'text-cyan-400/80'}`} />}
-                      label={sb.menuDesktopCapture}
-                    />
-                  </div>
-                )}
-
-                <div className="border-t border-zinc-800" />
-                <AccountMenuItem
-                  onClick={() => {
-                    setShowSettings(true);
-                    setShowUserMenu(false);
-                  }}
-                  icon={<Settings className="w-4 h-4" />}
-                  label={sb.menuSettings}
-                />
-                <AccountMenuItem
-                  onClick={() => {
-                    signOut();
-                    setShowUserMenu(false);
-                  }}
-                  icon={<LogOut className="w-4 h-4" />}
-                  label={sb.menuSignOut}
-                />
-              </div>
+              <SidebarAccountMenu
+                onClose={() => setShowUserMenu(false)}
+                advancedToolsOpen={advancedToolsOpen}
+                onToggleAdvancedTools={() => setShowAccountAdvancedTools((open) => !open)}
+                hasActiveAdvancedTool={hasActiveAdvancedTool}
+                currentSessionProjectId={currentSessionProjectId}
+              />
             )}
           </>
         ) : (

@@ -12,6 +12,7 @@
 // ============================================================================
 
 import { VOICE_DOWNSTREAM_SAMPLE_RATE, VOICE_UPSTREAM_SAMPLE_RATE } from '@shared/constants/voice';
+import type { VoiceMessageCode } from '@shared/contract/voice';
 
 /** 跨回调保留的小数读取位置，避免缓冲区边界处的漂移与咔哒声。 */
 export interface ResampleState {
@@ -49,8 +50,8 @@ export interface VoiceAudioPipelineCallbacks {
   onFrame: (pcm16k: Int16Array) => void;
   /** 双向电平（RMS，0..1 量级），100ms 节流。 */
   onLevels?: (mic: number, playback: number) => void;
-  /** 采集失败（麦克风权限等），code 与 spike 口径一致。 */
-  onError?: (code: string) => void;
+  /** 采集失败（麦克风权限等）。code 是可枚举的用户文案编号；detail 是原始异常名，只供排查。 */
+  onError?: (code: VoiceMessageCode, detail?: string) => void;
 }
 
 /** WebView 与原生 AEC 管线共同向 voiceCallBridge 暴露的最小合同。 */
@@ -146,7 +147,13 @@ export class VoiceAudioPipeline implements VoiceAudioPipelineLike {
       gain.connect(ctx.destination);
     } catch (err) {
       const name = err instanceof Error ? err.name : 'UnknownError';
-      this.callbacks.onError?.(name === 'NotAllowedError' ? 'MICROPHONE_PERMISSION_DENIED' : name);
+      // 非权限类一律归一成 AUDIO_CAPTURE_FAILED：原来直接把 DOMException.name 当 code 抛出去，
+      // 那是个无法枚举的集合，进不了 i18n 表，用户只会看到一个英文异常名（如 NotReadableError）。
+      // 真名通过 detail 带走供排查，不进用户可见文案。
+      this.callbacks.onError?.(
+        name === 'NotAllowedError' ? 'MICROPHONE_PERMISSION_DENIED' : 'AUDIO_CAPTURE_FAILED',
+        name,
+      );
     }
   }
 

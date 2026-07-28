@@ -7,7 +7,7 @@
 // ============================================================================
 
 import type { WebSocket as WsSocket } from 'ws';
-import { QWEN_OMNI_REALTIME_MODEL, VOICE_RECONNECT_GRACE_MS, VOICE_SESSION_MAX_DURATION_MS, VOICE_TEARDOWN_DRAIN_MS } from '../../../shared/constants/voice';
+import { resolveConversationModelOption, VOICE_RECONNECT_GRACE_MS, VOICE_SESSION_MAX_DURATION_MS, VOICE_TEARDOWN_DRAIN_MS } from '../../../shared/constants/voice';
 import type { VoiceClientCommand, VoiceEvent, VoiceFocusContext, VoiceTransportHandle } from '../../../shared/contract/voice';
 import { getDashscopeApiKey } from '../media/imageGenerationService';
 import { createLogger } from '../infra/logger';
@@ -62,6 +62,8 @@ interface ActiveSession {
   transcriptBuf: { assistant: string };
   /** 通话身份的短人设，焦点刷新时要和 Focus 段一起重拼 */
   personaInstructions: string;
+  /** 本次通话真用的上游模型（设置白名单解析后），挂断摘要如实记它 */
+  conversationModel: string;
   /** 用户此刻在看什么（Renderer 节流上报） */
   focus: VoiceFocusContext | null;
 }
@@ -224,7 +226,7 @@ async function teardown(reason: string): Promise<void> {
         voiceCallSummary: {
           durationSec,
           provider: session.upstream.provider,
-          conversationModel: QWEN_OMNI_REALTIME_MODEL,
+          conversationModel: session.conversationModel,
           workItemCount: session.workItemCount,
           startedAt,
           endedAt,
@@ -289,6 +291,13 @@ async function connectAndBind(
 
   const routing = resolveVoiceRouting(requestedAgentId);
   const liveSettings = readVoiceLiveSettings();
+  // 通话模型白名单解析：未配置 / 表外 id（手改 JSON）一律回落默认，表外 id 绝不上线。
+  const conversationModel = resolveConversationModelOption(liveSettings?.conversationModel);
+  if (liveSettings?.conversationModel && liveSettings.conversationModel !== conversationModel.id) {
+    logger.warn('conversation model not in whitelist, falling back to default', {
+      requested: liveSettings.conversationModel,
+    });
+  }
 
   const transcriptBuf = { assistant: '' };
   const baseInstructions = withLanguageDirective(routing.personaInstructions, liveSettings?.language);
@@ -310,6 +319,7 @@ async function connectAndBind(
       apiKey,
       config: {
         neoSessionId,
+        model: conversationModel.id,
         instructions: baseInstructions,
         tools: VOICE_TOOL_DEFINITIONS,
         ...(liveSettings?.voiceId ? { voice: liveSettings.voiceId } : {}),
@@ -366,6 +376,7 @@ async function connectAndBind(
     workItemCount: 0,
     transcriptBuf,
     personaInstructions: baseInstructions,
+    conversationModel: conversationModel.id,
     focus: null,
     maxDurationTimer: setTimeout(() => {
       logger.warn('session hit max duration, force closing', { voiceSessionId: id });

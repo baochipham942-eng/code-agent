@@ -46,7 +46,12 @@ describe('CapabilityHubPage', () => {
     await waitFor(() => expect(useAppStore.getState().capabilityHubTab).toBe('experts'));
   });
 
-  it('不再承载提示词入口（已迁设置 → 人格）', () => {
+  it('不再承载提示词入口（2026-07-27 二次拍板：迁账号菜单 admin 档）', () => {
+    useAuthStore.setState({ user: user(false) });
+    const { unmount } = render(<CapabilityHubPage />);
+    expect(screen.queryByTestId('capability-hub-open-prompts')).toBeNull();
+    unmount();
+
     useAuthStore.setState({ user: user(true) });
     render(<CapabilityHubPage />);
     expect(screen.queryByTestId('capability-hub-open-prompts')).toBeNull();

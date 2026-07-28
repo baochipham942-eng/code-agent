@@ -100,6 +100,7 @@ import { getTrailingSlashToken } from './slashPickerModel';
 import { AgentChip } from './AgentChip';
 import { LibraryPinModal } from '../../knowledge/LibraryPinModal';
 import { SurfaceExecutionComposerStatus } from '../../surfaceExecution/SurfaceExecutionRunStatus';
+import { ComposerUploadStatus } from './ComposerUploadStatus';
 
 // ============================================================================
 // 类型定义
@@ -798,12 +799,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
         )}
 
         {/* 文件处理中提示 */}
-        {isUploading && (
-          <div className="flex items-center gap-2 px-3 py-2 mb-2 bg-amber-500/10 border border-amber-500/20 rounded-lg">
-            <div className="w-4 h-4 border-2 border-amber-400 border-t-transparent rounded-full animate-spin" />
-            <span className="text-sm text-amber-400">{t.chatInput.processingFiles}</span>
-          </div>
-        )}
+        <ComposerUploadStatus active={isUploading} />
 
         {/* Appshot 飞入动画落点锚（0 高，仅用于测量 composer 槽位屏幕坐标） */}
         <div ref={appshotSlotRef} aria-hidden className="h-0" />

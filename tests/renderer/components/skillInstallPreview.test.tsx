@@ -27,9 +27,19 @@ vi.mock('../../../src/renderer/stores/appStore', () => ({
     }),
 }));
 
-vi.mock('../../../src/renderer/services/invokeSkillIPC', () => ({
-  invokeSkillIPC: vi.fn(),
-}));
+// 动作路径走 invokeSkillIPCOrThrow（fail-loud），只读路径走 invokeSkillIPC——
+// 这里让两者共用同一个 mock，既保留原有按通道分派的桩，也能统一断言调用。
+vi.mock('../../../src/renderer/services/invokeSkillIPC', async () => {
+  const actual = await vi.importActual<typeof import('../../../src/renderer/services/invokeSkillIPC')>(
+    '../../../src/renderer/services/invokeSkillIPC',
+  );
+  const shared = vi.fn();
+  return {
+    invokeSkillIPC: shared,
+    invokeSkillIPCOrThrow: shared,
+    describeSkillIpcError: actual.describeSkillIpcError,
+  };
+});
 
 import { invokeSkillIPC } from '../../../src/renderer/services/invokeSkillIPC';
 import { SkillsSettings } from '../../../src/renderer/components/features/settings/tabs/SkillsSettings';

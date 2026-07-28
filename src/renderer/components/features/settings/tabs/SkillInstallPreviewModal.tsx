@@ -12,7 +12,7 @@ import { SKILL_CHANNELS } from '@shared/ipc/channels';
 import type { StageRepositoryResult } from '@shared/contract/skillRepository';
 import { useI18n } from '../../../../hooks/useI18n';
 import { createLogger } from '../../../../utils/logger';
-import { invokeSkillIPC } from '../../../../services/invokeSkillIPC';
+import { describeSkillIpcError, invokeSkillIPC, invokeSkillIPCOrThrow } from '../../../../services/invokeSkillIPC';
 
 const logger = createLogger('SkillInstallPreviewModal');
 
@@ -90,7 +90,7 @@ export const SkillInstallPreviewModal: React.FC<SkillInstallPreviewModalProps> =
     setConfirming(true);
     setConfirmError(null);
     try {
-      const confirmResult = await invokeSkillIPC(SKILL_CHANNELS.REPO_CONFIRM, stageId);
+      const confirmResult = await invokeSkillIPCOrThrow(SKILL_CHANNELS.REPO_CONFIRM, stageId);
       if (confirmResult?.success) {
         settledRef.current = true;
         onInstalled(repoName);
@@ -99,7 +99,7 @@ export const SkillInstallPreviewModal: React.FC<SkillInstallPreviewModalProps> =
       }
     } catch (err) {
       logger.error('Failed to confirm staged repository', err);
-      setConfirmError(previewText.confirmFailed);
+      setConfirmError(describeSkillIpcError(err, previewText.confirmFailed));
     } finally {
       setConfirming(false);
     }

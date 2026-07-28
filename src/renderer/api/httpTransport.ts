@@ -19,6 +19,7 @@ import { RENDERER_POLLING } from '../../shared/constants';
 import { getLocalBridgeClient } from '../services/localBridge';
 import { useLocalBridgeStore } from '../stores/localBridgeStore';
 import { localToolAbortRegistry } from './localToolAbortRegistry';
+import { recordTransportFailure } from './transportFailures';
 
 type EventCallback = (...args: unknown[]) => void;
 
@@ -727,6 +728,7 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
             response.status,
             errorMessage || errorBody,
           );
+          recordTransportFailure(channel, response.status, errorMessage || errorBody);
           return undefined as ReturnType<IpcInvokeHandlers[K]>;
         }
         clearAuthTokenReloadAttempt();
@@ -740,6 +742,7 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
             if (json.success === false) {
               // 错误响应（如 NOT_FOUND）不应作为有效数据透传到前端
               console.warn(`[HttpTransport] ${channel} returned error:`, json.error);
+              recordTransportFailure(channel, response.status, parseHttpErrorMessage(JSON.stringify(json.error ?? '')));
               return undefined as ReturnType<IpcInvokeHandlers[K]>;
             }
             if ('data' in json) {
@@ -752,6 +755,7 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
         return undefined as ReturnType<IpcInvokeHandlers[K]>;
       } catch (err) {
         logTransportErrorThrottled(`${channel}:exception`, `[HttpTransport] ${channel} error:`, err);
+        recordTransportFailure(channel, null, err instanceof Error ? err.message : String(err));
         return undefined as ReturnType<IpcInvokeHandlers[K]>;
       }
     }) as CommandBridgeAPI['invoke'],

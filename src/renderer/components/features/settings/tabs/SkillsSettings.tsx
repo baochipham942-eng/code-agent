@@ -25,7 +25,7 @@ import { isWebMode } from '../../../../utils/platform';
 import { useAppStore } from '../../../../stores/appStore';
 import { useI18n } from '../../../../hooks/useI18n';
 import { WebModeBanner } from '../WebModeBanner';
-import { invokeSkillIPC } from '../../../../services/invokeSkillIPC';
+import { describeSkillIpcError, invokeSkillIPC, invokeSkillIPCOrThrow } from '../../../../services/invokeSkillIPC';
 import { SkillsInstalledTab } from './SkillsInstalledTab';
 import type { InstalledSkill, ProjectOverrideValue } from './SkillsInstalledTab';
 import { SkillsDiscoverTab } from './SkillsDiscoverTab';
@@ -161,14 +161,14 @@ export const SkillsSettings: React.FC = () => {
       )
     );
     try {
-      await invokeSkillIPC(
+      await invokeSkillIPCOrThrow(
         enabled ? SKILL_CHANNELS.SKILL_ENABLE : SKILL_CHANNELS.SKILL_DISABLE,
         skillName
       );
     } catch (err) {
       logger.error('Failed to toggle skill', err);
       setDiscoveredSkills(previous);
-      setMessage({ type: 'error', text: skillsText.actionFailed });
+      setMessage({ type: 'error', text: describeSkillIpcError(err, skillsText.actionFailed) });
     }
   };
 
@@ -189,14 +189,14 @@ export const SkillsSettings: React.FC = () => {
     );
     try {
       if (nextOverride === null) {
-        await invokeSkillIPC(SKILL_CHANNELS.SKILL_PROJECT_CLEAR, skillName);
+        await invokeSkillIPCOrThrow(SKILL_CHANNELS.SKILL_PROJECT_CLEAR, skillName);
       } else {
-        await invokeSkillIPC(SKILL_CHANNELS.SKILL_PROJECT_SET, skillName, nextOverride);
+        await invokeSkillIPCOrThrow(SKILL_CHANNELS.SKILL_PROJECT_SET, skillName, nextOverride);
       }
     } catch (err) {
       logger.error('Failed to change project skill override', err);
       setDiscoveredSkills(previous);
-      setMessage({ type: 'error', text: skillsText.actionFailed });
+      setMessage({ type: 'error', text: describeSkillIpcError(err, skillsText.actionFailed) });
     }
   };
 
@@ -205,7 +205,7 @@ export const SkillsSettings: React.FC = () => {
     setActionLoading(`registry-${item.entry.name}`);
     setMessage(null);
     try {
-      const result = await invokeSkillIPC(
+      const result = await invokeSkillIPCOrThrow(
         SKILL_CHANNELS.REGISTRY_INSTALL,
         item.entry.name
       );
@@ -220,7 +220,7 @@ export const SkillsSettings: React.FC = () => {
       }
     } catch (err) {
       logger.error('Failed to install from registry', err);
-      setMessage({ type: 'error', text: skillsText.installFailed });
+      setMessage({ type: 'error', text: describeSkillIpcError(err, skillsText.installFailed) });
     } finally {
       setActionLoading(null);
     }
@@ -231,7 +231,7 @@ export const SkillsSettings: React.FC = () => {
     setActionLoading(repo.id);
     setMessage(null);
     try {
-      const result = await invokeSkillIPC(
+      const result = await invokeSkillIPCOrThrow(
         SKILL_CHANNELS.REPO_DOWNLOAD,
         repo
       );
@@ -244,7 +244,7 @@ export const SkillsSettings: React.FC = () => {
       }
     } catch (err) {
       logger.error('Failed to download repo', err);
-      setMessage({ type: 'error', text: skillsText.installFailed });
+      setMessage({ type: 'error', text: describeSkillIpcError(err, skillsText.installFailed) });
     } finally {
       setActionLoading(null);
     }
@@ -272,7 +272,7 @@ export const SkillsSettings: React.FC = () => {
           failures.push(repoId);
           continue;
         }
-        const result = await invokeSkillIPC(
+        const result = await invokeSkillIPCOrThrow(
           SKILL_CHANNELS.REPO_DOWNLOAD,
           repo
         );
@@ -289,7 +289,7 @@ export const SkillsSettings: React.FC = () => {
       await loadData();
     } catch (err) {
       logger.error('Failed to install bundle', err);
-      setMessage({ type: 'error', text: skillsText.installFailed });
+      setMessage({ type: 'error', text: describeSkillIpcError(err, skillsText.installFailed) });
     } finally {
       setActionLoading(null);
     }
@@ -300,7 +300,7 @@ export const SkillsSettings: React.FC = () => {
     setActionLoading(repoId);
     setMessage(null);
     try {
-      const result = await invokeSkillIPC(
+      const result = await invokeSkillIPCOrThrow(
         SKILL_CHANNELS.REPO_UPDATE,
         repoId
       );
@@ -315,7 +315,7 @@ export const SkillsSettings: React.FC = () => {
       }
     } catch (err) {
       logger.error('Failed to update repo', err);
-      setMessage({ type: 'error', text: skillsText.updateFailed });
+      setMessage({ type: 'error', text: describeSkillIpcError(err, skillsText.updateFailed) });
     } finally {
       setActionLoading(null);
     }
@@ -327,7 +327,7 @@ export const SkillsSettings: React.FC = () => {
     setActionLoading(`remove-${repoId}`);
     setMessage(null);
     try {
-      await invokeSkillIPC(
+      await invokeSkillIPCOrThrow(
         SKILL_CHANNELS.REPO_REMOVE,
         repoId
       );
@@ -335,7 +335,7 @@ export const SkillsSettings: React.FC = () => {
       await loadData();
     } catch (err) {
       logger.error('Failed to remove repo', err);
-      setMessage({ type: 'error', text: skillsText.removeFailed });
+      setMessage({ type: 'error', text: describeSkillIpcError(err, skillsText.removeFailed) });
     } finally {
       setActionLoading(null);
     }
@@ -356,7 +356,7 @@ export const SkillsSettings: React.FC = () => {
     setActionLoading('custom');
     setCustomError(null);
     try {
-      const result = await invokeSkillIPC(
+      const result = await invokeSkillIPCOrThrow(
         SKILL_CHANNELS.REPO_STAGE,
         url
       );
@@ -372,7 +372,7 @@ export const SkillsSettings: React.FC = () => {
       }
     } catch (err) {
       logger.error('Failed to stage custom repo', err);
-      setCustomError(skillsText.addFailed);
+      setCustomError(describeSkillIpcError(err, skillsText.addFailed));
     } finally {
       setActionLoading(null);
     }
@@ -388,7 +388,7 @@ export const SkillsSettings: React.FC = () => {
     setSearchResults([]);
 
     try {
-      const result = await invokeSkillIPC(
+      const result = await invokeSkillIPCOrThrow(
         SKILL_CHANNELS.SKILLSMP_SEARCH,
         query,
         10
@@ -411,7 +411,7 @@ export const SkillsSettings: React.FC = () => {
       }
     } catch (err) {
       logger.error('SkillsMP search failed', err);
-      setSearchError(skillsText.searchServiceUnavailable);
+      setSearchError(describeSkillIpcError(err, skillsText.searchServiceUnavailable));
     } finally {
       setIsSearching(false);
     }
@@ -437,7 +437,7 @@ export const SkillsSettings: React.FC = () => {
     setMessage(null);
 
     try {
-      const result = await invokeSkillIPC(
+      const result = await invokeSkillIPCOrThrow(
         SKILL_CHANNELS.REPO_ADD_CUSTOM,
         repoUrl
       );
@@ -451,7 +451,7 @@ export const SkillsSettings: React.FC = () => {
       }
     } catch (err) {
       logger.error('Failed to install skill from SkillsMP', err);
-      setMessage({ type: 'error', text: skillsText.installFailed });
+      setMessage({ type: 'error', text: describeSkillIpcError(err, skillsText.installFailed) });
     } finally {
       setActionLoading(null);
     }

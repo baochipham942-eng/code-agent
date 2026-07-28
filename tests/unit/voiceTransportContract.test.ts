@@ -6,11 +6,13 @@
 import { beforeEach, describe, it, expect, vi } from 'vitest';
 import { EventEmitter } from 'events';
 import type { VoiceEvent, VoiceTransport, VoiceTransportHandle, VoiceTurnDetectionConfig } from '../../src/shared/contract/voice';
+import { QWEN_OMNI_REALTIME_MODEL } from '../../src/shared/constants/voice';
 
 /** 最小 ws 替身：qwenOmniTransport 只用到 open/error 事件、send、readyState、close。 */
 class FakeUpstream extends EventEmitter {
   static OPEN = 1;
   readyState = 1;
+  url = '';
   sent: string[] = [];
   send(data: string) {
     this.sent.push(data);
@@ -25,14 +27,15 @@ class FakeUpstream extends EventEmitter {
 
 const upstreams: FakeUpstream[] = [];
 const mockConfig = vi.hoisted(() => ({
-  settings: {} as { voice?: { turnDetection?: VoiceTurnDetectionConfig } },
+  settings: {} as { voice?: { turnDetection?: VoiceTurnDetectionConfig; live?: { interrupt?: 'server_vad' | 'manual' } } },
 }));
 
 vi.mock('ws', () => {
   class MockWebSocket extends FakeUpstream {
     static OPEN = 1;
-    constructor() {
+    constructor(url: string) {
       super();
+      this.url = url;
       upstreams.push(this);
       setTimeout(() => this.emit('open'), 0);
     }
@@ -60,6 +63,9 @@ const fakeDirectTransport: VoiceTransport = {
       provider: 'openai-realtime',
       clientBootstrap: { kind: 'webrtc', clientSecret: 'ephemeral-x', sdpUrl: 'https://example.invalid/sdp', expiresAt: 1 },
       interrupt: vi.fn(),
+      // 批 H 新增：instructions 增量刷新是两侧都必须实现的能力（焦点变化 / 切专家）。
+      // direct 形态的媒体面不经 Host，但控制面照样要能刷——这条属于 Base，不属于分支。
+      updateInstructions: vi.fn(),
       close: async () => undefined,
     };
   },
@@ -167,7 +173,7 @@ describe('VoiceTransport 契约（relay / direct 双跑）', () => {
   });
 
   it('turn_detection 关闭时 response.done 不报 ttfaPerceivedMs', async () => {
-    mockConfig.settings = { voice: { turnDetection: null } };
+    mockConfig.settings = { voice: { turnDetection: null, live: { interrupt: 'manual' } } };
     const events: VoiceEvent[] = [];
     const handle = await qwenOmniTransport.connect({
       apiKey: 'test-key',
@@ -250,6 +256,109 @@ describe('VoiceTransport 契约（relay / direct 双跑）', () => {
 
     // 判别联合的价值：direct 上根本没有 sendAudio 可调，而不是调了个 no-op。
     expect('sendAudio' in handle).toBe(false);
+
+    await handle.close();
+  });
+
+  // 批 H：焦点变化/切专家要增量刷 instructions。这是 Base 上的能力，
+  // 两种形态都得有——少一个就是「换个 provider 上下文注入静默失效」。
+  it('两种形态都实现 updateInstructions（不是 relay 独有）', async () => {
+    const relay = await connectHandle(qwenOmniTransport);
+    expect(typeof relay.updateInstructions).toBe('function');
+    await relay.close();
+
+    const direct = await connectHandle(fakeDirectTransport);
+    expect(typeof direct.updateInstructions).toBe('function');
+    await direct.close();
+  });
+
+  it('relay 的 updateInstructions 只发 instructions，不重发整份 session', async () => {
+    const handle = await connectHandle(qwenOmniTransport);
+    const upstream = upstreams[upstreams.length - 1];
+    upstream.sent.length = 0;
+
+    handle.updateInstructions('你是牧之\n\n[Context — Focus]\n- 当前文件：/repo/a.ts');
+
+    const frames = upstream.sent.map((raw) => JSON.parse(raw) as { type: string; session?: Record<string, unknown> });
+    const update = frames.find((frame) => frame.type === 'session.update');
+    expect(update?.session).toEqual({ instructions: '你是牧之\n\n[Context — Focus]\n- 当前文件：/repo/a.ts' });
+    // 重发 turn_detection / tools 会把上游按模型分化过的行为重新赌一遍，不做。
+    expect(update?.session).not.toHaveProperty('turn_detection');
+    expect(update?.session).not.toHaveProperty('tools');
+
+    await handle.close();
+  });
+
+  // 删「按住说话」档留下的老配置形状：turnDetection: null（手动 commit）
+  // 但 live.interrupt 是已下线的 push_to_talk。UI 侧把它归一成全双工了，
+  // 运行时若还按 null 走 = UI 说全双工、上游永远等不到 commit，用户说了没反应。
+  it('老 push_to_talk 配置不再让上游停在手动 commit 档', async () => {
+    mockConfig.settings = { voice: { turnDetection: null, live: { interrupt: 'push_to_talk' as never } } };
+    const handle = await connectHandle(qwenOmniTransport);
+    const upstream = upstreams[upstreams.length - 1];
+
+    expect(readSessionUpdate(upstream).session.turn_detection).toMatchObject({ type: 'server_vad' });
+
+    await handle.close();
+  });
+
+  // 工单③：通话模型可配。判据打在「WS URL 里的 ?model= 真是什么」，不是「字段被赋了值」。
+  it('config.model 真进 WS URL 的 ?model=；未传时回落默认常量', async () => {
+    const explicit = await qwenOmniTransport.connect({
+      apiKey: 'test-key',
+      config: { neoSessionId: 's1', model: 'qwen3-omni-flash-realtime' },
+      onEvent: vi.fn(),
+      onAudio: vi.fn(),
+    });
+    expect(upstreams[upstreams.length - 1].url).toContain('?model=qwen3-omni-flash-realtime');
+    await explicit.close();
+
+    const fallback = await connectHandle(qwenOmniTransport);
+    expect(upstreams[upstreams.length - 1].url).toContain(`?model=${QWEN_OMNI_REALTIME_MODEL}`);
+    await fallback.close();
+  });
+
+  // 工单③ fail-loud 兜底：上一代模型对 tools 是「收下不报错、回显 null」——
+  // 判据是「用户可见的 notice 真发出去了」，不是「logger.warn 被调了」。
+  it('注册了 tools 但 session.updated 回显 tools: null → 发用户可见 notice，一条连接只发一次', async () => {
+    const events: VoiceEvent[] = [];
+    const handle = await qwenOmniTransport.connect({
+      apiKey: 'test-key',
+      config: { neoSessionId: 's1', tools: [{ type: 'function', name: 'get_active_tasks', description: 'd', parameters: { type: 'object', properties: {}, required: [] } }] },
+      onEvent: (event) => events.push(event),
+      onAudio: vi.fn(),
+      onToolCall: async () => 'ok',
+    });
+    const upstream = upstreams[upstreams.length - 1];
+
+    upstream.emit('message', JSON.stringify({ type: 'session.updated', session: { tools: null } }));
+    // 上游可能刷多条 session.updated（比如 focus 刷新后），提示只该出现一次
+    upstream.emit('message', JSON.stringify({ type: 'session.updated', session: {} }));
+
+    const notices = events.filter((event) => event.type === 'notice');
+    expect(notices).toHaveLength(1);
+    expect(notices[0]).toMatchObject({ type: 'notice', code: 'VOICE_TOOLS_DROPPED' });
+
+    await handle.close();
+  });
+
+  it('session.updated 回显真收下了 tools → 不发 notice', async () => {
+    const events: VoiceEvent[] = [];
+    const handle = await qwenOmniTransport.connect({
+      apiKey: 'test-key',
+      config: { neoSessionId: 's1', tools: [{ type: 'function', name: 'get_active_tasks', description: 'd', parameters: { type: 'object', properties: {}, required: [] } }] },
+      onEvent: (event) => events.push(event),
+      onAudio: vi.fn(),
+      onToolCall: async () => 'ok',
+    });
+    const upstream = upstreams[upstreams.length - 1];
+
+    upstream.emit('message', JSON.stringify({
+      type: 'session.updated',
+      session: { tools: [{ type: 'function', name: 'get_active_tasks' }] },
+    }));
+
+    expect(events.filter((event) => event.type === 'notice')).toHaveLength(0);
 
     await handle.close();
   });

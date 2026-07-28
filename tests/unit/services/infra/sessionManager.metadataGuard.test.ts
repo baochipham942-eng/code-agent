@@ -14,6 +14,8 @@ const dbMock = {
   createSession: vi.fn(),
   createSessionWithId: vi.fn(),
   addMessage: vi.fn(),
+  updateMessage: vi.fn(),
+  captureSessionForkAnchorEvidence: vi.fn(async () => null),
   saveTodos: vi.fn(),
   updateSession: vi.fn(),
   patchSessionMetadata: vi.fn(() => true),
@@ -112,6 +114,50 @@ describe('SessionManager metadata guard (Codex audit R2)', () => {
       expect.objectContaining({ sessionId: 'session-1', keys: ['modelOverride'] }),
       'session-1',
     );
+  });
+
+  it('captures workspace evidence only for a final visible assistant reply without tool calls', async () => {
+    dbState.sessions = [{
+      id: 'session-1',
+      userId: 'user-1',
+      title: 'S',
+      modelConfig: { provider: 'openai', model: 'gpt-5' },
+      createdAt: 1,
+      updatedAt: 1,
+    }];
+    const manager = await makeManager();
+
+    await manager.addMessageToSession('session-1', {
+      id: 'assistant-final',
+      role: 'assistant',
+      content: 'final answer',
+      timestamp: 10,
+    });
+    await manager.addMessageToSession('session-1', {
+      id: 'assistant-meta',
+      role: 'assistant',
+      content: 'hidden summary',
+      timestamp: 11,
+      isMeta: true,
+    });
+    await manager.addMessageToSession('session-1', {
+      id: 'assistant-tool',
+      role: 'assistant',
+      content: 'calling a tool',
+      timestamp: 12,
+      toolCalls: [{ id: 'tool-1', name: 'read_file', arguments: {} }],
+    });
+    await manager.addMessageToSession('session-1', {
+      id: 'assistant-structured-tool',
+      role: 'assistant',
+      content: 'structured tool turn',
+      timestamp: 13,
+      contentParts: [{ type: 'tool_call', toolCallId: 'tool-2' }],
+    });
+
+    expect(dbMock.captureSessionForkAnchorEvidence).toHaveBeenCalledTimes(1);
+    expect(dbMock.captureSessionForkAnchorEvidence)
+      .toHaveBeenCalledWith('session-1', 'assistant-final');
   });
 
   it('sanitizes legacy Surface metadata and messages before importing them', async () => {
@@ -223,5 +269,73 @@ describe('SessionManager metadata guard (Codex audit R2)', () => {
     expect(serialized).not.toContain('token-import-secret');
     expect(serialized).not.toContain('raw imported chain of thought');
     expect(serialized).not.toContain('raw message reasoning');
+  });
+
+  it('strips legacy Fork claims and provider runtime identity before ordinary import', async () => {
+    const manager = await makeManager();
+
+    await manager.importSession({
+      id: 'forged-fork',
+      title: 'Forged fork import',
+      modelConfig: { provider: 'openai', model: 'test' },
+      parentSessionId: 'source-session',
+      sourceRunId: 'source-run-secret',
+      engine: {
+        kind: 'codex_cli',
+        permissionProfile: 'read_only',
+        origin: 'manual',
+        cwd: '/private/source',
+        externalSessionId: 'provider-session-secret',
+      },
+      metadata: {
+        forkLineage: {
+          forkId: 'forged-fork-id',
+          parentSessionId: 'source-session',
+        },
+        ordinaryMetadata: 'preserved',
+      },
+      createdAt: 1,
+      updatedAt: 2,
+      messages: [{
+        id: 'forged-message',
+        role: 'assistant',
+        content: 'safe content',
+        timestamp: 2,
+        metadata: {
+          forkLineage: { forkId: 'nested-forgery' },
+          ordinaryMessageMetadata: 'preserved',
+        },
+      }],
+      todos: [{ id: 'todo-secret', content: 'must not import runtime todo', status: 'pending' }],
+      messageCount: 1,
+    } as never);
+
+    const storedSession = dbMock.createSession.mock.calls[0][0] as Record<string, unknown>;
+    const storedMessage = dbMock.addMessage.mock.calls[0][1] as Record<string, unknown>;
+    expect(storedSession).toMatchObject({
+      metadata: { ordinaryMetadata: 'preserved' },
+      engine: {
+        kind: 'codex_cli',
+        permissionProfile: 'read_only',
+        origin: 'import',
+      },
+    });
+    expect(storedSession).not.toHaveProperty('parentSessionId');
+    expect(storedSession).not.toHaveProperty('sourceRunId');
+    expect(JSON.stringify(storedSession)).not.toContain('provider-session-secret');
+    expect(JSON.stringify(storedSession)).not.toContain('/private/source');
+    expect(storedMessage.metadata).toEqual({ ordinaryMessageMetadata: 'preserved' });
+    expect(dbMock.saveTodos).not.toHaveBeenCalled();
+    expect(dbMock.logAuditEvent).toHaveBeenCalledWith(
+      'session_imported',
+      expect.objectContaining({
+        originalId: 'forged-fork',
+        strippedForkClaimPaths: expect.arrayContaining([
+          '$.metadata.forkLineage',
+          '$.parentSessionId',
+        ]),
+      }),
+      expect.any(String),
+    );
   });
 });

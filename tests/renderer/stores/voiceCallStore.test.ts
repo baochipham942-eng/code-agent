@@ -45,13 +45,13 @@ describe('voiceCallStore 动作', () => {
   it('dialStarted 清空上一通残留并进 connecting', () => {
     const store = useVoiceCallStore.getState();
     store.eventApplied({ partialAssistant: '上一通的字幕', workItem: { id: 'w0', title: '旧活', status: 'queued' } });
-    store.dialStarted('s1', 'role-a', 'push_to_talk');
+    store.dialStarted('s1', 'role-a', 'manual');
 
     const state = useVoiceCallStore.getState();
     expect(state.phase).toBe('connecting');
     expect(state.sessionId).toBe('s1');
     expect(state.activeAgentId).toBe('role-a');
-    expect(state.interruptMode).toBe('push_to_talk');
+    expect(state.interruptMode).toBe('manual');
     expect(state.partialAssistant).toBe('');
     expect(state.workItems).toEqual([]);
   });

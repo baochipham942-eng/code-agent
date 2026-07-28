@@ -28,8 +28,13 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
   // Conversation
   { tab: 'conversation', labelKey: 'modelRoutingStrategy', keywords: ['routing', 'route', 'model routing', 'auto', 'direct', 'parallel'] },
 
-  // Voice Input
-  { tab: 'voiceInput', labelKey: 'voiceInput', keywords: ['voice', 'speech', 'mic', 'microphone', 'recording', 'transcription', 'asr'] },
+  // Voice Live（实时通话）
+  { tab: 'voiceLive', labelKey: 'voiceLive', keywords: ['voice', 'live voice', 'call', 'realtime', 'real-time', 'voice call', 'voice chat'] },
+  { tab: 'voiceLive', labelKey: 'voiceLiveVoice', keywords: ['timbre', 'voice id', 'speaker', 'voice'] },
+  { tab: 'voiceLive', labelKey: 'voiceLiveInterrupt', keywords: ['interrupt', 'barge-in', 'vad', 'sensitivity', 'turn detection'] },
+
+  // Voice Input（语音转文字）
+  { tab: 'voiceInput', labelKey: 'voiceInput', keywords: ['voice', 'speech', 'mic', 'microphone', 'recording', 'transcription', 'asr', 'dictation', 'speech to text'] },
   { tab: 'voiceInput', labelKey: 'whisperModel', keywords: ['whisper', 'model', 'asr', 'speech to text', 'local model', 'transcription model'] },
   { tab: 'voiceInput', labelKey: 'transcriptionLanguage', keywords: ['language', 'locale', 'multilingual', 'chinese', 'english'] },
 
@@ -77,6 +82,9 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
   { tab: 'appearance', labelKey: 'theme', keywords: ['theme', 'dark', 'light', 'night'] },
   { tab: 'appearance', labelKey: 'fontSize', keywords: ['font', 'size', 'text'] },
   { tab: 'appearance', labelKey: 'language', keywords: ['language', 'chinese', 'english', 'internationalization', 'i18n'] },
+
+  // Persona
+  { tab: 'soul', labelKey: 'promptManager', keywords: ['prompt', 'prompts', 'prompt manager', 'persona', 'system prompt'] },
 
   // Doctor（全量诊断：基础偏好组的独立菜单项）
   { tab: 'doctor', labelKey: 'systemDiagnostics', keywords: ['doctor', 'diagnostics', 'health check', 'system check', 'troubleshoot', 'stethoscope'] },

@@ -36,6 +36,7 @@ const logger = createLogger('PluginInstallService');
 // ----------------------------------------------------------------------------
 
 const INSTALLED_PLUGINS_FILE = 'installed-plugins.json';
+const STAGING_SKILL_NAME_PATTERN = /\.staging-[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 // ----------------------------------------------------------------------------
 // Path Utilities
@@ -84,7 +85,16 @@ async function loadInstalledPlugins(): Promise<InstalledPluginsFile> {
     const filePath = getInstalledPluginsPath();
     if (!fsSync.existsSync(filePath)) return {};
     const raw = await fs.readFile(filePath, 'utf8');
-    return JSON.parse(raw) as InstalledPluginsFile;
+    const state = JSON.parse(raw) as InstalledPluginsFile;
+    const migrated = migrateStagingSkillNames(state);
+    if (migrated !== state) {
+      await saveInstalledPlugins(migrated).catch(error => {
+        logger.warn('Failed to persist installed plugin skill name migration', {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
+    }
+    return migrated;
   } catch {
     return {};
   }
@@ -105,6 +115,49 @@ async function saveInstalledPlugins(state: InstalledPluginsFile): Promise<void> 
     await fs.rm(tempPath, { force: true }).catch(() => {});
     throw error;
   }
+}
+
+function migrateStagingSkillNames(state: InstalledPluginsFile): InstalledPluginsFile {
+  let migratedState: InstalledPluginsFile | undefined;
+
+  for (const [pluginSpec, record] of Object.entries(state)) {
+    if (
+      !record.pluginRoot
+      || !Array.isArray(record.skills)
+      || !Array.isArray(record.skillPaths)
+      || record.skills.length !== record.skillPaths.length
+    ) {
+      continue;
+    }
+
+    let migratedSkills: string[] | undefined;
+    for (const [index, skillName] of record.skills.entries()) {
+      if (!STAGING_SKILL_NAME_PATTERN.test(skillName)) continue;
+
+      try {
+        const finalSkillDir = resolveInside(record.pluginRoot, record.skillPaths[index]!);
+        const finalSkillName = path.basename(finalSkillDir);
+        if (
+          !finalSkillName
+          || STAGING_SKILL_NAME_PATTERN.test(finalSkillName)
+          || !fsSync.existsSync(path.join(finalSkillDir, 'SKILL.md'))
+        ) {
+          continue;
+        }
+        migratedSkills ??= [...record.skills];
+        migratedSkills[index] = finalSkillName;
+      } catch {
+        // Leave records untouched when their managed relative paths are invalid.
+      }
+    }
+
+    if (migratedSkills) {
+      migratedState ??= { ...state };
+      migratedState[pluginSpec] = { ...record, skills: migratedSkills };
+    }
+  }
+
+  return migratedState ?? state;
 }
 
 // ----------------------------------------------------------------------------
@@ -773,12 +826,11 @@ async function performInstall(args: {
     });
     const pluginTypes = getPluginEntryTypes(entry);
 
-    const skillDirs = await resolveSkillDirs({
+    await resolveSkillDirs({
       rootDir: stagingRoot,
       entrySourceBase: stagingRoot,
       skillPaths: entry.skills || [],
     });
-    const installedSkills = skillDirs.map((skill) => skill.name);
     const commandFiles = await resolveCommandFiles({
       rootDir: stagingRoot,
       entrySourceBase: stagingRoot,
@@ -801,6 +853,13 @@ async function performInstall(args: {
     ]);
     await fs.rename(stagingRoot, pluginRoot);
     stagedAssetsMoved = true;
+
+    const skillDirs = await resolveSkillDirs({
+      rootDir: pluginRoot,
+      entrySourceBase: pluginRoot,
+      skillPaths: entry.skills || [],
+    });
+    const installedSkills = skillDirs.map((skill) => skill.name);
 
     if (options.enableAfterInstall === true) {
       activatedCommands = await activatePluginCommands({

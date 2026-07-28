@@ -29,6 +29,7 @@ function setHookState(patch: Record<string, unknown> = {}) {
     errorCode: null,
     lastResult: null,
     inputLevel: 0,
+    partialText: '',
     silenceWarning: false,
     ...patch,
   } as UseVoiceInputReturn;
@@ -106,7 +107,7 @@ describe('VoiceInputButton', () => {
     const html = renderButton();
 
     expect(html).toContain('模型文件不存在');
-    expect(html).toContain('本地优先');
+    expect(html).toContain('边说边出字');
     expect(html).toContain('重试');
     expect(html).toContain('关闭');
   });
@@ -122,5 +123,18 @@ describe('VoiceInputButton', () => {
 
     expect(html).toContain('请允许麦克风权限');
     expect(html).toContain('打开设置');
+  });
+
+  // ChatInput 在「正在建会话」那段窗口把 disabled 传下来，靠的就是这条：
+  // 按钮留在原位置灰，不是消失。它一消失底栏就少一格、旁边全部横移
+  // ——2026-07-27 真机「切到新会话时按钮闪变」的其中一半就是这么来的。
+  it('disabled 时置灰留在原位，不是整个消失', () => {
+    const html = renderToStaticMarkup(
+      React.createElement(VoiceInputButton, { voice: voiceState, disabled: true }),
+    );
+
+    expect(html).toContain('aria-label="语音转文字"');
+    expect(html).toContain('disabled=""');
+    expect(html).toContain('cursor-not-allowed');
   });
 });

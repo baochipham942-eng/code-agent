@@ -198,7 +198,7 @@ export function setupAllIpcHandlers(ipcMain: IpcMain, deps: IpcDependencies): vo
   registerAgentRoutingHandlers(ipcMain);
 
   // Checkpoint handlers
-  registerCheckpointHandlers(ipcMain);
+  registerCheckpointHandlers(ipcMain, getAppService);
 
   // LSP handlers (语言服务器)
   registerLSPHandlers();

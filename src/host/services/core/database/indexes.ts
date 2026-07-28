@@ -38,6 +38,16 @@ export function applyIndexes(db: BetterSqlite3.Database): void {
   db.exec(`CREATE INDEX IF NOT EXISTS idx_messages_session_visibility_timestamp ON messages(session_id, visibility, timestamp DESC)`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_messages_hidden_by_rewind ON messages(hidden_by_rewind_id)`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_session_rewinds_session_created ON session_rewinds(session_id, created_at DESC)`);
+  db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_session_rewinds_idempotency ON session_rewinds(session_id, idempotency_key) WHERE idempotency_key IS NOT NULL`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_session_forks_source_created ON session_forks(source_session_id, created_at DESC)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_session_forks_root_depth ON session_forks(root_session_id, depth, created_at)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_session_forks_parent ON session_forks(parent_fork_id)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_session_fork_message_source ON session_fork_message_map(source_message_id)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_session_fork_context_handoff_state ON session_fork_context_handoffs(state, dispatch_started_at)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_session_fork_anchor_evidence_lookup ON session_fork_anchor_evidence(source_session_id, anchor_message_id, status)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_session_fork_anchor_evidence_project ON session_fork_anchor_evidence(project_id, workspace_scope_version)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_session_fork_workspace_intents_status ON session_fork_workspace_intents(status, updated_at)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_session_fork_workspace_sagas_state ON session_fork_workspace_sagas(state, updated_at)`);
 
   // Cron 相关索引
   db.exec(`CREATE INDEX IF NOT EXISTS idx_cron_jobs_enabled ON cron_jobs(enabled)`);
@@ -106,6 +116,7 @@ export function applyIndexes(db: BetterSqlite3.Database): void {
   db.exec(`CREATE INDEX IF NOT EXISTS idx_turn_cost_session_created ON turn_cost_estimates(session_id, created_at)`);
 
   db.exec(`CREATE INDEX IF NOT EXISTS idx_generative_ui_instances_message ON generative_ui_instances(session_id, source_message_id, source_ordinal)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_generative_ui_instances_rewind ON generative_ui_instances(session_id, hidden_by_rewind_id)`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_generative_ui_events_instance_created ON generative_ui_events(instance_id, created_at)`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_execution_manifests_session_status ON execution_manifests(session_id, status, created_at)`);
 

@@ -18,22 +18,12 @@ import {
   MessageSquare,
   Loader2,
   User,
-  Settings,
   LogIn,
-  LogOut,
   ChevronDown,
   Trash2,
   Search,
   PanelLeftClose,
-  ChevronRight,
-  FlaskConical,
-  CalendarDays,
-  Monitor,
-  MonitorSmartphone,
-  Activity,
-  UsersRound,
   Download,
-  Gauge,
 } from 'lucide-react';
 import { IPC_CHANNELS } from '@shared/ipc';
 import { getCurrentKeybindingPlatform } from '@shared/keybindings/defaults';
@@ -49,9 +39,11 @@ import type { SessionAutomationSessionSummary } from '@shared/contract';
 import { sessionAutomationClient } from '../services/sessionAutomationClient';
 import { SessionReplaySummaryDialog } from './features/sidebar/SessionReplaySummaryDialog';
 import { getSessionTypeLabel } from './features/sidebar/SessionTypeFilterBar';
-import { AccountMenuItem, AccountMenuLabel } from './features/sidebar/sidebarPresentation';
+import { NeoBrandMark } from './features/sidebar/NeoBrandMark';
+import { isTauriMode } from '../utils/platform';
+import { isNativeWindowFullscreen } from '../services/tauriPluginFacade';
 import { useI18n } from '../hooks/useI18n';
-import { formatRelativeTime } from '../utils/i18nTime';
+import { localeForLanguage } from '../utils/i18nTime';
 import ipcService from '../services/ipcService';
 import { getDisplaySessionTitle, getSessionStatusPresentation } from '../utils/sessionPresentation';
 import { hasSessionDeliverySignals } from '../utils/sessionRecoveryHints';
@@ -62,9 +54,9 @@ import { useSidebarDerivedSessions } from './features/sidebar/useSidebarDerivedS
 import { useSidebarSessionActions } from './features/sidebar/useSidebarSessionActions';
 import { useSidebarRowActions, resolveRuntimeLogsDir } from './features/sidebar/useSidebarRowActions';
 import { SidebarStatusFilterDropdown } from './features/sidebar/SidebarStatusFilterDropdown';
+import { SidebarAccountMenu } from './features/sidebar/SidebarAccountMenu';
 import { SidebarSearchDialog } from './features/sidebar/SidebarSearchDialog';
 import { SidebarNewTaskRow } from './features/sidebar/SidebarNewTaskRow';
-import { SidebarWorkspaceRow } from './features/sidebar/SidebarWorkspaceRow';
 import {
   buildSessionStatusFilterOptions,
   buildSessionStatusFilterLabels,
@@ -92,28 +84,32 @@ export function isAccountMenuEventOutside(
 }
 
 export const Sidebar: React.FC = () => {
-  const { t } = useI18n();
-  // 原生标题栏撤掉后 macOS 红绿灯浮在侧栏头行左端，得给它留死区（Windows/Linux 无此约束）
+  const { t, language } = useI18n();
+  // 原生标题栏撤掉后 macOS 红绿灯浮在侧栏头行左端，得给它留死区（Windows/Linux 无此约束）。
+  // 红绿灯只存在于「Tauri 壳 + macOS + 非全屏」：全屏时系统把它藏起来，浏览器里根本没有——
+  // 这两种态左上角空着难看，改挂品牌标（2026-07-27 产品负责人拍板）。
   const isMacShell = getCurrentKeybindingPlatform() === 'darwin';
+  const [isNativeFullscreen, setIsNativeFullscreen] = useState(false);
+  useEffect(() => {
+    if (!isTauriMode()) return;
+    let alive = true;
+    const check = () => {
+      isNativeWindowFullscreen()
+        .then((v) => { if (alive) setIsNativeFullscreen(v); })
+        .catch(() => {});
+    };
+    check();
+    window.addEventListener('resize', check);
+    return () => { alive = false; window.removeEventListener('resize', check); };
+  }, []);
+  const trafficLightZone = isMacShell && isTauriMode() && !isNativeFullscreen;
   const sb = t.sidebar;
   const {
     clearPlanningState,
-    setShowSettings,
     setWorkingDirectory,
     showLab,
-    setShowLab,
     showTimeCapabilityCenter,
-    setShowTimeCapabilityCenter,
     showDesktopPanel,
-    setShowDesktopPanel,
-    showActivityPanel,
-    setShowActivityPanel,
-    showLocalOpsPanel,
-    openLocalOpsPanel,
-    showProjectCollaborationPage,
-    openProjectCollaborationPage,
-    showEvalCenter,
-    openEvalCenter,
     optionalUpdateInfo,
     setShowOptionalUpdateModal,
     openWorkspacePreview,
@@ -174,14 +170,11 @@ export const Sidebar: React.FC = () => {
     isAuthenticated,
     isLoading: isAuthLoading,
     setShowAuthModal,
-    signOut,
     sessionTrustState,
     authBackendAvailable,
     hasCachedAdminClaim,
   } = useAuthStore();
   const canOpenSessionReplay = canAccessFeature('eval.replay', user);
-  // 评测中心入口门禁与菜单里其他 admin 判定同一条通路（user.isAdmin verified claim）。
-  const canOpenEvalCenter = canAccessFeature('eval.center', user);
   const isVerifiedAdmin = user?.isAdmin === true;
   const isAdminPendingVerification = !isVerifiedAdmin && hasCachedAdminClaim && sessionTrustState === 'cached';
   const adminPendingTitle =
@@ -561,7 +554,7 @@ export const Sidebar: React.FC = () => {
           showStatusBadge: status.showBadge,
           typeLabel: getSessionTypeLabel(session.type),
           summary: hasMeaningfulSummary ? snapshotSummary : undefined,
-          lastActiveLabel: formatRelativeTime(t, latestActivityAt),
+          lastActiveTitle: new Date(latestActivityAt).toLocaleString(localeForLanguage(language)),
           workingDirectory: session.workingDirectory,
           gitBranch: session.gitBranch,
           prLabel: session.prLink ? `PR #${session.prLink.number}` : undefined,
@@ -642,13 +635,17 @@ export const Sidebar: React.FC = () => {
       {/* Header: h-12 to align with TitleBar on the right.
           2026-07-27 审美关：① 原生标题栏已撤（tauri.conf.json titleBarStyle=Overlay +
           hiddenTitle），内容延伸到窗口顶，macOS 红绿灯浮在本行左端，所以 darwin 下
-          左侧留出 72px 死区；② 品牌标撤下（产品负责人：「品牌标识本身没有特别合适的
-          地方，可以先不展示」），这行于是只剩右侧功能图标——与 Codex 参照一致。
+          左侧留出 72px 死区；② 品牌标只在红绿灯不在场时展示（全屏/浏览器/非 mac 壳，
+          2026-07-27 产品负责人：那两种态左上角太空），红绿灯在场时仍不展示。
           本行同时是窗口拖拽区（原生标题栏没了，得自己给一块能拖的地方）。 */}
       <div
-        className={`h-12 flex items-center justify-end gap-2 flex-shrink-0 pr-3 ${isMacShell ? 'pl-[72px]' : 'pl-3'}`}
+        className={`h-12 flex items-center justify-between gap-2 flex-shrink-0 pr-3 ${trafficLightZone ? 'pl-[72px]' : 'pl-3'}`}
         style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
       >
+        {/* 左槽：红绿灯不在场（全屏/浏览器/非 mac 壳）时挂品牌标，否则留空由 pl-[72px] 让位 */}
+        <div className="flex min-w-0 items-center">
+          {!trafficLightZone && <NeoBrandMark size={22} />}
+        </div>
         <div className="flex items-center gap-1" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
           {!isAuthLoading && (
             <>
@@ -701,11 +698,8 @@ export const Sidebar: React.FC = () => {
         </div>
       </div>
 
-      {/* 当前工作目录行：放在新任务行上方。它是「新任务落到哪、下面项目组怎么分」的上游
-          作用域声明，读作上下文而不是与能力区并列的入口；目录选择已并入侧栏（顶栏 chip 退役）。 */}
-      <div className="px-2 flex-shrink-0">
-        <SidebarWorkspaceRow />
-      </div>
+      {/* 「选择目录」行已退役（批C2）：目录选择并入新任务流程（欢迎页目录 chip +
+          DirectoryPickerModal/原生选择器），侧栏不再展示内部路径。 */}
 
       {/* 新任务默认纯对话，不继承项目上下文（项目会话走各项目组 + 按钮）。
           与能力区之间零间距：四条入口行等距同组，区间断点只留在能力区之后（pb-2）。 */}
@@ -721,7 +715,10 @@ export const Sidebar: React.FC = () => {
       <SidebarCapabilityZone />
 
       {/* Session List - Project Grouped */}
-      <div className="flex-1 overflow-y-auto px-2 min-h-0">
+      {/* scrollbar-hidden：全局 ::-webkit-scrollbar 是 6px 占位式滚动条，列表一溢出
+          行内右轨（分组角标/状态点 cx=212）整体左移 6px，与容器外账号区箭头错轴
+          （2026-07-27 Dev 包实测 206 vs 212）。隐藏滚动条让占位归零，滚轮/触控板滚动不受影响。 */}
+      <div className="flex-1 overflow-y-auto scrollbar-hidden px-2 min-h-0" data-testid="sidebar-session-scroll">
         {isLoading && sessions.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 gap-3">
             <Loader2 className="w-6 h-6 animate-spin text-primary-400" />
@@ -858,111 +855,15 @@ export const Sidebar: React.FC = () => {
                 className={`w-4 h-4 text-zinc-600 transition-transform ${showUserMenu ? 'rotate-180' : ''}`}
               />
             </button>
-            {/* User Dropdown Menu */}
+            {/* User Dropdown Menu（整块已抽成 SidebarAccountMenu：Sidebar 逼近 god-file 门） */}
             {showUserMenu && (
-              <div className="absolute bottom-full left-2 right-2 z-50 max-h-[80vh] overflow-y-auto rounded-xl border border-zinc-700 bg-zinc-900 py-1 shadow-xl">
-                <AccountMenuLabel>{sb.menuCommon}</AccountMenuLabel>
-                <AccountMenuItem
-                  onClick={() => {
-                    setShowActivityPanel(true);
-                    setShowUserMenu(false);
-                  }}
-                  icon={<Activity className={`w-4 h-4 ${showActivityPanel ? 'text-cyan-400' : 'text-cyan-400/80'}`} />}
-                  label={sb.menuActivity}
-                />
-                <AccountMenuItem
-                  onClick={() => {
-                    openLocalOpsPanel('desktop');
-                    setShowUserMenu(false);
-                  }}
-                  icon={
-                    <MonitorSmartphone
-                      className={`w-4 h-4 ${showLocalOpsPanel ? 'text-cyan-400' : 'text-cyan-400/80'}`}
-                    />
-                  }
-                  label={sb.menuLocalOps}
-                />
-                <AccountMenuItem
-                  onClick={() => {
-                    openProjectCollaborationPage(currentSessionProjectId);
-                    setShowUserMenu(false);
-                  }}
-                  icon={
-                    <UsersRound
-                      className={`w-4 h-4 ${showProjectCollaborationPage ? 'text-violet-400' : 'text-violet-400/80'}`}
-                    />
-                  }
-                  label={sb.menuNeoCollab}
-                />
-                {canOpenEvalCenter && (
-                  <AccountMenuItem
-                    onClick={() => {
-                      openEvalCenter();
-                      setShowUserMenu(false);
-                    }}
-                    icon={
-                      <Gauge
-                        className={`w-4 h-4 ${showEvalCenter ? 'text-amber-400' : 'text-amber-400/80'}`}
-                      />
-                    }
-                    label={sb.menuEvalCenter}
-                  />
-                )}
-
-                <div className="my-1 border-t border-zinc-800" />
-                <button
-                  type="button"
-                  onClick={() => setShowAccountAdvancedTools((open) => !open)}
-                  className="flex w-full items-center gap-2 px-3 py-2 text-sm text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-300"
-                >
-                  <ChevronRight
-                    className={`h-3.5 w-3.5 transition-transform ${advancedToolsOpen ? 'rotate-90' : ''}`}
-                  />
-                  <span className="min-w-0 flex-1 text-left">{sb.advancedTools}</span>
-                  {hasActiveAdvancedTool && (
-                    <span className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] text-emerald-300">
-                      {sb.advancedToolsRunning}
-                    </span>
-                  )}
-                </button>
-                {advancedToolsOpen && (
-                  <div className="pb-1">
-                    <AccountMenuItem
-                      onClick={() => { setShowLab(true); setShowUserMenu(false); }}
-                      icon={<FlaskConical className={`w-4 h-4 ${showLab ? 'text-emerald-400' : 'text-emerald-400/80'}`} />}
-                      label={sb.menuModelTraining}
-                    />
-                    <AccountMenuItem
-                      onClick={() => { setShowTimeCapabilityCenter(!showTimeCapabilityCenter); setShowUserMenu(false); }}
-                      icon={<CalendarDays className={`w-4 h-4 ${showTimeCapabilityCenter ? 'text-sky-400' : 'text-sky-400/80'}`} />}
-                      label={sb.menuTimeCapability}
-                    />
-                    <AccountMenuItem
-                      onClick={() => { setShowDesktopPanel(!showDesktopPanel); setShowUserMenu(false); }}
-                      icon={<Monitor className={`w-4 h-4 ${showDesktopPanel ? 'text-cyan-400' : 'text-cyan-400/80'}`} />}
-                      label={sb.menuDesktopCapture}
-                    />
-                  </div>
-                )}
-
-                <div className="border-t border-zinc-800" />
-                <AccountMenuItem
-                  onClick={() => {
-                    setShowSettings(true);
-                    setShowUserMenu(false);
-                  }}
-                  icon={<Settings className="w-4 h-4" />}
-                  label={sb.menuSettings}
-                />
-                <AccountMenuItem
-                  onClick={() => {
-                    signOut();
-                    setShowUserMenu(false);
-                  }}
-                  icon={<LogOut className="w-4 h-4" />}
-                  label={sb.menuSignOut}
-                />
-              </div>
+              <SidebarAccountMenu
+                onClose={() => setShowUserMenu(false)}
+                advancedToolsOpen={advancedToolsOpen}
+                onToggleAdvancedTools={() => setShowAccountAdvancedTools((open) => !open)}
+                hasActiveAdvancedTool={hasActiveAdvancedTool}
+                currentSessionProjectId={currentSessionProjectId}
+              />
             )}
           </>
         ) : (

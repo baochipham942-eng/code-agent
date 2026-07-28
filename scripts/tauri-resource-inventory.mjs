@@ -131,6 +131,7 @@ function classifyGroup(groupKey, bytes) {
     groupKey === 'scripts/vision-ocr'
     || groupKey === 'scripts/vision-tagger'
     || groupKey === 'scripts/system-audio-capture'
+    || groupKey === 'scripts/voice-aec-io'
   ) {
     return {
       placement: 'optional-candidate',

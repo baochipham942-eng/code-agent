@@ -10,10 +10,10 @@ export interface AccessSubject {
 export const ACCESS_CONTROL_REGISTRY = {
   // settings.users/invites/controlPlane/capabilities 已随管理组迁 admin-console（2026-07 方案 9C），
   // 桌面端无任何调用方，注册项一并移除。
-  // Settings IA v2 拍板（2026-07-03）：插件/Hook 下放普通用户自行配置
+  // 插件入口仅管理员可见；Hook 仍允许普通用户自行配置。
   'settings.plugins': {
     label: '插件管理',
-    adminOnly: false,
+    adminOnly: true,
   },
   'settings.hooks': {
     label: 'Hook 原始配置',

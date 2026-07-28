@@ -5,8 +5,9 @@
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { ChevronDown, ChevronRight, Undo2, Check, Loader2 } from 'lucide-react';
+import type { RestoreWorkspaceFilesAtCheckpointResult } from '@shared/contract/fileRestore';
 import type { TraceTurn } from '@shared/contract/trace';
-import { IPC_CHANNELS } from '@shared/ipc';
+import { IPC_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
 import ipcService from '../../../../services/ipcService';
 import { useSessionStore } from '../../../../stores/sessionStore';
 import { toast } from '../../../../hooks/useToast';
@@ -86,16 +87,19 @@ export const TurnDiffSummary: React.FC<TurnDiffSummaryProps> = ({ turn }) => {
     setIsUndoing(true);
     setUndoError(null);
     try {
-      const result = (await ipcService.invoke(
-        IPC_CHANNELS.CHECKPOINT_REWIND,
-        currentSessionId,
-        anchorMessageId
-      )) as { success: boolean; filesRestored: number; error?: string } | undefined;
+      const result = await ipcService.invokeDomain<RestoreWorkspaceFilesAtCheckpointResult>(
+        IPC_DOMAINS.SESSION,
+        'restoreWorkspaceFilesAtCheckpoint',
+        {
+          sessionId: currentSessionId,
+          checkpointMessageId: anchorMessageId,
+        },
+      );
 
-      if (result?.success) {
+      if (result.success) {
         setUndoState('done');
       } else {
-        const message = result?.error || 'Rewind failed';
+        const message = 'Rewind failed';
         setUndoState('error');
         setUndoError(message);
         toast.error(t.turnDiff.undoToastFailed.replace('{message}', message));

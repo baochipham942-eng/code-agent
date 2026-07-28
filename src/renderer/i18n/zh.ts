@@ -613,6 +613,8 @@ export const zh = {
   about: {
     title: '关于',
     version: '版本',
+    buildInfo: '{branch} @ {commitShort}（{builtAt}）',
+    buildUnknown: '未知',
     description:
       'Agent Neo 是评测驱动的多模型生活 / 工作 AI 助手，面向资料处理、项目推进、编程交付和本地桌面执行；支持 Native / Codex CLI / Claude Code 等 Agent Engine，并把过程、验证和结果留在同一条可追踪上下文里。',
     capabilities: '核心能力',

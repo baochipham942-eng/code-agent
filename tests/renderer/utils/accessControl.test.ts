@@ -25,8 +25,9 @@ describe('renderer access control registry', () => {
     expect(ACCESS_CONTROL_REGISTRY).not.toHaveProperty('settings.capabilities');
   });
 
-  it('opens plugins/hooks configuration to all users (Settings IA v2, 2026-07-03 拍板)', () => {
-    expect(canAccessFeature('settings.plugins', { isAdmin: false })).toBe(true);
+  it('keeps plugins admin-only while hooks remain available to regular users', () => {
+    expect(canAccessFeature('settings.plugins', { isAdmin: false })).toBe(false);
+    expect(canAccessFeature('settings.plugins', { isAdmin: true })).toBe(true);
     expect(canAccessFeature('settings.hooks', { isAdmin: false })).toBe(true);
   });
 

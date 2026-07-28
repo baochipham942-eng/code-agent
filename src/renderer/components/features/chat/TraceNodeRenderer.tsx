@@ -441,10 +441,18 @@ const AssistantTextNode: React.FC<{
         <TurnQualityStrip summary={node.metadata.turnQuality} />
       )}
 
-      {node.metadata?.source === 'voice' && (
+      {node.metadata?.source === 'voice' && !node.metadata?.voiceDispatch && (
         <div data-testid="voice-source-badge" className="mb-1 flex items-center gap-1 text-2xs text-zinc-500">
           <AudioLines className="h-3 w-3" />
           <span>{t.voice.sourceBadge}</span>
+        </div>
+      )}
+
+      {/* 通话 brain 改写后发给执行引擎的指令——不是用户说的话，必须写明来源 */}
+      {node.metadata?.voiceDispatch && (
+        <div data-testid="voice-dispatch-label" className="mb-1 flex items-center gap-1 text-2xs text-zinc-500">
+          <AudioLines className="h-3 w-3" />
+          <span>{t.voice.dispatchLabel.replace('{title}', node.metadata.voiceDispatch.title)}</span>
         </div>
       )}
 

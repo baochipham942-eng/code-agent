@@ -2,7 +2,6 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2, MessageSquareText, Search } from 'lucide-react';
 import type { SessionWithMeta } from '../../../stores/sessionStore';
 import { useI18n } from '../../../hooks/useI18n';
-import { formatRelativeTime } from '../../../utils/i18nTime';
 import { getDisplaySessionTitle } from '../../../utils/sessionPresentation';
 import type {
   SidebarMessageSearchHitGroup,
@@ -170,11 +169,11 @@ export const SidebarSearchDialog: React.FC<SidebarSearchDialogProps> = ({
                           <span className="ml-2 text-[11px] text-cyan-400">{sb.currentSession}</span>
                         )}
                       </span>
-                      <span className="block truncate text-[11px] text-zinc-500">
-                        {hitGroup
-                          ? sb.messageHits.replace('{count}', String(hitGroup.totalHitCount))
-                          : formatRelativeTime(t, session.updatedAt)}
-                      </span>
+                      {hitGroup && (
+                        <span className="block truncate text-[11px] text-zinc-500">
+                          {sb.messageHits.replace('{count}', String(hitGroup.totalHitCount))}
+                        </span>
+                      )}
                     </span>
                   </button>
                 );

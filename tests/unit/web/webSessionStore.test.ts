@@ -25,7 +25,7 @@ function createDatabaseStub() {
     updateSession: vi.fn(),
     addMessage: vi.fn(),
     updateMessage: vi.fn(),
-    getMessages: vi.fn(() => []),
+    getMessages: vi.fn<() => Message[]>(() => []),
   };
 }
 
@@ -264,6 +264,64 @@ describe('WebSessionStore', () => {
     expect(logger.warn).not.toHaveBeenCalledWith(
       'Failed to persist messages to DB:',
       expect.any(String),
+    );
+  });
+
+  it('captures the persisted final assistant as a Fork anchor without blocking the completed turn', async () => {
+    setDbAvailable(true);
+    const db = createDatabaseStub();
+    db.getSession.mockReturnValue({ id: 'session-fork-anchor', title: 'Existing' });
+    db.getMessages.mockImplementation(() => [
+      {
+        id: 'persisted-assistant',
+        role: 'assistant',
+        content: '完成回复',
+        timestamp: 30,
+      },
+    ] as Message[]);
+    const captureSessionForkAnchorEvidence = vi.fn(async () => {
+      throw new Error('anchor evidence blocked');
+    });
+    const store = createWebSessionStore({
+      tryGetSessionManager: async () => null,
+      logger,
+      getDatabase: async () => db as unknown as DatabaseService,
+      captureSessionForkAnchorEvidence,
+    });
+
+    const result = await store.commitTurn({
+      sessionId: 'session-fork-anchor',
+      title: 'Fork anchor',
+      modelConfig: { provider: 'xiaomi', model: 'mimo-v2.5-pro' },
+      historyLength: 1,
+      userMessagePrePersistedDb: true,
+      userMessage: {
+        id: 'anchor-user',
+        role: 'user',
+        content: '完成任务',
+        timestamp: 20,
+      },
+      turn: {
+        assistantText: '完成回复',
+        assistantThinking: '',
+        assistantMetadata: undefined,
+        assistantToolCalls: [],
+        lastLoopAssistantMessageId: 'persisted-assistant',
+        contentParts: [{ type: 'text', text: '完成回复' }],
+        runCancelled: false,
+        hasAssistantOutput: () => true,
+        hasInterleaving: () => false,
+      },
+    });
+
+    expect(result.assistantMsgId).toEqual(expect.any(String));
+    expect(captureSessionForkAnchorEvidence).toHaveBeenCalledWith(
+      'session-fork-anchor',
+      'persisted-assistant',
+    );
+    expect(logger.warn).toHaveBeenCalledWith(
+      '[AgentRouter] Session Fork anchor capture failed closed for session-fork-anchor:',
+      expect.any(Error),
     );
   });
 

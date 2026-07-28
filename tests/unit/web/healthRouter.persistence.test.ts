@@ -2,15 +2,25 @@ import express from 'express';
 import http from 'http';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createHealthRouter } from '../../../src/web/routes/health';
-import type { PersistenceHealth, RendererServeDecision, WebHealthResponse } from '../../../src/shared/contract';
+import type {
+  BuildInfo,
+  PersistenceHealth,
+  RendererServeDecision,
+  WebHealthResponse,
+} from '../../../src/shared/contract';
 
 let server: http.Server | undefined;
 let baseUrl = '';
 
-async function startHealthApi(persistence: PersistenceHealth, rendererServe?: RendererServeDecision) {
+async function startHealthApi(
+  persistence: PersistenceHealth,
+  rendererServe?: RendererServeDecision,
+  build: BuildInfo | null = null,
+) {
   const app = express();
   app.use('/api', createHealthRouter({
     handlers: new Map(),
+    getBuildInfo: () => build,
     getPersistenceHealth: () => persistence,
     getRendererServeDecision: rendererServe ? () => rendererServe : undefined,
   }));
@@ -83,5 +93,31 @@ describe('createHealthRouter persistence health', () => {
 
     expect(response.status).toBe(200);
     expect(body.rendererServe).toEqual(rendererServe);
+  });
+
+  it('includes injected build info', async () => {
+    const persistence = {
+      status: 'available',
+      mode: 'database',
+      durable: true,
+      message: 'ok',
+      checkedAt: 123,
+    } satisfies PersistenceHealth;
+    const build = {
+      appName: 'Agent Neo Dev',
+      branch: 'feat/dev-build-info',
+      commit: '1234567890123456789012345678901234567890',
+      commitShort: '1234567',
+      dirty: false,
+      worktree: '/tmp/dev-build-info',
+      builtAt: '2026-07-27T12:34:56.000Z',
+    } satisfies BuildInfo;
+
+    await startHealthApi(persistence, undefined, build);
+
+    const response = await fetch(`${baseUrl}/api/health`);
+    const body = await response.json() as WebHealthResponse;
+
+    expect(body.build).toEqual(build);
   });
 });

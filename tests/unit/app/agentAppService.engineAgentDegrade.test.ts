@@ -15,7 +15,11 @@ vi.mock('../../../src/host/services', () => ({
   getSessionManager: vi.fn(),
 }));
 vi.mock('../../../src/host/services/core/databaseService', () => ({
-  getDatabase: vi.fn(() => ({ getMessageById: vi.fn() })),
+  getDatabase: vi.fn(() => ({
+    getMessageById: vi.fn(),
+    getSessionForkLineage: vi.fn(() => null),
+    getSessionForkContextSource: vi.fn(() => null),
+  })),
 }));
 vi.mock('../../../src/host/session/streamSnapshot', () => ({
   loadStreamSnapshot: vi.fn(),

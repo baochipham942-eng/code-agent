@@ -15,12 +15,20 @@ export type VoiceTurnDetectionConfig =
   | { type: 'semantic_vad'; eagerness?: 'low' | 'medium' | 'high' | 'auto' }
   | null;
 
-/** 通话里派出的一件活。Phase 1 批 A 只有 queued / failed 两个真实终态，进度细分留给 Phase 2。 */
+/**
+ * 通话里派出的一件活。
+ *
+ * Phase 2 批 H 补齐全生命周期：此前只有 queued / failed 两态——run 干完了不发任何事件，
+ * Active Work 条上它永远停在「排队中」，通话 brain 也拿不到「做完了」的依据。
+ * 状态迁移由 TaskManager 的 task_started / task_completed / task_error / task_cancelled 驱动。
+ */
+export type VoiceWorkItemStatus = 'queued' | 'running' | 'done' | 'failed' | 'cancelled';
+
 export interface VoiceWorkItem {
   id: string;
   title: string;
-  status: 'queued' | 'failed';
-  /** 失败原因，供 UI 显示；成功排上队时没有 */
+  status: VoiceWorkItemStatus;
+  /** 失败原因，供 UI 显示；其余状态没有 */
   detail?: string;
 }
 
@@ -61,6 +69,8 @@ export interface VoiceStatusResponse {
   configured: boolean;
   /** 全局单路互斥：当前是否有通话进行中 */
   active: boolean;
+  /** 本月通话用量（只记账不设限，方案 §5.4；设置页展示用） */
+  usage: { monthSeconds: number; monthCalls: number };
 }
 
 /** 设置页「实时通话」组保存后广播的窗口事件（对齐 VOICE_INPUT_SETTINGS_UPDATED_EVENT 先例）。 */
@@ -78,12 +88,59 @@ export type VoiceEvent =
   | { type: 'response.done'; ttfaModelMs?: number; ttfaPerceivedMs?: number }
   /** 语音派出的任务状态。Active Work 条消费（批 B），host 侧同时用它计通话摘要的 workItemCount。 */
   | { type: 'work.upsert'; item: VoiceWorkItem }
-  | { type: 'error'; code: string; message: string };
+  /**
+   * 用户可见的一次性提示（不致命，通话继续）。判据钉在上游真实回显上——
+   * 例如注册了 tools 但 session.updated 回显 tools: null（模型不支持 function calling）。
+   */
+  | { type: 'notice'; code: VoiceMessageCode; message: string }
+  | { type: 'error'; code: VoiceMessageCode; message: string };
+
+/**
+ * 发给用户看的所有提示/错误的编号（host 与 renderer 两侧都在这里登记）。**新增一条必须加进这里**——
+ * renderer 的 i18n 表按这个联合类型定型（`Record<VoiceMessageCode, string>`），
+ * 少写一条就是编译错误，不是「以后谁记得补翻译」。
+ *
+ * 为什么要有这层：host 里那几条 `message` 是硬编码中文，英文用户会原样看到中文。
+ * 文案的家在 renderer 的 i18n，host 只负责说「出了哪件事」。
+ * `message` 保留作日志与兜底（真出现表外 code 时总比空白强）。
+ */
+export type VoiceMessageCode =
+  | 'VOICE_SESSION_BUSY'
+  | 'VOICE_PROVIDER_UNCONFIGURED'
+  | 'VOICE_TOOLS_DROPPED'
+  | 'VOICE_UPSTREAM_UNAVAILABLE'
+  | 'UPSTREAM_SOCKET'
+  | 'UPSTREAM_ERROR'
+  // 以下由 renderer 侧产生（建连握手 / 重连 / 麦克风采集），同样要有文案
+  | 'HANDSHAKE_FAILED'
+  | 'RECONNECT_FAILED'
+  | 'MICROPHONE_PERMISSION_DENIED'
+  | 'AUDIO_CAPTURE_FAILED'
+  | 'NATIVE_AEC_FAILED';
+
+/**
+ * 用户此刻在看什么（方案 §6.5 的 `[Context — Focus]`，批 H）。
+ *
+ * 字段按 **Neo 真实存在的焦点** 定义，不照抄 IDE 词汇：这个产品里没有编辑器文本选区、
+ * 也没有 diff 视图，硬编出来只会让通话 brain 一本正经地说不存在的东西。
+ */
+export interface VoiceFocusContext {
+  /** 右栏当前视图：overview / files / browser / design-canvas / preview:<path> */
+  view?: string;
+  /** 当前打开的文件路径（右栏 preview tab） */
+  filePath?: string;
+  /** 该文件处于编辑态且有未保存改动 */
+  unsaved?: boolean;
+  /** 实时预览里用户点选的元素描述 */
+  selectedElement?: string;
+}
 
 /** Renderer → Host 的控制帧（媒体帧走二进制，不走这里）。 */
 export type VoiceClientCommand =
   | { type: 'end' }
   | { type: 'interrupt' }
+  /** 焦点变化上报。节流后发；host 据此增量刷新 instructions（§6.5）。 */
+  | { type: 'focus'; context: VoiceFocusContext }
   /**
    * 手动提交（turn_detection = null 的 PTT/点按模式）：把缓冲音频切成一轮并请求回复。
    * server_vad 模式下上游自动断句，发这个帧是合法的 no-op 上游行为，但 Renderer 只在
@@ -95,6 +152,11 @@ interface VoiceTransportHandleBase {
   readonly provider: VoiceProviderId;
   /** 打断当前回复。 */
   interrupt(): void;
+  /**
+   * 建连后增量刷新 instructions（焦点变化 / 切专家）。方案 §6.5 的
+   * `VoiceContextAssembler` 增量 session.update；调用方负责节流。
+   */
+  updateInstructions(instructions: string): void;
   close(): Promise<void>;
 }
 

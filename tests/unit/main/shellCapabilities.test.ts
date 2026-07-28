@@ -28,6 +28,7 @@ describe('shell capabilities', () => {
     ['domain:settings', 'getBudgetStatus'],
     ['domain:settings', 'setBudgetConfig'],
     ['domain:memory', 'memoryEntryUpdate'],
+    ['domain:session', 'restoreWorkspaceFilesAtCheckpoint'],
     ['domain:surfaceExecution', 'control'],
     ['domain:surfaceExecution', 'getFrame'],
     ['domain:surfaceExecution', 'getOutput'],
@@ -54,6 +55,17 @@ describe('shell capabilities', () => {
     });
     expect(capabilities.find((capability) => capability.id === makeTauriCommandCapabilityId('desktop_get_capabilities'))).toMatchObject({
       layer: 'native',
+    });
+  });
+
+  it('marks workspace file restore as a high-risk shell mutation', () => {
+    expect(getShellCapabilities().find((capability) => (
+      capability.id === makeShellCapabilityId(
+        'domain:session',
+        'restoreWorkspaceFilesAtCheckpoint',
+      )
+    ))).toMatchObject({
+      risk: 'high',
     });
   });
 });

@@ -31,6 +31,7 @@ import type { InstalledSkill, ProjectOverrideValue } from './SkillsInstalledTab'
 import { SkillsDiscoverTab } from './SkillsDiscoverTab';
 import type { SkillsMPSearchResult } from './SkillsSettingsCards';
 import { SkillInstallPreviewModal, mapRepoInstallError } from './SkillInstallPreviewModal';
+import { HubTabHeader } from '../../capabilityHub/HubTabHeader';
 
 // 分组/摘要工具函数集中在 SkillsInstalledTab，测试也从那里引用
 export {
@@ -73,7 +74,6 @@ export const SkillsSettings: React.FC = () => {
   const [addSkillModalOpen, setAddSkillModalOpen] = useState(false);
   // 自定义库 staged 装前预览：stage 成功后的预览载荷，非空即弹预览弹窗
   const [stagedPreview, setStagedPreview] = useState<StageRepositoryResult | null>(null);
-  const [registryLoading, setRegistryLoading] = useState(true);
   // 「添加技能」弹窗内联错误（stage 失败在弹窗内展示）
   const [customError, setCustomError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -83,6 +83,7 @@ export const SkillsSettings: React.FC = () => {
   // 官方市场货架状态
   const [registryItems, setRegistryItems] = useState<SkillRegistryListItem[]>([]);
   const [registryError, setRegistryError] = useState<string | null>(null);
+  const [registryLoading, setRegistryLoading] = useState(false);
 
   // SkillsMP 搜索状态
   const [searchQuery, setSearchQuery] = useState('');
@@ -97,47 +98,42 @@ export const SkillsSettings: React.FC = () => {
     }
   }, [settingsCapabilityFocus?.kind, settingsCapabilityFocus?.nonce]);
 
-  // 加载数据。分两段跑：
-  //   本地两路（仓库 / 技能列表，实测各几十 ms）决定首屏 spinner；
-  //   远端三路（推荐目录 / 云端 catalog / 签名 registry）并行在后台补齐。
-  // 原来是五路串行且整页等它们：registry 冷启实测 1.6s、热态每次仍真打网络 0.3s
-  //（货架要新鲜数据，不缓存是有意的），等于把整个技能 tab 押在最慢的一路上
-  //（2026-07-27 真机实测首屏 ~2s 空转）。
+  // 加载数据。本地四项毫秒级、并行拉完即撤整页 spinner；
+  // 官方货架走控制面网络（冷路径实测 2.2s，是此前整页转圈 3.5s 的大头），
+  // 拆成独立小态不阻塞页面——已安装列表先可用，货架区自己转圈。
   const loadData = useCallback(async () => {
-    const localLoad = Promise.all([
-      invokeSkillIPC(SKILL_CHANNELS.REPO_LIST),
-      invokeSkillIPC(SKILL_CHANNELS.SKILL_LIST),
-    ]).then(([libs, skills]) => {
+    try {
+      setLoading(true);
+      const [libs, skills, repos, remoteCatalog] = await Promise.all([
+        invokeSkillIPC(SKILL_CHANNELS.REPO_LIST),
+        invokeSkillIPC(SKILL_CHANNELS.SKILL_LIST),
+        invokeSkillIPC(SKILL_CHANNELS.RECOMMENDED_REPOS),
+        invokeSkillIPC(SKILL_CHANNELS.CATALOG),
+      ]);
       setLibraries(libs || []);
       setDiscoveredSkills(skills || []);
-      setLoading(false);
-      return libs || [];
-    });
-
-    const remoteLoad = Promise.all([
-      invokeSkillIPC(SKILL_CHANNELS.RECOMMENDED_REPOS),
-      invokeSkillIPC(SKILL_CHANNELS.CATALOG),
-      // 官方市场货架（签名 registry；离线/校验失败为空货架 + 原因码）
-      invokeSkillIPC(SKILL_CHANNELS.REGISTRY_LIST),
-    ]).then(async ([repos, remoteCatalog, registry]) => {
-      const libs = await localLoad;
       if (remoteCatalog) {
         setCatalog(remoteCatalog);
       }
       // 推荐列表里排除已安装的仓库
-      const installedIds = new Set(libs.map((l) => l.repoId));
+      const installedIds = new Set((libs || []).map((l) => l.repoId));
       setRecommendedRepos((repos || []).filter((r) => !installedIds.has(r.id)));
-      setRegistryItems(registry?.items || []);
-      setRegistryError(registry?.error || null);
-    });
-
-    try {
-      await Promise.all([localLoad, remoteLoad]);
     } catch (err) {
       logger.error('Failed to load skill data', err);
       setMessage({ type: 'error', text: skillsText.loadFailed });
     } finally {
       setLoading(false);
+    }
+    // 官方市场货架（签名 registry；离线/校验失败为空货架 + 原因码）
+    setRegistryLoading(true);
+    try {
+      const registry = await invokeSkillIPC(SKILL_CHANNELS.REGISTRY_LIST);
+      setRegistryItems(registry?.items || []);
+      setRegistryError(registry?.error || null);
+    } catch (err) {
+      logger.error('Failed to load skill registry shelf', err);
+      setRegistryError('fetch_failed');
+    } finally {
       setRegistryLoading(false);
     }
   }, [skillsText.loadFailed]);
@@ -461,18 +457,77 @@ export const SkillsSettings: React.FC = () => {
     }
   };
 
+  // 页头走四 tab 共用的 HubTabHeader：大标题「技能」与操作簇（添加技能 / 已安装|发现安装 /
+  // 刷新）同一行（2026-07-27 产品负责人验收拍板：「放一行不行吗」）。加载中也渲染页头，
+  // 与其余三个 tab 一致，避免标题闪现。
+  const hubHeader = (
+    <HubTabHeader
+      testId="skills-hub-header"
+      title={t.capabilityHub.tabSkills}
+      actions={(
+        <>
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => {
+              setCustomUrl('');
+              setCustomError(null);
+              setAddSkillModalOpen(true);
+            }}
+            leftIcon={<Plus className="h-3 w-3" />}
+          >
+            {skillsText.addSkill}
+          </Button>
+          <div className="flex items-center gap-1 rounded-lg bg-zinc-800/80 p-1">
+            {([
+              ['installed', `${skillsText.installedTabPrefix}${discoveredSkills.length}${skillsText.installedTabSuffix}`],
+              ['discover', skillsText.discoverTab],
+            ] as Array<[SkillsViewTab, string]>).map(([tab, label]) => (
+              <button
+                key={tab}
+                type="button"
+                role="tab"
+                aria-selected={activeTab === tab}
+                onClick={() => setActiveTab(tab)}
+                className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                  activeTab === tab
+                    ? 'bg-zinc-700 text-zinc-100'
+                    : 'text-zinc-400 hover:text-zinc-200'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={loadData}
+            disabled={loading}
+            leftIcon={<RefreshCw className="h-3 w-3" />}
+          >
+            {skillsText.refresh}
+          </Button>
+        </>
+      )}
+    />
+  );
+
   // 加载中
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-12">
-        <Loader2 className="h-6 w-6 animate-spin text-zinc-400" />
+      <div>
+        {hubHeader}
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="h-6 w-6 animate-spin text-zinc-400" />
+        </div>
       </div>
     );
   }
 
   return (
-    // 弹窗头部已展示「Skills / 能力与连接」标题，内容区直接从 Tab 开始，不再叠标题
     <div className="space-y-6">
+      {hubHeader}
       <WebModeBanner />
 
       {settingsCapabilityFocus?.kind === 'skill' && (
@@ -507,52 +562,6 @@ export const SkillsSettings: React.FC = () => {
           <span className="text-sm">{message.text}</span>
         </div>
       )}
-
-      {/* Tab 切换 + 刷新 + 添加技能 */}
-      <div className="flex items-center justify-end gap-3">
-        <Button
-          size="sm"
-          variant="secondary"
-          onClick={() => {
-            setCustomUrl('');
-            setCustomError(null);
-            setAddSkillModalOpen(true);
-          }}
-          leftIcon={<Plus className="h-3 w-3" />}
-        >
-          {skillsText.addSkill}
-        </Button>
-        <div className="flex items-center gap-1 rounded-lg bg-zinc-800/80 p-1">
-          {([
-            ['installed', `${skillsText.installedTabPrefix}${discoveredSkills.length}${skillsText.installedTabSuffix}`],
-            ['discover', skillsText.discoverTab],
-          ] as Array<[SkillsViewTab, string]>).map(([tab, label]) => (
-            <button
-              key={tab}
-              type="button"
-              role="tab"
-              aria-selected={activeTab === tab}
-              onClick={() => setActiveTab(tab)}
-              className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-                activeTab === tab
-                  ? 'bg-zinc-700 text-zinc-100'
-                  : 'text-zinc-400 hover:text-zinc-200'
-              }`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-        <Button
-          size="sm"
-          variant="ghost"
-          onClick={loadData}
-          disabled={loading}
-          leftIcon={<RefreshCw className="h-3 w-3" />}
-        >
-          {skillsText.refresh}
-        </Button>
-      </div>
 
       {/* Tab 内容 */}
       {activeTab === 'installed' ? (

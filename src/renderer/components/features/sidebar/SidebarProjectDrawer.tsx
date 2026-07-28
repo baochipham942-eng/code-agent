@@ -36,7 +36,8 @@ export interface SidebarProjectDrawerSession {
   showStatusBadge: boolean;
   typeLabel?: string | null;
   summary?: string;
-  lastActiveLabel: string;
+  /** 绝对时间字符串，挂行级 title（相对时间 2026-07-27 拍板撤下） */
+  lastActiveTitle: string;
   workingDirectory?: string;
   gitBranch?: string;
   prLabel?: string;
@@ -456,6 +457,7 @@ export const SidebarProjectDrawer: React.FC<SidebarProjectDrawerProps> = ({
                     key={session.id}
                     type="button"
                     aria-label={p.openProjectSession.replace('{title}', session.title)}
+                    title={session.lastActiveTitle}
                     onClick={() => { void onOpenSession(session.id); }}
                     className={`rounded-md border px-2.5 py-2 text-left transition-colors hover:bg-zinc-800/70 ${
                       session.isCurrent
@@ -480,7 +482,6 @@ export const SidebarProjectDrawer: React.FC<SidebarProjectDrawerProps> = ({
                       <span className="min-w-0 flex-1 truncate">
                         {session.summary || session.workingDirectory || p.messageCount.replace('{count}', String(session.messageCount ?? 0))}
                       </span>
-                      <span className="shrink-0">{session.lastActiveLabel}</span>
                     </div>
                     <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1">
                       {session.gitBranch && (

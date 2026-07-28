@@ -26,17 +26,33 @@ export interface VoiceLiveSettings {
    * 换模型必须重新真机验证白名单，别让这里写成自由文本。
    */
   voiceId?: string;
+  /**
+   * 通话模型（负责听和说的实时模型）：只能是 `QWEN_OMNI_REALTIME_MODEL_OPTIONS`
+   * 白名单里的 id；未配置 / 表外 id = 回落 `QWEN_OMNI_REALTIME_MODEL`。
+   * **音色与它强绑定**：换模型时 voiceId 必须一起落到新模型的 voices 里。
+   */
+  conversationModel?: string;
   /** 通话语言；auto/未配置 = 跟随上游自动检测 */
   language?: 'auto' | 'zh' | 'en';
   /**
    * 打断方式：
    * - `server_vad`（默认）：全双工自动断句，灵敏度由 vadSensitivity 映射 turn_detection.threshold；
-   * - `push_to_talk`：按住说话、松开提交（turn_detection = null + commit）；
-   * - `manual`：点按开始、再点按提交（同为 turn_detection = null + commit，仅交互不同）。
+   * - `manual`：点按开始说话、再点按提交（turn_detection = null + commit），背景有人声时用。
+   *
+   * 2026-07-27 删掉 `push_to_talk`（按住说话）：它相对 `manual` 只多一条「松手必关麦」，
+   * 代价是整通电话手被按在按钮上，桌面端不值。历史值由 normalizeInterruptMode 迁到 manual。
    */
-  interrupt?: 'server_vad' | 'push_to_talk' | 'manual';
+  interrupt?: 'server_vad' | 'manual';
   /** server_vad 灵敏度档位：high 灵敏（threshold 0.3）/ medium（0.5）/ low 迟钝（0.7） */
   vadSensitivity?: 'low' | 'medium' | 'high';
+  /**
+   * 语音派活时的执行引擎（方案 §6.1 双脑：通话模型只负责听说，干活是另一个模型）。
+   * 未配置 = 跟随会话默认引擎，与批 H 之前的行为完全一致。
+   * 通话模型（听说）在上面的 conversationModel 配，白名单见 QWEN_OMNI_REALTIME_MODEL_OPTIONS。
+   */
+  executionModel?: { provider: string; model: string };
+  /** 回声消除：auto 优先原生 AEC；off 强制走耳机模式。未配置 = auto。 */
+  echoCancellation?: 'auto' | 'off';
 }
 
 export interface ModelEntrySettings {

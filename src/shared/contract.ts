@@ -114,6 +114,7 @@ export * from './contract/reviewQueue';
 export * from './contract/productClosure';
 export * from './contract/completionSummary';
 export * from './contract/persistence';
+export * from './contract/buildInfo';
 export * from './contract/desktopShell';
 export * from './contract/surfaceExecution';
 export * from './contract/browserRelay';

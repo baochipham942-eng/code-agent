@@ -28,7 +28,8 @@ import { useAuthStore } from '../../../../stores/authStore';
 import { useI18n } from '../../../../hooks/useI18n';
 import ipcService from '../../../../services/ipcService';
 import { Button, EmptyState } from '../../../primitives';
-import { SettingsDetails, SettingsPage, SettingsSection } from '../SettingsLayout';
+import { SettingsDetails, SettingsSection } from '../SettingsLayout';
+import { HubTabHeader } from '../../capabilityHub/HubTabHeader';
 
 type Notice = { type: 'success' | 'error'; text: string };
 export * from './PluginsSettings.helpers';
@@ -46,6 +47,7 @@ import {
   formatDate,
   getResultError,
   normalizeMarketplaceResult,
+  toDisplayPath,
 } from './PluginsSettings.helpers';
 
 const SummaryTile: React.FC<{
@@ -269,22 +271,34 @@ export const PluginsSettings: React.FC = () => {
 
   if (!isAdmin) {
     return (
-      <SettingsPage
-        title={pluginsText.title}
-        description={pluginsText.adminRequiredDescription}
-      >
+      <div className="space-y-6">
+        <HubTabHeader testId="plugins-hub-header" title={t.capabilityHub.tabPlugins} />
         <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-200">
           {pluginsText.adminRequiredNotice}
         </div>
-      </SettingsPage>
+      </div>
     );
   }
 
+  // 页头走四 tab 共用的 HubTabHeader：大标题「插件」+ 刷新同一行
+  // （刷新原是「已安装」section 的 actions，提进页头操作簇与其余 tab 口径一致）。
   return (
-    <SettingsPage
-      title={pluginsText.title}
-      description={pluginsText.description}
-    >
+    <div className="space-y-6">
+      <HubTabHeader
+        testId="plugins-hub-header"
+        title={t.capabilityHub.tabPlugins}
+        actions={(
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => void reload()}
+            loading={loading}
+            leftIcon={<RefreshCw className="h-3.5 w-3.5" />}
+          >
+            {pluginsText.installed.refresh}
+          </Button>
+        )}
+      />
       {/* 操作结果通知（页面级，所有 section 的操作都在这里反馈） */}
       {notice && (
         <div className={`flex items-start gap-2 rounded-lg border px-3 py-2 text-sm ${
@@ -301,17 +315,6 @@ export const PluginsSettings: React.FC = () => {
       <SettingsSection
         title={pluginsText.installed.title}
         description={pluginsText.installed.description}
-        actions={(
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => void reload()}
-            loading={loading}
-            leftIcon={<RefreshCw className="h-3.5 w-3.5" />}
-          >
-            {pluginsText.installed.refresh}
-          </Button>
-        )}
       >
         {loading ? (
           <div className="flex items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900/40 py-8 text-sm text-zinc-500">
@@ -346,11 +349,9 @@ export const PluginsSettings: React.FC = () => {
                       </div>
                       <div className="mt-2 text-xs leading-5 text-zinc-500">
                         {pluginsText.installed.installedAtPrefix}{formatDate(plugin.installedAt, pluginsText.date)}
-                        {plugin.projectPath ? `${pluginsText.installed.projectPrefix}${plugin.projectPath}` : ''}
+                        {plugin.projectPath ? `${pluginsText.installed.projectPrefix}${toDisplayPath(plugin.projectPath)}` : ''}
                       </div>
-                      {plugin.pluginRoot && (
-                        <div className="mt-1 break-all text-xs text-zinc-600">{plugin.pluginRoot}</div>
-                      )}
+                      {/* 安装目录只在下面「Plugin asset」格里出现一次：卡片名下再渲染一遍是重复外泄 */}
                     </div>
                     <div className="flex shrink-0 flex-wrap gap-2">
                       <Button
@@ -390,7 +391,7 @@ export const PluginsSettings: React.FC = () => {
                     </div>
                     <div className="rounded-md bg-zinc-950/60 p-2 text-xs text-zinc-500 md:col-span-2">
                       <span className="text-zinc-300">{pluginsText.installed.pluginAsset}</span>
-                      <span className="ml-2 break-all">{plugin.pluginRoot || pluginsText.installed.none}</span>
+                      <span className="ml-2 break-all">{plugin.pluginRoot ? toDisplayPath(plugin.pluginRoot) : pluginsText.installed.none}</span>
                     </div>
                     <div className="rounded-md bg-zinc-950/60 p-2 text-xs leading-5 text-zinc-500">
                       <span className="text-zinc-300">{pluginsText.installed.trust}</span>
@@ -723,6 +724,6 @@ export const PluginsSettings: React.FC = () => {
           </div>
         </div>
       </SettingsDetails>
-    </SettingsPage>
+    </div>
   );
 };

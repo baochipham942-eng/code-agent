@@ -63,6 +63,31 @@ import { findRecommendedMcpServer } from '../../shared/constants/mcpCatalog';
 
 const logger = createLogger('RolesIPC');
 
+const ROLE_HISTORY_PREFIX = /^-\s*/;
+const ROLE_HISTORY_WORKDIR = /\[工作目录\s*:\s*[^\]]*\]/g;
+const ROLE_HISTORY_ABSOLUTE_PATH = /(?:\/(?:Users|private|tmp|var|home|opt|etc|Applications|Volumes)\/|~\/|[A-Za-z]:\\)[^\s，。；、！？)\]}>"'`]+/g;
+
+function cleanLastWorkText(text: string): string {
+  return text
+    .replace(ROLE_HISTORY_WORKDIR, ' ')
+    .replace(ROLE_HISTORY_ABSOLUTE_PATH, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+export function sanitizeLastWork(line: string): string {
+  const normalizedLine = line.replace(ROLE_HISTORY_PREFIX, '');
+  const segments = normalizedLine.split(' | ');
+  if (segments.length < 3) {
+    return cleanLastWorkText(normalizedLine);
+  }
+
+  const [date, label, ...summarySegments] = segments;
+  const summary = cleanLastWorkText(summarySegments.join(' | '));
+  const visibleWork = summary || cleanLastWorkText(label);
+  return [cleanLastWorkText(date), visibleWork].filter(Boolean).join(' ');
+}
+
 // ----------------------------------------------------------------------------
 // Payload 类型
 // ----------------------------------------------------------------------------
@@ -184,7 +209,7 @@ async function handleList(): Promise<RolePanelEntry[]> {
       description: agent?.description ?? '',
       source,
       memoryCount: memories.length,
-      lastWork: history.length > 0 ? history[history.length - 1] : null,
+      lastWork: history.length > 0 ? sanitizeLastWork(history[history.length - 1]) || null : null,
       icon: visual?.icon,
       category: visual?.category,
       displayName: visual?.displayName,
@@ -242,7 +267,8 @@ async function handleDetail(roleId: string): Promise<RolePanelDetail> {
       content: m.content,
       updatedAt: m.updatedAt,
     })),
-    history,
+    // 与 lastWork 同一边界收口：详情页「记录」tab 也不吐内部产物标签与文件系统路径
+    history: history.map((line) => sanitizeLastWork(line)).filter(Boolean),
     proactivity,
     visual: getBuiltinRoleVisual(roleId) ?? (definition ? parseAgentMdVisual(definition) : {}),
     isBuiltin: builtinRoleIdSet.has(roleId),

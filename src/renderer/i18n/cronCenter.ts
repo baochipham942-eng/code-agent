@@ -10,6 +10,8 @@ export const cronCenterZh = {
   cronCenter: {
     title: '自动化',
     subtitle: '按计划执行，结果回来给你过目',
+    tabJobs: '定时任务',
+    tabRuns: '运行记录',
     close: '关闭自动化面板',
     // 页首三格状态条（数据：cronStore.stats + 收件箱待过目数）
     statRunning: '运行中',
@@ -68,6 +70,7 @@ export const cronCenterZh = {
     execDetailTitle: '执行详情',
     execOpenSession: '打开会话',
     execOpeningSession: '打开中',
+    colJob: '任务',
     colStatus: '状态',
     colScheduledAt: '计划时间',
     colStartedAt: '开始时间',
@@ -151,6 +154,8 @@ export const cronCenterEn: typeof cronCenterZh = {
   cronCenter: {
     title: 'Automations',
     subtitle: 'Runs on schedule, results come back for review',
+    tabJobs: 'Scheduled jobs',
+    tabRuns: 'Run history',
     close: 'Close automations',
     statRunning: 'Running',
     statPendingReview: 'To review',
@@ -204,6 +209,7 @@ export const cronCenterEn: typeof cronCenterZh = {
     execDetailTitle: 'Run details',
     execOpenSession: 'Open session',
     execOpeningSession: 'Opening',
+    colJob: 'Job',
     colStatus: 'Status',
     colScheduledAt: 'Scheduled',
     colStartedAt: 'Started',

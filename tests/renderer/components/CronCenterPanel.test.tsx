@@ -15,6 +15,9 @@ vi.mock('../../../src/renderer/services/cronClient', () => ({
     listJobs: vi.fn().mockResolvedValue([]),
     getStats: vi.fn().mockResolvedValue(null),
     getExecutions: vi.fn().mockResolvedValue([]),
+    getRecentExecutions: vi.fn().mockResolvedValue([
+      { id: 'exec-1', jobId: 'job-1', status: 'completed', scheduledAt: 1, startedAt: 1, completedAt: 2, duration: 1, retryAttempt: 0 },
+    ]),
   },
 }));
 
@@ -54,6 +57,7 @@ beforeEach(() => {
     isEditorOpen: false,
     editingJobId: null,
     error: null,
+    recentExecutions: [],
   });
 });
 
@@ -78,5 +82,34 @@ describe('CronCenterPanel 页级滚动契约（D0）', () => {
     const workbench = screen.getByTestId('stub-job-list').parentElement!;
     expect(workbench.className).toContain('flex-[1_0_420px]');
     expect(workbench.className).not.toContain('min-h-0');
+  });
+});
+
+describe('CronCenterPanel 双 tab（批C4 WorkBuddy 式改造）', () => {
+  it('默认落「定时任务」：模板区与任务工作台可见，收件箱隐藏（保活挂载）', () => {
+    render(<CronCenterPanel onClose={() => undefined} />);
+    expect(screen.getByTestId('cron-center-tab-jobs').getAttribute('aria-selected')).toBe('true');
+    expect(screen.getByTestId('stub-templates')).toBeTruthy();
+    expect(screen.getByTestId('stub-job-list')).toBeTruthy();
+    // 收件箱仍在 DOM（待过目数据源），但被 hidden 收起
+    expect(screen.getByTestId('stub-inbox').parentElement!.className).toContain('hidden');
+  });
+
+  it('切「运行记录」：拉跨任务执行流并渲染任务名列，任务工作台让位', async () => {
+    const { cronClient } = await import('../../../src/renderer/services/cronClient');
+    // refresh() 挂载即拉任务列表并覆写 store，任务名要从 mock 供给
+    vi.mocked(cronClient.listJobs).mockResolvedValue([{ id: 'job-1', name: '每日晨报' } as never]);
+    render(<CronCenterPanel onClose={() => undefined} />);
+    screen.getByTestId('cron-center-tab-runs').click();
+    // loadRecentExecutions 异步落 store
+    await vi.waitFor(() => {
+      expect(cronClient.getRecentExecutions).toHaveBeenCalled();
+      expect(screen.getByTestId('cron-runs-workbench')).toBeTruthy();
+    });
+    expect(screen.queryByTestId('stub-job-list')).toBeNull();
+    expect(screen.getByTestId('stub-inbox').parentElement!.className).not.toContain('hidden');
+    await vi.waitFor(() => {
+      expect(screen.getByText('每日晨报')).toBeTruthy();
+    });
   });
 });

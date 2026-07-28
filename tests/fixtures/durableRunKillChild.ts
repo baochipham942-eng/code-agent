@@ -17,5 +17,7 @@ const kernel = new DurableRunKernel({
 });
 
 await kernel.createNativeRun({ runId: 'run-killed', sessionId: 'session-killed', now: Date.now() });
-process.stdout.write('READY\n');
+// 带上自己的 pid：调用方要断言的是「真正持有这个 run 的进程死了」，
+// 而它未必是 spawn 出来的那个直接子进程（tsx CLI 会再套一层）。
+process.stdout.write(`READY ${process.pid}\n`);
 setInterval(() => undefined, 1_000);

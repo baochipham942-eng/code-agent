@@ -35,6 +35,85 @@ resign_app_if_possible() {
   fi
 }
 
+warn_about_existing_install() {
+  local installed_app="/Applications/$APP_NAME.app"
+  local build_info="$installed_app/Contents/Resources/build-info.json"
+  [ -d "$installed_app" ] || return 0
+
+  if [ ! -f "$build_info" ]; then
+    echo "[install-dev] 槽位里是无 build-info 的旧包，将继续覆盖"
+    return 0
+  fi
+
+  CURRENT_PROJECT_ROOT="$PROJECT_ROOT" EXISTING_BUILD_INFO="$build_info" node -e '
+    const fs = require("fs");
+    try {
+      const info = JSON.parse(fs.readFileSync(process.env.EXISTING_BUILD_INFO, "utf8"));
+      if (info.worktree !== process.env.CURRENT_PROJECT_ROOT) {
+        console.warn([
+          "",
+          "============================================================",
+          "[install-dev] WARNING: 正在覆盖另一个 worktree 安装的开发包",
+          `  worktree: ${info.worktree ?? "null"}`,
+          `  build:    ${info.branch ?? "null"} @ ${info.commitShort ?? "null"}`,
+          `  builtAt:  ${info.builtAt ?? "null"}`,
+          "============================================================",
+          "",
+        ].join("\n"));
+      }
+    } catch (error) {
+      console.warn(`[install-dev] 槽位里的 build-info.json 无法读取，将继续覆盖：${error.message}`);
+    }
+  ' || echo "[install-dev] 无法检查槽位 build-info，将继续覆盖"
+}
+
+write_build_info() {
+  local installed_app="/Applications/$APP_NAME.app"
+  local build_info="$installed_app/Contents/Resources/build-info.json"
+  local branch
+  local commit
+  local commit_short
+  local dirty
+  local git_status
+  local worktree
+
+  branch="$(git -C "$PROJECT_ROOT" symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
+  commit="$(git -C "$PROJECT_ROOT" rev-parse HEAD 2>/dev/null || true)"
+  commit_short="$(git -C "$PROJECT_ROOT" rev-parse --short=7 HEAD 2>/dev/null || true)"
+  worktree="$(git -C "$PROJECT_ROOT" rev-parse --show-toplevel 2>/dev/null || true)"
+  if git_status="$(git -C "$PROJECT_ROOT" status --porcelain --untracked-files=normal 2>/dev/null)"; then
+    if [ -n "$git_status" ]; then
+      dirty="true"
+    else
+      dirty="false"
+    fi
+  else
+    dirty=""
+  fi
+
+  BUILD_INFO_PATH="$build_info" \
+  BUILD_APP_NAME="$APP_NAME" \
+  BUILD_BRANCH="$branch" \
+  BUILD_COMMIT="$commit" \
+  BUILD_COMMIT_SHORT="$commit_short" \
+  BUILD_DIRTY="$dirty" \
+  BUILD_WORKTREE="$worktree" \
+  node -e '
+    const fs = require("fs");
+    const nullable = (value) => value || null;
+    const info = {
+      appName: process.env.BUILD_APP_NAME,
+      branch: nullable(process.env.BUILD_BRANCH),
+      commit: nullable(process.env.BUILD_COMMIT),
+      commitShort: nullable(process.env.BUILD_COMMIT_SHORT),
+      dirty: process.env.BUILD_DIRTY === "" ? null : process.env.BUILD_DIRTY === "true",
+      worktree: nullable(process.env.BUILD_WORKTREE),
+      builtAt: new Date().toISOString(),
+    };
+    fs.writeFileSync(process.env.BUILD_INFO_PATH, `${JSON.stringify(info, null, 2)}\n`);
+  '
+}
+
 # 只关掉测试包实例，不碰生产
 pkill -f "$APP_NAME" 2>/dev/null || true
 sleep 1
@@ -46,9 +125,11 @@ if [ ! -d "$SOURCE_APP" ]; then
 fi
 
 strip_local_secrets "$SOURCE_APP"
+warn_about_existing_install
 rm -rf "/Applications/$APP_NAME.app"
 cp -R "$SOURCE_APP" "/Applications/$APP_NAME.app"
 strip_local_secrets "/Applications/$APP_NAME.app"
+write_build_info
 resign_app_if_possible "/Applications/$APP_NAME.app"
 node "$PROJECT_ROOT/scripts/release-security-scan.mjs" "/Applications/$APP_NAME.app/Contents/Resources/_up_"
 echo "Installed to /Applications/$APP_NAME.app"

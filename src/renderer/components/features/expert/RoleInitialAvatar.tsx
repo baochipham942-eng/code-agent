@@ -1,4 +1,5 @@
 import React from 'react';
+import { getRoleAvatarAsset } from './roleAvatarAssets';
 
 export function roleInitial(value: string): string {
   const trimmed = value.trim();
@@ -15,14 +16,31 @@ export const RoleInitialAvatar: React.FC<{
   roleId: string;
   name?: string;
   className?: string;
-}> = ({ roleId, name, className = 'h-8 w-8 text-xs' }) => (
-  <span
-    data-testid={`role-initial-avatar-${roleId}`}
-    data-role-color={roleAvatarColor(roleId)}
-    className={`inline-flex shrink-0 items-center justify-center rounded-full font-semibold text-white ${className}`}
-    style={{ backgroundColor: roleAvatarColor(roleId) }}
-    aria-label={name || roleId}
-  >
-    {roleInitial(name || roleId)}
-  </span>
-);
+}> = ({ roleId, name, className = 'h-8 w-8 text-xs' }) => {
+  const label = name || roleId;
+  const avatarAsset = getRoleAvatarAsset(roleId);
+
+  if (avatarAsset) {
+    return (
+      <img
+        src={avatarAsset}
+        alt={label}
+        data-testid={`role-initial-avatar-${roleId}`}
+        className={`inline-flex shrink-0 rounded-full object-cover ${className}`}
+        aria-label={label}
+      />
+    );
+  }
+
+  return (
+    <span
+      data-testid={`role-initial-avatar-${roleId}`}
+      data-role-color={roleAvatarColor(roleId)}
+      className={`inline-flex shrink-0 items-center justify-center rounded-full font-semibold text-white ${className}`}
+      style={{ backgroundColor: roleAvatarColor(roleId) }}
+      aria-label={label}
+    >
+      {roleInitial(label)}
+    </span>
+  );
+};

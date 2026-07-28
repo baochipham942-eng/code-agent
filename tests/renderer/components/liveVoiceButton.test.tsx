@@ -78,4 +78,17 @@ describe('LiveVoiceButton', () => {
     fireEvent.click(screen.getByText(zh.common.cancel));
     expect(bridgeMock.dial).not.toHaveBeenCalled();
   });
+
+  // ChatInput 在「正在建会话」那段窗口把 disabled 传下来，靠的就是这条：
+  // 按钮留在原位置灰，不是消失。它一消失底栏就少一格、旁边全部横移
+  // ——2026-07-27 真机「切到新会话时按钮闪变」的其中一半就是这么来的。
+  it('disabled 时置灰留在原位，不是整个消失', () => {
+    render(<LiveVoiceButton sessionId="s1" hasMessages={false} disabled />);
+    const button = screen.getByTestId('live-voice-button') as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    expect(button.className).toContain('cursor-not-allowed');
+
+    fireEvent.click(button);
+    expect(bridgeMock.dial).not.toHaveBeenCalled();
+  });
 });

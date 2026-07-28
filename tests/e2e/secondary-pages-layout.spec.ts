@@ -63,6 +63,27 @@ test('三个二级页可达，且都不接管整窗——侧栏常驻可见', as
   await expect(page.getByTestId('library-panel')).toHaveCount(0);
 });
 
+test('侧栏会话列表滚动条不占布局宽——右轨与账号区箭头同轴的前提', async ({ page }) => {
+  await waitForAppReady(page);
+  const scroll = page.getByTestId('sidebar-session-scroll');
+  await expect(scroll).toBeVisible({ timeout: 15_000 });
+
+  // 全局 ::-webkit-scrollbar 是 6px 占位式滚动条。强制列表溢出后，若滚动条占宽，
+  // clientWidth 会比 offsetWidth 少 6px——列表内右轨（角标/状态点）随之左移 6px，
+  // 与滚动容器外的账号区箭头错轴（2026-07-27 真机实锤 206 vs 212）。
+  const widths = await scroll.evaluate((node) => {
+    const el = node as HTMLElement;
+    el.style.maxHeight = '40px'; // 与会话数无关地制造溢出
+    return {
+      overflowing: el.scrollHeight > el.clientHeight,
+      clientWidth: el.clientWidth,
+      offsetWidth: el.offsetWidth,
+    };
+  });
+  expect(widths.overflowing).toBe(true);
+  expect(widths.clientWidth).toBe(widths.offsetWidth);
+});
+
 test('点会话回到聊天区，二级页让位', async ({ page }) => {
   await waitForAppReady(page);
 

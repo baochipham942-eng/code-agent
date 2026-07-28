@@ -39,6 +39,7 @@ import {
   Stethoscope,
   Terminal,
   Mic,
+  Phone,
   Search,
 } from 'lucide-react';
 import { useAppStore } from '../../../stores/appStore';
@@ -86,6 +87,7 @@ export const WIDE_SETTINGS_TABS = new Set<SettingsTab>([
 import { GeneralSettings } from './tabs/GeneralSettings';
 import { ConversationSettings } from './tabs/ConversationSettings';
 import { VoiceInputSettings } from './tabs/VoiceInputSettings';
+import { VoiceLiveSettings } from './tabs/VoiceLiveSettings';
 import { KeybindingsSettings } from './tabs/KeybindingsSettings';
 import { WorkspaceSettings } from './tabs/WorkspaceSettings';
 import { AppshotsSettings } from './tabs/AppshotsSettings';
@@ -151,6 +153,7 @@ export function buildSettingsTabGroups({
     { id: 'doctor', label: t.settings.tabs.doctor, icon: <Stethoscope className="w-4 h-4" /> },
     { id: 'conversation', label: t.settings.tabs.conversation, icon: <FoldVertical className="w-4 h-4" /> },
     { id: 'keybindings', label: t.settings.tabs.keybindings, icon: <Keyboard className="w-4 h-4" /> },
+    { id: 'voiceLive', label: t.settings.tabs.voiceLive, icon: <Phone className="w-4 h-4" /> },
     { id: 'voiceInput', label: t.settings.tabs.voiceInput, icon: <Mic className="w-4 h-4" /> },
     // 工作与协作
     { id: 'workspace', label: t.settings.tabs.workspace, icon: <FolderOpen className="w-4 h-4" /> },
@@ -469,6 +472,7 @@ export const SettingsModal: React.FC = () => {
             {activeTab === 'doctor' && <DoctorSettings />}
             {activeTab === 'conversation' && <ConversationSettings />}
             {activeTab === 'search' && <SearchSettings />}
+            {activeTab === 'voiceLive' && <VoiceLiveSettings />}
             {activeTab === 'voiceInput' && <VoiceInputSettings />}
             {activeTab === 'keybindings' && <KeybindingsSettings />}
             {activeTab === 'workspace' && <WorkspaceSettings />}

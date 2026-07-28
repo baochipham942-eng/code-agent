@@ -5,11 +5,14 @@
 // ============================================================================
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { Fingerprint, Save, RotateCcw, FileText, ShieldCheck, Loader2, Check } from 'lucide-react';
+import { Fingerprint, Save, RotateCcw, FileText, ShieldCheck, Loader2, Check, ScrollText } from 'lucide-react';
 import { IPC_DOMAINS } from '@shared/ipc';
 import { createLogger } from '../../../../utils/logger';
 import ipcService from '../../../../services/ipcService';
 import { useI18n } from '../../../../hooks/useI18n';
+import { useAppStore } from '../../../../stores/appStore';
+import { useAuthStore } from '../../../../stores/authStore';
+import { canAccessFeature } from '../../../../utils/accessControl';
 
 const logger = createLogger('SoulSettings');
 
@@ -38,6 +41,9 @@ const USER_SCOPE = { scope: 'user' as const };
 export const SoulSettings: React.FC = () => {
   const { t } = useI18n();
   const soulText = t.settings.soul;
+  const setShowPromptManager = useAppStore((s) => s.setShowPromptManager);
+  const currentUser = useAuthStore((s) => s.user);
+  const canOpenPromptManager = canAccessFeature('prompt.manager', currentUser);
   const [content, setContent] = useState('');
   const [baseline, setBaseline] = useState('');       // 已保存/已加载基线，用于判断是否 dirty
   const [defaultContent, setDefaultContent] = useState('');
@@ -137,18 +143,31 @@ export const SoulSettings: React.FC = () => {
     <div className="space-y-6">
       {/* 头部说明 + 来源徽章 */}
       <div>
-        <div className="flex items-center gap-2">
-          <Fingerprint className="h-4 w-4 text-primary-400" />
-          <h3 className="text-sm font-medium text-zinc-200">{soulText.title}</h3>
-          <span
-            className={`ml-1 rounded-full px-2 py-0.5 text-xs ${
-              isCustom
-                ? 'bg-primary-500/20 text-primary-400'
-                : 'bg-zinc-700 text-zinc-400'
-            }`}
-          >
-            {isCustom ? soulText.customBadge : soulText.builtinBadge}
-          </span>
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <Fingerprint className="h-4 w-4 text-primary-400" />
+            <h3 className="text-sm font-medium text-zinc-200">{soulText.title}</h3>
+            <span
+              className={`ml-1 rounded-full px-2 py-0.5 text-xs ${
+                isCustom
+                  ? 'bg-primary-500/20 text-primary-400'
+                  : 'bg-zinc-700 text-zinc-400'
+              }`}
+            >
+              {isCustom ? soulText.customBadge : soulText.builtinBadge}
+            </span>
+          </div>
+          {canOpenPromptManager && (
+            <button /* ds-allow:button: 人格页标题区次级入口，与设置页次级操作保持同尺寸 */
+              type="button"
+              data-testid="settings-soul-open-prompts"
+              onClick={() => setShowPromptManager(true)}
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-zinc-700 px-3 py-1.5 text-xs text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-200"
+            >
+              <ScrollText className="h-3.5 w-3.5" />
+              {soulText.promptManager}
+            </button>
+          )}
         </div>
         <p className="mt-2 text-xs text-zinc-500">
           {soulText.description}
@@ -231,6 +250,7 @@ export const SoulSettings: React.FC = () => {
           {soulText.reset}
         </button>
       </div>
+
     </div>
   );
 };

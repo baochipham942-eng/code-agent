@@ -31,9 +31,12 @@ export { buildDefaultSuggestions } from './features/chat/NewSessionWelcome';
 import { SurfaceExecutionChatPanel } from './features/surfaceExecution/SurfaceExecutionChatPanel';
 import { PinnedTodoBar } from './features/chat/PinnedTodoBar';
 import { SessionRecapBanner } from './features/chat/SessionRecapBanner';
+import { ForkSourceHint } from './features/chat/ForkSourceHint';
+import { ActiveConversationRewindBanner } from './features/chat/ActiveConversationRewindBanner';
 import { ChatInput } from './features/chat/ChatInput';
 import { UserQuestionCard } from './UserQuestionCard';
-import { TranscriptPartialLine } from './features/voice/TranscriptPartialLine';
+import { applyVoicePartialsToProjection } from '../utils/voicePartialOverlay';
+import { useVoiceCallStore } from '../stores/voiceCallStore';
 import { GoalStatusBar } from './features/chat/GoalStatusBar';
 import { buildGoalNoticeMessage } from './features/chat/goalNotice';
 import type { ChatInputHandle } from './features/chat/ChatInput';
@@ -51,7 +54,8 @@ import { InlineStrip } from './features/chat/InlineStrip';
 import { ConfirmDialog } from './composites/ConfirmDialog';
 import { useLocalBridgeStore } from '../stores/localBridgeStore';
 import { useMessageActionStore } from '../stores/messageActionStore';
-import { isWebMode } from '../utils/platform';
+import { isWebMode, isTauriMode } from '../utils/platform';
+import { pickNativeDirectory } from '../services/tauriPluginFacade';
 import { toast } from '../hooks/useToast';
 import { hasConfiguredDefaultRuntimeModel, hasConfiguredRuntimeModels } from '@shared/modelRuntime';
 import { buildGoalSeedTodos } from '@shared/utils/goalTodos';
@@ -61,7 +65,7 @@ import { SemanticResearchIndicator } from './features/chat/SemanticResearchIndic
 import { RewindPanel } from './RewindPanel';
 // PermissionCard moved to inline display in TurnBasedTraceView
 import type { AppSettings, Message, MessageAttachment, StreamRecoverySnapshot, TaskPlan } from '../../shared/contract';
-import type { PromptRewindResult } from '@shared/contract/appService';
+import type { RewindConversationResult } from '@shared/contract/sessionRewind';
 import type { ConversationEnvelope, ConversationEnvelopeContext } from '@shared/contract/conversationEnvelope';
 import { useI18n } from '../hooks/useI18n';
 import { localeForLanguage } from '../utils/i18nTime';
@@ -96,6 +100,8 @@ export async function handleQueuedSteerOutcome(
 export const ChatView: React.FC = () => {
   const { t } = useI18n();
   const appWorkingDirectory = useAppStore((state) => state.workingDirectory);
+  const setAppWorkingDirectory = useAppStore((state) => state.setWorkingDirectory);
+  const setComposerWorkingDirectory = useComposerStore((state) => state.setWorkingDirectory);
   const viewingMemberId = useMemberViewStore((state) => state.viewingMemberId);
   const setTaskPlan = useAppStore((state) => state.setTaskPlan);
   const openSettingsTab = useAppStore((state) => state.openSettingsTab);
@@ -222,6 +228,7 @@ export const ChatView: React.FC = () => {
     content: string;
   } | null>(null);
   const [isPromptRewinding, setIsPromptRewinding] = useState(false);
+  const [rewindRefreshToken, setRewindRefreshToken] = useState(0);
 
   const handleSearchMatchesChange = useCallback((matches: SearchMatch[], activeIdx: number) => {
     setSearchMatches(matches);
@@ -385,12 +392,60 @@ export const ChatView: React.FC = () => {
 
   const { requireAuthAsync } = useRequireAuth();
 
+  // 目录选择并入新任务流程（批C2）：沿用原 SidebarWorkspaceRow 的同一条数据通道——
+  // composer + appStore 同写，并持久化到当前会话，让工作区分组归位、agent 拿到正确 cwd。
+  const applyWorkingDirectory = React.useCallback(async (selectedPath: string) => {
+    setComposerWorkingDirectory(selectedPath);
+    setAppWorkingDirectory(selectedPath);
+    const sessionId = useSessionStore.getState().currentSessionId;
+    if (sessionId) {
+      try {
+        await window.domainAPI?.invoke(IPC_DOMAINS.SESSION, 'update', {
+          sessionId,
+          updates: { workingDirectory: selectedPath },
+        });
+      } catch (err) {
+        console.error('Failed to persist session workingDirectory:', err);
+      }
+    }
+  }, [setAppWorkingDirectory, setComposerWorkingDirectory]);
+
+  const handlePickDirectory = React.useCallback(async () => {
+    try {
+      if (isTauriMode()) {
+        const selectedPath = await pickNativeDirectory({ title: t.sidebar.selectDirectoryTitle });
+        if (selectedPath) await applyWorkingDirectory(selectedPath);
+      } else {
+        setShowDirPicker(true);
+      }
+    } catch (error) {
+      console.error('Failed to pick working directory:', error);
+    }
+  }, [applyWorkingDirectory, t.sidebar.selectDirectoryTitle]);
+
   // Turn-based trace projection
   const baseProjection = useTurnProjection(messages, currentSessionId, effectiveIsProcessing, launchRequests, neoWorkCards);
   const clarityProjection = useTurnExecutionClarity(baseProjection);
+  // 通话 partial：只叠加在「正在通话的那条会话」上，且不写任何 store（§7.5）
+  const voiceCallPhase = useVoiceCallStore((state) => state.phase);
+  const voiceCallSessionId = useVoiceCallStore((state) => state.sessionId);
+  const voicePartialUser = useVoiceCallStore((state) => state.partialUser);
+  const voicePartialAssistant = useVoiceCallStore((state) => state.partialAssistant);
+  const voiceStartedAt = useVoiceCallStore((state) => state.startedAt);
   const projection = React.useMemo(
-    () => applyStreamingMessageDeltasToProjection(clarityProjection, messages, streamingMessageEntries),
-    [clarityProjection, messages, streamingMessageEntries],
+    () => applyVoicePartialsToProjection(
+      applyStreamingMessageDeltasToProjection(clarityProjection, messages, streamingMessageEntries),
+      {
+        live: voiceCallPhase === 'live' && voiceCallSessionId === currentSessionId,
+        user: voicePartialUser,
+        assistant: voicePartialAssistant,
+        startedAt: voiceStartedAt,
+      },
+    ),
+    [
+      clarityProjection, messages, streamingMessageEntries, currentSessionId,
+      voiceCallPhase, voiceCallSessionId, voicePartialUser, voicePartialAssistant, voiceStartedAt,
+    ],
   );
 
   useEffect(() => {
@@ -680,18 +735,19 @@ export const ChatView: React.FC = () => {
     if (!currentSessionId || !pendingPromptRewind || isPromptRewinding) return;
     setIsPromptRewinding(true);
     try {
-      const result = await ipcService.invokeDomain<PromptRewindResult>(
+      const result = await ipcService.invokeDomain<RewindConversationResult>(
         IPC_DOMAINS.SESSION,
-        'rewindToPrompt',
+        'rewindConversation',
         {
           sessionId: currentSessionId,
-          userMessageId: pendingPromptRewind.messageId,
+          anchorUserMessageId: pendingPromptRewind.messageId,
+          idempotencyKey: `rewind:${currentSessionId}:${pendingPromptRewind.messageId}:${crypto.randomUUID()}`,
         },
       );
       setMessages(result.activeMessages);
       chatInputRef.current?.setDraft(result.draft);
       setPendingPromptRewind(null);
-      toast.success(t.chat.rewindSuccess.replace('{count}', String(result.filesRestored + result.filesDeleted)));
+      setRewindRefreshToken((token) => token + 1);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : String(error));
     } finally {
@@ -755,6 +811,21 @@ export const ChatView: React.FC = () => {
         {/* 回会话追赶提示（A6）：离开期间产出变了什么，一句话 */}
         <SessionRecapBanner sessionId={currentSessionId} />
 
+        <ActiveConversationRewindBanner
+          sessionId={currentSessionId}
+          refreshToken={rewindRefreshToken}
+          disabled={effectiveIsProcessing}
+          onRestored={(result) => {
+            setMessages(result.activeMessages);
+            toast.success(
+              t.chat.rewindRestored.replace(
+                '{count}',
+                String(result.restoredMessageCount),
+              ),
+            );
+          }}
+        />
+
         <SurfaceExecutionChatPanel conversationId={currentSessionId} />
 
         {/* Messages - Turn-based trace view（查看某位成员时整块换成他的对话） */}
@@ -770,6 +841,7 @@ export const ChatView: React.FC = () => {
                 onSend={handleSendMessage}
                 workingDirectory={currentSessionWorkingDirectory}
                 workbenchSnapshot={currentSession?.workbenchSnapshot}
+                onPickDirectory={() => { void handlePickDirectory(); }}
               />
             ) : (
               <div className="h-full" aria-hidden />
@@ -783,6 +855,9 @@ export const ChatView: React.FC = () => {
               searchMatches={searchMatches}
               activeMatchIndex={activeMatchIndex}
               onRewindUserPrompt={handleRequestPromptRewind}
+              beforeFirstUserMessage={
+                <ForkSourceHint sessionId={currentSessionId} />
+              }
             />
           )}
         </div>
@@ -822,9 +897,13 @@ export const ChatView: React.FC = () => {
           )}
 
           {/* 工作目录选择弹窗 (Phase 4) */}
+          {/* onSelect 真正落盘（此前只关弹窗把选择丢掉了——批C2 顺带修正） */}
           <DirectoryPickerModal
             isOpen={showDirPicker}
-            onSelect={() => setShowDirPicker(false)}
+            onSelect={(directory) => {
+              setShowDirPicker(false);
+              void applyWorkingDirectory(directory);
+            }}
             onClose={() => setShowDirPicker(false)}
           />
 
@@ -847,9 +926,6 @@ export const ChatView: React.FC = () => {
 
           {/* /goal 运行进度条（独立一行，仅 goal 运行中显示） */}
           <GoalStatusBar />
-
-          {/* 通话中 partial 字幕（final 由 host 落库后自然进消息流，§7.5） */}
-          <TranscriptPartialLine />
 
           {/* G2 打断式选项卡：有待答问题时遮盖/替换输入区（拍板形态，非 Modal 非内联卡） */}
           {pendingUserQuestion && (

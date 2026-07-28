@@ -125,9 +125,9 @@ describe('Sidebar new session button', () => {
     const html = renderToStaticMarkup(React.createElement(Sidebar));
     const newTaskButtonHtml = html.match(/<button[^>]*data-testid="sidebar-new-task"[^>]*>.*?<\/button>/)?.[0] ?? '';
 
-    // 2026-07-27 审美关：品牌标从侧栏头行下架（产品负责人：品牌标识暂无合适位置，
-    // 先不展示）；空态欢迎页那处品牌触点仍在，本行只剩右侧功能图标 = Codex 参照形态。
-    expect(html).not.toContain('data-testid="neo-brand-mark"');
+    // 2026-07-27 批C2：品牌标改条件展示——红绿灯不在场（全屏/浏览器/非 Tauri 壳）时
+    // 回到侧栏头行左槽。jsdom 无 __TAURI_INTERNALS__ = 浏览器态，品牌标应在。
+    expect(html).toContain('data-testid="neo-brand-mark"');
     expect(html).toContain('新任务');
     // D2（打磨批 D）：实现语义 tooltip 已删，行内只剩「新任务」一个称谓。
     expect(html).not.toContain('新建任务（纯对话，不继承项目上下文）');
@@ -158,10 +158,17 @@ describe('Sidebar new session button', () => {
     expect(html).toContain('查看 Agent Neo v0.16.89 更新内容');
   });
 
+  // 账号下拉菜单 2026-07-27 抽成 SidebarAccountMenu（Sidebar 逼近 god-file 门），
+  // 断言跟着搬家：Sidebar 负责把当前会话所属项目传下去，菜单里负责发起跳转。
   it('wires the lower account menu to the project collaboration page', () => {
-    const source = readFileSync(resolve(process.cwd(), 'src/renderer/components/Sidebar.tsx'), 'utf8');
+    const sidebar = readFileSync(resolve(process.cwd(), 'src/renderer/components/Sidebar.tsx'), 'utf8');
+    const menu = readFileSync(
+      resolve(process.cwd(), 'src/renderer/components/features/sidebar/SidebarAccountMenu.tsx'),
+      'utf8',
+    );
 
-    expect(source).toContain('openProjectCollaborationPage(currentSessionProjectId)');
-    expect(source).toContain('label={sb.menuNeoCollab}');
+    expect(sidebar).toContain('currentSessionProjectId={currentSessionProjectId}');
+    expect(menu).toContain('openProjectCollaborationPage(currentSessionProjectId)');
+    expect(menu).toContain('label={sb.menuNeoCollab}');
   });
 });

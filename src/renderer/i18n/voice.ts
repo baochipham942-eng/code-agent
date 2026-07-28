@@ -3,6 +3,8 @@
 // 键名对齐方案附录 A 的最小状态字典；设置页「实时通话」组文案也在这里。
 // ============================================================================
 
+import type { VoiceMessageCode } from '@shared/contract/voice';
+
 type WidenVoiceCopy<T> = T extends string
   ? string
   : { -readonly [Key in keyof T]: WidenVoiceCopy<T[Key]> };
@@ -47,6 +49,20 @@ export const voiceZh: VoiceTranslations = {
       micDenied: '麦克风权限被拒绝，请在系统设置中允许后重试',
       handshake: '语音服务握手失败，请稍后重试',
       reconnectFailed: '通话已断开，重连失败。请重新拨号。',
+    },
+    /** host 发来的提示/错误按 code 查这里；键集由 VoiceMessageCode 定型，少一条就 typecheck 红。 */
+    messageByCode: {
+      VOICE_SESSION_BUSY: '已有一路通话在进行中',
+      VOICE_PROVIDER_UNCONFIGURED: '还没配语音服务的 API Key，去设置里填一个就能打电话',
+      VOICE_TOOLS_DROPPED: '当前通话模型不支持在通话中派活，这通电话只能聊天',
+      VOICE_UPSTREAM_UNAVAILABLE: '连不上语音服务，稍后再试',
+      UPSTREAM_SOCKET: '通话连接断开了',
+      UPSTREAM_ERROR: '语音服务出错了，稍后再试',
+      HANDSHAKE_FAILED: '语音服务握手失败，稍后再试',
+      RECONNECT_FAILED: '通话已断开，重连失败，请重新拨号',
+      MICROPHONE_PERMISSION_DENIED: '麦克风权限被拒绝，请在系统设置中允许后重试',
+      AUDIO_CAPTURE_FAILED: '打不开麦克风，检查一下是不是被别的程序占用了',
+      NATIVE_AEC_FAILED: '系统回声消除没起来，建议戴耳机通话',
     },
     permission: {
       title: '需要确认',
@@ -172,6 +188,20 @@ export const voiceEn = {
       handshake: 'Voice service handshake failed. Please retry',
       reconnectFailed: 'Call disconnected and could not be restored. Please dial again.',
     },
+    /** host 发来的提示/错误按 code 查这里；键集由 VoiceMessageCode 定型，少一条就 typecheck 红。 */
+    messageByCode: {
+      VOICE_SESSION_BUSY: 'Another call is already in progress',
+      VOICE_PROVIDER_UNCONFIGURED: 'No API key for the voice service yet — add one in settings to start calling',
+      VOICE_TOOLS_DROPPED: 'This call model cannot run tasks during a call, so this call is chat only',
+      VOICE_UPSTREAM_UNAVAILABLE: 'Cannot reach the voice service — try again shortly',
+      UPSTREAM_SOCKET: 'The call connection dropped',
+      UPSTREAM_ERROR: 'The voice service hit an error — try again shortly',
+      HANDSHAKE_FAILED: 'Could not hand shake with the voice service — try again shortly',
+      RECONNECT_FAILED: 'The call dropped and could not reconnect — please dial again',
+      MICROPHONE_PERMISSION_DENIED: 'Microphone access was denied — allow it in System Settings and retry',
+      AUDIO_CAPTURE_FAILED: 'Could not open the microphone — check whether another app is using it',
+      NATIVE_AEC_FAILED: 'System echo cancellation did not start — headphones are recommended',
+    } satisfies Record<VoiceMessageCode, string>,
     permission: {
       title: 'Confirmation required',
     },

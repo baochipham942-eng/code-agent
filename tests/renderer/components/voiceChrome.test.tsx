@@ -147,12 +147,15 @@ describe('VoiceChrome C 方案', () => {
   it('出错：只保留挂断一个操作', () => {
     dialInto();
     useVoiceCallStore.getState().phaseChanged('error');
-    useVoiceCallStore.getState().eventApplied({ error: { code: 'UPSTREAM', message: '连接断了，正在重试…' } });
+    useVoiceCallStore.getState().eventApplied({ error: { code: 'UPSTREAM_ERROR', message: 'upstream blew up' } });
     render(<VoiceChrome sessionId="session-1" />);
 
     expect(screen.getByTestId('voice-chrome').dataset.state).toBe('error');
     expect(screen.getByTestId('voice-presence').dataset.orbState).toBe('error');
-    expect(screen.getByTestId('voice-status').textContent).toBe('连接断了，正在重试…');
+    // 文案按 code 查 i18n，不是显示 host 原文（host 那句是硬编码中文，英文用户会原样看到）。
+    // 断言取 i18n 的值而不是写死字符串——写死就变成「改文案必改测试」的假门。
+    expect(screen.getByTestId('voice-status').textContent).toBe(zh.voice.messageByCode.UPSTREAM_ERROR);
+    expect(screen.getByTestId('voice-status').textContent).not.toBe('upstream blew up');
     expect(screen.queryByTestId('voice-mute')).toBeNull();
     expect(screen.queryByTestId('voice-manual-commit')).toBeNull();
     expect(chromeButtons()).toEqual([screen.getByTestId('voice-end')]);

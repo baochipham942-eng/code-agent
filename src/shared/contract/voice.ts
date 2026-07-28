@@ -92,8 +92,31 @@ export type VoiceEvent =
    * 用户可见的一次性提示（不致命，通话继续）。判据钉在上游真实回显上——
    * 例如注册了 tools 但 session.updated 回显 tools: null（模型不支持 function calling）。
    */
-  | { type: 'notice'; code: string; message: string }
-  | { type: 'error'; code: string; message: string };
+  | { type: 'notice'; code: VoiceMessageCode; message: string }
+  | { type: 'error'; code: VoiceMessageCode; message: string };
+
+/**
+ * 发给用户看的所有提示/错误的编号（host 与 renderer 两侧都在这里登记）。**新增一条必须加进这里**——
+ * renderer 的 i18n 表按这个联合类型定型（`Record<VoiceMessageCode, string>`），
+ * 少写一条就是编译错误，不是「以后谁记得补翻译」。
+ *
+ * 为什么要有这层：host 里那几条 `message` 是硬编码中文，英文用户会原样看到中文。
+ * 文案的家在 renderer 的 i18n，host 只负责说「出了哪件事」。
+ * `message` 保留作日志与兜底（真出现表外 code 时总比空白强）。
+ */
+export type VoiceMessageCode =
+  | 'VOICE_SESSION_BUSY'
+  | 'VOICE_PROVIDER_UNCONFIGURED'
+  | 'VOICE_TOOLS_DROPPED'
+  | 'VOICE_UPSTREAM_UNAVAILABLE'
+  | 'UPSTREAM_SOCKET'
+  | 'UPSTREAM_ERROR'
+  // 以下由 renderer 侧产生（建连握手 / 重连 / 麦克风采集），同样要有文案
+  | 'HANDSHAKE_FAILED'
+  | 'RECONNECT_FAILED'
+  | 'MICROPHONE_PERMISSION_DENIED'
+  | 'AUDIO_CAPTURE_FAILED'
+  | 'NATIVE_AEC_FAILED';
 
 /**
  * 用户此刻在看什么（方案 §6.5 的 `[Context — Focus]`，批 H）。

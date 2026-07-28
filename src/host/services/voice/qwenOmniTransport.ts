@@ -250,7 +250,9 @@ export const qwenOmniTransport: VoiceTransport = {
           logger.warn('upstream error', { code: event.error?.code, message: event.error?.message });
           onEvent({
             type: 'error',
-            code: event.error?.code ?? 'UPSTREAM_ERROR',
+            // 上游自己的错误码不往外透传：它无法枚举，进不了 i18n 表，
+            // 传出去只会让渲染端拿到一个查不到文案的串。它已经在上一行进日志了。
+            code: 'UPSTREAM_ERROR',
             message: event.error?.message ?? 'upstream error',
           });
           break;

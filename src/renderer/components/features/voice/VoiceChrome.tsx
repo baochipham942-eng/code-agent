@@ -17,6 +17,7 @@ import {
   useRegisterComposerInProgress,
 } from '../../../stores/composerNoticeStore';
 import { useSessionMembers } from '../expert/SessionMemberBar';
+import { resolveVoiceMessage } from './resolveVoiceMessage';
 
 type OrbState = Exclude<VoiceVisualState, 'idle'> | 'manual-ready';
 
@@ -100,7 +101,7 @@ export const VoiceChrome: React.FC<{ sessionId: string | null }> = ({ sessionId 
   const isConnecting = visual === 'connecting' || visual === 'reconnecting';
   const isManualListening = visual === 'listening' && store.interruptMode === 'manual';
   const statusText = visual === 'error'
-    ? (store.error?.message ?? t.voice.status.error)
+    ? (store.error ? resolveVoiceMessage(t, store.error) : t.voice.status.error)
     : visual === 'working' && currentWorkItem
       ? currentWorkItem.title
       : visual === 'muted'
@@ -206,7 +207,7 @@ export const VoiceChrome: React.FC<{ sessionId: string | null }> = ({ sessionId 
       {/* 一次性提示（如 tools 被上游静默丢弃）：不抢 error 态，通话继续，但用户必须当场看见 */}
       {store.notice && (
         <p data-testid="voice-call-notice" className="mt-1.5 text-xs leading-5 text-amber-300">
-          {store.notice}
+          {resolveVoiceMessage(t, store.notice)}
         </p>
       )}
     </div>

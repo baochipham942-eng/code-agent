@@ -24,6 +24,8 @@ interface TurnBasedTraceViewProps {
   searchMatches?: SearchMatch[];
   activeMatchIndex?: number;
   onRewindUserPrompt?: (messageId: string, content: string) => void;
+  /** 注入到第一条 turn 用户消息上方（分叉子会话的来源提示） */
+  beforeFirstUserMessage?: React.ReactNode;
 }
 
 export const ACTIVE_DISPLAY_SCROLL_INTERVAL_MS = 80;
@@ -268,6 +270,7 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
   searchMatches = [],
   activeMatchIndex = 0,
   onRewindUserPrompt,
+  beforeFirstUserMessage,
 }) => {
   const { t } = useI18n();
   const virtuosoRef = useRef<VirtuosoHandle>(null);
@@ -868,12 +871,13 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
                 shouldFollowOutput ? () => scheduleActiveDisplayScroll(index) : undefined
               }
               onRewindUserPrompt={onRewindUserPrompt}
+              beforeUserMessage={index === 0 ? beforeFirstUserMessage : undefined}
             />
           </div>
         </div>
       );
     },
-    [activeMatchIndex, firstItemIndex, isProjectionSessionProcessing, onRewindUserPrompt, outputFollowTurnIndex, projection.activeTurnIndex, projection.sessionId, projection.turns, projectionStreamSnapshot, scheduleActiveDisplayScroll, searchMatches, sessionStatus],
+    [activeMatchIndex, beforeFirstUserMessage, firstItemIndex, isProjectionSessionProcessing, onRewindUserPrompt, outputFollowTurnIndex, projection.activeTurnIndex, projection.sessionId, projection.turns, projectionStreamSnapshot, scheduleActiveDisplayScroll, searchMatches, sessionStatus],
   );
 
   // Header: load-older indicator

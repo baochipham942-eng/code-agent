@@ -96,6 +96,7 @@ export const enSettingsCore = {
       theme: 'Theme',
       fontSize: 'Font size',
       language: 'Language',
+      promptManager: 'Prompt management',
       dataManagement: 'Data management',
       databaseSize: 'Database size',
       clearCache: 'Clear cache',

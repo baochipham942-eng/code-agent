@@ -16,6 +16,7 @@ import {
   getPluginSpec,
   isPluginRuntimeVisible,
   getPluginTrustSummary,
+  toDisplayPath,
   PLUGIN_COMPLETENESS_ROWS,
 } from '../../../src/renderer/components/features/settings/tabs/PluginsSettings';
 
@@ -282,6 +283,16 @@ describe('PluginsSettings helpers', () => {
       canExposeInSlash: true,
       requiredRuntimeCapabilities: ['marketplace-plugin-assets', 'command-manifest', 'plugin-permissions:command'],
     });
+  });
+
+  it('folds the home directory out of displayed plugin paths on all three platforms', () => {
+    expect(toDisplayPath('/Users/someone/.code-agent-dev/plugins/canvas-design__official-registry'))
+      .toBe('~/.code-agent-dev/plugins/canvas-design__official-registry');
+    expect(toDisplayPath('/home/someone/.code-agent/plugins/x')).toBe('~/.code-agent/plugins/x');
+    expect(toDisplayPath('C:\\Users\\someone\\.code-agent\\plugins\\x')).toBe('~\\.code-agent\\plugins\\x');
+    // 非主目录路径原样保留（/opt、相对路径不该被伪装成 ~）
+    expect(toDisplayPath('/opt/plugins/x')).toBe('/opt/plugins/x');
+    expect(toDisplayPath('/Users')).toBe('/Users');
   });
 
   it('summarizes plugin trust fields and treats missing declarations as unknown risk', () => {

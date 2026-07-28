@@ -13,6 +13,11 @@ export async function listenTauriEvent<T>(
   return listen<T>(event, handler);
 }
 
+export async function isNativeWindowFullscreen(): Promise<boolean> {
+  const { getCurrentWindow } = await import('@tauri-apps/api/window');
+  return getCurrentWindow().isFullscreen();
+}
+
 export async function openNativePath(path: string): Promise<void> {
   const { openPath } = await import('@tauri-apps/plugin-opener');
   await openPath(path);

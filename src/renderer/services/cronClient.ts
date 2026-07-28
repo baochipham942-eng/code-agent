@@ -46,6 +46,11 @@ export const cronClient = {
     return invokeCron<CronJobExecution[]>('getExecutions', { jobId, limit });
   },
 
+  /** 跨任务执行流（运行记录 tab）：全部任务的执行按时间倒序 */
+  getRecentExecutions(limit = 50) {
+    return invokeCron<CronJobExecution[]>('getRecentExecutions', { limit });
+  },
+
   getStats() {
     return invokeCron<CronServiceStats>('getStats');
   },

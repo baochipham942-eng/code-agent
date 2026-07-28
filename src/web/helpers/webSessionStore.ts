@@ -97,8 +97,11 @@ export function clearAllSessionProjections(): void {
 // 测试只通过门面搭建和观察投影现场；底层 Map 仍只归 WebSessionStore 所有。
 export const sessionMessagesProjection = {
   get: getSessionMessagesProjection,
-  set(sessionId: string, messages: CachedMessage[]) {
-    replaceSessionMessagesProjection(sessionId, messages);
+  set(sessionId: string, messages: CachedMessage[] | Message[]) {
+    replaceSessionMessagesProjection(
+      sessionId,
+      toCachedSessionMessages(messages as Message[]),
+    );
     return sessionMessagesProjection;
   },
   has: (sessionId: string) => sessionMessages.has(sessionId),
@@ -148,6 +151,15 @@ interface WebSessionStoreDeps {
   logger: WebRouteLogger;
   // 仅保留给 CLI SM 不可用时的既有兼容降级；生产正常路径不经过 core writer。
   getDatabase: () => DatabaseService | Promise<DatabaseService>;
+  /**
+   * Fork 的 isolated_at_anchor 需要在回复完成当下捕获文件证据。Web 主写路径
+   * 可能走 CLI SessionManager，因此不能把 capture 隐含在 core writer 里。
+   * 失败只会把该锚点记为 blocked，不得反向打断已完成的回复。
+   */
+  captureSessionForkAnchorEvidence?: (
+    sessionId: string,
+    messageId: string,
+  ) => Promise<unknown>;
 }
 
 interface PrePersistUserMessageInput {
@@ -515,6 +527,7 @@ export function createWebSessionStore(deps: WebSessionStoreDeps) {
       if (dbAvailable) {
         let sm: WebCLISessionManagerLike | null = null;
         let persistenceSucceeded = false;
+        let persistedFinalAssistantMessageId: string | undefined;
         try {
           sm = await resolvePersistentSessionManager(
             await deps.tryGetSessionManager(),
@@ -562,6 +575,11 @@ export function createWebSessionStore(deps: WebSessionStoreDeps) {
               contentParts: turn.hasInterleaving() ? turn.contentParts : undefined,
             } as Message);
           }
+          if (!turn.runCancelled && turn.hasAssistantOutput()) {
+            persistedFinalAssistantMessageId = loopPersistedAssistant
+              ? turn.lastLoopAssistantMessageId
+              : assistantMsgId;
+          }
 
           // 更新会话标题/时间戳
           const sessionUpdates = historyLength === 0
@@ -577,6 +595,22 @@ export function createWebSessionStore(deps: WebSessionStoreDeps) {
           persistenceSucceeded = true;
         } catch (dbErr) {
           deps.logger.warn('Failed to persist messages to DB:', (dbErr as Error).message);
+        }
+
+        if (
+          persistenceSucceeded
+          && persistedFinalAssistantMessageId
+          && deps.captureSessionForkAnchorEvidence
+        ) {
+          await deps.captureSessionForkAnchorEvidence(
+            sessionId,
+            persistedFinalAssistantMessageId,
+          ).catch((error) => {
+            deps.logger.warn(
+              `[AgentRouter] Session Fork anchor capture failed closed for ${sessionId}:`,
+              error,
+            );
+          });
         }
 
         if (persistenceSucceeded) {

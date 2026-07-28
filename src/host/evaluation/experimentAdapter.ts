@@ -3,6 +3,7 @@
 // ============================================================================
 
 import { execSync } from 'child_process';
+import { createHash } from 'node:crypto';
 import type { DatabaseService } from '../services/core/databaseService';
 import type { TestRunSummary, TestResult } from '../testing/types';
 import { getReplayCompletenessReasons } from '../../shared/contract/evaluation';
@@ -21,7 +22,28 @@ import {
   type ArtifactIssue,
 } from '../../shared/contract/productClosure';
 
-type ExperimentDbWriter = Pick<DatabaseService, 'insertExperiment' | 'insertExperimentCases'>;
+type ConversationAttributionWriter = Pick<
+  DatabaseService,
+  | 'getDb'
+  | 'getSession'
+  | 'replayConversationBranch'
+  | 'recordConversationEvaluationAttribution'
+>;
+
+type ExperimentDbWriter =
+  Pick<DatabaseService, 'insertExperiment' | 'insertExperimentCases'>
+  & Partial<ConversationAttributionWriter>;
+
+function supportsConversationAttribution(
+  writer: ExperimentDbWriter,
+): writer is ExperimentDbWriter & ConversationAttributionWriter {
+  return (
+    typeof writer.getDb === 'function'
+    && typeof writer.getSession === 'function'
+    && typeof writer.replayConversationBranch === 'function'
+    && typeof writer.recordConversationEvaluationAttribution === 'function'
+  );
+}
 
 export interface EvalHarnessExperimentResultLike {
   experimentId: string;
@@ -210,6 +232,51 @@ export class ExperimentAdapter {
     });
   }
 
+  /**
+   * Attach the canonical case score to the immutable entries that were active
+   * when the evaluated branch was persisted. Provider-native runtime identity
+   * is deliberately not consulted: `runId` is the local canonical eval run.
+   */
+  private persistConversationAttributions(
+    writer: ExperimentDbWriter & ConversationAttributionWriter,
+    run: CanonicalEvalRun,
+    experimentId: string,
+  ): void {
+    for (const evalCase of run.cases) {
+      if (!evalCase.sessionId) continue;
+      const session = writer.getSession(evalCase.sessionId);
+      if (!session) continue;
+      const boundary = {
+        ownerUserId: session.userId ?? null,
+        projectId: session.projectId ?? null,
+      };
+      const replay = writer.replayConversationBranch(evalCase.sessionId, boundary);
+      const attributedMessageIds = replay.messages.map((message) => message.projectedMessageId);
+      if (attributedMessageIds.length === 0) continue;
+
+      const evaluationId = `canonical-eval:${experimentId}:${evalCase.caseId}`;
+      const idempotencyKey = `canonical-eval-attribution:${createHash('sha256')
+        .update(JSON.stringify({
+          schemaVersion: 1,
+          experimentId,
+          caseId: evalCase.caseId,
+          sessionId: evalCase.sessionId,
+        }))
+        .digest('hex')}`;
+      writer.recordConversationEvaluationAttribution({
+        sessionId: evalCase.sessionId,
+        boundary,
+        evaluationId,
+        runId: experimentId,
+        metric: 'canonical_score_100',
+        value: evalCase.score,
+        attributedMessageIds,
+        idempotencyKey,
+        createdAt: run.endTime ?? run.startTime,
+      });
+    }
+  }
+
   private buildRealAgentRunGate(result: TestResult): {
     passed: boolean;
     reasons: string[];
@@ -305,34 +372,50 @@ export class ExperimentAdapter {
     const gitCommit = run.gitCommit || this.getGitCommit();
     const day = new Date(run.startTime).toISOString().slice(0, 10);
 
-    this.db.insertExperiment({
-      id: experimentId,
-      name: run.name || `${run.source}-${day}`,
-      timestamp: run.startTime,
-      model: run.environment?.model || 'unknown',
-      provider: run.environment?.provider || 'unknown',
-      scope: run.scope || 'full',
-      config_json: JSON.stringify({
-        ...(run.config || {}),
-        canonicalSchemaVersion: run.schemaVersion,
+    const persist = (): void => {
+      this.db.insertExperiment({
+        id: experimentId,
+        name: run.name || `${run.source}-${day}`,
+        timestamp: run.startTime,
+        model: run.environment?.model || 'unknown',
+        provider: run.environment?.provider || 'unknown',
+        scope: run.scope || 'full',
+        config_json: JSON.stringify({
+          ...(run.config || {}),
+          canonicalSchemaVersion: run.schemaVersion,
+          source: run.source,
+          aggregation: run.aggregation,
+          environment: run.environment,
+        }),
+        summary_json: this.buildSummaryJson(run),
         source: run.source,
-        aggregation: run.aggregation,
-        environment: run.environment,
-      }),
-      summary_json: this.buildSummaryJson(run),
-      source: run.source,
-      git_commit: gitCommit,
-    });
+        git_commit: gitCommit,
+      });
 
-    this.db.insertExperimentCases(experimentId, run.cases.map(c => ({
-      id: c.id || crypto.randomUUID(),
-      case_id: c.caseId,
-      session_id: c.sessionId,
-      status: c.status,
-      score: Math.round(c.score),
-      duration_ms: c.durationMs || 0,
-      data_json: this.buildCaseDataJson(run, c),
-    })));
+      this.db.insertExperimentCases(experimentId, run.cases.map(c => ({
+        id: c.id || crypto.randomUUID(),
+        case_id: c.caseId,
+        session_id: c.sessionId,
+        status: c.status,
+        score: Math.round(c.score),
+        duration_ms: c.durationMs || 0,
+        data_json: this.buildCaseDataJson(run, c),
+      })));
+
+      if (supportsConversationAttribution(this.db)) {
+        this.persistConversationAttributions(this.db, run, experimentId);
+      }
+    };
+
+    if (supportsConversationAttribution(this.db)) {
+      const rawDb = this.db.getDb();
+      if (!rawDb) {
+        throw new Error('canonical eval attribution requires an initialized transaction database');
+      }
+      rawDb.transaction(persist)();
+    } else {
+      persist();
+    }
 
     return experimentId;
   }

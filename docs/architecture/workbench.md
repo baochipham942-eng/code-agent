@@ -17,7 +17,7 @@ Workbench 把这些能力收成聊天主链路的一部分。它不改 orchestra
 2. 输入框上方的 `InlineWorkbenchBar` 把选择点放在离文本最近的地方
 3. 关键审批（swarm launch）用内联卡片拉回聊天流，而不是侧面板
 4. 每个 turn 内投影出 `workbench_snapshot / capability_scope / blocked / routing / hook_activity / artifact` 执行解释
-5. 用户需要回到某条历史提示词时，用 Prompt Rewind 恢复文件 checkpoint、隐藏旧尝试，把原提示词重新放回输入框
+5. 用户需要回到某条历史提示词时，用 Prompt Rewind 软隐藏旧尝试并把原提示词放回输入框；文件 checkpoint 恢复是另一个需要显式触发的动作
 
 目标是让"选择"、"执行"、"解释"这三步都在聊天主链路里闭环，而不是分散在 sidecar 里。
 
@@ -34,7 +34,7 @@ Workbench 是一个整合功能，不是一条线性 phase。代码层面可以�
 | **E. Browser/Desktop 显式入口** | `browserSessionMode / executionIntent` 进入 envelope，workbench badge 区分 `managed / desktop` | in-app managed browser 已有 session/profile/account/artifact/lease/proxy/TargetRef；Computer Surface 有 background AX / CGEvent 受控验证；acceptance suite 覆盖生产化基线；**ADR-041**：本机 Chromium profile Cookie 导入 + Chrome Relay 扩展附着 + `browser_action.engine` auto/managed/relay（见 `docs/acceptance/browser-login-reuse-parity.md`） | remote browser pool、Firefox/Safari profile 导入、完整 localStorage/IDB 镜像、CAPTCHA/anti-bot 自动绕过 |
 | **F. Live Preview / Visual Edit** | dev server 启动、iframe source grounding、selectedElement 进入 envelope、TweakPanel 原子样式修改 | Vite-only V2-A/B 已交付：DevServerLauncher + protocol 0.3.0 + TweakPanel；Next.js V2-C 已按 ADR-012 延期 | partial HMR MutationObserver、V3 批注/多选、Next 支持重新评估 |
 | **G. Semantic Tool UI** | `_meta.shortDescription / targetContext / rationale` 从 prompt/schema/parser 进入 ToolCall，再投影到 trace UI | 工具调用可读标题、target icon、memory citation、session diff summary、raw URL chip 已接入；SessionRepository 有 fallback shortDescription | 更高质量 target/rationale 生成、跨 provider 稳定性评估 |
-| **H. Hook Activity + Prompt Rewind** | Hook trigger history 汇入 turn timeline；用户可从历史 user prompt 回退并恢复文件 checkpoint | 聊天 TurnCard 展示 hook 执行摘要；`session_rewinds` 保留审计，active transcript 只显示未 rewind 消息；输入框回填原 prompt/attachments | rewind UI 的批量历史管理、跨设备冲突可视化 |
+| **H. Hook Activity + Prompt Rewind** | Hook trigger history 汇入 turn timeline；用户可从历史 user prompt 软回退，并可独立选择恢复文件 checkpoint | 聊天 TurnCard 展示 hook 执行摘要；`session_rewinds` 保留审计，active transcript 只显示未 rewind 消息；输入框回填原 prompt/attachments；文件恢复不隐式改变会话 | rewind UI 的批量历史管理、跨设备冲突可视化 |
 | **I. Session Quality + Strategy** | 模型策略、记忆注入、能力使用、工具调用和交付质量进入 turn quality；Replay Audit 复用同一证据 | `TurnQualityStrip`、模型决策 trace、记忆忽略/归档、session media asset 导航已进入会话页 | 跨 session 聚合趋势、团队级质量面板 |
 
 ## 2. 关键数据结构
@@ -150,13 +150,14 @@ Prompt Rewind 采用 session 级修正语义，和 fork 分支语义分开。它
 ```ts
 type MessageVisibility = 'active' | 'rewound';
 
-interface PromptRewindResult {
+interface RewindConversationResult {
   success: true;
   sessionId: string;
   rewindId: string;
   draft: { content: string; attachments?: MessageAttachment[] };
   activeMessages: Message[];
   hiddenMessageCount: number;
+  workspaceChanged: false;
   filesRestored: number;
   filesDeleted: number;
 }
@@ -164,10 +165,11 @@ interface PromptRewindResult {
 
 规则：
 
-- `rewindToPrompt` 只接受 active user message；session 正在 running 时拒绝执行。
+- `rewindConversation` 只接受 active user message 和显式 `idempotencyKey`；session 正在 running 时拒绝执行。`rewindToPrompt` 只保留为旧客户端兼容投影。
 - `SessionRepository.applyPromptRewind()` 把锚点消息及之后的 active 消息标成 `visibility='rewound'`，普通 `getMessages()` 默认过滤它们。
 - `session_rewinds` 记录 anchor prompt、hidden ids、checkpoint message、files restored/deleted 和 errors，供审计、同步、replay 查询。
-- 文件恢复复用 `FileCheckpointService.getFirstCheckpointAtOrAfter()` + `rewindFiles()`，没有 checkpoint 时只做消息层回退。
+- `restoreConversationRewind` 只恢复同一次 Rewind 隐藏的消息与生成式 UI 投影，不恢复已经失效的执行授权。
+- `restoreWorkspaceFilesAtCheckpoint` 是独立、fail-closed 的文件恢复动作；成功或失败都不会改变消息可见性。
 
 ### 2.7 Turn Quality and Model Strategy
 
@@ -249,20 +251,28 @@ messages + metadata.workbench
 ```
 User message action: 回到这条提示词
   → ChatView 打开确认态
-  → domain:session / rewindToPrompt {sessionId, userMessageId}
+  → domain:session / rewindConversation {sessionId, anchorUserMessageId, idempotencyKey}
     → AgentApplicationService 校验 TaskManager 当前状态不是 running
-    → Database.getMessageById() 读取 active user anchor
-    → FileCheckpointService.getFirstCheckpointAtOrAfter(anchor.timestamp)
-    → checkpoint 存在时 rewindFiles(sessionId, checkpoint.messageId)
-    → SessionManager.applyPromptRewind()
+    → SessionRewindService 校验 owner、anchor 和幂等键
+    → SessionRewindRepository.applyPromptRewind()
       → messages.visibility = 'rewound'
+      → 精确标记并隐藏关联 generative UI
       → insert session_rewinds audit row
       → refresh session cache + emit session updated
   ← ChatView setMessages(activeMessages)
   ← ChatInput.setDraft(anchor content + attachments)
+
+User action: 恢复这次 Rewind
+  → domain:session / restoreConversationRewind {sessionId, rewindId}
+  → 事务内恢复同一次 Rewind 的消息与 UI 可见性，不改变文件
+
+User action: 恢复工作区文件
+  → domain:session / restoreWorkspaceFilesAtCheckpoint {sessionId, checkpointMessageId}
+  → FileCheckpointService.rewindFiles()
+  → 失败时零消息写入，成功结果明确报告 restored/deleted file count
 ```
 
-Web 模式的 `src/web/webServer.ts` 有同名 `rewindToPrompt` action，逻辑与 Tauri IPC 对齐，方便桌面和 Web 预览共用同一产品语义。
+Web 与 Desktop 都通过同一 `SessionHistoryAppService` 暴露上述三条动作；Web 成功后还会失效 message projection cache，避免返回旧 transcript。
 
 ## 4. 与 TaskPanel / SwarmMonitor 的分工
 

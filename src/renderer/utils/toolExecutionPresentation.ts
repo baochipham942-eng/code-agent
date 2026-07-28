@@ -232,7 +232,7 @@ export interface ToolErrorActionState {
 
 /**
  * 失败工具结果的可点 action 决策：复制错误 + 从此重试。
- * 「从此重试」复用既有 forkFromHere（messageActionStore），与会话页消息级
+ * 「从此重试」复用既有 createForkFromReply（messageActionStore），与会话页消息级
  * 「从此重试」同一条路径；只在拿得到所属 messageId 时才可点。
  * 注：浏览器/Computer 类失败有自己的只读 recovery actions（BrowserComputerNextStepActions），
  * 由调用方另行 gate，不走这里。

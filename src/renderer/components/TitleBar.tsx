@@ -1,6 +1,6 @@
 // ============================================================================
 // TitleBar - 右侧顶栏
-// （目录 chip 已退役：工作目录选择并入侧栏项目组体系，入口在 SidebarWorkspaceRow。）
+// （目录 chip 已退役：目录选择并入新任务流程，入口在欢迎页目录 chip / DirectoryPickerModal。）
 //
 // 2026-07-27 审美关拍板：侧栏收起开关挪回左侧面板自己头上（SidebarHeader），
 // 这里只在**侧栏收起态**留展开入口——侧栏那时不存在，按钮得有别的落脚点。
@@ -39,7 +39,8 @@ export const TitleBar: React.FC<TitleBarProps> = ({ secondaryPageActive = false 
     // 本行整体可拖，行内控件逐个 no-drag。拖拽真正生效靠 `data-tauri-drag-region`
     // （WKWebView 不认 Electron 的 -webkit-app-region），双击缩放窗口也由它带来。
     // 无 border-b、无自有底色：与右栏内容是同一块面（2026-07-27 左右结构拍板）。
-    // 画一条横线会把右栏切成上下两段，正是要消除的读法；底色由 App 的右栏容器统一给。
+    // 底色由 App 的右栏容器统一给（main 的 #760 把 bg-zinc-900 写在本行，合并时收敛到 App 一处，
+    // 免得两个地方各给一次底色）。画一条横线会把右栏切成上下两段，正是要消除的读法。
     <div
       data-tauri-drag-region
       className={`h-12 flex items-center justify-between px-4 bg-transparent relative z-30 ${sidebarCollapsed ? COLLAPSED_TRAFFIC_LIGHT_INSET : ''}`}

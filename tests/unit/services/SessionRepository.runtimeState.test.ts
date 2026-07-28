@@ -69,6 +69,10 @@ function createSchema(db: BetterSqlite3.Database): void {
         files_restored INTEGER NOT NULL DEFAULT 0,
         files_deleted INTEGER NOT NULL DEFAULT 0,
         errors_json TEXT,
+        idempotency_key TEXT,
+        request_digest TEXT,
+        status TEXT NOT NULL DEFAULT 'completed',
+        restored_at INTEGER,
         created_at INTEGER NOT NULL
       );
 
@@ -111,6 +115,7 @@ function createSchema(db: BetterSqlite3.Database): void {
       session_id TEXT NOT NULL,
       source_message_id TEXT NOT NULL,
       status TEXT NOT NULL,
+      hidden_by_rewind_id TEXT,
       updated_at INTEGER NOT NULL
     );
 
@@ -279,7 +284,7 @@ describe('SessionRepository runtime recovery state', () => {
     ]);
   });
 
-  it('soft-hides the anchor user message and later active messages on prompt rewind', () => {
+  it('keeps the anchor user message active and soft-hides only later messages', () => {
     const messages: Message[] = [
       { id: 'u1', role: 'user', content: 'first prompt', timestamp: 10 },
       { id: 'a1', role: 'assistant', content: 'first answer', timestamp: 20 },
@@ -294,12 +299,13 @@ describe('SessionRepository runtime recovery state', () => {
       checkpointMessageId: 'checkpoint-message',
       filesRestored: 2,
       filesDeleted: 1,
-      createdAt: 100
+      createdAt: 100,
+      ownerUserId: null,
     });
 
-    expect(result.hiddenMessageIds).toEqual(['u2', 'a2']);
-    expect(result.activeMessages.map((message) => message.id)).toEqual(['u1', 'a1']);
-    expect(repo.getMessages('session-1').map((message) => message.id)).toEqual(['u1', 'a1']);
+    expect(result.hiddenMessageIds).toEqual(['a2']);
+    expect(result.activeMessages.map((message) => message.id)).toEqual(['u1', 'a1', 'u2']);
+    expect(repo.getMessages('session-1').map((message) => message.id)).toEqual(['u1', 'a1', 'u2']);
     expect(
       repo
         .getMessages('session-1', undefined, undefined, {
@@ -307,18 +313,17 @@ describe('SessionRepository runtime recovery state', () => {
         })
         .map((message) => message.id)
     ).toEqual(['u1', 'a1', 'u2', 'a2']);
-    expect(repo.getMessageCount('session-1')).toBe(2);
+    expect(repo.getMessageCount('session-1')).toBe(3);
     expect(repo.getMessageCount('session-1', { includeRewound: true })).toBe(4);
 
-    const hidden = repo.getMessageById('session-1', 'u2', {
+    const anchor = repo.getMessageById('session-1', 'u2', {
       includeRewound: true
     });
-    expect(hidden).toMatchObject({
+    expect(anchor).toMatchObject({
       id: 'u2',
-      visibility: 'rewound',
-      hiddenAt: 100
+      visibility: 'active'
     });
-    expect(repo.getMessageById('session-1', 'u2')).toBeNull();
+    expect(repo.getMessageById('session-1', 'u2')).toMatchObject({ id: 'u2' });
 
     const audit = db.prepare('SELECT * FROM session_rewinds WHERE anchor_message_id = ?').get('u2') as {
       anchor_prompt: string;
@@ -329,7 +334,7 @@ describe('SessionRepository runtime recovery state', () => {
     };
     expect(audit.anchor_prompt).toBe('prompt to edit');
     expect(audit.checkpoint_message_id).toBe('checkpoint-message');
-    expect(audit.hidden_message_count).toBe(2);
+    expect(audit.hidden_message_count).toBe(1);
     expect(audit.files_restored).toBe(2);
     expect(audit.files_deleted).toBe(1);
   });
@@ -350,7 +355,7 @@ describe('SessionRepository runtime recovery state', () => {
       VALUES ('manifest-1', 'session-1', 'ui-1', 'approved', 50)
     `).run();
 
-    repo.applyPromptRewind('session-1', 'u2', { createdAt: 100 });
+    repo.applyPromptRewind('session-1', 'u2', { createdAt: 100, ownerUserId: null });
 
     expect(db.prepare('SELECT status FROM generative_ui_instances WHERE instance_id = ?').get('ui-1'))
       .toEqual({ status: 'hidden' });
@@ -387,10 +392,11 @@ describe('SessionRepository runtime recovery state', () => {
       repo.addMessage('session-1', message);
     }
 
-    repo.applyPromptRewind('session-1', 'u3', { createdAt: 100 });
-    repo.applyPromptRewind('session-1', 'u2', { createdAt: 200 });
+    repo.applyPromptRewind('session-1', 'u3', { createdAt: 100, ownerUserId: null });
+    repo.applyPromptRewind('session-1', 'u2', { createdAt: 200, ownerUserId: null });
 
-    expect(repo.getMessages('session-1').map((message) => message.id)).toEqual(['u1', 'a1']);
+    expect(repo.getMessages('session-1').map((message) => message.id))
+      .toEqual(['u1', 'a1', 'u2']);
     expect(
       repo
         .getMessages('session-1', undefined, undefined, {
@@ -437,9 +443,10 @@ describe('SessionRepository runtime recovery state', () => {
       repo.addMessage('session-1', message);
     }
 
-    repo.applyPromptRewind('session-1', 'u2', { createdAt: 100 });
+    repo.applyPromptRewind('session-1', 'u2', { createdAt: 100, ownerUserId: null });
 
-    expect(repo.getMessages('session-1').map((message) => message.id)).toEqual(['u1', 'a1']);
+    expect(repo.getMessages('session-1').map((message) => message.id))
+      .toEqual(['u1', 'a1', 'u2']);
     expect(
       repo
         .getMessages('session-1', undefined, undefined, {
@@ -452,7 +459,7 @@ describe('SessionRepository runtime recovery state', () => {
     ).toEqual([
       { id: 'u1', visibility: 'active' },
       { id: 'a1', visibility: 'active' },
-      { id: 'u2', visibility: 'rewound' },
+      { id: 'u2', visibility: 'active' },
       { id: 'a2', visibility: 'rewound' }
     ]);
   });

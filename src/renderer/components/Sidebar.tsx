@@ -50,8 +50,11 @@ import { sessionAutomationClient } from '../services/sessionAutomationClient';
 import { SessionReplaySummaryDialog } from './features/sidebar/SessionReplaySummaryDialog';
 import { getSessionTypeLabel } from './features/sidebar/SessionTypeFilterBar';
 import { AccountMenuItem, AccountMenuLabel } from './features/sidebar/sidebarPresentation';
+import { NeoBrandMark } from './features/sidebar/NeoBrandMark';
+import { isTauriMode } from '../utils/platform';
+import { isNativeWindowFullscreen } from '../services/tauriPluginFacade';
 import { useI18n } from '../hooks/useI18n';
-import { formatRelativeTime } from '../utils/i18nTime';
+import { localeForLanguage } from '../utils/i18nTime';
 import ipcService from '../services/ipcService';
 import { getDisplaySessionTitle, getSessionStatusPresentation } from '../utils/sessionPresentation';
 import { hasSessionDeliverySignals } from '../utils/sessionRecoveryHints';
@@ -64,7 +67,6 @@ import { useSidebarRowActions, resolveRuntimeLogsDir } from './features/sidebar/
 import { SidebarStatusFilterDropdown } from './features/sidebar/SidebarStatusFilterDropdown';
 import { SidebarSearchDialog } from './features/sidebar/SidebarSearchDialog';
 import { SidebarNewTaskRow } from './features/sidebar/SidebarNewTaskRow';
-import { SidebarWorkspaceRow } from './features/sidebar/SidebarWorkspaceRow';
 import {
   buildSessionStatusFilterOptions,
   buildSessionStatusFilterLabels,
@@ -92,9 +94,25 @@ export function isAccountMenuEventOutside(
 }
 
 export const Sidebar: React.FC = () => {
-  const { t } = useI18n();
-  // 原生标题栏撤掉后 macOS 红绿灯浮在侧栏头行左端，得给它留死区（Windows/Linux 无此约束）
+  const { t, language } = useI18n();
+  // 原生标题栏撤掉后 macOS 红绿灯浮在侧栏头行左端，得给它留死区（Windows/Linux 无此约束）。
+  // 红绿灯只存在于「Tauri 壳 + macOS + 非全屏」：全屏时系统把它藏起来，浏览器里根本没有——
+  // 这两种态左上角空着难看，改挂品牌标（2026-07-27 产品负责人拍板）。
   const isMacShell = getCurrentKeybindingPlatform() === 'darwin';
+  const [isNativeFullscreen, setIsNativeFullscreen] = useState(false);
+  useEffect(() => {
+    if (!isTauriMode()) return;
+    let alive = true;
+    const check = () => {
+      isNativeWindowFullscreen()
+        .then((v) => { if (alive) setIsNativeFullscreen(v); })
+        .catch(() => {});
+    };
+    check();
+    window.addEventListener('resize', check);
+    return () => { alive = false; window.removeEventListener('resize', check); };
+  }, []);
+  const trafficLightZone = isMacShell && isTauriMode() && !isNativeFullscreen;
   const sb = t.sidebar;
   const {
     clearPlanningState,
@@ -561,7 +579,7 @@ export const Sidebar: React.FC = () => {
           showStatusBadge: status.showBadge,
           typeLabel: getSessionTypeLabel(session.type),
           summary: hasMeaningfulSummary ? snapshotSummary : undefined,
-          lastActiveLabel: formatRelativeTime(t, latestActivityAt),
+          lastActiveTitle: new Date(latestActivityAt).toLocaleString(localeForLanguage(language)),
           workingDirectory: session.workingDirectory,
           gitBranch: session.gitBranch,
           prLabel: session.prLink ? `PR #${session.prLink.number}` : undefined,
@@ -652,33 +670,35 @@ export const Sidebar: React.FC = () => {
     <div className="flex-1 flex flex-col bg-transparent overflow-hidden px-[var(--scrollbar-size)]">
       {/* Header: h-12 to align with TitleBar on the right.
           2026-07-27 审美关：① 原生标题栏已撤（tauri.conf.json titleBarStyle=Overlay +
-          hiddenTitle），内容延伸到窗口顶，macOS 红绿灯浮在本行左端；灯的纵向由原生 objc
-          摆到中心 24（src-tauri/src/traffic_lights.rs），与本行图标同轴。
-          ② 图标在本行**垂直居中**（h-16 ⇒ 中心 32），与右侧 TitleBar 的图标同一水平——
-          两条顶栏的控件必须同轴（2026-07-27 产品负责人拍板），所以 TitleBar 要同高。
-          行高 48 + 图标框 16 居中 ⇒ 上下 padding 各 16，与左右 16 齐
-          （2026-07-28 产品负责人：「红绿灯上面的 padding = 左边的 padding」）。
+          hiddenTitle），内容延伸到窗口顶，macOS 红绿灯浮在本行左端；灯的横纵都由原生 objc 摆
+          （src-tauri/src/traffic_lights.rs：左缘 16、中心 24），与本行图标同轴、同左轨。
+          ② 图标在本行**垂直居中**（h-12 ⇒ 图标框中心 24），与右侧 TitleBar 的图标同一水平——
+          两条顶栏的控件必须同轴（2026-07-27 拍板）。行高 48 + 图标框 16 居中 ⇒ 上下 padding 各 16，
+          与左右 16 齐（2026-07-28：「红绿灯上面的 padding = 左边的 padding」）。
           ⚠️ 对齐口径是布局框不是可见笔画：每个 lucide 图标在自己 16px 框里的内缩都不同
           （实测开关字形右边空 3、箭头空 5、角标空 1.5），按笔画永远拉不齐，按框才能一致。
-          ③ 图标**右对齐**（产品负责人 07-27 二次拍板）：`justify-end` ⇒ 最右那颗图标落在
-          分组角标 / 状态点 / 账号箭头那条右轨（字形框右缘 224）上。写 justify-end 而不是某个
-          pl 魔法值：图标数量随权限变化（筛选钮仅管理员可见），左对齐的绝对内边距一改人数就散。
+          ③ 功能图标**右对齐**（07-27 二次拍板）：最右那颗落在分组角标 / 状态点 / 账号箭头
+          那条右轨（字形框右缘 224）上。
           ⚠️ 本行的 px 比别处小 8：这里的图标是 32px 的 IconButton（16 字形居中 ⇒ 框内自带 8 内缩），
           而角标 / 状态点 / 箭头都是裸 16px 字形。喂同一个 px 值，前者会比后者多缩 8、右轨断开
           （2026-07-28 实测中心 206.8 vs 214.8）。所以这里写 px-0.5，让**字形框**而不是按钮框对齐。
-          ④ 品牌标撤下（产品负责人：「品牌标识本身没有特别合适的地方，可以先不展示」）。
+          ④ 左槽：红绿灯不在场时（全屏 / 浏览器 / 非 mac 壳）挂品牌标，否则留空让位给灯
+          （批 C2 增量）；品牌标自己补 pl-2 落到 16 左轨上。
           本行同时是窗口拖拽区（原生标题栏没了，得自己给一块能拖的地方）。
           ⚠️ 拖拽靠 `data-tauri-drag-region` 属性——`-webkit-app-region: drag` 是 Electron 的
           私有属性，Tauri 的 WKWebView 根本不认，只写 style 的话窗口拖不动、双击也不缩放
           （2026-07-27 产品负责人实测「双击标题栏没反应」）。style 保留是给 web/Electron 兜底。 */}
       <div
         data-tauri-drag-region
-        className="h-12 flex items-center justify-end gap-2 flex-shrink-0 px-0.5"
+        className="h-12 flex items-center justify-between gap-2 flex-shrink-0 px-0.5"
         style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
       >
+        {/* 左槽：红绿灯在场时留空（灯自己占位），否则挂品牌标 */}
+        <div className="flex min-w-0 items-center pl-2">
+          {!trafficLightZone && <NeoBrandMark size={22} />}
+        </div>
         {/* 图标之间不留 gap：32px 按钮首尾相接 ⇒ 中心间距 32，与 Codex 顶栏一致 */}
-        <div className="flex items-center" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
-          {!isAuthLoading && (
+        <div className="flex items-center" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>          {!isAuthLoading && (
             <>
             <IconButton
               type="button"
@@ -729,11 +749,8 @@ export const Sidebar: React.FC = () => {
         </div>
       </div>
 
-      {/* 当前工作目录行：放在新任务行上方。它是「新任务落到哪、下面项目组怎么分」的上游
-          作用域声明，读作上下文而不是与能力区并列的入口；目录选择已并入侧栏（顶栏 chip 退役）。 */}
-      <div className="px-1 flex-shrink-0">
-        <SidebarWorkspaceRow />
-      </div>
+      {/* 「选择目录」行已退役（批C2）：目录选择并入新任务流程（欢迎页目录 chip +
+          DirectoryPickerModal/原生选择器），侧栏不再展示内部路径。 */}
 
       {/* 新任务默认纯对话，不继承项目上下文（项目会话走各项目组 + 按钮）。
           与能力区之间零间距：四条入口行等距同组，区间断点只留在能力区之后（pb-2）。 */}
@@ -759,7 +776,7 @@ export const Sidebar: React.FC = () => {
           一条滚动条宽的窄带 ⇒ 顶行/能力区/账号行都缩到同一条内轨；本滚动容器再用等宽负 margin
           把那条窄带"要回来"，`overflow-y-scroll` 恒定占位把滚动条正好摆进去 ⇒ 它的内容盒宽度
           回到与兄弟块相同的内轨。滚动条照常可见，且与列表溢不溢出无关。 */}
-      <div className="flex-1 overflow-y-scroll px-1 min-h-0 mr-[calc(var(--scrollbar-size)*-1)]">
+      <div className="flex-1 overflow-y-scroll px-1 min-h-0 mr-[calc(var(--scrollbar-size)*-1)]" data-testid="sidebar-session-scroll">
         {isLoading && sessions.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 gap-3">
             <Loader2 className="w-6 h-6 animate-spin text-primary-400" />

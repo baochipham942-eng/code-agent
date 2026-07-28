@@ -25,7 +25,7 @@ describe('TeamRecipeDraftCard', () => {
     useAgentRegistryStore.setState({
       entries: [
         { id: '牧之', name: '牧之', description: '', source: 'builtin', modelTier: 'balanced', readonly: true, tools: [], profession: '资深产品经理' },
-        { id: '溯真', name: '溯真', description: '', source: 'builtin', modelTier: 'balanced', readonly: true, tools: [], profession: '行业研究员' },
+        { id: '溯真', name: '溯真', description: '', source: 'builtin', modelTier: 'balanced', readonly: true, tools: [], profession: '竞品与市场情报分析师' },
         { id: '小助手', name: '小助手', description: '', source: 'user', modelTier: 'balanced', readonly: false, tools: [] },
       ],
       isLoaded: true,
@@ -36,7 +36,7 @@ describe('TeamRecipeDraftCard', () => {
     const html = container.innerHTML;
 
     expect(html).toContain('资深产品经理');
-    expect(html).toContain('行业研究员');
+    expect(html).toContain('竞品与市场情报分析师');
     // 主理人文案的两半都要在（占位符切分不能把句子切坏）
     expect(html).toContain('专家团 ·');
     expect(html).toContain('综述定稿');

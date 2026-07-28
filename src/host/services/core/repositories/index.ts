@@ -3,6 +3,20 @@
 // ============================================================================
 
 export { SessionRepository, type StoredSession, type StoredMessage } from './SessionRepository';
+export {
+  SessionForkRepository,
+} from './SessionForkRepository';
+export {
+  SessionForkWorkspaceRepository,
+  digestSessionForkAnchorMessage,
+  isCompletedSessionForkAnchor,
+} from './SessionForkWorkspaceRepository';
+export {
+  ConversationBranchRepository,
+} from './ConversationBranchRepository';
+export {
+  SessionForkPortabilityRepository,
+} from './SessionForkPortabilityRepository';
 export { MemoryRepository, type MemoryRecord } from './MemoryRepository';
 export { ConfigRepository, type UserPreference, type ProjectKnowledge, type ToolExecution } from './ConfigRepository';
 export { CaptureRepository } from './CaptureRepository';

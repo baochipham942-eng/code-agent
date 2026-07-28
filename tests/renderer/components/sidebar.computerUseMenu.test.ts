@@ -18,7 +18,8 @@ vi.mock('react', async () => {
     ...actual,
     useState: (initial: unknown) => {
       reactState.useStateCalls += 1;
-      if (reactState.useStateCalls === 3) {
+      // 第 4 个 useState = showUserMenu（批C2 在组件头部新增 isNativeFullscreen 后顺延一位）
+      if (reactState.useStateCalls === 4) {
         return [true, vi.fn()] as const;
       }
       return actual.useState(initial);
@@ -193,10 +194,13 @@ describe('Sidebar account menu entry planning', () => {
     reactState.useStateCalls = 0;
     const html = renderToStaticMarkup(React.createElement(Sidebar));
     expect(html).toContain('data-tauri-drag-region');
-    // justify-end + 与分组头/会话行同一个 pr-3 ⇒ 最右图标中心落在角标/状态点/账号箭头那条轨上。
-    // 图标数量随权限变化，左对齐的绝对内边距守不住这条轨，所以这里钉的是 justify-end 而非某个 pl 值。
-    expect(html).toContain('justify-end');
+    // 顶行 = 左槽（红绿灯不在场时挂品牌标）+ 右侧功能图标簇，justify-between 把图标簇推到右轨。
+    // 图标数量随权限变化（筛选钮仅管理员可见），左对齐的绝对内边距守不住这条轨，所以钉布局方式。
+    expect(html).toContain('justify-between');
     expect(html).not.toContain('justify-start');
+    // px-0.5 比别处小 8：本行图标是 32px IconButton（16 字形居中 ⇒ 框内自带 8 内缩），
+    // 而角标/状态点/箭头是裸 16px 字形；喂同一个 px 值右轨会断开（实测 206.8 vs 214.8）。
+    expect(html).toContain('px-0.5');
   });
 
   it('keeps internal validation tools out of the account menu for admins and members', () => {

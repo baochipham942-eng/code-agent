@@ -88,6 +88,10 @@ describe('SessionManager project attribution', () => {
       modelConfig: { provider: 'openai', model: 'gpt-5' },
     });
     expect(dbMock.getSession(unsortedSession.id)?.projectId ?? null).toBe(UNSORTED_PROJECT_ID);
+    expect(dbMock.createSession).toHaveBeenCalledWith(expect.objectContaining({
+      id: unsortedSession.id,
+      projectId: UNSORTED_PROJECT_ID,
+    }));
 
     const selectedDirectory = '/some/real/dir';
     await manager.updateSession(unsortedSession.id, { workingDirectory: selectedDirectory });

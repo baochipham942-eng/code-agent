@@ -1,5 +1,5 @@
 import React from 'react';
-import { Archive, ArchiveRestore, CheckSquare, Eye, Loader2, Pin, ScrollText, Square } from 'lucide-react';
+import { Archive, ArchiveRestore, CheckSquare, Eye, GitFork, Loader2, Pin, ScrollText, Square } from 'lucide-react';
 import type { SessionRuntimeSummary } from '@shared/ipc';
 import type { SessionAutomationSessionSummary } from '@shared/contract';
 import { IconButton } from '../../primitives';
@@ -36,6 +36,17 @@ function getAttentionDotClassName(kind: string): string | null {
     default:
       return null;
   }
+}
+
+function getForkParentSessionId(session: SessionWithMeta): string | null {
+  const lineage = session.metadata?.forkLineage;
+  if (lineage && typeof lineage === 'object' && !Array.isArray(lineage)) {
+    const parentSessionId = (lineage as Record<string, unknown>).parentSessionId;
+    if (typeof parentSessionId === 'string' && parentSessionId.trim()) {
+      return parentSessionId;
+    }
+  }
+  return null;
 }
 
 export interface SidebarSessionItemProps {
@@ -145,6 +156,7 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
   const displayTitle = getDisplaySessionTitle(session.title);
   const canOpenSessionAssets = canReuseSessionWorkbench(session);
   const titleToneClass = isSelected ? 'text-zinc-100' : isUnread ? 'text-zinc-200' : 'text-zinc-400';
+  const forkParentSessionId = getForkParentSessionId(session);
 
   return (
     <div
@@ -200,9 +212,11 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
           </span>
         )}
 
-        {/* 行尾固定 16px 状态列（2026-07-27 对齐规范）：宽度恒定，内容互斥——
-            运行中 spinner / 需关注圆点 / 未读点 / 空。相对时间已撤（产品拍板：
-            新旧由排序表达，精确时间在行 title 里），右槽不再讲第二件事。 */}
+        {/* 行尾状态区：两个固定 16px 槽位、同一基线——
+            左槽是临时状态（surfaceExecution / 运行中 spinner / 需关注圆点 / 未读点），
+            右槽（最右轴）是分叉标记：身份而非状态，永远占位，不与临时状态互斥
+            （参照 Codex：分叉子任务运行时身份图标与状态图标并存）。
+            分叉标记点击跳回父会话；hover 动作簇上来时两槽一起让位。 */}
         {!isRenaming && (
           <span className="w-4 shrink-0 flex items-center justify-center transition-opacity duration-150 group-hover:opacity-0 group-focus-visible:opacity-0">
             {surfaceExecutionSession ? (
@@ -214,6 +228,25 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
             ) : isUnread && !multiSelectMode ? (
               <span className="w-1.5 h-1.5 rounded-full bg-purple-400 shrink-0" aria-label={s.unread} />
             ) : null}
+          </span>
+        )}
+        {!isRenaming && (
+          <span className="w-4 shrink-0 flex items-center justify-center transition-opacity duration-150 group-hover:opacity-0 group-focus-visible:opacity-0">
+            {forkParentSessionId && !multiSelectMode && (
+              <button /* ds-allow:button: 侧栏最右状态轴上的分叉身份小图标，Button primitive 动作按钮形状不适配列表行 */
+                type="button"
+                data-testid="fork-lineage-marker"
+                aria-label={s.forkedFrom.replace('{sessionId}', forkParentSessionId)}
+                title={s.openForkParent.replace('{sessionId}', forkParentSessionId)}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  void handleSelectSession(forkParentSessionId);
+                }}
+                className="shrink-0 rounded p-0.5 text-violet-400 transition-colors hover:bg-violet-500/15 hover:text-violet-300 focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-violet-400"
+              >
+                <GitFork className="h-3.5 w-3.5" />
+              </button>
+            )}
           </span>
         )}
       </div>

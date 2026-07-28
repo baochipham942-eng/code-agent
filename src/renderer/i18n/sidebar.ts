@@ -12,12 +12,8 @@ export const sidebarZh = {
     expandSidebar: '展开侧栏',
     // （原 newTaskTitle tooltip 已删：实现语义自嗨文案，2026-07-26 打磨批 D D2）
     // 当前工作目录行（顶栏目录 chip 退役后的唯一入口）
-    currentDirectory: '当前目录',
     selectDirectory: '选择目录',
     selectDirectoryTitle: '选择工作目录',
-    pathDialogTitle: '输入工作目录路径',
-    pathDialogDescription: 'Web 模式没有系统目录选择器，请直接输入绝对路径。',
-    pathDialogPlaceholder: '/绝对/路径',
     confirm: '确定',
     openSearch: '搜索会话',
     searchPlaceholder: '搜索会话…',
@@ -277,6 +273,8 @@ export const sidebarZh = {
   },
   sidebarSession: {
     unread: '未读',
+    forkedFrom: '分支任务，源任务：{sessionId}',
+    openForkParent: '返回源任务 {sessionId}',
     openSession: '打开会话 {title}',
     openReplay: '打开 {title} Replay',
     openAssets: '打开 {title} 的产物与资产',
@@ -292,12 +290,8 @@ export const sidebarEn: typeof sidebarZh = {
     newTask: 'New task',
     collapseSidebar: 'Collapse sidebar',
     expandSidebar: 'Expand sidebar',
-    currentDirectory: 'Current directory',
     selectDirectory: 'Choose directory',
     selectDirectoryTitle: 'Choose working directory',
-    pathDialogTitle: 'Enter working directory path',
-    pathDialogDescription: 'Web mode has no system directory picker; type an absolute path.',
-    pathDialogPlaceholder: '/absolute/path',
     confirm: 'Confirm',
     openSearch: 'Search sessions',
     searchPlaceholder: 'Search sessions…',
@@ -549,6 +543,8 @@ export const sidebarEn: typeof sidebarZh = {
   },
   sidebarSession: {
     unread: 'Unread',
+    forkedFrom: 'Forked task, source task: {sessionId}',
+    openForkParent: 'Open source task {sessionId}',
     openSession: 'Open session {title}',
     openReplay: 'Open {title} Replay',
     openAssets: 'Open {title} artifacts & assets',

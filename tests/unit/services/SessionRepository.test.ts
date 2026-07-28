@@ -56,6 +56,9 @@ function createMockDb() {
           is_deleted: 0,
         };
       }
+      if (sql.includes('SELECT session_id FROM messages')) {
+        return { session_id: 'test-session-1' };
+      }
       return undefined;
     }),
     all: vi.fn(() => []),

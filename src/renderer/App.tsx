@@ -829,11 +829,11 @@ export const App: React.FC = () => {
 
   // 侧栏是否真的在画（收起 / 非 standard 档都不画）——顶栏该不该存在跟着它走。
   const isSidebarVisible = isStandard && !sidebarCollapsed;
-  // 侧栏常驻的 inline 二级页（能力中心/资料库/自动化/专家详情/知识记忆/本机操作）在位时，
-  // 顶栏收敛。评测中心是 overlay 独立页，整窗盖住顶栏，不参与这里的判定。
+  // 侧栏常驻的 inline 二级页（能力中心/资料库/自动化/专家详情/知识记忆/本机操作/评测中心）
+  // 在位时，顶栏收敛。评测中心 2026-07-27 拍板从 overlay 改 inline，一并计入。
   const inlineSecondaryPageActive = Boolean(
     expertDetailRoleId || showKnowledgeMemoryPanel || showLibraryPanel
-    || showCapabilityHub || showCronCenter || showLocalOpsPanel
+    || showCapabilityHub || showCronCenter || showLocalOpsPanel || showEvalCenter
   );
 
   const renderWorkbenchContent = () => (
@@ -919,8 +919,10 @@ export const App: React.FC = () => {
                   {showWorkbench && (
                     <ResizeHandle className="w-1 hover:w-1.5 bg-zinc-800 hover:bg-primary-500/50 transition-all cursor-col-resize" />
                   )}
+                  {/* 2026-07-27 拍板（Kimi 三栏占比分析）：min 15%→22%（15% 在 1440 宽下仅
+                      180px，任何视图都不可用）、max 45%→35%（2560 下 1044px 远超需要） */}
                   {showWorkbench && (
-                    <Panel defaultSize="32" minSize="15" maxSize="45" id="right-panel">
+                    <Panel defaultSize="32" minSize="22" maxSize="35" id="right-panel">
                       {renderWorkbenchContent()}
                     </Panel>
                   )}

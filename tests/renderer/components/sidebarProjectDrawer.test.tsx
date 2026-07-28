@@ -71,7 +71,7 @@ describe('SidebarProjectDrawer', () => {
             showStatusBadge: true,
             typeLabel: '对话',
             summary: '工作区 · Browser',
-            lastActiveLabel: '刚刚',
+            lastActiveTitle: '2026/7/27 16:00:00',
             workingDirectory: '/Users/linchen/Downloads/ai/code-agent',
             gitBranch: 'codex/alma-project-session-organization-visible',
             prLabel: 'PR #17',

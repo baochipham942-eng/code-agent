@@ -40,6 +40,12 @@ export interface VoiceDispatchBinding {
   activeAgentId?: string;
   /** work item 变化推给 Renderer 的 Active Work 条 */
   onWorkItem: (item: VoiceWorkItem) => void;
+  /**
+   * 一件活落到 failed。与 onWorkItem **不同寿命**：`onWorkItem` 是通话态的 UI 回流，
+   * 挂断即断（emit 置 null）；失败留痕必须活到最后一件活落地——语音派出的 run 常常
+   * 比通话活得久，而「挂断之后才死」正是最需要留痕的场景（G1，2026-07-28）。
+   */
+  onWorkFailed: (item: VoiceWorkItem) => void;
 }
 
 const TERMINAL: readonly VoiceWorkItemStatus[] = ['done', 'failed', 'cancelled'];
@@ -49,6 +55,8 @@ interface LedgerState {
   activeAgentId?: string;
   /** 通话挂断后置 null：只记账、不再往已关闭的 WS 推。 */
   emit: ((item: VoiceWorkItem) => void) | null;
+  /** 失败留痕；**挂断不清**（见 VoiceDispatchBinding.onWorkFailed）。 */
+  onFailed: (item: VoiceWorkItem) => void;
   items: Map<string, VoiceWorkItem>;
   /** 当前等着状态迁移的那件活。一会话一 orchestrator，同时只可能有一件。 */
   pendingId: string | null;
@@ -78,6 +86,7 @@ export function beginVoiceDispatch(binding: VoiceDispatchBinding): void {
     neoSessionId: binding.neoSessionId,
     activeAgentId: binding.activeAgentId,
     emit: binding.onWorkItem,
+    onFailed: binding.onWorkFailed,
     items: new Map(),
     pendingId: null,
     listener: (event) => onTaskManagerEvent(event),
@@ -129,7 +138,17 @@ function upsert(state: LedgerState, item: VoiceWorkItem): void {
 function settle(state: LedgerState, id: string, status: VoiceWorkItemStatus, detail?: string): void {
   const item = state.items.get(id);
   if (!item || TERMINAL.includes(item.status)) return;
-  upsert(state, { ...item, status, ...(detail ? { detail } : {}) });
+  const settled = { ...item, status, ...(detail ? { detail } : {}) };
+  upsert(state, settled);
+  // 失败必须被说出去，且不能挂在 emit 上——emit 挂断即 null，而「挂断之后才死」
+  // 恰恰是最需要留痕的那种失败（G1）。这里不吞异常也不让它影响还票。
+  if (status === 'failed') {
+    try {
+      state.onFailed(settled);
+    } catch (err) {
+      logger.warn('onWorkFailed threw', { message: err instanceof Error ? err.message : 'unknown' });
+    }
+  }
   getPermissionModeManager().clearLiveVoiceSession(state.neoSessionId, runHoldId(id));
   if (state.pendingId === id) state.pendingId = null;
   detachIfSettled(false);

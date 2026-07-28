@@ -161,18 +161,24 @@ export const qwenOmniTransport: VoiceTransport = {
     }
 
     // 上游到底回了什么，此前只有被 switch 命中的那几类才留痕；真机出现
-    // 「转写有了但模型不开口」时，日志里一片空白，无法判因。这里只记事件
-    // **类型**和计数，绝不记 delta / audio 内容（音频不落日志是硬纪律）。
+    // 「转写有了但模型不开口」时，日志里一片空白，无法判因。现在按用户发言
+    // 轮次为每种事件类型留一条，既能还原每轮是否齐全，也避免 delta 刷屏。
+    // 绝不记 delta / audio / transcript 内容（音频不落日志是硬纪律）。
     const eventTypeSeen = new Map<string, number>();
+    let turn = 0;
     // tools 被上游静默丢弃的用户可见提示：一通电话只报一次，别每条 session.updated 刷。
     let toolsDroppedNotified = false;
     ws.on('message', (raw) => {
       const event = parseEvent(raw);
       if (!event) return;
+      if (event.type === 'input_audio_buffer.speech_started') {
+        turn += 1;
+        eventTypeSeen.clear();
+      }
       const seen = (eventTypeSeen.get(event.type) ?? 0) + 1;
       eventTypeSeen.set(event.type, seen);
-      // 每种类型只在首次出现时记一条，避免 delta 刷屏
-      if (seen === 1) logger.info('upstream event', { type: event.type });
+      // 每轮每种类型只记首次，避免 delta 刷屏
+      if (seen === 1) logger.info('upstream event', { turn, type: event.type });
 
       switch (event.type) {
         case 'response.audio.delta':

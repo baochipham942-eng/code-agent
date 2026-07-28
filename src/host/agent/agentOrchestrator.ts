@@ -83,6 +83,7 @@ import { resolveWorkspacePath } from '../runtime/workspaceScope';
 import { resolveSessionWorkspaceScope } from '../services/sessionFork/workspace';
 import { getAuthService } from '../services/auth/authService';
 import { getDatabase } from '../services/core/databaseService';
+import { wrapWithTurnSystemContext } from './turnScaffold';
 
 export type { AgentOrchestratorConfig } from './orchestrator/types';
 
@@ -1373,11 +1374,9 @@ export class AgentOrchestrator {
     if (liveVoiceNotice) {
       turnSystemContext.push(liveVoiceNotice);
     }
-    if (turnSystemContext.length === 0) {
-      return content;
-    }
-
-    return `${turnSystemContext.join('\n\n')}\n\n<user_request>\n${content}\n</user_request>`;
+    // 标签字面量收在 turnScaffold 里：轮首的分类器要按同一份定义把用户原话拆回来
+    // （见该文件顶注的 skill 别名劫持实录）。
+    return wrapWithTurnSystemContext(turnSystemContext, content);
   }
 
   /**

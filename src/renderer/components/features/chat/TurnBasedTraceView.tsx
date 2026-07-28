@@ -30,6 +30,12 @@ interface TurnBasedTraceViewProps {
 
 export const ACTIVE_DISPLAY_SCROLL_INTERVAL_MS = 80;
 export const USER_SCROLL_PROGRAMMATIC_PAUSE_MS = 280;
+// 跟随恢复（followOutput 重新钉底）的抑制窗口，比普通程序滚动抑制长。
+// 真机证据（2026-07-28 用户反馈）：触控板惯性拉到最底、手停后页面快速抖几下——
+// 280ms 一到期，惯性/橡皮筋的最后几帧还在微沉降，followOutput='auto' 抢先钉底，
+// 与沉降尾巴对抢形成抖动。拉长到 800ms，沉降干净后再钉；流式期间用户上翻后
+// 回底的跟随恢复最多晚半秒，可接受。
+export const USER_SCROLL_FOLLOW_REENGAGE_PAUSE_MS = 800;
 
 export function getFocusedTurnIndex(projection: TraceProjection): number {
   if (projection.turns.length === 0) return -1;
@@ -287,6 +293,7 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
   const activeDisplayScrollCancelRef = useRef<(() => void) | null>(null);
   const activeDisplayScrollLastAtRef = useRef(0);
   const userScrollSuppressUntilRef = useRef(0);
+  const userScrollLastInteractionAtRef = useRef(0);
   const touchStartYRef = useRef<number | null>(null);
   const keepActiveOutputVisibleRef = useRef(false);
   const historyPrependInProgressRef = useRef(false);
@@ -454,7 +461,17 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
     isProgrammaticScrollSuppressed(userScrollSuppressUntilRef.current, Date.now())
   ), []);
 
+  // 跟随恢复专用：窗口比普通程序滚动抑制长（USER_SCROLL_FOLLOW_REENGAGE_PAUSE_MS），
+  // 让惯性/橡皮筋沉降干净后才允许 followOutput 重新钉底，防底部抖动。
+  const isFollowReengageSuppressed = useCallback(() => (
+    isProgrammaticScrollSuppressed(
+      getUserScrollSuppressionUntil(userScrollLastInteractionAtRef.current, USER_SCROLL_FOLLOW_REENGAGE_PAUSE_MS),
+      Date.now(),
+    )
+  ), []);
+
   const markUserScrollInteraction = useCallback((now = Date.now()) => {
+    userScrollLastInteractionAtRef.current = now;
     userScrollSuppressUntilRef.current = getUserScrollSuppressionUntil(now);
     activeDisplayScrollCancelRef.current?.();
     activeDisplayScrollCancelRef.current = null;
@@ -823,10 +840,10 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
       return shouldFollowTurnOutput(
         isAtBottom,
         hasOutputFollowTurnOutput && keepActiveOutputVisibleRef.current,
-        isUserScrollSuppressed(),
+        isFollowReengageSuppressed(),
       );
     },
-    [hasOutputFollowTurnOutput, isUserScrollSuppressed],
+    [hasOutputFollowTurnOutput, isFollowReengageSuppressed],
   );
 
   // 一键回到底部并恢复跟随；抵达底部后 atBottomStateChange 会重新置位 keepActiveOutputVisible

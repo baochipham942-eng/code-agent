@@ -731,13 +731,13 @@ export const Sidebar: React.FC = () => {
 
       {/* 当前工作目录行：放在新任务行上方。它是「新任务落到哪、下面项目组怎么分」的上游
           作用域声明，读作上下文而不是与能力区并列的入口；目录选择已并入侧栏（顶栏 chip 退役）。 */}
-      <div className="px-2 flex-shrink-0">
+      <div className="px-1 flex-shrink-0">
         <SidebarWorkspaceRow />
       </div>
 
       {/* 新任务默认纯对话，不继承项目上下文（项目会话走各项目组 + 按钮）。
           与能力区之间零间距：四条入口行等距同组，区间断点只留在能力区之后（pb-2）。 */}
-      <div className="px-2 flex-shrink-0">
+      <div className="px-1 flex-shrink-0">
         <SidebarNewTaskRow
           onClick={handleNewChat}
           disabled={isCreatingSession || creatingWorkspaceKey !== null}
@@ -842,7 +842,7 @@ export const Sidebar: React.FC = () => {
 
       {/* Optional update entry */}
       {showOptionalUpdateButton && (
-        <div className="px-2 pb-1 flex-shrink-0">
+        <div className="px-1 pb-1 flex-shrink-0">
           <button
             type="button"
             onClick={() => setShowOptionalUpdateModal(true)}
@@ -864,7 +864,7 @@ export const Sidebar: React.FC = () => {
           底部这块也做成 48 高：容器 py-1.5(6) + 行 py-2(8)*2 + 行内容 20(text-sm leading-5) = 48
           ⇒ 内容中心距底 6+18 = 24，图标框下缘距底 16，与左右各 16 齐。
           注意行内容高由**最高的那个**决定（昵称 text-sm 的 20，不是头像的 16）——
-          按 16 算会差 2px，实测才发现（2026-07-28）。横向仍是 8，与其他区块 px-2 同规范。 */}
+          按 16 算会差 2px，实测才发现（2026-07-28）。横向仍是 4，与其他区块 px-1 同规范。 */}
       <div className="px-1 py-1.5 relative flex-shrink-0" ref={accountMenuRef}>
         {isAuthenticated && user ? (
           <>

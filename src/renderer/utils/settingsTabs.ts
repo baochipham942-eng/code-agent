@@ -13,6 +13,7 @@ export const SETTINGS_TAB_IDS = [
   'general',
   'conversation',
   'search',
+  'voiceLive',
   'voiceInput',
   'keybindings',
   'doctor',
@@ -111,6 +112,7 @@ export const SETTINGS_TAB_GROUP_BY_TAB: Record<SettingsTab, SettingsTabGroupId> 
   conversation: 'basics',
   appearance: 'basics',
   keybindings: 'basics',
+  voiceLive: 'basics',
   voiceInput: 'basics',
   // 全量诊断：系统级能力，独立菜单项（工单③b 返工拍板）
   doctor: 'basics',

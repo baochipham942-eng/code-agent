@@ -53,7 +53,18 @@ export interface VoiceAudioPipelineCallbacks {
   onError?: (code: string) => void;
 }
 
-export class VoiceAudioPipeline {
+/** WebView 与原生 AEC 管线共同向 voiceCallBridge 暴露的最小合同。 */
+export interface VoiceAudioPipelineLike {
+  setMuted(muted: boolean): void;
+  setCaptureOpen(open: boolean): void;
+  getMicLevel(): number;
+  start(): Promise<void>;
+  stop(): void;
+  enqueuePlayback(pcm24k: Int16Array): void;
+  clearPlayback(): void;
+}
+
+export class VoiceAudioPipeline implements VoiceAudioPipelineLike {
   private stream: MediaStream | null = null;
   private captureCtx: AudioContext | null = null;
   private processor: ScriptProcessorNode | null = null;

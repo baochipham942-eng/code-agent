@@ -99,6 +99,9 @@ export interface HooksConfig {
   PostCompact?: HookMatcher[];        // Phase 3: observer-only
   StopFailure?: HookMatcher[];        // Phase 3: observer-only
   RoleWake?: HookMatcher[];           // 角色主动性醒来: observer-only
+  VoiceCallStarted?: HookMatcher[];   // 实时通话生命周期: observer-only
+  VoiceCallPaused?: HookMatcher[];
+  VoiceCallEnded?: HookMatcher[];
 }
 
 /**
@@ -184,6 +187,10 @@ const OBSERVER_ONLY_EVENTS: ReadonlySet<HookEvent> = new Set([
   'PostCompact',
   'StopFailure',
   'RoleWake',
+  // 通话已经发生了，hook 拦不住也改不了它——只观察。
+  'VoiceCallStarted',
+  'VoiceCallPaused',
+  'VoiceCallEnded',
 ]);
 
 function compileHookMatcher(
@@ -235,6 +242,9 @@ function parseHooksObject(
     'PostCompact',        // Phase 3
     'StopFailure',        // Phase 3
     'RoleWake',           // 角色主动性（内部文档 §2.3）
+    'VoiceCallStarted',   // 通话生命周期（agent 可订阅的编排事件）
+    'VoiceCallPaused',
+    'VoiceCallEnded',
   ];
 
   // GAP-007: 未知事件名告警。

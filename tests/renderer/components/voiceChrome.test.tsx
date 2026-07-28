@@ -32,7 +32,7 @@ vi.mock('../../../src/renderer/components/features/expert/SessionMemberBar', () 
 import { VoiceChrome } from '../../../src/renderer/components/features/voice/VoiceChrome';
 import { useVoiceCallStore } from '../../../src/renderer/stores/voiceCallStore';
 
-function dialInto(mode: 'server_vad' | 'push_to_talk' | 'manual', agentId?: string) {
+function dialInto(mode: 'server_vad' | 'manual', agentId?: string) {
   useVoiceCallStore.getState().dialStarted('session-1', agentId, mode);
   useVoiceCallStore.getState().phaseChanged('live');
 }
@@ -95,18 +95,6 @@ describe('VoiceChrome', () => {
     expect(bridgeMock.toggleMute).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByTestId('voice-end'));
     expect(bridgeMock.hangUp).toHaveBeenCalledTimes(1);
-  });
-
-  it('push_to_talk：按住/松开走 pttDown/pttUp', () => {
-    dialInto('push_to_talk');
-    render(<VoiceChrome sessionId="session-1" />);
-    const ptt = screen.getByTestId('voice-ptt');
-    expect(ptt.textContent).toBe(zh.voice.live.holdToTalk);
-    fireEvent.pointerDown(ptt);
-    expect(bridgeMock.pttDown).toHaveBeenCalledTimes(1);
-    useVoiceCallStore.getState().pttCaptureChanged(true);
-    fireEvent.pointerUp(ptt);
-    expect(bridgeMock.pttUp).toHaveBeenCalledTimes(1);
   });
 
   it('manual：点按走 manualTap', () => {

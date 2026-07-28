@@ -21,6 +21,7 @@ import type {
   PostCompactContext,
   StopFailureContext,
   RoleWakeContext,
+  VoiceCallHookContext,
 } from '../protocol/events';
 import type { MergedHookConfig, MergeStrategy } from './merger';
 import type { AICompletionFn } from './promptHook';
@@ -648,6 +649,35 @@ export class HookManager {
     };
 
     return this.triggerEventHooks('RoleWake', context);
+  }
+
+  /**
+   * 实时通话生命周期（observer-only）。三个事件同一通电话共用 voiceCallId，
+   * 断线重连不换 id、也不重复发 started——订阅方靠这一点区分「真结束」和「网络抖动」。
+   * @experimental API may change between minor versions
+   */
+  async triggerVoiceCall(
+    event: 'VoiceCallStarted' | 'VoiceCallPaused' | 'VoiceCallEnded',
+    params: {
+      voiceCallId: string;
+      sessionId: string;
+      durationSec: number;
+      workItemCount?: number;
+      reason?: string;
+    }
+  ): Promise<HookTriggerResult> {
+    const context: VoiceCallHookContext = {
+      event,
+      sessionId: params.sessionId,
+      timestamp: Date.now(),
+      workingDirectory: this.config.workingDirectory,
+      voiceCallId: params.voiceCallId,
+      durationSec: params.durationSec,
+      ...(params.workItemCount !== undefined ? { workItemCount: params.workItemCount } : {}),
+      ...(params.reason ? { reason: params.reason } : {}),
+    };
+
+    return this.triggerEventHooks(event, context);
   }
 
   // ==========================================================================

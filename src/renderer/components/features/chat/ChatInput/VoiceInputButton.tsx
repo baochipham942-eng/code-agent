@@ -14,6 +14,7 @@ import { DEFAULT_SPEECH_INPUT_SETTINGS } from '@shared/contract';
 import type { UseVoiceInputReturn } from '../../../../hooks/useVoiceInput';
 import { openNativeDesktopSystemSettings } from '../../../../services/nativeDesktop';
 import { useI18n } from '../../../../hooks/useI18n';
+import { useAppStore } from '../../../../stores/appStore';
 
 export interface VoiceInputButtonProps {
   /** ChatInput 持有的语音输入状态（同一 hook 实例驱动录音条与按钮） */
@@ -76,6 +77,7 @@ export const VoiceInputButton: React.FC<VoiceInputButtonProps> = ({
 }) => {
   const { t } = useI18n();
   const v = t.voiceInputButton;
+  const openSettingsTab = useAppStore((s) => s.openSettingsTab);
   const {
     status,
     duration,
@@ -93,7 +95,14 @@ export const VoiceInputButton: React.FC<VoiceInputButtonProps> = ({
 
   const isRecording = status === 'recording';
   const isTranscribing = status === 'transcribing';
-  const canOpenMicrophoneSettings = errorCode === 'MICROPHONE_PERMISSION_DENIED';
+  // 错误卡只留一个「去解决」的落点，落到哪由错误码决定：麦克风权限 → 系统设置；
+  // 没通道 / 没配 key → 语音输入设置（这两种配置问题上「重试」是点了没用的）。
+  const fixAction: { label: string; run: () => void } | null =
+    errorCode === 'MICROPHONE_PERMISSION_DENIED'
+      ? { label: v.openSettingsButton, run: () => void openNativeDesktopSystemSettings('microphone') }
+      : errorCode === 'SPEECH_NO_CHANNEL' || errorCode === 'NOT_INITIALIZED'
+        ? { label: v.openVoiceSettingsButton, run: () => { clearError(); openSettingsTab('voiceInput'); } }
+        : null;
   const effectiveSettings = settings ?? DEFAULT_SPEECH_INPUT_SETTINGS;
 
   React.useEffect(() => {
@@ -164,20 +173,26 @@ export const VoiceInputButton: React.FC<VoiceInputButtonProps> = ({
             <div className="min-w-0 flex-1">
               <p className="break-words text-xs leading-5 text-zinc-200">{error}</p>
               <p className="mt-1 text-2xs text-zinc-500">
-                {effectiveSettings.mode === 'local-first' ? v.modeLocalFirst : effectiveSettings.mode === 'local-only' ? v.modeLocalOnly : v.modeCloudOnly}
+                {effectiveSettings.mode === 'stream'
+                  ? v.modeStream
+                  : effectiveSettings.mode === 'local-first'
+                    ? v.modeLocalFirst
+                    : effectiveSettings.mode === 'local-only'
+                      ? v.modeLocalOnly
+                      : v.modeCloudOnly}
                 {' · '}
                 {effectiveSettings.language === 'auto' ? v.autoLanguage : effectiveSettings.language}
               </p>
             </div>
           </div>
           <div className="mt-3 flex items-center justify-end gap-2">
-            {canOpenMicrophoneSettings && (
+            {fixAction && (
               <button
                 type="button"
-                onClick={() => void openNativeDesktopSystemSettings('microphone')}
+                onClick={fixAction.run}
                 className="inline-flex h-7 items-center rounded-md bg-zinc-800 px-2 text-xs text-zinc-200 hover:bg-zinc-700"
               >
-                {v.openSettingsButton}
+                {fixAction.label}
               </button>
             )}
             {canRetry && (

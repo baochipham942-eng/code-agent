@@ -35,7 +35,8 @@ import { ForkSourceHint } from './features/chat/ForkSourceHint';
 import { ActiveConversationRewindBanner } from './features/chat/ActiveConversationRewindBanner';
 import { ChatInput } from './features/chat/ChatInput';
 import { UserQuestionCard } from './UserQuestionCard';
-import { TranscriptPartialLine } from './features/voice/TranscriptPartialLine';
+import { applyVoicePartialsToProjection } from '../utils/voicePartialOverlay';
+import { useVoiceCallStore } from '../stores/voiceCallStore';
 import { GoalStatusBar } from './features/chat/GoalStatusBar';
 import { buildGoalNoticeMessage } from './features/chat/goalNotice';
 import type { ChatInputHandle } from './features/chat/ChatInput';
@@ -425,9 +426,26 @@ export const ChatView: React.FC = () => {
   // Turn-based trace projection
   const baseProjection = useTurnProjection(messages, currentSessionId, effectiveIsProcessing, launchRequests, neoWorkCards);
   const clarityProjection = useTurnExecutionClarity(baseProjection);
+  // 通话 partial：只叠加在「正在通话的那条会话」上，且不写任何 store（§7.5）
+  const voiceCallPhase = useVoiceCallStore((state) => state.phase);
+  const voiceCallSessionId = useVoiceCallStore((state) => state.sessionId);
+  const voicePartialUser = useVoiceCallStore((state) => state.partialUser);
+  const voicePartialAssistant = useVoiceCallStore((state) => state.partialAssistant);
+  const voiceStartedAt = useVoiceCallStore((state) => state.startedAt);
   const projection = React.useMemo(
-    () => applyStreamingMessageDeltasToProjection(clarityProjection, messages, streamingMessageEntries),
-    [clarityProjection, messages, streamingMessageEntries],
+    () => applyVoicePartialsToProjection(
+      applyStreamingMessageDeltasToProjection(clarityProjection, messages, streamingMessageEntries),
+      {
+        live: voiceCallPhase === 'live' && voiceCallSessionId === currentSessionId,
+        user: voicePartialUser,
+        assistant: voicePartialAssistant,
+        startedAt: voiceStartedAt,
+      },
+    ),
+    [
+      clarityProjection, messages, streamingMessageEntries, currentSessionId,
+      voiceCallPhase, voiceCallSessionId, voicePartialUser, voicePartialAssistant, voiceStartedAt,
+    ],
   );
 
   useEffect(() => {
@@ -908,9 +926,6 @@ export const ChatView: React.FC = () => {
 
           {/* /goal 运行进度条（独立一行，仅 goal 运行中显示） */}
           <GoalStatusBar />
-
-          {/* 通话中 partial 字幕（final 由 host 落库后自然进消息流，§7.5） */}
-          <TranscriptPartialLine />
 
           {/* G2 打断式选项卡：有待答问题时遮盖/替换输入区（拍板形态，非 Modal 非内联卡） */}
           {pendingUserQuestion && (

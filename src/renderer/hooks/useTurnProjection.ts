@@ -332,7 +332,10 @@ export function projectTurns(
 
       currentTurn.nodes.push({
         id: msg.id,
-        type: 'user',
+        // 语音派出的那条指令是通话 brain 改写的，不是用户原话（原话是字幕那条）。
+        // 存的是 role:'user'（runtime 需要一条用户轮），但**不能顶着用户身份显示在右边**——
+        // 那等于把机器编的话安在用户嘴里。投成左侧节点，由渲染层标明来源。
+        type: msg.metadata?.voiceDispatch ? 'assistant_text' : 'user',
         content: msg.content,
         timestamp: msg.timestamp,
         attachments: msg.attachments,

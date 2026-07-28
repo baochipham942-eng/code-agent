@@ -178,7 +178,7 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
       aria-label={s.openSession.replace('{title}', displayTitle)}
       data-session-id={session.id}
       title={new Date(latestActivityAt).toLocaleString(localeForLanguage(language))}
-      className={`group relative pl-0 pr-3 py-1.5 rounded-lg cursor-pointer transition-colors duration-150 ${isSelected && !multiSelectMode ? 'bg-zinc-700/60' : isChecked ? 'bg-blue-500/10 border border-blue-500/20' : 'hover:bg-zinc-800'}`}
+      className={`group relative pl-0 pr-1.5 py-1.5 rounded-lg cursor-pointer transition-colors duration-150 ${isSelected && !multiSelectMode ? 'bg-zinc-700/60' : isChecked ? 'bg-blue-500/10 border border-blue-500/20' : 'hover:bg-zinc-800'}`}
     >
       <div className="flex items-center gap-2">
         {/* 多选 Checkbox */}
@@ -215,16 +215,16 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
           </span>
         )}
 
-        {/* 行尾状态区：两个固定 16px 槽位、同一基线——
-            左槽是临时状态（surfaceExecution / 运行中 spinner / 需关注圆点 / 未读点），
-            右槽（最右轴）是身份：分叉标记 / 用过实时语音，身份而非状态，永远占位，
-            不与临时状态互斥（参照 Codex：分叉子任务运行时身份图标与状态图标并存）。
-            分叉标记点击跳回父会话；hover 动作簇上来时两槽一起让位。
-
-            语音图标原本挤在左槽的互斥链最低一档（有未读/在跑就让位）。#771 把身份
-            拆出独立右轴之后那个代价没必要再付了——「用过语音」和「分叉来的」是同一类
-            事实：说的是这会话**是什么**，不是它**此刻怎么了**。两者同时成立时右槽让给
-            分叉标记：它可点击、能跳回父会话，信息量更大。 */}
+        {/* 行尾状态轴：**一个**固定 16px 槽，内容按优先级互斥 ——
+            临时状态 > 分叉标记 > 用过实时语音。
+            · 状态压身份（2026-07-28 产品负责人拍板，推翻「两槽并存、身份占最右轴」）：
+              分叉/语音这类身份标记绝大多数会话都没有，让身份单独占最右轴 ⇒ 那一格常年空着，
+              肉眼看到的最右元素变成状态点，落在 190.8 而不是全栏右轨 214.8，
+              与分组角标 / 账号箭头错开 24（= 16 槽 + 8 gap，实测截图）。
+            · 身份内部分叉压语音（#756 定的次序，保留）：两者都在说这会话**是什么**，
+              但分叉标记可点击、能跳回父会话，信息量更大。
+            代价说清楚：分叉/语音会话正在运行或需关注时，这一刻只显示状态，身份标记等状态清了再回来。
+            分叉标记点击跳回父会话；hover 动作簇上来时本槽让位。 */}
         {!isRenaming && (
           <span className="w-4 shrink-0 flex items-center justify-center transition-opacity duration-150 group-hover:opacity-0 group-focus-visible:opacity-0">
             {surfaceExecutionSession ? (
@@ -235,12 +235,7 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
               <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${attentionDotClass}`} aria-label={localizedStatusLabel} />
             ) : isUnread && !multiSelectMode ? (
               <span className="w-1.5 h-1.5 rounded-full bg-purple-400 shrink-0" aria-label={s.unread} />
-            ) : null}
-          </span>
-        )}
-        {!isRenaming && (
-          <span className="w-4 shrink-0 flex items-center justify-center transition-opacity duration-150 group-hover:opacity-0 group-focus-visible:opacity-0">
-            {forkParentSessionId && !multiSelectMode && (
+            ) : forkParentSessionId && !multiSelectMode ? (
               <button /* ds-allow:button: 侧栏最右状态轴上的分叉身份小图标，Button primitive 动作按钮形状不适配列表行 */
                 type="button"
                 data-testid="fork-lineage-marker"
@@ -254,14 +249,13 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
               >
                 <GitFork className="h-3.5 w-3.5" />
               </button>
-            )}
-            {!forkParentSessionId && hadLiveVoice && (
+            ) : hadLiveVoice ? (
               <AudioLines
                 className="h-3.5 w-3.5 shrink-0 text-zinc-500"
                 aria-label={s.liveVoiceSession}
                 data-testid="session-live-voice-badge"
               />
-            )}
+            ) : null}
           </span>
         )}
       </div>

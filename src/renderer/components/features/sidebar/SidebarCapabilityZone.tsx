@@ -36,7 +36,7 @@ export const SidebarCapabilityZone: React.FC = () => {
     : showCronCenter ? 'automation'
     : null;
   const rowClass = (key: 'hub' | 'library' | 'automation') => (
-    `group flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors ${
+    `group flex w-full items-center gap-2.5 rounded-lg px-1.5 py-1.5 text-left transition-colors ${
       activeRow === key ? 'bg-zinc-800 text-zinc-100' : 'hover:bg-zinc-800/70'
     }`
   );
@@ -79,7 +79,7 @@ export const SidebarCapabilityZone: React.FC = () => {
   // pb-2 = 侧栏唯一的区间断点（入口区 ‖ 会话列表，8px）：
   // 入口行之间零间距等距排列，靠行本身的对齐表达同组，不再每层 pb-1 糊成一个面。
   return (
-    <div className="px-2 pb-2 flex-shrink-0" data-testid="sidebar-capability-zone">
+    <div className="px-1 pb-2 flex-shrink-0" data-testid="sidebar-capability-zone">
       {/* 能力中心入口 */}
       <button /* ds-allow:button: 侧栏能力区单行列表行（裸图标+标题+chevron 左对齐布局），Button primitive 是居中动作按钮形状，变体不适配列表行 */
         type="button"

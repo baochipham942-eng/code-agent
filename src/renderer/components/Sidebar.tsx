@@ -631,23 +631,49 @@ export const Sidebar: React.FC = () => {
   };
 
   return (
-    <div className="flex-1 flex flex-col bg-transparent overflow-hidden">
+    // 侧栏横向节奏的单一真源（2026-07-27 产品负责人：「内容都太靠左，而且左右 padding 不一样」）：
+    //   根左右各让一条 --scrollbar-size 的带 → 右边那条给滚动条用（列表用等宽负 margin 要回去），
+    //   左边那条是纯留白，于是**外框左右等宽**；各区块统一 px-1(4)，各行内统一 px-1.5(6)。
+    //   ⇒ 任意行的内容左缘 16 / 右缘 224，四边 padding 全等 16。
+    //   为什么是 16 而不是别的数：顶行元素在栏内垂直居中 ⇒ 栏高 = 2×padding + 图标框 16。
+    //   padding 26 会把顶栏顶成 68 高（2026-07-28 产品负责人：「标题栏长那么高？」并给了
+    //   Codex 对照——它是 11/14）。16 是唯一让栏高回到 48(h-12) 的取值，四边又同时相等。
+    //   ⚠️ 早先修左右不对称时选错了方向：把左边推到 26 去迁就被 pr-3+滚动条带撑大的右边；
+    //   正解是把右边收回来。padding 一改，栏高、灯的 x/y、收起态让位、overlay 让位全要跟着算。
+    // 改这里的任何一个数，下面每一处（入口区 / 分组头 / 会话行 / 账号行 / 顶行图标）都要跟着对，
+    // 否则又会退回改之前那种「三条右轨、两条左轨」的状态。
+    <div className="flex-1 flex flex-col bg-transparent overflow-hidden px-[var(--scrollbar-size)]">
       {/* Header: h-12 to align with TitleBar on the right.
           2026-07-27 审美关：① 原生标题栏已撤（tauri.conf.json titleBarStyle=Overlay +
-          hiddenTitle），内容延伸到窗口顶，macOS 红绿灯浮在本行左端，所以 darwin 下
-          左侧留出 72px 死区；② 品牌标只在红绿灯不在场时展示（全屏/浏览器/非 mac 壳，
-          2026-07-27 产品负责人：那两种态左上角太空），红绿灯在场时仍不展示。
-          本行同时是窗口拖拽区（原生标题栏没了，得自己给一块能拖的地方）。 */}
+          hiddenTitle），内容延伸到窗口顶，macOS 红绿灯浮在本行左端；灯的横纵都由原生 objc 摆
+          （src-tauri/src/traffic_lights.rs：左缘 16、中心 24），与本行图标同轴、同左轨。
+          ② 图标在本行**垂直居中**（h-12 ⇒ 图标框中心 24），与右侧 TitleBar 的图标同一水平——
+          两条顶栏的控件必须同轴（2026-07-27 拍板）。行高 48 + 图标框 16 居中 ⇒ 上下 padding 各 16，
+          与左右 16 齐（2026-07-28：「红绿灯上面的 padding = 左边的 padding」）。
+          ⚠️ 对齐口径是布局框不是可见笔画：每个 lucide 图标在自己 16px 框里的内缩都不同
+          （实测开关字形右边空 3、箭头空 5、角标空 1.5），按笔画永远拉不齐，按框才能一致。
+          ③ 功能图标**右对齐**（07-27 二次拍板）：最右那颗落在分组角标 / 状态点 / 账号箭头
+          那条右轨（字形框右缘 224）上。
+          ⚠️ 本行的 px 比别处小 8：这里的图标是 32px 的 IconButton（16 字形居中 ⇒ 框内自带 8 内缩），
+          而角标 / 状态点 / 箭头都是裸 16px 字形。喂同一个 px 值，前者会比后者多缩 8、右轨断开
+          （2026-07-28 实测中心 206.8 vs 214.8）。所以这里写 px-0.5，让**字形框**而不是按钮框对齐。
+          ④ 左槽：红绿灯不在场时（全屏 / 浏览器 / 非 mac 壳）挂品牌标，否则留空让位给灯
+          （批 C2 增量）；品牌标自己补 pl-2 落到 16 左轨上。
+          本行同时是窗口拖拽区（原生标题栏没了，得自己给一块能拖的地方）。
+          ⚠️ 拖拽靠 `data-tauri-drag-region` 属性——`-webkit-app-region: drag` 是 Electron 的
+          私有属性，Tauri 的 WKWebView 根本不认，只写 style 的话窗口拖不动、双击也不缩放
+          （2026-07-27 产品负责人实测「双击标题栏没反应」）。style 保留是给 web/Electron 兜底。 */}
       <div
-        className={`h-12 flex items-center justify-between gap-2 flex-shrink-0 pr-3 ${trafficLightZone ? 'pl-[72px]' : 'pl-3'}`}
+        data-tauri-drag-region
+        className="h-12 flex items-center justify-between gap-2 flex-shrink-0 px-0.5"
         style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
       >
-        {/* 左槽：红绿灯不在场（全屏/浏览器/非 mac 壳）时挂品牌标，否则留空由 pl-[72px] 让位 */}
-        <div className="flex min-w-0 items-center">
+        {/* 左槽：红绿灯在场时留空（灯自己占位），否则挂品牌标 */}
+        <div className="flex min-w-0 items-center pl-2">
           {!trafficLightZone && <NeoBrandMark size={22} />}
         </div>
-        <div className="flex items-center gap-1" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
-          {!isAuthLoading && (
+        {/* 图标之间不留 gap：32px 按钮首尾相接 ⇒ 中心间距 32，与 Codex 顶栏一致 */}
+        <div className="flex items-center" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>          {!isAuthLoading && (
             <>
             <IconButton
               type="button"
@@ -703,7 +729,7 @@ export const Sidebar: React.FC = () => {
 
       {/* 新任务默认纯对话，不继承项目上下文（项目会话走各项目组 + 按钮）。
           与能力区之间零间距：四条入口行等距同组，区间断点只留在能力区之后（pb-2）。 */}
-      <div className="px-2 flex-shrink-0">
+      <div className="px-1 flex-shrink-0">
         <SidebarNewTaskRow
           onClick={handleNewChat}
           disabled={isCreatingSession || creatingWorkspaceKey !== null}
@@ -714,11 +740,18 @@ export const Sidebar: React.FC = () => {
       {/* 能力区：自动化 / 专家 / 资料库（三件套，逐批点亮） */}
       <SidebarCapabilityZone />
 
-      {/* Session List - Project Grouped */}
-      {/* scrollbar-hidden：全局 ::-webkit-scrollbar 是 6px 占位式滚动条，列表一溢出
-          行内右轨（分组角标/状态点 cx=212）整体左移 6px，与容器外账号区箭头错轴
-          （2026-07-27 Dev 包实测 206 vs 212）。隐藏滚动条让占位归零，滚轮/触控板滚动不受影响。 */}
-      <div className="flex-1 overflow-y-auto scrollbar-hidden px-2 min-h-0" data-testid="sidebar-session-scroll">
+      {/* Session List - Project Grouped
+          scrollbar-hidden 不是审美选择，是右轨对齐的根因修复（2026-07-27 实测）：
+          global.css 给了 `::-webkit-scrollbar{width:6px}` 这种**占布局宽度**的经典滚动条，
+          列表一溢出，容器内容盒就窄 6px ⇒ 组角标/状态点中心被推到 205.8，
+          而账号行在滚动容器**外**、中心仍是 212，三者于是不同轴（产品负责人 07-27 反馈）。
+          按状态补 6px padding 只在"正在溢出"时对，不溢出时反而错——只有把这段占位彻底去掉，
+          栏内所有行才共用同一条右轨（220 右缘 / 212 中心），与溢出与否无关。
+          做法（参照 Codex：滚动条独占最右一条窄带，内容轨不受它影响）：侧栏根 `pr` 让出
+          一条滚动条宽的窄带 ⇒ 顶行/能力区/账号行都缩到同一条内轨；本滚动容器再用等宽负 margin
+          把那条窄带"要回来"，`overflow-y-scroll` 恒定占位把滚动条正好摆进去 ⇒ 它的内容盒宽度
+          回到与兄弟块相同的内轨。滚动条照常可见，且与列表溢不溢出无关。 */}
+      <div className="flex-1 overflow-y-scroll px-1 min-h-0 mr-[calc(var(--scrollbar-size)*-1)]" data-testid="sidebar-session-scroll">
         {isLoading && sessions.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 gap-3">
             <Loader2 className="w-6 h-6 animate-spin text-primary-400" />
@@ -801,7 +834,7 @@ export const Sidebar: React.FC = () => {
 
       {/* Optional update entry */}
       {showOptionalUpdateButton && (
-        <div className="px-2 pb-1 flex-shrink-0">
+        <div className="px-1 pb-1 flex-shrink-0">
           <button
             type="button"
             onClick={() => setShowOptionalUpdateModal(true)}
@@ -819,17 +852,23 @@ export const Sidebar: React.FC = () => {
       )}
 
       {/* Bottom: User Menu or Login */}
-      <div className="p-2 relative flex-shrink-0" ref={accountMenuRef}>
+      {/* 上下留白按「与顶行对称」反推，不是拍脑袋：顶行 h-12(48) 内容居中 ⇒ 图标框中心距顶 24。
+          底部这块也做成 48 高：容器 py-1.5(6) + 行 py-2(8)*2 + 行内容 20(text-sm leading-5) = 48
+          ⇒ 内容中心距底 6+18 = 24，图标框下缘距底 16，与左右各 16 齐。
+          注意行内容高由**最高的那个**决定（昵称 text-sm 的 20，不是头像的 16）——
+          按 16 算会差 2px，实测才发现（2026-07-28）。横向仍是 4，与其他区块 px-1 同规范。 */}
+      <div className="px-1 py-1.5 relative flex-shrink-0" ref={accountMenuRef}>
         {isAuthenticated && user ? (
           <>
             <button
               onClick={() => setShowUserMenu(!showUserMenu)}
               aria-label={sb.userMenu}
               aria-expanded={showUserMenu}
-              /* 落到全侧栏基准轨（2026-07-27 对齐规范）：pl-2 使外层 8 + 8 = 图标左缘 16；
-                 图标 16px + gap-2.5(10) 使昵称左缘 42，与入口行/分组名/会话行标题同线；
-                 pr-3 使展开箭头右缘 220、中心 212，与分组头角标/会话行状态点同轴。 */
-              className="w-full flex items-center gap-2.5 pl-2 pr-3 py-2.5 rounded-xl hover:bg-white/[0.04] transition-colors"
+              /* 落到全侧栏基准轨（数值见 Sidebar 根的横向节奏注释）：
+                 根带 6 + 容器 p-2(8) + 行 px-3(12) = 图标左缘 26；+图标 16 +gap-2.5(10) = 昵称左缘 52，
+                 与入口行/分组名/会话行标题同线；右侧同样 6+8+12 ⇒ 内容右缘 214，
+                 展开箭头与分组头角标/会话行状态点同轴。左右内边距都用 px-3，不再一边 8 一边 12。 */
+              className="w-full flex items-center gap-2.5 px-1.5 py-2 rounded-xl hover:bg-white/[0.04] transition-colors"
             >
               {user.avatarUrl ? (
                 <img src={user.avatarUrl} alt="" className="w-4 h-4 shrink-0 rounded-full object-cover" />

@@ -160,33 +160,25 @@ describe('LibraryPanel', () => {
     expect(document.querySelector('[data-library-item="upload"]')).toBeNull();
   });
 
-  it('来源 tab 按推导口径分流：AI 生成 / 我的上传', async () => {
-    const { fireEvent } = await import('@testing-library/react');
+  it('单行工具条：不再有来源 tab，类型 chips 与搜索/品牌套件同行（2026-07-27 拍板：两行 tab 太复杂）', async () => {
     listLibraryItems.mockResolvedValue([
       makeItem({ id: 'lib_ai', title: '会话产物', kind: 'artifact', sourceSessionId: 'session_a' }),
       makeItem({ id: 'lib_manual', title: '手动上传.pdf', kind: 'upload', sourceSessionId: undefined }),
     ]);
     render(<LibraryPanel />);
 
-    // 默认「AI 生成」tab：只显示会话产物
+    // 来源 tab 整行已删：两类条目现在同屏可见，不再被「AI 生成」默认档挡住
     await screen.findByText('会话产物');
-    expect(screen.queryByText('手动上传.pdf')).toBeNull();
-
-    // 「我的上传」tab：只显示手动上传
-    fireEvent.click(screen.getByTestId('library-source-uploads'));
     await screen.findByText('手动上传.pdf');
-    expect(screen.queryByText('会话产物')).toBeNull();
-  });
+    expect(screen.queryByTestId('library-source-ai')).toBeNull();
+    expect(screen.queryByTestId('library-source-uploads')).toBeNull();
+    expect(screen.queryByTestId('library-source-favorites')).toBeNull();
 
-  it('收藏 tab 是壳：固定空态「还没有收藏的资料」', async () => {
-    const { fireEvent } = await import('@testing-library/react');
-    listLibraryItems.mockResolvedValue([makeItem()]);
-    render(<LibraryPanel />);
-    await screen.findByText('Brief.pdf');
-
-    fireEvent.click(screen.getByTestId('library-source-favorites'));
-    await screen.findByText('还没有收藏的资料。');
-    expect(document.querySelector('[data-library-item]')).toBeNull();
+    // 类型 chips / 搜索 / 品牌套件在同一条工具行里
+    const toolbar = screen.getByTestId('library-toolbar');
+    expect(toolbar.querySelector('[data-testid="library-kind-chips"]')).not.toBeNull();
+    expect(toolbar.querySelector('[data-testid="library-search"]')).not.toBeNull();
+    expect(toolbar.querySelector('[data-testid="library-brands-entry"]')).not.toBeNull();
   });
 
   // 2026-07-27 审美关：「记忆」从资料库撤走（记忆偏个人设置），家在设置 → 记忆。

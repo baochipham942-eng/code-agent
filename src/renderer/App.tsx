@@ -858,17 +858,20 @@ export const App: React.FC = () => {
       <BudgetAlertNotice />
       <SessionExpiredNotice />
       <div className="h-screen flex flex-col bg-zinc-950 text-zinc-200">
-        {/* Main Content - Three-column layout with integrated title bars */}
+        {/* 左右结构（2026-07-27 拍板「右侧标题栏和下面样式上打通」，参照 Codex）：
+            左栏一块面（zinc-950）+ 一条竖分隔线 + 右栏一块面（zinc-900），
+            右栏顶栏与右栏内容共用同一底色、同一左右边界 ⇒ 顶栏读作右栏的一部分，
+            而不是横贯窗口的一条上边。底色写在右栏容器上（唯一真源），
+            TitleBar / FullScreenPage(inline) / ChatView / Workbench 都是它的透明子面。 */}
         <div className="flex-1 flex overflow-hidden">
-          {/* Left Column: Sidebar with its own title bar - darker background */}
           {isSidebarVisible && (
-            <div className="flex flex-col w-60 bg-zinc-950">
+            <div className="flex flex-col w-60 bg-zinc-950 border-r border-zinc-800">
               <Sidebar />
             </div>
           )}
 
           {/* Right Area: Chat + TaskPanel with shared title bar */}
-          <div className="flex-1 flex flex-col min-w-0">
+          <div className="flex-1 flex flex-col min-w-0 bg-zinc-900">
             {/* Right Title Bar —— 三个槽位全空时整条不渲染（2026-07-27 审美关）：
                 侧栏收起开关已挪回侧栏自己头上，顶栏只在收起态留展开入口；
                 二级页在位时会话动作与右栏开关也都没有对象。于是「二级页 + 侧栏展开」

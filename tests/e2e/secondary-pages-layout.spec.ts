@@ -63,14 +63,19 @@ test('三个二级页可达，且都不接管整窗——侧栏常驻可见', as
   await expect(page.getByTestId('library-panel')).toHaveCount(0);
 });
 
-test('侧栏会话列表滚动条不占布局宽——右轨与账号区箭头同轴的前提', async ({ page }) => {
+test('侧栏会话列表的滚动条不挤内容轨——右轨与账号区箭头同轴的前提', async ({ page }) => {
   await waitForAppReady(page);
   const scroll = page.getByTestId('sidebar-session-scroll');
   await expect(scroll).toBeVisible({ timeout: 15_000 });
+  const sibling = page.getByTestId('sidebar-capability-zone');
+  await expect(sibling).toBeVisible({ timeout: 15_000 });
 
-  // 全局 ::-webkit-scrollbar 是 6px 占位式滚动条。强制列表溢出后，若滚动条占宽，
-  // clientWidth 会比 offsetWidth 少 6px——列表内右轨（角标/状态点）随之左移 6px，
-  // 与滚动容器外的账号区箭头错轴（2026-07-27 真机实锤 206 vs 212）。
+  // 全局 ::-webkit-scrollbar 是 6px 占位式滚动条。它**可以存在**（产品负责人 2026-07-28
+  // 对着 Codex 拍板：滚动条要看得见，只是不能挤内容），关键是别让它把列表内的右轨
+  // 相对不滚动的兄弟块左移——那正是 206 vs 212 错轴的成因。
+  // 做法是侧栏根让出一条同宽窄带、列表用等宽负 margin 要回去，于是：
+  //   列表**内容盒**宽度 === 不滚动兄弟块（能力区）的宽度。
+  // 这条不变量对「溢出 / 不溢出」都成立，所以先强制溢出再比。
   const widths = await scroll.evaluate((node) => {
     const el = node as HTMLElement;
     el.style.maxHeight = '40px'; // 与会话数无关地制造溢出
@@ -80,8 +85,12 @@ test('侧栏会话列表滚动条不占布局宽——右轨与账号区箭头�
       offsetWidth: el.offsetWidth,
     };
   });
+  const siblingWidth = await sibling.evaluate((node) => (node as HTMLElement).offsetWidth);
   expect(widths.overflowing).toBe(true);
-  expect(widths.clientWidth).toBe(widths.offsetWidth);
+  // 滚动条确实还在（占了自己那条窄带），没有被藏掉
+  expect(widths.offsetWidth).toBeGreaterThan(widths.clientWidth);
+  // 但内容轨与兄弟块同宽 ⇒ 右轨不左移
+  expect(widths.clientWidth).toBe(siblingWidth);
 });
 
 test('点会话回到聊天区，二级页让位', async ({ page }) => {

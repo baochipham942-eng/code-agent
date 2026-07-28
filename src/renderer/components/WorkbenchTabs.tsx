@@ -283,6 +283,10 @@ export const WorkbenchTabs: React.FC = () => {
     closeWorkbenchTab(meta.id);
   };
 
+  // 收起右栏的入口不在这里：它和「展开」同住顶栏那一个位置（TitleBar），两态只换图标不换位置。
+  // 曾经收起钮在本工具条上，于是它在空态（本分支早退、整条工具条不画）直接消失、右栏关不掉；
+  // 补回来之后又暴露出更根本的毛病——开关一开一收在两行之间跳。两个症状同一个根因：
+  // 一个开关的两态不该分居两处（2026-07-27 产品负责人：「为什么纵向位置会变？」）。
   if (metas.length === 0) {
     return (
       <WorkbenchViewLauncher
@@ -367,15 +371,6 @@ export const WorkbenchTabs: React.FC = () => {
             />
           )}
         </div>
-
-        <IconButton
-          size="sm"
-          variant="ghost"
-          icon={<PanelRightClose />}
-          aria-label={t.workbenchTabs.collapsePanel}
-          title={t.workbenchTabs.collapsePanel}
-          onClick={() => setWorkbenchCollapsed(true)}
-        />
 
         {menuOpen && (
           <div

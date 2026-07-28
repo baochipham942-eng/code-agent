@@ -36,4 +36,21 @@ describe('FullScreenPage 外壳契约', () => {
     render(<FullScreenPageHeader icon={null} title="标题" onClose={() => {}} closeLabel="能力中心" />);
     expect(screen.getByTestId('full-screen-page-back').textContent).toContain('能力中心');
   });
+
+  // 2026-07-27 产品负责人实测「双击标题栏没反应」：拖拽/双击缩放靠 Tauri 的
+  // data-tauri-drag-region 属性，-webkit-app-region 是 Electron 私有属性，WKWebView 不认。
+  // 属性掉了窗口就拖不动，且单测不会自己红，所以在这里钉住。
+  it('页头是 Tauri 拖拽区（窗口可拖、双击可缩放）', () => {
+    const { container, unmount } = render(<FullScreenPageHeader icon={null} title="标题" onClose={() => {}} />);
+    expect(container.querySelector('header[data-tauri-drag-region]')).not.toBeNull();
+    unmount();
+
+    const bar = render(<FullScreenPageHeader icon={null} title="标题" variant="bar" onClose={() => {}} />);
+    expect(bar.container.querySelector('header[data-tauri-drag-region]')).not.toBeNull();
+  });
+
+  it('返回按钮热区不小于 32px 高（参照 Codex 顶栏按钮）', () => {
+    render(<FullScreenPageHeader icon={null} title="标题" onClose={() => {}} />);
+    expect(screen.getByTestId('full-screen-page-back').className).toContain('h-8');
+  });
 });

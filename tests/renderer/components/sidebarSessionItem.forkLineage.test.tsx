@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import { SidebarSessionItem } from '../../../src/renderer/components/features/sidebar/SidebarSessionItem';
 
-function renderRow(session: Record<string, unknown>): string {
+function renderRow(session: Record<string, unknown>, overrides: Record<string, unknown> = {}): string {
   return renderToStaticMarkup(
     <SidebarSessionItem
       {...({
@@ -51,6 +51,7 @@ function renderRow(session: Record<string, unknown>): string {
         handleOpenReplayEvidence: vi.fn(),
         handleSelectMessageSearchHit: vi.fn(),
         handleArchiveSession: vi.fn(),
+        ...overrides,
       } as React.ComponentProps<typeof SidebarSessionItem>)}
     />,
   );
@@ -80,6 +81,26 @@ describe('SidebarSessionItem fork lineage marker', () => {
 
     expect(html).not.toContain('data-testid="fork-lineage-marker"');
     expect(html).not.toContain('legacy-parent');
+  });
+
+  // 2026-07-28 产品负责人拍板：行尾只留**一个** 16px 状态轴，内容按优先级互斥（状态 > 分叉）。
+  // 此前是两槽并存、分叉占最右轴，导致绝大多数（无分叉）会话最右那格常年空着，
+  // 肉眼看到的状态点落在 190.8 而不是全栏右轨 214.8，与分组角标/账号箭头错开 24。
+  // 这条门钉的是「同时有状态和分叉时，只显示状态」——退回两槽会立刻红。
+  it('状态与分叉同时存在时只显示状态（单槽 + 优先级：状态 > 分叉）', () => {
+    const html = renderRow(
+      {
+        metadata: {
+          forkLineage: { parentSessionId: 'source-session', sourceAnchorMessageId: 'a2' },
+        },
+      },
+      { unreadSessionIds: new Set(['child-session']) },
+    );
+
+    // 未读状态点在场
+    expect(html).toContain('bg-purple-400');
+    // 同一时刻分叉标记让位，不再另占一格
+    expect(html).not.toContain('data-testid="fork-lineage-marker"');
   });
 
   it('does not mark an ordinary session as a branch', () => {

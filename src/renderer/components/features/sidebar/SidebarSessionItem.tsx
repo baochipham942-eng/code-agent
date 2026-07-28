@@ -212,11 +212,13 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
           </span>
         )}
 
-        {/* 行尾状态区：两个固定 16px 槽位、同一基线——
-            左槽是临时状态（surfaceExecution / 运行中 spinner / 需关注圆点 / 未读点），
-            右槽（最右轴）是分叉标记：身份而非状态，永远占位，不与临时状态互斥
-            （参照 Codex：分叉子任务运行时身份图标与状态图标并存）。
-            分叉标记点击跳回父会话；hover 动作簇上来时两槽一起让位。 */}
+        {/* 行尾状态轴：**一个**固定 16px 槽，内容按优先级互斥 —— 临时状态 > 分叉标记
+            （2026-07-28 产品负责人拍板，推翻此前「两槽并存、身份占最右轴」的做法）。
+            为什么不是两槽：分叉标记绝大多数会话都没有，让它单独占最右轴 ⇒ 那一格常年空着，
+            肉眼看到的最右元素变成状态点，落在 190.8 而不是全栏右轨 214.8，与分组角标 /
+            账号箭头错开 24（= 16 槽 + 8 gap，产品负责人实测截图）。
+            代价说清楚：分叉会话正在运行 / 需关注时，这一刻只显示状态，分叉标记等状态清了再回来。
+            分叉标记点击跳回父会话；hover 动作簇上来时本槽让位。 */}
         {!isRenaming && (
           <span className="w-4 shrink-0 flex items-center justify-center transition-opacity duration-150 group-hover:opacity-0 group-focus-visible:opacity-0">
             {surfaceExecutionSession ? (
@@ -227,12 +229,7 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
               <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${attentionDotClass}`} aria-label={localizedStatusLabel} />
             ) : isUnread && !multiSelectMode ? (
               <span className="w-1.5 h-1.5 rounded-full bg-purple-400 shrink-0" aria-label={s.unread} />
-            ) : null}
-          </span>
-        )}
-        {!isRenaming && (
-          <span className="w-4 shrink-0 flex items-center justify-center transition-opacity duration-150 group-hover:opacity-0 group-focus-visible:opacity-0">
-            {forkParentSessionId && !multiSelectMode && (
+            ) : forkParentSessionId && !multiSelectMode ? (
               <button /* ds-allow:button: 侧栏最右状态轴上的分叉身份小图标，Button primitive 动作按钮形状不适配列表行 */
                 type="button"
                 data-testid="fork-lineage-marker"
@@ -246,7 +243,7 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
               >
                 <GitFork className="h-3.5 w-3.5" />
               </button>
-            )}
+            ) : null}
           </span>
         )}
       </div>

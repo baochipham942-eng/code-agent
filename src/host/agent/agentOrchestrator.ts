@@ -83,10 +83,14 @@ import { resolveWorkspacePath } from '../runtime/workspaceScope';
 import { resolveSessionWorkspaceScope } from '../services/sessionFork/workspace';
 import { getAuthService } from '../services/auth/authService';
 import { getDatabase } from '../services/core/databaseService';
+import { wrapWithTurnSystemContext } from './turnScaffold';
 
 export type { AgentOrchestratorConfig } from './orchestrator/types';
 
 const logger = createLogger('AgentOrchestrator');
+
+/** 通话态不能暴露需要用户当场在会话区回答的工具；危险操作审批仍走原权限链。 */
+const LIVE_VOICE_INTERACTIVE_TOOL_DENYLIST = ['AskUserQuestion', 'ask_user_question'] as const;
 
 /** 归一化审批响应为「放行/拒绝」。allow_standing（B4 铸权）在放行语义上等价 allow。 */
 function isApproveResponse(response: PermissionResponse): boolean {
@@ -1208,7 +1212,14 @@ export class AgentOrchestrator {
           'EpisodicRecall',
         ]
       : (options?.deniedToolNames || []);
-    const mergedDeniedToolNames = Array.from(new Set([...baseDeniedToolNames, ...routingDeniedToolNames]));
+    const liveVoiceDeniedToolNames = getPermissionModeManager().isLiveVoiceSession(sessionId)
+      ? LIVE_VOICE_INTERACTIVE_TOOL_DENYLIST
+      : [];
+    const mergedDeniedToolNames = Array.from(new Set([
+      ...baseDeniedToolNames,
+      ...routingDeniedToolNames,
+      ...liveVoiceDeniedToolNames,
+    ]));
     const deniedToolNames = mergedDeniedToolNames.length > 0 ? mergedDeniedToolNames : undefined;
 
     const baseSystemPrompt = routingResolution?.agent?.systemPrompt
@@ -1373,11 +1384,9 @@ export class AgentOrchestrator {
     if (liveVoiceNotice) {
       turnSystemContext.push(liveVoiceNotice);
     }
-    if (turnSystemContext.length === 0) {
-      return content;
-    }
-
-    return `${turnSystemContext.join('\n\n')}\n\n<user_request>\n${content}\n</user_request>`;
+    // 标签字面量收在 turnScaffold 里：轮首的分类器要按同一份定义把用户原话拆回来
+    // （见该文件顶注的 skill 别名劫持实录）。
+    return wrapWithTurnSystemContext(turnSystemContext, content);
   }
 
   /**

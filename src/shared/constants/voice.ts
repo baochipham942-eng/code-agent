@@ -127,6 +127,12 @@ export const VOICE_AEC_BASE64_CHUNK_BYTES = 0x8000;
 /** 上游 WS 握手超时（ms）。 */
 export const VOICE_UPSTREAM_CONNECT_TIMEOUT_MS = 15_000;
 
+/** 上游 WS 心跳间隔（ms）；用于主动触发 TCP 层断链探测。 */
+export const VOICE_UPSTREAM_HEARTBEAT_INTERVAL_MS = 15_000;
+
+/** 上游完全无消息 / pong 的最长容忍时间（ms）。 */
+export const VOICE_UPSTREAM_SILENCE_TIMEOUT_MS = 30_000;
+
 /** 通话最长时长（ms），到点强制挂断，兜住忘记挂断导致的持续计费。 */
 export const VOICE_SESSION_MAX_DURATION_MS = 10 * 60 * 1000;
 
@@ -136,6 +142,13 @@ export const VOICE_SESSION_MAX_DURATION_MS = 10 * 60 * 1000;
  * 落库只剩摘要）。窗口内到达的 final 照常落库，超时后再关。
  */
 export const VOICE_TEARDOWN_DRAIN_MS = 1500;
+
+/**
+ * 模型调 end_call 之后，等它把告别说完的兜底上限（ms）。
+ * 正常路径是听到这一轮的 response.done 就挂；上游不回那一帧时不能让通话永远挂着
+ * （按秒计费），到点强挂。
+ */
+export const VOICE_END_CALL_GOODBYE_TIMEOUT_MS = 5_000;
 
 /**
  * 客户端断开后等它回来的宽限窗（批 H · 断线重连 sticky）。

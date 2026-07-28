@@ -66,6 +66,22 @@ export const VOICE_TOOL_DEFINITIONS: VoiceToolDefinition[] = [
     description: '停掉正在跑的任务。用户说「算了」「别做了」「停下」时调用。',
     parameters: { type: 'object', properties: {}, required: [] },
   },
+  {
+    type: 'function',
+    name: 'get_current_time',
+    description:
+      '查现在的日期和时间。用户问「现在几点」「今天几号」「星期几」时调用。'
+      + '你自己不知道时间，必须调这个，不要让用户自己去看钟。',
+    parameters: { type: 'object', properties: {}, required: [] },
+  },
+  {
+    type: 'function',
+    name: 'end_call',
+    description:
+      '挂断这通电话。用户说「挂断」「结束通话」「先这样」「拜拜」时调用。'
+      + '调用之后通话真的会结束——不要在没调它的时候说「已挂断」。',
+    parameters: { type: 'object', properties: {}, required: [] },
+  },
 ];
 
 /** 上游 function_call 的执行出口。返回值原样回灌给通话 brain（纯文本）。 */
@@ -90,6 +106,10 @@ function toIntent(name: string, rawArguments: string): VoiceIntent | string {
       return { kind: 'recent_files' };
     case 'cancel_task':
       return { kind: 'cancel_task' };
+    case 'end_call':
+      return { kind: 'end_call' };
+    case 'get_current_time':
+      return { kind: 'current_time' };
     case 'spawn_task': {
       const args = parseArgs(rawArguments);
       if (!args) return '任务参数解析失败，请重说一遍要做什么。';

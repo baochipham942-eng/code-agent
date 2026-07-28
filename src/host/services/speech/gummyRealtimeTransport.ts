@@ -33,6 +33,8 @@ export interface GummyRealtimeHandle {
 
 export interface GummyRealtimeConnectOptions {
   apiKey: string;
+  streamId: string;
+  signal?: AbortSignal;
   onTranscript: (transcript: GummyTranscript) => void;
   onError: (code: string, message: string) => void;
 }
@@ -66,6 +68,8 @@ function parseEvent(raw: unknown): GummyEvent | null {
 
 export async function connectGummyRealtime({
   apiKey,
+  streamId,
+  signal,
   onTranscript,
   onError,
 }: GummyRealtimeConnectOptions): Promise<GummyRealtimeHandle> {
@@ -75,19 +79,39 @@ export async function connectGummyRealtime({
   });
 
   await new Promise<void>((resolve, reject) => {
+    let settled = false;
+    const onOpen = () => settle();
+    const onConnectError = (err: Error) => {
+      ws.terminate();
+      settle(err);
+    };
+    const onAbort = () => {
+      ws.terminate();
+      settle(new Error('Gummy realtime connection cancelled'));
+    };
+    const cleanup = () => {
+      clearTimeout(timer);
+      ws.off('open', onOpen);
+      ws.off('error', onConnectError);
+      signal?.removeEventListener('abort', onAbort);
+    };
+    const settle = (err?: Error) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      if (err) reject(err);
+      else resolve();
+    };
     const timer = setTimeout(() => {
       ws.terminate();
-      reject(new Error('SPEECH_NO_CHANNEL'));
+      settle(new Error('SPEECH_NO_CHANNEL'));
     }, VOICE_UPSTREAM_CONNECT_TIMEOUT_MS);
-    ws.once('open', () => {
-      clearTimeout(timer);
-      resolve();
-    });
-    ws.once('error', (err: Error) => {
-      clearTimeout(timer);
-      reject(err);
-    });
+    ws.once('open', onOpen);
+    ws.once('error', onConnectError);
+    signal?.addEventListener('abort', onAbort, { once: true });
+    if (signal?.aborted) onAbort();
   });
+  logger.info('upstream connection established', { streamId });
 
   ws.send(JSON.stringify({
     header: { action: 'run-task', task_id: taskId, streaming: 'duplex' },
@@ -114,26 +138,34 @@ export async function connectGummyRealtime({
   let finishResolve: (() => void) | null = null;
   let finishReject: ((err: Error) => void) | null = null;
   let finishTimer: ReturnType<typeof setTimeout> | null = null;
+  let releaseLogged = false;
   // task-started 之前不许推音频（协议约束）；这些帧先攒着，别把用户的第一个字吞掉。
   let prestartFrames: Buffer[] | null = [];
 
-  const closeSocket = () => {
+  const logReleased = (reason: string) => {
+    if (releaseLogged) return;
+    releaseLogged = true;
+    logger.info('upstream connection released', { streamId, reason });
+  };
+
+  const closeSocket = (reason: string) => {
     if (finishTimer) {
       clearTimeout(finishTimer);
       finishTimer = null;
     }
     prestartFrames = null;
     if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) ws.close();
+    logReleased(reason);
   };
 
   /** 收尾只有一个出口：settle 一次 + 关连接（这是按秒计费的上游，泄漏一条就一直在烧钱）。 */
-  const settleFinish = (err?: Error) => {
+  const settleFinish = (err?: Error, reason = err ? 'error' : 'task-finished') => {
     if (!settled) {
       settled = true;
       if (err) finishReject?.(err);
       else finishResolve?.();
     }
-    closeSocket();
+    closeSocket(reason);
   };
 
   const sendFinish = () => {
@@ -197,6 +229,7 @@ export async function connectGummyRealtime({
     fail('SPEECH_NO_CHANNEL', err.message);
   });
   ws.on('close', () => {
+    logReleased('socket-close');
     if (finishRequested) settleFinish(new Error('Gummy realtime connection closed before task finished'));
   });
 
@@ -236,7 +269,7 @@ export async function connectGummyRealtime({
       });
     },
     close() {
-      settleFinish(new Error('Gummy realtime connection closed'));
+      settleFinish(new Error('Gummy realtime connection closed'), 'client-close');
     },
   };
 }

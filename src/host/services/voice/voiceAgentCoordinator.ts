@@ -32,7 +32,24 @@ export type VoiceIntent =
   | { kind: 'recent_files' }
   | { kind: 'spawn_task'; title: string; prompt: string }
   | { kind: 'steer_task'; instruction: string }
-  | { kind: 'cancel_task' };
+  | { kind: 'cancel_task' }
+  | { kind: 'end_call' }
+  | { kind: 'current_time' };
+
+/** 通话字幕的一条 final。近窗原文用它组装，不进 UI、不落盘。 */
+export interface VoiceTranscriptEntry {
+  role: 'user' | 'assistant';
+  text: string;
+}
+
+/**
+ * 近窗字幕最多带几条 / 每条最多多少字。
+ *
+ * 挑 12 条：真机碎句案例里一件事被 VAD 切成 5 个用户片段 + 5 句助手追问 = 10 条，
+ * 12 条能把一件事的来龙去脉整个装下，再多就开始把上一件事的尾巴也拖进来。
+ */
+const TRANSCRIPT_WINDOW_ENTRIES = 12;
+const TRANSCRIPT_ENTRY_MAX_CHARS = 240;
 
 export interface VoiceDispatchBinding {
   neoSessionId: string;
@@ -46,6 +63,12 @@ export interface VoiceDispatchBinding {
    * 比通话活得久，而「挂断之后才死」正是最需要留痕的场景（G1，2026-07-28）。
    */
   onWorkFailed: (item: VoiceWorkItem) => void;
+  /**
+   * 模型自己收线（end_call 工具）。真机 2026-07-28：用户说「挂断当前通话」，
+   * 模型答「好，通话已挂断」——而日志里 `reason: client-end` 说明是用户自己点的 X，
+   * 模型只是嘴上说。语音层此前压根没有挂断这个动作，这是第二例「说了没做」。
+   */
+  onEndCall: () => void;
 }
 
 const TERMINAL: readonly VoiceWorkItemStatus[] = ['done', 'failed', 'cancelled'];
@@ -57,6 +80,7 @@ interface LedgerState {
   emit: ((item: VoiceWorkItem) => void) | null;
   /** 失败留痕；**挂断不清**（见 VoiceDispatchBinding.onWorkFailed）。 */
   onFailed: (item: VoiceWorkItem) => void;
+  endCall: () => void;
   items: Map<string, VoiceWorkItem>;
   /** 当前等着状态迁移的那件活。一会话一 orchestrator，同时只可能有一件。 */
   pendingId: string | null;
@@ -64,6 +88,8 @@ interface LedgerState {
   listenerAttached: boolean;
   /** 用户此刻在看什么（§6.5 焦点上报）；决定 get_current_file_summary 答什么。 */
   focus: VoiceFocusContext | null;
+  /** 近窗字幕原文（voiceSessionService 每落一条 final 就推一次），派活时随 run 一起交给执行侧。 */
+  transcript: VoiceTranscriptEntry[];
 }
 
 // ponytail: 通话是全局单路（voiceSessionService 的互斥），一个模块级账本就够，
@@ -87,17 +113,51 @@ export function beginVoiceDispatch(binding: VoiceDispatchBinding): void {
     activeAgentId: binding.activeAgentId,
     emit: binding.onWorkItem,
     onFailed: binding.onWorkFailed,
+    endCall: binding.onEndCall,
     items: new Map(),
     pendingId: null,
     listener: (event) => onTaskManagerEvent(event),
     listenerAttached: false,
     focus: null,
+    transcript: [],
   };
 }
 
 /** 焦点上报进账本，供 get_current_file_summary 用真焦点作答。 */
 export function setVoiceDispatchFocus(focus: VoiceFocusContext | null): void {
   if (ledger) ledger.focus = focus;
+}
+
+/**
+ * 一条 final 字幕进近窗（P0-2，2026-07-28）。
+ *
+ * 为什么执行侧要拿原文而不是只拿 brain 改写的 prompt：`spawn_task(prompt)` 是通话 brain
+ * **改写**出来的，改写会丢信息，而且「改写正确」是这条链上唯一的一条路——它一失手，
+ * 用户说的话就再也到不了执行侧。Codex Desktop 的做法是 handoff 载荷同时带
+ * `<input>`（意图）和 `<transcript_delta>`（近窗带噪原文），把意图重建的责任从断句层
+ * 挪到文本层。碎句、半句、同音错字都由执行侧的文本模型自己复原。
+ */
+export function pushVoiceTranscript(entry: VoiceTranscriptEntry): void {
+  if (!ledger) return;
+  const text = entry.text.trim();
+  if (!text) return;
+  ledger.transcript.push({ role: entry.role, text: text.slice(0, TRANSCRIPT_ENTRY_MAX_CHARS) });
+  if (ledger.transcript.length > TRANSCRIPT_WINDOW_ENTRIES) ledger.transcript.shift();
+}
+
+/** 近窗字幕拼成一段 system 上下文。空窗返回 null——没东西可说时不要塞空块进 run。 */
+function buildTranscriptBlock(entries: VoiceTranscriptEntry[]): string | null {
+  if (!entries.length) return null;
+  return [
+    '[Voice — 通话近窗字幕原文]',
+    '这件活来自一通实时语音通话。任务描述是语音层改写出来的，可能丢信息，也可能被语音识别写错。',
+    '下面是通话最近几轮的原始字幕（可能含半句、重复、同音错字）：',
+    ...entries.map((entry) => `${entry.role === 'user' ? '用户' : '助手'}：${entry.text}`),
+    '以字幕原文为准重建用户的真实意图。文件名/路径/专名明显是同音错写时（例：「a点text」= a.txt），',
+    '按上下文纠正后执行，并在结果里说明你是按什么理解做的。',
+    '**用户此刻在打电话，不在键盘前**：不要向他提问、不要弹选择框等他回答——他看不见也点不了。',
+    '信息不全就按最合理的默认做法先做完，然后在结果里一句话说明你按什么假设做的。',
+  ].join('\n');
 }
 
 /** 第一件活派出去时才把生命周期 listener 挂上。 */
@@ -209,6 +269,10 @@ export async function dispatchVoiceIntent(intent: VoiceIntent): Promise<string> 
       return steerTask(state, intent.instruction);
     case 'cancel_task':
       return cancelTask(state);
+    case 'end_call':
+      return endCall(state);
+    case 'current_time':
+      return describeCurrentTime();
   }
 }
 
@@ -217,6 +281,10 @@ async function buildRunOptions(state: LedgerState) {
   const roleContextBlock = state.activeAgentId
     ? await buildRoleContextBlock(state.activeAgentId).catch(() => null)
     : null;
+  // 近窗字幕走 turnSystemContext 而不是拼进 prompt：prompt 那条消息会原样显示在会话里，
+  // 把带噪原文塞进去等于把内部载荷泄漏到用户眼前（本仓刚修过一轮 `<...>` 标签外泄）。
+  const transcriptBlock = buildTranscriptBlock(state.transcript);
+  const systemBlocks = [roleContextBlock, transcriptBlock].filter((block): block is string => !!block);
   // 执行引擎与通话模型分离（§6.1）：没配就不传，行为与批 H 之前完全一致。
   const executionModel = readVoiceExecutionModel();
   // mode 在返回值里必须是确定的字面量：withWorkbenchTurnSystemContext 的返回类型把它
@@ -226,7 +294,7 @@ async function buildRunOptions(state: LedgerState) {
     ...withWorkbenchTurnSystemContext({
       mode: 'normal' as const,
       ...(state.activeAgentId ? { agentOverrideId: state.activeAgentId } : {}),
-      ...(roleContextBlock ? { turnSystemContext: [roleContextBlock] } : {}),
+      ...(systemBlocks.length ? { turnSystemContext: systemBlocks } : {}),
       maxIterations: VOICE_SPAWN_TASK_MAX_ITERATIONS,
     }),
     mode: 'normal' as const,
@@ -270,6 +338,51 @@ async function startRun(state: LedgerState, title: string, prompt: string): Prom
   return workItemId;
 }
 
+/**
+ * 挂断 tail flush（P0-3，产品负责人 2026-07-28 拍板「自动补派」）。
+ *
+ * 真机 dogfood 的失败形态是「说了一通，一件活都没派出去」——通话 brain 在碎句里
+ * 一路追问澄清，直到用户挂断。挂断是这条链上最后一次机会：把这通电话的字幕交给
+ * 执行侧的文本模型，让它自己判断有没有没做的事。
+ *
+ * 三条闸同时满足才补派，宁可漏补不可乱补：
+ * 1. **本通电话一件活都没派过**——派过就说明链路是通的，没派的那部分多半是用户主动放弃的；
+ * 2. 近窗里**有用户说过话**——空通话什么都不做；
+ * 3. 会话**当前空闲**——有活在跑时插一件新的会撞 TaskManager 的并发闸。
+ *
+ * 判「有没有要做的事」交给执行侧模型，不自己写分类器：它已经拿到近窗原文
+ * （buildRunOptions 的 transcript 块），而「没有待办就什么都不做」是它能理解的指令。
+ *
+ * 已知代价：人已经挂断走开，这条 run 若撞上 D4 抬严的权限卡就会停在那儿等确认。
+ * 这是「宁可停下也不越权」的正确行为，但用户下次回来才看得到。
+ */
+export async function flushVoiceTail(): Promise<boolean> {
+  const state = ledger;
+  if (!state) return false;
+  if (state.items.size > 0) return false;
+  const lastUser = [...state.transcript].reverse().find((entry) => entry.role === 'user');
+  if (!lastUser) return false;
+
+  const tm = await taskManager();
+  // 忙档与 spawnTask 用同一份判据：startTask 在这四档会抛。
+  const status = tm.getSessionState(state.neoSessionId).status;
+  if (status === 'running' || status === 'queued' || status === 'paused' || status === 'cancelling') {
+    logger.info('tail flush skipped: session busy', { status });
+    return false;
+  }
+
+  const title = `通话结束补派：${lastUser.text.slice(0, 20)}`;
+  logger.info('tail flush dispatching', { neoSessionId: state.neoSessionId, entries: state.transcript.length });
+  await startRun(state, title, [
+    '这通语音通话刚刚结束，通话过程中一件任务都没有派出来。',
+    '看上面「通话近窗字幕原文」里用户说的话：',
+    '如果里面有明确的、还没被执行的动作请求（建文件、改东西、跑命令等），现在把它做掉。',
+    '如果只是闲聊、或者没有能确定下来的动作，就什么都不要做，直接结束并说明没有发现待办。',
+    '注意用户已经挂断电话，不在旁边——不要反问，按最合理的理解做或者不做。',
+  ].join('\n'));
+  return true;
+}
+
 async function spawnTask(state: LedgerState, title: string, prompt: string): Promise<string> {
   const tm = await taskManager();
   const status = tm.getSessionState(state.neoSessionId).status;
@@ -300,6 +413,17 @@ async function steerTask(state: LedgerState, instruction: string): Promise<strin
   return `已经打断「${title}」并按新要求继续，还在后台跑，没做完。`;
 }
 
+/**
+ * 收线。这里只「请求挂断」，真正的 teardown 由 voiceSessionService 在模型把这句
+ * 告别说完之后执行——立刻挂会把告别掐掉，用户听到的是电话突然断了。
+ * 返回值写死状态：通话 brain 会把它当事实转述。
+ */
+function endCall(state: LedgerState): string {
+  logger.info('end call requested by model');
+  state.endCall();
+  return '挂断动作已经执行，通话马上结束。跟用户说一句简短的告别，不要再问别的。';
+}
+
 async function cancelTask(state: LedgerState): Promise<string> {
   const tm = await taskManager();
   const status = tm.getSessionState(state.neoSessionId).status;
@@ -315,6 +439,21 @@ async function cancelTask(state: LedgerState): Promise<string> {
 // ============================================================================
 // 只读查询
 // ============================================================================
+
+/**
+ * 现在几点（真机 2026-07-28：用户问「现在几点了？」，通话 brain 答「我这边看不到具体时间」，
+ * 用户只好说「通过 computer use 来看」才绕出去——语音层拿不到时间是产品缺陷不是模型笨）。
+ * 走工具而不是往 instructions 里注入时间：instructions 只在建连和焦点变化时刷新，
+ * 注进去的时间会随通话变旧，而这是个「问了就该准」的问题。
+ */
+function describeCurrentTime(): string {
+  const now = new Date();
+  const text = now.toLocaleString('zh-CN', {
+    year: 'numeric', month: 'long', day: 'numeric',
+    weekday: 'long', hour: '2-digit', minute: '2-digit',
+  });
+  return `现在是${text}。`;
+}
 
 function describeStatus(state: LedgerState): string {
   const lines: string[] = [];

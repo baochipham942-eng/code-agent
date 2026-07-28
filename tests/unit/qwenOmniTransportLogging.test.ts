@@ -5,12 +5,13 @@ class FakeUpstream extends EventEmitter {
   static OPEN = 1;
   readyState = 1;
   send = vi.fn();
+  ping = vi.fn();
   close() {
     this.readyState = 3;
   }
-  terminate() {
+  terminate = vi.fn(() => {
     this.readyState = 3;
-  }
+  });
 }
 
 const upstreams: FakeUpstream[] = [];
@@ -74,6 +75,111 @@ describe('Qwen Omni 上游事件日志', () => {
     expect(upstreamEventLogs.filter(([, data]) => data.turn === 3 && data.type === 'response.audio.delta')).toHaveLength(1);
     expect(JSON.stringify(upstreamEventLogs)).not.toContain('audio-3');
     expect(JSON.stringify(upstreamEventLogs)).not.toContain('secret-3');
+
+    await handle.close();
+  });
+
+  it('建连后 30 秒零上游信号会报 UPSTREAM_ERROR 并 terminate socket', async () => {
+    vi.useFakeTimers();
+    try {
+      const events: Array<{ type: string; code?: string; message?: string }> = [];
+      const connecting = qwenOmniTransport.connect({
+        apiKey: 'test-key',
+        config: { neoSessionId: 's1' },
+        onEvent: (event) => events.push(event),
+        onAudio: vi.fn(),
+      });
+      await vi.advanceTimersByTimeAsync(0);
+      await connecting;
+      const upstream = upstreams[0];
+
+      await vi.advanceTimersByTimeAsync(30_000);
+
+      expect(events).toContainEqual({
+        type: 'error',
+        code: 'UPSTREAM_ERROR',
+        message: '上游连接已断开（长时间无响应）',
+      });
+      expect(upstream.terminate).toHaveBeenCalledTimes(1);
+      expect(logger.warn).toHaveBeenCalledWith(
+        'upstream heartbeat timed out',
+        expect.objectContaining({ silenceMs: 30_000 }),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('主动 close 后清掉心跳定时器，不再发送 ping', async () => {
+    vi.useFakeTimers();
+    try {
+      const connecting = qwenOmniTransport.connect({
+        apiKey: 'test-key',
+        config: { neoSessionId: 's1' },
+        onEvent: vi.fn(),
+        onAudio: vi.fn(),
+      });
+      await vi.advanceTimersByTimeAsync(0);
+      const handle = await connecting;
+      const upstream = upstreams[0];
+
+      await handle.close();
+      await vi.advanceTimersByTimeAsync(60_000);
+
+      expect(upstream.ping).not.toHaveBeenCalled();
+      expect(upstream.terminate).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('任何 message 和 pong 都会刷新上游活跃时间', async () => {
+    vi.useFakeTimers();
+    try {
+      const connecting = qwenOmniTransport.connect({
+        apiKey: 'test-key',
+        config: { neoSessionId: 's1' },
+        onEvent: vi.fn(),
+        onAudio: vi.fn(),
+      });
+      await vi.advanceTimersByTimeAsync(0);
+      const handle = await connecting;
+      const upstream = upstreams[0];
+
+      await vi.advanceTimersByTimeAsync(20_000);
+      upstream.emit('message', 'not-json-but-still-a-signal');
+      await vi.advanceTimersByTimeAsync(25_000);
+      upstream.emit('pong');
+      await vi.advanceTimersByTimeAsync(25_000);
+
+      expect(upstream.terminate).not.toHaveBeenCalled();
+      await handle.close();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('session.updated 日志区分 tools 空数组和字段缺失', async () => {
+    const handle = await qwenOmniTransport.connect({
+      apiKey: 'test-key',
+      config: { neoSessionId: 's1' },
+      onEvent: vi.fn(),
+      onAudio: vi.fn(),
+    });
+    const upstream = upstreams[0];
+
+    upstream.emit('message', JSON.stringify({ type: 'session.updated', session: { tools: [] } }));
+    upstream.emit('message', JSON.stringify({ type: 'session.updated', session: {} }));
+
+    const echoes = logger.info.mock.calls.filter(([message]) => message === 'session.updated echo');
+    expect(echoes).toContainEqual([
+      'session.updated echo',
+      expect.objectContaining({ toolsLength: 0 }),
+    ]);
+    expect(echoes).toContainEqual([
+      'session.updated echo',
+      expect.objectContaining({ toolsLength: null }),
+    ]);
 
     await handle.close();
   });

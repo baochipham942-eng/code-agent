@@ -149,9 +149,15 @@ vi.mock('../../src/host/services', () => ({
 
 // 专家审批档的门要看「AgentLoop 真跑那一刻的有效档位」，所以 loop 本身换成探针。
 // 本文件其余用例都不碰真 AgentLoop（orchestrator.agentLoop 一律是 null 或 stub）。
-const agentLoopProbe = vi.hoisted(() => ({ onRun: undefined as undefined | (() => void) }));
+const agentLoopProbe = vi.hoisted(() => ({
+  onRun: undefined as undefined | (() => void),
+  lastConfig: undefined as undefined | { deniedToolNames?: string[] },
+}));
 vi.mock('../../src/host/agent/agentLoop', () => ({
   AgentLoop: class {
+    constructor(config: { deniedToolNames?: string[] }) {
+      agentLoopProbe.lastConfig = config;
+    }
     async run(): Promise<void> { agentLoopProbe.onRun?.(); }
     setEffortLevel(): void { /* noop */ }
     getSerializedCompressionState(): undefined { return undefined; }
@@ -230,6 +236,9 @@ interface OrchestratorInternals {
 }
 function internals(o: AgentOrchestrator): OrchestratorInternals {
   return o as unknown as OrchestratorInternals;
+}
+function lastAgentLoopConfig(): { deniedToolNames?: string[] } | undefined {
+  return agentLoopProbe.lastConfig;
 }
 function makeMessage(id: string, role: Message['role'], content: string): Message {
   return { id, role, content, timestamp: 0 };
@@ -1111,6 +1120,56 @@ describe('AgentOrchestrator', () => {
       const result = internals(orchestrator).applyTurnSystemContext('干活', undefined, SESSION);
 
       expect(result).not.toContain('live_voice_permission_notice');
+    });
+
+    it('通话态 run 的模型工具面拒绝 AskUserQuestion，危险操作工具不受影响', async () => {
+      getPermissionModeManager().markLiveVoiceSession(SESSION, 'call:test');
+      agentLoopProbe.lastConfig = undefined;
+
+      await (orchestrator as unknown as {
+        runStandardAgentLoop(
+          content: string,
+          onEvent: (e: AgentEvent) => void,
+          modelConfig: unknown,
+          sessionId?: string,
+          executionContent?: string,
+          toolScope?: unknown,
+          executionIntent?: unknown,
+          options?: AgentRunOptions,
+        ): Promise<void>;
+      }).runStandardAgentLoop(
+        '干活',
+        mockOnEvent,
+        { provider: 'deepseek', model: 'deepseek-chat' },
+        SESSION,
+      );
+
+      expect(lastAgentLoopConfig()?.deniedToolNames).toEqual(
+        expect.arrayContaining(['AskUserQuestion', 'ask_user_question']),
+      );
+      expect(lastAgentLoopConfig()?.deniedToolNames).not.toContain('confirm_action');
+      expect(lastAgentLoopConfig()?.deniedToolNames).not.toContain('Bash');
+      expect(lastAgentLoopConfig()?.deniedToolNames).not.toContain('Write');
+    });
+
+    it('非通话态 run 不屏蔽 AskUserQuestion', async () => {
+      agentLoopProbe.lastConfig = undefined;
+
+      await (orchestrator as unknown as {
+        runStandardAgentLoop(
+          content: string,
+          onEvent: (e: AgentEvent) => void,
+          modelConfig: unknown,
+          sessionId?: string,
+        ): Promise<void>;
+      }).runStandardAgentLoop(
+        '干活',
+        mockOnEvent,
+        { provider: 'deepseek', model: 'deepseek-chat' },
+        SESSION,
+      );
+
+      expect(lastAgentLoopConfig()?.deniedToolNames || []).not.toContain('AskUserQuestion');
     });
   });
 });

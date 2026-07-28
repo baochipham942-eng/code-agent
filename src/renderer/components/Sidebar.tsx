@@ -18,23 +18,12 @@ import {
   MessageSquare,
   Loader2,
   User,
-  Settings,
   LogIn,
-  LogOut,
   ChevronDown,
   Trash2,
   Search,
   PanelLeftClose,
-  ChevronRight,
-  FlaskConical,
-  CalendarDays,
-  Monitor,
-  MonitorSmartphone,
-  Activity,
-  UsersRound,
   Download,
-  Gauge,
-  ScrollText,
 } from 'lucide-react';
 import { IPC_CHANNELS } from '@shared/ipc';
 import { getCurrentKeybindingPlatform } from '@shared/keybindings/defaults';
@@ -50,7 +39,6 @@ import type { SessionAutomationSessionSummary } from '@shared/contract';
 import { sessionAutomationClient } from '../services/sessionAutomationClient';
 import { SessionReplaySummaryDialog } from './features/sidebar/SessionReplaySummaryDialog';
 import { getSessionTypeLabel } from './features/sidebar/SessionTypeFilterBar';
-import { AccountMenuItem, AccountMenuLabel } from './features/sidebar/sidebarPresentation';
 import { NeoBrandMark } from './features/sidebar/NeoBrandMark';
 import { isTauriMode } from '../utils/platform';
 import { isNativeWindowFullscreen } from '../services/tauriPluginFacade';
@@ -118,27 +106,14 @@ export const Sidebar: React.FC = () => {
   const sb = t.sidebar;
   const {
     clearPlanningState,
-    setShowSettings,
     setWorkingDirectory,
     showLab,
-    setShowLab,
     showTimeCapabilityCenter,
-    setShowTimeCapabilityCenter,
     showDesktopPanel,
-    setShowDesktopPanel,
-    showActivityPanel,
-    setShowActivityPanel,
-    showLocalOpsPanel,
-    openLocalOpsPanel,
-    showProjectCollaborationPage,
-    openProjectCollaborationPage,
-    showEvalCenter,
-    openEvalCenter,
     optionalUpdateInfo,
     setShowOptionalUpdateModal,
     openWorkspacePreview,
     setSidebarCollapsed,
-    setShowPromptManager,
   } = useAppStore();
   const applySessionWorkbenchPreset = useComposerStore((state) => state.applySessionWorkbenchPreset);
   const applyWorkbenchPreset = useComposerStore((state) => state.applyWorkbenchPreset);
@@ -195,18 +170,11 @@ export const Sidebar: React.FC = () => {
     isAuthenticated,
     isLoading: isAuthLoading,
     setShowAuthModal,
-    signOut,
     sessionTrustState,
     authBackendAvailable,
     hasCachedAdminClaim,
   } = useAuthStore();
   const canOpenSessionReplay = canAccessFeature('eval.replay', user);
-  // 评测中心入口门禁与菜单里其他 admin 判定同一条通路（user.isAdmin verified claim）。
-  const canOpenEvalCenter = canAccessFeature('eval.center', user);
-  // 提示词覆写是管理员工具（2026-07-27 拍板：它既不是能力资产也不是个人配置，
-  // 且改的是本机 ~/.code-agent/prompts-overrides/*.md，云端 admin-console 够不着）——
-  // 归到用户菜单「高级工具」，与模型训练/桌面采集同一档按身份显形。
-  const canOpenPromptManager = canAccessFeature('prompt.manager', user);
   const isVerifiedAdmin = user?.isAdmin === true;
   const isAdminPendingVerification = !isVerifiedAdmin && hasCachedAdminClaim && sessionTrustState === 'cached';
   const adminPendingTitle =

@@ -249,31 +249,53 @@ describe('DurableRunKernel', () => {
   it('recovers a Native run after the owning process is killed', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'durable-run-kill-'));
     const dbPath = join(directory, 'run.db');
+    // detached：tsx 的 CLI 会再 spawn 一层真正跑 fixture 的孙进程，只 kill 直接子进程
+    // 等于杀掉包装、把孙进程（fixture 里 setInterval 永不退出）甩成 ppid=1 的孤儿。
+    // 独立进程组 + 负 pid 杀整组，才真的把持有 run 的那个进程干掉。
     const child = spawn(process.execPath, [
       join(process.cwd(), 'node_modules/tsx/dist/cli.mjs'),
       join(process.cwd(), 'tests/fixtures/durableRunKillChild.ts'),
       dbPath,
-    ], { stdio: ['ignore', 'pipe', 'pipe'] });
-    await new Promise<void>((resolve, reject) => {
-      child.stdout.once('data', (chunk) => String(chunk).includes('READY') && resolve());
-      child.once('error', reject);
-      child.once('exit', (code, signal) => reject(new Error(`child exited before READY (${code ?? signal})`)));
-    });
-    child.kill('SIGKILL');
-    await new Promise<void>((resolve) => child.once('exit', () => resolve()));
-    await new Promise((resolve) => setTimeout(resolve, 120));
+    ], { stdio: ['ignore', 'pipe', 'pipe'], detached: true });
+    const childGroup = -child.pid!;
+    const killGroup = () => {
+      try { process.kill(childGroup, 'SIGKILL'); } catch { /* 整组已退出 */ }
+    };
+    let fixturePid = 0;
+    try {
+      await new Promise<void>((resolve, reject) => {
+        child.stdout.once('data', (chunk) => {
+          const ready = String(chunk).match(/READY (\d+)/);
+          if (!ready) return;
+          fixturePid = Number(ready[1]);
+          resolve();
+        });
+        child.once('error', reject);
+        child.once('exit', (code, signal) => reject(new Error(`child exited before READY (${code ?? signal})`)));
+      });
+      killGroup();
+      await new Promise<void>((resolve) => child.once('exit', () => resolve()));
+      await new Promise((resolve) => setTimeout(resolve, 120));
 
-    const db = new Database(dbPath);
-    db.pragma('foreign_keys = ON');
-    const repository = new DurableRunRepository(db);
-    const kernel = new DurableRunKernel({
-      stores: repository, ownerId: 'native-host', processInstanceId: 'parent-process', leaseDurationMs: 100,
-    });
-    const plans = await kernel.recoverOnStartup(Date.now());
-    expect(plans).toHaveLength(1);
-    expect(plans[0].envelope).toMatchObject({ runId: 'run-killed', status: 'recovering', attempt: 2 });
-    db.close();
-    await rm(directory, { recursive: true, force: true });
+      // 断言「持有这个 run 的那个进程真的死了」，而不是「我们调用过 kill」：
+      // 只杀直接子进程时它会活下来变成 ppid=1 的孤儿，这里必须转红。
+      expect(() => process.kill(fixturePid, 0)).toThrow(/ESRCH/);
+
+      const db = new Database(dbPath);
+      db.pragma('foreign_keys = ON');
+      const repository = new DurableRunRepository(db);
+      const kernel = new DurableRunKernel({
+        stores: repository, ownerId: 'native-host', processInstanceId: 'parent-process', leaseDurationMs: 100,
+      });
+      const plans = await kernel.recoverOnStartup(Date.now());
+      expect(plans).toHaveLength(1);
+      expect(plans[0].envelope).toMatchObject({ runId: 'run-killed', status: 'recovering', attempt: 2 });
+      db.close();
+    } finally {
+      // 断言失败 / READY 没等到时也不能把进程组留在机器上
+      killGroup();
+      await rm(directory, { recursive: true, force: true });
+    }
   });
 
   it('rehydrates an expired Native run as a new recovering attempt and fences the old owner', async () => {

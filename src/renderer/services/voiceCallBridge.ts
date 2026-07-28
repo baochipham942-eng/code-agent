@@ -277,7 +277,11 @@ class VoiceCallBridge {
       return true;
     }
     this.reconnectAttempt += 1;
-    this.store().reconnectingChanged(true);
+    // 上限必须从退避表推导——UI 不许另写数字，否则改退避表的人不会记得回来改 UI。
+    this.store().reconnectingChanged(true, {
+      attempt: this.reconnectAttempt,
+      maxAttempts: VOICE_RECONNECT_BACKOFF_MS.length,
+    });
     this.store().phaseChanged('connecting');
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     this.reconnectTimer = setTimeout(() => {

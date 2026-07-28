@@ -35,26 +35,11 @@ import { BrandManager } from '../../design/BrandManager';
 const GLOBAL_SCOPE = 'global';
 const closeEmbeddedBrandManager = () => undefined;
 
-// 来源维度：AI 生成 / 我的上传 / 我的收藏（favorites 暂为壳，见 deriveItemSource 注释）
-type LibrarySource = 'ai' | 'uploads' | 'favorites';
 // 页面视图：items = 条目列表；brands = 品牌套件管理（次级入口打开）。
 // 「记忆」tab 已撤（2026-07-27 审美关：记忆是个人设置不是资料库）——它的家在
 // 设置 → 记忆（SettingsModal 的 MemoryTab，深链 openSettingsTab('memory')），
 // 独立整窗页 KnowledgeMemoryPanel 也仍在。一个能力只留一个家。
 type LibraryView = 'items' | 'brands';
-
-/**
- * 来源推导口径：LibraryItem contract（src/shared/contract/library.ts）暂无 origin/favorite
- * 字段，renderer 侧按现有字段推导，不改主进程 schema：
- * - AI 生成：带 sourceSessionId（任务/会话产出归档），或 kind 为 artifact/capture
- *   （产物与采集天然来自 agent 流程）；
- * - 我的上传：其余条目（手动上传的 upload、手动添加的 external_ref）；
- * - 我的收藏：contract 无收藏字段，tab 先做壳，固定空态「还没有收藏的资料」。
- */
-function deriveItemSource(item: LibraryItem): Exclude<LibrarySource, 'favorites'> {
-  if (item.sourceSessionId || item.kind === 'artifact' || item.kind === 'capture') return 'ai';
-  return 'uploads';
-}
 
 interface LibraryItemDraft {
   title: string;
@@ -110,7 +95,6 @@ export const LibraryPanel: React.FC = () => {
   const [updatedAtDescending, setUpdatedAtDescending] = useState(true);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const [view, setView] = useState<LibraryView>('items');
-  const [source, setSource] = useState<LibrarySource>('ai');
 
   const projectId = scope === GLOBAL_SCOPE ? null : scope;
   const sessionTitles = useMemo(() => new Map<string, string>(
@@ -128,8 +112,6 @@ export const LibraryPanel: React.FC = () => {
     const grouped = new Map<string, LibraryGroup>();
     const ungrouped: LibraryGroup = { id: 'ungrouped', name: t.library.ungrouped, items: [] };
     const visibleItems = items
-      // 收藏是壳：contract 无收藏字段，不过滤出任何条目，空态由渲染层兜底
-      .filter((item) => source !== 'favorites' && deriveItemSource(item) === source)
       .filter((item) => selectedKind === 'all' || item.kind === selectedKind)
       .filter((item) => matchesSearch(item, search))
       .sort((left, right) => updatedAtDescending ? right.updatedAt - left.updatedAt : left.updatedAt - right.updatedAt);
@@ -149,7 +131,7 @@ export const LibraryPanel: React.FC = () => {
       }
     }
     return [...grouped.values(), ...(ungrouped.items.length > 0 ? [ungrouped] : [])];
-  }, [items, search, selectedKind, sessionTitles, source, t.library.ungrouped, updatedAtDescending]);
+  }, [items, search, selectedKind, sessionTitles, t.library.ungrouped, updatedAtDescending]);
 
   const toggleGroup = (groupId: string) => {
     setCollapsedGroups((current) => {
@@ -302,27 +284,39 @@ export const LibraryPanel: React.FC = () => {
         ) : undefined}
       />
 
-      {/* 顶行：来源 tab × 搜索 × 品牌套件入口；「记忆」并列 tab 在最右（见文件头注释） */}
-      <div className="shrink-0 border-b border-zinc-800 px-6 py-2">
-        <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1" role="tablist" aria-label={t.library.sectionsLabel}>
-            {(['ai', 'uploads', 'favorites'] as const).map((sourceKey) => (
+      {/* 单行工具条（2026-07-27 产品负责人拍板：连着两行 tab 太复杂）：
+          原「来源 tab」（AI 生成 / 我的上传 / 我的收藏）是类型 chips 的粗粒度重复
+          —— AI 生成≈任务产物+采集内容、我的上传≈上传文件+外部引用，收藏那格更是
+          contract 无字段的空壳 —— 整行删掉，只留类型 chips，搜索与品牌套件并入同一行右侧。 */}
+      <div className="shrink-0 border-b border-zinc-800 px-6 py-2" data-testid="library-toolbar">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          {view === 'items' && (
+            <div className="flex flex-wrap items-center gap-1.5" aria-label={t.library.kindChipsLabel} data-testid="library-kind-chips">
               <Button
-                key={sourceKey}
                 type="button"
-                role="tab"
                 size="sm"
-                variant={view === 'items' && source === sourceKey ? 'secondary' : 'ghost'}
-                aria-selected={view === 'items' && source === sourceKey}
-                aria-controls="library-items-panel"
-                tabIndex={view === 'items' && source === sourceKey ? 0 : -1}
-                data-testid={`library-source-${sourceKey}`}
-                onClick={() => { setSource(sourceKey); setView('items'); }}
+                variant={selectedKind === 'all' ? 'secondary' : 'ghost'}
+                aria-pressed={selectedKind === 'all'}
+                data-testid="library-kind-chip-all"
+                onClick={() => setSelectedKind('all')}
               >
-                {sourceKey === 'ai' ? t.library.sourceAi : sourceKey === 'uploads' ? t.library.sourceUploads : t.library.sourceFavorites}
+                {t.library.allTypes}
               </Button>
-            ))}
-          </div>
+              {LIBRARY_ITEM_KINDS.map((kind) => (
+                <Button
+                  key={kind}
+                  type="button"
+                  size="sm"
+                  variant={selectedKind === kind ? 'secondary' : 'ghost'}
+                  aria-pressed={selectedKind === kind}
+                  data-testid={`library-kind-chip-${kind}`}
+                  onClick={() => setSelectedKind(kind)}
+                >
+                  {kindLabels[kind]}
+                </Button>
+              ))}
+            </div>
+          )}
           <div className="ml-auto flex min-w-0 items-center gap-2">
             {view === 'items' && (
               <Input
@@ -359,46 +353,12 @@ export const LibraryPanel: React.FC = () => {
         </div>
       </div>
 
-      {/* 次行：类型 chips = 全部 + LIBRARY_ITEM_KINDS（contract 推导） */}
-      {view === 'items' && (
-        <div className="shrink-0 border-b border-zinc-800 px-6 py-2" aria-label={t.library.kindChipsLabel} data-testid="library-kind-chips">
-          <div className="flex flex-wrap items-center gap-1.5">
-            <Button
-              type="button"
-              size="sm"
-              variant={selectedKind === 'all' ? 'secondary' : 'ghost'}
-              aria-pressed={selectedKind === 'all'}
-              data-testid="library-kind-chip-all"
-              onClick={() => setSelectedKind('all')}
-            >
-              {t.library.allTypes}
-            </Button>
-            {LIBRARY_ITEM_KINDS.map((kind) => (
-              <Button
-                key={kind}
-                type="button"
-                size="sm"
-                variant={selectedKind === kind ? 'secondary' : 'ghost'}
-                aria-pressed={selectedKind === kind}
-                data-testid={`library-kind-chip-${kind}`}
-                onClick={() => setSelectedKind(kind)}
-              >
-                {kindLabels[kind]}
-              </Button>
-            ))}
-          </div>
-        </div>
-      )}
-
       {view === 'items' ? (
         <PageContent id="library-items-panel" role="tabpanel">
           {loading ? (
             <div className="flex items-center justify-center py-16 text-zinc-500">
               <Loader2 className="h-5 w-5 animate-spin" />
             </div>
-          ) : source === 'favorites' ? (
-            // 收藏壳：contract 无收藏字段，固定空态，不展示任何条目
-            <div className="py-16 text-center text-sm text-zinc-500 leading-relaxed">{t.library.favoritesEmpty}</div>
           ) : items.length === 0 ? (
             <div className="py-16 text-center text-sm text-zinc-500 leading-relaxed">{t.library.empty}</div>
           ) : groups.length === 0 ? (

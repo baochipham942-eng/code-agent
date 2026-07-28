@@ -189,6 +189,21 @@ describe('Sidebar account menu entry planning', () => {
     expect(html).not.toContain('In-App 验证');
   });
 
+  // 2026-07-27 产品负责人实测「双击标题栏没反应」：Tauri 的 WKWebView 不认 Electron 的
+  // -webkit-app-region，拖拽/双击缩放必须靠 data-tauri-drag-region 属性；属性掉了不会有测试自己红。
+  it('侧栏顶行是 Tauri 拖拽区，且图标右对齐钉在侧栏右轨上（2026-07-27 二次拍板）', () => {
+    reactState.useStateCalls = 0;
+    const html = renderToStaticMarkup(React.createElement(Sidebar));
+    expect(html).toContain('data-tauri-drag-region');
+    // 顶行 = 左槽（红绿灯不在场时挂品牌标）+ 右侧功能图标簇，justify-between 把图标簇推到右轨。
+    // 图标数量随权限变化（筛选钮仅管理员可见），左对齐的绝对内边距守不住这条轨，所以钉布局方式。
+    expect(html).toContain('justify-between');
+    expect(html).not.toContain('justify-start');
+    // px-0.5 比别处小 8：本行图标是 32px IconButton（16 字形居中 ⇒ 框内自带 8 内缩），
+    // 而角标/状态点/箭头是裸 16px 字形；喂同一个 px 值右轨会断开（实测 206.8 vs 214.8）。
+    expect(html).toContain('px-0.5');
+  });
+
   it('提示词管理只对 admin 出现在账号菜单（2026-07-27 拍板：它是管理员工具，不进设置页/能力中心）', () => {
     reactState.useStateCalls = 0;
     authState.user.isAdmin = true;

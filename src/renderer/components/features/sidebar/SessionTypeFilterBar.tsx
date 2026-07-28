@@ -39,7 +39,7 @@ interface SessionTypeFilterBarProps {
 export const SessionTypeFilterBar: React.FC<SessionTypeFilterBarProps> = ({ value, onChange }) => {
   const { t } = useI18n();
   return (
-  <div className="px-2 pb-1 flex-shrink-0">
+  <div className="px-1 pb-1 flex-shrink-0">
     <div className="flex items-center gap-1 overflow-x-auto">
       {buildSessionTypeFilters(t).map((filter) => (
         <button

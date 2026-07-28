@@ -9,10 +9,17 @@
 // ============================================================================
 import React from 'react';
 import { useAppStore } from '../stores/appStore';
-import { PanelLeft, PanelRight } from 'lucide-react';
+import { PanelLeft, PanelRight, PanelRightClose } from 'lucide-react';
 import { IconButton } from './primitives';
 import { SessionActionsMenu } from './SessionActionsMenu';
+import { getCurrentKeybindingPlatform } from '@shared/keybindings/defaults';
 import { useI18n } from '../hooks/useI18n';
+
+// 侧栏展开时红绿灯浮在**侧栏**顶行上，本栏不受影响；侧栏一收起，本栏就成了窗口左上角那块，
+// 灯直接压在展开按钮上（2026-07-27 产品负责人截图）。darwin 下这一档要让开灯区：
+// 灯现在摆在 x16..75.5（横纵都由 traffic_lights.rs 摆，见那里的常量），再留呼吸位 ⇒ 92。
+// ⚠️ 灯的横向位置一改，这个数就要跟着改——它不在 CSS 节奏里，不会自己动。
+const COLLAPSED_TRAFFIC_LIGHT_INSET = getCurrentKeybindingPlatform() === 'darwin' ? 'pl-[92px]' : '';
 
 interface TitleBarProps {
   /** 二级页（能力中心/资料库/自动化等）在位：会话动作与右栏开关都无对象 */
@@ -29,11 +36,14 @@ export const TitleBar: React.FC<TitleBarProps> = ({ secondaryPageActive = false 
   } = useAppStore();
   return (
     // 原生标题栏已撤（tauri.conf.json titleBarStyle=Overlay），窗口得自己留拖拽区：
-    // 本行整体可拖，行内控件逐个 no-drag。
-    // bg-zinc-900 与下方聊天区/右栏同色、不画下边框——顶栏与内容区打通成一整块
-    // （2026-07-27 产品负责人：黑色顶栏与下方割裂）。
+    // 本行整体可拖，行内控件逐个 no-drag。拖拽真正生效靠 `data-tauri-drag-region`
+    // （WKWebView 不认 Electron 的 -webkit-app-region），双击缩放窗口也由它带来。
+    // 无 border-b、无自有底色：与右栏内容是同一块面（2026-07-27 左右结构拍板）。
+    // 底色由 App 的右栏容器统一给（main 的 #760 把 bg-zinc-900 写在本行，合并时收敛到 App 一处，
+    // 免得两个地方各给一次底色）。画一条横线会把右栏切成上下两段，正是要消除的读法。
     <div
-      className="h-12 flex items-center justify-between px-4 bg-zinc-900 relative z-30"
+      data-tauri-drag-region
+      className={`h-12 flex items-center justify-between px-4 bg-transparent relative z-30 ${sidebarCollapsed ? COLLAPSED_TRAFFIC_LIGHT_INSET : ''}`}
       style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
     >
       <div className="flex items-center gap-2" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
@@ -49,15 +59,18 @@ export const TitleBar: React.FC<TitleBarProps> = ({ secondaryPageActive = false 
         )}
         {!secondaryPageActive && <SessionActionsMenu />}
       </div>
-      {/* Right: 右栏收起态的展开入口。展开态的收起 affordance 在面板头
-          （WorkbenchTabs 收起按钮），顶栏不再叠一颗（2026-07-26 打磨批 D D5 去重）。 */}
+      {/* Right: 右栏开关。**两态同住一个位置**——2026-07-27 产品负责人：「展开收起侧边栏按钮
+          为什么纵向位置会变？」根因是收起态的入口在本栏（h-12，中心 24）、展开态的收起钮在
+          面板头那一行，同一个开关的两态住在两行里，一开一收就跳。改回顶栏单点：图标随状态翻，
+          位置恒定。（这推翻了 2026-07-26 打磨批 D5 的「顶栏不叠一颗」——D5 去的是重复，
+          代价是位移；位移比重复更伤，且现在顶栏这颗是唯一一颗，不构成重复。） */}
       <div className="flex items-center gap-2" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
-        {workbenchCollapsed && !secondaryPageActive && (
+        {!secondaryPageActive && (
           <IconButton
-            icon={<PanelRight className="w-4 h-4" />}
-            aria-label={t.workbenchTabs.expandPanel}
-            data-testid="titlebar-expand-workbench"
-            onClick={() => setWorkbenchCollapsed(false)}
+            icon={workbenchCollapsed ? <PanelRight className="w-4 h-4" /> : <PanelRightClose className="w-4 h-4" />}
+            aria-label={workbenchCollapsed ? t.workbenchTabs.expandPanel : t.workbenchTabs.collapsePanel}
+            data-testid={workbenchCollapsed ? 'titlebar-expand-workbench' : 'titlebar-collapse-workbench'}
+            onClick={() => setWorkbenchCollapsed(!workbenchCollapsed)}
             variant="ghost"
             size="md"
           />

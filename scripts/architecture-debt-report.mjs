@@ -110,12 +110,26 @@ function readHistoricalGodFileWhitelist() {
   return paths;
 }
 
+// effective = 非空、非注释行。注意 JSX 的 `{/* ... */}` 也是注释——2026-07-28 之前这里
+// 不认它，于是 .tsx 里的成块 JSX 注释被当成代码计入，写注释就会把文件推过 god-file 门
+// （实测：Sidebar.tsx 现行口径 1019 行超限，排除 JSX 注释后只有 966，即真实代码只多了 1 行）。
+// 这不是放宽门，是修计数：门要量的是代码体量，不该因为把设计约定写清楚而变红。
 function countLines(content) {
   const lines = content.split(/\r?\n/);
   let effective = 0;
+  let inJsxComment = false;
   for (const line of lines) {
     const trimmed = line.trim();
     if (!trimmed) continue;
+    if (inJsxComment) {
+      if (trimmed.endsWith('*/}') || trimmed.endsWith('*/')) inJsxComment = false;
+      continue;
+    }
+    if (trimmed.startsWith('{/*')) {
+      // 单行 `{/* ... */}` 直接跳过；跨行的进块态，直到收尾符
+      if (!(trimmed.endsWith('*/}') || trimmed.endsWith('*/'))) inJsxComment = true;
+      continue;
+    }
     if (trimmed.startsWith('//')) continue;
     if (trimmed.startsWith('/*') || trimmed.startsWith('*') || trimmed.startsWith('*/')) continue;
     effective += 1;

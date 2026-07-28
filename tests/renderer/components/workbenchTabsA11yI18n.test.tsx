@@ -202,7 +202,10 @@ describe('WorkbenchTabs tab 条形态（D6）', () => {
     expect(screen.queryByLabelText(en.workbenchTabs.addView)).toBeNull();
   });
 
-  it('the header close button collapses the whole column instead of closing one view', () => {
+  // 2026-07-27：收起整栏的入口已从面板头搬到顶栏（两态同槽，位置不再随开合上下跳），
+  // 「收整栏而不是关单视图」这条语义随之由 workbenchCollapseAlwaysReachable.test.tsx 守。
+  // 这里改守反向约束：面板头**不该**再长出收起钮，否则同一开关又分居两行、位移问题复发。
+  it('面板头不再自带收起钮（收起入口只在顶栏，避免开关两态分居两行）', () => {
     useAppStore.setState({
       workbenchTabs: ['files'],
       activeWorkbenchTab: 'files',
@@ -210,12 +213,9 @@ describe('WorkbenchTabs tab 条形态（D6）', () => {
     });
     render(<WorkbenchTabs />);
 
-    fireEvent.click(screen.getByLabelText(en.workbenchTabs.collapsePanel));
-
-    // 收起的是整栏；面板本身留着，展开后回到原来那个视图。
-    expect(useAppStore.getState().workbenchCollapsed).toBe(true);
-    expect(useAppStore.getState().workbenchTabs).toEqual(['files']);
-    expect(useAppStore.getState().activeWorkbenchTab).toBe('files');
+    expect(screen.queryByLabelText(en.workbenchTabs.collapsePanel)).toBeNull();
+    // tab 上的 × 仍在，两者别混为一谈（下一条用例守它关的是单个视图）。
+    expect(screen.getByLabelText(en.workbenchTabs.closeView.replace('{view}', en.workbenchTabs.filesLabel))).toBeTruthy();
   });
 
   it('tab 上的 × 关闭单个视图（含概览/文件等常驻视图），关完回空态启动器', () => {

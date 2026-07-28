@@ -186,19 +186,22 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
       data-sidebar-group-phase={expansionView.phase}
     >
       <div
-        className={`group sticky top-0 ${menuOpen ? 'z-30' : 'z-20'} flex items-center gap-1.5 w-full pl-2 pr-3 py-1.5 bg-zinc-900 backdrop-blur-sm text-left hover:bg-zinc-800/40 transition-colors`}
+        className={`group sticky top-0 ${menuOpen ? 'z-30' : 'z-20'} flex items-center gap-1.5 w-full px-1.5 py-1.5 bg-zinc-900 backdrop-blur-sm text-left hover:bg-zinc-800/40 transition-colors`}
         title={title}
       >
         {/* 分组头对齐约定(2026-07-02 拍板,2026-07-26 强化)：图标+名称左对齐、整行垂直居中；
             展开收起 chevron 不常驻，hover/聚焦时才出现在名称右侧(参考 Codex)；
             未完成数右对齐，用"色球+数字"与会话行的状态圆点同一视觉语言，不用文字胶囊。
             07-26 Codex 式分组：分组头升格作一等工作区，会话行整体缩进，组间距 10px。
-            07-27 对齐规范（数值是在真实 DOM 里量出来的，不是推算）：
-            左轨 42px —— 入口区行 8(容器)+16(图标)+... = 文字 42；分组头 px-2 同轨；
-            会话行区 ml-[10px] 使行容器落在 18，行内 pl-0 + 16px 前导槽 + gap-2 = 18+24 = 42；
+            07-28 对齐规范（数值实测，不是推算；单一真源见 Sidebar 根的横向节奏注释）：
+            外框 = 根左右各让一条 --scrollbar-size(6)，右边那条给滚动条；各区块 px-1(4)；各行内 px-1.5(6)。
+            ⇒ 左轨：图标左缘 16、文字左缘 42（16 + 图标 16 + gap 10）。分组头 px-1.5 同轨；
+            会话行区 ml-2(8) 使行容器落在 18，行内 pl-0 + 16px 前导槽 + gap-2 = 18+24 = 42；
             展开行没有前导槽，用 pl-6(24) 补齐到同一条 42。
-            右轨基准 = 账号区箭头（cx=212，right=220）：分组头 pr-3、会话行 pr-3，
-            使角标 / 状态点 / 账号箭头三者右缘同为 220、中心同为 212（实测口径）。 */}
+            ⇒ 右轨：内容右缘 224（240-6-4-6），角标 / 状态点 / 账号箭头 / 顶行最右图标同轴。
+            四边 padding 全等 16 —— 改任一处要把**所有区块**一起对：工作目录行 / 新任务行 /
+            能力区 / 会话列表 / 更新横幅 / 会话类型筛选条 / doctor 提示 / 账号区，一个都不能漏
+            （2026-07-28 就漏了工作目录行与新任务行，产品负责人一眼看出「新任务样式不对」）。 */}
         <button
           type="button"
           title={expansionView.toggleTitle}
@@ -419,7 +422,7 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
         const canToggle = !hasSearchFilters && (hiddenCount > 0 || showAllRows);
         return (
           <div
-            className={`${expansionView.rowsClassName} ml-[10px]`}
+            className={`${expansionView.rowsClassName} ml-2`}
             data-sidebar-group-rows={group.key}
           >
             {group.sessions.length === 0 ? (

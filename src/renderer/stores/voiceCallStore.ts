@@ -47,6 +47,10 @@ interface VoiceCallStoreState {
   pttCaptureOn: boolean;
   /** 断线重连中：phase 回到 connecting，但这是同一通电话，work items / 计时都不重置 */
   reconnecting: boolean;
+  /** 当前是第几次重连（1 起）；非重连态为 0。上限由 VOICE_RECONNECT_BACKOFF_MS 推导，bridge 写入 */
+  reconnectAttempt: number;
+  /** 重连总次数上限（= 退避表长度）；非重连态为 0 */
+  reconnectMaxAttempts: number;
   /** 本次通话的打断方式（建连时从设置快照）：决定 VoiceChrome 是全双工还是 PTT/点按 */
   interruptMode: VoiceInterruptMode;
   workItems: VoiceWorkItem[];
@@ -77,7 +81,10 @@ interface VoiceCallStoreState {
   levelsChanged: (mic: number, playback: number) => void;
   muteChanged: (muted: boolean) => void;
   pttCaptureChanged: (on: boolean) => void;
-  reconnectingChanged: (reconnecting: boolean) => void;
+  reconnectingChanged: (
+    reconnecting: boolean,
+    progress?: { attempt: number; maxAttempts: number },
+  ) => void;
   reset: () => void;
 }
 
@@ -91,6 +98,8 @@ const INITIAL = {
   assistantSpeaking: false,
   pttCaptureOn: false,
   reconnecting: false,
+  reconnectAttempt: 0,
+  reconnectMaxAttempts: 0,
   interruptMode: 'server_vad' as const,
   workItems: [],
   partialUser: '',
@@ -134,7 +143,13 @@ export const useVoiceCallStore = create<VoiceCallStoreState>((set) => ({
   levelsChanged: (mic, playback) => set({ micLevel: mic, playbackLevel: playback }),
   muteChanged: (muted) => set({ muted }),
   pttCaptureChanged: (on) => set({ pttCaptureOn: on }),
-  reconnectingChanged: (reconnecting) => set({ reconnecting }),
+  // 重连开始必须带进度（attempt 从 1 起）；结束/归零时不带，进度清零。
+  reconnectingChanged: (reconnecting, progress) =>
+    set({
+      reconnecting,
+      reconnectAttempt: reconnecting ? progress?.attempt ?? 0 : 0,
+      reconnectMaxAttempts: reconnecting ? progress?.maxAttempts ?? 0 : 0,
+    }),
 
   reset: () => set({ ...INITIAL }),
 }));

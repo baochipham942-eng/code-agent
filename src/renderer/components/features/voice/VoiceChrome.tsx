@@ -102,13 +102,19 @@ export const VoiceChrome: React.FC<{ sessionId: string | null }> = ({ sessionId 
   const isManualListening = visual === 'listening' && store.interruptMode === 'manual';
   const statusText = visual === 'error'
     ? (store.error ? resolveVoiceMessage(t, store.error) : t.voice.status.error)
-    : visual === 'working' && currentWorkItem
-      ? currentWorkItem.title
-      : visual === 'muted'
-        ? t.voice.status.mutedDetail
-        : isManualListening
-          ? (store.pttCaptureOn ? t.voice.status.manualListening : t.voice.status.manualReady)
-          : t.voice.status[visual];
+    : visual === 'reconnecting'
+      ? (store.reconnectMaxAttempts > 0
+          ? t.voice.status.reconnectingProgress
+              .replace('{n}', String(store.reconnectAttempt))
+              .replace('{m}', String(store.reconnectMaxAttempts))
+          : t.voice.status.reconnecting)
+      : visual === 'working' && currentWorkItem
+        ? currentWorkItem.title
+        : visual === 'muted'
+          ? t.voice.status.mutedDetail
+          : isManualListening
+            ? (store.pttCaptureOn ? t.voice.status.manualListening : t.voice.status.manualReady)
+            : t.voice.status[visual];
 
   const orbState: OrbState = isManualListening && !store.pttCaptureOn ? 'manual-ready' : visual;
   const metaParts = visual === 'error'

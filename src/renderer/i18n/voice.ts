@@ -35,6 +35,8 @@ export const voiceZh: VoiceTranslations = {
       speaking: '正在回答',
       working: '执行中',
       reconnecting: '重连中…',
+      /** 样机⑦：「连接断了，正在重试… / 第 2 次 · 最多 5 次」。{n}=当前第几次，{m}=总上限（退避表长度）。 */
+      reconnectingProgress: '连接断了，正在重试… · 第 {n} 次 · 最多 {m} 次',
       muted: '已静音',
       mutedDetail: '已静音 · 它听不见你',
       manualReady: '点一下开始说',
@@ -175,6 +177,8 @@ export const voiceEn = {
       speaking: 'Speaking',
       working: 'Working',
       reconnecting: 'Reconnecting…',
+      /** Prototype ⑦: "Connection lost, retrying… / attempt 2 of 5". {n}=current attempt, {m}=max (backoff table length). */
+      reconnectingProgress: 'Connection lost, retrying… · attempt {n} of {m}',
       muted: 'Muted',
       mutedDetail: "Muted · it can't hear you",
       manualReady: 'Tap to start talking',

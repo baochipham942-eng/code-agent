@@ -861,8 +861,9 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
         {/* 实时通话 chrome：live 时底栏扩展（打字/附件入口保留在下方原处，§7.2） */}
         <VoiceChrome sessionId={currentSessionId ?? null} />
 
-        {/* Codex 风格融合：去掉明显边框 + 阴影，只用极弱 bg 区分输入区跟聊天内容 */}
-        <div className="relative bg-white/[0.02] backdrop-blur-sm rounded-2xl focus-within:bg-white/[0.04] transition-colors duration-200">
+        {/* composer 浮起（2026-07-28 品质感打磨）：L1 底 + 投影 + 聚焦描边微亮，
+            与聊天内容拉开亮度层级，样式真源在 global.css .composer-elevated */}
+        <div className="relative composer-elevated rounded-2xl">
           {/* 看某位成员时输入框整块封住：人只跟团长说话，不跟成员说话 */}
           {viewingMemberId && (
             <div className="absolute inset-0 z-20 flex items-center justify-center rounded-2xl bg-zinc-900/80 backdrop-blur-sm">
@@ -891,7 +892,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
             onSelect={handleSlashCommandSelect}
           />
           {isAgentCommandAutocompleteOpen && (
-            <div className="absolute bottom-full left-0 right-0 z-20 mb-1 max-h-[240px] overflow-y-auto rounded-lg border border-zinc-700/70 bg-zinc-900 shadow-xl">
+            <div className="absolute bottom-full left-0 right-0 z-20 mb-1 max-h-[240px] overflow-y-auto rounded-lg elevation-l2 popover-enter">
               <div className="border-b border-zinc-800 px-3 py-1.5 text-[10px] uppercase tracking-wide text-zinc-500">
                 /agent
               </div>
@@ -936,7 +937,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
           )}
           {/* @ File autocomplete dropdown */}
           {!isAgentCommandAutocompleteOpen && isAgentMentionAutocompleteOpen && agentMentionAutocomplete && (
-            <div className="absolute bottom-full left-0 right-0 mb-1 bg-zinc-900 border border-zinc-700 rounded-lg shadow-xl z-20 max-h-[240px] overflow-y-auto">
+            <div className="absolute bottom-full left-0 right-0 mb-1 elevation-l2 popover-enter rounded-lg z-20 max-h-[240px] overflow-y-auto">
               {agentMentionAutocomplete.matches.map((agent, index) => {
                 const agentRole = (agent as { role?: string }).role;
                 return (
@@ -963,7 +964,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
             </div>
           )}
           {(!isAgentMentionAutocompleteOpen && !neoTagInvocation && isAutocompleteOpen && fileMatches.length > 0) && (
-            <div className="absolute bottom-full left-0 right-0 mb-1 bg-zinc-900 border border-zinc-700 rounded-lg shadow-xl z-20 max-h-[200px] overflow-y-auto">
+            <div className="absolute bottom-full left-0 right-0 mb-1 elevation-l2 popover-enter rounded-lg z-20 max-h-[200px] overflow-y-auto">
               {fileMatches.map((f, i) => (
                 <button
                   key={i}

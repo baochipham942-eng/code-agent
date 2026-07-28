@@ -92,10 +92,12 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(
     const baseStyles = [
       'inline-flex items-center justify-center',
       'rounded-md',
-      'transition-colors duration-200',
+      'transition-all duration-200',
       'focus:outline-hidden',
       'focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]',
       'disabled:opacity-50 disabled:cursor-not-allowed',
+      // 2026-07-28 品质感打磨④：按下瞬时反馈（60-100ms 内有感），对齐 Button 的 active:scale
+      'active:scale-[0.97]',
     ].join(' ');
 
     const iconSize = iconSizeStyles[size];

@@ -127,6 +127,35 @@ describe('MessageProcessor persistence', () => {
     expect(sessionManagerState.addMessage).not.toHaveBeenCalled();
   });
 
+  // 2026-07-28：steer 路径此前把「拼了 turnSystemContext 的模型面内容」当用户消息落库，
+  // 语音通话因此把 <live_voice_permission_notice> 整块讲给了用户。
+  it('persists the user-facing content while the model still sees the scaffolded one', () => {
+    const ctx = {
+      stats: RunStatsState.forTest(),
+      contextHealth: ContextHealthState.forTest(),
+      sessionId: 'runtime-session-1',
+      messages: [] as unknown[],
+    };
+    const processor = createProcessor(ctx as DeepPartial<RuntimeContext>);
+    const scaffolded = '<live_voice_permission_notice>\n钳档说明\n</live_voice_permission_notice>\n\n<user_request>\n改成蓝色\n</user_request>';
+
+    processor.injectSteerMessage(scaffolded, undefined, undefined, undefined, '改成蓝色');
+
+    // 模型面：拼装体原样进上下文，notice 不能被削掉
+    expect((ctx.messages[0] as { content: string }).content).toBe(scaffolded);
+
+    const persisted = sessionManagerState.addMessageToSession.mock.calls.at(-1)![1] as {
+      id: string;
+      content: string;
+    };
+    // 展示面：落库的是原话，且一个标签都不带
+    expect(persisted.content).toBe('改成蓝色');
+    expect(persisted.content).not.toContain('live_voice_permission_notice');
+    expect(persisted.content).not.toContain('<user_request>');
+    // 同一条消息的两个面，id 必须一致，否则渲染端会当成两条
+    expect(persisted.id).toBe((ctx.messages[0] as { id: string }).id);
+  });
+
   it('reuses the renderer optimistic message id when provided', () => {
     const ctx = {
       stats: RunStatsState.forTest(),

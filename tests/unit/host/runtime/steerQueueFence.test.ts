@@ -103,8 +103,28 @@ describe('steerOrQueue', () => {
       repository,
     )).resolves.toEqual({ outcome: 'steered' });
 
-    expect(steer).toHaveBeenCalledWith('new direction', 'message-1', undefined, undefined);
+    expect(steer).toHaveBeenCalledWith('new direction', 'message-1', undefined, undefined, undefined);
     expect(repository.enqueue).not.toHaveBeenCalled();
+  });
+
+  // 2026-07-28：排队的活重派时会重新拼装 turnSystemContext，入队存拼装体等于双重包装，
+  // 而且那条 envelope 一旦被消费就会以用户消息身份把脚手架露出来。
+  it('queues the user-facing content, never the scaffolded model input', async () => {
+    const repository = createRepository();
+    const steer = vi.fn().mockRejectedValue(new SteerRejectedError());
+    const scaffolded = '<notice/>\n\n<user_request>\n改成蓝色\n</user_request>';
+
+    const outcome = await steerOrQueue(
+      { steer },
+      { sessionId: 'session-1', content: scaffolded, displayContent: '改成蓝色', clientMessageId: 'message-9' },
+      repository,
+    );
+
+    expect(outcome).toEqual({ outcome: 'queued', queuedInputId: 'message-9' });
+    expect(steer).toHaveBeenCalledWith(scaffolded, 'message-9', undefined, undefined, '改成蓝色');
+    const enqueued = repository.enqueue.mock.calls.at(-1)![0] as { envelope: { content: string } };
+    expect(enqueued.envelope.content).toBe('改成蓝色');
+    expect(enqueued.envelope.content).not.toContain('<user_request>');
   });
 
   it('queues a settled-run rejection with generated identity and the original payload', async () => {

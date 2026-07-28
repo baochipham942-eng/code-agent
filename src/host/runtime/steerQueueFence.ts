@@ -83,6 +83,7 @@ export interface SteerAttemptTarget {
     clientMessageId?: string,
     attachments?: MessageAttachment[],
     metadata?: MessageMetadata,
+    displayContent?: string,
   ): void | Promise<void>;
 }
 
@@ -93,6 +94,12 @@ export interface SteerQueueFenceRepository {
 export interface SteerOrQueueInput {
   sessionId: string | null;
   content: string;
+  /**
+   * 用户/语音的原话。`content` 可能已被调用方拼上 turnSystemContext 脚手架（模型面），
+   * 那份绝不能落库或排队——排队的活重派时会重新拼装，存脚手架等于双重包装且会露给用户。
+   * 省略时按 `content` 本身就是原话处理。
+   */
+  displayContent?: string;
   clientMessageId?: string;
   attachments?: MessageAttachment[];
   metadata?: MessageMetadata;
@@ -108,6 +115,8 @@ export type { SteerOrQueueOutcome } from '../../shared/contract/appService';
 interface QueuedSteerEnvelopeInput {
   sessionId: string;
   content: string;
+  /** 见 SteerOrQueueInput.displayContent —— 入队一律存原话，不存模型面脚手架。 */
+  displayContent?: string;
   clientMessageId?: string;
   attachments?: MessageAttachment[];
   metadata?: MessageMetadata;
@@ -126,7 +135,7 @@ function buildQueuedSteerEnvelope(
   return {
     id,
     envelope: {
-      content: input.content,
+      content: input.displayContent ?? input.content,
       clientMessageId: id,
       sessionId: input.sessionId,
       attachments: input.attachments,
@@ -148,6 +157,7 @@ export async function steerOrQueue(
       input.clientMessageId,
       input.attachments,
       input.metadata,
+      input.displayContent,
     );
     return { outcome: 'steered' };
   } catch (error) {
@@ -177,6 +187,8 @@ function resolveQueuedInputRepository(): SteerQueueFenceRepository {
 
 export interface PendingSteerLikeMessage {
   content: string;
+  /** 见 SteerOrQueueInput.displayContent。 */
+  displayContent?: string;
   clientMessageId?: string;
   attachments?: MessageAttachment[];
   metadata?: MessageMetadata;

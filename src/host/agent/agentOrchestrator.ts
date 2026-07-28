@@ -95,6 +95,8 @@ function isApproveResponse(response: PermissionResponse): boolean {
 
 interface PendingSteerMessage {
   content: string;
+  /** 用户原话；`content` 可能带 turnSystemContext 脚手架，那份只给模型。 */
+  displayContent?: string;
   clientMessageId?: string;
   attachments?: MessageAttachment[];
   messageMetadata?: MessageMetadata;
@@ -380,6 +382,7 @@ export class AgentOrchestrator {
       logger.info('[AgentOrchestrator] Already interrupting, queuing message');
       this.pendingSteerMessages.push({
         content: effectiveMessage,
+        displayContent: newMessage,
         clientMessageId,
         attachments: attachments as MessageAttachment[] | undefined,
         messageMetadata,
@@ -398,13 +401,13 @@ export class AgentOrchestrator {
     if (this.agentLoop) {
       try {
         const outcome = await steerOrQueue(this.agentLoop, {
-          sessionId, content: effectiveMessage, clientMessageId, attachments: attachments as MessageAttachment[] | undefined, metadata: messageMetadata,
+          sessionId, content: effectiveMessage, displayContent: newMessage, clientMessageId, attachments: attachments as MessageAttachment[] | undefined, metadata: messageMetadata,
         });
 
         while (this.pendingSteerMessages.length > 0) {
           const queued = this.pendingSteerMessages.shift()!;
           await steerOrQueue(this.agentLoop, {
-            sessionId, content: queued.content, clientMessageId: queued.clientMessageId, attachments: queued.attachments, metadata: queued.messageMetadata,
+            sessionId, content: queued.content, displayContent: queued.displayContent, clientMessageId: queued.clientMessageId, attachments: queued.attachments, metadata: queued.messageMetadata,
           });
           logger.info('[AgentOrchestrator] Processed queued steer message');
         }
@@ -1328,7 +1331,9 @@ export class AgentOrchestrator {
     logger.info(`[EffortLevel] complexity=${complexityAnalysis.complexity} → effort=${effort}`);
 
       logger.info('========== Starting agent loop ==========');
-      const runPromise = this.agentLoop.run(effectiveContent);
+      // 第二个参数是用户原话：telemetry 的 user_prompt 只能存它，别存拼了
+      // turnSystemContext 的 effectiveContent（backfill 会把那一列写回消息流）。
+      const runPromise = this.agentLoop.run(effectiveContent, content);
       this.activeRunPromise = runPromise;
       await runPromise;
       logger.info('========== Agent loop completed normally ==========');

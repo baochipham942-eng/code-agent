@@ -16,7 +16,7 @@ import { getSessionManager } from '../infra/sessionManager';
 import { getPermissionModeManager } from '../../permissions/modes';
 import { qwenOmniTransport } from './qwenOmniTransport';
 import { resolveVoiceRouting } from './voiceRouting';
-import { beginVoiceDispatch, endVoiceDispatch, setVoiceDispatchFocus } from './voiceAgentCoordinator';
+import { beginVoiceDispatch, endVoiceDispatch, flushVoiceTail, pushVoiceTranscript, setVoiceDispatchFocus } from './voiceAgentCoordinator';
 import { composeVoiceInstructions, focusChanged } from './voiceContextAssembler';
 import { recordVoiceCall } from './voiceUsageLedger';
 import { VOICE_TOOL_DEFINITIONS, executeVoiceTool } from './voiceTools';
@@ -156,6 +156,9 @@ async function persistTranscript(
 ): Promise<void> {
   const trimmed = text.trim();
   if (!trimmed) return;
+  // 落库的同时进近窗（P0-2）：派活时执行侧要拿原文自己重建意图，
+  // 别只给它通话 brain 改写过的那一句。落库失败不影响近窗，反之亦然。
+  pushVoiceTranscript({ role, text: trimmed });
   try {
     await getSessionManager().addMessageToSession(neoSessionId, {
       id: `voice-${role}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -263,8 +266,6 @@ async function teardown(reason: string): Promise<void> {
   // 只还「通话」这一张票。语音派出去、还在飞的 run 各自持票，抬严对它们继续有效——
   // 挂断不再等于解除（2026-07-26 真机：挂断后同一个 run 直接落盘，D4 承诺全失效）。
   getPermissionModeManager().clearLiveVoiceSession(session.neoSessionId, `call:${session.id}`);
-  // 断开 work item 的 UI 回流；账本与 run 的票继续活到最后一件活落地（同上）。
-  endVoiceDispatch();
   // 排水窗：用户 ASR completed / 助手 transcript done 常在挂断后 ~1s 才到，立刻关
   // 上游会把这通电话说过的话全部丢掉（2026-07-26 真机：12s 通话落库只剩摘要）。
   // 窗口内 onEvent 照常把 final 落库；窗口结束后 done 仍没到的助手增量缓冲冲成 final。
@@ -274,6 +275,15 @@ async function teardown(reason: string): Promise<void> {
     session.transcriptBuf.assistant = '';
     await persistTranscript(session.neoSessionId, 'assistant', pendingAssistant, session.transcriptCounter);
   }
+  // tail flush（P0-3）必须夹在「排水窗结束」与「断开账本」之间：早了尾巴还没到，
+  // 晚了账本已经被 endVoiceDispatch 摘掉。补派与否的三条闸在 flushVoiceTail 里判。
+  try {
+    if (await flushVoiceTail()) session.workItemCount += 1;
+  } catch (err) {
+    logger.warn('tail flush failed', { message: err instanceof Error ? err.message : 'unknown' });
+  }
+  // 断开 work item 的 UI 回流；账本与 run 的票继续活到最后一件活落地（同上）。
+  endVoiceDispatch();
   const endedAt = Date.now();
   const { startedAt } = session;
   const durationSec = Math.max(0, Math.round((endedAt - startedAt) / 1000));
@@ -474,10 +484,17 @@ async function connectAndBind(
  * 这里再按内容去重，避免同一份焦点被反复推给上游。
  */
 function applyFocus(session: ActiveSession, focus: VoiceFocusContext): void {
-  if (!focusChanged(session.focus, focus)) return;
+  const changed = focusChanged(session.focus, focus);
+  // 取证文档 §4：applyFocus / updateInstructions 全程零日志，于是「焦点刷新有没有发生」
+  // 与「上游不回显」两种情况在现场根本区分不了——判因前先补可观测性，别拿猜的当结论。
+  // 不记 filePath 原文（本地路径），只记有没有。
+  logger.info('focus reported', { voiceSessionId: session.id, changed, view: focus.view, hasFile: !!focus.filePath });
+  if (!changed) return;
   session.focus = focus;
   setVoiceDispatchFocus(focus);
-  session.upstream.updateInstructions(composeVoiceInstructions(session.personaInstructions, focus));
+  const instructions = composeVoiceInstructions(session.personaInstructions, focus);
+  logger.info('instructions updated', { voiceSessionId: session.id, chars: instructions.length });
+  session.upstream.updateInstructions(instructions);
 }
 
 /** 一条 Renderer WS 的事件绑定。重连换 socket 时原样再绑一次。 */

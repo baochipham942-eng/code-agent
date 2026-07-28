@@ -127,6 +127,12 @@ export const VOICE_AEC_BASE64_CHUNK_BYTES = 0x8000;
 /** 上游 WS 握手超时（ms）。 */
 export const VOICE_UPSTREAM_CONNECT_TIMEOUT_MS = 15_000;
 
+/** 上游 WS 心跳间隔（ms）；用于主动触发 TCP 层断链探测。 */
+export const VOICE_UPSTREAM_HEARTBEAT_INTERVAL_MS = 15_000;
+
+/** 上游完全无消息 / pong 的最长容忍时间（ms）。 */
+export const VOICE_UPSTREAM_SILENCE_TIMEOUT_MS = 30_000;
+
 /** 通话最长时长（ms），到点强制挂断，兜住忘记挂断导致的持续计费。 */
 export const VOICE_SESSION_MAX_DURATION_MS = 10 * 60 * 1000;
 

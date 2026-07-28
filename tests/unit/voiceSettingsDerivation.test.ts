@@ -4,6 +4,7 @@ import {
   deriveInterruptMode,
   deriveTurnDetection,
   deriveVadSensitivity,
+  normalizeInterruptMode,
 } from '../../src/renderer/components/features/voice/voiceSettingsDerivation';
 
 describe('deriveTurnDetection', () => {
@@ -18,15 +19,14 @@ describe('deriveTurnDetection', () => {
     expect(deriveTurnDetection('server_vad', 'low')).toMatchObject({ threshold: 0.7 });
   });
 
-  it('push_to_talk / manual：turn_detection = null（手动 commit 模式，B6 前提）', () => {
-    expect(deriveTurnDetection('push_to_talk', 'medium')).toBeNull();
-    expect(deriveTurnDetection('manual', 'medium')).toBeNull();
+  it('点按说话：turn_detection = null（手动 commit 模式，B6 前提）', () => {
+        expect(deriveTurnDetection('manual', 'medium')).toBeNull();
   });
 });
 
 describe('反推（老配置没有 live.* 时按 turnDetection 形状推）', () => {
-  it('turnDetection null → push_to_talk；server_vad → server_vad；未配置 → server_vad', () => {
-    expect(deriveInterruptMode({ turnDetection: null })).toBe('push_to_talk');
+  it('turnDetection null → manual；server_vad → server_vad；未配置 → server_vad', () => {
+    expect(deriveInterruptMode({ turnDetection: null })).toBe('manual');
     expect(deriveInterruptMode({ turnDetection: { type: 'server_vad' } })).toBe('server_vad');
     expect(deriveInterruptMode(undefined)).toBe('server_vad');
   });
@@ -40,5 +40,27 @@ describe('反推（老配置没有 live.* 时按 turnDetection 形状推）', ()
     expect(deriveVadSensitivity({ turnDetection: { type: 'server_vad', threshold: 0.7 } })).toBe('low');
     expect(deriveVadSensitivity(undefined)).toBe('medium');
     expect(deriveVadSensitivity({ live: { vadSensitivity: 'low' }, turnDetection: { type: 'server_vad', threshold: 0.3 } })).toBe('low');
+  });
+});
+
+// 2026-07-27 删「按住说话」档：它相对「点按说话」只多一条松手必关麦，
+// 代价是整通电话手被按在按钮上。已经存了这个值的用户必须被迁走——
+// 留在运行时就是一个没有 UI 的档位（设置页选不到，却在生效）。
+describe('删档迁移', () => {
+  // 迁到全双工而不是点按：当初选 PTT 的多半只是随手试了一下，
+  // 升级后要反复点按钮才能说话是莫名其妙的（2026-07-27 真机踩到）。
+  it('历史 push_to_talk 迁到全双工，不是点按', () => {
+    expect(normalizeInterruptMode('push_to_talk')).toBe('server_vad');
+    expect(deriveInterruptMode({ live: { interrupt: 'push_to_talk' as never } })).toBe('server_vad');
+  });
+
+  it('显式选的点按说话不受影响', () => {
+    expect(normalizeInterruptMode('manual')).toBe('manual');
+    expect(deriveInterruptMode({ live: { interrupt: 'manual' } })).toBe('manual');
+  });
+
+  it('server_vad 与未配置不受影响', () => {
+    expect(normalizeInterruptMode('server_vad')).toBe('server_vad');
+    expect(normalizeInterruptMode(undefined)).toBe('server_vad');
   });
 });

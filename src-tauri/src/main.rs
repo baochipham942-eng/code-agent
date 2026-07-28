@@ -35,9 +35,10 @@ use native_app_icon::desktop_get_app_icon;
 use native_desktop::{
     desktop_capture_screenshot, desktop_get_capabilities, desktop_get_collector_status,
     desktop_get_frontmost_context, desktop_get_permission_status, desktop_list_recent_events,
-    desktop_open_system_settings, desktop_request_microphone_permission, desktop_start_audio_rec,
-    desktop_start_collector, desktop_stop_audio_rec, desktop_stop_collector,
-    desktop_update_analyze_text, NativeDesktopState,
+    desktop_control_voice_aec, desktop_open_system_settings, desktop_request_microphone_permission,
+    desktop_start_audio_rec, desktop_start_collector, desktop_start_voice_aec,
+    desktop_stop_audio_rec, desktop_stop_collector, desktop_stop_voice_aec,
+    desktop_update_analyze_text, desktop_write_voice_aec_playback, NativeDesktopState,
 };
 use agent_halo::{agent_halo_hide, agent_halo_mode, agent_halo_show, AgentHaloState};
 use pip::{pip_control, pip_controls, pip_frame, pip_hide, pip_show};
@@ -2757,6 +2758,10 @@ fn main() {
             desktop_request_microphone_permission,
             desktop_start_audio_rec,
             desktop_stop_audio_rec,
+            desktop_start_voice_aec,
+            desktop_write_voice_aec_playback,
+            desktop_control_voice_aec,
+            desktop_stop_voice_aec,
             desktop_get_app_icon,
             appshots_trigger,
             appshots_read_image_data_url,

@@ -24,7 +24,8 @@ export const enSettingsCore = {
       skills: 'Skills',
       conversation: 'Context compaction',
       keybindings: 'Shortcuts',
-      voiceInput: 'Voice',
+      voiceLive: 'Live voice',
+      voiceInput: 'Speech to text',
       doctor: 'Diagnostics',
       workspace: 'Workspace',
       automation: 'Automation',
@@ -63,6 +64,9 @@ export const enSettingsCore = {
       permissionMode: 'Safety mode',
       modelRoutingStrategy: 'Model routing strategy',
       voiceInput: 'Voice input',
+      voiceLive: 'Live voice call',
+      voiceLiveVoice: 'Live voice timbre',
+      voiceLiveInterrupt: 'Interrupt mode',
       whisperModel: 'Whisper model',
       transcriptionLanguage: 'Transcription language',
       keybindingsConfig: 'Shortcut configuration',
@@ -575,6 +579,10 @@ export const enSettingsCore = {
       enableTitle: 'Enable session voice input',
       enableDescription: 'Show the microphone entry in the session composer and put transcription results into the draft.',
       modeTitle: 'Transcription mode',
+      groupRecognition: 'Recognition',
+      groupPerformance: 'Performance',
+      groupRecording: 'Recording',
+      groupPostProcessing: 'Post-processing',
       languageLabel: 'Language',
       localModelLabel: 'Local model',
       threadsLabel: 'Threads',
@@ -589,17 +597,21 @@ export const enSettingsCore = {
       saving: 'Saving',
       effectiveNextRecording: 'Settings take effect on the next recording',
       modes: {
+        stream: {
+          label: 'Live transcription',
+          description: 'Words appear in the composer as you speak. Uses your own DashScope key (billed by duration, about ¥0.009/min)',
+        },
+        'cloud-only': {
+          label: 'Transcribe after speaking',
+          description: 'Transcribes once you stop recording. Uses your own Groq key — high accuracy, pay per use',
+        },
         'local-first': {
           label: 'Local first',
-          description: 'Use local transcription when whisper-cpp is available, then fall back to Groq on failure',
+          description: 'Try local whisper-cpp first, fall back to Groq. Requires setup: brew install whisper-cpp and a model in ~/.cache/whisper/',
         },
         'local-only': {
           label: 'Local only',
-          description: 'Audio stays on this device; missing models or transcription failures return an error directly',
-        },
-        'cloud-only': {
-          label: 'Cloud only',
-          description: 'Use Groq Whisper, useful as a temporary fallback when local models are unavailable',
+          description: 'Audio never leaves this device and costs nothing; accuracy is below cloud. Also requires whisper-cpp and a model',
         },
       },
       // 语言选项用 autonym（各语言自己的文字），与 zh 侧一致——用户找自己的语言认原生文字

@@ -40,6 +40,7 @@ const resources = conf.bundle?.resources ?? [];
 // 对应能力的代码层降级见 windows-support.md §1.5）
 const MACOS_ONLY_PREFIXES = [
   '../scripts/system-audio-capture',
+  '../scripts/voice-aec-io',
   '../scripts/vision-ocr',
   '../scripts/vision-tagger',
   '../.tauri-resources.noindex/scripts/Agent Neo Computer Use.app',

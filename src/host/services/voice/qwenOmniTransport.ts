@@ -48,7 +48,14 @@ type UpstreamTurnDetection =
 
 function resolveTurnDetectionConfig(): VoiceTurnDetectionConfig {
   try {
-    const configured = getConfigService().getSettings().voice?.turnDetection;
+    const voice = getConfigService().getSettings().voice;
+    const configured = voice?.turnDetection;
+    // `turnDetection: null` = 手动 commit 档。但删掉「按住说话」之后，老配置里会出现
+    // `turnDetection: null` + `live.interrupt: 'push_to_talk'` 的组合——UI 侧把它归一到
+    // 全双工了，运行时若还按 null 走，就是「UI 说全双工、上游永远等不到 commit」的
+    // 分叉：用户说了没反应，连补救的点按按钮都不显示（2026-07-27 真机差点踩到）。
+    // 只有**显式**留在点按档时才认这个 null。
+    if (configured === null && voice?.live?.interrupt !== 'manual') return VOICE_TURN_DETECTION_DEFAULT;
     return configured === undefined ? VOICE_TURN_DETECTION_DEFAULT : configured;
   } catch {
     return VOICE_TURN_DETECTION_DEFAULT;
@@ -89,7 +96,14 @@ export const qwenOmniTransport: VoiceTransport = {
       : undefined;
     const registeredTools = onToolCall ? config.tools ?? [] : [];
     const url = `${QWEN_OMNI_REALTIME_WS_URL}?model=${encodeURIComponent(model)}`;
-    logger.info('connecting upstream', { model, toolCount: registeredTools.length });
+    logger.info('connecting upstream', {
+      model,
+      toolCount: registeredTools.length,
+      // 「说了没反应」的头号嫌疑就是这个值（null = 手动档，上游等 commit 才回话）。
+      // 此前它完全不可见，真机只能靠猜——2026-07-27 真机踩到。
+      turnDetection: upstreamTurnDetection === null ? 'null(manual)' : upstreamTurnDetection.type,
+      turnDetectionRaw: JSON.stringify(upstreamTurnDetection),
+    });
 
     const ws = new WebSocket(url, { headers: { Authorization: `Bearer ${apiKey}` } });
 
@@ -146,9 +160,17 @@ export const qwenOmniTransport: VoiceTransport = {
       ws.send(JSON.stringify({ type: 'response.create' }));
     }
 
+    // 上游到底回了什么，此前只有被 switch 命中的那几类才留痕；真机出现
+    // 「转写有了但模型不开口」时，日志里一片空白，无法判因。这里只记事件
+    // **类型**和计数，绝不记 delta / audio 内容（音频不落日志是硬纪律）。
+    const eventTypeSeen = new Map<string, number>();
     ws.on('message', (raw) => {
       const event = parseEvent(raw);
       if (!event) return;
+      const seen = (eventTypeSeen.get(event.type) ?? 0) + 1;
+      eventTypeSeen.set(event.type, seen);
+      // 每种类型只在首次出现时记一条，避免 delta 刷屏
+      if (seen === 1) logger.info('upstream event', { type: event.type });
 
       switch (event.type) {
         case 'response.audio.delta':
@@ -179,7 +201,13 @@ export const qwenOmniTransport: VoiceTransport = {
         case 'input_audio_buffer.speech_stopped':
           speechStoppedAt = Date.now();
           break;
-        case 'session.updated':
+        case 'session.updated': {
+          // 上游到底收下了什么档：我们发 server_vad、它回 null，就是「说了没反应」
+          // 的直接证据（发出去 ≠ 被采纳）。
+          const echoed = (event.session as { turn_detection?: unknown } | undefined)?.turn_detection;
+          logger.info('session.updated echo', {
+            turnDetection: echoed === null ? 'null(manual)' : JSON.stringify(echoed),
+          });
           // 静默降级留痕：上一代模型对 tools 是「收下不报错、回显 null」，
           // 不告警的话现场只能看到「模型死活不肯派活」，查不到根因。
           if (registeredTools.length && !upstreamAcceptedTools(event)) {
@@ -189,6 +217,7 @@ export const qwenOmniTransport: VoiceTransport = {
             });
           }
           break;
+        }
         case 'response.function_call_arguments.done':
           if (onToolCall && typeof event.call_id === 'string' && typeof event.name === 'string') {
             void handleToolCall(event.call_id, event.name, typeof event.arguments === 'string' ? event.arguments : '{}');
@@ -228,6 +257,12 @@ export const qwenOmniTransport: VoiceTransport = {
       sendAudio(frame: Buffer) {
         if (ws.readyState !== WebSocket.OPEN) return;
         ws.send(JSON.stringify({ type: 'input_audio_buffer.append', audio: frame.toString('base64') }));
+      },
+      updateInstructions(instructions: string) {
+        if (ws.readyState !== WebSocket.OPEN) return;
+        // 只发 instructions 这一个字段：整份 session 重发会把 turn_detection / tools
+        // 一起重置，上游对「重发 tools」的行为按模型分化过一次（见 voiceTools 顶注），不赌。
+        ws.send(JSON.stringify({ type: 'session.update', session: { instructions } }));
       },
       commit() {
         if (ws.readyState !== WebSocket.OPEN) return;

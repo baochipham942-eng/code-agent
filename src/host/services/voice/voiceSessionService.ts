@@ -7,8 +7,8 @@
 // ============================================================================
 
 import type { WebSocket as WsSocket } from 'ws';
-import { QWEN_OMNI_REALTIME_MODEL, VOICE_SESSION_MAX_DURATION_MS, VOICE_TEARDOWN_DRAIN_MS } from '../../../shared/constants/voice';
-import type { VoiceClientCommand, VoiceEvent, VoiceTransportHandle } from '../../../shared/contract/voice';
+import { QWEN_OMNI_REALTIME_MODEL, VOICE_RECONNECT_GRACE_MS, VOICE_SESSION_MAX_DURATION_MS, VOICE_TEARDOWN_DRAIN_MS } from '../../../shared/constants/voice';
+import type { VoiceClientCommand, VoiceEvent, VoiceFocusContext, VoiceTransportHandle } from '../../../shared/contract/voice';
 import { getDashscopeApiKey } from '../media/imageGenerationService';
 import { createLogger } from '../infra/logger';
 import { getConfigService } from '../core/configService';
@@ -16,6 +16,9 @@ import { getSessionManager } from '../infra/sessionManager';
 import { getPermissionModeManager } from '../../permissions/modes';
 import { qwenOmniTransport } from './qwenOmniTransport';
 import { resolveVoiceRouting } from './voiceRouting';
+import { beginVoiceDispatch, endVoiceDispatch, setVoiceDispatchFocus } from './voiceAgentCoordinator';
+import { composeVoiceInstructions, focusChanged } from './voiceContextAssembler';
+import { recordVoiceCall } from './voiceUsageLedger';
 import { VOICE_TOOL_DEFINITIONS, executeVoiceTool } from './voiceTools';
 import type { VoiceLiveSettings } from '../../../shared/contract/settings';
 
@@ -44,13 +47,23 @@ interface ActiveSession {
   id: string;
   neoSessionId: string;
   startedAt: number;
-  client: WsSocket;
+  /**
+   * 当前这条 Renderer WS。重连会**换掉它**而不换通话——所以上游回调必须通过这个
+   * 可变引用发，不能闭包捕获建连那一刻的 socket。
+   */
+  clientRef: { current: WsSocket };
   upstream: VoiceTransportHandle;
   maxDurationTimer: NodeJS.Timeout;
+  /** 非 null = 客户端断了，正在宽限窗里等它回来 */
+  graceTimer: NodeJS.Timeout | null;
   /** 本次通话派出去的任务数，进通话摘要 */
   workItemCount: number;
   /** 助手字幕的增量缓冲：上游只给 delta，挂断时若 done 没到要拿它冲成 final。 */
   transcriptBuf: { assistant: string };
+  /** 通话身份的短人设，焦点刷新时要和 Focus 段一起重拼 */
+  personaInstructions: string;
+  /** 用户此刻在看什么（Renderer 节流上报） */
+  focus: VoiceFocusContext | null;
 }
 
 // ponytail: 单进程内一个模块级变量就是「全局单路」的全部实现（方案 §2.6）。
@@ -89,16 +102,101 @@ async function persistTranscript(neoSessionId: string, role: 'user' | 'assistant
   }
 }
 
+/**
+ * 会话级标记：这条会话用过实时语音。侧栏据此在标题旁挂一个语音图标
+ * （产品负责人 2026-07-27）——是**身份**不是状态，所以写在会话 metadata 上，
+ * 不去每次列会话时翻消息。
+ *
+ * 用 patchSessionMetadata 而不是 updateSession({metadata})：后者是整份覆盖，
+ * 会把别人写的 key 冲掉。失败只告警不影响通话。
+ */
+function markSessionHadLiveVoice(neoSessionId: string): void {
+  void getSessionManager()
+    .patchSessionMetadata(neoSessionId, { hadLiveVoice: true })
+    .catch((err: unknown) => {
+      logger.warn('failed to mark session as live-voice', {
+        message: err instanceof Error ? err.message : 'unknown',
+      });
+    });
+}
+
+/**
+ * 通话生命周期事件（observer-only）：暂停/结束要让 agent 侧可编排，
+ * 典型用例是会议形态的通话结束后问一句「要我整理一下吗」。
+ *
+ * 三条纪律：
+ * 1. **fire-and-forget**：hook 是用户脚本，不能让它拖住建连或收尾，也不能把通话搞挂；
+ * 2. **懒加载 task 依赖树**：建连是关键路径，不为一个可能没人订阅的事件把它拉进来
+ *    （同 voiceAgentCoordinator 的 taskManager() 先例）；
+ * 3. **重连不重复发 started**：宽限窗内接回来走 reattachVoiceClient，不经过这里。
+ */
+function emitVoiceCallHook(
+  event: 'VoiceCallStarted' | 'VoiceCallPaused' | 'VoiceCallEnded',
+  params: { voiceCallId: string; sessionId: string; durationSec: number; workItemCount?: number; reason?: string },
+): void {
+  void (async () => {
+    try {
+      const { getTaskManager } = await import('../../task');
+      // 已存在的 manager 挂着 onTrigger / aiCompletion，优先复用；纯语音会话没有
+      // orchestrator 时才临时创建，避免为了观察事件拉起整棵 agent 运行时。
+      let hooks = getTaskManager()?.getOrchestrator(params.sessionId)?.getHookManager?.();
+      if (!hooks) {
+        try {
+          const session = await getSessionManager().getSession(params.sessionId, 1);
+          const { createHookManager } = await import('../../hooks');
+          hooks = createHookManager({
+            workingDirectory: session?.workingDirectory?.trim() || process.cwd(),
+          });
+          await hooks.initialize();
+          if (!hooks.hasHooksFor(event)) return;
+        } catch (err) {
+          logger.info('voice call hook skipped: existing and temporary hook managers unavailable', {
+            event,
+            sessionId: params.sessionId,
+            message: err instanceof Error ? err.message : 'unknown',
+          });
+          return;
+        }
+      }
+      await hooks.triggerVoiceCall(event, params);
+    } catch (err) {
+      logger.warn('voice call hook failed', { event, message: err instanceof Error ? err.message : 'unknown' });
+    }
+  })();
+}
+
+/**
+ * 客户端断了先进宽限窗，不立刻挂断上游（批 H · sticky）。
+ * 窗口内重新 attach 就当作同一通电话继续；超时才真 teardown。
+ */
+function beginReconnectGrace(sessionId: string): void {
+  const session = active;
+  if (session?.id !== sessionId || session.graceTimer) return;
+  logger.info('client gone, waiting for reconnect', { voiceSessionId: sessionId });
+  emitVoiceCallHook('VoiceCallPaused', {
+    voiceCallId: sessionId,
+    sessionId: session.neoSessionId,
+    durationSec: Math.max(0, Math.round((Date.now() - session.startedAt) / 1000)),
+    reason: 'client-gone',
+  });
+  session.graceTimer = setTimeout(() => {
+    if (active?.id === sessionId) void teardown('reconnect-timeout');
+  }, VOICE_RECONNECT_GRACE_MS);
+}
+
 async function teardown(reason: string): Promise<void> {
   const session = active;
   if (!session) return;
   active = null;
   clearTimeout(session.maxDurationTimer);
+  if (session.graceTimer) clearTimeout(session.graceTimer);
   logger.info('session ended', { voiceSessionId: session.id, reason });
   // D4：通话态标记必须先于任何后续动作解除，别让抬严挂在会话上不下来。
   // 只还「通话」这一张票。语音派出去、还在飞的 run 各自持票，抬严对它们继续有效——
   // 挂断不再等于解除（2026-07-26 真机：挂断后同一个 run 直接落盘，D4 承诺全失效）。
   getPermissionModeManager().clearLiveVoiceSession(session.neoSessionId, `call:${session.id}`);
+  // 断开 work item 的 UI 回流；账本与 run 的票继续活到最后一件活落地（同上）。
+  endVoiceDispatch();
   // 排水窗：用户 ASR completed / 助手 transcript done 常在挂断后 ~1s 才到，立刻关
   // 上游会把这通电话说过的话全部丢掉（2026-07-26 真机：12s 通话落库只剩摘要）。
   // 窗口内 onEvent 照常把 final 落库；窗口结束后 done 仍没到的助手增量缓冲冲成 final。
@@ -114,6 +212,7 @@ async function teardown(reason: string): Promise<void> {
   const minutes = Math.floor(durationSec / 60);
   const seconds = durationSec % 60;
   const durationText = minutes > 0 ? `${minutes} 分 ${seconds} 秒` : `${seconds} 秒`;
+  recordVoiceCall(endedAt, durationSec);
   try {
     await getSessionManager().addMessageToSession(session.neoSessionId, {
       id: `voice-summary-${endedAt}-${Math.random().toString(36).slice(2, 8)}`,
@@ -135,8 +234,17 @@ async function teardown(reason: string): Promise<void> {
   } catch (err) {
     logger.warn('failed to persist call summary', { message: err instanceof Error ? err.message : 'unknown' });
   }
+  emitVoiceCallHook('VoiceCallEnded', {
+    voiceCallId: session.id,
+    sessionId: session.neoSessionId,
+    // 与摘要卡同一个 durationSec，别各算各的
+    durationSec,
+    workItemCount: session.workItemCount,
+    reason,
+  });
   await session.upstream.close().catch(() => undefined);
-  if (session.client.readyState === session.client.OPEN) session.client.close();
+  const client = session.clientRef.current;
+  if (client.readyState === client.OPEN) client.close();
 }
 
 /**
@@ -144,6 +252,11 @@ async function teardown(reason: string): Promise<void> {
  * 互斥：已有活跃通话时直接拒绝，不排队。
  */
 export async function attachVoiceClient(client: WsSocket, neoSessionId: string, requestedAgentId?: string): Promise<void> {
+  // 宽限窗里的同一条会话重新连上来 = 同一通电话续上，不建新上游、不落第二张摘要卡。
+  if (active?.graceTimer && active.neoSessionId === neoSessionId) {
+    reattachVoiceClient(active, client);
+    return;
+  }
   if (active || connecting) {
     send(client, { type: 'error', code: 'VOICE_SESSION_BUSY', message: '已有一路通话在进行中' });
     client.close();
@@ -178,18 +291,31 @@ async function connectAndBind(
   const liveSettings = readVoiceLiveSettings();
 
   const transcriptBuf = { assistant: '' };
+  const baseInstructions = withLanguageDirective(routing.personaInstructions, liveSettings?.language);
+  // 上游回调一律经这个可变引用发：重连换的是 socket，不是通话。
+  const clientRef = { current: client };
+  // 绑定必须早于建连：上游一旦握手成功就可能立刻发 function_call，
+  // 晚绑一步那次调用会落到「通话还没就绪」的兜底上。
+  beginVoiceDispatch({
+    neoSessionId,
+    activeAgentId: routing.activeAgentId,
+    onWorkItem: (item) => {
+      if (active?.id === id && item.status === 'queued') active.workItemCount += 1;
+      send(clientRef.current, { type: 'work.upsert', item });
+    },
+  });
   let upstream: VoiceTransportHandle;
   try {
     upstream = await qwenOmniTransport.connect({
       apiKey,
       config: {
         neoSessionId,
-        instructions: withLanguageDirective(routing.personaInstructions, liveSettings?.language),
+        instructions: baseInstructions,
         tools: VOICE_TOOL_DEFINITIONS,
         ...(liveSettings?.voiceId ? { voice: liveSettings.voiceId } : {}),
       },
       onEvent: (event) => {
-        send(client, event);
+        send(clientRef.current, event);
         if (event.type === 'user.transcript' && event.done) void persistTranscript(neoSessionId, 'user', event.text);
         else if (event.type === 'assistant.transcript') {
           if (event.done) {
@@ -209,20 +335,15 @@ async function connectAndBind(
         }
       },
       onAudio: (frame) => {
-        if (client.readyState === client.OPEN) client.send(frame, { binary: true });
+        const socket = clientRef.current;
+        if (socket.readyState === socket.OPEN) socket.send(frame, { binary: true });
       },
-      onToolCall: (call) => executeVoiceTool(call.name, call.arguments, {
-        neoSessionId,
-        activeAgentId: routing.activeAgentId,
-        onWorkItem: (item) => {
-          if (active?.id === id && item.status === 'queued') active.workItemCount += 1;
-          send(client, { type: 'work.upsert', item });
-        },
-      }),
+      onToolCall: (call) => executeVoiceTool(call.name, call.arguments),
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'connect failed';
     logger.warn('upstream connect failed', { voiceSessionId: id, message });
+    endVoiceDispatch();
     send(client, { type: 'error', code: 'VOICE_UPSTREAM_UNAVAILABLE', message });
     client.close();
     return;
@@ -230,27 +351,51 @@ async function connectAndBind(
 
   // 客户端在 await 期间就断了：别留悬空的上游连接（会持续计费）。
   if (client.readyState !== client.OPEN) {
+    endVoiceDispatch();
     await upstream.close().catch(() => undefined);
     return;
   }
 
-  active = {
+  const session: ActiveSession = {
     id,
     neoSessionId,
     startedAt: Date.now(),
-    client,
+    clientRef,
     upstream,
+    graceTimer: null,
     workItemCount: 0,
     transcriptBuf,
+    personaInstructions: baseInstructions,
+    focus: null,
     maxDurationTimer: setTimeout(() => {
       logger.warn('session hit max duration, force closing', { voiceSessionId: id });
       void teardown('max-duration');
     }, VOICE_SESSION_MAX_DURATION_MS),
   };
+  active = session;
   // D4 抬严必须在有任何工具可派之前就位——建连成功即标记。
   getPermissionModeManager().markLiveVoiceSession(neoSessionId, `call:${id}`);
   logger.info('session started', { voiceSessionId: id, neoSessionId, activeAgentId: routing.activeAgentId });
+  emitVoiceCallHook('VoiceCallStarted', { voiceCallId: id, sessionId: neoSessionId, durationSec: 0 });
+  markSessionHadLiveVoice(neoSessionId);
 
+  bindClientHandlers(session, client);
+}
+
+/**
+ * 焦点上报（§6.5）。只有真变了才发 session.update——Renderer 已经节流过一层，
+ * 这里再按内容去重，避免同一份焦点被反复推给上游。
+ */
+function applyFocus(session: ActiveSession, focus: VoiceFocusContext): void {
+  if (!focusChanged(session.focus, focus)) return;
+  session.focus = focus;
+  setVoiceDispatchFocus(focus);
+  session.upstream.updateInstructions(composeVoiceInstructions(session.personaInstructions, focus));
+}
+
+/** 一条 Renderer WS 的事件绑定。重连换 socket 时原样再绑一次。 */
+function bindClientHandlers(session: ActiveSession, client: WsSocket): void {
+  const { id, upstream } = session;
   client.on('message', (data: Buffer, isBinary: boolean) => {
     if (active?.id !== id) return;
     if (isBinary) {
@@ -265,19 +410,33 @@ async function connectAndBind(
     } catch {
       return;
     }
+    // 用户显式挂断走真 teardown，不进宽限窗——他不是断线，是不想打了。
     if (command.type === 'end') void teardown('client-end');
     else if (command.type === 'interrupt') upstream.interrupt();
+    else if (command.type === 'focus') applyFocus(session, command.context);
     // PTT/点按手动模式：Renderer 松开（或再点按）后提交这一轮。
     // direct 形态的 commit 走它自己的 data channel，不经过 Host——这里没有它的分支是刻意的。
     else if (command.type === 'commit' && upstream.kind === 'relay') upstream.commit();
   });
 
+  // 断了先等重连，别急着落摘要卡：网络抖一下不该变成「一通电话结束 + 另一通开始」。
   client.on('close', () => {
-    if (active?.id === id) void teardown('client-closed');
+    if (active?.id === id && session.clientRef.current === client) beginReconnectGrace(id);
   });
   client.on('error', () => {
-    if (active?.id === id) void teardown('client-error');
+    if (active?.id === id && session.clientRef.current === client) beginReconnectGrace(id);
   });
+}
+
+/** 宽限窗内客户端回来了：换 socket，通话继续。 */
+function reattachVoiceClient(session: ActiveSession, client: WsSocket): void {
+  if (session.graceTimer) clearTimeout(session.graceTimer);
+  session.graceTimer = null;
+  session.clientRef.current = client;
+  bindClientHandlers(session, client);
+  logger.info('client reattached', { voiceSessionId: session.id });
+  // 让 Renderer 知道自己接回的是同一通电话（它据此保留 work items / 通话计时）。
+  send(client, { type: 'state', state: 'live' });
 }
 
 /** 测试用：强制释放当前通话。 */

@@ -23,18 +23,48 @@ async function fetchVoiceStatus(): Promise<VoiceStatusResponse | null> {
   }
 }
 
-export function useVoiceLiveAvailability(): { enabled: boolean; configured: boolean } {
-  const [enabled, setEnabled] = useState(false);
-  const [configured, setConfigured] = useState(false);
+const NO_USAGE: VoiceStatusResponse['usage'] = { monthSeconds: 0, monthCalls: 0 };
+
+/**
+ * 跨挂载记住上一次的结果。
+ *
+ * 这两个值要等 IPC + fetch 才知道，而输入框右侧主按钮的归属依赖它们
+ * （空输入框时让给「开通话」）。每次开新会话组件重新挂载、初值又回到「不可用」，
+ * 用户就会看到按钮先是发送键、几十毫秒后跳成通话键——布局抖一下。
+ * 语音可用性在一次会话里基本不变，记住上次的值，重新挂载时就没有这一跳。
+ */
+let lastKnown = { enabled: false, configured: false, usage: NO_USAGE };
+
+export function useVoiceLiveAvailability(): {
+  enabled: boolean;
+  configured: boolean;
+  usage: VoiceStatusResponse['usage'];
+} {
+  const [enabled, setEnabled] = useState(lastKnown.enabled);
+  const [configured, setConfigured] = useState(lastKnown.configured);
+  const [usage, setUsage] = useState<VoiceStatusResponse['usage']>(lastKnown.usage);
 
   const refresh = useCallback(() => {
     let cancelled = false;
     void ipcService.invokeDomain<AppSettings>(IPC_DOMAINS.SETTINGS, 'get')
-      .then((settings) => { if (!cancelled) setEnabled(settings.voice?.live?.enabled === true); })
+      .then((settings) => {
+        const next = settings.voice?.live?.enabled === true;
+        lastKnown = { ...lastKnown, enabled: next };
+        if (!cancelled) setEnabled(next);
+      })
       .catch(() => { if (!cancelled) setEnabled(false); });
     void fetchVoiceStatus()
-      .then((status) => { if (!cancelled) setConfigured(status?.configured === true); })
-      .catch(() => { if (!cancelled) setConfigured(false); });
+      .then((status) => {
+        lastKnown = {
+          ...lastKnown,
+          configured: status?.configured === true,
+          usage: status?.usage ?? NO_USAGE,
+        };
+        if (cancelled) return;
+        setConfigured(lastKnown.configured);
+        setUsage(lastKnown.usage);
+      })
+      .catch(() => { if (!cancelled) { setConfigured(false); setUsage(NO_USAGE); } });
     return () => { cancelled = true; };
   }, []);
 
@@ -47,5 +77,5 @@ export function useVoiceLiveAvailability(): { enabled: boolean; configured: bool
     return () => window.removeEventListener(VOICE_LIVE_SETTINGS_UPDATED_EVENT, handler);
   }, [refresh]);
 
-  return { enabled, configured };
+  return { enabled, configured, usage };
 }

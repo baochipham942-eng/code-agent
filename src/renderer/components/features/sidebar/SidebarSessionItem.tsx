@@ -1,5 +1,5 @@
 import React from 'react';
-import { Archive, ArchiveRestore, CheckSquare, Eye, GitFork, Loader2, Pin, ScrollText, Square } from 'lucide-react';
+import { Archive, ArchiveRestore, AudioLines, CheckSquare, Eye, GitFork, Loader2, Pin, ScrollText, Square } from 'lucide-react';
 import type { SessionRuntimeSummary } from '@shared/ipc';
 import type { SessionAutomationSessionSummary } from '@shared/contract';
 import { IconButton } from '../../primitives';
@@ -154,6 +154,9 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
   );
   const messageSearchHitGroup = searchQuery.trim() ? messageSearchHitsBySessionId[session.id] : undefined;
   const displayTitle = getDisplaySessionTitle(session.title);
+  // 这条会话用过实时语音（host 在建连时写进会话 metadata）。是身份不是状态，
+  // 所以走行尾的身份轴（右槽），不进讲「此刻怎么了」的状态槽——详见下方渲染处。
+  const hadLiveVoice = session.metadata?.hadLiveVoice === true;
   const canOpenSessionAssets = canReuseSessionWorkbench(session);
   const titleToneClass = isSelected ? 'text-zinc-100' : isUnread ? 'text-zinc-200' : 'text-zinc-400';
   const forkParentSessionId = getForkParentSessionId(session);
@@ -212,12 +215,15 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
           </span>
         )}
 
-        {/* 行尾状态轴：**一个**固定 16px 槽，内容按优先级互斥 —— 临时状态 > 分叉标记
-            （2026-07-28 产品负责人拍板，推翻此前「两槽并存、身份占最右轴」的做法）。
-            为什么不是两槽：分叉标记绝大多数会话都没有，让它单独占最右轴 ⇒ 那一格常年空着，
-            肉眼看到的最右元素变成状态点，落在 190.8 而不是全栏右轨 214.8，与分组角标 /
-            账号箭头错开 24（= 16 槽 + 8 gap，产品负责人实测截图）。
-            代价说清楚：分叉会话正在运行 / 需关注时，这一刻只显示状态，分叉标记等状态清了再回来。
+        {/* 行尾状态轴：**一个**固定 16px 槽，内容按优先级互斥 ——
+            临时状态 > 分叉标记 > 用过实时语音。
+            · 状态压身份（2026-07-28 产品负责人拍板，推翻「两槽并存、身份占最右轴」）：
+              分叉/语音这类身份标记绝大多数会话都没有，让身份单独占最右轴 ⇒ 那一格常年空着，
+              肉眼看到的最右元素变成状态点，落在 190.8 而不是全栏右轨 214.8，
+              与分组角标 / 账号箭头错开 24（= 16 槽 + 8 gap，实测截图）。
+            · 身份内部分叉压语音（#756 定的次序，保留）：两者都在说这会话**是什么**，
+              但分叉标记可点击、能跳回父会话，信息量更大。
+            代价说清楚：分叉/语音会话正在运行或需关注时，这一刻只显示状态，身份标记等状态清了再回来。
             分叉标记点击跳回父会话；hover 动作簇上来时本槽让位。 */}
         {!isRenaming && (
           <span className="w-4 shrink-0 flex items-center justify-center transition-opacity duration-150 group-hover:opacity-0 group-focus-visible:opacity-0">
@@ -243,6 +249,12 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
               >
                 <GitFork className="h-3.5 w-3.5" />
               </button>
+            ) : hadLiveVoice ? (
+              <AudioLines
+                className="h-3.5 w-3.5 shrink-0 text-zinc-500"
+                aria-label={s.liveVoiceSession}
+                data-testid="session-live-voice-badge"
+              />
             ) : null}
           </span>
         )}

@@ -61,11 +61,14 @@ const {
 } = await import('../../src/host/services/voice/voiceAgentCoordinator');
 const { executeVoiceTool } = await import('../../src/host/services/voice/voiceTools');
 
+const endCalls: number[] = [];
+
 function bind(): void {
   beginVoiceDispatch({
     neoSessionId: 'session-1',
     onWorkItem: () => {},
     onWorkFailed: () => {},
+    onEndCall: () => endCalls.push(1),
   });
 }
 
@@ -178,5 +181,29 @@ describe('P0-3 挂断 tail flush', () => {
 
     await expect(flushVoiceTail()).resolves.toBe(false);
     expect(runtime.startTask).not.toHaveBeenCalled();
+  });
+});
+
+describe('收线与时间（2026-07-28 真机补的两只窄工具）', () => {
+  beforeEach(() => {
+    endCalls.length = 0;
+    endVoiceDispatch();
+    bind();
+  });
+
+  it('end_call 真的请求了挂断，不是只回一句话', async () => {
+    const reply = await executeVoiceTool('end_call', '{}');
+
+    // 真机那次它说「好，通话已挂断」，而日志 reason 是 client-end——嘴上说不算数，
+    // 判据必须钉在「挂断动作被请求了」这件事上。
+    expect(endCalls).toHaveLength(1);
+    expect(reply).toContain('挂断');
+  });
+
+  it('get_current_time 给出真时间，而不是「我看不到」', async () => {
+    const reply = await executeVoiceTool('get_current_time', '{}');
+
+    expect(reply).toContain(String(new Date().getFullYear()));
+    expect(reply).not.toContain('看不到');
   });
 });

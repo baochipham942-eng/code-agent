@@ -7,7 +7,7 @@
 // ============================================================================
 
 import type { WebSocket as WsSocket } from 'ws';
-import { resolveConversationModelOption, VOICE_RECONNECT_GRACE_MS, VOICE_SESSION_MAX_DURATION_MS, VOICE_TEARDOWN_DRAIN_MS } from '../../../shared/constants/voice';
+import { resolveConversationModelOption, VOICE_END_CALL_GOODBYE_TIMEOUT_MS, VOICE_RECONNECT_GRACE_MS, VOICE_SESSION_MAX_DURATION_MS, VOICE_TEARDOWN_DRAIN_MS } from '../../../shared/constants/voice';
 import type { VoiceClientCommand, VoiceEvent, VoiceFocusContext, VoiceTransportHandle, VoiceWorkItem } from '../../../shared/contract/voice';
 import { getDashscopeApiKey } from '../media/imageGenerationService';
 import { createLogger } from '../infra/logger';
@@ -385,6 +385,8 @@ async function connectAndBind(
   // 字幕落库计数器：onEvent 闭包与挂断摘要共用同一个可变引用（同 transcriptBuf 先例），
   // 成功落库才 +1，挂断时原样写进 voiceCallSummary.transcriptCount。
   const transcriptCounter = { count: 0 };
+  // 模型请求挂断后置位；onEvent 看到这一轮说完（response.done）就真挂。
+  const endCallRequested = { value: false };
   const baseInstructions = withLanguageDirective(routing.personaInstructions, liveSettings?.language);
   // 上游回调一律经这个可变引用发：重连换的是 socket，不是通话。
   const clientRef = { current: client };
@@ -402,6 +404,17 @@ async function connectAndBind(
     // activeWorkItems 过滤），failed 就这么无声消失；通话模型也没人告诉它，
     // 于是继续说「已经写好了」。第五例「建好不接电」。
     onWorkFailed: (item) => void reportWorkFailure(neoSessionId, id, clientRef, item),
+    // 模型自己收线：不当场 teardown，先记一笔，等它把告别说完（response.done）再断。
+    // 立刻断会把这句告别掐掉，用户听到的是电话突然没了；但也不能无限等——
+    // 上游不回 response.done 时用兜底定时器收尾（同 dictation finish 的先例）。
+    onEndCall: () => {
+      if (endCallRequested.value) return;
+      endCallRequested.value = true;
+      logger.info('end call requested by model, waiting for goodbye', { voiceSessionId: id });
+      setTimeout(() => {
+        if (active?.id === id && endCallRequested.value) void teardown('model-end-call-timeout');
+      }, VOICE_END_CALL_GOODBYE_TIMEOUT_MS);
+    },
   });
   let upstream: VoiceTransportHandle;
   try {
@@ -424,6 +437,11 @@ async function connectAndBind(
           } else {
             transcriptBuf.assistant += event.text;
           }
+        }
+        // 模型说完告别这一轮 = 可以真挂了（end_call 的落点，别让它只是嘴上说）。
+        else if (event.type === 'response.done' && endCallRequested.value && active?.id === id) {
+          endCallRequested.value = false;
+          void teardown('model-end-call');
         }
         // 上游报错 / 上游连接关闭 = 这一路通话已经死了，必须就地释放 active。
         // 否则两侧对「通话是否结束」的判断会分叉：渲染侧收到 error 就把按钮切回「开始通话」，

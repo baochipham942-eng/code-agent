@@ -32,7 +32,9 @@ export type VoiceIntent =
   | { kind: 'recent_files' }
   | { kind: 'spawn_task'; title: string; prompt: string }
   | { kind: 'steer_task'; instruction: string }
-  | { kind: 'cancel_task' };
+  | { kind: 'cancel_task' }
+  | { kind: 'end_call' }
+  | { kind: 'current_time' };
 
 /** 通话字幕的一条 final。近窗原文用它组装，不进 UI、不落盘。 */
 export interface VoiceTranscriptEntry {
@@ -61,6 +63,12 @@ export interface VoiceDispatchBinding {
    * 比通话活得久，而「挂断之后才死」正是最需要留痕的场景（G1，2026-07-28）。
    */
   onWorkFailed: (item: VoiceWorkItem) => void;
+  /**
+   * 模型自己收线（end_call 工具）。真机 2026-07-28：用户说「挂断当前通话」，
+   * 模型答「好，通话已挂断」——而日志里 `reason: client-end` 说明是用户自己点的 X，
+   * 模型只是嘴上说。语音层此前压根没有挂断这个动作，这是第二例「说了没做」。
+   */
+  onEndCall: () => void;
 }
 
 const TERMINAL: readonly VoiceWorkItemStatus[] = ['done', 'failed', 'cancelled'];
@@ -72,6 +80,7 @@ interface LedgerState {
   emit: ((item: VoiceWorkItem) => void) | null;
   /** 失败留痕；**挂断不清**（见 VoiceDispatchBinding.onWorkFailed）。 */
   onFailed: (item: VoiceWorkItem) => void;
+  endCall: () => void;
   items: Map<string, VoiceWorkItem>;
   /** 当前等着状态迁移的那件活。一会话一 orchestrator，同时只可能有一件。 */
   pendingId: string | null;
@@ -104,6 +113,7 @@ export function beginVoiceDispatch(binding: VoiceDispatchBinding): void {
     activeAgentId: binding.activeAgentId,
     emit: binding.onWorkItem,
     onFailed: binding.onWorkFailed,
+    endCall: binding.onEndCall,
     items: new Map(),
     pendingId: null,
     listener: (event) => onTaskManagerEvent(event),
@@ -144,7 +154,9 @@ function buildTranscriptBlock(entries: VoiceTranscriptEntry[]): string | null {
     '下面是通话最近几轮的原始字幕（可能含半句、重复、同音错字）：',
     ...entries.map((entry) => `${entry.role === 'user' ? '用户' : '助手'}：${entry.text}`),
     '以字幕原文为准重建用户的真实意图。文件名/路径/专名明显是同音错写时（例：「a点text」= a.txt），',
-    '按上下文纠正后执行，并在结果里说明你是按什么理解做的。信息仍然不全，就按最合理的默认做法先做，不要卡住不动。',
+    '按上下文纠正后执行，并在结果里说明你是按什么理解做的。',
+    '**用户此刻在打电话，不在键盘前**：不要向他提问、不要弹选择框等他回答——他看不见也点不了。',
+    '信息不全就按最合理的默认做法先做完，然后在结果里一句话说明你按什么假设做的。',
   ].join('\n');
 }
 
@@ -257,6 +269,10 @@ export async function dispatchVoiceIntent(intent: VoiceIntent): Promise<string> 
       return steerTask(state, intent.instruction);
     case 'cancel_task':
       return cancelTask(state);
+    case 'end_call':
+      return endCall(state);
+    case 'current_time':
+      return describeCurrentTime();
   }
 }
 
@@ -397,6 +413,17 @@ async function steerTask(state: LedgerState, instruction: string): Promise<strin
   return `已经打断「${title}」并按新要求继续，还在后台跑，没做完。`;
 }
 
+/**
+ * 收线。这里只「请求挂断」，真正的 teardown 由 voiceSessionService 在模型把这句
+ * 告别说完之后执行——立刻挂会把告别掐掉，用户听到的是电话突然断了。
+ * 返回值写死状态：通话 brain 会把它当事实转述。
+ */
+function endCall(state: LedgerState): string {
+  logger.info('end call requested by model');
+  state.endCall();
+  return '挂断动作已经执行，通话马上结束。跟用户说一句简短的告别，不要再问别的。';
+}
+
 async function cancelTask(state: LedgerState): Promise<string> {
   const tm = await taskManager();
   const status = tm.getSessionState(state.neoSessionId).status;
@@ -412,6 +439,21 @@ async function cancelTask(state: LedgerState): Promise<string> {
 // ============================================================================
 // 只读查询
 // ============================================================================
+
+/**
+ * 现在几点（真机 2026-07-28：用户问「现在几点了？」，通话 brain 答「我这边看不到具体时间」，
+ * 用户只好说「通过 computer use 来看」才绕出去——语音层拿不到时间是产品缺陷不是模型笨）。
+ * 走工具而不是往 instructions 里注入时间：instructions 只在建连和焦点变化时刷新，
+ * 注进去的时间会随通话变旧，而这是个「问了就该准」的问题。
+ */
+function describeCurrentTime(): string {
+  const now = new Date();
+  const text = now.toLocaleString('zh-CN', {
+    year: 'numeric', month: 'long', day: 'numeric',
+    weekday: 'long', hour: '2-digit', minute: '2-digit',
+  });
+  return `现在是${text}。`;
+}
 
 function describeStatus(state: LedgerState): string {
   const lines: string[] = [];

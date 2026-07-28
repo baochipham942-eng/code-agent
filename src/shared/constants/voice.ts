@@ -138,6 +138,13 @@ export const VOICE_SESSION_MAX_DURATION_MS = 10 * 60 * 1000;
 export const VOICE_TEARDOWN_DRAIN_MS = 1500;
 
 /**
+ * 模型调 end_call 之后，等它把告别说完的兜底上限（ms）。
+ * 正常路径是听到这一轮的 response.done 就挂；上游不回那一帧时不能让通话永远挂着
+ * （按秒计费），到点强挂。
+ */
+export const VOICE_END_CALL_GOODBYE_TIMEOUT_MS = 5_000;
+
+/**
  * 客户端断开后等它回来的宽限窗（批 H · 断线重连 sticky）。
  * 窗口内不挂断上游、不落通话摘要——否则每次网络抖动都会在消息流里落一张
  * 「通话结束」卡，然后重连变成第二通电话。超时才走正常 teardown。

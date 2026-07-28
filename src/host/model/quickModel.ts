@@ -24,6 +24,14 @@ export interface QuickModelResult {
   success: boolean;
   content?: string;
   error?: string;
+  authFailed?: boolean;
+}
+
+export interface QuickModelAuthFailure {
+  provider: string;
+  model: string;
+  status: number;
+  at: number;
 }
 
 export interface ClassificationResult {
@@ -46,6 +54,11 @@ interface QuickModelConfig {
 }
 
 let quickConfig: QuickModelConfig | null = null;
+let quickModelAuthFailure: QuickModelAuthFailure | null = null;
+
+export function getQuickModelAuthFailure(): QuickModelAuthFailure | null {
+  return quickModelAuthFailure ? { ...quickModelAuthFailure } : null;
+}
 
 function isUnknownRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -183,6 +196,24 @@ export async function quickTask(prompt: string, maxTokens?: number): Promise<Qui
     });
 
     if (!response.ok) {
+      if (response.status === 401 || response.status === 403) {
+        quickModelAuthFailure = {
+          provider: config.provider,
+          model: config.model,
+          status: response.status,
+          at: Date.now(),
+        };
+        logger.error('快模型鉴权失败，疑似 API Key 无效或已过期', {
+          provider: config.provider,
+          model: config.model,
+          status: response.status,
+        });
+        return {
+          success: false,
+          error: `${response.status} 快模型鉴权失败：API Key 可能无效或已过期`,
+          authFailed: true,
+        };
+      }
       const text = await response.text();
       if (response.status === 429 || text.includes('1302') || text.includes('速率限制')) {
         limiter?.onRateLimit();
@@ -190,6 +221,7 @@ export async function quickTask(prompt: string, maxTokens?: number): Promise<Qui
       return { success: false, error: `${response.status} ${text.slice(0, 200)}` };
     }
 
+    quickModelAuthFailure = null;
     limiter?.onSuccess();
     const data: unknown = await response.json();
     const content = parseChatCompletionContent(data);

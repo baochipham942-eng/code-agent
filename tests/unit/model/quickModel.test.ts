@@ -5,8 +5,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { DEFAULT_MODELS } from '../../../src/shared/constants';
 
-const { getConfigServiceMock } = vi.hoisted(() => ({
+const { getConfigServiceMock, loggerErrorMock } = vi.hoisted(() => ({
   getConfigServiceMock: vi.fn(),
+  loggerErrorMock: vi.fn(),
 }));
 
 vi.mock('../../../src/host/services/core/configService', () => ({
@@ -14,10 +15,15 @@ vi.mock('../../../src/host/services/core/configService', () => ({
 }));
 
 vi.mock('../../../src/host/services/infra/logger', () => ({
-  createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
+  createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: loggerErrorMock, debug: vi.fn() }),
 }));
 
-import { quickTask, getQuickModelInfo, resetQuickModel } from '../../../src/host/model/quickModel';
+import {
+  getQuickModelAuthFailure,
+  getQuickModelInfo,
+  quickTask,
+  resetQuickModel,
+} from '../../../src/host/model/quickModel';
 
 /** 构造一个 configService mock，可指定哪些 provider 有 key */
 function mockConfig(opts: {
@@ -54,6 +60,7 @@ function mockFetchOnce(content: string) {
 beforeEach(() => {
   resetQuickModel();
   getConfigServiceMock.mockReset();
+  loggerErrorMock.mockReset();
 });
 
 afterEach(() => {
@@ -105,5 +112,51 @@ describe('thinking 模型回落时自动关闭思考', () => {
     await quickTask('hi');
     const body = JSON.parse(fetchMock.mock.calls[0][1].body);
     expect(body.thinking).toBeUndefined();
+  });
+});
+
+describe('快模型鉴权失败诊断', () => {
+  it('401 留下鉴权失败记录且不泄露 API Key，后续成功响应会清除记录', async () => {
+    const apiKey = 'quick-model-secret-canary';
+    mockConfig({ keys: { zhipu: apiKey } });
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 401,
+        text: async () => `expired credential ${apiKey}`,
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ choices: [{ message: { content: 'general' } }] }),
+      }));
+
+    const failed = await quickTask('分类这句话');
+
+    expect(failed).toMatchObject({
+      success: false,
+      authFailed: true,
+    });
+    expect(failed.error).not.toContain(apiKey);
+    expect(getQuickModelAuthFailure()).toMatchObject({
+      provider: 'zhipu',
+      model: DEFAULT_MODELS.quick,
+      status: 401,
+    });
+    expect(getQuickModelAuthFailure()?.at).toEqual(expect.any(Number));
+    expect(loggerErrorMock).toHaveBeenCalledWith(
+      '快模型鉴权失败，疑似 API Key 无效或已过期',
+      {
+        provider: 'zhipu',
+        model: DEFAULT_MODELS.quick,
+        status: 401,
+      },
+    );
+    expect(JSON.stringify(loggerErrorMock.mock.calls)).not.toContain(apiKey);
+
+    const succeeded = await quickTask('再试一次');
+
+    expect(succeeded.success).toBe(true);
+    expect(getQuickModelAuthFailure()).toBeNull();
   });
 });

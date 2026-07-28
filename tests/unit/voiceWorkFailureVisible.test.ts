@@ -87,6 +87,7 @@ function bind(): void {
     neoSessionId: 'session-1',
     onWorkItem: (item) => { upserts.push({ ...item }); },
     onEndCall: () => {},
+    onWorkNarration: () => {},
     onWorkFailed: (item) => {
       failures.push({ ...item });
       if (failHookThrows) throw new Error('reporter exploded');

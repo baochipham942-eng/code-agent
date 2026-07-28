@@ -169,6 +169,18 @@ export const VOICE_RECENT_FILE_LIMIT = 8;
 /** 语音派发任务的迭代上限：通话场景的任务应该是小活，跑飞了要有个头。 */
 export const VOICE_SPAWN_TASK_MAX_ITERATIONS = 30;
 
+/**
+ * 终态回流念出来的上限（字）。超过就截断并指路屏幕——一段话念过 15 秒，
+ * 用户既插不上嘴也记不住，屏幕上本来就有全文。
+ */
+export const VOICE_NARRATION_MAX_CHARS = 120;
+
+/**
+ * 回头找「这一轮的结论」时往回翻几条消息。一轮 run 的尾部是 assistant 收尾语，
+ * 中间隔的是工具调用消息；30 条足够跨过一轮的工具流，又不至于把上一件活的结论捞回来。
+ */
+export const VOICE_CONCLUSION_LOOKBACK_MESSAGES = 30;
+
 /** Renderer→Host 媒体面 WS 路径。 */
 export const VOICE_STREAM_WS_PATH = '/api/voice/stream';
 

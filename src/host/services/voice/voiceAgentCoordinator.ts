@@ -14,8 +14,8 @@
 // ============================================================================
 
 import type { TaskManagerEvent } from '../../task/TaskManager';
-import type { VoiceFocusContext, VoiceWorkItem, VoiceWorkItemStatus } from '../../../shared/contract/voice';
-import { VOICE_RECENT_FILE_LIMIT, VOICE_SPAWN_TASK_MAX_ITERATIONS } from '../../../shared/constants/voice';
+import type { VoiceFocusContext, VoiceWorkItem, VoiceWorkItemStatus, VoiceWorkNarration } from '../../../shared/contract/voice';
+import { VOICE_CONCLUSION_LOOKBACK_MESSAGES, VOICE_RECENT_FILE_LIMIT, VOICE_SPAWN_TASK_MAX_ITERATIONS } from '../../../shared/constants/voice';
 import { getIncompleteTasks } from '../planning/taskStore';
 import { getSessionManager } from '../infra/sessionManager';
 import { createLogger } from '../infra/logger';
@@ -23,6 +23,7 @@ import { buildRoleContextBlock } from '../roleAssets/roleAssetService';
 import { withWorkbenchTurnSystemContext } from '../../app/workbenchTurnContext';
 import { getPermissionModeManager } from '../../permissions/modes';
 import { getConfigService } from '../core/configService';
+import { buildWorkNarration } from './voiceNarration';
 
 const logger = createLogger('VoiceCoordinator');
 
@@ -69,6 +70,13 @@ export interface VoiceDispatchBinding {
    * 模型只是嘴上说。语音层此前压根没有挂断这个动作，这是第二例「说了没做」。
    */
   onEndCall: () => void;
+  /**
+   * 发言人协议（W6-1）：一件活落 done/failed 时「该念哪句、以谁的身份念」。
+   *
+   * 与 onWorkItem **同寿命**（挂断即断）而不是跟着 onWorkFailed：电话都挂了，
+   * 念给谁听。挂断之后才死的那种失败仍走 onWorkFailed 落屏，不重复。
+   */
+  onWorkNarration: (narration: VoiceWorkNarration) => void;
 }
 
 const TERMINAL: readonly VoiceWorkItemStatus[] = ['done', 'failed', 'cancelled'];
@@ -80,6 +88,8 @@ interface LedgerState {
   emit: ((item: VoiceWorkItem) => void) | null;
   /** 失败留痕；**挂断不清**（见 VoiceDispatchBinding.onWorkFailed）。 */
   onFailed: (item: VoiceWorkItem) => void;
+  /** 终态回流；与 emit 同寿命，挂断置 null。 */
+  narrate: ((narration: VoiceWorkNarration) => void) | null;
   endCall: () => void;
   items: Map<string, VoiceWorkItem>;
   /** 当前等着状态迁移的那件活。一会话一 orchestrator，同时只可能有一件。 */
@@ -113,6 +123,7 @@ export function beginVoiceDispatch(binding: VoiceDispatchBinding): void {
     activeAgentId: binding.activeAgentId,
     emit: binding.onWorkItem,
     onFailed: binding.onWorkFailed,
+    narrate: binding.onWorkNarration,
     endCall: binding.onEndCall,
     items: new Map(),
     pendingId: null,
@@ -175,6 +186,7 @@ async function ensureListener(state: LedgerState): Promise<void> {
 export function endVoiceDispatch(): void {
   if (!ledger) return;
   ledger.emit = null;
+  ledger.narrate = null;
   detachIfSettled(false);
 }
 
@@ -209,9 +221,49 @@ function settle(state: LedgerState, id: string, status: VoiceWorkItemStatus, det
       logger.warn('onWorkFailed threw', { message: err instanceof Error ? err.message : 'unknown' });
     }
   }
+  // 发言人协议：只有 done / failed 才是「有话要说」。cancelled 是用户自己叫停的，
+  // 他知道，回头念一遍是噪音。detachIfSettled 之前发——它可能把账本整个丢掉。
+  if (status === 'done' || status === 'failed') void narrateSettled(state, settled, status);
   getPermissionModeManager().clearLiveVoiceSession(state.neoSessionId, runHoldId(id));
   if (state.pendingId === id) state.pendingId = null;
   detachIfSettled(false);
+}
+
+/**
+ * 取结论文本 → 裁成能说的话 → 连署名一起交给语音层（W6-1）。
+ *
+ * 结论来源是**执行侧这一轮真写下来的最后一句 assistant 消息**，不是工具返回值的措辞——
+ * 后者是我们自己编的模板（「已经排上队」），念出来等于系统在自言自语。
+ * 取不到就退回状态本身：`buildWorkNarration` 允许 summary 为空，宁可只说「做完了」，
+ * 也不编一句它没说过的话。
+ */
+async function narrateSettled(state: LedgerState, item: VoiceWorkItem, status: 'done' | 'failed'): Promise<void> {
+  try {
+    const conclusion = status === 'failed'
+      ? (item.detail ?? '')
+      : await readRunConclusion(state.neoSessionId);
+    // await 之后 narrate 可能已被挂断置 null——此刻再念没人听。
+    state.narrate?.(buildWorkNarration({
+      workItemId: item.id,
+      status,
+      title: item.title,
+      conclusion,
+      ...(state.activeAgentId ? { agentId: state.activeAgentId } : {}),
+    }));
+  } catch (err) {
+    logger.warn('narrate settled failed', { message: err instanceof Error ? err.message : 'unknown' });
+  }
+}
+
+/** 会话里最后一条有正文的 assistant 消息。task_completed 发在 sendMessage await 之后，此时它已落库。 */
+async function readRunConclusion(neoSessionId: string): Promise<string> {
+  const session = await getSessionManager().getSession(neoSessionId, VOICE_CONCLUSION_LOOKBACK_MESSAGES);
+  const messages = session?.messages ?? [];
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const message = messages[i];
+    if (message.role === 'assistant' && message.content?.trim()) return message.content;
+  }
+  return '';
 }
 
 function runHoldId(workItemId: string): string {

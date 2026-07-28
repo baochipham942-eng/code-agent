@@ -677,7 +677,7 @@ describe('ExpertPanel', () => {
     expect(screen.getByRole('button', { name: '重试' })).toBeTruthy();
   });
 
-  it('分类 chips 与操作按钮合并进同一 sticky 工具条，按角色 category 推导，选中后过滤卡片、回「全部」恢复', async () => {
+  it('分类 chips 与操作按钮收进同一个 sticky 页头（HubTabHeader），按角色 category 推导，选中后过滤卡片、回「全部」恢复', async () => {
     listRoles.mockResolvedValue([
       makeEntry(),
       makeEntry({ roleId: '溯真', displayName: '溯真', category: 'research', profession: '研究员', tags: ['调研'] }),
@@ -686,11 +686,12 @@ describe('ExpertPanel', () => {
     render(<ExpertPanel />);
     fireEvent.click(screen.getByTestId('expert-tab-mine'));
     await waitFor(() => expect(screen.getByTestId('expert-category-chips')).toBeTruthy());
-    // 工具条合并：chips 与「我的/发现 + 刷新 + 新建专家」同处一条 sticky 容器
-    const toolbar = screen.getByTestId('expert-category-chips').parentElement!;
-    expect(toolbar.className).toContain('sticky');
-    expect(within(toolbar).getByTestId('expert-create-role')).toBeTruthy();
-    expect(within(toolbar).getByTestId('expert-tab-mine')).toBeTruthy();
+    // 页头合并：chips（第二行）与「我的/发现 + 刷新 + 新建专家」（第一行操作簇）同处一条 sticky 容器
+    const header = screen.getByTestId('expert-hub-header');
+    expect(header.className).toContain('sticky');
+    expect(within(header).getByTestId('expert-category-chips')).toBeTruthy();
+    expect(within(header).getByTestId('expert-create-role')).toBeTruthy();
+    expect(within(header).getByTestId('expert-tab-mine')).toBeTruthy();
     // chips = 全部 + 出现的分类（product/research）+ 无分类归「其他」
     expect(screen.getByTestId('expert-category-chip-all')).toBeTruthy();
     expect(screen.getByTestId('expert-category-chip-product')).toBeTruthy();

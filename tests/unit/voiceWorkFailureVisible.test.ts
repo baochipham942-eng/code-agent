@@ -86,8 +86,8 @@ function bind(): void {
   beginVoiceDispatch({
     neoSessionId: 'session-1',
     onWorkItem: (item) => { upserts.push({ ...item }); },
-    onWorkFailed: (item) => {
     onEndCall: () => {},
+    onWorkFailed: (item) => {
       failures.push({ ...item });
       if (failHookThrows) throw new Error('reporter exploded');
     },

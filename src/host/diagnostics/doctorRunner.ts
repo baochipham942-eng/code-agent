@@ -12,6 +12,7 @@ import {
 } from './checks/environment';
 import { checkProviderConnectivity } from './checks/network';
 import { checkProviderHealth } from './checks/providerHealth';
+import { checkQuickModelAuth } from './checks/quickModelAuth';
 import { checkCurrentBrowserRelay } from './checks/browserRelay';
 import { checkMcpServers } from './checks/mcp';
 import { checkHooksConfig } from './checks/hooks';
@@ -131,6 +132,11 @@ export async function runDoctor(opts?: RunDoctorOptions): Promise<DoctorReport> 
       category: 'provider_health',
       name: 'Provider health',
       run: async () => checkProviderHealth(),
+    },
+    {
+      category: 'provider_health',
+      name: '快模型鉴权',
+      run: async () => checkQuickModelAuth(),
     },
     {
       category: 'provider_health',

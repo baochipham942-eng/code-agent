@@ -269,6 +269,17 @@ pre code {
    Animations
    ============================================================================ */
 
+@keyframes popoverEnter {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 @keyframes fadeIn {
   from { opacity: 0; }
   to { opacity: 1; }
@@ -537,6 +548,10 @@ pre code {
 @media (prefers-reduced-motion: reduce) {
   .voice-presence-orb-core,
   .voice-presence-orb-glow {
+    animation: none;
+  }
+
+  .popover-enter {
     animation: none;
   }
 
@@ -860,6 +875,50 @@ pre code {
     @apply badge;
     background-color: var(--bg-hover);
     color: var(--text-tertiary);
+  }
+
+  /* ----------------------------------------
+     Elevation 层级（2026-07-28 品质感打磨拍板）
+     暗色下层级靠亮度阶梯 + 投影，不靠描边。色值/投影的唯一真源是
+     themes/*.css 的 --elevation-l* / --shadow-l* token；这里只做组装。
+     放 components 层：toast 等场景用语义 border 色 utility 覆盖描边色。
+     ---------------------------------------- */
+  .elevation-l2 {
+    background-color: var(--elevation-l2);
+    border: 1px solid var(--border-default);
+    box-shadow: var(--shadow-l2);
+  }
+
+  .elevation-l3 {
+    background-color: var(--elevation-l3);
+    border: 1px solid var(--border-default);
+    box-shadow: var(--shadow-l3);
+  }
+
+  /* 浮层入场：opacity + 4px 上浮，140ms ease-out，别瞬现 */
+  .popover-enter {
+    animation: popoverEnter 140ms var(--ease-out) both;
+  }
+
+  /* composer 浮起：输入框抬到 L1（聚焦 L2）+ 投影，聚焦时描边微亮 */
+  .composer-elevated {
+    background-color: var(--elevation-l1);
+    border: 1px solid var(--border-default);
+    box-shadow: var(--shadow-composer);
+    transition:
+      background-color var(--duration-fast) var(--ease-out),
+      border-color var(--duration-fast) var(--ease-out);
+  }
+
+  .composer-elevated:focus-within {
+    background-color: var(--elevation-l2);
+    border-color: var(--border-hover);
+  }
+
+  /* composer 上方滚动渐隐：聊天文字「淡入」到框后，而不是被硬切 */
+  .chat-scroll-fade {
+    -webkit-mask-image: linear-gradient(to bottom, black calc(100% - 28px), transparent 100%);
+    mask-image: linear-gradient(to bottom, black calc(100% - 28px), transparent 100%);
   }
 
   /* ----------------------------------------

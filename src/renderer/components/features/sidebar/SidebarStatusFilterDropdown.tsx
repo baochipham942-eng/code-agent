@@ -67,7 +67,7 @@ export const SidebarStatusFilterDropdown: React.FC<SidebarStatusFilterDropdownPr
         )}
       </button>
       {statusFilterOpen && (
-        <div className="absolute right-0 top-full z-30 mt-1 min-w-[220px] rounded-lg border border-zinc-700 bg-zinc-800 py-1 shadow-xl">
+        <div className="absolute right-0 top-full z-30 mt-1 min-w-[220px] rounded-lg elevation-l2 popover-enter py-1">
           <div className="px-3 pb-1 pt-1 text-[10px] uppercase tracking-wider text-zinc-500">{f.filterByStatus}</div>
           {visibleStatusFilterOptions.map((option) => {
             const active = sessionStatusFilter === option.id;

@@ -39,6 +39,8 @@ export interface VoiceCallSummary {
   workItemCount: number;
   startedAt: number;
   endedAt: number;
+  /** 这通电话落库了多少条字幕。旧记录没有这个字段——字段缺失本身就是「旧版本通话」的判据。 */
+  transcriptCount?: number;
 }
 
 /** 注册给通话 brain 的窄工具（方案 §6.2 模式 A）。JSON Schema 直接透给上游。 */

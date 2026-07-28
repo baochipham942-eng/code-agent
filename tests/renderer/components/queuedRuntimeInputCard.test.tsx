@@ -72,7 +72,7 @@ describe('QueuedRuntimeInputCard', () => {
     );
 
     const cardIndex = source.indexOf('<QueuedRuntimeInputCard');
-    const containerIndex = source.indexOf('rounded-2xl focus-within:bg-white/[0.04]');
+    const containerIndex = source.indexOf('composer-elevated rounded-2xl');
     expect(cardIndex, '找不到排队卡的挂载点，本门的锚点已失效，请修门而不是放行')
       .toBeGreaterThan(-1);
     expect(containerIndex, '找不到输入框容器锚点，本门的锚点已失效，请修门而不是放行')

@@ -1,6 +1,7 @@
 // ============================================================================
 // emoji→lucide 图标化收敛棘轮：Toast / CitationList / sessionContextMenuItems
-// (+消费方 SessionContextMenu) 已清扫完的文件里，禁止再用 emoji 字面量当图标。
+// (+消费方 SessionContextMenu) / GoalStatusBar 已清扫完的文件里，禁止再用
+// emoji 字面量当图标。
 // 按 unicode 区间枚举（emoji pictograph + symbol + arrow 区）而不是按具体字符
 // 枚举——新增 emoji 形态也会被扫到。清单只覆盖本批清扫过的文件，不扫全仓
 // （toolSummary.ts / ToolCallGroup / scheduleTemplates.ts 的用户可选 emoji 字段
@@ -26,12 +27,15 @@ const SCOPED_FILES = [
   'components/citations/CitationList.tsx',
   'components/features/sidebar/sessionContextMenuItems.ts',
   'components/features/sidebar/SessionContextMenu.tsx',
+  // 2026-07-28 品质感打磨②：⏱（U+23F1）→ lucide Clock，入棘轮防回潮
+  'components/features/chat/GoalStatusBar.tsx',
 ];
 
-/** emoji pictograph（1F300-1FAFF）+ misc symbol（2600-27BF）+ arrow（2190-21FF）区间。
+/** emoji pictograph（1F300-1FAFF）+ misc symbol（2600-27BF）+ arrow（2190-21FF）
+ * + misc technical（2300-23FF，⏱⏰⌛ 等计时符号所在区）区间。
  * 用 Node 自带正则直接扫文件内容，不 shell out 给 grep——BSD grep（macOS 系统自带）
  * 不支持 -P/PCRE 的 \x{...} Unicode 转义，会整门报「自身故障」假红。 */
-const EMOJI_PATTERN = /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{2190}-\u{21FF}]/gu;
+const EMOJI_PATTERN = /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{2190}-\u{21FF}\u{2300}-\u{23FF}]/gu;
 
 function grepEmojiSites(): Map<string, number> {
   const counts = new Map<string, number>();

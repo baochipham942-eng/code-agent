@@ -31,7 +31,7 @@ export const ToastContainer: React.FC = () => {
       {toasts.map((t) => (
         <div
           key={t.id}
-          className={`flex items-start gap-2 px-3 py-2.5 bg-zinc-800 border rounded-lg shadow-lg animate-in slide-in-from-right-5 fade-in duration-200 ${COLOR_MAP[t.type]}`}
+          className={`flex items-start gap-2 px-3 py-2.5 elevation-l3 popover-enter rounded-2xl ${COLOR_MAP[t.type]}`}
           role="alert"
         >
           <span className="text-sm font-bold shrink-0 mt-0.5">{ICON_MAP[t.type]}</span>

@@ -559,8 +559,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
       ref={menuRef}
       className="
         py-1 overflow-y-auto
-        bg-zinc-800 border border-zinc-700 rounded-lg
-        shadow-xl
+        elevation-l2 popover-enter rounded-lg
       "
       style={{
         position: 'fixed',

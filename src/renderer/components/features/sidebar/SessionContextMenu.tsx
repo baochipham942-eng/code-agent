@@ -92,7 +92,7 @@ export const SessionContextMenu: React.FC<SessionContextMenuProps> = ({
   return (
     <div
       ref={menuRef}
-      className="fixed min-w-[160px] py-1 bg-zinc-900 border border-zinc-700/80 rounded-lg shadow-xl"
+      className="fixed min-w-[160px] py-1 elevation-l2 popover-enter rounded-lg"
       style={{ left: pos.left, top: pos.top, zIndex: Z_LAYERS.contextMenu }}
     >
       {items.map((item, index) => (

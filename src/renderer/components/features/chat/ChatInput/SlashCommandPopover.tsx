@@ -864,7 +864,7 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
     <div
       ref={listRef}
       data-slash-command-popover
-      className="absolute bottom-full left-0 right-0 mb-1 bg-zinc-900 border border-zinc-700 rounded-lg shadow-2xl z-20 max-h-[280px] overflow-y-auto animate-fade-in"
+      className="absolute bottom-full left-0 right-0 mb-1 elevation-l2 popover-enter rounded-lg z-20 max-h-[280px] overflow-y-auto"
     >
       <div className="py-1">
         {grouped.map((group) => (

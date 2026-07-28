@@ -83,7 +83,7 @@ describe('VoiceCallSummaryCard 展开文字记录（G1）', () => {
 
     render(<VoiceCallSummaryCard summary={summary} />);
     fireEvent.click(screen.getByRole('button'));
-    expect(screen.getByText(zh.voice.call.noTranscript)).toBeTruthy();
+    expect(screen.getByText(zh.voice.call.noTranscriptLegacy)).toBeTruthy();
   });
 
   it('再次点击收起', () => {

@@ -58,6 +58,8 @@ interface ActiveSession {
   graceTimer: NodeJS.Timeout | null;
   /** 本次通话派出去的任务数，进通话摘要 */
   workItemCount: number;
+  /** 本次通话成功落库的字幕条数，进通话摘要（旧记录没有 = 旧版本通话的判据） */
+  transcriptCounter: { count: number };
   /** 助手字幕的增量缓冲：上游只给 delta，挂断时若 done 没到要拿它冲成 final。 */
   transcriptBuf: { assistant: string };
   /** 通话身份的短人设，焦点刷新时要和 Focus 段一起重拼 */
@@ -87,8 +89,15 @@ function send(client: WsSocket, event: VoiceEvent): void {
 /**
  * final 字幕落到绑定会话的消息流。走 sessionManager 既有写入路径，不新造存储。
  * 只落文本，不落音频（方案 §8.1）。
+ * 传入 counter 时，每次成功落库就 +1——挂断摘要的 transcriptCount 全靠它，
+ * 漏一个调用点就会把有对话的电话报成没对话。
  */
-async function persistTranscript(neoSessionId: string, role: 'user' | 'assistant', text: string): Promise<void> {
+async function persistTranscript(
+  neoSessionId: string,
+  role: 'user' | 'assistant',
+  text: string,
+  counter?: { count: number },
+): Promise<void> {
   const trimmed = text.trim();
   if (!trimmed) return;
   try {
@@ -99,6 +108,7 @@ async function persistTranscript(neoSessionId: string, role: 'user' | 'assistant
       timestamp: Date.now(),
       metadata: { source: 'voice' },
     });
+    if (counter) counter.count += 1;
   } catch (err) {
     logger.warn('failed to persist transcript', { role, message: err instanceof Error ? err.message : 'unknown' });
   }
@@ -206,7 +216,7 @@ async function teardown(reason: string): Promise<void> {
   const pendingAssistant = session.transcriptBuf.assistant;
   if (pendingAssistant.trim()) {
     session.transcriptBuf.assistant = '';
-    await persistTranscript(session.neoSessionId, 'assistant', pendingAssistant);
+    await persistTranscript(session.neoSessionId, 'assistant', pendingAssistant, session.transcriptCounter);
   }
   const endedAt = Date.now();
   const { startedAt } = session;
@@ -230,6 +240,7 @@ async function teardown(reason: string): Promise<void> {
           workItemCount: session.workItemCount,
           startedAt,
           endedAt,
+          transcriptCount: session.transcriptCounter.count,
         },
       },
     });
@@ -300,6 +311,9 @@ async function connectAndBind(
   }
 
   const transcriptBuf = { assistant: '' };
+  // 字幕落库计数器：onEvent 闭包与挂断摘要共用同一个可变引用（同 transcriptBuf 先例），
+  // 成功落库才 +1，挂断时原样写进 voiceCallSummary.transcriptCount。
+  const transcriptCounter = { count: 0 };
   const baseInstructions = withLanguageDirective(routing.personaInstructions, liveSettings?.language);
   // 上游回调一律经这个可变引用发：重连换的是 socket，不是通话。
   const clientRef = { current: client };
@@ -326,11 +340,11 @@ async function connectAndBind(
       },
       onEvent: (event) => {
         send(clientRef.current, event);
-        if (event.type === 'user.transcript' && event.done) void persistTranscript(neoSessionId, 'user', event.text);
+        if (event.type === 'user.transcript' && event.done) void persistTranscript(neoSessionId, 'user', event.text, transcriptCounter);
         else if (event.type === 'assistant.transcript') {
           if (event.done) {
             transcriptBuf.assistant = '';
-            void persistTranscript(neoSessionId, 'assistant', event.text);
+            void persistTranscript(neoSessionId, 'assistant', event.text, transcriptCounter);
           } else {
             transcriptBuf.assistant += event.text;
           }
@@ -374,6 +388,7 @@ async function connectAndBind(
     upstream,
     graceTimer: null,
     workItemCount: 0,
+    transcriptCounter,
     transcriptBuf,
     personaInstructions: baseInstructions,
     conversationModel: conversationModel.id,

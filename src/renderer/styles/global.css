@@ -173,6 +173,13 @@ body.theme-switching * {
   -ms-overflow-style: none;
 }
 
+/* 聊天主栏右轨对齐（现象 9）：trace 滚动条恒定占位，与列表是否溢出无关。
+   Virtuoso 内联写了 overflowY:auto，类名压不过，只能在这里点名。
+   布局配合：ChatView 主栏 pr 让出窄带 + TurnBasedTraceView 负 margin 要回。 */
+[data-virtuoso-first-item-index] [data-virtuoso-scroller='true'] {
+  overflow-y: scroll !important; /* ds-allow:important Virtuoso 在 scroller 上内联写死 overflowY:auto，内联样式只有它能压，别无他法 */
+}
+
 .scrollbar-hidden::-webkit-scrollbar,
 .scrollbar-hidden *::-webkit-scrollbar {
   display: none;

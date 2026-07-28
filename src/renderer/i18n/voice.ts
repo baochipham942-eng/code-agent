@@ -86,7 +86,9 @@ export const voiceZh: VoiceTranslations = {
       second: '秒',
       expand: '展开文字记录',
       collapse: '收起文字记录',
-      noTranscript: '这通电话的文字记录未保留（旧版本通话）',
+      noTranscriptLegacy: '这通电话的文字记录未保留（旧版本通话）',
+      noTranscriptEmpty: '这通电话没有对话内容',
+      noTranscriptMissing: '这通电话的文字记录未保留',
     },
     settings: {
       live: '实时通话',
@@ -224,7 +226,9 @@ export const voiceEn = {
       second: 's',
       expand: 'Show transcript',
       collapse: 'Hide transcript',
-      noTranscript: "This call's transcript wasn't kept (older app version)",
+      noTranscriptLegacy: "This call's transcript wasn't kept (older app version)",
+      noTranscriptEmpty: 'There was no conversation in this call',
+      noTranscriptMissing: "This call's transcript wasn't kept",
     },
     settings: {
       live: 'Realtime call',

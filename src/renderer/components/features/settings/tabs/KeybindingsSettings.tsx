@@ -308,7 +308,7 @@ export const KeybindingsSettings: React.FC = () => {
                 return (
                   <div
                     key={definition.id}
-                    className={`grid gap-3 border-b border-zinc-800 bg-zinc-950/40 p-3 last:border-b-0 md:grid-cols-[minmax(0,1fr)_220px_108px] md:items-center ${
+                    className={`grid gap-3 border-b border-zinc-800 bg-zinc-950/40 p-3 last:border-b-0 md:grid-cols-[minmax(0,1fr)_220px_136px] md:items-center ${
                       hasConflict ? 'bg-amber-950/10' : ''
                     }`}
                   >

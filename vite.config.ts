@@ -132,6 +132,7 @@ export default defineConfig({
       '/api': {
         target: 'http://localhost:8180',
         changeOrigin: true,
+        ws: true,
         bypass(req) {
           // Don't proxy Vite module requests (source files, HMR)
           if (req.url?.match(/\.(ts|tsx|js|jsx|mjs)(\?|$)/) || req.url?.includes('?import')) {

@@ -11,8 +11,12 @@ import { DICTATION_STREAM_WS_PATH } from '@shared/constants/voice';
 import { createLogger } from '../utils/logger';
 import ipcService from '../services/ipcService';
 import { VoiceAudioPipeline } from '../services/voiceAudioPipeline';
+import { VOICE_INPUT_NETWORK_ERROR_CODE } from '../utils/voiceInputError';
 
 const logger = createLogger('VoiceInput');
+
+/** 实例自增 id：dictation 路径 getUserMedia / track.stop 的日志带它，事后配对检查。 */
+let nextDictationId = 1;
 
 export type VoiceInputStatus = 'idle' | 'recording' | 'transcribing' | 'error';
 
@@ -153,6 +157,10 @@ export function useVoiceInput(options: UseVoiceInputOptions = {}): UseVoiceInput
   const streamPipelineRef = useRef<VoiceAudioPipeline | null>(null);
   const streamStoppingRef = useRef(false);
   const streamFailureRef = useRef(false);
+  /** 整段转写路径的麦克风流：不依赖 mediaRecorder.onstop 也一定能释放。 */
+  const dictationStreamRef = useRef<MediaStream | null>(null);
+  /** start() 的 getUserMedia 还在 pending 时用户已取消（stop/卸载）：拿到 stream 就立刻停掉。 */
+  const dictationAbortedRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -280,6 +288,19 @@ export function useVoiceInput(options: UseVoiceInputOptions = {}): UseVoiceInput
     }
   }, []);
 
+  const dictationIdRef = useRef(0);
+  if (dictationIdRef.current === 0) dictationIdRef.current = nextDictationId++;
+
+  /** 释放整段转写路径的麦克风流；幂等，onstop 不触发时（卸载/取消）也能兜底。 */
+  const releaseDictationStream = useCallback((reason: string) => {
+    const stream = dictationStreamRef.current;
+    dictationStreamRef.current = null;
+    stream?.getTracks().forEach((track) => {
+      track.stop();
+      logger.info('dictation track stopped', { dictationId: dictationIdRef.current, reason });
+    });
+  }, []);
+
   const stopStreamCapture = useCallback(() => {
     streamPipelineRef.current?.stop();
     streamPipelineRef.current = null;
@@ -359,7 +380,7 @@ export function useVoiceInput(options: UseVoiceInputOptions = {}): UseVoiceInput
     if (ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({ type: 'stop' }));
     } else {
-      failStream('实时语音连接尚未就绪');
+      failStream('实时语音连接尚未就绪', VOICE_INPUT_NETWORK_ERROR_CODE);
     }
   }, [failStream, stopStreamCapture]);
 
@@ -372,7 +393,7 @@ export function useVoiceInput(options: UseVoiceInputOptions = {}): UseVoiceInput
     try {
       ws = new WebSocket(buildDictationStreamUrl());
     } catch (err) {
-      failStream(err instanceof Error ? err.message : '无法建立实时语音连接');
+      failStream(err instanceof Error ? err.message : '无法建立实时语音连接', VOICE_INPUT_NETWORK_ERROR_CODE);
       return;
     }
     streamWsRef.current = ws;
@@ -464,7 +485,7 @@ export function useVoiceInput(options: UseVoiceInputOptions = {}): UseVoiceInput
     };
 
     ws.onerror = () => {
-      if (!streamStoppingRef.current) failStream('实时语音连接失败');
+      if (!streamStoppingRef.current) failStream('实时语音连接失败', VOICE_INPUT_NETWORK_ERROR_CODE);
     };
     ws.onclose = () => {
       if (streamWsRef.current === ws) streamWsRef.current = null;
@@ -473,7 +494,7 @@ export function useVoiceInput(options: UseVoiceInputOptions = {}): UseVoiceInput
       if (streamStoppingRef.current && !streamFailureRef.current) {
         setStatus('idle');
       } else if (!streamFailureRef.current) {
-        failStream('实时语音连接意外断开');
+        failStream('实时语音连接意外断开', VOICE_INPUT_NETWORK_ERROR_CODE);
       }
     };
   }, [
@@ -527,7 +548,18 @@ export function useVoiceInput(options: UseVoiceInputOptions = {}): UseVoiceInput
       }
 
       // 请求麦克风权限
+      dictationAbortedRef.current = false;
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      logger.info('dictation getUserMedia acquired', {
+        dictationId: dictationIdRef.current,
+        tracks: stream.getTracks().length,
+      });
+      dictationStreamRef.current = stream;
+      // await 期间被取消（stop/卸载）：刚拿到的 stream 无人持有，就地停掉。
+      if (dictationAbortedRef.current) {
+        releaseDictationStream('aborted-during-start');
+        return;
+      }
 
       setStatus('recording');
       setInputLevel(0);
@@ -552,8 +584,8 @@ export function useVoiceInput(options: UseVoiceInputOptions = {}): UseVoiceInput
 
       mediaRecorder.onstop = async () => {
         stopLevelMeter();
-        // 停止所有音轨
-        stream.getTracks().forEach(track => track.stop());
+        // 停止所有音轨（幂等：卸载兜底路径可能已经停过）
+        releaseDictationStream('recorder-stop');
 
         // 清除计时器
         if (durationIntervalRef.current) {
@@ -603,7 +635,7 @@ export function useVoiceInput(options: UseVoiceInputOptions = {}): UseVoiceInput
       mediaRecorder.onerror = (event) => {
         console.error('[VoiceInput] MediaRecorder error:', event);
         stopLevelMeter();
-        stream.getTracks().forEach(track => track.stop());
+        releaseDictationStream('recorder-error');
         setError('录音出错');
         setErrorCode('RECORDING_ERROR');
         setStatus('error');
@@ -639,7 +671,7 @@ export function useVoiceInput(options: UseVoiceInputOptions = {}): UseVoiceInput
     } finally {
       isStartingRef.current = false;
     }
-  }, [checkSupport, effectiveMaxDuration, settings.enabled, settings.mode, startLevelMeter, startStream, status, stopLevelMeter, transcribePendingAudio]);
+  }, [checkSupport, effectiveMaxDuration, releaseDictationStream, settings.enabled, settings.mode, startLevelMeter, startStream, status, stopLevelMeter, transcribePendingAudio]);
 
   /**
    * 停止录音
@@ -649,6 +681,10 @@ export function useVoiceInput(options: UseVoiceInputOptions = {}): UseVoiceInput
       stopStream();
       return;
     }
+    // start() 还卡在 getUserMedia 上：标记取消，让它拿到 stream 后立刻停掉。
+    if (isStartingRef.current && !mediaRecorderRef.current) {
+      dictationAbortedRef.current = true;
+    }
     if (mediaRecorderRef.current?.state === 'recording') {
       mediaRecorderRef.current.stop();
     }
@@ -656,6 +692,15 @@ export function useVoiceInput(options: UseVoiceInputOptions = {}): UseVoiceInput
 
   useEffect(() => {
     return () => {
+      dictationAbortedRef.current = true;
+      if (mediaRecorderRef.current?.state === 'recording') {
+        try {
+          mediaRecorderRef.current.stop();
+        } catch {
+          // 卸载兜底：recorder 状态异常时忽略，音轨由下面的 release 停
+        }
+      }
+      releaseDictationStream('unmount');
       if (durationIntervalRef.current) {
         clearInterval(durationIntervalRef.current);
         durationIntervalRef.current = null;
@@ -663,7 +708,7 @@ export function useVoiceInput(options: UseVoiceInputOptions = {}): UseVoiceInput
       stopLevelMeter();
       closeStream();
     };
-  }, [closeStream, stopLevelMeter]);
+  }, [closeStream, releaseDictationStream, stopLevelMeter]);
 
   const retry = useCallback(() => {
     if (status === 'recording' || status === 'transcribing') return;

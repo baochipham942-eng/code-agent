@@ -13,7 +13,7 @@
 // ============================================================================
 
 import type { VoiceMessageCode } from '@shared/contract/voice';
-import { VOICE_FOCUS_REPORT_MIN_INTERVAL_MS, VOICE_RECONNECT_BACKOFF_MS, VOICE_STREAM_WS_PATH } from '@shared/constants/voice';
+import { VOICE_FOCUS_REPORT_MIN_INTERVAL_MS, VOICE_RECONNECT_BACKOFF_MS, VOICE_STREAM_WS_PATH, VOICE_TEARDOWN_DRAIN_MS } from '@shared/constants/voice';
 import type { AppSettings, Message } from '@shared/contract';
 import type { VoiceClientCommand, VoiceEvent } from '@shared/contract/voice';
 import { IPC_DOMAINS } from '@shared/ipc';
@@ -120,6 +120,23 @@ class VoiceCallBridge {
     });
     this.settledPartials = {};
     if (Object.keys(patch).length > 0) state.eventApplied(patch);
+  }
+
+  /**
+   * 挂断后的第二次拉消息（现象 3·摘要卡延迟的根因）：
+   * host teardown 要等 VOICE_TEARDOWN_DRAIN_MS（1500ms）排水窗才把摘要卡落库，
+   * 而挂断时那次 reload 固定在 800ms——拉回来的消息里还没有摘要，之后又没有任何人
+   * 再拉，于是「第一通挂断不显示，第二通挂断才把第一通的顶出来」。
+   * 800ms 那次照留（字幕尾巴尽早上屏），排水窗之后再补一次拿摘要卡。
+   */
+  private hangupReloadTimer: ReturnType<typeof setTimeout> | null = null;
+
+  private scheduleHangupSummaryReload(sessionId: string): void {
+    if (this.hangupReloadTimer) clearTimeout(this.hangupReloadTimer);
+    this.hangupReloadTimer = setTimeout(() => {
+      this.hangupReloadTimer = null;
+      void reloadVoiceSessionMessages(sessionId);
+    }, VOICE_TEARDOWN_DRAIN_MS + 500);
   }
 
   /**
@@ -252,6 +269,7 @@ class VoiceCallBridge {
       if (!this.intentionalClose && phase !== 'error' && this.scheduleReconnect(sessionId, activeAgentId, interruptMode, echoCancellation)) return;
       // host 侧关闭（挂断/上游死/超时）：摘要落库有一点延迟，稍后再拉一次。
       this.scheduleReload(sessionId, undefined, 800);
+      this.scheduleHangupSummaryReload(sessionId);
       // error 态不 reset：把错误留在 chrome 上给用户看，由 End 按钮显式收尾；
       // 否则上游报错一闪而过，用户只看到通话凭空消失。
       if (phase !== 'error') this.store().reset();
@@ -328,6 +346,12 @@ class VoiceCallBridge {
     this.audio = pipeline;
     if (involuntary) this.warnAecFallback();
     await pipeline.start();
+    // 与 native 分支同款的 post-await 竞态复查：getUserMedia 期间 WS 可能已关
+    // （真机降级到耳机模式走的正是这条路），不复查的话管线会漏到通话外继续占麦。
+    if (this.ws !== ws || ws.readyState !== WebSocket.OPEN) {
+      pipeline.stop();
+      return 'headphones';
+    }
     return 'headphones';
   }
 
@@ -467,7 +491,10 @@ class VoiceCallBridge {
     this.audio = null;
     this.audioReady = null;
     const { sessionId } = this.store();
-    if (sessionId) this.scheduleReload(sessionId, undefined, 800);
+    if (sessionId) {
+      this.scheduleReload(sessionId, undefined, 800);
+      this.scheduleHangupSummaryReload(sessionId);
+    }
     this.store().reset();
   }
 

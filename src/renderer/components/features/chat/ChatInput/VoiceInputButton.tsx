@@ -15,6 +15,7 @@ import type { UseVoiceInputReturn } from '../../../../hooks/useVoiceInput';
 import { openNativeDesktopSystemSettings } from '../../../../services/nativeDesktop';
 import { useI18n } from '../../../../hooks/useI18n';
 import { useAppStore } from '../../../../stores/appStore';
+import { classifyVoiceInputError } from '../../../../utils/voiceInputError';
 
 export interface VoiceInputButtonProps {
   /** ChatInput 持有的语音输入状态（同一 hook 实例驱动录音条与按钮） */
@@ -84,6 +85,7 @@ export const VoiceInputButton: React.FC<VoiceInputButtonProps> = ({
     isSupported,
     isEnabled,
     settings,
+    start,
     toggle,
     retry,
     canRetry,
@@ -95,14 +97,28 @@ export const VoiceInputButton: React.FC<VoiceInputButtonProps> = ({
 
   const isRecording = status === 'recording';
   const isTranscribing = status === 'transcribing';
-  // 错误卡只留一个「去解决」的落点，落到哪由错误码决定：麦克风权限 → 系统设置；
-  // 没通道 / 没配 key → 语音输入设置（这两种配置问题上「重试」是点了没用的）。
+  // 错误分类（现象 8）：host 会把 TLS/网络失败也塞进 SPEECH_NO_CHANNEL，
+  // 不能按 code 直接给「去设置」。分类细则见 utils/voiceInputError。
+  const errorKind = classifyVoiceInputError(errorCode, error);
+  // 主文案只放本地化人话；裸英文技术串只留在 tooltip（title），不占主文案。
+  const displayError =
+    errorKind === 'network'
+      ? v.networkError
+      : errorKind === 'unknown'
+        ? v.genericError
+        : error;
+  // 错误卡只留一个「去解决」的落点，落到哪由错误分类决定：麦克风权限 → 系统设置；
+  // 配置问题 → 语音输入设置；网络/未知 → 重试（默认档，绝不掉进「去配置」）。
   const fixAction: { label: string; run: () => void } | null =
-    errorCode === 'MICROPHONE_PERMISSION_DENIED'
+    errorKind === 'mic-permission'
       ? { label: v.openSettingsButton, run: () => void openNativeDesktopSystemSettings('microphone') }
-      : errorCode === 'SPEECH_NO_CHANNEL' || errorCode === 'NOT_INITIALIZED'
+      : errorKind === 'config'
         ? { label: v.openVoiceSettingsButton, run: () => { clearError(); openSettingsTab('voiceInput'); } }
-        : null;
+        // 非流式且有 pendingAudio 时沿用下方 hook 的 retry（重转同一段音频），
+        // 这里不再重复给一个重试按钮。
+        : canRetry
+          ? null
+          : { label: v.retryButton, run: () => { clearError(); start(); } };
   const effectiveSettings = settings ?? DEFAULT_SPEECH_INPUT_SETTINGS;
 
   React.useEffect(() => {
@@ -171,7 +187,7 @@ export const VoiceInputButton: React.FC<VoiceInputButtonProps> = ({
           <div className="flex items-start gap-2">
             <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" />
             <div className="min-w-0 flex-1">
-              <p className="break-words text-xs leading-5 text-zinc-200">{error}</p>
+              <p className="break-words text-xs leading-5 text-zinc-200">{displayError}</p>
               <p className="mt-1 text-2xs text-zinc-500">
                 {effectiveSettings.mode === 'stream'
                   ? v.modeStream

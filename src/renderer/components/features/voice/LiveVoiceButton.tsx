@@ -12,8 +12,7 @@ import { AudioLines } from 'lucide-react';
 import { voiceCallBridge } from '../../../services/voiceCallBridge';
 import { useVoiceCallStore } from '../../../stores/voiceCallStore';
 import { useI18n } from '../../../hooks/useI18n';
-import { VoiceStartDialog } from './VoiceStartDialog';
-import { useVoiceLiveAvailability } from './useVoiceLiveAvailability';
+import { VoiceStartDialog, isVoiceStartConfirmDismissed } from './VoiceStartDialog';
 
 export interface LiveVoiceButtonProps {
   sessionId: string | null;
@@ -25,11 +24,19 @@ export interface LiveVoiceButtonProps {
    * 那个位置的按钮是这一行的视觉落点，用弱色 icon-only 会让整行没有终点。
    */
   variant?: 'ghost' | 'primary';
+  /**
+   * 可见性前提（设置总开关 + Provider 已配置），由 ChatInput 的单一
+   * useVoiceLiveAvailability 实例传入。曾经组件内部各自再调一次这个 hook——
+   * 两个实例的异步解析结果会短暂不一致：父层已判定「语音占主位」而按钮内部
+   * 还没拿到 configured，于是 return null，主按钮位整格空掉（没有发送键兜底），
+   * 要等下一次无关的重渲染（hover/聚焦）才补上——真机「按钮 hover 才出现」。
+   */
+  availability: { enabled: boolean; configured: boolean };
 }
 
-export const LiveVoiceButton: React.FC<LiveVoiceButtonProps> = ({ sessionId, hasMessages, disabled, variant = 'ghost' }) => {
+export const LiveVoiceButton: React.FC<LiveVoiceButtonProps> = ({ sessionId, hasMessages, disabled, variant = 'ghost', availability }) => {
   const { t } = useI18n();
-  const { enabled, configured } = useVoiceLiveAvailability();
+  const { enabled, configured } = availability;
   const phase = useVoiceCallStore((state) => state.phase);
   const [confirmOpen, setConfirmOpen] = useState(false);
 
@@ -44,7 +51,7 @@ export const LiveVoiceButton: React.FC<LiveVoiceButtonProps> = ({ sessionId, has
       <button /* ds-allow:button: 与 VoiceInputButton 同构的纯图标入口按钮，圆形 icon-only 形态沿用既有 composer 按钮语言 */
         type="button"
         data-testid="live-voice-button"
-        onClick={() => (hasMessages ? setConfirmOpen(true) : start())}
+        onClick={() => (hasMessages && !isVoiceStartConfirmDismissed() ? setConfirmOpen(true) : start())}
         disabled={disabled}
         title={t.voice.live.startTitle}
         aria-label={t.voice.live.startTitle}

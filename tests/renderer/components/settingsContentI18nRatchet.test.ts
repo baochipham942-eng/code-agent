@@ -18,6 +18,7 @@ const MIGRATED: string[] = [
   'tabs/ConversationSettings.tsx',
   'tabs/KeybindingsSettings.tsx',
   'tabs/VoiceInputSettings.tsx',
+  'tabs/VoiceModelSettings.tsx',
   'tabs/ModelSettings.tsx',
   'tabs/ModelSettings.helpers.tsx',
   'tabs/ModelThinkingControl.tsx',

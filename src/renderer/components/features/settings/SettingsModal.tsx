@@ -19,6 +19,7 @@ import {
   ChevronDown,
   ChevronRight,
   X,
+  AudioLines,
   Image as ImageIcon,
   Palette,
   Fingerprint,
@@ -88,6 +89,7 @@ import { GeneralSettings } from './tabs/GeneralSettings';
 import { ConversationSettings } from './tabs/ConversationSettings';
 import { VoiceInputSettings } from './tabs/VoiceInputSettings';
 import { VoiceLiveSettings } from './tabs/VoiceLiveSettings';
+import { VoiceModelSettings } from './tabs/VoiceModelSettings';
 import { KeybindingsSettings } from './tabs/KeybindingsSettings';
 import { WorkspaceSettings } from './tabs/WorkspaceSettings';
 import { AppshotsSettings } from './tabs/AppshotsSettings';
@@ -145,6 +147,9 @@ export function buildSettingsTabGroups({
     // 模型与能力
     { id: 'model', label: t.settings.tabs.model, icon: <Brain className="w-4 h-4" /> },
     { id: 'visualModels', label: t.settings.tabs.visualModels, icon: <ImageIcon className="w-4 h-4" /> },
+    // T1（2026-07-28 拍板）：通话模型/音色/转写模型从 voiceLive/voiceInput 收拢到这里，
+    // 两个旧 tab 只留使用偏好（一个能力只有一个家、消费路径只选不配）。
+    { id: 'voiceModel', label: t.settings.tabs.voiceModel, icon: <AudioLines className="w-4 h-4" /> },
     { id: 'search', label: t.settings.tabs.search, icon: <Search className="w-4 h-4" /> },
     { id: 'soul', label: t.settings.tabs.soul, icon: <Fingerprint className="w-4 h-4" /> },
     // 基础偏好
@@ -474,6 +479,7 @@ export const SettingsModal: React.FC = () => {
             {activeTab === 'search' && <SearchSettings />}
             {activeTab === 'voiceLive' && <VoiceLiveSettings />}
             {activeTab === 'voiceInput' && <VoiceInputSettings />}
+            {activeTab === 'voiceModel' && <VoiceModelSettings />}
             {activeTab === 'keybindings' && <KeybindingsSettings />}
             {activeTab === 'workspace' && <WorkspaceSettings />}
             {activeTab === 'appshots' && <AppshotsSettings />}

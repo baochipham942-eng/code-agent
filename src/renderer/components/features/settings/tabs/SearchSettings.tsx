@@ -10,6 +10,7 @@ import type { AppSettings } from '@shared/contract';
 import { SEARCH_SOURCE_CATALOG, type SearchSourceCatalogEntry } from '@shared/constants';
 import { SettingsPage, SettingsSection } from '../SettingsLayout';
 import { ConfirmDialog } from '../../../composites/ConfirmDialog';
+import { Button } from '../../../primitives';
 import { invokeDomain } from '../../../../services/ipcService';
 import { IPC_DOMAINS } from '@shared/ipc';
 import { toast } from '../../../../hooks/useToast';
@@ -246,14 +247,14 @@ export function SearchSettings() {
                         <div className="mt-1.5 flex items-center gap-2 text-xs text-zinc-400">
                           <KeyRound className="h-3.5 w-3.5 text-zinc-500" />
                           <span className="font-mono" data-testid={`search-key-masked-${id}`}>{maskedKey}</span>
-                          <button
-                            type="button"
+                          <Button
+                            variant="ghost"
+                            size="sm"
                             data-testid={`search-key-change-${id}`}
                             onClick={() => setEditorOpen((prev) => new Set(prev).add(id))}
-                            className="rounded border border-zinc-700 px-1.5 py-0.5 text-[11px] text-zinc-300 transition-colors hover:border-zinc-500 hover:text-zinc-100"
                           >
                             {searchText.changeKey}
-                          </button>
+                          </Button>
                         </div>
                       );
                     }
@@ -267,15 +268,15 @@ export function SearchSettings() {
                           placeholder={searchText.keyPlaceholder}
                           className="h-7 w-56 rounded border border-zinc-700 bg-zinc-950 px-2 text-xs text-zinc-200 outline-none placeholder:text-zinc-600 focus:border-sky-500/60"
                         />
-                        <button
-                          type="button"
+                        <Button
+                          variant="primary"
+                          size="sm"
                           data-testid={`search-key-save-${id}`}
                           onClick={() => handleSaveKey(entry)}
                           disabled={isSavingKey || (!draft.trim() && !maskedKey)}
-                          className="rounded border border-sky-500/30 bg-sky-500/10 px-2 py-1 text-[11px] text-sky-100 transition-colors hover:bg-sky-500/20 disabled:opacity-50"
                         >
                           {isSavingKey ? searchText.saving : searchText.saveKey}
-                        </button>
+                        </Button>
                       </div>
                     );
                   })()}

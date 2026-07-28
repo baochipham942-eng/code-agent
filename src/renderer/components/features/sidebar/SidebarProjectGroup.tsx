@@ -186,7 +186,7 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
       data-sidebar-group-phase={expansionView.phase}
     >
       <div
-        className="group sticky top-0 z-20 flex items-center gap-1.5 w-full pl-2 pr-3 py-1.5 bg-zinc-900 backdrop-blur-sm text-left hover:bg-zinc-800/40 transition-colors"
+        className={`group sticky top-0 ${menuOpen ? 'z-30' : 'z-20'} flex items-center gap-1.5 w-full pl-2 pr-3 py-1.5 bg-zinc-900 backdrop-blur-sm text-left hover:bg-zinc-800/40 transition-colors`}
         title={title}
       >
         {/* 分组头对齐约定(2026-07-02 拍板,2026-07-26 强化)：图标+名称左对齐、整行垂直居中；

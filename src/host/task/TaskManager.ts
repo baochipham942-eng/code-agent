@@ -672,11 +672,14 @@ export class TaskManager extends EventEmitter {
       }
 
       logger.error(`Task error for session ${sessionId}:`, error);
-      this.updateSessionState(sessionId, {
-        status: 'error',
-        error: error instanceof Error ? error.message : 'Unknown error',
-      });
-      this.emitEvent('task_error', sessionId, { error });
+      // 事件里带的必须是字符串，不是 Error 对象：唯一的消费方
+      // （voiceAgentCoordinator）按 `typeof === 'string'` 取值，塞 Error 进去
+      // 等于让它每次都退化成兜底文案「执行失败」，真实原因（如「服务认证异常」）
+      // 全程丢失（2026-07-28 G1 真机：用户只可能看到四个字的废话）。
+      // 与下面 session state 的 error 同一份归一化，别各算各的。
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      this.updateSessionState(sessionId, { status: 'error', error: errorMessage });
+      this.emitEvent('task_error', sessionId, { error: errorMessage });
     } finally {
       this.activeModelSpecs.delete(sessionId);
       // 释放信号量

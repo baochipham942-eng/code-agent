@@ -16,8 +16,8 @@ vi.mock('../../../src/host/services/project/projectService', () => ({
 
 vi.mock('../../../src/host/services/project/projectCollaborationService', () => {
   class ProjectCollaborationError extends Error {
-    constructor(readonly code: string, message = 'safe public message') {
-      super(message);
+    constructor(readonly code: string) {
+      super(code === 'COLLAB_INVITE_EXPIRED' ? '邀请码已过期。' : '协同服务暂时出错，请稍后重试。');
       this.name = 'ProjectCollaborationError';
     }
   }
@@ -92,7 +92,7 @@ describe('project collaboration IPC actions', () => {
 
   it('returns a stable collaboration code and never leaks the internal cause', async () => {
     env.redeemInvite.mockRejectedValue(
-      new ProjectCollaborationError('COLLAB_INVITE_EXPIRED', '邀请码已过期。'),
+      new ProjectCollaborationError('COLLAB_INVITE_EXPIRED'),
     );
 
     await expect(call('redeemInvite', { code: 'secret-code' })).resolves.toEqual({

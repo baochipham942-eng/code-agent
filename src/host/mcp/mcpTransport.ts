@@ -1,15 +1,18 @@
+import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
+import {
+  Client,
+  SdkError,
+  SdkErrorCode,
+  SdkHttpError,
+  SSEClientTransport,
+  StreamableHTTPClientTransport,
+} from '@modelcontextprotocol/client';
+import type { ListChangedHandlers, OAuthClientProvider, Transport } from '@modelcontextprotocol/client';
+
 // ============================================================================
 // MCP Transport - 传输层创建和连接管理
 // 支持 Stdio / SSE / HTTP Streamable 三种外部传输协议
 // ============================================================================
-
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import type { ListChangedHandlers } from '@modelcontextprotocol/sdk/types.js';
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
-import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
-import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
-import type { OAuthClientProvider } from '@modelcontextprotocol/sdk/client/auth.js';
-import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import { fetch as undiciFetch, ProxyAgent } from 'undici';
 import { createLogger } from '../services/infra/logger';
 import { sanitizeEnv } from '../utils/sanitizeEnv';
@@ -29,6 +32,50 @@ export const STDIO_FIRST_RUN_TIMEOUT = MCP_TIMEOUTS.FIRST_RUN;
 export const REMOTE_MCP_CONNECT_MAX_ATTEMPTS = 2;
 export const REMOTE_MCP_CONNECT_RETRY_DELAY_MS = 400;
 const mcpProxyAgents = new Map<string, ProxyAgent>();
+const RETRYABLE_SDK_ERROR_CODES = new Set<string>([
+  SdkErrorCode.NotConnected,
+  SdkErrorCode.RequestTimeout,
+  SdkErrorCode.ConnectionClosed,
+  SdkErrorCode.SendFailed,
+  SdkErrorCode.EraNegotiationFailed,
+]);
+const RETRYABLE_SYSTEM_ERROR_CODES = new Set([
+  'ECONNRESET',
+  'ETIMEDOUT',
+  'EAI_AGAIN',
+  'ENETUNREACH',
+  'EPIPE',
+]);
+
+function errorRecord(error: unknown): Record<string, unknown> | undefined {
+  return error && typeof error === 'object' ? error as Record<string, unknown> : undefined;
+}
+
+function findSystemErrorCode(error: unknown): string | undefined {
+  let current = errorRecord(error);
+  const visited = new Set<object>();
+  while (current && !visited.has(current)) {
+    visited.add(current);
+    if (typeof current.code === 'string' && RETRYABLE_SYSTEM_ERROR_CODES.has(current.code)) {
+      return current.code;
+    }
+    current = errorRecord(current.cause);
+  }
+  return undefined;
+}
+
+function sdkErrorCode(error: unknown): string | undefined {
+  const code = errorRecord(error)?.code;
+  return typeof code === 'string' ? code : undefined;
+}
+
+function retryableHttpStatus(error: unknown): boolean {
+  const status = SdkHttpError.isInstance(error)
+    ? error.status
+    : errorRecord(error)?.status;
+  return typeof status === 'number'
+    && (status === 408 || status === 429 || status >= 500);
+}
 
 function headersWithoutAuthorization(headers: Record<string, string>): Record<string, string> | undefined {
   const sanitized = Object.fromEntries(
@@ -77,18 +124,14 @@ function createRemoteMCPFetch(target: URL): typeof globalThis.fetch | undefined 
 }
 
 export function isRetryableRemoteMCPConnectionError(error: unknown): boolean {
-  const message = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
-  const normalized = message.toLowerCase();
-  return [
-    'fetch failed',
-    'econnreset',
-    'etimedout',
-    'eai_again',
-    'enetunreach',
-    'socket hang up',
-    'other side closed',
-    'terminated',
-  ].some((marker) => normalized.includes(marker));
+  return RETRYABLE_SDK_ERROR_CODES.has(sdkErrorCode(error) ?? '')
+    || retryableHttpStatus(error)
+    || findSystemErrorCode(error) !== undefined;
+}
+
+export function isMcpToolConnectionInterruptionError(error: unknown): boolean {
+  const code = errorRecord(error)?.code;
+  return isRetryableRemoteMCPConnectionError(error) || code === -32001;
 }
 
 export async function retryTransientRemoteMCPConnection<T>(
@@ -294,6 +337,7 @@ export function createMCPSDKClient(listChangedHandlers?: ListChangedHandlers): C
       version: '0.1.0',
     },
     {
+      versionNegotiation: { mode: 'auto' },
       capabilities: {
         elicitation: {
           form: {},
@@ -338,7 +382,11 @@ export async function connectWithTimeout(
             errorMsg += `Try running 'npx -y ${packageName}' manually to pre-download the package.`;
           }
         }
-        reject(new Error(errorMsg));
+        reject(new SdkError(
+          SdkErrorCode.RequestTimeout,
+          errorMsg,
+          { serverName: config.name, timeoutMs: connectTimeout },
+        ));
       }
     }, connectTimeout);
 

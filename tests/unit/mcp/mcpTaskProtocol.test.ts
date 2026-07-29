@@ -34,6 +34,7 @@ describe('McpSdkTaskProtocol trace propagation', () => {
     });
 
     expect(request).toHaveBeenCalledTimes(4);
+    expect(request.mock.calls[0]?.[0].params.task).toEqual({});
     for (const [rpc] of request.mock.calls) {
       const meta = rpc.params._meta;
       expect(meta).toEqual({

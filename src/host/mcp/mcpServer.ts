@@ -1,15 +1,10 @@
+import { StdioServerTransport } from '@modelcontextprotocol/server/stdio';
+import { Server } from '@modelcontextprotocol/server';
+import type { Tool } from '@modelcontextprotocol/server';
+
 // ============================================================================
 // MCP Server - 暴露 Code Agent 日志和状态给外部 MCP 客户端
 // ============================================================================
-
-import { Server } from '@modelcontextprotocol/sdk/server/index.js';
-import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import {
-  CallToolRequestSchema,
-  ListResourcesRequestSchema,
-  ListToolsRequestSchema,
-  ReadResourceRequestSchema,
-} from '@modelcontextprotocol/sdk/types.js';
 import { logCollector, type LogEntry, type LogLevel, type LogSource, type LogStatus } from './logCollector.js';
 import { promises as fsp } from 'node:fs';
 import { homedir } from 'node:os';
@@ -146,7 +141,7 @@ export class CodeAgentMCPServer {
 
   private setupHandlers(): void {
     // List available resources
-    this.server.setRequestHandler(ListResourcesRequestSchema, async () => {
+    this.server.setRequestHandler('resources/list', async () => {
       return {
         resources: [
           {
@@ -184,7 +179,7 @@ export class CodeAgentMCPServer {
     });
 
     // Read resource content
-    this.server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
+    this.server.setRequestHandler('resources/read', async (request) => {
       const { uri } = request.params;
 
       if (uri === 'code-agent://logs/browser') {
@@ -272,9 +267,8 @@ export class CodeAgentMCPServer {
     });
 
     // List available tools — 只读/安全能力；控屏 / 反向命令执行不 MCP 化（见文件头注释）。
-    this.server.setRequestHandler(ListToolsRequestSchema, async () => {
-      return {
-        tools: [
+    this.server.setRequestHandler('tools/list', async () => {
+      const tools: Tool[] = [
           {
             name: 'get_logs',
             description: 'Get logs from Agent Neo by source type',
@@ -401,12 +395,12 @@ export class CodeAgentMCPServer {
               },
             },
           },
-        ],
-      };
+      ];
+      return { tools };
     });
 
     // Handle tool calls
-    this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
+    this.server.setRequestHandler('tools/call', async (request) => {
       const { name, arguments: args } = request.params;
 
       if (name === 'get_logs') {

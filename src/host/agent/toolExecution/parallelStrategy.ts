@@ -4,6 +4,7 @@
 
 import type { ToolCall } from '../../../shared/contract';
 import type { MCPToolAnnotations } from '../../mcp/types';
+import { isMcpToolReadOnly } from '../../mcp/mcpToolSafety';
 import type { ToolClassification } from '../loopTypes';
 import { PARALLEL_SAFE_TOOLS, MAX_PARALLEL_TOOLS } from '../loopTypes';
 import { createLogger } from '../../services/infra/logger';
@@ -22,7 +23,7 @@ export function isParallelSafeTool(toolName: string, toolAnnotations?: MCPToolAn
   // MCP tools: prefer annotation-based classification
   if (toolName.startsWith('mcp_')) {
     if (toolAnnotations) {
-      return toolAnnotations.readOnlyHint === true && toolAnnotations.destructiveHint !== true;
+      return isMcpToolReadOnly(toolAnnotations);
     }
     // Fallback to name-based heuristic if no annotations
     return !toolName.includes('write') && !toolName.includes('create');

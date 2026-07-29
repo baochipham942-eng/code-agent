@@ -28,11 +28,12 @@ afterEach(() => {
 });
 
 describe('SidebarCapabilityZone', () => {
-  it('按能力中心、资料库、自动化顺序渲染，且不恢复专家头像条', async () => {
+  it('按项目、能力中心、资料库、自动化顺序渲染，且不恢复专家头像条', async () => {
     listJobs.mockResolvedValue([]); getStats.mockResolvedValue(makeStats(0)); render(<SidebarCapabilityZone />);
     const rows = [...screen.getByTestId('sidebar-capability-zone').querySelectorAll('button')];
-    // 断言顺序本身，不只是数量——顺序是这次 IA 调整的产物
+    // 断言顺序本身，不只是数量——顺序是 IA 调整的产物（批P 新增「项目」首槽位）
     expect(rows.map((row) => row.dataset.testid)).toEqual([
+      'sidebar-capability-projects',
       'sidebar-capability-hub',
       'sidebar-capability-library',
       'sidebar-capability-automation',

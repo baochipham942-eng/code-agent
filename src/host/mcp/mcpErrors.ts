@@ -5,6 +5,7 @@ import {
 } from '@modelcontextprotocol/client';
 
 export const MCP_TOOL_DELIVERY_UNKNOWN_CODE = 'MCP_TOOL_DELIVERY_UNKNOWN' as const;
+const MCP_TASK_UNAVAILABLE_CODE = 'MCP_TASK_UNAVAILABLE' as const;
 const OAUTH_AUTHORIZATION_REQUIRED_ERROR_PREFIX = 'oauth-authorization-required';
 
 export function isOAuthAuthorizationRequiredError(error: unknown): boolean {
@@ -42,5 +43,29 @@ export class MCPToolDeliveryUnknownError extends Error {
     this.serverName = serverName;
     this.toolName = toolName;
     this.originalError = originalError;
+  }
+}
+
+/** Task polling cannot safely converge, so the durable operation must remain reviewable. */
+export class MCPTaskUnavailableError extends Error {
+  readonly code = MCP_TASK_UNAVAILABLE_CODE;
+  readonly serverIdentity: string;
+  readonly taskId: string;
+  readonly reason: 'unsupported' | 'timeout' | 'terminal_failure' | 'missing_result';
+  readonly originalError: unknown;
+
+  constructor(input: {
+    serverIdentity: string;
+    taskId: string;
+    reason: MCPTaskUnavailableError['reason'];
+    message: string;
+    originalError?: unknown;
+  }) {
+    super(input.message);
+    this.name = 'MCPTaskUnavailableError';
+    this.serverIdentity = input.serverIdentity;
+    this.taskId = input.taskId;
+    this.reason = input.reason;
+    this.originalError = input.originalError;
   }
 }

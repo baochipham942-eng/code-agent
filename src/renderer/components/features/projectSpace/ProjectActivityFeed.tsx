@@ -94,7 +94,7 @@ export const ProjectActivityFeed: React.FC<ProjectActivityFeedProps> = ({
         <div
           key={`${entry.kind}:${entry.id}`}
           data-testid={`project-space-activity-${entry.kind}-${entry.id}`}
-          className="group flex items-center gap-3 rounded-lg px-3 py-2 hover:bg-zinc-800/60"
+          className="group flex min-w-0 items-center gap-3 rounded-lg px-3 py-2 hover:bg-zinc-800/60"
         >
           <span className="flex-shrink-0">{kindIcon(entry)}</span>
           <span className="min-w-0 flex-1">

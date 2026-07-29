@@ -67,7 +67,7 @@ export const ProjectArtifactsList: React.FC<ProjectArtifactsListProps> = ({
         <div
           key={artifact.id}
           data-testid={`project-space-asset-${artifact.id}`}
-          className={`group flex items-center gap-3 rounded-lg px-3 py-2 hover:bg-zinc-800/60 ${
+          className={`group flex min-w-0 items-center gap-3 rounded-lg px-3 py-2 hover:bg-zinc-800/60 ${
             highlightId === artifact.id ? 'bg-zinc-800/70 ring-1 ring-violet-500/40' : ''
           }`}
         >

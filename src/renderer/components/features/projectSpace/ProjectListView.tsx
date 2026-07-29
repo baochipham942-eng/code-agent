@@ -184,7 +184,7 @@ export const ProjectListView: React.FC<ProjectListViewProps> = ({ onSelect }) =>
           return (
           <div
             key={project.id}
-            className="group flex w-full items-center gap-1 rounded-lg transition-colors hover:bg-zinc-800/70"
+            className="group flex w-full min-w-0 items-center gap-1 rounded-lg transition-colors hover:bg-zinc-800/70"
           >
             <button /* ds-allow:button: 协作空间列表行（图标+名称/描述+右侧元信息左对齐布局），Button primitive 是居中动作按钮形状，变体不适配列表行 */
               type="button"

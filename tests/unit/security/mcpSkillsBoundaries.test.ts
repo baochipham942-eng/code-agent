@@ -11,7 +11,7 @@ const mocks = vi.hoisted(() => ({
   }),
 }));
 
-vi.mock('@modelcontextprotocol/sdk/client/stdio.js', () => ({
+vi.mock('@modelcontextprotocol/client/stdio', () => ({
   StdioClientTransport: mocks.stdioTransport,
 }));
 

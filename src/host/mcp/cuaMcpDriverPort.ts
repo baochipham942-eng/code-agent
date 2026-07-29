@@ -1,4 +1,5 @@
 import { getMCPClient } from './mcpClient';
+import { MCPToolDeliveryUnknownError } from './mcpErrors';
 import { CUA_DRIVER_SERVER_NAME } from './types';
 import type {
   CuaDriverCallContext,
@@ -16,18 +17,30 @@ export class CuaMcpDriverPort implements CuaDriverPort {
     args: Record<string, unknown>,
     context: CuaDriverCallContext,
   ): Promise<CuaDriverCallResult> {
-    const result = await getMCPClient().callTool(
-      `${context.toolCallId}:cua:${toolName}:${Date.now()}`,
-      CUA_DRIVER_SERVER_NAME,
-      toolName,
-      args,
-      {
-        sessionId: context.sessionId,
-        cuaLockScope: context.surfaceSessionId,
-        abortSignal: context.abortSignal,
-        cuaStatefulFacade: true,
-      },
-    );
+    let result;
+    try {
+      result = await getMCPClient().callTool(
+        `${context.toolCallId}:cua:${toolName}:${Date.now()}`,
+        CUA_DRIVER_SERVER_NAME,
+        toolName,
+        args,
+        {
+          sessionId: context.sessionId,
+          cuaLockScope: context.surfaceSessionId,
+          abortSignal: context.abortSignal,
+          cuaStatefulFacade: true,
+        },
+      );
+    } catch (error) {
+      if (error instanceof MCPToolDeliveryUnknownError) {
+        return {
+          success: false,
+          error: error.message,
+          deliveryUnknown: true,
+        };
+      }
+      throw error;
+    }
     const metadata = result.metadata ?? {};
     const rawStructured = metadata.mcpStructuredContent;
     const rawScreenshot = metadata.cuaScreenshot;

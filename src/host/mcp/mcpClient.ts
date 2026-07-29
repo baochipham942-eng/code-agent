@@ -1,5 +1,7 @@
 // ============================================================================
 // MCP Client - Model Context Protocol 客户端编排器
+import type { Client, Transport, ListChangedHandlers } from '@modelcontextprotocol/client';
+
 // 支持三种传输协议：
 // - stdio (本地命令行)
 // - SSE/HTTP (远程)
@@ -13,10 +15,6 @@
 
 import { EventEmitter } from 'node:events';
 import { createHash } from 'node:crypto';
-import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { UnauthorizedError } from '@modelcontextprotocol/sdk/client/auth.js';
-import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
-import type { ListChangedHandlers } from '@modelcontextprotocol/sdk/types.js';
 import type { ToolDefinition, ToolResult } from '../../shared/contract';
 import { createLogger } from '../services/infra/logger';
 
@@ -54,6 +52,7 @@ import {
   createTransport,
   createMCPSDKClient,
   connectWithTimeout,
+  isMcpToolConnectionInterruptionError,
   retryTransientRemoteMCPConnection,
 } from './mcpTransport';
 import { MCPToolRegistry } from './mcpToolRegistry';
@@ -62,6 +61,12 @@ import type { McpTaskCapability, McpTaskProtocol } from './mcpDurableTask';
 import { registerElicitationHandler } from './mcpElicitation';
 import { createOAuthProviderForServer } from './mcpOAuthProvider';
 import { getMcpOAuthCoordinator } from './mcpOAuthCoordinator';
+import {
+  formatMcpConnectionError,
+  isOAuthAuthorizationRequiredError,
+  MCPToolDeliveryUnknownError,
+} from './mcpErrors';
+import { classifyMcpToolReplaySafety } from './mcpToolSafety';
 import { resolveServerConfigSecrets } from './mcpSecretResolver';
 import {
   getDefaultMCPServers as _getDefaultMCPServers,
@@ -92,19 +97,9 @@ export { isInProcessConfig } from './types';
 
 const logger = createLogger('MCPClient');
 const CUA_SEARCH_KEYWORDS = new Set(['computer', 'desktop', 'screen', 'cursor', 'cua', 'driver']);
-const OAUTH_AUTHORIZATION_REQUIRED_ERROR_PREFIX = 'oauth-authorization-required';
-
 type OAuthFinishAuthTransport = Transport & {
   finishAuth?: (authorizationCode: string) => Promise<void>;
 };
-
-function formatMcpConnectionError(error: unknown): string {
-  if (error instanceof UnauthorizedError) {
-    const message = error.message || 'authorization required';
-    return `${OAUTH_AUTHORIZATION_REQUIRED_ERROR_PREFIX}: ${message}`;
-  }
-  return error instanceof Error ? error.message : 'Unknown error';
-}
 
 export interface MCPToolCallOptions {
   timeoutMs?: number;
@@ -503,7 +498,7 @@ export class MCPClient extends EventEmitter {
     transport: Transport,
     error: unknown,
   ): boolean {
-    if (!isHttpStreamableConfig(config) || config.auth !== 'oauth' || !(error instanceof UnauthorizedError)) {
+    if (!isHttpStreamableConfig(config) || config.auth !== 'oauth' || !isOAuthAuthorizationRequiredError(error)) {
       return false;
     }
 
@@ -1070,18 +1065,11 @@ export class MCPClient extends EventEmitter {
       }
 
       const errorMessage = error instanceof Error ? error.message : 'MCP tool call failed';
-
-      // 会话过期检测 (JSON-RPC -32001 "Session not found")
-      const isSessionExpired = errorMessage.includes('-32001') ||
-        errorMessage.includes('Session not found') ||
-        errorMessage.includes('session expired');
-
-      // 连接错误时尝试重连。状态化 CUA 的写操作禁止自动重放：断连可能发生在
-      // 输入事件已送达但回执尚未返回的窗口，此时重试会造成双击/重复输入。
-      const isConnectionError = isSessionExpired ||
-        errorMessage.includes('timed out') ||
-        errorMessage.includes('Connection closed') ||
-        errorMessage.includes('not connected');
+      const errorCode = error && typeof error === 'object'
+        ? (error as { code?: unknown }).code
+        : undefined;
+      const isSessionExpired = errorCode === -32001;
+      const isConnectionError = isMcpToolConnectionInterruptionError(error);
 
       if (isConnectionError) {
         if (isSessionExpired) {
@@ -1089,15 +1077,17 @@ export class MCPClient extends EventEmitter {
           // 清除缓存的能力数据（session 过期意味着服务器重启了）
           this.toolDefinitionCache.delete(serverName);
         }
-        const suppressRetry = shouldSuppressCuaAutoReplay(serverName, toolName);
+        const replaySafety = shouldSuppressCuaAutoReplay(serverName, toolName)
+          ? 'forbidden'
+          : classifyMcpToolReplaySafety(this.registry.getToolAnnotations(serverName, toolName));
         logger.warn(
-          suppressRetry
+          replaySafety !== 'automatic'
             ? `MCP server ${serverName} connection issue; reconnecting without replaying ${toolName}`
             : `MCP server ${serverName} connection issue, attempting reconnect and retry...`,
         );
 
         const reconnectResult = await this.reconnect(serverName);
-        if (reconnectResult.success && !suppressRetry) {
+        if (reconnectResult.success && replaySafety === 'automatic') {
           logger.info(`Reconnected to ${serverName}, retrying tool call...`);
           const retryClient = this.clients.get(serverName);
           if (retryClient) {
@@ -1107,15 +1097,17 @@ export class MCPClient extends EventEmitter {
             if (retryResult) return retryResult;
           }
         }
+
+        if (replaySafety !== 'automatic') {
+          throw new MCPToolDeliveryUnknownError(serverName, toolName, error);
+        }
       }
 
-      const deliveryUnknown = shouldSuppressCuaAutoReplay(serverName, toolName) && isConnectionError;
       return {
         toolCallId,
         success: false,
         error: errorMessage,
         duration: Date.now() - startTime,
-        ...(deliveryUnknown ? { metadata: { cuaDeliveryUnknown: true } } : {}),
       };
     }
   }

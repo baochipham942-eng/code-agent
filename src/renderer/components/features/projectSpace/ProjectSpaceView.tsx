@@ -110,7 +110,8 @@ export const ProjectSpaceView: React.FC<ProjectSpaceViewProps> = ({ projectId, o
         onClose={onBackToList}
         closeLabel={ps.backToList}
       />
-      <div className="flex min-h-0 flex-1">
+      {/* min-w-0 + overflow-hidden：窄窗下内容列收缩、行内截断，禁止把页面撑出横向滚动（房规：宽内容在自身容器内滚） */}
+      <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
         <div className="flex min-w-0 flex-1 flex-col">
           <nav className="flex shrink-0 items-center gap-1 px-6 pb-2" role="tablist" aria-label={project?.name ?? projectId}>
             {tabs.map(({ key, label }) => (
@@ -131,7 +132,7 @@ export const ProjectSpaceView: React.FC<ProjectSpaceViewProps> = ({ projectId, o
               </button>
             ))}
           </nav>
-          <div className="min-h-0 flex-1 overflow-y-auto px-6 py-2">
+          <div className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden px-6 py-2">
             {tab === 'activity' && (
               <ProjectActivityFeed
                 projectId={projectId}

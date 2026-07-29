@@ -148,7 +148,8 @@ export const ProjectListView: React.FC<ProjectListViewProps> = ({ onSelect }) =>
                   {ps.activeTopicBadge.replace('{count}', String(project.activeTopicCount))}
                 </Badge>
               )}
-              <span className="text-[11px] text-zinc-600 tabular-nums">
+              {/* 固定宽右对齐：有无徽标时间列都对齐（爸抓的时间列不齐） */}
+              <span className="w-16 text-right text-[11px] text-zinc-600 tabular-nums">
                 {project.lastActivityAt ? formatRelativeTime(t, project.lastActivityAt) : ps.noActivity}
               </span>
             </span>

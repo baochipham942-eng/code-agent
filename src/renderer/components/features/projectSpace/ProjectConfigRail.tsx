@@ -253,7 +253,7 @@ export const ProjectConfigRail: React.FC<ProjectConfigRailProps> = ({
           options={skillOptions}
           onSelect={handleSelectSkill}
           onRemove={skillsEditable ? handleUnselectSkill : undefined}
-          readOnlyHint={skillsEditable ? null : ps.skillsReadonlyHint}
+          readOnlyHint={skillsEditable ? null : project?.workspacePath ? ps.skillsReadonlyHint : ps.skillsNoWorkspaceHint}
         />
         <ProjectConfigCard
           testId="project-space-card-connectors"

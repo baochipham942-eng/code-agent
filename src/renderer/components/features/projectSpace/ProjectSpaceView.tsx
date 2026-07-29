@@ -15,6 +15,7 @@ import { useI18n } from '../../../hooks/useI18n';
 import { Badge } from '../../primitives/Badge';
 import { ProjectActivityFeed } from './ProjectActivityFeed';
 import { ProjectArtifactsList } from './ProjectArtifactsList';
+import { ProjectComposer } from './ProjectComposer';
 
 export interface ProjectSpaceViewProps {
   projectId: string;
@@ -127,6 +128,7 @@ export const ProjectSpaceView: React.FC<ProjectSpaceViewProps> = ({ projectId, o
               />
             )}
           </div>
+          <ProjectComposer project={project} />
         </div>
       </div>
     </>

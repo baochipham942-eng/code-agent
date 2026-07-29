@@ -287,4 +287,3 @@ export const ProjectConfigRail: React.FC<ProjectConfigRailProps> = ({
   );
 };
 
-export default ProjectConfigRail;

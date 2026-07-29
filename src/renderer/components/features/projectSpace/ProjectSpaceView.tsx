@@ -138,4 +138,3 @@ export const ProjectSpaceView: React.FC<ProjectSpaceViewProps> = ({ projectId, o
   );
 };
 
-export default ProjectSpaceView;

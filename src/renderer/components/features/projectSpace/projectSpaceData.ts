@@ -6,7 +6,7 @@ import type { ProjectArtifact } from '@shared/contract/project';
 // 纯函数——数据由页面各自 IPC 取好后喂进来，方便单测与空态降级。
 // ============================================================================
 
-export type ProjectActivityKind = 'session' | 'topic' | 'artifact';
+type ProjectActivityKind = 'session' | 'topic' | 'artifact';
 
 export interface ProjectActivityEntry {
   kind: ProjectActivityKind;

@@ -43,4 +43,3 @@ export const ProjectSpacePage: React.FC<ProjectSpacePageProps> = ({ onClose }) =
   );
 };
 
-export default ProjectSpacePage;

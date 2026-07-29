@@ -16,6 +16,7 @@ import type {
   NeoWorkCardRequestChangesInput,
   NeoWorkCardReviewActionInput,
   UpdateNeoWorkCardDraftRevisionRequest,
+  UpdateNeoWorkCardMetaInput,
   NeoWorkCardWithCurrentRevision,
 } from '@shared/contract/tag';
 import { NEO_TAG_IPC_DOMAIN } from '@shared/contract/tag';
@@ -180,6 +181,12 @@ export const tagClient = {
 
   async archive(input: NeoWorkCardCloseActionInput): Promise<NeoWorkCardDetail> {
     await invokeTag('archive', input);
+    return readDetail(input.workCardId);
+  },
+
+  // @neo tag 升级 S1：priority/dueAt 元数据编辑（dueAt 显式 null = 清空）。
+  async updateMeta(input: UpdateNeoWorkCardMetaInput): Promise<NeoWorkCardDetail> {
+    await invokeTag('updateMeta', input);
     return readDetail(input.workCardId);
   },
 

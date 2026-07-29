@@ -12,6 +12,7 @@ import type {
   NeoWorkCardRequestChangesInput,
   NeoWorkCardReviewActionInput,
   UpdateNeoWorkCardDraftRevisionRequest,
+  UpdateNeoWorkCardMetaInput,
   NeoWorkCardStatus,
 } from '@shared/contract/tag';
 import { isNeoTagIpcUnavailableError, tagClient } from '../services/tagClient';
@@ -42,6 +43,8 @@ interface NeoWorkCardState {
   reject: (input: NeoWorkCardReviewActionInput) => Promise<NeoWorkCardDetail>;
   cancel: (input: NeoWorkCardCloseActionInput) => Promise<NeoWorkCardDetail>;
   archive: (input: NeoWorkCardCloseActionInput) => Promise<NeoWorkCardDetail>;
+  /** @neo tag 升级 S1：编辑 priority/dueAt；成功后靠 TAG_EVENT(meta_updated) 推送刷新。 */
+  updateMeta: (input: UpdateNeoWorkCardMetaInput) => Promise<NeoWorkCardDetail>;
   acceptResult: (input: NeoWorkCardAcceptResultInput) => Promise<NeoWorkCardDetail>;
   requestChanges: (input: NeoWorkCardRequestChangesInput) => Promise<NeoWorkCardDetail>;
   approveMemoryCandidate: (input: NeoMemoryCandidateDecisionInput) => Promise<NeoMemoryCandidate>;
@@ -266,6 +269,8 @@ export const useNeoWorkCardStore = create<NeoWorkCardState>()((set) => {
     cancel: async (input) => withPending(input.workCardId, () => tagClient.cancel(input)),
 
     archive: async (input) => withPending(input.workCardId, () => tagClient.archive(input)),
+
+    updateMeta: async (input) => withPending(input.workCardId, () => tagClient.updateMeta(input)),
 
     acceptResult: async (input) => withPending(input.workCardId, () => tagClient.acceptResult(input)),
 

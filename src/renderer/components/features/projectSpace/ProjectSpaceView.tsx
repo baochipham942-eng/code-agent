@@ -145,7 +145,7 @@ export const ProjectSpaceView: React.FC<ProjectSpaceViewProps> = ({ projectId, o
         actions={project ? (
           <SecondaryButton
             size="sm"
-            leftIcon={<UserPlus />}
+            leftIcon={<UserPlus className="h-3.5 w-3.5" />}
             data-testid="project-space-invite-open"
             onClick={() => {
               if (project.cloudProjectId) {

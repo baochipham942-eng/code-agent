@@ -126,13 +126,39 @@ describe('VoiceTransport 契约（relay / direct 双跑）', () => {
     const upstream = upstreams[upstreams.length - 1];
     const update = readSessionUpdate(upstream);
 
+    // 批 X2：silence 800 / prefix 500（阶梯停顿 A/B 实测，500 档真人犹豫必切碎）
     expect(update.session.turn_detection).toEqual({
       type: 'server_vad',
       threshold: 0.5,
-      prefix_padding_ms: 300,
-      silence_duration_ms: 500,
+      prefix_padding_ms: 500,
+      silence_duration_ms: 800,
     });
 
+    await handle.close();
+  });
+
+  it('存量配置里的旧默认 prefix/silence（300/500）读取时升级为新默认，手改值保留', async () => {
+    // prefix/silence 从来不是 UI 可设项，落盘 300/500 只可能是旧默认拷贝——
+    // 「改默认值对存量用户零生效」是踩过的坑，读取口必须升级（批 X2）。
+    mockConfig.settings = { voice: { turnDetection: { type: 'server_vad', threshold: 0.7, prefixPaddingMs: 300, silenceDurationMs: 500 } } };
+    let handle = await connectHandle(qwenOmniTransport);
+    expect(readSessionUpdate(upstreams[upstreams.length - 1]).session.turn_detection).toEqual({
+      type: 'server_vad',
+      threshold: 0.7, // 手选灵敏度保留
+      prefix_padding_ms: 500,
+      silence_duration_ms: 800,
+    });
+    await handle.close();
+
+    // 手改过的实验值（非旧默认）原样保留，别把调参路堵死
+    mockConfig.settings = { voice: { turnDetection: { type: 'server_vad', threshold: 0.5, prefixPaddingMs: 450, silenceDurationMs: 600 } } };
+    handle = await connectHandle(qwenOmniTransport);
+    expect(readSessionUpdate(upstreams[upstreams.length - 1]).session.turn_detection).toEqual({
+      type: 'server_vad',
+      threshold: 0.5,
+      prefix_padding_ms: 450,
+      silence_duration_ms: 600,
+    });
     await handle.close();
   });
 
@@ -166,7 +192,8 @@ describe('VoiceTransport 契约（relay / direct 双跑）', () => {
     upstream.emit('message', JSON.stringify({ type: 'response.done' }));
 
     const done = events.find((event) => event.type === 'response.done');
-    expect(done).toMatchObject({ type: 'response.done', ttfaModelMs: 427, ttfaPerceivedMs: 927 });
+    // perceived = model + silence 窗（批 X2 起默认 800）
+    expect(done).toMatchObject({ type: 'response.done', ttfaModelMs: 427, ttfaPerceivedMs: 1227 });
 
     nowSpy.mockRestore();
     await handle.close();

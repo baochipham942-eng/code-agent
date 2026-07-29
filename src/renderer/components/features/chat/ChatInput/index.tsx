@@ -1074,6 +1074,10 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
                 hasMessages={hasMessages}
                 disabled={disabled}
                 variant="primary"
+                availability={{
+                  enabled: liveVoiceAvailability.enabled,
+                  configured: liveVoiceAvailability.configured,
+                }}
               />
             ) : (
               <SendButton

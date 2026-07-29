@@ -54,6 +54,20 @@ vi.mock('../../src/host/hooks', () => ({
   }),
 }));
 
+// 挂断收尾里「谁先谁后」是跨线不变量，不能只靠注释守：渲染侧的摘要卡补拉窗口钉在
+// 「排水窗 + 500ms」上，补派（flushVoiceTail）要走 buildRoleContextBlock 这类上百毫秒的
+// 准备工作——它一旦排到摘要前面，就会把摘要挤出那个窗口，刚修好的「摘要卡延迟」原样复发。
+// 所以这里只替换 flushVoiceTail 一个导出，其余走真实实现，用于记录落地顺序。
+const teardownOrder: string[] = [];
+const flushVoiceTailSpy = vi.fn(async () => {
+  teardownOrder.push('tail-flush');
+  return false;
+});
+vi.mock('../../src/host/services/voice/voiceAgentCoordinator', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/host/services/voice/voiceAgentCoordinator')>();
+  return { ...actual, flushVoiceTail: flushVoiceTailSpy };
+});
+
 const { attachVoiceClient, getActiveVoiceSessionId, endActiveVoiceSession } = await import('../../src/host/services/voice/voiceSessionService');
 
 /** 最小 ws 替身：只要 readyState / OPEN / send / close / 事件。 */
@@ -269,6 +283,25 @@ describe('voiceSessionService 互斥与挂断', () => {
     });
     expect(summaryMessage.content).toBe('语音通话结束，时长 1 分 15 秒');
     nowSpy.mockRestore();
+  });
+
+  it('摘要卡先落库，挂断补派排在它后面（别把摘要挤出渲染侧补拉窗口）', async () => {
+    teardownOrder.length = 0;
+    flushVoiceTailSpy.mockClear();
+    addMessageToSession.mockImplementation(async (_sessionId: string, message: Message) => {
+      if (message.metadata?.voiceCallSummary) teardownOrder.push('summary');
+      return undefined;
+    });
+    const client = new FakeClient();
+    await attachVoiceClient(client as never, 'session-1');
+
+    client.emit('message', Buffer.from(JSON.stringify({ type: 'end' })), false);
+
+    await vi.waitFor(() => {
+      expect(flushVoiceTailSpy).toHaveBeenCalled();
+    }, { timeout: 4000 });
+    expect(teardownOrder).toEqual(['summary', 'tail-flush']);
+    addMessageToSession.mockImplementation(async () => undefined);
   });
 });
 

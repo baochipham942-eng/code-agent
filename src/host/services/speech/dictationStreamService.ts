@@ -3,6 +3,7 @@
 // 每条客户端 WS 独占一路上游；任一侧结束都立即释放另一侧，避免持续计费。
 // ============================================================================
 
+import { randomUUID } from 'node:crypto';
 import type { WebSocket as WsSocket } from 'ws';
 import { getDashscopeApiKey } from '../media/imageGenerationService';
 import { createLogger } from '../infra/logger';
@@ -22,11 +23,14 @@ function send(client: WsSocket, event: DictationServerEvent): void {
 }
 
 export async function attachDictationClient(client: WsSocket): Promise<void> {
+  const streamId = randomUUID();
+  const connectAbort = new AbortController();
   let upstream: GummyRealtimeHandle | null = null;
   let clientGone = false;
   let stopping = false;
 
   const closeAll = () => {
+    connectAbort.abort();
     upstream?.close();
     if (client.readyState === client.OPEN) client.close();
   };
@@ -54,6 +58,8 @@ export async function attachDictationClient(client: WsSocket): Promise<void> {
   try {
     upstream = await connectGummyRealtime({
       apiKey,
+      streamId,
+      signal: connectAbort.signal,
       onTranscript: ({ text, sentenceId, done }) => {
         send(client, { type: done ? 'final' : 'partial', text, sentenceId });
       },
@@ -63,8 +69,9 @@ export async function attachDictationClient(client: WsSocket): Promise<void> {
       },
     });
   } catch (err) {
+    if (clientGone) return;
     const message = err instanceof Error ? err.message : 'Gummy realtime connection failed';
-    logger.warn('upstream connect failed', { message });
+    logger.warn('upstream connect failed', { streamId, message });
     send(client, { type: 'error', code: 'SPEECH_NO_CHANNEL', message });
     client.close();
     return;

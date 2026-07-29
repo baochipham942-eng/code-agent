@@ -778,8 +778,12 @@ export const ChatView: React.FC = () => {
           </div>
         </div>
       )}
-      {/* Main Chat */}
-      <div className="flex-1 min-h-0 flex flex-col min-w-0">
+      {/* Main Chat
+          pr 让出一条滚动条宽的窄带（现象 9 右轨对齐，Sidebar 2026-07-27 同款先例）：
+          消息列表滚动、底栏/横幅不滚动——全局 6px 占位式滚动条一出现，
+          滚动区内容盒就比兄弟块窄 6px，摘要卡 ∨ / 错误条 ✕ / 发送 ↑ 于是不同轴。
+          主栏统一缩到内轨，trace 滚动容器再用负 margin 把窄带要回（见下）。 */}
+      <div className="flex-1 min-h-0 flex flex-col min-w-0 pr-[var(--scrollbar-size)]">
         {/* Task Status Bar - 显示多任务状态 */}
         <TaskStatusBar className="shrink-0 mx-4 mt-2" />
         {/* Todo Progress Panel 已移至右侧 TaskInfo 面板 */}
@@ -828,8 +832,12 @@ export const ChatView: React.FC = () => {
 
         <SurfaceExecutionChatPanel conversationId={currentSessionId} />
 
-        {/* Messages - Turn-based trace view（查看某位成员时整块换成他的对话） */}
-        <div className="flex-1 min-h-0 overflow-hidden">
+        {/* Messages - Turn-based trace view（查看某位成员时整块换成他的对话）
+            负 margin 把主栏让出的滚动条窄带要回：Virtuoso 滚动条摆进窄带，
+            内容盒回到与 composer/横幅相同的内轨；配合 global.css 对该 scroller 的
+            overflow-y:scroll 恒定占位，右轨与「列表是否溢出」无关（现象 9）。
+            负 margin 只能加在这层——它自己有 overflow-hidden，加到子级会被裁掉。 */}
+        <div className="flex-1 min-h-0 overflow-hidden mr-[calc(var(--scrollbar-size)*-1)]">
           {viewingMemberId ? (
             <MemberConversationView sessionId={currentSessionId} />
           ) : projection.turns.length === 0 ? (
@@ -1038,7 +1046,9 @@ export const StreamRecoveryBanner: React.FC<{
 
   return (
     <div className="px-4 pt-3">
-      <div className="max-w-3xl mx-auto flex items-start gap-3 rounded-lg border border-amber-500/25 bg-amber-500/10 px-4 py-3 text-sm text-status-warning-soft">
+      {/* bar 内边距对齐 composer/摘要卡的 px-3：✕ 右缘 = −1(border)−12 = −13px，
+          与摘要卡 ∨、发送 ↑ 同一条右轨（现象 9）。 */}
+      <div className="max-w-3xl mx-auto flex items-start gap-3 rounded-lg border border-amber-500/25 bg-amber-500/10 px-3 py-3 text-sm text-status-warning-soft">
         <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0 text-status-warning-soft dark:text-amber-300 [.high-contrast-dark_&]:text-amber-300" />
         <div className="min-w-0 flex-1">
           <div className="font-medium">{t.chat.streamInterruptedTitle}</div>

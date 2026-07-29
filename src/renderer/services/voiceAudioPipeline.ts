@@ -13,6 +13,12 @@
 
 import { VOICE_DOWNSTREAM_SAMPLE_RATE, VOICE_UPSTREAM_SAMPLE_RATE } from '@shared/constants/voice';
 import type { VoiceMessageCode } from '@shared/contract/voice';
+import { createLogger } from '../utils/logger';
+
+const logger = createLogger('VoiceAudioPipeline');
+
+/** 实例自增 id：getUserMedia 成功 / track.stop 的日志带它，事后配对检查谁漏了 stop。 */
+let nextPipelineId = 1;
 
 /** 跨回调保留的小数读取位置，避免缓冲区边界处的漂移与咔哒声。 */
 export interface ResampleState {
@@ -85,6 +91,14 @@ export class VoiceAudioPipeline implements VoiceAudioPipelineLike {
   private playbackLevel = 0;
   private lastLevelAt = 0;
 
+  private readonly instanceId = nextPipelineId++;
+  /**
+   * stop() 置位。start() 的 getUserMedia 还在 pending 时被 stop 的话，那次 stop
+   * 是空操作（this.stream 还是 null），随后拿到的 stream 再没人停 ⇒ 麦克风常开。
+   * start() 在 await 之后复查本标志，已 disposed 就立刻停掉刚拿到的 stream。
+   */
+  private disposed = false;
+
   constructor(private readonly callbacks: VoiceAudioPipelineCallbacks) {}
 
   setMuted(muted: boolean): void {
@@ -100,10 +114,18 @@ export class VoiceAudioPipeline implements VoiceAudioPipelineLike {
   }
 
   async start(): Promise<void> {
+    this.disposed = false;
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true },
       });
+      logger.info('getUserMedia acquired', { pipelineId: this.instanceId, tracks: stream.getTracks().length });
+      // await 期间被 stop() 了：刚拿到的 stream 无人持有，必须就地停掉并返回。
+      if (this.disposed) {
+        logger.warn('disposed during getUserMedia, stopping acquired stream', { pipelineId: this.instanceId });
+        this.stopStreamTracks(stream);
+        return;
+      }
       this.stream = stream;
 
       // 不强制 sampleRate：macOS 上通常是 48000，由 resampleTo16k 按 ctx 实际速率降采样。
@@ -158,13 +180,14 @@ export class VoiceAudioPipeline implements VoiceAudioPipelineLike {
   }
 
   stop(): void {
+    this.disposed = true;
     this.processor?.disconnect();
     this.source?.disconnect();
     this.gain?.disconnect();
     this.processor = null;
     this.source = null;
     this.gain = null;
-    this.stream?.getTracks().forEach((track) => track.stop());
+    if (this.stream) this.stopStreamTracks(this.stream);
     this.stream = null;
     void this.captureCtx?.close().catch(() => undefined);
     this.captureCtx = null;
@@ -175,6 +198,14 @@ export class VoiceAudioPipeline implements VoiceAudioPipelineLike {
     this.resampleState = { pos: 0 };
     this.micLevel = 0;
     this.playbackLevel = 0;
+  }
+
+  /** 逐 track stop 并记日志（与 getUserMedia acquired 配对）。 */
+  private stopStreamTracks(stream: MediaStream): void {
+    stream.getTracks().forEach((track) => {
+      track.stop();
+      logger.info('track stopped', { pipelineId: this.instanceId, kind: track.kind, trackId: track.id });
+    });
   }
 
   enqueuePlayback(pcm24k: Int16Array): void {

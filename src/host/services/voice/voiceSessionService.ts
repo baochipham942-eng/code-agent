@@ -7,7 +7,7 @@
 // ============================================================================
 
 import type { WebSocket as WsSocket } from 'ws';
-import { resolveConversationModelOption, VOICE_RECONNECT_GRACE_MS, VOICE_SESSION_MAX_DURATION_MS, VOICE_TEARDOWN_DRAIN_MS } from '../../../shared/constants/voice';
+import { resolveConversationModelOption, VOICE_END_CALL_GOODBYE_TIMEOUT_MS, VOICE_RECONNECT_GRACE_MS, VOICE_SESSION_MAX_DURATION_MS, VOICE_TEARDOWN_DRAIN_MS } from '../../../shared/constants/voice';
 import type { VoiceClientCommand, VoiceEvent, VoiceFocusContext, VoiceTransportHandle, VoiceWorkItem } from '../../../shared/contract/voice';
 import { getDashscopeApiKey } from '../media/imageGenerationService';
 import { createLogger } from '../infra/logger';
@@ -16,7 +16,7 @@ import { getSessionManager } from '../infra/sessionManager';
 import { getPermissionModeManager } from '../../permissions/modes';
 import { qwenOmniTransport } from './qwenOmniTransport';
 import { resolveVoiceRouting } from './voiceRouting';
-import { beginVoiceDispatch, endVoiceDispatch, setVoiceDispatchFocus } from './voiceAgentCoordinator';
+import { beginVoiceDispatch, endVoiceDispatch, flushVoiceTail, pushVoiceTranscript, setVoiceDispatchFocus } from './voiceAgentCoordinator';
 import { composeVoiceInstructions, focusChanged } from './voiceContextAssembler';
 import { recordVoiceCall } from './voiceUsageLedger';
 import { VOICE_TOOL_DEFINITIONS, executeVoiceTool } from './voiceTools';
@@ -156,6 +156,9 @@ async function persistTranscript(
 ): Promise<void> {
   const trimmed = text.trim();
   if (!trimmed) return;
+  // 落库的同时进近窗（P0-2）：派活时执行侧要拿原文自己重建意图，
+  // 别只给它通话 brain 改写过的那一句。落库失败不影响近窗，反之亦然。
+  pushVoiceTranscript({ role, text: trimmed });
   try {
     await getSessionManager().addMessageToSession(neoSessionId, {
       id: `voice-${role}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -263,8 +266,6 @@ async function teardown(reason: string): Promise<void> {
   // 只还「通话」这一张票。语音派出去、还在飞的 run 各自持票，抬严对它们继续有效——
   // 挂断不再等于解除（2026-07-26 真机：挂断后同一个 run 直接落盘，D4 承诺全失效）。
   getPermissionModeManager().clearLiveVoiceSession(session.neoSessionId, `call:${session.id}`);
-  // 断开 work item 的 UI 回流；账本与 run 的票继续活到最后一件活落地（同上）。
-  endVoiceDispatch();
   // 排水窗：用户 ASR completed / 助手 transcript done 常在挂断后 ~1s 才到，立刻关
   // 上游会把这通电话说过的话全部丢掉（2026-07-26 真机：12s 通话落库只剩摘要）。
   // 窗口内 onEvent 照常把 final 落库；窗口结束后 done 仍没到的助手增量缓冲冲成 final。
@@ -303,6 +304,20 @@ async function teardown(reason: string): Promise<void> {
   } catch (err) {
     logger.warn('failed to persist call summary', { message: err instanceof Error ? err.message : 'unknown' });
   }
+  // tail flush（P0-3）排在摘要**之后**、账本断开**之前**：
+  // 早了不行——账本被 endVoiceDispatch 摘掉就没得派；
+  // 但也不能排在摘要前面：渲染侧挂断后的补拉窗口钉在「排水窗 + 500ms」上
+  // （voiceCallBridge.scheduleHangupSummaryReload），而补派要走 buildRoleContextBlock
+  // 这类可能上百毫秒的准备工作，插在摘要前面会把摘要卡挤出那个窗口，
+  // 让刚修好的「摘要卡延迟」原样复发。补派本身是通话之外的活，晚几百毫秒无所谓。
+  // 同理它不计进 workItemCount：那个数说的是「这通电话里派出去的活」。
+  try {
+    await flushVoiceTail();
+  } catch (err) {
+    logger.warn('tail flush failed', { message: err instanceof Error ? err.message : 'unknown' });
+  }
+  // 断开 work item 的 UI 回流；账本与 run 的票继续活到最后一件活落地（同上）。
+  endVoiceDispatch();
   emitVoiceCallHook('VoiceCallEnded', {
     voiceCallId: session.id,
     sessionId: session.neoSessionId,
@@ -370,6 +385,8 @@ async function connectAndBind(
   // 字幕落库计数器：onEvent 闭包与挂断摘要共用同一个可变引用（同 transcriptBuf 先例），
   // 成功落库才 +1，挂断时原样写进 voiceCallSummary.transcriptCount。
   const transcriptCounter = { count: 0 };
+  // 模型请求挂断后置位；onEvent 看到这一轮说完（response.done）就真挂。
+  const endCallRequested = { value: false };
   const baseInstructions = withLanguageDirective(routing.personaInstructions, liveSettings?.language);
   // 上游回调一律经这个可变引用发：重连换的是 socket，不是通话。
   const clientRef = { current: client };
@@ -387,6 +404,17 @@ async function connectAndBind(
     // activeWorkItems 过滤），failed 就这么无声消失；通话模型也没人告诉它，
     // 于是继续说「已经写好了」。第五例「建好不接电」。
     onWorkFailed: (item) => void reportWorkFailure(neoSessionId, id, clientRef, item),
+    // 模型自己收线：不当场 teardown，先记一笔，等它把告别说完（response.done）再断。
+    // 立刻断会把这句告别掐掉，用户听到的是电话突然没了；但也不能无限等——
+    // 上游不回 response.done 时用兜底定时器收尾（同 dictation finish 的先例）。
+    onEndCall: () => {
+      if (endCallRequested.value) return;
+      endCallRequested.value = true;
+      logger.info('end call requested by model, waiting for goodbye', { voiceSessionId: id });
+      setTimeout(() => {
+        if (active?.id === id && endCallRequested.value) void teardown('model-end-call-timeout');
+      }, VOICE_END_CALL_GOODBYE_TIMEOUT_MS);
+    },
   });
   let upstream: VoiceTransportHandle;
   try {
@@ -409,6 +437,11 @@ async function connectAndBind(
           } else {
             transcriptBuf.assistant += event.text;
           }
+        }
+        // 模型说完告别这一轮 = 可以真挂了（end_call 的落点，别让它只是嘴上说）。
+        else if (event.type === 'response.done' && endCallRequested.value && active?.id === id) {
+          endCallRequested.value = false;
+          void teardown('model-end-call');
         }
         // 上游报错 / 上游连接关闭 = 这一路通话已经死了，必须就地释放 active。
         // 否则两侧对「通话是否结束」的判断会分叉：渲染侧收到 error 就把按钮切回「开始通话」，
@@ -474,10 +507,17 @@ async function connectAndBind(
  * 这里再按内容去重，避免同一份焦点被反复推给上游。
  */
 function applyFocus(session: ActiveSession, focus: VoiceFocusContext): void {
-  if (!focusChanged(session.focus, focus)) return;
+  const changed = focusChanged(session.focus, focus);
+  // 取证文档 §4：applyFocus / updateInstructions 全程零日志，于是「焦点刷新有没有发生」
+  // 与「上游不回显」两种情况在现场根本区分不了——判因前先补可观测性，别拿猜的当结论。
+  // 不记 filePath 原文（本地路径），只记有没有。
+  logger.info('focus reported', { voiceSessionId: session.id, changed, view: focus.view, hasFile: !!focus.filePath });
+  if (!changed) return;
   session.focus = focus;
   setVoiceDispatchFocus(focus);
-  session.upstream.updateInstructions(composeVoiceInstructions(session.personaInstructions, focus));
+  const instructions = composeVoiceInstructions(session.personaInstructions, focus);
+  logger.info('instructions updated', { voiceSessionId: session.id, chars: instructions.length });
+  session.upstream.updateInstructions(instructions);
 }
 
 /** 一条 Renderer WS 的事件绑定。重连换 socket 时原样再绑一次。 */

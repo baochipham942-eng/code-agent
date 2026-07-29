@@ -26,7 +26,8 @@ export interface TaskNotificationData {
   succeeded?: boolean;
 }
 
-export interface VoiceWorkSettledNotificationData {
+/** 只在本文件内当 notifyVoiceWorkSettled 的参数类型用；导出无人引用会顶爆 knip 零余量棘轮。 */
+interface VoiceWorkSettledNotificationData {
   sessionId: string;
   taskTitle: string;
   status: 'done' | 'failed';

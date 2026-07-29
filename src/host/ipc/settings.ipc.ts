@@ -7,6 +7,7 @@ import { app, broadcastToRenderer } from '../platform';
 import { IPC_CHANNELS, IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
 import type { AppSettings, ModelEntrySettings, ModelProvider, ModelProviderSettings } from '../../shared/contract';
 import type { ServiceApiKey } from '../../shared/contract/configService';
+import { MASKED_SERVICE_KEY_LIST, type MaskedServiceKeyMap } from '../../shared/contract/configService';
 import type { ConfigService } from '../services';
 import { MODEL_API_ENDPOINTS, API_VERSIONS } from '../../shared/constants';
 import { assertAdminAccess, getAdminAccessIpcError, isCurrentUserAdmin } from './adminGuard';
@@ -365,34 +366,16 @@ async function handleGetServiceApiKey(
 
 async function handleGetAllServiceKeys(
   getConfigService: () => ConfigService | null
-): Promise<{
-  brave?: string;
-  firecrawl?: string;
-  github?: string;
-  openrouter?: string;
-  langfuse_public?: string;
-  langfuse_secret?: string;
-  exa?: string;
-  perplexity?: string;
-  tavily?: string;
-}> {
+): Promise<MaskedServiceKeyMap> {
   const configService = getConfigService();
   if (!configService) throw new Error('Config service not initialized');
 
-  const services = [
-    'brave',
-    'firecrawl',
-    'github',
-    'openrouter',
-    'langfuse_public',
-    'langfuse_secret',
-    'exa',
-    'perplexity',
-    'tavily',
-  ] as const;
+  // 枚举列表收敛在 shared/contract/configService.ts 的 MASKED_SERVICE_KEY_LIST：
+  // SEARCH_SOURCE_CATALOG 的每个 serviceKey 都必须在列（有测试守着），
+  // 漏一个就会出现「key 配了但设置页永远显示需配 Key」。
   const result: Record<string, string | undefined> = {};
 
-  for (const service of services) {
+  for (const service of MASKED_SERVICE_KEY_LIST) {
     const key = configService.getServiceApiKey(service);
     if (key) {
       // Mask API key for display (show first 8 chars only)

@@ -33,6 +33,12 @@ export const GUMMY_REALTIME_MODEL = 'gummy-realtime-v1';
 export const GUMMY_REALTIME_SAMPLE_RATE = 16_000;
 export const GUMMY_REALTIME_MAX_END_SILENCE_MS = 800;
 
+/** 口述词表最多保留多少个有效词条，防止 instructions 无界膨胀。 */
+export const VOICE_VOCABULARY_MAX_ENTRIES = 100;
+
+/** 单个口述词表词条的最大长度；超长词条直接丢弃。 */
+export const VOICE_VOCABULARY_MAX_TERM_LENGTH = 40;
+
 /**
  * finish-task 之后等 task-finished 的上限。上游不回这一帧时既不能让 UI 永远卡在
  * 「识别中」，也不能留着一条按秒计费的 WS——超时就当收尾成功，把已经拿到的文字留下。

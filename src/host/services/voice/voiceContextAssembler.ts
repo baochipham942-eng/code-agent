@@ -10,6 +10,7 @@
 // ============================================================================
 
 import type { VoiceFocusContext } from '../../../shared/contract/voice';
+import { buildVocabularyBlock } from './voiceVocabulary';
 
 const VIEW_LABEL: Record<string, string> = {
   overview: '概览',
@@ -38,10 +39,10 @@ export function buildFocusBlock(focus: VoiceFocusContext | null): string {
   ].join('\n');
 }
 
-/** 人设 + 焦点。焦点为空时原样返回人设，不留空行。 */
+/** 人设 + 焦点 + 口述词表。空块不留标题或空行。 */
 export function composeVoiceInstructions(persona: string, focus: VoiceFocusContext | null): string {
-  const block = buildFocusBlock(focus);
-  return block ? `${persona}\n\n${block}` : persona;
+  const blocks = [buildFocusBlock(focus), buildVocabularyBlock()].filter(Boolean);
+  return [persona, ...blocks].join('\n\n');
 }
 
 /** 焦点有没有实质变化。没变就不发 session.update——上游每次刷新都有代价。 */

@@ -17,6 +17,9 @@ type FakeEvent = { type: string; sessionId: string; data?: unknown };
 const runtime = vi.hoisted(() => ({
   listeners: new Set<(event: FakeEvent) => void>(),
   status: 'idle' as string,
+  settings: { voice: { live: {} } } as {
+    voice?: { vocabulary?: string[]; live?: Record<string, unknown> };
+  },
   startTask: vi.fn(async (
     _sessionId: string,
     _message: string,
@@ -39,7 +42,7 @@ vi.mock('../../src/host/services/roleAssets/roleAssetService', () => ({
   buildRoleContextBlock: vi.fn(async () => null),
 }));
 vi.mock('../../src/host/services/core/configService', () => ({
-  getConfigService: () => ({ getSettings: () => ({ voice: { live: {} } }) }),
+  getConfigService: () => ({ getSettings: () => runtime.settings }),
 }));
 vi.mock('../../src/host/services/planning/taskStore', () => ({ getIncompleteTasks: () => [] }));
 vi.mock('../../src/host/services/infra/sessionManager', () => ({
@@ -96,6 +99,7 @@ describe('P0-2 派活载荷带通话近窗字幕', () => {
   beforeEach(() => {
     runtime.startTask.mockClear();
     runtime.status = 'idle';
+    runtime.settings = { voice: { live: {} } };
     endVoiceDispatch();
     bind();
   });
@@ -131,18 +135,40 @@ describe('P0-2 派活载荷带通话近窗字幕', () => {
 
     expect(systemContext()).not.toContain('通话近窗字幕原文');
   });
+
+  it('近窗存在时附带口述词表', async () => {
+    pushVoiceTranscript({ role: 'user', text: '创建 a点text' });
+    runtime.settings = { voice: { live: {}, vocabulary: ['a.txt'] } };
+
+    await executeVoiceTool('spawn_task', JSON.stringify({ title: 't', prompt: 'p' }));
+
+    expect(systemContext()).toContain('[口述词表]');
+    expect(systemContext()).toContain('- a.txt');
+  });
+
+  it('近窗存在但词表为空时保持原上下文', async () => {
+    runtime.settings = { voice: { live: {}, vocabulary: [] } };
+    pushVoiceTranscript({ role: 'user', text: '创建 a点text' });
+
+    await executeVoiceTool('spawn_task', JSON.stringify({ title: 't', prompt: 'p' }));
+
+    expect(systemContext()).toContain('通话近窗字幕原文');
+    expect(systemContext()).not.toContain('口述词表');
+  });
 });
 
 describe('P0-3 挂断 tail flush', () => {
   beforeEach(() => {
     runtime.startTask.mockClear();
     runtime.status = 'idle';
+    runtime.settings = { voice: { live: {} } };
     endVoiceDispatch();
     bind();
   });
 
   it('整通电话零派活时，把尾巴交给执行侧再判一次', async () => {
     pushRealCallTranscript();
+    runtime.settings = { voice: { live: {}, vocabulary: ['a.txt'] } };
 
     await expect(flushVoiceTail()).resolves.toBe(true);
 
@@ -150,6 +176,7 @@ describe('P0-3 挂断 tail flush', () => {
     expect(lastRun().message).toContain('一件任务都没有派出来');
     // 补派那一轮同样要拿到原文，否则执行侧无从判断有没有待办
     expect(systemContext()).toContain('a点text的文件');
+    expect(systemContext()).toContain('- a.txt');
   });
 
   it('已经派过活就不补派——没派的那部分多半是用户自己放弃的', async () => {

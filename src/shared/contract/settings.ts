@@ -184,6 +184,8 @@ export interface AppSettings {
   voice?: {
     /** 上游断句策略；null 表示手动 commit 模式 */
     turnDetection?: VoiceTurnDetectionConfig;
+    /** 口述专名词表；Host 会在注入前统一清洗与限长 */
+    vocabulary?: string[];
     /** 实时通话（Live Voice）UI 设置；运行时断句真源仍是上面的 turnDetection */
     live?: VoiceLiveSettings;
   };

@@ -5,6 +5,11 @@ import { isVoiceInputMessage, type Message } from '../../src/shared/contract/mes
 import type { VoiceEvent, VoiceTransport, VoiceWorkItem } from '../../src/shared/contract/voice';
 import { QWEN_OMNI_REALTIME_MODEL } from '../../src/shared/constants/voice';
 
+const vocabulary = vi.hoisted(() => ({ block: '' }));
+vi.mock('../../src/host/services/voice/voiceVocabulary', () => ({
+  buildVocabularyBlock: () => vocabulary.block,
+}));
+
 const close = vi.fn(async () => undefined);
 const sendAudio = vi.fn();
 const commitMock = vi.fn();
@@ -130,6 +135,7 @@ describe('voiceSessionService 互斥与挂断', () => {
     voiceDispatchProbe.fail = null;
     addMessageToSession.mockClear();
     lastOnEvent = null;
+    vocabulary.block = '';
   });
 
   // 批 H 起客户端断开只进宽限窗（不再等于挂断），残留会话会污染下一个用例。
@@ -635,10 +641,29 @@ describe('焦点上报刷新 instructions（批 H）', () => {
   beforeEach(() => {
     updateInstructions.mockClear();
     connect.mockClear();
+    vocabulary.block = '';
   });
 
   afterEach(async () => {
     await endActiveVoiceSession();
+  });
+
+  it('初始 session.update 带上非空口述词表', async () => {
+    vocabulary.block = '[口述词表]\n- a.txt';
+    const client = new FakeClient();
+
+    await attachVoiceClient(client as never, 'session-1');
+
+    expect(connect.mock.calls[0][0].config.instructions).toContain('[口述词表]');
+    expect(connect.mock.calls[0][0].config.instructions).toContain('- a.txt');
+  });
+
+  it('空词表不污染初始 instructions', async () => {
+    const client = new FakeClient();
+
+    await attachVoiceClient(client as never, 'session-1');
+
+    expect(connect.mock.calls[0][0].config.instructions).not.toContain('口述词表');
   });
 
   it('焦点变化推一次 session.update，且内容里带得上文件路径', async () => {
@@ -652,6 +677,21 @@ describe('焦点上报刷新 instructions（批 H）', () => {
 
     expect(updateInstructions).toHaveBeenCalledTimes(1);
     expect(updateInstructions.mock.calls[0][0]).toContain('/repo/a.ts');
+  });
+
+  it('焦点增量 session.update 同样带上口述词表', async () => {
+    vocabulary.block = '[口述词表]\n- a.txt';
+    const client = new FakeClient();
+    await attachVoiceClient(client as never, 'session-1');
+
+    client.emit('message', Buffer.from(JSON.stringify({
+      type: 'focus',
+      context: { filePath: '/repo/a.ts' },
+    })), false);
+
+    expect(updateInstructions).toHaveBeenCalledTimes(1);
+    expect(updateInstructions.mock.calls[0][0]).toContain('[口述词表]');
+    expect(updateInstructions.mock.calls[0][0]).toContain('- a.txt');
   });
 
   it('同一份焦点重复上报不再推（上游每次刷新都有代价）', async () => {

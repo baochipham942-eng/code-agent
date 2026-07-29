@@ -116,9 +116,13 @@ describe('McpOAuthCoordinator', () => {
       authorizationServerIssuer: AUTHORIZATION_SERVER_ISSUER,
     });
     const exchangeAuthorizationCode = vi.fn();
-    const callback = coordinator.waitForCallback(flow.flowId).then((result) => {
-      exchangeAuthorizationCode(result.code);
-    });
+    const callbackOutcome = coordinator.waitForCallback(flow.flowId).then(
+      (result) => {
+        exchangeAuthorizationCode(result.code);
+        return { status: 'resolved' as const };
+      },
+      (error: unknown) => ({ status: 'rejected' as const, error }),
+    );
 
     const response = await httpGet(callbackUrl(flow.redirectUrl, {
       code: 'must-not-be-exchanged',
@@ -129,9 +133,13 @@ describe('McpOAuthCoordinator', () => {
     expect(response.statusCode).toBe(400);
     expect(response.body).toContain(`expected "${AUTHORIZATION_SERVER_ISSUER}"`);
     expect(response.body).toContain('received "https://attacker.example.net"');
-    await expect(callback).rejects.toThrow(
-      `MCP OAuth issuer mismatch: expected "${AUTHORIZATION_SERVER_ISSUER}", received "https://attacker.example.net"`,
-    );
+    const outcome = await callbackOutcome;
+    expect(outcome.status).toBe('rejected');
+    expect(outcome).toMatchObject({
+      error: expect.objectContaining({
+        message: `MCP OAuth issuer mismatch: expected "${AUTHORIZATION_SERVER_ISSUER}", received "https://attacker.example.net"`,
+      }),
+    });
     expect(exchangeAuthorizationCode).not.toHaveBeenCalled();
     await waitForRefused(flow.redirectUrl);
   });

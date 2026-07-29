@@ -205,6 +205,7 @@ describe('McpOAuthProvider', () => {
       'notion:abc123digest',
       coordinator,
     );
+    provider.saveDiscoveryState({ authorizationServerUrl: DEFAULT_ISSUER });
 
     // flow 未起:必须返回真值占位,绝不 throw
     const before = provider.redirectUrl;

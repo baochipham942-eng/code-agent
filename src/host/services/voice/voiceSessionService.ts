@@ -582,7 +582,12 @@ async function connectAndBind(
     const message = err instanceof Error ? err.message : 'connect failed';
     logger.warn('upstream connect failed', { voiceSessionId: id, message });
     endVoiceDispatch();
-    send(client, { type: 'error', code: 'VOICE_UPSTREAM_UNAVAILABLE', message });
+    send(client, {
+      type: 'error',
+      code: 'VOICE_UPSTREAM_UNAVAILABLE',
+      message: 'upstream unavailable',
+      detail: message,
+    });
     client.close();
     return;
   }

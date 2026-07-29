@@ -17,7 +17,7 @@ import {
   useRegisterComposerInProgress,
 } from '../../../stores/composerNoticeStore';
 import { useSessionMembers } from '../expert/SessionMemberBar';
-import { resolveVoiceMessage } from './resolveVoiceMessage';
+import { resolveVoiceErrorTitle, resolveVoiceMessage } from './resolveVoiceMessage';
 
 type OrbState = Exclude<VoiceVisualState, 'idle'> | 'manual-ready';
 
@@ -144,7 +144,7 @@ export const VoiceChrome: React.FC<{ sessionId: string | null }> = ({ sessionId 
       <span className="flex min-w-0 flex-col gap-px">
         <span
           data-testid="voice-status"
-          title={statusText}
+          title={visual === 'error' && store.error ? resolveVoiceErrorTitle(t, store.error) : statusText}
           className={`truncate text-[11.5px] tracking-[0.02em] ${STATUS_COLOR[visual]}`}
         >
           {statusText}

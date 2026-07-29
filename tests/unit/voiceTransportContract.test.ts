@@ -210,7 +210,12 @@ describe('VoiceTransport 契约（relay / direct 双跑）', () => {
     handle.injectItem('再播一次');
     upstream.emit('message', JSON.stringify({ type: 'response.created' }));
     upstream.emit('message', JSON.stringify({ type: 'error', error: { message: 'connection failed' } }));
-    expect(events.at(-1)).toEqual({ type: 'error', code: 'UPSTREAM_ERROR', message: 'connection failed' });
+    expect(events.at(-1)).toEqual({
+      type: 'error',
+      code: 'UPSTREAM_ERROR',
+      message: 'upstream error',
+      detail: 'connection failed',
+    });
 
     await handle.close();
   });
@@ -228,7 +233,12 @@ describe('VoiceTransport 契约（relay / direct 双跑）', () => {
 
     handle.injectItem('播报任务失败');
     upstream.emit('error', new Error('socket gone'));
-    expect(events.at(-1)).toEqual({ type: 'error', code: 'UPSTREAM_SOCKET', message: 'socket gone' });
+    expect(events.at(-1)).toEqual({
+      type: 'error',
+      code: 'UPSTREAM_SOCKET',
+      message: 'upstream socket error',
+      detail: 'socket gone',
+    });
 
     upstream.emit('close');
     expect(events.at(-1)).toEqual({ type: 'state', state: 'closed' });

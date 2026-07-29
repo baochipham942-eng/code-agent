@@ -120,8 +120,8 @@ export type VoiceEvent =
    * 用户可见的一次性提示（不致命，通话继续）。判据钉在上游真实回显上——
    * 例如注册了 tools 但 session.updated 回显 tools: null（模型不支持 function calling）。
    */
-  | { type: 'notice'; code: VoiceMessageCode; message: string }
-  | { type: 'error'; code: VoiceMessageCode; message: string };
+  | { type: 'notice'; code: VoiceMessageCode; message: string; detail?: string }
+  | { type: 'error'; code: VoiceMessageCode; message: string; detail?: string };
 
 /**
  * 发给用户看的所有提示/错误的编号（host 与 renderer 两侧都在这里登记）。**新增一条必须加进这里**——

@@ -311,7 +311,8 @@ export const qwenOmniTransport: VoiceTransport = {
               // 上游自己的错误码不往外透传：它无法枚举，进不了 i18n 表，
               // 传出去只会让渲染端拿到一个查不到文案的串。它已经在上一行进日志了。
               code: 'UPSTREAM_ERROR',
-              message: event.error?.message ?? 'upstream error',
+              message: 'upstream error',
+              ...(event.error?.message ? { detail: event.error.message } : {}),
             });
           }
           break;
@@ -324,7 +325,12 @@ export const qwenOmniTransport: VoiceTransport = {
       clearHeartbeat();
       onEvent({ type: 'state', state: 'closed' });
     });
-    ws.on('error', (err: Error) => onEvent({ type: 'error', code: 'UPSTREAM_SOCKET', message: err.message }));
+    ws.on('error', (err: Error) => onEvent({
+      type: 'error',
+      code: 'UPSTREAM_SOCKET',
+      message: 'upstream socket error',
+      detail: err.message,
+    }));
 
     onEvent({ type: 'state', state: 'live' });
 

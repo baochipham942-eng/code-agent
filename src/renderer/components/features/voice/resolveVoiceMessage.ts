@@ -19,3 +19,8 @@ export function resolveVoiceMessage(t: Translations, entry: VoiceCallError): str
   // 同 t.voice.work.remaining 的 `{n}` 先例；没有占位符的 code 不受影响。
   return (t.voice.messageByCode[entry.code] ?? entry.message).replace('{reason}', entry.message);
 }
+
+/** 错误条的 title：有原始详情时只放在悬停层，没有时沿用主文案。 */
+export function resolveVoiceErrorTitle(t: Translations, entry: VoiceCallError): string {
+  return entry.detail?.trim() || resolveVoiceMessage(t, entry);
+}

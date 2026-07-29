@@ -193,14 +193,15 @@ describe('INSTALL / UNINSTALL / ENABLE / DISABLE', () => {
 
   it('同 id 安装进行中拒绝并发，取消后原请求返回 cancelled 而非错误', async () => {
     let rejectInstall!: (error: unknown) => void;
-    mp.installPlugin.mockImplementationOnce((_spec: string, options?: { signal?: AbortSignal }) => (
-      new Promise((_resolve, reject) => {
+    mp.installPlugin.mockImplementationOnce((...args: unknown[]) => {
+      const options = args[1] as { signal?: AbortSignal } | undefined;
+      return new Promise((_resolve, reject) => {
         rejectInstall = reject;
         options?.signal?.addEventListener('abort', () => {
           rejectInstall(new DOMException('Plugin installation cancelled', 'AbortError'));
         }, { once: true });
-      })
-    ));
+      });
+    });
 
     const first = call(IPC_CHANNELS.MARKETPLACE_INSTALL_PLUGIN, 'pdf@official');
     await vi.waitFor(() => {

@@ -84,8 +84,8 @@ function prioritySortRank(priority: NeoWorkCardPriority | undefined): number {
   return PRIORITY_SORT_RANK[priority ?? 'medium'];
 }
 
-/** 最近活动（默认）：updatedAt 降序。 */
-export const compareNeoTopicsByRecent: NeoTopicSortComparator = (a, b) =>
+/** 最近活动（默认）：updatedAt 降序。消费方走 NEO_TOPIC_SORT_COMPARATORS，不单独导出。 */
+const compareNeoTopicsByRecent: NeoTopicSortComparator = (a, b) =>
   b.workCard.updatedAt - a.workCard.updatedAt;
 
 /** 优先级：urgent>high>medium(含 undefined)>low，同级按 updatedAt 降序。 */

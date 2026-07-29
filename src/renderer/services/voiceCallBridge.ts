@@ -468,11 +468,15 @@ class VoiceCallBridge {
         this.store().eventApplied({ workItem: event.item });
         break;
       case 'notice':
-        this.store().eventApplied({ notice: { code: event.code, message: event.message } });
+        this.store().eventApplied({
+          notice: { code: event.code, message: event.message, ...(event.detail ? { detail: event.detail } : {}) },
+        });
         break;
       case 'error':
         this.store().phaseChanged('error');
-        this.store().eventApplied({ error: { code: event.code, message: event.message } });
+        this.store().eventApplied({
+          error: { code: event.code, message: event.message, ...(event.detail ? { detail: event.detail } : {}) },
+        });
         break;
       default:
         break;

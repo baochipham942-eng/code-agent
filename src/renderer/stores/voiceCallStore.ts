@@ -29,6 +29,8 @@ export interface VoiceCallError {
   code: VoiceMessageCode;
   /** host 侧原文，仅作兜底与日志；给用户看的文案按 code 查 i18n（见 resolveVoiceMessage）。 */
   message: string;
+  /** 上游/执行侧原始详情，不进入主文案；只在详情交互或 title 中展示。 */
+  detail?: string;
 }
 
 interface VoiceCallStoreState {

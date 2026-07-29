@@ -3,6 +3,8 @@ import type {
   NeoMemoryCandidate,
   NeoWorkCard,
   NeoWorkCardDelta,
+  NeoWorkCardDetail,
+  NeoWorkCardPriority,
   NeoWorkCardRevision,
   NeoWorkCardStatus,
 } from '@shared/contract/tag';
@@ -61,6 +63,74 @@ export interface ProjectCollaborationBadge {
   activeCount: number;
   runningCount: number;
   needsInputCount: number;
+}
+
+// ============================================================================
+// @neo tag 升级 S1：排序比较器（导出纯函数，方便单测）+ priority/dueAt 展示助手
+// ============================================================================
+
+export type NeoTopicSortMode = 'recent' | 'priority' | 'dueAt';
+
+export type NeoTopicSortComparator = (a: NeoWorkCardDetail, b: NeoWorkCardDetail) => number;
+
+const PRIORITY_SORT_RANK: Record<NeoWorkCardPriority, number> = {
+  urgent: 0,
+  high: 1,
+  medium: 2,
+  low: 3,
+};
+
+function prioritySortRank(priority: NeoWorkCardPriority | undefined): number {
+  return PRIORITY_SORT_RANK[priority ?? 'medium'];
+}
+
+/** 最近活动（默认）：updatedAt 降序。 */
+export const compareNeoTopicsByRecent: NeoTopicSortComparator = (a, b) =>
+  b.workCard.updatedAt - a.workCard.updatedAt;
+
+/** 优先级：urgent>high>medium(含 undefined)>low，同级按 updatedAt 降序。 */
+export const compareNeoTopicsByPriority: NeoTopicSortComparator = (a, b) => {
+  const diff = prioritySortRank(a.workCard.priority) - prioritySortRank(b.workCard.priority);
+  return diff !== 0 ? diff : compareNeoTopicsByRecent(a, b);
+};
+
+/** 截止：有 dueAt 的升序在前（最紧的最上），无 dueAt 的按 updatedAt 降序垫底。 */
+export const compareNeoTopicsByDueAt: NeoTopicSortComparator = (a, b) => {
+  const aDue = a.workCard.dueAt ?? null;
+  const bDue = b.workCard.dueAt ?? null;
+  if (aDue !== null && bDue !== null) return aDue - bDue;
+  if (aDue !== null) return -1;
+  if (bDue !== null) return 1;
+  return compareNeoTopicsByRecent(a, b);
+};
+
+export const NEO_TOPIC_SORT_COMPARATORS: Record<NeoTopicSortMode, NeoTopicSortComparator> = {
+  recent: compareNeoTopicsByRecent,
+  priority: compareNeoTopicsByPriority,
+  dueAt: compareNeoTopicsByDueAt,
+};
+
+/** priority ≠ medium/undefined 时才出 chip；样式对齐既有 phase chip 的 border/bg 写法。 */
+export const NEO_WORK_CARD_PRIORITY_CHIP_STYLE: Record<'urgent' | 'high' | 'low', string> = {
+  urgent: 'border-rose-400/30 bg-rose-400/10 text-rose-200',
+  high: 'border-amber-400/30 bg-amber-400/10 text-amber-200',
+  low: 'border-zinc-700 bg-zinc-900 text-zinc-400',
+};
+
+/** 截止已过期且卡未到终态（phase 非 done/closed）→ 标红。 */
+export function isNeoTopicDueOverdue(
+  workCard: Pick<NeoWorkCard, 'dueAt' | 'status'>,
+  now = Date.now(),
+): boolean {
+  if (workCard.dueAt == null) return false;
+  const phase = statusPhase(workCard.status);
+  return workCard.dueAt < now && phase !== 'done' && phase !== 'closed';
+}
+
+/** 「截止 M/D」的 M/D 部分（前缀文案走 i18n）。 */
+export function formatNeoTopicDueDay(dueAt: number): string {
+  const date = new Date(dueAt);
+  return `${date.getMonth() + 1}/${date.getDate()}`;
 }
 
 const PROJECT_ID = 'project-neo-tag-p0';

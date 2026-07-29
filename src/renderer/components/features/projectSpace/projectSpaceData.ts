@@ -22,6 +22,26 @@ export interface ProjectActivityEntry {
 
 export const PROJECT_ACTIVITY_FEED_LIMIT = 50;
 
+// ============================================================================
+// 状态 chip 语义 = 活跃度派生，不读 projects.status 原值（DB 默认 active 导致
+// 满屏「活跃」且与活跃 topic 徽标自相矛盾——2026-07-29 审美关抓的）。
+// ============================================================================
+
+export const PROJECT_ACTIVE_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+
+export type ProjectActivityStatus = 'active' | 'idle' | 'archived';
+
+/** 归档看 status；其余按活跃度：有活跃 topic 或 7 天内有动静 = 活跃，否则空闲。 */
+export function deriveProjectActivityStatus(
+  input: { status: string; activeTopicCount: number; lastActivityAt: number | null },
+  now = Date.now(),
+): ProjectActivityStatus {
+  if (input.status === 'archived') return 'archived';
+  if (input.activeTopicCount > 0) return 'active';
+  if (input.lastActivityAt != null && now - input.lastActivityAt < PROJECT_ACTIVE_WINDOW_MS) return 'active';
+  return 'idle';
+}
+
 export interface BuildProjectActivityFeedInput {
   sessions: Array<{ id: string; title?: string | null; updatedAt: number }>;
   cards: Array<Pick<NeoWorkCard, 'id' | 'title' | 'status' | 'updatedAt' | 'sourceConversationId'>>;

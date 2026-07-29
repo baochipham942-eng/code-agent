@@ -18,6 +18,9 @@ vi.mock('../../../src/renderer/services/projectClient', () => ({
   deleteProject: vi.fn(),
   createSpace: vi.fn(),
   promoteToSpace: vi.fn(),
+  promoteToCloudSpace: vi.fn(),
+  createInvite: vi.fn(),
+  listMembers: vi.fn(),
 }));
 vi.mock('../../../src/renderer/services/tagClient', () => ({
   tagClient: { listByProject: vi.fn() },
@@ -96,6 +99,20 @@ function setupHappyPathMocks() {
   vi.mocked(projectClient.deleteProject).mockResolvedValue({ deleted: true });
   vi.mocked(projectClient.createSpace).mockResolvedValue(projectFixture as never);
   vi.mocked(projectClient.promoteToSpace).mockResolvedValue(projectFixture as never);
+  vi.mocked(projectClient.promoteToCloudSpace).mockResolvedValue({
+    localProjectId: PROJECT_ID,
+    cloudProjectId: 'cloud-1',
+    name: projectFixture.name,
+  });
+  vi.mocked(projectClient.createInvite).mockResolvedValue({
+    code: 'INVITE-CODE-1',
+    projectId: PROJECT_ID,
+    expiresAt: new Date(Date.now() + 72 * 3600_000).toISOString(),
+    maxUses: 10,
+    usedCount: 0,
+    revokedAt: null,
+  });
+  vi.mocked(projectClient.listMembers).mockResolvedValue([]);
   vi.mocked(projectClient.selectCapability).mockResolvedValue({
     projectId: PROJECT_ID,
     kind: 'connector',
@@ -411,5 +428,168 @@ describe('ProjectComposer 底部输入框', () => {
     fireEvent.change(input, { target: { value: '   ' } });
     fireEvent.keyDown(input, { key: 'Enter' });
     expect(createSessionMock).not.toHaveBeenCalled();
+  });
+});
+
+// ---- P1-C0：云协同空间（邀请按钮 / 成员卡 / 云标） ----
+const cloudFixture = { ...projectFixture, cloudProjectId: 'cloud-1' };
+const cloudDetailFixture = { ...detailFixture, project: { ...cloudFixture } };
+
+const membersFixture = [
+  {
+    projectId: PROJECT_ID,
+    userId: 'user-owner',
+    role: 'owner' as const,
+    displayName: '房主',
+    avatarUrl: null,
+    joinedAt: '2026-07-01T00:00:00Z',
+  },
+  {
+    projectId: PROJECT_ID,
+    userId: 'user-member',
+    role: 'member' as const,
+    displayName: null,
+    avatarUrl: null,
+    joinedAt: '2026-07-02T00:00:00Z',
+  },
+];
+
+function setupCloudSpace() {
+  vi.mocked(projectClient.listProjectsWithActivity).mockResolvedValue([cloudFixture] as never);
+  vi.mocked(projectClient.getProjectDetail).mockResolvedValue(cloudDetailFixture as never);
+}
+
+describe('空间页头邀请按钮（两态）', () => {
+  it('cloudProjectId 为空：文案「升级为协同空间」，确认后调 promoteToCloudSpace 并刷新 detail', async () => {
+    await enterSpaceView();
+    const button = await screen.findByTestId('project-space-invite-open');
+    expect(button.textContent).toContain(ps.promoteToCloud);
+
+    fireEvent.click(button);
+    await screen.findByTestId('project-space-invite-promote-modal');
+    expect(projectClient.createInvite).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByText(ps.promoteSubmit));
+    await waitFor(() => expect(projectClient.promoteToCloudSpace).toHaveBeenCalledWith(PROJECT_ID));
+    // 成功后刷新 detail（再发一次 detail 查询）
+    await waitFor(() => {
+      expect(vi.mocked(projectClient.getProjectDetail).mock.calls.length).toBeGreaterThanOrEqual(2);
+    });
+  });
+
+  it('promoteToCloudSpace 失败：toast 真因，detail 不刷新', async () => {
+    vi.mocked(projectClient.promoteToCloudSpace).mockRejectedValue(new Error('请先登录后再使用协同空间。'));
+    await enterSpaceView();
+    fireEvent.click(await screen.findByTestId('project-space-invite-open'));
+    await screen.findByTestId('project-space-invite-promote-modal');
+    fireEvent.click(screen.getByText(ps.promoteSubmit));
+    await waitFor(() => expect(projectClient.promoteToCloudSpace).toHaveBeenCalled());
+    // 确认弹层未关闭、未刷新 detail
+    expect(screen.getByTestId('project-space-invite-promote-modal')).toBeTruthy();
+    expect(vi.mocked(projectClient.getProjectDetail).mock.calls.length).toBe(1);
+  });
+
+  it('cloudProjectId 非空：文案「邀请」，打开 Modal 调 createInvite（72h/10 次）并展示邀请码', async () => {
+    setupCloudSpace();
+    await enterSpaceView();
+    const button = await screen.findByTestId('project-space-invite-open');
+    expect(button.textContent).toContain(ps.invite);
+    expect(button.textContent).not.toContain(ps.promoteToCloud);
+
+    fireEvent.click(button);
+    await screen.findByTestId('project-space-invite-modal');
+    await waitFor(() =>
+      expect(projectClient.createInvite).toHaveBeenCalledWith(PROJECT_ID, { expiresInHours: 72, maxUses: 10 }),
+    );
+    const codeInput = await screen.findByTestId('project-space-invite-code');
+    expect((codeInput as HTMLInputElement).value).toBe('INVITE-CODE-1');
+    expect(screen.getByTestId('project-space-invite-hint').textContent).toContain('72');
+    expect(screen.getByTestId('project-space-invite-hint').textContent).toContain('10');
+  });
+
+  it('createInvite 失败：Modal 内展示真因，不吞错', async () => {
+    setupCloudSpace();
+    vi.mocked(projectClient.createInvite).mockRejectedValue(new Error('只有空间所有者可以执行此操作。'));
+    await enterSpaceView();
+    fireEvent.click(await screen.findByTestId('project-space-invite-open'));
+    const error = await screen.findByTestId('project-space-invite-error');
+    expect(error.textContent).toContain('只有空间所有者可以执行此操作。');
+  });
+});
+
+describe('右栏成员卡', () => {
+  it('云协同空间：渲染成员行（首字母圆片 + 显示名 + role chip），无显示名回落 userId', async () => {
+    setupCloudSpace();
+    vi.mocked(projectClient.listMembers).mockResolvedValue(membersFixture);
+    await enterSpaceView();
+    const card = await screen.findByTestId('project-space-members-card');
+    await within(card).findByTestId('project-space-members-row-user-owner');
+    expect(within(card).getByTestId('project-space-members-row-user-owner').textContent).toContain('房主');
+    expect(within(card).getByTestId('project-space-members-role-user-owner').textContent).toBe(ps.memberRoleOwner);
+    expect(within(card).getByTestId('project-space-members-row-user-member').textContent).toContain('user-member');
+    expect(within(card).getByTestId('project-space-members-role-user-member').textContent).toBe(ps.memberRoleMember);
+  });
+
+  it('空态：无成员显示引导文案，卡不消失', async () => {
+    setupCloudSpace();
+    await enterSpaceView();
+    const card = await screen.findByTestId('project-space-members-card');
+    await within(card).findByTestId('project-space-members-empty');
+    expect(card.textContent).toContain(ps.membersEmpty);
+  });
+
+  it('取数失败：显示失败提示，卡不消失', async () => {
+    setupCloudSpace();
+    vi.mocked(projectClient.listMembers).mockRejectedValue(new Error('协同服务当前不可用，请检查网络后重试。'));
+    await enterSpaceView();
+    const card = await screen.findByTestId('project-space-members-card');
+    await within(card).findByTestId('project-space-members-error');
+    expect(card.textContent).toContain(ps.membersLoadFailed);
+  });
+
+  it('纯本地空间（cloudProjectId 为空）：成员卡整个不渲染', async () => {
+    await enterSpaceView();
+    await screen.findByTestId('project-space-card-experts');
+    expect(screen.queryByTestId('project-space-members-card')).toBeNull();
+    expect(projectClient.listMembers).not.toHaveBeenCalled();
+  });
+
+  it('成员卡「邀请」入口走页头同一 Modal 逻辑（createInvite 只此一份）', async () => {
+    setupCloudSpace();
+    await enterSpaceView();
+    const entry = await screen.findByTestId('project-space-members-invite');
+    fireEvent.click(entry);
+    await screen.findByTestId('project-space-invite-modal');
+    await waitFor(() =>
+      expect(projectClient.createInvite).toHaveBeenCalledWith(PROJECT_ID, { expiresInHours: 72, maxUses: 10 }),
+    );
+    await screen.findByTestId('project-space-invite-code');
+  });
+});
+
+describe('云标', () => {
+  it('列表行：cloudProjectId 非空出现「云」Badge，为空不出现', async () => {
+    setupCloudSpace();
+    render(<ProjectSpacePage onClose={() => undefined} />);
+    await screen.findByTestId(`project-space-cloud-badge-${PROJECT_ID}`);
+    expect(screen.getByTestId(`project-space-cloud-badge-${PROJECT_ID}`).textContent).toBe(ps.cloudBadge);
+  });
+
+  it('列表行：纯本地空间不渲染云标', async () => {
+    render(<ProjectSpacePage onClose={() => undefined} />);
+    await screen.findByTestId(`project-space-list-item-${PROJECT_ID}`);
+    expect(screen.queryByTestId(`project-space-cloud-badge-${PROJECT_ID}`)).toBeNull();
+  });
+
+  it('空间页头：云协同空间状态 chip 旁出现云标', async () => {
+    setupCloudSpace();
+    await enterSpaceView();
+    await screen.findByTestId('project-space-header-cloud-badge');
+  });
+
+  it('空间页头：纯本地空间不渲染云标', async () => {
+    await enterSpaceView();
+    await screen.findByTestId('project-space-header-status');
+    expect(screen.queryByTestId('project-space-header-cloud-badge')).toBeNull();
   });
 });

@@ -92,8 +92,7 @@ export interface SlashPickerCandidateGroup<T extends SlashPickerCandidate = Slas
 }
 
 /**
- * 候选装饰文案注入（同 agentCommand 的 AgentCommandOptionLabels 模式）：
- * 渲染层从 i18n 的 slashCommands.picker 传入；缺省回退中文保持既有行为。
+ * 候选装饰文案注入（i18n）：渲染层从 i18n 的 slashCommands.picker 传入；缺省回退中文保持既有行为。
  */
 export interface SlashPickerLabels {
   prefillCommand?: string;
@@ -106,8 +105,6 @@ export interface SlashPickerLabels {
   prefillPromptWithArgs?: string;
   prefillPrompt?: string;
   setAgentForTurn?: string;
-  restoreAutoAgent?: string;
-  defaultAgentDescription?: string;
   mountedSkillPrefix?: string;
   selectForTurn?: string;
   mountAndSelect?: string;
@@ -245,9 +242,8 @@ export function createAgentCandidates(
   agents: AgentListEntry[],
   labels?: SlashPickerLabels,
 ): SlashPickerCandidate[] {
-  return getAgentCommandOptions(agents, '', {
-    ...(labels?.defaultAgentDescription ? { defaultDescription: labels.defaultAgentDescription } : {}),
-  }).map((option) => ({
+  // 与 /agent 面板同源：无 Default 项（2026-07-29 起，去掉专家 chip 即恢复默认路由）
+  return getAgentCommandOptions(agents).map((option) => ({
     id: `agent:${option.id ?? 'default'}`,
     kind: 'agent',
     group: 'agent',
@@ -256,9 +252,7 @@ export function createAgentCandidates(
     sublabel: option.profession,
     description: option.description,
     slashText: `/agent ${option.token}`,
-    effectLabel: option.id
-      ? (labels?.setAgentForTurn ?? zh.slashCommands.picker.setAgentForTurn)
-      : (labels?.restoreAutoAgent ?? zh.slashCommands.picker.restoreAutoAgent),
+    effectLabel: labels?.setAgentForTurn ?? zh.slashCommands.picker.setAgentForTurn,
     agentToken: option.token,
     agentId: option.id,
     searchText: buildSearchText([

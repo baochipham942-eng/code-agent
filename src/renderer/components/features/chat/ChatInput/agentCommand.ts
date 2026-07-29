@@ -1,5 +1,4 @@
 import { isPanelVisibleAgent, type AgentListEntry } from '@shared/contract/agentRegistry';
-import { zh } from '../../../../i18n/zh';
 
 export interface AgentCommandOption {
   id: string | null;
@@ -10,11 +9,6 @@ export interface AgentCommandOption {
   group: 'agent' | 'role';
   /** 职业（如「内容主理人」）：跟在花名后，让用户知道这个专家是干什么的 */
   profession?: string;
-}
-
-export interface AgentCommandOptionLabels {
-  defaultName?: string;
-  defaultDescription?: string;
 }
 
 export type AgentCommandParseResult =
@@ -34,19 +28,13 @@ export function getAgentCommandToken(agent: Pick<AgentListEntry, 'id' | 'name'>)
   return normalizeToken(agent.name || agent.id) || agent.id;
 }
 
+// 2026-07-29 起面板不再提供「Default / 恢复自动路由」项：去掉专家 chip 就是默认，
+// 交互层不需要显式恢复入口。'/agent default' 文本命令的解析（RESET_TOKENS）保留作 CLI 兼容。
 export function getAgentCommandOptions(
   agents: AgentListEntry[],
   query = '',
-  labels?: AgentCommandOptionLabels,
 ): AgentCommandOption[] {
   const normalizedQuery = normalizeToken(query);
-  const defaultOption: AgentCommandOption = {
-    id: null,
-    name: labels?.defaultName ?? 'Default',
-    description: labels?.defaultDescription ?? zh.agentCommand.defaultDescription,
-    token: 'default',
-    group: 'agent',
-  };
   const visible = agents.filter(isPanelVisibleAgent);
   const toOption = (agent: AgentListEntry): AgentCommandOption => ({
     id: agent.id,
@@ -58,7 +46,7 @@ export function getAgentCommandOptions(
   });
   const agentOptions = visible.filter((a) => !a.isRole).map(toOption);
   const roleOptions = visible.filter((a) => a.isRole).map(toOption);
-  const options = [defaultOption, ...agentOptions, ...roleOptions];
+  const options = [...agentOptions, ...roleOptions];
   if (!normalizedQuery) return options;
   return options.filter((option) => {
     const haystack = [
@@ -124,6 +112,13 @@ export function getAgentSlashCommandQuery(value: string): string | null {
   return rest.length > 0 ? null : token;
 }
 
-export function applyAgentCommandOption(option: AgentCommandOption): string {
-  return `/agent ${option.token} `;
+/**
+ * 清掉行首的 /agent 触发文本（连同已输入的 query token 和尾空格），保留其后正文草稿。
+ * 二级面板选中后 chip 立即生效，触发文本不再留作路由前缀。
+ * removeTrailingSlashToken 只认末尾 /token，覆盖不了 '/agent d'、'/agent ' 这些场景，故单列。
+ */
+export function removeLeadingAgentCommandTrigger(value: string): string {
+  const match = /^\s*\/agent(?:\s+[^\s]*)?\s*/i.exec(value);
+  if (!match) return value;
+  return value.slice(match[0].length);
 }

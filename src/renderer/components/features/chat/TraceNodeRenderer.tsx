@@ -11,6 +11,7 @@ import type { ToolCall } from '@shared/contract';
 import type { WorkbenchMessageMetadata } from '@shared/contract/conversationEnvelope';
 import type { TurnTimelineNode as TurnTimelinePayload } from '@shared/contract/turnTimeline';
 import { stripAppshotBlocks } from '@shared/contract/appshot';
+import { extractUserRequest } from '@shared/utils/turnScaffold';
 import { MessageContent } from './MessageBubble/MessageContent';
 import { restoreNeoTagTokenForDisplay } from './MessageBubble/triggerTokenHighlight';
 import { ToolCallDisplay } from './MessageBubble/ToolCallDisplay/index';
@@ -25,6 +26,7 @@ import { GoalNoticeMessage } from './MessageBubble/GoalNoticeMessage';
 import { FallbackBanner } from './MessageBubble/FallbackBanner';
 import { RouteTraceChip, shouldRenderModelDecisionChip } from './RouteTraceChip';
 import { TurnQualityStrip } from './TurnQualityStrip';
+import { AgentErrorCard } from './AgentErrorCard';
 import { VoiceCallSummaryCard } from '../voice/VoiceCallSummaryCard';
 import { useSmoothStreamingText } from '../../../hooks/useSmoothStreamingText';
 import { Archive, AudioLines, ChevronDown, ChevronRight, AlertTriangle, Copy, Check, FileText, Link, GitBranch, RotateCcw, Wrench, CornerDownRight } from 'lucide-react';
@@ -116,103 +118,6 @@ export const TraceNodeRenderer: React.FC<TraceNodeRendererProps> = ({
 };
 
 // ---- User Node ----
-const ROUTING_LABELS: Record<string, string> = {
-  auto: 'Auto',
-  direct: 'Direct',
-  parallel: 'Parallel',
-};
-
-function getBrowserWorkbenchLabel(mode: 'managed' | 'desktop'): string {
-  return mode === 'managed' ? 'Browser Managed' : 'Browser Desktop';
-}
-
-const WorkbenchSummary: React.FC<{ metadata?: WorkbenchMessageMetadata }> = ({ metadata }) => {
-  if (!metadata) return null;
-
-  const items: string[] = [];
-  if (metadata.workingDirectory) {
-    const label = metadata.workingDirectory.split('/').filter(Boolean).pop() || metadata.workingDirectory;
-    items.push(`WS ${label}`);
-  }
-  if (metadata.routingMode) {
-    items.push(ROUTING_LABELS[metadata.routingMode] || metadata.routingMode);
-  }
-
-  const targets = metadata.targetAgentNames?.length
-    ? metadata.targetAgentNames
-    : metadata.targetAgentIds || [];
-  const selectedSkills = metadata.selectedSkillIds || [];
-  const selectedConnectors = metadata.selectedConnectorIds || [];
-  const selectedMcpServers = metadata.selectedMcpServerIds || [];
-  const browserSessionMode = metadata.executionIntent?.browserSessionMode;
-  const selectedPrompt = metadata.selectedPromptCommand;
-  const selectedAgentLabel =
-    metadata.selectedAgent?.name ||
-    metadata.preferredAgentName ||
-    metadata.selectedAgent?.id ||
-    metadata.preferredAgentId;
-
-  return (
-    <div className="mb-2 flex flex-wrap items-center gap-1.5">
-      {items.map((item) => (
-        <WorkbenchPill
-          key={item}
-          tone="neutral"
-        >
-          {item}
-        </WorkbenchPill>
-      ))}
-      {targets.map((target) => (
-        <WorkbenchPill
-          key={target}
-          tone="agent"
-        >
-          @{target}
-        </WorkbenchPill>
-      ))}
-      {selectedAgentLabel && (
-        <WorkbenchPill tone="agent">
-          Agent {selectedAgentLabel}
-        </WorkbenchPill>
-      )}
-      {selectedPrompt && (
-        <WorkbenchPill tone="info">
-          Prompt /{selectedPrompt.name}
-        </WorkbenchPill>
-      )}
-      {selectedSkills.map((skillId) => (
-        <WorkbenchPill
-          key={`skill-${skillId}`}
-          tone="skill"
-        >
-          Skill {skillId}
-        </WorkbenchPill>
-      ))}
-      {selectedConnectors.map((connectorId) => (
-        <WorkbenchPill
-          key={`connector-${connectorId}`}
-          tone="connector"
-        >
-          Connector {connectorId}
-        </WorkbenchPill>
-      ))}
-      {selectedMcpServers.map((serverId) => (
-        <WorkbenchPill
-          key={`mcp-${serverId}`}
-          tone="mcp"
-        >
-          MCP {serverId}
-        </WorkbenchPill>
-      ))}
-      {browserSessionMode && (
-        <WorkbenchPill tone="info">
-          {getBrowserWorkbenchLabel(browserSessionMode)}
-        </WorkbenchPill>
-      )}
-    </div>
-  );
-};
-
 const UserNode: React.FC<{
   messageId: string;
   sessionId?: string;
@@ -227,15 +132,18 @@ const UserNode: React.FC<{
 }> = ({ messageId, sessionId, content, attachments, metadata, sourceType, isNeoTagMessage, onRewind, rewindDisabled }) => {
   const { t } = useI18n();
   const isGuidedTurn = metadata?.runtimeInputDelivery === 'queued_next_turn';
+  // 展示面还原：带 turnSystemContext 脚手架（<user_request> 包裹）的历史/泄漏消息只显示
+  // 用户原话——包装是模型面，用户界面显示原话（UX round2 20f，定义在 shared/utils/turnScaffold）。
   // @neo 落库正文被剥了前缀（它兼任模型 prompt），渲染时补回展示，重启后也能看到带色的 @neo
   const displayContent = restoreNeoTagTokenForDisplay(
-    stripAppshotBlocks(content || ''),
+    stripAppshotBlocks(extractUserRequest(content || '')),
     Boolean(isNeoTagMessage),
   );
 
   return (
     <div>
-      <WorkbenchSummary metadata={metadata} />
+      {/* 轮次 chip 行已移除（2026-07-29 产品反馈）：专家/skill/连接器/pin/命令不在
+          消息上方独立展示，由模型在回答里自然说明用了什么；metadata 仍落库备遥测。 */}
       {attachments && attachments.length > 0 && (
         <div className="mb-2">
           <AttachmentDisplay
@@ -398,7 +306,8 @@ const AssistantTextNode: React.FC<{
   const hasRenderableContent = Boolean(
     node.content
     || (node.modelDecision && shouldRenderModelDecisionChip(node.modelDecision))
-    || node.metadata?.turnQuality,
+    || node.metadata?.turnQuality
+    || node.metadata?.agentError,
   );
   if (!hasRenderableContent) return null;
 
@@ -473,6 +382,15 @@ const AssistantTextNode: React.FC<{
             <span className="sr-only">正在生成</span>
           )}
         </div>
+      )}
+
+      {/* 运行失败的结构化错误卡片（替代旧版 merge 进正文的 ⚠ 文本） */}
+      {node.metadata?.agentError && (
+        <AgentErrorCard
+          error={node.metadata.agentError}
+          messageId={messageId}
+          sessionId={sessionId}
+        />
       )}
 
     </div>
@@ -676,7 +594,7 @@ const HookActivityNode: React.FC<{ timeline: TurnTimelinePayload }> = ({ timelin
 function getSkillActionLabel(action: string): string {
   switch (action) {
     case 'selected':
-      return '写入偏好';
+      return '本轮挂载';
     case 'triggered':
       return '已触发';
     case 'written':

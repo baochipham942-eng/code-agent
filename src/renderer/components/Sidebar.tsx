@@ -24,6 +24,7 @@ import {
   Search,
   PanelLeftClose,
   Download,
+  Plus,
 } from 'lucide-react';
 import { IPC_CHANNELS, type NotificationShowEvent } from '@shared/ipc';
 import { getCurrentKeybindingPlatform } from '@shared/keybindings/defaults';
@@ -54,6 +55,7 @@ import { useSidebarDerivedSessions } from './features/sidebar/useSidebarDerivedS
 import { useSidebarSessionActions } from './features/sidebar/useSidebarSessionActions';
 import { useSidebarRowActions, resolveRuntimeLogsDir } from './features/sidebar/useSidebarRowActions';
 import { SidebarStatusFilterDropdown } from './features/sidebar/SidebarStatusFilterDropdown';
+import { CreateProjectModal } from './features/sidebar/CreateProjectModal';
 import { SidebarAccountMenu } from './features/sidebar/SidebarAccountMenu';
 import { SidebarSearchDialog } from './features/sidebar/SidebarSearchDialog';
 import { SidebarNewTaskRow } from './features/sidebar/SidebarNewTaskRow';
@@ -71,6 +73,8 @@ import type {
 } from '@shared/contract/agentTrajectory';
 import { UNSORTED_PROJECT_ID } from '@shared/contract/project';
 import { PLAIN_CHAT_SUMMARY_LABEL } from '@shared/contract/sessionWorkspace';
+import { isWorkspaceExpanded } from '../utils/workspaceGrouping';
+import { createProject } from '../services/projectClient';
 
 export { resolveRuntimeLogsDir };
 
@@ -179,6 +183,7 @@ export const Sidebar: React.FC = () => {
     pendingDelete,
     expandedWorkspaces,
     setWorkspaceExpanded,
+    setWorkspacesExpanded,
   } = useSessionUIStore();
 
   const {
@@ -363,6 +368,9 @@ export const Sidebar: React.FC = () => {
   // Keep new local state after the legacy Sidebar state sequence; several renderer tests
   // intentionally inject historical context/review state by hook index.
   const [searchDialogOpen, setSearchDialogOpen] = useState(false);
+  // 「项目」section 标题行（2026-07-29 侧栏项目区 redesign）：新建项目弹窗开合态 + 创建进行中。
+  const [createProjectOpen, setCreateProjectOpen] = useState(false);
+  const [creatingProject, setCreatingProject] = useState(false);
   const collapseTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
   useEffect(
@@ -381,7 +389,6 @@ export const Sidebar: React.FC = () => {
     handleSelectSession,
     handleArchiveSession,
     handleOpenWorkspaceAssets,
-    handleOpenSessionAssets,
     handleOpenProjectArtifactSession,
     handleStartProjectGoal,
     handleRenameSidebarProject,
@@ -419,7 +426,6 @@ export const Sidebar: React.FC = () => {
     saveExportToDownloads,
     openRuntimeLogsFolder,
     handleOpenSessionReplay,
-    handleOpenSessionReplayInEvalCenter,
     handleOpenReplayEvidence,
     handleContextMenu,
     handleDoubleClick,
@@ -510,6 +516,35 @@ export const Sidebar: React.FC = () => {
   const visibleStatusFilterOptions = buildSessionStatusFilterOptions(t).filter(
     (option) => !option.adminOnly || canOpenSessionReplay,
   );
+  // 「项目」section 标题行 chevron（2026-07-29，参考 Codex 桌面端）：一键全展开/全收起。
+  // 状态语义：全部展开时点一下全收起；否则（含部分收起）点一下全展开。
+  // 未记录的 key 缺省即展开（isWorkspaceExpanded 缺省 true），与单组行为一致。
+  const allProjectsExpanded = useMemo(
+    () => workspaceGroupedSessions.every((group) => isWorkspaceExpanded(expandedWorkspaces, group.key)),
+    [workspaceGroupedSessions, expandedWorkspaces],
+  );
+  const handleToggleAllProjects = useCallback(() => {
+    setWorkspacesExpanded(
+      workspaceGroupedSessions.map((group) => group.key),
+      !allProjectsExpanded,
+    );
+  }, [workspaceGroupedSessions, allProjectsExpanded, setWorkspacesExpanded]);
+  // 新建项目（18b）：先显式建项目（保住用户输入的名字），再为它建一条新会话——
+  // 复用 createWorkspaceChat 路径，与「选目录建新会话即建项目」的现有心智一致；
+  // 会话进列表后项目组与 projectMeta 拉取链路自然刷新，无需额外失效逻辑。
+  const handleCreateProject = useCallback(async (input: { name: string; workspacePath: string }) => {
+    setCreatingProject(true);
+    try {
+      await createProject({ name: input.name, workspacePath: input.workspacePath });
+      setCreateProjectOpen(false);
+      await createWorkspaceChat(input.workspacePath, input.workspacePath);
+    } catch (error) {
+      logger.error('Failed to create project:', error);
+      showToast('error', sb.createProjectFailed);
+    } finally {
+      setCreatingProject(false);
+    }
+  }, [createWorkspaceChat, sb, showToast]);
   const showOptionalUpdateButton = isOptionalUpdateAvailable(optionalUpdateInfo);
   const optionalUpdateLabel = optionalUpdateInfo?.latestVersion ? `v${optionalUpdateInfo.latestVersion}` : sb.newVersion;
   const handleUpdateTrajectoryCollection = useCallback(
@@ -610,7 +645,6 @@ export const Sidebar: React.FC = () => {
     searchQuery,
     messageSearchHitsBySessionId,
     replayEvidenceBySessionId,
-    canOpenSessionReplay,
     reviewItemsBySessionId,
     trajectoryQualityBySessionId,
     multiSelectMode,
@@ -624,8 +658,6 @@ export const Sidebar: React.FC = () => {
     handleRenameSubmit,
     handleRenameKeyDown,
     handleDoubleClick,
-    handleOpenSessionReplayInEvalCenter,
-    handleOpenSessionAssets,
     handleOpenReplayEvidence,
     handleSelectMessageSearchHit,
     handleArchiveSession,
@@ -690,7 +722,6 @@ export const Sidebar: React.FC = () => {
         </div>
         {/* 图标之间不留 gap：32px 按钮首尾相接 ⇒ 中心间距 32，与 Codex 顶栏一致 */}
         <div className="flex items-center" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>          {!isAuthLoading && (
-            <>
             <IconButton
               type="button"
               variant="ghost"
@@ -704,27 +735,6 @@ export const Sidebar: React.FC = () => {
                 setSearchDialogOpen(true);
               }}
             />
-            {/* 状态筛选：仅管理员可见；搜索入口对所有人可见。 */}
-            {canOpenSessionReplay && (
-              <SidebarStatusFilterDropdown
-                statusFilterOpen={statusFilterOpen}
-                setStatusFilterOpen={setStatusFilterOpen}
-                statusFilterRef={statusFilterRef}
-                visibleStatusFilterOptions={visibleStatusFilterOptions}
-                sessionStatusFilter={sessionStatusFilter}
-                setSessionStatusFilter={setSessionStatusFilter}
-                trajectoryTierFilter={trajectoryTierFilter}
-                setTrajectoryTierFilter={setTrajectoryTierFilter}
-                trajectoryFailureFilter={trajectoryFailureFilter}
-                setTrajectoryFailureFilter={setTrajectoryFailureFilter}
-                trajectoryReviewFilter={trajectoryReviewFilter}
-                setTrajectoryReviewFilter={setTrajectoryReviewFilter}
-                hasActiveTrajectoryFilter={hasActiveTrajectoryFilter}
-                hasActiveStatusDropdownFilter={hasActiveStatusDropdownFilter}
-                activeStatusFilterLabel={activeStatusFilterLabel}
-              />
-            )}
-            </>
           )}
           {/* 侧栏收起开关坐在侧栏自己头上（2026-07-27 审美关拍板：从右侧顶栏挪回左侧面板）。
               收起态的展开入口留在 TitleBar——侧栏那时不存在，按钮得有别的落脚点。 */}
@@ -740,8 +750,8 @@ export const Sidebar: React.FC = () => {
         </div>
       </div>
 
-      {/* 「选择目录」行已退役（批C2）：目录选择并入新任务流程（欢迎页目录 chip +
-          DirectoryPickerModal/原生选择器），侧栏不再展示内部路径。 */}
+      {/* 「选择目录」行已退役（批C2）：目录选择收进「项目」区的新建项目流程
+          （CreateProjectModal/原生选择器）与项目行 ⋯ 菜单，侧栏不再展示内部路径。 */}
 
       {/* 新任务默认纯对话，不继承项目上下文（项目会话走各项目组 + 按钮）。
           与能力区之间零间距：四条入口行等距同组，区间断点只留在能力区之后（pb-2）。 */}
@@ -755,6 +765,59 @@ export const Sidebar: React.FC = () => {
 
       {/* 能力区：自动化 / 专家 / 资料库（三件套，逐批点亮） */}
       <SidebarCapabilityZone />
+
+      {/* 「项目」section 标题行（2026-07-29 侧栏项目区 redesign，参考 Codex 桌面端）：
+          左侧「项目」+ chevron 批量展开/收起所有项目组（语义：全展开时点击全收起，否则全展开）；
+          右侧状态筛选（自顶行图标簇挪入，仅管理员可见）+「+」新建项目。 */}
+      <div className="px-1 flex-shrink-0">
+        <div className="flex items-center gap-1 px-1.5 pb-1">
+          <button /* ds-allow:button: section 标题行（小写标题+chevron 的裸文本钮），Button primitive 居中动作按钮形状不适配 */
+            type="button"
+            onClick={handleToggleAllProjects}
+            title={allProjectsExpanded ? sb.collapseAllProjects : sb.expandAllProjects}
+            aria-label={allProjectsExpanded ? sb.collapseAllProjects : sb.expandAllProjects}
+            className="flex min-w-0 flex-1 items-center gap-1 text-left"
+          >
+            <ChevronDown
+              className={`h-3.5 w-3.5 shrink-0 text-zinc-500 transition-transform ${allProjectsExpanded ? '' : '-rotate-90'}`}
+            />
+            <span className="truncate text-[11px] font-medium uppercase tracking-wider text-zinc-500">
+              {sb.projectsSectionTitle}
+            </span>
+          </button>
+          {/* 状态筛选：仅管理员可见；自顶行图标簇挪到本行（2026-07-29）。
+              与顶行搜索同一约定：auth 未解析完不渲染，避免身份闪烁出管理员入口。 */}
+          {!isAuthLoading && canOpenSessionReplay && (
+            <SidebarStatusFilterDropdown
+              statusFilterOpen={statusFilterOpen}
+              setStatusFilterOpen={setStatusFilterOpen}
+              statusFilterRef={statusFilterRef}
+              visibleStatusFilterOptions={visibleStatusFilterOptions}
+              sessionStatusFilter={sessionStatusFilter}
+              setSessionStatusFilter={setSessionStatusFilter}
+              trajectoryTierFilter={trajectoryTierFilter}
+              setTrajectoryTierFilter={setTrajectoryTierFilter}
+              trajectoryFailureFilter={trajectoryFailureFilter}
+              setTrajectoryFailureFilter={setTrajectoryFailureFilter}
+              trajectoryReviewFilter={trajectoryReviewFilter}
+              setTrajectoryReviewFilter={setTrajectoryReviewFilter}
+              hasActiveTrajectoryFilter={hasActiveTrajectoryFilter}
+              hasActiveStatusDropdownFilter={hasActiveStatusDropdownFilter}
+              activeStatusFilterLabel={activeStatusFilterLabel}
+            />
+          )}
+          <button /* ds-allow:button: section 行尾 24px 图标钮（与分组头 ⋯/+ 同形态），Button primitive 无对应微尺寸方形变体 */
+            type="button"
+            aria-label={sb.createProject}
+            title={sb.createProject}
+            data-testid="sidebar-create-project"
+            onClick={() => setCreateProjectOpen(true)}
+            className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-700/70 hover:text-zinc-200 focus:outline-hidden"
+          >
+            <Plus className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      </div>
 
       {/* Session List - Project Grouped
           scrollbar-hidden 不是审美选择，是右轨对齐的根因修复（2026-07-27 实测）：
@@ -945,6 +1008,13 @@ export const Sidebar: React.FC = () => {
         setSearchScope={setSearchScope}
         canSearchCurrentProject={canSearchCurrentProject}
         onSelectSession={handleSelectSearchSession}
+      />
+
+      <CreateProjectModal
+        isOpen={createProjectOpen}
+        creating={creatingProject}
+        onClose={() => setCreateProjectOpen(false)}
+        onSubmit={(input) => { void handleCreateProject(input); }}
       />
 
       {/* Replay 摘要 */}

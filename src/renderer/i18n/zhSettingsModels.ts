@@ -148,6 +148,12 @@ export const zhSettingsModels = {
         contextLabel: '上下文',
         // 这一档从底栏收进面板里了，标题不能继续是英文 Effort
         effortSectionLabel: '思考深度',
+        // 思考段（Thinking/Effort 合并）：关/低/中/高 4 等分
+        thinkingSectionLabel: '思考',
+        thinkingOptionOff: '关',
+        thinkingOptionLow: '低',
+        thinkingOptionMedium: '中',
+        thinkingOptionHigh: '高',
         setDefault: '设为默认',
         setDefaultSaving: '保存中…',
         selectableLabel: '进选择页',

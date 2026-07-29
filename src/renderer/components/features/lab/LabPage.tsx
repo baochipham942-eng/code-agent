@@ -142,7 +142,7 @@ export const LabPage: React.FC = () => {
   );
 
   return (
-    <FullScreenPage testId="lab-page">
+    <FullScreenPage testId="lab-page" variant="inline">
       <FullScreenPageHeader
         icon={<FlaskConical className="h-4 w-4 text-emerald-300" />}
         title={currentLabTitle}

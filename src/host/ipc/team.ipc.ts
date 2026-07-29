@@ -8,6 +8,7 @@ interface LaunchRecipePayload {
   sessionId?: string;
   recipeId?: string;
   topic?: string;
+  excludeMemberKeys?: string[];
 }
 
 interface RecipeIdPayload {
@@ -66,13 +67,20 @@ export function registerTeamHandlers(ipcMain: IpcMain): void {
           return { success: true, data: await rejectTeamRecipeDraft(draftId) };
         }
         case 'launchRecipe': {
-          const { sessionId, recipeId, topic } = (request.payload ?? {}) as LaunchRecipePayload;
+          const { sessionId, recipeId, topic, excludeMemberKeys } = (request.payload ?? {}) as LaunchRecipePayload;
           if (!sessionId || !recipeId || typeof topic !== 'string') {
             return invalid('sessionId, recipeId and topic are required');
           }
           return {
             success: true,
-            data: await launchTeamRecipe({ sessionId, recipeId, topic }),
+            data: await launchTeamRecipe({
+              sessionId,
+              recipeId,
+              topic,
+              excludeMemberKeys: Array.isArray(excludeMemberKeys)
+                ? excludeMemberKeys.filter((key): key is string => typeof key === 'string')
+                : undefined,
+            }),
           };
         }
         default:

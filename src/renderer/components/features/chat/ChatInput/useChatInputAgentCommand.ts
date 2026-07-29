@@ -1,22 +1,18 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type React from 'react';
+import type { ComposerAgentSelection } from '@shared/contract/conversationEnvelope';
 import type { InputAreaRef } from './InputArea';
 import {
   applyAgentMentionSuggestion,
   getLeadingAgentMentionAutocomplete,
 } from './agentMentionRouting';
-import {
-  buildNeoTopicMentionCandidates,
-  NEO_TAG_MENTION_AGENT,
-  NEO_TOPIC_MENTION_PREFIX,
-} from './neoMentionRouting';
 import { useI18n } from '../../../../hooks/useI18n';
 import {
-  applyAgentCommandOption,
   getAgentCommandOptions,
   getAgentSlashCommandQuery,
+  removeLeadingAgentCommandTrigger,
 } from './agentCommand';
-import { useNeoWorkCardStore } from '../../../../stores/neoWorkCardStore';
+import { isImeKeyEvent, useImeCompositionRef } from './imeCompositionGuard';
 
 export interface UseChatInputAgentCommandParams {
   /** 当前输入框文本（组件持有，单向喂入）。 */
@@ -32,6 +28,8 @@ export interface UseChatInputAgentCommandParams {
   setValue: React.Dispatch<React.SetStateAction<string>>;
   setShowSlashPopover: React.Dispatch<React.SetStateAction<boolean>>;
   setSlashFilter: React.Dispatch<React.SetStateAction<string>>;
+  setPendingAgentSelection: React.Dispatch<React.SetStateAction<ComposerAgentSelection | null>>;
+  setActiveAgentId: (id: string | null) => void;
 }
 
 /**
@@ -50,38 +48,23 @@ export function useChatInputAgentCommand(params: UseChatInputAgentCommandParams)
     setValue,
     setShowSlashPopover,
     setSlashFilter,
+    setPendingAgentSelection,
+    setActiveAgentId,
   } = params;
+
+  const isComposingRef = useImeCompositionRef();
 
   const [selectedAgentMentionIndex, setSelectedAgentMentionIndex] = useState(0);
   const [selectedAgentCommandIndex, setSelectedAgentCommandIndex] = useState(0);
   const [dismissedAgentAutocompleteValue, setDismissedAgentAutocompleteValue] = useState<string | null>(null);
 
-  // @neo 下拉的「续接既有 topic」候选（ADR-035 D1）：数据源 = store 全局目录，
-  // 下拉首次可见时懒加载一次（listAll，与「Neo 协同」目录同源）。
-  const detailsById = useNeoWorkCardStore((state) => state.detailsById);
-  const loadAllTopics = useNeoWorkCardStore((state) => state.loadAll);
-  const [topicsLoaded, setTopicsLoaded] = useState(false);
-  const neoTopicCandidates = useMemo(
-    () => buildNeoTopicMentionCandidates(Object.values(detailsById).map((detail) => ({
-      workCardId: detail.workCard.id,
-      title: detail.workCard.title,
-      status: detail.workCard.status,
-      updatedAt: detail.workCard.updatedAt,
-    })), t),
-    [detailsById, t],
-  );
-
+  // @neo 已从 composer 入口移除（2026-07-29 拍板）：不再加载 topic 目录做续接候选，
+  // mention 面板只列 swarm agents（工作卡/续接改从 Neo 协同页发起）。
   const agentMentionAutocomplete = useMemo(
-    () => getLeadingAgentMentionAutocomplete(value, swarmAgents, neoTopicCandidates, t),
-    [neoTopicCandidates, swarmAgents, value, t],
+    () => getLeadingAgentMentionAutocomplete(value, swarmAgents),
+    [swarmAgents, value],
   );
 
-  useEffect(() => {
-    if (agentMentionAutocomplete && !topicsLoaded) {
-      setTopicsLoaded(true);
-      void loadAllTopics().catch(() => {});
-    }
-  }, [agentMentionAutocomplete, loadAllTopics, topicsLoaded]);
   const isAgentMentionAutocompleteOpen = Boolean(
     agentMentionAutocomplete
     && agentMentionAutocomplete.matches.length > 0
@@ -91,10 +74,8 @@ export function useChatInputAgentCommand(params: UseChatInputAgentCommandParams)
   const agentCommandOptions = useMemo(
     () => agentSlashCommandQuery === null
       ? []
-      : getAgentCommandOptions(agentEntries, agentSlashCommandQuery, {
-        defaultDescription: t.agentCommand.defaultDescription,
-      }),
-    [agentEntries, agentSlashCommandQuery, t],
+      : getAgentCommandOptions(agentEntries, agentSlashCommandQuery),
+    [agentEntries, agentSlashCommandQuery],
   );
   const isAgentCommandAutocompleteOpen = agentSlashCommandQuery !== null && agentCommandOptions.length > 0;
 
@@ -110,24 +91,8 @@ export function useChatInputAgentCommand(params: UseChatInputAgentCommandParams)
   }, [agentSlashCommandQuery, agentCommandOptions.length]);
 
   const handleAgentMentionSelect = useCallback((agentId: string) => {
-    // 续接既有 topic（ADR-035）：挂 composer chip（可移除），正文照常插 `@neo `——不做文本编码。
-    if (agentId.startsWith(NEO_TOPIC_MENTION_PREFIX)) {
-      const workCardId = agentId.slice(NEO_TOPIC_MENTION_PREFIX.length);
-      const detail = useNeoWorkCardStore.getState().detailsById[workCardId];
-      if (detail) {
-        useNeoWorkCardStore.getState().setContinuationTarget({
-          workCardId,
-          title: detail.workCard.title,
-        });
-      }
-      setValue((prev) => applyAgentMentionSuggestion(prev, NEO_TAG_MENTION_AGENT));
-      setDismissedAgentAutocompleteValue(null);
-      inputAreaRef.current?.focus();
-      return;
-    }
-    const agent = agentId === NEO_TAG_MENTION_AGENT.id
-      ? NEO_TAG_MENTION_AGENT
-      : swarmAgents.find((item) => item.id === agentId);
+    // @neo 工作卡/续接候选已从面板移除（2026-07-29），这里只处理普通 agent mention
+    const agent = swarmAgents.find((item) => item.id === agentId);
     if (!agent) return;
     setValue((prev) => applyAgentMentionSuggestion(prev, agent));
     setDismissedAgentAutocompleteValue(null);
@@ -145,12 +110,23 @@ export function useChatInputAgentCommand(params: UseChatInputAgentCommandParams)
   const handleAgentCommandOptionSelect = useCallback((index: number) => {
     const option = agentCommandOptions[index];
     if (!option) return;
-    setValue(applyAgentCommandOption(option));
+    // 与 slash 总面板 AGENTS 组一致：chip 立即生效，触发文本（含已输入 query）整体清掉，
+    // 不再把 `/agent <token>` 留在输入框当路由前缀（发送时 activeAgentId 优先，见 buildEnvelope）。
+    // 面板已无 Default 项（2026-07-29 起）；恢复默认路由 = 删掉底栏专家 chip。
+    if (!option.id) return;
+    setActiveAgentId(option.id);
+    setPendingAgentSelection({
+      id: option.id,
+      name: option.name,
+      token: option.token,
+      via: 'agent_command',
+    });
+    setValue((prev) => removeLeadingAgentCommandTrigger(prev));
     setSelectedAgentCommandIndex(index);
     requestAnimationFrame(() => inputAreaRef.current?.focus());
-  }, [agentCommandOptions, inputAreaRef, setValue]);
+  }, [agentCommandOptions, inputAreaRef, setActiveAgentId, setPendingAgentSelection, setValue]);
 
-  const handleAutocompleteKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+  const handleAutocompleteKeyDown = useCallback((e: React.KeyboardEvent<HTMLElement>) => {
     if (isAgentCommandAutocompleteOpen) {
       if (e.key === 'ArrowDown') {
         e.preventDefault();
@@ -166,7 +142,8 @@ export function useChatInputAgentCommand(params: UseChatInputAgentCommandParams)
         return true;
       }
 
-      if ((e.key === 'Enter' && !e.shiftKey) || e.key === 'Tab') {
+      // IME 组合中的 Enter 是确认候选词，不是选择面板项（keyCode 229 + 组合态 ref 双保险）
+      if (((e.key === 'Enter' && !e.shiftKey) || e.key === 'Tab') && !isImeKeyEvent(e.nativeEvent, isComposingRef)) {
         e.preventDefault();
         handleAgentCommandOptionSelect(selectedAgentCommandIndex);
         return true;
@@ -197,7 +174,7 @@ export function useChatInputAgentCommand(params: UseChatInputAgentCommandParams)
       return true;
     }
 
-    if ((e.key === 'Enter' && !e.shiftKey) || e.key === 'Tab') {
+    if (((e.key === 'Enter' && !e.shiftKey) || e.key === 'Tab') && !isImeKeyEvent(e.nativeEvent, isComposingRef)) {
       const selected = agentMentionAutocomplete.matches[selectedAgentMentionIndex];
       if (selected) {
         e.preventDefault();

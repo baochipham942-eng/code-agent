@@ -373,10 +373,10 @@ export const SettingsModal: React.FC = () => {
   return (
     <FullScreenPage
       role="dialog"
-      aria-modal="true"
       aria-label={t.settings.title}
       testId="settings-panel"
-      className="h-screen overflow-hidden animate-fadeIn"
+      variant="inline"
+      className="overflow-hidden animate-fadeIn"
     >
       <div className="flex h-full min-h-0">
         <aside className="flex w-[280px] shrink-0 flex-col border-r border-zinc-800 bg-zinc-900/95">

@@ -49,6 +49,7 @@ import {
 import { useKeybindingsSettings } from '../../../../hooks/useKeybindingsSettings';
 import { useI18n } from '../../../../hooks/useI18n';
 import { RoleInitialAvatar } from '../../expert/RoleInitialAvatar';
+import { isImeKeyEvent, useImeCompositionRef } from './imeCompositionGuard';
 
 type ExtensionMutationResult = { success: boolean; error?: string };
 
@@ -138,6 +139,7 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
 }) => {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const listRef = useRef<HTMLDivElement>(null);
+  const isComposingRef = useImeCompositionRef();
   const { t } = useI18n();
   const { keybindings, platform } = useKeybindingsSettings();
   const getShortcutLabel = useMemo(() => (actionId: KeybindingActionId): string | undefined => {
@@ -678,8 +680,10 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
     const guiOnlyIds = new Set(guiOnlyCommands.map(c => c.id));
 
     // Convert registry commands to SlashCommand format (skip those already in GUI-only)
+    // 'skills'（技能列表 /skills）也从面板排除：CLI surface 保留，GUI 面板里技能走 SKILLS 组的
+    // 挂载候选，COMMANDS 区再放一个「技能列表」首项只是噪音。
     const fromRegistry: SlashCommand[] = registryDefs
-      .filter((def: CommandDefinition) => !guiOnlyIds.has(def.id))
+      .filter((def: CommandDefinition) => !guiOnlyIds.has(def.id) && def.id !== 'skills')
       .map((def: CommandDefinition) => makeCommand({
         id: def.id,
         label: def.name,
@@ -828,6 +832,8 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
         e.stopPropagation();
         setSelectedIndex(prev => (prev > 0 ? prev - 1 : filtered.length - 1));
       } else if (e.key === 'Enter' && filtered[selectedIndex]) {
+        // IME 组合中的 Enter 是确认候选词（如中文选字），不能当成选择面板项
+        if (isImeKeyEvent(e, isComposingRef)) return;
         const selected = filtered[selectedIndex];
         const normalizedFilter = filter.trim().replace(/^\//, '').toLowerCase();
         const shouldSubmitExactCommand =

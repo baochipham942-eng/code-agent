@@ -23,6 +23,9 @@ import {
 import { createWebSessionStore } from '../helpers/webSessionStore';
 import { syncSupabaseSessionRow } from '../helpers/supabaseSessionSync';
 import { buildGoalContract } from '../../host/agent/goalModeController';
+import { buildWorkbenchCapabilityContextLines } from '../../host/app/workbenchTurnContext';
+import { wrapWithTurnSystemContext } from '../../host/agent/turnScaffold';
+import { getLibraryService } from '../../host/services/library/libraryService';
 import {
   ClaudeCodeAdapter,
   CodexCliAdapter,
@@ -158,6 +161,26 @@ function toWorkbenchMetadata(context?: ConversationEnvelopeContext): MessageMeta
   if (context.workingDirectory !== undefined) {
     workbench.workingDirectory = context.workingDirectory;
   }
+  // UX round2 20f：专家/命令 chip 此前只走桌面链路（useAgentIPC / agentAppService），
+  // web 这条独立 HTTP 路径漏接，重开会话后用户消息上方 chip 行丢失——这里补齐。
+  if (context.preferredAgentId !== undefined) {
+    workbench.preferredAgentId = context.preferredAgentId;
+  }
+  if (context.preferredAgentName !== undefined) {
+    workbench.preferredAgentName = context.preferredAgentName;
+  }
+  if (context.selectedAgent) {
+    workbench.selectedAgent = { ...context.selectedAgent };
+  }
+  if (context.selectedPromptCommand) {
+    workbench.selectedPromptCommand = {
+      ...context.selectedPromptCommand,
+      hints: context.selectedPromptCommand.hints ? [...context.selectedPromptCommand.hints] : undefined,
+    };
+  }
+  if (context.pendingCommand) {
+    workbench.pendingCommand = { ...context.pendingCommand };
+  }
   if (context.routing) {
     workbench.routingMode = context.routing.mode;
     if (context.routing.targetAgentIds?.length) {
@@ -173,6 +196,9 @@ function toWorkbenchMetadata(context?: ConversationEnvelopeContext): MessageMeta
   if (context.selectedMcpServerIds?.length) {
     workbench.selectedMcpServerIds = [...context.selectedMcpServerIds];
   }
+  if (context.turnCapabilityScopeMode) {
+    workbench.turnCapabilityScopeMode = context.turnCapabilityScopeMode;
+  }
   if (context.designBrief) {
     workbench.designBrief = context.designBrief;
   }
@@ -185,8 +211,27 @@ function toWorkbenchMetadata(context?: ConversationEnvelopeContext): MessageMeta
       workbench.runtimeInputDelivery = context.runtimeInput.delivery;
     }
   }
+  if (context.voiceInput) {
+    workbench.voiceInput = { ...context.voiceInput };
+  }
 
   return Object.keys(workbench).length > 0 ? { workbench } : undefined;
+}
+
+/**
+ * UX round2 20f：pin 资料是会话级状态、不在 envelope——持久化 user message 时把当前
+ * pin 条目 id+标题快照进 metadata（与桌面 agentAppService.getPinnedLibrarySnapshot 对称）。
+ */
+function getPinnedLibrarySnapshot(sessionId?: string): Array<{ id: string; title: string }> | undefined {
+  if (!sessionId) return undefined;
+  try {
+    const items = getLibraryService().getPinnedItems(sessionId);
+    return items.length > 0
+      ? items.map((item) => ({ id: item.id, title: item.title }))
+      : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 export function createAgentRouter(deps: AgentRouterDeps): Router {
@@ -752,13 +797,28 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       const artifactLocator = body.context?.localityAnchor
         ? await upgradeLegacyAnchor(body.context.localityAnchor)
         : null;
+      // UX round2 20f：workbench chip 行数据（专家/skills/连接器/pin/命令）此前只进了
+      // 外部引擎分支（messageMetadata），原生 loop 的 user message 不落 metadata，
+      // 重开会话后用户消息上方的 chip 行丢失——这里与桌面 agentAppService 对齐。
+      const userWorkbench = toWorkbenchMetadata(body.context)?.workbench;
+      const pinnedLibraryItems = getPinnedLibrarySnapshot(sessionId);
+      const userMessageMetadata: MessageMetadata | undefined = (() => {
+        const workbench = userWorkbench || pinnedLibraryItems
+          ? { ...(userWorkbench ?? {}), ...(pinnedLibraryItems ? { pinnedLibraryItems } : {}) }
+          : undefined;
+        const metadata: MessageMetadata = {
+          ...(workbench ? { workbench } : {}),
+          ...(artifactLocator ? { artifactLocator } : {}),
+        };
+        return Object.keys(metadata).length > 0 ? metadata : undefined;
+      })();
       const userMsg: CachedMessage & { role: 'user' } = {
         id: msgId,
         role: 'user' as const,
         content: visiblePrompt,
         timestamp: Date.now(),
         attachments: persistedAttachments,
-        ...(artifactLocator ? { metadata: { artifactLocator } } : {}),
+        ...(userMessageMetadata ? { metadata: userMessageMetadata } : {}),
       };
 
       // 加载历史消息 + 当前用户消息
@@ -782,7 +842,19 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         attachments: sanitizeAttachmentsForPersistence(attachments),
         metadata,
       }));
-      const messages = [...history, userMsg] as import('../../shared/contract').Message[];
+      // 能力挂载透传（web 独立 HTTP 路径补接）：composer 里选的 skills/connectors/MCP
+      // 此前只被 toWorkbenchMetadata 存进消息 metadata，模型完全看不到（桌面路径经
+      // agentAppService → withWorkbenchTurnSystemContext 注入）。模型面消息拼
+      // turnSystemContext 脚手架；持久化与展示仍用 visiblePrompt（extractUserRequest
+      // 负责还原，agentLoop.run 第二参 displayPrompt 即桌面双轨语义的对应物）。
+      const capabilityContextLines = buildWorkbenchCapabilityContextLines(body.context);
+      const modelFacePrompt = capabilityContextLines.length > 0
+        ? wrapWithTurnSystemContext(capabilityContextLines, visiblePrompt)
+        : visiblePrompt;
+      const messages = [
+        ...history,
+        modelFacePrompt === visiblePrompt ? userMsg : { ...userMsg, content: modelFacePrompt },
+      ] as import('../../shared/contract').Message[];
       const isNewSession = history.length === 0;
 
       // ── Tool Executor 选择 ──
@@ -838,6 +910,8 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           content: visiblePrompt,
           timestamp: userMsg.timestamp,
           attachments: userMsg.attachments,
+          // 与 commitTurn 的 user 侧对称：chip 行 metadata（workbench/locator）随 pre-persist 落库
+          metadata: userMsg.metadata,
         },
       });
 
@@ -874,7 +948,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         };
         runEventCollector.observe(cancelledEvent, runController.emitAgentEvent(cancelledEvent));
       } else {
-        await agentLoop.run(visiblePrompt);
+        await agentLoop.run(modelFacePrompt, visiblePrompt);
       }
 
       const { assistantMsgId } = await sessionStore.commitTurn({
@@ -1072,7 +1146,12 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         content,
         clientMessageId,
         attachments,
-        metadata: toWorkbenchMetadata(context),
+        metadata: (() => {
+          const base = toWorkbenchMetadata(context);
+          const pinnedLibraryItems = getPinnedLibrarySnapshot(targetSessionId);
+          if (!pinnedLibraryItems) return base;
+          return { ...base, workbench: { ...(base?.workbench ?? {}), pinnedLibraryItems } };
+        })(),
         context,
       });
       broadcastSSE('agent:event', {

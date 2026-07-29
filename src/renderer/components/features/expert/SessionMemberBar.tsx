@@ -9,6 +9,7 @@
 // ============================================================================
 
 import React, { useEffect, useMemo, useState } from 'react';
+import { X } from 'lucide-react';
 import { useSwarmStore } from '../../../stores/swarmStore';
 import { useComposerStore } from '../../../stores/composerStore';
 import { useTeamRecipeStore } from '../../../stores/teamRecipeStore';
@@ -19,7 +20,7 @@ import ipcService from '../../../services/ipcService';
 import { IPC_CHANNELS } from '@shared/ipc';
 import type { SwarmAgentState } from '@shared/contract/swarm';
 import type { SwarmRunAgentRecord } from '@shared/contract/swarmTrace';
-import { readPersistedTeamLead } from '@shared/contract/teamRecipe';
+import { readPersistedTeamLead, teamRecipeMemberKey } from '@shared/contract/teamRecipe';
 import { useMemberViewStore } from '../../../stores/memberViewStore';
 import { useComposerNoticeStore, selectHasBlockingNotice } from '../../../stores/composerNoticeStore';
 import { useVoiceCallStore } from '../../../stores/voiceCallStore';
@@ -52,6 +53,8 @@ export interface MemberPill {
   profession?: string;
   status: 'standby' | 'running' | 'completed' | 'failed';
   isLead: boolean;
+  /** standby 成员的排除键（member 的 id ?? roleId；lead 用 roleId），× 掉时写进 composerStore */
+  standbyKey?: string;
   agent?: SwarmAgentState;
   record?: SwarmRunAgentRecord;
 }
@@ -81,6 +84,7 @@ export function useSessionMembers(sessionId: string | null): MemberPill[] {
   const agents = useSwarmStore((state) => state.agents);
   const swarmSessionId = useSwarmStore((state) => state.activeSessionId);
   const selectedTeamRecipeId = useComposerStore((state) => state.selectedTeamRecipeId);
+  const standbyExcludedMemberKeys = useComposerStore((state) => state.standbyExcludedMemberKeys);
   const recipes = useTeamRecipeStore((state) => state.recipes);
   const agentEntries = useAgentRegistryStore((state) => state.entries);
   const teamLeadRoleId = useSessionStore((state) => {
@@ -130,19 +134,26 @@ export function useSessionMembers(sessionId: string | null): MemberPill[] {
     if (hasRealtimeTeam) return fromAgents(teamAgents);
     if (persistedAgents.length > 0) return fromAgents(persistedAgents.map(swarmRunAgentRecordToState), persistedAgents);
 
-    // 预选：还没跑，只铺名单
+    // 预选：还没跑，只铺名单（× 掉的成员按 standbyExcludedMemberKeys 过滤，
+    // 发送启动时同一份排除会传给 host，显示口径 = 实际起团口径）
     const recipe = selectedTeamRecipeId ? recipes.find((item) => item.id === selectedTeamRecipeId) : undefined;
     if (!recipe) return [];
-    const roleIds = [...(recipe.lead ? [recipe.lead.roleId] : []), ...recipe.members.map((member) => member.roleId)];
-    return roleIds.map((roleId, index) => ({
-      key: `${roleId}-${index}`,
-      roleId,
-      name: roleId,
-      profession: professionOf(roleId),
-      status: 'standby' as const,
-      isLead: roleId === teamLeadRoleId,
-    }));
-  }, [hasRealtimeTeam, teamAgents, persistedAgents, selectedTeamRecipeId, recipes, professionOf, teamLeadRoleId]);
+    const standbyEntries = [
+      ...(recipe.lead ? [{ roleId: recipe.lead.roleId, standbyKey: recipe.lead.roleId }] : []),
+      ...recipe.members.map((member) => ({ roleId: member.roleId, standbyKey: teamRecipeMemberKey(member) })),
+    ];
+    return standbyEntries
+      .filter((entry) => !standbyExcludedMemberKeys.includes(entry.standbyKey))
+      .map((entry, index) => ({
+        key: `${entry.roleId}-${index}`,
+        roleId: entry.roleId,
+        name: entry.roleId,
+        profession: professionOf(entry.roleId),
+        status: 'standby' as const,
+        isLead: entry.roleId === teamLeadRoleId,
+        standbyKey: entry.standbyKey,
+      }));
+  }, [hasRealtimeTeam, teamAgents, persistedAgents, selectedTeamRecipeId, standbyExcludedMemberKeys, recipes, professionOf, teamLeadRoleId]);
 
   return pills;
 }
@@ -163,6 +174,19 @@ export const SessionMemberBar: React.FC<{ sessionId: string | null }> = ({ sessi
   useEffect(() => { setViewingMemberId(null); }, [sessionId, setViewingMemberId]);
   // 确认卡收掉后回到常态，别把「展开」黏在下一次
   useEffect(() => { if (!blockedByNotice) setExpandedOverNotice(false); }, [blockedByNotice]);
+
+  // standby ×：把该成员从本次预选排除（启动时少起这个人）；
+  // × 到最后一个不剩 = 整团取消，清掉配方预选本身（排除标记随 setSelectedTeamRecipeId 一并复位）
+  const removeStandbyMember = (pill: MemberPill) => {
+    if (!pill.standbyKey) return;
+    const store = useComposerStore.getState();
+    const remaining = pills.filter((candidate) => candidate.standbyKey !== pill.standbyKey);
+    if (remaining.length === 0) {
+      store.setSelectedTeamRecipeId(null);
+      return;
+    }
+    store.setStandbyExcludedMemberKeys([...store.standbyExcludedMemberKeys, pill.standbyKey]);
+  };
 
   if (pills.length === 0) return null;
 
@@ -215,6 +239,51 @@ export const SessionMemberBar: React.FC<{ sessionId: string | null }> = ({ sessi
         )}
         {pills.map((pill) => {
           const voiceActive = voiceCallLive && (pill.key === voiceActiveAgentId || pill.roleId === voiceActiveAgentId);
+          // standby pill 本体点击是无操作（还没有对话可看），语义保持；
+          // 取消预选走 hover 浮现的 × 按钮或聚焦后 Delete/Backspace，与 composer chip 口径一致
+          if (pill.status === 'standby') {
+            return (
+              <div
+                key={pill.key}
+                role="group"
+                tabIndex={0}
+                data-testid={`member-pill-${pill.roleId}`}
+                data-voice-active={voiceActive || undefined}
+                title={pill.profession ? `${pill.name} · ${pill.profession}` : pill.name}
+                aria-label={pill.name}
+                onKeyDown={(event) => {
+                  if (event.key !== 'Delete' && event.key !== 'Backspace') return;
+                  event.preventDefault();
+                  removeStandbyMember(pill);
+                }}
+                className="group flex shrink-0 cursor-default items-center gap-1.5 rounded-full border border-zinc-800 bg-zinc-900/60 py-1 pl-1 pr-2.5 text-left text-zinc-500 transition-colors"
+              >
+                <RoleInitialAvatar roleId={pill.roleId} name={pill.name} className="h-5 w-5 text-[10px]" />
+                <span className="flex min-w-0 flex-col items-start leading-tight">
+                  {pill.profession && <span className="text-xs font-semibold text-zinc-100">{pill.profession}</span>}
+                  <span className={pill.profession ? 'text-[10px] text-zinc-400' : 'text-xs font-medium text-zinc-100'}>{pill.name}</span>
+                </span>
+                {pill.isLead && (
+                  <span
+                    data-testid={`member-lead-badge-${pill.roleId}`}
+                    className="shrink-0 rounded bg-amber-400/15 px-1 py-0.5 text-[9px] font-medium leading-none text-amber-300"
+                  >
+                    {text.leadLabel}
+                  </span>
+                )}
+                <button
+                  type="button"
+                  tabIndex={-1}
+                  data-testid={`member-standby-remove-${pill.roleId}`}
+                  onClick={() => removeStandbyMember(pill)}
+                  aria-label={text.standbyRemoveAria.replace('{name}', pill.name)}
+                  className="-mr-1 shrink-0 rounded-full p-0.5 text-zinc-500 opacity-0 transition-opacity hover:bg-zinc-700 hover:text-zinc-200 focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100"
+                >
+                  <X className="h-3 w-3" aria-hidden />
+                </button>
+              </div>
+            );
+          }
           return (
           <button /* ds-allow:button: 成员 pill 需承载头像、两行文字和状态徽标，Button primitive 的居中按钮形态不适配 */
             key={pill.key}
@@ -223,19 +292,16 @@ export const SessionMemberBar: React.FC<{ sessionId: string | null }> = ({ sessi
             data-selected={viewingMemberId === pill.key}
             data-voice-active={voiceActive || undefined}
             onClick={() => {
-              // 待命态还没有对话可看；再点同一个人回主会话
-              if (pill.status === 'standby') return;
+              // 再点同一个人回主会话（standby 走上方 div 分支，不会到这里）
               setViewingMemberId(viewingMemberId === pill.key ? null : pill.key);
             }}
             title={pill.profession ? `${pill.name} · ${pill.profession}` : pill.name}
             className={`flex shrink-0 items-center gap-1.5 rounded-full border py-1 pl-1 pr-2.5 text-left transition-colors ${
-              pill.status === 'standby'
-                ? 'border-zinc-800 bg-zinc-900/60 text-zinc-500'
-                : voiceActive
-                  ? 'border-emerald-400/70 bg-emerald-500/10 ring-1 ring-emerald-400/40'
-                  : viewingMemberId === pill.key
-                    ? 'border-zinc-300 bg-zinc-800'
-                    : 'border-zinc-700 bg-zinc-800/70 hover:border-zinc-500'
+              voiceActive
+                ? 'border-emerald-400/70 bg-emerald-500/10 ring-1 ring-emerald-400/40'
+                : viewingMemberId === pill.key
+                  ? 'border-zinc-300 bg-zinc-800'
+                  : 'border-zinc-700 bg-zinc-800/70 hover:border-zinc-500'
             }`}
           >
             <RoleInitialAvatar roleId={pill.roleId} name={pill.name} className="h-5 w-5 text-[10px]" />

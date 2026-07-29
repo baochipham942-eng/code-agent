@@ -1,4 +1,3 @@
-import { localizeNeoTagMentionAgent, shouldSuggestNeoMention } from './neoMentionRouting';
 import { zh, type Translations } from '../../../../i18n/zh';
 
 export interface MentionRoutingAgent {
@@ -163,8 +162,8 @@ export function syncLeadingAgentMentions(
 export function getLeadingAgentMentionAutocomplete(
   value: string,
   agents: MentionRoutingAgent[],
-  neoTopicCandidates?: MentionRoutingAgent[],
-  t: Translations = zh,
+  _neoTopicCandidates?: MentionRoutingAgent[],
+  _t: Translations = zh,
 ): AgentMentionAutocompleteResult | null {
   const query = getTrailingMentionQuery(value);
   if (query === null) {
@@ -173,7 +172,8 @@ export function getLeadingAgentMentionAutocomplete(
 
   const normalizedQuery = normalizeMentionToken(query);
   const matches = agents.filter((agent) => {
-    // @neo 是保留 mention（路由到工作卡），swarm agent 命名为 neo 也不在直连候选里出现。
+    // @neo 已从 composer 入口移除（2026-07-29 拍板，工作卡改从 Neo 协同页发起），
+    // swarm agent 命名为 neo 也不在直连候选里出现。
     if (isReservedNeoMention(agent.id) || isReservedNeoMention(agent.name)) {
       return false;
     }
@@ -184,19 +184,13 @@ export function getLeadingAgentMentionAutocomplete(
     return Array.from(aliases).some((alias) => alias.startsWith(normalizedQuery));
   });
 
-  // 输入 @n / @ne / @neo 时把 Neo 工作卡作为可点候选置顶（发现性 + 顺带压掉文件 popup），
-  // 紧随其后是「续接既有 topic」候选（ADR-035 D1）。
-  const withNeo = shouldSuggestNeoMention(query)
-    ? [localizeNeoTagMentionAgent(t), ...(neoTopicCandidates ?? []), ...matches]
-    : matches;
-
-  if (withNeo.length === 0) {
+  if (matches.length === 0) {
     return null;
   }
 
   return {
     query,
-    matches: withNeo,
+    matches,
   };
 }
 

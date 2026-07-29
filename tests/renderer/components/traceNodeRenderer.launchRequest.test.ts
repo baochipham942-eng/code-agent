@@ -227,13 +227,12 @@ describe('TraceNodeRenderer launch request', () => {
       }),
     );
 
-    expect(html).toContain('WS app');
-    expect(html).toContain('Direct');
-    expect(html).toContain('@reviewer');
-    expect(html).toContain('Skill review-skill');
-    expect(html).toContain('Connector mail');
-    expect(html).toContain('MCP github');
-    expect(html).toContain('Browser Managed');
+    // 2026-07-29 拍板：轮次 chip 行整个移除（WS/Auto/@目标/专家/skill/连接器/pin/命令
+    // 都不在消息上方独立展示，由模型在回答里说明）。
+    expect(html).not.toContain('WS app');
+    expect(html).not.toContain('@reviewer');
+    expect(html).not.toContain('turn-context-chip');
+    expect(html).not.toContain('Browser Managed');
   });
 
   it('renders model decision route chip on assistant text', () => {

@@ -44,7 +44,8 @@ import { CommandPalette } from '../../../CommandPalette';
 import { SlashCommandPopover } from './SlashCommandPopover';
 import { useFileUpload } from './useFileUpload';
 import { useChatInputSessionScope } from './useChatInputSessionScope';
-import { useFileAutocomplete } from '../../../../hooks/useFileAutocomplete';
+import { useAtMentionPanel, type AtMentionFileRow } from './useAtMentionPanel';
+import { AtMentionPopover } from './AtMentionPopover';
 import { useWorkbenchBrowserSession } from '../../../../hooks/useWorkbenchBrowserSession';
 import { useSessionUIStore } from '../../../../stores/sessionUIStore';
 import { useSessionStore } from '../../../../stores/sessionStore';
@@ -56,6 +57,7 @@ import { SkillDraftNotifications } from './SkillDraftCard';
 import { RoleDraftNotifications } from './RoleDraftCard';
 import { TeamRecipeDraftNotifications } from './TeamRecipeDraftCard';
 import { SessionMemberBar } from '../../expert/SessionMemberBar';
+import { RoleInitialAvatar } from '../../expert/RoleInitialAvatar';
 import { useMemberViewStore } from '../../../../stores/memberViewStore';
 import { startCreateRoleChat } from '../../../../utils/startCreateRoleChat';
 import { computeSlashMenuValue } from '../../../../utils/composerShortcuts';
@@ -65,7 +67,6 @@ import { useI18n } from '../../../../hooks/useI18n';
 import { useAppStore } from '../../../../stores/appStore';
 import { useAppshotsStore } from '../../../../stores/appshotsStore';
 import { ComposerChipsRow } from './ComposerChipsRow';
-import { InlineWorkbenchBar } from '../InlineWorkbenchBar';
 import { useWorkbenchCapabilityRegistry } from '../../../../hooks/useWorkbenchCapabilityRegistry';
 import { ModelSwitcher } from '../../../StatusBar/ModelSwitcher';
 import ipcService from '../../../../services/ipcService';
@@ -85,7 +86,6 @@ import {
   getPreferredAgentMentionToken,
   isLeadingAgentMentionInput,
 } from './agentMentionRouting';
-import { isLeadingNeoTagInput, parseLeadingNeoTagInvocation } from './neoMentionRouting';
 import { useDragAndDrop } from './useDragAndDrop';
 import { useChatInputEnvelope } from './useChatInputEnvelope';
 import { useChatInputAgentCommand } from './useChatInputAgentCommand';
@@ -97,8 +97,12 @@ import {
   readDebugDraftFromLocation,
 } from './debugDraftUrl';
 import { getTrailingSlashToken } from './slashPickerModel';
+import type { InlineChipRef } from './composerRichTextModel';
+import type { InlineChipView } from './InlineComposerChip';
+import { buildMentionAttachment } from './mentionAttachment';
 import { AgentChip } from './AgentChip';
-import { LibraryPinModal } from '../../knowledge/LibraryPinModal';
+import { MountedConnectorIcons } from './MountedConnectorIcons';
+import { getAgentSlashCommandQuery } from './agentCommand';
 import { SurfaceExecutionComposerStatus } from '../../surfaceExecution/SurfaceExecutionRunStatus';
 import { ComposerUploadStatus } from './ComposerUploadStatus';
 
@@ -173,6 +177,9 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
 }, ref) => {
   const { t } = useI18n();
   const [value, setValue] = useState('');
+  // @ 文件附件是异步读盘构建的，chip 替换触发词时需要此刻的最新文本（闭包里的 value 可能已旧）
+  const latestValueRef = useRef('');
+  latestValueRef.current = value;
   const [voiceInputContext, setVoiceInputContext] = useState<{
     anchor: string;
     metadata: ConversationVoiceInputMetadata;
@@ -191,7 +198,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   const [showCommandPalette, setShowCommandPalette] = useState(false);
   const [slashFilter, setSlashFilter] = useState('');
   const [showSlashPopover, setShowSlashPopover] = useState(false);
-  const [showLibraryPin, setShowLibraryPin] = useState(false);
   const currentSessionProjectId = useSessionStore((s) => s.sessions.find((x) => x.id === currentSessionId)?.projectId ?? null);
   const [pendingPromptCommand, setPendingPromptCommand] = useState<ComposerPromptCommandSelection | null>(null);
   const [pendingAgentSelection, setPendingAgentSelection] = useState<ComposerAgentSelection | null>(null);
@@ -300,17 +306,14 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   const buildContext = useComposerStore((state) => state.buildContext);
   const routingMode = useComposerStore((state) => state.routingMode);
   const targetAgentIds = useComposerStore((state) => state.targetAgentIds);
+  const pendingCommand = useComposerStore((state) => state.pendingCommand);
+  const selectedSkillIds = useComposerStore((state) => state.selectedSkillIds);
   const agentEntries = useAgentRegistryStore((state) => state.entries);
   const activeAgentId = useAppStore((state) => state.activeAgentId);
   const viewingMemberId = useMemberViewStore((state) => state.viewingMemberId);
   const setViewingMemberId = useMemberViewStore((state) => state.setViewingMemberId);
   const setActiveAgentId = useAppStore((state) => state.setActiveAgentId);
   const hasMessages = useSessionStore((state) => state.messages.length > 0);
-  const currentSessionMemoryMode = useSessionStore((state) =>
-    currentSessionId
-      ? state.sessions.find((session) => session.id === currentSessionId)?.memoryMode || 'auto'
-      : 'auto'
-  );
   const swarmAgents = useSwarmStore((state) => state.agents);
   const selectedDirectAgents = useMemo(
     () => swarmAgents.filter((agent) => targetAgentIds.includes(agent.id)),
@@ -322,7 +325,78 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     }
     return undefined;
   }, [routingMode, selectedDirectAgents, swarmAgents, t]);
-  const neoTagInvocation = useMemo(() => parseLeadingNeoTagInvocation(value), [value]);
+  // /agent 面板的 typed-query（任务 15：面板顶部 query echo 行）
+  const agentCommandQuery = useMemo(() => getAgentSlashCommandQuery(value), [value]);
+
+  // 文字流内联 chip（WorkBuddy phrase chip 模型）：chip 是 store 的渲染，不是数据源。
+  // 命令 → pendingCommand（teal）；当轮 skill → selectedSkillIds（sparkle）；
+  // @ 文件 → attachments（文件类型图标）。视觉顺序由编辑器 DOM 里的挂载点位置决定。
+  const inlineChips = useMemo<InlineChipView[]>(() => {
+    const chips: InlineChipView[] = [];
+    if (pendingCommand) {
+      chips.push({ key: `command:${pendingCommand.id}`, kind: 'command', id: pendingCommand.id, label: pendingCommand.name });
+    }
+    for (const skillId of selectedSkillIds) {
+      const item = capabilityRegistry.items.find((entry) => entry.kind === 'skill' && entry.id === skillId);
+      chips.push({ key: `skill:${skillId}`, kind: 'skill', id: skillId, label: item?.label ?? skillId });
+    }
+    for (const attachment of attachments) {
+      chips.push({
+        key: `file:${attachment.id}`,
+        kind: 'file',
+        id: attachment.id,
+        label: attachment.name,
+        category: attachment.category,
+      });
+    }
+    return chips;
+  }, [pendingCommand, selectedSkillIds, attachments, capabilityRegistry.items]);
+
+  // slash 面板选中后：光标前的触发词（/goal、/sk…）原位替换成 chip 挂载点。
+  // 无触发词（+ 菜单等无光标来源）时 no-op——store 更新后编辑器对账会把 chip 补到末尾。
+  const insertInlineChip = useCallback((chip: InlineChipRef) => {
+    const editor = inputAreaRef.current;
+    if (!editor) return;
+    const caret = editor.getCaretOffset();
+    const token = getTrailingSlashToken(latestValueRef.current.slice(0, caret));
+    if (!token) return;
+    editor.replaceRangeWithChip(token.start, token.end, chip);
+  }, []);
+
+  // 内联 chip 删除（× / chip 聚焦 Delete / Backspace 紧贴删除）：从对应 store 移除，
+  // DOM 挂载点由编辑器的对账 effect 摘除（Backspace 路径已在键处理里先摘了）。
+  const handleRemoveInlineChip = useCallback((chip: InlineChipView) => {
+    if (chip.kind === 'command') {
+      const store = useComposerStore.getState();
+      if (store.pendingCommand?.id === chip.id) store.setPendingCommand(null);
+      return;
+    }
+    if (chip.kind === 'skill') {
+      const store = useComposerStore.getState();
+      store.setTurnCapabilityScopeMode('manual');
+      store.setSelectedSkillIds(store.selectedSkillIds.filter((id) => id !== chip.id));
+      return;
+    }
+    setAttachments((prev) => prev.filter((attachment) => attachment.id !== chip.id));
+  }, []);
+
+  // 浏览器侧删了 chip（框选删除 / 剪切）：DOM 现存的 chip key 回传，缺席的 store 条目同步移除。
+  const handleInlineChipsChanged = useCallback((presentKeys: string[]) => {
+    const present = new Set(presentKeys);
+    const store = useComposerStore.getState();
+    if (store.pendingCommand && !present.has(`command:${store.pendingCommand.id}`)) {
+      store.setPendingCommand(null);
+    }
+    const keptSkills = store.selectedSkillIds.filter((id) => present.has(`skill:${id}`));
+    if (keptSkills.length !== store.selectedSkillIds.length) {
+      store.setTurnCapabilityScopeMode('manual');
+      store.setSelectedSkillIds(keptSkills);
+    }
+    setAttachments((prev) => {
+      const next = prev.filter((attachment) => present.has(`file:${attachment.id}`));
+      return next.length === prev.length ? prev : next;
+    });
+  }, []);
 
   const buildEnvelope = useChatInputEnvelope({
     swarmAgents,
@@ -453,8 +527,48 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     inputAreaRef.current?.focus();
   }, []);
 
-  // @ file autocomplete
-  const { matches: fileMatches, isOpen: isAutocompleteOpen, query: atQuery, search: searchFiles, dismiss: dismissAutocomplete } = useFileAutocomplete();
+  // @ 触发面板（任务 14：资料库 pin + 工作区文件分组；任务 15：query echo + 键盘导航）
+  // 文件行选中 = 触发词原位变文件 chip + 构建附件（文本类内联内容，二进制只带路径）；
+  // 目录行保留旧行为（@path 文本）；资料库行选中在 hook 内切换 pin。
+  const handleAtFileSelect = useCallback((row: AtMentionFileRow) => {
+    const editor = inputAreaRef.current;
+    const caret = editor?.getCaretOffset() ?? latestValueRef.current.length;
+    const beforeCaret = latestValueRef.current.slice(0, caret);
+    const triggerMatch = beforeCaret.match(/@([^\s@]*)$/);
+    const triggerStart = triggerMatch ? caret - triggerMatch[0].length : caret;
+
+    if (row.isDirectory || !editor) {
+      editor?.replaceRangeWithText(triggerStart, caret, `@${row.path} `);
+      editor?.focus();
+      return;
+    }
+
+    const workingDirectory = useAppStore.getState().workingDirectory
+      ?? useSessionStore.getState().sessions.find((session) => session.id === currentSessionId)?.workingDirectory
+      ?? null;
+    void (async () => {
+      const attachment = await buildMentionAttachment({ path: row.path, name: row.name, workingDirectory });
+      // 读盘期间用户可能继续输入：以最新文本重定位触发词，找不到就交给对账把 chip 补到末尾
+      const freshCaret = editor.getCaretOffset();
+      const freshBefore = latestValueRef.current.slice(0, freshCaret);
+      const freshMatch = freshBefore.match(/@([^\s@]*)$/);
+      if (freshMatch) {
+        editor.replaceRangeWithChip(freshCaret - freshMatch[0].length, freshCaret, {
+          key: `file:${attachment.id}`,
+          kind: 'file',
+          id: attachment.id,
+        });
+      }
+      setAttachments((prev) => [...prev, attachment].slice(0, UI.MAX_ATTACHMENTS_DROP));
+    })();
+    editor.focus();
+  }, [currentSessionId]);
+  const atMention = useAtMentionPanel({
+    sessionId: currentSessionId ?? null,
+    projectId: currentSessionProjectId,
+    onFileSelect: handleAtFileSelect,
+  });
+  const { search: searchAtMention, dismiss: dismissAtMention } = atMention;
 
   // Track input changes for @ autocomplete and / command palette
   const handleValueChange = useCallback((newValue: string) => {
@@ -464,38 +578,28 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     }
     if (newValue.toLowerCase().startsWith('/agent ')) {
       setShowSlashPopover(false);
-      dismissAutocomplete();
+      dismissAtMention();
       return;
     }
-    const slashToken = getTrailingSlashToken(newValue);
+    // 触发词识别是光标位置感知的：只看光标前的纯文本算尾 token
+    const caret = inputAreaRef.current?.getCaretOffset() ?? newValue.length;
+    const beforeCaret = newValue.slice(0, caret);
+    const slashToken = getTrailingSlashToken(beforeCaret);
     // Composer-native slash picker: supports leading "/" and tail tokens like "帮我整理 /sum".
     if (slashToken) {
       setShowSlashPopover(true);
       setSlashFilter(slashToken.query);
-      dismissAutocomplete();
+      dismissAtMention();
       return;
     }
     setShowSlashPopover(false);
-    if (isLeadingNeoTagInput(newValue)) {
-      dismissAutocomplete();
-      return;
-    }
     if (isLeadingAgentMentionInput(newValue, swarmAgents)) {
-      dismissAutocomplete();
+      dismissAtMention();
       return;
     }
-    // Check for @ pattern at cursor position (approximate: end of string)
-    searchFiles(newValue, newValue.length);
-  }, [dismissAutocomplete, pendingPromptCommand, searchFiles, swarmAgents]);
-
-  // Handle @ file selection
-  const handleFileSelectAutocomplete = useCallback((filePath: string) => {
-    // Replace @query with the file path
-    const beforeAt = value.replace(new RegExp(`@${atQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`), '');
-    setValue(beforeAt + '@' + filePath + ' ');
-    dismissAutocomplete();
-    inputAreaRef.current?.focus();
-  }, [value, atQuery, dismissAutocomplete]);
+    // Check for @ pattern at cursor position
+    searchAtMention(newValue, caret);
+  }, [dismissAtMention, pendingPromptCommand, searchAtMention, swarmAgents]);
 
   const focusComposer = useCallback(() => {
     requestAnimationFrame(() => inputAreaRef.current?.focus());
@@ -522,6 +626,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     setValue,
     setShowSlashPopover,
     setSlashFilter,
+    setPendingAgentSelection,
+    setActiveAgentId,
   });
 
   // 斜杠命令 / 能力选择单元：slash popover 选择分发 + skill/connector/mcp 当轮挂载
@@ -537,6 +643,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     capabilityItems: capabilityRegistry.items,
     openAgentCommand,
     focusComposer,
+    insertInlineChip,
     setValue,
     setShowSlashPopover,
     setSlashFilter,
@@ -553,6 +660,11 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     getNextInput,
     resetInputHistoryIndex,
   } = useSessionUIStore();
+
+  // 键盘导航分发：@ 面板与 agent 自动补全互斥打开，先问 @ 面板再交 agent 链路
+  const handleComposerAutocompleteKeyDown = useCallback((e: React.KeyboardEvent<HTMLElement>) => (
+    atMention.handleKeyDown(e) || handleAutocompleteKeyDown(e)
+  ), [atMention.handleKeyDown, handleAutocompleteKeyDown]);
 
   const resolvedPlaceholder = useMemo(() => {
     if (inputPlaceholder) return inputPlaceholder;
@@ -592,16 +704,12 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     setActiveAgentId,
   });
 
-  // 附件 / 语音 / 记忆开关动作单元
+  // 附件 / 语音动作单元
   const {
     handleFileSelect,
     handleImagePaste,
-    removeAttachment,
     handleVoiceTranscript,
-    handleMemoryModeToggle,
   } = useChatInputComposerActions({
-    currentSessionId,
-    currentSessionMemoryMode,
     processFile,
     inputAreaRef,
     setIsUploading,
@@ -704,7 +812,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   // 圆环 hover 展开时与上下文用量同面板展示，底栏不再常驻成本数字。
   // useBudgetStatus 不是定时轮询：仅在成本前进 / 流式结束时各拉一次，挂在 pill 侧。
 
-  const hasContent = value.trim().length > 0 || attachments.length > 0;
+  const hasContent = value.trim().length > 0 || attachments.length > 0 || Boolean(pendingCommand);
   // 右侧主按钮的归属：只有「空输入框 + 没在跑 + 语音入口真能用」时才让给开通话，
   // 其余情况发送键都有事可做（发送 / 停止），不能被换掉。
   //
@@ -731,14 +839,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     >
       {/* Command Palette triggered by / */}
       <CommandPalette isOpen={showCommandPalette} onClose={() => setShowCommandPalette(false)} />
-      {/* Batch 2 L2: 资料库 Pin 选择器 */}
-      {showLibraryPin && currentSessionId && (
-        <LibraryPinModal
-          sessionId={currentSessionId}
-          projectId={currentSessionProjectId}
-          onClose={() => setShowLibraryPin(false)}
-        />
-      )}
       <form ref={formRef} onSubmit={handleSubmit} className="max-w-3xl mx-auto">
         {/* 会话内循环（/loop）运行状态条 */}
         <LoopStatusBar sessionId={currentSessionId} />
@@ -804,8 +904,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
         {/* Appshot 飞入动画落点锚（0 高，仅用于测量 composer 槽位屏幕坐标） */}
         <div ref={appshotSlotRef} aria-hidden className="h-0" />
 
-        <ComposerChipsRow pendingAppshot={pendingAppshot} clearAppshot={clearAppshot} attachments={attachments} removeAttachment={removeAttachment} />
-
         {/* 拖放提示 */}
         {isDragOver && (
           <div className="absolute inset-0 flex items-center justify-center bg-zinc-800-950/90 backdrop-blur-sm z-10 rounded-xl border-2 border-dashed border-primary-500">
@@ -836,7 +934,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
         )}
 
         <SurfaceExecutionComposerStatus conversationId={currentSessionId} />
-        <InlineWorkbenchBar />
         <CapabilitySuggestionStrip
           skillRecommendations={skillRecommendations}
           capabilitySuggestions={capabilitySuggestions}
@@ -896,6 +993,12 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
               <div className="border-b border-zinc-800 px-3 py-1.5 text-[10px] uppercase tracking-wide text-zinc-500">
                 /agent
               </div>
+              {/* 任务 15：query echo —— 输入过滤词可见，空 query 给搜索提示 */}
+              <div className="border-b border-zinc-800 px-3 py-1.5 text-[11px] text-zinc-500">
+                {agentCommandQuery?.trim()
+                  ? t.mentionPanel.searchEcho.replace('{query}', agentCommandQuery).replace('{count}', String(agentCommandOptions.length))
+                  : t.mentionPanel.emptyHintAgent}
+              </div>
               {agentCommandOptions.map((option, index) => (
                 <React.Fragment key={option.id ?? 'default'}>
                   {option.group === 'role' && agentCommandOptions[index - 1]?.group !== 'role' && (
@@ -912,14 +1015,24 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
                       : 'text-zinc-300 hover:bg-zinc-800/70'
                   }`}
                 >
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium truncate">{option.name}</span>
-                    <span className="ml-auto rounded bg-white/[0.04] px-1.5 py-0.5 text-[10px] font-mono text-zinc-500">
-                      {option.token}
+                  <div className="flex items-start gap-2.5">
+                    <span className="mt-0.5 shrink-0">
+                      <RoleInitialAvatar roleId={option.id ?? 'default'} name={option.name} className="h-6 w-6 text-[11px]" />
                     </span>
-                  </div>
-                  <div className="mt-0.5 truncate text-[11px] text-zinc-500">
-                    {option.description}
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium truncate">{option.name}</span>
+                        {option.profession ? (
+                          <span className="shrink-0 truncate text-[10px] text-zinc-500">{option.profession}</span>
+                        ) : null}
+                        <span className="ml-auto rounded bg-white/[0.04] px-1.5 py-0.5 text-[10px] font-mono text-zinc-500">
+                          {option.token}
+                        </span>
+                      </div>
+                      <div className="mt-0.5 line-clamp-2 text-[11px] text-zinc-500">
+                        {option.description}
+                      </div>
+                    </div>
                   </div>
                 </button>
                 </React.Fragment>
@@ -940,6 +1053,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
             <div className="absolute bottom-full left-0 right-0 mb-1 elevation-l2 popover-enter rounded-lg z-20 max-h-[240px] overflow-y-auto">
               {agentMentionAutocomplete.matches.map((agent, index) => {
                 const agentRole = (agent as { role?: string }).role;
+                // Neo 合成候选（工作卡 / 续接 topic）自带 role：主文案直接用 name
+                // （「Neo 工作卡」/「Neo · {标题}」），@token 降为次要信息，两行一眼可辨。
                 return (
                   <button
                     key={agent.id}
@@ -952,8 +1067,12 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
                     }`}
                   >
                     <div className="flex items-center gap-2">
-                      <span className="text-sm text-zinc-200">@{getPreferredAgentMentionToken(agent)}</span>
-                      <span className="text-xs text-zinc-500 truncate">{agent.name}</span>
+                      <span className="text-sm text-zinc-200 truncate">
+                        {agentRole ? agent.name : `@${getPreferredAgentMentionToken(agent)}`}
+                      </span>
+                      <span className="text-xs text-zinc-500 truncate">
+                        {agentRole ? `@${getPreferredAgentMentionToken(agent)}` : agent.name}
+                      </span>
                       {agentRole ? (
                         <span className="ml-auto text-[11px] text-zinc-600 truncate">{agentRole}</span>
                       ) : null}
@@ -963,22 +1082,17 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
               })}
             </div>
           )}
-          {(!isAgentMentionAutocompleteOpen && !neoTagInvocation && isAutocompleteOpen && fileMatches.length > 0) && (
-            <div className="absolute bottom-full left-0 right-0 mb-1 elevation-l2 popover-enter rounded-lg z-20 max-h-[200px] overflow-y-auto">
-              {fileMatches.map((f, i) => (
-                <button
-                  key={i}
-                  type="button"
-                  onClick={() => handleFileSelectAutocomplete(f.path)}
-                  className="w-full px-3 py-1.5 text-left text-sm text-zinc-400 hover:bg-zinc-700 transition-colors font-mono truncate"
-                >
-                  {f.name}
-                </button>
-              ))}
-            </div>
+          {(!isAgentMentionAutocompleteOpen && atMention.isOpen) && (
+            <AtMentionPopover
+              query={atMention.query}
+              libraryRows={atMention.libraryRows}
+              fileRows={atMention.fileRows}
+              selectedIndex={atMention.selectedIndex}
+              onSelect={atMention.selectRow}
+              onHover={atMention.setSelectedIndex}
+            />
           )}
-          {/* Neo Tag 轻量化重设计:@neo = 正常输入,composer 不再显示 "work card" 预览 chip
-              (产品负责人 2026-07-02)。neoTagInvocation 仍用于压掉文件 mention 弹窗噪音。 */}
+          {/* @neo 交互已从 composer 移除（2026-07-29 拍板）：工作卡/续接改从 Neo 协同页发起 */}
           <InputArea
             ref={inputAreaRef}
             value={value}
@@ -995,23 +1109,26 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
             onHistoryPrev={getPreviousInput}
             onHistoryNext={getNextInput}
             onHistoryReset={resetInputHistoryIndex}
-            onAutocompleteKeyDown={handleAutocompleteKeyDown}
+            onAutocompleteKeyDown={handleComposerAutocompleteKeyDown}
+            chips={(
+              <ComposerChipsRow
+                pendingAppshot={pendingAppshot}
+                clearAppshot={clearAppshot}
+              />
+            )}
+            inlineChips={inlineChips}
+            onRemoveInlineChip={handleRemoveInlineChip}
+            onInlineChipsChanged={handleInlineChipsChanged}
           />
           <RuntimeInputShortcutHint isProcessing={Boolean(isProcessing)} hasDraft={Boolean(value.trim())} />
           {/* 底部工具栏。录音中这一行**原地变成波形条**（`+` 留在最左，波形铺中间，
               右侧 时长 + 停止 + 发送）——不在输入框上方另悬浮一条，也就不会出现
               两个发送键（产品负责人 2026-07-27 真机反馈，形态对齐 Codex composer）。
               输入框本体全程可见可编辑。 */}
-          <div className="flex items-center gap-1 px-3 pb-3">
-            {/* "+" 二级菜单（Codex 风格 B+）— 收纳 /命令 + 上传附件 + 交互模式 */}
+          <div className="flex items-center gap-1 px-4 pb-3">
+            {/* "+" 二级菜单（Codex 风格 B+）— 收纳上传附件 + 能力入口 + 交互模式 */}
             <InputAddMenu
-              onSlashCommand={() => { setShowSlashPopover(true); setSlashFilter(''); }}
               onFileSelect={handleFileSelect}
-              memoryMode={currentSessionMemoryMode}
-              onToggleMemory={handleMemoryModeToggle}
-              memoryToggleDisabled={!currentSessionId}
-              onOpenLibrary={() => setShowLibraryPin(true)}
-              libraryDisabled={!currentSessionId}
               onSelectCapability={selectWorkbenchCapabilityForCurrentTurn}
             />
 
@@ -1029,14 +1146,15 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
               />
             ) : (
             <>
-            {/* 专家在主位：用户是在跟「人」协作，这行最该先看到的是它（带头像）。
-                权限档紧跟其后并弱一档——它是"这次对话怎么放权"，是专家的属性而不是同级的另一样东西。 */}
+            {/* 专家有专门位置：底栏最左（头像+花名）。它不跟着单轮 chip 走，
+                是这场对话「在跟谁协作」的常驻身份。 */}
             <AgentChip onOpenAgentCommand={openAgentCommand} />
+
+            {/* 当前会话挂载的连接器 / MCP 小图标（无挂载不渲染），点击即取消挂载 */}
+            <MountedConnectorIcons />
 
             {/* 运行权限模式 chip（高频，保留独立位置） */}
             <PermissionToggle disabled={disabled && !isProcessing} />
-
-            {/* C-6: 本会话记忆开关默认开启，已从底栏移入 InputAddMenu 二级菜单（低频功能不常驻） */}
 
             {/* B+ 移除: AbilityMenu (Routing/Browser/Live Preview) — 挪到 Settings；
                 Live Preview 后续挪到 SessionWorkspaceBar 顶栏 */}

@@ -39,7 +39,7 @@ describe('SessionMemberBar', () => {
     swarmState.activeSessionId = undefined;
     invokeMock.mockReset();
     invokeMock.mockResolvedValue([]);
-    useComposerStore.setState({ selectedTeamRecipeId: null });
+    useComposerStore.setState({ selectedTeamRecipeId: null, standbyExcludedMemberKeys: [] });
     useTeamRecipeStore.setState({ recipes: [], isLoaded: true });
     useAgentRegistryStore.setState({ entries: [], isLoaded: true });
     useMemberViewStore.setState({ viewingMemberId: null });
@@ -115,6 +115,59 @@ describe('SessionMemberBar', () => {
     expect(screen.queryByTestId('member-status-completed')).toBeNull();
     // 还没跑，没有「主会话」可回
     expect(screen.queryByTestId('member-pill-leader')).toBeNull();
+  });
+
+  it('待命成员 pill 的 × 把该成员排除出本次预选，配方预选本身保留', async () => {
+    useTeamRecipeStore.setState({
+      recipes: [{ id: 'r1', name: '上线评审', description: '', category: 'automation', lead: { roleId: '牧之', briefTemplate: '汇总 {topic}' }, members: [{ roleId: '溯真', taskTemplate: '调研 {topic}' }, { roleId: '青禾', taskTemplate: '写作 {topic}' }] }],
+      isLoaded: true,
+    });
+    useComposerStore.setState({ selectedTeamRecipeId: 'r1' });
+
+    render(<SessionMemberBar sessionId="session-1" />);
+    await waitFor(() => expect(screen.getByTestId('member-pill-青禾')).toBeTruthy());
+
+    fireEvent.click(screen.getByTestId('member-standby-remove-青禾'));
+
+    await waitFor(() => expect(screen.queryByTestId('member-pill-青禾')).toBeNull());
+    expect(useComposerStore.getState().standbyExcludedMemberKeys).toEqual(['青禾']);
+    expect(useComposerStore.getState().selectedTeamRecipeId).toBe('r1');
+    expect(screen.getByTestId('member-pill-牧之')).toBeTruthy();
+    expect(screen.getByTestId('member-pill-溯真')).toBeTruthy();
+  });
+
+  it('待命成员 × 到最后一个不剩时整团取消预选', async () => {
+    useTeamRecipeStore.setState({
+      recipes: [{ id: 'r1', name: '上线评审', description: '', category: 'automation', lead: { roleId: '牧之', briefTemplate: '汇总 {topic}' }, members: [{ roleId: '溯真', taskTemplate: '调研 {topic}' }] }],
+      isLoaded: true,
+    });
+    useComposerStore.setState({ selectedTeamRecipeId: 'r1' });
+
+    render(<SessionMemberBar sessionId="session-1" />);
+    await waitFor(() => expect(screen.getByTestId('member-pill-溯真')).toBeTruthy());
+
+    fireEvent.click(screen.getByTestId('member-standby-remove-牧之'));
+    fireEvent.click(screen.getByTestId('member-standby-remove-溯真'));
+
+    await waitFor(() => expect(screen.queryByTestId('session-member-bar')).toBeNull());
+    expect(useComposerStore.getState().selectedTeamRecipeId).toBeNull();
+    expect(useComposerStore.getState().standbyExcludedMemberKeys).toEqual([]);
+  });
+
+  it('待命成员 pill 聚焦后按 Delete 也能排除', async () => {
+    useTeamRecipeStore.setState({
+      recipes: [{ id: 'r1', name: '上线评审', description: '', category: 'automation', lead: { roleId: '牧之', briefTemplate: '汇总 {topic}' }, members: [{ roleId: '溯真', taskTemplate: '调研 {topic}' }, { roleId: '青禾', taskTemplate: '写作 {topic}' }] }],
+      isLoaded: true,
+    });
+    useComposerStore.setState({ selectedTeamRecipeId: 'r1' });
+
+    render(<SessionMemberBar sessionId="session-1" />);
+    await waitFor(() => expect(screen.getByTestId('member-pill-青禾')).toBeTruthy());
+
+    fireEvent.keyDown(screen.getByTestId('member-pill-青禾'), { key: 'Delete' });
+
+    await waitFor(() => expect(screen.queryByTestId('member-pill-青禾')).toBeNull());
+    expect(useComposerStore.getState().standbyExcludedMemberKeys).toEqual(['青禾']);
   });
 
   it('把持久化成员记录映射为工作记录所需的实时状态', () => {

@@ -16,6 +16,7 @@ import { modalPrimitivesEn } from './modalPrimitives';
 import { userQuestionEn } from './userQuestion';
 import { taskStatusPanelsEn } from './taskStatusPanels';
 import { noticesEn } from './notices';
+import { agentErrorEn } from './agentError';
 import { labEn } from './lab';
 import { labGpt1En } from './labGpt1';
 import { labNanogptEn } from './labNanogpt';
@@ -807,7 +808,6 @@ export const en: Translations = {
 
   // /agent 命令与面板
   agentCommand: {
-    defaultDescription: 'Resume auto routing',
     roleGroupLabel: 'Roles',
     createRoleEntry: 'New role…',
     switchedToPrefix: 'Switched to ',
@@ -816,6 +816,7 @@ export const en: Translations = {
     chipTitlePrefix: 'Current agent: ',
     chipTitleSuffix: '. Type /agent to switch.',
     chipAriaLabel: 'Current agent',
+    chipRemoveAria: 'Remove expert {name}; restore auto routing',
     badgeNotAppliedSuffix: ' not applied',
     badgeNotAppliedTitlePrefix: 'Requested agent was not applied this turn; actually ran: ',
     degradedToastPrefix: 'Requested agent ',
@@ -916,6 +917,7 @@ export const en: Translations = {
   ...userQuestionEn,
   ...taskStatusPanelsEn,
   ...noticesEn,
+  ...agentErrorEn,
   ...labEn,
   ...labGpt1En,
   ...labNanogptEn,
@@ -962,20 +964,6 @@ export const en: Translations = {
     removeAria: 'Remove capability: {name}',
   },
 
-  inlineWorkbenchBar: {
-    skillsSummary: 'Skills {selected}/{total}',
-    connectorsSummary: 'Connectors {selected}/{total}',
-    mcpSummary: 'MCP servers {selected}/{total}',
-    capabilities: 'Capabilities',
-    expandCapabilitiesAria: 'Expand capability list',
-    collapseCapabilitiesAria: 'Collapse capability list',
-    auto: 'Auto',
-    manual: 'Manual',
-    autoTitle: 'Automatically select available capabilities',
-    manualTitle: 'Manually limit capabilities for this turn',
-    noMountedSkills: 'No skills are mounted for this session yet.',
-  },
-
   commandPalette: {
     ariaLabel: 'Command palette',
     searchPlaceholder: 'Search commands…',
@@ -1006,8 +994,6 @@ export const en: Translations = {
       prefillPromptWithArgs: 'Prefill, then add args',
       prefillPrompt: 'Prefill prompt',
       setAgentForTurn: 'Set agent for this turn',
-      restoreAutoAgent: 'Restore auto agent',
-      defaultAgentDescription: 'Restore automatic routing',
       mountedSkillPrefix: 'Mounted skill',
       selectForTurn: 'Select for this turn',
       mountAndSelect: 'Mount & select for this turn',

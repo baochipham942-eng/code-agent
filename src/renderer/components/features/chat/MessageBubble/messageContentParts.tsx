@@ -4,7 +4,7 @@
 // ============================================================================
 
 import React, { useState, useMemo, useCallback, memo, useRef, useEffect, lazy, Suspense } from 'react';
-import { Code2, Copy, Check, ExternalLink, Play, ZoomIn, ZoomOut, ClipboardCopy, MessageSquare, MessageSquarePlus, Settings } from 'lucide-react';
+import { Code2, Copy, Check, ExternalLink, Eye, Play, ZoomIn, ZoomOut, ClipboardCopy, MessageSquare, MessageSquarePlus, Settings } from 'lucide-react';
 import { loadMermaid } from './mermaidLoader';
 import { UI } from '@shared/constants';
 import type { Components } from 'react-markdown';
@@ -873,12 +873,13 @@ export const InlineCode = memo(function InlineCode({
     );
   }
 
-  // File path - make it clickable
+  // File path - clickable。非核心信息不做亮色（primary-300 在整段回复里太跳），
+  // 用与正文同级的灰字 + hover 微亮来表达可点；点击进 app 内预览，不再直接打开本地文件。
   const { path: filePath, lineNumber } = parseFilePathWithLine(text);
 
   return (
     <code
-      className="inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5 rounded-md bg-surface-hover text-primary-300 text-xs font-mono cursor-pointer hover:bg-white/[0.1] hover:text-primary-200 transition-colors group"
+      className="inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5 rounded-md bg-surface-hover text-zinc-300 text-xs font-mono cursor-pointer hover:bg-white/[0.1] hover:text-zinc-100 transition-colors group"
       onClick={() => {
         if (isHtml && onPreviewHtml) {
           onPreviewHtml(filePath);
@@ -886,13 +887,13 @@ export const InlineCode = memo(function InlineCode({
           onOpenFile(filePath, lineNumber);
         }
       }}
-      title={isHtml ? '点击预览' : lineNumber ? `点击打开文件（第 ${lineNumber} 行）` : '点击打开文件'}
+      title={isHtml ? '点击预览' : lineNumber ? `点击预览（第 ${lineNumber} 行）` : '点击预览'}
     >
       {children}
       {isHtml ? (
         <Play className="w-3 h-3 opacity-50 group-hover:opacity-100 text-blue-400" />
       ) : (
-        <ExternalLink className="w-3 h-3 opacity-50 group-hover:opacity-100" />
+        <Eye className="w-3 h-3 opacity-50 group-hover:opacity-100" />
       )}
     </code>
   );

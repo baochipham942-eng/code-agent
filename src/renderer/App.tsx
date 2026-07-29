@@ -145,6 +145,8 @@ export const App: React.FC = () => {
   useAgentHalo(); // CUA 原生驱动时的系统级光晕跟随（单指针共驾聚光灯）
   const {
     showSettings,
+    showPromptManager,
+    showDesktopPanel,
     setTaskPanelTab,
     showCapabilityHub,
     expertDetailRoleId,
@@ -829,11 +831,14 @@ export const App: React.FC = () => {
 
   // 侧栏是否真的在画（收起 / 非 standard 档都不画）——顶栏该不该存在跟着它走。
   const isSidebarVisible = isStandard && !sidebarCollapsed;
-  // 侧栏常驻的 inline 二级页（能力中心/资料库/自动化/专家详情/知识记忆/本机操作/评测中心）
-  // 在位时，顶栏收敛。评测中心 2026-07-27 拍板从 overlay 改 inline，一并计入。
+  // 侧栏常驻的 inline 二级页（能力中心/资料库/自动化/专家详情/知识记忆/本机操作/评测中心，
+  // 以及 2026-07-29 起统一收进 inline 的账号菜单页：设置/提示词库/Lab/时间能力/活动/
+  // Neo 协同/桌面状态）在位时，顶栏收敛。评测中心 2026-07-27 拍板从 overlay 改 inline，一并计入。
   const inlineSecondaryPageActive = Boolean(
     expertDetailRoleId || showKnowledgeMemoryPanel || showLibraryPanel
     || showCapabilityHub || showCronCenter || showLocalOpsPanel || showEvalCenter
+    || showSettings || showPromptManager || showLab || showTimeCapabilityCenter
+    || showActivityPanel || showProjectCollaborationPage || showDesktopPanel
   );
 
   const renderWorkbenchContent = () => (
@@ -882,7 +887,40 @@ export const App: React.FC = () => {
 
             {/* Content Area */}
             <div className="flex-1 min-h-0 flex overflow-hidden">
-              {expertDetailRoleId ? (
+              {/* 账号菜单打开的页面统一走 inline（2026-07-29 拍板：侧栏常驻 + 右侧内容区接管），
+                  排在既有二级页之前 = 沿用 overlay 时代「后开者盖住先开者、关掉后露出」的语义；
+                  提示词库排在设置前，于是设置内（SoulSettings）打开提示词库时盖住设置、关闭回到设置。 */}
+              {showDesktopPanel ? (
+                <FullScreenPage testId="desktop-status-panel" variant="inline">
+                  <NativeDesktopSection
+                    variant="fullscreen"
+                    onClose={() => useAppStore.getState().setShowDesktopPanel(false)}
+                  />
+                </FullScreenPage>
+              ) : showProjectCollaborationPage ? (
+                <ProjectCollaborationPage
+                  projectId={visibleProjectCollaborationProjectId}
+                  onClose={closeProjectCollaborationPage}
+                />
+              ) : showActivityPanel ? (
+                <React.Suspense fallback={null}>
+                  <ActivityPanel onClose={() => setShowActivityPanel(false)} />
+                </React.Suspense>
+              ) : showTimeCapabilityCenter ? (
+                <React.Suspense fallback={null}>
+                  <TimeCapabilityPanel onClose={() => useAppStore.getState().setShowTimeCapabilityCenter(false)} />
+                </React.Suspense>
+              ) : showLab ? (
+                <React.Suspense fallback={null}>
+                  <LabPage />
+                </React.Suspense>
+              ) : showPromptManager ? (
+                <PromptManagerModal />
+              ) : showSettings ? (
+                <React.Suspense fallback={null}>
+                  <SettingsModal />
+                </React.Suspense>
+              ) : expertDetailRoleId ? (
                 <RoleDetailPage roleId={expertDetailRoleId} />
               ) : showKnowledgeMemoryPanel ? (
                 <React.Suspense fallback={null}>
@@ -932,25 +970,8 @@ export const App: React.FC = () => {
           </div>
       </div>
 
-      {/* Settings Modal */}
-      {showSettings && (
-        <React.Suspense fallback={null}>
-          <SettingsModal />
-        </React.Suspense>
-      )}
-
-      {/* Prompt Manager Modal */}
-      <PromptManagerModal />
-
       {/* V2-A: DevServerLauncher 自管 visibility，挂全局 */}
       <DevServerLauncher />
-
-      {/* Lab Page */}
-      {showLab && (
-        <React.Suspense fallback={null}>
-          <LabPage />
-        </React.Suspense>
-      )}
 
       {/* Workflow Page - 全屏工作流可视化 */}
       {dagPanelEnabled && showDAGPanel && (
@@ -1078,25 +1099,6 @@ export const App: React.FC = () => {
         </React.Suspense>
       )}
 
-      {showTimeCapabilityCenter && (
-        <React.Suspense fallback={null}>
-          <TimeCapabilityPanel onClose={() => useAppStore.getState().setShowTimeCapabilityCenter(false)} />
-        </React.Suspense>
-      )}
-
-      {showActivityPanel && (
-        <React.Suspense fallback={null}>
-          <ActivityPanel onClose={() => setShowActivityPanel(false)} />
-        </React.Suspense>
-      )}
-
-      {showProjectCollaborationPage && (
-        <ProjectCollaborationPage
-          projectId={visibleProjectCollaborationProjectId}
-          onClose={closeProjectCollaborationPage}
-        />
-      )}
-
       {showAgentTeamPanel && currentSessionId && swarmActiveRunId && swarmActiveSessionId === currentSessionId && (
         <div className="fixed inset-0 z-50 flex items-center justify-end">
           <div
@@ -1115,16 +1117,6 @@ export const App: React.FC = () => {
             </React.Suspense>
           </div>
         </div>
-      )}
-
-      {/* Desktop Collector Panel - 全局记忆时间线面板 */}
-      {useAppStore((s) => s.showDesktopPanel) && (
-        <FullScreenPage testId="desktop-status-panel">
-          <NativeDesktopSection
-            variant="fullscreen"
-            onClose={() => useAppStore.getState().setShowDesktopPanel(false)}
-          />
-        </FullScreenPage>
       )}
 
 

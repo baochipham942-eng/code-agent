@@ -895,6 +895,7 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
               forceExpanded={hasSearchMatch}
               highlightActive={isActiveMatchTurn}
               isActiveTurn={isStreaming}
+              isLastTurn={isLast}
               sessionStatus={exposesSessionRuntime ? sessionStatus : null}
               isSessionProcessing={exposesSessionRuntime ? isProjectionSessionProcessing : false}
               streamSnapshot={projectionStreamSnapshot}

@@ -6,6 +6,7 @@ import type { ConnectorLifecycleAction, ConnectorStatusSummary } from '@shared/i
 import {
   extractWorkbenchReferenceFromToolCall,
 } from '@shared/contract/workbenchTools';
+import { getBuiltinMcpCatalogPayload } from '@shared/constants/mcpCatalog';
 import { useComposerStore } from '../stores/composerStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { useSkillStore } from '../stores/skillStore';
@@ -49,8 +50,22 @@ export interface WorkbenchMcpCapability {
   toolCount: number;
   resourceCount: number;
   error?: string;
+  /** 与能力中心「连接器」页同源的目录描述（MCP catalog）；目录外的自建 server 没有 */
+  description?: string;
   authMode?: MCPServerStateSummary['authMode'];
   hasOAuthTokens?: boolean;
+}
+
+// MCP 目录描述查表：与能力中心「连接器」页（McpDiscoverTab）同源，
+// 懒构建一次缓存，避免每次 build registry 都重扫目录。
+let mcpCatalogDescriptionMap: Map<string, string> | null = null;
+export function getMcpCatalogDescription(serverId: string): string | undefined {
+  if (!mcpCatalogDescriptionMap) {
+    mcpCatalogDescriptionMap = new Map(
+      getBuiltinMcpCatalogPayload().servers.map((entry) => [entry.id, entry.description]),
+    );
+  }
+  return mcpCatalogDescriptionMap.get(serverId);
 }
 
 export interface WorkbenchCapabilities {
@@ -199,6 +214,7 @@ export function buildWorkbenchCapabilities(args: {
       toolCount: server?.toolCount || 0,
       resourceCount: server?.resourceCount || 0,
       error: server?.error,
+      description: getMcpCatalogDescription(serverId),
       authMode: server?.authMode,
       hasOAuthTokens: server?.hasOAuthTokens,
     };

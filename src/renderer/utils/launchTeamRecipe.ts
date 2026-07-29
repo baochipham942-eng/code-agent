@@ -7,6 +7,7 @@ export async function launchTeamRecipe(
   recipeId: string,
   recipeName: string,
   topic: string,
+  excludeMemberKeys?: string[],
 ): Promise<LaunchRecipeResult> {
   const app = useAppStore.getState();
   app.setShowCapabilityHub(false);
@@ -20,5 +21,5 @@ export async function launchTeamRecipe(
   }
   if (!session) return { ok: false };
 
-  return launchRecipe(session.id, recipeId, topic);
+  return launchRecipe(session.id, recipeId, topic, excludeMemberKeys);
 }

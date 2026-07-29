@@ -133,9 +133,9 @@ export const PromptManagerModal: React.FC = () => {
   return (
     <FullScreenPage
       role="dialog"
-      aria-modal="true"
       aria-label="提示词"
       testId="prompt-manager-panel"
+      variant="inline"
     >
       <FullScreenPageHeader
         icon={<ScrollText className="h-4 w-4 text-violet-300" />}

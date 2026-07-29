@@ -147,6 +147,12 @@ export const enSettingsModels = {
         unverifiedHint: 'Tool calling is unverified for these models. Picking one means Neo may stall or do nothing mid-task — at your own risk.',
         contextLabel: 'Context',
         effortSectionLabel: 'Thinking depth',
+        // Merged thinking segment (Thinking + Effort): Off/Low/Med/High quarters
+        thinkingSectionLabel: 'Thinking',
+        thinkingOptionOff: 'Off',
+        thinkingOptionLow: 'Low',
+        thinkingOptionMedium: 'Med',
+        thinkingOptionHigh: 'High',
         setDefault: 'Set default',
         setDefaultSaving: 'Saving...',
         selectableLabel: 'In picker',

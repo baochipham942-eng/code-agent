@@ -39,7 +39,6 @@ function renderRow() {
       searchQuery=""
       messageSearchHitsBySessionId={{}}
       replayEvidenceBySessionId={new Map()}
-      canOpenSessionReplay={true}
       reviewItemsBySessionId={{}}
       trajectoryQualityBySessionId={{}}
       multiSelectMode={false}
@@ -53,8 +52,6 @@ function renderRow() {
       handleRenameSubmit={vi.fn()}
       handleRenameKeyDown={vi.fn()}
       handleDoubleClick={vi.fn()}
-      handleOpenSessionReplayInEvalCenter={vi.fn()}
-      handleOpenSessionAssets={vi.fn()}
       handleOpenReplayEvidence={vi.fn()}
       handleSelectMessageSearchHit={vi.fn()}
       handleArchiveSession={vi.fn()}

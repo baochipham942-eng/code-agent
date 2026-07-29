@@ -3,7 +3,6 @@ import { IPC_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
 import type { ConfigScopeSummary } from '@shared/contract/configScope';
 import type { StructuredReplay } from '@shared/contract/evaluation';
 import type { SessionWithMeta } from '../../../stores/sessionStore';
-import { useAppStore } from '../../../stores/appStore';
 import type { ToastType } from '../../../stores/uiStore';
 import type { Translations } from '../../../i18n';
 import ipcService from '../../../services/ipcService';
@@ -65,8 +64,6 @@ export interface SidebarRowActions {
   saveExportToDownloads: (fileName: string, content: string) => Promise<void>;
   openRuntimeLogsFolder: () => Promise<boolean>;
   handleOpenSessionReplay: (session: SessionWithMeta) => Promise<void>;
-  /** 会话行 hover 眼睛图标：打开评测中心回放 tab 并预选该会话（2026-07 评测中心 v1）。 */
-  handleOpenSessionReplayInEvalCenter: (session: SessionWithMeta) => void;
   handleOpenReplayEvidence: (session: SessionWithMeta, evidence: SessionReplayEvidence) => Promise<void>;
   handleContextMenu: (e: React.MouseEvent, session: SessionWithMeta) => void;
   handleDoubleClick: (e: React.MouseEvent, session: SessionWithMeta) => void;
@@ -181,17 +178,9 @@ export function useSidebarRowActions(params: UseSidebarRowActionsParams): Sideba
     }
   }, [canOpenSessionReplay, setReplayDialog, showToast, menu]);
 
-  // hover 眼睛图标走评测中心（不回放弹窗）：回放已收编为评测中心的一个 tab，
-  // 弹窗路径仍保留给证据跳转 / 右键菜单这些需要 workflowRuns 合并的旧流程。
-  const openEvalCenter = useAppStore((s) => s.openEvalCenter);
-  const handleOpenSessionReplayInEvalCenter = useCallback((session: SessionWithMeta) => {
-    if (!canOpenSessionReplay) {
-      showToast('warning', menu.replayAdminOnlyToast);
-      return;
-    }
-    openEvalCenter('replay', session.id);
-  }, [canOpenSessionReplay, openEvalCenter, showToast, menu]);
-
+  // 会话行 hover 眼睛图标已撤（2026-07-29 侧栏项目区 redesign：hover 只留归档），
+  // 评测中心回放 tab 的入口只剩评测中心自身；回放弹窗路径仍保留给证据跳转 / 右键菜单
+  // 这些需要 workflowRuns 合并的旧流程。
   const handleOpenReplayEvidence = useCallback(async (
     session: SessionWithMeta,
     evidence: SessionReplayEvidence,
@@ -246,7 +235,6 @@ export function useSidebarRowActions(params: UseSidebarRowActionsParams): Sideba
     saveExportToDownloads,
     openRuntimeLogsFolder,
     handleOpenSessionReplay,
-    handleOpenSessionReplayInEvalCenter,
     handleOpenReplayEvidence,
     handleContextMenu,
     handleDoubleClick,

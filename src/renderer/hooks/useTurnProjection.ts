@@ -402,9 +402,12 @@ export function projectTurns(
         msg.reasoning?.trim().length || msg.thinking?.trim().length,
       );
       const hasToolCalls = msg.toolCalls && msg.toolCalls.length > 0;
+      // 运行失败的结构化错误挂在 metadata 上（AgentErrorCard），content 可能为空——
+      // 不能按"空消息"跳过，否则错误卡片投不出来。
+      const hasAgentError = Boolean(msg.metadata?.agentError);
 
       // Skip empty assistant messages
-      if (!hasContent && !hasReasoning && !hasToolCalls) continue;
+      if (!hasContent && !hasReasoning && !hasToolCalls && !hasAgentError) continue;
 
       const turn = currentTurn;
 
@@ -511,6 +514,12 @@ export function projectTurns(
           if (!referencedToolCallIds.has(tc.id)) pushToolCallNode(tc);
         }
 
+        // 错误卡片尾随在工具行之后：带 agentError 的消息即使 content_parts 全是工具
+        // 调用，也要补一个空正文节点承载 AgentErrorCard，否则失败无任何可见落点。
+        if (hasAgentError) {
+          pushAssistantTextNode('');
+        }
+
         // content_parts 是权威交错顺序。走到这里若仍 textIndex===0，说明 parts 里没有
         // 任何 text part：不能把内存里残留的 msg.content 当尾随正文追加到工具行之后——
         // 流式期模型先吐的 preamble（如"使用Write工具来创建文件"）被服务端精简成纯工具
@@ -519,7 +528,7 @@ export function projectTurns(
         continue;
       }
 
-      if (hasContent || hasReasoning) {
+      if (hasContent || hasReasoning || hasAgentError) {
         pushAssistantTextNode(msg.content);
       }
 

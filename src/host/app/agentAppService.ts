@@ -94,6 +94,7 @@ import type { ExternalAgentEngineKind } from '../../shared/contract/agentEngine'
 import type { AgentEngineRunResult } from '../../shared/contract/agentEngine';
 import type { RunRegistry } from '../runtime/runRegistry';
 import { getProjectService } from '../services/project/projectService';
+import { getLibraryService } from '../services/library/libraryService';
 import { resolveSessionWorkspaceScope } from '../services/sessionFork/workspace';
 import { getLogsPath } from '../platform/appPaths';
 import {
@@ -271,6 +272,9 @@ export class AgentAppServiceImpl implements AgentApplicationService {
         hints: context.selectedPromptCommand.hints ? [...context.selectedPromptCommand.hints] : undefined,
       };
     }
+    if (context.pendingCommand) {
+      metadata.pendingCommand = { ...context.pendingCommand };
+    }
     if (context.routing) {
       metadata.routingMode = context.routing.mode;
       if (context.routing.targetAgentIds?.length) {
@@ -312,7 +316,27 @@ export class AgentAppServiceImpl implements AgentApplicationService {
 
   private getMessageMetadata(envelope: ConversationEnvelope): MessageMetadata | undefined {
     const workbench = this.toWorkbenchMetadata(envelope.context);
-    return workbench ? { workbench } : undefined;
+    // UX round2 20f：pin 资料是会话级状态、不在 envelope——持久化 user message 时
+    // 由 host 把当前 pin 条目 id+标题快照进 metadata，回放 chip 行按快照渲染（事后改 pin 不漂移）。
+    const pinnedLibraryItems = this.getPinnedLibrarySnapshot(envelope.sessionId);
+    const merged = workbench || pinnedLibraryItems
+      ? { ...(workbench ?? {}), ...(pinnedLibraryItems ? { pinnedLibraryItems } : {}) }
+      : undefined;
+    return merged ? { workbench: merged } : undefined;
+  }
+
+  private getPinnedLibrarySnapshot(sessionId?: string): Array<{ id: string; title: string }> | undefined {
+    const resolvedSessionId = this.resolveSessionId(sessionId);
+    if (!resolvedSessionId) return undefined;
+    try {
+      const items = getLibraryService().getPinnedItems(resolvedSessionId);
+      return items.length > 0
+        ? items.map((item) => ({ id: item.id, title: item.title }))
+        : undefined;
+    } catch {
+      // pin 快照是展示增强，library 未初始化等失败不阻塞发送
+      return undefined;
+    }
   }
 
   /**

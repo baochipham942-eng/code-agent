@@ -11,6 +11,7 @@ import { useAppStore } from '../../../../stores/appStore';
 import { wrapFilePathsInBackticks, wrapTicketsAsLinks } from './filePathProcessor';
 import { parseLeadingTriggerToken } from './triggerTokenHighlight';
 import { isWebMode, copyPathToClipboard, openExternalLink } from '../../../../utils/platform';
+import { isPreviewable } from '../../../../utils/previewable';
 import { ChartBlock, isChartSpecSource } from './ChartBlock';
 import { GenerativeUIBlock } from './GenerativeUIBlock';
 import { GenerativeUIHost } from '../GenerativeUI/GenerativeUIHost';
@@ -71,13 +72,29 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
     );
   });
 
-  // Handle opening a file externally
+  // 点击文件链接进 app 内预览（PreviewPanel），不再直接打开本地文件；
+  // 裸文件名（模型很少写全路径）先按名字在工作目录里找回真实路径；
+  // 类型不支持预览时才回退系统打开（桌面）/ 复制路径（web）。
   const handleOpenFile = useCallback(async (filePath: string, lineNumber?: number) => {
     try {
       // Resolve relative paths
       let fullPath = filePath;
       if (!filePath.startsWith('/') && !filePath.startsWith('~')) {
         fullPath = workingDirectory ? `${workingDirectory}/${filePath}` : filePath;
+        // 裸文件名（无目录段）：workingDirectory 直拼基本必错，按名字找回真实路径
+        if (workingDirectory && !filePath.includes('/')) {
+          try {
+            const response = await window.domainAPI?.invoke<Array<{ path: string }>>(
+              'workspace', 'findFile', { dirPath: workingDirectory, name: filePath },
+            );
+            const found = response?.success && response.data?.length ? response.data[0] : null;
+            if (found) fullPath = found.path;
+          } catch { /* 找回失败就用直拼路径，交给预览层报错 */ }
+        }
+      }
+      if (isPreviewable(fullPath)) {
+        openPreview(fullPath);
+        return;
       }
       if (isWebMode()) {
         await copyPathToClipboard(fullPath);
@@ -87,7 +104,7 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
     } catch (error) {
       console.error('Failed to open file:', error);
     }
-  }, [workingDirectory]);
+  }, [workingDirectory, openPreview]);
 
   // Handle previewing HTML in-app
   const handlePreviewHtml = useCallback((filePath: string) => {

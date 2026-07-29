@@ -33,30 +33,22 @@ describe('agent mention routing', () => {
     });
   });
 
-  it('keeps @neo out of direct agent routing but offers it as a work-card mention', () => {
+  it('keeps @neo out of the composer mention panel entirely (2026-07-29 拍板砍入口)', () => {
     expect(parseLeadingAgentMentions('@neo 实现入口', agents)).toBeNull();
-    // @neo 不再被藏：作为可点的 Neo 工作卡候选置顶，swarm 里名为 neo 的 agent 不出现
-    expect(getLeadingAgentMentionAutocomplete('@neo', agents)).toEqual({
-      query: 'neo',
-      matches: [NEO_TAG_MENTION_AGENT],
-    });
-    expect(parseLeadingNeoTagInvocation('  @neo 实现入口')).toEqual({
-      originalContent: '@neo 实现入口',
-      userText: '实现入口',
-    });
+    // @neo 交互已从 composer 移除：mention 面板不再注入工作卡/续接候选，
+    // 输入 @neo 没有任何候选（工作卡改从 Neo 协同页发起）。
+    expect(getLeadingAgentMentionAutocomplete('@neo', agents)).toBeNull();
   });
 
-  it('surfaces the Neo work-card candidate for prefixes of neo', () => {
-    // @n / @ne 前缀都置顶 Neo；@n 还会带上名字含 n 前缀的普通 agent
-    expect(getLeadingAgentMentionAutocomplete('@ne', agents)?.matches[0]).toEqual(NEO_TAG_MENTION_AGENT);
-    const nMatches = getLeadingAgentMentionAutocomplete('@n', agents)?.matches ?? [];
-    expect(nMatches[0]).toEqual(NEO_TAG_MENTION_AGENT);
+  it('does not summon Neo for prefixes of neo', () => {
+    expect(getLeadingAgentMentionAutocomplete('@ne', agents)).toBeNull();
+    expect(getLeadingAgentMentionAutocomplete('@n', agents)).toBeNull();
   });
 
-  it('summons Neo on a bare @ (置顶 Neo,压掉文件 popup 噪音)', () => {
-    // 产品负责人 2026-07-02：裸 @ 应像 @teammate 一样召唤 Neo,而不是弹一堆文件名噪音。
-    const matches = getLeadingAgentMentionAutocomplete('@', agents)?.matches ?? [];
-    expect(matches[0]).toEqual(NEO_TAG_MENTION_AGENT);
+  it('bare @ 不再召唤 Neo（压文件 popup 的职责随 @neo 一并移除）', () => {
+    const result = getLeadingAgentMentionAutocomplete('@', agents);
+    // 裸 @ 只剩普通 agent 候选（别名为空集的不算），Neo 不在其中
+    expect(result?.matches.some((m) => m.id === NEO_TAG_MENTION_AGENT.id) ?? false).toBe(false);
   });
 
   it('still routes @<filename> to file mention (query 非 neo 前缀不注入 Neo)', () => {
@@ -164,7 +156,14 @@ describe('neo topic mention candidates (ADR-035)', () => {
       `${NEO_TOPIC_MENTION_PREFIX}nwc_1`,
       `${NEO_TOPIC_MENTION_PREFIX}nwc_2`,
     ]);
-    expect(candidates[0].role).toContain('整理竞品报告');
+    // 主文案直接带 topic 标题（与「Neo 工作卡」首行一眼可辨），右侧只标「续接」
+    expect(candidates[0].name).toBe('Neo · 整理竞品报告');
+    expect(candidates[0].role).toBe('续接');
+  });
+
+  it('Neo 工作卡候选主文案与说明性 role 可辨', () => {
+    expect(NEO_TAG_MENTION_AGENT.name).toBe('Neo 工作卡');
+    expect(NEO_TAG_MENTION_AGENT.role).toBe('呼叫 Neo 开一张新工作卡');
   });
 
   it('caps candidates at 5 most recently active', () => {
@@ -179,11 +178,9 @@ describe('neo topic mention candidates (ADR-035)', () => {
     expect(candidates[0].id).toBe(`${NEO_TOPIC_MENTION_PREFIX}nwc_m7`);
   });
 
-  it('surfaces topic candidates in the @ autocomplete right after the Neo entry', () => {
+  it('topic candidates 不再进 @ 面板（@neo 入口已砍）', () => {
     const autocomplete = getLeadingAgentMentionAutocomplete('@neo', agents, buildNeoTopicMentionCandidates(topics));
-    expect(autocomplete?.matches[0]).toEqual(NEO_TAG_MENTION_AGENT);
-    expect(autocomplete?.matches[1]?.id).toBe(`${NEO_TOPIC_MENTION_PREFIX}nwc_1`);
-    expect(autocomplete?.matches[2]?.id).toBe(`${NEO_TOPIC_MENTION_PREFIX}nwc_2`);
+    expect(autocomplete).toBeNull();
   });
 
   it('keeps topic candidates out when query does not summon Neo', () => {

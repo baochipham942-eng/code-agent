@@ -57,6 +57,17 @@ describe('NativeVoiceAudioPipeline', () => {
     expect(pipeline.getMicLevel()).toBe(0.25);
   });
 
+  it('把持久化 label 透传给原生 AEC 启动命令', async () => {
+    const pipeline = new NativeVoiceAudioPipeline(
+      { onFrame: vi.fn() },
+      { label: 'Studio Mic', webDeviceId: 'web-only-id' },
+    );
+
+    await pipeline.start();
+
+    expect(mocks.start).toHaveBeenCalledWith('Studio Mic');
+  });
+
   it('下行、barge-in 与 PTT 门都走 Rust 控制通道', async () => {
     const pipeline = new NativeVoiceAudioPipeline({ onFrame: vi.fn() });
     await pipeline.start();

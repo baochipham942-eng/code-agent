@@ -12,7 +12,9 @@
 // ============================================================================
 
 import { VOICE_DOWNSTREAM_SAMPLE_RATE, VOICE_UPSTREAM_SAMPLE_RATE } from '@shared/constants/voice';
+import type { VoiceInputDeviceSettings } from '@shared/contract/settings';
 import type { VoiceMessageCode } from '@shared/contract/voice';
+import { normalizeVoiceInputDevice } from '@shared/voiceInputDevice';
 import { createLogger } from '../utils/logger';
 
 const logger = createLogger('VoiceAudioPipeline');
@@ -50,6 +52,80 @@ export function resampleTo16k(input: Float32Array, inRate: number, state: Resamp
 
 const CAPTURE_BUFFER_SIZE = 4096;
 const LEVEL_UPDATE_INTERVAL_MS = 100;
+
+const DEFAULT_CAPTURE_CONSTRAINTS: MediaTrackConstraints = {
+  channelCount: 1,
+  echoCancellation: true,
+  noiseSuppression: true,
+  autoGainControl: true,
+};
+
+type VoiceInputDeviceMatch = 'webDeviceId' | 'label' | 'default';
+
+export interface VoiceInputDeviceResolution {
+  match: VoiceInputDeviceMatch;
+  deviceId?: string;
+}
+
+/**
+ * 纯设备解析：缓存 id 优先，缓存失效再按跨采集链共用的 label 找，最后明确回默认。
+ */
+export function resolveVoiceInputDevice(
+  preference: VoiceInputDeviceSettings,
+  devices: readonly Pick<MediaDeviceInfo, 'deviceId' | 'kind' | 'label'>[],
+): VoiceInputDeviceResolution {
+  const inputs = devices.filter((device) => device.kind === 'audioinput');
+  if (preference.webDeviceId) {
+    const cached = inputs.find((device) => device.deviceId === preference.webDeviceId);
+    if (cached) return { match: 'webDeviceId', deviceId: cached.deviceId };
+  }
+  const named = inputs.find((device) => device.label === preference.label);
+  if (named) return { match: 'label', deviceId: named.deviceId };
+  return { match: 'default' };
+}
+
+/**
+ * 三个 Web 开麦点共用的约束入口。枚举失败、设备被拔掉或配置损坏都 fail-open
+ * 到系统默认；只有确认设备仍存在时才附加 ideal deviceId。
+ */
+export async function resolveVoiceAudioCaptureConstraints(
+  configured: unknown,
+  baseConstraints: MediaTrackConstraints = DEFAULT_CAPTURE_CONSTRAINTS,
+  mediaDevices: MediaDevices = navigator.mediaDevices,
+): Promise<MediaTrackConstraints> {
+  const preference = normalizeVoiceInputDevice(configured);
+  if (!preference) return { ...baseConstraints };
+
+  let devices: MediaDeviceInfo[];
+  try {
+    if (typeof mediaDevices.enumerateDevices !== 'function') {
+      throw new Error('enumerateDevices is unavailable');
+    }
+    devices = await mediaDevices.enumerateDevices();
+  } catch (error) {
+    logger.warn('input device enumeration failed; using system default', {
+      label: preference.label,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return { ...baseConstraints };
+  }
+
+  const resolution = resolveVoiceInputDevice(preference, devices);
+  if (!resolution.deviceId) {
+    logger.warn('configured input device unavailable; using system default', {
+      label: preference.label,
+    });
+    return { ...baseConstraints };
+  }
+  logger.info('input device resolved', {
+    label: preference.label,
+    match: resolution.match,
+  });
+  return {
+    ...baseConstraints,
+    deviceId: { ideal: resolution.deviceId },
+  };
+}
 
 export interface VoiceAudioPipelineCallbacks {
   /** 一帧上行音频（PCM16@16k 单声道）；静音/门关闭时是零帧。 */
@@ -99,7 +175,10 @@ export class VoiceAudioPipeline implements VoiceAudioPipelineLike {
    */
   private disposed = false;
 
-  constructor(private readonly callbacks: VoiceAudioPipelineCallbacks) {}
+  constructor(
+    private readonly callbacks: VoiceAudioPipelineCallbacks,
+    private readonly inputDevice?: VoiceInputDeviceSettings,
+  ) {}
 
   setMuted(muted: boolean): void {
     this.muted = muted;
@@ -116,8 +195,13 @@ export class VoiceAudioPipeline implements VoiceAudioPipelineLike {
   async start(): Promise<void> {
     this.disposed = false;
     try {
+      // 无设备偏好时保持原来的同步 getUserMedia 起步时序；额外的 await 会让
+      // start() 后立刻 stop() 的竞态窗口前移，破坏既有隐私回归测试。
+      const audio = this.inputDevice
+        ? await resolveVoiceAudioCaptureConstraints(this.inputDevice)
+        : { ...DEFAULT_CAPTURE_CONSTRAINTS };
       const stream = await navigator.mediaDevices.getUserMedia({
-        audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+        audio,
       });
       logger.info('getUserMedia acquired', { pipelineId: this.instanceId, tracks: stream.getTracks().length });
       // await 期间被 stop() 了：刚拿到的 stream 无人持有，必须就地停掉并返回。

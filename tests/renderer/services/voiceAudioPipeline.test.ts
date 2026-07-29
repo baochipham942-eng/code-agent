@@ -8,7 +8,11 @@ vi.mock('../../../src/renderer/utils/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
 }));
 
-import { VoiceAudioPipeline } from '../../../src/renderer/services/voiceAudioPipeline';
+import type { VoiceInputDeviceSettings } from '../../../src/shared/contract/settings';
+import {
+  resolveVoiceInputDevice,
+  VoiceAudioPipeline,
+} from '../../../src/renderer/services/voiceAudioPipeline';
 
 function fakeTrack() {
   return { stop: vi.fn(), kind: 'audio', id: 'track-1' } as unknown as MediaStreamTrack;
@@ -42,8 +46,25 @@ function installGetUserMedia(impl: () => Promise<MediaStream>) {
   (navigator as unknown as { mediaDevices: unknown }).mediaDevices = { getUserMedia: impl };
 }
 
-function makePipeline() {
-  return new VoiceAudioPipeline({ onFrame: () => {} });
+function installMediaDevices(
+  getUserMedia: (constraints: MediaStreamConstraints) => Promise<MediaStream>,
+  enumerateDevices: () => Promise<MediaDeviceInfo[]>,
+) {
+  (navigator as unknown as { mediaDevices: unknown }).mediaDevices = {
+    getUserMedia,
+    enumerateDevices,
+  };
+}
+
+function audioInput(
+  deviceId: string,
+  label: string,
+): Pick<MediaDeviceInfo, 'deviceId' | 'kind' | 'label'> {
+  return { deviceId, kind: 'audioinput', label };
+}
+
+function makePipeline(inputDevice?: VoiceInputDeviceSettings) {
+  return new VoiceAudioPipeline({ onFrame: () => {} }, inputDevice);
 }
 
 beforeEach(() => {
@@ -107,5 +128,60 @@ describe('VoiceAudioPipeline 麦克风竞态', () => {
     // 再 stop 一次是幂等空操作：track.stop 总共只该有一次
     pipeline.stop();
     expect(track.stop).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('VoiceAudioPipeline 输入设备解析', () => {
+  const preference = { label: 'Studio Mic', webDeviceId: 'cached-id' };
+
+  it('webDeviceId 仍存在时优先命中缓存', () => {
+    expect(resolveVoiceInputDevice(preference, [
+      audioInput('label-id', 'Studio Mic'),
+      audioInput('cached-id', 'Other Mic'),
+    ])).toEqual({ match: 'webDeviceId', deviceId: 'cached-id' });
+  });
+
+  it('webDeviceId 失效时按 label 重解析', () => {
+    expect(resolveVoiceInputDevice(preference, [
+      audioInput('fresh-id', 'Studio Mic'),
+    ])).toEqual({ match: 'label', deviceId: 'fresh-id' });
+  });
+
+  it('缓存与 label 全失效时明确回落系统默认', () => {
+    expect(resolveVoiceInputDevice(preference, [
+      audioInput('built-in', 'MacBook Microphone'),
+    ])).toEqual({ match: 'default' });
+  });
+
+  it('命中设备后把 ideal deviceId 写进 getUserMedia 约束', async () => {
+    const getUserMedia = vi.fn(async (_constraints: MediaStreamConstraints) => fakeStream([]));
+    installMediaDevices(
+      getUserMedia,
+      async () => [audioInput('fresh-id', 'Studio Mic') as MediaDeviceInfo],
+    );
+
+    await makePipeline(preference).start();
+
+    expect(getUserMedia).toHaveBeenCalledWith({
+      audio: expect.objectContaining({
+        deviceId: { ideal: 'fresh-id' },
+      }),
+    });
+  });
+
+  it('设备枚举失败仍调用系统默认麦克风，不让通话失效', async () => {
+    const getUserMedia = vi.fn(async (_constraints: MediaStreamConstraints) => fakeStream([]));
+    installMediaDevices(
+      getUserMedia,
+      async () => {
+        throw new Error('device service unavailable');
+      },
+    );
+
+    await makePipeline(preference).start();
+
+    expect(getUserMedia).toHaveBeenCalledTimes(1);
+    const constraints = getUserMedia.mock.calls[0][0];
+    expect((constraints.audio as MediaTrackConstraints).deviceId).toBeUndefined();
   });
 });

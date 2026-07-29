@@ -9,7 +9,7 @@ import type { SpeechTranscribeResult } from '../../../src/shared/contract/speech
 
 const ipc = vi.hoisted(() => ({
   isAvailable: vi.fn(() => true),
-  invokeDomain: vi.fn(async (..._args: unknown[]) => ({ speech: {} })),
+  invokeDomain: vi.fn(async (..._args: unknown[]): Promise<unknown> => ({ speech: {} })),
   transcribeSpeech: vi.fn(async (..._args: unknown[]): Promise<SpeechTranscribeResult | null> => ({ success: true, text: '你好世界' })),
 }));
 const pipeline = vi.hoisted(() => ({
@@ -18,6 +18,8 @@ const pipeline = vi.hoisted(() => ({
     onLevels?: (mic: number, playback: number) => void;
     onError?: (code: string) => void;
   },
+  inputDevice: undefined as undefined | { label: string; webDeviceId?: string },
+  resolveConstraints: vi.fn(async () => ({})),
   start: vi.fn(async () => undefined),
   stop: vi.fn(),
 }));
@@ -30,12 +32,17 @@ vi.mock('../../../src/renderer/services/ipcService', () => ({
 }));
 vi.mock('../../../src/renderer/services/voiceAudioPipeline', () => ({
   VoiceAudioPipeline: class {
-    constructor(callbacks: typeof pipeline.callbacks) {
+    constructor(
+      callbacks: typeof pipeline.callbacks,
+      inputDevice?: { label: string; webDeviceId?: string },
+    ) {
       pipeline.callbacks = callbacks;
+      pipeline.inputDevice = inputDevice;
     }
     start = pipeline.start;
     stop = pipeline.stop;
   },
+  resolveVoiceAudioCaptureConstraints: pipeline.resolveConstraints,
 }));
 vi.mock('../../../src/renderer/utils/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
@@ -112,6 +119,8 @@ beforeEach(() => {
   ipc.transcribeSpeech.mockResolvedValue({ success: true, text: '你好世界' });
   lastRecorder = null;
   pipeline.callbacks = null;
+  pipeline.inputDevice = undefined;
+  pipeline.resolveConstraints.mockResolvedValue({});
   vi.stubGlobal('fetch', vi.fn(async () => ({
     ok: true,
     json: async () => ({ configured: false }),
@@ -230,7 +239,10 @@ describe('录音 → 转写主链路', () => {
         sockets.push(this);
       }
     });
-    ipc.invokeDomain.mockResolvedValue({ speech: { enabled: true, mode: 'stream' } });
+    ipc.invokeDomain.mockResolvedValue({
+      speech: { enabled: true, mode: 'stream' },
+      voice: { inputDevice: { label: ' Studio Mic ', webDeviceId: 'cached-id' } },
+    });
     const onTranscript = vi.fn();
     const view = renderHook(() => useVoiceInput({ onTranscript }));
     await waitFor(() => expect(view.result.current.settings.mode).toBe('stream'));
@@ -242,6 +254,7 @@ describe('录音 → 转写主链路', () => {
       sockets[0].open();
     });
     expect(pipeline.start).toHaveBeenCalledTimes(1);
+    expect(pipeline.inputDevice).toEqual({ label: 'Studio Mic', webDeviceId: 'cached-id' });
 
     act(() => {
       sockets[0].message({ type: 'partial', text: '你', sentenceId: 3 });
@@ -401,5 +414,26 @@ describe('设置加载与事件更新', () => {
       window.dispatchEvent(new CustomEvent('voice-input-settings-updated', { detail: { enabled: false } }));
     });
     expect(result.current.isEnabled).toBe(false);
+  });
+
+  it('整段口述开麦前刷新并使用 voice.inputDevice', async () => {
+    ipc.invokeDomain.mockResolvedValue({
+      speech: { enabled: true, mode: 'local-first' },
+      voice: { inputDevice: { label: ' USB Mic ', webDeviceId: 'device-7' } },
+    });
+    const { result } = renderHook(() => useVoiceInput());
+    await waitFor(() => expect(result.current.settings.mode).toBe('local-first'));
+
+    await act(async () => {
+      await result.current.start();
+    });
+
+    expect(pipeline.resolveConstraints).toHaveBeenCalledWith(
+      {
+        label: 'USB Mic',
+        webDeviceId: 'device-7',
+      },
+      {},
+    );
   });
 });

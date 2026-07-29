@@ -9,6 +9,7 @@ import {
   VOICE_AEC_BASE64_CHUNK_BYTES,
   VOICE_AEC_OUTPUT_EVENT,
 } from '@shared/constants/voice';
+import type { VoiceInputDeviceSettings } from '@shared/contract/settings';
 import {
   controlNativeVoiceAec,
   startNativeVoiceAec,
@@ -61,7 +62,10 @@ export class NativeVoiceAudioPipeline implements VoiceAudioPipelineLike {
   private playbackWrites: Promise<void> = Promise.resolve();
   private controlWrites: Promise<void> = Promise.resolve();
 
-  constructor(private readonly callbacks: VoiceAudioPipelineCallbacks) {}
+  constructor(
+    private readonly callbacks: VoiceAudioPipelineCallbacks,
+    private readonly inputDevice?: VoiceInputDeviceSettings,
+  ) {}
 
   setMuted(muted: boolean): void {
     this.muted = muted;
@@ -85,7 +89,7 @@ export class NativeVoiceAudioPipeline implements VoiceAudioPipelineLike {
       ({ payload }) => this.handleEvent(payload),
     );
     try {
-      const result = await startNativeVoiceAec();
+      const result = await startNativeVoiceAec(this.inputDevice?.label);
       if (result.outputEvent !== VOICE_AEC_OUTPUT_EVENT) {
         throw new Error(`Unexpected native AEC event: ${result.outputEvent}`);
       }

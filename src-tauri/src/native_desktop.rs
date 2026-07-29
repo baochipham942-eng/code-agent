@@ -2540,6 +2540,30 @@ fn cleanup_voice_aec_fifos(upstream: &Path, downstream: &Path) {
     let _ = fs::remove_file(downstream);
 }
 
+fn voice_aec_sidecar_args(
+    upstream_fifo_path: &Path,
+    downstream_fifo_path: &Path,
+    input_device_label: Option<&str>,
+) -> Result<Vec<String>, String> {
+    let mut args = vec![
+        "--upstream-fifo".to_string(),
+        upstream_fifo_path
+            .to_str()
+            .ok_or_else(|| "voice AEC upstream FIFO path is not UTF-8".to_string())?
+            .to_string(),
+        "--downstream-fifo".to_string(),
+        downstream_fifo_path
+            .to_str()
+            .ok_or_else(|| "voice AEC downstream FIFO path is not UTF-8".to_string())?
+            .to_string(),
+    ];
+    if let Some(label) = input_device_label.and_then(trim_or_none) {
+        args.push("--input-device".to_string());
+        args.push(label);
+    }
+    Ok(args)
+}
+
 fn emit_voice_aec_event(app: &AppHandle, event: VoiceAecOutputEvent) {
     if let Err(error) = app.emit(VOICE_AEC_OUTPUT_EVENT, event) {
         eprintln!("[VoiceAEC] failed to emit renderer event: {error}");
@@ -2709,10 +2733,14 @@ fn spawn_voice_aec_upstream_reader(
 }
 
 #[tauri::command]
-pub fn desktop_start_voice_aec(app: AppHandle) -> Result<VoiceAecStartResult, String> {
+pub fn desktop_start_voice_aec(
+    app: AppHandle,
+    input_device_label: Option<String>,
+) -> Result<VoiceAecStartResult, String> {
     #[cfg(not(target_os = "macos"))]
     {
         let _ = app;
+        let _ = input_device_label;
         return Err("Native echo cancellation is only available on macOS.".to_string());
     }
 
@@ -2750,17 +2778,13 @@ pub fn desktop_start_voice_aec(app: AppHandle) -> Result<VoiceAecStartResult, St
             return Err(error);
         }
 
+        let sidecar_args = voice_aec_sidecar_args(
+            &upstream_fifo_path,
+            &downstream_fifo_path,
+            input_device_label.as_deref(),
+        )?;
         let mut child = Command::new(&binary)
-            .args([
-                "--upstream-fifo",
-                upstream_fifo_path
-                    .to_str()
-                    .ok_or_else(|| "voice AEC upstream FIFO path is not UTF-8".to_string())?,
-                "--downstream-fifo",
-                downstream_fifo_path
-                    .to_str()
-                    .ok_or_else(|| "voice AEC downstream FIFO path is not UTF-8".to_string())?,
-            ])
+            .args(sidecar_args)
             .stdin(Stdio::piped())
             .stdout(Stdio::null())
             .stderr(Stdio::piped())
@@ -3021,6 +3045,42 @@ mod privacy_tests {
                 .to_path_buf()
         ));
         assert!(candidates.contains(&Path::new("/repo/scripts/voice-aec-io").to_path_buf()));
+    }
+
+    #[test]
+    fn voice_aec_sidecar_args_include_optional_input_device_label() {
+        let args = voice_aec_sidecar_args(
+            Path::new("/tmp/up.fifo"),
+            Path::new("/tmp/down.fifo"),
+            Some("  Studio Mic  "),
+        )
+        .expect("sidecar args");
+
+        assert_eq!(
+            args,
+            vec![
+                "--upstream-fifo",
+                "/tmp/up.fifo",
+                "--downstream-fifo",
+                "/tmp/down.fifo",
+                "--input-device",
+                "Studio Mic",
+            ]
+        );
+        assert_eq!(
+            voice_aec_sidecar_args(
+                Path::new("/tmp/up.fifo"),
+                Path::new("/tmp/down.fifo"),
+                None,
+            )
+            .expect("default sidecar args"),
+            vec![
+                "--upstream-fifo",
+                "/tmp/up.fifo",
+                "--downstream-fifo",
+                "/tmp/down.fifo",
+            ]
+        );
     }
 
     #[test]

@@ -14,9 +14,10 @@
 
 import type { VoiceMessageCode } from '@shared/contract/voice';
 import { VOICE_FOCUS_REPORT_MIN_INTERVAL_MS, VOICE_RECONNECT_BACKOFF_MS, VOICE_STREAM_WS_PATH, VOICE_TEARDOWN_DRAIN_MS } from '@shared/constants/voice';
-import type { AppSettings, Message } from '@shared/contract';
+import type { AppSettings, Message, VoiceInputDeviceSettings } from '@shared/contract';
 import type { VoiceClientCommand, VoiceEvent } from '@shared/contract/voice';
 import { IPC_DOMAINS } from '@shared/ipc';
+import { normalizeVoiceInputDevice } from '@shared/voiceInputDevice';
 import { languages } from '../i18n';
 import { readActiveAgentSessionMap } from '../stores/activeAgentSessionMap';
 import { useAppStore } from '../stores/appStore';
@@ -47,12 +48,14 @@ function buildStreamUrl(sessionId: string, agentId?: string): string {
 async function readVoiceRuntimeSettings(): Promise<{
   interruptMode: VoiceInterruptMode;
   echoCancellation: 'auto' | 'off';
+  inputDevice?: VoiceInputDeviceSettings;
 }> {
   try {
     const settings = await ipcService.invokeDomain<AppSettings>(IPC_DOMAINS.SETTINGS, 'get');
     return {
       interruptMode: normalizeInterruptMode(settings.voice?.live?.interrupt),
       echoCancellation: settings.voice?.live?.echoCancellation ?? 'auto',
+      inputDevice: normalizeVoiceInputDevice(settings.voice?.inputDevice),
     };
   } catch {
     return { interruptMode: 'server_vad', echoCancellation: 'auto' };
@@ -82,6 +85,7 @@ class VoiceCallBridge {
   private intentionalClose = false;
   private reconnectAttempt = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private inputDevice: VoiceInputDeviceSettings | undefined;
 
   private store() {
     return useVoiceCallStore.getState();
@@ -196,8 +200,9 @@ class VoiceCallBridge {
     this.fallbackWarningShown = false;
 
     const activeAgentId = readActiveAgentSessionMap()[sessionId];
-    const { interruptMode, echoCancellation } = await readVoiceRuntimeSettings();
+    const { interruptMode, echoCancellation, inputDevice } = await readVoiceRuntimeSettings();
     if (useVoiceCallStore.getState().phase !== 'idle') return; // await 期间状态被改，别抢
+    this.inputDevice = inputDevice;
     this.store().dialStarted(sessionId, activeAgentId, interruptMode);
     this.intentionalClose = false;
     this.reconnectAttempt = 0;
@@ -341,7 +346,7 @@ class VoiceCallBridge {
     interruptMode: VoiceInterruptMode,
     involuntary: boolean,
   ): Promise<'headphones'> {
-    const pipeline = new VoiceAudioPipeline(this.webAudioCallbacks(ws));
+    const pipeline = new VoiceAudioPipeline(this.webAudioCallbacks(ws), this.inputDevice);
     pipeline.setCaptureOpen(interruptMode === 'server_vad');
     this.audio = pipeline;
     if (involuntary) this.warnAecFallback();
@@ -377,15 +382,18 @@ class VoiceCallBridge {
       return this.startWebAudio(ws, interruptMode, true);
     }
 
-    const pipeline = new NativeVoiceAudioPipeline({
-      onFrame: (pcm16k) => {
-        if (ws.readyState === WebSocket.OPEN) ws.send(pcm16k.buffer as ArrayBuffer);
+    const pipeline = new NativeVoiceAudioPipeline(
+      {
+        onFrame: (pcm16k) => {
+          if (ws.readyState === WebSocket.OPEN) ws.send(pcm16k.buffer as ArrayBuffer);
+        },
+        onLevels: (mic, playback) => this.store().levelsChanged(mic, playback),
+        onError: () => {
+          void this.fallbackFromNative(ws, interruptMode, pipeline);
+        },
       },
-      onLevels: (mic, playback) => this.store().levelsChanged(mic, playback),
-      onError: () => {
-        void this.fallbackFromNative(ws, interruptMode, pipeline);
-      },
-    });
+      this.inputDevice,
+    );
     pipeline.setCaptureOpen(interruptMode === 'server_vad');
     this.audio = pipeline;
     try {

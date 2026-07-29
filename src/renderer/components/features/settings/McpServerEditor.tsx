@@ -26,7 +26,7 @@ export interface McpServerConfig {
 }
 
 /** JSON 视图能读写的字段集合——与 configToJson / handleSave 的取值口径保持一致。 */
-export const JSON_EDITABLE_KEYS = ['name', 'type', 'command', 'args', 'env', 'url', 'headers'] as const;
+const JSON_EDITABLE_KEYS = ['name', 'type', 'command', 'args', 'env', 'url', 'headers'] as const;
 
 export interface McpServerSaveSecrets {
   secretEnvKeys: string[];

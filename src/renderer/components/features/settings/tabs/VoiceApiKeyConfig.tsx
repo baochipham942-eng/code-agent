@@ -132,5 +132,3 @@ export const VoiceApiKeyConfig: React.FC = () => {
     </div>
   );
 };
-
-export default VoiceApiKeyConfig;

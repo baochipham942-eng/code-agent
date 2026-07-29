@@ -916,13 +916,10 @@ export class ToolExecutor {
         // 只读探索档（审出 MED）：无审批 UI 的运行环境（CLI run/batch 非交互模式）对
         // forceConfirm 请求自动拒绝（fail-closed）。泛用的 "Permission denied by user"
         // 在该路径是误导——给模型可转述的真实原因与出路。
-        // D4：通话态钳档不是无 UI 环境（走停车挂起，请求真的进了审批卡），文案分化见
-        // readOnlyDenialError 的 isLiveVoiceClamp 分支。
-        const isLiveVoiceClamp = readOnlyForcesConfirmation
-          && getPermissionModeManager().isLiveVoiceSession(options.sessionId);
+        // 通话态曾有一条专用文案分支，2026-07-29 通话不再钳档后它已死（见 readOnlyDenialError）。
         return {
           success: false,
-          error: readOnlyForcesConfirmation ? readOnlyDenialError(executionToolName, isLiveVoiceClamp) : 'Permission denied by user',
+          error: readOnlyForcesConfirmation ? readOnlyDenialError(executionToolName) : 'Permission denied by user',
         };
       }
       } // end needsUserApproval

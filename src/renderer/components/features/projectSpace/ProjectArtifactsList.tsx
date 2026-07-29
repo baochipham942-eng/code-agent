@@ -99,4 +99,3 @@ export const ProjectArtifactsList: React.FC<ProjectArtifactsListProps> = ({
   );
 };
 
-export default ProjectArtifactsList;

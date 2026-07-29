@@ -76,4 +76,3 @@ export const ProjectComposer: React.FC<ProjectComposerProps> = ({ project }) => 
   );
 };
 
-export default ProjectComposer;

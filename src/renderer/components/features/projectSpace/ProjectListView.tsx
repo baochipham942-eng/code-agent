@@ -103,4 +103,3 @@ export const ProjectListView: React.FC<ProjectListViewProps> = ({ onSelect }) =>
   );
 };
 
-export default ProjectListView;

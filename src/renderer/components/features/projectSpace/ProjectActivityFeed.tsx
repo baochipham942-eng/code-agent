@@ -123,4 +123,3 @@ export const ProjectActivityFeed: React.FC<ProjectActivityFeedProps> = ({
   );
 };
 
-export default ProjectActivityFeed;

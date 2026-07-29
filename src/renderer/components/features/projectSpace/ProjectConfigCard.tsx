@@ -10,7 +10,7 @@ import { GhostButton } from '../../primitives/Button';
 import { IconButton } from '../../primitives/IconButton';
 import { Modal } from '../../primitives/Modal';
 
-export interface ConfigCardItem {
+interface ConfigCardItem {
   id: string;
   label: string;
 }
@@ -117,4 +117,3 @@ export const ProjectConfigCard: React.FC<ProjectConfigCardProps> = ({
   );
 };
 
-export default ProjectConfigCard;

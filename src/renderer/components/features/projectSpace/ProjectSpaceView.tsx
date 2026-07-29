@@ -7,19 +7,24 @@
 // ============================================================================
 
 import React, { useCallback, useEffect, useState } from 'react';
-import { FolderKanban } from 'lucide-react';
+import { FolderKanban, UserPlus } from 'lucide-react';
 import type { ProjectDetail } from '@shared/contract/project';
 import { FullScreenPageHeader } from '../shared/FullScreenPage';
 import { ProjectCollaborationPanel } from '../projectCollaboration/ProjectCollaborationPanel';
-import { getProjectDetail, listProjectsWithActivity } from '../../../services/projectClient';
+import { getProjectDetail, listProjectsWithActivity, promoteToCloudSpace } from '../../../services/projectClient';
 import { deriveProjectActivityStatus, type ProjectActivityStatus } from './projectSpaceData';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { useI18n } from '../../../hooks/useI18n';
+import { toast } from '../../../hooks/useToast';
 import { Badge } from '../../primitives/Badge';
+import { SecondaryButton } from '../../primitives/Button';
+import { Modal, ModalFooter } from '../../primitives/Modal';
 import { ProjectActivityFeed } from './ProjectActivityFeed';
 import { ProjectArtifactsList } from './ProjectArtifactsList';
 import { ProjectComposer } from './ProjectComposer';
 import { ProjectConfigRail } from './ProjectConfigRail';
+import { ProjectInviteModal } from './ProjectInviteModal';
+import { useProjectSpaceInvite } from './useProjectSpaceInvite';
 
 export interface ProjectSpaceViewProps {
   projectId: string;
@@ -65,6 +70,27 @@ export const ProjectSpaceView: React.FC<ProjectSpaceViewProps> = ({ projectId, o
     refreshDetail();
   }, [refreshDetail]);
 
+  // 邀请码 Modal：页头「邀请」按钮与右栏成员卡「邀请」入口共用同一实例（别复制两份逻辑）
+  const inviteModal = useProjectSpaceInvite();
+  // 升级确认弹层（cloudProjectId 为空时页头按钮文案「升级为协同空间」）
+  const [promoteConfirmOpen, setPromoteConfirmOpen] = useState(false);
+  const [promoteBusy, setPromoteBusy] = useState(false);
+  const handlePromoteToCloud = async () => {
+    if (promoteBusy) return;
+    setPromoteBusy(true);
+    try {
+      await promoteToCloudSpace(projectId);
+      setPromoteConfirmOpen(false);
+      toast.success(ps.promoteSuccess);
+      refreshDetail();
+    } catch (error) {
+      // fail-loud：host 返回的 error.message 已是人话，toast 直接展示真因
+      toast.error(error instanceof Error ? error.message : String(error));
+    } finally {
+      setPromoteBusy(false);
+    }
+  };
+
   // 跳到源会话：switchSession 内部会 closeSecondaryPages()，本页随二级页一起让位
   const openSession = (sessionId: string) => {
     void useSessionStore.getState().switchSession(sessionId);
@@ -109,6 +135,22 @@ export const ProjectSpaceView: React.FC<ProjectSpaceViewProps> = ({ projectId, o
         badge={statusChip}
         onClose={onBackToList}
         closeLabel={ps.backToList}
+        actions={project ? (
+          <SecondaryButton
+            size="sm"
+            leftIcon={<UserPlus />}
+            data-testid="project-space-invite-open"
+            onClick={() => {
+              if (project.cloudProjectId) {
+                inviteModal.open(projectId);
+              } else {
+                setPromoteConfirmOpen(true);
+              }
+            }}
+          >
+            {project.cloudProjectId ? ps.invite : ps.promoteToCloud}
+          </SecondaryButton>
+        ) : undefined}
       />
       {/* min-w-0 + overflow-hidden：窄窗下内容列收缩、行内截断，禁止把页面撑出横向滚动（房规：宽内容在自身容器内滚） */}
       <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
@@ -157,8 +199,28 @@ export const ProjectSpaceView: React.FC<ProjectSpaceViewProps> = ({ projectId, o
           project={project}
           detail={detail}
           onRefreshDetail={refreshDetail}
+          onInvite={() => inviteModal.open(projectId)}
         />
       </div>
+      <ProjectInviteModal state={inviteModal.state} isOpen={inviteModal.isOpen} onClose={inviteModal.close} />
+      <Modal
+        isOpen={promoteConfirmOpen}
+        onClose={() => setPromoteConfirmOpen(false)}
+        title={ps.promoteTitle}
+        size="sm"
+        footer={(
+          <ModalFooter
+            onCancel={() => setPromoteConfirmOpen(false)}
+            onConfirm={() => { void handlePromoteToCloud(); }}
+            confirmText={ps.promoteSubmit}
+            confirmDisabled={promoteBusy}
+          />
+        )}
+      >
+        <p className="text-sm leading-6 text-zinc-400" data-testid="project-space-invite-promote-modal">
+          {ps.promoteConfirm}
+        </p>
+      </Modal>
     </>
   );
 };

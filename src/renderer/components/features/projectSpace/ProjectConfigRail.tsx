@@ -32,6 +32,8 @@ export interface ProjectConfigRailProps {
   project: Project | null;
   detail: ProjectDetail | null;
   onRefreshDetail: () => void;
+  /** 打开空间邀请码 Modal（页头按钮同一实例，成员卡「邀请」入口复用） */
+  onInvite: () => void;
 }
 
 const COLLAPSE_STORAGE_KEY = 'projectSpace.configRailCollapsed';

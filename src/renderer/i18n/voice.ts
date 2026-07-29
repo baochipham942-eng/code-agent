@@ -29,6 +29,10 @@ export const voiceZh: VoiceTranslations = {
       tapToTalk: '点按说话',
       tapDone: '说完了',
       providerMissing: '未配置语音 Provider，请到设置 → 语音完成配置',
+      noKeyButtonTitle: '实时语音：未配置 API Key，点我配置',
+      noKeyTitle: '实时语音需要配置 API Key',
+      noKeyMessage: '实时语音由通义千问（DashScope）提供，配一个 API Key 就能从这里直接发起通话。同一个 Key 也用于图片生成和口述转写。',
+      noKeyAction: '去配置',
     },
     status: {
       connecting: '正在接通…',
@@ -181,6 +185,10 @@ export const voiceEn = {
       tapToTalk: 'Tap to talk',
       tapDone: 'Done talking',
       providerMissing: 'No voice provider configured. Finish setup in Settings → Voice',
+      noKeyButtonTitle: 'Live voice: no API key configured — tap to set up',
+      noKeyTitle: 'Live voice needs an API key',
+      noKeyMessage: 'Live voice is powered by Qwen (DashScope). Add one API key to start calls right from here — the same key also covers image generation and dictation.',
+      noKeyAction: 'Set up',
     },
     status: {
       connecting: 'Connecting…',

@@ -1064,4 +1064,19 @@ export const en: Translations = {
     compact: { label: 'Compact context', description: 'Manually trigger context compression' },
     config: { label: 'Config', description: 'View current configuration' },
   },
+
+  // @neo topic 目录 S1：排序/优先级/截止/续接（面板存量文案仍为硬编码中文，仅新增键走 i18n）
+  neoTopics: {
+    sortRecent: 'Recent activity',
+    sortPriority: 'Priority',
+    sortDueAt: 'Due date',
+    priorityUrgent: 'Urgent',
+    priorityHigh: 'High',
+    priorityMedium: 'Medium',
+    priorityLow: 'Low',
+    duePrefix: 'Due',
+    followUp: 'Follow up',
+    openSourceConversation: 'Source',
+    updateMetaFailed: 'Failed to update topic',
+  },
 };

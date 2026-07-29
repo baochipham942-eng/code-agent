@@ -240,7 +240,7 @@ function defineTargets(isDev: boolean): Record<string, BuildTarget> {
       entry: 'src/host/mcp/mcp-server-entry.ts',
       outfile: 'dist/mcp-server.js',
       format: 'esm',
-      external: ['@modelcontextprotocol/sdk', ...NATIVE_EXTERNALS],
+      external: ['@modelcontextprotocol/server', ...NATIVE_EXTERNALS],
       banner: "import { createRequire as __cr } from 'node:module'; const require = __cr(import.meta.url);",
     },
     bridge: {

@@ -14,8 +14,8 @@
 // ============================================================================
 
 import type { TaskManagerEvent } from '../../task/TaskManager';
-import type { VoiceFocusContext, VoiceWorkItem, VoiceWorkItemStatus } from '../../../shared/contract/voice';
-import { VOICE_RECENT_FILE_LIMIT, VOICE_SPAWN_TASK_MAX_ITERATIONS } from '../../../shared/constants/voice';
+import type { VoiceFocusContext, VoiceWorkItem, VoiceWorkItemStatus, VoiceWorkNarration } from '../../../shared/contract/voice';
+import { VOICE_CONCLUSION_LOOKBACK_MESSAGES, VOICE_RECENT_FILE_LIMIT, VOICE_SPAWN_TASK_MAX_ITERATIONS } from '../../../shared/constants/voice';
 import { getIncompleteTasks } from '../planning/taskStore';
 import { getSessionManager } from '../infra/sessionManager';
 import { createLogger } from '../infra/logger';
@@ -23,6 +23,7 @@ import { buildRoleContextBlock } from '../roleAssets/roleAssetService';
 import { withWorkbenchTurnSystemContext } from '../../app/workbenchTurnContext';
 import { getPermissionModeManager } from '../../permissions/modes';
 import { getConfigService } from '../core/configService';
+import { buildWorkNarration, resolveNarrationSpeaker } from './voiceNarration';
 
 const logger = createLogger('VoiceCoordinator');
 
@@ -69,6 +70,13 @@ export interface VoiceDispatchBinding {
    * 模型只是嘴上说。语音层此前压根没有挂断这个动作，这是第二例「说了没做」。
    */
   onEndCall: () => void;
+  /**
+   * 发言人协议（W6-1）：一件活落 done/failed 时「该念哪句、以谁的身份念」。
+   *
+   * 与 onWorkItem **同寿命**（挂断即断）而不是跟着 onWorkFailed：电话都挂了，
+   * 念给谁听。挂断之后才死的那种失败仍走 onWorkFailed 落屏，不重复。
+   */
+  onWorkNarration: (narration: VoiceWorkNarration) => void;
 }
 
 const TERMINAL: readonly VoiceWorkItemStatus[] = ['done', 'failed', 'cancelled'];
@@ -80,6 +88,8 @@ interface LedgerState {
   emit: ((item: VoiceWorkItem) => void) | null;
   /** 失败留痕；**挂断不清**（见 VoiceDispatchBinding.onWorkFailed）。 */
   onFailed: (item: VoiceWorkItem) => void;
+  /** 终态回流；与 emit 同寿命，挂断置 null。 */
+  narrate: ((narration: VoiceWorkNarration) => void) | null;
   endCall: () => void;
   items: Map<string, VoiceWorkItem>;
   /** 当前等着状态迁移的那件活。一会话一 orchestrator，同时只可能有一件。 */
@@ -101,6 +111,27 @@ async function taskManager() {
   return getTaskManager();
 }
 
+async function notifyVoiceWorkSettledAfterHangup(
+  state: LedgerState,
+  item: VoiceWorkItem,
+  status: 'done' | 'failed',
+): Promise<void> {
+  try {
+    // 通话中落终态不走这里，避免把通知基础设施拉进实时语音关键路径。
+    const { notificationService } = await import('../infra/notificationService');
+    notificationService.notifyVoiceWorkSettled({
+      sessionId: state.neoSessionId,
+      taskTitle: item.title,
+      status,
+      ...(item.detail ? { detail: item.detail } : {}),
+    });
+  } catch (err) {
+    logger.warn('voice work settlement notification failed', {
+      message: err instanceof Error ? err.message : 'unknown',
+    });
+  }
+}
+
 /**
  * 通话建连时绑定。同步、零 IO——**不要在这里 await 加载 TaskManager**：建连是通话的
  * 关键路径，把整棵 task 依赖树拉进来只为了挂一个可能永远用不上的 listener 不划算
@@ -113,6 +144,7 @@ export function beginVoiceDispatch(binding: VoiceDispatchBinding): void {
     activeAgentId: binding.activeAgentId,
     emit: binding.onWorkItem,
     onFailed: binding.onWorkFailed,
+    narrate: binding.onWorkNarration,
     endCall: binding.onEndCall,
     items: new Map(),
     pendingId: null,
@@ -175,6 +207,7 @@ async function ensureListener(state: LedgerState): Promise<void> {
 export function endVoiceDispatch(): void {
   if (!ledger) return;
   ledger.emit = null;
+  ledger.narrate = null;
   detachIfSettled(false);
 }
 
@@ -209,9 +242,62 @@ function settle(state: LedgerState, id: string, status: VoiceWorkItemStatus, det
       logger.warn('onWorkFailed threw', { message: err instanceof Error ? err.message : 'unknown' });
     }
   }
+  // 发言人协议与挂断后可见性互斥：电话还在就念结论；电话已断就发一条带任务名的
+  // 会话通知，让侧栏复用既有未读圆点。cancelled 是用户自己叫停的，不重复打扰。
+  if (status === 'done' || status === 'failed') {
+    if (state.narrate === null) {
+      void notifyVoiceWorkSettledAfterHangup(state, settled, status);
+    } else {
+      void narrateSettled(state, settled, status);
+    }
+  }
   getPermissionModeManager().clearLiveVoiceSession(state.neoSessionId, runHoldId(id));
   if (state.pendingId === id) state.pendingId = null;
   detachIfSettled(false);
+}
+
+/**
+ * 取结论文本 → 裁成能说的话 → 连署名一起交给语音层（W6-1）。
+ *
+ * 结论来源是**执行侧这一轮真写下来的最后一句 assistant 消息**，不是工具返回值的措辞——
+ * 后者是我们自己编的模板（「已经排上队」），念出来等于系统在自言自语。
+ * 取不到就退回状态本身：`buildWorkNarration` 允许 summary 为空，宁可只说「做完了」，
+ * 也不编一句它没说过的话。
+ */
+async function narrateSettled(state: LedgerState, item: VoiceWorkItem, status: 'done' | 'failed'): Promise<void> {
+  try {
+    const conclusion = status === 'failed'
+      ? (item.detail ?? '')
+      : await readRunConclusion(state.neoSessionId);
+    // await 之后 narrate 可能已被挂断置 null——此刻再念没人听。
+    // **但也不能就这么算了**：那正是「说完就挂、活刚好这时跑完」这个最常见的场景，
+    // 静默丢掉等于这条代偿链在它最该生效的时刻失效。落回通知那条路。
+    const narrate = state.narrate;
+    if (!narrate) {
+      await notifyVoiceWorkSettledAfterHangup(state, item, status);
+      return;
+    }
+    narrate(buildWorkNarration({
+      workItemId: item.id,
+      status,
+      title: item.title,
+      conclusion,
+      ...(state.activeAgentId ? { agentId: state.activeAgentId } : {}),
+    }));
+  } catch (err) {
+    logger.warn('narrate settled failed', { message: err instanceof Error ? err.message : 'unknown' });
+  }
+}
+
+/** 会话里最后一条有正文的 assistant 消息。task_completed 发在 sendMessage await 之后，此时它已落库。 */
+async function readRunConclusion(neoSessionId: string): Promise<string> {
+  const session = await getSessionManager().getSession(neoSessionId, VOICE_CONCLUSION_LOOKBACK_MESSAGES);
+  const messages = session?.messages ?? [];
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const message = messages[i];
+    if (message.role === 'assistant' && message.content?.trim()) return message.content;
+  }
+  return '';
 }
 
 function runHoldId(workItemId: string): string {
@@ -320,6 +406,7 @@ async function startRun(state: LedgerState, title: string, prompt: string): Prom
   await ensureListener(state);
   const options = await buildRunOptions(state);
   const workItemId = newWorkItemId();
+  const speaker = resolveNarrationSpeaker(state.activeAgentId);
   upsert(state, { id: workItemId, title, status: 'queued' });
   state.pendingId = workItemId;
   // D4：这张票的寿命跟着 run 走，不跟着通话走。终态事件或启动失败才还。
@@ -328,7 +415,11 @@ async function startRun(state: LedgerState, title: string, prompt: string): Prom
     // 第 5 个参数落在 startTask 建的那条 role:'user' 消息上。必须标记 voiceDispatch——
     // prompt 是通话 brain 改写出来的，不是用户原话（用户原话是字幕那条），
     // 不标就会顶着用户身份显示在右边。
-    .startTask(state.neoSessionId, prompt, undefined, options, { voiceDispatch: { title } })
+    .startTask(state.neoSessionId, prompt, undefined, options, {
+      // 署名和语音层回流用同一个解析器（voiceNarration），两处不许各算各的：
+      // 屏幕上写「牧之」而耳朵里听到别的名字，比不署名更糟。
+      voiceDispatch: { title, workItemId, ...(speaker ? { speaker } : {}) },
+    })
     .catch((err: unknown) => {
       const detail = err instanceof Error ? err.message : 'unknown';
       logger.warn('voice run failed to start', { title, message: detail });

@@ -35,6 +35,7 @@ const runtime = vi.hoisted(() => ({
 }));
 
 const clearLiveVoiceSession = vi.hoisted(() => vi.fn());
+const notifyVoiceWorkSettled = vi.hoisted(() => vi.fn());
 
 vi.mock('../../src/host/task', () => ({
   getTaskManager: () => ({
@@ -59,6 +60,9 @@ vi.mock('../../src/host/services/infra/sessionManager', () => ({
 vi.mock('../../src/host/services/infra/logger', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
+}));
+vi.mock('../../src/host/services/infra/notificationService', () => ({
+  notificationService: { notifyVoiceWorkSettled },
 }));
 vi.mock('../../src/host/permissions/modes', () => ({
   getPermissionModeManager: () => ({
@@ -87,6 +91,7 @@ function bind(): void {
     neoSessionId: 'session-1',
     onWorkItem: (item) => { upserts.push({ ...item }); },
     onEndCall: () => {},
+    onWorkNarration: () => {},
     onWorkFailed: (item) => {
       failures.push({ ...item });
       if (failHookThrows) throw new Error('reporter exploded');
@@ -99,10 +104,15 @@ async function spawn(title = '建个文件'): Promise<void> {
   await dispatchVoiceIntent({ kind: 'spawn_task', title, prompt: '建一个 test-b.txt' });
 }
 
+async function flush(): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, 0));
+}
+
 beforeEach(() => {
   runtime.listeners.clear();
   runtime.startTask.mockClear();
   clearLiveVoiceSession.mockClear();
+  notifyVoiceWorkSettled.mockClear();
   upserts = [];
   failures = [];
   failHookThrows = false;
@@ -122,6 +132,7 @@ describe('G1 语音派活失败必须被说出去', () => {
     // 这条是重点：真实原因必须活着到出口。退化成「执行失败」等于告诉用户一句废话。
     expect(failures[0].detail).toBe('服务认证异常');
     expect(failures[0].detail).not.toBe('执行失败');
+    expect(notifyVoiceWorkSettled).not.toHaveBeenCalled();
   });
 
   it('挂断之后才死的活，失败出口仍然触发（UI 回流已断，留痕不许跟着断）', async () => {
@@ -132,12 +143,19 @@ describe('G1 语音派活失败必须被说出去', () => {
     // 挂断：endVoiceDispatch 把 emit 置 null（只断 UI 回流，账本继续活）
     endVoiceDispatch();
     runtime.emit('task_error', 'session-1', { error: '服务认证异常' });
+    await flush();
 
     // UI 回流确实断了……
     expect(upserts).toHaveLength(upsertsBeforeHangup);
     // ……但失败出口必须照样响。这是 G1 里最需要留痕的那种失败。
     expect(failures).toHaveLength(1);
     expect(failures[0].detail).toBe('服务认证异常');
+    expect(notifyVoiceWorkSettled).toHaveBeenCalledWith({
+      sessionId: 'session-1',
+      taskTitle: '建个文件',
+      status: 'failed',
+      detail: '服务认证异常',
+    });
   });
 
   it('done / cancelled 不触发失败出口（别把正常终态也报成失败）', async () => {

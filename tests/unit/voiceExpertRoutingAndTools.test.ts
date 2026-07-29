@@ -90,6 +90,7 @@ function bind(activeAgentId?: string): void {
     // 失败出口的行为由 voiceWorkFailureVisible.test.ts 专门钉；这里只是补齐契约。
     onWorkFailed: () => {},
     onEndCall: () => {},
+    onWorkNarration: () => {},
   });
 }
 

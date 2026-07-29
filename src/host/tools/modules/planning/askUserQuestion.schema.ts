@@ -54,4 +54,6 @@ export const askUserQuestionSchema: ToolSchema = {
   },
   category: 'planning',
   permissionLevel: 'execute',
+  requiresUserPresence: true,
+  aliases: ['ask_user_question'],
 };

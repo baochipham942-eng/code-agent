@@ -20,6 +20,8 @@ function createCoordinator(timeoutMs = 200): McpOAuthCoordinator {
   return coordinator;
 }
 
+const AUTHORIZATION_SERVER_ISSUER = 'https://auth.example.com';
+
 function httpGet(url: string): Promise<{ statusCode: number; body: string }> {
   return new Promise((resolve, reject) => {
     const request = http.get(url, (response) => {
@@ -72,6 +74,7 @@ describe('McpOAuthCoordinator', () => {
     const flow = await coordinator.beginFlow({
       serverName: 'notion',
       serverIdentity: 'notion:abc123',
+      authorizationServerIssuer: AUTHORIZATION_SERVER_ISSUER,
     });
 
     const redirectUrl = new URL(flow.redirectUrl);
@@ -81,11 +84,12 @@ describe('McpOAuthCoordinator', () => {
     expect(Number(redirectUrl.port)).toBeGreaterThan(0);
   });
 
-  it('resolves the callback code for a matching state and closes the server', async () => {
+  it('keeps compatibility when the callback omits iss', async () => {
     const coordinator = createCoordinator();
     const flow = await coordinator.beginFlow({
       serverName: 'notion',
       serverIdentity: 'notion:abc123',
+      authorizationServerIssuer: AUTHORIZATION_SERVER_ISSUER,
     });
     const callback = coordinator.waitForCallback(flow.flowId);
 
@@ -104,11 +108,48 @@ describe('McpOAuthCoordinator', () => {
     await waitForRefused(flow.redirectUrl);
   });
 
+  it('rejects a mismatched iss before the authorization code can be exchanged', async () => {
+    const coordinator = createCoordinator();
+    const flow = await coordinator.beginFlow({
+      serverName: 'notion',
+      serverIdentity: 'notion:abc123',
+      authorizationServerIssuer: AUTHORIZATION_SERVER_ISSUER,
+    });
+    const exchangeAuthorizationCode = vi.fn();
+    const callbackOutcome = coordinator.waitForCallback(flow.flowId).then(
+      (result) => {
+        exchangeAuthorizationCode(result.code);
+        return { status: 'resolved' as const };
+      },
+      (error: unknown) => ({ status: 'rejected' as const, error }),
+    );
+
+    const response = await httpGet(callbackUrl(flow.redirectUrl, {
+      code: 'must-not-be-exchanged',
+      state: flow.state,
+      iss: 'https://attacker.example.net',
+    }));
+
+    expect(response.statusCode).toBe(400);
+    expect(response.body).toContain(`expected "${AUTHORIZATION_SERVER_ISSUER}"`);
+    expect(response.body).toContain('received "https://attacker.example.net"');
+    const outcome = await callbackOutcome;
+    expect(outcome.status).toBe('rejected');
+    expect(outcome).toMatchObject({
+      error: expect.objectContaining({
+        message: `MCP OAuth issuer mismatch: expected "${AUTHORIZATION_SERVER_ISSUER}", received "https://attacker.example.net"`,
+      }),
+    });
+    expect(exchangeAuthorizationCode).not.toHaveBeenCalled();
+    await waitForRefused(flow.redirectUrl);
+  });
+
   it('rejects a mismatched state without consuming the flow', async () => {
     const coordinator = createCoordinator();
     const flow = await coordinator.beginFlow({
       serverName: 'notion',
       serverIdentity: 'notion:abc123',
+      authorizationServerIssuer: AUTHORIZATION_SERVER_ISSUER,
     });
     const callback = coordinator.waitForCallback(flow.flowId);
 
@@ -138,6 +179,7 @@ describe('McpOAuthCoordinator', () => {
     const flow = await coordinator.beginFlow({
       serverName: 'notion',
       serverIdentity: 'notion:abc123',
+      authorizationServerIssuer: AUTHORIZATION_SERVER_ISSUER,
     });
     const callback = coordinator.waitForCallback(flow.flowId);
     const url = callbackUrl(flow.redirectUrl, {
@@ -161,6 +203,7 @@ describe('McpOAuthCoordinator', () => {
     const flow = await coordinator.beginFlow({
       serverName: 'notion',
       serverIdentity: 'notion:abc123',
+      authorizationServerIssuer: AUTHORIZATION_SERVER_ISSUER,
     });
 
     await expect(coordinator.waitForCallback(flow.flowId)).rejects.toThrow('MCP OAuth flow timed out');
@@ -173,10 +216,12 @@ describe('McpOAuthCoordinator', () => {
     const first = await coordinator.beginFlow({
       serverName: 'notion',
       serverIdentity: 'notion:abc123',
+      authorizationServerIssuer: AUTHORIZATION_SERVER_ISSUER,
     });
     const second = await coordinator.beginFlow({
       serverName: 'notion-renamed',
       serverIdentity: 'notion:abc123',
+      authorizationServerIssuer: AUTHORIZATION_SERVER_ISSUER,
     });
 
     expect(second).toEqual(first);
@@ -188,10 +233,12 @@ describe('McpOAuthCoordinator', () => {
     const first = await coordinator.beginFlow({
       serverName: 'notion',
       serverIdentity: 'notion:abc123',
+      authorizationServerIssuer: AUTHORIZATION_SERVER_ISSUER,
     });
     const second = await coordinator.beginFlow({
       serverName: 'linear',
       serverIdentity: 'linear:def456',
+      authorizationServerIssuer: 'https://login.example.net',
     });
 
     expect(first.state).not.toBe(second.state);

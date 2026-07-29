@@ -32,6 +32,30 @@ export interface VoiceWorkItem {
   detail?: string;
 }
 
+/**
+ * 发言人协议（W6）：一件活落终态后，「该念哪句、以谁的身份念」的唯一载体。
+ *
+ * 只在 done / failed 时产生——排队/开始跑不是结论，念了就是噪音（W6-6 门）。
+ * 播不播、什么时候播由 voiceSessionService 的节制闸决定（W6-4），
+ * 这里只负责把「念什么」算准。
+ */
+export interface VoiceWorkNarration {
+  workItemId: string;
+  /** 只有终态；`cancelled` 是用户自己叫停的，他知道，不用回头念给他听。 */
+  status: 'done' | 'failed';
+  title: string;
+  /**
+   * 已裁剪成「能用嘴说出来」的结论文本：代码块/表格换成一句指路，
+   * 长路径只留文件名，超长截断。原文在屏幕上，不进耳朵。
+   */
+  summary: string;
+  /**
+   * 署名。**只有专家团场景才有**——无专家时 undefined，语音层用第一人称说，
+   * 不冒充任何人格（W6-6 门）。
+   */
+  speaker?: { agentId: string; displayName: string };
+}
+
 export interface VoiceCallSummary {
   durationSec: number;
   provider: VoiceProviderId;
@@ -181,6 +205,14 @@ export type VoiceTransportHandle =
        * 只在 turn_detection = null（PTT/点按）路径有意义；server_vad 路径上游自动断句。
        */
       commit(): void;
+      /**
+       * 把一条外部消息塞进实时会话并让模型就它开口（发言人协议回流，W6-2）。
+       *
+       * 走会话项而不是改 instructions：instructions 是「你是谁」，一件活的结论是
+       * 「刚发生了什么」，塞进 instructions 会让它变成永久人设的一部分，下一轮还在。
+       * 角色用 user 而不是 assistant——模型只会顺着自己说过的话往下说，不会去转述它。
+       */
+      injectItem(text: string): void;
     })
   /** Renderer 直连上游（OpenAI Realtime 等 WebRTC 形态），媒体不经 Host。 */
   | (VoiceTransportHandleBase & {

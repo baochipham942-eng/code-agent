@@ -287,6 +287,44 @@ export function projectTurns(
       continue;
     }
 
+    // 语音派活失败留痕（W6-5）：派出的 run 失败时 host 落一条带
+    // `metadata.voiceWorkFailure` 的 role:'system' 消息。它不是对话内容，
+    // 但**是那张任务卡的结局证据**——按 workItemId 对回对应的 voiceDispatch 轮，
+    // 投成该轮内的 error 节点，任务卡据此如实显示失败。
+    // 对不上就挂当前轮，一个轮都没有就独立成轮——失败记录绝不丢，也不留在半空。
+    if (msg.role === 'system' && msg.metadata?.voiceWorkFailure) {
+      const failedWorkItemId = msg.metadata.voiceWorkFailure.workItemId;
+      {
+        const node: TraceNode = {
+          id: msg.id,
+          type: 'system',
+          subtype: 'error',
+          content: msg.content,
+          timestamp: msg.timestamp,
+          metadata: msg.metadata,
+        };
+        const matchedTurn = [...turns]
+          .reverse()
+          .find((turn) => turn.nodes.some((n) => n.metadata?.voiceDispatch?.workItemId === failedWorkItemId));
+        const hostTurn = matchedTurn ?? currentTurn;
+        if (hostTurn) {
+          hostTurn.nodes.push(node);
+          hostTurn.endTime = msg.timestamp;
+        } else {
+          turnCounter++;
+          turns.push({
+            turnNumber: turnCounter,
+            turnId: `turn-${turnCounter}`,
+            nodes: [node],
+            status: 'completed',
+            startTime: msg.timestamp,
+            endTime: msg.timestamp,
+          });
+        }
+        continue;
+      }
+    }
+
     // System messages → skip (nudges, recovery hints)
     if (msg.role === 'system') continue;
 

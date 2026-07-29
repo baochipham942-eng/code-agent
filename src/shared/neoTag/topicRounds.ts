@@ -47,6 +47,22 @@ export function mergeTopicRounds(lists: NeoTopicRound[][]): NeoTopicRound[] {
   return lists.flat().sort((a, b) => a.at - b.at);
 }
 
+/**
+ * ② topic 主会话规则（2026-07-29 拍板）：最近一轮落点会话为主入口，源会话保留次入口。
+ * 落点真源 = 最后一条带归属的 delta（review 类记账 delta 无归属，自动跳过）；
+ * 老卡全程无归属 → 回退源会话。
+ */
+export function topicPrimaryConversationId(detail: {
+  workCard: { sourceConversationId: string };
+  deltas: Array<Pick<NeoWorkCardDelta, 'conversationId'>>;
+}): string {
+  for (let i = detail.deltas.length - 1; i >= 0; i -= 1) {
+    const conversationId = detail.deltas[i].conversationId;
+    if (conversationId) return conversationId;
+  }
+  return detail.workCard.sourceConversationId;
+}
+
 /** 卡参与过的会话集合：源会话在前，delta 归属去重在后（老 delta 无归属 → 自动回退源会话行为）。 */
 export function topicConversationIds(detail: {
   workCard: { sourceConversationId: string };

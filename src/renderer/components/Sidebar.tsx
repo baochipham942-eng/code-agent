@@ -25,7 +25,7 @@ import {
   PanelLeftClose,
   Download,
 } from 'lucide-react';
-import { IPC_CHANNELS } from '@shared/ipc';
+import { IPC_CHANNELS, type NotificationShowEvent } from '@shared/ipc';
 import { getCurrentKeybindingPlatform } from '@shared/keybindings/defaults';
 import { useUIStore } from '../stores/uiStore';
 import { IconButton, UndoToast } from './primitives';
@@ -57,6 +57,7 @@ import { SidebarStatusFilterDropdown } from './features/sidebar/SidebarStatusFil
 import { SidebarAccountMenu } from './features/sidebar/SidebarAccountMenu';
 import { SidebarSearchDialog } from './features/sidebar/SidebarSearchDialog';
 import { SidebarNewTaskRow } from './features/sidebar/SidebarNewTaskRow';
+import { applySessionNotificationAttention } from './features/sidebar/sessionNotificationAttention';
 import {
   buildSessionStatusFilterOptions,
   buildSessionStatusFilterLabels,
@@ -132,9 +133,24 @@ export const Sidebar: React.FC = () => {
     archiveSession,
     unarchiveSession,
     unreadSessionIds,
+    markSessionUnread,
     sessionRuntimes,
     renameSession,
   } = useSessionStore();
+
+  // 挂断后才落地的语音派活由 host 发一条带 sessionId 的终态通知。
+  // 这里只接到既有 unreadSessionIds：圆点与点开即读沿用原行为。
+  useEffect(() => {
+    const unsubscribe = ipcService.on(
+      IPC_CHANNELS.NOTIFICATION_SHOW,
+      (event: NotificationShowEvent) => {
+        applySessionNotificationAttention(event, { markSessionUnread });
+      },
+    );
+    return () => {
+      unsubscribe?.();
+    };
+  }, [markSessionUnread]);
 
   const {
     pinnedSessionIds,

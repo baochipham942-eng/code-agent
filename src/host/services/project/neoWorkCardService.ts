@@ -19,6 +19,7 @@ import type {
   NeoWorkCardDelta,
   NeoWorkCardDetail,
   NeoWorkCardListOptions,
+  NeoWorkCardPriority,
   NeoWorkCardRequestChangesInput,
   NeoWorkCardResultReview,
   NeoWorkCardRevision,
@@ -27,9 +28,12 @@ import type {
   NeoWriteScope,
   ReviewNeoWorkCardRevisionInput,
   UpdateNeoWorkCardDraftRevisionInput,
+  UpdateNeoWorkCardMetaInput,
 } from '../../../shared/contract/tag';
 
 type RepoProvider = () => NeoWorkCardRepository;
+
+const NEO_WORK_CARD_PRIORITIES = new Set<NeoWorkCardPriority>(['urgent', 'high', 'medium', 'low']);
 
 let cachedRepo: { db: BetterSqlite3.Database; repo: NeoWorkCardRepository } | null = null;
 
@@ -253,6 +257,9 @@ export class NeoWorkCardService {
       requesterUserId,
       title,
       status: 'draft',
+      priority: 'medium',
+      dueAt: null,
+      blockedReason: null,
       currentRevisionId: revisionId,
       approvedRevisionId: null,
       createdAt: now,
@@ -309,6 +316,35 @@ export class NeoWorkCardService {
       .listBySourceConversation(normalizedSourceConversationId, options)
       .map((card) => this.get(card.id))
       .filter((detail): detail is NeoWorkCardDetail => Boolean(detail));
+  }
+
+  updateMeta(input: UpdateNeoWorkCardMetaInput, now = Date.now()): NeoWorkCard {
+    const repo = this.repoProvider();
+    const workCard = repo.getWorkCard(cleanString(input.workCardId));
+    if (!workCard) throw new NeoWorkCardServiceError('NOT_FOUND', 'work card not found');
+    assertOpen(workCard);
+    const actorUserId = cleanString(input.actorUserId);
+    if (!actorUserId) throw new NeoWorkCardServiceError('INVALID_ARGS', 'actorUserId is required');
+    if (input.priority !== undefined && !NEO_WORK_CARD_PRIORITIES.has(input.priority)) {
+      throw new NeoWorkCardServiceError('INVALID_ARGS', 'priority must be urgent, high, medium, or low');
+    }
+    if (
+      input.dueAt !== undefined
+      && input.dueAt !== null
+      && (typeof input.dueAt !== 'number' || !Number.isFinite(input.dueAt))
+    ) {
+      throw new NeoWorkCardServiceError('INVALID_ARGS', 'dueAt must be a number or null');
+    }
+    if (input.priority === undefined && input.dueAt === undefined) {
+      throw new NeoWorkCardServiceError('INVALID_ARGS', 'priority or dueAt is required');
+    }
+    repo.updateWorkCardMeta(workCard.id, {
+      priority: input.priority,
+      dueAt: input.dueAt,
+    }, now);
+    const updated = repo.getWorkCard(workCard.id);
+    if (!updated) throw new NeoWorkCardServiceError('NOT_FOUND', 'work card not found after metadata update');
+    return updated;
   }
 
   updateDraftRevision(
@@ -474,13 +510,20 @@ export class NeoWorkCardService {
     workCardId: string,
     status: NeoWorkCard['status'],
     now = Date.now(),
+    blockedReason?: string | null,
   ): NeoWorkCard {
     const repo = this.repoProvider();
     const normalizedWorkCardId = cleanString(workCardId);
     const workCard = repo.getWorkCard(normalizedWorkCardId);
     if (!workCard) throw new NeoWorkCardServiceError('NOT_FOUND', 'work card not found');
     assertOpen(workCard);
-    repo.setWorkCardStatus(workCard.id, status, now);
+    if (blockedReason !== undefined && status !== 'waiting_for_user' && status !== 'failed') {
+      throw new NeoWorkCardServiceError(
+        'INVALID_STATE',
+        'blockedReason is only valid for waiting_for_user or failed status',
+      );
+    }
+    repo.setWorkCardStatus(workCard.id, status, now, blockedReason);
     const updated = repo.getWorkCard(workCard.id);
     if (!updated) throw new NeoWorkCardServiceError('NOT_FOUND', 'work card not found after status update');
     return updated;

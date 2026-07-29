@@ -8,7 +8,7 @@
 
 import type { WebSocket as WsSocket } from 'ws';
 import { resolveConversationModelOption, VOICE_END_CALL_GOODBYE_TIMEOUT_MS, VOICE_RECONNECT_GRACE_MS, VOICE_SESSION_MAX_DURATION_MS, VOICE_TEARDOWN_DRAIN_MS } from '../../../shared/constants/voice';
-import type { VoiceClientCommand, VoiceEvent, VoiceFocusContext, VoiceTransportHandle, VoiceWorkItem } from '../../../shared/contract/voice';
+import type { VoiceClientCommand, VoiceEvent, VoiceFocusContext, VoiceTransportHandle, VoiceWorkItem, VoiceWorkNarration } from '../../../shared/contract/voice';
 import { getDashscopeApiKey } from '../media/imageGenerationService';
 import { createLogger } from '../infra/logger';
 import { getConfigService } from '../core/configService';
@@ -68,6 +68,12 @@ interface ActiveSession {
   conversationModel: string;
   /** 用户此刻在看什么（Renderer 节流上报） */
   focus: VoiceFocusContext | null;
+  /** 终态播报只属于这通电话：压住、去重与已播记录都随 active 一起销毁。 */
+  narration: {
+    userSpeaking: boolean;
+    queue: Map<string, { narration: VoiceWorkNarration; suppressedTurns: number }>;
+    spokenWorkItemIds: Set<string>;
+  };
 }
 
 // ponytail: 单进程内一个模块级变量就是「全局单路」的全部实现（方案 §2.6）。
@@ -93,20 +99,19 @@ function send(client: WsSocket, event: VoiceEvent): void {
  * 漏一个调用点就会把有对话的电话报成没对话。
  */
 /**
- * 派出去的活失败了，三件事一起做（G1，2026-07-28）：
+ * 派出去的活失败了，这里做两件事（G1，2026-07-28）：
  *
  * 1. **通话里的人当场知道** —— 走既有 notice 通道（同 VOICE_TOOLS_DROPPED 先例），
  *    不新建机制。
  * 2. **失败留痕，事后还找得到** —— notice 是通话态的一次性提示，挂断/切走就没了。
  *    失败必须像通话摘要那样落进消息流，否则「我明明看到它失败了」第二天无从复查。
- * 3. **告诉通话模型它派的活死了** —— 这是「报喜」的根因：brain 只在被问
- *    （get_status）时才看账本，没人主动纠正它就会按「我派成功了」的记忆继续说。
- *    措辞写死，不留自由发挥空间——同 spawnTask 返回值的先例（brain 会把这些
- *    话当事实原样转述给用户）。
  *
- * 三件事互不依赖：任一失败都不许影响另外两件，也不许把异常抛回 onWorkItem。
- * 通话可能已经挂断（活比通话活得久，见 endVoiceDispatch 顶注）——那时 1 和 3
- * 无处可送，但 2 照样要做，而且那正是最需要它的场景。
+ * 曾经的第三件「告诉通话模型它派的活死了」（「报喜」的根因：brain 只在被问时才看账本）
+ * 已归并到发言人协议的回流通道，见本函数末尾注释。
+ *
+ * 两件事互不依赖：任一失败都不许影响另一件，也不许把异常抛回 onWorkItem。
+ * 通话可能已经挂断（活比通话活得久，见 endVoiceDispatch 顶注）——那时 1 无处可送，
+ * 但 2 照样要做，而且那正是最需要它的场景。
  */
 async function reportWorkFailure(
   neoSessionId: string,
@@ -130,22 +135,81 @@ async function reportWorkFailure(
       role: 'system',
       content: `语音派出的任务「${item.title}」失败了，没有完成：${reason}`,
       timestamp: Date.now(),
-      metadata: { source: 'voice' },
+      // workItemId 必须落进 metadata：渲染侧要把这条失败留痕对回它属于的那张任务卡，
+      // 唯一能对得准的只有 id。靠正文文本反解标题看着也能跑，但那是拿人话当协议——
+      // 文案一改、进一次 i18n，失败就静默不再显示（而这条链的全部意义就是别让失败静默）。
+      metadata: { source: 'voice', voiceWorkFailure: { workItemId: item.id, title: item.title } },
     });
   } catch (err) {
     logger.warn('failed to persist work failure', { message: err instanceof Error ? err.message : 'unknown' });
   }
 
-  // 3. 把失败事实推给上游模型，让它下一句就改口
-  if (!stillOnThisCall || !active) return;
-  try {
-    active.upstream.updateInstructions(composeVoiceInstructions(
-      `${active.personaInstructions}\n\n<work_failed_notice>\n你刚才派出去的任务「${item.title}」失败了，没有完成，原因：${reason}。\n必须如实告诉用户这件事失败了。绝对不要说它已经完成、已经写入或已经生效。\n</work_failed_notice>`,
-      active.focus,
-    ));
-  } catch (err) {
-    logger.warn('failed to push work failure to upstream', { message: err instanceof Error ? err.message : 'unknown' });
+  // 「告诉通话模型它派的活死了」这第三件事，现在归发言人协议的回流通道
+  // （onWorkNarration → injectItem）。此前是往 instructions 里塞一段
+  // <work_failed_notice>——instructions 是「你是谁」，一次性事件塞进去会变成
+  // 永久人设，下一轮、下下轮它还在那儿。同一件事只留一条路。
+}
+
+/**
+ * 终态回流 → 一句塞进实时会话的话（发言人协议 §2.2）。
+ *
+ * `[BACKEND] ` 前缀是给模型看的来源标记（用户消息带 `[USER] `），prompt 里明令不许念出来。
+ * 措辞写死不留自由发挥空间：模型会把这段话当事实原样转述，失败尤其不能让它自己润色。
+ */
+function formatNarration(narration: VoiceWorkNarration): string {
+  const who = narration.speaker ? `${narration.speaker.displayName}：` : '';
+  if (narration.status === 'failed') {
+    const reason = narration.summary || '未给出原因';
+    return `[BACKEND] ${who}「${narration.title}」失败了，没有完成，原因：${reason}。`
+      + '如实告诉用户这件事失败了，绝不要说它已经完成、已经写入或已经生效。';
   }
+  return `[BACKEND] ${who}「${narration.title}」做完了。${narration.summary}`.trim();
+}
+
+function injectNarration(session: ActiveSession, narration: VoiceWorkNarration): void {
+  if (session.narration.spokenWorkItemIds.has(narration.workItemId)) return;
+  const { upstream } = session;
+  if (upstream.kind !== 'relay') {
+    // WebRTC 形态媒体不经 Host，注入通道要走 Renderer 的 data channel，尚未实现。
+    // 静默 no-op = 用户永远等不到那句话且查不出为什么，必须留痕。
+    logger.warn('narration dropped: transport has no inject channel', { provider: upstream.provider });
+    return;
+  }
+  upstream.injectItem(formatNarration(narration));
+  session.narration.spokenWorkItemIds.add(narration.workItemId);
+}
+
+function enqueueOrInjectNarration(session: ActiveSession, narration: VoiceWorkNarration): void {
+  const state = session.narration;
+  if (state.spokenWorkItemIds.has(narration.workItemId) || state.queue.has(narration.workItemId)) return;
+  if (!state.userSpeaking) {
+    injectNarration(session, narration);
+    return;
+  }
+  // narration 到达前，这个 speech_started 已经发生；当前用户轮次也算压过一轮。
+  state.queue.set(narration.workItemId, { narration, suppressedTurns: 1 });
+}
+
+function markNarrationUserTurn(session: ActiveSession): void {
+  const state = session.narration;
+  state.userSpeaking = true;
+  for (const [workItemId, pending] of state.queue) {
+    pending.suppressedTurns += 1;
+    if (pending.suppressedTurns < 2) continue;
+    state.queue.delete(workItemId);
+    logger.info('narration dropped after two suppressed user turns', {
+      voiceSessionId: session.id,
+      workItemId,
+    });
+  }
+}
+
+function flushNarrationQueue(session: ActiveSession): void {
+  const state = session.narration;
+  state.userSpeaking = false;
+  const queued = [...state.queue.values()];
+  state.queue.clear();
+  for (const { narration } of queued) injectNarration(session, narration);
 }
 
 async function persistTranscript(
@@ -258,6 +322,7 @@ function beginReconnectGrace(sessionId: string): void {
 async function teardown(reason: string): Promise<void> {
   const session = active;
   if (!session) return;
+  session.narration.queue.clear();
   active = null;
   clearTimeout(session.maxDurationTimer);
   if (session.graceTimer) clearTimeout(session.graceTimer);
@@ -404,6 +469,12 @@ async function connectAndBind(
     // activeWorkItems 过滤），failed 就这么无声消失；通话模型也没人告诉它，
     // 于是继续说「已经写好了」。第五例「建好不接电」。
     onWorkFailed: (item) => void reportWorkFailure(neoSessionId, id, clientRef, item),
+    // 发言人协议（W6）：一件活落终态 → 把结论塞进实时会话，模型用第一人称念给用户听。
+    // 注意 upstream 此刻还不存在（绑定必须早于建连），所以读 active 而不是闭包捕获。
+    onWorkNarration: (narration) => {
+      if (active?.id !== id) return;
+      enqueueOrInjectNarration(active, narration);
+    },
     // 模型自己收线：不当场 teardown，先记一笔，等它把告别说完（response.done）再断。
     // 立刻断会把这句告别掐掉，用户听到的是电话突然没了；但也不能无限等——
     // 上游不回 response.done 时用兜底定时器收尾（同 dictation finish 的先例）。
@@ -429,6 +500,10 @@ async function connectAndBind(
       },
       onEvent: (event) => {
         send(clientRef.current, event);
+        if (active?.id === id) {
+          if (event.type === 'speech.started') markNarrationUserTurn(active);
+          else if (event.type === 'response.done') flushNarrationQueue(active);
+        }
         if (event.type === 'user.transcript' && event.done) void persistTranscript(neoSessionId, 'user', event.text, transcriptCounter);
         else if (event.type === 'assistant.transcript') {
           if (event.done) {
@@ -487,6 +562,11 @@ async function connectAndBind(
     personaInstructions: baseInstructions,
     conversationModel: conversationModel.id,
     focus: null,
+    narration: {
+      userSpeaking: false,
+      queue: new Map(),
+      spokenWorkItemIds: new Set(),
+    },
     maxDurationTimer: setTimeout(() => {
       logger.warn('session hit max duration, force closing', { voiceSessionId: id });
       void teardown('max-duration');

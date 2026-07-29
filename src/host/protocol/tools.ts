@@ -58,6 +58,13 @@ export interface ToolSchema {
   readonly requiresApiKey?: readonly string[];
   /** 幂等 hint（read-only tool），用于缓存和 plan-mode 判断 */
   readonly readOnly?: boolean;
+  /**
+   * 工具会阻塞执行，等待用户在当前会话界面当场输入或选择。
+   * 通话等无法操作会话 UI 的形态据此收窄工具面。
+   */
+  readonly requiresUserPresence?: boolean;
+  /** 同一工具在 provider / 兼容层使用的其他调用名。 */
+  readonly aliases?: readonly string[];
   /** 是否可在 plan mode 下使用（read-only + 不触发外部副作用） */
   readonly allowInPlanMode?: boolean;
 }

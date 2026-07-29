@@ -701,26 +701,30 @@ export function rolePermissionPresetToMode(preset: 'strict' | 'development' | 'c
 }
 
 /**
- * D4 Live 语音抬严（主 agent 链）：通话态比文本再严一档 —— 收到 readOnly。
+ * D4 Live 语音钳制（主 agent 链）——**2026-07-29 产品负责人拍板改成「跟随用户选择」**。
  *
- * ⚠️ 方案 §6.7.10 的映射表写的是 `acceptEdits → default`，**那个映射兑现不了它自己
- * 承诺的行为**，2026-07-26 真机验证实测：会话档 acceptEdits + 通话态，钳到 default 后
- * 语音派的写文件任务**照样直接落盘**。原因是档位不是写入放行的唯一闸门——
- * `permissionClassifier` 的 W1 规则「写入项目目录内 → approve」与档位无关，
- * `permissionModeAutoApproves` 只把 ask 升成 approve，压根管不到 W1 已经 approve 的那条。
+ * 旧行为：任何有免确认的档一律钳到 readOnly。理由写的是「通话时用户手不在键盘、
+ * 眼睛不在 diff 上，口述『好的』不能替代权限卡点击」。
  *
- * 真正能兑现「写盘一律要点权限卡」的机制只有一个：readOnly 档的
- * `readOnlyForcesConfirmationFor`，它把 classifier 的 approve **降级回 ask**。
- * 首跑钳制（clampFirstRunPermissionMode）出于同样的理由也是收到 readOnly，不是 default。
+ * 它被真机推翻了，而且是被自己的理由推翻的：**抬严的前提是「用户点不了确认」，
+ * 抬严的效果却是「弹更多确认让他点」**。2026-07-29 实录——通话里说「建个文件」，
+ * 会话档被钳到 readOnly，执行侧拆成 ls → Write → ls 三步，三张审批卡**全部在挂断
+ * 之后才弹出来**，用户对着一个凭空出现的紫框点了三次。安全上没挡住任何东西
+ * （他只能全点允许），体验上把语音这条链整个堵死。
  *
- * 语义对齐方案 §6.6 权限矩阵：读/搜索随会话 policy 通过，写文件 / patch / shell / 外发
- * 一律 Ask。dontAsk / plan 已经是 deny 级别，比 readOnly 更严，原样返回。
+ * 新决议：**档位跟随会话自己的选择**。用户选 acceptEdits 就是已经拍过板了，
+ * 系统不该趁他打电话替他改回去。原来靠「事前逐次点头」承担的保障，改由
+ * **事后可追溯**承担——发言人协议会把每件活的结论念出来，任务卡把执行过程留在
+ * 会话里，失败留痕独立落库。「无声改东西」这个前提在发言人协议之后已经不成立。
  *
- * 为什么不能「口头说允许就行」：通话时用户手不在键盘、眼睛不在 diff 上，
- * 口述「好的」既没有具体对象也没有可回看的痕迹，不能替代权限卡点击。
+ * **唯一保留的底线：bypassPermissions → acceptEdits**。这一条不是不信任用户，
+ * 是语音独有的新风险：ASR 会听错（2026-07-29 实录「a.txt」被听成「a点text」，
+ * 最后落盘的文件叫 notes.md）。文本模式下打错字用户自己看得见，语音下看不见。
+ * bypass + 听错 = 零确认执行一条他没说过的命令。同款钳制在无人值守会话已有先例
+ * （clampUnattendedPermissionMode），照抄那个口径，不自创。
  */
 export function clampLiveVoicePermissionMode(mode: PermissionMode): PermissionMode {
-  return mode === 'dontAsk' || mode === 'plan' || mode === 'readOnly' ? mode : 'readOnly';
+  return mode === 'bypassPermissions' ? 'acceptEdits' : mode;
 }
 
 /**
@@ -732,6 +736,8 @@ export function clampLiveVoicePermissionMode(mode: PermissionMode): PermissionMo
  * development / strict 已经不免确认，原样返回。
  */
 export function clampLiveVoicePermissionPreset(preset: PermissionPreset): PermissionPreset {
+  // 子链与主链同一决议：只压掉「四类操作全自动批准」的 ci 档（等价于主链的
+  // bypassPermissions → acceptEdits），其余 preset 跟随用户选择。
   return preset === 'ci' ? 'development' : preset;
 }
 

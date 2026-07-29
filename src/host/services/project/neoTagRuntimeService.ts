@@ -353,7 +353,7 @@ export async function launchApprovedNeoWorkCard(
     const state = await waitForRuntimeState(input.taskManager, roundConversationId);
     if (state?.status === 'error') {
       const error = state.error || 'Runtime task ended with an error state.';
-      service.setStatus(workCard.id, 'failed', now());
+      service.setStatus(workCard.id, 'failed', now(), error);
       appendFailureDelta({
         service,
         workCardId: workCard.id,
@@ -368,7 +368,12 @@ export async function launchApprovedNeoWorkCard(
     }
 
     if (state?.status === 'paused') {
-      service.setStatus(workCard.id, 'waiting_for_user', now());
+      service.setStatus(
+        workCard.id,
+        'waiting_for_user',
+        now(),
+        'Runtime paused for user input or approval.',
+      );
       service.appendDelta({
         workCardId: workCard.id,
         runId: run,
@@ -402,7 +407,7 @@ export async function launchApprovedNeoWorkCard(
   } catch (error) {
     logger.error('Neo Tag runtime launch failed', error);
     const message = runtimeErrorMessage(error);
-    service.setStatus(workCard.id, 'failed', now());
+    service.setStatus(workCard.id, 'failed', now(), message);
     appendFailureDelta({
       service,
       workCardId: workCard.id,

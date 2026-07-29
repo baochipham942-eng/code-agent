@@ -1,5 +1,10 @@
 // ============================================================================
 // MCP Client - Model Context Protocol 客户端编排器
+import type {
+  Client,
+  Transport,
+} from '@modelcontextprotocol/client';
+
 // 支持三种传输协议：
 // - stdio (本地命令行)
 // - SSE/HTTP (远程)
@@ -13,10 +18,6 @@
 
 import { EventEmitter } from 'node:events';
 import { createHash } from 'node:crypto';
-import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { UnauthorizedError } from '@modelcontextprotocol/sdk/client/auth.js';
-import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
-import type { ListChangedHandlers } from '@modelcontextprotocol/sdk/types.js';
 import type { ToolDefinition, ToolResult } from '../../shared/contract';
 import { createLogger } from '../services/infra/logger';
 
@@ -54,14 +55,26 @@ import {
   createTransport,
   createMCPSDKClient,
   connectWithTimeout,
+  isMcpToolConnectionInterruptionError,
   retryTransientRemoteMCPConnection,
 } from './mcpTransport';
 import { MCPToolRegistry } from './mcpToolRegistry';
+import {
+  createMcpListChangedHandlers,
+  McpListChangedRecovery,
+  type ListRefreshCallbacks,
+} from './mcpListChangedRecovery';
 import { McpSdkTaskProtocol } from './mcpTaskProtocol';
 import type { McpTaskCapability, McpTaskProtocol } from './mcpDurableTask';
 import { registerElicitationHandler } from './mcpElicitation';
 import { createOAuthProviderForServer } from './mcpOAuthProvider';
 import { getMcpOAuthCoordinator } from './mcpOAuthCoordinator';
+import {
+  formatMcpConnectionError,
+  isOAuthAuthorizationRequiredError,
+  MCPToolDeliveryUnknownError,
+} from './mcpErrors';
+import { classifyMcpToolReplaySafety } from './mcpToolSafety';
 import { resolveServerConfigSecrets } from './mcpSecretResolver';
 import {
   getDefaultMCPServers as _getDefaultMCPServers,
@@ -92,19 +105,9 @@ export { isInProcessConfig } from './types';
 
 const logger = createLogger('MCPClient');
 const CUA_SEARCH_KEYWORDS = new Set(['computer', 'desktop', 'screen', 'cursor', 'cua', 'driver']);
-const OAUTH_AUTHORIZATION_REQUIRED_ERROR_PREFIX = 'oauth-authorization-required';
-
 type OAuthFinishAuthTransport = Transport & {
   finishAuth?: (authorizationCode: string) => Promise<void>;
 };
-
-function formatMcpConnectionError(error: unknown): string {
-  if (error instanceof UnauthorizedError) {
-    const message = error.message || 'authorization required';
-    return `${OAUTH_AUTHORIZATION_REQUIRED_ERROR_PREFIX}: ${message}`;
-  }
-  return error instanceof Error ? error.message : 'Unknown error';
-}
 
 export interface MCPToolCallOptions {
   timeoutMs?: number;
@@ -175,6 +178,7 @@ export class MCPClient extends EventEmitter {
   // 懒加载：正在连接中的服务器 Promise（防止重复连接）
   private connectingServers: Map<string, Promise<void>> = new Map();
   private pendingOAuthAuthorizations: Map<string, Promise<void>> = new Map();
+  private listChangedRecovery = new McpListChangedRecovery();
 
   // ========================================================================
   // LRU 缓存 + 会话管理
@@ -191,63 +195,32 @@ export class MCPClient extends EventEmitter {
     super();
   }
 
-  /**
-   * 构建 listChanged 通知处理器。
-   * SDK 仅在 server 声明对应 listChanged capability 时激活；autoRefresh 默认 true，
-   * onChanged 回调拿到的 items 即为重新拉取后的最新列表。
-   */
-  private buildListChangedHandlers(serverName: string): ListChangedHandlers {
+  private buildListRefreshCallbacks(
+    serverName: string,
+  ): Omit<ListRefreshCallbacks, 'shouldContinue'> {
     return {
-      tools: {
-        onChanged: (error, tools) => {
-          if (error || !tools) {
-            logger.warn(`listChanged(tools) refresh failed for ${serverName}`, { error: error?.message });
-            return;
-          }
-          this.registry.refreshServerTools(serverName, tools);
-          this.toolDefinitionCache.delete(serverName);
-          const state = this.serverStates.get(serverName);
-          if (state) {
-            state.toolCount = this.registry.getToolCount(serverName);
-          }
-          this.emit('capabilities-changed', {
-            serverName,
-            kind: 'tools',
-            count: tools.length,
-          } satisfies MCPCapabilitiesChangedEvent);
-        },
+      applyTools: (tools) => {
+        this.registry.refreshServerTools(serverName, tools);
+        this.toolDefinitionCache.delete(serverName);
+        const state = this.serverStates.get(serverName);
+        if (state) state.toolCount = this.registry.getToolCount(serverName);
+        this.emit('capabilities-changed', {
+          serverName, kind: 'tools', count: tools.length,
+        } satisfies MCPCapabilitiesChangedEvent);
       },
-      resources: {
-        onChanged: (error, resources) => {
-          if (error || !resources) {
-            logger.warn(`listChanged(resources) refresh failed for ${serverName}`, { error: error?.message });
-            return;
-          }
-          this.registry.refreshServerResources(serverName, resources);
-          const state = this.serverStates.get(serverName);
-          if (state) {
-            state.resourceCount = this.registry.getResourceCount(serverName);
-          }
-          this.emit('capabilities-changed', {
-            serverName,
-            kind: 'resources',
-            count: resources.length,
-          } satisfies MCPCapabilitiesChangedEvent);
-        },
+      applyResources: (resources) => {
+        this.registry.refreshServerResources(serverName, resources);
+        const state = this.serverStates.get(serverName);
+        if (state) state.resourceCount = this.registry.getResourceCount(serverName);
+        this.emit('capabilities-changed', {
+          serverName, kind: 'resources', count: resources.length,
+        } satisfies MCPCapabilitiesChangedEvent);
       },
-      prompts: {
-        onChanged: (error, prompts) => {
-          if (error || !prompts) {
-            logger.warn(`listChanged(prompts) refresh failed for ${serverName}`, { error: error?.message });
-            return;
-          }
-          this.registry.refreshServerPrompts(serverName, prompts);
-          this.emit('capabilities-changed', {
-            serverName,
-            kind: 'prompts',
-            count: prompts.length,
-          } satisfies MCPCapabilitiesChangedEvent);
-        },
+      applyPrompts: (prompts) => {
+        this.registry.refreshServerPrompts(serverName, prompts);
+        this.emit('capabilities-changed', {
+          serverName, kind: 'prompts', count: prompts.length,
+        } satisfies MCPCapabilitiesChangedEvent);
       },
     };
   }
@@ -438,7 +411,10 @@ export class MCPClient extends EventEmitter {
           useProxy: attemptNumber > 1,
           ...(authProvider ? { authProvider } : {}),
         });
-        const client = createMCPSDKClient(this.buildListChangedHandlers(config.name));
+        const client = createMCPSDKClient(createMcpListChangedHandlers(
+          config.name,
+          this.buildListRefreshCallbacks(config.name),
+        ));
 
         // Register elicitation handler before connecting (required by SDK)
         registerElicitationHandler(client, config.name);
@@ -469,6 +445,11 @@ export class MCPClient extends EventEmitter {
       this.clients.set(config.name, connected.client);
       this.transports.set(config.name, connected.transport);
       this.bumpServerConnectionGeneration(config.name);
+      const refreshCallbacks = this.buildListRefreshCallbacks(config.name);
+      void this.listChangedRecovery.monitor(config.name, connected.client, {
+        shouldContinue: () => this.clients.get(config.name) === connected.client,
+        ...refreshCallbacks,
+      });
 
       // 更新状态
       if (state) {
@@ -503,7 +484,7 @@ export class MCPClient extends EventEmitter {
     transport: Transport,
     error: unknown,
   ): boolean {
-    if (!isHttpStreamableConfig(config) || config.auth !== 'oauth' || !(error instanceof UnauthorizedError)) {
+    if (!isHttpStreamableConfig(config) || config.auth !== 'oauth' || !isOAuthAuthorizationRequiredError(error)) {
       return false;
     }
 
@@ -606,6 +587,7 @@ export class MCPClient extends EventEmitter {
     this.bumpServerConnectionGeneration(serverName);
     const client = this.clients.get(serverName);
     const transport = this.transports.get(serverName);
+    this.listChangedRecovery.stop(serverName);
 
     if (client) {
       await client.close();
@@ -866,9 +848,10 @@ export class MCPClient extends EventEmitter {
       serverIdentity,
       trusted: trustedServerIdentities.has(serverIdentity),
       serverToolsCall: declaration.server.toolsCall,
-      // tasks/get and tasks/result are required by task-augmented tools/call. list is separate.
+      // The extension's tasks/get is the bounded query/result path; tasks/list no longer exists.
       query: declaration.server.toolsCall,
       cancel: declaration.server.cancel,
+      update: declaration.server.update,
       toolTaskSupport: declaration.toolTaskSupport,
     };
   }
@@ -1070,18 +1053,11 @@ export class MCPClient extends EventEmitter {
       }
 
       const errorMessage = error instanceof Error ? error.message : 'MCP tool call failed';
-
-      // 会话过期检测 (JSON-RPC -32001 "Session not found")
-      const isSessionExpired = errorMessage.includes('-32001') ||
-        errorMessage.includes('Session not found') ||
-        errorMessage.includes('session expired');
-
-      // 连接错误时尝试重连。状态化 CUA 的写操作禁止自动重放：断连可能发生在
-      // 输入事件已送达但回执尚未返回的窗口，此时重试会造成双击/重复输入。
-      const isConnectionError = isSessionExpired ||
-        errorMessage.includes('timed out') ||
-        errorMessage.includes('Connection closed') ||
-        errorMessage.includes('not connected');
+      const errorCode = error && typeof error === 'object'
+        ? (error as { code?: unknown }).code
+        : undefined;
+      const isSessionExpired = errorCode === -32001;
+      const isConnectionError = isMcpToolConnectionInterruptionError(error);
 
       if (isConnectionError) {
         if (isSessionExpired) {
@@ -1089,15 +1065,17 @@ export class MCPClient extends EventEmitter {
           // 清除缓存的能力数据（session 过期意味着服务器重启了）
           this.toolDefinitionCache.delete(serverName);
         }
-        const suppressRetry = shouldSuppressCuaAutoReplay(serverName, toolName);
+        const replaySafety = shouldSuppressCuaAutoReplay(serverName, toolName)
+          ? 'forbidden'
+          : classifyMcpToolReplaySafety(this.registry.getToolAnnotations(serverName, toolName));
         logger.warn(
-          suppressRetry
+          replaySafety !== 'automatic'
             ? `MCP server ${serverName} connection issue; reconnecting without replaying ${toolName}`
             : `MCP server ${serverName} connection issue, attempting reconnect and retry...`,
         );
 
         const reconnectResult = await this.reconnect(serverName);
-        if (reconnectResult.success && !suppressRetry) {
+        if (reconnectResult.success && replaySafety === 'automatic') {
           logger.info(`Reconnected to ${serverName}, retrying tool call...`);
           const retryClient = this.clients.get(serverName);
           if (retryClient) {
@@ -1107,15 +1085,17 @@ export class MCPClient extends EventEmitter {
             if (retryResult) return retryResult;
           }
         }
+
+        if (replaySafety !== 'automatic') {
+          throw new MCPToolDeliveryUnknownError(serverName, toolName, error);
+        }
       }
 
-      const deliveryUnknown = shouldSuppressCuaAutoReplay(serverName, toolName) && isConnectionError;
       return {
         toolCallId,
         success: false,
         error: errorMessage,
         duration: Date.now() - startTime,
-        ...(deliveryUnknown ? { metadata: { cuaDeliveryUnknown: true } } : {}),
       };
     }
   }

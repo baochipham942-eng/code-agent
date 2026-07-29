@@ -31,7 +31,7 @@ const MAX_RECAP_LENGTH = 120;
 /** 喂给小模型的素材条数上限：再多也只是重复，白花 token */
 const MAX_ARTIFACTS_IN_PROMPT = 8;
 const MAX_TASKS_IN_PROMPT = 8;
-export const MIN_RECAP_ABSENCE_MS = 5 * 60 * 1000;
+const MIN_RECAP_ABSENCE_MS = 5 * 60 * 1000;
 
 export interface SessionRecapMaterial {
   /** 上次查看之后收口的轮次 */

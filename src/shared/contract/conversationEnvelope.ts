@@ -79,7 +79,7 @@ export interface ComposerAgentSelection {
 }
 
 /** composer 命令 chip（/goal /schedule /loop /workflow）：发送时拼回正文前缀，同时随 envelope 进 metadata 供回放 chip 行。 */
-export interface ConversationPendingCommand {
+interface ConversationPendingCommand {
   id: string;
   /** 面板展示名（如「设定目标」） */
   name: string;

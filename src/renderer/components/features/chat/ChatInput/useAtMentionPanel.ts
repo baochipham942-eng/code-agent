@@ -228,5 +228,5 @@ export function useAtMentionPanel(params: UseAtMentionPanelParams) {
   };
 }
 
-export type AtMentionPanel = ReturnType<typeof useAtMentionPanel>;
+type AtMentionPanel = ReturnType<typeof useAtMentionPanel>;
 export type { AtMentionFileRow, AtMentionLibraryRow, AtMentionRow };

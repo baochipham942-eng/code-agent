@@ -28,7 +28,7 @@ const AUDIO_EXTENSIONS = ['.mp3', '.wav', '.m4a', '.aac', '.flac', '.ogg', '.oga
 const VIDEO_EXTENSIONS = ['.mp4', '.webm', '.mov', '.m4v', '.mkv', '.avi'];
 
 /** 按文件名推导附件类别（@ 面板没有浏览器 File 对象，只有路径）。 */
-export function getFileCategoryByName(name: string): { category: AttachmentCategory; language?: string } {
+function getFileCategoryByName(name: string): { category: AttachmentCategory; language?: string } {
   const ext = `.${name.split('.').pop()?.toLowerCase() ?? ''}`;
   if (CODE_EXTENSIONS[ext]) return { category: 'code', language: CODE_EXTENSIONS[ext] };
   if (STYLE_EXTENSIONS[ext]) return { category: 'code', language: STYLE_EXTENSIONS[ext] };
@@ -51,7 +51,7 @@ function isTextLikeCategory(category: AttachmentCategory): boolean {
   return category === 'code' || category === 'data' || category === 'text' || category === 'html' || category === 'other';
 }
 
-export function resolveMentionAbsolutePath(path: string, workingDirectory: string | null): string {
+function resolveMentionAbsolutePath(path: string, workingDirectory: string | null): string {
   if (path.startsWith('/')) return path;
   const clean = path.replace(/^\.\//, '');
   if (!workingDirectory) return clean;

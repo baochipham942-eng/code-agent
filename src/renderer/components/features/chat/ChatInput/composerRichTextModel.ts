@@ -22,11 +22,11 @@ export interface InlineChipRef {
   id: string;
 }
 
-export const COMPOSER_CHIP_KEY_ATTR = 'data-composer-chip-key';
+const COMPOSER_CHIP_KEY_ATTR = 'data-composer-chip-key';
 const COMPOSER_CHIP_KIND_ATTR = 'data-composer-chip-kind';
 const COMPOSER_CHIP_ID_ATTR = 'data-composer-chip-id';
 
-export function isChipMount(node: Node | null | undefined): boolean {
+function isChipMount(node: Node | null | undefined): boolean {
   return Boolean(
     node
     && node.nodeType === 1
@@ -254,7 +254,7 @@ export function replaceRangeWithChipMount(root: HTMLElement, start: number, end:
   return mount;
 }
 
-export function setCaretAfterMount(root: HTMLElement, mount: HTMLElement): void {
+function setCaretAfterMount(root: HTMLElement, mount: HTMLElement): void {
   const index = Array.prototype.indexOf.call(root.childNodes, mount);
   applyCaretPosition(root, index + 1);
 }

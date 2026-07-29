@@ -31,11 +31,11 @@ const NEW_SESSION_CATEGORIES: ReadonlySet<AgentErrorCategory> = new Set([
   'generic',
 ]);
 
-export function shouldShowSwitchModel(category: AgentErrorCategory): boolean {
+function shouldShowSwitchModel(category: AgentErrorCategory): boolean {
   return SWITCH_MODEL_CATEGORIES.has(category);
 }
 
-export function shouldShowNewSession(category: AgentErrorCategory): boolean {
+function shouldShowNewSession(category: AgentErrorCategory): boolean {
   return NEW_SESSION_CATEGORIES.has(category);
 }
 

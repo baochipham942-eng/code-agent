@@ -17,27 +17,6 @@ export const NEO_TAG_MENTION_AGENT: MentionRoutingAgent & { role: string } = {
   role: zh.neoMentionRouting.workCardRole,
 };
 
-/** 按当前语言重写 NEO_TAG_MENTION_AGENT 的展示态 name/role（id 保持稳定，mention token 仍归一为 'neo'）。 */
-export function localizeNeoTagMentionAgent(t: Translations): MentionRoutingAgent & { role: string } {
-  return {
-    ...NEO_TAG_MENTION_AGENT,
-    name: t.neoMentionRouting.workCardName,
-    role: t.neoMentionRouting.workCardRole,
-  };
-}
-
-/**
- * 建议展示 Neo 候选的时机：
- * - 裸 @（空 query）：像 @teammate 一样置顶召唤 Neo,并借此压掉文件 popup 噪音（产品负责人 2026-07-02）。
- * - @ 后接 'neo' 的前缀（n / ne / neo）：继续置顶 Neo。
- * - @ 后接其它前缀（如文件名 src/...）：不召唤 Neo,文件 mention 照常。
- */
-export function shouldSuggestNeoMention(query: string): boolean {
-  const normalized = query.trim().toLowerCase();
-  if (!normalized) return true;
-  return 'neo'.startsWith(normalized);
-}
-
 export const NEO_TOPIC_MENTION_PREFIX = '__neo_topic__:';
 
 const CLOSED_TOPIC_STATUSES = new Set(['cancelled', 'archived']);
@@ -67,11 +46,6 @@ export function buildNeoTopicMentionCandidates(
         role: t.neoMentionRouting.continuationRole,
       };
     });
-}
-
-export function isLeadingNeoTagInput(value: string): boolean {
-  const trimmedStart = value.replace(/^\s+/, '');
-  return /^@neo(?:\s|$)/i.test(trimmedStart);
 }
 
 export function parseLeadingNeoTagInvocation(content: string): ParsedNeoTagInvocation | null {

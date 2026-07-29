@@ -12,7 +12,7 @@ import type { LibraryItem } from '@shared/contract/library';
 import { filterPinCandidates, matchesLibraryItemSearch } from '../../knowledge/libraryItemModel';
 
 /** 每组最多展示条数（资料库 / 工作区文件各自独立计算）。 */
-export const AT_MENTION_GROUP_LIMIT = 8;
+const AT_MENTION_GROUP_LIMIT = 8;
 
 export interface AtMentionFileMatch {
   path: string;

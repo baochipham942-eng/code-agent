@@ -34,6 +34,33 @@ export interface Project {
   sourceRevision?: number;
 }
 
+/** 云协同空间成员（project 域 listMembers 返回行；形状与 host ProjectMember 一致） */
+export interface ProjectMember {
+  projectId: string;
+  userId: string;
+  role: 'owner' | 'member';
+  displayName: string | null;
+  avatarUrl: string | null;
+  joinedAt: string;
+}
+
+/** 空间邀请码（project 域 createInvite 返回；形状与 host ProjectInvite 一致） */
+export interface ProjectInvite {
+  code: string;
+  projectId: string;
+  expiresAt: string;
+  maxUses: number;
+  usedCount: number;
+  revokedAt: string | null;
+}
+
+/** 升级为云协同空间的结果（project 域 promoteToCloudSpace 返回） */
+export interface CloudSpacePromotion {
+  localProjectId: string;
+  cloudProjectId: string;
+  name: string;
+}
+
 export type ProjectSourceRole = 'primary' | 'additional';
 export type ProjectSourceAccess = 'read_only' | 'read_write';
 export type ProjectSourceTrustState = 'trusted' | 'blocked';

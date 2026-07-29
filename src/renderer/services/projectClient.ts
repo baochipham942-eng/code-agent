@@ -8,6 +8,7 @@
 
 import { IPC_DOMAINS } from '@shared/ipc';
 import type {
+  CloudSpacePromotion,
   CreateSpaceInput,
   Project,
   ProjectArtifact,
@@ -16,6 +17,8 @@ import type {
   ProjectDetail,
   ProjectGoal,
   ProjectGoalStatus,
+  ProjectInvite,
+  ProjectMember,
   ProjectRoleLink,
   ProjectSourceGitState,
   ProjectStatus,
@@ -42,6 +45,28 @@ export async function createSpace(input: CreateSpaceInput): Promise<Project> {
 /** 将已有普通项目升级为显式协作空间 */
 export async function promoteToSpace(projectId: string): Promise<Project> {
   return ipcService.invokeDomain<Project>(IPC_DOMAINS.PROJECT, 'promoteToSpace', { projectId });
+}
+
+/** 升级为云协同空间：创建云项目壳并写回本地映射；失败 error.message 已是人话（host 侧映射） */
+export async function promoteToCloudSpace(projectId: string): Promise<CloudSpacePromotion> {
+  return ipcService.invokeDomain<CloudSpacePromotion>(IPC_DOMAINS.PROJECT, 'promoteToCloudSpace', { projectId });
+}
+
+/** owner 创建空间邀请码；失败 error.message 已是人话，toast 直接展示 */
+export async function createInvite(
+  projectId: string,
+  opts: { expiresInHours: number; maxUses: number },
+): Promise<ProjectInvite> {
+  return ipcService.invokeDomain<ProjectInvite>(IPC_DOMAINS.PROJECT, 'createInvite', {
+    projectId,
+    expiresInHours: opts.expiresInHours,
+    maxUses: opts.maxUses,
+  });
+}
+
+/** 读取云协同空间成员卡（仅 cloudProjectId 非空的空间可用） */
+export async function listMembers(projectId: string): Promise<ProjectMember[]> {
+  return ipcService.invokeDomain<ProjectMember[]>(IPC_DOMAINS.PROJECT, 'listMembers', { projectId });
 }
 
 /** 项目级能力选用清单（connector 等 kind 维度；skill 走 SKILL IPC 覆盖模型） */

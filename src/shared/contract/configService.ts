@@ -28,6 +28,7 @@ import type { ModelProvider } from './model';
  * 让两边复用时不需要再做类型 narrow。
  */
 export type ServiceApiKey =
+  | 'dashscope'
   | 'brave'
   | 'langfuse_public'
   | 'langfuse_secret'

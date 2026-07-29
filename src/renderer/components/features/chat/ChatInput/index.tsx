@@ -705,8 +705,12 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   // useBudgetStatus 不是定时轮询：仅在成本前进 / 流式结束时各拉一次，挂在 pill 侧。
 
   const hasContent = value.trim().length > 0 || attachments.length > 0;
-  // 右侧主按钮的归属：只有「空输入框 + 没在跑 + 语音入口真能用」时才让给开通话，
+  // 右侧主按钮的归属：只有「空输入框 + 没在跑 + 语音入口开着」时才让给开通话，
   // 其余情况发送键都有事可做（发送 / 停止），不能被换掉。
+  //
+  // 不看 `configured`（2026-07-30 缺 key 降级）：没配 key 时主位照让，
+  // LiveVoiceButton 自己渲染成「点我配 key」的引导态——能力不可用要降级提示，
+  // 不是消失，否则新用户永远发现不了这儿有实时语音。
   //
   // 刻意不看 `disabled`（2026-07-27 真机：切到新会话时底栏按钮闪变）：
   // `disabled = isProcessing || isCreatingSession`，而 `!isProcessing` 上面已经拦了，
@@ -719,7 +723,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     && !isProcessing
     && Boolean(currentSessionId)
     && liveVoiceAvailability.enabled
-    && liveVoiceAvailability.configured
     && liveVoiceCallPhase === 'idle';
 
   return (

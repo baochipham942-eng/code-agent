@@ -1,19 +1,25 @@
 // @vitest-environment jsdom
 //
-// LiveVoiceButton 入口门（B1）：可见性（总开关 && Provider 配置 && idle 相位）、
-// 空会话直接开、有消息会话先确认。
+// LiveVoiceButton 入口门（B1）：可见性（总开关 && idle 相位）、空会话直接开、
+// 有消息会话先确认；缺 key（enabled && !configured）降级成可点引导态——
+// 按钮在、可点、点击不拨号，而是弹引导层跳设置（2026-07-30，降级提示不消失）。
 import React from 'react';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { zh } from '../../../src/renderer/i18n/zh';
 
 const bridgeMock = vi.hoisted(() => ({ dial: vi.fn() }));
+const appStoreMock = vi.hoisted(() => ({ openSettingsTab: vi.fn() }));
 
 vi.mock('../../../src/renderer/hooks/useI18n', () => ({
   useI18n: () => ({ t: zh, language: 'zh' }),
 }));
 vi.mock('../../../src/renderer/services/voiceCallBridge', () => ({
   voiceCallBridge: bridgeMock,
+}));
+vi.mock('../../../src/renderer/stores/appStore', () => ({
+  useAppStore: (selector: (state: unknown) => unknown) =>
+    selector({ openSettingsTab: appStoreMock.openSettingsTab }),
 }));
 
 import { LiveVoiceButton, type LiveVoiceButtonProps } from '../../../src/renderer/components/features/voice/LiveVoiceButton';
@@ -36,17 +42,36 @@ describe('LiveVoiceButton', () => {
     useVoiceCallStore.getState().reset();
   });
 
-  it('总开关关 / Provider 未配置 / 无会话：不渲染（§9.3）', () => {
+  it('总开关关 / 无会话：不渲染（§9.3）', () => {
     const { container, unmount } = renderButton({ availability: { enabled: false, configured: true } });
     expect(container.querySelector('[data-testid="live-voice-button"]')).toBeNull();
     unmount();
 
-    const { container: c2, unmount: u2 } = renderButton({ availability: { enabled: true, configured: false } });
+    // 总开关关掉时就算配了 key 也不渲染——用户明确关掉的东西不纠缠
+    const { container: c2, unmount: u2 } = renderButton({ availability: { enabled: false, configured: false } });
     expect(c2.querySelector('[data-testid="live-voice-button"]')).toBeNull();
+    expect(c2.querySelector('[data-testid="live-voice-button-unconfigured"]')).toBeNull();
     u2();
 
     const { container: c3 } = renderButton({ sessionId: null });
     expect(c3.querySelector('[data-testid="live-voice-button"]')).toBeNull();
+  });
+
+  it('缺 key（enabled && !configured）：降级成可点引导态，不消失、不拨号', () => {
+    renderButton({ availability: { enabled: true, configured: false } });
+
+    const button = screen.getByTestId('live-voice-button-unconfigured');
+    // 正常拨号按钮不出现，但引导按钮在原位置
+    expect(screen.queryByTestId('live-voice-button')).toBeNull();
+
+    fireEvent.click(button);
+    expect(bridgeMock.dial).not.toHaveBeenCalled();
+    // 引导层弹出：文案 + 「去配置」
+    expect(screen.getByText(zh.voice.live.noKeyTitle)).toBeTruthy();
+
+    fireEvent.click(screen.getByText(zh.voice.live.noKeyAction));
+    expect(bridgeMock.dial).not.toHaveBeenCalled();
+    expect(appStoreMock.openSettingsTab).toHaveBeenCalledWith('voiceLive');
   });
 
   it('通话进行中不渲染（VoiceChrome 接管底栏）', () => {

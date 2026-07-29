@@ -34,7 +34,7 @@ export const enSettingsModels = {
         },
         qwen: {
           name: '通义千问',
-          description: 'Alibaba Cloud 通义千问 models',
+          description: 'Alibaba Cloud 通义千问 models — one API key also powers live voice, image generation, and dictation',
         },
         moonshot: {
           name: 'Kimi',

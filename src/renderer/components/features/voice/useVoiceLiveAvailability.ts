@@ -2,7 +2,8 @@
 // useVoiceLiveAvailability —— 实时通话入口可见性的两个前提（方案 §9.3）
 //   1) 设置 → 语音「实时通话」总开关打开；
 //   2) Realtime Provider 已配置（host 真相：secureStorage 或 env 的 key）。
-// 两者缺一，LiveVoiceButton 不渲染；设置页负责解释「为什么看不到」。
+// 总开关关掉 = 用户明确不要，入口不渲染；只缺 key（1 成立 2 不成立）时入口
+// 降级成可点的「去配 key」引导态（LiveVoiceButton，2026-07-30），不再消失。
 // ============================================================================
 
 import { useCallback, useEffect, useState } from 'react';

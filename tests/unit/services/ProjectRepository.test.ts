@@ -79,6 +79,24 @@ describe('ProjectRepository', () => {
     expect(repo.getProject(p.id)?.name).toBe('alpha');
   });
 
+  it('写回并按 cloud_project_id 查回唯一云空间映射', () => {
+    const p = makeRow('/work/alpha', getProjectKey('/work/alpha'), NOW);
+    repo.upsertProject(p);
+
+    expect(repo.setCloudProjectId(p.id, 'cloud-alpha', NOW + 1)).toEqual(
+      expect.objectContaining({
+        id: p.id,
+        cloudProjectId: 'cloud-alpha',
+        updatedAt: NOW + 1,
+      }),
+    );
+    expect(repo.getProjectByCloudProjectId('cloud-alpha')?.id).toBe(p.id);
+
+    const second = { ...makeRow('/work/beta', getProjectKey('/work/beta'), NOW), id: 'proj_beta' };
+    repo.upsertProject(second);
+    expect(() => repo.setCloudProjectId(second.id, 'cloud-alpha', NOW + 2)).toThrow();
+  });
+
   it('允许同一 workspace path 属于不同 Project', () => {
     const key = getProjectKey('/work/shared');
     const first = { ...makeRow('/work/shared', key, NOW), id: 'proj_first' };

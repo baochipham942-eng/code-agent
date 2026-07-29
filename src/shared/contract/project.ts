@@ -28,6 +28,8 @@ export interface Project {
   archivedAt?: number | null;
   /** 用户显式升级为协作空间的时间；null 表示仍是自动派生的普通项目。 */
   spacePromotedAt?: number | null;
+  /** 对应 collab_projects.id；null 表示该项目仍是纯本地空间。 */
+  cloudProjectId?: string | null;
   /** Monotonic revision for atomic source edits and immutable run snapshots. */
   sourceRevision?: number;
 }

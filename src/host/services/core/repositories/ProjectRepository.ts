@@ -43,6 +43,7 @@ function rowToProject(row: SQLiteRow): Project {
     updatedAt: row.updated_at as number,
     archivedAt: (row.archived_at as number) ?? null,
     spacePromotedAt: (row.space_promoted_at as number) ?? null,
+    cloudProjectId: (row.cloud_project_id as string) ?? null,
     sourceRevision: Number(row.source_revision ?? 0),
   };
 }
@@ -86,11 +87,13 @@ export class ProjectRepository {
     this.db.prepare(`
       INSERT INTO projects (
         id, name, workspace_path, workspace_key, status, description, is_deleted,
-        created_at, updated_at, archived_at, space_promoted_at, source_revision
+        created_at, updated_at, archived_at, space_promoted_at, cloud_project_id,
+        source_revision
       )
       VALUES (
         @id, @name, @workspace_path, @workspace_key, @status, @description, 0,
-        @created_at, @updated_at, @archived_at, @space_promoted_at, @source_revision
+        @created_at, @updated_at, @archived_at, @space_promoted_at, @cloud_project_id,
+        @source_revision
       )
       ON CONFLICT(id) DO UPDATE SET
         name = excluded.name,
@@ -101,6 +104,7 @@ export class ProjectRepository {
         updated_at = excluded.updated_at,
         archived_at = excluded.archived_at,
         space_promoted_at = COALESCE(projects.space_promoted_at, excluded.space_promoted_at),
+        cloud_project_id = COALESCE(projects.cloud_project_id, excluded.cloud_project_id),
         source_revision = excluded.source_revision
     `).run({
       id: p.id,
@@ -113,8 +117,27 @@ export class ProjectRepository {
       updated_at: p.updatedAt,
       archived_at: p.archivedAt ?? null,
       space_promoted_at: p.spacePromotedAt ?? null,
+      cloud_project_id: p.cloudProjectId ?? null,
       source_revision: p.sourceRevision ?? 0,
     });
+  }
+
+  getProjectByCloudProjectId(cloudProjectId: string): Project | undefined {
+    const row = this.db.prepare(`
+      SELECT * FROM projects
+      WHERE cloud_project_id = ? AND is_deleted = 0
+      LIMIT 1
+    `).get(cloudProjectId) as SQLiteRow | undefined;
+    return row ? rowToProject(row) : undefined;
+  }
+
+  setCloudProjectId(projectId: string, cloudProjectId: string, updatedAt: number): Project | undefined {
+    this.db.prepare(`
+      UPDATE projects
+      SET cloud_project_id = ?, updated_at = ?
+      WHERE id = ? AND is_deleted = 0
+    `).run(cloudProjectId, updatedAt, projectId);
+    return this.getProject(projectId);
   }
 
   promoteToSpace(projectId: string, now: number): Project | undefined {

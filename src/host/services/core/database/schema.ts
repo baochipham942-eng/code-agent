@@ -77,6 +77,8 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
   safeAlter(db, `ALTER TABLE messages ADD COLUMN visibility TEXT NOT NULL DEFAULT 'active'`, logger);
   safeAlter(db, `ALTER TABLE messages ADD COLUMN hidden_by_rewind_id TEXT`, logger);
   safeAlter(db, `ALTER TABLE messages ADD COLUMN hidden_at INTEGER`, logger);
+  // 协同空间协议：null 表示该 turn 沿用 session.user_id（会话发起人）。
+  safeAlter(db, `ALTER TABLE messages ADD COLUMN author_user_id TEXT`, logger);
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS session_rewinds (
@@ -1232,12 +1234,18 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
   `);
   safeAlter(db, `ALTER TABLE projects ADD COLUMN source_revision INTEGER NOT NULL DEFAULT 0`, logger);
   safeAlter(db, `ALTER TABLE projects ADD COLUMN space_promoted_at INTEGER`, logger);
+  // null 表示本地项目尚未升级或加入云协同空间；云项目 id 是唯一空间映射。
+  safeAlter(db, `ALTER TABLE projects ADD COLUMN cloud_project_id TEXT`, logger);
   // Multi-Source Projects allow the same canonical path to belong to different Projects.
   // Drop the legacy global uniqueness; per-Project Source uniqueness lives on project_sources.
   db.exec(`DROP INDEX IF EXISTS idx_projects_workspace_key`);
   db.exec(
     `CREATE INDEX IF NOT EXISTS idx_projects_workspace_key ON projects(workspace_key) WHERE workspace_key IS NOT NULL`,
   );
+  db.exec(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_cloud_project_id
+    ON projects(cloud_project_id) WHERE cloud_project_id IS NOT NULL
+  `);
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS project_sources (

@@ -4,8 +4,8 @@
 // - 专家：detail.roles 已选；rolesClient.listRoles() 可选；add/removeProjectRole 后刷新 detail
 // - 连接器：project capability selections（kind='connector'）；可选项与能力中心「连接器」页
 //   同源——connector 域 listNativeInventory（产品意义连接器：飞书/GitHub 等），不混 MCP 工具型 server
-// - 技能：SKILL IPC 覆盖模型（projectOverride===true 已选），store 按当前工作目录隔离——
-//   仅当项目 workspacePath 等于当前会话工作目录时可增删，否则只读 + hint
+// - 技能：SKILL IPC 覆盖模型（projectOverride===true 已选），store 按工作目录隔离——
+//   读写一律显式传 project.workspacePath；项目有工作目录即可增删，无目录只读 + hint
 // - 自动化：cron agent 任务的 action.libraryProjectId===projectId 已选；updateJob 设置/清除
 // 收起态写 localStorage('projectSpace.configRailCollapsed')。
 // ============================================================================
@@ -17,7 +17,6 @@ import { SKILL_CHANNELS } from '@shared/ipc/channels';
 import type { Project, ProjectCapabilitySelection, ProjectDetail } from '@shared/contract/project';
 import type { CronJobDefinition } from '@shared/contract';
 import { useAppStore } from '../../../stores/appStore';
-import { useSessionStore } from '../../../stores/sessionStore';
 import { useI18n } from '../../../hooks/useI18n';
 import * as projectClient from '../../../services/projectClient';
 import * as rolesClient from '../../../services/rolesClient';
@@ -60,12 +59,6 @@ export const ProjectConfigRail: React.FC<ProjectConfigRailProps> = ({
   const ps = t.projectSpace;
   const openCapabilityHub = useAppStore((state) => state.openCapabilityHub);
   const setShowCronCenter = useAppStore((state) => state.setShowCronCenter);
-  const appWorkingDirectory = useAppStore((state) => state.workingDirectory);
-  const sessionWorkingDirectory = useSessionStore((state) => {
-    const current = state.sessions.find((session) => session.id === state.currentSessionId);
-    return current?.workingDirectory ?? null;
-  });
-  const currentWorkingDirectory = sessionWorkingDirectory ?? appWorkingDirectory;
 
   const [collapsed, setCollapsed] = useState(readCollapsed);
   const [roleOptions, setRoleOptions] = useState<Array<{ id: string; label: string }>>([]);
@@ -105,11 +98,12 @@ export const ProjectConfigRail: React.FC<ProjectConfigRailProps> = ({
       .catch(() => setConnectorCatalog([]));
   }, [projectId]);
 
+  const skillWorkspacePath = project?.workspacePath ?? undefined;
   const loadSkills = useCallback(() => {
-    void invokeSkillIPC(SKILL_CHANNELS.SKILL_LIST).then((list) => {
+    void invokeSkillIPC(SKILL_CHANNELS.SKILL_LIST, skillWorkspacePath).then((list) => {
       setSkills((list ?? []) as SkillListEntry[]);
     });
-  }, []);
+  }, [skillWorkspacePath]);
 
   const loadAgentJobs = useCallback(() => {
     cronClient.listJobs()
@@ -155,8 +149,8 @@ export const ProjectConfigRail: React.FC<ProjectConfigRailProps> = ({
     void projectClient.unselectCapability(projectId, 'connector', capabilityId).then(loadConnectors).catch(() => undefined);
   };
 
-  // ---- 技能（按当前工作目录隔离；非本项目工作目录只读） ----
-  const skillsEditable = Boolean(project?.workspacePath) && project?.workspacePath === currentWorkingDirectory;
+  // ---- 技能（按项目工作目录隔离；有工作目录即可增删，无目录只读） ----
+  const skillsEditable = Boolean(project?.workspacePath);
   const skillSelected = skills
     .filter((skill) => skill.projectOverride === true)
     .map((skill) => ({ id: skill.name, label: skill.name }));
@@ -164,10 +158,10 @@ export const ProjectConfigRail: React.FC<ProjectConfigRailProps> = ({
     .filter((skill) => skill.projectOverride !== true)
     .map((skill) => ({ id: skill.name, label: skill.name }));
   const handleSelectSkill = (name: string) => {
-    void invokeSkillIPCOrThrow(SKILL_CHANNELS.SKILL_PROJECT_SET, name, true).then(loadSkills).catch(() => undefined);
+    void invokeSkillIPCOrThrow(SKILL_CHANNELS.SKILL_PROJECT_SET, name, true, skillWorkspacePath).then(loadSkills).catch(() => undefined);
   };
   const handleUnselectSkill = (name: string) => {
-    void invokeSkillIPCOrThrow(SKILL_CHANNELS.SKILL_PROJECT_CLEAR, name).then(loadSkills).catch(() => undefined);
+    void invokeSkillIPCOrThrow(SKILL_CHANNELS.SKILL_PROJECT_CLEAR, name, skillWorkspacePath).then(loadSkills).catch(() => undefined);
   };
 
   // ---- 自动化（cron agent 任务的 libraryProjectId） ----
@@ -253,7 +247,7 @@ export const ProjectConfigRail: React.FC<ProjectConfigRailProps> = ({
           options={skillOptions}
           onSelect={handleSelectSkill}
           onRemove={skillsEditable ? handleUnselectSkill : undefined}
-          readOnlyHint={skillsEditable ? null : project?.workspacePath ? ps.skillsReadonlyHint : ps.skillsNoWorkspaceHint}
+          readOnlyHint={skillsEditable ? null : ps.skillsNoWorkspaceHint}
         />
         <ProjectConfigCard
           testId="project-space-card-connectors"

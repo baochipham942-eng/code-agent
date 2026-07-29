@@ -1,6 +1,8 @@
 // ============================================================================
 // ProjectConfigCard —— 项目配置右栏的通用卡片（专家/技能/连接器/自动化共用）。
-// 结构：标题 +「去配置」深链 + 已选 chip 列表（每个带移除 ×）+「添加」弹层（Modal，点击即选）。
+// 结构：标题 +「去配置」深链 +「+」+ 已选 chip 列表（每个带移除 ×）+「添加」弹层（Modal，点击即选）。
+// 四卡头部布局完全一致：只读卡（如技能在非本项目工作目录）「+」渲染禁用态 + tooltip 说明原因
+// （房规：能力不可用要降级提示，不是消失），hint 不进卡身，避免卡高不齐。
 // ============================================================================
 
 import React, { useState } from 'react';
@@ -27,8 +29,9 @@ export interface ProjectConfigCardProps {
   selected: ConfigCardItem[];
   options: ConfigCardItem[];
   onSelect: (id: string) => void;
-  /** 省略 = 只读（不画移除 ×、不开放添加） */
+  /** 省略 = 只读（不画移除 ×，「+」禁用态 + title 说明原因） */
   onRemove?: (id: string) => void;
+  /** 只读原因：用作「+」禁用态的 title/tooltip（不进卡身，避免四卡高度不齐） */
   readOnlyHint?: string | null;
 }
 
@@ -57,19 +60,17 @@ export const ProjectConfigCard: React.FC<ProjectConfigCardProps> = ({
         <GhostButton size="sm" onClick={onConfigure} data-testid={`${testId}-configure`}>
           {configureLabel}
         </GhostButton>
-        {!readOnly && (
-          <IconButton
-            size="sm"
-            variant="ghost"
-            icon={<Plus className="h-3.5 w-3.5" />}
-            aria-label={addLabel}
-            title={addLabel}
-            data-testid={`${testId}-add`}
-            onClick={() => setPickerOpen(true)}
-          />
-        )}
+        <IconButton
+          size="sm"
+          variant="ghost"
+          icon={<Plus className="h-3.5 w-3.5" />}
+          aria-label={addLabel}
+          title={readOnly ? (readOnlyHint ?? addLabel) : addLabel}
+          disabled={readOnly}
+          data-testid={`${testId}-add`}
+          onClick={() => setPickerOpen(true)}
+        />
       </div>
-      {readOnlyHint ? <p className="mt-1.5 text-xs leading-5 text-zinc-600">{readOnlyHint}</p> : null}
       <div className="mt-2 flex flex-wrap gap-1.5" data-testid={`${testId}-selected`}>
         {selected.length === 0 ? (
           <span className="text-xs text-zinc-600">{selectedEmptyLabel}</span>

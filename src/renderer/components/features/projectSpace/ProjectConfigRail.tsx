@@ -173,14 +173,14 @@ export const ProjectConfigRail: React.FC<ProjectConfigRailProps> = ({
     .map((job) => ({ id: job.id, label: job.name }));
   const handleSelectAutomation = (jobId: string) => {
     const job = agentJobs.find((item) => item.id === jobId);
-    if (!job || job.action.type !== 'agent') return;
+    if (job?.action.type !== 'agent') return;
     void cronClient.updateJob(jobId, { action: { ...job.action, libraryProjectId: projectId } })
       .then(loadAgentJobs)
       .catch(() => undefined);
   };
   const handleUnselectAutomation = (jobId: string) => {
     const job = agentJobs.find((item) => item.id === jobId);
-    if (!job || job.action.type !== 'agent') return;
+    if (job?.action.type !== 'agent') return;
     // host updateJob 是整体替换 action（{...definition, ...updates} 中 action 作为整值覆盖），
     // 省略 libraryProjectId 键即清除，无需设 'global' 占位
     const { libraryProjectId: _dropped, ...restAction } = job.action;

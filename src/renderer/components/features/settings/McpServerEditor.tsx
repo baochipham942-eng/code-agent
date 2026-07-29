@@ -4,7 +4,7 @@
 
 import React, { useState, useCallback } from 'react';
 import { Server, Terminal, Globe, Code, Plus, Trash2, Eye, EyeOff } from 'lucide-react';
-import { Modal, ModalFooter, Input } from '../../primitives';
+import { Modal, ModalFooter, Input, Badge } from '../../primitives';
 import { useI18n } from '../../../hooks/useI18n';
 import { MCP_SECRET_REF_PREFIX } from '@shared/constants';
 import { isSensitiveMcpCredentialKey } from '@shared/security/mcpSecretKeys';
@@ -437,10 +437,18 @@ export const McpServerEditor: React.FC<McpServerEditorProps> = ({
                 >
                   {st.icon}
                   <span>{st.label}</span>
+                  {st.value === 'sse' && (
+                    <Badge className="border-zinc-700 bg-zinc-800 text-[10px] font-normal text-zinc-400">
+                      {editorText.sseLegacyBadge}
+                    </Badge>
+                  )}
                 </button>
               );
             })}
           </div>
+          {config.type === 'sse' && (
+            <p className="mt-1.5 text-xs text-zinc-500">{editorText.sseLegacyNote}</p>
+          )}
         </div>
 
         {/* View Mode Toggle */}
@@ -521,7 +529,7 @@ export const McpServerEditor: React.FC<McpServerEditorProps> = ({
                   <Input
                     value={config.url || ''}
                     onChange={(e) => updateConfig('url', e.target.value)}
-                    placeholder={config.type === 'sse' ? 'http://localhost:3001/sse' : 'http://localhost:3001/mcp'}
+                    placeholder={config.type === 'sse' ? editorText.urlPlaceholderSse : editorText.urlPlaceholderHttp}
                     inputSize="sm"
                   />
                 </div>

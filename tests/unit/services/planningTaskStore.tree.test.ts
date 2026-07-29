@@ -10,6 +10,10 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SessionTaskEvent } from '../../../src/shared/contract/planning';
+import { makeEvidenceRef } from '../../../src/shared/contract/evidence';
+
+// ADR-050：转 completed 必须带证据（fail-loud 门见 todoParser.evidence.test）
+const testEvidence = () => [makeEvidenceRef({ kind: 'tool', ref: 'tree test evidence', source: 'test' })];
 
 const dbState = vi.hoisted(() => ({
   db: {
@@ -96,7 +100,7 @@ describe('taskStore — tree ids / owner / events (roadmap 2.6)', () => {
     taskStore.updateTask(s, task.id, { status: 'in_progress' });
     taskStore.updateTask(s, task.id, { subject: 'Owned renamed' });
     taskStore.updateTask(s, task.id, { owner: 'subagent_2_def' });
-    taskStore.updateTask(s, task.id, { status: 'completed' });
+    taskStore.updateTask(s, task.id, { status: 'completed', evidenceRefs: testEvidence() });
 
     const kinds = recordedEvents().map((e) => e.kind);
     expect(kinds).toEqual(['created', 'started', 'renamed', 'owner_changed', 'done']);
@@ -127,7 +131,7 @@ describe('taskStore — tree ids / owner / events (roadmap 2.6)', () => {
 
     const open = taskStore.createTask(s, { subject: 'Open', description: 'o', owner });
     const done = taskStore.createTask(s, { subject: 'Done', description: 'd', owner });
-    taskStore.updateTask(s, done.id, { status: 'completed' });
+    taskStore.updateTask(s, done.id, { status: 'completed', evidenceRefs: testEvidence() });
     const other = taskStore.createTask(s, { subject: 'Other', description: 'x', owner: 'subagent_other' });
 
     const adopted = taskStore.adoptOrphanTasks(s, owner);

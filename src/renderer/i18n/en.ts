@@ -29,6 +29,7 @@ import { expertEn } from './expert';
 import { generativeUIEn } from './generativeUI';
 import { capabilityHubEn } from './capabilityHub';
 import { neoTopicsEn } from './neoTopics';
+import { projectSpaceEn } from './projectSpace';
 import { evalCenterEn } from './evalCenter';
 import { localOpsEn } from './localOps';
 import { onboardingEn } from './onboarding';
@@ -39,6 +40,7 @@ export const en: Translations = {
   ...activityPanelEn,
   ...capabilityHubEn,
   ...neoTopicsEn,
+  ...projectSpaceEn,
   ...evalCenterEn,
   ...localOpsEn,
   ...onboardingEn,

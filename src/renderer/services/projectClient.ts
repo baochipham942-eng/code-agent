@@ -10,12 +10,15 @@ import { IPC_DOMAINS } from '@shared/ipc';
 import type {
   Project,
   ProjectArtifact,
+  ProjectCapabilityKind,
+  ProjectCapabilitySelection,
   ProjectDetail,
   ProjectGoal,
   ProjectGoalStatus,
   ProjectRoleLink,
   ProjectSourceGitState,
   ProjectStatus,
+  ProjectWithActivity,
   UpdateProjectInput,
 } from '@shared/contract/project';
 import type { ArtifactIssue, ArtifactIssueStatus } from '@shared/contract/productClosure';
@@ -23,6 +26,40 @@ import ipcService from './ipcService';
 
 export async function listProjects(includeArchived = false): Promise<Project[]> {
   return ipcService.invokeDomain<Project[]>(IPC_DOMAINS.PROJECT, 'list', { includeArchived });
+}
+
+/** 项目列表页数据源：项目 + 活跃 topic 数 + 最近活动时间 */
+export async function listProjectsWithActivity(includeArchived = false): Promise<ProjectWithActivity[]> {
+  return ipcService.invokeDomain<ProjectWithActivity[]>(IPC_DOMAINS.PROJECT, 'listWithActivity', { includeArchived });
+}
+
+/** 项目级能力选用清单（connector 等 kind 维度；skill 走 SKILL IPC 覆盖模型） */
+export async function listCapabilitySelections(projectId: string): Promise<ProjectCapabilitySelection[]> {
+  return ipcService.invokeDomain<ProjectCapabilitySelection[]>(IPC_DOMAINS.PROJECT, 'listCapabilitySelections', { projectId });
+}
+
+export async function selectCapability(
+  projectId: string,
+  kind: ProjectCapabilityKind,
+  capabilityId: string,
+): Promise<ProjectCapabilitySelection> {
+  return ipcService.invokeDomain<ProjectCapabilitySelection>(IPC_DOMAINS.PROJECT, 'selectCapability', {
+    projectId,
+    kind,
+    capabilityId,
+  });
+}
+
+export async function unselectCapability(
+  projectId: string,
+  kind: ProjectCapabilityKind,
+  capabilityId: string,
+): Promise<{ removed: boolean }> {
+  return ipcService.invokeDomain<{ removed: boolean }>(IPC_DOMAINS.PROJECT, 'unselectCapability', {
+    projectId,
+    kind,
+    capabilityId,
+  });
 }
 
 export async function getProjectDetail(projectId: string): Promise<ProjectDetail> {

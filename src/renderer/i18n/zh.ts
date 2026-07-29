@@ -28,6 +28,7 @@ import { expertZh } from './expert';
 import { generativeUIZh } from './generativeUI';
 import { capabilityHubZh } from './capabilityHub';
 import { neoTopicsZh } from './neoTopics';
+import { projectSpaceZh } from './projectSpace';
 import { evalCenterZh } from './evalCenter';
 import { localOpsZh } from './localOps';
 import { onboardingZh } from './onboarding';
@@ -38,6 +39,7 @@ export const zh = {
   ...activityPanelZh,
   ...capabilityHubZh,
   ...neoTopicsZh,
+  ...projectSpaceZh,
   ...evalCenterZh,
   ...localOpsZh,
   ...onboardingZh,

@@ -306,6 +306,16 @@ describe('skill 启停', () => {
     expect(svc.getProjectPrefStore).toHaveBeenCalledWith('/work');
   });
 
+  it('未信任目录写偏好被拦（读写同门）——2026-07-29 真机「选了没反应」回归', async () => {
+    const { isProjectConfigTrusted } = await import('../../../src/host/security/folderTrustService');
+    vi.mocked(isProjectConfigTrusted).mockResolvedValueOnce(false);
+    await expect(call(SKILL_CHANNELS.SKILL_PROJECT_SET, 'pdf', true, '/space')).rejects.toThrow('未被信任');
+    vi.mocked(isProjectConfigTrusted).mockResolvedValueOnce(false);
+    await expect(call(SKILL_CHANNELS.SKILL_PROJECT_CLEAR, 'pdf', '/space')).rejects.toThrow('未被信任');
+    expect(svc.projectPref.setOverride).not.toHaveBeenCalled();
+    expect(svc.projectPref.clearOverride).not.toHaveBeenCalled();
+  });
+
   it('显式目录对应不到项目时 fail-loud，不回落当前目录', async () => {
     await expect(call(SKILL_CHANNELS.SKILL_LIST, '/missing')).rejects.toThrow(
       'No project found for workspacePath: /missing',

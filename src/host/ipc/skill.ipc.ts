@@ -217,10 +217,23 @@ async function handleSkillList(workspacePath?: string) {
 }
 
 /**
+ * 写路径与读路径同一道信任门：list 读偏好前有 isProjectConfigTrusted 拦截，
+ * 写侧若不拦会把配置写进未信任目录、读回永远为空——「选了没反应」的静默失败
+ * （2026-07-29 真机实测：identityChanged 使目录信任失效，写成功读被拦）。
+ */
+async function ensureSkillPreferenceDirTrusted(workingDirectory: string): Promise<void> {
+  if (!(await isProjectConfigTrusted(workingDirectory, 'project-skill-preferences'))) {
+    throw new Error(`该目录未被信任，无法为其配置技能：${workingDirectory}。先在该目录打开会话并信任此项目。`);
+  }
+}
+
+/**
  * 设置当前项目内的 skill 启停覆盖（项目级 > 全局）
  */
 async function handleSkillProjectSet(skillName: string, enabled: boolean, workspacePath?: string) {
-  getProjectSkillPreferenceStore(resolveSkillIpcWorkingDirectory(workspacePath)).setOverride(skillName, enabled);
+  const workingDirectory = resolveSkillIpcWorkingDirectory(workspacePath);
+  await ensureSkillPreferenceDirTrusted(workingDirectory);
+  getProjectSkillPreferenceStore(workingDirectory).setOverride(skillName, enabled);
   await refreshToolSearchRegistration();
 }
 
@@ -228,7 +241,9 @@ async function handleSkillProjectSet(skillName: string, enabled: boolean, worksp
  * 清除当前项目内的 skill 覆盖，回落全局语义
  */
 async function handleSkillProjectClear(skillName: string, workspacePath?: string) {
-  getProjectSkillPreferenceStore(resolveSkillIpcWorkingDirectory(workspacePath)).clearOverride(skillName);
+  const workingDirectory = resolveSkillIpcWorkingDirectory(workspacePath);
+  await ensureSkillPreferenceDirTrusted(workingDirectory);
+  getProjectSkillPreferenceStore(workingDirectory).clearOverride(skillName);
   await refreshToolSearchRegistration();
 }
 

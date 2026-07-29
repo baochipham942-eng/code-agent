@@ -22,7 +22,8 @@ import * as projectClient from '../../../services/projectClient';
 import * as rolesClient from '../../../services/rolesClient';
 import { cronClient } from '../../../services/cronClient';
 import ipcService from '../../../services/ipcService';
-import { invokeSkillIPC, invokeSkillIPCOrThrow } from '../../../services/invokeSkillIPC';
+import { describeSkillIpcError, invokeSkillIPC, invokeSkillIPCOrThrow } from '../../../services/invokeSkillIPC';
+import { toast } from '../../../hooks/useToast';
 import { IconButton } from '../../primitives/IconButton';
 import { ProjectConfigCard } from './ProjectConfigCard';
 
@@ -158,10 +159,12 @@ export const ProjectConfigRail: React.FC<ProjectConfigRailProps> = ({
     .filter((skill) => skill.projectOverride !== true)
     .map((skill) => ({ id: skill.name, label: skill.name }));
   const handleSelectSkill = (name: string) => {
-    void invokeSkillIPCOrThrow(SKILL_CHANNELS.SKILL_PROJECT_SET, name, true, skillWorkspacePath).then(loadSkills).catch(() => undefined);
+    void invokeSkillIPCOrThrow(SKILL_CHANNELS.SKILL_PROJECT_SET, name, true, skillWorkspacePath).then(loadSkills)
+      .catch((error) => toast.error(describeSkillIpcError(error, ps.skillUpdateFailed)));
   };
   const handleUnselectSkill = (name: string) => {
-    void invokeSkillIPCOrThrow(SKILL_CHANNELS.SKILL_PROJECT_CLEAR, name, skillWorkspacePath).then(loadSkills).catch(() => undefined);
+    void invokeSkillIPCOrThrow(SKILL_CHANNELS.SKILL_PROJECT_CLEAR, name, skillWorkspacePath).then(loadSkills)
+      .catch((error) => toast.error(describeSkillIpcError(error, ps.skillUpdateFailed)));
   };
 
   // ---- 自动化（cron agent 任务的 libraryProjectId） ----

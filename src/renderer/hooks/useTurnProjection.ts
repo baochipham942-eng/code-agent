@@ -287,6 +287,44 @@ export function projectTurns(
       continue;
     }
 
+    // 语音派活失败留痕（W6-5）：派出的 run 失败时 host 落一条 role:'system' 的
+    // 「语音派出的任务「X」失败了，没有完成：…」（voiceSessionService 落库，host 侧形状
+    // 已定死，这里只按它消费）。它不是对话内容，但**是那张任务卡的结局证据**——按标题
+    // 对回对应的 voiceDispatch 轮，投成该轮内的一个 error 节点，任务卡据此如实显示失败；
+    // 对不上标题就挂当前轮，对不上任何轮就独立成轮——失败记录绝不丢，也不留在半空。
+    if (msg.role === 'system' && msg.metadata?.source === 'voice') {
+      const failureTitle = parseVoiceDispatchFailureTitle(msg.content);
+      if (failureTitle) {
+        const node: TraceNode = {
+          id: msg.id,
+          type: 'system',
+          subtype: 'error',
+          content: msg.content,
+          timestamp: msg.timestamp,
+          metadata: msg.metadata,
+        };
+        const matchedTurn = [...turns]
+          .reverse()
+          .find((turn) => turn.nodes.some((n) => n.metadata?.voiceDispatch?.title === failureTitle));
+        const hostTurn = matchedTurn ?? currentTurn;
+        if (hostTurn) {
+          hostTurn.nodes.push(node);
+          hostTurn.endTime = msg.timestamp;
+        } else {
+          turnCounter++;
+          turns.push({
+            turnNumber: turnCounter,
+            turnId: `turn-${turnCounter}`,
+            nodes: [node],
+            status: 'completed',
+            startTime: msg.timestamp,
+            endTime: msg.timestamp,
+          });
+        }
+        continue;
+      }
+    }
+
     // System messages → skip (nudges, recovery hints)
     if (msg.role === 'system') continue;
 
@@ -578,6 +616,16 @@ export function projectTurns(
     activeTurnIndex,
   };
   });
+}
+
+/**
+ * 从 host 的失败留痕文本里取出任务标题。文本形状由 host 侧定死：
+ * 「语音派出的任务「X」失败了，没有完成：…」。标题里含 」 的极端情况不迁就——
+ * 对不上就退到「挂当前轮」，失败记录本身不会丢。
+ */
+function parseVoiceDispatchFailureTitle(content: string): string | null {
+  const match = /^语音派出的任务「(.+?)」失败了/.exec(content);
+  return match?.[1] ?? null;
 }
 
 function relocateActiveTurnReasoningToTail(turn: TraceTurn): void {

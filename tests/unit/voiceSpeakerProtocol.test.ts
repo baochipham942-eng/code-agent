@@ -36,6 +36,7 @@ const runtime = vi.hoisted(() => ({
     for (const listener of [...this.listeners]) listener({ type, sessionId, data });
   },
 }));
+const notifyVoiceWorkSettled = vi.hoisted(() => vi.fn());
 
 vi.mock('../../src/host/task', () => ({
   getTaskManager: () => ({
@@ -71,6 +72,9 @@ vi.mock('../../src/host/services/infra/sessionManager', () => ({
 vi.mock('../../src/host/services/infra/logger', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
+}));
+vi.mock('../../src/host/services/infra/notificationService', () => ({
+  notificationService: { notifyVoiceWorkSettled },
 }));
 vi.mock('../../src/host/permissions/modes', () => ({
   getPermissionModeManager: () => ({
@@ -119,6 +123,7 @@ beforeEach(() => {
   runtime.listeners.clear();
   runtime.startTask.mockClear();
   runtime.conclusion = '';
+  notifyVoiceWorkSettled.mockClear();
   endVoiceDispatch();
 });
 
@@ -133,6 +138,7 @@ describe('① 只有终态才念，且念的是执行侧的结论', () => {
     expect(narrations).toHaveLength(1);
     expect(narrations[0].status).toBe('done');
     expect(narrations[0].summary).toBe('已经建好 a.txt，里面写了一行问候。');
+    expect(notifyVoiceWorkSettled).not.toHaveBeenCalled();
   });
 
   it('cancelled 一句都不念——用户自己叫停的，他知道', async () => {
@@ -174,6 +180,11 @@ describe('① 只有终态才念，且念的是执行侧的结论', () => {
     await flush();
 
     expect(narrations).toHaveLength(0);
+    expect(notifyVoiceWorkSettled).toHaveBeenCalledWith({
+      sessionId: 'session-1',
+      taskTitle: '建个文件',
+      status: 'done',
+    });
   });
 });
 

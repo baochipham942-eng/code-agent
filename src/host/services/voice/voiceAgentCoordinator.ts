@@ -111,6 +111,27 @@ async function taskManager() {
   return getTaskManager();
 }
 
+async function notifyVoiceWorkSettledAfterHangup(
+  state: LedgerState,
+  item: VoiceWorkItem,
+  status: 'done' | 'failed',
+): Promise<void> {
+  try {
+    // 通话中落终态不走这里，避免把通知基础设施拉进实时语音关键路径。
+    const { notificationService } = await import('../infra/notificationService');
+    notificationService.notifyVoiceWorkSettled({
+      sessionId: state.neoSessionId,
+      taskTitle: item.title,
+      status,
+      ...(item.detail ? { detail: item.detail } : {}),
+    });
+  } catch (err) {
+    logger.warn('voice work settlement notification failed', {
+      message: err instanceof Error ? err.message : 'unknown',
+    });
+  }
+}
+
 /**
  * 通话建连时绑定。同步、零 IO——**不要在这里 await 加载 TaskManager**：建连是通话的
  * 关键路径，把整棵 task 依赖树拉进来只为了挂一个可能永远用不上的 listener 不划算
@@ -221,9 +242,15 @@ function settle(state: LedgerState, id: string, status: VoiceWorkItemStatus, det
       logger.warn('onWorkFailed threw', { message: err instanceof Error ? err.message : 'unknown' });
     }
   }
-  // 发言人协议：只有 done / failed 才是「有话要说」。cancelled 是用户自己叫停的，
-  // 他知道，回头念一遍是噪音。detachIfSettled 之前发——它可能把账本整个丢掉。
-  if (status === 'done' || status === 'failed') void narrateSettled(state, settled, status);
+  // 发言人协议与挂断后可见性互斥：电话还在就念结论；电话已断就发一条带任务名的
+  // 会话通知，让侧栏复用既有未读圆点。cancelled 是用户自己叫停的，不重复打扰。
+  if (status === 'done' || status === 'failed') {
+    if (state.narrate === null) {
+      void notifyVoiceWorkSettledAfterHangup(state, settled, status);
+    } else {
+      void narrateSettled(state, settled, status);
+    }
+  }
   getPermissionModeManager().clearLiveVoiceSession(state.neoSessionId, runHoldId(id));
   if (state.pendingId === id) state.pendingId = null;
   detachIfSettled(false);

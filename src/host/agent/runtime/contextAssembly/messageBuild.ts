@@ -1,6 +1,5 @@
 // ContextAssembly - Model message construction and transcript projection.
 import type { Message } from '../../../../shared/contract';
-import type { ContextInterventionSnapshot } from '../../../../shared/contract/contextView';
 import { getContextWindow, ACTIVE_TOOL_RESULT_PRUNE, CONTEXT_LEDGER } from '../../../../shared/constants';
 import type { ModelMessage } from '../../../agent/loopTypes';
 import { formatToolCallForHistory, buildMultimodalContent } from '../../../agent/messageHandling/converter';

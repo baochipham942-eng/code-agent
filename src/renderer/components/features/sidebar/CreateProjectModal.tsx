@@ -96,7 +96,6 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
               value={name}
               onChange={(event) => setName(event.target.value)}
               placeholder={sb.createProjectNamePlaceholder}
-              // eslint-disable-next-line jsx-a11y/no-autofocus -- 弹窗唯一主输入框，打开即输入是预期路径
               autoFocus
               className="w-full rounded-md border border-zinc-700 bg-zinc-800 px-2.5 py-1.5 text-sm text-zinc-200 placeholder:text-zinc-600 focus:border-blue-500 focus:outline-hidden"
             />

@@ -6,7 +6,6 @@ import {
   applyAgentMentionSuggestion,
   getLeadingAgentMentionAutocomplete,
 } from './agentMentionRouting';
-import { useI18n } from '../../../../hooks/useI18n';
 import {
   getAgentCommandOptions,
   getAgentSlashCommandQuery,
@@ -38,7 +37,6 @@ export interface UseChatInputAgentCommandParams {
  * 纯结构性抽取自 index.tsx，零行为改动。
  */
 export function useChatInputAgentCommand(params: UseChatInputAgentCommandParams) {
-  const { t } = useI18n();
   const {
     value,
     swarmAgents,

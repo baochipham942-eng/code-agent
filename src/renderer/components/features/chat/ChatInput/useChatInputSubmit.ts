@@ -245,7 +245,6 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
   const handleSubmit = async (e?: React.FormEvent, opts?: { steer?: boolean; content?: string }) => {
     e?.preventDefault();
     const trimmedValue = (opts?.content ?? value).trim();
-    let contentToSend = trimmedValue;
     let preferredAgentIdOverride: string | null | undefined;
     let selectedAgentOverride: ComposerAgentSelection | null | undefined;
     // 任务 17：命令 chip（/goal /schedule /loop /workflow）发送时拼回 `/${id} ` 前缀，
@@ -281,7 +280,7 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
 
     // 命令 chip 在这里拼回前缀（配方分支只吃用户原话当主题，不看 chip）
     const commandValue = pendingCommand ? applyPendingCommandPrefix(trimmedValue, pendingCommand) : trimmedValue;
-    contentToSend = commandValue;
+    let contentToSend = commandValue;
 
     const compactCommand = parseCompactCommand(commandValue);
     if (compactCommand) {

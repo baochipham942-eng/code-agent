@@ -11,7 +11,6 @@ import { useSessionUIStore } from '../stores/sessionUIStore';
 import { useStreamingMessageAccumulatorStore } from '../stores/streamingMessageAccumulatorStore';
 import { useTaskStore } from '../stores/taskStore';
 import { useSwarmStore } from '../stores/swarmStore';
-import { useAuthStore } from '../stores/authStore';
 import {
   ensureNeoWorkCardLiveUpdates,
   isNeoWorkCardAwaitingRuntimeTerminal,
@@ -114,7 +113,6 @@ export const ChatView: React.FC = () => {
   const launchRequests = useSwarmStore((state) => state.launchRequests);
   // 订阅节流快照而非原始 entries：原始 entries 每 token 变一次，会把投影重算推到 token 频率
   const streamingMessageEntries = useStreamingMessageAccumulatorStore((state) => state.visibleEntries);
-  const authUser = useAuthStore((state) => state.user);
   const neoWorkCards = useNeoWorkCardStore(useShallow((state) =>
     selectNeoWorkCardDetailsForConversation(state, currentSessionId),
   ));

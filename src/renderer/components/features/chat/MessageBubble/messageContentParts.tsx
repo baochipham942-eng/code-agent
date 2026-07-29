@@ -4,7 +4,7 @@
 // ============================================================================
 
 import React, { useState, useMemo, useCallback, memo, useRef, useEffect, lazy, Suspense } from 'react';
-import { Code2, Copy, Check, ExternalLink, Eye, Play, ZoomIn, ZoomOut, ClipboardCopy, MessageSquare, MessageSquarePlus, Settings } from 'lucide-react';
+import { Code2, Copy, Check, Eye, Play, ZoomIn, ZoomOut, ClipboardCopy, MessageSquare, MessageSquarePlus, Settings } from 'lucide-react';
 import { loadMermaid } from './mermaidLoader';
 import { UI } from '@shared/constants';
 import type { Components } from 'react-markdown';

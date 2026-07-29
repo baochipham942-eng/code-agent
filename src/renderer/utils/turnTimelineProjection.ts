@@ -169,7 +169,6 @@ function buildSkillActivity(
 ): TurnSkillActivity | undefined {
   // 「挂载」项不展示（2026-07-29 产品反馈）：用户挂载的 skill 由模型在回答里自然说明，
   // 卡片只保留模型真实触发/写入 skill 的记录。
-  const userNode = turn.nodes.find((node) => node.type === 'user');
   const items: TurnSkillActivity['items'] = [];
 
   for (const node of turn.nodes) {

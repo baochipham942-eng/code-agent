@@ -28,10 +28,8 @@ const COMPOSER_CHIP_ID_ATTR = 'data-composer-chip-id';
 
 function isChipMount(node: Node | null | undefined): boolean {
   return Boolean(
-    node
-    && node.nodeType === 1
-    && (node as HTMLElement).hasAttribute
-    && (node as HTMLElement).hasAttribute(COMPOSER_CHIP_KEY_ATTR),
+    node?.nodeType === 1
+    && (node as HTMLElement).hasAttribute?.(COMPOSER_CHIP_KEY_ATTR),
   );
 }
 

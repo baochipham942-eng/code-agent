@@ -55,6 +55,15 @@ export interface VoiceLiveSettings {
   echoCancellation?: 'auto' | 'off';
 }
 
+/**
+ * 语音采集输入设备。WebRTC deviceId 与 CoreAudio UID 不互通，因此 label 是
+ * Web / 原生两条采集链的持久化对账键；webDeviceId 只作 Web 路快速命中缓存。
+ */
+export interface VoiceInputDeviceSettings {
+  label: string;
+  webDeviceId?: string;
+}
+
 export interface ModelEntrySettings {
   enabled?: boolean;
   label?: string;
@@ -190,6 +199,8 @@ export interface AppSettings {
     turnDetection?: VoiceTurnDetectionConfig;
     /** 口述专名词表；Host 会在注入前统一清洗与限长 */
     vocabulary?: string[];
+    /** 麦克风输入设备；设备消失或形状无效时采集链回落系统默认。 */
+    inputDevice?: VoiceInputDeviceSettings;
     /** 实时通话（Live Voice）UI 设置；运行时断句真源仍是上面的 turnDetection */
     live?: VoiceLiveSettings;
   };

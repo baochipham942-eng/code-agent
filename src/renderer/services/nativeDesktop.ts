@@ -240,7 +240,7 @@ export interface NativeDesktopActionMap {
     result: boolean;
   };
   startVoiceAec: {
-    payload: undefined;
+    payload: { inputDeviceLabel?: string } | undefined;
     result: NativeVoiceAecStartResult;
   };
   writeVoiceAecPlayback: {
@@ -294,7 +294,10 @@ const NATIVE_DESKTOP_COMMANDS: {
     args: (payload) => ({ limit: payload?.limit ?? 8 }),
   },
   stopAudioRecorder: { command: 'desktop_stop_audio_rec' },
-  startVoiceAec: { command: 'desktop_start_voice_aec' },
+  startVoiceAec: {
+    command: 'desktop_start_voice_aec',
+    args: (payload) => ({ inputDeviceLabel: payload?.inputDeviceLabel }),
+  },
   writeVoiceAecPlayback: {
     command: 'desktop_write_voice_aec_playback',
     args: (payload) => ({ data: payload.data }),
@@ -372,8 +375,8 @@ export async function listRecentNativeDesktopEvents(limit = 8): Promise<DesktopA
   return invokeNativeDesktopAction('listRecentEvents', { limit });
 }
 
-export async function startNativeVoiceAec(): Promise<NativeVoiceAecStartResult> {
-  return invokeNativeDesktopAction('startVoiceAec');
+export async function startNativeVoiceAec(inputDeviceLabel?: string): Promise<NativeVoiceAecStartResult> {
+  return invokeNativeDesktopAction('startVoiceAec', { inputDeviceLabel });
 }
 
 export async function writeNativeVoiceAecPlayback(data: string): Promise<boolean> {

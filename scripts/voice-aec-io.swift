@@ -6,6 +6,8 @@
 
 import Foundation
 import AVFoundation
+import AudioToolbox
+import CoreAudio
 
 private let upstreamSampleRate: Double = 16_000
 private let downstreamSampleRate: Double = 24_000
@@ -37,7 +39,7 @@ private enum VoiceAecError: Error, CustomStringConvertible {
     var description: String {
         switch self {
         case .invalidArguments:
-            return "usage: voice-aec-io --upstream-fifo <path> --downstream-fifo <path>"
+            return "usage: voice-aec-io --upstream-fifo <path> --downstream-fifo <path> [--input-device <name>]"
         case .fifoOpenFailed(let path):
             return "failed to open FIFO: \(path)"
         case .audioFormatUnavailable:
@@ -49,10 +51,12 @@ private enum VoiceAecError: Error, CustomStringConvertible {
 private struct Arguments {
     let upstreamFifo: String
     let downstreamFifo: String
+    let inputDevice: String?
 
     static func parse(_ raw: [String]) throws -> Arguments {
         var upstream: String?
         var downstream: String?
+        var inputDevice: String?
         var index = 1
         while index < raw.count {
             switch raw[index] {
@@ -62,6 +66,10 @@ private struct Arguments {
             case "--downstream-fifo" where index + 1 < raw.count:
                 downstream = raw[index + 1]
                 index += 2
+            case "--input-device" where index + 1 < raw.count:
+                let value = raw[index + 1].trimmingCharacters(in: .whitespacesAndNewlines)
+                inputDevice = value.isEmpty ? nil : value
+                index += 2
             default:
                 throw VoiceAecError.invalidArguments
             }
@@ -69,8 +77,118 @@ private struct Arguments {
         guard let upstream, let downstream else {
             throw VoiceAecError.invalidArguments
         }
-        return Arguments(upstreamFifo: upstream, downstreamFifo: downstream)
+        return Arguments(
+            upstreamFifo: upstream,
+            downstreamFifo: downstream,
+            inputDevice: inputDevice
+        )
     }
+}
+
+private func audioObjectString(
+    _ objectID: AudioObjectID,
+    selector: AudioObjectPropertySelector
+) -> String? {
+    var address = AudioObjectPropertyAddress(
+        mSelector: selector,
+        mScope: kAudioObjectPropertyScopeGlobal,
+        mElement: kAudioObjectPropertyElementMain
+    )
+    guard AudioObjectHasProperty(objectID, &address) else { return nil }
+    var value: Unmanaged<CFString>?
+    var size = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
+    let status = AudioObjectGetPropertyData(objectID, &address, 0, nil, &size, &value)
+    return status == noErr ? value?.takeUnretainedValue() as String? : nil
+}
+
+private func hasInputStreams(_ deviceID: AudioDeviceID) -> Bool {
+    var address = AudioObjectPropertyAddress(
+        mSelector: kAudioDevicePropertyStreams,
+        mScope: kAudioDevicePropertyScopeInput,
+        mElement: kAudioObjectPropertyElementMain
+    )
+    var size: UInt32 = 0
+    return AudioObjectGetPropertyDataSize(deviceID, &address, 0, nil, &size) == noErr
+        && size >= UInt32(MemoryLayout<AudioStreamID>.size)
+}
+
+private func inputDevice(named requestedName: String) -> AudioDeviceID? {
+    var address = AudioObjectPropertyAddress(
+        mSelector: kAudioHardwarePropertyDevices,
+        mScope: kAudioObjectPropertyScopeGlobal,
+        mElement: kAudioObjectPropertyElementMain
+    )
+    var size: UInt32 = 0
+    guard AudioObjectGetPropertyDataSize(
+        AudioObjectID(kAudioObjectSystemObject),
+        &address,
+        0,
+        nil,
+        &size
+    ) == noErr else {
+        return nil
+    }
+    let count = Int(size) / MemoryLayout<AudioDeviceID>.size
+    guard count > 0 else { return nil }
+    var devices = [AudioDeviceID](repeating: 0, count: count)
+    let status = devices.withUnsafeMutableBytes { bytes in
+        AudioObjectGetPropertyData(
+            AudioObjectID(kAudioObjectSystemObject),
+            &address,
+            0,
+            nil,
+            &size,
+            bytes.baseAddress!
+        )
+    }
+    guard status == noErr else { return nil }
+    return devices.first { deviceID in
+        hasInputStreams(deviceID)
+            && audioObjectString(deviceID, selector: kAudioObjectPropertyName) == requestedName
+    }
+}
+
+/**
+ * AVAudioEngine 开启 voice processing 后底层是 VoiceProcessingIO。CoreAudio UID
+ * 与 Web deviceId 不互通，所以只按持久化 label 找 AudioDeviceID，再设置当前输入设备。
+ * 找不到或设置失败都留在系统默认，设备偏好不能阻断通话。
+ */
+private func selectInputDeviceIfRequested(
+    named requestedName: String?,
+    inputNode: AVAudioInputNode
+) {
+    guard let requestedName else { return }
+    guard let deviceID = inputDevice(named: requestedName) else {
+        fputs(
+            "voice-aec-io: input device '\(requestedName)' not found; using system default\n",
+            stderr
+        )
+        return
+    }
+    guard let audioUnit = inputNode.audioUnit else {
+        fputs(
+            "voice-aec-io: input device '\(requestedName)' cannot be selected; using system default\n",
+            stderr
+        )
+        return
+    }
+    var selectedDeviceID = deviceID
+    let status = AudioUnitSetProperty(
+        audioUnit,
+        kAudioOutputUnitProperty_CurrentDevice,
+        kAudioUnitScope_Global,
+        0,
+        &selectedDeviceID,
+        UInt32(MemoryLayout<AudioDeviceID>.size)
+    )
+    guard status == noErr else {
+        fputs(
+            "voice-aec-io: failed to select input device '\(requestedName)' (OSStatus \(status)); using system default\n",
+            stderr
+        )
+        return
+    }
+    fputs("voice-aec-io: selected input device '\(requestedName)'\n", stderr)
 }
 
 private final class VoiceAecIO {
@@ -156,6 +274,7 @@ private final class VoiceAecIO {
             // 在 24k 播放格式下 kAUInitialize 失败（-10875，本机可复现），图先行则正常。
             try input.setVoiceProcessingEnabled(true)
             try output.setVoiceProcessingEnabled(true)
+            selectInputDeviceIfRequested(named: arguments.inputDevice, inputNode: input)
             try rebuildInputAndStartEngine()
             startWatchdog()
         }

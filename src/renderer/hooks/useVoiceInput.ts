@@ -5,12 +5,21 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { IPC_DOMAINS } from '@shared/ipc';
-import type { AppSettings, SpeechInputSettings, SpeechTranscribeResult } from '@shared/contract';
+import type {
+  AppSettings,
+  SpeechInputSettings,
+  SpeechTranscribeResult,
+  VoiceInputDeviceSettings,
+} from '@shared/contract';
 import { DEFAULT_SPEECH_INPUT_SETTINGS, VOICE_INPUT_SETTINGS_UPDATED_EVENT } from '@shared/contract';
 import { DICTATION_STREAM_WS_PATH } from '@shared/constants/voice';
+import { normalizeVoiceInputDevice } from '@shared/voiceInputDevice';
 import { createLogger } from '../utils/logger';
 import ipcService from '../services/ipcService';
-import { VoiceAudioPipeline } from '../services/voiceAudioPipeline';
+import {
+  resolveVoiceAudioCaptureConstraints,
+  VoiceAudioPipeline,
+} from '../services/voiceAudioPipeline';
 import { VOICE_INPUT_NETWORK_ERROR_CODE } from '../utils/voiceInputError';
 
 const logger = createLogger('VoiceInput');
@@ -157,6 +166,8 @@ export function useVoiceInput(options: UseVoiceInputOptions = {}): UseVoiceInput
   const streamPipelineRef = useRef<VoiceAudioPipeline | null>(null);
   const streamStoppingRef = useRef(false);
   const streamFailureRef = useRef(false);
+  /** voice.inputDevice 的运行时防御读取结果；每次开麦前刷新，设置页改完立即生效。 */
+  const inputDeviceRef = useRef<VoiceInputDeviceSettings | undefined>(undefined);
   /** 整段转写路径的麦克风流：不依赖 mediaRecorder.onstop 也一定能释放。 */
   const dictationStreamRef = useRef<MediaStream | null>(null);
   /** start() 的 getUserMedia 还在 pending 时用户已取消（stop/卸载）：拿到 stream 就立刻停掉。 */
@@ -169,6 +180,7 @@ export function useVoiceInput(options: UseVoiceInputOptions = {}): UseVoiceInput
         const appSettings = await ipcService.invokeDomain<AppSettings>(IPC_DOMAINS.SETTINGS, 'get');
         if (!cancelled) {
           setSettings(mergeSpeechSettings(appSettings.speech));
+          inputDeviceRef.current = normalizeVoiceInputDevice(appSettings.voice?.inputDevice);
         }
       } catch (err) {
         logger.warn('Failed to load voice input settings', {
@@ -408,34 +420,37 @@ export function useVoiceInput(options: UseVoiceInputOptions = {}): UseVoiceInput
       setSilenceWarning(false);
       setStatus('recording');
 
-      const pipeline = new VoiceAudioPipeline({
-        onFrame: (pcm16k) => {
-          if (ws.readyState !== WebSocket.OPEN || streamStoppingRef.current) return;
-          const frame = new ArrayBuffer(pcm16k.byteLength);
-          new Uint8Array(frame).set(new Uint8Array(
-            pcm16k.buffer,
-            pcm16k.byteOffset,
-            pcm16k.byteLength,
-          ));
-          ws.send(frame);
+      const pipeline = new VoiceAudioPipeline(
+        {
+          onFrame: (pcm16k) => {
+            if (ws.readyState !== WebSocket.OPEN || streamStoppingRef.current) return;
+            const frame = new ArrayBuffer(pcm16k.byteLength);
+            new Uint8Array(frame).set(new Uint8Array(
+              pcm16k.buffer,
+              pcm16k.byteOffset,
+              pcm16k.byteLength,
+            ));
+            ws.send(frame);
+          },
+          onLevels: (mic) => {
+            const now = Date.now();
+            setInputLevel(mic);
+            if (mic > 0.08) lastVoiceAtRef.current = now;
+            setSilenceWarning(
+              now - startTimeRef.current > 2500
+              && now - lastVoiceAtRef.current > 2000,
+            );
+          },
+          onError: (code) => {
+            if (code === 'MICROPHONE_PERMISSION_DENIED') {
+              failStream('请允许麦克风权限', code);
+            } else {
+              failStream('无法访问麦克风', 'MICROPHONE_UNAVAILABLE');
+            }
+          },
         },
-        onLevels: (mic) => {
-          const now = Date.now();
-          setInputLevel(mic);
-          if (mic > 0.08) lastVoiceAtRef.current = now;
-          setSilenceWarning(
-            now - startTimeRef.current > 2500
-            && now - lastVoiceAtRef.current > 2000,
-          );
-        },
-        onError: (code) => {
-          if (code === 'MICROPHONE_PERMISSION_DENIED') {
-            failStream('请允许麦克风权限', code);
-          } else {
-            failStream('无法访问麦克风', 'MICROPHONE_UNAVAILABLE');
-          }
-        },
-      });
+        inputDeviceRef.current,
+      );
       streamPipelineRef.current = pipeline;
       void pipeline.start().catch((err: unknown) => {
         failStream(err instanceof Error ? err.message : '无法访问麦克风', 'MICROPHONE_UNAVAILABLE');
@@ -540,6 +555,17 @@ export function useVoiceInput(options: UseVoiceInputOptions = {}): UseVoiceInput
       setLastResult(null);
       setPartialText('');
 
+      // 设置页可能在 hook 挂载后换过设备；每次开麦前重读一次，读取失败沿用上次
+      // 合法值（首次失败即系统默认），不能让配置 IPC 故障阻断录音。
+      try {
+        const appSettings = await ipcService.invokeDomain<AppSettings>(IPC_DOMAINS.SETTINGS, 'get');
+        inputDeviceRef.current = normalizeVoiceInputDevice(appSettings.voice?.inputDevice);
+      } catch (error) {
+        logger.warn('Failed to refresh voice input device settings', {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+
       // stream 只在起步时判一次：没配 DashScope key 就落回原来的整段转写；
       // 已进入流式后不再切通道，避免半句话在输入框里重来。
       if (settings.mode === 'stream' && await isDictationStreamConfigured()) {
@@ -549,7 +575,12 @@ export function useVoiceInput(options: UseVoiceInputOptions = {}): UseVoiceInput
 
       // 请求麦克风权限
       dictationAbortedRef.current = false;
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // 无偏好时保持历史 audio:true；有偏好时只叠加 deviceId，不顺手改变
+      // 整段口述的 echo/noise/AGC 浏览器默认行为。
+      const audio = inputDeviceRef.current
+        ? await resolveVoiceAudioCaptureConstraints(inputDeviceRef.current, {})
+        : true;
+      const stream = await navigator.mediaDevices.getUserMedia({ audio });
       logger.info('dictation getUserMedia acquired', {
         dictationId: dictationIdRef.current,
         tracks: stream.getTracks().length,

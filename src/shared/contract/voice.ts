@@ -112,6 +112,8 @@ export type VoiceEvent =
   /** 用户开口 —— Renderer 据此清空播放队列做 barge-in */
   | { type: 'speech.started' }
   | { type: 'response.done'; ttfaModelMs?: number; ttfaPerceivedMs?: number }
+  /** Host 注入的 narration 在 response.create 确认窗内被上游拒绝；通话本身仍然存活。 */
+  | { type: 'injection.rejected'; message: string }
   /** 语音派出的任务状态。Active Work 条消费（批 B），host 侧同时用它计通话摘要的 workItemCount。 */
   | { type: 'work.upsert'; item: VoiceWorkItem }
   /**

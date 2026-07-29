@@ -396,6 +396,39 @@ describe('终态结论节制播报', () => {
     expect(injectItem).toHaveBeenLastCalledWith('[BACKEND] 「查个问题」做完了。已经建好 a.txt。');
   });
 
+  it('注入拒绝后退回队列只重试一次，第二次拒绝只留屏幕且通话不死', async () => {
+    const client = new FakeClient();
+    await attachVoiceClient(client as never, 'session-injection-retry');
+
+    voiceDispatchProbe.narrate?.(narration);
+    expect(injectItem).toHaveBeenCalledTimes(1);
+
+    lastOnEvent?.({ type: 'injection.rejected', message: 'Conversation already has an active response' });
+    expect(getActiveVoiceSessionId()).not.toBeNull();
+    expect(injectItem).toHaveBeenCalledTimes(1);
+
+    lastOnEvent?.({ type: 'response.done' });
+    expect(injectItem).toHaveBeenCalledTimes(2);
+
+    lastOnEvent?.({ type: 'injection.rejected', message: 'still busy' });
+    lastOnEvent?.({ type: 'response.done' });
+    expect(injectItem).toHaveBeenCalledTimes(2);
+    expect(getActiveVoiceSessionId()).not.toBeNull();
+    expect(voiceLogger.warn).toHaveBeenCalledWith(
+      'narration injection dropped after retry',
+      expect.objectContaining({ workItemId: narration.workItemId }),
+    );
+  });
+
+  it('注入确认窗内连接真的 close 仍按致命错误释放通话', async () => {
+    const client = new FakeClient();
+    await attachVoiceClient(client as never, 'session-close-during-injection');
+    voiceDispatchProbe.narrate?.(narration);
+
+    lastOnEvent?.({ type: 'state', state: 'closed' });
+    await vi.waitFor(() => expect(getActiveVoiceSessionId()).toBeNull());
+  });
+
   it('连续压过两个用户轮次就丢弃，并留下可诊断日志', async () => {
     const client = new FakeClient();
     await attachVoiceClient(client as never, 'session-stale-narration');

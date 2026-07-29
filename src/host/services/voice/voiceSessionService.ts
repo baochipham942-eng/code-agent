@@ -71,7 +71,8 @@ interface ActiveSession {
   /** 终态播报只属于这通电话：压住、去重与已播记录都随 active 一起销毁。 */
   narration: {
     userSpeaking: boolean;
-    queue: Map<string, { narration: VoiceWorkNarration; suppressedTurns: number }>;
+    queue: Map<string, { narration: VoiceWorkNarration; suppressedTurns: number; rejectionCount: number }>;
+    inFlight: { narration: VoiceWorkNarration; rejectionCount: number } | null;
     spokenWorkItemIds: Set<string>;
   };
 }
@@ -166,7 +167,7 @@ function formatNarration(narration: VoiceWorkNarration): string {
   return `[BACKEND] ${who}「${narration.title}」做完了。${narration.summary}`.trim();
 }
 
-function injectNarration(session: ActiveSession, narration: VoiceWorkNarration): void {
+function injectNarration(session: ActiveSession, narration: VoiceWorkNarration, rejectionCount = 0): void {
   if (session.narration.spokenWorkItemIds.has(narration.workItemId)) return;
   const { upstream } = session;
   if (upstream.kind !== 'relay') {
@@ -176,6 +177,7 @@ function injectNarration(session: ActiveSession, narration: VoiceWorkNarration):
     return;
   }
   upstream.injectItem(formatNarration(narration));
+  session.narration.inFlight = { narration, rejectionCount };
   session.narration.spokenWorkItemIds.add(narration.workItemId);
 }
 
@@ -188,7 +190,11 @@ function enqueueOrInjectNarration(session: ActiveSession, narration: VoiceWorkNa
     return;
   }
   // 只把真实用户轮算进压制次数；单纯撞上模型响应窗不消耗用户轮额度。
-  state.queue.set(narration.workItemId, { narration, suppressedTurns: state.userSpeaking ? 1 : 0 });
+  state.queue.set(narration.workItemId, {
+    narration,
+    suppressedTurns: state.userSpeaking ? 1 : 0,
+    rejectionCount: 0,
+  });
 }
 
 function markNarrationUserTurn(session: ActiveSession): void {
@@ -208,14 +214,45 @@ function markNarrationUserTurn(session: ActiveSession): void {
 function flushNarrationQueue(session: ActiveSession): void {
   const state = session.narration;
   state.userSpeaking = false;
+  state.inFlight = null;
   // 每次 response.done 只放一条。injectItem 会立即请求下一次 response，
   // 一次清空多条会让这些 response.create 互相碰撞。
   const next = state.queue.entries().next().value as
-    | [string, { narration: VoiceWorkNarration; suppressedTurns: number }]
+    | [string, { narration: VoiceWorkNarration; suppressedTurns: number; rejectionCount: number }]
     | undefined;
   if (!next) return;
   state.queue.delete(next[0]);
-  injectNarration(session, next[1].narration);
+  injectNarration(session, next[1].narration, next[1].rejectionCount);
+}
+
+function handleNarrationInjectionRejected(session: ActiveSession, message: string): void {
+  const state = session.narration;
+  const failed = state.inFlight;
+  state.inFlight = null;
+  if (!failed) {
+    logger.warn('unmatched narration injection rejection', { voiceSessionId: session.id, message });
+    return;
+  }
+  const { narration, rejectionCount } = failed;
+  if (rejectionCount >= 1) {
+    logger.warn('narration injection dropped after retry', {
+      voiceSessionId: session.id,
+      workItemId: narration.workItemId,
+      message,
+    });
+    return;
+  }
+  state.spokenWorkItemIds.delete(narration.workItemId);
+  state.queue.set(narration.workItemId, {
+    narration,
+    suppressedTurns: 0,
+    rejectionCount: rejectionCount + 1,
+  });
+  logger.info('narration injection rejected; queued one retry', {
+    voiceSessionId: session.id,
+    workItemId: narration.workItemId,
+    message,
+  });
 }
 
 async function persistTranscript(
@@ -505,10 +542,12 @@ async function connectAndBind(
         ...(liveSettings?.voiceId ? { voice: liveSettings.voiceId } : {}),
       },
       onEvent: (event) => {
-        send(clientRef.current, event);
+        // injection.rejected 是 Host 内部的重试信号；Renderer 没有用户动作要做。
+        if (event.type !== 'injection.rejected') send(clientRef.current, event);
         if (active?.id === id) {
           if (event.type === 'speech.started') markNarrationUserTurn(active);
           else if (event.type === 'response.done') flushNarrationQueue(active);
+          else if (event.type === 'injection.rejected') handleNarrationInjectionRejected(active, event.message);
         }
         if (event.type === 'user.transcript' && event.done) void persistTranscript(neoSessionId, 'user', event.text, transcriptCounter);
         else if (event.type === 'assistant.transcript') {
@@ -571,6 +610,7 @@ async function connectAndBind(
     narration: {
       userSpeaking: false,
       queue: new Map(),
+      inFlight: null,
       spokenWorkItemIds: new Set(),
     },
     maxDurationTimer: setTimeout(() => {

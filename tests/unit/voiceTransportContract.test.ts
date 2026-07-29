@@ -186,6 +186,54 @@ describe('VoiceTransport 契约（relay / direct 双跑）', () => {
     await handle.close();
   });
 
+  it('只把 injectItem 后未获响应确认的协议 error 分类为注入拒绝', async () => {
+    const events: VoiceEvent[] = [];
+    const handle = await qwenOmniTransport.connect({
+      apiKey: 'test-key',
+      config: { neoSessionId: 's1' },
+      onEvent: (event) => events.push(event),
+      onAudio: vi.fn(),
+    });
+    if (handle.kind !== 'relay') throw new Error('unreachable');
+    const upstream = upstreams[upstreams.length - 1];
+
+    handle.injectItem('播报任务失败');
+    upstream.emit('message', JSON.stringify({
+      type: 'error',
+      error: { message: 'Conversation already has an active response' },
+    }));
+    expect(events.at(-1)).toEqual({
+      type: 'injection.rejected',
+      message: 'Conversation already has an active response',
+    });
+
+    handle.injectItem('再播一次');
+    upstream.emit('message', JSON.stringify({ type: 'response.created' }));
+    upstream.emit('message', JSON.stringify({ type: 'error', error: { message: 'connection failed' } }));
+    expect(events.at(-1)).toEqual({ type: 'error', code: 'UPSTREAM_ERROR', message: 'connection failed' });
+
+    await handle.close();
+  });
+
+  it('socket error 与 close 不受注入确认窗影响，仍是连接级事件', async () => {
+    const events: VoiceEvent[] = [];
+    const handle = await qwenOmniTransport.connect({
+      apiKey: 'test-key',
+      config: { neoSessionId: 's1' },
+      onEvent: (event) => events.push(event),
+      onAudio: vi.fn(),
+    });
+    if (handle.kind !== 'relay') throw new Error('unreachable');
+    const upstream = upstreams[upstreams.length - 1];
+
+    handle.injectItem('播报任务失败');
+    upstream.emit('error', new Error('socket gone'));
+    expect(events.at(-1)).toEqual({ type: 'error', code: 'UPSTREAM_SOCKET', message: 'socket gone' });
+
+    upstream.emit('close');
+    expect(events.at(-1)).toEqual({ type: 'state', state: 'closed' });
+  });
+
   it('turn_detection 关闭时 response.done 不报 ttfaPerceivedMs', async () => {
     mockConfig.settings = { voice: { turnDetection: null, live: { interrupt: 'manual' } } };
     const events: VoiceEvent[] = [];

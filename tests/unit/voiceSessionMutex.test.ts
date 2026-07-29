@@ -2,7 +2,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { EventEmitter } from 'events';
 import { isVoiceInputMessage, type Message } from '../../src/shared/contract/message';
-import type { VoiceEvent, VoiceTransport } from '../../src/shared/contract/voice';
+import type { VoiceEvent, VoiceTransport, VoiceWorkItem } from '../../src/shared/contract/voice';
 import { QWEN_OMNI_REALTIME_MODEL } from '../../src/shared/constants/voice';
 
 const close = vi.fn(async () => undefined);
@@ -73,6 +73,7 @@ const voiceDispatchProbe = vi.hoisted(() => ({
     title: string;
     summary: string;
   }) => void),
+  fail: null as null | ((item: VoiceWorkItem) => void),
 }));
 const flushVoiceTailSpy = vi.fn(async () => {
   teardownOrder.push('tail-flush');
@@ -84,6 +85,7 @@ vi.mock('../../src/host/services/voice/voiceAgentCoordinator', async (importOrig
     ...actual,
     beginVoiceDispatch: (binding: Parameters<typeof actual.beginVoiceDispatch>[0]) => {
       voiceDispatchProbe.narrate = binding.onWorkNarration as typeof voiceDispatchProbe.narrate;
+      voiceDispatchProbe.fail = binding.onWorkFailed;
       actual.beginVoiceDispatch(binding);
     },
     flushVoiceTail: flushVoiceTailSpy,
@@ -125,6 +127,7 @@ describe('voiceSessionService 互斥与挂断', () => {
     voiceLogger.info.mockClear();
     voiceLogger.warn.mockClear();
     voiceDispatchProbe.narrate = null;
+    voiceDispatchProbe.fail = null;
     addMessageToSession.mockClear();
     lastOnEvent = null;
   });
@@ -466,6 +469,49 @@ describe('终态结论节制播报', () => {
     lastOnEvent?.({ type: 'response.done' });
 
     expect(injectItem).not.toHaveBeenCalled();
+  });
+});
+
+describe('失败告知出口', () => {
+  beforeEach(() => {
+    addMessageToSession.mockClear();
+    voiceDispatchProbe.fail = null;
+  });
+
+  afterEach(async () => {
+    await endActiveVoiceSession();
+  });
+
+  it('未知异常只进 notice/detail 与落库 metadata，不进入主文案', async () => {
+    const client = new FakeClient();
+    await attachVoiceClient(client as never, 'session-failure-copy');
+    const raw = 'Project Source trust identity changed: /Users/foo/secret/repo';
+
+    voiceDispatchProbe.fail?.({
+      id: 'failed-work',
+      title: '建个文件',
+      status: 'failed',
+      detail: raw,
+    });
+
+    await vi.waitFor(() => expect(addMessageToSession).toHaveBeenCalled());
+    const notice = client.sent
+      .filter((entry) => entry !== '<binary>')
+      .map((entry) => JSON.parse(entry) as VoiceEvent)
+      .find((event) => event.type === 'notice' && event.code === 'VOICE_WORK_FAILED');
+    expect(notice).toMatchObject({
+      type: 'notice',
+      code: 'VOICE_WORK_FAILED',
+      message: '执行时出了问题，没有完成',
+      detail: raw,
+    });
+    if (notice?.type === 'notice') expect(notice.message).not.toContain(raw);
+
+    const persisted = addMessageToSession.mock.calls
+      .map((call) => call[1])
+      .find((message) => message.metadata?.voiceWorkFailure);
+    expect(persisted?.content).not.toContain(raw);
+    expect(persisted?.metadata?.voiceWorkFailure?.detail).toBe(raw);
   });
 });
 

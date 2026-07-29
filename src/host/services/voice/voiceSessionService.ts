@@ -21,6 +21,7 @@ import { composeVoiceInstructions, focusChanged } from './voiceContextAssembler'
 import { recordVoiceCall } from './voiceUsageLedger';
 import { VOICE_TOOL_DEFINITIONS, executeVoiceTool } from './voiceTools';
 import type { VoiceLiveSettings } from '../../../shared/contract/settings';
+import { describeWorkFailure } from './workFailureDescription';
 
 const logger = createLogger('VoiceSession');
 
@@ -120,13 +121,23 @@ async function reportWorkFailure(
   clientRef: { current: WsSocket },
   item: VoiceWorkItem,
 ): Promise<void> {
-  const reason = item.detail?.trim() || '执行侧未给出原因';
+  const failure = describeWorkFailure(item.detail);
   const stillOnThisCall = active?.id === voiceSessionId;
-  logger.warn('voice work item failed', { voiceSessionId, title: item.title, reason, stillOnThisCall });
+  logger.warn('voice work item failed', {
+    voiceSessionId,
+    title: item.title,
+    detail: failure.detail,
+    stillOnThisCall,
+  });
 
   // 1. 通话里当场可见（i18n 表用 {reason} 占位，message 只送原因本身）
   if (stillOnThisCall) {
-    send(clientRef.current, { type: 'notice', code: 'VOICE_WORK_FAILED', message: reason });
+    send(clientRef.current, {
+      type: 'notice',
+      code: 'VOICE_WORK_FAILED',
+      message: failure.screen,
+      ...(failure.detail ? { detail: failure.detail } : {}),
+    });
   }
 
   // 2. 落进消息流，挂断后仍可复查
@@ -134,12 +145,19 @@ async function reportWorkFailure(
     await getSessionManager().addMessageToSession(neoSessionId, {
       id: `voice-work-failed-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       role: 'system',
-      content: `语音派出的任务「${item.title}」失败了，没有完成：${reason}`,
+      content: `语音派出的任务「${item.title}」${failure.screen}`,
       timestamp: Date.now(),
       // workItemId 必须落进 metadata：渲染侧要把这条失败留痕对回它属于的那张任务卡，
       // 唯一能对得准的只有 id。靠正文文本反解标题看着也能跑，但那是拿人话当协议——
       // 文案一改、进一次 i18n，失败就静默不再显示（而这条链的全部意义就是别让失败静默）。
-      metadata: { source: 'voice', voiceWorkFailure: { workItemId: item.id, title: item.title } },
+      metadata: {
+        source: 'voice',
+        voiceWorkFailure: {
+          workItemId: item.id,
+          title: item.title,
+          ...(failure.detail ? { detail: failure.detail } : {}),
+        },
+      },
     });
   } catch (err) {
     logger.warn('failed to persist work failure', { message: err instanceof Error ? err.message : 'unknown' });

@@ -212,9 +212,15 @@ export const VoiceChrome: React.FC<{ sessionId: string | null }> = ({ sessionId 
 
       {/* 一次性提示（如 tools 被上游静默丢弃）：不抢 error 态，通话继续，但用户必须当场看见 */}
       {store.notice && (
-        <p data-testid="voice-call-notice" className="mt-1.5 text-xs leading-5 text-amber-300">
-          {resolveVoiceMessage(t, store.notice)}
-        </p>
+        <div data-testid="voice-call-notice" className="mt-1.5 text-xs leading-5 text-amber-300">
+          <p>{resolveVoiceMessage(t, store.notice)}</p>
+          {store.notice.detail && (
+            <details className="mt-1 text-[11px] text-amber-300/75">
+              <summary className="cursor-pointer select-none">{t.systemError.viewDetails}</summary>
+              <pre className="mt-1 whitespace-pre-wrap break-words font-mono">{store.notice.detail}</pre>
+            </details>
+          )}
+        </div>
       )}
     </div>
   );

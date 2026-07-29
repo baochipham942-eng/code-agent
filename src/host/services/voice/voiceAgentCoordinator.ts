@@ -24,6 +24,7 @@ import { withWorkbenchTurnSystemContext } from '../../app/workbenchTurnContext';
 import { getPermissionModeManager } from '../../permissions/modes';
 import { getConfigService } from '../core/configService';
 import { buildWorkNarration, resolveNarrationSpeaker } from './voiceNarration';
+import { describeWorkFailure } from './workFailureDescription';
 
 const logger = createLogger('VoiceCoordinator');
 
@@ -267,7 +268,7 @@ function settle(state: LedgerState, id: string, status: VoiceWorkItemStatus, det
 async function narrateSettled(state: LedgerState, item: VoiceWorkItem, status: 'done' | 'failed'): Promise<void> {
   try {
     const conclusion = status === 'failed'
-      ? (item.detail ?? '')
+      ? describeWorkFailure(item.detail).spoken
       : await readRunConclusion(state.neoSessionId);
     // await 之后 narrate 可能已被挂断置 null——此刻再念没人听。
     // **但也不能就这么算了**：那正是「说完就挂、活刚好这时跑完」这个最常见的场景，

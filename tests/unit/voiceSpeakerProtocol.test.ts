@@ -250,6 +250,23 @@ describe('② 长内容不念原文', () => {
   });
 });
 
+describe('失败口播不泄露内部异常', () => {
+  it('未知异常只念人话并指向屏幕，英文原文与路径不进耳朵', async () => {
+    bind();
+    await spawn('建个文件');
+    runtime.emit('task_error', 'session-1', {
+      error: 'Project Source trust identity changed: /Users/foo/secret/repo',
+    });
+    await flush();
+
+    expect(narrations).toHaveLength(1);
+    expect(narrations[0].summary).toContain('没有完成');
+    expect(narrations[0].summary).toContain('屏幕');
+    expect(narrations[0].summary).not.toContain('Project Source');
+    expect(narrations[0].summary).not.toContain('/Users/foo');
+  });
+});
+
 describe('③ 署名只在有专家时出现', () => {
   it('无专家 → 不署名（语音层用第一人称，不冒充任何人格）', async () => {
     bind();

@@ -804,12 +804,16 @@ const ArtifactOwnershipNode: React.FC<{ timeline: TurnTimelinePayload; sessionId
 // 系统错误原文(往往是堆栈/工程报错)对非程序员用户是噪音：先给一句人话+建议，
 // 原文进「查看详情」折叠。分类复用 humanizeToolError（quota/rate_limit/auth/
 // overloaded/timeout/network 已有文案），分不出类别时给通用兜底。
-const SystemErrorNode: React.FC<{ content: string }> = ({ content }) => {
+const SystemErrorNode: React.FC<{ node: TraceNode }> = ({ node }) => {
   const { t } = useI18n();
   const [expanded, setExpanded] = useState(false);
-  const humanized = humanizeToolError(content, undefined, t);
-  const summary = humanized?.summary ?? t.systemError.fallbackSummary;
-  const detail = humanized?.detail ?? t.systemError.fallbackDetail;
+  const failureDetail = node.metadata?.voiceWorkFailure?.detail;
+  const humanized = failureDetail === undefined ? humanizeToolError(node.content, undefined, t) : null;
+  const summary = failureDetail === undefined
+    ? humanized?.summary ?? t.systemError.fallbackSummary
+    : node.content;
+  const detail = failureDetail === undefined ? humanized?.detail ?? t.systemError.fallbackDetail : undefined;
+  const expandableDetail = failureDetail ?? node.content;
 
   return (
     <div className="py-1">
@@ -827,9 +831,9 @@ const SystemErrorNode: React.FC<{ content: string }> = ({ content }) => {
           {expanded ? t.systemError.hideDetails : t.systemError.viewDetails}
         </button>
       </div>
-      {expanded && (
+      {expanded && expandableDetail && (
         <div className="mt-2 px-3 py-2.5 rounded-md bg-red-500/5 border border-red-500/10">
-          <ExpandableContent content={content} maxLines={30} />
+          <ExpandableContent content={expandableDetail} maxLines={30} />
         </div>
       )}
     </div>
@@ -865,7 +869,7 @@ const SystemNode: React.FC<{ node: TraceNode }> = ({ node }) => {
   }
 
   if (node.subtype === 'error') {
-    return <SystemErrorNode content={node.content} />;
+    return <SystemErrorNode node={node} />;
   }
 
   if (node.subtype === 'skill_status') {

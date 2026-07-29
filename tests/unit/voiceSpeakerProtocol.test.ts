@@ -212,6 +212,20 @@ describe('① 只有终态才念，且念的是执行侧的结论', () => {
       status: 'done',
     });
   });
+
+  it('挂断后失败通知的 detail 同样过⑤的统一出口，不透传 throw 原文', async () => {
+    bind();
+    await spawn();
+    endVoiceDispatch();
+    runtime.emit('task_error', 'session-1', { error: 'Project Source trust identity changed: /Users/x/.worktrees/y' });
+    await flush();
+
+    const call = notifyVoiceWorkSettled.mock.calls.at(-1)?.[0] as { status: string; detail?: string };
+    expect(call.status).toBe('failed');
+    expect(call.detail).toBeTruthy();
+    expect(call.detail).not.toContain('trust identity');
+    expect(call.detail).not.toContain('/Users/');
+  });
 });
 
 describe('② 长内容不念原文', () => {

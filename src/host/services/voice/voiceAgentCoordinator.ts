@@ -121,11 +121,16 @@ async function notifyVoiceWorkSettledAfterHangup(
   try {
     // 通话中落终态不走这里，避免把通知基础设施拉进实时语音关键路径。
     const { notificationService } = await import('../infra/notificationService');
+    // 通知 body 也是用户可见文案：失败原因必须过⑤的统一出口，不许把 throw 原文
+    // （英文 + 内部概念）直接拼进侧栏通知——这是失败告知的第四条路径，同病同治。
+    const failureDetail = status === 'failed'
+      ? describeWorkFailure(item.detail, item.failure).screen
+      : item.detail;
     notificationService.notifyVoiceWorkSettled({
       sessionId: state.neoSessionId,
       taskTitle: item.title,
       status,
-      ...(item.detail ? { detail: item.detail } : {}),
+      ...(failureDetail ? { detail: failureDetail } : {}),
     });
   } catch (err) {
     logger.warn('voice work settlement notification failed', {

@@ -31,4 +31,28 @@ describe('语音派活失败文案出口', () => {
     expect(result.spoken).not.toContain(raw);
     expect(result.detail).toBe(raw);
   });
+
+  it('三种 Project Source trust 成因给三句人话和对应下一步', () => {
+    const missing = describeWorkFailure('Project Source is missing: /repo/a', {
+      code: 'PROJECT_SOURCE_TRUST',
+      kind: 'source_missing',
+    });
+    const changed = describeWorkFailure('Project Source trust identity changed: /repo/a', {
+      code: 'PROJECT_SOURCE_TRUST',
+      kind: 'identity_changed',
+    });
+    const untrusted = describeWorkFailure('Project Source is not trusted: /repo/a', {
+      code: 'PROJECT_SOURCE_TRUST',
+      kind: 'not_trusted',
+    });
+
+    expect(missing.screen).toContain('重新选择位置');
+    expect(changed.screen).toContain('重新确认授权');
+    expect(untrusted.screen).toContain('完成授权');
+    expect(new Set([missing.screen, changed.screen, untrusted.screen])).toHaveLength(3);
+    for (const result of [missing, changed, untrusted]) {
+      expect(result.spoken).not.toContain('/repo/a');
+      expect(result.detail).toContain('/repo/a');
+    }
+  });
 });

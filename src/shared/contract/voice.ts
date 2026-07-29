@@ -30,6 +30,8 @@ export interface VoiceWorkItem {
   status: VoiceWorkItemStatus;
   /** 失败原因，供 UI 显示；其余状态没有 */
   detail?: string;
+  /** 自有错误生产者给出的稳定分类；不从 detail 文本反推。 */
+  failure?: import('./project').ProjectSourceTrustFailureMarker;
 }
 
 /**

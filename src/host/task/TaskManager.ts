@@ -30,6 +30,7 @@ import type { ConversationModelSpec } from '../../shared/contract/conversationEn
 import type { SessionStatus as PersistedSessionStatus } from '../../shared/contract/session';
 import { getModelSessionState } from '../session/modelSessionState';
 import type { RunRegistry } from '../runtime/runRegistry';
+import { getProjectSourceTrustFailureMarker } from '../services/project/projectSourceTrustError';
 
 const logger = createLogger('TaskManager');
 const CONTEXT_ASSEMBLY_PERSISTED_MESSAGE = Symbol.for('code-agent.contextAssembly.persistedMessage');
@@ -678,8 +679,12 @@ export class TaskManager extends EventEmitter {
       // 全程丢失（2026-07-28 G1 真机：用户只可能看到四个字的废话）。
       // 与下面 session state 的 error 同一份归一化，别各算各的。
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      const failure = getProjectSourceTrustFailureMarker(error);
       this.updateSessionState(sessionId, { status: 'error', error: errorMessage });
-      this.emitEvent('task_error', sessionId, { error: errorMessage });
+      this.emitEvent('task_error', sessionId, {
+        error: errorMessage,
+        ...(failure ? { failure } : {}),
+      });
     } finally {
       this.activeModelSpecs.delete(sessionId);
       // 释放信号量

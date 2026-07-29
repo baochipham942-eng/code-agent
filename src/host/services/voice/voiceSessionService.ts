@@ -121,7 +121,7 @@ async function reportWorkFailure(
   clientRef: { current: WsSocket },
   item: VoiceWorkItem,
 ): Promise<void> {
-  const failure = describeWorkFailure(item.detail);
+  const failure = describeWorkFailure(item.detail, item.failure);
   const stillOnThisCall = active?.id === voiceSessionId;
   logger.warn('voice work item failed', {
     voiceSessionId,

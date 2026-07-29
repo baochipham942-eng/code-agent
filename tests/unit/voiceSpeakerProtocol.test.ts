@@ -265,6 +265,20 @@ describe('失败口播不泄露内部异常', () => {
     expect(narrations[0].summary).not.toContain('Project Source');
     expect(narrations[0].summary).not.toContain('/Users/foo');
   });
+
+  it('结构化 trust kind 穿过账本后给出对应下一步，不靠英文原文猜', async () => {
+    bind();
+    await spawn('建个文件');
+    runtime.emit('task_error', 'session-1', {
+      error: 'completely opaque internal detail /Users/foo/repo',
+      failure: { code: 'PROJECT_SOURCE_TRUST', kind: 'source_missing' },
+    });
+    await flush();
+
+    expect(narrations[0].summary).toContain('重新选择位置');
+    expect(narrations[0].summary).not.toContain('opaque');
+    expect(narrations[0].summary).not.toContain('/Users/foo');
+  });
 });
 
 describe('③ 署名只在有专家时出现', () => {

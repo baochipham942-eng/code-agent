@@ -34,6 +34,16 @@ export type ProjectSourceRole = 'primary' | 'additional';
 export type ProjectSourceAccess = 'read_only' | 'read_write';
 export type ProjectSourceTrustState = 'trusted' | 'blocked';
 
+export type ProjectSourceTrustFailureKind =
+  | 'source_missing'
+  | 'identity_changed'
+  | 'not_trusted';
+
+export interface ProjectSourceTrustFailureMarker {
+  code: 'PROJECT_SOURCE_TRUST';
+  kind: ProjectSourceTrustFailureKind;
+}
+
 export interface ProjectSource {
   id: string;
   projectId: string;

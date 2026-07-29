@@ -262,6 +262,27 @@ describe('ProjectConfigRail 项目配置', () => {
     );
   });
 
+  it('技能卡只读时「+」禁用态 + tooltip 说明（降级提示不消失）；工作目录匹配时可用', async () => {
+    await enterSpaceView();
+    const addButton = await screen.findByTestId('project-space-card-skills-add');
+    expect((addButton as HTMLButtonElement).disabled).toBe(true);
+    expect(addButton.getAttribute('title')).toBe(ps.skillsReadonlyHint);
+
+    cleanup();
+    useSessionStore.setState({
+      sessions: [{ id: 'sess-1', workingDirectory: '/tmp/ws' }],
+      currentSessionId: 'sess-1',
+      switchSession: switchSessionMock,
+      createSession: createSessionMock,
+    } as never);
+    render(<ProjectSpacePage onClose={() => undefined} />);
+    const item = await screen.findByTestId(`project-space-list-item-${PROJECT_ID}`);
+    fireEvent.click(item);
+    const enabledAdd = await screen.findByTestId('project-space-card-skills-add');
+    expect((enabledAdd as HTMLButtonElement).disabled).toBe(false);
+    expect(enabledAdd.getAttribute('title')).toBe(ps.add);
+  });
+
   it('「去配置」深链：专家卡调 openCapabilityHub(experts)', async () => {
     await enterSpaceView();
     const configure = await screen.findByTestId('project-space-card-experts-configure');

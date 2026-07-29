@@ -5,6 +5,7 @@
 import React, { useCallback, useRef, useState, useEffect } from 'react';
 import { useShallow } from 'zustand/shallow';
 import { useAppStore } from '../stores/appStore';
+import { useProjectChatSeedStore } from '../stores/projectChatSeedStore';
 import { useComposerStore } from '../stores/composerStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { useSessionUIStore } from '../stores/sessionUIStore';
@@ -724,13 +725,13 @@ export const ChatView: React.FC = () => {
 
   // 项目协作空间底部输入框：建新会话 + 落 seed，这里在目标会话就绪后自动发出首条消息。
   // 与 goal seed 的差别仅是不起 goal run，纯文本直发（@neo 前缀原样透传）。
-  const pendingProjectChatSeed = useAppStore((state) => state.pendingProjectChatSeed);
+  const pendingProjectChatSeed = useProjectChatSeedStore((state) => state.pendingProjectChatSeed);
   useEffect(() => {
     if (!pendingProjectChatSeed || !currentSessionId || effectiveIsProcessing) return;
     if (pendingProjectChatSeed.sessionId !== currentSessionId) return;
 
     const seed = pendingProjectChatSeed;
-    useAppStore.getState().setPendingProjectChatSeed(null);
+    useProjectChatSeedStore.getState().setPendingProjectChatSeed(null);
     void handleSendMessage(seed.content);
   }, [pendingProjectChatSeed, currentSessionId, effectiveIsProcessing, handleSendMessage]);
 

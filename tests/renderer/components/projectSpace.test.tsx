@@ -35,6 +35,7 @@ vi.mock('../../../src/renderer/components/features/projectCollaboration/ProjectC
 
 import { ProjectSpacePage } from '../../../src/renderer/components/features/projectSpace/ProjectSpacePage';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
+import { useProjectChatSeedStore } from '../../../src/renderer/stores/projectChatSeedStore';
 import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
 import * as projectClient from '../../../src/renderer/services/projectClient';
 import { tagClient } from '../../../src/renderer/services/tagClient';
@@ -123,10 +124,10 @@ beforeEach(() => {
   useAppStore.setState({
     language: 'zh',
     showProjectSpacePage: true,
-    pendingProjectChatSeed: null,
     openCapabilityHub: openCapabilityHubMock,
     workingDirectory: null,
   });
+  useProjectChatSeedStore.setState({ pendingProjectChatSeed: null });
   useSessionStore.setState({
     sessions: [],
     currentSessionId: null,
@@ -137,7 +138,8 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
-  useAppStore.setState({ showProjectSpacePage: false, pendingProjectChatSeed: null });
+  useAppStore.setState({ showProjectSpacePage: false });
+  useProjectChatSeedStore.setState({ pendingProjectChatSeed: null });
 });
 
 describe('ProjectSpacePage 列表视图', () => {
@@ -232,7 +234,7 @@ describe('ProjectComposer 底部输入框', () => {
       expect(createSessionMock).toHaveBeenCalledWith('帮我整理这个项目的周报', { workingDirectory: '/tmp/ws' }),
     );
     await waitFor(() =>
-      expect(useAppStore.getState().pendingProjectChatSeed).toEqual({
+      expect(useProjectChatSeedStore.getState().pendingProjectChatSeed).toEqual({
         sessionId: 'sess-new',
         content: '帮我整理这个项目的周报',
       }),

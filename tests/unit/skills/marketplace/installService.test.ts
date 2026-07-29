@@ -194,6 +194,51 @@ describe('marketplace install service trust defaults', () => {
     expect(mocks.reloadSkills).toHaveBeenCalledTimes(2);
   });
 
+  it('rejects a duplicate install while the same plugin id is still resolving', async () => {
+    let resolveMarketplace!: (value: unknown) => void;
+    mocks.getMarketplaceInfo.mockReturnValueOnce(new Promise((resolve) => {
+      resolveMarketplace = resolve;
+    }));
+
+    const first = installPlugin('demo@trusted-test');
+    await expect(installPlugin('demo@trusted-test')).rejects.toThrow(
+      "Plugin 'demo@trusted-test' installation is already in progress",
+    );
+
+    resolveMarketplace({
+      rootDir: mocks.marketplaceRoot,
+      manifest: {
+        name: 'trusted-test',
+        plugins: [{
+          name: 'demo',
+          source: './',
+          skills: ['skills/demo'],
+          commands: ['commands/inspect.md'],
+        }],
+      },
+    });
+    await expect(first).resolves.toMatchObject({ pluginSpec: 'demo@trusted-test' });
+  });
+
+  it('rolls back staged assets and installed state when cancelled mid-install', async () => {
+    const controller = new AbortController();
+    const originalRename = fs.rename.bind(fs);
+    vi.spyOn(fs, 'rename').mockImplementation(async (source, destination) => {
+      await originalRename(source, destination);
+      if (String(source).includes('.staging-') && String(destination).includes('demo__trusted-test')) {
+        controller.abort();
+      }
+    });
+
+    await expect(installPlugin('demo@trusted-test', { signal: controller.signal }))
+      .rejects.toMatchObject({ name: 'AbortError' });
+
+    expect((await listInstalledPlugins())['demo@trusted-test']).toBeUndefined();
+    const pluginsDir = path.join(mocks.userConfigDir, 'plugins');
+    const residualEntries = fsSync.existsSync(pluginsDir) ? await fs.readdir(pluginsDir) : [];
+    expect(residualEntries.filter((entry) => entry.includes('demo__trusted-test'))).toEqual([]);
+  });
+
   it('pins a GitHub commit and preserves the same content hash across reinstall', async () => {
     useRemotePlugin();
     const commit = 'a'.repeat(40);

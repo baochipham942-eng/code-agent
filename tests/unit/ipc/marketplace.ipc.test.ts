@@ -191,6 +191,37 @@ describe('INSTALL / UNINSTALL / ENABLE / DISABLE', () => {
     expect(await call(IPC_CHANNELS.MARKETPLACE_INSTALL_PLUGIN, 'pdf')).toEqual({ success: false, error: 'install boom' });
   });
 
+  it('同 id 安装进行中拒绝并发，取消后原请求返回 cancelled 而非错误', async () => {
+    let rejectInstall!: (error: unknown) => void;
+    mp.installPlugin.mockImplementationOnce((...args: unknown[]) => {
+      const options = args[1] as { signal?: AbortSignal } | undefined;
+      return new Promise((_resolve, reject) => {
+        rejectInstall = reject;
+        options?.signal?.addEventListener('abort', () => {
+          rejectInstall(new DOMException('Plugin installation cancelled', 'AbortError'));
+        }, { once: true });
+      });
+    });
+
+    const first = call(IPC_CHANNELS.MARKETPLACE_INSTALL_PLUGIN, 'pdf@official');
+    await vi.waitFor(() => {
+      expect(mp.installPlugin).toHaveBeenCalledWith(
+        'pdf@official',
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      );
+    });
+
+    await expect(call(IPC_CHANNELS.MARKETPLACE_INSTALL_PLUGIN, 'pdf@official')).resolves.toEqual({
+      success: false,
+      error: "Plugin 'pdf@official' installation is already in progress",
+    });
+    await expect(call(IPC_CHANNELS.MARKETPLACE_CANCEL_INSTALL, 'pdf@official')).resolves.toEqual({
+      success: true,
+      data: { cancelled: true },
+    });
+    await expect(first).resolves.toEqual({ success: false, cancelled: true });
+  });
+
   it('UNINSTALL 委派带 scope', async () => {
     await call(IPC_CHANNELS.MARKETPLACE_UNINSTALL_PLUGIN, 'pdf', 'project');
     expect(mp.uninstallPlugin).toHaveBeenCalledWith('pdf', { scope: 'project' });

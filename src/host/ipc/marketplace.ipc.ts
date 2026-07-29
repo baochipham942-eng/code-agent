@@ -29,6 +29,11 @@ import { createLogger } from '../services/infra/logger';
 import { isCurrentUserAdmin } from './adminGuard';
 
 const logger = createLogger('MarketplaceIPC');
+const activeMarketplaceInstalls = new Map<string, AbortController>();
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof Error && error.name === 'AbortError';
+}
 
 // ----------------------------------------------------------------------------
 // Helper Functions
@@ -287,8 +292,20 @@ export function registerMarketplaceHandlers(ipcMain: IpcMain): void {
   handleMarketplace(
     IPC_CHANNELS.MARKETPLACE_INSTALL_PLUGIN,
     async (_, pluginSpec: string, options?: { scope?: 'user' | 'project'; projectPath?: string }): Promise<PluginInstallResult> => {
+      if (activeMarketplaceInstalls.has(pluginSpec)) {
+        return {
+          success: false,
+          error: `Plugin '${pluginSpec}' installation is already in progress`,
+        };
+      }
+
+      const controller = new AbortController();
+      activeMarketplaceInstalls.set(pluginSpec, controller);
       try {
-        const result = await installPlugin(pluginSpec, options);
+        const result = await installPlugin(pluginSpec, {
+          ...options,
+          signal: controller.signal,
+        });
         const installed = await listInstalledPlugins();
         const record = installed[pluginSpec];
 
@@ -311,13 +328,35 @@ export function registerMarketplaceHandlers(ipcMain: IpcMain): void {
           installedPluginRoot: result.installedPluginRoot,
         };
       } catch (error) {
+        if (controller.signal.aborted || isAbortError(error)) {
+          return {
+            success: false,
+            cancelled: true,
+          };
+        }
         logger.error('Failed to install plugin', { pluginSpec, error });
         return {
           success: false,
           error: error instanceof Error ? error.message : String(error),
         };
+      } finally {
+        if (activeMarketplaceInstalls.get(pluginSpec) === controller) {
+          activeMarketplaceInstalls.delete(pluginSpec);
+        }
       }
     }
+  );
+
+  handleMarketplace(
+    IPC_CHANNELS.MARKETPLACE_CANCEL_INSTALL,
+    async (_, pluginSpec: string): Promise<MarketplaceResult<{ cancelled: boolean }>> => {
+      const controller = activeMarketplaceInstalls.get(pluginSpec);
+      if (!controller) {
+        return successResult({ cancelled: false });
+      }
+      controller.abort(new DOMException('Plugin installation cancelled', 'AbortError'));
+      return successResult({ cancelled: true });
+    },
   );
 
   // Uninstall a plugin

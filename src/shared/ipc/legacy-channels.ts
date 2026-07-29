@@ -210,6 +210,7 @@ export const IPC_CHANNELS = {
   MARKETPLACE_LIST_PLUGINS: 'marketplace:list-plugins',
   MARKETPLACE_SEARCH_PLUGINS: 'marketplace:search-plugins',
   MARKETPLACE_INSTALL_PLUGIN: 'marketplace:install-plugin',
+  MARKETPLACE_CANCEL_INSTALL: 'marketplace:cancel-install',
   MARKETPLACE_UNINSTALL_PLUGIN: 'marketplace:uninstall-plugin',
   MARKETPLACE_LIST_INSTALLED: 'marketplace:list-installed',
   MARKETPLACE_ENABLE_PLUGIN: 'marketplace:enable-plugin',

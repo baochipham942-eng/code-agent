@@ -154,8 +154,11 @@ export const ProjectListView: React.FC<ProjectListViewProps> = ({ onSelect }) =>
               </span>
             </span>
           </button>
-          {!isUnsorted && (
-            <span className="flex flex-shrink-0 items-center gap-0.5 pr-2 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+          {/* 动作列固定宽：未分类无按钮也占同宽空位，时间列各行右缘对齐 */}
+          {isUnsorted ? (
+            <span className="w-[60px] flex-shrink-0" aria-hidden="true" />
+          ) : (
+            <span className="flex w-[60px] flex-shrink-0 items-center justify-end gap-0.5 pr-2 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
               <IconButton
                 size="sm"
                 variant="ghost"

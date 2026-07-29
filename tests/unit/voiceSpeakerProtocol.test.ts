@@ -235,6 +235,24 @@ describe('③ 署名只在有专家时出现', () => {
     expect(resolveNarrationSpeaker('ghost-agent')).toBeUndefined();
     expect(resolveNarrationSpeaker(undefined)).toBeUndefined();
   });
+
+  it('屏幕上的署名与耳朵里听到的同源：派活消息的 voiceDispatch 带同一个 speaker', async () => {
+    bind('mu-zhi');
+    await spawn('建个文件');
+
+    const metadata = runtime.startTask.mock.calls[0]?.[4] as
+      { voiceDispatch?: { title: string; speaker?: { displayName: string } } } | undefined;
+    expect(metadata?.voiceDispatch?.speaker?.displayName).toBe('牧之');
+  });
+
+  it('无专家时派活消息也不带署名', async () => {
+    bind();
+    await spawn('建个文件');
+
+    const metadata = runtime.startTask.mock.calls[0]?.[4] as
+      { voiceDispatch?: { speaker?: unknown } } | undefined;
+    expect(metadata?.voiceDispatch?.speaker).toBeUndefined();
+  });
 });
 
 describe('④ prompt 不许把分层暴露给用户', () => {

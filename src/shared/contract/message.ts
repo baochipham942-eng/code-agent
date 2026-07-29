@@ -255,7 +255,14 @@ export interface MessageMetadata {
    * （语音派活时 startTask 会建一条用户轮）。没有这个标记，机器编的话会顶着用户的
    * 身份显示在右边——等于把话安在用户嘴里。投影层据此改成左侧、标明来源。
    */
-  voiceDispatch?: { title: string };
+  voiceDispatch?: {
+    title: string;
+    /**
+     * 这件活的署名（W6-5）。**只有用户点名了专家时才有**——没点名时不署名，
+     * 屏幕上就该只有一个 Neo，和语音层的第一人称同一套规矩。
+     */
+    speaker?: { agentId: string; displayName: string };
+  };
   /**
    * ADR-040：用户在预览里点选的产物位置。由 host 补 revision 后生成并校验，
    * 是写前 guard 的唯一坐标真源——prompt 里的可读位置只给人看，不作数。

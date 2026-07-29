@@ -23,7 +23,7 @@ import { buildRoleContextBlock } from '../roleAssets/roleAssetService';
 import { withWorkbenchTurnSystemContext } from '../../app/workbenchTurnContext';
 import { getPermissionModeManager } from '../../permissions/modes';
 import { getConfigService } from '../core/configService';
-import { buildWorkNarration } from './voiceNarration';
+import { buildWorkNarration, resolveNarrationSpeaker } from './voiceNarration';
 
 const logger = createLogger('VoiceCoordinator');
 
@@ -372,6 +372,7 @@ async function startRun(state: LedgerState, title: string, prompt: string): Prom
   await ensureListener(state);
   const options = await buildRunOptions(state);
   const workItemId = newWorkItemId();
+  const speaker = resolveNarrationSpeaker(state.activeAgentId);
   upsert(state, { id: workItemId, title, status: 'queued' });
   state.pendingId = workItemId;
   // D4：这张票的寿命跟着 run 走，不跟着通话走。终态事件或启动失败才还。
@@ -380,7 +381,11 @@ async function startRun(state: LedgerState, title: string, prompt: string): Prom
     // 第 5 个参数落在 startTask 建的那条 role:'user' 消息上。必须标记 voiceDispatch——
     // prompt 是通话 brain 改写出来的，不是用户原话（用户原话是字幕那条），
     // 不标就会顶着用户身份显示在右边。
-    .startTask(state.neoSessionId, prompt, undefined, options, { voiceDispatch: { title } })
+    .startTask(state.neoSessionId, prompt, undefined, options, {
+      // 署名和语音层回流用同一个解析器（voiceNarration），两处不许各算各的：
+      // 屏幕上写「牧之」而耳朵里听到别的名字，比不署名更糟。
+      voiceDispatch: { title, ...(speaker ? { speaker } : {}) },
+    })
     .catch((err: unknown) => {
       const detail = err instanceof Error ? err.message : 'unknown';
       logger.warn('voice run failed to start', { title, message: detail });

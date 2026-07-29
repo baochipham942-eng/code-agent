@@ -101,11 +101,128 @@ describe('NeoWorkCardService', () => {
     const detail = service.get(created.workCard.id)!;
 
     expect(created.workCard.status).toBe('draft');
+    expect(created.workCard).toMatchObject({
+      priority: 'medium',
+      dueAt: null,
+      blockedReason: null,
+    });
     expect(created.revision.revisionNumber).toBe(1);
     expect(detail.workCard.currentRevisionId).toBe(created.revision.id);
     expect(detail.currentRevision?.taskSummary).toBe('Implement the backend contract');
     expect(detail.currentRevision?.readScope.fileGlobs).toEqual(['src/shared/contract/tag.ts']);
     expect(detail.approvedRevision).toBeNull();
+  });
+
+  it('updates priority and due date metadata, including explicitly clearing dueAt', () => {
+    const created = service.createDraft(draft(), NOW);
+
+    const updated = service.updateMeta({
+      workCardId: created.workCard.id,
+      actorUserId: 'user_editor',
+      priority: 'urgent',
+      dueAt: NOW + 86_400_000,
+    }, NOW + 1);
+
+    expect(updated).toMatchObject({
+      priority: 'urgent',
+      dueAt: NOW + 86_400_000,
+      updatedAt: NOW + 1,
+    });
+
+    const cleared = service.updateMeta({
+      workCardId: created.workCard.id,
+      actorUserId: 'user_editor',
+      dueAt: null,
+    }, NOW + 2);
+
+    expect(cleared).toMatchObject({
+      priority: 'urgent',
+      dueAt: null,
+      updatedAt: NOW + 2,
+    });
+  });
+
+  it('rejects invalid priority and empty metadata updates', () => {
+    const created = service.createDraft(draft(), NOW);
+
+    expect(() => service.updateMeta({
+      workCardId: created.workCard.id,
+      actorUserId: 'user_editor',
+      priority: 'critical' as never,
+    })).toThrowError(/priority/);
+    expect(() => service.updateMeta({
+      workCardId: created.workCard.id,
+      actorUserId: 'user_editor',
+    })).toThrowError(/priority or dueAt/);
+  });
+
+  it('stores blocked reasons for blocked statuses and clears them after progress resumes', () => {
+    const created = service.createDraft(draft(), NOW);
+
+    const failed = service.setStatus(created.workCard.id, 'failed', NOW + 1, 'Provider unavailable');
+    expect(failed.blockedReason).toBe('Provider unavailable');
+
+    const working = service.setStatus(created.workCard.id, 'working', NOW + 2);
+    expect(working.blockedReason).toBeNull();
+
+    const waiting = service.setStatus(
+      created.workCard.id,
+      'waiting_for_user',
+      NOW + 3,
+      'Approval required',
+    );
+    expect(waiting.blockedReason).toBe('Approval required');
+
+    const queued = service.setStatus(created.workCard.id, 'queued', NOW + 4);
+    expect(queued.blockedReason).toBeNull();
+    expect(() => service.setStatus(
+      created.workCard.id,
+      'working',
+      NOW + 5,
+      'must not be silently discarded',
+    )).toThrowError(/blockedReason/);
+  });
+
+  it('applies blocked reason coupling through the repository status input path', () => {
+    const created = service.createDraft(draft(), NOW);
+
+    repo.setStatus({
+      workCardId: created.workCard.id,
+      status: 'failed',
+      updatedAt: NOW + 1,
+      blockedReason: 'Repository failure',
+    });
+    expect(repo.getWorkCard(created.workCard.id)?.blockedReason).toBe('Repository failure');
+
+    repo.setStatus({
+      workCardId: created.workCard.id,
+      status: 'completed',
+      updatedAt: NOW + 2,
+    });
+    expect(repo.getWorkCard(created.workCard.id)?.blockedReason).toBeNull();
+  });
+
+  it('reads legacy work card shapes with medium priority defaults', () => {
+    repo.insertWorkCard({
+      id: 'nwc_legacy',
+      projectId: 'proj_alpha',
+      sourceConversationId: 'conv_legacy',
+      sourceTurnId: 'turn_legacy',
+      requesterUserId: 'user_legacy',
+      title: 'Legacy card',
+      status: 'draft',
+      currentRevisionId: 'nwcr_legacy',
+      approvedRevisionId: null,
+      createdAt: NOW,
+      updatedAt: NOW,
+      archivedAt: null,
+    });
+
+    expect(service.get('nwc_legacy')?.workCard).toMatchObject({
+      priority: 'medium',
+      dueAt: null,
+      blockedReason: null,
+    });
   });
 
   it('lists work cards by project and status scope', () => {

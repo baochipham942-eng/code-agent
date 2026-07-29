@@ -16,6 +16,7 @@ import {
 } from '../../../src/host/services/project/neoWorkCardService';
 import {
   continueAndRunNeoWorkCard,
+  launchApprovedNeoWorkCard,
   type NeoTagTaskManager,
 } from '../../../src/host/services/project/neoTagRuntimeService';
 
@@ -162,6 +163,33 @@ describe('continueAndRunNeoWorkCard', () => {
       taskManager: stubTaskManager(),
       service,
     })).toThrowError(/还在跑/);
+  });
+
+  it('persists the runtime error as the failed work card blocked reason', async () => {
+    const created = service.createDraft(draft(), NOW);
+    service.approveRevision({
+      workCardId: created.workCard.id,
+      reviewerUserId: 'user_1',
+    }, NOW + 1);
+    const taskManager = {
+      startTask: vi.fn<NeoTagTaskManager['startTask']>(async () => {}),
+      getSessionState: vi.fn(() => ({
+        status: 'error',
+        error: 'Model route unavailable',
+      })),
+    };
+
+    await launchApprovedNeoWorkCard({
+      workCardId: created.workCard.id,
+      taskManager,
+      service,
+      now: () => NOW + 2,
+    });
+
+    expect(service.get(created.workCard.id)?.workCard).toMatchObject({
+      status: 'failed',
+      blockedReason: 'Model route unavailable',
+    });
   });
 
   it('rejects closed cards (archived/cancelled)', () => {

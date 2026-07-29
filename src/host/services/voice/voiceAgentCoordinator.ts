@@ -25,6 +25,7 @@ import { getPermissionModeManager } from '../../permissions/modes';
 import { getConfigService } from '../core/configService';
 import { buildWorkNarration, resolveNarrationSpeaker } from './voiceNarration';
 import { describeWorkFailure } from './workFailureDescription';
+import { buildVocabularyBlock } from './voiceVocabulary';
 import type { ProjectSourceTrustFailureMarker } from '../../../shared/contract/project';
 
 const logger = createLogger('VoiceCoordinator');
@@ -187,6 +188,7 @@ export function pushVoiceTranscript(entry: VoiceTranscriptEntry): void {
 /** 近窗字幕拼成一段 system 上下文。空窗返回 null——没东西可说时不要塞空块进 run。 */
 function buildTranscriptBlock(entries: VoiceTranscriptEntry[]): string | null {
   if (!entries.length) return null;
+  const vocabularyBlock = buildVocabularyBlock();
   return [
     '[Voice — 通话近窗字幕原文]',
     '这件活来自一通实时语音通话。任务描述是语音层改写出来的，可能丢信息，也可能被语音识别写错。',
@@ -196,6 +198,7 @@ function buildTranscriptBlock(entries: VoiceTranscriptEntry[]): string | null {
     '按上下文纠正后执行，并在结果里说明你是按什么理解做的。',
     '**用户此刻在打电话，不在键盘前**：不要向他提问、不要弹选择框等他回答——他看不见也点不了。',
     '信息不全就按最合理的默认做法先做完，然后在结果里一句话说明你按什么假设做的。',
+    ...(vocabularyBlock ? ['', vocabularyBlock] : []),
   ].join('\n');
 }
 

@@ -29,6 +29,7 @@ export const ProjectSpacePage: React.FC<ProjectSpacePageProps> = ({ onClose }) =
       ) : (
         <>
           <FullScreenPageHeader
+            variant="bar"
             icon={<FolderKanban className="h-4 w-4 text-violet-300" />}
             title={t.projectSpace.listTitle}
             description={t.projectSpace.listDescription}

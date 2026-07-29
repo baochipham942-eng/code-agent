@@ -130,6 +130,15 @@ describe('TaskDAG', () => {
       expect(t1?.dependents).toContain('t2');
       expect(t2?.dependencies).toContain('t1');
     });
+
+    it('rejects a dependency edge that would create a cycle before scheduling', () => {
+      dag.addAgentTask('a', { role: 'coder', prompt: 'A' });
+      dag.addAgentTask('b', { role: 'reviewer', prompt: 'B' }, { dependencies: ['a'] });
+
+      expect(() => dag.addDependency('a', 'b')).toThrow(/cycle/i);
+      expect(dag.getTask('a')?.dependencies).toEqual([]);
+      expect(dag.getTask('b')?.dependents).toEqual([]);
+    });
   });
 
   // --------------------------------------------------------------------------
@@ -465,6 +474,16 @@ describe('TaskDAG', () => {
       expect(events.length).toBe(2);
       expect(events.map(e => e.type)).toEqual(['dag:start', 'dag:complete']);
     });
+
+    it('keeps the first DAG terminal status immutable', () => {
+      dag.setStatus('running');
+      dag.setStatus('completed');
+
+      dag.setStatus('failed');
+      dag.setStatus('cancelled');
+
+      expect(dag.getStatus()).toBe('completed');
+    });
   });
 
   // --------------------------------------------------------------------------
@@ -620,6 +639,23 @@ describe('TaskDAG', () => {
       dag.failTask('t1', { message: 'Persistent error', retryable: true });
 
       expect(dag.getTask('t1')?.status).toBe('failed'); // No more retries
+    });
+  });
+
+  describe('Terminal latch', () => {
+    it('keeps the first terminal status and output when a late failure arrives', () => {
+      dag.addAgentTask('t1', { role: 'coder', prompt: 'Work' });
+      dag.updateTaskStatus('t1', 'ready');
+      dag.startTask('t1');
+      dag.completeTask('t1', { text: 'durable success' });
+
+      dag.failTask('t1', { message: 'late failure', retryable: false });
+
+      expect(dag.getTask('t1')).toMatchObject({
+        status: 'completed',
+        output: { text: 'durable success' },
+      });
+      expect(dag.getTask('t1')?.failure).toBeUndefined();
     });
   });
 

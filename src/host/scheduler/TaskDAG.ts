@@ -261,6 +261,13 @@ export class TaskDAG extends EventEmitter {
       task.dependencies.push(dependsOn);
       depTask.dependents.push(taskId);
       this.markDirty();
+      const validation = validateDAG(this.tasks);
+      if (!validation.valid) {
+        task.dependencies = task.dependencies.filter((id) => id !== dependsOn);
+        depTask.dependents = depTask.dependents.filter((id) => id !== taskId);
+        this.markDirty();
+        throw new Error(`Dependency cycle rejected: ${validation.errors.join('; ')}`);
+      }
     }
 
     return this;
@@ -332,6 +339,9 @@ export class TaskDAG extends EventEmitter {
     }
 
     const oldStatus = task.status;
+    if (isTaskTerminal(oldStatus)) {
+      return;
+    }
     task.status = newStatus;
 
     // 更新元数据
@@ -401,6 +411,7 @@ export class TaskDAG extends EventEmitter {
     if (!task) {
       throw new Error(`Task "${taskId}" not found`);
     }
+    if (isTaskTerminal(task.status)) return;
 
     // 检查是否可以重试
     if (failure.retryable && task.metadata.retryCount < task.metadata.maxRetries) {
@@ -711,6 +722,9 @@ export class TaskDAG extends EventEmitter {
    */
   setStatus(status: DAGStatus): void {
     const oldStatus = this.status;
+    if (oldStatus === 'completed' || oldStatus === 'failed' || oldStatus === 'cancelled') {
+      return;
+    }
     this.status = status;
 
     if (status === 'running' && !this.startedAt) {

@@ -87,6 +87,12 @@ export {
 
 const logger = createLogger('ParallelAgentCoordinator');
 
+function isLogicalRunConflict(message: string): boolean {
+  return message.includes('LOGICAL_RUN_STILL_RUNNING')
+    || message.includes('LOGICAL_RUN_ALREADY_COMPLETED')
+    || message.includes('LOGICAL_RUN_ALREADY_TERMINAL');
+}
+
 // ============================================================================
 // ParallelAgentCoordinator
 // ============================================================================
@@ -113,6 +119,7 @@ export class ParallelAgentCoordinator extends EventEmitter {
   private graphCheckpoint?: GraphCheckpoint;
   private skipNextGraphCheckpoint = false;
   private recoveryRefs = createEmptyParallelAgentRecoveryRefs();
+  private recoveryRetryTaskIds = new Set<string>();
 
   constructor(config: Partial<CoordinatorConfig> = {}, scope?: SwarmRunScope) {
     super();
@@ -226,6 +233,7 @@ export class ParallelAgentCoordinator extends EventEmitter {
     let currentConcurrent = 0;
     let maxConcurrent = 0;
     const thrownFailures = new Set<string>();
+    const executionResults = new Map<string, AgentTaskResult>();
     const unsubscribeCompatibility = compatibilitySink.subscribe({
       graph: (event) => {
         if (!event.nodeId) return;
@@ -288,6 +296,7 @@ export class ParallelAgentCoordinator extends EventEmitter {
             () => thrownFailures.add(task.id),
             () => graphContext.progress({ legacyEvent: 'task:start' }),
           );
+          executionResults.set(task.id, taskResult);
           await progressQueue;
           return {
             status: taskResult.cancelled ? 'cancelled' : taskResult.success ? 'completed' : 'failed',
@@ -326,7 +335,7 @@ export class ParallelAgentCoordinator extends EventEmitter {
     }
 
     const rawResults = tasks.flatMap((task) => {
-      const result = this.completedTasks.get(task.id);
+      const result = executionResults.get(task.id) ?? this.completedTasks.get(task.id);
       return result ? [result] : [];
     });
     for (const result of rawResults) {
@@ -366,7 +375,7 @@ export class ParallelAgentCoordinator extends EventEmitter {
     const recovered = await resolveRecoveredTaskExecution({ task, refs: this.recoveryRefs, cwd: executionContext.cwd, onWorktreeCreated: (worktreePath) => this.recordTaskWorktree(task.id, worktreePath) });
     if (recovered.result) {
       await this.durableController?.markNodeTerminal(task, recovered.result);
-      this.completedTasks.set(task.id, recovered.result);
+      this.latchCompletedTask(task.id, recovered.result);
     }
 
     // Checkpoint hit: 成功节点短路，不重新执行（对称 autoAgentCoordinator）
@@ -424,7 +433,8 @@ export class ParallelAgentCoordinator extends EventEmitter {
       // Execute task
       const executor = await this.getSubagentExecutor();
       throwIfCancelledBeforeExecutor();
-      await this.durableController?.markNodeDispatched(task);
+      const recoveryRetry = this.recoveryRetryTaskIds.delete(task.id);
+      if (!recoveryRetry) await this.durableController?.markNodeDispatched(task);
       await onStarted?.();
 
       // Inject shared context into system prompt if available
@@ -501,10 +511,10 @@ export class ParallelAgentCoordinator extends EventEmitter {
 
       await this.durableController?.markNodeTerminal(task, taskResult);
 
-      this.completedTasks.set(task.id, taskResult);
+      const durableResult = this.latchCompletedTask(task.id, taskResult);
       this.abortControllers.delete(task.id); this.runningTasks.delete(task.id);
 
-      return taskResult;
+      return durableResult;
     } catch (error) {
       onThrownFailure?.();
       const endTime = Date.now();
@@ -534,8 +544,10 @@ export class ParallelAgentCoordinator extends EventEmitter {
           defaultCode: AgentFailureCode.ModelError,
         }),
       };
-      await this.durableController?.markNodeTerminal(task, failedResult);
-      this.completedTasks.set(task.id, failedResult);
+      if (!isLogicalRunConflict(errorMessage)) {
+        await this.durableController?.markNodeTerminal(task, failedResult);
+        this.latchCompletedTask(task.id, failedResult);
+      }
 
       return failedResult;
     } finally {
@@ -690,6 +702,13 @@ export class ParallelAgentCoordinator extends EventEmitter {
     return Array.from(this.completedTasks.values());
   }
 
+  private latchCompletedTask(taskId: string, result: AgentTaskResult): AgentTaskResult {
+    const existing = this.completedTasks.get(taskId);
+    if (existing) return existing;
+    this.completedTasks.set(taskId, result);
+    return result;
+  }
+
   getTaskDefinition(taskId: string): AgentTask | undefined {
     const task = this.taskDefinitions.get(taskId);
     return task ? { ...task } : undefined;
@@ -750,6 +769,11 @@ export class ParallelAgentCoordinator extends EventEmitter {
     this.cancelReason = restored.cancelReason;
     this.graphCheckpoint = restored.graphCheckpoint;
     this.recoveryRefs = restored.recoveryRefs;
+    this.recoveryRetryTaskIds = new Set(
+      decision.nodes
+        .filter((node) => node.classification === 'retry_safe')
+        .map((node) => node.nodeId),
+    );
     if (ownerEpoch !== undefined) this.durableOwnerEpoch = ownerEpoch;
   }
 
@@ -933,6 +957,17 @@ export class ParallelAgentCoordinator extends EventEmitter {
 
     if (this.abortControllers.has(taskId)) {
       throw new Error(`Task is still running: ${taskId}`);
+    }
+    const durableNode = this.durableController?.getState().taskGraph.find((node) => node.id === taskId);
+    const isRecoveryRetry = this.recoveryRetryTaskIds.has(taskId);
+    if (durableNode?.status === 'dispatched' && !isRecoveryRetry) {
+      throw new Error(`LOGICAL_RUN_STILL_RUNNING: ${taskId}`);
+    }
+    if (durableNode?.status === 'completed') {
+      throw new Error(`LOGICAL_RUN_ALREADY_COMPLETED: ${taskId}`);
+    }
+    if (durableNode && ['failed', 'cancelled', 'blocked'].includes(durableNode.status)) {
+      throw new Error(`LOGICAL_RUN_ALREADY_TERMINAL: ${taskId} (${durableNode.status})`);
     }
 
     // 显式重试必须绕过 checkpoint cache-skip，否则上一轮的成功结果会短路

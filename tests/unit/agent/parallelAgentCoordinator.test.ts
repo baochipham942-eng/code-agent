@@ -1319,6 +1319,70 @@ describe('ParallelAgentCoordinator', () => {
       expect(retried.success).toBe(true);
       expect(executorState.executeMock).toHaveBeenCalledTimes(2);
     });
+
+    it('durable 已成功任务拒绝同逻辑 retry，不删除首个结果', async () => {
+      const scope: SwarmRunScope = {
+        sessionId: 'durable-retry-session',
+        runId: 'durable-retry-run',
+        treeId: 'durable-retry-tree',
+      };
+      const durable = makeFakeDurableController(scope);
+      const scoped = new ParallelAgentCoordinator({ aggregateResults: false }, scope);
+      const taskId = createScopedSwarmAgentId(scope, 'a');
+      scoped.initialize({
+        ...makeFakeContext(),
+        executionContext: { ...makeFakeContext().executionContext, sessionId: scope.sessionId } as never,
+        scope,
+        durableController: durable,
+      });
+      await scoped.executeParallel([makeTask(taskId, { role: 'coder' })]);
+      durable.getState().taskGraph.push({
+        id: taskId,
+        role: 'coder',
+        task: `task description for ${taskId}`,
+        dependsOn: [],
+        tools: ['Read'],
+        permissionProfile: 'readonly',
+        sideEffect: false,
+        status: 'completed',
+        operationId: `node:${taskId}`,
+        artifactRefs: [],
+      });
+
+      await expect(scoped.retryTask(taskId)).rejects.toThrow(/LOGICAL_RUN_ALREADY_COMPLETED/);
+      expect(executorState.executeMock).toHaveBeenCalledTimes(1);
+      expect(scoped.getCompletedTasks()).toEqual([
+        expect.objectContaining({ taskId, success: true }),
+      ]);
+    });
+
+    it('durable 并发冲突不把原运行任务写成 failed', async () => {
+      const scope: SwarmRunScope = {
+        sessionId: 'durable-conflict-session',
+        runId: 'durable-conflict-run',
+        treeId: 'durable-conflict-tree',
+      };
+      const durable = makeFakeDurableController(scope);
+      const taskId = createScopedSwarmAgentId(scope, 'a');
+      vi.mocked(durable.markNodeDispatched).mockRejectedValueOnce(new Error(`LOGICAL_RUN_STILL_RUNNING: ${taskId}`));
+      const scoped = new ParallelAgentCoordinator({ aggregateResults: false }, scope);
+      scoped.initialize({
+        ...makeFakeContext(),
+        executionContext: { ...makeFakeContext().executionContext, sessionId: scope.sessionId } as never,
+        scope,
+        durableController: durable,
+      });
+
+      const result = await scoped.executeParallel([makeTask(taskId)]);
+
+      expect(result.results[0]).toMatchObject({
+        success: false,
+        error: `LOGICAL_RUN_STILL_RUNNING: ${taskId}`,
+      });
+      expect(durable.markNodeTerminal).not.toHaveBeenCalled();
+      expect(scoped.getCompletedTasks()).toEqual([]);
+      expect(executorState.executeMock).not.toHaveBeenCalled();
+    });
   });
 
   describe('abortTask', () => {

@@ -5,11 +5,13 @@ import {
 } from '../../shared/contract/swarm';
 import { ParallelAgentCoordinator } from './parallelAgentCoordinator';
 import {
+  isLegacyCoordinatorScope,
   LEGACY_COORDINATOR_SCOPE,
   type CompletedParallelCoordinatorSnapshot,
   type CoordinatorConfig,
   type ParallelCoordinatorTerminalStatus,
 } from './parallelAgentCoordinatorTypes';
+import { getSwarmEventEmitter } from './swarmEventPublisher';
 
 /** Explicit scope container. The container is process-wide; mutable run state is not. */
 export class ParallelAgentCoordinatorRegistry {
@@ -96,6 +98,7 @@ export class ParallelAgentCoordinatorRegistry {
       const scope = coordinator.getScope();
       if (scope?.sessionId !== ref.sessionId || scope.runId !== ref.runId) continue;
       coordinator.abortAllRunning(reason);
+      getSwarmEventEmitter().cancelled(scope);
       aborted = true;
     }
     return aborted;
@@ -106,6 +109,8 @@ export class ParallelAgentCoordinatorRegistry {
     for (const coordinator of this.coordinators.values()) {
       if (coordinator.getScope()?.sessionId !== sessionId) continue;
       coordinator.abortAllRunning(reason);
+      const scope = coordinator.getScope();
+      if (scope && !isLegacyCoordinatorScope(scope)) getSwarmEventEmitter().cancelled(scope);
       aborted += 1;
     }
     return aborted;

@@ -3,13 +3,19 @@ import React from 'react';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { zh } from '../../../src/renderer/i18n/zh';
-import type { SwarmAgentState } from '../../../src/shared/contract/swarm';
+import { createSwarmTraceStorageId, type SwarmAgentState } from '../../../src/shared/contract/swarm';
 import type { SwarmRunAgentRecord, SwarmRunDetail, SwarmRunListItem } from '../../../src/shared/contract/swarmTrace';
 import { IPC_CHANNELS } from '../../../src/shared/ipc';
 
 const invokeMock = vi.fn();
 const appState = { openWorkspacePreview: vi.fn() };
-const swarmState: { agents: SwarmAgentState[]; activeSessionId: string | undefined } = { agents: [], activeSessionId: undefined };
+const swarmState: {
+  agents: SwarmAgentState[];
+  activeSessionId: string | undefined;
+  activeRunId?: string;
+  activeTreeId?: string;
+  lastEventAt?: number;
+} = { agents: [], activeSessionId: undefined };
 
 vi.mock('../../../src/renderer/hooks/useI18n', () => ({ useI18n: () => ({ t: zh }) }));
 vi.mock('../../../src/renderer/stores/appStore', () => ({ useAppStore: (selector: (state: typeof appState) => unknown) => selector(appState) }));
@@ -37,6 +43,9 @@ describe('SessionMemberBar', () => {
   beforeEach(() => {
     swarmState.agents = [];
     swarmState.activeSessionId = undefined;
+    swarmState.activeRunId = undefined;
+    swarmState.activeTreeId = undefined;
+    swarmState.lastEventAt = undefined;
     invokeMock.mockReset();
     invokeMock.mockResolvedValue([]);
     useComposerStore.setState({ selectedTeamRecipeId: null });
@@ -70,25 +79,50 @@ describe('SessionMemberBar', () => {
     await waitFor(() => expect(useMemberViewStore.getState().viewingMemberId).toBe('researcher'));
   });
 
-  it('实时团队优先，不读取持久化 run', async () => {
+  it('实时事件与持久化状态冲突时只展示账本/API 状态', async () => {
     swarmState.activeSessionId = 'session-1';
-    swarmState.agents = agents.map(swarmRunAgentRecordToState);
+    swarmState.activeRunId = 'logical-run-1';
+    swarmState.activeTreeId = 'tree-1';
+    swarmState.lastEventAt = 10;
+    swarmState.agents = agents.map((agent) => ({ ...swarmRunAgentRecordToState(agent), status: 'running' }));
+    const detail: SwarmRunDetail = { run: { ...run, totalToolCalls: 11, parallelPeak: 2, errorSummary: null, aggregation: null, tags: [] }, agents, events: [] };
+    invokeMock.mockImplementation((channel: string) => {
+      if (channel === IPC_CHANNELS.SWARM_LIST_TRACE_RUNS) return Promise.resolve([run]);
+      if (channel === IPC_CHANNELS.SWARM_GET_TRACE_RUN_DETAIL) return Promise.resolve(detail);
+      return Promise.resolve(null);
+    });
 
     render(<SessionMemberBar sessionId="session-1" />);
-    expect(screen.getByTestId('session-member-bar')).toBeTruthy();
-    await Promise.resolve();
-    expect(invokeMock).not.toHaveBeenCalledWith(IPC_CHANNELS.SWARM_LIST_TRACE_RUNS, expect.anything());
+    await waitFor(() => expect(screen.getAllByTestId('member-status-completed')).toHaveLength(2));
+    expect(screen.queryByTestId('member-status-running')).toBeNull();
+    expect(invokeMock).toHaveBeenCalledWith(IPC_CHANNELS.SWARM_GET_TRACE_RUN_DETAIL, {
+      sessionId: 'session-1',
+      runId: createSwarmTraceStorageId({
+        sessionId: 'session-1',
+        runId: 'logical-run-1',
+        treeId: 'tree-1',
+      }),
+    });
   });
 
   it('运行中的成员带转圈徽标，跑完的带对勾', async () => {
-    swarmState.activeSessionId = 'session-1';
-    swarmState.agents = [
-      { ...swarmRunAgentRecordToState(agents[0]), status: 'running' },
-      swarmRunAgentRecordToState(agents[1]),
+    const durableAgents: SwarmRunAgentRecord[] = [
+      { ...agents[0], status: 'running', endTime: null, durationMs: null },
+      agents[1],
     ];
+    const detail: SwarmRunDetail = {
+      run: { ...run, status: 'running', endedAt: null, completedCount: 1, totalToolCalls: 11, parallelPeak: 2, errorSummary: null, aggregation: null, tags: [] },
+      agents: durableAgents,
+      events: [],
+    };
+    invokeMock.mockImplementation((channel: string) => {
+      if (channel === IPC_CHANNELS.SWARM_LIST_TRACE_RUNS) return Promise.resolve([{ ...run, status: 'running' }]);
+      if (channel === IPC_CHANNELS.SWARM_GET_TRACE_RUN_DETAIL) return Promise.resolve(detail);
+      return Promise.resolve(null);
+    });
 
     render(<SessionMemberBar sessionId="session-1" />);
-    expect(screen.getByTestId('member-status-running')).toBeTruthy();
+    await waitFor(() => expect(screen.getByTestId('member-status-running')).toBeTruthy());
     expect(screen.getByTestId('member-status-completed')).toBeTruthy();
   });
 

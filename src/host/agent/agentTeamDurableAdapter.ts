@@ -43,12 +43,46 @@ function resultRef(runId: string, taskId: string, result: AgentTaskResult): stri
   return `agent-team-result:${digest(JSON.stringify({ runId, taskId, success: result.success, output: result.output, error: result.error })).slice(0, 40)}`;
 }
 
+const TERMINAL_NODE_STATUSES = new Set(['completed', 'failed', 'cancelled', 'blocked']);
+
+function assertValidTaskGraph(tasks: AgentTask[]): void {
+  const ids = new Set<string>();
+  for (const task of tasks) {
+    if (ids.has(task.id)) throw new Error(`DUPLICATE_TASK_KEY: ${task.id}`);
+    ids.add(task.id);
+  }
+  const graph = new Map(tasks.map((task) => [task.id, [...(task.dependsOn ?? [])]]));
+  for (const [taskId, dependencies] of graph) {
+    for (const dependency of dependencies) {
+      if (!ids.has(dependency)) throw new Error(`DEPENDENCY_NOT_FOUND: ${taskId} -> ${dependency}`);
+    }
+  }
+  const visiting = new Set<string>();
+  const visited = new Set<string>();
+  const path: string[] = [];
+  const visit = (taskId: string): void => {
+    if (visiting.has(taskId)) {
+      const start = path.indexOf(taskId);
+      throw new Error(`DEPENDENCY_CYCLE: ${[...path.slice(start), taskId].join(' -> ')}`);
+    }
+    if (visited.has(taskId)) return;
+    visiting.add(taskId);
+    path.push(taskId);
+    for (const dependency of graph.get(taskId) ?? []) visit(dependency);
+    path.pop();
+    visiting.delete(taskId);
+    visited.add(taskId);
+  };
+  for (const taskId of graph.keys()) visit(taskId);
+}
+
 class Controller implements AgentTeamDurableController {
   readonly ownerEpoch: number;
   readonly traceContext?: RunTraceContext;
   private readonly operations = new Map<string, PendingOperation>();
   private serial: Promise<void> = Promise.resolve();
   private terminalized = false;
+  private terminalPromise?: Promise<void>;
   private heartbeatTimer?: ReturnType<typeof setInterval>;
 
   constructor(
@@ -118,6 +152,7 @@ class Controller implements AgentTeamDurableController {
   }
 
   async projectGraphCheckpoint(checkpoint: GraphCheckpoint): Promise<void> {
+    this.assertMutable();
     if (checkpoint.runId !== this.scope.runId || checkpoint.sessionId !== this.scope.sessionId) {
       throw new Error('Agent Team graph checkpoint identity mismatch');
     }
@@ -129,6 +164,7 @@ class Controller implements AgentTeamDurableController {
   }
 
   async markApprovalWaiting(approvalId: string, now = Date.now()): Promise<void> {
+    this.assertMutable();
     const operationId = `approval:${approvalId}`;
     this.operations.set(operationId, this.kernel.prepareOperation({
       runId: this.scope.runId,
@@ -148,6 +184,7 @@ class Controller implements AgentTeamDurableController {
   }
 
   async resolveApproval(approvalId: string, status: 'approved' | 'rejected' | 'cancelled', now = Date.now()): Promise<void> {
+    this.assertMutable();
     const ref = this.state.pendingApprovalRefs.find((approval) => approval.approvalId === approvalId);
     if (!ref) throw new Error(`Unknown Agent Team approval: ${approvalId}`);
     ref.status = status;
@@ -158,8 +195,18 @@ class Controller implements AgentTeamDurableController {
   }
 
   async markNodeDispatched(task: AgentTask, now = Date.now()): Promise<void> {
+    this.assertMutable();
     const node = this.requireNode(task.id);
-    if (node.status === 'completed') return;
+    if (node.status === 'dispatched') {
+      throw new Error(`LOGICAL_RUN_STILL_RUNNING: ${task.id}`);
+    }
+    if (TERMINAL_NODE_STATUSES.has(node.status)) {
+      throw new Error(
+        node.status === 'completed'
+          ? `LOGICAL_RUN_ALREADY_COMPLETED: ${task.id}`
+          : `LOGICAL_RUN_ALREADY_TERMINAL: ${task.id} (${node.status})`,
+      );
+    }
     node.status = 'dispatched';
     const operation = this.operations.get(node.operationId);
     if (operation) this.operations.set(node.operationId, { ...operation, status: 'dispatched', updatedAt: now });
@@ -169,6 +216,7 @@ class Controller implements AgentTeamDurableController {
   }
 
   async markNodeWorktree(taskId: string, worktreeRef: string, now = Date.now()): Promise<void> {
+    this.assertMutable();
     const node = this.requireNode(taskId);
     node.worktreeRef = worktreeRef;
     this.state.worktreeRefs[taskId] = worktreeRef;
@@ -177,7 +225,9 @@ class Controller implements AgentTeamDurableController {
   }
 
   async markNodeTerminal(task: AgentTask, result: AgentTaskResult, now = Date.now()): Promise<void> {
+    this.assertMutable();
     const node = this.requireNode(task.id);
+    if (TERMINAL_NODE_STATUSES.has(node.status)) return;
     node.status = result.cancelled ? 'cancelled' : result.blocked ? 'blocked' : result.success ? 'completed' : 'failed';
     node.result = { ...result, toolsUsed: [...result.toolsUsed] };
     node.error = result.error;
@@ -204,6 +254,7 @@ class Controller implements AgentTeamDurableController {
   }
 
   async enqueueMessage(agentId: string, body: string, from = 'parent', type = 'text', now = Date.now()): Promise<AgentTeamMailboxMessage> {
+    this.assertMutable();
     const seq = this.state.mailbox.nextSeq++;
     const message: AgentTeamMailboxMessage = {
       id: `${this.scope.treeId}:mail:${seq}`,
@@ -222,6 +273,7 @@ class Controller implements AgentTeamDurableController {
   }
 
   async consumeMessages(agentId: string, now = Date.now()): Promise<AgentTeamMailboxMessage[]> {
+    this.assertMutable();
     const consumed = new Set(this.state.mailbox.consumedMessageIds);
     const messages = this.state.mailbox.pending
       .filter((message) => message.agentId === agentId && message.treeId === this.scope.treeId && !consumed.has(message.id))
@@ -236,6 +288,7 @@ class Controller implements AgentTeamDurableController {
   }
 
   async cancel(reason: string, now = Date.now()): Promise<void> {
+    this.assertMutable();
     this.state.cancelled = true;
     this.state.errors.push(`Cancelled: ${reason}`);
     for (const node of this.state.taskGraph) {
@@ -246,37 +299,47 @@ class Controller implements AgentTeamDurableController {
     await this.checkpoint('recovering');
   }
 
-  async terminal(status: 'completed' | 'failed' | 'cancelled', reason?: string, now = Date.now()): Promise<void> {
-    await this.serial;
-    await this.parentHost.projectAgentTeamChildTerminal({
-      parentRunId: this.parentRunId,
-      teamRunId: this.scope.runId,
-      status,
-      resultRef: status === 'completed' ? `agent-team:${this.scope.runId}:completed` : undefined,
-      now,
-    });
-    await this.kernel.terminal({
-      runId: this.scope.runId,
-      attempt: this.attempt,
-      owner: this.owner,
-      now,
-      status,
-      reason,
-      event: {
-        type: `agent_team_${status}`,
-        payload: { treeId: this.scope.treeId, reason },
-        recordedAt: now,
-      },
-    });
-    if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
-    this.heartbeatTimer = undefined;
-    this.terminalized = true;
+  terminal(status: 'completed' | 'failed' | 'cancelled', reason?: string, now = Date.now()): Promise<void> {
+    if (this.terminalPromise) return this.terminalPromise;
+    this.terminalPromise = (async () => {
+      await this.serial;
+      await this.parentHost.projectAgentTeamChildTerminal({
+        parentRunId: this.parentRunId,
+        teamRunId: this.scope.runId,
+        status,
+        resultRef: status === 'completed' ? `agent-team:${this.scope.runId}:completed` : undefined,
+        now,
+      });
+      await this.kernel.terminal({
+        runId: this.scope.runId,
+        attempt: this.attempt,
+        owner: this.owner,
+        now,
+        status,
+        reason,
+        event: {
+          type: `agent_team_${status}`,
+          payload: { treeId: this.scope.treeId, reason },
+          recordedAt: now,
+        },
+      });
+      if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = undefined;
+      this.terminalized = true;
+    })();
+    return this.terminalPromise;
   }
 
   private requireNode(taskId: string): AgentTeamCheckpointNode {
     const node = this.state.taskGraph.find((candidate) => candidate.id === taskId);
     if (!node) throw new Error(`Unknown Agent Team node: ${taskId}`);
     return node;
+  }
+
+  private assertMutable(): void {
+    if (this.terminalPromise || this.terminalized) {
+      throw new Error(`Agent Team run is already terminal: ${this.scope.runId}`);
+    }
   }
 
   private startHeartbeat(now: number): void {
@@ -305,6 +368,7 @@ export class AgentTeamDurableRuntime implements AgentTeamDurableRuntimePort {
     if (input.scope.runId !== stableAgentTeamRunId(input.parentRunId, input.logicalOperationId)) {
       throw new Error('Agent Team run identity must be stable for its parent logical operation');
     }
+    assertValidTaskGraph(input.tasks);
     await this.parentHost.prepareAgentTeamChild({
       parentRunId: input.parentRunId,
       teamRunId: input.scope.runId,

@@ -355,14 +355,27 @@ class VoiceCallBridge {
     return 'headphones';
   }
 
+  /**
+   * 本次通话音频管线的判定原因（批 X §5）。原生 AEC 的失败此前被 catch 静默吞掉，
+   * 真机「AEC 没起来」在任何日志里都查不到。记下原因，live 后经 audio_mode 命令
+   * 送 host 落日志——renderer 自己的 logger 只进 console，事后取不到证。
+   */
+  private audioModeReason = '';
+
   private async startAudio(
     ws: WebSocket,
     interruptMode: VoiceInterruptMode,
     echoCancellation: 'auto' | 'off',
   ): Promise<'native_aec' | 'headphones'> {
     // 用户显式关掉 = 自愿走耳机模式，不报降级；非 macOS/原生壳不可用 = 非自愿，要报。
-    if (echoCancellation === 'off') return this.startWebAudio(ws, interruptMode, false);
-    if (!isNativeDesktopAvailable()) return this.startWebAudio(ws, interruptMode, true);
+    if (echoCancellation === 'off') {
+      this.audioModeReason = 'user-off';
+      return this.startWebAudio(ws, interruptMode, false);
+    }
+    if (!isNativeDesktopAvailable()) {
+      this.audioModeReason = 'no-native-shell';
+      return this.startWebAudio(ws, interruptMode, true);
+    }
 
     const pipeline = new NativeVoiceAudioPipeline({
       onFrame: (pcm16k) => {
@@ -377,12 +390,15 @@ class VoiceCallBridge {
     this.audio = pipeline;
     try {
       await pipeline.start();
+      this.audioModeReason = 'native-aec-started';
       if (this.ws !== ws || ws.readyState !== WebSocket.OPEN) {
         pipeline.stop();
         return 'native_aec';
       }
       return 'native_aec';
-    } catch {
+    } catch (error) {
+      // 失败原因是「环境还是代码」判因的唯一证据，绝不再静默吞。
+      this.audioModeReason = `native-start-failed: ${error instanceof Error ? error.message : String(error)}`;
       if (this.audio === pipeline) {
         pipeline.stop();
         this.audio = null;
@@ -400,6 +416,9 @@ class VoiceCallBridge {
     if (this.audio !== failedPipeline || this.ws !== ws || ws.readyState !== WebSocket.OPEN) return;
     failedPipeline.stop();
     this.audio = null;
+    // 运行中降级同样要留痕（start 成功后原生管线半路死掉这一档）。
+    this.audioModeReason = 'native-runtime-error';
+    this.send({ type: 'audio_mode', mode: 'headphones', reason: this.audioModeReason });
     await this.startWebAudio(ws, interruptMode, true);
     if (this.ws !== ws || this.store().phase !== 'live') return;
     const text = getT().voice.echoHint;
@@ -419,6 +438,8 @@ class VoiceCallBridge {
           const ready = this.audioReady;
           void (async () => {
             const mode = await ready;
+            // 管线判定结果送 host 落日志（批 X §5）：ws 此刻已 live，正是能送的时点。
+            if (mode) this.send({ type: 'audio_mode', mode, reason: this.audioModeReason || 'unknown' });
             if (mode !== 'headphones' || this.store().phase !== 'live') return;
             const text = getT().voice.echoHint;
             await maybeShowSpeakerEchoHint({ message: text.message, dontShowAgain: text.dontShowAgain });

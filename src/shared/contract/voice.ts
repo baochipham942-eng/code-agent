@@ -178,7 +178,13 @@ export type VoiceClientCommand =
    * server_vad 模式下上游自动断句，发这个帧是合法的 no-op 上游行为，但 Renderer 只在
    * 手动模式下发它。
    */
-  | { type: 'commit' };
+  | { type: 'commit' }
+  /**
+   * 音频管线诊断上报（批 X §5）：Renderer 走了哪条采集管线、为什么。
+   * 原生 AEC 的降级链此前全程零日志（start 失败被 catch 吞掉、renderer logger 只进
+   * console），真机「AEC 没起来」在 host 日志里查不到任何痕迹。host 收到只落日志。
+   */
+  | { type: 'audio_mode'; mode: 'native_aec' | 'headphones'; reason: string };
 
 interface VoiceTransportHandleBase {
   readonly provider: VoiceProviderId;

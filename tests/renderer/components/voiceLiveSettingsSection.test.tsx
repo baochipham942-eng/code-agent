@@ -122,78 +122,7 @@ describe('VoiceLiveSettingsSection', () => {
     availability.usage = { monthSeconds: 0, monthCalls: 0 };
   });
 
-  it('未配 key：输入框恒展开，保存写 dashscope 槽并广播设置刷新事件', async () => {
-    availability.configured = false;
-    settingsGet(undefined);
-    const events: string[] = [];
-    const listener = (event: Event) => events.push(event.type);
-    window.addEventListener(VOICE_LIVE_SETTINGS_UPDATED_EVENT, listener);
-    render(<VoiceLiveSettingsSection />);
-
-    const input = await screen.findByTestId('voice-live-key-input');
-    // 空输入下保存按钮不可点（没什么可保存，也还没 key 可清）
-    expect((screen.getByTestId('voice-live-key-save') as HTMLButtonElement).disabled).toBe(true);
-
-    fireEvent.change(input, { target: { value: 'sk-dashscope-1234567890' } });
-    fireEvent.click(screen.getByTestId('voice-live-key-save'));
-    await waitFor(() => {
-      expect(invokeDomainMock).toHaveBeenCalledWith(
-        IPC_DOMAINS.SETTINGS,
-        'setServiceApiKey',
-        { service: 'dashscope', apiKey: 'sk-dashscope-1234567890' },
-      );
-    });
-    expect(events).toContain(VOICE_LIVE_SETTINGS_UPDATED_EVENT);
-    window.removeEventListener(VOICE_LIVE_SETTINGS_UPDATED_EVENT, listener);
-  });
-
-  it('已配 key：显示已配置 + 更换；换 key 后收起成打码值', async () => {
-    availability.configured = true;
-    settingsGet(undefined);
-    render(<VoiceLiveSettingsSection />);
-
-    // 已配默认收起：不渲染输入框，显示「已配置」+ 更换
-    await waitFor(() => expect(screen.getByTestId('voice-live-key-masked')).toBeTruthy());
-    expect(screen.queryByTestId('voice-live-key-input')).toBeNull();
-
-    fireEvent.click(screen.getByTestId('voice-live-key-change'));
-    const input = await screen.findByTestId('voice-live-key-input');
-    fireEvent.change(input, { target: { value: 'sk-newkey-987654321' } });
-    fireEvent.click(screen.getByTestId('voice-live-key-save'));
-    await waitFor(() => {
-      expect(invokeDomainMock).toHaveBeenCalledWith(
-        IPC_DOMAINS.SETTINGS,
-        'setServiceApiKey',
-        { service: 'dashscope', apiKey: 'sk-newkey-987654321' },
-      );
-    });
-    // 保存成功后就地收起成打码值，不整页 reload
-    await waitFor(() => expect(screen.getByTestId('voice-live-key-masked').textContent).toBe('sk-newke...'));
-    expect(screen.queryByTestId('voice-live-key-input')).toBeNull();
-  });
-
-  it('空串保存 = 清除：先过确认弹窗，确认后写空串清除', async () => {
-    availability.configured = true;
-    settingsGet(undefined);
-    render(<VoiceLiveSettingsSection />);
-
-    fireEvent.click(await screen.findByTestId('voice-live-key-change'));
-    // 已配状态下空输入点保存 = 请求清除
-    fireEvent.click(screen.getByTestId('voice-live-key-save'));
-    expect(await screen.findByText(zh.voice.settings.apiKeyClearTitle)).toBeTruthy();
-    expect(invokeDomainMock).not.toHaveBeenCalledWith(
-      IPC_DOMAINS.SETTINGS, 'setServiceApiKey', expect.anything(),
-    );
-
-    fireEvent.click(screen.getByText(zh.voice.settings.apiKeyClearConfirm));
-    await waitFor(() => {
-      expect(invokeDomainMock).toHaveBeenCalledWith(
-        IPC_DOMAINS.SETTINGS,
-        'setServiceApiKey',
-        { service: 'dashscope', apiKey: '' },
-      );
-    });
-  });
+  // key 配置三条断言已随组件迁往 voiceApiKeyConfig.test.tsx（批 X3：key 的家在「语音模型」tab 常驻）
 
   it('回声消除默认自动，可持久化为强制关', async () => {
     settingsGet({ live: { enabled: true }, turnDetection: { type: 'server_vad' } });

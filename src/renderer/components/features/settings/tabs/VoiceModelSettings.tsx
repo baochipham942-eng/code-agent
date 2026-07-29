@@ -22,6 +22,7 @@ import { createLogger } from '../../../../utils/logger';
 import { useI18n } from '../../../../hooks/useI18n';
 import { useVoiceLiveAvailability } from '../../voice/useVoiceLiveAvailability';
 import { deriveInterruptMode, deriveTurnDetection, deriveVadSensitivity } from '../../voice/voiceSettingsDerivation';
+import { VoiceApiKeyConfig } from './VoiceApiKeyConfig';
 
 const logger = createLogger('VoiceModelSettings');
 
@@ -115,6 +116,10 @@ export const VoiceModelSettings: React.FC = () => {
 
   return (
     <div className="space-y-6" data-testid="voice-model-settings">
+      {/* API Key 常驻在语音模型 tab（批 X3 产品拍板）：key 是模型的配置，
+          配没配都展示（形态不同），缺 key 引导态只是入口侧的补救通道 */}
+      <VoiceApiKeyConfig />
+
       {/* 通话模型 / Provider：白名单可配。不支持 tools 的模型选中时当场说清代价 */}
       <div>
         <div className="flex items-center justify-between gap-4">

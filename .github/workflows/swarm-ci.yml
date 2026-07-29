@@ -214,6 +214,9 @@ jobs:
             --exclude 'tests/unit/tools/modules/network/webSearch.test.ts' \
             --exclude 'tests/unit/agent/goalVerifyGate.test.ts'
 
+      - name: MCP protocol compatibility (unit + integration)
+        run: npx vitest run tests/unit/mcp tests/integration/mcp --retry=1
+
       - name: Knip dead-export ratchet
         # dead exports+types 棘轮（基线 2785，见 scripts/knip-ratchet.mjs 头注）。
         # knip 版本锁在脚本内（npx knip@<pin>），未入 devDependencies；本地实测 ~12s，

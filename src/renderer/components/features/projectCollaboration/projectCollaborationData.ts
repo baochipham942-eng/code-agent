@@ -170,6 +170,9 @@ function card(input: {
   status: NeoWorkCardStatus;
   revisionId: string;
   offset: number;
+  priority?: NeoWorkCardPriority;
+  dueAt?: number | null;
+  blockedReason?: string | null;
 }): NeoWorkCard {
   return {
     id: input.id,
@@ -179,6 +182,9 @@ function card(input: {
     requesterUserId: USER_ID,
     title: input.title,
     status: input.status,
+    priority: input.priority,
+    dueAt: input.dueAt ?? null,
+    blockedReason: input.blockedReason ?? null,
     currentRevisionId: input.revisionId,
     approvedRevisionId: ['approved', 'queued', 'working', 'waiting_for_user', 'in_result_review', 'completed'].includes(input.status)
       ? input.revisionId
@@ -445,6 +451,46 @@ const NEO_PROJECT_COLLABORATION_FIXTURE: ProjectCollaborationWorkCardRecord[] = 
         createdAt: BASE_TIME + 540000,
       }),
     ],
+  },
+  // S1 状态可见样本：urgent + 已过期的截止
+  {
+    card: card({
+      id: 'wc-urgent',
+      title: '@neo 紧急修登录页白屏',
+      status: 'working',
+      revisionId: 'rev-urgent-1',
+      offset: 6000,
+      priority: 'urgent',
+      dueAt: BASE_TIME - 86400000,
+    }),
+    revision: revision({
+      id: 'rev-urgent-1',
+      workCardId: 'wc-urgent',
+      revisionNumber: 1,
+      intent: 'implement',
+      taskSummary: '定位并修复登录页白屏回归，当天必须上线。',
+      outputs: [{ kind: 'patch', title: '登录页白屏修复' }],
+    }),
+  },
+  // S1 状态可见样本：failed 带 host 侧 blockedReason
+  {
+    card: card({
+      id: 'wc-blocked',
+      title: '@neo 迁移设置页数据源',
+      status: 'failed',
+      revisionId: 'rev-blocked-1',
+      offset: 7000,
+      blockedReason: 'provider 凭证失效，运行在第 3 步中断',
+    }),
+    revision: revision({
+      id: 'rev-blocked-1',
+      workCardId: 'wc-blocked',
+      revisionNumber: 1,
+      intent: 'implement',
+      taskSummary: '把设置页从 fixture 数据源迁到真实 IPC。',
+      outputs: [{ kind: 'patch', title: '设置页数据源迁移' }],
+      risks: ['旧 fixture 字段与新契约不一致'],
+    }),
   },
 ];
 

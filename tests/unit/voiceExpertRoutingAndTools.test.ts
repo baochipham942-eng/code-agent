@@ -37,7 +37,7 @@ const buildRoleContextBlock = vi.hoisted(() => vi.fn(async () => '<role>全量 L
 const voiceSettings = vi.hoisted(() => ({ value: {} as Record<string, unknown> }));
 const incompleteTasks = vi.hoisted(() => ({ value: [] as Array<{ subject: string; status: string }> }));
 const resolvedAgent = vi.hoisted(() => ({
-  value: undefined as undefined | { id: string; name: string; description?: string; connectors?: Array<{ id: string; level: string }> },
+  value: undefined as undefined | { id: string; name: string; description?: string; source?: string; connectors?: Array<{ id: string; level: string }> },
 }));
 
 vi.mock('../../src/host/task', () => ({
@@ -110,6 +110,17 @@ describe('A3 通话身份解析', () => {
     expect(routing.activeAgentId).toBeUndefined();
     expect(routing.personaInstructions).toContain('spawn_task');
     expect(routing.personaInstructions).not.toContain('身份是');
+  });
+
+  it('系统型内置 agent（面板选不到的）不当专家：不署名、不套人设（批 X §5，真机署名 Dream）', () => {
+    // dream 是 PANEL_HIDDEN_BUILTIN_AGENT_IDS 里的系统型内置——用户没有任何途径点名它。
+    // 它出现在 requestedAgentId 里只可能是存量脏映射，语音层必须按「没选专家」处理。
+    resolvedAgent.value = { id: 'dream', name: 'Dream', source: 'builtin' };
+
+    const routing = resolveVoiceRouting('dream');
+
+    expect(routing.activeAgentId).toBeUndefined();
+    expect(routing.personaInstructions).toBe(resolveVoiceRouting(undefined).personaInstructions);
   });
 
   it('选了专家时短人设进 instructions，且不带全量角色资料', () => {

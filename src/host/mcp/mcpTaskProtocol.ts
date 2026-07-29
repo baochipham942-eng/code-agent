@@ -64,7 +64,7 @@ async function abortableSleep(delayMs: number, signal?: AbortSignal): Promise<vo
     const onAbort = () => {
       clearTimeout(timeout);
       signal?.removeEventListener('abort', onAbort);
-      reject(signal.reason ?? new DOMException('Aborted', 'AbortError'));
+      reject(signal?.reason ?? new DOMException('Aborted', 'AbortError'));
     };
     const timeout = setTimeout(() => {
       signal?.removeEventListener('abort', onAbort);
@@ -126,7 +126,9 @@ export class McpSdkTaskProtocol implements McpTaskProtocol {
     }
   }
 
-  async updateTask(input: Parameters<McpTaskProtocol['updateTask']>[0]): Promise<McpTaskSnapshot> {
+  async updateTask(
+    input: Parameters<NonNullable<McpTaskProtocol['updateTask']>>[0],
+  ): Promise<McpTaskSnapshot> {
     this.assertServer(input.serverIdentity);
     try {
       return (await this.client.request({

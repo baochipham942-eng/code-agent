@@ -21,6 +21,7 @@ import { getConfigService } from '../core/configService';
 import { createLogger } from '../infra/logger';
 
 const logger = createLogger('QwenOmniVoice');
+const INJECTION_ACK_WINDOW_MS = 5_000;
 
 interface UpstreamEvent {
   type: string;
@@ -178,6 +179,8 @@ export const qwenOmniTransport: VoiceTransport = {
     let speechStoppedAt = 0;
     let ttfaModelMs: number | undefined;
     let ttfaPerceivedMs: number | undefined;
+    let responseActive = false;
+    let pendingInjectionAt: number | null = null;
 
     /**
      * 工具结果回灌：写进对话项后必须再发一次 response.create，否则模型拿到结果也不开口。
@@ -217,6 +220,10 @@ export const qwenOmniTransport: VoiceTransport = {
       if (seen === 1) logger.info('upstream event', { turn, type: event.type });
 
       switch (event.type) {
+        case 'response.created':
+          responseActive = true;
+          pendingInjectionAt = null;
+          break;
         case 'response.audio.delta':
           if (typeof event.delta === 'string') {
             if (speechStoppedAt && ttfaModelMs === undefined) {
@@ -281,6 +288,8 @@ export const qwenOmniTransport: VoiceTransport = {
           }
           break;
         case 'response.done':
+          responseActive = false;
+          pendingInjectionAt = null;
           onEvent({
             type: 'response.done',
             ...(ttfaModelMs !== undefined ? { ttfaModelMs } : {}),
@@ -292,13 +301,20 @@ export const qwenOmniTransport: VoiceTransport = {
           // 真正说明原因的只有 message。2026-07-26 真机踩到——现场只剩一个 COMMON_ERROR，
           // 解释在哪查不到（那句话当时只发给了渲染侧）。
           logger.warn('upstream error', { code: event.error?.code, message: event.error?.message });
-          onEvent({
-            type: 'error',
-            // 上游自己的错误码不往外透传：它无法枚举，进不了 i18n 表，
-            // 传出去只会让渲染端拿到一个查不到文案的串。它已经在上一行进日志了。
-            code: 'UPSTREAM_ERROR',
-            message: event.error?.message ?? 'upstream error',
-          });
+          if (pendingInjectionAt !== null && Date.now() - pendingInjectionAt <= INJECTION_ACK_WINDOW_MS) {
+            pendingInjectionAt = null;
+            onEvent({ type: 'injection.rejected', message: event.error?.message ?? 'injection rejected' });
+          } else {
+            pendingInjectionAt = null;
+            onEvent({
+              type: 'error',
+              // 上游自己的错误码不往外透传：它无法枚举，进不了 i18n 表，
+              // 传出去只会让渲染端拿到一个查不到文案的串。它已经在上一行进日志了。
+              code: 'UPSTREAM_ERROR',
+              message: 'upstream error',
+              ...(event.error?.message ? { detail: event.error.message } : {}),
+            });
+          }
           break;
         default:
           break;
@@ -309,7 +325,12 @@ export const qwenOmniTransport: VoiceTransport = {
       clearHeartbeat();
       onEvent({ type: 'state', state: 'closed' });
     });
-    ws.on('error', (err: Error) => onEvent({ type: 'error', code: 'UPSTREAM_SOCKET', message: err.message }));
+    ws.on('error', (err: Error) => onEvent({
+      type: 'error',
+      code: 'UPSTREAM_SOCKET',
+      message: 'upstream socket error',
+      detail: err.message,
+    }));
 
     onEvent({ type: 'state', state: 'live' });
 
@@ -340,7 +361,11 @@ export const qwenOmniTransport: VoiceTransport = {
           type: 'conversation.item.create',
           item: { type: 'message', role: 'user', content: [{ type: 'input_text', text }] },
         }));
+        pendingInjectionAt = Date.now();
         ws.send(JSON.stringify({ type: 'response.create' }));
+      },
+      isResponding() {
+        return responseActive;
       },
       interrupt() {
         if (ws.readyState !== WebSocket.OPEN) return;

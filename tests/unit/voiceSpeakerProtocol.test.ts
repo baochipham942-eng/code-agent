@@ -212,6 +212,20 @@ describe('① 只有终态才念，且念的是执行侧的结论', () => {
       status: 'done',
     });
   });
+
+  it('挂断后失败通知的 detail 同样过⑤的统一出口，不透传 throw 原文', async () => {
+    bind();
+    await spawn();
+    endVoiceDispatch();
+    runtime.emit('task_error', 'session-1', { error: 'Project Source trust identity changed: /Users/x/.worktrees/y' });
+    await flush();
+
+    const call = notifyVoiceWorkSettled.mock.calls.at(-1)?.[0] as { status: string; detail?: string };
+    expect(call.status).toBe('failed');
+    expect(call.detail).toBeTruthy();
+    expect(call.detail).not.toContain('trust identity');
+    expect(call.detail).not.toContain('/Users/');
+  });
 });
 
 describe('② 长内容不念原文', () => {
@@ -247,6 +261,37 @@ describe('② 长内容不念原文', () => {
 
   it('短句原样通过，不做无谓改写', () => {
     expect(toSpokenSummary('建好了。')).toBe('建好了。');
+  });
+});
+
+describe('失败口播不泄露内部异常', () => {
+  it('未知异常只念人话并指向屏幕，英文原文与路径不进耳朵', async () => {
+    bind();
+    await spawn('建个文件');
+    runtime.emit('task_error', 'session-1', {
+      error: 'Project Source trust identity changed: /Users/foo/secret/repo',
+    });
+    await flush();
+
+    expect(narrations).toHaveLength(1);
+    expect(narrations[0].summary).toContain('没有完成');
+    expect(narrations[0].summary).toContain('屏幕');
+    expect(narrations[0].summary).not.toContain('Project Source');
+    expect(narrations[0].summary).not.toContain('/Users/foo');
+  });
+
+  it('结构化 trust kind 穿过账本后给出对应下一步，不靠英文原文猜', async () => {
+    bind();
+    await spawn('建个文件');
+    runtime.emit('task_error', 'session-1', {
+      error: 'completely opaque internal detail /Users/foo/repo',
+      failure: { code: 'PROJECT_SOURCE_TRUST', kind: 'source_missing' },
+    });
+    await flush();
+
+    expect(narrations[0].summary).toContain('重新选择位置');
+    expect(narrations[0].summary).not.toContain('opaque');
+    expect(narrations[0].summary).not.toContain('/Users/foo');
   });
 });
 

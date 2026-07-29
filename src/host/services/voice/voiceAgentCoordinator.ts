@@ -24,6 +24,8 @@ import { withWorkbenchTurnSystemContext } from '../../app/workbenchTurnContext';
 import { getPermissionModeManager } from '../../permissions/modes';
 import { getConfigService } from '../core/configService';
 import { buildWorkNarration, resolveNarrationSpeaker } from './voiceNarration';
+import { describeWorkFailure } from './workFailureDescription';
+import type { ProjectSourceTrustFailureMarker } from '../../../shared/contract/project';
 
 const logger = createLogger('VoiceCoordinator');
 
@@ -119,11 +121,16 @@ async function notifyVoiceWorkSettledAfterHangup(
   try {
     // 通话中落终态不走这里，避免把通知基础设施拉进实时语音关键路径。
     const { notificationService } = await import('../infra/notificationService');
+    // 通知 body 也是用户可见文案：失败原因必须过⑤的统一出口，不许把 throw 原文
+    // （英文 + 内部概念）直接拼进侧栏通知——这是失败告知的第四条路径，同病同治。
+    const failureDetail = status === 'failed'
+      ? describeWorkFailure(item.detail, item.failure).screen
+      : item.detail;
     notificationService.notifyVoiceWorkSettled({
       sessionId: state.neoSessionId,
       taskTitle: item.title,
       status,
-      ...(item.detail ? { detail: item.detail } : {}),
+      ...(failureDetail ? { detail: failureDetail } : {}),
     });
   } catch (err) {
     logger.warn('voice work settlement notification failed', {
@@ -228,10 +235,21 @@ function upsert(state: LedgerState, item: VoiceWorkItem): void {
 }
 
 /** 终态：还票 + 清 pending + 视情况摘 listener。还票幂等，重复调用无害。 */
-function settle(state: LedgerState, id: string, status: VoiceWorkItemStatus, detail?: string): void {
+function settle(
+  state: LedgerState,
+  id: string,
+  status: VoiceWorkItemStatus,
+  detail?: string,
+  failure?: ProjectSourceTrustFailureMarker,
+): void {
   const item = state.items.get(id);
   if (!item || TERMINAL.includes(item.status)) return;
-  const settled = { ...item, status, ...(detail ? { detail } : {}) };
+  const settled = {
+    ...item,
+    status,
+    ...(detail ? { detail } : {}),
+    ...(failure ? { failure } : {}),
+  };
   upsert(state, settled);
   // 失败必须被说出去，且不能挂在 emit 上——emit 挂断即 null，而「挂断之后才死」
   // 恰恰是最需要留痕的那种失败（G1）。这里不吞异常也不让它影响还票。
@@ -267,7 +285,7 @@ function settle(state: LedgerState, id: string, status: VoiceWorkItemStatus, det
 async function narrateSettled(state: LedgerState, item: VoiceWorkItem, status: 'done' | 'failed'): Promise<void> {
   try {
     const conclusion = status === 'failed'
-      ? (item.detail ?? '')
+      ? describeWorkFailure(item.detail, item.failure).spoken
       : await readRunConclusion(state.neoSessionId);
     // await 之后 narrate 可能已被挂断置 null——此刻再念没人听。
     // **但也不能就这么算了**：那正是「说完就挂、活刚好这时跑完」这个最常见的场景，
@@ -320,9 +338,20 @@ function onTaskManagerEvent(event: TaskManagerEvent): void {
       settle(state, pendingId, 'done');
       break;
     case 'task_error': {
-      const data = event.data as { error?: unknown } | undefined;
+      const data = event.data as {
+        error?: unknown;
+        failure?: ProjectSourceTrustFailureMarker;
+      } | undefined;
       const detail = typeof data?.error === 'string' ? data.error : '执行失败';
-      settle(state, pendingId, 'failed', detail);
+      const failure = data?.failure?.code === 'PROJECT_SOURCE_TRUST'
+        && (
+          data.failure.kind === 'source_missing'
+          || data.failure.kind === 'identity_changed'
+          || data.failure.kind === 'not_trusted'
+        )
+        ? data.failure
+        : undefined;
+      settle(state, pendingId, 'failed', detail, failure);
       break;
     }
     case 'task_cancelled':

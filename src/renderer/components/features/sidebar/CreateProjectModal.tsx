@@ -103,7 +103,7 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
           </label>
           <div className="flex flex-col gap-1.5">
             <span className="text-xs text-zinc-400">{sb.createProjectSourceLabel}</span>
-            <button
+            <button /* ds-allow:button: 目录选择是带图标的虚线热区行，Button primitive 无此变体 */
               type="button"
               onClick={() => { void handlePickFolder(); }}
               data-testid="create-project-pick-folder"

@@ -459,7 +459,7 @@ export const LibraryPanel: React.FC = () => {
                           <td className="px-3 py-2.5">
                             <div className="flex min-w-0 items-start gap-2">
                               <span className="mt-0.5 flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md bg-zinc-800">{KIND_ICONS[item.kind]}</span>
-                              <div className="min-w-0"><button type="button" onClick={() => handlePreview(item)} title={t.library.preview} className="block max-w-full cursor-pointer truncate text-left text-sm text-zinc-200 hover:text-white hover:underline">{item.title}</button><div className="mt-0.5 truncate text-[11px] text-zinc-500">{item.summary || item.pathOrUri}</div><div className="mt-1 flex flex-wrap gap-1">{item.tags.map((tag) => <span key={tag} className="rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] text-zinc-400">{tag}</span>)}</div></div>
+                              <div className="min-w-0"><button /* ds-allow:button: 行标题即预览入口，纯文字热区，Button primitive 不适配 */ type="button" onClick={() => handlePreview(item)} title={t.library.preview} className="block max-w-full cursor-pointer truncate text-left text-sm text-zinc-200 hover:text-white hover:underline">{item.title}</button><div className="mt-0.5 truncate text-[11px] text-zinc-500">{item.summary || item.pathOrUri}</div><div className="mt-1 flex flex-wrap gap-1">{item.tags.map((tag) => <span key={tag} className="rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] text-zinc-400">{tag}</span>)}</div></div>
                             </div>
                           </td>
                           <td className="px-3 py-2.5 text-zinc-400">{kindLabels[item.kind]}</td>

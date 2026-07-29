@@ -63,7 +63,7 @@ export const AtMentionPopover: React.FC<AtMentionPopoverProps> = ({
             {t.mentionPanel.libraryGroup} · {libraryRows.length}
           </div>
           {libraryRows.map((row, index) => (
-            <button
+            <button /* ds-allow:button: 面板候选行是图标+双行文字的整行热区，Button primitive 不适配 */
               key={`library:${row.item.id}`}
               type="button"
               data-selected={index === selectedIndex}
@@ -98,7 +98,7 @@ export const AtMentionPopover: React.FC<AtMentionPopoverProps> = ({
             const index = libraryRows.length + fileIndex;
             const Icon = row.isDirectory ? Folder : FileIcon;
             return (
-              <button
+              <button /* ds-allow:button: 面板候选行是图标+双行文字的整行热区，Button primitive 不适配 */
                 key={`file:${row.path}`}
                 type="button"
                 data-selected={index === selectedIndex}

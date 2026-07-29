@@ -23,7 +23,7 @@ export const MountedConnectorIcons: React.FC = () => {
       {mounted.map((capability) => {
         const TypeIcon = capability.kind === 'mcp' ? Server : Plug;
         return (
-          <button
+          <button /* ds-allow:button: 底栏连接器是图标级小按钮，Button primitive 无此紧凑图标变体 */
             key={capability.key}
             type="button"
             onClick={() => removeCapability(capability)}

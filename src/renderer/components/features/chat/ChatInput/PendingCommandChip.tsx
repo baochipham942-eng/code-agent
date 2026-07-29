@@ -43,7 +43,7 @@ export function PendingCommandChip() {
       >
         <Icon className="h-4 w-4 shrink-0 p-0.5" aria-hidden />
         <span className="truncate">{pendingCommand.name}</span>
-        <button
+        <button /* ds-allow:button: chip 删除是图标级小按钮，Button primitive 无此紧凑图标变体 */
           type="button"
           tabIndex={-1}
           onClick={remove}

@@ -148,7 +148,7 @@ export const AgentErrorCard: React.FC<{
       )}
 
       <div className="mt-2 flex flex-wrap items-center gap-1.5 pl-6">
-        <button
+        <button /* ds-allow:button: 报错卡操作行是紧凑小按钮组，Button primitive 无此紧凑变体 */
           type="button"
           onClick={handleRetry}
           disabled={isRunning}
@@ -159,7 +159,7 @@ export const AgentErrorCard: React.FC<{
           {t.agentError.actions.retry}
         </button>
         {shouldShowSwitchModel(error.category) && (
-          <button
+          <button /* ds-allow:button: 报错卡操作行是紧凑小按钮组，Button primitive 无此紧凑变体 */
             type="button"
             onClick={handleSwitchModel}
             className={ACTION_BUTTON_CLASS}
@@ -169,7 +169,7 @@ export const AgentErrorCard: React.FC<{
           </button>
         )}
         {shouldShowNewSession(error.category) && (
-          <button
+          <button /* ds-allow:button: 报错卡操作行是紧凑小按钮组，Button primitive 无此紧凑变体 */
             type="button"
             onClick={handleNewSession}
             className={ACTION_BUTTON_CLASS}
@@ -178,7 +178,7 @@ export const AgentErrorCard: React.FC<{
             {t.agentError.actions.newSession}
           </button>
         )}
-        <button
+        <button /* ds-allow:button: 报错卡操作行是紧凑小按钮组，Button primitive 无此紧凑变体 */
           type="button"
           onClick={handleCopyReport}
           className={ACTION_BUTTON_CLASS}

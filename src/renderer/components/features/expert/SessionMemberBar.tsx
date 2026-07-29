@@ -271,7 +271,7 @@ export const SessionMemberBar: React.FC<{ sessionId: string | null }> = ({ sessi
                     {text.leadLabel}
                   </span>
                 )}
-                <button
+                <button /* ds-allow:button: standby 成员 pill 的删除是图标级小按钮，Button primitive 无此紧凑图标变体 */
                   type="button"
                   tabIndex={-1}
                   data-testid={`member-standby-remove-${pill.roleId}`}

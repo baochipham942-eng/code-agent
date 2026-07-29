@@ -80,7 +80,7 @@ export const AgentChip: React.FC<AgentChipProps> = ({ onOpenAgentCommand }) => {
           <span className="min-w-0 truncate text-[10px] font-normal text-zinc-500">{activeEntry.profession}</span>
         )}
       </button>
-      <button
+      <button /* ds-allow:button: chip 删除是图标级小按钮，Button primitive 无此紧凑图标变体 */
         type="button"
         tabIndex={-1}
         data-testid="chat-input-agent-chip-remove"

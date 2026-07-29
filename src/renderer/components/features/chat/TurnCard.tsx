@@ -585,7 +585,7 @@ const TurnCopyAction: React.FC<{ content: string }> = ({ content }) => {
   };
 
   return (
-    <button
+    <button /* ds-allow:button: 「复制回答」是回复操作行的图标级小按钮，Button primitive 无此紧凑图标变体 */
       type="button"
       data-testid="turn-copy-action"
       aria-label={copied ? t.turnCard.answerCopied : t.turnCard.copyAnswer}

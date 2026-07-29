@@ -73,7 +73,7 @@ export function InlineComposerChip({
         <AttachmentIcon category={chip.category ?? 'document'} className="h-3.5 w-3.5 shrink-0" />
       )}
       <span className="truncate">{chip.label}</span>
-      <button
+      <button /* ds-allow:button: chip 删除是图标级小按钮，Button primitive 无此紧凑图标变体 */
         type="button"
         tabIndex={-1}
         onClick={() => onRemove(chip)}

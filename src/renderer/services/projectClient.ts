@@ -8,6 +8,7 @@
 
 import { IPC_DOMAINS } from '@shared/ipc';
 import type {
+  CreateSpaceInput,
   Project,
   ProjectArtifact,
   ProjectCapabilityKind,
@@ -28,9 +29,19 @@ export async function listProjects(includeArchived = false): Promise<Project[]> 
   return ipcService.invokeDomain<Project[]>(IPC_DOMAINS.PROJECT, 'list', { includeArchived });
 }
 
-/** 项目列表页数据源：项目 + 活跃 topic 数 + 最近活动时间 */
-export async function listProjectsWithActivity(includeArchived = false): Promise<ProjectWithActivity[]> {
-  return ipcService.invokeDomain<ProjectWithActivity[]>(IPC_DOMAINS.PROJECT, 'listWithActivity', { includeArchived });
+/** 项目列表页数据源：项目 + 活跃 topic 数 + 最近活动时间；spacesOnly=true 只回显式空间 */
+export async function listProjectsWithActivity(includeArchived = false, spacesOnly = false): Promise<ProjectWithActivity[]> {
+  return ipcService.invokeDomain<ProjectWithActivity[]>(IPC_DOMAINS.PROJECT, 'listWithActivity', { includeArchived, spacesOnly });
+}
+
+/** 新建显式协作空间；撞已有 workspace 项目时 host 侧自动升级并返回该项目 */
+export async function createSpace(input: CreateSpaceInput): Promise<Project> {
+  return ipcService.invokeDomain<Project>(IPC_DOMAINS.PROJECT, 'createSpace', input);
+}
+
+/** 将已有普通项目升级为显式协作空间 */
+export async function promoteToSpace(projectId: string): Promise<Project> {
+  return ipcService.invokeDomain<Project>(IPC_DOMAINS.PROJECT, 'promoteToSpace', { projectId });
 }
 
 /** 项目级能力选用清单（connector 等 kind 维度；skill 走 SKILL IPC 覆盖模型） */

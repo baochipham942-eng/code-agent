@@ -899,6 +899,8 @@ export const App: React.FC = () => {
                 <React.Suspense fallback={null}>
                   <CapabilityHubPage />
                 </React.Suspense>
+              ) : showProjectSpacePage ? (
+                <ProjectSpacePage onClose={closeProjectSpacePage} />
               ) : showCronCenter ? (
                 <React.Suspense fallback={null}>
                   <CronCenterPanel onClose={() => setShowCronCenter(false)} />
@@ -1098,10 +1100,6 @@ export const App: React.FC = () => {
           projectId={visibleProjectCollaborationProjectId}
           onClose={closeProjectCollaborationPage}
         />
-      )}
-
-      {showProjectSpacePage && (
-        <ProjectSpacePage onClose={closeProjectSpacePage} />
       )}
 
       {showAgentTeamPanel && currentSessionId && swarmActiveRunId && swarmActiveSessionId === currentSessionId && (

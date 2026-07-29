@@ -75,6 +75,18 @@ export interface ProjectMember {
   joinedAt: string;
 }
 
+export interface CloudCollabCard {
+  localCardId: string;
+  sourceUserId: string;
+  title: string;
+  status: string;
+  priority: string;
+  dueAt: number | null;
+  updatedAt: number;
+  requesterUserId: string;
+  readonly: true;
+}
+
 export interface CloudSpacePromotion {
   localProjectId: string;
   cloudProjectId: string;
@@ -389,6 +401,39 @@ export class ProjectCollaborationService {
       avatarUrl: member.avatar_url,
       joinedAt: member.joined_at,
     }));
+  }
+
+  async listCloudCards(projectId: string): Promise<CloudCollabCard[]> {
+    const user = this.currentUser();
+    const project = this.localProject(projectId);
+    if (!project.cloudProjectId) {
+      throw new ProjectCollaborationError('COLLAB_NOT_CLOUD_SPACE');
+    }
+    const cloudProjectId = project.cloudProjectId;
+    const cloud = this.cloud();
+    const { data, error } = await this.cloudCall(() =>
+      cloud
+        .from('collab_cards')
+        .select(
+          'source_user_id, local_card_id, title, status, priority, due_at, updated_at, requester_user_id',
+        )
+        .eq('project_id', cloudProjectId)
+        .neq('source_user_id', user.id)
+        .order('updated_at', { ascending: false }));
+    assertCloudResult(error);
+    return (data ?? [])
+      .filter((card) => card.source_user_id !== user.id)
+      .map((card) => ({
+        localCardId: card.local_card_id,
+        sourceUserId: card.source_user_id,
+        title: card.title,
+        status: card.status,
+        priority: card.priority,
+        dueAt: card.due_at === null ? null : Date.parse(card.due_at),
+        updatedAt: Date.parse(card.updated_at),
+        requesterUserId: card.requester_user_id,
+        readonly: true,
+      }));
   }
 }
 

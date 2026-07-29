@@ -15,6 +15,7 @@ import type {
   NeoWorkCardRequestChangesInput,
   ReviewNeoWorkCardRevisionInput,
   UpdateNeoWorkCardDraftRevisionInput,
+  UpdateNeoWorkCardMetaInput,
 } from '../../shared/contract/tag';
 import { AppWindow } from '../platform';
 import {
@@ -213,6 +214,16 @@ export function registerTagHandlers(ipcMain: IpcMain): void {
           if (!input) return invalid('payload is required');
           const updated = service.updateDraftRevision(input);
           emitWorkCardUpdated(service, updated.workCard.id, 'draft_updated');
+          return { success: true, data: updated };
+        }
+
+        case 'updateMeta': {
+          const input = payload as UpdateNeoWorkCardMetaInput | undefined;
+          if (!input?.workCardId || !input.actorUserId) {
+            return invalid('workCardId and actorUserId are required');
+          }
+          const updated = service.updateMeta(input);
+          emitWorkCardUpdated(service, updated.id, 'meta_updated');
           return { success: true, data: updated };
         }
 

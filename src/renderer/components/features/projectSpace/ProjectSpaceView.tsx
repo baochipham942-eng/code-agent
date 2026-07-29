@@ -1,6 +1,8 @@
 // ============================================================================
 // ProjectSpaceView —— 协作空间（space 视图）。
-// 页头：面包屑「协作空间 / <名称>」（FullScreenPageHeader 的 back 即面包屑回列表）+ 状态 chip。
+// 页头：FullScreenPageHeader variant="bar" 紧凑条（面包屑回列表 + 名称 + 状态 chip）——
+// 列表/空间两档都用 bar：overlay 的 pt-7 红绿灯让位之外不再叠 page 形态的 pt-5+返回行，
+// 顶部留白与能力中心页（inline，pt-4）同一紧凑水平；共享组件不动，其他全屏页不陪葬。
 // tab：动态(默认)/任务/资产，本地 useState。任务 tab 直接内嵌 ProjectCollaborationPanel。
 // ============================================================================
 
@@ -100,6 +102,7 @@ export const ProjectSpaceView: React.FC<ProjectSpaceViewProps> = ({ projectId, o
   return (
     <>
       <FullScreenPageHeader
+        variant="bar"
         icon={<FolderKanban className="h-4 w-4 text-violet-300" />}
         title={project?.name ?? projectId}
         description={project?.description || undefined}

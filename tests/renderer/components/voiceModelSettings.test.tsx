@@ -167,7 +167,7 @@ describe('搬家不是复制：三项已从原 tab 消失', () => {
   });
   afterEach(() => cleanup());
 
-  it('voiceLive（实时通话）不再有通话模型与音色', async () => {
+  it('voiceLive（实时语音）不再有通话模型与音色', async () => {
     settingsGet(undefined);
     render(<VoiceLiveSettingsSection />);
     await waitFor(() => expect(invokeDomainMock).toHaveBeenCalled());

@@ -23,6 +23,8 @@ import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc
 import { getProjectService } from '../services/project/projectService';
 import { getArtifactIssueRepository } from '../services/core/repositories/ArtifactIssueRepository';
 import {
+  UNSORTED_PROJECT_ID,
+  type CreateSpaceInput,
   type ProjectCapabilityKind,
   type ProjectGoalStatus,
   type ProjectSourceAccess,
@@ -41,7 +43,9 @@ const GOAL_STATUSES: ReadonlySet<string> = new Set(['active', 'met', 'aborted', 
 
 interface ListPayload {
   includeArchived?: boolean;
+  spacesOnly?: boolean;
 }
+type CreateSpacePayload = Partial<CreateSpaceInput>;
 interface DetailPayload {
   projectId?: string;
 }
@@ -138,8 +142,35 @@ export function registerProjectHandlers(ipcMain: IpcMain): void {
         }
 
         case 'listWithActivity': {
-          const { includeArchived } = (payload ?? {}) as ListPayload;
-          return { success: true, data: svc.listProjectsWithActivity(Boolean(includeArchived)) };
+          const { includeArchived, spacesOnly } = (payload ?? {}) as ListPayload;
+          return {
+            success: true,
+            data: svc.listProjectsWithActivity(Boolean(includeArchived), Boolean(spacesOnly)),
+          };
+        }
+
+        case 'createSpace': {
+          const { name, description, workspacePath } = (payload ?? {}) as CreateSpacePayload;
+          if (!name?.trim()) return invalid('name is required');
+          if (workspacePath !== undefined && workspacePath !== null && !workspacePath.trim()) {
+            return invalid('workspacePath must be a non-empty path when provided');
+          }
+          const created = await svc.createSpace({
+            name: name.trim(),
+            description,
+            workspacePath,
+          }, now);
+          return { success: true, data: created };
+        }
+
+        case 'promoteToSpace': {
+          const { projectId } = (payload ?? {}) as DetailPayload;
+          if (!projectId?.trim()) return invalid('projectId is required');
+          if (projectId === UNSORTED_PROJECT_ID) {
+            return invalid('the unsorted project cannot be promoted to a space');
+          }
+          const promoted = svc.promoteToSpace(projectId, now);
+          return promoted ? { success: true, data: promoted } : notFound('project not found');
         }
 
         case 'listCapabilitySelections': {

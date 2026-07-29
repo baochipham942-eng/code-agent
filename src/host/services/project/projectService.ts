@@ -23,6 +23,7 @@ import {
   UNSORTED_PROJECT_ID,
   UNSORTED_PROJECT_NAME,
   type CreateProjectGoalInput,
+  type CreateSpaceInput,
   type Project,
   type ProjectArtifact,
   type ProjectArtifactKind,
@@ -424,6 +425,68 @@ export class ProjectService {
     return project;
   }
 
+  async createSpace(input: CreateSpaceInput, now: number): Promise<Project> {
+    const name = input.name.trim();
+    if (!name) throw new Error('Space name is required.');
+    const description = input.description?.trim() || undefined;
+    const requestedWorkspacePath = input.workspacePath?.trim();
+    const repo = this.repo();
+
+    if (requestedWorkspacePath) {
+      const workspacePath = canonicalizeWorkspacePath(requestedWorkspacePath);
+      const workspaceKey = getProjectKey(workspacePath);
+      const existing = repo.getProjectByWorkspacePath(workspacePath);
+      if (existing) return repo.promoteToSpace(existing.id, now)!;
+
+      const project: Project = {
+        ...buildProjectRow(workspacePath, workspaceKey, now),
+        name,
+        description,
+        spacePromotedAt: now,
+      };
+      repo.upsertProject(project);
+      repo.upsertSource(buildSource(project.id, {
+        path: workspacePath,
+        role: 'primary',
+        access: 'read_write',
+        trustState: 'trusted',
+      }, now));
+      await linkProjectIdToMeta(workspacePath, project.id).catch((err) =>
+        logger.warn('[ProjectService] linkProjectIdToMeta failed:', err instanceof Error ? err.message : String(err)),
+      );
+      return repo.getProject(project.id)!;
+    }
+
+    const project: Project = {
+      id: shortId('proj'),
+      name,
+      workspacePath: null,
+      workspaceKey: null,
+      status: 'active',
+      description,
+      createdAt: now,
+      updatedAt: now,
+      archivedAt: null,
+      spacePromotedAt: now,
+      sourceRevision: 0,
+    };
+    repo.upsertProject(project);
+    return repo.getProject(project.id)!;
+  }
+
+  promoteToSpace(projectId: string, now: number): Project | undefined {
+    if (projectId === UNSORTED_PROJECT_ID) {
+      throw new Error('The unsorted project cannot be promoted to a space.');
+    }
+    return this.repo().promoteToSpace(projectId, now);
+  }
+
+  getProjectForWorkspace(workspacePath: string): Project | undefined {
+    const normalizedPath = workspacePath.trim();
+    if (!normalizedPath || !path.isAbsolute(normalizedPath)) return undefined;
+    return this.repo().getProjectByWorkspacePath(normalizedPath);
+  }
+
   private ensureUnsorted(now: number): Project {
     const repo = this.repo();
     const existing = repo.getProject(UNSORTED_PROJECT_ID);
@@ -455,8 +518,8 @@ export class ProjectService {
     return this.repo().listProjects(includeArchived);
   }
 
-  listProjectsWithActivity(includeArchived = false): ProjectWithActivity[] {
-    return this.repo().listProjectsWithActivity(includeArchived);
+  listProjectsWithActivity(includeArchived = false, spacesOnly = false): ProjectWithActivity[] {
+    return this.repo().listProjectsWithActivity(includeArchived, spacesOnly);
   }
 
   /** 中心视图数据源：project + goals + roles + sessionIds */

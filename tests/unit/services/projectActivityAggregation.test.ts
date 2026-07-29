@@ -9,6 +9,7 @@ import { applySessionsMigrations } from '../../../src/host/services/core/databas
 import { applySchema } from '../../../src/host/services/core/database/schema';
 import { ProjectRepository } from '../../../src/host/services/core/repositories/ProjectRepository';
 import { ProjectService } from '../../../src/host/services/project/projectService';
+import { UNSORTED_PROJECT_ID } from '../../../src/shared/contract/project';
 import type { NeoWorkCardStatus } from '../../../src/shared/contract/tag';
 
 const noopLogger = {
@@ -20,12 +21,18 @@ const noopLogger = {
 
 const NOW = 1_800_000_000_000;
 
-function seedProject(db: BetterSqlite3.Database, id: string, updatedAt = NOW): void {
+function seedProject(
+  db: BetterSqlite3.Database,
+  id: string,
+  updatedAt = NOW,
+  spacePromotedAt: number | null = null,
+): void {
   db.prepare(`
     INSERT INTO projects (
-      id, name, workspace_path, workspace_key, status, is_deleted, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, 'active', 0, ?, ?)
-  `).run(id, id, `/work/${id}`, `key_${id}`, NOW, updatedAt);
+      id, name, workspace_path, workspace_key, status, is_deleted,
+      created_at, updated_at, space_promoted_at
+    ) VALUES (?, ?, ?, ?, 'active', 0, ?, ?, ?)
+  `).run(id, id, `/work/${id}`, `key_${id}`, NOW, updatedAt, spacePromotedAt);
 }
 
 function seedSession(
@@ -121,5 +128,16 @@ describe('project activity aggregation', () => {
         lastActivityAt: NOW + 80,
       }),
     );
+  });
+
+  it('spacesOnly 只返回已升级空间，并始终排除 UNSORTED', () => {
+    seedProject(db, 'proj_regular', NOW + 30);
+    seedProject(db, 'proj_space', NOW + 20, NOW + 1);
+    // 防御历史坏数据：即使保留桶意外带 promoted_at，也不能进入空间列表。
+    seedProject(db, UNSORTED_PROJECT_ID, NOW + 40, NOW + 2);
+
+    expect(service.listProjectsWithActivity(false, true).map((project) => project.id)).toEqual([
+      'proj_space',
+    ]);
   });
 });

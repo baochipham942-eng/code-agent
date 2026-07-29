@@ -1231,6 +1231,7 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
     )
   `);
   safeAlter(db, `ALTER TABLE projects ADD COLUMN source_revision INTEGER NOT NULL DEFAULT 0`, logger);
+  safeAlter(db, `ALTER TABLE projects ADD COLUMN space_promoted_at INTEGER`, logger);
   // Multi-Source Projects allow the same canonical path to belong to different Projects.
   // Drop the legacy global uniqueness; per-Project Source uniqueness lives on project_sources.
   db.exec(`DROP INDEX IF EXISTS idx_projects_workspace_key`);

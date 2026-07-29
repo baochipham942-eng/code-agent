@@ -26,6 +26,8 @@ export interface Project {
   createdAt: number;
   updatedAt: number;
   archivedAt?: number | null;
+  /** 用户显式升级为协作空间的时间；null 表示仍是自动派生的普通项目。 */
+  spacePromotedAt?: number | null;
   /** Monotonic revision for atomic source edits and immutable run snapshots. */
   sourceRevision?: number;
 }
@@ -181,6 +183,18 @@ export interface CreateProjectInput {
   name: string;
   workspacePath?: string | null;
   description?: string;
+}
+
+/** 新建显式协作空间入参；无目录空间沿用 projects 的 null workspace 形态。 */
+export interface CreateSpaceInput {
+  name: string;
+  description?: string;
+  workspacePath?: string | null;
+}
+
+/** 将已有普通项目升级为显式协作空间。 */
+export interface PromoteToSpaceInput {
+  projectId: string;
 }
 
 export interface ProjectSourceInput {

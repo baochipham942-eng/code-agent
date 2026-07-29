@@ -42,6 +42,7 @@ function rowToProject(row: SQLiteRow): Project {
     createdAt: row.created_at as number,
     updatedAt: row.updated_at as number,
     archivedAt: (row.archived_at as number) ?? null,
+    spacePromotedAt: (row.space_promoted_at as number) ?? null,
     sourceRevision: Number(row.source_revision ?? 0),
   };
 }
@@ -83,8 +84,14 @@ export class ProjectRepository {
 
   upsertProject(p: Project): void {
     this.db.prepare(`
-      INSERT INTO projects (id, name, workspace_path, workspace_key, status, description, is_deleted, created_at, updated_at, archived_at, source_revision)
-      VALUES (@id, @name, @workspace_path, @workspace_key, @status, @description, 0, @created_at, @updated_at, @archived_at, @source_revision)
+      INSERT INTO projects (
+        id, name, workspace_path, workspace_key, status, description, is_deleted,
+        created_at, updated_at, archived_at, space_promoted_at, source_revision
+      )
+      VALUES (
+        @id, @name, @workspace_path, @workspace_key, @status, @description, 0,
+        @created_at, @updated_at, @archived_at, @space_promoted_at, @source_revision
+      )
       ON CONFLICT(id) DO UPDATE SET
         name = excluded.name,
         workspace_path = excluded.workspace_path,
@@ -93,6 +100,7 @@ export class ProjectRepository {
         description = excluded.description,
         updated_at = excluded.updated_at,
         archived_at = excluded.archived_at,
+        space_promoted_at = COALESCE(projects.space_promoted_at, excluded.space_promoted_at),
         source_revision = excluded.source_revision
     `).run({
       id: p.id,
@@ -104,8 +112,23 @@ export class ProjectRepository {
       created_at: p.createdAt,
       updated_at: p.updatedAt,
       archived_at: p.archivedAt ?? null,
+      space_promoted_at: p.spacePromotedAt ?? null,
       source_revision: p.sourceRevision ?? 0,
     });
+  }
+
+  promoteToSpace(projectId: string, now: number): Project | undefined {
+    if (projectId === UNSORTED_PROJECT_ID) {
+      throw new Error('The unsorted project cannot be promoted to a space.');
+    }
+    this.db.prepare(`
+      UPDATE projects
+      SET
+        space_promoted_at = COALESCE(space_promoted_at, ?),
+        updated_at = CASE WHEN space_promoted_at IS NULL THEN ? ELSE updated_at END
+      WHERE id = ? AND is_deleted = 0
+    `).run(now, now, projectId);
+    return this.getProject(projectId);
   }
 
   // --- project_sources ---
@@ -238,6 +261,22 @@ export class ProjectRepository {
     return row ? rowToProject(row) : undefined;
   }
 
+  getProjectByWorkspacePath(workspacePath: string): Project | undefined {
+    const canonicalPath = canonicalizeWorkspacePath(workspacePath);
+    const workspaceKey = getProjectKey(canonicalPath);
+    const row = this.db.prepare(`
+      SELECT DISTINCT p.*
+      FROM projects p
+      LEFT JOIN project_sources s
+        ON s.project_id = p.id AND s.role = 'primary'
+      WHERE p.is_deleted = 0
+        AND (s.canonical_path = @canonicalPath OR p.workspace_key = @workspaceKey)
+      ORDER BY p.updated_at DESC
+      LIMIT 1
+    `).get({ canonicalPath, workspaceKey }) as SQLiteRow | undefined;
+    return row ? rowToProject(row) : undefined;
+  }
+
   listProjects(includeArchived = false): Project[] {
     const sql = includeArchived
       ? 'SELECT * FROM projects WHERE is_deleted = 0 ORDER BY updated_at DESC'
@@ -245,9 +284,12 @@ export class ProjectRepository {
     return (this.db.prepare(sql).all() as SQLiteRow[]).map(rowToProject);
   }
 
-  listProjectsWithActivity(includeArchived = false): ProjectWithActivity[] {
+  listProjectsWithActivity(includeArchived = false, spacesOnly = false): ProjectWithActivity[] {
     const archivedClause = includeArchived ? '' : "AND p.status != 'archived'";
-    const rows = this.db.prepare(`
+    const spacesClause = spacesOnly
+      ? 'AND p.space_promoted_at IS NOT NULL AND p.id != @unsortedProjectId'
+      : '';
+    const statement = this.db.prepare(`
       SELECT
         p.*,
         COALESCE(cards.active_topic_count, 0) AS active_topic_count,
@@ -277,12 +319,15 @@ export class ProjectRepository {
         WHERE is_deleted = 0 AND project_id IS NOT NULL
         GROUP BY project_id
       ) sessions ON sessions.project_id = p.id
-      WHERE p.is_deleted = 0 ${archivedClause}
+      WHERE p.is_deleted = 0 ${archivedClause} ${spacesClause}
       ORDER BY
         CASE WHEN last_activity_at IS NULL THEN 1 ELSE 0 END,
         last_activity_at DESC,
         p.updated_at DESC
-    `).all() as SQLiteRow[];
+    `);
+    const rows = (spacesOnly
+      ? statement.all({ unsortedProjectId: UNSORTED_PROJECT_ID })
+      : statement.all()) as SQLiteRow[];
     return rows.map((row) => ({
       ...rowToProject(row),
       activeTopicCount: Number(row.active_topic_count ?? 0),

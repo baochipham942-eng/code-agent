@@ -28,6 +28,7 @@ import { rolePackEn } from './rolePack';
 import { expertEn } from './expert';
 import { generativeUIEn } from './generativeUI';
 import { capabilityHubEn } from './capabilityHub';
+import { neoTopicsEn } from './neoTopics';
 import { evalCenterEn } from './evalCenter';
 import { localOpsEn } from './localOps';
 import { onboardingEn } from './onboarding';
@@ -37,6 +38,7 @@ import { activityPanelEn } from './activity';
 export const en: Translations = {
   ...activityPanelEn,
   ...capabilityHubEn,
+  ...neoTopicsEn,
   ...evalCenterEn,
   ...localOpsEn,
   ...onboardingEn,
@@ -1063,20 +1065,5 @@ export const en: Translations = {
     model: { label: 'Model', description: 'View or switch the current model' },
     compact: { label: 'Compact context', description: 'Manually trigger context compression' },
     config: { label: 'Config', description: 'View current configuration' },
-  },
-
-  // @neo topic 目录 S1：排序/优先级/截止/续接（面板存量文案仍为硬编码中文，仅新增键走 i18n）
-  neoTopics: {
-    sortRecent: 'Recent activity',
-    sortPriority: 'Priority',
-    sortDueAt: 'Due date',
-    priorityUrgent: 'Urgent',
-    priorityHigh: 'High',
-    priorityMedium: 'Medium',
-    priorityLow: 'Low',
-    duePrefix: 'Due',
-    followUp: 'Follow up',
-    openSourceConversation: 'Source',
-    updateMetaFailed: 'Failed to update topic',
   },
 };

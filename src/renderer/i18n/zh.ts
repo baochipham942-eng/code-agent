@@ -27,6 +27,7 @@ import { rolePackZh } from './rolePack';
 import { expertZh } from './expert';
 import { generativeUIZh } from './generativeUI';
 import { capabilityHubZh } from './capabilityHub';
+import { neoTopicsZh } from './neoTopics';
 import { evalCenterZh } from './evalCenter';
 import { localOpsZh } from './localOps';
 import { onboardingZh } from './onboarding';
@@ -36,6 +37,7 @@ import { activityPanelZh } from './activity';
 export const zh = {
   ...activityPanelZh,
   ...capabilityHubZh,
+  ...neoTopicsZh,
   ...evalCenterZh,
   ...localOpsZh,
   ...onboardingZh,
@@ -1054,21 +1056,6 @@ export const zh = {
     model: { label: '模型', description: '查看或切换当前模型' },
     compact: { label: '压缩上下文', description: '手动触发上下文压缩' },
     config: { label: '配置', description: '查看当前配置' },
-  },
-
-  // @neo topic 目录 S1：排序/优先级/截止/续接（面板存量文案仍为硬编码中文，仅新增键走 i18n）
-  neoTopics: {
-    sortRecent: '最近活动',
-    sortPriority: '优先级',
-    sortDueAt: '截止',
-    priorityUrgent: '紧急',
-    priorityHigh: '高',
-    priorityMedium: '中',
-    priorityLow: '低',
-    duePrefix: '截止',
-    followUp: '接着做',
-    openSourceConversation: '源会话',
-    updateMetaFailed: '更新 topic 失败',
   },
 };
 export type Translations = typeof zh;

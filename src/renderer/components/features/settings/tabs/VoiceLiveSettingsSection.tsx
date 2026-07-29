@@ -1,10 +1,10 @@
 // ============================================================================
-// VoiceLiveSettingsSection —— 设置 → 语音「实时通话」组（B5，§7.6 IA）
+// VoiceLiveSettingsSection —— 设置 → 语音「实时语音」组（B5，§7.6 IA）
 //
 // 总开关 / 语言 / 打断方式三态 + 灵敏度 / 回声消除 / 通话用量 / 隐私说明（§8.3）。
 // T1（2026-07-28）：通话模型·Provider 与音色搬去「模型与能力」组的「语音模型」tab
 // （VoiceModelSettings），本 tab 只留使用偏好；persist 透传本 tab 不拥有的 live 键。
-// 独立「实时通话」tab（VoiceLiveSettings 薄壳）；口述输入在「语音转文字」tab。
+// 独立「实时语音」tab（VoiceLiveSettings 薄壳）；口述输入在「语音转文字」tab。
 // ============================================================================
 
 import React, { useEffect, useState } from 'react';

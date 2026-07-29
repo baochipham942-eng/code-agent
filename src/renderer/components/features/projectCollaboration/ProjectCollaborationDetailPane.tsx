@@ -169,8 +169,10 @@ export const ProjectCollaborationDetailPane: React.FC<ProjectCollaborationDetail
   const latestDelta = deltas.at(-1);
   // ② topic 主会话规则：主入口 = 最近一轮落点会话，源会话降级为次入口
   const primaryConversationId = topicPrimaryConversationId(detail);
-  // blockedReason（host 侧真实阻塞原因）优先于从 delta.risks 猜的文案；为空保持旧回退
-  const blockedReason = workCard.blockedReason?.trim() || null;
+  // blockedReason（host 侧真实阻塞原因）优先于从 delta.risks 猜的文案；为空保持旧回退。
+  // runtime 生命周期记账串（如 waiting 态的 "Runtime paused..."）不是给用户看的，过既有过滤器。
+  const rawBlockedReason = workCard.blockedReason?.trim() || null;
+  const blockedReason = rawBlockedReason && !isInternalRuntimeText(rawBlockedReason) ? rawBlockedReason : null;
   const messageSource = messagesByConversation ?? loadedByConversation;
   const rounds = mergeTopicRounds(conversationIds.map((conversationId) =>
     extractNeoTopicRounds(messageSource[conversationId] ?? [], workCard.id, conversationId)));

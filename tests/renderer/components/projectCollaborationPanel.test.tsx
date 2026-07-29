@@ -430,6 +430,24 @@ describe('topic 元数据展示（S1）', () => {
     expect(failedBlock.textContent).not.toContain('delta 里的旧风险文案');
   });
 
+  it('waiting 态的内部记账串 blockedReason 不进用户视野，openQuestions 优先', () => {
+    // runtime 给 waiting_for_user 写的是英文生命周期串，isInternalRuntimeText 已收录；
+    // 详情必须展示真问题（openQuestions），不能被记账串挤掉
+    const details = [makeDetail({
+      id: 'w',
+      title: '等确认topic',
+      status: 'waiting_for_user',
+      blockedReason: 'Runtime paused for user input or approval.',
+      deltas: [makeDelta({ openQuestions: ['要不要保留旧配色？'] })],
+    })];
+    render(<ProjectCollaborationPanel projectId="project-1" details={details} />);
+    fireEvent.click(screen.getByTestId('neo-topic-row-w'));
+
+    const detailPane = screen.getByTestId('neo-topic-detail');
+    expect(detailPane.textContent).toContain('要不要保留旧配色？');
+    expect(detailPane.textContent).not.toContain('Runtime paused for user input');
+  });
+
   it('falls back to delta risks when blockedReason is empty', () => {
     const details = [makeDetail({
       id: 'f',

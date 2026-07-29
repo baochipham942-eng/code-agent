@@ -1289,6 +1289,19 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
     )
   `);
 
+  // Project Capability Selections — 仅承接没有既有项目归属模型的能力类别。
+  // skills 继续使用项目 skill preference；automations 继续经 source session 归属项目。
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS project_capability_selections (
+      project_id TEXT NOT NULL,
+      kind TEXT NOT NULL CHECK (kind IN ('skill', 'connector', 'automation')),
+      capability_id TEXT NOT NULL,
+      selected_at INTEGER NOT NULL,
+      PRIMARY KEY (project_id, kind, capability_id),
+      FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+    )
+  `);
+
   // Neo Tag Work Cards (P0) - project-scoped shared work contracts.
   db.exec(`
     CREATE TABLE IF NOT EXISTS neo_work_cards (

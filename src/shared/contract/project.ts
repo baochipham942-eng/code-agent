@@ -93,6 +93,15 @@ export interface ProjectRoleLink {
   joinedAt: number;
 }
 
+export type ProjectCapabilityKind = 'skill' | 'connector' | 'automation';
+
+export interface ProjectCapabilitySelection {
+  projectId: string;
+  kind: ProjectCapabilityKind;
+  capabilityId: string;
+  selectedAt: number;
+}
+
 /** 项目详情聚合（中心视图数据源） */
 export interface ProjectDetail {
   project: Project;

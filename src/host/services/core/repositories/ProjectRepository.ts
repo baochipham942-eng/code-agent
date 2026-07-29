@@ -12,6 +12,8 @@ import { getProjectKey } from '../../roleAssets/roleAssetPaths';
 import {
   UNSORTED_PROJECT_ID,
   type Project,
+  type ProjectCapabilityKind,
+  type ProjectCapabilitySelection,
   type ProjectGoal,
   type ProjectGoalStatus,
   type ProjectRoleLink,
@@ -336,6 +338,67 @@ export class ProjectRepository {
       roleId: row.role_id as string,
       joinedAt: row.joined_at as number,
     }));
+  }
+
+  // --- project capability selections ---
+
+  listCapabilitySelections(projectId: string): ProjectCapabilitySelection[] {
+    const rows = this.db
+      .prepare(`
+        SELECT project_id, kind, capability_id, selected_at
+        FROM project_capability_selections
+        WHERE project_id = ?
+        ORDER BY selected_at ASC, kind ASC, capability_id ASC
+      `)
+      .all(projectId) as SQLiteRow[];
+    return rows.map((row) => ({
+      projectId: row.project_id as string,
+      kind: row.kind as ProjectCapabilityKind,
+      capabilityId: row.capability_id as string,
+      selectedAt: row.selected_at as number,
+    }));
+  }
+
+  selectCapability(selection: ProjectCapabilitySelection): ProjectCapabilitySelection {
+    this.db.prepare(`
+      INSERT INTO project_capability_selections (project_id, kind, capability_id, selected_at)
+      VALUES (?, ?, ?, ?)
+      ON CONFLICT(project_id, kind, capability_id) DO NOTHING
+    `).run(
+      selection.projectId,
+      selection.kind,
+      selection.capabilityId,
+      selection.selectedAt,
+    );
+    const row = this.db.prepare(`
+      SELECT project_id, kind, capability_id, selected_at
+      FROM project_capability_selections
+      WHERE project_id = ? AND kind = ? AND capability_id = ?
+    `).get(
+      selection.projectId,
+      selection.kind,
+      selection.capabilityId,
+    ) as SQLiteRow;
+    return {
+      projectId: row.project_id as string,
+      kind: row.kind as ProjectCapabilityKind,
+      capabilityId: row.capability_id as string,
+      selectedAt: row.selected_at as number,
+    };
+  }
+
+  unselectCapability(
+    projectId: string,
+    kind: ProjectCapabilityKind,
+    capabilityId: string,
+  ): boolean {
+    const result = this.db
+      .prepare(`
+        DELETE FROM project_capability_selections
+        WHERE project_id = ? AND kind = ? AND capability_id = ?
+      `)
+      .run(projectId, kind, capabilityId);
+    return result.changes > 0;
   }
 
   // --- sessions ↔ project ---

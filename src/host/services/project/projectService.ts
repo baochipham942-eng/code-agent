@@ -26,6 +26,8 @@ import {
   type Project,
   type ProjectArtifact,
   type ProjectArtifactKind,
+  type ProjectCapabilityKind,
+  type ProjectCapabilitySelection,
   type ProjectDetail,
   type ProjectGoal,
   type ProjectGoalStatus,
@@ -370,8 +372,12 @@ function buildSource(
 }
 
 export class ProjectService {
+  constructor(
+    private readonly repoProvider: () => ProjectRepository = () => getDatabase().getProjectRepo(),
+  ) {}
+
   private repo(): ProjectRepository {
-    return getDatabase().getProjectRepo();
+    return this.repoProvider();
   }
 
   /**
@@ -684,6 +690,76 @@ export class ProjectService {
     const ok = repo.removeRole(projectId, roleId);
     if (ok) repo.touchProject(projectId, now);
     return ok;
+  }
+
+  // --- capability selections ---
+  // Skills and automations already have their own project attribution models.
+  // This table-backed path is intentionally limited to connectors.
+
+  listCapabilitySelections(projectId: string): ProjectCapabilitySelection[] | undefined {
+    const normalizedProjectId = projectId.trim();
+    if (!normalizedProjectId) throw new Error('projectId is required');
+    const repo = this.repo();
+    if (!repo.getProject(normalizedProjectId)) return undefined;
+    return repo.listCapabilitySelections(normalizedProjectId);
+  }
+
+  selectCapability(
+    projectId: string,
+    kind: ProjectCapabilityKind,
+    capabilityId: string,
+    now: number,
+  ): ProjectCapabilitySelection | undefined {
+    const normalizedProjectId = projectId.trim();
+    const normalizedCapabilityId = capabilityId.trim();
+    this.assertSelectableCapability(normalizedProjectId, kind, normalizedCapabilityId);
+    const repo = this.repo();
+    if (!repo.getProject(normalizedProjectId)) return undefined;
+    const existing = repo.listCapabilitySelections(normalizedProjectId).find(
+      (selection) => selection.kind === kind && selection.capabilityId === normalizedCapabilityId,
+    );
+    if (existing) return existing;
+    const selection = repo.selectCapability({
+      projectId: normalizedProjectId,
+      kind,
+      capabilityId: normalizedCapabilityId,
+      selectedAt: now,
+    });
+    repo.touchProject(normalizedProjectId, now);
+    return selection;
+  }
+
+  unselectCapability(
+    projectId: string,
+    kind: ProjectCapabilityKind,
+    capabilityId: string,
+    now: number,
+  ): { removed: boolean } | undefined {
+    const normalizedProjectId = projectId.trim();
+    const normalizedCapabilityId = capabilityId.trim();
+    this.assertSelectableCapability(normalizedProjectId, kind, normalizedCapabilityId);
+    const repo = this.repo();
+    if (!repo.getProject(normalizedProjectId)) return undefined;
+    const removed = repo.unselectCapability(
+      normalizedProjectId,
+      kind,
+      normalizedCapabilityId,
+    );
+    if (removed) repo.touchProject(normalizedProjectId, now);
+    return { removed };
+  }
+
+  private assertSelectableCapability(
+    projectId: string,
+    kind: ProjectCapabilityKind,
+    capabilityId: string,
+  ): void {
+    if (!projectId || !capabilityId) {
+      throw new Error('projectId and capabilityId are required');
+    }
+    if (kind !== 'connector') {
+      throw new Error(`Unsupported project capability selection kind: ${String(kind)}`);
+    }
   }
 }
 

@@ -23,6 +23,7 @@ import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc
 import { getProjectService } from '../services/project/projectService';
 import { getArtifactIssueRepository } from '../services/core/repositories/ArtifactIssueRepository';
 import {
+  type ProjectCapabilityKind,
   type ProjectGoalStatus,
   type ProjectSourceAccess,
   type ProjectSourceInput,
@@ -71,6 +72,11 @@ interface RolePayload {
   projectId?: string;
   roleId?: string;
 }
+interface CapabilitySelectionPayload {
+  projectId?: string;
+  kind?: string;
+  capabilityId?: string;
+}
 interface ArtifactIssuesPayload {
   artifactIds?: string[];
   status?: ArtifactIssueStatus;
@@ -94,6 +100,30 @@ function invalid(message: string): IPCResponse {
 function notFound(message: string): IPCResponse {
   return { success: false, error: { code: 'NOT_FOUND', message } };
 }
+function errorResponse(error: unknown): IPCResponse {
+  logger.error('Project IPC error', error);
+  return {
+    success: false,
+    error: { code: 'PROJECT_ERROR', message: error instanceof Error ? error.message : 'Unknown error' },
+  };
+}
+
+function readConnectorSelectionPayload(
+  payload: unknown,
+): { projectId: string; kind: ProjectCapabilityKind; capabilityId: string } | IPCResponse {
+  const { projectId, kind, capabilityId } = (payload ?? {}) as CapabilitySelectionPayload;
+  if (!projectId?.trim() || !capabilityId?.trim()) {
+    return invalid('projectId and capabilityId are required');
+  }
+  if (kind !== 'connector') {
+    return invalid('kind must be connector; skills and automations use their existing project models');
+  }
+  return {
+    projectId: projectId.trim(),
+    kind,
+    capabilityId: capabilityId.trim(),
+  };
+}
 
 export function registerProjectHandlers(ipcMain: IpcMain): void {
   ipcMain.handle(IPC_DOMAINS.PROJECT, async (_event, request: IPCRequest): Promise<IPCResponse> => {
@@ -105,6 +135,43 @@ export function registerProjectHandlers(ipcMain: IpcMain): void {
         case 'list': {
           const { includeArchived } = (payload ?? {}) as ListPayload;
           return { success: true, data: svc.listProjects(Boolean(includeArchived)) };
+        }
+
+        case 'listCapabilitySelections': {
+          const { projectId } = (payload ?? {}) as DetailPayload;
+          if (!projectId?.trim()) return invalid('projectId is required');
+          const selections = svc.listCapabilitySelections(projectId);
+          return selections
+            ? { success: true, data: selections }
+            : notFound('project not found');
+        }
+
+        case 'selectCapability': {
+          const parsed = readConnectorSelectionPayload(payload);
+          if ('success' in parsed) return parsed;
+          const selection = svc.selectCapability(
+            parsed.projectId,
+            parsed.kind,
+            parsed.capabilityId,
+            now,
+          );
+          return selection
+            ? { success: true, data: selection }
+            : notFound('project not found');
+        }
+
+        case 'unselectCapability': {
+          const parsed = readConnectorSelectionPayload(payload);
+          if ('success' in parsed) return parsed;
+          const result = svc.unselectCapability(
+            parsed.projectId,
+            parsed.kind,
+            parsed.capabilityId,
+            now,
+          );
+          return result
+            ? { success: true, data: result }
+            : notFound('project not found');
         }
 
         case 'detail': {
@@ -285,11 +352,7 @@ export function registerProjectHandlers(ipcMain: IpcMain): void {
           return { success: false, error: { code: 'UNKNOWN_ACTION', message: `Unknown project action: ${action}` } };
       }
     } catch (error) {
-      logger.error('Project IPC error', error);
-      return {
-        success: false,
-        error: { code: 'PROJECT_ERROR', message: error instanceof Error ? error.message : 'Unknown error' },
-      };
+      return errorResponse(error);
     }
   });
 

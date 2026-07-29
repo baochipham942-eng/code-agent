@@ -112,6 +112,11 @@ export interface ProjectCapabilitySelection {
   selectedAt: number;
 }
 
+export interface ProjectWithActivity extends Project {
+  activeTopicCount: number;
+  lastActivityAt: number | null;
+}
+
 /** 项目详情聚合（中心视图数据源） */
 export interface ProjectDetail {
   project: Project;

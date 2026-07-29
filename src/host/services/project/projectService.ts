@@ -36,6 +36,7 @@ import {
   type ProjectSourceInput,
   type ProjectSourceTrustFailureKind,
   type ProjectStatus,
+  type ProjectWithActivity,
   type UpdateProjectInput,
   type WorkspaceScope,
 } from '../../../shared/contract/project';
@@ -452,6 +453,10 @@ export class ProjectService {
 
   listProjects(includeArchived = false): Project[] {
     return this.repo().listProjects(includeArchived);
+  }
+
+  listProjectsWithActivity(includeArchived = false): ProjectWithActivity[] {
+    return this.repo().listProjectsWithActivity(includeArchived);
   }
 
   /** 中心视图数据源：project + goals + roles + sessionIds */

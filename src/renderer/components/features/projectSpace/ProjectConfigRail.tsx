@@ -26,6 +26,7 @@ import { describeSkillIpcError, invokeSkillIPC, invokeSkillIPCOrThrow } from '..
 import { toast } from '../../../hooks/useToast';
 import { IconButton } from '../../primitives/IconButton';
 import { ProjectConfigCard } from './ProjectConfigCard';
+import { ProjectMembersCard } from './ProjectMembersCard';
 
 export interface ProjectConfigRailProps {
   projectId: string;
@@ -57,6 +58,7 @@ export const ProjectConfigRail: React.FC<ProjectConfigRailProps> = ({
   project,
   detail,
   onRefreshDetail,
+  onInvite,
 }) => {
   const { t } = useI18n();
   const ps = t.projectSpace;
@@ -282,6 +284,10 @@ export const ProjectConfigRail: React.FC<ProjectConfigRailProps> = ({
           onSelect={handleSelectAutomation}
           onRemove={handleUnselectAutomation}
         />
+        {/* 第五卡「成员」：仅云协同空间渲染（纯本地空间没有成员概念，卡整个不出现） */}
+        {project?.cloudProjectId ? (
+          <ProjectMembersCard projectId={projectId} onInvite={onInvite} />
+        ) : null}
       </div>
     </aside>
   );

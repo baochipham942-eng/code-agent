@@ -104,12 +104,19 @@ export function resolveConversationModelOption(id: string | undefined): VoiceCon
 /**
  * 显式写死 server_vad 默认值，是为了 ttfaPerceivedMs 能算得出静音窗。
  * 上游常见默认：threshold=0.5、prefix_padding_ms=300、silence_duration_ms=500。
+ *
+ * silence 500→800（批 X2，2026-07-29 阶梯停顿 A/B 实测）：VAD 会把语音尾音衰减段
+ * 提前计入静默，感知静默 ≈ 真实停顿 + ~300ms。500 档下句中停顿 300ms 就被切成
+ * 独立轮次（真人犹豫 200-400ms 是常态 → 必切碎，「第一句被切成一个字」的主因）；
+ * 800 档实测容住 450ms 停顿、600ms 才断。代价是收话判定慢 300ms，已计入 ttfa 口径。
+ * prefix 300→500：VAD 切分后的续段持续丢头（「叫」被吃、「内容」听成「总」），
+ * 300ms 回补盖不住 onset 检测延迟。
  */
 export const VOICE_TURN_DETECTION_DEFAULT: VoiceTurnDetectionConfig = {
   type: 'server_vad',
   threshold: 0.5,
-  prefixPaddingMs: 300,
-  silenceDurationMs: 500,
+  prefixPaddingMs: 500,
+  silenceDurationMs: 800,
 };
 
 /** 上行麦克风采样率（Hz），厂商要求 16k 单声道 PCM16。 */
@@ -132,6 +139,9 @@ export const VOICE_UPSTREAM_HEARTBEAT_INTERVAL_MS = 15_000;
 
 /** 上游完全无消息 / pong 的最长容忍时间（ms）。 */
 export const VOICE_UPSTREAM_SILENCE_TIMEOUT_MS = 30_000;
+
+/** 已提交用户轮次等待模型创建响应的窗口（ms）；首轮超时后 nudge，再超时提示用户。 */
+export const VOICE_UPSTREAM_RESPONSE_TIMEOUT_MS = 10_000;
 
 /** 通话最长时长（ms），到点强制挂断，兜住忘记挂断导致的持续计费。 */
 export const VOICE_SESSION_MAX_DURATION_MS = 10 * 60 * 1000;

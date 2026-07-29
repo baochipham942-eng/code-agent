@@ -30,6 +30,8 @@ export interface VoiceWorkItem {
   status: VoiceWorkItemStatus;
   /** 失败原因，供 UI 显示；其余状态没有 */
   detail?: string;
+  /** 自有错误生产者给出的稳定分类；不从 detail 文本反推。 */
+  failure?: import('./project').ProjectSourceTrustFailureMarker;
 }
 
 /**
@@ -112,14 +114,16 @@ export type VoiceEvent =
   /** 用户开口 —— Renderer 据此清空播放队列做 barge-in */
   | { type: 'speech.started' }
   | { type: 'response.done'; ttfaModelMs?: number; ttfaPerceivedMs?: number }
+  /** Host 注入的 narration 在 response.create 确认窗内被上游拒绝；通话本身仍然存活。 */
+  | { type: 'injection.rejected'; message: string }
   /** 语音派出的任务状态。Active Work 条消费（批 B），host 侧同时用它计通话摘要的 workItemCount。 */
   | { type: 'work.upsert'; item: VoiceWorkItem }
   /**
    * 用户可见的一次性提示（不致命，通话继续）。判据钉在上游真实回显上——
    * 例如注册了 tools 但 session.updated 回显 tools: null（模型不支持 function calling）。
    */
-  | { type: 'notice'; code: VoiceMessageCode; message: string }
-  | { type: 'error'; code: VoiceMessageCode; message: string };
+  | { type: 'notice'; code: VoiceMessageCode; message: string; detail?: string }
+  | { type: 'error'; code: VoiceMessageCode; message: string; detail?: string };
 
 /**
  * 发给用户看的所有提示/错误的编号（host 与 renderer 两侧都在这里登记）。**新增一条必须加进这里**——
@@ -134,6 +138,7 @@ export type VoiceMessageCode =
   | 'VOICE_SESSION_BUSY'
   | 'VOICE_PROVIDER_UNCONFIGURED'
   | 'VOICE_TOOLS_DROPPED'
+  | 'VOICE_MODEL_UNRESPONSIVE'
   /** 语音派出去的活死了。G1（2026-07-28 真机）：失败此前只进日志，通话里的人毫无察觉。 */
   | 'VOICE_WORK_FAILED'
   | 'VOICE_UPSTREAM_UNAVAILABLE'
@@ -174,7 +179,13 @@ export type VoiceClientCommand =
    * server_vad 模式下上游自动断句，发这个帧是合法的 no-op 上游行为，但 Renderer 只在
    * 手动模式下发它。
    */
-  | { type: 'commit' };
+  | { type: 'commit' }
+  /**
+   * 音频管线诊断上报（批 X §5）：Renderer 走了哪条采集管线、为什么。
+   * 原生 AEC 的降级链此前全程零日志（start 失败被 catch 吞掉、renderer logger 只进
+   * console），真机「AEC 没起来」在 host 日志里查不到任何痕迹。host 收到只落日志。
+   */
+  | { type: 'audio_mode'; mode: 'native_aec' | 'headphones'; reason: string };
 
 interface VoiceTransportHandleBase {
   readonly provider: VoiceProviderId;
@@ -213,6 +224,8 @@ export type VoiceTransportHandle =
        * 角色用 user 而不是 assistant——模型只会顺着自己说过的话往下说，不会去转述它。
        */
       injectItem(text: string): void;
+      /** 上游已创建回复、但尚未发出对应 response.done。注入前用它避开 active response 窗口。 */
+      isResponding(): boolean;
     })
   /** Renderer 直连上游（OpenAI Realtime 等 WebRTC 形态），媒体不经 Host。 */
   | (VoiceTransportHandleBase & {

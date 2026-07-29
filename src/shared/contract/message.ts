@@ -291,7 +291,7 @@ export interface MessageMetadata {
    * 语音派出的活失败了的留痕消息（`role:'system'`）。带 workItemId 是为了让渲染侧
    * 把它对回那张任务卡——靠正文文本反解标题等于拿人话当协议，文案一改就静默失效。
    */
-  voiceWorkFailure?: { workItemId: string; title: string };
+  voiceWorkFailure?: { workItemId: string; title: string; detail?: string };
   voiceDispatch?: {
     title: string;
     /** 账本里这件活的 id。失败留痕靠它对回这张任务卡（见 voiceWorkFailure）。 */

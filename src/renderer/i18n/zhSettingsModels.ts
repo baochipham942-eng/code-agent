@@ -34,7 +34,7 @@ export const zhSettingsModels = {
         },
         qwen: {
           name: '通义千问',
-          description: '阿里云通义千问模型',
+          description: '阿里云通义千问模型；同一个 API Key 同时供实时语音、图片生成与口述转写使用',
         },
         moonshot: {
           name: 'Kimi',
@@ -633,6 +633,7 @@ export const zhSettingsModels = {
         savedCredentialHint: '已保存 · 留空即保留',
         jsonError: 'JSON 格式错误',
         jsonSaveError: 'JSON 格式错误，无法保存',
+        jsonIgnoredKeys: '以下字段不会被保存：{keys}',
         cancel: '取消',
         save: '保存',
         serverName: '服务器名称',

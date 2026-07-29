@@ -8,7 +8,11 @@
 // ============================================================================
 
 import { resolveAgent } from '../../agent/agentRegistry';
+import { isPanelVisibleAgent } from '../../../shared/contract/agentRegistry';
 import { getBuiltinRoleVisual } from '../roleAssets/builtinRoles';
+import { createLogger } from '../infra/logger';
+
+const logger = createLogger('VoiceRouting');
 
 export interface VoiceRoutingState {
   /** 默认收件人；无专家时 undefined = 会话默认 agent（自动路由） */
@@ -54,7 +58,9 @@ const VOICE_BASE_INSTRUCTIONS = [
   '3. **派完之后用户又补充了细节**（补文件名、补内容、改要求），立刻调 steer_task 把新信息追进那件活，'
     + '不要只是嘴上应一声——那件活已经开跑了，光答应改变不了它正在做什么。',
   '4. 绝不描述你没有真做过的事。没调 spawn_task 就不许说「正在为你创建」「正在写入」；'
-    + '没调 end_call 就不许说「已挂断」。工具返回什么状态就照它说，不许把「已排队」升级成「已完成」。',
+    + '没调 end_call 就不许说「已挂断」。派出去的活，它的结果**只会**以 [BACKEND] 开头的消息送达：'
+    + '没收到那条消息，这件活就没有做完，你也不知道任何进展——「已经建好了」「写进去了」这种话，'
+    + '只有 [BACKEND] 消息说了做成，你才能说。被问进度先调 get_active_tasks，不许凭记忆答。',
   '危险操作由界面上的权限卡确认，你不能口头替用户放行。',
   '',
   '报结果时：',
@@ -93,6 +99,18 @@ function buildShortPersona(agentId: string): string {
 }
 
 /**
+ * 系统型内置 agent（awaiter/dream/distill 这类面板不可见的）：用户没有任何途径点名它，
+ * 它出现在 requestedAgentId 里只可能是存量脏映射或内部流程写入。
+ * 货架/内置角色（有 role visual 的）是用户请进来的专家，不在此列。
+ * 查不到的 id 保持现状（照传，由下游各自兜底），这里只拦「确认是系统内置且面板不可见」的。
+ */
+function isSystemInternalAgent(agentId: string): boolean {
+  if (getBuiltinRoleVisual(agentId)) return false;
+  const agent = resolveAgent(agentId);
+  return !!agent && !isPanelVisibleAgent({ id: agentId, source: agent.source });
+}
+
+/**
  * 建连时解析通话身份。
  *
  * requestedAgentId 来自 Renderer 的 activeAgentId：单专家会话 = 那位专家；
@@ -103,7 +121,15 @@ function buildShortPersona(agentId: string): string {
  * 接线留给语音批 B，不在这里提前改变现有通话路由。
  */
 export function resolveVoiceRouting(requestedAgentId?: string): VoiceRoutingState {
-  const activeAgentId = requestedAgentId?.trim() || undefined;
+  const candidate = requestedAgentId?.trim() || undefined;
+  // 「activeAgentId 有值」≠「用户点名了专家」（批 X §5，2026-07-29 真机：任务卡署名
+  // Dream，而 dream 是面板都选不到的系统型内置 agent，用户不可能点名它）。
+  // 判据复用面板同一个真源 isPanelVisibleAgent：用户选不到的，语音层就不许当专家
+  // ——不署名、不套人设、派活不锁身份。机制判据，不按名字枚举。
+  const activeAgentId = candidate && !isSystemInternalAgent(candidate) ? candidate : undefined;
+  if (candidate && !activeAgentId) {
+    logger.info('requested agent is a system-internal builtin, treating call as no-expert', { requestedAgentId: candidate });
+  }
   if (!activeAgentId) return { personaInstructions: VOICE_BASE_INSTRUCTIONS };
 
   const persona = buildShortPersona(activeAgentId);

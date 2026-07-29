@@ -816,6 +816,10 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   // 右侧主按钮的归属：只有「空输入框 + 没在跑 + 语音入口真能用」时才让给开通话，
   // 其余情况发送键都有事可做（发送 / 停止），不能被换掉。
   //
+  // 不看 `configured`（2026-07-30 缺 key 降级）：没配 key 时主位照让，
+  // LiveVoiceButton 自己渲染成「点我配 key」的引导态——能力不可用要降级提示，
+  // 不是消失，否则新用户永远发现不了这儿有实时语音。
+  //
   // 刻意不看 `disabled`（2026-07-27 真机：切到新会话时底栏按钮闪变）：
   // `disabled = isProcessing || isCreatingSession`，而 `!isProcessing` 上面已经拦了，
   // 它多出来的只有「正在建会话」那一小段。建会话跟「有没有通话入口」无关——
@@ -827,7 +831,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     && !isProcessing
     && Boolean(currentSessionId)
     && liveVoiceAvailability.enabled
-    && liveVoiceAvailability.configured
     && liveVoiceCallPhase === 'idle';
 
   return (

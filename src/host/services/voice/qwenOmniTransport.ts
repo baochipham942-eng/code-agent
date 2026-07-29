@@ -14,6 +14,7 @@ import {
   VOICE_TURN_DETECTION_DEFAULT,
   VOICE_UPSTREAM_CONNECT_TIMEOUT_MS,
   VOICE_UPSTREAM_HEARTBEAT_INTERVAL_MS,
+  VOICE_UPSTREAM_RESPONSE_TIMEOUT_MS,
   VOICE_UPSTREAM_SILENCE_TIMEOUT_MS,
 } from '../../../shared/constants/voice';
 import type { VoiceTransport, VoiceTransportHandle, VoiceTurnDetectionConfig } from '../../../shared/contract/voice';
@@ -21,6 +22,7 @@ import { getConfigService } from '../core/configService';
 import { createLogger } from '../infra/logger';
 
 const logger = createLogger('QwenOmniVoice');
+const INJECTION_ACK_WINDOW_MS = 5_000;
 
 interface UpstreamEvent {
   type: string;
@@ -58,10 +60,28 @@ function resolveTurnDetectionConfig(): VoiceTurnDetectionConfig {
     // 分叉：用户说了没反应，连补救的点按按钮都不显示（2026-07-27 真机差点踩到）。
     // 只有**显式**留在点按档时才认这个 null。
     if (configured === null && voice?.live?.interrupt !== 'manual') return VOICE_TURN_DETECTION_DEFAULT;
-    return configured === undefined ? VOICE_TURN_DETECTION_DEFAULT : configured;
+    if (configured === undefined) return VOICE_TURN_DETECTION_DEFAULT;
+    return upgradeStaleVadDefaults(configured);
   } catch {
     return VOICE_TURN_DETECTION_DEFAULT;
   }
+}
+
+/**
+ * 存量配置里的旧默认值升级（批 X2）。prefix/silence 从来不是 UI 可设项——落盘里的
+ * 300/500 只可能是「当年默认值随保存写死的拷贝」，不是用户选择。改默认值对存量
+ * 零生效是踩过的坑（echoCancellation 先例），所以在读取口把旧默认识别为过期：
+ * 逐字段等于旧默认 → 升到新默认；手改过的其他值（含 threshold）原样保留。
+ */
+function upgradeStaleVadDefaults(configured: VoiceTurnDetectionConfig): VoiceTurnDetectionConfig {
+  if (configured?.type !== 'server_vad') return configured;
+  const defaults = VOICE_TURN_DETECTION_DEFAULT;
+  if (defaults?.type !== 'server_vad') return configured;
+  return {
+    ...configured,
+    ...(configured.prefixPaddingMs === 300 ? { prefixPaddingMs: defaults.prefixPaddingMs } : {}),
+    ...(configured.silenceDurationMs === 500 ? { silenceDurationMs: defaults.silenceDurationMs } : {}),
+  };
 }
 
 /** session.updated 回显里是否真收下了工具。回显不带 tools 字段一律按「没收下」算。 */
@@ -178,6 +198,55 @@ export const qwenOmniTransport: VoiceTransport = {
     let speechStoppedAt = 0;
     let ttfaModelMs: number | undefined;
     let ttfaPerceivedMs: number | undefined;
+    let responseActive = false;
+    let pendingInjectionAt: number | null = null;
+    let responseWatchdogTimer: ReturnType<typeof setTimeout> | null = null;
+    let responseWatchdogNudged = false;
+    let modelUnresponsiveNotified = false;
+
+    const clearResponseWatchdog = () => {
+      if (responseWatchdogTimer) clearTimeout(responseWatchdogTimer);
+      responseWatchdogTimer = null;
+      responseWatchdogNudged = false;
+    };
+    const scheduleResponseWatchdog = () => {
+      if (responseWatchdogTimer) clearTimeout(responseWatchdogTimer);
+      responseWatchdogTimer = setTimeout(() => {
+        responseWatchdogTimer = null;
+        if (ws.readyState !== WebSocket.OPEN) {
+          responseWatchdogNudged = false;
+          return;
+        }
+        if (!responseWatchdogNudged) {
+          responseWatchdogNudged = true;
+          logger.warn('upstream response watchdog nudging silent turn', {
+            turn,
+            timeoutMs: VOICE_UPSTREAM_RESPONSE_TIMEOUT_MS,
+          });
+          // 只推动已提交轮次，不创建 conversation item，也不打开 injection 确认窗。
+          ws.send(JSON.stringify({ type: 'response.create' }));
+          scheduleResponseWatchdog();
+          return;
+        }
+        responseWatchdogNudged = false;
+        logger.warn('upstream response watchdog still silent after nudge', {
+          turn,
+          timeoutMs: VOICE_UPSTREAM_RESPONSE_TIMEOUT_MS,
+        });
+        if (!modelUnresponsiveNotified) {
+          modelUnresponsiveNotified = true;
+          onEvent({
+            type: 'notice',
+            code: 'VOICE_MODEL_UNRESPONSIVE',
+            message: '模型没有回应，可以再说一遍，或挂断重拨',
+          });
+        }
+      }, VOICE_UPSTREAM_RESPONSE_TIMEOUT_MS);
+    };
+    const armResponseWatchdog = () => {
+      clearResponseWatchdog();
+      scheduleResponseWatchdog();
+    };
 
     /**
      * 工具结果回灌：写进对话项后必须再发一次 response.create，否则模型拿到结果也不开口。
@@ -217,6 +286,14 @@ export const qwenOmniTransport: VoiceTransport = {
       if (seen === 1) logger.info('upstream event', { turn, type: event.type });
 
       switch (event.type) {
+        case 'input_audio_buffer.committed':
+          armResponseWatchdog();
+          break;
+        case 'response.created':
+          clearResponseWatchdog();
+          responseActive = true;
+          pendingInjectionAt = null;
+          break;
         case 'response.audio.delta':
           if (typeof event.delta === 'string') {
             if (speechStoppedAt && ttfaModelMs === undefined) {
@@ -237,6 +314,7 @@ export const qwenOmniTransport: VoiceTransport = {
           onEvent({ type: 'user.transcript', text: typeof event.transcript === 'string' ? event.transcript : '', done: true });
           break;
         case 'input_audio_buffer.speech_started':
+          clearResponseWatchdog();
           speechStoppedAt = 0;
           ttfaModelMs = undefined;
           ttfaPerceivedMs = undefined;
@@ -281,6 +359,8 @@ export const qwenOmniTransport: VoiceTransport = {
           }
           break;
         case 'response.done':
+          responseActive = false;
+          pendingInjectionAt = null;
           onEvent({
             type: 'response.done',
             ...(ttfaModelMs !== undefined ? { ttfaModelMs } : {}),
@@ -292,13 +372,20 @@ export const qwenOmniTransport: VoiceTransport = {
           // 真正说明原因的只有 message。2026-07-26 真机踩到——现场只剩一个 COMMON_ERROR，
           // 解释在哪查不到（那句话当时只发给了渲染侧）。
           logger.warn('upstream error', { code: event.error?.code, message: event.error?.message });
-          onEvent({
-            type: 'error',
-            // 上游自己的错误码不往外透传：它无法枚举，进不了 i18n 表，
-            // 传出去只会让渲染端拿到一个查不到文案的串。它已经在上一行进日志了。
-            code: 'UPSTREAM_ERROR',
-            message: event.error?.message ?? 'upstream error',
-          });
+          if (pendingInjectionAt !== null && Date.now() - pendingInjectionAt <= INJECTION_ACK_WINDOW_MS) {
+            pendingInjectionAt = null;
+            onEvent({ type: 'injection.rejected', message: event.error?.message ?? 'injection rejected' });
+          } else {
+            pendingInjectionAt = null;
+            onEvent({
+              type: 'error',
+              // 上游自己的错误码不往外透传：它无法枚举，进不了 i18n 表，
+              // 传出去只会让渲染端拿到一个查不到文案的串。它已经在上一行进日志了。
+              code: 'UPSTREAM_ERROR',
+              message: 'upstream error',
+              ...(event.error?.message ? { detail: event.error.message } : {}),
+            });
+          }
           break;
         default:
           break;
@@ -307,9 +394,15 @@ export const qwenOmniTransport: VoiceTransport = {
 
     ws.on('close', () => {
       clearHeartbeat();
+      clearResponseWatchdog();
       onEvent({ type: 'state', state: 'closed' });
     });
-    ws.on('error', (err: Error) => onEvent({ type: 'error', code: 'UPSTREAM_SOCKET', message: err.message }));
+    ws.on('error', (err: Error) => onEvent({
+      type: 'error',
+      code: 'UPSTREAM_SOCKET',
+      message: 'upstream socket error',
+      detail: err.message,
+    }));
 
     onEvent({ type: 'state', state: 'live' });
 
@@ -340,7 +433,11 @@ export const qwenOmniTransport: VoiceTransport = {
           type: 'conversation.item.create',
           item: { type: 'message', role: 'user', content: [{ type: 'input_text', text }] },
         }));
+        pendingInjectionAt = Date.now();
         ws.send(JSON.stringify({ type: 'response.create' }));
+      },
+      isResponding() {
+        return responseActive;
       },
       interrupt() {
         if (ws.readyState !== WebSocket.OPEN) return;
@@ -348,6 +445,7 @@ export const qwenOmniTransport: VoiceTransport = {
       },
       async close() {
         clearHeartbeat();
+        clearResponseWatchdog();
         if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) ws.close();
       },
     };

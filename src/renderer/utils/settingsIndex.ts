@@ -28,7 +28,7 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
   // Conversation
   { tab: 'conversation', labelKey: 'modelRoutingStrategy', keywords: ['routing', 'route', 'model routing', 'auto', 'direct', 'parallel'] },
 
-  // Voice Live（实时通话）
+  // Voice Live（实时语音）
   { tab: 'voiceLive', labelKey: 'voiceLive', keywords: ['voice', 'live voice', 'call', 'realtime', 'real-time', 'voice call', 'voice chat'] },
   { tab: 'voiceLive', labelKey: 'voiceLiveInterrupt', keywords: ['interrupt', 'barge-in', 'vad', 'sensitivity', 'turn detection'] },
 

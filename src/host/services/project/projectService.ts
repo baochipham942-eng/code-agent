@@ -33,6 +33,7 @@ import {
   type ProjectRoleLink,
   type ProjectSource,
   type ProjectSourceInput,
+  type ProjectSourceTrustFailureKind,
   type ProjectStatus,
   type UpdateProjectInput,
   type WorkspaceScope,
@@ -45,10 +46,21 @@ import {
   workspacePathIdentity,
   resolveWorkspacePath,
 } from '../../runtime/workspaceScope';
+import { ProjectSourceTrustError } from './projectSourceTrustError';
 import { evaluateFolderTrust } from '../../security/folderTrustService';
 import { getProjectSourceGitStates } from '../git/gitStatusService';
 
 const logger = createLogger('ProjectService');
+
+function sourceTrustFailureKind(
+  source: Pick<ProjectSource, 'trustState' | 'identityDev' | 'identityIno'>,
+  identity: ReturnType<typeof workspacePathIdentity>,
+): ProjectSourceTrustFailureKind | undefined {
+  if (identity.dev === null || identity.ino === null) return 'source_missing';
+  if (!workspaceIdentityMatches(source, identity)) return 'identity_changed';
+  if (source.trustState !== 'trusted') return 'not_trusted';
+  return undefined;
+}
 
 const FILE_METADATA_KEYS = [
   'filePath',
@@ -488,8 +500,8 @@ export class ProjectService {
     if (!project) return undefined;
     const sources = repo.listSources(projectId).map((source) => {
       const identity = workspacePathIdentity(source.canonicalPath);
-      const identityValid = workspaceIdentityMatches(source, identity);
-      return identityValid ? source : { ...source, trustState: 'blocked' as const };
+      const failureKind = sourceTrustFailureKind(source, identity);
+      return failureKind ? { ...source, trustState: 'blocked' as const } : source;
     });
     return {
       project,
@@ -511,12 +523,8 @@ export class ProjectService {
     if (sources.length === 0) return undefined;
     for (const source of sources) {
       const identity = workspacePathIdentity(source.canonicalPath);
-      if (
-        source.trustState !== 'trusted'
-        || !workspaceIdentityMatches(source, identity)
-      ) {
-        throw new Error(`Project Source trust identity changed: ${source.path}`);
-      }
+      const failureKind = sourceTrustFailureKind(source, identity);
+      if (failureKind) throw new ProjectSourceTrustError(failureKind, source.path);
     }
     return createWorkspaceScope(projectId, sources.map((source) => ({
       sourceId: source.id,

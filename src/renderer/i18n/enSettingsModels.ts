@@ -34,7 +34,7 @@ export const enSettingsModels = {
         },
         qwen: {
           name: '通义千问',
-          description: 'Alibaba Cloud 通义千问 models',
+          description: 'Alibaba Cloud 通义千问 models — one API key also powers live voice, image generation, and dictation',
         },
         moonshot: {
           name: 'Kimi',
@@ -632,6 +632,7 @@ export const enSettingsModels = {
         savedCredentialHint: 'Saved · leave blank to keep',
         jsonError: 'Invalid JSON format',
         jsonSaveError: 'Invalid JSON format, cannot save',
+        jsonIgnoredKeys: 'These fields will not be saved: {keys}',
         cancel: 'Cancel',
         save: 'Save',
         serverName: 'Server name',

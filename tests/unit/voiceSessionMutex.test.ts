@@ -2,7 +2,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { EventEmitter } from 'events';
 import { isVoiceInputMessage, type Message } from '../../src/shared/contract/message';
-import type { VoiceEvent, VoiceTransport } from '../../src/shared/contract/voice';
+import type { VoiceEvent, VoiceTransport, VoiceWorkItem } from '../../src/shared/contract/voice';
 import { QWEN_OMNI_REALTIME_MODEL } from '../../src/shared/constants/voice';
 
 const close = vi.fn(async () => undefined);
@@ -10,13 +10,15 @@ const sendAudio = vi.fn();
 const commitMock = vi.fn();
 const updateInstructions = vi.fn();
 const injectItem = vi.fn();
+let upstreamResponding = false;
+const isResponding = vi.fn(() => upstreamResponding);
 const addMessageToSession = vi.fn(async (_sessionId: string, _message: Message) => undefined);
 const patchSessionMetadata = vi.fn(async (_sessionId: string, _patch: Record<string, unknown>) => true);
 const getSession = vi.fn(async (_sessionId: string) => ({ workingDirectory: '/repo/voice-session' }));
 let lastOnEvent: ((event: VoiceEvent) => void) | null = null;
 const connect = vi.fn(async (input: Parameters<VoiceTransport['connect']>[0]) => {
   lastOnEvent = input.onEvent;
-  return { kind: 'relay', provider: 'qwen-omni', sendAudio, commit: commitMock, interrupt: vi.fn(), updateInstructions, injectItem, close };
+  return { kind: 'relay', provider: 'qwen-omni', sendAudio, commit: commitMock, interrupt: vi.fn(), updateInstructions, injectItem, isResponding, close };
 });
 
 vi.mock('../../src/host/services/voice/qwenOmniTransport', () => ({ qwenOmniTransport: { id: 'qwen-omni', connect } }));
@@ -71,6 +73,7 @@ const voiceDispatchProbe = vi.hoisted(() => ({
     title: string;
     summary: string;
   }) => void),
+  fail: null as null | ((item: VoiceWorkItem) => void),
 }));
 const flushVoiceTailSpy = vi.fn(async () => {
   teardownOrder.push('tail-flush');
@@ -82,6 +85,7 @@ vi.mock('../../src/host/services/voice/voiceAgentCoordinator', async (importOrig
     ...actual,
     beginVoiceDispatch: (binding: Parameters<typeof actual.beginVoiceDispatch>[0]) => {
       voiceDispatchProbe.narrate = binding.onWorkNarration as typeof voiceDispatchProbe.narrate;
+      voiceDispatchProbe.fail = binding.onWorkFailed;
       actual.beginVoiceDispatch(binding);
     },
     flushVoiceTail: flushVoiceTailSpy,
@@ -118,9 +122,12 @@ describe('voiceSessionService 互斥与挂断', () => {
     commitMock.mockClear();
     updateInstructions.mockClear();
     injectItem.mockClear();
+    isResponding.mockClear();
+    upstreamResponding = false;
     voiceLogger.info.mockClear();
     voiceLogger.warn.mockClear();
     voiceDispatchProbe.narrate = null;
+    voiceDispatchProbe.fail = null;
     addMessageToSession.mockClear();
     lastOnEvent = null;
   });
@@ -151,7 +158,7 @@ describe('voiceSessionService 互斥与挂断', () => {
     // 上游握手不是瞬时的：让它挂一拍，模拟真实的 await 窗口
     connect.mockImplementationOnce(async () => {
       await new Promise((resolve) => setTimeout(resolve, 20));
-      return { kind: 'relay', provider: 'qwen-omni', sendAudio, commit: commitMock, interrupt: vi.fn(), injectItem, updateInstructions, close };
+      return { kind: 'relay', provider: 'qwen-omni', sendAudio, commit: commitMock, interrupt: vi.fn(), injectItem, isResponding, updateInstructions, close };
     });
 
     const a = new FakeClient();
@@ -361,6 +368,70 @@ describe('终态结论节制播报', () => {
     expect(injectItem).toHaveBeenCalledWith('[BACKEND] 「建个文件」做完了。已经建好 a.txt。');
   });
 
+  it('模型响应窗内零注入，response.done 后才注入', async () => {
+    const client = new FakeClient();
+    await attachVoiceClient(client as never, 'session-model-response');
+
+    upstreamResponding = true;
+    voiceDispatchProbe.narrate?.(narration);
+    expect(injectItem).not.toHaveBeenCalled();
+
+    upstreamResponding = false;
+    lastOnEvent?.({ type: 'response.done' });
+    expect(injectItem).toHaveBeenCalledTimes(1);
+  });
+
+  it('两条结论排队时每个 response.done 只放一条', async () => {
+    const client = new FakeClient();
+    await attachVoiceClient(client as never, 'session-one-per-response');
+    upstreamResponding = true;
+
+    voiceDispatchProbe.narrate?.(narration);
+    voiceDispatchProbe.narrate?.({ ...narration, workItemId: 'work-2', title: '查个问题' });
+    upstreamResponding = false;
+
+    lastOnEvent?.({ type: 'response.done' });
+    expect(injectItem).toHaveBeenCalledTimes(1);
+    expect(injectItem).toHaveBeenLastCalledWith('[BACKEND] 「建个文件」做完了。已经建好 a.txt。');
+
+    lastOnEvent?.({ type: 'response.done' });
+    expect(injectItem).toHaveBeenCalledTimes(2);
+    expect(injectItem).toHaveBeenLastCalledWith('[BACKEND] 「查个问题」做完了。已经建好 a.txt。');
+  });
+
+  it('注入拒绝后退回队列只重试一次，第二次拒绝只留屏幕且通话不死', async () => {
+    const client = new FakeClient();
+    await attachVoiceClient(client as never, 'session-injection-retry');
+
+    voiceDispatchProbe.narrate?.(narration);
+    expect(injectItem).toHaveBeenCalledTimes(1);
+
+    lastOnEvent?.({ type: 'injection.rejected', message: 'Conversation already has an active response' });
+    expect(getActiveVoiceSessionId()).not.toBeNull();
+    expect(injectItem).toHaveBeenCalledTimes(1);
+
+    lastOnEvent?.({ type: 'response.done' });
+    expect(injectItem).toHaveBeenCalledTimes(2);
+
+    lastOnEvent?.({ type: 'injection.rejected', message: 'still busy' });
+    lastOnEvent?.({ type: 'response.done' });
+    expect(injectItem).toHaveBeenCalledTimes(2);
+    expect(getActiveVoiceSessionId()).not.toBeNull();
+    expect(voiceLogger.warn).toHaveBeenCalledWith(
+      'narration injection dropped after retry',
+      expect.objectContaining({ workItemId: narration.workItemId }),
+    );
+  });
+
+  it('注入确认窗内连接真的 close 仍按致命错误释放通话', async () => {
+    const client = new FakeClient();
+    await attachVoiceClient(client as never, 'session-close-during-injection');
+    voiceDispatchProbe.narrate?.(narration);
+
+    lastOnEvent?.({ type: 'state', state: 'closed' });
+    await vi.waitFor(() => expect(getActiveVoiceSessionId()).toBeNull());
+  });
+
   it('连续压过两个用户轮次就丢弃，并留下可诊断日志', async () => {
     const client = new FakeClient();
     await attachVoiceClient(client as never, 'session-stale-narration');
@@ -398,6 +469,49 @@ describe('终态结论节制播报', () => {
     lastOnEvent?.({ type: 'response.done' });
 
     expect(injectItem).not.toHaveBeenCalled();
+  });
+});
+
+describe('失败告知出口', () => {
+  beforeEach(() => {
+    addMessageToSession.mockClear();
+    voiceDispatchProbe.fail = null;
+  });
+
+  afterEach(async () => {
+    await endActiveVoiceSession();
+  });
+
+  it('未知异常只进 notice/detail 与落库 metadata，不进入主文案', async () => {
+    const client = new FakeClient();
+    await attachVoiceClient(client as never, 'session-failure-copy');
+    const raw = 'Project Source trust identity changed: /Users/foo/secret/repo';
+
+    voiceDispatchProbe.fail?.({
+      id: 'failed-work',
+      title: '建个文件',
+      status: 'failed',
+      detail: raw,
+    });
+
+    await vi.waitFor(() => expect(addMessageToSession).toHaveBeenCalled());
+    const notice = client.sent
+      .filter((entry) => entry !== '<binary>')
+      .map((entry) => JSON.parse(entry) as VoiceEvent)
+      .find((event) => event.type === 'notice' && event.code === 'VOICE_WORK_FAILED');
+    expect(notice).toMatchObject({
+      type: 'notice',
+      code: 'VOICE_WORK_FAILED',
+      message: '执行时出了问题，没有完成',
+      detail: raw,
+    });
+    if (notice?.type === 'notice') expect(notice.message).not.toContain(raw);
+
+    const persisted = addMessageToSession.mock.calls
+      .map((call) => call[1])
+      .find((message) => message.metadata?.voiceWorkFailure);
+    expect(persisted?.content).not.toContain(raw);
+    expect(persisted?.metadata?.voiceWorkFailure?.detail).toBe(raw);
   });
 });
 

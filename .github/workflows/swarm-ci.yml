@@ -210,9 +210,15 @@ jobs:
         # gameArtifactValidator 就是靠那次补装变绿的，且它从未被排除。排除列表越长，
         # "主链路子集"这个名字越名不副实，所以逐条试摘、用真 CI 验，而不是留着好看。
         run: |
-          npx vitest run tests/unit/agent tests/unit/ipc tests/unit/tools tests/unit/services tests/renderer --retry=1 \
+          # tests/unit 根目录文件（语音全套等）此前不在任何 PR 门里——#809 曾带着
+          # 根目录一条红测绿灯合入（批 X 实撞）。glob 只取根级 *.test.ts，子目录仍由
+          # 上面的显式列表覆盖，不重复跑。
+          npx vitest run tests/unit/agent tests/unit/ipc tests/unit/tools tests/unit/services tests/renderer 'tests/unit/*.test.ts' --retry=1 \
             --exclude 'tests/unit/tools/modules/network/webSearch.test.ts' \
             --exclude 'tests/unit/agent/goalVerifyGate.test.ts'
+
+      - name: MCP protocol compatibility (unit + integration)
+        run: npx vitest run tests/unit/mcp tests/integration/mcp --retry=1
 
       - name: Knip dead-export ratchet
         # dead exports+types 棘轮（基线 2785，见 scripts/knip-ratchet.mjs 头注）。

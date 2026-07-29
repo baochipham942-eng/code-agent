@@ -54,6 +54,7 @@ vi.mock('../../src/host/agent/agentOrchestrator', () => ({
 }));
 
 const { TaskManager } = await import('../../src/host/task/TaskManager');
+const { ProjectSourceTrustError } = await import('../../src/host/services/project/projectSourceTrustError');
 
 describe('TaskManager task_error 载荷', () => {
   it('带的是字符串原因，不是 Error 对象（否则消费方只能显示兜底文案）', async () => {
@@ -75,5 +76,25 @@ describe('TaskManager task_error 载荷', () => {
     expect(typeof payload.error).toBe('string');
     expect(payload.error).toBe('服务认证异常');
     expect(payload.error).not.toBeInstanceOf(Error);
+  });
+
+  it('保留 Project Source trust 错误的结构化 kind，同时维持字符串 error 兼容', async () => {
+    const manager = new TaskManager({ maxConcurrentTasks: 1 });
+    manager.initialize({ configService: {} as never, onAgentEvent: vi.fn() });
+    orchestratorMocks.sendMessage.mockRejectedValueOnce(
+      new ProjectSourceTrustError('source_missing', '/repo/missing'),
+    );
+    const events: Array<{ type: string; data?: unknown }> = [];
+    manager.on('event', (event) => { events.push(event as { type: string; data?: unknown }); });
+
+    await manager.startTask('session-trust', '建个文件');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const payload = events.find((event) => event.type === 'task_error')?.data as {
+      error?: unknown;
+      failure?: unknown;
+    };
+    expect(typeof payload.error).toBe('string');
+    expect(payload.failure).toEqual({ code: 'PROJECT_SOURCE_TRUST', kind: 'source_missing' });
   });
 });

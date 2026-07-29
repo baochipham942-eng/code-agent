@@ -9,6 +9,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { zh } from '../../../src/renderer/i18n/zh';
 import type { AppSettings } from '../../../src/shared/contract';
+import { VOICE_LIVE_SETTINGS_UPDATED_EVENT } from '../../../src/shared/contract/voice';
 import { IPC_DOMAINS } from '../../../src/shared/ipc';
 
 const invokeDomainMock = vi.hoisted(() => vi.fn());
@@ -120,6 +121,8 @@ describe('VoiceLiveSettingsSection', () => {
     expect(summary.textContent).toContain('11');
     availability.usage = { monthSeconds: 0, monthCalls: 0 };
   });
+
+  // key 配置三条断言已随组件迁往 voiceApiKeyConfig.test.tsx（批 X3：key 的家在「语音模型」tab 常驻）
 
   it('回声消除默认自动，可持久化为强制关', async () => {
     settingsGet({ live: { enabled: true }, turnDetection: { type: 'server_vad' } });

@@ -1,4 +1,4 @@
-import { StdioServerTransport } from '@modelcontextprotocol/server/stdio';
+import { serveStdio, type StdioServerHandle } from '@modelcontextprotocol/server/stdio';
 import { Server } from '@modelcontextprotocol/server';
 import type { Tool } from '@modelcontextprotocol/server';
 
@@ -113,6 +113,7 @@ async function fetchJsonFromBridge(pathAndQuery: string): Promise<{ ok: boolean;
 
 export class CodeAgentMCPServer {
   private server: Server;
+  private stdioHandle?: StdioServerHandle;
   private isRunning: boolean = false;
   /** 解析 eval 结果时的工作目录（其下的 .code-agent/ 存放 eval-baseline.json / eval-trend.json）。 */
   private readonly workingDirectory: string;
@@ -686,8 +687,7 @@ export class CodeAgentMCPServer {
 
     console.error('[MCPServer] Starting Agent Neo MCP Server...');
 
-    const transport = new StdioServerTransport();
-    await this.server.connect(transport);
+    this.stdioHandle = serveStdio(() => this.server);
 
     this.isRunning = true;
     console.error('[MCPServer] Agent Neo MCP Server started');
@@ -699,7 +699,8 @@ export class CodeAgentMCPServer {
     }
 
     console.error('[MCPServer] Stopping Agent Neo MCP Server...');
-    await this.server.close();
+    await this.stdioHandle?.close();
+    this.stdioHandle = undefined;
     this.isRunning = false;
     console.error('[MCPServer] Agent Neo MCP Server stopped');
   }

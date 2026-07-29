@@ -37,7 +37,7 @@ const buildRoleContextBlock = vi.hoisted(() => vi.fn(async () => '<role>全量 L
 const voiceSettings = vi.hoisted(() => ({ value: {} as Record<string, unknown> }));
 const incompleteTasks = vi.hoisted(() => ({ value: [] as Array<{ subject: string; status: string }> }));
 const resolvedAgent = vi.hoisted(() => ({
-  value: undefined as undefined | { id: string; name: string; description?: string; connectors?: Array<{ id: string; level: string }> },
+  value: undefined as undefined | { id: string; name: string; description?: string; source?: string; connectors?: Array<{ id: string; level: string }> },
 }));
 
 vi.mock('../../src/host/task', () => ({
@@ -110,6 +110,17 @@ describe('A3 通话身份解析', () => {
     expect(routing.activeAgentId).toBeUndefined();
     expect(routing.personaInstructions).toContain('spawn_task');
     expect(routing.personaInstructions).not.toContain('身份是');
+  });
+
+  it('系统型内置 agent（面板选不到的）不当专家：不署名、不套人设（批 X §5，真机署名 Dream）', () => {
+    // dream 是 PANEL_HIDDEN_BUILTIN_AGENT_IDS 里的系统型内置——用户没有任何途径点名它。
+    // 它出现在 requestedAgentId 里只可能是存量脏映射，语音层必须按「没选专家」处理。
+    resolvedAgent.value = { id: 'dream', name: 'Dream', source: 'builtin' };
+
+    const routing = resolveVoiceRouting('dream');
+
+    expect(routing.activeAgentId).toBeUndefined();
+    expect(routing.personaInstructions).toBe(resolveVoiceRouting(undefined).personaInstructions);
   });
 
   it('选了专家时短人设进 instructions，且不带全量角色资料', () => {
@@ -190,9 +201,14 @@ describe('A4 窄工具 / H1 指挥台', () => {
 
     const result = await executeVoiceTool('spawn_task', JSON.stringify({ title: '改大纲', prompt: '把大纲改成三段' }));
 
-    // 措辞不能让通话 brain 转述成「已经做完了」——真机实测过一次这种撒谎
-    expect(result).toContain('排上队');
-    expect(result).not.toContain('完成了');
+    // ①（批 X）：返回值是言语行为指令 + 认知协议，不是状态描述——「已排队」这种
+    // 状态名词会被通话 brain 润色成「已完成」（真机撞过三次）。钉三件事：
+    // 有下一句台词、结果只认 [BACKEND] 回流、进度问题落 get_active_tasks；
+    // 且不给任何可润色的状态名词。
+    expect(result).toContain('现在对用户说');
+    expect(result).toContain('[BACKEND]');
+    expect(result).toContain('get_active_tasks');
+    expect(result).not.toMatch(/排队|后台|完成了/);
     expect(workItems.value).toEqual([expect.objectContaining({ title: '改大纲', status: 'queued' })]);
     await vi.waitFor(() => expect(runtime.startTask).toHaveBeenCalled());
     expect(runtime.startTask.mock.calls.at(-1)?.[1]).toBe('把大纲改成三段');
@@ -260,8 +276,10 @@ describe('A4 窄工具 / H1 指挥台', () => {
     expect(runtime.interruptAndContinue.mock.calls.at(-1)?.[1]).toBe('改成五段');
     // 关键：不能顺手又 startTask 一件新的（那正是绕开状态机时的旧行为）
     expect(runtime.startTask).not.toHaveBeenCalled();
-    expect(result).toContain('打断');
-    expect(result).not.toContain('做完了');
+    // ①同款协议：改方向的返回值同样不给可润色状态，结果只认 [BACKEND] 回流
+    expect(result).toContain('改了方向');
+    expect(result).toContain('[BACKEND]');
+    expect(result).not.toMatch(/排队|后台|做完了|完成了/);
   });
 
   it('steer_task 在没活跑时如实说「当成新任务派了」，不假装 steer 成功', async () => {
@@ -273,6 +291,9 @@ describe('A4 窄工具 / H1 指挥台', () => {
     expect(runtime.interruptAndContinue).not.toHaveBeenCalled();
     await vi.waitFor(() => expect(runtime.startTask).toHaveBeenCalled());
     expect(result).toContain('新任务');
+    // ①同款协议：这条路也走 spawnSpeechDirective，不给可润色状态
+    expect(result).toContain('[BACKEND]');
+    expect(result).not.toMatch(/排队|后台|完成了/);
   });
 
   it('cancel_task 真调到 TaskManager，并把条目落成 cancelled', async () => {

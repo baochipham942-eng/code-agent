@@ -11,13 +11,27 @@ import type { MCPServerConfig } from '../../../src/host/mcp/types';
 // 这类由环境变量门控的本机能力 server 在有云端配置的机器上永远不会注册。
 // computer-use 底座必须独立于云端清单补注册。
 //
-// 2026-07-29 重写：原先每条都拿 getDefaultMCPServers() 当输入，而默认清单里
-// cua-driver 的 enabled = cuaEnabled && (darwin || win32)。后果是同一份测试在
-// Linux CI 上一半变红、另一半**假绿**——`not.toContain('cua-driver')` 在那儿
-// 永远通过，因为它本来就是 disabled，等于什么都没守。
-// 现在拆两层：① picker 是纯函数，喂合成输入 → 平台无关，每个平台都真守逻辑；
-// ② 真实默认清单/平台相关的断言显式按平台跑，跳过时理由写在用例名里。
-const CUA_SUPPORTED = process.platform === 'darwin' || process.platform === 'win32';
+// 2026-07-29：这个文件同日被两个会话分别修过，合并后取两边各自更强的一半。
+//   起因——默认清单里 cua-driver 的 enabled = cuaEnabled && (darwin || win32)，
+//   而原用例直接拿 getDefaultMCPServers() 当输入，于是在 Linux CI 上一半变红、
+//   另一半**假绿**（`not.toContain('cua-driver')` 恒过，因为它本来就 disabled）。
+//   ① 平台闸必须在测试里钉死，而不是按平台跳过——跳过等于 CI 永远不验这条逻辑，
+//      门自带盲区。所以下面涉及真实默认清单的用例一律 stub process.platform。
+//   ② picker 本身是纯函数，它的其余不变量（去重 / argus / 不夹带别的 server /
+//      enabled 过滤）用合成清单喂，跟默认清单和宿主环境彻底解耦。
+const CUA_SUPPORTED_PLATFORM = 'darwin';
+const CUA_UNSUPPORTED_PLATFORM = 'linux';
+
+/** 在钉死的 process.platform 下执行——覆盖平台闸，且任何 runner 上都真跑。 */
+function withPlatform<T>(platform: string, fn: () => T): T {
+  const original = Object.getOwnPropertyDescriptor(process, 'platform')!;
+  Object.defineProperty(process, 'platform', { value: platform, configurable: true });
+  try {
+    return fn();
+  } finally {
+    Object.defineProperty(process, 'platform', original);
+  }
+}
 
 /** 合成一份「默认清单」样本：只放 picker 关心的字段。 */
 function defaultsFixture(options: {
@@ -32,15 +46,38 @@ function defaultsFixture(options: {
   ] as MCPServerConfig[];
 }
 
-describe('pickEnvGatedComputerUseServers — computer-use 底座独立于云端清单', () => {
-  it('已启用且未注册 → 返回 cua-driver 待补注册', () => {
-    const picked = pickEnvGatedComputerUseServers(
-      defaultsFixture({ cuaEnabled: true }),
-      new Set(['context7']),
-    );
-    expect(picked.map((s) => s.name)).toContain('cua-driver');
+afterEach(() => {
+  delete process.env.CODE_AGENT_ENABLE_CUA;
+  delete process.env.CODE_AGENT_ENABLE_ARGUS_MCP;
+  delete process.env.CODE_AGENT_CUA_DRIVER_PATH;
+});
+
+describe('平台闸：cua-driver 的 enabled 受 process.platform 门控', () => {
+  it('CUA 开启 + 受支持平台 → 返回 cua-driver 待补注册', () => {
+    withPlatform(CUA_SUPPORTED_PLATFORM, () => {
+      process.env.CODE_AGENT_ENABLE_CUA = '1';
+      const picked = pickEnvGatedComputerUseServers(getDefaultMCPServers(), new Set(['context7']));
+      expect(picked.map((s) => s.name)).toContain('cua-driver');
+    });
   });
 
+  it('CUA 开启但平台不支持（linux）→ 不返回 cua-driver', () => {
+    withPlatform(CUA_UNSUPPORTED_PLATFORM, () => {
+      process.env.CODE_AGENT_ENABLE_CUA = '1';
+      const picked = pickEnvGatedComputerUseServers(getDefaultMCPServers(), new Set());
+      expect(picked.map((s) => s.name)).not.toContain('cua-driver');
+    });
+  });
+
+  it('受支持平台但 CUA 未开启 → 不返回 cua-driver', () => {
+    withPlatform(CUA_SUPPORTED_PLATFORM, () => {
+      const picked = pickEnvGatedComputerUseServers(getDefaultMCPServers(), new Set());
+      expect(picked.map((s) => s.name)).not.toContain('cua-driver');
+    });
+  });
+});
+
+describe('pickEnvGatedComputerUseServers 的纯逻辑（合成清单，与宿主环境解耦）', () => {
   it('云端清单已含同名 server → 不重复注册', () => {
     const picked = pickEnvGatedComputerUseServers(
       defaultsFixture({ cuaEnabled: true }),
@@ -49,7 +86,7 @@ describe('pickEnvGatedComputerUseServers — computer-use 底座独立于云端�
     expect(picked.map((s) => s.name)).not.toContain('cua-driver');
   });
 
-  it('未启用 → 不返回（这条在任何平台都真的在守 enabled 过滤）', () => {
+  it('未启用 → 不返回（任何平台上都真的在守 enabled 过滤）', () => {
     const picked = pickEnvGatedComputerUseServers(defaultsFixture({ cuaEnabled: false }), new Set());
     expect(picked.map((s) => s.name)).not.toContain('cua-driver');
   });
@@ -68,48 +105,46 @@ describe('pickEnvGatedComputerUseServers — computer-use 底座独立于云端�
   });
 });
 
-// 下面依赖真实默认清单：cua-driver 的 enabled 受 process.platform 门控
-// （仅 darwin/win32 supported），Linux 上显式跳过而不是假装通过。
-describe.runIf(CUA_SUPPORTED)('真实默认清单上的 cua-driver 形态（仅 macOS / Windows）', () => {
-  afterEach(() => {
-    delete process.env.CODE_AGENT_ENABLE_CUA;
-    delete process.env.CODE_AGENT_CUA_DRIVER_PATH;
-  });
-
+// 真实默认清单上的形态。同样 stub 平台，所以 Linux runner 上照跑不跳过。
+describe('真实默认清单上的 cua-driver 形态', () => {
   it('显式开启时保持 lazy，避免未使用 Computer Use 时常驻空转', () => {
-    process.env.CODE_AGENT_ENABLE_CUA = '1';
-    const cua = getDefaultMCPServers().find((s) => s.name === 'cua-driver');
-    expect(cua, 'cua-driver 应出现在受支持平台的默认清单里').toBeTruthy();
-    // lazyLoad 只在 MCPStdioServerConfig 分支上；cua-driver 是 stdio server，按同一惯例窄化访问。
-    expect((cua as { lazyLoad?: boolean } | undefined)?.lazyLoad).toBe(true);
-    expect((cua as { env?: Record<string, string> } | undefined)?.env).toMatchObject({
-      CUA_DRIVER_MCP_MODE: '1',
-      CUA_DRIVER_RS_UPDATE_CHECK: '0',
-      CUA_DRIVER_RS_TELEMETRY_ENABLED: 'false',
+    withPlatform(CUA_SUPPORTED_PLATFORM, () => {
+      process.env.CODE_AGENT_ENABLE_CUA = '1';
+      const cua = getDefaultMCPServers().find((s) => s.name === 'cua-driver');
+      expect(cua, 'cua-driver 应出现在受支持平台的默认清单里').toBeTruthy();
+      // lazyLoad 只在 MCPStdioServerConfig 分支上；cua-driver 是 stdio server，按同一惯例窄化访问。
+      expect((cua as { lazyLoad?: boolean } | undefined)?.lazyLoad).toBe(true);
+      expect((cua as { env?: Record<string, string> } | undefined)?.env).toMatchObject({
+        CUA_DRIVER_MCP_MODE: '1',
+        CUA_DRIVER_RS_UPDATE_CHECK: '0',
+        CUA_DRIVER_RS_TELEMETRY_ENABLED: 'false',
+      });
     });
   });
 
-  it.runIf(process.platform === 'darwin')('签名 helper 通过 bundle 内 launcher 启动，禁止默认 mcp 重启旧 CuaDriver', () => {
-    process.env.CODE_AGENT_ENABLE_CUA = '1';
-    process.env.CODE_AGENT_CUA_DRIVER_PATH = path.join(
-      '/tmp',
-      'Agent Neo Computer Use.app',
-      'Contents',
-      'MacOS',
-      'cua-driver',
-    );
-
-    const cua = getDefaultMCPServers().find((s) => s.name === 'cua-driver');
-
-    expect(cua).toMatchObject({
-      command: path.join(
+  it('签名 helper 通过 bundle 内 launcher 启动，禁止默认 mcp 重启旧 CuaDriver', () => {
+    withPlatform(CUA_SUPPORTED_PLATFORM, () => {
+      process.env.CODE_AGENT_ENABLE_CUA = '1';
+      process.env.CODE_AGENT_CUA_DRIVER_PATH = path.join(
         '/tmp',
         'Agent Neo Computer Use.app',
         'Contents',
-        'Resources',
-        'agent-neo-computer-use-mcp.sh',
-      ),
-      args: [],
+        'MacOS',
+        'cua-driver',
+      );
+
+      const cua = getDefaultMCPServers().find((s) => s.name === 'cua-driver');
+
+      expect(cua).toMatchObject({
+        command: path.join(
+          '/tmp',
+          'Agent Neo Computer Use.app',
+          'Contents',
+          'Resources',
+          'agent-neo-computer-use-mcp.sh',
+        ),
+        args: [],
+      });
     });
   });
 });

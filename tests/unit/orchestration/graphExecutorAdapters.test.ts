@@ -64,7 +64,7 @@ describe('remaining Graph executor adapters', () => {
       loadMcpTaskResult: vi.fn(async () => ({ answer: 42 })),
       cancelMcpTask: vi.fn(async () => waiting),
     };
-    const capability = { serverIdentity: 'server-id', trusted: true, serverToolsCall: true, query: true, cancel: true, toolTaskSupport: 'required' as const };
+    const capability = { serverIdentity: 'server-id', trusted: true, serverToolsCall: true, query: true, cancel: true, update: true, toolTaskSupport: 'required' as const };
     const adapter = new McpTaskExecutor({ resolve: () => ({ controller: controller as never, capability }) });
     const graphNode = node('mcp_durable_task', {
       durableTask: true, operationId: 'op', serverIdentity: 'server-id', serverName: 'server', toolName: 'slow', args: {}, sideEffect: false,

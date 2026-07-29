@@ -46,6 +46,13 @@ describe('mcpTransport remote connection retry', () => {
       { name: 'code-agent', version: '0.1.0' },
       expect.objectContaining({
         versionNegotiation: { mode: 'auto' },
+        capabilities: expect.objectContaining({
+          extensions: {
+            'io.modelcontextprotocol/tasks': {},
+          },
+        }),
+        responseCacheStore: expect.anything(),
+        defaultCacheTtlMs: 30_000,
       }),
     );
   });

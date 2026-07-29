@@ -259,6 +259,7 @@ export function createMcpOperationRecoveryHandler(input: {
     createTask: async () => { throw new Error('Recovery never creates a new MCP task'); },
     getTask: (request) => requireMcpProtocol(input, request.serverIdentity).getTask(request),
     cancelTask: (request) => requireMcpProtocol(input, request.serverIdentity).cancelTask(request),
+    updateTask: (request) => requireMcpProtocol(input, request.serverIdentity).updateTask(request),
     resolveTaskResult: (request) => requireMcpProtocol(input, request.serverIdentity).resolveTaskResult(request),
   };
   return {

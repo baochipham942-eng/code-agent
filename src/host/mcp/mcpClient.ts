@@ -1,6 +1,9 @@
 // ============================================================================
 // MCP Client - Model Context Protocol 客户端编排器
-import type { Client, Transport, ListChangedHandlers } from '@modelcontextprotocol/client';
+import type {
+  Client,
+  Transport,
+} from '@modelcontextprotocol/client';
 
 // 支持三种传输协议：
 // - stdio (本地命令行)
@@ -56,6 +59,11 @@ import {
   retryTransientRemoteMCPConnection,
 } from './mcpTransport';
 import { MCPToolRegistry } from './mcpToolRegistry';
+import {
+  createMcpListChangedHandlers,
+  McpListChangedRecovery,
+  type ListRefreshCallbacks,
+} from './mcpListChangedRecovery';
 import { McpSdkTaskProtocol } from './mcpTaskProtocol';
 import type { McpTaskCapability, McpTaskProtocol } from './mcpDurableTask';
 import { registerElicitationHandler } from './mcpElicitation';
@@ -170,6 +178,7 @@ export class MCPClient extends EventEmitter {
   // 懒加载：正在连接中的服务器 Promise（防止重复连接）
   private connectingServers: Map<string, Promise<void>> = new Map();
   private pendingOAuthAuthorizations: Map<string, Promise<void>> = new Map();
+  private listChangedRecovery = new McpListChangedRecovery();
 
   // ========================================================================
   // LRU 缓存 + 会话管理
@@ -186,63 +195,32 @@ export class MCPClient extends EventEmitter {
     super();
   }
 
-  /**
-   * 构建 listChanged 通知处理器。
-   * SDK 仅在 server 声明对应 listChanged capability 时激活；autoRefresh 默认 true，
-   * onChanged 回调拿到的 items 即为重新拉取后的最新列表。
-   */
-  private buildListChangedHandlers(serverName: string): ListChangedHandlers {
+  private buildListRefreshCallbacks(
+    serverName: string,
+  ): Omit<ListRefreshCallbacks, 'shouldContinue'> {
     return {
-      tools: {
-        onChanged: (error, tools) => {
-          if (error || !tools) {
-            logger.warn(`listChanged(tools) refresh failed for ${serverName}`, { error: error?.message });
-            return;
-          }
-          this.registry.refreshServerTools(serverName, tools);
-          this.toolDefinitionCache.delete(serverName);
-          const state = this.serverStates.get(serverName);
-          if (state) {
-            state.toolCount = this.registry.getToolCount(serverName);
-          }
-          this.emit('capabilities-changed', {
-            serverName,
-            kind: 'tools',
-            count: tools.length,
-          } satisfies MCPCapabilitiesChangedEvent);
-        },
+      applyTools: (tools) => {
+        this.registry.refreshServerTools(serverName, tools);
+        this.toolDefinitionCache.delete(serverName);
+        const state = this.serverStates.get(serverName);
+        if (state) state.toolCount = this.registry.getToolCount(serverName);
+        this.emit('capabilities-changed', {
+          serverName, kind: 'tools', count: tools.length,
+        } satisfies MCPCapabilitiesChangedEvent);
       },
-      resources: {
-        onChanged: (error, resources) => {
-          if (error || !resources) {
-            logger.warn(`listChanged(resources) refresh failed for ${serverName}`, { error: error?.message });
-            return;
-          }
-          this.registry.refreshServerResources(serverName, resources);
-          const state = this.serverStates.get(serverName);
-          if (state) {
-            state.resourceCount = this.registry.getResourceCount(serverName);
-          }
-          this.emit('capabilities-changed', {
-            serverName,
-            kind: 'resources',
-            count: resources.length,
-          } satisfies MCPCapabilitiesChangedEvent);
-        },
+      applyResources: (resources) => {
+        this.registry.refreshServerResources(serverName, resources);
+        const state = this.serverStates.get(serverName);
+        if (state) state.resourceCount = this.registry.getResourceCount(serverName);
+        this.emit('capabilities-changed', {
+          serverName, kind: 'resources', count: resources.length,
+        } satisfies MCPCapabilitiesChangedEvent);
       },
-      prompts: {
-        onChanged: (error, prompts) => {
-          if (error || !prompts) {
-            logger.warn(`listChanged(prompts) refresh failed for ${serverName}`, { error: error?.message });
-            return;
-          }
-          this.registry.refreshServerPrompts(serverName, prompts);
-          this.emit('capabilities-changed', {
-            serverName,
-            kind: 'prompts',
-            count: prompts.length,
-          } satisfies MCPCapabilitiesChangedEvent);
-        },
+      applyPrompts: (prompts) => {
+        this.registry.refreshServerPrompts(serverName, prompts);
+        this.emit('capabilities-changed', {
+          serverName, kind: 'prompts', count: prompts.length,
+        } satisfies MCPCapabilitiesChangedEvent);
       },
     };
   }
@@ -433,7 +411,10 @@ export class MCPClient extends EventEmitter {
           useProxy: attemptNumber > 1,
           ...(authProvider ? { authProvider } : {}),
         });
-        const client = createMCPSDKClient(this.buildListChangedHandlers(config.name));
+        const client = createMCPSDKClient(createMcpListChangedHandlers(
+          config.name,
+          this.buildListRefreshCallbacks(config.name),
+        ));
 
         // Register elicitation handler before connecting (required by SDK)
         registerElicitationHandler(client, config.name);
@@ -464,6 +445,11 @@ export class MCPClient extends EventEmitter {
       this.clients.set(config.name, connected.client);
       this.transports.set(config.name, connected.transport);
       this.bumpServerConnectionGeneration(config.name);
+      const refreshCallbacks = this.buildListRefreshCallbacks(config.name);
+      this.listChangedRecovery.monitor(config.name, connected.client, {
+        shouldContinue: () => this.clients.get(config.name) === connected.client,
+        ...refreshCallbacks,
+      });
 
       // 更新状态
       if (state) {
@@ -601,6 +587,7 @@ export class MCPClient extends EventEmitter {
     this.bumpServerConnectionGeneration(serverName);
     const client = this.clients.get(serverName);
     const transport = this.transports.get(serverName);
+    this.listChangedRecovery.stop(serverName);
 
     if (client) {
       await client.close();
@@ -861,9 +848,10 @@ export class MCPClient extends EventEmitter {
       serverIdentity,
       trusted: trustedServerIdentities.has(serverIdentity),
       serverToolsCall: declaration.server.toolsCall,
-      // tasks/get and tasks/result are required by task-augmented tools/call. list is separate.
+      // The extension's tasks/get is the bounded query/result path; tasks/list no longer exists.
       query: declaration.server.toolsCall,
       cancel: declaration.server.cancel,
+      update: declaration.server.update,
       toolTaskSupport: declaration.toolTaskSupport,
     };
   }

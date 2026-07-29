@@ -135,8 +135,8 @@ export interface MCPToolExecution {
 
 export interface MCPServerTaskCapabilities {
   toolsCall: boolean;
-  list: boolean;
   cancel: boolean;
+  update: boolean;
 }
 
 export interface MCPTool {

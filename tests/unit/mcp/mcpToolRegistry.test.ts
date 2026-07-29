@@ -256,7 +256,13 @@ describe('MCPToolRegistry permission metadata', () => {
     const client = {
       getServerCapabilities: vi.fn(() => ({
         tools: {},
-        tasks: { list: {}, cancel: {}, requests: { tools: { call: {} } } },
+        extensions: {
+          'io.modelcontextprotocol/tasks': {
+            cancel: {},
+            update: {},
+            requests: { tools: { call: {} } },
+          },
+        },
       })),
       listTools: vi.fn(async () => ({ tools: [{
         name: 'long_read', description: 'Long read', inputSchema: { type: 'object', properties: {} },
@@ -270,7 +276,7 @@ describe('MCPToolRegistry permission metadata', () => {
     await registry.discoverCapabilities('docs', client as never);
 
     expect(registry.getTaskCapabilityDeclaration('docs', 'long_read')).toEqual({
-      server: { toolsCall: true, list: true, cancel: true },
+      server: { toolsCall: true, cancel: true, update: true },
       toolTaskSupport: 'optional',
     });
     // getToolDefinitions() 的公开返回类型是 ToolDefinition[]，但实现内部按 ToolDefinition & { metadata? }

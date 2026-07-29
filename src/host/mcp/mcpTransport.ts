@@ -1,6 +1,7 @@
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 import {
   Client,
+  InMemoryResponseCacheStore,
   SdkError,
   SdkErrorCode,
   SdkHttpError,
@@ -24,6 +25,14 @@ import type {
 import { isStdioConfig, isSSEConfig, isHttpStreamableConfig } from './types';
 
 const logger = createLogger('MCPTransport');
+export const MCP_TASKS_EXTENSION_ID = 'io.modelcontextprotocol/tasks';
+/**
+ * Thirty seconds removes repeated registry round trips during reconnect/startup bursts without
+ * hiding server changes for minutes when notifications are unavailable. A shorter value gives
+ * little protection from the ~1.6s registry path; a longer value increases stale-list exposure.
+ */
+export const MCP_RESPONSE_CACHE_DEFAULT_TTL_MS = 30_000;
+const sharedMcpResponseCacheStore = new InMemoryResponseCacheStore();
 
 // Connection timeout constants (configured in shared/constants.ts)
 export const SSE_CONNECT_TIMEOUT = MCP_TIMEOUTS.SSE_CONNECT;
@@ -342,11 +351,14 @@ export function createMCPSDKClient(listChangedHandlers?: ListChangedHandlers): C
         elicitation: {
           form: {},
         },
-        tasks: {
-          list: {},
-          cancel: {},
+        extensions: {
+          [MCP_TASKS_EXTENSION_ID]: {},
         },
       },
+      responseCacheStore: sharedMcpResponseCacheStore,
+      // Neo is a single-user desktop process, so the SDK's default '' partition is the safe
+      // single-tenant posture. Do not bind this cache to OAuth subjects without multi-user hosting.
+      defaultCacheTtlMs: MCP_RESPONSE_CACHE_DEFAULT_TTL_MS,
       ...(listChangedHandlers ? { listChanged: listChangedHandlers } : {}),
     }
   );

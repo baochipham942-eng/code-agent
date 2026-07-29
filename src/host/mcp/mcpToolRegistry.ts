@@ -27,6 +27,7 @@ import {
   serializeRunTraceContext,
 } from '../telemetry/runTraceContext';
 import { isMcpToolReadOnly } from './mcpToolSafety';
+import { MCP_TASKS_EXTENSION_ID } from './mcpTransport';
 
 const logger = createLogger('MCPToolRegistry');
 
@@ -141,6 +142,12 @@ function isMcpContent(value: unknown): value is { type?: string; text?: string; 
   );
 }
 
+function objectRecord(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === 'object'
+    ? value as Record<string, unknown>
+    : undefined;
+}
+
 function mcpContentToText(value: unknown, includeNonText: boolean): string {
   if (!isMcpContent(value)) return '';
   if (typeof value.text === 'string') return value.text;
@@ -204,11 +211,13 @@ export class MCPToolRegistry {
    */
   async discoverCapabilities(serverName: string, client: Client): Promise<void> {
     const capabilities = client.getServerCapabilities();
-    const tasks = capabilities?.tasks;
+    const tasks = objectRecord(capabilities?.extensions?.[MCP_TASKS_EXTENSION_ID]);
+    const requests = objectRecord(tasks?.requests);
+    const tools = objectRecord(requests?.tools);
     this.serverTaskCapabilities.set(serverName, {
-      toolsCall: Boolean(tasks?.requests?.tools?.call),
-      list: Boolean(tasks?.list),
+      toolsCall: Boolean(tools?.call),
       cancel: Boolean(tasks?.cancel),
+      update: Boolean(tasks?.update),
     });
     const shouldProbe = (capability: 'tools' | 'resources' | 'prompts') =>
       !capabilities || Boolean(capabilities[capability]);

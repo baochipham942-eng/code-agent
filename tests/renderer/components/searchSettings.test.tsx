@@ -86,9 +86,10 @@ describe('SearchSettings 搜索源 API Key', () => {
 
   it('不变量：catalog 里每个 serviceKey 都在 getAllServiceKeys 的枚举列表里', () => {
     const enumerated = new Set<string>(MASKED_SERVICE_KEY_LIST);
+    // flatMap 收窄而不是 `is string` 谓词：serviceKey 的联合类型比 string 窄，
+    // 谓词写 string 会 TS2677；用 as 抹平则等于把门的类型信息丢掉。
     const missing = SEARCH_SOURCE_CATALOG
-      .map((entry) => entry.serviceKey)
-      .filter((serviceKey): serviceKey is string => Boolean(serviceKey))
+      .flatMap((entry) => (entry.serviceKey ? [entry.serviceKey] : []))
       .filter((serviceKey) => !enumerated.has(serviceKey));
     expect(missing).toEqual([]);
   });

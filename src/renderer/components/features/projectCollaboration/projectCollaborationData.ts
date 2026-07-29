@@ -16,7 +16,7 @@ import { statusPhase } from '../chat/neoWorkCardPhase';
 // ============================================================================
 
 export type { NeoTopicRound } from '@shared/neoTag/topicRounds';
-export { extractNeoTopicRounds, mergeTopicRounds, topicConversationIds } from '@shared/neoTag/topicRounds';
+export { extractNeoTopicRounds, mergeTopicRounds, topicConversationIds, topicPrimaryConversationId } from '@shared/neoTag/topicRounds';
 
 /** 只读拉取某个会话的消息（供 topic 详情回溯多轮结果；失败静默返回空）。 */
 export async function fetchConversationMessages(sessionId: string): Promise<Message[]> {

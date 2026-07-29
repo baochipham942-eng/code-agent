@@ -183,6 +183,38 @@ describe('NeoWorkCardService', () => {
     )).toThrowError(/blockedReason/);
   });
 
+  it('clears stale blocked reason when a failed card is revised or rejected (continuation path)', () => {
+    // 续接失败卡：新 revision 落 draft，上一轮的失败原因不再适用，必须随状态离开而清空
+    const created = service.createDraft(draft(), NOW);
+    service.setStatus(created.workCard.id, 'failed', NOW + 1, 'Provider unavailable');
+
+    const revised = service.updateDraftRevision({
+      workCardId: created.workCard.id,
+      updatedByUserId: 'user_editor',
+      revision: revision({ taskSummary: 'Follow-up round after failure' }),
+    }, NOW + 2);
+    expect(revised.workCard.status).toBe('draft');
+    expect(revised.workCard.blockedReason).toBeNull();
+
+    // approve 路径（setApprovedRevision）同样不得携带旧原因
+    service.setStatus(created.workCard.id, 'failed', NOW + 3, 'Second failure');
+    service.approveRevision({
+      workCardId: created.workCard.id,
+      reviewerUserId: 'user_editor',
+    }, NOW + 4);
+    expect(repo.getWorkCard(created.workCard.id)?.blockedReason).toBeNull();
+
+    // reject 路径（clearApprovedRevision → needs_review）也清空
+    service.setStatus(created.workCard.id, 'failed', NOW + 5, 'Third failure');
+    service.rejectRevision({
+      workCardId: created.workCard.id,
+      reviewerUserId: 'user_editor',
+    }, NOW + 6);
+    const rejected = repo.getWorkCard(created.workCard.id);
+    expect(rejected?.status).toBe('needs_review');
+    expect(rejected?.blockedReason).toBeNull();
+  });
+
   it('applies blocked reason coupling through the repository status input path', () => {
     const created = service.createDraft(draft(), NOW);
 

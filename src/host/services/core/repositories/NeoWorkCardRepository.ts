@@ -338,7 +338,8 @@ export class NeoWorkCardRepository {
                current_revision_id = ?,
                approved_revision_id = CASE WHEN ? THEN NULL ELSE approved_revision_id END,
                updated_at = ?,
-               archived_at = NULL
+               archived_at = NULL,
+               blocked_reason = NULL
          WHERE id = ?
       `).run(
         options.title ?? null,
@@ -380,7 +381,8 @@ export class NeoWorkCardRepository {
       UPDATE neo_work_cards
          SET approved_revision_id = ?,
              status = 'approved',
-             updated_at = ?
+             updated_at = ?,
+             blocked_reason = NULL
        WHERE id = ?
     `).run(revisionId, updatedAt, workCardId);
     return result.changes > 0;
@@ -391,9 +393,10 @@ export class NeoWorkCardRepository {
       UPDATE neo_work_cards
          SET approved_revision_id = NULL,
              status = ?,
-             updated_at = ?
+             updated_at = ?,
+             blocked_reason = CASE WHEN ? IN ('waiting_for_user', 'failed') THEN blocked_reason ELSE NULL END
        WHERE id = ?
-    `).run(status, updatedAt, workCardId);
+    `).run(status, updatedAt, status, workCardId);
     return result.changes > 0;
   }
 

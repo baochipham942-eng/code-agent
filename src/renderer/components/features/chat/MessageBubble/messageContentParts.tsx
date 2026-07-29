@@ -114,10 +114,26 @@ export function findMermaidSelectable(target: Element): { el: SVGElement; label:
   return null;
 }
 
-interface MermaidView {
+export interface MermaidView {
   scale: number;
   x: number;
   y: number;
+}
+
+export function clampMermaidScale(scale: number): number {
+  return Math.min(MERMAID_MAX_SCALE, Math.max(MERMAID_MIN_SCALE, scale));
+}
+
+// 以 viewport 内 (px,py) 为锚把 view 缩放到 nextScale：缩放前后锚点处的图内容保持不动
+export function zoomMermaidViewAt(view: MermaidView, px: number, py: number, nextScale: number): MermaidView {
+  const scale = clampMermaidScale(nextScale);
+  const ratio = scale / view.scale;
+  return { scale, x: px - (px - view.x) * ratio, y: py - (py - view.y) * ratio };
+}
+
+// wheel 缩放因子：鼠标滚轮一格 deltaY≈±120，不 clamp 单格就放大 3 倍；触控板 pinch 的小 delta 不受影响
+export function mermaidWheelZoomFactor(deltaY: number): number {
+  return Math.exp(-Math.max(-100, Math.min(100, deltaY)) * 0.0025);
 }
 
 // Mermaid diagram renderer — wheel 缩放 / drag 平移 / 点选节点一句话改图
@@ -126,6 +142,9 @@ export const MermaidDiagram = memo(function MermaidDiagram({ code }: { code: str
   const tm = t.mermaid;
   // agent 跑动中禁发：run 未结束时 /api/agent/run 会 409（already has active run）
   const isProcessing = useAppStore((state) => state.isProcessing);
+  // 无会话上下文（ChatView 未注册发送通道）时隐藏标注入口：节点不显示可点手势、
+  // 点击也不弹编辑栏——不给用户假的可编辑假象（同 DocumentBlock 无源文件约定）
+  const canAnnotate = useMessageActionStore((state) => state._send !== null);
   const viewportRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [error, setError] = useState<string | null>(null);
@@ -153,11 +172,7 @@ export const MermaidDiagram = memo(function MermaidDiagram({ code }: { code: str
 
   // 以 viewport 内某点为锚缩放（wheel 缩放围绕光标、按钮缩放围绕中心）
   const zoomAt = useCallback((px: number, py: number, nextScale: number) => {
-    setView((v) => {
-      const scale = Math.min(MERMAID_MAX_SCALE, Math.max(MERMAID_MIN_SCALE, nextScale));
-      const ratio = scale / v.scale;
-      return { scale, x: px - (px - v.x) * ratio, y: py - (py - v.y) * ratio };
-    });
+    setView((v) => zoomMermaidViewAt(v, px, py, nextScale));
   }, []);
 
   // 计算适配窗口的初始视图（大图不再被 maxWidth:100% 压扁，直接按窗口宽度 fit）
@@ -215,11 +230,11 @@ export const MermaidDiagram = memo(function MermaidDiagram({ code }: { code: str
       svgEl.style.width = `${width}px`;
       svgEl.style.height = `${height}px`;
       svgEl.querySelectorAll<SVGElement>(MERMAID_SELECTABLE).forEach((el) => {
-        el.style.cursor = 'pointer';
+        el.style.cursor = canAnnotate ? 'pointer' : '';
       });
     }
     fitToViewport();
-  }, [svgMarkup, fitToViewport]);
+  }, [svgMarkup, fitToViewport, canAnnotate]);
 
   // wheel 缩放需要 preventDefault，React 合成事件是 passive 的，必须原生监听
   useEffect(() => {
@@ -229,15 +244,10 @@ export const MermaidDiagram = memo(function MermaidDiagram({ code }: { code: str
       if (!e.ctrlKey && !e.metaKey) return; // 普通滚轮留给聊天列表滚动
       e.preventDefault();
       const rect = viewport.getBoundingClientRect();
-      // clamp：鼠标滚轮一格 deltaY≈±120，不 clamp 单格就放大 3 倍；触控板 pinch 的小 delta 不受影响
-      const factor = Math.exp(-Math.max(-100, Math.min(100, e.deltaY)) * 0.0025);
-      setView((v) => {
-        const scale = Math.min(MERMAID_MAX_SCALE, Math.max(MERMAID_MIN_SCALE, v.scale * factor));
-        const ratio = scale / v.scale;
-        const px = e.clientX - rect.left;
-        const py = e.clientY - rect.top;
-        return { scale, x: px - (px - v.x) * ratio, y: py - (py - v.y) * ratio };
-      });
+      const factor = mermaidWheelZoomFactor(e.deltaY);
+      const px = e.clientX - rect.left;
+      const py = e.clientY - rect.top;
+      setView((v) => zoomMermaidViewAt(v, px, py, v.scale * factor));
     };
     viewport.addEventListener('wheel', onWheel, { passive: false });
     return () => viewport.removeEventListener('wheel', onWheel);
@@ -271,6 +281,8 @@ export const MermaidDiagram = memo(function MermaidDiagram({ code }: { code: str
     const drag = dragRef.current;
     dragRef.current = null;
     if (!drag || drag.moved) return;
+    // 无会话上下文时标注入口隐藏：点击只平移/缩放，不进入点选
+    if (!canAnnotate) return;
     // 位移在阈值内视作点击：尝试选取节点
     const found = drag.downTarget ? findMermaidSelectable(drag.downTarget) : null;
     if (selectedElRef.current) selectedElRef.current.style.filter = '';
@@ -283,11 +295,11 @@ export const MermaidDiagram = memo(function MermaidDiagram({ code }: { code: str
       selectedElRef.current = null;
       setSelectedLabel(null);
     }
-  }, []);
+  }, [canAnnotate]);
 
   const handleSendEdit = useCallback(async () => {
     const trimmed = instruction.trim();
-    if (!selectedLabel || !trimmed || sending || useAppStore.getState().isProcessing) return;
+    if (!canAnnotate || !selectedLabel || !trimmed || sending || useAppStore.getState().isProcessing) return;
     const codeBlock = '```mermaid\n' + code + '\n```\n';
     const promptValues = {
       label: selectedLabel,
@@ -305,7 +317,7 @@ export const MermaidDiagram = memo(function MermaidDiagram({ code }: { code: str
     } finally {
       setSending(false);
     }
-  }, [instruction, selectedLabel, sending, code, tm.editPrompt, clearSelection]);
+  }, [canAnnotate, instruction, selectedLabel, sending, code, tm.editPrompt, clearSelection]);
 
   const handleCopyCode = useCallback(async () => {
     await navigator.clipboard.writeText(code);
@@ -422,7 +434,7 @@ export const MermaidDiagram = memo(function MermaidDiagram({ code }: { code: str
             />
             <button
               onClick={() => void handleSendEdit()}
-              disabled={!instruction.trim() || sending || isProcessing}
+              disabled={!canAnnotate || !instruction.trim() || sending || isProcessing}
               className="px-3 py-1.5 rounded-lg text-xs font-medium bg-pink-500/20 text-pink-300 hover:bg-pink-500/30 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             >
               {tm.send}

@@ -17,9 +17,30 @@ describe('pickEnvGatedComputerUseServers — computer-use 底座独立于云端�
   });
 
   it('CUA 开启且未注册 → 返回 cua-driver 待补注册', () => {
-    process.env.CODE_AGENT_ENABLE_CUA = '1';
-    const picked = pickEnvGatedComputerUseServers(getDefaultMCPServers(), new Set(['context7']));
-    expect(picked.map((s) => s.name)).toContain('cua-driver');
+    // cua 的 enabled 含平台闸（darwin/win32）。平台必须在测试里钉死：不钉的话
+    // 本地 mac 永远绿、linux CI runner 永远红（2026-07-29 实撞——这一条把 main 的
+    // Swarm CI 直接挂了）。不用 runIf 跳过：跳过 = CI 永远不验这条逻辑，门自带盲区。
+    const originalPlatform = Object.getOwnPropertyDescriptor(process, 'platform')!;
+    Object.defineProperty(process, 'platform', { value: 'darwin' });
+    try {
+      process.env.CODE_AGENT_ENABLE_CUA = '1';
+      const picked = pickEnvGatedComputerUseServers(getDefaultMCPServers(), new Set(['context7']));
+      expect(picked.map((s) => s.name)).toContain('cua-driver');
+    } finally {
+      Object.defineProperty(process, 'platform', originalPlatform);
+    }
+  });
+
+  it('CUA 开启但平台不支持（linux）→ 不返回 cua-driver', () => {
+    const originalPlatform = Object.getOwnPropertyDescriptor(process, 'platform')!;
+    Object.defineProperty(process, 'platform', { value: 'linux' });
+    try {
+      process.env.CODE_AGENT_ENABLE_CUA = '1';
+      const picked = pickEnvGatedComputerUseServers(getDefaultMCPServers(), new Set());
+      expect(picked.map((s) => s.name)).not.toContain('cua-driver');
+    } finally {
+      Object.defineProperty(process, 'platform', originalPlatform);
+    }
   });
 
   it('CUA 开启但云端清单已含同名 server → 不重复注册', () => {

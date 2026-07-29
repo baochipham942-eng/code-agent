@@ -4,7 +4,7 @@
 
 import React, { useState, useCallback } from 'react';
 import { Server, Terminal, Globe, Code, Plus, Trash2, Eye, EyeOff } from 'lucide-react';
-import { Modal, ModalFooter, Input, Badge } from '../../primitives';
+import { Modal, ModalFooter, Input, Badge, Button } from '../../primitives';
 import { useI18n } from '../../../hooks/useI18n';
 import { MCP_SECRET_REF_PREFIX } from '@shared/constants';
 import { isSensitiveMcpCredentialKey } from '@shared/security/mcpSecretKeys';
@@ -451,21 +451,13 @@ export const McpServerEditor: React.FC<McpServerEditorProps> = ({
             className="flex w-full flex-col-reverse gap-2 sm:w-auto sm:flex-row"
           >
             {installState === 'installing' && (
-              <button
-                type="button"
-                onClick={handleCancelInstall}
-                className="rounded-lg px-4 py-2 text-sm text-zinc-300 hover:bg-zinc-700"
-              >
+              <Button variant="ghost" onClick={handleCancelInstall}>
                 {editorText.cancelInstall}
-              </button>
+              </Button>
             )}
-            <button
-              type="button"
-              disabled
-              className="rounded-lg bg-zinc-700 px-4 py-2 text-sm font-medium text-zinc-400"
-            >
+            <Button variant="secondary" disabled loading>
               {installState === 'installing' ? editorText.installing : editorText.cancelling}
-            </button>
+            </Button>
           </div>
         )
       }

@@ -1,6 +1,6 @@
 // ============================================================================
-// ProjectSpaceView —— 项目协作空间（space 视图）。
-// 页头：面包屑「项目 / <名称>」（FullScreenPageHeader 的 back 即面包屑回列表）+ 状态 chip。
+// ProjectSpaceView —— 协作空间（space 视图）。
+// 页头：面包屑「协作空间 / <名称>」（FullScreenPageHeader 的 back 即面包屑回列表）+ 状态 chip。
 // tab：动态(默认)/任务/资产，本地 useState。任务 tab 直接内嵌 ProjectCollaborationPanel。
 // ============================================================================
 

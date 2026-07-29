@@ -13,6 +13,9 @@ vi.mock('../../../src/renderer/services/projectClient', () => ({
   listCapabilitySelections: vi.fn(),
   selectCapability: vi.fn(),
   unselectCapability: vi.fn(),
+  renameProject: vi.fn(),
+  setProjectDescription: vi.fn(),
+  deleteProject: vi.fn(),
 }));
 vi.mock('../../../src/renderer/services/tagClient', () => ({
   tagClient: { listByProject: vi.fn() },
@@ -85,6 +88,9 @@ function setupHappyPathMocks() {
   vi.mocked(projectClient.listCapabilitySelections).mockResolvedValue([
     { projectId: PROJECT_ID, kind: 'connector', capabilityId: 'mcp-1', selectedAt: 1 },
   ]);
+  vi.mocked(projectClient.renameProject).mockResolvedValue({ ...projectFixture, name: '新名字' } as never);
+  vi.mocked(projectClient.setProjectDescription).mockResolvedValue(projectFixture as never);
+  vi.mocked(projectClient.deleteProject).mockResolvedValue({ deleted: true });
   vi.mocked(projectClient.selectCapability).mockResolvedValue({
     projectId: PROJECT_ID,
     kind: 'connector',
@@ -153,6 +159,47 @@ describe('ProjectSpacePage 列表视图', () => {
     vi.mocked(projectClient.listProjectsWithActivity).mockResolvedValue([]);
     render(<ProjectSpacePage onClose={() => undefined} />);
     await screen.findByText(ps.listEmpty);
+  });
+
+  it('无描述显示占位灰字；编辑弹层改名/改描述', async () => {
+    vi.mocked(projectClient.listProjectsWithActivity).mockResolvedValue([
+      { ...projectFixture, description: null },
+    ] as never);
+    render(<ProjectSpacePage onClose={() => undefined} />);
+    await screen.findByTestId(`project-space-description-placeholder-${PROJECT_ID}`);
+
+    fireEvent.click(screen.getByTestId(`project-space-edit-${PROJECT_ID}`));
+    const nameInput = await screen.findByTestId('project-space-edit-name');
+    fireEvent.change(nameInput, { target: { value: '新名字' } });
+    fireEvent.change(screen.getByTestId('project-space-edit-description'), { target: { value: '新描述' } });
+    fireEvent.click(screen.getByText(ps.save));
+
+    await waitFor(() => expect(projectClient.renameProject).toHaveBeenCalledWith(PROJECT_ID, '新名字'));
+    await waitFor(() => expect(projectClient.setProjectDescription).toHaveBeenCalledWith(PROJECT_ID, '新描述'));
+  });
+
+  it('删除走确认对话框，确认后调 deleteProject；文案照实写会话/topic 归入「未分类」', async () => {
+    render(<ProjectSpacePage onClose={() => undefined} />);
+    await screen.findByTestId(`project-space-list-item-${PROJECT_ID}`);
+
+    fireEvent.click(screen.getByTestId(`project-space-delete-${PROJECT_ID}`));
+    const dialog = await screen.findByTestId('project-space-delete-modal');
+    expect(dialog.textContent).toContain('未分类');
+    expect(dialog.textContent).toContain(projectFixture.name);
+
+    fireEvent.click(screen.getByText(ps.deleteSpace));
+    await waitFor(() => expect(projectClient.deleteProject).toHaveBeenCalledWith(PROJECT_ID));
+  });
+
+  it('proj_unsorted 保留桶：不显示编辑/删除，也不显示描述占位', async () => {
+    vi.mocked(projectClient.listProjectsWithActivity).mockResolvedValue([
+      { ...projectFixture, id: 'proj_unsorted', name: '未分类', description: null },
+    ] as never);
+    render(<ProjectSpacePage onClose={() => undefined} />);
+    await screen.findByTestId('project-space-list-item-proj_unsorted');
+    expect(screen.queryByTestId('project-space-edit-proj_unsorted')).toBeNull();
+    expect(screen.queryByTestId('project-space-delete-proj_unsorted')).toBeNull();
+    expect(screen.queryByTestId('project-space-description-placeholder-proj_unsorted')).toBeNull();
   });
 });
 

@@ -9,6 +9,7 @@ import { FolderKanban } from 'lucide-react';
 import { FullScreenPage, FullScreenPageHeader } from '../shared/FullScreenPage';
 import { useI18n } from '../../../hooks/useI18n';
 import { ProjectListView } from './ProjectListView';
+import { ProjectSpaceView } from './ProjectSpaceView';
 
 export interface ProjectSpacePageProps {
   onClose: () => void;
@@ -21,17 +22,10 @@ export const ProjectSpacePage: React.FC<ProjectSpacePageProps> = ({ onClose }) =
   return (
     <FullScreenPage testId="project-space-page">
       {selectedProjectId ? (
-        // space 视图占位：下一批接入 ProjectSpaceView（页头+三 tab+右栏）
-        <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3">
-          <span className="text-sm text-zinc-500">{selectedProjectId}</span>
-          <button /* ds-allow:button: 占位返回链接，下一批随 space 视图一起替换 */
-            type="button"
-            onClick={() => setSelectedProjectId(null)}
-            className="text-sm text-zinc-400 hover:text-zinc-200"
-          >
-            {t.projectSpace.backToList}
-          </button>
-        </div>
+        <ProjectSpaceView
+          projectId={selectedProjectId}
+          onBackToList={() => setSelectedProjectId(null)}
+        />
       ) : (
         <>
           <FullScreenPageHeader

@@ -23,6 +23,8 @@ const runtime = vi.hoisted(() => ({
   status: 'idle' as string,
   /** 会话里最后一条 assistant 消息 = 这一轮的结论，narrateSettled 回头取的就是它。 */
   conclusion: '',
+  /** 读会话时的注入点，用来复现「念到一半挂断」的竞态。 */
+  onSessionRead: undefined as (() => void) | undefined,
   startTask: vi.fn(async (
     _sessionId: string,
     _message: string,
@@ -36,6 +38,7 @@ const runtime = vi.hoisted(() => ({
     for (const listener of [...this.listeners]) listener({ type, sessionId, data });
   },
 }));
+const notifyVoiceWorkSettled = vi.hoisted(() => vi.fn());
 
 vi.mock('../../src/host/task', () => ({
   getTaskManager: () => ({
@@ -61,16 +64,23 @@ vi.mock('../../src/host/services/core/configService', () => ({
 vi.mock('../../src/host/services/planning/taskStore', () => ({ getIncompleteTasks: () => [] }));
 vi.mock('../../src/host/services/infra/sessionManager', () => ({
   getSessionManager: () => ({
-    getSession: async () => ({
-      messages: runtime.conclusion
-        ? [{ role: 'assistant', content: runtime.conclusion }]
-        : [],
-    }),
+    getSession: async () => {
+      // 钩子：让测试能在「读会话」这一拍之间插入挂断，复现 await 竞态。
+      runtime.onSessionRead?.();
+      return {
+        messages: runtime.conclusion
+          ? [{ role: 'assistant', content: runtime.conclusion }]
+          : [],
+      };
+    },
   }),
 }));
 vi.mock('../../src/host/services/infra/logger', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
+}));
+vi.mock('../../src/host/services/infra/notificationService', () => ({
+  notificationService: { notifyVoiceWorkSettled },
 }));
 vi.mock('../../src/host/permissions/modes', () => ({
   getPermissionModeManager: () => ({
@@ -119,6 +129,7 @@ beforeEach(() => {
   runtime.listeners.clear();
   runtime.startTask.mockClear();
   runtime.conclusion = '';
+  notifyVoiceWorkSettled.mockClear();
   endVoiceDispatch();
 });
 
@@ -133,6 +144,7 @@ describe('① 只有终态才念，且念的是执行侧的结论', () => {
     expect(narrations).toHaveLength(1);
     expect(narrations[0].status).toBe('done');
     expect(narrations[0].summary).toBe('已经建好 a.txt，里面写了一行问候。');
+    expect(notifyVoiceWorkSettled).not.toHaveBeenCalled();
   });
 
   it('cancelled 一句都不念——用户自己叫停的，他知道', async () => {
@@ -165,6 +177,26 @@ describe('① 只有终态才念，且念的是执行侧的结论', () => {
     expect(narrations).toHaveLength(1);
   });
 
+  // 竞态：narrateSettled 要先 await 一次 DB 读才拿到结论。用户正好在这段 await 里挂断，
+  // narrate 就变成 null——首版直接静默 return，而这恰恰是「说完就挂、活刚好这时跑完」
+  // 这个最常见的场景。代偿链在它最该生效的时刻失效，等于没有。
+  it('念到一半用户挂断 → 不静默丢掉，落回挂断后通知', async () => {
+    bind();
+    await spawn('建个文件');
+    runtime.conclusion = '做完了。';
+    // 让 DB 读这一拍之间发生挂断
+    runtime.onSessionRead = () => endVoiceDispatch();
+    runtime.emit('task_completed');
+    await flush();
+    runtime.onSessionRead = undefined;
+
+    expect(narrations).toHaveLength(0);
+    expect(notifyVoiceWorkSettled).toHaveBeenCalledWith(expect.objectContaining({
+      taskTitle: '建个文件',
+      status: 'done',
+    }));
+  });
+
   it('挂断之后才落的终态不再念——电话都挂了，念给谁听', async () => {
     bind();
     await spawn();
@@ -174,6 +206,11 @@ describe('① 只有终态才念，且念的是执行侧的结论', () => {
     await flush();
 
     expect(narrations).toHaveLength(0);
+    expect(notifyVoiceWorkSettled).toHaveBeenCalledWith({
+      sessionId: 'session-1',
+      taskTitle: '建个文件',
+      status: 'done',
+    });
   });
 });
 

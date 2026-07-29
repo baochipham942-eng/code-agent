@@ -30,12 +30,24 @@ export interface AgentListEntry {
 }
 
 /**
- * 系统型内置 agent：面向内部流程（长命令监控 / 复盘 / 工作流提炼），
- * 对协作者没有"选它执行本轮"的语义 —— 不进 /agent 选择面板（registry 本身保留）。
+ * 面板隐藏的内置 agent —— 不进 /agent 选择面板（registry 本身保留）：
+ * - awaiter/dream/distill：系统型，面向内部流程（长命令监控 / 复盘 / 工作流提炼），
+ *   对协作者没有"选它执行本轮"的语义。
+ * - coder/reviewer/explore/plan：传统内置 agent，2026-07-29 起从用户可选入口隐藏，
+ *   用户只与专家（角色/自建 agent）交互；它们仍是 Task/AgentSpawn 的合法 subagent_type，
+ *   主 agent 内部拆任务照常派发（coreAgents.ts 定义不可删）。
  */
-const PANEL_HIDDEN_BUILTIN_AGENT_IDS: readonly string[] = ['awaiter', 'dream', 'distill'];
+const PANEL_HIDDEN_BUILTIN_AGENT_IDS: readonly string[] = [
+  'awaiter',
+  'dream',
+  'distill',
+  'coder',
+  'reviewer',
+  'explore',
+  'plan',
+];
 
-/** /agent 面板可见性过滤（只隐藏系统型内置；用户自建 agent / 角色照常显示） */
+/** /agent 面板可见性过滤（隐藏系统型与传统内置；用户自建 agent / 角色照常显示） */
 export function isPanelVisibleAgent(entry: Pick<AgentListEntry, 'id' | 'source'>): boolean {
   return !(entry.source === 'builtin' && PANEL_HIDDEN_BUILTIN_AGENT_IDS.includes(entry.id));
 }

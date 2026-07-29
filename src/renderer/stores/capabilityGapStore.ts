@@ -2,7 +2,9 @@
 // CapabilityGapStore — Step 7 PR 3
 //
 // Per-session ephemeral 状态：保存最近一次 `recommend_capability` tool 调用
-// 返回的能力缺口快照。InlineWorkbenchBar 读这个 store 渲染 GapCard。
+// 返回的能力缺口快照。（原渲染出口 GapCard/InlineWorkbenchBar 已随 composer 上方
+// 混合面板一并移除，目前 store 仅由 useToolExecutionEffects 写入、暂无 UI 消费；
+// 保留写入链路，后续 UI 需要时可直接读。）
 //
 // 设计原则：
 // - 单次覆盖，不堆栈：每个 session 只保留"最近一次" notice。新 notice 直接覆

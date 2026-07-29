@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  formatAgentErrorContent,
+  classifyAgentError,
   getAgentErrorMessage,
   isTerminalAgentError,
   normalizeAgentErrorPayload,
@@ -25,13 +25,15 @@ describe('agent lifecycle error helpers', () => {
     expect(isTerminalAgentError(payload)).toBe(false);
   });
 
-  it('does not invent Unknown error copy for empty payloads', () => {
+  it('does not invent errors for empty payloads', () => {
     expect(getAgentErrorMessage({})).toBeNull();
-    expect(formatAgentErrorContent({})).toBeNull();
+    expect(classifyAgentError({})).toBeNull();
   });
+});
 
-  it('keeps context length errors as terminal with specific guidance', () => {
-    const content = formatAgentErrorContent({
+describe('classifyAgentError', () => {
+  it('classifies context length errors with token details', () => {
+    const error = classifyAgentError({
       code: 'CONTEXT_LENGTH_EXCEEDED',
       message: '上下文超限',
       details: { requested: 4481000, max: 4000000 },
@@ -39,51 +41,81 @@ describe('agent lifecycle error helpers', () => {
     });
 
     expect(isTerminalAgentError({ code: 'CONTEXT_LENGTH_EXCEEDED', message: '上下文超限' })).toBe(true);
-    expect(content).toContain('上下文超限');
-    expect(content).toContain('4481K tokens');
-    expect(content).toContain('4000K tokens');
-    expect(content).toContain('新开会话继续。');
-  });
-
-  it('explains model provider forbidden failures with next actions', () => {
-    const content = formatAgentErrorContent({
-      code: 'RUN_FAILED',
-      message: 'Forbidden',
+    expect(error).toMatchObject({
+      category: 'context_length',
+      code: 'CONTEXT_LENGTH_EXCEEDED',
+      requestedTokens: 4481000,
+      maxTokens: 4000000,
+      rawMessage: '上下文超限',
     });
-
-    expect(content).toContain('模型服务拒绝了这次请求');
-    expect(content).toContain('API Key');
-    expect(content).toContain('模型权限');
-    expect(content).toContain('切换到其他模型');
+    expect(error?.timestamp).toBeGreaterThan(0);
   });
 
-  it('explains custom model not found failures with configuration hints', () => {
-    const content = formatAgentErrorContent({
-      code: 'RUN_FAILED',
-      message: 'Not Found',
-    });
+  it('classifies 403 Forbidden as forbidden with http status', () => {
+    const error = classifyAgentError({ code: 'RUN_FAILED', message: 'Forbidden' });
 
-    expect(content).toContain('模型接口或模型名称不匹配');
-    expect(content).toContain('Base URL');
-    expect(content).toContain('/v1');
-    expect(content).toContain('模型 ID');
+    expect(error).toMatchObject({ category: 'forbidden', httpStatus: 403 });
   });
 
-  it('explains provider concurrency limits with retry guidance', () => {
-    const content = formatAgentErrorContent({
+  it('classifies 404 Not Found as model_not_found with http status', () => {
+    const error = classifyAgentError({ code: 'RUN_FAILED', message: 'Not Found' });
+
+    expect(error).toMatchObject({ category: 'model_not_found', httpStatus: 404 });
+  });
+
+  it('classifies provider concurrency limits', () => {
+    const error = classifyAgentError({
       code: 'RUN_FAILED',
       message: 'Concurrency limit exceeded for account, please retry later',
     });
 
-    expect(content).toContain('模型账号并发已满');
-    expect(content).toContain('稍后重试');
-    expect(content).toContain('切换到其他可用模型');
+    expect(error?.category).toBe('concurrency');
   });
 
-  it('keeps unknown failures in the raw error format', () => {
-    expect(formatAgentErrorContent({
+  it('classifies 429 / rate limit messages as rate_limited', () => {
+    expect(classifyAgentError({ code: 'RUN_FAILED', message: 'Rate limit exceeded' })?.category).toBe('rate_limited');
+    expect(classifyAgentError({ code: 'RUN_FAILED', message: 'HTTP 429 Too Many Requests' })).toMatchObject({
+      category: 'rate_limited',
+      httpStatus: 429,
+    });
+  });
+
+  it('classifies network-style failures as network', () => {
+    expect(classifyAgentError({ code: 'RUN_FAILED', message: 'fetch failed' })?.category).toBe('network');
+    expect(classifyAgentError({ code: 'RUN_FAILED', message: 'connect ECONNREFUSED 127.0.0.1:443' })?.category).toBe('network');
+    expect(classifyAgentError({ code: 'RUN_FAILED', message: 'request timed out' })?.category).toBe('network');
+  });
+
+  it('falls back to generic for unrecognized failures and keeps the raw message', () => {
+    const error = classifyAgentError({
       code: 'RUN_FAILED',
       message: 'Something unexpected happened',
-    })).toBe('Error: Something unexpected happened');
+    });
+
+    expect(error).toMatchObject({
+      category: 'generic',
+      code: 'RUN_FAILED',
+      rawMessage: 'Something unexpected happened',
+    });
+  });
+
+  it('prefers explicit status/trace fields and carries the current model id', () => {
+    const error = classifyAgentError(
+      {
+        code: 'RUN_FAILED',
+        message: 'AI_APICallError: Forbidden',
+        statusCode: 401,
+        traceId: 'trace-abc',
+      },
+      { modelId: 'gpt-5.2' },
+    );
+
+    // 分类仍按 message 走 forbidden，但 httpStatus 以显式字段为准，不强行写成 403
+    expect(error).toMatchObject({
+      category: 'forbidden',
+      httpStatus: 401,
+      traceId: 'trace-abc',
+      modelId: 'gpt-5.2',
+    });
   });
 });

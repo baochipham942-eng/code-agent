@@ -151,6 +151,15 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
     isCollapsing: Boolean(collapsingWorkspaces[group.key]),
     displayName: summary.displayName,
     disableForceExpand: group.isUncategorized,
+    labels: {
+      forceExpandReason: p.forceExpandedReason,
+      collapseTitle: p.collapseGroupTitle,
+      expandTitle: p.expandGroupTitle,
+      collapseAriaLabel: p.collapseGroupAria,
+      expandAriaLabel: p.expandGroupAria,
+      forceExpandAriaLabel: p.forceExpandedAria,
+      protectionLabel: p.keepExpanded,
+    },
   });
   const expanded = expansionView.isVisibleExpanded;
   const summaryLine = formatSidebarProjectSummaryLine({
@@ -186,7 +195,7 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
       data-sidebar-group-phase={expansionView.phase}
     >
       <div
-        className={`group sticky top-0 ${menuOpen ? 'z-30' : 'z-20'} flex items-center gap-1.5 w-full px-1.5 py-1.5 bg-zinc-900 backdrop-blur-sm text-left hover:bg-zinc-800/40 transition-colors`}
+        className={`group sticky top-0 ${menuOpen ? 'z-30' : 'z-20'} flex items-center gap-1.5 w-full px-1.5 py-1.5 bg-zinc-950 text-left hover:bg-zinc-900 transition-colors`}
         title={title}
       >
         {/* 分组头对齐约定(2026-07-02 拍板,2026-07-26 强化)：图标+名称左对齐、整行垂直居中；
@@ -232,8 +241,10 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
         {/* 项目操作收敛为两个按钮（2026-07-28 产品负责人拍板）：「⋯」菜单 + 「新建」。
             原 hover 图标簇（设置/控制台/详情/产物）全部收进 ⋯ 菜单，另加「选择工作目录」；
             新建沿用侧栏左上角新任务的 SquarePen 图标。仍是默认隐藏、hover/聚焦浮现 +
-            绝对定位覆盖右侧（不占流内宽度，避免窄侧栏挤叠流内徽标），未分类组不渲染。 */}
-        <div className="absolute right-1 top-1/2 z-10 hidden -translate-y-1/2 items-center rounded-md bg-zinc-900 pl-1 group-hover:flex group-focus-within:flex">
+            绝对定位覆盖右侧（不占流内宽度，避免窄侧栏挤叠流内徽标），未分类组不渲染。
+            底色跟分组头同步（2026-07-29：默认 zinc-950 与侧栏底色齐平，hover 才提亮到
+            zinc-900）——盖住行内内容靠的是不透明底色，底色错一拍就会露出一条异色补丁。 */}
+        <div className="absolute right-1 top-1/2 z-10 hidden -translate-y-1/2 items-center rounded-md bg-zinc-950 pl-1 transition-colors group-hover:bg-zinc-900 group-hover:flex group-focus-within:flex">
         {!group.isUncategorized && (
           <>
           <div className="relative" ref={menuRef}>

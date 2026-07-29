@@ -8,6 +8,7 @@
 
 import { IPC_DOMAINS } from '@shared/ipc';
 import type {
+  CreateProjectInput,
   Project,
   ProjectArtifact,
   ProjectDetail,
@@ -23,6 +24,10 @@ import ipcService from './ipcService';
 
 export async function listProjects(includeArchived = false): Promise<Project[]> {
   return ipcService.invokeDomain<Project[]>(IPC_DOMAINS.PROJECT, 'list', { includeArchived });
+}
+
+export async function createProject(input: CreateProjectInput): Promise<Project> {
+  return ipcService.invokeDomain<Project>(IPC_DOMAINS.PROJECT, 'create', input);
 }
 
 export async function getProjectDetail(projectId: string): Promise<ProjectDetail> {

@@ -1,5 +1,5 @@
 import { hasNativeBridge } from '../api/transport';
-import { CONFIG_DIR_NEW } from '../../shared/constants/configDir';
+import { CONFIG_DIR_NEW, CONFIG_DIR_DEV } from '../../shared/constants/configDir';
 
 function getBrowserAuthToken(): string | null {
   if (typeof window === 'undefined') return null;
@@ -31,10 +31,12 @@ export function resolveFileUrl(filePath: string): string {
     && (!hasNativeBridge() || window.location.protocol === 'http:' || window.location.protocol === 'https:');
 
   if (isWebMode) {
-    // app 私有配置目录（.code-agent）下的图片走专用截图路由，由后端按运行时真实目录做白名单校验。
+    // app 私有配置目录下的图片走专用截图路由，由后端按运行时真实目录做白名单校验。
+    // 运行时数据目录（CODE_AGENT_DATA_DIR）生产是 .code-agent、dev 通道是 .code-agent-dev，
+    // 两个都要识别；漏掉 dev 目录会错路由到 /api/workspace/file 被 403，pptx 预览整页裂图。
     // normalize 分隔符以兼容 Windows 反斜杠路径。
     const normalized = filePath.replace(/\\/g, '/');
-    if (normalized.includes(`/${CONFIG_DIR_NEW}/`)) {
+    if (normalized.includes(`/${CONFIG_DIR_NEW}/`) || normalized.includes(`/${CONFIG_DIR_DEV}/`)) {
       return resolveScreenshotUrl(filePath);
     }
 

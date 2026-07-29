@@ -164,10 +164,12 @@ export const ContextUsagePill: React.FC = () => {
         onFocus={() => setOpen(true)}
         className={`inline-flex h-8 items-center justify-center gap-1 rounded-lg px-1.5 text-xs tabular-nums transition-colors ${styles.text} ${styles.hoverBg}`}
         aria-label={ch.usageAriaLabel}
-        title={ch.usageTitle
-          .replace('{percent}', displayPct)
-          .replace('{used}', formatTokens(currentTokens))
-          .replace('{max}', formatTokens(maxTokens))}
+        title={hasData
+          ? ch.usageTitle
+              .replace('{percent}', displayPct)
+              .replace('{used}', formatTokens(currentTokens))
+              .replace('{max}', formatTokens(maxTokens))
+          : ch.waitingFirstTurn}
       >
         <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="transform -rotate-90">
           <circle

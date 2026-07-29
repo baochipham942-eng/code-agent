@@ -8,5 +8,8 @@
 /** New config directory name */
 export const CONFIG_DIR_NEW = '.code-agent';
 
+/** 测试/开发通道的数据目录名，与生产 CONFIG_DIR_NEW 并存、互不污染 */
+export const CONFIG_DIR_DEV = `${CONFIG_DIR_NEW}-dev`;
+
 /** Legacy config directory name (for backward compatibility) */
 export const CONFIG_DIR_LEGACY = '.claude';

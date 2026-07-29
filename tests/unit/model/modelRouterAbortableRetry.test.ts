@@ -17,6 +17,7 @@ vi.mock('../../../src/host/services/infra/logger', () => ({
 vi.mock('../../../src/host/model/providerHealthMonitor', () => ({
   getProviderHealthMonitor: () => ({
     getHealth: vi.fn().mockReturnValue(null),
+    getObservationCount: vi.fn().mockReturnValue(0),
     recordSuccess: vi.fn(),
     recordFailure: vi.fn(),
   }),

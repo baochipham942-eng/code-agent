@@ -17,6 +17,7 @@ import {
   type WorkbenchRecipe,
 } from '@shared/contract/workbenchPreset';
 import { useAppStore, type LivePreviewSelectedElement } from './appStore';
+import type { PendingCommandSelection } from '../components/features/chat/ChatInput/pendingCommand';
 
 // appStore 存的是 flat 结构（来自 LivePreviewFrame 的 toSelectedElement），
 // envelope 走 shared/livePreview/protocol.ts 的 nested SelectedElementInfo 形。
@@ -54,6 +55,16 @@ interface ComposerState {
    * 真正启动发生在发送那一刻（输入的第一句话当主题）。
    */
   selectedTeamRecipeId: string | null;
+  /**
+   * 待命名单里被 × 掉的成员键（member 的 id ?? roleId，lead 用 roleId）：
+   * 只是预选期的排除标记，发送启动团队时随 launchRecipe 传给 host 真正少起人。
+   */
+  standbyExcludedMemberKeys: string[];
+  /**
+   * 待参数的 feature 命令 chip（2026-07-29 任务 17）：/goal /schedule /loop /workflow
+   * 选中后不往输入框留文本前缀，挂这里；发送时 useChatInputSubmit 拼回 `/${id} ` 走原解析。
+   */
+  pendingCommand: PendingCommandSelection | null;
   hydratedSessionId: string | null;
   hydrateFromSession: (sessionId: string | null, workingDirectory: string | null) => void;
   applySessionWorkbenchPreset: (source: WorkbenchPresetSessionSource) => void;
@@ -68,6 +79,8 @@ interface ComposerState {
   setSelectedMcpServerIds: (ids: string[]) => void;
   setTurnCapabilityScopeMode: (mode: TurnCapabilityScopeMode) => void;
   setSelectedTeamRecipeId: (id: string | null) => void;
+  setStandbyExcludedMemberKeys: (keys: string[]) => void;
+  setPendingCommand: (command: PendingCommandSelection | null) => void;
   resetForSuccessfulSend: () => void;
   buildContext: () => ConversationEnvelopeContext | undefined;
 }
@@ -82,6 +95,8 @@ const initialComposerState = {
   selectedMcpServerIds: [],
   turnCapabilityScopeMode: 'auto' as const,
   selectedTeamRecipeId: null,
+  standbyExcludedMemberKeys: [],
+  pendingCommand: null,
   hydratedSessionId: null,
 };
 
@@ -130,6 +145,9 @@ export const useComposerStore = create<ComposerState>((set, get) => ({
           turnCapabilityScopeMode: 'auto',
           // 换会话不该把上一个会话选的团队带过来
           selectedTeamRecipeId: null,
+          standbyExcludedMemberKeys: [],
+          // 命令 chip 同样只隶属于当前会话的草稿
+          pendingCommand: null,
         };
       }
 
@@ -216,13 +234,20 @@ export const useComposerStore = create<ComposerState>((set, get) => ({
           }),
     })),
 
-  setSelectedTeamRecipeId: (id) => set({ selectedTeamRecipeId: id }),
+  // 换配方（或取消预选）时旧的排除标记一并作废——排除只隶属于当前这次预选
+  setSelectedTeamRecipeId: (id) => set({ selectedTeamRecipeId: id, standbyExcludedMemberKeys: [] }),
+
+  setStandbyExcludedMemberKeys: (keys) => set({ standbyExcludedMemberKeys: keys }),
+
+  setPendingCommand: (command) => set({ pendingCommand: command }),
 
   resetForSuccessfulSend: () =>
     set((state) => ({
       targetAgentIds: state.routingMode === 'direct' ? state.targetAgentIds : [],
       // 配方已经启动，预选态就该退场——留着会让下一句话又想启动一次
       selectedTeamRecipeId: null,
+      standbyExcludedMemberKeys: [],
+      pendingCommand: null,
     })),
 
   buildContext: () => {

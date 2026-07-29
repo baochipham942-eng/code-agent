@@ -4,6 +4,7 @@ import type {
   AgentTrajectoryGateFailure,
   AgentTrajectoryQualityTier,
 } from '@shared/contract/agentTrajectory';
+import { useAppStore } from './appStore';
 import { useSessionStore, type SessionFilter } from './sessionStore';
 import { createLogger } from '../utils/logger';
 
@@ -96,6 +97,8 @@ interface SessionUIActions {
   getNextInput: () => string | null;
   resetInputHistoryIndex: () => void;
   setWorkspaceExpanded: (key: string, expanded: boolean) => void;
+  /** 批量写展开态（「项目」section 标题行 chevron：一键全展开/全收起），只持久化一次。 */
+  setWorkspacesExpanded: (keys: string[], expanded: boolean) => void;
 }
 
 type SessionUIStore = SessionUIState & SessionUIActions;
@@ -179,6 +182,11 @@ export const useSessionUIStore = create<SessionUIStore>()((set, get) => ({
       if (remainingSessions.length > 0) {
         sessionStore.switchSession(remainingSessions[0].id);
       } else {
+        // 与 deleteSession/archiveSession 的末会话路径一致：回到 draft 时清掉
+        // per-session agent / workbench 选择，避免上个会话的专家残留在 draft 里
+        // 被下一次 createSession 的 inheritCurrent 写进新会话（ux-round2 20e）。
+        useAppStore.getState().syncActiveAgentForSession(null);
+        useAppStore.getState().syncWorkbenchForSession(null);
         useSessionStore.setState({ currentSessionId: null, messages: [] });
       }
     }
@@ -275,6 +283,15 @@ export const useSessionUIStore = create<SessionUIStore>()((set, get) => ({
 
   setWorkspaceExpanded: (key: string, expanded: boolean) => {
     const next = { ...get().expandedWorkspaces, [key]: expanded };
+    set({ expandedWorkspaces: next });
+    persistExpandedWorkspaces(next);
+  },
+
+  setWorkspacesExpanded: (keys: string[], expanded: boolean) => {
+    const next = { ...get().expandedWorkspaces };
+    for (const key of keys) {
+      next[key] = expanded;
+    }
     set({ expandedWorkspaces: next });
     persistExpandedWorkspaces(next);
   },

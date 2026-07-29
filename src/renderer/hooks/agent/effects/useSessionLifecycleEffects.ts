@@ -1,6 +1,6 @@
 // useAgentSessionLifecycleEffects - agent_complete, error, stream_end, message completion, research_detected, research_mode_started, interrupt_start, interrupt_acknowledged, interrupt_complete, stale processing cleanup
 import { useEffect } from 'react';
-import type { AgentEventEnvelope, Message, ResearchDetectedData } from '@shared/contract';
+import type { AgentErrorMetadata, AgentEventEnvelope, Message, ResearchDetectedData } from '@shared/contract';
 import { createLogger } from '../../../utils/logger';
 import { useAppStore } from '../../../stores/appStore';
 import { useSessionStore } from '../../../stores/sessionStore';
@@ -52,92 +52,105 @@ function isGenericRunFailure(payload: AgentErrorPayload): boolean {
   return payload.code === 'RUN_FAILED' || typeof payload.code !== 'string';
 }
 
-function formatFriendlyRunFailureContent(payload: AgentErrorPayload, message: string): string | null {
-  if (!isGenericRunFailure(payload)) return null;
-
-  const normalized = message.trim().toLowerCase();
-  const hasStatus = (status: number) => new RegExp(`\\b${status}\\b`).test(message);
-
-  if (normalized.includes('concurrency limit exceeded')) {
-    return (
-      '⚠️ **模型账号并发已满**\n\n' +
-      '当前模型服务返回并发限制。请稍后重试，或先切换到其他可用模型。'
-    );
-  }
-
-  if (normalized === 'forbidden' || normalized === 'ai_apicallerror: forbidden' || hasStatus(403)) {
-    return (
-      '⚠️ **模型服务拒绝了这次请求**\n\n' +
-      '当前模型供应商返回 403/Forbidden。请检查 API Key 是否有效、账号是否有该模型权限、额度是否可用；也可以先切换到其他模型后重试。'
-    );
-  }
-
-  if (normalized === 'not found' || normalized === 'ai_apicallerror: not found' || hasStatus(404)) {
-    return (
-      '⚠️ **模型接口或模型名称不匹配**\n\n' +
-      '当前模型供应商返回 404/Not Found。请检查自定义模型的 Base URL、路径是否包含 /v1、模型 ID 是否正确；也可以先切换到其他模型后重试。'
-    );
-  }
-
-  if (normalized.includes('rate limit') || normalized.includes('too many requests') || hasStatus(429)) {
-    return (
-      '⚠️ **模型服务暂时限流**\n\n' +
-      '当前模型供应商返回限流。请稍后重试，或先切换到其他可用模型。'
-    );
-  }
-
-  if (
-    normalized.includes('timeout') ||
-    normalized.includes('timed out') ||
-    normalized.includes('network') ||
-    normalized.includes('fetch failed') ||
-    normalized.includes('econnrefused') ||
-    normalized.includes('econnreset') ||
-    normalized.includes('enotfound')
-  ) {
-    return (
-      '⚠️ **暂时连不上模型服务**\n\n' +
-      '当前模型请求没有成功到达供应商。请检查网络、代理或自定义模型 Base URL，稍后再重试。'
-    );
-  }
-
-  return null;
+function getStringPayloadField(data: unknown, field: string): string | undefined {
+  if (!isRecord(data)) return undefined;
+  const value = data[field];
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
 }
 
-export function formatAgentErrorContent(data: unknown): string | null {
+/**
+ * 把 agent error 事件分类成结构化错误（写进 message.metadata.agentError，由
+ * AgentErrorCard 渲染）。title/suggestion 文案不在这里生成——文案随 i18n 走，
+ * 分类只产出 category + 排障字段，卡片渲染时按 category 查表。
+ */
+export function classifyAgentError(
+  data: unknown,
+  context?: { modelId?: string },
+): AgentErrorMetadata | null {
   const payload = normalizeAgentErrorPayload(data);
   const message = getAgentErrorMessage(payload);
   if (!message) return null;
 
+  const base = {
+    code: typeof payload.code === 'string' ? payload.code : undefined,
+    traceId: getStringPayloadField(payload, 'traceId') ?? getStringPayloadField(payload, 'requestId'),
+    rawMessage: message,
+    modelId: context?.modelId,
+    timestamp: Date.now(),
+  };
+  const explicitStatus = getNumberPayloadField(payload, 'httpStatus')
+    ?? getNumberPayloadField(payload, 'statusCode')
+    ?? getNumberPayloadField(payload, 'status');
+
   if (payload.code === 'CONTEXT_LENGTH_EXCEEDED') {
     const details = payload.details;
-    const requested = getNumberPayloadField(details, 'requested');
-    const max = getNumberPayloadField(details, 'max');
-    const requestedK = requested ? Math.round(requested / 1000) : '?';
-    const maxK = max ? Math.round(max / 1000) : '?';
-    const suggestion = typeof payload.suggestion === 'string'
-      ? payload.suggestion
-      : '建议新开一个会话继续对话。';
-    return (
-      `⚠️ **${message}**\n\n` +
-      `当前对话长度约 ${requestedK}K tokens，超出模型限制 ${maxK}K tokens。\n\n` +
-      `${suggestion}`
-    );
+    return {
+      ...base,
+      category: 'context_length',
+      httpStatus: explicitStatus,
+      requestedTokens: getNumberPayloadField(details, 'requested'),
+      maxTokens: getNumberPayloadField(details, 'max'),
+    };
   }
 
-  const friendlyContent = formatFriendlyRunFailureContent(payload, message);
-  if (friendlyContent) return friendlyContent;
+  if (isGenericRunFailure(payload)) {
+    const normalized = message.trim().toLowerCase();
+    const hasStatus = (status: number) => new RegExp(`\\b${status}\\b`).test(message);
 
-  return `Error: ${message}`;
+    if (normalized.includes('concurrency limit exceeded')) {
+      return { ...base, category: 'concurrency', httpStatus: explicitStatus };
+    }
+
+    if (normalized === 'forbidden' || normalized === 'ai_apicallerror: forbidden' || hasStatus(403)) {
+      return { ...base, category: 'forbidden', httpStatus: explicitStatus ?? 403 };
+    }
+
+    if (normalized === 'not found' || normalized === 'ai_apicallerror: not found' || hasStatus(404)) {
+      return { ...base, category: 'model_not_found', httpStatus: explicitStatus ?? 404 };
+    }
+
+    if (normalized.includes('rate limit') || normalized.includes('too many requests') || hasStatus(429)) {
+      return { ...base, category: 'rate_limited', httpStatus: explicitStatus ?? 429 };
+    }
+
+    if (
+      normalized.includes('timeout') ||
+      normalized.includes('timed out') ||
+      normalized.includes('network') ||
+      normalized.includes('fetch failed') ||
+      normalized.includes('econnrefused') ||
+      normalized.includes('econnreset') ||
+      normalized.includes('enotfound')
+    ) {
+      return { ...base, category: 'network', httpStatus: explicitStatus };
+    }
+  }
+
+  return { ...base, category: 'generic', httpStatus: explicitStatus };
 }
 
-function mergeErrorContent(existing: string | undefined, errorContent: string): string {
-  const current = existing || '';
-  const trimmed = current.trim();
-  if (!trimmed || trimmed.startsWith('Error:') || trimmed.startsWith('⚠️')) {
-    return errorContent;
+/**
+ * 把结构化错误挂到最后一条 assistant 消息的 metadata 上（AgentErrorCard 渲染源）。
+ * 错误若发生在任何 assistant 草稿之前（如首轮请求直接 404），补一条空 assistant
+ * 消息承载卡片——否则这次失败在会话区完全不可见。
+ */
+function attachAgentErrorToLatestAssistant(agentError: AgentErrorMetadata): void {
+  const store = useSessionStore.getState();
+  const messages = store.messages;
+  const lastMessage = messages[messages.length - 1];
+  if (lastMessage?.role === 'assistant') {
+    store.updateMessage(lastMessage.id, {
+      metadata: { ...lastMessage.metadata, agentError },
+    });
+    return;
   }
-  return `${current}\n\n${errorContent}`;
+  store.addMessage({
+    id: `agent-error-${agentError.timestamp}`,
+    role: 'assistant',
+    content: '',
+    timestamp: agentError.timestamp,
+    metadata: { agentError },
+  });
 }
 
 function clearRuntimeSessionState(sessionId: string): void {
@@ -223,7 +236,6 @@ export const useSessionLifecycleEffects = ({
       const currentSessionId = useSessionStore.getState().currentSessionId;
       const eventSessionId = getAgentEventSessionId(event);
       const isCurrentSessionEvent = isAgentEventForCurrentSession(event, currentSessionId);
-      const getFreshMessages = () => useSessionStore.getState().messages;
       const clearSessionProcessing = () => {
         const sessionId = eventSessionId;
         if (sessionId) {
@@ -269,14 +281,14 @@ export const useSessionLifecycleEffects = ({
             code: normalizeAgentErrorPayload(event.data).code,
           });
           if (isCurrentSessionEvent) {
-            const lastMessage = getFreshMessages()[getFreshMessages().length - 1];
-            if (lastMessage?.role === 'assistant') {
-              const errorContent = formatAgentErrorContent(event.data);
-              if (errorContent) {
-                updateMessage(lastMessage.id, {
-                  content: mergeErrorContent(lastMessage.content, errorContent),
-                });
-              }
+            // 结构化错误卡片：不再把友好文案 merge 进 content，而是在最后一条
+            // assistant 消息的 metadata 写 agentError，渲染层据此渲染 AgentErrorCard
+            // （带重试/切换模型/新开会话/复制错误报告按钮）。content 保持原样。
+            const agentError = classifyAgentError(event.data, {
+              modelId: useAppStore.getState().modelConfig.model,
+            });
+            if (agentError) {
+              attachAgentErrorToLatestAssistant(agentError);
             }
           }
           clearSessionProcessing();

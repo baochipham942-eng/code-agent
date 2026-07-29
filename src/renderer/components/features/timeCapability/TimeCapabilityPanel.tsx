@@ -399,7 +399,7 @@ const TimeCapabilityPanel: React.FC<TimeCapabilityPanelProps> = ({ onClose }) =>
   };
 
   return (
-    <FullScreenPage testId="time-capability-panel">
+    <FullScreenPage testId="time-capability-panel" variant="inline">
       <FullScreenPageHeader
         icon={<CalendarDays className="h-4 w-4 text-sky-300" />}
         title="Time & Capability"

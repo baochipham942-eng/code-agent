@@ -37,7 +37,6 @@ describe('SidebarSessionItem Evidence Control quietness', () => {
         searchQuery=""
         messageSearchHitsBySessionId={{}}
         replayEvidenceBySessionId={new Map()}
-        canOpenSessionReplay={true}
         reviewItemsBySessionId={{}}
         trajectoryQualityBySessionId={{
           'session-evidence': {
@@ -116,8 +115,6 @@ describe('SidebarSessionItem Evidence Control quietness', () => {
         handleRenameSubmit={vi.fn()}
         handleRenameKeyDown={vi.fn()}
         handleDoubleClick={vi.fn()}
-        handleOpenSessionReplayInEvalCenter={vi.fn()}
-        handleOpenSessionAssets={vi.fn()}
         handleOpenReplayEvidence={vi.fn()}
         handleSelectMessageSearchHit={vi.fn()}
         handleArchiveSession={vi.fn()}

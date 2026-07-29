@@ -31,6 +31,7 @@ const MAX_RECAP_LENGTH = 120;
 /** 喂给小模型的素材条数上限：再多也只是重复，白花 token */
 const MAX_ARTIFACTS_IN_PROMPT = 8;
 const MAX_TASKS_IN_PROMPT = 8;
+const MIN_RECAP_ABSENCE_MS = 5 * 60 * 1000;
 
 export interface SessionRecapMaterial {
   /** 上次查看之后收口的轮次 */
@@ -97,15 +98,15 @@ export function formatRecapFallback(material: SessionRecapMaterial): string {
     parts.push(rest > 0 ? `更新了 ${shown} 等 ${material.artifactLabels.length} 项产物` : `更新了 ${shown}`);
   }
   if (material.completedTasks.length > 0) parts.push(`${material.completedTasks.length} 项任务完成`);
-  if (material.blockedTasks.length > 0) parts.push(`${material.blockedTasks.length} 项卡住`);
+  if (material.blockedTasks.length > 0) parts.push(`${material.blockedTasks.length} 项任务受阻`);
   if (parts.length === 0) parts.push(`跑完了 ${material.records.length} 轮`);
   return parts.join('，');
 }
 
 function buildPrompt(material: SessionRecapMaterial): string {
   const lines = [
-    '下面是一个 AI 助手在用户离开期间做出的产出变化。请用一句中文（40 字以内）告诉用户"你不在的时候产出发生了什么"。',
-    '要求：说产物和结果，不要提工具名、命令、报错原文、文件路径；有卡住的事项要点出来。不要加引号。',
+    '下面是一个 AI 助手在用户离开期间做出的产出变化。请用一句中文（40 字以内）说明这段时间产出发生了什么。',
+    '要求：说产物和结果，不要提工具名、命令、报错原文、文件路径；有受阻事项要自然点出。不要使用“遇到了卡住”这类病句，不要加引号。',
     '',
   ];
   if (material.artifactLabels.length > 0) {
@@ -163,6 +164,9 @@ export async function getSessionRecap(
   sessionId: string,
   sinceTimestamp: number,
 ): Promise<SessionRecap | null> {
+  if (sinceTimestamp > 0 && Date.now() - sinceTimestamp < MIN_RECAP_ABSENCE_MS) {
+    return null;
+  }
   const records = await readCompletionSummaryRecordsBySession(sessionId);
   const { listTasks } = await import('../services/planning/taskStore');
   const material = collectRecapMaterial(records, listTasks(sessionId), sinceTimestamp);

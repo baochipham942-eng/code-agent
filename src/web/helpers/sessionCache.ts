@@ -27,6 +27,7 @@ export interface CachedMessage {
   content: string;
   timestamp: number;
   toolCalls?: CachedToolCall[];
+  toolResults?: Message['toolResults'];
   thinking?: string;
   contentParts?: CachedContentPart[];
   artifacts?: Artifact[];
@@ -94,7 +95,7 @@ export function getPersistenceHealth(): PersistenceHealth {
 export function toCachedSessionMessages(messages: Message[]): CachedMessage[] {
   return messages
     .map((message): CachedMessage | null => {
-      if (message.role !== 'user' && message.role !== 'assistant') {
+      if (message.role !== 'user' && message.role !== 'assistant' && message.role !== 'tool') {
         return null;
       }
 
@@ -104,6 +105,7 @@ export function toCachedSessionMessages(messages: Message[]): CachedMessage[] {
         content: stripInlineAttachmentBlocks(message.content),
         timestamp: message.timestamp,
         toolCalls: message.toolCalls as CachedToolCall[] | undefined,
+        ...(message.toolResults?.length ? { toolResults: message.toolResults } : {}),
         thinking: message.thinking || message.reasoning,
         contentParts: message.contentParts as CachedContentPart[] | undefined,
         artifacts: message.artifacts,

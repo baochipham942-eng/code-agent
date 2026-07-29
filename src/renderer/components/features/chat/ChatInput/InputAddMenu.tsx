@@ -1,64 +1,62 @@
 // Codex 风格 "+" 二级菜单：收纳 ChatInput 工具栏低频入口。
-// B+ 设计：上传 / 命令 / 交互模式（Code/Plan/Ask）都进这里，
+// B+ 设计：上传 / 能力（专家/团队/技能/连接器）/ 交互模式 都进这里，
 // ChatInput 工具栏只露真正高频的（权限模式 / 上下文 / 模型 / 语音 / 发送）。
 
 import React, { useEffect, useRef, useState } from 'react';
-import { Plus, Image as ImageIcon, SlashSquare, Brain, BookOpen, Bot, ChevronRight, Plug, Sparkles, UsersRound } from 'lucide-react';
+import { Plus, Image as ImageIcon, Bot, ChevronRight, Plug, SlidersHorizontal, Sparkles, UsersRound } from 'lucide-react';
 import { useModeStore } from '../../../../stores/modeStore';
 import { useAppStore } from '../../../../stores/appStore';
 import { useAgentRegistryStore } from '../../../../stores/agentRegistryStore';
+import { isPanelVisibleAgent } from '../../../../../shared/contract/agentRegistry';
 import { useComposerStore } from '../../../../stores/composerStore';
 import { useTeamRecipeStore } from '../../../../stores/teamRecipeStore';
 import { useWorkbenchCapabilityRegistry } from '../../../../hooks/useWorkbenchCapabilityRegistry';
 import type { InteractionMode } from '../../../../../shared/contract/agent';
-import type { SessionMemoryMode } from '../../../../../shared/contract';
 import type { WorkbenchCapabilityRegistryItem } from '../../../../utils/workbenchCapabilityRegistry';
 import { useI18n } from '../../../../hooks/useI18n';
 import { InputAddSubmenu, type InputAddSubmenuItem } from './InputAddSubmenu';
 
 interface Props {
-  onSlashCommand: () => void;
   onFileSelect: (files: FileList) => void;
-  /** 本会话记忆模式（默认 'auto' = 开启）。C-6：从底栏移入此二级菜单。 */
-  memoryMode: SessionMemoryMode;
-  onToggleMemory: () => void;
-  memoryToggleDisabled?: boolean;
-  /** Batch 2 L2：打开资料库 Pin 选择器（无会话时禁用） */
-  onOpenLibrary: () => void;
-  libraryDisabled?: boolean;
   /** 当轮能力选择动作（由 ChatInput 从 useChatInputSlashCommands 透传） */
   onSelectCapability: (capability: WorkbenchCapabilityRegistryItem) => void;
 }
 
-function buildModeOptions(hints: { code: string; plan: string; ask: string }): Array<{ value: InteractionMode; label: string; color: string; hint: string }> {
+type SubmenuKind = 'experts' | 'teams' | 'skills' | 'connectors' | 'mode';
+
+/** hover 离开能力行到进入 flyout 之间有个间隙，留一点宽限避免 flyout 被误关 */
+const SUBMENU_CLOSE_GRACE_MS = 150;
+
+function buildModeOptions(hints: { code: string; plan: string; ask: string }): Array<{ value: InteractionMode; label: string; hint: string }> {
   return [
-    { value: 'code', label: '◆Code', color: 'text-emerald-400', hint: hints.code },
-    { value: 'plan', label: '◆Plan', color: 'text-purple-400', hint: hints.plan },
-    { value: 'ask', label: '◆Ask', color: 'text-cyan-400', hint: hints.ask },
+    { value: 'code', label: 'Code', hint: hints.code },
+    { value: 'plan', label: 'Plan', hint: hints.plan },
+    { value: 'ask', label: 'Ask', hint: hints.ask },
   ];
 }
 
 export const InputAddMenu: React.FC<Props> = ({
-  onSlashCommand,
   onFileSelect,
-  memoryMode,
-  onToggleMemory,
-  memoryToggleDisabled,
-  onOpenLibrary,
-  libraryDisabled,
   onSelectCapability,
 }) => {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
-  const [submenu, setSubmenu] = useState<'experts' | 'teams' | 'skills' | 'connectors' | null>(null);
+  const [submenu, setSubmenu] = useState<SubmenuKind | null>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const submenuCloseTimerRef = useRef<number | null>(null);
+  // 五个能力行的 DOM 引用：flyout 错位修复靠指针坐标对行 rect 做几何判定（见 handleMenuMouseMove）
+  const submenuRowRefs = useRef<Partial<Record<SubmenuKind, HTMLDivElement | null>>>({});
 
   const interactionMode = useModeStore((s) => s.interactionMode);
   const setInteractionMode = useModeStore((s) => s.setInteractionMode);
-  const { skills, connectors } = useWorkbenchCapabilityRegistry();
-  const expertEntries = useAgentRegistryStore((s) => s.entries);
+  // 连接器 flyout 合并 MCP servers（用户真实已连接/已添加的，如飞书）与 host 原生
+  // 连接器（Mail/Calendar 等，桌面端才有）：两者共用同一条 selectedXxxIds 挂载链路。
+  const { skills, connectors, mcpServers } = useWorkbenchCapabilityRegistry();
+  const connectorEntries: WorkbenchCapabilityRegistryItem[] = [...mcpServers, ...connectors];
+  // 用户只与专家交互：传统内置 agent（coder/reviewer/…）与系统型 agent 不进选择列表
+  const expertEntries = useAgentRegistryStore((s) => s.entries).filter(isPanelVisibleAgent);
   const activeAgentId = useAppStore((s) => s.activeAgentId);
   const setActiveAgentId = useAppStore((s) => s.setActiveAgentId);
   const openCapabilityHub = useAppStore((s) => s.openCapabilityHub);
@@ -69,7 +67,56 @@ export const InputAddMenu: React.FC<Props> = ({
   const setSelectedTeamRecipeId = useComposerStore((s) => s.setSelectedTeamRecipeId);
   const modeOptions = buildModeOptions(t.inputAddMenu.modeHints);
 
+  const clearSubmenuCloseTimer = () => {
+    if (submenuCloseTimerRef.current !== null) {
+      window.clearTimeout(submenuCloseTimerRef.current);
+      submenuCloseTimerRef.current = null;
+    }
+  };
+  const openSubmenu = (kind: SubmenuKind) => {
+    clearSubmenuCloseTimer();
+    setSubmenu(kind);
+  };
+  const closeSubmenuNow = () => {
+    clearSubmenuCloseTimer();
+    setSubmenu(null);
+  };
+  const scheduleSubmenuClose = () => {
+    clearSubmenuCloseTimer();
+    submenuCloseTimerRef.current = window.setTimeout(() => {
+      submenuCloseTimerRef.current = null;
+      setSubmenu(null);
+    }, SUBMENU_CLOSE_GRACE_MS);
+  };
+
+  // macOS 式二级菜单：flyout 是行的 DOM 子节点且向上展开时会盖住上面的行，
+  // 被盖住行的 onMouseEnter 永远不触发（指针物理上在 flyout 上）。所以不看
+  // 事件目标，看指针纵坐标落在哪个行的纵向区间（行横跨整列、flyout 向右伸出，
+  // 故只要求 clientX 不越出菜单左缘）——落到哪行就开哪行的 flyout；
+  // 落在菜单容器内的非行区域（上传按钮/边缘）走 150ms grace 关闭；
+  // 落在菜单容器外（flyout 探出菜单顶/底的部分）维持现状，不打断正在浏览的 flyout。
+  const handleMenuMouseMove = (e: React.MouseEvent) => {
+    const { clientX, clientY } = e;
+    const inRect = (rect: DOMRect) => (
+      clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom
+    );
+    const inRowBand = (rect: DOMRect) => (
+      clientX >= rect.left && clientY >= rect.top && clientY <= rect.bottom
+    );
+    for (const [kind, el] of Object.entries(submenuRowRefs.current)) {
+      if (el && inRowBand(el.getBoundingClientRect())) {
+        openSubmenu(kind as SubmenuKind);
+        return;
+      }
+    }
+    const menuEl = menuRef.current;
+    if (menuEl && inRect(menuEl.getBoundingClientRect())) {
+      scheduleSubmenuClose();
+    }
+  };
+
   const closeMenu = () => {
+    clearSubmenuCloseTimer();
     setSubmenu(null);
     setOpen(false);
   };
@@ -79,7 +126,12 @@ export const InputAddMenu: React.FC<Props> = ({
   const capabilityItems = (items: WorkbenchCapabilityRegistryItem[]): InputAddSubmenuItem[] => items.map((item) => ({
     id: item.id,
     label: item.label,
-    description: item.kind === 'skill' ? item.description : item.kind === 'connector' ? item.detail || item.capabilities.join(' · ') : item.error,
+    description: item.kind === 'skill'
+      ? item.description
+      : item.kind === 'connector'
+        ? item.detail || item.capabilities.join(' · ')
+        // MCP server：优先展示与能力中心「连接器」页同源的目录描述，没有才回退工具数
+        : item.description || item.error || (item.toolCount > 0 ? t.inputAddMenu.submenuMcpTools.replace('{count}', String(item.toolCount)) : undefined),
     selected: item.selected,
   }));
   const teamItems: InputAddSubmenuItem[] = recipes.map((recipe) => ({
@@ -95,6 +147,12 @@ export const InputAddMenu: React.FC<Props> = ({
     sublabel: entry.profession,
     description: entry.description,
     selected: entry.id === activeAgentId,
+  }));
+  const modeItems: InputAddSubmenuItem[] = modeOptions.map((opt) => ({
+    id: opt.value,
+    label: opt.label,
+    description: opt.hint,
+    selected: interactionMode === opt.value,
   }));
 
   useEffect(() => {
@@ -113,16 +171,18 @@ export const InputAddMenu: React.FC<Props> = ({
     return () => document.removeEventListener('mousedown', handler);
   }, [open]);
 
+  useEffect(() => () => clearSubmenuCloseTimer(), []);
+
   return (
     <div className="relative">
       <button
         ref={triggerRef}
         type="button"
-        onClick={() => setOpen((v) => { if (v) setSubmenu(null); return !v; })}
+        onClick={() => setOpen((v) => { if (v) closeSubmenuNow(); return !v; })}
         aria-label={t.inputAddMenu.moreOptionsAria}
         aria-expanded={open}
         title={t.inputAddMenu.moreOptionsTitle}
-        className="flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center text-zinc-500 hover:text-zinc-300 hover:bg-zinc-700/50 transition-colors"
+        className="flex-shrink-0 w-8 h-8 -ml-2 rounded-lg flex items-center justify-center text-zinc-500 hover:text-zinc-300 hover:bg-zinc-700/50 transition-colors"
       >
         <Plus className="w-4 h-4" />
       </button>
@@ -144,27 +204,18 @@ export const InputAddMenu: React.FC<Props> = ({
       {open && (
         <div
           ref={menuRef}
+          onMouseMove={handleMenuMouseMove}
+          onMouseLeave={scheduleSubmenuClose}
           className="absolute bottom-full left-0 mb-2 min-w-[220px] py-1 bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl z-30"
         >
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
+            onMouseEnter={closeSubmenuNow}
             className="w-full flex items-center gap-2 px-3 py-2 text-xs text-zinc-200 hover:bg-zinc-700 transition-colors text-left"
           >
             <ImageIcon className="w-3.5 h-3.5 text-zinc-400" />
             <span>{t.inputAddMenu.uploadLabel}</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              closeMenu();
-              onSlashCommand();
-            }}
-            className="w-full flex items-center gap-2 px-3 py-2 text-xs text-zinc-200 hover:bg-zinc-700 transition-colors text-left"
-          >
-            <SlashSquare className="w-3.5 h-3.5 text-zinc-400" />
-            <span>{t.inputAddMenu.slashPanelLabel}</span>
-            <span className="ml-auto text-[10px] text-zinc-500 font-mono">/</span>
           </button>
 
           <div className="border-t border-zinc-700/60 mt-1 pt-1">
@@ -173,8 +224,16 @@ export const InputAddMenu: React.FC<Props> = ({
               ['teams', UsersRound, t.inputAddMenu.teamsLabel],
               ['skills', Sparkles, t.inputAddMenu.skillsLabel],
               ['connectors', Plug, t.inputAddMenu.connectorsLabel],
+              ['mode', SlidersHorizontal, t.inputAddMenu.modeLabel],
             ] as const).map(([kind, Icon, label]) => (
-              <div key={kind} className="relative" onMouseEnter={() => setSubmenu(kind)}>
+              <div
+                key={kind}
+                ref={(el) => { submenuRowRefs.current[kind] = el; }}
+                data-submenu-row={kind}
+                className="relative"
+                onMouseEnter={() => openSubmenu(kind)}
+                onMouseLeave={scheduleSubmenuClose}
+              >
                 <button /* ds-allow:button: "+"菜单的二级入口是图标、文案和 chevron 对齐的完整菜单行，Button primitive 不适配 */
                   type="button"
                   onClick={() => setSubmenu((current) => current === kind ? null : kind)}
@@ -189,7 +248,13 @@ export const InputAddMenu: React.FC<Props> = ({
                   <div className="absolute bottom-0 left-full ml-1 z-40">
                     <InputAddSubmenu
                       scope={kind}
-                      items={kind === 'experts' ? expertItems : kind === 'teams' ? teamItems : capabilityItems(kind === 'skills' ? skills : connectors)}
+                      items={kind === 'experts'
+                        ? expertItems
+                        : kind === 'teams'
+                          ? teamItems
+                          : kind === 'mode'
+                            ? modeItems
+                            : capabilityItems(kind === 'skills' ? skills : connectorEntries)}
                       onSelect={(item) => {
                         if (kind === 'experts') {
                           setActiveAgentId(item.id);
@@ -198,13 +263,16 @@ export const InputAddMenu: React.FC<Props> = ({
                           // 选中只是预选：成员条先把名单铺出来，真启动等发第一句话
                           setSelectedTeamRecipeId(item.id === selectedTeamRecipeId ? null : item.id);
                           focusComposer();
+                        } else if (kind === 'mode') {
+                          setInteractionMode(item.id as InteractionMode);
+                          focusComposer();
                         } else {
-                          const capability = (kind === 'skills' ? skills : connectors).find((entry) => entry.id === item.id);
+                          const capability = (kind === 'skills' ? skills : connectorEntries).find((entry) => entry.id === item.id);
                           if (capability) onSelectCapability(capability);
                         }
                         closeMenu();
                       }}
-                      footerActions={[{
+                      footerActions={kind === 'mode' ? [] : [{
                         label: kind === 'experts' ? t.inputAddMenu.manageExperts : kind === 'teams' ? t.inputAddMenu.manageTeams : kind === 'skills' ? t.inputAddMenu.manageSkills : t.inputAddMenu.manageConnectors,
                         onClick: () => {
                           // 团队和专家同属能力中心的「专家」tab
@@ -217,65 +285,6 @@ export const InputAddMenu: React.FC<Props> = ({
                 )}
               </div>
             ))}
-          </div>
-
-          {/* Batch 2 L2: 资料库 Pin 选择器入口 */}
-          <button /* ds-allow:button: "+"二级菜单行（图标+文案左对齐菜单项，同文件既有菜单行同构），Button primitive 是居中动作按钮形状，不适配菜单行 */
-            type="button"
-            data-library-pin-entry
-            disabled={libraryDisabled}
-            onClick={() => {
-              closeMenu();
-              onOpenLibrary();
-            }}
-            className="w-full flex items-center gap-2 px-3 py-2 text-xs text-zinc-200 hover:bg-zinc-700 transition-colors text-left disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            <BookOpen className="w-3.5 h-3.5 text-zinc-400" />
-            <span>{t.inputAddMenu.libraryLabel}</span>
-          </button>
-
-          {/* C-6: 本会话记忆开关（默认开启的低频功能，从底栏移入这里） */}
-          <button
-            type="button"
-            disabled={memoryToggleDisabled}
-            onClick={() => {
-              onToggleMemory();
-              closeMenu();
-            }}
-            className="w-full flex items-center gap-2 px-3 py-2 text-xs text-zinc-200 hover:bg-zinc-700 transition-colors text-left disabled:cursor-not-allowed disabled:opacity-40"
-            title={memoryMode === 'off' ? t.inputAddMenu.memoryOffTitle : t.inputAddMenu.memoryOnTitle}
-          >
-            <Brain className={`w-3.5 h-3.5 ${memoryMode === 'off' ? 'text-zinc-500' : 'text-emerald-300'}`} />
-            <span>{t.inputAddMenu.memoryLabel}</span>
-            <span className={`ml-auto text-[10px] ${memoryMode === 'off' ? 'text-zinc-500' : 'text-emerald-300'}`}>
-              {memoryMode === 'off' ? t.inputAddMenu.memoryOffStatus : t.inputAddMenu.memoryOnStatus}
-            </span>
-          </button>
-
-          {/* 交互模式：3 chip 横排，显示当前选中并直接切换 */}
-          <div className="border-t border-zinc-700/60 mt-1 pt-1.5 px-2 pb-1.5">
-            <div className="text-[10px] uppercase tracking-wider text-zinc-500 mb-1 px-1">{t.inputAddMenu.interactionModeHeader}</div>
-            <div className="grid grid-cols-3 gap-1">
-              {modeOptions.map((opt) => (
-                <button
-                  key={opt.value}
-                  type="button"
-                  onClick={() => {
-                    setInteractionMode(opt.value);
-                    closeMenu();
-                  }}
-                  className={`
-                    px-2 py-1.5 text-[11px] rounded transition-colors
-                    ${interactionMode === opt.value
-                      ? `${opt.color} bg-zinc-700 font-medium`
-                      : 'text-zinc-500 hover:bg-zinc-700/50'}
-                  `}
-                  title={opt.hint}
-                >
-                  {opt.label}
-                </button>
-              ))}
-            </div>
           </div>
         </div>
       )}

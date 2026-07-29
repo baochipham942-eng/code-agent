@@ -15,6 +15,7 @@ import { useSessionStore } from '../../../stores/sessionStore';
 import { useTaskStore } from '../../../stores/taskStore';
 import { recordStreamingPerformanceCounter } from '../../../utils/streamingPerformanceMetrics';
 import { useI18n } from '../../../hooks/useI18n';
+import { SessionModelsContext } from './sessionModelsContext';
 
 interface TurnBasedTraceViewProps {
   projection: TraceProjection;
@@ -345,6 +346,20 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
   const hasOutputFollowTurnOutput = outputFollowTurnIndex >= 0 && Boolean(outputFollowRevision);
 
   const firstTurnId = projection.turns[0]?.turnId ?? null;
+
+  // 会话内各轮实际使用过的模型集合（TurnQualityStrip 据此判断徽标是否在重复
+  // 全会话唯一的模型名——单模型会话里每轮印同一个名字是纯噪音，直接隐藏）。
+  const sessionModels = useMemo(() => {
+    const models = new Set<string>();
+    for (const turn of projection.turns) {
+      for (const node of turn.nodes) {
+        const strategy = node.metadata?.turnQuality?.strategy;
+        const model = strategy?.model || strategy?.requestedModel;
+        if (model) models.add(model);
+      }
+    }
+    return models;
+  }, [projection.turns]);
   const previousHistoryList = historyListRef.current;
   const prependedTurnCount = previousHistoryList.sessionId === projection.sessionId
     ? getPrependedTurnCount(previousHistoryList.firstTurnId, projection.turns)
@@ -880,6 +895,7 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
               forceExpanded={hasSearchMatch}
               highlightActive={isActiveMatchTurn}
               isActiveTurn={isStreaming}
+              isLastTurn={isLast}
               sessionStatus={exposesSessionRuntime ? sessionStatus : null}
               isSessionProcessing={exposesSessionRuntime ? isProjectionSessionProcessing : false}
               streamSnapshot={projectionStreamSnapshot}
@@ -916,6 +932,7 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
   ), []);
 
   return (
+    <SessionModelsContext.Provider value={sessionModels}>
     <div className="relative h-full min-h-0" data-virtuoso-first-item-index={firstItemIndex}>
       <Virtuoso
         ref={virtuosoRef}
@@ -958,5 +975,6 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
         </button>
       )}
     </div>
+    </SessionModelsContext.Provider>
   );
 };

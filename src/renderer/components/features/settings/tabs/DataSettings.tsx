@@ -245,6 +245,8 @@ export function buildTelemetryHealthSummary(health: unknown): TelemetryHealthSum
   if (!isTelemetryHealth(health)) {
     throw new Error(TELEMETRY_HEALTH_UNAVAILABLE);
   }
+  // 上传失败字段是后加的可选通道（老后端不返回），缺失时按"无失败信息"降级，
+  // 不参与 isTelemetryHealth 的硬校验。
   return {
     loading: false,
     available: true,
@@ -252,6 +254,12 @@ export function buildTelemetryHealthSummary(health: unknown): TelemetryHealthSum
     sessionCount: health.sessionCount,
     storageBytes: health.storageBytes,
     lastEventAt: health.lastEventAt,
+    lastUploadAt: typeof health.lastUploadAt === 'number' ? health.lastUploadAt : null,
+    lastUploadError: typeof health.lastUploadError === 'string' && health.lastUploadError.trim()
+      ? health.lastUploadError
+      : null,
+    lastUploadErrorAt: typeof health.lastUploadErrorAt === 'number' ? health.lastUploadErrorAt : null,
+    uploadFailureCount: typeof health.uploadFailureCount === 'number' ? health.uploadFailureCount : 0,
   };
 }
 
@@ -266,6 +274,12 @@ interface TelemetryHealthSummary {
   storageBytes: number | null;
   /** 最近事件时间戳（ms）；null 表示无数据 */
   lastEventAt: number | null;
+  /** 最近一次成功上传时间（ms）；老后端不上报为 null */
+  lastUploadAt: number | null;
+  /** 最近一次上传失败的脱敏摘要；无失败/老后端为 null */
+  lastUploadError: string | null;
+  lastUploadErrorAt: number | null;
+  uploadFailureCount: number;
   error?: string;
 }
 
@@ -294,6 +308,10 @@ export const DataSettings: React.FC = () => {
     sessionCount: null,
     storageBytes: null,
     lastEventAt: null,
+    lastUploadAt: null,
+    lastUploadError: null,
+    lastUploadErrorAt: null,
+    uploadFailureCount: 0,
   });
   const [persistenceHealth, setPersistenceHealth] = useState<PersistenceHealth | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -338,6 +356,10 @@ export const DataSettings: React.FC = () => {
         sessionCount: null,
         storageBytes: null,
         lastEventAt: null,
+        lastUploadAt: null,
+        lastUploadError: null,
+        lastUploadErrorAt: null,
+        uploadFailureCount: 0,
       });
       return;
     }
@@ -358,6 +380,10 @@ export const DataSettings: React.FC = () => {
         sessionCount: null,
         storageBytes: null,
         lastEventAt: null,
+        lastUploadAt: null,
+        lastUploadError: null,
+        lastUploadErrorAt: null,
+        uploadFailureCount: 0,
         // 哨兵/空消息不透传，展示层落 dataText.telemetry.notConnected
         error: raw && raw !== TELEMETRY_HEALTH_UNAVAILABLE ? raw : undefined,
       });
@@ -617,6 +643,16 @@ export const DataSettings: React.FC = () => {
                 {dataText.telemetry.recentPrefix}
                 {formatLastEventAt(telemetrySummary.lastEventAt, dataText.telemetry.time)}
               </span>
+              {telemetrySummary.lastUploadError && (
+                <span
+                  className="inline-flex items-center gap-1.5 rounded-md border border-red-500/30 bg-red-500/10 px-2 py-1 text-red-300"
+                  title={telemetrySummary.lastUploadError}
+                >
+                  {dataText.telemetry.uploadFailedSummary
+                    .replace('{count}', String(telemetrySummary.uploadFailureCount))
+                    .replace('{time}', formatLastEventAt(telemetrySummary.lastUploadErrorAt, dataText.telemetry.time))}
+                </span>
+              )}
             </div>
           ) : (
             <div className="flex flex-wrap items-center gap-2 text-xs">

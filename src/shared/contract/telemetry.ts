@@ -471,4 +471,12 @@ export interface TelemetryHealth {
   storageBytes: number;
   /** 最近一次 telemetry 事件/turn/session 的时间戳（ms），无数据为 null */
   lastEventAt: number | null;
+  /** 最近一次完整成功的云端上传时间；尚未成功上传时为 null */
+  lastUploadAt: number | null;
+  /** 最近一次云端上传失败的脱敏摘要；从未失败时为 null */
+  lastUploadError: string | null;
+  /** 最近一次云端上传失败时间；从未失败时为 null */
+  lastUploadErrorAt: number | null;
+  /** 当前进程累计观测到的云端上传失败次数 */
+  uploadFailureCount: number;
 }

@@ -78,6 +78,13 @@ export interface ComposerAgentSelection {
   via?: 'slash_picker' | 'agent_command' | 'agent_chip';
 }
 
+/** composer 命令 chip（/goal /schedule /loop /workflow）：发送时拼回正文前缀，同时随 envelope 进 metadata 供回放 chip 行。 */
+interface ConversationPendingCommand {
+  id: string;
+  /** 面板展示名（如「设定目标」） */
+  name: string;
+}
+
 export interface RuntimeInputIntent {
   mode: RuntimeInputMode;
   delivery?: RuntimeInputDelivery;
@@ -109,6 +116,8 @@ export interface ConversationEnvelopeContext {
   preferredAgentName?: string | null;
   selectedAgent?: ComposerAgentSelection;
   selectedPromptCommand?: ComposerPromptCommandSelection;
+  /** 发送时挂在 composer 上的命令 chip（/goal 等）；提交链路会把它拼回正文前缀，这里留快照给回放 chip 行。 */
+  pendingCommand?: ConversationPendingCommand | null;
   routing?: ConversationRouting;
   selectedSkillIds?: string[];
   selectedConnectorIds?: string[];
@@ -150,6 +159,9 @@ export interface WorkbenchMessageMetadata {
   preferredAgentName?: string | null;
   selectedAgent?: ComposerAgentSelection;
   selectedPromptCommand?: ComposerPromptCommandSelection;
+  pendingCommand?: ConversationPendingCommand;
+  /** 发送这一刻会话 pin 的资料快照（id+标题），host 持久化 user message 时写入；回放 chip 行用。 */
+  pinnedLibraryItems?: Array<{ id: string; title: string }>;
   routingMode?: ConversationRoutingMode;
   targetAgentIds?: string[];
   targetAgentNames?: string[];

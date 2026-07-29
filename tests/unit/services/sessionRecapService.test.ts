@@ -100,7 +100,7 @@ describe('sessionRecapService 素材收集', () => {
     const text = formatRecapFallback(material!);
     expect(text).toContain('销售图表');
     expect(text).toContain('1 项任务完成');
-    expect(text).toContain('1 项卡住');
+    expect(text).toContain('1 项任务受阻');
     expect(text).not.toMatch(/Error|Traceback|at .*:\d+:\d+/);
   });
 

@@ -9,6 +9,7 @@ import { useSessionStore } from '../../stores/sessionStore';
 import { IPC_DOMAINS } from '@shared/ipc';
 import type { AppSettings, ModelProvider } from '@shared/contract';
 import type { AgentEngineKind } from '@shared/contract/agentEngine';
+import type { EffortLevel } from '@shared/contract/agent';
 import { normalizeAgentEngineSession } from '@shared/contract/agentEngine';
 import { getProviderDisplayName, isAgenticVerifiedModel } from '@shared/constants';
 import {
@@ -56,6 +57,9 @@ interface ModelSwitcherProps {
 }
 
 export const MODEL_OVERRIDE_CHANGE_EVENT = 'code-agent:model-override-change';
+
+/** 会话内（如 AgentErrorCard「切换模型」按钮）请求打开模型选择器的事件。 */
+export const OPEN_MODEL_SWITCHER_EVENT = 'code-agent:open-model-switcher';
 
 // 相对倍率价签（设计稿 §8.1）：基准恒定，逐 option 纯函数求值即可，无需状态。
 const PRICE_BASELINE = resolveModelPrice(PRICING_BASELINE_DEFAULT.provider, PRICING_BASELINE_DEFAULT.modelId);
@@ -142,11 +146,17 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
   const [activeOptionIndex, setActiveOptionIndex] = useState(0);
   const [healthMap, setHealthMap] = useState<Record<string, ProviderHealthSnapshot>>({});
   const [modelSettings, setModelSettings] = useState<AppSettings | null>(null);
+  // modelSettings IPC 是否已返回（用于打开面板时的锚定时机）
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
   const { t } = useI18n();
   const modelText = t.settings.model.models;
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  // 内层模型列表滚动容器（max-h-64 overflow-y-auto），锚定滚动只动它，避免误滚外层页面
+  const listScrollRef = useRef<HTMLDivElement>(null);
+  // 打开面板后是否还需要执行一次"锚定到选中模型"（搜索过滤不重复锚定）
+  const anchorPendingRef = useRef(false);
   const [menuPos, setMenuPos] = useState<ModelSwitcherMenuPosition | null>(null);
   const sessionId = useSessionStore((s) => s.currentSessionId);
   const session = useSessionStore((s) =>
@@ -233,6 +243,13 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
     }
   }, [open]);
 
+  // 会话内入口（AgentErrorCard「切换模型」）请求打开菜单
+  useEffect(() => {
+    const handleOpenRequest = () => setOpen(true);
+    window.addEventListener(OPEN_MODEL_SWITCHER_EVENT, handleOpenRequest);
+    return () => window.removeEventListener(OPEN_MODEL_SWITCHER_EVENT, handleOpenRequest);
+  }, []);
+
   useEffect(() => {
     if (engine.kind !== 'native' && open) {
       setOpen(false);
@@ -241,14 +258,23 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
 
   // 打开时读取模型设置，保证输入框模型列表和 Settings 的启用状态一致
   useEffect(() => {
-    if (!open) return;
-    window.domainAPI?.invoke<AppSettings>(IPC_DOMAINS.SETTINGS, 'get', {})
+    if (!open) {
+      setSettingsLoaded(false);
+      return;
+    }
+    const api = window.domainAPI;
+    if (!api) {
+      setSettingsLoaded(true);
+      return;
+    }
+    api.invoke<AppSettings>(IPC_DOMAINS.SETTINGS, 'get', {})
       .then((res) => {
         if (res?.success && res.data) {
           setModelSettings(res.data);
         }
       })
-      .catch(() => { /* 设置读取失败时保留内置模型列表兜底 */ });
+      .catch(() => { /* 设置读取失败时保留内置模型列表兜底 */ })
+      .finally(() => setSettingsLoaded(true));
   }, [open]);
 
   // 打开时拉取 provider 健康状态
@@ -489,6 +515,39 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
   const displayModel = overrideModel || currentModel;
   const isOverridden = engine.kind === 'native' && !!overrideModel;
   const displayProvider = overrideProvider || defaultProvider;
+
+  // 打开面板时锚定到当前选中模型：等 modelSettings IPC 返回、列表二次渲染后执行一次。
+  // 用 anchorPendingRef 保证每次打开只锚一次，搜索过滤（groupedFilteredOptions 变化）不重复锚定。
+  useEffect(() => {
+    if (!open) return;
+    if (!settingsLoaded) {
+      anchorPendingRef.current = true;
+      return;
+    }
+    if (!anchorPendingRef.current) return;
+    anchorPendingRef.current = false;
+    if (showModelSettingsPrompt) return;
+    let selectedIndex = 0;
+    for (const group of groupedFilteredOptions) {
+      const hit = group.options.find(
+        ({ option }) => option.model === displayModel && option.provider === displayProvider,
+      );
+      if (hit) {
+        selectedIndex = hit.index;
+        break;
+      }
+    }
+    // 键盘导航从当前选中项开始；无选中项时保持 0（「自动」）
+    setActiveOptionIndex(selectedIndex);
+    if (selectedIndex <= 0) return;
+    // 直接设置内层滚动容器的 scrollTop 让选中行居中可见，避免 scrollIntoView 误滚外层页面
+    const container = listScrollRef.current;
+    const row = container?.querySelector<HTMLElement>(`[data-model-option-index="${selectedIndex}"]`);
+    if (container && row) {
+      container.scrollTop = row.offsetTop - (container.clientHeight - row.clientHeight) / 2;
+    }
+  }, [open, settingsLoaded, showModelSettingsPrompt, groupedFilteredOptions, displayModel, displayProvider]);
+
   const nativeDisplayLabel = overrideAdaptive ? '自动' : getRuntimeModelLabel(displayModel, displayProvider, modelSettings);
   const selectedNativeOption = useMemo(
     () => modelOptions.find((option) => option.provider === displayProvider && option.model === displayModel),
@@ -505,6 +564,37 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
     [displayModel, displayProvider, engine.kind, selectedNativeOption?.features],
   );
   const selectedEffort = getSelectedEffortOption(effortLevel, effortOptions);
+  // 思考段（2026-07-29 合并改版）：原 Thinking On/Off 与 Effort 两段行高不齐、
+  // 选项数不一（2 vs 3），合并为一行 4 等分 segmented：关 = thinking off；
+  // 低/中/高 = thinking on + effort low/med/high。setters 不变，只是 UI 合段。
+  const thinkingSegmentOptions = useMemo(() => ([
+    {
+      value: 'off' as const,
+      label: modelText.thinkingOptionOff,
+      selected: !thinkingEnabled,
+      color: 'text-zinc-300',
+      tint: 'bg-zinc-700',
+      onSelect: () => setThinkingEnabled(false),
+    },
+    ...(['low', 'medium', 'high'] as const).map((level) => {
+      const effortOption = effortOptions.find((option) => option.value === level);
+      return {
+        value: level as EffortLevel,
+        label: level === 'low'
+          ? modelText.thinkingOptionLow
+          : level === 'medium'
+            ? modelText.thinkingOptionMedium
+            : modelText.thinkingOptionHigh,
+        selected: thinkingEnabled && effortLevel === level,
+        color: effortOption?.color ?? 'text-zinc-300',
+        tint: effortOption?.tint ?? 'bg-zinc-700',
+        onSelect: () => {
+          setThinkingEnabled(true);
+          setEffortLevel(level);
+        },
+      };
+    }),
+  ]), [effortLevel, effortOptions, modelText, setEffortLevel, setThinkingEnabled, thinkingEnabled]);
   const supportsThinkingControls = !showModelSettingsPrompt && engine.kind === 'native'
     ? displayProvider === 'xiaomi'
       || Boolean(selectedNativeOption?.features.includes('reasoning'))
@@ -592,7 +682,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
                 "
               />
             </div>
-            <div className="max-h-64 overflow-y-auto pb-1">
+            <div ref={listScrollRef} className="max-h-64 overflow-y-auto pb-1">
               {showModelSettingsPrompt ? (
                   <div className="px-3 py-4 text-center">
                     <div className="mx-auto mb-2 flex h-8 w-8 items-center justify-center rounded bg-zinc-700/60 text-zinc-300">
@@ -745,24 +835,21 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
             <div className="px-2 pt-1.5 pb-1.5 border-b border-zinc-700/50">
               <div className="flex items-center gap-1 text-[10px] text-zinc-500 mb-1 px-1">
                 <Brain className="w-3 h-3" />
-                <span>Thinking</span>
+                <span>{modelText.thinkingSectionLabel}</span>
               </div>
-              <div className="grid grid-cols-2 gap-1">
-                {[
-                  { value: false, label: 'Off' },
-                  { value: true, label: 'On' },
-                ].map((option) => (
+              <div className="grid grid-cols-4 gap-1">
+                {thinkingSegmentOptions.map((option) => (
                   <button
-                    key={option.label}
+                    key={option.value}
                     type="button"
-                    onClick={() => setThinkingEnabled(option.value)}
+                    onClick={option.onSelect}
                     className={`
                       inline-flex h-7 items-center justify-center rounded px-2 text-[10px] transition-colors
-                      ${thinkingEnabled === option.value
-                        ? 'text-amber-300 bg-amber-500/15 font-medium ring-1 ring-zinc-600/70'
+                      ${option.selected
+                        ? `${option.color} ${option.tint} font-medium ring-1 ring-zinc-600/70`
                         : 'text-zinc-500 hover:bg-zinc-700/50'}
                     `}
-                    title={`Thinking: ${option.label}`}
+                    title={`${modelText.thinkingSectionLabel}: ${option.label}`}
                   >
                     {option.label}
                   </button>
@@ -771,7 +858,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
             </div>
           )}
 
-          {!showModelSettingsPrompt && (
+          {!showModelSettingsPrompt && !supportsThinkingControls && (
           <div className="px-2 pt-1.5 pb-1.5 border-b border-zinc-700/50">
             <div className="flex items-center gap-1 text-[10px] text-zinc-500 mb-1 px-1">
               <Zap className="w-3 h-3" />

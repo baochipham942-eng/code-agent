@@ -160,6 +160,29 @@ describe('ProjectRepository', () => {
     expect(repo.listSessionIds(UNSORTED_PROJECT_ID)).toEqual(['s_stuck']);
   });
 
+  it('backfill 按 session 跳过不可变边界冲突，不阻断同批其它会话', () => {
+    db.exec('CREATE TABLE conversation_branches (session_id TEXT, project_id TEXT)');
+    seedSession(db, 's_conflict', '/work/alpha', NOW);
+    seedSession(db, 's_healthy', '/work/alpha', NOW);
+    db.prepare('INSERT INTO conversation_branches (session_id, project_id) VALUES (?, ?)')
+      .run('s_conflict', 'immutable-project');
+    const onSkipped = vi.fn();
+
+    const migrated = repo.backfillSessions(
+      NOW,
+      (wp, key) => makeRow(wp, key, NOW),
+      onSkipped,
+    );
+
+    const alpha = repo.getProjectByWorkspaceKey(getProjectKey('/work/alpha'))!;
+    expect(migrated).toBe(1);
+    expect(repo.listSessionIds(alpha.id)).toEqual(['s_healthy']);
+    expect(onSkipped).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: 's_conflict',
+      reason: expect.stringContaining('PROJECT_BOUNDARY_IMMUTABLE'),
+    }));
+  });
+
   it('backfill 不破坏存量：session 其它字段不变', () => {
     seedSession(db, 's1', '/work/alpha', NOW);
     repo.backfillSessions(NOW, (wp, key) => makeRow(wp, key, NOW));

@@ -40,6 +40,7 @@ import {
 import { shouldOpenGoalConfirm } from './goalConfirm';
 import { buildSeedComposerCommand, getBareSeedComposerKind, type SeedComposerKind } from './SeedComposerCard';
 import { getAgentCommandToken, parseAgentSlashCommand } from './agentCommand';
+import { applyPendingCommandPrefix } from './pendingCommand';
 import { shouldClearComposerAfterSend } from './utils';
 
 type VoiceInputContextValue = {
@@ -244,21 +245,28 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
   const handleSubmit = async (e?: React.FormEvent, opts?: { steer?: boolean; content?: string }) => {
     e?.preventDefault();
     const trimmedValue = (opts?.content ?? value).trim();
-    let contentToSend = trimmedValue;
     let preferredAgentIdOverride: string | null | undefined;
     let selectedAgentOverride: ComposerAgentSelection | null | undefined;
+    // 任务 17：命令 chip（/goal /schedule /loop /workflow）发送时拼回 `/${id} ` 前缀，
+    // 之后的解析/分支与手打「/goal xxx」逐字一致。
+    const pendingCommand = useComposerStore.getState().pendingCommand;
+    const clearPendingCommand = () => {
+      if (pendingCommand) useComposerStore.getState().setPendingCommand(null);
+    };
 
     // 预选了团队配方：这句话就是主题，发送即启动整个团队（不走普通对话链路）
     const pendingRecipeId = useComposerStore.getState().selectedTeamRecipeId;
     if (pendingRecipeId && trimmedValue) {
       const recipe = useTeamRecipeStore.getState().recipes.find((item) => item.id === pendingRecipeId);
       if (recipe) {
+        // 成员条上 × 掉的待命成员随启动传给 host，显示口径 = 实际起团口径
+        const excludeMemberKeys = useComposerStore.getState().standbyExcludedMemberKeys;
         addToInputHistory(trimmedValue);
         setValue('');
         useComposerStore.getState().setSelectedTeamRecipeId(null);
         const result = currentSessionId
-          ? await launchRecipe(currentSessionId, recipe.id, trimmedValue)
-          : await launchTeamRecipe(recipe.id, recipe.name, trimmedValue);
+          ? await launchRecipe(currentSessionId, recipe.id, trimmedValue, excludeMemberKeys)
+          : await launchTeamRecipe(recipe.id, recipe.name, trimmedValue, excludeMemberKeys);
         if (!result.ok) {
           // 启动失败要把话还给用户，别让他重打一遍
           setValue(trimmedValue);
@@ -270,10 +278,15 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
       useComposerStore.getState().setSelectedTeamRecipeId(null);
     }
 
-    const compactCommand = parseCompactCommand(trimmedValue);
+    // 命令 chip 在这里拼回前缀（配方分支只吃用户原话当主题，不看 chip）
+    const commandValue = pendingCommand ? applyPendingCommandPrefix(trimmedValue, pendingCommand) : trimmedValue;
+    let contentToSend = commandValue;
+
+    const compactCommand = parseCompactCommand(commandValue);
     if (compactCommand) {
-      addToInputHistory(trimmedValue);
+      addToInputHistory(commandValue);
       setValue('');
+      clearPendingCommand();
       setVoiceInputContext(null);
       try {
         const result = await invoke(IPC_CHANNELS.CONTEXT_COMPACT_CURRENT, currentSessionId ?? undefined, compactCommand.focusText);
@@ -289,25 +302,27 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
     }
 
     // /schedule：自然语言 → 定时任务。复用 cron:generateFromPrompt（LLM 出配置）+ createJob。
-    if (isScheduleCommand(trimmedValue)) {
-      const parsed = parseScheduleCommand(trimmedValue);
+    if (isScheduleCommand(commandValue)) {
+      const parsed = parseScheduleCommand(commandValue);
       if (!parsed?.description) {
         // 不带描述 → 打开对话式创建卡片（解释怎么运作 + 模板/自定义），而非直接报错
         setValue('');
+        clearPendingCommand();
         closeGoalConfirm();
         setScheduleComposerOpen(true);
         return;
       }
-      addToInputHistory(trimmedValue);
+      addToInputHistory(commandValue);
       setValue('');
+      clearPendingCommand();
       setVoiceInputContext(null);
       await runScheduleCreation(parsed.description);
       return;
     }
 
     // /loop：会话内循环——在当前 session 反复执行同一 prompt，直到达成软条件 / 喊停 / 触到轮次上限。
-    if (isLoopCommand(trimmedValue)) {
-      const parsed = parseLoopCommand(trimmedValue);
+    if (isLoopCommand(commandValue)) {
+      const parsed = parseLoopCommand(commandValue);
       if (!parsed?.prompt) {
         toast.warning(t.chatInputSubmit.loopUsageWarning);
         inputAreaRef.current?.focus();
@@ -318,8 +333,9 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
         inputAreaRef.current?.focus();
         return;
       }
-      addToInputHistory(trimmedValue);
+      addToInputHistory(commandValue);
       setValue('');
+      clearPendingCommand();
       setVoiceInputContext(null);
       try {
         const state = await loopClient.start({
@@ -357,29 +373,32 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
 
     // /goal 自治模式：主路径 = 自然语言 → 安静确认卡（提炼草案 + 一键启动）；
     // 显式 --verify/--review/预算 flags = power-user 合同，跳过确认直接启动。
-    if (isGoalCommand(trimmedValue)) {
-      const rawParsed = parseGoalCommand(trimmedValue);
+    if (isGoalCommand(commandValue)) {
+      const rawParsed = parseGoalCommand(commandValue);
       if (!rawParsed || shouldOpenGoalConfirm(rawParsed)) {
         setValue('');
+        clearPendingCommand();
         setScheduleComposerOpen(false);
         openGoalConfirm(rawParsed?.goal ?? '');
         return;
       }
       const parsed = normalizeGoalCommand(rawParsed, t);
-      await startGoalRun(parsed, trimmedValue);
+      clearPendingCommand();
+      await startGoalRun(parsed, commandValue);
       return;
     }
 
-    const seedComposerKind = getBareSeedComposerKind(trimmedValue);
+    const seedComposerKind = getBareSeedComposerKind(commandValue);
     if (seedComposerKind) {
       setValue('');
+      clearPendingCommand();
       setScheduleComposerOpen(false);
       closeGoalConfirm();
       openSeedComposer(seedComposerKind);
       return;
     }
 
-    const agentCommand = parseAgentSlashCommand(trimmedValue, agentEntries);
+    const agentCommand = parseAgentSlashCommand(commandValue, agentEntries);
     if (agentCommand.kind === 'prompt') {
       openAgentCommand();
       return;
@@ -462,6 +481,8 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
           setPendingPromptCommand(draftSnapshot.pendingPromptCommand);
           setPendingAgentSelection(draftSnapshot.pendingAgentSelection);
           setVoiceInputContext(draftSnapshot.voiceInputContext);
+          // 命令 chip 也随草稿一起还回来，跟文本输入框的回滚口径一致
+          if (pendingCommand) useComposerStore.getState().setPendingCommand(pendingCommand);
           if (draftSnapshot.appshot) {
             useAppshotsStore.getState().setPending(draftSnapshot.appshot, currentSessionId);
           }
@@ -476,6 +497,7 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
       setAttachments([]);
       setPendingPromptCommand(null);
       setPendingAgentSelection(null);
+      clearPendingCommand();
       clearAppshot();
 
       // P3-18: Shell shortcut - ! prefix sends command to agent as bash request

@@ -114,9 +114,16 @@ export const ProjectSpaceView: React.FC<ProjectSpaceViewProps> = ({ projectId, o
     })
     : null;
   const statusChip = project && activityStatus ? (
-    <Badge className={`text-[11px] ${STATUS_CHIP_CLASS[activityStatus]}`} data-testid="project-space-header-status">
-      {activityStatus === 'active' ? ps.statusActive : activityStatus === 'archived' ? ps.statusArchived : ps.statusIdle}
-    </Badge>
+    <span className="flex items-center gap-1.5">
+      {project.cloudProjectId ? (
+        <Badge className="border-violet-500/30 bg-violet-500/10 text-[11px] text-violet-300" data-testid="project-space-header-cloud-badge">
+          {ps.cloudBadge}
+        </Badge>
+      ) : null}
+      <Badge className={`text-[11px] ${STATUS_CHIP_CLASS[activityStatus]}`} data-testid="project-space-header-status">
+        {activityStatus === 'active' ? ps.statusActive : activityStatus === 'archived' ? ps.statusArchived : ps.statusIdle}
+      </Badge>
+    </span>
   ) : null;
 
   const tabs: Array<{ key: SpaceTab; label: string }> = [

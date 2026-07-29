@@ -196,6 +196,11 @@ export const ProjectListView: React.FC<ProjectListViewProps> = ({ onSelect }) =>
               <span className="min-w-0 flex-1">
                 <span className="flex min-w-0 items-center gap-2">
                   <span className="truncate text-sm text-zinc-200 group-hover:text-zinc-100">{project.name}</span>
+                  {project.cloudProjectId ? (
+                    <Badge className="border-violet-500/30 bg-violet-500/10 text-[11px] text-violet-300" data-testid={`project-space-cloud-badge-${project.id}`}>
+                      {ps.cloudBadge}
+                    </Badge>
+                  ) : null}
                   <Badge className={`text-[11px] ${STATUS_CHIP_CLASS[activityStatus]}`} data-testid={`project-space-status-${project.id}`}>
                     {statusLabel(activityStatus)}
                   </Badge>

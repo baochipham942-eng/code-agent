@@ -4,7 +4,7 @@
 // tab：动态(默认)/任务/资产，本地 useState。任务 tab 直接内嵌 ProjectCollaborationPanel。
 // ============================================================================
 
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { FolderKanban } from 'lucide-react';
 import type { ProjectDetail, ProjectStatus } from '@shared/contract/project';
 import { FullScreenPageHeader } from '../shared/FullScreenPage';
@@ -16,6 +16,7 @@ import { Badge } from '../../primitives/Badge';
 import { ProjectActivityFeed } from './ProjectActivityFeed';
 import { ProjectArtifactsList } from './ProjectArtifactsList';
 import { ProjectComposer } from './ProjectComposer';
+import { ProjectConfigRail } from './ProjectConfigRail';
 
 export interface ProjectSpaceViewProps {
   projectId: string;
@@ -37,20 +38,16 @@ export const ProjectSpaceView: React.FC<ProjectSpaceViewProps> = ({ projectId, o
   const [tab, setTab] = useState<SpaceTab>('activity');
   const [highlightArtifactId, setHighlightArtifactId] = useState<string | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
-    setDetail(null);
+  const refreshDetail = useCallback(() => {
     getProjectDetail(projectId)
-      .then((next) => {
-        if (!cancelled) setDetail(next);
-      })
-      .catch(() => {
-        if (!cancelled) setDetail(null);
-      });
-    return () => {
-      cancelled = true;
-    };
+      .then((next) => setDetail(next))
+      .catch(() => setDetail(null));
   }, [projectId]);
+
+  useEffect(() => {
+    setDetail(null);
+    refreshDetail();
+  }, [refreshDetail]);
 
   // 跳到源会话：switchSession 内部会 closeSecondaryPages()，本页随二级页一起让位
   const openSession = (sessionId: string) => {
@@ -130,6 +127,12 @@ export const ProjectSpaceView: React.FC<ProjectSpaceViewProps> = ({ projectId, o
           </div>
           <ProjectComposer project={project} />
         </div>
+        <ProjectConfigRail
+          projectId={projectId}
+          project={project}
+          detail={detail}
+          onRefreshDetail={refreshDetail}
+        />
       </div>
     </>
   );

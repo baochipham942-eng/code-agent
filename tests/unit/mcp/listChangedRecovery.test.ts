@@ -3,7 +3,7 @@ import type { McpSubscription } from '@modelcontextprotocol/client';
 import { describe, expect, it, vi } from 'vitest';
 import { maintainListChangedSubscription } from '../../../src/host/mcp/mcpListChangedRecovery';
 
-const FILTER = { tools: {} };
+const FILTER = { toolsListChanged: true };
 
 function subscription(reason: 'local' | 'graceful' | 'remote'): McpSubscription {
   return {

@@ -69,7 +69,7 @@ describe('McpSdkTaskProtocol', () => {
         ...(status === 'completed' ? { result: { content: [{ type: 'text', text: 'done' }] } } : {}),
       };
     });
-    const sleep = vi.fn(async () => {});
+    const sleep = vi.fn(async (_delayMs: number) => {});
     const protocol = new McpSdkTaskProtocol(
       { request } as never,
       'server:identity',

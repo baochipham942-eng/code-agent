@@ -59,3 +59,27 @@ describe('mermaidWheelZoomFactor', () => {
     expect(mermaidWheelZoomFactor(0)).toBe(1);
   });
 });
+
+describe('mermaid 高度缓存（历史会话零跳动占位）', () => {
+  it('量过的高度可按图源码取回，没量过的返回 null', async () => {
+    const { rememberMermaidHeight, getCachedMermaidHeight } = await import(
+      '../../../src/renderer/components/features/chat/MessageBubble/messageContentParts'
+    );
+    expect(getCachedMermaidHeight('graph TD; X-->Y')).toBeNull();
+    rememberMermaidHeight('graph TD; X-->Y', 321);
+    expect(getCachedMermaidHeight('graph TD; X-->Y')).toBe(321);
+    rememberMermaidHeight('graph TD; X-->Y', 400);
+    expect(getCachedMermaidHeight('graph TD; X-->Y')).toBe(400);
+  });
+
+  it('超出容量时淘汰最早的条目，新条目仍可取回', async () => {
+    const { rememberMermaidHeight, getCachedMermaidHeight } = await import(
+      '../../../src/renderer/components/features/chat/MessageBubble/messageContentParts'
+    );
+    for (let i = 0; i < 205; i++) {
+      rememberMermaidHeight(`graph TD; N${i}`, 100 + i);
+    }
+    expect(getCachedMermaidHeight('graph TD; N204')).toBe(304);
+    expect(getCachedMermaidHeight('graph TD; N0')).toBeNull();
+  });
+});

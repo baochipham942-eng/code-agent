@@ -94,6 +94,24 @@ const MERMAID_MIN_SCALE = 0.1;
 const MERMAID_MAX_SCALE = 4;
 const MERMAID_VIEWPORT_MAX_HEIGHT = 560;
 const MERMAID_VIEWPORT_PADDING = 16;
+// 异步渲染完成前 viewport 的占位高：没有它高度先塌 0 再撑开，整页跟着跳
+const MERMAID_PLACEHOLDER_HEIGHT = 240;
+const MERMAID_HEIGHT_CACHE_MAX = 200;
+
+// 量过的 fit 高度按图源码缓存：重进历史会话时同一张图第一帧就按精确高度占位，零跳动
+const mermaidHeightCache = new Map<string, number>();
+
+export function rememberMermaidHeight(code: string, height: number): void {
+  if (!mermaidHeightCache.has(code) && mermaidHeightCache.size >= MERMAID_HEIGHT_CACHE_MAX) {
+    const oldest = mermaidHeightCache.keys().next().value;
+    if (oldest !== undefined) mermaidHeightCache.delete(oldest);
+  }
+  mermaidHeightCache.set(code, height);
+}
+
+export function getCachedMermaidHeight(code: string): number | null {
+  return mermaidHeightCache.get(code) ?? null;
+}
 const MERMAID_DRAG_CLICK_THRESHOLD = 4;
 const MERMAID_SELECTED_FILTER = 'drop-shadow(0 0 4px rgb(236 72 153)) drop-shadow(0 0 1px rgb(236 72 153))';
 // flowchart/state/class 的节点组、连线标签；sequence 的 actor / 消息 / note；子图框
@@ -150,7 +168,7 @@ export const MermaidDiagram = memo(function MermaidDiagram({ code }: { code: str
   const [error, setError] = useState<string | null>(null);
   const [svgMarkup, setSvgMarkup] = useState<string | null>(null);
   const [view, setView] = useState<MermaidView>({ scale: 1, x: MERMAID_VIEWPORT_PADDING, y: MERMAID_VIEWPORT_PADDING });
-  const [viewportHeight, setViewportHeight] = useState<number | null>(null);
+  const [viewportHeight, setViewportHeight] = useState<number | null>(() => getCachedMermaidHeight(code));
   const [copied, setCopiedState] = useState(false);
   const [selectedLabel, setSelectedLabel] = useState<string | null>(null);
   const [instruction, setInstruction] = useState('');
@@ -183,13 +201,14 @@ export const MermaidDiagram = memo(function MermaidDiagram({ code }: { code: str
     const availableWidth = viewport.clientWidth - MERMAID_VIEWPORT_PADDING * 2;
     const scale = availableWidth > 0 ? Math.min(1, availableWidth / size.width) : 1;
     const height = Math.min(size.height * scale + MERMAID_VIEWPORT_PADDING * 2, MERMAID_VIEWPORT_MAX_HEIGHT);
+    rememberMermaidHeight(code, height);
     setViewportHeight(height);
     setView({
       scale,
       x: Math.max(MERMAID_VIEWPORT_PADDING, (viewport.clientWidth - size.width * scale) / 2),
       y: MERMAID_VIEWPORT_PADDING,
     });
-  }, []);
+  }, [code]);
 
   useEffect(() => {
     let cancelled = false;
@@ -388,7 +407,7 @@ export const MermaidDiagram = memo(function MermaidDiagram({ code }: { code: str
       <div
         ref={viewportRef}
         className="relative overflow-hidden select-none"
-        style={{ height: viewportHeight ?? undefined, touchAction: 'none', cursor: 'grab' }}
+        style={{ height: viewportHeight ?? MERMAID_PLACEHOLDER_HEIGHT, touchAction: 'none', cursor: 'grab' }}
         title={tm.zoomHint}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}

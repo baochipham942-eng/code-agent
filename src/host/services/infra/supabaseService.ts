@@ -192,6 +192,41 @@ export interface Database {
         };
         Relationships: [];
       };
+      collab_cards: {
+        Row: {
+          id: string;
+          project_id: string;
+          source_user_id: string;
+          local_card_id: string;
+          title: string;
+          status: string;
+          priority: string;
+          due_at: string | null;
+          requester_user_id: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          project_id: string;
+          source_user_id: string;
+          local_card_id: string;
+          title: string;
+          status: string;
+          priority: string;
+          due_at?: string | null;
+          requester_user_id: string;
+          updated_at: string;
+        };
+        Update: {
+          title?: string;
+          status?: string;
+          priority?: string;
+          due_at?: string | null;
+          requester_user_id?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
       sessions: {
         Row: {
           id: string;

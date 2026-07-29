@@ -2,6 +2,7 @@ import { randomUUID } from 'crypto';
 import type BetterSqlite3 from 'better-sqlite3';
 import { getDatabase } from '../core/databaseService';
 import { NeoWorkCardRepository } from '../core/repositories/NeoWorkCardRepository';
+import { getCollabCardSyncService } from './collabCardSyncService';
 import type {
   AppendNeoWorkCardDeltaInput,
   CloseNeoWorkCardInput,
@@ -32,6 +33,11 @@ import type {
 } from '../../../shared/contract/tag';
 
 type RepoProvider = () => NeoWorkCardRepository;
+
+export interface NeoWorkCardCloudSync {
+  scheduleUpsert(card: NeoWorkCard): void;
+  scheduleDelete(card: NeoWorkCard): void;
+}
 
 const NEO_WORK_CARD_PRIORITIES = new Set<NeoWorkCardPriority>(['urgent', 'high', 'medium', 'low']);
 
@@ -217,7 +223,12 @@ export class NeoWorkCardServiceError extends Error {
 }
 
 export class NeoWorkCardService {
-  constructor(private readonly repoProvider: RepoProvider = getDefaultRepo) {}
+  constructor(
+    private readonly repoProvider: RepoProvider = getDefaultRepo,
+    private readonly syncHook: NeoWorkCardCloudSync | null = repoProvider === getDefaultRepo
+      ? getCollabCardSyncService()
+      : null,
+  ) {}
 
   createDraft(input: CreateNeoWorkCardDraftInput, now = Date.now()): NeoWorkCardWithCurrentRevision {
     const projectId = cleanString(input.projectId);
@@ -267,6 +278,7 @@ export class NeoWorkCardService {
       archivedAt: null,
     };
     this.repoProvider().createDraft(workCard, revision);
+    this.syncHook?.scheduleUpsert(workCard);
     return { workCard, revision };
   }
 
@@ -344,6 +356,7 @@ export class NeoWorkCardService {
     }, now);
     const updated = repo.getWorkCard(workCard.id);
     if (!updated) throw new NeoWorkCardServiceError('NOT_FOUND', 'work card not found after metadata update');
+    this.syncHook?.scheduleUpsert(updated);
     return updated;
   }
 
@@ -378,6 +391,7 @@ export class NeoWorkCardService {
     });
     const updated = repo.getWorkCard(workCard.id);
     if (!updated) throw new NeoWorkCardServiceError('NOT_FOUND', 'work card not found after update');
+    this.syncHook?.scheduleUpsert(updated);
     return { workCard: updated, revision: nextRevision };
   }
 
@@ -407,6 +421,8 @@ export class NeoWorkCardService {
     repo.createApproval(approval);
     repo.setApprovedRevision(workCard.id, revision.id, now);
     repo.insertMemoryCandidates(this.buildExplicitMemoryCandidates(workCard, revision, now));
+    const updated = repo.getWorkCard(workCard.id);
+    if (updated) this.syncHook?.scheduleUpsert(updated);
     return approval;
   }
 
@@ -436,6 +452,8 @@ export class NeoWorkCardService {
     });
     repo.createApproval(approval);
     repo.clearApprovedRevision(workCard.id, 'needs_review', now);
+    const updated = repo.getWorkCard(workCard.id);
+    if (updated) this.syncHook?.scheduleUpsert(updated);
     return approval;
   }
 
@@ -454,7 +472,9 @@ export class NeoWorkCardService {
       status: 'cancelled',
       updatedAt: now,
     });
-    return repo.getWorkCard(workCard.id);
+    const cancelled = repo.getWorkCard(workCard.id);
+    if (cancelled) this.syncHook?.scheduleUpsert(cancelled);
+    return cancelled;
   }
 
   archive(input: string | CloseNeoWorkCardInput, now = Date.now()): NeoWorkCard | null {
@@ -474,7 +494,9 @@ export class NeoWorkCardService {
       }));
     }
     repo.archiveWorkCard(workCard.id, now);
-    return repo.getWorkCard(workCard.id);
+    const archived = repo.getWorkCard(workCard.id);
+    if (archived) this.syncHook?.scheduleDelete(archived);
+    return archived;
   }
 
   appendDelta(input: AppendNeoWorkCardDeltaInput, now = Date.now()): NeoWorkCardDelta {
@@ -503,6 +525,8 @@ export class NeoWorkCardService {
     if (shouldMoveToResultReview(workCard, input)) {
       repo.setWorkCardStatus(workCard.id, 'in_result_review', now);
     }
+    const updated = repo.getWorkCard(workCard.id);
+    if (updated) this.syncHook?.scheduleUpsert(updated);
     return delta;
   }
 
@@ -526,6 +550,7 @@ export class NeoWorkCardService {
     repo.setWorkCardStatus(workCard.id, status, now, blockedReason);
     const updated = repo.getWorkCard(workCard.id);
     if (!updated) throw new NeoWorkCardServiceError('NOT_FOUND', 'work card not found after status update');
+    this.syncHook?.scheduleUpsert(updated);
     return updated;
   }
 
@@ -549,6 +574,7 @@ export class NeoWorkCardService {
     repo.setWorkCardStatus(workCard.id, 'completed', now);
     const detail = this.get(workCard.id);
     if (!detail) throw new NeoWorkCardServiceError('NOT_FOUND', 'work card not found after accepting result');
+    this.syncHook?.scheduleUpsert(detail.workCard);
     return detail;
   }
 
@@ -586,6 +612,7 @@ export class NeoWorkCardService {
     repo.setWorkCardStatus(workCard.id, workCard.approvedRevisionId ? 'working' : 'needs_review', now);
     const detail = this.get(workCard.id);
     if (!detail) throw new NeoWorkCardServiceError('NOT_FOUND', 'work card not found after requesting changes');
+    this.syncHook?.scheduleUpsert(detail.workCard);
     return detail;
   }
 

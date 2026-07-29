@@ -461,6 +461,32 @@ describe('topic 元数据展示（S1）', () => {
     expect(screen.getByTestId('neo-topic-detail-failed').textContent).toContain('delta 里的旧风险文案');
   });
 
+  it('外部点击收起抽屉；点别的 topic 行仍直接切换详情', () => {
+    const details = [
+      makeDetail({ id: 'a', title: '甲topic', status: 'completed' }),
+      makeDetail({ id: 'b', title: '乙topic', status: 'completed' }),
+    ];
+    render(<ProjectCollaborationPanel projectId="project-1" details={details} sourceMessagesByConversation={{}} />);
+
+    fireEvent.click(screen.getByTestId('neo-topic-row-a'));
+    expect(screen.getByTestId('neo-topic-drawer')).toBeTruthy();
+
+    // 外部（面板空白处）pointerdown → 收起
+    fireEvent.pointerDown(document.body);
+    expect(screen.queryByTestId('neo-topic-drawer')).toBeNull();
+
+    // 重新打开 a，再点 b 行：pointerdown 先关、click 随后开 b 的详情（切换不中断）
+    fireEvent.click(screen.getByTestId('neo-topic-row-a'));
+    const rowB = screen.getByTestId('neo-topic-row-b');
+    fireEvent.pointerDown(rowB);
+    fireEvent.click(rowB);
+    expect(screen.getByTestId('neo-topic-drawer').textContent).toContain('乙topic');
+
+    // 抽屉内部点击不收起
+    fireEvent.pointerDown(screen.getByTestId('neo-topic-drawer'));
+    expect(screen.getByTestId('neo-topic-drawer')).toBeTruthy();
+  });
+
   it('接着做 writes continuationTarget and opens the primary (latest-round) conversation', () => {
     const details = [makeDetail({
       id: 'a',

@@ -1,4 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useShallow } from 'zustand/shallow';
 import { Loader2, Search, Sparkles, X } from 'lucide-react';
 import type { NeoWorkCardDetail } from '@shared/contract/tag';
@@ -252,6 +253,19 @@ export const ProjectCollaborationPanel: React.FC<ProjectCollaborationPanelProps>
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [selectedId]);
 
+  // 外部点击收起：pointerdown 先关，落在别的 topic 行上时其 click 随后重开新详情（保持"点别的行直接切换"）
+  const drawerRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!selectedId) return;
+    const onPointerDown = (event: PointerEvent) => {
+      if (drawerRef.current && event.target instanceof Node && !drawerRef.current.contains(event.target)) {
+        setSelectedId(null);
+      }
+    };
+    document.addEventListener('pointerdown', onPointerDown);
+    return () => document.removeEventListener('pointerdown', onPointerDown);
+  }, [selectedId]);
+
   const handleCancel = useCallback(async (workCardId: string) => {
     try {
       if (onCancel) await onCancel(workCardId);
@@ -388,10 +402,12 @@ export const ProjectCollaborationPanel: React.FC<ProjectCollaborationPanelProps>
 
       </div>
 
-      {/* 详情 = 非模态右侧抽屉：列表保持可点（点别的行直接切换内容），X/Esc 关闭 */}
-      {selectedDetail && (
+      {/* 详情 = 非模态右侧抽屉：列表保持可点（点别的行直接切换内容），X/Esc/外部点击关闭。
+          portal 到 body + fixed：占满 app 全高（挂载点在全屏页 banner 之下，absolute 只能盖住面板区）。 */}
+      {selectedDetail && createPortal(
         <div
-          className="absolute inset-y-0 right-0 z-40 flex w-[min(560px,100%)] flex-col border-l border-zinc-800 bg-zinc-950 shadow-[-24px_0_48px_-24px_rgba(0,0,0,0.8)]"
+          ref={drawerRef}
+          className="fixed inset-y-0 right-0 z-50 flex w-[min(560px,100vw)] flex-col border-l border-zinc-800 bg-zinc-950 shadow-[-24px_0_48px_-24px_rgba(0,0,0,0.8)]"
           data-testid="neo-topic-drawer"
           role="complementary"
           aria-label="topic 详情"
@@ -418,7 +434,8 @@ export const ProjectCollaborationPanel: React.FC<ProjectCollaborationPanelProps>
               onApproveMemory={handleApproveMemory}
             />
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );

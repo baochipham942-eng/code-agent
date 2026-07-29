@@ -59,10 +59,28 @@ function resolveTurnDetectionConfig(): VoiceTurnDetectionConfig {
     // 分叉：用户说了没反应，连补救的点按按钮都不显示（2026-07-27 真机差点踩到）。
     // 只有**显式**留在点按档时才认这个 null。
     if (configured === null && voice?.live?.interrupt !== 'manual') return VOICE_TURN_DETECTION_DEFAULT;
-    return configured === undefined ? VOICE_TURN_DETECTION_DEFAULT : configured;
+    if (configured === undefined) return VOICE_TURN_DETECTION_DEFAULT;
+    return upgradeStaleVadDefaults(configured);
   } catch {
     return VOICE_TURN_DETECTION_DEFAULT;
   }
+}
+
+/**
+ * 存量配置里的旧默认值升级（批 X2）。prefix/silence 从来不是 UI 可设项——落盘里的
+ * 300/500 只可能是「当年默认值随保存写死的拷贝」，不是用户选择。改默认值对存量
+ * 零生效是踩过的坑（echoCancellation 先例），所以在读取口把旧默认识别为过期：
+ * 逐字段等于旧默认 → 升到新默认；手改过的其他值（含 threshold）原样保留。
+ */
+function upgradeStaleVadDefaults(configured: VoiceTurnDetectionConfig): VoiceTurnDetectionConfig {
+  if (configured?.type !== 'server_vad') return configured;
+  const defaults = VOICE_TURN_DETECTION_DEFAULT;
+  if (defaults?.type !== 'server_vad') return configured;
+  return {
+    ...configured,
+    ...(configured.prefixPaddingMs === 300 ? { prefixPaddingMs: defaults.prefixPaddingMs } : {}),
+    ...(configured.silenceDurationMs === 500 ? { silenceDurationMs: defaults.silenceDurationMs } : {}),
+  };
 }
 
 /** session.updated 回显里是否真收下了工具。回显不带 tools 字段一律按「没收下」算。 */

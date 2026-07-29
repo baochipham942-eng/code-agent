@@ -4,7 +4,7 @@
 // 纯 DOM 模型层 + InputArea（contenteditable）交互
 // ============================================================================
 
-import React, { createRef, useState } from 'react';
+import React, { createRef, forwardRef, useState } from 'react';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -146,11 +146,12 @@ describe('composerRichTextModel', () => {
 
 const skillChipView: InlineChipView = { key: 'skill:docx', kind: 'skill', id: 'docx', label: 'docx' };
 
-function Harness(props: Partial<InputAreaProps> & { initialValue?: string }) {
+const Harness = forwardRef<InputAreaRef, Partial<InputAreaProps> & { initialValue?: string }>(function Harness(props, ref) {
   const { initialValue = '', ...rest } = props;
   const [value, setValue] = useState(initialValue);
   return (
     <InputArea
+      ref={ref}
       value={value}
       onChange={(next) => { setValue(next); props.onChange?.(next); }}
       onSubmit={props.onSubmit ?? vi.fn()}
@@ -160,7 +161,7 @@ function Harness(props: Partial<InputAreaProps> & { initialValue?: string }) {
       {...rest}
     />
   );
-}
+});
 
 function getEditor(): HTMLElement {
   return screen.getByTestId('chat-composer-textarea');

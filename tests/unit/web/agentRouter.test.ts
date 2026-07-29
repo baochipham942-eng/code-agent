@@ -1770,7 +1770,7 @@ describe('createAgentRouter', () => {
     const sessionEq = vi.fn(async () => ({ error: null }));
     const sessionsTable = {
       upsert: vi.fn(async () => ({ error: null })),
-      update: vi.fn(() => ({ eq: sessionEq })),
+      update: vi.fn((_row: Record<string, unknown>) => ({ eq: sessionEq })),
     };
     const messagesTable = {
       insert: vi.fn(async () => ({ error: null })),

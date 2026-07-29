@@ -9,7 +9,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 
 const chipMocks = vi.hoisted(() => ({
   appState: {
-    activeAgentId: 'lanxi',
+    activeAgentId: 'lanxi' as string | null,
     setActiveAgentId: vi.fn(),
   },
   agentRegistryState: {

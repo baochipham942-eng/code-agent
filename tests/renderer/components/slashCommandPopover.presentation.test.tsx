@@ -146,13 +146,13 @@ describe('SlashCommandPopover 候选行呈现', () => {
 
     const props = {
       isOpen: true,
-      agents: [],
+      agents: [] as import('../../../src/shared/contract/agentRegistry').AgentListEntry[],
       skillRecommendations: [],
       capabilityItems: [],
       capabilitySuggestions: [],
       onClose: vi.fn(),
       onSelect: vi.fn(),
-    } as const;
+    };
 
     // 对照组：doctor 正常出现，证明 registry 候选链路本身是通的
     const { rerender } = render(<SlashCommandPopover {...props} filter="doctor" />);

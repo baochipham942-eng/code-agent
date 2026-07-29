@@ -19,17 +19,21 @@ vi.mock('../../../src/host/services/core/secureStorage', () => ({
 import { McpOAuthProvider, createOAuthProviderForServer } from '../../../src/host/mcp/mcpOAuthProvider';
 import type { McpOAuthCoordinator } from '../../../src/host/mcp/mcpOAuthCoordinator';
 
+const DEFAULT_ISSUER = 'https://auth.example.com';
+
 function createProvider(
   serverIdentity: string,
   onRedirectToAuthorization: (authUrl: URL) => void | Promise<void> = vi.fn(),
 ): McpOAuthProvider {
-  return new McpOAuthProvider({
+  const provider = new McpOAuthProvider({
     serverIdentity,
     serverName: 'Notion',
     redirectUrl: () => 'http://127.0.0.1:49321/oauth/callback',
     state: () => 'state-abc',
     onRedirectToAuthorization,
   });
+  provider.saveDiscoveryState({ authorizationServerUrl: DEFAULT_ISSUER });
+  return provider;
 }
 
 const notionTokens: OAuthTokens = {
@@ -99,9 +103,12 @@ describe('McpOAuthProvider', () => {
     expect(provider.clientInformation()).toBeUndefined();
     expect(() => provider.codeVerifier()).toThrow('MCP OAuth code verifier is not available');
     expect(secureStorageState.delete).toHaveBeenCalledWith('mcp-oauth:notion:abc123digest:tokens');
-    expect(secureStorageState.delete).toHaveBeenCalledWith('mcp-oauth:notion:abc123digest:client-info');
+    expect(secureStorageState.delete).toHaveBeenCalledWith(
+      'mcp-oauth:notion:abc123digest:issuer:https%3A%2F%2Fauth.example.com:client-info',
+    );
     expect(secureStorageState.delete).toHaveBeenCalledWith('mcp-oauth:notion:abc123digest:code-verifier');
     expect(secureStorageState.delete).toHaveBeenCalledWith('mcp-oauth:notion:abc123digest:discovery');
+    expect(secureStorageState.delete).toHaveBeenCalledWith('mcp-oauth:notion:abc123digest:issuer');
   });
 
   it('invalidates a single credential scope without clearing the other stored entries', () => {
@@ -147,11 +154,36 @@ describe('McpOAuthProvider', () => {
     expect(onRedirectToAuthorization).toHaveBeenCalledWith(authorizationUrl);
   });
 
+  it('does not reuse client credentials after the authorization server issuer changes', () => {
+    const provider = createProvider('notion:abc123digest');
+
+    provider.saveClientInformation(clientInfo);
+    expect(provider.clientInformation()).toEqual(clientInfo);
+    expect(secureStorageState.values.has(
+      'mcp-oauth:notion:abc123digest:issuer:https%3A%2F%2Fauth.example.com:client-info',
+    )).toBe(true);
+
+    provider.saveDiscoveryState({ authorizationServerUrl: 'https://login.example.net/issuer' });
+
+    expect(provider.authorizationServerIssuer()).toBe('https://login.example.net/issuer');
+    expect(provider.clientInformation()).toBeUndefined();
+    expect(secureStorageState.get).toHaveBeenLastCalledWith(
+      'mcp-oauth:notion:abc123digest:issuer:https%3A%2F%2Flogin.example.net%2Fissuer:client-info',
+    );
+  });
+
+  it('declares native application type for dynamic client registration', () => {
+    const provider = createProvider('notion:abc123digest');
+
+    expect(provider.clientMetadata.application_type).toBe('native');
+  });
+
   it('redirectUrl never throws before a flow exists (SDK reads it at auth() entry)', async () => {
     const flow = {
       flowId: 'flow-1',
       serverName: 'notion',
       serverIdentity: 'notion:abc123digest',
+      authorizationServerIssuer: DEFAULT_ISSUER,
       state: 'state-xyz',
       redirectUrl: 'http://127.0.0.1:54321/callback',
     };

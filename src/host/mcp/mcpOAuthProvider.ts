@@ -132,6 +132,9 @@ export class McpOAuthProvider implements OAuthClientProvider {
         if (issuer) {
           this.secureStorage.delete(this.clientInformationKey(issuer));
         }
+        // 旧版本把 client-info 写在不带 issuer 前缀的键上。升级用户那份必须无条件一并删除，
+        // 否则「退出登录」之后凭据仍残留在 SecureStorage 里；issuer 取不到时这也是唯一能删的键。
+        this.secureStorage.delete(this.keyFor(kind));
       } else {
         this.secureStorage.delete(this.keyFor(kind));
       }

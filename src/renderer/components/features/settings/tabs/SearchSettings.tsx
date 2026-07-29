@@ -5,10 +5,12 @@
 // ============================================================================
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { ChevronUp, ChevronDown, Search } from 'lucide-react';
+import { ChevronUp, ChevronDown, KeyRound, Search } from 'lucide-react';
 import type { AppSettings } from '@shared/contract';
 import { SEARCH_SOURCE_CATALOG, type SearchSourceCatalogEntry } from '@shared/constants';
 import { SettingsPage, SettingsSection } from '../SettingsLayout';
+import { ConfirmDialog } from '../../../composites/ConfirmDialog';
+import { Button } from '../../../primitives';
 import { invokeDomain } from '../../../../services/ipcService';
 import { IPC_DOMAINS } from '@shared/ipc';
 import { toast } from '../../../../hooks/useToast';
@@ -37,6 +39,12 @@ export function SearchSettings() {
   const [serviceKeys, setServiceKeys] = useState<ServiceKeyMap>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  // Key 编辑区状态：draft 按源 id 存；editorOpen 只记「已配 Key 但用户点了更换」的卡，
+  // 未配 Key 的卡编辑器恒展开，不占用这个集合。
+  const [keyDrafts, setKeyDrafts] = useState<Record<string, string>>({});
+  const [editorOpen, setEditorOpen] = useState<Set<string>>(new Set());
+  const [keySavingId, setKeySavingId] = useState<string | null>(null);
+  const [pendingClear, setPendingClear] = useState<SearchSourceCatalogEntry | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -100,6 +108,59 @@ export function SearchSettings() {
       toast.error(`${searchText.saveFailedPrefix}${error instanceof Error ? error.message : t.settings.general.permissions.unknownError}`);
     } finally {
       setSaving(false);
+    }
+  };
+
+  /** 与 settings.ipc.ts handleGetAllServiceKeys 同一套打码规则：前 8 位 + `...`。 */
+  const maskApiKey = (key: string) => (key.length > 8 ? `${key.substring(0, 8)}...` : key);
+
+  /**
+   * 保存/清除某个付费源的 API Key。这条写路径独立于页面底部的「保存」
+   * （那个只管启停与排序），成功后就地翻转 key 状态，不整页 reload。
+   * 空串 = 清除，需先过 ConfirmDialog。
+   */
+  const handleSaveKey = async (entry: SearchSourceCatalogEntry) => {
+    if (!entry.serviceKey) return;
+    const service = entry.serviceKey;
+    const draft = (keyDrafts[entry.id] ?? '').trim();
+    if (!draft) {
+      if (serviceKeys[service]) setPendingClear(entry);
+      return;
+    }
+    setKeySavingId(entry.id);
+    try {
+      await invokeDomain(IPC_DOMAINS.SETTINGS, 'setServiceApiKey', { service, apiKey: draft });
+      setServiceKeys((prev) => ({ ...prev, [service]: maskApiKey(draft) }));
+      setKeyDrafts((prev) => ({ ...prev, [entry.id]: '' }));
+      setEditorOpen((prev) => {
+        const next = new Set(prev);
+        next.delete(entry.id);
+        return next;
+      });
+      toast.success(searchText.keySaved);
+    } catch (error) {
+      toast.error(`${searchText.keySaveFailedPrefix}${error instanceof Error ? error.message : t.settings.general.permissions.unknownError}`);
+    } finally {
+      setKeySavingId(null);
+    }
+  };
+
+  const handleConfirmClearKey = async () => {
+    const entry = pendingClear;
+    setPendingClear(null);
+    if (!entry?.serviceKey) return;
+    const service = entry.serviceKey;
+    try {
+      await invokeDomain(IPC_DOMAINS.SETTINGS, 'setServiceApiKey', { service, apiKey: '' });
+      setServiceKeys((prev) => {
+        const next = { ...prev };
+        delete next[service];
+        return next;
+      });
+      setKeyDrafts((prev) => ({ ...prev, [entry.id]: '' }));
+      toast.success(searchText.keyCleared);
+    } catch (error) {
+      toast.error(`${searchText.keySaveFailedPrefix}${error instanceof Error ? error.message : t.settings.general.permissions.unknownError}`);
     }
   };
 
@@ -173,6 +234,52 @@ export function SearchSettings() {
                   <div className="mt-0.5 truncate text-xs text-zinc-500" title={sourceText?.description ?? entry.description}>
                     {sourceText?.description ?? entry.description}
                   </div>
+                  {entry.requiresKey && entry.serviceKey && (() => {
+                    const service = entry.serviceKey;
+                    if (!service) return null;
+                    const maskedKey = serviceKeys[service];
+                    // 展开规则：未配 Key 恒展开；已配 Key 默认收起成打码值，点「更换」才展开。
+                    const showEditor = !maskedKey || editorOpen.has(id);
+                    const draft = keyDrafts[id] ?? '';
+                    const isSavingKey = keySavingId === id;
+                    if (!showEditor) {
+                      return (
+                        <div className="mt-1.5 flex items-center gap-2 text-xs text-zinc-400">
+                          <KeyRound className="h-3.5 w-3.5 text-zinc-500" />
+                          <span className="font-mono" data-testid={`search-key-masked-${id}`}>{maskedKey}</span>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            data-testid={`search-key-change-${id}`}
+                            onClick={() => setEditorOpen((prev) => new Set(prev).add(id))}
+                          >
+                            {searchText.changeKey}
+                          </Button>
+                        </div>
+                      );
+                    }
+                    return (
+                      <div className="mt-1.5 flex items-center gap-2">
+                        <input
+                          type="password"
+                          data-testid={`search-key-input-${id}`}
+                          value={draft}
+                          onChange={(event) => setKeyDrafts((prev) => ({ ...prev, [id]: event.target.value }))}
+                          placeholder={searchText.keyPlaceholder}
+                          className="h-7 w-56 rounded border border-zinc-700 bg-zinc-950 px-2 text-xs text-zinc-200 outline-none placeholder:text-zinc-600 focus:border-sky-500/60"
+                        />
+                        <Button
+                          variant="primary"
+                          size="sm"
+                          data-testid={`search-key-save-${id}`}
+                          onClick={() => handleSaveKey(entry)}
+                          disabled={isSavingKey || (!draft.trim() && !maskedKey)}
+                        >
+                          {isSavingKey ? searchText.saving : searchText.saveKey}
+                        </Button>
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 <label className="flex shrink-0 items-center gap-2 text-xs text-zinc-300">
@@ -197,6 +304,17 @@ export function SearchSettings() {
         </button>
         <span className="text-xs text-zinc-500">{searchText.applyHint}</span>
       </div>
+
+      <ConfirmDialog
+        isOpen={pendingClear !== null}
+        title={searchText.clearKeyTitle}
+        message={searchText.clearKeyMessage}
+        variant="danger"
+        confirmText={searchText.clearKeyConfirm}
+        cancelText={t.common.cancel}
+        onConfirm={handleConfirmClearKey}
+        onCancel={() => setPendingClear(null)}
+      />
     </SettingsPage>
   );
 }

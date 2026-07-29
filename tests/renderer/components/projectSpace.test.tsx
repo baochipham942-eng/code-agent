@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 
 // ---- 服务层 mock（IPC 一律不进测试） ----
 vi.mock('../../../src/renderer/services/projectClient', () => ({
@@ -275,7 +275,7 @@ describe('ProjectComposer 底部输入框', () => {
     await enterSpaceView();
     const input = await screen.findByTestId('project-space-composer-input');
     fireEvent.change(input, { target: { value: '帮我整理这个项目的周报' } });
-    fireEvent.click(screen.getByTestId('project-space-composer-send'));
+    fireEvent.click(within(screen.getByTestId('project-space-composer-send')).getByRole('button'));
 
     await waitFor(() =>
       expect(createSessionMock).toHaveBeenCalledWith('帮我整理这个项目的周报', { workingDirectory: '/tmp/ws' }),
@@ -289,11 +289,21 @@ describe('ProjectComposer 底部输入框', () => {
     expect(switchSessionMock).toHaveBeenCalledWith('sess-new');
   });
 
+  it('Enter 发送、Shift+Enter 不发送（多行 textarea 观感）', async () => {
+    await enterSpaceView();
+    const input = await screen.findByTestId('project-space-composer-input');
+    fireEvent.change(input, { target: { value: '整理周报' } });
+    fireEvent.keyDown(input, { key: 'Enter', shiftKey: true });
+    expect(createSessionMock).not.toHaveBeenCalled();
+    fireEvent.keyDown(input, { key: 'Enter' });
+    await waitFor(() => expect(createSessionMock).toHaveBeenCalled());
+  });
+
   it('空文本不发送', async () => {
     await enterSpaceView();
     const input = await screen.findByTestId('project-space-composer-input');
     fireEvent.change(input, { target: { value: '   ' } });
-    fireEvent.click(screen.getByTestId('project-space-composer-send'));
+    fireEvent.keyDown(input, { key: 'Enter' });
     expect(createSessionMock).not.toHaveBeenCalled();
   });
 });

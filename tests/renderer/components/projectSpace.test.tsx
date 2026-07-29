@@ -16,6 +16,8 @@ vi.mock('../../../src/renderer/services/projectClient', () => ({
   renameProject: vi.fn(),
   setProjectDescription: vi.fn(),
   deleteProject: vi.fn(),
+  createSpace: vi.fn(),
+  promoteToSpace: vi.fn(),
 }));
 vi.mock('../../../src/renderer/services/tagClient', () => ({
   tagClient: { listByProject: vi.fn() },
@@ -47,7 +49,8 @@ import * as projectClient from '../../../src/renderer/services/projectClient';
 import { tagClient } from '../../../src/renderer/services/tagClient';
 import * as rolesClient from '../../../src/renderer/services/rolesClient';
 import { cronClient } from '../../../src/renderer/services/cronClient';
-import { invokeSkillIPC } from '../../../src/renderer/services/invokeSkillIPC';
+import { invokeSkillIPC, invokeSkillIPCOrThrow } from '../../../src/renderer/services/invokeSkillIPC';
+import { SKILL_CHANNELS } from '../../../src/shared/ipc/channels';
 import ipcService from '../../../src/renderer/services/ipcService';
 import { projectSpaceZh } from '../../../src/renderer/i18n/projectSpace';
 
@@ -91,6 +94,8 @@ function setupHappyPathMocks() {
   vi.mocked(projectClient.renameProject).mockResolvedValue({ ...projectFixture, name: '新名字' } as never);
   vi.mocked(projectClient.setProjectDescription).mockResolvedValue(projectFixture as never);
   vi.mocked(projectClient.deleteProject).mockResolvedValue({ deleted: true });
+  vi.mocked(projectClient.createSpace).mockResolvedValue(projectFixture as never);
+  vi.mocked(projectClient.promoteToSpace).mockResolvedValue(projectFixture as never);
   vi.mocked(projectClient.selectCapability).mockResolvedValue({
     projectId: PROJECT_ID,
     kind: 'connector',
@@ -105,6 +110,7 @@ function setupHappyPathMocks() {
   ] as never);
   vi.mocked(cronClient.listJobs).mockResolvedValue([]);
   vi.mocked(invokeSkillIPC).mockResolvedValue([]);
+  vi.mocked(invokeSkillIPCOrThrow).mockResolvedValue(undefined as never);
   // 连接器可选项真源：connector 域 listNativeInventory（与能力中心「连接器」页同源）
   vi.mocked(ipcService.invokeDomain).mockResolvedValue([
     { id: 'mcp-1', label: 'Server 1', enabled: true },
@@ -201,6 +207,61 @@ describe('ProjectSpacePage 列表视图', () => {
     expect(screen.queryByTestId('project-space-delete-proj_unsorted')).toBeNull();
     expect(screen.queryByTestId('project-space-description-placeholder-proj_unsorted')).toBeNull();
   });
+
+  it('列表数据走 spacesOnly=true（verify-* 噪音与未分类不出现）', async () => {
+    render(<ProjectSpacePage onClose={() => undefined} />);
+    await screen.findByTestId(`project-space-list-item-${PROJECT_ID}`);
+    expect(projectClient.listProjectsWithActivity).toHaveBeenCalledWith(false, true);
+  });
+
+  it('新建空间：选择工作目录来源，提交调 createSpace 并刷新列表', async () => {
+    render(<ProjectSpacePage onClose={() => undefined} />);
+    await screen.findByTestId(`project-space-list-item-${PROJECT_ID}`);
+
+    fireEvent.click(screen.getByTestId('project-space-create-open'));
+    await screen.findByTestId('project-space-create-modal');
+    fireEvent.change(screen.getByTestId('project-space-create-name'), { target: { value: '新空间' } });
+    fireEvent.change(screen.getByTestId('project-space-create-description'), { target: { value: '空间描述' } });
+    fireEvent.change(screen.getByTestId('project-space-create-workspace'), { target: { value: '/tmp/new-ws' } });
+    fireEvent.click(screen.getByText(ps.createSubmit));
+
+    await waitFor(() =>
+      expect(projectClient.createSpace).toHaveBeenCalledWith({
+        name: '新空间',
+        description: '空间描述',
+        workspacePath: '/tmp/new-ws',
+      }),
+    );
+    expect(projectClient.promoteToSpace).not.toHaveBeenCalled();
+    // 提交后关闭并刷新列表（再发一次 spacesOnly=true 查询）
+    await waitFor(() => {
+      const spacesCalls = vi.mocked(projectClient.listProjectsWithActivity).mock.calls
+        .filter((call) => call[1] === true);
+      expect(spacesCalls.length).toBeGreaterThanOrEqual(2);
+    });
+  });
+
+  it('新建空间：从现有项目升级，提交调 promoteToSpace；候选排除未分类与已升级', async () => {
+    render(<ProjectSpacePage onClose={() => undefined} />);
+    await screen.findByTestId(`project-space-list-item-${PROJECT_ID}`);
+
+    fireEvent.click(screen.getByTestId('project-space-create-open'));
+    await screen.findByTestId('project-space-create-modal');
+    fireEvent.change(screen.getByTestId('project-space-create-name'), { target: { value: '升级空间' } });
+    fireEvent.click(screen.getByTestId('project-space-create-source-promote'));
+
+    // 候选列表拉的是全量项目（spacesOnly=false）；fixture 无 spacePromotedAt → 候选
+    await waitFor(() =>
+      expect(projectClient.listProjectsWithActivity).toHaveBeenCalledWith(false, false),
+    );
+    const select = await screen.findByTestId('project-space-create-promote-select');
+    await within(select).findByRole('option', { name: projectFixture.name });
+    fireEvent.change(select, { target: { value: PROJECT_ID } });
+    fireEvent.click(screen.getByText(ps.createSubmit));
+
+    await waitFor(() => expect(projectClient.promoteToSpace).toHaveBeenCalledWith(PROJECT_ID));
+    expect(projectClient.createSpace).not.toHaveBeenCalled();
+  });
 });
 
 describe('ProjectSpacePage 空间视图', () => {
@@ -262,25 +323,49 @@ describe('ProjectConfigRail 项目配置', () => {
     );
   });
 
-  it('技能卡只读时「+」禁用态 + tooltip 说明（降级提示不消失）；工作目录匹配时可用', async () => {
+  it('技能卡：项目有工作目录即可增删（不要求等于当前会话目录），IPC 收到显式 workspacePath', async () => {
+    vi.mocked(invokeSkillIPC).mockResolvedValue([
+      { name: 'skill-a', description: '', projectOverride: null },
+      { name: 'skill-b', description: '', projectOverride: true },
+    ] as never);
+    await enterSpaceView();
+    // SKILL_LIST 也带显式 workspacePath
+    await waitFor(() =>
+      expect(invokeSkillIPC).toHaveBeenCalledWith(SKILL_CHANNELS.SKILL_LIST, '/tmp/ws'),
+    );
+    const addButton = await screen.findByTestId('project-space-card-skills-add');
+    expect((addButton as HTMLButtonElement).disabled).toBe(false);
+    expect(addButton.getAttribute('title')).toBe(ps.add);
+
+    fireEvent.click(addButton);
+    const option = await screen.findByTestId('project-space-card-skills-option-skill-a');
+    fireEvent.click(option);
+    await waitFor(() =>
+      expect(invokeSkillIPCOrThrow).toHaveBeenCalledWith(
+        SKILL_CHANNELS.SKILL_PROJECT_SET, 'skill-a', true, '/tmp/ws',
+      ),
+    );
+
+    const remove = await screen.findByTestId('project-space-card-skills-remove-skill-b');
+    fireEvent.click(remove);
+    await waitFor(() =>
+      expect(invokeSkillIPCOrThrow).toHaveBeenCalledWith(
+        SKILL_CHANNELS.SKILL_PROJECT_CLEAR, 'skill-b', '/tmp/ws',
+      ),
+    );
+  });
+
+  it('技能卡：无工作目录的空间禁用「+」+ skillsNoWorkspaceHint 降级提示', async () => {
+    const noWorkspace = { ...projectFixture, workspacePath: null, workspaceKey: null };
+    vi.mocked(projectClient.listProjectsWithActivity).mockResolvedValue([noWorkspace] as never);
+    vi.mocked(projectClient.getProjectDetail).mockResolvedValue({
+      ...detailFixture,
+      project: { ...noWorkspace },
+    } as never);
     await enterSpaceView();
     const addButton = await screen.findByTestId('project-space-card-skills-add');
     expect((addButton as HTMLButtonElement).disabled).toBe(true);
-    expect(addButton.getAttribute('title')).toBe(ps.skillsReadonlyHint);
-
-    cleanup();
-    useSessionStore.setState({
-      sessions: [{ id: 'sess-1', workingDirectory: '/tmp/ws' }],
-      currentSessionId: 'sess-1',
-      switchSession: switchSessionMock,
-      createSession: createSessionMock,
-    } as never);
-    render(<ProjectSpacePage onClose={() => undefined} />);
-    const item = await screen.findByTestId(`project-space-list-item-${PROJECT_ID}`);
-    fireEvent.click(item);
-    const enabledAdd = await screen.findByTestId('project-space-card-skills-add');
-    expect((enabledAdd as HTMLButtonElement).disabled).toBe(false);
-    expect(enabledAdd.getAttribute('title')).toBe(ps.add);
+    expect(addButton.getAttribute('title')).toBe(ps.skillsNoWorkspaceHint);
   });
 
   it('「去配置」深链：专家卡调 openCapabilityHub(experts)', async () => {

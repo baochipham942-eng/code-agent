@@ -42,6 +42,8 @@ import { ProjectCollaborationDetailPane } from './ProjectCollaborationDetailPane
 
 export interface ProjectCollaborationPanelProps {
   projectId?: string | null;
+  /** 嵌入模式（项目空间任务 tab）：隐藏面板自带标题头（宿主页头已有项目名）。 */
+  embedded?: boolean;
   /** 注入的 topic 明细（测试/fixture 用）。传入时绕开 store 加载。 */
   details?: NeoWorkCardDetail[];
   /** 注入的源会话消息（测试/fixture 用），key=sourceConversationId。传入时详情绕开 IPC 拉取。 */
@@ -164,6 +166,7 @@ function TopicRow({
 
 export const ProjectCollaborationPanel: React.FC<ProjectCollaborationPanelProps> = ({
   projectId = null,
+  embedded = false,
   details,
   sourceMessagesByConversation,
   onOpenConversation,
@@ -302,21 +305,22 @@ export const ProjectCollaborationPanel: React.FC<ProjectCollaborationPanelProps>
 
   return (
     <div className="relative flex h-full min-h-0 flex-col overflow-hidden bg-zinc-900" data-testid="neo-topic-directory">
-      <div className="shrink-0 border-b border-zinc-800 px-4 py-3">
-        <div className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-md border border-emerald-500/20 bg-emerald-500/10">
-            <Sparkles className="h-4 w-4 text-emerald-200" />
-          </div>
-          <div className="min-w-0 flex-1">
-            <h2 className="text-sm font-semibold text-zinc-100">Neo 协同</h2>
-            <div className="mt-0.5 text-[11px] text-zinc-500">
-              {projectId ? `所有 @neo topic · ${projectId}` : '所有 @neo topic'}
+      <div className={embedded ? 'shrink-0 px-4 pt-3' : 'shrink-0 border-b border-zinc-800 px-4 py-3'}>
+        {/* 嵌入模式（项目空间任务 tab）：宿主页头已有项目名，不再重复标题，更不给用户看裸 project id */}
+        {!embedded && (
+          <div className="flex items-center gap-2">
+            <div className="flex h-8 w-8 items-center justify-center rounded-md border border-emerald-500/20 bg-emerald-500/10">
+              <Sparkles className="h-4 w-4 text-emerald-200" />
             </div>
+            <div className="min-w-0 flex-1">
+              <h2 className="text-sm font-semibold text-zinc-100">Neo 协同</h2>
+              <div className="mt-0.5 text-[11px] text-zinc-500">所有 @neo topic</div>
+            </div>
+            <span className="shrink-0 text-[11px] text-zinc-500" data-testid="neo-topic-count">
+              {filteredTopics.length}/{topics.length}
+            </span>
           </div>
-          <span className="shrink-0 text-[11px] text-zinc-500" data-testid="neo-topic-count">
-            {filteredTopics.length}/{topics.length}
-          </span>
-        </div>
+        )}
         {loading && (
           <div className="mt-3 inline-flex items-center gap-1.5 rounded border border-zinc-800 bg-zinc-950/50 px-2 py-1 text-[11px] text-zinc-400">
             <Loader2 className="h-3.5 w-3.5 animate-spin" />正在加载 topic

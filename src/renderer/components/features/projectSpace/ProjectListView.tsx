@@ -7,8 +7,9 @@
 
 import React, { useEffect, useState } from 'react';
 import { FolderKanban } from 'lucide-react';
-import type { ProjectStatus, ProjectWithActivity } from '@shared/contract/project';
+import type { ProjectWithActivity } from '@shared/contract/project';
 import { listProjectsWithActivity } from '../../../services/projectClient';
+import { deriveProjectActivityStatus, type ProjectActivityStatus } from './projectSpaceData';
 import { useI18n } from '../../../hooks/useI18n';
 import { formatRelativeTime } from '../../../utils/i18nTime';
 import { Badge } from '../../primitives/Badge';
@@ -18,7 +19,7 @@ export interface ProjectListViewProps {
   onSelect: (projectId: string) => void;
 }
 
-const STATUS_CHIP_CLASS: Record<ProjectStatus, string> = {
+const STATUS_CHIP_CLASS: Record<ProjectActivityStatus, string> = {
   active: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300',
   idle: 'border-zinc-700 bg-zinc-800/60 text-zinc-400',
   archived: 'border-amber-500/30 bg-amber-500/10 text-amber-300',
@@ -61,13 +62,15 @@ export const ProjectListView: React.FC<ProjectListViewProps> = ({ onSelect }) =>
     );
   }
 
-  const statusLabel = (status: ProjectStatus) => (
+  const statusLabel = (status: ProjectActivityStatus) => (
     status === 'active' ? ps.statusActive : status === 'archived' ? ps.statusArchived : ps.statusIdle
   );
 
   return (
     <div className="grid gap-1" data-testid="project-space-list">
-      {projects.map((project) => (
+      {projects.map((project) => {
+        const activityStatus = deriveProjectActivityStatus(project);
+        return (
         <button /* ds-allow:button: 项目列表行（图标+名称/描述+右侧元信息左对齐布局），Button primitive 是居中动作按钮形状，变体不适配列表行 */
           key={project.id}
           type="button"
@@ -79,8 +82,8 @@ export const ProjectListView: React.FC<ProjectListViewProps> = ({ onSelect }) =>
           <span className="min-w-0 flex-1">
             <span className="flex min-w-0 items-center gap-2">
               <span className="truncate text-sm text-zinc-200 group-hover:text-zinc-100">{project.name}</span>
-              <Badge className={`text-[11px] ${STATUS_CHIP_CLASS[project.status]}`} data-testid={`project-space-status-${project.id}`}>
-                {statusLabel(project.status)}
+              <Badge className={`text-[11px] ${STATUS_CHIP_CLASS[activityStatus]}`} data-testid={`project-space-status-${project.id}`}>
+                {statusLabel(activityStatus)}
               </Badge>
             </span>
             {project.description ? (
@@ -98,7 +101,8 @@ export const ProjectListView: React.FC<ProjectListViewProps> = ({ onSelect }) =>
             </span>
           </span>
         </button>
-      ))}
+        );
+      })}
     </div>
   );
 };

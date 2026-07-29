@@ -6,10 +6,11 @@
 
 import React, { useCallback, useEffect, useState } from 'react';
 import { FolderKanban } from 'lucide-react';
-import type { ProjectDetail, ProjectStatus } from '@shared/contract/project';
+import type { ProjectDetail } from '@shared/contract/project';
 import { FullScreenPageHeader } from '../shared/FullScreenPage';
 import { ProjectCollaborationPanel } from '../projectCollaboration/ProjectCollaborationPanel';
-import { getProjectDetail } from '../../../services/projectClient';
+import { getProjectDetail, listProjectsWithActivity } from '../../../services/projectClient';
+import { deriveProjectActivityStatus, type ProjectActivityStatus } from './projectSpaceData';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { useI18n } from '../../../hooks/useI18n';
 import { Badge } from '../../primitives/Badge';
@@ -25,7 +26,7 @@ export interface ProjectSpaceViewProps {
 
 type SpaceTab = 'activity' | 'tasks' | 'assets';
 
-const STATUS_CHIP_CLASS: Record<ProjectStatus, string> = {
+const STATUS_CHIP_CLASS: Record<ProjectActivityStatus, string> = {
   active: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300',
   idle: 'border-zinc-700 bg-zinc-800/60 text-zinc-400',
   archived: 'border-amber-500/30 bg-amber-500/10 text-amber-300',
@@ -37,6 +38,19 @@ export const ProjectSpaceView: React.FC<ProjectSpaceViewProps> = ({ projectId, o
   const [detail, setDetail] = useState<ProjectDetail | null>(null);
   const [tab, setTab] = useState<SpaceTab>('activity');
   const [highlightArtifactId, setHighlightArtifactId] = useState<string | null>(null);
+  // 页头 chip 与列表页同一套活跃度派生（listWithActivity 单 SQL 聚合，取本项目那行）
+  const [activityRow, setActivityRow] = useState<{ activeTopicCount: number; lastActivityAt: number | null } | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    listProjectsWithActivity()
+      .then((rows) => {
+        if (cancelled) return;
+        const row = rows.find((item) => item.id === projectId);
+        setActivityRow(row ? { activeTopicCount: row.activeTopicCount, lastActivityAt: row.lastActivityAt } : null);
+      })
+      .catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [projectId]);
 
   const refreshDetail = useCallback(() => {
     getProjectDetail(projectId)
@@ -64,9 +78,16 @@ export const ProjectSpaceView: React.FC<ProjectSpaceViewProps> = ({ projectId, o
   };
 
   const project = detail?.project ?? null;
-  const statusChip = project ? (
-    <Badge className={`text-[11px] ${STATUS_CHIP_CLASS[project.status]}`} data-testid="project-space-header-status">
-      {project.status === 'active' ? ps.statusActive : project.status === 'archived' ? ps.statusArchived : ps.statusIdle}
+  const activityStatus = project
+    ? deriveProjectActivityStatus({
+      status: project.status,
+      activeTopicCount: activityRow?.activeTopicCount ?? 0,
+      lastActivityAt: activityRow?.lastActivityAt ?? null,
+    })
+    : null;
+  const statusChip = project && activityStatus ? (
+    <Badge className={`text-[11px] ${STATUS_CHIP_CLASS[activityStatus]}`} data-testid="project-space-header-status">
+      {activityStatus === 'active' ? ps.statusActive : activityStatus === 'archived' ? ps.statusArchived : ps.statusIdle}
     </Badge>
   ) : null;
 
@@ -116,7 +137,7 @@ export const ProjectSpaceView: React.FC<ProjectSpaceViewProps> = ({ projectId, o
                 onOpenArtifact={openArtifact}
               />
             )}
-            {tab === 'tasks' && <ProjectCollaborationPanel projectId={projectId} />}
+            {tab === 'tasks' && <ProjectCollaborationPanel projectId={projectId} embedded />}
             {tab === 'assets' && (
               <ProjectArtifactsList
                 projectId={projectId}

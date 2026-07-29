@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildProjectActivityFeed,
+  deriveProjectActivityStatus,
+  PROJECT_ACTIVE_WINDOW_MS,
   PROJECT_ACTIVITY_FEED_LIMIT,
 } from '../../../src/renderer/components/features/projectSpace/projectSpaceData';
 
@@ -28,6 +30,16 @@ describe('buildProjectActivityFeed（批P 动态流三源合并）', () => {
     expect(feed).toHaveLength(2);
     expect(feed[0].title).toBe('未命名会话');
     expect(feed[1].title).toBe('未命名产物');
+  });
+
+  it('状态 chip 按活跃度派生：DB status=active 但无活跃 topic 且超 7 天 → 空闲（消除满屏活跃+矛盾）', () => {
+    const NOW = 1_800_000_000_000;
+    expect(deriveProjectActivityStatus({ status: 'active', activeTopicCount: 0, lastActivityAt: NOW - PROJECT_ACTIVE_WINDOW_MS - 1 }, NOW)).toBe('idle');
+    expect(deriveProjectActivityStatus({ status: 'active', activeTopicCount: 0, lastActivityAt: null }, NOW)).toBe('idle');
+    // 有活跃 topic 就是活跃（即使 DB status=idle——「空闲但 7 个活跃 topic」矛盾的正解）
+    expect(deriveProjectActivityStatus({ status: 'idle', activeTopicCount: 7, lastActivityAt: null }, NOW)).toBe('active');
+    expect(deriveProjectActivityStatus({ status: 'active', activeTopicCount: 0, lastActivityAt: NOW - 60_000 }, NOW)).toBe('active');
+    expect(deriveProjectActivityStatus({ status: 'archived', activeTopicCount: 7, lastActivityAt: NOW }, NOW)).toBe('archived');
   });
 
   it('超量截断到 limit（默认 50）', () => {

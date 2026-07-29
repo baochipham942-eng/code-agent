@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Archive, Brain, Check, ChevronDown, ChevronRight, HelpCircle, Loader2, MessageSquare, Send, Sparkles, X } from 'lucide-react';
-import type { NeoWorkCardDetail } from '@shared/contract/tag';
+import type { NeoWorkCardDetail, NeoWorkCardPriority } from '@shared/contract/tag';
 import type { Message } from '@shared/contract/message';
 import {
   isInternalRuntimeText,
@@ -14,9 +14,12 @@ import {
   formatRequesterLabel,
   mergeTopicRounds,
   topicConversationIds,
+  topicPrimaryConversationId,
   type NeoTopicRound,
 } from './projectCollaborationData';
 import { useNeoWorkCardStore } from '../../../stores/neoWorkCardStore';
+import { useI18n } from '../../../hooks/useI18n';
+import { toast } from '../../../hooks/useToast';
 import { Badge } from '../../primitives';
 
 // ============================================================================
@@ -42,6 +45,15 @@ function formatTime(timestamp: number): string {
 
 function uniqueNonEmpty(items: string[]): string[] {
   return [...new Set(items.map((item) => item.trim()).filter(Boolean))];
+}
+
+/** 原生 <input type="date"> 的 yyyy-mm-dd 值（本地时区）；dueAt 空 → 空串（清空=传 null）。 */
+function toDateInputValue(dueAt: number | null | undefined): string {
+  if (dueAt == null) return '';
+  const date = new Date(dueAt);
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${date.getFullYear()}-${month}-${day}`;
 }
 
 const REPLY_CLAMP_CHARS = 600;
@@ -118,6 +130,7 @@ export const ProjectCollaborationDetailPane: React.FC<ProjectCollaborationDetail
   const [followUpText, setFollowUpText] = useState('');
   const [followUpError, setFollowUpError] = useState<string | null>(null);
   const [followUpSending, setFollowUpSending] = useState(false);
+  const { t } = useI18n();
 
   // topic 参与过的会话集合（ADR-035）：源会话 + 各轮 delta 归属；老卡自然退化为单会话
   const conversationIds = useMemo(
@@ -154,6 +167,10 @@ export const ProjectCollaborationDetailPane: React.FC<ProjectCollaborationDetail
   const { workCard, deltas } = detail;
   const phase = statusPhase(workCard.status);
   const latestDelta = deltas.at(-1);
+  // ② topic 主会话规则：主入口 = 最近一轮落点会话，源会话降级为次入口
+  const primaryConversationId = topicPrimaryConversationId(detail);
+  // blockedReason（host 侧真实阻塞原因）优先于从 delta.risks 猜的文案；为空保持旧回退
+  const blockedReason = workCard.blockedReason?.trim() || null;
   const messageSource = messagesByConversation ?? loadedByConversation;
   const rounds = mergeTopicRounds(conversationIds.map((conversationId) =>
     extractNeoTopicRounds(messageSource[conversationId] ?? [], workCard.id, conversationId)));
@@ -185,9 +202,36 @@ export const ProjectCollaborationDetailPane: React.FC<ProjectCollaborationDetail
   );
   const changedFiles = uniqueNonEmpty(deltas.flatMap((delta) => delta.changedFiles));
   const openQuestions = uniqueNonEmpty(latestDelta?.openQuestions ?? []).filter((item) => !isInternalRuntimeText(item));
-  const errors = uniqueNonEmpty(latestDelta?.risks ?? []);
+  const errors = blockedReason ? [blockedReason] : uniqueNonEmpty(latestDelta?.risks ?? []);
   const pendingMemory = detail.memoryCandidates.filter((candidate) => candidate.status === 'pending');
   const isActive = phase === 'running' || phase === 'needs_input';
+
+  // S1 最小元数据编辑：priority 四档 + 截止（清空=传 null），失败 toast
+  const actorUserId = currentUser?.id ?? 'local-user';
+  const handlePriorityChange = (value: string) => {
+    void useNeoWorkCardStore.getState().updateMeta({
+      workCardId: workCard.id,
+      actorUserId,
+      priority: value as NeoWorkCardPriority,
+    }).catch((error) => {
+      toast.error(error instanceof Error ? error.message : t.neoTopics.updateMetaFailed);
+    });
+  };
+  const handleDueAtChange = (value: string) => {
+    void useNeoWorkCardStore.getState().updateMeta({
+      workCardId: workCard.id,
+      actorUserId,
+      dueAt: value ? new Date(`${value}T00:00:00`).getTime() : null,
+    }).catch((error) => {
+      toast.error(error instanceof Error ? error.message : t.neoTopics.updateMetaFailed);
+    });
+  };
+
+  // ③「接着做」：复用续接 chip 链路（setContinuationTarget → ChatInput chip → 同卡续接），跳到主入口会话
+  const handleFollowUpInChat = () => {
+    useNeoWorkCardStore.getState().setContinuationTarget({ workCardId: workCard.id, title: workCard.title });
+    onOpenConversation?.(primaryConversationId);
+  };
 
   return (
     <div className="px-4 py-4" data-testid="neo-topic-detail">
@@ -203,17 +247,50 @@ export const ProjectCollaborationDetailPane: React.FC<ProjectCollaborationDetail
             </Badge>
             <span>发起人 {formatRequesterLabel(workCard.requesterUserId, currentUser)}</span>
             <span>更新于 {formatTime(workCard.updatedAt)}</span>
+            <select
+              value={workCard.priority ?? 'medium'}
+              onChange={(event) => handlePriorityChange(event.target.value)}
+              className="h-6 rounded-md border border-zinc-800 bg-zinc-900 px-1 text-[11px] text-zinc-400 outline-none focus:border-emerald-500/60"
+              data-testid="neo-topic-detail-priority"
+            >
+              <option value="urgent">{t.neoTopics.priorityUrgent}</option>
+              <option value="high">{t.neoTopics.priorityHigh}</option>
+              <option value="medium">{t.neoTopics.priorityMedium}</option>
+              <option value="low">{t.neoTopics.priorityLow}</option>
+            </select>
+            <label className="inline-flex h-6 items-center gap-1 text-[11px] text-zinc-500">
+              {t.neoTopics.duePrefix}
+              <input
+                type="date"
+                value={toDateInputValue(workCard.dueAt)}
+                onChange={(event) => handleDueAtChange(event.target.value)}
+                className="h-6 rounded-md border border-zinc-800 bg-zinc-900 px-1 text-[11px] text-zinc-400 outline-none focus:border-emerald-500/60"
+                data-testid="neo-topic-detail-due"
+              />
+            </label>
           </div>
         </div>
         {onOpenConversation && (
-          <button
-            type="button"
-            onClick={() => onOpenConversation(workCard.sourceConversationId)}
-            className="inline-flex h-7 shrink-0 items-center gap-1 rounded-md border border-emerald-500/25 bg-emerald-500/10 px-2 text-xs text-emerald-200 hover:bg-emerald-500/15"
-            data-testid="neo-topic-detail-open-conversation"
-          >
-            <MessageSquare className="h-3 w-3" />打开会话
-          </button>
+          <span className="flex shrink-0 items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => onOpenConversation(primaryConversationId)}
+              className="inline-flex h-7 items-center gap-1 rounded-md border border-emerald-500/25 bg-emerald-500/10 px-2 text-xs text-emerald-200 hover:bg-emerald-500/15"
+              data-testid="neo-topic-detail-open-conversation"
+            >
+              <MessageSquare className="h-3 w-3" />打开会话
+            </button>
+            {primaryConversationId !== workCard.sourceConversationId && (
+              <button /* ds-allow:button: 次级「源会话」跳转是面板既有小按钮写法的延续（紧凑 border chip），Button primitive 变体不适配 */
+                type="button"
+                onClick={() => onOpenConversation(workCard.sourceConversationId)}
+                className="inline-flex h-7 items-center gap-1 rounded-md border border-zinc-700/70 bg-zinc-800/60 px-2 text-xs text-zinc-400 hover:border-zinc-600 hover:text-zinc-200"
+                data-testid="neo-topic-detail-open-source"
+              >
+                <MessageSquare className="h-3 w-3" />{t.neoTopics.openSourceConversation}
+              </button>
+            )}
+          </span>
         )}
       </div>
 
@@ -229,15 +306,20 @@ export const ProjectCollaborationDetailPane: React.FC<ProjectCollaborationDetail
       {phase === 'needs_input' && (
         <div className="mt-3 rounded-md border border-amber-400/20 bg-amber-400/[0.06] px-3 py-2 text-[13px] leading-5 text-amber-100/90">
           <div className="mb-1 flex items-center gap-1 text-amber-200/80"><HelpCircle className="h-3.5 w-3.5" />待你确认</div>
-          {openQuestions.length > 0
-            ? openQuestions.map((question, index) => <div key={index}>· {question}</div>)
-            : <div>Neo 在会话里等你补充信息，打开会话回它一句。</div>}
+          {blockedReason
+            ? <div data-testid="neo-topic-detail-blocked-reason">{blockedReason}</div>
+            : openQuestions.length > 0
+              ? openQuestions.map((question, index) => <div key={index}>· {question}</div>)
+              : <div>Neo 在会话里等你补充信息，打开会话回它一句。</div>}
         </div>
       )}
 
       {/* 失败 */}
       {phase === 'failed' && errors.length > 0 && (
-        <div className="mt-3 rounded-md border border-rose-400/20 bg-rose-400/[0.06] px-3 py-2 text-[13px] leading-5 text-rose-100/90">
+        <div
+          className="mt-3 rounded-md border border-rose-400/20 bg-rose-400/[0.06] px-3 py-2 text-[13px] leading-5 text-rose-100/90"
+          data-testid="neo-topic-detail-failed"
+        >
           {errors.map((error, index) => <div key={index}>{error}</div>)}
         </div>
       )}
@@ -312,6 +394,16 @@ export const ProjectCollaborationDetailPane: React.FC<ProjectCollaborationDetail
       {/* 追问（ADR-035）：同 topic 追加一轮，落最近一轮的会话 */}
       {canFollowUp && (
         <div className="mt-4" data-testid="neo-topic-detail-followup">
+          {onOpenConversation && (
+            <button /* ds-allow:button: 「接着做」是面板既有小按钮写法的延续（紧凑 border chip），Button primitive 变体不适配 */
+              type="button"
+              onClick={handleFollowUpInChat}
+              className="mb-2 inline-flex h-7 items-center gap-1 rounded-md border border-emerald-500/25 bg-emerald-500/10 px-2 text-xs text-emerald-200 hover:bg-emerald-500/15"
+              data-testid="neo-topic-detail-followup-chat"
+            >
+              <MessageSquare className="h-3 w-3" />{t.neoTopics.followUp}
+            </button>
+          )}
           <div className="flex items-center gap-2">
             <input
               type="text"

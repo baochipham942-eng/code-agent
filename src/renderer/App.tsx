@@ -837,6 +837,7 @@ export const App: React.FC = () => {
   const inlineSecondaryPageActive = Boolean(
     expertDetailRoleId || showKnowledgeMemoryPanel || showLibraryPanel
     || showCapabilityHub || showCronCenter || showLocalOpsPanel || showEvalCenter
+    || showProjectSpacePage
   );
 
   const renderWorkbenchContent = () => (

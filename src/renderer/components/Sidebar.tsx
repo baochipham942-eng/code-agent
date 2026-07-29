@@ -69,7 +69,6 @@ import type {
   AgentTrajectoryDatasetRole,
   AgentTrajectorySessionQualitySummary,
 } from '@shared/contract/agentTrajectory';
-import { UNSORTED_PROJECT_ID } from '@shared/contract/project';
 import { PLAIN_CHAT_SUMMARY_LABEL } from '@shared/contract/sessionWorkspace';
 
 export { resolveRuntimeLogsDir };
@@ -211,10 +210,6 @@ export const Sidebar: React.FC = () => {
     showLab || showTimeCapabilityCenter || showDesktopPanel,
   );
   const advancedToolsOpen = showAccountAdvancedTools || hasActiveAdvancedTool;
-  const currentSessionProjectId = useMemo(() => {
-    const session = sessions.find((item) => item.id === currentSessionId);
-    return session?.projectId && session.projectId !== UNSORTED_PROJECT_ID ? session.projectId : null;
-  }, [currentSessionId, sessions]);
 
   useEffect(() => {
     if (!showUserMenu) return undefined;
@@ -917,7 +912,6 @@ export const Sidebar: React.FC = () => {
                 advancedToolsOpen={advancedToolsOpen}
                 onToggleAdvancedTools={() => setShowAccountAdvancedTools((open) => !open)}
                 hasActiveAdvancedTool={hasActiveAdvancedTool}
-                currentSessionProjectId={currentSessionProjectId}
               />
             )}
           </>

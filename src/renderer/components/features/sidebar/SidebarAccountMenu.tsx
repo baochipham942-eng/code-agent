@@ -21,7 +21,6 @@ import {
   MonitorSmartphone,
   ScrollText,
   Settings,
-  UsersRound,
 } from 'lucide-react';
 import { useAppStore } from '../../../stores/appStore';
 import { useAuthStore } from '../../../stores/authStore';
@@ -34,7 +33,6 @@ interface SidebarAccountMenuProps {
   advancedToolsOpen: boolean;
   onToggleAdvancedTools: () => void;
   hasActiveAdvancedTool: boolean;
-  currentSessionProjectId: string | null;
 }
 
 export const SidebarAccountMenu: React.FC<SidebarAccountMenuProps> = ({
@@ -42,7 +40,6 @@ export const SidebarAccountMenu: React.FC<SidebarAccountMenuProps> = ({
   advancedToolsOpen,
   onToggleAdvancedTools,
   hasActiveAdvancedTool,
-  currentSessionProjectId,
 }) => {
   const { t } = useI18n();
   const sb = t.sidebar;
@@ -60,8 +57,6 @@ export const SidebarAccountMenu: React.FC<SidebarAccountMenuProps> = ({
     setShowActivityPanel,
     showLocalOpsPanel,
     openLocalOpsPanel,
-    showProjectCollaborationPage,
-    openProjectCollaborationPage,
     showEvalCenter,
     openEvalCenter,
     setShowPromptManager,
@@ -85,11 +80,7 @@ export const SidebarAccountMenu: React.FC<SidebarAccountMenuProps> = ({
         icon={<MonitorSmartphone className={`w-4 h-4 ${showLocalOpsPanel ? 'text-cyan-400' : 'text-cyan-400/80'}`} />}
         label={sb.menuLocalOps}
       />
-      <AccountMenuItem
-        onClick={() => { openProjectCollaborationPage(currentSessionProjectId); onClose(); }}
-        icon={<UsersRound className={`w-4 h-4 ${showProjectCollaborationPage ? 'text-violet-400' : 'text-violet-400/80'}`} />}
-        label={sb.menuNeoCollab}
-      />
+      {/* 「协作请求（@neo）」入口已拿掉（爸 2026-07-29）：topic 目录的家=协作空间页任务 tab */}
       {canOpenEvalCenter && (
         <AccountMenuItem
           onClick={() => { openEvalCenter(); onClose(); }}

@@ -62,7 +62,10 @@ export const ProjectInviteModal: React.FC<ProjectInviteModalProps> = ({ state, i
                 size="sm"
                 className="shrink-0"
                 data-testid="project-space-invite-copy"
-                onClick={() => { void copyCode(state.invite!.code); }}
+                onClick={() => {
+                  const code = state.invite?.code;
+                  if (code) void copyCode(code);
+                }}
               >
                 {copied ? ps.copied : ps.copy}
               </SecondaryButton>

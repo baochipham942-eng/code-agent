@@ -202,6 +202,7 @@ const CAPABILITY_DOMAIN_ACTIONS = {
   ],
   [IPC_DOMAINS.MCP]: [
     'addServer',
+    'cancelServerInstall',
     'getCatalog',
     'getServerStates',
     'getStatus',

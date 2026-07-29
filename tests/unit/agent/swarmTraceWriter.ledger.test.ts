@@ -8,8 +8,10 @@ import type BetterSqlite3 from 'better-sqlite3';
 import { applySchema } from '../../../src/host/services/core/database/schema';
 import { SwarmTraceRepository } from '../../../src/host/services/core/repositories/SwarmTraceRepository';
 import { SwarmLedgerRepository } from '../../../src/host/services/core/repositories/SwarmLedgerRepository';
+import { rebuildRunDetail } from '../../../src/host/services/core/swarmRollupProjection';
 import { SwarmTraceWriter } from '../../../src/host/agent/swarmTraceWriter';
 import { SwarmEventEmitter } from '../../../src/host/agent/swarmEventPublisher';
+import { ParallelAgentCoordinatorRegistry } from '../../../src/host/agent/parallelAgentCoordinatorRegistry';
 import { shutdownEventBus } from '../../../src/host/services/eventing/bus';
 import { createSwarmTraceStorageId, type SwarmRunScope } from '../../../src/shared/contract/swarm';
 
@@ -88,6 +90,49 @@ describe('SwarmTraceWriter · 3b 并行追加协同事件账本', () => {
     expect(detail.run.status).toBe('completed');
     expect(detail.run.totalTokensIn).toBe(30);
     expect(detail.agents[0].toolCalls).toBe(3);
+  });
+
+  it('agent 成功后的迟到失败不会污染内存聚合、rollup 或 ledger', async () => {
+    const scope = makeScope();
+    const storageRunId = createSwarmTraceStorageId(scope);
+    emitter.started(scope, 1);
+    emitter.agentAdded(scope, { id: 'a1', name: 'Coder', role: 'coder' });
+    emitter.agentUpdated(scope, 'a1', { status: 'running', startTime: 100, tokenUsage: { input: 30, output: 15 } });
+    emitter.agentCompleted(scope, 'a1', 'durable success');
+    emitter.agentFailed(scope, 'a1', 'late failure');
+    emitter.completed(scope, { total: 1, completed: 1, failed: 0, parallelPeak: 1, totalTime: 500 });
+    await writer.drain();
+
+    expect(repo.getRunDetail(storageRunId)?.agents[0]).toMatchObject({
+      status: 'completed',
+      error: null,
+      finalOutput: 'durable success',
+    });
+    expect(rebuildRunDetail(ledger.getByRun(storageRunId))?.agents[0]).toMatchObject({
+      status: 'completed',
+      error: null,
+      finalOutput: 'durable success',
+    });
+  });
+
+  it('父 Stop 会在 run_closed 前把 pending/running 子任务全部落成 cancelled', async () => {
+    const scope = makeScope();
+    emitter.started(scope, 2);
+    emitter.agentAdded(scope, { id: 'queued', name: 'Queued', role: 'reviewer' });
+    emitter.agentAdded(scope, { id: 'running', name: 'Running', role: 'coder' });
+    emitter.agentUpdated(scope, 'running', { status: 'running', startTime: 100 });
+    const registry = new ParallelAgentCoordinatorRegistry();
+    registry.getOrCreate(scope);
+    expect(registry.abortSession(scope.sessionId, 'user-cancel')).toBe(1);
+    await writer.drain();
+
+    const detail = rebuildRunDetail(ledger.getByRun(createSwarmTraceStorageId(scope)))!;
+    expect(detail.run.status).toBe('cancelled');
+    expect(detail.agents.map((agent) => [agent.agentId, agent.status])).toEqual([
+      ['queued', 'cancelled'],
+      ['running', 'cancelled'],
+    ]);
+    expect(detail.agents.every((agent) => agent.endTime !== null)).toBe(true);
   });
 
   it('将下发任务原文与超过 200 字的完整成员产出写进 agent_snapshot', async () => {

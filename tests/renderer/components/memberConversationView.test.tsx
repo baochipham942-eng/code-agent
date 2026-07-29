@@ -8,7 +8,8 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { zh } from '../../../src/renderer/i18n/zh';
 import type { SwarmAgentState } from '../../../src/shared/contract/swarm';
-import type { SwarmRunAgentRecord } from '../../../src/shared/contract/swarmTrace';
+import type { SwarmRunAgentRecord, SwarmRunDetail, SwarmRunListItem } from '../../../src/shared/contract/swarmTrace';
+import { IPC_CHANNELS } from '../../../src/shared/ipc';
 
 const invokeMock = vi.fn();
 const swarmState: { agents: SwarmAgentState[]; activeSessionId: string | undefined; messages: Array<{ id: string; from: string; to: string; content: string; timestamp: number; messageType: string }> } = {
@@ -32,6 +33,20 @@ const record: SwarmRunAgentRecord = {
   error: null, failureCategory: null, filesChanged: [], dispatchedTask: '核对第三方数据口径', finalOutput: '三处口径不一致，已列明',
 };
 
+// 成员条/成员页状态以持久化账本为唯一真相源（竞品借鉴B），夹具喂 ledger API
+const writerRecord: SwarmRunAgentRecord = {
+  ...record, agentId: 'writer', name: '撰稿员', role: 'writer', dispatchedTask: '起草', finalOutput: '初稿',
+};
+const ledgerRun: SwarmRunListItem = {
+  id: 'run-1', sessionId: 'session-1', status: 'completed', coordinator: 'parallel', startedAt: 1, endedAt: 5_001, durationMs: 5_000,
+  totalAgents: 2, completedCount: 2, failedCount: 0, totalCostUsd: 0.005, totalTokensIn: 68, totalTokensOut: 112, trigger: 'llm-spawn',
+};
+const ledgerDetail: SwarmRunDetail = {
+  run: { ...ledgerRun, totalToolCalls: 11, parallelPeak: 2, errorSummary: null, aggregation: null, tags: [] },
+  agents: [record, writerRecord],
+  events: [],
+};
+
 function agentOf(overrides: Partial<SwarmAgentState> = {}): SwarmAgentState {
   return {
     id: record.agentId, name: record.name, role: record.role, status: 'completed',
@@ -45,7 +60,11 @@ function agentOf(overrides: Partial<SwarmAgentState> = {}): SwarmAgentState {
 describe('成员对话页', () => {
   beforeEach(() => {
     invokeMock.mockReset();
-    invokeMock.mockResolvedValue([]);
+    invokeMock.mockImplementation((channel: unknown) => {
+      if (channel === IPC_CHANNELS.SWARM_LIST_TRACE_RUNS) return Promise.resolve([ledgerRun]);
+      if (channel === IPC_CHANNELS.SWARM_GET_TRACE_RUN_DETAIL) return Promise.resolve(ledgerDetail);
+      return Promise.resolve(null);
+    });
     swarmState.activeSessionId = 'session-1';
     swarmState.agents = [agentOf(), agentOf({ id: 'writer', name: '撰稿员', role: 'writer', dispatchedTask: '起草', finalOutput: '初稿' })];
     swarmState.messages = [];
@@ -60,7 +79,7 @@ describe('成员对话页', () => {
     render(<><SessionMemberBar sessionId="session-1" /><MemberConversationView sessionId="session-1" /></>);
     expect(screen.queryByTestId('member-conversation-view')).toBeNull();
 
-    fireEvent.click(screen.getByTestId('member-pill-researcher'));
+    fireEvent.click(await screen.findByTestId('member-pill-researcher'));
     await waitFor(() => expect(screen.getByTestId('member-conversation-view')).toBeTruthy());
     expect(screen.getByTestId('member-dispatched-task').textContent).toContain('核对第三方数据口径');
     expect(screen.getByTestId('member-final-output').textContent).toContain('三处口径不一致');
@@ -70,7 +89,7 @@ describe('成员对话页', () => {
 
   it('再点同一个成员回主会话，点主会话 pill 也回', async () => {
     render(<><SessionMemberBar sessionId="session-1" /><MemberConversationView sessionId="session-1" /></>);
-    fireEvent.click(screen.getByTestId('member-pill-researcher'));
+    fireEvent.click(await screen.findByTestId('member-pill-researcher'));
     await waitFor(() => expect(screen.getByTestId('member-conversation-view')).toBeTruthy());
 
     fireEvent.click(screen.getByTestId('member-pill-researcher'));

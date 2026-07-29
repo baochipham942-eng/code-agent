@@ -339,6 +339,147 @@ describe('Agent Team durable adapter', () => {
     expect(controller.getState().taskGraph[0].status).toBe('prepared');
   });
 
+  it('rejects a concurrent dispatch for the same logical task with an explainable durable error', async () => {
+    const runtime = new AgentTeamDurableRuntime(fakeKernel(), parentHost);
+    const controller = await runtime.start({
+      scope,
+      parentRunId: 'native-a',
+      logicalOperationId: 'tool-call-a',
+      sideEffect: false,
+      tasks: [{ id: 'node-a', role: 'explore', task: 'inspect', tools: ['Read'] }],
+      now: 10,
+    });
+    const task = { id: 'node-a', role: 'explore', task: 'inspect', tools: ['Read'] };
+
+    await controller.markNodeDispatched(task, 11);
+    await expect(controller.markNodeDispatched(task, 12))
+      .rejects.toThrow(/LOGICAL_RUN_STILL_RUNNING/);
+  });
+
+  it('rejects duplicate task keys and dependency cycles before creating a durable run', async () => {
+    const kernel = fakeKernel();
+    const runtime = new AgentTeamDurableRuntime(kernel, parentHost);
+    const base = {
+      scope,
+      parentRunId: 'native-a',
+      logicalOperationId: 'tool-call-a',
+      sideEffect: false,
+      now: 10,
+    };
+
+    await expect(runtime.start({
+      ...base,
+      tasks: [
+        { id: 'same', role: 'explore', task: 'one', tools: ['Read'] },
+        { id: 'same', role: 'reviewer', task: 'two', tools: ['Read'] },
+      ],
+    })).rejects.toThrow(/DUPLICATE_TASK_KEY/);
+    await expect(runtime.start({
+      ...base,
+      tasks: [
+        { id: 'a', role: 'explore', task: 'one', tools: ['Read'], dependsOn: ['b'] },
+        { id: 'b', role: 'reviewer', task: 'two', tools: ['Read'], dependsOn: ['a'] },
+      ],
+    })).rejects.toThrow(/DEPENDENCY_CYCLE.*a.*b.*a/);
+    expect(kernel.createRun).not.toHaveBeenCalled();
+    expect(parentHost.prepareAgentTeamChild).not.toHaveBeenCalled();
+  });
+
+  it('keeps a successful node immutable when a late failure settles', async () => {
+    const runtime = new AgentTeamDurableRuntime(fakeKernel(), parentHost);
+    const controller = await runtime.start({
+      scope,
+      parentRunId: 'native-a',
+      logicalOperationId: 'tool-call-a',
+      sideEffect: false,
+      tasks: [{ id: 'node-a', role: 'explore', task: 'inspect', tools: ['Read'] }],
+      now: 10,
+    });
+    const task = { id: 'node-a', role: 'explore', task: 'inspect', tools: ['Read'] };
+    await controller.markNodeDispatched(task, 11);
+    await controller.markNodeTerminal(task, {
+      success: true, output: 'durable success', toolsUsed: [], iterations: 1,
+      taskId: 'node-a', role: 'explore', startTime: 11, endTime: 12, duration: 1,
+    }, 12);
+    await controller.markNodeTerminal(task, {
+      success: false, output: '', error: 'late failure', toolsUsed: [], iterations: 1,
+      taskId: 'node-a', role: 'explore', startTime: 11, endTime: 13, duration: 2,
+    }, 13);
+
+    expect(controller.getState().taskGraph[0]).toMatchObject({
+      status: 'completed',
+      result: { success: true, output: 'durable success' },
+    });
+    expect(controller.getState().errors).not.toContain('[node-a] late failure');
+  });
+
+  it('keeps the first run terminal when a conflicting terminal call races', async () => {
+    const kernel = fakeKernel();
+    const runtime = new AgentTeamDurableRuntime(kernel, parentHost);
+    const controller = await runtime.start({
+      scope,
+      parentRunId: 'native-a',
+      logicalOperationId: 'tool-call-a',
+      sideEffect: false,
+      tasks: [{ id: 'node-a', role: 'explore', task: 'inspect', tools: ['Read'] }],
+      now: 10,
+    });
+
+    const firstTerminal = controller.terminal('completed', undefined, 12);
+    await Promise.all([
+      firstTerminal,
+      controller.terminal('failed', 'late failure', 13),
+    ]);
+    await expect(controller.markNodeTerminal(
+      { id: 'node-a', role: 'explore', task: 'inspect', tools: ['Read'] },
+      {
+        success: false, output: '', error: 'later node failure', toolsUsed: [], iterations: 1,
+        taskId: 'node-a', role: 'explore', startTime: 10, endTime: 14, duration: 4,
+      },
+      14,
+    )).rejects.toThrow(/already terminal/);
+
+    expect(parentHost.projectAgentTeamChildTerminal).toHaveBeenCalledTimes(1);
+    expect(parentHost.projectAgentTeamChildTerminal).toHaveBeenCalledWith(expect.objectContaining({
+      status: 'completed',
+    }));
+    expect(kernel.terminal).toHaveBeenCalledTimes(1);
+    expect(kernel.terminal).toHaveBeenCalledWith(expect.objectContaining({
+      status: 'completed',
+    }));
+  });
+
+  it('parent cancellation preserves completed nodes and cancels every non-terminal node', async () => {
+    const runtime = new AgentTeamDurableRuntime(fakeKernel(), parentHost);
+    const controller = await runtime.start({
+      scope,
+      parentRunId: 'native-a',
+      logicalOperationId: 'tool-call-a',
+      sideEffect: false,
+      tasks: [
+        { id: 'done', role: 'explore', task: 'done', tools: ['Read'] },
+        { id: 'running', role: 'reviewer', task: 'running', tools: ['Read'] },
+        { id: 'queued', role: 'coder', task: 'queued', tools: ['Read'], dependsOn: ['running'] },
+      ],
+      now: 10,
+    });
+    await controller.markNodeDispatched({ id: 'done', role: 'explore', task: 'done', tools: ['Read'] }, 11);
+    await controller.markNodeTerminal({ id: 'done', role: 'explore', task: 'done', tools: ['Read'] }, {
+      success: true, output: 'ok', toolsUsed: [], iterations: 1,
+      taskId: 'done', role: 'explore', startTime: 11, endTime: 12, duration: 1,
+    }, 12);
+    await controller.markNodeDispatched({ id: 'running', role: 'reviewer', task: 'running', tools: ['Read'] }, 13);
+
+    await controller.cancel('parent-stop', 14);
+
+    expect(controller.getState().taskGraph.map(({ id, status }) => ({ id, status }))).toEqual([
+      { id: 'done', status: 'completed' },
+      { id: 'running', status: 'cancelled' },
+      { id: 'queued', status: 'cancelled' },
+    ]);
+    expect(controller.getState().runningChildRefs).toEqual([]);
+  });
+
   it('stores the GraphRunner projection inside the existing Team durable checkpoint', async () => {
     const kernel = fakeKernel();
     const runtime = new AgentTeamDurableRuntime(kernel, parentHost);

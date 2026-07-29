@@ -4,7 +4,7 @@
 // 两种数据源，同一条：
 //   1) 预选：用户在「＋ → 团队」选了配方但还没发第一句话 —— 灰态名单，让他先知道
 //      这个团队由谁组成（WorkBuddy 不做这一步，只在真 spawn 后才铺；我们多给一层可预期性）
-//   2) 运行时：会话真的跑起来了（实时 swarm 成员，或从账本回灌的历史 run）—— 带状态
+//   2) 运行时：会话真的跑起来了（持久化账本/API 回灌）—— 带状态
 // 第一颗 pill 永远是「主会话」（团长位），点它回主对话；点成员打开他的工作记录。
 // ============================================================================
 
@@ -16,8 +16,6 @@ import { useTeamRecipeStore } from '../../../stores/teamRecipeStore';
 import { useAgentRegistryStore } from '../../../stores/agentRegistryStore';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { useI18n } from '../../../hooks/useI18n';
-import ipcService from '../../../services/ipcService';
-import { IPC_CHANNELS } from '@shared/ipc';
 import type { SwarmAgentState } from '@shared/contract/swarm';
 import type { SwarmRunAgentRecord } from '@shared/contract/swarmTrace';
 import { readPersistedTeamLead, teamRecipeMemberKey } from '@shared/contract/teamRecipe';
@@ -25,6 +23,7 @@ import { useMemberViewStore } from '../../../stores/memberViewStore';
 import { useComposerNoticeStore, selectHasBlockingNotice } from '../../../stores/composerNoticeStore';
 import { useVoiceCallStore } from '../../../stores/voiceCallStore';
 import { RoleInitialAvatar } from './RoleInitialAvatar';
+import { useDurableSwarmRunDetail } from '../../../hooks/useDurableSwarmRunDetail';
 
 export function swarmRunAgentRecordToState(record: SwarmRunAgentRecord): SwarmAgentState {
   return {
@@ -77,12 +76,10 @@ const StatusBadge: React.FC<{ status: MemberPill['status'] }> = ({ status }) => 
 };
 
 /**
- * 本会话的团队成员（实时 swarm > 账本回灌 > 预选配方名单）。
+ * 本会话的团队成员（持久化账本/API > 预选配方名单）。
  * 成员条和成员对话页共用同一份解析，避免两处各抄一遍口径。
  */
 export function useSessionMembers(sessionId: string | null): MemberPill[] {
-  const agents = useSwarmStore((state) => state.agents);
-  const swarmSessionId = useSwarmStore((state) => state.activeSessionId);
   const selectedTeamRecipeId = useComposerStore((state) => state.selectedTeamRecipeId);
   const standbyExcludedMemberKeys = useComposerStore((state) => state.standbyExcludedMemberKeys);
   const recipes = useTeamRecipeStore((state) => state.recipes);
@@ -91,25 +88,10 @@ export function useSessionMembers(sessionId: string | null): MemberPill[] {
     const session = state.sessions.find((item) => item.id === sessionId);
     return readPersistedTeamLead(session?.metadata)?.roleId ?? null;
   });
-  const [persistedAgents, setPersistedAgents] = useState<SwarmRunAgentRecord[]>([]);
-
-  const teamAgents = swarmSessionId === sessionId && agents.length > 1 ? agents : [];
-  const hasRealtimeTeam = teamAgents.length > 0;
-
-  useEffect(() => {
-    let current = true;
-    setPersistedAgents([]);
-    if (!sessionId || hasRealtimeTeam) return () => { current = false; };
-    void ipcService.invoke(IPC_CHANNELS.SWARM_LIST_TRACE_RUNS, { sessionId, limit: 1 })
-      .then(async (runs) => {
-        const run = runs[0];
-        if (!current || !run || run.totalAgents < 2) return;
-        const detail = await ipcService.invoke(IPC_CHANNELS.SWARM_GET_TRACE_RUN_DETAIL, { sessionId, runId: run.id });
-        if (current && detail?.agents.length && detail.agents.length >= 2) setPersistedAgents(detail.agents);
-      })
-      .catch(() => { if (current) setPersistedAgents([]); });
-    return () => { current = false; };
-  }, [hasRealtimeTeam, sessionId]);
+  const durableDetail = useDurableSwarmRunDetail(sessionId);
+  const persistedAgents = durableDetail?.agents.length && durableDetail.agents.length >= 2
+    ? durableDetail.agents
+    : [];
 
   const professionOf = useMemo(() => {
     const map = new Map(agentEntries.map((entry) => [entry.id, entry.profession]));
@@ -131,7 +113,6 @@ export function useSessionMembers(sessionId: string | null): MemberPill[] {
       } satisfies MemberPill;
     });
 
-    if (hasRealtimeTeam) return fromAgents(teamAgents);
     if (persistedAgents.length > 0) return fromAgents(persistedAgents.map(swarmRunAgentRecordToState), persistedAgents);
 
     // 预选：还没跑，只铺名单（× 掉的成员按 standbyExcludedMemberKeys 过滤，
@@ -153,7 +134,7 @@ export function useSessionMembers(sessionId: string | null): MemberPill[] {
         isLead: entry.roleId === teamLeadRoleId,
         standbyKey: entry.standbyKey,
       }));
-  }, [hasRealtimeTeam, teamAgents, persistedAgents, selectedTeamRecipeId, standbyExcludedMemberKeys, recipes, professionOf, teamLeadRoleId]);
+  }, [persistedAgents, selectedTeamRecipeId, standbyExcludedMemberKeys, recipes, professionOf, teamLeadRoleId]);
 
   return pills;
 }

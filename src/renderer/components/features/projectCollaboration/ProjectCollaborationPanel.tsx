@@ -305,7 +305,9 @@ export const ProjectCollaborationPanel: React.FC<ProjectCollaborationPanelProps>
 
   return (
     <div className="relative flex h-full min-h-0 flex-col overflow-hidden bg-zinc-900" data-testid="neo-topic-directory">
-      <div className={embedded ? 'shrink-0 px-4 pt-3' : 'shrink-0 border-b border-zinc-800 px-4 py-3'}>
+      {/* 嵌入模式 wrapper 不带 pt：宿主 tab 栏与内容区间距由宿主页统一给（与「动态」tab 首行一致），
+          叠加 pt-3 会把面板内容顶得离 tab 栏老远；loading/error 条自带 mt-3 不受影响 */}
+      <div className={embedded ? 'shrink-0 px-4' : 'shrink-0 border-b border-zinc-800 px-4 py-3'}>
         {/* 嵌入模式（项目空间任务 tab）：宿主页头已有项目名，不再重复标题，更不给用户看裸 project id */}
         {!embedded && (
           <div className="flex items-center gap-2">
@@ -334,7 +336,7 @@ export const ProjectCollaborationPanel: React.FC<ProjectCollaborationPanelProps>
       </div>
 
       <div className="min-h-0 flex-1">
-        <div className="h-full min-h-0 overflow-y-auto px-4 py-3">
+        <div className={embedded ? 'h-full min-h-0 overflow-y-auto px-4 pb-3' : 'h-full min-h-0 overflow-y-auto px-4 py-3'}>
           <div className="mb-3 space-y-2">
             <div className="relative">
               <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-600" />

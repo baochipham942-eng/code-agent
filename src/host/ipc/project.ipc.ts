@@ -11,6 +11,11 @@
 // - rename          -> 改名（{ projectId, name }）
 // - setDescription  -> 改描述（{ projectId, description? }）
 // - setStatus       -> 改状态（{ projectId, status }）
+// - promoteToCloudSpace -> 创建云项目壳并写回本地映射（{ projectId }）
+// - createInvite    -> owner 创建邀请码（{ projectId, expiresInHours, maxUses }）
+// - revokeInvite    -> owner 撤销邀请码（{ code }）
+// - redeemInvite    -> 兑换邀请码并补本地占位项目（{ code }）
+// - listMembers     -> 读取空间成员卡（{ projectId }）
 // - addGoal         -> 新增目标（{ projectId, goal, verify?, review? }）
 // - updateGoalStatus-> 更新目标状态（{ goalId, status, lastRunSessionId? }）
 // - addRole         -> 角色入驻（{ projectId, roleId }）
@@ -21,6 +26,10 @@
 import type { IpcMain } from '../platform';
 import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
 import { getProjectService } from '../services/project/projectService';
+import {
+  getProjectCollaborationService,
+  ProjectCollaborationError,
+} from '../services/project/projectCollaborationService';
 import { getArtifactIssueRepository } from '../services/core/repositories/ArtifactIssueRepository';
 import {
   UNSORTED_PROJECT_ID,
@@ -89,6 +98,14 @@ interface ArtifactIssuesPayload {
 interface SourcesPayload {
   projectId?: string;
 }
+interface CreateInvitePayload {
+  projectId?: string;
+  expiresInHours?: number;
+  maxUses?: number;
+}
+interface InviteCodePayload {
+  code?: string;
+}
 type UpdateProjectPayload = Partial<UpdateProjectInput>;
 interface SourceMutationPayload {
   projectId?: string;
@@ -106,6 +123,12 @@ function notFound(message: string): IPCResponse {
 }
 function errorResponse(error: unknown): IPCResponse {
   logger.error('Project IPC error', error);
+  if (error instanceof ProjectCollaborationError) {
+    return {
+      success: false,
+      error: { code: error.code, message: error.message },
+    };
+  }
   return {
     success: false,
     error: { code: 'PROJECT_ERROR', message: error instanceof Error ? error.message : 'Unknown error' },
@@ -133,6 +156,7 @@ export function registerProjectHandlers(ipcMain: IpcMain): void {
   ipcMain.handle(IPC_DOMAINS.PROJECT, async (_event, request: IPCRequest): Promise<IPCResponse> => {
     const { action, payload } = request;
     const svc = getProjectService();
+    const collaboration = getProjectCollaborationService();
     const now = Date.now();
     try {
       switch (action) {
@@ -171,6 +195,63 @@ export function registerProjectHandlers(ipcMain: IpcMain): void {
           }
           const promoted = svc.promoteToSpace(projectId, now);
           return promoted ? { success: true, data: promoted } : notFound('project not found');
+        }
+
+        case 'promoteToCloudSpace': {
+          const { projectId } = (payload ?? {}) as DetailPayload;
+          if (!projectId?.trim()) return invalid('projectId is required');
+          if (projectId === UNSORTED_PROJECT_ID) {
+            return invalid('the unsorted project cannot be promoted to a cloud space');
+          }
+          return {
+            success: true,
+            data: await collaboration.promoteToCloudSpace(projectId.trim()),
+          };
+        }
+
+        case 'createInvite': {
+          const { projectId, expiresInHours, maxUses } = (payload ?? {}) as CreateInvitePayload;
+          if (
+            !projectId?.trim()
+            || typeof expiresInHours !== 'number'
+            || typeof maxUses !== 'number'
+          ) {
+            return invalid('projectId, expiresInHours and maxUses are required');
+          }
+          return {
+            success: true,
+            data: await collaboration.createInvite(projectId.trim(), {
+              expiresInHours,
+              maxUses,
+            }),
+          };
+        }
+
+        case 'revokeInvite': {
+          const { code } = (payload ?? {}) as InviteCodePayload;
+          if (!code?.trim()) return invalid('code is required');
+          return {
+            success: true,
+            data: await collaboration.revokeInvite(code.trim()),
+          };
+        }
+
+        case 'redeemInvite': {
+          const { code } = (payload ?? {}) as InviteCodePayload;
+          if (!code?.trim()) return invalid('code is required');
+          return {
+            success: true,
+            data: await collaboration.redeemInvite(code.trim()),
+          };
+        }
+
+        case 'listMembers': {
+          const { projectId } = (payload ?? {}) as DetailPayload;
+          if (!projectId?.trim()) return invalid('projectId is required');
+          return {
+            success: true,
+            data: await collaboration.listMembers(projectId.trim()),
+          };
         }
 
         case 'listCapabilitySelections': {

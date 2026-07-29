@@ -34,7 +34,7 @@ export const zhSettingsModels = {
         },
         qwen: {
           name: '通义千问',
-          description: '阿里云通义千问模型',
+          description: '阿里云通义千问模型；同一个 API Key 同时供实时语音、图片生成与口述转写使用',
         },
         moonshot: {
           name: 'Kimi',

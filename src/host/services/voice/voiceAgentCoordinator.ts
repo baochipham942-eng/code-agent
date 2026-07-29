@@ -270,7 +270,14 @@ async function narrateSettled(state: LedgerState, item: VoiceWorkItem, status: '
       ? (item.detail ?? '')
       : await readRunConclusion(state.neoSessionId);
     // await 之后 narrate 可能已被挂断置 null——此刻再念没人听。
-    state.narrate?.(buildWorkNarration({
+    // **但也不能就这么算了**：那正是「说完就挂、活刚好这时跑完」这个最常见的场景，
+    // 静默丢掉等于这条代偿链在它最该生效的时刻失效。落回通知那条路。
+    const narrate = state.narrate;
+    if (!narrate) {
+      await notifyVoiceWorkSettledAfterHangup(state, item, status);
+      return;
+    }
+    narrate(buildWorkNarration({
       workItemId: item.id,
       status,
       title: item.title,

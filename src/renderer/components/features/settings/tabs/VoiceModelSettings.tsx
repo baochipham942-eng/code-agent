@@ -16,12 +16,13 @@ import type { AppSettings, SpeechInputSettings } from '@shared/contract';
 import { DEFAULT_SPEECH_INPUT_SETTINGS, VOICE_INPUT_SETTINGS_UPDATED_EVENT } from '@shared/contract';
 import { VOICE_LIVE_SETTINGS_UPDATED_EVENT, type VoiceTurnDetectionConfig } from '@shared/contract/voice';
 import type { VoiceLiveSettings } from '@shared/contract/settings';
-import { QWEN_OMNI_REALTIME_MODEL_OPTIONS, resolveConversationModelOption } from '@shared/constants/voice';
+import { QWEN_OMNI_REALTIME_MODEL_OPTIONS, VOICE_VOCABULARY_MAX_ENTRIES, resolveConversationModelOption } from '@shared/constants/voice';
 import ipcService from '../../../../services/ipcService';
 import { createLogger } from '../../../../utils/logger';
 import { useI18n } from '../../../../hooks/useI18n';
 import { useVoiceLiveAvailability } from '../../voice/useVoiceLiveAvailability';
 import { deriveInterruptMode, deriveTurnDetection, deriveVadSensitivity } from '../../voice/voiceSettingsDerivation';
+import { parseVoiceVocabularyInput } from '../../voice/voiceVocabularyParsing';
 import { VoiceApiKeyConfig } from './VoiceApiKeyConfig';
 
 const logger = createLogger('VoiceModelSettings');
@@ -51,6 +52,7 @@ export const VoiceModelSettings: React.FC = () => {
   const [live, setLive] = useState<VoiceLiveSettings>({});
   const [turnDetection, setTurnDetection] = useState<VoiceTurnDetectionConfig | undefined>(undefined);
   const [speech, setSpeech] = useState<SpeechInputSettings>(DEFAULT_SPEECH_INPUT_SETTINGS);
+  const [vocabularyText, setVocabularyText] = useState('');
 
   useEffect(() => {
     let cancelled = false;
@@ -60,6 +62,7 @@ export const VoiceModelSettings: React.FC = () => {
         setLive(settings.voice?.live ?? {});
         setTurnDetection(settings.voice?.turnDetection);
         setSpeech(mergeSpeechSettings(settings.speech));
+        setVocabularyText((settings.voice?.vocabulary ?? []).join('\n'));
       })
       .catch((error) => logger.error('load voice model settings failed', error));
     return () => { cancelled = true; };
@@ -106,6 +109,21 @@ export const VoiceModelSettings: React.FC = () => {
       logger.error('save transcription model settings failed', error);
     }
   };
+
+  // 口述词表：失焦时解析（split/trim/去重/截上限）后走 settings set 落盘，
+  // 与本页其他项同款链路；textarea 原文保留给用户继续编辑，落盘的只有解析结果。
+  const persistVocabulary = async () => {
+    const { entries } = parseVoiceVocabularyInput(vocabularyText);
+    try {
+      await ipcService.invokeDomain(IPC_DOMAINS.SETTINGS, 'set', {
+        voice: { vocabulary: entries },
+      } as Partial<AppSettings>);
+    } catch (error) {
+      logger.error('save voice vocabulary failed', error);
+    }
+  };
+
+  const parsedVocabulary = parseVoiceVocabularyInput(vocabularyText);
 
   const conversationModelOption = resolveConversationModelOption(live.conversationModel);
   // 音色与模型强绑定：存量 voiceId 不在当前模型的 voices 里就落到第一个合法值，
@@ -188,6 +206,34 @@ export const VoiceModelSettings: React.FC = () => {
           </select>
           <p className="text-xs text-zinc-500">{modelText.transcriptionModelNote}</p>
         </label>
+      </div>
+
+      {/* 口述词表：听写/通话共用的专名词表，一行一个，失焦保存；右上角实时条数 */}
+      <div className="border-t border-zinc-700 pt-4">
+        <div className="mb-1 flex items-center justify-between gap-4">
+          <span className="text-sm font-medium text-zinc-200">{text.vocabularyTitle}</span>
+          <span data-testid="voice-vocabulary-count" className="text-xs text-zinc-500">
+            {text.vocabularyCount
+              .replace('{count}', String(parsedVocabulary.entries.length))
+              .replace('{max}', String(VOICE_VOCABULARY_MAX_ENTRIES))}
+          </span>
+        </div>
+        <p className="mb-2 text-xs text-zinc-500">{text.vocabularyDescription}</p>
+        <textarea
+          data-testid="voice-vocabulary-input"
+          value={vocabularyText}
+          onChange={(event) => setVocabularyText(event.target.value)}
+          onBlur={() => void persistVocabulary()}
+          rows={5}
+          spellCheck={false}
+          placeholder={text.vocabularyPlaceholder}
+          className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-primary-500"
+        />
+        {parsedVocabulary.overflowCount > 0 && (
+          <p data-testid="voice-vocabulary-overflow" className="mt-2 text-xs text-amber-400/80">
+            {text.vocabularyOverflowHint.replace('{max}', String(VOICE_VOCABULARY_MAX_ENTRIES))}
+          </p>
+        )}
       </div>
     </div>
   );

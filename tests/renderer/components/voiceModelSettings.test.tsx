@@ -175,6 +175,60 @@ describe('VoiceModelSettings（新 tab 收拢三项）', () => {
   });
 });
 
+describe('VoiceModelSettings · 口述词表（批 X4）', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    availability.configured = true;
+  });
+  afterEach(() => cleanup());
+
+  it('加载 settings.voice.vocabulary 进 textarea，并展示当前条数', async () => {
+    settingsGet({ vocabulary: ['Neo', 'worktree'] } as AppSettings['voice']);
+    render(<VoiceModelSettings />);
+    const textarea = await screen.findByTestId('voice-vocabulary-input') as HTMLTextAreaElement;
+    expect(textarea.value).toBe('Neo\nworktree');
+    expect(screen.getByTestId('voice-vocabulary-count').textContent).toBe('2 / 100');
+  });
+
+  it('空词表显示 0 / 100，不出现超限提示', async () => {
+    settingsGet(undefined);
+    render(<VoiceModelSettings />);
+    expect(await screen.findByTestId('voice-vocabulary-count')).toHaveProperty('textContent', '0 / 100');
+    expect(screen.queryByTestId('voice-vocabulary-overflow')).toBeNull();
+  });
+
+  it('失焦保存：split/trim/去空行/去重后落到 voice.vocabulary', async () => {
+    settingsGet(undefined);
+    render(<VoiceModelSettings />);
+    const textarea = await screen.findByTestId('voice-vocabulary-input');
+    fireEvent.change(textarea, { target: { value: '  a.txt  \nNeo\n\nNeo\nworktree ' } });
+    fireEvent.blur(textarea);
+    await waitFor(() => {
+      const setCall = invokeDomainMock.mock.calls.filter(([, action]) => action === 'set').at(-1);
+      const payload = setCall![2] as { voice: { vocabulary?: string[] } };
+      expect(payload.voice.vocabulary).toEqual(['a.txt', 'Neo', 'worktree']);
+    });
+  });
+
+  it('超过 100 条：提示超限，保存只保留前 100 条', async () => {
+    settingsGet(undefined);
+    render(<VoiceModelSettings />);
+    const textarea = await screen.findByTestId('voice-vocabulary-input');
+    const text = Array.from({ length: 105 }, (_, i) => `term-${i}`).join('\n');
+    fireEvent.change(textarea, { target: { value: text } });
+    expect(screen.getByTestId('voice-vocabulary-count').textContent).toBe('100 / 100');
+    expect(screen.getByTestId('voice-vocabulary-overflow').textContent)
+      .toBe(zh.voice.settings.vocabularyOverflowHint.replace('{max}', '100'));
+    fireEvent.blur(textarea);
+    await waitFor(() => {
+      const setCall = invokeDomainMock.mock.calls.filter(([, action]) => action === 'set').at(-1);
+      const payload = setCall![2] as { voice: { vocabulary?: string[] } };
+      expect(payload.voice.vocabulary).toHaveLength(100);
+      expect(payload.voice.vocabulary!.at(-1)).toBe('term-99');
+    });
+  });
+});
+
 describe('搬家不是复制：三项已从原 tab 消失', () => {
   beforeEach(() => {
     vi.clearAllMocks();

@@ -1307,6 +1307,9 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
       FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
     )
   `);
+  safeAlter(db, `ALTER TABLE neo_work_cards ADD COLUMN priority TEXT NOT NULL DEFAULT 'medium'`, logger);
+  safeAlter(db, `ALTER TABLE neo_work_cards ADD COLUMN due_at INTEGER`, logger);
+  safeAlter(db, `ALTER TABLE neo_work_cards ADD COLUMN blocked_reason TEXT`, logger);
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS neo_work_card_revisions (

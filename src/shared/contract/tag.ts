@@ -39,9 +39,12 @@ export type NeoWorkCardStatus =
   | 'cancelled'
   | 'archived';
 
+export type NeoWorkCardPriority = 'urgent' | 'high' | 'medium' | 'low';
+
 export type NeoWorkCardUpdateReason =
   | 'draft_created'
   | 'draft_updated'
+  | 'meta_updated'
   | 'revision_approved'
   | 'revision_rejected'
   | 'card_cancelled'
@@ -163,6 +166,9 @@ export interface NeoWorkCard {
   requesterUserId: string;
   title: string;
   status: NeoWorkCardStatus;
+  priority?: NeoWorkCardPriority;
+  dueAt?: number | null;
+  blockedReason?: string | null;
   currentRevisionId: string;
   approvedRevisionId?: string | null;
   createdAt: number;
@@ -313,6 +319,13 @@ export interface UpdateNeoWorkCardDraftRevisionInput {
   updatedByUserId: string;
   title?: string;
   revision: NeoWorkCardRevisionDraftInput;
+}
+
+export interface UpdateNeoWorkCardMetaInput {
+  workCardId: string;
+  actorUserId: string;
+  priority?: NeoWorkCardPriority;
+  dueAt?: number | null;
 }
 
 export interface NeoWorkCardListOptions {

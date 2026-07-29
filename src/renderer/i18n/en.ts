@@ -28,6 +28,7 @@ import { rolePackEn } from './rolePack';
 import { expertEn } from './expert';
 import { generativeUIEn } from './generativeUI';
 import { capabilityHubEn } from './capabilityHub';
+import { neoTopicsEn } from './neoTopics';
 import { evalCenterEn } from './evalCenter';
 import { localOpsEn } from './localOps';
 import { onboardingEn } from './onboarding';
@@ -37,6 +38,7 @@ import { activityPanelEn } from './activity';
 export const en: Translations = {
   ...activityPanelEn,
   ...capabilityHubEn,
+  ...neoTopicsEn,
   ...evalCenterEn,
   ...localOpsEn,
   ...onboardingEn,

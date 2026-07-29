@@ -27,6 +27,7 @@ import { rolePackZh } from './rolePack';
 import { expertZh } from './expert';
 import { generativeUIZh } from './generativeUI';
 import { capabilityHubZh } from './capabilityHub';
+import { neoTopicsZh } from './neoTopics';
 import { evalCenterZh } from './evalCenter';
 import { localOpsZh } from './localOps';
 import { onboardingZh } from './onboarding';
@@ -36,6 +37,7 @@ import { activityPanelZh } from './activity';
 export const zh = {
   ...activityPanelZh,
   ...capabilityHubZh,
+  ...neoTopicsZh,
   ...evalCenterZh,
   ...localOpsZh,
   ...onboardingZh,

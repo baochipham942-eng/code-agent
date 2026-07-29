@@ -1,3 +1,5 @@
+import type { Client } from '@modelcontextprotocol/client';
+
 // ============================================================================
 // MCP Elicitation Handler - Bridge MCP server elicitation to UI
 //
@@ -8,9 +10,6 @@
 // 2. Translates the MCP form schema into a UI prompt sent via IPC
 // 3. Waits for the user response and returns it as an ElicitResult
 // ============================================================================
-
-import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { ElicitRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { AppWindow, ipcHost } from '../platform';
 import { IPC_CHANNELS } from '../../shared/ipc';
 import { INTERACTION_TIMEOUTS } from '../../shared/constants';
@@ -71,7 +70,7 @@ export function registerElicitationHandler(
 ): void {
   registerElicitationResponseHandler();
 
-  client.setRequestHandler(ElicitRequestSchema, async (request) => {
+  client.setRequestHandler('elicitation/create', async (request) => {
     const params = request.params;
 
     // Only support form mode; URL mode requires opening a browser which is

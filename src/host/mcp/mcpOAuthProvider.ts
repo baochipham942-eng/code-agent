@@ -1,12 +1,10 @@
 import type {
   OAuthClientProvider,
   OAuthDiscoveryState,
-} from '@modelcontextprotocol/sdk/client/auth.js';
-import type {
   OAuthClientInformationMixed,
   OAuthClientMetadata,
   OAuthTokens,
-} from '@modelcontextprotocol/sdk/shared/auth.js';
+} from '@modelcontextprotocol/client';
 import { getSecureStorage, type SecureStorageService } from '../services/core/secureStorage';
 import type { MCPHttpStreamableServerConfig } from './types';
 import { getMcpOAuthCoordinator, type McpOAuthCoordinator, type McpOAuthFlow } from './mcpOAuthCoordinator';
@@ -14,8 +12,9 @@ import { getMcpOAuthCoordinator, type McpOAuthCoordinator, type McpOAuthFlow } f
 const PRODUCT_CLIENT_NAME = 'Agent Neo';
 
 type McpOAuthStorageKind = 'tokens' | 'client-info' | 'code-verifier' | 'discovery';
-type McpOAuthStorageKey = `mcp-oauth:${string}:${McpOAuthStorageKind}`;
+type McpOAuthStorageKey = `mcp-oauth:${string}:${string}`;
 type McpOAuthCredentialScope = 'all' | 'client' | 'tokens' | 'verifier' | 'discovery';
+type NativeOAuthClientMetadata = OAuthClientMetadata & { application_type: 'native' };
 
 export interface McpOAuthProviderOptions {
   serverIdentity: string;
@@ -51,10 +50,11 @@ export class McpOAuthProvider implements OAuthClientProvider {
     return this.redirectUrlResolver();
   }
 
-  get clientMetadata(): OAuthClientMetadata {
+  get clientMetadata(): NativeOAuthClientMetadata {
     return {
       redirect_uris: [this.redirectUrl],
       client_name: PRODUCT_CLIENT_NAME,
+      application_type: 'native',
       token_endpoint_auth_method: 'none',
       grant_types: ['authorization_code', 'refresh_token'],
       response_types: ['code'],
@@ -66,14 +66,18 @@ export class McpOAuthProvider implements OAuthClientProvider {
   }
 
   clientInformation(): OAuthClientInformationMixed | undefined | Promise<OAuthClientInformationMixed | undefined> {
-    const clientInformation = this.readJson<OAuthClientInformationMixed>('client-info');
+    const clientInformation = this.readClientInformation();
     if (clientInformation || !this.beforeClientMetadata) return clientInformation;
 
-    return Promise.resolve(this.beforeClientMetadata()).then(() => this.readJson<OAuthClientInformationMixed>('client-info'));
+    return Promise.resolve(this.beforeClientMetadata()).then(() => this.readClientInformation());
   }
 
   saveClientInformation(clientInformation: OAuthClientInformationMixed): void {
-    this.writeJson('client-info', clientInformation);
+    const issuer = this.authorizationServerIssuer();
+    if (!issuer) {
+      throw new Error('MCP OAuth authorization server issuer is not available');
+    }
+    this.secureStorage.set(this.clientInformationKey(issuer), JSON.stringify(clientInformation));
   }
 
   tokens(): OAuthTokens | undefined {
@@ -101,17 +105,40 @@ export class McpOAuthProvider implements OAuthClientProvider {
   }
 
   saveDiscoveryState(state: OAuthDiscoveryState): void {
+    const issuer = this.issuerFromDiscoveryState(state);
     this.writeJson('discovery', state);
+    this.secureStorage.set(this.issuerKey(), issuer);
   }
 
   discoveryState(): OAuthDiscoveryState | undefined {
-    return this.readJson<OAuthDiscoveryState>('discovery');
+    const state = this.readJson<OAuthDiscoveryState>('discovery');
+    if (state) {
+      this.secureStorage.set(this.issuerKey(), this.issuerFromDiscoveryState(state));
+    }
+    return state;
+  }
+
+  authorizationServerIssuer(): string | undefined {
+    return this.secureStorage.get(this.issuerKey());
   }
 
   invalidateCredentials(scope: McpOAuthCredentialScope): void {
+    const issuer = this.authorizationServerIssuer();
     const kinds = scope === 'all' ? ['tokens', 'client-info', 'code-verifier', 'discovery'] as const : [this.kindForScope(scope)];
     for (const kind of kinds) {
-      this.secureStorage.delete(this.keyFor(kind));
+      if (kind === 'client-info') {
+        if (issuer) {
+          this.secureStorage.delete(this.clientInformationKey(issuer));
+        }
+        // 旧版本把 client-info 写在不带 issuer 前缀的键上。升级用户那份必须无条件一并删除，
+        // 否则「退出登录」之后凭据仍残留在 SecureStorage 里；issuer 取不到时这也是唯一能删的键。
+        this.secureStorage.delete(this.keyFor(kind));
+      } else {
+        this.secureStorage.delete(this.keyFor(kind));
+      }
+    }
+    if (scope === 'all' || scope === 'discovery') {
+      this.secureStorage.delete(this.issuerKey());
     }
   }
 
@@ -129,6 +156,35 @@ export class McpOAuthProvider implements OAuthClientProvider {
 
   private keyFor(kind: McpOAuthStorageKind): McpOAuthStorageKey {
     return `mcp-oauth:${this.serverIdentity}:${kind}`;
+  }
+
+  private issuerKey(): McpOAuthStorageKey {
+    return `mcp-oauth:${this.serverIdentity}:issuer`;
+  }
+
+  private clientInformationKey(issuer: string): McpOAuthStorageKey {
+    return `mcp-oauth:${this.serverIdentity}:issuer:${encodeURIComponent(issuer)}:client-info`;
+  }
+
+  private readClientInformation(): OAuthClientInformationMixed | undefined {
+    const issuer = this.authorizationServerIssuer();
+    if (!issuer) return undefined;
+    const raw = this.secureStorage.get(this.clientInformationKey(issuer));
+    if (!raw) return undefined;
+
+    try {
+      return JSON.parse(raw) as OAuthClientInformationMixed;
+    } catch {
+      return undefined;
+    }
+  }
+
+  private issuerFromDiscoveryState(state: OAuthDiscoveryState): string {
+    const issuer = state.authorizationServerMetadata?.issuer ?? state.authorizationServerUrl;
+    if (!issuer.trim()) {
+      throw new Error('MCP OAuth authorization server issuer is empty');
+    }
+    return issuer;
   }
 
   private readJson<T>(kind: McpOAuthStorageKind): T | undefined {
@@ -158,17 +214,23 @@ export function createOAuthProviderForServer(
   coordinator: McpOAuthCoordinator = getMcpOAuthCoordinator(),
 ): McpOAuthProvider {
   let activeFlow: McpOAuthFlow | undefined;
+  let provider: McpOAuthProvider;
   const ensureFlow = async () => {
+    const authorizationServerIssuer = provider.authorizationServerIssuer();
+    if (!authorizationServerIssuer) {
+      throw new Error('MCP OAuth authorization server issuer is not available');
+    }
     activeFlow = await coordinator.beginFlow({
       serverName: config.name,
       serverIdentity,
+      authorizationServerIssuer,
       serverUrl: new URL(config.serverUrl).toString(),
       ...(config.scope !== undefined ? { configSource: config.scope } : {}),
     });
     return activeFlow;
   };
 
-  return new McpOAuthProvider({
+  provider = new McpOAuthProvider({
     serverIdentity,
     serverName: config.name,
     redirectUrl: () => {
@@ -193,4 +255,5 @@ export function createOAuthProviderForServer(
       await ensureFlow();
     },
   });
+  return provider;
 }

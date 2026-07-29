@@ -296,6 +296,15 @@ describe('skill 启停', () => {
     expect(svc.discovery.registerSkillsToToolSearch).toHaveBeenCalled();
   });
 
+  it('web 桥无参编码（{} / null）按未传处理走当前目录——2026-07-29 真机 500 回归', async () => {
+    // domain.ts 通配路由把无 body 的 POST 包成 handler(null, {})，Electron 侧才是真 undefined
+    await call(SKILL_CHANNELS.SKILL_LIST, {} as never);
+    expect(svc.getProjectPrefStore).toHaveBeenCalledWith('/work');
+    svc.getProjectPrefStore.mockClear();
+    await call(SKILL_CHANNELS.SKILL_LIST, null as never);
+    expect(svc.getProjectPrefStore).toHaveBeenCalledWith('/work');
+  });
+
   it('显式目录对应不到项目时 fail-loud，不回落当前目录', async () => {
     await expect(call(SKILL_CHANNELS.SKILL_LIST, '/missing')).rejects.toThrow(
       'No project found for workspacePath: /missing',

@@ -36,8 +36,17 @@ function getSkillIpcWorkingDirectory(): string {
     || process.cwd();
 }
 
-function resolveSkillIpcWorkingDirectory(workspacePath?: string): string {
-  if (workspacePath === undefined) return getSkillIpcWorkingDirectory();
+function resolveSkillIpcWorkingDirectory(workspacePath?: unknown): string {
+  // web 桥（domain.ts 通配路由）把无 body 的调用包成 handler(null, {})，null 同理——
+  // 这两种是「未传参」的传输编码，不是显式目录，一律走既有当前工作目录路径。
+  // 只有非空字符串才算显式；空串/其他类型是调用方 bug，fail-loud。
+  if (
+    workspacePath === undefined
+    || workspacePath === null
+    || (typeof workspacePath === 'object' && Object.keys(workspacePath as object).length === 0)
+  ) {
+    return getSkillIpcWorkingDirectory();
+  }
   if (typeof workspacePath !== 'string' || !workspacePath.trim()) {
     throw new Error('workspacePath must be a non-empty absolute project directory.');
   }

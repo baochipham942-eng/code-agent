@@ -137,6 +137,11 @@ export function registerProjectHandlers(ipcMain: IpcMain): void {
           return { success: true, data: svc.listProjects(Boolean(includeArchived)) };
         }
 
+        case 'listWithActivity': {
+          const { includeArchived } = (payload ?? {}) as ListPayload;
+          return { success: true, data: svc.listProjectsWithActivity(Boolean(includeArchived)) };
+        }
+
         case 'listCapabilitySelections': {
           const { projectId } = (payload ?? {}) as DetailPayload;
           if (!projectId?.trim()) return invalid('projectId is required');

@@ -22,6 +22,7 @@ import {
   type ProjectSourceRole,
   type ProjectSourceTrustState,
   type ProjectStatus,
+  type ProjectWithActivity,
 } from '../../../../shared/contract/project';
 import {
   canonicalizeWorkspacePath,
@@ -242,6 +243,51 @@ export class ProjectRepository {
       ? 'SELECT * FROM projects WHERE is_deleted = 0 ORDER BY updated_at DESC'
       : "SELECT * FROM projects WHERE is_deleted = 0 AND status != 'archived' ORDER BY updated_at DESC";
     return (this.db.prepare(sql).all() as SQLiteRow[]).map(rowToProject);
+  }
+
+  listProjectsWithActivity(includeArchived = false): ProjectWithActivity[] {
+    const archivedClause = includeArchived ? '' : "AND p.status != 'archived'";
+    const rows = this.db.prepare(`
+      SELECT
+        p.*,
+        COALESCE(cards.active_topic_count, 0) AS active_topic_count,
+        CASE
+          WHEN cards.last_topic_at IS NULL THEN sessions.last_session_at
+          WHEN sessions.last_session_at IS NULL THEN cards.last_topic_at
+          WHEN cards.last_topic_at >= sessions.last_session_at THEN cards.last_topic_at
+          ELSE sessions.last_session_at
+        END AS last_activity_at
+      FROM projects p
+      LEFT JOIN (
+        SELECT
+          project_id,
+          SUM(
+            CASE
+              WHEN status NOT IN ('completed', 'failed', 'cancelled', 'archived') THEN 1
+              ELSE 0
+            END
+          ) AS active_topic_count,
+          MAX(updated_at) AS last_topic_at
+        FROM neo_work_cards
+        GROUP BY project_id
+      ) cards ON cards.project_id = p.id
+      LEFT JOIN (
+        SELECT project_id, MAX(updated_at) AS last_session_at
+        FROM sessions
+        WHERE is_deleted = 0 AND project_id IS NOT NULL
+        GROUP BY project_id
+      ) sessions ON sessions.project_id = p.id
+      WHERE p.is_deleted = 0 ${archivedClause}
+      ORDER BY
+        CASE WHEN last_activity_at IS NULL THEN 1 ELSE 0 END,
+        last_activity_at DESC,
+        p.updated_at DESC
+    `).all() as SQLiteRow[];
+    return rows.map((row) => ({
+      ...rowToProject(row),
+      activeTopicCount: Number(row.active_topic_count ?? 0),
+      lastActivityAt: row.last_activity_at == null ? null : Number(row.last_activity_at),
+    }));
   }
 
   setProjectStatus(id: string, status: ProjectStatus, updatedAt: number, archivedAt?: number | null): void {

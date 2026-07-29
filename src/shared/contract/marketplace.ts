@@ -67,6 +67,7 @@ export interface MarketplaceResult<T> {
 
 export interface PluginInstallResult {
   success: boolean;
+  cancelled?: boolean;
   plugin?: InstalledPlugin;
   installedSkills?: string[];
   installedCommands?: string[];

@@ -28,6 +28,7 @@ import {
   extractZipSafely,
   getArchiveSha256,
 } from './githubArchiveSecurity';
+import { copyDirectory, runExclusivePluginInstall, throwIfInstallAborted } from './installConcurrency';
 
 const logger = createLogger('PluginInstallService');
 
@@ -37,6 +38,14 @@ const logger = createLogger('PluginInstallService');
 
 const INSTALLED_PLUGINS_FILE = 'installed-plugins.json';
 const STAGING_SKILL_NAME_PATTERN = /\.staging-[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+type PluginInstallOptions = {
+  scope?: PluginScope;
+  projectPath?: string;
+  force?: boolean;
+  enableAfterInstall?: boolean;
+  signal?: AbortSignal;
+};
 
 // ----------------------------------------------------------------------------
 // Path Utilities
@@ -188,7 +197,7 @@ export function parsePluginSpec(spec: string): {
 /**
  * Resolve plugin name to full spec (plugin@marketplace)
  */
-async function resolvePluginSpec(pluginInput: string): Promise<{
+async function resolvePluginSpec(pluginInput: string, signal?: AbortSignal): Promise<{
   plugin: string;
   marketplace: string;
   pluginSpec: string;
@@ -196,10 +205,12 @@ async function resolvePluginSpec(pluginInput: string): Promise<{
   rootDir: string;
 }> {
   const { plugin, marketplace } = parsePluginSpec(pluginInput);
+  throwIfInstallAborted(signal);
 
   if (marketplace) {
     // Explicit marketplace specified
     const info = await getMarketplaceInfo(marketplace);
+    throwIfInstallAborted(signal);
     const entry = info.manifest.plugins.find(p => p.name === plugin);
     if (!entry) {
       throw new Error(
@@ -217,6 +228,7 @@ async function resolvePluginSpec(pluginInput: string): Promise<{
 
   // Search all marketplaces
   const config = await listMarketplaces();
+  throwIfInstallAborted(signal);
   const matches: Array<{
     plugin: string;
     marketplace: string;
@@ -227,6 +239,7 @@ async function resolvePluginSpec(pluginInput: string): Promise<{
   for (const marketplaceName of Object.keys(config)) {
     try {
       const info = await getMarketplaceInfo(marketplaceName);
+      throwIfInstallAborted(signal);
       const found = info.manifest.plugins.find(p => p.name === plugin);
       if (found) {
         matches.push({
@@ -263,26 +276,6 @@ async function resolvePluginSpec(pluginInput: string): Promise<{
     entry: match.entry,
     rootDir: match.rootDir,
   };
-}
-
-// ----------------------------------------------------------------------------
-// Copy Utilities
-// ----------------------------------------------------------------------------
-
-async function copyDirectory(src: string, dest: string): Promise<void> {
-  await ensureDir(dest);
-  const entries = await fs.readdir(src, { withFileTypes: true });
-
-  for (const entry of entries) {
-    const srcPath = path.join(src, entry.name);
-    const destPath = path.join(dest, entry.name);
-
-    if (entry.isDirectory()) {
-      await copyDirectory(srcPath, destPath);
-    } else if (entry.isFile()) {
-      await fs.copyFile(srcPath, destPath);
-    }
-  }
 }
 
 function normalizePluginKind(value: unknown): PluginEntryKind | null {
@@ -358,16 +351,20 @@ function parseGitHubRepository(repository?: string): { owner: string; repo: stri
 async function resolveGitHubBranchCommit(
   owner: string,
   repo: string,
+  signal?: AbortSignal,
 ): Promise<string> {
   const refs = ['main', 'master'];
   let lastError: Error | null = null;
 
   for (const ref of refs) {
+    throwIfInstallAborted(signal);
     try {
       const url = `https://api.github.com/repos/${owner}/${repo}/commits/${ref}`;
-      const response = await fetch(url, {
+      const requestInit = {
         headers: { Accept: 'application/vnd.github+json' },
-      });
+        ...(signal ? { signal } : {}),
+      };
+      const response = await fetch(url, requestInit);
       if (response.ok) {
         const body = await response.json() as { sha?: unknown };
         if (typeof body.sha === 'string' && /^[0-9a-f]{40}$/i.test(body.sha)) {
@@ -378,6 +375,7 @@ async function resolveGitHubBranchCommit(
         lastError = new Error(`GitHub API returned ${response.status} for ${owner}/${repo}@${ref}`);
       }
     } catch (error) {
+      if (signal?.aborted) throw error;
       lastError = error instanceof Error ? error : new Error(String(error));
     }
   }
@@ -394,10 +392,13 @@ async function downloadGitHubRepository(
   repo: string,
   destDir: string,
   expected?: { pinnedCommit?: string; contentHash?: string },
+  signal?: AbortSignal,
 ): Promise<{ pinnedCommit: string; contentHash: string }> {
-  const pinnedCommit = expected?.pinnedCommit ?? await resolveGitHubBranchCommit(owner, repo);
+  throwIfInstallAborted(signal);
+  const pinnedCommit = expected?.pinnedCommit ?? await resolveGitHubBranchCommit(owner, repo, signal);
   const url = `https://codeload.github.com/${owner}/${repo}/zip/${pinnedCommit}`;
-  const archive = await downloadArchive(url);
+  const archive = await downloadArchive(url, undefined, signal);
+  throwIfInstallAborted(signal);
   const contentHash = getArchiveSha256(archive);
   // Registry 可验证分发：收录时算好的 hash 不符即 fail-closed，先于解压
   if (expected?.contentHash && contentHash.toLowerCase() !== expected.contentHash.toLowerCase()) {
@@ -407,7 +408,8 @@ async function downloadGitHubRepository(
   }
   await ensureDir(destDir);
   try {
-    await extractZipSafely(archive, destDir);
+    await extractZipSafely(archive, destDir, signal);
+    throwIfInstallAborted(signal);
     const entries = await fs.readdir(destDir);
     if (entries.length === 1) {
       const nested = path.join(destDir, entries[0]!);
@@ -415,6 +417,7 @@ async function downloadGitHubRepository(
       if (stat.isDirectory()) {
         const nestedEntries = await fs.readdir(nested);
         for (const entry of nestedEntries) {
+          throwIfInstallAborted(signal);
           await fs.rename(path.join(nested, entry), path.join(destDir, entry));
         }
         await fs.rm(nested, { recursive: true, force: true });
@@ -431,6 +434,7 @@ async function resolveEntrySourceBase(args: {
   rootDir: string;
   entry: PluginEntry;
   pluginSpec: string;
+  signal?: AbortSignal;
 }): Promise<{
   sourceBase: string;
   cleanup?: () => Promise<void>;
@@ -438,6 +442,7 @@ async function resolveEntrySourceBase(args: {
   contentHash?: string;
 }> {
   const sourcePath = args.entry.source || args.entry.path || './';
+  throwIfInstallAborted(args.signal);
   const localSourceBase = path.resolve(args.rootDir, sourcePath);
   if (fsSync.existsSync(localSourceBase)) {
     return { sourceBase: localSourceBase };
@@ -449,7 +454,13 @@ async function resolveEntrySourceBase(args: {
   }
 
   const tempDir = path.join(getUserConfigDir(), 'marketplace-plugin-cache', `tmp-${getPluginAssetDirName(args.pluginSpec)}-${randomUUID()}`);
-  const artifact = await downloadGitHubRepository(github.owner, github.repo, tempDir);
+  const artifact = await downloadGitHubRepository(
+    github.owner,
+    github.repo,
+    tempDir,
+    undefined,
+    args.signal,
+  );
   const remoteSourceBase = path.resolve(tempDir, args.entry.path || args.entry.source || './');
   if (!fsSync.existsSync(remoteSourceBase)) {
     await fs.rm(tempDir, { recursive: true, force: true });
@@ -467,7 +478,9 @@ async function resolveEntrySourceBase(args: {
 async function installPluginAssets(args: {
   entrySourceBase: string;
   destinationRoot: string;
+  signal?: AbortSignal;
 }): Promise<string> {
+  throwIfInstallAborted(args.signal);
   const stat = await fs.stat(args.entrySourceBase);
   if (!stat.isDirectory()) {
     throw new Error(`Plugin source must be a directory: ${args.entrySourceBase}`);
@@ -476,7 +489,8 @@ async function installPluginAssets(args: {
   if (fsSync.existsSync(args.destinationRoot)) {
     throw new Error(`Plugin asset destination already exists: ${args.destinationRoot}`);
   }
-  await copyDirectory(args.entrySourceBase, args.destinationRoot);
+  await copyDirectory(args.entrySourceBase, args.destinationRoot, args.signal);
+  throwIfInstallAborted(args.signal);
   return args.destinationRoot;
 }
 
@@ -678,22 +692,29 @@ async function resolveSkillDirs(args: {
 /**
  * Install a skill plugin
  */
-export async function installPlugin(
+export function installPlugin(
   pluginInput: string,
-  options: {
-    scope?: PluginScope;
-    projectPath?: string;
-    force?: boolean;
-    enableAfterInstall?: boolean;
-  } = {}
+  options: PluginInstallOptions = {},
+): Promise<InstallResult> {
+  return runExclusivePluginInstall(
+    pluginInput,
+    () => installPluginUnlocked(pluginInput, options),
+  );
+}
+
+async function installPluginUnlocked(
+  pluginInput: string,
+  options: PluginInstallOptions,
 ): Promise<InstallResult> {
   const scope = options.scope || 'user';
   const projectPath = scope === 'project' ? options.projectPath || process.cwd() : undefined;
+  throwIfInstallAborted(options.signal);
 
   const { plugin, marketplace, pluginSpec, entry, rootDir } =
-    await resolvePluginSpec(pluginInput);
+    await resolvePluginSpec(pluginInput, options.signal);
 
   const state = await loadInstalledPlugins();
+  throwIfInstallAborted(options.signal);
 
   // Check if already installed
   const existing = state[pluginSpec];
@@ -706,9 +727,11 @@ export async function installPlugin(
     rootDir,
     entry,
     pluginSpec,
+    signal: options.signal,
   });
 
   try {
+    throwIfInstallAborted(options.signal);
     assertTrustedArchiveHash(
       existing?.contentHash,
       entrySource.contentHash ?? existing?.contentHash ?? '',
@@ -725,6 +748,7 @@ export async function installPlugin(
       existing,
       force: options.force,
       enableAfterInstall: options.enableAfterInstall,
+      signal: options.signal,
     });
   } finally {
     await entrySource.cleanup?.();
@@ -736,17 +760,30 @@ export async function installPlugin(
  * 信任模型：控制面签名 registry + 收录时钉死的 pinnedCommit/contentHash 强校验
  * （替代 TOFU 漂移断言——升级换钉点时 hash 变化是预期的，等值校验在下载层做）。
  */
-export async function installFromRegistryEntry(
+export function installFromRegistryEntry(
   registryEntry: SkillRegistryEntry,
-  options: { force?: boolean; enableAfterInstall?: boolean } = {}
+  options: { force?: boolean; enableAfterInstall?: boolean; signal?: AbortSignal } = {},
 ): Promise<InstallResult> {
   const pluginSpec = `${registryEntry.name}@${SKILL_REGISTRY_MARKETPLACE_ID}`;
+  return runExclusivePluginInstall(
+    pluginSpec,
+    () => installFromRegistryEntryUnlocked(registryEntry, options),
+  );
+}
+
+async function installFromRegistryEntryUnlocked(
+  registryEntry: SkillRegistryEntry,
+  options: { force?: boolean; enableAfterInstall?: boolean; signal?: AbortSignal },
+): Promise<InstallResult> {
+  const pluginSpec = `${registryEntry.name}@${SKILL_REGISTRY_MARKETPLACE_ID}`;
+  throwIfInstallAborted(options.signal);
   const github = parseGitHubRepository(registryEntry.repository);
   if (!github) {
     throw new Error(`Invalid registry repository: ${registryEntry.repository}`);
   }
 
   const state = await loadInstalledPlugins();
+  throwIfInstallAborted(options.signal);
   const existing = state[pluginSpec];
   if (existing && !options.force) {
     throw new Error(
@@ -763,7 +800,8 @@ export async function installFromRegistryEntry(
     const artifact = await downloadGitHubRepository(github.owner, github.repo, tempDir, {
       pinnedCommit: registryEntry.pinnedCommit,
       contentHash: registryEntry.contentHash,
-    });
+    }, options.signal);
+    throwIfInstallAborted(options.signal);
     const sourceBase = path.resolve(tempDir, registryEntry.path || './');
     if (!fsSync.existsSync(sourceBase)) {
       throw new Error(`Plugin path not found in repository: ${registryEntry.path || './'}`);
@@ -787,6 +825,7 @@ export async function installFromRegistryEntry(
       existing,
       force: options.force,
       enableAfterInstall: options.enableAfterInstall,
+      signal: options.signal,
     });
   } finally {
     await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
@@ -805,6 +844,7 @@ async function performInstall(args: {
   existing?: InstalledPluginRecord;
   force?: boolean;
   enableAfterInstall?: boolean;
+  signal?: AbortSignal;
 }): Promise<InstallResult> {
   const { plugin, marketplace, pluginSpec, entry, entrySource, scope, projectPath, state, existing } = args;
   const options = { force: args.force, enableAfterInstall: args.enableAfterInstall };
@@ -814,16 +854,20 @@ async function performInstall(args: {
   let commandBackups: RenamedPathBackup[] = [];
   let stagedAssetsMoved = false;
   let activatedCommands: string[] = [];
+  let stateCommitted = false;
 
   if (fsSync.existsSync(pluginRoot) && !options.force) {
     throw new Error(`Plugin asset destination already exists: ${pluginRoot}`);
   }
 
   try {
+    throwIfInstallAborted(args.signal);
     await installPluginAssets({
       entrySourceBase: entrySource.sourceBase,
       destinationRoot: stagingRoot,
+      signal: args.signal,
     });
+    throwIfInstallAborted(args.signal);
     const pluginTypes = getPluginEntryTypes(entry);
 
     await resolveSkillDirs({
@@ -837,6 +881,7 @@ async function performInstall(args: {
       commandPaths: entry.commands || [],
     });
     const installedCommands = commandFiles.map((command) => command.name);
+    throwIfInstallAborted(args.signal);
 
     if (existing && options.force) {
       const existingCommandsDir = getCommandsDir(existing.scope, existing.projectPath);
@@ -845,14 +890,17 @@ async function performInstall(args: {
           path.join(existingCommandsDir, `${commandName}.md`)
         ),
       );
+      throwIfInstallAborted(args.signal);
     }
 
     rootBackups = await renamePathsToBackups([
       ...(existing?.pluginRoot ? [existing.pluginRoot] : []),
       pluginRoot,
     ]);
+    throwIfInstallAborted(args.signal);
     await fs.rename(stagingRoot, pluginRoot);
     stagedAssetsMoved = true;
+    throwIfInstallAborted(args.signal);
 
     const skillDirs = await resolveSkillDirs({
       rootDir: pluginRoot,
@@ -860,6 +908,7 @@ async function performInstall(args: {
       skillPaths: entry.skills || [],
     });
     const installedSkills = skillDirs.map((skill) => skill.name);
+    throwIfInstallAborted(args.signal);
 
     if (options.enableAfterInstall === true) {
       activatedCommands = await activatePluginCommands({
@@ -868,6 +917,7 @@ async function performInstall(args: {
         projectPath,
         commandPaths: commandFiles.map((command) => command.relativeSourcePath),
       });
+      throwIfInstallAborted(args.signal);
     }
 
     const installedRecord: InstalledPluginRecord = {
@@ -888,6 +938,8 @@ async function performInstall(args: {
       sourceMarketplacePath: pluginRoot,
     };
     await saveInstalledPlugins({ ...state, [pluginSpec]: installedRecord });
+    stateCommitted = true;
+    throwIfInstallAborted(args.signal);
 
     try {
       logger.info('Plugin installed', {
@@ -915,6 +967,9 @@ async function performInstall(args: {
 
     return { pluginSpec, installedSkills, installedCommands, installedPluginRoot: pluginRoot };
   } catch (error) {
+    if (stateCommitted) {
+      await saveInstalledPlugins(state).catch(() => {});
+    }
     if (activatedCommands.length > 0) {
       await deactivatePluginCommands({
         scope,

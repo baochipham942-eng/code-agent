@@ -90,6 +90,28 @@ describe('mcpTransport remote connection retry', () => {
     await rejection;
   });
 
+  it('closes the transport and reports AbortError when a connection is cancelled', async () => {
+    const controller = new AbortController();
+    const close = vi.fn().mockResolvedValue(undefined);
+    const pending = connectWithTimeout(
+      { connect: vi.fn(() => new Promise<void>(() => {})) } as never,
+      { close } as never,
+      {
+        name: 'cancelled-http',
+        type: 'http-streamable',
+        serverUrl: 'https://mcp.example.com/mcp',
+        enabled: true,
+      },
+      30_000,
+      controller.signal,
+    );
+
+    controller.abort();
+
+    await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+    expect(close).toHaveBeenCalledOnce();
+  });
+
   it('does not retry authentication failures', async () => {
     const attempt = vi.fn().mockRejectedValue(new SdkHttpError(
       SdkErrorCode.ClientHttpAuthentication,

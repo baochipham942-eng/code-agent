@@ -8,6 +8,8 @@ const pathExistsMock = vi.fn();
 const readFileMock = vi.fn();
 const writeFileMock = vi.fn();
 const setIntegrationMock = vi.hoisted(() => vi.fn());
+const getIntegrationMock = vi.hoisted(() => vi.fn());
+const clearMcpServerAcrossSessionsMock = vi.hoisted(() => vi.fn());
 const mcpClientMock = vi.hoisted(() => ({
   getStatus: vi.fn(),
   getTools: vi.fn(),
@@ -51,13 +53,14 @@ vi.mock('../../../src/host/services/core/secureStorage', () => ({
 
 vi.mock('../../../src/host/services/core/configService', () => ({
   getConfigService: () => ({
+    getIntegration: getIntegrationMock,
     setIntegration: setIntegrationMock,
   }),
 }));
 
 vi.mock('../../../src/host/context/contextHealthService', () => ({
   getContextHealthService: () => ({
-    clearMcpServerAcrossSessions: vi.fn(),
+    clearMcpServerAcrossSessions: clearMcpServerAcrossSessionsMock,
   }),
 }));
 
@@ -101,7 +104,10 @@ beforeEach(() => {
   readFileMock.mockReset();
   writeFileMock.mockReset();
   setIntegrationMock.mockReset();
+  getIntegrationMock.mockReset();
+  clearMcpServerAcrossSessionsMock.mockReset();
   setIntegrationMock.mockResolvedValue(undefined);
+  getIntegrationMock.mockReturnValue(null);
 
   getMcpConfigPathMock.mockReturnValue({
     new: '/tmp/work/.code-agent/mcp.json',
@@ -418,6 +424,59 @@ describe('mcp.ipc settings add helpers', () => {
     ]));
   });
 
+  it('rejects duplicate add while the same server id is installing and rolls back on cancel', async () => {
+    const fakeFs = new Map<string, string>();
+    readFileMock.mockImplementation(async (filePath: string) => {
+      if (!fakeFs.has(filePath)) throw new Error('ENOENT');
+      return fakeFs.get(filePath)!;
+    });
+    writeFileMock.mockImplementation(async (filePath: string, content: string) => {
+      fakeFs.set(filePath, content);
+    });
+    let releaseSecretWrite!: () => void;
+    setIntegrationMock.mockImplementationOnce(() => new Promise<void>((resolve) => {
+      releaseSecretWrite = resolve;
+    }));
+
+    const first = invokeMcpAction('addServer', {
+      scope: 'user',
+      config: {
+        name: 'slow_server',
+        type: 'stdio',
+        command: 'npx',
+        env: { TOKEN: 'secret' },
+      },
+      secretEnvKeys: ['TOKEN'],
+    });
+    await vi.waitFor(() => expect(setIntegrationMock).toHaveBeenCalledOnce());
+
+    const duplicate = await invokeMcpAction('addServer', {
+      scope: 'user',
+      config: { name: 'slow_server', type: 'stdio', command: 'npx' },
+    }) as { success: boolean; error?: { code: string } };
+    expect(duplicate).toMatchObject({
+      success: false,
+      error: { code: 'INSTALL_IN_PROGRESS' },
+    });
+
+    await expect(invokeMcpAction('cancelServerInstall', { serverName: 'slow_server' }))
+      .resolves.toMatchObject({ success: true, data: { cancelled: true } });
+    releaseSecretWrite();
+    await expect(first).resolves.toMatchObject({
+      success: false,
+      error: { code: 'CANCELLED' },
+    });
+
+    const persisted = JSON.parse(fakeFs.get('/tmp/user-data/mcp.json') ?? '{}') as {
+      servers?: Array<{ name: string }>;
+    };
+    expect(persisted.servers ?? []).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'slow_server' }),
+    ]));
+    expect(secureStorageMock.delete).toHaveBeenCalledWith('integration.mcp_slow_server');
+    expect(mcpClientMock.removeServer).toHaveBeenCalledWith('slow_server');
+  });
+
   it('keeps env values unchanged when no secret key list is provided', async () => {
     const fakeSecret = 'legacy-plaintext-secret';
     const response = await invokeMcpAction('addServer', {
@@ -614,7 +673,11 @@ describe('setServerEnabled 持久化（P0b：重启不再丢启用状态）', ()
     };
 
     expect(response).toMatchObject({ success: true });
-    expect(mcpClientMock.setServerEnabled).toHaveBeenCalledWith('lark', true);
+    expect(mcpClientMock.setServerEnabled).toHaveBeenCalledWith(
+      'lark',
+      true,
+      expect.any(AbortSignal),
+    );
     expect(writeFileMock).toHaveBeenCalledTimes(1);
     const written = JSON.parse(String(writeFileMock.mock.calls[0][1])) as {
       servers: Array<{ name: string; enabled: boolean }>;
@@ -630,7 +693,11 @@ describe('setServerEnabled 持久化（P0b：重启不再丢启用状态）', ()
 
     await invokeMcpAction('setServerEnabled', { serverName: 'lark', enabled: true });
 
-    expect(mcpClientMock.setServerEnabled).toHaveBeenCalledWith('lark', true);
+    expect(mcpClientMock.setServerEnabled).toHaveBeenCalledWith(
+      'lark',
+      true,
+      expect.any(AbortSignal),
+    );
     expect(writeFileMock).not.toHaveBeenCalled();
   });
 
@@ -656,6 +723,39 @@ describe('setServerEnabled 持久化（P0b：重启不再丢启用状态）', ()
 
     expect(response).toMatchObject({ success: true });
     expect(writeFileMock).not.toHaveBeenCalled();
+  });
+
+  it('cancels a slow connection, disconnects it, and persists disabled without a server error', async () => {
+    const fakeConfig = {
+      servers: [{ name: 'slow_remote', type: 'http-streamable', serverUrl: 'https://example.com/mcp', enabled: false }],
+    };
+    readFileMock.mockImplementation(async () => JSON.stringify(fakeConfig));
+    mcpClientMock.setServerEnabled.mockImplementationOnce(
+      (_serverName: string, _enabled: boolean, signal?: AbortSignal) => new Promise<void>((_resolve, reject) => {
+        signal?.addEventListener('abort', () => {
+          reject(new DOMException('MCP connection cancelled', 'AbortError'));
+        }, { once: true });
+      }),
+    );
+
+    const connecting = invokeMcpAction('setServerEnabled', {
+      serverName: 'slow_remote',
+      enabled: true,
+    });
+    await vi.waitFor(() => expect(mcpClientMock.setServerEnabled).toHaveBeenCalledOnce());
+
+    await expect(invokeMcpAction('cancelServerInstall', { serverName: 'slow_remote' }))
+      .resolves.toMatchObject({ success: true, data: { cancelled: true } });
+    await expect(connecting).resolves.toMatchObject({
+      success: false,
+      error: { code: 'CANCELLED' },
+    });
+    expect(mcpClientMock.disconnect).toHaveBeenCalledWith('slow_remote');
+    expect(clearMcpServerAcrossSessionsMock).toHaveBeenCalledWith('slow_remote');
+    expect(writeFileMock.mock.calls.every(([, content]) => {
+      const parsed = JSON.parse(String(content)) as typeof fakeConfig;
+      return parsed.servers[0]?.enabled !== true;
+    })).toBe(true);
   });
 });
 

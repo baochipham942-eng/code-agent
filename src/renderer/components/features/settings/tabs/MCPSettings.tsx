@@ -34,6 +34,7 @@ import { NativeConnectorsSection } from '../sections';
 import {
   McpServerEditor,
   type McpServerConfig,
+  type McpServerSaveOutcome,
   type McpServerSaveSecrets,
 } from '../McpServerEditor';
 import { McpDiscoverTab } from './McpDiscoverTab';
@@ -95,6 +96,7 @@ export const MCPSettings: React.FC = () => {
   const [message, setMessage] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [editorInitialConfig, setEditorInitialConfig] = useState<Partial<McpServerConfig> | undefined>(undefined);
+  const [serverInstallStates, setServerInstallStates] = useState<Record<string, 'installing' | 'cancelling'>>({});
   // 每个 entry 独立 loading + 代际防陈旧覆盖（A5 stale-promise 修复，见 hook 注释）
   const {
     loading: discoverActionLoading,
@@ -191,6 +193,9 @@ export const MCPSettings: React.FC = () => {
 
   const handleToggleServer = async (serverName: string, enabled: boolean) => {
     if (!canManageMcp) return;
+    if (enabled) {
+      setServerInstallStates((current) => ({ ...current, [serverName]: 'installing' }));
+    }
     try {
       const result = await window.domainAPI?.invoke(IPC_DOMAINS.MCP, 'setServerEnabled', {
         serverName,
@@ -198,17 +203,34 @@ export const MCPSettings: React.FC = () => {
       });
       if (result?.success) {
         await reloadMcpStatus();
+      } else if (result?.error?.code !== 'CANCELLED') {
+        logger.error('Failed to toggle server', result?.error);
       }
     } catch (error) {
       logger.error('Failed to toggle server', error);
+    } finally {
+      if (enabled) {
+        setServerInstallStates((current) => {
+          const next = { ...current };
+          delete next[serverName];
+          return next;
+        });
+      }
     }
   };
+
+  const handleCancelServerInstall = useCallback(async (serverName: string) => {
+    setServerInstallStates((current) => (
+      current[serverName] ? { ...current, [serverName]: 'cancelling' } : current
+    ));
+    await window.domainAPI?.invoke(IPC_DOMAINS.MCP, 'cancelServerInstall', { serverName });
+  }, []);
 
   const handleAddServer = useCallback(async (
     config: McpServerConfig,
     secrets?: McpServerSaveSecrets,
-  ) => {
-    if (!canManageMcp) return;
+  ): Promise<McpServerSaveOutcome> => {
+    if (!canManageMcp) return 'error';
     try {
       const result = await window.domainAPI?.invoke(IPC_DOMAINS.MCP, 'addServer', {
         config,
@@ -222,12 +244,17 @@ export const MCPSettings: React.FC = () => {
           text: `${mcpText.toast.addServerSuccessPrefix}${config.name}${mcpText.toast.addServerSuccessSuffix}`,
         });
         await reloadMcpStatus();
+        return 'success';
+      } else if (result?.error?.code === 'CANCELLED') {
+        return 'cancelled';
       } else {
         setMessage({ type: 'error', text: result?.error?.message || mcpText.toast.addServerFailed });
+        return 'error';
       }
     } catch (error) {
       logger.error('Failed to add MCP server', error);
       setMessage({ type: 'error', text: mcpText.toast.addServerFailed });
+      return 'error';
     }
   }, [mcpText, reloadMcpStatus]);
 
@@ -606,13 +633,30 @@ export const MCPSettings: React.FC = () => {
                           {/* 行尾操作全列表统一：启用/禁用开关 + 详情入口；
                               重连/重新授权/退出授权收进详情弹层的 quick actions */}
                           <div className="flex items-center justify-end gap-2">
-                            {canManageMcp && (
+                            {canManageMcp && !serverInstallStates[server.id] && (
                               <Toggle
                                 checked={server.enabled}
                                 onChange={(enabled) => handleToggleServer(server.id, enabled)}
                                 aria-label={`${server.enabled ? mcpText.management.disable : mcpText.management.enable} ${server.label}`}
                                 title={`${server.enabled ? mcpText.management.disable : mcpText.management.enable} ${server.label}`}
                               />
+                            )}
+                            {serverInstallStates[server.id] === 'installing' && (
+                              <div className="flex flex-col gap-1 sm:flex-row">
+                                <Button size="sm" variant="ghost" onClick={() => {
+                                  void handleCancelServerInstall(server.id);
+                                }}>
+                                  {mcpText.management.cancelInstall}
+                                </Button>
+                                <Button size="sm" variant="secondary" disabled loading>
+                                  {mcpText.management.installing}
+                                </Button>
+                              </div>
+                            )}
+                            {serverInstallStates[server.id] === 'cancelling' && (
+                              <Button size="sm" variant="secondary" disabled loading>
+                                {mcpText.management.cancelling}
+                              </Button>
                             )}
                             <WorkbenchCapabilityDetailButton
                               label={server.label}
@@ -681,6 +725,7 @@ export const MCPSettings: React.FC = () => {
           setEditorInitialConfig(undefined);
         }}
         onSave={handleAddServer}
+        onCancelInstall={handleCancelServerInstall}
         initialConfig={editorInitialConfig}
       />
 

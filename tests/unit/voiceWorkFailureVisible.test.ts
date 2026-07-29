@@ -149,12 +149,15 @@ describe('G1 语音派活失败必须被说出去', () => {
     expect(upserts).toHaveLength(upsertsBeforeHangup);
     // ……但失败出口必须照样响。这是 G1 里最需要留痕的那种失败。
     expect(failures).toHaveLength(1);
+    // 账本内部（onFailed 出口）保留原始原因——后续消费方（落库 metadata）还要用它。
     expect(failures[0].detail).toBe('服务认证异常');
+    // 但通知 body 是用户可见文案，必须过⑤的统一出口（批 X）：认不出的错误
+    // 给通用人话，原始原因只活在会话消息的 metadata 里，不进通知正文。
     expect(notifyVoiceWorkSettled).toHaveBeenCalledWith({
       sessionId: 'session-1',
       taskTitle: '建个文件',
       status: 'failed',
-      detail: '服务认证异常',
+      detail: '执行时出了问题，没有完成',
     });
   });
 

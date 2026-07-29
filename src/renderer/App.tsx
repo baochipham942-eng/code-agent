@@ -22,6 +22,7 @@ import { UpdateNotification } from './components/UpdateNotification';
 import { isDesktopShellMode, isTauriMode } from './utils/platform';
 // PermissionDialog moved to PermissionCard inline in ChatView
 import { ProjectCollaborationPage } from './components/features/projectCollaboration';
+import { ProjectSpacePage } from './components/features/projectSpace';
 import { DevServerLauncher } from './components/LivePreview/DevServerLauncher';
 import { WorkbenchTabs } from './components/WorkbenchTabs';
 import { WorkbenchViewContent } from './components/WorkbenchViewContent';
@@ -161,6 +162,8 @@ export const App: React.FC = () => {
     showProjectCollaborationPage,
     projectCollaborationPageProjectId,
     closeProjectCollaborationPage,
+    showProjectSpacePage,
+    closeProjectSpacePage,
     showKnowledgeMemoryPanel,
     showLibraryPanel,
     showActivityPanel,
@@ -1095,6 +1098,10 @@ export const App: React.FC = () => {
           projectId={visibleProjectCollaborationProjectId}
           onClose={closeProjectCollaborationPage}
         />
+      )}
+
+      {showProjectSpacePage && (
+        <ProjectSpacePage onClose={closeProjectSpacePage} />
       )}
 
       {showAgentTeamPanel && currentSessionId && swarmActiveRunId && swarmActiveSessionId === currentSessionId && (

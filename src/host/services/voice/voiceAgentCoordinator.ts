@@ -512,8 +512,27 @@ async function spawnTask(state: LedgerState, title: string, prompt: string): Pro
     return `现在还有一件活在跑，没有派新的。要改方向就说「改成……」，要停就说「别做了」。`;
   }
   await startRun(state, title, prompt);
-  // 措辞必须写死状态：通话 brain 会把工具返回值当事实原样转述给用户。
-  return `任务「${title}」已经排上队，还在后台跑，没做完。别说已经完成。`;
+  // 谎报的根治（批 X ①，2026-07-30）：上一版返回「已经排上队，还在后台跑，没做完。
+  // 别说已经完成」——「已排队」是个可润色的状态名词，离「已完成」只差一次善意润色，
+  // 真机第三次撞到模型照说「已经建好了」。禁令加狠话是同一招的第三次，不再走。
+  // 换成言语行为指令 + 认知协议：返回值不描述状态，只说「你下一句该说什么」，
+  // 并把「完成」从可推断的状态收窄成协议事件（只认 [BACKEND] 回流）。
+  return spawnSpeechDirective(title);
+}
+
+/**
+ * 派活后回给通话 brain 的话（①）。三段缺一不可：
+ * 1. 下一句台词（没有状态名词，无可润色空间）；
+ * 2. 认知协议：结果只会以 [BACKEND] 消息送达，没收到就不存在「做完」；
+ * 3. 进度问题强制落地 get_active_tasks，不许凭记忆答。
+ */
+function spawnSpeechDirective(title: string): string {
+  return [
+    `现在对用户说：「${title}」这件事你开始做了，做完会立刻主动告诉他。就说这一个意思，不要再多说。`,
+    '关于这件事你目前只知道「已经开始」。它的结果（做成或失败）只会以 [BACKEND] 开头的消息送达；',
+    '在收到那条消息之前，它没有做完，你也不知道任何进展——不存在「应该差不多了」。',
+    '用户如果问「好了吗」「怎么样了」，先调 get_active_tasks 看真实状态再回答，不要凭记忆或猜测回答。',
+  ].join('\n');
 }
 
 async function steerTask(state: LedgerState, instruction: string): Promise<string> {
@@ -525,12 +544,16 @@ async function steerTask(state: LedgerState, instruction: string): Promise<strin
     // 没有在跑的活，「改成 X」就是「做 X」。开新的一件，别假装 steer 成功了。
     const title = instruction.slice(0, 30);
     await startRun(state, title, instruction);
-    return `刚才没有在跑的活，已经把「${title}」当成新任务派出去了，还在后台跑。`;
+    // 同 spawnSpeechDirective 的口径（①）：不给「还在后台跑」这类可润色状态。
+    return `刚才没有在跑的活，「${title}」按新任务开始做了。\n${spawnSpeechDirective(title)}`;
   }
 
   await tm.interruptAndContinue(state.neoSessionId, instruction, undefined, await buildRunOptions(state));
   const title = pending?.title ?? '进行中的任务';
-  return `已经打断「${title}」并按新要求继续，还在后台跑，没做完。`;
+  return [
+    `现在对用户说：「${title}」已经按新要求改了方向，做完会立刻主动告诉他。`,
+    '它的结果同样只以 [BACKEND] 消息为准；没收到就不是做完，被问进度先调 get_active_tasks。',
+  ].join('\n');
 }
 
 /**

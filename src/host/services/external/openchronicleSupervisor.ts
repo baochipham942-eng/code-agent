@@ -37,6 +37,10 @@ const SHIM_PATHS = [
 ];
 const VENV_BIN = join(homedir(), '.openchronicle', 'venv', 'bin', 'openchronicle');
 const MCP_SERVER_NAME = 'openchronicle';
+const STATELESS_PROTOCOL_VERSION = '2026-07-28';
+const LEGACY_PROTOCOL_VERSION = '2025-06-18';
+const PROBE_CLIENT_INFO = { name: 'code-agent-probe', version: '1' } as const;
+const probeProtocolModes = new Map<string, 'legacy'>();
 
 let cachedShim: string | null = null;
 let currentState: OpenchronicleProcessState = 'stopped';
@@ -120,25 +124,128 @@ async function runShim(args: string[]): Promise<{ code: number; stdout: string; 
   });
 }
 
-async function probeMcpHealthy(): Promise<boolean> {
+interface JsonRpcError {
+  code?: number;
+  data?: unknown;
+}
+
+interface JsonRpcResponse {
+  result?: unknown;
+  error?: JsonRpcError;
+}
+
+type ProbeAttempt = 'healthy' | 'unsupported' | 'failed';
+
+function parseSseOrJson(text: string): unknown {
+  const dataLine = text.split('\n').find((line) => line.startsWith('data:'));
+  const payload = dataLine ? dataLine.slice(5).trim() : text.trim();
+  return JSON.parse(payload);
+}
+
+function isUnsupportedProtocolError(error: JsonRpcError): boolean {
+  if (error.code === -32601) return true;
+  if (!isRecord(error.data)) return false;
+  const reason = error.data.reason ?? error.data.code ?? error.data.kind;
+  return reason === 'unsupported_protocol_version'
+    || reason === 'unsupportedProtocolVersion'
+    || Array.isArray(error.data.supportedProtocolVersions);
+}
+
+function errorDetails(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+async function attemptMcpProbe(
+  signal: AbortSignal,
+  mode: 'stateless' | 'legacy',
+): Promise<ProbeAttempt> {
+  let res: Response;
   try {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 2000);
-    const res = await fetch(OPENCHRONICLE_MCP_ENDPOINT, {
+    res = await fetch(OPENCHRONICLE_MCP_ENDPOINT, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json,text/event-stream' },
-      body: JSON.stringify({
-        jsonrpc: '2.0',
-        id: 1,
-        method: 'initialize',
-        params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'code-agent-probe', version: '1' } },
-      }),
-      signal: ctrl.signal,
+      body: JSON.stringify(mode === 'stateless'
+        ? {
+            jsonrpc: '2.0',
+            id: 1,
+            method: 'ping',
+            params: {
+              _meta: {
+                'io.modelcontextprotocol/protocolVersion': STATELESS_PROTOCOL_VERSION,
+                'io.modelcontextprotocol/clientInfo': PROBE_CLIENT_INFO,
+              },
+            },
+          }
+        : {
+            jsonrpc: '2.0',
+            id: 1,
+            method: 'initialize',
+            params: {
+              protocolVersion: LEGACY_PROTOCOL_VERSION,
+              capabilities: {},
+              clientInfo: PROBE_CLIENT_INFO,
+            },
+          }),
+      signal,
     });
-    clearTimeout(timer);
-    return res.ok;
-  } catch {
+  } catch (error) {
+    logger.warn(`OpenChronicle ${mode} MCP probe network failure`, { error: errorDetails(error) });
+    return 'failed';
+  }
+
+  if (!res.ok) {
+    logger.warn(`OpenChronicle ${mode} MCP probe HTTP failure`, { status: res.status });
+    if (mode === 'stateless' && res.status >= 400 && res.status < 500) return 'unsupported';
+    return 'failed';
+  }
+
+  let parsed: JsonRpcResponse;
+  try {
+    parsed = parseSseOrJson(await res.text()) as JsonRpcResponse;
+  } catch (error) {
+    logger.warn(`OpenChronicle ${mode} MCP probe response was unparseable`, {
+      error: errorDetails(error),
+    });
+    return 'failed';
+  }
+  if (parsed.error) {
+    logger.warn(`OpenChronicle ${mode} MCP probe JSON-RPC error`, {
+      code: parsed.error.code,
+      data: parsed.error.data,
+    });
+    if (mode === 'stateless' && isUnsupportedProtocolError(parsed.error)) return 'unsupported';
+    return 'failed';
+  }
+  if (parsed.result === undefined) {
+    logger.warn(`OpenChronicle ${mode} MCP probe response contained no result`);
+    return 'failed';
+  }
+  return 'healthy';
+}
+
+async function probeMcpHealthy(): Promise<boolean> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 2000);
+  try {
+    const cachedLegacy = probeProtocolModes.get(OPENCHRONICLE_MCP_ENDPOINT) === 'legacy';
+    if (!cachedLegacy) {
+      const stateless = await attemptMcpProbe(ctrl.signal, 'stateless');
+      if (stateless === 'healthy') return true;
+      if (stateless === 'failed') return false;
+      logger.warn('OpenChronicle stateless MCP probe unsupported; falling back to legacy initialize');
+    }
+
+    const legacy = await attemptMcpProbe(ctrl.signal, 'legacy');
+    if (legacy === 'healthy') {
+      probeProtocolModes.set(OPENCHRONICLE_MCP_ENDPOINT, 'legacy');
+      return true;
+    }
+    logger.warn(cachedLegacy
+      ? 'OpenChronicle cached legacy MCP probe failed'
+      : 'OpenChronicle stateless and legacy MCP probes both failed');
     return false;
+  } finally {
+    clearTimeout(timer);
   }
 }
 

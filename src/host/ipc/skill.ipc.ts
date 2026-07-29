@@ -20,6 +20,7 @@ import { getRemoteSkillRegistryService } from '../skills/marketplace/remoteSkill
 import { installFromRegistryEntry } from '../skills/marketplace/installService';
 import { matchSkillRegistryDraftRecommendations } from '../skills/marketplace/skillRegistryMatcher';
 import { isProjectConfigTrusted } from '../security/folderTrustService';
+import { getProjectService } from '../services/project/projectService';
 
 const logger = createLogger('SkillIPC');
 const registryDraftRecommendationsBySession = new Map<string, Set<string>>();
@@ -33,6 +34,18 @@ function getSkillIpcWorkingDirectory(): string {
   return discovery.getWorkingDirectory()
     || process.env.CODE_AGENT_WORKING_DIR
     || process.cwd();
+}
+
+function resolveSkillIpcWorkingDirectory(workspacePath?: string): string {
+  if (workspacePath === undefined) return getSkillIpcWorkingDirectory();
+  if (typeof workspacePath !== 'string' || !workspacePath.trim()) {
+    throw new Error('workspacePath must be a non-empty absolute project directory.');
+  }
+  const project = getProjectService().getProjectForWorkspace(workspacePath);
+  if (!project?.workspacePath) {
+    throw new Error(`No project found for workspacePath: ${workspacePath}`);
+  }
+  return project.workspacePath;
 }
 
 async function ensureSkillDiscoveryForIpc(): Promise<void> {
@@ -170,12 +183,12 @@ async function handleRegistryInstall(name: string): Promise<{ success: boolean; 
  * - projectOverride：当前项目覆盖（true/false=强制启停，null=跟随全局）
  * - enabled：生效态（项目覆盖优先，否则全局），供既有消费方沿用
  */
-async function handleSkillList() {
+async function handleSkillList(workspacePath?: string) {
   await ensureSkillDiscoveryForIpc();
   const repoService = getSkillRepositoryService();
   await repoService.initialize();
   const discoveryService = getSkillDiscoveryService();
-  const workingDirectory = getSkillIpcWorkingDirectory();
+  const workingDirectory = resolveSkillIpcWorkingDirectory(workspacePath);
   const projectPreferencesTrusted = await isProjectConfigTrusted(workingDirectory, 'project-skill-preferences');
   const prefStore = projectPreferencesTrusted
     ? getProjectSkillPreferenceStore(workingDirectory)
@@ -196,16 +209,16 @@ async function handleSkillList() {
 /**
  * 设置当前项目内的 skill 启停覆盖（项目级 > 全局）
  */
-async function handleSkillProjectSet(skillName: string, enabled: boolean) {
-  getProjectSkillPreferenceStore(getSkillIpcWorkingDirectory()).setOverride(skillName, enabled);
+async function handleSkillProjectSet(skillName: string, enabled: boolean, workspacePath?: string) {
+  getProjectSkillPreferenceStore(resolveSkillIpcWorkingDirectory(workspacePath)).setOverride(skillName, enabled);
   await refreshToolSearchRegistration();
 }
 
 /**
  * 清除当前项目内的 skill 覆盖，回落全局语义
  */
-async function handleSkillProjectClear(skillName: string) {
-  getProjectSkillPreferenceStore(getSkillIpcWorkingDirectory()).clearOverride(skillName);
+async function handleSkillProjectClear(skillName: string, workspacePath?: string) {
+  getProjectSkillPreferenceStore(resolveSkillIpcWorkingDirectory(workspacePath)).clearOverride(skillName);
   await refreshToolSearchRegistration();
 }
 
@@ -598,9 +611,9 @@ export function registerSkillHandlers(ipcMain: IpcMain): void {
   // Skill Management
   // ------------------------------------------------------------------------
 
-  ipcMain.handle(SKILL_CHANNELS.SKILL_LIST, async () => {
+  ipcMain.handle(SKILL_CHANNELS.SKILL_LIST, async (_, workspacePath?: string) => {
     try {
-      return await handleSkillList();
+      return await handleSkillList(workspacePath);
     } catch (error) {
       logger.error('Failed to list skills', { error });
       throw error;
@@ -625,20 +638,20 @@ export function registerSkillHandlers(ipcMain: IpcMain): void {
     }
   });
 
-  ipcMain.handle(SKILL_CHANNELS.SKILL_PROJECT_SET, async (_, skillName: string, enabled: boolean) => {
+  ipcMain.handle(SKILL_CHANNELS.SKILL_PROJECT_SET, async (_, skillName: string, enabled: boolean, workspacePath?: string) => {
     try {
-      await handleSkillProjectSet(skillName, enabled);
+      await handleSkillProjectSet(skillName, enabled, workspacePath);
     } catch (error) {
-      logger.error('Failed to set project skill override', { skillName, enabled, error });
+      logger.error('Failed to set project skill override', { skillName, enabled, workspacePath, error });
       throw error;
     }
   });
 
-  ipcMain.handle(SKILL_CHANNELS.SKILL_PROJECT_CLEAR, async (_, skillName: string) => {
+  ipcMain.handle(SKILL_CHANNELS.SKILL_PROJECT_CLEAR, async (_, skillName: string, workspacePath?: string) => {
     try {
-      await handleSkillProjectClear(skillName);
+      await handleSkillProjectClear(skillName, workspacePath);
     } catch (error) {
-      logger.error('Failed to clear project skill override', { skillName, error });
+      logger.error('Failed to clear project skill override', { skillName, workspacePath, error });
       throw error;
     }
   });

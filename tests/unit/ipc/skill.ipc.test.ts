@@ -61,7 +61,26 @@ const svc = vi.hoisted(() => {
     setOverride: vi.fn(),
     clearOverride: vi.fn(),
   };
-  return { repo, discovery, session, cloud, config, recorder, drafts, registry, marketplaceInstall, projectPref };
+  const getProjectPrefStore = vi.fn((_projectDir: string) => projectPref);
+  const project = {
+    getProjectForWorkspace: vi.fn((workspacePath: string) => (
+      workspacePath === '/space' ? { id: 'proj_space', workspacePath: '/space' } : undefined
+    )),
+  };
+  return {
+    repo,
+    discovery,
+    session,
+    cloud,
+    config,
+    recorder,
+    drafts,
+    registry,
+    marketplaceInstall,
+    projectPref,
+    getProjectPrefStore,
+    project,
+  };
 });
 
 vi.mock('../../../src/host/services/skills/skillRepositoryService', () => ({
@@ -71,7 +90,13 @@ vi.mock('../../../src/host/services/skills/skillDiscoveryService', () => ({
   getSkillDiscoveryService: () => svc.discovery,
 }));
 vi.mock('../../../src/host/services/skills/projectSkillPreferenceService', () => ({
-  getProjectSkillPreferenceStore: () => svc.projectPref,
+  getProjectSkillPreferenceStore: (projectDir: string) => svc.getProjectPrefStore(projectDir),
+}));
+vi.mock('../../../src/host/services/project/projectService', () => ({
+  getProjectService: () => svc.project,
+}));
+vi.mock('../../../src/host/security/folderTrustService', () => ({
+  isProjectConfigTrusted: vi.fn(async () => true),
 }));
 vi.mock('../../../src/host/services/skills/sessionSkillService', () => ({
   getSessionSkillService: () => svc.session,
@@ -126,6 +151,11 @@ beforeEach(() => {
   svc.discovery.reload.mockResolvedValue(undefined);
   svc.discovery.registerSkillsToToolSearch.mockReturnValue(undefined);
   svc.discovery.initialize.mockResolvedValue(undefined);
+  svc.discovery.getWorkingDirectory.mockReturnValue('/work');
+  svc.getProjectPrefStore.mockReturnValue(svc.projectPref);
+  svc.project.getProjectForWorkspace.mockImplementation((workspacePath: string) => (
+    workspacePath === '/space' ? { id: 'proj_space', workspacePath: '/space' } : undefined
+  ));
   svc.repo.getLocalLibraries.mockReturnValue([{ id: 'lib1' }]);
   svc.repo.downloadRepository.mockResolvedValue({ success: true });
   svc.repo.updateRepository.mockResolvedValue({ success: true, hasUpdates: true });
@@ -229,16 +259,54 @@ describe('skill 启停', () => {
     ]);
   });
 
+  it('SKILL_LIST 显式目录读取该项目覆盖', async () => {
+    svc.projectPref.getOverride.mockImplementation((n: string) => (n === 'pdf' ? false : undefined));
+
+    const result = (await call(SKILL_CHANNELS.SKILL_LIST, '/space')) as Array<{
+      name: string;
+      projectOverride: boolean | null;
+    }>;
+
+    expect(svc.project.getProjectForWorkspace).toHaveBeenCalledWith('/space');
+    expect(svc.getProjectPrefStore).toHaveBeenCalledWith('/space');
+    expect(result[0]).toEqual(expect.objectContaining({ name: 'pdf', projectOverride: false }));
+  });
+
   it('SKILL_PROJECT_SET 写项目覆盖并刷新 ToolSearch 注册表', async () => {
     await call(SKILL_CHANNELS.SKILL_PROJECT_SET, 'pdf', false);
+    expect(svc.getProjectPrefStore).toHaveBeenCalledWith('/work');
     expect(svc.projectPref.setOverride).toHaveBeenCalledWith('pdf', false);
     expect(svc.discovery.registerSkillsToToolSearch).toHaveBeenCalled();
   });
 
+  it('SKILL_PROJECT_SET/CLEAR 使用显式项目目录', async () => {
+    await call(SKILL_CHANNELS.SKILL_PROJECT_SET, 'pdf', false, '/space');
+    await call(SKILL_CHANNELS.SKILL_PROJECT_CLEAR, 'pdf', '/space');
+
+    expect(svc.getProjectPrefStore).toHaveBeenNthCalledWith(1, '/space');
+    expect(svc.getProjectPrefStore).toHaveBeenNthCalledWith(2, '/space');
+    expect(svc.projectPref.setOverride).toHaveBeenCalledWith('pdf', false);
+    expect(svc.projectPref.clearOverride).toHaveBeenCalledWith('pdf');
+  });
+
   it('SKILL_PROJECT_CLEAR 清项目覆盖并刷新注册表', async () => {
     await call(SKILL_CHANNELS.SKILL_PROJECT_CLEAR, 'pdf');
+    expect(svc.getProjectPrefStore).toHaveBeenCalledWith('/work');
     expect(svc.projectPref.clearOverride).toHaveBeenCalledWith('pdf');
     expect(svc.discovery.registerSkillsToToolSearch).toHaveBeenCalled();
+  });
+
+  it('显式目录对应不到项目时 fail-loud，不回落当前目录', async () => {
+    await expect(call(SKILL_CHANNELS.SKILL_LIST, '/missing')).rejects.toThrow(
+      'No project found for workspacePath: /missing',
+    );
+    await expect(call(SKILL_CHANNELS.SKILL_PROJECT_SET, 'pdf', true, '/missing')).rejects.toThrow(
+      'No project found for workspacePath: /missing',
+    );
+    await expect(call(SKILL_CHANNELS.SKILL_PROJECT_CLEAR, 'pdf', '/missing')).rejects.toThrow(
+      'No project found for workspacePath: /missing',
+    );
+    expect(svc.getProjectPrefStore).not.toHaveBeenCalled();
   });
 
   it('SKILL_ENABLE 启用并刷新 ToolSearch 注册表', async () => {

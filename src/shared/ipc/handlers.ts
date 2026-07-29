@@ -246,15 +246,15 @@ export interface IpcInvokeHandlers {
   [SKILL_CHANNELS.REPO_CANCEL]: (stageId: string) => Promise<void>;
   [SKILL_CHANNELS.REGISTRY_LIST]: () => Promise<{ items: SkillRegistryListItem[]; error?: string }>;
   [SKILL_CHANNELS.REGISTRY_INSTALL]: (name: string) => Promise<{ success: boolean; error?: string }>;
-  [SKILL_CHANNELS.SKILL_LIST]: () => Promise<Array<ParsedSkill & {
+  [SKILL_CHANNELS.SKILL_LIST]: (workspacePath?: string) => Promise<Array<ParsedSkill & {
     globalEnabled: boolean;
     projectOverride: boolean | null;
     enabled: boolean;
   }>>;
   [SKILL_CHANNELS.SKILL_ENABLE]: (skillName: string) => Promise<void>;
   [SKILL_CHANNELS.SKILL_DISABLE]: (skillName: string) => Promise<void>;
-  [SKILL_CHANNELS.SKILL_PROJECT_SET]: (skillName: string, enabled: boolean) => Promise<void>;
-  [SKILL_CHANNELS.SKILL_PROJECT_CLEAR]: (skillName: string) => Promise<void>;
+  [SKILL_CHANNELS.SKILL_PROJECT_SET]: (skillName: string, enabled: boolean, workspacePath?: string) => Promise<void>;
+  [SKILL_CHANNELS.SKILL_PROJECT_CLEAR]: (skillName: string, workspacePath?: string) => Promise<void>;
   [SKILL_CHANNELS.SESSION_MOUNT]: (sessionId: string, skillName: string, libraryId: string) => Promise<boolean>;
   [SKILL_CHANNELS.SESSION_UNMOUNT]: (sessionId: string, skillName: string) => Promise<boolean>;
   [SKILL_CHANNELS.SESSION_LIST]: (sessionId: string) => Promise<SessionSkillMount[]>;

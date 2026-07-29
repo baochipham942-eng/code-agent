@@ -98,6 +98,21 @@ describe('VoiceModelSettings（新 tab 收拢三项）', () => {
     expect(screen.getByTestId('voice-model-transcription-model')).toBeTruthy();
   });
 
+  it('API Key 配置块常驻在语音模型 tab——配没配都展示，不是缺 key 才出现（批 X3 产品拍板）', async () => {
+    settingsGet(undefined);
+    const { unmount } = render(<VoiceModelSettings />);
+    // 已配：块在（收起成打码值形态）
+    expect(await screen.findByTestId('voice-api-key-config')).toBeTruthy();
+    expect(screen.getByTestId('voice-live-key-masked')).toBeTruthy();
+    unmount();
+
+    // 未配：块也在（展开成输入框形态）
+    availability.configured = false;
+    render(<VoiceModelSettings />);
+    expect(await screen.findByTestId('voice-api-key-config')).toBeTruthy();
+    expect(screen.getByTestId('voice-live-key-input')).toBeTruthy();
+  });
+
   it('Provider 已配置显示「已配置」，未配置显示引导文案', async () => {
     settingsGet(undefined);
     const { unmount } = render(<VoiceModelSettings />);

@@ -91,7 +91,7 @@ export const LiveVoiceButton: React.FC<LiveVoiceButtonProps> = ({ sessionId, has
                 onCancel={() => setGuideOpen(false)}
                 onConfirm={() => {
                   setGuideOpen(false);
-                  openSettingsTab('voiceLive');
+                  openSettingsTab('voiceModel');
                 }}
                 confirmColorClass={BUTTON_PRIMARY_CLASS}
               />

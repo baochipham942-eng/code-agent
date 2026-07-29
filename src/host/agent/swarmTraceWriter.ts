@@ -254,6 +254,10 @@ export class SwarmTraceWriter {
     if (!run) return;
     const state = event.data.agentState;
     if (!state) return;
+    const existing = run.agents.get(state.id);
+    if (existing?.status === 'completed' || existing?.status === 'failed' || existing?.status === 'cancelled') {
+      return;
+    }
 
     const rollup = this.mergeAgentRollup(run, state);
     // parallel peak：取所有 status=running 的 agent 数量
@@ -365,6 +369,65 @@ export class SwarmTraceWriter {
   private onCancelled(event: SwarmEvent): void {
     const run = this.getRunForEvent(event);
     if (!run) return;
+    // Stop 接受后立即把所有非终态子任务收敛到 cancelled，再写 run_closed。
+    // 这样 renderer 只读 ledger/API 也不会看到永久 pending/running。
+    for (const [agentId, agent] of run.agents) {
+      if (agent.status === 'completed' || agent.status === 'failed' || agent.status === 'cancelled') continue;
+      const cancelledAt = event.timestamp;
+      const cancelled: AgentRollup = {
+        ...agent,
+        status: 'cancelled',
+        endTime: cancelledAt,
+        error: agent.error ?? 'cancelled',
+      };
+      run.agents.set(agentId, cancelled);
+      const durationMs = cancelled.startTime == null ? null : Math.max(0, cancelledAt - cancelled.startTime);
+      this.schedulePersist(() => this.repo.upsertAgent({
+        runId: run.storageRunId,
+        agentId,
+        name: cancelled.name,
+        role: cancelled.role,
+        status: cancelled.status,
+        startTime: cancelled.startTime,
+        endTime: cancelled.endTime,
+        durationMs,
+        tokensIn: cancelled.tokensIn,
+        tokensOut: cancelled.tokensOut,
+        toolCalls: cancelled.toolCalls,
+        costUsd: cancelled.costUsd,
+        error: cancelled.error,
+        failureCategory: 'cancelled',
+        filesChanged: cancelled.filesChanged,
+        dispatchedTask: cancelled.dispatchedTask,
+        dispatchedTaskTruncated: cancelled.dispatchedTaskTruncated,
+        dispatchedTaskArchiveItemId: cancelled.dispatchedTaskArchiveItemId,
+        finalOutput: cancelled.finalOutput,
+        finalOutputTruncated: cancelled.finalOutputTruncated,
+        finalOutputArchiveItemId: cancelled.finalOutputArchiveItemId,
+      }));
+      this.appendLedgerEvent(run, 'agent_snapshot', agentId, {
+        agentId,
+        name: cancelled.name,
+        role: cancelled.role,
+        status: cancelled.status,
+        startTime: cancelled.startTime,
+        endTime: cancelled.endTime,
+        durationMs,
+        tokensIn: cancelled.tokensIn,
+        tokensOut: cancelled.tokensOut,
+        toolCalls: cancelled.toolCalls,
+        costUsd: cancelled.costUsd,
+        error: cancelled.error,
+        failureCategory: 'cancelled',
+        filesChanged: cancelled.filesChanged,
+        dispatchedTask: cancelled.dispatchedTask,
+        dispatchedTaskTruncated: cancelled.dispatchedTaskTruncated,
+        dispatchedTaskArchiveItemId: cancelled.dispatchedTaskArchiveItemId,
+        finalOutput: cancelled.finalOutput,
+        finalOutputTruncated: cancelled.finalOutputTruncated,
+        finalOutputArchiveItemId: cancelled.finalOutputArchiveItemId,
+      }, cancelledAt);
+    }
     const totals = this.aggregateAgentTotals(run);
     const closed = {
       id: run.storageRunId,

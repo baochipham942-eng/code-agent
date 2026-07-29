@@ -25,6 +25,8 @@ import type {
 import type { SwarmLedgerEvent } from '../../../shared/contract/swarmLedger';
 import type { SwarmAggregation } from '../../../shared/contract/swarm';
 
+const TERMINAL_AGENT_STATUSES = new Set(['completed', 'failed', 'cancelled']);
+
 function num(v: unknown, dflt = 0): number {
   const n = Number(v);
   return Number.isFinite(n) ? n : dflt;
@@ -83,12 +85,15 @@ export function rebuildRunDetail(events: SwarmLedgerEvent[]): SwarmRunDetail | n
     try {
       const p = ev.payload ?? {};
       if (ev.kind === 'run_started') {
-        started = p;
+        if (!started) started = p;
       } else if (ev.kind === 'run_closed') {
-        closed = p;
+        // 第一条终态即 durable 事实。历史坏账中若已有迟到 close，回放也不得改写。
+        if (!closed) closed = p;
       } else if (ev.kind === 'agent_snapshot') {
         const agentId = ev.agentId ?? str(p.agentId);
         if (!agentId) continue;
+        const existing = agentLatest.get(agentId);
+        if (existing && TERMINAL_AGENT_STATUSES.has(str(existing.status))) continue;
         agentLatest.set(agentId, p);
         agentStatus.set(agentId, str(p.status, 'pending'));
         const running = Array.from(agentStatus.values()).filter((s) => s === 'running').length;

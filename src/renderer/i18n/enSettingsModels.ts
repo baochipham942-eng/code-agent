@@ -626,6 +626,7 @@ export const enSettingsModels = {
         savedCredentialHint: 'Saved · leave blank to keep',
         jsonError: 'Invalid JSON format',
         jsonSaveError: 'Invalid JSON format, cannot save',
+        jsonIgnoredKeys: 'These fields will not be saved: {keys}',
         cancel: 'Cancel',
         save: 'Save',
         serverName: 'Server name',

@@ -25,6 +25,9 @@ export interface McpServerConfig {
   headers?: Record<string, string>;
 }
 
+/** JSON 视图能读写的字段集合——与 configToJson / handleSave 的取值口径保持一致。 */
+export const JSON_EDITABLE_KEYS = ['name', 'type', 'command', 'args', 'env', 'url', 'headers'] as const;
+
 export interface McpServerSaveSecrets {
   secretEnvKeys: string[];
   secretHeaderKeys: string[];
@@ -277,6 +280,21 @@ export const McpServerEditor: React.FC<McpServerEditorProps> = ({
   const [viewMode, setViewMode] = useState<ViewMode>('form');
   const [jsonText, setJsonText] = useState('');
   const [jsonError, setJsonError] = useState<string | null>(null);
+
+  // JSON 视图只认连接配置字段，其余（enabled/lazyLoad、从别家客户端配置文件粘来的扩展键…）
+  // 保存时会被丢掉。粘贴外部配置是常见用法，静默丢弃会让用户以为写进去的设置生效了，
+  // 所以这里当场把被忽略的键列出来——只提示，不改保存语义（粘贴不应等于自动启用）。
+  const ignoredJsonKeys = React.useMemo(() => {
+    if (viewMode !== 'json' || !jsonText.trim()) return [];
+    try {
+      const parsed: unknown = JSON.parse(jsonText);
+      if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return [];
+      return Object.keys(parsed as Record<string, unknown>)
+        .filter((key) => !(JSON_EDITABLE_KEYS as readonly string[]).includes(key));
+    } catch {
+      return [];
+    }
+  }, [viewMode, jsonText]);
 
   // 打开时应用预填配置（用于推荐 MCP 的"连接"入口）
   React.useEffect(() => {
@@ -560,6 +578,11 @@ export const McpServerEditor: React.FC<McpServerEditorProps> = ({
             />
             {jsonError && (
               <p className="text-xs text-red-400">{jsonError}</p>
+            )}
+            {ignoredJsonKeys.length > 0 && (
+              <p className="text-xs text-amber-400">
+                {editorText.jsonIgnoredKeys.replace('{keys}', ignoredJsonKeys.join(', '))}
+              </p>
             )}
             <p className="text-xs text-zinc-500">
               {editorText.jsonHint}

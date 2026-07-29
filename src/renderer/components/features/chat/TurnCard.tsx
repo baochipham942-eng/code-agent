@@ -10,6 +10,7 @@ import { redactBrowserComputerInputPayloadsInValue } from '@shared/utils/browser
 import {
   Anchor,
   AlertTriangle,
+  AudioLines,
   Brain,
   ChevronRight,
   ChevronDown,
@@ -24,6 +25,7 @@ import {
   Wrench,
   XCircle,
 } from 'lucide-react';
+import { Button } from '../../primitives';
 import { TraceNodeRenderer } from './TraceNodeRenderer';
 import { StreamingIndicator, getRunningToolStartTime, getStreamingWaitingReason } from './StreamingIndicator';
 import { TurnDiffSummary } from './MessageBubble/TurnDiffSummary';
@@ -109,8 +111,23 @@ export const TurnCard: React.FC<TurnCardProps> = ({
     [turn.nodes]
   );
 
+  // 语音派活任务卡（W6-5）：一通电话里派出去的活，整轮折叠成一张任务卡——
+  // 卡头说清「这件活是什么 + 谁做的 + 什么结果」，过程（工具调用、中间文本）默认折叠，
+  // 结论留在卡外。判据：轮内首个带 metadata.voiceDispatch 的节点（投影层保证它是轮首）。
+  const voiceDispatch = useMemo(() => {
+    for (const node of turn.nodes) {
+      const dispatch = node.metadata?.voiceDispatch;
+      if (dispatch) return dispatch;
+    }
+    return null;
+  }, [turn.nodes]);
+  const isVoiceTurn = Boolean(voiceDispatch);
+
   const foldedView = useMemo(() => {
     const userNode = turn.nodes.find((n) => n.type === 'user') || null;
+    // 「结论」= 这一轮最后一条有正文的 assistant 文本。语音任务卡里要把派活指令
+    // 节点自己排除掉——它也是 assistant_text 且有正文（改写后的指令），不排除的话
+    // 一个什么都没产出的轮会把指令原文顶到卡外当结论，还会误触「已完成」徽章。
     const finalTextNode =
       [...turn.nodes]
         .reverse()
@@ -118,17 +135,21 @@ export const TurnCard: React.FC<TurnCardProps> = ({
           (n) =>
             n.type === 'assistant_text' &&
             typeof n.content === 'string' &&
-            n.content.trim().length > 0
+            n.content.trim().length > 0 &&
+            !(isVoiceTurn && n.metadata?.voiceDispatch)
         ) || null;
     return { userNode, finalTextNode };
-  }, [turn.nodes]);
+  }, [turn.nodes, isVoiceTurn]);
 
-  // 折叠策略：已完成 + 非 streaming + 节点数达阈值 + 确实有最终 assistant 文本
-  const canFold =
-    turn.status === 'completed' &&
-    !isStreaming &&
-    turn.nodes.length >= FOLD_THRESHOLD &&
-    Boolean(foldedView.finalTextNode);
+  // 折叠策略：已完成 + 非 streaming + 节点数达阈值 + 确实有最终 assistant 文本。
+  // 语音任务卡不套这条阈值——电话里派出去的活不管几步都折成卡（用户在打电话，不看屏幕），
+  // 流式期间也折：卡头状态徽章承担 live 信号，过程默认不铺开。
+  const canFold = isVoiceTurn
+    ? turn.nodes.length > 0
+    : turn.status === 'completed' &&
+      !isStreaming &&
+      turn.nodes.length >= FOLD_THRESHOLD &&
+      Boolean(foldedView.finalTextNode);
   const [userExpanded, setUserExpanded] = useState(
     Boolean(defaultExpanded) || !canFold
   );
@@ -179,6 +200,30 @@ export const TurnCard: React.FC<TurnCardProps> = ({
     [turn.nodes],
   );
   const thinkingSegments = useMemo(() => getTurnThinkingSegments(turn), [turn]);
+  // 任务卡结果状态：只报有证据的结局，拿不准就不显示——谎报「已完成」比不报严重得多
+  // （本批 host 侧刚为「模型报喜」做过一轮修，屏幕这半不许再犯）。
+  //   failed   = 投影层对回来的失败留痕节点 / 轮 status=error / error 级 timeline，都是实锤；
+  //   running  = 轮还在流式，这不是猜是事实；
+  //   completed= 轮正常完成 + 有最终结论正文 + 没有取消标记——三者缺一就不报。
+  const voiceStatus = useMemo((): 'failed' | 'running' | 'completed' | null => {
+    if (!isVoiceTurn) return null;
+    const hasFailureEvidence =
+      turn.status === 'error'
+      || turn.nodes.some((node) => (
+        (node.type === 'system' && node.subtype === 'error' && node.metadata?.source === 'voice')
+        || node.turnTimeline?.tone === 'error'
+      ));
+    if (hasFailureEvidence) return 'failed';
+    if (turn.status === 'streaming') return 'running';
+    if (
+      turn.status === 'completed'
+      && !hasCancelledRunMarker(turn)
+      && Boolean(foldedView.finalTextNode)
+    ) {
+      return 'completed';
+    }
+    return null;
+  }, [isVoiceTurn, turn, foldedView.finalTextNode]);
   // 投影层已经挑好了这一轮该被评价的那个节点（markFeedbackEligibleNodes），
   // 这里只借它的 messageId 当锚点，判定逻辑不搬也不复制一份。
   const feedbackAnchor = useMemo(() => {
@@ -257,6 +302,20 @@ export const TurnCard: React.FC<TurnCardProps> = ({
           </div>
         )}
 
+        {/* 语音派活任务卡卡头：整轮的头一句话——这件活是什么、谁做的、什么结果。
+            过程折叠在卡身里，结论（最后一条有正文的 assistant_text）走下方既有
+            finalTextNode 通道留在卡外——过程中模型会穿插「我来做」类过渡文本，
+            只有最后一条正文是这轮给用户看的结论，与 Codex 式外壳的切法同一条判据。 */}
+        {isVoiceTurn && voiceDispatch && (
+          <VoiceDispatchCardHeader
+            title={voiceDispatch.title}
+            speaker={voiceDispatch.speaker}
+            status={voiceStatus}
+            expanded={expanded}
+            onToggle={() => setUserExpanded(!expanded)}
+          />
+        )}
+
         <TurnRunHeader turn={turn} streamingState={streamingState} />
         {shouldShowStreamingState(streamingState) && (
           <StreamingStateBanner state={streamingState} />
@@ -265,8 +324,9 @@ export const TurnCard: React.FC<TurnCardProps> = ({
         {hookActivity && <HookExecutionBanner activity={hookActivity} />}
         {skillActivity && <SkillActivityBanner activity={skillActivity} />}
 
-        {/* "Worked for Xm Ys" toggle — always visible when foldable */}
-        {canFold && (
+        {/* "Worked for Xm Ys" toggle — always visible when foldable。
+            语音任务卡的展开/收起由上面的卡头承担，不再重复一个折叠钮。 */}
+        {canFold && !isVoiceTurn && (
           <button
             onClick={() => setUserExpanded(!expanded)}
             className="flex items-center gap-1.5 text-xs text-zinc-500 hover:text-zinc-300 transition-colors py-0.5"
@@ -365,6 +425,18 @@ export const TurnCard: React.FC<TurnCardProps> = ({
           </>
         )}
 
+        {/* 语音任务卡折叠态仍在流式时：过程收在卡身里，live 信号不能全灭——
+            卡头状态徽章之外，底部保留呼吸态指示。 */}
+        {isVoiceTurn && folded && isStreaming && turn.nodes.length > 0 && (
+          <StreamingIndicator
+            startTime={turn.startTime}
+            runningToolStartTime={runningToolStartTime}
+            showCaret={!lastNodeIsStreamingText}
+            isThinking={isThinkingPhase}
+            waitingReason={getStreamingWaitingReason(turn.nodes, streamingState.status)}
+          />
+        )}
+
         {/* Final AI answer (always shown when foldable; non-foldable turns already rendered in map above) */}
         {canFold && foldedView?.finalTextNode && (
           <TraceNodeRenderer
@@ -418,6 +490,64 @@ export const TurnCard: React.FC<TurnCardProps> = ({
         )}
       </div>
     </div>
+  );
+};
+
+// ---- 语音派活任务卡卡头（W6-5）----
+// 卡头三要素：这是什么活（title）+ 谁做的（speaker，只有用户点名了专家才有——
+// 没有就一个人名都不显示，不编默认署名）+ 什么结果（status，没证据就不报）。
+// 整行是一个 Button primitive（点卡头展开/收起），[&>span] 覆盖是让 Button 内部的
+// 单个子 span 撑满整行左对齐——不改变 primitive 本身。
+const VoiceDispatchCardHeader: React.FC<{
+  title: string;
+  speaker?: { agentId: string; displayName: string };
+  status: 'failed' | 'running' | 'completed' | null;
+  expanded: boolean;
+  onToggle: () => void;
+}> = ({ title, speaker, status, expanded, onToggle }) => {
+  const { t } = useI18n();
+  const statusView = status ? {
+    failed: { label: t.voice.taskCard.statusFailed, tone: 'error' as const, icon: <XCircle className="h-3 w-3" /> },
+    running: { label: t.voice.taskCard.statusRunning, tone: 'info' as const, icon: <LoaderCircle className="h-3 w-3 animate-spin" /> },
+    completed: { label: t.voice.taskCard.statusCompleted, tone: 'success' as const, icon: <CheckCircle2 className="h-3 w-3" /> },
+  }[status] : null;
+
+  return (
+    <Button
+      type="button"
+      variant="ghost"
+      size="sm"
+      data-testid="voice-task-card-header"
+      aria-expanded={expanded}
+      title={expanded ? t.voice.taskCard.collapseProcess : t.voice.taskCard.expandProcess}
+      onClick={onToggle}
+      className="w-full px-2 [&>span]:flex [&>span]:w-full [&>span]:min-w-0 [&>span]:items-center [&>span]:gap-2"
+    >
+      <AudioLines className="h-4 w-4 shrink-0 text-zinc-500" />
+      <span className="min-w-0 truncate text-left font-medium text-zinc-300">{title}</span>
+      {speaker && (
+        <span
+          data-testid="voice-task-speaker"
+          className="shrink-0 rounded-md border border-border-muted bg-surface-subtle px-1.5 py-0.5 text-[11px] text-zinc-400"
+        >
+          {speaker.displayName}
+        </span>
+      )}
+      {statusView && (
+        <span
+          data-testid="voice-task-status"
+          className={`inline-flex shrink-0 items-center gap-1 rounded-md border px-1.5 py-0.5 text-[11px] ${getToneClass(statusView.tone)}`}
+        >
+          {statusView.icon}
+          <span className="font-medium">{statusView.label}</span>
+        </span>
+      )}
+      {expanded ? (
+        <ChevronDown className="ml-auto h-3.5 w-3.5 shrink-0 text-zinc-600" />
+      ) : (
+        <ChevronRight className="ml-auto h-3.5 w-3.5 shrink-0 text-zinc-600" />
+      )}
+    </Button>
   );
 };
 

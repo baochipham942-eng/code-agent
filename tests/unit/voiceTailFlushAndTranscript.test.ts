@@ -69,6 +69,7 @@ function bind(): void {
     onWorkItem: () => {},
     onWorkFailed: () => {},
     onEndCall: () => endCalls.push(1),
+    onWorkNarration: () => {},
   });
 }
 

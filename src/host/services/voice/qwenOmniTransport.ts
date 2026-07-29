@@ -332,6 +332,16 @@ export const qwenOmniTransport: VoiceTransport = {
         ws.send(JSON.stringify({ type: 'input_audio_buffer.commit' }));
         ws.send(JSON.stringify({ type: 'response.create' }));
       },
+      injectItem(text: string) {
+        if (ws.readyState !== WebSocket.OPEN) return;
+        // 与工具结果回灌同一套路：写进对话项后必须再发一次 response.create，
+        // 否则模型收下了也不开口（handleToolCall 顶注是同一条踩坑）。
+        ws.send(JSON.stringify({
+          type: 'conversation.item.create',
+          item: { type: 'message', role: 'user', content: [{ type: 'input_text', text }] },
+        }));
+        ws.send(JSON.stringify({ type: 'response.create' }));
+      },
       interrupt() {
         if (ws.readyState !== WebSocket.OPEN) return;
         ws.send(JSON.stringify({ type: 'response.cancel' }));

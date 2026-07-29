@@ -148,6 +148,14 @@ export const voiceZh: VoiceTranslations = {
     },
     sourceBadge: '语音',
     dispatchLabel: '语音派出任务「{title}」，以下是发给执行引擎的指令',
+    /** W6-5 任务卡：电话里派出去的活折成一张卡。状态只报有证据的结局，拿不准不显示。 */
+    taskCard: {
+      expandProcess: '展开过程',
+      collapseProcess: '收起过程',
+      statusFailed: '失败',
+      statusRunning: '进行中',
+      statusCompleted: '已完成',
+    },
     echoHint: {
       message: '外放可能让助手听到自己的声音，建议佩戴耳机',
       dontShowAgain: '不再提示',
@@ -292,6 +300,14 @@ export const voiceEn = {
     },
     sourceBadge: 'Voice',
     dispatchLabel: 'Dispatched by voice as「{title}」— this is the instruction sent to the execution engine',
+    /** W6-5 task card: work dispatched during a call folds into one card. Status is only shown with evidence. */
+    taskCard: {
+      expandProcess: 'Show process',
+      collapseProcess: 'Hide process',
+      statusFailed: 'Failed',
+      statusRunning: 'In progress',
+      statusCompleted: 'Completed',
+    },
     echoHint: {
       message: 'Speaker output may let the assistant hear itself. Consider wearing headphones',
       dontShowAgain: "Don't show again",

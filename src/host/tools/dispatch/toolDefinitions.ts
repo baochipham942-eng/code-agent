@@ -68,6 +68,8 @@ function schemaToDefinition(
     permissionLevel: mapPermissionLevel(schema.permissionLevel),
     // readOnly 探索档判定依赖：network 档只读工具直通，非只读强制确认
     readOnly: schema.readOnly === true,
+    requiresUserPresence: schema.requiresUserPresence === true,
+    aliases: schema.aliases ? [...schema.aliases] : undefined,
   };
 }
 
@@ -243,4 +245,12 @@ export function getAllToolDefinitions(): ToolDefinition[] {
     ...getProtocolToolSchemas().map((schema) => schemaToDefinition(schema, cloudToolMeta)),
     ...getMCPClient().getToolDefinitions(),
   ];
+}
+
+/** 通话等无会话 UI 形态需要隐藏的工具名，包含 provider / 兼容层别名。 */
+export function getUserPresenceToolNames(): string[] {
+  const names = getAllToolDefinitions()
+    .filter((definition) => definition.requiresUserPresence === true)
+    .flatMap((definition) => [definition.name, ...(definition.aliases ?? [])]);
+  return [...new Set(names)];
 }

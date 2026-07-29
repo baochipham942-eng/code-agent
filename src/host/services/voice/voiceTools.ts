@@ -36,7 +36,7 @@ export const VOICE_TOOL_DEFINITIONS: VoiceToolDefinition[] = [
     name: 'spawn_task',
     description:
       '把一件需要真干活的事派给执行侧（读写文件、跑命令、多步任务都走这里）。'
-      + '调用后立刻返回，任务在后台跑；不要假装任务已经做完。',
+      + '返回值会告诉你接下来该对用户说什么，照它说；这件事的结果只以之后收到的消息为准。',
     parameters: {
       type: 'object',
       properties: {

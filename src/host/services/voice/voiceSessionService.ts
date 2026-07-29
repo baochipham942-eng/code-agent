@@ -693,6 +693,10 @@ function bindClientHandlers(session: ActiveSession, client: WsSocket): void {
     // PTT/点按手动模式：Renderer 松开（或再点按）后提交这一轮。
     // direct 形态的 commit 走它自己的 data channel，不经过 Host——这里没有它的分支是刻意的。
     else if (command.type === 'commit' && upstream.kind === 'relay') upstream.commit();
+    // 音频管线诊断（批 X §5）：AEC 走没走原生、为什么降级，落进 host 日志才能事后判因。
+    else if (command.type === 'audio_mode') {
+      logger.info('client audio mode', { voiceSessionId: id, mode: command.mode, reason: command.reason });
+    }
   });
 
   // 断了先等重连，别急着落摘要卡：网络抖一下不该变成「一通电话结束 + 另一通开始」。

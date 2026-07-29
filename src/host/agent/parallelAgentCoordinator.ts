@@ -46,6 +46,7 @@ import {
   createEmptySharedContext,
   formatSharedContextForPrompt,
 } from './parallelAgentCoordinatorResults';
+import { appendDependencyResultsToPrompt } from './parallelAgentDependencyPrompt';
 import type { AgentTeamDurableController, AgentTeamCheckpointState } from './agentTeamDurableTypes';
 import type { AgentTeamRecoveryDecision } from './agentTeamRecovery';
 import { restoreParallelAgentDurableState } from './parallelAgentDurableRecovery';
@@ -422,6 +423,7 @@ export class ParallelAgentCoordinator extends EventEmitter {
     };
 
     try {
+      const resolvedPrompt = this.resolveTaskPrompt(task);
       slotLease = await guard.acquireSlot({
         treeId,
         scope: this.scope,
@@ -444,7 +446,7 @@ export class ParallelAgentCoordinator extends EventEmitter {
       }
 
       const executionPromise = executor.execute({
-        prompt: task.task,
+        prompt: resolvedPrompt,
         config: {
           name: task.role,
           // 持久化角色资产绑定 key（并行路径下 role 即 agent 注册 id）
@@ -466,7 +468,7 @@ export class ParallelAgentCoordinator extends EventEmitter {
           onContextSnapshot: (snapshot) => { void onProgress?.(snapshot); },
         },
       });
-      guard.register(task.id, task.role, task.task, executionPromise, taskAbortController, {
+      guard.register(task.id, task.role, resolvedPrompt, executionPromise, taskAbortController, {
         treeId,
         parentId: executionContext.spawnParentAgentId,
         slotAcquired: true,
@@ -588,6 +590,25 @@ export class ParallelAgentCoordinator extends EventEmitter {
     if (!result.success && result.error) {
       this.sharedContext.errors.push(`[${result.role}] ${result.error}`);
     }
+  }
+
+  private resolveTaskPrompt(task: AgentTask): string {
+    const dependencyIds = [...new Set(task.dependsOn ?? [])];
+    const results = dependencyIds.map((dependencyId) => {
+      const result = this.completedTasks.get(dependencyId);
+      if (!result) {
+        throw new Error(`Missing dependency result: ${dependencyId}`);
+      }
+      if (!result.success) {
+        throw new Error(`Dependency failed: ${dependencyId}`);
+      }
+      return {
+        taskId: dependencyId,
+        role: result.role,
+        output: result.output,
+      };
+    });
+    return appendDependencyResultsToPrompt(task.task, results);
   }
 
   /**

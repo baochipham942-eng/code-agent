@@ -255,8 +255,15 @@ export interface MessageMetadata {
    * （语音派活时 startTask 会建一条用户轮）。没有这个标记，机器编的话会顶着用户的
    * 身份显示在右边——等于把话安在用户嘴里。投影层据此改成左侧、标明来源。
    */
+  /**
+   * 语音派出的活失败了的留痕消息（`role:'system'`）。带 workItemId 是为了让渲染侧
+   * 把它对回那张任务卡——靠正文文本反解标题等于拿人话当协议，文案一改就静默失效。
+   */
+  voiceWorkFailure?: { workItemId: string; title: string };
   voiceDispatch?: {
     title: string;
+    /** 账本里这件活的 id。失败留痕靠它对回这张任务卡（见 voiceWorkFailure）。 */
+    workItemId?: string;
     /**
      * 这件活的署名（W6-5）。**只有用户点名了专家时才有**——没点名时不署名，
      * 屏幕上就该只有一个 Neo，和语音层的第一人称同一套规矩。

@@ -130,22 +130,26 @@ describe('语音派活任务卡（W6-5）', () => {
     expect(header.textContent).not.toContain('助手');
   });
 
-  it('失败的轮（真实 projectTurns：失败留痕按标题对回任务卡）→ 卡头显示失败，不显示「已完成」', () => {
-    // 与 host 落库形状逐字段对齐：voiceSessionService.reportVoiceWorkFailure
+  it('失败的轮（真实 projectTurns：失败留痕按 workItemId 对回任务卡）→ 卡头显示失败，不显示「已完成」', () => {
+    // 与 host 落库形状逐字段对齐：voiceSessionService.reportWorkFailure。
+    // 对回的键是 workItemId 而不是正文里的标题——正文是给人看的话，不是协议。
     const messages: Message[] = [
       {
         id: 'voice-dispatch-1',
         role: 'user',
         content: '改写后的派活指令全文',
         timestamp: 1_000,
-        metadata: { voiceDispatch: { title: '建 test3.txt' } },
+        metadata: { voiceDispatch: { title: '建 test3.txt', workItemId: 'voice-work-1' } },
       },
       {
         id: 'voice-work-failed-1',
         role: 'system',
-        content: '语音派出的任务「建 test3.txt」失败了，没有完成：配额不足',
+        // 正文刻意不写成 host 现在那句中文模板：对回任务卡的键必须是 workItemId。
+        // 谁要是改回「按正文反解标题」，这一条当场转红——而那种实现会在文案一改、
+        // 或这句话进一次 i18n 时静默失效，失败从此不再显示。
+        content: 'Voice-dispatched task failed: quota exceeded',
         timestamp: 5_000,
-        metadata: { source: 'voice' },
+        metadata: { source: 'voice', voiceWorkFailure: { workItemId: 'voice-work-1', title: '建 test3.txt' } },
       },
     ];
 

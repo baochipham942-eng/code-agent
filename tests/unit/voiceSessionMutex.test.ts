@@ -151,7 +151,7 @@ describe('voiceSessionService 互斥与挂断', () => {
     // 上游握手不是瞬时的：让它挂一拍，模拟真实的 await 窗口
     connect.mockImplementationOnce(async () => {
       await new Promise((resolve) => setTimeout(resolve, 20));
-      return { kind: 'relay', provider: 'qwen-omni', sendAudio, commit: commitMock, interrupt: vi.fn(), updateInstructions, close };
+      return { kind: 'relay', provider: 'qwen-omni', sendAudio, commit: commitMock, interrupt: vi.fn(), injectItem, updateInstructions, close };
     });
 
     const a = new FakeClient();

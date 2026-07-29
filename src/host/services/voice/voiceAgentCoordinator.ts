@@ -384,7 +384,7 @@ async function startRun(state: LedgerState, title: string, prompt: string): Prom
     .startTask(state.neoSessionId, prompt, undefined, options, {
       // 署名和语音层回流用同一个解析器（voiceNarration），两处不许各算各的：
       // 屏幕上写「牧之」而耳朵里听到别的名字，比不署名更糟。
-      voiceDispatch: { title, ...(speaker ? { speaker } : {}) },
+      voiceDispatch: { title, workItemId, ...(speaker ? { speaker } : {}) },
     })
     .catch((err: unknown) => {
       const detail = err instanceof Error ? err.message : 'unknown';

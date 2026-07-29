@@ -28,6 +28,9 @@ const runtime = vi.hoisted(() => ({
     _message: string,
     _attachments: unknown,
     _options: AgentRunOptions,
+    // 第 5 个参数是落在派活消息上的 metadata（voiceDispatch）——署名门读的就是它，
+    // mock 签名少一位，断言就取不到、且只有 tsc-tests-ratchet 看得见。
+    _messageMetadata?: unknown,
   ) => undefined),
   emit(type: string, sessionId = 'session-1', data?: unknown) {
     for (const listener of [...this.listeners]) listener({ type, sessionId, data });

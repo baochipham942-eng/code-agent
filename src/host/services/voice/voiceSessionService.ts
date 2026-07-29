@@ -135,7 +135,10 @@ async function reportWorkFailure(
       role: 'system',
       content: `语音派出的任务「${item.title}」失败了，没有完成：${reason}`,
       timestamp: Date.now(),
-      metadata: { source: 'voice' },
+      // workItemId 必须落进 metadata：渲染侧要把这条失败留痕对回它属于的那张任务卡，
+      // 唯一能对得准的只有 id。靠正文文本反解标题看着也能跑，但那是拿人话当协议——
+      // 文案一改、进一次 i18n，失败就静默不再显示（而这条链的全部意义就是别让失败静默）。
+      metadata: { source: 'voice', voiceWorkFailure: { workItemId: item.id, title: item.title } },
     });
   } catch (err) {
     logger.warn('failed to persist work failure', { message: err instanceof Error ? err.message : 'unknown' });

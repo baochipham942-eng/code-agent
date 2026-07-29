@@ -9,7 +9,7 @@
 import React, { useState } from 'react';
 import { SendHorizonal } from 'lucide-react';
 import type { Project } from '@shared/contract/project';
-import { useAppStore } from '../../../stores/appStore';
+import { useProjectChatSeedStore } from '../../../stores/projectChatSeedStore';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { useI18n } from '../../../hooks/useI18n';
 import { Input } from '../../primitives/Input';
@@ -37,7 +37,7 @@ export const ProjectComposer: React.FC<ProjectComposerProps> = ({ project }) => 
         workingDirectory: project?.workspacePath ?? undefined,
       });
       if (!session) return;
-      useAppStore.getState().setPendingProjectChatSeed({ sessionId: session.id, content });
+      useProjectChatSeedStore.getState().setPendingProjectChatSeed({ sessionId: session.id, content });
       // switchSession 会 closeSecondaryPages()，本页让位给新会话；ChatView 消费 seed 发出首条消息
       await useSessionStore.getState().switchSession(session.id);
       setText('');

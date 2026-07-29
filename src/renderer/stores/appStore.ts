@@ -188,12 +188,6 @@ export interface PendingProjectGoalChatSeed {
   goal: GoalRunInput;
 }
 
-/** 项目协作空间底部输入框：新会话就绪后自动发出的首条消息（轻量版 goal seed，无 run 语义） */
-export interface PendingProjectChatSeed {
-  sessionId: string;
-  content: string;
-}
-
 export interface AppState {
   // UI State
   showSettings: boolean;
@@ -205,7 +199,6 @@ export interface AppState {
   // 项目目标：从 Project 详情/控制台启动后，等目标 session 成为当前会话再自动发出 /goal envelope
   pendingProjectGoalChatSeed: PendingProjectGoalChatSeed | null;
   // 项目协作空间底部输入框：新会话成为当前会话后自动发出的首条消息
-  pendingProjectChatSeed: PendingProjectChatSeed | null;
   showPromptManager: boolean;
   showWorkspace: boolean;
   taskPanelTab: TaskPanelTab;
@@ -378,7 +371,6 @@ export interface AppState {
   closeProjectCollaborationPage: () => void;
   openProjectSpacePage: () => void;
   closeProjectSpacePage: () => void;
-  setPendingProjectChatSeed: (seed: PendingProjectChatSeed | null) => void;
   setPendingInAppValidationRequest: (
     request: import('@shared/contract/browserInteraction').InAppValidationRequest | null,
   ) => void;
@@ -487,7 +479,6 @@ export const useAppStore = create<AppState>()((set, get) => ({
   settingsCapabilityFocus: null,
   pendingRoleChatSeed: null,
   pendingProjectGoalChatSeed: null,
-  pendingProjectChatSeed: null,
   showPromptManager: false,
   showWorkspace: false,
   taskPanelTab: 'monitor',
@@ -693,7 +684,6 @@ export const useAppStore = create<AppState>()((set, get) => ({
   }),
   openProjectSpacePage: () => set({ ...SECONDARY_PAGES_CLOSED, showProjectSpacePage: true }),
   closeProjectSpacePage: () => set({ showProjectSpacePage: false }),
-  setPendingProjectChatSeed: (seed) => set({ pendingProjectChatSeed: seed }),
   setPendingInAppValidationRequest: (request) => set({ pendingInAppValidationRequest: request }),
   setShowActivityPanel: (show) => set({ showActivityPanel: show }),
   setShowCapabilityHub: (show) => set({ ...(show ? SECONDARY_PAGES_CLOSED : {}), showCapabilityHub: show }),

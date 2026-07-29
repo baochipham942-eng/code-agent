@@ -28,6 +28,9 @@ vi.mock('../../../src/renderer/services/invokeSkillIPC', () => ({
   invokeSkillIPCOrThrow: vi.fn(),
   describeSkillIpcError: vi.fn(),
 }));
+vi.mock('../../../src/renderer/services/ipcService', () => ({
+  default: { invokeDomain: vi.fn() },
+}));
 // 重组件内嵌零改造，但测试里不拉它的依赖树
 vi.mock('../../../src/renderer/components/features/projectCollaboration/ProjectCollaborationPanel', () => ({
   ProjectCollaborationPanel: () => <div data-testid="mock-collaboration-panel" />,
@@ -42,6 +45,7 @@ import { tagClient } from '../../../src/renderer/services/tagClient';
 import * as rolesClient from '../../../src/renderer/services/rolesClient';
 import { cronClient } from '../../../src/renderer/services/cronClient';
 import { invokeSkillIPC } from '../../../src/renderer/services/invokeSkillIPC';
+import ipcService from '../../../src/renderer/services/ipcService';
 import { projectSpaceZh } from '../../../src/renderer/i18n/projectSpace';
 
 const ps = projectSpaceZh.projectSpace;
@@ -95,18 +99,11 @@ function setupHappyPathMocks() {
   ] as never);
   vi.mocked(cronClient.listJobs).mockResolvedValue([]);
   vi.mocked(invokeSkillIPC).mockResolvedValue([]);
-  (window as unknown as { domainAPI: unknown }).domainAPI = {
-    invoke: vi.fn().mockResolvedValue({
-      success: true,
-      data: {
-        categories: [],
-        servers: [
-          { id: 'mcp-1', name: 'Server 1', description: '' },
-          { id: 'mcp-2', name: 'Server 2', description: '' },
-        ],
-      },
-    }),
-  };
+  // 连接器可选项真源：connector 域 listNativeInventory（与能力中心「连接器」页同源）
+  vi.mocked(ipcService.invokeDomain).mockResolvedValue([
+    { id: 'mcp-1', label: 'Server 1', enabled: true },
+    { id: 'mcp-2', label: 'Server 2', enabled: true },
+  ] as never);
 }
 
 async function enterSpaceView() {
@@ -201,6 +198,9 @@ describe('ProjectConfigRail 项目配置', () => {
 
   it('连接器：移除调用 unselectCapability，添加调用 selectCapability', async () => {
     await enterSpaceView();
+    // 显示名从 listNativeInventory 反查（查不到才回落裸 id）
+    const chip = await screen.findByTestId('project-space-card-connectors-chip-mcp-1');
+    expect(chip.textContent).toContain('Server 1');
     const remove = await screen.findByTestId('project-space-card-connectors-remove-mcp-1');
     fireEvent.click(remove);
     await waitFor(() =>

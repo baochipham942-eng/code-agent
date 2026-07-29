@@ -2,7 +2,8 @@
 // ProjectConfigRail —— 项目协作空间右栏「项目配置」（专家/技能/连接器/自动化四卡）。
 // 数据模型各走既有通道：
 // - 专家：detail.roles 已选；rolesClient.listRoles() 可选；add/removeProjectRole 后刷新 detail
-// - 连接器：project capability selections（kind='connector'）；可选项 MCP getCatalog
+// - 连接器：project capability selections（kind='connector'）；可选项与能力中心「连接器」页
+//   同源——connector 域 listNativeInventory（产品意义连接器：飞书/GitHub 等），不混 MCP 工具型 server
 // - 技能：SKILL IPC 覆盖模型（projectOverride===true 已选），store 按当前工作目录隔离——
 //   仅当项目 workspacePath 等于当前会话工作目录时可增删，否则只读 + hint
 // - 自动化：cron agent 任务的 action.libraryProjectId===projectId 已选；updateJob 设置/清除
@@ -11,10 +12,9 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { PanelRightClose, PanelRightOpen } from 'lucide-react';
-import { IPC_DOMAINS } from '@shared/ipc';
+import { IPC_DOMAINS, type NativeConnectorInventoryItem } from '@shared/ipc';
 import { SKILL_CHANNELS } from '@shared/ipc/channels';
 import type { Project, ProjectCapabilitySelection, ProjectDetail } from '@shared/contract/project';
-import type { McpCatalogPayload } from '@shared/contract/mcpCatalog';
 import type { CronJobDefinition } from '@shared/contract';
 import { useAppStore } from '../../../stores/appStore';
 import { useSessionStore } from '../../../stores/sessionStore';
@@ -22,6 +22,7 @@ import { useI18n } from '../../../hooks/useI18n';
 import * as projectClient from '../../../services/projectClient';
 import * as rolesClient from '../../../services/rolesClient';
 import { cronClient } from '../../../services/cronClient';
+import ipcService from '../../../services/ipcService';
 import { invokeSkillIPC, invokeSkillIPCOrThrow } from '../../../services/invokeSkillIPC';
 import { IconButton } from '../../primitives/IconButton';
 import { ProjectConfigCard } from './ProjectConfigCard';
@@ -95,11 +96,11 @@ export const ProjectConfigRail: React.FC<ProjectConfigRailProps> = ({
     projectClient.listCapabilitySelections(projectId)
       .then((selections) => setConnectorSelections(selections.filter((item) => item.kind === 'connector')))
       .catch(() => setConnectorSelections([]));
-    void window.domainAPI?.invoke<McpCatalogPayload>(IPC_DOMAINS.MCP, 'getCatalog')
-      .then((result) => {
-        if (result?.success && result.data) {
-          setConnectorCatalog(result.data.servers.map((server) => ({ id: server.id, label: server.name })));
-        }
+    // 可选项与能力中心「连接器」页同源（NativeConnectorsSection）：产品意义的原生连接器，
+    // 不取 MCP getCatalog（会混入 Fetch 等基础工具型 server）
+    ipcService.invokeDomain<NativeConnectorInventoryItem[]>(IPC_DOMAINS.CONNECTOR, 'listNativeInventory')
+      .then((items) => {
+        setConnectorCatalog((Array.isArray(items) ? items : []).map((item) => ({ id: item.id, label: item.label })));
       })
       .catch(() => setConnectorCatalog([]));
   }, [projectId]);

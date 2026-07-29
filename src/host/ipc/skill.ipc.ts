@@ -37,9 +37,10 @@ function getSkillIpcWorkingDirectory(): string {
 }
 
 function resolveSkillIpcWorkingDirectory(workspacePath?: unknown): string {
-  // web 桥（domain.ts 通配路由）把无 body 的调用包成 handler(null, {})，null 同理——
-  // 这两种是「未传参」的传输编码，不是显式目录，一律走既有当前工作目录路径。
-  // 只有非空字符串才算显式；空串/其他类型是调用方 bug，fail-loud。
+  // Neo 是 Tauri 壳：真机 renderer 全部经 webServer HTTP 桥进来（domain.ts 通配路由），
+  // 无 body 的调用会被包成 handler(null, {})，null 同理——{} 是生产环境「未传参」的唯一编码，
+  // undefined 只出现在单测/进程内直调。这两种一律走既有当前工作目录路径；
+  // 只有非空字符串才算显式目录；空串/其他类型是调用方 bug，fail-loud。
   if (
     workspacePath === undefined
     || workspacePath === null

@@ -297,7 +297,8 @@ describe('skill 启停', () => {
   });
 
   it('web 桥无参编码（{} / null）按未传处理走当前目录——2026-07-29 真机 500 回归', async () => {
-    // domain.ts 通配路由把无 body 的 POST 包成 handler(null, {})，Electron 侧才是真 undefined
+    // Neo 是 Tauri 壳：真机 renderer 一律走 webServer HTTP 桥，domain.ts 通配路由把无 body 的
+    // POST 包成 handler(null, {})——{} 是生产唯一形状；undefined 只存在于单测/进程内直调
     await call(SKILL_CHANNELS.SKILL_LIST, {} as never);
     expect(svc.getProjectPrefStore).toHaveBeenCalledWith('/work');
     svc.getProjectPrefStore.mockClear();

@@ -172,6 +172,20 @@ describe('VoiceTransport 契约（relay / direct 双跑）', () => {
     await handle.close();
   });
 
+  it('relay handle 精确反映 response.created 到 response.done 的模型响应窗', async () => {
+    const handle = await connectHandle(qwenOmniTransport);
+    if (handle.kind !== 'relay') throw new Error('unreachable');
+    const upstream = upstreams[upstreams.length - 1];
+
+    expect(handle.isResponding()).toBe(false);
+    upstream.emit('message', JSON.stringify({ type: 'response.created' }));
+    expect(handle.isResponding()).toBe(true);
+    upstream.emit('message', JSON.stringify({ type: 'response.done' }));
+    expect(handle.isResponding()).toBe(false);
+
+    await handle.close();
+  });
+
   it('turn_detection 关闭时 response.done 不报 ttfaPerceivedMs', async () => {
     mockConfig.settings = { voice: { turnDetection: null, live: { interrupt: 'manual' } } };
     const events: VoiceEvent[] = [];

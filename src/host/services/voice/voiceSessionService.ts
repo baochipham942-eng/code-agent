@@ -182,12 +182,13 @@ function injectNarration(session: ActiveSession, narration: VoiceWorkNarration):
 function enqueueOrInjectNarration(session: ActiveSession, narration: VoiceWorkNarration): void {
   const state = session.narration;
   if (state.spokenWorkItemIds.has(narration.workItemId) || state.queue.has(narration.workItemId)) return;
-  if (!state.userSpeaking) {
+  const upstreamResponding = session.upstream.kind === 'relay' && session.upstream.isResponding();
+  if (!state.userSpeaking && !upstreamResponding) {
     injectNarration(session, narration);
     return;
   }
-  // narration 到达前，这个 speech_started 已经发生；当前用户轮次也算压过一轮。
-  state.queue.set(narration.workItemId, { narration, suppressedTurns: 1 });
+  // 只把真实用户轮算进压制次数；单纯撞上模型响应窗不消耗用户轮额度。
+  state.queue.set(narration.workItemId, { narration, suppressedTurns: state.userSpeaking ? 1 : 0 });
 }
 
 function markNarrationUserTurn(session: ActiveSession): void {
@@ -207,9 +208,14 @@ function markNarrationUserTurn(session: ActiveSession): void {
 function flushNarrationQueue(session: ActiveSession): void {
   const state = session.narration;
   state.userSpeaking = false;
-  const queued = [...state.queue.values()];
-  state.queue.clear();
-  for (const { narration } of queued) injectNarration(session, narration);
+  // 每次 response.done 只放一条。injectItem 会立即请求下一次 response，
+  // 一次清空多条会让这些 response.create 互相碰撞。
+  const next = state.queue.entries().next().value as
+    | [string, { narration: VoiceWorkNarration; suppressedTurns: number }]
+    | undefined;
+  if (!next) return;
+  state.queue.delete(next[0]);
+  injectNarration(session, next[1].narration);
 }
 
 async function persistTranscript(

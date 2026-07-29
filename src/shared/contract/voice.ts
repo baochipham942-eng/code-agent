@@ -213,6 +213,8 @@ export type VoiceTransportHandle =
        * 角色用 user 而不是 assistant——模型只会顺着自己说过的话往下说，不会去转述它。
        */
       injectItem(text: string): void;
+      /** 上游已创建回复、但尚未发出对应 response.done。注入前用它避开 active response 窗口。 */
+      isResponding(): boolean;
     })
   /** Renderer 直连上游（OpenAI Realtime 等 WebRTC 形态），媒体不经 Host。 */
   | (VoiceTransportHandleBase & {

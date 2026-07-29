@@ -10,13 +10,15 @@ const sendAudio = vi.fn();
 const commitMock = vi.fn();
 const updateInstructions = vi.fn();
 const injectItem = vi.fn();
+let upstreamResponding = false;
+const isResponding = vi.fn(() => upstreamResponding);
 const addMessageToSession = vi.fn(async (_sessionId: string, _message: Message) => undefined);
 const patchSessionMetadata = vi.fn(async (_sessionId: string, _patch: Record<string, unknown>) => true);
 const getSession = vi.fn(async (_sessionId: string) => ({ workingDirectory: '/repo/voice-session' }));
 let lastOnEvent: ((event: VoiceEvent) => void) | null = null;
 const connect = vi.fn(async (input: Parameters<VoiceTransport['connect']>[0]) => {
   lastOnEvent = input.onEvent;
-  return { kind: 'relay', provider: 'qwen-omni', sendAudio, commit: commitMock, interrupt: vi.fn(), updateInstructions, injectItem, close };
+  return { kind: 'relay', provider: 'qwen-omni', sendAudio, commit: commitMock, interrupt: vi.fn(), updateInstructions, injectItem, isResponding, close };
 });
 
 vi.mock('../../src/host/services/voice/qwenOmniTransport', () => ({ qwenOmniTransport: { id: 'qwen-omni', connect } }));
@@ -118,6 +120,8 @@ describe('voiceSessionService 互斥与挂断', () => {
     commitMock.mockClear();
     updateInstructions.mockClear();
     injectItem.mockClear();
+    isResponding.mockClear();
+    upstreamResponding = false;
     voiceLogger.info.mockClear();
     voiceLogger.warn.mockClear();
     voiceDispatchProbe.narrate = null;
@@ -151,7 +155,7 @@ describe('voiceSessionService 互斥与挂断', () => {
     // 上游握手不是瞬时的：让它挂一拍，模拟真实的 await 窗口
     connect.mockImplementationOnce(async () => {
       await new Promise((resolve) => setTimeout(resolve, 20));
-      return { kind: 'relay', provider: 'qwen-omni', sendAudio, commit: commitMock, interrupt: vi.fn(), injectItem, updateInstructions, close };
+      return { kind: 'relay', provider: 'qwen-omni', sendAudio, commit: commitMock, interrupt: vi.fn(), injectItem, isResponding, updateInstructions, close };
     });
 
     const a = new FakeClient();
@@ -359,6 +363,37 @@ describe('终态结论节制播报', () => {
     lastOnEvent?.({ type: 'response.done' });
     expect(injectItem).toHaveBeenCalledTimes(1);
     expect(injectItem).toHaveBeenCalledWith('[BACKEND] 「建个文件」做完了。已经建好 a.txt。');
+  });
+
+  it('模型响应窗内零注入，response.done 后才注入', async () => {
+    const client = new FakeClient();
+    await attachVoiceClient(client as never, 'session-model-response');
+
+    upstreamResponding = true;
+    voiceDispatchProbe.narrate?.(narration);
+    expect(injectItem).not.toHaveBeenCalled();
+
+    upstreamResponding = false;
+    lastOnEvent?.({ type: 'response.done' });
+    expect(injectItem).toHaveBeenCalledTimes(1);
+  });
+
+  it('两条结论排队时每个 response.done 只放一条', async () => {
+    const client = new FakeClient();
+    await attachVoiceClient(client as never, 'session-one-per-response');
+    upstreamResponding = true;
+
+    voiceDispatchProbe.narrate?.(narration);
+    voiceDispatchProbe.narrate?.({ ...narration, workItemId: 'work-2', title: '查个问题' });
+    upstreamResponding = false;
+
+    lastOnEvent?.({ type: 'response.done' });
+    expect(injectItem).toHaveBeenCalledTimes(1);
+    expect(injectItem).toHaveBeenLastCalledWith('[BACKEND] 「建个文件」做完了。已经建好 a.txt。');
+
+    lastOnEvent?.({ type: 'response.done' });
+    expect(injectItem).toHaveBeenCalledTimes(2);
+    expect(injectItem).toHaveBeenLastCalledWith('[BACKEND] 「查个问题」做完了。已经建好 a.txt。');
   });
 
   it('连续压过两个用户轮次就丢弃，并留下可诊断日志', async () => {

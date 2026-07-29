@@ -178,6 +178,7 @@ export const qwenOmniTransport: VoiceTransport = {
     let speechStoppedAt = 0;
     let ttfaModelMs: number | undefined;
     let ttfaPerceivedMs: number | undefined;
+    let responseActive = false;
 
     /**
      * 工具结果回灌：写进对话项后必须再发一次 response.create，否则模型拿到结果也不开口。
@@ -217,6 +218,9 @@ export const qwenOmniTransport: VoiceTransport = {
       if (seen === 1) logger.info('upstream event', { turn, type: event.type });
 
       switch (event.type) {
+        case 'response.created':
+          responseActive = true;
+          break;
         case 'response.audio.delta':
           if (typeof event.delta === 'string') {
             if (speechStoppedAt && ttfaModelMs === undefined) {
@@ -281,6 +285,7 @@ export const qwenOmniTransport: VoiceTransport = {
           }
           break;
         case 'response.done':
+          responseActive = false;
           onEvent({
             type: 'response.done',
             ...(ttfaModelMs !== undefined ? { ttfaModelMs } : {}),
@@ -341,6 +346,9 @@ export const qwenOmniTransport: VoiceTransport = {
           item: { type: 'message', role: 'user', content: [{ type: 'input_text', text }] },
         }));
         ws.send(JSON.stringify({ type: 'response.create' }));
+      },
+      isResponding() {
+        return responseActive;
       },
       interrupt() {
         if (ws.readyState !== WebSocket.OPEN) return;

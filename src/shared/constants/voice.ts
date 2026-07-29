@@ -140,6 +140,9 @@ export const VOICE_UPSTREAM_HEARTBEAT_INTERVAL_MS = 15_000;
 /** 上游完全无消息 / pong 的最长容忍时间（ms）。 */
 export const VOICE_UPSTREAM_SILENCE_TIMEOUT_MS = 30_000;
 
+/** 已提交用户轮次等待模型创建响应的窗口（ms）；首轮超时后 nudge，再超时提示用户。 */
+export const VOICE_UPSTREAM_RESPONSE_TIMEOUT_MS = 10_000;
+
 /** 通话最长时长（ms），到点强制挂断，兜住忘记挂断导致的持续计费。 */
 export const VOICE_SESSION_MAX_DURATION_MS = 10 * 60 * 1000;
 

@@ -14,6 +14,7 @@ import {
   VOICE_TURN_DETECTION_DEFAULT,
   VOICE_UPSTREAM_CONNECT_TIMEOUT_MS,
   VOICE_UPSTREAM_HEARTBEAT_INTERVAL_MS,
+  VOICE_UPSTREAM_RESPONSE_TIMEOUT_MS,
   VOICE_UPSTREAM_SILENCE_TIMEOUT_MS,
 } from '../../../shared/constants/voice';
 import type { VoiceTransport, VoiceTransportHandle, VoiceTurnDetectionConfig } from '../../../shared/contract/voice';
@@ -199,6 +200,53 @@ export const qwenOmniTransport: VoiceTransport = {
     let ttfaPerceivedMs: number | undefined;
     let responseActive = false;
     let pendingInjectionAt: number | null = null;
+    let responseWatchdogTimer: ReturnType<typeof setTimeout> | null = null;
+    let responseWatchdogNudged = false;
+    let modelUnresponsiveNotified = false;
+
+    const clearResponseWatchdog = () => {
+      if (responseWatchdogTimer) clearTimeout(responseWatchdogTimer);
+      responseWatchdogTimer = null;
+      responseWatchdogNudged = false;
+    };
+    const scheduleResponseWatchdog = () => {
+      if (responseWatchdogTimer) clearTimeout(responseWatchdogTimer);
+      responseWatchdogTimer = setTimeout(() => {
+        responseWatchdogTimer = null;
+        if (ws.readyState !== WebSocket.OPEN) {
+          responseWatchdogNudged = false;
+          return;
+        }
+        if (!responseWatchdogNudged) {
+          responseWatchdogNudged = true;
+          logger.warn('upstream response watchdog nudging silent turn', {
+            turn,
+            timeoutMs: VOICE_UPSTREAM_RESPONSE_TIMEOUT_MS,
+          });
+          // 只推动已提交轮次，不创建 conversation item，也不打开 injection 确认窗。
+          ws.send(JSON.stringify({ type: 'response.create' }));
+          scheduleResponseWatchdog();
+          return;
+        }
+        responseWatchdogNudged = false;
+        logger.warn('upstream response watchdog still silent after nudge', {
+          turn,
+          timeoutMs: VOICE_UPSTREAM_RESPONSE_TIMEOUT_MS,
+        });
+        if (!modelUnresponsiveNotified) {
+          modelUnresponsiveNotified = true;
+          onEvent({
+            type: 'notice',
+            code: 'VOICE_MODEL_UNRESPONSIVE',
+            message: '模型没有回应，可以再说一遍，或挂断重拨',
+          });
+        }
+      }, VOICE_UPSTREAM_RESPONSE_TIMEOUT_MS);
+    };
+    const armResponseWatchdog = () => {
+      clearResponseWatchdog();
+      scheduleResponseWatchdog();
+    };
 
     /**
      * 工具结果回灌：写进对话项后必须再发一次 response.create，否则模型拿到结果也不开口。
@@ -238,7 +286,11 @@ export const qwenOmniTransport: VoiceTransport = {
       if (seen === 1) logger.info('upstream event', { turn, type: event.type });
 
       switch (event.type) {
+        case 'input_audio_buffer.committed':
+          armResponseWatchdog();
+          break;
         case 'response.created':
+          clearResponseWatchdog();
           responseActive = true;
           pendingInjectionAt = null;
           break;
@@ -262,6 +314,7 @@ export const qwenOmniTransport: VoiceTransport = {
           onEvent({ type: 'user.transcript', text: typeof event.transcript === 'string' ? event.transcript : '', done: true });
           break;
         case 'input_audio_buffer.speech_started':
+          clearResponseWatchdog();
           speechStoppedAt = 0;
           ttfaModelMs = undefined;
           ttfaPerceivedMs = undefined;
@@ -341,6 +394,7 @@ export const qwenOmniTransport: VoiceTransport = {
 
     ws.on('close', () => {
       clearHeartbeat();
+      clearResponseWatchdog();
       onEvent({ type: 'state', state: 'closed' });
     });
     ws.on('error', (err: Error) => onEvent({
@@ -391,6 +445,7 @@ export const qwenOmniTransport: VoiceTransport = {
       },
       async close() {
         clearHeartbeat();
+        clearResponseWatchdog();
         if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) ws.close();
       },
     };

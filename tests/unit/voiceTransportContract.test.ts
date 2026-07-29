@@ -3,10 +3,13 @@
 // clientBootstrap（Renderer 直连上游）。判别联合把「永远不该被调用的 no-op」
 // 从接口上消灭，本测试钉住两侧真跑出来的 handle 形态——真 OpenAI adapter 未落地，
 // direct 侧用 fake adapter 钉形态。
-import { beforeEach, describe, it, expect, vi } from 'vitest';
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 import { EventEmitter } from 'events';
 import type { VoiceEvent, VoiceTransport, VoiceTransportHandle, VoiceTurnDetectionConfig } from '../../src/shared/contract/voice';
-import { QWEN_OMNI_REALTIME_MODEL } from '../../src/shared/constants/voice';
+import {
+  QWEN_OMNI_REALTIME_MODEL,
+  VOICE_UPSTREAM_RESPONSE_TIMEOUT_MS,
+} from '../../src/shared/constants/voice';
 
 /** 最小 ws 替身：qwenOmniTransport 只用到 open/error 事件、send、readyState、close。 */
 class FakeUpstream extends EventEmitter {
@@ -16,6 +19,9 @@ class FakeUpstream extends EventEmitter {
   sent: string[] = [];
   send(data: string) {
     this.sent.push(data);
+  }
+  ping() {
+    this.emit('pong');
   }
   close() {
     this.readyState = 3;
@@ -90,6 +96,10 @@ describe('VoiceTransport 契约（relay / direct 双跑）', () => {
   beforeEach(() => {
     upstreams.length = 0;
     mockConfig.settings = {};
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it('relay adapter：kind=relay 且 sendAudio 真把帧推给上游', async () => {
@@ -211,6 +221,124 @@ describe('VoiceTransport 契约（relay / direct 双跑）', () => {
     expect(handle.isResponding()).toBe(false);
 
     await handle.close();
+  });
+
+  it('已提交轮次持续哑火时先 nudge，再发一次性 notice；看门狗 response.create 不算注入', async () => {
+    vi.useFakeTimers();
+    const events: VoiceEvent[] = [];
+    const connecting = qwenOmniTransport.connect({
+      apiKey: 'test-key',
+      config: { neoSessionId: 's1' },
+      onEvent: (event) => events.push(event),
+      onAudio: vi.fn(),
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    const handle = await connecting;
+    const upstream = upstreams[upstreams.length - 1];
+    const sentBeforeCommit = upstream.sent.length;
+
+    upstream.emit('message', JSON.stringify({ type: 'input_audio_buffer.committed' }));
+    await vi.advanceTimersByTimeAsync(VOICE_UPSTREAM_RESPONSE_TIMEOUT_MS);
+
+    const firstTurnFrames = upstream.sent
+      .slice(sentBeforeCommit)
+      .map((raw) => JSON.parse(raw) as { type: string });
+    expect(firstTurnFrames.filter((frame) => frame.type === 'response.create')).toHaveLength(1);
+    expect(events.filter((event) => event.type === 'notice' && event.code === 'VOICE_MODEL_UNRESPONSIVE')).toHaveLength(0);
+
+    upstream.emit('message', JSON.stringify({
+      type: 'error',
+      error: { message: 'nudge rejected' },
+    }));
+    expect(events.at(-1)).toMatchObject({ type: 'error', code: 'UPSTREAM_ERROR' });
+
+    await vi.advanceTimersByTimeAsync(VOICE_UPSTREAM_RESPONSE_TIMEOUT_MS);
+    expect(events.filter((event) => event.type === 'notice' && event.code === 'VOICE_MODEL_UNRESPONSIVE')).toHaveLength(1);
+
+    upstream.emit('message', JSON.stringify({ type: 'input_audio_buffer.committed' }));
+    await vi.advanceTimersByTimeAsync(VOICE_UPSTREAM_RESPONSE_TIMEOUT_MS * 2);
+    const responseCreates = upstream.sent
+      .slice(sentBeforeCommit)
+      .map((raw) => JSON.parse(raw) as { type: string })
+      .filter((frame) => frame.type === 'response.create');
+    expect(responseCreates).toHaveLength(2);
+    expect(events.filter((event) => event.type === 'notice' && event.code === 'VOICE_MODEL_UNRESPONSIVE')).toHaveLength(1);
+
+    await handle.close();
+  });
+
+  it('已提交轮次很快收到 response.created 时看门狗零动作', async () => {
+    vi.useFakeTimers();
+    const events: VoiceEvent[] = [];
+    const connecting = qwenOmniTransport.connect({
+      apiKey: 'test-key',
+      config: { neoSessionId: 's1' },
+      onEvent: (event) => events.push(event),
+      onAudio: vi.fn(),
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    const handle = await connecting;
+    const upstream = upstreams[upstreams.length - 1];
+    const sentBeforeCommit = upstream.sent.length;
+
+    upstream.emit('message', JSON.stringify({ type: 'input_audio_buffer.committed' }));
+    await vi.advanceTimersByTimeAsync(1_000);
+    upstream.emit('message', JSON.stringify({ type: 'response.created' }));
+    await vi.advanceTimersByTimeAsync(VOICE_UPSTREAM_RESPONSE_TIMEOUT_MS * 2);
+
+    const frames = upstream.sent.slice(sentBeforeCommit).map((raw) => JSON.parse(raw) as { type: string });
+    expect(frames.filter((frame) => frame.type === 'response.create')).toHaveLength(0);
+    expect(events.filter((event) => event.type === 'notice' && event.code === 'VOICE_MODEL_UNRESPONSIVE')).toHaveLength(0);
+
+    await handle.close();
+  });
+
+  it('committed 后用户再次开口会解除已作废轮次的看门狗', async () => {
+    vi.useFakeTimers();
+    const events: VoiceEvent[] = [];
+    const connecting = qwenOmniTransport.connect({
+      apiKey: 'test-key',
+      config: { neoSessionId: 's1' },
+      onEvent: (event) => events.push(event),
+      onAudio: vi.fn(),
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    const handle = await connecting;
+    const upstream = upstreams[upstreams.length - 1];
+    const sentBeforeCommit = upstream.sent.length;
+
+    upstream.emit('message', JSON.stringify({ type: 'input_audio_buffer.committed' }));
+    upstream.emit('message', JSON.stringify({ type: 'input_audio_buffer.speech_started' }));
+    await vi.advanceTimersByTimeAsync(VOICE_UPSTREAM_RESPONSE_TIMEOUT_MS * 2);
+
+    const frames = upstream.sent.slice(sentBeforeCommit).map((raw) => JSON.parse(raw) as { type: string });
+    expect(frames.filter((frame) => frame.type === 'response.create')).toHaveLength(0);
+    expect(events.filter((event) => event.type === 'notice' && event.code === 'VOICE_MODEL_UNRESPONSIVE')).toHaveLength(0);
+
+    await handle.close();
+  });
+
+  it('close 会清掉已武装的响应看门狗', async () => {
+    vi.useFakeTimers();
+    const events: VoiceEvent[] = [];
+    const connecting = qwenOmniTransport.connect({
+      apiKey: 'test-key',
+      config: { neoSessionId: 's1' },
+      onEvent: (event) => events.push(event),
+      onAudio: vi.fn(),
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    const handle = await connecting;
+    const upstream = upstreams[upstreams.length - 1];
+    const sentBeforeCommit = upstream.sent.length;
+
+    upstream.emit('message', JSON.stringify({ type: 'input_audio_buffer.committed' }));
+    await handle.close();
+    await vi.advanceTimersByTimeAsync(VOICE_UPSTREAM_RESPONSE_TIMEOUT_MS * 2);
+
+    const frames = upstream.sent.slice(sentBeforeCommit).map((raw) => JSON.parse(raw) as { type: string });
+    expect(frames.filter((frame) => frame.type === 'response.create')).toHaveLength(0);
+    expect(events.filter((event) => event.type === 'notice' && event.code === 'VOICE_MODEL_UNRESPONSIVE')).toHaveLength(0);
   });
 
   it('只把 injectItem 后未获响应确认的协议 error 分类为注入拒绝', async () => {

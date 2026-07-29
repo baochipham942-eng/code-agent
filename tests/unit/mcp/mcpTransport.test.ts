@@ -1,20 +1,28 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const transportMocks = vi.hoisted(() => ({
+  client: vi.fn(),
   sseClientTransport: vi.fn(),
   streamableHTTPClientTransport: vi.fn(),
 }));
 
-vi.mock('@modelcontextprotocol/sdk/client/sse.js', () => ({
+vi.mock('@modelcontextprotocol/client', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@modelcontextprotocol/client')>(),
+  Client: transportMocks.client,
   SSEClientTransport: transportMocks.sseClientTransport,
-}));
-
-vi.mock('@modelcontextprotocol/sdk/client/streamableHttp.js', () => ({
   StreamableHTTPClientTransport: transportMocks.streamableHTTPClientTransport,
 }));
 
 import {
+  SdkError,
+  SdkErrorCode,
+  SdkHttpError,
+} from '@modelcontextprotocol/client';
+
+import {
+  createMCPSDKClient,
   createTransport,
+  connectWithTimeout,
   isRetryableRemoteMCPConnectionError,
   resolveMCPProxyUrl,
   retryTransientRemoteMCPConnection,
@@ -24,11 +32,27 @@ describe('mcpTransport remote connection retry', () => {
   beforeEach(() => {
     transportMocks.sseClientTransport.mockClear();
     transportMocks.streamableHTTPClientTransport.mockClear();
+    transportMocks.client.mockClear();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('enables automatic v2 negotiation with legacy fallback', () => {
+    createMCPSDKClient();
+
+    expect(transportMocks.client).toHaveBeenCalledWith(
+      { name: 'code-agent', version: '0.1.0' },
+      expect.objectContaining({
+        versionNegotiation: { mode: 'auto' },
+      }),
+    );
   });
 
   it('retries one transient fetch failure with a fresh attempt', async () => {
     const attempt = vi.fn()
-      .mockRejectedValueOnce(new TypeError('fetch failed'))
+      .mockRejectedValueOnce(new SdkError(SdkErrorCode.RequestTimeout, 'request timed out'))
       .mockResolvedValueOnce('connected');
 
     await expect(retryTransientRemoteMCPConnection(attempt, { retryDelayMs: 0 }))
@@ -38,8 +62,33 @@ describe('mcpTransport remote connection retry', () => {
     expect(attempt).toHaveBeenNthCalledWith(2, 2);
   });
 
+  it('emits a structured SDK timeout when the connection deadline wins', async () => {
+    vi.useFakeTimers();
+    const pending = connectWithTimeout(
+      { connect: vi.fn(() => new Promise<void>(() => {})) } as never,
+      { close: vi.fn().mockResolvedValue(undefined) } as never,
+      {
+        name: 'slow-http',
+        type: 'http-streamable',
+        serverUrl: 'https://mcp.example.com/mcp',
+        enabled: true,
+      },
+      25,
+    );
+    const rejection = expect(pending).rejects.toMatchObject({
+      code: SdkErrorCode.RequestTimeout,
+    });
+
+    await vi.advanceTimersByTimeAsync(25);
+    await rejection;
+  });
+
   it('does not retry authentication failures', async () => {
-    const attempt = vi.fn().mockRejectedValue(new Error('HTTP 401: invalid_token'));
+    const attempt = vi.fn().mockRejectedValue(new SdkHttpError(
+      SdkErrorCode.ClientHttpAuthentication,
+      'invalid_token',
+      { status: 401 },
+    ));
 
     await expect(retryTransientRemoteMCPConnection(attempt, { retryDelayMs: 0 }))
       .rejects.toThrow('invalid_token');
@@ -47,9 +96,17 @@ describe('mcpTransport remote connection retry', () => {
   });
 
   it('classifies common transient network failures without treating auth as transient', () => {
-    expect(isRetryableRemoteMCPConnectionError(new TypeError('fetch failed'))).toBe(true);
-    expect(isRetryableRemoteMCPConnectionError(new Error('read ECONNRESET'))).toBe(true);
-    expect(isRetryableRemoteMCPConnectionError(new Error('HTTP 401: invalid_token'))).toBe(false);
+    const reset = Object.assign(new Error('socket reset'), { code: 'ECONNRESET' });
+    const timeout = new SdkError(SdkErrorCode.RequestTimeout, 'request timed out');
+    const unauthorized = new SdkHttpError(
+      SdkErrorCode.ClientHttpAuthentication,
+      'invalid_token',
+      { status: 401 },
+    );
+
+    expect(isRetryableRemoteMCPConnectionError(timeout)).toBe(true);
+    expect(isRetryableRemoteMCPConnectionError(reset)).toBe(true);
+    expect(isRetryableRemoteMCPConnectionError(unauthorized)).toBe(false);
   });
 
   it('uses the HTTPS proxy for remote MCP and respects local and NO_PROXY targets', () => {

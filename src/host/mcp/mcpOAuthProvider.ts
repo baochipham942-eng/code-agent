@@ -1,12 +1,10 @@
 import type {
   OAuthClientProvider,
   OAuthDiscoveryState,
-} from '@modelcontextprotocol/sdk/client/auth.js';
-import type {
   OAuthClientInformationMixed,
   OAuthClientMetadata,
   OAuthTokens,
-} from '@modelcontextprotocol/sdk/shared/auth.js';
+} from '@modelcontextprotocol/client';
 import { getSecureStorage, type SecureStorageService } from '../services/core/secureStorage';
 import type { MCPHttpStreamableServerConfig } from './types';
 import { getMcpOAuthCoordinator, type McpOAuthCoordinator, type McpOAuthFlow } from './mcpOAuthCoordinator';

@@ -1,5 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { UnauthorizedError } from '@modelcontextprotocol/sdk/client/auth.js';
+import {
+  SdkErrorCode,
+  SdkHttpError,
+  UnauthorizedError,
+} from '@modelcontextprotocol/client';
 
 const transportMocks = vi.hoisted(() => ({
   createTransport: vi.fn(),
@@ -44,6 +48,14 @@ function setupTransportMocks(error: Error) {
   return transport;
 }
 
+function unauthorizedHttpError(): SdkHttpError {
+  return new SdkHttpError(
+    SdkErrorCode.ClientHttpAuthentication,
+    'login required',
+    { status: 401 },
+  );
+}
+
 function mockSdkClient() {
   return {
     getServerCapabilities: vi.fn(() => ({})),
@@ -65,7 +77,34 @@ describe('MCPClient OAuth connection errors', () => {
     coordinatorMocks.coordinator.getFlowForServerIdentity.mockReturnValue(undefined);
   });
 
-  it('marks UnauthorizedError as oauth authorization required', async () => {
+  it('routes a structured HTTP 401 to oauth authorization required', async () => {
+    setupTransportMocks(unauthorizedHttpError());
+    const client = new MCPClient();
+    const config = {
+      name: 'oauth-http',
+      type: 'http-streamable' as const,
+      serverUrl: 'https://mcp.example.com/mcp',
+      enabled: true,
+      auth: 'oauth' as const,
+    };
+    client.addServer(config);
+
+    await expect(client.connect(config)).rejects.toMatchObject({
+      code: SdkErrorCode.ClientHttpAuthentication,
+      status: 401,
+    });
+
+    expect(client.getServerState('oauth-http')?.error)
+      .toContain('oauth-authorization-required: login required');
+    expect(transportMocks.createTransport).toHaveBeenCalledWith(
+      config,
+      expect.objectContaining({
+        authProvider: expect.any(Object),
+      }),
+    );
+  });
+
+  it('keeps the SDK authorization redirect error compatible', async () => {
     setupTransportMocks(new UnauthorizedError('login required'));
     const client = new MCPClient();
     const config = {
@@ -78,15 +117,8 @@ describe('MCPClient OAuth connection errors', () => {
     client.addServer(config);
 
     await expect(client.connect(config)).rejects.toBeInstanceOf(UnauthorizedError);
-
     expect(client.getServerState('oauth-http')?.error)
       .toContain('oauth-authorization-required: login required');
-    expect(transportMocks.createTransport).toHaveBeenCalledWith(
-      config,
-      expect.objectContaining({
-        authProvider: expect.any(Object),
-      }),
-    );
   });
 
   it('does not mark ordinary connection errors as oauth authorization required', async () => {
@@ -154,11 +186,11 @@ describe('MCPClient OAuth connection errors', () => {
       .mockReturnValueOnce({ transport: secondTransport, connectTimeout: 100 });
     transportMocks.createMCPSDKClient.mockReturnValue(mockSdkClient());
     transportMocks.connectWithTimeout
-      .mockRejectedValueOnce(new UnauthorizedError('login required'))
+      .mockRejectedValueOnce(unauthorizedHttpError())
       .mockResolvedValueOnce(undefined);
     transportMocks.retryTransientRemoteMCPConnection.mockImplementation(async (attempt) => attempt(1));
 
-    await expect(client.connect(config)).rejects.toBeInstanceOf(UnauthorizedError);
+    await expect(client.connect(config)).rejects.toMatchObject({ status: 401 });
     expect(firstTransport.close).not.toHaveBeenCalled();
 
     resolveCallback({
@@ -203,10 +235,10 @@ describe('MCPClient OAuth connection errors', () => {
     });
     transportMocks.createTransport.mockReturnValue({ transport: firstTransport, connectTimeout: 100 });
     transportMocks.createMCPSDKClient.mockReturnValue(mockSdkClient());
-    transportMocks.connectWithTimeout.mockRejectedValue(new UnauthorizedError('login required'));
+    transportMocks.connectWithTimeout.mockRejectedValue(unauthorizedHttpError());
     transportMocks.retryTransientRemoteMCPConnection.mockImplementation(async (attempt) => attempt(1));
 
-    await expect(client.connect(config)).rejects.toBeInstanceOf(UnauthorizedError);
+    await expect(client.connect(config)).rejects.toMatchObject({ status: 401 });
 
     await vi.waitFor(() => {
       expect(firstTransport.close).toHaveBeenCalled();
@@ -239,10 +271,10 @@ describe('MCPClient OAuth connection errors', () => {
     coordinatorMocks.coordinator.waitForCallback.mockReturnValue(callback);
     transportMocks.createTransport.mockReturnValue({ transport: firstTransport, connectTimeout: 100 });
     transportMocks.createMCPSDKClient.mockReturnValue(mockSdkClient());
-    transportMocks.connectWithTimeout.mockRejectedValue(new UnauthorizedError('login required'));
+    transportMocks.connectWithTimeout.mockRejectedValue(unauthorizedHttpError());
     transportMocks.retryTransientRemoteMCPConnection.mockImplementation(async (attempt) => attempt(1));
 
-    await expect(client.connect(config)).rejects.toBeInstanceOf(UnauthorizedError);
+    await expect(client.connect(config)).rejects.toMatchObject({ status: 401 });
     rejectCallback(new Error('MCP OAuth flow cancelled'));
 
     await vi.waitFor(() => {

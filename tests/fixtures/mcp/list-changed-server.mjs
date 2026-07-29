@@ -1,3 +1,6 @@
+import { StdioServerTransport } from '@modelcontextprotocol/server/stdio';
+import { McpServer } from '@modelcontextprotocol/server';
+
 // ============================================================================
 // MCP listChanged 测试 fixture — stdio server，运行时动态新增工具
 //
@@ -7,10 +10,6 @@
 //   - 声明 tools.listChanged capability
 //   - 收到 add_dynamic_tool 调用后注册 dynamic_tool 并发 notifications/tools/list_changed
 // ============================================================================
-
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-
 const server = new McpServer(
   { name: 'list-changed-fixture', version: '0.0.1' },
   { capabilities: { tools: { listChanged: true } } },

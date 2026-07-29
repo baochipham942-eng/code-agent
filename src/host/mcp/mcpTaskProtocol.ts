@@ -1,10 +1,10 @@
+import type { Client, Request } from '@modelcontextprotocol/client';
 import {
   CallToolResultSchema,
   CancelTaskResultSchema,
   CreateTaskResultSchema,
   GetTaskResultSchema,
-} from '@modelcontextprotocol/sdk/types.js';
-import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
+} from '@modelcontextprotocol/core';
 import type { McpTaskProtocol, McpTaskSnapshot } from './mcpDurableTask';
 import {
   getActiveRunTraceContext,
@@ -21,7 +21,7 @@ function activeTraceMeta(): Record<string, string> | undefined {
   };
 }
 
-/** SDK 1.29 protocol adapter. It intentionally uses the public request API so
+/** MCP SDK protocol adapter. It intentionally uses the public request API so
  * W3C metadata is propagated on create/get/result/cancel, not only tools/call. */
 export class McpSdkTaskProtocol implements McpTaskProtocol {
   constructor(
@@ -31,14 +31,20 @@ export class McpSdkTaskProtocol implements McpTaskProtocol {
 
   async createTask(input: Parameters<McpTaskProtocol['createTask']>[0]): Promise<McpTaskSnapshot> {
     this.assertServer(input.serverIdentity);
-    const result = await this.client.request({
+    const request: Request = {
       method: 'tools/call',
       params: {
         name: input.toolName,
         arguments: input.args,
         _meta: input.traceMeta ?? activeTraceMeta(),
+        task: {},
       },
-    }, CreateTaskResultSchema, { task: {}, signal: input.signal });
+    };
+    const result = await this.client.request(
+      request,
+      CreateTaskResultSchema,
+      { signal: input.signal },
+    );
     return result.task;
   }
 

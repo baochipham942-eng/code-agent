@@ -448,8 +448,7 @@ describe('MCPToolRegistry permission metadata', () => {
     );
 
     expect(client.callTool).toHaveBeenCalledWith(
-      { name: 'search_code', arguments: { query: 'repo:example test' } },
-      undefined,
+      { name: 'search_code', arguments: { query: 'repo:example test' }, _meta: undefined },
       { timeout: 1234, signal: controller.signal },
     );
   });

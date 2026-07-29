@@ -5,7 +5,7 @@ import {
 } from '@modelcontextprotocol/client';
 
 export const MCP_TOOL_DELIVERY_UNKNOWN_CODE = 'MCP_TOOL_DELIVERY_UNKNOWN' as const;
-export const MCP_TASK_UNAVAILABLE_CODE = 'MCP_TASK_UNAVAILABLE' as const;
+const MCP_TASK_UNAVAILABLE_CODE = 'MCP_TASK_UNAVAILABLE' as const;
 const OAUTH_AUTHORIZATION_REQUIRED_ERROR_PREFIX = 'oauth-authorization-required';
 
 export function isOAuthAuthorizationRequiredError(error: unknown): boolean {

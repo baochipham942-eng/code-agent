@@ -24,7 +24,7 @@ async function delay(delayMs: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, delayMs));
 }
 
-export async function maintainListChangedSubscription(input: {
+async function maintainListChangedSubscription(input: {
   serverName: string;
   client: Pick<Client, 'listen'>;
   initialSubscription: McpSubscription;
@@ -120,15 +120,22 @@ export function createMcpListChangedHandlers(
 export class McpListChangedRecovery {
   private readonly fallbackTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
-  monitor(serverName: string, client: Client, callbacks: ListRefreshCallbacks): void {
+  constructor(private readonly sleep: (delayMs: number) => Promise<void> = delay) {}
+
+  monitor(
+    serverName: string,
+    client: Client,
+    callbacks: ListRefreshCallbacks,
+  ): Promise<void> | undefined {
     const subscription = client.autoOpenedSubscription;
     if (!subscription) return;
-    void maintainListChangedSubscription({
+    return maintainListChangedSubscription({
       serverName,
       client,
       initialSubscription: subscription,
       shouldContinue: callbacks.shouldContinue,
       onUnavailable: () => this.scheduleFallback(serverName, client, callbacks),
+      sleep: this.sleep,
     }).catch((error) => {
       logger.warn(`MCP listChanged subscription monitor failed for ${serverName}`, {
         error: error instanceof Error ? error.message : String(error),

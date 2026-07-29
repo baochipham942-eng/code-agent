@@ -446,7 +446,7 @@ export class MCPClient extends EventEmitter {
       this.transports.set(config.name, connected.transport);
       this.bumpServerConnectionGeneration(config.name);
       const refreshCallbacks = this.buildListRefreshCallbacks(config.name);
-      this.listChangedRecovery.monitor(config.name, connected.client, {
+      void this.listChangedRecovery.monitor(config.name, connected.client, {
         shouldContinue: () => this.clients.get(config.name) === connected.client,
         ...refreshCallbacks,
       });

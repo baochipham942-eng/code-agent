@@ -833,8 +833,10 @@ export const App: React.FC = () => {
   // 侧栏是否真的在画（收起 / 非 standard 档都不画）——顶栏该不该存在跟着它走。
   const isSidebarVisible = isStandard && !sidebarCollapsed;
   // 侧栏常驻的 inline 二级页（能力中心/资料库/自动化/专家详情/知识记忆/本机操作/评测中心，
-  // 以及 2026-07-29 起统一收进 inline 的账号菜单页：设置/提示词库/Lab/时间能力/活动/
+  // 以及 2026-07-29 起统一收进 inline 的账号菜单页：提示词库/Lab/时间能力/活动/
   // Neo 协同/桌面状态）在位时，顶栏收敛。评测中心 2026-07-27 拍板从 overlay 改 inline，一并计入。
+  // 设置页 2026-07-30 起是 overlay 整窗覆盖（X5.5-B1），本就不是 inline 页；仍留在名单里
+  // 只为压住底下的顶栏不随设置开关抖动（覆盖层在位时它反正不可见）。
   const inlineSecondaryPageActive = Boolean(
     expertDetailRoleId || showKnowledgeMemoryPanel || showLibraryPanel
     || showCapabilityHub || showCronCenter || showLocalOpsPanel || showEvalCenter
@@ -893,9 +895,10 @@ export const App: React.FC = () => {
 
             {/* Content Area */}
             <div className="flex-1 min-h-0 flex overflow-hidden">
-              {/* 账号菜单打开的页面统一走 inline（2026-07-29 拍板：侧栏常驻 + 右侧内容区接管），
+              {/* 账号菜单打开的页面统一排进同一条互斥级联（2026-07-29 拍板），
                   排在既有二级页之前 = 沿用 overlay 时代「后开者盖住先开者、关掉后露出」的语义；
-                  提示词库排在设置前，于是设置内（SoulSettings）打开提示词库时盖住设置、关闭回到设置。 */}
+                  提示词库排在设置前，于是设置内（SoulSettings）打开提示词库时盖住设置、关闭回到设置。
+                  设置页自身 2026-07-30 起是 overlay 整窗覆盖（X5.5-B1），其余账号菜单页仍是 inline。 */}
               {showDesktopPanel ? (
                 <FullScreenPage testId="desktop-status-panel" variant="inline">
                   <NativeDesktopSection

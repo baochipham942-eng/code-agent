@@ -36,7 +36,7 @@ import {
 import { useVoiceInput } from '../../../../hooks/useVoiceInput';
 import { LiveVoiceButton } from '../../voice/LiveVoiceButton';
 import { useVoiceLiveAvailability } from '../../voice/useVoiceLiveAvailability';
-import { useVoiceCallStore } from '../../../../stores/voiceCallStore';
+import { useVoiceCallStore, type VoiceCallPhase } from '../../../../stores/voiceCallStore';
 import { VoiceChrome } from '../../voice/VoiceChrome';
 import { PermissionToggle } from './PermissionToggle';
 import { ContextUsagePill } from '../ContextUsagePill';
@@ -163,6 +163,29 @@ export const RuntimeInputShortcutHint: React.FC<{ isProcessing: boolean; hasDraf
     </div>
   );
 };
+
+// ============================================================================
+// 实时通话入口的槽位判定（单真源，组件外可测）
+// ============================================================================
+//   primary   = 占输入框右侧主按钮位（空输入框 + 没在跑 + 空闲相位 + 入口可用）；
+//   secondary = 主位被停止键占用（正在跑）时退到停止键左边的次位——通话入口
+//               挂在原地、照常可拨，不是整个消失（X5.5 返工批 R4c 真机：一通挂断后
+//               派出去的活还在跑，isProcessing 把主位判给停止键，通话按钮「短暂消失、
+//               跑完（下一通前）才回来」）；
+//   none      = 通话中（VoiceChrome 接管）/ 无会话 / 总开关关 / 有草稿（发送键有事可做）。
+export type LiveVoiceSlot = 'primary' | 'secondary' | 'none';
+
+export function resolveLiveVoiceSlot(params: {
+  hasContent: boolean;
+  isProcessing: boolean;
+  sessionId: string | null;
+  enabled: boolean;
+  phase: VoiceCallPhase;
+}): LiveVoiceSlot {
+  if (!params.sessionId || !params.enabled || params.phase !== 'idle') return 'none';
+  if (params.hasContent) return 'none';
+  return params.isProcessing ? 'secondary' : 'primary';
+}
 
 // ============================================================================
 // 主组件
@@ -833,13 +856,19 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   // 它多出来的只有「正在建会话」那一小段。建会话跟「有没有通话入口」无关——
   // 拿它决定按钮存不存在，就是让底栏在每次开新会话时换一次构成。
   // 这段窗口按钮照常在位，只是 disabled 置灰（两个按钮都真的会灰，见各自实现）。
+  //
+  // X5.5 返工批 R4c：挂断后派出去的活还在跑（isProcessing）时，主位是停止键，
+  // 通话入口退次位（见 resolveLiveVoiceSlot）——挂断即回到可拨状态，
+  // 不再「按钮短暂消失、活跑完才回来」。
   const liveVoiceAvailability = useVoiceLiveAvailability();
   const liveVoiceCallPhase = useVoiceCallStore((state) => state.phase);
-  const liveVoiceIsPrimary = !hasContent
-    && !isProcessing
-    && Boolean(currentSessionId)
-    && liveVoiceAvailability.enabled
-    && liveVoiceCallPhase === 'idle';
+  const liveVoiceSlot = resolveLiveVoiceSlot({
+    hasContent,
+    isProcessing: Boolean(isProcessing),
+    sessionId: currentSessionId ?? null,
+    enabled: liveVoiceAvailability.enabled,
+    phase: liveVoiceCallPhase,
+  });
 
   return (
     <div
@@ -1196,8 +1225,22 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
               输入框空着时是「开通话」，打了字才变「发送」——空输入框上摆一个
               点了也没用的发送键，是这三个图标里最没用的那个。
               正在跑 / 有内容 / 语音入口不可用时回退成发送键（那些状态下它有事可做）。
+              R4c 次位：正在跑（停止键占主位）时通话入口退到停止键左边的 ghost 次位，
+              挂在原地照常可拨——挂断后按钮立刻在，不随活跑完才回来。
             */}
-            {liveVoiceIsPrimary ? (
+            {liveVoiceSlot === 'secondary' && (
+              <LiveVoiceButton
+                sessionId={currentSessionId ?? null}
+                hasMessages={hasMessages}
+                disabled={disabled && !isProcessing}
+                variant="ghost"
+                availability={{
+                  enabled: liveVoiceAvailability.enabled,
+                  configured: liveVoiceAvailability.configured,
+                }}
+              />
+            )}
+            {liveVoiceSlot === 'primary' ? (
               <LiveVoiceButton
                 sessionId={currentSessionId ?? null}
                 hasMessages={hasMessages}

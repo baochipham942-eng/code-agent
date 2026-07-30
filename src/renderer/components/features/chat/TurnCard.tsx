@@ -16,7 +16,6 @@ import {
   ChevronDown,
   Check,
   CheckCircle2,
-  CircleDashed,
   CircleDot,
   Copy,
   FileText,
@@ -138,7 +137,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
     const userNode = turn.nodes.find((n) => n.type === 'user') || null;
     // 「结论」= 这一轮最后一条有正文的 assistant 文本。语音任务卡里要把派活指令
     // 节点自己排除掉——它也是 assistant_text 且有正文（改写后的指令），不排除的话
-    // 一个什么都没产出的轮会把指令原文顶到卡外当结论，还会误触「已完成」徽章。
+    // 一个什么都没产出的轮会把指令原文顶到卡外当结论。
     const finalTextNode =
       [...turn.nodes]
         .reverse()
@@ -154,7 +153,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
 
   // 折叠策略：已完成 + 非 streaming + 节点数达阈值 + 确实有最终 assistant 文本。
   // 语音任务卡不套这条阈值——电话里派出去的活不管几步都折成卡（用户在打电话，不看屏幕），
-  // 流式期间也折：卡头状态徽章承担 live 信号，过程默认不铺开。
+  // 流式期间也折：live 信号由卡身底部的呼吸态指示承担，过程默认不铺开。
   const canFold = isVoiceTurn
     ? turn.nodes.length > 0
     : turn.status === 'completed' &&
@@ -211,31 +210,6 @@ export const TurnCard: React.FC<TurnCardProps> = ({
     [turn.nodes],
   );
   const thinkingSegments = useMemo(() => getTurnThinkingSegments(turn), [turn]);
-  // 任务卡结果状态：只报有证据的结局，拿不准就不显示——谎报「已完成」比不报严重得多
-  // （本批 host 侧刚为「模型报喜」做过一轮修，屏幕这半不许再犯）。
-  //   failed   = 投影层对回来的失败留痕节点 / 轮 status=error / error 级 timeline，都是实锤；
-  //   running  = 轮还在流式，这不是猜是事实；
-  //   completed/unverified = **只认 host 落的结局印章**（turn.voiceWorkOutcome，X5.5-A2-a）。
-  //
-  // 此前这里是「轮正常完成 + 有最终结论正文 = 已完成」——那是拿「模型说了句话」当完成，
-  // 一个什么都没干、只留下一句「我已经帮你建好了」的 run 照样是绿的。完成语义的判定
-  // 已经收到 host 的证据门里（产物 / 工件 / 通过的校验），屏幕这半只负责如实转述。
-  // 没有印章（旧会话、跑到一半重启、印章没落库成）就不报结局——拿不准就不显示。
-  const voiceStatus = useMemo((): 'failed' | 'running' | 'completed' | 'unverified' | null => {
-    if (!isVoiceTurn) return null;
-    const hasFailureEvidence =
-      turn.status === 'error'
-      || turn.nodes.some((node) => (
-        (node.type === 'system' && node.subtype === 'error' && node.metadata?.source === 'voice')
-        || node.turnTimeline?.tone === 'error'
-      ));
-    if (hasFailureEvidence) return 'failed';
-    if (turn.status === 'streaming') return 'running';
-    if (turn.voiceWorkOutcome && !hasCancelledRunMarker(turn)) {
-      return turn.voiceWorkOutcome === 'done' ? 'completed' : 'unverified';
-    }
-    return null;
-  }, [isVoiceTurn, turn]);
   // 投影层已经挑好了这一轮该被评价的那个节点（markFeedbackEligibleNodes），
   // 这里只借它的 messageId 当锚点，判定逻辑不搬也不复制一份。
   const feedbackAnchor = useMemo(() => {
@@ -260,11 +234,22 @@ export const TurnCard: React.FC<TurnCardProps> = ({
     return { messageId };
   }, [isStreaming, turn.nodes]);
 
+  const hasVoiceFailureEvidence = useMemo(
+    () => isVoiceTurn && (
+      turn.status === 'error'
+      || turn.nodes.some((node) => (
+        (node.type === 'system' && node.subtype === 'error' && node.metadata?.source === 'voice')
+        || node.turnTimeline?.tone === 'error'
+      ))
+    ),
+    [isVoiceTurn, turn.nodes, turn.status],
+  );
+
   // X5.5-D2 顺手收：startTask 是 fire-and-forget，running 态到达前派活轮短暂呈现
   // 「completed + 有正文」，动作条会先闪一下。通话还在进行时、既无结局印章也无失败
   // 证据的任务轮不渲染动作条；挂断后（phase 回 idle）或印章落下后恢复。
   const suppressReplyActions =
-    isVoiceTurn && voiceCallInFlight && !turn.voiceWorkOutcome && voiceStatus !== 'failed';
+    isVoiceTurn && voiceCallInFlight && !turn.voiceWorkOutcome && !hasVoiceFailureEvidence;
 
   const handleFork = async () => {
     if (!forkAnchor || isForking || isSessionProcessing || sessionIsRunning) return;
@@ -322,15 +307,15 @@ export const TurnCard: React.FC<TurnCardProps> = ({
           </div>
         )}
 
-        {/* 语音派活任务卡卡头：整轮的头一句话——这件活是什么、谁做的、什么结果。
-            过程折叠在卡身里，结论（最后一条有正文的 assistant_text）走下方既有
+        {/* 语音派活任务卡卡头：整轮的头一句话——这件活是什么、谁做的。
+            不显示任何状态徽章（X5.5 返工批 R4a 产品拍板）：结局判定是 host 证据门的事，
+            卡片不转述。过程折叠在卡身里，结论（最后一条有正文的 assistant_text）走下方既有
             finalTextNode 通道留在卡外——过程中模型会穿插「我来做」类过渡文本，
             只有最后一条正文是这轮给用户看的结论，与 Codex 式外壳的切法同一条判据。 */}
         {isVoiceTurn && voiceDispatch && (
           <VoiceDispatchCardHeader
             title={voiceDispatch.title}
             speaker={voiceDispatch.speaker}
-            status={voiceStatus}
             expanded={expanded}
             onToggle={() => setUserExpanded(!expanded)}
           />
@@ -447,7 +432,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
         )}
 
         {/* 语音任务卡折叠态仍在流式时：过程收在卡身里，live 信号不能全灭——
-            卡头状态徽章之外，底部保留呼吸态指示。 */}
+            底部保留呼吸态指示。 */}
         {isVoiceTurn && folded && isStreaming && turn.nodes.length > 0 && (
           <StreamingIndicator
             startTime={turn.startTime}
@@ -524,25 +509,25 @@ export const TurnCard: React.FC<TurnCardProps> = ({
 };
 
 // ---- 语音派活任务卡卡头（W6-5）----
-// 卡头三要素：这是什么活（title）+ 谁做的（speaker，只有用户点名了专家才有——
-// 没有就一个人名都不显示，不编默认署名）+ 什么结果（status，没证据就不报）。
+// 卡头两要素：这是什么活（title）+ 谁做的（speaker，只有用户点名了专家才有——
+// 没有就一个人名都不显示，不编默认署名）。不显示任何状态徽章（X5.5 返工批 R4a
+// 产品拍板）：结局判定收在 host 证据门（turn.voiceWorkOutcome 照常落库），卡片不转述。
 // 整行是一个 Button primitive（点卡头展开/收起），[&>span] 覆盖是让 Button 内部的
 // 单个子 span 撑满整行左对齐——不改变 primitive 本身。
+//
+// 左缘基线（X5.5 返工批 R4b，真机截图实锤卡头比正文右移一截）：
+// 正文（assistant 文本 / 结论气泡）的左缘 = 卡容器 px-4 的内容边；Button size=sm
+// 自带 px-3，此前 className 里的 px-2 是死类——TW4 层叠里同族间距大值赢（px-3 盖住
+// px-2），与书写顺序无关——于是图标/标题被顶到内容边右 12px。修法不是再写一个新
+// px 去压（那是同一条死路），而是保留 px-3 的点击/hover 面积，用 -mx-3 把整行
+// 负 margin 回内容边、宽度同步补偿：图标与正文同一左缘，hover 底色外扩进 px-4 排水沟。
 const VoiceDispatchCardHeader: React.FC<{
   title: string;
   speaker?: { agentId: string; displayName: string };
-  status: 'failed' | 'running' | 'completed' | 'unverified' | null;
   expanded: boolean;
   onToggle: () => void;
-}> = ({ title, speaker, status, expanded, onToggle }) => {
+}> = ({ title, speaker, expanded, onToggle }) => {
   const { t } = useI18n();
-  const statusView = status ? {
-    failed: { label: t.voice.taskCard.statusFailed, tone: 'error' as const, icon: <XCircle className="h-3 w-3" /> },
-    running: { label: t.voice.taskCard.statusRunning, tone: 'info' as const, icon: <LoaderCircle className="h-3 w-3 animate-spin" /> },
-    completed: { label: t.voice.taskCard.statusCompleted, tone: 'success' as const, icon: <CheckCircle2 className="h-3 w-3" /> },
-    // 待核验不是失败，用中性色；但绝不许沾 success 的绿——那正是它要区别于「已完成」的地方。
-    unverified: { label: t.voice.taskCard.statusUnverified, tone: 'neutral' as const, icon: <CircleDashed className="h-3 w-3" /> },
-  }[status] : null;
 
   return (
     <Button
@@ -553,7 +538,7 @@ const VoiceDispatchCardHeader: React.FC<{
       aria-expanded={expanded}
       title={expanded ? t.voice.taskCard.collapseProcess : t.voice.taskCard.expandProcess}
       onClick={onToggle}
-      className="w-full px-2 [&>span]:flex [&>span]:w-full [&>span]:min-w-0 [&>span]:items-center [&>span]:gap-2"
+      className="-mx-3 w-[calc(100%+1.5rem)] [&>span]:flex [&>span]:w-full [&>span]:min-w-0 [&>span]:items-center [&>span]:gap-2"
     >
       <AudioLines className="h-4 w-4 shrink-0 text-zinc-500" />
       <span className="min-w-0 truncate text-left font-medium text-zinc-300">{title}</span>
@@ -563,15 +548,6 @@ const VoiceDispatchCardHeader: React.FC<{
           className="shrink-0 rounded-md border border-border-muted bg-surface-subtle px-1.5 py-0.5 text-[11px] text-zinc-400"
         >
           {speaker.displayName}
-        </span>
-      )}
-      {statusView && (
-        <span
-          data-testid="voice-task-status"
-          className={`inline-flex shrink-0 items-center gap-1 rounded-md border px-1.5 py-0.5 text-[11px] ${getToneClass(statusView.tone)}`}
-        >
-          {statusView.icon}
-          <span className="font-medium">{statusView.label}</span>
         </span>
       )}
       {expanded ? (

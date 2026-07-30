@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
 // ============================================================================
 // W6-5 语音派活任务卡门：一通电话里派出去的活折叠成一张任务卡——
-// 卡头「这件活是什么 + 谁做的 + 什么结果」，过程默认折叠，结论留在卡外。
+// 卡头「这件活是什么 + 谁做的」，过程默认折叠，结论留在卡外。
 //
 // 承重条：无 speaker 时卡头一个人名都不出现（冒充人格是本批一直在治的病）；
-// 失败的轮如实显示失败，绝不谎报「已完成」。
+// 卡头不显示任何状态徽章（X5.5 返工批 R4a 产品拍板）——结局判定是 host 证据门
+// 的事（voiceWorkOutcome 照常落库、照常对回卡片轮），卡片一律不转述。
 // ============================================================================
 import React from 'react';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
@@ -49,8 +50,9 @@ function voiceTaskTurn(overrides: Partial<TraceTurn> = {}, speaker?: { agentId: 
     status: 'completed',
     startTime: 1_000,
     endTime: 9_000,
-    // 「已完成」只来自 host 落的结局印章（X5.5-A2-a）。默认夹具带 done 章，
-    // 是为了让折叠/署名那几条继续测它们本来要测的东西。
+    // host 结局印章（X5.5-A2-a）照常落在轮上：R4a 之后卡片不再转述它，
+    // 但投影层对回机制不动，下面投影用例继续钉。夹具默认带 done 章，
+    // 是为了证明「有章也不显示徽章」。
     voiceWorkOutcome: 'done',
     nodes: [
       dispatchNode('建 test3.txt', speaker),
@@ -91,13 +93,14 @@ function voiceTaskTurn(overrides: Partial<TraceTurn> = {}, speaker?: { agentId: 
 afterEach(cleanup);
 
 describe('语音派活任务卡（W6-5）', () => {
-  it('折成一张卡：卡头有标题和结果状态，过程默认不在文档里，点卡头展开后出现；结论始终留在卡外', () => {
+  it('折成一张卡：卡头有标题、无任何状态徽章，过程默认不在文档里，点卡头展开后出现；结论始终留在卡外', () => {
     render(<TurnCard turn={voiceTaskTurn()} sessionId="session-1" />);
 
-    // 卡头：标题 + 已完成徽章
+    // 卡头：标题在；带 done 章也不显示任何状态徽章（R4a）
     const header = screen.getByTestId('voice-task-card-header');
     expect(header.textContent).toContain('建 test3.txt');
-    expect(screen.getByTestId('voice-task-status').textContent).toContain('已完成');
+    expect(screen.queryByTestId('voice-task-status')).toBeNull();
+    expect(header.textContent).not.toContain('已完成');
 
     // 过程（改写指令全文 / 中间文本 / 工具调用）默认不在文档里
     expect(screen.queryByText('改写后的派活指令全文')).toBeNull();
@@ -125,6 +128,20 @@ describe('语音派活任务卡（W6-5）', () => {
     expect(screen.getByTestId('voice-task-speaker').textContent).toBe('牧之');
   });
 
+  it('卡头与正文同一左缘基线（R4b）：负 margin 抵消 Button 内边距，且不许再有 px-* 覆盖类', () => {
+    // 真机截图实锤：卡头（波形图标+标题）比正文气泡右移一截。根因：Button size=sm
+    // 自带 px-3，旧 className 的 px-2 在 TW4 层叠里被 px-3 盖住（同族间距大值赢，
+    // 与书写顺序无关）——图标被顶到内容边右 12px。钉死两件事：
+    //   ① -mx-3 负 margin 把整行拉回容器内容边（正文左缘所在）；
+    //   ② 不许再出现 px-* 覆盖类——那是同一条死路，再写一次还是死类。
+    render(<TurnCard turn={voiceTaskTurn()} sessionId="session-1" />);
+    const header = screen.getByTestId('voice-task-card-header');
+    expect(header.className).toContain('-mx-3');
+    // 唯一的水平 padding 必须是 Button sm 自带的 px-3（由 -mx-3 抵消）；
+    // 除此之外的任何 px-* 覆盖类都是「再写一次还是死类」的同一条死路。
+    expect(header.className).not.toMatch(/(?:^|\s)px-(?!3(?:\s|$))/);
+  });
+
   it('speaker 不存在 → 卡头一个人名都不出现（不编默认署名）', () => {
     render(<TurnCard turn={voiceTaskTurn()} sessionId="session-1" />);
     expect(screen.queryByTestId('voice-task-speaker')).toBeNull();
@@ -133,7 +150,7 @@ describe('语音派活任务卡（W6-5）', () => {
     expect(header.textContent).not.toContain('助手');
   });
 
-  it('失败的轮（真实 projectTurns：失败留痕按 workItemId 对回任务卡）→ 卡头显示失败，不显示「已完成」', () => {
+  it('失败的轮（真实 projectTurns：失败留痕按 workItemId 对回任务卡）→ 留痕进轮，但卡头照样不显示任何状态徽章（R4a）', () => {
     // 与 host 落库形状逐字段对齐：voiceSessionService.reportWorkFailure。
     // 对回的键是 workItemId 而不是正文里的标题——正文是给人看的话，不是协议。
     const messages: Message[] = [
@@ -149,7 +166,7 @@ describe('语音派活任务卡（W6-5）', () => {
         role: 'system',
         // 正文刻意不写成 host 现在那句中文模板：对回任务卡的键必须是 workItemId。
         // 谁要是改回「按正文反解标题」，这一条当场转红——而那种实现会在文案一改、
-        // 或这句话进一次 i18n 时静默失效，失败从此不再显示。
+        // 或这句话进一次 i18n 时静默失效，失败留痕从此对不回任务卡。
         content: 'Voice-dispatched task failed: quota exceeded',
         timestamp: 5_000,
         metadata: { source: 'voice', voiceWorkFailure: { workItemId: 'voice-work-1', title: '建 test3.txt' } },
@@ -165,45 +182,42 @@ describe('语音派活任务卡（W6-5）', () => {
     expect(voiceTurn!.nodes.some((node) => node.subtype === 'error' && node.metadata?.source === 'voice')).toBe(true);
 
     render(<TurnCard turn={voiceTurn!} sessionId="session-1" />);
-    const status = screen.getByTestId('voice-task-status');
-    expect(status.textContent).toContain('失败');
-    expect(status.textContent).not.toContain('已完成');
+    // 失败也不显示徽章——卡头一律没有状态徽章，不是只报喜不报忧
+    expect(screen.queryByTestId('voice-task-status')).toBeNull();
     expect(screen.getByTestId('voice-task-card-header').textContent).not.toContain('已完成');
   });
 
-  it('拿不准就不报状态：正常完成但没有任何结论正文时，卡头不出现状态徽章', () => {
+  it('没有 host 结局印章的轮：卡头同样没有状态徽章，标题照在', () => {
     const turn = voiceTaskTurn({
       nodes: [dispatchNode('建 test3.txt')],
       voiceWorkOutcome: undefined,
     });
     render(<TurnCard turn={turn} sessionId="session-1" />);
     expect(screen.queryByTestId('voice-task-status')).toBeNull();
-    // 卡头仍在，标题在——只是不猜一个结果
+    // 卡头仍在，标题在
     expect(screen.getByTestId('voice-task-card-header').textContent).toContain('建 test3.txt');
   });
 
-  // ---- X5.5-A2-a 完成语义证据门 ----
-  // 真机病症：run 一件产物都没留下，只在末尾说了句「已创建 test3.txt。」，卡片就绿了。
-  // 「派活成功 ≠ 用户目标完成」——这三条钉的就是屏幕这一半不许再自己推断完成。
+  // ---- X5.5-A2-a 完成语义证据门（投影层）+ R4a（渲染层）----
+  // host 的 outcome 机制不动：印章照常落库、照常对回任务卡所在轮；
+  // R4a 产品拍板：卡片一律不转述结局——有章无章、done/unverified 都不显示徽章。
 
-  it('轮正常完成 + 有结论正文，但没有 host 的结局印章 → 绝不显示「已完成」', () => {
-    // 这正是修之前会绿的那个夹具：完整的一轮、末尾一句「已创建 test3.txt。」。
+  it('无印章的完整一轮：不显示徽章，结论正文照旧留在卡外', () => {
     const turn = voiceTaskTurn({ voiceWorkOutcome: undefined });
     render(<TurnCard turn={turn} sessionId="session-1" />);
 
     expect(screen.queryByTestId('voice-task-status')).toBeNull();
     expect(screen.getByTestId('voice-task-card-header').textContent).not.toContain('已完成');
-    // 结论正文照旧留在卡外——不报结局不等于把话藏起来
+    // 结论正文照旧留在卡外
     expect(screen.getByText('已创建 test3.txt。')).toBeTruthy();
   });
 
-  it('印章是 unverified → 显示「已结束 · 待核验」，且一个「已完成」都没有', () => {
+  it('印章是 unverified：同样不显示徽章，一个「已结束 · 待核验」都没有', () => {
     const turn = voiceTaskTurn({ voiceWorkOutcome: 'unverified' });
     render(<TurnCard turn={turn} sessionId="session-1" />);
 
-    const status = screen.getByTestId('voice-task-status');
-    expect(status.textContent).toContain('已结束 · 待核验');
-    expect(status.textContent).not.toContain('已完成');
+    expect(screen.queryByTestId('voice-task-status')).toBeNull();
+    expect(screen.getByTestId('voice-task-card-header').textContent).not.toContain('待核验');
   });
 
   it('真实 projectTurns：结局印章按 workItemId 对回任务卡，且自己不占一条气泡', () => {
@@ -245,7 +259,9 @@ describe('语音派活任务卡（W6-5）', () => {
       .some((node) => node.metadata?.voiceWorkSettled)).toBe(false);
 
     render(<TurnCard turn={voiceTurn!} sessionId="session-1" />);
-    expect(screen.getByTestId('voice-task-status').textContent).toContain('已结束 · 待核验');
+    // 印章对回了轮，但卡片不转述（R4a）
+    expect(screen.queryByTestId('voice-task-status')).toBeNull();
+    expect(screen.getByTestId('voice-task-card-header').textContent).toContain('建 test3.txt');
   });
 
   it('普通（非语音）turn 完全不受影响：无任务卡卡头，节点照常铺开', () => {

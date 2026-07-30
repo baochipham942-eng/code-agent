@@ -110,6 +110,7 @@ export const zhSettingsSystem = {
         callFailedPrefix: 'telemetry:health 调用失败（',
         callFailedSuffix: '）。',
         notConnected: '未连接',
+        uploadFailedSummary: '上传失败 {count} 次 · 最近 {time}',
         time: {
           noEvents: '暂无事件',
           justNow: '刚刚',

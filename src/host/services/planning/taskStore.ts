@@ -228,6 +228,20 @@ export function updateTask(
   const task = taskMap.get(taskId);
   if (!task) return null;
 
+  // ADR-050 fail-loud：不允许无证据把任务转成 completed。所有写路径要么走证据门
+  // （taskUpdate/taskManager），要么带机器证据章（todo 同步/auto-advance）——
+  // 静默豁免通道就是谎报温床。只拦「转入」completed，已完成任务的改名等写入不受影响。
+  if (
+    updates.status === 'completed'
+    && task.status !== 'completed'
+    && !updates.evidenceRefs?.length
+    && !task.evidenceRefs?.length
+  ) {
+    throw new Error(
+      `updateTask: refusing to mark task ${taskId} completed without evidenceRefs (ADR-050)`,
+    );
+  }
+
   // Handle deletion
   if (updates.status === 'deleted') {
     // Remove from other tasks' blockedBy/blocks lists；解除阻塞的任务记 unblocked；

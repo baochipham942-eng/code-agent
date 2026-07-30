@@ -142,6 +142,14 @@ export function useSidebarSessionActions(
       return;
     }
 
+    // 2026-07-29（ux-round2 20e）：draft 态（无当前会话）点「新任务」时主动清掉
+    // draft 期的专家选择——新会话不继承任何专家（上个会话删光后 activeAgentId
+    // 会残留在内存里，createSession 的 inheritCurrent 会把它写进新会话）。
+    // draft 态先选专家再发第一条的主动选择继承不经过这里，不受影响。
+    if (!currentSessionId) {
+      useAppStore.getState().setActiveAgentId(null);
+    }
+
     setCreatingSessionMode('current');
     try {
       const session = await createSession(t.sidebar.newSessionTitle, { workingDirectory: null });

@@ -45,4 +45,34 @@ describe('taskDeduplication Team scope', () => {
       cachedResult: 'result-b',
     });
   });
+
+  it('rejects a second registration for the same logical running task', () => {
+    const namespace = getSwarmRunScopeKey(SCOPE_A);
+    taskDeduplication.registerTask('reviewer', 'same task', namespace);
+
+    expect(() => taskDeduplication.registerTask('reviewer', 'same task', namespace))
+      .toThrow('LOGICAL_RUN_STILL_RUNNING');
+  });
+
+  it('rejects re-registering a successfully completed logical task', () => {
+    const namespace = getSwarmRunScopeKey(SCOPE_A);
+    const hash = taskDeduplication.registerTask('reviewer', 'same task', namespace);
+    taskDeduplication.completeTask(hash, 'done');
+
+    expect(() => taskDeduplication.registerTask('reviewer', 'same task', namespace))
+      .toThrow('LOGICAL_RUN_ALREADY_COMPLETED');
+  });
+
+  it('keeps completed immutable when a late failure arrives', () => {
+    const namespace = getSwarmRunScopeKey(SCOPE_A);
+    const hash = taskDeduplication.registerTask('reviewer', 'same task', namespace);
+    taskDeduplication.completeTask(hash, 'durable result');
+
+    taskDeduplication.failTask(hash);
+
+    expect(taskDeduplication.isDuplicate('reviewer', 'same task', namespace)).toMatchObject({
+      isDuplicate: true,
+      cachedResult: 'durable result',
+    });
+  });
 });

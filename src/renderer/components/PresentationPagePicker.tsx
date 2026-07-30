@@ -117,7 +117,8 @@ export const PresentationPagePicker: React.FC<Props> = ({ title, filePath, outli
       )}
 
       {pages.length > 0 && (
-        <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
+        // 一页一行：整宽大图纵向排列，幻灯片内容可读（此前 2-3 列网格缩略图看不清）
+        <div className="mt-3 flex flex-col gap-3">
           {pages.map((page, index) => {
             const locator = 'locator' in page ? page.locator : undefined;
             const displayIndex = locator?.target.displayIndex ?? ('displayIndex' in page ? page.displayIndex : index);
@@ -139,10 +140,10 @@ export const PresentationPagePicker: React.FC<Props> = ({ title, filePath, outli
                   <img
                     src={resolveFileUrl(screenshotPath)}
                     alt={`第 ${displayIndex + 1} 页 · ${pageTitle}`}
-                    className="aspect-video w-full bg-zinc-950 object-cover"
+                    className="w-full bg-zinc-950 object-contain"
                   />
                 ) : (
-                  <div className="aspect-video overflow-hidden p-2 text-[10px] leading-relaxed text-zinc-400">
+                  <div className="overflow-hidden p-2 text-[10px] leading-relaxed text-zinc-400">
                     {page.text.slice(0, 5).join(' · ') || '本页没有可读取文字'}
                   </div>
                 )}

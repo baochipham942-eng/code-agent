@@ -103,6 +103,13 @@ class TaskDeduplicationManager {
    */
   registerTask(subagentType: string, prompt: string, namespace?: string): string {
     const hash = this.computeTaskHash(subagentType, prompt, namespace);
+    const existing = this.dispatchedTasks.get(hash);
+    if (existing?.status === 'running') {
+      throw new Error(`LOGICAL_RUN_STILL_RUNNING: ${existing.promptPreview}`);
+    }
+    if (existing?.status === 'completed') {
+      throw new Error(`LOGICAL_RUN_ALREADY_COMPLETED: ${existing.promptPreview}`);
+    }
 
     this.dispatchedTasks.set(hash, {
       hash,
@@ -123,7 +130,7 @@ class TaskDeduplicationManager {
    */
   completeTask(hash: string, result: string): void {
     const task = this.dispatchedTasks.get(hash);
-    if (task) {
+    if (task?.status === 'running') {
       task.status = 'completed';
       task.result = result.substring(0, this.RESULT_MAX_LENGTH);
     }
@@ -134,7 +141,7 @@ class TaskDeduplicationManager {
    */
   failTask(hash: string): void {
     const task = this.dispatchedTasks.get(hash);
-    if (task) {
+    if (task?.status === 'running') {
       task.status = 'failed';
     }
   }

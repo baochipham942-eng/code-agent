@@ -72,6 +72,22 @@ describe('getSwarmRunDetailPreferLedger（3b 切换降级）', () => {
     expect(detail.events.length).toBeGreaterThan(0);  // timeline 仍来自 rollup 缓存
   });
 
+  it('运行中账本也优先于实时 rollup，UI 不从流式缓存推断状态', () => {
+    db = new Database(':memory:');
+    applySchema(db, createLogger() as never);
+    const repo = new SwarmTraceRepository(db);
+    const ledger = new SwarmLedgerRepository(db);
+    repo.startRun({ id: 'active', sessionId: 's1', coordinator: 'hybrid', startedAt: 100, totalAgents: 1, trigger: 'auto' });
+    repo.upsertAgent({ runId: 'active', agentId: 'a1', name: 'a1', role: 'w', status: 'running', startTime: 100, endTime: null, durationMs: null, tokensIn: 999, tokensOut: 0, toolCalls: 0, costUsd: 0, error: null, failureCategory: null, filesChanged: [] });
+    ledger.append({ runId: 'active', sessionId: 's1', seq: 0, kind: 'run_started', agentId: null, payload: { coordinator: 'hybrid', startedAt: 100, totalAgents: 1, trigger: 'auto' }, recordedAt: 100 });
+    ledger.append({ runId: 'active', sessionId: 's1', seq: 1, kind: 'agent_snapshot', agentId: 'a1', payload: { agentId: 'a1', name: 'a1', role: 'w', status: 'running', startTime: 100, endTime: null, durationMs: null, tokensIn: 10, tokensOut: 5, toolCalls: 1, costUsd: 0.01, error: null, failureCategory: null, filesChanged: [] }, recordedAt: 110 });
+
+    const detail = wire().getSwarmRunDetailPreferLedger('active')!;
+
+    expect(detail.run.status).toBe('running');
+    expect(detail.agents[0].tokensIn).toBe(10);
+  });
+
   it('无账的历史 run → 回退 rollup 缓存（兼容老数据，不丢）', async () => {
     db = new Database(':memory:');
     applySchema(db, createLogger() as never);

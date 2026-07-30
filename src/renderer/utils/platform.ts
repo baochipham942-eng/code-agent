@@ -21,7 +21,13 @@ export function isTauriMode(): boolean {
 }
 
 export function isWebMode(): boolean {
-  return import.meta.env.VITE_BUILD_TARGET === 'web';
+  if (import.meta.env.VITE_BUILD_TARGET === 'web') return true;
+  // 运行时兜底：webServer 实际 serve 的是 dist/renderer（桌面构建，没有 build-time
+  // flag），但它会在 index.html 注入 __CODE_AGENT_TOKEN__（src/web/routes/static.ts）。
+  // Tauri webview 也可能走同一 http origin，必须先排除 __TAURI_INTERNALS__，
+  // 否则桌面壳会被误判成 web 降级。
+  if (isTauriMode()) return false;
+  return typeof window !== 'undefined' && '__CODE_AGENT_TOKEN__' in window;
 }
 
 function isLegacyElectronMode(): boolean {

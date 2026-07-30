@@ -12,6 +12,8 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { zh } from '../../../src/renderer/i18n/zh';
 import type { SwarmAgentState } from '../../../src/shared/contract/swarm';
+import type { SwarmRunAgentRecord, SwarmRunDetail, SwarmRunListItem } from '../../../src/shared/contract/swarmTrace';
+import { IPC_CHANNELS } from '../../../src/shared/ipc';
 
 const invokeMock = vi.fn();
 const swarmState: { agents: SwarmAgentState[]; activeSessionId: string | undefined; messages: unknown[] } = {
@@ -33,10 +35,29 @@ function agentOf(id: string, status: SwarmAgentState['status']): SwarmAgentState
   return { id, name: id, role: id, status, iterations: 0, tokenUsage: { input: 0, output: 0 }, toolCalls: 0, filesChanged: [] };
 }
 
+// 成员条状态以持久化账本为唯一真相源（竞品借鉴B），夹具喂 ledger API 而不是 stream
+const ledgerAgents: SwarmRunAgentRecord[] = [
+  { runId: 'run-1', agentId: 'researcher', name: 'researcher', role: 'researcher', status: 'running', startTime: 1, endTime: null, durationMs: null, tokensIn: 0, tokensOut: 0, toolCalls: 0, costUsd: 0, error: null, failureCategory: null, filesChanged: [] },
+  { runId: 'run-1', agentId: 'writer', name: 'writer', role: 'writer', status: 'completed', startTime: 2, endTime: 5_001, durationMs: 3_000, tokensIn: 0, tokensOut: 0, toolCalls: 0, costUsd: 0, error: null, failureCategory: null, filesChanged: [] },
+];
+const ledgerRun: SwarmRunListItem = {
+  id: 'run-1', sessionId: 'session-1', status: 'running', coordinator: 'parallel', startedAt: 1, endedAt: null, durationMs: null,
+  totalAgents: 2, completedCount: 1, failedCount: 0, totalCostUsd: 0, totalTokensIn: 0, totalTokensOut: 0, trigger: 'llm-spawn',
+};
+const ledgerDetail: SwarmRunDetail = {
+  run: { ...ledgerRun, totalToolCalls: 0, parallelPeak: 2, errorSummary: null, aggregation: null, tags: [] },
+  agents: ledgerAgents,
+  events: [],
+};
+
 describe('输入框上方那一格的优先级', () => {
   beforeEach(() => {
     invokeMock.mockReset();
-    invokeMock.mockResolvedValue([]);
+    invokeMock.mockImplementation((channel: unknown) => {
+      if (channel === IPC_CHANNELS.SWARM_LIST_TRACE_RUNS) return Promise.resolve([ledgerRun]);
+      if (channel === IPC_CHANNELS.SWARM_GET_TRACE_RUN_DETAIL) return Promise.resolve(ledgerDetail);
+      return Promise.resolve(null);
+    });
     swarmState.activeSessionId = 'session-1';
     swarmState.agents = [agentOf('researcher', 'running'), agentOf('writer', 'completed')];
     useComposerNoticeStore.setState({ notices: {}, inProgress: {} });
@@ -47,14 +68,15 @@ describe('输入框上方那一格的优先级', () => {
   });
   afterEach(() => cleanup());
 
-  it('没有确认卡时成员条完整展示', () => {
+  it('没有确认卡时成员条完整展示', async () => {
     render(<SessionMemberBar sessionId="session-1" />);
-    expect(screen.getByTestId('session-member-bar')).toBeTruthy();
+    expect(await screen.findByTestId('session-member-bar')).toBeTruthy();
     expect(screen.queryByTestId('session-member-bar-collapsed')).toBeNull();
   });
 
-  it('确认卡占位时成员条收成一行摘要，而不是整条消失', () => {
+  it('确认卡占位时成员条收成一行摘要，而不是整条消失', async () => {
     render(<SessionMemberBar sessionId="session-1" />);
+    await screen.findByTestId('session-member-bar');
     act(() => { useComposerNoticeStore.getState().setNotice('team-recipe-draft', true); });
 
     const collapsed = screen.getByTestId('session-member-bar-collapsed');
@@ -65,16 +87,18 @@ describe('输入框上方那一格的优先级', () => {
     expect(collapsed.textContent).toContain('工作中');
   });
 
-  it('点摘要能就地展开完整成员条', () => {
+  it('点摘要能就地展开完整成员条', async () => {
     render(<SessionMemberBar sessionId="session-1" />);
+    await screen.findByTestId('session-member-bar');
     act(() => { useComposerNoticeStore.getState().setNotice('skill-draft', true); });
 
     fireEvent.click(screen.getByTestId('session-member-bar-collapsed'));
     expect(screen.getByTestId('session-member-bar')).toBeTruthy();
   });
 
-  it('确认卡收掉后回到完整态，展开状态不黏到下一次', () => {
+  it('确认卡收掉后回到完整态，展开状态不黏到下一次', async () => {
     render(<SessionMemberBar sessionId="session-1" />);
+    await screen.findByTestId('session-member-bar');
     act(() => { useComposerNoticeStore.getState().setNotice('role-draft', true); });
     fireEvent.click(screen.getByTestId('session-member-bar-collapsed'));
     act(() => { useComposerNoticeStore.getState().setNotice('role-draft', false); });
@@ -84,11 +108,14 @@ describe('输入框上方那一格的优先级', () => {
     expect(screen.getByTestId('session-member-bar-collapsed')).toBeTruthy();
   });
 
-  it('没有成员时确认卡不会凭空造出一行摘要', () => {
+  it('没有成员时确认卡不会凭空造出一行摘要', async () => {
     swarmState.agents = [];
     swarmState.activeSessionId = undefined;
+    invokeMock.mockReset();
+    invokeMock.mockResolvedValue([]);
     render(<SessionMemberBar sessionId="session-1" />);
     act(() => { useComposerNoticeStore.getState().setNotice('team-recipe-draft', true); });
+    await Promise.resolve();
     expect(screen.queryByTestId('session-member-bar-collapsed')).toBeNull();
     expect(screen.queryByTestId('session-member-bar')).toBeNull();
   });

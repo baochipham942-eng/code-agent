@@ -14,8 +14,10 @@ import {
   Brain,
   ChevronRight,
   ChevronDown,
+  Check,
   CheckCircle2,
   CircleDot,
+  Copy,
   FileText,
   GitFork,
   LoaderCircle,
@@ -26,6 +28,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import { Button } from '../../primitives';
+import { UI } from '@shared/constants';
 import { TraceNodeRenderer } from './TraceNodeRenderer';
 import { StreamingIndicator, getRunningToolStartTime, getStreamingWaitingReason } from './StreamingIndicator';
 import { TurnDiffSummary } from './MessageBubble/TurnDiffSummary';
@@ -60,6 +63,8 @@ interface TurnCardProps {
   highlightActive?: boolean;
   /** This turn is the current active renderer turn. */
   isActiveTurn?: boolean;
+  /** 会话最后一轮：操作行（复制/赞/踩/分叉）只在这轮常驻，历史轮 hover 才显示 */
+  isLastTurn?: boolean;
   sessionStatus?: RuntimeSessionStatus | null;
   isSessionProcessing?: boolean;
   streamSnapshot?: StreamRecoverySnapshot | null;
@@ -80,6 +85,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
   forceExpanded,
   highlightActive,
   isActiveTurn,
+  isLastTurn,
   sessionStatus,
   isSessionProcessing,
   streamSnapshot,
@@ -272,8 +278,11 @@ export const TurnCard: React.FC<TurnCardProps> = ({
           <div className="h-px flex-1 bg-zinc-800"></div>
           {/* 只说时间点。轮时长由下面折叠按钮那一处带「用时」标签地讲——
               同一个数字在同一屏出现两次、其中一次还没有标签，正是第 17 条那个歧义。
-              2026-07-28 品质感打磨③：时间戳是工程遥测，默认隐去，hover 本卡片浮出。 */}
-          <span className="text-[10px] text-zinc-500 shrink-0 opacity-0 transition-opacity duration-150 group-hover/turncard:opacity-100">{stats.time}</span>
+              UX round2 20i：时间戳每轮常驻可见（低透明度常态、hover 提亮）。
+              此前 opacity-0 + group-hover 浮出——滚动时鼠标静止、卡片从光标下穿过，
+              :hover 随卡片边界高速翻转，时间戳「开始时间数字会随页面滑动偶尔消失但还在」
+              的闪烁就是这条 hover 门控造成的；常驻后闪烁根因消除。 */}
+          <span className="text-[10px] text-zinc-500 shrink-0 opacity-60 transition-opacity duration-150 group-hover/turncard:opacity-100">{stats.time}</span>
           <div className="h-px flex-1 bg-zinc-800"></div>
         </div>
       )}
@@ -329,14 +338,14 @@ export const TurnCard: React.FC<TurnCardProps> = ({
         {canFold && !isVoiceTurn && (
           <button
             onClick={() => setUserExpanded(!expanded)}
-            className="flex items-center gap-1.5 text-xs text-zinc-500 hover:text-zinc-300 transition-colors py-0.5"
+            className="flex items-center gap-1.5 text-xs leading-4 text-zinc-500 hover:text-zinc-300 transition-colors py-0.5"
             aria-expanded={expanded}
             title={expanded ? t.turnCard.collapseTurn : t.turnCard.expandTurn}
           >
             {expanded ? (
-              <ChevronDown className="w-3 h-3 flex-shrink-0 text-zinc-600" />
+              <ChevronDown className="w-3 h-3 flex-shrink-0 text-zinc-500" />
             ) : (
-              <ChevronRight className="w-3 h-3 flex-shrink-0 text-zinc-600" />
+              <ChevronRight className="w-3 h-3 flex-shrink-0 text-zinc-500" />
             )}
             <span>
               {t.turnCard.workedFor.replace(
@@ -462,9 +471,17 @@ export const TurnCard: React.FC<TurnCardProps> = ({
         <TurnDiffSummary turn={turn} />
 
         {/* 评价对象是这一轮的回答，所以位置在整轮最后——挂在正文节点里会插在答案和
-            它产出的文件卡之间，看起来像在给上面那一句话打分。 */}
+            它产出的文件卡之间，看起来像在给上面那一句话打分。
+            操作行（复制/好评/差评/分叉）只在最后一轮常驻；历史轮 hover 进入该轮才显示，
+            避免多轮会话里每轮都拖一条操作行造成的割裂感（2026-07-29 产品反馈）。 */}
         {(forkAnchor || feedbackAnchor) && (
-          <div className="flex items-center gap-2" data-testid="turn-reply-actions">
+          <div
+            className={`flex items-center gap-2 ${isLastTurn ? '' : 'opacity-0 transition-opacity duration-150 group-hover/turncard:opacity-100'}`}
+            data-testid="turn-reply-actions"
+          >
+            {feedbackAnchor && (
+              <TurnCopyAction content={feedbackAnchor.content} />
+            )}
             {feedbackAnchor && (
               <TurnFeedback
                 messageId={feedbackAnchor.messageId}
@@ -548,6 +565,38 @@ const VoiceDispatchCardHeader: React.FC<{
         <ChevronRight className="ml-auto h-3.5 w-3.5 shrink-0 text-zinc-600" />
       )}
     </Button>
+  );
+};
+
+// UX round2 20i：每轮常驻的「复制回答」小图标按钮，与点赞/点踩/分叉同形同排。
+const TurnCopyAction: React.FC<{ content: string }> = ({ content }) => {
+  const { t } = useI18n();
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    if (!content.trim()) return;
+    try {
+      await navigator.clipboard.writeText(content);
+      setCopied(true);
+      setTimeout(() => setCopied(false), UI.COPY_FEEDBACK_DURATION);
+    } catch {
+      // 剪贴板不可用（权限/非安全上下文）时静默，不阻塞其它操作
+    }
+  };
+
+  return (
+    <button /* ds-allow:button: 「复制回答」是回复操作行的图标级小按钮，Button primitive 无此紧凑图标变体 */
+      type="button"
+      data-testid="turn-copy-action"
+      aria-label={copied ? t.turnCard.answerCopied : t.turnCard.copyAnswer}
+      title={copied ? t.turnCard.answerCopied : t.turnCard.copyAnswer}
+      onClick={() => void handleCopy()}
+      className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-transparent text-zinc-500 transition-colors hover:border-zinc-700 hover:bg-zinc-800/70 hover:text-zinc-300 focus:outline-hidden focus-visible:ring-1 focus-visible:ring-[var(--focus-ring)]"
+    >
+      {copied
+        ? <Check className="h-3.5 w-3.5 text-emerald-400" />
+        : <Copy className="h-3.5 w-3.5" />}
+    </button>
   );
 };
 
@@ -666,7 +715,7 @@ const HookExecutionBanner: React.FC<{ activity: TurnHookActivity }> = ({ activit
 function getSkillActionLabel(action: TurnSkillActivity['items'][number]['action']): string {
   switch (action) {
     case 'selected':
-      return '写入偏好';
+      return '本轮挂载';
     case 'triggered':
       return '已触发';
     case 'written':

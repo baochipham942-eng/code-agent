@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => {
     getUnsyncedSessions: vi.fn(),
     getTurnsBySession: vi.fn(),
     getTurnCalls: vi.fn(),
+    getTurnDetail: vi.fn(),
     getUnsyncedFeedback: vi.fn(),
     markFeedbackSynced: vi.fn(),
     getUnsyncedRendererBundleAttempts: vi.fn(),
@@ -126,6 +127,9 @@ describe('TelemetryUploaderService', () => {
     mocks.storage.getUnsyncedSessions.mockReturnValue([session]);
     mocks.storage.getTurnsBySession.mockReturnValue([turn]);
     mocks.storage.getTurnCalls.mockReturnValue({ modelCalls: [], toolCalls: [] });
+    mocks.storage.getTurnDetail.mockImplementation((turnId: string) => (
+      turnId === 'turn-1' ? { turn, modelCalls: [], toolCalls: [], events: [] } : null
+    ));
     mocks.storage.getUnsyncedFeedback.mockReturnValue([]);
     mocks.storage.getUnsyncedRendererBundleAttempts.mockReturnValue([]);
   });
@@ -256,6 +260,41 @@ describe('TelemetryUploaderService', () => {
         full_content: { assistantResponse: 'bad answer' },
       }),
     ]);
+  });
+
+  it('omits an unproven message id from the cloud turn foreign key and exposes upload failures', async () => {
+    mocks.storage.getUnsyncedFeedback.mockReturnValue([
+      {
+        id: '00000000-0000-4000-8000-000000000002',
+        sessionId: 'session-1',
+        turnId: 'assistant-message-id',
+        messageId: 'assistant-message-id',
+        rating: 1,
+        createdAt: 456,
+      },
+    ]);
+    let feedbackRow: Record<string, unknown> | undefined;
+    mocks.from.mockImplementation((table: string) => ({
+      upsert: vi.fn(async (rows: Record<string, unknown>[]) => {
+        if (table === 'telemetry_feedback') {
+          feedbackRow = rows[0];
+          return { error: { code: '42501', message: 'row-level security policy rejected row' } };
+        }
+        return { error: null };
+      }),
+    }));
+
+    const { TelemetryUploaderService } = await import('../../../src/host/telemetry/telemetryUploaderService');
+    const service = new TelemetryUploaderService();
+
+    await expect(service.upload()).resolves.toBe(1);
+    expect(feedbackRow?.turn_id).toBeNull();
+    expect(service.getUploadHealth()).toMatchObject({
+      lastUploadAt: null,
+      lastUploadError: expect.stringContaining('telemetry_feedback'),
+      lastUploadErrorAt: expect.any(Number),
+      uploadFailureCount: 1,
+    });
   });
 
   it('uploads renderer bundle hot-update attempts as metadata-only system events', async () => {

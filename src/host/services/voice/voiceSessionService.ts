@@ -514,6 +514,7 @@ async function connectAndBind(
   // 模型请求挂断后置位；onEvent 看到这一轮说完（response.done）就真挂。
   const endCallRequested = { value: false };
   const baseInstructions = withLanguageDirective(routing.personaInstructions, liveSettings?.language);
+  const initialInstructions = composeVoiceInstructions(baseInstructions, null);
   // 上游回调一律经这个可变引用发：重连换的是 socket，不是通话。
   const clientRef = { current: client };
   // 绑定必须早于建连：上游一旦握手成功就可能立刻发 function_call，
@@ -555,7 +556,7 @@ async function connectAndBind(
       config: {
         neoSessionId,
         model: conversationModel.id,
-        instructions: baseInstructions,
+        instructions: initialInstructions,
         tools: VOICE_TOOL_DEFINITIONS,
         ...(liveSettings?.voiceId ? { voice: liveSettings.voiceId } : {}),
       },

@@ -8,21 +8,25 @@
 // - 次行：类型 chips = 全部 + LIBRARY_ITEM_KINDS（contract 推导，样式对齐原 kind filter）。
 // 「记忆」tab 已撤（2026-07-27 审美关：记忆偏个人设置，不算资料库）——
 // 家在设置 → 记忆（深链 openSettingsTab('memory')），独立整窗页 KnowledgeMemoryPanel 也仍在。
-// 带进对话在聊天输入区的 LibraryPinModal 里做，本页只管资产面。
+// 带进对话在聊天输入区做（@ 面板的资料库组 / PinnedLibraryChips），本页只管资产面。
 // 布局契约（2026-07-27 UX 收尾 1.4）：内容区走 PageContent（全宽 + px-6 py-4），
 // 两行工具带对齐同一横向节奏 px-6；
 // 用 PageContent 的 flex 容器形态（scroll/padding 关闭），布局由被嵌组件自管。
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { BookOpen, ChevronDown, ChevronRight, FileText, Globe, Loader2, Package, Pencil, RefreshCw, Trash2, Upload } from 'lucide-react';
+import { BookOpen, ChevronDown, ChevronRight, Eye, FileText, Globe, Loader2, Package, Pencil, RefreshCw, Trash2, Upload, X } from 'lucide-react';
 import { LIBRARY_ITEM_KINDS, type LibraryItem, type LibraryItemKind } from '@shared/contract/library';
 import type { Project } from '@shared/contract/project';
-import { deleteLibraryItem, importLibraryFiles, listLibraryItems, updateLibraryItem } from '../../../services/libraryClient';
+import { deleteLibraryItem, importLibraryFiles, listLibraryItems, setSessionPin, updateLibraryItem } from '../../../services/libraryClient';
 import { listProjects } from '../../../services/projectClient';
 import ipcService from '../../../services/ipcService';
 import { useSessionStore } from '../../../stores/sessionStore';
+import { useAppStore } from '../../../stores/appStore';
 import { useI18n } from '../../../hooks/useI18n';
 import { toast } from '../../../hooks/useToast';
+import { isPreviewable } from '../../../utils/previewable';
+import { openExternalLink } from '../../../utils/platform';
+import { matchesLibraryItemSearch, pruneLibrarySelection } from './libraryItemModel';
 import { FullScreenPage, FullScreenPageHeader } from '../shared/FullScreenPage';
 import { PageContent } from '../shared/PageContent';
 import { Button } from '../../primitives/Button';
@@ -68,14 +72,6 @@ type LibraryGroup = {
   items: LibraryItem[];
 };
 
-function matchesSearch(item: LibraryItem, query: string): boolean {
-  const haystack = [item.title, item.summary, item.pathOrUri, ...item.tags]
-    .filter((value): value is string => Boolean(value))
-    .join(' ')
-    .toLocaleLowerCase();
-  return haystack.includes(query.toLocaleLowerCase());
-}
-
 export const LibraryPanel: React.FC = () => {
   const { t, language } = useI18n();
   const sessions = useSessionStore((s) => s.sessions);
@@ -95,6 +91,9 @@ export const LibraryPanel: React.FC = () => {
   const [updatedAtDescending, setUpdatedAtDescending] = useState(true);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const [view, setView] = useState<LibraryView>('items');
+  // 任务 16b：行勾选多选 → 底部浮条「带进新会话」
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bringing, setBringing] = useState(false);
 
   const projectId = scope === GLOBAL_SCOPE ? null : scope;
   const sessionTitles = useMemo(() => new Map<string, string>(
@@ -113,7 +112,7 @@ export const LibraryPanel: React.FC = () => {
     const ungrouped: LibraryGroup = { id: 'ungrouped', name: t.library.ungrouped, items: [] };
     const visibleItems = items
       .filter((item) => selectedKind === 'all' || item.kind === selectedKind)
-      .filter((item) => matchesSearch(item, search))
+      .filter((item) => matchesLibraryItemSearch(item, search))
       .sort((left, right) => updatedAtDescending ? right.updatedAt - left.updatedAt : left.updatedAt - right.updatedAt);
 
     for (const item of visibleItems) {
@@ -147,6 +146,8 @@ export const LibraryPanel: React.FC = () => {
     try {
       const list = await listLibraryItems({ projectId });
       setItems(list);
+      // 刷新后剪掉已不存在的选中项，浮条计数不脱节
+      setSelectedIds((current) => pruneLibrarySelection(current, list));
     } catch (error) {
       toast.error(t.library.loadFailed + (error instanceof Error ? `: ${error.message}` : ''));
     } finally {
@@ -230,6 +231,56 @@ export const LibraryPanel: React.FC = () => {
     }
   };
 
+  // 任务 16a：行预览——复用 workbench PreviewPanel（openPreview）；
+  // external_ref 走系统浏览器，非本地可预览路径优雅降级为 toast。
+  const handlePreview = (item: LibraryItem) => {
+    if (item.kind === 'external_ref') {
+      if (!openExternalLink(item.pathOrUri)) {
+        window.open(item.pathOrUri, '_blank', 'noopener,noreferrer');
+      }
+      return;
+    }
+    if (!isPreviewable(item.pathOrUri)) {
+      toast.error(t.library.previewUnavailable);
+      return;
+    }
+    const app = useAppStore.getState();
+    app.openPreview(item.pathOrUri);
+    // 资料库页是 inline 二级页，会盖住 workbench——关掉它预览才看得见
+    app.setShowLibraryPanel(false);
+  };
+
+  const toggleSelect = (itemId: string) => {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (next.has(itemId)) next.delete(itemId);
+      else next.add(itemId);
+      return next;
+    });
+  };
+
+  // 任务 16b：带进新会话——复用侧栏「新任务」同一条 createSession 路径
+  // （非默认标题，跳过空白草稿复用），再把勾选条目 pin 进新会话；
+  // createSession 会关掉本页并切到新会话，composer 上方 chip 区立即可见。
+  const handleBringIntoNewSession = async () => {
+    if (selectedIds.size === 0 || bringing) return;
+    setBringing(true);
+    try {
+      const ids = [...selectedIds];
+      const session = await useSessionStore.getState().createSession(
+        t.library.bringSessionTitle.replace('{count}', String(ids.length)),
+      );
+      if (!session) throw new Error('createSession returned null');
+      await setSessionPin(session.id, ids);
+      setSelectedIds(new Set());
+      toast.success(t.library.bringSuccess);
+    } catch (error) {
+      toast.error(t.library.bringFailed + (error instanceof Error ? `: ${error.message}` : ''));
+    } finally {
+      setBringing(false);
+    }
+  };
+
   return (
     <FullScreenPage testId="library-panel" variant="inline">
       <FullScreenPageHeader
@@ -240,7 +291,7 @@ export const LibraryPanel: React.FC = () => {
           <div className="flex min-w-0 items-center gap-2">
             <select
               value={scope}
-              onChange={(e) => setScope(e.target.value)}
+              onChange={(e) => { setScope(e.target.value); setSelectedIds(new Set()); }}
               data-testid="library-scope-select"
               className="h-8 rounded-md border border-zinc-700 bg-zinc-900 px-2 text-xs text-zinc-300 outline-none focus:border-zinc-600"
             >
@@ -368,7 +419,8 @@ export const LibraryPanel: React.FC = () => {
               <table className="w-full table-fixed text-left text-xs">
                 <thead className="bg-zinc-900 text-zinc-500">
                   <tr>
-                    <th className="w-[38%] px-3 py-2 font-medium">{t.library.nameColumn}</th>
+                    <th className="w-8 px-2 py-2" />
+                    <th className="w-[34%] px-3 py-2 font-medium">{t.library.nameColumn}</th>
                     <th className="w-[14%] px-3 py-2 font-medium">{t.library.typeColumn}</th>
                     <th className="w-[18%] px-3 py-2 font-medium">{t.library.sourceColumn}</th>
                     <th className="w-[16%] px-3 py-2 font-medium">
@@ -384,7 +436,7 @@ export const LibraryPanel: React.FC = () => {
                   return (
                     <tbody key={group.id} data-testid={`library-group-${group.id}`}>
                       <tr className="border-y border-zinc-800 bg-zinc-900/70">
-                        <th colSpan={5} className="px-3 py-2 text-left font-medium text-zinc-300">
+                        <th colSpan={6} className="px-3 py-2 text-left font-medium text-zinc-300">
                           <button type="button" onClick={() => toggleGroup(group.id)} className="inline-flex items-center gap-1.5 hover:text-white" aria-expanded={!collapsed}>
                             {collapsed ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
                             <span>{group.name}</span>
@@ -393,17 +445,27 @@ export const LibraryPanel: React.FC = () => {
                         </th>
                       </tr>
                       {!collapsed && group.items.map((item) => (
-                        <tr key={item.id} data-library-item={item.id} className="group border-t border-zinc-800/80 bg-zinc-900/40 hover:bg-zinc-800/50">
+                        <tr key={item.id} data-library-item={item.id} className={`group border-t border-zinc-800/80 hover:bg-zinc-800/50 ${selectedIds.has(item.id) ? 'bg-indigo-500/10' : 'bg-zinc-900/40'}`}>
+                          <td className="px-2 py-2.5 align-top">
+                            <input
+                              type="checkbox"
+                              checked={selectedIds.has(item.id)}
+                              onChange={() => toggleSelect(item.id)}
+                              aria-label={t.library.selectItemAria.replace('{title}', item.title)}
+                              data-testid={`library-select-${item.id}`}
+                              className="mt-1.5 h-3.5 w-3.5 cursor-pointer accent-indigo-500"
+                            />
+                          </td>
                           <td className="px-3 py-2.5">
                             <div className="flex min-w-0 items-start gap-2">
                               <span className="mt-0.5 flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md bg-zinc-800">{KIND_ICONS[item.kind]}</span>
-                              <div className="min-w-0"><div className="truncate text-sm text-zinc-200">{item.title}</div><div className="mt-0.5 truncate text-[11px] text-zinc-500">{item.summary || item.pathOrUri}</div><div className="mt-1 flex flex-wrap gap-1">{item.tags.map((tag) => <span key={tag} className="rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] text-zinc-400">{tag}</span>)}</div></div>
+                              <div className="min-w-0"><button /* ds-allow:button: 行标题即预览入口，纯文字热区，Button primitive 不适配 */ type="button" onClick={() => handlePreview(item)} title={t.library.preview} className="block max-w-full cursor-pointer truncate text-left text-sm text-zinc-200 hover:text-white hover:underline">{item.title}</button><div className="mt-0.5 truncate text-[11px] text-zinc-500">{item.summary || item.pathOrUri}</div><div className="mt-1 flex flex-wrap gap-1">{item.tags.map((tag) => <span key={tag} className="rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] text-zinc-400">{tag}</span>)}</div></div>
                             </div>
                           </td>
                           <td className="px-3 py-2.5 text-zinc-400">{kindLabels[item.kind]}</td>
                           <td className="truncate px-3 py-2.5 text-zinc-400">{item.sourceRoleId || t.library.sourceUpload}</td>
                           <td className="px-3 py-2.5 text-zinc-500">{new Date(item.updatedAt).toLocaleDateString(language === 'zh' ? 'zh-CN' : 'en-US')}</td>
-                          <td className="px-3 py-2.5"><div className="flex items-center gap-1"><IconButton variant="ghost" size="sm" data-testid={`library-edit-${item.id}`} onClick={() => openEdit(item)} title={t.library.edit} aria-label={t.library.edit} icon={<Pencil className="h-3.5 w-3.5" />} /><IconButton variant="danger" size="sm" data-testid={`library-delete-${item.id}`} onClick={() => void handleDelete(item.id)} className={confirmingDelete === item.id ? 'bg-red-500/20 text-red-300' : ''} title={confirmingDelete === item.id ? t.library.deleteConfirm : t.library.deleteAction} aria-label={confirmingDelete === item.id ? t.library.deleteConfirm : t.library.deleteAction} icon={<Trash2 className="h-3.5 w-3.5" />} /></div></td>
+                          <td className="px-3 py-2.5"><div className="flex items-center gap-1"><IconButton variant="ghost" size="sm" data-testid={`library-preview-${item.id}`} onClick={() => handlePreview(item)} title={t.library.preview} aria-label={t.library.preview} icon={<Eye className="h-3.5 w-3.5" />} /><IconButton variant="ghost" size="sm" data-testid={`library-edit-${item.id}`} onClick={() => openEdit(item)} title={t.library.edit} aria-label={t.library.edit} icon={<Pencil className="h-3.5 w-3.5" />} /><IconButton variant="danger" size="sm" data-testid={`library-delete-${item.id}`} onClick={() => void handleDelete(item.id)} className={confirmingDelete === item.id ? 'bg-red-500/20 text-red-300' : ''} title={confirmingDelete === item.id ? t.library.deleteConfirm : t.library.deleteAction} aria-label={confirmingDelete === item.id ? t.library.deleteConfirm : t.library.deleteAction} icon={<Trash2 className="h-3.5 w-3.5" />} /></div></td>
                         </tr>
                       ))}
                     </tbody>
@@ -417,6 +479,37 @@ export const LibraryPanel: React.FC = () => {
         <PageContent id="library-brands-panel" role="tabpanel">
           <BrandManager isOpen onClose={closeEmbeddedBrandManager} presentation="inline" />
         </PageContent>
+      )}
+
+      {/* 任务 16b：多选浮条——参考 WorkBuddy「我的文件」底部浮条，
+          主按钮把勾选条目 pin 进一个新会话 */}
+      {view === 'items' && selectedIds.size > 0 && (
+        <div className="fixed bottom-6 left-1/2 z-30 -translate-x-1/2" data-testid="library-selection-bar">
+          <div className="flex items-center gap-3 rounded-full border border-zinc-700 bg-zinc-900/95 px-4 py-2 shadow-xl">
+            <span className="whitespace-nowrap text-xs text-zinc-300">
+              {t.library.selectedCount.replace('{count}', String(selectedIds.size))}
+            </span>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="shrink-0 whitespace-nowrap"
+              onClick={() => setSelectedIds(new Set())}
+              leftIcon={<X className="h-3.5 w-3.5" />}
+            >
+              {t.library.clearSelection}
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              className="shrink-0 whitespace-nowrap"
+              data-testid="library-bring-into-session"
+              onClick={() => void handleBringIntoNewSession()}
+              loading={bringing}
+            >
+              {t.library.bringIntoNewSession}
+            </Button>
+          </div>
+        </div>
       )}
 
       <Modal

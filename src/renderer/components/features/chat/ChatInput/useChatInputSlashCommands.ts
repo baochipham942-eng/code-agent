@@ -19,6 +19,7 @@ import {
   buildLeadingSlashCommandValue,
   removeTrailingSlashToken,
 } from './slashPickerModel';
+import type { InlineChipRef } from './composerRichTextModel';
 
 export interface UseChatInputSlashCommandsParams {
   value: string;
@@ -32,6 +33,8 @@ export interface UseChatInputSlashCommandsParams {
   /** 打开 /agent 命令（来自 useChatInputAgentCommand）。 */
   openAgentCommand: () => void;
   focusComposer: () => void;
+  /** 触发词原位替换为内联 chip（无触发词时 no-op，由编辑器对账把 chip 补到末尾）。 */
+  insertInlineChip: (chip: InlineChipRef) => void;
   setValue: React.Dispatch<React.SetStateAction<string>>;
   setShowSlashPopover: React.Dispatch<React.SetStateAction<boolean>>;
   setSlashFilter: React.Dispatch<React.SetStateAction<string>>;
@@ -59,6 +62,7 @@ export function useChatInputSlashCommands(params: UseChatInputSlashCommandsParam
     capabilityItems,
     openAgentCommand,
     focusComposer,
+    insertInlineChip,
     setValue,
     setShowSlashPopover,
     setSlashFilter,
@@ -72,6 +76,7 @@ export function useChatInputSlashCommands(params: UseChatInputSlashCommandsParam
   const setSelectedConnectorIds = useComposerStore((state) => state.setSelectedConnectorIds);
   const setSelectedMcpServerIds = useComposerStore((state) => state.setSelectedMcpServerIds);
   const setTurnCapabilityScopeMode = useComposerStore((state) => state.setTurnCapabilityScopeMode);
+  const setPendingCommand = useComposerStore((state) => state.setPendingCommand);
   const openCapabilitySettingsTarget = useAppStore((state) => state.openCapabilitySettingsTarget);
   const mountSkill = useSkillStore((state) => state.mountSkill);
   const setSkillCurrentSession = useSkillStore((state) => state.setCurrentSession);
@@ -79,10 +84,11 @@ export function useChatInputSlashCommands(params: UseChatInputSlashCommandsParam
 
   const markSkillSelected = useCallback((skillName: string) => {
     const currentSelectedSkillIds = useComposerStore.getState().selectedSkillIds;
+    // 触发词原位变 skill chip（内联进文字流）；store 更新后编辑器对账渲染
+    insertInlineChip({ key: `skill:${skillName}`, kind: 'skill', id: skillName });
     setSelectedSkillIds([...new Set([...currentSelectedSkillIds, skillName])]);
-    setValue((prev) => removeTrailingSlashToken(prev));
     focusComposer();
-  }, [focusComposer, setSelectedSkillIds, setValue]);
+  }, [focusComposer, insertInlineChip, setSelectedSkillIds]);
 
   const ensureSessionForSkill = useCallback(async (): Promise<string | null> => {
     if (currentSessionId) return currentSessionId;
@@ -201,18 +207,15 @@ export function useChatInputSlashCommands(params: UseChatInputSlashCommandsParam
     }
 
     if (cmd.actionKind === 'select-agent' && cmd.agentToken) {
-      if (cmd.agentId) {
-        setActiveAgentId(cmd.agentId);
-        setPendingAgentSelection({
-          id: cmd.agentId,
-          name: cmd.label,
-          token: cmd.agentToken,
-          via: 'slash_picker',
-        });
-      } else {
-        setActiveAgentId(null);
-        setPendingAgentSelection({ id: null, name: 'Default', token: cmd.agentToken, via: 'slash_picker' });
-      }
+      // 面板已无 Default 项（2026-07-29 起）；恢复默认路由 = 删掉底栏专家 chip
+      if (!cmd.agentId) return;
+      setActiveAgentId(cmd.agentId);
+      setPendingAgentSelection({
+        id: cmd.agentId,
+        name: cmd.label,
+        token: cmd.agentToken,
+        via: 'slash_picker',
+      });
       setValue(removeTrailingSlashToken(value));
       focusComposer();
       return;
@@ -231,7 +234,11 @@ export function useChatInputSlashCommands(params: UseChatInputSlashCommandsParam
     }
 
     if (cmd.actionKind === 'prefill-leading-command' && cmd.commandId) {
-      setValue(buildLeadingSlashCommandValue(value, cmd.commandId));
+      // 任务 17：带参特色命令（/goal /schedule /loop /workflow）chip 化——
+      // 触发词原位变命令 chip（内联进文字流），命令挂 composerStore.pendingCommand，
+      // 用户随后输入的就是参数；发送时 useChatInputSubmit 拼回 `/${id} ` 走原解析链路。
+      insertInlineChip({ key: `command:${cmd.commandId}`, kind: 'command', id: cmd.commandId });
+      setPendingCommand({ id: cmd.commandId, name: cmd.label });
       focusComposer();
       return;
     }
@@ -275,12 +282,14 @@ export function useChatInputSlashCommands(params: UseChatInputSlashCommandsParam
   }, [
     capabilityItems,
     focusComposer,
+    insertInlineChip,
     openAgentCommand,
     openSeedComposer,
     selectSkillForCurrentTurn,
     selectWorkbenchCapabilityForCurrentTurn,
     setActiveAgentId,
     setPendingAgentSelection,
+    setPendingCommand,
     setPendingPromptCommand,
     setShowSlashPopover,
     setSlashFilter,

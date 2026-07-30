@@ -123,7 +123,28 @@ describe('DataSettings telemetry health summary', () => {
       sessionCount: 12,
       storageBytes: 2048,
       lastEventAt: 1000,
+      // 上传失败字段是老后端没有的可选通道，缺失时按"无失败信息"降级
+      lastUploadAt: null,
+      lastUploadError: null,
+      lastUploadErrorAt: null,
+      uploadFailureCount: 0,
     });
+  });
+
+  it('surfaces upload failure fields when the backend reports them', () => {
+    const summary = buildTelemetryHealthSummary({
+      enabled: true,
+      sessionCount: 12,
+      storageBytes: 2048,
+      lastEventAt: 1000,
+      lastUploadAt: 900,
+      lastUploadError: '42501 row-level security',
+      lastUploadErrorAt: 2000,
+      uploadFailureCount: 3,
+    });
+    expect(summary.lastUploadError).toBe('42501 row-level security');
+    expect(summary.uploadFailureCount).toBe(3);
+    expect(summary.lastUploadErrorAt).toBe(2000);
   });
 
   it('treats empty web IPC responses as disconnected (sentinel error, UI falls back to notConnected copy)', () => {

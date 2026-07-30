@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render } from '@testing-library/react';
 import type { TurnQualitySummary } from '../../../src/shared/contract/turnQuality';
 import { TurnQualityStrip } from '../../../src/renderer/components/features/chat/TurnQualityStrip';
+import { SessionModelsContext } from '../../../src/renderer/components/features/chat/sessionModelsContext';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
 
 vi.mock('../../../src/renderer/services/ipcService', () => ({
@@ -160,5 +161,38 @@ describe('TurnQualityStrip', () => {
     fireEvent.click(toggle!);
     expect(toggle?.getAttribute('aria-expanded')).toBe('true');
     expect(container.textContent).toContain('18/20');
+  });
+
+  it('单模型会话：模型徽标是每轮重复的噪音，隐藏', () => {
+    const { container } = render(
+      <SessionModelsContext.Provider value={new Set(['glm-5'])}>
+        <TurnQualityStrip summary={summary} />
+      </SessionModelsContext.Provider>,
+    );
+    // 模型名不显示，但 agent 徽标（另一信息源）不受影响
+    expect(container.textContent || '').not.toContain('glm-5');
+    expect(container.textContent || '').toContain('coder');
+  });
+
+  it('多模型会话：模型徽标恢复显示（模型归属变成有效信息）', () => {
+    const { container } = render(
+      <SessionModelsContext.Provider value={new Set(['glm-5', 'deepseek-v4-flash'])}>
+        <TurnQualityStrip summary={summary} />
+      </SessionModelsContext.Provider>,
+    );
+    expect(container.textContent || '').toContain('glm-5');
+  });
+
+  it('本轮发生重路由/fallback（model ≠ requestedModel）时即使单模型会话也显示', () => {
+    const rerouted: TurnQualitySummary = {
+      ...summary,
+      strategy: { provider: 'zhipu', model: 'glm-5', requestedModel: 'glm-5-turbo', reason: 'fallback-availability' },
+    } as TurnQualitySummary;
+    const { container } = render(
+      <SessionModelsContext.Provider value={new Set(['glm-5'])}>
+        <TurnQualityStrip summary={rerouted} />
+      </SessionModelsContext.Provider>,
+    );
+    expect(container.textContent || '').toContain('glm-5');
   });
 });

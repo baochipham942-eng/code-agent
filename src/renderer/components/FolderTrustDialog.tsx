@@ -90,14 +90,6 @@ export const FolderTrustDialog: React.FC<FolderTrustDialogProps> = ({
         >
           {copy.openSettings}
         </button>
-        <button
-          type="button"
-          className="rounded-md border border-red-500/40 px-3 py-1.5 text-xs text-red-200 hover:bg-red-500/10"
-          onClick={onBlock}
-          disabled={isBusy}
-        >
-          {isBusy ? copy.saving : copy.block}
-        </button>
       </div>
     </div>
   );

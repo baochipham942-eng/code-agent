@@ -93,10 +93,13 @@ function getGroupPaths(sessions: SessionWithMeta[]): string[] {
  * - Sessions without project metadata fall back to full workingDirectory path.
  * - The uncategorized bucket (if non-empty) is always appended at the end; its
  *   display name comes from the caller (i18n), not hardcoded here.
+ * - `projectFallbackName` covers the rare group with no primary path at all
+ *   (i18n, 禁硬编码 — 复用侧栏「项目」section 标题词条即可)。
  */
 export function groupByWorkspace(
   sessions: SessionWithMeta[],
   uncategorizedName: string,
+  projectFallbackName: string,
 ): WorkspaceGroup[] {
   const buckets = new Map<string, SessionBucket>();
 
@@ -138,7 +141,7 @@ export function groupByWorkspace(
     } else {
       categorized.push({
         key,
-        name: primaryPath ? basenameOf(primaryPath) : 'Project',
+        name: primaryPath ? basenameOf(primaryPath) : projectFallbackName,
         path: primaryPath,
         paths,
         isUncategorized: false,

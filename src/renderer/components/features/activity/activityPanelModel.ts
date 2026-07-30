@@ -151,6 +151,7 @@ function buildModeCopy(mode: ActivityPanelMode, shellLabel: string, copy: Activi
 }
 
 function buildRecentSummary(args: {
+  mode: ActivityPanelMode;
   preview: ActivityContextPreview;
   native: ActivityNativeSnapshot;
   copy: ActivityPanelCopy;
@@ -205,8 +206,8 @@ function buildRecentSummary(args: {
   }
 
   return {
-    recentHeadline: copy.recent.emptyHeadline,
-    recentDetail: copy.recent.emptyDetail,
+    recentHeadline: args.mode === 'web' ? copy.recent.emptyHeadlineWeb : copy.recent.emptyHeadline,
+    recentDetail: args.mode === 'web' ? copy.recent.emptyDetailWeb : copy.recent.emptyDetail,
     recentItems: [],
   };
 }
@@ -366,7 +367,7 @@ export function buildActivityPanelModel(args: {
 }): ActivityPanelModel {
   return {
     ...buildModeCopy(args.mode, args.shellLabel, args.copy),
-    ...buildRecentSummary({ preview: args.preview, native: args.native, copy: args.copy }),
+    ...buildRecentSummary({ mode: args.mode, preview: args.preview, native: args.native, copy: args.copy }),
     capabilityRows: buildCapabilityRows({
       providers: args.providers,
       context: args.context,

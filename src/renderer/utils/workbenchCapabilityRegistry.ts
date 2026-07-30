@@ -9,6 +9,7 @@ import type {
 } from '@shared/contract/turnTimeline';
 import {
   buildWorkbenchCapabilities,
+  getMcpCatalogDescription,
   type WorkbenchCapabilities,
   type WorkbenchConnectorCapability,
   type WorkbenchMcpCapability,
@@ -448,6 +449,7 @@ function withMissingMcpServers(
       toolCount: server.toolCount,
       resourceCount: server.resourceCount,
       error: server.error,
+      description: getMcpCatalogDescription(server.config.name),
       authMode: server.authMode,
       hasOAuthTokens: server.hasOAuthTokens,
     });

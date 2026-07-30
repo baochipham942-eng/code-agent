@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SessionTask } from '../../../src/shared/contract/planning';
+import { makeEvidenceRef } from '../../../src/shared/contract/evidence';
 
 const dbState = vi.hoisted(() => ({
   db: {
@@ -42,7 +43,11 @@ describe('taskStore persistence', () => {
 
     expect(dbState.db.saveSessionTasks).toHaveBeenCalledWith('task-session-1', [task]);
 
-    taskStore.updateTask('task-session-1', task.id, { status: 'completed' });
+    // ADR-050：转 completed 必须带证据，裸写会被 fail-loud 门拦下（todoParser.evidence.test 钉门）
+    taskStore.updateTask('task-session-1', task.id, {
+      status: 'completed',
+      evidenceRefs: [makeEvidenceRef({ kind: 'tool', ref: 'persistence test evidence', source: 'test' })],
+    });
 
     const lastSavedTasks = dbState.db.saveSessionTasks.mock.calls.at(-1)?.[1] as SessionTask[];
     expect(lastSavedTasks[0].status).toBe('completed');

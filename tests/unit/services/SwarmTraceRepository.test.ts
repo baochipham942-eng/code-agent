@@ -163,7 +163,7 @@ describe('SwarmTraceRepository', () => {
     expect(detail.run.aggregation?.filesChanged).toEqual(['a.ts']);
   });
 
-  it('重复 startRun(同 id) 等价于 reset，status 回到 running', () => {
+  it('重复 startRun 与迟到 close 不可覆盖首个 run 终态', () => {
     repo.startRun({
       id: 'run-1',
       sessionId: null,
@@ -195,12 +195,26 @@ describe('SwarmTraceRepository', () => {
       totalAgents: 1,
       trigger: 'auto',
     });
+    repo.closeRun({
+      id: 'run-1',
+      status: 'completed',
+      endedAt: 6_000,
+      completedCount: 1,
+      failedCount: 0,
+      parallelPeak: 1,
+      totalTokensIn: 1,
+      totalTokensOut: 1,
+      totalToolCalls: 1,
+      totalCostUsd: 0,
+      errorSummary: null,
+      aggregation: null,
+    });
 
     const detail = repo.getRunDetail('run-1')!;
-    expect(detail.run.status).toBe('running');
-    expect(detail.run.startedAt).toBe(5_000);
-    expect(detail.run.totalAgents).toBe(1);
-    expect(detail.run.errorSummary).toBeNull();
+    expect(detail.run.status).toBe('failed');
+    expect(detail.run.startedAt).toBe(1_000);
+    expect(detail.run.totalAgents).toBe(2);
+    expect(detail.run.errorSummary).toBe('boom');
   });
 
   // --------------------------------------------------------------------------
@@ -250,6 +264,52 @@ describe('SwarmTraceRepository', () => {
     const agents = repo.getRunDetail('run-1')!.agents;
     expect(agents[0].error).toBe('tool timeout');
     expect(agents[0].failureCategory).toBe('timeout');
+  });
+
+  it('agent 首个终态不可被迟到状态覆盖', () => {
+    repo.startRun({
+      id: 'run-1', sessionId: null, coordinator: 'parallel',
+      startedAt: 0, totalAgents: 1, trigger: 'llm-spawn',
+    });
+    repo.upsertAgent({
+      runId: 'run-1', agentId: 'a1', name: 'A', role: 'a',
+      status: 'completed', startTime: 0, endTime: 100, durationMs: 100,
+      tokensIn: 10, tokensOut: 10, toolCalls: 1, costUsd: 0,
+      error: null, failureCategory: null, filesChanged: [],
+    });
+    repo.upsertAgent({
+      runId: 'run-1', agentId: 'a1', name: 'A', role: 'a',
+      status: 'failed', startTime: 0, endTime: 200, durationMs: 200,
+      tokensIn: 999, tokensOut: 999, toolCalls: 9, costUsd: 0,
+      error: 'late failure', failureCategory: 'late', filesChanged: [],
+    });
+
+    expect(repo.getRunDetail('run-1')?.agents[0]).toMatchObject({
+      status: 'completed',
+      tokensIn: 10,
+      error: null,
+    });
+  });
+
+  it('run 已终态后拒绝新增或更新 agent 状态', () => {
+    repo.startRun({
+      id: 'run-1', sessionId: null, coordinator: 'parallel',
+      startedAt: 0, totalAgents: 1, trigger: 'llm-spawn',
+    });
+    repo.closeRun({
+      id: 'run-1', status: 'cancelled', endedAt: 100,
+      completedCount: 0, failedCount: 0, parallelPeak: 0,
+      totalTokensIn: 0, totalTokensOut: 0, totalToolCalls: 0,
+      totalCostUsd: 0, errorSummary: 'cancelled', aggregation: null,
+    });
+    repo.upsertAgent({
+      runId: 'run-1', agentId: 'late', name: 'Late', role: 'worker',
+      status: 'running', startTime: 101, endTime: null, durationMs: null,
+      tokensIn: 0, tokensOut: 0, toolCalls: 0, costUsd: 0,
+      error: null, failureCategory: null, filesChanged: [],
+    });
+
+    expect(repo.getRunDetail('run-1')?.agents).toEqual([]);
   });
 
   // --------------------------------------------------------------------------

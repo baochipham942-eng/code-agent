@@ -3,13 +3,19 @@ import React from 'react';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { zh } from '../../../src/renderer/i18n/zh';
-import type { SwarmAgentState } from '../../../src/shared/contract/swarm';
+import { createSwarmTraceStorageId, type SwarmAgentState } from '../../../src/shared/contract/swarm';
 import type { SwarmRunAgentRecord, SwarmRunDetail, SwarmRunListItem } from '../../../src/shared/contract/swarmTrace';
 import { IPC_CHANNELS } from '../../../src/shared/ipc';
 
 const invokeMock = vi.fn();
 const appState = { openWorkspacePreview: vi.fn() };
-const swarmState: { agents: SwarmAgentState[]; activeSessionId: string | undefined } = { agents: [], activeSessionId: undefined };
+const swarmState: {
+  agents: SwarmAgentState[];
+  activeSessionId: string | undefined;
+  activeRunId?: string;
+  activeTreeId?: string;
+  lastEventAt?: number;
+} = { agents: [], activeSessionId: undefined };
 
 vi.mock('../../../src/renderer/hooks/useI18n', () => ({ useI18n: () => ({ t: zh }) }));
 vi.mock('../../../src/renderer/stores/appStore', () => ({ useAppStore: (selector: (state: typeof appState) => unknown) => selector(appState) }));
@@ -37,9 +43,12 @@ describe('SessionMemberBar', () => {
   beforeEach(() => {
     swarmState.agents = [];
     swarmState.activeSessionId = undefined;
+    swarmState.activeRunId = undefined;
+    swarmState.activeTreeId = undefined;
+    swarmState.lastEventAt = undefined;
     invokeMock.mockReset();
     invokeMock.mockResolvedValue([]);
-    useComposerStore.setState({ selectedTeamRecipeId: null });
+    useComposerStore.setState({ selectedTeamRecipeId: null, standbyExcludedMemberKeys: [] });
     useTeamRecipeStore.setState({ recipes: [], isLoaded: true });
     useAgentRegistryStore.setState({ entries: [], isLoaded: true });
     useMemberViewStore.setState({ viewingMemberId: null });
@@ -70,25 +79,50 @@ describe('SessionMemberBar', () => {
     await waitFor(() => expect(useMemberViewStore.getState().viewingMemberId).toBe('researcher'));
   });
 
-  it('实时团队优先，不读取持久化 run', async () => {
+  it('实时事件与持久化状态冲突时只展示账本/API 状态', async () => {
     swarmState.activeSessionId = 'session-1';
-    swarmState.agents = agents.map(swarmRunAgentRecordToState);
+    swarmState.activeRunId = 'logical-run-1';
+    swarmState.activeTreeId = 'tree-1';
+    swarmState.lastEventAt = 10;
+    swarmState.agents = agents.map((agent) => ({ ...swarmRunAgentRecordToState(agent), status: 'running' }));
+    const detail: SwarmRunDetail = { run: { ...run, totalToolCalls: 11, parallelPeak: 2, errorSummary: null, aggregation: null, tags: [] }, agents, events: [] };
+    invokeMock.mockImplementation((channel: string) => {
+      if (channel === IPC_CHANNELS.SWARM_LIST_TRACE_RUNS) return Promise.resolve([run]);
+      if (channel === IPC_CHANNELS.SWARM_GET_TRACE_RUN_DETAIL) return Promise.resolve(detail);
+      return Promise.resolve(null);
+    });
 
     render(<SessionMemberBar sessionId="session-1" />);
-    expect(screen.getByTestId('session-member-bar')).toBeTruthy();
-    await Promise.resolve();
-    expect(invokeMock).not.toHaveBeenCalledWith(IPC_CHANNELS.SWARM_LIST_TRACE_RUNS, expect.anything());
+    await waitFor(() => expect(screen.getAllByTestId('member-status-completed')).toHaveLength(2));
+    expect(screen.queryByTestId('member-status-running')).toBeNull();
+    expect(invokeMock).toHaveBeenCalledWith(IPC_CHANNELS.SWARM_GET_TRACE_RUN_DETAIL, {
+      sessionId: 'session-1',
+      runId: createSwarmTraceStorageId({
+        sessionId: 'session-1',
+        runId: 'logical-run-1',
+        treeId: 'tree-1',
+      }),
+    });
   });
 
   it('运行中的成员带转圈徽标，跑完的带对勾', async () => {
-    swarmState.activeSessionId = 'session-1';
-    swarmState.agents = [
-      { ...swarmRunAgentRecordToState(agents[0]), status: 'running' },
-      swarmRunAgentRecordToState(agents[1]),
+    const durableAgents: SwarmRunAgentRecord[] = [
+      { ...agents[0], status: 'running', endTime: null, durationMs: null },
+      agents[1],
     ];
+    const detail: SwarmRunDetail = {
+      run: { ...run, status: 'running', endedAt: null, completedCount: 1, totalToolCalls: 11, parallelPeak: 2, errorSummary: null, aggregation: null, tags: [] },
+      agents: durableAgents,
+      events: [],
+    };
+    invokeMock.mockImplementation((channel: string) => {
+      if (channel === IPC_CHANNELS.SWARM_LIST_TRACE_RUNS) return Promise.resolve([{ ...run, status: 'running' }]);
+      if (channel === IPC_CHANNELS.SWARM_GET_TRACE_RUN_DETAIL) return Promise.resolve(detail);
+      return Promise.resolve(null);
+    });
 
     render(<SessionMemberBar sessionId="session-1" />);
-    expect(screen.getByTestId('member-status-running')).toBeTruthy();
+    await waitFor(() => expect(screen.getByTestId('member-status-running')).toBeTruthy());
     expect(screen.getByTestId('member-status-completed')).toBeTruthy();
   });
 
@@ -115,6 +149,59 @@ describe('SessionMemberBar', () => {
     expect(screen.queryByTestId('member-status-completed')).toBeNull();
     // 还没跑，没有「主会话」可回
     expect(screen.queryByTestId('member-pill-leader')).toBeNull();
+  });
+
+  it('待命成员 pill 的 × 把该成员排除出本次预选，配方预选本身保留', async () => {
+    useTeamRecipeStore.setState({
+      recipes: [{ id: 'r1', name: '上线评审', description: '', category: 'automation', lead: { roleId: '牧之', briefTemplate: '汇总 {topic}' }, members: [{ roleId: '溯真', taskTemplate: '调研 {topic}' }, { roleId: '青禾', taskTemplate: '写作 {topic}' }] }],
+      isLoaded: true,
+    });
+    useComposerStore.setState({ selectedTeamRecipeId: 'r1' });
+
+    render(<SessionMemberBar sessionId="session-1" />);
+    await waitFor(() => expect(screen.getByTestId('member-pill-青禾')).toBeTruthy());
+
+    fireEvent.click(screen.getByTestId('member-standby-remove-青禾'));
+
+    await waitFor(() => expect(screen.queryByTestId('member-pill-青禾')).toBeNull());
+    expect(useComposerStore.getState().standbyExcludedMemberKeys).toEqual(['青禾']);
+    expect(useComposerStore.getState().selectedTeamRecipeId).toBe('r1');
+    expect(screen.getByTestId('member-pill-牧之')).toBeTruthy();
+    expect(screen.getByTestId('member-pill-溯真')).toBeTruthy();
+  });
+
+  it('待命成员 × 到最后一个不剩时整团取消预选', async () => {
+    useTeamRecipeStore.setState({
+      recipes: [{ id: 'r1', name: '上线评审', description: '', category: 'automation', lead: { roleId: '牧之', briefTemplate: '汇总 {topic}' }, members: [{ roleId: '溯真', taskTemplate: '调研 {topic}' }] }],
+      isLoaded: true,
+    });
+    useComposerStore.setState({ selectedTeamRecipeId: 'r1' });
+
+    render(<SessionMemberBar sessionId="session-1" />);
+    await waitFor(() => expect(screen.getByTestId('member-pill-溯真')).toBeTruthy());
+
+    fireEvent.click(screen.getByTestId('member-standby-remove-牧之'));
+    fireEvent.click(screen.getByTestId('member-standby-remove-溯真'));
+
+    await waitFor(() => expect(screen.queryByTestId('session-member-bar')).toBeNull());
+    expect(useComposerStore.getState().selectedTeamRecipeId).toBeNull();
+    expect(useComposerStore.getState().standbyExcludedMemberKeys).toEqual([]);
+  });
+
+  it('待命成员 pill 聚焦后按 Delete 也能排除', async () => {
+    useTeamRecipeStore.setState({
+      recipes: [{ id: 'r1', name: '上线评审', description: '', category: 'automation', lead: { roleId: '牧之', briefTemplate: '汇总 {topic}' }, members: [{ roleId: '溯真', taskTemplate: '调研 {topic}' }, { roleId: '青禾', taskTemplate: '写作 {topic}' }] }],
+      isLoaded: true,
+    });
+    useComposerStore.setState({ selectedTeamRecipeId: 'r1' });
+
+    render(<SessionMemberBar sessionId="session-1" />);
+    await waitFor(() => expect(screen.getByTestId('member-pill-青禾')).toBeTruthy());
+
+    fireEvent.keyDown(screen.getByTestId('member-pill-青禾'), { key: 'Delete' });
+
+    await waitFor(() => expect(screen.queryByTestId('member-pill-青禾')).toBeNull());
+    expect(useComposerStore.getState().standbyExcludedMemberKeys).toEqual(['青禾']);
   });
 
   it('把持久化成员记录映射为工作记录所需的实时状态', () => {

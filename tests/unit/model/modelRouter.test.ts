@@ -14,6 +14,8 @@ import type { ModelConfig, ModelProvider } from '../../../src/shared/contract';
 
 const healthMonitorMock = {
   getHealth: vi.fn().mockReturnValue(null),
+  getObservationCount: vi.fn().mockReturnValue(0),
+  recordSuccess: vi.fn(),
   recordFailure: vi.fn(),
 };
 

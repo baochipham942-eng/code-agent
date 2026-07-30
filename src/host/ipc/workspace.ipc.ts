@@ -284,6 +284,43 @@ async function handleListFiles(payload: { dirPath: string }): Promise<FileInfo[]
   }
 }
 
+// 消息里的文件链接常是裸文件名（模型很少写全路径），点击预览需要按名字找回真实路径。
+// 有界递归：跳过依赖/构建目录，先按「文件名完全相等」收集，命中即返回（最多 5 个候选）。
+const FIND_FILE_PRUNE_DIRS = new Set(['node_modules', '.git', 'dist', '.build', '.next', 'build', 'coverage', '.cache', '.worktrees']);
+const FIND_FILE_MAX_DEPTH = 6;
+const FIND_FILE_MAX_RESULTS = 5;
+
+async function handleFindFile(payload: { dirPath: string; name: string }): Promise<Array<{ name: string; path: string }>> {
+  const fs = await import('fs/promises');
+  const pathModule = await import('path');
+  const results: Array<{ name: string; path: string }> = [];
+
+  async function walk(dir: string, depth: number): Promise<void> {
+    if (results.length >= FIND_FILE_MAX_RESULTS || depth > FIND_FILE_MAX_DEPTH) return;
+    let entries;
+    try {
+      entries = await fs.readdir(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      if (results.length >= FIND_FILE_MAX_RESULTS) return;
+      if (entry.name.startsWith('.')) continue;
+      const fullPath = pathModule.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (!FIND_FILE_PRUNE_DIRS.has(entry.name)) {
+          await walk(fullPath, depth + 1);
+        }
+      } else if (entry.name === payload.name) {
+        results.push({ name: entry.name, path: fullPath });
+      }
+    }
+  }
+
+  await walk(payload.dirPath, 0);
+  return results;
+}
+
 async function handleReadFile(payload: { filePath: string }): Promise<string> {
   const fs = await import('fs/promises');
   return fs.readFile(payload.filePath, 'utf-8');
@@ -790,6 +827,9 @@ export function registerWorkspaceHandlers(
           break;
         case 'listFiles':
           data = await handleListFiles(payload as { dirPath: string });
+          break;
+        case 'findFile':
+          data = await handleFindFile(payload as { dirPath: string; name: string });
           break;
         case 'readFile':
           data = await handleReadFile(payload as { filePath: string });

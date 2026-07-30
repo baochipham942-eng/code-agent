@@ -4,6 +4,7 @@ import {
   sanitizeBrowserComputerToolResult,
   sanitizeLargeTextToolArguments,
 } from '../../../shared/utils/browserComputerRedaction';
+import { ensureFailedToolResultError } from '../../tools/toolResultError';
 
 export function sanitizeToolArgumentsForObservation(toolCall: Pick<ToolCall, 'name' | 'arguments'>): Record<string, unknown> {
   const browserSafeArgs = sanitizeBrowserComputerToolArguments(toolCall.name, toolCall.arguments) || toolCall.arguments;
@@ -14,7 +15,11 @@ export function sanitizeToolResultForObservation(
   toolCall: Pick<ToolCall, 'name' | 'arguments'>,
   result: ToolResult,
 ): ToolResult {
-  return sanitizeBrowserComputerToolResult(toolCall.name, toolCall.arguments, result);
+  return sanitizeBrowserComputerToolResult(
+    toolCall.name,
+    toolCall.arguments,
+    ensureFailedToolResultError(toolCall.name, result),
+  );
 }
 
 export function summarizeArtifactRepairFileEvidenceForObservation(

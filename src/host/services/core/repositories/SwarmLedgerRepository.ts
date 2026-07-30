@@ -40,21 +40,60 @@ function rowToEvent(row: SQLiteRow): SwarmLedgerEvent {
 export class SwarmLedgerRepository {
   constructor(private db: BetterSqlite3.Database) {}
 
-  /** 追加一条协同事件（append-only）。 */
-  append(input: SwarmLedgerAppendInput): void {
-    this.db.prepare(`
-      INSERT INTO swarm_run_ledger
-        (run_id, session_id, seq, event_kind, agent_id, payload_json, recorded_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      input.runId,
-      input.sessionId ?? null,
-      input.seq,
-      input.kind,
-      input.agentId ?? null,
-      JSON.stringify(input.payload ?? {}),
-      input.recordedAt,
-    );
+  /**
+   * 追加一条协同事件（append-only）。
+   *
+   * 返回 false 表示事件被 durable 终态门闩拒绝。所有状态写入都经过本方法：
+   * - run_closed 首写生效；
+   * - agent 的 completed/failed/cancelled 首写生效；
+   * - run 收尾后的任何迟到写入都不再进入账本。
+   */
+  append(input: SwarmLedgerAppendInput): boolean {
+    return this.db.transaction(() => {
+      const runClosed = this.db.prepare(`
+        SELECT 1 FROM swarm_run_ledger
+        WHERE run_id = ? AND event_kind = 'run_closed'
+        LIMIT 1
+      `).get(input.runId);
+      if (runClosed) return false;
+
+      if (input.kind === 'run_started') {
+        const alreadyStarted = this.db.prepare(`
+          SELECT 1 FROM swarm_run_ledger
+          WHERE run_id = ? AND event_kind = 'run_started'
+          LIMIT 1
+        `).get(input.runId);
+        if (alreadyStarted) return false;
+      }
+
+      if (input.kind === 'agent_snapshot' && input.agentId) {
+        const latest = this.db.prepare(`
+          SELECT payload_json FROM swarm_run_ledger
+          WHERE run_id = ? AND event_kind = 'agent_snapshot' AND agent_id = ?
+          ORDER BY seq DESC, id DESC
+          LIMIT 1
+        `).get(input.runId, input.agentId) as { payload_json?: string } | undefined;
+        const latestStatus = parsePayload(latest?.payload_json)?.status;
+        if (latestStatus === 'completed' || latestStatus === 'failed' || latestStatus === 'cancelled') {
+          return false;
+        }
+      }
+
+      this.db.prepare(`
+        INSERT INTO swarm_run_ledger
+          (run_id, session_id, seq, event_kind, agent_id, payload_json, recorded_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        input.runId,
+        input.sessionId ?? null,
+        input.seq,
+        input.kind,
+        input.agentId ?? null,
+        JSON.stringify(input.payload ?? {}),
+        input.recordedAt,
+      );
+      return true;
+    })();
   }
 
   /** 某 run 的全部事件（按 seq 升序，供投影回放重建 rollup）。 */

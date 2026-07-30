@@ -104,6 +104,13 @@ export class DurableRecoveryDispatcher {
     for (const operation of plan.pendingOperations) {
       const handler = this.operationHandlers.find((candidate) => candidate.matches(plan, operation));
       if (!handler) {
+        // Some engines recover their internal pending operations as one
+        // checkpointed unit. Emitting an additional operation-level
+        // "unsupported" result after that handler already
+        // recovered/reviewed the same operation is a false alarm.
+        if (engineHandler && isEngineOwnedOperation(plan.envelope.engine.kind, operation.kind)) {
+          continue;
+        }
         if (!isTerminalOperation(operation)) {
           results.push(this.baseResult(plan, 'operation', 'dispatcher', {
             status: 'unsupported',
@@ -199,4 +206,14 @@ export class DurableRecoveryDispatcher {
 
 function isTerminalOperation(operation: PendingOperation): boolean {
   return operation.status === 'succeeded' || operation.status === 'failed' || operation.status === 'abandoned';
+}
+
+function isEngineOwnedOperation(
+  engineKind: RunEngineRef['kind'],
+  operationKind: PendingOperation['kind'],
+): boolean {
+  return (
+    (engineKind === 'native' && operationKind === 'model_call') ||
+    (engineKind === 'agent_team' && operationKind === 'child_run')
+  );
 }

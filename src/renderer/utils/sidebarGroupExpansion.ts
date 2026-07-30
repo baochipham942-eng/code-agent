@@ -16,6 +16,25 @@ export interface SidebarGroupExpansionView {
   protectionLabel: string | null;
 }
 
+/**
+ * 分组头展开/收起相关文案。本文件是纯工具（不依赖 i18n hook），
+ * 词条由调用方（SidebarProjectGroup，持有 t）按当前语言注入——禁硬编码。
+ */
+export interface SidebarGroupExpansionLabels {
+  /** force-expand 原因说明（搜索/筛选命中时）。 */
+  forceExpandReason: string;
+  /** 收起/展开按钮的 tooltip。 */
+  collapseTitle: string;
+  expandTitle: string;
+  /** aria 模板，{name} 替换为分组显示名。 */
+  collapseAriaLabel: string;
+  expandAriaLabel: string;
+  /** force-expand aria 模板，{name}/{reason} 双占位。 */
+  forceExpandAriaLabel: string;
+  /** force-expand 且用户曾显式收起时的保护标签。 */
+  protectionLabel: string;
+}
+
 export function shouldForceExpandSidebarGroup(
   { hasSearchFilters }: SidebarGroupExpansionSignals,
   options?: { disableForceExpand?: boolean },
@@ -37,10 +56,8 @@ export function resolveSidebarGroupExpanded(
   return persistedExpanded || shouldForceExpandSidebarGroup(signals, options);
 }
 
-function getForceExpandReason(_signals: SidebarGroupExpansionSignals): string {
-  // force-expand 现在只有搜索/筛选一个来源（见 shouldForceExpandSidebarGroup）。
-  // 措辞避开「命中」二字：搜索态的 DOM 断言用它排查旧版计数 chip 回归。
-  return '搜索/筛选结果所在项目保持展开';
+function fillName(template: string, displayName: string): string {
+  return template.replace('{name}', displayName);
 }
 
 export function resolveSidebarGroupExpansionView({
@@ -49,12 +66,14 @@ export function resolveSidebarGroupExpansionView({
   isCollapsing,
   displayName,
   disableForceExpand,
+  labels,
 }: {
   persistedExpanded: boolean;
   signals: SidebarGroupExpansionSignals;
   isCollapsing: boolean;
   displayName: string;
   disableForceExpand?: boolean;
+  labels: SidebarGroupExpansionLabels;
 }): SidebarGroupExpansionView {
   const forceExpanded = shouldForceExpandSidebarGroup(signals, { disableForceExpand });
   const isVisibleExpanded = resolveSidebarGroupExpanded(persistedExpanded, signals, { disableForceExpand })
@@ -66,7 +85,6 @@ export function resolveSidebarGroupExpansionView({
       : isVisibleExpanded
         ? 'expanded'
         : 'collapsed';
-  const forceReason = getForceExpandReason(signals);
   const phaseClassName = {
     expanded: 'sidebar-project-rows--expanded',
     collapsing: 'sidebar-project-rows--collapsing',
@@ -80,15 +98,15 @@ export function resolveSidebarGroupExpansionView({
     phase,
     rowsClassName: `sidebar-project-rows ${phaseClassName}`,
     toggleTitle: forceExpanded
-      ? forceReason
+      ? labels.forceExpandReason
       : isVisibleExpanded
-        ? '折叠项目'
-        : '展开项目',
+        ? labels.collapseTitle
+        : labels.expandTitle,
     toggleAriaLabel: forceExpanded
-      ? `${displayName} 保持展开，${forceReason}`
+      ? fillName(labels.forceExpandAriaLabel, displayName).replace('{reason}', labels.forceExpandReason)
       : isVisibleExpanded
-        ? `折叠 ${displayName}`
-        : `展开 ${displayName}`,
-    protectionLabel: forceExpanded && !persistedExpanded ? '保持展开' : null,
+        ? fillName(labels.collapseAriaLabel, displayName)
+        : fillName(labels.expandAriaLabel, displayName),
+    protectionLabel: forceExpanded && !persistedExpanded ? labels.protectionLabel : null,
   };
 }

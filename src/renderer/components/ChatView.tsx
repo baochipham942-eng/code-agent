@@ -11,7 +11,6 @@ import { useSessionUIStore } from '../stores/sessionUIStore';
 import { useStreamingMessageAccumulatorStore } from '../stores/streamingMessageAccumulatorStore';
 import { useTaskStore } from '../stores/taskStore';
 import { useSwarmStore } from '../stores/swarmStore';
-import { useAuthStore } from '../stores/authStore';
 import {
   ensureNeoWorkCardLiveUpdates,
   isNeoWorkCardAwaitingRuntimeTerminal,
@@ -54,8 +53,7 @@ import { InlineStrip } from './features/chat/InlineStrip';
 import { ConfirmDialog } from './composites/ConfirmDialog';
 import { useLocalBridgeStore } from '../stores/localBridgeStore';
 import { useMessageActionStore } from '../stores/messageActionStore';
-import { isWebMode, isTauriMode } from '../utils/platform';
-import { pickNativeDirectory } from '../services/tauriPluginFacade';
+import { isWebMode } from '../utils/platform';
 import { toast } from '../hooks/useToast';
 import { hasConfiguredDefaultRuntimeModel, hasConfiguredRuntimeModels } from '@shared/modelRuntime';
 import { buildGoalSeedTodos } from '@shared/utils/goalTodos';
@@ -80,12 +78,6 @@ import { recordStreamingPerformanceCounter } from '../utils/streamingPerformance
 import { findSearchMatchForPendingJump } from '../utils/sessionSearchJump';
 import { buildProjectGoalChatStart } from '../utils/projectGoalChatSeed';
 import { isDragPointInsideVisibleRect } from '../utils/dragBounds';
-import {
-  buildNeoTagContinuationMessage,
-  buildNeoTagSourceMessage,
-  submitNeoTagContinuation,
-  submitNeoTagDraft,
-} from './features/chat/neoTagSubmit';
 import { Image, AlertTriangle, MessageSquare, X } from 'lucide-react';
 
 export async function handleQueuedSteerOutcome(
@@ -121,11 +113,9 @@ export const ChatView: React.FC = () => {
   const launchRequests = useSwarmStore((state) => state.launchRequests);
   // 订阅节流快照而非原始 entries：原始 entries 每 token 变一次，会把投影重算推到 token 频率
   const streamingMessageEntries = useStreamingMessageAccumulatorStore((state) => state.visibleEntries);
-  const authUser = useAuthStore((state) => state.user);
   const neoWorkCards = useNeoWorkCardStore(useShallow((state) =>
     selectNeoWorkCardDetailsForConversation(state, currentSessionId),
   ));
-  const runNeoTag = useNeoWorkCardStore((state) => state.createAndRun);
   const loadNeoWorkCardsForConversation = useNeoWorkCardStore((state) => state.loadForConversation);
   const {
     messages,
@@ -410,19 +400,6 @@ export const ChatView: React.FC = () => {
     }
   }, [setAppWorkingDirectory, setComposerWorkingDirectory]);
 
-  const handlePickDirectory = React.useCallback(async () => {
-    try {
-      if (isTauriMode()) {
-        const selectedPath = await pickNativeDirectory({ title: t.sidebar.selectDirectoryTitle });
-        if (selectedPath) await applyWorkingDirectory(selectedPath);
-      } else {
-        setShowDirPicker(true);
-      }
-    } catch (error) {
-      console.error('Failed to pick working directory:', error);
-    }
-  }, [applyWorkingDirectory, t.sidebar.selectDirectoryTitle]);
-
   // Turn-based trace projection
   const baseProjection = useTurnProjection(messages, currentSessionId, effectiveIsProcessing, launchRequests, neoWorkCards);
   const clarityProjection = useTurnExecutionClarity(baseProjection);
@@ -590,63 +567,9 @@ export const ChatView: React.FC = () => {
   }, [openSettingsTab, t]);
 
   // 发送消息需要登录
+  // @neo 提交分支已移除（2026-07-29 拍板）：输入框不再有工作卡/续接交互，
+  // @neo 字样按普通文本消息发送；工作卡从 Neo 协同页发起。
   const handleSendEnvelope = useCallback(async (envelope: ConversationEnvelope): Promise<boolean> => {
-    const neoResult = await requireAuthAsync(async () => {
-      if (!currentSessionId) return null;
-      try {
-        // @neo 跨会话续接（ADR-035）：chip 即意图 —— 有续接目标就走同卡追加轮，
-        // 执行落当前会话（过程流式可见），本地补显同 ID 去重。
-        const continuationTarget = useNeoWorkCardStore.getState().continuationTarget;
-        if (continuationTarget) {
-          const continuation = await submitNeoTagContinuation({
-            envelope,
-            conversationId: currentSessionId,
-            continuationTarget,
-            requesterUserId: authUser?.id ?? 'local-user',
-            runContinuation: useNeoWorkCardStore.getState().continueAndRun,
-          });
-          const roundMessage = buildNeoTagContinuationMessage({
-            envelope,
-            conversationId: currentSessionId,
-            workCardId: continuationTarget.workCardId,
-            roundTurnId: continuation.roundTurnId,
-          });
-          if (!messagesRef.current.some((message) => message.id === roundMessage.id)) {
-            useSessionStore.getState().addMessage(roundMessage);
-          }
-          useNeoWorkCardStore.getState().setContinuationTarget(null);
-          return true;
-        }
-        const result = await submitNeoTagDraft({
-          envelope,
-          sourceConversationId: currentSessionId,
-          projectId: currentSession?.projectId ?? null,
-          workspacePath: currentSessionWorkingDirectory,
-          requesterUserId: authUser?.id ?? 'local-user',
-          runNeoTag,
-        });
-        if (!result) return null;
-        // @neo = 正常 agent 聊天：用户那句原话按普通用户消息进会话（BUG1）。
-        // host 落库的用户消息与这里同 ID（sourceTurnId），reload 不会出现双份。
-        const sourceMessage = buildNeoTagSourceMessage({
-          envelope,
-          sourceConversationId: currentSessionId,
-          result,
-        });
-        if (!messagesRef.current.some((message) => message.id === sourceMessage.id)) {
-          useSessionStore.getState().addMessage(sourceMessage);
-        }
-        // 轻量化重设计:@neo = 正常 agent 聊天,不弹 toast(回复直接流式出现在对话里)。
-        return true;
-      } catch (error) {
-        toast.error(error instanceof Error ? error.message : String(error));
-        return false;
-      }
-    });
-    if (neoResult !== null && neoResult !== undefined) {
-      return neoResult === true;
-    }
-
     const didSend = await requireAuthAsync(async () => {
       const modelReady = await ensureModelConfigured();
       if (!modelReady) return false;
@@ -655,11 +578,7 @@ export const ChatView: React.FC = () => {
     });
     return didSend === true;
   }, [
-    authUser?.id,
-    runNeoTag,
-    currentSession?.projectId,
     currentSessionId,
-    currentSessionWorkingDirectory,
     ensureModelConfigured,
     requireAuthAsync,
     sendMessage,
@@ -849,7 +768,6 @@ export const ChatView: React.FC = () => {
                 onSend={handleSendMessage}
                 workingDirectory={currentSessionWorkingDirectory}
                 workbenchSnapshot={currentSession?.workbenchSnapshot}
-                onPickDirectory={() => { void handlePickDirectory(); }}
               />
             ) : (
               <div className="h-full" aria-hidden />

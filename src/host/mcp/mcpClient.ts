@@ -76,6 +76,7 @@ import {
 } from './mcpErrors';
 import { classifyMcpToolReplaySafety } from './mcpToolSafety';
 import { resolveServerConfigSecrets } from './mcpSecretResolver';
+import { CUA_SEARCH_KEYWORDS, extractMcpSearchKeywords, processBatched } from './mcpSearchUtils';
 import {
   getDefaultMCPServers as _getDefaultMCPServers,
   DEFAULT_MCP_SERVERS as _DEFAULT_MCP_SERVERS,
@@ -104,7 +105,6 @@ export { isHttpStreamableConfig } from './types';
 export { isInProcessConfig } from './types';
 
 const logger = createLogger('MCPClient');
-const CUA_SEARCH_KEYWORDS = new Set(['computer', 'desktop', 'screen', 'cursor', 'cua', 'driver']);
 type OAuthFinishAuthTransport = Transport & {
   finishAuth?: (authorizationCode: string) => Promise<void>;
 };
@@ -304,7 +304,11 @@ export class MCPClient extends EventEmitter {
   /**
    * 启用/禁用服务器
    */
-  async setServerEnabled(serverName: string, enabled: boolean): Promise<void> {
+  async setServerEnabled(
+    serverName: string,
+    enabled: boolean,
+    abortSignal?: AbortSignal,
+  ): Promise<void> {
     const config = this.serverConfigs.get(serverName);
     if (!config) {
       throw new Error(`Server ${serverName} not found`);
@@ -316,7 +320,14 @@ export class MCPClient extends EventEmitter {
     if (wasEnabled && !enabled) {
       await this.disconnect(serverName);
     } else if (!wasEnabled && enabled) {
-      await this.connect(config);
+      try {
+        await this.connect(config, abortSignal);
+      } catch (error) {
+        if (abortSignal?.aborted || isAbortError(error)) {
+          config.enabled = wasEnabled;
+        }
+        throw error;
+      }
     }
   }
 
@@ -366,7 +377,8 @@ export class MCPClient extends EventEmitter {
   /**
    * 连接到单个服务器
    */
-  async connect(config: MCPServerConfig): Promise<void> {
+  async connect(config: MCPServerConfig, abortSignal?: AbortSignal): Promise<void> {
+    abortSignal?.throwIfAborted();
     // 检查是否已连接
     if (isInProcessConfig(config)) {
       if (this.inProcessServers.has(config.name)) {
@@ -392,6 +404,7 @@ export class MCPClient extends EventEmitter {
       // 进程内服务器
       if (isInProcessConfig(config)) {
         await this.connectInProcess(config);
+        abortSignal?.throwIfAborted();
         return;
       }
 
@@ -420,8 +433,15 @@ export class MCPClient extends EventEmitter {
         registerElicitationHandler(client, config.name);
 
         try {
-          await connectWithTimeout(client, transport, transportConfig, connectTimeout);
+          await connectWithTimeout(
+            client,
+            transport,
+            transportConfig,
+            connectTimeout,
+            abortSignal,
+          );
           await this.registry.discoverCapabilities(config.name, client);
+          abortSignal?.throwIfAborted();
           return { client, transport };
         } catch (error) {
           const awaitingAuthorization = serverIdentity
@@ -434,6 +454,7 @@ export class MCPClient extends EventEmitter {
         }
       }, {
         ...(isStdioConfig(config) ? { maxAttempts: 1 } : {}),
+        signal: abortSignal,
         onRetry: (error, nextAttempt) => {
           logger.warn(`Transient MCP connection failure for ${config.name}; retrying`, {
             nextAttempt,
@@ -471,8 +492,15 @@ export class MCPClient extends EventEmitter {
       }
 
       if (state) {
-        state.status = 'error';
-        state.error = formatMcpConnectionError(error);
+        if (abortSignal?.aborted || isAbortError(error)) {
+          state.status = isStdioConfig(config) && config.lazyLoad !== false
+            ? 'lazy'
+            : 'disconnected';
+          state.error = undefined;
+        } else {
+          state.status = 'error';
+          state.error = formatMcpConnectionError(error);
+        }
       }
       throw error;
     }
@@ -1215,40 +1243,6 @@ export class MCPClient extends EventEmitter {
     logger.info(`Registered in-process MCP server: ${server.name}`);
   }
 
-}
-
-function extractMcpSearchKeywords(query: string): string[] {
-  const normalized = query
-    .replace(/^select:/i, '')
-    .replace(/^mcp__/i, '')
-    .toLowerCase();
-
-  const rawTokens = normalized
-    .split(/[^a-z0-9_-]+/)
-    .map((token) => token.trim())
-    .filter((token) => token.length >= 3 && token !== 'mcp');
-
-  const expanded = new Set<string>();
-  for (const token of rawTokens) {
-    expanded.add(token);
-    for (const part of token.split(/[-_]+/)) {
-      if (part.length >= 3) expanded.add(part);
-    }
-  }
-
-  return Array.from(expanded);
-}
-
-/** Process items in batches with concurrency control. */
-async function processBatched<T>(
-  items: T[],
-  batchSize: number,
-  processor: (item: T) => Promise<void>,
-): Promise<void> {
-  for (let i = 0; i < items.length; i += batchSize) {
-    const batch = items.slice(i, i + batchSize);
-    await Promise.allSettled(batch.map(processor));
-  }
 }
 
 // ----------------------------------------------------------------------------

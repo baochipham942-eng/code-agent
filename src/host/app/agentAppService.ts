@@ -28,7 +28,7 @@ import type {
 } from '../../shared/contract';
 import type { SessionStatus, TaskManager } from '../task';
 import type { PermissionDeliveryOutcome } from '../../shared/contract/permission';
-import { orphanDeadParkedApproval } from '../agent/parkedApprovalHydration';
+import { closeDeadParkedApproval } from '../agent/parkedApprovalHydration';
 import type { ConfigService } from '../services';
 import { getSessionManager, type SessionWithMessages } from '../services';
 import { createLogger } from '../services/infra/logger';
@@ -94,6 +94,7 @@ import type { ExternalAgentEngineKind } from '../../shared/contract/agentEngine'
 import type { AgentEngineRunResult } from '../../shared/contract/agentEngine';
 import type { RunRegistry } from '../runtime/runRegistry';
 import { getProjectService } from '../services/project/projectService';
+import { getLibraryService } from '../services/library/libraryService';
 import { resolveSessionWorkspaceScope } from '../services/sessionFork/workspace';
 import { getLogsPath } from '../platform/appPaths';
 import {
@@ -271,6 +272,9 @@ export class AgentAppServiceImpl implements AgentApplicationService {
         hints: context.selectedPromptCommand.hints ? [...context.selectedPromptCommand.hints] : undefined,
       };
     }
+    if (context.pendingCommand) {
+      metadata.pendingCommand = { ...context.pendingCommand };
+    }
     if (context.routing) {
       metadata.routingMode = context.routing.mode;
       if (context.routing.targetAgentIds?.length) {
@@ -312,7 +316,27 @@ export class AgentAppServiceImpl implements AgentApplicationService {
 
   private getMessageMetadata(envelope: ConversationEnvelope): MessageMetadata | undefined {
     const workbench = this.toWorkbenchMetadata(envelope.context);
-    return workbench ? { workbench } : undefined;
+    // UX round2 20f：pin 资料是会话级状态、不在 envelope——持久化 user message 时
+    // 由 host 把当前 pin 条目 id+标题快照进 metadata，回放 chip 行按快照渲染（事后改 pin 不漂移）。
+    const pinnedLibraryItems = this.getPinnedLibrarySnapshot(envelope.sessionId);
+    const merged = workbench || pinnedLibraryItems
+      ? { ...(workbench ?? {}), ...(pinnedLibraryItems ? { pinnedLibraryItems } : {}) }
+      : undefined;
+    return merged ? { workbench: merged } : undefined;
+  }
+
+  private getPinnedLibrarySnapshot(sessionId?: string): Array<{ id: string; title: string }> | undefined {
+    const resolvedSessionId = this.resolveSessionId(sessionId);
+    if (!resolvedSessionId) return undefined;
+    try {
+      const items = getLibraryService().getPinnedItems(resolvedSessionId);
+      return items.length > 0
+        ? items.map((item) => ({ id: item.id, title: item.title }))
+        : undefined;
+    } catch {
+      // pin 快照是展示增强，library 未初始化等失败不阻塞发送
+      return undefined;
+    }
   }
 
   /**
@@ -746,16 +770,16 @@ export class AgentAppServiceImpl implements AgentApplicationService {
 
   handlePermissionResponse(requestId: string, response: PermissionResponse, sessionId?: string): PermissionDeliveryOutcome {
     // 停车审批的宿主可能已随进程重启消失（D0 根因，2026-07-27）：
-    // 找不到宿主/内存 pending 已丢时，把 DB 行标 orphaned（收件箱转灰态），
+    // 找不到宿主/内存 pending 已丢时，把 DB 行 fail-closed 拒绝收尾，
     // 返回类型化结果而不是裸抛或静默丢弃。
     let outcome: PermissionDeliveryOutcome;
     try {
       outcome = this.getOrchestratorOrThrow(sessionId).handlePermissionResponse(requestId, response);
     } catch (err) {
-      if (orphanDeadParkedApproval(requestId)) return 'no_orchestrator';
+      if (closeDeadParkedApproval(requestId)) return 'no_orchestrator';
       throw err;
     }
-    if (outcome === 'unknown_request') orphanDeadParkedApproval(requestId);
+    if (outcome === 'unknown_request') closeDeadParkedApproval(requestId);
     return outcome;
   }
 

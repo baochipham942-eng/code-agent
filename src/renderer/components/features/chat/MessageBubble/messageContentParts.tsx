@@ -4,7 +4,7 @@
 // ============================================================================
 
 import React, { useState, useMemo, useCallback, memo, useEffect, lazy, Suspense } from 'react';
-import { Code2, Copy, Check, ExternalLink, Play, ClipboardCopy, MessageSquare, MessageSquarePlus, Settings } from 'lucide-react';
+import { Code2, Copy, Check, Eye, Play, ClipboardCopy, MessageSquare, MessageSquarePlus, Settings } from 'lucide-react';
 import { UI } from '@shared/constants';
 import type { Components } from 'react-markdown';
 import { useAppStore } from '../../../../stores/appStore';
@@ -535,12 +535,13 @@ export const InlineCode = memo(function InlineCode({
     );
   }
 
-  // File path - make it clickable
+  // File path - clickable。非核心信息不做亮色（primary-300 在整段回复里太跳），
+  // 用与正文同级的灰字 + hover 微亮来表达可点；点击进 app 内预览，不再直接打开本地文件。
   const { path: filePath, lineNumber } = parseFilePathWithLine(text);
 
   return (
     <code
-      className="inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5 rounded-md bg-surface-hover text-primary-300 text-xs font-mono cursor-pointer hover:bg-white/[0.1] hover:text-primary-200 transition-colors group"
+      className="inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5 rounded-md bg-surface-hover text-zinc-300 text-xs font-mono cursor-pointer hover:bg-white/[0.1] hover:text-zinc-100 transition-colors group"
       onClick={() => {
         if (isHtml && onPreviewHtml) {
           onPreviewHtml(filePath);
@@ -548,13 +549,13 @@ export const InlineCode = memo(function InlineCode({
           onOpenFile(filePath, lineNumber);
         }
       }}
-      title={isHtml ? '点击预览' : lineNumber ? `点击打开文件（第 ${lineNumber} 行）` : '点击打开文件'}
+      title={isHtml ? '点击预览' : lineNumber ? `点击预览（第 ${lineNumber} 行）` : '点击预览'}
     >
       {children}
       {isHtml ? (
         <Play className="w-3 h-3 opacity-50 group-hover:opacity-100 text-blue-400" />
       ) : (
-        <ExternalLink className="w-3 h-3 opacity-50 group-hover:opacity-100" />
+        <Eye className="w-3 h-3 opacity-50 group-hover:opacity-100" />
       )}
     </code>
   );
@@ -600,6 +601,37 @@ export function filterSystemTags(text: string): string {
   // Clean up multiple consecutive newlines left by removed tags
   filtered = filtered.replace(/\n{3,}/g, '\n\n');
   return filtered.trim();
+}
+
+/**
+ * 已知 HTML 标签名单：只剥这些，避免误伤技术文本里的尖括号（如 Array<string>、a<b）。
+ */
+const RAW_HTML_TAG_PATTERN = /<\/?(?:span|div|p|br|hr|b|i|em|strong|u|s|del|ins|mark|small|sub|sup|a|img|table|thead|tbody|tr|td|th|ul|ol|li|h[1-6]|section|article|header|footer|nav|aside|main|figure|figcaption|button|input|select|option|textarea|label|form|style|script|font|center|details|summary|kbd|samp|var|abbr|cite|q|blockquote)(?:\s[^>]*)?\/?>/gi;
+
+/**
+ * 纯文本兜底通道（流式中途的 plain-text 渲染、MarkdownCore 懒加载 fallback）没有
+ * markdown/HTML 解析能力，模型偶尔输出的原始 HTML 标签（如 <span style=...>）和
+ * IACT 链接语法（[text](!add)）会被原样露出。这里做降级清洗：
+ * - IACT 链接降级为链接文字（协议在纯文本下不可点击，露出 "!add" 只会困惑）；
+ * - HTML 标签剥掉只留内部文本（与 react-markdown 默认丢弃 html 节点的行为对齐）。
+ */
+export function sanitizePlainTextFallback(text: string): string {
+  return text
+    .replace(/\[([^\]]*)\]\(![^)]*\)/g, '$1')
+    .replace(RAW_HTML_TAG_PATTERN, '');
+}
+
+/**
+ * 完成态消息兜底：历史/上游数据里 HTML 标签可能被转义成字面文本持久化（QA 2026-07-28
+ * A3 现象1：正文原样露出 `<span style="color:red">❌执行失败</span>`），react-markdown
+ * 只能丢原始 html 节点，对已经是纯文本的标签无能为力。这里在 markdown 渲染前把代码
+ * （fenced block / inline code）之外的已知 HTML 标签剥掉，只留内部文本。
+ */
+export function stripRawHtmlOutsideCode(text: string): string {
+  return text
+    .split(/(```[\s\S]*?(?:```|$)|`[^`\n]*`)/g)
+    .map((segment, index) => (index % 2 === 1 ? segment : segment.replace(RAW_HTML_TAG_PATTERN, '')))
+    .join('');
 }
 
 // IACT Copy button with copied state feedback
@@ -693,7 +725,7 @@ export const MarkdownRenderer = memo(function markdownRenderer({
   });
 
   return (
-    <Suspense fallback={<div className="whitespace-pre-wrap break-words">{content}</div>}>
+    <Suspense fallback={<div className="whitespace-pre-wrap break-words">{sanitizePlainTextFallback(content)}</div>}>
       <LazyMarkdownCore
         content={content}
         gfm

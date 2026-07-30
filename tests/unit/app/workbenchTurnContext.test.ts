@@ -5,6 +5,7 @@ import path from 'path';
 import type { ConnectorStatus } from '../../../src/host/connectors';
 import { getConnectorRegistry } from '../../../src/host/connectors';
 import {
+  buildWorkbenchCapabilityContextLines,
   buildWorkbenchToolScope,
   buildWorkbenchTurnSystemContext,
   withWorkbenchTurnSystemContext,
@@ -85,6 +86,33 @@ describe('workbenchTurnContext', () => {
   it('无 canvasSnapshot：不注入 <design_canvas>', () => {
     const blocks = buildWorkbenchTurnSystemContext({ selectedSkillIds: ['x'] });
     expect(blocks.join('\n')).not.toContain('<design_canvas>');
+  });
+
+  it('buildWorkbenchCapabilityContextLines：只产出能力行，不含设计画布块', () => {
+    const lines = buildWorkbenchCapabilityContextLines({
+      selectedSkillIds: ['first-principles'],
+      selectedMcpServerIds: ['lark'],
+      turnCapabilityScopeMode: 'manual',
+      executionIntent: { designCanvasActive: true },
+    });
+    const joined = lines.join('\n');
+    expect(joined).toContain('first-principles');
+    expect(joined).toContain('lark');
+    expect(joined).toContain('手动选择');
+    expect(joined).toContain('Browser routing contract');
+    expect(joined).not.toContain('design_canvas');
+    expect(joined).not.toContain('design_brief');
+  });
+
+  it('buildWorkbenchCapabilityContextLines：无 context / 无已选能力时为空', () => {
+    expect(buildWorkbenchCapabilityContextLines(undefined)).toHaveLength(0);
+    expect(buildWorkbenchCapabilityContextLines({})).toHaveLength(0);
+  });
+
+  it('buildWorkbenchTurnSystemContext 与 capability 子集不重复产出能力行', () => {
+    const blocks = buildWorkbenchTurnSystemContext({ selectedSkillIds: ['review-skill'] });
+    const occurrences = blocks.filter((b) => b.includes('review-skill')).length;
+    expect(occurrences).toBe(1);
   });
 
   it('projects browser execution intent into the hidden turn system context', () => {

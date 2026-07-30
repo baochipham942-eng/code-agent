@@ -177,17 +177,20 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
           setUserToggled(true);
           setExpanded((value) => !value);
         }}
-        className={`flex w-full min-w-0 items-center gap-1.5 rounded-md text-left text-[11px] transition-colors group ${
+        // leading-4：行内文字行高压到 16px，chevron（12px）与文字视觉中线对齐——
+        // 此前继承祖先的宽松行高，文字 glyph 在更高的行盒里下沉，chevron 看起来上飘。
+        // UX round2 20i：ok 行文字从 zinc-600 提到 zinc-400（「搜索通话字幕原文」这类行太暗看不清）。
+        className={`flex w-full min-w-0 items-center gap-1.5 rounded-md text-left text-[11px] leading-4 transition-colors group ${
           status === 'ok'
-            ? 'px-1 py-0.5 text-zinc-600 hover:bg-surface-subtle hover:text-zinc-400'
+            ? 'px-1 py-0.5 text-zinc-400 hover:bg-surface-subtle hover:text-zinc-300'
             : 'border border-white/[0.04] bg-white/[0.015] px-2 py-1 text-zinc-500 hover:border-white/[0.08] hover:bg-white/[0.03] hover:text-zinc-300'
         }`}
         aria-expanded={ariaExpanded}
       >
         {ariaExpanded ? (
-          <ChevronDown className="w-3 h-3 flex-shrink-0 text-zinc-600" />
+          <ChevronDown className="w-3 h-3 flex-shrink-0 self-center text-zinc-500" />
         ) : (
-          <ChevronRight className="w-3 h-3 flex-shrink-0 text-zinc-600" />
+          <ChevronRight className="w-3 h-3 flex-shrink-0 self-center text-zinc-500" />
         )}
         {status === 'error' && (
           <span

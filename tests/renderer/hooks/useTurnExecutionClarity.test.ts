@@ -143,13 +143,16 @@ describe('buildTurnExecutionClarityProjection', () => {
       'user',
       'turn_timeline',
       'turn_timeline',
-      'turn_timeline',
       'assistant_text',
       'tool_call',
       'turn_timeline',
       'turn_timeline',
     ]);
-    expect(enriched.turns[0]?.nodes[0]?.metadata?.workbench).toBeUndefined();
+    // userNode 的 metadata.workbench 必须保留：遥测/能力审计直接读它
+    expect(enriched.turns[0]?.nodes[0]?.metadata?.workbench).toMatchObject({
+      routingMode: 'direct',
+      selectedSkillIds: ['draft-skill'],
+    });
     expect(enriched.turns[0]?.nodes[1]?.turnTimeline?.kind).toBe('workbench_snapshot');
     expect(enriched.turns[0]?.nodes[1]?.turnTimeline?.snapshot?.executionIntent?.browserSessionMode).toBe('managed');
     expect(enriched.turns[0]?.nodes[1]?.turnTimeline?.snapshot?.executionIntent?.browserSessionSnapshot).toMatchObject({
@@ -171,12 +174,12 @@ describe('buildTurnExecutionClarityProjection', () => {
       invoked: [],
     });
     expect(enriched.turns[0]?.nodes[2]?.turnTimeline?.capabilityScope?.blocked).toHaveLength(3);
-    expect(enriched.turns[0]?.nodes[3]?.turnTimeline?.kind).toBe('skill_activity');
-    expect(enriched.turns[0]?.nodes[3]?.turnTimeline?.skillActivity?.summary).toBe('Skill 写入偏好 1');
-    expect(enriched.turns[0]?.nodes[6]?.turnTimeline?.routingEvidence?.summary).toContain('Direct');
+    // 「挂载」项不再进 skill_activity（2026-07-29 拍板）：只挂载没触发的轮次不产生该节点
+    expect(enriched.turns[0]?.nodes.some((node) => node.turnTimeline?.kind === 'skill_activity')).toBe(false);
+    expect(enriched.turns[0]?.nodes[5]?.turnTimeline?.routingEvidence?.summary).toContain('Direct');
     // report.md 是 Write 的 outputPath，已作为 tool_call/file-change 可见；
     // 9c7cb06bc 起 artifact-ownership 去重不再重复列入（避免与 file-change 双列）。
-    expect(enriched.turns[0]?.nodes[7]?.turnTimeline?.artifactOwnership?.map((item) => item.label)).toEqual([
+    expect(enriched.turns[0]?.nodes[6]?.turnTimeline?.artifactOwnership?.map((item) => item.label)).toEqual([
       'Execution Chart',
       'preview.png',
     ]);
@@ -1003,7 +1006,7 @@ describe('buildTurnExecutionClarityProjection', () => {
 
     const skillNode = enriched.turns[0]?.nodes.find((node) => node.turnTimeline?.kind === 'skill_activity');
 
-    expect(skillNode?.turnTimeline?.skillActivity?.summary).toBe('Skill 触发 1 · 写入 1');
+    expect(skillNode?.turnTimeline?.skillActivity?.summary).toBe('Skill 触发了 lark-doc skill；lark-doc skill 已写入');
     expect(skillNode?.turnTimeline?.skillActivity?.items.map((item) => item.action)).toEqual([
       'triggered',
       'written',

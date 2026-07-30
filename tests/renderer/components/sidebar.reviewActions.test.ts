@@ -334,7 +334,8 @@ describe('Sidebar review actions', () => {
     const replayAction = menuState.items.find((item) => item.label === '打开 Replay');
     expect(replayAction).toBeTruthy();
     expect(replayAction?.disabled).not.toBe(true);
-    expect(html).toContain('aria-label="打开 Reviewable Session Replay"');
+    // 2026-07-29：行内 hover Replay 图标已撤（hover 只留归档），Replay 入口保留在右键菜单。
+    expect(html).not.toContain('aria-label="打开 Reviewable Session Replay"');
 
     await replayAction?.onClick();
 

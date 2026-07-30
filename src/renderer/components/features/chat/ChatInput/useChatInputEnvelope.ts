@@ -11,6 +11,7 @@ import type {
 import type { useWorkbenchBrowserSession } from '../../../../hooks/useWorkbenchBrowserSession';
 import { parseLeadingAgentMentions } from './agentMentionRouting';
 import { buildBrowserSessionIntentSnapshot } from '../../../../utils/browserExecutionIntent';
+import { useComposerStore } from '../../../../stores/composerStore';
 
 /** ChatInput 中 agent chip / 注册表条目的统一形态（id + name）。 */
 interface BuildEnvelopeAgentEntry {
@@ -90,6 +91,10 @@ export function useChatInputEnvelope(params: UseChatInputEnvelopeParams): BuildE
     } else if (hasExplicitAgentSelection && preferredAgentId === null) {
       selectedAgent = { id: null, name: 'Default', token: 'default', via: 'agent_command' };
     }
+    // 命令 chip 快照（/goal 等）：提交链路稍后把它拼回正文前缀，这里随 envelope 进
+    // context → message.metadata，回放时用户消息上方能渲染「这一轮用了什么命令」。
+    // 读 getState 而非参数：发送瞬间的快照，不进入 useCallback 依赖（chip 变化不该重建 envelope builder）。
+    const pendingCommandSnapshot = useComposerStore.getState().pendingCommand ?? undefined;
     const nextContext = parsedMentions
       ? {
           ...baseContext,
@@ -97,6 +102,7 @@ export function useChatInputEnvelope(params: UseChatInputEnvelopeParams): BuildE
           ...(preferredAgent?.name ? { preferredAgentName: preferredAgent.name } : {}),
           ...(selectedAgent ? { selectedAgent } : {}),
           ...(promptCommand ? { selectedPromptCommand: promptCommand } : {}),
+          ...(pendingCommandSnapshot ? { pendingCommand: pendingCommandSnapshot } : {}),
           ...(voiceInput ? { voiceInput } : {}),
           routing: {
             mode: 'direct' as const,
@@ -109,6 +115,7 @@ export function useChatInputEnvelope(params: UseChatInputEnvelopeParams): BuildE
           ...(preferredAgent?.name ? { preferredAgentName: preferredAgent.name } : {}),
           ...(selectedAgent ? { selectedAgent } : {}),
           ...(promptCommand ? { selectedPromptCommand: promptCommand } : {}),
+          ...(pendingCommandSnapshot ? { pendingCommand: pendingCommandSnapshot } : {}),
           ...(voiceInput ? { voiceInput } : {}),
         };
     const browserSessionMode = nextContext?.executionIntent?.browserSessionMode;

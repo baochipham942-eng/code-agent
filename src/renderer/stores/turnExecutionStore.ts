@@ -42,6 +42,7 @@ interface TurnExecutionStoreState {
   recordRoutingEvidence: (sessionId: string, event: RoutingEvidenceEvent) => void;
   recordHookActivity: (sessionId: string, event: HookActivityEvent) => void;
   recordHookStart: (sessionId: string, event: HookRunningEvent) => void;
+  clearHookRunning: (sessionId: string) => void;
   clearSession: (sessionId: string) => void;
   reset: () => void;
 }
@@ -129,6 +130,18 @@ export const useTurnExecutionStore = create<TurnExecutionStoreState>((set) => ({
           [sessionId]: event,
         },
       };
+    }),
+
+  // running 悬挂兜底：started 发出后进程/SSE 断开、agent 报错、turn 结束而配对的
+  // hook_trigger 永远不到达时，由 turn_end / agent 终态事件调用，防止 shimmer 一直挂着。
+  clearHookRunning: (sessionId) =>
+    set((state) => {
+      if (!(sessionId in state.hookRunningBySession)) {
+        return state;
+      }
+      const nextRunning = { ...state.hookRunningBySession };
+      delete nextRunning[sessionId];
+      return { hookRunningBySession: nextRunning };
     }),
 
   clearSession: (sessionId) =>

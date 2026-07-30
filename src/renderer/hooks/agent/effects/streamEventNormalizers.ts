@@ -859,7 +859,9 @@ export function normalizeHookTriggerData(data: unknown): HookTriggerEventData | 
       ? { names: raw.names.filter((name): name is string => typeof name === 'string') }
       : {}),
     ...(typeof raw.errorCount === 'number' ? { errorCount: raw.errorCount } : {}),
-    ...(typeof raw.message === 'string' ? { message: raw.message } : {}),
+    // message 刻意不透传：hook 的完整输出是任意文本（实测漏过整份记忆索引），
+    // 只留 host 观测日志；渲染层唯一允许看到的 hook 文本是单行决策摘要 reason。
+    // 纵深防御——即使投影/组件失守，store 里也根本没有 message 可拿。
     ...(typeof raw.reason === 'string' ? { reason: raw.reason } : {}),
     ...(typeof raw.sessionId === 'string' ? { sessionId: raw.sessionId } : {}),
     ...(typeof raw.turnId === 'string' ? { turnId: raw.turnId } : {}),

@@ -131,6 +131,26 @@ describe('Hook 决策原因摘要（trigger history reason）', () => {
     expect(entry?.reason).toBeDefined();
     expect(entry?.reason).not.toContain(leakedKey);
   });
+
+  it('横跨 120 字截断点的 secret 不进 reason（先脱敏再截断，顺序不能反）', async () => {
+    const { getHooksForEvent } = await import('../../../src/host/hooks/merger');
+    // 密钥起点在第 111 字：旧顺序（先截断）会把密钥拦腰切成 10 字残段，
+    // 残段不满足 mask 的 token 匹配（sk-ant- 后需 90+ 字符）→ 半截密钥上屏
+    const leakedKey = 'sk-ant-api03-' + 'a'.repeat(90);
+    const prefix = 'A'.repeat(110);
+    vi.mocked(getHooksForEvent).mockReturnValue([
+      scriptConfig('Stop', `printf '${prefix}${leakedKey}'; exit 1`),
+    ]);
+
+    await manager.triggerStop('done', 'session-1');
+
+    const entry = manager.getTriggerHistory().at(-1);
+    expect(entry?.reason).toBeDefined();
+    expect(entry?.reason).not.toContain(leakedKey);
+    // 残段也不行：连密钥前缀特征都不能出现
+    expect(entry?.reason).not.toContain('sk-ant-api03');
+    expect(entry?.reason).not.toContain('a'.repeat(20));
+  });
 });
 
 describe('Hook onStart 信号（hook_started）', () => {

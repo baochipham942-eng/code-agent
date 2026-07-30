@@ -107,4 +107,20 @@ describe('turnExecutionStore', () => {
     store.reset();
     expect(useTurnExecutionStore.getState().hookRunningBySession).toEqual({});
   });
+
+  it('clearHookRunning 兜底：started 后配对 trigger 永不到达也能撤下（turn_end/终态路径调用）', () => {
+    const store = useTurnExecutionStore.getState();
+
+    store.recordHookStart('session-1', { timestamp: 130, event: 'PreToolUse', names: ['门禁'] });
+    store.recordHookStart('session-2', { timestamp: 131, event: 'PreToolUse', names: ['门禁'] });
+
+    store.clearHookRunning('session-1');
+    expect(useTurnExecutionStore.getState().hookRunningBySession['session-1']).toBeUndefined();
+    expect(useTurnExecutionStore.getState().hookRunningBySession['session-2']).toBeDefined();
+
+    // 无记录时是 no-op：不换切片引用（zustand v5 裸 useSyncExternalStore 对引用敏感）
+    const sliceBefore = useTurnExecutionStore.getState().hookRunningBySession;
+    store.clearHookRunning('session-1');
+    expect(useTurnExecutionStore.getState().hookRunningBySession).toBe(sliceBefore);
+  });
 });

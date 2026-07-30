@@ -100,6 +100,27 @@ describe('hook running 链路不引发无限重渲染（React #185 回归）', (
     expect(consoleErrorSpy.mock.calls.flat().join(' ')).not.toContain('getSnapshot should be cached');
   });
 
+  it('started 后兜底清除（turn_end/终态路径）→ running 指示撤下', () => {
+    act(() => {
+      root.render(React.createElement(Probe));
+    });
+
+    act(() => {
+      useTurnExecutionStore.getState().recordHookStart('session-hook-running', {
+        timestamp: 140,
+        event: 'PreToolUse',
+        names: ['命令门禁'],
+      });
+    });
+    expect(container.textContent).toContain('PreToolUse');
+
+    // 模拟 turn_end / agent 终态到达（配对的 hook_trigger 因断流永不到达）
+    act(() => {
+      useTurnExecutionStore.getState().clearHookRunning('session-hook-running');
+    });
+    expect(container.textContent).toBe('null');
+  });
+
   it('无关的 hook_trigger 不抖 hookRunningBySession 切片引用（防快照风暴）', () => {
     act(() => {
       root.render(React.createElement(Probe));

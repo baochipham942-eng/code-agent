@@ -109,20 +109,21 @@ const MAX_TRIGGER_HISTORY = 50;
 const HOOK_REASON_MAX_CHARS = 120;
 
 /**
- * 从 trigger 结果里提炼 block/modify 的原因摘要：首个非空行、截断、脱敏。
- * 放行且无改写时没有「决策」可言，不出 reason。
+ * 从 trigger 结果里提炼 block/modify 的原因摘要：先对完整文本脱敏、再取首个
+ * 非空行、最后截断 120 字。顺序不能反——先截断可能把 secret 拦腰切断，破坏
+ * mask 的 token 匹配，让半截密钥上屏。放行且无改写时没有「决策」可言，不出 reason。
  */
 function summarizeHookDecisionReason(result: HookTriggerResult): string | undefined {
   if (result.shouldProceed && !result.modifiedInput) return undefined;
-  const firstLine = result.message
+  const masked = result.message ? maskSensitiveData(result.message) : undefined;
+  const firstLine = masked
     ?.split('\n')
     .map((line) => line.trim())
     .find((line) => line.length > 0);
   if (!firstLine) return undefined;
-  const truncated = firstLine.length > HOOK_REASON_MAX_CHARS
+  return firstLine.length > HOOK_REASON_MAX_CHARS
     ? `${firstLine.slice(0, HOOK_REASON_MAX_CHARS)}…`
     : firstLine;
-  return maskSensitiveData(truncated);
 }
 
 interface HookActivityMetadata {

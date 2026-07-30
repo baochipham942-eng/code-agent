@@ -13,7 +13,7 @@
 // ============================================================================
 
 import type { VoiceMessageCode } from '@shared/contract/voice';
-import { VOICE_DOWNSTREAM_SAMPLE_RATE, VOICE_FOCUS_REPORT_MIN_INTERVAL_MS, VOICE_RECONNECT_BACKOFF_MS, VOICE_STREAM_WS_PATH, VOICE_SUBTITLE_REVEAL_INTERVAL_MS, VOICE_SUBTITLE_STALL_FLUSH_MS, VOICE_TEARDOWN_DRAIN_MS, VOICE_WS_CLOSE_TERMINAL } from '@shared/constants/voice';
+import { VOICE_DOWNSTREAM_SAMPLE_RATE, VOICE_FOCUS_REPORT_MIN_INTERVAL_MS, VOICE_RECONNECT_BACKOFF_MS, VOICE_PARTIAL_HANDOFF_MAX_WAIT_MS, VOICE_STREAM_WS_PATH, VOICE_SUBTITLE_REVEAL_INTERVAL_MS, VOICE_SUBTITLE_STALL_FLUSH_MS, VOICE_TEARDOWN_DRAIN_MS, VOICE_WS_CLOSE_TERMINAL } from '@shared/constants/voice';
 import type { AppSettings, Message } from '@shared/contract';
 import type { VoiceClientCommand, VoiceEvent } from '@shared/contract/voice';
 import { IPC_DOMAINS } from '@shared/ipc';
@@ -98,28 +98,47 @@ class VoiceCallBridge {
    */
   private settledPartials: { user?: string; assistant?: string } = {};
 
+  /** 交接等待的截止时刻：真消息迟迟不落库时不能无限重拉。 */
+  private handoffDeadline = 0;
+
   private scheduleReload(sessionId: string, settled?: 'user' | 'assistant', delayMs = 500): void {
     if (settled) {
       this.settledPartials[settled] = settled === 'user'
         ? this.store().partialUser
         : this.store().partialAssistant;
+      this.handoffDeadline = Date.now() + VOICE_PARTIAL_HANDOFF_MAX_WAIT_MS;
     }
     if (this.reloadTimer) clearTimeout(this.reloadTimer);
     this.reloadTimer = setTimeout(async () => {
       this.reloadTimer = null;
       await reloadVoiceSessionMessages(sessionId);
-      this.releaseSettledPartials();
+      // 真消息还没进消息流就撤气泡 = 空帧（R1 闪断）。继续顶着，隔一会儿再拉一次。
+      // 一次拉不到是常态：host 落库比这里的 500ms 慢，且此前没有任何人会再拉第二次，
+      // 于是那句话一直缺到挂断才被补拉回来——真机看到的「清空 → 再出现」就是这么来的。
+      if (!this.releaseSettledPartials() && Date.now() < this.handoffDeadline) {
+        this.scheduleReload(sessionId, undefined, delayMs);
+      }
     }, delayMs);
   }
 
-  private releaseSettledPartials(): void {
+  /** @returns 待交接的临时气泡是否已全部撤完（false = 还得再等真消息）。 */
+  private releaseSettledPartials(): boolean {
     const state = this.store();
-    const patch = resolvePartialRelease(this.settledPartials, {
-      user: state.partialUser,
-      assistant: state.partialAssistant,
-    });
-    this.settledPartials = {};
+    const messages = useSessionStore.getState().messages;
+    const landed = (role: 'user' | 'assistant', text: string | undefined): boolean =>
+      text !== undefined && messages.some((m) => m.role === role && m.content.trim() === text.trim());
+    const patch = resolvePartialRelease(
+      this.settledPartials,
+      { user: state.partialUser, assistant: state.partialAssistant },
+      {
+        user: landed('user', this.settledPartials.user),
+        assistant: landed('assistant', this.settledPartials.assistant),
+      },
+    );
+    if (patch.partialUser !== undefined) delete this.settledPartials.user;
+    if (patch.partialAssistant !== undefined) delete this.settledPartials.assistant;
     if (Object.keys(patch).length > 0) state.eventApplied(patch);
+    return Object.keys(this.settledPartials).length === 0;
   }
 
   // ==========================================================================

@@ -12,6 +12,7 @@ import { electronFetch, parseOpenAIResponse, safeJsonStringify } from './shared'
 import { withTransientRetry } from './retryStrategy';
 import { MODEL_MAX_TOKENS, DEFAULT_MODEL } from '../../../shared/constants';
 import { PROVIDER_REGISTRY } from '../providerRegistry';
+import { MODEL_API_KEY_MISSING_CODE } from '../errorClassifier';
 import { createLogger } from '../../services/infra/logger';
 import { resolveModelRequestTemperature } from '../../../shared/modelSampling';
 
@@ -125,7 +126,13 @@ export abstract class BaseOpenAIProvider implements Provider {
     const apiKey = this.getApiKey(config);
 
     if (this.requiresApiKey() && !apiKey) {
-      throw new Error(`${this.name} API key not configured`);
+      // 结构化标记而不是让下游认这句英文：失败要变成用户看得懂的「去设置里配 key」，
+      // 判据必须是字段（批 X5 ③）。
+      throw Object.assign(new Error(`${this.name} API key not configured`), {
+        code: MODEL_API_KEY_MISSING_CODE,
+        provider: config.provider,
+        model: config.model,
+      });
     }
 
     const requestBody = this.buildRequestBody(messages, tools, config);
@@ -170,7 +177,13 @@ export abstract class BaseOpenAIProvider implements Provider {
           if (!response.ok) {
             const error = await response.text();
             const urlHint = response.status === 404 ? `\n请求 URL: ${requestUrl} — 请检查 Base URL 是否完整（OpenAI 兼容通常以 /v1 结尾）` : '';
-            throw new Error(`${this.name} API error: ${response.status} - ${error}${urlHint}`);
+            // status 只写在 message 里等于没有：下游要按 401/403 判「鉴权失败」，
+            // 就得能从错误对象上读到它（批 X5 ③）。
+            throw Object.assign(new Error(`${this.name} API error: ${response.status} - ${error}${urlHint}`), {
+              status: response.status,
+              provider: config.provider,
+              model: config.model,
+            });
           }
 
           return parseOpenAIResponse(await response.json());

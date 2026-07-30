@@ -1,13 +1,14 @@
-// P0-2 handoff 带字幕近窗 / P0-3 挂断 tail flush 的接线门（2026-07-28）。
+// P0-2 handoff 带字幕近窗的接线门（2026-07-28）。
 //
 // 治的是真机 dogfood 那条最严重的现象：模型口头说「正在为你创建 a.txt」，
-// 一次工具都没调，磁盘上什么都没发生。两件事分别从两头兜：
-//   · 派活时把通话近窗的**原始字幕**一起交给执行侧（brain 改写会丢信息，
-//     而「改写正确」原本是这条链上唯一的一条路）；
-//   · 挂断时若整通电话一件活都没派出来，把尾巴交给执行侧再判一次。
+// 一次工具都没调，磁盘上什么都没发生。修法是派活时把通话近窗的**原始字幕**一起交给
+// 执行侧（brain 改写会丢信息，而「改写正确」原本是这条链上唯一的一条路）。
 //
 // 判据钉在「执行侧那一轮真的拿到了什么」——startTask 的 message 与
 // turnSystemContext，不是「函数返回了对的字符串」。
+//
+// 同批曾有的「挂断 tail flush 补派」（P0-3）已整条删除（2026-07-30 产品拍板：
+// 挂断 = 用户不要执行），它的门随之移除。
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { AgentRunOptions } from '../../src/host/research/types';
@@ -59,7 +60,6 @@ vi.mock('../../src/host/connectors', () => ({
 const {
   beginVoiceDispatch,
   endVoiceDispatch,
-  flushVoiceTail,
   pushVoiceTranscript,
 } = await import('../../src/host/services/voice/voiceAgentCoordinator');
 const { executeVoiceTool } = await import('../../src/host/services/voice/voiceTools');
@@ -154,61 +154,6 @@ describe('P0-2 派活载荷带通话近窗字幕', () => {
 
     expect(systemContext()).toContain('通话近窗字幕原文');
     expect(systemContext()).not.toContain('口述词表');
-  });
-});
-
-describe('P0-3 挂断 tail flush', () => {
-  beforeEach(() => {
-    runtime.startTask.mockClear();
-    runtime.status = 'idle';
-    runtime.settings = { voice: { live: {} } };
-    endVoiceDispatch();
-    bind();
-  });
-
-  it('整通电话零派活时，把尾巴交给执行侧再判一次', async () => {
-    pushRealCallTranscript();
-    runtime.settings = { voice: { live: {}, vocabulary: ['a.txt'] } };
-
-    await expect(flushVoiceTail()).resolves.toBe(true);
-
-    expect(runtime.startTask).toHaveBeenCalledTimes(1);
-    expect(lastRun().message).toContain('一件任务都没有派出来');
-    // 补派那一轮同样要拿到原文，否则执行侧无从判断有没有待办
-    expect(systemContext()).toContain('a点text的文件');
-    expect(systemContext()).toContain('- a.txt');
-  });
-
-  it('已经派过活就不补派——没派的那部分多半是用户自己放弃的', async () => {
-    pushRealCallTranscript();
-    await executeVoiceTool('spawn_task', JSON.stringify({ title: 't', prompt: 'p' }));
-    runtime.startTask.mockClear();
-
-    await expect(flushVoiceTail()).resolves.toBe(false);
-    expect(runtime.startTask).not.toHaveBeenCalled();
-  });
-
-  it('用户一句话没说过的空通话不补派', async () => {
-    pushVoiceTranscript({ role: 'assistant', text: '喂？' });
-
-    await expect(flushVoiceTail()).resolves.toBe(false);
-    expect(runtime.startTask).not.toHaveBeenCalled();
-  });
-
-  it('会话里还有活在跑时不插队', async () => {
-    pushRealCallTranscript();
-    runtime.status = 'running';
-
-    await expect(flushVoiceTail()).resolves.toBe(false);
-    expect(runtime.startTask).not.toHaveBeenCalled();
-  });
-
-  it('通话账本已经断开后不补派', async () => {
-    pushRealCallTranscript();
-    endVoiceDispatch();
-
-    await expect(flushVoiceTail()).resolves.toBe(false);
-    expect(runtime.startTask).not.toHaveBeenCalled();
   });
 });
 

@@ -79,7 +79,12 @@ export class GeminiProvider implements Provider {
           throw contextError;
         }
 
-        throw new Error(`Gemini API error: ${response.status} - ${error}`);
+        // 同 sseStream：status 带在错误对象上，下游才判得出 401/403（批 X5 ③）。
+        throw Object.assign(new Error(`Gemini API error: ${response.status} - ${error}`), {
+          status: response.status,
+          provider: config.provider,
+          model,
+        });
       }
 
       if (onStream && response.body) {

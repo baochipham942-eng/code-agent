@@ -3,7 +3,7 @@
 // ============================================================================
 
 import { describe, it, expect } from 'vitest';
-import { classifyError } from '../../../src/host/model/errorClassifier';
+import { classifyError, getModelAuthFailureMarker, MODEL_API_KEY_MISSING_CODE } from '../../../src/host/model/errorClassifier';
 import type { ErrorClass } from '../../../src/host/model/errorClassifier';
 
 // --------------------------------------------------------------------------
@@ -187,5 +187,44 @@ describe('classifyError – unknown and edge cases', () => {
 
   it('statusCode field is also accepted', () => {
     expect(classifyError({ statusCode: 429, message: '' })).toBe<ErrorClass>('rate_limit');
+  });
+});
+
+// --------------------------------------------------------------------------
+// 缺 key / 鉴权失败的结构化识别（批 X5 ③）
+//
+// 与 classifyError 刻意不同：这个结果直接决定用户看到的那句人话，所以**只认字段**。
+// message 是上游自由文案，按文本认必然漏，漏了还静默（deny-list 教训）。
+// --------------------------------------------------------------------------
+
+describe('getModelAuthFailureMarker', () => {
+  it('HTTP 401 / 403 认成鉴权失败，并带上认得出的 provider/model', () => {
+    expect(getModelAuthFailureMarker({ status: 401, provider: 'openai', model: 'gpt-4o' })).toEqual({
+      code: 'MODEL_AUTH',
+      provider: 'openai',
+      model: 'gpt-4o',
+    });
+    expect(getModelAuthFailureMarker({ status: 403 })).toEqual({ code: 'MODEL_AUTH' });
+  });
+
+  it('本地缺 key 的自有 code 同样认成鉴权失败', () => {
+    expect(getModelAuthFailureMarker({ code: MODEL_API_KEY_MISSING_CODE, provider: 'deepseek' }))
+      .toEqual({ code: 'MODEL_AUTH', provider: 'deepseek' });
+  });
+
+  it('沿 cause 链上溯（重试/agent loop 会把原始错误包起来）', () => {
+    const wrapped = new Error('run failed', { cause: new Error('inference failed', { cause: { status: 401, provider: 'zhipu' } }) });
+    expect(getModelAuthFailureMarker(wrapped)).toEqual({ code: 'MODEL_AUTH', provider: 'zhipu' });
+  });
+
+  it('只有英文原文、没有结构化字段时不认（判据是字段不是文本）', () => {
+    expect(getModelAuthFailureMarker(new Error("You didn't provide an API key."))).toBeUndefined();
+    expect(getModelAuthFailureMarker(new Error('401 Unauthorized'))).toBeUndefined();
+  });
+
+  it('其他状态码不冒充鉴权失败', () => {
+    expect(getModelAuthFailureMarker({ status: 500 })).toBeUndefined();
+    expect(getModelAuthFailureMarker({ status: 429 })).toBeUndefined();
+    expect(getModelAuthFailureMarker(undefined)).toBeUndefined();
   });
 });

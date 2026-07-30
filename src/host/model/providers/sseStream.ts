@@ -397,7 +397,13 @@ export function openAISSEStream(options: SSEStreamOptions): Promise<ModelRespons
           if (ctxError) {
             reject(ctxError);
           } else {
-            reject(new Error(errorMessage));
+            // status 只进 message 文本等于下游拿不到：401/403 这类要按码判的场景
+            // （缺 key 的人话文案，批 X5 ③）只能靠错误对象上的字段。
+            reject(Object.assign(new Error(errorMessage), {
+              status: res.statusCode,
+              provider,
+              model: requestBody['model'],
+            }));
           }
         });
         return;

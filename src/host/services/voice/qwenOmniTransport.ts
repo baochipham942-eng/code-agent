@@ -11,6 +11,8 @@ import {
   QWEN_OMNI_REALTIME_TRANSCRIPTION_MODEL,
   QWEN_OMNI_REALTIME_VOICE,
   QWEN_OMNI_REALTIME_WS_URL,
+  VOICE_STALE_PREFIX_DEFAULTS_MS,
+  VOICE_STALE_SILENCE_DEFAULTS_MS,
   VOICE_TURN_DETECTION_DEFAULT,
   VOICE_UPSTREAM_CONNECT_TIMEOUT_MS,
   VOICE_UPSTREAM_HEARTBEAT_INTERVAL_MS,
@@ -68,19 +70,27 @@ function resolveTurnDetectionConfig(): VoiceTurnDetectionConfig {
 }
 
 /**
- * 存量配置里的旧默认值升级（批 X2）。prefix/silence 从来不是 UI 可设项——落盘里的
- * 300/500 只可能是「当年默认值随保存写死的拷贝」，不是用户选择。改默认值对存量
- * 零生效是踩过的坑（echoCancellation 先例），所以在读取口把旧默认识别为过期：
- * 逐字段等于旧默认 → 升到新默认；手改过的其他值（含 threshold）原样保留。
+ * 存量配置里的旧默认值升级（批 X2，批 X5 补上 800）。prefix/silence 从来不是 UI 可设项
+ * ——落盘里等于历代默认值之一，就只可能是「当年默认值随保存写死的拷贝」，不是用户选择。
+ * 改默认值对存量零生效是踩过的坑（echoCancellation 先例），所以在读取口把旧默认识别为
+ * 过期：逐字段命中历代默认表 → 升到新默认；手改过的其他值（含 threshold）原样保留。
+ *
+ * 历代默认表放常量文件而不是写在这里：改默认值的人改的是那个文件，旧值必须在他眼前。
  */
 function upgradeStaleVadDefaults(configured: VoiceTurnDetectionConfig): VoiceTurnDetectionConfig {
   if (configured?.type !== 'server_vad') return configured;
   const defaults = VOICE_TURN_DETECTION_DEFAULT;
   if (defaults?.type !== 'server_vad') return configured;
+  const isStale = (value: number | undefined, stale: readonly number[]): boolean =>
+    value !== undefined && stale.includes(value);
   return {
     ...configured,
-    ...(configured.prefixPaddingMs === 300 ? { prefixPaddingMs: defaults.prefixPaddingMs } : {}),
-    ...(configured.silenceDurationMs === 500 ? { silenceDurationMs: defaults.silenceDurationMs } : {}),
+    ...(isStale(configured.prefixPaddingMs, VOICE_STALE_PREFIX_DEFAULTS_MS)
+      ? { prefixPaddingMs: defaults.prefixPaddingMs }
+      : {}),
+    ...(isStale(configured.silenceDurationMs, VOICE_STALE_SILENCE_DEFAULTS_MS)
+      ? { silenceDurationMs: defaults.silenceDurationMs }
+      : {}),
   };
 }
 

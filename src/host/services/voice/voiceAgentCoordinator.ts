@@ -14,7 +14,7 @@
 // ============================================================================
 
 import type { TaskManagerEvent } from '../../task/TaskManager';
-import type { VoiceFocusContext, VoiceWorkItem, VoiceWorkItemStatus, VoiceWorkNarration } from '../../../shared/contract/voice';
+import type { VoiceFocusContext, VoiceWorkFailureMarker, VoiceWorkItem, VoiceWorkItemStatus, VoiceWorkNarration } from '../../../shared/contract/voice';
 import { VOICE_CONCLUSION_LOOKBACK_MESSAGES, VOICE_RECENT_FILE_LIMIT, VOICE_SPAWN_TASK_MAX_ITERATIONS } from '../../../shared/constants/voice';
 import { getIncompleteTasks } from '../planning/taskStore';
 import { getSessionManager } from '../infra/sessionManager';
@@ -26,7 +26,6 @@ import { getConfigService } from '../core/configService';
 import { buildWorkNarration, resolveNarrationSpeaker } from './voiceNarration';
 import { describeWorkFailure } from './workFailureDescription';
 import { buildVocabularyBlock } from './voiceVocabulary';
-import type { ProjectSourceTrustFailureMarker } from '../../../shared/contract/project';
 
 const logger = createLogger('VoiceCoordinator');
 
@@ -243,7 +242,7 @@ function settle(
   id: string,
   status: VoiceWorkItemStatus,
   detail?: string,
-  failure?: ProjectSourceTrustFailureMarker,
+  failure?: VoiceWorkFailureMarker,
 ): void {
   const item = state.items.get(id);
   if (!item || TERMINAL.includes(item.status)) return;
@@ -325,6 +324,30 @@ function runHoldId(workItemId: string): string {
   return `run:${workItemId}`;
 }
 
+/**
+ * TaskManager 事件的 data 是 unknown，标记要在这个边界上重新验形——生产者与消费者
+ * 隔着一层无类型事件总线，只有这里能保证「进账本的标记确实是它自称的那个」。
+ * 认不出的一律 undefined，让文案退回兜底，绝不半信半疑地当成已识别。
+ */
+function readFailureMarker(raw: unknown): VoiceWorkFailureMarker | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const marker = raw as { code?: unknown; kind?: unknown; provider?: unknown; model?: unknown };
+  if (
+    marker.code === 'PROJECT_SOURCE_TRUST'
+    && (marker.kind === 'source_missing' || marker.kind === 'identity_changed' || marker.kind === 'not_trusted')
+  ) {
+    return { code: 'PROJECT_SOURCE_TRUST', kind: marker.kind };
+  }
+  if (marker.code === 'MODEL_AUTH') {
+    return {
+      code: 'MODEL_AUTH',
+      ...(typeof marker.provider === 'string' && marker.provider ? { provider: marker.provider } : {}),
+      ...(typeof marker.model === 'string' && marker.model ? { model: marker.model } : {}),
+    };
+  }
+  return undefined;
+}
+
 function onTaskManagerEvent(event: TaskManagerEvent): void {
   const state = ledger;
   if (event.sessionId !== state?.neoSessionId) return;
@@ -341,20 +364,9 @@ function onTaskManagerEvent(event: TaskManagerEvent): void {
       settle(state, pendingId, 'done');
       break;
     case 'task_error': {
-      const data = event.data as {
-        error?: unknown;
-        failure?: ProjectSourceTrustFailureMarker;
-      } | undefined;
+      const data = event.data as { error?: unknown; failure?: unknown } | undefined;
       const detail = typeof data?.error === 'string' ? data.error : '执行失败';
-      const failure = data?.failure?.code === 'PROJECT_SOURCE_TRUST'
-        && (
-          data.failure.kind === 'source_missing'
-          || data.failure.kind === 'identity_changed'
-          || data.failure.kind === 'not_trusted'
-        )
-        ? data.failure
-        : undefined;
-      settle(state, pendingId, 'failed', detail, failure);
+      settle(state, pendingId, 'failed', detail, readFailureMarker(data?.failure));
       break;
     }
     case 'task_cancelled':

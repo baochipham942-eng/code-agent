@@ -25,6 +25,20 @@ export type ModelProvider = BuiltInModelProvider | (string & {});
 
 export type ModelProviderProtocol = 'openai' | 'claude';
 
+/**
+ * 模型鉴权失败的结构化标记（缺 API Key / key 被拒）。
+ *
+ * 判据只认引擎侧带上来的结构化字段——本地缺 key 的自有 code，或上游 HTTP 401/403，
+ * 绝不按报错文本枚举：真机那句 `You didn't provide an API key...` 是上游自由文案，
+ * 换个供应商、换个版本就变，按文本认必然漏（deny-list 教训）。
+ */
+export interface ModelAuthFailureMarker {
+  code: 'MODEL_AUTH';
+  /** 认得出时带上，用于把「哪个模型没配 key」说清楚；认不出就不带，文案退回泛指。 */
+  provider?: string;
+  model?: string;
+}
+
 export type ModelReasoningEffort = 'low' | 'medium' | 'high';
 
 /** 模型原生 thinking 控制形态；调用方必须按 kind 渲染和写入对应参数。 */

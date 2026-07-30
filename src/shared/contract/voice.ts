@@ -16,6 +16,14 @@ export type VoiceTurnDetectionConfig =
   | null;
 
 /**
+ * 派活失败的结构化成因。生产者在 throw 处带上，一路带到用户可见文案的统一出口
+ * （describeWorkFailure）——认不出的一律走兜底，绝不从 detail 文本反推。
+ */
+export type VoiceWorkFailureMarker =
+  | import('./project').ProjectSourceTrustFailureMarker
+  | import('./model').ModelAuthFailureMarker;
+
+/**
  * 通话里派出的一件活。
  *
  * Phase 2 批 H 补齐全生命周期：此前只有 queued / failed 两态——run 干完了不发任何事件，
@@ -31,7 +39,7 @@ export interface VoiceWorkItem {
   /** 失败原因，供 UI 显示；其余状态没有 */
   detail?: string;
   /** 自有错误生产者给出的稳定分类；不从 detail 文本反推。 */
-  failure?: import('./project').ProjectSourceTrustFailureMarker;
+  failure?: VoiceWorkFailureMarker;
 }
 
 /**

@@ -184,6 +184,26 @@ describe('G1 语音派活失败必须被说出去', () => {
     expect(clearLiveVoiceSession).toHaveBeenCalled();
   });
 
+  // 批 X5 ③：标记要**穿过**无类型的事件总线到账本，文案出口才认得出。
+  it('鉴权失败标记穿过 task_error 落进账本（认不出的形状一律丢弃）', async () => {
+    bind();
+    await spawn();
+
+    runtime.emit('task_error', 'session-1', {
+      error: "OpenAI API (401): You didn't provide an API key.",
+      failure: { code: 'MODEL_AUTH', provider: 'openai', model: 'gpt-4o' },
+    });
+
+    expect(failures[0].failure).toEqual({ code: 'MODEL_AUTH', provider: 'openai', model: 'gpt-4o' });
+
+    failures.length = 0;
+    endVoiceDispatch();
+    bind();
+    await spawn();
+    runtime.emit('task_error', 'session-1', { error: '炸了', failure: { code: 'SOMETHING_ELSE' } });
+    expect(failures[0].failure).toBeUndefined();
+  });
+
   it('事件里带的不是字符串时 detail 只能退化成兜底——这就是 TaskManager 必须发字符串的原因', async () => {
     bind();
     await spawn();

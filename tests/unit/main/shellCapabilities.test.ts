@@ -22,6 +22,8 @@ describe('shell capabilities', () => {
 
   it.each([
     ['domain:project', 'artifactIssues'],
+    ['domain:project', 'listCloudCards'],
+    ['domain:project', 'resyncCloudCards'],
     ['domain:project', 'setDescription'],
     ['domain:settings', 'saveProviderIconAsset'],
     ['domain:settings', 'resolveProviderIconAsset'],
@@ -66,6 +68,14 @@ describe('shell capabilities', () => {
       )
     ))).toMatchObject({
       risk: 'high',
+    });
+  });
+
+  it('marks cloud card resync as a medium-risk shell mutation', () => {
+    expect(getShellCapabilities().find((capability) => (
+      capability.id === makeShellCapabilityId('domain:project', 'resyncCloudCards')
+    ))).toMatchObject({
+      risk: 'medium',
     });
   });
 });

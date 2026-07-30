@@ -298,6 +298,9 @@ export class ConfigService implements IReadConfigService {
           });
         }, CONFIG_WATCH_DEBOUNCE_MS);
       });
+      this.configWatcher.on('error', (error) => {
+        logger.warn('Config watcher error (non-fatal)', { error: String(error) });
+      });
       logger.info('Watching config.json for external edits', { path: this.configPath });
     } catch (error) {
       logger.warn('Failed to watch config file', { error: String(error) });

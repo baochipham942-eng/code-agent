@@ -26,8 +26,63 @@ export interface Project {
   createdAt: number;
   updatedAt: number;
   archivedAt?: number | null;
+  /** 用户显式升级为协作空间的时间；null 表示仍是自动派生的普通项目。 */
+  spacePromotedAt?: number | null;
+  /** 对应 collab_projects.id；null 表示该项目仍是纯本地空间。 */
+  cloudProjectId?: string | null;
   /** Monotonic revision for atomic source edits and immutable run snapshots. */
   sourceRevision?: number;
+}
+
+/** 云协同空间成员（project 域 listMembers 返回行；形状与 host ProjectMember 一致） */
+export interface ProjectMember {
+  projectId: string;
+  userId: string;
+  role: 'owner' | 'member';
+  displayName: string | null;
+  avatarUrl: string | null;
+  joinedAt: string;
+}
+
+/** 空间邀请码（project 域 createInvite 返回；形状与 host ProjectInvite 一致） */
+export interface ProjectInvite {
+  code: string;
+  projectId: string;
+  expiresAt: string;
+  maxUses: number;
+  usedCount: number;
+  revokedAt: string | null;
+}
+
+/** 升级为云协同空间的结果（project 域 promoteToCloudSpace 返回） */
+export interface CloudSpacePromotion {
+  localProjectId: string;
+  cloudProjectId: string;
+  name: string;
+}
+
+/**
+ * 其他成员共享到云端的只读卡元数据（project 域 listCloudCards 返回行；
+ * 形状与 host CloudCollabCard 一致，字段全集 = collabCloudContract 白名单 + 归属 id）。
+ * readonly 恒为 true：云卡只读展示，本地不可编辑。
+ */
+export interface CloudCollabCard {
+  localCardId: string;
+  sourceUserId: string;
+  title: string;
+  status: string;
+  priority: string;
+  dueAt: number | null;
+  updatedAt: number;
+  requesterUserId: string;
+  readonly: true;
+}
+
+/** 重新推送本机卡元数据到云端的结果（project 域 resyncCloudCards 返回；形状与 host CollabCardSyncReport 一致） */
+export interface CollabCardSyncReport {
+  queued: number;
+  synced: number;
+  failed: number;
 }
 
 export type ProjectSourceRole = 'primary' | 'additional';
@@ -103,6 +158,20 @@ export interface ProjectRoleLink {
   joinedAt: number;
 }
 
+export type ProjectCapabilityKind = 'skill' | 'connector' | 'automation';
+
+export interface ProjectCapabilitySelection {
+  projectId: string;
+  kind: ProjectCapabilityKind;
+  capabilityId: string;
+  selectedAt: number;
+}
+
+export interface ProjectWithActivity extends Project {
+  activeTopicCount: number;
+  lastActivityAt: number | null;
+}
+
 /** 项目详情聚合（中心视图数据源） */
 export interface ProjectDetail {
   project: Project;
@@ -167,6 +236,28 @@ export interface CreateProjectInput {
   name: string;
   workspacePath?: string | null;
   description?: string;
+}
+
+/** 新建显式协作空间入参；无目录空间沿用 projects 的 null workspace 形态。 */
+export interface CreateSpaceInput {
+  name: string;
+  description?: string;
+  workspacePath?: string | null;
+  /** 知情确认：目录含危险项时用户已在确认步看过清单并再点创建（批P 第六波①a 创建即信任） */
+  trustAcknowledged?: boolean;
+}
+
+/**
+ * 创建即信任：目录含危险项且未知情确认时 host 抛的 coded 错误前缀（domain:project 契约的一部分），
+ * renderer 凭此前缀在同一 Modal 内切确认步，不 toast 报错。
+ */
+export const FOLDER_TRUST_CONFIRM_REQUIRED_PREFIX = 'FOLDER_TRUST_CONFIRM_REQUIRED:';
+
+/** 将已有普通项目升级为显式协作空间。 */
+export interface PromoteToSpaceInput {
+  projectId: string;
+  /** 同 CreateSpaceInput.trustAcknowledged：升级目录含危险项时的知情确认 */
+  trustAcknowledged?: boolean;
 }
 
 export interface ProjectSourceInput {

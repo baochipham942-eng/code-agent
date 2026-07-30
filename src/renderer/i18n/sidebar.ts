@@ -153,6 +153,18 @@ export const sidebarZh = {
     plainChatTitle: '纯对话，不继承项目上下文',
     // 未分类组（无工作区的纯对话归宿）的组名
     uncategorizedGroupName: '快速对话',
+    // 历史会话三分区节头（ADR-053 词表，2026-07-29 晚拍板：协作空间/独立空间/快速对话，
+    // UI 不对用户暴露「项目」一词）。顺序固定：协作空间 → 独立空间 → 快速对话。
+    tierSpace: '协作空间',
+    tierProject: '独立空间',
+    tierQuick: '快速对话',
+    // 云标占位（批P 第三波留接口不点亮）：空间绑云身份后节头点亮，contract 字段在另一条分支。
+    tierCloudBadgeTitle: '已绑定云身份',
+    // 分区节头交互（折叠/只看本分区/创建）的悬浮提示与 aria 文案。
+    tierCollapse: '折叠分区',
+    tierExpand: '展开分区',
+    tierNewSpace: '新建协作空间',
+    tierNewQuickChat: '新建快速对话',
     // 分组头展开/收起 tooltip 与 aria（sidebarGroupExpansion 纯工具由调用方注入词条）
     collapseGroupTitle: '折叠项目',
     expandGroupTitle: '展开项目',
@@ -448,6 +460,14 @@ export const sidebarEn: typeof sidebarZh = {
   sidebarProject: {
     plainChatTitle: 'Plain conversation, no project context',
     uncategorizedGroupName: 'Quick chats',
+    tierSpace: 'Spaces',
+    tierProject: 'Local spaces',
+    tierQuick: 'Quick chats',
+    tierCloudBadgeTitle: 'Cloud identity linked',
+    tierCollapse: 'Collapse section',
+    tierExpand: 'Expand section',
+    tierNewSpace: 'New space',
+    tierNewQuickChat: 'New quick chat',
     collapseGroupTitle: 'Collapse project',
     expandGroupTitle: 'Expand project',
     collapseGroupAria: 'Collapse {name}',

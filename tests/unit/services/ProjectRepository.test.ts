@@ -16,7 +16,7 @@ import { applySchema } from '../../../src/host/services/core/database/schema';
 import { applySessionsMigrations } from '../../../src/host/services/core/database/migrations';
 import { applyIndexes } from '../../../src/host/services/core/database/indexes';
 import { ProjectRepository } from '../../../src/host/services/core/repositories/ProjectRepository';
-import { buildProjectArtifacts } from '../../../src/host/services/project/projectService';
+import { buildProjectArtifacts, ProjectService } from '../../../src/host/services/project/projectService';
 import { getProjectKey } from '../../../src/host/services/roleAssets/roleAssetPaths';
 import { UNSORTED_PROJECT_ID, type Project } from '../../../src/shared/contract/project';
 
@@ -67,11 +67,34 @@ describe('ProjectRepository', () => {
     expect(cols).toContain('project_id');
   });
 
+  it('迁移后 projects 表有 space_promoted_at 列', () => {
+    const cols = (db.prepare("PRAGMA table_info(projects)").all() as Array<{ name: string }>).map((c) => c.name);
+    expect(cols).toContain('space_promoted_at');
+  });
+
   it('upsert + 按 workspace_key 查回', () => {
     const p = makeRow('/work/alpha', getProjectKey('/work/alpha'), NOW);
     repo.upsertProject(p);
     expect(repo.getProjectByWorkspaceKey(p.workspaceKey!)?.id).toBe(p.id);
     expect(repo.getProject(p.id)?.name).toBe('alpha');
+  });
+
+  it('写回并按 cloud_project_id 查回唯一云空间映射', () => {
+    const p = makeRow('/work/alpha', getProjectKey('/work/alpha'), NOW);
+    repo.upsertProject(p);
+
+    expect(repo.setCloudProjectId(p.id, 'cloud-alpha', NOW + 1)).toEqual(
+      expect.objectContaining({
+        id: p.id,
+        cloudProjectId: 'cloud-alpha',
+        updatedAt: NOW + 1,
+      }),
+    );
+    expect(repo.getProjectByCloudProjectId('cloud-alpha')?.id).toBe(p.id);
+
+    const second = { ...makeRow('/work/beta', getProjectKey('/work/beta'), NOW), id: 'proj_beta' };
+    repo.upsertProject(second);
+    expect(() => repo.setCloudProjectId(second.id, 'cloud-alpha', NOW + 2)).toThrow();
   });
 
   it('允许同一 workspace path 属于不同 Project', () => {
@@ -82,6 +105,56 @@ describe('ProjectRepository', () => {
     repo.upsertProject(second);
     expect(repo.getProject(first.id)?.workspaceKey).toBe(key);
     expect(repo.getProject(second.id)?.workspaceKey).toBe(key);
+  });
+
+  it('promoteToSpace 幂等：保留首次升级时间，重复调用不改时间', () => {
+    const project = makeRow('/work/alpha', getProjectKey('/work/alpha'), NOW);
+    repo.upsertProject(project);
+
+    expect(repo.promoteToSpace(project.id, NOW + 1)?.spacePromotedAt).toBe(NOW + 1);
+    const promotedAgain = repo.promoteToSpace(project.id, NOW + 2);
+
+    expect(promotedAgain?.spacePromotedAt).toBe(NOW + 1);
+    expect(promotedAgain?.updatedAt).toBe(NOW + 1);
+  });
+
+  it('promoteToSpace 拒绝 UNSORTED 保留项目', () => {
+    expect(() => repo.promoteToSpace(UNSORTED_PROJECT_ID, NOW)).toThrow(
+      'The unsorted project cannot be promoted to a space.',
+    );
+  });
+
+  it('createSpace 无目录时复用 null workspace 形态', async () => {
+    const service = new ProjectService(() => repo);
+    const created = await service.createSpace({
+      name: '  无目录空间  ',
+      description: '  方案讨论  ',
+    }, NOW);
+
+    expect(created).toEqual(expect.objectContaining({
+      name: '无目录空间',
+      description: '方案讨论',
+      workspacePath: null,
+      workspaceKey: null,
+      spacePromotedAt: NOW,
+    }));
+    expect(repo.listSources(created.id)).toEqual([]);
+  });
+
+  it('createSpace 命中已有 workspace 时升级并复用原项目', async () => {
+    const existing = makeRow('/work/alpha', getProjectKey('/work/alpha'), NOW);
+    repo.upsertProject(existing);
+    const service = new ProjectService(() => repo);
+
+    const result = await service.createSpace({
+      name: '不会覆盖已有名称',
+      workspacePath: '/work/alpha',
+    }, NOW + 1);
+
+    expect(result.id).toBe(existing.id);
+    expect(result.name).toBe(existing.name);
+    expect(result.spacePromotedAt).toBe(NOW + 1);
+    expect(repo.listProjects()).toHaveLength(1);
   });
 
   it('多 goal 并行：一个项目可挂多条 active goal', () => {

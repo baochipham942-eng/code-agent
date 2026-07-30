@@ -58,6 +58,12 @@ export function createWorkbenchActions({
         workbenchTabs,
         activeWorkbenchTab,
         workbenchSessionKey: sessionId,
+        // 全新会话（无快照）一律回产品默认收起（批P 第四波④）：本函数把 tabs 清成 []，
+        // 若放任 collapsed 跨会话泄漏（上一会话被任务/用户带成展开），新会话落地就是
+        // 空态 launcher——空间 composer 与主界面「新任务」都经此 chokepoint，同判据。
+        // 有快照的回访会话不动（用户离开时的开/合就是意图）；sessionId=null（欢迎页）不动。
+        // workbenchCollapsedByUser 不动：这不是用户按的，任务活动照样能把右栏带出来（#700 语义）。
+        ...(sessionId && !restored ? { workbenchCollapsed: true } : {}),
       });
     },
 

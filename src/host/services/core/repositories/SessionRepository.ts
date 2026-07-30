@@ -27,6 +27,7 @@ import {
 } from './sessionRepositoryParsers';
 import { sanitizeConversationMessageSnapshot } from '../conversationMessageSnapshot';
 import * as sidecarState from './sessionRepositorySidecarState';
+import { getLatestUserAuthorId as readLatestUserAuthorId } from './sessionRepositoryParsers';
 import { ConversationBranchRepository } from './ConversationBranchRepository';
 import { SessionFtsRepository } from './SessionFtsRepository';
 import {
@@ -836,6 +837,10 @@ export class SessionRepository {
     const rows = stmt.all(...params) as SQLiteRow[];
 
     return rows.map((row) => rowToMessage(row));
+  }
+
+  getLatestUserAuthorId(sessionId: string): string | null {
+    return readLatestUserAuthorId(this.db, sessionId);
   }
 
   getMessageCount(sessionId: string, options: MessageQueryOptions = {}): number {

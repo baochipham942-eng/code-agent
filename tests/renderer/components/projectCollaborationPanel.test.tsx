@@ -461,6 +461,17 @@ describe('topic 元数据展示（S1）', () => {
     expect(screen.getByTestId('neo-topic-detail-failed').textContent).toContain('delta 里的旧风险文案');
   });
 
+  it('嵌入模式：隐藏面板自带标题头，裸 project id 不出现在 DOM', () => {
+    const details = [makeDetail({ id: 'a', title: '甲topic', status: 'completed' })];
+    const { container } = render(
+      <ProjectCollaborationPanel projectId="proj_raw_id_should_hide" details={details} sourceMessagesByConversation={{}} embedded />,
+    );
+    expect(container.textContent).not.toContain('Neo 协同');
+    expect(container.textContent).not.toContain('proj_raw_id_should_hide');
+    // 列表本体照常渲染
+    expect(screen.getByTestId('neo-topic-row-a')).toBeTruthy();
+  });
+
   it('外部点击收起抽屉；点别的 topic 行仍直接切换详情', () => {
     const details = [
       makeDetail({ id: 'a', title: '甲topic', status: 'completed' }),

@@ -5,10 +5,18 @@
 // 根挂载页不在右侧内容区里，inline 对它们就是坏的——默认档钉死在这里。
 import React from 'react';
 import { cleanup, render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { FullScreenPage, FullScreenPageHeader } from '../../../src/renderer/components/features/shared/FullScreenPage';
+import { useAppStore } from '../../../src/renderer/stores/appStore';
 
-afterEach(cleanup);
+vi.mock('@shared/keybindings/defaults', () => ({
+  getCurrentKeybindingPlatform: () => 'darwin',
+}));
+
+afterEach(() => {
+  cleanup();
+  useAppStore.setState({ sidebarCollapsed: false });
+});
 
 describe('FullScreenPage 外壳契约', () => {
   it('不写 variant 时默认 overlay（整窗固定覆盖层）', () => {
@@ -49,6 +57,24 @@ describe('FullScreenPage 外壳契约', () => {
 
     const bar = render(<FullScreenPageHeader icon={null} title="标题" variant="bar" onClose={() => {}} />);
     expect(bar.container.querySelector('header[data-tauri-drag-region="deep"]')).not.toBeNull();
+  });
+
+  it('inline 紧凑页头只在侧栏收起时为 macOS 红绿灯让位', () => {
+    useAppStore.setState({ sidebarCollapsed: true });
+    const inline = render(
+      <FullScreenPage variant="inline">
+        <FullScreenPageHeader icon={null} title="标题" variant="bar" />
+      </FullScreenPage>,
+    );
+    expect(inline.container.querySelector('header')?.className).toContain('pl-[92px]');
+    inline.unmount();
+
+    const overlay = render(
+      <FullScreenPage variant="overlay">
+        <FullScreenPageHeader icon={null} title="标题" variant="bar" />
+      </FullScreenPage>,
+    );
+    expect(overlay.container.querySelector('header')?.className).not.toContain('pl-[92px]');
   });
 
   it('返回按钮热区不小于 32px 高（参照 Codex 顶栏按钮）', () => {

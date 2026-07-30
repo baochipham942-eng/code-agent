@@ -314,4 +314,67 @@ describe('appStore workbench tabs', () => {
     expect(useAppStore.getState().workbenchTabs).toEqual(['browser', 'preview:/tmp/report.pdf']);
   });
 
+  // 批P 第四波④：空间 composer 发起的新会话右栏自动展开成空 launcher——根因是
+  // syncWorkbenchForSession 清 tabs 不带 collapsed，展开态跨会话泄漏。修复钉死在
+  // chokepoint：全新会话（无快照）落地一律回默认收起，两条新会话路径同判据。
+  it('syncWorkbenchForSession：全新会话落地强制回默认收起（collapsed 不跨会话泄漏）', () => {
+    // 现场：上一会话右栏被带成展开（collapsed=false）且有 tab
+    useAppStore.setState({
+      workbenchCollapsed: false,
+      workbenchCollapsedByUser: false,
+      workbenchTabs: ['overview'],
+      activeWorkbenchTab: 'overview',
+      workbenchSessionKey: 'sess-a',
+      workbenchBySession: {},
+    });
+
+    // 空间 composer / 主界面「新任务」都经 createSession → 这个 chokepoint
+    useAppStore.getState().syncWorkbenchForSession('sess-b-brand-new');
+
+    const state = useAppStore.getState();
+    expect(state.workbenchCollapsed).toBe(true);
+    expect(state.workbenchTabs).toEqual([]);
+    expect(state.activeWorkbenchTab).toBeNull();
+    expect(state.workbenchSessionKey).toBe('sess-b-brand-new');
+    // 旧会话快照照存（tabs 回访可恢复）
+    expect(state.workbenchBySession['sess-a']).toEqual({ tabs: ['overview'], active: 'overview' });
+    // 强制收起不是用户意图：collapsedByUser 不动，任务活动照样能把右栏带出来（#700）
+    expect(state.workbenchCollapsedByUser).toBe(false);
+  });
+
+  it('syncWorkbenchForSession：回访有快照的会话不强制收起（离开时的开/合就是意图）', () => {
+    useAppStore.setState({
+      workbenchCollapsed: false,
+      workbenchTabs: ['overview'],
+      activeWorkbenchTab: 'overview',
+      workbenchSessionKey: 'sess-a',
+      workbenchBySession: {},
+    });
+    // 先去新会话（强制收起），再回访 sess-a
+    useAppStore.getState().syncWorkbenchForSession('sess-b');
+    useAppStore.setState({ workbenchCollapsed: false });
+    useAppStore.getState().syncWorkbenchForSession('sess-a');
+
+    const state = useAppStore.getState();
+    expect(state.workbenchTabs).toEqual(['overview']);
+    expect(state.activeWorkbenchTab).toBe('overview');
+    // 有快照 → 不动 collapsed（保持当前值）
+    expect(state.workbenchCollapsed).toBe(false);
+  });
+
+  it('syncWorkbenchForSession：sessionId=null（欢迎页）不动 collapsed', () => {
+    useAppStore.setState({
+      workbenchCollapsed: false,
+      workbenchTabs: ['overview'],
+      activeWorkbenchTab: 'overview',
+      workbenchSessionKey: 'sess-a',
+      workbenchBySession: {},
+    });
+
+    useAppStore.getState().syncWorkbenchForSession(null);
+
+    expect(useAppStore.getState().workbenchCollapsed).toBe(false);
+    expect(useAppStore.getState().workbenchTabs).toEqual([]);
+  });
+
 });

@@ -54,6 +54,11 @@ export function resolvePartialRelease(
  *
  * 分母为 0（音频还没开始/拿不到）时揭示 0 —— 调用方负责 fail-open 与停滞兜底，
  * 这里只做纯计算，不替调用方决定「等不到怎么办」。
+ *
+ * ponytail: 分母用「已入队」而不是「总时长」，因为总时长要等音频下发完才知道。
+ * 代价是下发阶段（实测约前 4.3 秒）字幕会略微领先真实语音，实测峰值 15/124 字
+ * （t=1s），到下发结束归零，之后完全贴合、零漂移。要抹掉这段领先只能引入
+ * 「标称语速」常量去估总时长，那正是拍板时否掉的调参债，所以留着这个上限。
  */
 export function computeRevealedSubtitle(target: string, enqueuedSec: number, playedSec: number): string {
   if (enqueuedSec <= 0) return '';

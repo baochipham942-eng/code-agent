@@ -148,14 +148,17 @@ class VoiceCallBridge {
    * （delta 拼接与 final 逐字不同），只比长度会把这次静默替换整个漏掉。
    */
   private revealedText = '';
-  /** 揭示进度上次推进的时刻，用于停滞兜底。 */
+  /** 播放进度上次推进的时刻，用于停滞兜底。 */
   private revealStallAt = 0;
+  /** 上次看到的已播秒数——停滞判据打在它身上，见 tickReveal。 */
+  private lastPlayedSec = 0;
   /** 揭示完成后才交接真消息的那条会话（§7.5 落库仍只有 host 一个生产者）。 */
   private pendingHandoffSessionId: string | null = null;
 
   private startRevealCycle(): void {
     this.revealFinalized = false;
     this.revealedText = '';
+    this.lastPlayedSec = 0;
     this.audioEnqueuedSec = 0;
     this.playbackEndsAt = 0;
     this.revealStallAt = Date.now();
@@ -170,14 +173,17 @@ class VoiceCallBridge {
 
   private tickReveal(): void {
     const backlogSec = Math.max(0, this.playbackEndsAt - Date.now()) / 1000;
-    const revealed = computeRevealedSubtitle(
-      this.revealTarget,
-      this.audioEnqueuedSec,
-      this.audioEnqueuedSec - backlogSec,
-    );
+    const playedSec = this.audioEnqueuedSec - backlogSec;
+    // 停滞判据打在**播放进度**上，不打在揭示长度上：音频还在下发的那几秒里，
+    // 已播和已入队同步增长、比例短暂持平，揭示长度就不动——那不是停滞。
+    // 打错地方的代价是「整段字幕在第 3 秒被兜底一次性抖出来」，正是本单要修的病。
+    if (playedSec > this.lastPlayedSec + 0.05) {
+      this.lastPlayedSec = playedSec;
+      this.revealStallAt = Date.now();
+    }
+    const revealed = computeRevealedSubtitle(this.revealTarget, this.audioEnqueuedSec, playedSec);
     if (revealed !== this.revealedText) {
       // 长度没变但内容变了（final 校正）也要写：这一步就是「防漂移」。
-      if (revealed.length !== this.revealedText.length) this.revealStallAt = Date.now();
       this.revealedText = revealed;
       this.store().eventApplied({ partialAssistant: revealed });
     } else if (Date.now() - this.revealStallAt >= VOICE_SUBTITLE_STALL_FLUSH_MS) {
@@ -207,6 +213,7 @@ class VoiceCallBridge {
     this.revealTarget = '';
     this.revealFinalized = false;
     this.revealedText = '';
+    this.lastPlayedSec = 0;
     this.audioEnqueuedSec = 0;
     this.playbackEndsAt = 0;
     const sessionId = this.pendingHandoffSessionId;

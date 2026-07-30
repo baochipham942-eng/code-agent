@@ -197,6 +197,66 @@ describe('voiceCallBridge 字幕揭示绑播放进度', () => {
     expect(partial()).toBe('');
   });
 
+  // 监工点名的验收口径。它只能在 renderer 侧量：本单一个字节的线上协议都没改，
+  // 协议层探针在修复前后看到的是完全相同的流量，量不出这个改动。
+  // 所以把 2026-07-30 探针实录的时间线（REPORT §2.1）原样回放进真 bridge 来量。
+  it('真机时间线回放：首字幕≈音频开播时刻，揭示总时长与播放时长同量级', async () => {
+    const CHARS = 124;              // 实录全文字数
+    const DELTA_BURST_MS = 544;     // 实录 36 帧 delta 的到齐窗口
+    const AUDIO_START_MS = 284;     // 首帧下行音频相对首帧 delta
+    const AUDIO_DELIVERED_MS = 4_568; // 24.6 秒音频按生成速度下发完的时刻
+    const FINAL_MS = 4_548;
+    const AUDIO_SEC = 24.64;
+    const PLAYBACK_END_MS = AUDIO_START_MS + AUDIO_SEC * 1000;
+
+    const socket = await dialAndOpen();
+    vi.useFakeTimers();
+
+    const text = '字'.repeat(CHARS);
+    const STEP = 100;
+    let sentDeltas = 0;
+    let sentAudioSec = 0;
+    let sentFinal = false;
+    let firstRevealAt: number | null = null;
+    let revealDoneAt: number | null = null;
+
+    for (let now = 0; now <= 40_000; now += STEP) {
+      // delta 突发：544ms 内 36 帧到齐
+      if (now <= DELTA_BURST_MS) {
+        const target = Math.round(((now + STEP) / DELTA_BURST_MS) * CHARS);
+        while (sentDeltas < Math.min(target, CHARS)) {
+          sendEvent(socket, { type: 'assistant.transcript', text: text[sentDeltas], done: false });
+          sentDeltas += 1;
+        }
+      }
+      // 音频按生成速度下发（4.3 秒发完 24.6 秒的量）
+      if (now >= AUDIO_START_MS && now <= AUDIO_DELIVERED_MS && sentAudioSec < AUDIO_SEC) {
+        const chunk = Math.min(AUDIO_SEC / ((AUDIO_DELIVERED_MS - AUDIO_START_MS) / STEP), AUDIO_SEC - sentAudioSec);
+        sendAudio(socket, chunk);
+        sentAudioSec += chunk;
+      }
+      if (!sentFinal && now >= FINAL_MS) {
+        sendEvent(socket, { type: 'assistant.transcript', text, done: true });
+        sentFinal = true;
+      }
+
+      await vi.advanceTimersByTimeAsync(STEP);
+      const shown = partial().length;
+      if (shown > 0 && firstRevealAt === null) firstRevealAt = now;
+      if (shown >= CHARS && revealDoneAt === null) revealDoneAt = now;
+    }
+
+    // ① 首字幕上屏 ≈ 音频开播时刻（而不是 delta 到齐时刻）
+    expect(firstRevealAt).not.toBeNull();
+    expect(firstRevealAt!).toBeGreaterThanOrEqual(AUDIO_START_MS - STEP);
+    expect(firstRevealAt!).toBeLessThan(AUDIO_START_MS + 700);
+
+    // ② 揭示总时长与播放时长同量级（修复前是 544ms vs 24.6s，差 45 倍）
+    expect(revealDoneAt).not.toBeNull();
+    expect(revealDoneAt!).toBeGreaterThan(PLAYBACK_END_MS * 0.8);
+    expect(revealDoneAt!).toBeLessThan(PLAYBACK_END_MS * 1.2);
+  });
+
   it('边界3+4 拿不到播放进度：停滞兜底放完全文，字幕绝不永久悬着', async () => {
     const socket = await dialAndOpen();
     vi.useFakeTimers();

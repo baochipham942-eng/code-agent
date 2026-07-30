@@ -30,8 +30,9 @@ export const projectSpaceZh = {
     cardSkills: '技能',
     cardConnectors: '连接器',
     cardAutomation: '自动化',
-    // 成员 tab 名（tab 内容在 p1-c0-ui 分支；本分支只留 tab 位语义，键先到位免合并漂名）
+    // 成员第五卡名（仅云空间渲染；第四波①右栏回滚四卡竖排形态）
     cardMembers: '成员',
+    add: '添加',
     remove: '移除',
     // 原生连接器介绍（清单接口只吐 id+label，介绍是展示层文案——爸 2026-07-30：四类选用列表都要有描述）
     nativeConnectorDescriptions: {
@@ -123,8 +124,9 @@ export const projectSpaceEn = {
     cardSkills: 'Skills',
     cardConnectors: 'Connectors',
     cardAutomation: 'Automation',
-    // Members tab label (tab content lands with p1-c0-ui; this branch keeps the tab slot only)
+    // Members card title (rendered only for cloud spaces; fourth-wave rollback to stacked cards)
     cardMembers: 'Members',
+    add: 'Add',
     remove: 'Remove',
     nativeConnectorDescriptions: {
       calendar: 'Connect macOS Calendar to view and schedule events',

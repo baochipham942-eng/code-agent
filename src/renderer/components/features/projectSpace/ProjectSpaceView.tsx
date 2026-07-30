@@ -207,7 +207,7 @@ export const ProjectSpaceView: React.FC<ProjectSpaceViewProps> = ({ projectId, o
           project={project}
           detail={detail}
           onRefreshDetail={refreshDetail}
-          // 成员 tab 仅云空间注入（tab 壳约定：membersContent 为空则不渲染 tab 位）
+          // 成员第五卡仅云空间注入（卡位约定：membersContent 为空则不渲染成员卡）
           membersContent={project?.cloudProjectId ? (
             <ProjectMembersCard projectId={projectId} onInvite={() => inviteModal.open(projectId)} />
           ) : undefined}

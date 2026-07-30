@@ -343,90 +343,99 @@ describe('ProjectSpacePage 空间视图', () => {
   });
 });
 
-describe('ProjectConfigRail 项目配置（tab 化右栏）', () => {
-  it('tab 条贴顶：四个 tab + 收起钮在条内；「协作空间配置」标题行取消；本分支无成员 tab', async () => {
+describe('ProjectConfigRail 项目配置（四卡竖排形态，第四波①回滚）', () => {
+  it('四卡竖排：专家/技能/连接器/自动化四卡 + 标题行（含收起钮）；纯本地空间无成员卡', async () => {
     await enterSpaceView();
-    const strip = await screen.findByTestId('project-space-config-rail-tabs');
-    expect(within(strip).getByTestId('project-space-rail-tab-experts')).toBeTruthy();
-    expect(within(strip).getByTestId('project-space-rail-tab-skills')).toBeTruthy();
-    expect(within(strip).getByTestId('project-space-rail-tab-connectors')).toBeTruthy();
-    expect(within(strip).getByTestId('project-space-rail-tab-automation')).toBeTruthy();
-    // 成员 tab 仅云空间注入内容时出现（成员内容在 p1-c0-ui 分支，本分支只留 tab 位）
-    expect(within(strip).queryByTestId('project-space-rail-tab-members')).toBeNull();
-    // 收起钮并在 tab 条右端（两态不换位置）
-    expect(within(strip).getByTestId('project-space-config-rail-collapse')).toBeTruthy();
-    // 标题行取消：栏内不再有「协作空间配置」标题文案
-    const rail = screen.getByTestId('project-space-config-rail');
-    expect(within(rail).queryByText(ps.configRailTitle)).toBeNull();
-    // 默认激活专家 tab，内容区拿全高（panel 直接在栏内，无弹窗）
-    expect(screen.getByTestId('project-space-rail-tab-experts').getAttribute('aria-selected')).toBe('true');
-    await screen.findByTestId('project-space-rail-experts');
+    const rail = await screen.findByTestId('project-space-config-rail');
+    expect(within(rail).getByTestId('project-space-card-experts')).toBeTruthy();
+    expect(within(rail).getByTestId('project-space-card-skills')).toBeTruthy();
+    expect(within(rail).getByTestId('project-space-card-connectors')).toBeTruthy();
+    expect(within(rail).getByTestId('project-space-card-automation')).toBeTruthy();
+    // 标题行回来：「协作空间配置」标题 + 收起钮同行
+    expect(within(rail).getByText(ps.configRailTitle)).toBeTruthy();
+    expect(within(rail).getByTestId('project-space-config-rail-collapse')).toBeTruthy();
+    // 成员卡仅云空间渲染（纯本地不渲染卡位）
+    expect(within(rail).queryByTestId('project-space-members-card')).toBeNull();
   });
 
-  it('专家：移除已选调用 removeProjectRole；可选列表点击即 addProjectRole；chip 与列表项显示 displayName', async () => {
+  it('专家：移除已选调用 removeProjectRole，添加调用 addProjectRole；chip 与弹窗项显示 displayName', async () => {
     await enterSpaceView();
     // 已选 chip 用 displayName（不是裸 roleId）
-    const chip = await screen.findByTestId('project-space-rail-experts-chip-role-a');
+    const chip = await screen.findByTestId('project-space-card-experts-chip-role-a');
     expect(chip.textContent).toContain('数据分析师');
-    const remove = await screen.findByTestId('project-space-rail-experts-remove-role-a');
+    const remove = await screen.findByTestId('project-space-card-experts-remove-role-a');
     fireEvent.click(remove);
     await waitFor(() => expect(projectClient.removeProjectRole).toHaveBeenCalledWith(PROJECT_ID, 'role-a'));
 
-    // 可选列表同屏（无弹窗）：两行项 displayName + 描述，点击即选用
-    const option = await screen.findByTestId('project-space-rail-experts-option-role-b');
+    fireEvent.click(screen.getByTestId('project-space-card-experts-add'));
+    const option = await screen.findByTestId('project-space-card-experts-option-role-b');
+    // 弹窗项两行：displayName + 描述
     expect(option.textContent).toContain('研究员');
     expect(option.textContent).toContain('做研究调研');
     fireEvent.click(option);
     await waitFor(() => expect(projectClient.addProjectRole).toHaveBeenCalledWith(PROJECT_ID, 'role-b'));
   });
 
-  it('搜索：名称与描述都过滤，无匹配给提示', async () => {
+  it('整卡可点打开添加弹窗；chip 删除不冒泡（不弹弹窗）', async () => {
     await enterSpaceView();
-    await screen.findByTestId('project-space-rail-experts-option-role-b');
-    // 按描述命中（「调研」只在描述里）
-    fireEvent.change(screen.getByTestId('project-space-rail-experts-search'), { target: { value: '调研' } });
-    await screen.findByTestId('project-space-rail-experts-option-role-b');
-    // 按名称命中
-    fireEvent.change(screen.getByTestId('project-space-rail-experts-search'), { target: { value: '研究员' } });
-    await screen.findByTestId('project-space-rail-experts-option-role-b');
-    // 无匹配
-    fireEvent.change(screen.getByTestId('project-space-rail-experts-search'), { target: { value: '不存在的词' } });
-    await screen.findByTestId('project-space-rail-experts-no-match');
-    expect(screen.queryByTestId('project-space-rail-experts-option-role-b')).toBeNull();
+    await screen.findByTestId('project-space-card-experts-chip-role-a');
+    // 整卡点击 → 弹窗打开
+    fireEvent.click(screen.getByTestId('project-space-card-experts'));
+    await screen.findByTestId('project-space-card-experts-picker');
+    fireEvent.keyDown(document, { key: 'Escape' });
+    // chip 删除 × 不冒泡：移除被调用、弹窗不再打开
+    const removeCallCount = vi.mocked(projectClient.removeProjectRole).mock.calls.length;
+    fireEvent.click(screen.getByTestId('project-space-card-experts-remove-role-a'));
+    expect(vi.mocked(projectClient.removeProjectRole).mock.calls.length).toBe(removeCallCount + 1);
+    expect(screen.queryByTestId('project-space-card-experts-picker')).toBeNull();
   });
 
-  it('连接器：切 tab 后移除调用 unselectCapability，可选点击调用 selectCapability', async () => {
+  it('弹窗搜索：名称与描述都过滤，无匹配给提示', async () => {
     await enterSpaceView();
-    await screen.findByTestId('project-space-rail-experts');
-    fireEvent.click(screen.getByTestId('project-space-rail-tab-connectors'));
+    fireEvent.click(await screen.findByTestId('project-space-card-experts-add'));
+    await screen.findByTestId('project-space-card-experts-option-role-b');
+    // 按描述命中（「调研」只在描述里）
+    fireEvent.change(screen.getByTestId('project-space-card-experts-search'), { target: { value: '调研' } });
+    await screen.findByTestId('project-space-card-experts-option-role-b');
+    // 按名称命中
+    fireEvent.change(screen.getByTestId('project-space-card-experts-search'), { target: { value: '研究员' } });
+    await screen.findByTestId('project-space-card-experts-option-role-b');
+    // 无匹配
+    fireEvent.change(screen.getByTestId('project-space-card-experts-search'), { target: { value: '不存在的词' } });
+    await screen.findByTestId('project-space-card-experts-picker-no-match');
+    expect(screen.queryByTestId('project-space-card-experts-option-role-b')).toBeNull();
+  });
+
+  it('连接器：移除调用 unselectCapability，添加调用 selectCapability', async () => {
+    await enterSpaceView();
     // 显示名从 listNativeInventory 反查（查不到才回落裸 id）
-    const chip = await screen.findByTestId('project-space-rail-connectors-chip-mcp-1');
+    const chip = await screen.findByTestId('project-space-card-connectors-chip-mcp-1');
     expect(chip.textContent).toContain('Server 1');
-    const remove = await screen.findByTestId('project-space-rail-connectors-remove-mcp-1');
+    const remove = await screen.findByTestId('project-space-card-connectors-remove-mcp-1');
     fireEvent.click(remove);
     await waitFor(() =>
       expect(projectClient.unselectCapability).toHaveBeenCalledWith(PROJECT_ID, 'connector', 'mcp-1'),
     );
 
-    const option = await screen.findByTestId('project-space-rail-connectors-option-mcp-2');
+    fireEvent.click(screen.getByTestId('project-space-card-connectors-add'));
+    const option = await screen.findByTestId('project-space-card-connectors-option-mcp-2');
     fireEvent.click(option);
     await waitFor(() =>
       expect(projectClient.selectCapability).toHaveBeenCalledWith(PROJECT_ID, 'connector', 'mcp-2'),
     );
   });
 
-  it('连接器可选项含货架 MCP（飞书）且带描述——扩口径 2026-07-30', async () => {
+  it('连接器弹窗可选项含货架 MCP（飞书）且带描述——扩口径 2026-07-30', async () => {
     await enterSpaceView();
-    await screen.findByTestId('project-space-rail-experts');
-    fireEvent.click(screen.getByTestId('project-space-rail-tab-connectors'));
+    fireEvent.click(await screen.findByTestId('project-space-card-connectors-add'));
     // getCatalog 的 mock 返回形状不对 → 走 builtin 货架兜底，'lark'（飞书）必在
-    const larkOption = await screen.findByTestId('project-space-rail-connectors-option-lark');
+    const larkOption = await screen.findByTestId('project-space-card-connectors-option-lark');
     expect(larkOption.textContent).toContain('飞书');
     // 两行项：描述真的渲染出来（货架条目自带 description）
     expect(larkOption.textContent).toContain('多维表格');
   });
 
-  it('技能：项目有工作目录即可增删（不要求等于当前会话目录），IPC 收到显式 workspacePath', async () => {
+  it('技能卡：项目有工作目录即可增删（不要求等于当前会话目录），IPC 收到显式 workspacePath', async () => {
     vi.mocked(invokeSkillIPC).mockResolvedValue([
       { name: 'skill-a', description: '', projectOverride: null },
       { name: 'skill-b', description: '', projectOverride: true },
@@ -436,9 +445,12 @@ describe('ProjectConfigRail 项目配置（tab 化右栏）', () => {
     await waitFor(() =>
       expect(invokeSkillIPC).toHaveBeenCalledWith(SKILL_CHANNELS.SKILL_LIST, '/tmp/ws'),
     );
-    fireEvent.click(screen.getByTestId('project-space-rail-tab-skills'));
-    const option = await screen.findByTestId('project-space-rail-skills-option-skill-a');
-    expect((option as HTMLButtonElement).disabled).toBe(false);
+    const addButton = await screen.findByTestId('project-space-card-skills-add');
+    expect((addButton as HTMLButtonElement).disabled).toBe(false);
+    expect(addButton.getAttribute('title')).toBe(ps.add);
+
+    fireEvent.click(addButton);
+    const option = await screen.findByTestId('project-space-card-skills-option-skill-a');
     fireEvent.click(option);
     await waitFor(() =>
       expect(invokeSkillIPCOrThrow).toHaveBeenCalledWith(
@@ -446,7 +458,7 @@ describe('ProjectConfigRail 项目配置（tab 化右栏）', () => {
       ),
     );
 
-    const remove = await screen.findByTestId('project-space-rail-skills-remove-skill-b');
+    const remove = await screen.findByTestId('project-space-card-skills-remove-skill-b');
     fireEvent.click(remove);
     await waitFor(() =>
       expect(invokeSkillIPCOrThrow).toHaveBeenCalledWith(
@@ -455,7 +467,7 @@ describe('ProjectConfigRail 项目配置（tab 化右栏）', () => {
     );
   });
 
-  it('技能：无工作目录的空间只读——选项行禁用 + hint 内联降级提示（不消失）', async () => {
+  it('技能卡：无工作目录的空间禁用「+」+ skillsNoWorkspaceHint 降级提示', async () => {
     const noWorkspace = { ...projectFixture, workspacePath: null, workspaceKey: null };
     vi.mocked(projectClient.listProjectsWithActivity).mockResolvedValue([noWorkspace] as never);
     vi.mocked(projectClient.getProjectDetail).mockResolvedValue({
@@ -463,13 +475,26 @@ describe('ProjectConfigRail 项目配置（tab 化右栏）', () => {
       project: { ...noWorkspace },
     } as never);
     await enterSpaceView();
-    await screen.findByTestId('project-space-rail-experts');
-    fireEvent.click(screen.getByTestId('project-space-rail-tab-skills'));
-    const hint = await screen.findByTestId('project-space-rail-skills-readonly-hint');
-    expect(hint.textContent).toBe(ps.skillsNoWorkspaceHint);
+    const addButton = await screen.findByTestId('project-space-card-skills-add');
+    expect((addButton as HTMLButtonElement).disabled).toBe(true);
+    expect(addButton.getAttribute('title')).toBe(ps.skillsNoWorkspaceHint);
   });
 
-  it('成员 tab 位：注入 membersContent 才出现第五 tab，可切换', async () => {
+  it('无工作目录的只读卡整卡不可点（降级提示而非消失）', async () => {
+    const noWorkspace = { ...projectFixture, workspacePath: null, workspaceKey: null };
+    vi.mocked(projectClient.listProjectsWithActivity).mockResolvedValue([noWorkspace] as never);
+    vi.mocked(projectClient.getProjectDetail).mockResolvedValue({
+      ...detailFixture,
+      project: { ...noWorkspace },
+    } as never);
+    await enterSpaceView();
+    const card = await screen.findByTestId('project-space-card-skills');
+    fireEvent.click(card);
+    expect(screen.queryByTestId('project-space-card-skills-picker')).toBeNull();
+    expect(card.getAttribute('role')).toBeNull();
+  });
+
+  it('成员卡位：注入 membersContent 才渲染第五卡，位置在四卡之后', async () => {
     const { unmount } = render(
       <ProjectConfigRail
         projectId={PROJECT_ID}
@@ -479,9 +504,7 @@ describe('ProjectConfigRail 项目配置（tab 化右栏）', () => {
         membersContent={<div data-testid="mock-members-content" />}
       />,
     );
-    const membersTab = await screen.findByTestId('project-space-rail-tab-members');
-    fireEvent.click(membersTab);
-    expect(membersTab.getAttribute('aria-selected')).toBe('true');
+    await screen.findByTestId('project-space-card-automation');
     await screen.findByTestId('mock-members-content');
     unmount();
   });
@@ -647,18 +670,16 @@ describe('空间页头邀请按钮（两态）', () => {
   });
 });
 
-describe('右栏成员 tab（tab 壳形态：内容经 membersContent 注入，先切成员 tab）', () => {
-  async function openMembersTab() {
+describe('右栏成员卡（四卡形态的第五卡：云空间直渲染，无需切 tab）', () => {
+  async function openMembersCard() {
     await enterSpaceView();
-    const tab = await screen.findByTestId('project-space-rail-tab-members');
-    fireEvent.click(tab);
     return screen.findByTestId('project-space-members-card');
   }
 
   it('云协同空间：渲染成员行（首字母圆片 + 显示名 + role chip），无显示名回落 userId', async () => {
     setupCloudSpace();
     vi.mocked(projectClient.listMembers).mockResolvedValue(membersFixture);
-    const card = await openMembersTab();
+    const card = await openMembersCard();
     await within(card).findByTestId('project-space-members-row-user-owner');
     expect(within(card).getByTestId('project-space-members-row-user-owner').textContent).toContain('房主');
     expect(within(card).getByTestId('project-space-members-role-user-owner').textContent).toBe(ps.memberRoleOwner);
@@ -666,32 +687,31 @@ describe('右栏成员 tab（tab 壳形态：内容经 membersContent 注入，�
     expect(within(card).getByTestId('project-space-members-role-user-member').textContent).toBe(ps.memberRoleMember);
   });
 
-  it('空态：无成员显示引导文案，tab 内容不消失', async () => {
+  it('空态：无成员显示引导文案，卡不消失', async () => {
     setupCloudSpace();
-    const card = await openMembersTab();
+    const card = await openMembersCard();
     await within(card).findByTestId('project-space-members-empty');
     expect(card.textContent).toContain(ps.membersEmpty);
   });
 
-  it('取数失败：显示失败提示，tab 内容不消失', async () => {
+  it('取数失败：显示失败提示，卡不消失', async () => {
     setupCloudSpace();
     vi.mocked(projectClient.listMembers).mockRejectedValue(new Error('协同服务当前不可用，请检查网络后重试。'));
-    const card = await openMembersTab();
+    const card = await openMembersCard();
     await within(card).findByTestId('project-space-members-error');
     expect(card.textContent).toContain(ps.membersLoadFailed);
   });
 
-  it('纯本地空间（cloudProjectId 为空）：成员 tab 位整个不渲染', async () => {
+  it('纯本地空间（cloudProjectId 为空）：成员卡整个不渲染', async () => {
     await enterSpaceView();
-    await screen.findByTestId('project-space-rail-experts');
-    expect(screen.queryByTestId('project-space-rail-tab-members')).toBeNull();
+    await screen.findByTestId('project-space-card-experts');
     expect(screen.queryByTestId('project-space-members-card')).toBeNull();
     expect(projectClient.listMembers).not.toHaveBeenCalled();
   });
 
-  it('成员 tab「邀请」入口走页头同一 Modal 逻辑（createInvite 只此一份）', async () => {
+  it('成员卡「邀请」入口走页头同一 Modal 逻辑（createInvite 只此一份）', async () => {
     setupCloudSpace();
-    const card = await openMembersTab();
+    const card = await openMembersCard();
     const entry = within(card).getByTestId('project-space-members-invite');
     fireEvent.click(entry);
     await screen.findByTestId('project-space-invite-modal');

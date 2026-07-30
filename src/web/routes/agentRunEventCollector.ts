@@ -1,5 +1,6 @@
 import type { AgentEvent, Message } from '../../shared/contract';
 import type { CachedToolCall } from '../helpers/sessionCache';
+import { ensureFailedToolResultError } from '../../host/tools/toolResultError';
 
 export type AgentRunContentPart =
   | { type: 'text'; text: string }
@@ -124,12 +125,12 @@ export class AgentRunEventCollector {
     if (callId) {
       const toolCall = this.assistantToolCalls.find((candidate) => candidate.id === callId);
       if (toolCall) {
-        toolCall.result = {
+        toolCall.result = ensureFailedToolResultError(toolCall.name, {
           success: !!data.success,
           output: data.success ? String(data.output || '').substring(0, 200) : undefined,
-          error: data.success ? undefined : String(data.error || 'unknown'),
+          error: data.success ? undefined : data.error,
           metadata: data.metadata as Record<string, unknown> | undefined,
-        };
+        });
       }
     }
 

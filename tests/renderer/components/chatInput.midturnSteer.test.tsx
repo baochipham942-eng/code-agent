@@ -44,7 +44,7 @@ function makeParams(overrides: Partial<UseChatInputSubmitParams> = {}): UseChatI
     addToInputHistory: vi.fn(),
     clearAppshot: vi.fn(),
     inputAreaRef: {
-      current: { focus: vi.fn(), getTextarea: () => null },
+      current: { focus: vi.fn(), getEditor: () => null, getCaretOffset: () => 0, replaceRangeWithChip: vi.fn(), replaceRangeWithText: vi.fn() },
     },
     setValue: vi.fn(),
     setAttachments: vi.fn(),
@@ -143,7 +143,7 @@ describe('mid-turn composer submission', () => {
     const params = makeParams({
       setValue,
       inputAreaRef: {
-        current: { focus, getTextarea: () => null },
+        current: { focus, getEditor: () => null, getCaretOffset: () => 0, replaceRangeWithChip: vi.fn(), replaceRangeWithText: vi.fn() },
       },
       onSteer: vi.fn().mockResolvedValue(undefined),
     });

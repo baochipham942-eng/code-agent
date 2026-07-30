@@ -6,6 +6,7 @@ import type { ConnectorLifecycleAction, ConnectorStatusSummary } from '@shared/i
 import {
   extractWorkbenchReferenceFromToolCall,
 } from '@shared/contract/workbenchTools';
+import { getBuiltinMcpCatalogPayload } from '@shared/constants/mcpCatalog';
 import { useComposerStore } from '../stores/composerStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { useSkillStore } from '../stores/skillStore';
@@ -49,8 +50,33 @@ export interface WorkbenchMcpCapability {
   toolCount: number;
   resourceCount: number;
   error?: string;
+  /** 与能力中心「连接器」页同源的目录描述（MCP catalog）；目录外的自建 server 没有 */
+  description?: string;
   authMode?: MCPServerStateSummary['authMode'];
   hasOAuthTokens?: boolean;
+}
+
+// MCP 目录描述查表：与能力中心「连接器」页（McpDiscoverTab）同源，
+// 懒构建一次缓存，避免每次 build registry 都重扫目录。
+let mcpCatalogDescriptionMap: Map<string, string> | null = null;
+// catalog 之外的补充描述：catalog 条目有「可发现连接模板」的完整性校验（mcpCatalog.test.ts），
+// 只想要描述的常见 server 不进 catalog，在这里维护（与 catalog 描述同样优先级）。
+const EXTRA_MCP_DESCRIPTIONS: Record<string, string> = {
+  filesystem: '本地文件与目录的读写、搜索和管理',
+  git: '本地 Git 仓库的提交、分支、历史与差异操作',
+  sqlite: '本地 SQLite 数据库的查询与分析',
+  docker: 'Docker 容器、镜像与编排管理',
+  argus: '桌面自动化：截图、点击、输入等本机操作',
+  'cua-driver': '桌面操作（Computer Use）驱动，执行点击、输入、滚动',
+};
+
+export function getMcpCatalogDescription(serverId: string): string | undefined {
+  if (!mcpCatalogDescriptionMap) {
+    mcpCatalogDescriptionMap = new Map(
+      getBuiltinMcpCatalogPayload().servers.map((entry) => [entry.id, entry.description]),
+    );
+  }
+  return mcpCatalogDescriptionMap.get(serverId) ?? EXTRA_MCP_DESCRIPTIONS[serverId];
 }
 
 export interface WorkbenchCapabilities {
@@ -199,6 +225,7 @@ export function buildWorkbenchCapabilities(args: {
       toolCount: server?.toolCount || 0,
       resourceCount: server?.resourceCount || 0,
       error: server?.error,
+      description: getMcpCatalogDescription(serverId),
       authMode: server?.authMode,
       hasOAuthTokens: server?.hasOAuthTokens,
     };

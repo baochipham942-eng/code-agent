@@ -10,6 +10,7 @@ import type { Request, Response } from 'express';
 import { getUserDataPath } from '../../host/platform/appPaths';
 import { MANAGED_BROWSER_ARTIFACT_DIR } from '../../host/services/infra/browser/managedBrowserHelpers';
 import { resolveNativeDesktopCandidateRoots } from '../../host/services/desktop/nativeDesktopService';
+import { PRESENTATION_PREVIEW_CACHE_DIRNAME } from '../../host/tools/media/ppt/constants';
 
 export const MAX_UPLOAD_SIZE = 50 * 1024 * 1024;
 export const UPLOAD_ROOT_DIR = path.join(os.tmpdir(), 'code-agent-uploads');
@@ -181,8 +182,11 @@ export function handleScreenshot(req: Request, res: Response): void {
   const normalized = resolved.replace(/\\/g, '/');
   const nativeDesktopPrefixes = resolveNativeDesktopCandidateRoots()
     .map((root) => `${path.join(root, 'native-desktop').replace(/\\/g, '/').replace(/\/+$/, '')}/`);
+  // pptx 逐页预览截图缓存在 <userData>/cache/presentation-page-previews/（host 侧
+  // buildPresentationPagePreview 的同源目录），不放行会让资料库 pptx 预览整页裂图。
   const isScreenshotDir = isPathWithinBase(resolved, path.join(userData, MANAGED_BROWSER_ARTIFACT_DIR))
     || isPathWithinBase(resolved, path.join(userData, 'appshots'))
+    || isPathWithinBase(resolved, path.join(userData, 'cache', PRESENTATION_PREVIEW_CACHE_DIRNAME))
     || nativeDesktopPrefixes.some((prefix) => normalized.startsWith(prefix));
   const isImageExt = /\.(jpg|jpeg|png|webp|gif)$/i.test(resolved);
 

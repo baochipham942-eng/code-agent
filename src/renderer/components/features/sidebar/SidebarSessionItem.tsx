@@ -1,12 +1,11 @@
 import React from 'react';
-import { Archive, ArchiveRestore, AudioLines, CheckSquare, Eye, GitFork, Loader2, Pin, ScrollText, Square } from 'lucide-react';
+import { Archive, ArchiveRestore, AudioLines, CheckSquare, GitFork, Loader2, Pin, Square } from 'lucide-react';
 import type { SessionRuntimeSummary } from '@shared/ipc';
 import type { SessionAutomationSessionSummary } from '@shared/contract';
 import { IconButton } from '../../primitives';
 import type { SessionWithMeta } from '../../../stores/sessionStore';
 import type { SessionState } from '../../../stores/taskStore';
 import { getDisplaySessionTitle, getSessionStatusPresentation } from '../../../utils/sessionPresentation';
-import { canReuseSessionWorkbench } from './sidebarPresentation';
 import { localeForLanguage } from '../../../utils/i18nTime';
 import { useI18n } from '../../../hooks/useI18n';
 import { SidebarMessageHitList } from './SidebarMessageHitList';
@@ -64,7 +63,6 @@ export interface SidebarSessionItemProps {
   searchQuery: string;
   messageSearchHitsBySessionId: SidebarDerivedSessions['messageSearchHitsBySessionId'];
   replayEvidenceBySessionId: SidebarDerivedSessions['replayEvidenceBySessionId'];
-  canOpenSessionReplay: boolean;
   reviewItemsBySessionId: SidebarDerivedSessions['reviewItemsBySessionId'];
   trajectoryQualityBySessionId: SidebarDerivedSessions['trajectoryQualityBySessionId'];
   multiSelectMode: boolean;
@@ -78,8 +76,6 @@ export interface SidebarSessionItemProps {
   handleRenameSubmit: SidebarRowActions['handleRenameSubmit'];
   handleRenameKeyDown: SidebarRowActions['handleRenameKeyDown'];
   handleDoubleClick: SidebarRowActions['handleDoubleClick'];
-  handleOpenSessionReplayInEvalCenter: SidebarRowActions['handleOpenSessionReplayInEvalCenter'];
-  handleOpenSessionAssets: SidebarSessionActions['handleOpenSessionAssets'];
   handleOpenReplayEvidence: SidebarRowActions['handleOpenReplayEvidence'];
   handleSelectMessageSearchHit: SidebarSessionActions['handleSelectMessageSearchHit'];
   handleArchiveSession: SidebarSessionActions['handleArchiveSession'];
@@ -90,7 +86,8 @@ export type SidebarSessionItemSharedProps = Omit<SidebarSessionItemProps, 'sessi
 
 /**
  * 单条会话行（Codex 风极简版）：默认只显「标题 + 右侧时间」，运行中显 spinner，
- * 需关注状态显一个安静小圆点；Replay/产物/归档等动作 hover 才浮现。
+ * 需关注状态显一个安静小圆点；hover 只浮现归档（2026-07-29：Replay/产物图标已撤，
+ * 入口保留在右键菜单与项目 ⋯ 菜单）。
  * eval 诊断（轨迹质量 / 证据等级）、类型/自动化徽标、摘要行、Replay 证据按钮
  * 全部移出默认行——它们仍可经项目控制台 / Replay 面板查看，不再喧宾夺主。
  */
@@ -107,7 +104,6 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
   hasNeedsInputForSession,
   searchQuery,
   messageSearchHitsBySessionId,
-  canOpenSessionReplay,
   multiSelectMode,
   renameValue,
   renameInputRef,
@@ -117,8 +113,6 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
   handleRenameSubmit,
   handleRenameKeyDown,
   handleDoubleClick,
-  handleOpenSessionReplayInEvalCenter,
-  handleOpenSessionAssets,
   handleSelectMessageSearchHit,
   handleArchiveSession,
 }) => {
@@ -132,8 +126,6 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
   const sessionRuntime = sessionRuntimes.get(session.id);
   const backgroundSession = backgroundSessionMap.get(session.id);
   const surfaceExecutionSession = useSurfaceExecutionRunSession(session.id);
-  // 空会话（0 轮 / 0 消息）没有可回放内容，hover 也不挂 Replay 入口。
-  const sessionHasActivity = (session.turnCount ?? 0) > 0 || (session.messageCount ?? 0) > 0;
   const status = getSessionStatusPresentation({
     backgroundSession,
     runtime: sessionRuntime,
@@ -157,7 +149,6 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
   // 这条会话用过实时语音（host 在建连时写进会话 metadata）。是身份不是状态，
   // 所以走行尾的身份轴（右槽），不进讲「此刻怎么了」的状态槽——详见下方渲染处。
   const hadLiveVoice = session.metadata?.hadLiveVoice === true;
-  const canOpenSessionAssets = canReuseSessionWorkbench(session);
   const titleToneClass = isSelected ? 'text-zinc-100' : isUnread ? 'text-zinc-200' : 'text-zinc-400';
   const forkParentSessionId = getForkParentSessionId(session);
 
@@ -260,41 +251,14 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
         )}
       </div>
 
-      {/* Hover 动作簇：Replay（管理员，进评测中心回放 tab）/ 产物 / 归档 — 默认隐藏，覆盖右槽位置。
+      {/* Hover 动作簇：只留归档（2026-07-29 侧栏项目区 redesign，对齐 Codex 极简行）。
+          Replay / 产物入口仍在右键菜单与项目 ⋯ 菜单，不删功能只删行内图标。
           显隐用 group-focus-visible 而非 group-focus-within（2026-07-26 打磨批 D D3）：
           鼠标点击按钮后 Chrome 会留下 :focus（但不标 :focus-visible），focus-within
           因此粘滞——鼠标移开后动作簇仍常驻；键盘 Tab 聚焦照样命中 focus-visible，
           可及性不受损。 */}
       {!multiSelectMode && !isRenaming && (
         <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-0.5 rounded-md bg-zinc-800 pl-2 shadow-[-8px_0_8px_-4px_rgba(24,24,27,0.95)] opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100">
-          {canOpenSessionReplay && sessionHasActivity && (
-            <button
-              type="button"
-              aria-label={s.openReplay.replace('{title}', displayTitle)}
-              title={s.openReplay.replace('{title}', displayTitle)}
-              onClick={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                handleOpenSessionReplayInEvalCenter(session);
-              }}
-              className="shrink-0 rounded-md p-1 text-zinc-500 transition-colors hover:bg-zinc-700/70 hover:text-zinc-200 focus:outline-hidden focus-visible:ring-1 focus-visible:ring-[var(--focus-ring)]"
-            >
-              <Eye className="h-3.5 w-3.5" />
-            </button>
-          )}
-          {canOpenSessionAssets && (
-            <button
-              type="button"
-              aria-label={s.openAssets.replace('{title}', displayTitle)}
-              title={s.openAssets.replace('{title}', displayTitle)}
-              onClick={(event) => {
-                void handleOpenSessionAssets(event, session);
-              }}
-              className="shrink-0 rounded-md p-1 text-zinc-500 transition-colors hover:bg-zinc-700/70 hover:text-zinc-200 focus:outline-hidden focus-visible:ring-1 focus-visible:ring-[var(--focus-ring)]"
-            >
-              <ScrollText className="h-3.5 w-3.5" />
-            </button>
-          )}
           <IconButton
             icon={session.isArchived ? <ArchiveRestore className="w-3.5 h-3.5" /> : <Archive className="w-3.5 h-3.5" />}
             aria-label={`${session.isArchived ? s.unarchiveSession : s.archiveSession} ${displayTitle}`}

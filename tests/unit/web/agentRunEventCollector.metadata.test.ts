@@ -83,4 +83,21 @@ describe('AgentRunEventCollector assistantMetadata', () => {
     } as AgentEvent, true);
     expect(collector.assistantMetadata).toBeUndefined();
   });
+
+  it('为缺失 error 的失败 tool_call_end 补充工具名和失败原因', () => {
+    const collector = makeCollector();
+    collector.observe({
+      type: 'tool_call_start',
+      data: { id: 'tool-system-info', name: 'system_info', arguments: {} },
+    } as AgentEvent, true);
+    collector.observe({
+      type: 'tool_call_end',
+      data: { toolCallId: 'tool-system-info', success: false },
+    } as AgentEvent, true);
+
+    expect(collector.assistantToolCalls[0]?.result).toMatchObject({
+      success: false,
+      error: 'Tool "system_info" failed: execution backend returned failure without an error message',
+    });
+  });
 });

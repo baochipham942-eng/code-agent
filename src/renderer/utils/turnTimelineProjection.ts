@@ -167,19 +167,9 @@ function buildSkillActivity(
   turn: TraceTurn,
   capabilities: WorkbenchCapabilities,
 ): TurnSkillActivity | undefined {
-  const userNode = turn.nodes.find((node) => node.type === 'user');
-  const selectedSkillIds = userNode?.metadata?.workbench?.selectedSkillIds || [];
+  // 「挂载」项不展示（2026-07-29 产品反馈）：用户挂载的 skill 由模型在回答里自然说明，
+  // 卡片只保留模型真实触发/写入 skill 的记录。
   const items: TurnSkillActivity['items'] = [];
-
-  for (const skillId of selectedSkillIds) {
-    addSkillActivityItem(items, {
-      timestamp: userNode?.timestamp || turn.startTime,
-      skillId,
-      label: getSkillLabel(skillId, capabilities),
-      action: 'selected',
-      detail: '已写入本轮 workbench 偏好',
-    });
-  }
 
   for (const node of turn.nodes) {
     if (node.subtype === 'skill_status') {
@@ -256,14 +246,17 @@ function buildSkillActivity(
   const selectedCount = orderedItems.filter((item) => item.action === 'selected').length;
   const triggeredCount = orderedItems.filter((item) => item.action === 'triggered').length;
   const writtenCount = orderedItems.filter((item) => item.action === 'written').length;
+  const namesOf = (action: TurnSkillActivityAction) =>
+    orderedItems.filter((item) => item.action === action).map((item) => item.label);
+  // 纯文字描述（「挂载了 xxx skill」），不堆 挂载/触发/写入 这类技术计数
   const summaryParts = [
-    triggeredCount > 0 ? `触发 ${triggeredCount}` : '',
-    writtenCount > 0 ? `写入 ${writtenCount}` : '',
-    selectedCount > 0 ? `写入偏好 ${selectedCount}` : '',
+    triggeredCount > 0 ? `触发了 ${namesOf('triggered').join('、')} skill` : '',
+    writtenCount > 0 ? `${namesOf('written').join('、')} skill 已写入` : '',
+    selectedCount > 0 ? `挂载了 ${namesOf('selected').join('、')} skill` : '',
   ].filter(Boolean);
 
   return {
-    summary: `Skill ${summaryParts.join(' · ')}`,
+    summary: `Skill ${summaryParts.join('；')}`,
     items: orderedItems,
   };
 }
@@ -542,20 +535,9 @@ function buildRoutingEvidence(
     || buildParallelRoutingEvidence(turn, window, launchRequests, swarmEvents);
 }
 
-function withoutWorkbenchMetadata(node: TraceNode): TraceNode {
-  if (!node.metadata?.workbench) {
-    return node;
-  }
-
-  return {
-    ...node,
-    metadata: {
-      ...node.metadata,
-      workbench: undefined,
-    },
-  };
-}
-
+// 注意：userNode 的 metadata.workbench 必须原样保留——遥测/能力审计与 skill 活动卡
+// 都直接读它。workbench_snapshot 时间线节点在主对话流里渲染为 null
+// （TraceNodeRenderer TurnTimelineNodeRenderer），剥掉 metadata 只会丢数据，不会让画面更干净。
 function enrichTurn(
   turn: TraceTurn,
   index: number,
@@ -594,7 +576,7 @@ function enrichTurn(
   const nextNodes: TraceNode[] = [];
 
   turn.nodes.forEach((node, nodeIndex) => {
-    nextNodes.push(nodeIndex === userIndex && snapshot ? withoutWorkbenchMetadata(node) : node);
+    nextNodes.push(node);
 
     if (nodeIndex !== userIndex) {
       return;

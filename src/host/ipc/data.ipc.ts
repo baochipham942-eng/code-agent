@@ -3,10 +3,10 @@
 // ============================================================================
 
 import type { IpcMain } from '../platform';
-import { app } from '../platform';
 import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
 import { createLogger } from '../services/infra/logger';
 import { getAdminAccessIpcError } from './adminGuard';
+import { getUserConfigDir } from '../config/configPaths';
 
 const logger = createLogger('DataIPC');
 
@@ -42,7 +42,7 @@ async function handleDataGetStats(): Promise<unknown> {
 
   const dbCacheCount = db.getToolCacheCount();
 
-  const userDataPath = app.getPath('userData');
+  const userDataPath = getUserConfigDir();
   const dbPath = path.join(userDataPath, 'code-agent.db');
   let databaseSize = 0;
   try {

@@ -228,12 +228,17 @@ export default tseslint.config(
   {
     // God File 历史白名单：有意为之的数据表/兼容性边界，max-lines 不适用（architecture-debt-report 据此豁免）。
     // builtinSkillsData.ts — 内置 skill 扁平目录（~2960 行纯数据），accessor 逻辑已分离至 builtinSkills.ts。
+    // agentAppService / ChatInput/index / web/routes/agent — 编排与协议穿越边界（桌面/渲染/web 三条
+    // 消息链路的汇聚口），2026-07-29 UX round2 后同 agentOrchestrator 类按汇聚口豁免。
     files: [
       'src/host/services/skills/builtinSkillsData.ts',
       'src/host/agent/agentOrchestrator.ts',
       'src/host/services/core/database/schema.ts',
       'src/host/services/core/databaseService.ts',
       'src/host/tools/toolExecutor.ts',
+      'src/host/app/agentAppService.ts',
+      'src/renderer/components/features/chat/ChatInput/index.tsx',
+      'src/web/routes/agent.ts',
     ],
     rules: {
       'max-lines': 'off',

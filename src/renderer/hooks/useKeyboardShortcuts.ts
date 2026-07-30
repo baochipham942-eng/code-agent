@@ -349,9 +349,12 @@ export function useKeyboardShortcuts(config: KeyboardShortcutsConfig = {}): void
           if (bareKey) {
             const inputEl = document.querySelector('[data-chat-input]') as HTMLTextAreaElement | null;
             const composerFocused = !!inputEl && document.activeElement === inputEl;
+            // contenteditable 编辑器把纯文本镜像在 data-plain-text 上（chip 不计入）；
+            // 旧 textarea 路径读 .value，两者取其一
+            const composerValue = inputEl?.getAttribute('data-plain-text') ?? inputEl?.value ?? '';
             if (!shouldTriggerBareComposerShortcut({
               composerFocused,
-              value: inputEl?.value ?? '',
+              value: composerValue,
             })) {
               return false;
             }

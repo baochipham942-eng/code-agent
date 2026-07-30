@@ -42,6 +42,9 @@ chat: {
   inheritedWorkspace: '继承工作区：{path}',
   inheritedPrefix: '继承：{parts}',
   recentTools: '最近工具 {names}',
+  skillCount: '{count} 技能',
+  connectorCount: '{count} 连接器',
+  mcpCount: '{count} MCP',
   suggestions: {
     game: {
       title: '做个能玩的小游戏',
@@ -288,6 +291,8 @@ turnCard: {
   fork: '创建分支',
   forking: '创建中…',
   createForkFromReply: '从这条回复创建分支',
+  copyAnswer: '复制回答',
+  answerCopied: '已复制',
   chooseWorkspace: '选择分支工作区',
   sharedCurrent: '历史对话 + 当前文件',
   sharedCurrentDetail: '新任务读取当前工作区，不修改源任务。',
@@ -465,6 +470,9 @@ chat: {
   inheritedWorkspace: 'Inherited workspace: {path}',
   inheritedPrefix: 'Inherited: {parts}',
   recentTools: 'Recent tools {names}',
+  skillCount: '{count} Skill',
+  connectorCount: '{count} Connector',
+  mcpCount: '{count} MCP',
   suggestions: {
     game: {
       title: 'Build a playable mini game',
@@ -710,6 +718,8 @@ turnCard: {
   fork: 'Fork',
   forking: 'Forking…',
   createForkFromReply: 'Fork from this reply',
+  copyAnswer: 'Copy answer',
+  answerCopied: 'Copied',
   chooseWorkspace: 'Choose branch workspace',
   sharedCurrent: 'History + current files',
   sharedCurrentDetail: 'The child reads the current workspace without changing the source task.',

@@ -259,11 +259,13 @@ export function registerTelemetryHandlers(getMainWindow: () => AppWindow | null)
   // 健康摘要：是否启用 + session 数 + 存储占用 + 最近事件时间
   ipcHost.handle(TELEMETRY_CHANNELS.HEALTH, async (): Promise<TelemetryHealth> => {
     assertAdminAccess('Telemetry');
+    const uploadHealth = getTelemetryUploaderService().getUploadHealth();
     return {
       enabled: storage.dbAvailable,
       sessionCount: storage.getSessionCount(),
       storageBytes: storage.getStorageBytes(),
       lastEventAt: storage.getLastEventAt(),
+      ...uploadHealth,
     };
   });
 

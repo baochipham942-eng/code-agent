@@ -27,6 +27,7 @@ const UNAVAILABLE_THRESHOLD = 0.7;  // 70% error rate
 const RECOVERY_SUCCESS_COUNT = 3;   // consecutive successes to recover
 
 interface ProviderState {
+  observationCount: number;
   latencies: number[];
   events: Array<{ time: number; success: boolean }>;
   consecutiveErrors: number;
@@ -42,6 +43,7 @@ class ProviderHealthMonitor {
   /** Call after each successful request */
   recordSuccess(provider: string, latencyMs: number): void {
     const state = this.getOrCreate(provider);
+    state.observationCount++;
     state.latencies.push(latencyMs);
     if (state.latencies.length > WINDOW_SIZE) state.latencies.shift();
     state.events.push({ time: Date.now(), success: true });
@@ -57,6 +59,7 @@ class ProviderHealthMonitor {
     // 用户主动取消不是 provider 故障，不参与健康统计，也不记作成功。
     if (options?.cancelled === true) return;
     const state = this.getOrCreate(provider);
+    state.observationCount++;
     state.events.push({ time: Date.now(), success: false });
     state.consecutiveErrors++;
     state.consecutiveSuccesses = 0;
@@ -81,6 +84,11 @@ class ProviderHealthMonitor {
     return this.buildHealth(provider, state);
   }
 
+  /** Lifetime counter used by outer adapters to fill only genuinely missing observations. */
+  getObservationCount(provider: string): number {
+    return this.providers.get(provider)?.observationCount ?? 0;
+  }
+
   private buildHealth(provider: string, state: ProviderState): ProviderHealth {
     const sorted = [...state.latencies].sort((a, b) => a - b);
     const p50 = sorted.length > 0 ? sorted[Math.floor(sorted.length * 0.5)] : 0;
@@ -101,6 +109,7 @@ class ProviderHealthMonitor {
     let state = this.providers.get(provider);
     if (!state) {
       state = {
+        observationCount: 0,
         latencies: [],
         events: [],
         consecutiveErrors: 0,

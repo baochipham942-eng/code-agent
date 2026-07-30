@@ -49,6 +49,22 @@ describe('rebuildRunDetail（3b · 从 ledger 重建 rollup）', () => {
     expect(detail.run.status).toBe('running');     // 无 run_closed → running
   });
 
+  it('已成功 agent 的迟到失败与 run 的迟到失败都不覆盖首个终态', () => {
+    const events: SwarmLedgerEvent[] = [
+      ev({ seq: 0, kind: 'run_started', payload: { coordinator: 'hybrid', startedAt: 100, totalAgents: 1, trigger: 'auto' } }),
+      agentSnap(1, 'a1', 'running'),
+      agentSnap(2, 'a1', 'completed', { tokensIn: 20 }),
+      agentSnap(3, 'a1', 'failed', { tokensIn: 999, error: 'late failure' }),
+      ev({ seq: 4, kind: 'run_closed', payload: { status: 'completed', endedAt: 300, completedCount: 1, failedCount: 0, parallelPeak: 1, totalTokensIn: 20, totalTokensOut: 5, totalToolCalls: 1, totalCostUsd: 0.01, errorSummary: null, aggregation: null, tags: [] } }),
+      ev({ seq: 5, kind: 'run_closed', payload: { status: 'failed', endedAt: 400, completedCount: 0, failedCount: 1, parallelPeak: 1, totalTokensIn: 999, totalTokensOut: 5, totalToolCalls: 1, totalCostUsd: 0.01, errorSummary: 'late failure', aggregation: null, tags: [] } }),
+      ev({ seq: 6, kind: 'run_started', payload: { coordinator: 'hybrid', startedAt: 999, totalAgents: 9, trigger: 'auto' } }),
+    ];
+
+    const detail = rebuildRunDetail(events)!;
+    expect(detail.agents[0]).toMatchObject({ status: 'completed', tokensIn: 20, error: null });
+    expect(detail.run).toMatchObject({ status: 'completed', startedAt: 100, totalAgents: 1, endedAt: 300, completedCount: 1, failedCount: 0 });
+  });
+
   it('parallelPeak 按时刻 running-count 峰值重算', () => {
     const events: SwarmLedgerEvent[] = [
       ev({ seq: 0, kind: 'run_started', payload: { coordinator: 'parallel', startedAt: 0, totalAgents: 3, trigger: 'auto' } }),

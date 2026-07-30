@@ -4,9 +4,6 @@ import type { MessageAttachment } from '@shared/contract';
 import type { SpeechTranscribeResult } from '@shared/contract';
 import type { ConversationVoiceInputMetadata } from '@shared/contract/conversationEnvelope';
 import { UI } from '@shared/constants';
-import { toast } from '../../../../hooks/useToast';
-import { useSessionStore } from '../../../../stores/sessionStore';
-import { useI18n } from '../../../../hooks/useI18n';
 import type { InputAreaRef } from './InputArea';
 
 type VoiceInputContextValue = {
@@ -15,8 +12,6 @@ type VoiceInputContextValue = {
 } | null;
 
 export interface UseChatInputComposerActionsParams {
-  currentSessionId: string | null;
-  currentSessionMemoryMode: string;
   processFile: (file: File) => Promise<MessageAttachment | null>;
   inputAreaRef: React.RefObject<InputAreaRef | null>;
   setIsUploading: React.Dispatch<React.SetStateAction<boolean>>;
@@ -26,15 +21,12 @@ export interface UseChatInputComposerActionsParams {
 }
 
 /**
- * ChatInput 的附件 / 语音 / 记忆开关动作单元：
- * 文件选择、图片粘贴、附件移除、语音转写回填、本会话记忆开关。
+ * ChatInput 的附件 / 语音动作单元：
+ * 文件选择、图片粘贴、附件移除、语音转写回填。
  * 纯结构性抽取自 index.tsx，零行为改动。
  */
 export function useChatInputComposerActions(params: UseChatInputComposerActionsParams) {
-  const { t } = useI18n();
   const {
-    currentSessionId,
-    currentSessionMemoryMode,
     processFile,
     inputAreaRef,
     setIsUploading,
@@ -42,8 +34,6 @@ export function useChatInputComposerActions(params: UseChatInputComposerActionsP
     setValue,
     setVoiceInputContext,
   } = params;
-
-  const updateSessionMemoryMode = useSessionStore((state) => state.updateSessionMemoryMode);
 
   // 处理文件选择
   const handleFileSelect = async (files: FileList) => {
@@ -111,22 +101,10 @@ export function useChatInputComposerActions(params: UseChatInputComposerActionsP
     }
   }, [inputAreaRef, setValue, setVoiceInputContext]);
 
-  const handleMemoryModeToggle = useCallback(async () => {
-    if (!currentSessionId) return;
-    const nextMode = currentSessionMemoryMode === 'off' ? 'auto' : 'off';
-    try {
-      await updateSessionMemoryMode(currentSessionId, nextMode);
-      toast.success(nextMode === 'off' ? t.chatInput.memoryDisabledToast : t.chatInput.memoryEnabledToast);
-    } catch (error) {
-      toast.error(t.chatInput.memoryUpdateFailedPrefix + (error instanceof Error ? error.message : t.chatInput.unknownError));
-    }
-  }, [currentSessionId, currentSessionMemoryMode, updateSessionMemoryMode, t]);
-
   return {
     handleFileSelect,
     handleImagePaste,
     removeAttachment,
     handleVoiceTranscript,
-    handleMemoryModeToggle,
   };
 }

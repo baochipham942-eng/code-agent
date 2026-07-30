@@ -109,6 +109,31 @@ describe('NativeRecoveryHost production recovery', () => {
     expect(ports.model.dispatchPrepared).not.toHaveBeenCalled();
     expect(registry.terminalDurable).not.toHaveBeenCalled();
   });
+
+  it('keeps workspace scope drift in manual review even without a continuation executor', async () => {
+    const pending = operation({ status: 'prepared' });
+    const recoveryPlan = plan(pending);
+    const descriptor = recoveryPlan.checkpoint!.state as NativeRecoveryDescriptor;
+    descriptor.workspace.scope = {
+      projectId: 'project-1',
+      primaryRoot: '/repo',
+      roots: [],
+      version: 'scope-v1',
+    };
+    const { handler, registry } = fixture({
+      continuationExecutor: 'unavailable',
+      resolveWorkspaceScopeVersion: vi.fn(async () => 'scope-v2'),
+    });
+
+    await expect(handler.recover(recoveryPlan, 10)).resolves.toMatchObject({
+      status: 'requires_review',
+      reason: 'native_workspace_scope_drift',
+    });
+    expect(registry.checkpointDurable).toHaveBeenCalledWith('run-1', expect.objectContaining({
+      status: 'waiting',
+    }));
+    expect(registry.terminalDurable).not.toHaveBeenCalled();
+  });
 });
 
 describe('NativeRecoveryHost interrupted goal run (P0 false-completion止血)', () => {

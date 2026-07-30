@@ -28,6 +28,31 @@ const logger = createLogger('TelemetryUploader');
 
 const DEFAULT_INTERVAL_MS = 5 * 60 * 1000; // 5min，对齐 syncService
 const BATCH_SIZE = 200;
+const MAX_UPLOAD_ERROR_LENGTH = 500;
+
+export interface TelemetryUploadHealth {
+  lastUploadAt: number | null;
+  lastUploadError: string | null;
+  lastUploadErrorAt: number | null;
+  uploadFailureCount: number;
+}
+
+function summarizeUploadError(scope: string, error: unknown): string {
+  let detail: string;
+  if (error instanceof Error) {
+    detail = error.message;
+  } else if (typeof error === 'string') {
+    detail = error;
+  } else {
+    try {
+      detail = JSON.stringify(error);
+    } catch {
+      detail = String(error);
+    }
+  }
+  return `${scope}: ${scrubString(detail || 'unknown upload error', { homeDir: os.homedir() })}`
+    .slice(0, MAX_UPLOAD_ERROR_LENGTH);
+}
 
 function getAppVersion(): string | null {
   try {
@@ -44,6 +69,12 @@ export class TelemetryUploaderService implements Disposable {
   private uploading = false;
   private enabled = true; // 运行时开关（telemetry.cloudUpload.enabled）
   private authSkipLogged = false; // 2a(ADR-030): auth-gated skip 只记一次，避免每 5min 刷日志
+  private uploadHealth: TelemetryUploadHealth = {
+    lastUploadAt: null,
+    lastUploadError: null,
+    lastUploadErrorAt: null,
+    uploadFailureCount: 0,
+  };
 
   constructor() {
     this.deviceId = getSecureStorage().getDeviceId();
@@ -51,6 +82,16 @@ export class TelemetryUploaderService implements Disposable {
 
   setEnabled(value: boolean): void {
     this.enabled = value;
+  }
+
+  getUploadHealth(): TelemetryUploadHealth {
+    return { ...this.uploadHealth };
+  }
+
+  private recordUploadFailure(scope: string, error: unknown): void {
+    this.uploadHealth.lastUploadError = summarizeUploadError(scope, error);
+    this.uploadHealth.lastUploadErrorAt = Date.now();
+    this.uploadHealth.uploadFailureCount += 1;
   }
 
   startAutoUpload(intervalMs: number = DEFAULT_INTERVAL_MS): void {
@@ -87,6 +128,7 @@ export class TelemetryUploaderService implements Disposable {
 
     this.uploading = true;
     try {
+      let uploadFailed = false;
       const storage = getTelemetryStorage();
       const sessions = storage
         .getUnsyncedSessions(BATCH_SIZE)
@@ -107,6 +149,7 @@ export class TelemetryUploaderService implements Disposable {
           );
         if (sessionError) {
           logger.error('Failed to push telemetry_sessions', { error: sessionError });
+          this.recordUploadFailure('telemetry_sessions', sessionError);
           return 0; // 会话没写成功就不标记已同步，下轮重试
         }
       }
@@ -127,7 +170,9 @@ export class TelemetryUploaderService implements Disposable {
           .upsert(turnRows.slice(i, i + BATCH_SIZE), { onConflict: 'id' });
         if (turnError) {
           logger.error('Failed to push telemetry_turns', { error: turnError });
+          this.recordUploadFailure('telemetry_turns', turnError);
           turnUploadFailed = true;
+          uploadFailed = true;
         }
       }
       if (turnUploadFailed) return 0;
@@ -135,14 +180,23 @@ export class TelemetryUploaderService implements Disposable {
       // 3) 用户显式反馈。它依赖云端已有 session/turn，因此放在 session/turn 后面。
       const feedback = storage.getUnsyncedFeedback(BATCH_SIZE, user.id);
       if (feedback.length > 0) {
+        // UI 的 messageId 只负责本地定位，不保证等于 telemetry_turns.id。
+        // 不存在的 turn_id 会被 owns_telemetry_turn RLS 正确拒绝（42501），
+        // 因此只有本地账本能证明存在时才上传 turn 外键。
         const { error: feedbackError } = await supabase
           .from('telemetry_feedback')
           .upsert(
-            feedback.map((item) => this.toFeedbackRow(item, user.id)),
+            feedback.map((item) => {
+              const turnDetail = item.turnId ? storage.getTurnDetail(item.turnId) : null;
+              const turnId = turnDetail?.turn.sessionId === item.sessionId ? item.turnId ?? null : null;
+              return this.toFeedbackRow(item, user.id, turnId);
+            }),
             { onConflict: 'id' },
           );
         if (feedbackError) {
           logger.error('Failed to push telemetry_feedback', { error: feedbackError });
+          this.recordUploadFailure('telemetry_feedback', feedbackError);
+          uploadFailed = true;
         } else {
           storage.markFeedbackSynced(feedback.map((item) => item.id));
         }
@@ -160,6 +214,8 @@ export class TelemetryUploaderService implements Disposable {
           );
         if (rendererBundleError) {
           logger.error('Failed to push telemetry_renderer_bundle_attempts', { error: rendererBundleError });
+          this.recordUploadFailure('telemetry_renderer_bundle_attempts', rendererBundleError);
+          uploadFailed = true;
         } else {
           storage.markRendererBundleAttemptsSynced(rendererBundleAttempts.map((item) => item.id));
         }
@@ -176,6 +232,8 @@ export class TelemetryUploaderService implements Disposable {
           );
         if (diagError) {
           logger.error('Failed to push telemetry_diagnostic_bundles', { error: diagError });
+          this.recordUploadFailure('telemetry_diagnostic_bundles', diagError);
+          uploadFailed = true;
         } else {
           storage.markDiagnosticBundlesSynced(diagBundles.map((b) => b.id), Date.now());
         }
@@ -183,10 +241,14 @@ export class TelemetryUploaderService implements Disposable {
 
       // 6) 会话和 turn 都写成功后再标记已同步；否则下轮继续补传
       storage.markSessionsSynced(sessions.map((s) => s.id));
+      if (!uploadFailed) {
+        this.uploadHealth.lastUploadAt = Date.now();
+      }
       logger.info('Telemetry uploaded', { sessions: sessions.length, turns: turnRows.length, feedback: feedback.length, rendererBundleAttempts: rendererBundleAttempts.length, diagnosticBundles: diagBundles.length });
       return sessions.length;
     } catch (err) {
       logger.error('Telemetry upload error', err as Error);
+      this.recordUploadFailure('telemetry_upload', err);
       return 0;
     } finally {
       this.uploading = false;
@@ -281,11 +343,11 @@ export class TelemetryUploaderService implements Disposable {
     };
   }
 
-  private toFeedbackRow(f: TelemetryFeedback, userId: string) {
+  private toFeedbackRow(f: TelemetryFeedback, userId: string, turnId: string | null) {
     return {
       id: f.id,
       session_id: f.sessionId,
-      turn_id: f.turnId ?? null,
+      turn_id: turnId,
       user_id: userId,
       rating: f.rating,
       comment: f.comment ?? null,

@@ -23,6 +23,7 @@ import {
   UNSORTED_PROJECT_ID,
   UNSORTED_PROJECT_NAME,
   type CreateProjectGoalInput,
+  type CreateProjectInput,
   type Project,
   type ProjectArtifact,
   type ProjectArtifactKind,
@@ -417,6 +418,44 @@ export class ProjectService {
     return project;
   }
 
+  /**
+   * 显式创建项目（侧栏「项目」区「+」入口，2026-07-29）。
+   * 复用 ensureProjectForWorkspace 的路径归一化 / workspaceKey 逻辑；显式 name
+   * 覆盖「目录名」这个默认值。目录已绑定项目时幂等返回既有项目并把显式 name 应用上去
+   * （创建语义 = 确保存在 + 应用名字），避免同一目录悄悄长出第二个项目。
+   */
+  async createProject(input: CreateProjectInput, now: number): Promise<Project> {
+    const name = input.name?.trim();
+    if (!name) throw new Error('Project name is required.');
+
+    const dir = input.workspacePath?.trim();
+    if (!dir) {
+      // 无目录的纯容器项目：暂不绑定 workspace，等第一条会话落进来再接管。
+      const project: Project = {
+        id: shortId('proj'),
+        name,
+        workspacePath: null,
+        workspaceKey: null,
+        status: 'active',
+        createdAt: now,
+        updatedAt: now,
+        archivedAt: null,
+        sourceRevision: 0,
+      };
+      this.repo().upsertProject(project);
+      return project;
+    }
+
+    let project = await this.ensureProjectForWorkspace(dir, now);
+    if (project.name !== name) {
+      project = this.renameProject(project.id, name, now) ?? project;
+    }
+    if (typeof input.description === 'string' && input.description.trim()) {
+      project = this.setProjectDescription(project.id, input.description, now) ?? project;
+    }
+    return project;
+  }
+
   private ensureUnsorted(now: number): Project {
     const repo = this.repo();
     const existing = repo.getProject(UNSORTED_PROJECT_ID);
@@ -439,7 +478,13 @@ export class ProjectService {
   /** D4 启动迁移归桶：把存量无 project_id 的 session 按 workspace 自动归桶。返回归桶数。 */
   backfillSessions(now: number): number {
     const repo = this.repo();
-    const count = repo.backfillSessions(now, (workspacePath, key) => buildProjectRow(workspacePath, key, now));
+    const count = repo.backfillSessions(
+      now,
+      (workspacePath, key) => buildProjectRow(workspacePath, key, now),
+      ({ sessionId, reason }) => {
+        logger.warn('[ProjectService] 跳过不可变边界冲突的存量会话归桶', { sessionId, reason });
+      },
+    );
     repo.backfillProjectSources(now);
     return count;
   }

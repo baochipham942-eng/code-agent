@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildGlobalTaskRecords,
+  buildDurableSubagentViews,
   buildLedgerTaskRecords,
   buildWorkflowSubagentViews,
   buildWorkflowTaskRecord,
@@ -79,6 +80,39 @@ describe('buildGlobalTaskRecords', () => {
       status: 'in_progress',
       steps: [{ title: '队列 #2', status: 'in_progress' }],
     });
+  });
+});
+
+describe('buildDurableSubagentViews', () => {
+  it('uses only persisted ledger records for capsule status and output', () => {
+    expect(buildDurableSubagentViews({
+      runId: 'run-1',
+      selectedAgentId: null,
+      agents: [{
+        runId: 'run-1',
+        agentId: 'agent-1',
+        name: 'Reviewer',
+        role: 'reviewer',
+        status: 'completed',
+        startTime: 1,
+        endTime: 2,
+        durationMs: 1,
+        tokensIn: 1,
+        tokensOut: 1,
+        toolCalls: 0,
+        costUsd: 0,
+        error: null,
+        failureCategory: null,
+        filesChanged: [],
+        dispatchedTask: 'review durable state',
+        finalOutput: 'verified',
+      }],
+    })).toEqual([expect.objectContaining({
+      id: 'agent-1',
+      status: 'completed',
+      inputSummary: 'review durable state',
+      lastOutput: 'verified',
+    })]);
   });
 });
 

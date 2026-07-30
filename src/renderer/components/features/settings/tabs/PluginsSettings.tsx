@@ -102,6 +102,7 @@ export const PluginsSettings: React.FC = () => {
   const [projectPath, setProjectPath] = useState('');
   const [loading, setLoading] = useState(false);
   const [busyKey, setBusyKey] = useState<string | null>(null);
+  const [installStates, setInstallStates] = useState<Record<string, 'installing' | 'cancelling'>>({});
   const [notice, setNotice] = useState<Notice | null>(null);
 
   const reload = useCallback(async () => {
@@ -223,15 +224,42 @@ export const PluginsSettings: React.FC = () => {
 
   const handleInstall = useCallback((plugin: MarketplacePluginEntry) => {
     const spec = getPluginSpec(plugin);
-    void runAction(`plugin:install:${spec}`, async () => {
+    setInstallStates((current) => ({ ...current, [spec]: 'installing' }));
+    setNotice(null);
+    void (async () => {
       const options = installScope === 'project'
         ? { scope: installScope, projectPath: projectPath.trim() || undefined }
         : { scope: installScope };
-      const result = await ipcService.invoke(IPC_CHANNELS.MARKETPLACE_INSTALL_PLUGIN, spec, options);
-      if (!result?.success) throw new Error(getResultError(result, pluginsText.errors));
-      return `${pluginsText.toast.installSuccessPrefix}${spec}${pluginsText.toast.installSuccessSuffix}`;
-    });
-  }, [installScope, pluginsText, projectPath, runAction]);
+      try {
+        const result = await ipcService.invoke(IPC_CHANNELS.MARKETPLACE_INSTALL_PLUGIN, spec, options);
+        if (result?.cancelled) return;
+        if (!result?.success) throw new Error(getResultError(result, pluginsText.errors));
+        setNotice({
+          type: 'success',
+          text: `${pluginsText.toast.installSuccessPrefix}${spec}${pluginsText.toast.installSuccessSuffix}`,
+        });
+        await reload();
+      } catch (error) {
+        setNotice({
+          type: 'error',
+          text: error instanceof Error ? error.message : String(error),
+        });
+      } finally {
+        setInstallStates((current) => {
+          const next = { ...current };
+          delete next[spec];
+          return next;
+        });
+      }
+    })();
+  }, [installScope, pluginsText, projectPath, reload]);
+
+  const handleCancelInstall = useCallback((spec: string) => {
+    setInstallStates((current) => (
+      current[spec] ? { ...current, [spec]: 'cancelling' } : current
+    ));
+    void ipcService.invoke(IPC_CHANNELS.MARKETPLACE_CANCEL_INSTALL, spec);
+  }, []);
 
   const handleToggle = useCallback((plugin: InstalledPlugin) => {
     const spec = getPluginSpec(plugin);
@@ -489,20 +517,45 @@ export const PluginsSettings: React.FC = () => {
                       )}
                       <div className="mt-2 break-all text-xs text-zinc-600">{plugin.source}</div>
                     </div>
-                    {installedPlugin ? (
-                      <PackageCheck className="h-5 w-5 shrink-0 text-emerald-300" />
-                    ) : (
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        loading={busyKey === `plugin:install:${spec}`}
-                        disabled={busyKey !== null}
-                        onClick={() => handleInstall(plugin)}
-                        leftIcon={<Download className="h-3.5 w-3.5" />}
-                      >
-                        {pluginsText.marketplace.install}
-                      </Button>
-                    )}
+                    <div
+                      data-testid={`plugin-install-state-${spec}`}
+                      data-state={installedPlugin ? 'installed' : installStates[spec] ?? 'idle'}
+                      className="shrink-0"
+                    >
+                      {installedPlugin ? (
+                        <PackageCheck className="h-5 w-5 text-emerald-300" />
+                      ) : installStates[spec] === 'installing' ? (
+                        <div className="flex flex-col gap-2 sm:flex-row">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleCancelInstall(spec)}
+                          >
+                            {pluginsText.marketplace.cancelInstall}
+                          </Button>
+                          <Button variant="secondary" size="sm" disabled>
+                            <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                            {pluginsText.marketplace.installing}
+                          </Button>
+                        </div>
+                      ) : installStates[spec] === 'cancelling' ? (
+                        <Button variant="secondary" size="sm" disabled>
+                          <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                          {pluginsText.marketplace.cancelling}
+                        </Button>
+                      ) : (
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          loading={busyKey === `plugin:install:${spec}`}
+                          disabled={busyKey !== null}
+                          onClick={() => handleInstall(plugin)}
+                          leftIcon={<Download className="h-3.5 w-3.5" />}
+                        >
+                          {pluginsText.marketplace.install}
+                        </Button>
+                      )}
+                    </div>
                   </div>
                   <div className="mt-3 flex flex-wrap gap-1.5">
                     {(plugin.tags ?? []).slice(0, 6).map((tag) => (

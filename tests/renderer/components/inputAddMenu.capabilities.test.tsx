@@ -41,11 +41,7 @@ describe('InputAddMenu 能力入口', () => {
   it('从加号菜单展开技能、渲染条目并选择到当前 turn 后关闭菜单', () => {
     render(
       <InputAddMenu
-        onSlashCommand={vi.fn()}
         onFileSelect={vi.fn()}
-        memoryMode="auto"
-        onToggleMemory={vi.fn()}
-        onOpenLibrary={vi.fn()}
         onSelectCapability={selectCapability}
       />,
     );

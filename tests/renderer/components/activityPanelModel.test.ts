@@ -169,7 +169,8 @@ describe('activity panel model', () => {
     });
 
     expect(model.modeLabel).toBe('Web 降级');
-    expect(model.recentHeadline).toContain('还没有可展示');
+    expect(model.recentHeadline).toBe(zhCopy.recent.emptyHeadlineWeb);
+    expect(model.recentDetail).toBe(zhCopy.recent.emptyDetailWeb);
     expect(model.capabilityRows).toHaveLength(5);
     expect(model.injectionItems[0]?.label).toBe('暂无可注入内容');
     expect(model.localEvidenceItems[0]?.label).toBe('暂无本地证据');
@@ -199,7 +200,7 @@ describe('activity panel model', () => {
     });
 
     expect(model.modeLabel).toBe('Web degraded');
-    expect(model.recentHeadline).toBe(enCopy.recent.emptyHeadline);
+    expect(model.recentHeadline).toBe(enCopy.recent.emptyHeadlineWeb);
     expect(model.injectionItems[0]?.label).toBe('Nothing to inject yet');
     expect(model.localEvidenceItems[0]?.label).toBe('No local evidence yet');
   });

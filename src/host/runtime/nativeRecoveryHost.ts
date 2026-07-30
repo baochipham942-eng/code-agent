@@ -240,7 +240,8 @@ export class NativeRecoveryHost {
   }
 
   private async review(plan: RunRehydrationPlan, now: number, reason: string) {
-    if (this.ports.continuationExecutor === 'unavailable') {
+    const canPauseForManualWorkspaceReview = reason === 'native_workspace_scope_drift';
+    if (this.ports.continuationExecutor === 'unavailable' && !canPauseForManualWorkspaceReview) {
       return this.failUnrecoverable(plan, now, reason);
     }
     await this.registry.checkpointDurable(plan.envelope.runId, {

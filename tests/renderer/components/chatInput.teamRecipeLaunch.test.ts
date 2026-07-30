@@ -78,22 +78,30 @@ describe('预选团队配方的发送链路', () => {
     mocks.launchRecipe.mockResolvedValue({ ok: true });
     mocks.launchTeamRecipe.mockResolvedValue({ ok: true });
     useTeamRecipeStore.setState({ recipes: [RECIPE], isLoaded: true });
-    useComposerStore.setState({ selectedTeamRecipeId: 'r1' });
+    useComposerStore.setState({ selectedTeamRecipeId: 'r1', standbyExcludedMemberKeys: [] });
   });
 
   it('已有会话时用这句话当主题启动配方，不走普通对话', async () => {
     const onSend = vi.fn();
     await submit(makeParams({ onSend }));
 
-    expect(mocks.launchRecipe).toHaveBeenCalledWith('session-1', 'r1', '帮我评审这次上线');
+    expect(mocks.launchRecipe).toHaveBeenCalledWith('session-1', 'r1', '帮我评审这次上线', []);
     expect(onSend).not.toHaveBeenCalled();
     expect(useComposerStore.getState().selectedTeamRecipeId).toBeNull();
+  });
+
+  it('成员条上 × 掉的待命成员随启动传给 host，且预选复位时排除标记一并清掉', async () => {
+    useComposerStore.setState({ standbyExcludedMemberKeys: ['溯真'] });
+    await submit(makeParams());
+
+    expect(mocks.launchRecipe).toHaveBeenCalledWith('session-1', 'r1', '帮我评审这次上线', ['溯真']);
+    expect(useComposerStore.getState().standbyExcludedMemberKeys).toEqual([]);
   });
 
   it('还没有会话时先建会话再启动', async () => {
     await submit(makeParams({ currentSessionId: null }));
 
-    expect(mocks.launchTeamRecipe).toHaveBeenCalledWith('r1', '上线评审', '帮我评审这次上线');
+    expect(mocks.launchTeamRecipe).toHaveBeenCalledWith('r1', '上线评审', '帮我评审这次上线', []);
     expect(mocks.launchRecipe).not.toHaveBeenCalled();
   });
 

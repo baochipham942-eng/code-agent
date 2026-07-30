@@ -14,11 +14,12 @@ export function listRecipes(): Promise<TeamRecipe[]> {
   return ipcService.invokeDomain<TeamRecipe[]>(IPC_DOMAINS.TEAM, 'recipeList', {});
 }
 
-export async function launchRecipe(sessionId: string, recipeId: string, topic: string): Promise<LaunchRecipeResult> {
+export async function launchRecipe(sessionId: string, recipeId: string, topic: string, excludeMemberKeys?: string[]): Promise<LaunchRecipeResult> {
   const result = await ipcService.invokeDomain<LaunchRecipeResult>(IPC_DOMAINS.TEAM, 'launchRecipe', {
     sessionId,
     recipeId,
     topic,
+    ...(excludeMemberKeys && excludeMemberKeys.length > 0 ? { excludeMemberKeys } : {}),
   });
   if (result.ok) {
     // teamLead 由 host 写入标准 session metadata；复用现有 session list 读回，

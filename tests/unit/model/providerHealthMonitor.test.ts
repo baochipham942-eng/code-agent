@@ -7,10 +7,12 @@ describe('ProviderHealthMonitor', () => {
     const monitor = getProviderHealthMonitor();
     monitor.recordSuccess(provider, 20);
     const before = monitor.getHealth(provider);
+    const beforeCount = monitor.getObservationCount(provider);
 
     monitor.recordFailure(provider, { cancelled: true });
 
     expect(monitor.getHealth(provider)).toEqual(before);
+    expect(monitor.getObservationCount(provider)).toBe(beforeCount);
     expect(monitor.getHealth(provider)).toMatchObject({
       status: 'healthy',
       errorRate: 0,

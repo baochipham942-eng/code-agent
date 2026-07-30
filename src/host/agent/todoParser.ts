@@ -6,6 +6,7 @@
 // 规则：忽略代码块内的列表，只提升带明确任务意图的 checkbox 清单
 
 import type { SessionTask, TodoItem, TodoStatus } from '../../shared/contract';
+import { makeEvidenceRef, type EvidenceRef } from '../../shared/contract/evidence';
 import { createLogger } from '../services/infra/logger';
 import { getDatabase } from '../services/core/databaseService';
 import { createTask, listTasks, updateTask } from '../services/planning/taskStore';
@@ -313,9 +314,26 @@ function shouldUpdateTaskFromTodo(task: SessionTask, todo: TodoItem): boolean {
   return task.subject !== todo.content || task.description !== todo.content || task.activeForm !== todo.activeForm;
 }
 
+export interface TodoSyncOptions {
+  /** completed 落账时的机器证据（auto-advance 传触发推进的工具调用）；缺省打 todo 自报章 */
+  completionEvidence?: EvidenceRef[];
+}
+
+// ADR-050：completed 落账不允许空证据，todo 同步不是证据门的豁免通道——
+// 机器推进带工具调用证据，agent 自己勾掉的 todo 打「自报」章，账本上两种来源可审计区分
+function todoCompletionEvidence(todo: TodoItem, options?: TodoSyncOptions): EvidenceRef[] {
+  if (options?.completionEvidence?.length) return options.completionEvidence;
+  return [makeEvidenceRef({
+    kind: 'tool',
+    ref: `agent marked todo completed: ${todo.content}`,
+    source: 'todo_parser:self-report',
+  })];
+}
+
 export function syncTodosToSessionTasks(
   sessionId: string,
   todos: TodoItem[],
+  options?: TodoSyncOptions,
 ): { tasks: SessionTask[]; created: SessionTask[]; updated: SessionTask[] } {
   const existingTasks = listTasks(sessionId);
   const matchedTaskIds = new Set<string>();
@@ -338,7 +356,10 @@ export function syncTodosToSessionTasks(
       const nextStatus = todoToTaskStatus(todo.status);
       const finalTask = nextStatus === 'pending'
         ? createdTask
-        : updateTask(sessionId, createdTask.id, { status: nextStatus }) ?? createdTask;
+        : updateTask(sessionId, createdTask.id, {
+            status: nextStatus,
+            ...(nextStatus === 'completed' ? { evidenceRefs: todoCompletionEvidence(todo, options) } : {}),
+          }) ?? createdTask;
       created.push(finalTask);
       continue;
     }
@@ -350,11 +371,13 @@ export function syncTodosToSessionTasks(
 
     const nextStatus = todoToTaskStatus(todo.status);
     const status = isStickySessionTaskStatus(task.status) ? task.status : nextStatus;
+    const becameCompleted = status === 'completed' && task.status !== 'completed';
     const nextTask = updateTask(sessionId, task.id, {
       subject: todo.content,
       description: todo.content,
       activeForm: todo.activeForm,
       status,
+      ...(becameCompleted ? { evidenceRefs: todoCompletionEvidence(todo, options) } : {}),
       metadata: { source: 'todo_parser' },
     });
     if (nextTask) {

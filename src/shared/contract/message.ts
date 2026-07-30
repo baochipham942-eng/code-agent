@@ -236,6 +236,36 @@ export interface AgentTeamMessageMetadata {
   targetAgentIds?: string[];
 }
 
+/** 会话区错误卡片的错误分类（AgentErrorCard 按它决定文案和动作按钮）。 */
+export type AgentErrorCategory =
+  | 'model_not_found'
+  | 'forbidden'
+  | 'rate_limited'
+  | 'concurrency'
+  | 'network'
+  | 'context_length'
+  | 'generic';
+
+/**
+ * agent 运行失败的结构化错误信息，落在最后一条 assistant 消息的 metadata 上，
+ * 由 AgentErrorCard 渲染成可操作卡片（替代旧版 merge 进 content 的纯文本）。
+ * 刻意不存 title/suggestion 文案——文案随 i18n 走，存下来会把语言钉死在持久化数据里。
+ */
+export interface AgentErrorMetadata {
+  category: AgentErrorCategory;
+  /** host 侧错误码（RUN_FAILED / CONTEXT_LENGTH_EXCEEDED / …） */
+  code?: string;
+  httpStatus?: number;
+  traceId?: string;
+  /** 供应商/运行时的原始错误文本，进错误报告 */
+  rawMessage: string;
+  modelId?: string;
+  timestamp: number;
+  /** context_length 专用：实际/上限 tokens，供卡片模板填空 */
+  requestedTokens?: number;
+  maxTokens?: number;
+}
+
 export interface MessageMetadata {
   /**
    * 方案 §8.2 的用户输入来源；缺省视为 typed。
@@ -248,6 +278,8 @@ export interface MessageMetadata {
   channel?: ChannelMessageMetadata;
   neoTag?: NeoTagMessageMetadata;
   agentTeam?: AgentTeamMessageMetadata;
+  /** agent 运行失败的结构化错误（会话区渲染 AgentErrorCard），见 AgentErrorMetadata */
+  agentError?: AgentErrorMetadata;
   automation?: SessionAutomationMessageMetadata;
   turnQuality?: TurnQualitySummary;
   /**

@@ -9,6 +9,7 @@ import type { SessionWithMeta } from '../../../src/renderer/stores/sessionStore'
 
 // 未分类组名由调用方按 i18n 传入（生产代码走 t.sidebarProject.uncategorizedGroupName）
 const UNCATEGORIZED_NAME = '快速对话';
+const PROJECT_FALLBACK_NAME = '项目';
 
 type SessionOverrides = {
   id?: string;
@@ -42,7 +43,7 @@ describe('groupByWorkspace', () => {
       makeSession({ id: 's3', workingDirectory: '/Users/me/Downloads', updatedAt: 150 }),
     ];
 
-    const groups = groupByWorkspace(sessions, UNCATEGORIZED_NAME);
+    const groups = groupByWorkspace(sessions, UNCATEGORIZED_NAME, PROJECT_FALLBACK_NAME);
 
     expect(groups).toHaveLength(2);
     const codeAgent = groups.find((g) => g.name === 'code-agent')!;
@@ -59,7 +60,7 @@ describe('groupByWorkspace', () => {
       makeSession({ id: 'b', workingDirectory: '/work/beta/foo', updatedAt: 200 }),
     ];
 
-    const groups = groupByWorkspace(sessions, UNCATEGORIZED_NAME);
+    const groups = groupByWorkspace(sessions, UNCATEGORIZED_NAME, PROJECT_FALLBACK_NAME);
 
     expect(groups).toHaveLength(2);
     expect(groups[0].name).toBe('foo');
@@ -75,7 +76,7 @@ describe('groupByWorkspace', () => {
       makeSession({ id: 'mid', workingDirectory: '/mid-proj', updatedAt: 200 }),
     ];
 
-    const groups = groupByWorkspace(sessions, UNCATEGORIZED_NAME);
+    const groups = groupByWorkspace(sessions, UNCATEGORIZED_NAME, PROJECT_FALLBACK_NAME);
 
     expect(groups.map((g) => g.name)).toEqual(['new-proj', 'mid-proj', 'old-proj']);
   });
@@ -87,7 +88,7 @@ describe('groupByWorkspace', () => {
       makeSession({ id: 'chat2', workingDirectory: '', updatedAt: 400 }),
     ];
 
-    const groups = groupByWorkspace(sessions, UNCATEGORIZED_NAME);
+    const groups = groupByWorkspace(sessions, UNCATEGORIZED_NAME, PROJECT_FALLBACK_NAME);
 
     expect(groups).toHaveLength(2);
     expect(groups[0].isUncategorized).toBe(false);
@@ -105,7 +106,7 @@ describe('groupByWorkspace', () => {
       makeSession({ id: 'proj-old', workingDirectory: '/old', updatedAt: 100 }),
     ];
 
-    const groups = groupByWorkspace(sessions, UNCATEGORIZED_NAME);
+    const groups = groupByWorkspace(sessions, UNCATEGORIZED_NAME, PROJECT_FALLBACK_NAME);
 
     expect(groups[groups.length - 1].isUncategorized).toBe(true);
   });
@@ -115,13 +116,13 @@ describe('groupByWorkspace', () => {
       makeSession({ id: 's', workingDirectory: '/Users/me/projects/foo/', updatedAt: 0 }),
     ];
 
-    const groups = groupByWorkspace(sessions, UNCATEGORIZED_NAME);
+    const groups = groupByWorkspace(sessions, UNCATEGORIZED_NAME, PROJECT_FALLBACK_NAME);
 
     expect(groups[0].name).toBe('foo');
   });
 
   it('returns empty array for empty input', () => {
-    expect(groupByWorkspace([], UNCATEGORIZED_NAME)).toEqual([]);
+    expect(groupByWorkspace([], UNCATEGORIZED_NAME, PROJECT_FALLBACK_NAME)).toEqual([]);
   });
 
   it('surfaces a shared project id when every session in a workspace agrees', () => {
@@ -130,7 +131,7 @@ describe('groupByWorkspace', () => {
       makeSession({ id: 'b', workingDirectory: '/repo/code-agent', projectId: 'proj-code-agent' }),
     ];
 
-    const groups = groupByWorkspace(sessions, UNCATEGORIZED_NAME);
+    const groups = groupByWorkspace(sessions, UNCATEGORIZED_NAME, PROJECT_FALLBACK_NAME);
 
     expect(groups[0].projectId).toBe('proj-code-agent');
     expect(groups[0].key).toBe('project:proj-code-agent');
@@ -142,7 +143,7 @@ describe('groupByWorkspace', () => {
       makeSession({ id: 'worktree', workingDirectory: '/repo/code-agent-worktree', projectId: 'proj-code-agent', updatedAt: 300 }),
     ];
 
-    const groups = groupByWorkspace(sessions, UNCATEGORIZED_NAME);
+    const groups = groupByWorkspace(sessions, UNCATEGORIZED_NAME, PROJECT_FALLBACK_NAME);
 
     expect(groups).toHaveLength(1);
     expect(groups[0].key).toBe('project:proj-code-agent');
@@ -158,7 +159,7 @@ describe('groupByWorkspace', () => {
       makeSession({ id: 'b', workingDirectory: '/repo/code-agent', projectId: 'proj-b' }),
     ];
 
-    const groups = groupByWorkspace(sessions, UNCATEGORIZED_NAME);
+    const groups = groupByWorkspace(sessions, UNCATEGORIZED_NAME, PROJECT_FALLBACK_NAME);
 
     expect(groups).toHaveLength(2);
     expect(groups.map((group) => group.projectId).sort()).toEqual(['proj-a', 'proj-b']);
@@ -171,7 +172,7 @@ describe('groupByWorkspace', () => {
       makeSession({ id: 'b', workingDirectory: '/repo/code-agent' }),
     ];
 
-    const groups = groupByWorkspace(sessions, UNCATEGORIZED_NAME);
+    const groups = groupByWorkspace(sessions, UNCATEGORIZED_NAME, PROJECT_FALLBACK_NAME);
 
     expect(groups).toHaveLength(2);
     expect(groups.find((group) => group.projectId === 'proj-code-agent')?.key).toBe('project:proj-code-agent');

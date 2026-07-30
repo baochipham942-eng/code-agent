@@ -35,6 +35,7 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
       updated_at INTEGER NOT NULL,
       workbench_provenance TEXT,
       is_deleted INTEGER NOT NULL DEFAULT 0,
+      is_archived INTEGER NOT NULL DEFAULT 0,
       synced_at INTEGER
     )
   `);
@@ -43,6 +44,7 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
   safeAlter(db, `ALTER TABLE sessions ADD COLUMN suppressed_memory_entry_ids TEXT NOT NULL DEFAULT '[]'`, logger);
   safeAlter(db, `ALTER TABLE sessions ADD COLUMN metadata TEXT`, logger);
   safeAlter(db, `ALTER TABLE sessions ADD COLUMN project_id TEXT`, logger);
+  safeAlter(db, `ALTER TABLE sessions ADD COLUMN is_archived INTEGER NOT NULL DEFAULT 0`, logger);
 
   // Messages 表
   db.exec(`

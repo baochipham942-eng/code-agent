@@ -88,7 +88,6 @@ describe('hover actions remain visible to keyboard users', () => {
           searchQuery: '',
           messageSearchHitsBySessionId: {},
           replayEvidenceBySessionId: new Map(),
-          canOpenSessionReplay: true,
           reviewItemsBySessionId: {},
           trajectoryQualityBySessionId: {},
           multiSelectMode: false,
@@ -102,8 +101,6 @@ describe('hover actions remain visible to keyboard users', () => {
           handleRenameSubmit: vi.fn(),
           handleRenameKeyDown: vi.fn(),
           handleDoubleClick: vi.fn(),
-          handleOpenSessionReplayInEvalCenter: vi.fn(),
-          handleOpenSessionAssets: vi.fn(),
           handleOpenReplayEvidence: vi.fn(),
           handleSelectMessageSearchHit: vi.fn(),
           handleArchiveSession: vi.fn(),
@@ -113,10 +110,11 @@ describe('hover actions remain visible to keyboard users', () => {
 
     // D3（2026-07-26 打磨批 D）：键盘可及性改挂 group-focus-visible——Tab 聚焦命中
     // :focus-visible 照常显现，鼠标点击残留的 :focus 不再让动作簇粘滞。
+    // 2026-07-29：hover 动作簇只留归档（Replay/产物图标撤到右键菜单与项目 ⋯ 菜单），
+    // 焦点环由 IconButton 自带 focus-visible 样式承载，不再有行内自定义 ring-1。
     expect(html).toContain('group-focus-visible:opacity-100');
     expect(html).toContain('group-focus-visible:opacity-0');
     expect(html).not.toContain('group-focus-within');
-    expect(count(html, 'focus-visible:ring-1')).toBe(2);
     expect(html).toContain('aria-label="归档会话 M2 键盘验收"');
   });
 

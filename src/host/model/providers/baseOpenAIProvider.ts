@@ -189,7 +189,7 @@ export abstract class BaseOpenAIProvider implements Provider {
           return parseOpenAIResponse(await response.json());
         },
         {
-          providerName: this.name,
+          providerName: config.provider,
           signal,
           maxRetries: options?.disableProviderTransientRetry ? 0 : undefined,
         },
@@ -217,7 +217,7 @@ export abstract class BaseOpenAIProvider implements Provider {
         endpoint: this.getEndpoint(),
       }),
       {
-        providerName: this.name,
+        providerName: config.provider,
         signal,
         maxRetries: options?.disableProviderTransientRetry ? 0 : undefined,
       }

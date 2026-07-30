@@ -213,7 +213,7 @@ export const ActivityPanel: React.FC<{ onClose: () => void }> = ({ onClose }) =>
   }, [ap, context]);
 
   return (
-    <FullScreenPage testId="activity-panel">
+    <FullScreenPage testId="activity-panel" variant="inline">
       <FullScreenPageHeader
         icon={<Activity className="h-4 w-4 text-cyan-300" />}
         title="Activity"

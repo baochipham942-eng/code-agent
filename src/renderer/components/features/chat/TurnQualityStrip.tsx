@@ -8,6 +8,7 @@ import { useSessionStore } from '../../../stores/sessionStore';
 import { toast } from '../../../hooks/useToast';
 import { useI18n } from '../../../hooks/useI18n';
 import { unescapeHtmlEntities } from '../../../utils/htmlEntities';
+import { useSessionModels } from './sessionModelsContext';
 
 interface TurnQualityStripProps {
   summary: TurnQualitySummary;
@@ -89,6 +90,7 @@ function blockLabel(blockType: string): string {
 
 export const TurnQualityStrip: React.FC<TurnQualityStripProps> = ({ summary }) => {
   const developerMode = useAppStore((state) => state.developerMode);
+  const sessionModels = useSessionModels();
   const { t } = useI18n();
   const [expanded, setExpanded] = useState(false);
   const [busyEntryId, setBusyEntryId] = useState<string | null>(null);
@@ -144,6 +146,17 @@ export const TurnQualityStrip: React.FC<TurnQualityStripProps> = ({ summary }) =
   // 不需要也看不懂，只留一颗安静的模型名徽标标注"这轮是谁在干活"。
   if (!developerMode) {
     const modelName = summary.strategy.model || summary.strategy.requestedModel;
+    // 本轮发生了重路由/fallback（实际模型 ≠ 请求模型）时徽标始终值得显示。
+    const rerouted = Boolean(
+      summary.strategy.model
+      && summary.strategy.requestedModel
+      && summary.strategy.model !== summary.strategy.requestedModel,
+    );
+    // 会话内所有轮共用同一模型时，每轮重复印同一个模型名是纯噪音（2026-07-28 产品
+    // 反馈：独占一行浪费空间）；只在模型有分歧（多模型会话）或本轮重路由时显示。
+    // sessionModels 为 null（无会话级上下文，如单测/嵌套复用）时保持原行为。
+    const showModel = Boolean(modelName)
+      && (rerouted || sessionModels === null || sessionModels.size > 1);
     // 手动 /agent 指定（非 default）时透出"本轮由 X 执行"的安静徽标，
     // 恢复自动路由后 agentName 回到 default 徽标自然消失。
     const agentName = summary.capabilities?.agentName;
@@ -154,10 +167,10 @@ export const TurnQualityStrip: React.FC<TurnQualityStripProps> = ({ summary }) =
     const degradedAgentId = requestedAgentId && requestedAgentId !== summary.capabilities?.agentId
       ? requestedAgentId
       : null;
-    if (!modelName && !showAgent && !degradedAgentId) return null;
+    if (!showModel && !showAgent && !degradedAgentId) return null;
     return (
       <div className="mb-2 flex items-center gap-1">
-        {modelName && (
+        {showModel && (
           <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] text-zinc-600">
             {modelName}
           </span>

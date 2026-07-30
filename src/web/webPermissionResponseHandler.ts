@@ -14,7 +14,7 @@
 
 import { IPC_CHANNELS } from '../shared/ipc';
 import { getTaskManager } from '../host/task/TaskManager';
-import { orphanDeadParkedApproval } from '../host/agent/parkedApprovalHydration';
+import { closeDeadParkedApproval } from '../host/agent/parkedApprovalHydration';
 import type { PermissionDeliveryOutcome, PermissionResponse } from '../shared/contract/permission';
 import type { PendingDevPermissionRequest } from './routes/dev';
 import type { WebRouteLogger } from './routes/routeTypes';
@@ -66,13 +66,12 @@ export function installPermissionResponseHandler(deps: PermissionResponseDeps): 
         return { success: true, data: { requestId, sessionId: targetSessionId, source: 'task-manager' } };
       }
 
-      // 停车审批的宿主已随进程重启消失（D0 根因）：把行标 orphaned 转灰态，
-      // 对收件箱回报 orphaned 而不是让失败静默或裸报错。
-      if (orphanDeadParkedApproval(requestId)) {
-        logger.warn('Parked approval orphaned on dead resolve (web)', { requestId, outcome });
+      // 停车审批的宿主已随进程重启消失：fail-closed 拒绝并从待办收口。
+      if (closeDeadParkedApproval(requestId)) {
+        logger.warn('Parked approval rejected on dead resolve (web)', { requestId, outcome });
         return {
           success: true,
-          data: { requestId, sessionId: targetSessionId, outcome, orphaned: true },
+          data: { requestId, sessionId: targetSessionId, outcome, closed: true },
         };
       }
       logger.warn('Permission response not delivered (web)', {

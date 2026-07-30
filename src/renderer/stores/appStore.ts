@@ -290,13 +290,19 @@ export interface AppState {
     active: WorkbenchViewId | null;
   }>;
   workbenchSessionKey: string | null;
-  /** 右栏整栏收起。视图切换器模型下「关闭」的对象是整栏，不再是单个视图。 */
+  /**
+   * 右栏整栏收起。视图切换器模型下「关闭」的对象是整栏，不再是单个视图。
+   * 写点三处（2026-07-30 第四波④对账）：setWorkbenchCollapsed（用户点击）、
+   * openWorkbenchTab（打开视图即带出右栏；auto 源尊重 workbenchCollapsedByUser）、
+   * syncWorkbenchForSession（全新会话落地强制回默认收起，防 collapsed 跨会话泄漏成空 launcher）。
+   */
   workbenchCollapsed: boolean;
   /**
    * 右栏当前的收起是不是**用户自己按的**。
    * 默认收起（初值 true）是产品默认值，不是用户意图——两者要分开，否则
    * 「任务开跑自动弹出右栏」和 #700 的「用户收起后不因活动信号自己弹回」二选一。
-   * 只由 setWorkbenchCollapsed 写（它的两个调用点都是用户点击）。
+   * 只由 setWorkbenchCollapsed 写（它的调用点是用户点击）；syncWorkbenchForSession
+   * 的强制收起不写本字段——那不是用户意图，任务活动照样能把右栏带出来。
    */
   workbenchCollapsedByUser: boolean;
   taskWorkbenchOpenSource: WorkbenchOpenSource | null;

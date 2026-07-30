@@ -38,6 +38,11 @@ export interface ProjectListViewProps {
   onSelect: (projectId: string) => void;
 }
 
+/** 页头「新建空间」按钮住在 ProjectSpacePage 的 header actions 槽（规范位），经此句柄触发本组件的创建 Modal。 */
+export interface ProjectListViewHandle {
+  openCreate: () => void;
+}
+
 const STATUS_CHIP_CLASS: Record<ProjectActivityStatus, string> = {
   active: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300',
   idle: 'border-zinc-700 bg-zinc-800/60 text-zinc-400',
@@ -46,7 +51,7 @@ const STATUS_CHIP_CLASS: Record<ProjectActivityStatus, string> = {
 
 type CreateSource = 'directory' | 'promote';
 
-export const ProjectListView: React.FC<ProjectListViewProps> = ({ onSelect }) => {
+export const ProjectListView = React.forwardRef<ProjectListViewHandle, ProjectListViewProps>(({ onSelect }, ref) => {
   const { t } = useI18n();
   const ps = t.projectSpace;
   const [projects, setProjects] = useState<ProjectWithActivity[] | null>(null);
@@ -102,6 +107,8 @@ export const ProjectListView: React.FC<ProjectListViewProps> = ({ onSelect }) =>
       ))
       .catch(() => setPromoteCandidates([]));
   };
+
+  React.useImperativeHandle(ref, () => ({ openCreate }));
 
   const handlePickDirectory = async () => {
     const picked = await pickNativeDirectory({ title: ps.chooseDirectory });
@@ -303,16 +310,6 @@ export const ProjectListView: React.FC<ProjectListViewProps> = ({ onSelect }) =>
 
   return (
     <div>
-      <div className="mb-2 flex justify-end">
-        <PrimaryButton
-          size="sm"
-          leftIcon={<Plus className="h-3.5 w-3.5" />}
-          data-testid="project-space-create-open"
-          onClick={openCreate}
-        >
-          {ps.createSpace}
-        </PrimaryButton>
-      </div>
       {content}
       <Modal
         isOpen={createOpen}
@@ -473,4 +470,5 @@ export const ProjectListView: React.FC<ProjectListViewProps> = ({ onSelect }) =>
       </Modal>
     </div>
   );
-};
+});
+ProjectListView.displayName = 'ProjectListView';

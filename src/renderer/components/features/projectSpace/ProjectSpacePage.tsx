@@ -5,11 +5,12 @@
 // projectId=null 显示列表，点列表项进 space 视图，面包屑「协作空间」点回列表。
 // ============================================================================
 
-import React, { useState } from 'react';
-import { FolderKanban } from 'lucide-react';
+import React, { useRef, useState } from 'react';
+import { FolderKanban, Plus } from 'lucide-react';
 import { FullScreenPage, FullScreenPageHeader } from '../shared/FullScreenPage';
 import { useI18n } from '../../../hooks/useI18n';
-import { ProjectListView } from './ProjectListView';
+import { ProjectListView, type ProjectListViewHandle } from './ProjectListView';
+import { PrimaryButton } from '../../primitives/Button';
 import { ProjectSpaceView } from './ProjectSpaceView';
 
 export interface ProjectSpacePageProps {
@@ -19,6 +20,7 @@ export interface ProjectSpacePageProps {
 export const ProjectSpacePage: React.FC<ProjectSpacePageProps> = ({ onClose }) => {
   const { t } = useI18n();
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
+  const listRef = useRef<ProjectListViewHandle>(null);
 
   return (
     <FullScreenPage testId="project-space-page" variant="inline">
@@ -35,9 +37,20 @@ export const ProjectSpacePage: React.FC<ProjectSpacePageProps> = ({ onClose }) =
             title={t.projectSpace.listTitle}
             description={t.projectSpace.listDescription}
             onClose={onClose}
+            // 「新建空间」住页头 actions 槽（规范位，爸 2026-07-30：按钮别在内容区乱飘）
+            actions={(
+              <PrimaryButton
+                size="sm"
+                leftIcon={<Plus className="h-3.5 w-3.5" />}
+                data-testid="project-space-create-open"
+                onClick={() => listRef.current?.openCreate()}
+              >
+                {t.projectSpace.createSpace}
+              </PrimaryButton>
+            )}
           />
           <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-6">
-            <ProjectListView onSelect={setSelectedProjectId} />
+            <ProjectListView ref={listRef} onSelect={setSelectedProjectId} />
           </div>
         </>
       )}

@@ -27,6 +27,7 @@ import {
 } from './sessionRepositoryParsers';
 import { sanitizeConversationMessageSnapshot } from '../conversationMessageSnapshot';
 import * as sidecarState from './sessionRepositorySidecarState';
+import { getLatestUserAuthorId as readLatestUserAuthorId } from './sessionRepositoryAttribution';
 import { ConversationBranchRepository } from './ConversationBranchRepository';
 import { SessionFtsRepository } from './SessionFtsRepository';
 import {
@@ -838,29 +839,8 @@ export class SessionRepository {
     return rows.map((row) => rowToMessage(row));
   }
 
-  /**
-   * Return the user who initiated the current turn.
-   *
-   * Collaboration-aware clients may persist messages.author_user_id. Older
-   * clients do not, so the owning session user remains the compatibility
-   * fallback. Rewound messages are excluded to keep attribution aligned with
-   * the active conversation projection.
-   */
   getLatestUserAuthorId(sessionId: string): string | null {
-    const row = this.db.prepare(`
-      SELECT COALESCE(m.author_user_id, s.user_id) AS author_user_id
-      FROM sessions s
-      LEFT JOIN messages m
-        ON m.session_id = s.id
-        AND m.role = 'user'
-        AND ${activeMessageWhere('m')}
-      WHERE s.id = ?
-      ORDER BY m.timestamp DESC, m.rowid DESC
-      LIMIT 1
-    `).get(sessionId) as SQLiteRow | undefined;
-    return typeof row?.author_user_id === 'string' && row.author_user_id.trim()
-      ? row.author_user_id
-      : null;
+    return readLatestUserAuthorId(this.db, sessionId);
   }
 
   getMessageCount(sessionId: string, options: MessageQueryOptions = {}): number {

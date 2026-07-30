@@ -1,5 +1,10 @@
 // ============================================================================
-// ProjectConfigRail —— 项目协作空间右栏「项目配置」（专家/技能/连接器/自动化四卡）。
+// ProjectConfigRail —— 项目协作空间右栏（专家/技能/连接器/自动化四 tab + 成员 tab 位）。
+// 形态（批P 返工第二波）：「协作空间配置」标题行取消，顶部横滑 tab 条（共享壳
+// RailTabShell）+ tab 内容拿全高；已选/可选同屏（弹窗形态废弃）。收起钮并在 tab 条
+// 右端——两态同住右栏顶右角，不换位置（2026-07-27 房规）。
+// 成员 tab 仅云空间显示：成员内容在 p1-c0-ui 分支，本分支只留 tab 位语义——
+// 调用方经 membersContent 注入时才出现第五个 tab，本分支无人注入、tab 不渲染。
 // 数据模型各走既有通道：
 // - 专家：detail.roles 已选；rolesClient.listRoles() 可选；add/removeProjectRole 后刷新 detail
 // - 连接器：project capability selections（kind='connector'）；可选项与能力中心「连接器」页
@@ -11,8 +16,10 @@
 // ============================================================================
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { PanelRightClose, PanelRightOpen } from 'lucide-react';
+import { Clock, PanelRightClose, PanelRightOpen, Plug, Sparkles, Users, UsersRound } from 'lucide-react';
 import { IPC_DOMAINS, type NativeConnectorInventoryItem } from '@shared/ipc';
+import type { McpCatalogPayload } from '@shared/contract/mcpCatalog';
+import { getBuiltinMcpCatalogPayload, mergeMcpCatalogWithBuiltinOfficialFeatured } from '@shared/constants/mcpCatalog';
 import { SKILL_CHANNELS } from '@shared/ipc/channels';
 import type { Project, ProjectCapabilitySelection, ProjectDetail } from '@shared/contract/project';
 import type { CronJobDefinition } from '@shared/contract';
@@ -26,19 +33,21 @@ import { toast } from '../../../hooks/useToast';
 import { formatNextRun } from '../../../utils/formatNextRun';
 import { localeForLanguage } from '../../../utils/i18nTime';
 import { IconButton } from '../../primitives/IconButton';
-import { ProjectConfigCard } from './ProjectConfigCard';
-import { ProjectMembersCard } from './ProjectMembersCard';
+import { RailTabShell, type RailTabItem } from '../../composites/RailTabShell';
+import { ProjectConfigTabPanel } from './ProjectConfigTabPanel';
 
 export interface ProjectConfigRailProps {
   projectId: string;
   project: Project | null;
   detail: ProjectDetail | null;
   onRefreshDetail: () => void;
-  /** 打开空间邀请码 Modal（页头按钮同一实例，成员卡「邀请」入口复用） */
-  onInvite: () => void;
+  /** 成员 tab 内容（仅云空间注入；本分支无人注入 = tab 位空着，不渲染） */
+  membersContent?: React.ReactNode;
 }
 
 const COLLAPSE_STORAGE_KEY = 'projectSpace.configRailCollapsed';
+
+type RailTabKey = 'experts' | 'skills' | 'connectors' | 'automation' | 'members';
 
 function readCollapsed(): boolean {
   try {
@@ -59,16 +68,17 @@ export const ProjectConfigRail: React.FC<ProjectConfigRailProps> = ({
   project,
   detail,
   onRefreshDetail,
-  onInvite,
+  membersContent,
 }) => {
   const { t, language } = useI18n();
   const ps = t.projectSpace;
 
   const [collapsed, setCollapsed] = useState(readCollapsed);
-  // 专家可选项带展示层字段（displayName/description/icon）：弹窗两行项与已选 chip 都用 displayName
+  const [activeTab, setActiveTab] = useState<RailTabKey>('experts');
+  // 专家可选项带展示层字段（displayName/description/icon）：可选列表两行项用 displayName
   const [roleOptions, setRoleOptions] = useState<Array<{ id: string; label: string; description?: string; icon?: string }>>([]);
   const [connectorSelections, setConnectorSelections] = useState<ProjectCapabilitySelection[]>([]);
-  const [connectorCatalog, setConnectorCatalog] = useState<Array<{ id: string; label: string }>>([]);
+  const [connectorCatalog, setConnectorCatalog] = useState<Array<{ id: string; label: string; description?: string }>>([]);
   const [skills, setSkills] = useState<SkillListEntry[]>([]);
   const [agentJobs, setAgentJobs] = useState<CronJobDefinition[]>([]);
 
@@ -95,18 +105,35 @@ export const ProjectConfigRail: React.FC<ProjectConfigRailProps> = ({
       .catch(() => setRoleOptions([]));
   }, []);
 
+  const nativeConnectorDescriptions = ps.nativeConnectorDescriptions as Record<string, string | undefined>;
   const loadConnectors = useCallback(() => {
     projectClient.listCapabilitySelections(projectId)
       .then((selections) => setConnectorSelections(selections.filter((item) => item.kind === 'connector')))
       .catch(() => setConnectorSelections([]));
-    // 可选项与能力中心「连接器」页同源（NativeConnectorsSection）：产品意义的原生连接器，
-    // 不取 MCP getCatalog（会混入 Fetch 等基础工具型 server）
-    ipcService.invokeDomain<NativeConnectorInventoryItem[]>(IPC_DOMAINS.CONNECTOR, 'listNativeInventory')
-      .then((items) => {
-        setConnectorCatalog((Array.isArray(items) ? items : []).map((item) => ({ id: item.id, label: item.label })));
-      })
-      .catch(() => setConnectorCatalog([]));
-  }, [projectId]);
+    // 可选项 = 原生连接器 + 货架推荐 MCP（爸 2026-07-30 拍板扩口径「飞书这些要进连接器」）。
+    // 货架走推荐目录（内置常量 + 云端目录合并，MCPSettings 同一套），自带名称/描述，
+    // 与 getCatalog 直出「已配置 server 清单」不同——推荐目录是产品策展面，不混基础工具型条目的裸配置。
+    const nativePromise = ipcService.invokeDomain<NativeConnectorInventoryItem[]>(IPC_DOMAINS.CONNECTOR, 'listNativeInventory')
+      .then((items) => (Array.isArray(items) ? items : []).map((item) => ({
+        id: item.id,
+        label: item.label,
+        description: nativeConnectorDescriptions[item.id],
+      })))
+      .catch(() => [] as Array<{ id: string; label: string; description?: string }>);
+    const shelfPromise = ipcService.invokeDomain<McpCatalogPayload>(IPC_DOMAINS.MCP, 'getCatalog')
+      .then((payload) => mergeMcpCatalogWithBuiltinOfficialFeatured(payload))
+      .catch(() => getBuiltinMcpCatalogPayload());
+    void Promise.all([nativePromise, shelfPromise]).then(([native, shelf]) => {
+      const shelfItems = shelf.servers.map((server) => ({
+        id: server.id,
+        label: server.name,
+        description: server.description,
+      }));
+      // id 撞车时原生优先（native 四件 id 是短词，货架 id 均带厂商前缀，实际不撞；防御性去重）
+      const seen = new Set(native.map((item) => item.id));
+      setConnectorCatalog([...native, ...shelfItems.filter((item) => !seen.has(item.id))]);
+    });
+  }, [projectId, nativeConnectorDescriptions]);
 
   const skillWorkspacePath = project?.workspacePath ?? undefined;
   const loadSkills = useCallback(() => {
@@ -214,100 +241,116 @@ export const ProjectConfigRail: React.FC<ProjectConfigRailProps> = ({
 
   if (collapsed) {
     return (
-      <aside className="flex w-10 shrink-0 flex-col items-center border-l border-zinc-800/70 py-3" data-testid="project-space-config-rail-collapsed">
-        <IconButton
-          size="sm"
-          variant="ghost"
-          icon={<PanelRightOpen className="h-4 w-4" />}
-          aria-label={ps.expandRail}
-          title={ps.expandRail}
-          data-testid="project-space-config-rail-expand"
-          onClick={toggleCollapsed}
-        />
+      <aside className="flex w-10 shrink-0 flex-col items-center border-l border-zinc-800/70" data-testid="project-space-config-rail-collapsed">
+        {/* 两态同位（2026-07-27 房规）：展开钮与展开态 tab 条右端的收起钮同心——
+            槽高对齐 tab 条实测高 37px 并垂直居中，探针实测两态按钮 top 差 ≤1px */}
+        <div className="flex h-[37px] shrink-0 items-center">
+          <IconButton
+            size="sm"
+            variant="ghost"
+            icon={<PanelRightOpen className="h-4 w-4" />}
+            aria-label={ps.expandRail}
+            title={ps.expandRail}
+            data-testid="project-space-config-rail-expand"
+            onClick={toggleCollapsed}
+          />
+        </div>
       </aside>
     );
   }
 
+  const tabs: RailTabItem[] = [
+    { id: 'experts', label: ps.cardExperts, icon: Users, testId: 'project-space-rail-tab-experts' },
+    { id: 'skills', label: ps.cardSkills, icon: Sparkles, testId: 'project-space-rail-tab-skills' },
+    { id: 'connectors', label: ps.cardConnectors, icon: Plug, testId: 'project-space-rail-tab-connectors' },
+    { id: 'automation', label: ps.cardAutomation, icon: Clock, testId: 'project-space-rail-tab-automation' },
+  ];
+  // 成员 tab 位：仅调用方注入成员内容（云空间）时占位出现，本分支不注入
+  if (membersContent) {
+    tabs.push({ id: 'members', label: ps.cardMembers, icon: UsersRound, testId: 'project-space-rail-tab-members' });
+  }
+  const effectiveTab: RailTabKey = tabs.some((tab) => tab.id === activeTab) ? activeTab : 'experts';
+
   return (
     <aside className="flex w-72 shrink-0 flex-col border-l border-zinc-800/70" data-testid="project-space-config-rail">
-      {/* 收起钮右缘与下方卡片「+」右缘同轴（批P 审美关，探针实测修前差 13px）：
-          卡片「+」右缘 = 栏右缘 - 卡片网格 p-3(12) - 卡片边框(1) - 卡片 p-3(12) = 25，
-          故本行右 padding 用 25px，不是与左侧对称的 px-3。 */}
-      <div className="flex shrink-0 items-center gap-2 pl-3 pr-[25px] pt-3">
-        <h2 className="min-w-0 flex-1 truncate text-sm font-medium text-zinc-300">{ps.configRailTitle}</h2>
-        <IconButton
-          size="sm"
-          variant="ghost"
-          icon={<PanelRightClose className="h-4 w-4" />}
-          aria-label={ps.collapseRail}
-          title={ps.collapseRail}
-          data-testid="project-space-config-rail-collapse"
-          onClick={toggleCollapsed}
-        />
-      </div>
-      <div className="grid min-h-0 flex-1 content-start gap-3 overflow-y-auto p-3">
-        <ProjectConfigCard
-          testId="project-space-card-experts"
-          title={ps.cardExperts}
-          addLabel={ps.add}
-          removeLabel={ps.remove}
-          selectedEmptyLabel={ps.selectedEmpty}
-          pickerEmptyLabel={ps.pickerEmpty}
-          pickerSearchPlaceholder={ps.pickerSearchPlaceholder}
-          pickerNoMatchLabel={ps.pickerNoMatch}
-          selected={expertSelected}
-          options={expertOptions}
-          onSelect={handleAddExpert}
-          onRemove={handleRemoveExpert}
-        />
-        <ProjectConfigCard
-          testId="project-space-card-skills"
-          title={ps.cardSkills}
-          addLabel={ps.add}
-          removeLabel={ps.remove}
-          selectedEmptyLabel={ps.selectedEmpty}
-          pickerEmptyLabel={ps.pickerEmpty}
-          pickerSearchPlaceholder={ps.pickerSearchPlaceholder}
-          pickerNoMatchLabel={ps.pickerNoMatch}
-          selected={skillSelected}
-          options={skillOptions}
-          onSelect={handleSelectSkill}
-          onRemove={skillsEditable ? handleUnselectSkill : undefined}
-          readOnlyHint={skillsEditable ? null : ps.skillsNoWorkspaceHint}
-        />
-        <ProjectConfigCard
-          testId="project-space-card-connectors"
-          title={ps.cardConnectors}
-          addLabel={ps.add}
-          removeLabel={ps.remove}
-          selectedEmptyLabel={ps.selectedEmpty}
-          pickerEmptyLabel={ps.pickerEmpty}
-          pickerSearchPlaceholder={ps.pickerSearchPlaceholder}
-          pickerNoMatchLabel={ps.pickerNoMatch}
-          selected={connectorSelected}
-          options={connectorOptions}
-          onSelect={handleSelectConnector}
-          onRemove={handleUnselectConnector}
-        />
-        <ProjectConfigCard
-          testId="project-space-card-automation"
-          title={ps.cardAutomation}
-          addLabel={ps.add}
-          removeLabel={ps.remove}
-          selectedEmptyLabel={ps.selectedEmpty}
-          pickerEmptyLabel={ps.pickerEmpty}
-          pickerSearchPlaceholder={ps.pickerSearchPlaceholder}
-          pickerNoMatchLabel={ps.pickerNoMatch}
-          selected={automationSelected}
-          options={automationOptions}
-          onSelect={handleSelectAutomation}
-          onRemove={handleUnselectAutomation}
-        />
-        {/* 第五卡「成员」：仅云协同空间渲染（纯本地空间没有成员概念，卡整个不出现） */}
-        {project?.cloudProjectId ? (
-          <ProjectMembersCard projectId={projectId} onInvite={onInvite} />
-        ) : null}
-      </div>
+      <RailTabShell
+        tabs={tabs}
+        activeTabId={effectiveTab}
+        onSelectTab={(id) => setActiveTab(id as RailTabKey)}
+        ariaLabel={ps.configRailTitle}
+        testId="project-space-config-rail-tabs"
+        contentTestId="project-space-config-rail-content"
+        trailing={(
+          <IconButton
+            size="sm"
+            variant="ghost"
+            icon={<PanelRightClose className="h-4 w-4" />}
+            aria-label={ps.collapseRail}
+            title={ps.collapseRail}
+            data-testid="project-space-config-rail-collapse"
+            onClick={toggleCollapsed}
+          />
+        )}
+      >
+        {effectiveTab === 'experts' && (
+          <ProjectConfigTabPanel
+            testId="project-space-rail-experts"
+            removeLabel={ps.remove}
+            selectedEmptyLabel={ps.selectedEmpty}
+            optionsEmptyLabel={ps.pickerEmpty}
+            searchPlaceholder={ps.pickerSearchPlaceholder}
+            noMatchLabel={ps.pickerNoMatch}
+            selected={expertSelected}
+            options={expertOptions}
+            onSelect={handleAddExpert}
+            onRemove={handleRemoveExpert}
+          />
+        )}
+        {effectiveTab === 'skills' && (
+          <ProjectConfigTabPanel
+            testId="project-space-rail-skills"
+            removeLabel={ps.remove}
+            selectedEmptyLabel={ps.selectedEmpty}
+            optionsEmptyLabel={ps.pickerEmpty}
+            searchPlaceholder={ps.pickerSearchPlaceholder}
+            noMatchLabel={ps.pickerNoMatch}
+            selected={skillSelected}
+            options={skillOptions}
+            onSelect={handleSelectSkill}
+            onRemove={skillsEditable ? handleUnselectSkill : undefined}
+            readOnlyHint={skillsEditable ? null : ps.skillsNoWorkspaceHint}
+          />
+        )}
+        {effectiveTab === 'connectors' && (
+          <ProjectConfigTabPanel
+            testId="project-space-rail-connectors"
+            removeLabel={ps.remove}
+            selectedEmptyLabel={ps.selectedEmpty}
+            optionsEmptyLabel={ps.pickerEmpty}
+            searchPlaceholder={ps.pickerSearchPlaceholder}
+            noMatchLabel={ps.pickerNoMatch}
+            selected={connectorSelected}
+            options={connectorOptions}
+            onSelect={handleSelectConnector}
+            onRemove={handleUnselectConnector}
+          />
+        )}
+        {effectiveTab === 'automation' && (
+          <ProjectConfigTabPanel
+            testId="project-space-rail-automation"
+            removeLabel={ps.remove}
+            selectedEmptyLabel={ps.selectedEmpty}
+            optionsEmptyLabel={ps.pickerEmpty}
+            searchPlaceholder={ps.pickerSearchPlaceholder}
+            noMatchLabel={ps.pickerNoMatch}
+            selected={automationSelected}
+            options={automationOptions}
+            onSelect={handleSelectAutomation}
+            onRemove={handleUnselectAutomation}
+          />
+        )}
+        {effectiveTab === 'members' && membersContent}
+      </RailTabShell>
     </aside>
   );
 };

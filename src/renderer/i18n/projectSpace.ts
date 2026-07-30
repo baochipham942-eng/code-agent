@@ -30,8 +30,16 @@ export const projectSpaceZh = {
     cardSkills: '技能',
     cardConnectors: '连接器',
     cardAutomation: '自动化',
-    add: '添加',
+    // 成员 tab 名（tab 内容在 p1-c0-ui 分支；本分支只留 tab 位语义，键先到位免合并漂名）
+    cardMembers: '成员',
     remove: '移除',
+    // 原生连接器介绍（清单接口只吐 id+label，介绍是展示层文案——爸 2026-07-30：四类选用列表都要有描述）
+    nativeConnectorDescriptions: {
+      calendar: '连接 macOS 日历，查看和安排日程',
+      mail: '连接 macOS 邮件，读取和搜索邮件',
+      reminders: '连接 macOS 提醒事项，创建和查询待办',
+      photos: '连接 macOS 照片图库，查找和取用照片',
+    },
     pickerEmpty: '没有可添加的选项',
     pickerSearchPlaceholder: '搜索名称或描述…',
     pickerNoMatch: '没有匹配的选项',
@@ -116,8 +124,15 @@ export const projectSpaceEn = {
     cardSkills: 'Skills',
     cardConnectors: 'Connectors',
     cardAutomation: 'Automation',
-    add: 'Add',
+    // Members tab label (tab content lands with p1-c0-ui; this branch keeps the tab slot only)
+    cardMembers: 'Members',
     remove: 'Remove',
+    nativeConnectorDescriptions: {
+      calendar: 'Connect macOS Calendar to view and schedule events',
+      mail: 'Connect macOS Mail to read and search messages',
+      reminders: 'Connect macOS Reminders to create and check to-dos',
+      photos: 'Connect macOS Photos to find and use pictures',
+    },
     pickerEmpty: 'Nothing available to add',
     pickerSearchPlaceholder: 'Search name or description…',
     pickerNoMatch: 'No matching options',

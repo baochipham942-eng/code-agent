@@ -1049,6 +1049,11 @@ export class DatabaseService extends DurableRunDatabaseSupport {
     this.ensureDb();
     return this.sessionRepo.getMessages(sessionId, limit, offset, options);
   }
+
+  getLatestUserAuthorId(sessionId: string): string | null {
+    this.ensureDb();
+    return this.sessionRepo.getLatestUserAuthorId(sessionId);
+  }
   getMessageCount(sessionId: string, options?: { includeRewound?: boolean }): number {
     this.ensureDb();
     return this.sessionRepo.getMessageCount(sessionId, options);

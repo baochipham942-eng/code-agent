@@ -4,7 +4,7 @@
 // ============================================================================
 
 import React, { useState, useMemo, useCallback, memo, useEffect, lazy, Suspense } from 'react';
-import { Code2, Copy, Check, Eye, Play, ExternalLink, ClipboardCopy, MessageSquare, MessageSquarePlus, Settings } from 'lucide-react';
+import { Code2, Copy, Check, ExternalLink, ClipboardCopy, MessageSquare, MessageSquarePlus, Settings } from 'lucide-react';
 import { UI } from '@shared/constants';
 import type { Components } from 'react-markdown';
 import { useAppStore } from '../../../../stores/appStore';

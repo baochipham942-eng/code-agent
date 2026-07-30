@@ -184,10 +184,11 @@ describe('自定义库 staged 装前预览', () => {
 
     await waitFor(() =>
       expect(callsFor(SKILL_CHANNELS.REPO_CONFIRM)).toEqual([[SKILL_CHANNELS.REPO_CONFIRM, 'stage-1']]),
-    );
+    // 全量并行跑时 IPC mock 的异步一跳可能超过 waitFor 默认 1s，放宽（同上文 chunk 加载先例）
+    { timeout: 5000 });
     expect(callsFor(SKILL_CHANNELS.REPO_CANCEL)).toEqual([]);
     // 弹窗关闭 + 成功提示 + 重新加载列表
-    await waitFor(() => expect(screen.queryByText('warning one')).toBeNull());
+    await waitFor(() => expect(screen.queryByText('warning one')).toBeNull(), { timeout: 5000 });
     await screen.findByText(/安装成功/);
     expect(callsFor(SKILL_CHANNELS.REPO_LIST).length).toBeGreaterThan(1);
   });
@@ -202,9 +203,9 @@ describe('自定义库 staged 装前预览', () => {
 
     await waitFor(() =>
       expect(callsFor(SKILL_CHANNELS.REPO_CANCEL)).toEqual([[SKILL_CHANNELS.REPO_CANCEL, 'stage-1']]),
-    );
+    { timeout: 5000 });
     expect(callsFor(SKILL_CHANNELS.REPO_CONFIRM)).toEqual([]);
-    await waitFor(() => expect(screen.queryByText('warning one')).toBeNull());
+    await waitFor(() => expect(screen.queryByText('warning one')).toBeNull(), { timeout: 5000 });
   });
 
   it('ESC 关闭也调 cancel，不留孤儿 staging', async () => {
@@ -217,8 +218,8 @@ describe('自定义库 staged 装前预览', () => {
 
     await waitFor(() =>
       expect(callsFor(SKILL_CHANNELS.REPO_CANCEL)).toEqual([[SKILL_CHANNELS.REPO_CANCEL, 'stage-1']]),
-    );
-    await waitFor(() => expect(screen.queryByText('warning one')).toBeNull());
+    { timeout: 5000 });
+    await waitFor(() => expect(screen.queryByText('warning one')).toBeNull(), { timeout: 5000 });
   });
 
   it('confirm 失败在弹窗内展示错误，不静默关闭', async () => {

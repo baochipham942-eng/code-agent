@@ -58,8 +58,23 @@ export interface HookManagerConfig {
   aiCompletion?: AICompletionFn;
   /** Notify UI/runtime observers when configured hooks actually run */
   onTrigger?: (entry: TriggerHistoryEntry) => void;
+  /** hook 批次开始执行时通知（hook_trigger 的配对信号，会话区据此显示 running 指示） */
+  onStart?: (info: HookStartInfo) => void;
   /** Whether to enable hooks (default: true) */
   enabled?: boolean;
+}
+
+/**
+ * 一批 hook 开始执行的信号。与 hook_trigger（批次完成）配对：会话区收到它显示
+ * running 指示，对应 hook_trigger 到达后指示消失。
+ */
+export interface HookStartInfo {
+  timestamp: number;
+  event: HookEvent;
+  /** 本批要跑的 hook 各自的名字（配置里的 name，没写就退回脚本名）。 */
+  names: string[];
+  toolName?: string;
+  matcher?: string;
 }
 
 /**
@@ -78,11 +93,38 @@ export interface TriggerHistoryEntry {
   names?: string[];
   errorCount?: number;
   message?: string;
+  /**
+   * block/modify 的决策原因摘要（message 首个非空行、截 120 字、已脱敏）。
+   * 与 message 不同：message 是 hook 的完整输出（渲染层拿不到），reason 是
+   * 给会话区上屏用的单行摘要——这是渲染层唯一允许看到的 hook 文本。
+   */
+  reason?: string;
   toolName?: string;
   matcher?: string;
 }
 
 const MAX_TRIGGER_HISTORY = 50;
+
+/** 决策原因摘要上屏长度上限（首行截断）。 */
+const HOOK_REASON_MAX_CHARS = 120;
+
+/**
+ * 从 trigger 结果里提炼 block/modify 的原因摘要：先对完整文本脱敏、再取首个
+ * 非空行、最后截断 120 字。顺序不能反——先截断可能把 secret 拦腰切断，破坏
+ * mask 的 token 匹配，让半截密钥上屏。放行且无改写时没有「决策」可言，不出 reason。
+ */
+function summarizeHookDecisionReason(result: HookTriggerResult): string | undefined {
+  if (result.shouldProceed && !result.modifiedInput) return undefined;
+  const masked = result.message ? maskSensitiveData(result.message) : undefined;
+  const firstLine = masked
+    ?.split('\n')
+    .map((line) => line.trim())
+    .find((line) => line.length > 0);
+  if (!firstLine) return undefined;
+  return firstLine.length > HOOK_REASON_MAX_CHARS
+    ? `${firstLine.slice(0, HOOK_REASON_MAX_CHARS)}…`
+    : firstLine;
+}
 
 interface HookActivityMetadata {
   sources: HookActivitySource[];
@@ -700,6 +742,7 @@ export class HookManager {
     metadata?: HookActivityMetadata,
   ): void {
     const errorCount = result.results.filter((entry) => entry.action === 'error' || entry.error).length;
+    const reason = summarizeHookDecisionReason(result);
     const entry: TriggerHistoryEntry = {
       timestamp: Date.now(),
       event,
@@ -714,6 +757,7 @@ export class HookManager {
       // GAP-015: trigger history 是观测日志（UI/导出可见），message 必须脱敏；
       // HookTriggerResult.message 本身（注入上下文用）不脱敏，保持功能不变
       ...(result.message ? { message: maskSensitiveData(result.message) } : {}),
+      ...(reason ? { reason } : {}),
       ...(metadata?.toolName ? { toolName: metadata.toolName } : {}),
       ...(metadata?.matcher ? { matcher: metadata.matcher } : {}),
     };
@@ -737,6 +781,25 @@ export class HookManager {
   // --------------------------------------------------------------------------
 
   /**
+   * hook 批次开跑信号：有匹配 hook 才发，发的批次随后必有 recordTrigger（runHooks
+   * 把执行异常也收成 result），会话区的 running 指示一定能等到配对的 hook_trigger。
+   */
+  private emitHookStart(event: HookEvent, metadata: HookActivityMetadata): void {
+    if (!this.config.onStart || metadata.names.length === 0) return;
+    try {
+      this.config.onStart({
+        timestamp: Date.now(),
+        event,
+        names: metadata.names,
+        ...(metadata.toolName ? { toolName: metadata.toolName } : {}),
+        ...(metadata.matcher ? { matcher: metadata.matcher } : {}),
+      });
+    } catch (error) {
+      logger.warn('Hook start observer failed', { error: (error as Error).message });
+    }
+  }
+
+  /**
    * Trigger hooks for tool-related events
    */
   private async triggerToolHooks(
@@ -749,8 +812,10 @@ export class HookManager {
     }
 
     const matchingHooks = getHooksForTool(this.hooks, event, toolName);
+    const metadata = { ...summarizeHookActivity(matchingHooks), toolName };
+    this.emitHookStart(event, metadata);
     const result = await runHooks(matchingHooks, context, this.engineEnv());
-    this.recordTrigger(event, result, { ...summarizeHookActivity(matchingHooks), toolName });
+    this.recordTrigger(event, result, metadata);
     return result;
   }
 
@@ -766,8 +831,10 @@ export class HookManager {
     }
 
     const matchingHooks = getHooksForEvent(this.hooks, event);
+    const metadata = summarizeHookActivity(matchingHooks);
+    this.emitHookStart(event, metadata);
     const result = await runHooks(matchingHooks, context, this.engineEnv());
-    this.recordTrigger(event, result, summarizeHookActivity(matchingHooks));
+    this.recordTrigger(event, result, metadata);
     return result;
   }
 

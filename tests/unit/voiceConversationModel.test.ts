@@ -87,6 +87,9 @@ describe('通话模型可配（工单③）', () => {
 
     expect(lastConnectConfig().model).toBe('qwen3-omni-flash-realtime');
 
+    // 这通电话得真说过话，否则按 A3 零字幕通话根本不落摘要卡
+    lastOnEvent?.({ type: 'user.transcript', text: '你好', done: true });
+    await vi.waitFor(() => expect(addMessageToSession).toHaveBeenCalled());
     client.emit('message', Buffer.from(JSON.stringify({ type: 'end' })), false);
     await vi.waitFor(() => {
       expect(addMessageToSession.mock.calls.some(([, m]) => Boolean(m.metadata?.voiceCallSummary))).toBe(true);

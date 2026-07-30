@@ -535,6 +535,75 @@ describe('失败告知出口', () => {
 });
 
 // ============================================================================
+// R6 · 内部工具标签不当字幕（2026-07-30 真机：模型把 <end_call> 当话说了出来，
+// 又上屏又落库）。标签是暗号不是话。
+// ============================================================================
+describe('纯工具标签字幕不上屏不落库（R6）', () => {
+  beforeEach(() => {
+    connect.mockClear();
+    close.mockClear();
+    addMessageToSession.mockClear();
+    lastOnEvent = null;
+  });
+
+  afterEach(async () => {
+    await endActiveVoiceSession();
+  });
+
+  function assistantEvents(client: FakeClient): { text: string }[] {
+    return client.sent
+      .filter((entry) => entry !== '<binary>')
+      .map((entry) => JSON.parse(entry) as VoiceEvent)
+      .filter((event): event is Extract<VoiceEvent, { type: 'assistant.transcript' }> => event.type === 'assistant.transcript');
+  }
+
+  it('整条只有 <end_call>：不下发 renderer，也不落库', async () => {
+    const client = new FakeClient();
+    await attachVoiceClient(client as never, 'session-tool-tag');
+
+    lastOnEvent?.({ type: 'assistant.transcript', text: '<end_call>', done: true });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(assistantEvents(client)).toHaveLength(0);
+    expect(addMessageToSession.mock.calls.some(([, m]) => m.content.includes('end_call'))).toBe(false);
+  });
+
+  it('流式半截标签也压住（<end 到货时还看不出是整条标签）', async () => {
+    const client = new FakeClient();
+    await attachVoiceClient(client as never, 'session-tool-tag-stream');
+
+    lastOnEvent?.({ type: 'assistant.transcript', text: '<end', done: false });
+    lastOnEvent?.({ type: 'assistant.transcript', text: '_call>', done: false });
+
+    expect(assistantEvents(client)).toHaveLength(0);
+  });
+
+  it('标签后面接上正文就恢复下发，正文一个字不动', async () => {
+    const client = new FakeClient();
+    await attachVoiceClient(client as never, 'session-tool-tag-mixed');
+
+    lastOnEvent?.({ type: 'assistant.transcript', text: '<end_call>', done: false });
+    lastOnEvent?.({ type: 'assistant.transcript', text: ' 好的，这就去办', done: false });
+    lastOnEvent?.({ type: 'assistant.transcript', text: '<end_call> 好的，这就去办', done: true });
+    await vi.waitFor(() => expect(addMessageToSession).toHaveBeenCalled());
+
+    expect(assistantEvents(client).some((e) => e.text.includes('好的，这就去办'))).toBe(true);
+    expect(addMessageToSession.mock.calls.some(([, m]) => m.content === '<end_call> 好的，这就去办')).toBe(true);
+  });
+
+  it('挂断排水窗冲刷的半截缓冲若只有标签，同样不落库', async () => {
+    const client = new FakeClient();
+    await attachVoiceClient(client as never, 'session-tool-tag-drain');
+    lastOnEvent?.({ type: 'assistant.transcript', text: '<end_call>', done: false });
+
+    client.emit('message', Buffer.from(JSON.stringify({ type: 'end' })), false);
+    await vi.waitFor(() => expect(close).toHaveBeenCalled(), { timeout: 4000 });
+
+    expect(addMessageToSession.mock.calls.some(([, m]) => m.content.includes('end_call'))).toBe(false);
+  }, 10_000);
+});
+
+// ============================================================================
 // A3 · 空对话不落摘要卡（2026-07-30）。那通 16 秒空通话在消息流里留下一张
 // 「这通电话没有对话内容」——记录零内容的事不是记录，是噪音。
 // ============================================================================

@@ -294,6 +294,19 @@ function handleNarrationInjectionRejected(session: ActiveSession, message: strin
   });
 }
 
+/**
+ * 整条字幕只有工具标签（R6，2026-07-30 真机：模型把 `<end_call>` 当话「说」了出来）。
+ *
+ * 标签是模型和我们之间的暗号，不是说给用户听的话——不该上屏，也不该落进消息流。
+ * 流式 delta 会给到半截标签（`<`、`<end_c`），所以闭合的 `>` 是可选的。
+ * **标签混在正文里的不管**：那时正文才是这句话的内容，删标签等于改用户看到的话。
+ */
+const PURE_TOOL_TAG_TEXT = /^\s*(<[a-z0-9_]*>?\s*)+$/i;
+
+function isPureToolTagText(text: string): boolean {
+  return PURE_TOOL_TAG_TEXT.test(text);
+}
+
 async function persistTranscript(
   neoSessionId: string,
   role: 'user' | 'assistant',
@@ -301,7 +314,8 @@ async function persistTranscript(
   counter?: { count: number },
 ): Promise<void> {
   const trimmed = text.trim();
-  if (!trimmed) return;
+  // 落库的唯一入口 = 过滤的唯一落点：done 那条、排水窗冲刷那条走的都是这里。
+  if (!trimmed || isPureToolTagText(trimmed)) return;
   // 落库的同时进近窗（P0-2）：派活时执行侧要拿原文自己重建意图，
   // 别只给它通话 brain 改写过的那一句。落库失败不影响近窗，反之亦然。
   pushVoiceTranscript({ role, text: trimmed });
@@ -592,8 +606,12 @@ async function connectAndBind(
         ...(liveSettings?.voiceId ? { voice: liveSettings.voiceId } : {}),
       },
       onEvent: (event) => {
+        // R6：整条只有工具标签的助手字幕不上屏。流式期间按「累计到此刻」判，
+        // 半截标签（`<end_c`）也压住；后面真接上正文就恢复下发，正文一个字不动。
+        const suppressedToolTag = event.type === 'assistant.transcript'
+          && isPureToolTagText(event.done ? event.text : transcriptBuf.assistant + event.text);
         // injection.rejected 是 Host 内部的重试信号；Renderer 没有用户动作要做。
-        if (event.type !== 'injection.rejected') send(clientRef.current, event);
+        if (event.type !== 'injection.rejected' && !suppressedToolTag) send(clientRef.current, event);
         if (active?.id === id) {
           if (event.type === 'speech.started') markNarrationUserTurn(active);
           else if (event.type === 'response.done') flushNarrationQueue(active);

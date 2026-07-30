@@ -15,6 +15,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { AgentRunOptions } from '../../src/host/research/types';
+import type { VoiceWorkFailureMarker } from '../../src/shared/contract/voice';
 
 type FakeEvent = { type: string; sessionId: string; data?: unknown };
 
@@ -80,7 +81,7 @@ vi.mock('../../src/host/connectors', () => ({
 const { beginVoiceDispatch, endVoiceDispatch, dispatchVoiceIntent } =
   await import('../../src/host/services/voice/voiceAgentCoordinator');
 
-type Item = { id: string; status: string; title: string; detail?: string };
+type Item = { id: string; status: string; title: string; detail?: string; failure?: VoiceWorkFailureMarker };
 
 let upserts: Item[];
 let failures: Item[];

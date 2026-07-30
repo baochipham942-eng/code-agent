@@ -9,6 +9,13 @@ const env = vi.hoisted(() => ({
   redeemInvite: vi.fn(),
   listMembers: vi.fn(),
   listCloudCards: vi.fn(),
+  resyncCloudCards: vi.fn(),
+}));
+
+vi.mock('../../../src/host/services/project/collabCardSyncService', () => ({
+  getCollabCardSyncService: () => ({
+    resyncProjectCards: env.resyncCloudCards,
+  }),
 }));
 
 vi.mock('../../../src/host/services/project/projectService', () => ({
@@ -68,6 +75,7 @@ describe('project collaboration IPC actions', () => {
     env.revokeInvite.mockResolvedValue({ revoked: true });
     env.listMembers.mockResolvedValue([{ userId: 'user-1' }]);
     env.listCloudCards.mockResolvedValue([{ localCardId: 'nwc-1', readonly: true }]);
+    env.resyncCloudCards.mockResolvedValue({ queued: 0, synced: 2, failed: 0 });
 
     await expect(call('promoteToCloudSpace', { projectId: ' proj-1 ' }))
       .resolves.toMatchObject({ success: true, data: { cloudProjectId: 'cloud-1' } });
@@ -87,6 +95,11 @@ describe('project collaboration IPC actions', () => {
         success: true,
         data: [{ localCardId: 'nwc-1', readonly: true }],
       });
+    await expect(call('resyncCloudCards', { projectId: ' proj-1 ' }))
+      .resolves.toMatchObject({
+        success: true,
+        data: { queued: 0, synced: 2, failed: 0 },
+      });
 
     expect(env.promoteToCloudSpace).toHaveBeenCalledWith('proj-1');
     expect(env.createInvite).toHaveBeenCalledWith('proj-1', {
@@ -97,6 +110,7 @@ describe('project collaboration IPC actions', () => {
     expect(env.revokeInvite).toHaveBeenCalledWith('code-1');
     expect(env.listMembers).toHaveBeenCalledWith('proj-1');
     expect(env.listCloudCards).toHaveBeenCalledWith('proj-1');
+    expect(env.resyncCloudCards).toHaveBeenCalledWith('proj-1');
   });
 
   it('returns a stable collaboration code and never leaks the internal cause', async () => {
@@ -126,7 +140,12 @@ describe('project collaboration IPC actions', () => {
       success: false,
       error: { code: 'INVALID_ARGS' },
     });
+    await expect(call('resyncCloudCards', { projectId: '   ' })).resolves.toMatchObject({
+      success: false,
+      error: { code: 'INVALID_ARGS' },
+    });
     expect(env.createInvite).not.toHaveBeenCalled();
     expect(env.redeemInvite).not.toHaveBeenCalled();
+    expect(env.resyncCloudCards).not.toHaveBeenCalled();
   });
 });

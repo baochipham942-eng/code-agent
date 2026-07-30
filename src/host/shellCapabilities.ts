@@ -255,6 +255,7 @@ const CAPABILITY_DOMAIN_ACTIONS = {
     'gitStates',
     'list',
     'listCapabilitySelections',
+    'listCloudCards',
     'listMembers',
     'listWithActivity',
     'promoteToCloudSpace',
@@ -262,6 +263,7 @@ const CAPABILITY_DOMAIN_ACTIONS = {
     'removeRole',
     'removeSource',
     'rename',
+    'resyncCloudCards',
     'selectCapability',
     'setPrimarySource',
     'setDescription',
@@ -512,7 +514,7 @@ const HIGH_RISK_CAPABILITIES = new Set([
 function inferRisk(domain: string, action: string): ShellCapabilityRisk {
   const id = makeShellCapabilityId(domain, action);
   if (HIGH_RISK_CAPABILITIES.has(id)) return 'high';
-  if (/^(add|archive|cancel|capture|clear|close|confirm|create|delete|disconnect|download|force|import|install|interrupt|open|pause|prepare|probe|refresh|reject|remove|rename|repair|reset|resume|retry|save|select|send|set|sign|start|stop|switch|unarchive|update|write)/i.test(action)) {
+  if (/^(add|archive|cancel|capture|clear|close|confirm|create|delete|disconnect|download|force|import|install|interrupt|open|pause|prepare|probe|refresh|reject|remove|rename|repair|reset|resume|resync|retry|save|select|send|set|sign|start|stop|switch|unarchive|update|write)/i.test(action)) {
     return 'medium';
   }
   return 'low';

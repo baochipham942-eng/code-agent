@@ -18,6 +18,7 @@
 // - redeemInvite    -> 兑换邀请码并补本地占位项目（{ code }）
 // - listMembers     -> 读取空间成员卡（{ projectId }）
 // - listCloudCards  -> 读取其他成员共享的只读卡元数据（{ projectId }）
+// - resyncCloudCards-> 重新推送本机卡元数据到云端（{ projectId }）
 // - addGoal         -> 新增目标（{ projectId, goal, verify?, review? }）
 // - updateGoalStatus-> 更新目标状态（{ goalId, status, lastRunSessionId? }）
 // - addRole         -> 角色入驻（{ projectId, roleId }）
@@ -32,6 +33,7 @@ import {
   getProjectCollaborationService,
   ProjectCollaborationError,
 } from '../services/project/projectCollaborationService';
+import { getCollabCardSyncService } from '../services/project/collabCardSyncService';
 import { getArtifactIssueRepository } from '../services/core/repositories/ArtifactIssueRepository';
 import {
   UNSORTED_PROJECT_ID,
@@ -269,6 +271,15 @@ export function registerProjectHandlers(ipcMain: IpcMain): void {
           return {
             success: true,
             data: await collaboration.listCloudCards(projectId.trim()),
+          };
+        }
+
+        case 'resyncCloudCards': {
+          const { projectId } = (payload ?? {}) as DetailPayload;
+          if (!projectId?.trim()) return invalid('projectId is required');
+          return {
+            success: true,
+            data: await getCollabCardSyncService().resyncProjectCards(projectId.trim()),
           };
         }
 

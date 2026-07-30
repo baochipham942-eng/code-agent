@@ -204,8 +204,10 @@ export type VoiceClientCommand =
    * 音频管线诊断上报（批 X §5）：Renderer 走了哪条采集管线、为什么。
    * 原生 AEC 的降级链此前全程零日志（start 失败被 catch 吞掉、renderer logger 只进
    * console），真机「AEC 没起来」在 host 日志里查不到任何痕迹。host 收到只落日志。
-   */
-  | { type: 'audio_mode'; mode: 'native_aec' | 'headphones'; reason: string };
+  */
+  | { type: 'audio_mode'; mode: 'native_aec' | 'headphones'; reason: string }
+  /** 原生 AEC sidecar 的受控生命周期诊断码；不传音频、字幕或本地路径。 */
+  | { type: 'audio_diagnostic'; code: string };
 
 interface VoiceTransportHandleBase {
   readonly provider: VoiceProviderId;

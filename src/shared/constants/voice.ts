@@ -175,6 +175,12 @@ export const VOICE_AEC_OUTPUT_EVENT = 'voice-aec:output';
 /** PCM 经 JSON IPC 传给 Rust 时的 base64 分块大小，避免一次展开大数组撑爆调用栈。 */
 export const VOICE_AEC_BASE64_CHUNK_BYTES = 0x8000;
 
+/**
+ * relay 通话进入 live 后等待首个 Renderer 上行音频帧的窗口。
+ * 正常原生 AEC 首帧实测 0.1–0.3s；8 秒足够覆盖启动和短抖动，又能在用户持续说话前留下明确 warn。
+ */
+export const VOICE_INBOUND_AUDIO_STARTUP_TIMEOUT_MS = 8_000;
+
 /** 上游 WS 握手超时（ms）。 */
 export const VOICE_UPSTREAM_CONNECT_TIMEOUT_MS = 15_000;
 

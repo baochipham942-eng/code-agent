@@ -22,7 +22,7 @@ import type { VoiceAudioPipelineCallbacks, VoiceAudioPipelineLike } from './voic
 const logger = createLogger('NativeVoiceAec');
 
 interface NativeVoiceAecEvent {
-  kind: 'audio' | 'levels' | 'error';
+  kind: 'audio' | 'levels' | 'error' | 'diagnostic';
   data?: string;
   mic?: number;
   playback?: number;
@@ -63,6 +63,7 @@ export class NativeVoiceAudioPipeline implements VoiceAudioPipelineLike {
   private playbackGeneration = 0;
   private playbackWrites: Promise<void> = Promise.resolve();
   private controlWrites: Promise<void> = Promise.resolve();
+  private pendingDiagnostics: string[] = [];
 
   constructor(private readonly callbacks: VoiceAudioPipelineCallbacks) {}
 
@@ -93,6 +94,9 @@ export class NativeVoiceAudioPipeline implements VoiceAudioPipelineLike {
         throw new Error(`Unexpected native AEC event: ${result.outputEvent}`);
       }
       this.started = true;
+      for (const code of this.pendingDiagnostics.splice(0)) {
+        this.callbacks.onDiagnostic?.(code);
+      }
       this.syncCaptureGate(true);
     } catch (error) {
       this.unlisten?.();
@@ -111,6 +115,7 @@ export class NativeVoiceAudioPipeline implements VoiceAudioPipelineLike {
     this.unlisten?.();
     this.unlisten = null;
     this.micLevel = 0;
+    this.pendingDiagnostics = [];
     void stopNativeVoiceAec().catch(() => undefined);
   }
 
@@ -174,6 +179,11 @@ export class NativeVoiceAudioPipeline implements VoiceAudioPipelineLike {
       const playback = typeof event.playback === 'number' ? event.playback : 0;
       this.micLevel = mic;
       this.callbacks.onLevels?.(mic, playback);
+      return;
+    }
+    if (event.kind === 'diagnostic' && event.message) {
+      if (this.started) this.callbacks.onDiagnostic?.(event.message);
+      else this.pendingDiagnostics.push(event.message);
       return;
     }
     if (event.kind === 'error' && this.started) {

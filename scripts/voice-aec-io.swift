@@ -11,11 +11,22 @@ private let upstreamSampleRate: Double = 16_000
 private let downstreamSampleRate: Double = 24_000
 private let levelInterval: TimeInterval = 0.1
 
+// 看门狗：连续这么久一帧不产就判定采集已死并写 error 帧。
+// 选值理由：VPIO 冷启动到首帧实测 0.1–0.3s，实测两次「引擎自杀」发生在 start() 后 +0.32s/+0.38s，
+// 自愈重建实测 <0.5s；4s 是正常首帧耗时的十倍以上（不会误杀），又远小于 Rust 侧 30s 启动超时
+// （保证 host 拿到的是「明确的错误」而不是「超时」）。
+private let frameStallTimeout: TimeInterval = 4
+private let watchdogInterval: TimeInterval = 1
+// 配置变更自愈的熔断：短窗内反复重建说明设备在抖，继续重试只会让用户听一段断续的假通话。
+private let recoveryWindow: TimeInterval = 10
+private let maxRecoveriesInWindow = 3
+
 private enum OutputFrameKind: UInt8 {
     case audio = 1
     case levels = 2
     case ready = 3
     case error = 4
+    case diagnostic = 5
 }
 
 private enum VoiceAecError: Error, CustomStringConvertible {
@@ -78,6 +89,18 @@ private final class VoiceAecIO {
     private var playbackUntil: TimeInterval = 0
     private var lastLevelAt: TimeInterval = 0
     private var stopped = false
+    private var lastFrameAt: TimeInterval = 0
+    private var readySent = false
+    private var failed = false
+    private var recoveryPending = false
+    private var tapInstalled = false
+
+    // 自愈与看门狗都跑在这条串行队列上：重建期间看门狗自然被挡住，不必再加一把锁。
+    private let recoveryQueue = DispatchQueue(label: "voice-aec-io.recovery")
+    private let recoveryQueueKey = DispatchSpecificKey<Void>()
+    private var watchdogTimer: DispatchSourceTimer?
+    private var configObserver: NSObjectProtocol?
+    private var recoveryTimestamps: [TimeInterval] = []
 
     init(arguments: Arguments) throws {
         guard let upstream = FileHandle(forWritingAtPath: arguments.upstreamFifo) else {
@@ -109,46 +132,37 @@ private final class VoiceAecIO {
         self.downstream = downstream
         self.upstreamFormat = upstreamFormat
         self.downstreamFormat = downstreamFormat
+        recoveryQueue.setSpecific(key: recoveryQueueKey, value: ())
     }
 
     func start() throws {
-        let input = engine.inputNode
-        let output = engine.outputNode
+        try recoveryQueue.sync {
+            let input = engine.inputNode
+            let output = engine.outputNode
 
-        engine.attach(player)
-        engine.connect(player, to: engine.mainMixerNode, format: downstreamFormat)
+            engine.attach(player)
+            engine.connect(player, to: engine.mainMixerNode, format: downstreamFormat)
 
-        // 两端必须同时进入 VoiceProcessingIO：输入负责采集，输出提供 AEC 参考信号。
-        // 顺序不能反：必须先把播放图搭好再开 voice processing——先开 VP 会让输出单元
-        // 在 24k 播放格式下 kAUInitialize 失败（-10875，本机可复现），图先行则正常。
-        try input.setVoiceProcessingEnabled(true)
-        try output.setVoiceProcessingEnabled(true)
+            configObserver = NotificationCenter.default.addObserver(
+                forName: .AVAudioEngineConfigurationChange,
+                object: engine,
+                queue: nil
+            ) { [weak self] _ in
+                self?.scheduleConfigurationRecovery()
+            }
 
-        let inputFormat = input.outputFormat(forBus: 0)
-        guard let converter = AVAudioConverter(from: inputFormat, to: upstreamFormat) else {
-            throw VoiceAecError.audioFormatUnavailable
+            // 两端必须同时进入 VoiceProcessingIO：输入负责采集，输出提供 AEC 参考信号。
+            // 顺序不能反：必须先把播放图搭好再开 voice processing——先开 VP 会让输出单元
+            // 在 24k 播放格式下 kAUInitialize 失败（-10875，本机可复现），图先行则正常。
+            try input.setVoiceProcessingEnabled(true)
+            try output.setVoiceProcessingEnabled(true)
+            try rebuildInputAndStartEngine()
+            startWatchdog()
         }
-        // 开了 voice processing 后输入是 7 声道 discrete 布局（本机实测，7 路内容相同），
-        // AVAudioConverter 推不出降混矩阵，默认 channelMap = [-1]＝输出声道无来源 → 转换结果恒为静音。
-        // 必须显式取第 0 路；单声道输入时 [0] 同样正确。
-        converter.channelMap = [0]
-        self.converter = converter
-        fputs(
-            "voice-aec-io: input \(inputFormat.channelCount)ch@\(Int(inputFormat.sampleRate))Hz channelMap=\(converter.channelMap)\n",
-            stderr
-        )
-
-        input.installTap(onBus: 0, bufferSize: 1024, format: inputFormat) { [weak self] buffer, _ in
-            self?.consumeInput(buffer)
-        }
-
-        engine.prepare()
-        try engine.start()
-        player.play()
 
         startDownstreamReader()
-        writeFrame(kind: .ready, payload: Data("ready".utf8))
-        fputs("voice-aec-io: started (AEC input 16kHz ↔ playback 24kHz)\n", stderr)
+        writeDiagnostic("engine-started")
+        fputs("voice-aec-io: engine started; waiting for first capture frame\n", stderr)
     }
 
     func handle(command: String) {
@@ -187,9 +201,14 @@ private final class VoiceAecIO {
         stopped = true
         stateLock.unlock()
 
-        engine.inputNode.removeTap(onBus: 0)
-        player.stop()
-        engine.stop()
+        writeDiagnostic("stopped")
+        runOnRecoveryQueueSync {
+            stopWatchdog()
+            removeConfigurationObserver()
+            removeInputTap()
+            player.stop()
+            engine.stop()
+        }
         try? upstream.close()
         try? downstream.close()
         fputs("voice-aec-io: stopped\n", stderr)
@@ -199,8 +218,7 @@ private final class VoiceAecIO {
         writeFrame(kind: .error, payload: Data(String(describing: error).utf8))
     }
 
-    private func consumeInput(_ input: AVAudioPCMBuffer) {
-        guard let converter else { return }
+    private func consumeInput(_ input: AVAudioPCMBuffer, converter: AVAudioConverter) {
         let ratio = upstreamSampleRate / input.format.sampleRate
         let capacity = max(1, AVAudioFrameCount(ceil(Double(input.frameLength) * ratio)) + 1)
         guard let output = AVAudioPCMBuffer(pcmFormat: upstreamFormat, frameCapacity: capacity) else {
@@ -230,8 +248,17 @@ private final class VoiceAecIO {
         let micRms = rms(pcm)
 
         stateLock.lock()
+        guard !stopped, !failed else {
+            stateLock.unlock()
+            return
+        }
         let isMuted = muted
         let now = Date.timeIntervalSinceReferenceDate
+        lastFrameAt = now
+        let shouldSendReady = !readySent
+        if shouldSendReady {
+            readySent = true
+        }
         if isMuted {
             pcm.resetBytes(in: 0..<pcm.count)
         }
@@ -245,6 +272,11 @@ private final class VoiceAecIO {
         }
         stateLock.unlock()
 
+        if shouldSendReady {
+            writeFrame(kind: .ready, payload: Data("ready".utf8))
+            writeDiagnostic("capture-started")
+            fputs("voice-aec-io: capturing (first upstream frame produced)\n", stderr)
+        }
         writeFrame(kind: .audio, payload: pcm)
         if shouldReportLevel {
             var mic = isMuted ? Float(0) : micRms
@@ -257,6 +289,169 @@ private final class VoiceAecIO {
                 }
             }
             writeFrame(kind: .levels, payload: payload)
+        }
+    }
+
+    private func rebuildInputAndStartEngine() throws {
+        let input = engine.inputNode
+        removeInputTap()
+        engine.stop()
+
+        let inputFormat = input.outputFormat(forBus: 0)
+        guard let converter = AVAudioConverter(from: inputFormat, to: upstreamFormat) else {
+            throw VoiceAecError.audioFormatUnavailable
+        }
+        // VoiceProcessingIO 可能在设备重构后从 1 声道变成 7 声道。AVAudioConverter
+        // 无法自行推导 discrete → mono 的降混矩阵；显式保留第 0 路，避免恢复后恒静音。
+        converter.channelMap = [0]
+        self.converter = converter
+        fputs(
+            "voice-aec-io: input \(inputFormat.channelCount)ch@\(Int(inputFormat.sampleRate))Hz channelMap=\(converter.channelMap)\n",
+            stderr
+        )
+
+        input.installTap(onBus: 0, bufferSize: 1024, format: inputFormat) { [weak self, converter] buffer, _ in
+            self?.consumeInput(buffer, converter: converter)
+        }
+        tapInstalled = true
+
+        engine.prepare()
+        try engine.start()
+        if !player.isPlaying {
+            player.play()
+        }
+
+        stateLock.lock()
+        lastFrameAt = Date.timeIntervalSinceReferenceDate
+        stateLock.unlock()
+    }
+
+    private func scheduleConfigurationRecovery() {
+        stateLock.lock()
+        guard !stopped, !failed, !recoveryPending else {
+            stateLock.unlock()
+            return
+        }
+        recoveryPending = true
+        stateLock.unlock()
+
+        recoveryQueue.async { [weak self] in
+            self?.recoverFromConfigurationChange()
+        }
+    }
+
+    private func recoverFromConfigurationChange() {
+        stateLock.lock()
+        guard !stopped, !failed else {
+            recoveryPending = false
+            stateLock.unlock()
+            return
+        }
+        stateLock.unlock()
+
+        let now = Date.timeIntervalSinceReferenceDate
+        recoveryTimestamps.removeAll { now - $0 > recoveryWindow }
+        guard recoveryTimestamps.count < maxRecoveriesInWindow else {
+            stateLock.lock()
+            recoveryPending = false
+            stateLock.unlock()
+            failLoud("AEC_CONFIG_CHANGE_LOOP")
+            return
+        }
+        recoveryTimestamps.append(now)
+
+        fputs(
+            "voice-aec-io: configuration changed; rebuilding capture (\(recoveryTimestamps.count)/\(maxRecoveriesInWindow))\n",
+            stderr
+        )
+        writeDiagnostic("configuration-changed")
+        do {
+            try rebuildInputAndStartEngine()
+            writeDiagnostic("configuration-recovered")
+            fputs("voice-aec-io: configuration recovery restarted engine\n", stderr)
+        } catch {
+            stateLock.lock()
+            recoveryPending = false
+            stateLock.unlock()
+            failLoud("AEC_CONFIG_RECOVERY_FAILED: \(error)")
+            return
+        }
+
+        stateLock.lock()
+        recoveryPending = false
+        stateLock.unlock()
+    }
+
+    private func startWatchdog() {
+        let timer = DispatchSource.makeTimerSource(queue: recoveryQueue)
+        timer.schedule(
+            deadline: .now() + watchdogInterval,
+            repeating: watchdogInterval
+        )
+        timer.setEventHandler { [weak self] in
+            self?.checkCaptureHealth()
+        }
+        watchdogTimer = timer
+        timer.resume()
+    }
+
+    private func stopWatchdog() {
+        watchdogTimer?.setEventHandler {}
+        watchdogTimer?.cancel()
+        watchdogTimer = nil
+    }
+
+    private func checkCaptureHealth() {
+        stateLock.lock()
+        let shouldFail = !stopped
+            && !failed
+            && Date.timeIntervalSinceReferenceDate - lastFrameAt >= frameStallTimeout
+        stateLock.unlock()
+        if shouldFail {
+            failLoud("AEC_CAPTURE_STALLED")
+        }
+    }
+
+    private func failLoud(_ reason: String) {
+        stateLock.lock()
+        guard !stopped, !failed else {
+            stateLock.unlock()
+            return
+        }
+        failed = true
+        recoveryPending = false
+        stateLock.unlock()
+
+        fputs("voice-aec-io: fatal \(reason)\n", stderr)
+        writeDiagnostic("fatal:\(reason)")
+        writeFrame(kind: .error, payload: Data(reason.utf8))
+        stopWatchdog()
+        removeConfigurationObserver()
+        removeInputTap()
+        player.stop()
+        engine.stop()
+    }
+
+    private func removeInputTap() {
+        if tapInstalled {
+            engine.inputNode.removeTap(onBus: 0)
+            tapInstalled = false
+        }
+        converter = nil
+    }
+
+    private func removeConfigurationObserver() {
+        if let configObserver {
+            NotificationCenter.default.removeObserver(configObserver)
+            self.configObserver = nil
+        }
+    }
+
+    private func runOnRecoveryQueueSync(_ work: () -> Void) {
+        if DispatchQueue.getSpecific(key: recoveryQueueKey) != nil {
+            work()
+        } else {
+            recoveryQueue.sync(execute: work)
         }
     }
 
@@ -334,6 +529,10 @@ private final class VoiceAecIO {
             stop()
             exit(0)
         }
+    }
+
+    private func writeDiagnostic(_ code: String) {
+        writeFrame(kind: .diagnostic, payload: Data(code.utf8))
     }
 }
 

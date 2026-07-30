@@ -2445,6 +2445,7 @@ enum VoiceAecFrame {
     Levels { mic: f32, playback: f32 },
     Ready,
     Error(String),
+    Diagnostic(String),
 }
 
 fn decode_voice_aec_frame(kind: u8, payload: Vec<u8>) -> Result<VoiceAecFrame, String> {
@@ -2462,6 +2463,9 @@ fn decode_voice_aec_frame(kind: u8, payload: Vec<u8>) -> Result<VoiceAecFrame, S
         3 => Ok(VoiceAecFrame::Ready),
         4 => Ok(VoiceAecFrame::Error(
             String::from_utf8(payload).unwrap_or_else(|_| "voice AEC sidecar failed".to_string()),
+        )),
+        5 => Ok(VoiceAecFrame::Diagnostic(
+            String::from_utf8(payload).unwrap_or_else(|_| "invalid-diagnostic".to_string()),
         )),
         other => Err(format!("voice AEC emitted unknown frame kind {other}")),
     }
@@ -2686,6 +2690,16 @@ fn spawn_voice_aec_upstream_reader(
                             },
                         );
                     }
+                    Ok(VoiceAecFrame::Diagnostic(message)) => emit_voice_aec_event(
+                        &app,
+                        VoiceAecOutputEvent {
+                            kind: "diagnostic".to_string(),
+                            data: None,
+                            mic: None,
+                            playback: None,
+                            message: Some(message),
+                        },
+                    ),
                     Err(message) => {
                         if !startup_reported {
                             startup_reported = true;
@@ -3037,5 +3051,15 @@ mod privacy_tests {
             _ => panic!("expected levels frame"),
         }
         assert!(decode_voice_aec_frame(2, vec![0; 4]).is_err());
+    }
+
+    #[test]
+    fn voice_aec_diagnostic_frame_keeps_the_controlled_code() {
+        match decode_voice_aec_frame(5, b"configuration-recovered".to_vec())
+            .expect("decode diagnostic")
+        {
+            VoiceAecFrame::Diagnostic(code) => assert_eq!(code, "configuration-recovered"),
+            _ => panic!("expected diagnostic frame"),
+        }
     }
 }

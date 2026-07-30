@@ -25,6 +25,8 @@ const ALLOWLIST: Record<string, number> = {
   // 单选/多选项的选中指示圆点，不是按钮
   'components/MCPElicitationModal.tsx': 1,
   'components/UserQuestionCard.tsx': 1,
+  // DecisionCard 决策卡统一骨架的选项行选中指示圆点（同 UserQuestionCard 形态），不是按钮
+  'components/DecisionCard.tsx': 1,
   // 下载进度条填充色
   'components/features/background/BackgroundSessionPanel.tsx': 1,
   // 分类调色板数组（用户活动分类打点色），非 UI 按钮

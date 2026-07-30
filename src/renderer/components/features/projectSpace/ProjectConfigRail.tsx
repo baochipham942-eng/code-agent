@@ -210,7 +210,10 @@ export const ProjectConfigRail: React.FC<ProjectConfigRailProps> = ({
 
   return (
     <aside className="flex w-72 shrink-0 flex-col border-l border-zinc-800/70" data-testid="project-space-config-rail">
-      <div className="flex shrink-0 items-center gap-2 px-3 pt-3">
+      {/* 收起钮右缘与下方卡片「+」右缘同轴（批P 审美关，探针实测修前差 13px）：
+          卡片「+」右缘 = 栏右缘 - 卡片网格 p-3(12) - 卡片边框(1) - 卡片 p-3(12) = 25，
+          故本行右 padding 用 25px，不是与左侧对称的 px-3。 */}
+      <div className="flex shrink-0 items-center gap-2 pl-3 pr-[25px] pt-3">
         <h2 className="min-w-0 flex-1 truncate text-sm font-medium text-zinc-300">{ps.configRailTitle}</h2>
         <IconButton
           size="sm"

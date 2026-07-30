@@ -31,7 +31,6 @@ const SCOPED_FILES = [
   'components/features/chat/TurnQualityStrip.tsx',
   'components/features/chat/TurnCard.tsx',
   'components/features/chat/SessionDiffSummary.tsx',
-  'components/features/chat/InlineWorkbenchBar.tsx',
   'components/features/chat/ContextUsagePill.tsx',
   'components/features/chat/TraceNodeRenderer.tsx',
   'components/features/chat/InlineStrip.tsx',

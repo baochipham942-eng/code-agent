@@ -1400,9 +1400,13 @@ export class AgentOrchestrator {
     const manager = getPermissionModeManager();
     if (!manager.isLiveVoiceSession(sessionId)) return null;
     const mode = manager.getModeForSession(sessionId);
+    // ADR-053 之后通话不再抬严（唯一钳制是 bypassPermissions→acceptEdits），
+    // 旧文案「已临时抬严到 X」变成了假话，会误导执行模型以为有额外限制。
+    // 现在只陈述事实：档位是多少、需要确认的操作会等审批卡、用户在通话中可能不马上点。
     return [
       '<live_voice_permission_notice>',
-      `当前处于实时语音通话中，权限档已临时抬严到 ${mode}：写入和执行类操作会挂起等待用户在审批卡上确认，不会被静默拒绝。`,
+      `当前处于实时语音通话中，本轮权限档为 ${mode}（通话跟随会话自己的权限设置，不额外收紧）。`,
+      '需要用户确认的操作会挂起等待审批卡；用户正在通话、不在键盘前，可能不会立刻确认。',
       '不要因为一次尝试没有立即成功就反复更换写法重试，等待审批结果即可。',
       '</live_voice_permission_notice>',
     ].join('\n');

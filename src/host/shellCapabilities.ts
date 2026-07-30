@@ -202,6 +202,7 @@ const CAPABILITY_DOMAIN_ACTIONS = {
   ],
   [IPC_DOMAINS.MCP]: [
     'addServer',
+    'cancelServerInstall',
     'getCatalog',
     'getServerStates',
     'getStatus',
@@ -248,6 +249,7 @@ const CAPABILITY_DOMAIN_ACTIONS = {
     'artifacts',
     'createInvite',
     'createSpace',
+    'create',
     'deleteProject',
     'detail',
     'gitStates',
@@ -465,6 +467,7 @@ const CAPABILITY_DOMAIN_ACTIONS = {
     'importDesignImage',
     'inspectArchive',
     'inspectPresentation',
+    'findFile',
     'previewPresentation',
     'listBrands',
     'listCustomImageModels',

@@ -1,6 +1,6 @@
 // ============================================================================
 // 实时语音（Live Voice）词条 —— zh/en 同文件相邻维护（同 chatInput.ts 先例）。
-// 键名对齐方案附录 A 的最小状态字典；设置页「实时通话」组文案也在这里。
+// 键名对齐方案附录 A 的最小状态字典；设置页「实时语音」组文案也在这里。
 // ============================================================================
 
 import type { VoiceMessageCode } from '@shared/contract/voice';
@@ -15,13 +15,13 @@ export type VoiceTranslations = WidenVoiceCopy<typeof voiceEn>;
 export const voiceZh: VoiceTranslations = {
   voice: {
     live: {
-      start: '实时通话',
-      startTitle: '开始实时通话',
+      start: '实时语音',
+      startTitle: '开始实时语音',
       end: '结束',
       endTitle: '结束通话',
       mute: '静音',
       unmute: '取消静音',
-      confirmTitle: '开始实时通话',
+      confirmTitle: '开始实时语音',
       confirmMessage: '延续当前会话的上下文继续对话，通话字幕和派发的任务都会进入消息流。',
       confirmAction: '开始通话',
       confirmPrivacy: '通话音频实时上传至语音服务用于识别与合成，默认不保留原始录音。',
@@ -61,7 +61,8 @@ export const voiceZh: VoiceTranslations = {
     messageByCode: {
       VOICE_SESSION_BUSY: '已有一路通话在进行中',
       VOICE_PROVIDER_UNCONFIGURED: '还没配语音服务的 API Key，去设置里填一个就能打电话',
-      VOICE_TOOLS_DROPPED: '当前通话模型不支持在通话中派活，这通电话只能聊天',
+      VOICE_TOOLS_DROPPED: '当前实时语音模型不支持在通话中派活，这通电话只能聊天',
+      VOICE_MODEL_UNRESPONSIVE: '模型没有回应，可以再说一遍，或挂断重拨',
       VOICE_WORK_FAILED: '刚才派出去的活失败了，没有做完：{reason}',
       VOICE_UPSTREAM_UNAVAILABLE: '连不上语音服务，稍后再试',
       UPSTREAM_SOCKET: '通话连接断开了',
@@ -99,9 +100,9 @@ export const voiceZh: VoiceTranslations = {
       noTranscriptMissing: '这通电话的文字记录未保留',
     },
     settings: {
-      live: '实时通话',
+      live: '实时语音',
       dictation: '口述输入',
-      enableTitle: '启用实时通话',
+      enableTitle: '启用实时语音',
       enableDescription: '在输入框显示实时语音入口，与当前专家全双工通话、字幕进消息流',
       apiKeyTitle: 'DashScope API Key',
       apiKeyDescription: '实时语音、图片生成、口述转写共用这一个 Key。保存在系统安全存储，不明文落盘。',
@@ -115,18 +116,18 @@ export const voiceZh: VoiceTranslations = {
       apiKeyClearTitle: '清除 DashScope API Key？',
       apiKeyClearMessage: '清除后实时语音、图片生成、口述转写都会不可用，直到重新配置。',
       apiKeyClearConfirm: '清除',
-      providerTitle: '通话模型 / Provider',
+      providerTitle: '实时语音模型 / Provider',
       providerConfigured: '已配置',
-      providerMissing: '未配置 DashScope Key，实时通话不可用',
+      providerMissing: '未配置 DashScope Key，实时语音不可用',
       providerMissingHint: '请到设置 → 模型配置 DashScope（qwen）API Key',
       modelNoToolsWarning: '该模型不支持在通话里派活，选它这通电话只能聊天',
       executionModelTitle: '执行引擎',
-      executionModelDescription: '通话模型只负责听和说；派出去的活由这里的模型真干。不选就跟随会话默认引擎。',
+      executionModelDescription: '实时语音模型只负责听和说；派出去的活由这里的模型真干。不选就跟随会话默认引擎。',
       executionModelFollowSession: '跟随会话默认',
       usageTitle: '通话用量',
       usageThisMonth: '本月 {minutes} 分钟 · {calls} 通。仅记录，不做限制。',
       voiceLabel: '音色',
-      voiceNote: '音色与通话模型绑定，选项来自当前模型的实测白名单',
+      voiceNote: '音色与实时语音模型绑定，选项来自当前模型的实测白名单',
       languageLabel: '通话语言',
       languageAuto: '自动（跟随说话）',
       languageZh: '中文',
@@ -146,7 +147,7 @@ export const voiceZh: VoiceTranslations = {
       sensitivityMedium: '中',
       sensitivityHigh: '高',
       privacyTitle: '隐私说明',
-      privacyBody: '麦克风仅用于实时通话；通话音频会实时上传至所选 Provider（DashScope）用于识别与合成；默认不在本地保留原始音频，只保留文字字幕。',
+      privacyBody: '麦克风仅用于实时语音；通话音频会实时上传至所选 Provider（DashScope）用于识别与合成；默认不在本地保留原始音频，只保留文字字幕。',
     },
     expert: {
       with_name: '与 {name} 通话',
@@ -171,6 +172,8 @@ export const voiceZh: VoiceTranslations = {
       statusFailed: '失败',
       statusRunning: '进行中',
       statusCompleted: '已完成',
+      /** run 跑完了但没留下产物证据。「已完成」只留给查得到产物的那一档（X5.5-A2-a）。 */
+      statusUnverified: '已结束 · 待核验',
     },
     echoHint: {
       message: '外放可能让助手听到自己的声音，建议佩戴耳机',
@@ -183,13 +186,13 @@ export const voiceZh: VoiceTranslations = {
 export const voiceEn = {
   voice: {
     live: {
-      start: 'Live call',
-      startTitle: 'Start a live call',
+      start: 'Live Voice',
+      startTitle: 'Start Live Voice',
       end: 'End',
       endTitle: 'End call',
       mute: 'Mute',
       unmute: 'Unmute',
-      confirmTitle: 'Start a live call',
+      confirmTitle: 'Start Live Voice',
       confirmMessage: 'Continue this conversation by voice — live captions and dispatched tasks land in the message flow.',
       confirmAction: 'Start call',
       confirmPrivacy: 'Call audio streams to the voice service for recognition and synthesis. Raw audio is not kept by default.',
@@ -229,7 +232,8 @@ export const voiceEn = {
     messageByCode: {
       VOICE_SESSION_BUSY: 'Another call is already in progress',
       VOICE_PROVIDER_UNCONFIGURED: 'No API key for the voice service yet — add one in settings to start calling',
-      VOICE_TOOLS_DROPPED: 'This call model cannot run tasks during a call, so this call is chat only',
+      VOICE_TOOLS_DROPPED: 'This Live Voice model cannot run tasks during a call, so this call is chat only',
+      VOICE_MODEL_UNRESPONSIVE: 'The model did not respond. Try saying it again, or hang up and redial',
       VOICE_WORK_FAILED: 'The task dispatched during this call failed and did not finish: {reason}',
       VOICE_UPSTREAM_UNAVAILABLE: 'Cannot reach the voice service — try again shortly',
       UPSTREAM_SOCKET: 'The call connection dropped',
@@ -267,9 +271,9 @@ export const voiceEn = {
       noTranscriptMissing: "This call's transcript wasn't kept",
     },
     settings: {
-      live: 'Realtime call',
+      live: 'Live Voice',
       dictation: 'Dictation',
-      enableTitle: 'Enable realtime voice',
+      enableTitle: 'Enable Live Voice',
       enableDescription: 'Show the live voice entry in the composer: full-duplex calls with the active expert, transcripts in the message flow',
       apiKeyTitle: 'DashScope API Key',
       apiKeyDescription: 'One key shared by live voice, image generation, and dictation. Stored in the system secure storage, never in plaintext.',
@@ -283,18 +287,18 @@ export const voiceEn = {
       apiKeyClearTitle: 'Clear the DashScope API key?',
       apiKeyClearMessage: 'Live voice, image generation, and dictation will all stop working until you configure a key again.',
       apiKeyClearConfirm: 'Clear',
-      providerTitle: 'Call model / Provider',
+      providerTitle: 'Live Voice model / Provider',
       providerConfigured: 'Configured',
-      providerMissing: 'DashScope key not configured — realtime voice is unavailable',
+      providerMissing: 'DashScope key not configured — Live Voice is unavailable',
       providerMissingHint: 'Set up a DashScope (qwen) API key in Settings → Models',
       modelNoToolsWarning: 'This model cannot dispatch tasks during a call — with it, calls are chat-only',
       executionModelTitle: 'Execution engine',
-      executionModelDescription: 'The call model only listens and speaks; dispatched work runs on this model. Leave unset to follow the session default.',
+      executionModelDescription: 'The Live Voice model only listens and speaks; dispatched work runs on this model. Leave unset to follow the session default.',
       executionModelFollowSession: 'Follow session default',
       usageTitle: 'Call usage',
       usageThisMonth: '{minutes} min · {calls} calls this month. Recorded only, no limit applied.',
       voiceLabel: 'Voice',
-      voiceNote: 'Voices are bound to the call model; options come from the verified whitelist of the current model',
+      voiceNote: 'Voices are bound to the Live Voice model; options come from the verified whitelist of the current model',
       languageLabel: 'Call language',
       languageAuto: 'Auto (follow speech)',
       languageZh: '中文',
@@ -314,7 +318,7 @@ export const voiceEn = {
       sensitivityMedium: 'Medium',
       sensitivityHigh: 'High',
       privacyTitle: 'Privacy',
-      privacyBody: 'The microphone is only used for realtime calls. Call audio is streamed to the selected provider (DashScope) for recognition and synthesis. Raw audio is not kept locally by default — only text transcripts are stored.',
+      privacyBody: 'The microphone is only used for Live Voice. Call audio is streamed to the selected provider (DashScope) for recognition and synthesis. Raw audio is not kept locally by default — only text transcripts are stored.',
     },
     expert: {
       with_name: 'On a call with {name}',
@@ -339,6 +343,7 @@ export const voiceEn = {
       statusFailed: 'Failed',
       statusRunning: 'In progress',
       statusCompleted: 'Completed',
+      statusUnverified: 'Finished · pending verification',
     },
     echoHint: {
       message: 'Speaker output may let the assistant hear itself. Consider wearing headphones',

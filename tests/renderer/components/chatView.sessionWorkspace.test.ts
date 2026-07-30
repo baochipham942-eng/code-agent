@@ -202,9 +202,10 @@ describe('ChatView session shell', () => {
     expect(html).toContain('搜一份最新行业简报');
     expect(html).toContain('梳理磁盘空间占用');
     expect(html).not.toContain('继续推进 Phase 5');
-    // 批C2：tooltip 不再回显完整路径（内部路径泄漏面），chip 显示项目名并可点换目录
+    // 批C2：tooltip 不再回显完整路径（内部路径泄漏面），上下文标签只读显示项目名
+    // （2026-07-29：目录 chip 入口删除，目录选择收进侧栏「项目」区新建项目流程）。
     expect(html).toContain('项目会话 · code-agent');
-    expect(html).toContain('welcome-directory-chip');
+    expect(html).not.toContain('welcome-directory-chip');
     expect(html).not.toContain('继承工作区：/repo/code-agent');
     expect(html).toContain('继承：工作区 · Browser · 最近工具 browser_action');
     expect(html).not.toContain('/repo/other');

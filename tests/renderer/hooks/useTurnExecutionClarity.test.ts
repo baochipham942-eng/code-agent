@@ -143,13 +143,16 @@ describe('buildTurnExecutionClarityProjection', () => {
       'user',
       'turn_timeline',
       'turn_timeline',
-      'turn_timeline',
       'assistant_text',
       'tool_call',
       'turn_timeline',
       'turn_timeline',
     ]);
-    expect(enriched.turns[0]?.nodes[0]?.metadata?.workbench).toBeUndefined();
+    // userNode 的 metadata.workbench 必须保留：遥测/能力审计直接读它
+    expect(enriched.turns[0]?.nodes[0]?.metadata?.workbench).toMatchObject({
+      routingMode: 'direct',
+      selectedSkillIds: ['draft-skill'],
+    });
     expect(enriched.turns[0]?.nodes[1]?.turnTimeline?.kind).toBe('workbench_snapshot');
     expect(enriched.turns[0]?.nodes[1]?.turnTimeline?.snapshot?.executionIntent?.browserSessionMode).toBe('managed');
     expect(enriched.turns[0]?.nodes[1]?.turnTimeline?.snapshot?.executionIntent?.browserSessionSnapshot).toMatchObject({
@@ -171,12 +174,12 @@ describe('buildTurnExecutionClarityProjection', () => {
       invoked: [],
     });
     expect(enriched.turns[0]?.nodes[2]?.turnTimeline?.capabilityScope?.blocked).toHaveLength(3);
-    expect(enriched.turns[0]?.nodes[3]?.turnTimeline?.kind).toBe('skill_activity');
-    expect(enriched.turns[0]?.nodes[3]?.turnTimeline?.skillActivity?.summary).toBe('Skill 写入偏好 1');
-    expect(enriched.turns[0]?.nodes[6]?.turnTimeline?.routingEvidence?.summary).toContain('Direct');
+    // 「挂载」项不再进 skill_activity（2026-07-29 拍板）：只挂载没触发的轮次不产生该节点
+    expect(enriched.turns[0]?.nodes.some((node) => node.turnTimeline?.kind === 'skill_activity')).toBe(false);
+    expect(enriched.turns[0]?.nodes[5]?.turnTimeline?.routingEvidence?.summary).toContain('Direct');
     // report.md 是 Write 的 outputPath，已作为 tool_call/file-change 可见；
     // 9c7cb06bc 起 artifact-ownership 去重不再重复列入（避免与 file-change 双列）。
-    expect(enriched.turns[0]?.nodes[7]?.turnTimeline?.artifactOwnership?.map((item) => item.label)).toEqual([
+    expect(enriched.turns[0]?.nodes[6]?.turnTimeline?.artifactOwnership?.map((item) => item.label)).toEqual([
       'Execution Chart',
       'preview.png',
     ]);
@@ -900,6 +903,91 @@ describe('buildTurnExecutionClarityProjection', () => {
     expect(secondHookNode?.turnTimeline?.hookActivity?.items.map((item) => item.toolName)).toEqual(['Read']);
   });
 
+  it('passes hook decision reason through to timeline items', () => {
+    const enriched = buildTurnExecutionClarityProjection({
+      projection: {
+        sessionId: 'session-hooks',
+        activeTurnIndex: -1,
+        turns: [
+          {
+            turnNumber: 1,
+            turnId: 'turn-1',
+            status: 'completed',
+            startTime: 100,
+            endTime: 180,
+            nodes: [
+              { id: 'user-1', type: 'user', content: '跑一下', timestamp: 100 },
+              { id: 'assistant-1-text', type: 'assistant_text', content: 'done', timestamp: 180 },
+            ],
+          },
+        ],
+      },
+      capabilities: { skills: [], connectors: [], mcpServers: [] },
+      launchRequests: [],
+      swarmEvents: [],
+      routingEvents: [],
+      hookEvents: [
+        {
+          timestamp: 120,
+          event: 'PreToolUse',
+          action: 'block',
+          durationMs: 5,
+          hookCount: 1,
+          modified: false,
+          sources: ['project'],
+          hookType: 'decision',
+          toolName: 'Bash',
+          reason: '危险命令：rm -rf',
+          // 完整输出绝不能进投影，单行决策摘要才行
+          message: '危险命令：rm -rf\n完整的脚本输出原文',
+        },
+      ],
+    });
+
+    const hookNode = enriched.turns[0]?.nodes.find((node) => node.turnTimeline?.kind === 'hook_activity');
+    expect(hookNode?.turnTimeline?.hookActivity?.items[0]?.reason).toBe('危险命令：rm -rf');
+    expect(JSON.stringify(hookNode)).not.toContain('完整的脚本输出原文');
+  });
+
+  it('projects a running hook batch even before any trigger lands', () => {
+    const enriched = buildTurnExecutionClarityProjection({
+      projection: {
+        sessionId: 'session-hooks',
+        activeTurnIndex: -1,
+        turns: [
+          {
+            turnNumber: 1,
+            turnId: 'turn-1',
+            status: 'streaming',
+            startTime: 100,
+            nodes: [
+              { id: 'user-1', type: 'user', content: '跑一下', timestamp: 100 },
+              { id: 'runtime-turn-1-text', type: 'assistant_text', content: 'working', timestamp: 150 },
+            ],
+          },
+        ],
+      },
+      capabilities: { skills: [], connectors: [], mcpServers: [] },
+      launchRequests: [],
+      swarmEvents: [],
+      routingEvents: [],
+      hookEvents: [],
+      hookRunning: {
+        timestamp: 140,
+        event: 'PreToolUse',
+        names: ['命令门禁'],
+        turnId: 'runtime-turn-1',
+      },
+    });
+
+    const hookNode = enriched.turns[0]?.nodes.find((node) => node.turnTimeline?.kind === 'hook_activity');
+    expect(hookNode?.turnTimeline?.hookActivity?.items).toEqual([]);
+    expect(hookNode?.turnTimeline?.hookActivity?.running).toEqual({
+      event: 'PreToolUse',
+      names: ['命令门禁'],
+    });
+  });
+
   it('projects skill trigger and instruction write activity into the current turn', () => {
     const enriched = buildTurnExecutionClarityProjection({
       projection: {
@@ -1003,7 +1091,7 @@ describe('buildTurnExecutionClarityProjection', () => {
 
     const skillNode = enriched.turns[0]?.nodes.find((node) => node.turnTimeline?.kind === 'skill_activity');
 
-    expect(skillNode?.turnTimeline?.skillActivity?.summary).toBe('Skill 触发 1 · 写入 1');
+    expect(skillNode?.turnTimeline?.skillActivity?.summary).toBe('Skill 触发了 lark-doc skill；lark-doc skill 已写入');
     expect(skillNode?.turnTimeline?.skillActivity?.items.map((item) => item.action)).toEqual([
       'triggered',
       'written',

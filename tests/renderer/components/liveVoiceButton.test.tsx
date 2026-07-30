@@ -71,7 +71,7 @@ describe('LiveVoiceButton', () => {
 
     fireEvent.click(screen.getByText(zh.voice.live.noKeyAction));
     expect(bridgeMock.dial).not.toHaveBeenCalled();
-    expect(appStoreMock.openSettingsTab).toHaveBeenCalledWith('voiceLive');
+    expect(appStoreMock.openSettingsTab).toHaveBeenCalledWith('voiceModel');
   });
 
   it('通话进行中不渲染（VoiceChrome 接管底栏）', () => {

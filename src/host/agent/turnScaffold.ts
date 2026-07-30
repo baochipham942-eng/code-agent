@@ -12,29 +12,8 @@
 // 角色资料块、通话钳档告知同理，只是没被抓现行。
 //
 // 所以标签定义与拆包收在这一个文件里：谁拼的谁负责拆，别让两处各写一遍正则。
+// 实现 2026-07-29 挪到 shared/utils/turnScaffold（renderer 展示侧也要拆包），
+// 这里保留 re-export，host 侧既有 import 路径不变。
 // ============================================================================
 
-const USER_REQUEST_OPEN = '<user_request>';
-const USER_REQUEST_CLOSE = '</user_request>';
-
-/** 把系统上下文拼在前面，用户原话用 <user_request> 包住。空上下文原样返回。 */
-export function wrapWithTurnSystemContext(blocks: string[], content: string): string {
-  if (blocks.length === 0) return content;
-  return `${blocks.join('\n\n')}\n\n${USER_REQUEST_OPEN}\n${content}\n${USER_REQUEST_CLOSE}`;
-}
-
-/**
- * 取回用户原话。没有包装（绝大多数轮）时原样返回——判据是「有没有这层包装」，
- * 不是「有没有系统上下文」，所以对没走 turnSystemContext 的路径零影响。
- *
- * 判据钉在「整条消息**以结束标签收尾**」：包装总是把结束标签放在最末一个字符上。
- * 用户原话里出现同名标签是可能的（他在问这个标签怎么用），按「首个开始标签 + 末尾结束标签」
- * 取中间那段，才不会把他的话截断——这条被测试钉住。
- */
-export function extractUserRequest(message: string): string {
-  const trimmed = message.trimEnd();
-  if (!trimmed.endsWith(USER_REQUEST_CLOSE)) return message;
-  const open = trimmed.indexOf(USER_REQUEST_OPEN);
-  if (open === -1) return message;
-  return trimmed.slice(open + USER_REQUEST_OPEN.length, trimmed.length - USER_REQUEST_CLOSE.length).trim();
-}
+export { wrapWithTurnSystemContext, extractUserRequest } from '../../shared/utils/turnScaffold';

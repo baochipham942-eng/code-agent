@@ -12,6 +12,7 @@ import {
   normalizeRoutingResolvedPayload,
   normalizeModelDecisionPayload,
   normalizeModelFallbackPayload,
+  normalizeHookStartedData,
   normalizeHookTriggerData,
 } from '@renderer/hooks/agent/effects/streamEventNormalizers';
 
@@ -580,7 +581,6 @@ describe('normalizeHookTriggerData', () => {
         sources: ['global', 'project', 'bogus'],
         hookType: 'decision',
         errorCount: 1,
-        message: 'blocked',
         sessionId: 's',
         turnId: 't',
         toolName: 'Bash',
@@ -596,7 +596,81 @@ describe('normalizeHookTriggerData', () => {
       sources: ['global', 'project'],
       hookType: 'decision',
       errorCount: 1,
-      message: 'blocked',
+      sessionId: 's',
+      turnId: 't',
+      toolName: 'Bash',
+      matcher: '*',
+    });
+  });
+
+  it('message 不进渲染侧（纵深防御）：完整输出被丢弃，只留单行决策摘要 reason', () => {
+    const result = normalizeHookTriggerData({
+      ...valid,
+      action: 'block',
+      message: '危险命令：rm -rf\n完整的脚本输出原文，可能带整份记忆索引',
+      reason: '危险命令：rm -rf',
+    });
+
+    expect(result).toEqual({
+      timestamp: 1,
+      event: 'PreToolUse',
+      action: 'block',
+      durationMs: 12,
+      hookCount: 2,
+      modified: false,
+      sources: [],
+      hookType: 'observer',
+      reason: '危险命令：rm -rf',
+    });
+    expect(JSON.stringify(result)).not.toContain('完整的脚本输出原文');
+  });
+
+  it('透传 names 与 reason（决策原因摘要要能上屏）', () => {
+    expect(
+      normalizeHookTriggerData({
+        ...valid,
+        action: 'block',
+        names: ['命令门禁', 42, '审计'],
+        reason: '危险命令：rm -rf',
+      }),
+    ).toEqual({
+      timestamp: 1,
+      event: 'PreToolUse',
+      action: 'block',
+      durationMs: 12,
+      hookCount: 2,
+      modified: false,
+      sources: [],
+      hookType: 'observer',
+      names: ['命令门禁', '审计'],
+      reason: '危险命令：rm -rf',
+    });
+  });
+});
+
+describe('normalizeHookStartedData', () => {
+  it('非对象或缺必填返回 null', () => {
+    expect(normalizeHookStartedData(null)).toBeNull();
+    expect(normalizeHookStartedData('x')).toBeNull();
+    expect(normalizeHookStartedData({ event: 'PreToolUse' })).toBeNull();
+    expect(normalizeHookStartedData({ timestamp: 1 })).toBeNull();
+  });
+
+  it('合法输入保留事件名与可选字段，过滤非字符串 names', () => {
+    expect(
+      normalizeHookStartedData({
+        timestamp: 1,
+        event: 'PreToolUse',
+        names: ['命令门禁', 7],
+        sessionId: 's',
+        turnId: 't',
+        toolName: 'Bash',
+        matcher: '*',
+      }),
+    ).toEqual({
+      timestamp: 1,
+      event: 'PreToolUse',
+      names: ['命令门禁'],
       sessionId: 's',
       turnId: 't',
       toolName: 'Bash',

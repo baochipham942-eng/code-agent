@@ -7,6 +7,7 @@
 //
 // actions:
 // - list            -> 项目列表（{ includeArchived? }）
+// - create          -> 显式创建项目（{ name, workspacePath?, description? }）
 // - detail          -> 项目详情（project + goals + roles + sessionIds）
 // - rename          -> 改名（{ projectId, name }）
 // - setDescription  -> 改描述（{ projectId, description? }）
@@ -56,6 +57,11 @@ interface ListPayload {
   spacesOnly?: boolean;
 }
 type CreateSpacePayload = Partial<CreateSpaceInput>;
+interface CreatePayload {
+  name?: string;
+  workspacePath?: string | null;
+  description?: string;
+}
 interface DetailPayload {
   projectId?: string;
 }
@@ -291,6 +297,20 @@ export function registerProjectHandlers(ipcMain: IpcMain): void {
           return result
             ? { success: true, data: result }
             : notFound('project not found');
+        }
+
+        case 'create': {
+          const { name, workspacePath, description } = (payload ?? {}) as CreatePayload;
+          if (!name?.trim()) return invalid('name is required');
+          const created = await svc.createProject(
+            {
+              name: name.trim(),
+              workspacePath: typeof workspacePath === 'string' ? workspacePath : null,
+              description: typeof description === 'string' ? description : undefined,
+            },
+            now,
+          );
+          return { success: true, data: created };
         }
 
         case 'detail': {

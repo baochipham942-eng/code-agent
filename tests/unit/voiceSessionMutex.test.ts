@@ -3,7 +3,12 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { EventEmitter } from 'events';
 import { isVoiceInputMessage, type Message } from '../../src/shared/contract/message';
 import type { VoiceEvent, VoiceTransport, VoiceWorkItem } from '../../src/shared/contract/voice';
-import { QWEN_OMNI_REALTIME_MODEL } from '../../src/shared/constants/voice';
+import { QWEN_OMNI_REALTIME_MODEL, VOICE_END_CALL_GOODBYE_TIMEOUT_MS, VOICE_TRANSCRIPT_MERGE_WINDOW_MS, VOICE_WS_CLOSE_TERMINAL } from '../../src/shared/constants/voice';
+
+const vocabulary = vi.hoisted(() => ({ block: '' }));
+vi.mock('../../src/host/services/voice/voiceVocabulary', () => ({
+  buildVocabularyBlock: () => vocabulary.block,
+}));
 
 const close = vi.fn(async () => undefined);
 const sendAudio = vi.fn();
@@ -22,9 +27,11 @@ const connect = vi.fn(async (input: Parameters<VoiceTransport['connect']>[0]) =>
 });
 
 vi.mock('../../src/host/services/voice/qwenOmniTransport', () => ({ qwenOmniTransport: { id: 'qwen-omni', connect } }));
-vi.mock('../../src/host/services/media/imageGenerationService', () => ({ getDashscopeApiKey: () => 'test-key' }));
+const dashscopeKey = vi.hoisted(() => ({ value: 'test-key' }));
+vi.mock('../../src/host/services/media/imageGenerationService', () => ({ getDashscopeApiKey: () => dashscopeKey.value }));
+const updateMessage = vi.fn(async (_messageId: string, _updates: Partial<Message>) => undefined);
 vi.mock('../../src/host/services/infra/sessionManager', () => ({
-  getSessionManager: () => ({ addMessageToSession, patchSessionMetadata, getSession }),
+  getSessionManager: () => ({ addMessageToSession, patchSessionMetadata, getSession, updateMessage }),
 }));
 const voiceLogger = vi.hoisted(() => ({
   info: vi.fn(),
@@ -61,11 +68,6 @@ vi.mock('../../src/host/hooks', () => ({
   }),
 }));
 
-// 挂断收尾里「谁先谁后」是跨线不变量，不能只靠注释守：渲染侧的摘要卡补拉窗口钉在
-// 「排水窗 + 500ms」上，补派（flushVoiceTail）要走 buildRoleContextBlock 这类上百毫秒的
-// 准备工作——它一旦排到摘要前面，就会把摘要挤出那个窗口，刚修好的「摘要卡延迟」原样复发。
-// 所以这里只替换 flushVoiceTail 一个导出，其余走真实实现，用于记录落地顺序。
-const teardownOrder: string[] = [];
 const voiceDispatchProbe = vi.hoisted(() => ({
   narrate: null as null | ((narration: {
     workItemId: string;
@@ -74,11 +76,8 @@ const voiceDispatchProbe = vi.hoisted(() => ({
     summary: string;
   }) => void),
   fail: null as null | ((item: VoiceWorkItem) => void),
+  work: null as null | ((item: VoiceWorkItem) => void),
 }));
-const flushVoiceTailSpy = vi.fn(async () => {
-  teardownOrder.push('tail-flush');
-  return false;
-});
 vi.mock('../../src/host/services/voice/voiceAgentCoordinator', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/host/services/voice/voiceAgentCoordinator')>();
   return {
@@ -86,9 +85,9 @@ vi.mock('../../src/host/services/voice/voiceAgentCoordinator', async (importOrig
     beginVoiceDispatch: (binding: Parameters<typeof actual.beginVoiceDispatch>[0]) => {
       voiceDispatchProbe.narrate = binding.onWorkNarration as typeof voiceDispatchProbe.narrate;
       voiceDispatchProbe.fail = binding.onWorkFailed;
+      voiceDispatchProbe.work = binding.onWorkItem;
       actual.beginVoiceDispatch(binding);
     },
-    flushVoiceTail: flushVoiceTailSpy,
   };
 });
 
@@ -100,11 +99,14 @@ class FakeClient extends EventEmitter {
   readyState = 1;
   sent: string[] = [];
   closed = false;
+  /** host 关的那一下带没带终止 close code；测试自己 close() 时是 undefined（= 模拟断线）。 */
+  closeCode: number | undefined;
   send(data: unknown) {
     this.sent.push(typeof data === 'string' ? data : '<binary>');
   }
-  close() {
+  close(code?: number) {
     this.closed = true;
+    this.closeCode = code;
     this.readyState = 3;
     this.emit('close');
   }
@@ -130,6 +132,7 @@ describe('voiceSessionService 互斥与挂断', () => {
     voiceDispatchProbe.fail = null;
     addMessageToSession.mockClear();
     lastOnEvent = null;
+    vocabulary.block = '';
   });
 
   // 批 H 起客户端断开只进宽限窗（不再等于挂断），残留会话会污染下一个用例。
@@ -221,6 +224,38 @@ describe('voiceSessionService 互斥与挂断', () => {
     again.close();
   });
 
+  // 2026-07-30 真机：模型 end_call 正常挂断 2 秒后 renderer 自动重连出一通新电话
+  // （16 秒空通话、通话条不落、计时继续走）。根因是 host 主动结束与网络抖动关的 WS
+  // 长得一模一样。这里逐条钉 host 侧终态出口——漏掉任何一条都会原样复发。
+  it('host 侧终态关闭一律带终止 close code（renderer 据此不进重连宽限窗）', async () => {
+    // ① teardown（model-end-call / watchdog / 上游死 / client-end 共用这一个出口）
+    const call = new FakeClient();
+    await attachVoiceClient(call as never, 'session-1');
+    lastOnEvent?.({ type: 'error', code: 'UPSTREAM_ERROR', message: '上游炸了' });
+    await vi.waitFor(() => expect(call.closeCode).toBe(VOICE_WS_CLOSE_TERMINAL), { timeout: 4000 });
+
+    // ② 会话互斥抢占
+    const holder = new FakeClient();
+    await attachVoiceClient(holder as never, 'session-1');
+    const rejected = new FakeClient();
+    await attachVoiceClient(rejected as never, 'session-2');
+    expect(rejected.closeCode).toBe(VOICE_WS_CLOSE_TERMINAL);
+    await endActiveVoiceSession();
+
+    // ③ 上游建连失败
+    connect.mockRejectedValueOnce(new Error('handshake refused'));
+    const upstreamDead = new FakeClient();
+    await attachVoiceClient(upstreamDead as never, 'session-1');
+    expect(upstreamDead.closeCode).toBe(VOICE_WS_CLOSE_TERMINAL);
+
+    // ④ 缺 provider key
+    dashscopeKey.value = '';
+    const unconfigured = new FakeClient();
+    await attachVoiceClient(unconfigured as never, 'session-1');
+    expect(unconfigured.closeCode).toBe(VOICE_WS_CLOSE_TERMINAL);
+    dashscopeKey.value = 'test-key';
+  }, 15_000);
+
   it('二进制帧转发到上游，文本帧不当音频转发', async () => {
     const client = new FakeClient();
     await attachVoiceClient(client as never, 'session-1');
@@ -292,6 +327,9 @@ describe('voiceSessionService 互斥与挂断', () => {
     const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(startedAt);
     const client = new FakeClient();
     await attachVoiceClient(client as never, 'session-1');
+    // 这通电话得真说过话，否则按 A3 根本不该落摘要卡
+    lastOnEvent?.({ type: 'user.transcript', text: '你好', done: true });
+    await vi.waitFor(() => expect(addMessageToSession).toHaveBeenCalled());
     nowSpy.mockReturnValue(endedAt);
 
     client.emit('message', Buffer.from(JSON.stringify({ type: 'end' })), false);
@@ -316,24 +354,6 @@ describe('voiceSessionService 互斥与挂断', () => {
     nowSpy.mockRestore();
   });
 
-  it('摘要卡先落库，挂断补派排在它后面（别把摘要挤出渲染侧补拉窗口）', async () => {
-    teardownOrder.length = 0;
-    flushVoiceTailSpy.mockClear();
-    addMessageToSession.mockImplementation(async (_sessionId: string, message: Message) => {
-      if (message.metadata?.voiceCallSummary) teardownOrder.push('summary');
-      return undefined;
-    });
-    const client = new FakeClient();
-    await attachVoiceClient(client as never, 'session-1');
-
-    client.emit('message', Buffer.from(JSON.stringify({ type: 'end' })), false);
-
-    await vi.waitFor(() => {
-      expect(flushVoiceTailSpy).toHaveBeenCalled();
-    }, { timeout: 4000 });
-    expect(teardownOrder).toEqual(['summary', 'tail-flush']);
-    addMessageToSession.mockImplementation(async () => undefined);
-  });
 });
 
 describe('终态结论节制播报', () => {
@@ -515,6 +535,363 @@ describe('失败告知出口', () => {
   });
 });
 
+// ============================================================================
+// R5 · 连续用户字幕并入上一条。VAD 把一句话切成几轮，消息流里就成了一串碎片。
+// 合并是「落库后回头改上一条」，不是攒着晚点写——晚写会让近窗/挂断闸都晚看到。
+// ============================================================================
+describe('连续用户字幕合并（R5）', () => {
+  beforeEach(() => {
+    connect.mockClear();
+    close.mockClear();
+    addMessageToSession.mockClear();
+    updateMessage.mockClear();
+    lastOnEvent = null;
+  });
+
+  afterEach(async () => {
+    await endActiveVoiceSession();
+  });
+
+  function userMessages(): Message[] {
+    return addMessageToSession.mock.calls.map(([, m]) => m).filter((m) => m.role === 'user');
+  }
+
+  it('2 秒内的第二条 final 并进上一条，不新增消息', async () => {
+    const client = new FakeClient();
+    await attachVoiceClient(client as never, 'session-merge');
+
+    lastOnEvent?.({ type: 'user.transcript', text: '帮我看一下', done: true });
+    await vi.waitFor(() => expect(addMessageToSession).toHaveBeenCalledTimes(1));
+    lastOnEvent?.({ type: 'user.transcript', text: '这个文件', done: true });
+    await vi.waitFor(() => expect(updateMessage).toHaveBeenCalledTimes(1));
+
+    expect(userMessages()).toHaveLength(1);
+    expect(updateMessage.mock.calls[0][1].content).toBe('帮我看一下 这个文件');
+  });
+
+  it('中间隔了 assistant 字幕就不合并（那是新的一轮）', async () => {
+    const client = new FakeClient();
+    await attachVoiceClient(client as never, 'session-merge-turn');
+
+    lastOnEvent?.({ type: 'user.transcript', text: '帮我看一下', done: true });
+    await vi.waitFor(() => expect(addMessageToSession).toHaveBeenCalledTimes(1));
+    lastOnEvent?.({ type: 'assistant.transcript', text: '好的。', done: true });
+    await vi.waitFor(() => expect(addMessageToSession).toHaveBeenCalledTimes(2));
+    lastOnEvent?.({ type: 'user.transcript', text: '这个文件', done: true });
+    await vi.waitFor(() => expect(addMessageToSession).toHaveBeenCalledTimes(3));
+
+    expect(userMessages()).toHaveLength(2);
+    expect(updateMessage).not.toHaveBeenCalled();
+  });
+
+  it('超过合并窗就不合并', async () => {
+    const client = new FakeClient();
+    await attachVoiceClient(client as never, 'session-merge-window');
+    const base = Date.now();
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(base);
+    try {
+      lastOnEvent?.({ type: 'user.transcript', text: '帮我看一下', done: true });
+      await vi.waitFor(() => expect(addMessageToSession).toHaveBeenCalledTimes(1));
+      nowSpy.mockReturnValue(base + VOICE_TRANSCRIPT_MERGE_WINDOW_MS + 1);
+      lastOnEvent?.({ type: 'user.transcript', text: '这个文件', done: true });
+      await vi.waitFor(() => expect(addMessageToSession).toHaveBeenCalledTimes(2));
+
+      expect(userMessages()).toHaveLength(2);
+      expect(updateMessage).not.toHaveBeenCalled();
+    } finally {
+      nowSpy.mockRestore();
+    }
+  });
+
+  // 护栏：合并动的是消息流，不许动挂断闸的判定顺序（R2 的反悔就吃这条顺序）。
+  it('合并开着时 R2 反悔仍然成立，且挂断闸照常认挂断词', async () => {
+    const client = new FakeClient();
+    await attachVoiceClient(client as never, 'session-merge-hangup');
+
+    lastOnEvent?.({ type: 'user.transcript', text: '先这样吧拜拜', done: true });
+    // 等上一条真落库再说下一句：真机上两条 final 至少隔一个 VAD 静音窗，
+    // 落库早就完成了；不等的话合并会退化成「各落各的」（安全，但测的就不是合并了）。
+    await vi.waitFor(() => expect(addMessageToSession).toHaveBeenCalledTimes(1));
+    lastOnEvent?.({ type: 'speech.started' });
+    lastOnEvent?.({ type: 'response.done' });
+    expect(getActiveVoiceSessionId()).not.toBeNull();
+
+    // 这一条会被并进上一条（<2s），但反悔判定必须照样生效
+    lastOnEvent?.({ type: 'user.transcript', text: '不要挂断', done: true });
+    lastOnEvent?.({ type: 'response.done' });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(getActiveVoiceSessionId()).not.toBeNull();
+    expect(close).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(updateMessage).toHaveBeenCalledTimes(1));
+  });
+
+  it('合并后 transcriptCount 只算一条（消息没多，计数也不该多）', async () => {
+    const client = new FakeClient();
+    await attachVoiceClient(client as never, 'session-merge-count');
+
+    lastOnEvent?.({ type: 'user.transcript', text: '帮我看一下', done: true });
+    await vi.waitFor(() => expect(addMessageToSession).toHaveBeenCalledTimes(1));
+    lastOnEvent?.({ type: 'user.transcript', text: '这个文件', done: true });
+    await vi.waitFor(() => expect(updateMessage).toHaveBeenCalledTimes(1));
+
+    client.emit('message', Buffer.from(JSON.stringify({ type: 'end' })), false);
+    await vi.waitFor(() => {
+      expect(addMessageToSession.mock.calls.some(([, m]) => Boolean(m.metadata?.voiceCallSummary))).toBe(true);
+    }, { timeout: 4000 });
+    const summary = addMessageToSession.mock.calls.find(([, m]) => Boolean(m.metadata?.voiceCallSummary));
+    expect(summary?.[1].metadata?.voiceCallSummary).toMatchObject({ transcriptCount: 1 });
+  }, 10_000);
+});
+
+// ============================================================================
+// R6 · 内部工具标签不当字幕（2026-07-30 真机：模型把 <end_call> 当话说了出来，
+// 又上屏又落库）。标签是暗号不是话。
+// ============================================================================
+describe('纯工具标签字幕不上屏不落库（R6）', () => {
+  beforeEach(() => {
+    connect.mockClear();
+    close.mockClear();
+    addMessageToSession.mockClear();
+    lastOnEvent = null;
+  });
+
+  afterEach(async () => {
+    await endActiveVoiceSession();
+  });
+
+  function assistantEvents(client: FakeClient): { text: string }[] {
+    return client.sent
+      .filter((entry) => entry !== '<binary>')
+      .map((entry) => JSON.parse(entry) as VoiceEvent)
+      .filter((event): event is Extract<VoiceEvent, { type: 'assistant.transcript' }> => event.type === 'assistant.transcript');
+  }
+
+  it('整条只有 <end_call>：不下发 renderer，也不落库', async () => {
+    const client = new FakeClient();
+    await attachVoiceClient(client as never, 'session-tool-tag');
+
+    lastOnEvent?.({ type: 'assistant.transcript', text: '<end_call>', done: true });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(assistantEvents(client)).toHaveLength(0);
+    expect(addMessageToSession.mock.calls.some(([, m]) => m.content.includes('end_call'))).toBe(false);
+  });
+
+  it('流式半截标签也压住（<end 到货时还看不出是整条标签）', async () => {
+    const client = new FakeClient();
+    await attachVoiceClient(client as never, 'session-tool-tag-stream');
+
+    lastOnEvent?.({ type: 'assistant.transcript', text: '<end', done: false });
+    lastOnEvent?.({ type: 'assistant.transcript', text: '_call>', done: false });
+
+    expect(assistantEvents(client)).toHaveLength(0);
+  });
+
+  it('标签后面接上正文就恢复下发，正文一个字不动', async () => {
+    const client = new FakeClient();
+    await attachVoiceClient(client as never, 'session-tool-tag-mixed');
+
+    lastOnEvent?.({ type: 'assistant.transcript', text: '<end_call>', done: false });
+    lastOnEvent?.({ type: 'assistant.transcript', text: ' 好的，这就去办', done: false });
+    lastOnEvent?.({ type: 'assistant.transcript', text: '<end_call> 好的，这就去办', done: true });
+    await vi.waitFor(() => expect(addMessageToSession).toHaveBeenCalled());
+
+    expect(assistantEvents(client).some((e) => e.text.includes('好的，这就去办'))).toBe(true);
+    expect(addMessageToSession.mock.calls.some(([, m]) => m.content === '<end_call> 好的，这就去办')).toBe(true);
+  });
+
+  it('挂断排水窗冲刷的半截缓冲若只有标签，同样不落库', async () => {
+    const client = new FakeClient();
+    await attachVoiceClient(client as never, 'session-tool-tag-drain');
+    lastOnEvent?.({ type: 'assistant.transcript', text: '<end_call>', done: false });
+
+    client.emit('message', Buffer.from(JSON.stringify({ type: 'end' })), false);
+    await vi.waitFor(() => expect(close).toHaveBeenCalled(), { timeout: 4000 });
+
+    expect(addMessageToSession.mock.calls.some(([, m]) => m.content.includes('end_call'))).toBe(false);
+  }, 10_000);
+});
+
+// ============================================================================
+// A3 · 空对话不落摘要卡（2026-07-30）。那通 16 秒空通话在消息流里留下一张
+// 「这通电话没有对话内容」——记录零内容的事不是记录，是噪音。
+// ============================================================================
+describe('空对话不出通话摘要卡（A3）', () => {
+  beforeEach(() => {
+    connect.mockClear();
+    // close 是「teardown 走完了」的路标，上一条用例的收尾会污染它，必须清
+    close.mockClear();
+    addMessageToSession.mockClear();
+    voiceDispatchProbe.work = null;
+    lastOnEvent = null;
+  });
+
+  afterEach(async () => {
+    await endActiveVoiceSession();
+  });
+
+  function summaries(): Message[] {
+    return addMessageToSession.mock.calls
+      .map(([, message]) => message)
+      .filter((message) => Boolean(message.metadata?.voiceCallSummary));
+  }
+
+  it('零字幕通话挂断：不落摘要卡', async () => {
+    const client = new FakeClient();
+    await attachVoiceClient(client as never, 'session-empty');
+
+    client.emit('message', Buffer.from(JSON.stringify({ type: 'end' })), false);
+    // 等 teardown 真走过落卡那一步再断言：active 在排水窗**之前**就置空了，
+    // 拿它当路标会在摘要写入前就判「没落卡」（假绿）。upstream.close() 在落卡之后。
+    await vi.waitFor(() => expect(close).toHaveBeenCalled(), { timeout: 4000 });
+
+    expect(summaries()).toHaveLength(0);
+  }, 10_000);
+
+  it('有字幕就照落，且 transcriptCount 数得对', async () => {
+    const client = new FakeClient();
+    await attachVoiceClient(client as never, 'session-with-transcript');
+    lastOnEvent?.({ type: 'user.transcript', text: '帮我看一下这个文件', done: true });
+    lastOnEvent?.({ type: 'assistant.transcript', text: '好的，我看看。', done: true });
+    await vi.waitFor(() => expect(addMessageToSession).toHaveBeenCalledTimes(2));
+
+    client.emit('message', Buffer.from(JSON.stringify({ type: 'end' })), false);
+    await vi.waitFor(() => expect(summaries()).toHaveLength(1), { timeout: 4000 });
+
+    expect(summaries()[0].metadata?.voiceCallSummary).toMatchObject({ transcriptCount: 2 });
+  }, 10_000);
+
+  // 理论上派活必有字幕，但真出现「零字幕却派过活」时保守落卡：工作项就是那通电话的产物。
+  it('零字幕但派过活：仍落摘要卡', async () => {
+    const client = new FakeClient();
+    await attachVoiceClient(client as never, 'session-work-only');
+    voiceDispatchProbe.work?.({ id: 'work-1', title: '建个文件', status: 'queued' });
+
+    client.emit('message', Buffer.from(JSON.stringify({ type: 'end' })), false);
+    await vi.waitFor(() => expect(summaries()).toHaveLength(1), { timeout: 4000 });
+
+    expect(summaries()[0].metadata?.voiceCallSummary).toMatchObject({ transcriptCount: 0, workItemCount: 1 });
+  }, 10_000);
+});
+
+// ============================================================================
+// A1 · 挂断确定性闸（2026-07-30）。模型答「好的，通话结束」却不调 end_call 已四次
+// 复现、prompt 三连败——判据必须打在「电话真挂了」，不是「匹配器返回 true」。
+// ============================================================================
+describe('挂断确定性闸（A1）', () => {
+  beforeEach(() => {
+    connect.mockClear();
+    close.mockClear();
+    lastOnEvent = null;
+  });
+
+  afterEach(async () => {
+    await endActiveVoiceSession();
+  });
+
+  it('用户 final 字幕命中挂断词：等这一轮说完才挂，且带终止 close code', async () => {
+    const client = new FakeClient();
+    await attachVoiceClient(client as never, 'session-hangup');
+
+    lastOnEvent?.({ type: 'user.transcript', text: '好了，挂断吧', done: true });
+    // 告别还没说完，不许当场掐掉
+    expect(getActiveVoiceSessionId()).not.toBeNull();
+
+    lastOnEvent?.({ type: 'response.done' });
+
+    await vi.waitFor(() => expect(getActiveVoiceSessionId()).toBeNull(), { timeout: 4000 });
+    await vi.waitFor(() => expect(client.closeCode).toBe(VOICE_WS_CLOSE_TERMINAL), { timeout: 4000 });
+    expect(close).toHaveBeenCalled();
+  }, 10_000);
+
+  it('否定式不触发：「别挂断」之后 response.done 也不挂', async () => {
+    const client = new FakeClient();
+    await attachVoiceClient(client as never, 'session-hangup-negated');
+
+    lastOnEvent?.({ type: 'user.transcript', text: '先别挂断', done: true });
+    lastOnEvent?.({ type: 'response.done' });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(getActiveVoiceSessionId()).not.toBeNull();
+    expect(close).not.toHaveBeenCalled();
+  });
+
+  it('assistant 说同一个词不触发（闸只看用户说的话）', async () => {
+    const client = new FakeClient();
+    await attachVoiceClient(client as never, 'session-hangup-assistant');
+
+    lastOnEvent?.({ type: 'assistant.transcript', text: '好的，通话结束，拜拜', done: true });
+    lastOnEvent?.({ type: 'response.done' });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(getActiveVoiceSessionId()).not.toBeNull();
+    expect(close).not.toHaveBeenCalled();
+  });
+
+  // R2（2026-07-30 真机 14:39:42）：「先这样吧拜拜」之后紧跟「不要挂断」，电话照样挂了。
+  // 武装不等于判决——告别窗里的新一句话就是反悔的机会。
+  it('武装后用户反悔：新的非挂断字幕解除武装，response.done 不再挂断', async () => {
+    const client = new FakeClient();
+    await attachVoiceClient(client as never, 'session-hangup-recant');
+
+    lastOnEvent?.({ type: 'user.transcript', text: '先这样吧拜拜', done: true });
+    // barge-in：用户抢话，这一轮的 response.done 可能抢在他的字幕前面到
+    lastOnEvent?.({ type: 'speech.started' });
+    lastOnEvent?.({ type: 'response.done' });
+    expect(getActiveVoiceSessionId()).not.toBeNull();
+
+    lastOnEvent?.({ type: 'user.transcript', text: '不要挂断', done: true });
+    lastOnEvent?.({ type: 'response.done' });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(getActiveVoiceSessionId()).not.toBeNull();
+    expect(close).not.toHaveBeenCalled();
+  });
+
+  it('反悔后兜底定时器也撤掉（不能 5 秒后自己挂了）', async () => {
+    vi.useFakeTimers();
+    try {
+      const client = new FakeClient();
+      await attachVoiceClient(client as never, 'session-hangup-recant-timer');
+      lastOnEvent?.({ type: 'user.transcript', text: '拜拜', done: true });
+      lastOnEvent?.({ type: 'user.transcript', text: '等一下我还有事要问', done: true });
+
+      await vi.advanceTimersByTimeAsync(VOICE_END_CALL_GOODBYE_TIMEOUT_MS + 1000);
+
+      expect(getActiveVoiceSessionId()).not.toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('武装后不说话：兜底定时器照旧挂断', async () => {
+    vi.useFakeTimers();
+    try {
+      const client = new FakeClient();
+      await attachVoiceClient(client as never, 'session-hangup-timeout');
+      lastOnEvent?.({ type: 'user.transcript', text: '拜拜', done: true });
+
+      await vi.advanceTimersByTimeAsync(VOICE_END_CALL_GOODBYE_TIMEOUT_MS + 1000);
+
+      expect(getActiveVoiceSessionId()).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('未 done 的用户字幕不触发（说了一半的话不算数）', async () => {
+    const client = new FakeClient();
+    await attachVoiceClient(client as never, 'session-hangup-partial');
+
+    lastOnEvent?.({ type: 'user.transcript', text: '挂断', done: false });
+    lastOnEvent?.({ type: 'response.done' });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(getActiveVoiceSessionId()).not.toBeNull();
+  });
+});
+
 // D4 的生产者接线：钳制函数写得再对，没人置位就是「建好不接电」。
 // 这一条钉的是 attachVoiceClient/teardown 真的动了通话态标记。
 describe('通话态标记（D4 生产者）', () => {
@@ -635,10 +1012,29 @@ describe('焦点上报刷新 instructions（批 H）', () => {
   beforeEach(() => {
     updateInstructions.mockClear();
     connect.mockClear();
+    vocabulary.block = '';
   });
 
   afterEach(async () => {
     await endActiveVoiceSession();
+  });
+
+  it('初始 session.update 带上非空口述词表', async () => {
+    vocabulary.block = '[口述词表]\n- a.txt';
+    const client = new FakeClient();
+
+    await attachVoiceClient(client as never, 'session-1');
+
+    expect(connect.mock.calls[0][0].config.instructions).toContain('[口述词表]');
+    expect(connect.mock.calls[0][0].config.instructions).toContain('- a.txt');
+  });
+
+  it('空词表不污染初始 instructions', async () => {
+    const client = new FakeClient();
+
+    await attachVoiceClient(client as never, 'session-1');
+
+    expect(connect.mock.calls[0][0].config.instructions).not.toContain('口述词表');
   });
 
   it('焦点变化推一次 session.update，且内容里带得上文件路径', async () => {
@@ -652,6 +1048,21 @@ describe('焦点上报刷新 instructions（批 H）', () => {
 
     expect(updateInstructions).toHaveBeenCalledTimes(1);
     expect(updateInstructions.mock.calls[0][0]).toContain('/repo/a.ts');
+  });
+
+  it('焦点增量 session.update 同样带上口述词表', async () => {
+    vocabulary.block = '[口述词表]\n- a.txt';
+    const client = new FakeClient();
+    await attachVoiceClient(client as never, 'session-1');
+
+    client.emit('message', Buffer.from(JSON.stringify({
+      type: 'focus',
+      context: { filePath: '/repo/a.ts' },
+    })), false);
+
+    expect(updateInstructions).toHaveBeenCalledTimes(1);
+    expect(updateInstructions.mock.calls[0][0]).toContain('[口述词表]');
+    expect(updateInstructions.mock.calls[0][0]).toContain('- a.txt');
   });
 
   it('同一份焦点重复上报不再推（上游每次刷新都有代价）', async () => {
@@ -731,6 +1142,8 @@ describe('通话生命周期 hook', () => {
     const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(startedAt);
     const client = new FakeClient();
     await attachVoiceClient(client as never, 'session-hook');
+    lastOnEvent?.({ type: 'user.transcript', text: '你好', done: true });
+    await vi.waitFor(() => expect(addMessageToSession).toHaveBeenCalled());
     nowSpy.mockReturnValue(startedAt + 75_000);
 
     client.emit('message', Buffer.from(JSON.stringify({ type: 'end' })), false);

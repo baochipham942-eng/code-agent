@@ -9,7 +9,7 @@
 // ============================================================================
 
 import { createLogger } from '../services/infra/logger';
-import { DEFAULT_MODELS, MODEL_API_ENDPOINTS, MODEL_FEATURES, getProviderEndpoint } from '../../shared/constants';
+import { DEFAULT_MODELS, MODEL_API_ENDPOINTS, MODEL_FEATURES, QUICK_MODEL_AUTH_BLACKLIST_MS, getProviderEndpoint } from '../../shared/constants';
 import { getConfigService } from '../services/core/configService';
 import { getProviderLimiter } from './concurrencyLimiter';
 import type { ModelProvider } from '../../shared/contract';
@@ -53,8 +53,30 @@ interface QuickModelConfig {
   disableThinking: boolean;
 }
 
-let quickConfig: QuickModelConfig | null = null;
 let quickModelAuthFailure: QuickModelAuthFailure | null = null;
+
+// 鉴权失败拉黑表：key = provider:model:key指纹（指纹=长度+末4位，不存整 key）。
+// 「有一个失效的 key」不能比「没有 key」更糟：401/403 后该候选在窗口内不再入选，
+// 解析降到下一级；换 key 指纹即变 → 立即恢复重试。
+const quickAuthBlacklist = new Map<string, number>();
+// 每次调用都重解析（getSettings 是内存读，成本远小于随后的 LLM 请求），
+// 只在解析结果变化时打 info，恒定结果不刷屏。
+let lastResolvedLogKey: string | null = null;
+
+function blacklistKey(provider: string, model: string, apiKey: string): string {
+  return `${provider}:${model}:${apiKey.length}:${apiKey.slice(-4)}`;
+}
+
+function isAuthBlacklisted(provider: string, model: string, apiKey: string): boolean {
+  const key = blacklistKey(provider, model, apiKey);
+  const at = quickAuthBlacklist.get(key);
+  if (at === undefined) return false;
+  if (Date.now() - at >= QUICK_MODEL_AUTH_BLACKLIST_MS) {
+    quickAuthBlacklist.delete(key);
+    return false;
+  }
+  return true;
+}
 
 export function getQuickModelAuthFailure(): QuickModelAuthFailure | null {
   return quickModelAuthFailure ? { ...quickModelAuthFailure } : null;
@@ -97,6 +119,7 @@ function resolveRole(provider: string, model: string): QuickModelConfig | null {
     ? cfg.getZhipuOfficialKey()
     : cfg.getApiKey(provider as ModelProvider);
   if (!apiKey) return null;
+  if (isAuthBlacklisted(provider, model, apiKey)) return null;
 
   const baseUrl = provider === 'zhipu'
     ? MODEL_API_ENDPOINTS.zhipuOfficial
@@ -114,8 +137,6 @@ function resolveRole(provider: string, model: string): QuickModelConfig | null {
  *  4) 都拿不到 → null（调用方：intent 走关键词兜底，其余 quick 任务 skip）
  */
 function initializeQuickModel(): QuickModelConfig | null {
-  if (quickConfig) return quickConfig;
-
   let resolved: QuickModelConfig | null = null;
   try {
     const routing = getConfigService().getSettings().models.routing;
@@ -127,7 +148,7 @@ function initializeQuickModel(): QuickModelConfig | null {
 
   if (!resolved) {
     const apiKey = process.env.ZHIPU_OFFICIAL_API_KEY || process.env.ZHIPU_API_KEY;
-    if (apiKey) {
+    if (apiKey && !isAuthBlacklisted('zhipu', DEFAULT_MODELS.quick, apiKey)) {
       resolved = {
         apiKey,
         baseUrl: MODEL_API_ENDPOINTS.zhipuOfficial,
@@ -140,16 +161,20 @@ function initializeQuickModel(): QuickModelConfig | null {
 
   if (!resolved) {
     logger.warn('Quick model unavailable: no fast-model key, no main-model key, no Zhipu key');
+    lastResolvedLogKey = null;
     return null;
   }
 
-  quickConfig = resolved;
-  logger.info('Quick model resolved', {
-    provider: resolved.provider,
-    model: resolved.model,
-    disableThinking: resolved.disableThinking,
-  });
-  return quickConfig;
+  const logKey = `${resolved.provider}:${resolved.model}`;
+  if (logKey !== lastResolvedLogKey) {
+    lastResolvedLogKey = logKey;
+    logger.info('Quick model resolved', {
+      provider: resolved.provider,
+      model: resolved.model,
+      disableThinking: resolved.disableThinking,
+    });
+  }
+  return resolved;
 }
 
 /**
@@ -197,6 +222,8 @@ export async function quickTask(prompt: string, maxTokens?: number): Promise<Qui
 
     if (!response.ok) {
       if (response.status === 401 || response.status === 403) {
+        // 拉黑该候选（本 key 指纹），下一次调用重解析时自动降到下一级
+        quickAuthBlacklist.set(blacklistKey(config.provider, config.model, config.apiKey), Date.now());
         quickModelAuthFailure = {
           provider: config.provider,
           model: config.model,
@@ -325,7 +352,9 @@ Provide only the extracted/transformed result, nothing else.`;
  * Call this when user settings change
  */
 export function resetQuickModel(): void {
-  quickConfig = null;
+  quickAuthBlacklist.clear();
+  quickModelAuthFailure = null;
+  lastResolvedLogKey = null;
   logger.debug('Quick model configuration reset');
 }
 

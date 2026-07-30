@@ -109,4 +109,54 @@ describe('findMermaidSelectable', () => {
       undefined,
     ));
   });
+
+  it('无会话上下文（未注册发送通道）时标注入口隐藏：点选不弹编辑栏、节点无可点手势', async () => {
+    const code = 'flowchart TD\nA[鉴权] --> B[登录]';
+    mocks.renderMermaid.mockResolvedValue({
+      svg: `<svg xmlns="${SVG_NS}" viewBox="0 0 100 50"><g class="node"><text>鉴权</text></g></svg>`,
+    });
+    useAppStore.setState({ language: 'en', isProcessing: false });
+    // 刻意不 register：模拟无 thread/会话上下文
+    vi.stubGlobal('PointerEvent', MouseEvent);
+
+    const { container } = render(React.createElement(MermaidDiagram, { code }));
+    const node = await waitFor(() => {
+      const found = container.querySelector('g.node');
+      expect(found).not.toBeNull();
+      return found as SVGGElement;
+    });
+    expect(node.style.cursor).not.toBe('pointer');
+
+    const viewport = node.closest('div[title]') as HTMLDivElement;
+    viewport.setPointerCapture = vi.fn();
+    fireEvent.pointerDown(node, { button: 0, pointerId: 1, clientX: 10, clientY: 10 });
+    fireEvent.pointerUp(node, { button: 0, pointerId: 1, clientX: 10, clientY: 10 });
+
+    expect(screen.queryByPlaceholderText('Describe the change, e.g. "split into two steps"')).toBeNull();
+  });
+
+  it('注册发送通道后点选节点弹出编辑栏', async () => {
+    const code = 'flowchart TD\nA[鉴权] --> B[登录]';
+    mocks.renderMermaid.mockResolvedValue({
+      svg: `<svg xmlns="${SVG_NS}" viewBox="0 0 100 50"><g class="node"><text>鉴权</text></g></svg>`,
+    });
+    useAppStore.setState({ language: 'en', isProcessing: false });
+    useMessageActionStore.getState().register(vi.fn(), () => []);
+    vi.stubGlobal('PointerEvent', MouseEvent);
+
+    const { container } = render(React.createElement(MermaidDiagram, { code }));
+    const node = await waitFor(() => {
+      const found = container.querySelector('g.node');
+      expect(found).not.toBeNull();
+      return found as SVGGElement;
+    });
+    expect(node.style.cursor).toBe('pointer');
+
+    const viewport = node.closest('div[title]') as HTMLDivElement;
+    viewport.setPointerCapture = vi.fn();
+    fireEvent.pointerDown(node, { button: 0, pointerId: 1, clientX: 10, clientY: 10 });
+    fireEvent.pointerUp(node, { button: 0, pointerId: 1, clientX: 10, clientY: 10 });
+
+    expect(screen.getByPlaceholderText('Describe the change, e.g. "split into two steps"')).toBeTruthy();
+  });
 });

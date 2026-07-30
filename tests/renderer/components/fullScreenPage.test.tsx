@@ -51,6 +51,6 @@ describe('FullScreenPage 外壳契约', () => {
 
   it('返回按钮热区不小于 32px 高（参照 Codex 顶栏按钮）', () => {
     render(<FullScreenPageHeader icon={null} title="标题" onClose={() => {}} />);
-    expect(screen.getByTestId('full-screen-page-back').className).toContain('h-8');
+    expect(screen.getByTestId('full-screen-page-back').className).toContain('h-9');
   });
 });

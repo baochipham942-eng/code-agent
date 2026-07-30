@@ -269,7 +269,7 @@ export const SessionActionsMenu: React.FC = () => {
   }
   items.push({
     key: 'live-preview',
-    label: 'Live Preview…',
+    label: sam.livePreviewLabel,
     icon: <Play className="h-3.5 w-3.5" />,
     onClick: () => { close(); openDevServerLauncher(); },
   });

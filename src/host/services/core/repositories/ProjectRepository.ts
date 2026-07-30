@@ -580,6 +580,7 @@ export class ProjectRepository {
   backfillSessions(
     now: number,
     makeProjectRow: (workspacePath: string, key: string) => Project,
+    onSkipped?: (input: { sessionId: string; reason: string }) => void,
   ): number {
     const orphans = this.db
       .prepare(
@@ -612,6 +613,17 @@ export class ProjectRepository {
     const run = this.db.transaction(() => {
       let count = 0;
       const keyCache = new Map<string, string>(); // workspacePath → projectId
+      const assignForBackfill = (sessionId: string, projectId: string): boolean => {
+        try {
+          this.assignSessionProject(sessionId, projectId);
+          return true;
+        } catch (error) {
+          const reason = error instanceof Error ? error.message : String(error);
+          if (!reason.includes('PROJECT_BOUNDARY_IMMUTABLE')) throw error;
+          onSkipped?.({ sessionId, reason });
+          return false;
+        }
+      };
       for (const row of orphans) {
         const dir = ((row.working_directory as string) || (row.workspace as string) || '').trim();
         const cachedProjectId = keyCache.get(dir);
@@ -633,8 +645,7 @@ export class ProjectRepository {
           }
           keyCache.set(dir, projectId);
         }
-        this.assignSessionProject(row.id as string, projectId);
-        count++;
+        if (assignForBackfill(row.id as string, projectId)) count++;
       }
       // 第二趟：把有 wd 但冻在 UNSORTED 的会话重归到**已存在**的真实项目
       for (const row of strandedUnsorted) {
@@ -643,8 +654,7 @@ export class ProjectRepository {
         // 同事务内能查到 orphans 趟刚 upsert 的项目，无需借 keyCache
         const existing = this.getProjectByWorkspaceKey(getProjectKey(dir));
         if (existing && existing.id !== UNSORTED_PROJECT_ID) {
-          this.assignSessionProject(row.id as string, existing.id);
-          count++;
+          if (assignForBackfill(row.id as string, existing.id)) count++;
         }
       }
       return count;

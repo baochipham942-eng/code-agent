@@ -4,7 +4,6 @@ export {
   WorkbenchLabelStack,
   WorkbenchPill,
   WorkbenchReferenceRow,
-  WorkbenchSectionHeader,
   WorkbenchSectionLabel,
   WorkbenchSelectablePill,
 } from '../workbench/WorkbenchPrimitives';

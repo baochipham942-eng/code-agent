@@ -149,15 +149,18 @@ export async function retryTransientRemoteMCPConnection<T>(
     maxAttempts?: number;
     retryDelayMs?: number;
     onRetry?: (error: unknown, nextAttempt: number) => void;
+    signal?: AbortSignal;
   } = {},
 ): Promise<T> {
   const maxAttempts = Math.max(1, options.maxAttempts ?? REMOTE_MCP_CONNECT_MAX_ATTEMPTS);
   const retryDelayMs = Math.max(0, options.retryDelayMs ?? REMOTE_MCP_CONNECT_RETRY_DELAY_MS);
 
   for (let attemptNumber = 1; attemptNumber <= maxAttempts; attemptNumber += 1) {
+    options.signal?.throwIfAborted();
     try {
       return await attempt(attemptNumber);
     } catch (error) {
+      options.signal?.throwIfAborted();
       if (attemptNumber >= maxAttempts || !isRetryableRemoteMCPConnectionError(error)) {
         throw error;
       }
@@ -372,13 +375,28 @@ export async function connectWithTimeout(
   transport: Transport,
   config: MCPServerConfig,
   connectTimeout: number,
+  signal?: AbortSignal,
 ): Promise<void> {
   return new Promise<void>((resolve, reject) => {
     let isSettled = false;
+    const cleanup = () => {
+      clearTimeout(timeoutId);
+      signal?.removeEventListener('abort', handleAbort);
+    };
+    const handleAbort = () => {
+      if (isSettled) return;
+      isSettled = true;
+      cleanup();
+      void transport.close().catch(() => {});
+      reject(signal?.reason instanceof Error
+        ? signal.reason
+        : new DOMException('MCP connection cancelled', 'AbortError'));
+    };
 
     const timeoutId = setTimeout(() => {
       if (!isSettled) {
         isSettled = true;
+        cleanup();
         // 超时时尝试关闭 transport，防止资源泄漏
         transport.close().catch(() => {
           // 忽略关闭错误
@@ -402,18 +420,24 @@ export async function connectWithTimeout(
       }
     }, connectTimeout);
 
+    if (signal?.aborted) {
+      handleAbort();
+      return;
+    }
+    signal?.addEventListener('abort', handleAbort, { once: true });
+
     client.connect(transport)
       .then(() => {
         if (!isSettled) {
           isSettled = true;
-          clearTimeout(timeoutId);
+          cleanup();
           resolve();
         }
       })
       .catch((err) => {
         if (!isSettled) {
           isSettled = true;
-          clearTimeout(timeoutId);
+          cleanup();
           reject(err);
         }
       });

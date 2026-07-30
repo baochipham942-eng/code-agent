@@ -11,9 +11,12 @@ import {
   QWEN_OMNI_REALTIME_TRANSCRIPTION_MODEL,
   QWEN_OMNI_REALTIME_VOICE,
   QWEN_OMNI_REALTIME_WS_URL,
+  VOICE_STALE_PREFIX_DEFAULTS_MS,
+  VOICE_STALE_SILENCE_DEFAULTS_MS,
   VOICE_TURN_DETECTION_DEFAULT,
   VOICE_UPSTREAM_CONNECT_TIMEOUT_MS,
   VOICE_UPSTREAM_HEARTBEAT_INTERVAL_MS,
+  VOICE_UPSTREAM_RESPONSE_TIMEOUT_MS,
   VOICE_UPSTREAM_SILENCE_TIMEOUT_MS,
 } from '../../../shared/constants/voice';
 import type { VoiceTransport, VoiceTransportHandle, VoiceTurnDetectionConfig } from '../../../shared/contract/voice';
@@ -59,10 +62,36 @@ function resolveTurnDetectionConfig(): VoiceTurnDetectionConfig {
     // 分叉：用户说了没反应，连补救的点按按钮都不显示（2026-07-27 真机差点踩到）。
     // 只有**显式**留在点按档时才认这个 null。
     if (configured === null && voice?.live?.interrupt !== 'manual') return VOICE_TURN_DETECTION_DEFAULT;
-    return configured === undefined ? VOICE_TURN_DETECTION_DEFAULT : configured;
+    if (configured === undefined) return VOICE_TURN_DETECTION_DEFAULT;
+    return upgradeStaleVadDefaults(configured);
   } catch {
     return VOICE_TURN_DETECTION_DEFAULT;
   }
+}
+
+/**
+ * 存量配置里的旧默认值升级（批 X2，批 X5 补上 800）。prefix/silence 从来不是 UI 可设项
+ * ——落盘里等于历代默认值之一，就只可能是「当年默认值随保存写死的拷贝」，不是用户选择。
+ * 改默认值对存量零生效是踩过的坑（echoCancellation 先例），所以在读取口把旧默认识别为
+ * 过期：逐字段命中历代默认表 → 升到新默认；手改过的其他值（含 threshold）原样保留。
+ *
+ * 历代默认表放常量文件而不是写在这里：改默认值的人改的是那个文件，旧值必须在他眼前。
+ */
+function upgradeStaleVadDefaults(configured: VoiceTurnDetectionConfig): VoiceTurnDetectionConfig {
+  if (configured?.type !== 'server_vad') return configured;
+  const defaults = VOICE_TURN_DETECTION_DEFAULT;
+  if (defaults?.type !== 'server_vad') return configured;
+  const isStale = (value: number | undefined, stale: readonly number[]): boolean =>
+    value !== undefined && stale.includes(value);
+  return {
+    ...configured,
+    ...(isStale(configured.prefixPaddingMs, VOICE_STALE_PREFIX_DEFAULTS_MS)
+      ? { prefixPaddingMs: defaults.prefixPaddingMs }
+      : {}),
+    ...(isStale(configured.silenceDurationMs, VOICE_STALE_SILENCE_DEFAULTS_MS)
+      ? { silenceDurationMs: defaults.silenceDurationMs }
+      : {}),
+  };
 }
 
 /** session.updated 回显里是否真收下了工具。回显不带 tools 字段一律按「没收下」算。 */
@@ -145,7 +174,11 @@ export const qwenOmniTransport: VoiceTransport = {
       const silenceMs = Date.now() - lastUpstreamSignalAt;
       if (silenceMs >= VOICE_UPSTREAM_SILENCE_TIMEOUT_MS) {
         clearHeartbeat();
-        logger.warn('upstream heartbeat timed out', { silenceMs });
+        // missedBeats 是判因用的：1 拍 = 丢包/迟到，连丢三拍才是这条链真死了。
+        logger.warn('upstream heartbeat timed out', {
+          silenceMs,
+          missedBeats: Math.floor(silenceMs / VOICE_UPSTREAM_HEARTBEAT_INTERVAL_MS),
+        });
         onEvent({
           type: 'error',
           code: 'UPSTREAM_ERROR',
@@ -181,6 +214,53 @@ export const qwenOmniTransport: VoiceTransport = {
     let ttfaPerceivedMs: number | undefined;
     let responseActive = false;
     let pendingInjectionAt: number | null = null;
+    let responseWatchdogTimer: ReturnType<typeof setTimeout> | null = null;
+    let responseWatchdogNudged = false;
+    let modelUnresponsiveNotified = false;
+
+    const clearResponseWatchdog = () => {
+      if (responseWatchdogTimer) clearTimeout(responseWatchdogTimer);
+      responseWatchdogTimer = null;
+      responseWatchdogNudged = false;
+    };
+    const scheduleResponseWatchdog = () => {
+      if (responseWatchdogTimer) clearTimeout(responseWatchdogTimer);
+      responseWatchdogTimer = setTimeout(() => {
+        responseWatchdogTimer = null;
+        if (ws.readyState !== WebSocket.OPEN) {
+          responseWatchdogNudged = false;
+          return;
+        }
+        if (!responseWatchdogNudged) {
+          responseWatchdogNudged = true;
+          logger.warn('upstream response watchdog nudging silent turn', {
+            turn,
+            timeoutMs: VOICE_UPSTREAM_RESPONSE_TIMEOUT_MS,
+          });
+          // 只推动已提交轮次，不创建 conversation item，也不打开 injection 确认窗。
+          ws.send(JSON.stringify({ type: 'response.create' }));
+          scheduleResponseWatchdog();
+          return;
+        }
+        responseWatchdogNudged = false;
+        logger.warn('upstream response watchdog still silent after nudge', {
+          turn,
+          timeoutMs: VOICE_UPSTREAM_RESPONSE_TIMEOUT_MS,
+        });
+        if (!modelUnresponsiveNotified) {
+          modelUnresponsiveNotified = true;
+          onEvent({
+            type: 'notice',
+            code: 'VOICE_MODEL_UNRESPONSIVE',
+            message: '模型没有回应，可以再说一遍，或挂断重拨',
+          });
+        }
+      }, VOICE_UPSTREAM_RESPONSE_TIMEOUT_MS);
+    };
+    const armResponseWatchdog = () => {
+      clearResponseWatchdog();
+      scheduleResponseWatchdog();
+    };
 
     /**
      * 工具结果回灌：写进对话项后必须再发一次 response.create，否则模型拿到结果也不开口。
@@ -220,7 +300,11 @@ export const qwenOmniTransport: VoiceTransport = {
       if (seen === 1) logger.info('upstream event', { turn, type: event.type });
 
       switch (event.type) {
+        case 'input_audio_buffer.committed':
+          armResponseWatchdog();
+          break;
         case 'response.created':
+          clearResponseWatchdog();
           responseActive = true;
           pendingInjectionAt = null;
           break;
@@ -244,6 +328,7 @@ export const qwenOmniTransport: VoiceTransport = {
           onEvent({ type: 'user.transcript', text: typeof event.transcript === 'string' ? event.transcript : '', done: true });
           break;
         case 'input_audio_buffer.speech_started':
+          clearResponseWatchdog();
           speechStoppedAt = 0;
           ttfaModelMs = undefined;
           ttfaPerceivedMs = undefined;
@@ -323,6 +408,7 @@ export const qwenOmniTransport: VoiceTransport = {
 
     ws.on('close', () => {
       clearHeartbeat();
+      clearResponseWatchdog();
       onEvent({ type: 'state', state: 'closed' });
     });
     ws.on('error', (err: Error) => onEvent({
@@ -373,6 +459,7 @@ export const qwenOmniTransport: VoiceTransport = {
       },
       async close() {
         clearHeartbeat();
+        clearResponseWatchdog();
         if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) ws.close();
       },
     };

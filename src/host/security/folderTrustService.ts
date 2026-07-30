@@ -437,7 +437,8 @@ export class FolderTrustService {
     }
 
     for (const filePath of await findAgentInstructionFiles(workingDirectory)) {
-      pushItem(items, workingDirectory, 'agent-instructions', filePath, 'Project agent instructions', 'prompt');
+      const relativePath = path.relative(workingDirectory, filePath) || path.basename(filePath);
+      pushItem(items, workingDirectory, 'agent-instructions', filePath, `Project agent instructions · ${relativePath}`, 'prompt');
     }
 
     const policyPath = path.join(workingDirectory, POLICY_FILENAME);
@@ -493,7 +494,8 @@ export class FolderTrustService {
     if (existsSync(profilePath)) pushItem(items, workingDirectory, 'project-profile', profilePath, 'Project profile prompt', 'prompt');
 
     for (const filePath of findAgentInstructionFilesSync(workingDirectory)) {
-      pushItem(items, workingDirectory, 'agent-instructions', filePath, 'Project agent instructions', 'prompt');
+      const relativePath = path.relative(workingDirectory, filePath) || path.basename(filePath);
+      pushItem(items, workingDirectory, 'agent-instructions', filePath, `Project agent instructions · ${relativePath}`, 'prompt');
     }
 
     const policyPath = path.join(workingDirectory, POLICY_FILENAME);

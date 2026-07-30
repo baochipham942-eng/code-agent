@@ -12,9 +12,10 @@
 // - 实时性：订阅 telemetry:event 推送，isLive 开关沿用 store 语义。
 // ============================================================================
 import React, { useEffect, useState } from 'react';
-import { BarChart3, List, Clock, Wrench, Radio, CircleOff, ChevronLeft } from 'lucide-react';
+import { BarChart3, List, Clock, Wrench, Radio, CircleOff } from 'lucide-react';
 import { useTelemetryStore } from '../../../stores/telemetryStore';
 import { useI18n } from '../../../hooks/useI18n';
+import { BackButton } from '../shared/FullScreenPage';
 import ipcService from '../../../services/ipcService';
 import { SessionHeader } from '../telemetry/SessionHeader';
 import { TurnList } from '../telemetry/TurnList';
@@ -122,14 +123,12 @@ export const EvalTelemetryTab: React.FC = () => {
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-testid="eval-telemetry-tab">
       <div className="shrink-0 border-b border-zinc-800 p-2">
-        <button /* ds-allow:button: 返回列表链接式按钮，10px 微尺寸，Button primitive 无对应变体 */
-          type="button"
+        {/* 返回列表与三级页 header 同款从属级返回（共享 BackButton，样式跟随 FullScreenPage） */}
+        <BackButton
           onClick={() => useTelemetryStore.setState({ currentSession: null })}
-          className="mb-1 flex items-center gap-1 text-[10px] text-zinc-500 hover:text-zinc-400"
-        >
-          <ChevronLeft className="h-3 w-3" />
-          {tm.backToList}
-        </button>
+          label={tm.backToList}
+          className="mb-1"
+        />
         <SessionHeader session={currentSession} />
       </div>
 

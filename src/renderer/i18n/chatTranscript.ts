@@ -42,6 +42,9 @@ chat: {
   inheritedWorkspace: '继承工作区：{path}',
   inheritedPrefix: '继承：{parts}',
   recentTools: '最近工具 {names}',
+  skillCount: '{count} 技能',
+  connectorCount: '{count} 连接器',
+  mcpCount: '{count} MCP',
   suggestions: {
     game: {
       title: '做个能玩的小游戏',
@@ -163,6 +166,8 @@ traceView: {
   scrollToLoadMore: '↑ 滚动加载更多',
   conversationLog: '对话消息',
   jumpToBottom: '回到底部',
+  renderFailedTitle: '这个会话的消息暂时显示不出来',
+  renderFailedHint: '其他会话不受影响，可以先切到别的会话继续；切回来会自动重试。',
 },
 
 // 工具步骤组（ToolStepGroup）
@@ -288,6 +293,8 @@ turnCard: {
   fork: '创建分支',
   forking: '创建中…',
   createForkFromReply: '从这条回复创建分支',
+  copyAnswer: '复制回答',
+  answerCopied: '已复制',
   chooseWorkspace: '选择分支工作区',
   sharedCurrent: '历史对话 + 当前文件',
   sharedCurrentDetail: '新任务读取当前工作区，不修改源任务。',
@@ -321,6 +328,12 @@ turnHooks: {
   collapse: '收起 Hooks',
   allowed: '放行',
   blocked: '拦下',
+  blockedCount: '拦下 {count} 次',
+  modified: '改写输入',
+  modifiedCount: '改写输入 {count} 次',
+  reason: '原因：{reason}',
+  stopBlocked: '要求继续',
+  running: '正在运行 {event}…',
   errored: '{count} 个出错',
   unnamed: '未命名的 hook',
   sourceGlobal: '你的全局设置',
@@ -465,6 +478,9 @@ chat: {
   inheritedWorkspace: 'Inherited workspace: {path}',
   inheritedPrefix: 'Inherited: {parts}',
   recentTools: 'Recent tools {names}',
+  skillCount: '{count} Skill',
+  connectorCount: '{count} Connector',
+  mcpCount: '{count} MCP',
   suggestions: {
     game: {
       title: 'Build a playable mini game',
@@ -586,6 +602,8 @@ traceView: {
   scrollToLoadMore: '↑ Scroll to load more',
   conversationLog: 'Conversation messages',
   jumpToBottom: 'Jump to bottom',
+  renderFailedTitle: 'This conversation could not be displayed',
+  renderFailedHint: 'Other conversations are unaffected — switch away and back to retry.',
 },
 
 // Tool step group (ToolStepGroup)
@@ -710,6 +728,8 @@ turnCard: {
   fork: 'Fork',
   forking: 'Forking…',
   createForkFromReply: 'Fork from this reply',
+  copyAnswer: 'Copy answer',
+  answerCopied: 'Copied',
   chooseWorkspace: 'Choose branch workspace',
   sharedCurrent: 'History + current files',
   sharedCurrentDetail: 'The child reads the current workspace without changing the source task.',
@@ -742,6 +762,12 @@ turnHooks: {
   collapse: 'Hide hooks',
   allowed: 'Allowed',
   blocked: 'Blocked',
+  blockedCount: 'Blocked {count}×',
+  modified: 'Input modified',
+  modifiedCount: 'Input modified {count}×',
+  reason: 'Reason: {reason}',
+  stopBlocked: 'Asked to continue',
+  running: 'Running {event}…',
   errored: '{count} failed',
   unnamed: 'Unnamed hook',
   sourceGlobal: 'your global settings',

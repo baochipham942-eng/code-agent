@@ -14,7 +14,7 @@
 // ============================================================================
 
 import type { TaskManagerEvent } from '../../task/TaskManager';
-import type { VoiceFocusContext, VoiceWorkItem, VoiceWorkItemStatus, VoiceWorkNarration } from '../../../shared/contract/voice';
+import type { VoiceFocusContext, VoiceWorkFailureMarker, VoiceWorkItem, VoiceWorkItemStatus, VoiceWorkNarration } from '../../../shared/contract/voice';
 import { VOICE_CONCLUSION_LOOKBACK_MESSAGES, VOICE_RECENT_FILE_LIMIT, VOICE_SPAWN_TASK_MAX_ITERATIONS } from '../../../shared/constants/voice';
 import { getIncompleteTasks } from '../planning/taskStore';
 import { getSessionManager } from '../infra/sessionManager';
@@ -25,7 +25,8 @@ import { getPermissionModeManager } from '../../permissions/modes';
 import { getConfigService } from '../core/configService';
 import { buildWorkNarration, resolveNarrationSpeaker } from './voiceNarration';
 import { describeWorkFailure } from './workFailureDescription';
-import type { ProjectSourceTrustFailureMarker } from '../../../shared/contract/project';
+import { buildVocabularyBlock } from './voiceVocabulary';
+import { resolveVoiceWorkOutcome } from './voiceWorkEvidence';
 
 const logger = createLogger('VoiceCoordinator');
 
@@ -81,7 +82,7 @@ export interface VoiceDispatchBinding {
   onWorkNarration: (narration: VoiceWorkNarration) => void;
 }
 
-const TERMINAL: readonly VoiceWorkItemStatus[] = ['done', 'failed', 'cancelled'];
+const TERMINAL: readonly VoiceWorkItemStatus[] = ['done', 'unverified', 'failed', 'cancelled'];
 
 interface LedgerState {
   neoSessionId: string;
@@ -96,6 +97,8 @@ interface LedgerState {
   items: Map<string, VoiceWorkItem>;
   /** 当前等着状态迁移的那件活。一会话一 orchestrator，同时只可能有一件。 */
   pendingId: string | null;
+  /** pendingId 那件活派出去的时刻。证据门据此排掉上一轮遗留的 completion summary。 */
+  pendingStartedAt: number;
   listener: (event: TaskManagerEvent) => void;
   listenerAttached: boolean;
   /** 用户此刻在看什么（§6.5 焦点上报）；决定 get_current_file_summary 答什么。 */
@@ -113,10 +116,13 @@ async function taskManager() {
   return getTaskManager();
 }
 
+/** 会被念出来 / 落屏 / 发通知的那三档终态。cancelled 不在其中（用户自己叫停的）。 */
+type SettledOutcome = 'done' | 'unverified' | 'failed';
+
 async function notifyVoiceWorkSettledAfterHangup(
   state: LedgerState,
   item: VoiceWorkItem,
-  status: 'done' | 'failed',
+  status: SettledOutcome,
 ): Promise<void> {
   try {
     // 通话中落终态不走这里，避免把通知基础设施拉进实时语音关键路径。
@@ -155,6 +161,7 @@ export function beginVoiceDispatch(binding: VoiceDispatchBinding): void {
     endCall: binding.onEndCall,
     items: new Map(),
     pendingId: null,
+    pendingStartedAt: 0,
     listener: (event) => onTaskManagerEvent(event),
     listenerAttached: false,
     focus: null,
@@ -187,6 +194,7 @@ export function pushVoiceTranscript(entry: VoiceTranscriptEntry): void {
 /** 近窗字幕拼成一段 system 上下文。空窗返回 null——没东西可说时不要塞空块进 run。 */
 function buildTranscriptBlock(entries: VoiceTranscriptEntry[]): string | null {
   if (!entries.length) return null;
+  const vocabularyBlock = buildVocabularyBlock();
   return [
     '[Voice — 通话近窗字幕原文]',
     '这件活来自一通实时语音通话。任务描述是语音层改写出来的，可能丢信息，也可能被语音识别写错。',
@@ -196,6 +204,7 @@ function buildTranscriptBlock(entries: VoiceTranscriptEntry[]): string | null {
     '按上下文纠正后执行，并在结果里说明你是按什么理解做的。',
     '**用户此刻在打电话，不在键盘前**：不要向他提问、不要弹选择框等他回答——他看不见也点不了。',
     '信息不全就按最合理的默认做法先做完，然后在结果里一句话说明你按什么假设做的。',
+    ...(vocabularyBlock ? ['', vocabularyBlock] : []),
   ].join('\n');
 }
 
@@ -240,7 +249,7 @@ function settle(
   id: string,
   status: VoiceWorkItemStatus,
   detail?: string,
-  failure?: ProjectSourceTrustFailureMarker,
+  failure?: VoiceWorkFailureMarker,
 ): void {
   const item = state.items.get(id);
   if (!item || TERMINAL.includes(item.status)) return;
@@ -262,12 +271,17 @@ function settle(
   }
   // 发言人协议与挂断后可见性互斥：电话还在就念结论；电话已断就发一条带任务名的
   // 会话通知，让侧栏复用既有未读圆点。cancelled 是用户自己叫停的，不重复打扰。
-  if (status === 'done' || status === 'failed') {
+  if (status === 'done' || status === 'unverified' || status === 'failed') {
     if (state.narrate === null) {
       void notifyVoiceWorkSettledAfterHangup(state, settled, status);
     } else {
       void narrateSettled(state, settled, status);
     }
+  }
+  // 屏幕这一路（X5.5-A2-a）：任务卡的结局必须来自 host 的判定，落库才活得过挂断和重启。
+  // 失败留痕走 voiceSessionService 既有那条（notice + 消息流），这里只补 done/unverified。
+  if (status === 'done' || status === 'unverified') {
+    void persistWorkOutcome(state.neoSessionId, settled, status);
   }
   getPermissionModeManager().clearLiveVoiceSession(state.neoSessionId, runHoldId(id));
   if (state.pendingId === id) state.pendingId = null;
@@ -282,7 +296,7 @@ function settle(
  * 取不到就退回状态本身：`buildWorkNarration` 允许 summary 为空，宁可只说「做完了」，
  * 也不编一句它没说过的话。
  */
-async function narrateSettled(state: LedgerState, item: VoiceWorkItem, status: 'done' | 'failed'): Promise<void> {
+async function narrateSettled(state: LedgerState, item: VoiceWorkItem, status: SettledOutcome): Promise<void> {
   try {
     const conclusion = status === 'failed'
       ? describeWorkFailure(item.detail, item.failure).spoken
@@ -307,6 +321,38 @@ async function narrateSettled(state: LedgerState, item: VoiceWorkItem, status: '
   }
 }
 
+/**
+ * 任务卡的结局落库（X5.5-A2-a）。
+ *
+ * 为什么非落库不可：`work.upsert` 是通话态事件，挂断就断；而任务卡活在会话记录里，
+ * 关掉重开还要显示。不落库的话渲染侧只能自己从「这一轮完成了 + 有正文」反推「已完成」——
+ * 那正是「模型说了句话就算做完」的那条反推，本批要拆掉的就是它。
+ *
+ * 消息本身不进对话（`role:'system'`，投影层只取 metadata 不成节点），它是给卡片看的
+ * 结局印章，不是说给用户的话。落库失败只降级成「卡上不显示结局」，绝不影响还票和播报。
+ */
+async function persistWorkOutcome(
+  neoSessionId: string,
+  item: VoiceWorkItem,
+  outcome: 'done' | 'unverified',
+): Promise<void> {
+  try {
+    await getSessionManager().addMessageToSession(neoSessionId, {
+      id: `voice-work-settled-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      role: 'system',
+      // 正文只作日志/兜底可读性；渲染一律读 metadata（靠正文反解标题是拿人话当协议）。
+      content: `语音派出的任务「${item.title}」${outcome === 'done' ? '已完成' : '已结束，产物待核验'}`,
+      timestamp: Date.now(),
+      metadata: {
+        source: 'voice',
+        voiceWorkSettled: { workItemId: item.id, title: item.title, outcome },
+      },
+    });
+  } catch (err) {
+    logger.warn('failed to persist work outcome', { message: err instanceof Error ? err.message : 'unknown' });
+  }
+}
+
 /** 会话里最后一条有正文的 assistant 消息。task_completed 发在 sendMessage await 之后，此时它已落库。 */
 async function readRunConclusion(neoSessionId: string): Promise<string> {
   const session = await getSessionManager().getSession(neoSessionId, VOICE_CONCLUSION_LOOKBACK_MESSAGES);
@@ -322,6 +368,47 @@ function runHoldId(workItemId: string): string {
   return `run:${workItemId}`;
 }
 
+/**
+ * TaskManager 事件的 data 是 unknown，标记要在这个边界上重新验形——生产者与消费者
+ * 隔着一层无类型事件总线，只有这里能保证「进账本的标记确实是它自称的那个」。
+ * 认不出的一律 undefined，让文案退回兜底，绝不半信半疑地当成已识别。
+ */
+function readFailureMarker(raw: unknown): VoiceWorkFailureMarker | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const marker = raw as { code?: unknown; kind?: unknown; provider?: unknown; model?: unknown };
+  if (
+    marker.code === 'PROJECT_SOURCE_TRUST'
+    && (marker.kind === 'source_missing' || marker.kind === 'identity_changed' || marker.kind === 'not_trusted')
+  ) {
+    return { code: 'PROJECT_SOURCE_TRUST', kind: marker.kind };
+  }
+  if (marker.code === 'MODEL_AUTH') {
+    return {
+      code: 'MODEL_AUTH',
+      ...(typeof marker.provider === 'string' && marker.provider ? { provider: marker.provider } : {}),
+      ...(typeof marker.model === 'string' && marker.model ? { model: marker.model } : {}),
+    };
+  }
+  return undefined;
+}
+
+/**
+ * run 正常结束 → 查产物证据 → 落 done 或 unverified（X5.5-A2-a 的唯一判定点）。
+ *
+ * 判定收在 host 这一处：屏幕、耳朵、通知、通话 brain 四条出口全部消费 settle 的结果，
+ * 谁都不许自己再推断一次「是不是完成了」。
+ */
+async function settleCompletedWithEvidence(
+  state: LedgerState,
+  workItemId: string,
+  dispatchedAtMs: number,
+): Promise<void> {
+  const outcome = await resolveVoiceWorkOutcome(state.neoSessionId, dispatchedAtMs);
+  // await 期间 ledger 可能已被换掉（新通话）——那时这件活的账本不再是当前这本，
+  // 但 settle 只动传进来的这本 state，幂等且安全。
+  settle(state, workItemId, outcome);
+}
+
 function onTaskManagerEvent(event: TaskManagerEvent): void {
   const state = ledger;
   if (event.sessionId !== state?.neoSessionId) return;
@@ -335,23 +422,14 @@ function onTaskManagerEvent(event: TaskManagerEvent): void {
       if (item.status === 'queued') upsert(state, { ...item, status: 'running' });
       break;
     case 'task_completed':
-      settle(state, pendingId, 'done');
+      // 「跑完了」不等于「做成了」。证据查完再落终态——查证要读盘，事件回调是同步的，
+      // 所以这中间的一小段时间卡片停在 running（诚实：此刻我们确实还不知道结局）。
+      void settleCompletedWithEvidence(state, pendingId, state.pendingStartedAt);
       break;
     case 'task_error': {
-      const data = event.data as {
-        error?: unknown;
-        failure?: ProjectSourceTrustFailureMarker;
-      } | undefined;
+      const data = event.data as { error?: unknown; failure?: unknown } | undefined;
       const detail = typeof data?.error === 'string' ? data.error : '执行失败';
-      const failure = data?.failure?.code === 'PROJECT_SOURCE_TRUST'
-        && (
-          data.failure.kind === 'source_missing'
-          || data.failure.kind === 'identity_changed'
-          || data.failure.kind === 'not_trusted'
-        )
-        ? data.failure
-        : undefined;
-      settle(state, pendingId, 'failed', detail, failure);
+      settle(state, pendingId, 'failed', detail, readFailureMarker(data?.failure));
       break;
     }
     case 'task_cancelled':
@@ -438,6 +516,7 @@ async function startRun(state: LedgerState, title: string, prompt: string): Prom
   const speaker = resolveNarrationSpeaker(state.activeAgentId);
   upsert(state, { id: workItemId, title, status: 'queued' });
   state.pendingId = workItemId;
+  state.pendingStartedAt = Date.now();
   // D4：这张票的寿命跟着 run 走，不跟着通话走。终态事件或启动失败才还。
   getPermissionModeManager().markLiveVoiceSession(state.neoSessionId, runHoldId(workItemId));
   void tm
@@ -458,50 +537,10 @@ async function startRun(state: LedgerState, title: string, prompt: string): Prom
   return workItemId;
 }
 
-/**
- * 挂断 tail flush（P0-3，产品负责人 2026-07-28 拍板「自动补派」）。
- *
- * 真机 dogfood 的失败形态是「说了一通，一件活都没派出去」——通话 brain 在碎句里
- * 一路追问澄清，直到用户挂断。挂断是这条链上最后一次机会：把这通电话的字幕交给
- * 执行侧的文本模型，让它自己判断有没有没做的事。
- *
- * 三条闸同时满足才补派，宁可漏补不可乱补：
- * 1. **本通电话一件活都没派过**——派过就说明链路是通的，没派的那部分多半是用户主动放弃的；
- * 2. 近窗里**有用户说过话**——空通话什么都不做；
- * 3. 会话**当前空闲**——有活在跑时插一件新的会撞 TaskManager 的并发闸。
- *
- * 判「有没有要做的事」交给执行侧模型，不自己写分类器：它已经拿到近窗原文
- * （buildRunOptions 的 transcript 块），而「没有待办就什么都不做」是它能理解的指令。
- *
- * 已知代价：人已经挂断走开，这条 run 若撞上 D4 抬严的权限卡就会停在那儿等确认。
- * 这是「宁可停下也不越权」的正确行为，但用户下次回来才看得到。
- */
-export async function flushVoiceTail(): Promise<boolean> {
-  const state = ledger;
-  if (!state) return false;
-  if (state.items.size > 0) return false;
-  const lastUser = [...state.transcript].reverse().find((entry) => entry.role === 'user');
-  if (!lastUser) return false;
-
-  const tm = await taskManager();
-  // 忙档与 spawnTask 用同一份判据：startTask 在这四档会抛。
-  const status = tm.getSessionState(state.neoSessionId).status;
-  if (status === 'running' || status === 'queued' || status === 'paused' || status === 'cancelling') {
-    logger.info('tail flush skipped: session busy', { status });
-    return false;
-  }
-
-  const title = `通话结束补派：${lastUser.text.slice(0, 20)}`;
-  logger.info('tail flush dispatching', { neoSessionId: state.neoSessionId, entries: state.transcript.length });
-  await startRun(state, title, [
-    '这通语音通话刚刚结束，通话过程中一件任务都没有派出来。',
-    '看上面「通话近窗字幕原文」里用户说的话：',
-    '如果里面有明确的、还没被执行的动作请求（建文件、改东西、跑命令等），现在把它做掉。',
-    '如果只是闲聊、或者没有能确定下来的动作，就什么都不要做，直接结束并说明没有发现待办。',
-    '注意用户已经挂断电话，不在旁边——不要反问，按最合理的理解做或者不做。',
-  ].join('\n'));
-  return true;
-}
+// 「通话结束补派」（P0-3 tail flush）已整条删除（产品负责人 2026-07-30 拍板）：
+// 挂断 = 用户不要执行。零派活的通话原样结束，不再拿字幕尾巴替他派一件活
+// （那条链还会把一段内部指令 prompt 显示给用户看）。
+// 保留的是「已派出任务的挂断后通知」与近窗字幕注入普通派活——它们与本条无关。
 
 async function spawnTask(state: LedgerState, title: string, prompt: string): Promise<string> {
   const tm = await taskManager();
@@ -612,6 +651,9 @@ function statusText(status: VoiceWorkItemStatus): string {
     case 'queued': return '排队中';
     case 'running': return '进行中';
     case 'done': return '已完成';
+    // 终态项已被 describeStatus 滤掉，这几支只为穷尽联合；措辞仍按「不可润色」写，
+    // 免得哪天有人把终态也列进去，就地变成一句可以被润成「做完了」的话。
+    case 'unverified': return '跑完了但没看到产物，不能算做完';
     case 'failed': return '失败';
     case 'cancelled': return '已取消';
   }

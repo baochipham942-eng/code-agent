@@ -67,7 +67,12 @@ export const SidebarStatusFilterDropdown: React.FC<SidebarStatusFilterDropdownPr
         )}
       </button>
       {statusFilterOpen && (
-        <div className="absolute right-0 top-full z-30 mt-1 min-w-[220px] rounded-lg elevation-l2 popover-enter py-1">
+        // 定位几何（侧栏宽 240 = --sidebar-width，根 overflow-hidden 会裁掉越界部分）：
+        //   挂载点已挪到「项目」section 标题行右端（2026-07-29，原在顶行图标簇）。
+        //   right-0 锚按钮右缘、宽 184 ⇒ 面板右缘对齐行右轨，左缘落在栏内不越界。
+        //   ⚠️ 不能改 left-0：按钮贴近行右端，向右空间不足，内容（≥~180px）必被右裁。
+        //   内容自适应：chip 组 flex-wrap、failure 选项 truncate，184px 下均完整可见。
+        <div className="absolute right-0 top-full z-30 mt-1 w-[184px] rounded-lg elevation-l2 popover-enter py-1">
           <div className="px-3 pb-1 pt-1 text-[10px] uppercase tracking-wider text-zinc-500">{f.filterByStatus}</div>
           {visibleStatusFilterOptions.map((option) => {
             const active = sessionStatusFilter === option.id;

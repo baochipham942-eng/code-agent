@@ -70,6 +70,8 @@ describe('FolderTrustService', () => {
     expect(result.blockedItems.map((item) => item.kind).sort()).toEqual(
       result.dangerousItems.map((item) => item.kind).sort(),
     );
+    expect(result.dangerousItems.find((item) => item.kind === 'agent-instructions')?.label)
+      .toContain('AGENTS.md');
   });
 
   it('keys trust by canonical realpath so symlinks cannot bypass a decision', async () => {

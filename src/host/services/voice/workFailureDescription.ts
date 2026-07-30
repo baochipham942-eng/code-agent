@@ -1,4 +1,4 @@
-import type { ProjectSourceTrustFailureMarker } from '../../../shared/contract/project';
+import type { VoiceWorkFailureMarker } from '../../../shared/contract/voice';
 
 export interface WorkFailureDescription {
   spoken: string;
@@ -14,9 +14,21 @@ export interface WorkFailureDescription {
  */
 export function describeWorkFailure(
   rawDetail?: string,
-  marker?: ProjectSourceTrustFailureMarker,
+  marker?: VoiceWorkFailureMarker,
 ): WorkFailureDescription {
   const detail = rawDetail?.trim();
+  if (marker?.code === 'MODEL_AUTH') {
+    // 屏幕上点名是哪个模型（用户要照着它去设置里找），耳朵里不念——
+    // provider/model 是英文 id，念出来是一串噪音，且屏幕上本来就有。
+    const which = marker.model
+      ? `（${marker.provider ? `${marker.provider}/` : ''}${marker.model}）`
+      : marker.provider ? `（${marker.provider}）` : '';
+    return {
+      screen: `执行任务的模型${which}还没有配置 API Key，去 设置 → 模型 配置后重试`,
+      spoken: '执行任务的模型还没有配置 API Key，这件事没有完成。请在屏幕上打开 设置 → 模型 配置后重试。',
+      ...(detail ? { detail } : {}),
+    };
+  }
   if (marker?.code === 'PROJECT_SOURCE_TRUST') {
     const copy = {
       source_missing: {

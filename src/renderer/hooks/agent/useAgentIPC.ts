@@ -540,6 +540,9 @@ function toWorkbenchMetadata(
       hints: context.selectedPromptCommand.hints ? [...context.selectedPromptCommand.hints] : undefined,
     };
   }
+  if (context.pendingCommand) {
+    metadata.pendingCommand = { ...context.pendingCommand };
+  }
   if (context.routing) {
     metadata.routingMode = context.routing.mode;
     if (context.routing.targetAgentIds?.length) {

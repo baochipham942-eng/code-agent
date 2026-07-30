@@ -56,4 +56,12 @@ describe('CapabilityHubPage', () => {
     render(<CapabilityHubPage />);
     expect(screen.queryByTestId('capability-hub-open-prompts')).toBeNull();
   });
+
+  // 二级页在位时右侧 TitleBar 不渲染，页头就是窗口拖拽区（拖窗 + 双击缩放）。
+  // 裸值只认直接命中，必须 ="deep" 让子树生效（参照 fullScreenPage.test.tsx 同款钉住）。
+  it('页头导航行是 Tauri 拖拽区（deep 子树生效）', () => {
+    useAuthStore.setState({ user: user(false) });
+    const { container } = render(<CapabilityHubPage />);
+    expect(container.querySelector('header[data-tauri-drag-region="deep"]')).not.toBeNull();
+  });
 });

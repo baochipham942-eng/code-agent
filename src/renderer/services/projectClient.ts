@@ -10,6 +10,7 @@ import { IPC_DOMAINS } from '@shared/ipc';
 import type {
   CloudSpacePromotion,
   CreateSpaceInput,
+  CreateProjectInput,
   Project,
   ProjectArtifact,
   ProjectCapabilityKind,
@@ -102,6 +103,10 @@ export async function unselectCapability(
     kind,
     capabilityId,
   });
+}
+
+export async function createProject(input: CreateProjectInput): Promise<Project> {
+  return ipcService.invokeDomain<Project>(IPC_DOMAINS.PROJECT, 'create', input);
 }
 
 export async function getProjectDetail(projectId: string): Promise<ProjectDetail> {

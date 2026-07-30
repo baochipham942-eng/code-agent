@@ -13,8 +13,10 @@ import { cronCenterZh } from './cronCenter';
 import { previewWorkspaceZh } from './previewWorkspace';
 import { modalPrimitivesZh } from './modalPrimitives';
 import { userQuestionZh } from './userQuestion';
+import { decisionCardZh } from './decisionCard';
 import { taskStatusPanelsZh } from './taskStatusPanels';
 import { noticesZh } from './notices';
+import { agentErrorZh } from './agentError';
 import { labZh } from './lab';
 import { labGpt1Zh } from './labGpt1';
 import { labNanogptZh } from './labNanogpt';
@@ -100,15 +102,16 @@ export const zh = {
     block: '阻止项目配置',
     openSettings: '打开设置',
     saving: '保存中…',
+    saveFailed: '保存失败，决定没有生效',
     risks: {
-      execution: '执行',
-      mcp: 'MCP',
-      agent: 'Agent',
-      skill: 'Skill',
+      execution: '命令执行',
+      mcp: 'MCP 服务',
+      agent: 'Agent 定义',
+      skill: 'Skill 定义',
       prompt: '提示词',
-      policy: '策略',
-      preference: '偏好',
-      diagnostic: '配置',
+      policy: '安全策略',
+      preference: '偏好设置',
+      diagnostic: '其他配置',
     },
   },
 
@@ -799,7 +802,6 @@ export const zh = {
 
   // /agent 命令与面板
   agentCommand: {
-    defaultDescription: '恢复自动路由',
     roleGroupLabel: '角色',
     createRoleEntry: '新建角色…',
     switchedToPrefix: '已切到 ',
@@ -808,6 +810,7 @@ export const zh = {
     chipTitlePrefix: '当前 agent: ',
     chipTitleSuffix: '。输入 /agent 切换。',
     chipAriaLabel: '当前 agent',
+    chipRemoveAria: '移除专家 {name}，恢复自动路由',
     badgeNotAppliedSuffix: ' 未生效',
     badgeNotAppliedTitlePrefix: '指定的 agent 本轮未生效，实际执行: ',
     degradedToastPrefix: '指定的 agent ',
@@ -907,8 +910,10 @@ export const zh = {
   ...previewWorkspaceZh,
   ...modalPrimitivesZh,
   ...userQuestionZh,
+  ...decisionCardZh,
   ...taskStatusPanelsZh,
   ...noticesZh,
+  ...agentErrorZh,
   ...labZh,
   ...labGpt1Zh,
   ...labNanogptZh,
@@ -956,20 +961,6 @@ export const zh = {
     removeAria: '移除能力：{name}',
   },
 
-  inlineWorkbenchBar: {
-    skillsSummary: '技能 {selected}/{total}',
-    connectorsSummary: '连接器 {selected}/{total}',
-    mcpSummary: 'MCP 服务 {selected}/{total}',
-    capabilities: '能力',
-    expandCapabilitiesAria: '展开能力列表',
-    collapseCapabilitiesAria: '收起能力列表',
-    auto: '自动',
-    manual: '手动',
-    autoTitle: '系统自动选择可用能力',
-    manualTitle: '手动限定本轮能力范围',
-    noMountedSkills: '当前会话还没有已挂载的技能。',
-  },
-
   commandPalette: {
     ariaLabel: '命令面板',
     searchPlaceholder: '搜索命令…',
@@ -1000,8 +991,6 @@ export const zh = {
       prefillPromptWithArgs: '预填后补参数',
       prefillPrompt: '预填 prompt',
       setAgentForTurn: '设为本轮 agent',
-      restoreAutoAgent: '恢复自动 agent',
-      defaultAgentDescription: '恢复自动路由',
       mountedSkillPrefix: '已挂载 Skill',
       selectForTurn: '选入本轮',
       mountAndSelect: '挂载并选入本轮',

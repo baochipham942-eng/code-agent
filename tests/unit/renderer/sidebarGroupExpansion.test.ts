@@ -3,7 +3,21 @@ import {
   resolveSidebarGroupExpansionView,
   resolveSidebarGroupExpanded,
   shouldForceExpandSidebarGroup,
+  type SidebarGroupExpansionLabels,
 } from '../../../src/renderer/utils/sidebarGroupExpansion';
+import { zh } from '../../../src/renderer/i18n/zh';
+
+// 词条由调用方注入（组件侧来自 i18n）；测试直接复用 zh 词典，顺带锁住模板占位符形状。
+const p = zh.sidebarProject;
+const labels: SidebarGroupExpansionLabels = {
+  forceExpandReason: p.forceExpandedReason,
+  collapseTitle: p.collapseGroupTitle,
+  expandTitle: p.expandGroupTitle,
+  collapseAriaLabel: p.collapseGroupAria,
+  expandAriaLabel: p.expandGroupAria,
+  forceExpandAriaLabel: p.forceExpandedAria,
+  protectionLabel: p.keepExpanded,
+};
 
 describe('sidebarGroupExpansion', () => {
   it('只有搜索/筛选命中才 force-expand；当前会话与未完成不再钉死分组（2026-07-26 语义修正）', () => {
@@ -40,6 +54,7 @@ describe('sidebarGroupExpansion', () => {
       signals: activeSignals,
       isCollapsing: false,
       displayName: 'work',
+      labels,
     });
     expect(view.forceExpanded).toBe(false);
     expect(view.isVisibleExpanded).toBe(false);
@@ -75,6 +90,7 @@ describe('sidebarGroupExpansion', () => {
       },
       isCollapsing: false,
       displayName: 'code-agent',
+      labels,
     });
 
     expect(view.isVisibleExpanded).toBe(true);
@@ -95,6 +111,7 @@ describe('sidebarGroupExpansion', () => {
       },
       isCollapsing: true,
       displayName: 'archive',
+      labels,
     });
 
     expect(view.isVisibleExpanded).toBe(true);
@@ -114,6 +131,7 @@ describe('sidebarGroupExpansion', () => {
       },
       isCollapsing: false,
       displayName: 'archive',
+      labels,
     });
 
     expect(view.isVisibleExpanded).toBe(false);

@@ -2,7 +2,7 @@
 // VoiceModelSettings - 语音模型 tab（T1，2026-07-28 产品负责人拍板）
 //
 // 「模型与能力」组收拢三处模型配置：通话模型（provider + model）/ 音色 / 转写模型。
-// 使用偏好留在原 tab：实时通话（打断方式/回声消除/断句灵敏度）、语音转文字
+// 使用偏好留在原 tab：实时语音（打断方式/回声消除/断句灵敏度）、语音转文字
 // （转写模式/线程数等）。搬家不是复制——原 tab 不再渲染这三项。
 //
 // 硬约束：存储 key、默认值、读写路径一律不动——
@@ -22,6 +22,7 @@ import { createLogger } from '../../../../utils/logger';
 import { useI18n } from '../../../../hooks/useI18n';
 import { useVoiceLiveAvailability } from '../../voice/useVoiceLiveAvailability';
 import { deriveInterruptMode, deriveTurnDetection, deriveVadSensitivity } from '../../voice/voiceSettingsDerivation';
+import { VoiceApiKeyConfig } from './VoiceApiKeyConfig';
 
 const logger = createLogger('VoiceModelSettings');
 
@@ -115,6 +116,10 @@ export const VoiceModelSettings: React.FC = () => {
 
   return (
     <div className="space-y-6" data-testid="voice-model-settings">
+      {/* API Key 常驻在语音模型 tab（批 X3 产品拍板）：key 是模型的配置，
+          配没配都展示（形态不同），缺 key 引导态只是入口侧的补救通道 */}
+      <VoiceApiKeyConfig />
+
       {/* 通话模型 / Provider：白名单可配。不支持 tools 的模型选中时当场说清代价 */}
       <div>
         <div className="flex items-center justify-between gap-4">

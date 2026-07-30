@@ -373,10 +373,10 @@ export const SettingsModal: React.FC = () => {
   return (
     <FullScreenPage
       role="dialog"
-      aria-modal="true"
       aria-label={t.settings.title}
       testId="settings-panel"
-      className="h-screen overflow-hidden animate-fadeIn"
+      variant="inline"
+      className="overflow-hidden animate-fadeIn"
     >
       <div className="flex h-full min-h-0">
         <aside className="flex w-[280px] shrink-0 flex-col border-r border-zinc-800 bg-zinc-900/95">
@@ -453,7 +453,9 @@ export const SettingsModal: React.FC = () => {
 
         <main className="min-w-0 flex-1 overflow-y-auto bg-zinc-950">
           <div className={`mx-auto min-h-full px-8 pb-16 pt-8 ${contentWidthClass}`}>
-            <div className="mb-6 flex items-start justify-between gap-6">
+            {/* 页顶标题行即窗口拖拽区（二级页在位时右侧 TitleBar 不渲染）：
+                ="deep" 让整行可拖、双击缩放；X 关闭钮是 button，Tauri 自动豁免 */}
+            <div data-tauri-drag-region="deep" className="mb-6 flex items-start justify-between gap-6">
               <div>
                 <h2 id="settings-page-title" className="text-2xl font-semibold text-zinc-100">
                   {activeTabConfig?.label || t.settings.title}

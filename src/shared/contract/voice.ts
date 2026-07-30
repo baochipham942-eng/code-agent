@@ -16,13 +16,29 @@ export type VoiceTurnDetectionConfig =
   | null;
 
 /**
+ * 派活失败的结构化成因。生产者在 throw 处带上，一路带到用户可见文案的统一出口
+ * （describeWorkFailure）——认不出的一律走兜底，绝不从 detail 文本反推。
+ */
+export type VoiceWorkFailureMarker =
+  | import('./project').ProjectSourceTrustFailureMarker
+  | import('./model').ModelAuthFailureMarker;
+
+/**
  * 通话里派出的一件活。
  *
  * Phase 2 批 H 补齐全生命周期：此前只有 queued / failed 两态——run 干完了不发任何事件，
  * Active Work 条上它永远停在「排队中」，通话 brain 也拿不到「做完了」的依据。
  * 状态迁移由 TaskManager 的 task_started / task_completed / task_error / task_cancelled 驱动。
  */
-export type VoiceWorkItemStatus = 'queued' | 'running' | 'done' | 'failed' | 'cancelled';
+/**
+ * `unverified`（X5.5-A2）：run 正常跑完，但这一轮**没留下任何产物证据**
+ * （没改文件、没产出工件、没跑过通过的校验命令）。
+ *
+ * 「派活成功 ≠ 用户目标完成」——run 终态只证明循环退出了，不证明用户要的事做成了。
+ * 模型最后那句「已经建好了」不算证据，它正是要防的那样东西。所以 done 与 unverified
+ * 之间只有一条判据：ADR-050 意义上的机器产物证据（见 voiceWorkEvidence.ts）。
+ */
+export type VoiceWorkItemStatus = 'queued' | 'running' | 'done' | 'unverified' | 'failed' | 'cancelled';
 
 export interface VoiceWorkItem {
   id: string;
@@ -31,7 +47,7 @@ export interface VoiceWorkItem {
   /** 失败原因，供 UI 显示；其余状态没有 */
   detail?: string;
   /** 自有错误生产者给出的稳定分类；不从 detail 文本反推。 */
-  failure?: import('./project').ProjectSourceTrustFailureMarker;
+  failure?: VoiceWorkFailureMarker;
 }
 
 /**
@@ -43,8 +59,12 @@ export interface VoiceWorkItem {
  */
 export interface VoiceWorkNarration {
   workItemId: string;
-  /** 只有终态；`cancelled` 是用户自己叫停的，他知道，不用回头念给他听。 */
-  status: 'done' | 'failed';
+  /**
+   * 只有终态；`cancelled` 是用户自己叫停的，他知道，不用回头念给他听。
+   * `unverified` 必须自成一档而不是并进 done——耳朵这一路和屏幕那一路要么一起说实话，
+   * 要么就是「卡片写着待核验、耳机里说已经做完了」。
+   */
+  status: 'done' | 'unverified' | 'failed';
   title: string;
   /**
    * 已裁剪成「能用嘴说出来」的结论文本：代码块/表格换成一句指路，
@@ -138,6 +158,7 @@ export type VoiceMessageCode =
   | 'VOICE_SESSION_BUSY'
   | 'VOICE_PROVIDER_UNCONFIGURED'
   | 'VOICE_TOOLS_DROPPED'
+  | 'VOICE_MODEL_UNRESPONSIVE'
   /** 语音派出去的活死了。G1（2026-07-28 真机）：失败此前只进日志，通话里的人毫无察觉。 */
   | 'VOICE_WORK_FAILED'
   | 'VOICE_UPSTREAM_UNAVAILABLE'

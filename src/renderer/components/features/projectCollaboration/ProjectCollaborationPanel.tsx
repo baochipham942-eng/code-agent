@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useShallow } from 'zustand/shallow';
-import { Loader2, Search, Sparkles, X } from 'lucide-react';
+import { Loader2, Search, X } from 'lucide-react';
 import type { NeoWorkCardDetail } from '@shared/contract/tag';
 import { toast } from '../../../hooks/useToast';
 import { useAuthStore } from '../../../stores/authStore';
@@ -305,35 +305,22 @@ export const ProjectCollaborationPanel: React.FC<ProjectCollaborationPanelProps>
 
   return (
     <div className="relative flex h-full min-h-0 flex-col overflow-hidden bg-zinc-900" data-testid="neo-topic-directory">
-      {/* 嵌入模式 wrapper 不带 pt：宿主 tab 栏与内容区间距由宿主页统一给（与「动态」tab 首行一致），
-          叠加 pt-3 会把面板内容顶得离 tab 栏老远；loading/error 条自带 mt-3 不受影响 */}
-      <div className={embedded ? 'shrink-0 px-4' : 'shrink-0 border-b border-zinc-800 px-4 py-3'}>
-        {/* 嵌入模式（项目空间任务 tab）：宿主页头已有项目名，不再重复标题，更不给用户看裸 project id */}
-        {!embedded && (
-          <div className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-md border border-emerald-500/20 bg-emerald-500/10">
-              <Sparkles className="h-4 w-4 text-emerald-200" />
+      {/* 标题由 Page 层 FullScreenPageHeader 统一承担（2026-07-29 去掉重复的「Neo 协同」旧 header），
+          这里只剩加载/错误指示；嵌入模式的间距继续由宿主 tab 统一承担。 */}
+      {(loading || loadError) && (
+        <div className={embedded ? 'shrink-0 px-4' : 'shrink-0 border-b border-zinc-800 px-4 py-3'}>
+          {loading && (
+            <div className="inline-flex items-center gap-1.5 rounded border border-zinc-800 bg-zinc-950/50 px-2 py-1 text-[11px] text-zinc-400">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />正在加载 topic
             </div>
-            <div className="min-w-0 flex-1">
-              <h2 className="text-sm font-semibold text-zinc-100">Neo 协同</h2>
-              <div className="mt-0.5 text-[11px] text-zinc-500">所有 @neo topic</div>
+          )}
+          {loadError && (
+            <div className="rounded border border-rose-500/25 bg-rose-500/10 px-2 py-1 text-[11px] leading-5 text-rose-100" data-testid="project-collab-load-error">
+              {loadError}
             </div>
-            <span className="shrink-0 text-[11px] text-zinc-500" data-testid="neo-topic-count">
-              {filteredTopics.length}/{topics.length}
-            </span>
-          </div>
-        )}
-        {loading && (
-          <div className="mt-3 inline-flex items-center gap-1.5 rounded border border-zinc-800 bg-zinc-950/50 px-2 py-1 text-[11px] text-zinc-400">
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />正在加载 topic
-          </div>
-        )}
-        {loadError && (
-          <div className="mt-3 rounded border border-rose-500/25 bg-rose-500/10 px-2 py-1 text-[11px] leading-5 text-rose-100" data-testid="project-collab-load-error">
-            {loadError}
-          </div>
-        )}
-      </div>
+          )}
+        </div>
+      )}
 
       <div className="min-h-0 flex-1">
         <div className={embedded ? 'h-full min-h-0 overflow-y-auto px-4 pb-3' : 'h-full min-h-0 overflow-y-auto px-4 py-3'}>

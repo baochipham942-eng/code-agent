@@ -69,6 +69,10 @@ export interface WorkspacePreviewModelState {
   currentTurnArtifacts: CurrentTurnArtifactOwnershipView | null;
 }
 
+/** artifact id 里不会出现 NUL，拿它拼内容键不会和 id 本身冲突。 */
+const ARTIFACT_ID_SEPARATOR = '\u0000';
+const EMPTY_ARTIFACT_IDS: string[] = [];
+
 export function useWorkspacePreviewModelState(): WorkspacePreviewModelState {
   const messages = useSessionStore((state) => state.messages);
   const workingDirectory = useAppStore((state) => state.workingDirectory);
@@ -93,9 +97,21 @@ export function useWorkspacePreviewModelState(): WorkspacePreviewModelState {
     })
   ), [currentTurnArtifacts, messages, pendingPermissionRequest, workingDirectory]);
 
-  const artifactIds = useMemo(() => (
+  // 必须按「id 集合的内容」稳定，不能按 baseItems 的身份稳定。
+  // baseItems 的上游（currentTurnArtifacts ← 当前轮投影）每渲染都换身份，所以直接
+  // memo 在 baseItems 上时，artifactIds 每渲染都是新数组 → 下面那条 effect 每渲染
+  // 重跑 → `setArtifactIssues({})` 每渲染塞一个新对象（新引用，React 无法 bail out）
+  // → 立刻又触发渲染，形成满速自激循环。实测 App 被拖到 235 次/秒重渲染，最终把
+  // React 的 50 层嵌套更新上限打满抛 #185，整个 app 被 App 级 ErrorBoundary 罩死。
+  // 顺带：重跑还意味着每渲染打一次 getArtifactIssuesByArtifactId，等于对 host 的请求风暴。
+  const artifactIdsKey = useMemo(() => (
     Array.from(new Set(baseItems.map(artifactIssueLookupId).filter((id): id is string => Boolean(id))))
+      .join(ARTIFACT_ID_SEPARATOR)
   ), [baseItems]);
+  const artifactIds = useMemo(
+    () => (artifactIdsKey === '' ? EMPTY_ARTIFACT_IDS : artifactIdsKey.split(ARTIFACT_ID_SEPARATOR)),
+    [artifactIdsKey],
+  );
 
   useEffect(() => {
     if (artifactIds.length === 0) {

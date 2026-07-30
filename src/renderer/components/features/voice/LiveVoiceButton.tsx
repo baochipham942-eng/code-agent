@@ -8,7 +8,7 @@
 //
 // 缺 key 降级（2026-07-30，能力不可用要降级提示不是消失）：总开关开着但没配
 // DashScope key 时，按钮不消失，降级成同位置同尺寸的弱化引导态——点击不拨号，
-// 弹引导层指向设置 → 语音「实时通话」tab（那里可以就地配 key）。
+// 弹引导层指向设置 → 语音「实时语音」tab（那里可以就地配 key）。
 // 总开关关掉（enabled === false）是用户明确不要，保持不渲染。
 // ============================================================================
 
@@ -91,7 +91,7 @@ export const LiveVoiceButton: React.FC<LiveVoiceButtonProps> = ({ sessionId, has
                 onCancel={() => setGuideOpen(false)}
                 onConfirm={() => {
                   setGuideOpen(false);
-                  openSettingsTab('voiceLive');
+                  openSettingsTab('voiceModel');
                 }}
                 confirmColorClass={BUTTON_PRIMARY_CLASS}
               />

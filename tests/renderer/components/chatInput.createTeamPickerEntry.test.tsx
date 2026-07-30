@@ -75,6 +75,7 @@ function makeParams(overrides: Record<string, unknown> = {}) {
     capabilityItems: [],
     openAgentCommand: vi.fn(),
     focusComposer: vi.fn(),
+    insertInlineChip: vi.fn(),
     setValue: vi.fn(),
     setShowSlashPopover: vi.fn(),
     setSlashFilter: vi.fn(),

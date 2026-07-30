@@ -12,8 +12,8 @@ describe('deriveTurnDetection', () => {
     expect(deriveTurnDetection('server_vad', 'high')).toEqual({
       type: 'server_vad',
       threshold: 0.3,
-      prefixPaddingMs: 300,
-      silenceDurationMs: 500,
+      prefixPaddingMs: 500,
+      silenceDurationMs: 1000,
     });
     expect(deriveTurnDetection('server_vad', 'medium')).toMatchObject({ threshold: 0.5 });
     expect(deriveTurnDetection('server_vad', 'low')).toMatchObject({ threshold: 0.7 });

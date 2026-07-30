@@ -18,8 +18,8 @@ export interface AttachmentBarProps {
 /**
  * 根据附件类别返回对应图标
  */
-const AttachmentIcon: React.FC<{ category: AttachmentCategory }> = ({ category }) => {
-  const iconClass = 'w-5 h-5';
+export const AttachmentIcon: React.FC<{ category: AttachmentCategory; className?: string }> = ({ category, className }) => {
+  const iconClass = className ?? 'w-5 h-5';
   switch (category) {
     case 'pdf':
       return <FileText className={`${iconClass} text-red-400`} />;
@@ -88,7 +88,17 @@ const AttachmentItem: React.FC<{
   };
 
   return (
-    <div className="relative group flex items-center gap-2 px-3 py-2 bg-zinc-700/60 rounded-lg border border-zinc-700">
+    // chip 可聚焦：聚焦后 Delete/Backspace 删除，与 capability/pin chip 的键盘口径一致；
+    // 鼠标删除仍走右上角 hover 浮现的 ×（group-focus-within 让 × 对键盘焦点同样可见）
+    <div
+      className="relative group flex items-center gap-2 px-3 py-2 bg-zinc-700/60 rounded-lg border border-zinc-700"
+      tabIndex={0}
+      onKeyDown={(event) => {
+        if (event.key !== 'Delete' && event.key !== 'Backspace') return;
+        event.preventDefault();
+        onRemove();
+      }}
+    >
       {att.category === 'image' ? (
         <>
           <img

@@ -325,6 +325,18 @@ export function projectTurns(
       }
     }
 
+    // 语音派活的结局印章（X5.5-A2-a）：host 查过产物证据后落的一条 role:'system' 消息。
+    // 它不是对话内容，不成节点——只把结局盖到它属于的那一轮上，任务卡据此报结局。
+    // 对不上任何一轮就丢弃：宁可卡上不显示结局，也不能把印章盖到别人的活头上。
+    if (msg.role === 'system' && msg.metadata?.voiceWorkSettled) {
+      const settled = msg.metadata.voiceWorkSettled;
+      const matchedTurn = [...turns]
+        .reverse()
+        .find((turn) => turn.nodes.some((n) => n.metadata?.voiceDispatch?.workItemId === settled.workItemId));
+      if (matchedTurn) matchedTurn.voiceWorkOutcome = settled.outcome;
+      continue;
+    }
+
     // System messages → skip (nudges, recovery hints)
     if (msg.role === 'system') continue;
 
@@ -402,9 +414,12 @@ export function projectTurns(
         msg.reasoning?.trim().length || msg.thinking?.trim().length,
       );
       const hasToolCalls = msg.toolCalls && msg.toolCalls.length > 0;
+      // 运行失败的结构化错误挂在 metadata 上（AgentErrorCard），content 可能为空——
+      // 不能按"空消息"跳过，否则错误卡片投不出来。
+      const hasAgentError = Boolean(msg.metadata?.agentError);
 
       // Skip empty assistant messages
-      if (!hasContent && !hasReasoning && !hasToolCalls) continue;
+      if (!hasContent && !hasReasoning && !hasToolCalls && !hasAgentError) continue;
 
       const turn = currentTurn;
 
@@ -511,6 +526,12 @@ export function projectTurns(
           if (!referencedToolCallIds.has(tc.id)) pushToolCallNode(tc);
         }
 
+        // 错误卡片尾随在工具行之后：带 agentError 的消息即使 content_parts 全是工具
+        // 调用，也要补一个空正文节点承载 AgentErrorCard，否则失败无任何可见落点。
+        if (hasAgentError) {
+          pushAssistantTextNode('');
+        }
+
         // content_parts 是权威交错顺序。走到这里若仍 textIndex===0，说明 parts 里没有
         // 任何 text part：不能把内存里残留的 msg.content 当尾随正文追加到工具行之后——
         // 流式期模型先吐的 preamble（如"使用Write工具来创建文件"）被服务端精简成纯工具
@@ -519,7 +540,7 @@ export function projectTurns(
         continue;
       }
 
-      if (hasContent || hasReasoning) {
+      if (hasContent || hasReasoning || hasAgentError) {
         pushAssistantTextNode(msg.content);
       }
 

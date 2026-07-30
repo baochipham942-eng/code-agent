@@ -59,6 +59,19 @@ describe('resolveFileUrl', () => {
     expect(params.get('token')).toBe('test-token');
   });
 
+  it('routes dev-channel config dir (.code-agent-dev) images to /api/screenshot in web mode', () => {
+    mocks.hasNativeBridge.mockReturnValue(false);
+    stubWindow('http:', 'test-token');
+
+    const cachePath = '/Users/linchen/.code-agent-dev/cache/presentation-page-previews/rev123/pages/deck-01.jpg';
+    const resolved = resolveFileUrl(cachePath);
+    const params = new URLSearchParams(resolved.split('?')[1]);
+
+    expect(resolved.startsWith('/api/screenshot?')).toBe(true);
+    expect(params.get('path')).toBe(cachePath);
+    expect(params.get('token')).toBe('test-token');
+  });
+
   it('builds authed screenshot URLs via resolveScreenshotUrl', () => {
     stubWindow('http:', 'test-token');
 

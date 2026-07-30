@@ -405,6 +405,7 @@ export function useSidebarDerivedSessions(params: UseSidebarDerivedSessionsParam
           return !(wd.includes(marker) || wd.endsWith(base));
         }),
         t.sidebarProject.uncategorizedGroupName,
+        t.sidebar.projectsSectionTitle,
       ).map((group) => ({
         ...group,
         sessions: sortSidebarSessionsForRecovery(

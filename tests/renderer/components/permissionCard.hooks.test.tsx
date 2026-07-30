@@ -9,6 +9,11 @@ const state = vi.hoisted(() => ({
   sessionId: 'session-current' as string | null,
 }));
 
+vi.mock('../../../src/renderer/hooks/useI18n', async () => {
+  const { zh } = await import('../../../src/renderer/i18n/zh');
+  return { useI18n: () => ({ t: zh, language: 'zh' }) };
+});
+
 vi.mock('../../../src/renderer/stores/appStore', () => ({
   useAppStore: () => ({
     pendingPermissionRequest: state.request,

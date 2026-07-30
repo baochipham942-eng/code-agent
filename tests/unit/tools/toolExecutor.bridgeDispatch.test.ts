@@ -99,4 +99,39 @@ describe('ToolExecutor Bridge dispatch', () => {
     await expect(fs.stat(path.join(workspace, 'output.txt'))).rejects.toMatchObject({ code: 'ENOENT' });
     await expect(fs.stat(path.join(workspace, '.code-agent/artifacts/images'))).resolves.toMatchObject({});
   });
+
+  it('repairs a Bridge failure that omitted its error details', async () => {
+    const workspace = path.join(tempRoot, 'repo');
+    await fs.mkdir(workspace, { recursive: true });
+    const runContext = createRunContext({
+      runId: 'run-bridge-empty-error',
+      sessionId: 'session-bridge-empty-error',
+      workspace,
+    });
+    const dispatch: ToolExecutionDelegate = vi.fn(async () => ({
+      success: false,
+      metadata: { code: 'LOCAL_CONFIG_UNAVAILABLE' },
+    }));
+    const baseExecutor = new ToolExecutor({
+      workingDirectory: tempRoot,
+      requestPermission: vi.fn(async () => true),
+    });
+    baseExecutor.setAuditEnabled(false);
+    const executor = baseExecutor.forRun(runContext, dispatch);
+
+    const result = await executor.execute(
+      'Read',
+      { file_path: 'config.json' },
+      {
+        runId: runContext.runId,
+        sessionId: runContext.sessionId,
+        currentToolCallId: 'call-local-config',
+      },
+    );
+
+    expect(result).toMatchObject({
+      success: false,
+      error: 'Tool "Read" failed: execution backend returned failure (LOCAL_CONFIG_UNAVAILABLE) without an error message',
+    });
+  });
 });

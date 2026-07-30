@@ -236,6 +236,36 @@ export interface AgentTeamMessageMetadata {
   targetAgentIds?: string[];
 }
 
+/** 会话区错误卡片的错误分类（AgentErrorCard 按它决定文案和动作按钮）。 */
+export type AgentErrorCategory =
+  | 'model_not_found'
+  | 'forbidden'
+  | 'rate_limited'
+  | 'concurrency'
+  | 'network'
+  | 'context_length'
+  | 'generic';
+
+/**
+ * agent 运行失败的结构化错误信息，落在最后一条 assistant 消息的 metadata 上，
+ * 由 AgentErrorCard 渲染成可操作卡片（替代旧版 merge 进 content 的纯文本）。
+ * 刻意不存 title/suggestion 文案——文案随 i18n 走，存下来会把语言钉死在持久化数据里。
+ */
+export interface AgentErrorMetadata {
+  category: AgentErrorCategory;
+  /** host 侧错误码（RUN_FAILED / CONTEXT_LENGTH_EXCEEDED / …） */
+  code?: string;
+  httpStatus?: number;
+  traceId?: string;
+  /** 供应商/运行时的原始错误文本，进错误报告 */
+  rawMessage: string;
+  modelId?: string;
+  timestamp: number;
+  /** context_length 专用：实际/上限 tokens，供卡片模板填空 */
+  requestedTokens?: number;
+  maxTokens?: number;
+}
+
 export interface MessageMetadata {
   /**
    * 方案 §8.2 的用户输入来源；缺省视为 typed。
@@ -248,6 +278,8 @@ export interface MessageMetadata {
   channel?: ChannelMessageMetadata;
   neoTag?: NeoTagMessageMetadata;
   agentTeam?: AgentTeamMessageMetadata;
+  /** agent 运行失败的结构化错误（会话区渲染 AgentErrorCard），见 AgentErrorMetadata */
+  agentError?: AgentErrorMetadata;
   automation?: SessionAutomationMessageMetadata;
   turnQuality?: TurnQualitySummary;
   /**
@@ -260,6 +292,13 @@ export interface MessageMetadata {
    * 把它对回那张任务卡——靠正文文本反解标题等于拿人话当协议，文案一改就静默失效。
    */
   voiceWorkFailure?: { workItemId: string; title: string; detail?: string };
+  /**
+   * 语音派出的活跑完了的结局印章（`role:'system'`，X5.5-A2-a）。host 查完产物证据才写，
+   * 是任务卡「已完成 / 已结束·待核验」的唯一依据——渲染侧不许再从「这轮完成了 + 有正文」
+   * 反推完成，那条反推等于把模型的一句「我已经建好了」当成事实。
+   * 这条消息不进对话（投影层只取 metadata，不成节点）。
+   */
+  voiceWorkSettled?: { workItemId: string; title: string; outcome: 'done' | 'unverified' };
   voiceDispatch?: {
     title: string;
     /** 账本里这件活的 id。失败留痕靠它对回这张任务卡（见 voiceWorkFailure）。 */

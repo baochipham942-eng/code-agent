@@ -588,13 +588,20 @@ export function projectTurns(
   // 会话里不再投影独立的 neo_work_card 卡片。@neo 的运行本就是同会话的正常 agent turn，
   // 其回复已在对话流里；work card 记录仅供账号菜单「Neo 协同」topic 目录做历史视图。
 
+  // X5.5-D5：语音派出的 run 刻意活得比通话久，挂断后 run 的收尾文本 timestamp
+  // 晚于摘要卡的 endedAt——摘要卡因此不在消息流最后。展示层把摘要卡钉到所在轮
+  // 末尾（不改落库时序），恒排在这通电话 episode 的内容之后。
+  pinVoiceCallSummaryToEpisodeEnd(turns);
+
   // Direct-routed sidecar messages should not steal the active marker from
   // the in-flight task. Normal user turns can still be active while waiting
   // for the first assistant response.
   let activeTurnIndex = -1;
   if (isProcessing && turns.length > 0) {
     const latestTurn = turns[turns.length - 1];
-    const latestNode = latestTurn.nodes[latestTurn.nodes.length - 1];
+    // 钉在轮尾的通话摘要卡不是活动内容（D5）——判断轮尾时跳过它，否则钉尾会把
+    // 在跑的派活轮从 active 上顶下来（lastNode 变成 system，流式标记丢失）。
+    const latestNode = lastNonVoiceSummaryNode(latestTurn);
     const directRoutingDelivery = latestNode?.metadata?.workbench?.directRoutingDelivery;
     const isDirectRoutedUserTurn =
       latestNode?.type === 'user' &&
@@ -614,7 +621,7 @@ export function projectTurns(
     for (let index = turns.length - 1; index >= 0; index -= 1) {
       if (activeTurnIndex >= 0) break;
       const candidateTurn = turns[index];
-      const lastNode = candidateTurn.nodes[candidateTurn.nodes.length - 1];
+      const lastNode = lastNonVoiceSummaryNode(candidateTurn);
       if (!lastNode) continue;
 
       if (lastNode.type === 'assistant_text' || lastNode.type === 'tool_call') {
@@ -647,6 +654,32 @@ export function projectTurns(
     activeTurnIndex,
   };
   });
+}
+
+/**
+ * X5.5-D5：把「语音通话摘要」节点钉到所在轮的末尾。
+ * 语音派出的 run 被刻意设计为活得比通话久，挂断后 run 的收尾文本 timestamp 晚于
+ * 摘要卡的 endedAt，摘要卡因此不在这通 episode 的最后。这里只动展示层节点顺序，
+ * 不改落库时序；摘要卡恒排在本轮这通电话的内容之后。钉钉是幂等的。
+ */
+function pinVoiceCallSummaryToEpisodeEnd(turns: TraceTurn[]): void {
+  for (const turn of turns) {
+    const summaryNodes = turn.nodes.filter((node) => node.subtype === 'voice_call_summary');
+    if (summaryNodes.length === 0) continue;
+    if (turn.nodes[turn.nodes.length - 1]?.subtype === 'voice_call_summary') continue;
+    turn.nodes = turn.nodes
+      .filter((node) => node.subtype !== 'voice_call_summary')
+      .concat(summaryNodes);
+  }
+}
+
+/** 轮尾的「真实内容节点」：跳过钉尾的通话摘要卡（D5），active/流式判断不看它。 */
+function lastNonVoiceSummaryNode(turn: TraceTurn): TraceNode | undefined {
+  for (let index = turn.nodes.length - 1; index >= 0; index -= 1) {
+    const node = turn.nodes[index];
+    if (node.subtype !== 'voice_call_summary') return node;
+  }
+  return undefined;
 }
 
 function relocateActiveTurnReasoningToTail(turn: TraceTurn): void {

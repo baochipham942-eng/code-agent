@@ -4,7 +4,7 @@
 // ============================================================================
 
 import React, { useState, useMemo, useCallback, memo, useEffect, lazy, Suspense } from 'react';
-import { Code2, Copy, Check, Eye, Play, ClipboardCopy, MessageSquare, MessageSquarePlus, Settings } from 'lucide-react';
+import { Code2, Copy, Check, ExternalLink, ClipboardCopy, MessageSquare, MessageSquarePlus, Settings } from 'lucide-react';
 import { UI } from '@shared/constants';
 import type { Components } from 'react-markdown';
 import { useAppStore } from '../../../../stores/appStore';
@@ -526,22 +526,22 @@ export const InlineCode = memo(function InlineCode({
   const isFile = isFilePath(text);
   const isHtml = isHtmlFile(text);
 
-  // Regular inline code (not a file) — Codex 风格：无 border，柔和灰底
+  // Regular inline code (not a file) — 轻呈现：6% 白淡底、小圆角，无边框无实心块感
   if (!isFile) {
     return (
-      <code className="px-1.5 py-0.5 mx-0.5 rounded-md bg-surface-hover text-zinc-200 text-xs font-mono">
+      <code className="px-1 mx-0.5 rounded bg-white/[0.06] text-zinc-200 text-xs font-mono">
         {children}
       </code>
     );
   }
 
-  // File path - clickable。非核心信息不做亮色（primary-300 在整段回复里太跳），
-  // 用与正文同级的灰字 + hover 微亮来表达可点；点击进 app 内预览，不再直接打开本地文件。
+  // File path - 可点，但去 chip 容器感：mono 蓝字 inline 在正文流里，
+  // hover 出下划线 + ↗ 表达可点；点击进 app 内预览，不再直接打开本地文件。
   const { path: filePath, lineNumber } = parseFilePathWithLine(text);
 
   return (
     <code
-      className="inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5 rounded-md bg-surface-hover text-zinc-300 text-xs font-mono cursor-pointer hover:bg-white/[0.1] hover:text-zinc-100 transition-colors group"
+      className="inline-flex items-baseline gap-0.5 mx-0.5 font-mono text-xs text-primary-300 hover:text-primary-200 cursor-pointer hover:underline underline-offset-2 transition-colors group"
       onClick={() => {
         if (isHtml && onPreviewHtml) {
           onPreviewHtml(filePath);
@@ -552,11 +552,7 @@ export const InlineCode = memo(function InlineCode({
       title={isHtml ? '点击预览' : lineNumber ? `点击预览（第 ${lineNumber} 行）` : '点击预览'}
     >
       {children}
-      {isHtml ? (
-        <Play className="w-3 h-3 opacity-50 group-hover:opacity-100 text-blue-400" />
-      ) : (
-        <Eye className="w-3 h-3 opacity-50 group-hover:opacity-100" />
-      )}
+      <ExternalLink className="w-3 h-3 self-center opacity-0 group-hover:opacity-60 transition-opacity" />
     </code>
   );
 });

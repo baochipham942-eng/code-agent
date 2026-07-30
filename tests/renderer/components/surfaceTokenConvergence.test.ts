@@ -41,7 +41,7 @@ const SCOPED_FILES = [
  * 映射到最近 token 后档位跳档明显（相对误差 >35%，且没有更近的 token 可选），
  * 保留原字面量以保证「视觉终态无可感变化」。 */
 const ALLOWLIST: Record<string, number> = {
-  'components/features/chat/MessageBubble/messageContentParts.tsx': 1, // hover:bg-white/[0.1]，离 surface-hover(0.05) 太远
+  'components/features/chat/MessageBubble/messageContentParts.tsx': 1, // 行内 code 淡底 bg-white/[0.06]（轻呈现拍板值，比 surface-hover(0.05) 略亮一档）
   'components/features/chat/ContextUsagePill.tsx': 1, // hover:bg-white/[0.1]，同上
   'components/features/chat/InlineStrip.tsx': 1, // bg-white/[0.08]，离 surface-hover(0.05) 太远
 };

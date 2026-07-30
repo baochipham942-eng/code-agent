@@ -877,12 +877,15 @@ export const App: React.FC = () => {
 
           {/* Right Area: Chat + TaskPanel with shared title bar */}
           <div className="flex-1 flex flex-col min-w-0 bg-zinc-900">
-            {/* Right Title Bar —— 三个槽位全空时整条不渲染（2026-07-27 审美关）：
+            {/* Right Title Bar（二级页分支，全宽）—— 三个槽位全空时整条不渲染（2026-07-27 审美关）：
                 侧栏收起开关已挪回侧栏自己头上，顶栏只在收起态留展开入口；
                 二级页在位时会话动作与右栏开关也都没有对象。于是「二级页 + 侧栏展开」
-                这一档顶栏什么都不剩，留着只是一条空的 h-12 边框——不画，让大标题贴顶。 */}
-            {(!inlineSecondaryPageActive || !isSidebarVisible) && (
-              <TitleBar secondaryPageActive={inlineSecondaryPageActive} />
+                这一档顶栏什么都不剩，留着只是一条空的 h-12 边框——不画，让大标题贴顶。
+                2026-07-30 第四波②：正常会话分支的顶栏并入聊天列（见下 PanelGroup），
+                右栏 workbench 列通顶、tab 条贴面板最顶（WorkBuddy 形态），不再在 tab 条上方
+                压一行只有拖拽区的空档；二级页分支顶栏仍全宽（本分支）。 */}
+            {inlineSecondaryPageActive && !isSidebarVisible && (
+              <TitleBar secondaryPageActive />
             )}
 
             {/* Content Area */}
@@ -919,6 +922,10 @@ export const App: React.FC = () => {
                 <PanelGroup orientation="horizontal" className="flex-1 min-h-0" id="main-layout">
                   <Panel minSize="30" id="chat">
                     <div className="flex flex-col h-full min-h-0 min-w-0 bg-zinc-900">
+                      {/* 正常会话的顶栏住在聊天列里（第四波②）：右栏展开时 workbench 列
+                          通顶、tab 条贴窗口最顶（WorkBuddy）；右栏开关仍在顶栏右端那组，
+                          两态同一行同一槽位（2026-07-27 房规：纵向不跳、顶栏单点可达）。 */}
+                      <TitleBar />
                       {showNarrowWorkbench ? renderWorkbenchContent() : <ChatView />}
                     </div>
                   </Panel>

@@ -541,6 +541,8 @@ describe('失败告知出口', () => {
 describe('空对话不出通话摘要卡（A3）', () => {
   beforeEach(() => {
     connect.mockClear();
+    // close 是「teardown 走完了」的路标，上一条用例的收尾会污染它，必须清
+    close.mockClear();
     addMessageToSession.mockClear();
     voiceDispatchProbe.work = null;
     lastOnEvent = null;

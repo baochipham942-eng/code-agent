@@ -143,6 +143,23 @@ export const VOICE_UPSTREAM_SAMPLE_RATE = 16_000;
 /** 下行助手音频采样率（Hz），厂商固定 24k 单声道 PCM16。 */
 export const VOICE_DOWNSTREAM_SAMPLE_RATE = 24_000;
 
+/**
+ * 字幕揭示器的推进间隔（ms）。
+ *
+ * 上游按**生成速度**吐转写（实测 124 字全文 544ms 到齐），而音频按**真实时间**播
+ * （同一段 24.6 秒）——直接上屏就是字幕比语音早结束 20 多秒，肉眼看就是「攒整句一次性铺满」。
+ * 所以字幕的揭示进度绑音频播放进度，这个间隔是推进节拍。
+ */
+export const VOICE_SUBTITLE_REVEAL_INTERVAL_MS = 100;
+
+/**
+ * 字幕揭示的停滞兜底（ms）：播放进度连续这么久没推进，就把剩余全文一次放完。
+ *
+ * 兜底存在的理由是「字幕绝不许永久悬着」——原生 AEC 走 sidecar、音频可能中途断供，
+ * 没有这个闸，用户会对着半句话等到天荒地老。
+ */
+export const VOICE_SUBTITLE_STALL_FLUSH_MS = 3_000;
+
 /** Tauri 原生 AEC sidecar 的上行音频/电平/生命周期事件。 */
 export const VOICE_AEC_OUTPUT_EVENT = 'voice-aec:output';
 
@@ -179,6 +196,32 @@ export const VOICE_TEARDOWN_DRAIN_MS = 1500;
 export const VOICE_END_CALL_GOODBYE_TIMEOUT_MS = 5_000;
 
 /**
+ * 用户说挂断的词表（A1，2026-07-30）。
+ *
+ * 模型嘴上答「好的，通话结束」却不调 end_call 已四次复现、prompt 强化三连败，
+ * 所以挂断不再只挂在模型的自觉上：host 自己看用户 final 字幕，命中就走收线链。
+ * 匹配规则见 hangupIntent.ts——**只认句尾**，「这个先这样处理然后继续」不算。
+ *
+ * 「挂断电话」「挂电话」单独成条：匹配是句尾比对，「挂断」这一条盖不住它们的尾巴。
+ * 本次先做常量；「用户可配」记在 REPORT 遗留里。
+ */
+export const VOICE_HANGUP_INTENT_PHRASES = [
+  '挂断',
+  '挂断电话',
+  '挂电话',
+  '挂了',
+  '结束通话',
+  '结束对话',
+  '先这样',
+  '就这样',
+  '拜拜',
+  '再见',
+  '回头聊',
+  '下次聊',
+  '不聊了',
+] as const;
+
+/**
  * 客户端断开后等它回来的宽限窗（批 H · 断线重连 sticky）。
  * 窗口内不挂断上游、不落通话摘要——否则每次网络抖动都会在消息流里落一张
  * 「通话结束」卡，然后重连变成第二通电话。超时才走正常 teardown。
@@ -208,6 +251,15 @@ export const VOICE_RECENT_FILE_LIMIT = 8;
 
 /** 语音派发任务的迭代上限：通话场景的任务应该是小活，跑飞了要有个头。 */
 export const VOICE_SPAWN_TASK_MAX_ITERATIONS = 30;
+
+/**
+ * 完成语义证据查询的上限（X5.5-A2-a）。
+ *
+ * 为什么一次本地读盘也要设上限：这次查询卡在 run 终态**之前**，而终态那一步要还
+ * D4 抬严票。查询永不返回 = 票永远不还 = 这条会话永久钉死在只读档，用户点什么都
+ * 弹确认（本仓 2026-07-26 已被同一形状的锁死咬过一次）。超时按无证据处理（fail-closed）。
+ */
+export const VOICE_WORK_EVIDENCE_TIMEOUT_MS = 3_000;
 
 /**
  * 终态回流念出来的上限（字）。超过就截断并指路屏幕——一段话念过 15 秒，

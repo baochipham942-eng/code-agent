@@ -2592,7 +2592,26 @@ fn align_traffic_lights(app: &AppHandle) {
 /// 灯留在系统默认的中心 16；此前一次"看起来成了"，是因为手动前置窗口撞上了 Focused 重放
 /// ——典型的竞态假绿。摆法是幂等的绝对定位，所以这里在随后几拍里再断言几次；
 /// 这是对 AppKit 排版时机的补偿，有界（总计约 2s 内结束），不是轮询。
-fn present_main_window(app: &AppHandle) {
+///
+/// `via` 记录三条路径谁先到并写进 shell 事件流：invoke 通道被 ACL 拒掉时会静默降级成
+/// 超时兜底，肉眼只看到"窗口慢了两秒"，没有这行日志无法从外部分辨渲染器→壳的 invoke
+/// 到底通不通（2026-07-30 原生 AEC ACL 事故就是这么潜伏下来的）。
+fn present_main_window(app: &AppHandle, via: &str) {
+    append_shell_event_payload(
+        app,
+        serde_json::json!({
+            "schemaVersion": 1,
+            "source": "tauri-shell",
+            "generatedAt": now_millis_string(),
+            "level": "info",
+            "event": "desktop-shell-window-presented",
+            "message": "main window presented",
+            "appVersion": app.config().version,
+            "bundleId": app.config().identifier,
+            "channel": desktop_shell_channel(Some(&app.config().identifier), cfg!(debug_assertions)),
+            "presentedVia": via,
+        }),
+    );
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.show();
         let _ = window.set_focus();
@@ -2618,7 +2637,7 @@ struct RendererReadyShown(Arc<AtomicBool>);
 #[tauri::command]
 fn renderer_ready(app: AppHandle, state: State<'_, RendererReadyShown>) {
     if !state.0.swap(true, std::sync::atomic::Ordering::SeqCst) {
-        present_main_window(&app);
+        present_main_window(&app, "invoke-command");
     }
 }
 
@@ -2862,7 +2881,7 @@ fn main() {
                 // app 级监听更可靠地收到(实测 window.once 收不到、窗口一直走超时兜底)。
                 app.handle().once("renderer-ready", move |_event| {
                     if !shown.swap(true, std::sync::atomic::Ordering::SeqCst) {
-                        present_main_window(&app_for_show);
+                        present_main_window(&app_for_show, "renderer-ready-event");
                     }
                 });
             }
@@ -2872,7 +2891,7 @@ fn main() {
                 thread::spawn(move || {
                     thread::sleep(RENDERER_READY_TIMEOUT);
                     if !shown.swap(true, std::sync::atomic::Ordering::SeqCst) {
-                        present_main_window(&app_for_timeout);
+                        present_main_window(&app_for_timeout, "timeout-fallback");
                     }
                 });
             }

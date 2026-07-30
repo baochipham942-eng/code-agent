@@ -421,9 +421,17 @@ async function teardown(reason: string): Promise<void> {
   const minutes = Math.floor(durationSec / 60);
   const seconds = durationSec % 60;
   const durationText = minutes > 0 ? `${minutes} 分 ${seconds} 秒` : `${seconds} 秒`;
+  // 用量账本无条件记：空通话也真按秒付了钱，不落卡不等于没发生。
   recordVoiceCall(endedAt, durationSec);
+  // A3：零字幕通话不落摘要卡。2026-07-30 真机那通 16 秒空通话（自动重连拨出来的）
+  // 在消息流里留了一张「这通电话没有对话内容」——那不是记录，是噪音。
+  // 派过活的通话即使一句没说也照落：工作项才是那通电话的产物。
+  const hasCallContent = session.transcriptCounter.count > 0 || session.workItemCount > 0;
+  if (!hasCallContent) {
+    logger.info('empty call, summary card skipped', { voiceSessionId: session.id, durationSec });
+  }
   try {
-    await getSessionManager().addMessageToSession(session.neoSessionId, {
+    if (hasCallContent) await getSessionManager().addMessageToSession(session.neoSessionId, {
       id: `voice-summary-${endedAt}-${Math.random().toString(36).slice(2, 8)}`,
       role: 'system',
       content: `语音通话结束，时长 ${durationText}`,

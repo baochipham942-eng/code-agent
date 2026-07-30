@@ -75,6 +75,7 @@ const voiceDispatchProbe = vi.hoisted(() => ({
     summary: string;
   }) => void),
   fail: null as null | ((item: VoiceWorkItem) => void),
+  work: null as null | ((item: VoiceWorkItem) => void),
 }));
 vi.mock('../../src/host/services/voice/voiceAgentCoordinator', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/host/services/voice/voiceAgentCoordinator')>();
@@ -83,6 +84,7 @@ vi.mock('../../src/host/services/voice/voiceAgentCoordinator', async (importOrig
     beginVoiceDispatch: (binding: Parameters<typeof actual.beginVoiceDispatch>[0]) => {
       voiceDispatchProbe.narrate = binding.onWorkNarration as typeof voiceDispatchProbe.narrate;
       voiceDispatchProbe.fail = binding.onWorkFailed;
+      voiceDispatchProbe.work = binding.onWorkItem;
       actual.beginVoiceDispatch(binding);
     },
   };
@@ -324,6 +326,9 @@ describe('voiceSessionService 互斥与挂断', () => {
     const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(startedAt);
     const client = new FakeClient();
     await attachVoiceClient(client as never, 'session-1');
+    // 这通电话得真说过话，否则按 A3 根本不该落摘要卡
+    lastOnEvent?.({ type: 'user.transcript', text: '你好', done: true });
+    await vi.waitFor(() => expect(addMessageToSession).toHaveBeenCalled());
     nowSpy.mockReturnValue(endedAt);
 
     client.emit('message', Buffer.from(JSON.stringify({ type: 'end' })), false);
@@ -527,6 +532,64 @@ describe('失败告知出口', () => {
     expect(persisted?.content).not.toContain(raw);
     expect(persisted?.metadata?.voiceWorkFailure?.detail).toBe(raw);
   });
+});
+
+// ============================================================================
+// A3 · 空对话不落摘要卡（2026-07-30）。那通 16 秒空通话在消息流里留下一张
+// 「这通电话没有对话内容」——记录零内容的事不是记录，是噪音。
+// ============================================================================
+describe('空对话不出通话摘要卡（A3）', () => {
+  beforeEach(() => {
+    connect.mockClear();
+    addMessageToSession.mockClear();
+    voiceDispatchProbe.work = null;
+    lastOnEvent = null;
+  });
+
+  afterEach(async () => {
+    await endActiveVoiceSession();
+  });
+
+  function summaries(): Message[] {
+    return addMessageToSession.mock.calls
+      .map(([, message]) => message)
+      .filter((message) => Boolean(message.metadata?.voiceCallSummary));
+  }
+
+  it('零字幕通话挂断：不落摘要卡', async () => {
+    const client = new FakeClient();
+    await attachVoiceClient(client as never, 'session-empty');
+
+    client.emit('message', Buffer.from(JSON.stringify({ type: 'end' })), false);
+    await vi.waitFor(() => expect(getActiveVoiceSessionId()).toBeNull(), { timeout: 4000 });
+
+    expect(summaries()).toHaveLength(0);
+  }, 10_000);
+
+  it('有字幕就照落，且 transcriptCount 数得对', async () => {
+    const client = new FakeClient();
+    await attachVoiceClient(client as never, 'session-with-transcript');
+    lastOnEvent?.({ type: 'user.transcript', text: '帮我看一下这个文件', done: true });
+    lastOnEvent?.({ type: 'assistant.transcript', text: '好的，我看看。', done: true });
+    await vi.waitFor(() => expect(addMessageToSession).toHaveBeenCalledTimes(2));
+
+    client.emit('message', Buffer.from(JSON.stringify({ type: 'end' })), false);
+    await vi.waitFor(() => expect(summaries()).toHaveLength(1), { timeout: 4000 });
+
+    expect(summaries()[0].metadata?.voiceCallSummary).toMatchObject({ transcriptCount: 2 });
+  }, 10_000);
+
+  // 理论上派活必有字幕，但真出现「零字幕却派过活」时保守落卡：工作项就是那通电话的产物。
+  it('零字幕但派过活：仍落摘要卡', async () => {
+    const client = new FakeClient();
+    await attachVoiceClient(client as never, 'session-work-only');
+    voiceDispatchProbe.work?.({ id: 'work-1', title: '建个文件', status: 'queued' });
+
+    client.emit('message', Buffer.from(JSON.stringify({ type: 'end' })), false);
+    await vi.waitFor(() => expect(summaries()).toHaveLength(1), { timeout: 4000 });
+
+    expect(summaries()[0].metadata?.voiceCallSummary).toMatchObject({ transcriptCount: 0, workItemCount: 1 });
+  }, 10_000);
 });
 
 // ============================================================================
@@ -845,6 +908,8 @@ describe('通话生命周期 hook', () => {
     const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(startedAt);
     const client = new FakeClient();
     await attachVoiceClient(client as never, 'session-hook');
+    lastOnEvent?.({ type: 'user.transcript', text: '你好', done: true });
+    await vi.waitFor(() => expect(addMessageToSession).toHaveBeenCalled());
     nowSpy.mockReturnValue(startedAt + 75_000);
 
     client.emit('message', Buffer.from(JSON.stringify({ type: 'end' })), false);

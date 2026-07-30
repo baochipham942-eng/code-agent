@@ -23,6 +23,7 @@ import { ProjectActivityFeed } from './ProjectActivityFeed';
 import { ProjectArtifactsList } from './ProjectArtifactsList';
 import { ProjectComposer } from './ProjectComposer';
 import { ProjectConfigRail } from './ProjectConfigRail';
+import { ProjectMembersCard } from './ProjectMembersCard';
 import { ProjectInviteModal } from './ProjectInviteModal';
 import { useProjectSpaceInvite } from './useProjectSpaceInvite';
 
@@ -206,7 +207,10 @@ export const ProjectSpaceView: React.FC<ProjectSpaceViewProps> = ({ projectId, o
           project={project}
           detail={detail}
           onRefreshDetail={refreshDetail}
-          onInvite={() => inviteModal.open(projectId)}
+          // 成员 tab 仅云空间注入（tab 壳约定：membersContent 为空则不渲染 tab 位）
+          membersContent={project?.cloudProjectId ? (
+            <ProjectMembersCard projectId={projectId} onInvite={() => inviteModal.open(projectId)} />
+          ) : undefined}
         />
       </div>
       <ProjectInviteModal state={inviteModal.state} isOpen={inviteModal.isOpen} onClose={inviteModal.close} />

@@ -3,7 +3,7 @@
 // ============================================================================
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { DEFAULT_MODELS } from '../../../src/shared/constants';
+import { DEFAULT_MODELS, QUICK_MODEL_AUTH_BLACKLIST_MS } from '../../../src/shared/constants';
 
 const { getConfigServiceMock, loggerErrorMock } = vi.hoisted(() => ({
   getConfigServiceMock: vi.fn(),
@@ -115,11 +115,11 @@ describe('thinking 模型回落时自动关闭思考', () => {
   });
 });
 
-describe('快模型鉴权失败诊断', () => {
-  it('401 留下鉴权失败记录且不泄露 API Key，后续成功响应会清除记录', async () => {
+describe('快模型鉴权失败诊断 + 401 拉黑降级', () => {
+  it('401 留下鉴权失败记录且不泄露 API Key；下一次调用自动降级到主模型并清除记录', async () => {
     const apiKey = 'quick-model-secret-canary';
-    mockConfig({ keys: { zhipu: apiKey } });
-    vi.stubGlobal('fetch', vi.fn()
+    mockConfig({ keys: { zhipu: apiKey, xiaomi: 'xk' } });
+    const fetchMock = vi.fn()
       .mockResolvedValueOnce({
         ok: false,
         status: 401,
@@ -129,7 +129,8 @@ describe('快模型鉴权失败诊断', () => {
         ok: true,
         status: 200,
         json: async () => ({ choices: [{ message: { content: 'general' } }] }),
-      }));
+      });
+    vi.stubGlobal('fetch', fetchMock);
 
     const failed = await quickTask('分类这句话');
 
@@ -154,9 +155,60 @@ describe('快模型鉴权失败诊断', () => {
     );
     expect(JSON.stringify(loggerErrorMock.mock.calls)).not.toContain(apiKey);
 
+    // 拉黑生效：第二次调用不再撞失效的 zhipu，降级到 routing.code（mimo）
     const succeeded = await quickTask('再试一次');
-
     expect(succeeded.success).toBe(true);
+    const secondBody = JSON.parse(fetchMock.mock.calls[1][1].body);
+    expect(secondBody.model).toBe('mimo-v2.5-pro');
     expect(getQuickModelAuthFailure()).toBeNull();
+  });
+
+  it('失效 key 不比没 key 糟：401 后解析降到 code 档；resetQuickModel 清黑名单后回到 fast', async () => {
+    mockConfig({ keys: { zhipu: 'dead-key', xiaomi: 'xk' } });
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: false,
+      status: 401,
+      text: async () => 'invalid',
+    }));
+
+    await quickTask('hi');
+    expect(getQuickModelInfo()).toEqual({ provider: 'xiaomi', model: 'mimo-v2.5-pro' });
+
+    resetQuickModel();
+    expect(getQuickModelInfo()).toEqual({ provider: 'zhipu', model: DEFAULT_MODELS.quick });
+  });
+
+  it('换了 key（指纹不同）立即恢复重试 fast 档，不用等窗口', async () => {
+    mockConfig({ keys: { zhipu: 'dead-key', xiaomi: 'xk' } });
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: false,
+      status: 401,
+      text: async () => 'invalid',
+    }));
+    await quickTask('hi');
+    expect(getQuickModelInfo()).toEqual({ provider: 'xiaomi', model: 'mimo-v2.5-pro' });
+
+    mockConfig({ keys: { zhipu: 'fresh-new-key', xiaomi: 'xk' } });
+    expect(getQuickModelInfo()).toEqual({ provider: 'zhipu', model: DEFAULT_MODELS.quick });
+  });
+
+  it('拉黑窗口过期后重试 fast 档', async () => {
+    mockConfig({ keys: { zhipu: 'dead-key', xiaomi: 'xk' } });
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: false,
+      status: 401,
+      text: async () => 'invalid',
+    }));
+    await quickTask('hi');
+    expect(getQuickModelInfo()).toEqual({ provider: 'xiaomi', model: 'mimo-v2.5-pro' });
+
+    // 只挪 Date.now（拉黑窗口的唯一判据），不动 timer 体系——限流器依赖真实定时器
+    const realNow = Date.now();
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(realNow + QUICK_MODEL_AUTH_BLACKLIST_MS + 1);
+    try {
+      expect(getQuickModelInfo()).toEqual({ provider: 'zhipu', model: DEFAULT_MODELS.quick });
+    } finally {
+      nowSpy.mockRestore();
+    }
   });
 });

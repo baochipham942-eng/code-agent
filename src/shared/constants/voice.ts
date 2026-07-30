@@ -229,6 +229,12 @@ export const VOICE_HANGUP_INTENT_PHRASES = [
 ] as const;
 
 /**
+ * 连续用户字幕并入上一条的时间窗（ms，R5）。VAD 把一句话切成几轮时，消息流里
+ * 会留下一串碎片；这个窗口内到达的下一条 final 直接改写上一条，不新增消息。
+ */
+export const VOICE_TRANSCRIPT_MERGE_WINDOW_MS = 2_000;
+
+/**
  * 客户端断开后等它回来的宽限窗（批 H · 断线重连 sticky）。
  * 窗口内不挂断上游、不落通话摘要——否则每次网络抖动都会在消息流里落一张
  * 「通话结束」卡，然后重连变成第二通电话。超时才走正常 teardown。

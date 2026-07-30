@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { EventEmitter } from 'events';
 import { isVoiceInputMessage, type Message } from '../../src/shared/contract/message';
 import type { VoiceEvent, VoiceTransport, VoiceWorkItem } from '../../src/shared/contract/voice';
-import { QWEN_OMNI_REALTIME_MODEL, VOICE_END_CALL_GOODBYE_TIMEOUT_MS, VOICE_WS_CLOSE_TERMINAL } from '../../src/shared/constants/voice';
+import { QWEN_OMNI_REALTIME_MODEL, VOICE_END_CALL_GOODBYE_TIMEOUT_MS, VOICE_TRANSCRIPT_MERGE_WINDOW_MS, VOICE_WS_CLOSE_TERMINAL } from '../../src/shared/constants/voice';
 
 const vocabulary = vi.hoisted(() => ({ block: '' }));
 vi.mock('../../src/host/services/voice/voiceVocabulary', () => ({
@@ -29,8 +29,9 @@ const connect = vi.fn(async (input: Parameters<VoiceTransport['connect']>[0]) =>
 vi.mock('../../src/host/services/voice/qwenOmniTransport', () => ({ qwenOmniTransport: { id: 'qwen-omni', connect } }));
 const dashscopeKey = vi.hoisted(() => ({ value: 'test-key' }));
 vi.mock('../../src/host/services/media/imageGenerationService', () => ({ getDashscopeApiKey: () => dashscopeKey.value }));
+const updateMessage = vi.fn(async (_messageId: string, _updates: Partial<Message>) => undefined);
 vi.mock('../../src/host/services/infra/sessionManager', () => ({
-  getSessionManager: () => ({ addMessageToSession, patchSessionMetadata, getSession }),
+  getSessionManager: () => ({ addMessageToSession, patchSessionMetadata, getSession, updateMessage }),
 }));
 const voiceLogger = vi.hoisted(() => ({
   info: vi.fn(),
@@ -532,6 +533,115 @@ describe('失败告知出口', () => {
     expect(persisted?.content).not.toContain(raw);
     expect(persisted?.metadata?.voiceWorkFailure?.detail).toBe(raw);
   });
+});
+
+// ============================================================================
+// R5 · 连续用户字幕并入上一条。VAD 把一句话切成几轮，消息流里就成了一串碎片。
+// 合并是「落库后回头改上一条」，不是攒着晚点写——晚写会让近窗/挂断闸都晚看到。
+// ============================================================================
+describe('连续用户字幕合并（R5）', () => {
+  beforeEach(() => {
+    connect.mockClear();
+    close.mockClear();
+    addMessageToSession.mockClear();
+    updateMessage.mockClear();
+    lastOnEvent = null;
+  });
+
+  afterEach(async () => {
+    await endActiveVoiceSession();
+  });
+
+  function userMessages(): Message[] {
+    return addMessageToSession.mock.calls.map(([, m]) => m).filter((m) => m.role === 'user');
+  }
+
+  it('2 秒内的第二条 final 并进上一条，不新增消息', async () => {
+    const client = new FakeClient();
+    await attachVoiceClient(client as never, 'session-merge');
+
+    lastOnEvent?.({ type: 'user.transcript', text: '帮我看一下', done: true });
+    await vi.waitFor(() => expect(addMessageToSession).toHaveBeenCalledTimes(1));
+    lastOnEvent?.({ type: 'user.transcript', text: '这个文件', done: true });
+    await vi.waitFor(() => expect(updateMessage).toHaveBeenCalledTimes(1));
+
+    expect(userMessages()).toHaveLength(1);
+    expect(updateMessage.mock.calls[0][1].content).toBe('帮我看一下 这个文件');
+  });
+
+  it('中间隔了 assistant 字幕就不合并（那是新的一轮）', async () => {
+    const client = new FakeClient();
+    await attachVoiceClient(client as never, 'session-merge-turn');
+
+    lastOnEvent?.({ type: 'user.transcript', text: '帮我看一下', done: true });
+    await vi.waitFor(() => expect(addMessageToSession).toHaveBeenCalledTimes(1));
+    lastOnEvent?.({ type: 'assistant.transcript', text: '好的。', done: true });
+    await vi.waitFor(() => expect(addMessageToSession).toHaveBeenCalledTimes(2));
+    lastOnEvent?.({ type: 'user.transcript', text: '这个文件', done: true });
+    await vi.waitFor(() => expect(addMessageToSession).toHaveBeenCalledTimes(3));
+
+    expect(userMessages()).toHaveLength(2);
+    expect(updateMessage).not.toHaveBeenCalled();
+  });
+
+  it('超过合并窗就不合并', async () => {
+    const client = new FakeClient();
+    await attachVoiceClient(client as never, 'session-merge-window');
+    const base = Date.now();
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(base);
+    try {
+      lastOnEvent?.({ type: 'user.transcript', text: '帮我看一下', done: true });
+      await vi.waitFor(() => expect(addMessageToSession).toHaveBeenCalledTimes(1));
+      nowSpy.mockReturnValue(base + VOICE_TRANSCRIPT_MERGE_WINDOW_MS + 1);
+      lastOnEvent?.({ type: 'user.transcript', text: '这个文件', done: true });
+      await vi.waitFor(() => expect(addMessageToSession).toHaveBeenCalledTimes(2));
+
+      expect(userMessages()).toHaveLength(2);
+      expect(updateMessage).not.toHaveBeenCalled();
+    } finally {
+      nowSpy.mockRestore();
+    }
+  });
+
+  // 护栏：合并动的是消息流，不许动挂断闸的判定顺序（R2 的反悔就吃这条顺序）。
+  it('合并开着时 R2 反悔仍然成立，且挂断闸照常认挂断词', async () => {
+    const client = new FakeClient();
+    await attachVoiceClient(client as never, 'session-merge-hangup');
+
+    lastOnEvent?.({ type: 'user.transcript', text: '先这样吧拜拜', done: true });
+    // 等上一条真落库再说下一句：真机上两条 final 至少隔一个 VAD 静音窗，
+    // 落库早就完成了；不等的话合并会退化成「各落各的」（安全，但测的就不是合并了）。
+    await vi.waitFor(() => expect(addMessageToSession).toHaveBeenCalledTimes(1));
+    lastOnEvent?.({ type: 'speech.started' });
+    lastOnEvent?.({ type: 'response.done' });
+    expect(getActiveVoiceSessionId()).not.toBeNull();
+
+    // 这一条会被并进上一条（<2s），但反悔判定必须照样生效
+    lastOnEvent?.({ type: 'user.transcript', text: '不要挂断', done: true });
+    lastOnEvent?.({ type: 'response.done' });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(getActiveVoiceSessionId()).not.toBeNull();
+    expect(close).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(updateMessage).toHaveBeenCalledTimes(1));
+  });
+
+  it('合并后 transcriptCount 只算一条（消息没多，计数也不该多）', async () => {
+    const client = new FakeClient();
+    await attachVoiceClient(client as never, 'session-merge-count');
+
+    lastOnEvent?.({ type: 'user.transcript', text: '帮我看一下', done: true });
+    await vi.waitFor(() => expect(addMessageToSession).toHaveBeenCalledTimes(1));
+    lastOnEvent?.({ type: 'user.transcript', text: '这个文件', done: true });
+    await vi.waitFor(() => expect(updateMessage).toHaveBeenCalledTimes(1));
+
+    client.emit('message', Buffer.from(JSON.stringify({ type: 'end' })), false);
+    await vi.waitFor(() => {
+      expect(addMessageToSession.mock.calls.some(([, m]) => Boolean(m.metadata?.voiceCallSummary))).toBe(true);
+    }, { timeout: 4000 });
+    const summary = addMessageToSession.mock.calls.find(([, m]) => Boolean(m.metadata?.voiceCallSummary));
+    expect(summary?.[1].metadata?.voiceCallSummary).toMatchObject({ transcriptCount: 1 });
+  }, 10_000);
 });
 
 // ============================================================================

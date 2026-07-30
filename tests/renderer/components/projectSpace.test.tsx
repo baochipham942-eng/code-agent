@@ -647,12 +647,18 @@ describe('空间页头邀请按钮（两态）', () => {
   });
 });
 
-describe('右栏成员卡', () => {
+describe('右栏成员 tab（tab 壳形态：内容经 membersContent 注入，先切成员 tab）', () => {
+  async function openMembersTab() {
+    await enterSpaceView();
+    const tab = await screen.findByTestId('project-space-rail-tab-members');
+    fireEvent.click(tab);
+    return screen.findByTestId('project-space-members-card');
+  }
+
   it('云协同空间：渲染成员行（首字母圆片 + 显示名 + role chip），无显示名回落 userId', async () => {
     setupCloudSpace();
     vi.mocked(projectClient.listMembers).mockResolvedValue(membersFixture);
-    await enterSpaceView();
-    const card = await screen.findByTestId('project-space-members-card');
+    const card = await openMembersTab();
     await within(card).findByTestId('project-space-members-row-user-owner');
     expect(within(card).getByTestId('project-space-members-row-user-owner').textContent).toContain('房主');
     expect(within(card).getByTestId('project-space-members-role-user-owner').textContent).toBe(ps.memberRoleOwner);
@@ -660,34 +666,33 @@ describe('右栏成员卡', () => {
     expect(within(card).getByTestId('project-space-members-role-user-member').textContent).toBe(ps.memberRoleMember);
   });
 
-  it('空态：无成员显示引导文案，卡不消失', async () => {
+  it('空态：无成员显示引导文案，tab 内容不消失', async () => {
     setupCloudSpace();
-    await enterSpaceView();
-    const card = await screen.findByTestId('project-space-members-card');
+    const card = await openMembersTab();
     await within(card).findByTestId('project-space-members-empty');
     expect(card.textContent).toContain(ps.membersEmpty);
   });
 
-  it('取数失败：显示失败提示，卡不消失', async () => {
+  it('取数失败：显示失败提示，tab 内容不消失', async () => {
     setupCloudSpace();
     vi.mocked(projectClient.listMembers).mockRejectedValue(new Error('协同服务当前不可用，请检查网络后重试。'));
-    await enterSpaceView();
-    const card = await screen.findByTestId('project-space-members-card');
+    const card = await openMembersTab();
     await within(card).findByTestId('project-space-members-error');
     expect(card.textContent).toContain(ps.membersLoadFailed);
   });
 
-  it('纯本地空间（cloudProjectId 为空）：成员卡整个不渲染', async () => {
+  it('纯本地空间（cloudProjectId 为空）：成员 tab 位整个不渲染', async () => {
     await enterSpaceView();
-    await screen.findByTestId('project-space-card-experts');
+    await screen.findByTestId('project-space-rail-experts');
+    expect(screen.queryByTestId('project-space-rail-tab-members')).toBeNull();
     expect(screen.queryByTestId('project-space-members-card')).toBeNull();
     expect(projectClient.listMembers).not.toHaveBeenCalled();
   });
 
-  it('成员卡「邀请」入口走页头同一 Modal 逻辑（createInvite 只此一份）', async () => {
+  it('成员 tab「邀请」入口走页头同一 Modal 逻辑（createInvite 只此一份）', async () => {
     setupCloudSpace();
-    await enterSpaceView();
-    const entry = await screen.findByTestId('project-space-members-invite');
+    const card = await openMembersTab();
+    const entry = within(card).getByTestId('project-space-members-invite');
     fireEvent.click(entry);
     await screen.findByTestId('project-space-invite-modal');
     await waitFor(() =>

@@ -22,35 +22,44 @@ describe('isRawUrlLink', () => {
   it('handles array children whose joined text matches href', () => {
     expect(isRawUrlLink('https://x.com/foo', ['https://x.com/foo'])).toBe(true);
   });
+
+  it('rejects near-miss variants (trailing slash / case) — 判定保持严格全等', () => {
+    expect(isRawUrlLink('https://a.com/', 'https://a.com')).toBe(false);
+    expect(isRawUrlLink('https://Example.com', 'https://example.com')).toBe(false);
+  });
 });
 
-describe('LinkPreviewCard', () => {
-  it('uses friendly label for known hostnames', () => {
+describe('LinkPreviewCard（轻呈现 + favicon：raw URL 渲染为 16px 图标 + 下划线链接）', () => {
+  it('renders the raw URL as an underlined link with a 16px favicon, no chip', () => {
     const html = renderToStaticMarkup(
       React.createElement(LinkPreviewCard, {
         href: 'https://baochipham942.feishu.cn/docx/abc',
       }),
     );
-    expect(html).toContain('飞书');
     expect(html).toContain('favicons?domain=baochipham942.feishu.cn');
+    expect(html).toContain('h-4 w-4');
+    expect(html).toContain('text-sky-400/80');
+    expect(html).toContain('decoration-sky-400/30');
+    expect(html).toContain('underline');
+    expect(html).toContain('>https://baochipham942.feishu.cn/docx/abc</a>');
   });
 
-  it('falls back to hostname for unknown sites', () => {
+  it('does not shorten long paths — the full URL stays visible as link text', () => {
+    const longUrl = 'https://github.com/foo/bar/blob/main/path/to/very/long/file.tsx';
+    const html = renderToStaticMarkup(
+      React.createElement(LinkPreviewCard, { href: longUrl }),
+    );
+    expect(html).toContain(`>${longUrl}</a>`);
+    expect(html).not.toContain('…');
+  });
+
+  it('no chip container: no rounded-md background/border block', () => {
     const html = renderToStaticMarkup(
       React.createElement(LinkPreviewCard, { href: 'https://example.com/x' }),
     );
-    expect(html).toContain('example.com');
-  });
-
-  it('shortens long paths', () => {
-    const html = renderToStaticMarkup(
-      React.createElement(LinkPreviewCard, {
-        href: 'https://github.com/foo/bar/blob/main/path/to/very/long/file.tsx',
-      }),
-    );
-    expect(html).toContain('GitHub');
-    // 长 path 被截断，前缀以 … 开头
-    expect(html).toMatch(/…\//);
+    expect(html).not.toContain('bg-zinc-800/60');
+    expect(html).not.toContain('rounded-md');
+    expect(html).not.toContain('border-zinc-700/60');
   });
 
   it('falls back to plain link when href is malformed', () => {

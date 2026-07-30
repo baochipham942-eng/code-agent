@@ -303,6 +303,19 @@ describe('A4 窄工具 / H1 指挥台', () => {
     expect(result).not.toMatch(/排队|后台|做完了|完成了/);
   });
 
+  // E4（2026-07-30 真机）：模型把给它的指令照着念给用户听——「这件事你开始做了」，
+  // 主语错乱。台词必须写成即使被整句照读也通顺的用户向第一人称。
+  it('派活台词是用户向第一人称，照念也通顺', async () => {
+    bind();
+
+    const result = await executeVoiceTool('spawn_task', JSON.stringify({ title: '创建a.txt文件', prompt: '建个文件' }));
+
+    expect(result).toContain('我已经开始做');
+    expect(result).toContain('做完马上告诉你');
+    // 「你开始做了 / 告诉他」这种第二三人称混写就是真机那句读不懂的话
+    expect(result).not.toMatch(/你开始做了|告诉他/);
+  });
+
   it('steer_task 在没活跑时如实说「当成新任务派了」，不假装 steer 成功', async () => {
     bind();
     runtime.status = 'idle';

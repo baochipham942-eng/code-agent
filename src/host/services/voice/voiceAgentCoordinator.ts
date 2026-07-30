@@ -567,7 +567,11 @@ async function spawnTask(state: LedgerState, title: string, prompt: string): Pro
  */
 function spawnSpeechDirective(title: string): string {
   return [
-    `现在对用户说：「${title}」这件事你开始做了，做完会立刻主动告诉他。就说这一个意思，不要再多说。`,
+    // 台词写成**用户听得懂的第一人称**（E4，2026-07-30 真机）：上一版是
+    // 「『X』这件事你开始做了，做完会立刻主动告诉他」——模型照着念出来，用户听到的是
+    // 「你开始做了」，主语错乱、读不懂。「不要复述」类禁令本仓已三连败，所以不加禁令，
+    // 改成即使被整句照读也通顺的话。
+    `现在对用户说：「我已经开始做『${title}』了，做完马上告诉你。」就说这一个意思，不要再多说。`,
     '关于这件事你目前只知道「已经开始」。它的结果（做成或失败）只会以 [BACKEND] 开头的消息送达；',
     '在收到那条消息之前，它没有做完，你也不知道任何进展——不存在「应该差不多了」。',
     '用户如果问「好了吗」「怎么样了」，先调 get_active_tasks 看真实状态再回答，不要凭记忆或猜测回答。',
@@ -590,7 +594,7 @@ async function steerTask(state: LedgerState, instruction: string): Promise<strin
   await tm.interruptAndContinue(state.neoSessionId, instruction, undefined, await buildRunOptions(state));
   const title = pending?.title ?? '进行中的任务';
   return [
-    `现在对用户说：「${title}」已经按新要求改了方向，做完会立刻主动告诉他。`,
+    `现在对用户说：「『${title}』我已经按你的新要求改了方向，做完马上告诉你。」`,
     '它的结果同样只以 [BACKEND] 消息为准；没收到就不是做完，被问进度先调 get_active_tasks。',
   ].join('\n');
 }

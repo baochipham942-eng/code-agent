@@ -80,6 +80,28 @@ describe('Qwen Omni 上游事件日志', () => {
     await handle.close();
   });
 
+  // E1 fail-loud：空 transcript 不许静默走过去，日志要说清有没有兜回来。
+  it('completed 空文本时打 warn，说明兜底有没有救回来', async () => {
+    const handle = await qwenOmniTransport.connect({
+      apiKey: 'test-key',
+      config: { neoSessionId: 's1' },
+      onEvent: vi.fn(),
+      onAudio: vi.fn(),
+    });
+    const upstream = upstreams[0];
+
+    upstream.emit('message', JSON.stringify({
+      type: 'conversation.item.input_audio_transcription.completed',
+      item_id: 'item-nostash', transcript: '',
+    }));
+
+    expect(logger.warn).toHaveBeenCalledWith(
+      'user transcript empty on completed, falling back to delta stash',
+      expect.objectContaining({ hasStash: false, recovered: false }),
+    );
+    await handle.close();
+  });
+
   // R3（2026-07-30 真机 silenceMs=30225）：丢一拍就把整通电话判死。DashScope 的
   // pong 已实测支持（探针 40s 空闲 8/8 回 pong），所以单拍不回是丢包，不是死亡。
   it('丢一拍不杀通话，连丢三拍才报 UPSTREAM_ERROR 并 terminate socket', async () => {

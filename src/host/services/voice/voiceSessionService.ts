@@ -7,7 +7,7 @@
 // ============================================================================
 
 import type { WebSocket as WsSocket } from 'ws';
-import { resolveConversationModelOption, VOICE_END_CALL_GOODBYE_TIMEOUT_MS, VOICE_RECONNECT_GRACE_MS, VOICE_SESSION_MAX_DURATION_MS, VOICE_TEARDOWN_DRAIN_MS, VOICE_TRANSCRIPT_MERGE_WINDOW_MS, VOICE_WS_CLOSE_TERMINAL } from '../../../shared/constants/voice';
+import { resolveConversationModelOption, VOICE_END_CALL_GOODBYE_TIMEOUT_MS, VOICE_RECONNECT_GRACE_MS, VOICE_DOWNSTREAM_SAMPLE_RATE, VOICE_HANGUP_REACTION_WINDOW_MS, VOICE_SESSION_MAX_DURATION_MS, VOICE_TEARDOWN_DRAIN_MS, VOICE_TRANSCRIPT_MERGE_WINDOW_MS, VOICE_WS_CLOSE_TERMINAL } from '../../../shared/constants/voice';
 import type { VoiceClientCommand, VoiceEvent, VoiceFocusContext, VoiceTransportHandle, VoiceWorkItem, VoiceWorkNarration } from '../../../shared/contract/voice';
 import { getDashscopeApiKey } from '../media/imageGenerationService';
 import { createLogger } from '../infra/logger';
@@ -331,7 +331,15 @@ async function persistTranscript(
 ): Promise<void> {
   const trimmed = text.trim();
   // 落库的唯一入口 = 过滤的唯一落点：done 那条、排水窗冲刷那条走的都是这里。
-  if (!trimmed || isPureToolTagText(trimmed)) return;
+  // 丢弃必须出声（E1 硬要求）：静默丢弃就是「用户说了话、系统什么都没留下、日志一个字都没有」，
+  // 本仓已为此付过一次数据丢失。只记 role 和原因，不记内容。
+  if (!trimmed || isPureToolTagText(trimmed)) {
+    logger.warn('transcript dropped before persist', {
+      role,
+      reason: trimmed ? 'pure-tool-tag' : 'empty-text',
+    });
+    return;
+  }
   // 落库的同时进近窗（P0-2）：派活时执行侧要拿原文自己重建意图，
   // 别只给它通话 brain 改写过的那一句。落库失败不影响近窗，反之亦然。
   // ponytail: 合并只改消息流不回收近窗——近窗是喂模型的，碎一点无害（产品拍板）。
@@ -577,6 +585,16 @@ async function connectAndBind(
 
   const transcriptBuf = { assistant: '' };
   const transcriptMerge: TranscriptMergeState = { messageId: null, text: '', at: 0 };
+  /**
+   * 告别音频的播放计量（E2）。host 转发多少字节就是要播多久（PCM16@24k 单声道），
+   * 播放起点 = 第一帧转发的时刻。不新造 renderer 回报协议——这点端到端延迟由反应窗兜住。
+   */
+  const goodbyeAudio = { firstFrameAt: 0, bytes: 0 };
+  const remainingGoodbyeMs = (): number => {
+    if (!goodbyeAudio.firstFrameAt) return 0;
+    const durationMs = (goodbyeAudio.bytes / (VOICE_DOWNSTREAM_SAMPLE_RATE * 2)) * 1000;
+    return Math.max(0, durationMs - (Date.now() - goodbyeAudio.firstFrameAt));
+  };
   // 字幕落库计数器：onEvent 闭包与挂断摘要共用同一个可变引用（同 transcriptBuf 先例），
   // 成功落库才 +1，挂断时原样写进 voiceCallSummary.transcriptCount。
   const transcriptCounter = { count: 0 };
@@ -613,6 +631,9 @@ async function connectAndBind(
   const requestEndCall = (reason: 'model-end-call' | 'user-hangup-intent'): void => {
     endCallRequested.awaitingUserTurn = false;
     if (endCallRequested.value) return;
+    // 武装之后转发的下行音频就是这句告别，从这里开始记时长。
+    goodbyeAudio.firstFrameAt = 0;
+    goodbyeAudio.bytes = 0;
     endCallRequested.value = true;
     endCallRequested.reason = reason;
     // 字幕内容不进日志（音频/字幕内容不落日志是硬纪律），只记命中这件事。
@@ -703,17 +724,20 @@ async function connectAndBind(
             transcriptBuf.assistant += event.text;
           }
         }
-        // 说完告别这一轮 = 可以真挂了（收线的落点，别让它只是嘴上说）。
-        else if (
-          event.type === 'response.done'
-          && endCallRequested.value
-          && !endCallRequested.awaitingUserTurn
-          && active?.id === id
-        ) {
-          endCallRequested.value = false;
+        // 告别**生成**完了 ≠ 用户**听**完了（E2）。response.done 到货时音频才刚开始播，
+        // 此刻挂断，用户既没听到告别也没机会反悔。等音频真播完再加一个反应窗。
+        else if (event.type === 'response.done' && endCallRequested.value && active?.id === id) {
           if (endCallRequested.timer) clearTimeout(endCallRequested.timer);
-          endCallRequested.timer = null;
-          void teardown(endCallRequested.reason);
+          const waitMs = remainingGoodbyeMs() + VOICE_HANGUP_REACTION_WINDOW_MS;
+          logger.info('goodbye generated, waiting for playback before teardown', { voiceSessionId: id, waitMs });
+          endCallRequested.timer = setTimeout(() => {
+            // 用户正在说话就不挂：等他那句字幕到了再判是挂断还是反悔。
+            // 字幕万一never到，宁可让通话活着——他人就在那儿说话（max-duration 兜底）。
+            if (active?.id !== id || !endCallRequested.value || endCallRequested.awaitingUserTurn) return;
+            endCallRequested.value = false;
+            endCallRequested.timer = null;
+            void teardown(endCallRequested.reason);
+          }, waitMs);
         }
         // 上游报错 / 上游连接关闭 = 这一路通话已经死了，必须就地释放 active。
         // 否则两侧对「通话是否结束」的判断会分叉：渲染侧收到 error 就把按钮切回「开始通话」，
@@ -725,6 +749,10 @@ async function connectAndBind(
         }
       },
       onAudio: (frame) => {
+        if (endCallRequested.value) {
+          if (!goodbyeAudio.firstFrameAt) goodbyeAudio.firstFrameAt = Date.now();
+          goodbyeAudio.bytes += frame.length;
+        }
         const socket = clientRef.current;
         if (socket.readyState === socket.OPEN) socket.send(frame, { binary: true });
       },

@@ -4,18 +4,25 @@
 // props 全量透传现有 state/回调，行为零变化；三分区逻辑后续只加在本组件，不回填主文件。
 // ============================================================================
 
-import React from 'react';
+import React, { useCallback } from 'react';
 import { Cloud, Loader2, MessageSquare, Search } from 'lucide-react';
+import { PLAIN_CHAT_SUMMARY_LABEL } from '@shared/contract/sessionWorkspace';
 import { useI18n } from '../../../hooks/useI18n';
 import type { SessionStatusFilter } from '../../../stores/sessionUIStore';
+import type { SessionWithMeta } from '../../../stores/sessionStore';
+import { localeForLanguage } from '../../../utils/i18nTime';
+import { getDisplaySessionTitle, getSessionStatusPresentation } from '../../../utils/sessionPresentation';
+import { hasSessionDeliverySignals } from '../../../utils/sessionRecoveryHints';
 import {
   buildSidebarSessionTierSections,
   type SidebarSessionTier,
 } from '../../../utils/sidebarSessionTiers';
+import type { SidebarProjectDrawerSession } from './SidebarProjectDrawer';
+import { getSessionTypeLabel } from './SessionTypeFilterBar';
 import { SidebarProjectGroup, type SidebarProjectGroupProps } from './SidebarProjectGroup';
 import type { SidebarDerivedSessions } from './useSidebarDerivedSessions';
 
-export interface SidebarSessionListProps extends Omit<SidebarProjectGroupProps, 'group'> {
+export interface SidebarSessionListProps extends Omit<SidebarProjectGroupProps, 'group' | 'buildProjectDrawerSessions'> {
   groups: SidebarDerivedSessions['workspaceGroupedSessions'];
   isLoading: boolean;
   hasAnySessions: boolean;
@@ -63,13 +70,87 @@ export const SidebarSessionList: React.FC<SidebarSessionListProps> = ({
   handleSetSidebarProjectDescription,
   createWorkspaceChat,
   openWorkspacePreview,
-  buildProjectDrawerSessions,
   sessionItemProps,
   cloudBadge,
 }) => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const sb = t.sidebar;
   const p = t.sidebarProject;
+  // 项目抽屉行数据装配随列表区一起迁出（god-file 治理第二刀）：全部依赖都在
+  // sessionItemProps / i18n 里，Sidebar 主文件不再持有这段映射。
+  const {
+    backgroundSessionMap,
+    sessionRuntimes,
+    sessionStates,
+    hasNeedsInputForSession,
+    replayEvidenceBySessionId,
+    reviewItemsBySessionId,
+    currentSessionId,
+  } = sessionItemProps;
+  const buildProjectDrawerSessions = useCallback(
+    (groupSessions: SessionWithMeta[]): SidebarProjectDrawerSession[] =>
+      groupSessions.map((session) => {
+        const sessionRuntime = sessionRuntimes.get(session.id);
+        const backgroundSession = backgroundSessionMap.get(session.id);
+        const status = getSessionStatusPresentation({
+          backgroundSession,
+          runtime: sessionRuntime,
+          taskState: sessionStates[session.id],
+          messageCount: session.messageCount,
+          turnCount: session.turnCount,
+          sessionStatus: session.status,
+          hasNeedsInput: hasNeedsInputForSession(session.id),
+        });
+        const latestActivityAt = Math.max(
+          session.updatedAt || 0,
+          sessionRuntime?.lastActivityAt || 0,
+          backgroundSession?.backgroundedAt || 0,
+        );
+        const replayEvidenceCount = replayEvidenceBySessionId.get(session.id)?.length ?? 0;
+        const pendingReviewCount = (reviewItemsBySessionId[session.id] ?? []).filter(
+          (item) => item.reviewStatus === 'pending',
+        ).length;
+        const snapshotSummary = session.workbenchSnapshot?.summary?.trim();
+        const hasMeaningfulSummary = Boolean(snapshotSummary && snapshotSummary !== PLAIN_CHAT_SUMMARY_LABEL);
+
+        return {
+          id: session.id,
+          title: getDisplaySessionTitle(session.title),
+          statusLabel:
+            status.kind === 'error'
+              ? t.common.error
+              : status.kind === 'incomplete'
+                ? t.common.incomplete
+                : status.label,
+          statusToneClassName: status.toneClassName,
+          showStatusBadge: status.showBadge,
+          typeLabel: getSessionTypeLabel(session.type),
+          summary: hasMeaningfulSummary ? snapshotSummary : undefined,
+          lastActiveTitle: new Date(latestActivityAt).toLocaleString(localeForLanguage(language)),
+          workingDirectory: session.workingDirectory,
+          gitBranch: session.gitBranch,
+          prLabel: session.prLink ? `PR #${session.prLink.number}` : undefined,
+          isCurrent: session.id === currentSessionId,
+          turnCount: session.turnCount,
+          messageCount: session.messageCount,
+          hasDeliverySignals: hasSessionDeliverySignals(session, {
+            hasReplay: replayEvidenceCount > 0,
+          }),
+          replayEvidenceCount,
+          pendingReviewCount,
+        };
+      }),
+    [
+      backgroundSessionMap,
+      currentSessionId,
+      hasNeedsInputForSession,
+      replayEvidenceBySessionId,
+      reviewItemsBySessionId,
+      sessionRuntimes,
+      sessionStates,
+      t,
+    ],
+  );
   // 三分区归位（ADR-053）：判据与排序规则全部在 sidebarSessionTiers，
   // 组内/组间排序不动，空分区整节不出现在返回里（含节头）。
   const tierSections = buildSidebarSessionTierSections(groups, projectMetaById);

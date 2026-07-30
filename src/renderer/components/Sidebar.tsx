@@ -29,22 +29,17 @@ import { useUIStore } from '../stores/uiStore';
 import { IconButton, UndoToast } from './primitives';
 import { createLogger } from '../utils/logger';
 import { SessionContextMenu, type ContextMenuItem } from './features/sidebar/SessionContextMenu';
-import { type SidebarProjectDrawerSession } from './features/sidebar/SidebarProjectDrawer';
 import { SidebarSessionList } from './features/sidebar/SidebarSessionList';
 import { SidebarCapabilityZone } from './features/sidebar/SidebarCapabilityZone';
 import type { SidebarSessionItemSharedProps } from './features/sidebar/SidebarSessionItem';
 import type { SessionAutomationSessionSummary } from '@shared/contract';
 import { sessionAutomationClient } from '../services/sessionAutomationClient';
 import { SessionReplaySummaryDialog } from './features/sidebar/SessionReplaySummaryDialog';
-import { getSessionTypeLabel } from './features/sidebar/SessionTypeFilterBar';
 import { NeoBrandMark } from './features/sidebar/NeoBrandMark';
 import { isTauriMode } from '../utils/platform';
 import { isNativeWindowFullscreen } from '../services/tauriPluginFacade';
 import { useI18n } from '../hooks/useI18n';
-import { localeForLanguage } from '../utils/i18nTime';
 import ipcService from '../services/ipcService';
-import { getDisplaySessionTitle, getSessionStatusPresentation } from '../utils/sessionPresentation';
-import { hasSessionDeliverySignals } from '../utils/sessionRecoveryHints';
 import { isOptionalUpdateAvailable } from '../utils/updatePrompt';
 import { canAccessFeature } from '../utils/accessControl';
 import { buildSessionContextMenuItems } from './features/sidebar/sessionContextMenuItems';
@@ -67,7 +62,6 @@ import type {
   AgentTrajectoryDatasetRole,
   AgentTrajectorySessionQualitySummary,
 } from '@shared/contract/agentTrajectory';
-import { PLAIN_CHAT_SUMMARY_LABEL } from '@shared/contract/sessionWorkspace';
 
 export { resolveRuntimeLogsDir };
 
@@ -82,7 +76,7 @@ export function isAccountMenuEventOutside(
 }
 
 export const Sidebar: React.FC = () => {
-  const { t, language } = useI18n();
+  const { t } = useI18n();
   // 原生标题栏撤掉后 macOS 红绿灯浮在侧栏头行左端，得给它留死区（Windows/Linux 无此约束）。
   // 红绿灯只存在于「Tauri 壳 + macOS + 非全屏」：全屏时系统把它藏起来，浏览器里根本没有——
   // 这两种态左上角空着难看，改挂品牌标（2026-07-27 产品负责人拍板）。
@@ -524,70 +518,6 @@ export const Sidebar: React.FC = () => {
     },
     [mergeTrajectoryQualitySummary, replayDialog, showToast],
   );
-  const buildProjectDrawerSessions = useCallback(
-    (groupSessions: SessionWithMeta[]): SidebarProjectDrawerSession[] =>
-      groupSessions.map((session) => {
-        const sessionRuntime = sessionRuntimes.get(session.id);
-        const backgroundSession = backgroundSessionMap.get(session.id);
-        const status = getSessionStatusPresentation({
-          backgroundSession,
-          runtime: sessionRuntime,
-          taskState: sessionStates[session.id],
-          messageCount: session.messageCount,
-          turnCount: session.turnCount,
-          sessionStatus: session.status,
-          hasNeedsInput: hasNeedsInputForSession(session.id),
-        });
-        const latestActivityAt = Math.max(
-          session.updatedAt || 0,
-          sessionRuntime?.lastActivityAt || 0,
-          backgroundSession?.backgroundedAt || 0,
-        );
-        const replayEvidenceCount = replayEvidenceBySessionId.get(session.id)?.length ?? 0;
-        const pendingReviewCount = (reviewItemsBySessionId[session.id] ?? []).filter(
-          (item) => item.reviewStatus === 'pending',
-        ).length;
-        const snapshotSummary = session.workbenchSnapshot?.summary?.trim();
-        const hasMeaningfulSummary = Boolean(snapshotSummary && snapshotSummary !== PLAIN_CHAT_SUMMARY_LABEL);
-
-        return {
-          id: session.id,
-          title: getDisplaySessionTitle(session.title),
-          statusLabel:
-            status.kind === 'error'
-              ? t.common.error
-              : status.kind === 'incomplete'
-                ? t.common.incomplete
-                : status.label,
-          statusToneClassName: status.toneClassName,
-          showStatusBadge: status.showBadge,
-          typeLabel: getSessionTypeLabel(session.type),
-          summary: hasMeaningfulSummary ? snapshotSummary : undefined,
-          lastActiveTitle: new Date(latestActivityAt).toLocaleString(localeForLanguage(language)),
-          workingDirectory: session.workingDirectory,
-          gitBranch: session.gitBranch,
-          prLabel: session.prLink ? `PR #${session.prLink.number}` : undefined,
-          isCurrent: session.id === currentSessionId,
-          turnCount: session.turnCount,
-          messageCount: session.messageCount,
-          hasDeliverySignals: hasSessionDeliverySignals(session, {
-            hasReplay: replayEvidenceCount > 0,
-          }),
-          replayEvidenceCount,
-          pendingReviewCount,
-        };
-      }),
-    [
-      backgroundSessionMap,
-      currentSessionId,
-      hasNeedsInputForSession,
-      replayEvidenceBySessionId,
-      reviewItemsBySessionId,
-      sessionRuntimes,
-      sessionStates,
-      t,
-    ],
-  );
 
   const sessionItemProps: SidebarSessionItemSharedProps = {
     unreadSessionIds,
@@ -782,7 +712,6 @@ export const Sidebar: React.FC = () => {
         handleSetSidebarProjectDescription={handleSetSidebarProjectDescription}
         createWorkspaceChat={createWorkspaceChat}
         openWorkspacePreview={openWorkspacePreview}
-        buildProjectDrawerSessions={buildProjectDrawerSessions}
         sessionItemProps={sessionItemProps}
       />
 

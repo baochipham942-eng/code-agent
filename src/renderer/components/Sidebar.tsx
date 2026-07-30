@@ -15,8 +15,6 @@ import { useTaskStore } from '../stores/taskStore';
 import { useBackgroundTaskStore } from '../stores/backgroundTaskStore';
 import { useWorkflowStore } from '../stores/workflowStore';
 import {
-  MessageSquare,
-  Loader2,
   User,
   LogIn,
   ChevronDown,
@@ -31,22 +29,17 @@ import { useUIStore } from '../stores/uiStore';
 import { IconButton, UndoToast } from './primitives';
 import { createLogger } from '../utils/logger';
 import { SessionContextMenu, type ContextMenuItem } from './features/sidebar/SessionContextMenu';
-import { type SidebarProjectDrawerSession } from './features/sidebar/SidebarProjectDrawer';
-import { SidebarProjectGroup } from './features/sidebar/SidebarProjectGroup';
+import { SidebarSessionList } from './features/sidebar/SidebarSessionList';
 import { SidebarCapabilityZone } from './features/sidebar/SidebarCapabilityZone';
 import type { SidebarSessionItemSharedProps } from './features/sidebar/SidebarSessionItem';
 import type { SessionAutomationSessionSummary } from '@shared/contract';
 import { sessionAutomationClient } from '../services/sessionAutomationClient';
 import { SessionReplaySummaryDialog } from './features/sidebar/SessionReplaySummaryDialog';
-import { getSessionTypeLabel } from './features/sidebar/SessionTypeFilterBar';
 import { NeoBrandMark } from './features/sidebar/NeoBrandMark';
 import { isTauriMode } from '../utils/platform';
 import { isNativeWindowFullscreen } from '../services/tauriPluginFacade';
 import { useI18n } from '../hooks/useI18n';
-import { localeForLanguage } from '../utils/i18nTime';
 import ipcService from '../services/ipcService';
-import { getDisplaySessionTitle, getSessionStatusPresentation } from '../utils/sessionPresentation';
-import { hasSessionDeliverySignals } from '../utils/sessionRecoveryHints';
 import { isOptionalUpdateAvailable } from '../utils/updatePrompt';
 import { canAccessFeature } from '../utils/accessControl';
 import { buildSessionContextMenuItems } from './features/sidebar/sessionContextMenuItems';
@@ -69,7 +62,6 @@ import type {
   AgentTrajectoryDatasetRole,
   AgentTrajectorySessionQualitySummary,
 } from '@shared/contract/agentTrajectory';
-import { PLAIN_CHAT_SUMMARY_LABEL } from '@shared/contract/sessionWorkspace';
 
 export { resolveRuntimeLogsDir };
 
@@ -84,7 +76,7 @@ export function isAccountMenuEventOutside(
 }
 
 export const Sidebar: React.FC = () => {
-  const { t, language } = useI18n();
+  const { t } = useI18n();
   // 原生标题栏撤掉后 macOS 红绿灯浮在侧栏头行左端，得给它留死区（Windows/Linux 无此约束）。
   // 红绿灯只存在于「Tauri 壳 + macOS + 非全屏」：全屏时系统把它藏起来，浏览器里根本没有——
   // 这两种态左上角空着难看，改挂品牌标（2026-07-27 产品负责人拍板）。
@@ -526,70 +518,6 @@ export const Sidebar: React.FC = () => {
     },
     [mergeTrajectoryQualitySummary, replayDialog, showToast],
   );
-  const buildProjectDrawerSessions = useCallback(
-    (groupSessions: SessionWithMeta[]): SidebarProjectDrawerSession[] =>
-      groupSessions.map((session) => {
-        const sessionRuntime = sessionRuntimes.get(session.id);
-        const backgroundSession = backgroundSessionMap.get(session.id);
-        const status = getSessionStatusPresentation({
-          backgroundSession,
-          runtime: sessionRuntime,
-          taskState: sessionStates[session.id],
-          messageCount: session.messageCount,
-          turnCount: session.turnCount,
-          sessionStatus: session.status,
-          hasNeedsInput: hasNeedsInputForSession(session.id),
-        });
-        const latestActivityAt = Math.max(
-          session.updatedAt || 0,
-          sessionRuntime?.lastActivityAt || 0,
-          backgroundSession?.backgroundedAt || 0,
-        );
-        const replayEvidenceCount = replayEvidenceBySessionId.get(session.id)?.length ?? 0;
-        const pendingReviewCount = (reviewItemsBySessionId[session.id] ?? []).filter(
-          (item) => item.reviewStatus === 'pending',
-        ).length;
-        const snapshotSummary = session.workbenchSnapshot?.summary?.trim();
-        const hasMeaningfulSummary = Boolean(snapshotSummary && snapshotSummary !== PLAIN_CHAT_SUMMARY_LABEL);
-
-        return {
-          id: session.id,
-          title: getDisplaySessionTitle(session.title),
-          statusLabel:
-            status.kind === 'error'
-              ? t.common.error
-              : status.kind === 'incomplete'
-                ? t.common.incomplete
-                : status.label,
-          statusToneClassName: status.toneClassName,
-          showStatusBadge: status.showBadge,
-          typeLabel: getSessionTypeLabel(session.type),
-          summary: hasMeaningfulSummary ? snapshotSummary : undefined,
-          lastActiveTitle: new Date(latestActivityAt).toLocaleString(localeForLanguage(language)),
-          workingDirectory: session.workingDirectory,
-          gitBranch: session.gitBranch,
-          prLabel: session.prLink ? `PR #${session.prLink.number}` : undefined,
-          isCurrent: session.id === currentSessionId,
-          turnCount: session.turnCount,
-          messageCount: session.messageCount,
-          hasDeliverySignals: hasSessionDeliverySignals(session, {
-            hasReplay: replayEvidenceCount > 0,
-          }),
-          replayEvidenceCount,
-          pendingReviewCount,
-        };
-      }),
-    [
-      backgroundSessionMap,
-      currentSessionId,
-      hasNeedsInputForSession,
-      replayEvidenceBySessionId,
-      reviewItemsBySessionId,
-      sessionRuntimes,
-      sessionStates,
-      t,
-    ],
-  );
 
   const sessionItemProps: SidebarSessionItemSharedProps = {
     unreadSessionIds,
@@ -751,78 +679,41 @@ export const Sidebar: React.FC = () => {
       {/* 能力区：自动化 / 专家 / 资料库（三件套，逐批点亮） */}
       <SidebarCapabilityZone />
 
-      {/* Session List - Project Grouped
-          scrollbar-hidden 不是审美选择，是右轨对齐的根因修复（2026-07-27 实测）：
-          global.css 给了 `::-webkit-scrollbar{width:6px}` 这种**占布局宽度**的经典滚动条，
-          列表一溢出，容器内容盒就窄 6px ⇒ 组角标/状态点中心被推到 205.8，
-          而账号行在滚动容器**外**、中心仍是 212，三者于是不同轴（产品负责人 07-27 反馈）。
-          按状态补 6px padding 只在"正在溢出"时对，不溢出时反而错——只有把这段占位彻底去掉，
-          栏内所有行才共用同一条右轨（220 右缘 / 212 中心），与溢出与否无关。
-          做法（参照 Codex：滚动条独占最右一条窄带，内容轨不受它影响）：侧栏根 `pr` 让出
-          一条滚动条宽的窄带 ⇒ 顶行/能力区/账号行都缩到同一条内轨；本滚动容器再用等宽负 margin
-          把那条窄带"要回来"，`overflow-y-scroll` 恒定占位把滚动条正好摆进去 ⇒ 它的内容盒宽度
-          回到与兄弟块相同的内轨。滚动条照常可见，且与列表溢不溢出无关。 */}
-      <div className="flex-1 overflow-y-scroll px-1 min-h-0 mr-[calc(var(--scrollbar-size)*-1)]" data-testid="sidebar-session-scroll">
-        {isLoading && sessions.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-12 gap-3">
-            <Loader2 className="w-6 h-6 animate-spin text-primary-400" />
-            <span className="text-xs text-zinc-500">{sb.loading}</span>
-          </div>
-        ) : !hasAnySessions ? (
-          <div className="flex flex-col items-center justify-center h-full text-center px-4">
-            <div className="w-12 h-12 rounded-2xl bg-zinc-800 flex items-center justify-center mb-3">
-              <MessageSquare className="w-6 h-6 text-zinc-500" />
-            </div>
-            <p className="text-sm text-zinc-400 mb-1">{sb.noSessions}</p>
-            <p className="text-xs text-zinc-500">{sb.startNewTask}</p>
-          </div>
-        ) : filteredSessions.length === 0 && hasSearchFilters ? (
-          <div className="flex flex-col items-center justify-center py-12 text-center px-4">
-            <Search className="w-6 h-6 text-zinc-600 mb-2" />
-            <p className="text-sm text-zinc-500">
-              {messageSearchLoading
-                ? sb.searchingMessageContent
-                : !searchQuery && sessionStatusFilter !== 'all'
-                  ? sb.noStatusSessions.replace('{label}', activeStatusFilterLabel)
-                  : sb.noMatchedSessions}
-            </p>
-          </div>
-        ) : (
-          /* Workspace/project grouped view, including search and status-filtered results. */
-          <div className="py-2">
-            {workspaceGroupedSessions.map((group) => (
-              <SidebarProjectGroup
-                key={group.key}
-                group={group}
-                projectMetaById={projectMetaById}
-                setProjectMetaById={setProjectMetaById}
-                hasSearchFilters={hasSearchFilters}
-                expandedWorkspaces={expandedWorkspaces}
-                collapsingWorkspaces={collapsingWorkspaces}
-                expandedProjectDetails={expandedProjectDetails}
-                projectDrawerKey={projectDrawerKey}
-                isCreatingSession={isCreatingSession}
-                creatingWorkspaceKey={creatingWorkspaceKey}
-                setProjectDrawerKey={setProjectDrawerKey}
-                setExpandedProjectDetails={setExpandedProjectDetails}
-                handleToggleWorkspaceGroup={handleToggleWorkspaceGroup}
-                handleOpenWorkspaceAssets={handleOpenWorkspaceAssets}
-                handleNewWorkspaceChat={handleNewWorkspaceChat}
-                handleOpenProjectArtifactSession={handleOpenProjectArtifactSession}
-                handleStartProjectGoal={handleStartProjectGoal}
-                handleSelectSession={handleSelectSession}
-                handleRenameSidebarProject={handleRenameSidebarProject}
-                handleSetSidebarProjectStatus={handleSetSidebarProjectStatus}
-                handleSetSidebarProjectDescription={handleSetSidebarProjectDescription}
-                createWorkspaceChat={createWorkspaceChat}
-                openWorkspacePreview={openWorkspacePreview}
-                buildProjectDrawerSessions={buildProjectDrawerSessions}
-                sessionItemProps={sessionItemProps}
-              />
-            ))}
-          </div>
-        )}
-      </div>
+      {/* Session List - Project Grouped（整块已抽成 SidebarSessionList：Sidebar 逼近 god-file 门。
+          滚动条/右轨对齐的完整推导随之迁走，见该文件头注释。） */}
+      <SidebarSessionList
+        groups={workspaceGroupedSessions}
+        isLoading={isLoading}
+        hasAnySessions={hasAnySessions}
+        filteredSessionsEmpty={filteredSessions.length === 0}
+        messageSearchLoading={messageSearchLoading}
+        searchQuery={searchQuery}
+        sessionStatusFilter={sessionStatusFilter}
+        activeStatusFilterLabel={activeStatusFilterLabel}
+        projectMetaById={projectMetaById}
+        setProjectMetaById={setProjectMetaById}
+        hasSearchFilters={hasSearchFilters}
+        expandedWorkspaces={expandedWorkspaces}
+        collapsingWorkspaces={collapsingWorkspaces}
+        expandedProjectDetails={expandedProjectDetails}
+        projectDrawerKey={projectDrawerKey}
+        isCreatingSession={isCreatingSession}
+        creatingWorkspaceKey={creatingWorkspaceKey}
+        setProjectDrawerKey={setProjectDrawerKey}
+        setExpandedProjectDetails={setExpandedProjectDetails}
+        handleToggleWorkspaceGroup={handleToggleWorkspaceGroup}
+        handleOpenWorkspaceAssets={handleOpenWorkspaceAssets}
+        handleNewWorkspaceChat={handleNewWorkspaceChat}
+        handleOpenProjectArtifactSession={handleOpenProjectArtifactSession}
+        handleStartProjectGoal={handleStartProjectGoal}
+        handleSelectSession={handleSelectSession}
+        handleRenameSidebarProject={handleRenameSidebarProject}
+        handleSetSidebarProjectStatus={handleSetSidebarProjectStatus}
+        handleSetSidebarProjectDescription={handleSetSidebarProjectDescription}
+        createWorkspaceChat={createWorkspaceChat}
+        openWorkspacePreview={openWorkspacePreview}
+        sessionItemProps={sessionItemProps}
+      />
 
       {/* 多选模式底部操作栏 */}
       {multiSelectMode && selectedSessionIds.size > 0 && (

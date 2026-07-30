@@ -16,7 +16,6 @@ import { IPC_DOMAINS, type NativeConnectorInventoryItem } from '@shared/ipc';
 import { SKILL_CHANNELS } from '@shared/ipc/channels';
 import type { Project, ProjectCapabilitySelection, ProjectDetail } from '@shared/contract/project';
 import type { CronJobDefinition } from '@shared/contract';
-import { useAppStore } from '../../../stores/appStore';
 import { useI18n } from '../../../hooks/useI18n';
 import * as projectClient from '../../../services/projectClient';
 import * as rolesClient from '../../../services/rolesClient';
@@ -24,6 +23,8 @@ import { cronClient } from '../../../services/cronClient';
 import ipcService from '../../../services/ipcService';
 import { describeSkillIpcError, invokeSkillIPC, invokeSkillIPCOrThrow } from '../../../services/invokeSkillIPC';
 import { toast } from '../../../hooks/useToast';
+import { formatNextRun } from '../../../utils/formatNextRun';
+import { localeForLanguage } from '../../../utils/i18nTime';
 import { IconButton } from '../../primitives/IconButton';
 import { ProjectConfigCard } from './ProjectConfigCard';
 import { ProjectMembersCard } from './ProjectMembersCard';
@@ -60,13 +61,12 @@ export const ProjectConfigRail: React.FC<ProjectConfigRailProps> = ({
   onRefreshDetail,
   onInvite,
 }) => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const ps = t.projectSpace;
-  const openCapabilityHub = useAppStore((state) => state.openCapabilityHub);
-  const setShowCronCenter = useAppStore((state) => state.setShowCronCenter);
 
   const [collapsed, setCollapsed] = useState(readCollapsed);
-  const [roleOptions, setRoleOptions] = useState<Array<{ id: string; label: string }>>([]);
+  // 专家可选项带展示层字段（displayName/description/icon）：弹窗两行项与已选 chip 都用 displayName
+  const [roleOptions, setRoleOptions] = useState<Array<{ id: string; label: string; description?: string; icon?: string }>>([]);
   const [connectorSelections, setConnectorSelections] = useState<ProjectCapabilitySelection[]>([]);
   const [connectorCatalog, setConnectorCatalog] = useState<Array<{ id: string; label: string }>>([]);
   const [skills, setSkills] = useState<SkillListEntry[]>([]);
@@ -86,7 +86,12 @@ export const ProjectConfigRail: React.FC<ProjectConfigRailProps> = ({
 
   const loadRoles = useCallback(() => {
     rolesClient.listRoles()
-      .then((entries) => setRoleOptions(entries.map((entry) => ({ id: entry.roleId, label: entry.roleId }))))
+      .then((entries) => setRoleOptions(entries.map((entry) => ({
+        id: entry.roleId,
+        label: entry.displayName ?? entry.roleId,
+        description: entry.description || undefined,
+        icon: entry.icon,
+      }))))
       .catch(() => setRoleOptions([]));
   }, []);
 
@@ -125,7 +130,11 @@ export const ProjectConfigRail: React.FC<ProjectConfigRailProps> = ({
 
   // ---- 专家 ----
   const selectedRoleIds = useMemo(() => new Set((detail?.roles ?? []).map((link) => link.roleId)), [detail]);
-  const expertSelected = (detail?.roles ?? []).map((link) => ({ id: link.roleId, label: link.roleId }));
+  // 已选 chip 也用 displayName（roles 目录未加载到时回落裸 roleId）
+  const expertSelected = (detail?.roles ?? []).map((link) => ({
+    id: link.roleId,
+    label: roleOptions.find((option) => option.id === link.roleId)?.label ?? link.roleId,
+  }));
   const expertOptions = roleOptions.filter((option) => !selectedRoleIds.has(option.id));
   const handleAddExpert = (roleId: string) => {
     void projectClient.addProjectRole(projectId, roleId).then(onRefreshDetail).catch(() => undefined);
@@ -161,7 +170,7 @@ export const ProjectConfigRail: React.FC<ProjectConfigRailProps> = ({
     .map((skill) => ({ id: skill.name, label: skill.name }));
   const skillOptions = skills
     .filter((skill) => skill.projectOverride !== true)
-    .map((skill) => ({ id: skill.name, label: skill.name }));
+    .map((skill) => ({ id: skill.name, label: skill.name, description: skill.description || undefined }));
   const handleSelectSkill = (name: string) => {
     void invokeSkillIPCOrThrow(SKILL_CHANNELS.SKILL_PROJECT_SET, name, true, skillWorkspacePath).then(loadSkills)
       .catch((error) => toast.error(describeSkillIpcError(error, ps.skillUpdateFailed)));
@@ -177,7 +186,14 @@ export const ProjectConfigRail: React.FC<ProjectConfigRailProps> = ({
     .map((job) => ({ id: job.id, label: job.name }));
   const automationOptions = agentJobs
     .filter((job) => !(job.action.type === 'agent' && job.action.libraryProjectId === projectId))
-    .map((job) => ({ id: job.id, label: job.name }));
+    .map((job) => ({
+      id: job.id,
+      label: job.name,
+      // 调度时间人话复用侧栏能力区 formatNextRun 样板（utils/formatNextRun），不重写
+      description: job.nextRunAt != null
+        ? ps.automationNextRun.replace('{time}', formatNextRun(job.nextRunAt, localeForLanguage(language)))
+        : undefined,
+    }));
   const handleSelectAutomation = (jobId: string) => {
     const job = agentJobs.find((item) => item.id === jobId);
     if (job?.action.type !== 'agent') return;
@@ -214,7 +230,10 @@ export const ProjectConfigRail: React.FC<ProjectConfigRailProps> = ({
 
   return (
     <aside className="flex w-72 shrink-0 flex-col border-l border-zinc-800/70" data-testid="project-space-config-rail">
-      <div className="flex shrink-0 items-center gap-2 px-3 pt-3">
+      {/* 收起钮右缘与下方卡片「+」右缘同轴（批P 审美关，探针实测修前差 13px）：
+          卡片「+」右缘 = 栏右缘 - 卡片网格 p-3(12) - 卡片边框(1) - 卡片 p-3(12) = 25，
+          故本行右 padding 用 25px，不是与左侧对称的 px-3。 */}
+      <div className="flex shrink-0 items-center gap-2 pl-3 pr-[25px] pt-3">
         <h2 className="min-w-0 flex-1 truncate text-sm font-medium text-zinc-300">{ps.configRailTitle}</h2>
         <IconButton
           size="sm"
@@ -230,12 +249,12 @@ export const ProjectConfigRail: React.FC<ProjectConfigRailProps> = ({
         <ProjectConfigCard
           testId="project-space-card-experts"
           title={ps.cardExperts}
-          configureLabel={ps.configure}
-          onConfigure={() => openCapabilityHub('experts')}
           addLabel={ps.add}
           removeLabel={ps.remove}
           selectedEmptyLabel={ps.selectedEmpty}
           pickerEmptyLabel={ps.pickerEmpty}
+          pickerSearchPlaceholder={ps.pickerSearchPlaceholder}
+          pickerNoMatchLabel={ps.pickerNoMatch}
           selected={expertSelected}
           options={expertOptions}
           onSelect={handleAddExpert}
@@ -244,12 +263,12 @@ export const ProjectConfigRail: React.FC<ProjectConfigRailProps> = ({
         <ProjectConfigCard
           testId="project-space-card-skills"
           title={ps.cardSkills}
-          configureLabel={ps.configure}
-          onConfigure={() => openCapabilityHub('skills')}
           addLabel={ps.add}
           removeLabel={ps.remove}
           selectedEmptyLabel={ps.selectedEmpty}
           pickerEmptyLabel={ps.pickerEmpty}
+          pickerSearchPlaceholder={ps.pickerSearchPlaceholder}
+          pickerNoMatchLabel={ps.pickerNoMatch}
           selected={skillSelected}
           options={skillOptions}
           onSelect={handleSelectSkill}
@@ -259,12 +278,12 @@ export const ProjectConfigRail: React.FC<ProjectConfigRailProps> = ({
         <ProjectConfigCard
           testId="project-space-card-connectors"
           title={ps.cardConnectors}
-          configureLabel={ps.configure}
-          onConfigure={() => openCapabilityHub('connectors')}
           addLabel={ps.add}
           removeLabel={ps.remove}
           selectedEmptyLabel={ps.selectedEmpty}
           pickerEmptyLabel={ps.pickerEmpty}
+          pickerSearchPlaceholder={ps.pickerSearchPlaceholder}
+          pickerNoMatchLabel={ps.pickerNoMatch}
           selected={connectorSelected}
           options={connectorOptions}
           onSelect={handleSelectConnector}
@@ -273,12 +292,12 @@ export const ProjectConfigRail: React.FC<ProjectConfigRailProps> = ({
         <ProjectConfigCard
           testId="project-space-card-automation"
           title={ps.cardAutomation}
-          configureLabel={ps.configure}
-          onConfigure={() => setShowCronCenter(true)}
           addLabel={ps.add}
           removeLabel={ps.remove}
           selectedEmptyLabel={ps.selectedEmpty}
           pickerEmptyLabel={ps.pickerEmpty}
+          pickerSearchPlaceholder={ps.pickerSearchPlaceholder}
+          pickerNoMatchLabel={ps.pickerNoMatch}
           selected={automationSelected}
           options={automationOptions}
           onSelect={handleSelectAutomation}

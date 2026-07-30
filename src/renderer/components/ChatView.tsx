@@ -5,7 +5,7 @@
 import React, { useCallback, useRef, useState, useEffect } from 'react';
 import { useShallow } from 'zustand/shallow';
 import { useAppStore } from '../stores/appStore';
-import { useProjectChatSeedStore } from '../stores/projectChatSeedStore';
+import { useProjectChatSeedConsumption } from './features/chat/useProjectChatSeed';
 import { useComposerStore } from '../stores/composerStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { useSessionUIStore } from '../stores/sessionUIStore';
@@ -723,17 +723,11 @@ export const ChatView: React.FC = () => {
     });
   }, [pendingProjectGoalChatSeed, currentSessionId, effectiveIsProcessing, buildEnvelope, handleSendEnvelope]);
 
-  // 项目协作空间底部输入框：建新会话 + 落 seed，这里在目标会话就绪后自动发出首条消息。
-  // 与 goal seed 的差别仅是不起 goal run，纯文本直发（@neo 前缀原样透传）。
-  const pendingProjectChatSeed = useProjectChatSeedStore((state) => state.pendingProjectChatSeed);
-  useEffect(() => {
-    if (!pendingProjectChatSeed || !currentSessionId || effectiveIsProcessing) return;
-    if (pendingProjectChatSeed.sessionId !== currentSessionId) return;
-
-    const seed = pendingProjectChatSeed;
-    useProjectChatSeedStore.getState().setPendingProjectChatSeed(null);
-    void handleSendMessage(seed.content);
-  }, [pendingProjectChatSeed, currentSessionId, effectiveIsProcessing, handleSendMessage]);
+  // 项目协作空间底部输入框：composer 已建好新会话、乐观上屏首条用户消息（落地即在
+  // 时间线上）并落 seed（完整 envelope，clientMessageId 与乐观消息同 id）。
+  // 消费端抽到 useProjectChatSeed（可单测）：目标会话就绪后把 envelope 真正发给 agent
+  // （sendMessage 按 id 去重不双份）；发送失败回滚乐观消息。
+  useProjectChatSeedConsumption({ currentSessionId, effectiveIsProcessing, handleSendEnvelope });
 
   const handleRequestPromptRewind = useCallback((messageId: string, content: string) => {
     if (!currentSessionId) return;

@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { EventEmitter } from 'events';
 import { isVoiceInputMessage, type Message } from '../../src/shared/contract/message';
 import type { VoiceEvent, VoiceTransport, VoiceWorkItem } from '../../src/shared/contract/voice';
-import { QWEN_OMNI_REALTIME_MODEL, VOICE_END_CALL_GOODBYE_TIMEOUT_MS, VOICE_TRANSCRIPT_MERGE_WINDOW_MS, VOICE_WS_CLOSE_TERMINAL } from '../../src/shared/constants/voice';
+import { QWEN_OMNI_REALTIME_MODEL, VOICE_END_CALL_GOODBYE_TIMEOUT_MS, VOICE_HANGUP_REACTION_WINDOW_MS, VOICE_TRANSCRIPT_MERGE_WINDOW_MS, VOICE_WS_CLOSE_TERMINAL } from '../../src/shared/constants/voice';
 
 const vocabulary = vi.hoisted(() => ({ block: '' }));
 vi.mock('../../src/host/services/voice/voiceVocabulary', () => ({
@@ -879,6 +879,36 @@ describe('挂断确定性闸（A1）', () => {
       vi.useRealTimers();
     }
   });
+
+  // E2（2026-07-30 真机）：武装→挂断只隔 2 秒，因为触发点是 response.done——
+  // 那是模型「生成完」，不是用户「听完」。告别音频那时才刚开始播。
+  it('response.done 不当场挂断：等告别音频播完 + 反应窗', async () => {
+    const client = new FakeClient();
+    await attachVoiceClient(client as never, 'session-goodbye-playback');
+
+    lastOnEvent?.({ type: 'user.transcript', text: '拜拜', done: true });
+    lastOnEvent?.({ type: 'response.done' });
+    // 生成完的那一刻绝不能已经挂了
+    expect(getActiveVoiceSessionId()).not.toBeNull();
+
+    await vi.waitFor(() => expect(getActiveVoiceSessionId()).toBeNull(), { timeout: 6000 });
+  }, 12_000);
+
+  it('告别播放窗里用户反悔：不挂断（这正是真机那次没拦住的）', async () => {
+    const client = new FakeClient();
+    await attachVoiceClient(client as never, 'session-goodbye-recant');
+
+    lastOnEvent?.({ type: 'user.transcript', text: '先这样吧，拜拜', done: true });
+    lastOnEvent?.({ type: 'response.done' });
+    // 反应窗里抢话
+    lastOnEvent?.({ type: 'speech.started' });
+    lastOnEvent?.({ type: 'user.transcript', text: '不要挂断', done: true });
+
+    await new Promise((resolve) => setTimeout(resolve, VOICE_HANGUP_REACTION_WINDOW_MS + 500));
+    // 判据只看「这通电话还在」：close 是共享替身，上一条用例 teardown 的排水窗尾巴
+    // （1.5s 后才调 upstream.close）会跨用例边界打进来，拿它当判据是假红。
+    expect(getActiveVoiceSessionId()).not.toBeNull();
+  }, 12_000);
 
   it('未 done 的用户字幕不触发（说了一半的话不算数）', async () => {
     const client = new FakeClient();

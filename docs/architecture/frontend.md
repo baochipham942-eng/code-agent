@@ -363,7 +363,7 @@ V2 不承诺 Next.js App Router 支持；原因见 ADR-012。
 | `targetContext` | `TargetContextIcon` 显示 Browser / Computer / MCP / app / file 等目标上下文 |
 | `MemoryCitationGroup` | 折叠展示 memory citation 的 rationale 与来源 |
 | `SessionDiffSummary` | 聚合当前 session 的文件变更数 |
-| `LinkPreviewCard` | raw URL 渲染为 favicon chip |
+| `LinkPreviewCard` | raw URL 渲染为 favicon + 下划线链接（轻呈现，无 chip） |
 
 ---
 

@@ -410,7 +410,7 @@ prompt builder 要求 _meta
 - `ToolHeader` 优先显示 `shortDescription`，MCP 工具可把 server 名作为主标题，`targetContext` 显示 Browser / Computer / MCP / app 图标
 - `MemoryCitationGroup` 把 memory 引用折叠成 rationale + source chips
 - `SessionDiffSummary` 聚合当前 session 文件变更
-- `LinkPreviewCard` 把 raw URL 渲染为 favicon chip
+- `LinkPreviewCard` 把 raw URL 渲染为 16px favicon + 下划线链接（轻呈现，无 chip）
 - `enableSemanticToolUI` feature flag 保留一键回退旧 UI 的通道
 
 ### 4.7 Workbench 诊断面板群（2026-05-13~14）

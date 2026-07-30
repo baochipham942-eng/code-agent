@@ -16,7 +16,10 @@ import {
   writeNativeVoiceAecPlayback,
 } from './nativeDesktop';
 import { listenTauriEvent, type TauriUnlisten } from './tauriPluginFacade';
+import { createLogger } from '../utils/logger';
 import type { VoiceAudioPipelineCallbacks, VoiceAudioPipelineLike } from './voiceAudioPipeline';
+
+const logger = createLogger('NativeVoiceAec');
 
 interface NativeVoiceAecEvent {
   kind: 'audio' | 'levels' | 'error';
@@ -143,11 +146,24 @@ export class NativeVoiceAudioPipeline implements VoiceAudioPipelineLike {
       .catch(() => this.fail('NATIVE_AEC_CONTROL_FAILED'));
   }
 
+  private audioEvents = 0;
+
   private handleEvent(event: NativeVoiceAecEvent): void {
     if (this.stopped) return;
     if (event.kind === 'audio' && event.data) {
       try {
-        this.callbacks.onFrame(base64ToPcm(event.data));
+        const pcm = base64ToPcm(event.data);
+        // 采集链探针：首帧 + 每 200 帧记幅值峰值——事件腿断/静音/正常在日志里必须可分辨。
+        this.audioEvents += 1;
+        if (this.audioEvents === 1 || this.audioEvents % 200 === 0) {
+          let peak = 0;
+          for (let i = 0; i < pcm.length; i += 1) {
+            const v = Math.abs(pcm[i]);
+            if (v > peak) peak = v;
+          }
+          logger.info('native aec capture frame', { frames: this.audioEvents, samples: pcm.length, peak });
+        }
+        this.callbacks.onFrame(pcm);
       } catch {
         this.fail('NATIVE_AEC_CAPTURE_FAILED');
       }

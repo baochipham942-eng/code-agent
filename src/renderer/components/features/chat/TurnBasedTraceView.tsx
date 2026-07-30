@@ -207,6 +207,10 @@ export function getTraceNodeSelector(nodeId: string, nodeType: string): string {
 
 const TRACE_TURN_ANCHOR_SELECTOR = '[data-trace-turn-id]';
 
+// 默认值必须是模块级常量：写成 `searchMatches = []` 的话，调用方不传时每次渲染
+// 都是新数组，itemContent 跟着换身份，等于每渲染往 virtuoso store 发布一次新 props。
+const NO_SEARCH_MATCHES: SearchMatch[] = [];
+
 export function getTraceTurnSelector(turnId: string): string {
   return `[data-trace-turn-id="${escapeAttributeSelector(turnId)}"]`;
 }
@@ -274,7 +278,7 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
   hasOlderMessages,
   isLoadingOlder,
   onLoadOlder,
-  searchMatches = [],
+  searchMatches = NO_SEARCH_MATCHES,
   activeMatchIndex = 0,
   onRewindUserPrompt,
   beforeFirstUserMessage,

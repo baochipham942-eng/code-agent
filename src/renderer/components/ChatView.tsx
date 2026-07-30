@@ -31,6 +31,8 @@ import { SurfaceExecutionChatPanel } from './features/surfaceExecution/SurfaceEx
 import { PinnedTodoBar } from './features/chat/PinnedTodoBar';
 import { SessionRecapBanner } from './features/chat/SessionRecapBanner';
 import { ForkSourceHint } from './features/chat/ForkSourceHint';
+import { ChatTraceFallback } from './features/chat/ChatTraceFallback';
+import { ErrorBoundary } from './ErrorBoundary';
 import { ActiveConversationRewindBanner } from './features/chat/ActiveConversationRewindBanner';
 import { ChatInput } from './features/chat/ChatInput';
 import { UserQuestionCard } from './UserQuestionCard';
@@ -409,6 +411,15 @@ export const ChatView: React.FC = () => {
   const voicePartialUser = useVoiceCallStore((state) => state.partialUser);
   const voicePartialAssistant = useVoiceCallStore((state) => state.partialAssistant);
   const voiceStartedAt = useVoiceCallStore((state) => state.startedAt);
+  // 必须 memo：这个元素是 TurnBasedTraceView 的 itemContent 依赖，每渲染新建一个
+  // 就等于每次 ChatView 重渲染都往 react-virtuoso 的 store 里发布一份新 itemContent。
+  // virtuoso 每渲染在 layout effect 里全量发布 props，发布即通知订阅者
+  // （useSyncExternalStore → forceStoreRerender），于是"ChatView 渲染"被放大成
+  // 同步嵌套更新；只要上游有一条高频重渲染源，就会打满 React 的 50 层嵌套上限。
+  const forkSourceHint = React.useMemo(
+    () => <ForkSourceHint sessionId={currentSessionId} />,
+    [currentSessionId],
+  );
   const projection = React.useMemo(
     () => applyVoicePartialsToProjection(
       applyStreamingMessageDeltasToProjection(clarityProjection, messages, streamingMessageEntries),
@@ -773,18 +784,24 @@ export const ChatView: React.FC = () => {
               <div className="h-full" aria-hidden />
             )
           ) : (
-            <TurnBasedTraceView
-              projection={projection}
-              hasOlderMessages={hasOlderMessages}
-              isLoadingOlder={isLoadingOlder}
-              onLoadOlder={loadOlderMessages}
-              searchMatches={searchMatches}
-              activeMatchIndex={activeMatchIndex}
-              onRewindUserPrompt={handleRequestPromptRewind}
-              beforeFirstUserMessage={
-                <ForkSourceHint sessionId={currentSessionId} />
-              }
-            />
+            // 会话级错误边界：消息区一旦渲染失败（如虚拟列表反馈环打满 React 嵌套
+            // 更新上限），只塌陷这一块并允许重试，不再让 App 级边界罩死整个应用。
+            // key 绑会话 —— 切走再切回自动复位，不用用户手动点重试。
+            <ErrorBoundary
+              key={currentSessionId ?? 'no-session'}
+              fallback={<ChatTraceFallback />}
+            >
+              <TurnBasedTraceView
+                projection={projection}
+                hasOlderMessages={hasOlderMessages}
+                isLoadingOlder={isLoadingOlder}
+                onLoadOlder={loadOlderMessages}
+                searchMatches={searchMatches}
+                activeMatchIndex={activeMatchIndex}
+                onRewindUserPrompt={handleRequestPromptRewind}
+                beforeFirstUserMessage={forkSourceHint}
+              />
+            </ErrorBoundary>
           )}
         </div>
 

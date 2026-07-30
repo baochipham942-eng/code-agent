@@ -166,6 +166,8 @@ traceView: {
   scrollToLoadMore: '↑ 滚动加载更多',
   conversationLog: '对话消息',
   jumpToBottom: '回到底部',
+  renderFailedTitle: '这个会话的消息暂时显示不出来',
+  renderFailedHint: '其他会话不受影响，可以先切到别的会话继续；切回来会自动重试。',
 },
 
 // 工具步骤组（ToolStepGroup）
@@ -594,6 +596,8 @@ traceView: {
   scrollToLoadMore: '↑ Scroll to load more',
   conversationLog: 'Conversation messages',
   jumpToBottom: 'Jump to bottom',
+  renderFailedTitle: 'This conversation could not be displayed',
+  renderFailedHint: 'Other conversations are unaffected — switch away and back to retry.',
 },
 
 // Tool step group (ToolStepGroup)

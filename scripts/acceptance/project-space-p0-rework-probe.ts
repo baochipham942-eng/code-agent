@@ -112,7 +112,13 @@ function __rect(selector) {
         addConnectors: __rect('[data-testid="project-space-card-connectors-add"]'),
         addAutomation: __rect('[data-testid="project-space-card-automation-add"]'),
       };
-    })()`);
+    })()`) as {
+      collapseButton: { right: number } | null;
+      addExperts: { right: number } | null;
+      addSkills: { right: number } | null;
+      addConnectors: { right: number } | null;
+      addAutomation: { right: number } | null;
+    };
     report.railAlignment = {
       ...railMeasure,
       rightEdgeDelta: railMeasure.collapseButton && railMeasure.addExperts
@@ -136,7 +142,11 @@ function __rect(selector) {
         pageBack: __rect('[data-testid="full-screen-page-back"]'),
         platform: navigator.platform,
       };
-    })()`);
+    })()`) as {
+      expandSidebar: { left: number } | null;
+      pageBack: { left: number } | null;
+      platform: string;
+    };
     report.titlebarBackAlignment = {
       ...titlebarMeasure,
       leftEdgeDelta: titlebarMeasure.expandSidebar && titlebarMeasure.pageBack

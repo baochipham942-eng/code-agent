@@ -188,7 +188,7 @@ async function main(): Promise<void> {
       content: prompt,
       timestamp: now + 1,
     }];
-    const toolCalls: Array<{ name: string; args: Record<string, unknown> }> = [];
+    const toolCalls: Array<{ id: string; name: string; args: Record<string, unknown> }> = [];
     const toolResults: Array<{ name: string; success: boolean }> = [];
     const errors: string[] = [];
     const toolExecutor = new ToolExecutor({
@@ -222,14 +222,14 @@ async function main(): Promise<void> {
       onEvent: (event) => {
         if (event.type === 'tool_call_start') {
           toolCalls.push({
+            id: event.data.id,
             name: event.data.name,
             args: event.data.arguments || {},
           });
         } else if (event.type === 'tool_call_end') {
-          const call = toolCalls.find((candidate) => candidate.name === event.data.name)
-            ?? toolCalls[toolCalls.length - 1];
+          const call = toolCalls.find((candidate) => candidate.id === event.data.toolCallId);
           toolResults.push({
-            name: call?.name || event.data.name || 'unknown',
+            name: call?.name || 'unknown',
             success: event.data.success,
           });
         } else if (event.type === 'error') {

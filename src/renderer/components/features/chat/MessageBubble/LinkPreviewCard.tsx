@@ -56,7 +56,7 @@ export const LinkPreviewCard: React.FC<LinkPreviewCardProps> = ({ href }) => {
           loading="lazy"
           referrerPolicy="no-referrer"
           onError={() => setFaviconFailed(true)}
-          className="mr-1 inline-block h-4 w-4 rounded-[3px] align-[-2px]"
+          className="mr-1 inline-block h-4 w-4 rounded-sm align-[-2px]"
         />
       )}
       {href}

@@ -172,8 +172,15 @@ export const VOICE_UPSTREAM_CONNECT_TIMEOUT_MS = 15_000;
 /** 上游 WS 心跳间隔（ms）；用于主动触发 TCP 层断链探测。 */
 export const VOICE_UPSTREAM_HEARTBEAT_INTERVAL_MS = 15_000;
 
-/** 上游完全无消息 / pong 的最长容忍时间（ms）。 */
-export const VOICE_UPSTREAM_SILENCE_TIMEOUT_MS = 30_000;
+/**
+ * 上游完全无消息 / pong 的最长容忍时间（ms）= 心跳间隔 × 3。
+ *
+ * 写成倍数而不是裸数字，是因为这个值的含义是「连丢几拍才判死」：30_000 那版等于
+ * **丢一拍就杀掉整通电话**（2026-07-30 真机 silenceMs=30225，派活等待期通话被判死，
+ * 用户还在说话）。DashScope 的 WS pong 已实测支持（2026-07-30 探针：40s 空闲
+ * 8/8 回 pong，RTT 50-170ms），所以单拍不回是丢包/迟到，连丢三拍才是真死。
+ */
+export const VOICE_UPSTREAM_SILENCE_TIMEOUT_MS = VOICE_UPSTREAM_HEARTBEAT_INTERVAL_MS * 3;
 
 /** 已提交用户轮次等待模型创建响应的窗口（ms）；首轮超时后 nudge，再超时提示用户。 */
 export const VOICE_UPSTREAM_RESPONSE_TIMEOUT_MS = 10_000;

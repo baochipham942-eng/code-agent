@@ -14,6 +14,7 @@ import { cronCenterEn } from './cronCenter';
 import { previewWorkspaceEn } from './previewWorkspace';
 import { modalPrimitivesEn } from './modalPrimitives';
 import { userQuestionEn } from './userQuestion';
+import { decisionCardEn } from './decisionCard';
 import { taskStatusPanelsEn } from './taskStatusPanels';
 import { noticesEn } from './notices';
 import { agentErrorEn } from './agentError';
@@ -916,6 +917,7 @@ export const en: Translations = {
   ...previewWorkspaceEn,
   ...modalPrimitivesEn,
   ...userQuestionEn,
+  ...decisionCardEn,
   ...taskStatusPanelsEn,
   ...noticesEn,
   ...agentErrorEn,

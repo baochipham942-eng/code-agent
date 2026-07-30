@@ -52,6 +52,7 @@ export const IMMEDIATE_EVENT_TYPES = new Set<AgentEventType>([
   'turn_start',
   'turn_end',
   'hook_trigger',
+  'hook_started',
   'tool_call_start',
   'tool_call_end',
   'surface_execution',

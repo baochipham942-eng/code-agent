@@ -13,6 +13,7 @@ import { cronCenterZh } from './cronCenter';
 import { previewWorkspaceZh } from './previewWorkspace';
 import { modalPrimitivesZh } from './modalPrimitives';
 import { userQuestionZh } from './userQuestion';
+import { decisionCardZh } from './decisionCard';
 import { taskStatusPanelsZh } from './taskStatusPanels';
 import { noticesZh } from './notices';
 import { agentErrorZh } from './agentError';
@@ -906,6 +907,7 @@ export const zh = {
   ...previewWorkspaceZh,
   ...modalPrimitivesZh,
   ...userQuestionZh,
+  ...decisionCardZh,
   ...taskStatusPanelsZh,
   ...noticesZh,
   ...agentErrorZh,

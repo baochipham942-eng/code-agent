@@ -18,6 +18,7 @@ import {
   getBooleanField,
   isRecord,
   normalizeAssistantMessagePayload,
+  normalizeHookStartedData,
   normalizeHookTriggerData,
   normalizeMessageDeltaPayload,
   normalizeMessageSnapshotPayload,
@@ -388,6 +389,10 @@ export const useConversationStreamEffects = ({
         case 'agent_cancelled':
         case 'error':
         case 'stream_end':
+          // running 兜底：agent 终态/错误后不会再有配对的 hook_trigger，撤下悬挂的指示
+          if (eventSessionId) {
+            useTurnExecutionStore.getState().clearHookRunning(eventSessionId);
+          }
           flushRef.current();
           flushStreamingMessages();
           return;
@@ -548,6 +553,10 @@ export const useConversationStreamEffects = ({
         case 'turn_end':
           lastEventAtRef.current = Date.now();
           logHandledEvent();
+          // running 兜底：本轮结束（含被取消/报错收尾）后不应再有在跑的 hook 批次
+          if (eventSessionId) {
+            useTurnExecutionStore.getState().clearHookRunning(eventSessionId);
+          }
           if (!isCurrentSessionEvent) {
             break;
           }
@@ -615,6 +624,17 @@ export const useConversationStreamEffects = ({
             const hookData = normalizeHookTriggerData(event.data);
             if (eventSessionId && hookData) {
               useTurnExecutionStore.getState().recordHookActivity(eventSessionId, hookData);
+            }
+          }
+          break;
+
+        case 'hook_started':
+          lastEventAtRef.current = Date.now();
+          logHandledEvent();
+          {
+            const hookStart = normalizeHookStartedData(event.data);
+            if (eventSessionId && hookStart) {
+              useTurnExecutionStore.getState().recordHookStart(eventSessionId, hookStart);
             }
           }
           break;

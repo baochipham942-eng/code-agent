@@ -29,10 +29,6 @@ interface FolderTrustDialogProps {
   onOpenSettings: () => void;
 }
 
-function riskText(risk: string, labels: Record<string, string>): string {
-  return labels[risk] ?? risk;
-}
-
 /**
  * 只有「用户还没做决定」才需要问。`trusted` 和 `blocked` 都是已落库的决定
  * （见 folderTrustService 的 FolderTrustDecisionState），只有 `untrusted`

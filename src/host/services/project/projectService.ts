@@ -440,7 +440,11 @@ export class ProjectService {
       await this.ensureFolderTrustForSpaceCreation(workspacePath, 'create-space', input.trustAcknowledged);
       const workspaceKey = getProjectKey(workspacePath);
       const existing = repo.getProjectByWorkspacePath(workspacePath);
-      if (existing) return repo.promoteToSpace(existing.id, now)!;
+      if (existing) {
+        const promoted = repo.promoteToSpace(existing.id, now);
+        if (!promoted) throw new Error(`Project disappeared during space promotion: ${existing.id}`);
+        return promoted;
+      }
 
       const project: Project = {
         ...buildProjectRow(workspacePath, workspaceKey, now),
@@ -458,7 +462,7 @@ export class ProjectService {
       await linkProjectIdToMeta(workspacePath, project.id).catch((err) =>
         logger.warn('[ProjectService] linkProjectIdToMeta failed:', err instanceof Error ? err.message : String(err)),
       );
-      return repo.getProject(project.id)!;
+      return repo.getProject(project.id) ?? project;
     }
 
     const project: Project = {
@@ -475,7 +479,7 @@ export class ProjectService {
       sourceRevision: 0,
     };
     repo.upsertProject(project);
-    return repo.getProject(project.id)!;
+    return repo.getProject(project.id) ?? project;
   }
 
   async promoteToSpace(

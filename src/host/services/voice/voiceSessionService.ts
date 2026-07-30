@@ -701,12 +701,26 @@ function applyFocus(session: ActiveSession, focus: VoiceFocusContext): void {
 /** 一条 Renderer WS 的事件绑定。重连换 socket 时原样再绑一次。 */
 function bindClientHandlers(session: ActiveSession, client: WsSocket): void {
   const { id, upstream } = session;
+  let inboundAudioFrames = 0;
   client.on('message', (data: Buffer, isBinary: boolean) => {
     if (active?.id !== id) return;
     if (isBinary) {
       // direct 形态的媒体面不经 Host（Renderer 直连上游），这里收到二进制帧只能是
       // 客户端接错了传输形态——丢弃比静默 no-op 转发更接近真相。
       if (upstream.kind === 'relay') upstream.sendAudio(data);
+      // 采集链探针：首帧 + 每 200 帧记一次，带幅值峰值——没有这行，原生采集
+      // 静音/断流与「模型不响应」在日志里不可区分（AEC 判因第三例的教训）。
+      inboundAudioFrames += 1;
+      if (inboundAudioFrames === 1 || inboundAudioFrames % 200 === 0) {
+        let peak = 0;
+        for (let i = 0; i + 1 < data.length; i += 2) {
+          const v = Math.abs(data.readInt16LE(i));
+          if (v > peak) peak = v;
+        }
+        logger.info('client audio inbound', {
+          voiceSessionId: id, frames: inboundAudioFrames, bytes: data.length, peak, relay: upstream.kind === 'relay',
+        });
+      }
       return;
     }
     let command: VoiceClientCommand;

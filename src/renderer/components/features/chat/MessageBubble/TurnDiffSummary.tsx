@@ -14,6 +14,10 @@ import { toast } from '../../../../hooks/useToast';
 import { DiffView } from '../../../DiffView';
 import { ConfirmDialog } from '../../../composites/ConfirmDialog';
 import { buildTurnFileChanges } from '../../../../utils/turnDiffSummary';
+import {
+  readTurnDiffExpansion,
+  writeTurnDiffExpansion,
+} from '../../../../utils/turnDiffExpansionState';
 import { useI18n } from '../../../../hooks/useI18n';
 
 interface CheckpointListItem {
@@ -37,7 +41,13 @@ export const TurnDiffSummary: React.FC<TurnDiffSummaryProps> = ({ turn }) => {
   );
   const { t } = useI18n();
 
-  const [expandedFiles, setExpandedFiles] = useState<Set<string>>(new Set());
+  // 展开态提到组件外（模块级 Map，按 sessionId:turnId 键控）：消息流是虚拟列表，
+  // 执行中自动滚动会卸载/重挂载本卡，组件内 useState 会被重置（X5.5-B2 根因）。
+  // 只被用户手势改写——程序不主动展开/收起，执行中默认收起、终态后一次性定型。
+  const expansionKey = `${currentSessionId ?? 'no-session'}:${turn.turnId}`;
+  const [expandedFiles, setExpandedFiles] = useState<Set<string>>(
+    () => readTurnDiffExpansion(expansionKey),
+  );
   const [isUndoing, setIsUndoing] = useState(false);
   const [undoState, setUndoState] = useState<UndoState>('idle');
   const [undoError, setUndoError] = useState<string | null>(null);
@@ -124,9 +134,11 @@ export const TurnDiffSummary: React.FC<TurnDiffSummaryProps> = ({ turn }) => {
       const next = new Set(prev);
       if (next.has(filePath)) next.delete(filePath);
       else next.add(filePath);
+      // 同步写回组件外存放，重挂载后原样恢复
+      writeTurnDiffExpansion(expansionKey, next);
       return next;
     });
-  }, []);
+  }, [expansionKey]);
 
   if (fileChanges.length === 0) return null;
 
@@ -222,6 +234,7 @@ export const TurnDiffSummary: React.FC<TurnDiffSummaryProps> = ({ turn }) => {
             >
               <button
                 onClick={() => toggleFile(fc.filePath)}
+                aria-expanded={expanded}
                 className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-zinc-800/50 transition-colors text-left"
               >
                 {expanded ? (

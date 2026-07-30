@@ -321,6 +321,18 @@ async function handleSetDevMode(
 async function handleCheckApiKeyConfigured(getConfigService: () => ConfigService | null): Promise<boolean> {
   const configService = getConfigService();
   const settings = configService ? await handleGet(getConfigService) : undefined;
+  const forcedAfter = Number(process.env.CODE_AGENT_E2E_FORCE_MODEL_ONBOARDING_AFTER);
+  if (
+    process.env.CODE_AGENT_E2E === '1'
+    && Number.isFinite(forcedAfter)
+    && forcedAfter > 0
+    && (settings?.onboarding?.completedAt ?? 0) < forcedAfter
+  ) {
+    return false;
+  }
+  if (settings?.onboarding?.completedAt) {
+    return true;
+  }
   if (settings?.models?.providers) {
     for (const [provider, providerConfig] of Object.entries(settings.models.providers)) {
       if (providerConfig?.enabled !== false && isRuntimeProviderConfigured(provider as ModelProvider, providerConfig)) {

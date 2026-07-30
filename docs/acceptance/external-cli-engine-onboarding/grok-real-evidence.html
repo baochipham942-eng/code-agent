@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Neo × Grok Build 实机验收证据</title>
+  <style>
+    :root { color-scheme: dark; font-family: Inter, "PingFang SC", system-ui, sans-serif; }
+    body { margin: 0; background: #09090b; color: #e4e4e7; }
+    main { width: min(1280px, calc(100% - 48px)); margin: 0 auto; padding: 48px 0 72px; }
+    h1 { margin: 0; font-size: 32px; }
+    .lead { color: #a1a1aa; line-height: 1.7; }
+    .status { display: inline-flex; margin-top: 14px; padding: 6px 10px; border: 1px solid #166534; border-radius: 999px; color: #86efac; background: #052e162e; font-size: 13px; }
+    .facts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin: 28px 0; }
+    .fact, section { border: 1px solid #27272a; border-radius: 14px; background: #111113; }
+    .fact { padding: 16px; }
+    .fact small { display: block; color: #71717a; margin-bottom: 7px; }
+    section { margin-top: 20px; padding: 20px; }
+    h2 { margin: 0 0 8px; font-size: 19px; }
+    p { color: #a1a1aa; line-height: 1.65; }
+    img { display: block; width: 100%; margin-top: 16px; border: 1px solid #3f3f46; border-radius: 10px; }
+    code { color: #bfdbfe; }
+    @media (max-width: 820px) { .facts { grid-template-columns: 1fr 1fr; } }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Neo × Grok Build 实机验收证据</h1>
+    <p class="lead">证据来自本机官方 Grok Build CLI 和 Neo 的真实 Web runtime。没有使用静态 mock，也没有读取、复制或持久化 Grok 登录凭证。</p>
+    <span class="status">PASS · 真实账号与真实模型</span>
+
+    <div class="facts">
+      <div class="fact"><small>客户端</small>grok 0.2.114</div>
+      <div class="fact"><small>登录</small>grok.com 已认证</div>
+      <div class="fact"><small>实机模型目录</small>grok-4.5</div>
+      <div class="fact"><small>传输</small>streaming-json</div>
+    </div>
+
+    <section>
+      <h2>模型选择弹窗</h2>
+      <p>会话已切换到 Grok Build；弹窗只展示 <code>grok-4.5</code>，模型名、模型 ID、推荐状态和能力信息均来自运行时目录。</p>
+      <img src="10-session-grok-model-popup.png" alt="Neo Grok Build 模型选择弹窗">
+    </section>
+
+    <section>
+      <h2>真实会话闭环</h2>
+      <p>Neo 经 <code>/api/run</code> 发送每轮随机 nonce，Grok Build 返回完全相同的正文；SSE 与持久化会话消息同时命中。</p>
+      <img src="09-session-grok-live-conversation.png" alt="Neo 使用 Grok Build 完成真实会话">
+    </section>
+
+    <section>
+      <h2>验证边界</h2>
+      <p>本轮实机证明安装探测、官方登录探测、模型枚举、引擎与模型选择、streaming-json 正文解析、会话持久化和真实 UI 展示。工具、子 Agent、跨会话记忆与联网搜索在 P0 adapter 中保持关闭；外部会话恢复仍按 fail-closed 标记为不可恢复。</p>
+    </section>
+  </main>
+</body>
+</html>

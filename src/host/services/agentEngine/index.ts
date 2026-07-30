@@ -6,4 +6,6 @@ export * from './codexCliAdapter';
 export * from './claudeCodeAdapter';
 export * from './mimoCliAdapter';
 export * from './kimiCliAdapter';
+export * from './grokCliAdapter';
+export * from './codeBuddyCliAdapter';
 export * from './externalEngineDurableLifecycle';

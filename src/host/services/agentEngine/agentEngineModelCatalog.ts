@@ -3,6 +3,9 @@
 // ============================================================================
 
 import { execFile } from 'child_process';
+import { access } from 'node:fs/promises';
+import { homedir } from 'node:os';
+import { isAbsolute, join } from 'node:path';
 import { promisify } from 'util';
 import type { ModelCapability } from '../../../shared/contract/model';
 import type {
@@ -14,6 +17,11 @@ import type {
   ExternalAgentEngineKind,
 } from '../../../shared/contract/agentEngine';
 import { BUILTIN_AGENT_ENGINE_MODEL_CATALOG } from '../../../shared/agentEngineModelCatalog';
+import {
+  getExternalEngineManifestForKind,
+  listExternalEngineManifests,
+  type ExternalEngineManifest,
+} from '../../../shared/externalEngineManifest';
 import { CLOUD, CLOUD_ENDPOINTS } from '../../../shared/constants';
 import {
   getControlPlanePublicKeysFromEnv,
@@ -27,7 +35,14 @@ import { getShellPath } from '../infra/shellEnvironment';
 const logger = createLogger('AgentEngineModelCatalog');
 const execFileAsync = promisify(execFile);
 
-const EXTERNAL_AGENT_ENGINE_KINDS = new Set<ExternalAgentEngineKind>(['codex_cli', 'claude_code', 'mimo_code', 'kimi_code']);
+const EXTERNAL_AGENT_ENGINE_KINDS = new Set<ExternalAgentEngineKind>([
+  'codex_cli',
+  'claude_code',
+  'mimo_code',
+  'kimi_code',
+  'codebuddy_code',
+  'grok_cli',
+]);
 const MODEL_CAPABILITIES = new Set<ModelCapability>([
   'code',
   'vision',
@@ -168,7 +183,39 @@ async function resolveBinary(command: string): Promise<string | undefined> {
   }
 }
 
+async function resolveManifestBinary(manifest: ExternalEngineManifest): Promise<string | undefined> {
+  if (!manifest.probe) return undefined;
+  for (const candidate of [
+    ...(manifest.probe.binaryPaths ?? []),
+    ...manifest.probe.commands,
+  ]) {
+    if (candidate.startsWith('~/')) {
+      const expanded = join(homedir(), candidate.slice(2));
+      try {
+        await access(expanded);
+        return expanded;
+      } catch {
+        continue;
+      }
+    }
+    if (isAbsolute(candidate)) {
+      try {
+        await access(candidate);
+        return candidate;
+      } catch {
+        continue;
+      }
+    }
+    const resolved = await resolveBinary(candidate);
+    if (resolved) return resolved;
+  }
+  return undefined;
+}
+
 function formatDiscoveredModelLabel(kind: ExternalAgentEngineKind, id: string): string {
+  if (id.toLowerCase() === 'auto') {
+    return 'Auto（客户端自适应）';
+  }
   if (kind === 'claude_code') {
     const name = id
       .split(/[-_]/)
@@ -187,6 +234,9 @@ function formatDiscoveredModelLabel(kind: ExternalAgentEngineKind, id: string): 
       if (lower === 'codex') return 'Codex';
       if (lower === 'mimo') return 'MiMo';
       if (lower === 'kimi') return 'Kimi';
+      if (lower === 'glm') return 'GLM';
+      if (lower === 'minimax') return 'MiniMax';
+      if (lower === 'deepseek') return 'DeepSeek';
       return part.charAt(0).toUpperCase() + part.slice(1);
     })
     .join(' ');
@@ -330,11 +380,74 @@ export function parseClaudeHelpModelCatalog(
   );
 }
 
+export function parseParenthesizedSupportedModelsCatalog(
+  kind: ExternalAgentEngineKind,
+  helpText: string,
+  marker: string,
+  updatedAt = getNowIso(),
+  preferredDefault?: string,
+): AgentEngineModelCatalogEngine | null {
+  const markerIndex = helpText.indexOf(marker);
+  if (markerIndex < 0) return null;
+  const afterMarker = helpText.slice(markerIndex + marker.length);
+  const list = afterMarker.match(/\(([^)]+)\)/)?.[1];
+  if (!list) return null;
+
+  const models = list
+    .split(',')
+    .map((id) => id.trim())
+    .filter((id) => /^[a-z0-9][a-z0-9._-]*$/i.test(id))
+    .map((id) => ({ id }));
+
+  return normalizeDiscoveredModels(kind, models, updatedAt, preferredDefault);
+}
+
+export function parseJsonModelMapCatalog(
+  kind: ExternalAgentEngineKind,
+  output: string,
+  modelMapKey = 'models',
+  labelField = 'displayName',
+  updatedAt = getNowIso(),
+  preferredDefault?: string,
+): AgentEngineModelCatalogEngine | null {
+  const parsed: unknown = JSON.parse(output);
+  if (!isRecord(parsed) || !isRecord(parsed[modelMapKey])) {
+    return null;
+  }
+
+  const models = Object.entries(parsed[modelMapKey])
+    .filter(([, value]) => isRecord(value))
+    .map(([id, value]) => ({
+      id,
+      label: isRecord(value) ? readString(value[labelField]) : null,
+    }));
+
+  return normalizeDiscoveredModels(kind, models, updatedAt, preferredDefault);
+}
+
+export function parseGrokModelsCatalog(
+  output: string,
+  updatedAt = getNowIso(),
+  preferredDefault?: string,
+): AgentEngineModelCatalogEngine | null {
+  const defaultModel = preferredDefault
+    ?? output.match(/Default model:\s*([^\s]+)/i)?.[1]?.trim();
+  const availableSection = output.split(/Available models:\s*/i)[1] ?? '';
+  const models = availableSection
+    .split(/\r?\n/)
+    .map((line) => line.match(/^\s*\*\s+([a-z0-9][a-z0-9._-]*)/i)?.[1])
+    .filter((id): id is string => Boolean(id))
+    .map((id) => ({ id }));
+  return normalizeDiscoveredModels('grok_cli', models, updatedAt, defaultModel);
+}
+
 function mergeDiscoveredEngine(
   baseEngine: AgentEngineModelCatalogEngine | undefined,
   discoveredEngine: AgentEngineModelCatalogEngine,
 ): AgentEngineModelCatalogEngine {
-  const baseModels = baseEngine?.models ?? [];
+  const mergeMode = getExternalEngineManifestForKind(discoveredEngine.kind)
+    ?.probe?.modelDiscovery?.merge ?? 'overlay';
+  const baseModels = mergeMode === 'replace' ? [] : baseEngine?.models ?? [];
   const discoveredIds = new Set(discoveredEngine.models.map((model) => model.id));
   const models = [
     ...discoveredEngine.models.map((model) => {
@@ -447,6 +560,81 @@ export async function discoverLocalAgentEngineModels(now?: number): Promise<Agen
     }
   }
 
+  const configuredDiscoveries = listExternalEngineManifests()
+    .filter((manifest): manifest is ExternalEngineManifest & { kind: ExternalAgentEngineKind } =>
+      Boolean(
+        manifest.kind
+        && manifest.kind !== 'native'
+        && manifest.probe?.modelDiscovery,
+      ));
+  for (const manifest of configuredDiscoveries) {
+    const discovery = manifest.probe?.modelDiscovery;
+    if (!discovery) continue;
+    const binary = await resolveManifestBinary(manifest);
+    if (!binary) continue;
+    try {
+      const result = await execFileAsync(binary, discovery.args, {
+        env: getProbeEnv(),
+        timeout: LOCAL_DISCOVERY_TIMEOUT_MS,
+        maxBuffer: 1024 * 1024,
+      }) as ExecProbeResult;
+      const output = `${result.stdout}\n${result.stderr}`;
+      let preferredDefault = discovery.preferredDefault;
+      if (discovery.defaultModelProbe) {
+        try {
+          const defaultResult = await execFileAsync(binary, discovery.defaultModelProbe.args, {
+            env: getProbeEnv(),
+            timeout: LOCAL_DISCOVERY_TIMEOUT_MS,
+            maxBuffer: 1024 * 1024,
+          }) as ExecProbeResult;
+          const match = `${defaultResult.stdout}\n${defaultResult.stderr}`
+            .match(new RegExp(discovery.defaultModelProbe.pattern, 'i'));
+          preferredDefault = match?.[1]?.trim() || preferredDefault;
+        } catch {
+          diagnostics.push(diagnostic(
+            `local_${manifest.kind}_default_model_discovery_failed`,
+            `The installed ${manifest.label} client did not return its configured default model.`,
+            { severity: 'warning', path: binary },
+          ));
+        }
+      }
+      const engine = discovery.parser === 'supported_models_parenthesized'
+        ? parseParenthesizedSupportedModelsCatalog(
+            manifest.kind,
+            output,
+            discovery.marker ?? '',
+            updatedAt,
+            preferredDefault,
+          )
+        : discovery.parser === 'model_map_json'
+          ? parseJsonModelMapCatalog(
+              manifest.kind,
+              output,
+              discovery.modelMapKey,
+              discovery.labelField,
+              updatedAt,
+              preferredDefault,
+            )
+          : parseGrokModelsCatalog(output, updatedAt, preferredDefault);
+      if (engine) {
+        engines.push(engine);
+      } else {
+        diagnostics.push(diagnostic(
+          `local_${manifest.kind}_model_discovery_empty`,
+          `The installed ${manifest.label} client did not return a parseable model catalog.`,
+          { severity: 'warning', path: binary },
+        ));
+      }
+    } catch (error) {
+      diagnostics.push(diagnostic(
+        `local_${manifest.kind}_model_discovery_failed`,
+        `Skipped local ${manifest.label} model discovery because its configured probe failed.`,
+        { severity: 'warning', path: binary },
+      ));
+      logger.warn(`Failed to discover ${manifest.label} models`, { error: String(error) });
+    }
+  }
+
   return { engines, diagnostics };
 }
 
@@ -499,7 +687,11 @@ function parseEngine(
 
   const kind = readString(value.kind);
   if (!kind || !EXTERNAL_AGENT_ENGINE_KINDS.has(kind as ExternalAgentEngineKind)) {
-    diagnostics.push(diagnostic('invalid_engine_kind', 'Agent Engine catalog engine kind must be codex_cli, claude_code, mimo_code, or kimi_code.', { path: `${path}.kind` }));
+    diagnostics.push(diagnostic(
+      'invalid_engine_kind',
+      'Agent Engine catalog engine kind must be codex_cli, claude_code, mimo_code, kimi_code, codebuddy_code, or grok_cli.',
+      { path: `${path}.kind` },
+    ));
     return { diagnostics };
   }
 

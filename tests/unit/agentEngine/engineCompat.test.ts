@@ -24,6 +24,7 @@ describe('engineCompat — billingMode 映射', () => {
     expect(getEngineBillingMode('claude_code')).toBe('subscription');
     expect(getEngineBillingMode('mimo_code')).toBe('subscription');
     expect(getEngineBillingMode('kimi_code')).toBe('subscription');
+    expect(getEngineBillingMode('grok_cli')).toBe('subscription');
   });
 
   it('只有 native 的计费需结合 provider 才能确定（非权威），外部引擎权威', () => {
@@ -32,6 +33,7 @@ describe('engineCompat — billingMode 映射', () => {
     expect(engineBillingModeIsAuthoritative('claude_code')).toBe(true);
     expect(engineBillingModeIsAuthoritative('mimo_code')).toBe(true);
     expect(engineBillingModeIsAuthoritative('kimi_code')).toBe(true);
+    expect(engineBillingModeIsAuthoritative('grok_cli')).toBe(true);
   });
 });
 
@@ -64,7 +66,7 @@ describe('engineCompat — getEngineModelCompat 判定', () => {
     });
   });
 
-  describe('codex / claude — 仅签名目录内已启用模型', () => {
+  describe('codex / claude / grok — 仅目录内已启用模型', () => {
     const ctx = {
       signedCatalogEnabledModelIds: new Set(['gpt-5-codex', 'o4-mini']),
       signedCatalogDisabledModelIds: new Set(['legacy-codex']),
@@ -73,6 +75,7 @@ describe('engineCompat — getEngineModelCompat 判定', () => {
     it('目录内已启用 → supported', () => {
       expect(getEngineModelCompat('codex_cli', 'gpt-5-codex', ctx)).toEqual({ supported: true });
       expect(getEngineModelCompat('claude_code', 'o4-mini', ctx)).toEqual({ supported: true });
+      expect(getEngineModelCompat('grok_cli', 'o4-mini', ctx)).toEqual({ supported: true });
     });
 
     it('目录内被停用 → unsupported + disabled_in_catalog', () => {
@@ -84,6 +87,10 @@ describe('engineCompat — getEngineModelCompat 判定', () => {
 
     it('不在目录里 → unsupported + not_in_signed_catalog（fail-closed）', () => {
       expect(getEngineModelCompat('claude_code', 'gpt-5.5', ctx)).toEqual({
+        supported: false,
+        reasonCode: 'not_in_signed_catalog',
+      });
+      expect(getEngineModelCompat('grok_cli', 'gpt-5.5', ctx)).toEqual({
         supported: false,
         reasonCode: 'not_in_signed_catalog',
       });

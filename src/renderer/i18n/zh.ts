@@ -532,6 +532,8 @@ export const zh = {
         claude_code: '安装 Claude Code CLI 后将 claude 加入 PATH，再点「检测引擎」。',
         mimo_code: '安装 MiMo-Code CLI 后将 mimo 加入 PATH，再点「检测引擎」。',
         kimi_code: '安装 Kimi Code CLI 后将 kimi 加入 PATH，再点「检测引擎」。',
+        codebuddy_code: '安装 WorkBuddy 后，Neo 会自动检测应用内置 CLI。',
+        grok_cli: '安装 Grok Build CLI 后将 grok 加入 PATH，再点「检测引擎」。',
       },
       // 登录提示（外部引擎吃订阅，需各自登录）
       loginHintTitle: '登录提示',
@@ -540,6 +542,8 @@ export const zh = {
         claude_code: '首次使用前需用 Claude Code 自身的登录命令完成账号授权。',
         mimo_code: '首次使用前需运行 mimo providers login 完成账号授权。',
         kimi_code: '首次使用前需运行 kimi login 完成账号授权。',
+        codebuddy_code: '首次使用前需在 WorkBuddy 官方客户端完成账号登录。',
+        grok_cli: '首次使用前需运行 grok login 完成官方账号授权。',
       },
     },
     // 设置页「Agent Engine 模型目录」section（签名目录发布 + 本机默认选择）

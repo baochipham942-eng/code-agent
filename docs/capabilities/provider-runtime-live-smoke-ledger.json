@@ -129,6 +129,41 @@
       "reason": "CLI is not installed, so no live smoke can run."
     },
     {
+      "id": "codebuddy-code-local-spike",
+      "date": "2026-07-30",
+      "runtime": "codebuddy_code",
+      "protocolFamily": "opaque_cli",
+      "provider": "cli-owned",
+      "model": "client-default (reported glm-5.2)",
+      "verificationStatus": "verified",
+      "result": "passed",
+      "scope": "Neo webServer session selection, print-mode stream-json, SSE, persisted assistant message, tools disabled",
+      "evidence": [
+        "scripts/acceptance/workbuddy-engine-live-smoke.ts",
+        "docs/acceptance/external-cli-engine-onboarding/07-session-workbuddy-real-client-selected.png"
+      ],
+      "reason": "Authenticated WorkBuddy 5.3.5 / embedded CodeBuddy CLI 2.115.0 returned the exact per-run nonce through Neo."
+    },
+    {
+      "id": "grok-cli-local-spike",
+      "date": "2026-07-30",
+      "runtime": "grok_cli",
+      "protocolFamily": "opaque_cli",
+      "provider": "cli-owned",
+      "model": "grok-4.5",
+      "verificationStatus": "verified",
+      "result": "passed",
+      "scope": "Official login, model discovery, single-turn streaming-json text and terminal session identity",
+      "evidence": [
+        "src/host/services/agentEngine/grokCliAdapter.ts",
+        "tests/unit/agentEngine/grokCliAdapter.test.ts",
+        "docs/acceptance/external-cli-engine-onboarding/grok-live-evidence.json",
+        "docs/acceptance/external-cli-engine-onboarding/09-session-grok-live-conversation.png",
+        "docs/acceptance/external-cli-engine-onboarding/10-session-grok-model-popup.png"
+      ],
+      "reason": "Authenticated Grok Build 0.2.114 returned an exact per-run nonce through Neo webServer selection, streaming SSE, and persisted conversation with model grok-4.5."
+    },
+    {
       "id": "p0-local-stop-verified",
       "date": "2026-07-11",
       "runtime": "native",

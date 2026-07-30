@@ -50,6 +50,9 @@ export function registerAgentEngineHandlers(ipcMain: IpcMain): void {
         case 'list':
           data = await registry.list();
           break;
+        case 'listSources':
+          data = await registry.listSources();
+          break;
         case 'get':
           data = await registry.get((request.payload as { kind: AgentEngineKind }).kind);
           break;

@@ -4,6 +4,7 @@ import type { AgentEngineDescriptor, AgentEnginePermissionProfile, AgentEngineSe
 import { normalizeAgentEngineSession } from '../../../shared/contract/agentEngine';
 import type { Session } from '../../../shared/contract/session';
 import type { WorkspaceScope } from '../../../shared/contract/project';
+import { isManifestBackedExternalKind } from '../../../shared/externalEngineManifest';
 import { resolveWorkspacePath } from '../../runtime/workspaceScope';
 
 export function assertWorkspaceCwd(cwd: string, workspaceRoot: string): string {
@@ -19,7 +20,7 @@ export function assertWorkspaceCwd(cwd: string, workspaceRoot: string): string {
 export function isExternalAgentEngine(
   kind: AgentEngineSessionMetadata['kind'],
 ): kind is ExternalAgentEngineKind {
-  return kind === 'codex_cli' || kind === 'claude_code' || kind === 'mimo_code' || kind === 'kimi_code';
+  return isManifestBackedExternalKind(kind);
 }
 
 export function assertReadOnlyExternalProfile(

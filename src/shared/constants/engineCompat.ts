@@ -47,6 +47,8 @@ export const ENGINE_BILLING_MODE: Record<AgentEngineKind, EngineBillingMode> = {
   claude_code: 'subscription',
   mimo_code: 'subscription',
   kimi_code: 'subscription',
+  codebuddy_code: 'subscription',
+  grok_cli: 'subscription',
 };
 
 export function getEngineBillingMode(kind: AgentEngineKind): EngineBillingMode {
@@ -144,7 +146,8 @@ export function getEngineModelCompat(
       return ok ? { supported: true } : { supported: false, reasonCode: 'provider_not_registered' };
     }
     case 'codex_cli':
-    case 'claude_code': {
+    case 'claude_code':
+    case 'grok_cli': {
       const enabled = toSet(context.signedCatalogEnabledModelIds);
       if (enabled.has(trimmed)) {
         return { supported: true };
@@ -157,6 +160,7 @@ export function getEngineModelCompat(
     }
     case 'mimo_code':
     case 'kimi_code':
+    case 'codebuddy_code':
       return { supported: true, reasonCode: 'resolved_by_cli' };
     default:
       return { supported: true };

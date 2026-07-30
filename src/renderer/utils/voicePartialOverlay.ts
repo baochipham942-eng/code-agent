@@ -33,14 +33,21 @@ export interface VoicePartialOverlayInput {
  *
  * 只撤「顶着的那句还没被新 partial 覆盖」的——用户说完上一句、真消息还没回来的空档里
  * 又开口了是常事，无脑清空会把正在说的下一句一起抹掉（然后从半截重新长）。
+ *
+ * `landed` = 真消息是否已经进了消息流。**撤气泡必须等它为真**：host 落库是异步的，
+ * 只按「文本没被覆盖」就撤，会撤出一段两边都没有这句话的空帧——真机表现为
+ * 助手回复「突然清空 → 再出现」（R1 交接闪断，2026-07-30）。
  */
 export function resolvePartialRelease(
   settled: { user?: string; assistant?: string },
   current: { user: string; assistant: string },
+  landed: { user: boolean; assistant: boolean },
 ): { partialUser?: string; partialAssistant?: string } {
   const patch: { partialUser?: string; partialAssistant?: string } = {};
-  if (settled.user !== undefined && current.user === settled.user) patch.partialUser = '';
-  if (settled.assistant !== undefined && current.assistant === settled.assistant) patch.partialAssistant = '';
+  if (settled.user !== undefined && current.user === settled.user && landed.user) patch.partialUser = '';
+  if (settled.assistant !== undefined && current.assistant === settled.assistant && landed.assistant) {
+    patch.partialAssistant = '';
+  }
   return patch;
 }
 

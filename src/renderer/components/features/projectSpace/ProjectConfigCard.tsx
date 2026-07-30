@@ -24,6 +24,8 @@ interface ConfigCardItem {
   description?: string;
   /** 列表项左图标（专家：RolePanelEntry.icon 的 lucide 名，缺省 RoleIcon 自兜底） */
   icon?: string;
+  /** 专家行首段「花名 · 职能」的职能段（真源=RolePanelEntry.profession，缺省回落分类中文标签；都没有则不显示） */
+  profession?: string;
 }
 
 export interface ProjectConfigCardProps {
@@ -42,6 +44,11 @@ export interface ProjectConfigCardProps {
   onRemove?: (id: string) => void;
   /** 只读原因：用作「+」禁用态的 title/tooltip（不进卡身，避免四卡高度不齐） */
   readOnlyHint?: string | null;
+  /**
+   * 列表行图标槽永远渲染（行模板统一：缺 icon 也由 RoleIcon 兜底 UserCircle，行缩进/结构不塌）。
+   * RoleIcon 是专家语义图标，仅专家卡开启；技能/连接器/自动化不传 = 保持无图标槽的既有形态。
+   */
+  showOptionIcons?: boolean;
 }
 
 export const ProjectConfigCard: React.FC<ProjectConfigCardProps> = ({
@@ -58,6 +65,7 @@ export const ProjectConfigCard: React.FC<ProjectConfigCardProps> = ({
   onSelect,
   onRemove,
   readOnlyHint = null,
+  showOptionIcons = false,
 }) => {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -186,11 +194,16 @@ export const ProjectConfigCard: React.FC<ProjectConfigCardProps> = ({
                   }}
                   className="flex w-full min-w-0 items-center gap-2.5 rounded-lg px-3 py-2 text-left transition-colors hover:bg-zinc-800/70"
                 >
-                  {option.icon !== undefined && (
+                  {showOptionIcons ? (
                     <RoleIcon name={option.icon} className="h-4 w-4 flex-shrink-0 text-zinc-500" />
-                  )}
+                  ) : null}
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm text-zinc-300">{option.label}</span>
+                    <span className="block truncate text-sm text-zinc-300">
+                      {option.label}
+                      {option.profession ? (
+                        <span className="text-xs text-zinc-500">{` · ${option.profession}`}</span>
+                      ) : null}
+                    </span>
                     {option.description ? (
                       <span className="mt-0.5 block truncate text-xs text-zinc-500">{option.description}</span>
                     ) : null}

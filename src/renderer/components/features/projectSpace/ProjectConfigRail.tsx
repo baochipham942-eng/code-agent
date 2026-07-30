@@ -71,8 +71,15 @@ export const ProjectConfigRail: React.FC<ProjectConfigRailProps> = ({
   const ps = t.projectSpace;
 
   const [collapsed, setCollapsed] = useState(readCollapsed);
-  // 专家可选项带展示层字段（displayName/description/icon）：弹窗两行项与已选 chip 都用 displayName
-  const [roleOptions, setRoleOptions] = useState<Array<{ id: string; label: string; description?: string; icon?: string }>>([]);
+  // 专家可选项带展示层字段（displayName/description/icon/profession）：弹窗两行项与已选 chip 都用 displayName；
+  // profession 真源=RolePanelEntry.profession（仅预设角色配置），缺省不显示职能段
+  const [roleOptions, setRoleOptions] = useState<Array<{
+    id: string;
+    label: string;
+    description?: string;
+    icon?: string;
+    profession?: string;
+  }>>([]);
   const [connectorSelections, setConnectorSelections] = useState<ProjectCapabilitySelection[]>([]);
   const [connectorCatalog, setConnectorCatalog] = useState<Array<{ id: string; label: string; description?: string }>>([]);
   const [skills, setSkills] = useState<SkillListEntry[]>([]);
@@ -97,6 +104,7 @@ export const ProjectConfigRail: React.FC<ProjectConfigRailProps> = ({
         label: entry.displayName ?? entry.roleId,
         description: entry.description || undefined,
         icon: entry.icon,
+        profession: entry.profession || undefined,
       }))))
       .catch(() => setRoleOptions([]));
   }, []);
@@ -282,6 +290,7 @@ export const ProjectConfigRail: React.FC<ProjectConfigRailProps> = ({
           options={expertOptions}
           onSelect={handleAddExpert}
           onRemove={handleRemoveExpert}
+          showOptionIcons
         />
         <ProjectConfigCard
           testId="project-space-card-skills"

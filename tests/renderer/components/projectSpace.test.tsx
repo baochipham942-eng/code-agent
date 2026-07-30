@@ -190,7 +190,8 @@ function setupHappyPathMocks() {
   vi.mocked(tagClient.listByProject).mockResolvedValue([]);
   vi.mocked(rolesClient.listRoles).mockResolvedValue([
     { roleId: 'role-a', description: '分析数据', source: 'builtin', memoryCount: 0, lastWork: null, displayName: '数据分析师', icon: 'BarChart3' },
-    { roleId: 'role-b', description: '做研究调研', source: 'builtin', memoryCount: 0, lastWork: null, displayName: '研究员', icon: 'Microscope' },
+    { roleId: 'role-b', description: '做研究调研', source: 'builtin', memoryCount: 0, lastWork: null, displayName: '研究员', icon: 'Microscope', profession: '资深研究员' },
+    { roleId: 'role-c', description: '', source: 'user', memoryCount: 0, lastWork: null },
   ] as never);
   vi.mocked(cronClient.listJobs).mockResolvedValue([]);
   vi.mocked(invokeSkillIPC).mockResolvedValue([]);
@@ -510,9 +511,14 @@ describe('ProjectConfigRail 项目配置（四卡竖排形态，第四波①回�
 
     fireEvent.click(screen.getByTestId('project-space-card-experts-add'));
     const option = await screen.findByTestId('project-space-card-experts-option-role-b');
-    // 弹窗项两行：displayName + 描述
+    // 弹窗项两行：displayName · 职能 + 描述（第六波③）
     expect(option.textContent).toContain('研究员');
+    expect(option.textContent).toContain('· 资深研究员');
     expect(option.textContent).toContain('做研究调研');
+    // 缺 displayName/icon/描述的角色不塌行：图标兜底槽在（svg），标签回落裸 roleId
+    const bare = screen.getByTestId('project-space-card-experts-option-role-c');
+    expect(bare.querySelector('svg')).toBeTruthy();
+    expect(bare.textContent).toContain('role-c');
     fireEvent.click(option);
     await waitFor(() => expect(projectClient.addProjectRole).toHaveBeenCalledWith(PROJECT_ID, 'role-b'));
   });

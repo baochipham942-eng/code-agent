@@ -323,3 +323,184 @@ describe('completionSummaryService', () => {
     }
   });
 });
+
+// ============================================================================
+// R7 账本污染回归门（2026-07-30 真机 session_1785393342389_a3480b45）
+//
+// 现场：用户在通话里说「帮我创建一个 txt 文件」，模型 Write /Users/linchen/a.txt，
+// 被写前读门拒绝（success=false, NOT_READ_FOR_OVERWRITE），改用 Read 看了一眼，
+// 然后如实答「a.txt 早就在那儿了，内容是 123，我没动它」。
+// 而账本记下 changedFiles=["/Users/linchen/a.txt"]、artifactRefs 同一路径——
+// 语音完成语义证据门读这份账，判出「已完成」。**证据门被自己的账本骗了。**
+//
+// 账本是证据门/口播/通知三条链的共同上游，它一旦把「想写」记成「写了」，
+// 下游做得再严也没用。所以门钉在账本生产侧，且钉的是 success 语义本身。
+// 两条工具结果的形状逐字段抄自真机 DB（messages.tool_results）。
+// ============================================================================
+describe('completionSummaryService · 只有真落盘的变更才进账（R7）', () => {
+  let tempRoot: string;
+  let workingDirectory: string;
+
+  beforeEach(async () => {
+    tempRoot = await mkdtemp(path.join(tmpdir(), 'completion-summary-r7-'));
+    mockConfig.userConfigDir = tempRoot;
+    workingDirectory = await mkdtemp(path.join(tmpdir(), 'completion-summary-r7-wd-'));
+  });
+
+  afterEach(async () => {
+    await rm(tempRoot, { recursive: true, force: true });
+    await rm(workingDirectory, { recursive: true, force: true });
+  });
+
+  /** 与主 harness 的区别：nudge 账为空，好让断言只盯工具结果这条路。 */
+  function ctxWithMessages(messages: Message[]): RuntimeContext {
+    const ctx = makeRuntimeContext(workingDirectory, messages, 'session-r7');
+    (ctx as { nudgeManager: unknown }).nudgeManager = { getModifiedFiles: () => new Set<string>() };
+    return ctx;
+  }
+
+  /** 真机那次被写前读门拒绝的 Write，逐字段照抄。 */
+  function refusedWriteResult(filePath: string) {
+    return {
+      toolCallId: 'call_019fb1bdc18571209dd417e3',
+      success: false,
+      error: 'Existing file must be read before overwrite. Use Read first to bind the latest digest, then retry Write.',
+      metadata: {
+        code: 'NOT_READ_FOR_OVERWRITE',
+        // ← 病灶：失败了照样带目标路径。这是「本来想写哪」，不是「写成了什么」。
+        outputPath: filePath,
+        writeIsolation: { kind: 'file', targetPath: filePath, lockKey: `file:${filePath}` },
+      },
+    };
+  }
+
+  it('Write 失败不入账：被写前读门拒绝的目标路径既不进 changedFiles 也不进 artifactRefs', async () => {
+    const target = path.join(workingDirectory, 'a.txt');
+    const messages: Message[] = [
+      {
+        id: 'assistant-write',
+        role: 'assistant',
+        content: '',
+        timestamp: 100,
+        toolCalls: [{ id: 'call_019fb1bdc18571209dd417e3', name: 'Write', arguments: { file_path: target, content: '' } }],
+      },
+      {
+        id: '2dfaa1a8-d2bb-4dd2-8085-1ed00ae8851f',
+        role: 'tool',
+        content: '',
+        timestamp: 200,
+        toolResults: [refusedWriteResult(target)],
+      },
+      {
+        id: 'final-answer',
+        role: 'assistant',
+        content: 'a.txt 已经存在了，里面是 123，我没有动它。',
+        timestamp: 300,
+      },
+    ];
+
+    const record = await buildCompletionSummaryRecord({
+      ctx: ctxWithMessages(messages),
+      status: 'completed',
+      iterations: 4,
+      userMessage: '帮我创建一个 txt 文件',
+    });
+
+    expect(record.changedFiles).toEqual([]);
+    expect(record.artifactRefs).toEqual([]);
+  });
+
+  it('失败调用自称的 changedFiles 同样不认（工具都没跑成，那份清单是意图不是结果）', async () => {
+    const messages: Message[] = [
+      {
+        id: 'tool-results',
+        role: 'tool',
+        content: '',
+        timestamp: 200,
+        toolResults: [{
+          toolCallId: 'edit-1',
+          success: false,
+          error: 'patch did not apply',
+          metadata: { changedFiles: ['src/never-touched.ts'], outputPath: 'src/never-touched.ts' },
+        }],
+      },
+    ];
+
+    const record = await buildCompletionSummaryRecord({
+      ctx: ctxWithMessages(messages),
+      status: 'completed',
+      iterations: 1,
+      userMessage: '改一下那个文件',
+    });
+
+    expect(record.changedFiles).toEqual([]);
+  });
+
+  it('Read 不入账：成功的读取带 artifact/evidenceRef，但一个字节都没改', async () => {
+    const target = path.join(workingDirectory, 'a.txt');
+    const messages: Message[] = [
+      {
+        id: 'assistant-read',
+        role: 'assistant',
+        content: '',
+        timestamp: 100,
+        toolCalls: [{ id: 'call_DACudkf1ceKOHRCsvT3JtNx7', name: 'Read', arguments: { file_path: target } }],
+      },
+      {
+        id: 'dd46f4a0-fb2c-438d-83d8-e8c197435734',
+        role: 'tool',
+        content: '',
+        timestamp: 200,
+        // 真机 Read 结果形状：有 artifact、有 read 级 evidenceRef，但没有 outputPath。
+        toolResults: [{
+          toolCallId: 'call_DACudkf1ceKOHRCsvT3JtNx7',
+          success: true,
+          output: '     1\t123',
+          metadata: {
+            artifact: { artifactId: 'artifact_171973962f998451', kind: 'text', sourceTool: 'Read', path: target },
+            evidenceRef: { id: 'evidence_58fd97b6', kind: 'read', ref: `${target}#L1-L1`, source: 'Read' },
+            evidenceKind: 'file_read',
+          },
+        }],
+      },
+    ];
+
+    const record = await buildCompletionSummaryRecord({
+      ctx: ctxWithMessages(messages),
+      status: 'completed',
+      iterations: 2,
+      userMessage: '看看 a.txt 里有什么',
+    });
+
+    expect(record.changedFiles).toEqual([]);
+    expect(record.artifactRefs).toEqual([]);
+  });
+
+  it('成功的 Write 照常入账（别把门修成谁都进不来）', async () => {
+    const target = path.join(workingDirectory, 'b.txt');
+    const messages: Message[] = [
+      {
+        id: 'tool-results',
+        role: 'tool',
+        content: '',
+        timestamp: 200,
+        toolResults: [{
+          toolCallId: 'write-ok',
+          success: true,
+          output: 'File created',
+          metadata: { outputPath: target, changedFiles: [target] },
+        }],
+      },
+    ];
+
+    const record = await buildCompletionSummaryRecord({
+      ctx: ctxWithMessages(messages),
+      status: 'completed',
+      iterations: 1,
+      userMessage: '建个 b.txt',
+    });
+
+    expect(record.changedFiles).toEqual([target]);
+    expect(record.artifactRefs).toEqual([{ kind: 'file', path: target, messageId: 'tool-results' }]);
+  });
+});

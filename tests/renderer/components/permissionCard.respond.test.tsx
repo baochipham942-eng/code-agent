@@ -60,6 +60,12 @@ const request: PermissionRequest = {
   timestamp: 1,
 };
 
+// DecisionCard 骨架：审批级别是选项行，选中后点 primary「确认」才提交
+function confirmAllowOnce() {
+  fireEvent.click(screen.getByRole('button', { name: /允许一次/ }));
+  fireEvent.click(screen.getByRole('button', { name: '确认' }));
+}
+
 describe('PermissionCard respond path', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -78,7 +84,7 @@ describe('PermissionCard respond path', () => {
     invoke.mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce(undefined);
     render(<PermissionCard />);
 
-    fireEvent.click(screen.getByRole('button', { name: /允许/ }));
+    confirmAllowOnce();
 
     await waitFor(() => {
       expect(invoke).toHaveBeenCalledWith(
@@ -91,7 +97,7 @@ describe('PermissionCard respond path', () => {
       expect(toastError).toHaveBeenCalledWith(expect.stringContaining('请重试'));
     });
 
-    fireEvent.click(screen.getByRole('button', { name: /允许/ }));
+    confirmAllowOnce();
     await waitFor(() => expect(invoke).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(setPendingPermissionRequest).toHaveBeenLastCalledWith(null));
   });
@@ -100,7 +106,7 @@ describe('PermissionCard respond path', () => {
     ipcAvailable.value = false;
     render(<PermissionCard />);
 
-    fireEvent.click(screen.getByRole('button', { name: /允许/ }));
+    confirmAllowOnce();
 
     await waitFor(() => {
       expect(invoke).not.toHaveBeenCalled();
@@ -109,7 +115,7 @@ describe('PermissionCard respond path', () => {
     });
 
     ipcAvailable.value = true;
-    fireEvent.click(screen.getByRole('button', { name: /允许/ }));
+    confirmAllowOnce();
 
     await waitFor(() => expect(invoke).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(setPendingPermissionRequest).toHaveBeenLastCalledWith(null));
@@ -153,9 +159,10 @@ describe('PermissionCard respond path', () => {
       </>,
     );
 
-    const allowButtons = screen.getAllByRole('button', { name: /允许/ });
-    fireEvent.click(allowButtons[0]);
-    fireEvent.click(allowButtons[1]);
+    // ApprovalSyncCard 的「允许」直发（第一个 surface 在途）；
+    // PermissionCard 走 DecisionCard 选项 + 确认（第二个 surface 应被 claim 门挡住）
+    fireEvent.click(screen.getByRole('button', { name: '允许' }));
+    confirmAllowOnce();
 
     expect(invoke).toHaveBeenCalledTimes(1);
     resolveInvoke();

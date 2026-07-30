@@ -40,6 +40,7 @@ vi.mock('../../../src/renderer/services/nativeVoiceAudioPipeline', () => ({
 
 const { voiceCallBridge } = await import('../../../src/renderer/services/voiceCallBridge');
 const { useVoiceCallStore } = await import('../../../src/renderer/stores/voiceCallStore');
+const { useSessionStore } = await import('../../../src/renderer/stores/sessionStore');
 
 class FakeWebSocket {
   static OPEN = 1;
@@ -95,13 +96,27 @@ describe('voiceCallBridge 字幕揭示绑播放进度', () => {
     vi.stubGlobal('WebSocket', class extends FakeWebSocket {
       constructor() { super(); sockets.push(this); }
     });
+    // 交接是原子的（R1）：真消息进了消息流才撤临时气泡，所以这里得让 reload 拉得到它。
+    (window as unknown as Record<string, unknown>).domainAPI = {
+      invoke: vi.fn(async () => ({
+        success: true,
+        data: {
+          messages: [
+            { id: 'voice-assistant-1', role: 'assistant', content: FULL_TEXT, timestamp: 0, metadata: { source: 'voice' } },
+          ],
+        },
+      })),
+    };
     useVoiceCallStore.getState().reset();
+    useSessionStore.setState({ currentSessionId: 'session-1', messages: [] });
   });
 
   afterEach(() => {
     vi.useRealTimers();
     vi.unstubAllGlobals();
+    delete (window as unknown as Record<string, unknown>).domainAPI;
     useVoiceCallStore.getState().reset();
+    useSessionStore.setState({ currentSessionId: null, messages: [] });
   });
 
   it('揭示比例跟播放进度走：整段 delta 突发到齐也不一次性铺满', async () => {

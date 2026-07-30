@@ -141,21 +141,36 @@ function collectVerificationEvidence(commands: CompletionSummaryCommand[]): Comp
     }));
 }
 
+/**
+ * 工具结果里的「产物路径」——**只有真跑成功的调用才算数**。
+ *
+ * 失败的调用照样带 `metadata.outputPath`：那是「本来想写哪」，不是「写成了什么」。
+ * 2026-07-30 真机（session_1785393342389_a3480b45）：Write 被写前读门拒绝
+ * （success=false，code=NOT_READ_FOR_OVERWRITE），账本却把 /Users/linchen/a.txt
+ * 记进 changedFiles + artifactRefs，于是语音完成语义证据门被自己的账本骗出「已完成」，
+ * 而模型嘴上说的是「文件早就在那儿了，我没动它」。
+ *
+ * 同一条纪律 `trackFileMutationSideEffects` 早就有（`normalizedResult.success` 才记
+ * nudge 账），只有这份账漏了——所以那次的 changedFiles 全部来自这里。
+ */
+function successfulOutputPath(result: ToolResult): string | undefined {
+  if (!result.success) return undefined;
+  if (typeof result.outputPath === 'string') return result.outputPath;
+  return typeof result.metadata?.outputPath === 'string' ? result.metadata.outputPath : undefined;
+}
+
 function collectChangedFiles(ctx: RuntimeContext): string[] {
   const fromNudge = Array.from(ctx.nudgeManager.getModifiedFiles()).map((filePath) =>
     normalizePath(filePath, ctx.workingDirectory)
   );
   const fromResults = ctx.messages.flatMap((message) =>
     (message.toolResults ?? []).flatMap((result) => {
-      const changedFiles = Array.isArray(result.metadata?.changedFiles)
+      // 失败调用连它自称改了哪些文件都不认——工具都没跑成，那份清单是意图不是结果。
+      const changedFiles = result.success && Array.isArray(result.metadata?.changedFiles)
         ? result.metadata.changedFiles.filter((item): item is string => typeof item === 'string')
         : [];
-      const outputPath = typeof result.outputPath === 'string'
-        ? result.outputPath
-        : typeof result.metadata?.outputPath === 'string'
-          ? result.metadata.outputPath
-          : undefined;
-      return [...changedFiles, outputPath].map((filePath) => normalizePath(filePath, ctx.workingDirectory));
+      return [...changedFiles, successfulOutputPath(result)]
+        .map((filePath) => normalizePath(filePath, ctx.workingDirectory));
     })
   );
   return uniqueStrings([...fromNudge, ...fromResults]);
@@ -172,12 +187,7 @@ function collectArtifactRefs(ctx: RuntimeContext): CompletionSummaryArtifactRef[
   );
   const fromResults = ctx.messages.flatMap((message) =>
     (message.toolResults ?? []).flatMap((result) => {
-      const outputPath = typeof result.outputPath === 'string'
-        ? result.outputPath
-        : typeof result.metadata?.outputPath === 'string'
-          ? result.metadata.outputPath
-          : undefined;
-      const normalized = normalizePath(outputPath, ctx.workingDirectory);
+      const normalized = normalizePath(successfulOutputPath(result), ctx.workingDirectory);
       return normalized ? [{ kind: 'file' as const, path: normalized, messageId: message.id }] : [];
     })
   );

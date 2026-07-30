@@ -56,7 +56,7 @@ export const CapabilityHubPage: React.FC = () => {
       {/* 2026-07-27 审美关拍板（对标 WorkBuddy）：四个 tab 从右上角小胶囊提为顶行主导航，
           本 header 只留 pill 导航；大标题下沉到各 tab 自己的 HubTabHeader，
           这样标题才可能和同 tab 的操作簇同行。 */}
-      <header className="shrink-0 px-6 pt-4">
+      <header data-tauri-drag-region="deep" className="shrink-0 px-6 pt-4">
         <div className="flex items-center gap-3">
           <nav className="flex items-center gap-1" role="tablist" aria-label={t.capabilityHub.title}>
             {visibleTabs.map(({ key, icon, label }) => (

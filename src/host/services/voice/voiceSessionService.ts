@@ -7,7 +7,7 @@
 // ============================================================================
 
 import type { WebSocket as WsSocket } from 'ws';
-import { resolveConversationModelOption, VOICE_END_CALL_GOODBYE_TIMEOUT_MS, VOICE_RECONNECT_GRACE_MS, VOICE_SESSION_MAX_DURATION_MS, VOICE_TEARDOWN_DRAIN_MS, VOICE_WS_CLOSE_TERMINAL } from '../../../shared/constants/voice';
+import { resolveConversationModelOption, VOICE_END_CALL_GOODBYE_TIMEOUT_MS, VOICE_RECONNECT_GRACE_MS, VOICE_SESSION_MAX_DURATION_MS, VOICE_TEARDOWN_DRAIN_MS, VOICE_TRANSCRIPT_MERGE_WINDOW_MS, VOICE_WS_CLOSE_TERMINAL } from '../../../shared/constants/voice';
 import type { VoiceClientCommand, VoiceEvent, VoiceFocusContext, VoiceTransportHandle, VoiceWorkItem, VoiceWorkNarration } from '../../../shared/contract/voice';
 import { getDashscopeApiKey } from '../media/imageGenerationService';
 import { createLogger } from '../infra/logger';
@@ -64,6 +64,8 @@ interface ActiveSession {
   transcriptCounter: { count: number };
   /** 助手字幕的增量缓冲：上游只给 delta，挂断时若 done 没到要拿它冲成 final。 */
   transcriptBuf: { assistant: string };
+  /** 上一条落库的用户字幕，供 R5 连续字幕并入上一条 */
+  transcriptMerge: TranscriptMergeState;
   /** 通话身份的短人设，焦点刷新时要和 Focus 段一起重拼 */
   personaInstructions: string;
   /** 本次通话真用的上游模型（设置白名单解析后），挂断摘要如实记它 */
@@ -294,26 +296,76 @@ function handleNarrationInjectionRejected(session: ActiveSession, message: strin
   });
 }
 
+/**
+ * 整条字幕只有工具标签（R6，2026-07-30 真机：模型把 `<end_call>` 当话「说」了出来）。
+ *
+ * 标签是模型和我们之间的暗号，不是说给用户听的话——不该上屏，也不该落进消息流。
+ * 流式 delta 会给到半截标签（`<`、`<end_c`），所以闭合的 `>` 是可选的。
+ * **标签混在正文里的不管**：那时正文才是这句话的内容，删标签等于改用户看到的话。
+ */
+const PURE_TOOL_TAG_TEXT = /^\s*(<[a-z0-9_]*>?\s*)+$/i;
+
+function isPureToolTagText(text: string): boolean {
+  return PURE_TOOL_TAG_TEXT.test(text);
+}
+
+/**
+ * 上一条落库的用户字幕（R5 合并用）。VAD 会把一句话切成几轮，消息流里就成了几条碎片。
+ *
+ * 合并是**落库后回头并入**，不是攒着晚点写：近窗（派活时执行侧重建意图的原文）、
+ * 挂断闸、字幕 UI 全都吃这条 final 的到达时刻，晚 2 秒等于让紧跟的 spawn_task
+ * 看不到用户最后那句话。所以照常立即写，下一条来得够快就把上一条改掉。
+ */
+interface TranscriptMergeState {
+  messageId: string | null;
+  text: string;
+  at: number;
+}
+
 async function persistTranscript(
   neoSessionId: string,
   role: 'user' | 'assistant',
   text: string,
   counter?: { count: number },
+  merge?: TranscriptMergeState,
 ): Promise<void> {
   const trimmed = text.trim();
-  if (!trimmed) return;
+  // 落库的唯一入口 = 过滤的唯一落点：done 那条、排水窗冲刷那条走的都是这里。
+  if (!trimmed || isPureToolTagText(trimmed)) return;
   // 落库的同时进近窗（P0-2）：派活时执行侧要拿原文自己重建意图，
   // 别只给它通话 brain 改写过的那一句。落库失败不影响近窗，反之亦然。
+  // ponytail: 合并只改消息流不回收近窗——近窗是喂模型的，碎一点无害（产品拍板）。
   pushVoiceTranscript({ role, text: trimmed });
+  const now = Date.now();
+  // ponytail: 上一条还在写库时（messageId 尚未回填）就直接不合并，各落各的——
+  // 真机上两条 final 至少隔一个 VAD 静音窗，插入早完成了；退化路径也只是多一条消息。
+  const mergeable = role === 'user'
+    && merge?.messageId
+    && now - merge.at < VOICE_TRANSCRIPT_MERGE_WINDOW_MS;
   try {
+    if (mergeable && merge?.messageId) {
+      const merged = `${merge.text} ${trimmed}`;
+      await getSessionManager().updateMessage(merge.messageId, { content: merged });
+      merge.text = merged;
+      merge.at = now;
+      // 合并进上一条 = 消息没多一条，transcriptCount 也不该多一个。
+      return;
+    }
+    const id = `voice-${role}-${now}-${Math.random().toString(36).slice(2, 8)}`;
     await getSessionManager().addMessageToSession(neoSessionId, {
-      id: `voice-${role}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      id,
       role,
       content: trimmed,
-      timestamp: Date.now(),
+      timestamp: now,
       metadata: { source: 'voice' },
     });
     if (counter) counter.count += 1;
+    // 助手说过话之后用户再开口，那是新的一轮，不能再往上一条里并。
+    if (merge) {
+      merge.messageId = role === 'user' ? id : null;
+      merge.text = trimmed;
+      merge.at = now;
+    }
   } catch (err) {
     logger.warn('failed to persist transcript', { role, message: err instanceof Error ? err.message : 'unknown' });
   }
@@ -420,7 +472,7 @@ async function teardown(reason: string): Promise<void> {
   const pendingAssistant = session.transcriptBuf.assistant;
   if (pendingAssistant.trim()) {
     session.transcriptBuf.assistant = '';
-    await persistTranscript(session.neoSessionId, 'assistant', pendingAssistant, session.transcriptCounter);
+    await persistTranscript(session.neoSessionId, 'assistant', pendingAssistant, session.transcriptCounter, session.transcriptMerge);
   }
   const endedAt = Date.now();
   const { startedAt } = session;
@@ -524,13 +576,29 @@ async function connectAndBind(
   }
 
   const transcriptBuf = { assistant: '' };
+  const transcriptMerge: TranscriptMergeState = { messageId: null, text: '', at: 0 };
   // 字幕落库计数器：onEvent 闭包与挂断摘要共用同一个可变引用（同 transcriptBuf 先例），
   // 成功落库才 +1，挂断时原样写进 voiceCallSummary.transcriptCount。
   const transcriptCounter = { count: 0 };
-  // 收线请求置位后，onEvent 看到这一轮说完（response.done）就真挂；reason 记的是谁要求的。
-  const endCallRequested: { value: boolean; reason: 'model-end-call' | 'user-hangup-intent' } = {
+  /**
+   * 收线武装状态。置位后 onEvent 看到这一轮说完（response.done）就真挂。
+   *
+   * `timer` 要留着是因为**用户可以反悔**（R2，2026-07-30 真机：「先这样吧拜拜」
+   * 之后紧跟一句「不要挂断」，电话照样挂了）。反悔要把兜底定时器一起撤掉，
+   * 光复位标志的话 5 秒后照样挂。
+   * `awaitingUserTurn`：告别窗里用户又开口了，先把扣扳机的手松开，等听清他说什么再定
+   * ——barge-in 会让这一轮的 response.done 抢在用户字幕前面到，那时挂断已经来不及拦。
+   */
+  const endCallRequested: {
+    value: boolean;
+    reason: 'model-end-call' | 'user-hangup-intent';
+    timer: NodeJS.Timeout | null;
+    awaitingUserTurn: boolean;
+  } = {
     value: false,
     reason: 'model-end-call',
+    timer: null,
+    awaitingUserTurn: false,
   };
   const baseInstructions = withLanguageDirective(routing.personaInstructions, liveSettings?.language);
   const initialInstructions = composeVoiceInstructions(baseInstructions, null);
@@ -543,6 +611,7 @@ async function connectAndBind(
    * response.done 再断；上游不回那一帧时由兜底定时器收尾（同 dictation finish 的先例）。
    */
   const requestEndCall = (reason: 'model-end-call' | 'user-hangup-intent'): void => {
+    endCallRequested.awaitingUserTurn = false;
     if (endCallRequested.value) return;
     endCallRequested.value = true;
     endCallRequested.reason = reason;
@@ -553,9 +622,18 @@ async function connectAndBind(
         : 'hangup intent matched from user transcript',
       { voiceSessionId: id },
     );
-    setTimeout(() => {
+    endCallRequested.timer = setTimeout(() => {
       if (active?.id === id && endCallRequested.value) void teardown(`${reason}-timeout`);
     }, VOICE_END_CALL_GOODBYE_TIMEOUT_MS);
+  };
+  /** 用户反悔（告别窗里说了句不是挂断的话）：解除武装，通话继续。 */
+  const disarmEndCall = (): void => {
+    endCallRequested.awaitingUserTurn = false;
+    if (!endCallRequested.value) return;
+    endCallRequested.value = false;
+    if (endCallRequested.timer) clearTimeout(endCallRequested.timer);
+    endCallRequested.timer = null;
+    logger.info('end call disarmed by new user turn', { voiceSessionId: id });
   };
   // 绑定必须早于建连：上游一旦握手成功就可能立刻发 function_call，
   // 晚绑一步那次调用会落到「通话还没就绪」的兜底上。
@@ -592,29 +670,49 @@ async function connectAndBind(
         ...(liveSettings?.voiceId ? { voice: liveSettings.voiceId } : {}),
       },
       onEvent: (event) => {
+        // R6：整条只有工具标签的助手字幕不上屏。流式期间按「累计到此刻」判，
+        // 半截标签（`<end_c`）也压住；后面真接上正文就恢复下发，正文一个字不动。
+        const suppressedToolTag = event.type === 'assistant.transcript'
+          && isPureToolTagText(event.done ? event.text : transcriptBuf.assistant + event.text);
         // injection.rejected 是 Host 内部的重试信号；Renderer 没有用户动作要做。
-        if (event.type !== 'injection.rejected') send(clientRef.current, event);
+        if (event.type !== 'injection.rejected' && !suppressedToolTag) send(clientRef.current, event);
         if (active?.id === id) {
-          if (event.type === 'speech.started') markNarrationUserTurn(active);
+          if (event.type === 'speech.started') {
+            markNarrationUserTurn(active);
+            // R2：告别窗里用户又开口——先别扣扳机。barge-in 会让这一轮的 response.done
+            // 抢在用户字幕前面到，那时挂断已成事实，再听到「不要挂断」也拦不住了。
+            if (endCallRequested.value) endCallRequested.awaitingUserTurn = true;
+          }
           else if (event.type === 'response.done') flushNarrationQueue(active);
           else if (event.type === 'injection.rejected') handleNarrationInjectionRejected(active, event.message);
         }
         if (event.type === 'user.transcript' && event.done) {
-          void persistTranscript(neoSessionId, 'user', event.text, transcriptCounter);
+          void persistTranscript(neoSessionId, 'user', event.text, transcriptCounter, transcriptMerge);
           // 挂断确定性闸（A1）：只看用户说的话，绝不看 assistant 字幕——
           // 模型复述「好的，挂断」会把它自己的话当成用户的指令。
-          if (active?.id === id && detectHangupIntent(event.text)) requestEndCall('user-hangup-intent');
+          // 反过来（R2）：告别窗里的新一句话若不是挂断，就是反悔，解除武装继续通话。
+          if (active?.id === id) {
+            if (detectHangupIntent(event.text)) requestEndCall('user-hangup-intent');
+            else disarmEndCall();
+          }
         } else if (event.type === 'assistant.transcript') {
           if (event.done) {
             transcriptBuf.assistant = '';
-            void persistTranscript(neoSessionId, 'assistant', event.text, transcriptCounter);
+            void persistTranscript(neoSessionId, 'assistant', event.text, transcriptCounter, transcriptMerge);
           } else {
             transcriptBuf.assistant += event.text;
           }
         }
         // 说完告别这一轮 = 可以真挂了（收线的落点，别让它只是嘴上说）。
-        else if (event.type === 'response.done' && endCallRequested.value && active?.id === id) {
+        else if (
+          event.type === 'response.done'
+          && endCallRequested.value
+          && !endCallRequested.awaitingUserTurn
+          && active?.id === id
+        ) {
           endCallRequested.value = false;
+          if (endCallRequested.timer) clearTimeout(endCallRequested.timer);
+          endCallRequested.timer = null;
           void teardown(endCallRequested.reason);
         }
         // 上游报错 / 上游连接关闭 = 这一路通话已经死了，必须就地释放 active。
@@ -663,6 +761,7 @@ async function connectAndBind(
     workItemCount: 0,
     transcriptCounter,
     transcriptBuf,
+    transcriptMerge,
     personaInstructions: baseInstructions,
     conversationModel: conversationModel.id,
     focus: null,

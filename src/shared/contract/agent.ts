@@ -268,6 +268,25 @@ export interface HookTriggerEventData {
   names?: string[];
   errorCount?: number;
   message?: string;
+  /**
+   * block/modify 的决策原因摘要（首行截断、host 侧已脱敏）。渲染层只允许看到这个
+   * 单行摘要，完整输出（message）不上屏——见 turnTimeline.ts TurnHookActivityItem。
+   */
+  reason?: string;
+  sessionId?: string;
+  turnId?: string;
+  toolName?: string;
+  matcher?: string;
+}
+
+/**
+ * 一批 hook 开始执行的信号（hook_trigger 的配对事件）。会话区据此显示 running
+ * 指示；对应 hook_trigger 到达即消失。只关心「哪个时机、哪几个 hook」。
+ */
+export interface HookStartedEventData {
+  timestamp: number;
+  event: string;
+  names?: string[];
   sessionId?: string;
   turnId?: string;
   toolName?: string;
@@ -373,6 +392,7 @@ export type AgentEvent =
   | { type: 'permission_request'; data: PermissionRequest }
   | { type: 'model_decision'; data: ModelDecisionEventData }
   | { type: 'hook_trigger'; data: HookTriggerEventData }
+  | { type: 'hook_started'; data: HookStartedEventData }
   | { type: 'error'; data: { message: string; code?: string; suggestion?: string; details?: Record<string, unknown>; parentToolUseId?: string } }
   | { type: 'message_delta'; data: MessageDeltaData }
   | { type: 'message_snapshot'; data: MessageSnapshotData }

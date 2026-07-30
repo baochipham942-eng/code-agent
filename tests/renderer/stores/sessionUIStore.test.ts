@@ -259,6 +259,52 @@ describe('sessionUIStore - input history', () => {
     });
   });
 
+  describe('tier section collapse / solo', () => {
+    beforeEach(() => {
+      useSessionUIStore.setState({ collapsedTiers: {}, soloTier: null });
+    });
+
+    it('collapsedTiers defaults to empty when localStorage is unavailable', () => {
+      expect(useSessionUIStore.getState().collapsedTiers).toEqual({});
+    });
+
+    it('setTierCollapsed toggles a single tier without touching the others', () => {
+      useSessionUIStore.getState().setTierCollapsed('space', true);
+      expect(useSessionUIStore.getState().collapsedTiers).toEqual({ space: true });
+
+      useSessionUIStore.getState().setTierCollapsed('quick', true);
+      expect(useSessionUIStore.getState().collapsedTiers).toEqual({ space: true, quick: true });
+
+      useSessionUIStore.getState().setTierCollapsed('space', false);
+      expect(useSessionUIStore.getState().collapsedTiers).toEqual({ space: false, quick: true });
+    });
+
+    it('setTierCollapsed persists to localStorage under sidebar.collapsedTiers', () => {
+      const store = new Map<string, string>();
+      const fakeStorage = {
+        getItem: (key: string) => store.get(key) ?? null,
+        setItem: (key: string, value: string) => { store.set(key, value); },
+      };
+      vi.stubGlobal('localStorage', fakeStorage);
+      try {
+        useSessionUIStore.getState().setTierCollapsed('project', true);
+        expect(store.get('sidebar.collapsedTiers')).toBe(JSON.stringify({ project: true }));
+      } finally {
+        vi.unstubAllGlobals();
+      }
+    });
+
+    it('soloTier defaults to null and setSoloTier updates/clears it', () => {
+      expect(useSessionUIStore.getState().soloTier).toBeNull();
+
+      useSessionUIStore.getState().setSoloTier('space');
+      expect(useSessionUIStore.getState().soloTier).toBe('space');
+
+      useSessionUIStore.getState().setSoloTier(null);
+      expect(useSessionUIStore.getState().soloTier).toBeNull();
+    });
+  });
+
   describe('trajectory review filters', () => {
     it('should default trajectory filters to all', () => {
       expect(useSessionUIStore.getState().trajectoryTierFilter).toBe('all');

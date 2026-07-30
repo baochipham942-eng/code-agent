@@ -147,6 +147,13 @@ export const sidebarZh = {
     tierQuick: '快速对话',
     // 云标占位（批P 第三波留接口不点亮）：空间绑云身份后节头点亮，contract 字段在另一条分支。
     tierCloudBadgeTitle: '已绑定云身份',
+    // 分区节头交互（折叠/只看本分区/创建）的悬浮提示与 aria 文案。
+    tierCollapse: '折叠分区',
+    tierExpand: '展开分区',
+    tierSolo: '只看本分区',
+    tierSoloExit: '显示全部分区',
+    tierNewSpace: '新建协作空间',
+    tierNewQuickChat: '新建快速对话',
     unfinishedCount: '{count} 个未完成',
     // ⋯ 菜单项不带项目名（2026-07-28 拍板）：244px 侧栏里带名字的长文案必折两行，
     // 菜单高度翻倍往下盖会话行。菜单容器自身 aria-label 已是「{name} 更多操作」，
@@ -427,6 +434,12 @@ export const sidebarEn: typeof sidebarZh = {
     tierProject: 'Local spaces',
     tierQuick: 'Quick chats',
     tierCloudBadgeTitle: 'Cloud identity linked',
+    tierCollapse: 'Collapse section',
+    tierExpand: 'Expand section',
+    tierSolo: 'Show only this section',
+    tierSoloExit: 'Show all sections',
+    tierNewSpace: 'New space',
+    tierNewQuickChat: 'New quick chat',
     unfinishedCount: '{count} unfinished',
     openConsole: 'Open project console',
     collapseDetails: 'Collapse project details',

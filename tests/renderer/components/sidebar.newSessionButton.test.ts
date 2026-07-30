@@ -56,6 +56,10 @@ const sessionUiState = {
   pendingDelete: null,
   expandedWorkspaces: {},
   setWorkspaceExpanded: vi.fn(),
+  collapsedTiers: {},
+  setTierCollapsed: vi.fn(),
+  soloTier: null,
+  setSoloTier: vi.fn(),
 };
 
 const appState = {
@@ -65,6 +69,7 @@ const appState = {
   setShowEvalCenter: vi.fn(),
   showProjectCollaborationPage: false,
   openProjectCollaborationPage: vi.fn(),
+  openProjectSpacePage: vi.fn(),
   optionalUpdateInfo: null as any,
   setShowOptionalUpdateModal: vi.fn(),
 };

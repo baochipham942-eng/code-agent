@@ -5,10 +5,11 @@
 // ============================================================================
 
 import React, { useCallback } from 'react';
-import { Cloud, Loader2, MessageSquare, Search } from 'lucide-react';
+import { ChevronRight, Cloud, Focus, Loader2, MessageSquare, Plus, Search } from 'lucide-react';
 import { PLAIN_CHAT_SUMMARY_LABEL } from '@shared/contract/sessionWorkspace';
 import { useI18n } from '../../../hooks/useI18n';
-import type { SessionStatusFilter } from '../../../stores/sessionUIStore';
+import { useAppStore } from '../../../stores/appStore';
+import { useSessionUIStore, type SessionStatusFilter } from '../../../stores/sessionUIStore';
 import type { SessionWithMeta } from '../../../stores/sessionStore';
 import { localeForLanguage } from '../../../utils/i18nTime';
 import { getDisplaySessionTitle, getSessionStatusPresentation } from '../../../utils/sessionPresentation';
@@ -37,6 +38,8 @@ export interface SidebarSessionListProps extends Omit<SidebarProjectGroupProps, 
    * 合流后把「该空间是否已绑云身份」接进这个 prop 即一行点亮。
    */
   cloudBadge?: boolean;
+  /** 快速对话分区节头「+」：与侧栏顶部「新任务」同一个动作（纯对话，不复制逻辑）。 */
+  handleNewChat: () => void | Promise<void>;
 }
 
 export const SidebarSessionList: React.FC<SidebarSessionListProps> = ({
@@ -72,10 +75,17 @@ export const SidebarSessionList: React.FC<SidebarSessionListProps> = ({
   openWorkspacePreview,
   sessionItemProps,
   cloudBadge,
+  handleNewChat,
 }) => {
   const { t, language } = useI18n();
   const sb = t.sidebar;
   const p = t.sidebarProject;
+  // 分区节头交互状态（折叠持久化、solo 会话内）都在 sessionUIStore；新建空间入口复用 appStore 的 openProjectSpacePage。
+  const collapsedTiers = useSessionUIStore((state) => state.collapsedTiers);
+  const setTierCollapsed = useSessionUIStore((state) => state.setTierCollapsed);
+  const soloTier = useSessionUIStore((state) => state.soloTier);
+  const setSoloTier = useSessionUIStore((state) => state.setSoloTier);
+  const openProjectSpacePage = useAppStore((state) => state.openProjectSpacePage);
   // 项目抽屉行数据装配随列表区一起迁出（god-file 治理第二刀）：全部依赖都在
   // sessionItemProps / i18n 里，Sidebar 主文件不再持有这段映射。
   const {
@@ -159,6 +169,12 @@ export const SidebarSessionList: React.FC<SidebarSessionListProps> = ({
     project: p.tierProject,
     quick: p.tierQuick,
   };
+  // 「只看本分区」：solo 生效时只保留命中分区；solo 目标已为空分区（整节省略）时回退全部，
+  // 避免列表整片消失却没有任何提示。solo 与会话级 statusFilter 管线天然正交（一个筛分区、一个筛会话）。
+  const visibleSections =
+    soloTier && tierSections.some((section) => section.tier === soloTier)
+      ? tierSections.filter((section) => section.tier === soloTier)
+      : tierSections;
   return (
     /* Session List - Project Grouped
        scrollbar-hidden 不是审美选择，是右轨对齐的根因修复（2026-07-27 实测）：
@@ -200,18 +216,88 @@ export const SidebarSessionList: React.FC<SidebarSessionListProps> = ({
         /* Workspace/project grouped view, including search and status-filtered results.
            三分区渲染：节头排版对齐能力区行制度（text-sm 标题 + text-[11px] 计数，不发明新字号）。 */
         <div className="py-2">
-          {tierSections.map((section) => (
+          {visibleSections.map((section) => {
+            const isCollapsed = Boolean(collapsedTiers[section.tier]);
+            const isSolo = soloTier === section.tier;
+            return (
             <section key={section.tier} aria-label={tierLabels[section.tier]} data-testid={`sidebar-tier-${section.tier}`}>
-              <div className="flex items-center gap-2.5 px-1.5 pb-1 pt-2">
-                <span className="min-w-0 flex-1 truncate text-sm text-zinc-500">{tierLabels[section.tier]}</span>
+              {/* 节头 = 折叠主钮（原生 button，Enter/Space 可达）+ 计数 + solo/创建图标钮。
+                  图标钮是主钮的兄弟而非子元素，仍显式 stopPropagation 防未来结构调整误触折叠。 */}
+              <div className="flex items-center gap-1 px-1.5 pb-1 pt-2">
+                <button /* ds-allow:button: 分区节头折叠行（chevron+标题左对齐列表行形态），Button primitive 居中动作钮形状不适配行布局 */
+                  type="button"
+                  aria-expanded={!isCollapsed}
+                  aria-label={isCollapsed ? p.tierExpand : p.tierCollapse}
+                  title={isCollapsed ? p.tierExpand : p.tierCollapse}
+                  data-testid={`sidebar-tier-toggle-${section.tier}`}
+                  onClick={() => setTierCollapsed(section.tier, !isCollapsed)}
+                  className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
+                >
+                  <ChevronRight
+                    className={`h-3 w-3 shrink-0 text-zinc-600 transition-transform ${isCollapsed ? '' : 'rotate-90'}`}
+                  />
+                  <span className="min-w-0 flex-1 truncate text-sm text-zinc-500">{tierLabels[section.tier]}</span>
+                </button>
                 {section.tier === 'space' && cloudBadge && (
                   <span className="flex-shrink-0" title={p.tierCloudBadgeTitle} data-testid="sidebar-tier-cloud-badge">
                     <Cloud className="h-3.5 w-3.5 text-sky-400" aria-label={p.tierCloudBadgeTitle} />
                   </span>
                 )}
+                {/* 计数折叠态也保留：折叠后它是这个分区唯一的信息密度。 */}
                 <span className="flex-shrink-0 text-[11px] text-zinc-600 tabular-nums">{section.sessionCount}</span>
+                <button /* ds-allow:button: 节头 20px 图标钮，Button primitive 无对应微尺寸方形变体（同分组头图标钮形态） */
+                  type="button"
+                  aria-pressed={isSolo}
+                  aria-label={isSolo ? p.tierSoloExit : p.tierSolo}
+                  title={isSolo ? p.tierSoloExit : p.tierSolo}
+                  data-testid={`sidebar-tier-solo-${section.tier}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setSoloTier(isSolo ? null : section.tier);
+                  }}
+                  className={`inline-flex h-5 w-5 shrink-0 items-center justify-center rounded focus:outline-hidden ${
+                    isSolo
+                      ? 'bg-zinc-700/70 text-primary-400'
+                      : 'text-zinc-600 hover:bg-zinc-700/70 hover:text-zinc-300'
+                  }`}
+                >
+                  <Focus className="h-3 w-3" />
+                </button>
+                {/* 独立空间分区不放「+」：产品上没有「新建独立空间」入口（独立空间由工作目录会话自然长出来），
+                    新写一份创建流超出本任务范围。 */}
+                {section.tier === 'space' && (
+                  <button /* ds-allow:button: 节头 20px 图标钮，Button primitive 无对应微尺寸方形变体（同分组头图标钮形态） */
+                    type="button"
+                    aria-label={p.tierNewSpace}
+                    title={p.tierNewSpace}
+                    data-testid="sidebar-tier-new-space"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      openProjectSpacePage();
+                    }}
+                    className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded text-zinc-600 hover:bg-zinc-700/70 hover:text-zinc-300 focus:outline-hidden"
+                  >
+                    <Plus className="h-3 w-3" />
+                  </button>
+                )}
+                {section.tier === 'quick' && (
+                  <button /* ds-allow:button: 节头 20px 图标钮，Button primitive 无对应微尺寸方形变体（同分组头图标钮形态） */
+                    type="button"
+                    aria-label={p.tierNewQuickChat}
+                    title={p.tierNewQuickChat}
+                    data-testid="sidebar-tier-new-quick"
+                    disabled={isCreatingSession}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void handleNewChat();
+                    }}
+                    className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded text-zinc-600 hover:bg-zinc-700/70 hover:text-zinc-300 focus:outline-hidden disabled:opacity-50"
+                  >
+                    <Plus className="h-3 w-3" />
+                  </button>
+                )}
               </div>
-              {section.groups.map((group) => (
+              {!isCollapsed && section.groups.map((group) => (
                 <SidebarProjectGroup
                   key={group.key}
                   group={group}
@@ -242,7 +328,8 @@ export const SidebarSessionList: React.FC<SidebarSessionListProps> = ({
                 />
               ))}
             </section>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

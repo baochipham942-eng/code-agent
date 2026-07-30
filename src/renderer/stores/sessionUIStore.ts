@@ -5,6 +5,7 @@ import type {
   AgentTrajectoryQualityTier,
 } from '@shared/contract/agentTrajectory';
 import { useSessionStore, type SessionFilter } from './sessionStore';
+import type { SidebarSessionTier } from '../utils/sidebarSessionTiers';
 import { createLogger } from '../utils/logger';
 
 const logger = createLogger('SessionUIStore');
@@ -65,6 +66,33 @@ function persistExpandedWorkspaces(next: Record<string, boolean>): void {
   }
 }
 
+// Persisted collapse state for the three session tier sections in the sidebar.
+// Unset or false = expanded; true = collapsed by the user.
+const COLLAPSED_TIERS_STORAGE_KEY = 'sidebar.collapsedTiers';
+
+function loadCollapsedTiers(): Partial<Record<SidebarSessionTier, boolean>> {
+  try {
+    const raw = typeof localStorage !== 'undefined'
+      ? localStorage.getItem(COLLAPSED_TIERS_STORAGE_KEY)
+      : null;
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function persistCollapsedTiers(next: Partial<Record<SidebarSessionTier, boolean>>): void {
+  try {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(COLLAPSED_TIERS_STORAGE_KEY, JSON.stringify(next));
+    }
+  } catch {
+    // localStorage may be disabled in private modes; fail silently.
+  }
+}
+
 interface SessionUIState {
   pendingDelete: PendingDelete | null;
   filter: SessionFilter;
@@ -78,6 +106,9 @@ interface SessionUIState {
   inputHistoryIndex: number;
   inputHistoryDraft: string;
   expandedWorkspaces: Record<string, boolean>;
+  collapsedTiers: Partial<Record<SidebarSessionTier, boolean>>;
+  /** 「只看本分区」的临时聚焦态：不持久化（与 sessionStatusFilter 同款的会话内筛选语义）。 */
+  soloTier: SidebarSessionTier | null;
 }
 
 interface SessionUIActions {
@@ -96,6 +127,8 @@ interface SessionUIActions {
   getNextInput: () => string | null;
   resetInputHistoryIndex: () => void;
   setWorkspaceExpanded: (key: string, expanded: boolean) => void;
+  setTierCollapsed: (tier: SidebarSessionTier, collapsed: boolean) => void;
+  setSoloTier: (tier: SidebarSessionTier | null) => void;
 }
 
 type SessionUIStore = SessionUIState & SessionUIActions;
@@ -113,6 +146,8 @@ export const useSessionUIStore = create<SessionUIStore>()((set, get) => ({
   inputHistoryIndex: -1,
   inputHistoryDraft: '',
   expandedWorkspaces: loadExpandedWorkspaces(),
+  collapsedTiers: loadCollapsedTiers(),
+  soloTier: null,
 
   setFilter: (filter: SessionFilter) => {
     set({ filter });
@@ -277,5 +312,15 @@ export const useSessionUIStore = create<SessionUIStore>()((set, get) => ({
     const next = { ...get().expandedWorkspaces, [key]: expanded };
     set({ expandedWorkspaces: next });
     persistExpandedWorkspaces(next);
+  },
+
+  setTierCollapsed: (tier: SidebarSessionTier, collapsed: boolean) => {
+    const next = { ...get().collapsedTiers, [tier]: collapsed };
+    set({ collapsedTiers: next });
+    persistCollapsedTiers(next);
+  },
+
+  setSoloTier: (soloTier: SidebarSessionTier | null) => {
+    set({ soloTier });
   },
 }));

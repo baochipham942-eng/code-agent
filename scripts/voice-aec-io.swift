@@ -115,12 +115,14 @@ private final class VoiceAecIO {
         let input = engine.inputNode
         let output = engine.outputNode
 
-        // 两端必须同时进入 VoiceProcessingIO：输入负责采集，输出提供 AEC 参考信号。
-        try input.setVoiceProcessingEnabled(true)
-        try output.setVoiceProcessingEnabled(true)
-
         engine.attach(player)
         engine.connect(player, to: engine.mainMixerNode, format: downstreamFormat)
+
+        // 两端必须同时进入 VoiceProcessingIO：输入负责采集，输出提供 AEC 参考信号。
+        // 顺序不能反：必须先把播放图搭好再开 voice processing——先开 VP 会让输出单元
+        // 在 24k 播放格式下 kAUInitialize 失败（-10875，本机可复现），图先行则正常。
+        try input.setVoiceProcessingEnabled(true)
+        try output.setVoiceProcessingEnabled(true)
 
         let inputFormat = input.outputFormat(forBus: 0)
         guard let converter = AVAudioConverter(from: inputFormat, to: upstreamFormat) else {

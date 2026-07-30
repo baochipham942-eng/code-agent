@@ -168,18 +168,24 @@ describe('通话 partial 的投影叠加（批 H）', () => {
 // 否则临时气泡先消失、真气泡后出现＝一次肉眼可见的闪断。
 describe('partial 与真消息的交接（批 H）', () => {
   it('顶着的那句在真消息上屏后才撤', () => {
-    expect(resolvePartialRelease({ user: '把大纲改成三段' }, { user: '把大纲改成三段', assistant: '' }))
+    expect(resolvePartialRelease({ user: '把大纲改成三段' }, { user: '把大纲改成三段', assistant: '' }, { user: true, assistant: false }))
       .toEqual({ partialUser: '' });
   });
 
   it('空档里又开口了就不撤（别把正在说的下一句抹掉）', () => {
-    expect(resolvePartialRelease({ user: '把大纲改成三段' }, { user: '再帮我', assistant: '' }))
+    expect(resolvePartialRelease({ user: '把大纲改成三段' }, { user: '再帮我', assistant: '' }, { user: true, assistant: false }))
       .toEqual({});
   });
 
   it('只撤已 final 的那一侧，另一侧照常在说', () => {
-    expect(resolvePartialRelease({ assistant: '好的' }, { user: '你还在吗', assistant: '好的' }))
+    expect(resolvePartialRelease({ assistant: '好的' }, { user: '你还在吗', assistant: '好的' }, { user: false, assistant: true }))
       .toEqual({ partialAssistant: '' });
+
+  });
+
+  it('真消息还没上屏就不撤——撤了就是一段谁都没有这句话的空帧（R1 闪断）', () => {
+    expect(resolvePartialRelease({ assistant: '好的' }, { user: '', assistant: '好的' }, { user: false, assistant: false }))
+      .toEqual({});
   });
 });
 

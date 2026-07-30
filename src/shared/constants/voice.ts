@@ -160,6 +160,15 @@ export const VOICE_SUBTITLE_REVEAL_INTERVAL_MS = 100;
  */
 export const VOICE_SUBTITLE_STALL_FLUSH_MS = 3_000;
 
+/**
+ * 临时气泡等真消息上屏的最长时间（ms）。
+ *
+ * 撤气泡与真消息上屏必须原子，所以拉不到就重拉。等不到也**不撤**——顶着定稿文本
+ * 至少画面是对的，撤了就是一段谁都没有这句话的空帧（R1 闪断）。这个上限只用来
+ * 停掉重拉，避免落库真出问题时无限打 IPC。
+ */
+export const VOICE_PARTIAL_HANDOFF_MAX_WAIT_MS = 5_000;
+
 /** Tauri 原生 AEC sidecar 的上行音频/电平/生命周期事件。 */
 export const VOICE_AEC_OUTPUT_EVENT = 'voice-aec:output';
 

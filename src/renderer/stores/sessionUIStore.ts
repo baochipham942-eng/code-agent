@@ -76,8 +76,9 @@ function loadCollapsedTiers(): Partial<Record<SidebarSessionTier, boolean>> {
       ? localStorage.getItem(COLLAPSED_TIERS_STORAGE_KEY)
       : null;
     if (!raw) return {};
-    const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === 'object' ? parsed : {};
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return {};
+    return parsed as Partial<Record<SidebarSessionTier, boolean>>;
   } catch {
     return {};
   }

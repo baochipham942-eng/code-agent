@@ -16,6 +16,7 @@ import {
   ChevronDown,
   Check,
   CheckCircle2,
+  CircleDashed,
   CircleDot,
   Copy,
   FileText,
@@ -210,8 +211,13 @@ export const TurnCard: React.FC<TurnCardProps> = ({
   // （本批 host 侧刚为「模型报喜」做过一轮修，屏幕这半不许再犯）。
   //   failed   = 投影层对回来的失败留痕节点 / 轮 status=error / error 级 timeline，都是实锤；
   //   running  = 轮还在流式，这不是猜是事实；
-  //   completed= 轮正常完成 + 有最终结论正文 + 没有取消标记——三者缺一就不报。
-  const voiceStatus = useMemo((): 'failed' | 'running' | 'completed' | null => {
+  //   completed/unverified = **只认 host 落的结局印章**（turn.voiceWorkOutcome，X5.5-A2-a）。
+  //
+  // 此前这里是「轮正常完成 + 有最终结论正文 = 已完成」——那是拿「模型说了句话」当完成，
+  // 一个什么都没干、只留下一句「我已经帮你建好了」的 run 照样是绿的。完成语义的判定
+  // 已经收到 host 的证据门里（产物 / 工件 / 通过的校验），屏幕这半只负责如实转述。
+  // 没有印章（旧会话、跑到一半重启、印章没落库成）就不报结局——拿不准就不显示。
+  const voiceStatus = useMemo((): 'failed' | 'running' | 'completed' | 'unverified' | null => {
     if (!isVoiceTurn) return null;
     const hasFailureEvidence =
       turn.status === 'error'
@@ -221,15 +227,11 @@ export const TurnCard: React.FC<TurnCardProps> = ({
       ));
     if (hasFailureEvidence) return 'failed';
     if (turn.status === 'streaming') return 'running';
-    if (
-      turn.status === 'completed'
-      && !hasCancelledRunMarker(turn)
-      && Boolean(foldedView.finalTextNode)
-    ) {
-      return 'completed';
+    if (turn.voiceWorkOutcome && !hasCancelledRunMarker(turn)) {
+      return turn.voiceWorkOutcome === 'done' ? 'completed' : 'unverified';
     }
     return null;
-  }, [isVoiceTurn, turn, foldedView.finalTextNode]);
+  }, [isVoiceTurn, turn]);
   // 投影层已经挑好了这一轮该被评价的那个节点（markFeedbackEligibleNodes），
   // 这里只借它的 messageId 当锚点，判定逻辑不搬也不复制一份。
   const feedbackAnchor = useMemo(() => {
@@ -518,7 +520,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
 const VoiceDispatchCardHeader: React.FC<{
   title: string;
   speaker?: { agentId: string; displayName: string };
-  status: 'failed' | 'running' | 'completed' | null;
+  status: 'failed' | 'running' | 'completed' | 'unverified' | null;
   expanded: boolean;
   onToggle: () => void;
 }> = ({ title, speaker, status, expanded, onToggle }) => {
@@ -527,6 +529,8 @@ const VoiceDispatchCardHeader: React.FC<{
     failed: { label: t.voice.taskCard.statusFailed, tone: 'error' as const, icon: <XCircle className="h-3 w-3" /> },
     running: { label: t.voice.taskCard.statusRunning, tone: 'info' as const, icon: <LoaderCircle className="h-3 w-3 animate-spin" /> },
     completed: { label: t.voice.taskCard.statusCompleted, tone: 'success' as const, icon: <CheckCircle2 className="h-3 w-3" /> },
+    // 待核验不是失败，用中性色；但绝不许沾 success 的绿——那正是它要区别于「已完成」的地方。
+    unverified: { label: t.voice.taskCard.statusUnverified, tone: 'neutral' as const, icon: <CircleDashed className="h-3 w-3" /> },
   }[status] : null;
 
   return (

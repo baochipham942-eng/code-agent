@@ -236,6 +236,15 @@ export const VOICE_RECENT_FILE_LIMIT = 8;
 export const VOICE_SPAWN_TASK_MAX_ITERATIONS = 30;
 
 /**
+ * 完成语义证据查询的上限（X5.5-A2-a）。
+ *
+ * 为什么一次本地读盘也要设上限：这次查询卡在 run 终态**之前**，而终态那一步要还
+ * D4 抬严票。查询永不返回 = 票永远不还 = 这条会话永久钉死在只读档，用户点什么都
+ * 弹确认（本仓 2026-07-26 已被同一形状的锁死咬过一次）。超时按无证据处理（fail-closed）。
+ */
+export const VOICE_WORK_EVIDENCE_TIMEOUT_MS = 3_000;
+
+/**
  * 终态回流念出来的上限（字）。超过就截断并指路屏幕——一段话念过 15 秒，
  * 用户既插不上嘴也记不住，屏幕上本来就有全文。
  */

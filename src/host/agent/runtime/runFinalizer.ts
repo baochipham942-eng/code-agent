@@ -41,6 +41,7 @@ import {
   setSessionTodos,
   syncTodosToSessionTasks,
 } from '../../agent/todoParser';
+import { makeEvidenceRef } from '../../../shared/contract/evidence';
 import { getDatabase } from '../../services/core/databaseService';
 import type { RuntimeContext } from './runtimeContext';
 import type { LearningPipeline } from './learningPipeline';
@@ -520,7 +521,7 @@ export class RunFinalizer {
     if (!hasInProgress) return;
 
     // 只在有修改类操作时才推进任务（纯读取不算完成任务）
-    const hasModification = toolCalls.some(tc => {
+    const modificationCalls = toolCalls.filter(tc => {
       const result = successfulResultsById.get(tc.id);
       if (!result) return false;
       const name = tc.name.toLowerCase();
@@ -529,12 +530,27 @@ export class RunFinalizer {
       }
       return name === 'edit' || name === 'write' || name === 'notebookedit';
     });
-    if (!hasModification) return;
+    if (modificationCalls.length === 0) return;
+
+    // ADR-050：自动推进是「有成功写入=任务完成」的乐观推断，落账必须带上推断依据
+    // （哪个工具调用改了什么），账本上机器章与模型自证可区分
+    const completionEvidence = modificationCalls.map((tc) => {
+      const target = typeof tc.arguments?.file_path === 'string'
+        ? tc.arguments.file_path
+        : typeof tc.arguments?.command === 'string'
+          ? tc.arguments.command.slice(0, 120)
+          : '';
+      return makeEvidenceRef({
+        kind: 'tool',
+        ref: `auto-advance: ${tc.name}${target ? ` ${target}` : ''} (toolCall ${tc.id})`,
+        source: 'todo_parser:auto-advance',
+      });
+    });
 
     const { updated, todos: advanced } = completeCurrentAndAdvance(todos);
     if (updated) {
       setSessionTodos(this.ctx.sessionId, advanced);
-      const taskSync = syncTodosToSessionTasks(this.ctx.sessionId, advanced);
+      const taskSync = syncTodosToSessionTasks(this.ctx.sessionId, advanced, { completionEvidence });
       this.ctx.onEvent({ type: 'todo_update', data: advanced });
       this.ctx.onEvent({
         type: 'task_update',

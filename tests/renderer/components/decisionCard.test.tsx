@@ -109,4 +109,52 @@ describe('DecisionCard 统一骨架', () => {
     fireEvent.click(screen.getByRole('button', { name: '取消' }));
     expect(props.onCancel).toHaveBeenCalledTimes(1);
   });
+
+  it('contentEditable（neo composer）聚焦时数字键/Enter/Esc 都不吃（review P1）', () => {
+    const props = renderCard({ selectedId: 'approve' });
+
+    // jsdom 未实现 isContentEditable，手动挂属性模拟真实浏览器行为
+    const composer = document.createElement('div');
+    composer.contentEditable = 'true';
+    Object.defineProperty(composer, 'isContentEditable', { value: true, configurable: true });
+    document.body.appendChild(composer);
+
+    fireEvent.keyDown(composer, { key: '1' });
+    fireEvent.keyDown(composer, { key: 'Enter' });
+    fireEvent.keyDown(composer, { key: 'Escape' });
+
+    expect(props.onSelect).not.toHaveBeenCalled();
+    expect(props.onConfirm).not.toHaveBeenCalled();
+    expect(props.onCancel).not.toHaveBeenCalled();
+
+    composer.remove();
+  });
+
+  it('textarea 内 Esc：不取消但吞掉冒泡（防 ChatView Esc+Esc rewind）（review P1）', () => {
+    const props = renderCard({
+      footerExtra: <textarea aria-label="反馈" />,
+    });
+    // 卡片自己的监听在 window capture；bubble 阶段的 window 监听若能收到，
+    // 说明 Esc 冒泡穿了（ChatView 的 Esc+Esc 就会接着触发）
+    const bubbleSpy = vi.fn();
+    window.addEventListener('keydown', bubbleSpy);
+
+    const textarea = screen.getByLabelText('反馈');
+    fireEvent.keyDown(textarea, { key: 'Escape' });
+
+    expect(props.onCancel).not.toHaveBeenCalled();
+    expect(bubbleSpy).not.toHaveBeenCalled();
+
+    window.removeEventListener('keydown', bubbleSpy);
+  });
+
+  it('submitting 期间 Esc/Enter 只吞不动作（防在途双发 IPC）（review P1）', () => {
+    const props = renderCard({ selectedId: 'approve', submitting: true });
+
+    fireEvent.keyDown(window, { key: 'Escape' });
+    fireEvent.keyDown(window, { key: 'Enter' });
+
+    expect(props.onCancel).not.toHaveBeenCalled();
+    expect(props.onConfirm).not.toHaveBeenCalled();
+  });
 });

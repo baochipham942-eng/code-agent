@@ -58,6 +58,18 @@ export interface DecisionCardProps {
   testId?: string;
 }
 
+// 可编辑目标判定：input/textarea + contentEditable（neo composer 是
+// contentEditable，先例见 useKeyboardShortcuts 的 isInputTarget）。
+// PermissionCard 的字母直发快捷键也复用这份判定。
+export function isEditableTarget(target: EventTarget | null): boolean {
+  const element = target as HTMLElement | null;
+  return Boolean(
+    element instanceof HTMLInputElement
+    || element instanceof HTMLTextAreaElement
+    || element?.isContentEditable
+  );
+}
+
 // 选中指示圆点：与 UserQuestionCard 的 SelectionIndicator 同形（单选，恒圆形）。
 const SelectionIndicator: React.FC<{ selected: boolean }> = ({ selected }) => (
   <div
@@ -97,18 +109,22 @@ export const DecisionCard: React.FC<DecisionCardProps> = ({
     cardRef.current?.focus();
   }, []);
 
-  // 数字键 1-N 选中、Enter 确认、Esc 取消；输入框聚焦时不拦截
+  // 数字键 1-N 选中、Enter 确认、Esc 取消。
+  // 守卫三条（review P1）：
+  // - 可编辑目标（input/textarea/contentEditable）内不拦截数字键与 Enter——但 Esc
+  //   即使在输入控件内也始终吞掉（preventDefault+stopPropagation，防 ChatView 的
+  //   Esc+Esc rewind 被误触发），只是不调 onCancel；
+  // - submitting 期间 Esc/Enter 只吞不动作，防确认在途时双发 IPC。
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
-        return;
-      }
+      const editable = isEditableTarget(e.target);
       if (e.key === 'Escape') {
         e.preventDefault();
         e.stopPropagation();
-        onCancel();
+        if (!editable && !submitting) onCancel();
         return;
       }
+      if (editable) return;
       if (e.key === 'Enter') {
         if (selectedId !== null && !submitting) {
           e.preventDefault();

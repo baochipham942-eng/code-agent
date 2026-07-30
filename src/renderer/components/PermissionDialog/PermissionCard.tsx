@@ -12,7 +12,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useAppStore } from '../../stores/appStore';
 import { useSessionStore } from '../../stores/sessionStore';
 import { usePermissionStore, type PermissionRequestForMemory } from '../../stores/permissionStore';
-import { DecisionCard, type DecisionOption } from '../DecisionCard';
+import { DecisionCard, isEditableTarget, type DecisionOption } from '../DecisionCard';
 import { RequestDetails } from './RequestDetails';
 import type { PermissionRequest, ApprovalLevel, PermissionType } from './types';
 import type { PermissionResponse } from '@shared/contract';
@@ -236,10 +236,8 @@ export function PermissionCard() {
     if (!request) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (
-        e.target instanceof HTMLInputElement ||
-        e.target instanceof HTMLTextAreaElement
-      ) {
+      // 含 contentEditable（neo composer）：输入时不吃字母快捷键
+      if (isEditableTarget(e.target)) {
         return;
       }
 

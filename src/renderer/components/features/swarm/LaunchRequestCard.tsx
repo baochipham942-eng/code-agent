@@ -5,7 +5,8 @@
 // 2026-07-29 拍板：pending 态视觉骨架统一迁移到 DecisionCard（与
 // AskUserQuestion 提问卡同形）——「批准启动 / 拒绝」变成选项行，底部
 // ghost 取消编排 + primary 确认（选中后才可点）。数据流/IPC 不变。
-// approved/rejected 态是消息流里的历史记录卡，维持原紧凑形态不迁移。
+// approved/rejected 态是消息流里的历史记录卡，维持紧凑形态，但 stats
+// 与 tasks 列表必须保留（默认折叠可展开）——历史回看要能核对「当时批了什么」。
 // ============================================================================
 
 import React, { useState } from 'react';
@@ -59,6 +60,67 @@ const TaskPromptBlock: React.FC<{ task: SwarmLaunchTaskPreview; colorClass: stri
   );
 };
 
+// 统计格（agent 数 / 依赖 / 写权限）：pending 决策区与 settled 历史卡共用
+const LaunchPlanStats: React.FC<{ request: SwarmLaunchRequest }> = ({ request }) => (
+  <div className="grid grid-cols-3 gap-2 text-[11px]">
+    <div className="rounded bg-zinc-800 px-2 py-1.5 text-zinc-400">
+      Agent <span className="ml-1 text-zinc-200">{request.agentCount}</span>
+    </div>
+    <div className="rounded bg-zinc-800 px-2 py-1.5 text-zinc-400">
+      依赖 <span className="ml-1 text-cyan-300">{request.dependencyCount}</span>
+    </div>
+    <div className="rounded bg-zinc-800 px-2 py-1.5 text-zinc-400">
+      写权限 <span className="ml-1 text-amber-300">{request.writeAgentCount}</span>
+    </div>
+  </div>
+);
+
+// 任务列表：pending 决策区与 settled 历史卡共用
+const LaunchTaskList: React.FC<{ tasks: SwarmLaunchTaskPreview[] }> = ({ tasks }) => (
+  <div className="space-y-2">
+    {tasks.map((task) => {
+      const agentColor = agentColorFor(task.id);
+      return (
+        <div key={task.id} className="rounded-lg border border-white/[0.04] bg-zinc-800 px-3 py-2">
+          <div className="flex items-center gap-2">
+            <span className={`rounded-full bg-zinc-700/80 px-1.5 py-0.5 text-[10px] uppercase tracking-wide font-semibold ${agentColor}`}>
+              {task.role}
+            </span>
+            <span
+              className={`rounded-full px-1.5 py-0.5 text-[10px] ${
+                task.writeAccess
+                  ? 'bg-amber-500/15 text-amber-300'
+                  : 'bg-emerald-500/15 text-emerald-300'
+              }`}
+            >
+              {task.writeAccess ? '可写' : '只读'}
+            </span>
+            {task.dependsOn && task.dependsOn.length > 0 && (
+              <span className="text-[10px] text-cyan-300">
+                依赖 {task.dependsOn.join(', ')}
+              </span>
+            )}
+          </div>
+          <TaskPromptBlock task={task} colorClass={agentColor} />
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {task.tools.slice(0, 4).map((tool) => (
+              <span
+                key={`${task.id}-${tool}`}
+                className="rounded bg-zinc-900 px-1.5 py-0.5 font-mono text-[10px] text-zinc-500"
+              >
+                {tool}
+              </span>
+            ))}
+            {task.tools.length > 4 && (
+              <span className="text-[10px] text-zinc-600">+{task.tools.length - 4}</span>
+            )}
+          </div>
+        </div>
+      );
+    })}
+  </div>
+);
+
 export const LaunchRequestCard: React.FC<{ request: SwarmLaunchRequest }> = ({ request }) => {
   const { t } = useI18n();
   const [feedback, setFeedback] = useState(request.feedback || '');
@@ -70,6 +132,7 @@ export const LaunchRequestCard: React.FC<{ request: SwarmLaunchRequest }> = ({ r
   const s = t.decisionCard.swarm;
 
   const handleApprove = async () => {
+    if (submitting !== null) return; // 提交中防双发 IPC（review P1）
     const selectedSessionIdAtSubmit = useSessionStore.getState().currentSessionId;
     const activeRunIdAtSubmit = useSwarmStore.getState().activeRunId;
     setSubmitting('approve');
@@ -103,6 +166,7 @@ export const LaunchRequestCard: React.FC<{ request: SwarmLaunchRequest }> = ({ r
   };
 
   const handleReject = async () => {
+    if (submitting !== null) return; // 提交中防双发 IPC（review P1）
     const trimmed = feedback.trim();
     if (!trimmed) {
       setError(s.rejectReasonRequired);
@@ -128,7 +192,8 @@ export const LaunchRequestCard: React.FC<{ request: SwarmLaunchRequest }> = ({ r
     }
   };
 
-  // approved / rejected = 消息流里的历史记录卡，维持原紧凑形态
+  // approved / rejected = 消息流里的历史记录卡：维持紧凑形态，但 stats 与
+  // tasks 列表保留在默认折叠的 <details> 里——回看能核对「当时批了什么」（review P1）。
   if (request.status !== 'pending') {
     const badgeClass =
       request.status === 'approved'
@@ -155,6 +220,16 @@ export const LaunchRequestCard: React.FC<{ request: SwarmLaunchRequest }> = ({ r
             {request.feedback}
           </div>
         )}
+
+        <details className="mt-2">
+          <summary className="cursor-pointer text-[11px] text-zinc-500 hover:text-zinc-300">
+            {s.detailToggle}（{request.agentCount}）
+          </summary>
+          <div className="mt-2 space-y-2">
+            <LaunchPlanStats request={request} />
+            <LaunchTaskList tasks={request.tasks} />
+          </div>
+        </details>
       </div>
     );
   }
@@ -175,61 +250,8 @@ export const LaunchRequestCard: React.FC<{ request: SwarmLaunchRequest }> = ({ r
       details={
         <>
           <div className="text-xs leading-5 text-zinc-400">{request.summary}</div>
-
-          <div className="grid grid-cols-3 gap-2 text-[11px]">
-            <div className="rounded bg-zinc-800 px-2 py-1.5 text-zinc-400">
-              Agent <span className="ml-1 text-zinc-200">{request.agentCount}</span>
-            </div>
-            <div className="rounded bg-zinc-800 px-2 py-1.5 text-zinc-400">
-              依赖 <span className="ml-1 text-cyan-300">{request.dependencyCount}</span>
-            </div>
-            <div className="rounded bg-zinc-800 px-2 py-1.5 text-zinc-400">
-              写权限 <span className="ml-1 text-amber-300">{request.writeAgentCount}</span>
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            {request.tasks.map((task) => {
-              const agentColor = agentColorFor(task.id);
-              return (
-                <div key={task.id} className="rounded-lg border border-white/[0.04] bg-zinc-800 px-3 py-2">
-                  <div className="flex items-center gap-2">
-                    <span className={`rounded-full bg-zinc-700/80 px-1.5 py-0.5 text-[10px] uppercase tracking-wide font-semibold ${agentColor}`}>
-                      {task.role}
-                    </span>
-                    <span
-                      className={`rounded-full px-1.5 py-0.5 text-[10px] ${
-                        task.writeAccess
-                          ? 'bg-amber-500/15 text-amber-300'
-                          : 'bg-emerald-500/15 text-emerald-300'
-                      }`}
-                    >
-                      {task.writeAccess ? '可写' : '只读'}
-                    </span>
-                    {task.dependsOn && task.dependsOn.length > 0 && (
-                      <span className="text-[10px] text-cyan-300">
-                        依赖 {task.dependsOn.join(', ')}
-                      </span>
-                    )}
-                  </div>
-                  <TaskPromptBlock task={task} colorClass={agentColor} />
-                  <div className="mt-2 flex flex-wrap gap-1.5">
-                    {task.tools.slice(0, 4).map((tool) => (
-                      <span
-                        key={`${task.id}-${tool}`}
-                        className="rounded bg-zinc-900 px-1.5 py-0.5 font-mono text-[10px] text-zinc-500"
-                      >
-                        {tool}
-                      </span>
-                    ))}
-                    {task.tools.length > 4 && (
-                      <span className="text-[10px] text-zinc-600">+{task.tools.length - 4}</span>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+          <LaunchPlanStats request={request} />
+          <LaunchTaskList tasks={request.tasks} />
         </>
       }
       options={options}

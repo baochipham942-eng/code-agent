@@ -99,6 +99,42 @@ describe('scoped swarm mutations', () => {
     });
   });
 
+  it('ignores duplicate approve/reject while a launch decision is in flight', async () => {
+    let resolveApproval: ((approved: boolean) => void) | undefined;
+    invokeMock.mockImplementation(() => new Promise<boolean>((resolve) => {
+      resolveApproval = resolve;
+    }));
+    const request: SwarmLaunchRequest = {
+      id: 'request-double',
+      ...scope,
+      treeId: 'tree-scope',
+      status: 'pending',
+      requestedAt: 1,
+      summary: 'scope launch',
+      agentCount: 1,
+      dependencyCount: 0,
+      writeAgentCount: 0,
+      tasks: [],
+    };
+    const view = render(<LaunchRequestCard request={request} />);
+
+    // 先填反馈——若 Esc 触达 reject 路径会真实发出 REJECT IPC，断言才够锋利
+    fireEvent.change(view.getByPlaceholderText('可选说明；取消编排时填写原因'), {
+      target: { value: '在途防护验证' },
+    });
+    fireEvent.click(view.getByRole('button', { name: /批准启动/ }));
+    fireEvent.click(view.getByRole('button', { name: '确认' }));
+    // 确认在途：Esc（onCancel → reject 路径）与重复确认都必须被吞（review P1）
+    fireEvent.keyDown(window, { key: 'Escape' });
+    fireEvent.click(view.getByRole('button', { name: '确认' }));
+
+    expect(invokeMock).toHaveBeenCalledTimes(1);
+    expect(invokeMock).toHaveBeenCalledWith(IPC_CHANNELS.SWARM_APPROVE_LAUNCH, expect.anything());
+
+    resolveApproval?.(true);
+    await waitFor(() => expect(invokeMock).toHaveBeenCalledTimes(1));
+  });
+
   it('sends plan rejection with run scope and agent identity', async () => {
     const view = render(
       <ApprovalCard

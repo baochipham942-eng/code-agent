@@ -202,6 +202,12 @@ describe('TraceNodeRenderer launch request', () => {
     expect(html).toContain('按计划启动');
     expect(html).not.toContain('开始执行');
     expect(html).not.toContain('取消编排');
+    // review P1：settled 历史卡保留 stats + tasks（默认折叠在 <details> 里），
+    // 回看能核对「当时批了什么」
+    expect(html).toContain('编排详情');
+    expect(html).toContain('builder');
+    expect(html).toContain('qa');
+    expect(html).toContain('依赖 task-builder');
   });
 
   it('renders user workbench routing badges inline', () => {

@@ -50,12 +50,23 @@ vi.mock('../../../src/renderer/stores/sessionStore', () => ({
 
 import { useWorkspacePreviewModelState } from '../../../src/renderer/hooks/useWorkspacePreviewModel';
 
+// 环一旦回来，jsdom 里是**真的停不下来**（每次渲染 deps 都变，React 认为是合法的
+// 依赖变化，不会触发它自己的 50 层保护）。不设上限的话回归表现为 worker 跑满内存
+// 被杀、CI 超时——实测 144 秒。这个计数器把它变成一条秒级、说人话的断言失败。
+const RENDER_BUDGET = 200;
+let renderCount = 0;
+
 function Probe(): React.ReactElement {
+  renderCount += 1;
+  if (renderCount > RENDER_BUDGET) {
+    throw new Error(`渲染自激环回归：${RENDER_BUDGET} 次渲染后仍未收敛`);
+  }
   useWorkspacePreviewModelState();
   return <div data-testid="probe" />;
 }
 
 beforeEach(() => {
+  renderCount = 0;
   mocks.getArtifactIssuesByArtifactId.mockReset();
   mocks.getArtifactIssuesByArtifactId.mockResolvedValue({});
   // 复刻事故现场：上游每次调用都返回**内容相同但身份全新**的对象。

@@ -531,6 +531,18 @@ describe('ProjectConfigRail 项目配置（四卡竖排形态，第四波①回�
     expect(screen.queryByTestId('project-space-card-experts-picker')).toBeNull();
   });
 
+  it('点遮罩关闭添加弹窗（backdrop 点击不冒泡成卡面点击把弹窗重开）', async () => {
+    await enterSpaceView();
+    fireEvent.click(await screen.findByTestId('project-space-card-experts-add'));
+    await screen.findByTestId('project-space-card-experts-picker');
+    // backdrop = Modal 根 overlay 的第一个子元素（dialog 的兄弟）
+    const dialog = screen.getByRole('dialog');
+    const backdrop = dialog.parentElement?.firstElementChild;
+    expect(backdrop).toBeTruthy();
+    fireEvent.click(backdrop as Element);
+    await waitFor(() => expect(screen.queryByTestId('project-space-card-experts-picker')).toBeNull());
+  });
+
   it('弹窗搜索：名称与描述都过滤，无匹配给提示', async () => {
     await enterSpaceView();
     fireEvent.click(await screen.findByTestId('project-space-card-experts-add'));

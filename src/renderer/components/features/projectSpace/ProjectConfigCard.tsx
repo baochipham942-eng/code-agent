@@ -79,76 +79,95 @@ export const ProjectConfigCard: React.FC<ProjectConfigCardProps> = ({
   }, [options, query]);
 
   return (
-    <section
-      className={`rounded-xl border border-zinc-800/80 bg-zinc-900/40 p-3 ${
-        readOnly ? '' : 'cursor-pointer transition-colors hover:border-zinc-700'
-      }`}
-      data-testid={testId}
-      role={readOnly ? undefined : 'button'}
-      tabIndex={readOnly ? undefined : 0}
-      aria-label={readOnly ? undefined : `${addLabel} · ${title}`}
-      onClick={readOnly ? undefined : openPicker}
-      onKeyDown={readOnly ? undefined : (event) => {
-        // 只响应卡在焦上的按键；「+」/chip × 等内嵌控件的键盘事件走它们自己
-        if (event.target !== event.currentTarget) return;
-        if (event.key === 'Enter' || event.key === ' ') {
-          event.preventDefault();
-          openPicker();
-        }
-      }}
-    >
-      <div className="flex items-center gap-2">
-        <h3 className="min-w-0 flex-1 truncate text-sm font-medium text-zinc-200">{title}</h3>
-        <IconButton
-          size="sm"
-          variant="ghost"
-          icon={<Plus className="h-3.5 w-3.5" />}
-          aria-label={addLabel}
-          title={readOnly ? (readOnlyHint ?? addLabel) : addLabel}
-          disabled={readOnly}
-          data-testid={`${testId}-add`}
-          onClick={(event) => {
-            event.stopPropagation();
+    <>
+      <section
+        className={`rounded-xl border border-zinc-800/80 bg-zinc-900/40 p-3 ${
+          readOnly ? '' : 'cursor-pointer transition-colors hover:border-zinc-700'
+        }`}
+        data-testid={testId}
+        role={readOnly ? undefined : 'button'}
+        tabIndex={readOnly ? undefined : 0}
+        aria-label={readOnly ? undefined : `${addLabel} · ${title}`}
+        onClick={readOnly ? undefined : openPicker}
+        onKeyDown={readOnly ? undefined : (event) => {
+          // 只响应卡在焦上的按键；「+」/chip × 等内嵌控件的键盘事件走它们自己
+          if (event.target !== event.currentTarget) return;
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
             openPicker();
-          }}
-        />
-      </div>
-      <div className="mt-2 flex flex-wrap gap-1.5" data-testid={`${testId}-selected`}>
-        {selected.length === 0 ? (
-          <span className="text-xs text-zinc-600">{selectedEmptyLabel}</span>
-        ) : (
-          selected.map((item) => (
-            <Badge key={item.id} className="border-zinc-700 bg-zinc-800/70 text-[11px] text-zinc-300" data-testid={`${testId}-chip-${item.id}`}>
-              {item.label}
-              {onRemove ? (
-                <IconButton
-                  size="sm"
-                  variant="ghost"
-                  icon={<X className="h-3 w-3" />}
-                  aria-label={`${removeLabel} ${item.label}`}
-                  data-testid={`${testId}-remove-${item.id}`}
-                  onClick={(event) => {
-                    // 点删除是移除已选，不能冒泡成卡面点击弹弹窗
-                    event.stopPropagation();
-                    onRemove(item.id);
-                  }}
-                />
-              ) : null}
-            </Badge>
-          ))
-        )}
-      </div>
-      <Modal isOpen={pickerOpen} onClose={() => setPickerOpen(false)} title={`${addLabel} · ${title}`} size="sm">
+          }
+        }}
+      >
+        <div className="flex items-center gap-2">
+          <h3 className="min-w-0 flex-1 truncate text-sm font-medium text-zinc-200">{title}</h3>
+          <IconButton
+            size="sm"
+            variant="ghost"
+            icon={<Plus className="h-3.5 w-3.5" />}
+            aria-label={addLabel}
+            title={readOnly ? (readOnlyHint ?? addLabel) : addLabel}
+            disabled={readOnly}
+            data-testid={`${testId}-add`}
+            onClick={(event) => {
+              event.stopPropagation();
+              openPicker();
+            }}
+          />
+        </div>
+        <div className="mt-2 flex flex-wrap gap-1.5" data-testid={`${testId}-selected`}>
+          {selected.length === 0 ? (
+            <span className="text-xs text-zinc-600">{selectedEmptyLabel}</span>
+          ) : (
+            selected.map((item) => (
+              <Badge key={item.id} className="border-zinc-700 bg-zinc-800/70 text-[11px] text-zinc-300" data-testid={`${testId}-chip-${item.id}`}>
+                {item.label}
+                {onRemove ? (
+                  <IconButton
+                    size="sm"
+                    variant="ghost"
+                    icon={<X className="h-3 w-3" />}
+                    aria-label={`${removeLabel} ${item.label}`}
+                    data-testid={`${testId}-remove-${item.id}`}
+                    onClick={(event) => {
+                      // 点删除是移除已选，不能冒泡成卡面点击弹弹窗
+                      event.stopPropagation();
+                      onRemove(item.id);
+                    }}
+                  />
+                ) : null}
+              </Badge>
+            ))
+          )}
+        </div>
+      </section>
+      {/* Modal 不做 portal，必须渲染成卡片的兄弟节点而非子节点：backdrop 点击若冒泡到
+          卡面 section，会在 onClose 之后被卡面 onClick 当「打开弹窗」立即重开（探针实测
+          点遮罩关不掉的根因）。弹层容器自身 stopPropagation，backdrop 没有，故只能挪出来。 */}
+      {/* 尺寸档位：picker/选择类弹窗一律 lg 起（SidebarSearchDialog/CaptureAddDialog/
+          AddProviderCard 同档），sm 只留给确认/单字段弹窗。 */}
+      <Modal isOpen={pickerOpen} onClose={() => setPickerOpen(false)} title={`${addLabel} · ${title}`} size="lg">
         <div className="grid gap-2" data-testid={`${testId}-picker`}>
+          {/* 搜索框照抄已装技能页样板（SkillsInstalledTab）：inputSize=sm + Input 自带
+              leftIcon 槽（不手写绝对定位图标）+ 有词时右侧清除钮 */}
           <div className="relative">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-500" />
             <Input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder={pickerSearchPlaceholder}
-              className="pl-8"
+              inputSize="sm"
+              leftIcon={<Search className="h-3 w-3" />}
               data-testid={`${testId}-search`}
             />
+            {query ? (
+              <button /* ds-allow:button: 搜索框清除钮（已装技能页 SkillsInstalledTab 同款样板），纯图标行内控件，IconButton 变体形状不适配输入框内嵌 */
+                type="button"
+                data-testid={`${testId}-search-clear`}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300"
+                onClick={() => setQuery('')}
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            ) : null}
           </div>
           <div className="grid gap-1">
             {options.length === 0 ? (
@@ -182,6 +201,6 @@ export const ProjectConfigCard: React.FC<ProjectConfigCardProps> = ({
           </div>
         </div>
       </Modal>
-    </section>
+    </>
   );
 };

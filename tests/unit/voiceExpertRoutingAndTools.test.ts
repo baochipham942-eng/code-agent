@@ -67,6 +67,17 @@ vi.mock('../../src/host/services/infra/sessionManager', () => ({
 vi.mock('../../src/host/services/infra/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
 }));
+// 本文件钉的是路由/窄工具/D4 持票，不是完成语义证据门：给一份「确实改了文件」的 run
+// 记录，让 task_completed 照旧落 done。证据门本身由 voiceWorkEvidenceGate.test.ts 钉。
+vi.mock('../../src/host/session/completionSummaryService', () => ({
+  readLatestCompletionSummaryRecord: async () => ({
+    changedFiles: ['/repo/src/a.ts'],
+    artifactRefs: [],
+    commitIds: [],
+    verificationEvidence: [],
+    endedAt: Number.MAX_SAFE_INTEGER,
+  }),
+}));
 // 连接器就绪判定与 registry：让「专家声明了 crm，且它已连上」成为可控事实。
 vi.mock('../../src/host/agent/agentRegistry', () => ({
   resolveAgent: () => resolvedAgent.value,
@@ -98,6 +109,15 @@ function lastRunOptions(): AgentRunOptions {
   const call = runtime.startTask.mock.calls.at(-1);
   if (!call) throw new Error('startTask was never called');
   return call[3];
+}
+
+/**
+ * `task_completed` 到终态之间隔着一次证据查询（X5.5-A2-a），是异步的。
+ * 「跑完了」不再等于「做成了」，所以终态断言必须等这一步落地。
+ */
+async function settleFlush(): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  await new Promise((resolve) => setTimeout(resolve, 0));
 }
 
 describe('A3 通话身份解析', () => {
@@ -261,6 +281,7 @@ describe('A4 窄工具 / H1 指挥台', () => {
     expect(workItems.value.at(-1)).toMatchObject({ status: 'running' });
 
     runtime.emit('task_completed');
+    await settleFlush();
     expect(workItems.value.at(-1)).toMatchObject({ title: '跑测试', status: 'done' });
   });
 
@@ -344,6 +365,9 @@ describe('A4 窄工具 / H1 指挥台', () => {
     expect(permissions.isLiveVoiceSession('session-1')).toBe(true);
 
     runtime.emit('task_completed');
+    // 证据查询没落地之前票不还——抬严多罩一拍是安全方向，但绝不允许永不返回
+    // （所以查询自带超时，见 VOICE_WORK_EVIDENCE_TIMEOUT_MS）。
+    await settleFlush();
     expect(permissions.isLiveVoiceSession('session-1')).toBe(false);
   });
 
@@ -358,6 +382,7 @@ describe('A4 窄工具 / H1 指挥台', () => {
     expect(permissions.isLiveVoiceSession('session-1')).toBe(true);
 
     runtime.emit('task_completed');
+    await settleFlush();
     expect(permissions.isLiveVoiceSession('session-1')).toBe(false);
   });
 

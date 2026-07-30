@@ -3,15 +3,12 @@
 // 从 MessageContent.tsx 纯结构性拆出，零行为改动；主组件按需 import 回去
 // ============================================================================
 
-import React, { useState, useMemo, useCallback, memo, useRef, useEffect, lazy, Suspense } from 'react';
-import { Code2, Copy, Check, ExternalLink, Play, ZoomIn, ZoomOut, ClipboardCopy, MessageSquare, MessageSquarePlus, Settings } from 'lucide-react';
-import { loadMermaid } from './mermaidLoader';
+import React, { useState, useMemo, useCallback, memo, useEffect, lazy, Suspense } from 'react';
+import { Code2, Copy, Check, ExternalLink, Play, ClipboardCopy, MessageSquare, MessageSquarePlus, Settings } from 'lucide-react';
 import { UI } from '@shared/constants';
 import type { Components } from 'react-markdown';
 import { useAppStore } from '../../../../stores/appStore';
 import { useSessionStore } from '../../../../stores/sessionStore';
-import { useMessageActionStore } from '../../../../stores/messageActionStore';
-import { useI18n } from '../../../../hooks/useI18n';
 import { SETTINGS_TAB_IDS, type SettingsTab } from '../../../../utils/settingsTabs';
 import {
   recordStreamingPerformanceCounter,

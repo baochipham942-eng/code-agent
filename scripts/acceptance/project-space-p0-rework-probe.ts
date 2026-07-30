@@ -51,6 +51,18 @@ async function main(): Promise<void> {
   try {
     await page.goto(base, { waitUntil: 'domcontentloaded' });
     await page.waitForSelector('[data-testid="sidebar-capability-projects"]', { timeout: 60_000 });
+    // 新 server 实例的启动目录未信任时会弹信任框——点「信任并加载」放行，别让它盖住量测/截图
+    const trustButton = await page.waitForSelector(
+      'button:has-text("信任并加载"), button:has-text("Trust and load")',
+      { timeout: 3_000 },
+    ).catch(() => null);
+    if (trustButton) {
+      await trustButton.click();
+      await page.waitForSelector(
+        'button:has-text("信任并加载"), button:has-text("Trust and load")',
+        { state: 'detached', timeout: 10_000 },
+      ).catch(() => undefined);
+    }
     const token = await page.evaluate(() => (window as unknown as { __CODE_AGENT_TOKEN__?: string }).__CODE_AGENT_TOKEN__ ?? '');
 
     // ---- 数据准备：找一个带工作目录的协作空间，没有就建一个 ----

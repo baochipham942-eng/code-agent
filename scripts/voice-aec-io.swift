@@ -11,6 +11,16 @@ private let upstreamSampleRate: Double = 16_000
 private let downstreamSampleRate: Double = 24_000
 private let levelInterval: TimeInterval = 0.1
 
+// 看门狗：连续这么久一帧不产就判定采集已死并写 error 帧。
+// 选值理由：VPIO 冷启动到首帧实测 0.1–0.3s，实测两次「引擎自杀」发生在 start() 后 +0.32s/+0.38s，
+// 自愈重建实测 <0.5s；4s 是正常首帧耗时的十倍以上（不会误杀），又远小于 Rust 侧 30s 启动超时
+// （保证 host 拿到的是「明确的错误」而不是「超时」）。
+private let frameStallTimeout: TimeInterval = 4
+private let watchdogInterval: TimeInterval = 1
+// 配置变更自愈的熔断：短窗内反复重建说明设备在抖，继续重试只会让用户听一段断续的假通话。
+private let recoveryWindow: TimeInterval = 10
+private let maxRecoveriesInWindow = 3
+
 private enum OutputFrameKind: UInt8 {
     case audio = 1
     case levels = 2
@@ -78,6 +88,15 @@ private final class VoiceAecIO {
     private var playbackUntil: TimeInterval = 0
     private var lastLevelAt: TimeInterval = 0
     private var stopped = false
+    private var lastFrameAt: TimeInterval = 0
+    private var readySent = false
+    private var failed = false
+
+    // 自愈与看门狗都跑在这条串行队列上：重建期间看门狗自然被挡住，不必再加一把锁。
+    private let recoveryQueue = DispatchQueue(label: "voice-aec-io.recovery")
+    private var watchdogTimer: DispatchSourceTimer?
+    private var configObserver: NSObjectProtocol?
+    private var recoveryTimestamps: [TimeInterval] = []
 
     init(arguments: Arguments) throws {
         guard let upstream = FileHandle(forWritingAtPath: arguments.upstreamFifo) else {

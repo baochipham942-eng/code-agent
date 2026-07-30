@@ -12,6 +12,7 @@ import { wrapFilePathsInBackticks, wrapTicketsAsLinks } from './filePathProcesso
 import { parseLeadingTriggerToken } from './triggerTokenHighlight';
 import { isWebMode, copyPathToClipboard, openExternalLink } from '../../../../utils/platform';
 import { isPreviewable } from '../../../../utils/previewable';
+import { LinkPreviewCard, isRawUrlLink } from './LinkPreviewCard';
 import { ChartBlock, isChartSpecSource } from './ChartBlock';
 import { GenerativeUIBlock } from './GenerativeUIBlock';
 import { GenerativeUIHost } from '../GenerativeUI/GenerativeUIHost';
@@ -209,13 +210,14 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
           </div>
         );
       },
+      // 轻呈现表格：thead 无亮底（11px 小字灰）、无竖向边框、只留横向行分隔线、无斑马纹
       thead({ children }) {
-        return <thead className="bg-zinc-800">{children}</thead>;
+        return <thead>{children}</thead>;
       },
       th({ children, style }) {
         return (
           <th
-            className="px-3 py-2 text-left font-semibold text-zinc-200 border border-zinc-700"
+            className="px-2 py-1.5 text-left text-[11px] font-medium text-zinc-500"
             style={style}
           >
             {children}
@@ -226,12 +228,12 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
         return <tbody>{children}</tbody>;
       },
       tr({ children }) {
-        return <tr className="even:bg-zinc-700/20 odd:bg-zinc-900/30">{children}</tr>;
+        return <tr className="border-b border-zinc-800">{children}</tr>;
       },
       td({ children, style }) {
         return (
           <td
-            className="px-3 py-2 text-zinc-400 border border-zinc-700"
+            className="px-2 py-1.5 text-zinc-400"
             style={style}
           >
             {children}
@@ -239,15 +241,15 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
         );
       },
 
-      // Headings
+      // 会话内标题压平：H1-H3 统一 13.5px semibold，只用 margin 分层，不给更大字号/更亮颜色
       h1({ children }) {
-        return <h1 className="text-xl font-bold text-zinc-200 mt-4 mb-2">{children}</h1>;
+        return <h1 className="text-[13.5px] font-semibold text-zinc-200 mt-3.5 mb-1.5">{children}</h1>;
       },
       h2({ children }) {
-        return <h2 className="text-lg font-bold text-zinc-200 mt-3 mb-2">{children}</h2>;
+        return <h2 className="text-[13.5px] font-semibold text-zinc-200 mt-3.5 mb-1.5">{children}</h2>;
       },
       h3({ children }) {
-        return <h3 className="text-base font-semibold text-zinc-200 mt-3 mb-1">{children}</h3>;
+        return <h3 className="text-[13.5px] font-semibold text-zinc-200 mt-3.5 mb-1.5">{children}</h3>;
       },
       h4({ children }) {
         return <h4 className="text-sm font-semibold text-zinc-200 mt-2 mb-1">{children}</h4>;
@@ -261,15 +263,15 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
 
       // Paragraphs
       p({ children }) {
-        return <p className="my-1">{children}</p>;
+        return <p className="my-2.5">{children}</p>;
       },
 
       // Lists
       ul({ children }) {
-        return <ul className="my-2 pl-5 space-y-1 list-disc">{children}</ul>;
+        return <ul className="my-2 pl-5 space-y-1 list-disc marker:text-zinc-600">{children}</ul>;
       },
       ol({ children }) {
-        return <ol className="my-2 pl-5 space-y-1 list-decimal">{children}</ol>;
+        return <ol className="my-2 pl-5 space-y-1 list-decimal marker:text-zinc-600">{children}</ol>;
       },
       li({ children }) {
         return <li className="text-zinc-400">{children}</li>;
@@ -438,6 +440,12 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
           );
         }
 
+        // raw URL（链接文字就是 URL 本身）：favicon + 下划线链接，帮用户一眼认站点。
+        // 轻呈现——只有 16px 图标，没有 chip 边框/底色。
+        if (href && isRawUrlLink(href, children)) {
+          return <LinkPreviewCard href={href} />;
+        }
+
         // Regular links（带描述文字的内联链接）
         // Tauri webview 里 <a target="_blank"> 不会触发任何打开，必须拦截 onClick 走系统 opener
         return (
@@ -454,8 +462,9 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
       },
 
       // Text formatting
+      // strong 只给字重不提色：颜色继承所在正文（text-inherit），任何容器下都与正文同色
       strong({ children }) {
-        return <strong className="font-semibold text-zinc-200">{children}</strong>;
+        return <strong className="font-semibold text-inherit">{children}</strong>;
       },
       em({ children }) {
         return <em className="italic text-zinc-200">{children}</em>;
@@ -499,7 +508,7 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
 
   if (isStreaming && !streamingNeedsMarkdown) {
     return (
-      <div className="text-sm leading-relaxed break-words prose prose-invert prose-sm max-w-none streaming-text with-caret">
+      <div className="text-sm leading-[1.7] break-words prose prose-invert prose-sm max-w-none streaming-text with-caret">
         <span className="whitespace-pre-wrap">
           {sanitizePlainTextFallback(filterSystemTags(content))}
         </span>
@@ -511,7 +520,7 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
   const streamingDecor = isStreaming ? ' streaming-text with-caret' : '';
   return (
     <div
-      className={`text-sm leading-relaxed break-words prose prose-invert prose-sm max-w-none${streamingDecor}`}
+      className={`text-sm leading-[1.7] break-words prose prose-invert prose-sm max-w-none${streamingDecor}`}
       data-turn-heavy-content={deferCompletedLayout ? 'true' : undefined}
       style={deferCompletedLayout ? deferredTurnContentStyle : undefined}
     >

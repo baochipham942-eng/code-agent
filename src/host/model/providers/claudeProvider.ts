@@ -97,7 +97,12 @@ function claudeSSEStream(options: {
           if (onStream) {
             onStream({ type: 'error', error: errorMessage, errorCode: String(res.statusCode) });
           }
-          reject(new Error(errorMessage));
+          // 同 sseStream：status 必须挂在错误对象上，下游才判得出 401/403（批 X5 ③）。
+          reject(Object.assign(new Error(errorMessage), {
+            status: res.statusCode,
+            provider: 'claude',
+            model: requestBody['model'],
+          }));
         });
         return;
       }

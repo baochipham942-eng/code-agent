@@ -13,7 +13,7 @@
 // ============================================================================
 
 import type { VoiceMessageCode } from '@shared/contract/voice';
-import { VOICE_FOCUS_REPORT_MIN_INTERVAL_MS, VOICE_RECONNECT_BACKOFF_MS, VOICE_STREAM_WS_PATH, VOICE_TEARDOWN_DRAIN_MS } from '@shared/constants/voice';
+import { VOICE_FOCUS_REPORT_MIN_INTERVAL_MS, VOICE_RECONNECT_BACKOFF_MS, VOICE_STREAM_WS_PATH, VOICE_TEARDOWN_DRAIN_MS, VOICE_WS_CLOSE_TERMINAL } from '@shared/constants/voice';
 import type { AppSettings, Message } from '@shared/contract';
 import type { VoiceClientCommand, VoiceEvent } from '@shared/contract/voice';
 import { IPC_DOMAINS } from '@shared/ipc';
@@ -249,7 +249,7 @@ class VoiceCallBridge {
       }
     };
 
-    ws.onclose = () => {
+    ws.onclose = (closeEvent) => {
       this.audio?.stop();
       this.audio = null;
       this.audioReady = null;
@@ -265,8 +265,12 @@ class VoiceCallBridge {
         return;
       }
       this.stopFocusReporting();
+      // host 说「这通电话结束了」（模型挂断 / watchdog / 上游死 / 互斥抢占）带终止 close code。
+      // 它不是抖动，重连等于当场拨出一通新电话——2026-07-30 真机就是这么在挂断 2 秒后
+      // 冒出一通 16 秒空通话，通话条不落、计时继续走，用户以为压根没挂断。
+      const hostTerminated = closeEvent.code === VOICE_WS_CLOSE_TERMINAL;
       // 用户没挂断却断了 = 网络抖动，试着接回同一通电话（host 侧有宽限窗）。
-      if (!this.intentionalClose && phase !== 'error' && this.scheduleReconnect(sessionId, activeAgentId, interruptMode, echoCancellation)) return;
+      if (!hostTerminated && !this.intentionalClose && phase !== 'error' && this.scheduleReconnect(sessionId, activeAgentId, interruptMode, echoCancellation)) return;
       // host 侧关闭（挂断/上游死/超时）：摘要落库有一点延迟，稍后再拉一次。
       this.scheduleReload(sessionId, undefined, 800);
       this.scheduleHangupSummaryReload(sessionId);

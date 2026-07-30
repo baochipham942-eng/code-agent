@@ -7,7 +7,7 @@
 // ============================================================================
 
 import type { WebSocket as WsSocket } from 'ws';
-import { resolveConversationModelOption, VOICE_END_CALL_GOODBYE_TIMEOUT_MS, VOICE_RECONNECT_GRACE_MS, VOICE_SESSION_MAX_DURATION_MS, VOICE_TEARDOWN_DRAIN_MS } from '../../../shared/constants/voice';
+import { resolveConversationModelOption, VOICE_END_CALL_GOODBYE_TIMEOUT_MS, VOICE_RECONNECT_GRACE_MS, VOICE_SESSION_MAX_DURATION_MS, VOICE_TEARDOWN_DRAIN_MS, VOICE_WS_CLOSE_TERMINAL } from '../../../shared/constants/voice';
 import type { VoiceClientCommand, VoiceEvent, VoiceFocusContext, VoiceTransportHandle, VoiceWorkItem, VoiceWorkNarration } from '../../../shared/contract/voice';
 import { getDashscopeApiKey } from '../media/imageGenerationService';
 import { createLogger } from '../infra/logger';
@@ -16,7 +16,7 @@ import { getSessionManager } from '../infra/sessionManager';
 import { getPermissionModeManager } from '../../permissions/modes';
 import { qwenOmniTransport } from './qwenOmniTransport';
 import { resolveVoiceRouting } from './voiceRouting';
-import { beginVoiceDispatch, endVoiceDispatch, flushVoiceTail, pushVoiceTranscript, setVoiceDispatchFocus } from './voiceAgentCoordinator';
+import { beginVoiceDispatch, endVoiceDispatch, pushVoiceTranscript, setVoiceDispatchFocus } from './voiceAgentCoordinator';
 import { composeVoiceInstructions, focusChanged } from './voiceContextAssembler';
 import { recordVoiceCall } from './voiceUsageLedger';
 import { VOICE_TOOL_DEFINITIONS, executeVoiceTool } from './voiceTools';
@@ -92,6 +92,18 @@ export function getActiveVoiceSessionId(): string | null {
 
 function send(client: WsSocket, event: VoiceEvent): void {
   if (client.readyState === client.OPEN) client.send(JSON.stringify(event));
+}
+
+/**
+ * Host 主动结束这一路的**唯一**关闭出口：一律带终止 close code。
+ *
+ * 所有 host 侧终态都必须走这里——teardown 的全部 reason（model-end-call /
+ * model-end-call-timeout / max-duration / upstream-error / upstream-closed /
+ * reconnect-timeout / client-end）、互斥抢占、缺 provider key、上游建连失败。
+ * 漏掉任何一条，renderer 都会把那次关闭当成网络抖动接回来，于是立刻拨出一通新电话。
+ */
+function closeClientTerminal(client: WsSocket): void {
+  if (client.readyState === client.OPEN) client.close(VOICE_WS_CLOSE_TERMINAL);
 }
 
 /**
@@ -430,18 +442,6 @@ async function teardown(reason: string): Promise<void> {
   } catch (err) {
     logger.warn('failed to persist call summary', { message: err instanceof Error ? err.message : 'unknown' });
   }
-  // tail flush（P0-3）排在摘要**之后**、账本断开**之前**：
-  // 早了不行——账本被 endVoiceDispatch 摘掉就没得派；
-  // 但也不能排在摘要前面：渲染侧挂断后的补拉窗口钉在「排水窗 + 500ms」上
-  // （voiceCallBridge.scheduleHangupSummaryReload），而补派要走 buildRoleContextBlock
-  // 这类可能上百毫秒的准备工作，插在摘要前面会把摘要卡挤出那个窗口，
-  // 让刚修好的「摘要卡延迟」原样复发。补派本身是通话之外的活，晚几百毫秒无所谓。
-  // 同理它不计进 workItemCount：那个数说的是「这通电话里派出去的活」。
-  try {
-    await flushVoiceTail();
-  } catch (err) {
-    logger.warn('tail flush failed', { message: err instanceof Error ? err.message : 'unknown' });
-  }
   // 断开 work item 的 UI 回流；账本与 run 的票继续活到最后一件活落地（同上）。
   endVoiceDispatch();
   emitVoiceCallHook('VoiceCallEnded', {
@@ -453,8 +453,7 @@ async function teardown(reason: string): Promise<void> {
     reason,
   });
   await session.upstream.close().catch(() => undefined);
-  const client = session.clientRef.current;
-  if (client.readyState === client.OPEN) client.close();
+  closeClientTerminal(session.clientRef.current);
 }
 
 /**
@@ -469,14 +468,14 @@ export async function attachVoiceClient(client: WsSocket, neoSessionId: string, 
   }
   if (active || connecting) {
     send(client, { type: 'error', code: 'VOICE_SESSION_BUSY', message: '已有一路通话在进行中' });
-    client.close();
+    closeClientTerminal(client);
     return;
   }
 
   const apiKey = getDashscopeApiKey();
   if (!apiKey) {
     send(client, { type: 'error', code: 'VOICE_PROVIDER_UNCONFIGURED', message: '未配置 DashScope API Key' });
-    client.close();
+    closeClientTerminal(client);
     return;
   }
 
@@ -607,7 +606,7 @@ async function connectAndBind(
       message: 'upstream unavailable',
       detail: message,
     });
-    client.close();
+    closeClientTerminal(client);
     return;
   }
 

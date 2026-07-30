@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { EventEmitter } from 'events';
 import { isVoiceInputMessage, type Message } from '../../src/shared/contract/message';
 import type { VoiceEvent, VoiceTransport, VoiceWorkItem } from '../../src/shared/contract/voice';
-import { QWEN_OMNI_REALTIME_MODEL } from '../../src/shared/constants/voice';
+import { QWEN_OMNI_REALTIME_MODEL, VOICE_WS_CLOSE_TERMINAL } from '../../src/shared/constants/voice';
 
 const vocabulary = vi.hoisted(() => ({ block: '' }));
 vi.mock('../../src/host/services/voice/voiceVocabulary', () => ({
@@ -27,7 +27,8 @@ const connect = vi.fn(async (input: Parameters<VoiceTransport['connect']>[0]) =>
 });
 
 vi.mock('../../src/host/services/voice/qwenOmniTransport', () => ({ qwenOmniTransport: { id: 'qwen-omni', connect } }));
-vi.mock('../../src/host/services/media/imageGenerationService', () => ({ getDashscopeApiKey: () => 'test-key' }));
+const dashscopeKey = vi.hoisted(() => ({ value: 'test-key' }));
+vi.mock('../../src/host/services/media/imageGenerationService', () => ({ getDashscopeApiKey: () => dashscopeKey.value }));
 vi.mock('../../src/host/services/infra/sessionManager', () => ({
   getSessionManager: () => ({ addMessageToSession, patchSessionMetadata, getSession }),
 }));
@@ -66,11 +67,6 @@ vi.mock('../../src/host/hooks', () => ({
   }),
 }));
 
-// 挂断收尾里「谁先谁后」是跨线不变量，不能只靠注释守：渲染侧的摘要卡补拉窗口钉在
-// 「排水窗 + 500ms」上，补派（flushVoiceTail）要走 buildRoleContextBlock 这类上百毫秒的
-// 准备工作——它一旦排到摘要前面，就会把摘要挤出那个窗口，刚修好的「摘要卡延迟」原样复发。
-// 所以这里只替换 flushVoiceTail 一个导出，其余走真实实现，用于记录落地顺序。
-const teardownOrder: string[] = [];
 const voiceDispatchProbe = vi.hoisted(() => ({
   narrate: null as null | ((narration: {
     workItemId: string;
@@ -80,10 +76,6 @@ const voiceDispatchProbe = vi.hoisted(() => ({
   }) => void),
   fail: null as null | ((item: VoiceWorkItem) => void),
 }));
-const flushVoiceTailSpy = vi.fn(async () => {
-  teardownOrder.push('tail-flush');
-  return false;
-});
 vi.mock('../../src/host/services/voice/voiceAgentCoordinator', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/host/services/voice/voiceAgentCoordinator')>();
   return {
@@ -93,7 +85,6 @@ vi.mock('../../src/host/services/voice/voiceAgentCoordinator', async (importOrig
       voiceDispatchProbe.fail = binding.onWorkFailed;
       actual.beginVoiceDispatch(binding);
     },
-    flushVoiceTail: flushVoiceTailSpy,
   };
 });
 
@@ -105,11 +96,14 @@ class FakeClient extends EventEmitter {
   readyState = 1;
   sent: string[] = [];
   closed = false;
+  /** host 关的那一下带没带终止 close code；测试自己 close() 时是 undefined（= 模拟断线）。 */
+  closeCode: number | undefined;
   send(data: unknown) {
     this.sent.push(typeof data === 'string' ? data : '<binary>');
   }
-  close() {
+  close(code?: number) {
     this.closed = true;
+    this.closeCode = code;
     this.readyState = 3;
     this.emit('close');
   }
@@ -227,6 +221,38 @@ describe('voiceSessionService 互斥与挂断', () => {
     again.close();
   });
 
+  // 2026-07-30 真机：模型 end_call 正常挂断 2 秒后 renderer 自动重连出一通新电话
+  // （16 秒空通话、通话条不落、计时继续走）。根因是 host 主动结束与网络抖动关的 WS
+  // 长得一模一样。这里逐条钉 host 侧终态出口——漏掉任何一条都会原样复发。
+  it('host 侧终态关闭一律带终止 close code（renderer 据此不进重连宽限窗）', async () => {
+    // ① teardown（model-end-call / watchdog / 上游死 / client-end 共用这一个出口）
+    const call = new FakeClient();
+    await attachVoiceClient(call as never, 'session-1');
+    lastOnEvent?.({ type: 'error', code: 'UPSTREAM_ERROR', message: '上游炸了' });
+    await vi.waitFor(() => expect(call.closeCode).toBe(VOICE_WS_CLOSE_TERMINAL), { timeout: 4000 });
+
+    // ② 会话互斥抢占
+    const holder = new FakeClient();
+    await attachVoiceClient(holder as never, 'session-1');
+    const rejected = new FakeClient();
+    await attachVoiceClient(rejected as never, 'session-2');
+    expect(rejected.closeCode).toBe(VOICE_WS_CLOSE_TERMINAL);
+    await endActiveVoiceSession();
+
+    // ③ 上游建连失败
+    connect.mockRejectedValueOnce(new Error('handshake refused'));
+    const upstreamDead = new FakeClient();
+    await attachVoiceClient(upstreamDead as never, 'session-1');
+    expect(upstreamDead.closeCode).toBe(VOICE_WS_CLOSE_TERMINAL);
+
+    // ④ 缺 provider key
+    dashscopeKey.value = '';
+    const unconfigured = new FakeClient();
+    await attachVoiceClient(unconfigured as never, 'session-1');
+    expect(unconfigured.closeCode).toBe(VOICE_WS_CLOSE_TERMINAL);
+    dashscopeKey.value = 'test-key';
+  }, 15_000);
+
   it('二进制帧转发到上游，文本帧不当音频转发', async () => {
     const client = new FakeClient();
     await attachVoiceClient(client as never, 'session-1');
@@ -322,24 +348,6 @@ describe('voiceSessionService 互斥与挂断', () => {
     nowSpy.mockRestore();
   });
 
-  it('摘要卡先落库，挂断补派排在它后面（别把摘要挤出渲染侧补拉窗口）', async () => {
-    teardownOrder.length = 0;
-    flushVoiceTailSpy.mockClear();
-    addMessageToSession.mockImplementation(async (_sessionId: string, message: Message) => {
-      if (message.metadata?.voiceCallSummary) teardownOrder.push('summary');
-      return undefined;
-    });
-    const client = new FakeClient();
-    await attachVoiceClient(client as never, 'session-1');
-
-    client.emit('message', Buffer.from(JSON.stringify({ type: 'end' })), false);
-
-    await vi.waitFor(() => {
-      expect(flushVoiceTailSpy).toHaveBeenCalled();
-    }, { timeout: 4000 });
-    expect(teardownOrder).toEqual(['summary', 'tail-flush']);
-    addMessageToSession.mockImplementation(async () => undefined);
-  });
 });
 
 describe('终态结论节制播报', () => {

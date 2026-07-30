@@ -631,6 +631,42 @@ describe('TurnBasedTraceView streaming scroll drivers', () => {
     expect(mocks.scrollToIndex).not.toHaveBeenCalled();
   });
 
+  it('进会话带搜索命中：首帧落底不影响显式跳转，命中轮仍 align:center 居中', () => {
+    // review 遗留（#832 P1）：底部落点与搜索跳转是两条独立驱动——initialTopMostItemIndex
+    // 负责首帧落底，search effect 负责显式跳转，后者必须仍然生效且不被守卫吞掉。
+    const projection: TraceProjection = {
+      sessionId: 'session-9',
+      activeTurnIndex: -1,
+      turns: [
+        { ...makeStreamingTurn(), status: 'completed' },
+        { ...makeStreamingTurn({ turnNumber: 2, turnId: 'turn-2', startTime: 200 }), status: 'completed' },
+        { ...makeStreamingTurn({ turnNumber: 3, turnId: 'turn-3', startTime: 300 }), status: 'completed' },
+      ],
+    };
+    render(React.createElement(TurnBasedTraceView, {
+      projection,
+      searchMatches: [{ turnIndex: 1, nodeIndex: 0, offset: 5 }],
+      activeMatchIndex: 0,
+    }));
+    flushView();
+
+    // 首帧落底配置不变（initialTopMostItemIndex 仍指向底部）
+    expect(mocks.virtuosoProps.initialTopMostItemIndex).toEqual({
+      index: 'LAST',
+      align: 'end',
+      behavior: 'auto',
+    });
+    // 搜索跳转照常触发：命中轮居中、无动画、不顶置
+    expect(mocks.scrollToIndex).toHaveBeenCalledWith({
+      index: 1,
+      align: 'center',
+      behavior: 'auto',
+    });
+    expect(mocks.scrollToIndex).not.toHaveBeenCalledWith(
+      expect.objectContaining({ align: 'start' }),
+    );
+  });
+
   it('同一会话内新轮开始（非进入场景）仍把新轮顶置到视口上方', () => {
     const projection: TraceProjection = {
       sessionId: 'session-1',

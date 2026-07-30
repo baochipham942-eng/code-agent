@@ -255,8 +255,12 @@ export const ProjectListView: React.FC<ProjectListViewProps> = ({ onSelect }) =>
   return (
     <div>
       <div className="mb-2 flex justify-end">
-        <PrimaryButton size="sm" data-testid="project-space-create-open" onClick={openCreate}>
-          <Plus className="h-3.5 w-3.5" />
+        <PrimaryButton
+          size="sm"
+          leftIcon={<Plus className="h-3.5 w-3.5" />}
+          data-testid="project-space-create-open"
+          onClick={openCreate}
+        >
           {ps.createSpace}
         </PrimaryButton>
       </div>

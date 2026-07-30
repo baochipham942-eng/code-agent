@@ -93,6 +93,17 @@ export const projectSpaceZh = {
     membersLoadFailed: '成员列表加载失败',
     memberRoleOwner: '所有者',
     memberRoleMember: '成员',
+    // C1 云端成员卡只读区（任务 tab；与本地可操作 topic 列表严格区分）
+    cloudCardsTitle: '云端成员卡',
+    cloudCardsReadonlyBadge: '只读',
+    cloudCardsLoading: '正在加载云端卡…',
+    cloudCardsEmpty: '还没有其他成员共享的卡。',
+    cloudCardsLoadFailed: '云端卡加载失败',
+    cloudCardsRetry: '重试',
+    cloudCardsResync: '重新同步本机卡',
+    cloudCardsResyncing: '正在同步…',
+    cloudCardsResyncSuccess: '已重新同步本机卡元数据（成功 {synced}，失败 {failed}）',
+    cloudCardsResyncFailed: '重新同步失败',
   },
 };
 
@@ -186,5 +197,16 @@ export const projectSpaceEn = {
     membersLoadFailed: 'Failed to load members',
     memberRoleOwner: 'Owner',
     memberRoleMember: 'Member',
+    // C1 read-only cloud member cards section (tasks tab; strictly separate from local actionable topics)
+    cloudCardsTitle: 'Member cloud cards',
+    cloudCardsReadonlyBadge: 'Read-only',
+    cloudCardsLoading: 'Loading cloud cards…',
+    cloudCardsEmpty: 'No cards shared by other members yet.',
+    cloudCardsLoadFailed: 'Failed to load cloud cards',
+    cloudCardsRetry: 'Retry',
+    cloudCardsResync: 'Resync my cards',
+    cloudCardsResyncing: 'Syncing…',
+    cloudCardsResyncSuccess: 'Resynced local card metadata ({synced} synced, {failed} failed)',
+    cloudCardsResyncFailed: 'Resync failed',
   },
 };

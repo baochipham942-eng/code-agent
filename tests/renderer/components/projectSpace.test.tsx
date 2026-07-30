@@ -21,6 +21,8 @@ vi.mock('../../../src/renderer/services/projectClient', () => ({
   promoteToCloudSpace: vi.fn(),
   createInvite: vi.fn(),
   listMembers: vi.fn(),
+  listCloudCards: vi.fn(),
+  resyncCloudCards: vi.fn(),
 }));
 vi.mock('../../../src/renderer/services/tagClient', () => ({
   tagClient: { listByProject: vi.fn() },
@@ -183,6 +185,8 @@ function setupHappyPathMocks() {
     revokedAt: null,
   });
   vi.mocked(projectClient.listMembers).mockResolvedValue([]);
+  vi.mocked(projectClient.listCloudCards).mockResolvedValue([]);
+  vi.mocked(projectClient.resyncCloudCards).mockResolvedValue({ queued: 0, synced: 0, failed: 0 });
   vi.mocked(projectClient.selectCapability).mockResolvedValue({
     projectId: PROJECT_ID,
     kind: 'connector',
@@ -972,5 +976,27 @@ describe('云标', () => {
     await enterSpaceView();
     await screen.findByTestId('project-space-header-status');
     expect(screen.queryByTestId('project-space-header-cloud-badge')).toBeNull();
+  });
+});
+
+// ---- P1-C1：任务 tab 云端成员卡只读区（组件行为详见 cloudCollabCardsSection.test） ----
+describe('任务 tab 云端成员卡只读区（挂载条件）', () => {
+  it('云协同空间：切任务 tab 渲染只读区（在本地 topic 面板之上）', async () => {
+    setupCloudSpace();
+    await enterSpaceView();
+    fireEvent.click(screen.getByTestId('project-space-tab-tasks'));
+    const section = await screen.findByTestId('cloud-collab-cards-section');
+    expect(within(section).getByTestId('cloud-collab-readonly-badge').textContent).toBe(ps.cloudCardsReadonlyBadge);
+    // 本地 topic 面板仍在同 tab（上下分区共存）
+    expect(screen.getByTestId('mock-collaboration-panel')).toBeTruthy();
+    await waitFor(() => expect(projectClient.listCloudCards).toHaveBeenCalledWith(PROJECT_ID));
+  });
+
+  it('纯本地空间（cloudProjectId 为空）：只读区不渲染，listCloudCards 不调用', async () => {
+    await enterSpaceView();
+    fireEvent.click(screen.getByTestId('project-space-tab-tasks'));
+    await screen.findByTestId('mock-collaboration-panel');
+    expect(screen.queryByTestId('cloud-collab-cards-section')).toBeNull();
+    expect(projectClient.listCloudCards).not.toHaveBeenCalled();
   });
 });

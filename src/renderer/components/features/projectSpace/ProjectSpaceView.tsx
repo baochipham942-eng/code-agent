@@ -3,7 +3,8 @@
 // 页头：FullScreenPageHeader variant="bar" 紧凑条（面包屑回列表 + 名称 + 状态 chip）——
 // 列表/空间两档都用 bar：overlay 的 pt-7 红绿灯让位之外不再叠 page 形态的 pt-5+返回行，
 // 顶部留白与能力中心页（inline，pt-4）同一紧凑水平；共享组件不动，其他全屏页不陪葬。
-// tab：动态(默认)/任务/资产，本地 useState。任务 tab 直接内嵌 ProjectCollaborationPanel。
+// tab：动态(默认)/任务/资产，本地 useState。任务 tab = 云端成员卡只读区（仅云空间渲染，
+// C1）+ 内嵌 ProjectCollaborationPanel（本地 topic，可操作），两者上下分区、语义不混。
 // ============================================================================
 
 import React, { useCallback, useEffect, useState } from 'react';
@@ -11,6 +12,7 @@ import { FolderKanban, UserPlus } from 'lucide-react';
 import type { ProjectDetail } from '@shared/contract/project';
 import { FullScreenPageHeader } from '../shared/FullScreenPage';
 import { ProjectCollaborationPanel } from '../projectCollaboration/ProjectCollaborationPanel';
+import { CloudCollabCardsSection } from './CloudCollabCardsSection';
 import { getProjectDetail, listProjectsWithActivity, promoteToCloudSpace } from '../../../services/projectClient';
 import { deriveProjectActivityStatus, type ProjectActivityStatus } from './projectSpaceData';
 import { useSessionStore } from '../../../stores/sessionStore';
@@ -194,7 +196,16 @@ export const ProjectSpaceView: React.FC<ProjectSpaceViewProps> = ({ projectId, o
                 onOpenArtifact={openArtifact}
               />
             )}
-            {tab === 'tasks' && <ProjectCollaborationPanel projectId={projectId} embedded />}
+            {tab === 'tasks' && (
+              // 云端只读卡区（上，仅云空间）+ 本地可操作 topic 列表（下）：视觉与语义分段，
+              // 云卡绝不混入本地卡的取消/归档动作语境
+              <div className="flex h-full min-h-0 flex-col gap-3">
+                {project?.cloudProjectId ? <CloudCollabCardsSection projectId={projectId} /> : null}
+                <div className="min-h-0 flex-1">
+                  <ProjectCollaborationPanel projectId={projectId} embedded />
+                </div>
+              </div>
+            )}
             {tab === 'assets' && (
               <ProjectArtifactsList
                 projectId={projectId}

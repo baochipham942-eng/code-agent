@@ -8,7 +8,9 @@
 
 import { IPC_DOMAINS } from '@shared/ipc';
 import type {
+  CloudCollabCard,
   CloudSpacePromotion,
+  CollabCardSyncReport,
   CreateSpaceInput,
   CreateProjectInput,
   Project,
@@ -74,6 +76,16 @@ export async function createInvite(
 /** 读取云协同空间成员卡（仅 cloudProjectId 非空的空间可用） */
 export async function listMembers(projectId: string): Promise<ProjectMember[]> {
   return ipcService.invokeDomain<ProjectMember[]>(IPC_DOMAINS.PROJECT, 'listMembers', { projectId });
+}
+
+/** 读取其他成员共享的云端只读卡元数据（仅云空间可用；host 已剔除本机卡，readonly 恒 true） */
+export async function listCloudCards(projectId: string): Promise<CloudCollabCard[]> {
+  return ipcService.invokeDomain<CloudCollabCard[]>(IPC_DOMAINS.PROJECT, 'listCloudCards', { projectId });
+}
+
+/** 重新推送本机卡元数据到云端；失败 error.message 已是人话，直接展示 */
+export async function resyncCloudCards(projectId: string): Promise<CollabCardSyncReport> {
+  return ipcService.invokeDomain<CollabCardSyncReport>(IPC_DOMAINS.PROJECT, 'resyncCloudCards', { projectId });
 }
 
 /** 项目级能力选用清单（connector 等 kind 维度；skill 走 SKILL IPC 覆盖模型） */

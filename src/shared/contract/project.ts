@@ -61,6 +61,30 @@ export interface CloudSpacePromotion {
   name: string;
 }
 
+/**
+ * 其他成员共享到云端的只读卡元数据（project 域 listCloudCards 返回行；
+ * 形状与 host CloudCollabCard 一致，字段全集 = collabCloudContract 白名单 + 归属 id）。
+ * readonly 恒为 true：云卡只读展示，本地不可编辑。
+ */
+export interface CloudCollabCard {
+  localCardId: string;
+  sourceUserId: string;
+  title: string;
+  status: string;
+  priority: string;
+  dueAt: number | null;
+  updatedAt: number;
+  requesterUserId: string;
+  readonly: true;
+}
+
+/** 重新推送本机卡元数据到云端的结果（project 域 resyncCloudCards 返回；形状与 host CollabCardSyncReport 一致） */
+export interface CollabCardSyncReport {
+  queued: number;
+  synced: number;
+  failed: number;
+}
+
 export type ProjectSourceRole = 'primary' | 'additional';
 export type ProjectSourceAccess = 'read_only' | 'read_write';
 export type ProjectSourceTrustState = 'trusted' | 'blocked';

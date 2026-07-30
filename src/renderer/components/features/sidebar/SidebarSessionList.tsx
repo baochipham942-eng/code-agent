@@ -5,9 +5,13 @@
 // ============================================================================
 
 import React from 'react';
-import { Loader2, MessageSquare, Search } from 'lucide-react';
+import { Cloud, Loader2, MessageSquare, Search } from 'lucide-react';
 import { useI18n } from '../../../hooks/useI18n';
 import type { SessionStatusFilter } from '../../../stores/sessionUIStore';
+import {
+  buildSidebarSessionTierSections,
+  type SidebarSessionTier,
+} from '../../../utils/sidebarSessionTiers';
 import { SidebarProjectGroup, type SidebarProjectGroupProps } from './SidebarProjectGroup';
 import type { SidebarDerivedSessions } from './useSidebarDerivedSessions';
 
@@ -20,6 +24,12 @@ export interface SidebarSessionListProps extends Omit<SidebarProjectGroupProps, 
   searchQuery: string;
   sessionStatusFilter: SessionStatusFilter;
   activeStatusFilterLabel: string;
+  /**
+   * 云标留接口不点亮（批P 第三波刻意为之）：渲染逻辑已写好（协作空间节头点亮云图标），
+   * 但本分支 contract 没有 cloudProjectId（在另一条分支上），调用方恒传 undefined；
+   * 合流后把「该空间是否已绑云身份」接进这个 prop 即一行点亮。
+   */
+  cloudBadge?: boolean;
 }
 
 export const SidebarSessionList: React.FC<SidebarSessionListProps> = ({
@@ -55,9 +65,19 @@ export const SidebarSessionList: React.FC<SidebarSessionListProps> = ({
   openWorkspacePreview,
   buildProjectDrawerSessions,
   sessionItemProps,
+  cloudBadge,
 }) => {
   const { t } = useI18n();
   const sb = t.sidebar;
+  const p = t.sidebarProject;
+  // 三分区归位（ADR-053）：判据与排序规则全部在 sidebarSessionTiers，
+  // 组内/组间排序不动，空分区整节不出现在返回里（含节头）。
+  const tierSections = buildSidebarSessionTierSections(groups, projectMetaById);
+  const tierLabels: Record<SidebarSessionTier, string> = {
+    space: p.tierSpace,
+    project: p.tierProject,
+    quick: p.tierQuick,
+  };
   return (
     /* Session List - Project Grouped
        scrollbar-hidden 不是审美选择，是右轨对齐的根因修复（2026-07-27 实测）：
@@ -96,37 +116,51 @@ export const SidebarSessionList: React.FC<SidebarSessionListProps> = ({
           </p>
         </div>
       ) : (
-        /* Workspace/project grouped view, including search and status-filtered results. */
+        /* Workspace/project grouped view, including search and status-filtered results.
+           三分区渲染：节头排版对齐能力区行制度（text-sm 标题 + text-[11px] 计数，不发明新字号）。 */
         <div className="py-2">
-          {groups.map((group) => (
-            <SidebarProjectGroup
-              key={group.key}
-              group={group}
-              projectMetaById={projectMetaById}
-              setProjectMetaById={setProjectMetaById}
-              hasSearchFilters={hasSearchFilters}
-              expandedWorkspaces={expandedWorkspaces}
-              collapsingWorkspaces={collapsingWorkspaces}
-              expandedProjectDetails={expandedProjectDetails}
-              projectDrawerKey={projectDrawerKey}
-              isCreatingSession={isCreatingSession}
-              creatingWorkspaceKey={creatingWorkspaceKey}
-              setProjectDrawerKey={setProjectDrawerKey}
-              setExpandedProjectDetails={setExpandedProjectDetails}
-              handleToggleWorkspaceGroup={handleToggleWorkspaceGroup}
-              handleOpenWorkspaceAssets={handleOpenWorkspaceAssets}
-              handleNewWorkspaceChat={handleNewWorkspaceChat}
-              handleOpenProjectArtifactSession={handleOpenProjectArtifactSession}
-              handleStartProjectGoal={handleStartProjectGoal}
-              handleSelectSession={handleSelectSession}
-              handleRenameSidebarProject={handleRenameSidebarProject}
-              handleSetSidebarProjectStatus={handleSetSidebarProjectStatus}
-              handleSetSidebarProjectDescription={handleSetSidebarProjectDescription}
-              createWorkspaceChat={createWorkspaceChat}
-              openWorkspacePreview={openWorkspacePreview}
-              buildProjectDrawerSessions={buildProjectDrawerSessions}
-              sessionItemProps={sessionItemProps}
-            />
+          {tierSections.map((section) => (
+            <section key={section.tier} aria-label={tierLabels[section.tier]} data-testid={`sidebar-tier-${section.tier}`}>
+              <div className="flex items-center gap-2.5 px-1.5 pb-1 pt-2">
+                <span className="min-w-0 flex-1 truncate text-sm text-zinc-500">{tierLabels[section.tier]}</span>
+                {section.tier === 'space' && cloudBadge && (
+                  <span className="flex-shrink-0" title={p.tierCloudBadgeTitle} data-testid="sidebar-tier-cloud-badge">
+                    <Cloud className="h-3.5 w-3.5 text-sky-400" aria-label={p.tierCloudBadgeTitle} />
+                  </span>
+                )}
+                <span className="flex-shrink-0 text-[11px] text-zinc-600 tabular-nums">{section.sessionCount}</span>
+              </div>
+              {section.groups.map((group) => (
+                <SidebarProjectGroup
+                  key={group.key}
+                  group={group}
+                  projectMetaById={projectMetaById}
+                  setProjectMetaById={setProjectMetaById}
+                  hasSearchFilters={hasSearchFilters}
+                  expandedWorkspaces={expandedWorkspaces}
+                  collapsingWorkspaces={collapsingWorkspaces}
+                  expandedProjectDetails={expandedProjectDetails}
+                  projectDrawerKey={projectDrawerKey}
+                  isCreatingSession={isCreatingSession}
+                  creatingWorkspaceKey={creatingWorkspaceKey}
+                  setProjectDrawerKey={setProjectDrawerKey}
+                  setExpandedProjectDetails={setExpandedProjectDetails}
+                  handleToggleWorkspaceGroup={handleToggleWorkspaceGroup}
+                  handleOpenWorkspaceAssets={handleOpenWorkspaceAssets}
+                  handleNewWorkspaceChat={handleNewWorkspaceChat}
+                  handleOpenProjectArtifactSession={handleOpenProjectArtifactSession}
+                  handleStartProjectGoal={handleStartProjectGoal}
+                  handleSelectSession={handleSelectSession}
+                  handleRenameSidebarProject={handleRenameSidebarProject}
+                  handleSetSidebarProjectStatus={handleSetSidebarProjectStatus}
+                  handleSetSidebarProjectDescription={handleSetSidebarProjectDescription}
+                  createWorkspaceChat={createWorkspaceChat}
+                  openWorkspacePreview={openWorkspacePreview}
+                  buildProjectDrawerSessions={buildProjectDrawerSessions}
+                  sessionItemProps={sessionItemProps}
+                />
+              ))}
+            </section>
           ))}
         </div>
       )}

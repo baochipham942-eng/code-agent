@@ -35,6 +35,8 @@ export interface SidebarProjectMeta {
   name?: string;
   status?: ProjectStatus;
   description?: string;
+  /** 项目升级为协作空间的时间（ADR-053 三分区判据）；null/缺省 = 独立空间。 */
+  spacePromotedAt?: number | null;
   goalCount?: number;
   activeGoalTitles?: string[];
   goals?: SidebarProjectGoalMeta[];

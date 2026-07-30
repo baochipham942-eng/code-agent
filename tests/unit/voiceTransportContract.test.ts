@@ -487,6 +487,39 @@ describe('VoiceTransport 契约（relay / direct 双跑）', () => {
     expect(events.at(-1)).toEqual({ type: 'state', state: 'closed' });
   });
 
+  it('300 秒无响应归为空闲结束，其他上游 error 仍归服务故障', async () => {
+    const events: VoiceEvent[] = [];
+    const handle = await qwenOmniTransport.connect({
+      apiKey: 'test-key',
+      config: { neoSessionId: 's1' },
+      onEvent: (event) => events.push(event),
+      onAudio: vi.fn(),
+    });
+    const upstream = upstreams[upstreams.length - 1];
+
+    upstream.emit('message', JSON.stringify({
+      type: 'error',
+      error: {
+        code: 'response_idle_timeout',
+        message: 'Your session was closed because no response was generated for 300 seconds.',
+      },
+    }));
+    expect(events.at(-1)).toEqual({ type: 'session.ended', reason: 'idle-timeout' });
+
+    upstream.emit('message', JSON.stringify({
+      type: 'error',
+      error: { code: 'COMMON_ERROR', message: 'upstream failed' },
+    }));
+    expect(events.at(-1)).toEqual({
+      type: 'error',
+      code: 'UPSTREAM_ERROR',
+      message: 'upstream error',
+      detail: 'upstream failed',
+    });
+
+    await handle.close();
+  });
+
   it('turn_detection 关闭时 response.done 不报 ttfaPerceivedMs', async () => {
     mockConfig.settings = { voice: { turnDetection: null, live: { interrupt: 'manual' } } };
     const events: VoiceEvent[] = [];

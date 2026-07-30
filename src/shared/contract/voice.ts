@@ -127,6 +127,8 @@ export const VOICE_LIVE_SETTINGS_UPDATED_EVENT = 'voice-live-settings-updated';
 /** 上游 → Host 归一化后的事件。Renderer 只认这一套，换 provider 不改前端。 */
 export type VoiceEvent =
   | { type: 'state'; state: 'connecting' | 'live' | 'closed' }
+  /** 通话自然结束；与需要用户处理的 error 分流。 */
+  | { type: 'session.ended'; reason: 'idle-timeout' }
   /** 用户说的话（上游 ASR），final 时 done=true */
   | { type: 'user.transcript'; text: string; done: boolean }
   /** 助手说的话的字幕 */

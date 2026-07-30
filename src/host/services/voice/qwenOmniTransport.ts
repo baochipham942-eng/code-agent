@@ -25,6 +25,7 @@ import { createLogger } from '../infra/logger';
 
 const logger = createLogger('QwenOmniVoice');
 const INJECTION_ACK_WINDOW_MS = 5_000;
+const RESPONSE_IDLE_TIMEOUT_CODE = 'response_idle_timeout';
 
 interface UpstreamEvent {
   type: string;
@@ -411,6 +412,17 @@ export const qwenOmniTransport: VoiceTransport = {
           });
           break;
         case 'error':
+          if (event.error?.code === RESPONSE_IDLE_TIMEOUT_CODE) {
+            clearResponseWatchdog();
+            responseActive = false;
+            pendingInjectionAt = null;
+            logger.info('upstream session ended after idle timeout', {
+              code: event.error.code,
+              message: event.error.message,
+            });
+            onEvent({ type: 'session.ended', reason: 'idle-timeout' });
+            break;
+          }
           // message 必须一起记：上游的 code 常常是 COMMON_ERROR 这种无信息量的占位，
           // 真正说明原因的只有 message。2026-07-26 真机踩到——现场只剩一个 COMMON_ERROR，
           // 解释在哪查不到（那句话当时只发给了渲染侧）。

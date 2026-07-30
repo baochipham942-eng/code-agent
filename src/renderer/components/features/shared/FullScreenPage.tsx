@@ -114,7 +114,7 @@ export const FullScreenPageHeader: React.FC<FullScreenPageHeaderProps> = ({
 
   if (variant === 'bar') {
     return (
-      <header data-tauri-drag-region className="flex h-12 shrink-0 items-center justify-between border-b border-border-muted bg-zinc-900 px-4">
+      <header data-tauri-drag-region="deep" className="flex h-12 shrink-0 items-center justify-between border-b border-border-muted bg-zinc-900 px-4">
         <div className="flex min-w-0 items-center gap-3">
           {backButton}
           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-zinc-700/70 bg-zinc-800">
@@ -138,8 +138,11 @@ export const FullScreenPageHeader: React.FC<FullScreenPageHeaderProps> = ({
   // 内容左边线对齐），视觉从属于标题；大标题独占视觉一等位、actions 与标题同行
   // 右对齐，描述压在标题下方。
   // 二级页在位时右侧顶栏不渲染，本标题块就是窗口顶部——原生标题栏撤掉后它得能拖窗口。
+  // 用 ="deep"：Tauri 的 drag.js 对裸值只认「直接点在该元素上」，内层内容行会把有效区
+  // 挤成一条边（2026-07-30 产品负责人：二级页双击标题栏不能缩放）；deep 让整个子树可拖，
+  // 按钮/链接等可点元素仍由 Tauri 自动豁免。
   return (
-    <header data-tauri-drag-region className="shrink-0 px-6 pb-4 pt-5" style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}>
+    <header data-tauri-drag-region="deep" className="shrink-0 px-6 pb-4 pt-5" style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}>
       <div className="flex items-start justify-between gap-4" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
         <div className="flex min-w-0 items-center gap-3">
           {backButton ? <div className="-ml-2 shrink-0">{backButton}</div> : null}

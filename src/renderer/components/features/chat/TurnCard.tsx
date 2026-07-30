@@ -53,6 +53,7 @@ import { useI18n } from '../../../hooks/useI18n';
 import type { Translations } from '../../../i18n';
 import { useMessageActionStore } from '../../../stores/messageActionStore';
 import { useSessionStore } from '../../../stores/sessionStore';
+import { useVoiceCallStore } from '../../../stores/voiceCallStore';
 
 interface TurnCardProps {
   turn: TraceTurn;
@@ -99,6 +100,9 @@ export const TurnCard: React.FC<TurnCardProps> = ({
   const createForkFromReply = useMessageActionStore((state) => state.createForkFromReply);
   const sessionIsRunning = useSessionStore((state) => (
     sessionId ? Boolean(state.runningSessionIds?.has(sessionId)) : false
+  ));
+  const voiceCallInFlight = useVoiceCallStore((state) => (
+    state.phase === 'live' || state.phase === 'connecting'
   ));
   const [isForking, setIsForking] = useState(false);
   const stats = useMemo(() => {
@@ -244,19 +248,23 @@ export const TurnCard: React.FC<TurnCardProps> = ({
     return { messageId, content };
   }, [isStreaming, turn.nodes]);
   const forkAnchor = useMemo(() => {
-    if (turn.status !== 'completed' || isStreaming) return null;
-    const node = [...turn.nodes]
-      .reverse()
-      .find((item) => (
-        item.type === 'assistant_text'
-        && typeof item.content === 'string'
-        && item.content.trim().length > 0
-      ));
+    if (isStreaming) return null;
+    // X5.5-D3：fork 锚点与 feedback 锚点用同一份 eligible 判定（投影层
+    // markFeedbackEligibleNodes，feedbackEligible 只在轮 completed 时落）。
+    // 此前 fork 自己找「最后一条有正文的 assistant_text」——轮被切成 completed
+    // 且轮尾恰挂 tool_call 时 feedback 锚隐、fork 锚显，动作条只剩一个 fork 图标。
+    const node = turn.nodes.find((item) => item.feedbackEligible === true);
     if (!node) return null;
     const messageId = node.messageId
       || (node.id.endsWith('-text') ? node.id.slice(0, -5) : node.id);
     return { messageId };
-  }, [isStreaming, turn.nodes, turn.status]);
+  }, [isStreaming, turn.nodes]);
+
+  // X5.5-D2 顺手收：startTask 是 fire-and-forget，running 态到达前派活轮短暂呈现
+  // 「completed + 有正文」，动作条会先闪一下。通话还在进行时、既无结局印章也无失败
+  // 证据的任务轮不渲染动作条；挂断后（phase 回 idle）或印章落下后恢复。
+  const suppressReplyActions =
+    isVoiceTurn && voiceCallInFlight && !turn.voiceWorkOutcome && voiceStatus !== 'failed';
 
   const handleFork = async () => {
     if (!forkAnchor || isForking || isSessionProcessing || sessionIsRunning) return;
@@ -298,6 +306,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
             node={foldedView.userNode}
             sessionId={sessionId}
             attachments={foldedView.userNode.attachments}
+            inVoiceDispatchCard={isVoiceTurn}
             onRewindUserPrompt={onRewindUserPrompt}
             rewindDisabled={Boolean(isSessionProcessing)}
           />
@@ -415,6 +424,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
                   sessionId={sessionId}
                   attachments={node.attachments}
                   isStreaming={isNodeStreaming}
+                  inVoiceDispatchCard={isVoiceTurn}
                   onStreamingDisplayUpdate={shouldReportDisplayUpdate ? onStreamingDisplayUpdate : undefined}
                   onRewindUserPrompt={onRewindUserPrompt}
                   rewindDisabled={Boolean(isSessionProcessing)}
@@ -454,6 +464,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
             node={foldedView.finalTextNode}
             sessionId={sessionId}
             attachments={foldedView.finalTextNode.attachments}
+            inVoiceDispatchCard={isVoiceTurn}
             onStreamingDisplayUpdate={onStreamingDisplayUpdate}
           />
         )}
@@ -476,7 +487,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
             它产出的文件卡之间，看起来像在给上面那一句话打分。
             操作行（复制/好评/差评/分叉）只在最后一轮常驻；历史轮 hover 进入该轮才显示，
             避免多轮会话里每轮都拖一条操作行造成的割裂感（2026-07-29 产品反馈）。 */}
-        {(forkAnchor || feedbackAnchor) && (
+        {(forkAnchor || feedbackAnchor) && !suppressReplyActions && (
           <div
             className={`flex items-center gap-2 ${isLastTurn ? '' : 'opacity-0 transition-opacity duration-150 group-hover/turncard:opacity-100'}`}
             data-testid="turn-reply-actions"

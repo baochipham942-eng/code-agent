@@ -239,6 +239,15 @@ body.theme-switching * {
   border-radius: var(--radius-md);
 }
 
+/* 下拉框收口（2026-07-30 产品拍板）：浏览器启发式让 select 鼠标聚焦也命中
+   :focus-visible（select 接受键盘输入），上面这条 2px 光圈于是鼠标一点就亮。
+   select 单独把光圈收成细描边——鼠标交互不再有外圈光圈，键盘 Tab 聚焦仍有
+   细焦点态保底（配合各 select 自身的 focus:border 变色）。 */
+select:focus-visible {
+  outline: 1px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
 .chat-composer-textarea:focus,
 .chat-composer-textarea:focus-visible {
   outline: none !important;

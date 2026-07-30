@@ -80,11 +80,12 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
       'pr-10',
     ];
 
-    // Border and focus styles
+    // Border and focus styles —— 不加 focus:ring 光圈（2026-07-30 产品拍板：下拉框
+    // 鼠标交互不出现外圈光圈）；键盘焦点态由 global.css 的 select:focus-visible 细描边保底。
     if (hasError) {
-      baseClasses.push('border-red-500', 'focus:border-red-400', 'focus:ring-2', 'focus:ring-red-500/50');
+      baseClasses.push('border-red-500', 'focus:border-red-400');
     } else {
-      baseClasses.push('border-zinc-700', 'focus:border-zinc-600', 'focus:ring-2', 'focus:ring-blue-500/50', 'focus:border-blue-500');
+      baseClasses.push('border-zinc-700', 'focus:border-zinc-600', 'focus:border-blue-500');
     }
 
     // Disabled styles

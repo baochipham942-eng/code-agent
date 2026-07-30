@@ -120,12 +120,12 @@ export const VoiceModelSettings: React.FC = () => {
           配没配都展示（形态不同），缺 key 引导态只是入口侧的补救通道 */}
       <VoiceApiKeyConfig />
 
-      {/* 通话模型 / Provider：白名单可配。不支持 tools 的模型选中时当场说清代价 */}
+      {/* 通话模型：白名单可配。不支持 tools 的模型选中时当场说清代价 */}
       <div>
         <div className="flex items-center justify-between gap-4">
           <div>
             <h3 className="mb-1 text-sm font-medium text-zinc-200">{text.providerTitle}</h3>
-            <p className="text-xs text-zinc-500">Qwen-Omni</p>
+            <p className="text-xs text-zinc-500">{text.providerNote}</p>
           </div>
           <span
             data-testid="voice-provider-status"

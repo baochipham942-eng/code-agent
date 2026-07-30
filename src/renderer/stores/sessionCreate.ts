@@ -197,7 +197,10 @@ export async function executeCreateSession(
       useAppStore.getState().syncActiveAgentForSession(session.id, { inheritCurrent: !previousSessionId });
       useAppStore.getState().syncWorkbenchForSession(session.id);
       set({
-        sessions: [newSessionWithMeta, ...get().sessions],
+        // 去重前插：host 在 create 返回前就广播 SESSION_LIST_UPDATED，静默 loadSessions
+        // 可能已把同 id 会话放进列表（中间还有 switchModel 等 await 让出事件循环），
+        // 无条件前插会让侧栏同 id 渲染两行。过滤后前插只是把已有条目挪到顶部。
+        sessions: [newSessionWithMeta, ...get().sessions.filter((s) => s.id !== session.id)],
         currentSessionId: session.id,
         messages: [],
         todos: [],

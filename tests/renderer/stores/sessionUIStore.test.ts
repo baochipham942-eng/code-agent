@@ -259,9 +259,9 @@ describe('sessionUIStore - input history', () => {
     });
   });
 
-  describe('tier section collapse / solo', () => {
+  describe('tier section collapse', () => {
     beforeEach(() => {
-      useSessionUIStore.setState({ collapsedTiers: {}, soloTier: null });
+      useSessionUIStore.setState({ collapsedTiers: {} });
     });
 
     it('collapsedTiers defaults to empty when localStorage is unavailable', () => {
@@ -292,16 +292,6 @@ describe('sessionUIStore - input history', () => {
       } finally {
         vi.unstubAllGlobals();
       }
-    });
-
-    it('soloTier defaults to null and setSoloTier updates/clears it', () => {
-      expect(useSessionUIStore.getState().soloTier).toBeNull();
-
-      useSessionUIStore.getState().setSoloTier('space');
-      expect(useSessionUIStore.getState().soloTier).toBe('space');
-
-      useSessionUIStore.getState().setSoloTier(null);
-      expect(useSessionUIStore.getState().soloTier).toBeNull();
     });
   });
 

@@ -33,7 +33,7 @@ import { zh } from '../../../src/renderer/i18n/zh';
 const skillsText = zh.settings.skills.main;
 const TRUST_ERROR_MESSAGE = '该目录未被信任，无法为其配置技能：/ws。先在该目录打开会话并信任此项目。';
 
-const pdfSkill: InstalledSkill = {
+const pdfSkill = {
   name: 'pdf',
   description: 'pdf desc',
   promptContent: '',
@@ -46,6 +46,10 @@ const pdfSkill: InstalledSkill = {
   globalEnabled: true,
   projectOverride: null,
   enabled: true,
+} satisfies InstalledSkill & {
+  globalEnabled: boolean;
+  projectOverride: boolean | null;
+  enabled: boolean;
 };
 
 // 零危险项 + identityChanged：技能门恰在这种「信任失效」场景也拦，弹窗必须渲染完整评估
@@ -77,9 +81,7 @@ async function renderInstalledTab() {
 
 describe('SkillsSettings 目录信任门原地修复', () => {
   beforeEach(() => {
-    vi.mocked(invokeSkillIPC).mockImplementation(async (channel) =>
-      channel === SKILL_CHANNELS.SKILL_LIST ? [pdfSkill] : undefined,
-    );
+    vi.mocked(invokeSkillIPC).mockResolvedValue([pdfSkill]);
     vi.mocked(invokeSkillIPCOrThrow).mockResolvedValue(undefined);
     mockInvokeDomain();
   });
@@ -151,10 +153,16 @@ describe('SkillsSettings 目录信任门原地修复', () => {
   });
 
   it('follow（CLEAR）撞信任门同样出按钮，授权后重发 CLEAR', async () => {
-    const overriddenSkill: InstalledSkill = { ...pdfSkill, projectOverride: true, enabled: true };
-    vi.mocked(invokeSkillIPC).mockImplementation(async (channel) =>
-      channel === SKILL_CHANNELS.SKILL_LIST ? [overriddenSkill] : undefined,
-    );
+    const overriddenSkill = {
+      ...pdfSkill,
+      projectOverride: true,
+      enabled: true,
+    } satisfies InstalledSkill & {
+      globalEnabled: boolean;
+      projectOverride: boolean | null;
+      enabled: boolean;
+    };
+    vi.mocked(invokeSkillIPC).mockResolvedValue([overriddenSkill]);
     vi.mocked(invokeSkillIPCOrThrow)
       .mockRejectedValueOnce(new Error(TRUST_ERROR_MESSAGE))
       .mockResolvedValue(undefined);

@@ -461,50 +461,10 @@ async function startRun(state: LedgerState, title: string, prompt: string): Prom
   return workItemId;
 }
 
-/**
- * 挂断 tail flush（P0-3，产品负责人 2026-07-28 拍板「自动补派」）。
- *
- * 真机 dogfood 的失败形态是「说了一通，一件活都没派出去」——通话 brain 在碎句里
- * 一路追问澄清，直到用户挂断。挂断是这条链上最后一次机会：把这通电话的字幕交给
- * 执行侧的文本模型，让它自己判断有没有没做的事。
- *
- * 三条闸同时满足才补派，宁可漏补不可乱补：
- * 1. **本通电话一件活都没派过**——派过就说明链路是通的，没派的那部分多半是用户主动放弃的；
- * 2. 近窗里**有用户说过话**——空通话什么都不做；
- * 3. 会话**当前空闲**——有活在跑时插一件新的会撞 TaskManager 的并发闸。
- *
- * 判「有没有要做的事」交给执行侧模型，不自己写分类器：它已经拿到近窗原文
- * （buildRunOptions 的 transcript 块），而「没有待办就什么都不做」是它能理解的指令。
- *
- * 已知代价：人已经挂断走开，这条 run 若撞上 D4 抬严的权限卡就会停在那儿等确认。
- * 这是「宁可停下也不越权」的正确行为，但用户下次回来才看得到。
- */
-export async function flushVoiceTail(): Promise<boolean> {
-  const state = ledger;
-  if (!state) return false;
-  if (state.items.size > 0) return false;
-  const lastUser = [...state.transcript].reverse().find((entry) => entry.role === 'user');
-  if (!lastUser) return false;
-
-  const tm = await taskManager();
-  // 忙档与 spawnTask 用同一份判据：startTask 在这四档会抛。
-  const status = tm.getSessionState(state.neoSessionId).status;
-  if (status === 'running' || status === 'queued' || status === 'paused' || status === 'cancelling') {
-    logger.info('tail flush skipped: session busy', { status });
-    return false;
-  }
-
-  const title = `通话结束补派：${lastUser.text.slice(0, 20)}`;
-  logger.info('tail flush dispatching', { neoSessionId: state.neoSessionId, entries: state.transcript.length });
-  await startRun(state, title, [
-    '这通语音通话刚刚结束，通话过程中一件任务都没有派出来。',
-    '看上面「通话近窗字幕原文」里用户说的话：',
-    '如果里面有明确的、还没被执行的动作请求（建文件、改东西、跑命令等），现在把它做掉。',
-    '如果只是闲聊、或者没有能确定下来的动作，就什么都不要做，直接结束并说明没有发现待办。',
-    '注意用户已经挂断电话，不在旁边——不要反问，按最合理的理解做或者不做。',
-  ].join('\n'));
-  return true;
-}
+// 「通话结束补派」（P0-3 tail flush）已整条删除（产品负责人 2026-07-30 拍板）：
+// 挂断 = 用户不要执行。零派活的通话原样结束，不再拿字幕尾巴替他派一件活
+// （那条链还会把一段内部指令 prompt 显示给用户看）。
+// 保留的是「已派出任务的挂断后通知」与近窗字幕注入普通派活——它们与本条无关。
 
 async function spawnTask(state: LedgerState, title: string, prompt: string): Promise<string> {
   const tm = await taskManager();

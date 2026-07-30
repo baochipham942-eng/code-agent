@@ -105,8 +105,8 @@ function setupHappyPathMocks() {
   vi.mocked(projectClient.unselectCapability).mockResolvedValue({ removed: true });
   vi.mocked(tagClient.listByProject).mockResolvedValue([]);
   vi.mocked(rolesClient.listRoles).mockResolvedValue([
-    { roleId: 'role-a', description: '', source: 'builtin', memoryCount: 0, lastWork: null },
-    { roleId: 'role-b', description: '', source: 'builtin', memoryCount: 0, lastWork: null },
+    { roleId: 'role-a', description: '分析数据', source: 'builtin', memoryCount: 0, lastWork: null, displayName: '数据分析师', icon: 'BarChart3' },
+    { roleId: 'role-b', description: '做研究调研', source: 'builtin', memoryCount: 0, lastWork: null, displayName: '研究员', icon: 'Microscope' },
   ] as never);
   vi.mocked(cronClient.listJobs).mockResolvedValue([]);
   vi.mocked(invokeSkillIPC).mockResolvedValue([]);
@@ -292,16 +292,52 @@ describe('ProjectSpacePage 空间视图', () => {
 });
 
 describe('ProjectConfigRail 项目配置', () => {
-  it('专家：移除已选调用 removeProjectRole，添加调用 addProjectRole', async () => {
+  it('专家：移除已选调用 removeProjectRole，添加调用 addProjectRole；chip 与弹窗项显示 displayName', async () => {
     await enterSpaceView();
+    // 已选 chip 用 displayName（不是裸 roleId）
+    const chip = await screen.findByTestId('project-space-card-experts-chip-role-a');
+    expect(chip.textContent).toContain('数据分析师');
     const remove = await screen.findByTestId('project-space-card-experts-remove-role-a');
     fireEvent.click(remove);
     await waitFor(() => expect(projectClient.removeProjectRole).toHaveBeenCalledWith(PROJECT_ID, 'role-a'));
 
     fireEvent.click(screen.getByTestId('project-space-card-experts-add'));
     const option = await screen.findByTestId('project-space-card-experts-option-role-b');
+    // 弹窗项两行：displayName + 描述
+    expect(option.textContent).toContain('研究员');
+    expect(option.textContent).toContain('做研究调研');
     fireEvent.click(option);
     await waitFor(() => expect(projectClient.addProjectRole).toHaveBeenCalledWith(PROJECT_ID, 'role-b'));
+  });
+
+  it('整卡可点打开添加弹窗；chip 删除不冒泡（不弹弹窗）', async () => {
+    await enterSpaceView();
+    await screen.findByTestId('project-space-card-experts-chip-role-a');
+    // 整卡点击 → 弹窗打开
+    fireEvent.click(screen.getByTestId('project-space-card-experts'));
+    await screen.findByTestId('project-space-card-experts-picker');
+    fireEvent.keyDown(document, { key: 'Escape' });
+    // chip 删除 × 不冒泡：移除被调用、弹窗不再打开
+    const removeCallCount = vi.mocked(projectClient.removeProjectRole).mock.calls.length;
+    fireEvent.click(screen.getByTestId('project-space-card-experts-remove-role-a'));
+    expect(vi.mocked(projectClient.removeProjectRole).mock.calls.length).toBe(removeCallCount + 1);
+    expect(screen.queryByTestId('project-space-card-experts-picker')).toBeNull();
+  });
+
+  it('弹窗搜索：名称与描述都过滤，无匹配给提示', async () => {
+    await enterSpaceView();
+    fireEvent.click(await screen.findByTestId('project-space-card-experts-add'));
+    await screen.findByTestId('project-space-card-experts-option-role-b');
+    // 按描述命中（「调研」只在描述里）
+    fireEvent.change(screen.getByTestId('project-space-card-experts-search'), { target: { value: '调研' } });
+    await screen.findByTestId('project-space-card-experts-option-role-b');
+    // 按名称命中
+    fireEvent.change(screen.getByTestId('project-space-card-experts-search'), { target: { value: '研究员' } });
+    await screen.findByTestId('project-space-card-experts-option-role-b');
+    // 无匹配
+    fireEvent.change(screen.getByTestId('project-space-card-experts-search'), { target: { value: '不存在的词' } });
+    await screen.findByTestId('project-space-card-experts-picker-no-match');
+    expect(screen.queryByTestId('project-space-card-experts-option-role-b')).toBeNull();
   });
 
   it('连接器：移除调用 unselectCapability，添加调用 selectCapability', async () => {
@@ -368,11 +404,18 @@ describe('ProjectConfigRail 项目配置', () => {
     expect(addButton.getAttribute('title')).toBe(ps.skillsNoWorkspaceHint);
   });
 
-  it('「去配置」深链：专家卡调 openCapabilityHub(experts)', async () => {
+  it('无工作目录的只读卡整卡不可点（降级提示而非消失）', async () => {
+    const noWorkspace = { ...projectFixture, workspacePath: null, workspaceKey: null };
+    vi.mocked(projectClient.listProjectsWithActivity).mockResolvedValue([noWorkspace] as never);
+    vi.mocked(projectClient.getProjectDetail).mockResolvedValue({
+      ...detailFixture,
+      project: { ...noWorkspace },
+    } as never);
     await enterSpaceView();
-    const configure = await screen.findByTestId('project-space-card-experts-configure');
-    fireEvent.click(configure);
-    expect(openCapabilityHubMock).toHaveBeenCalledWith('experts');
+    const card = await screen.findByTestId('project-space-card-skills');
+    fireEvent.click(card);
+    expect(screen.queryByTestId('project-space-card-skills-picker')).toBeNull();
+    expect(card.getAttribute('role')).toBeNull();
   });
 });
 

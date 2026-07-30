@@ -10,20 +10,9 @@ import { useCronStore } from '../../../stores/cronStore';
 import { useAppStore } from '../../../stores/appStore';
 import { useI18n } from '../../../hooks/useI18n';
 import { sessionAutomationClient } from '../../../services/sessionAutomationClient';
+import { formatNextRun } from '../../../utils/formatNextRun';
 import { Badge } from '../../primitives/Badge';
 import { SidebarDoctorAlert } from './SidebarDoctorAlert';
-
-/** 下次运行时间：今天只显 HH:mm，其他日期带月日 */
-function formatNextRun(ts: number, locale: string): string {
-  const date = new Date(ts);
-  const now = new Date();
-  const sameDay = date.getFullYear() === now.getFullYear()
-    && date.getMonth() === now.getMonth()
-    && date.getDate() === now.getDate();
-  const time = date.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' });
-  if (sameDay) return time;
-  return `${date.toLocaleDateString(locale, { month: 'numeric', day: 'numeric' })} ${time}`;
-}
 
 export const SidebarCapabilityZone: React.FC = () => {
   const { t, language } = useI18n();

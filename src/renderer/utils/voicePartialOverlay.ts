@@ -44,6 +44,28 @@ export function resolvePartialRelease(
   return patch;
 }
 
+/**
+ * 助手字幕该揭示到第几个字（批 X5.5-A4）。
+ *
+ * 判据是**音频播放进度**，不是 delta 到达进度：上游按生成速度吐转写、按生成速度下发音频，
+ * 但音频要按真实时间播——两者差约 5 倍，照 delta 到达上屏字幕就跑在语音前面 20 多秒。
+ * 已播比例用「已入队音频时长」作分母：文本和音频是同一次生成的产物，
+ * 播了几成音频就等于念了几成文本，比例天然自校正，不需要猜语速。
+ *
+ * 分母为 0（音频还没开始/拿不到）时揭示 0 —— 调用方负责 fail-open 与停滞兜底，
+ * 这里只做纯计算，不替调用方决定「等不到怎么办」。
+ *
+ * ponytail: 分母用「已入队」而不是「总时长」，因为总时长要等音频下发完才知道。
+ * 代价是下发阶段（实测约前 4.3 秒）字幕会略微领先真实语音，实测峰值 15/124 字
+ * （t=1s），到下发结束归零，之后完全贴合、零漂移。要抹掉这段领先只能引入
+ * 「标称语速」常量去估总时长，那正是拍板时否掉的调参债，所以留着这个上限。
+ */
+export function computeRevealedSubtitle(target: string, enqueuedSec: number, playedSec: number): string {
+  if (enqueuedSec <= 0) return '';
+  const ratio = Math.min(1, Math.max(0, playedSec / enqueuedSec));
+  return target.slice(0, Math.round(target.length * ratio));
+}
+
 export function applyVoicePartialsToProjection(
   projection: TraceProjection,
   input: VoicePartialOverlayInput,

@@ -32,6 +32,20 @@ function riskText(risk: string, labels: Record<string, string>): string {
   return labels[risk] ?? risk;
 }
 
+/**
+ * 只有「用户还没做决定」才需要问。`trusted` 和 `blocked` 都是已落库的决定
+ * （见 folderTrustService 的 FolderTrustDecisionState），只有 `untrusted`
+ * 表示无记录或目录身份变了需要重新确认。
+ *
+ * 2026-07-27 修：此前三处调用点都写成 `state !== 'trusted'`，把「已阻止」也当成
+ * 未决定，导致 ① 点「阻止项目配置」后弹窗永不消失；② 阻止过的目录每次启动都再问一遍。
+ */
+export function needsFolderTrustDecision(
+  evaluation: FolderTrustEvaluationView | null,
+): evaluation is FolderTrustEvaluationView {
+  return !!evaluation && evaluation.state === 'untrusted' && evaluation.dangerousItems.length > 0;
+}
+
 export const FolderTrustDialog: React.FC<FolderTrustDialogProps> = ({
   evaluation,
   isBusy = false,
@@ -40,7 +54,7 @@ export const FolderTrustDialog: React.FC<FolderTrustDialogProps> = ({
   onOpenSettings,
 }) => {
   const { t } = useI18n();
-  if (!evaluation || evaluation.state === 'trusted' || evaluation.dangerousItems.length === 0) {
+  if (!needsFolderTrustDecision(evaluation)) {
     return null;
   }
 

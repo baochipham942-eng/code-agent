@@ -41,7 +41,7 @@ import { ToastContainer } from './components/Toast';
 import { ProviderStatusNotice } from './components/ProviderStatusNotice';
 import { SessionExpiredNotice } from './components/SessionExpiredNotice';
 import { BudgetAlertNotice } from './components/BudgetAlertNotice';
-import { FolderTrustDialog, type FolderTrustEvaluationView } from './components/FolderTrustDialog';
+import { FolderTrustDialog, needsFolderTrustDecision, type FolderTrustEvaluationView } from './components/FolderTrustDialog';
 import { useTheme } from './hooks/useTheme';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { useTaskSync } from './hooks/useTaskSync';
@@ -56,6 +56,8 @@ import { useSurfaceExecutionPip } from './hooks/useSurfaceExecutionPip';
 import { useSurfaceExecutionEffects } from './hooks/agent/effects/useSurfaceExecutionEffects';
 import { useAgentHalo } from './hooks/useAgentHalo';
 import { useRendererBundleAutoReload } from './hooks/useRendererBundleAutoReload';
+import { useI18n } from './hooks/useI18n';
+import { toast } from './hooks/useToast';
 import { IPC_CHANNELS, IPC_DOMAINS, type NotificationClickedEvent, type NotificationShowEvent, type ToolCreateRequestEvent, type ConfirmActionRequest, type ContextHealthUpdateEvent } from '@shared/ipc';
 import { postOsNotification, registerNotificationClick } from './utils/osNotification';
 import type { AppSettings, ModelConfig, ModelProvider, UserQuestionRequest, MCPElicitationRequest, MCPOAuthConsentRequest, UpdateInfo, Message } from '@shared/contract';
@@ -140,6 +142,7 @@ function useWindowWidth(): number {
 }
 
 export const App: React.FC = () => {
+  const { t } = useI18n();
   useAppshots(); // 挂载 Appshots 事件监听（热键截图 → composer）
   useSurfaceExecutionPip(); // 当前会话 Browser / Computer 共享的可信实时 PiP
   useAgentHalo(); // CUA 原生驱动时的系统级光晕跟随（单指针共驾聚光灯）
@@ -482,11 +485,7 @@ export const App: React.FC = () => {
   const refreshFolderTrust = useCallback(async () => {
     try {
       const evaluation = await invokeDomain<FolderTrustEvaluationView>(IPC_DOMAINS.FOLDER_TRUST, 'get');
-      if (evaluation.state !== 'trusted' && evaluation.dangerousItems.length > 0) {
-        setFolderTrustEvaluation(evaluation);
-      } else {
-        setFolderTrustEvaluation(null);
-      }
+      setFolderTrustEvaluation(needsFolderTrustDecision(evaluation) ? evaluation : null);
     } catch (error) {
       logger.warn('Failed to evaluate folder trust', { error });
     }
@@ -504,17 +503,16 @@ export const App: React.FC = () => {
         'set',
         { state },
       );
-      if (evaluation.state === 'trusted') {
-        setFolderTrustEvaluation(null);
-      } else {
-        setFolderTrustEvaluation(evaluation);
-      }
+      // 决定已生效（trusted 或 blocked）就关窗；只有 host 回报仍是未决定态才继续问。
+      setFolderTrustEvaluation(needsFolderTrustDecision(evaluation) ? evaluation : null);
     } catch (error) {
+      // 只写日志的话按钮看起来「点了没反应」，用户无从知道决定没保存上。
       logger.warn('Failed to update folder trust', { error });
+      toast.error(t.folderTrust.saveFailed + (error instanceof Error ? `: ${error.message}` : ''));
     } finally {
       setFolderTrustBusy(false);
     }
-  }, []);
+  }, [t]);
 
   // 应用启动时检查更新（强制更新检查）
   useEffect(() => {

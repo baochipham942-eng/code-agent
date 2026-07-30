@@ -9,6 +9,11 @@
 // "不打扰连续使用中的会话"靠 lastViewed 自然实现：进入会话时先读上次进入的时间戳、
 // 再把它刷成现在。你人在会话里看着跑完的轮次，下次进来时已在时间戳之前，不会再追赶
 // 一遍；离开后跑完的轮次才会被算进来。
+//
+// 在场持续推进水位（X5.5-B4）：原来 lastViewed 只在挂载时写一次，人全程在场盯着
+// 跑完、视图一重挂载就拿「切入时刻」当基准误报追赶。现在可见且聚焦期间每 30s
+// 心跳推进一次，离开/失焦与回来/复焦的当下也各刷一次——屏幕上渲染过的变化不进
+// 追赶摘要；离开期间心跳停写，那段空窗的变化才会被算作「你不在的时候」。
 // ============================================================================
 
 import React, { useEffect, useState } from 'react';
@@ -24,6 +29,8 @@ interface SessionRecapView {
 }
 
 const STORAGE_PREFIX = 'neo:recap:lastViewed:';
+// 可见期心跳粒度：工单拍板 30s——误报窗口最多 30s 内已上屏的变化，可接受
+const PRESENCE_HEARTBEAT_MS = 30_000;
 
 function readLastViewed(sessionId: string): number {
   try {
@@ -52,22 +59,42 @@ export const SessionRecapBanner: React.FC<{ sessionId: string | null }> = ({ ses
     if (!sessionId) return;
 
     const since = readLastViewed(sessionId);
-    writeLastViewed(sessionId, Date.now());
+    const advance = () => writeLastViewed(sessionId, Date.now());
+    advance();
     // 第一次进这个会话没有"上次"可比，不追赶
-    if (!since) return;
+    const shouldFetchRecap = Boolean(since);
+
+    // 在场（可见且聚焦）持续推进已看水位：可见期 30s 心跳 + 切走/回来即时刷。
+    // 切走前一刻也算"看过"——屏幕上渲染过的变化不进下次追赶摘要；
+    // 离开期间心跳停写，空窗里的变化才进追赶。
+    const isPresent = () => document.visibilityState === 'visible' && document.hasFocus();
+    const heartbeat = window.setInterval(() => {
+      if (isPresent()) advance();
+    }, PRESENCE_HEARTBEAT_MS);
+    document.addEventListener('visibilitychange', advance);
+    window.addEventListener('focus', advance);
+    window.addEventListener('blur', advance);
 
     let cancelled = false;
-    void window.domainAPI
-      ?.invoke<SessionRecapView | null>(IPC_DOMAINS.SESSION, 'getRecap', { sessionId, since })
-      .then((response) => {
-        if (cancelled || !response?.success || !response.data) return;
-        setRecap(response.data);
-      })
-      .catch(() => {
-        // 追赶提示是锦上添花，拿不到就不显示
-      });
+    if (shouldFetchRecap) {
+      void window.domainAPI
+        ?.invoke<SessionRecapView | null>(IPC_DOMAINS.SESSION, 'getRecap', { sessionId, since })
+        .then((response) => {
+          if (cancelled || !response?.success || !response.data) return;
+          setRecap(response.data);
+        })
+        .catch(() => {
+          // 追赶提示是锦上添花，拿不到就不显示
+        });
+    }
 
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+      window.clearInterval(heartbeat);
+      document.removeEventListener('visibilitychange', advance);
+      window.removeEventListener('focus', advance);
+      window.removeEventListener('blur', advance);
+    };
   }, [sessionId]);
 
   if (!recap) return null;

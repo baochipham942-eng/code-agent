@@ -318,16 +318,20 @@ export const ProjectConfigRail: React.FC<ProjectConfigRailProps> = ({
 
   if (collapsed) {
     return (
-      <aside className="flex w-10 shrink-0 flex-col items-center border-l border-zinc-800/70 py-3" data-testid="project-space-config-rail-collapsed">
-        <IconButton
-          size="sm"
-          variant="ghost"
-          icon={<PanelRightOpen className="h-4 w-4" />}
-          aria-label={ps.expandRail}
-          title={ps.expandRail}
-          data-testid="project-space-config-rail-expand"
-          onClick={toggleCollapsed}
-        />
+      <aside className="flex w-10 shrink-0 flex-col items-center border-l border-zinc-800/70" data-testid="project-space-config-rail-collapsed">
+        {/* 两态同位（2026-07-27 房规）：展开钮与展开态 tab 条右端的收起钮同心——
+            槽高对齐 tab 条实测高 37px 并垂直居中，探针实测两态按钮 top 差 ≤1px */}
+        <div className="flex h-[37px] shrink-0 items-center">
+          <IconButton
+            size="sm"
+            variant="ghost"
+            icon={<PanelRightOpen className="h-4 w-4" />}
+            aria-label={ps.expandRail}
+            title={ps.expandRail}
+            data-testid="project-space-config-rail-expand"
+            onClick={toggleCollapsed}
+          />
+        </div>
       </aside>
     );
   }

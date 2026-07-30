@@ -115,18 +115,28 @@ private final class VoiceAecIO {
         let input = engine.inputNode
         let output = engine.outputNode
 
-        // 两端必须同时进入 VoiceProcessingIO：输入负责采集，输出提供 AEC 参考信号。
-        try input.setVoiceProcessingEnabled(true)
-        try output.setVoiceProcessingEnabled(true)
-
         engine.attach(player)
         engine.connect(player, to: engine.mainMixerNode, format: downstreamFormat)
+
+        // 两端必须同时进入 VoiceProcessingIO：输入负责采集，输出提供 AEC 参考信号。
+        // 顺序不能反：必须先把播放图搭好再开 voice processing——先开 VP 会让输出单元
+        // 在 24k 播放格式下 kAUInitialize 失败（-10875，本机可复现），图先行则正常。
+        try input.setVoiceProcessingEnabled(true)
+        try output.setVoiceProcessingEnabled(true)
 
         let inputFormat = input.outputFormat(forBus: 0)
         guard let converter = AVAudioConverter(from: inputFormat, to: upstreamFormat) else {
             throw VoiceAecError.audioFormatUnavailable
         }
+        // 开了 voice processing 后输入是 7 声道 discrete 布局（本机实测，7 路内容相同），
+        // AVAudioConverter 推不出降混矩阵，默认 channelMap = [-1]＝输出声道无来源 → 转换结果恒为静音。
+        // 必须显式取第 0 路；单声道输入时 [0] 同样正确。
+        converter.channelMap = [0]
         self.converter = converter
+        fputs(
+            "voice-aec-io: input \(inputFormat.channelCount)ch@\(Int(inputFormat.sampleRate))Hz channelMap=\(converter.channelMap)\n",
+            stderr
+        )
 
         input.installTap(onBus: 0, bufferSize: 1024, format: inputFormat) { [weak self] buffer, _ in
             self?.consumeInput(buffer)

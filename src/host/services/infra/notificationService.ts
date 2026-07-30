@@ -30,7 +30,7 @@ export interface TaskNotificationData {
 interface VoiceWorkSettledNotificationData {
   sessionId: string;
   taskTitle: string;
-  status: 'done' | 'failed';
+  status: 'done' | 'unverified' | 'failed';
   detail?: string;
 }
 
@@ -195,17 +195,24 @@ class NotificationService implements Disposable {
    */
   notifyVoiceWorkSettled(data: VoiceWorkSettledNotificationData): void {
     const succeeded = data.status === 'done';
-    const intent: NotificationIntent = succeeded ? 'task_complete' : 'task_failed';
+    // 待核验按「完成类」投递（它不是失败，别用红色语气吓人），但标题正文一个字都不许
+    // 说「完成了」——通知是第四条用户可见出口，与卡片/播报同口径（X5.5-A2-a）。
+    const intent: NotificationIntent = data.status === 'failed' ? 'task_failed' : 'task_complete';
     if (!this.isIntentAllowed(intent)) return;
     if (!this.shouldNotify(true)) {
       logger.debug('Skip voice work notification - notifications unavailable');
       return;
     }
 
-    const title = `${succeeded ? '语音任务完成' : '语音任务失败'} - ${data.taskTitle}`;
+    const headline = succeeded
+      ? '语音任务完成'
+      : data.status === 'unverified' ? '语音任务已结束 · 待核验' : '语音任务失败';
+    const title = `${headline} - ${data.taskTitle}`;
     const body = succeeded
       ? '这件语音派出的任务在通话结束后完成了。'
-      : `这件语音派出的任务在通话结束后失败了：${data.detail?.trim() || '未给出原因'}`;
+      : data.status === 'unverified'
+        ? '这件语音派出的任务在通话结束后跑完了，但没有留下产物，请你自己确认一下结果。'
+        : `这件语音派出的任务在通话结束后失败了：${data.detail?.trim() || '未给出原因'}`;
     const entry = this.record({
       type: intent,
       sessionId: data.sessionId,

@@ -30,7 +30,15 @@ export type VoiceWorkFailureMarker =
  * Active Work 条上它永远停在「排队中」，通话 brain 也拿不到「做完了」的依据。
  * 状态迁移由 TaskManager 的 task_started / task_completed / task_error / task_cancelled 驱动。
  */
-export type VoiceWorkItemStatus = 'queued' | 'running' | 'done' | 'failed' | 'cancelled';
+/**
+ * `unverified`（X5.5-A2）：run 正常跑完，但这一轮**没留下任何产物证据**
+ * （没改文件、没产出工件、没跑过通过的校验命令）。
+ *
+ * 「派活成功 ≠ 用户目标完成」——run 终态只证明循环退出了，不证明用户要的事做成了。
+ * 模型最后那句「已经建好了」不算证据，它正是要防的那样东西。所以 done 与 unverified
+ * 之间只有一条判据：ADR-050 意义上的机器产物证据（见 voiceWorkEvidence.ts）。
+ */
+export type VoiceWorkItemStatus = 'queued' | 'running' | 'done' | 'unverified' | 'failed' | 'cancelled';
 
 export interface VoiceWorkItem {
   id: string;
@@ -51,8 +59,12 @@ export interface VoiceWorkItem {
  */
 export interface VoiceWorkNarration {
   workItemId: string;
-  /** 只有终态；`cancelled` 是用户自己叫停的，他知道，不用回头念给他听。 */
-  status: 'done' | 'failed';
+  /**
+   * 只有终态；`cancelled` 是用户自己叫停的，他知道，不用回头念给他听。
+   * `unverified` 必须自成一档而不是并进 done——耳朵这一路和屏幕那一路要么一起说实话，
+   * 要么就是「卡片写着待核验、耳机里说已经做完了」。
+   */
+  status: 'done' | 'unverified' | 'failed';
   title: string;
   /**
    * 已裁剪成「能用嘴说出来」的结论文本：代码块/表格换成一句指路，

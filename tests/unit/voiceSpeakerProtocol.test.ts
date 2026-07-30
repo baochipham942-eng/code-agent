@@ -62,6 +62,18 @@ vi.mock('../../src/host/services/core/configService', () => ({
   getConfigService: () => ({ getSettings: () => ({ voice: { live: {} } }) }),
 }));
 vi.mock('../../src/host/services/planning/taskStore', () => ({ getIncompleteTasks: () => [] }));
+// 本文件钉的是发言人协议（念不念 / 念什么 / 署谁的名），不是完成语义证据门。
+// 给一份「确实改了文件」的 run 记录，让终态照旧落 done，证据门那条线由
+// voiceWorkEvidenceGate.test.ts 单独钉。
+vi.mock('../../src/host/session/completionSummaryService', () => ({
+  readLatestCompletionSummaryRecord: async () => ({
+    changedFiles: ['/tmp/a.txt'],
+    artifactRefs: [],
+    commitIds: [],
+    verificationEvidence: [],
+    endedAt: Number.MAX_SAFE_INTEGER,
+  }),
+}));
 vi.mock('../../src/host/services/infra/sessionManager', () => ({
   getSessionManager: () => ({
     getSession: async () => {
@@ -120,8 +132,13 @@ async function spawn(title = '建个文件'): Promise<void> {
   await dispatchVoiceIntent({ kind: 'spawn_task', title, prompt: '建一个 a.txt' });
 }
 
-/** narrateSettled 是 fire-and-forget 的 async：让它跑完再断言。 */
+/**
+ * narrateSettled 是 fire-and-forget 的 async：让它跑完再断言。
+ * 两拍不是保险起见——`task_completed` 之后先有一次证据查询（读 run 级 completion
+ * summary）才落终态，念这一步排在它后面。
+ */
 async function flush(): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, 0));
   await new Promise((resolve) => setTimeout(resolve, 0));
 }
 

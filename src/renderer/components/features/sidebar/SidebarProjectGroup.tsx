@@ -182,7 +182,6 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
   };
   return (
     <div
-      className="mb-2.5"
       data-sidebar-group-phase={expansionView.phase}
     >
       <div

@@ -66,7 +66,8 @@ export const SidebarCapabilityZone: React.FC = () => {
       ? cz.automationCount.replace('{count}', String(enabledJobs.length))
       : cz.automationEmpty;
 
-  // pb-2 = 侧栏唯一的区间断点（入口区 ‖ 会话列表，8px）：
+  // pb-2 = 入口区 ‖ 会话列表的区间断点（8px）；会话列表内三分区之间沿用同一 8px
+  // （SidebarSessionList 外层 gap-2，批P 第五波① 统一垂直节奏）。
   // 入口行之间零间距等距排列，靠行本身的对齐表达同组，不再每层 pb-1 糊成一个面。
   return (
     <div className="px-1 pb-2 flex-shrink-0" data-testid="sidebar-capability-zone">

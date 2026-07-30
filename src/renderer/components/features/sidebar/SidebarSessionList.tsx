@@ -214,8 +214,11 @@ export const SidebarSessionList: React.FC<SidebarSessionListProps> = ({
         </div>
       ) : (
         /* Workspace/project grouped view, including search and status-filtered results.
-           三分区渲染：节头排版对齐能力区行制度（text-sm 标题 + text-[11px] 计数，不发明新字号）。 */
-        <div className="py-2">
+           三分区渲染：节头排版对齐能力区行制度（text-sm 标题 + text-[11px] 计数，不发明新字号）。
+           垂直节奏（批P 第五波①，探针实测修前 16/10/0/0 无规律）：
+           区间断点统一 8px —— 能力区 pb-2 之后本容器不再叠 pt（修前 py-2 叠出 16），
+           分区间 gap-2(8)（修前靠末组 mb-2.5 混出 10）；组间距仍 10（组列 gap-2.5，见下）。 */
+        <div className="flex flex-col gap-2 pb-2">
           {visibleSections.map((section) => {
             const isCollapsed = Boolean(collapsedTiers[section.tier]);
             const isSolo = soloTier === section.tier;
@@ -297,7 +300,12 @@ export const SidebarSessionList: React.FC<SidebarSessionListProps> = ({
                   </button>
                 )}
               </div>
-              {!isCollapsed && section.groups.map((group) => (
+              {/* 组列：组间距 10px 由本列 gap-2.5 统一给（批P 第五波①：原靠组根 mb-2.5，
+                  末组的外边距会混进分区间距，三段节奏量出来 16/10 不一致；移进列内后
+                  分区间距由外层 gap-2 独占，永远 8px）。 */}
+              {!isCollapsed && (
+                <div className="flex flex-col gap-2.5">
+                  {section.groups.map((group) => (
                 <SidebarProjectGroup
                   key={group.key}
                   group={group}
@@ -326,7 +334,9 @@ export const SidebarSessionList: React.FC<SidebarSessionListProps> = ({
                   buildProjectDrawerSessions={buildProjectDrawerSessions}
                   sessionItemProps={sessionItemProps}
                 />
-              ))}
+                  ))}
+                </div>
+              )}
             </section>
             );
           })}

@@ -128,7 +128,15 @@ private final class VoiceAecIO {
         guard let converter = AVAudioConverter(from: inputFormat, to: upstreamFormat) else {
             throw VoiceAecError.audioFormatUnavailable
         }
+        // 开了 voice processing 后输入是 7 声道 discrete 布局（本机实测，7 路内容相同），
+        // AVAudioConverter 推不出降混矩阵，默认 channelMap = [-1]＝输出声道无来源 → 转换结果恒为静音。
+        // 必须显式取第 0 路；单声道输入时 [0] 同样正确。
+        converter.channelMap = [0]
         self.converter = converter
+        fputs(
+            "voice-aec-io: input \(inputFormat.channelCount)ch@\(Int(inputFormat.sampleRate))Hz channelMap=\(converter.channelMap)\n",
+            stderr
+        )
 
         input.installTap(onBus: 0, bufferSize: 1024, format: inputFormat) { [weak self] buffer, _ in
             self?.consumeInput(buffer)

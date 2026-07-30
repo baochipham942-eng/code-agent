@@ -13,7 +13,6 @@ import type {
   AgentEngineSourceDescriptor,
 } from '../../../shared/contract/agentEngine';
 import {
-  getExternalEngineManifestForKind,
   listExternalEngineManifests,
   type ExternalEngineManifest,
 } from '../../../shared/externalEngineManifest';
@@ -333,8 +332,4 @@ let instance: AgentEngineRegistry | null = null;
 export function getAgentEngineRegistry(): AgentEngineRegistry {
   if (!instance) instance = new AgentEngineRegistry();
   return instance;
-}
-
-export function getManifestForAgentEngine(kind: AgentEngineKind): ExternalEngineManifest | undefined {
-  return getExternalEngineManifestForKind(kind);
 }

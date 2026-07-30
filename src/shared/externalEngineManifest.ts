@@ -13,9 +13,9 @@ export type ExternalEngineModelSelection =
   | 'client_default'
   | 'unavailable';
 
-export type ExternalEngineTransport = 'native' | 'cli' | 'local_http_sse' | 'acp';
+type ExternalEngineTransport = 'native' | 'cli' | 'local_http_sse' | 'acp';
 
-export interface ExternalEngineAdapterContract {
+interface ExternalEngineAdapterContract {
   /** Stable adapter registry key. A manifest cannot become executable without this adapter. */
   adapterId?: string;
   transport: ExternalEngineTransport;
@@ -25,7 +25,7 @@ export interface ExternalEngineAdapterContract {
   evidence: 'production' | 'local_spike' | 'official_docs' | 'none';
 }
 
-export interface ExternalEngineProbeContract {
+interface ExternalEngineProbeContract {
   commands: string[];
   /** Absolute or home-relative product-bundled CLI paths tried before PATH lookup. */
   binaryPaths?: string[];
@@ -464,10 +464,6 @@ const EXTERNAL_ENGINE_MANIFESTS: readonly ExternalEngineManifest[] = [
 
 export function listExternalEngineManifests(): readonly ExternalEngineManifest[] {
   return EXTERNAL_ENGINE_MANIFESTS;
-}
-
-export function getExternalEngineManifest(id: string): ExternalEngineManifest | undefined {
-  return EXTERNAL_ENGINE_MANIFESTS.find((manifest) => manifest.id === id);
 }
 
 export function getExternalEngineManifestForKind(

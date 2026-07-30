@@ -80,7 +80,7 @@ function EngineIcon({ source }: { source: AgentEngineSourceDescriptor }) {
   );
 }
 
-export function getOnboardingEngineStatus(source: AgentEngineSourceDescriptor): {
+function getOnboardingEngineStatus(source: AgentEngineSourceDescriptor): {
   detail: string;
   badge: string;
 } {

@@ -42,6 +42,13 @@ export const DEFAULT_MODELS = {
   unlimited: 'LongCat-2.0',
 } as const;
 
+/**
+ * 快模型鉴权失败拉黑窗口：某候选（provider+model+当前 key）401/403 后在此窗口内
+ * 不再入选，解析自动降到下一级（fast → code → env 智谱）。换了 key 指纹即变、立即重试；
+ * 窗口过后也会重试一次，避免上游误发 401 造成永久降级。
+ */
+export const QUICK_MODEL_AUTH_BLACKLIST_MS = 10 * 60_000;
+
 /** Agent 子任务默认模型（包月无限制，适合高频调用） */
 export const AGENT_DEFAULT_MODEL = {
   provider: 'moonshot',

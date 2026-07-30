@@ -160,6 +160,15 @@ export const VOICE_SUBTITLE_REVEAL_INTERVAL_MS = 100;
  */
 export const VOICE_SUBTITLE_STALL_FLUSH_MS = 3_000;
 
+/**
+ * 临时气泡等真消息上屏的最长时间（ms）。
+ *
+ * 撤气泡与真消息上屏必须原子，所以拉不到就重拉。等不到也**不撤**——顶着定稿文本
+ * 至少画面是对的，撤了就是一段谁都没有这句话的空帧（R1 闪断）。这个上限只用来
+ * 停掉重拉，避免落库真出问题时无限打 IPC。
+ */
+export const VOICE_PARTIAL_HANDOFF_MAX_WAIT_MS = 5_000;
+
 /** Tauri 原生 AEC sidecar 的上行音频/电平/生命周期事件。 */
 export const VOICE_AEC_OUTPUT_EVENT = 'voice-aec:output';
 
@@ -172,8 +181,15 @@ export const VOICE_UPSTREAM_CONNECT_TIMEOUT_MS = 15_000;
 /** 上游 WS 心跳间隔（ms）；用于主动触发 TCP 层断链探测。 */
 export const VOICE_UPSTREAM_HEARTBEAT_INTERVAL_MS = 15_000;
 
-/** 上游完全无消息 / pong 的最长容忍时间（ms）。 */
-export const VOICE_UPSTREAM_SILENCE_TIMEOUT_MS = 30_000;
+/**
+ * 上游完全无消息 / pong 的最长容忍时间（ms）= 心跳间隔 × 3。
+ *
+ * 写成倍数而不是裸数字，是因为这个值的含义是「连丢几拍才判死」：30_000 那版等于
+ * **丢一拍就杀掉整通电话**（2026-07-30 真机 silenceMs=30225，派活等待期通话被判死，
+ * 用户还在说话）。DashScope 的 WS pong 已实测支持（2026-07-30 探针：40s 空闲
+ * 8/8 回 pong，RTT 50-170ms），所以单拍不回是丢包/迟到，连丢三拍才是真死。
+ */
+export const VOICE_UPSTREAM_SILENCE_TIMEOUT_MS = VOICE_UPSTREAM_HEARTBEAT_INTERVAL_MS * 3;
 
 /** 已提交用户轮次等待模型创建响应的窗口（ms）；首轮超时后 nudge，再超时提示用户。 */
 export const VOICE_UPSTREAM_RESPONSE_TIMEOUT_MS = 10_000;
@@ -220,6 +236,12 @@ export const VOICE_HANGUP_INTENT_PHRASES = [
   '下次聊',
   '不聊了',
 ] as const;
+
+/**
+ * 连续用户字幕并入上一条的时间窗（ms，R5）。VAD 把一句话切成几轮时，消息流里
+ * 会留下一串碎片；这个窗口内到达的下一条 final 直接改写上一条，不新增消息。
+ */
+export const VOICE_TRANSCRIPT_MERGE_WINDOW_MS = 2_000;
 
 /**
  * 客户端断开后等它回来的宽限窗（批 H · 断线重连 sticky）。

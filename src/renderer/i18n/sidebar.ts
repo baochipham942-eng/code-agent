@@ -150,8 +150,6 @@ export const sidebarZh = {
     // 分区节头交互（折叠/只看本分区/创建）的悬浮提示与 aria 文案。
     tierCollapse: '折叠分区',
     tierExpand: '展开分区',
-    tierSolo: '只看本分区',
-    tierSoloExit: '显示全部分区',
     tierNewSpace: '新建协作空间',
     tierNewQuickChat: '新建快速对话',
     unfinishedCount: '{count} 个未完成',
@@ -436,8 +434,6 @@ export const sidebarEn: typeof sidebarZh = {
     tierCloudBadgeTitle: 'Cloud identity linked',
     tierCollapse: 'Collapse section',
     tierExpand: 'Expand section',
-    tierSolo: 'Show only this section',
-    tierSoloExit: 'Show all sections',
     tierNewSpace: 'New space',
     tierNewQuickChat: 'New quick chat',
     unfinishedCount: '{count} unfinished',

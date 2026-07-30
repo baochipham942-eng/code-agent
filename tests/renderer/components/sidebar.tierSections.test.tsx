@@ -16,8 +16,6 @@ vi.mock('../../../src/renderer/hooks/useI18n', async () => {
 const sessionUiState = {
   collapsedTiers: {} as Record<string, boolean>,
   setTierCollapsed: vi.fn(),
-  soloTier: null as string | null,
-  setSoloTier: vi.fn(),
 };
 
 const appState = {
@@ -104,9 +102,7 @@ function renderList(overrides: Record<string, unknown> = {}): string {
 describe('SidebarSessionList tier section headers', () => {
   beforeEach(() => {
     sessionUiState.collapsedTiers = {};
-    sessionUiState.soloTier = null;
     sessionUiState.setTierCollapsed.mockReset();
-    sessionUiState.setSoloTier.mockReset();
     appState.openProjectSpacePage.mockReset();
   });
 
@@ -155,28 +151,5 @@ describe('SidebarSessionList tier section headers', () => {
     expect(html).toContain('新建快速对话');
   });
 
-  it('shows only the solo tier section when soloTier is set', () => {
-    sessionUiState.soloTier = 'quick';
-    const html = renderList();
 
-    expect(html).toContain('data-testid="sidebar-tier-quick"');
-    expect(html).not.toContain('data-testid="sidebar-tier-space"');
-    expect(html).not.toContain('data-testid="sidebar-tier-project"');
-    // 激活态有视觉/语义区分
-    const soloButton = html.match(/<button[^>]*data-testid="sidebar-tier-solo-quick"[^>]*>/)?.[0] ?? '';
-    expect(soloButton).toContain('aria-pressed="true"');
-    expect(html).toContain('显示全部分区');
-  });
-
-  it('falls back to all sections when the solo tier has no visible section', () => {
-    sessionUiState.soloTier = 'space';
-    // space 分区为空（整节省略）时 solo 目标不存在 → 回退显示全部
-    const html = renderList({
-      groups: groups.filter((g) => g.key !== 'g-space'),
-      projectMetaById: { p2: {} },
-    });
-
-    expect(html).toContain('data-testid="sidebar-tier-project"');
-    expect(html).toContain('data-testid="sidebar-tier-quick"');
-  });
 });

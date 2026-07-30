@@ -5,7 +5,7 @@
 // ============================================================================
 
 import React, { useCallback } from 'react';
-import { ChevronRight, Cloud, Focus, Loader2, MessageSquare, Plus, Search } from 'lucide-react';
+import { ChevronRight, Cloud, Loader2, MessageSquare, Plus, Search } from 'lucide-react';
 import { PLAIN_CHAT_SUMMARY_LABEL } from '@shared/contract/sessionWorkspace';
 import { useI18n } from '../../../hooks/useI18n';
 import { useAppStore } from '../../../stores/appStore';
@@ -83,8 +83,6 @@ export const SidebarSessionList: React.FC<SidebarSessionListProps> = ({
   // 分区节头交互状态（折叠持久化、solo 会话内）都在 sessionUIStore；新建空间入口复用 appStore 的 openProjectSpacePage。
   const collapsedTiers = useSessionUIStore((state) => state.collapsedTiers);
   const setTierCollapsed = useSessionUIStore((state) => state.setTierCollapsed);
-  const soloTier = useSessionUIStore((state) => state.soloTier);
-  const setSoloTier = useSessionUIStore((state) => state.setSoloTier);
   const openProjectSpacePage = useAppStore((state) => state.openProjectSpacePage);
   // 项目抽屉行数据装配随列表区一起迁出（god-file 治理第二刀）：全部依赖都在
   // sessionItemProps / i18n 里，Sidebar 主文件不再持有这段映射。
@@ -169,12 +167,6 @@ export const SidebarSessionList: React.FC<SidebarSessionListProps> = ({
     project: p.tierProject,
     quick: p.tierQuick,
   };
-  // 「只看本分区」：solo 生效时只保留命中分区；solo 目标已为空分区（整节省略）时回退全部，
-  // 避免列表整片消失却没有任何提示。solo 与会话级 statusFilter 管线天然正交（一个筛分区、一个筛会话）。
-  const visibleSections =
-    soloTier && tierSections.some((section) => section.tier === soloTier)
-      ? tierSections.filter((section) => section.tier === soloTier)
-      : tierSections;
   return (
     /* Session List - Project Grouped
        scrollbar-hidden 不是审美选择，是右轨对齐的根因修复（2026-07-27 实测）：
@@ -219,14 +211,13 @@ export const SidebarSessionList: React.FC<SidebarSessionListProps> = ({
            区间断点统一 8px —— 能力区 pb-2 之后本容器不再叠 pt（修前 py-2 叠出 16），
            分区间 gap-2(8)（修前靠末组 mb-2.5 混出 10）；组间距仍 10（组列 gap-2.5，见下）。 */
         <div className="flex flex-col gap-2 pb-2">
-          {visibleSections.map((section) => {
+          {tierSections.map((section) => {
             const isCollapsed = Boolean(collapsedTiers[section.tier]);
-            const isSolo = soloTier === section.tier;
             return (
             <section key={section.tier} aria-label={tierLabels[section.tier]} data-testid={`sidebar-tier-${section.tier}`}>
               {/* 节头 = 折叠主钮（原生 button，Enter/Space 可达）+ 计数 + solo/创建图标钮。
                   图标钮是主钮的兄弟而非子元素，仍显式 stopPropagation 防未来结构调整误触折叠。 */}
-              <div className="flex items-center gap-1 px-1.5 pb-1 pt-2">
+              <div className="flex items-center gap-1 px-1.5 pb-1">
                 <button /* ds-allow:button: 分区节头折叠行（chevron+标题左对齐列表行形态），Button primitive 居中动作钮形状不适配行布局 */
                   type="button"
                   aria-expanded={!isCollapsed}
@@ -248,24 +239,6 @@ export const SidebarSessionList: React.FC<SidebarSessionListProps> = ({
                 )}
                 {/* 计数折叠态也保留：折叠后它是这个分区唯一的信息密度。 */}
                 <span className="flex-shrink-0 text-[11px] text-zinc-600 tabular-nums">{section.sessionCount}</span>
-                <button /* ds-allow:button: 节头 20px 图标钮，Button primitive 无对应微尺寸方形变体（同分组头图标钮形态） */
-                  type="button"
-                  aria-pressed={isSolo}
-                  aria-label={isSolo ? p.tierSoloExit : p.tierSolo}
-                  title={isSolo ? p.tierSoloExit : p.tierSolo}
-                  data-testid={`sidebar-tier-solo-${section.tier}`}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setSoloTier(isSolo ? null : section.tier);
-                  }}
-                  className={`inline-flex h-5 w-5 shrink-0 items-center justify-center rounded focus:outline-hidden ${
-                    isSolo
-                      ? 'bg-zinc-700/70 text-primary-400'
-                      : 'text-zinc-600 hover:bg-zinc-700/70 hover:text-zinc-300'
-                  }`}
-                >
-                  <Focus className="h-3 w-3" />
-                </button>
                 {/* 独立空间分区不放「+」：产品上没有「新建独立空间」入口（独立空间由工作目录会话自然长出来），
                     新写一份创建流超出本任务范围。 */}
                 {section.tier === 'space' && (

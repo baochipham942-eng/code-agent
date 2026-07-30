@@ -108,8 +108,6 @@ interface SessionUIState {
   inputHistoryDraft: string;
   expandedWorkspaces: Record<string, boolean>;
   collapsedTiers: Partial<Record<SidebarSessionTier, boolean>>;
-  /** 「只看本分区」的临时聚焦态：不持久化（与 sessionStatusFilter 同款的会话内筛选语义）。 */
-  soloTier: SidebarSessionTier | null;
 }
 
 interface SessionUIActions {
@@ -129,7 +127,6 @@ interface SessionUIActions {
   resetInputHistoryIndex: () => void;
   setWorkspaceExpanded: (key: string, expanded: boolean) => void;
   setTierCollapsed: (tier: SidebarSessionTier, collapsed: boolean) => void;
-  setSoloTier: (tier: SidebarSessionTier | null) => void;
 }
 
 type SessionUIStore = SessionUIState & SessionUIActions;
@@ -148,7 +145,6 @@ export const useSessionUIStore = create<SessionUIStore>()((set, get) => ({
   inputHistoryDraft: '',
   expandedWorkspaces: loadExpandedWorkspaces(),
   collapsedTiers: loadCollapsedTiers(),
-  soloTier: null,
 
   setFilter: (filter: SessionFilter) => {
     set({ filter });
@@ -321,7 +317,4 @@ export const useSessionUIStore = create<SessionUIStore>()((set, get) => ({
     persistCollapsedTiers(next);
   },
 
-  setSoloTier: (soloTier: SidebarSessionTier | null) => {
-    set({ soloTier });
-  },
 }));

@@ -87,4 +87,33 @@ describe('NativeVoiceAudioPipeline', () => {
     expect(mocks.unlisten).toHaveBeenCalledTimes(1);
     expect(mocks.stop).toHaveBeenCalled();
   });
+
+  it('sidecar 启动前后的诊断码都交给上层且不夹带媒体数据', async () => {
+    const onDiagnostic = vi.fn();
+    let resolveStart!: (value: {
+      pid: number;
+      upstreamFifoPath: string;
+      downstreamFifoPath: string;
+      outputEvent: string;
+    }) => void;
+    mocks.start.mockImplementationOnce(() => new Promise((resolve) => { resolveStart = resolve; }));
+    const pipeline = new NativeVoiceAudioPipeline({ onFrame: vi.fn(), onDiagnostic });
+    const starting = pipeline.start();
+
+    await vi.waitFor(() => expect(mocks.eventHandler).not.toBeNull());
+    mocks.eventHandler?.({ payload: { kind: 'diagnostic', message: 'engine-started' } });
+    expect(onDiagnostic).not.toHaveBeenCalled();
+
+    resolveStart({
+      pid: 42,
+      upstreamFifoPath: '/tmp/up',
+      downstreamFifoPath: '/tmp/down',
+      outputEvent: 'voice-aec:output',
+    });
+    await starting;
+    expect(onDiagnostic).toHaveBeenCalledWith('engine-started');
+
+    mocks.eventHandler?.({ payload: { kind: 'diagnostic', message: 'configuration-recovered' } });
+    expect(onDiagnostic).toHaveBeenLastCalledWith('configuration-recovered');
+  });
 });

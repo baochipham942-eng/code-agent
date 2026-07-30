@@ -26,6 +26,7 @@ private enum OutputFrameKind: UInt8 {
     case levels = 2
     case ready = 3
     case error = 4
+    case diagnostic = 5
 }
 
 private enum VoiceAecError: Error, CustomStringConvertible {
@@ -160,6 +161,7 @@ private final class VoiceAecIO {
         }
 
         startDownstreamReader()
+        writeDiagnostic("engine-started")
         fputs("voice-aec-io: engine started; waiting for first capture frame\n", stderr)
     }
 
@@ -199,6 +201,7 @@ private final class VoiceAecIO {
         stopped = true
         stateLock.unlock()
 
+        writeDiagnostic("stopped")
         runOnRecoveryQueueSync {
             stopWatchdog()
             removeConfigurationObserver()
@@ -271,6 +274,7 @@ private final class VoiceAecIO {
 
         if shouldSendReady {
             writeFrame(kind: .ready, payload: Data("ready".utf8))
+            writeDiagnostic("capture-started")
             fputs("voice-aec-io: capturing (first upstream frame produced)\n", stderr)
         }
         writeFrame(kind: .audio, payload: pcm)
@@ -360,8 +364,10 @@ private final class VoiceAecIO {
             "voice-aec-io: configuration changed; rebuilding capture (\(recoveryTimestamps.count)/\(maxRecoveriesInWindow))\n",
             stderr
         )
+        writeDiagnostic("configuration-changed")
         do {
             try rebuildInputAndStartEngine()
+            writeDiagnostic("configuration-recovered")
             fputs("voice-aec-io: configuration recovery restarted engine\n", stderr)
         } catch {
             stateLock.lock()
@@ -417,6 +423,7 @@ private final class VoiceAecIO {
         stateLock.unlock()
 
         fputs("voice-aec-io: fatal \(reason)\n", stderr)
+        writeDiagnostic("fatal:\(reason)")
         writeFrame(kind: .error, payload: Data(reason.utf8))
         stopWatchdog()
         removeConfigurationObserver()
@@ -522,6 +529,10 @@ private final class VoiceAecIO {
             stop()
             exit(0)
         }
+    }
+
+    private func writeDiagnostic(_ code: String) {
+        writeFrame(kind: .diagnostic, payload: Data(code.utf8))
     }
 }
 

@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { EventEmitter } from 'events';
 import { isVoiceInputMessage, type Message } from '../../src/shared/contract/message';
 import type { VoiceEvent, VoiceTransport, VoiceWorkItem } from '../../src/shared/contract/voice';
-import { QWEN_OMNI_REALTIME_MODEL, VOICE_DOWNSTREAM_SAMPLE_RATE, VOICE_END_CALL_GOODBYE_TIMEOUT_MS, VOICE_HANGUP_REACTION_WINDOW_MS, VOICE_TRANSCRIPT_MERGE_WINDOW_MS, VOICE_WS_CLOSE_TERMINAL } from '../../src/shared/constants/voice';
+import { QWEN_OMNI_REALTIME_MODEL, VOICE_DOWNSTREAM_SAMPLE_RATE, VOICE_END_CALL_GOODBYE_TIMEOUT_MS, VOICE_HANGUP_REACTION_WINDOW_MS, VOICE_INBOUND_AUDIO_STARTUP_TIMEOUT_MS, VOICE_TRANSCRIPT_MERGE_WINDOW_MS, VOICE_WS_CLOSE_TERMINAL } from '../../src/shared/constants/voice';
 
 const vocabulary = vi.hoisted(() => ({ block: '' }));
 vi.mock('../../src/host/services/voice/voiceVocabulary', () => ({
@@ -267,6 +267,47 @@ describe('voiceSessionService 互斥与挂断', () => {
 
     expect(sendAudio).toHaveBeenCalledTimes(1);
     client.close();
+  });
+
+  it('relay live 后 8 秒仍无上行帧就留 warn，首帧到达则撤销', async () => {
+    vi.useFakeTimers();
+    try {
+      const silent = new FakeClient();
+      await attachVoiceClient(silent as never, 'session-silent-audio');
+      await vi.advanceTimersByTimeAsync(VOICE_INBOUND_AUDIO_STARTUP_TIMEOUT_MS);
+      expect(voiceLogger.warn).toHaveBeenCalledWith('client audio missing after session start', expect.objectContaining({
+        waitedMs: VOICE_INBOUND_AUDIO_STARTUP_TIMEOUT_MS,
+      }));
+      const endingSilentCall = endActiveVoiceSession();
+      await vi.advanceTimersByTimeAsync(2_000);
+      await endingSilentCall;
+
+      voiceLogger.warn.mockClear();
+      const healthy = new FakeClient();
+      await attachVoiceClient(healthy as never, 'session-healthy-audio');
+      healthy.emit('message', Buffer.from([1, 0, 2, 0]), true);
+      await vi.advanceTimersByTimeAsync(VOICE_INBOUND_AUDIO_STARTUP_TIMEOUT_MS + 1);
+      expect(voiceLogger.warn).not.toHaveBeenCalledWith(
+        'client audio missing after session start',
+        expect.anything(),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('AEC sidecar 诊断码经媒体 WS 落 host 结构化日志', async () => {
+    const client = new FakeClient();
+    await attachVoiceClient(client as never, 'session-aec-diagnostic');
+
+    client.emit('message', Buffer.from(JSON.stringify({
+      type: 'audio_diagnostic',
+      code: 'configuration-recovered',
+    })), false);
+
+    expect(voiceLogger.info).toHaveBeenCalledWith('client audio diagnostic', expect.objectContaining({
+      code: 'configuration-recovered',
+    }));
   });
 
   it('commit 控制帧转发到 relay handle（PTT 手动提交路径）', async () => {

@@ -21,7 +21,7 @@ import {
   launchSystemChromeSession,
 } from './browser-computer-system-chrome.ts';
 
-type AgentEngineKind = 'native' | 'codex_cli' | 'claude_code';
+type AgentEngineKind = 'native' | 'codex_cli' | 'claude_code' | 'kimi_code' | 'codebuddy_code';
 
 interface AgentEngineSessionMetadata {
   kind: AgentEngineKind;
@@ -54,6 +54,8 @@ Usage:
 Options:
   --visible       Launch system Chrome in visible mode.
   --skip-build    Reuse existing dist/web and dist/renderer artifacts.
+  --workbuddy-only Validate the real WorkBuddy descriptor and selected-session UI only.
+  --kimi-only      Validate the installed Kimi CLI, its real model catalog, and model popup.
   --keep-browser  Keep the Chrome process open after the smoke.
   --keep-server   Keep the app-host server process open after the smoke.
   --port <port>   App-host port. Default: auto.
@@ -241,17 +243,49 @@ function startAppHost(
   fakeBinDir: string,
   dataDir: string,
   catalog: { url: string; publicKeysJson: string },
+  forceOnboarding = false,
 ): { child: ChildProcessByStdio<null, Readable, Readable>; output: () => string } {
   let logs = '';
-  const child = spawn('node', ['dist/web/webServer.cjs'], {
+  const childEnv = { ...process.env };
+  if (forceOnboarding) {
+    for (const key of [
+      'MOONSHOT_API_KEY',
+      'DEEPSEEK_API_KEY',
+      'OPENAI_API_KEY',
+      'ANTHROPIC_API_KEY',
+      'GEMINI_API_KEY',
+      'ZHIPU_API_KEY',
+      'GROQ_API_KEY',
+      'QWEN_API_KEY',
+      'MINIMAX_API_KEY',
+      'OPENROUTER_API_KEY',
+      'PERPLEXITY_API_KEY',
+      'LONGCAT_API_KEY',
+      'XIAOMI_API_KEY',
+    ]) {
+      // Keep an explicit empty value so the app-host's dotenv bootstrap cannot
+      // refill the isolated acceptance process from the user's real .env.
+      childEnv[key] = '';
+    }
+  }
+  const watcherSafeBootstrap = join(
+    process.cwd(),
+    'scripts',
+    'acceptance',
+    'session-fork-smoke-bootstrap.cjs',
+  );
+  const child = spawn('node', ['--require', watcherSafeBootstrap, 'dist/web/webServer.cjs'], {
     cwd: process.cwd(),
     env: {
-      ...process.env,
+      ...childEnv,
       PATH: `${fakeBinDir}${delimiter}${process.env.PATH || ''}`,
       WEB_HOST: '127.0.0.1',
       WEB_PORT: String(port),
       CODE_AGENT_ENABLE_DEV_API: 'true',
       CODE_AGENT_E2E: '1',
+      ...(forceOnboarding ? {
+        CODE_AGENT_E2E_FORCE_MODEL_ONBOARDING_AFTER: String(Date.now()),
+      } : {}),
       CODE_AGENT_DATA_DIR: dataDir,
       CODE_AGENT_WORKING_DIR: process.cwd(),
       CODE_AGENT_RENDERER_HOT_UPDATE: 'false',
@@ -321,6 +355,13 @@ async function dismissApiKeySetupIfVisible(page: Page): Promise<void> {
   }
 }
 
+async function trustAcceptanceWorkspaceIfVisible(page: Page): Promise<void> {
+  const dialog = page.getByRole('dialog', { name: '信任这个项目文件夹？' });
+  if (!await dialog.isVisible().catch(() => false)) return;
+  await dialog.getByRole('button', { name: '信任并加载' }).click({ timeout: 5_000 });
+  await dialog.waitFor({ state: 'hidden', timeout: 10_000 });
+}
+
 async function waitForAppReady(page: Page, timeoutMs = 60_000): Promise<void> {
   try {
     await page.setViewportSize({ width: 1440, height: 960 }).catch(() => undefined);
@@ -387,11 +428,13 @@ async function selectEngineViaDomain(
   page: Page,
   sessionId: string,
   kind: AgentEngineKind,
+  model?: string,
 ): Promise<AgentEngineSessionMetadata> {
   return invokeDomain<AgentEngineSessionMetadata>(page, 'domain:agentEngine', 'select', {
     sessionId,
     kind,
     permissionProfile: kind === 'native' ? 'default' : 'read_only',
+    ...(model ? { model } : {}),
   });
 }
 
@@ -448,7 +491,7 @@ async function readEngineButtons(page: Page): Promise<Array<{ text: string; titl
       text: row.innerText.trim(),
       title: row.getAttribute('data-engine-kind') || '',
     }))
-    .filter((row) => ['native', 'codex_cli', 'claude_code'].includes(row.title)));
+    .filter((row) => ['native', 'codex_cli', 'claude_code', 'codebuddy_code'].includes(row.title)));
 }
 
 function findEngineButton(buttons: Array<{ text: string; title: string }>, label: string): boolean {
@@ -456,26 +499,39 @@ function findEngineButton(buttons: Array<{ text: string; title: string }>, label
     ? 'native'
     : label === 'Codex CLI'
       ? 'codex_cli'
-      : 'claude_code';
+      : label === 'Claude Code'
+        ? 'claude_code'
+        : 'codebuddy_code';
   return buttons.some((button) => button.title === kind);
 }
 
-async function clickEngine(page: Page, label: 'Native' | 'Codex CLI' | 'Claude Code'): Promise<void> {
+async function clickEngine(
+  page: Page,
+  label: 'Native' | 'Codex CLI' | 'Claude Code' | 'WorkBuddy',
+): Promise<void> {
   const kind = label === 'Native'
     ? 'native'
     : label === 'Codex CLI'
       ? 'codex_cli'
-      : 'claude_code';
+      : label === 'Claude Code'
+        ? 'claude_code'
+        : 'codebuddy_code';
   const button = page.locator(`[data-engine-kind="${kind}"] button`).last();
   await button.waitFor({ state: 'visible', timeout: 10_000 });
   if (!await button.isEnabled().catch(() => false)) {
     const title = await button.getAttribute('title').catch(() => '');
+    if (title?.includes('当前会话正在使用') || title?.includes('current session is using')) {
+      return;
+    }
     throw new Error(`${label} engine button is disabled. title=${title}`);
   }
   await button.click({ timeout: 5_000 });
 }
 
-async function waitForTriggerEngine(page: Page, shortLabel: 'Agent Neo' | 'Codex' | 'Claude'): Promise<string> {
+async function waitForTriggerEngine(
+  page: Page,
+  shortLabel: 'Agent Neo' | 'Codex' | 'Claude' | 'Kimi' | 'WorkBuddy',
+): Promise<string> {
   const trigger = page.locator('button[aria-label="切换模型"]').last();
   const start = Date.now();
   let lastTexts: string[] = [];
@@ -529,13 +585,20 @@ async function main(): Promise<void> {
   const catalogPort = await getFreePort();
   const fakeCatalog = await createFakeSignedCatalogServer(catalogPort);
   const baseUrl = `http://127.0.0.1:${appPort}`;
-  const appHost = startAppHost(appPort, fakeBinDir, appDataDir, fakeCatalog);
+  const appHost = startAppHost(
+    appPort,
+    fakeBinDir,
+    appDataDir,
+    fakeCatalog,
+    hasFlag(args, 'workbuddy-only') || hasFlag(args, 'kimi-only'),
+  );
   let chromeSession: Awaited<ReturnType<typeof launchSystemChromeSession>> | null = null;
   let page: Page | null = null;
   let smokeSessionId: string | null = null;
   const failures: string[] = [];
   const consoleErrors: string[] = [];
   const pageErrors: string[] = [];
+  let qoderWorkOnboardingStatus = '';
 
   try {
     await waitForHealth(baseUrl, appHost.child, appHost.output);
@@ -558,6 +621,53 @@ async function main(): Promise<void> {
     });
 
     await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
+    if (hasFlag(args, 'workbuddy-only') || hasFlag(args, 'kimi-only')) {
+      await page.setViewportSize({ width: 1440, height: 960 });
+      const onboarding = page.getByRole('dialog', { name: '初始化 Neo' });
+      await onboarding.waitFor({ state: 'visible', timeout: 30_000 });
+      const onboardingLabel = hasFlag(args, 'kimi-only') ? 'Kimi Code' : 'WorkBuddy';
+      const onboardingKind = hasFlag(args, 'kimi-only') ? 'kimi_code' : 'codebuddy_code';
+      await onboarding.getByText(onboardingLabel, { exact: true })
+        .waitFor({ state: 'visible', timeout: 30_000 });
+      const qoderWorkCard = onboarding.locator('[data-onboarding-engine-status="qoder_work"]');
+      await qoderWorkCard.waitFor({ state: 'visible', timeout: 30_000 });
+      qoderWorkOnboardingStatus = await qoderWorkCard.innerText();
+      await page.screenshot({
+        path: join(
+          process.cwd(),
+          'docs',
+          'acceptance',
+          'external-cli-engine-onboarding',
+          hasFlag(args, 'kimi-only')
+            ? '12-onboarding-kimi-detected.png'
+            : '10-onboarding-two-step-workbuddy.png',
+        ),
+        fullPage: true,
+      });
+      await onboarding.locator(`[data-onboarding-engine="${onboardingKind}"]`).click();
+      await onboarding.locator('[data-testid="onboarding-step-model"][data-active="true"]')
+        .waitFor({ state: 'visible', timeout: 10_000 });
+      if (hasFlag(args, 'kimi-only')) {
+        await onboarding.locator('[data-onboarding-model="kimi-code/k3"]')
+          .waitFor({ state: 'visible', timeout: 10_000 });
+        await page.screenshot({
+          path: join(
+            process.cwd(),
+            'docs',
+            'acceptance',
+            'external-cli-engine-onboarding',
+            '13-onboarding-kimi-models.png',
+          ),
+          fullPage: true,
+        });
+      } else {
+        await onboarding.locator('[data-client-default-model]')
+          .waitFor({ state: 'visible', timeout: 10_000 });
+      }
+      await onboarding.getByTestId('onboarding-continue-to-chat').click();
+      await onboarding.waitFor({ state: 'hidden', timeout: 10_000 });
+      await trustAcceptanceWorkspaceIfVisible(page);
+    }
     await waitForAppReady(page);
 
     await invokeDomain(page, 'domain:folderTrust', 'set', {
@@ -589,10 +699,184 @@ async function main(): Promise<void> {
       native: findEngineButton(engineButtons, 'Native'),
       codexCli: findEngineButton(engineButtons, 'Codex CLI'),
       claudeCode: findEngineButton(engineButtons, 'Claude Code'),
+      workBuddy: findEngineButton(engineButtons, 'WorkBuddy'),
     };
     if (!selector.native) failures.push('Engine selector missing Native.');
     if (!selector.codexCli) failures.push('Engine selector missing Codex CLI.');
     if (!selector.claudeCode) failures.push('Engine selector missing Claude Code.');
+    if (!selector.workBuddy) failures.push('Engine selector missing WorkBuddy.');
+
+    if (hasFlag(args, 'workbuddy-only')) {
+      await selectEngineViaDomain(
+        page,
+        smokeSession.id,
+        'codebuddy_code',
+        'client_default',
+      );
+      await page.reload({ waitUntil: 'domcontentloaded' });
+      await waitForAppReady(page);
+      await selectSmokeSessionInSidebar(page, smokeSession);
+      const workBuddyTrigger = await waitForTriggerEngine(page, 'WorkBuddy');
+      const workBuddyEngine = await waitForSessionEngine(page, smokeSession.id, 'codebuddy_code');
+      await page.locator('button[aria-label="切换模型"]').last().click();
+      await page.locator('[data-external-engine-model-panel]')
+        .waitFor({ state: 'visible', timeout: 10_000 });
+      await page.locator('[data-client-default-model]')
+        .waitFor({ state: 'visible', timeout: 10_000 });
+      const modelPopupScreenshotPath = join(
+        process.cwd(),
+        'docs',
+        'acceptance',
+        'external-cli-engine-onboarding',
+        '09-session-workbuddy-model-popup.png',
+      );
+      await page.screenshot({ path: modelPopupScreenshotPath, fullPage: true });
+      const selectedModelScreenshotPath = join(
+        process.cwd(),
+        'docs',
+        'acceptance',
+        'external-cli-engine-onboarding',
+        '11-session-workbuddy-model-selected.png',
+      );
+      await page.screenshot({ path: selectedModelScreenshotPath, fullPage: true });
+      await page.keyboard.press('Escape');
+      await openEngineSelector(page);
+      const screenshotPath = join(
+        process.cwd(),
+        'docs',
+        'acceptance',
+        'external-cli-engine-onboarding',
+        '07-session-workbuddy-real-client-selected.png',
+      );
+      await page.locator('[data-engine-kind="codebuddy_code"]')
+        .scrollIntoViewIfNeeded({ timeout: 5_000 });
+      await page.screenshot({ path: screenshotPath, fullPage: true });
+      const result = {
+        ok: workBuddyEngine.permissionProfile === 'read_only'
+          && (!workBuddyEngine.model || workBuddyEngine.model === 'client_default')
+          && Boolean(workBuddyEngine.cwd)
+          && qoderWorkOnboardingStatus.includes('CLI 未登录')
+          && qoderWorkOnboardingStatus.includes('生产 Adapter 未开放'),
+        selector,
+        workBuddyTrigger,
+        workBuddyEngine,
+        modelSelection: 'client_default',
+        qoderWorkOnboardingStatus,
+        modelPopupScreenshotPath,
+        selectedModelScreenshotPath,
+        screenshotPath,
+        consoleErrors,
+        pageErrors,
+      };
+      await cleanupSmokeSession(page, smokeSession.id);
+      smokeSessionId = null;
+      printJson(result);
+      if (!result.ok) process.exitCode = 1;
+      return;
+    }
+
+    if (hasFlag(args, 'kimi-only')) {
+      const expectedKimiModel = engineSettings.models?.agentEngines?.kimi_code?.defaultModel;
+      if (!expectedKimiModel) {
+        throw new Error('Kimi onboarding did not persist a detected default model.');
+      }
+      await selectEngineViaDomain(page, smokeSession.id, 'kimi_code', expectedKimiModel);
+      await page.reload({ waitUntil: 'domcontentloaded' });
+      await waitForAppReady(page);
+      await selectSmokeSessionInSidebar(page, smokeSession);
+      const kimiTrigger = await waitForTriggerEngine(page, 'Kimi');
+      const kimiEngine = await waitForSessionEngine(page, smokeSession.id, 'kimi_code');
+      await page.locator('button[aria-label="切换模型"]').last().click();
+      const popup = page.locator('[data-external-engine-model-panel]');
+      await popup.waitFor({ state: 'visible', timeout: 10_000 });
+      await popup.locator('[data-external-model="kimi-code/k3"]')
+        .waitFor({ state: 'visible', timeout: 10_000 });
+      const currentModelText = await popup.locator('[data-current-external-model]').innerText();
+      const popupText = await popup.innerText();
+      const screenshotPath = join(
+        process.cwd(),
+        'docs',
+        'acceptance',
+        'external-cli-engine-onboarding',
+        '14-session-kimi-model-popup.png',
+      );
+      await page.screenshot({ path: screenshotPath, fullPage: true });
+      await page.keyboard.press('Escape');
+
+      // UI-only fixture in the isolated acceptance data dir. It exercises the
+      // real Neo ModelSwitcher without sending a provider request or using a credential.
+      await invokeDomain<null>(page, 'domain:settings', 'set', {
+        models: {
+          default: 'openai',
+          defaultProvider: 'openai',
+          providers: {
+            openai: {
+              enabled: true,
+              apiKey: 'acceptance-ui-only-not-a-credential',
+              apiKeyConfigured: true,
+              model: 'gpt-5.5',
+              models: {
+                'gpt-5.5': {
+                  enabled: true,
+                  label: 'GPT-5.5',
+                  capabilities: ['code', 'reasoning'],
+                },
+              },
+            },
+          },
+        },
+      });
+      await selectEngineViaDomain(page, smokeSession.id, 'native');
+      await page.reload({ waitUntil: 'domcontentloaded' });
+      await waitForAppReady(page);
+      await selectSmokeSessionInSidebar(page, smokeSession);
+      await page.locator('button[aria-label="切换模型"]').last().click();
+      const neoReasoningSegment = page.locator('[data-native-reasoning-segment]');
+      await neoReasoningSegment.waitFor({ state: 'visible', timeout: 10_000 });
+      const neoReasoningLabels = await neoReasoningSegment.locator('button').allInnerTexts();
+      const neoEffortScreenshotPath = join(
+        process.cwd(),
+        'docs',
+        'acceptance',
+        'external-cli-engine-onboarding',
+        '15-session-neo-reasoning-effort-popup.png',
+      );
+      await page.screenshot({ path: neoEffortScreenshotPath, fullPage: true });
+      const result = {
+        ok: kimiEngine.model === expectedKimiModel
+          && currentModelText.includes('K3')
+          && currentModelText.includes(expectedKimiModel)
+          && !popupText.includes('思考深度')
+          && neoReasoningLabels.join('|') === '关|低|中|高',
+        kimiTrigger,
+        kimiEngine,
+        expectedKimiModel,
+        currentModelText,
+        popupHasThinkingDepth: popupText.includes('思考深度'),
+        screenshotPath,
+        neoReasoningLabels,
+        neoEffortScreenshotPath,
+        consoleErrors,
+        pageErrors,
+      };
+      await cleanupSmokeSession(page, smokeSession.id);
+      smokeSessionId = null;
+      printJson(result);
+      if (!result.ok) process.exitCode = 1;
+      return;
+    }
+
+    await clickEngine(page, 'WorkBuddy');
+    const workBuddyTrigger = await waitForTriggerEngine(page, 'WorkBuddy');
+    const workBuddyEngine = await waitForSessionEngine(page, smokeSession.id, 'codebuddy_code');
+    const screenshotPath = join(
+      process.cwd(),
+      'docs',
+      'acceptance',
+      'external-cli-engine-onboarding',
+      '07-session-workbuddy-real-client-selected.png',
+    );
+    await page.screenshot({ path: screenshotPath, fullPage: true });
 
     await clickEngine(page, 'Native');
     const nativeTrigger = await waitForTriggerEngine(page, 'Agent Neo');
@@ -614,6 +898,12 @@ async function main(): Promise<void> {
     }
     if (!codexEngine.cwd || !claudeEngine.cwd) {
       failures.push('External engine metadata missing cwd.');
+    }
+    if (workBuddyEngine.permissionProfile !== 'read_only' || !workBuddyEngine.cwd) {
+      failures.push(`WorkBuddy engine metadata mismatch: ${JSON.stringify(workBuddyEngine)}`);
+    }
+    if (workBuddyEngine.model !== 'client_default') {
+      failures.push(`WorkBuddy client-default model mismatch: ${workBuddyEngine.model || 'missing'}`);
     }
     if (!codexEngine.model || (expectedCodexModel && codexEngine.model !== expectedCodexModel)) {
       failures.push(`Codex CLI model mismatch: expected=${expectedCodexModel || 'configured model'} actual=${codexEngine.model || 'missing'}`);
@@ -663,6 +953,9 @@ async function main(): Promise<void> {
         codexEngine,
         claudeTrigger,
         claudeEngine,
+        workBuddyTrigger,
+        workBuddyEngine,
+        screenshotPath,
       },
       consoleErrors,
       pageErrors,
@@ -685,10 +978,14 @@ async function main(): Promise<void> {
         ['selectorNative', result.selector.native],
         ['selectorCodexCli', result.selector.codexCli],
         ['selectorClaudeCode', result.selector.claudeCode],
+        ['selectorWorkBuddy', result.selector.workBuddy],
         ['initialEngine', result.session.initialEngine.kind],
         ['nativeEngine', result.session.nativeEngine.kind],
         ['codexEngine', result.session.codexEngine.kind],
         ['claudeEngine', result.session.claudeEngine.kind],
+        ['workBuddyEngine', result.session.workBuddyEngine.kind],
+        ['workBuddyModel', result.session.workBuddyEngine.model],
+        ['screenshot', result.session.screenshotPath],
         ['codexCwd', result.session.codexEngine.cwd],
         ['claudeCwd', result.session.claudeEngine.cwd],
         ['codexModel', result.session.codexEngine.model],

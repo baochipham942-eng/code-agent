@@ -65,7 +65,12 @@ export function buildEngineSectionRow(
   let defaultModelHint = section.defaultModelHint;
   if (!external) {
     defaultModelHint = section.defaultModelNative;
-  } else if (kind === 'mimo_code' || kind === 'kimi_code') {
+  } else if (
+    kind === 'mimo_code'
+    || kind === 'kimi_code'
+    || kind === 'codebuddy_code'
+    || kind === 'grok_cli'
+  ) {
     defaultModelHint = section.defaultModelCliResolved;
   }
 

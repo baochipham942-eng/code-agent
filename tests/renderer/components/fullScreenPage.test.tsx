@@ -5,10 +5,18 @@
 // 根挂载页不在右侧内容区里，inline 对它们就是坏的——默认档钉死在这里。
 import React from 'react';
 import { cleanup, render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { FullScreenPage, FullScreenPageHeader } from '../../../src/renderer/components/features/shared/FullScreenPage';
+import { useAppStore } from '../../../src/renderer/stores/appStore';
 
-afterEach(cleanup);
+vi.mock('@shared/keybindings/defaults', () => ({
+  getCurrentKeybindingPlatform: () => 'darwin',
+}));
+
+afterEach(() => {
+  cleanup();
+  useAppStore.setState({ sidebarCollapsed: false });
+});
 
 describe('FullScreenPage 外壳契约', () => {
   it('不写 variant 时默认 overlay（整窗固定覆盖层）', () => {
@@ -39,14 +47,34 @@ describe('FullScreenPage 外壳契约', () => {
 
   // 2026-07-27 产品负责人实测「双击标题栏没反应」：拖拽/双击缩放靠 Tauri 的
   // data-tauri-drag-region 属性，-webkit-app-region 是 Electron 私有属性，WKWebView 不认。
+  // 2026-07-30 升级：裸值只认「直接点在该元素上」，内层内容行会把有效区挤没，
+  // 必须 ="deep" 让整个子树可拖（可点元素 Tauri 自动豁免）——二级页双击缩放才成立。
   // 属性掉了窗口就拖不动，且单测不会自己红，所以在这里钉住。
-  it('页头是 Tauri 拖拽区（窗口可拖、双击可缩放）', () => {
+  it('页头是 Tauri 拖拽区（窗口可拖、双击可缩放，deep 子树生效）', () => {
     const { container, unmount } = render(<FullScreenPageHeader icon={null} title="标题" onClose={() => {}} />);
-    expect(container.querySelector('header[data-tauri-drag-region]')).not.toBeNull();
+    expect(container.querySelector('header[data-tauri-drag-region="deep"]')).not.toBeNull();
     unmount();
 
     const bar = render(<FullScreenPageHeader icon={null} title="标题" variant="bar" onClose={() => {}} />);
-    expect(bar.container.querySelector('header[data-tauri-drag-region]')).not.toBeNull();
+    expect(bar.container.querySelector('header[data-tauri-drag-region="deep"]')).not.toBeNull();
+  });
+
+  it('inline 紧凑页头只在侧栏收起时为 macOS 红绿灯让位', () => {
+    useAppStore.setState({ sidebarCollapsed: true });
+    const inline = render(
+      <FullScreenPage variant="inline">
+        <FullScreenPageHeader icon={null} title="标题" variant="bar" />
+      </FullScreenPage>,
+    );
+    expect(inline.container.querySelector('header')?.className).toContain('pl-[92px]');
+    inline.unmount();
+
+    const overlay = render(
+      <FullScreenPage variant="overlay">
+        <FullScreenPageHeader icon={null} title="标题" variant="bar" />
+      </FullScreenPage>,
+    );
+    expect(overlay.container.querySelector('header')?.className).not.toContain('pl-[92px]');
   });
 
   it('返回按钮热区不小于 32px 高（参照 Codex 顶栏按钮）', () => {

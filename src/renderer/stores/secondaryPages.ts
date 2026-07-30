@@ -18,5 +18,6 @@ export const SECONDARY_PAGES_CLOSED = {
   showLocalOpsPanel: false,
   showEvalCenter: false,
   showProjectCollaborationPage: false,
+  showProjectSpacePage: false,
   expertDetailRoleId: null,
 } as const;

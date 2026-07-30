@@ -78,6 +78,16 @@ export const EXTERNAL_FORK_CONTEXT_CAPABILITIES: Readonly<
     providerNativeFork: false,
     reason: 'Kimi fork-context launch wiring has not been verified.',
   }),
+  codebuddy_code: Object.freeze({
+    deliveryMode: 'unsupported',
+    providerNativeFork: false,
+    reason: 'WorkBuddy fork-context launch wiring has not been verified.',
+  }),
+  grok_cli: Object.freeze({
+    deliveryMode: 'unsupported',
+    providerNativeFork: false,
+    reason: 'Grok Build fork-context launch wiring has not been verified.',
+  }),
 });
 
 interface ExternalForkContextTokenPolicy {

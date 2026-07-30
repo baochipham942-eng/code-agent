@@ -8,7 +8,13 @@ import { createPortal } from 'react-dom';
 import { useSessionStore } from '../../stores/sessionStore';
 import { IPC_DOMAINS } from '@shared/ipc';
 import type { AppSettings, ModelProvider } from '@shared/contract';
-import type { AgentEngineKind } from '@shared/contract/agentEngine';
+import type {
+  AgentEngineKind,
+  AgentEngineModelCatalog,
+  AgentEngineModelCatalogResult,
+  AgentEngineSourceDescriptor,
+  ExternalAgentEngineKind,
+} from '@shared/contract/agentEngine';
 import type { EffortLevel } from '@shared/contract/agent';
 import { normalizeAgentEngineSession } from '@shared/contract/agentEngine';
 import { getProviderDisplayName, isAgenticVerifiedModel } from '@shared/constants';
@@ -26,7 +32,7 @@ import {
   resolveModelPrice,
 } from '@shared/pricing/resolveModelPrice';
 import { toast } from '../../hooks/useToast';
-import { BadgeCheck, Brain, Sparkles, Zap, Code2, Settings, Star } from 'lucide-react';
+import { BadgeCheck, Brain, Sparkles, Code2, Settings, Star } from 'lucide-react';
 import { useI18n } from '../../hooks/useI18n';
 import { useAppStore } from '../../stores/appStore';
 import { useModeStore } from '../../stores/modeStore';
@@ -48,7 +54,12 @@ import {
   ProviderLogo,
   QUICK_SWITCH_PROVIDERS,
   sortProviderGroupsByModelStrategy,
+  buildModelSwitcherEngineSelection,
 } from './modelSwitcherHelpers';
+import {
+  EngineScopedModelPanel,
+  type EngineMenuView,
+} from './EngineScopedModelPanel';
 
 export { buildModelSwitcherEngineSelection } from './modelSwitcherHelpers';
 
@@ -129,6 +140,24 @@ export function shouldShowModelSettingsPrompt(
     && !nativeHasConfiguredModels;
 }
 
+export function shouldShowNativeReasoningSegment(args: {
+  engineKind: AgentEngineKind;
+  showModelSettingsPrompt: boolean;
+  effortOptionCount: number;
+}): boolean {
+  return args.engineKind === 'native'
+    && !args.showModelSettingsPrompt
+    && args.effortOptionCount > 1;
+}
+
+export function shouldDismissModelSwitcher(
+  target: Node,
+  trigger: Pick<Node, 'contains'> | null,
+  menu: Pick<Node, 'contains'> | null,
+): boolean {
+  return !trigger?.contains(target) && !menu?.contains(target);
+}
+
 function emitModelOverrideChange(detail: ModelOverrideChangeDetail): void {
   window.dispatchEvent(new CustomEvent<ModelOverrideChangeDetail>(MODEL_OVERRIDE_CHANGE_EVENT, { detail }));
 }
@@ -158,13 +187,19 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
   // 打开面板后是否还需要执行一次"锚定到选中模型"（搜索过滤不重复锚定）
   const anchorPendingRef = useRef(false);
   const [menuPos, setMenuPos] = useState<ModelSwitcherMenuPosition | null>(null);
+  const [engineMenuView, setEngineMenuView] = useState<EngineMenuView>('models');
+  const [engineSources, setEngineSources] = useState<AgentEngineSourceDescriptor[]>([]);
+  const [engineCatalog, setEngineCatalog] = useState<AgentEngineModelCatalog | null>(null);
+  const [busyEngineId, setBusyEngineId] = useState<string | null>(null);
   const sessionId = useSessionStore((s) => s.currentSessionId);
   const session = useSessionStore((s) =>
     s.currentSessionId
       ? s.sessions.find((item) => item.id === s.currentSessionId) ?? null
       : null
   );
+  const updateSessionEngine = useSessionStore((s) => s.updateSessionEngine);
   const openSettingsTab = useAppStore((s) => s.openSettingsTab);
+  const appWorkingDirectory = useAppStore((s) => s.workingDirectory);
   const defaultProvider = useAppStore((s) => s.modelConfig.provider);
   // effort 切换内嵌到模型菜单顶部，对照 Codex 的"模型 + Intelligence"两层选择
   const effortLevel = useModeStore((s) => s.effortLevel);
@@ -250,12 +285,6 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
     return () => window.removeEventListener(OPEN_MODEL_SWITCHER_EVENT, handleOpenRequest);
   }, []);
 
-  useEffect(() => {
-    if (engine.kind !== 'native' && open) {
-      setOpen(false);
-    }
-  }, [engine.kind, open]);
-
   // 打开时读取模型设置，保证输入框模型列表和 Settings 的启用状态一致
   useEffect(() => {
     if (!open) {
@@ -277,6 +306,42 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
       .finally(() => setSettingsLoaded(true));
   }, [open]);
 
+  // 引擎来源与模型能力均由 host 探测/目录返回；renderer 不硬编码营销状态或模型。
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    Promise.all([
+      window.domainAPI?.invoke<AgentEngineSourceDescriptor[]>(
+        IPC_DOMAINS.AGENT_ENGINE,
+        'listSources',
+        {},
+      ),
+      window.domainAPI?.invoke<AgentEngineModelCatalogResult>(
+        IPC_DOMAINS.AGENT_ENGINE,
+        'listModels',
+        {},
+      ),
+    ]).then(([sourceResult, catalogResult]) => {
+      if (cancelled) return;
+      if (sourceResult?.success && Array.isArray(sourceResult.data)) {
+        setEngineSources(sourceResult.data);
+      }
+      if (catalogResult?.success && catalogResult.data?.catalog) {
+        setEngineCatalog(catalogResult.data.catalog);
+      }
+    }).catch(() => {
+      // 探测失败时保留当前会话触发器；不伪造来源或模型。
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
+
+  useEffect(() => {
+    setEngineMenuView('models');
+    setSearchQuery('');
+  }, [engine.kind]);
+
   // 打开时拉取 provider 健康状态
   useEffect(() => {
     if (open) {
@@ -294,9 +359,9 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       const target = e.target as Node;
-      if (triggerRef.current?.contains(target)) return;
-      if (menuRef.current?.contains(target)) return;
-      setOpen(false);
+      if (shouldDismissModelSwitcher(target, triggerRef.current, menuRef.current)) {
+        setOpen(false);
+      }
     };
     if (open) {
       document.addEventListener('mousedown', handler);
@@ -600,6 +665,11 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
       || Boolean(selectedNativeOption?.features.includes('reasoning'))
       || /reason|thinking|think|mimo|r1|o\d/i.test(displayModel)
     : false;
+  const showNativeReasoningSegment = shouldShowNativeReasoningSegment({
+    engineKind: engine.kind,
+    showModelSettingsPrompt,
+    effortOptionCount: effortOptions.length,
+  });
   const thinkingShortLabel = supportsThinkingControls
     ? thinkingEnabled ? '思考' : '不思考'
     : null;
@@ -631,13 +701,75 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
       });
 
   const handleTriggerClick = useCallback(() => {
-    if (engine.kind !== 'native') {
-      setOpen(false);
-      openSettingsTab('agentEngine');
+    setOpen((value) => !value);
+  }, []);
+
+  const handleEngineMenuViewChange = useCallback((view: EngineMenuView) => {
+    setEngineMenuView(view);
+    setSearchQuery('');
+  }, []);
+
+  const handleSelectEngine = useCallback(async (source: AgentEngineSourceDescriptor) => {
+    if (!sessionId || !source.kind || !source.selectable) return;
+    const descriptorResponse = await window.domainAPI?.invoke(
+      IPC_DOMAINS.AGENT_ENGINE,
+      'get',
+      { kind: source.kind },
+    );
+    if (!descriptorResponse?.success || !descriptorResponse.data) {
+      toast.error(descriptorResponse?.error?.message || '执行引擎探测结果不可用');
       return;
     }
-    setOpen((value) => !value);
-  }, [engine.kind, openSettingsTab]);
+    setBusyEngineId(source.manifestId);
+    try {
+      const descriptor = descriptorResponse.data as Parameters<typeof buildModelSwitcherEngineSelection>[0];
+      const workingDirectory = session?.workingDirectory ?? appWorkingDirectory ?? undefined;
+      await updateSessionEngine(
+        sessionId,
+        buildModelSwitcherEngineSelection(
+          descriptor,
+          workingDirectory,
+          source.kind === 'native'
+            ? undefined
+            : engineCatalog?.engines.find((item) => item.kind === source.kind)?.defaultModel,
+        ),
+      );
+      setEngineMenuView('models');
+      setSearchQuery('');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : '执行引擎切换失败');
+    } finally {
+      setBusyEngineId(null);
+    }
+  }, [
+    appWorkingDirectory,
+    engineCatalog?.engines,
+    session?.workingDirectory,
+    sessionId,
+    updateSessionEngine,
+  ]);
+
+  const handleSelectExternalModel = useCallback(async (
+    kind: ExternalAgentEngineKind,
+    model: string,
+  ) => {
+    if (!sessionId) return;
+    setBusyEngineId(kind);
+    try {
+      await updateSessionEngine(sessionId, {
+        kind,
+        model,
+        permissionProfile: 'read_only',
+        cwd: session?.workingDirectory ?? appWorkingDirectory ?? undefined,
+      });
+      setSearchQuery('');
+      setOpen(false);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : '外部引擎模型切换失败');
+    } finally {
+      setBusyEngineId(null);
+    }
+  }, [appWorkingDirectory, session?.workingDirectory, sessionId, updateSessionEngine]);
 
   useEffect(() => {
     if (effortOptions.some((option) => option.value === effortLevel)) return;
@@ -660,6 +792,38 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
         zIndex: Z_LAYERS.statusPopover,
       }}
     >
+      {engineMenuView === 'engines' ? (
+        <EngineScopedModelPanel
+          view="engines"
+          sources={engineSources}
+          catalog={engineCatalog}
+          currentEngine={engine.kind}
+          currentModel={engine.model}
+          query={searchQuery}
+          busyEngineId={busyEngineId}
+          onQueryChange={setSearchQuery}
+          onViewChange={handleEngineMenuViewChange}
+          onSelectEngine={(source) => void handleSelectEngine(source)}
+          onSelectExternalModel={(kind, model) => void handleSelectExternalModel(kind, model)}
+          onOpenSettings={openSettingsTab}
+        />
+      ) : (
+        <>
+          <EngineScopedModelPanel
+            view="models"
+            sources={engineSources}
+            catalog={engineCatalog}
+            currentEngine={engine.kind}
+            currentModel={engine.model}
+            query={searchQuery}
+            busyEngineId={busyEngineId}
+            onQueryChange={setSearchQuery}
+            onViewChange={handleEngineMenuViewChange}
+            onSelectEngine={(source) => void handleSelectEngine(source)}
+            onSelectExternalModel={(kind, model) => void handleSelectExternalModel(kind, model)}
+            onOpenSettings={openSettingsTab}
+          />
+          {engine.kind === 'native' && (
             <div className="border-b border-zinc-700/50">
               <div className="flex items-center gap-1 px-3 pt-1.5 pb-1 text-[10px] text-zinc-500">
               <Code2 className="w-3 h-3" />
@@ -830,14 +994,15 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
               )}
             </div>
           </div>
+          )}
 
-          {!showModelSettingsPrompt && supportsThinkingControls && (
+          {showNativeReasoningSegment && (
             <div className="px-2 pt-1.5 pb-1.5 border-b border-zinc-700/50">
               <div className="flex items-center gap-1 text-[10px] text-zinc-500 mb-1 px-1">
                 <Brain className="w-3 h-3" />
                 <span>{modelText.thinkingSectionLabel}</span>
               </div>
-              <div className="grid grid-cols-4 gap-1">
+              <div className="grid grid-cols-4 gap-1" data-native-reasoning-segment>
                 {thinkingSegmentOptions.map((option) => (
                   <button
                     key={option.value}
@@ -857,33 +1022,6 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
               </div>
             </div>
           )}
-
-          {!showModelSettingsPrompt && !supportsThinkingControls && (
-          <div className="px-2 pt-1.5 pb-1.5 border-b border-zinc-700/50">
-            <div className="flex items-center gap-1 text-[10px] text-zinc-500 mb-1 px-1">
-              <Zap className="w-3 h-3" />
-              <span>{modelText.effortSectionLabel}</span>
-            </div>
-            <div className="flex flex-wrap gap-1">
-              {effortOptions.map((opt) => (
-                <button
-                  key={opt.value}
-                  type="button"
-                  onClick={() => setEffortLevel(opt.value)}
-                  className={`
-                    inline-flex h-7 min-w-[3.8rem] items-center justify-center rounded px-2 text-[10px] transition-colors
-                    ${selectedEffort.value === opt.value
-                      ? `${opt.color} ${opt.tint} font-medium ring-1 ring-zinc-600/70`
-                      : 'text-zinc-500 hover:bg-zinc-700/50'}
-                  `}
-                  title={`Effort: ${opt.label}`}
-                >
-                  {opt.label}
-                </button>
-              ))}
-            </div>
-          </div>
-          )}
       {engine.kind === 'native' && isOverridden && !showModelSettingsPrompt && (
         <>
           <div className="border-t border-zinc-700 my-1" />
@@ -896,6 +1034,8 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
           </button>
         </>
       )}
+        </>
+      )}
     </div>
   );
 
@@ -906,7 +1046,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
         type="button"
         onClick={handleTriggerClick}
         aria-label="切换模型"
-        aria-expanded={engine.kind === 'native' ? open : undefined}
+        aria-expanded={open}
         // 弱一档（zinc-400/xs）：这行的主位是专家。「Neo」也从这里去掉——产品名跟模型名
         // 并排会让用户以为 Neo 是个模型；外部引擎名（Codex/Claude Code）是真信息，留着。
         // 思考档 / effort 收进点开后的面板：reasoning effort 对非程序员是纯噪音，

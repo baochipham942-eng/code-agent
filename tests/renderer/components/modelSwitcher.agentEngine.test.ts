@@ -6,6 +6,7 @@ import type { AgentEngineDescriptor } from '../../../src/shared/contract/agentEn
 import {
   buildModelSwitcherEngineSelection,
   computeModelSwitcherMenuPosition,
+  shouldShowNativeReasoningSegment,
   shouldShowModelSettingsPrompt,
 } from '../../../src/renderer/components/StatusBar/ModelSwitcher';
 import {
@@ -33,6 +34,7 @@ import { zh, en } from '../../../src/renderer/i18n';
 
 function descriptor(overrides: Partial<AgentEngineDescriptor>): AgentEngineDescriptor {
   return {
+    manifestId: 'native',
     kind: 'native',
     label: 'Neo',
     summary: '',
@@ -44,6 +46,7 @@ function descriptor(overrides: Partial<AgentEngineDescriptor>): AgentEngineDescr
     cwdPolicy: 'workspace_only',
     riskTier: 'low',
     detectedAt: 1,
+    modelSelection: 'neo_provider',
     ...overrides,
   };
 }
@@ -94,6 +97,24 @@ describe('ModelSwitcher Agent Engine selection', () => {
   it('keeps MiMo effort as intensity and leaves thinking to the separate switch', () => {
     expect(getProviderEffortOptions('xiaomi', 'mimo-v2.5-pro').map((option) => option.label))
       .toEqual(['Low', 'Med', 'High']);
+  });
+
+  it('keeps Neo reasoning effort in the optimized four-segment control', () => {
+    expect(shouldShowNativeReasoningSegment({
+      engineKind: 'native',
+      showModelSettingsPrompt: false,
+      effortOptionCount: 3,
+    })).toBe(true);
+    expect(shouldShowNativeReasoningSegment({
+      engineKind: 'native',
+      showModelSettingsPrompt: false,
+      effortOptionCount: 1,
+    })).toBe(false);
+    expect(shouldShowNativeReasoningSegment({
+      engineKind: 'kimi_code',
+      showModelSettingsPrompt: false,
+      effortOptionCount: 3,
+    })).toBe(false);
   });
 
   it('summarizes provider health for availability grouping', () => {

@@ -1,0 +1,124 @@
+{
+  "name": "external-cli-engine-onboarding",
+  "mode": "incremental-mock-update",
+  "sourceMock": {
+    "html": "docs/research/2026-07-30-external-cli-engine-onboarding-before-after.html",
+    "screenshot": "docs/acceptance/mock-guard/external-cli-engine-onboarding-current/correction3-implementation-conversation.png"
+  },
+  "implementation": {
+    "url": "http://127.0.0.1:4177/docs/research/2026-07-30-external-cli-engine-onboarding-before-after.html",
+    "route": "?view=after&scenario=detected&route=subscription&stage=conversation&engine=neo&model=deepseek-chat&modelMenu=open&enginePicker=open",
+    "screenshot": "docs/acceptance/mock-guard/external-cli-engine-onboarding-current/correction14-all-engine-icons-fill.png"
+  },
+  "viewports": [
+    {
+      "name": "desktop",
+      "width": 1280,
+      "height": 900
+    },
+    {
+      "name": "in-app-narrow",
+      "width": 419,
+      "height": 783
+    }
+  ],
+  "states": [
+    "source-detected",
+    "source-empty",
+    "source-api",
+    "source-api-anthropic-compatible",
+    "model",
+    "conversation",
+    "conversation-runtime-model-menu",
+    "conversation-seven-engine-picker",
+    "conversation-neo-engine-settings"
+  ],
+  "frozenFiles": [
+    "DESIGN.md",
+    "src/renderer/styles/global.css",
+    "src/renderer/styles/themes/dark.css",
+    "src/renderer/styles/themes/light.css",
+    "src/renderer/components/primitives/Modal.tsx",
+    "src/renderer/components/onboarding/ModelOnboardingModal.tsx",
+    "src/renderer/components/onboarding/modelOnboarding.ts",
+    "src/renderer/i18n/onboarding.ts"
+  ],
+  "allowedSelectors": [
+    ".prototype-shell",
+    ".prototype-toolbar",
+    ".view-switcher",
+    ".stage",
+    ".app-canvas",
+    ".annotation-rail",
+    ".note-card",
+    ".before-view",
+    ".after-view",
+    ".modal",
+    ".modal-header",
+    ".modal-body",
+    ".modal-footer",
+    ".stepper",
+    ".step",
+    ".source-choice",
+    ".source-option",
+    ".detection-bar",
+    ".engine-list",
+    ".engine-card",
+    ".engine-trailing",
+    ".empty-state",
+    ".recommend-grid",
+    ".api-layout",
+    ".model-source",
+    ".model-grid",
+    ".model-card",
+    ".recommendation-empty",
+    ".recommend-grid",
+    ".recommend-card",
+    ".recommend-recovery",
+    ".neo-chat-shell",
+    ".actual-chat-canvas",
+    ".actual-welcome",
+    ".actual-suggestions",
+    ".actual-suggestion",
+    ".actual-composer-wrap",
+    ".actual-composer",
+    ".actual-composer-toolbar",
+    ".composer-tool",
+    ".model-trigger",
+    ".runtime-model-menu",
+    ".runtime-model-title",
+    ".runtime-settings-link",
+    ".runtime-engine-brand",
+    ".runtime-engine-current",
+    ".runtime-model-search",
+    ".runtime-model-scroll",
+    ".runtime-model-auto",
+    ".runtime-effort",
+    ".runtime-effort-options",
+    ".runtime-engine-picker-head",
+    ".runtime-engine-search",
+    ".runtime-engine-picker-list",
+    ".runtime-engine-row",
+    ".runtime-source-meta",
+    ".runtime-model-option",
+    ".runtime-client-default",
+    ".toast"
+  ],
+  "protectedSelectors": [
+    ".app-shell",
+    ".sidebar",
+    ".chat-view",
+    ".settings-modal"
+  ],
+  "forbiddenCssTargets": [
+    ":root[data-theme",
+    "body.app-shell",
+    ".dark ",
+    ".light "
+  ],
+  "thresholds": {
+    "fullPageMaxDiffRatio": 0.55,
+    "protectedRegionMaxDiffRatio": 0.003,
+    "pixelThreshold": 8
+  }
+}

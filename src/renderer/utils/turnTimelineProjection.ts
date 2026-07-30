@@ -13,7 +13,7 @@ import {
   snapshotFromWorkbenchMetadata,
 } from '@shared/contract/turnTimeline';
 import type { WorkbenchCapabilities } from '../hooks/useWorkbenchCapabilities';
-import type { HookActivityEvent, RoutingEvidenceEvent } from '../stores/turnExecutionStore';
+import type { HookActivityEvent, HookRunningEvent, RoutingEvidenceEvent } from '../stores/turnExecutionStore';
 import type { SwarmTimelineEvent } from '../stores/swarmStore';
 import { buildArtifactOwnershipItems } from './artifactOwnership';
 import { buildWorkbenchCapabilityScope } from './workbenchScopeInspector';
@@ -25,6 +25,8 @@ interface ProjectionArgs {
   swarmEvents: SwarmTimelineEvent[];
   routingEvents: RoutingEvidenceEvent[];
   hookEvents?: HookActivityEvent[];
+  /** 当前会话正在执行的 hook 批次（hook_started 未配对 hook_trigger）。 */
+  hookRunning?: HookRunningEvent | null;
 }
 
 interface TurnWindow {
@@ -66,6 +68,7 @@ function buildHookActivity(
   turn: TraceTurn,
   window: TurnWindow,
   hookEvents: HookActivityEvent[] = [],
+  hookRunning?: HookRunningEvent | null,
 ): TurnHookActivity | undefined {
   const eventWindow = getTurnEventWindow(turn, window);
   const relevantEvents = hookEvents
@@ -76,8 +79,17 @@ function buildHookActivity(
     })
     .sort((left, right) => left.timestamp - right.timestamp);
 
+  // 在跑的批次归属判断与落账事件同一套口径：优先 turnId，退回时间窗。
+  const running = hookRunning && (
+    hookRunning.turnId
+      ? hasRuntimeTurnId(turn, hookRunning.turnId)
+      : isWithinWindow(hookRunning.timestamp, eventWindow)
+  )
+    ? { event: hookRunning.event, ...(hookRunning.names?.length ? { names: hookRunning.names } : {}) }
+    : undefined;
+
   if (relevantEvents.length === 0) {
-    return undefined;
+    return running ? { summary: '', items: [], running } : undefined;
   }
 
   const totalHooks = relevantEvents.reduce((sum, event) => sum + event.hookCount, 0);
@@ -110,9 +122,11 @@ function buildHookActivity(
       ...(event.names?.length ? { names: event.names } : {}),
       ...(event.modified ? { modified: true } : {}),
       ...(event.errorCount ? { errorCount: event.errorCount } : {}),
+      ...(event.reason ? { reason: event.reason } : {}),
       ...(event.toolName ? { toolName: event.toolName } : {}),
       ...(event.matcher ? { matcher: event.matcher } : {}),
     })),
+    ...(running ? { running } : {}),
   };
 }
 
@@ -565,7 +579,7 @@ function enrichTurn(
     args.swarmEvents,
     args.routingEvents,
   );
-  const hookActivity = buildHookActivity(turn, window, args.hookEvents);
+  const hookActivity = buildHookActivity(turn, window, args.hookEvents, args.hookRunning);
   const skillActivity = buildSkillActivity(turn, args.capabilities);
   const artifactOwnership = buildArtifactOwnershipItems(turn, routingEvidence);
 
@@ -682,6 +696,7 @@ export function buildTurnExecutionClarityProjection(args: ProjectionArgs): Trace
       swarmEvents,
       routingEvents: args.routingEvents,
       hookEvents: args.hookEvents || [],
+      hookRunning: args.hookRunning ?? null,
     })),
   };
 }

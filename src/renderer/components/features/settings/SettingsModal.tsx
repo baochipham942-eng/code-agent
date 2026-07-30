@@ -461,12 +461,9 @@ export const SettingsModal: React.FC = () => {
 
         <main className="min-w-0 flex-1 overflow-y-auto bg-zinc-950">
           <div className={`mx-auto min-h-full px-8 pb-16 pt-8 ${contentWidthClass}`}>
-            {/* 同 aside 头行：整窗覆盖后这里兼作窗口拖拽区，关闭钮 no-drag */}
-            <div
-              data-tauri-drag-region
-              className="mb-6 flex items-start justify-between gap-6"
-              style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
-            >
+            {/* 页顶标题行即窗口拖拽区（二级页在位时右侧 TitleBar 不渲染）：
+                ="deep" 让整行可拖、双击缩放；X 关闭钮是 button，Tauri 自动豁免 */}
+            <div data-tauri-drag-region="deep" className="mb-6 flex items-start justify-between gap-6">
               <div>
                 <h2 id="settings-page-title" className="text-2xl font-semibold text-zinc-100">
                   {activeTabConfig?.label || t.settings.title}

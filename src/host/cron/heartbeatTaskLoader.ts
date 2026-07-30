@@ -134,6 +134,9 @@ export class HeartbeatTaskLoader {
           }, 500);
         }
       });
+      this.watcher.on('error', (error) => {
+        logger.warn('HEARTBEAT watcher error (non-fatal)', { error: String(error) });
+      });
     } catch (error) {
       logger.warn('Failed to watch HEARTBEAT.md directory', { error: String(error) });
     }

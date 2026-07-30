@@ -15,8 +15,6 @@ import { useTaskStore } from '../stores/taskStore';
 import { useBackgroundTaskStore } from '../stores/backgroundTaskStore';
 import { useWorkflowStore } from '../stores/workflowStore';
 import {
-  MessageSquare,
-  Loader2,
   User,
   LogIn,
   ChevronDown,
@@ -24,7 +22,6 @@ import {
   Search,
   PanelLeftClose,
   Download,
-  Plus,
 } from 'lucide-react';
 import { IPC_CHANNELS, type NotificationShowEvent } from '@shared/ipc';
 import { getCurrentKeybindingPlatform } from '@shared/keybindings/defaults';
@@ -32,22 +29,17 @@ import { useUIStore } from '../stores/uiStore';
 import { IconButton, UndoToast } from './primitives';
 import { createLogger } from '../utils/logger';
 import { SessionContextMenu, type ContextMenuItem } from './features/sidebar/SessionContextMenu';
-import { type SidebarProjectDrawerSession } from './features/sidebar/SidebarProjectDrawer';
-import { SidebarProjectGroup } from './features/sidebar/SidebarProjectGroup';
+import { SidebarSessionList } from './features/sidebar/SidebarSessionList';
 import { SidebarCapabilityZone } from './features/sidebar/SidebarCapabilityZone';
 import type { SidebarSessionItemSharedProps } from './features/sidebar/SidebarSessionItem';
 import type { SessionAutomationSessionSummary } from '@shared/contract';
 import { sessionAutomationClient } from '../services/sessionAutomationClient';
 import { SessionReplaySummaryDialog } from './features/sidebar/SessionReplaySummaryDialog';
-import { getSessionTypeLabel } from './features/sidebar/SessionTypeFilterBar';
 import { NeoBrandMark } from './features/sidebar/NeoBrandMark';
 import { isTauriMode } from '../utils/platform';
 import { isNativeWindowFullscreen } from '../services/tauriPluginFacade';
 import { useI18n } from '../hooks/useI18n';
-import { localeForLanguage } from '../utils/i18nTime';
 import ipcService from '../services/ipcService';
-import { getDisplaySessionTitle, getSessionStatusPresentation } from '../utils/sessionPresentation';
-import { hasSessionDeliverySignals } from '../utils/sessionRecoveryHints';
 import { isOptionalUpdateAvailable } from '../utils/updatePrompt';
 import { canAccessFeature } from '../utils/accessControl';
 import { buildSessionContextMenuItems } from './features/sidebar/sessionContextMenuItems';
@@ -55,7 +47,6 @@ import { useSidebarDerivedSessions } from './features/sidebar/useSidebarDerivedS
 import { useSidebarSessionActions } from './features/sidebar/useSidebarSessionActions';
 import { useSidebarRowActions, resolveRuntimeLogsDir } from './features/sidebar/useSidebarRowActions';
 import { SidebarStatusFilterDropdown } from './features/sidebar/SidebarStatusFilterDropdown';
-import { CreateProjectModal } from './features/sidebar/CreateProjectModal';
 import { SidebarAccountMenu } from './features/sidebar/SidebarAccountMenu';
 import { SidebarSearchDialog } from './features/sidebar/SidebarSearchDialog';
 import { SidebarNewTaskRow } from './features/sidebar/SidebarNewTaskRow';
@@ -71,10 +62,6 @@ import type {
   AgentTrajectoryDatasetRole,
   AgentTrajectorySessionQualitySummary,
 } from '@shared/contract/agentTrajectory';
-import { UNSORTED_PROJECT_ID } from '@shared/contract/project';
-import { PLAIN_CHAT_SUMMARY_LABEL } from '@shared/contract/sessionWorkspace';
-import { isWorkspaceExpanded } from '../utils/workspaceGrouping';
-import { createProject } from '../services/projectClient';
 
 export { resolveRuntimeLogsDir };
 
@@ -89,7 +76,7 @@ export function isAccountMenuEventOutside(
 }
 
 export const Sidebar: React.FC = () => {
-  const { t, language } = useI18n();
+  const { t } = useI18n();
   // 原生标题栏撤掉后 macOS 红绿灯浮在侧栏头行左端，得给它留死区（Windows/Linux 无此约束）。
   // 红绿灯只存在于「Tauri 壳 + macOS + 非全屏」：全屏时系统把它藏起来，浏览器里根本没有——
   // 这两种态左上角空着难看，改挂品牌标（2026-07-27 产品负责人拍板）。
@@ -183,7 +170,6 @@ export const Sidebar: React.FC = () => {
     pendingDelete,
     expandedWorkspaces,
     setWorkspaceExpanded,
-    setWorkspacesExpanded,
   } = useSessionUIStore();
 
   const {
@@ -216,10 +202,6 @@ export const Sidebar: React.FC = () => {
     showLab || showTimeCapabilityCenter || showDesktopPanel,
   );
   const advancedToolsOpen = showAccountAdvancedTools || hasActiveAdvancedTool;
-  const currentSessionProjectId = useMemo(() => {
-    const session = sessions.find((item) => item.id === currentSessionId);
-    return session?.projectId && session.projectId !== UNSORTED_PROJECT_ID ? session.projectId : null;
-  }, [currentSessionId, sessions]);
 
   useEffect(() => {
     if (!showUserMenu) return undefined;
@@ -368,9 +350,6 @@ export const Sidebar: React.FC = () => {
   // Keep new local state after the legacy Sidebar state sequence; several renderer tests
   // intentionally inject historical context/review state by hook index.
   const [searchDialogOpen, setSearchDialogOpen] = useState(false);
-  // 「项目」section 标题行（2026-07-29 侧栏项目区 redesign）：新建项目弹窗开合态 + 创建进行中。
-  const [createProjectOpen, setCreateProjectOpen] = useState(false);
-  const [creatingProject, setCreatingProject] = useState(false);
   const collapseTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
   useEffect(
@@ -516,35 +495,6 @@ export const Sidebar: React.FC = () => {
   const visibleStatusFilterOptions = buildSessionStatusFilterOptions(t).filter(
     (option) => !option.adminOnly || canOpenSessionReplay,
   );
-  // 「项目」section 标题行 chevron（2026-07-29，参考 Codex 桌面端）：一键全展开/全收起。
-  // 状态语义：全部展开时点一下全收起；否则（含部分收起）点一下全展开。
-  // 未记录的 key 缺省即展开（isWorkspaceExpanded 缺省 true），与单组行为一致。
-  const allProjectsExpanded = useMemo(
-    () => workspaceGroupedSessions.every((group) => isWorkspaceExpanded(expandedWorkspaces, group.key)),
-    [workspaceGroupedSessions, expandedWorkspaces],
-  );
-  const handleToggleAllProjects = useCallback(() => {
-    setWorkspacesExpanded(
-      workspaceGroupedSessions.map((group) => group.key),
-      !allProjectsExpanded,
-    );
-  }, [workspaceGroupedSessions, allProjectsExpanded, setWorkspacesExpanded]);
-  // 新建项目（18b）：先显式建项目（保住用户输入的名字），再为它建一条新会话——
-  // 复用 createWorkspaceChat 路径，与「选目录建新会话即建项目」的现有心智一致；
-  // 会话进列表后项目组与 projectMeta 拉取链路自然刷新，无需额外失效逻辑。
-  const handleCreateProject = useCallback(async (input: { name: string; workspacePath: string }) => {
-    setCreatingProject(true);
-    try {
-      await createProject({ name: input.name, workspacePath: input.workspacePath });
-      setCreateProjectOpen(false);
-      await createWorkspaceChat(input.workspacePath, input.workspacePath);
-    } catch (error) {
-      logger.error('Failed to create project:', error);
-      showToast('error', sb.createProjectFailed);
-    } finally {
-      setCreatingProject(false);
-    }
-  }, [createWorkspaceChat, sb, showToast]);
   const showOptionalUpdateButton = isOptionalUpdateAvailable(optionalUpdateInfo);
   const optionalUpdateLabel = optionalUpdateInfo?.latestVersion ? `v${optionalUpdateInfo.latestVersion}` : sb.newVersion;
   const handleUpdateTrajectoryCollection = useCallback(
@@ -565,70 +515,6 @@ export const Sidebar: React.FC = () => {
       }
     },
     [mergeTrajectoryQualitySummary, replayDialog, showToast],
-  );
-  const buildProjectDrawerSessions = useCallback(
-    (groupSessions: SessionWithMeta[]): SidebarProjectDrawerSession[] =>
-      groupSessions.map((session) => {
-        const sessionRuntime = sessionRuntimes.get(session.id);
-        const backgroundSession = backgroundSessionMap.get(session.id);
-        const status = getSessionStatusPresentation({
-          backgroundSession,
-          runtime: sessionRuntime,
-          taskState: sessionStates[session.id],
-          messageCount: session.messageCount,
-          turnCount: session.turnCount,
-          sessionStatus: session.status,
-          hasNeedsInput: hasNeedsInputForSession(session.id),
-        });
-        const latestActivityAt = Math.max(
-          session.updatedAt || 0,
-          sessionRuntime?.lastActivityAt || 0,
-          backgroundSession?.backgroundedAt || 0,
-        );
-        const replayEvidenceCount = replayEvidenceBySessionId.get(session.id)?.length ?? 0;
-        const pendingReviewCount = (reviewItemsBySessionId[session.id] ?? []).filter(
-          (item) => item.reviewStatus === 'pending',
-        ).length;
-        const snapshotSummary = session.workbenchSnapshot?.summary?.trim();
-        const hasMeaningfulSummary = Boolean(snapshotSummary && snapshotSummary !== PLAIN_CHAT_SUMMARY_LABEL);
-
-        return {
-          id: session.id,
-          title: getDisplaySessionTitle(session.title),
-          statusLabel:
-            status.kind === 'error'
-              ? t.common.error
-              : status.kind === 'incomplete'
-                ? t.common.incomplete
-                : status.label,
-          statusToneClassName: status.toneClassName,
-          showStatusBadge: status.showBadge,
-          typeLabel: getSessionTypeLabel(session.type),
-          summary: hasMeaningfulSummary ? snapshotSummary : undefined,
-          lastActiveTitle: new Date(latestActivityAt).toLocaleString(localeForLanguage(language)),
-          workingDirectory: session.workingDirectory,
-          gitBranch: session.gitBranch,
-          prLabel: session.prLink ? `PR #${session.prLink.number}` : undefined,
-          isCurrent: session.id === currentSessionId,
-          turnCount: session.turnCount,
-          messageCount: session.messageCount,
-          hasDeliverySignals: hasSessionDeliverySignals(session, {
-            hasReplay: replayEvidenceCount > 0,
-          }),
-          replayEvidenceCount,
-          pendingReviewCount,
-        };
-      }),
-    [
-      backgroundSessionMap,
-      currentSessionId,
-      hasNeedsInputForSession,
-      replayEvidenceBySessionId,
-      reviewItemsBySessionId,
-      sessionRuntimes,
-      sessionStates,
-      t,
-    ],
   );
 
   const sessionItemProps: SidebarSessionItemSharedProps = {
@@ -722,6 +608,7 @@ export const Sidebar: React.FC = () => {
         </div>
         {/* 图标之间不留 gap：32px 按钮首尾相接 ⇒ 中心间距 32，与 Codex 顶栏一致 */}
         <div className="flex items-center" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>          {!isAuthLoading && (
+            <>
             <IconButton
               type="button"
               variant="ghost"
@@ -735,6 +622,27 @@ export const Sidebar: React.FC = () => {
                 setSearchDialogOpen(true);
               }}
             />
+            {/* 状态筛选：仅管理员可见；搜索入口对所有人可见。 */}
+            {canOpenSessionReplay && (
+              <SidebarStatusFilterDropdown
+                statusFilterOpen={statusFilterOpen}
+                setStatusFilterOpen={setStatusFilterOpen}
+                statusFilterRef={statusFilterRef}
+                visibleStatusFilterOptions={visibleStatusFilterOptions}
+                sessionStatusFilter={sessionStatusFilter}
+                setSessionStatusFilter={setSessionStatusFilter}
+                trajectoryTierFilter={trajectoryTierFilter}
+                setTrajectoryTierFilter={setTrajectoryTierFilter}
+                trajectoryFailureFilter={trajectoryFailureFilter}
+                setTrajectoryFailureFilter={setTrajectoryFailureFilter}
+                trajectoryReviewFilter={trajectoryReviewFilter}
+                setTrajectoryReviewFilter={setTrajectoryReviewFilter}
+                hasActiveTrajectoryFilter={hasActiveTrajectoryFilter}
+                hasActiveStatusDropdownFilter={hasActiveStatusDropdownFilter}
+                activeStatusFilterLabel={activeStatusFilterLabel}
+              />
+            )}
+            </>
           )}
           {/* 侧栏收起开关坐在侧栏自己头上（2026-07-27 审美关拍板：从右侧顶栏挪回左侧面板）。
               收起态的展开入口留在 TitleBar——侧栏那时不存在，按钮得有别的落脚点。 */}
@@ -750,8 +658,8 @@ export const Sidebar: React.FC = () => {
         </div>
       </div>
 
-      {/* 「选择目录」行已退役（批C2）：目录选择收进「项目」区的新建项目流程
-          （CreateProjectModal/原生选择器）与项目行 ⋯ 菜单，侧栏不再展示内部路径。 */}
+      {/* 「选择目录」行已退役（批C2）：目录选择并入新任务流程（欢迎页目录 chip +
+          DirectoryPickerModal/原生选择器），侧栏不再展示内部路径。 */}
 
       {/* 新任务默认纯对话，不继承项目上下文（项目会话走各项目组 + 按钮）。
           与能力区之间零间距：四条入口行等距同组，区间断点只留在能力区之后（pb-2）。 */}
@@ -766,131 +674,45 @@ export const Sidebar: React.FC = () => {
       {/* 能力区：自动化 / 专家 / 资料库（三件套，逐批点亮） */}
       <SidebarCapabilityZone />
 
-      {/* 「项目」section 标题行（2026-07-29 侧栏项目区 redesign，参考 Codex 桌面端）：
-          左侧「项目」+ chevron 批量展开/收起所有项目组（语义：全展开时点击全收起，否则全展开）；
-          右侧状态筛选（自顶行图标簇挪入，仅管理员可见）+「+」新建项目。 */}
-      <div className="px-1 flex-shrink-0">
-        <div className="flex items-center gap-1 px-1.5 pb-1">
-          <button /* ds-allow:button: section 标题行（小写标题+chevron 的裸文本钮），Button primitive 居中动作按钮形状不适配 */
-            type="button"
-            onClick={handleToggleAllProjects}
-            title={allProjectsExpanded ? sb.collapseAllProjects : sb.expandAllProjects}
-            aria-label={allProjectsExpanded ? sb.collapseAllProjects : sb.expandAllProjects}
-            className="flex min-w-0 flex-1 items-center gap-1 text-left"
-          >
-            <ChevronDown
-              className={`h-3.5 w-3.5 shrink-0 text-zinc-500 transition-transform ${allProjectsExpanded ? '' : '-rotate-90'}`}
-            />
-            <span className="truncate text-[11px] font-medium uppercase tracking-wider text-zinc-500">
-              {sb.projectsSectionTitle}
-            </span>
-          </button>
-          {/* 状态筛选：仅管理员可见；自顶行图标簇挪到本行（2026-07-29）。
-              与顶行搜索同一约定：auth 未解析完不渲染，避免身份闪烁出管理员入口。 */}
-          {!isAuthLoading && canOpenSessionReplay && (
-            <SidebarStatusFilterDropdown
-              statusFilterOpen={statusFilterOpen}
-              setStatusFilterOpen={setStatusFilterOpen}
-              statusFilterRef={statusFilterRef}
-              visibleStatusFilterOptions={visibleStatusFilterOptions}
-              sessionStatusFilter={sessionStatusFilter}
-              setSessionStatusFilter={setSessionStatusFilter}
-              trajectoryTierFilter={trajectoryTierFilter}
-              setTrajectoryTierFilter={setTrajectoryTierFilter}
-              trajectoryFailureFilter={trajectoryFailureFilter}
-              setTrajectoryFailureFilter={setTrajectoryFailureFilter}
-              trajectoryReviewFilter={trajectoryReviewFilter}
-              setTrajectoryReviewFilter={setTrajectoryReviewFilter}
-              hasActiveTrajectoryFilter={hasActiveTrajectoryFilter}
-              hasActiveStatusDropdownFilter={hasActiveStatusDropdownFilter}
-              activeStatusFilterLabel={activeStatusFilterLabel}
-            />
-          )}
-          <button /* ds-allow:button: section 行尾 24px 图标钮（与分组头 ⋯/+ 同形态），Button primitive 无对应微尺寸方形变体 */
-            type="button"
-            aria-label={sb.createProject}
-            title={sb.createProject}
-            data-testid="sidebar-create-project"
-            onClick={() => setCreateProjectOpen(true)}
-            className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-700/70 hover:text-zinc-200 focus:outline-hidden"
-          >
-            <Plus className="h-3.5 w-3.5" />
-          </button>
-        </div>
-      </div>
-
-      {/* Session List - Project Grouped
-          scrollbar-hidden 不是审美选择，是右轨对齐的根因修复（2026-07-27 实测）：
-          global.css 给了 `::-webkit-scrollbar{width:6px}` 这种**占布局宽度**的经典滚动条，
-          列表一溢出，容器内容盒就窄 6px ⇒ 组角标/状态点中心被推到 205.8，
-          而账号行在滚动容器**外**、中心仍是 212，三者于是不同轴（产品负责人 07-27 反馈）。
-          按状态补 6px padding 只在"正在溢出"时对，不溢出时反而错——只有把这段占位彻底去掉，
-          栏内所有行才共用同一条右轨（220 右缘 / 212 中心），与溢出与否无关。
-          做法（参照 Codex：滚动条独占最右一条窄带，内容轨不受它影响）：侧栏根 `pr` 让出
-          一条滚动条宽的窄带 ⇒ 顶行/能力区/账号行都缩到同一条内轨；本滚动容器再用等宽负 margin
-          把那条窄带"要回来"，`overflow-y-scroll` 恒定占位把滚动条正好摆进去 ⇒ 它的内容盒宽度
-          回到与兄弟块相同的内轨。滚动条照常可见，且与列表溢不溢出无关。 */}
-      <div className="flex-1 overflow-y-scroll px-1 min-h-0 mr-[calc(var(--scrollbar-size)*-1)]" data-testid="sidebar-session-scroll">
-        {isLoading && sessions.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-12 gap-3">
-            <Loader2 className="w-6 h-6 animate-spin text-primary-400" />
-            <span className="text-xs text-zinc-500">{sb.loading}</span>
-          </div>
-        ) : !hasAnySessions ? (
-          <div className="flex flex-col items-center justify-center h-full text-center px-4">
-            <div className="w-12 h-12 rounded-2xl bg-zinc-800 flex items-center justify-center mb-3">
-              <MessageSquare className="w-6 h-6 text-zinc-500" />
-            </div>
-            <p className="text-sm text-zinc-400 mb-1">{sb.noSessions}</p>
-            <p className="text-xs text-zinc-500">{sb.startNewTask}</p>
-          </div>
-        ) : filteredSessions.length === 0 && hasSearchFilters ? (
-          <div className="flex flex-col items-center justify-center py-12 text-center px-4">
-            <Search className="w-6 h-6 text-zinc-600 mb-2" />
-            <p className="text-sm text-zinc-500">
-              {messageSearchLoading
-                ? sb.searchingMessageContent
-                : !searchQuery && sessionStatusFilter !== 'all'
-                  ? sb.noStatusSessions.replace('{label}', activeStatusFilterLabel)
-                  : sb.noMatchedSessions}
-            </p>
-          </div>
-        ) : (
-          /* Workspace/project grouped view, including search and status-filtered results. */
-          <div className="py-2">
-            {workspaceGroupedSessions.map((group) => (
-              <SidebarProjectGroup
-                key={group.key}
-                group={group}
-                projectMetaById={projectMetaById}
-                setProjectMetaById={setProjectMetaById}
-                hasSearchFilters={hasSearchFilters}
-                expandedWorkspaces={expandedWorkspaces}
-                collapsingWorkspaces={collapsingWorkspaces}
-                expandedProjectDetails={expandedProjectDetails}
-                projectDrawerKey={projectDrawerKey}
-                isCreatingSession={isCreatingSession}
-                creatingWorkspaceKey={creatingWorkspaceKey}
-                setProjectDrawerKey={setProjectDrawerKey}
-                setExpandedProjectDetails={setExpandedProjectDetails}
-                handleToggleWorkspaceGroup={handleToggleWorkspaceGroup}
-                handleOpenWorkspaceAssets={handleOpenWorkspaceAssets}
-                handleNewWorkspaceChat={handleNewWorkspaceChat}
-                handleOpenProjectArtifactSession={handleOpenProjectArtifactSession}
-                handleStartProjectGoal={handleStartProjectGoal}
-                handleSelectSession={handleSelectSession}
-                handleRenameSidebarProject={handleRenameSidebarProject}
-                handleSetSidebarProjectStatus={handleSetSidebarProjectStatus}
-                handleSetSidebarProjectDescription={handleSetSidebarProjectDescription}
-                createWorkspaceChat={createWorkspaceChat}
-                openWorkspacePreview={openWorkspacePreview}
-                buildProjectDrawerSessions={buildProjectDrawerSessions}
-                sessionItemProps={sessionItemProps}
-              />
-            ))}
-          </div>
-        )}
-      </div>
+      {/* Session List - Project Grouped（整块已抽成 SidebarSessionList：Sidebar 逼近 god-file 门。
+          滚动条/右轨对齐的完整推导随之迁走，见该文件头注释。） */}
+      <SidebarSessionList
+        groups={workspaceGroupedSessions}
+        // 云标点亮（第三波预留接口）：本机存在已绑云身份的空间时，协同空间节头亮云图标
+        cloudBadge={Object.values(projectMetaById).some((meta) => Boolean(meta.cloudProjectId))}
+        isLoading={isLoading}
+        hasAnySessions={hasAnySessions}
+        filteredSessionsEmpty={filteredSessions.length === 0}
+        messageSearchLoading={messageSearchLoading}
+        searchQuery={searchQuery}
+        sessionStatusFilter={sessionStatusFilter}
+        activeStatusFilterLabel={activeStatusFilterLabel}
+        projectMetaById={projectMetaById}
+        setProjectMetaById={setProjectMetaById}
+        hasSearchFilters={hasSearchFilters}
+        expandedWorkspaces={expandedWorkspaces}
+        collapsingWorkspaces={collapsingWorkspaces}
+        expandedProjectDetails={expandedProjectDetails}
+        projectDrawerKey={projectDrawerKey}
+        isCreatingSession={isCreatingSession}
+        creatingWorkspaceKey={creatingWorkspaceKey}
+        setProjectDrawerKey={setProjectDrawerKey}
+        setExpandedProjectDetails={setExpandedProjectDetails}
+        handleToggleWorkspaceGroup={handleToggleWorkspaceGroup}
+        handleOpenWorkspaceAssets={handleOpenWorkspaceAssets}
+        handleNewWorkspaceChat={handleNewWorkspaceChat}
+        handleOpenProjectArtifactSession={handleOpenProjectArtifactSession}
+        handleStartProjectGoal={handleStartProjectGoal}
+        handleSelectSession={handleSelectSession}
+        handleRenameSidebarProject={handleRenameSidebarProject}
+        handleSetSidebarProjectStatus={handleSetSidebarProjectStatus}
+        handleSetSidebarProjectDescription={handleSetSidebarProjectDescription}
+        createWorkspaceChat={createWorkspaceChat}
+        openWorkspacePreview={openWorkspacePreview}
+        sessionItemProps={sessionItemProps}
+        // 快速对话分区节头「+」与顶部「新任务」同一动作
+        handleNewChat={handleNewChat}
+      />
 
       {/* 多选模式底部操作栏 */}
       {multiSelectMode && selectedSessionIds.size > 0 && (
@@ -980,7 +802,6 @@ export const Sidebar: React.FC = () => {
                 advancedToolsOpen={advancedToolsOpen}
                 onToggleAdvancedTools={() => setShowAccountAdvancedTools((open) => !open)}
                 hasActiveAdvancedTool={hasActiveAdvancedTool}
-                currentSessionProjectId={currentSessionProjectId}
               />
             )}
           </>
@@ -1008,13 +829,6 @@ export const Sidebar: React.FC = () => {
         setSearchScope={setSearchScope}
         canSearchCurrentProject={canSearchCurrentProject}
         onSelectSession={handleSelectSearchSession}
-      />
-
-      <CreateProjectModal
-        isOpen={createProjectOpen}
-        creating={creatingProject}
-        onClose={() => setCreateProjectOpen(false)}
-        onSubmit={(input) => { void handleCreateProject(input); }}
       />
 
       {/* Replay 摘要 */}

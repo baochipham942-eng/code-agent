@@ -82,7 +82,9 @@ import { normalizeCancellationReason } from '../../shared/contract/cancellation'
 import { AGENT_ENGINE_LABELS, normalizeAgentEngineSession } from '../../shared/contract/agentEngine';
 import {
   ClaudeCodeAdapter,
+  CodeBuddyCliAdapter,
   CodexCliAdapter,
+  GrokCliAdapter,
   KimiCliAdapter,
   MimoCliAdapter,
   ExternalEngineDurableLifecycle,
@@ -612,6 +614,66 @@ export class AgentAppServiceImpl implements AgentApplicationService {
       // Kimi CLI 不读 env API key；per-user KIMI_CODE_HOME 凭据隔离目录由后续凭据接口派生后
       // 通过 KimiCliRunRequest.kimiCodeHome 注入（当前沿用 env.KIMI_CODE_HOME / CLI 默认）。
       await this.executeExternalRun(durableLifecycle, () => new KimiCliAdapter().run({
+        sessionId: resolvedSessionId,
+        prompt: envelope.content,
+        cwd: launch.cwd,
+        workspaceRoot: launch.workspaceRoot,
+        model: resolvedModel,
+        permissionProfile: launch.permissionProfile,
+        clientMessageId: envelope.clientMessageId,
+        attachmentsCount: envelope.attachments?.length ?? 0,
+        messageMetadata: this.getMessageMetadata(envelope),
+        durableLifecycle,
+      }));
+      return;
+    }
+    if (engine.kind === 'codebuddy_code') {
+      const launch = resolveExternalEngineLaunch(
+        session,
+        engine,
+        externalRequestedCwd,
+        sessionWorkspaceScope,
+      );
+      orchestrator?.setWorkingDirectory(launch.cwd);
+      const resolvedModel = await getRemoteAgentEngineModelCatalogService()
+        .resolveModelId('codebuddy_code', launch.model);
+      const durableLifecycle = await this.startExternalLifecycle({
+        engine: engine.kind,
+        sessionId: resolvedSessionId,
+        workspace: launch.workspaceRoot,
+        cwd: launch.cwd,
+      });
+      await this.executeExternalRun(durableLifecycle, () => new CodeBuddyCliAdapter().run({
+        sessionId: resolvedSessionId,
+        prompt: envelope.content,
+        cwd: launch.cwd,
+        workspaceRoot: launch.workspaceRoot,
+        model: resolvedModel,
+        permissionProfile: launch.permissionProfile,
+        clientMessageId: envelope.clientMessageId,
+        attachmentsCount: envelope.attachments?.length ?? 0,
+        messageMetadata: this.getMessageMetadata(envelope),
+        durableLifecycle,
+      }));
+      return;
+    }
+    if (engine.kind === 'grok_cli') {
+      const launch = resolveExternalEngineLaunch(
+        session,
+        engine,
+        externalRequestedCwd,
+        sessionWorkspaceScope,
+      );
+      orchestrator?.setWorkingDirectory(launch.cwd);
+      const resolvedModel = await getRemoteAgentEngineModelCatalogService()
+        .resolveModelId('grok_cli', launch.model, { strict: true });
+      const durableLifecycle = await this.startExternalLifecycle({
+        engine: engine.kind,
+        sessionId: resolvedSessionId,
+        workspace: launch.workspaceRoot,
+        cwd: launch.cwd,
+      });
+      await this.executeExternalRun(durableLifecycle, () => new GrokCliAdapter().run({
         sessionId: resolvedSessionId,
         prompt: envelope.content,
         cwd: launch.cwd,

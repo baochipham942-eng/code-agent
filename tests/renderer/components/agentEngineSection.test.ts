@@ -21,6 +21,7 @@ function descriptor(
 ): AgentEngineDescriptor {
   const installState: AgentEngineInstallState = kind === 'native' ? 'builtin' : 'missing';
   return {
+    manifestId: kind,
     kind,
     label: kind === 'native' ? 'Neo' : kind,
     summary: 'summary',
@@ -32,6 +33,7 @@ function descriptor(
     cwdPolicy: 'workspace_only',
     riskTier: 'medium',
     detectedAt: 1,
+    modelSelection: kind === 'native' ? 'neo_provider' : 'runtime_catalog',
     ...overrides,
   };
 }

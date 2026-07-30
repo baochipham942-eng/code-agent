@@ -209,6 +209,8 @@ export const qwenOmniTransport: VoiceTransport = {
 
     // TTFA 模型口径从上游 speech_stopped 开始；体感口径不是实测值，
     // 是按 server_vad 先等待 silence_duration_ms 才发 speech_stopped 这一机制推算。
+    /** item_id → 该轮到目前为止的用户字幕（delta 的 stash 是累计值）。completed 到货即清。 */
+    const userTranscriptStash = new Map<string, string>();
     let speechStoppedAt = 0;
     let ttfaModelMs: number | undefined;
     let ttfaPerceivedMs: number | undefined;
@@ -324,9 +326,36 @@ export const qwenOmniTransport: VoiceTransport = {
         case 'response.audio_transcript.done':
           onEvent({ type: 'assistant.transcript', text: typeof event.transcript === 'string' ? event.transcript : '', done: true });
           break;
-        case 'conversation.item.input_audio_transcription.completed':
-          onEvent({ type: 'user.transcript', text: typeof event.transcript === 'string' ? event.transcript : '', done: true });
+        // 用户侧流式字幕（E3）。**文本在 `stash` 里，`text` 字段恒空**——2026-07-30
+        // 真上游探针实测（26 个 delta，text 全是 len=0，stash 单调增长 2→21）。
+        // stash 是**累计值**不是增量，所以直接当整句下发，renderer 的 partialUser 是替换语义。
+        case 'conversation.item.input_audio_transcription.delta': {
+          const stash = typeof event.stash === 'string' ? event.stash : '';
+          const itemId = typeof event.item_id === 'string' ? event.item_id : '';
+          if (!stash) break;
+          if (itemId) userTranscriptStash.set(itemId, stash);
+          onEvent({ type: 'user.transcript', text: stash, done: false });
           break;
+        }
+        case 'conversation.item.input_audio_transcription.completed': {
+          const itemId = typeof event.item_id === 'string' ? event.item_id : '';
+          const final = typeof event.transcript === 'string' ? event.transcript : '';
+          // E1（P0，2026-07-30 真机：25 秒通话两轮转写全丢，DB 里一条 user 都没有）：
+          // completed 的 transcript 会**间歇性为空**。此前空文本一路静默走到落库前被丢弃，
+          // 用户说的话就此蒸发。delta 攒下的 stash 是同一句话，拿它兜底。
+          const stashed = itemId ? userTranscriptStash.get(itemId) ?? '' : '';
+          const text = final.trim() ? final : stashed;
+          if (!final.trim()) {
+            logger.warn('user transcript empty on completed, falling back to delta stash', {
+              hasStash: !!stashed,
+              stashLength: stashed.length,
+              recovered: !!text,
+            });
+          }
+          if (itemId) userTranscriptStash.delete(itemId);
+          onEvent({ type: 'user.transcript', text, done: true });
+          break;
+        }
         case 'input_audio_buffer.speech_started':
           clearResponseWatchdog();
           speechStoppedAt = 0;

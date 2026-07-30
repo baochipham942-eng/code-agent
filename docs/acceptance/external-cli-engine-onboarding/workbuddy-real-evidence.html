@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Neo × 外部 CLI 实机验收</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #080b12;
+      --panel: rgba(18, 24, 38, .88);
+      --line: rgba(148, 163, 184, .18);
+      --muted: #9ca3af;
+      --text: #f4f4f5;
+      --blue: #60a5fa;
+      --green: #34d399;
+      --amber: #fbbf24;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background:
+        radial-gradient(circle at 12% -10%, rgba(37, 99, 235, .22), transparent 34rem),
+        radial-gradient(circle at 88% 5%, rgba(14, 165, 233, .12), transparent 30rem),
+        var(--bg);
+      color: var(--text);
+      font: 15px/1.6 Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    main { width: min(1180px, calc(100% - 40px)); margin: 0 auto; padding: 64px 0 80px; }
+    header { max-width: 900px; margin-bottom: 36px; }
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      color: #bfdbfe;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+    }
+    .eyebrow::before {
+      width: 8px; height: 8px; border-radius: 999px; background: var(--green);
+      box-shadow: 0 0 16px rgba(52, 211, 153, .7); content: "";
+    }
+    h1 { margin: 12px 0 12px; font-size: clamp(34px, 5vw, 58px); line-height: 1.08; letter-spacing: -.045em; }
+    header p { margin: 0; color: #cbd5e1; font-size: 17px; }
+    .summary {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 14px;
+      margin: 28px 0 42px;
+    }
+    .metric, .shot, .boundary {
+      border: 1px solid var(--line);
+      background: linear-gradient(160deg, rgba(24, 32, 50, .94), rgba(10, 14, 24, .94));
+      box-shadow: 0 20px 60px rgba(0, 0, 0, .22);
+    }
+    .metric { padding: 18px 20px; border-radius: 16px; }
+    .metric strong { display: block; margin-bottom: 3px; font-size: 17px; }
+    .metric span { color: var(--muted); font-size: 13px; }
+    .metric .pass { color: var(--green); }
+    .shots { display: grid; gap: 28px; }
+    .shot { overflow: hidden; border-radius: 20px; }
+    .shot-copy { display: grid; grid-template-columns: 52px 1fr; gap: 14px; padding: 22px 24px; }
+    .index {
+      display: grid; place-items: center; width: 42px; height: 42px; border-radius: 12px;
+      background: rgba(59, 130, 246, .13); color: #bfdbfe; font-weight: 800;
+      border: 1px solid rgba(96, 165, 250, .25);
+    }
+    h2 { margin: 0 0 4px; font-size: 19px; }
+    .shot-copy p { margin: 0; color: var(--muted); font-size: 14px; }
+    figure { margin: 0; border-top: 1px solid var(--line); background: #05070b; }
+    figure img { display: block; width: 100%; height: auto; }
+    .boundary { margin-top: 34px; padding: 24px; border-radius: 18px; }
+    .boundary h2 { margin-bottom: 12px; }
+    .boundary-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; }
+    .boundary h3 { margin: 0 0 8px; font-size: 14px; color: #e2e8f0; }
+    ul { margin: 0; padding-left: 18px; color: var(--muted); }
+    li + li { margin-top: 5px; }
+    code {
+      padding: 2px 6px; border-radius: 6px; background: rgba(148, 163, 184, .12);
+      color: #dbeafe; font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+    .warning { color: var(--amber); }
+    footer { margin-top: 26px; color: #64748b; font-size: 12px; }
+    @media (max-width: 760px) {
+      main { width: min(100% - 24px, 1180px); padding-top: 34px; }
+      .summary, .boundary-grid { grid-template-columns: 1fr; }
+      .shot-copy { grid-template-columns: 42px 1fr; padding: 18px; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div class="eyebrow">Real product evidence · 2026-07-30</div>
+      <h1>Neo × 外部 CLI<br>实机链路验收</h1>
+      <p>从两步 Onboarding 选择本机官方客户端，到真实会话区查看模型边界；WorkBuddy 完成真实对话，Kimi CLI 完成真实登录探测与模型选择。</p>
+    </header>
+
+    <section class="summary" aria-label="验收摘要">
+      <div class="metric"><strong class="pass">两套实机通过</strong><span>WorkBuddy 2.115.0 · Kimi Code 0.30.0</span></div>
+      <div class="metric"><strong class="pass">Kimi 模型可切换</strong><span>官方 CLI 返回 5 个模型 · 默认 kimi-code/k3</span></div>
+      <div class="metric"><strong class="pass">WorkBuddy 回复已持久化</strong><span>SSE 与会话消息包含相同 nonce</span></div>
+    </section>
+
+    <section class="shots" aria-label="关键截图">
+      <article class="shot">
+        <div class="shot-copy">
+          <div class="index">01</div>
+          <div>
+            <h2>Onboarding：连接来源 → 默认模型</h2>
+            <p>只有两步。官方账号/订阅与 API Key 使用清晰 tab；Neo 不在官方客户端列表；各客户端分别展示已适配、仅 Spike、未安装或推荐状态。</p>
+          </div>
+        </div>
+        <figure>
+          <img src="10-onboarding-two-step-workbuddy.png" alt="Neo 两步 Onboarding，展示 WorkBuddy 和其他官方客户端的真实探测状态">
+        </figure>
+      </article>
+
+      <article class="shot">
+        <div class="shot-copy">
+          <div class="index">02</div>
+          <div>
+            <h2>Onboarding：Kimi CLI 已检测并可用</h2>
+            <p>真实探测本机 <code>kimi 0.30.0</code>，官方 CLI 确认登录后整卡可选；Qoder Work 等只有探测证据、没有生产 Adapter 的来源继续保持不可选。</p>
+          </div>
+        </div>
+        <figure>
+          <img src="12-onboarding-kimi-detected.png" alt="Neo 两步 Onboarding 中 Kimi Code 已检测且可用">
+        </figure>
+      </article>
+
+      <article class="shot">
+        <div class="shot-copy">
+          <div class="index">03</div>
+          <div>
+            <h2>Onboarding：Kimi 的 5 个真实模型</h2>
+            <p>模型来自官方 CLI 的 <code>provider list --json</code>，默认选择 <code>kimi-code/k3</code>；Neo 不读取或展示 provider 凭证。</p>
+          </div>
+        </div>
+        <figure>
+          <img src="13-onboarding-kimi-models.png" alt="Neo Onboarding 默认模型步骤列出 Kimi CLI 返回的 5 个真实模型">
+        </figure>
+      </article>
+
+      <article class="shot">
+        <div class="shot-copy">
+          <div class="index">04</div>
+          <div>
+            <h2>会话区：Kimi 当前模型与切换列表</h2>
+            <p>弹窗头部明确显示 <code>K3 · kimi-code/k3</code>，下面列出真实模型并标记当前项；外部引擎不再误显示 Neo 专属的 Low / Med / High 控件。</p>
+          </div>
+        </div>
+        <figure>
+          <img src="14-session-kimi-model-popup.png" alt="真实 ChatView 中 Kimi Code 模型弹窗显示当前 K3 与 5 个可选模型">
+        </figure>
+      </article>
+
+      <article class="shot">
+        <div class="shot-copy">
+          <div class="index">05</div>
+          <div>
+            <h2>会话区：WorkBuddy 模型弹窗</h2>
+            <p>弹窗明确显示由官方客户端选择默认模型。当前客户端没有返回可信目录，Neo 不展示夹具模型，也不伪造 HY、GLM 或权益状态。</p>
+          </div>
+        </div>
+        <figure>
+          <img src="09-session-workbuddy-model-popup.png" alt="真实 ChatView 中的 WorkBuddy 模型弹窗，显示客户端默认模型说明">
+        </figure>
+      </article>
+
+      <article class="shot">
+        <div class="shot-copy">
+          <div class="index">06</div>
+          <div>
+            <h2>真实对话：WorkBuddy 返回精确 nonce</h2>
+            <p>Neo 通过生产 Web host 选择 WorkBuddy，以只读配置发出请求；回复 <code>NEO_WORKBUDDY_DEFAULT_20260730_001</code> 同时出现在 SSE 和持久化会话消息中。</p>
+          </div>
+        </div>
+        <figure>
+          <img src="08-session-workbuddy-live-conversation.png" alt="Neo 真实会话区中 WorkBuddy 返回精确 nonce 的对话截图">
+        </figure>
+      </article>
+
+      <article class="shot">
+        <div class="shot-copy">
+          <div class="index">07</div>
+          <div>
+            <h2>Neo：恢复等宽四段推理强度</h2>
+            <p>Neo 的多档 effort 统一使用已经优化过的 <code>关 / 低 / 中 / 高</code> 四段式控件，不再回退到左侧拥挤、右侧留空的 Low / Med / High 旧样式。</p>
+          </div>
+        </div>
+        <figure>
+          <img src="15-session-neo-reasoning-effort-popup.png" alt="真实 ChatView 中 Neo 模型弹窗使用等宽关低中高推理强度控件">
+        </figure>
+      </article>
+    </section>
+
+    <section class="boundary">
+      <h2>证据边界</h2>
+      <div class="boundary-grid">
+        <div>
+          <h3>本机真实验证</h3>
+          <ul>
+            <li>App-bundled CLI 路径、版本、官方登录态与可执行 Adapter。</li>
+            <li>Onboarding 直接进入真实 ChatView，模型弹窗与外部点击关闭走产品组件。</li>
+            <li>WorkBuddy 实际传输、精确回复、SSE 和会话持久化。</li>
+            <li>Kimi CLI 0.30.0 登录状态、5 个模型、默认模型和真实会话弹窗。</li>
+            <li>Neo effort 截图使用隔离数据目录内的 UI-only Provider 配置；未发起模型请求。</li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="warning">当前不能宣称</h3>
+          <ul>
+            <li>当前 WorkBuddy CLI 的 <code>--help</code> 没有返回可枚举模型目录。</li>
+            <li>HY 模型及手动模型切换没有实机协议证据，因此保持 fail-closed。</li>
+            <li>API Key 分支没有填入或保存任何真实凭证。</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <footer>截图来自 code-agent 的生产 renderer 与真实组件；未使用独立静态 mock 代替产品验收。</footer>
+  </main>
+</body>
+</html>

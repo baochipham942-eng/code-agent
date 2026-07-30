@@ -1049,6 +1049,11 @@ export class DatabaseService extends DurableRunDatabaseSupport {
     this.ensureDb();
     return this.sessionRepo.getMessages(sessionId, limit, offset, options);
   }
+
+  getLatestUserAuthorId(sessionId: string): string | null {
+    this.ensureDb();
+    return this.sessionRepo.getLatestUserAuthorId(sessionId);
+  }
   getMessageCount(sessionId: string, options?: { includeRewound?: boolean }): number {
     this.ensureDb();
     return this.sessionRepo.getMessageCount(sessionId, options);
@@ -2183,8 +2188,7 @@ export class DatabaseService extends DurableRunDatabaseSupport {
       const expectedOwnerScopeId = input.ownerUserId
         ?? LOCAL_SESSION_FORK_OWNER_SCOPE_ID;
       if (
-        !importRow
-        || importRow.target_owner_scope_id !== expectedOwnerScopeId
+        importRow?.target_owner_scope_id !== expectedOwnerScopeId
         || importRow.target_project_id !== targetProjectId
         || importRow.source_export_id !== sourceExportId
         || JSON.stringify(storedSessionIds) !== JSON.stringify([...sessionIds].sort())

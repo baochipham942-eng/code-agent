@@ -144,6 +144,10 @@ const sessionUiState = {
   pendingDelete: null,
   expandedWorkspaces: {},
   setWorkspaceExpanded: vi.fn(),
+  collapsedTiers: {} as Record<string, boolean>,
+  setTierCollapsed: vi.fn(),
+  soloTier: null as string | null,
+  setSoloTier: vi.fn(),
 };
 
 const appState = {
@@ -152,6 +156,7 @@ const appState = {
   openSettingsTab: vi.fn(),
   setShowEvalCenter: setShowEvalCenterMock,
   setWorkingDirectory: setWorkingDirectoryMock,
+  openProjectSpacePage: vi.fn(),
 };
 
 const authState = {

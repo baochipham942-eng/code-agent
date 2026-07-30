@@ -76,6 +76,7 @@ class VoiceCallBridge {
   private ws: WebSocket | null = null;
   private audio: VoiceAudioPipelineLike | null = null;
   private audioReady: Promise<'native_aec' | 'headphones'> | null = null;
+  private pendingAudioDiagnostics: string[] = [];
   private fallbackWarningShown = false;
   private reloadTimer: ReturnType<typeof setTimeout> | null = null;
   /** 用户显式挂断 vs 网络断开——只有后者才该重连。 */
@@ -314,6 +315,7 @@ class VoiceCallBridge {
     this.pendingHandoffSessionId = null;
     this.endRevealCycle();
     this.audioReady = null;
+    this.pendingAudioDiagnostics = [];
     this.fallbackWarningShown = false;
 
     const activeAgentId = readActiveAgentSessionMap()[sessionId];
@@ -493,6 +495,14 @@ class VoiceCallBridge {
    */
   private audioModeReason = '';
 
+  private reportAudioDiagnostic(code: string): void {
+    if (this.store().phase === 'live') {
+      this.send({ type: 'audio_diagnostic', code });
+    } else {
+      this.pendingAudioDiagnostics.push(code);
+    }
+  }
+
   private async startAudio(
     ws: WebSocket,
     interruptMode: VoiceInterruptMode,
@@ -516,6 +526,7 @@ class VoiceCallBridge {
       onError: () => {
         void this.fallbackFromNative(ws, interruptMode, pipeline);
       },
+      onDiagnostic: (code) => this.reportAudioDiagnostic(code),
     });
     pipeline.setCaptureOpen(interruptMode === 'server_vad');
     this.audio = pipeline;
@@ -571,6 +582,9 @@ class VoiceCallBridge {
             const mode = await ready;
             // 管线判定结果送 host 落日志（批 X §5）：ws 此刻已 live，正是能送的时点。
             if (mode) this.send({ type: 'audio_mode', mode, reason: this.audioModeReason || 'unknown' });
+            for (const code of this.pendingAudioDiagnostics.splice(0)) {
+              this.send({ type: 'audio_diagnostic', code });
+            }
             if (mode !== 'headphones' || this.store().phase !== 'live') return;
             const text = getT().voice.echoHint;
             await maybeShowSpeakerEchoHint({ message: text.message, dontShowAgain: text.dontShowAgain });

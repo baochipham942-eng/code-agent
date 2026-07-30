@@ -8,15 +8,24 @@
 
 import { IPC_DOMAINS } from '@shared/ipc';
 import type {
+  CloudCollabCard,
+  CloudSpacePromotion,
+  CollabCardSyncReport,
+  CreateSpaceInput,
   CreateProjectInput,
   Project,
   ProjectArtifact,
+  ProjectCapabilityKind,
+  ProjectCapabilitySelection,
   ProjectDetail,
   ProjectGoal,
   ProjectGoalStatus,
+  ProjectInvite,
+  ProjectMember,
   ProjectRoleLink,
   ProjectSourceGitState,
   ProjectStatus,
+  ProjectWithActivity,
   UpdateProjectInput,
 } from '@shared/contract/project';
 import type { ArtifactIssue, ArtifactIssueStatus } from '@shared/contract/productClosure';
@@ -24,6 +33,88 @@ import ipcService from './ipcService';
 
 export async function listProjects(includeArchived = false): Promise<Project[]> {
   return ipcService.invokeDomain<Project[]>(IPC_DOMAINS.PROJECT, 'list', { includeArchived });
+}
+
+/** 项目列表页数据源：项目 + 活跃 topic 数 + 最近活动时间；spacesOnly=true 只回显式空间 */
+export async function listProjectsWithActivity(includeArchived = false, spacesOnly = false): Promise<ProjectWithActivity[]> {
+  return ipcService.invokeDomain<ProjectWithActivity[]>(IPC_DOMAINS.PROJECT, 'listWithActivity', { includeArchived, spacesOnly });
+}
+
+/** 新建显式协作空间；撞已有 workspace 项目时 host 侧自动升级并返回该项目 */
+export async function createSpace(input: CreateSpaceInput): Promise<Project> {
+  return ipcService.invokeDomain<Project>(IPC_DOMAINS.PROJECT, 'createSpace', input);
+}
+
+/** 将已有普通项目升级为显式协作空间；项目带目录且含危险项时需 trustAcknowledged 知情确认 */
+export async function promoteToSpace(
+  projectId: string,
+  opts?: { trustAcknowledged?: boolean },
+): Promise<Project> {
+  return ipcService.invokeDomain<Project>(IPC_DOMAINS.PROJECT, 'promoteToSpace', {
+    projectId,
+    trustAcknowledged: opts?.trustAcknowledged,
+  });
+}
+
+/** 升级为云协同空间：创建云项目壳并写回本地映射；失败 error.message 已是人话（host 侧映射） */
+export async function promoteToCloudSpace(projectId: string): Promise<CloudSpacePromotion> {
+  return ipcService.invokeDomain<CloudSpacePromotion>(IPC_DOMAINS.PROJECT, 'promoteToCloudSpace', { projectId });
+}
+
+/** owner 创建空间邀请码；失败 error.message 已是人话，toast 直接展示 */
+export async function createInvite(
+  projectId: string,
+  opts: { expiresInHours: number; maxUses: number },
+): Promise<ProjectInvite> {
+  return ipcService.invokeDomain<ProjectInvite>(IPC_DOMAINS.PROJECT, 'createInvite', {
+    projectId,
+    expiresInHours: opts.expiresInHours,
+    maxUses: opts.maxUses,
+  });
+}
+
+/** 读取云协同空间成员卡（仅 cloudProjectId 非空的空间可用） */
+export async function listMembers(projectId: string): Promise<ProjectMember[]> {
+  return ipcService.invokeDomain<ProjectMember[]>(IPC_DOMAINS.PROJECT, 'listMembers', { projectId });
+}
+
+/** 读取其他成员共享的云端只读卡元数据（仅云空间可用；host 已剔除本机卡，readonly 恒 true） */
+export async function listCloudCards(projectId: string): Promise<CloudCollabCard[]> {
+  return ipcService.invokeDomain<CloudCollabCard[]>(IPC_DOMAINS.PROJECT, 'listCloudCards', { projectId });
+}
+
+/** 重新推送本机卡元数据到云端；失败 error.message 已是人话，直接展示 */
+export async function resyncCloudCards(projectId: string): Promise<CollabCardSyncReport> {
+  return ipcService.invokeDomain<CollabCardSyncReport>(IPC_DOMAINS.PROJECT, 'resyncCloudCards', { projectId });
+}
+
+/** 项目级能力选用清单（connector 等 kind 维度；skill 走 SKILL IPC 覆盖模型） */
+export async function listCapabilitySelections(projectId: string): Promise<ProjectCapabilitySelection[]> {
+  return ipcService.invokeDomain<ProjectCapabilitySelection[]>(IPC_DOMAINS.PROJECT, 'listCapabilitySelections', { projectId });
+}
+
+export async function selectCapability(
+  projectId: string,
+  kind: ProjectCapabilityKind,
+  capabilityId: string,
+): Promise<ProjectCapabilitySelection> {
+  return ipcService.invokeDomain<ProjectCapabilitySelection>(IPC_DOMAINS.PROJECT, 'selectCapability', {
+    projectId,
+    kind,
+    capabilityId,
+  });
+}
+
+export async function unselectCapability(
+  projectId: string,
+  kind: ProjectCapabilityKind,
+  capabilityId: string,
+): Promise<{ removed: boolean }> {
+  return ipcService.invokeDomain<{ removed: boolean }>(IPC_DOMAINS.PROJECT, 'unselectCapability', {
+    projectId,
+    kind,
+    capabilityId,
+  });
 }
 
 export async function createProject(input: CreateProjectInput): Promise<Project> {

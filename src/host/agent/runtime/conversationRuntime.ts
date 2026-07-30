@@ -188,6 +188,16 @@ export class ConversationRuntime {
             },
           });
         },
+        onStart: (info) => {
+          this.ctx.onEvent({
+            type: 'hook_started',
+            data: {
+              ...info,
+              sessionId: this.ctx.sessionId,
+              ...(this.ctx.turn.currentTurnId ? { turnId: this.ctx.turn.currentTurnId } : {}),
+            },
+          });
+        },
       });
     }
 

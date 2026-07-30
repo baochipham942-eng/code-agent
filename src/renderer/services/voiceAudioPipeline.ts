@@ -58,6 +58,8 @@ export interface VoiceAudioPipelineCallbacks {
   onLevels?: (mic: number, playback: number) => void;
   /** 采集失败（麦克风权限等）。code 是可枚举的用户文案编号；detail 是原始异常名，只供排查。 */
   onError?: (code: VoiceMessageCode, detail?: string) => void;
+  /** 原生 sidecar 生命周期诊断码；不含音频或用户内容。 */
+  onDiagnostic?: (code: string) => void;
 }
 
 /** WebView 与原生 AEC 管线共同向 voiceCallBridge 暴露的最小合同。 */

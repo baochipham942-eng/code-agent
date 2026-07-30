@@ -41,6 +41,11 @@ interface TraceNodeRendererProps {
   attachments?: import('@shared/contract').MessageAttachment[];
   /** Whether this node is in a currently streaming turn */
   isStreaming?: boolean;
+  /**
+   * X5.5-D4/D6：节点处于语音派活任务卡内。徽标已上提到轮层（卡头 AudioLines
+   * 图标是这通派活唯一的语音标记），轮内节点级的「语音」小标全部抑制。
+   */
+  inVoiceDispatchCard?: boolean;
   onStreamingDisplayUpdate?: (nodeId: string, displayLength: number, isAnimating: boolean) => void;
   onRewindUserPrompt?: (messageId: string, content: string) => void;
   rewindDisabled?: boolean;
@@ -51,6 +56,7 @@ export const TraceNodeRenderer: React.FC<TraceNodeRendererProps> = ({
   sessionId,
   attachments,
   isStreaming,
+  inVoiceDispatchCard,
   onStreamingDisplayUpdate,
   onRewindUserPrompt,
   rewindDisabled,
@@ -67,6 +73,7 @@ export const TraceNodeRenderer: React.FC<TraceNodeRendererProps> = ({
           attachments={attachments}
           metadata={node.metadata?.workbench}
           sourceType={node.metadata?.source}
+          suppressVoiceBadge={Boolean(inVoiceDispatchCard)}
           isNeoTagMessage={Boolean(node.metadata?.neoTag)}
           onRewind={onRewindUserPrompt}
           rewindDisabled={rewindDisabled}
@@ -79,6 +86,7 @@ export const TraceNodeRenderer: React.FC<TraceNodeRendererProps> = ({
           node={node}
           sessionId={sessionId}
           isStreaming={isStreaming}
+          inVoiceDispatchCard={inVoiceDispatchCard}
           onStreamingDisplayUpdate={onStreamingDisplayUpdate}
         />
       );
@@ -126,10 +134,12 @@ const UserNode: React.FC<{
   metadata?: WorkbenchMessageMetadata;
   /** 输入来源（§8.2）：voice/dictation 的气泡加来源小标 */
   sourceType?: 'voice' | 'dictation' | 'typed';
+  /** X5.5-D4：语音任务卡内抑制节点级「语音」小标（轮头已显示一次） */
+  suppressVoiceBadge?: boolean;
   isNeoTagMessage?: boolean;
   onRewind?: (messageId: string, content: string) => void;
   rewindDisabled?: boolean;
-}> = ({ messageId, sessionId, content, attachments, metadata, sourceType, isNeoTagMessage, onRewind, rewindDisabled }) => {
+}> = ({ messageId, sessionId, content, attachments, metadata, sourceType, suppressVoiceBadge, isNeoTagMessage, onRewind, rewindDisabled }) => {
   const { t } = useI18n();
   const isGuidedTurn = metadata?.runtimeInputDelivery === 'queued_next_turn';
   // 展示面还原：带 turnSystemContext 脚手架（<user_request> 包裹）的历史/泄漏消息只显示
@@ -161,7 +171,7 @@ const UserNode: React.FC<{
                 <span>已引导对话</span>
               </div>
             )}
-            {sourceType === 'voice' && (
+            {sourceType === 'voice' && !suppressVoiceBadge && (
               <div data-testid="voice-source-badge" className="mb-1 flex items-center justify-end gap-1 text-2xs text-zinc-500">
                 <AudioLines className="h-3 w-3" />
                 <span>{t.voice.sourceBadge}</span>
@@ -247,8 +257,10 @@ const AssistantTextNode: React.FC<{
   node: TraceNode;
   sessionId?: string;
   isStreaming?: boolean;
+  /** X5.5-D4/D6：语音任务卡内抑制节点级语音小标与派活 label（轮头已讲） */
+  inVoiceDispatchCard?: boolean;
   onStreamingDisplayUpdate?: (nodeId: string, displayLength: number, isAnimating: boolean) => void;
-}> = ({ node, sessionId, isStreaming: turnStreaming, onStreamingDisplayUpdate }) => {
+}> = ({ node, sessionId, isStreaming: turnStreaming, inVoiceDispatchCard, onStreamingDisplayUpdate }) => {
   const { t } = useI18n();
   const rootRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -350,15 +362,17 @@ const AssistantTextNode: React.FC<{
         <TurnQualityStrip summary={node.metadata.turnQuality} />
       )}
 
-      {node.metadata?.source === 'voice' && !node.metadata?.voiceDispatch && (
+      {node.metadata?.source === 'voice' && !node.metadata?.voiceDispatch && !inVoiceDispatchCard && (
         <div data-testid="voice-source-badge" className="mb-1 flex items-center gap-1 text-2xs text-zinc-500">
           <AudioLines className="h-3 w-3" />
           <span>{t.voice.sourceBadge}</span>
         </div>
       )}
 
-      {/* 通话 brain 改写后发给执行引擎的指令——不是用户说的话，必须写明来源 */}
-      {node.metadata?.voiceDispatch && (
+      {/* 通话 brain 改写后发给执行引擎的指令——不是用户说的话，必须写明来源。
+          X5.5-D6：语音任务卡内整条不渲染——卡头已显示同一个 title，
+          label 里的「{title}」与卡头读同一字段，必然重复。 */}
+      {node.metadata?.voiceDispatch && !inVoiceDispatchCard && (
         <div data-testid="voice-dispatch-label" className="mb-1 flex items-center gap-1 text-2xs text-zinc-500">
           <AudioLines className="h-3 w-3" />
           <span>{t.voice.dispatchLabel.replace('{title}', node.metadata.voiceDispatch.title)}</span>
@@ -566,7 +580,8 @@ const HookActivityNode: React.FC<{ timeline: TurnTimelinePayload }> = ({ timelin
           {activity.items.map((item, index) => (
             <div key={`${item.event}-${item.toolName || 'event'}-${item.timestamp}-${index}`} className="flex items-start gap-2 rounded-md bg-black/10 px-2.5 py-2 text-[11px]">
               <span className={`mt-[5px] h-1.5 w-1.5 shrink-0 rounded-full ${
-                item.action === 'block' ? 'bg-red-400' : (item.errorCount || 0) > 0 ? 'bg-amber-400' : 'bg-emerald-400'
+                // 与 TurnCard 同一套语义：拦下是 hook 的正常决策（amber），只有执行出错才红
+                item.action === 'block' ? 'bg-amber-400' : (item.errorCount || 0) > 0 ? 'bg-red-400' : 'bg-emerald-400'
               }`} />
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-1.5">

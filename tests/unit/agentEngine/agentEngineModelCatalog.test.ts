@@ -5,6 +5,9 @@ import {
   parseClaudeHelpModelCatalog,
   parseAgentEngineModelCatalogPayload,
   parseCodexDebugModelsCatalog,
+  parseJsonModelMapCatalog,
+  parseGrokModelsCatalog,
+  parseParenthesizedSupportedModelsCatalog,
   RemoteAgentEngineModelCatalogService,
   resolveAgentEngineCatalogModel,
 } from '../../../src/host/services/agentEngine/agentEngineModelCatalog';
@@ -148,6 +151,90 @@ describe('local Agent Engine model discovery parsing', () => {
     expect(engine?.models.find((model) => model.id === 'fable')?.label).toBe('Claude Fable (latest alias)');
   });
 
+  it('parses a manifest-configured WorkBuddy model list without inventing HY models', () => {
+    const engine = parseParenthesizedSupportedModelsCatalog(
+      'codebuddy_code',
+      '--model <model> Model ID. Currently supported: (auto, glm-5.1, kimi-k2.5, minimax-m2.7, deepseek-v3-2-volc)',
+      'Currently supported:',
+      '2026-07-30T00:00:00.000Z',
+      'auto',
+    );
+
+    expect(engine?.kind).toBe('codebuddy_code');
+    expect(engine?.defaultModel).toBe('auto');
+    expect(engine?.models.map((model) => model.id)).toEqual([
+      'auto',
+      'glm-5.1',
+      'kimi-k2.5',
+      'minimax-m2.7',
+      'deepseek-v3-2-volc',
+    ]);
+    expect(engine?.models.map((model) => model.id)).not.toContain('hy3');
+    expect(engine?.models[0].label).toBe('Auto（客户端自适应）');
+  });
+
+  it('parses the official Kimi provider model map and preserves the configured default', () => {
+    const engine = parseJsonModelMapCatalog(
+      'kimi_code',
+      JSON.stringify({
+        providers: {
+          'managed:kimi-code': {
+            apiKey: 'must-not-be-read',
+          },
+        },
+        models: {
+          'kimi-code/kimi-for-coding': {
+            provider: 'managed:kimi-code',
+            model: 'kimi-for-coding',
+            displayName: 'K2.7 Coding',
+          },
+          'kimi-code/k3': {
+            provider: 'kimi-code-key',
+            model: 'k3',
+            displayName: 'K3',
+          },
+        },
+      }),
+      'models',
+      'displayName',
+      '2026-07-30T00:00:00.000Z',
+      'kimi-code/k3',
+    );
+
+    expect(engine).toMatchObject({
+      kind: 'kimi_code',
+      defaultModel: 'kimi-code/k3',
+      models: [
+        expect.objectContaining({ id: 'kimi-code/kimi-for-coding', label: 'K2.7 Coding' }),
+        expect.objectContaining({ id: 'kimi-code/k3', label: 'K3' }),
+      ],
+    });
+    expect(JSON.stringify(engine)).not.toContain('must-not-be-read');
+  });
+
+  it('parses only models returned by the official Grok CLI', () => {
+    const engine = parseGrokModelsCatalog(`
+You are logged in with grok.com.
+
+Default model: grok-4.5
+
+Available models:
+  * grok-4.5 (default)
+`, '2026-07-30T00:00:00.000Z');
+
+    expect(engine).toMatchObject({
+      kind: 'grok_cli',
+      defaultModel: 'grok-4.5',
+      models: [
+        expect.objectContaining({
+          id: 'grok-4.5',
+          label: 'Grok 4.5',
+          recommended: true,
+        }),
+      ],
+    });
+  });
+
   it('merges discovered models before bundled fallback models', () => {
     const merged = mergeAgentEngineModelCatalogWithDiscovery(
       BUILTIN_AGENT_ENGINE_MODEL_CATALOG,
@@ -175,21 +262,24 @@ describe('local Agent Engine model discovery parsing', () => {
     expect(claude?.models[0].id).toBe('fable');
     expect(claude?.models.map((model) => model.id)).toEqual(expect.arrayContaining(['sonnet', 'fable', 'opus', 'haiku']));
   });
+
 });
 
 describe('bundled Agent Engine model catalog', () => {
-  it('registers mimo_code and kimi_code with resolvable default models', () => {
+  it('registers only safe bundled fallbacks and leaves Kimi/WorkBuddy to local discovery', () => {
     const parsed = parseAgentEngineModelCatalogPayload(BUILTIN_AGENT_ENGINE_MODEL_CATALOG, { sourcePath: 'bundled' });
     expect(parsed.diagnostics.filter((entry) => entry.severity === 'error')).toEqual([]);
     expect(parsed.catalog.engines.map((engine) => engine.kind)).toEqual(
-      expect.arrayContaining(['codex_cli', 'claude_code', 'mimo_code', 'kimi_code']),
+      expect.arrayContaining(['codex_cli', 'claude_code', 'mimo_code']),
     );
+    expect(parsed.catalog.engines.map((engine) => engine.kind)).not.toContain('kimi_code');
+    expect(parsed.catalog.engines.map((engine) => engine.kind)).not.toContain('codebuddy_code');
+    expect(parsed.catalog.engines.map((engine) => engine.kind)).not.toContain('grok_cli');
 
     // 未指定模型时回退到 defaultModel；指定时透传用户选择（resolveModelId 的核心路径）
     expect(resolveAgentEngineCatalogModel(parsed.catalog, 'mimo_code', null)?.id).toBe('mimo-coder');
     expect(resolveAgentEngineCatalogModel(parsed.catalog, 'mimo_code', 'mimo-coder')?.id).toBe('mimo-coder');
-    expect(resolveAgentEngineCatalogModel(parsed.catalog, 'kimi_code', null)?.id).toBe('kimi-k2.5');
-    expect(resolveAgentEngineCatalogModel(parsed.catalog, 'kimi_code', 'kimi-k2.5')?.id).toBe('kimi-k2.5');
+    expect(resolveAgentEngineCatalogModel(parsed.catalog, 'kimi_code', null)).toBeNull();
   });
 
   it('keeps Claude Code current aliases available in the bundled fallback', () => {

@@ -297,7 +297,12 @@ describe('external engine recovery handler', () => {
 
   it('keeps the audited capability matrix explicit', () => {
     expect(EXTERNAL_ENGINE_RESUME_CAPABILITIES).toEqual({
-      codex_cli: 'resumable', claude_code: 'resumable', mimo_code: 'non_resumable', kimi_code: 'unknown',
+      codex_cli: 'resumable',
+      claude_code: 'resumable',
+      mimo_code: 'non_resumable',
+      kimi_code: 'unknown',
+      codebuddy_code: 'non_resumable',
+      grok_cli: 'non_resumable',
     });
     expect(redactCommandSummary('cmd --token abcdefgh private prompt=secret')).not.toContain('abcdefgh');
     expect(extractExternalModelUsage('{"usage":{"input_tokens":12,"output_tokens":7}}')).toEqual({ inputTokens: 12, outputTokens: 7 });

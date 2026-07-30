@@ -23,10 +23,12 @@
 //   但视觉从属于标题（text-sm 灰字，见 BackButton），标题独占视觉一等位；
 //   按钮本体导出为 BackButton，页面内下钻视图（如评测遥测详情）复用同一形制。
 // ============================================================================
-import React from 'react';
+import React, { createContext, useContext } from 'react';
 import { ChevronLeft } from 'lucide-react';
 import { getCurrentKeybindingPlatform } from '@shared/keybindings/defaults';
+import { useAppStore } from '../../../stores/appStore';
 import { useI18n } from '../../../hooks/useI18n';
+import { COLLAPSED_TRAFFIC_LIGHT_INSET } from './trafficLightInset';
 
 // overlay 页整窗接管时，macOS 红绿灯就浮在它左上角（原生标题栏已撤）——
 // 主布局靠侧栏首行 h-12 给灯让位，overlay 页没有侧栏，不让位就顶格压在灯下面
@@ -35,6 +37,10 @@ const OVERLAY_TRAFFIC_LIGHT_INSET = getCurrentKeybindingPlatform() === 'darwin' 
 
 type FullScreenPageVariant = 'inline' | 'overlay';
 type FullScreenPageHeaderVariant = 'page' | 'bar';
+
+// header 需要知道自己所在的页形态（inline 页参与侧栏/顶栏布局制度，overlay 页整窗接管），
+// 由 FullScreenPage 经 context 下发；脱离 FullScreenPage 单用时按 overlay 旧行为。
+const FullScreenPageVariantContext = createContext<FullScreenPageVariant>('overlay');
 
 interface FullScreenPageProps extends React.HTMLAttributes<HTMLDivElement> {
   children: React.ReactNode;
@@ -85,14 +91,16 @@ export const FullScreenPage: React.FC<FullScreenPageProps> = ({
   variant = 'overlay',
   ...divProps
 }) => (
-  <div
-    {...divProps}
-    data-testid={testId}
-    data-page-variant={variant}
-    className={`${variant === 'overlay' ? `fixed inset-0 z-50 ${OVERLAY_TRAFFIC_LIGHT_INSET}` : 'min-w-0 flex-1'} flex min-h-0 flex-col bg-zinc-900 text-zinc-100 animate-fadeIn ${className}`}
-  >
-    {children}
-  </div>
+  <FullScreenPageVariantContext.Provider value={variant}>
+    <div
+      {...divProps}
+      data-testid={testId}
+      data-page-variant={variant}
+      className={`${variant === 'overlay' ? `fixed inset-0 z-50 ${OVERLAY_TRAFFIC_LIGHT_INSET}` : 'min-w-0 flex-1'} flex min-h-0 flex-col bg-zinc-900 text-zinc-100 animate-fadeIn ${className}`}
+    >
+      {children}
+    </div>
+  </FullScreenPageVariantContext.Provider>
 );
 
 export const FullScreenPageHeader: React.FC<FullScreenPageHeaderProps> = ({
@@ -106,6 +114,8 @@ export const FullScreenPageHeader: React.FC<FullScreenPageHeaderProps> = ({
   variant = 'page',
 }) => {
   const { t } = useI18n();
+  const pageVariant = useContext(FullScreenPageVariantContext);
+  const sidebarCollapsed = useAppStore((state) => state.sidebarCollapsed);
   const backButton = onClose ? (
     <BackButton
       onClick={onClose}
@@ -115,8 +125,12 @@ export const FullScreenPageHeader: React.FC<FullScreenPageHeaderProps> = ({
   ) : null;
 
   if (variant === 'bar') {
+    // inline 页 + 侧栏收起：TitleBar 仍渲染，其展开按钮按红绿灯让位制度坐在 x92，
+    // 本行同源让位，返回按钮左缘与它对齐（批P 审美关 2026-07-30，探针实测修前差 76px）。
+    // overlay 页整窗接管、不参与顶栏四角制度，保持 px-4。
+    const barInset = pageVariant === 'inline' && sidebarCollapsed ? COLLAPSED_TRAFFIC_LIGHT_INSET : '';
     return (
-      <header data-tauri-drag-region className="flex h-12 shrink-0 items-center justify-between border-b border-border-muted bg-zinc-900 px-4">
+      <header data-tauri-drag-region="deep" className={`flex h-12 shrink-0 items-center justify-between border-b border-border-muted bg-zinc-900 px-4 ${barInset}`}>
         <div className="flex min-w-0 items-center gap-3">
           {backButton}
           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-zinc-700/70 bg-zinc-800">
@@ -140,8 +154,11 @@ export const FullScreenPageHeader: React.FC<FullScreenPageHeaderProps> = ({
   // 内容左边线对齐），视觉从属于标题；大标题独占视觉一等位、actions 与标题同行
   // 右对齐，描述压在标题下方。
   // 二级页在位时右侧顶栏不渲染，本标题块就是窗口顶部——原生标题栏撤掉后它得能拖窗口。
+  // 用 ="deep"：Tauri 的 drag.js 对裸值只认「直接点在该元素上」，内层内容行会把有效区
+  // 挤成一条边（2026-07-30 产品负责人：二级页双击标题栏不能缩放）；deep 让整个子树可拖，
+  // 按钮/链接等可点元素仍由 Tauri 自动豁免。
   return (
-    <header data-tauri-drag-region className="shrink-0 px-6 pb-4 pt-5" style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}>
+    <header data-tauri-drag-region="deep" className="shrink-0 px-6 pb-4 pt-5" style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}>
       <div className="flex items-start justify-between gap-4" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
         <div className="flex min-w-0 items-center gap-3">
           {backButton ? <div className="-ml-2 shrink-0">{backButton}</div> : null}

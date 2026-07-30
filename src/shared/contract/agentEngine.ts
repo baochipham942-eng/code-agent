@@ -4,8 +4,16 @@
 
 import type { ModelCapability } from './model';
 import type { WorkspaceScope } from './project';
+import type { ExternalEngineModelSelection } from '../externalEngineManifest';
 
-export type AgentEngineKind = 'native' | 'codex_cli' | 'claude_code' | 'mimo_code' | 'kimi_code';
+export type AgentEngineKind =
+  | 'native'
+  | 'codex_cli'
+  | 'claude_code'
+  | 'mimo_code'
+  | 'kimi_code'
+  | 'codebuddy_code'
+  | 'grok_cli';
 
 export type ExternalAgentEngineKind = Exclude<AgentEngineKind, 'native'>;
 
@@ -92,6 +100,7 @@ export interface AgentEngineSessionMetadata {
 }
 
 export interface AgentEngineDescriptor {
+  manifestId: string;
   kind: AgentEngineKind;
   label: string;
   summary: string;
@@ -109,6 +118,30 @@ export interface AgentEngineDescriptor {
   lastError?: string;
   auditNotes?: string[];
   reliability?: AgentEngineReliability;
+  modelSelection: ExternalEngineModelSelection;
+  iconAsset?: string;
+}
+
+export interface AgentEngineSourceDescriptor {
+  manifestId: string;
+  kind?: AgentEngineKind;
+  label: string;
+  summary: string;
+  command?: string;
+  binaryPath?: string;
+  version?: string;
+  detected: boolean;
+  selectable: boolean;
+  authState: AgentEngineAuthState;
+  modelSelection: ExternalEngineModelSelection;
+  iconAsset?: string;
+  recommendation?: {
+    label: string;
+    reason: string;
+  };
+  evidence: 'production' | 'local_spike' | 'official_docs' | 'none';
+  credentialOwner: 'neo' | 'official_client';
+  auditNotes: string[];
 }
 
 export type AgentEngineEvent =
@@ -196,7 +229,15 @@ export interface AgentEngineModelCatalogResult {
   expiresAt?: string;
 }
 
-export const AGENT_ENGINE_KINDS: AgentEngineKind[] = ['native', 'codex_cli', 'claude_code', 'mimo_code', 'kimi_code'];
+export const AGENT_ENGINE_KINDS: AgentEngineKind[] = [
+  'native',
+  'codex_cli',
+  'claude_code',
+  'mimo_code',
+  'kimi_code',
+  'codebuddy_code',
+  'grok_cli',
+];
 
 /** 引擎展示名单一真源（registry descriptor 与 UI 文案共用，别把 kind 裸串透给用户） */
 export const AGENT_ENGINE_LABELS: Record<AgentEngineKind, string> = {
@@ -205,6 +246,8 @@ export const AGENT_ENGINE_LABELS: Record<AgentEngineKind, string> = {
   claude_code: 'Claude Code',
   mimo_code: 'MiMo-Code',
   kimi_code: 'Kimi Code',
+  codebuddy_code: 'WorkBuddy',
+  grok_cli: 'Grok Build',
 };
 
 export const DEFAULT_AGENT_ENGINE_SESSION: AgentEngineSessionMetadata = {

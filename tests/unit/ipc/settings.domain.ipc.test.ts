@@ -325,6 +325,23 @@ describe('devMode', () => {
 });
 
 describe('checkApiKeyConfigured', () => {
+  it('can force the real onboarding component only inside an explicit E2E process', async () => {
+    const savedE2E = process.env.CODE_AGENT_E2E;
+    const savedForce = process.env.CODE_AGENT_E2E_FORCE_MODEL_ONBOARDING_AFTER;
+    process.env.CODE_AGENT_E2E = '1';
+    process.env.CODE_AGENT_E2E_FORCE_MODEL_ONBOARDING_AFTER = '200';
+    env.config.getSettings.mockReturnValue({ onboarding: { completedAt: 100 } });
+    env.runtimeConfigured.mockReturnValue(true);
+    try {
+      expect((await callSettings('checkApiKeyConfigured')).data).toBe(false);
+    } finally {
+      if (savedE2E === undefined) delete process.env.CODE_AGENT_E2E;
+      else process.env.CODE_AGENT_E2E = savedE2E;
+      if (savedForce === undefined) delete process.env.CODE_AGENT_E2E_FORCE_MODEL_ONBOARDING_AFTER;
+      else process.env.CODE_AGENT_E2E_FORCE_MODEL_ONBOARDING_AFTER = savedForce;
+    }
+  });
+
   it('provider 运行时已配置 → true', async () => {
     env.config.getSettings.mockReturnValue({ models: { providers: { openai: { enabled: true } } } });
     env.runtimeConfigured.mockReturnValue(true);

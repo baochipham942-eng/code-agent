@@ -14,6 +14,7 @@ import { cronCenterEn } from './cronCenter';
 import { previewWorkspaceEn } from './previewWorkspace';
 import { modalPrimitivesEn } from './modalPrimitives';
 import { userQuestionEn } from './userQuestion';
+import { decisionCardEn } from './decisionCard';
 import { taskStatusPanelsEn } from './taskStatusPanels';
 import { noticesEn } from './notices';
 import { agentErrorEn } from './agentError';
@@ -30,6 +31,7 @@ import { expertEn } from './expert';
 import { generativeUIEn } from './generativeUI';
 import { capabilityHubEn } from './capabilityHub';
 import { neoTopicsEn } from './neoTopics';
+import { projectSpaceEn } from './projectSpace';
 import { evalCenterEn } from './evalCenter';
 import { localOpsEn } from './localOps';
 import { onboardingEn } from './onboarding';
@@ -40,6 +42,7 @@ export const en: Translations = {
   ...activityPanelEn,
   ...capabilityHubEn,
   ...neoTopicsEn,
+  ...projectSpaceEn,
   ...evalCenterEn,
   ...localOpsEn,
   ...onboardingEn,
@@ -95,6 +98,7 @@ export const en: Translations = {
     realpath: 'Real path',
     detected: 'Detected project configuration',
     identityChanged: 'This path was trusted before, but its folder identity changed. Confirm again before loading project configuration.',
+    emptyDangerNote: 'No dangerous configuration needs item-by-item review, but this folder is not trusted yet (or its trust has expired). Project configuration loads only after you confirm.',
     trust: 'Trust and load',
     block: 'Block project config',
     openSettings: 'Open settings',
@@ -525,6 +529,8 @@ export const en: Translations = {
         claude_code: 'Install Claude Code CLI, add claude to PATH, then click "Detect engines".',
         mimo_code: 'Install MiMo-Code CLI, add mimo to PATH, then click "Detect engines".',
         kimi_code: 'Install Kimi Code CLI, add kimi to PATH, then click "Detect engines".',
+        codebuddy_code: 'Install WorkBuddy; Neo detects the CLI bundled with the app automatically.',
+        grok_cli: 'Install Grok Build CLI, add grok to PATH, then click "Detect engines".',
       },
       loginHintTitle: 'Login hint',
       loginHint: {
@@ -532,6 +538,8 @@ export const en: Translations = {
         claude_code: 'Authorize your account via the Claude Code login command before first use.',
         mimo_code: 'Run mimo providers login to authorize your account before first use.',
         kimi_code: 'Run kimi login to authorize your account before first use.',
+        codebuddy_code: 'Sign in with the official WorkBuddy app before first use.',
+        grok_cli: 'Run grok login to authorize your official account before first use.',
       },
     },
     // Settings page "Agent Engine model catalog" section (signed catalog + local default)
@@ -916,6 +924,7 @@ export const en: Translations = {
   ...previewWorkspaceEn,
   ...modalPrimitivesEn,
   ...userQuestionEn,
+  ...decisionCardEn,
   ...taskStatusPanelsEn,
   ...noticesEn,
   ...agentErrorEn,

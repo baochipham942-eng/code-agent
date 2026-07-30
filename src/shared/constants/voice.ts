@@ -175,6 +175,12 @@ export const VOICE_AEC_OUTPUT_EVENT = 'voice-aec:output';
 /** PCM 经 JSON IPC 传给 Rust 时的 base64 分块大小，避免一次展开大数组撑爆调用栈。 */
 export const VOICE_AEC_BASE64_CHUNK_BYTES = 0x8000;
 
+/**
+ * relay 通话进入 live 后等待首个 Renderer 上行音频帧的窗口。
+ * 正常原生 AEC 首帧实测 0.1–0.3s；8 秒足够覆盖启动和短抖动，又能在用户持续说话前留下明确 warn。
+ */
+export const VOICE_INBOUND_AUDIO_STARTUP_TIMEOUT_MS = 8_000;
+
 /** 上游 WS 握手超时（ms）。 */
 export const VOICE_UPSTREAM_CONNECT_TIMEOUT_MS = 15_000;
 
@@ -242,6 +248,16 @@ export const VOICE_HANGUP_INTENT_PHRASES = [
  * 会留下一串碎片；这个窗口内到达的下一条 final 直接改写上一条，不新增消息。
  */
 export const VOICE_TRANSCRIPT_MERGE_WINDOW_MS = 2_000;
+
+/**
+ * 告别播完之后再留给用户反悔的窗口（ms，E2）。
+ *
+ * 2026-07-30 真机：武装到挂断只隔 2 秒，因为触发点是 `response.done`——那是**模型
+ * 生成完**，不是**用户听完**。告别音频那会儿才刚开始播，用户听到「好的拜拜」时
+ * 通话早已 teardown，「不要挂断」根本没机会说出口。现在等音频真播完再加这个窗，
+ * 代价是挂断慢 1-2 秒，换的是反悔真的来得及。
+ */
+export const VOICE_HANGUP_REACTION_WINDOW_MS = 1_500;
 
 /**
  * 客户端断开后等它回来的宽限窗（批 H · 断线重连 sticky）。

@@ -18,6 +18,8 @@ const EXTERNAL_ENGINE_LABELS: Record<ExternalAgentEngineKind, string> = {
   claude_code: 'Claude Code',
   mimo_code: 'MiMo-Code',
   kimi_code: 'Kimi Code',
+  codebuddy_code: 'WorkBuddy',
+  grok_cli: 'Grok Build',
 };
 
 function getExternalEngineLabel(kind: ExternalAgentEngineKind): string {

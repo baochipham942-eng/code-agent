@@ -2,11 +2,45 @@
 
 import React, { useState } from 'react';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { Modal } from '../../../src/renderer/components/primitives/Modal';
 
 afterEach(cleanup);
+
+describe('Modal backdrop', () => {
+  it('点 backdrop 调 onClose（默认 closeOnBackdropClick=true）；点弹层容器自身不调', () => {
+    const onClose = vi.fn();
+    render(
+      <Modal isOpen title="Backdrop test" onClose={onClose}>
+        Dialog content
+      </Modal>
+    );
+
+    const dialog = screen.getByRole('dialog');
+    // backdrop = Modal 根 overlay 的第一个子元素（dialog 的兄弟）
+    const backdrop = dialog.parentElement?.firstElementChild as Element;
+    fireEvent.click(backdrop);
+    expect(onClose).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(dialog);
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('closeOnBackdropClick=false 时点 backdrop 不调 onClose', () => {
+    const onClose = vi.fn();
+    render(
+      <Modal isOpen title="Backdrop disabled" onClose={onClose} closeOnBackdropClick={false}>
+        Dialog content
+      </Modal>
+    );
+
+    const dialog = screen.getByRole('dialog');
+    const backdrop = dialog.parentElement?.firstElementChild as Element;
+    fireEvent.click(backdrop);
+    expect(onClose).not.toHaveBeenCalled();
+  });
+});
 
 describe('Modal focus management', () => {
   it('wraps Tab forward and Shift+Tab backward within the dialog', () => {

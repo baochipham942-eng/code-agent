@@ -83,6 +83,7 @@ const CAPABILITY_DOMAIN_ACTIONS = {
     'list',
     'listHistory',
     'listModels',
+    'listSources',
     'previewHistory',
     'select',
     'selectModel',
@@ -247,18 +248,29 @@ const CAPABILITY_DOMAIN_ACTIONS = {
     'addSource',
     'artifactIssues',
     'artifacts',
+    'createInvite',
+    'createSpace',
     'create',
     'deleteProject',
     'detail',
     'gitStates',
     'list',
+    'listCapabilitySelections',
+    'listCloudCards',
+    'listMembers',
+    'listWithActivity',
+    'promoteToCloudSpace',
+    'promoteToSpace',
     'removeRole',
     'removeSource',
     'rename',
+    'resyncCloudCards',
+    'selectCapability',
     'setPrimarySource',
     'setDescription',
     'setStatus',
     'sources',
+    'unselectCapability',
     'updateGoalStatus',
     'updateProject',
     'updateSourceAccess',
@@ -503,7 +515,7 @@ const HIGH_RISK_CAPABILITIES = new Set([
 function inferRisk(domain: string, action: string): ShellCapabilityRisk {
   const id = makeShellCapabilityId(domain, action);
   if (HIGH_RISK_CAPABILITIES.has(id)) return 'high';
-  if (/^(add|archive|cancel|capture|clear|close|confirm|create|delete|disconnect|download|force|import|install|interrupt|open|pause|prepare|probe|refresh|reject|remove|rename|repair|reset|resume|retry|save|select|send|set|sign|start|stop|switch|unarchive|update|write)/i.test(action)) {
+  if (/^(add|archive|cancel|capture|clear|close|confirm|create|delete|disconnect|download|force|import|install|interrupt|open|pause|prepare|probe|refresh|reject|remove|rename|repair|reset|resume|resync|retry|save|select|send|set|sign|start|stop|switch|unarchive|update|write)/i.test(action)) {
     return 'medium';
   }
   return 'low';

@@ -15,12 +15,16 @@ interface ChatInputSessionScope {
  * ChatInput 的会话作用域状态：
  * - 暴露当前会话 id 和 engine 类型
  * - 会话切换时清空输入草稿和附件，避免上一个会话的内容残留到新会话
+ * - sessionless=true（协作空间页等无会话语境）：会话 id 强制视为 null，
+ *   会话绑定部件走主界面新会话草稿同款降级，草稿也不随后台会话切换被清
  */
 export function useChatInputSessionScope(
   setValue: (value: string) => void,
   setAttachments: (attachments: MessageAttachment[]) => void,
+  sessionless = false,
 ): ChatInputSessionScope {
-  const currentSessionId = useSessionStore((state) => state.currentSessionId);
+  const storeSessionId = useSessionStore((state) => state.currentSessionId);
+  const currentSessionId = sessionless ? null : storeSessionId;
   const sessionEngineKind = useSessionStore((state) => {
     const session = state.sessions.find((s) => s.id === state.currentSessionId);
     return session?.engine?.kind ?? 'native';

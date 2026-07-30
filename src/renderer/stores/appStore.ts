@@ -198,6 +198,7 @@ export interface AppState {
   pendingRoleChatSeed: string | null;
   // 项目目标：从 Project 详情/控制台启动后，等目标 session 成为当前会话再自动发出 /goal envelope
   pendingProjectGoalChatSeed: PendingProjectGoalChatSeed | null;
+  // 项目协作空间底部输入框：新会话成为当前会话后自动发出的首条消息
   showPromptManager: boolean;
   showWorkspace: boolean;
   taskPanelTab: TaskPanelTab;
@@ -221,6 +222,8 @@ export interface AppState {
   pendingInAppValidationRequest: import('@shared/contract/browserInteraction').InAppValidationRequest | null;
   showProjectCollaborationPage: boolean;
   projectCollaborationPageProjectId: string | null;
+  /** 项目列表页 + 项目协作空间页（批P）：页内 list/space 视图切换不进 store */
+  showProjectSpacePage: boolean;
   showActivityPanel: boolean;
   showCapabilityHub: boolean;
   capabilityHubTab: CapabilityHubTab;
@@ -287,13 +290,19 @@ export interface AppState {
     active: WorkbenchViewId | null;
   }>;
   workbenchSessionKey: string | null;
-  /** 右栏整栏收起。视图切换器模型下「关闭」的对象是整栏，不再是单个视图。 */
+  /**
+   * 右栏整栏收起。视图切换器模型下「关闭」的对象是整栏，不再是单个视图。
+   * 写点三处（2026-07-30 第四波④对账）：setWorkbenchCollapsed（用户点击）、
+   * openWorkbenchTab（打开视图即带出右栏；auto 源尊重 workbenchCollapsedByUser）、
+   * syncWorkbenchForSession（全新会话落地强制回默认收起，防 collapsed 跨会话泄漏成空 launcher）。
+   */
   workbenchCollapsed: boolean;
   /**
    * 右栏当前的收起是不是**用户自己按的**。
    * 默认收起（初值 true）是产品默认值，不是用户意图——两者要分开，否则
    * 「任务开跑自动弹出右栏」和 #700 的「用户收起后不因活动信号自己弹回」二选一。
-   * 只由 setWorkbenchCollapsed 写（它的两个调用点都是用户点击）。
+   * 只由 setWorkbenchCollapsed 写（它的调用点是用户点击）；syncWorkbenchForSession
+   * 的强制收起不写本字段——那不是用户意图，任务活动照样能把右栏带出来。
    */
   workbenchCollapsedByUser: boolean;
   taskWorkbenchOpenSource: WorkbenchOpenSource | null;
@@ -366,6 +375,8 @@ export interface AppState {
   clearEvalCenterReplayTarget: () => void;
   openProjectCollaborationPage: (projectId?: string | null) => void;
   closeProjectCollaborationPage: () => void;
+  openProjectSpacePage: () => void;
+  closeProjectSpacePage: () => void;
   setPendingInAppValidationRequest: (
     request: import('@shared/contract/browserInteraction').InAppValidationRequest | null,
   ) => void;
@@ -490,6 +501,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   pendingInAppValidationRequest: null,
   showProjectCollaborationPage: false,
   projectCollaborationPageProjectId: null,
+  showProjectSpacePage: false,
   showActivityPanel: false,
   showCapabilityHub: false,
   capabilityHubTab: 'experts',
@@ -676,6 +688,8 @@ export const useAppStore = create<AppState>()((set, get) => ({
     showProjectCollaborationPage: false,
     projectCollaborationPageProjectId: null,
   }),
+  openProjectSpacePage: () => set({ ...SECONDARY_PAGES_CLOSED, showProjectSpacePage: true }),
+  closeProjectSpacePage: () => set({ showProjectSpacePage: false }),
   setPendingInAppValidationRequest: (request) => set({ pendingInAppValidationRequest: request }),
   setShowActivityPanel: (show) => set({ showActivityPanel: show }),
   setShowCapabilityHub: (show) => set({ ...(show ? SECONDARY_PAGES_CLOSED : {}), showCapabilityHub: show }),

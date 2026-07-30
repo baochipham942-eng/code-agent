@@ -7,6 +7,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { AlertCircle, Check, Loader2, Plus, RefreshCw } from 'lucide-react';
 import { Button, Input, Modal } from '../../../primitives';
 import { SKILL_CHANNELS } from '@shared/ipc/channels';
+import { IPC_DOMAINS } from '@shared/ipc';
 import type {
   LocalSkillLibrary,
   SkillCatalogPayload,
@@ -25,7 +26,9 @@ import { isWebMode } from '../../../../utils/platform';
 import { useAppStore } from '../../../../stores/appStore';
 import { useI18n } from '../../../../hooks/useI18n';
 import { WebModeBanner } from '../WebModeBanner';
-import { describeSkillIpcError, invokeSkillIPC, invokeSkillIPCOrThrow } from '../../../../services/invokeSkillIPC';
+import { describeSkillIpcError, invokeSkillIPC, invokeSkillIPCOrThrow, isSkillFolderTrustError } from '../../../../services/invokeSkillIPC';
+import ipcService from '../../../../services/ipcService';
+import { FolderTrustDialog, type FolderTrustEvaluationView } from '../../../FolderTrustDialog';
 import { SkillsInstalledTab } from './SkillsInstalledTab';
 import type { InstalledSkill, ProjectOverrideValue } from './SkillsInstalledTab';
 import { SkillsDiscoverTab } from './SkillsDiscoverTab';
@@ -78,7 +81,17 @@ export const SkillsSettings: React.FC = () => {
   const [customError, setCustomError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
-  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [message, setMessage] = useState<{
+    type: 'success' | 'error';
+    text: string;
+    /** 信任类错误（目录未信任/失效）标记：错误条内联「确认信任」按钮，且不参与 3s 自动消失 */
+    trustError?: boolean;
+    /** 信任授权成功后的原地重试（重新应用乐观更新 + 重发 IPC） */
+    retry?: () => Promise<void>;
+  } | null>(null);
+  // 信任弹窗：复用既有 FolderTrustDialog 的完整评估（禁自制简化版），授权成功自动重试
+  const [trustEvaluation, setTrustEvaluation] = useState<FolderTrustEvaluationView | null>(null);
+  const [trustBusy, setTrustBusy] = useState(false);
 
   // 官方市场货架状态
   const [registryItems, setRegistryItems] = useState<SkillRegistryListItem[]>([]);
@@ -142,9 +155,9 @@ export const SkillsSettings: React.FC = () => {
     loadData();
   }, [loadData]);
 
-  // 消息自动消失
+  // 消息自动消失（信任类错误带「确认信任」操作入口，不自动消失，等用户处置）
   useEffect(() => {
-    if (message) {
+    if (message && !message.trustError) {
       const timer = setTimeout(() => setMessage(null), 3000);
       return () => clearTimeout(timer);
     }
@@ -176,27 +189,107 @@ export const SkillsSettings: React.FC = () => {
   const handleProjectOverrideChange = async (skillName: string, value: ProjectOverrideValue) => {
     const previous = discoveredSkills;
     const nextOverride: boolean | null = value === 'follow' ? null : value === 'on';
-    setDiscoveredSkills((current) =>
-      current.map((skill) =>
-        skill.name === skillName
-          ? {
-              ...skill,
-              projectOverride: nextOverride,
-              enabled: nextOverride ?? skill.globalEnabled ?? skill.enabled !== false,
-            }
-          : skill,
-      )
-    );
+    const applyOptimistic = () =>
+      setDiscoveredSkills((current) =>
+        current.map((skill) =>
+          skill.name === skillName
+            ? {
+                ...skill,
+                projectOverride: nextOverride,
+                enabled: nextOverride ?? skill.globalEnabled ?? skill.enabled !== false,
+              }
+            : skill,
+        )
+      );
+    const sendIpc = () =>
+      nextOverride === null
+        ? invokeSkillIPCOrThrow(SKILL_CHANNELS.SKILL_PROJECT_CLEAR, skillName)
+        : invokeSkillIPCOrThrow(SKILL_CHANNELS.SKILL_PROJECT_SET, skillName, nextOverride);
+    applyOptimistic();
     try {
-      if (nextOverride === null) {
-        await invokeSkillIPCOrThrow(SKILL_CHANNELS.SKILL_PROJECT_CLEAR, skillName);
-      } else {
-        await invokeSkillIPCOrThrow(SKILL_CHANNELS.SKILL_PROJECT_SET, skillName, nextOverride);
-      }
+      await sendIpc();
     } catch (err) {
       logger.error('Failed to change project skill override', err);
       setDiscoveredSkills(previous);
+      if (isSkillFolderTrustError(err)) {
+        // 信任类错误（未信任/identityChanged 失效）：错误条带「确认信任」原地修复入口，
+        // 授权成功后自动重试——重试 = 重新应用乐观更新 + 重发 SET/CLEAR IPC
+        setMessage({
+          type: 'error',
+          text: describeSkillIpcError(err, skillsText.actionFailed),
+          trustError: true,
+          retry: async () => {
+            applyOptimistic();
+            try {
+              await sendIpc();
+            } catch (retryErr) {
+              logger.error('Failed to retry project skill override after trust', retryErr);
+              setDiscoveredSkills(previous);
+              setMessage({
+                type: 'error',
+                text: describeSkillIpcError(retryErr, skillsText.actionFailed),
+              });
+              throw retryErr;
+            }
+          },
+        });
+      } else {
+        setMessage({ type: 'error', text: describeSkillIpcError(err, skillsText.actionFailed) });
+      }
+    }
+  };
+
+  // 授权确认后：清错误条、执行暂存的重试、刷新技能列表（重试失败已在闭包内回滚并报错）
+  const runPendingTrustRetry = useCallback(async () => {
+    const retry = message?.trustError ? message.retry : undefined;
+    setMessage(null);
+    try {
+      await retry?.();
+      await loadData();
+    } catch {
+      // retry 闭包已回滚乐观更新并给出错误条
+    }
+  }, [message, loadData]);
+
+  // 「确认信任」：取当前目录评估，原地拉起既有 FolderTrustDialog（完整评估 + 危险项清单）
+  const handleOpenTrustDialog = async () => {
+    try {
+      const evaluation = await ipcService.invokeDomain<FolderTrustEvaluationView>(
+        IPC_DOMAINS.FOLDER_TRUST,
+        'get',
+      );
+      if (evaluation.state === 'trusted') {
+        // 目录已被别处授权：不必弹窗，直接重试
+        await runPendingTrustRetry();
+        return;
+      }
+      setTrustEvaluation(evaluation);
+    } catch (err) {
+      logger.error('Failed to evaluate folder trust', err);
       setMessage({ type: 'error', text: describeSkillIpcError(err, skillsText.actionFailed) });
+    }
+  };
+
+  // 信任/阻止决定（语义对齐 App.tsx setFolderTrustDecision）；授权成功自动执行暂存的重试
+  const handleTrustDecision = async (state: 'trusted' | 'blocked') => {
+    setTrustBusy(true);
+    try {
+      const evaluation = await ipcService.invokeDomain<FolderTrustEvaluationView>(
+        IPC_DOMAINS.FOLDER_TRUST,
+        'set',
+        { state, decidedBy: 'skills-settings' },
+      );
+      if (evaluation.state === 'trusted') {
+        setTrustEvaluation(null);
+        await runPendingTrustRetry();
+      } else {
+        setTrustEvaluation(evaluation);
+      }
+    } catch (err) {
+      logger.error('Failed to update folder trust', err);
+      setMessage({ type: 'error', text: describeSkillIpcError(err, skillsText.actionFailed) });
+    } finally {
+      setTrustBusy(false);
     }
   };
 
@@ -545,7 +638,7 @@ export const SkillsSettings: React.FC = () => {
         </div>
       )}
 
-      {/* 操作结果消息 */}
+      {/* 操作结果消息（信任类错误内联「确认信任」原地修复入口） */}
       {message && (
         <div
           className={`flex items-center gap-2 rounded-lg p-3 ${
@@ -560,6 +653,16 @@ export const SkillsSettings: React.FC = () => {
             <AlertCircle className="h-4 w-4" />
           )}
           <span className="text-sm">{message.text}</span>
+          {message.trustError && (
+            <Button
+              size="sm"
+              variant="secondary"
+              className="ml-auto shrink-0"
+              onClick={() => { void handleOpenTrustDialog(); }}
+            >
+              {skillsText.confirmTrust}
+            </Button>
+          )}
         </div>
       )}
 
@@ -638,6 +741,18 @@ export const SkillsSettings: React.FC = () => {
           </div>
         </div>
       </Modal>
+
+      {/* 目录信任确认：复用既有 FolderTrustDialog 完整评估（requireDangerousItems=false——
+          技能信任门在零危险项的未信任/失效目录也拦，identityChanged 可能零危险项）。
+          「打开设置」语义对齐 App.tsx（那里是打开全局设置；此处本就在设置内，等价于关窗留下错误条） */}
+      <FolderTrustDialog
+        evaluation={trustEvaluation}
+        isBusy={trustBusy}
+        requireDangerousItems={false}
+        onTrust={() => { void handleTrustDecision('trusted'); }}
+        onBlock={() => { void handleTrustDecision('blocked'); }}
+        onOpenSettings={() => setTrustEvaluation(null)}
+      />
 
       {/* 自定义库装前预览：stage 成功后弹出，确认才落库，关闭即 cancel */}
       {stagedPreview && (

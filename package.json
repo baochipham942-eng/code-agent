@@ -48,6 +48,7 @@
     "acceptance:surface-execution-managed": "npx tsx scripts/acceptance/surface-execution-managed-smoke.ts",
     "acceptance:surface-execution-relay": "CODE_AGENT_DATA_DIR=/tmp/code-agent-surface-relay-$$ npx tsx scripts/acceptance/surface-execution-relay-smoke.ts",
     "acceptance:surface-execution-workbuddy": "npx tsx scripts/acceptance/surface-execution-workbuddy-smoke.ts",
+    "acceptance:grok-cli-engine": "npx tsx scripts/acceptance/grok-engine-live-smoke.ts",
     "acceptance:surface-execution-computer": "CODE_AGENT_DATA_DIR=/tmp/code-agent-surface-computer-$$ CODE_AGENT_ENABLE_CUA=1 CODE_AGENT_CUA_STATE_V2=1 npx tsx scripts/acceptance/surface-execution-computer-smoke.ts",
     "acceptance:surface-execution-cross-surface": "CODE_AGENT_DATA_DIR=/tmp/code-agent-surface-cross-$$ CODE_AGENT_ENABLE_CUA=1 CODE_AGENT_CUA_STATE_V2=1 npx tsx scripts/acceptance/surface-execution-cross-surface-smoke.ts",
     "acceptance:surface-execution-conversation": "npx tsx scripts/acceptance/surface-execution-conversation-smoke.ts",

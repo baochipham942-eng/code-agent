@@ -174,7 +174,11 @@ export const qwenOmniTransport: VoiceTransport = {
       const silenceMs = Date.now() - lastUpstreamSignalAt;
       if (silenceMs >= VOICE_UPSTREAM_SILENCE_TIMEOUT_MS) {
         clearHeartbeat();
-        logger.warn('upstream heartbeat timed out', { silenceMs });
+        // missedBeats 是判因用的：1 拍 = 丢包/迟到，连丢三拍才是这条链真死了。
+        logger.warn('upstream heartbeat timed out', {
+          silenceMs,
+          missedBeats: Math.floor(silenceMs / VOICE_UPSTREAM_HEARTBEAT_INTERVAL_MS),
+        });
         onEvent({
           type: 'error',
           code: 'UPSTREAM_ERROR',

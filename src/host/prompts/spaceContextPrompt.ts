@@ -3,6 +3,7 @@ import { listAllAgents } from '../agent/agentRegistry';
 import { getCronService } from '../cron/cronService';
 import { getDatabase } from '../services/core/databaseService';
 import { getProjectService } from '../services/project/projectService';
+import { getBuiltinRoleVisual } from '../services/roleAssets';
 import { getProjectSkillPreferenceStore } from '../services/skills/projectSkillPreferenceService';
 
 export interface SpaceContextExpert {
@@ -80,11 +81,14 @@ function defaultDependencies(): SpaceContextPromptDependencies {
       const wanted = new Set(roleIds);
       return listAllAgents()
         .filter((agent) => wanted.has(agent.id))
-        .map((agent) => ({
-          displayName: agent.name || agent.id,
-          profession: agent.profession,
-          description: agent.description || undefined,
-        }));
+        .map((agent) => {
+          const visual = getBuiltinRoleVisual(agent.id);
+          return {
+            displayName: visual?.displayName || agent.name || agent.id,
+            profession: visual?.profession || agent.profession,
+            description: agent.description || undefined,
+          };
+        });
     },
     listSkills: (workspacePath) => {
       if (!workspacePath) return [];

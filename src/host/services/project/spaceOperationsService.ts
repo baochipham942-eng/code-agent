@@ -8,6 +8,7 @@ import type {
 import { listAllAgents } from '../../agent/agentRegistry';
 import { getCronService } from '../../cron/cronService';
 import { getDatabase } from '../core/databaseService';
+import { getBuiltinRoleVisual } from '../roleAssets';
 import { getProjectSkillPreferenceStore } from '../skills/projectSkillPreferenceService';
 import { getProjectCollaborationService } from './projectCollaborationService';
 import { getProjectService } from './projectService';
@@ -99,10 +100,11 @@ export class SpaceOperationsService implements SpaceOperations {
       capabilities: {
         experts: detail.roles.map((role) => {
           const agent = agents.get(role.roleId);
+          const visual = getBuiltinRoleVisual(role.roleId);
           return {
             id: role.roleId,
-            displayName: agent?.name || role.roleId,
-            profession: agent?.profession,
+            displayName: visual?.displayName || agent?.name || role.roleId,
+            profession: visual?.profession || agent?.profession,
             description: agent?.description || undefined,
           };
         }),

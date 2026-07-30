@@ -135,15 +135,22 @@ async function main(): Promise<void> {
     await page.fill('[data-testid="project-space-composer"] [data-testid="chat-composer-textarea"]', probeText);
     await page.press('[data-testid="project-space-composer"] [data-testid="chat-composer-textarea"]', 'Enter');
 
-    // 落地采样：空间页消失（切进会话）立刻采一次，再追采 3s 稳态
+    // 落地采样：空间页消失（切进会话）立刻采一次，再 150ms 粒度追采 4s 时间线
     await page.waitForFunction(
       `!document.querySelector('[data-testid="project-space-page"]')`,
       { timeout: 15_000 },
     ).catch(() => undefined);
     (report.pathB as Record<string, unknown>).landingImmediate = await sampleWorkbench();
     await page.screenshot({ path: path.join(out, `04b-composer-landing-${tag}.png`) });
-    await delay(3_000);
-    (report.pathB as Record<string, unknown>).landingSettled = await sampleWorkbench();
+    const timeline: Array<Record<string, unknown>> = [];
+    const t0 = Date.now();
+    while (Date.now() - t0 < 4_000) {
+      const s = await sampleWorkbench();
+      timeline.push({ atMs: Date.now() - t0, ...s });
+      await delay(150);
+    }
+    (report.pathB as Record<string, unknown>).timeline = timeline;
+    (report.pathB as Record<string, unknown>).landingSettled = timeline[timeline.length - 1] ?? null;
     await page.screenshot({ path: path.join(out, `04b-composer-settled-${tag}.png`) });
 
     // 对照结论

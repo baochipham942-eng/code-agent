@@ -6,6 +6,7 @@ import type {
   AgentEngineFailureDiagnostics,
   AgentEngineReliability,
   HookTriggerEventData,
+  HookStartedEventData,
   Message,
   ModelCapabilityNeed,
   ModelCostPolicy,
@@ -854,8 +855,35 @@ export function normalizeHookTriggerData(data: unknown): HookTriggerEventData | 
     modified: Boolean(raw.modified),
     sources,
     hookType,
+    ...(Array.isArray(raw.names)
+      ? { names: raw.names.filter((name): name is string => typeof name === 'string') }
+      : {}),
     ...(typeof raw.errorCount === 'number' ? { errorCount: raw.errorCount } : {}),
     ...(typeof raw.message === 'string' ? { message: raw.message } : {}),
+    ...(typeof raw.reason === 'string' ? { reason: raw.reason } : {}),
+    ...(typeof raw.sessionId === 'string' ? { sessionId: raw.sessionId } : {}),
+    ...(typeof raw.turnId === 'string' ? { turnId: raw.turnId } : {}),
+    ...(typeof raw.toolName === 'string' ? { toolName: raw.toolName } : {}),
+    ...(typeof raw.matcher === 'string' ? { matcher: raw.matcher } : {}),
+  };
+}
+
+export function normalizeHookStartedData(data: unknown): HookStartedEventData | null {
+  if (!data || typeof data !== 'object') {
+    return null;
+  }
+
+  const raw = data as Partial<HookStartedEventData>;
+  if (typeof raw.timestamp !== 'number' || typeof raw.event !== 'string') {
+    return null;
+  }
+
+  return {
+    timestamp: raw.timestamp,
+    event: raw.event,
+    ...(Array.isArray(raw.names)
+      ? { names: raw.names.filter((name): name is string => typeof name === 'string') }
+      : {}),
     ...(typeof raw.sessionId === 'string' ? { sessionId: raw.sessionId } : {}),
     ...(typeof raw.turnId === 'string' ? { turnId: raw.turnId } : {}),
     ...(typeof raw.toolName === 'string' ? { toolName: raw.toolName } : {}),

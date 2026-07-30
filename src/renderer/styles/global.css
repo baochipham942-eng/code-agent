@@ -667,6 +667,24 @@ pre code {
   }
 }
 
+/* 慢 hook 的 running 指示：>300ms 才淡入（对齐 Codex 的 >300ms 才显示 shimmer）。
+   用 animation-delay 而不是 JS 定时器——批次一结束指示就随 projection 移除，
+   300ms 内完成的 hook 这行从未可见，零痕迹。 */
+@keyframes hookRunningFadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.hook-running-enter {
+  animation: hookRunningFadeIn 0.2s ease-out 0.3s both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hook-running-enter {
+    animation-delay: 0s;
+  }
+}
+
 /* ============================================================================
    Component Classes
    ============================================================================ */

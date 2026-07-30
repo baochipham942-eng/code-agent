@@ -603,15 +603,27 @@ const TurnCopyAction: React.FC<{ content: string }> = ({ content }) => {
 const HOOK_EVENT_LABELS: Record<string, string> = {
   UserPromptSubmit: '用户提示提交',
   SessionStart: '会话开始',
+  SessionEnd: '会话结束',
   PreToolUse: '工具前',
   PostToolUse: '工具后',
   PostToolUseFailure: '工具失败',
   PermissionRequest: '权限请求',
+  PermissionDenied: '权限拒绝',
   PreCompact: '压缩前',
   PostCompact: '压缩后',
   Stop: '停止',
   StopFailure: '停止失败',
-  SessionEnd: '会话结束',
+  SubagentStart: '子代理开始',
+  SubagentStop: '子代理停止',
+  PostExecution: '执行后',
+  Setup: '初始化',
+  Notification: '通知',
+  TaskCreated: '任务创建',
+  TaskCompleted: '任务完成',
+  RoleWake: '角色唤醒',
+  VoiceCallStarted: '通话开始',
+  VoiceCallPaused: '通话暂停',
+  VoiceCallEnded: '通话结束',
 };
 
 function getTurnHookActivity(turn: TraceTurn): TurnHookActivity | null {
@@ -630,20 +642,26 @@ function getTurnSkillActivity(turn: TraceTurn): TurnSkillActivity | null {
   return node?.turnTimeline?.skillActivity ?? null;
 }
 
+// 颜色语义：红只给 hook 自身执行出错；「拦下」「改写输入」是 hook 的正常决策，给 amber。
 function getHookActivityTone(activity: TurnHookActivity): 'success' | 'warning' | 'error' {
-  if (activity.items.some((item) => item.action === 'block')) return 'error';
-  if (activity.items.some((item) => (item.errorCount || 0) > 0 || item.modified)) return 'warning';
+  if (activity.items.some((item) => (item.errorCount || 0) > 0)) return 'error';
+  if (activity.items.some((item) => item.action === 'block' || item.modified)) return 'warning';
   return 'success';
 }
 
-function getHookStatusText(activity: TurnHookActivity): string {
-  const blocked = activity.items.filter((item) => item.action === 'block').length;
-  if (blocked > 0) return `${blocked} 次阻止`;
+function getHookStatusText(activity: TurnHookActivity, t: Translations): string {
+  const blockedItems = activity.items.filter((item) => item.action === 'block');
+  if (blockedItems.length > 0) {
+    const base = t.turnHooks.blockedCount.replace('{count}', String(blockedItems.length));
+    // 单条拦截直接带原因（首行截断已在 host 侧做过）；多条只计数，原因去展开里看
+    const reason = blockedItems.length === 1 ? blockedItems[0]?.reason : undefined;
+    return reason ? `${base} · ${t.turnHooks.reason.replace('{reason}', reason)}` : base;
+  }
   const errors = activity.items.reduce((sum, item) => sum + (item.errorCount || 0), 0);
-  if (errors > 0) return `${errors} 个错误`;
+  if (errors > 0) return t.turnHooks.errored.replace('{count}', String(errors));
   const modified = activity.items.filter((item) => item.modified).length;
-  if (modified > 0) return `${modified} 次改写输入`;
-  return '已放行';
+  if (modified > 0) return t.turnHooks.modifiedCount.replace('{count}', String(modified));
+  return t.turnHooks.allowed;
 }
 
 const HookExecutionBanner: React.FC<{ activity: TurnHookActivity }> = ({ activity }) => {
@@ -651,34 +669,46 @@ const HookExecutionBanner: React.FC<{ activity: TurnHookActivity }> = ({ activit
   const { t } = useI18n();
   const [expanded, setExpanded] = useState(false);
   const tone = getHookActivityTone(activity);
-  const statusText = getHookStatusText(activity);
-  const showStatus = tone !== 'success';
+  const statusText = getHookStatusText(activity, t);
+  const showStatus = tone !== 'success' && activity.items.length > 0;
 
   return (
     <div className="py-0.5 text-sm text-zinc-500">
-      <button
-        type="button"
-        className="flex min-w-0 items-center gap-2 rounded-md py-0.5 text-left text-zinc-500 transition-colors hover:text-zinc-300"
-        onClick={() => setExpanded((value) => !value)}
-        aria-expanded={expanded}
-        title={showStatus ? statusText : undefined}
-      >
-        <Anchor className="h-4 w-4 shrink-0" />
-        <span className="shrink-0 font-medium">{t.turnHooks.title}</span>
-        {/* 折叠态就说清「哪个时机、是哪几个 hook」——不展开也知道刚才动了什么 */}
-        <span className="min-w-0 truncate text-zinc-600">{activity.summary}</span>
-        {showStatus && (
-          <span className={`shrink-0 rounded px-1 py-px text-[11px] ${getHookIssueClass(tone)}`}>
-            {statusText}
+      {activity.items.length > 0 && (
+        <button
+          type="button"
+          className="flex min-w-0 items-center gap-2 rounded-md py-0.5 text-left text-zinc-500 transition-colors hover:text-zinc-300"
+          onClick={() => setExpanded((value) => !value)}
+          aria-expanded={expanded}
+          title={showStatus ? statusText : undefined}
+        >
+          <Anchor className="h-4 w-4 shrink-0" />
+          <span className="shrink-0 font-medium">{t.turnHooks.title}</span>
+          {/* 折叠态就说清「哪个时机、是哪几个 hook」——不展开也知道刚才动了什么 */}
+          <span className="min-w-0 truncate text-zinc-600">{activity.summary}</span>
+          {showStatus && (
+            <span className={`max-w-[360px] shrink-0 truncate rounded px-1 py-px text-[11px] ${getHookIssueClass(tone)}`}>
+              {statusText}
+            </span>
+          )}
+          {expanded ? (
+            <ChevronDown className="h-3.5 w-3.5 shrink-0 text-zinc-600" />
+          ) : (
+            <ChevronRight className="h-3.5 w-3.5 shrink-0 text-zinc-600" />
+          )}
+        </button>
+      )}
+      {/* 慢 hook 的 running 指示：>300ms 才淡入（CSS delay，无 JS 定时器），
+          批次完成（hook_trigger 落账）后随 projection 移除，落为上面的常驻 banner。 */}
+      {activity.running && (
+        <div className="hook-running-enter flex items-center gap-2 py-0.5" data-testid="hook-running-indicator">
+          <Anchor className="h-4 w-4 shrink-0 animate-pulse" />
+          <span className="streaming-thinking-shimmer font-medium">
+            {t.turnHooks.title} · {t.turnHooks.running.replace('{event}', HOOK_EVENT_LABELS[activity.running.event] || activity.running.event)}
           </span>
-        )}
-        {expanded ? (
-          <ChevronDown className="h-3.5 w-3.5 shrink-0 text-zinc-600" />
-        ) : (
-          <ChevronRight className="h-3.5 w-3.5 shrink-0 text-zinc-600" />
-        )}
-      </button>
-      {expanded && (
+        </div>
+      )}
+      {expanded && activity.items.length > 0 && (
         <div className="ml-7 mt-1 space-y-1 text-[13px] leading-5 text-zinc-500">
           {activity.items.map((item, index) => {
             const label = HOOK_EVENT_LABELS[item.event] || item.event;
@@ -687,21 +717,30 @@ const HookExecutionBanner: React.FC<{ activity: TurnHookActivity }> = ({ activit
             // 来源(全局/项目)、可干预/仅观察对非程序员是噪音，连 hover tooltip 也不放。
             const injectedContentLabel = (item.names || []).join('、') || item.toolName || item.matcher || undefined;
             const title = injectedContentLabel;
-            const itemStatus = getHookItemStatusText(item);
+            const itemStatus = getHookItemStatusText(item, t);
             return (
               <div
                 key={`${item.event}-${item.timestamp}-${index}`}
-                className="flex min-w-0 items-center gap-1.5"
+                className="min-w-0"
                 title={title || undefined}
               >
-                <span className="shrink-0">{label}</span>
-                {injectedContentLabel && (
-                  <span className="min-w-0 truncate text-zinc-600">{injectedContentLabel}</span>
-                )}
-                {itemStatus && (
-                  <span className={`shrink-0 rounded px-1 py-px text-[11px] ${getHookIssueClass(itemStatus.tone)}`}>
-                    {itemStatus.label}
-                  </span>
+                <div className="flex min-w-0 items-center gap-1.5">
+                  <span className="shrink-0">{label}</span>
+                  {injectedContentLabel && (
+                    <span className="min-w-0 truncate text-zinc-600">{injectedContentLabel}</span>
+                  )}
+                  {itemStatus && (
+                    <span className={`shrink-0 rounded px-1 py-px text-[11px] ${getHookIssueClass(itemStatus.tone)}`}>
+                      {itemStatus.label}
+                    </span>
+                  )}
+                </div>
+                {/* 决策原因（block/modify 的首行摘要，host 侧已截断+脱敏）是唯一上屏的
+                    hook 文本；Stop hook 拦下收尾时这行就是「为什么还要求继续」。 */}
+                {item.reason && (item.action === 'block' || item.modified) && (
+                  <div className="mt-0.5 truncate text-amber-200/70" title={item.reason}>
+                    {t.turnHooks.reason.replace('{reason}', item.reason)}
+                  </div>
                 )}
               </div>
             );
@@ -831,10 +870,16 @@ const ThinkingDigestBanner: React.FC<{ segments: TurnThinkingSegment[] }> = ({ s
 
 function getHookItemStatusText(
   item: TurnHookActivity['items'][number],
+  t: Translations,
 ): { label: string; tone: 'warning' | 'error' } | null {
-  if (item.action === 'block') return { label: '阻止', tone: 'error' };
-  if ((item.errorCount || 0) > 0) return { label: `${item.errorCount} 个错误`, tone: 'warning' };
-  if (item.modified) return { label: '改写输入', tone: 'warning' };
+  // 拦下/改写是 hook 的正常决策（amber）；Stop 系拦下是「要求 agent 继续」，措辞区分开
+  if (item.action === 'block') {
+    const isStopGate = item.event === 'Stop' || item.event === 'StopFailure';
+    return { label: isStopGate ? t.turnHooks.stopBlocked : t.turnHooks.blocked, tone: 'warning' };
+  }
+  // 只有 hook 自身执行出错才用红
+  if ((item.errorCount || 0) > 0) return { label: t.turnHooks.errored.replace('{count}', String(item.errorCount)), tone: 'error' };
+  if (item.modified) return { label: t.turnHooks.modified, tone: 'warning' };
   return null;
 }
 

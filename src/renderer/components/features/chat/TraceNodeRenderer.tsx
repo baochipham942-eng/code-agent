@@ -566,7 +566,8 @@ const HookActivityNode: React.FC<{ timeline: TurnTimelinePayload }> = ({ timelin
           {activity.items.map((item, index) => (
             <div key={`${item.event}-${item.toolName || 'event'}-${item.timestamp}-${index}`} className="flex items-start gap-2 rounded-md bg-black/10 px-2.5 py-2 text-[11px]">
               <span className={`mt-[5px] h-1.5 w-1.5 shrink-0 rounded-full ${
-                item.action === 'block' ? 'bg-red-400' : (item.errorCount || 0) > 0 ? 'bg-amber-400' : 'bg-emerald-400'
+                // 与 TurnCard 同一套语义：拦下是 hook 的正常决策（amber），只有执行出错才红
+                item.action === 'block' ? 'bg-amber-400' : (item.errorCount || 0) > 0 ? 'bg-red-400' : 'bg-emerald-400'
               }`} />
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-1.5">

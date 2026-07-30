@@ -67,6 +67,7 @@ export {
 // Hook Manager (main API)
 export {
   type HookManagerConfig,
+  type HookStartInfo,
   type HookTriggerResult,
   HookManager,
   createHookManager,

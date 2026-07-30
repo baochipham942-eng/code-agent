@@ -18,6 +18,7 @@ import {
   getBooleanField,
   isRecord,
   normalizeAssistantMessagePayload,
+  normalizeHookStartedData,
   normalizeHookTriggerData,
   normalizeMessageDeltaPayload,
   normalizeMessageSnapshotPayload,
@@ -615,6 +616,17 @@ export const useConversationStreamEffects = ({
             const hookData = normalizeHookTriggerData(event.data);
             if (eventSessionId && hookData) {
               useTurnExecutionStore.getState().recordHookActivity(eventSessionId, hookData);
+            }
+          }
+          break;
+
+        case 'hook_started':
+          lastEventAtRef.current = Date.now();
+          logHandledEvent();
+          {
+            const hookStart = normalizeHookStartedData(event.data);
+            if (eventSessionId && hookStart) {
+              useTurnExecutionStore.getState().recordHookStart(eventSessionId, hookStart);
             }
           }
           break;

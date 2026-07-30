@@ -7,6 +7,7 @@
     "urls": ["http://localhost:8180/*", "http://localhost:8181/*"]
   },
   "permissions": [
+    "allow-renderer-commands",
     "core:default",
     "updater:default",
     "updater:allow-check",

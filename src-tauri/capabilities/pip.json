@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "pip-window",
+  "description": "PiP 悬浮窗（本地 pip.html）：只放行回传控制指令，不授任何 remote 上下文",
+  "windows": ["computer-use-pip"],
+  "permissions": ["allow-pip-window-commands"]
+}

@@ -49,6 +49,9 @@ function voiceTaskTurn(overrides: Partial<TraceTurn> = {}, speaker?: { agentId: 
     status: 'completed',
     startTime: 1_000,
     endTime: 9_000,
+    // 「已完成」只来自 host 落的结局印章（X5.5-A2-a）。默认夹具带 done 章，
+    // 是为了让折叠/署名那几条继续测它们本来要测的东西。
+    voiceWorkOutcome: 'done',
     nodes: [
       dispatchNode('建 test3.txt', speaker),
       {
@@ -171,11 +174,78 @@ describe('语音派活任务卡（W6-5）', () => {
   it('拿不准就不报状态：正常完成但没有任何结论正文时，卡头不出现状态徽章', () => {
     const turn = voiceTaskTurn({
       nodes: [dispatchNode('建 test3.txt')],
+      voiceWorkOutcome: undefined,
     });
     render(<TurnCard turn={turn} sessionId="session-1" />);
     expect(screen.queryByTestId('voice-task-status')).toBeNull();
     // 卡头仍在，标题在——只是不猜一个结果
     expect(screen.getByTestId('voice-task-card-header').textContent).toContain('建 test3.txt');
+  });
+
+  // ---- X5.5-A2-a 完成语义证据门 ----
+  // 真机病症：run 一件产物都没留下，只在末尾说了句「已创建 test3.txt。」，卡片就绿了。
+  // 「派活成功 ≠ 用户目标完成」——这三条钉的就是屏幕这一半不许再自己推断完成。
+
+  it('轮正常完成 + 有结论正文，但没有 host 的结局印章 → 绝不显示「已完成」', () => {
+    // 这正是修之前会绿的那个夹具：完整的一轮、末尾一句「已创建 test3.txt。」。
+    const turn = voiceTaskTurn({ voiceWorkOutcome: undefined });
+    render(<TurnCard turn={turn} sessionId="session-1" />);
+
+    expect(screen.queryByTestId('voice-task-status')).toBeNull();
+    expect(screen.getByTestId('voice-task-card-header').textContent).not.toContain('已完成');
+    // 结论正文照旧留在卡外——不报结局不等于把话藏起来
+    expect(screen.getByText('已创建 test3.txt。')).toBeTruthy();
+  });
+
+  it('印章是 unverified → 显示「已结束 · 待核验」，且一个「已完成」都没有', () => {
+    const turn = voiceTaskTurn({ voiceWorkOutcome: 'unverified' });
+    render(<TurnCard turn={turn} sessionId="session-1" />);
+
+    const status = screen.getByTestId('voice-task-status');
+    expect(status.textContent).toContain('已结束 · 待核验');
+    expect(status.textContent).not.toContain('已完成');
+  });
+
+  it('真实 projectTurns：结局印章按 workItemId 对回任务卡，且自己不占一条气泡', () => {
+    // 与 host 落库形状逐字段对齐：voiceAgentCoordinator.persistWorkOutcome
+    const messages: Message[] = [
+      {
+        id: 'voice-dispatch-1',
+        role: 'user',
+        content: '改写后的派活指令全文',
+        timestamp: 1_000,
+        metadata: { voiceDispatch: { title: '建 test3.txt', workItemId: 'voice-work-1' } },
+      },
+      {
+        id: 'a2',
+        role: 'assistant',
+        content: '已创建 test3.txt。',
+        timestamp: 4_000,
+      },
+      {
+        id: 'voice-work-settled-1',
+        role: 'system',
+        // 正文只是兜底可读性；对回任务卡的键必须是 workItemId（拿正文反解标题＝拿人话当协议）
+        content: 'Voice-dispatched task finished without artifacts',
+        timestamp: 5_000,
+        metadata: {
+          source: 'voice',
+          voiceWorkSettled: { workItemId: 'voice-work-1', title: '建 test3.txt', outcome: 'unverified' },
+        },
+      },
+    ];
+
+    const projection = projectTurns(messages, 'session-1', false);
+    const voiceTurn = projection.turns.find((turn) => (
+      turn.nodes.some((node) => node.metadata?.voiceDispatch)
+    ));
+    expect(voiceTurn?.voiceWorkOutcome).toBe('unverified');
+    // 印章是给卡片看的，不是说给用户的话：它不许变成会话里的一条节点
+    expect(projection.turns.flatMap((turn) => turn.nodes)
+      .some((node) => node.metadata?.voiceWorkSettled)).toBe(false);
+
+    render(<TurnCard turn={voiceTurn!} sessionId="session-1" />);
+    expect(screen.getByTestId('voice-task-status').textContent).toContain('已结束 · 待核验');
   });
 
   it('普通（非语音）turn 完全不受影响：无任务卡卡头，节点照常铺开', () => {

@@ -325,6 +325,18 @@ export function projectTurns(
       }
     }
 
+    // 语音派活的结局印章（X5.5-A2-a）：host 查过产物证据后落的一条 role:'system' 消息。
+    // 它不是对话内容，不成节点——只把结局盖到它属于的那一轮上，任务卡据此报结局。
+    // 对不上任何一轮就丢弃：宁可卡上不显示结局，也不能把印章盖到别人的活头上。
+    if (msg.role === 'system' && msg.metadata?.voiceWorkSettled) {
+      const settled = msg.metadata.voiceWorkSettled;
+      const matchedTurn = [...turns]
+        .reverse()
+        .find((turn) => turn.nodes.some((n) => n.metadata?.voiceDispatch?.workItemId === settled.workItemId));
+      if (matchedTurn) matchedTurn.voiceWorkOutcome = settled.outcome;
+      continue;
+    }
+
     // System messages → skip (nudges, recovery hints)
     if (msg.role === 'system') continue;
 

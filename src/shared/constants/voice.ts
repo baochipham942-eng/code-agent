@@ -143,6 +143,32 @@ export const VOICE_UPSTREAM_SAMPLE_RATE = 16_000;
 /** 下行助手音频采样率（Hz），厂商固定 24k 单声道 PCM16。 */
 export const VOICE_DOWNSTREAM_SAMPLE_RATE = 24_000;
 
+/**
+ * 字幕揭示器的推进间隔（ms）。
+ *
+ * 上游按**生成速度**吐转写（实测 124 字全文 544ms 到齐），而音频按**真实时间**播
+ * （同一段 24.6 秒）——直接上屏就是字幕比语音早结束 20 多秒，肉眼看就是「攒整句一次性铺满」。
+ * 所以字幕的揭示进度绑音频播放进度，这个间隔是推进节拍。
+ */
+export const VOICE_SUBTITLE_REVEAL_INTERVAL_MS = 100;
+
+/**
+ * 字幕揭示的停滞兜底（ms）：播放进度连续这么久没推进，就把剩余全文一次放完。
+ *
+ * 兜底存在的理由是「字幕绝不许永久悬着」——原生 AEC 走 sidecar、音频可能中途断供，
+ * 没有这个闸，用户会对着半句话等到天荒地老。
+ */
+export const VOICE_SUBTITLE_STALL_FLUSH_MS = 3_000;
+
+/**
+ * 临时气泡等真消息上屏的最长时间（ms）。
+ *
+ * 撤气泡与真消息上屏必须原子，所以拉不到就重拉。等不到也**不撤**——顶着定稿文本
+ * 至少画面是对的，撤了就是一段谁都没有这句话的空帧（R1 闪断）。这个上限只用来
+ * 停掉重拉，避免落库真出问题时无限打 IPC。
+ */
+export const VOICE_PARTIAL_HANDOFF_MAX_WAIT_MS = 5_000;
+
 /** Tauri 原生 AEC sidecar 的上行音频/电平/生命周期事件。 */
 export const VOICE_AEC_OUTPUT_EVENT = 'voice-aec:output';
 
@@ -234,6 +260,15 @@ export const VOICE_RECENT_FILE_LIMIT = 8;
 
 /** 语音派发任务的迭代上限：通话场景的任务应该是小活，跑飞了要有个头。 */
 export const VOICE_SPAWN_TASK_MAX_ITERATIONS = 30;
+
+/**
+ * 完成语义证据查询的上限（X5.5-A2-a）。
+ *
+ * 为什么一次本地读盘也要设上限：这次查询卡在 run 终态**之前**，而终态那一步要还
+ * D4 抬严票。查询永不返回 = 票永远不还 = 这条会话永久钉死在只读档，用户点什么都
+ * 弹确认（本仓 2026-07-26 已被同一形状的锁死咬过一次）。超时按无证据处理（fail-closed）。
+ */
+export const VOICE_WORK_EVIDENCE_TIMEOUT_MS = 3_000;
 
 /**
  * 终态回流念出来的上限（字）。超过就截断并指路屏幕——一段话念过 15 秒，

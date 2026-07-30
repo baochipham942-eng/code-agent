@@ -202,9 +202,9 @@ test('pending launch request 会以内联卡片出现在聊天区', async ({ pag
 
   const chatLog = page.getByRole('log', { name: '对话消息' });
   await expect(chatLog).toBeVisible({ timeout: 10_000 });
-  await expect(chatLog).toContainText('准备 spawn 2 个 agent');
-  await expect(chatLog).toContainText('待确认');
+  // DecisionCard 骨架（2026-07-29 拍板）：问题句 + 选项行 + ghost 取消编排 + primary 确认
+  await expect(chatLog).toContainText('启动 Swarm · 2 个任务？');
   await expect(chatLog).toContainText('等待启动审批');
-  await expect(chatLog).toContainText('开始执行');
+  await expect(chatLog).toContainText('批准启动');
   await expect(chatLog).toContainText('取消编排');
 });

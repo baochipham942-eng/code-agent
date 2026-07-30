@@ -53,7 +53,9 @@ describe('scoped swarm mutations', () => {
     };
     const view = render(<LaunchRequestCard request={request} />);
 
-    fireEvent.click(view.getByRole('button', { name: '开始执行' }));
+    // DecisionCard 骨架：先选「批准启动」选项，再点 primary 确认
+    fireEvent.click(view.getByRole('button', { name: /批准启动/ }));
+    fireEvent.click(view.getByRole('button', { name: '确认' }));
 
     await waitFor(() => {
       expect(invokeMock).toHaveBeenCalledWith(IPC_CHANNELS.SWARM_APPROVE_LAUNCH, {
@@ -85,7 +87,8 @@ describe('scoped swarm mutations', () => {
     };
     const view = render(<LaunchRequestCard request={request} />);
 
-    fireEvent.click(view.getByRole('button', { name: '开始执行' }));
+    fireEvent.click(view.getByRole('button', { name: /批准启动/ }));
+    fireEvent.click(view.getByRole('button', { name: '确认' }));
     useSessionStore.setState({ currentSessionId: 'session-next' });
     useSwarmStore.getState().activateScope('session-next', 'run-next');
     resolveApproval?.(true);

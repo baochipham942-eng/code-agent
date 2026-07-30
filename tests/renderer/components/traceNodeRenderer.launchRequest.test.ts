@@ -164,18 +164,22 @@ describe('TraceNodeRenderer launch request', () => {
     expect(html).toContain('coder');
   });
 
-  it('renders pending launch request as an inline approval card', () => {
+  it('renders pending launch request as a decision card', () => {
     const html = renderToStaticMarkup(
       React.createElement(TraceNodeRenderer, {
         node: makeNode(makeLaunchRequest()),
       }),
     );
 
-    expect(html).toContain('准备 spawn 3 个 agent');
-    expect(html).toContain('待确认');
+    // 2026-07-29 拍板：启动审批卡统一迁移到 DecisionCard 骨架——
+    // 问题句 + 选项行（批准启动/拒绝）+ ghost 取消 + primary 确认。
+    expect(html).toContain('Swarm 启动审批');
+    expect(html).toContain('启动 Swarm · 3 个任务？');
     expect(html).toContain('准备启动 3 个 agent');
-    expect(html).toContain('开始执行');
+    expect(html).toContain('批准启动');
+    expect(html).toContain('拒绝');
     expect(html).toContain('取消编排');
+    expect(html).toContain('确认');
     expect(html).toContain('builder');
     expect(html).toContain('qa');
     expect(html).toContain('bash');

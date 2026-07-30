@@ -1,21 +1,25 @@
 // ============================================================================
 // PermissionCard - 浮动在 ChatInput 上方的权限审批卡片
 // 替代全屏遮罩的 PermissionDialog，用户审批时仍能看到对话上下文
+//
+// 2026-07-29 拍板：视觉骨架统一迁移到 DecisionCard（与 AskUserQuestion 提问卡
+// 同形）——审批级别变成选项行，底部 ghost 取消 + primary 确认（选中后才可点）。
+// 数据流/store/IPC 不变；y/n/s/a 字母快捷键保留直发（点了就执行，不经确认键），
+// Shift+N=永不允许 作为隐藏直发保留；授权记忆命中仍 100ms 自动执行、不弹卡。
 // ============================================================================
 
-import React, { useCallback, useEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useAppStore } from '../../stores/appStore';
 import { useSessionStore } from '../../stores/sessionStore';
 import { usePermissionStore, type PermissionRequestForMemory } from '../../stores/permissionStore';
-import { PermissionHeader } from './PermissionHeader';
-import { DangerWarning } from './DangerWarning';
+import { DecisionCard, type DecisionOption } from '../DecisionCard';
 import { RequestDetails } from './RequestDetails';
-import { ApprovalOptionsCompact } from './ApprovalOptionsCompact';
 import type { PermissionRequest, ApprovalLevel, PermissionType } from './types';
 import type { PermissionResponse } from '@shared/contract';
 import { permissionReasonText } from '@shared/contract';
 import { IPC_CHANNELS } from '@shared/ipc';
-import { getPermissionConfig, isDangerousCommand, getDangerReason } from './utils';
+import { getPermissionConfig, isDangerousCommand, getDangerReason, formatFilePath } from './utils';
+import { useI18n, type Translations } from '../../hooks/useI18n';
 import ipcService from '../../services/ipcService';
 import { toast } from '../../hooks/useToast';
 import { claimApprovalResponse, releaseApprovalResponse } from '../../utils/approvalResponseGuard';
@@ -65,12 +69,45 @@ function toMemoryRequest(request: PermissionRequest): PermissionRequestForMemory
   };
 }
 
+// 一行问题句（「允许写入 ~/work/report.md？」）；目标缺失时回退到通用问法
+function permissionQuestion(request: PermissionRequest, t: Translations): string {
+  const p = t.decisionCard.permission;
+  const filePath = request.details.filePath || request.details.path;
+  const target = filePath ? formatFilePath(filePath) : undefined;
+  switch (request.type) {
+    case 'file_read':
+      return target ? p.questionFileRead.replace('{target}', target) : p.questionFallback;
+    case 'file_write':
+      return target ? p.questionFileWrite.replace('{target}', target) : p.questionFallback;
+    case 'file_edit':
+      return target ? p.questionFileEdit.replace('{target}', target) : p.questionFallback;
+    case 'file_delete':
+      return target ? p.questionFileDelete.replace('{target}', target) : p.questionFallback;
+    case 'command':
+      return p.questionCommand;
+    case 'dangerous_command':
+      return p.questionDangerousCommand;
+    case 'network':
+      return request.details.url
+        ? p.questionNetwork.replace('{target}', request.details.url)
+        : p.questionFallback;
+    case 'mcp':
+      return request.details.server && request.details.toolName
+        ? p.questionMcp.replace('{target}', `${request.details.server} / ${request.details.toolName}`)
+        : p.questionFallback;
+    default:
+      return p.questionFallback;
+  }
+}
+
 export function PermissionCard() {
+  const { t } = useI18n();
   const { pendingPermissionRequest, pendingPermissionSessionId, setPendingPermissionRequest } = useAppStore();
   const currentSessionId = useSessionStore((state) => state.currentSessionId);
   const { checkMemory, saveMemory } = usePermissionStore();
-  const cardRef = useRef<HTMLDivElement>(null);
   const processedRequestRef = useRef<string | null>(null);
+  // 选中的审批级别（DecisionCard 选项行）；字母快捷键直发时不经过它
+  const [selectedLevel, setSelectedLevel] = useState<ApprovalLevel | null>(null);
 
   const request = pendingPermissionRequest && !(
     pendingPermissionSessionId &&
@@ -79,6 +116,12 @@ export function PermissionCard() {
   )
     ? normalizeRequest(pendingPermissionRequest)
     : null;
+
+  // 新请求进来时清空选中态（ processedRequestRef 之外的生命周期，独立于记忆直发 ）
+  const requestId = request?.id ?? null;
+  useEffect(() => {
+    setSelectedLevel(null);
+  }, [requestId]);
 
   // 「这操作本身危险」与「这次必须你亲手点」是两件事，卡上必须分开表达。
   //
@@ -187,7 +230,8 @@ export function PermissionCard() {
     return () => clearTimeout(timer);
   }, [request, memoryResult, handleApproval, isNewRequest]);
 
-  // 键盘快捷键 — stopPropagation 防止触发 ChatView 的 Esc+Esc
+  // 字母直发快捷键（点了就执行，不经确认键）— stopPropagation 防止触发 ChatView 的 Esc+Esc。
+  // 数字键 1-N / Enter / Esc 由 DecisionCard 统一处理。
   useEffect(() => {
     if (!request) return;
 
@@ -224,16 +268,11 @@ export function PermissionCard() {
           }
           break;
         case 'a':
-          if (e.shiftKey && !hideStandingGrants) {
+          if (!hideStandingGrants) {
             e.preventDefault();
             e.stopPropagation();
             handleApproval('always');
           }
-          break;
-        case 'escape':
-          e.preventDefault();
-          e.stopPropagation();
-          handleApproval('deny');
           break;
       }
     };
@@ -242,54 +281,54 @@ export function PermissionCard() {
     return () => window.removeEventListener('keydown', handleKeyDown, true);
   }, [request, handleApproval, hideStandingGrants]);
 
-  useEffect(() => {
-    if (!request) return;
-    cardRef.current?.focus();
-  }, [request?.id]);
-
   // 如果没有当前会话可见的待处理权限请求，不渲染
   if (!request) return null;
 
   const config = getPermissionConfig(request.type);
-  const dangerReason = isDangerous ? getDangerReason(request.details.command) : undefined;
+  const dangerReason = isDangerous ? getDangerReason(request.details.command) : null;
+
+  const p = t.decisionCard.permission;
+  const options: DecisionOption[] = [
+    { id: 'once', label: p.optionOnce, description: p.optionOnceDesc, shortcut: 'y' },
+    ...(!hideStandingGrants
+      ? [
+          { id: 'session', label: p.optionSession, description: p.optionSessionDesc, shortcut: 's' },
+          { id: 'always', label: p.optionAlways, description: p.optionAlwaysDesc, shortcut: 'a' },
+        ]
+      : []),
+    { id: 'deny', label: p.optionDeny, description: p.optionDenyDesc, shortcut: 'n' },
+  ];
+
+  const reasonText = request.reason || (request.reasonCode ? permissionReasonText(request.reasonCode) : '');
 
   return (
-    <div className="w-full px-4 animate-slideUp">
-      <div
-        ref={cardRef}
-        tabIndex={-1}
-        className={`
-          w-full
-          max-w-3xl mx-auto
-          bg-zinc-900 rounded-lg shadow-2xl
-          border-2 outline-hidden
-          ${isDangerous ? 'border-red-500' : config.borderColor}
-        `}
-      >
-        {/* 头部 */}
-        <PermissionHeader
-          config={config}
-          toolName={request.tool}
-          isDangerous={isDangerous}
-          onClose={() => handleApproval('deny')}
-        />
-
-        {/* 内容区域 - 紧凑布局 */}
-        <div className="px-4 py-3 space-y-2">
-          {isDangerous && <DangerWarning reason={dangerReason || undefined} />}
-
-          {(request.reason || (request.reasonCode && permissionReasonText(request.reasonCode))) && (
-            <p className="text-zinc-400 text-sm">
-              {request.reason || (request.reasonCode ? permissionReasonText(request.reasonCode) : '')}
-            </p>
-          )}
-
+    <DecisionCard
+      testId="permission-card"
+      tone={isDangerous ? 'danger' : 'neutral'}
+      icon={config.icon}
+      title={isDangerous ? t.decisionCard.dangerTitle : config.title}
+      headerMeta={request.tool}
+      dangerWarning={
+        isDangerous
+          ? `${t.decisionCard.dangerCopy}：${dangerReason || t.decisionCard.dangerDefaultReason}`
+          : undefined
+      }
+      question={permissionQuestion(request, t)}
+      details={
+        <>
+          {reasonText && <p className="text-zinc-400 text-sm">{reasonText}</p>}
           <RequestDetails request={request} />
-        </div>
-
-        {/* 审批选项 - 水平排列 */}
-        <ApprovalOptionsCompact onApproval={handleApproval} hideStandingGrants={hideStandingGrants} />
-      </div>
-    </div>
+        </>
+      }
+      options={options}
+      selectedId={selectedLevel}
+      onSelect={(id) => setSelectedLevel(id as ApprovalLevel)}
+      onConfirm={() => {
+        if (selectedLevel) void handleApproval(selectedLevel);
+      }}
+      onCancel={() => void handleApproval('deny')}
+      confirmLabel={t.decisionCard.confirm}
+      cancelLabel={p.optionDeny}
+    />
   );
 }

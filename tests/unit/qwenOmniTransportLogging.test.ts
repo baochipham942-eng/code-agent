@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { EventEmitter } from 'events';
+import { VOICE_UPSTREAM_HEARTBEAT_INTERVAL_MS, VOICE_UPSTREAM_SILENCE_TIMEOUT_MS } from '../../src/shared/constants/voice';
 
 class FakeUpstream extends EventEmitter {
   static OPEN = 1;
@@ -79,7 +80,9 @@ describe('Qwen Omni 上游事件日志', () => {
     await handle.close();
   });
 
-  it('建连后 30 秒零上游信号会报 UPSTREAM_ERROR 并 terminate socket', async () => {
+  // R3（2026-07-30 真机 silenceMs=30225）：丢一拍就把整通电话判死。DashScope 的
+  // pong 已实测支持（探针 40s 空闲 8/8 回 pong），所以单拍不回是丢包，不是死亡。
+  it('丢一拍不杀通话，连丢三拍才报 UPSTREAM_ERROR 并 terminate socket', async () => {
     vi.useFakeTimers();
     try {
       const events: Array<{ type: string; code?: string; message?: string }> = [];
@@ -93,7 +96,13 @@ describe('Qwen Omni 上游事件日志', () => {
       await connecting;
       const upstream = upstreams[0];
 
-      await vi.advanceTimersByTimeAsync(30_000);
+      // 丢一拍、丢两拍：通话得活着
+      await vi.advanceTimersByTimeAsync(VOICE_UPSTREAM_HEARTBEAT_INTERVAL_MS * 2);
+      expect(events.filter((event) => event.type === 'error')).toHaveLength(0);
+      expect(upstream.terminate).not.toHaveBeenCalled();
+
+      // 第三拍还是没回音 = 这条链真死了
+      await vi.advanceTimersByTimeAsync(VOICE_UPSTREAM_HEARTBEAT_INTERVAL_MS);
 
       expect(events).toContainEqual({
         type: 'error',
@@ -103,8 +112,33 @@ describe('Qwen Omni 上游事件日志', () => {
       expect(upstream.terminate).toHaveBeenCalledTimes(1);
       expect(logger.warn).toHaveBeenCalledWith(
         'upstream heartbeat timed out',
-        expect.objectContaining({ silenceMs: 30_000 }),
+        expect.objectContaining({ silenceMs: VOICE_UPSTREAM_SILENCE_TIMEOUT_MS, missedBeats: 3 }),
       );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('中途回一次 pong 就重新计时（长时间没话说不等于死了）', async () => {
+    vi.useFakeTimers();
+    try {
+      const events: Array<{ type: string }> = [];
+      const connecting = qwenOmniTransport.connect({
+        apiKey: 'test-key',
+        config: { neoSessionId: 's1' },
+        onEvent: (event) => events.push(event),
+        onAudio: vi.fn(),
+      });
+      await vi.advanceTimersByTimeAsync(0);
+      await connecting;
+      const upstream = upstreams[0];
+
+      await vi.advanceTimersByTimeAsync(VOICE_UPSTREAM_HEARTBEAT_INTERVAL_MS * 2);
+      upstream.emit('pong');
+      await vi.advanceTimersByTimeAsync(VOICE_UPSTREAM_HEARTBEAT_INTERVAL_MS * 2);
+
+      expect(events.filter((event) => event.type === 'error')).toHaveLength(0);
+      expect(upstream.terminate).not.toHaveBeenCalled();
     } finally {
       vi.useRealTimers();
     }

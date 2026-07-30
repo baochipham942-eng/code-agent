@@ -375,21 +375,29 @@ export const SettingsModal: React.FC = () => {
       role="dialog"
       aria-label={t.settings.title}
       testId="settings-panel"
-      variant="inline"
+      variant="overlay"
       className="overflow-hidden animate-fadeIn"
     >
       <div className="flex h-full min-h-0">
         <aside className="flex w-[280px] shrink-0 flex-col border-r border-zinc-800 bg-zinc-900/95">
-          <div className="px-4 pb-3 pt-5">
-            <button
-              type="button"
-              onClick={handleClose}
-              className="mb-5 inline-flex h-8 items-center gap-2 rounded-lg px-3 text-sm text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-300 focus:outline-hidden"
-            >
-              <ChevronLeft className="h-4 w-4" />
-              <span>{t.settings.backToApp}</span>
-            </button>
-            <SettingsSearch onNavigate={handleSearchNavigate} access={accessSubject} />
+          {/* 整窗覆盖后侧栏/顶栏都被盖住，本行顶起拖拽区（控件逐个 no-drag，
+              同 TitleBar 套路），不然设置打开期间窗口拖不动 */}
+          <div
+            data-tauri-drag-region
+            className="px-4 pb-3 pt-5"
+            style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
+          >
+            <div style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+              <button
+                type="button"
+                onClick={handleClose}
+                className="mb-5 inline-flex h-8 items-center gap-2 rounded-lg px-3 text-sm text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-300 focus:outline-hidden"
+              >
+                <ChevronLeft className="h-4 w-4" />
+                <span>{t.settings.backToApp}</span>
+              </button>
+              <SettingsSearch onNavigate={handleSearchNavigate} access={accessSubject} />
+            </div>
           </div>
 
           <nav className="min-h-0 flex-1 space-y-3 overflow-y-auto px-3 pb-5">
@@ -453,7 +461,12 @@ export const SettingsModal: React.FC = () => {
 
         <main className="min-w-0 flex-1 overflow-y-auto bg-zinc-950">
           <div className={`mx-auto min-h-full px-8 pb-16 pt-8 ${contentWidthClass}`}>
-            <div className="mb-6 flex items-start justify-between gap-6">
+            {/* 同 aside 头行：整窗覆盖后这里兼作窗口拖拽区，关闭钮 no-drag */}
+            <div
+              data-tauri-drag-region
+              className="mb-6 flex items-start justify-between gap-6"
+              style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
+            >
               <div>
                 <h2 id="settings-page-title" className="text-2xl font-semibold text-zinc-100">
                   {activeTabConfig?.label || t.settings.title}
@@ -464,13 +477,15 @@ export const SettingsModal: React.FC = () => {
                   </p>
                 )}
               </div>
-              <IconButton
-                icon={<X className="h-5 w-5" />}
-                aria-label={t.common.close}
-                onClick={handleClose}
-                variant="ghost"
-                size="lg"
-              />
+              <div style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+                <IconButton
+                  icon={<X className="h-5 w-5" />}
+                  aria-label={t.common.close}
+                  onClick={handleClose}
+                  variant="ghost"
+                  size="lg"
+                />
+              </div>
             </div>
 
             {activeTab === 'general' && <GeneralSettings />}

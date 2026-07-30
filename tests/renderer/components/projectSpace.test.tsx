@@ -39,6 +39,9 @@ vi.mock('../../../src/renderer/services/invokeSkillIPC', () => ({
 vi.mock('../../../src/renderer/services/ipcService', () => ({
   default: { invokeDomain: vi.fn() },
 }));
+vi.mock('../../../src/renderer/hooks/useToast', () => ({
+  toast: { success: vi.fn(), error: vi.fn() },
+}));
 // 重组件内嵌零改造，但测试里不拉它的依赖树
 vi.mock('../../../src/renderer/components/features/projectCollaboration/ProjectCollaborationPanel', () => ({
   ProjectCollaborationPanel: () => <div data-testid="mock-collaboration-panel" />,
@@ -89,11 +92,40 @@ import * as rolesClient from '../../../src/renderer/services/rolesClient';
 import { cronClient } from '../../../src/renderer/services/cronClient';
 import { invokeSkillIPC, invokeSkillIPCOrThrow } from '../../../src/renderer/services/invokeSkillIPC';
 import { SKILL_CHANNELS } from '../../../src/shared/ipc/channels';
+import { IPC_DOMAINS } from '../../../src/shared/ipc';
 import ipcService from '../../../src/renderer/services/ipcService';
+import { toast } from '../../../src/renderer/hooks/useToast';
 import { projectSpaceZh } from '../../../src/renderer/i18n/projectSpace';
 
 const ps = projectSpaceZh.projectSpace;
 const PROJECT_ID = 'proj_test1';
+
+// FOLDER_TRUST 'get' 预检的默认评估（干净目录）；单测可换危险评估
+const cleanTrustEvaluation = {
+  state: 'untrusted',
+  canonicalRealpath: '/tmp/ws',
+  displayPath: '/tmp/ws',
+  dangerousItems: [],
+  blockedItems: [],
+  identityChanged: false,
+};
+const dangerousTrustEvaluation = {
+  state: 'untrusted',
+  canonicalRealpath: '/tmp/new-ws',
+  displayPath: '/tmp/new-ws',
+  dangerousItems: [
+    {
+      kind: 'project-hooks',
+      displayPath: '.code-agent/hooks/hooks.json',
+      label: 'Project hooks',
+      risk: 'execution',
+      gated: true,
+    },
+  ],
+  blockedItems: [],
+  identityChanged: false,
+};
+let folderTrustEvaluationStub: unknown = cleanTrustEvaluation;
 
 const projectFixture = {
   id: PROJECT_ID,
@@ -163,11 +195,16 @@ function setupHappyPathMocks() {
   vi.mocked(cronClient.listJobs).mockResolvedValue([]);
   vi.mocked(invokeSkillIPC).mockResolvedValue([]);
   vi.mocked(invokeSkillIPCOrThrow).mockResolvedValue(undefined as never);
-  // 连接器可选项真源：connector 域 listNativeInventory（与能力中心「连接器」页同源）
-  vi.mocked(ipcService.invokeDomain).mockResolvedValue([
-    { id: 'mcp-1', label: 'Server 1', enabled: true },
-    { id: 'mcp-2', label: 'Server 2', enabled: true },
-  ] as never);
+  // 连接器可选项真源：connector 域 listNativeInventory（与能力中心「连接器」页同源）；
+  // FOLDER_TRUST 域 'get' 走创建即信任预检 stub（默认干净目录）
+  vi.mocked(ipcService.invokeDomain).mockImplementation(((domain: string) => Promise.resolve(
+    domain === IPC_DOMAINS.FOLDER_TRUST
+      ? folderTrustEvaluationStub
+      : [
+        { id: 'mcp-1', label: 'Server 1', enabled: true },
+        { id: 'mcp-2', label: 'Server 2', enabled: true },
+      ],
+  )) as never);
 }
 
 async function enterSpaceView() {
@@ -179,6 +216,7 @@ async function enterSpaceView() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  folderTrustEvaluationStub = cleanTrustEvaluation;
   setupHappyPathMocks();
   switchSessionMock.mockResolvedValue(undefined);
   createSessionMock.mockResolvedValue({ id: 'sess-new' });
@@ -313,6 +351,109 @@ describe('ProjectSpacePage 列表视图', () => {
 
     await waitFor(() => expect(projectClient.promoteToSpace).toHaveBeenCalledWith(PROJECT_ID));
     expect(projectClient.createSpace).not.toHaveBeenCalled();
+  });
+
+  it('创建即信任：目录含危险项 → 同一 Modal 切确认步，再点创建带 trustAcknowledged', async () => {
+    folderTrustEvaluationStub = dangerousTrustEvaluation;
+    render(<ProjectSpacePage onClose={() => undefined} />);
+    await screen.findByTestId(`project-space-list-item-${PROJECT_ID}`);
+
+    fireEvent.click(screen.getByTestId('project-space-create-open'));
+    await screen.findByTestId('project-space-create-modal');
+    fireEvent.change(screen.getByTestId('project-space-create-name'), { target: { value: '危险空间' } });
+    fireEvent.change(screen.getByTestId('project-space-create-workspace'), { target: { value: '/tmp/new-ws' } });
+    fireEvent.click(screen.getByText(ps.createSubmit));
+
+    // 预检拦截：不切新弹层，同一 Modal 内出现确认步 + 危险项清单，createSpace 未提交
+    const confirm = await screen.findByTestId('project-space-create-trust-confirm');
+    expect(confirm.textContent).toContain(ps.trustConfirmHint);
+    expect(within(confirm).getByTestId('folder-trust-danger-list').textContent).toContain('.code-agent/hooks/hooks.json');
+    expect(projectClient.createSpace).not.toHaveBeenCalled();
+
+    // 再点「创建」= 知情确认：带 trustAcknowledged 提交
+    fireEvent.click(screen.getByText(ps.createSubmit));
+    await waitFor(() =>
+      expect(projectClient.createSpace).toHaveBeenCalledWith({
+        name: '危险空间',
+        workspacePath: '/tmp/new-ws',
+        trustAcknowledged: true,
+      }),
+    );
+  });
+
+  it('创建即信任：干净目录零额外交互，直接创建且无 trustAcknowledged', async () => {
+    render(<ProjectSpacePage onClose={() => undefined} />);
+    await screen.findByTestId(`project-space-list-item-${PROJECT_ID}`);
+
+    fireEvent.click(screen.getByTestId('project-space-create-open'));
+    await screen.findByTestId('project-space-create-modal');
+    fireEvent.change(screen.getByTestId('project-space-create-name'), { target: { value: '干净空间' } });
+    fireEvent.change(screen.getByTestId('project-space-create-workspace'), { target: { value: '/tmp/new-ws' } });
+    fireEvent.click(screen.getByText(ps.createSubmit));
+
+    await waitFor(() =>
+      expect(projectClient.createSpace).toHaveBeenCalledWith({
+        name: '干净空间',
+        workspacePath: '/tmp/new-ws',
+      }),
+    );
+    expect(screen.queryByTestId('project-space-create-trust-confirm')).toBeNull();
+  });
+
+  it('创建即信任竞态兜底：host 抛 coded 错 → 进同一确认步，不 toast 报错', async () => {
+    // 预检时干净、提交瞬间 host 发现危险项（竞态）：createSpace 首次抛 coded 错，
+    // 同时把后续 get 评估切成危险（host 抛错后 renderer 会重新 get 评估进确认步）
+    vi.mocked(projectClient.createSpace).mockImplementationOnce(() => {
+      folderTrustEvaluationStub = dangerousTrustEvaluation;
+      return Promise.reject(new Error('FOLDER_TRUST_CONFIRM_REQUIRED: The folder contains project configuration that needs your review'));
+    });
+    render(<ProjectSpacePage onClose={() => undefined} />);
+    await screen.findByTestId(`project-space-list-item-${PROJECT_ID}`);
+
+    fireEvent.click(screen.getByTestId('project-space-create-open'));
+    await screen.findByTestId('project-space-create-modal');
+    fireEvent.change(screen.getByTestId('project-space-create-name'), { target: { value: '竞态空间' } });
+    fireEvent.change(screen.getByTestId('project-space-create-workspace'), { target: { value: '/tmp/new-ws' } });
+    // host 抛错后重新 get 评估，此时返回危险评估 → 确认步
+    fireEvent.click(screen.getByText(ps.createSubmit));
+    await waitFor(() => expect(projectClient.createSpace).toHaveBeenCalled());
+
+    const confirm = await screen.findByTestId('project-space-create-trust-confirm');
+    expect(confirm).toBeTruthy();
+    expect(vi.mocked(toast.error)).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByText(ps.createSubmit));
+    await waitFor(() =>
+      expect(projectClient.createSpace).toHaveBeenLastCalledWith({
+        name: '竞态空间',
+        workspacePath: '/tmp/new-ws',
+        trustAcknowledged: true,
+      }),
+    );
+  });
+
+  it('创建即信任：promote 候选项目带危险目录 → 确认步后 promoteToSpace 带 trustAcknowledged', async () => {
+    folderTrustEvaluationStub = dangerousTrustEvaluation;
+    render(<ProjectSpacePage onClose={() => undefined} />);
+    await screen.findByTestId(`project-space-list-item-${PROJECT_ID}`);
+
+    fireEvent.click(screen.getByTestId('project-space-create-open'));
+    await screen.findByTestId('project-space-create-modal');
+    fireEvent.change(screen.getByTestId('project-space-create-name'), { target: { value: '升级空间' } });
+    fireEvent.click(screen.getByTestId('project-space-create-source-promote'));
+    const select = await screen.findByTestId('project-space-create-promote-select');
+    await within(select).findByRole('option', { name: projectFixture.name });
+    fireEvent.change(select, { target: { value: PROJECT_ID } });
+    fireEvent.click(screen.getByText(ps.createSubmit));
+
+    // 候选项目带 workspacePath '/tmp/ws' → 预检进确认步
+    await screen.findByTestId('project-space-create-trust-confirm');
+    expect(projectClient.promoteToSpace).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByText(ps.createSubmit));
+    await waitFor(() =>
+      expect(projectClient.promoteToSpace).toHaveBeenCalledWith(PROJECT_ID, { trustAcknowledged: true }),
+    );
   });
 });
 

@@ -9,7 +9,8 @@
 
 import React, { useCallback, useEffect, useState } from 'react';
 import { FolderKanban, Pencil, Plus, Trash2 } from 'lucide-react';
-import { UNSORTED_PROJECT_ID, type ProjectWithActivity } from '@shared/contract/project';
+import { FOLDER_TRUST_CONFIRM_REQUIRED_PREFIX, UNSORTED_PROJECT_ID, type ProjectWithActivity } from '@shared/contract/project';
+import { IPC_DOMAINS } from '@shared/ipc';
 import {
   createSpace,
   deleteProject,
@@ -18,6 +19,9 @@ import {
   renameProject,
   setProjectDescription,
 } from '../../../services/projectClient';
+import ipcService from '../../../services/ipcService';
+import type { FolderTrustEvaluationView } from '../../FolderTrustDialog';
+import { FolderTrustDangerList } from '../../FolderTrustDangerList';
 import { pickNativeDirectory } from '../../../services/tauriPluginFacade';
 import { toast } from '../../../hooks/useToast';
 import { deriveProjectActivityStatus, type ProjectActivityStatus } from './projectSpaceData';
@@ -61,6 +65,8 @@ export const ProjectListView: React.FC<ProjectListViewProps> = ({ onSelect }) =>
   const [promoteCandidates, setPromoteCandidates] = useState<ProjectWithActivity[]>([]);
   const [promoteProjectId, setPromoteProjectId] = useState('');
   const [createSaving, setCreateSaving] = useState(false);
+  // 创建即信任：目录含危险项时存评估结果，同一 Modal 切确认步（非 null 即确认步）
+  const [trustConfirm, setTrustConfirm] = useState<FolderTrustEvaluationView | null>(null);
 
   const loadList = useCallback(() => {
     listProjectsWithActivity(false, true)
@@ -87,6 +93,7 @@ export const ProjectListView: React.FC<ProjectListViewProps> = ({ onSelect }) =>
     setCreateSource('directory');
     setCreateWorkspacePath('');
     setPromoteProjectId('');
+    setTrustConfirm(null);
     setCreateOpen(true);
     // 升级候选：全部项目里未升级的（排除 proj_unsorted 保留桶）
     listProjectsWithActivity(false, false)
@@ -101,27 +108,64 @@ export const ProjectListView: React.FC<ProjectListViewProps> = ({ onSelect }) =>
     if (picked) setCreateWorkspacePath(picked);
   };
 
-  const handleCreate = async () => {
+  // 预检：目录未信任且含危险项 → 同一 Modal 切确认步并拦截提交；预检失败不拦，host 信任门是最终兜底
+  const requestTrustConfirmIfNeeded = async (workspacePath: string): Promise<boolean> => {
+    try {
+      const evaluation = await ipcService.invokeDomain<FolderTrustEvaluationView>(
+        IPC_DOMAINS.FOLDER_TRUST,
+        'get',
+        { workingDirectory: workspacePath },
+      );
+      if (evaluation && evaluation.state !== 'trusted' && (evaluation.dangerousItems?.length ?? 0) > 0) {
+        setTrustConfirm(evaluation);
+        return true;
+      }
+    } catch {
+      // 评估失败（如路径不存在）：放行，由 host 侧决定
+    }
+    return false;
+  };
+
+  const handleCreate = async (trustAcknowledged = false) => {
     if (createSaving) return;
     const name = createName.trim();
     if (!name) return;
     if (createSource === 'promote' && !promoteProjectId) return;
+    const promoteCandidate = createSource === 'promote'
+      ? promoteCandidates.find((item) => item.id === promoteProjectId)
+      : undefined;
+    const workspacePath = createSource === 'promote'
+      ? promoteCandidate?.workspacePath?.trim() ?? ''
+      : createWorkspacePath.trim();
     setCreateSaving(true);
     try {
+      if (!trustAcknowledged && workspacePath && await requestTrustConfirmIfNeeded(workspacePath)) return;
       if (createSource === 'promote') {
-        await promoteToSpace(promoteProjectId);
+        if (trustAcknowledged) {
+          await promoteToSpace(promoteProjectId, { trustAcknowledged: true });
+        } else {
+          await promoteToSpace(promoteProjectId);
+        }
       } else {
         const description = createDescription.trim();
-        const workspacePath = createWorkspacePath.trim();
         await createSpace({
           name,
           ...(description ? { description } : {}),
           ...(workspacePath ? { workspacePath } : {}),
+          ...(trustAcknowledged ? { trustAcknowledged: true } : {}),
         });
       }
       setCreateOpen(false);
+      setTrustConfirm(null);
       loadList();
     } catch (error) {
+      // 竞态兜底：host 在提交瞬间发现危险项 → 重新评估并进同一确认步，不 toast 报错
+      if (
+        error instanceof Error
+        && error.message.startsWith(FOLDER_TRUST_CONFIRM_REQUIRED_PREFIX)
+        && workspacePath
+        && await requestTrustConfirmIfNeeded(workspacePath)
+      ) return;
       toast.error(`${ps.createFailed}: ${error instanceof Error ? error.message : String(error)}`);
     } finally {
       setCreateSaving(false);
@@ -272,18 +316,25 @@ export const ProjectListView: React.FC<ProjectListViewProps> = ({ onSelect }) =>
       {content}
       <Modal
         isOpen={createOpen}
-        onClose={() => setCreateOpen(false)}
+        onClose={() => { setCreateOpen(false); setTrustConfirm(null); }}
         title={ps.createTitle}
         size="sm"
         footer={(
           <ModalFooter
-            onCancel={() => setCreateOpen(false)}
-            onConfirm={() => { void handleCreate(); }}
+            onCancel={() => { setCreateOpen(false); setTrustConfirm(null); }}
+            onConfirm={() => { void handleCreate(trustConfirm !== null); }}
             confirmText={ps.createSubmit}
             confirmDisabled={createSaving || !createName.trim() || (createSource === 'promote' && !promoteProjectId)}
           />
         )}
       >
+        {trustConfirm ? (
+          <div className="grid gap-3" data-testid="project-space-create-trust-confirm">
+            <p className="text-sm leading-6 text-zinc-400">{ps.trustConfirmHint}</p>
+            <p className="font-mono text-xs text-zinc-100 break-all">{trustConfirm.displayPath}</p>
+            <FolderTrustDangerList items={trustConfirm.dangerousItems} />
+          </div>
+        ) : (
         <div className="grid gap-3" data-testid="project-space-create-modal">
           <label className="grid gap-1.5">
             <span className="text-xs text-zinc-500">{ps.nameLabel}</span>
@@ -364,6 +415,7 @@ export const ProjectListView: React.FC<ProjectListViewProps> = ({ onSelect }) =>
             )}
           </div>
         </div>
+        )}
       </Modal>
       <Modal
         isOpen={editing !== null}

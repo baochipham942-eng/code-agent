@@ -59,6 +59,8 @@ export const projectSpaceZh = {
     promoteEmpty: '没有可升级的项目',
     createSubmit: '创建',
     createFailed: '新建协作空间失败',
+    // 创建即信任（批P 第六波①a）：目录含危险项时同一 Modal 内切确认步，再点创建 = 授权并创建
+    trustConfirmHint: '该目录包含需要知情的项目级配置。点击「创建」即视为信任该目录并创建空间。',
     descriptionPlaceholder: '添加描述…',
     editSpace: '编辑',
     deleteSpace: '删除',
@@ -152,6 +154,7 @@ export const projectSpaceEn = {
     promoteEmpty: 'No projects available to promote',
     createSubmit: 'Create',
     createFailed: 'Failed to create space',
+    trustConfirmHint: 'This folder contains project configuration you should review. Clicking "Create" trusts the folder and creates the space.',
     descriptionPlaceholder: 'Add a description…',
     editSpace: 'Edit',
     deleteSpace: 'Delete',

@@ -219,11 +219,21 @@ export interface CreateSpaceInput {
   name: string;
   description?: string;
   workspacePath?: string | null;
+  /** 知情确认：目录含危险项时用户已在确认步看过清单并再点创建（批P 第六波①a 创建即信任） */
+  trustAcknowledged?: boolean;
 }
+
+/**
+ * 创建即信任：目录含危险项且未知情确认时 host 抛的 coded 错误前缀（domain:project 契约的一部分），
+ * renderer 凭此前缀在同一 Modal 内切确认步，不 toast 报错。
+ */
+export const FOLDER_TRUST_CONFIRM_REQUIRED_PREFIX = 'FOLDER_TRUST_CONFIRM_REQUIRED:';
 
 /** 将已有普通项目升级为显式协作空间。 */
 export interface PromoteToSpaceInput {
   projectId: string;
+  /** 同 CreateSpaceInput.trustAcknowledged：升级目录含危险项时的知情确认 */
+  trustAcknowledged?: boolean;
 }
 
 export interface ProjectSourceInput {

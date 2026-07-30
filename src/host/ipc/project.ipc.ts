@@ -39,6 +39,7 @@ import {
   type ProjectSourceAccess,
   type ProjectSourceInput,
   type ProjectStatus,
+  type PromoteToSpaceInput,
   type UpdateProjectInput,
 } from '../../shared/contract/project';
 import type { ArtifactIssue, ArtifactIssueStatus } from '../../shared/contract/productClosure';
@@ -174,7 +175,7 @@ export function registerProjectHandlers(ipcMain: IpcMain): void {
         }
 
         case 'createSpace': {
-          const { name, description, workspacePath } = (payload ?? {}) as CreateSpacePayload;
+          const { name, description, workspacePath, trustAcknowledged } = (payload ?? {}) as CreateSpacePayload;
           if (!name?.trim()) return invalid('name is required');
           if (workspacePath !== undefined && workspacePath !== null && !workspacePath.trim()) {
             return invalid('workspacePath must be a non-empty path when provided');
@@ -183,17 +184,18 @@ export function registerProjectHandlers(ipcMain: IpcMain): void {
             name: name.trim(),
             description,
             workspacePath,
+            trustAcknowledged,
           }, now);
           return { success: true, data: created };
         }
 
         case 'promoteToSpace': {
-          const { projectId } = (payload ?? {}) as DetailPayload;
+          const { projectId, trustAcknowledged } = (payload ?? {}) as Partial<PromoteToSpaceInput>;
           if (!projectId?.trim()) return invalid('projectId is required');
           if (projectId === UNSORTED_PROJECT_ID) {
             return invalid('the unsorted project cannot be promoted to a space');
           }
-          const promoted = svc.promoteToSpace(projectId, now);
+          const promoted = await svc.promoteToSpace(projectId.trim(), now, { trustAcknowledged });
           return promoted ? { success: true, data: promoted } : notFound('project not found');
         }
 

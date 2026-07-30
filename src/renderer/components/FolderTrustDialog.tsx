@@ -2,14 +2,9 @@ import React from 'react';
 import { ShieldAlert } from 'lucide-react';
 import { ConfirmDialog } from './composites/ConfirmDialog';
 import { useI18n } from '../hooks/useI18n';
+import { FolderTrustDangerList, type FolderTrustDangerousItem } from './FolderTrustDangerList';
 
-interface FolderTrustDangerousItem {
-  kind: string;
-  displayPath: string;
-  label: string;
-  risk: string;
-  gated: boolean;
-}
+export type { FolderTrustDangerousItem };
 
 export interface FolderTrustEvaluationView {
   state: 'trusted' | 'blocked' | 'untrusted';
@@ -26,10 +21,6 @@ interface FolderTrustDialogProps {
   onTrust: () => void;
   onBlock: () => void;
   onOpenSettings: () => void;
-}
-
-function riskText(risk: string, labels: Record<string, string>): string {
-  return labels[risk] ?? risk;
 }
 
 export const FolderTrustDialog: React.FC<FolderTrustDialogProps> = ({
@@ -60,27 +51,7 @@ export const FolderTrustDialog: React.FC<FolderTrustDialogProps> = ({
         </div>
       )}
 
-      <div className="space-y-2">
-        <p className="text-zinc-400">{copy.detected}</p>
-        <div className="max-h-56 space-y-2 overflow-auto pr-1">
-          {evaluation.dangerousItems.map((item) => (
-            <div
-              key={`${item.kind}:${item.displayPath}`}
-              className="rounded-md border border-zinc-800 bg-zinc-950/70 px-3 py-2"
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="text-zinc-100">{item.label}</p>
-                  <p className="mt-1 font-mono text-xs text-zinc-500 break-all">{item.displayPath}</p>
-                </div>
-                <span className="shrink-0 rounded border border-zinc-700 px-2 py-0.5 text-xs text-zinc-300">
-                  {riskText(item.risk, copy.risks)}
-                </span>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
+      <FolderTrustDangerList items={evaluation.dangerousItems} />
 
       <div className="flex gap-2">
         <button

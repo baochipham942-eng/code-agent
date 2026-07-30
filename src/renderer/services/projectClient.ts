@@ -42,9 +42,15 @@ export async function createSpace(input: CreateSpaceInput): Promise<Project> {
   return ipcService.invokeDomain<Project>(IPC_DOMAINS.PROJECT, 'createSpace', input);
 }
 
-/** 将已有普通项目升级为显式协作空间 */
-export async function promoteToSpace(projectId: string): Promise<Project> {
-  return ipcService.invokeDomain<Project>(IPC_DOMAINS.PROJECT, 'promoteToSpace', { projectId });
+/** 将已有普通项目升级为显式协作空间；项目带目录且含危险项时需 trustAcknowledged 知情确认 */
+export async function promoteToSpace(
+  projectId: string,
+  opts?: { trustAcknowledged?: boolean },
+): Promise<Project> {
+  return ipcService.invokeDomain<Project>(IPC_DOMAINS.PROJECT, 'promoteToSpace', {
+    projectId,
+    trustAcknowledged: opts?.trustAcknowledged,
+  });
 }
 
 /** 升级为云协同空间：创建云项目壳并写回本地映射；失败 error.message 已是人话（host 侧映射） */

@@ -20,6 +20,7 @@ import { collectToolArtifactsFromMetadata } from '../../../shared/contract/artif
 import type { GoalRunInput } from '../../../shared/contract/appService';
 import type { ToolCall } from '../../../shared/contract/tool';
 import {
+  FOLDER_TRUST_CONFIRM_REQUIRED_PREFIX,
   UNSORTED_PROJECT_ID,
   UNSORTED_PROJECT_NAME,
   type CreateProjectGoalInput,
@@ -50,7 +51,7 @@ import {
   resolveWorkspacePath,
 } from '../../runtime/workspaceScope';
 import { ProjectSourceTrustError } from './projectSourceTrustError';
-import { evaluateFolderTrust } from '../../security/folderTrustService';
+import { evaluateFolderTrust, setFolderTrust } from '../../security/folderTrustService';
 import { getProjectSourceGitStates } from '../git/gitStatusService';
 
 const logger = createLogger('ProjectService');
@@ -434,6 +435,8 @@ export class ProjectService {
 
     if (requestedWorkspacePath) {
       const workspacePath = canonicalizeWorkspacePath(requestedWorkspacePath);
+      // 创建即信任：信任门先行，撞已有项目的早退分支同样先过门再升级
+      await this.ensureFolderTrustForSpaceCreation(workspacePath, 'create-space', input.trustAcknowledged);
       const workspaceKey = getProjectKey(workspacePath);
       const existing = repo.getProjectByWorkspacePath(workspacePath);
       if (existing) return repo.promoteToSpace(existing.id, now)!;
@@ -474,11 +477,45 @@ export class ProjectService {
     return repo.getProject(project.id)!;
   }
 
-  promoteToSpace(projectId: string, now: number): Project | undefined {
+  async promoteToSpace(
+    projectId: string,
+    now: number,
+    opts?: { trustAcknowledged?: boolean },
+  ): Promise<Project | undefined> {
     if (projectId === UNSORTED_PROJECT_ID) {
       throw new Error('The unsorted project cannot be promoted to a space.');
     }
+    // 升级即信任：项目带工作目录时先过同一道信任门（无目录空间无授权面，直接升级）
+    const workspacePath = this.repo().getProject(projectId)?.workspacePath?.trim();
+    if (workspacePath) {
+      await this.ensureFolderTrustForSpaceCreation(workspacePath, 'promote-to-space', opts?.trustAcknowledged);
+    }
     return this.repo().promoteToSpace(projectId, now);
+  }
+
+  /**
+   * 创建即信任（批P 第六波①a）：用户亲手选目录 = 信任授权，走既有 folder-trust 通道落库。
+   * 目录含危险项且未知情确认 → 抛 coded 错（不落库、不创建）；干净目录静默授权、已信任幂等；
+   * 授权落库失败 warn-and-continue，不阻断创建（对齐 linkProjectIdToMeta 的失败语义）。
+   */
+  private async ensureFolderTrustForSpaceCreation(
+    workspacePath: string,
+    decidedBy: string,
+    trustAcknowledged?: boolean,
+  ): Promise<void> {
+    const evaluation = await evaluateFolderTrust(workspacePath).catch((err) => {
+      logger.warn('[ProjectService] evaluateFolderTrust failed:', err instanceof Error ? err.message : String(err));
+      return undefined;
+    });
+    if (!evaluation) return;
+    if (evaluation.state !== 'trusted' && evaluation.dangerousItems.length > 0 && !trustAcknowledged) {
+      throw new Error(
+        `${FOLDER_TRUST_CONFIRM_REQUIRED_PREFIX} The folder contains project configuration that needs your review before it can be trusted: ${workspacePath}`,
+      );
+    }
+    await setFolderTrust(workspacePath, 'trusted', decidedBy).catch((err) =>
+      logger.warn('[ProjectService] setFolderTrust failed:', err instanceof Error ? err.message : String(err)),
+    );
   }
 
   getProjectForWorkspace(workspacePath: string): Project | undefined {

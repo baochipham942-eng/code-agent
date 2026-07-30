@@ -561,7 +561,9 @@ describe('空对话不出通话摘要卡（A3）', () => {
     await attachVoiceClient(client as never, 'session-empty');
 
     client.emit('message', Buffer.from(JSON.stringify({ type: 'end' })), false);
-    await vi.waitFor(() => expect(getActiveVoiceSessionId()).toBeNull(), { timeout: 4000 });
+    // 等 teardown 真走过落卡那一步再断言：active 在排水窗**之前**就置空了，
+    // 拿它当路标会在摘要写入前就判「没落卡」（假绿）。upstream.close() 在落卡之后。
+    await vi.waitFor(() => expect(close).toHaveBeenCalled(), { timeout: 4000 });
 
     expect(summaries()).toHaveLength(0);
   }, 10_000);

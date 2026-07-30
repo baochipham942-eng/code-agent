@@ -492,6 +492,13 @@ export const TurnCard: React.FC<TurnCardProps> = ({
 // 产品拍板）：结局判定收在 host 证据门（turn.voiceWorkOutcome 照常落库），卡片不转述。
 // 整行是一个 Button primitive（点卡头展开/收起），[&>span] 覆盖是让 Button 内部的
 // 单个子 span 撑满整行左对齐——不改变 primitive 本身。
+//
+// 左缘基线（X5.5 返工批 R4b，真机截图实锤卡头比正文右移一截）：
+// 正文（assistant 文本 / 结论气泡）的左缘 = 卡容器 px-4 的内容边；Button size=sm
+// 自带 px-3，此前 className 里的 px-2 是死类——TW4 层叠里同族间距大值赢（px-3 盖住
+// px-2），与书写顺序无关——于是图标/标题被顶到内容边右 12px。修法不是再写一个新
+// px 去压（那是同一条死路），而是保留 px-3 的点击/hover 面积，用 -mx-3 把整行
+// 负 margin 回内容边、宽度同步补偿：图标与正文同一左缘，hover 底色外扩进 px-4 排水沟。
 const VoiceDispatchCardHeader: React.FC<{
   title: string;
   speaker?: { agentId: string; displayName: string };
@@ -509,7 +516,7 @@ const VoiceDispatchCardHeader: React.FC<{
       aria-expanded={expanded}
       title={expanded ? t.voice.taskCard.collapseProcess : t.voice.taskCard.expandProcess}
       onClick={onToggle}
-      className="w-full px-2 [&>span]:flex [&>span]:w-full [&>span]:min-w-0 [&>span]:items-center [&>span]:gap-2"
+      className="-mx-3 w-[calc(100%+1.5rem)] [&>span]:flex [&>span]:w-full [&>span]:min-w-0 [&>span]:items-center [&>span]:gap-2"
     >
       <AudioLines className="h-4 w-4 shrink-0 text-zinc-500" />
       <span className="min-w-0 truncate text-left font-medium text-zinc-300">{title}</span>

@@ -128,6 +128,20 @@ describe('语音派活任务卡（W6-5）', () => {
     expect(screen.getByTestId('voice-task-speaker').textContent).toBe('牧之');
   });
 
+  it('卡头与正文同一左缘基线（R4b）：负 margin 抵消 Button 内边距，且不许再有 px-* 覆盖类', () => {
+    // 真机截图实锤：卡头（波形图标+标题）比正文气泡右移一截。根因：Button size=sm
+    // 自带 px-3，旧 className 的 px-2 在 TW4 层叠里被 px-3 盖住（同族间距大值赢，
+    // 与书写顺序无关）——图标被顶到内容边右 12px。钉死两件事：
+    //   ① -mx-3 负 margin 把整行拉回容器内容边（正文左缘所在）；
+    //   ② 不许再出现 px-* 覆盖类——那是同一条死路，再写一次还是死类。
+    render(<TurnCard turn={voiceTaskTurn()} sessionId="session-1" />);
+    const header = screen.getByTestId('voice-task-card-header');
+    expect(header.className).toContain('-mx-3');
+    // 唯一的水平 padding 必须是 Button sm 自带的 px-3（由 -mx-3 抵消）；
+    // 除此之外的任何 px-* 覆盖类都是「再写一次还是死类」的同一条死路。
+    expect(header.className).not.toMatch(/(?:^|\s)px-(?!3(?:\s|$))/);
+  });
+
   it('speaker 不存在 → 卡头一个人名都不出现（不编默认署名）', () => {
     render(<TurnCard turn={voiceTaskTurn()} sessionId="session-1" />);
     expect(screen.queryByTestId('voice-task-speaker')).toBeNull();

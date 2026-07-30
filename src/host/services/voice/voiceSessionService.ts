@@ -331,7 +331,15 @@ async function persistTranscript(
 ): Promise<void> {
   const trimmed = text.trim();
   // 落库的唯一入口 = 过滤的唯一落点：done 那条、排水窗冲刷那条走的都是这里。
-  if (!trimmed || isPureToolTagText(trimmed)) return;
+  // 丢弃必须出声（E1 硬要求）：静默丢弃就是「用户说了话、系统什么都没留下、日志一个字都没有」，
+  // 本仓已为此付过一次数据丢失。只记 role 和原因，不记内容。
+  if (!trimmed || isPureToolTagText(trimmed)) {
+    logger.warn('transcript dropped before persist', {
+      role,
+      reason: trimmed ? 'pure-tool-tag' : 'empty-text',
+    });
+    return;
+  }
   // 落库的同时进近窗（P0-2）：派活时执行侧要拿原文自己重建意图，
   // 别只给它通话 brain 改写过的那一句。落库失败不影响近窗，反之亦然。
   // ponytail: 合并只改消息流不回收近窗——近窗是喂模型的，碎一点无害（产品拍板）。

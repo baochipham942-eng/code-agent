@@ -83,6 +83,7 @@ const CAPABILITY_DOMAIN_ACTIONS = {
     'list',
     'listHistory',
     'listModels',
+    'listSources',
     'previewHistory',
     'select',
     'selectModel',

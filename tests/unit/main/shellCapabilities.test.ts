@@ -21,6 +21,7 @@ describe('shell capabilities', () => {
   });
 
   it.each([
+    ['domain:agentEngine', 'listSources'],
     ['domain:project', 'artifactIssues'],
     ['domain:project', 'listCloudCards'],
     ['domain:project', 'resyncCloudCards'],

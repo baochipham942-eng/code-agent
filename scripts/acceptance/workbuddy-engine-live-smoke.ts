@@ -1,4 +1,5 @@
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { spawn, type ChildProcessByStdio } from 'node:child_process';
+import type { Readable } from 'node:stream';
 import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -27,7 +28,7 @@ interface SessionShape {
 }
 
 let output = '';
-let child: ChildProcessWithoutNullStreams | null = null;
+let child: ChildProcessByStdio<null, Readable, Readable> | null = null;
 let token = '';
 let sessionId = '';
 
@@ -81,7 +82,7 @@ async function waitForServer(): Promise<void> {
 
 async function main(): Promise<void> {
   const dataDir = await mkdtemp(join(tmpdir(), 'neo-workbuddy-live-'));
-  child = spawn(process.execPath, ['dist/web/webServer.cjs'], {
+  const serverChild = spawn(process.execPath, ['dist/web/webServer.cjs'], {
     cwd: workspace,
     env: {
       ...process.env,
@@ -98,8 +99,9 @@ async function main(): Promise<void> {
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
-  child.stdout.on('data', append);
-  child.stderr.on('data', append);
+  child = serverChild;
+  serverChild.stdout.on('data', append);
+  serverChild.stderr.on('data', append);
   await waitForServer();
 
   // Mirror the product's explicit "检测本机客户端" action. Startup may warm

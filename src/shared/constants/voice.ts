@@ -143,6 +143,23 @@ export const VOICE_UPSTREAM_SAMPLE_RATE = 16_000;
 /** 下行助手音频采样率（Hz），厂商固定 24k 单声道 PCM16。 */
 export const VOICE_DOWNSTREAM_SAMPLE_RATE = 24_000;
 
+/**
+ * 字幕揭示器的推进间隔（ms）。
+ *
+ * 上游按**生成速度**吐转写（实测 124 字全文 544ms 到齐），而音频按**真实时间**播
+ * （同一段 24.6 秒）——直接上屏就是字幕比语音早结束 20 多秒，肉眼看就是「攒整句一次性铺满」。
+ * 所以字幕的揭示进度绑音频播放进度，这个间隔是推进节拍。
+ */
+export const VOICE_SUBTITLE_REVEAL_INTERVAL_MS = 100;
+
+/**
+ * 字幕揭示的停滞兜底（ms）：播放进度连续这么久没推进，就把剩余全文一次放完。
+ *
+ * 兜底存在的理由是「字幕绝不许永久悬着」——原生 AEC 走 sidecar、音频可能中途断供，
+ * 没有这个闸，用户会对着半句话等到天荒地老。
+ */
+export const VOICE_SUBTITLE_STALL_FLUSH_MS = 3_000;
+
 /** Tauri 原生 AEC sidecar 的上行音频/电平/生命周期事件。 */
 export const VOICE_AEC_OUTPUT_EVENT = 'voice-aec:output';
 

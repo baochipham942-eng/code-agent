@@ -13,7 +13,7 @@
 // ============================================================================
 
 import type { VoiceMessageCode } from '@shared/contract/voice';
-import { VOICE_FOCUS_REPORT_MIN_INTERVAL_MS, VOICE_RECONNECT_BACKOFF_MS, VOICE_STREAM_WS_PATH, VOICE_TEARDOWN_DRAIN_MS, VOICE_WS_CLOSE_TERMINAL } from '@shared/constants/voice';
+import { VOICE_DOWNSTREAM_SAMPLE_RATE, VOICE_FOCUS_REPORT_MIN_INTERVAL_MS, VOICE_RECONNECT_BACKOFF_MS, VOICE_STREAM_WS_PATH, VOICE_SUBTITLE_REVEAL_INTERVAL_MS, VOICE_SUBTITLE_STALL_FLUSH_MS, VOICE_TEARDOWN_DRAIN_MS, VOICE_WS_CLOSE_TERMINAL } from '@shared/constants/voice';
 import type { AppSettings, Message } from '@shared/contract';
 import type { VoiceClientCommand, VoiceEvent } from '@shared/contract/voice';
 import { IPC_DOMAINS } from '@shared/ipc';
@@ -27,7 +27,7 @@ import { isNativeDesktopAvailable } from './nativeDesktop';
 import { NativeVoiceAudioPipeline } from './nativeVoiceAudioPipeline';
 import { maybeShowSpeakerEchoHint, showVoiceAecFallbackWarning } from './voiceEchoHint';
 import { VoiceAudioPipeline, type VoiceAudioPipelineLike } from './voiceAudioPipeline';
-import { resolvePartialRelease } from '../utils/voicePartialOverlay';
+import { computeRevealedSubtitle, resolvePartialRelease } from '../utils/voicePartialOverlay';
 import { selectVoiceFocusContext } from './voiceFocusContext';
 import { normalizeInterruptMode } from '../components/features/voice/voiceSettingsDerivation';
 
@@ -122,6 +122,98 @@ class VoiceCallBridge {
     if (Object.keys(patch).length > 0) state.eventApplied(patch);
   }
 
+  // ==========================================================================
+  // 助手字幕揭示器（批 X5.5-A4）
+  //
+  // 上游按生成速度吐转写（实测 124 字 544ms 到齐），音频却要按真实时间播（同段 24.6 秒）。
+  // 照 delta 到达直接上屏，字幕就比语音早跑完 20 多秒——用户看到的就是「攒整句一次性铺满」。
+  // 所以这里把**内容**和**揭示时机**拆开：delta/final 只喂内容，揭示进度绑音频播放进度。
+  // ==========================================================================
+
+  /** 字幕内容真源：delta 累积，final 到达后换成 final 全文（防漂移）。 */
+  private revealTarget = '';
+  /** final 已到 = 内容不会再变，揭示到尾即可交接真消息。 */
+  private revealFinalized = false;
+  /** 本轮已入队的下行音频秒数（揭示比例的分母）。 */
+  private audioEnqueuedSec = 0;
+  /**
+   * 播放队列排到几时（ms epoch）。与 Web Audio 的 nextStart 同款排程：
+   * 新帧接在上一帧末尾，队列空了就从此刻重新起算。
+   * 不直接读管线的 nextStart，是因为默认档的原生 AEC 把音频甩给 sidecar、压根没有播放时钟。
+   */
+  private playbackEndsAt = 0;
+  private revealTimer: ReturnType<typeof setInterval> | null = null;
+  /**
+   * 上次真正写进 store 的那串字。存文本而不是长度：final 校正常常**不改长度只改内容**
+   * （delta 拼接与 final 逐字不同），只比长度会把这次静默替换整个漏掉。
+   */
+  private revealedText = '';
+  /** 揭示进度上次推进的时刻，用于停滞兜底。 */
+  private revealStallAt = 0;
+  /** 揭示完成后才交接真消息的那条会话（§7.5 落库仍只有 host 一个生产者）。 */
+  private pendingHandoffSessionId: string | null = null;
+
+  private startRevealCycle(): void {
+    this.revealFinalized = false;
+    this.revealedText = '';
+    this.audioEnqueuedSec = 0;
+    this.playbackEndsAt = 0;
+    this.revealStallAt = Date.now();
+    this.store().eventApplied({ assistantSpeaking: true });
+  }
+
+  private ensureRevealTicker(): void {
+    if (this.revealTimer !== null) return;
+    this.revealStallAt = Date.now();
+    this.revealTimer = setInterval(() => this.tickReveal(), VOICE_SUBTITLE_REVEAL_INTERVAL_MS);
+  }
+
+  private tickReveal(): void {
+    const backlogSec = Math.max(0, this.playbackEndsAt - Date.now()) / 1000;
+    const revealed = computeRevealedSubtitle(
+      this.revealTarget,
+      this.audioEnqueuedSec,
+      this.audioEnqueuedSec - backlogSec,
+    );
+    if (revealed !== this.revealedText) {
+      // 长度没变但内容变了（final 校正）也要写：这一步就是「防漂移」。
+      if (revealed.length !== this.revealedText.length) this.revealStallAt = Date.now();
+      this.revealedText = revealed;
+      this.store().eventApplied({ partialAssistant: revealed });
+    } else if (Date.now() - this.revealStallAt >= VOICE_SUBTITLE_STALL_FLUSH_MS) {
+      // 停滞兜底：播放进度不动了（音频断供 / 这一轮压根没有音频）——
+      // 剩下的一次放完。字幕绝不许永久悬在半句上。
+      this.flushReveal();
+      return;
+    }
+    if (this.revealFinalized && revealed.length >= this.revealTarget.length) this.endRevealCycle();
+  }
+
+  /** 立刻放完全文并结算（挂断 / teardown / 停滞兜底）。 */
+  private flushReveal(): void {
+    if (this.revealTarget) this.store().eventApplied({ partialAssistant: this.revealTarget });
+    this.endRevealCycle();
+  }
+
+  /**
+   * 停表并结算。正常放完、被 barge-in 打断、挂断都走这里——
+   * 待交接的真消息一律在这里补上，否则打断一次就再没人去拉那条已落库的消息。
+   */
+  private endRevealCycle(): void {
+    if (this.revealTimer !== null) {
+      clearInterval(this.revealTimer);
+      this.revealTimer = null;
+    }
+    this.revealTarget = '';
+    this.revealFinalized = false;
+    this.revealedText = '';
+    this.audioEnqueuedSec = 0;
+    this.playbackEndsAt = 0;
+    const sessionId = this.pendingHandoffSessionId;
+    this.pendingHandoffSessionId = null;
+    if (sessionId) this.scheduleReload(sessionId, 'assistant');
+  }
+
   /**
    * 挂断后的第二次拉消息（现象 3·摘要卡延迟的根因）：
    * host teardown 要等 VOICE_TEARDOWN_DRAIN_MS（1500ms）排水窗才把摘要卡落库，
@@ -192,6 +284,9 @@ class VoiceCallBridge {
     this.audio?.stop();
     this.audio = null;
     this.settledPartials = {};
+    // 新一通电话不继承上一通的揭示残留，也不替上一通补交接。
+    this.pendingHandoffSessionId = null;
+    this.endRevealCycle();
     this.audioReady = null;
     this.fallbackWarningShown = false;
 
@@ -228,6 +323,10 @@ class VoiceCallBridge {
     ws.onmessage = (event) => {
       if (event.data instanceof ArrayBuffer) {
         this.audio?.enqueuePlayback(new Int16Array(event.data));
+        // 字幕揭示进度绑的就是这条播放时间轴（批 X5.5-A4）。
+        const frameSec = event.data.byteLength / 2 / VOICE_DOWNSTREAM_SAMPLE_RATE;
+        this.audioEnqueuedSec += frameSec;
+        this.playbackEndsAt = Math.max(this.playbackEndsAt, Date.now()) + frameSec * 1000;
         this.store().eventApplied({ assistantSpeaking: true });
         return;
       }
@@ -253,6 +352,8 @@ class VoiceCallBridge {
       this.audio?.stop();
       this.audio = null;
       this.audioReady = null;
+      // 音频没了，揭示进度再没有可绑的时间轴：就地放完剩余全文（host teardown / 断线重连同理）。
+      this.flushReveal();
       if (this.ws === ws) this.ws = null;
       const { phase } = this.store();
       if (phase === 'idle') return;
@@ -455,6 +556,9 @@ class VoiceCallBridge {
         break;
       case 'speech.started':
         this.audio?.clearPlayback(); // barge-in：用户开口就掐掉正在播的回答
+        // 播放队列被掐掉 = 剩下的文本永远不会被念出来，揭示器必须同步停，
+        // 否则它会对着一条不再播放的时间轴继续空转。
+        this.endRevealCycle();
         this.store().eventApplied({
           userSpeaking: true,
           assistantSpeaking: false,
@@ -474,13 +578,19 @@ class VoiceCallBridge {
         break;
       case 'assistant.transcript':
         if (event.done) {
-          this.store().eventApplied({ partialAssistant: event.text });
-          this.scheduleReload(sessionId, 'assistant');
+          // final 是**内容真源，不是揭示时机**（批 X5.5-A4 设计修订）：已揭示的前缀若与 final
+          // 不一致，以 final 为准静默替换；未揭示的部分继续按播放进度放出，不跳变到全文——
+          // final 在语音播完前 20 秒就到了，全文覆盖等于当场把字幕拍到结尾。
+          this.revealTarget = event.text;
+          this.revealFinalized = true;
+          // 真消息交接推迟到揭示完成，否则 15s 处一次性换脸，前面的节流全白做。
+          this.pendingHandoffSessionId = sessionId;
+          if (this.revealTimer === null) this.flushReveal();
+          else this.tickReveal();
         } else {
-          this.store().eventApplied({
-            assistantSpeaking: true,
-            partialAssistant: this.store().partialAssistant + event.text,
-          });
+          if (!this.revealTarget) this.startRevealCycle();
+          this.revealTarget += event.text;
+          this.ensureRevealTicker();
         }
         break;
       case 'response.done':
@@ -510,6 +620,9 @@ class VoiceCallBridge {
 
   hangUp(): void {
     this.intentionalClose = true;
+    // 挂断即定稿：把没揭示完的尾巴一次放完并停表，通话结束不留半句，
+    // 也不留一个还在往已 reset 的 store 里写字的定时器。
+    this.flushReveal();
     this.stopFocusReporting();
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     this.reconnectTimer = null;

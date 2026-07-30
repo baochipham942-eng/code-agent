@@ -194,6 +194,13 @@ function formatNarration(narration: VoiceWorkNarration): string {
     return `[BACKEND] ${who}「${narration.title}」失败了，没有完成，原因：${reason}。`
       + '如实告诉用户这件事失败了，绝不要说它已经完成、已经写入或已经生效。';
   }
+  // 待核验（X5.5-A2-a）：run 跑完了但没留下任何产物。这一档最容易被润色成「做完了」，
+  // 所以和失败一样把台词写死，不给「已结束」这种可润色的状态名词留空间。
+  if (narration.status === 'unverified') {
+    return `[BACKEND] ${who}「${narration.title}」跑完了，但没有留下任何产物，不能算做完。${narration.summary}`.trim()
+      + '\n如实告诉用户这件事跑完了但还没核验，请他自己确认一下；'
+      + '绝不要说它已经完成、已经写入或已经生效。';
+  }
   return `[BACKEND] ${who}「${narration.title}」做完了。${narration.summary}`.trim();
 }
 

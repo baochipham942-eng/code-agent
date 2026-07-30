@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { EventEmitter } from 'events';
 import { isVoiceInputMessage, type Message } from '../../src/shared/contract/message';
 import type { VoiceEvent, VoiceTransport, VoiceWorkItem } from '../../src/shared/contract/voice';
-import { QWEN_OMNI_REALTIME_MODEL, VOICE_WS_CLOSE_TERMINAL } from '../../src/shared/constants/voice';
+import { QWEN_OMNI_REALTIME_MODEL, VOICE_END_CALL_GOODBYE_TIMEOUT_MS, VOICE_WS_CLOSE_TERMINAL } from '../../src/shared/constants/voice';
 
 const vocabulary = vi.hoisted(() => ({ block: '' }));
 vi.mock('../../src/host/services/voice/voiceVocabulary', () => ({
@@ -717,6 +717,57 @@ describe('挂断确定性闸（A1）', () => {
 
     expect(getActiveVoiceSessionId()).not.toBeNull();
     expect(close).not.toHaveBeenCalled();
+  });
+
+  // R2（2026-07-30 真机 14:39:42）：「先这样吧拜拜」之后紧跟「不要挂断」，电话照样挂了。
+  // 武装不等于判决——告别窗里的新一句话就是反悔的机会。
+  it('武装后用户反悔：新的非挂断字幕解除武装，response.done 不再挂断', async () => {
+    const client = new FakeClient();
+    await attachVoiceClient(client as never, 'session-hangup-recant');
+
+    lastOnEvent?.({ type: 'user.transcript', text: '先这样吧拜拜', done: true });
+    // barge-in：用户抢话，这一轮的 response.done 可能抢在他的字幕前面到
+    lastOnEvent?.({ type: 'speech.started' });
+    lastOnEvent?.({ type: 'response.done' });
+    expect(getActiveVoiceSessionId()).not.toBeNull();
+
+    lastOnEvent?.({ type: 'user.transcript', text: '不要挂断', done: true });
+    lastOnEvent?.({ type: 'response.done' });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(getActiveVoiceSessionId()).not.toBeNull();
+    expect(close).not.toHaveBeenCalled();
+  });
+
+  it('反悔后兜底定时器也撤掉（不能 5 秒后自己挂了）', async () => {
+    vi.useFakeTimers();
+    try {
+      const client = new FakeClient();
+      await attachVoiceClient(client as never, 'session-hangup-recant-timer');
+      lastOnEvent?.({ type: 'user.transcript', text: '拜拜', done: true });
+      lastOnEvent?.({ type: 'user.transcript', text: '等一下我还有事要问', done: true });
+
+      await vi.advanceTimersByTimeAsync(VOICE_END_CALL_GOODBYE_TIMEOUT_MS + 1000);
+
+      expect(getActiveVoiceSessionId()).not.toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('武装后不说话：兜底定时器照旧挂断', async () => {
+    vi.useFakeTimers();
+    try {
+      const client = new FakeClient();
+      await attachVoiceClient(client as never, 'session-hangup-timeout');
+      lastOnEvent?.({ type: 'user.transcript', text: '拜拜', done: true });
+
+      await vi.advanceTimersByTimeAsync(VOICE_END_CALL_GOODBYE_TIMEOUT_MS + 1000);
+
+      expect(getActiveVoiceSessionId()).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('未 done 的用户字幕不触发（说了一半的话不算数）', async () => {

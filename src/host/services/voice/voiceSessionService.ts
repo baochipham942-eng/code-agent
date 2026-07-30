@@ -541,10 +541,25 @@ async function connectAndBind(
   // 字幕落库计数器：onEvent 闭包与挂断摘要共用同一个可变引用（同 transcriptBuf 先例），
   // 成功落库才 +1，挂断时原样写进 voiceCallSummary.transcriptCount。
   const transcriptCounter = { count: 0 };
-  // 收线请求置位后，onEvent 看到这一轮说完（response.done）就真挂；reason 记的是谁要求的。
-  const endCallRequested: { value: boolean; reason: 'model-end-call' | 'user-hangup-intent' } = {
+  /**
+   * 收线武装状态。置位后 onEvent 看到这一轮说完（response.done）就真挂。
+   *
+   * `timer` 要留着是因为**用户可以反悔**（R2，2026-07-30 真机：「先这样吧拜拜」
+   * 之后紧跟一句「不要挂断」，电话照样挂了）。反悔要把兜底定时器一起撤掉，
+   * 光复位标志的话 5 秒后照样挂。
+   * `awaitingUserTurn`：告别窗里用户又开口了，先把扣扳机的手松开，等听清他说什么再定
+   * ——barge-in 会让这一轮的 response.done 抢在用户字幕前面到，那时挂断已经来不及拦。
+   */
+  const endCallRequested: {
+    value: boolean;
+    reason: 'model-end-call' | 'user-hangup-intent';
+    timer: NodeJS.Timeout | null;
+    awaitingUserTurn: boolean;
+  } = {
     value: false,
     reason: 'model-end-call',
+    timer: null,
+    awaitingUserTurn: false,
   };
   const baseInstructions = withLanguageDirective(routing.personaInstructions, liveSettings?.language);
   const initialInstructions = composeVoiceInstructions(baseInstructions, null);
@@ -557,6 +572,7 @@ async function connectAndBind(
    * response.done 再断；上游不回那一帧时由兜底定时器收尾（同 dictation finish 的先例）。
    */
   const requestEndCall = (reason: 'model-end-call' | 'user-hangup-intent'): void => {
+    endCallRequested.awaitingUserTurn = false;
     if (endCallRequested.value) return;
     endCallRequested.value = true;
     endCallRequested.reason = reason;
@@ -567,9 +583,18 @@ async function connectAndBind(
         : 'hangup intent matched from user transcript',
       { voiceSessionId: id },
     );
-    setTimeout(() => {
+    endCallRequested.timer = setTimeout(() => {
       if (active?.id === id && endCallRequested.value) void teardown(`${reason}-timeout`);
     }, VOICE_END_CALL_GOODBYE_TIMEOUT_MS);
+  };
+  /** 用户反悔（告别窗里说了句不是挂断的话）：解除武装，通话继续。 */
+  const disarmEndCall = (): void => {
+    endCallRequested.awaitingUserTurn = false;
+    if (!endCallRequested.value) return;
+    endCallRequested.value = false;
+    if (endCallRequested.timer) clearTimeout(endCallRequested.timer);
+    endCallRequested.timer = null;
+    logger.info('end call disarmed by new user turn', { voiceSessionId: id });
   };
   // 绑定必须早于建连：上游一旦握手成功就可能立刻发 function_call，
   // 晚绑一步那次调用会落到「通话还没就绪」的兜底上。
@@ -613,7 +638,12 @@ async function connectAndBind(
         // injection.rejected 是 Host 内部的重试信号；Renderer 没有用户动作要做。
         if (event.type !== 'injection.rejected' && !suppressedToolTag) send(clientRef.current, event);
         if (active?.id === id) {
-          if (event.type === 'speech.started') markNarrationUserTurn(active);
+          if (event.type === 'speech.started') {
+            markNarrationUserTurn(active);
+            // R2：告别窗里用户又开口——先别扣扳机。barge-in 会让这一轮的 response.done
+            // 抢在用户字幕前面到，那时挂断已成事实，再听到「不要挂断」也拦不住了。
+            if (endCallRequested.value) endCallRequested.awaitingUserTurn = true;
+          }
           else if (event.type === 'response.done') flushNarrationQueue(active);
           else if (event.type === 'injection.rejected') handleNarrationInjectionRejected(active, event.message);
         }
@@ -621,7 +651,11 @@ async function connectAndBind(
           void persistTranscript(neoSessionId, 'user', event.text, transcriptCounter);
           // 挂断确定性闸（A1）：只看用户说的话，绝不看 assistant 字幕——
           // 模型复述「好的，挂断」会把它自己的话当成用户的指令。
-          if (active?.id === id && detectHangupIntent(event.text)) requestEndCall('user-hangup-intent');
+          // 反过来（R2）：告别窗里的新一句话若不是挂断，就是反悔，解除武装继续通话。
+          if (active?.id === id) {
+            if (detectHangupIntent(event.text)) requestEndCall('user-hangup-intent');
+            else disarmEndCall();
+          }
         } else if (event.type === 'assistant.transcript') {
           if (event.done) {
             transcriptBuf.assistant = '';
@@ -631,8 +665,15 @@ async function connectAndBind(
           }
         }
         // 说完告别这一轮 = 可以真挂了（收线的落点，别让它只是嘴上说）。
-        else if (event.type === 'response.done' && endCallRequested.value && active?.id === id) {
+        else if (
+          event.type === 'response.done'
+          && endCallRequested.value
+          && !endCallRequested.awaitingUserTurn
+          && active?.id === id
+        ) {
           endCallRequested.value = false;
+          if (endCallRequested.timer) clearTimeout(endCallRequested.timer);
+          endCallRequested.timer = null;
           void teardown(endCallRequested.reason);
         }
         // 上游报错 / 上游连接关闭 = 这一路通话已经死了，必须就地释放 active。

@@ -30,6 +30,7 @@ import {
 
 const mocks = vi.hoisted(() => ({
   scrollToIndex: vi.fn(),
+  virtuosoProps: {} as Record<string, any>,
 }));
 
 vi.mock('react-virtuoso', async () => {
@@ -37,6 +38,9 @@ vi.mock('react-virtuoso', async () => {
   return {
     Virtuoso: ReactModule.forwardRef(function MockVirtuoso(props: Record<string, any>, ref) {
       ReactModule.useImperativeHandle(ref, () => ({ scrollToIndex: mocks.scrollToIndex }));
+      // 真实 Virtuoso 每渲染都把全量 props 发布进自己的 store，所以这里记下最后一次
+      // 收到的 props，测试才能断言"没变的东西不许换引用"。
+      mocks.virtuosoProps = props;
       const setScrollerRef = ReactModule.useCallback((element: HTMLDivElement | null) => {
         props.scrollerRef?.(element);
       }, [props.scrollerRef]);
@@ -566,5 +570,41 @@ describe('TurnBasedTraceView streaming scroll drivers', () => {
       align: 'start',
       behavior: 'auto',
     });
+  });
+});
+
+// 渲染反馈环回归（2026-07-30 P0）：react-virtuoso 每次渲染都在 layout effect 里
+// 全量发布 props 到自己的 store，发布即通知订阅者（useSyncExternalStore →
+// forceStoreRerender）。所以任何"每渲染换身份"的 props 都会把上游一次普通重渲染
+// 放大成一轮同步嵌套更新——上游只要有高频重渲染源，就打满 React 50 层上限报 #185。
+// 守的不变量：props 值没变时，交给 Virtuoso 的 itemContent 必须保持同一个引用。
+describe('TurnBasedTraceView 不向虚拟列表灌入每渲染变身份的 props', () => {
+  it('相同 props 重渲染时 itemContent 引用保持稳定（含省略 searchMatches 的默认档）', () => {
+    const projection = makeProjection(-1);
+    const beforeFirstUserMessage = React.createElement('div', null, 'fork-hint');
+
+    const view = render(React.createElement(TurnBasedTraceView, {
+      projection,
+      beforeFirstUserMessage,
+    }));
+    const firstItemContent = mocks.virtuosoProps.itemContent;
+
+    view.rerender(React.createElement(TurnBasedTraceView, {
+      projection,
+      beforeFirstUserMessage,
+    }));
+
+    expect(mocks.virtuosoProps.itemContent).toBe(firstItemContent);
+  });
+
+  it('调用方不传 searchMatches 时默认值不得每渲染新建数组', () => {
+    const projection = makeProjection(-1);
+
+    const view = render(React.createElement(TurnBasedTraceView, { projection }));
+    const firstSearchMatches = mocks.virtuosoProps.itemContent;
+
+    view.rerender(React.createElement(TurnBasedTraceView, { projection }));
+
+    expect(mocks.virtuosoProps.itemContent).toBe(firstSearchMatches);
   });
 });

@@ -70,20 +70,6 @@ export const SidebarCapabilityZone: React.FC = () => {
   // 入口行之间零间距等距排列，靠行本身的对齐表达同组，不再每层 pb-1 糊成一个面。
   return (
     <div className="px-1 pb-2 flex-shrink-0" data-testid="sidebar-capability-zone">
-      {/* 项目入口：项目列表页 + 项目协作空间（批P），overlay 整窗页 */}
-      <button /* ds-allow:button: 侧栏能力区单行列表行（裸图标+标题+chevron 左对齐布局），Button primitive 是居中动作按钮形状，变体不适配列表行 */
-        type="button"
-        onClick={() => openProjectSpacePage()}
-        data-testid="sidebar-capability-projects"
-        aria-current={activeRow === 'projects' ? 'page' : undefined}
-        title={t.projectSpace.sidebarSubtitle}
-        className={rowClass('projects')}
-      >
-        <FolderKanban className="h-4 w-4 flex-shrink-0 text-zinc-500" />
-        <span className="min-w-0 flex-1 truncate text-sm text-zinc-300 group-hover:text-zinc-100">
-          {t.projectSpace.sidebarEntry}
-        </span>
-      </button>
       {/* 能力中心入口 */}
       <button /* ds-allow:button: 侧栏能力区单行列表行（裸图标+标题+chevron 左对齐布局），Button primitive 是居中动作按钮形状，变体不适配列表行 */
         type="button"
@@ -99,6 +85,20 @@ export const SidebarCapabilityZone: React.FC = () => {
         <Boxes className="h-4 w-4 flex-shrink-0 text-zinc-500" />
         <span className="min-w-0 flex-1 truncate text-sm text-zinc-300 group-hover:text-zinc-100">
           {cz.capabilityHub}
+        </span>
+      </button>
+      {/* 协作空间入口（批P）：爸 2026-07-30 拍板挪到能力中心下面 */}
+      <button /* ds-allow:button: 侧栏能力区单行列表行（裸图标+标题+chevron 左对齐布局），Button primitive 是居中动作按钮形状，变体不适配列表行 */
+        type="button"
+        onClick={() => openProjectSpacePage()}
+        data-testid="sidebar-capability-projects"
+        aria-current={activeRow === 'projects' ? 'page' : undefined}
+        title={t.projectSpace.sidebarSubtitle}
+        className={rowClass('projects')}
+      >
+        <FolderKanban className="h-4 w-4 flex-shrink-0 text-zinc-500" />
+        <span className="min-w-0 flex-1 truncate text-sm text-zinc-300 group-hover:text-zinc-100">
+          {t.projectSpace.sidebarEntry}
         </span>
       </button>
       {/* Batch 2 L3: 资料库槽位点亮 */}

@@ -172,6 +172,8 @@ export const voiceZh: VoiceTranslations = {
       statusFailed: '失败',
       statusRunning: '进行中',
       statusCompleted: '已完成',
+      /** run 跑完了但没留下产物证据。「已完成」只留给查得到产物的那一档（X5.5-A2-a）。 */
+      statusUnverified: '已结束 · 待核验',
     },
     echoHint: {
       message: '外放可能让助手听到自己的声音，建议佩戴耳机',
@@ -341,6 +343,7 @@ export const voiceEn = {
       statusFailed: 'Failed',
       statusRunning: 'In progress',
       statusCompleted: 'Completed',
+      statusUnverified: 'Finished · pending verification',
     },
     echoHint: {
       message: 'Speaker output may let the assistant hear itself. Consider wearing headphones',

@@ -292,6 +292,13 @@ export interface MessageMetadata {
    * 把它对回那张任务卡——靠正文文本反解标题等于拿人话当协议，文案一改就静默失效。
    */
   voiceWorkFailure?: { workItemId: string; title: string; detail?: string };
+  /**
+   * 语音派出的活跑完了的结局印章（`role:'system'`，X5.5-A2-a）。host 查完产物证据才写，
+   * 是任务卡「已完成 / 已结束·待核验」的唯一依据——渲染侧不许再从「这轮完成了 + 有正文」
+   * 反推完成，那条反推等于把模型的一句「我已经建好了」当成事实。
+   * 这条消息不进对话（投影层只取 metadata，不成节点）。
+   */
+  voiceWorkSettled?: { workItemId: string; title: string; outcome: 'done' | 'unverified' };
   voiceDispatch?: {
     title: string;
     /** 账本里这件活的 id。失败留痕靠它对回这张任务卡（见 voiceWorkFailure）。 */

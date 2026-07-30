@@ -97,20 +97,26 @@ function createCloudMock() {
           };
         },
         select(columns: string) {
-          return {
+          const payload: Record<string, unknown> = { columns };
+          const query = {
             eq(column: string, value: unknown) {
-              return {
-                order(orderColumn: string, options: unknown) {
-                  writes.push({
-                    operation: 'select',
-                    table,
-                    payload: { columns, [column]: value, orderColumn, options },
-                  });
-                  return Promise.resolve(take(`select:${table}`));
-                },
-              };
+              payload[column] = value;
+              return query;
+            },
+            neq(column: string, value: unknown) {
+              payload[`${column}:neq`] = value;
+              return query;
+            },
+            order(orderColumn: string, options: unknown) {
+              writes.push({
+                operation: 'select',
+                table,
+                payload: { ...payload, orderColumn, options },
+              });
+              return Promise.resolve(take(`select:${table}`));
             },
           };
+          return query;
         },
       };
     },
@@ -367,6 +373,60 @@ describe('ProjectCollaborationService', () => {
       avatarUrl: 'avatar',
       joinedAt: '2026-07-30T00:00:00.000Z',
     }]);
+  });
+
+  it('lists only other users cloud cards with readonly metadata and an RLS-scoped query', async () => {
+    const fixture = createFixture({
+      projects: [project({ cloudProjectId: 'cloud-alpha' })],
+    });
+    fixture.remote.queue('select:collab_cards', {
+      data: [
+        {
+          source_user_id: 'user-member',
+          local_card_id: 'nwc-member',
+          title: 'Member card',
+          status: 'working',
+          priority: 'high',
+          due_at: '2027-01-16T09:01:26.400Z',
+          updated_at: '2027-01-15T09:01:26.400Z',
+          requester_user_id: 'user-member',
+        },
+        {
+          source_user_id: 'user-owner',
+          local_card_id: 'nwc-own',
+          title: 'Own card returned by a loose mock',
+          status: 'draft',
+          priority: 'medium',
+          due_at: null,
+          updated_at: '2027-01-15T09:01:26.400Z',
+          requester_user_id: 'user-owner',
+        },
+      ],
+    });
+
+    await expect(fixture.service.listCloudCards('proj-local')).resolves.toEqual([{
+      localCardId: 'nwc-member',
+      sourceUserId: 'user-member',
+      title: 'Member card',
+      status: 'working',
+      priority: 'high',
+      dueAt: Date.parse('2027-01-16T09:01:26.400Z'),
+      updatedAt: Date.parse('2027-01-15T09:01:26.400Z'),
+      requesterUserId: 'user-member',
+      readonly: true,
+    }]);
+    expect(fixture.remote.writes).toContainEqual({
+      operation: 'select',
+      table: 'collab_cards',
+      payload: {
+        columns:
+          'source_user_id, local_card_id, title, status, priority, due_at, updated_at, requester_user_id',
+        project_id: 'cloud-alpha',
+        'source_user_id:neq': 'user-owner',
+        orderColumn: 'updated_at',
+        options: { ascending: false },
+      },
+    });
   });
 
   it.each([

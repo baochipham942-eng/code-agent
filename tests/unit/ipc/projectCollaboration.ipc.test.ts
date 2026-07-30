@@ -8,6 +8,7 @@ const env = vi.hoisted(() => ({
   revokeInvite: vi.fn(),
   redeemInvite: vi.fn(),
   listMembers: vi.fn(),
+  listCloudCards: vi.fn(),
 }));
 
 vi.mock('../../../src/host/services/project/projectService', () => ({
@@ -29,6 +30,7 @@ vi.mock('../../../src/host/services/project/projectCollaborationService', () => 
       revokeInvite: env.revokeInvite,
       redeemInvite: env.redeemInvite,
       listMembers: env.listMembers,
+      listCloudCards: env.listCloudCards,
     }),
   };
 });
@@ -59,12 +61,13 @@ describe('project collaboration IPC actions', () => {
     } as never);
   });
 
-  it('routes promote, create, redeem, revoke, and member listing through the project domain', async () => {
+  it('routes cloud collaboration actions through the project domain', async () => {
     env.promoteToCloudSpace.mockResolvedValue({ cloudProjectId: 'cloud-1' });
     env.createInvite.mockResolvedValue({ code: 'invite-1' });
     env.redeemInvite.mockResolvedValue({ localProjectId: 'proj-2' });
     env.revokeInvite.mockResolvedValue({ revoked: true });
     env.listMembers.mockResolvedValue([{ userId: 'user-1' }]);
+    env.listCloudCards.mockResolvedValue([{ localCardId: 'nwc-1', readonly: true }]);
 
     await expect(call('promoteToCloudSpace', { projectId: ' proj-1 ' }))
       .resolves.toMatchObject({ success: true, data: { cloudProjectId: 'cloud-1' } });
@@ -79,6 +82,11 @@ describe('project collaboration IPC actions', () => {
       .resolves.toMatchObject({ success: true, data: { revoked: true } });
     await expect(call('listMembers', { projectId: ' proj-1 ' }))
       .resolves.toMatchObject({ success: true, data: [{ userId: 'user-1' }] });
+    await expect(call('listCloudCards', { projectId: ' proj-1 ' }))
+      .resolves.toMatchObject({
+        success: true,
+        data: [{ localCardId: 'nwc-1', readonly: true }],
+      });
 
     expect(env.promoteToCloudSpace).toHaveBeenCalledWith('proj-1');
     expect(env.createInvite).toHaveBeenCalledWith('proj-1', {
@@ -88,6 +96,7 @@ describe('project collaboration IPC actions', () => {
     expect(env.redeemInvite).toHaveBeenCalledWith('code-1');
     expect(env.revokeInvite).toHaveBeenCalledWith('code-1');
     expect(env.listMembers).toHaveBeenCalledWith('proj-1');
+    expect(env.listCloudCards).toHaveBeenCalledWith('proj-1');
   });
 
   it('returns a stable collaboration code and never leaks the internal cause', async () => {

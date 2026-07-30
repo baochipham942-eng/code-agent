@@ -113,6 +113,40 @@ describe('NeoWorkCardService', () => {
     expect(detail.approvedRevision).toBeNull();
   });
 
+  it('hooks create, metadata, status, and archive writes after local persistence', () => {
+    const cloudSync = {
+      scheduleUpsert: vi.fn(),
+      scheduleDelete: vi.fn(),
+    };
+    const syncedService = new NeoWorkCardService(() => repo, cloudSync);
+
+    const created = syncedService.createDraft(draft(), NOW);
+    const reprioritized = syncedService.updateMeta({
+      workCardId: created.workCard.id,
+      actorUserId: 'user_editor',
+      priority: 'urgent',
+    }, NOW + 1);
+    const working = syncedService.setStatus(created.workCard.id, 'working', NOW + 2);
+    const archived = syncedService.archive(created.workCard.id, NOW + 3)!;
+
+    expect(cloudSync.scheduleUpsert).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ id: created.workCard.id, status: 'draft' }),
+    );
+    expect(cloudSync.scheduleUpsert).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ id: reprioritized.id, priority: 'urgent' }),
+    );
+    expect(cloudSync.scheduleUpsert).toHaveBeenNthCalledWith(
+      3,
+      expect.objectContaining({ id: working.id, status: 'working' }),
+    );
+    expect(cloudSync.scheduleDelete).toHaveBeenCalledWith(
+      expect.objectContaining({ id: archived.id, status: 'archived' }),
+    );
+    expect(repo.getWorkCard(created.workCard.id)?.status).toBe('archived');
+  });
+
   it('updates priority and due date metadata, including explicitly clearing dueAt', () => {
     const created = service.createDraft(draft(), NOW);
 

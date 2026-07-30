@@ -223,6 +223,17 @@ export class NeoWorkCardRepository {
     return rows.map(rowToWorkCard);
   }
 
+  listByProjectForCloudSync(projectId: string): NeoWorkCard[] {
+    const rows = this.db
+      .prepare(`
+        SELECT * FROM neo_work_cards
+        WHERE project_id = ?
+        ORDER BY updated_at ASC
+      `)
+      .all(projectId) as SQLiteRow[];
+    return rows.map(rowToWorkCard);
+  }
+
   // 全局 topic 目录（账号菜单「Neo 协同」）：跨项目列全部工作卡，不按 projectId 过滤
   listAll(options: NeoWorkCardListOptions = {}): NeoWorkCard[] {
     const clauses = ['1 = 1'];

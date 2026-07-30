@@ -17,6 +17,7 @@
 // - revokeInvite    -> owner 撤销邀请码（{ code }）
 // - redeemInvite    -> 兑换邀请码并补本地占位项目（{ code }）
 // - listMembers     -> 读取空间成员卡（{ projectId }）
+// - listCloudCards  -> 读取其他成员共享的只读卡元数据（{ projectId }）
 // - addGoal         -> 新增目标（{ projectId, goal, verify?, review? }）
 // - updateGoalStatus-> 更新目标状态（{ goalId, status, lastRunSessionId? }）
 // - addRole         -> 角色入驻（{ projectId, roleId }）
@@ -259,6 +260,15 @@ export function registerProjectHandlers(ipcMain: IpcMain): void {
           return {
             success: true,
             data: await collaboration.listMembers(projectId.trim()),
+          };
+        }
+
+        case 'listCloudCards': {
+          const { projectId } = (payload ?? {}) as DetailPayload;
+          if (!projectId?.trim()) return invalid('projectId is required');
+          return {
+            success: true,
+            data: await collaboration.listCloudCards(projectId.trim()),
           };
         }
 

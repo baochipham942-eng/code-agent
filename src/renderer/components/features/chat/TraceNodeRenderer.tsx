@@ -369,8 +369,10 @@ const AssistantTextNode: React.FC<{
         </div>
       )}
 
-      {/* 通话 brain 改写后发给执行引擎的指令——不是用户说的话，必须写明来源 */}
-      {node.metadata?.voiceDispatch && (
+      {/* 通话 brain 改写后发给执行引擎的指令——不是用户说的话，必须写明来源。
+          X5.5-D6：语音任务卡内整条不渲染——卡头已显示同一个 title，
+          label 里的「{title}」与卡头读同一字段，必然重复。 */}
+      {node.metadata?.voiceDispatch && !inVoiceDispatchCard && (
         <div data-testid="voice-dispatch-label" className="mb-1 flex items-center gap-1 text-2xs text-zinc-500">
           <AudioLines className="h-3 w-3" />
           <span>{t.voice.dispatchLabel.replace('{title}', node.metadata.voiceDispatch.title)}</span>

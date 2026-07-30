@@ -89,3 +89,18 @@ describe('「语音」徽标上提轮层（X5.5-D4）', () => {
     expect(screen.getAllByTestId('voice-source-badge').length).toBeGreaterThan(0);
   });
 });
+
+describe('卡头标题与卡内派活 label 去重（X5.5-D6）', () => {
+  it('语音任务卡内不再渲染派活 label：title 只在卡头出现一次', () => {
+    render(<TurnCard turn={voiceDispatchTurn()} sessionId="session-1" defaultExpanded />);
+
+    // 卡内首行 dispatchLabel 与卡头读同一个 title——整条不渲染
+    expect(screen.queryByText(/发给执行引擎的指令/)).toBeNull();
+    expect(screen.queryByTestId('voice-dispatch-label')).toBeNull();
+    // title 只剩卡头这一处
+    expect(screen.getAllByText('建 test3.txt')).toHaveLength(1);
+    expect(screen.getByTestId('voice-task-card-header').textContent).toContain('建 test3.txt');
+    // 指令正文本身还在（藏起来的是 label，不是内容）
+    expect(screen.getByText('改写后的派活指令全文')).toBeTruthy();
+  });
+});

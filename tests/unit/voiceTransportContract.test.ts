@@ -136,27 +136,38 @@ describe('VoiceTransport 契约（relay / direct 双跑）', () => {
     const upstream = upstreams[upstreams.length - 1];
     const update = readSessionUpdate(upstream);
 
-    // 批 X2：silence 800 / prefix 500（阶梯停顿 A/B 实测，500 档真人犹豫必切碎）
+    // 批 X5：silence 1000 / prefix 500（800 档真机仍把真人犹豫切断，2026-07-30）
     expect(update.session.turn_detection).toEqual({
       type: 'server_vad',
       threshold: 0.5,
       prefix_padding_ms: 500,
-      silence_duration_ms: 800,
+      silence_duration_ms: 1000,
     });
 
     await handle.close();
   });
 
-  it('存量配置里的旧默认 prefix/silence（300/500）读取时升级为新默认，手改值保留', async () => {
-    // prefix/silence 从来不是 UI 可设项，落盘 300/500 只可能是旧默认拷贝——
-    // 「改默认值对存量用户零生效」是踩过的坑，读取口必须升级（批 X2）。
+  it('存量配置里的历代旧默认 prefix/silence 读取时升级为新默认，手改值保留', async () => {
+    // prefix/silence 从来不是 UI 可设项，落盘等于历代默认之一只可能是旧默认拷贝——
+    // 「改默认值对存量用户零生效」是踩过的坑，读取口必须升级（批 X2 / X5）。
     mockConfig.settings = { voice: { turnDetection: { type: 'server_vad', threshold: 0.7, prefixPaddingMs: 300, silenceDurationMs: 500 } } };
     let handle = await connectHandle(qwenOmniTransport);
     expect(readSessionUpdate(upstreams[upstreams.length - 1]).session.turn_detection).toEqual({
       type: 'server_vad',
       threshold: 0.7, // 手选灵敏度保留
       prefix_padding_ms: 500,
-      silence_duration_ms: 800,
+      silence_duration_ms: 1000,
+    });
+    await handle.close();
+
+    // 批 X5：上一版默认 800 同样是拷贝，跟着升到 1000——只升 500 会把批 X2 之后
+    // 保存过配置的人永久钉死在 800 档（他们正是这次真机报「仍被切断」的那批）。
+    mockConfig.settings = { voice: { turnDetection: { type: 'server_vad', prefixPaddingMs: 500, silenceDurationMs: 800 } } };
+    handle = await connectHandle(qwenOmniTransport);
+    expect(readSessionUpdate(upstreams[upstreams.length - 1]).session.turn_detection).toEqual({
+      type: 'server_vad',
+      prefix_padding_ms: 500,
+      silence_duration_ms: 1000,
     });
     await handle.close();
 
@@ -202,8 +213,8 @@ describe('VoiceTransport 契约（relay / direct 双跑）', () => {
     upstream.emit('message', JSON.stringify({ type: 'response.done' }));
 
     const done = events.find((event) => event.type === 'response.done');
-    // perceived = model + silence 窗（批 X2 起默认 800）
-    expect(done).toMatchObject({ type: 'response.done', ttfaModelMs: 427, ttfaPerceivedMs: 1227 });
+    // perceived = model + silence 窗（批 X5 起默认 1000；抬窗的代价如实计进这个口径）
+    expect(done).toMatchObject({ type: 'response.done', ttfaModelMs: 427, ttfaPerceivedMs: 1427 });
 
     nowSpy.mockRestore();
     await handle.close();

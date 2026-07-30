@@ -114,7 +114,9 @@ export function resolveConversationModelOption(id: string | undefined): VoiceCon
  * silence 500→800（批 X2，2026-07-29 阶梯停顿 A/B 实测）：VAD 会把语音尾音衰减段
  * 提前计入静默，感知静默 ≈ 真实停顿 + ~300ms。500 档下句中停顿 300ms 就被切成
  * 独立轮次（真人犹豫 200-400ms 是常态 → 必切碎，「第一句被切成一个字」的主因）；
- * 800 档实测容住 450ms 停顿、600ms 才断。代价是收话判定慢 300ms，已计入 ttfa 口径。
+ * 800 档实测容住 450ms 停顿、600ms 才断。
+ * silence 800→1000（批 X5，2026-07-30 真机：回显确认 800 已生效，真人犹豫仍被切断）。
+ * 代价是收话判定又慢 200ms，已计入 ttfa 口径。
  * prefix 300→500：VAD 切分后的续段持续丢头（「叫」被吃、「内容」听成「总」），
  * 300ms 回补盖不住 onset 检测延迟。
  */
@@ -122,8 +124,18 @@ export const VOICE_TURN_DETECTION_DEFAULT: VoiceTurnDetectionConfig = {
   type: 'server_vad',
   threshold: 0.5,
   prefixPaddingMs: 500,
-  silenceDurationMs: 800,
+  silenceDurationMs: 1000,
 };
+
+/**
+ * 历代 silence 默认值。prefix/silence 从来不是 UI 可设项，落盘里等于其中任何一个的值
+ * 都只可能是「当年默认值随保存写死的拷贝」，不是用户的选择——读取口据此升级到新默认
+ * （见 upgradeStaleVadDefaults）。手改过的其他值不在表里，原样保留。
+ */
+export const VOICE_STALE_SILENCE_DEFAULTS_MS = [500, 800] as const;
+
+/** 同上，prefix 的历代默认值。 */
+export const VOICE_STALE_PREFIX_DEFAULTS_MS = [300] as const;
 
 /** 上行麦克风采样率（Hz），厂商要求 16k 单声道 PCM16。 */
 export const VOICE_UPSTREAM_SAMPLE_RATE = 16_000;

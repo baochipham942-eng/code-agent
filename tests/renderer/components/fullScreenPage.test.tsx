@@ -39,14 +39,16 @@ describe('FullScreenPage 外壳契约', () => {
 
   // 2026-07-27 产品负责人实测「双击标题栏没反应」：拖拽/双击缩放靠 Tauri 的
   // data-tauri-drag-region 属性，-webkit-app-region 是 Electron 私有属性，WKWebView 不认。
+  // 2026-07-30 升级：裸值只认「直接点在该元素上」，内层内容行会把有效区挤没，
+  // 必须 ="deep" 让整个子树可拖（可点元素 Tauri 自动豁免）——二级页双击缩放才成立。
   // 属性掉了窗口就拖不动，且单测不会自己红，所以在这里钉住。
-  it('页头是 Tauri 拖拽区（窗口可拖、双击可缩放）', () => {
+  it('页头是 Tauri 拖拽区（窗口可拖、双击可缩放，deep 子树生效）', () => {
     const { container, unmount } = render(<FullScreenPageHeader icon={null} title="标题" onClose={() => {}} />);
-    expect(container.querySelector('header[data-tauri-drag-region]')).not.toBeNull();
+    expect(container.querySelector('header[data-tauri-drag-region="deep"]')).not.toBeNull();
     unmount();
 
     const bar = render(<FullScreenPageHeader icon={null} title="标题" variant="bar" onClose={() => {}} />);
-    expect(bar.container.querySelector('header[data-tauri-drag-region]')).not.toBeNull();
+    expect(bar.container.querySelector('header[data-tauri-drag-region="deep"]')).not.toBeNull();
   });
 
   it('返回按钮热区不小于 32px 高（参照 Codex 顶栏按钮）', () => {

@@ -107,6 +107,8 @@ const ENGINE_KIND_LABELS: Record<ModelExternalEngineSnapshot['kind'], string> = 
   claude_code: 'Claude Code',
   mimo_code: 'MiMo Code',
   kimi_code: 'Kimi Code',
+  codebuddy_code: 'WorkBuddy',
+  grok_cli: 'Grok Build',
 };
 
 const ENGINE_INSTALL_LABELS: Record<ModelExternalEngineSnapshot['installState'], string> = {

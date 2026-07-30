@@ -6,7 +6,12 @@ import type {
 import type { ModelDecisionEventData, ModelToolPolicy } from '../../../shared/contract/modelDecision';
 
 function isExternalEngineKind(kind: string): kind is ExternalAgentEngineKind {
-  return kind === 'codex_cli' || kind === 'claude_code' || kind === 'mimo_code' || kind === 'kimi_code';
+  return kind === 'codex_cli'
+    || kind === 'claude_code'
+    || kind === 'mimo_code'
+    || kind === 'kimi_code'
+    || kind === 'codebuddy_code'
+    || kind === 'grok_cli';
 }
 
 function resolveToolPolicy(descriptor: AgentEngineDescriptor): ModelToolPolicy {

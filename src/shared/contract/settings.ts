@@ -2,7 +2,7 @@
 // Settings Types
 // ============================================================================
 
-import type { ExternalAgentEngineKind } from './agentEngine';
+import type { AgentEngineKind, ExternalAgentEngineKind } from './agentEngine';
 import type {
   ModelConfig,
   ModelProvider,
@@ -163,6 +163,10 @@ export interface AppSettings {
       gui: { provider: ModelProvider; model: string };
     };
     taskStrategy?: TaskModelStrategySettings;
+  };
+  onboarding?: {
+    completedAt?: number;
+    defaultEngine?: AgentEngineKind;
   };
   // 联网搜索源配置（ADR-026）。全部可选，未配置 = 现状行为不变。
   // 注：搜索 API key 仍由 secureStorage / configService 管，不存于此。

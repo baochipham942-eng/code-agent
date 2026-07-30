@@ -529,6 +529,8 @@ export const en: Translations = {
         claude_code: 'Install Claude Code CLI, add claude to PATH, then click "Detect engines".',
         mimo_code: 'Install MiMo-Code CLI, add mimo to PATH, then click "Detect engines".',
         kimi_code: 'Install Kimi Code CLI, add kimi to PATH, then click "Detect engines".',
+        codebuddy_code: 'Install WorkBuddy; Neo detects the CLI bundled with the app automatically.',
+        grok_cli: 'Install Grok Build CLI, add grok to PATH, then click "Detect engines".',
       },
       loginHintTitle: 'Login hint',
       loginHint: {
@@ -536,6 +538,8 @@ export const en: Translations = {
         claude_code: 'Authorize your account via the Claude Code login command before first use.',
         mimo_code: 'Run mimo providers login to authorize your account before first use.',
         kimi_code: 'Run kimi login to authorize your account before first use.',
+        codebuddy_code: 'Sign in with the official WorkBuddy app before first use.',
+        grok_cli: 'Run grok login to authorize your official account before first use.',
       },
     },
     // Settings page "Agent Engine model catalog" section (signed catalog + local default)

@@ -100,7 +100,9 @@ export class ExternalEngineExecutor implements GraphExecutorPort {
 function parseExternalEngineGraphInput(value: GraphJsonValue): ExternalEngineGraphInput {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('external engine graph input must be an object');
   const input = value as unknown as ExternalEngineGraphInput;
-  if (!['codex_cli', 'claude_code', 'mimo_code', 'kimi_code'].includes(input.engine)) throw new Error('unsupported external graph engine');
+  if (!['codex_cli', 'claude_code', 'mimo_code', 'kimi_code', 'codebuddy_code', 'grok_cli'].includes(input.engine)) {
+    throw new Error('unsupported external graph engine');
+  }
   return structuredClone(input);
 }
 

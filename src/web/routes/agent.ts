@@ -28,7 +28,9 @@ import { wrapWithTurnSystemContext } from '../../host/agent/turnScaffold';
 import { getLibraryService } from '../../host/services/library/libraryService';
 import {
   ClaudeCodeAdapter,
+  CodeBuddyCliAdapter,
   CodexCliAdapter,
+  GrokCliAdapter,
   KimiCliAdapter,
   MimoCliAdapter,
   getRemoteAgentEngineModelCatalogService,
@@ -590,7 +592,13 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         };
         // codex/claude 走签名 catalog 的 resolveModelId；mimo/kimi 未注册签名 catalog，
         // resolveModelId 对未注册 kind 返回 undefined 会丢掉用户所选模型，故直传 launch.model。
-        let adapter: CodexCliAdapter | ClaudeCodeAdapter | MimoCliAdapter | KimiCliAdapter;
+        let adapter:
+          | CodexCliAdapter
+          | ClaudeCodeAdapter
+          | MimoCliAdapter
+          | KimiCliAdapter
+          | CodeBuddyCliAdapter
+          | GrokCliAdapter;
         let resolvedEngineModel: string | undefined;
         if (selectedEngine.kind === 'codex_cli') {
           adapter = new CodexCliAdapter();
@@ -601,9 +609,17 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         } else if (selectedEngine.kind === 'mimo_code') {
           adapter = new MimoCliAdapter();
           resolvedEngineModel = launch.model;
-        } else {
+        } else if (selectedEngine.kind === 'kimi_code') {
           adapter = new KimiCliAdapter();
           resolvedEngineModel = launch.model;
+        } else if (selectedEngine.kind === 'codebuddy_code') {
+          adapter = new CodeBuddyCliAdapter();
+          resolvedEngineModel = await getRemoteAgentEngineModelCatalogService()
+            .resolveModelId('codebuddy_code', launch.model);
+        } else {
+          adapter = new GrokCliAdapter();
+          resolvedEngineModel = await getRemoteAgentEngineModelCatalogService()
+            .resolveModelId('grok_cli', launch.model, { strict: true });
         }
         const persistedExternalSessionId = persistedForkExternalSessionId;
         const forkContext = !persistedExternalSessionId

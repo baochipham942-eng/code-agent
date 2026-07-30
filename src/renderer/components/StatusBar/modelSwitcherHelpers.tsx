@@ -48,6 +48,8 @@ export const ENGINE_SHORT_LABEL: Record<AgentEngineKind, string> = {
   claude_code: 'Claude',
   mimo_code: 'MiMo',
   kimi_code: 'Kimi',
+  codebuddy_code: 'WorkBuddy',
+  grok_cli: 'Grok',
 };
 
 export const ENGINE_ICON: Record<AgentEngineKind, React.ReactNode> = {
@@ -56,6 +58,8 @@ export const ENGINE_ICON: Record<AgentEngineKind, React.ReactNode> = {
   claude_code: <Terminal className="w-3 h-3" />,
   mimo_code: <Terminal className="w-3 h-3" />,
   kimi_code: <Terminal className="w-3 h-3" />,
+  codebuddy_code: <Terminal className="w-3 h-3" />,
+  grok_cli: <Terminal className="w-3 h-3" />,
 };
 
 export const ENGINE_INSTALL_LABEL: Record<AgentEngineDescriptor['installState'], string> = {

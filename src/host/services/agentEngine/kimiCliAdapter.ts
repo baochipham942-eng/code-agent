@@ -13,7 +13,7 @@
 //   - 容错：OpenAI 兼容后端偶发流式完成但空响应，报 `empty response`，要 catch 不崩
 //
 // registry.get('kimi_code') 的 descriptor 由 agentEngineRegistry.detectKimi 探活产出；
-// model catalog 在 BUILTIN_AGENT_ENGINE_MODEL_CATALOG 登记 kimi_code 引擎条目。
+// model catalog 由官方 CLI 的 `provider list --json` 在运行时探测，探测失败即 fail-closed。
 
 import { spawn } from 'child_process';
 import { createWriteStream } from 'fs';

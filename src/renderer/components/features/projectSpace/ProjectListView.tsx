@@ -8,7 +8,7 @@
 // ============================================================================
 
 import React, { useCallback, useEffect, useState } from 'react';
-import { FolderKanban, Pencil, Plus, Trash2 } from 'lucide-react';
+import { FolderKanban, Pencil, Trash2 } from 'lucide-react';
 import { FOLDER_TRUST_CONFIRM_REQUIRED_PREFIX, UNSORTED_PROJECT_ID, type ProjectWithActivity } from '@shared/contract/project';
 import { IPC_DOMAINS } from '@shared/ipc';
 import {
@@ -28,7 +28,7 @@ import { deriveProjectActivityStatus, type ProjectActivityStatus } from './proje
 import { useI18n } from '../../../hooks/useI18n';
 import { formatRelativeTime } from '../../../utils/i18nTime';
 import { Badge } from '../../primitives/Badge';
-import { PrimaryButton, SecondaryButton } from '../../primitives/Button';
+import { SecondaryButton } from '../../primitives/Button';
 import { EmptyState } from '../../primitives/EmptyState';
 import { IconButton } from '../../primitives/IconButton';
 import { Input } from '../../primitives/Input';

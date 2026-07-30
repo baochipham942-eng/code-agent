@@ -683,6 +683,8 @@ export const Sidebar: React.FC = () => {
           滚动条/右轨对齐的完整推导随之迁走，见该文件头注释。） */}
       <SidebarSessionList
         groups={workspaceGroupedSessions}
+        // 云标点亮（第三波预留接口）：本机存在已绑云身份的空间时，协同空间节头亮云图标
+        cloudBadge={Object.values(projectMetaById).some((meta) => Boolean(meta.cloudProjectId))}
         isLoading={isLoading}
         hasAnySessions={hasAnySessions}
         filteredSessionsEmpty={filteredSessions.length === 0}

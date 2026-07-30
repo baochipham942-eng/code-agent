@@ -35,6 +35,9 @@ vi.mock('../../../src/renderer/services/invokeSkillIPC', () => ({
   invokeSkillIPC: vi.fn(),
   invokeSkillIPCOrThrow: vi.fn(),
   describeSkillIpcError: vi.fn(),
+  // 信任类错误判据保持真实语义（按 host 稳定文案前缀），否则 mock 掉等于测空气
+  isSkillFolderTrustError: (error: unknown) =>
+    error instanceof Error && error.message.includes('该目录未被信任'),
 }));
 vi.mock('../../../src/renderer/services/ipcService', () => ({
   default: { invokeDomain: vi.fn() },
@@ -624,6 +627,70 @@ describe('ProjectConfigRail 项目配置（四卡竖排形态，第四波①回�
         SKILL_CHANNELS.SKILL_PROJECT_CLEAR, 'skill-b', '/tmp/ws',
       ),
     );
+  });
+
+  it('技能卡撞信任门：错误 toast 带「确认信任」动作；授权后自动重放刚才那次设置（爸 2026-07-30：不跑腿）', async () => {
+    vi.mocked(invokeSkillIPC).mockResolvedValue([
+      { name: 'skill-a', description: '', projectOverride: null },
+    ] as never);
+    // 首次 SET 撞信任门（host 稳定文案前缀），授权后的重放成功
+    vi.mocked(invokeSkillIPCOrThrow)
+      .mockRejectedValueOnce(new Error('该目录未被信任，无法为其配置技能：/tmp/ws'))
+      .mockResolvedValueOnce(undefined as never);
+    // 未信任评估 → set 后已信任
+    vi.mocked(ipcService.invokeDomain).mockImplementation((async (domain: string, action: string) => {
+      if (domain === IPC_DOMAINS.FOLDER_TRUST) {
+        return action === 'set'
+          ? { state: 'trusted', workingDirectory: '/tmp/ws', dangerousItems: [] }
+          : { state: 'untrusted', workingDirectory: '/tmp/ws', dangerousItems: [] };
+      }
+      return [] as never;
+    }) as never);
+
+    await enterSpaceView();
+    fireEvent.click(await screen.findByTestId('project-space-card-skills-add'));
+    fireEvent.click(await screen.findByTestId('project-space-card-skills-option-skill-a'));
+
+    // 错误 toast 带动作按钮（第二参数），普通失败不会有
+    await waitFor(() => expect(vi.mocked(toast.error).mock.calls.at(-1)?.[1]).toBeTruthy());
+    const action = vi.mocked(toast.error).mock.calls.at(-1)?.[1] as { label: string; onClick: () => void };
+    expect(action.label).toBe(ps.trustConfirmAction);
+
+    // 点动作 → 评估未信任 → 弹既有完整信任框（按空间自己的工作目录评估，不是 app 当前目录）
+    action.onClick();
+    await waitFor(() =>
+      expect(ipcService.invokeDomain).toHaveBeenCalledWith(
+        IPC_DOMAINS.FOLDER_TRUST, 'get', { workingDirectory: '/tmp/ws' },
+      ),
+    );
+    // 弹的是既有完整信任框（无 testid，按其真实按钮文案定位）
+    const trustButton = await screen.findByText('信任并加载');
+    fireEvent.click(trustButton);
+
+    // 授权走空间目录 + 自动重放刚才的 SET
+    await waitFor(() =>
+      expect(ipcService.invokeDomain).toHaveBeenCalledWith(
+        IPC_DOMAINS.FOLDER_TRUST, 'set',
+        { state: 'trusted', decidedBy: 'project-space-rail', workingDirectory: '/tmp/ws' },
+      ),
+    );
+    await waitFor(() =>
+      expect(vi.mocked(invokeSkillIPCOrThrow).mock.calls.filter(
+        (call) => call[0] === SKILL_CHANNELS.SKILL_PROJECT_SET && call[1] === 'skill-a',
+      ).length).toBe(2),
+    );
+  });
+
+  it('技能卡非信任类失败：toast 无动作按钮（只有信任门给原地修复入口）', async () => {
+    vi.mocked(invokeSkillIPC).mockResolvedValue([
+      { name: 'skill-a', description: '', projectOverride: null },
+    ] as never);
+    vi.mocked(invokeSkillIPCOrThrow).mockRejectedValueOnce(new Error('磁盘写入失败'));
+    await enterSpaceView();
+    fireEvent.click(await screen.findByTestId('project-space-card-skills-add'));
+    fireEvent.click(await screen.findByTestId('project-space-card-skills-option-skill-a'));
+    await waitFor(() => expect(toast.error).toHaveBeenCalled());
+    expect(vi.mocked(toast.error).mock.calls.at(-1)?.[1]).toBeUndefined();
   });
 
   it('技能卡：无工作目录的空间禁用「+」+ skillsNoWorkspaceHint 降级提示', async () => {

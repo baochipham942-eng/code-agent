@@ -84,7 +84,9 @@ export const useToastStore = create<ToastStore>((set) => ({
 /** Convenience function for showing toasts (can be called from non-React code) */
 export const toast = {
   success: (msg: string) => useToastStore.getState().addToast('success', msg),
-  error: (msg: string) => useToastStore.getState().addToast('error', msg, 6000),
+  // action 可选：信任门这类「原地可修」的失败给一个动作按钮，别让用户跑到别处去解决
+  error: (msg: string, action?: ToastAction, duration = 6000) =>
+    useToastStore.getState().addToast('error', msg, duration, action),
   info: (msg: string) => useToastStore.getState().addToast('info', msg),
   warning: (msg: string, action?: ToastAction, duration = 5000) =>
     useToastStore.getState().addToast('warning', msg, duration, action),

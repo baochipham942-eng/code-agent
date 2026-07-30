@@ -28,7 +28,8 @@ import * as projectClient from '../../../services/projectClient';
 import * as rolesClient from '../../../services/rolesClient';
 import { cronClient } from '../../../services/cronClient';
 import ipcService from '../../../services/ipcService';
-import { describeSkillIpcError, invokeSkillIPC, invokeSkillIPCOrThrow } from '../../../services/invokeSkillIPC';
+import { describeSkillIpcError, invokeSkillIPC, invokeSkillIPCOrThrow, isSkillFolderTrustError } from '../../../services/invokeSkillIPC';
+import { FolderTrustDialog, type FolderTrustEvaluationView } from '../../FolderTrustDialog';
 import { toast } from '../../../hooks/useToast';
 import { formatNextRun } from '../../../utils/formatNextRun';
 import { localeForLanguage } from '../../../utils/i18nTime';
@@ -84,6 +85,13 @@ export const ProjectConfigRail: React.FC<ProjectConfigRailProps> = ({
   const [connectorCatalog, setConnectorCatalog] = useState<Array<{ id: string; label: string; description?: string }>>([]);
   const [skills, setSkills] = useState<SkillListEntry[]>([]);
   const [agentJobs, setAgentJobs] = useState<CronJobDefinition[]>([]);
+  // 信任门原地修复（爸 2026-07-30：不让用户跑去别处信任）：撞信任类错误 → toast 带「确认信任」
+  // → 原地拉起既有 FolderTrustDialog 完整评估（禁自制简化版）→ 授权成功自动重放刚才那次操作。
+  // 关键：信任目标是**本空间的工作目录**（folderTrust IPC 收 workingDirectory 参数），
+  // 不是 app 当前工作目录——两者常常不同，信错目录等于没修。
+  const [trustEvaluation, setTrustEvaluation] = useState<FolderTrustEvaluationView | null>(null);
+  const [trustBusy, setTrustBusy] = useState(false);
+  const pendingTrustRetryRef = React.useRef<(() => Promise<void>) | null>(null);
 
   const toggleCollapsed = () => {
     setCollapsed((previous) => {
@@ -202,13 +210,78 @@ export const ProjectConfigRail: React.FC<ProjectConfigRailProps> = ({
   const skillOptions = skills
     .filter((skill) => skill.projectOverride !== true)
     .map((skill) => ({ id: skill.name, label: skill.name, description: skill.description || undefined }));
+  // 技能增删共用出口：失败若属信任类，错误 toast 带「确认信任」动作并暂存重放闭包
+  const runSkillOverride = (run: () => Promise<unknown>) => {
+    void run().then(loadSkills).catch((error) => {
+      if (isSkillFolderTrustError(error) && skillWorkspacePath) {
+        pendingTrustRetryRef.current = async () => {
+          await run();
+          loadSkills();
+        };
+        toast.error(describeSkillIpcError(error, ps.skillUpdateFailed), {
+          label: ps.trustConfirmAction,
+          onClick: () => { void handleOpenTrustDialog(); },
+        });
+        return;
+      }
+      toast.error(describeSkillIpcError(error, ps.skillUpdateFailed));
+    });
+  };
   const handleSelectSkill = (name: string) => {
-    void invokeSkillIPCOrThrow(SKILL_CHANNELS.SKILL_PROJECT_SET, name, true, skillWorkspacePath).then(loadSkills)
-      .catch((error) => toast.error(describeSkillIpcError(error, ps.skillUpdateFailed)));
+    runSkillOverride(() => invokeSkillIPCOrThrow(SKILL_CHANNELS.SKILL_PROJECT_SET, name, true, skillWorkspacePath));
   };
   const handleUnselectSkill = (name: string) => {
-    void invokeSkillIPCOrThrow(SKILL_CHANNELS.SKILL_PROJECT_CLEAR, name, skillWorkspacePath).then(loadSkills)
-      .catch((error) => toast.error(describeSkillIpcError(error, ps.skillUpdateFailed)));
+    runSkillOverride(() => invokeSkillIPCOrThrow(SKILL_CHANNELS.SKILL_PROJECT_CLEAR, name, skillWorkspacePath));
+  };
+
+  const runPendingTrustRetry = async () => {
+    const retry = pendingTrustRetryRef.current;
+    pendingTrustRetryRef.current = null;
+    if (!retry) return;
+    try {
+      await retry();
+    } catch (error) {
+      toast.error(describeSkillIpcError(error, ps.skillUpdateFailed));
+    }
+  };
+  const handleOpenTrustDialog = async () => {
+    if (!skillWorkspacePath) return;
+    try {
+      const evaluation = await ipcService.invokeDomain<FolderTrustEvaluationView>(
+        IPC_DOMAINS.FOLDER_TRUST,
+        'get',
+        { workingDirectory: skillWorkspacePath },
+      );
+      // 目录已被别处授权：不必再弹，直接重放
+      if (evaluation.state === 'trusted') {
+        await runPendingTrustRetry();
+        return;
+      }
+      setTrustEvaluation(evaluation);
+    } catch (error) {
+      toast.error(describeSkillIpcError(error, ps.skillUpdateFailed));
+    }
+  };
+  const handleTrustDecision = async (state: 'trusted' | 'blocked') => {
+    if (!skillWorkspacePath) return;
+    setTrustBusy(true);
+    try {
+      const evaluation = await ipcService.invokeDomain<FolderTrustEvaluationView>(
+        IPC_DOMAINS.FOLDER_TRUST,
+        'set',
+        { state, decidedBy: 'project-space-rail', workingDirectory: skillWorkspacePath },
+      );
+      if (evaluation.state === 'trusted') {
+        setTrustEvaluation(null);
+        await runPendingTrustRetry();
+      } else {
+        setTrustEvaluation(evaluation);
+      }
+    } catch (error) {
+      toast.error(describeSkillIpcError(error, ps.skillUpdateFailed));
+    } finally {
+      setTrustBusy(false);
+    }
   };
 
   // ---- 自动化（cron agent 任务的 libraryProjectId） ----
@@ -338,6 +411,16 @@ export const ProjectConfigRail: React.FC<ProjectConfigRailProps> = ({
         {/* 成员第五卡：仅云空间注入（卡位语义与四卡一致，卡内「邀请」走页头同一 Modal） */}
         {membersContent}
       </div>
+      {/* 信任确认：复用既有完整评估弹窗；requireDangerousItems=false —— 撞的是「未信任/失效」本身，
+          零危险项也要给确认机会（与技能设置页同一档语义） */}
+      <FolderTrustDialog
+        evaluation={trustEvaluation}
+        isBusy={trustBusy}
+        requireDangerousItems={false}
+        onTrust={() => { void handleTrustDecision('trusted'); }}
+        onBlock={() => { void handleTrustDecision('blocked'); }}
+        onOpenSettings={() => setTrustEvaluation(null)}
+      />
     </aside>
   );
 };

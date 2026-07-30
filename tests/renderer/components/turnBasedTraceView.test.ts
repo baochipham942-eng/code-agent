@@ -556,7 +556,7 @@ describe('TurnBasedTraceView streaming scroll drivers', () => {
     });
   });
 
-  it('非跟随场景（无活动 turn 的历史会话）仍按 turn 顶置滚动', () => {
+  it('非 streaming 的历史会话进入：初始落点钉在底部，不再把末轮顶置到视口顶部', () => {
     const projection: TraceProjection = {
       sessionId: 'session-2',
       activeTurnIndex: -1,
@@ -565,8 +565,90 @@ describe('TurnBasedTraceView streaming scroll drivers', () => {
     render(React.createElement(TurnBasedTraceView, { projection }));
     flushView();
 
+    // 进入瞬间没有任何把 focused turn 钉到视口顶部的程序滚动
+    expect(mocks.scrollToIndex).not.toHaveBeenCalled();
+    // 首帧定位交给 Virtuoso：最后一条内容末尾对齐视口底部，无动画，底部锚定抗沉降
+    expect(mocks.virtuosoProps.initialTopMostItemIndex).toEqual({
+      index: 'LAST',
+      align: 'end',
+      behavior: 'auto',
+    });
+    expect(mocks.virtuosoProps.alignToBottom).toBe(true);
+  });
+
+  it('streaming 会话进入：不再先把活动轮钉到视口顶部（首帧即底部，followOutput 持续吸底）', () => {
+    const view = render(React.createElement(TurnBasedTraceView, {
+      projection: makeStreamingProjection(makeStreamingTurn()),
+    }));
+    flushView();
+
+    expect(mocks.scrollToIndex).not.toHaveBeenCalled();
+    expect(mocks.virtuosoProps.initialTopMostItemIndex).toEqual({
+      index: 'LAST',
+      align: 'end',
+      behavior: 'auto',
+    });
+
+    // 抵达底部后 atBottomStateChange 恢复跟随：后续流式 settle 仍走既有机制
+    act(() => {
+      mocks.virtuosoProps.atBottomStateChange(true);
+    });
+    mocks.scrollToIndex.mockClear();
+    const completed: TraceTurn = { ...makeStreamingTurn(), status: 'completed', endTime: 300 };
+    view.rerender(React.createElement(TurnBasedTraceView, {
+      projection: { sessionId: 'session-1', turns: [completed], activeTurnIndex: -1 },
+    }));
+    flushView();
     expect(mocks.scrollToIndex).toHaveBeenCalledWith({
       index: 0,
+      align: 'end',
+      behavior: 'auto',
+    });
+  });
+
+  it('切换会话时 Virtuoso 以 sessionId 为 key 重挂载，每个会话都重新应用底部初始落点', () => {
+    const first: TraceProjection = {
+      sessionId: 'session-1',
+      activeTurnIndex: -1,
+      turns: [{ ...makeStreamingTurn(), status: 'completed' }],
+    };
+    const view = render(React.createElement(TurnBasedTraceView, { projection: first }));
+    flushView();
+    const firstScroller = view.getByTestId('virtuoso-scroller');
+
+    const second: TraceProjection = {
+      sessionId: 'session-2',
+      activeTurnIndex: -1,
+      turns: [{ ...makeStreamingTurn({ turnId: 'turn-x' }), status: 'completed' }],
+    };
+    mocks.scrollToIndex.mockClear();
+    view.rerender(React.createElement(TurnBasedTraceView, { projection: second }));
+    flushView();
+
+    // key 变化 → 重挂载 → 新的 scroller 元素，initialTopMostItemIndex 重新生效
+    expect(view.getByTestId('virtuoso-scroller')).not.toBe(firstScroller);
+    // 切换后不做任何顶置程序滚动（落点由重挂载的首帧定位负责）
+    expect(mocks.scrollToIndex).not.toHaveBeenCalled();
+  });
+
+  it('同一会话内新轮开始（非进入场景）仍把新轮顶置到视口上方', () => {
+    const projection: TraceProjection = {
+      sessionId: 'session-1',
+      activeTurnIndex: -1,
+      turns: [{ ...makeStreamingTurn(), status: 'completed' }],
+    };
+    const view = render(React.createElement(TurnBasedTraceView, { projection }));
+    flushView();
+    mocks.scrollToIndex.mockClear();
+
+    const newTurn = makeStreamingTurn({ turnNumber: 2, turnId: 'turn-2', startTime: 200 });
+    view.rerender(React.createElement(TurnBasedTraceView, {
+      projection: { sessionId: 'session-1', turns: [projection.turns[0], newTurn], activeTurnIndex: 1 },
+    }));
+    flushView();
+
+    expect(mocks.scrollToIndex).toHaveBeenCalledWith({
+      index: 1,
       align: 'start',
       behavior: 'auto',
     });

@@ -48,6 +48,57 @@ describe('FolderTrustDialog', () => {
     expect(html).toContain(zh.folderTrust.risks.mcp);
   });
 
+  it('requireDangerousItems=false 时零危险项的未信任评估也渲染（说明文案，无清单）', () => {
+    const html = renderToStaticMarkup(
+      <FolderTrustDialog
+        evaluation={{
+          state: 'untrusted',
+          canonicalRealpath: '/ws',
+          displayPath: '/ws',
+          identityChanged: true,
+          dangerousItems: [],
+          blockedItems: [],
+        }}
+        requireDangerousItems={false}
+        onTrust={noop}
+        onBlock={noop}
+        onOpenSettings={noop}
+      />,
+    );
+
+    expect(html).toContain(zh.folderTrust.title);
+    expect(html).toContain(zh.folderTrust.emptyDangerNote);
+    expect(html).toContain(zh.folderTrust.identityChanged);
+    expect(html).not.toContain('folder-trust-danger-list');
+  });
+
+  it('默认 requireDangerousItems=true：零危险项不渲染；trusted 一律不渲染', () => {
+    const base = {
+      state: 'untrusted' as const,
+      canonicalRealpath: '/ws',
+      displayPath: '/ws',
+      identityChanged: false,
+      dangerousItems: [],
+      blockedItems: [],
+    };
+    expect(
+      renderToStaticMarkup(
+        <FolderTrustDialog evaluation={base} onTrust={noop} onBlock={noop} onOpenSettings={noop} />,
+      ),
+    ).toBe('');
+    expect(
+      renderToStaticMarkup(
+        <FolderTrustDialog
+          evaluation={{ ...base, state: 'trusted' }}
+          requireDangerousItems={false}
+          onTrust={noop}
+          onBlock={noop}
+          onOpenSettings={noop}
+        />,
+      ),
+    ).toBe('');
+  });
+
   it('keeps zh/en folder trust keys aligned', () => {
     expect(Object.keys(en.folderTrust).sort()).toEqual(Object.keys(zh.folderTrust).sort());
     expect(Object.keys(en.folderTrust.risks).sort()).toEqual(Object.keys(zh.folderTrust.risks).sort());

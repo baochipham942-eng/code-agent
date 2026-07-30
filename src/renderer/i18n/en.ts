@@ -96,6 +96,7 @@ export const en: Translations = {
     realpath: 'Real path',
     detected: 'Detected project configuration',
     identityChanged: 'This path was trusted before, but its folder identity changed. Confirm again before loading project configuration.',
+    emptyDangerNote: 'No dangerous configuration needs item-by-item review, but this folder is not trusted yet (or its trust has expired). Project configuration loads only after you confirm.',
     trust: 'Trust and load',
     block: 'Block project config',
     openSettings: 'Open settings',

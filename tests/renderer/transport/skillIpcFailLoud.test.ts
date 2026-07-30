@@ -26,6 +26,8 @@ import {
   describeSkillIpcError,
   invokeSkillIPC,
   invokeSkillIPCOrThrow,
+  isSkillFolderTrustError,
+  SKILL_FOLDER_TRUST_ERROR_MARKER,
 } from '../../../src/renderer/services/invokeSkillIPC';
 import { SKILL_CHANNELS } from '../../../src/shared/ipc/channels';
 
@@ -128,5 +130,35 @@ describe('skill IPC fail-loud', () => {
     expect(describeSkillIpcError(new Error('repo not found'), '添加失败')).toBe('添加失败：repo not found');
     expect(describeSkillIpcError(new Error('   '), '添加失败')).toBe('添加失败');
     expect(describeSkillIpcError(undefined, '添加失败')).toBe('添加失败');
+  });
+
+  it('isSkillFolderTrustError 机器区分信任门错误与其他失败', () => {
+    // host 信任门（skill.ipc.ts ensureSkillPreferenceDirTrusted）抛的稳定文案
+    expect(
+      isSkillFolderTrustError(
+        new Error(`${SKILL_FOLDER_TRUST_ERROR_MARKER}，无法为其配置技能：/ws。先在该目录打开会话并信任此项目。`),
+      ),
+    ).toBe(true);
+    expect(isSkillFolderTrustError(new Error('disk full'))).toBe(false);
+    expect(isSkillFolderTrustError(new Error('Failed to fetch'))).toBe(false);
+    expect(isSkillFolderTrustError(undefined)).toBe(false);
+    expect(isSkillFolderTrustError('该目录未被信任')).toBe(false);
+  });
+
+  it('信任门 500 真因穿过 transport 后仍可被 isSkillFolderTrustError 识别', async () => {
+    mockFetchOnce({
+      ok: false,
+      status: 500,
+      text: async () =>
+        JSON.stringify({
+          error: { message: `${SKILL_FOLDER_TRUST_ERROR_MARKER}，无法为其配置技能：/ws。先在该目录打开会话并信任此项目。` },
+        }),
+      headers: new Headers(),
+    } as unknown as Response);
+
+    const error = await invokeSkillIPCOrThrow(SKILL_CHANNELS.SKILL_PROJECT_SET, 'pdf', true).catch(
+      (err) => err,
+    );
+    expect(isSkillFolderTrustError(error)).toBe(true);
   });
 });

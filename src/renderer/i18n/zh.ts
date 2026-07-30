@@ -95,6 +95,7 @@ export const zh = {
     realpath: '真实路径',
     detected: '发现的项目级配置',
     identityChanged: '这个路径曾被信任，但目录身份已经变化，需要重新确认。',
+    emptyDangerNote: '未发现需要逐项确认的危险配置，但该目录尚未被信任（或信任已失效）。确认后才会加载项目级配置。',
     trust: '信任并加载',
     block: '阻止项目配置',
     openSettings: '打开设置',

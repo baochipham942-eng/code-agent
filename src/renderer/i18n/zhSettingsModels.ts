@@ -376,6 +376,7 @@ export const zhSettingsModels = {
       main: {
         loadFailed: '加载失败',
         actionFailed: '操作失败',
+        confirmTrust: '确认信任',
         installSuccessSuffix: ' 安装成功',
         installFailed: '安装失败',
         partialInstallFailedPrefix: '部分安装失败: ',

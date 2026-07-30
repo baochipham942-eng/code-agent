@@ -18,6 +18,12 @@ export interface FolderTrustEvaluationView {
 interface FolderTrustDialogProps {
   evaluation: FolderTrustEvaluationView | null;
   isBusy?: boolean;
+  /**
+   * 默认 true：零危险项的未信任评估不渲染（App 启动预检语义——干净目录不值得打扰）。
+   * 技能信任门等场景撞的是「未信任/失效」本身，零危险项也要给完整确认弹窗 → 传 false；
+   * 此时不渲染危险项清单，只显示说明文案（identityChanged 警告条照常）。
+   */
+  requireDangerousItems?: boolean;
   onTrust: () => void;
   onBlock: () => void;
   onOpenSettings: () => void;
@@ -26,12 +32,17 @@ interface FolderTrustDialogProps {
 export const FolderTrustDialog: React.FC<FolderTrustDialogProps> = ({
   evaluation,
   isBusy = false,
+  requireDangerousItems = true,
   onTrust,
   onBlock,
   onOpenSettings,
 }) => {
   const { t } = useI18n();
-  if (!evaluation || evaluation.state === 'trusted' || evaluation.dangerousItems.length === 0) {
+  if (
+    !evaluation ||
+    evaluation.state === 'trusted' ||
+    (requireDangerousItems && evaluation.dangerousItems.length === 0)
+  ) {
     return null;
   }
 
@@ -51,7 +62,11 @@ export const FolderTrustDialog: React.FC<FolderTrustDialogProps> = ({
         </div>
       )}
 
-      <FolderTrustDangerList items={evaluation.dangerousItems} />
+      {evaluation.dangerousItems.length > 0 ? (
+        <FolderTrustDangerList items={evaluation.dangerousItems} />
+      ) : (
+        <p className="text-zinc-400">{copy.emptyDangerNote}</p>
+      )}
 
       <div className="flex gap-2">
         <button

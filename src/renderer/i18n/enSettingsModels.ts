@@ -375,6 +375,7 @@ export const enSettingsModels = {
       main: {
         loadFailed: 'Failed to load',
         actionFailed: 'Action failed',
+        confirmTrust: 'Confirm trust',
         installSuccessSuffix: ' installed',
         installFailed: 'Installation failed',
         partialInstallFailedPrefix: 'Some installs failed: ',

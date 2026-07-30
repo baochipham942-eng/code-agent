@@ -12,14 +12,8 @@ import { useAppStore } from '../stores/appStore';
 import { PanelLeft, PanelRight, PanelRightClose } from 'lucide-react';
 import { IconButton } from './primitives';
 import { SessionActionsMenu } from './SessionActionsMenu';
-import { getCurrentKeybindingPlatform } from '@shared/keybindings/defaults';
+import { COLLAPSED_TRAFFIC_LIGHT_INSET } from './features/shared/trafficLightInset';
 import { useI18n } from '../hooks/useI18n';
-
-// 侧栏展开时红绿灯浮在**侧栏**顶行上，本栏不受影响；侧栏一收起，本栏就成了窗口左上角那块，
-// 灯直接压在展开按钮上（2026-07-27 产品负责人截图）。darwin 下这一档要让开灯区：
-// 灯现在摆在 x16..75.5（横纵都由 traffic_lights.rs 摆，见那里的常量），再留呼吸位 ⇒ 92。
-// ⚠️ 灯的横向位置一改，这个数就要跟着改——它不在 CSS 节奏里，不会自己动。
-const COLLAPSED_TRAFFIC_LIGHT_INSET = getCurrentKeybindingPlatform() === 'darwin' ? 'pl-[92px]' : '';
 
 interface TitleBarProps {
   /** 二级页（能力中心/资料库/自动化等）在位：会话动作与右栏开关都无对象 */

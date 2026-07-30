@@ -17,10 +17,12 @@
 //   这里刻意不跟——overlay 页不在侧栏语境里，不参与四角 padding 那套对称）。
 // - onClose 可选：给了才画返回按钮（overlay 页需要，inline 页靠侧栏返回）。
 // ============================================================================
-import React from 'react';
+import React, { createContext, useContext } from 'react';
 import { ChevronLeft } from 'lucide-react';
 import { getCurrentKeybindingPlatform } from '@shared/keybindings/defaults';
+import { useAppStore } from '../../../stores/appStore';
 import { useI18n } from '../../../hooks/useI18n';
+import { COLLAPSED_TRAFFIC_LIGHT_INSET } from './trafficLightInset';
 
 // overlay 页整窗接管时，macOS 红绿灯就浮在它左上角（原生标题栏已撤）——
 // 主布局靠侧栏首行 h-12 给灯让位，overlay 页没有侧栏，不让位就顶格压在灯下面
@@ -29,6 +31,10 @@ const OVERLAY_TRAFFIC_LIGHT_INSET = getCurrentKeybindingPlatform() === 'darwin' 
 
 type FullScreenPageVariant = 'inline' | 'overlay';
 type FullScreenPageHeaderVariant = 'page' | 'bar';
+
+// header 需要知道自己所在的页形态（inline 页参与侧栏/顶栏布局制度，overlay 页整窗接管），
+// 由 FullScreenPage 经 context 下发；脱离 FullScreenPage 单用时按 overlay 旧行为。
+const FullScreenPageVariantContext = createContext<FullScreenPageVariant>('overlay');
 
 interface FullScreenPageProps extends React.HTMLAttributes<HTMLDivElement> {
   children: React.ReactNode;
@@ -56,14 +62,16 @@ export const FullScreenPage: React.FC<FullScreenPageProps> = ({
   variant = 'overlay',
   ...divProps
 }) => (
-  <div
-    {...divProps}
-    data-testid={testId}
-    data-page-variant={variant}
-    className={`${variant === 'overlay' ? `fixed inset-0 z-50 ${OVERLAY_TRAFFIC_LIGHT_INSET}` : 'min-w-0 flex-1'} flex min-h-0 flex-col bg-zinc-900 text-zinc-100 animate-fadeIn ${className}`}
-  >
-    {children}
-  </div>
+  <FullScreenPageVariantContext.Provider value={variant}>
+    <div
+      {...divProps}
+      data-testid={testId}
+      data-page-variant={variant}
+      className={`${variant === 'overlay' ? `fixed inset-0 z-50 ${OVERLAY_TRAFFIC_LIGHT_INSET}` : 'min-w-0 flex-1'} flex min-h-0 flex-col bg-zinc-900 text-zinc-100 animate-fadeIn ${className}`}
+    >
+      {children}
+    </div>
+  </FullScreenPageVariantContext.Provider>
 );
 
 export const FullScreenPageHeader: React.FC<FullScreenPageHeaderProps> = ({
@@ -77,6 +85,8 @@ export const FullScreenPageHeader: React.FC<FullScreenPageHeaderProps> = ({
   variant = 'page',
 }) => {
   const { t } = useI18n();
+  const pageVariant = useContext(FullScreenPageVariantContext);
+  const sidebarCollapsed = useAppStore((state) => state.sidebarCollapsed);
   const backButton = onClose ? (
     <button
       type="button"
@@ -90,8 +100,12 @@ export const FullScreenPageHeader: React.FC<FullScreenPageHeaderProps> = ({
   ) : null;
 
   if (variant === 'bar') {
+    // inline 页 + 侧栏收起：TitleBar 仍渲染，其展开按钮按红绿灯让位制度坐在 x92，
+    // 本行同源让位，返回按钮左缘与它对齐（批P 审美关 2026-07-30，探针实测修前差 76px）。
+    // overlay 页整窗接管、不参与顶栏四角制度，保持 px-4。
+    const barInset = pageVariant === 'inline' && sidebarCollapsed ? COLLAPSED_TRAFFIC_LIGHT_INSET : '';
     return (
-      <header data-tauri-drag-region className="flex h-12 shrink-0 items-center justify-between border-b border-border-muted bg-zinc-900 px-4">
+      <header data-tauri-drag-region className={`flex h-12 shrink-0 items-center justify-between border-b border-border-muted bg-zinc-900 px-4 ${barInset}`}>
         <div className="flex min-w-0 items-center gap-3">
           {backButton}
           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-zinc-700/70 bg-zinc-800">

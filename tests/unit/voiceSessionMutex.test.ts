@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { EventEmitter } from 'events';
 import { isVoiceInputMessage, type Message } from '../../src/shared/contract/message';
 import type { VoiceEvent, VoiceTransport, VoiceWorkItem } from '../../src/shared/contract/voice';
-import { QWEN_OMNI_REALTIME_MODEL } from '../../src/shared/constants/voice';
+import { QWEN_OMNI_REALTIME_MODEL, VOICE_WS_CLOSE_TERMINAL } from '../../src/shared/constants/voice';
 
 const vocabulary = vi.hoisted(() => ({ block: '' }));
 vi.mock('../../src/host/services/voice/voiceVocabulary', () => ({
@@ -27,7 +27,8 @@ const connect = vi.fn(async (input: Parameters<VoiceTransport['connect']>[0]) =>
 });
 
 vi.mock('../../src/host/services/voice/qwenOmniTransport', () => ({ qwenOmniTransport: { id: 'qwen-omni', connect } }));
-vi.mock('../../src/host/services/media/imageGenerationService', () => ({ getDashscopeApiKey: () => 'test-key' }));
+const dashscopeKey = vi.hoisted(() => ({ value: 'test-key' }));
+vi.mock('../../src/host/services/media/imageGenerationService', () => ({ getDashscopeApiKey: () => dashscopeKey.value }));
 vi.mock('../../src/host/services/infra/sessionManager', () => ({
   getSessionManager: () => ({ addMessageToSession, patchSessionMetadata, getSession }),
 }));
@@ -105,11 +106,14 @@ class FakeClient extends EventEmitter {
   readyState = 1;
   sent: string[] = [];
   closed = false;
+  /** host 关的那一下带没带终止 close code；测试自己 close() 时是 undefined（= 模拟断线）。 */
+  closeCode: number | undefined;
   send(data: unknown) {
     this.sent.push(typeof data === 'string' ? data : '<binary>');
   }
-  close() {
+  close(code?: number) {
     this.closed = true;
+    this.closeCode = code;
     this.readyState = 3;
     this.emit('close');
   }
@@ -226,6 +230,38 @@ describe('voiceSessionService 互斥与挂断', () => {
     expect(types(again)).not.toContain('VOICE_SESSION_BUSY');
     again.close();
   });
+
+  // 2026-07-30 真机：模型 end_call 正常挂断 2 秒后 renderer 自动重连出一通新电话
+  // （16 秒空通话、通话条不落、计时继续走）。根因是 host 主动结束与网络抖动关的 WS
+  // 长得一模一样。这里逐条钉 host 侧终态出口——漏掉任何一条都会原样复发。
+  it('host 侧终态关闭一律带终止 close code（renderer 据此不进重连宽限窗）', async () => {
+    // ① teardown（model-end-call / watchdog / 上游死 / client-end 共用这一个出口）
+    const call = new FakeClient();
+    await attachVoiceClient(call as never, 'session-1');
+    lastOnEvent?.({ type: 'error', code: 'UPSTREAM_ERROR', message: '上游炸了' });
+    await vi.waitFor(() => expect(call.closeCode).toBe(VOICE_WS_CLOSE_TERMINAL), { timeout: 4000 });
+
+    // ② 会话互斥抢占
+    const holder = new FakeClient();
+    await attachVoiceClient(holder as never, 'session-1');
+    const rejected = new FakeClient();
+    await attachVoiceClient(rejected as never, 'session-2');
+    expect(rejected.closeCode).toBe(VOICE_WS_CLOSE_TERMINAL);
+    await endActiveVoiceSession();
+
+    // ③ 上游建连失败
+    connect.mockRejectedValueOnce(new Error('handshake refused'));
+    const upstreamDead = new FakeClient();
+    await attachVoiceClient(upstreamDead as never, 'session-1');
+    expect(upstreamDead.closeCode).toBe(VOICE_WS_CLOSE_TERMINAL);
+
+    // ④ 缺 provider key
+    dashscopeKey.value = '';
+    const unconfigured = new FakeClient();
+    await attachVoiceClient(unconfigured as never, 'session-1');
+    expect(unconfigured.closeCode).toBe(VOICE_WS_CLOSE_TERMINAL);
+    dashscopeKey.value = 'test-key';
+  }, 15_000);
 
   it('二进制帧转发到上游，文本帧不当音频转发', async () => {
     const client = new FakeClient();

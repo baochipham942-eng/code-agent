@@ -176,6 +176,18 @@ export const VOICE_RECONNECT_GRACE_MS = 15_000;
 /** Renderer 侧重连退避（毫秒）。用完还没连上就如实报断线，不再假装还在通话。 */
 export const VOICE_RECONNECT_BACKOFF_MS = [500, 1500, 4000] as const;
 
+/**
+ * Host 主动结束这一路时用的 WS close code（应用私有段 4000-4999）。
+ *
+ * 宽限窗只该服务网络抖动。host 侧终态（模型 end_call、watchdog/max-duration、上游死、
+ * 互斥抢占）关的 WS 若与抖动无从区分，renderer 就会当断线接回来——2026-07-30 真机：
+ * end_call 正常挂断 2 秒后自动重连出一通新电话（16 秒空通话、通话条不落、计时继续走，
+ * 还落了一条「这通电话没有对话内容」摘要）。
+ *
+ * 结构化 close code 而不是末帧文本：renderer 无论有没有收到那一帧都判得准。
+ */
+export const VOICE_WS_CLOSE_TERMINAL = 4001;
+
 /** 焦点上报最小间隔：这是 appStore 高频订阅，别每次面板切换都推一次 session.update。 */
 export const VOICE_FOCUS_REPORT_MIN_INTERVAL_MS = 1000;
 

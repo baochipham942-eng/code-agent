@@ -244,6 +244,16 @@ export const VOICE_HANGUP_INTENT_PHRASES = [
 export const VOICE_TRANSCRIPT_MERGE_WINDOW_MS = 2_000;
 
 /**
+ * 告别播完之后再留给用户反悔的窗口（ms，E2）。
+ *
+ * 2026-07-30 真机：武装到挂断只隔 2 秒，因为触发点是 `response.done`——那是**模型
+ * 生成完**，不是**用户听完**。告别音频那会儿才刚开始播，用户听到「好的拜拜」时
+ * 通话早已 teardown，「不要挂断」根本没机会说出口。现在等音频真播完再加这个窗，
+ * 代价是挂断慢 1-2 秒，换的是反悔真的来得及。
+ */
+export const VOICE_HANGUP_REACTION_WINDOW_MS = 1_500;
+
+/**
  * 客户端断开后等它回来的宽限窗（批 H · 断线重连 sticky）。
  * 窗口内不挂断上游、不落通话摘要——否则每次网络抖动都会在消息流里落一张
  * 「通话结束」卡，然后重连变成第二通电话。超时才走正常 teardown。

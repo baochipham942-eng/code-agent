@@ -195,6 +195,83 @@ describe('VoiceTransport 契约（relay / direct 双跑）', () => {
     await handle.close();
   });
 
+  // E3（2026-07-30 真上游探针）：用户侧增量文本在 `stash` 里，`text` 字段恒空。
+  // 照抄助手侧读 `delta`/`text` 的写法就是「上游一直在发、我们一直丢」。
+  it('用户转写 delta 从 stash 取文本，边说边下发 done:false', async () => {
+    const events: VoiceEvent[] = [];
+    const handle = await qwenOmniTransport.connect({
+      apiKey: 'test-key',
+      config: { neoSessionId: 's1' },
+      onEvent: (event) => events.push(event),
+      onAudio: vi.fn(),
+    });
+    const upstream = upstreams[upstreams.length - 1];
+
+    upstream.emit('message', JSON.stringify({
+      type: 'conversation.item.input_audio_transcription.delta',
+      item_id: 'item-1', text: '', stash: '你好',
+    }));
+    upstream.emit('message', JSON.stringify({
+      type: 'conversation.item.input_audio_transcription.delta',
+      item_id: 'item-1', text: '', stash: '你好，帮我',
+    }));
+
+    const partials = events.filter((e) => e.type === 'user.transcript' && !e.done);
+    expect(partials).toHaveLength(2);
+    expect(partials[1]).toMatchObject({ text: '你好，帮我', done: false });
+    await handle.close();
+  });
+
+  // E1（P0）：completed 的 transcript 间歇性为空，此前空文本一路走到落库前被静默丢弃，
+  // 25 秒通话两轮用户字幕全部蒸发。delta 攒下的 stash 是同一句话，必须兜住。
+  it('completed 的 transcript 为空时回落到 delta 攒下的文本，并打 warn', async () => {
+    const events: VoiceEvent[] = [];
+    const handle = await qwenOmniTransport.connect({
+      apiKey: 'test-key',
+      config: { neoSessionId: 's1' },
+      onEvent: (event) => events.push(event),
+      onAudio: vi.fn(),
+    });
+    const upstream = upstreams[upstreams.length - 1];
+
+    upstream.emit('message', JSON.stringify({
+      type: 'conversation.item.input_audio_transcription.delta',
+      item_id: 'item-1', text: '', stash: '你好，帮我看一下',
+    }));
+    upstream.emit('message', JSON.stringify({
+      type: 'conversation.item.input_audio_transcription.completed',
+      item_id: 'item-1', transcript: '',
+    }));
+
+    const final = events.find((e) => e.type === 'user.transcript' && e.done);
+    expect(final).toMatchObject({ text: '你好，帮我看一下', done: true });
+    await handle.close();
+  });
+
+  it('completed 有 transcript 时以它为准（不被 stash 覆盖）', async () => {
+    const events: VoiceEvent[] = [];
+    const handle = await qwenOmniTransport.connect({
+      apiKey: 'test-key',
+      config: { neoSessionId: 's1' },
+      onEvent: (event) => events.push(event),
+      onAudio: vi.fn(),
+    });
+    const upstream = upstreams[upstreams.length - 1];
+
+    upstream.emit('message', JSON.stringify({
+      type: 'conversation.item.input_audio_transcription.delta',
+      item_id: 'item-1', text: '', stash: '你好帮我看',
+    }));
+    upstream.emit('message', JSON.stringify({
+      type: 'conversation.item.input_audio_transcription.completed',
+      item_id: 'item-1', transcript: '你好，帮我看一下这个文件',
+    }));
+
+    const final = events.find((e) => e.type === 'user.transcript' && e.done);
+    expect(final).toMatchObject({ text: '你好，帮我看一下这个文件' });
+    await handle.close();
+  });
+
   it('response.done 同时报 ttfaModelMs 和按 server_vad 静音窗推算的 ttfaPerceivedMs', async () => {
     const events: VoiceEvent[] = [];
     const handle = await qwenOmniTransport.connect({

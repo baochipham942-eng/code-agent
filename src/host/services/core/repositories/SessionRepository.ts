@@ -27,7 +27,7 @@ import {
 } from './sessionRepositoryParsers';
 import { sanitizeConversationMessageSnapshot } from '../conversationMessageSnapshot';
 import * as sidecarState from './sessionRepositorySidecarState';
-import { getLatestUserAuthorId as readLatestUserAuthorId } from './sessionRepositoryAttribution';
+import { getLatestUserAuthorId as readLatestUserAuthorId } from './sessionRepositoryParsers';
 import { ConversationBranchRepository } from './ConversationBranchRepository';
 import { SessionFtsRepository } from './SessionFtsRepository';
 import {

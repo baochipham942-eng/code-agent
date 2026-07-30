@@ -27,8 +27,11 @@ interface HubTabHeaderProps {
 }
 
 export const HubTabHeader: React.FC<HubTabHeaderProps> = ({ title, actions, children, testId }) => (
+  // data-tauri-drag-region="deep"：能力中心页头即窗口拖拽区（二级页在位时右侧 TitleBar
+  // 不渲染），双击可缩放窗口；actions 均为 button，Tauri 自动豁免不参与拖拽
   <div
     data-testid={testId}
+    data-tauri-drag-region="deep"
     className="sticky -top-4 z-10 -mx-6 -mt-4 mb-3 border-b border-zinc-800/70 bg-zinc-900 px-6 pb-2 pt-6"
   >
     <div className="flex items-center justify-between gap-4">

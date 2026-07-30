@@ -306,6 +306,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
             node={foldedView.userNode}
             sessionId={sessionId}
             attachments={foldedView.userNode.attachments}
+            inVoiceDispatchCard={isVoiceTurn}
             onRewindUserPrompt={onRewindUserPrompt}
             rewindDisabled={Boolean(isSessionProcessing)}
           />
@@ -423,6 +424,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
                   sessionId={sessionId}
                   attachments={node.attachments}
                   isStreaming={isNodeStreaming}
+                  inVoiceDispatchCard={isVoiceTurn}
                   onStreamingDisplayUpdate={shouldReportDisplayUpdate ? onStreamingDisplayUpdate : undefined}
                   onRewindUserPrompt={onRewindUserPrompt}
                   rewindDisabled={Boolean(isSessionProcessing)}
@@ -462,6 +464,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
             node={foldedView.finalTextNode}
             sessionId={sessionId}
             attachments={foldedView.finalTextNode.attachments}
+            inVoiceDispatchCard={isVoiceTurn}
             onStreamingDisplayUpdate={onStreamingDisplayUpdate}
           />
         )}

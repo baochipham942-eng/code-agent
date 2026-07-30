@@ -1,0 +1,63 @@
+"$schema" = "../gen/schemas/desktop-schema.json"
+
+# App 自定义命令的 ACL 授权。
+#
+# 渲染器是从 remote origin(http://localhost:8180 / 8181，本地 webServer)加载的。
+# Tauri 2 对 remote origin 的 app 自定义命令**默认全拒**（tauri-2.11.2
+# src/webview/mod.rs 的 invoke 门：`plugin_command.is_some() || has_app_acl_manifest
+# || !is_local` → 未命中 ACL 即 reject），所以在本文件出现之前，`generate_handler!`
+# 里注册的每一条命令在打包态都是死的（实测日志只暴露了 desktop_start_voice_aec，
+# 因为只有它把失败写进了 host 日志）。
+#
+# ⚠️ 一旦 permissions/ 目录存在，has_app_acl_manifest 变 true，**本地上下文的 app
+# 命令也开始被 ACL 检查**——所以本地窗口（pip.html）用到的命令必须一并授权，
+# 见 allow-pip-window-commands 与 capabilities/pip.json。
+#
+# 新增命令时：`generate_handler!` 和本文件必须同步，否则新命令在打包态静默不可用。
+# 对账门：tests/scripts/tauriCommandAcl.test.ts。
+
+[[permission]]
+identifier = "allow-renderer-commands"
+description = "主窗渲染器（remote origin = 本地 webServer）可调用的 app 自定义命令"
+commands.allow = [
+  "get_app_version",
+  "check_for_update",
+  "install_update",
+  "open_update_url",
+  "desktop_get_capabilities",
+  "desktop_get_permission_status",
+  "desktop_get_frontmost_context",
+  "desktop_capture_screenshot",
+  "desktop_get_collector_status",
+  "desktop_start_collector",
+  "desktop_stop_collector",
+  "desktop_list_recent_events",
+  "desktop_open_system_settings",
+  "desktop_update_analyze_text",
+  "desktop_request_microphone_permission",
+  "desktop_start_audio_rec",
+  "desktop_stop_audio_rec",
+  "desktop_start_voice_aec",
+  "desktop_write_voice_aec_playback",
+  "desktop_control_voice_aec",
+  "desktop_stop_voice_aec",
+  "desktop_get_app_icon",
+  "appshots_trigger",
+  "appshots_read_image_data_url",
+  "appshots_report_composer_slot",
+  "appshots_set_enabled",
+  "pip_show",
+  "pip_frame",
+  "pip_controls",
+  "pip_hide",
+  "agent_halo_show",
+  "agent_halo_mode",
+  "agent_halo_hide",
+  "keybindings_set_global_hotkeys",
+  "renderer_ready",
+]
+
+[[permission]]
+identifier = "allow-pip-window-commands"
+description = "PiP 悬浮窗（本地 pip.html）回传控制指令，只授这一条"
+commands.allow = ["pip_control"]

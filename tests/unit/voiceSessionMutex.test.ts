@@ -529,6 +529,72 @@ describe('失败告知出口', () => {
   });
 });
 
+// ============================================================================
+// A1 · 挂断确定性闸（2026-07-30）。模型答「好的，通话结束」却不调 end_call 已四次
+// 复现、prompt 三连败——判据必须打在「电话真挂了」，不是「匹配器返回 true」。
+// ============================================================================
+describe('挂断确定性闸（A1）', () => {
+  beforeEach(() => {
+    connect.mockClear();
+    close.mockClear();
+    lastOnEvent = null;
+  });
+
+  afterEach(async () => {
+    await endActiveVoiceSession();
+  });
+
+  it('用户 final 字幕命中挂断词：等这一轮说完才挂，且带终止 close code', async () => {
+    const client = new FakeClient();
+    await attachVoiceClient(client as never, 'session-hangup');
+
+    lastOnEvent?.({ type: 'user.transcript', text: '好了，挂断吧', done: true });
+    // 告别还没说完，不许当场掐掉
+    expect(getActiveVoiceSessionId()).not.toBeNull();
+
+    lastOnEvent?.({ type: 'response.done' });
+
+    await vi.waitFor(() => expect(getActiveVoiceSessionId()).toBeNull(), { timeout: 4000 });
+    await vi.waitFor(() => expect(client.closeCode).toBe(VOICE_WS_CLOSE_TERMINAL), { timeout: 4000 });
+    expect(close).toHaveBeenCalled();
+  }, 10_000);
+
+  it('否定式不触发：「别挂断」之后 response.done 也不挂', async () => {
+    const client = new FakeClient();
+    await attachVoiceClient(client as never, 'session-hangup-negated');
+
+    lastOnEvent?.({ type: 'user.transcript', text: '先别挂断', done: true });
+    lastOnEvent?.({ type: 'response.done' });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(getActiveVoiceSessionId()).not.toBeNull();
+    expect(close).not.toHaveBeenCalled();
+  });
+
+  it('assistant 说同一个词不触发（闸只看用户说的话）', async () => {
+    const client = new FakeClient();
+    await attachVoiceClient(client as never, 'session-hangup-assistant');
+
+    lastOnEvent?.({ type: 'assistant.transcript', text: '好的，通话结束，拜拜', done: true });
+    lastOnEvent?.({ type: 'response.done' });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(getActiveVoiceSessionId()).not.toBeNull();
+    expect(close).not.toHaveBeenCalled();
+  });
+
+  it('未 done 的用户字幕不触发（说了一半的话不算数）', async () => {
+    const client = new FakeClient();
+    await attachVoiceClient(client as never, 'session-hangup-partial');
+
+    lastOnEvent?.({ type: 'user.transcript', text: '挂断', done: false });
+    lastOnEvent?.({ type: 'response.done' });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(getActiveVoiceSessionId()).not.toBeNull();
+  });
+});
+
 // D4 的生产者接线：钳制函数写得再对，没人置位就是「建好不接电」。
 // 这一条钉的是 attachVoiceClient/teardown 真的动了通话态标记。
 describe('通话态标记（D4 生产者）', () => {

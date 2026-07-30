@@ -847,7 +847,7 @@ export const App: React.FC = () => {
     <div className="flex flex-col h-full bg-zinc-900">
       <WorkbenchTabs>
         {activeWorkbenchTab && (
-          <div className="flex-1 min-h-0 overflow-hidden">
+          <div className="h-full min-h-0 overflow-hidden">
             <WorkbenchViewContent
               activeView={activeWorkbenchTab}
               onCloseFiles={() => setShowFileExplorer(false)}

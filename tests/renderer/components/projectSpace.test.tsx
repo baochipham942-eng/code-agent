@@ -40,6 +40,40 @@ vi.mock('../../../src/renderer/services/ipcService', () => ({
 vi.mock('../../../src/renderer/components/features/projectCollaboration/ProjectCollaborationPanel', () => ({
   ProjectCollaborationPanel: () => <div data-testid="mock-collaboration-panel" />,
 }));
+// ChatInput 完整件依赖树巨大（voice/命令面板/模型选择器…），测试用轻量 stub 守住
+// ProjectComposer 的 onSend 契约；stub 行为对齐真件：Enter 发送、Shift+Enter 换行
+const chatInputStub = vi.hoisted(() => ({
+  extras: {} as Record<string, unknown>,
+  lastProps: {} as { sessionless?: boolean; disabled?: boolean },
+}));
+vi.mock('../../../src/renderer/components/features/chat/ChatInput', () => ({
+  ChatInput: (props: {
+    onSend: (envelope: { content: string } & Record<string, unknown>) => boolean | Promise<boolean>;
+    disabled?: boolean;
+    sessionless?: boolean;
+  }) => {
+    chatInputStub.lastProps = { sessionless: props.sessionless, disabled: props.disabled };
+    const [text, setText] = React.useState('');
+    const submit = () => { void props.onSend({ content: text, ...chatInputStub.extras }); };
+    return (
+      <div data-testid="mock-chat-input">
+        <textarea
+          data-testid="project-space-composer-input"
+          value={text}
+          disabled={props.disabled}
+          onChange={(event) => setText(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' && !event.shiftKey) {
+              event.preventDefault();
+              submit();
+            }
+          }}
+        />
+        <button type="button" data-testid="project-space-composer-send" onClick={submit}>send</button>
+      </div>
+    );
+  },
+}));
 
 import { ProjectSpacePage } from '../../../src/renderer/components/features/projectSpace/ProjectSpacePage';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
@@ -420,25 +454,50 @@ describe('ProjectConfigRail 项目配置', () => {
 });
 
 describe('ProjectComposer 底部输入框', () => {
-  it('发送：createSession 带项目工作目录、落 seed、切到新会话', async () => {
+  beforeEach(() => {
+    chatInputStub.extras = {};
+    chatInputStub.lastProps = {};
+    useSessionStore.setState({ messages: [] } as never);
+  });
+
+  it('渲染完整 ChatInput（sessionless 模式），不是简化 textarea', async () => {
+    await enterSpaceView();
+    await screen.findByTestId('mock-chat-input');
+    expect(chatInputStub.lastProps.sessionless).toBe(true);
+  });
+
+  it('发送：createSession 带项目工作目录、落地即上屏用户消息、seed 带完整 envelope、切到新会话', async () => {
+    chatInputStub.extras = {
+      attachments: [{ id: 'att-1', type: 'image', category: 'image', name: 'a.png' }],
+      context: { routing: { mode: 'auto' } },
+    };
     await enterSpaceView();
     const input = await screen.findByTestId('project-space-composer-input');
     fireEvent.change(input, { target: { value: '帮我整理这个项目的周报' } });
-    fireEvent.click(within(screen.getByTestId('project-space-composer-send')).getByRole('button'));
+    fireEvent.click(screen.getByTestId('project-space-composer-send'));
 
     await waitFor(() =>
       expect(createSessionMock).toHaveBeenCalledWith('帮我整理这个项目的周报', { workingDirectory: '/tmp/ws' }),
     );
-    await waitFor(() =>
-      expect(useProjectChatSeedStore.getState().pendingProjectChatSeed).toEqual({
-        sessionId: 'sess-new',
-        content: '帮我整理这个项目的周报',
-      }),
-    );
+    // 落地即进行中态：切进会话那一刻用户消息已在时间线上
+    await waitFor(() => {
+      const messages = useSessionStore.getState().messages;
+      expect(messages.some((message) => message.role === 'user' && message.content === '帮我整理这个项目的周报')).toBe(true);
+    });
+    const optimistic = useSessionStore.getState().messages.find((message) => message.role === 'user');
+    // seed 带完整 envelope（附件/context 透传），clientMessageId 与乐观消息同 id（sendMessage 按 id 去重）
+    await waitFor(() => {
+      const seed = useProjectChatSeedStore.getState().pendingProjectChatSeed;
+      expect(seed?.sessionId).toBe('sess-new');
+      expect(seed?.envelope.content).toBe('帮我整理这个项目的周报');
+      expect(seed?.envelope.attachments).toHaveLength(1);
+      expect(seed?.envelope.context).toEqual({ routing: { mode: 'auto' } });
+      expect(seed?.envelope.clientMessageId).toBe(optimistic?.id);
+    });
     expect(switchSessionMock).toHaveBeenCalledWith('sess-new');
   });
 
-  it('Enter 发送、Shift+Enter 不发送（多行 textarea 观感）', async () => {
+  it('Enter 发送、Shift+Enter 不发送（多行输入观感）', async () => {
     await enterSpaceView();
     const input = await screen.findByTestId('project-space-composer-input');
     fireEvent.change(input, { target: { value: '整理周报' } });
@@ -454,5 +513,16 @@ describe('ProjectComposer 底部输入框', () => {
     fireEvent.change(input, { target: { value: '   ' } });
     fireEvent.keyDown(input, { key: 'Enter' });
     expect(createSessionMock).not.toHaveBeenCalled();
+  });
+
+  it('createSession 失败：不落 seed、不留乐观消息', async () => {
+    createSessionMock.mockResolvedValueOnce(null);
+    await enterSpaceView();
+    const input = await screen.findByTestId('project-space-composer-input');
+    fireEvent.change(input, { target: { value: '整理周报' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    await waitFor(() => expect(createSessionMock).toHaveBeenCalled());
+    expect(useProjectChatSeedStore.getState().pendingProjectChatSeed).toBeNull();
+    expect(useSessionStore.getState().messages).toHaveLength(0);
   });
 });

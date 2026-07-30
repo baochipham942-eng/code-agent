@@ -22,6 +22,7 @@ import { recordVoiceCall } from './voiceUsageLedger';
 import { VOICE_TOOL_DEFINITIONS, executeVoiceTool } from './voiceTools';
 import type { VoiceLiveSettings } from '../../../shared/contract/settings';
 import { describeWorkFailure } from './workFailureDescription';
+import { detectHangupIntent } from './hangupIntent';
 
 const logger = createLogger('VoiceSession');
 
@@ -98,8 +99,9 @@ function send(client: WsSocket, event: VoiceEvent): void {
  * Host 主动结束这一路的**唯一**关闭出口：一律带终止 close code。
  *
  * 所有 host 侧终态都必须走这里——teardown 的全部 reason（model-end-call /
- * model-end-call-timeout / max-duration / upstream-error / upstream-closed /
- * reconnect-timeout / client-end）、互斥抢占、缺 provider key、上游建连失败。
+ * model-end-call-timeout / user-hangup-intent / user-hangup-intent-timeout /
+ * max-duration / upstream-error / upstream-closed / reconnect-timeout /
+ * client-end）、互斥抢占、缺 provider key、上游建连失败。
  * 漏掉任何一条，renderer 都会把那次关闭当成网络抖动接回来，于是立刻拨出一通新电话。
  */
 function closeClientTerminal(client: WsSocket): void {
@@ -193,6 +195,13 @@ function formatNarration(narration: VoiceWorkNarration): string {
     const reason = narration.summary || '未给出原因';
     return `[BACKEND] ${who}「${narration.title}」失败了，没有完成，原因：${reason}。`
       + '如实告诉用户这件事失败了，绝不要说它已经完成、已经写入或已经生效。';
+  }
+  // 待核验（X5.5-A2-a）：run 跑完了但没留下任何产物。这一档最容易被润色成「做完了」，
+  // 所以和失败一样把台词写死，不给「已结束」这种可润色的状态名词留空间。
+  if (narration.status === 'unverified') {
+    return `[BACKEND] ${who}「${narration.title}」跑完了，但没有留下任何产物，不能算做完。${narration.summary}`.trim()
+      + '\n如实告诉用户这件事跑完了但还没核验，请他自己确认一下；'
+      + '绝不要说它已经完成、已经写入或已经生效。';
   }
   return `[BACKEND] ${who}「${narration.title}」做完了。${narration.summary}`.trim();
 }
@@ -419,9 +428,17 @@ async function teardown(reason: string): Promise<void> {
   const minutes = Math.floor(durationSec / 60);
   const seconds = durationSec % 60;
   const durationText = minutes > 0 ? `${minutes} 分 ${seconds} 秒` : `${seconds} 秒`;
+  // 用量账本无条件记：空通话也真按秒付了钱，不落卡不等于没发生。
   recordVoiceCall(endedAt, durationSec);
+  // A3：零字幕通话不落摘要卡。2026-07-30 真机那通 16 秒空通话（自动重连拨出来的）
+  // 在消息流里留了一张「这通电话没有对话内容」——那不是记录，是噪音。
+  // 派过活的通话即使一句没说也照落：工作项才是那通电话的产物。
+  const hasCallContent = session.transcriptCounter.count > 0 || session.workItemCount > 0;
+  if (!hasCallContent) {
+    logger.info('empty call, summary card skipped', { voiceSessionId: session.id, durationSec });
+  }
   try {
-    await getSessionManager().addMessageToSession(session.neoSessionId, {
+    if (hasCallContent) await getSessionManager().addMessageToSession(session.neoSessionId, {
       id: `voice-summary-${endedAt}-${Math.random().toString(36).slice(2, 8)}`,
       role: 'system',
       content: `语音通话结束，时长 ${durationText}`,
@@ -510,12 +527,36 @@ async function connectAndBind(
   // 字幕落库计数器：onEvent 闭包与挂断摘要共用同一个可变引用（同 transcriptBuf 先例），
   // 成功落库才 +1，挂断时原样写进 voiceCallSummary.transcriptCount。
   const transcriptCounter = { count: 0 };
-  // 模型请求挂断后置位；onEvent 看到这一轮说完（response.done）就真挂。
-  const endCallRequested = { value: false };
+  // 收线请求置位后，onEvent 看到这一轮说完（response.done）就真挂；reason 记的是谁要求的。
+  const endCallRequested: { value: boolean; reason: 'model-end-call' | 'user-hangup-intent' } = {
+    value: false,
+    reason: 'model-end-call',
+  };
   const baseInstructions = withLanguageDirective(routing.personaInstructions, liveSettings?.language);
   const initialInstructions = composeVoiceInstructions(baseInstructions, null);
   // 上游回调一律经这个可变引用发：重连换的是 socket，不是通话。
   const clientRef = { current: client };
+  /**
+   * 收线的**唯一**入口——模型调 end_call 与 host 从用户字幕判出的挂断意图共用。
+   *
+   * 不当场 teardown：立刻断会把这句告别掐掉，用户听到的是电话突然没了。等这一轮
+   * response.done 再断；上游不回那一帧时由兜底定时器收尾（同 dictation finish 的先例）。
+   */
+  const requestEndCall = (reason: 'model-end-call' | 'user-hangup-intent'): void => {
+    if (endCallRequested.value) return;
+    endCallRequested.value = true;
+    endCallRequested.reason = reason;
+    // 字幕内容不进日志（音频/字幕内容不落日志是硬纪律），只记命中这件事。
+    logger.info(
+      reason === 'model-end-call'
+        ? 'end call requested by model, waiting for goodbye'
+        : 'hangup intent matched from user transcript',
+      { voiceSessionId: id },
+    );
+    setTimeout(() => {
+      if (active?.id === id && endCallRequested.value) void teardown(`${reason}-timeout`);
+    }, VOICE_END_CALL_GOODBYE_TIMEOUT_MS);
+  };
   // 绑定必须早于建连：上游一旦握手成功就可能立刻发 function_call，
   // 晚绑一步那次调用会落到「通话还没就绪」的兜底上。
   beginVoiceDispatch({
@@ -536,17 +577,8 @@ async function connectAndBind(
       if (active?.id !== id) return;
       enqueueOrInjectNarration(active, narration);
     },
-    // 模型自己收线：不当场 teardown，先记一笔，等它把告别说完（response.done）再断。
-    // 立刻断会把这句告别掐掉，用户听到的是电话突然没了；但也不能无限等——
-    // 上游不回 response.done 时用兜底定时器收尾（同 dictation finish 的先例）。
-    onEndCall: () => {
-      if (endCallRequested.value) return;
-      endCallRequested.value = true;
-      logger.info('end call requested by model, waiting for goodbye', { voiceSessionId: id });
-      setTimeout(() => {
-        if (active?.id === id && endCallRequested.value) void teardown('model-end-call-timeout');
-      }, VOICE_END_CALL_GOODBYE_TIMEOUT_MS);
-    },
+    // 模型自己收线，走统一的收线入口。
+    onEndCall: () => requestEndCall('model-end-call'),
   });
   let upstream: VoiceTransportHandle;
   try {
@@ -567,8 +599,12 @@ async function connectAndBind(
           else if (event.type === 'response.done') flushNarrationQueue(active);
           else if (event.type === 'injection.rejected') handleNarrationInjectionRejected(active, event.message);
         }
-        if (event.type === 'user.transcript' && event.done) void persistTranscript(neoSessionId, 'user', event.text, transcriptCounter);
-        else if (event.type === 'assistant.transcript') {
+        if (event.type === 'user.transcript' && event.done) {
+          void persistTranscript(neoSessionId, 'user', event.text, transcriptCounter);
+          // 挂断确定性闸（A1）：只看用户说的话，绝不看 assistant 字幕——
+          // 模型复述「好的，挂断」会把它自己的话当成用户的指令。
+          if (active?.id === id && detectHangupIntent(event.text)) requestEndCall('user-hangup-intent');
+        } else if (event.type === 'assistant.transcript') {
           if (event.done) {
             transcriptBuf.assistant = '';
             void persistTranscript(neoSessionId, 'assistant', event.text, transcriptCounter);
@@ -576,10 +612,10 @@ async function connectAndBind(
             transcriptBuf.assistant += event.text;
           }
         }
-        // 模型说完告别这一轮 = 可以真挂了（end_call 的落点，别让它只是嘴上说）。
+        // 说完告别这一轮 = 可以真挂了（收线的落点，别让它只是嘴上说）。
         else if (event.type === 'response.done' && endCallRequested.value && active?.id === id) {
           endCallRequested.value = false;
-          void teardown('model-end-call');
+          void teardown(endCallRequested.reason);
         }
         // 上游报错 / 上游连接关闭 = 这一路通话已经死了，必须就地释放 active。
         // 否则两侧对「通话是否结束」的判断会分叉：渲染侧收到 error 就把按钮切回「开始通话」，
@@ -672,12 +708,26 @@ function applyFocus(session: ActiveSession, focus: VoiceFocusContext): void {
 /** 一条 Renderer WS 的事件绑定。重连换 socket 时原样再绑一次。 */
 function bindClientHandlers(session: ActiveSession, client: WsSocket): void {
   const { id, upstream } = session;
+  let inboundAudioFrames = 0;
   client.on('message', (data: Buffer, isBinary: boolean) => {
     if (active?.id !== id) return;
     if (isBinary) {
       // direct 形态的媒体面不经 Host（Renderer 直连上游），这里收到二进制帧只能是
       // 客户端接错了传输形态——丢弃比静默 no-op 转发更接近真相。
       if (upstream.kind === 'relay') upstream.sendAudio(data);
+      // 采集链探针：首帧 + 每 200 帧记一次，带幅值峰值——没有这行，原生采集
+      // 静音/断流与「模型不响应」在日志里不可区分（AEC 判因第三例的教训）。
+      inboundAudioFrames += 1;
+      if (inboundAudioFrames === 1 || inboundAudioFrames % 200 === 0) {
+        let peak = 0;
+        for (let i = 0; i + 1 < data.length; i += 2) {
+          const v = Math.abs(data.readInt16LE(i));
+          if (v > peak) peak = v;
+        }
+        logger.info('client audio inbound', {
+          voiceSessionId: id, frames: inboundAudioFrames, bytes: data.length, peak, relay: upstream.kind === 'relay',
+        });
+      }
       return;
     }
     let command: VoiceClientCommand;

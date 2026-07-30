@@ -398,6 +398,17 @@ describe('ProjectConfigRail 项目配置（tab 化右栏）', () => {
     );
   });
 
+  it('连接器可选项含货架 MCP（飞书）且带描述——扩口径 2026-07-30', async () => {
+    await enterSpaceView();
+    await screen.findByTestId('project-space-rail-experts');
+    fireEvent.click(screen.getByTestId('project-space-rail-tab-connectors'));
+    // getCatalog 的 mock 返回形状不对 → 走 builtin 货架兜底，'lark'（飞书）必在
+    const larkOption = await screen.findByTestId('project-space-rail-connectors-option-lark');
+    expect(larkOption.textContent).toContain('飞书');
+    // 两行项：描述真的渲染出来（货架条目自带 description）
+    expect(larkOption.textContent).toContain('多维表格');
+  });
+
   it('技能：项目有工作目录即可增删（不要求等于当前会话目录），IPC 收到显式 workspacePath', async () => {
     vi.mocked(invokeSkillIPC).mockResolvedValue([
       { name: 'skill-a', description: '', projectOverride: null },

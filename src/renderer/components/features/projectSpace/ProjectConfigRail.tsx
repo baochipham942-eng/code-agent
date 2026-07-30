@@ -18,6 +18,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Clock, PanelRightClose, PanelRightOpen, Plug, Sparkles, Users, UsersRound } from 'lucide-react';
 import { IPC_DOMAINS, type NativeConnectorInventoryItem } from '@shared/ipc';
+import type { McpCatalogPayload } from '@shared/contract/mcpCatalog';
+import { getBuiltinMcpCatalogPayload, mergeMcpCatalogWithBuiltinOfficialFeatured } from '@shared/constants/mcpCatalog';
 import { SKILL_CHANNELS } from '@shared/ipc/channels';
 import type { Project, ProjectCapabilitySelection, ProjectDetail } from '@shared/contract/project';
 import type { CronJobDefinition } from '@shared/contract';
@@ -76,7 +78,7 @@ export const ProjectConfigRail: React.FC<ProjectConfigRailProps> = ({
   // 专家可选项带展示层字段（displayName/description/icon）：可选列表两行项用 displayName
   const [roleOptions, setRoleOptions] = useState<Array<{ id: string; label: string; description?: string; icon?: string }>>([]);
   const [connectorSelections, setConnectorSelections] = useState<ProjectCapabilitySelection[]>([]);
-  const [connectorCatalog, setConnectorCatalog] = useState<Array<{ id: string; label: string }>>([]);
+  const [connectorCatalog, setConnectorCatalog] = useState<Array<{ id: string; label: string; description?: string }>>([]);
   const [skills, setSkills] = useState<SkillListEntry[]>([]);
   const [agentJobs, setAgentJobs] = useState<CronJobDefinition[]>([]);
 
@@ -103,18 +105,35 @@ export const ProjectConfigRail: React.FC<ProjectConfigRailProps> = ({
       .catch(() => setRoleOptions([]));
   }, []);
 
+  const nativeConnectorDescriptions = ps.nativeConnectorDescriptions as Record<string, string | undefined>;
   const loadConnectors = useCallback(() => {
     projectClient.listCapabilitySelections(projectId)
       .then((selections) => setConnectorSelections(selections.filter((item) => item.kind === 'connector')))
       .catch(() => setConnectorSelections([]));
-    // 可选项与能力中心「连接器」页同源（NativeConnectorsSection）：产品意义的原生连接器，
-    // 不取 MCP getCatalog（会混入 Fetch 等基础工具型 server）
-    ipcService.invokeDomain<NativeConnectorInventoryItem[]>(IPC_DOMAINS.CONNECTOR, 'listNativeInventory')
-      .then((items) => {
-        setConnectorCatalog((Array.isArray(items) ? items : []).map((item) => ({ id: item.id, label: item.label })));
-      })
-      .catch(() => setConnectorCatalog([]));
-  }, [projectId]);
+    // 可选项 = 原生连接器 + 货架推荐 MCP（爸 2026-07-30 拍板扩口径「飞书这些要进连接器」）。
+    // 货架走推荐目录（内置常量 + 云端目录合并，MCPSettings 同一套），自带名称/描述，
+    // 与 getCatalog 直出「已配置 server 清单」不同——推荐目录是产品策展面，不混基础工具型条目的裸配置。
+    const nativePromise = ipcService.invokeDomain<NativeConnectorInventoryItem[]>(IPC_DOMAINS.CONNECTOR, 'listNativeInventory')
+      .then((items) => (Array.isArray(items) ? items : []).map((item) => ({
+        id: item.id,
+        label: item.label,
+        description: nativeConnectorDescriptions[item.id],
+      })))
+      .catch(() => [] as Array<{ id: string; label: string; description?: string }>);
+    const shelfPromise = ipcService.invokeDomain<McpCatalogPayload>(IPC_DOMAINS.MCP, 'getCatalog')
+      .then((payload) => mergeMcpCatalogWithBuiltinOfficialFeatured(payload))
+      .catch(() => getBuiltinMcpCatalogPayload());
+    void Promise.all([nativePromise, shelfPromise]).then(([native, shelf]) => {
+      const shelfItems = shelf.servers.map((server) => ({
+        id: server.id,
+        label: server.name,
+        description: server.description,
+      }));
+      // id 撞车时原生优先（native 四件 id 是短词，货架 id 均带厂商前缀，实际不撞；防御性去重）
+      const seen = new Set(native.map((item) => item.id));
+      setConnectorCatalog([...native, ...shelfItems.filter((item) => !seen.has(item.id))]);
+    });
+  }, [projectId, nativeConnectorDescriptions]);
 
   const skillWorkspacePath = project?.workspacePath ?? undefined;
   const loadSkills = useCallback(() => {

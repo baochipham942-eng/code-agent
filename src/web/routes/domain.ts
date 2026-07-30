@@ -49,6 +49,18 @@ function readDomainRequestBody(body: unknown): DomainRequestBody {
   };
 }
 
+/**
+ * IPC handler 返回 undefined（写操作/void 通道，如 skill:project:set）时，
+ * `res.json(undefined)` 会发出**空 body 的 200**，renderer 的 `response.json()`
+ * 随即抛 "Unexpected end of JSON input" —— 表现为「明明写成功了却报错/没反应」
+ * （2026-07-30 产品负责人真机撞到：空间右栏选技能，host 已落库，UI 报解析失败）。
+ * 桥的唯一出口在这里统一兜：void 结果一律回 `null`（合法 JSON），
+ * 别让每个 void 通道各自去凑一个假返回值。
+ */
+function sendJsonResult(res: Response, result: unknown): void {
+  res.json(result === undefined ? null : result);
+}
+
 export function createDomainRouter(deps: DomainDeps): Router {
   const router = Router();
   const { handlers, logger } = deps;
@@ -69,7 +81,7 @@ export function createDomainRouter(deps: DomainDeps): Router {
     if (handler) {
       try {
         const result = await handler(null, { action, payload, requestId });
-        res.json(result);
+        sendJsonResult(res, result);
       } catch (error) {
         logger.error(`Domain handler error: ${domain}:${action}`, error);
         sendIpcHandlerError(res, error);
@@ -84,7 +96,7 @@ export function createDomainRouter(deps: DomainDeps): Router {
     if (directHandler) {
       try {
         const result = await directHandler(null, payload);
-        res.json(result);
+        sendJsonResult(res, result);
       } catch (error) {
         logger.error(`Direct handler error: ${directChannel}`, error);
         sendIpcHandlerError(res, error);
@@ -119,7 +131,7 @@ export function createDomainRouter(deps: DomainDeps): Router {
         // ipcMain.handle(ch, (event, arg1, arg2, ...)) expects separate arguments
         const args: unknown[] = Array.isArray(body) ? [...body as unknown[]] : [body];
         const result = await handler(null, ...args);
-        res.json(result);
+        sendJsonResult(res, result);
       } catch (error) {
         if (isAdminAccessError(error)) {
           res.json({

@@ -361,8 +361,13 @@ export function projectTurns(
 
     // User message → start a new turn
     if (msg.role === 'user') {
+      // 语音字幕（X5.5-D2）：字幕是会话流，不是 turn 边界——通话中用户再开口落的
+      // 一条 user 字幕，不许把装着在跑 run 的派活轮当场切成 completed（任务卡还在转，
+      // 轮已判完结，尾部动作条挂出）。字幕本身照常开轮、照常渲染进消息流；
+      // 普通（typed/dictation）用户消息仍是 turn 边界，关闭上一轮不变。
+      const isVoiceSubtitle = msg.metadata?.source === 'voice';
       // Close previous turn
-      if (currentTurn) {
+      if (currentTurn && !isVoiceSubtitle) {
         currentTurn.status = 'completed';
         if (currentTurn.nodes.length > 0) {
           currentTurn.endTime = currentTurn.nodes[currentTurn.nodes.length - 1].timestamp;
@@ -596,7 +601,12 @@ export function projectTurns(
       latestNode.metadata?.workbench?.routingMode === 'direct' &&
       (directRoutingDelivery?.deliveredTargetIds?.length || 0) > 0;
 
-    if (latestNode?.type === 'user' && !isDirectRoutedUserTurn) {
+    const isVoiceSubtitleTail =
+      latestNode?.type === 'user' && latestNode.metadata?.source === 'voice';
+    // 语音字幕轮不抢 active（X5.5-D2）：字幕刚来、run 还在跑时，若让字幕轮拿走
+    // active 标记，派活轮就会跌回 completed——和关轮豁免是同一件事的两个出口。
+    // 跳过它，让下面的回扫继续找到真正在跑的那一轮。
+    if (latestNode?.type === 'user' && !isDirectRoutedUserTurn && !isVoiceSubtitleTail) {
       latestTurn.status = 'streaming';
       activeTurnIndex = turns.length - 1;
     }

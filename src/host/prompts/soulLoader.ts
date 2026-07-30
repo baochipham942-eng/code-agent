@@ -134,6 +134,12 @@ export function watchSoulFiles(workingDirectory?: string): void {
           }, 500);
         }
       });
+      watcher.on('error', (error) => {
+        logger.warn('Soul file watcher error (non-fatal)', {
+          path: filePath,
+          error: String(error),
+        });
+      });
       watchers.push(watcher);
     } catch (error) {
       logger.warn('Failed to watch soul file directory', { dir, error });

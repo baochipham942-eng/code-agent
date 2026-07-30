@@ -12,6 +12,8 @@ import { getProjectKey } from '../../roleAssets/roleAssetPaths';
 import {
   UNSORTED_PROJECT_ID,
   type Project,
+  type ProjectCapabilityKind,
+  type ProjectCapabilitySelection,
   type ProjectGoal,
   type ProjectGoalStatus,
   type ProjectRoleLink,
@@ -20,6 +22,7 @@ import {
   type ProjectSourceRole,
   type ProjectSourceTrustState,
   type ProjectStatus,
+  type ProjectWithActivity,
 } from '../../../../shared/contract/project';
 import {
   canonicalizeWorkspacePath,
@@ -39,6 +42,8 @@ function rowToProject(row: SQLiteRow): Project {
     createdAt: row.created_at as number,
     updatedAt: row.updated_at as number,
     archivedAt: (row.archived_at as number) ?? null,
+    spacePromotedAt: (row.space_promoted_at as number) ?? null,
+    cloudProjectId: (row.cloud_project_id as string) ?? null,
     sourceRevision: Number(row.source_revision ?? 0),
   };
 }
@@ -80,8 +85,16 @@ export class ProjectRepository {
 
   upsertProject(p: Project): void {
     this.db.prepare(`
-      INSERT INTO projects (id, name, workspace_path, workspace_key, status, description, is_deleted, created_at, updated_at, archived_at, source_revision)
-      VALUES (@id, @name, @workspace_path, @workspace_key, @status, @description, 0, @created_at, @updated_at, @archived_at, @source_revision)
+      INSERT INTO projects (
+        id, name, workspace_path, workspace_key, status, description, is_deleted,
+        created_at, updated_at, archived_at, space_promoted_at, cloud_project_id,
+        source_revision
+      )
+      VALUES (
+        @id, @name, @workspace_path, @workspace_key, @status, @description, 0,
+        @created_at, @updated_at, @archived_at, @space_promoted_at, @cloud_project_id,
+        @source_revision
+      )
       ON CONFLICT(id) DO UPDATE SET
         name = excluded.name,
         workspace_path = excluded.workspace_path,
@@ -90,6 +103,8 @@ export class ProjectRepository {
         description = excluded.description,
         updated_at = excluded.updated_at,
         archived_at = excluded.archived_at,
+        space_promoted_at = COALESCE(projects.space_promoted_at, excluded.space_promoted_at),
+        cloud_project_id = COALESCE(projects.cloud_project_id, excluded.cloud_project_id),
         source_revision = excluded.source_revision
     `).run({
       id: p.id,
@@ -101,8 +116,42 @@ export class ProjectRepository {
       created_at: p.createdAt,
       updated_at: p.updatedAt,
       archived_at: p.archivedAt ?? null,
+      space_promoted_at: p.spacePromotedAt ?? null,
+      cloud_project_id: p.cloudProjectId ?? null,
       source_revision: p.sourceRevision ?? 0,
     });
+  }
+
+  getProjectByCloudProjectId(cloudProjectId: string): Project | undefined {
+    const row = this.db.prepare(`
+      SELECT * FROM projects
+      WHERE cloud_project_id = ? AND is_deleted = 0
+      LIMIT 1
+    `).get(cloudProjectId) as SQLiteRow | undefined;
+    return row ? rowToProject(row) : undefined;
+  }
+
+  setCloudProjectId(projectId: string, cloudProjectId: string, updatedAt: number): Project | undefined {
+    this.db.prepare(`
+      UPDATE projects
+      SET cloud_project_id = ?, updated_at = ?
+      WHERE id = ? AND is_deleted = 0
+    `).run(cloudProjectId, updatedAt, projectId);
+    return this.getProject(projectId);
+  }
+
+  promoteToSpace(projectId: string, now: number): Project | undefined {
+    if (projectId === UNSORTED_PROJECT_ID) {
+      throw new Error('The unsorted project cannot be promoted to a space.');
+    }
+    this.db.prepare(`
+      UPDATE projects
+      SET
+        space_promoted_at = COALESCE(space_promoted_at, ?),
+        updated_at = CASE WHEN space_promoted_at IS NULL THEN ? ELSE updated_at END
+      WHERE id = ? AND is_deleted = 0
+    `).run(now, now, projectId);
+    return this.getProject(projectId);
   }
 
   // --- project_sources ---
@@ -235,11 +284,78 @@ export class ProjectRepository {
     return row ? rowToProject(row) : undefined;
   }
 
+  getProjectByWorkspacePath(workspacePath: string): Project | undefined {
+    const canonicalPath = canonicalizeWorkspacePath(workspacePath);
+    const workspaceKey = getProjectKey(canonicalPath);
+    const row = this.db.prepare(`
+      SELECT DISTINCT p.*
+      FROM projects p
+      LEFT JOIN project_sources s
+        ON s.project_id = p.id AND s.role = 'primary'
+      WHERE p.is_deleted = 0
+        AND (s.canonical_path = @canonicalPath OR p.workspace_key = @workspaceKey)
+      ORDER BY p.updated_at DESC
+      LIMIT 1
+    `).get({ canonicalPath, workspaceKey }) as SQLiteRow | undefined;
+    return row ? rowToProject(row) : undefined;
+  }
+
   listProjects(includeArchived = false): Project[] {
     const sql = includeArchived
       ? 'SELECT * FROM projects WHERE is_deleted = 0 ORDER BY updated_at DESC'
       : "SELECT * FROM projects WHERE is_deleted = 0 AND status != 'archived' ORDER BY updated_at DESC";
     return (this.db.prepare(sql).all() as SQLiteRow[]).map(rowToProject);
+  }
+
+  listProjectsWithActivity(includeArchived = false, spacesOnly = false): ProjectWithActivity[] {
+    const archivedClause = includeArchived ? '' : "AND p.status != 'archived'";
+    const spacesClause = spacesOnly
+      ? 'AND p.space_promoted_at IS NOT NULL AND p.id != @unsortedProjectId'
+      : '';
+    const statement = this.db.prepare(`
+      SELECT
+        p.*,
+        COALESCE(cards.active_topic_count, 0) AS active_topic_count,
+        CASE
+          WHEN cards.last_topic_at IS NULL THEN sessions.last_session_at
+          WHEN sessions.last_session_at IS NULL THEN cards.last_topic_at
+          WHEN cards.last_topic_at >= sessions.last_session_at THEN cards.last_topic_at
+          ELSE sessions.last_session_at
+        END AS last_activity_at
+      FROM projects p
+      LEFT JOIN (
+        SELECT
+          project_id,
+          SUM(
+            CASE
+              WHEN status NOT IN ('completed', 'failed', 'cancelled', 'archived') THEN 1
+              ELSE 0
+            END
+          ) AS active_topic_count,
+          MAX(updated_at) AS last_topic_at
+        FROM neo_work_cards
+        GROUP BY project_id
+      ) cards ON cards.project_id = p.id
+      LEFT JOIN (
+        SELECT project_id, MAX(updated_at) AS last_session_at
+        FROM sessions
+        WHERE is_deleted = 0 AND project_id IS NOT NULL
+        GROUP BY project_id
+      ) sessions ON sessions.project_id = p.id
+      WHERE p.is_deleted = 0 ${archivedClause} ${spacesClause}
+      ORDER BY
+        CASE WHEN last_activity_at IS NULL THEN 1 ELSE 0 END,
+        last_activity_at DESC,
+        p.updated_at DESC
+    `);
+    const rows = (spacesOnly
+      ? statement.all({ unsortedProjectId: UNSORTED_PROJECT_ID })
+      : statement.all()) as SQLiteRow[];
+    return rows.map((row) => ({
+      ...rowToProject(row),
+      activeTopicCount: Number(row.active_topic_count ?? 0),
+      lastActivityAt: row.last_activity_at == null ? null : Number(row.last_activity_at),
+    }));
   }
 
   setProjectStatus(id: string, status: ProjectStatus, updatedAt: number, archivedAt?: number | null): void {
@@ -336,6 +452,67 @@ export class ProjectRepository {
       roleId: row.role_id as string,
       joinedAt: row.joined_at as number,
     }));
+  }
+
+  // --- project capability selections ---
+
+  listCapabilitySelections(projectId: string): ProjectCapabilitySelection[] {
+    const rows = this.db
+      .prepare(`
+        SELECT project_id, kind, capability_id, selected_at
+        FROM project_capability_selections
+        WHERE project_id = ?
+        ORDER BY selected_at ASC, kind ASC, capability_id ASC
+      `)
+      .all(projectId) as SQLiteRow[];
+    return rows.map((row) => ({
+      projectId: row.project_id as string,
+      kind: row.kind as ProjectCapabilityKind,
+      capabilityId: row.capability_id as string,
+      selectedAt: row.selected_at as number,
+    }));
+  }
+
+  selectCapability(selection: ProjectCapabilitySelection): ProjectCapabilitySelection {
+    this.db.prepare(`
+      INSERT INTO project_capability_selections (project_id, kind, capability_id, selected_at)
+      VALUES (?, ?, ?, ?)
+      ON CONFLICT(project_id, kind, capability_id) DO NOTHING
+    `).run(
+      selection.projectId,
+      selection.kind,
+      selection.capabilityId,
+      selection.selectedAt,
+    );
+    const row = this.db.prepare(`
+      SELECT project_id, kind, capability_id, selected_at
+      FROM project_capability_selections
+      WHERE project_id = ? AND kind = ? AND capability_id = ?
+    `).get(
+      selection.projectId,
+      selection.kind,
+      selection.capabilityId,
+    ) as SQLiteRow;
+    return {
+      projectId: row.project_id as string,
+      kind: row.kind as ProjectCapabilityKind,
+      capabilityId: row.capability_id as string,
+      selectedAt: row.selected_at as number,
+    };
+  }
+
+  unselectCapability(
+    projectId: string,
+    kind: ProjectCapabilityKind,
+    capabilityId: string,
+  ): boolean {
+    const result = this.db
+      .prepare(`
+        DELETE FROM project_capability_selections
+        WHERE project_id = ? AND kind = ? AND capability_id = ?
+      `)
+      .run(projectId, kind, capabilityId);
+    return result.changes > 0;
   }
 
   // --- sessions ↔ project ---

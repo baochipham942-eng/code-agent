@@ -81,6 +81,7 @@ import {
   appendPromptBlockWithinBudgetWithStatus, flushPromptLayerRecords,
   REQUIRED_REPAIR_TRIM_CANDIDATES,
 } from './promptBudget';
+import { buildSpaceContextPrompt } from '../../../prompts/spaceContextPrompt';
 
 export { formatArtifactRepairToolResultContent } from './artifactRepairProjection';
 export {
@@ -762,6 +763,28 @@ export async function buildModelMessages(ctx: ContextAssemblyCtx): Promise<Model
   let tailWorking = turnContext
     ? `${stableSystemPrompt}\n\n${turnContext}`
     : stableSystemPrompt;
+
+  // 显式协作空间按轮注入：放在稳定 system 前缀之后，避免配置变化击穿
+  // provider cache；每次 inference 重新读取空间配置，所以下一轮立即生效。
+  const spaceContextBlock = buildSpaceContextPrompt(
+    ctx.runtime.sessionId,
+    ctx.runtime.workspaceScope,
+  );
+  if (spaceContextBlock) {
+    const beforeSpaceContext = tailWorking;
+    tailWorking = appendPromptBlockWithinBudget(
+      tailWorking,
+      spaceContextBlock,
+      'collaboration space context',
+      ctx,
+    );
+    logger.debug('[ContextAssembly] collaboration space context evaluated', {
+      chars: spaceContextBlock.length,
+      tokens: estimateTokens(spaceContextBlock),
+      injected: tailWorking !== beforeSpaceContext,
+      cacheImpact: 'dynamic-tail-only',
+    });
+  }
 
   // git 状态（易变，从 <env> block 移出；GAP-010 的仓库感知保留）
   const gitStatusBlock = buildGitStatusBlock(ctx.runtime.workingDirectory || '');

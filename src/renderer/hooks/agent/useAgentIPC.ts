@@ -926,7 +926,11 @@ export function useAgentIPC({
         metadata: toMessageMetadata(contextWithDesignContext),
       };
       logger.debug('Adding user message', { id: userMessage.id, attachmentsCount: attachments?.length || 0 });
-      addMessage(userMessage);
+      // 乐观上屏去重：协作空间 composer 在切会话前已把同 id 消息放上时间线（落地即
+      // 进行中态），这里再 append 就是双份——时间线上已有同 id 就跳过（neo 流程同款判法）。
+      if (!useSessionStore.getState().messages.some((message) => message.id === userMessage.id)) {
+        addMessage(userMessage);
+      }
 
       // 不再预创建 assistant placeholder
       // 后端会在每轮迭代开始时发送 turn_start 事件，前端据此创建消息

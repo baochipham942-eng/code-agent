@@ -28,12 +28,13 @@ afterEach(() => {
 });
 
 describe('SidebarCapabilityZone', () => {
-  it('按能力中心、资料库、自动化顺序渲染，且不恢复专家头像条', async () => {
+  it('按能力中心、协作空间、资料库、自动化顺序渲染，且不恢复专家头像条', async () => {
     listJobs.mockResolvedValue([]); getStats.mockResolvedValue(makeStats(0)); render(<SidebarCapabilityZone />);
     const rows = [...screen.getByTestId('sidebar-capability-zone').querySelectorAll('button')];
-    // 断言顺序本身，不只是数量——顺序是这次 IA 调整的产物
+    // 断言顺序本身，不只是数量——顺序是 IA 调整的产物（爸 2026-07-30 拍板：协作空间挪到能力中心下面）
     expect(rows.map((row) => row.dataset.testid)).toEqual([
       'sidebar-capability-hub',
+      'sidebar-capability-projects',
       'sidebar-capability-library',
       'sidebar-capability-automation',
     ]);

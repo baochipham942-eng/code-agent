@@ -31,6 +31,7 @@ import { expertEn } from './expert';
 import { generativeUIEn } from './generativeUI';
 import { capabilityHubEn } from './capabilityHub';
 import { neoTopicsEn } from './neoTopics';
+import { projectSpaceEn } from './projectSpace';
 import { evalCenterEn } from './evalCenter';
 import { localOpsEn } from './localOps';
 import { onboardingEn } from './onboarding';
@@ -41,6 +42,7 @@ export const en: Translations = {
   ...activityPanelEn,
   ...capabilityHubEn,
   ...neoTopicsEn,
+  ...projectSpaceEn,
   ...evalCenterEn,
   ...localOpsEn,
   ...onboardingEn,
@@ -96,6 +98,7 @@ export const en: Translations = {
     realpath: 'Real path',
     detected: 'Detected project configuration',
     identityChanged: 'This path was trusted before, but its folder identity changed. Confirm again before loading project configuration.',
+    emptyDangerNote: 'No dangerous configuration needs item-by-item review, but this folder is not trusted yet (or its trust has expired). Project configuration loads only after you confirm.',
     trust: 'Trust and load',
     block: 'Block project config',
     openSettings: 'Open settings',

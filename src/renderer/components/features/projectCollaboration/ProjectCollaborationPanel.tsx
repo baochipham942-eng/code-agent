@@ -42,6 +42,8 @@ import { ProjectCollaborationDetailPane } from './ProjectCollaborationDetailPane
 
 export interface ProjectCollaborationPanelProps {
   projectId?: string | null;
+  /** 嵌入模式（项目空间任务 tab）：隐藏面板自带标题头（宿主页头已有项目名）。 */
+  embedded?: boolean;
   /** 注入的 topic 明细（测试/fixture 用）。传入时绕开 store 加载。 */
   details?: NeoWorkCardDetail[];
   /** 注入的源会话消息（测试/fixture 用），key=sourceConversationId。传入时详情绕开 IPC 拉取。 */
@@ -164,6 +166,7 @@ function TopicRow({
 
 export const ProjectCollaborationPanel: React.FC<ProjectCollaborationPanelProps> = ({
   projectId = null,
+  embedded = false,
   details,
   sourceMessagesByConversation,
   onOpenConversation,
@@ -303,9 +306,9 @@ export const ProjectCollaborationPanel: React.FC<ProjectCollaborationPanelProps>
   return (
     <div className="relative flex h-full min-h-0 flex-col overflow-hidden bg-zinc-900" data-testid="neo-topic-directory">
       {/* 标题由 Page 层 FullScreenPageHeader 统一承担（2026-07-29 去掉重复的「Neo 协同」旧 header），
-          这里只剩加载/错误指示，无状态时不占位 */}
+          这里只剩加载/错误指示；嵌入模式的间距继续由宿主 tab 统一承担。 */}
       {(loading || loadError) && (
-        <div className="shrink-0 border-b border-zinc-800 px-4 py-3">
+        <div className={embedded ? 'shrink-0 px-4' : 'shrink-0 border-b border-zinc-800 px-4 py-3'}>
           {loading && (
             <div className="inline-flex items-center gap-1.5 rounded border border-zinc-800 bg-zinc-950/50 px-2 py-1 text-[11px] text-zinc-400">
               <Loader2 className="h-3.5 w-3.5 animate-spin" />正在加载 topic
@@ -320,7 +323,7 @@ export const ProjectCollaborationPanel: React.FC<ProjectCollaborationPanelProps>
       )}
 
       <div className="min-h-0 flex-1">
-        <div className="h-full min-h-0 overflow-y-auto px-4 py-3">
+        <div className={embedded ? 'h-full min-h-0 overflow-y-auto px-4 pb-3' : 'h-full min-h-0 overflow-y-auto px-4 py-3'}>
           <div className="mb-3 space-y-2">
             <div className="relative">
               <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-600" />

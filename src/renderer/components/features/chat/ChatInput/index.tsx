@@ -133,6 +133,12 @@ export interface ChatInputProps {
   hasPlan?: boolean;
   /** 点击 Plan 入口 */
   onPlanClick?: () => void;
+  /**
+   * 无会话语境（如协作空间页 composer）：按主界面新会话草稿同款语义处理——
+   * 会话作用域视为 null，会话绑定部件（/loop、记忆开关、资料库 pin、实时通话）
+   * 走既有草稿态降级，不会绑到页面背后那个会话上发错配置。
+   */
+  sessionless?: boolean;
 }
 
 // Imperative handle exposed to parent (e.g. ChatView drop zone)
@@ -174,6 +180,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   onSendQueuedRuntimeInput,
   hasPlan,
   onPlanClick,
+  sessionless = false,
 }, ref) => {
   const { t } = useI18n();
   const [value, setValue] = useState('');
@@ -187,7 +194,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   const [isFocused, setIsFocused] = useState(false);
   const [attachments, setAttachments] = useState<MessageAttachment[]>([]);
   // 会话作用域：currentSessionId / engine 类型 / 切换会话时清空草稿
-  const { currentSessionId } = useChatInputSessionScope(setValue, setAttachments);
+  // （sessionless 时强制 null——项目页等无会话语境，见 ChatInputProps.sessionless）
+  const { currentSessionId } = useChatInputSessionScope(setValue, setAttachments, sessionless);
   const pendingAppshot = useAppshotsStore((s) =>
     s.pendingSessionId === currentSessionId ? s.pending : null
   );

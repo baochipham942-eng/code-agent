@@ -162,6 +162,9 @@ import { exploreSchema } from './planning/explore.schema';
 import { recommendCapabilitySchema } from './planning/recommendCapability.schema';
 import { declareDeliverablesSchema } from './planning/declareDeliverables.schema';
 import { attemptCompletionSchema } from './planning/attemptCompletion.schema';
+import { spaceListSchema } from './planning/spaceList.schema';
+import { spaceQuerySchema } from './planning/spaceQuery.schema';
+import { spaceCreateSchema } from './planning/spaceCreate.schema';
 
 export function registerMigratedTools(
   registry: ToolRegistry,
@@ -486,6 +489,18 @@ export function registerMigratedTools(
   registry.register(
     attemptCompletionSchema,
     async () => (await import('./planning/attemptCompletion')).attemptCompletionModule,
+  );
+  registry.register(
+    spaceListSchema,
+    async () => (await import('./planning/spaceList')).spaceListModule,
+  );
+  registry.register(
+    spaceQuerySchema,
+    async () => (await import('./planning/spaceQuery')).spaceQueryModule,
+  );
+  registry.register(
+    spaceCreateSchema,
+    async () => (await import('./planning/spaceCreate')).spaceCreateModule,
   );
 
   // ── batch 8: network/ — all native modules ────────────────────────────

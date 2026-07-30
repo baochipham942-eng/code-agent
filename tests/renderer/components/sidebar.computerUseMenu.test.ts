@@ -167,8 +167,8 @@ describe('Sidebar account menu entry planning', () => {
     expect(html).toContain('常用');
     expect(html).toContain('活动');
     expect(html).toContain('本机操作');
-    // 2026-07 方案 9C：「Neo 协同」改名「协作请求（@neo）」
-    expect(html).toContain('协作请求（@neo）');
+    // 「协作请求（@neo）」入口 2026-07-29 爸拍板拿掉（家=协作空间任务 tab），反向钉死
+    expect(html).not.toContain('协作请求（@neo）');
     // 评测中心（2026-07 v1）：admin-only 菜单项
     expect(html).toContain('评测中心');
     // 提示词管理（2026-07-27 拍板）：admin-only 工具，回到账号菜单与评测中心同档

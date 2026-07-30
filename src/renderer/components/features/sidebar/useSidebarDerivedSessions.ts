@@ -479,6 +479,8 @@ export function useSidebarDerivedSessions(params: UseSidebarDerivedSessionsParam
               name: detail.project.name,
               status: detail.project.status,
               description: detail.project.description,
+              spacePromotedAt: detail.project.spacePromotedAt ?? null,
+              cloudProjectId: detail.project.cloudProjectId ?? null,
               goalCount: visibleGoals.length,
               activeGoalTitles: activeGoals.map((goal) => goal.goal),
               goals: sortedGoals.slice(0, 5).map((goal) => ({

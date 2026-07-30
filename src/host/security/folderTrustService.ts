@@ -341,9 +341,26 @@ export class FolderTrustService {
     return { dev: String(stat.dev), ino: String(stat.ino) };
   }
 
+  /**
+   * 目录身份是否真的变了。
+   *
+   * 判据只认 **inode**，不认 dev。原因（2026-07-30 产品负责人真机撞到，实测取证）：
+   * macOS APFS 的 `st_dev` 是挂载期分配的卷设备号，**重启/重新挂载后会变**——
+   * 实测同一目录 ino 恒为 280299404、dev 从 16777229 变成 16777232，于是每次重启后
+   * 全部已信任目录集体「身份已变化」要求重新确认，确认完下次重启再来一遍（用户视角=永远修不好）。
+   * 行键已经是 canonical_realpath（真实路径），路径 + inode 相同即同一目录；
+   * dev 单独变化按「卷重新挂载」处理：静默重绑（见 buildEvaluation），不打扰用户。
+   */
   private identityChanged(row: FolderTrustRow | undefined, identity: FolderIdentity): boolean {
     if (!row) return false;
-    return row.dev !== identity.dev || row.ino !== identity.ino;
+    return row.ino !== identity.ino;
+  }
+
+  /** dev 单独变化（卷重挂载/重启）：把新 dev 写回，保持记录与现实一致，不改 state/decidedBy。 */
+  private rebindDevice(canonicalRealpath: string, dev: string): void {
+    this.getDb()
+      .prepare('UPDATE folder_trust SET dev = ? WHERE canonical_realpath = ?')
+      .run(dev, canonicalRealpath);
   }
 
   private buildEvaluation(
@@ -354,6 +371,10 @@ export class FolderTrustService {
   ): FolderTrustEvaluation {
     const row = this.getRow(canonicalRealpath);
     const identityChanged = this.identityChanged(row, identity);
+    // 同一 inode 但 dev 变了 = 卷重新挂载：就地重绑，不降级信任状态
+    if (row && !identityChanged && row.dev !== identity.dev) {
+      this.rebindDevice(canonicalRealpath, identity.dev);
+    }
     const state: FolderTrustState = row && !identityChanged ? row.state : 'untrusted';
     const blockedItems = state === 'trusted' ? [] : dangerousItems.filter((item) => item.gated);
     return {

@@ -5,10 +5,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.unmock('better-sqlite3');
 
+import Database from 'better-sqlite3';
 import {
   FolderTrustService,
   resetFolderTrustServiceForTest,
 } from '../../../src/host/security/folderTrustService';
+import { getUserConfigDir } from '../../../src/host/config/configPaths';
 
 async function writeFile(filePath: string, content = '{}'): Promise<void> {
   await fs.mkdir(path.dirname(filePath), { recursive: true });
@@ -85,6 +87,33 @@ describe('FolderTrustService', () => {
     await service.set(linkPath, 'blocked', 'test');
     const viaRealPath = await service.evaluate(projectDir);
     expect(viaRealPath.state).toBe('blocked');
+  });
+
+  it('keeps trust when only st_dev changes (macOS APFS volume remount/reboot re-assigns device ids)', async () => {
+    await writeFile(path.join(projectDir, '.code-agent', 'hooks', 'hooks.json'), '{"PreToolUse":[]}');
+    const service = new FolderTrustService();
+    await service.set(projectDir, 'trusted', 'test');
+    expect((await service.evaluate(projectDir)).state).toBe('trusted');
+
+    // 模拟重启后卷设备号被重新分配：inode 不变，dev 变。
+    // 修前：identityChanged=true → 每次重启所有已信任目录集体要求重新确认（产品负责人真机实测
+    // 同一目录 ino 恒定、dev 16777229→16777232）。
+    // 直连服务用的同一个库文件（服务内部持自己的连接，测试另开一个只读改 dev）
+    const db = new Database(path.join(getUserConfigDir(), 'code-agent.db'));
+    const realpath = await fs.realpath(projectDir);
+    const before = db.prepare('SELECT dev, ino FROM folder_trust WHERE canonical_realpath = ?')
+      .get(realpath) as { dev: string; ino: string };
+    db.prepare('UPDATE folder_trust SET dev = ? WHERE canonical_realpath = ?')
+      .run(String(Number(before.dev) - 3), realpath);
+
+    const result = await service.evaluate(projectDir);
+    expect(result.identityChanged).toBe(false);
+    expect(result.state).toBe('trusted');
+    // 重绑：记录里的 dev 跟回现实，不留下永久不一致
+    const after = db.prepare('SELECT dev, ino FROM folder_trust WHERE canonical_realpath = ?')
+      .get(realpath) as { dev: string; ino: string };
+    expect(after.dev).toBe(before.dev);
+    expect(after.ino).toBe(before.ino);
   });
 
   it('does not silently inherit trust when a trusted path is deleted and recreated', async () => {

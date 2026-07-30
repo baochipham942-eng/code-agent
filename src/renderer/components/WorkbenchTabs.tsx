@@ -192,7 +192,6 @@ export const WorkbenchTabs: React.FC<{ children?: React.ReactNode }> = ({ childr
   const closeWorkbenchTab = useAppStore((s) => s.closeWorkbenchTab);
   const openWorkbenchTab = useAppStore((s) => s.openWorkbenchTab);
   const currentSessionId = useSessionStore((s) => s.currentSessionId);
-  const setWorkbenchCollapsed = useAppStore((s) => s.setWorkbenchCollapsed);
   // 「＋」弹出层只列还没打开的视图；切换/关闭都在 tab 条上直接完成。
   const [menuOpen, setMenuOpen] = useState(false);
   const [pendingClose, setPendingClose] = useState<TabMeta | null>(null);
@@ -302,8 +301,8 @@ export const WorkbenchTabs: React.FC<{ children?: React.ReactNode }> = ({ childr
     );
   }
 
-  const selectView = (id: WorkbenchViewId) => {
-    openWorkbenchTab(id, { source: 'user' });
+  const selectView = (id: string) => {
+    openWorkbenchTab(id as WorkbenchViewId, { source: 'user' });
     setMenuOpen(false);
   };
 

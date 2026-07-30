@@ -15,7 +15,7 @@ import { IconButton } from '../../primitives/IconButton';
 import { Input } from '../../primitives/Input';
 import { RoleIcon } from '../shared/RoleIcon';
 
-export interface ProjectConfigTabItem {
+interface ProjectConfigTabItem {
   id: string;
   label: string;
   /** 可选列表项第二行（描述）；空则单行降级（连接器无描述字段，只列 label） */

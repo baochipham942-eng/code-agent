@@ -5,6 +5,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { VOICE_WS_CLOSE_TERMINAL } from '../../../src/shared/constants/voice';
 
+const toastMocks = vi.hoisted(() => ({ info: vi.fn() }));
+
+vi.mock('../../../src/renderer/hooks/useToast', () => ({
+  toast: { info: toastMocks.info },
+}));
 vi.mock('../../../src/renderer/services/ipcService', () => ({
   default: {
     invokeDomain: vi.fn(async () => ({ voice: { live: { interrupt: 'server_vad', echoCancellation: 'off' } } })),
@@ -62,6 +67,9 @@ class FakeWebSocket {
     this.readyState = 3;
     this.onclose?.({ code });
   }
+  simulateEvent(event: object) {
+    this.onmessage?.({ data: JSON.stringify(event) });
+  }
 }
 
 let sockets: FakeWebSocket[] = [];
@@ -78,6 +86,7 @@ async function dialAndOpen(): Promise<FakeWebSocket> {
 describe('voiceCallBridge 终止关闭 vs 网络抖动', () => {
   beforeEach(() => {
     sockets = [];
+    toastMocks.info.mockClear();
     vi.stubGlobal('WebSocket', class extends FakeWebSocket {
       constructor() {
         super();
@@ -115,5 +124,16 @@ describe('voiceCallBridge 终止关闭 vs 网络抖动', () => {
     await vi.advanceTimersByTimeAsync(1000);
 
     expect(sockets).toHaveLength(2);
+  });
+
+  it('空闲结束回到 idle 并给信息提示，不进入红色 error 态', async () => {
+    const socket = await dialAndOpen();
+    socket.simulateEvent({ type: 'state', state: 'live' });
+
+    socket.simulateEvent({ type: 'session.ended', reason: 'idle-timeout' });
+
+    expect(useVoiceCallStore.getState().phase).toBe('idle');
+    expect(useVoiceCallStore.getState().error).toBeNull();
+    expect(toastMocks.info).toHaveBeenCalledWith('长时间没有对话，通话已自动结束');
   });
 });

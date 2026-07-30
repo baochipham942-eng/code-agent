@@ -212,6 +212,26 @@ describe('voiceSessionService 互斥与挂断', () => {
     again.close();
   });
 
+  it('空闲结束按正常终态释放通话并保留结构化原因', async () => {
+    const client = new FakeClient();
+    await attachVoiceClient(client as never, 'session-1');
+    expect(getActiveVoiceSessionId()).not.toBeNull();
+
+    lastOnEvent?.({ type: 'session.ended', reason: 'idle-timeout' });
+    await vi.waitFor(() => expect(getActiveVoiceSessionId()).toBeNull());
+    await vi.waitFor(() => expect(close).toHaveBeenCalled(), { timeout: 4000 });
+
+    const events = client.sent
+      .filter((entry) => entry !== '<binary>')
+      .map((entry) => JSON.parse(entry) as VoiceEvent);
+    expect(events).toContainEqual({ type: 'session.ended', reason: 'idle-timeout' });
+    expect(events.some((event) => event.type === 'error')).toBe(false);
+    expect(voiceLogger.info).toHaveBeenCalledWith(
+      'session ended',
+      expect.objectContaining({ reason: 'idle-timeout' }),
+    );
+  });
+
   it('上游连接关闭即释放通话，用户能立刻重拨', async () => {
     const first = new FakeClient();
     await attachVoiceClient(first as never, 'session-1');

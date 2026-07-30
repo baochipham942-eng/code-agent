@@ -30,6 +30,7 @@ import { VoiceAudioPipeline, type VoiceAudioPipelineLike } from './voiceAudioPip
 import { computeRevealedSubtitle, resolvePartialRelease } from '../utils/voicePartialOverlay';
 import { selectVoiceFocusContext } from './voiceFocusContext';
 import { normalizeInterruptMode } from '../components/features/voice/voiceSettingsDerivation';
+import { toast } from '../hooks/useToast';
 
 function getT() {
   return languages[useAppStore.getState().language] ?? languages.zh;
@@ -646,6 +647,18 @@ class VoiceCallBridge {
         this.store().eventApplied({
           notice: { code: event.code, message: event.message, ...(event.detail ? { detail: event.detail } : {}) },
         });
+        break;
+      case 'session.ended':
+        this.intentionalClose = true;
+        this.flushReveal();
+        this.stopFocusReporting();
+        this.audio?.stop();
+        this.audio = null;
+        this.audioReady = null;
+        this.scheduleReload(sessionId, undefined, 800);
+        this.scheduleHangupSummaryReload(sessionId);
+        this.store().reset();
+        if (event.reason === 'idle-timeout') toast.info(getT().voice.status.idleTimeout);
         break;
       case 'error':
         this.store().phaseChanged('error');

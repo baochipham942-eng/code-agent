@@ -47,6 +47,7 @@ export const voiceZh: VoiceTranslations = {
       manualReady: '点一下开始说',
       manualListening: '正在听 · 说完再点一下',
       onCall: '通话中',
+      idleTimeout: '长时间没有对话，通话已自动结束',
       error: '通话异常',
     },
     error: {
@@ -218,6 +219,7 @@ export const voiceEn = {
       manualReady: 'Tap to start talking',
       manualListening: 'Listening · tap again when done',
       onCall: 'On call',
+      idleTimeout: 'The call ended after a long period of inactivity',
       error: 'Call error',
     },
     error: {

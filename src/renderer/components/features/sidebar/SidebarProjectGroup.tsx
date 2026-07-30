@@ -185,9 +185,13 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
       data-sidebar-group-phase={expansionView.phase}
     >
       <div
-        className={`group sticky top-0 ${menuOpen ? 'z-30' : 'z-20'} flex items-center gap-1.5 w-full px-1.5 py-1.5 bg-zinc-900 backdrop-blur-sm text-left hover:bg-zinc-800/40 transition-colors`}
+        className={`group sticky top-0 ${menuOpen ? 'z-30' : 'z-20'} flex items-center gap-1.5 w-full px-1.5 py-1.5 bg-zinc-950 text-left hover:bg-zinc-800/40 transition-colors`}
         title={title}
       >
+        {/* 组头底色制度（批P 第五波③）：非选中组头不给常驻底色——bg-zinc-950 是栏面本色
+            （App 侧栏列同一块面），只为 sticky 覆盖滚过的会话行，肉眼读作无底色；
+            抬色（zinc-800/900）只属 hover 与选中行。修前 bg-zinc-900 是 6 月侧栏还是
+            zinc-900 底时的遗留，07-27 侧栏换 zinc-950 后它就成了可见的常驻色块。 */}
         {/* 分组头对齐约定(2026-07-02 拍板,2026-07-26 强化)：图标+名称左对齐、整行垂直居中；
             展开收起 chevron 不常驻，hover/聚焦时才出现在名称右侧(参考 Codex)；
             未完成数右对齐，用"色球+数字"与会话行的状态圆点同一视觉语言，不用文字胶囊。

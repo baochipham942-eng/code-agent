@@ -30,7 +30,8 @@ export const projectSpaceZh = {
     cardSkills: '技能',
     cardConnectors: '连接器',
     cardAutomation: '自动化',
-    add: '添加',
+    // 成员 tab 名（tab 内容在 p1-c0-ui 分支；本分支只留 tab 位语义，键先到位免合并漂名）
+    cardMembers: '成员',
     remove: '移除',
     pickerEmpty: '没有可添加的选项',
     pickerSearchPlaceholder: '搜索名称或描述…',
@@ -96,7 +97,8 @@ export const projectSpaceEn = {
     cardSkills: 'Skills',
     cardConnectors: 'Connectors',
     cardAutomation: 'Automation',
-    add: 'Add',
+    // Members tab label (tab content lands with p1-c0-ui; this branch keeps the tab slot only)
+    cardMembers: 'Members',
     remove: 'Remove',
     pickerEmpty: 'Nothing available to add',
     pickerSearchPlaceholder: 'Search name or description…',

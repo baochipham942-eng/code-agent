@@ -50,4 +50,15 @@ describe('MessageContent 轻呈现', () => {
     expect(html).toContain('cursor-pointer');
     expect(html).not.toContain('bg-surface-hover');
   });
+
+  it('raw URL 走 LinkPreviewCard：favicon + sky 下划线；带文字链接保持 primary 普通链接', async () => {
+    const raw = await renderAssistant('见 https://github.com/openai/codex 这里');
+    expect(raw).toContain('favicons?domain=github.com');
+    expect(raw).toContain('text-sky-400/80');
+
+    const labeled = await renderAssistant('见 [Codex 文档](https://developers.openai.com/codex) 这里');
+    expect(labeled).not.toContain('favicons');
+    expect(labeled).toContain('text-primary-400');
+    expect(labeled).toContain('>Codex 文档</a>');
+  });
 });

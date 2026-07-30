@@ -54,6 +54,7 @@ export const LinkPreviewCard: React.FC<LinkPreviewCardProps> = ({ href }) => {
           src={`https://www.google.com/s2/favicons?domain=${hostname}&sz=32`}
           alt=""
           loading="lazy"
+          referrerPolicy="no-referrer"
           onError={() => setFaviconFailed(true)}
           className="mr-1 inline-block h-4 w-4 rounded-[3px] align-[-2px]"
         />

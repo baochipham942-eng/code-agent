@@ -36,12 +36,10 @@ import { evalCenterEn } from './evalCenter';
 import { localOpsEn } from './localOps';
 import { onboardingEn } from './onboarding';
 import { workbenchTabsEn } from './workbenchTabs';
-import { browserAgentWindowEn } from './browserAgentWindow';
 import { activityPanelEn } from './activity';
 
 export const en: Translations = {
   ...activityPanelEn,
-  ...browserAgentWindowEn,
   ...capabilityHubEn,
   ...neoTopicsEn,
   ...projectSpaceEn,

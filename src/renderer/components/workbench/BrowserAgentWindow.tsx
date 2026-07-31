@@ -12,7 +12,7 @@ import { AgentPointerPreviewCard, AgentPointerTimelineList } from './AgentPointe
 // profile 导入 / 扩展目录 / relay 启停 / 清 cookie 等高级管理全部留在 LocalOps
 // 的浏览器 tab（BrowserSurfaceContent），这里只给深链入口。
 
-type Copy = ReturnType<typeof useI18n>['t']['browserAgentWindow'];
+type Copy = ReturnType<typeof useI18n>['t']['workbenchTabs']['agentWindow'];
 
 function getModeLabel(mode: BrowserSessionMode, copy: Copy): string {
   if (mode === 'managed') return copy.modeManaged;
@@ -22,7 +22,7 @@ function getModeLabel(mode: BrowserSessionMode, copy: Copy): string {
 
 export const BrowserAgentWindow: React.FC = () => {
   const { t } = useI18n();
-  const copy = t.browserAgentWindow;
+  const copy = t.workbenchTabs.agentWindow;
   const browserSession = useWorkbenchBrowserSession();
   const livePointer = useLiveAgentPointer('browser');
   const openLocalOpsPanel = useAppStore((state) => state.openLocalOpsPanel);

@@ -35,12 +35,10 @@ import { evalCenterZh } from './evalCenter';
 import { localOpsZh } from './localOps';
 import { onboardingZh } from './onboarding';
 import { workbenchTabsZh } from './workbenchTabs';
-import { browserAgentWindowZh } from './browserAgentWindow';
 import { activityPanelZh } from './activity';
 
 export const zh = {
   ...activityPanelZh,
-  ...browserAgentWindowZh,
   ...capabilityHubZh,
   ...neoTopicsZh,
   ...projectSpaceZh,

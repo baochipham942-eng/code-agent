@@ -72,6 +72,10 @@ interface DesignImageToolbarProps {
   setAnnotTool: (tool: AnnotTool) => void;
   effectiveAnnotModel: string;
   setAnnotModel: (id: string) => void;
+  /** 标注模型 key 可用性（DesignCanvas 经 useVisualImageModelAvailability 统一拉取）；null = 加载中。 */
+  annotAvailability: Record<string, boolean> | null;
+  /** 一个可用标注模型都没有：批注重绘入口降级（禁用样式 + 原因说明），不让用户点了才失败。 */
+  annotModelUnavailable: boolean;
   annotInstruction: string;
   setAnnotInstruction: (v: string) => void;
   annotShapeCount: number;
@@ -134,6 +138,8 @@ export function DesignImageToolbar(props: DesignImageToolbarProps): React.ReactE
     setAnnotTool,
     effectiveAnnotModel,
     setAnnotModel,
+    annotAvailability,
+    annotModelUnavailable,
     annotInstruction,
     setAnnotInstruction,
     annotShapeCount,
@@ -186,7 +192,12 @@ export function DesignImageToolbar(props: DesignImageToolbarProps): React.ReactE
   };
 
   // 批注重绘按钮 = annotMode 开关：进模式同时弹出指令浮层，再点退模式收浮层。
+  // 无可用模型时降级（返工#4）：不进 annotMode，只弹浮层展示原因，不让用户点了才失败。
   const onAnnotateClick = (): void => {
+    if (annotModelUnavailable) {
+      setOpenMenu((cur) => (cur === 'annotate' ? null : 'annotate'));
+      return;
+    }
     const next = !annotMode;
     setAnnotMode(next);
     setOpenMenu(next ? 'annotate' : null);
@@ -230,18 +241,37 @@ export function DesignImageToolbar(props: DesignImageToolbarProps): React.ReactE
             type="button"
             data-testid="design-toolbar-annotate"
             aria-pressed={annotMode}
+            aria-disabled={annotModelUnavailable}
+            title={annotModelUnavailable ? t.design.annotNoAvailableModel : undefined}
             onClick={onAnnotateClick}
             className={`inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs transition-colors ${
-              annotMode ? 'bg-fuchsia-500/20 text-fuchsia-200' : 'text-zinc-300 hover:bg-white/[0.06] hover:text-zinc-100'
+              annotModelUnavailable
+                ? 'cursor-not-allowed text-zinc-600'
+                : annotMode
+                  ? 'bg-fuchsia-500/20 text-fuchsia-200'
+                  : 'text-zinc-300 hover:bg-white/[0.06] hover:text-zinc-100'
             }`}
           >
             <Pencil className="h-3.5 w-3.5" />
             {t.design.annotMode}
           </button>
 
-          {/* 批注重绘浮层：工具选择 + 指令 + 成本 + CTA（模型选择收在「更多」）。 */}
+          {/* 批注重绘浮层：工具选择 + 指令 + 模型选择（自「更多」挪入，控件跟着它服务的功能走，返工#4）
+              + 成本 + CTA。无可用模型时只展示原因 + 灰显模型列表。 */}
           {openMenu === 'annotate' && (
             <div data-testid="design-annotate-popover" className={MENU_CLASS} style={menuStyle}>
+              {annotModelUnavailable ? (
+                <>
+                  <p className="px-1 py-1 text-[11px] leading-snug text-amber-300/90">
+                    {t.design.annotNoAvailableModel}
+                  </p>
+                  <div className="mt-1 flex items-center justify-between gap-2 px-1">
+                    <span className="shrink-0 whitespace-nowrap text-[11px] text-zinc-400">{t.design.annotModelSelectLabel}</span>
+                    <AnnotModelSelect value={effectiveAnnotModel} onChange={setAnnotModel} availability={annotAvailability} />
+                  </div>
+                </>
+              ) : (
+                <>
               <div className="flex gap-1 rounded-lg border border-white/[0.08] bg-white/[0.02] p-0.5">
                 {/* ds-allow:start 标注工具分段控件（active 用自定义 bg-white/[0.10]，非 Button variant） */}
                 {([
@@ -273,6 +303,10 @@ export function DesignImageToolbar(props: DesignImageToolbarProps): React.ReactE
                   className="resize-none rounded-lg border border-white/[0.08] bg-white/[0.02] px-2.5 py-1.5 text-xs text-zinc-100 placeholder:text-zinc-600 focus:border-white/[0.2] focus:outline-none"
                 />
               </label>
+              <div className="mt-2 flex items-center justify-between gap-2">
+                <span className="shrink-0 whitespace-nowrap text-[11px] text-zinc-400">{t.design.annotModelSelectLabel}</span>
+                <AnnotModelSelect value={effectiveAnnotModel} onChange={setAnnotModel} availability={annotAvailability} />
+              </div>
               <div className="mt-2 text-[11px] text-zinc-500">
                 {t.design.costEstimateLabel}{' '}
                 <span className="font-mono text-emerald-300">{formatCny(estimateImageCostCny(effectiveAnnotModel))}</span>
@@ -289,6 +323,8 @@ export function DesignImageToolbar(props: DesignImageToolbarProps): React.ReactE
                 {t.design.annotRedraw}
               </button>
               {/* ds-allow:end */}
+                </>
+              )}
             </div>
           )}
         </div>
@@ -548,10 +584,6 @@ export function DesignImageToolbar(props: DesignImageToolbarProps): React.ReactE
                 {t.design.exportCanvasPptx}
               </button>
               {/* ds-allow:end */}
-              <div className="mt-2 flex items-center justify-between gap-2 border-t border-white/[0.08] px-2 pt-2">
-                <span className="shrink-0 whitespace-nowrap text-[11px] text-zinc-400">{t.design.annotModelSelectLabel}</span>
-                <AnnotModelSelect value={effectiveAnnotModel} onChange={setAnnotModel} />
-              </div>
             </div>
           )}
         </div>

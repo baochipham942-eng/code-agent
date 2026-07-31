@@ -13,6 +13,7 @@ import { useDesignCanvasStore } from './designCanvasStore';
 import { useDesignCanvasGeneration, type ExpandDirection } from './useDesignCanvasGeneration';
 import { useDesignCanvasImport } from './useDesignCanvasImport';
 import { useDesignCanvasExports } from './useDesignCanvasExports';
+import { useVisualImageModelAvailability } from './useVisualImageModelAvailability';
 import { DesignCompareOverlay } from './DesignCompareOverlay';
 import { DesignImageToolbar } from './DesignImageToolbar';
 import { DesignLayerPanel } from './DesignLayerPanel';
@@ -127,12 +128,25 @@ export const DesignCanvas: React.FC<{ showErrorBar?: boolean }> = ({ showErrorBa
   const [textDraft, setTextDraft] = useState<{ world: { x: number; y: number }; value: string } | null>(
     null,
   );
-  // 生效模型（cap 解析的唯一来源）：已选且仍具 annotEdit 能力则用之，否则取首个 annotEdit 模型为默认。
-  // 保证下拉值、成本预估、送 IPC 的模型三处一致且必为 annotEdit-capable。
+  // 生效模型（cap ∩ key 可用性解析的唯一来源；2026-08-01 返工#4：默认必须指向当前可用的模型，
+  // 不许默认档指向没配 key 的模型让用户点了才失败）：
+  // 已选且仍可用 → 用之；否则取首个「可用」的 annotEdit 模型；可用性未回包时按旧行为回退首个 cap 模型。
+  const annotAvailability = useVisualImageModelAvailability();
+  const annotCapModels = useMemo(() => imageModelsWithCap('annotEdit'), []);
   const effectiveAnnotModel = useMemo(() => {
-    const caps = imageModelsWithCap('annotEdit');
-    return annotModel && caps.some((m) => m.id === annotModel) ? annotModel : caps[0]?.id ?? '';
-  }, [annotModel]);
+    if (
+      annotModel &&
+      annotCapModels.some((m) => m.id === annotModel) &&
+      (annotAvailability == null || annotAvailability[annotModel])
+    ) {
+      return annotModel;
+    }
+    if (annotAvailability == null) return annotCapModels[0]?.id ?? '';
+    return annotCapModels.find((m) => annotAvailability[m.id])?.id ?? '';
+  }, [annotModel, annotCapModels, annotAvailability]);
+  // 一个可用模型都没有 → 动词条批注重绘入口降级（禁用 + 说明原因），不让用户点了才失败。
+  const annotModelUnavailable =
+    annotAvailability != null && !annotCapModels.some((m) => annotAvailability[m.id]);
 
   // 圈选标注本地态（世界坐标）。
   const [annotating, setAnnotating] = useState(false);
@@ -808,6 +822,8 @@ export const DesignCanvas: React.FC<{ showErrorBar?: boolean }> = ({ showErrorBa
           setAnnotTool={setAnnotTool}
           effectiveAnnotModel={effectiveAnnotModel}
           setAnnotModel={setAnnotModel}
+          annotAvailability={annotAvailability}
+          annotModelUnavailable={annotModelUnavailable}
           annotInstruction={annotInstruction}
           setAnnotInstruction={setAnnotInstruction}
           annotShapeCount={annotShapes.length}

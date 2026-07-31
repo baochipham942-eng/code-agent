@@ -52,22 +52,24 @@ vi.mock('../../../src/renderer/components/design/DesignCanvasNodes', () => ({
   KonvaVideoNode: () => null,
 }));
 
+const toolbarProps = vi.hoisted(() => ({ current: null as Record<string, unknown> | null }));
+
 vi.mock('../../../src/renderer/components/design/DesignImageToolbar', () => ({
-  DesignImageToolbar: ({
-    onExportImage,
-    onExportPdf,
-    onExportCanvasPptx,
-  }: {
+  DesignImageToolbar: (props: {
     onExportImage: () => void;
     onExportPdf: () => void;
     onExportCanvasPptx: () => void;
-  }) => (
-    <div>
-      <button type="button" onClick={onExportImage}>测试导出图片</button>
-      <button type="button" onClick={onExportPdf}>测试导出 PDF</button>
-      <button type="button" onClick={onExportCanvasPptx}>测试导出 PPTX</button>
-    </div>
-  ),
+  }) => {
+    toolbarProps.current = props as unknown as Record<string, unknown>;
+    const { onExportImage, onExportPdf, onExportCanvasPptx } = props;
+    return (
+      <div>
+        <button type="button" onClick={onExportImage}>测试导出图片</button>
+        <button type="button" onClick={onExportPdf}>测试导出 PDF</button>
+        <button type="button" onClick={onExportCanvasPptx}>测试导出 PPTX</button>
+      </div>
+    );
+  },
 }));
 
 vi.mock('../../../src/renderer/components/design/DesignLayerPanel', () => ({
@@ -214,5 +216,34 @@ describe('DesignCanvas tab 错误条', () => {
         'PPTX 导出失败：没有下载目录权限',
       );
     });
+  });
+});
+
+describe('批注重绘默认模型（2026-08-01 返工#4）', () => {
+  const stubModelAvailability = (available: boolean): void => {
+    vi.stubGlobal('domainAPI', {
+      invoke: vi.fn().mockResolvedValue({
+        success: true,
+        data: { models: [{ id: 'gpt-image-2', label: 'GPT-image-2', available }] },
+      }),
+    });
+  };
+
+  it('唯一 annotEdit 模型配了 key → 默认生效模型就是它，入口不降级', async () => {
+    stubModelAvailability(true);
+    setCanvas(imageNode('data:image/png;base64,AAAA'));
+    render(<DesignCanvasTab />);
+
+    await waitFor(() => expect(toolbarProps.current?.effectiveAnnotModel).toBe('gpt-image-2'));
+    expect(toolbarProps.current?.annotModelUnavailable).toBe(false);
+  });
+
+  it('唯一 annotEdit 模型没配 key → 生效模型置空 + annotModelUnavailable=true（默认档不许指向用不了的模型）', async () => {
+    stubModelAvailability(false);
+    setCanvas(imageNode('data:image/png;base64,AAAA'));
+    render(<DesignCanvasTab />);
+
+    await waitFor(() => expect(toolbarProps.current?.annotModelUnavailable).toBe(true));
+    expect(toolbarProps.current?.effectiveAnnotModel).toBe('');
   });
 });

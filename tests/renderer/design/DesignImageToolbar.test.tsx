@@ -43,6 +43,8 @@ function renderToolbar(over: Partial<React.ComponentProps<typeof DesignImageTool
     setAnnotTool: vi.fn(),
     effectiveAnnotModel: 'wanx2.1-imageedit',
     setAnnotModel: vi.fn(),
+    annotAvailability: null,
+    annotModelUnavailable: false,
     annotInstruction: '',
     setAnnotInstruction: vi.fn(),
     annotShapeCount: 0,
@@ -84,7 +86,7 @@ describe('DesignImageToolbar 动词条', () => {
     }
   });
 
-  it('批注重绘点击进 annotMode 并弹出指令浮层（工具四选 + 成本 + CTA）', () => {
+  it('批注重绘点击进 annotMode 并弹出指令浮层（工具四选 + 模型选择 + 成本 + CTA）', () => {
     const props = renderToolbar();
     fireEvent.click(screen.getByTestId('design-toolbar-annotate'));
     expect(props.setAnnotMode).toHaveBeenCalledWith(true);
@@ -96,11 +98,33 @@ describe('DesignImageToolbar 动词条', () => {
       zh.design.annotToolText,
       zh.design.annotInstruction,
       zh.design.costEstimateLabel,
+      zh.design.annotModelSelectLabel,
     ]) {
       expect(popover.textContent).toContain(label);
     }
+    // 标注模型选择已挪进批注重绘浮层（返工#4：控件跟着它服务的功能走）
+    expect(popover.querySelector('[data-testid="annot-model-select"]')).not.toBeNull();
     // 无标注图形 + 无指令时 CTA 禁用（与原浮层逻辑一致）
     expect((screen.getByTestId('design-annot-redraw-btn') as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('无可用标注模型时降级：按钮禁用样式 + 浮层只展示原因，不进 annotMode、无 CTA（返工#4）', () => {
+    const props = renderToolbar({
+      annotModelUnavailable: true,
+      effectiveAnnotModel: '',
+      annotAvailability: { 'gpt-image-2': false, 'wanx2.1-imageedit': false },
+    });
+    const btn = screen.getByTestId('design-toolbar-annotate');
+    expect(btn.getAttribute('aria-disabled')).toBe('true');
+    expect(btn.title).toBe(zh.design.annotNoAvailableModel);
+    fireEvent.click(btn);
+    expect(props.setAnnotMode).not.toHaveBeenCalled();
+    const popover = screen.getByTestId('design-annotate-popover');
+    expect(popover.textContent).toContain(zh.design.annotNoAvailableModel);
+    // 灰显的模型列表仍在（可见「未配置 Key」），但没有重绘 CTA、没有指令输入
+    expect(popover.textContent).toContain(zh.design.imageModelUnconfigured);
+    expect(screen.queryByTestId('design-annot-redraw-btn')).toBeNull();
+    expect(popover.querySelector('textarea')).toBeNull();
   });
 });
 
@@ -227,8 +251,9 @@ describe('扩图下拉与更多菜单', () => {
     expect(menu.textContent?.indexOf(zh.design.moreGroupDerive)).toBeLessThan(
       menu.textContent?.indexOf(zh.design.moreGroupCanvas) ?? 0,
     );
-    expect(menu.textContent).toContain(zh.design.annotModelSelectLabel);
-    expect(screen.getByTestId('annot-model-select')).toBeTruthy();
+    // 标注模型选择已挪出「更多」（返工#4：进批注重绘浮层），更多菜单只剩分组动作
+    expect(menu.textContent).not.toContain(zh.design.annotModelSelectLabel);
+    expect(menu.querySelector('[data-testid="annot-model-select"]')).toBeNull();
     // 动作可达：点导出图片调用回调并关菜单
     fireEvent.click(screen.getByTestId('design-more-export-image'));
     expect(props.onExportImage).toHaveBeenCalledTimes(1);

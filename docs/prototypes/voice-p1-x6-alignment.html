@@ -1,0 +1,1860 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Agent Neo · 实时语音 P1 + X6 UI 对齐原型</title>
+<!--
+  ============================================================================
+  实时语音 P1 + X6 UI 对齐原型（单文件，无构建依赖，双击可开）
+  基线：origin/main@dccb62c5eafffd88f9afd8457579d5713846d75e
+  性质：原型 / 设计对齐稿。不实现正式 UI，页面内全部数据为演示数据。
+  对齐对象：
+    - src/renderer/components/features/settings/tabs/VoiceModelSettings.tsx
+    - src/renderer/components/features/settings/tabs/VoiceApiKeyConfig.tsx
+    - src/renderer/components/features/chat/MessageBubble/DeliverableCardList.tsx
+    - src/shared/constants/voice.ts（模型/音色白名单、词表上限 100/40）
+    - src/host/services/voice/voiceVocabulary.ts（词表清洗：trim/去重/限长）
+  ============================================================================
+-->
+<style>
+  :root {
+    --bg: #09090b;
+    --bg-raised: #101013;
+    --bg-panel: #18181b;
+    --bg-subtle: #1f1f23;
+    --bg-hover: #27272a;
+    --border: #3f3f46;
+    --border-muted: #2e2e33;
+    --text-1: #f4f4f5;
+    --text-2: #e4e4e7;
+    --text-3: #a1a1aa;
+    --text-4: #71717a;
+    --text-5: #52525b;
+    --cyan: #22d3ee;
+    --sky: #38bdf8;
+    --emerald: #34d399;
+    --amber: #fbbf24;
+    --rose: #fb7185;
+    --violet: #a78bfa;
+    --radius: 10px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { -webkit-font-smoothing: antialiased; }
+  body {
+    background: var(--bg);
+    color: var(--text-2);
+    font: 14px/1.6 -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", "Segoe UI", sans-serif;
+    min-height: 100vh;
+    overflow-wrap: break-word; /* 长 token（模型 id、code）在窄视口不撑破布局 */
+  }
+  button { font: inherit; color: inherit; background: none; border: none; cursor: pointer; }
+  select, input { font: inherit; }
+  code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+  /* ---------- 顶栏 ---------- */
+  .topbar {
+    border-bottom: 1px solid var(--border-muted);
+    padding: 14px 24px;
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    background: linear-gradient(180deg, #0d0d10, #09090b);
+  }
+  .topbar h1 { font-size: 15px; font-weight: 600; color: var(--text-1); }
+  .topbar .sub { font-size: 12px; color: var(--text-4); }
+  .tag {
+    display: inline-flex; align-items: center; gap: 4px;
+    border-radius: 999px; padding: 2px 10px; font-size: 11px; font-weight: 500;
+  }
+  .tag-proto { background: rgba(167,139,250,.12); color: var(--violet); border: 1px solid rgba(167,139,250,.25); }
+  .tag-base { background: var(--bg-subtle); color: var(--text-4); border: 1px solid var(--border-muted); }
+
+  /* ---------- 布局 ---------- */
+  .layout {
+    display: grid; grid-template-columns: 216px minmax(0, 1fr);
+    max-width: 1180px; margin: 0 auto; min-height: calc(100vh - 57px);
+  }
+  .sidenav { border-right: 1px solid var(--border-muted); padding: 16px 10px; }
+  .sidenav .nav-title { font-size: 11px; color: var(--text-5); padding: 0 10px 8px; letter-spacing: .04em; }
+  .nav-item {
+    display: flex; align-items: center; gap: 8px; width: 100%;
+    padding: 8px 10px; border-radius: 8px; text-align: left;
+    font-size: 13px; color: var(--text-3); margin-bottom: 2px;
+  }
+  .nav-item:hover { background: var(--bg-subtle); color: var(--text-2); }
+  .nav-item.active { background: var(--bg-subtle); color: var(--text-1); font-weight: 500; box-shadow: inset 2px 0 0 var(--cyan); }
+  .nav-item .idx { color: var(--text-5); font-size: 11px; width: 16px; }
+  .nav-item.active .idx { color: var(--cyan); }
+  .main { padding: 24px 28px 64px; min-width: 0; }
+
+  /* ---------- 场景通用 ---------- */
+  .scenario-head { margin-bottom: 16px; }
+  .scenario-head h2 { font-size: 16px; font-weight: 600; color: var(--text-1); }
+  .scenario-head p { font-size: 12.5px; color: var(--text-4); margin-top: 4px; max-width: 640px; }
+  .scenario { display: none; }
+  .scenario.active { display: block; }
+
+  .note {
+    border: 1px solid var(--border-muted); background: var(--bg-raised);
+    border-radius: var(--radius); padding: 12px 14px; margin-top: 16px;
+    font-size: 12px; color: var(--text-3);
+  }
+  .note b, .note strong { color: var(--text-2); font-weight: 600; }
+  .note .note-title { font-size: 12px; font-weight: 600; color: var(--text-2); margin-bottom: 4px; }
+  .note ul { padding-left: 18px; }
+  .note li { margin: 3px 0; }
+  .note.amber { border-color: rgba(251,191,36,.3); background: rgba(251,191,36,.05); }
+  .note.amber .note-title { color: var(--amber); }
+
+  /* ---------- 模拟桌面窗口 ---------- */
+  .mock-window {
+    border: 1px solid var(--border); border-radius: 12px; overflow: hidden;
+    background: var(--bg-raised); box-shadow: 0 18px 50px rgba(0,0,0,.45);
+  }
+  .mock-titlebar {
+    display: flex; align-items: center; gap: 8px;
+    padding: 9px 14px; border-bottom: 1px solid var(--border-muted);
+    background: var(--bg-panel); font-size: 12px; color: var(--text-4);
+  }
+  .dot { width: 11px; height: 11px; border-radius: 50%; }
+  .dot.r { background: #ff5f57; } .dot.y { background: #febc2e; } .dot.g { background: #28c840; }
+  .mock-titlebar .ttl { margin-left: 8px; }
+  .mock-body { padding: 20px 22px; }
+  .mock-breadcrumb { font-size: 11px; color: var(--text-5); margin-bottom: 14px; }
+  .mock-breadcrumb span { color: var(--text-3); }
+
+  /* ---------- 控件 ---------- */
+  .field { margin-bottom: 18px; }
+  .field-label { font-size: 13px; font-weight: 500; color: var(--text-2); display: block; margin-bottom: 4px; }
+  .field-desc { font-size: 12px; color: var(--text-4); margin-bottom: 8px; }
+  .field-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .divider { border-top: 1px solid var(--border); margin: 20px 0; }
+
+  .select, .input {
+    width: 100%; border: 1px solid var(--border); border-radius: 8px;
+    background: var(--bg-panel); color: var(--text-2);
+    padding: 8px 10px; font-size: 13px; outline: none;
+  }
+  .select:focus, .input:focus { border-color: rgba(56,189,248,.6); }
+  .select:disabled { opacity: .45; }
+  .input::placeholder { color: var(--text-5); }
+  .input.narrow { width: 240px; }
+  .input.mono { font-size: 12px; }
+
+  .btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    border-radius: 8px; padding: 6px 14px; font-size: 12.5px; font-weight: 500;
+    border: 1px solid transparent; transition: background .12s, border-color .12s;
+    white-space: nowrap;
+  }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+  .btn-primary { background: rgba(56,189,248,.16); color: var(--sky); border-color: rgba(56,189,248,.35); }
+  .btn-primary:hover:not(:disabled) { background: rgba(56,189,248,.26); }
+  .btn-ghost { color: var(--text-3); border-color: var(--border); }
+  .btn-ghost:hover:not(:disabled) { background: var(--bg-hover); color: var(--text-2); }
+  .btn-danger { background: rgba(251,113,133,.1); color: var(--rose); border-color: rgba(251,113,133,.3); }
+  .btn-danger:hover:not(:disabled) { background: rgba(251,113,133,.2); }
+  .btn-sm { padding: 3px 10px; font-size: 12px; border-radius: 6px; }
+
+  .badge {
+    display: inline-flex; align-items: center; gap: 5px;
+    border-radius: 999px; padding: 2px 9px; font-size: 11px; font-weight: 500; flex-shrink: 0;
+  }
+  .badge.emerald { background: rgba(52,211,153,.1); color: var(--emerald); }
+  .badge.amber { background: rgba(251,191,36,.1); color: var(--amber); }
+  .badge.rose { background: rgba(251,113,133,.12); color: var(--rose); }
+  .badge.zinc { background: var(--bg-subtle); color: var(--text-4); }
+  .badge.violet { background: rgba(167,139,250,.12); color: var(--violet); }
+
+  .warn-text { font-size: 12px; color: rgba(251,191,36,.85); margin-top: 8px; }
+  .ok-text { font-size: 12px; color: var(--emerald); margin-top: 8px; }
+  .hint-text { font-size: 12px; color: var(--text-4); margin-top: 8px; }
+
+  /* ---------- 演示控件条 ---------- */
+  .demo-bar {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    border: 1px dashed rgba(167,139,250,.4); border-radius: var(--radius);
+    background: rgba(167,139,250,.05); padding: 10px 14px; margin-bottom: 16px;
+    font-size: 12px; color: var(--violet);
+  }
+  .demo-bar .lbl { font-weight: 600; }
+  .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+  .seg button { padding: 4px 12px; font-size: 12px; color: var(--text-3); }
+  .seg button.on { background: var(--bg-hover); color: var(--text-1); font-weight: 500; }
+  .seg button + button { border-left: 1px solid var(--border); }
+
+  /* ---------- Key 行 ---------- */
+  .key-line { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-3); }
+  .key-line .masked { font-family: ui-monospace, Menlo, monospace; color: var(--text-2); }
+  .key-icon { color: var(--text-4); }
+
+  /* ---------- 词表 chips ---------- */
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    border: 1px solid var(--border); border-radius: 999px;
+    background: var(--bg-panel); padding: 3px 6px 3px 11px; font-size: 12px; color: var(--text-2);
+  }
+  .chip button {
+    width: 16px; height: 16px; border-radius: 50%; font-size: 11px; line-height: 1;
+    color: var(--text-4); display: inline-flex; align-items: center; justify-content: center;
+  }
+  .chip button:hover { background: var(--bg-hover); color: var(--rose); }
+  .counter { font-size: 12px; color: var(--text-4); }
+  .counter.full { color: var(--amber); font-weight: 600; }
+
+  /* ---------- 文件卡 ---------- */
+  .chat-mock { max-width: 620px; }
+  .msg-row { display: flex; gap: 10px; margin-bottom: 14px; }
+  .avatar {
+    width: 26px; height: 26px; border-radius: 8px; flex-shrink: 0;
+    background: linear-gradient(135deg, rgba(34,211,238,.35), rgba(167,139,250,.35));
+    display: flex; align-items: center; justify-content: center; font-size: 11px; color: var(--text-1);
+  }
+  .msg-body { min-width: 0; flex: 1; font-size: 13px; color: var(--text-3); }
+  .filecard {
+    display: flex; align-items: center; gap: 8px;
+    border: 1px solid var(--border-muted); border-radius: 8px;
+    background: var(--bg-panel); padding: 7px 10px; margin-top: 8px;
+    transition: border-color .12s, background .12s; position: relative;
+  }
+  .filecard.clickable:hover { border-color: rgba(34,211,238,.3); background: rgba(34,211,238,.04); }
+  .filecard .ficon { flex-shrink: 0; font-size: 14px; }
+  .filecard .fmeta { min-width: 0; flex: 1; }
+  .filecard .ftitle { font-size: 12px; font-weight: 500; color: var(--text-1); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .filecard .fdesc { font-size: 11px; color: var(--text-4); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .icon-btn {
+    width: 24px; height: 24px; border-radius: 6px; flex-shrink: 0;
+    display: inline-flex; align-items: center; justify-content: center;
+    color: var(--text-4); font-size: 13px;
+  }
+  .icon-btn:hover { background: var(--bg-hover); color: var(--text-2); }
+  .icon-btn.accent { color: var(--cyan); width: auto; padding: 0 8px; gap: 4px; font-size: 11px; }
+  .icon-btn.accent:hover { color: #a5f3fc; }
+  .menu-wrap { position: relative; flex-shrink: 0; }
+  .menu {
+    position: absolute; right: 0; top: calc(100% + 4px); z-index: 30;
+    min-width: 168px; border: 1px solid var(--border); border-radius: 8px;
+    background: #1c1c20; box-shadow: 0 12px 32px rgba(0,0,0,.5); padding: 4px;
+    display: none;
+  }
+  .menu.open { display: block; }
+  .menu button {
+    display: flex; align-items: center; gap: 8px; width: 100%;
+    padding: 6px 10px; border-radius: 6px; font-size: 12px; color: var(--text-2); text-align: left;
+  }
+  .menu button:hover { background: var(--bg-hover); }
+  .menu button .mi { width: 14px; text-align: center; color: var(--text-4); }
+
+  /* ---------- 任务卡 / 通话 ---------- */
+  /* ---------- 场景 5：三栏运行态复刻（左栏 / 中央会话 / 右侧 Workbench，比例对齐现状截图） ---------- */
+  #s5 .neo-shell { display: grid; grid-template-columns: 210px minmax(0, 1fr) 300px; min-height: 470px; }
+  #s5 .neo-side { border-right: 1px solid var(--border-muted); background: #0e0e11; padding: 10px 8px; font-size: 12px; color: var(--text-3); overflow: hidden; }
+  #s5 .ns-top { display: flex; align-items: center; gap: 8px; padding: 2px 8px 10px; }
+  #s5 .ns-logo { width: 18px; height: 18px; border-radius: 5px; background: rgba(52,211,153,.2); color: var(--emerald); font-size: 11px; display: inline-flex; align-items: center; justify-content: center; }
+  #s5 .ns-name { font-size: 13px; font-weight: 600; color: var(--text-1); }
+  #s5 .ns-item { padding: 5px 8px; border-radius: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; gap: 7px; }
+  #s5 .ns-item:hover { background: var(--bg-subtle); }
+  #s5 .ns-group { margin: 10px 8px 4px; font-size: 11px; color: var(--text-5); }
+  #s5 .ns-sub { padding-left: 22px; color: var(--text-4); font-size: 11.5px; }
+  #s5 .ns-active { background: var(--bg-subtle); color: var(--text-2); }
+  #s5 .ns-badge { margin-left: auto; background: rgba(251,191,36,.15); color: var(--amber); border-radius: 999px; font-size: 10px; padding: 0 6px; }
+  #s5 .neo-chat { display: flex; flex-direction: column; min-width: 0; background: var(--bg-raised); }
+  #s5 .neo-msgs { flex: 1; padding: 16px 18px 10px; font-size: 12.5px; color: var(--text-3); overflow-y: auto; }
+  #s5 .nm, #s6 .nm { margin-bottom: 12px; font-size: 12.5px; color: var(--text-3); }
+  #s5 .nm-who, #s6 .nm-who { color: var(--text-5); font-size: 11px; margin-bottom: 3px; }
+  #s5 .nm-bubble-user, #s6 .nm-bubble-user { margin-left: auto; width: fit-content; max-width: 78%; background: var(--bg-hover); border-radius: 10px; padding: 6px 12px; color: var(--text-2); }
+  #s5 .nm-text, #s6 .nm-text { color: var(--text-2); }
+  #s5 .nm-summary, #s6 .nm-summary { display: flex; align-items: center; gap: 8px; border: 1px solid rgba(52,211,153,.25); background: rgba(52,211,153,.06); border-radius: 10px; padding: 7px 12px; font-size: 12px; color: var(--emerald); }
+  #s5 .nm-summary .arrow, #s6 .nm-summary .arrow { margin-left: auto; color: var(--text-5); }
+  #s5 .sysline { color: var(--text-5); font-size: 11.5px; text-align: center; margin: 8px 0; }
+
+  /* ---------- 右侧 Workbench 概览复刻（.workbench-overview-mock：概览 tab + TaskPanel/TaskMonitor 卡） ---------- */
+  .workbench-overview-mock { border-left: 1px solid var(--border-muted); background: var(--bg-panel); display: flex; flex-direction: column; min-width: 0; }
+  .workbench-overview-mock .wbm-tabs { display: flex; align-items: center; gap: 4px; padding: 7px 10px; border-bottom: 1px solid var(--border-muted); font-size: 12px; }
+  .workbench-overview-mock .wbm-tab { padding: 3px 10px; border-radius: 6px; color: var(--text-4); }
+  .workbench-overview-mock .wbm-tab.on { background: var(--bg-subtle); color: var(--text-1); }
+  .workbench-overview-mock .wbm-body { flex: 1; overflow-y: auto; padding: 10px 12px; }
+  .workbench-overview-mock .wbm-sec-title { font-size: 11px; font-weight: 500; letter-spacing: .04em; color: var(--text-5); margin: 4px 0 8px; }
+  .workbench-overview-mock .wbm-card { border: 1px solid var(--border-muted); border-radius: 10px; background: var(--bg-subtle); padding: 10px 12px; font-size: 12px; color: var(--text-3); }
+  .workbench-overview-mock .wbm-card-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; flex-wrap: wrap; }
+  .workbench-overview-mock .wbm-card-title { font-size: 12.5px; font-weight: 600; color: var(--text-1); }
+  .workbench-overview-mock .wbm-line { margin: 5px 0; }
+  .workbench-overview-mock .wbm-line.warn { color: rgba(251,191,36,.9); }
+  .workbench-overview-mock .wbm-actions { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
+  .workbench-overview-mock .wbm-empty { border: 1px solid rgba(255,255,255,.06); border-radius: 12px; background: rgba(255,255,255,.02); padding: 26px 16px; text-align: center; color: var(--text-4); font-size: 12px; }
+  .workbench-overview-mock .wbm-empty .ic { font-size: 20px; color: var(--text-5); }
+  .workbench-overview-mock .wbm-art { margin-top: 14px; border-top: 1px solid rgba(255,255,255,.06); padding-top: 8px; text-align: left; font-size: 11.5px; color: var(--text-5); }
+
+  /* ---------- VoiceChrome 复刻（.voice-chrome-mock：composer 内部固定一行，只报「通话中 mm:ss」） ---------- */
+  .voice-chrome-mock {
+    display: flex; align-items: center; gap: 10px;
+    border: 1px solid rgba(63,63,70,.7); border-radius: 12px;
+    background: rgba(24,24,27,.8); padding: 7px 12px; margin: 8px 12px 0;
+  }
+  .voice-chrome-mock .vcm-orb { position: relative; width: 26px; height: 26px; flex-shrink: 0; display: grid; place-items: center; }
+  .voice-chrome-mock .vcm-orb-core { width: 100%; height: 100%; border-radius: 50%; background: radial-gradient(circle at 35% 35%, rgba(52,211,153,.9), rgba(52,211,153,.25)); box-shadow: 0 0 12px rgba(52,211,153,.35); animation: pulse 2.4s ease-in-out infinite; }
+  .voice-chrome-mock[data-state="muted"] .vcm-orb-core { background: radial-gradient(circle at 35% 35%, rgba(113,113,122,.9), rgba(113,113,122,.25)); box-shadow: none; animation: none; }
+  .voice-chrome-mock .vcm-text { font-size: 11.5px; letter-spacing: .02em; color: var(--emerald); white-space: nowrap; }
+  .voice-chrome-mock[data-state="muted"] .vcm-text { color: var(--text-4); }
+  .voice-chrome-mock .vcm-flex { flex: 1; }
+  .voice-chrome-mock .vcm-btn { width: 30px; height: 30px; border-radius: 10px; display: inline-flex; align-items: center; justify-content: center; font-size: 13px; flex-shrink: 0; }
+  .voice-chrome-mock .vcm-mute { background: rgba(56,189,248,.12); color: var(--sky); }
+  .voice-chrome-mock .vcm-mute.on { background: rgba(251,191,36,.15); color: var(--amber); }
+  .voice-chrome-mock .vcm-end { background: rgba(239,68,68,.15); color: #fca5a5; }
+  .voice-chrome-mock .vcm-end:hover { background: rgba(239,68,68,.25); }
+
+  /* ---------- ChatInput composer-elevated 复刻（#s5/#s6 专用，对齐 global.css 的 composer-elevated 形态） ---------- */
+  #s5 .cem, #s6 .cem {
+    margin: 0 16px 14px; border: 1px solid var(--border); border-radius: 16px;
+    background: #1a1a1e; box-shadow: 0 10px 28px rgba(0,0,0,.4);
+  }
+  #s5 .cem-input, #s6 .cem-input { padding: 12px 16px 6px; font-size: 13px; color: var(--text-5); }
+  #s5 .cem-bar, #s6 .cem-bar { display: flex; align-items: center; gap: 8px; padding: 6px 16px 12px; font-size: 12px; color: var(--text-4); flex-wrap: wrap; }
+  #s5 .cem-ic, #s6 .cem-ic { font-size: 14px; color: var(--text-4); }
+  #s5 .cem-chip, #s6 .cem-chip { border: 1px solid var(--border-muted); border-radius: 999px; padding: 2px 10px; font-size: 11.5px; }
+  #s5 .cem-flex, #s6 .cem-flex { flex: 1; }
+  #s5 .cem-model, #s6 .cem-model { color: var(--amber); font-size: 12px; }
+  #s5 .cem-voice, #s6 .cem-voice {
+    border-radius: 10px; background: #2b2b31; color: var(--text-2);
+    width: 34px; height: 30px; display: inline-flex; align-items: center; justify-content: center; font-size: 14px;
+  }
+  #s5 .cem-voice.incall, #s6 .cem-voice.incall { background: rgba(52,211,153,.18); color: var(--emerald); }
+  .pulse { width: 8px; height: 8px; border-radius: 50%; background: var(--emerald); animation: pulse 1.6s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .3; } }
+  .taskcard {
+    border: 1px solid var(--border); border-radius: 10px;
+    background: var(--bg-panel); padding: 14px 16px; max-width: 620px;
+  }
+  .taskcard .t-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+  .taskcard .t-title { font-size: 13px; font-weight: 600; color: var(--text-1); }
+  .taskcard .t-status-line { font-size: 12px; color: var(--text-3); margin: 6px 0; }
+  .taskcard .t-actions { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+  .spinner {
+    width: 13px; height: 13px; border-radius: 50%; flex-shrink: 0;
+    border: 2px solid rgba(56,189,248,.25); border-top-color: var(--sky);
+    animation: spin .8s linear infinite; display: inline-block; vertical-align: -2px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  /* ---------- 音色列表（带试听形态） ---------- */
+  .voice-list { border: 1px solid var(--border); border-radius: 8px; overflow: hidden auto; max-height: 190px; background: var(--bg-panel); }
+  .voice-row { display: flex; align-items: center; gap: 8px; padding: 6px 10px; cursor: pointer; }
+  .voice-row:hover { background: var(--bg-subtle); }
+  .voice-row.sel { background: rgba(56,189,248,.08); box-shadow: inset 2px 0 0 var(--sky); }
+  .voice-row .vname { flex: 1; font-size: 12.5px; color: var(--text-2); font-family: ui-monospace, Menlo, monospace; }
+  .voice-row .vcheck { width: 14px; color: var(--sky); font-size: 12px; }
+  .btn-audition { cursor: not-allowed; }
+
+  /* ---------- 添加 Provider 配置面板（文档流内，不遮挡主设置区） ---------- */
+  .s1-grid { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 16px; align-items: start; }
+  .addp-panel { border: 1px solid var(--border); border-radius: 12px; background: var(--bg-raised); padding: 14px; min-width: 0; }
+  .addp-panel[hidden] { display: none; }
+  .ap-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+  .ap-title { font-size: 13px; font-weight: 600; color: var(--text-1); }
+  .ap-sub { font-size: 11.5px; color: var(--text-4); margin-bottom: 4px; }
+  .ap-sec { border-top: 1px solid var(--border-muted); padding-top: 10px; margin-top: 10px; }
+  .ap-lbl { display: block; font-size: 12px; color: var(--text-3); margin-bottom: 10px; }
+  .ap-lbl .input, .ap-lbl .select { margin-top: 4px; font-size: 12px; padding: 6px 8px; }
+  .ap-hint { display: block; font-size: 11px; color: var(--text-5); margin-top: 4px; }
+
+  /* ---------- 电平条 ---------- */
+  .levelbar { display: flex; align-items: flex-end; gap: 3px; height: 22px; margin-top: 10px; }
+  .levelbar i { width: 5px; border-radius: 2px; background: rgba(34,211,238,.55); animation: lvl 1s ease-in-out infinite; }
+  @keyframes lvl { 0%,100% { height: 20%; } 50% { height: 95%; } }
+
+  /* ---------- Toast ---------- */
+  #toast {
+    position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%) translateY(20px);
+    background: #1c1c20; border: 1px solid var(--border); border-radius: 8px;
+    color: var(--text-1); font-size: 12.5px; padding: 9px 16px;
+    opacity: 0; pointer-events: none; transition: opacity .18s, transform .18s; z-index: 99;
+    box-shadow: 0 10px 30px rgba(0,0,0,.5); max-width: 80vw;
+  }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  /* ---------- 设计说明 ---------- */
+  .decision-grid { display: grid; gap: 12px; max-width: 760px; }
+  .decision {
+    border: 1px solid var(--border-muted); border-radius: var(--radius);
+    background: var(--bg-raised); padding: 12px 16px;
+  }
+  .decision h4 { font-size: 13px; color: var(--text-1); font-weight: 600; margin-bottom: 4px; }
+  .decision p { font-size: 12.5px; color: var(--text-3); }
+  .decision p + p { margin-top: 4px; }
+  .decision .pick { color: var(--cyan); }
+  .openq { border-left: 2px solid var(--amber); padding-left: 12px; margin: 10px 0; }
+  .openq .q { font-size: 13px; color: var(--text-1); font-weight: 500; }
+  .openq .a { font-size: 12.5px; color: var(--text-3); }
+
+  .probe-banner {
+    display: flex; gap: 10px; align-items: flex-start;
+    border: 1px solid rgba(251,191,36,.35); border-radius: 10px;
+    background: rgba(251,191,36,.07); padding: 12px 14px; margin-bottom: 16px;
+    font-size: 12.5px; color: rgba(251,191,36,.95); max-width: 680px;
+  }
+  .probe-log { font-size: 11.5px; color: var(--text-4); margin-top: 8px; min-height: 18px; }
+  .probe-log .echo { color: var(--amber); }
+
+  /* ---------- 响应式 ----------
+     窄视口（Codex 右侧预览约 680-800px，断点放宽到 1023px 兜底）：
+     左栏导航改为顶部吸顶的横向滚动条，主内容单列占满可用宽度。 */
+  @media (max-width: 1023px) {
+    .topbar { padding: 10px 14px; gap: 8px; }
+    .topbar h1 { font-size: 14px; flex-basis: 100%; }
+    .topbar .sub { flex-basis: 100%; }
+    .layout { display: block; max-width: none; min-height: 0; }
+    .sidenav {
+      position: sticky; top: 0; z-index: 20;
+      display: flex; flex-wrap: nowrap; gap: 4px;
+      overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: thin;
+      border-right: none; border-bottom: 1px solid var(--border-muted);
+      background: var(--bg); padding: 8px 10px;
+    }
+    .sidenav .nav-title { display: none; }
+    .nav-item {
+      width: auto; flex-shrink: 0; white-space: nowrap;
+      padding: 6px 10px; margin-bottom: 0;
+    }
+    .nav-item.active { box-shadow: inset 0 -2px 0 var(--cyan); }
+    .main { padding: 16px 14px 48px; min-width: 0; }
+    .mock-window { min-width: 0; }
+    .mock-body { padding: 14px; }
+    .scenario-head h2 { font-size: 15px; }
+    .field-row, .key-line, .demo-bar { flex-wrap: wrap; }
+    .input.narrow { width: 100%; max-width: 320px; }
+    .voice-list { max-height: 160px; }
+    .probe-banner, .note, .decision, .taskcard { min-width: 0; }
+    /* 窄屏：s5 三栏降级为单列——左栏导航隐藏，右侧 Workbench 落到会话下方
+       （文档流内堆叠，不覆盖会话与输入框） */
+    #s5 .neo-shell { grid-template-columns: minmax(0, 1fr); }
+    #s5 .neo-side { display: none; }
+    #s5 .workbench-overview-mock { border-left: none; border-top: 1px solid var(--border-muted); }
+    /* 窄屏：添加 Provider 面板落到主设置区下方（仍在文档流内，不遮挡） */
+    .s1-grid { display: block; }
+    .addp-panel { margin-top: 16px; }
+  }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <h1>Agent Neo · 实时语音 P1 + X6 UI 对齐原型</h1>
+  <span class="tag tag-proto">原型 · 非正式 UI</span>
+  <span class="tag tag-base mono">基线 origin/main@dccb62c5</span>
+  <span class="sub">单文件 / 无构建依赖 / 全部演示数据，双击即可打开</span>
+</header>
+
+<div class="layout">
+  <nav class="sidenav" id="sidenav">
+    <div class="nav-title">情境导航</div>
+    <button class="nav-item active" data-scenario="s1"><span class="idx">1</span>语音模型 · Provider / Key</button>
+    <button class="nav-item" data-scenario="s2"><span class="idx">2</span>麦克风设备与回退</button>
+    <button class="nav-item" data-scenario="s3"><span class="idx">3</span>口述词表</button>
+    <button class="nav-item" data-scenario="s4"><span class="idx">4</span>Unverified 文件卡</button>
+    <button class="nav-item" data-scenario="s5"><span class="idx">5</span>长任务等待与重试</button>
+    <button class="nav-item" data-scenario="s6"><span class="idx">6</span>通话中探针能力</button>
+    <button class="nav-item" data-scenario="s7"><span class="idx">7</span>设计说明与未决判断</button>
+  </nav>
+
+  <main class="main">
+
+    <!-- ================= 场景 1：语音模型 · Provider / Key / 模型 / 音色 ================= -->
+    <section class="scenario active" id="s1">
+      <div class="scenario-head">
+        <h2>语音模型 · Provider 下拉与 Key 状态</h2>
+        <p>对齐「设置 → 模型与能力 → 语音模型」tab。Provider 下拉（DashScope / OpenAI Realtime）旁有「＋ 添加 Provider」，演示可配置接入的完整流程；Key、通话模型、音色全部随 Provider 联动。音色枚举与模型强绑定——换模型必须把音色落回白名单，否则上游第一次真合成才报 400。</p>
+      </div>
+
+      <div class="demo-bar">
+        <span class="lbl">演示控件</span>
+        <span>当前 Provider 的 Key 状态：</span>
+        <span class="seg" id="keyStateSeg">
+          <button data-keystate="configured" class="on">已配置</button>
+          <button data-keystate="missing">未配置</button>
+        </span>
+        <span style="color:var(--text-5)">（各自状态来自对应既有 Key 槽）</span>
+        <span>新增 Provider 测试结果：</span>
+        <span class="seg" id="addpOutcomeSeg">
+          <button data-outcome="success" class="on">成功</button>
+          <button data-outcome="fail">失败</button>
+        </span>
+      </div>
+
+      <div class="s1-grid">
+      <div class="mock-window">
+        <div class="mock-titlebar">
+          <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
+          <span class="ttl">Agent Neo — 设置</span>
+        </div>
+        <div class="mock-body">
+          <div class="mock-breadcrumb">设置 &nbsp;/&nbsp; 模型与能力 &nbsp;/&nbsp; <span>语音模型</span></div>
+
+          <!-- Provider 下拉 -->
+          <div class="field">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+              <div>
+                <span class="field-label">实时语音模型 / Provider</span>
+                <div class="field-desc" id="providerSub">Qwen-Omni Realtime（WebSocket）</div>
+              </div>
+              <span class="badge amber" id="providerStatusBadge">未配置</span>
+            </div>
+            <div class="field-row" style="margin-top:8px;flex-wrap:nowrap">
+              <select class="select" id="providerSelect">
+                <option value="dashscope">DashScope（通义千问 Qwen-Omni）</option>
+                <option value="openai">OpenAI Realtime</option>
+              </select>
+              <button class="btn btn-ghost btn-sm" id="addProviderBtn" style="flex-shrink:0"
+                title="接入自定义 Realtime Provider（内置正式支持仍只有以上两家）">＋ 添加 Provider</button>
+            </div>
+          </div>
+
+          <div class="divider"></div>
+
+          <!-- API Key 区块：已配置 / 未配置 / 编辑 / 保存 四态 -->
+          <div class="field" id="keyBlock"></div>
+
+          <div class="divider"></div>
+
+          <!-- 通话模型：随 Provider 联动 -->
+          <div class="field">
+            <span class="field-label">通话模型</span>
+            <div class="field-desc">白名单可配，不做自由输入；不支持 tools 的模型选中时当场说清代价</div>
+            <select class="select" id="modelSelect"></select>
+            <div id="modelWarning"></div>
+          </div>
+
+          <div class="divider"></div>
+
+          <!-- 音色：随模型联动；每个音色带「试听」形态（待生成禁用态，不伪造样音） -->
+          <div class="field" style="margin-bottom:0">
+            <span class="field-label">音色</span>
+            <div class="voice-list" id="voiceList"></div>
+            <div class="hint-text">音色与实时语音模型绑定，选项来自当前模型的实测白名单；换模型自动回落到合法音色。<br>
+            DashScope 默认模型（qwen3.5-omni-flash-realtime）真机验证过的音色仅 <b>Tina / Ethan / Serena</b> 3 个；OpenAI profile 当前为 marin 等 <b>10 个官方音色</b>。<br>
+            试听：仓内没有可靠真实样音，<b>真实样音待各 Provider 真上游生成并核验</b>后开放；禁用系统 TTS 或合成音冒充 Provider 音色，故一律为「待生成」禁用态。</div>
+          </div>
+        </div>
+      </div><!-- /mock-window -->
+
+      <!-- 添加 Provider：右侧配置面板（文档流内，不遮挡主设置区；窄屏落到下方） -->
+      <aside class="addp-panel" id="addProviderPanel" hidden>
+        <div class="ap-head">
+          <span class="ap-title">添加 Provider</span>
+          <span class="badge violet">原型</span>
+          <button class="icon-btn" id="addpClose" title="关闭：不写入任何数据" style="margin-left:auto">✕</button>
+        </div>
+        <div class="ap-sub">仅演示「可配置接入」流程；内置正式支持仍只有 DashScope / OpenAI Realtime，此处添加的是自定义 Provider。取消或关闭不写入任何数据。</div>
+
+        <div class="ap-sec">
+          <span class="field-label">接入路径</span>
+          <div class="seg" id="addpCompatSeg" style="display:flex;width:100%">
+            <button data-compat="compatible" class="on" style="flex:1">兼容现有协议 · 可配置</button>
+            <button data-compat="needs-code" style="flex:1">新鉴权 / 新协议 · 需适配</button>
+          </div>
+        </div>
+
+        <div id="addpForm"></div>
+      </aside>
+      </div><!-- /s1-grid -->
+
+      <div class="note" style="border-color:rgba(56,189,248,.3);background:rgba(56,189,248,.04)">
+        <div class="note-title" style="color:var(--sky)">接入新 Provider 的边界（说明）</div>
+        <ul>
+          <li><b>轻量接入</b>：与现有 Realtime 事件协议兼容 + Bearer 鉴权时，一份 provider profile（模型、音色、采样率、默认值等非敏感元数据写入 settings）+ Key 按 <code>providerId</code> 隔离进 secure-storage 命名空间 + 真机验收即可。</li>
+          <li><b>重量接入</b>：涉及非 Bearer 鉴权方式或新事件协议时，需一次性补 IPC 通道或协议 quirk 适配——<b>不能宣称「绝对零代码」</b>。</li>
+          <li>当前正式支持仍只有 DashScope 与 OpenAI Realtime 两家；本卡仅说明接入边界，不代表第三家已支持。内置两家继续走既有槽：DashScope = qwen/dashscope，OpenAI Realtime = openai。</li>
+        </ul>
+      </div>
+
+      <div class="note">
+        <div class="note-title">本页取舍</div>
+        <ul>
+          <li><b>Key 进 secure-storage，settings 只存非敏感元数据</b>：内置 DashScope 继续既有 qwen/dashscope 槽，OpenAI Realtime 复用既有 openai 槽（与模型配置主 Key 同一把，已拍板）；自定义 Provider 的 Key 按 <code>providerId</code> 隔离进 secure-storage 命名空间，settings 只保留显示名 / Endpoint / 模型 / 音色等非敏感 profile。打码规则沿用前 8 位 + <code>...</code>，<b>任何状态都不展示真实 Key</b>。</li>
+          <li><b>已配态默认收起</b>成「打码值 + 更换」，未配态恒展开输入框——对齐现有 <code>VoiceApiKeyConfig</code> 的形态。</li>
+          <li><b>联动是硬回落不是软提醒</b>：换 Provider / 换模型时音色直接落到新白名单第一项，不留「旧音色 + 新模型」的非法组合（正式实现同款策略，见 <code>VoiceModelSettings.persistConversationModel</code>）。</li>
+          <li><b>「＋ 添加 Provider」走右侧配置面板</b>：不遮挡主设置区；只有「兼容现有协议 + Bearer」是可配置路径（测试连接成功才允许保存）；选新鉴权/新协议立刻切为「需要代码适配」态并禁用保存，不宣称零代码。取消/关闭不写入任何数据。</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- ================= 场景 2：麦克风设备与回退 ================= -->
+    <section class="scenario" id="s2">
+      <div class="scenario-head">
+        <h2>麦克风设备选择与系统默认回退</h2>
+        <p>新增通话输入设备选择。默认跟随系统；用户手动指定的设备断开时 fail-open 回系统默认并当场告知；原设备恢复后自动切回原选择，自动切回失败则继续系统默认。</p>
+      </div>
+
+      <div class="demo-bar">
+        <span class="lbl">演示控件</span>
+        <button class="btn btn-ghost btn-sm" id="micDisconnectBtn">模拟当前设备断开</button>
+        <button class="btn btn-ghost btn-sm" id="micReconnectBtn">模拟设备恢复并自动切回</button>
+        <button class="btn btn-ghost btn-sm" id="micRestoreFailBtn">模拟自动切回失败</button>
+      </div>
+
+      <div class="mock-window">
+        <div class="mock-titlebar">
+          <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
+          <span class="ttl">Agent Neo — 设置</span>
+        </div>
+        <div class="mock-body">
+          <div class="mock-breadcrumb">设置 &nbsp;/&nbsp; 语音 &nbsp;/&nbsp; <span>实时语音</span></div>
+
+          <div class="field">
+            <span class="field-label">麦克风</span>
+            <div class="field-desc">默认跟随系统输入设备；指定设备断开时 fail-open 回系统默认，恢复后自动切回</div>
+            <select class="select" id="micSelect">
+              <option value="default">系统默认（MacBook Pro 麦克风）</option>
+              <option value="builtin">MacBook Pro 麦克风</option>
+              <option value="usb">USB Audio Device（外接麦克风）</option>
+              <option value="airpods">AirPods Pro</option>
+            </select>
+            <div id="micFallbackNote"></div>
+          </div>
+
+          <div class="field" style="margin-bottom:0">
+            <span class="field-label">输入测试</span>
+            <div class="field-desc" id="micTestDesc">正在收听：系统默认（MacBook Pro 麦克风）</div>
+            <div class="levelbar" id="levelbar"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="note">
+        <div class="note-title">本页取舍</div>
+        <ul>
+          <li><b>「系统默认」是一个显式选项</b>而不是留空——跟随系统插拔（耳机插上系统自己切）是桌面用户的心智默认。</li>
+          <li><b>断开 fail-open</b>：指定设备断开时立刻回系统默认，设置页留常驻提示 + 下拉值就地改回「系统默认」，不静默、不中断通话可用性；用户原选择保留在偏好里。</li>
+          <li><b>恢复后自动切回</b>：原设备重新接入后自动切回用户原选择；自动切回失败则继续系统默认，并提示原因，不强迫用户手动改。</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- ================= 场景 3：口述词表 ================= -->
+    <section class="scenario" id="s3">
+      <div class="scenario-head">
+        <h2>口述词表编辑</h2>
+        <p>专名词表注入通话 instructions，纠正转写里的音近/形近错误（如「a点text」→「a.txt」）。清洗规则与 host 侧一致：trim、去重、单条最长 40 字、最多 100 条。</p>
+      </div>
+
+      <div class="demo-bar">
+        <span class="lbl">演示控件</span>
+        <button class="btn btn-ghost btn-sm" id="vocabFillBtn">一键填充至 100 条上限</button>
+        <button class="btn btn-ghost btn-sm" id="vocabResetBtn">重置演示数据</button>
+      </div>
+
+      <div class="mock-window">
+        <div class="mock-titlebar">
+          <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
+          <span class="ttl">Agent Neo — 设置</span>
+        </div>
+        <div class="mock-body">
+          <div class="mock-breadcrumb">设置 &nbsp;/&nbsp; 语音 &nbsp;/&nbsp; <span>口述输入</span></div>
+
+          <div class="field">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+              <div>
+                <span class="field-label">口述词表</span>
+                <div class="field-desc">转写与派活时按词表拼写理解专名词；自动去重，单条 ≤ 40 字</div>
+              </div>
+              <span class="counter" id="vocabCounter">0 / 100</span>
+            </div>
+            <div class="field-row" style="margin-top:8px">
+              <input class="input narrow" id="vocabInput" placeholder="输入词条，回车添加" maxlength="60">
+              <button class="btn btn-primary" id="vocabAddBtn">添加</button>
+            </div>
+            <div id="vocabHint"></div>
+            <div class="chips" id="vocabChips"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="note">
+        <div class="note-title">本页取舍</div>
+        <ul>
+          <li><b>去重是静默的</b>：重复词条不报错、不打断输入流，只给一条轻提示——对齐 host 清洗逻辑（<code>voiceVocabulary.ts</code> 的 <code>seen</code> 集合）。</li>
+          <li><b>上限提示在快满时才出现</b>：平时只显示 <code>n / 100</code> 计数，到顶才转琥珀色并禁用添加，避免常态打扰。</li>
+          <li><b>超限不截断</b>：超过 40 字的词条整条拒收并说明，不悄悄砍掉尾巴——截断出来的半个词进词表比没有更糟。</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- ================= 场景 4：Unverified 文件卡与动作收敛 ================= -->
+    <section class="scenario" id="s4">
+      <div class="scenario-head">
+        <h2>Unverified 文件卡与动作收敛</h2>
+        <p>产物卡的次级动作（预览 / 打开 / 访达显示 / 复制引用 / 下载 / 归档）最多可达 6 个，全部平铺成图标按钮会拥挤且图标语义难猜。收敛为「主操作 + 更多菜单」。</p>
+      </div>
+
+      <div class="demo-bar">
+        <span class="lbl">演示控件</span>
+        <span>动作排布：</span>
+        <span class="seg" id="cardModeSeg">
+          <button data-cardmode="before">收敛前（平铺）</button>
+          <button data-cardmode="after" class="on">收敛后（主操作 + 更多）</button>
+        </span>
+      </div>
+
+      <div class="mock-window">
+        <div class="mock-titlebar">
+          <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
+          <span class="ttl">Agent Neo — 会话</span>
+        </div>
+        <div class="mock-body chat-mock">
+          <div class="msg-row">
+            <div class="avatar">N</div>
+            <div class="msg-body">
+              周报初稿已经写好了，数据表和图表也一并产出。其中季度汇总表我还没来得及复核，先标记为待核验。
+              <div id="fileCards"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="note">
+        <div class="note-title">状态文案示例（zh / en）与多语言注意点</div>
+        <ul>
+          <li>Verified：中文「<b>已核验</b>」 / English「<b>Verified</b>」——有复核证据才允许出现。</li>
+          <li>Unverified：中文「<b>待核验</b>」（完整表述「已结束 · 待核验」放 tooltip/说明位） / English「<b>Unverified</b>」（完整表述「Finished · pending verification」）。</li>
+          <li>注意点①：正式实现 <code>DeliverableCardList</code> 的 <code>statusMeta</code> 目前把 'Verified' / 'Unverified' / 'Failed' 硬编码为英文，落地时须补 i18n 词条，不要在组件里写死。</li>
+          <li>注意点②：徽标宽度随语言变化（中文 2~3 字 vs 英文 11 字符），卡片标题与描述已有 truncate，徽标保持 flex-shrink:0 不挤压；中英文混排时以中文为主文案、英文进 tooltip。</li>
+          <li>注意点③：状态词不做句子拼接（避免语序问题），完整语义放 tooltip 或说明区整句翻译。</li>
+        </ul>
+      </div>
+
+      <div class="note">
+        <div class="note-title">本页取舍</div>
+        <ul>
+          <li><b>主操作就是点卡本身</b>（预览/打开），不再单独占一个图标位；剩余动作全部进「更多」菜单，菜单项带文字，不靠图标猜。</li>
+          <li><b>Unverified 徽标常驻</b>：状态语义（已结束 · 待核验）比动作更重要，收敛后依然一眼可见；拿不准的状态不显示（对齐 <code>DeliverableCardList</code> 的证据原则）。Verified 与 Unverified 两态同屏展示，便于对照。</li>
+          <li><b>归档是高价值动作</b>：在菜单里排第一位并保留青色强调，收敛不等于埋没。</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- ================= 场景 5：长任务 · PinnedTodoBar + 右侧 Workbench 概览 ================= -->
+    <section class="scenario" id="s5">
+      <div class="scenario-head">
+        <h2>长任务 · 右侧 Workbench「概览」</h2>
+        <p>复刻现有三栏运行态：左侧栏 / 中央会话 / 右侧 Workbench（比例对齐现状截图，右栏 defaultSize 32%）。现有代码有两种各管各的投影：<code>PinnedTodoBar</code> 只显示当前会话已有 TaskPlan 的步骤；后台任务现场归右侧 <code>WorkbenchOverview → TaskPanel/TaskMonitor</code>。本场景的待生成后台任务只放右侧「概览」面板——不在会话框上方镜像 PinnedTodoBar；中央会话列只保留真实现状的消息流与 ChatInput，不新增任务卡。</p>
+      </div>
+
+      <div class="demo-bar">
+        <span class="lbl">演示控件</span>
+        <button class="btn btn-ghost btn-sm" id="taskFailBtn">模拟读取失败</button>
+        <button class="btn btn-ghost btn-sm" id="taskDoneBtn">模拟任务完成</button>
+        <button class="btn btn-ghost btn-sm" id="taskRestartBtn">重新开始演示</button>
+        <span style="color:var(--text-5)">右侧任务卡覆盖：等待 / 读取失败 / 重试 / 取消 / 完成</span>
+      </div>
+
+      <div class="mock-window">
+        <div class="mock-titlebar">
+          <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
+          <span class="ttl">Agent Neo — 运行态（三栏复刻）</span>
+        </div>
+        <div class="neo-shell">
+          <!-- 左侧栏：复刻现有 Neo 侧栏 -->
+          <aside class="neo-side">
+            <div class="ns-top"><span class="ns-logo">N</span><span class="ns-name">Neo</span></div>
+            <div class="ns-item">✏️ 新任务</div>
+            <div class="ns-item">🛠 能力中心</div>
+            <div class="ns-item">👥 协作空间</div>
+            <div class="ns-item">📚 资料库</div>
+            <div class="ns-item">🕘 自动化</div>
+            <div class="ns-group">协作空间</div>
+            <div class="ns-item">📁 code-agent <span class="ns-badge">1</span></div>
+            <div class="ns-item ns-sub ns-active">读取季度销售数据并生成周报…</div>
+            <div class="ns-item ns-sub">批X断句阶梯-800</div>
+            <div class="ns-item ns-sub">批X协议层验证-通话1</div>
+            <div class="ns-item">📁 voice-x-verify <span class="ns-badge">2</span></div>
+          </aside>
+
+          <!-- 中央会话列：真实现状的消息流 + ChatInput，不新增任务卡、不镜像 PinnedTodoBar -->
+          <div class="neo-chat">
+            <div class="neo-msgs" id="msgFlow">
+              <div class="nm"><div class="nm-who">🎙 语音</div><div class="nm-bubble-user">帮我把季度销售数据读出来，整理成一份周报。</div></div>
+              <div class="nm"><div class="nm-who">🎙 语音</div><div class="nm-text">好，这个活我已经派给执行引擎了，有进展我会说。期间我们可以继续聊别的。</div></div>
+              <div class="nm"><div class="nm-who">🎙 语音</div><div class="nm-bubble-user">行，那我先确认下华东二仓的口径……</div></div>
+            </div>
+            <!-- ChatInput composer-elevated 复刻：VoiceChrome 收敛为内部固定一行；
+                 注意：会话框上方不镜像 PinnedTodoBar——后台任务只在右侧「概览」 -->
+            <div class="cem">
+              <div id="voiceSlotS5"></div>
+              <div class="cem-input">继续描述…（@ 引用文件，/ 调用技能）</div>
+              <div class="cem-bar">
+                <span class="cem-ic">＋</span>
+                <span class="cem-chip">⊙ 请求批准</span>
+                <span class="cem-flex"></span>
+                <span class="cem-model">○ GLM-5.1</span>
+                <span class="cem-ic">🎤</span>
+                <button class="cem-voice" id="voiceBtnS5" title="实时语音">🔊</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- 右侧 Workbench：现有「概览」tab（WorkbenchOverview → TaskPanel/TaskMonitor） -->
+          <aside class="workbench-overview-mock">
+            <div class="wbm-tabs"><span class="wbm-tab on">⊞ 概览</span><span class="wbm-tab">＋</span></div>
+            <div class="wbm-body" id="workbenchBody"></div>
+          </aside>
+        </div>
+      </div>
+
+      <div class="note">
+        <div class="note-title">本页取舍（对齐现有产品结构）</div>
+        <ul>
+          <li><b>后台任务只放右侧「概览」</b>：任务现场归现有 <code>WorkbenchOverview → TaskPanel/TaskMonitor</code> 卡片；<code>PinnedTodoBar</code> 只服务当前会话已有 TaskPlan 的步骤，不为后台任务在会话框上方镜像一条。会话列只有消息流与 ChatInput，无内联任务卡、无新增 Todo 区。</li>
+          <li><b>有活跃任务才自动开右栏</b>：对齐 App.tsx 的按需展开逻辑（hasTaskWorkbenchContent → 打开概览 tab）；任务取消后右栏回到现有空态叙事（「运行中的任务会实时显示在这里」）。</li>
+          <li><b>等待只报可证实信息</b>：任务卡只有真实状态 + 已等待时长，无百分比、无预估。<b>读取失败即停止等待</b>：不再计时、不声称任务仍在执行，只说明无法确认任务状态；只给两个动作——「重试读取」（重新进入读取中，读到可证实的运行状态后才恢复已等待时长；只重读、不重派）与「取消任务」。</li>
+          <li><b>完成只收敛不重复</b>：任务卡在右栏转为「已完成」；产物卡只在会话流原位置出现一次，右侧 Workbench 不重复产物卡。</li>
+          <li><b>通话状态在 composer 内</b>：VoiceChrome 收敛为 composer 内部固定一行（见场景 6），不再悬浮覆盖会话。</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- ================= 场景 6：通话中探针能力 ================= -->
+    <section class="scenario" id="s6">
+      <div class="scenario-head">
+        <h2>通话中音色热切换与上游热词（探针）</h2>
+        <p>两项能力目前只走到「探针」：能发出 session.update、能收到上游回显，但<b>未做真机合成 / 识别验证</b>，一律不作为可承诺能力展示。</p>
+      </div>
+
+      <div class="probe-banner">
+        <span style="font-size:15px">⚠</span>
+        <div><b>探针状态 · 未验证 · 不可承诺。</b>以下控件仅演示交互形态。上游「回显确认」不等于能力可用——正式实现已踩过坑：音色错误不在建连时报，<code>session.updated</code> 原样回显，第一次真合成才 400。</div>
+      </div>
+
+      <div class="mock-window">
+        <div class="mock-titlebar">
+          <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
+          <span class="ttl">Agent Neo — 会话（ChatInput composer 复刻）</span>
+        </div>
+        <div class="mock-body">
+          <!-- 复刻截图 01 的中央会话列：消息（含现有「通话摘要」卡）+ composer-elevated。
+               VoiceChrome 收敛为 composer 内部固定一行：只报「通话中 mm:ss」，
+               隐藏专家名与模型名；静音/挂断沿用现有 30px icon 按钮。 -->
+          <div class="nm"><div class="nm-who">🎙 语音</div><div class="nm-bubble-user">请说一句测试完成。</div></div>
+          <div class="nm"><div class="nm-who">🎙 语音</div><div class="nm-text">测试完成啦，结果已生成。</div></div>
+          <div class="nm"><div class="nm-summary">🎙 通话摘要 <span style="color:var(--text-4)">时长 10 秒</span><span class="arrow">⌄</span></div></div>
+
+          <div class="cem" style="margin:14px 0 0">
+            <div id="voiceSlotS6"></div>
+            <div class="cem-input">继续描述…（@ 引用文件，/ 调用技能）</div>
+            <div class="cem-bar">
+              <span class="cem-ic">＋</span>
+              <span class="cem-chip">⊙ 请求批准</span>
+              <span class="cem-flex"></span>
+              <span class="cem-model">○ GLM-5.1</span>
+              <span class="cem-ic">🎤</span>
+              <button class="cem-voice" id="voiceBtnS6" title="实时语音">🔊</button>
+            </div>
+          </div>
+
+          <div class="taskcard" style="margin:16px 0 14px">
+            <div class="t-head">
+              <span class="t-title">音色热切换</span>
+              <span class="badge violet">探针</span>
+              <span class="badge amber">未验证</span>
+            </div>
+            <div class="t-status-line">通话不中断，向下行合成下发新音色。回显只证明上游「收到了」，不证明「能合成」。</div>
+            <div class="field-row" style="margin-top:8px">
+              <select class="select" id="hotVoiceSelect" style="width:200px">
+                <option>Tina</option><option>Ethan</option><option>Serena</option>
+              </select>
+              <button class="btn btn-primary btn-sm" id="hotVoiceBtn">通话中切换</button>
+            </div>
+            <div class="probe-log" id="hotVoiceLog">尚未发起热切换。</div>
+          </div>
+
+          <div class="taskcard">
+            <div class="t-head">
+              <span class="t-title">上游热词注入</span>
+              <span class="badge violet">探针</span>
+              <span class="badge amber">未验证</span>
+            </div>
+            <div class="t-status-line">将口述词表作为热词随 session.update 上行，期望提升专名词识别率。上游是否真正采纳：<b style="color:var(--amber)">未验证</b>。</div>
+            <div class="field-row" style="margin-top:8px">
+              <span class="counter">当前词表 12 条（与场景 3 共用演示数据）</span>
+              <button class="btn btn-ghost btn-sm" id="hotwordBtn">重新注入热词</button>
+            </div>
+            <div class="probe-log" id="hotwordLog">尚未注入。</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="note amber">
+        <div class="note-title">为什么必须标注「未验证」</div>
+        <ul>
+          <li>DashScope 实测教训（2026-07-26）：<code>session.update</code> 照收、<code>session.updated</code> 原样回显音色，但不受支持的音色直到第一次真合成才 400。<b>回显不是可用性判据。</b></li>
+          <li>热词是否进入上游识别路径，文档无承诺、未做对照实验；UI 若把它展示成已生效能力，等于替上游背书。</li>
+          <li>因此两项能力在 UI 上永远带「探针 / 未验证」徽标，验证通过前不进 release notes、不写进用户文档。</li>
+        </ul>
+      </div>
+
+      <div class="note">
+        <div class="note-title">通话状态的位置（已拍板，对齐现有 VoiceChrome / ChatInput）</div>
+        <ul>
+          <li><b>VoiceChrome 收敛为 composer 内部固定一行</b>：不再悬浮覆盖会话；沿用现有圆角（rounded-xl）、边框（zinc-700/70）、底色（zinc-900/80）与字级（11.5px 状态字），只显示「通话中 mm:ss」动态计时。</li>
+          <li><b>隐藏非必要信息</b>：专家名（与助手）与通话模型名（qwen3.5-omni-flash-realtime）不进这一行——通话对象就是当前会话，模型名是诊断信息，不占常态 UI。</li>
+          <li><b>操作沿用现有 30px icon 按钮语言</b>：静音（mic / mic-off，静音时转琥珀）与挂断（红色 ✕）各一枚 30×30 圆角按钮，不扩大占位；挂断后该行消失，composer 恢复原样，底栏语音按钮可再次发起。</li>
+          <li><b>composer 本体复刻现有 ChatInput</b>：composer-elevated 圆角 16px 浮起容器 + 底栏（＋ / 请求批准 / 模型 pill / 口述 mic / 语音主按钮），未另造独立 composer。</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- ================= 场景 7：设计说明与未决判断 ================= -->
+    <section class="scenario" id="s7">
+      <div class="scenario-head">
+        <h2>设计说明 · 方案取舍与未决产品判断</h2>
+        <p>本原型的所有关键取舍汇总，以及需要产品负责人拍板、原型不替做的决定。</p>
+      </div>
+
+      <h3 style="font-size:13px;color:var(--text-1);margin:18px 0 10px">方案取舍（已按对齐结论做进原型）</h3>
+      <div class="decision-grid">
+        <div class="decision">
+          <h4>1 · Provider 下拉放在「语音模型」tab</h4>
+          <p><span class="pick">取舍：</span>Provider 是模型配置不是使用偏好，与 Key / 通话模型 / 音色同 tab 收拢；「实时语音」tab 继续只留打断方式、灵敏度等偏好。</p>
+          <p><span class="pick">代价：</span>两个 tab 的职责边界要靠文案维持（key 的家在语音模型 tab，缺 key 的入口引导只是补救通道）。</p>
+        </div>
+        <div class="decision">
+          <h4>2 · Key 进 secure-storage，永不展示真值</h4>
+          <p><span class="pick">取舍：</span>敏感 Key 一律进 secure-storage：内置 DashScope 继续既有 qwen/dashscope 槽，OpenAI Realtime 复用既有 openai 槽（已拍板）；自定义 Provider 按 <code>providerId</code> 隔离进 secure-storage 命名空间，settings 只存非敏感元数据（显示名 / Endpoint / 模型 / 音色等）。已配态只显示前 8 位打码，编辑态空输入框重填，不回显原 Key（正式实现 raw key 不出主进程）。</p>
+          <p><span class="pick">代价：</span>用户无法「看一眼确认自己贴对了哪把 key」，只能靠打码前缀辨认。</p>
+        </div>
+        <div class="decision">
+          <h4>3 · 模型 ↔ 音色强绑定，硬回落</h4>
+          <p><span class="pick">取舍：</span>音色选项只从当前模型白名单出；换模型 / 换 Provider 时音色直接落到合法值，不给非法组合留存的机会。</p>
+          <p><span class="pick">代价：</span>用户换模型可能没注意到音色被改了——靠音色下方的说明文案兜底。</p>
+        </div>
+        <div class="decision">
+          <h4>4 · 麦克风默认跟随系统，断开 fail-open，恢复自动切回</h4>
+          <p><span class="pick">取舍：</span>「系统默认」为显式首选项；指定设备断开时 fail-open 回系统默认并常驻提示；原设备恢复后自动切回原选择，自动切回失败则继续系统默认。</p>
+        </div>
+        <div class="decision">
+          <h4>5 · 词表清洗静默化，上限显性化</h4>
+          <p><span class="pick">取舍：</span>去重/限长不打断输入；100 条上限用计数器常态可见、到顶才转为警告态。</p>
+        </div>
+        <div class="decision">
+          <h4>6 · 文件卡动作收敛：主操作 + 更多菜单</h4>
+          <p><span class="pick">取舍：</span>点卡 = 主操作（预览/打开），其余动作收进带文字的菜单；状态徽标（尤其 Unverified）不参与收敛。</p>
+          <p><span class="pick">取舍：</span>状态文案给 zh/en 双语示例（已核验 / Verified、待核验 / Unverified · Finished · pending verification），落地须补 i18n 词条——正式实现 statusMeta 目前硬编码英文。</p>
+          <p><span class="pick">代价：</span>次级动作从 1 击变 2 击——用「不拥挤、不误触、看得懂」换这一击。</p>
+        </div>
+        <div class="decision" data-decision="long-task-placement">
+          <h4>7 · 长任务只放右侧现有「概览」（已拍板）</h4>
+          <p><span class="pick">取舍：</span>后台任务现场归右侧现有 <code>WorkbenchOverview → TaskPanel/TaskMonitor</code> 卡片；有活跃任务时按 App.tsx 的按需展开逻辑自动打开右栏「概览」tab。现有两种投影各管各的：<code>PinnedTodoBar</code> 只显示当前会话已有 TaskPlan 的步骤，<b>不为后台任务在会话框上方镜像一条</b>；不新增右栏 Todo 区。会话主列只保留真实现状的消息流与 ChatInput，无内联任务大卡。</p>
+          <p><span class="pick">取舍：</span>执行时长不可预测——只展示可证实状态与已等待时长。<b>读取失败即停止等待</b>：不再计时、不声称任务仍在执行，只说明无法确认任务状态；只给「重试读取」（重新进入读取中，读到可证实的运行状态后才恢复已等待时长；只重读不重派）与「取消任务」。完成后产物卡只在会话流原位置出现一次，右侧 Workbench 不重复。</p>
+          <p><span class="pick">取舍：</span>窄屏时三栏降级为单列堆叠（左栏隐藏、右栏落到会话下方，文档流内，不覆盖输入框）。</p>
+        </div>
+        <div class="decision">
+          <h4>8 · 探针能力明示未验证</h4>
+          <p><span class="pick">取舍：</span>音色热切换、上游热词只做交互演示，常驻「探针 / 未验证」徽标与教训说明；验证通过前不对用户承诺。两项操作都门控在「通话中」——通话结束后操作不可用并说明原因。</p>
+        </div>
+        <div class="decision">
+          <h4>9 · 接入新 Provider 的边界要说实话</h4>
+          <p><span class="pick">取舍：</span>兼容现有 Realtime 事件协议 + Bearer 鉴权的，一份非敏感 profile 写 settings + Key 按 <code>providerId</code> 隔离进 secure-storage + 真机验收即可；涉及非 Bearer 鉴权 / 不兼容事件协议的，必须一次性补 IPC 通道或协议 quirk——对外表述写「轻量接入 / 重量接入」两档，<b>不宣称绝对零代码</b>。内置 DashScope / OpenAI 仍走既有槽。场景 1 的「＋ 添加 Provider」把这条边界做成了可点击流程（见第 12 条）。</p>
+        </div>
+        <div class="decision">
+          <h4>10 · 试听样音不伪造（已拍板）</h4>
+          <p><span class="pick">取舍：</span>仓内没有可靠真实样音，试听一律「待生成」禁用态并标注「真实样音待各 Provider 真上游生成并核验」；<b>禁止用系统 TTS 或合成音冒充 Provider 音色</b>。音色事实：DashScope qwen3.5 真机验证仅 Tina / Ethan / Serena 3 个；OpenAI profile 为 marin 等 10 个官方音色。</p>
+        </div>
+        <div class="decision" data-decision="voice-placement">
+          <h4>11 · VoiceChrome 收进现有 composer 固定一行（已拍板）</h4>
+          <p><span class="pick">取舍：</span>基于现有 ChatInput 的 composer-elevated：VoiceChrome 收敛为 composer 内部固定一行/槽位，沿用现有圆角、边框、字级与按钮语言，只显示「通话中 mm:ss」动态计时；专家名与通话模型名不进这一行；静音/挂断沿用现有 30px icon 按钮，不扩大占位。不另造独立 composer，不悬浮覆盖会话；结束后该行消失，底栏语音按钮可再次发起。</p>
+        </div>
+        <div class="decision">
+          <h4>12 · 添加 Provider：可配置 vs 需适配（已拍板边界）</h4>
+          <p><span class="pick">取舍：</span>「＋ 添加 Provider」在右侧配置面板进行，不遮挡主设置区。可配置路径（兼容现有协议 + Bearer）收集 profile 必要字段：显示名、稳定 providerId、Realtime Endpoint、鉴权方式、API Key、模型 ID、音色列表/默认音色、上行采样率。其中非敏感元数据写 settings；API Key 按 <code>providerId</code> 隔离进 secure-storage 命名空间（只掩码不回显）。<b>测试连接成功是保存的唯一闸门</b>（未测试/测试中/失败均禁保存，改字段即作废重测）；保存后进入下拉并切换为当前 Provider，Key 态与模型/音色联动。</p>
+          <p><span class="pick">取舍：</span>选非 Bearer / 不兼容事件协议时，面板整体切为「需要代码适配」态：说明需补 IPC 通道或协议 quirk，禁用保存，不宣称零代码。取消或关闭不写入任何数据。</p>
+        </div>
+      </div>
+
+      <h3 style="font-size:13px;color:var(--text-1);margin:26px 0 6px">未决产品判断（原型不替拍板）</h3>
+      <div class="openq" style="border-left-color:var(--emerald)">
+        <div class="q">已拍板 · Key 存储：内置槽 + 自定义按 providerId 隔离</div>
+        <div class="a">内置 DashScope 继续既有 qwen/dashscope 槽，OpenAI Realtime 复用既有 openai 槽（与模型配置主 Key 同一把）。自定义 Provider 的 Key 按 providerId 隔离进 secure-storage 命名空间；settings 只存非敏感元数据（显示名 / Endpoint / 模型 / 音色等）。此项不再是未决判断，已从待拍板清单移除。</div>
+      </div>
+      <div class="openq" style="border-left-color:var(--emerald)">
+        <div class="q">已拍板 · 长任务放置与状态语义</div>
+        <div class="a">后台任务只放右侧现有「概览」面板（WorkbenchOverview → TaskPanel/TaskMonitor），有活跃任务才自动打开；PinnedTodoBar 只服务当前会话已有 TaskPlan 的步骤，不为后台任务镜像；不新增 Todo 区，会话列只有消息流与 ChatInput。执行时长不可预测，只展示可证实状态与已等待时长；读取失败即停止计时、只说明无法确认状态，出口仅「重试读取」（读到可证实运行状态后才恢复计时；只重读不重派）与「取消任务」；完成后产物只在会话流原位置展示一次，右侧不重复产物卡。</div>
+      </div>
+      <div class="openq" style="border-left-color:var(--emerald)">
+        <div class="q">已拍板 · VoiceChrome 收进现有 composer</div>
+        <div class="a">取消覆盖会话的悬浮横条：VoiceChrome 收敛为现有 ChatInput composer-elevated 内部的固定一行，只显示「通话中 mm:ss」动态计时；隐藏专家名与通话模型名；静音/挂断沿用现有 30px icon 按钮，不扩大占位。</div>
+      </div>
+      <div class="openq" style="border-left-color:var(--emerald)">
+        <div class="q">已拍板 · 「可配置 Provider」与「需适配 Provider」的产品边界</div>
+        <div class="a">「＋ 添加 Provider」只承诺可配置路径：兼容现有 Realtime 协议 + Bearer；非敏感 profile 写 settings，Key 按 providerId 隔离进 secure-storage 命名空间，测试连接成功才允许保存。非 Bearer 鉴权 / 不兼容事件协议一律落「需要代码适配」态（补 IPC 通道或协议 quirk），UI 禁用保存、不宣称零代码。取消/关闭不写入数据，Key 只掩码不回显。内置 DashScope / OpenAI 仍分别走既有 qwen/dashscope 与 openai 槽。</div>
+      </div>
+      <div class="openq" style="border-left-color:var(--emerald)">
+        <div class="q">已拍板 · 试听样音不伪造</div>
+        <div class="a">试听形态保留但一律「待生成」禁用态：真实样音待各 Provider 真上游生成并核验后开放；禁止用系统 TTS 或合成音冒充 Provider 音色。</div>
+      </div>
+      <div class="openq" style="border-left-color:var(--emerald)">
+        <div class="q">已拍板 · 麦克风指定设备断开 / 恢复策略</div>
+        <div class="a">指定设备断开时 fail-open 回系统默认并当场告知（常驻提示 + 下拉改回系统默认）；记住用户原选择，原设备恢复后自动切回；自动切回失败则继续系统默认并提示原因。此项不再是未决判断，已从待拍板清单移除。</div>
+      </div>
+      <div class="openq">
+        <div class="q">Q1 · 音色热切换若上游真合成失败，策略是当场提示还是静默回退旧音色？</div>
+        <div class="a">原型倾向当场提示（与「回显 ≠ 可用」的教训一致），但提示发生在通话中，打断成本仍待产品拍板。</div>
+      </div>
+      <div class="openq">
+        <div class="q">Q2 · 长任务长时间无结果时，是否需要超时默认行为？</div>
+        <div class="a">执行时长不可预测，UI 不给预估；是否另设「超时自动转后台 / 到点强提示」等默认行为仍未拍板。原型只做手动出口（重试读取 / 取消任务），不做任何自动动作。涉及计费与通话占用。</div>
+      </div>
+      <div class="openq">
+        <div class="q">Q3 · 文件卡「更多」菜单里是否需要把「归档到资料库」提升为二级主操作？</div>
+        <div class="a">当前收敛为菜单第一项 + 青色强调。若数据显示归档是高频动作，可考虑恢复为常驻文字按钮（收敛前它本来就是唯一带文字的）。</div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<div id="toast"></div>
+
+<script>
+/* ============================================================================
+   全部状态均为演示数据，不落盘、不联网。
+   ========================================================================== */
+'use strict';
+
+/* ---------- 通用 ---------- */
+const $ = (sel) => document.querySelector(sel);
+const $$ = (sel) => Array.from(document.querySelectorAll(sel));
+const esc = (s) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+let toastTimer = null;
+function showToast(msg) {
+  const el = $('#toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 2400);
+}
+
+/* ---------- 情境导航 ---------- */
+$$('#sidenav .nav-item').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    $$('#sidenav .nav-item').forEach((b) => b.classList.toggle('active', b === btn));
+    $$('.scenario').forEach((s) => s.classList.toggle('active', s.id === btn.dataset.scenario));
+  });
+});
+
+/* ============================================================================
+   场景 1：Provider / Key / 模型 / 音色
+   ========================================================================== */
+const PROVIDERS = {
+  dashscope: {
+    sub: 'Qwen-Omni Realtime（WebSocket）',
+    keyTitle: 'DashScope API Key',
+    keyDesc: '实时语音、图片生成、口述转写共用这一个 Key。使用 secure-storage 既有 qwen/dashscope 槽；settings 不存 Key 明文。',
+    placeholder: '输入 DashScope API Key',
+    missingBadge: '未配置 DashScope Key，实时语音不可用',
+    missingHint: '请到设置 → 模型配置 DashScope（qwen）API Key，或在上方直接粘贴',
+    models: [
+      { id: 'qwen3.5-omni-flash-realtime', supportsTools: true, voices: ['Tina', 'Ethan', 'Serena'] },
+      { id: 'qwen3-omni-flash-realtime', supportsTools: false, voices: ['Cherry', 'Ethan', 'Serena'] },
+    ],
+  },
+  openai: {
+    sub: 'OpenAI Realtime API（WebSocket）',
+    keyTitle: 'OpenAI API Key',
+    keyDesc: '复用 secure-storage 既有 openai 槽，与模型配置的 OpenAI 主 Key 是同一把；settings 不存 Key 明文。',
+    placeholder: '输入 OpenAI API Key',
+    missingBadge: '未配置 OpenAI Key，实时语音不可用',
+    missingHint: '请在上方输入 OpenAI API Key（sk-...）',
+    // 与在途 P1 实现对齐（src/shared/constants/realtimeVoiceProviders.ts，本 worktree 并行工作中）：
+    // 模型 gpt-realtime-2.1 / 2.1-mini，默认音色 marin，两家模型共用同一张音色表。
+    models: [
+      { id: 'gpt-realtime-2.1', supportsTools: true, voices: ['marin', 'cedar', 'alloy', 'ash', 'ballad', 'coral', 'echo', 'sage', 'shimmer', 'verse'] },
+      { id: 'gpt-realtime-2.1-mini', supportsTools: true, voices: ['marin', 'cedar', 'alloy', 'ash', 'ballad', 'coral', 'echo', 'sage', 'shimmer', 'verse'] },
+    ],
+  },
+};
+
+/** 每个 Provider 独立的演示状态。masked 是伪造打码值，不代表真实 Key。 */
+const providerState = {
+  dashscope: { configured: true, masked: 'sk-9f3Kd20q...', modelIdx: 0, voiceIdx: 0 },
+  openai: { configured: false, masked: null, modelIdx: 0, voiceIdx: 0 },
+};
+let currentProvider = 'dashscope';
+let keyUiMode = 'idle'; // idle | editing | saving
+
+const maskKey = (key) => (key.length > 8 ? `${key.substring(0, 8)}...` : key);
+
+function currentModel() {
+  const p = PROVIDERS[currentProvider];
+  const st = providerState[currentProvider];
+  return p.models[st.modelIdx] || p.models[0];
+}
+
+function renderProviderBlock() {
+  const p = PROVIDERS[currentProvider];
+  const st = providerState[currentProvider];
+  $('#providerSub').textContent = p.sub;
+  const badge = $('#providerStatusBadge');
+  if (st.configured) {
+    badge.className = 'badge emerald';
+    badge.textContent = '已配置';
+  } else {
+    badge.className = 'badge amber';
+    badge.textContent = '未配置';
+  }
+  $$('#keyStateSeg button').forEach((b) =>
+    b.classList.toggle('on', (b.dataset.keystate === 'configured') === st.configured));
+  renderKeyBlock(p, st);
+  renderModelVoice(p, st);
+}
+
+function renderKeyBlock(p, st) {
+  const block = $('#keyBlock');
+  const configuredView = st.configured && keyUiMode === 'idle';
+  let inner = `<span class="field-label">${esc(p.keyTitle)}</span>
+    <div class="field-desc">${esc(p.keyDesc)}</div>`;
+
+  if (configuredView) {
+    inner += `
+      <div class="key-line">
+        <span class="key-icon">🔑</span>
+        <span class="masked">${esc(st.masked || '已配置')}</span>
+        <button class="btn btn-ghost btn-sm" id="keyChangeBtn">更换</button>
+        <button class="btn btn-ghost btn-sm" id="keyClearBtn">清除</button>
+      </div>`;
+  } else if (keyUiMode === 'confirmClear') {
+    inner += `
+      <div class="key-line" style="align-items:flex-start;flex-direction:column;gap:10px">
+        <span style="color:var(--rose)">清除后实时语音、图片生成、口述转写都会不可用，直到重新配置。确认清除？</span>
+        <div class="field-row">
+          <button class="btn btn-danger btn-sm" id="keyClearConfirmBtn">确认清除</button>
+          <button class="btn btn-ghost btn-sm" id="keyClearCancelBtn">取消</button>
+        </div>
+      </div>`;
+  } else {
+    const saving = keyUiMode === 'saving';
+    inner += `
+      <div class="field-row">
+        <input type="password" class="input narrow mono" id="keyInput" placeholder="${esc(p.placeholder)}" ${saving ? 'disabled' : ''} autocomplete="off">
+        <button class="btn btn-primary btn-sm" id="keySaveBtn" disabled>${saving ? '保存中…' : '保存'}</button>
+        ${st.configured ? '<button class="btn btn-ghost btn-sm" id="keyEditCancelBtn">取消</button>' : ''}
+      </div>
+      <div class="hint-text">只保存，不回显；保存后此处只显示打码前缀。</div>`;
+  }
+  if (!st.configured && keyUiMode === 'idle') {
+    inner += `<div class="warn-text">${esc(p.missingBadge)} · ${esc(p.missingHint)}</div>`;
+  }
+  block.innerHTML = inner;
+
+  // 绑定
+  const input = $('#keyInput');
+  const saveBtn = $('#keySaveBtn');
+  if (input && saveBtn) {
+    input.addEventListener('input', () => { saveBtn.disabled = !input.value.trim() || keyUiMode === 'saving'; });
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !saveBtn.disabled) saveBtn.click(); });
+    saveBtn.addEventListener('click', () => {
+      const draft = input.value.trim();
+      if (!draft) return;
+      keyUiMode = 'saving';
+      renderKeyBlock(p, st);
+      setTimeout(() => {
+        st.configured = true;
+        st.masked = maskKey(draft); // 只留打码，原值即弃
+        keyUiMode = 'idle';
+        showToast('API Key 已保存，实时语音已就绪');
+        renderProviderBlock();
+      }, 700);
+    });
+  }
+  const bind = (id, fn) => { const el = $(id); if (el) el.addEventListener('click', fn); };
+  bind('#keyChangeBtn', () => { keyUiMode = 'editing'; renderKeyBlock(p, st); const i = $('#keyInput'); if (i) i.focus(); });
+  bind('#keyEditCancelBtn', () => { keyUiMode = 'idle'; renderKeyBlock(p, st); });
+  bind('#keyClearBtn', () => { keyUiMode = 'confirmClear'; renderKeyBlock(p, st); });
+  bind('#keyClearCancelBtn', () => { keyUiMode = 'idle'; renderKeyBlock(p, st); });
+  bind('#keyClearConfirmBtn', () => {
+    st.configured = false; st.masked = null; keyUiMode = 'idle';
+    showToast('API Key 已清除');
+    renderProviderBlock();
+  });
+}
+
+function renderModelVoice(p, st) {
+  const modelSel = $('#modelSelect');
+  modelSel.innerHTML = p.models.map((m, i) =>
+    `<option value="${i}" ${i === st.modelIdx ? 'selected' : ''}>${esc(m.id)}</option>`).join('');
+  const model = currentModel();
+  const warn = $('#modelWarning');
+  let html = '';
+  if (!model.supportsTools) {
+    html += `<div class="warn-text">该模型不支持在通话里派活，选它这通电话只能聊天</div>`;
+  }
+  if (!st.configured) {
+    html += `<div class="warn-text">${esc(p.missingBadge)}</div>`;
+  }
+  warn.innerHTML = html;
+
+  // 音色硬回落：当前 voiceIdx 越界就落回 0（换模型/换 Provider 时）
+  if (st.voiceIdx >= model.voices.length) st.voiceIdx = 0;
+  // 音色列表：每行一个音色 + 「试听」形态。仓内无真实样音，禁止系统 TTS 冒充，
+  // 试听一律禁用态「待生成」，真实样音待各 Provider 真上游生成并核验后开放。
+  $('#voiceList').innerHTML = model.voices.map((v, i) => `
+    <div class="voice-row ${i === st.voiceIdx ? 'sel' : ''}" data-voice="${i}">
+      <span class="vcheck">${i === st.voiceIdx ? '✓' : ''}</span>
+      <span class="vname">${esc(v)}</span>
+      <span class="badge zinc">样音待生成</span>
+      <button class="btn btn-ghost btn-sm btn-audition" disabled
+        title="真实样音待各 Provider 真上游生成并核验后开放；仓内无真实样音，不以系统 TTS 或合成音冒充">🔇 试听</button>
+    </div>`).join('');
+  $$('#voiceList .voice-row').forEach((row) => row.addEventListener('click', (e) => {
+    if (e.target.closest('button')) return; // 试听按钮禁用态，不响应
+    providerState[currentProvider].voiceIdx = Number(row.dataset.voice);
+    renderModelVoice(PROVIDERS[currentProvider], providerState[currentProvider]);
+  }));
+}
+
+$('#providerSelect').addEventListener('change', (e) => {
+  currentProvider = e.target.value;
+  keyUiMode = 'idle';
+  renderProviderBlock();
+});
+$('#modelSelect').addEventListener('change', (e) => {
+  const st = providerState[currentProvider];
+  st.modelIdx = Number(e.target.value);
+  st.voiceIdx = 0; // 音色与模型强绑定：换模型回落白名单第一项
+  renderModelVoice(PROVIDERS[currentProvider], st);
+});
+$$('#keyStateSeg button').forEach((b) => b.addEventListener('click', () => {
+  const st = providerState[currentProvider];
+  const configured = b.dataset.keystate === 'configured';
+  st.configured = configured;
+  if (configured && !st.masked) st.masked = 'sk-Demo1234...';
+  if (!configured) st.masked = null;
+  keyUiMode = 'idle';
+  renderProviderBlock();
+}));
+
+renderProviderBlock();
+
+/* ============================================================================
+   场景 1b：添加 Provider
+   可配置路径（兼容现有 Realtime 事件协议 + Bearer；
+     非敏感 profile → settings；Key 按 providerId 隔离进 secure-storage 命名空间）
+   vs 需代码适配路径（非 Bearer 鉴权 / 不兼容事件协议）。
+   测试连接成功才允许保存；取消/关闭不写入任何数据；Key 只掩码、永不回显。
+   ========================================================================== */
+let addpOpen = false;
+let addpCompat = 'compatible';   // compatible | needs-code
+let addpTest = 'untested';       // untested | testing | success | failed
+let addpOutcome = 'success';     // 演示控件：模拟测试结果
+let addpIdTouched = false;
+
+const slugifyProviderId = (name) => {
+  const s = name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  return s ? `custom-${s}` : '';
+};
+
+function openAddProvider() {
+  addpOpen = true; addpTest = 'untested'; addpIdTouched = false;
+  renderAddProvider();
+}
+function closeAddProvider() {
+  // 关闭即丢弃：不写 PROVIDERS / providerState / 下拉，面板内输入全部随渲染销毁
+  addpOpen = false; addpTest = 'untested';
+  $('#addProviderPanel').hidden = true;
+}
+
+const ADD_TEST_META = {
+  untested: { badge: '<span class="badge zinc">未测试</span>', hint: '保存前必须「测试连接」成功；修改任何字段后需重新测试。' },
+  testing: { badge: '<span class="badge zinc"><span class="spinner"></span> 测试中…</span>', hint: '正在做 WS 握手 + session.update 回显检查（演示模拟）…' },
+  success: { badge: '<span class="badge emerald">✓ 测试成功</span>', hint: '握手成功，session.updated 回显正常（演示模拟）。可以保存。' },
+  failed: { badge: '<span class="badge rose">✕ 测试失败</span>', hint: '握手失败：鉴权被拒（401，演示模拟）。检查 Endpoint 与 Key 后重试；失败状态不允许保存。' },
+};
+
+function renderAddpTestArea() {
+  const meta = ADD_TEST_META[addpTest];
+  const status = $('#apTestStatus');
+  const hint = $('#apTestHint');
+  if (status) status.innerHTML = meta.badge;
+  if (hint) hint.innerHTML = meta.hint;
+  const saveBtn = $('#apSaveBtn');
+  if (saveBtn) saveBtn.disabled = addpTest !== 'success';
+  const testBtn = $('#apTestBtn');
+  if (testBtn) testBtn.disabled = addpTest === 'testing';
+}
+
+function renderAddProvider() {
+  const panel = $('#addProviderPanel');
+  panel.hidden = !addpOpen;
+  if (!addpOpen) return;
+  $$('#addpCompatSeg button').forEach((b) => b.classList.toggle('on', b.dataset.compat === addpCompat));
+  const form = $('#addpForm');
+
+  if (addpCompat === 'needs-code') {
+    form.innerHTML = `
+      <div class="ap-sec">
+        <div class="note amber" style="margin-top:0">
+          <div class="note-title">需要代码适配，不能直接保存</div>
+          <ul>
+            <li>非 Bearer 鉴权（OAuth / 签名 / 证书等）：需一次性补鉴权适配与 IPC 通道；</li>
+            <li>不兼容的事件协议：需新增 transport / protocol quirk 适配层；</li>
+            <li>可配置路径下的自定义 Key 已按 providerId 隔离进 secure-storage，settings 只存非敏感元数据；本态是协议/鉴权适配，不是「再开一个 Key 槽」。</li>
+            <li>在此之前 UI 不开放保存，也<b>不宣称「零代码接入」</b>。请转交工程评估后再开放。</li>
+          </ul>
+        </div>
+        <div class="field-row" style="margin-top:10px">
+          <button class="btn btn-primary btn-sm" disabled title="需代码适配完成后才开放保存">保存 Provider</button>
+          <button class="btn btn-ghost btn-sm" id="apCancelBtn">取消</button>
+        </div>
+      </div>`;
+    $('#apCancelBtn').addEventListener('click', closeAddProvider);
+    return;
+  }
+
+  form.innerHTML = `
+    <div class="ap-sec">
+      <label class="ap-lbl">Provider 显示名
+        <input class="input" id="apName" placeholder="例如 Acme Realtime"></label>
+      <label class="ap-lbl">稳定 providerId
+        <input class="input mono" id="apId" placeholder="custom-acme-realtime">
+        <span class="ap-hint">保存后不可改；随显示名自动生成，可手调。</span></label>
+      <label class="ap-lbl">Realtime Endpoint
+        <input class="input mono" id="apEndpoint" placeholder="wss://api.example.com/v1/realtime"></label>
+      <label class="ap-lbl">鉴权方式
+        <select class="select" id="apAuth">
+          <option value="bearer">Bearer API Key（可直接配置）</option>
+          <option value="other">其他（OAuth / 签名 / 证书… → 需代码适配）</option>
+        </select></label>
+      <label class="ap-lbl">API Key
+        <input type="password" class="input mono" id="apKey" placeholder="只保存，永不回显" autocomplete="off">
+        <span class="ap-hint">Key 按 providerId 隔离写入 secure-storage 命名空间；settings 只存非敏感元数据。任何状态只显示前 8 位打码，不回显真值。</span></label>
+      <label class="ap-lbl">模型 ID
+        <input class="input mono" id="apModel" placeholder="acme-realtime-1"></label>
+      <label class="ap-lbl">音色列表（逗号分隔，第一个为默认音色）
+        <input class="input" id="apVoices" placeholder="ada, bok, cori">
+        <span class="ap-hint">自定义音色的试听同样走「样音待生成」，不伪造。</span></label>
+      <label class="ap-lbl">上行采样率
+        <select class="select" id="apRate">
+          <option value="16000">16 kHz · PCM16 单声道</option>
+          <option value="24000">24 kHz · PCM16 单声道</option>
+        </select>
+        <span class="ap-hint">下行固定 24 kHz，与现有下行管线一致。</span></label>
+    </div>
+    <div class="ap-sec">
+      <div class="field-row">
+        <button class="btn btn-ghost btn-sm" id="apTestBtn">测试连接</button>
+        <span id="apTestStatus"></span>
+      </div>
+      <div class="ap-hint" id="apTestHint"></div>
+      <div class="field-row" style="margin-top:10px">
+        <button class="btn btn-primary btn-sm" id="apSaveBtn" disabled>保存 Provider</button>
+        <button class="btn btn-ghost btn-sm" id="apCancelBtn">取消</button>
+      </div>
+    </div>`;
+
+  // 任何字段变更 → 测试结果作废，需重新测试
+  ['apName', 'apId', 'apEndpoint', 'apKey', 'apModel', 'apVoices', 'apRate'].forEach((id) => {
+    document.getElementById(id).addEventListener('input', () => {
+      if (addpTest !== 'untested') { addpTest = 'untested'; renderAddpTestArea(); }
+    });
+  });
+  // 显示名 → providerId 自动派生（手改过就不再覆盖）
+  document.getElementById('apName').addEventListener('input', (e) => {
+    if (!addpIdTouched) document.getElementById('apId').value = slugifyProviderId(e.target.value);
+  });
+  document.getElementById('apId').addEventListener('input', () => { addpIdTouched = true; });
+  // 非 Bearer 鉴权 → 整个面板切「需代码适配」态
+  document.getElementById('apAuth').addEventListener('change', (e) => {
+    if (e.target.value === 'other') { addpCompat = 'needs-code'; addpTest = 'untested'; renderAddProvider(); }
+  });
+  document.getElementById('apTestBtn').addEventListener('click', () => {
+    if (addpTest === 'testing') return;
+    addpTest = 'testing'; renderAddpTestArea();
+    setTimeout(() => {
+      addpTest = addpOutcome === 'success' ? 'success' : 'failed';
+      renderAddpTestArea();
+    }, 1200);
+  });
+  document.getElementById('apSaveBtn').addEventListener('click', saveAddProvider);
+  document.getElementById('apCancelBtn').addEventListener('click', closeAddProvider);
+  renderAddpTestArea();
+}
+
+function saveAddProvider() {
+  if (addpTest !== 'success') return; // 双保险：按钮本身已禁用
+  const name = document.getElementById('apName').value.trim();
+  const id = document.getElementById('apId').value.trim();
+  const endpoint = document.getElementById('apEndpoint').value.trim();
+  const key = document.getElementById('apKey').value.trim();
+  const model = document.getElementById('apModel').value.trim();
+  const voices = document.getElementById('apVoices').value.split(',').map((v) => v.trim()).filter(Boolean);
+  const hint = $('#apTestHint');
+  if (!name || !id || !endpoint || !key || !model || voices.length === 0) {
+    hint.innerHTML = '<span style="color:var(--amber)">显示名 / providerId / Endpoint / Key / 模型 ID / 音色列表均为必填。</span>';
+    return;
+  }
+  if (PROVIDERS[id]) {
+    hint.innerHTML = `<span style="color:var(--amber)">providerId「${esc(id)}」已存在，请换一个。</span>`;
+    return;
+  }
+  PROVIDERS[id] = {
+    sub: `${endpoint}（自定义 · 上行 ${document.getElementById('apRate').value / 1000} kHz）`,
+    keyTitle: `${name} API Key`,
+    keyDesc: `自定义 Provider「${name}」的 Key：按 providerId「${id}」隔离写入 secure-storage 命名空间；settings 只存非敏感元数据。只掩码展示，不回显真值。`,
+    placeholder: `输入 ${name} API Key`,
+    missingBadge: `未配置 ${name} Key，实时语音不可用`,
+    missingHint: `在上方输入 ${name} API Key`,
+    models: [{ id: model, supportsTools: true, voices }],
+  };
+  providerState[id] = { configured: true, masked: maskKey(key), modelIdx: 0, voiceIdx: 0 };
+  const opt = document.createElement('option');
+  opt.value = id;
+  opt.textContent = `${name}（自定义）`;
+  $('#providerSelect').appendChild(opt);
+  closeAddProvider();
+  currentProvider = id;
+  keyUiMode = 'idle';
+  $('#providerSelect').value = id;
+  renderProviderBlock();
+  showToast(`Provider「${name}」已保存，并切换为当前 Provider`);
+}
+
+$('#addProviderBtn').addEventListener('click', openAddProvider);
+$('#addpClose').addEventListener('click', closeAddProvider);
+$$('#addpCompatSeg button').forEach((b) => b.addEventListener('click', () => {
+  addpCompat = b.dataset.compat; addpTest = 'untested'; renderAddProvider();
+}));
+$$('#addpOutcomeSeg button').forEach((b) => b.addEventListener('click', () => {
+  addpOutcome = b.dataset.outcome;
+  $$('#addpOutcomeSeg button').forEach((x) => x.classList.toggle('on', x === b));
+}));
+
+/* ============================================================================
+   场景 2：麦克风设备与回退
+   指定设备断开 → fail-open 系统默认（保留用户原偏好）；
+   原设备恢复 → 自动切回原选择；自动切回失败 → 继续系统默认。
+   ========================================================================== */
+const MIC_LABELS = {
+  default: '系统默认（MacBook Pro 麦克风）',
+  builtin: 'MacBook Pro 麦克风',
+  usb: 'USB Audio Device（外接麦克风）',
+  airpods: 'AirPods Pro',
+};
+let micPreferred = null; // 用户手动指定的非默认设备（断开后仍保留，用于自动切回）
+let micFailedOpen = false; // 当前因断开 fail-open 到系统默认
+const micSelect = $('#micSelect');
+
+// 假电平条
+(function buildLevelbar() {
+  const bar = $('#levelbar');
+  for (let i = 0; i < 28; i++) {
+    const seg = document.createElement('i');
+    seg.style.animationDelay = `${(i * 37) % 900}ms`;
+    seg.style.animationDuration = `${700 + ((i * 53) % 500)}ms`;
+    bar.appendChild(seg);
+  }
+})();
+
+function setMicListening(id) {
+  $('#micTestDesc').textContent = `正在收听：${MIC_LABELS[id] || MIC_LABELS.default}`;
+}
+
+micSelect.addEventListener('change', () => {
+  micPreferred = micSelect.value === 'default' ? null : micSelect.value;
+  micFailedOpen = false;
+  $('#micFallbackNote').innerHTML = '';
+  setMicListening(micSelect.value);
+});
+
+$('#micDisconnectBtn').addEventListener('click', () => {
+  const active = micSelect.value === 'default' ? null : micSelect.value;
+  if (!active && !micPreferred) {
+    showToast('当前跟随系统默认，设备切换由系统处理，无需回退');
+    return;
+  }
+  if (active) micPreferred = active; // 记住原选择
+  const gone = MIC_LABELS[micPreferred];
+  micFailedOpen = true;
+  micSelect.value = 'default';
+  setMicListening('default');
+  $('#micFallbackNote').innerHTML =
+    `<div class="warn-text">⚠ ${esc(gone)} 已断开，已 fail-open 到系统默认。原选择已保留，设备恢复后将自动切回。</div>`;
+  showToast('麦克风已回退到系统默认');
+});
+
+$('#micReconnectBtn').addEventListener('click', () => {
+  if (!micPreferred) {
+    showToast('没有记住的指定设备偏好，继续跟随系统默认');
+    return;
+  }
+  if (!micFailedOpen && micSelect.value === micPreferred) {
+    showToast(`已在使用 ${MIC_LABELS[micPreferred]}`);
+    return;
+  }
+  // 自动切回成功
+  micSelect.value = micPreferred;
+  micFailedOpen = false;
+  setMicListening(micPreferred);
+  $('#micFallbackNote').innerHTML =
+    `<div class="ok-text">✓ 检测到 ${esc(MIC_LABELS[micPreferred])} 已恢复，已自动切回原选择。</div>`;
+  showToast(`麦克风已自动切回 ${MIC_LABELS[micPreferred]}`);
+});
+
+$('#micRestoreFailBtn').addEventListener('click', () => {
+  if (!micPreferred) {
+    showToast('请先选择一个非系统默认的麦克风，再模拟切回失败');
+    return;
+  }
+  // 自动切回失败：继续系统默认，保留原偏好供后续再试
+  micFailedOpen = true;
+  micSelect.value = 'default';
+  setMicListening('default');
+  $('#micFallbackNote').innerHTML =
+    `<div class="warn-text">⚠ 检测到 ${esc(MIC_LABELS[micPreferred])} 已恢复，但自动切回失败，继续使用系统默认。可稍后重试或在上方手动选择。</div>`;
+  showToast('自动切回失败，继续系统默认');
+});
+
+/* ============================================================================
+   场景 3：口述词表
+   ========================================================================== */
+const VOCAB_MAX = 100;      // VOICE_VOCABULARY_MAX_ENTRIES
+const TERM_MAX = 40;        // VOICE_VOCABULARY_MAX_TERM_LENGTH
+const VOCAB_SEED = ['a.txt', 'Agent Neo', 'DashScope', 'qwen3.5-omni-flash-realtime', '合合信息', '财务三表', '季度 OKR 复盘', '供应链 S&OP', '华东二仓', 'SKU 动销率', '进项发票', '咚咚配货'];
+let vocab = VOCAB_SEED.slice();
+
+function renderVocab(hint) {
+  const counter = $('#vocabCounter');
+  counter.textContent = `${vocab.length} / ${VOCAB_MAX}`;
+  counter.classList.toggle('full', vocab.length >= VOCAB_MAX);
+  $('#vocabChips').innerHTML = vocab.map((term, i) =>
+    `<span class="chip">${esc(term)}<button data-i="${i}" title="删除">×</button></span>`).join('');
+  $$('#vocabChips button').forEach((b) => b.addEventListener('click', () => {
+    vocab.splice(Number(b.dataset.i), 1);
+    renderVocab();
+  }));
+  $('#vocabHint').innerHTML = hint || '';
+  const full = vocab.length >= VOCAB_MAX;
+  $('#vocabAddBtn').disabled = full;
+  $('#vocabInput').disabled = full;
+  if (full && !hint) {
+    $('#vocabHint').innerHTML = `<div class="warn-text">已达 100 条上限，请先删除再添加。上限防止通话 instructions 无界膨胀。</div>`;
+  }
+}
+
+function addVocabTerm(raw) {
+  const term = raw.trim();
+  if (!term) return;
+  if (term.length > TERM_MAX) {
+    renderVocab(`<div class="warn-text">「${esc(term.slice(0, 20))}…」共 ${term.length} 字，超过单条 40 字上限，整条未收录（不截断）。</div>`);
+    return;
+  }
+  if (vocab.includes(term)) {
+    renderVocab(`<div class="hint-text">「${esc(term)}」已在词表中，已自动去重。</div>`);
+    return;
+  }
+  if (vocab.length >= VOCAB_MAX) {
+    renderVocab(`<div class="warn-text">已达 100 条上限，「${esc(term)}」未添加，请先删除再添加。</div>`);
+    return;
+  }
+  vocab.push(term);
+  renderVocab();
+}
+
+$('#vocabAddBtn').addEventListener('click', () => {
+  addVocabTerm($('#vocabInput').value);
+  $('#vocabInput').value = '';
+  $('#vocabInput').focus();
+});
+$('#vocabInput').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { $('#vocabAddBtn').click(); }
+});
+$('#vocabFillBtn').addEventListener('click', () => {
+  let i = 1;
+  while (vocab.length < VOCAB_MAX) vocab.push(`演示词条-${String(i++).padStart(3, '0')}`);
+  renderVocab();
+  showToast('已填充到 100 条上限，继续添加可看到上限提示');
+});
+$('#vocabResetBtn').addEventListener('click', () => { vocab = VOCAB_SEED.slice(); renderVocab(); });
+renderVocab();
+
+/* ============================================================================
+   场景 4：Unverified 文件卡与动作收敛
+   ========================================================================== */
+const DEMO_CARDS = [
+  { kind: '📄', color: '', title: '2026-H1 经营周报.md', desc: '文档 · 12.4 KB · 已复核', status: 'verified', statusLabel: 'Verified' },
+  { kind: '📊', title: 'Q2 季度汇总表.xlsx', desc: '表格 · 86 KB · run 已结束但未查到复核证据', status: 'unverified', statusLabel: 'Unverified' },
+  { kind: '📈', title: '动销率趋势图.html', desc: '图表 · 交互式 · 已复核', status: 'verified', statusLabel: 'Verified' },
+];
+const SECONDARY_ACTIONS = [
+  { icon: '👁', label: '预览' },
+  { icon: '↗', label: '打开文件' },
+  { icon: '📂', label: '在访达中显示' },
+  { icon: '🔗', label: '复制引用' },
+  { icon: '⬇', label: '下载' },
+  { icon: '📚', label: '归档到资料库' },
+];
+let cardMode = 'after';
+let openMenuId = null;
+
+function statusBadge(card) {
+  if (card.status === 'unverified') {
+    // zh 主文案「待核验」；en 完整表述 Finished · pending verification 进 tooltip
+    return `<span class="badge amber" title="已结束 · 待核验 / Finished · pending verification：run 结束但未查到产物复核证据，不代表失败也不代表通过">⚠ 待核验</span>`;
+  }
+  // zh 主文案「已核验」；en Verified 进 tooltip
+  return `<span class="badge emerald" title="已核验 / Verified">✓ 已核验</span>`;
+}
+
+function renderCards() {
+  const wrap = $('#fileCards');
+  wrap.innerHTML = DEMO_CARDS.map((card, ci) => {
+    let actions = '';
+    if (cardMode === 'before') {
+      // 收敛前：全部平铺，图标无文字，6 个挤在一行
+      actions = `<div style="display:flex;align-items:center;gap:2px;flex-shrink:0">
+        ${SECONDARY_ACTIONS.map((a) => `<button class="icon-btn" data-act="${esc(a.label)}" data-card="${ci}" title="${esc(a.label)}">${a.icon}</button>`).join('')}
+      </div>`;
+    } else {
+      // 收敛后：点卡 = 主操作；归档保留文字强调收进菜单第一位；其余进「更多」
+      actions = `
+        <div class="menu-wrap">
+          <button class="icon-btn" data-menu="${ci}" title="更多操作" aria-label="更多操作">⋯</button>
+          <div class="menu ${openMenuId === ci ? 'open' : ''}" id="menu-${ci}">
+            ${SECONDARY_ACTIONS.slice(1).map((a, ai) => `
+              <button data-act="${esc(a.label)}" data-card="${ci}">
+                <span class="mi">${a.icon}</span>
+                <span ${a.label === '归档到资料库' ? 'style="color:var(--cyan)"' : ''}>${esc(a.label)}${ai === 0 ? '' : ''}</span>
+              </button>`).join('')}
+          </div>
+        </div>`;
+    }
+    return `
+      <div class="filecard clickable" data-open="${ci}">
+        <span class="ficon">${card.kind}</span>
+        <div class="fmeta">
+          <div class="ftitle">${esc(card.title)}</div>
+          <div class="fdesc">${esc(card.desc)}</div>
+        </div>
+        ${statusBadge(card)}
+        ${actions}
+      </div>`;
+  }).join('');
+
+  // 绑定：点卡 = 主操作
+  $$('#fileCards .filecard').forEach((el) => {
+    el.addEventListener('click', (e) => {
+      if (e.target.closest('button') || e.target.closest('.menu')) return;
+      const card = DEMO_CARDS[Number(el.dataset.open)];
+      showToast(`预览：${card.title}`);
+    });
+  });
+  $$('#fileCards [data-menu]').forEach((b) => b.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const id = Number(b.dataset.menu);
+    openMenuId = openMenuId === id ? null : id;
+    renderCards();
+  }));
+  $$('#fileCards [data-act]').forEach((b) => b.addEventListener('click', (e) => {
+    e.stopPropagation();
+    openMenuId = null;
+    renderCards();
+    showToast(`${b.dataset.act}：${DEMO_CARDS[Number(b.dataset.card)].title}`);
+  }));
+}
+document.addEventListener('click', () => { if (openMenuId !== null) { openMenuId = null; renderCards(); } });
+
+$$('#cardModeSeg button').forEach((b) => b.addEventListener('click', () => {
+  cardMode = b.dataset.cardmode;
+  $$('#cardModeSeg button').forEach((x) => x.classList.toggle('on', x === b));
+  renderCards();
+}));
+renderCards();
+
+/* ============================================================================
+   场景 5+6 共用：VoiceChrome 复刻（composer 内部固定一行，只报「通话中 mm:ss」，
+   隐藏专家名与模型名；静音/挂断沿用现有 30px icon 按钮语言）
+   ========================================================================== */
+const fmt = (s) => `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+let callActive = true;
+let callMuted = false;
+let callSeconds = 7 * 60 + 11; // 演示起点 07:11
+
+function renderVoiceChrome() {
+  ['voiceSlotS5', 'voiceSlotS6'].forEach((id) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.innerHTML = callActive ? `
+      <div class="voice-chrome-mock" data-state="${callMuted ? 'muted' : 'listening'}">
+        <span class="vcm-orb" aria-hidden="true"><span class="vcm-orb-core"></span></span>
+        <span class="vcm-text">通话中 <b class="mono calltimer">${fmt(callSeconds)}</b></span>
+        <span class="vcm-flex"></span>
+        <button class="vcm-btn vcm-mute ${callMuted ? 'on' : ''}" data-act="mute"
+          title="${callMuted ? '取消静音' : '静音'}">${callMuted ? '🔇' : '🎙'}</button>
+        <button class="vcm-btn vcm-end" data-act="end" title="结束通话">✕</button>
+      </div>` : '';
+  });
+  ['voiceBtnS5', 'voiceBtnS6'].forEach((id) => {
+    const b = document.getElementById(id);
+    if (b) b.classList.toggle('incall', callActive);
+  });
+  $$('.voice-chrome-mock [data-act="mute"]').forEach((b) => b.addEventListener('click', () => {
+    callMuted = !callMuted; renderVoiceChrome();
+  }));
+  $$('.voice-chrome-mock [data-act="end"]').forEach((b) => b.addEventListener('click', () => {
+    callActive = false; callMuted = false; renderVoiceChrome(); showToast('通话已结束');
+  }));
+}
+['voiceBtnS5', 'voiceBtnS6'].forEach((id) => {
+  const b = document.getElementById(id);
+  if (b) b.addEventListener('click', () => {
+    if (callActive) { showToast('通话已在进行中——用 composer 内通话行的 ✕ 结束'); return; }
+    callActive = true; callMuted = false; callSeconds = 0;
+    renderVoiceChrome(); showToast('通话已开始，计时从 00:00 起');
+  });
+});
+setInterval(() => {
+  if (!callActive) return;
+  callSeconds += 1;
+  $$('.calltimer').forEach((el) => { el.textContent = fmt(callSeconds); });
+}, 1000);
+renderVoiceChrome();
+
+/* ============================================================================
+   场景 5：右侧 Workbench「概览」任务现场（复刻现有组件形态）
+   后台任务只在右侧概览面板，不镜像 PinnedTodoBar；等待 → 读取失败 → 重试/取消 → 完成。
+   读取失败即停止计时，读到可证实的运行状态后才恢复已等待时长。
+   ========================================================================== */
+let taskState = 'waiting'; // waiting | readFailed | retrying | done | cancelled
+let taskElapsed = 83;      // 已等待秒数（演示起点 1:23，仅为一个真实感的已等待时长）
+let taskTimer = null;
+const FLOW_INITIAL = document.getElementById('msgFlow').innerHTML;
+let flowAppended = false;
+const TASK_TITLE = '读取季度销售数据并生成周报';
+
+function stopTaskTimer() { if (taskTimer) { clearInterval(taskTimer); taskTimer = null; } }
+function startTaskTimer() {
+  stopTaskTimer();
+  taskTimer = setInterval(() => {
+    taskElapsed += 1;
+    $$('.elapsed-live').forEach((el) => { el.textContent = fmt(taskElapsed); });
+  }, 1000);
+}
+
+/** 会话流只承载消息与天然位置的产物卡；完成/取消各追加一次，绝不重复。 */
+function syncFlow() {
+  const flow = $('#msgFlow');
+  if (flowAppended) return;
+  if (taskState === 'done') {
+    flowAppended = true;
+    flow.insertAdjacentHTML('beforeend', `
+      <div class="nm"><div class="nm-who">🎙 语音</div><div class="nm-text">周报做好了，数据口径按你说的华东二仓那版，产物在下面。</div></div>
+      <div class="filecard clickable" style="max-width:420px">
+        <span class="ficon">📄</span>
+        <div class="fmeta"><div class="ftitle">Q2 销售周报.md</div><div class="fdesc">文档 · 9.8 KB · 已复核</div></div>
+        <span class="badge emerald" title="已核验 / Verified">✓ 已核验</span>
+      </div>`);
+  } else if (taskState === 'cancelled') {
+    flowAppended = true;
+    flow.insertAdjacentHTML('beforeend',
+      `<div class="sysline">任务「${TASK_TITLE}」已取消 · 已通知执行引擎（已等待 ${fmt(taskElapsed)}）</div>`);
+  }
+}
+
+/** 右栏「概览」复刻：有活跃任务 → 任务进程 + TaskMonitor 卡；无任务 → 现有空态叙事。 */
+function renderWorkbench() {
+  const el = $('#workbenchBody');
+  if (taskState === 'cancelled') {
+    el.innerHTML = `
+      <div class="wbm-empty">
+        <div class="ic">📈</div>
+        <div style="margin-top:8px;color:var(--text-3)">运行中的任务会实时显示在这里</div>
+        <div class="wbm-art">最近产物<br>工作区</div>
+      </div>`;
+    return;
+  }
+  let card = '';
+  if (taskState === 'waiting') {
+    card = `
+      <div class="wbm-card-head"><span class="wbm-card-title">${TASK_TITLE}</span><span class="badge zinc">等待执行结果</span></div>
+      <div class="wbm-line">已等待 <b class="mono elapsed-live">${fmt(taskElapsed)}</b> · 只展示可证实状态与已等待时长，不给预估</div>
+      <div class="wbm-actions"><button class="btn btn-danger btn-sm" id="taskCancelBtn">取消任务</button></div>`;
+  } else if (taskState === 'readFailed') {
+    card = `
+      <div class="wbm-card-head"><span class="wbm-card-title">${TASK_TITLE}</span><span class="badge amber">结果读取失败</span></div>
+      <div class="wbm-line warn">结果读取失败——目前无法确认任务状态，等待已停止。</div>
+      <div class="wbm-line" style="color:var(--text-4)">「重试读取」重新进入读取中，读到新的可证实状态后才恢复展示等待时长；重试只重读结果，不重新派发任务。</div>
+      <div class="wbm-actions">
+        <button class="btn btn-primary btn-sm" id="taskRetryBtn">重试读取</button>
+        <button class="btn btn-danger btn-sm" id="taskCancelBtn">取消任务</button>
+      </div>`;
+  } else if (taskState === 'retrying') {
+    card = `
+      <div class="wbm-card-head"><span class="wbm-card-title">${TASK_TITLE}</span><span class="badge zinc">重试读取中</span></div>
+      <div class="wbm-line"><span class="spinner"></span> 读取中…读到新的可证实状态后恢复展示等待时长（只重读结果，不重派任务）</div>`;
+    setTimeout(() => { if (taskState === 'retrying') { taskState = 'waiting'; renderTaskAll(); } }, 1400);
+  } else if (taskState === 'done') {
+    card = `
+      <div class="wbm-card-head"><span class="wbm-card-title">${TASK_TITLE}</span><span class="badge emerald">已完成</span></div>
+      <div class="wbm-line">总耗时 ${fmt(taskElapsed)} · 产物已在会话流原位置展示，右栏不重复产物卡</div>`;
+  }
+  el.innerHTML = `
+    <div class="wbm-sec-title">任务进程</div>
+    <div class="wbm-card">${card}</div>
+    <div class="wbm-sec-title" style="margin-top:14px">产物</div>
+    <div class="wbm-line" style="font-size:11.5px;color:var(--text-5)">最近产物 · 工作区（产物完成时只在会话流展示，这里不重复）</div>`;
+  const bind = (id, fn) => { const b = $(id); if (b) b.addEventListener('click', fn); };
+  bind('#taskCancelBtn', () => { taskState = 'cancelled'; renderTaskAll(); showToast('任务已取消'); });
+  bind('#taskRetryBtn', () => { taskState = 'retrying'; renderTaskAll(); });
+}
+
+function renderTaskAll() {
+  renderWorkbench();
+  syncFlow();
+  if (taskState === 'waiting') startTaskTimer(); else stopTaskTimer();
+}
+
+$('#taskFailBtn').addEventListener('click', () => {
+  if (taskState !== 'waiting') { showToast('当前状态演示不了读取失败，请先「重新开始演示」'); return; }
+  taskState = 'readFailed'; renderTaskAll();
+});
+$('#taskDoneBtn').addEventListener('click', () => {
+  if (taskState === 'done') return;
+  taskState = 'done'; renderTaskAll();
+});
+$('#taskRestartBtn').addEventListener('click', () => {
+  taskState = 'waiting'; taskElapsed = 0;
+  flowAppended = false;
+  document.getElementById('msgFlow').innerHTML = FLOW_INITIAL;
+  renderTaskAll();
+});
+
+renderTaskAll();
+
+/* ============================================================================
+   场景 6：探针能力（门控：热切换/热词注入只发生在通话中）
+   ========================================================================== */
+$('#hotVoiceBtn').addEventListener('click', () => {
+  const voice = $('#hotVoiceSelect').value;
+  const log = $('#hotVoiceLog');
+  if (!callActive) {
+    log.innerHTML = '未在通话中：音色热切换只发生在通话里。请先点 composer 底栏的 🔊 开始通话。';
+    return;
+  }
+  log.innerHTML = `→ 已发送 <code>session.update</code>（voice = <b>${esc(voice)}</b>）…`;
+  setTimeout(() => {
+    log.innerHTML = `→ 已发送 <code>session.update</code>（voice = <b>${esc(voice)}</b>）<br>
+      <span class="echo">← 上游 <code>session.updated</code> 已回显 ${esc(voice)}</span> —— 回显只证明上游收到了字段，<b>未做真合成验证</b>，不代表新音色真的能出声。`;
+  }, 900);
+});
+
+$('#hotwordBtn').addEventListener('click', () => {
+  const log = $('#hotwordLog');
+  if (!callActive) {
+    log.innerHTML = '未在通话中：热词随 session.update 上行，需要一通进行中的通话。';
+    return;
+  }
+  log.innerHTML = `→ 已将 ${vocab.length} 条词表随 <code>session.update</code> 上行（instructions 注入）…`;
+  setTimeout(() => {
+    log.innerHTML = `→ 已将 ${vocab.length} 条词表随 <code>session.update</code> 上行<br>
+      <span class="echo">← 上游已确认 session 更新</span> —— 词表是否真进入识别热词路径：<b>未验证</b>，需对照实验（有无热词的专名词识别率）才能下结论。`;
+  }, 900);
+});
+</script>
+</body>
+</html>

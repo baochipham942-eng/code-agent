@@ -79,6 +79,7 @@ __pycache__/
 .screenshots/
 .claude/test-results/
 .claude/worktrees/
+.worktrees/
 eval-datasets/
 playwright-report/
 test-results/

@@ -52,8 +52,8 @@ vi.mock('../../../src/renderer/components/design/DesignCanvasNodes', () => ({
   KonvaVideoNode: () => null,
 }));
 
-vi.mock('../../../src/renderer/components/design/DesignImageEditPanel', () => ({
-  DesignImageEditPanel: ({
+vi.mock('../../../src/renderer/components/design/DesignImageToolbar', () => ({
+  DesignImageToolbar: ({
     onExportImage,
     onExportPdf,
   }: {

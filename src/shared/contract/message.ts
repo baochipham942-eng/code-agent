@@ -272,6 +272,8 @@ export interface MessageMetadata {
    * 注意：Message 顶层 source 是系统生产者来源，这是另一条轴。
    */
   source?: 'voice' | 'dictation' | 'typed';
+  /** 实时语音协议身份。取消轮的 tombstone 与 DB 投影都只认这组稳定 ID。 */
+  voiceTranscript?: { responseId?: string; itemId?: string };
   voiceCallSummary?: VoiceCallSummary;
   workbench?: WorkbenchMessageMetadata;
   skill?: SkillMessageMetadata;

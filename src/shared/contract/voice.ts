@@ -110,6 +110,15 @@ export interface VoiceSessionConfig {
 /** Renderer 直连上游所需的建连材料。只有 direct 形态才有。 */
 export type VoiceClientBootstrap = { kind: 'webrtc'; clientSecret: string; sdpUrl: string; expiresAt: number };
 
+export type VoiceInterruptClassification =
+  | 'pending'
+  | 'no_playback'
+  | 'background'
+  | 'acknowledgement'
+  | 'supplement'
+  | 'short_fragment'
+  | 'true_interrupt';
+
 /** GET /api/voice/status 的响应：LiveVoiceButton 可见性与占用态的 host 真相。 */
 export interface VoiceStatusResponse {
   provider: VoiceProviderId;
@@ -130,12 +139,22 @@ export type VoiceEvent =
   /** 通话自然结束；与需要用户处理的 error 分流。 */
   | { type: 'session.ended'; reason: 'idle-timeout' }
   /** 用户说的话（上游 ASR），final 时 done=true */
-  | { type: 'user.transcript'; text: string; done: boolean }
+  | { type: 'user.transcript'; text: string; done: boolean; itemId?: string }
   /** 助手说的话的字幕 */
-  | { type: 'assistant.transcript'; text: string; done: boolean }
-  /** 用户开口 —— Renderer 据此清空播放队列做 barge-in */
-  | { type: 'speech.started' }
-  | { type: 'response.done'; ttfaModelMs?: number; ttfaPerceivedMs?: number }
+  | { type: 'assistant.transcript'; text: string; done: boolean; responseId?: string; itemId?: string }
+  | { type: 'response.created'; responseId: string }
+  | { type: 'response.cancelled'; responseId: string; reason: 'interrupt' }
+  /** 声学 onset 只是候选：Renderer 暂停播放，语义闸决策后再恢复或丢弃。 */
+  | { type: 'speech.started'; candidateId?: string }
+  | { type: 'speech.stopped'; candidateId?: string; durationMs: number }
+  | {
+      type: 'interrupt.decision';
+      candidateId: string;
+      classification: VoiceInterruptClassification;
+      action: 'resume' | 'cancel_discard';
+      responseId?: string;
+    }
+  | { type: 'response.done'; responseId?: string; ttfaModelMs?: number; ttfaPerceivedMs?: number }
   /** Host 注入的 narration 在 response.create 确认窗内被上游拒绝；通话本身仍然存活。 */
   | { type: 'injection.rejected'; message: string }
   /** 语音派出的任务状态。Active Work 条消费（批 B），host 侧同时用它计通话摘要的 workItemCount。 */
@@ -194,6 +213,13 @@ export interface VoiceFocusContext {
 export type VoiceClientCommand =
   | { type: 'end' }
   | { type: 'interrupt' }
+  | {
+      type: 'interrupt.playback';
+      candidateId: string;
+      playing: boolean;
+      playedMs: number;
+      queuedMs: number;
+    }
   /** 焦点变化上报。节流后发；host 据此增量刷新 instructions（§6.5）。 */
   | { type: 'focus'; context: VoiceFocusContext }
   /**
@@ -213,8 +239,8 @@ export type VoiceClientCommand =
 
 interface VoiceTransportHandleBase {
   readonly provider: VoiceProviderId;
-  /** 打断当前回复。 */
-  interrupt(): void;
+  /** 打断当前回复，并返回被取消的上游 response identity。 */
+  interrupt(): string | null;
   /**
    * 建连后增量刷新 instructions（焦点变化 / 切专家）。方案 §6.5 的
    * `VoiceContextAssembler` 增量 session.update；调用方负责节流。
@@ -240,6 +266,11 @@ export type VoiceTransportHandle =
        * 只在 turn_detection = null（PTT/点按）路径有意义；server_vad 路径上游自动断句。
        */
       commit(): void;
+      /**
+       * server VAD 只切轮，不自动建回复；Host 在 final 语义决策后显式调用。
+       * instructions 只约束这一次 response，避免取消后的旧回复目标压过最新用户要求。
+       */
+      respond(instructions?: string): void;
       /**
        * 把一条外部消息塞进实时会话并让模型就它开口（发言人协议回流，W6-2）。
        *

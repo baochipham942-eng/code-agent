@@ -194,7 +194,7 @@ describe('voiceCallBridge 字幕揭示绑播放进度', () => {
     expect(partial()).toBe('');
   });
 
-  it('边界2 barge-in：用户开口掐掉播放队列，揭示器同步停、不空转', async () => {
+  it('边界2 barge-in：onset 只暂停，语义确认后才丢弃', async () => {
     const socket = await dialAndOpen();
     vi.useFakeTimers();
 
@@ -204,12 +204,82 @@ describe('voiceCallBridge 字幕揭示绑播放进度', () => {
     const revealedBefore = partial().length;
     expect(revealedBefore).toBeGreaterThan(0);
 
-    sendEvent(socket, { type: 'speech.started' });
-    expect(partial()).toBe(''); // 沿用既有 partial 清理语义
+    sendEvent(socket, { type: 'speech.started', candidateId: 'turn-old' });
+    expect(partial()).not.toBe('');
+    sendEvent(socket, {
+      type: 'interrupt.decision',
+      candidateId: 'turn-old',
+      classification: 'true_interrupt',
+      action: 'cancel_discard',
+    });
+    expect(partial()).toBe('');
 
     // 剩下的文本永远不会被念出来，揭示器不许继续长
     await vi.advanceTimersByTimeAsync(AUDIO_SECONDS * 1000);
     expect(partial()).toBe('');
+  });
+
+  it('cancel_discard 后同一 response 的晚到 final/done 不得复活字幕', async () => {
+    const socket = await dialAndOpen();
+    vi.useFakeTimers();
+
+    sendEvent(socket, {
+      type: 'assistant.transcript',
+      responseId: 'resp-old',
+      itemId: 'item-old',
+      text: '第一句旧回答',
+      done: false,
+    });
+    sendAudio(socket, 2);
+    await vi.advanceTimersByTimeAsync(600);
+    expect(partial()).not.toBe('');
+
+    sendEvent(socket, {
+      type: 'response.cancelled',
+      responseId: 'resp-old',
+      reason: 'interrupt',
+    });
+    expect(partial()).toBe('');
+
+    sendEvent(socket, {
+      type: 'assistant.transcript',
+      responseId: 'resp-old',
+      itemId: 'item-old',
+      text: '第一句旧回答（上游晚到 final）',
+      done: true,
+    });
+    sendEvent(socket, { type: 'response.done', responseId: 'resp-old' });
+    await vi.advanceTimersByTimeAsync(VOICE_SUBTITLE_STALL_FLUSH_MS + 500);
+
+    expect(partial()).toBe('');
+    expect(useSessionStore.getState().messages).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ content: '第一句旧回答（上游晚到 final）' }),
+    ]));
+  });
+
+  it('取消旧 response 不得吞掉交错到达的新 response 字幕', async () => {
+    const socket = await dialAndOpen();
+    vi.useFakeTimers();
+
+    sendEvent(socket, { type: 'response.cancelled', responseId: 'resp-old', reason: 'interrupt' });
+    sendEvent(socket, {
+      type: 'assistant.transcript',
+      responseId: 'resp-new',
+      itemId: 'item-new',
+      text: '第二句新回答',
+      done: false,
+    });
+    sendAudio(socket, 1);
+    sendEvent(socket, {
+      type: 'assistant.transcript',
+      responseId: 'resp-new',
+      itemId: 'item-new',
+      text: '第二句新回答',
+      done: true,
+    });
+    await vi.advanceTimersByTimeAsync(1_200);
+
+    expect(partial()).toBe('第二句新回答');
   });
 
   // 监工点名的验收口径。它只能在 renderer 侧量：本单一个字节的线上协议都没改，

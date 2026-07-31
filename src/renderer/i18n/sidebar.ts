@@ -164,6 +164,7 @@ export const sidebarZh = {
     tierCollapse: '折叠分区',
     tierExpand: '展开分区',
     tierNewSpace: '新建协作空间',
+    tierNewProject: '新建独立空间',
     tierNewQuickChat: '新建快速对话',
     // 分组头展开/收起 tooltip 与 aria（sidebarGroupExpansion 纯工具由调用方注入词条）
     collapseGroupTitle: '折叠项目',
@@ -467,6 +468,7 @@ export const sidebarEn: typeof sidebarZh = {
     tierCollapse: 'Collapse section',
     tierExpand: 'Expand section',
     tierNewSpace: 'New space',
+    tierNewProject: 'New local space',
     tierNewQuickChat: 'New quick chat',
     collapseGroupTitle: 'Collapse project',
     expandGroupTitle: 'Expand project',

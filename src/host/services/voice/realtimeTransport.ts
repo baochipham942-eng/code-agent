@@ -27,11 +27,21 @@ const RESPONSE_IDLE_TIMEOUT_CODE = 'response_idle_timeout';
 
 interface UpstreamEvent {
   type: string;
+  response_id?: string;
+  item_id?: string;
+  response?: { id?: string };
+  item?: { id?: string };
   delta?: string;
   transcript?: string;
   audio?: string;
   error?: { code?: string; message?: string };
   [key: string]: unknown;
+}
+
+function responseIdOf(event: UpstreamEvent, fallback = ''): string {
+  if (typeof event.response_id === 'string' && event.response_id) return event.response_id;
+  if (typeof event.response?.id === 'string' && event.response.id) return event.response.id;
+  return fallback;
 }
 
 function parseEvent(raw: unknown): UpstreamEvent | null {
@@ -47,8 +57,20 @@ function parseEvent(raw: unknown): UpstreamEvent | null {
 }
 
 type UpstreamTurnDetection =
-  | { type: 'server_vad'; threshold?: number; prefix_padding_ms?: number; silence_duration_ms?: number }
-  | { type: 'semantic_vad'; eagerness?: 'low' | 'medium' | 'high' | 'auto' }
+  | {
+      type: 'server_vad';
+      threshold?: number;
+      prefix_padding_ms?: number;
+      silence_duration_ms?: number;
+      create_response: false;
+      interrupt_response: false;
+    }
+  | {
+      type: 'semantic_vad';
+      eagerness?: 'low' | 'medium' | 'high' | 'auto';
+      create_response: false;
+      interrupt_response: false;
+    }
   | null;
 
 function resolveTurnDetectionConfig(): VoiceTurnDetectionConfig {
@@ -104,11 +126,15 @@ function toUpstreamTurnDetection(config: VoiceTurnDetectionConfig): UpstreamTurn
   if (config.type === 'semantic_vad') {
     return {
       type: 'semantic_vad',
+      create_response: false,
+      interrupt_response: false,
       ...(config.eagerness ? { eagerness: config.eagerness } : {}),
     };
   }
   return {
     type: 'server_vad',
+    create_response: false,
+    interrupt_response: false,
     ...(config.threshold !== undefined ? { threshold: config.threshold } : {}),
     ...(config.prefixPaddingMs !== undefined ? { prefix_padding_ms: config.prefixPaddingMs } : {}),
     ...(config.silenceDurationMs !== undefined ? { silence_duration_ms: config.silenceDurationMs } : {}),
@@ -288,11 +314,19 @@ export function createRealtimeTransport(profile: RealtimeVoiceProviderProfile): 
     let speechStoppedAt = 0;
     let ttfaModelMs: number | undefined;
     let ttfaPerceivedMs: number | undefined;
-    let responseActive = false;
+    let activeResponseId = '';
+    const responseItemIds = new Map<string, string>();
+    const cancellingResponseIds = new Set<string>();
+    const cancellingResponseItemIds = new Map<string, string>();
+    let responseCreateQueued = false;
+    let queuedResponseInstructions = '';
+    let sentResponseInstructions = '';
     let pendingInjectionAt: number | null = null;
     let responseWatchdogTimer: ReturnType<typeof setTimeout> | null = null;
     let responseWatchdogNudged = false;
     let modelUnresponsiveNotified = false;
+    let speechStartedAt = 0;
+    let currentCandidateId = '';
 
     const clearResponseWatchdog = () => {
       if (responseWatchdogTimer) clearTimeout(responseWatchdogTimer);
@@ -314,7 +348,12 @@ export function createRealtimeTransport(profile: RealtimeVoiceProviderProfile): 
             timeoutMs: VOICE_UPSTREAM_RESPONSE_TIMEOUT_MS,
           });
           // 只推动已提交轮次，不创建 conversation item，也不打开 injection 确认窗。
-          ws.send(JSON.stringify({ type: 'response.create' }));
+          ws.send(JSON.stringify({
+            type: 'response.create',
+            ...(sentResponseInstructions
+              ? { response: { instructions: sentResponseInstructions } }
+              : {}),
+          }));
           scheduleResponseWatchdog();
           return;
         }
@@ -336,6 +375,26 @@ export function createRealtimeTransport(profile: RealtimeVoiceProviderProfile): 
     const armResponseWatchdog = () => {
       clearResponseWatchdog();
       scheduleResponseWatchdog();
+    };
+    const sendResponseCreate = () => {
+      if (ws.readyState !== WebSocket.OPEN || activeResponseId || cancellingResponseIds.size > 0) return false;
+      responseCreateQueued = false;
+      sentResponseInstructions = queuedResponseInstructions;
+      queuedResponseInstructions = '';
+      armResponseWatchdog();
+      // 旧 assistant item 只能在当前用户 ASR final 已到、Host 明确请求新回复后删除。
+      // 若在旧 response.done 当刻删，可能连正在提交的 input transcription 一起截断。
+      for (const itemId of cancellingResponseItemIds.values()) {
+        ws.send(JSON.stringify({ type: 'conversation.item.delete', item_id: itemId }));
+      }
+      cancellingResponseItemIds.clear();
+      ws.send(JSON.stringify({
+        type: 'response.create',
+        ...(sentResponseInstructions
+          ? { response: { instructions: sentResponseInstructions } }
+          : {}),
+      }));
+      return true;
     };
 
     /**
@@ -378,13 +437,23 @@ export function createRealtimeTransport(profile: RealtimeVoiceProviderProfile): 
 
       switch (event.type) {
         case 'input_audio_buffer.committed':
-          armResponseWatchdog();
+          // VAD 只提交转写，是否创建回复由 Host 的语义闸在 final 后决定。
           break;
-        case 'response.created':
+        case 'response.created': {
           clearResponseWatchdog();
-          responseActive = true;
+          const responseId = responseIdOf(event, 'legacy-response');
+          activeResponseId = responseId;
+          responseCreateQueued = false;
           pendingInjectionAt = null;
+          if (responseId) onEvent({ type: 'response.created', responseId });
           break;
+        }
+        case 'response.output_item.added': {
+          const responseId = responseIdOf(event, activeResponseId);
+          const itemId = typeof event.item?.id === 'string' ? event.item.id : '';
+          if (responseId && itemId) responseItemIds.set(responseId, itemId);
+          break;
+        }
         case 'response.audio.delta':
         case 'response.output_audio.delta':
           if (typeof event.delta === 'string') {
@@ -397,13 +466,39 @@ export function createRealtimeTransport(profile: RealtimeVoiceProviderProfile): 
           }
           break;
         case 'response.audio_transcript.delta':
-        case 'response.output_audio_transcript.delta':
-          if (typeof event.delta === 'string') onEvent({ type: 'assistant.transcript', text: event.delta, done: false });
+        case 'response.output_audio_transcript.delta': {
+          if (typeof event.delta === 'string') {
+            const responseId = responseIdOf(event, activeResponseId);
+            if (responseId) {
+              const itemId = responseItemIds.get(responseId) ?? event.item_id;
+              if (itemId && !responseItemIds.has(responseId)) responseItemIds.set(responseId, itemId);
+              onEvent({
+                type: 'assistant.transcript',
+                text: event.delta,
+                done: false,
+                responseId,
+                ...(itemId ? { itemId } : {}),
+              });
+            }
+          }
           break;
+        }
         case 'response.audio_transcript.done':
-        case 'response.output_audio_transcript.done':
-          onEvent({ type: 'assistant.transcript', text: typeof event.transcript === 'string' ? event.transcript : '', done: true });
+        case 'response.output_audio_transcript.done': {
+          const responseId = responseIdOf(event, activeResponseId || 'legacy-response');
+          if (responseId) {
+            const itemId = responseItemIds.get(responseId) ?? event.item_id;
+            if (itemId && !responseItemIds.has(responseId)) responseItemIds.set(responseId, itemId);
+            onEvent({
+              type: 'assistant.transcript',
+              text: typeof event.transcript === 'string' ? event.transcript : '',
+              done: true,
+              responseId,
+              ...(itemId ? { itemId } : {}),
+            });
+          }
           break;
+        }
         // 用户侧流式字幕（E3）。**文本在 `stash` 里，`text` 字段恒空**——2026-07-30
         // 真上游探针实测（26 个 delta，text 全是 len=0，stash 单调增长 2→21）。
         // stash 是**累计值**不是增量，所以直接当整句下发，renderer 的 partialUser 是替换语义。
@@ -414,7 +509,7 @@ export function createRealtimeTransport(profile: RealtimeVoiceProviderProfile): 
             : typeof event.stash === 'string' ? event.stash : '';
           if (!stash) break;
           if (itemId) userTranscriptStash.set(itemId, stash);
-          onEvent({ type: 'user.transcript', text: stash, done: false });
+          onEvent({ type: 'user.transcript', text: stash, done: false, ...(itemId ? { itemId } : {}) });
           break;
         }
         case 'conversation.item.input_audio_transcription.completed': {
@@ -433,7 +528,7 @@ export function createRealtimeTransport(profile: RealtimeVoiceProviderProfile): 
             });
           }
           if (itemId) userTranscriptStash.delete(itemId);
-          onEvent({ type: 'user.transcript', text, done: true });
+          onEvent({ type: 'user.transcript', text, done: true, ...(itemId ? { itemId } : {}) });
           break;
         }
         case 'input_audio_buffer.speech_started':
@@ -441,10 +536,17 @@ export function createRealtimeTransport(profile: RealtimeVoiceProviderProfile): 
           speechStoppedAt = 0;
           ttfaModelMs = undefined;
           ttfaPerceivedMs = undefined;
-          onEvent({ type: 'speech.started' });
+          speechStartedAt = Date.now();
+          currentCandidateId = `turn-${turn}`;
+          onEvent({ type: 'speech.started', candidateId: currentCandidateId });
           break;
         case 'input_audio_buffer.speech_stopped':
           speechStoppedAt = Date.now();
+          onEvent({
+            type: 'speech.stopped',
+            candidateId: currentCandidateId,
+            durationMs: speechStartedAt ? Math.max(0, speechStoppedAt - speechStartedAt) : 0,
+          });
           break;
         case 'session.updated': {
           // 上游到底收下了什么档：我们发 server_vad、它回 null，就是「说了没反应」
@@ -487,19 +589,33 @@ export function createRealtimeTransport(profile: RealtimeVoiceProviderProfile): 
             void handleToolCall(event.call_id, event.name, typeof event.arguments === 'string' ? event.arguments : '{}');
           }
           break;
-        case 'response.done':
-          responseActive = false;
+        case 'response.done': {
+          const responseId = responseIdOf(event, activeResponseId || 'legacy-response');
+          if (responseId === activeResponseId) activeResponseId = '';
+          if (responseId) cancellingResponseIds.delete(responseId);
+          if (responseId) responseItemIds.delete(responseId);
           pendingInjectionAt = null;
-          onEvent({
-            type: 'response.done',
-            ...(ttfaModelMs !== undefined ? { ttfaModelMs } : {}),
-            ...(ttfaPerceivedMs !== undefined ? { ttfaPerceivedMs } : {}),
-          });
+          if (responseId) {
+            onEvent({
+              type: 'response.done',
+              responseId,
+              ...(ttfaModelMs !== undefined ? { ttfaModelMs } : {}),
+              ...(ttfaPerceivedMs !== undefined ? { ttfaPerceivedMs } : {}),
+            });
+          }
+          if (responseCreateQueued) sendResponseCreate();
           break;
+        }
         case 'error':
           if (event.error?.code === RESPONSE_IDLE_TIMEOUT_CODE) {
             clearResponseWatchdog();
-            responseActive = false;
+            activeResponseId = '';
+            cancellingResponseIds.clear();
+            cancellingResponseItemIds.clear();
+            responseItemIds.clear();
+            responseCreateQueued = false;
+            queuedResponseInstructions = '';
+            sentResponseInstructions = '';
             pendingInjectionAt = null;
             logger.info('upstream session ended after idle timeout', {
               code: event.error.code,
@@ -565,7 +681,13 @@ export function createRealtimeTransport(profile: RealtimeVoiceProviderProfile): 
         if (ws.readyState !== WebSocket.OPEN) return;
         // turn_detection = null 的手动模式：commit 把缓冲切成一轮，response.create 让模型开口。
         ws.send(JSON.stringify({ type: 'input_audio_buffer.commit' }));
-        ws.send(JSON.stringify({ type: 'response.create' }));
+        responseCreateQueued = true;
+        sendResponseCreate();
+      },
+      respond(instructions?: string) {
+        responseCreateQueued = true;
+        queuedResponseInstructions = instructions?.trim() ?? '';
+        sendResponseCreate();
       },
       injectItem(text: string) {
         if (ws.readyState !== WebSocket.OPEN) return;
@@ -579,11 +701,24 @@ export function createRealtimeTransport(profile: RealtimeVoiceProviderProfile): 
         ws.send(JSON.stringify({ type: 'response.create' }));
       },
       isResponding() {
-        return responseActive;
+        return Boolean(activeResponseId);
       },
       interrupt() {
-        if (ws.readyState !== WebSocket.OPEN) return;
+        if (ws.readyState !== WebSocket.OPEN || !activeResponseId) return null;
+        const responseId = activeResponseId;
+        cancellingResponseIds.add(responseId);
+        const itemId = responseItemIds.get(responseId);
+        if (itemId) {
+          cancellingResponseItemIds.set(responseId, itemId);
+          while (cancellingResponseItemIds.size > 32) {
+            const oldest = cancellingResponseItemIds.keys().next().value as string | undefined;
+            if (!oldest) break;
+            cancellingResponseItemIds.delete(oldest);
+          }
+        }
+        activeResponseId = '';
         ws.send(JSON.stringify({ type: 'response.cancel' }));
+        return responseId;
       },
       async close() {
         clearHeartbeat();

@@ -123,7 +123,13 @@ function OverflowAction({
   );
 }
 
-export const WorkspacePreviewPanel: React.FC = () => {
+export interface WorkspacePreviewPanelProps {
+  overviewMode?: boolean;
+}
+
+export const WorkspacePreviewPanel: React.FC<WorkspacePreviewPanelProps> = ({
+  overviewMode = false,
+}) => {
   const { t } = useI18n();
   const wp = t.previewWorkspace.workspacePreview;
   const items = useWorkspacePreviewModel();
@@ -500,7 +506,7 @@ export const WorkspacePreviewPanel: React.FC = () => {
             {selected && <PreviewBody item={selected} />}
           </div>
 
-          {selected && (
+          {selected && !overviewMode && (
             <div className="shrink-0 border-t border-white/[0.06]">
               <button
                 type="button"
@@ -552,7 +558,7 @@ export const WorkspacePreviewPanel: React.FC = () => {
         </section>
       )}
 
-      {currentProjectId && (
+      {currentProjectId && !overviewMode && (
         <section className="shrink-0 border-t border-white/[0.08]">
           <button
             type="button"

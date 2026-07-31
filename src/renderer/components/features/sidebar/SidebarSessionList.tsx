@@ -40,6 +40,8 @@ export interface SidebarSessionListProps extends Omit<SidebarProjectGroupProps, 
   cloudBadge?: boolean;
   /** 快速对话分区节头「+」：与侧栏顶部「新任务」同一个动作（纯对话，不复制逻辑）。 */
   handleNewChat: () => void | Promise<void>;
+  /** 独立空间分区节头「+」：选择工作目录后复用工作区会话创建链路。 */
+  handleNewIndependentSpace: () => void | Promise<void>;
 }
 
 export const SidebarSessionList: React.FC<SidebarSessionListProps> = ({
@@ -76,6 +78,7 @@ export const SidebarSessionList: React.FC<SidebarSessionListProps> = ({
   sessionItemProps,
   cloudBadge,
   handleNewChat,
+  handleNewIndependentSpace,
 }) => {
   const { t, language } = useI18n();
   const sb = t.sidebar;
@@ -215,7 +218,7 @@ export const SidebarSessionList: React.FC<SidebarSessionListProps> = ({
             const isCollapsed = Boolean(collapsedTiers[section.tier]);
             return (
             <section key={section.tier} aria-label={tierLabels[section.tier]} data-testid={`sidebar-tier-${section.tier}`}>
-              {/* 节头 = 折叠主钮（原生 button，Enter/Space 可达）+ 计数 + solo/创建图标钮。
+              {/* 节头 = 折叠主钮（原生 button，Enter/Space 可达）+ 创建图标钮。
                   图标钮是主钮的兄弟而非子元素，仍显式 stopPropagation 防未来结构调整误触折叠。 */}
               <div className="flex items-center gap-1 px-1.5 pb-1">
                 <button /* ds-allow:button: 分区节头折叠行（chevron+标题左对齐列表行形态），Button primitive 居中动作钮形状不适配行布局 */
@@ -237,10 +240,6 @@ export const SidebarSessionList: React.FC<SidebarSessionListProps> = ({
                     <Cloud className="h-3.5 w-3.5 text-sky-400" aria-label={p.tierCloudBadgeTitle} />
                   </span>
                 )}
-                {/* 计数折叠态也保留：折叠后它是这个分区唯一的信息密度。 */}
-                <span className="flex-shrink-0 text-[11px] text-zinc-600 tabular-nums">{section.sessionCount}</span>
-                {/* 独立空间分区不放「+」：产品上没有「新建独立空间」入口（独立空间由工作目录会话自然长出来），
-                    新写一份创建流超出本任务范围。 */}
                 {section.tier === 'space' && (
                   <button /* ds-allow:button: 节头 20px 图标钮，Button primitive 无对应微尺寸方形变体（同分组头图标钮形态） */
                     type="button"
@@ -252,6 +251,22 @@ export const SidebarSessionList: React.FC<SidebarSessionListProps> = ({
                       openProjectSpacePage();
                     }}
                     className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded text-zinc-600 hover:bg-zinc-700/70 hover:text-zinc-300 focus:outline-hidden"
+                  >
+                    <Plus className="h-3 w-3" />
+                  </button>
+                )}
+                {section.tier === 'project' && (
+                  <button /* ds-allow:button: 节头 20px 图标钮，Button primitive 无对应微尺寸方形变体（同分组头图标钮形态） */
+                    type="button"
+                    aria-label={p.tierNewProject}
+                    title={p.tierNewProject}
+                    data-testid="sidebar-tier-new-project"
+                    disabled={isCreatingSession || creatingWorkspaceKey !== null}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void handleNewIndependentSpace();
+                    }}
+                    className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded text-zinc-600 hover:bg-zinc-700/70 hover:text-zinc-300 focus:outline-hidden disabled:opacity-50"
                   >
                     <Plus className="h-3 w-3" />
                   </button>

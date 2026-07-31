@@ -139,6 +139,8 @@ describe('VoiceTransport 契约（relay / direct 双跑）', () => {
     // 批 X5：silence 1000 / prefix 500（800 档真机仍把真人犹豫切断，2026-07-30）
     expect(update.session.turn_detection).toEqual({
       type: 'server_vad',
+      create_response: false,
+      interrupt_response: false,
       threshold: 0.5,
       prefix_padding_ms: 500,
       silence_duration_ms: 1000,
@@ -154,6 +156,8 @@ describe('VoiceTransport 契约（relay / direct 双跑）', () => {
     let handle = await connectHandle(qwenOmniTransport);
     expect(readSessionUpdate(upstreams[upstreams.length - 1]).session.turn_detection).toEqual({
       type: 'server_vad',
+      create_response: false,
+      interrupt_response: false,
       threshold: 0.7, // 手选灵敏度保留
       prefix_padding_ms: 500,
       silence_duration_ms: 1000,
@@ -166,6 +170,8 @@ describe('VoiceTransport 契约（relay / direct 双跑）', () => {
     handle = await connectHandle(qwenOmniTransport);
     expect(readSessionUpdate(upstreams[upstreams.length - 1]).session.turn_detection).toEqual({
       type: 'server_vad',
+      create_response: false,
+      interrupt_response: false,
       prefix_padding_ms: 500,
       silence_duration_ms: 1000,
     });
@@ -176,6 +182,8 @@ describe('VoiceTransport 契约（relay / direct 双跑）', () => {
     handle = await connectHandle(qwenOmniTransport);
     expect(readSessionUpdate(upstreams[upstreams.length - 1]).session.turn_detection).toEqual({
       type: 'server_vad',
+      create_response: false,
+      interrupt_response: false,
       threshold: 0.5,
       prefix_padding_ms: 450,
       silence_duration_ms: 600,
@@ -190,7 +198,12 @@ describe('VoiceTransport 契约（relay / direct 双跑）', () => {
     const upstream = upstreams[upstreams.length - 1];
     const update = readSessionUpdate(upstream);
 
-    expect(update.session.turn_detection).toEqual({ type: 'semantic_vad', eagerness: 'high' });
+    expect(update.session.turn_detection).toEqual({
+      type: 'semantic_vad',
+      create_response: false,
+      interrupt_response: false,
+      eagerness: 'high',
+    });
 
     await handle.close();
   });
@@ -311,6 +324,179 @@ describe('VoiceTransport 契约（relay / direct 双跑）', () => {
     await handle.close();
   });
 
+  it('贯穿 responseId/itemId，取消返回被取消 response，并隔离晚到 done', async () => {
+    const events: VoiceEvent[] = [];
+    const handle = await qwenOmniTransport.connect({
+      apiKey: 'test-key',
+      config: { neoSessionId: 's1' },
+      onEvent: (event) => events.push(event),
+      onAudio: vi.fn(),
+    });
+    if (handle.kind !== 'relay') throw new Error('unreachable');
+    const upstream = upstreams[upstreams.length - 1];
+
+    upstream.emit('message', JSON.stringify({
+      type: 'response.created',
+      response: { id: 'resp-old' },
+    }));
+    upstream.emit('message', JSON.stringify({
+      type: 'response.audio_transcript.delta',
+      response_id: 'resp-old',
+      item_id: 'item-old',
+      delta: '旧回答',
+    }));
+    expect(handle.interrupt()).toBe('resp-old');
+    expect(events.at(-1)).toMatchObject({
+      type: 'assistant.transcript',
+      responseId: 'resp-old',
+      itemId: 'item-old',
+    });
+
+    upstream.emit('message', JSON.stringify({
+      type: 'response.created',
+      response: { id: 'resp-new' },
+    }));
+    upstream.emit('message', JSON.stringify({
+      type: 'response.done',
+      response: { id: 'resp-old' },
+    }));
+    expect(handle.isResponding()).toBe(true);
+
+    upstream.emit('message', JSON.stringify({
+      type: 'response.done',
+      response: { id: 'resp-new' },
+    }));
+    expect(handle.isResponding()).toBe(false);
+    expect(events.filter((event) => event.type === 'response.done')).toEqual([
+      expect.objectContaining({ responseId: 'resp-old' }),
+      expect.objectContaining({ responseId: 'resp-new' }),
+    ]);
+
+    await handle.close();
+  });
+
+  it('assistant itemId 优先绑定 response.output_item.added，避免误用 transcript 帧的 item_id', async () => {
+    const events: VoiceEvent[] = [];
+    const handle = await qwenOmniTransport.connect({
+      apiKey: 'test-key',
+      config: { neoSessionId: 's1' },
+      onEvent: (event) => events.push(event),
+      onAudio: vi.fn(),
+    });
+    if (handle.kind !== 'relay') throw new Error('unreachable');
+    const upstream = upstreams[upstreams.length - 1];
+    upstream.emit('message', JSON.stringify({
+      type: 'response.created',
+      response: { id: 'resp-new' },
+    }));
+    upstream.emit('message', JSON.stringify({
+      type: 'response.output_item.added',
+      response_id: 'resp-new',
+      item: { id: 'assistant-item' },
+    }));
+    upstream.emit('message', JSON.stringify({
+      type: 'response.audio_transcript.done',
+      response_id: 'resp-new',
+      item_id: 'user-item',
+      transcript: '新回答',
+    }));
+
+    expect(events.at(-1)).toMatchObject({
+      type: 'assistant.transcript',
+      responseId: 'resp-new',
+      itemId: 'assistant-item',
+      text: '新回答',
+    });
+    await handle.close();
+  });
+
+  it('取消旧 response 后只创建一次带最新用户 final 的新 response', async () => {
+    const handle = await qwenOmniTransport.connect({
+      apiKey: 'test-key',
+      config: { neoSessionId: 's1' },
+      onEvent: vi.fn(),
+      onAudio: vi.fn(),
+    });
+    if (handle.kind !== 'relay') throw new Error('unreachable');
+    const upstream = upstreams[upstreams.length - 1];
+
+    upstream.emit('message', JSON.stringify({
+      type: 'response.created',
+      response: { id: 'resp-old' },
+    }));
+    upstream.emit('message', JSON.stringify({
+      type: 'response.audio_transcript.delta',
+      response_id: 'resp-old',
+      item_id: 'item-old',
+      delta: '旧回答',
+    }));
+    expect(handle.interrupt()).toBe('resp-old');
+    handle.respond('只执行最新要求：从十倒数到一');
+    handle.respond('只执行最新要求：从十倒数到一');
+    expect(upstream.sent.filter((raw) => JSON.parse(raw).type === 'response.create')).toHaveLength(0);
+
+    upstream.emit('message', JSON.stringify({
+      type: 'response.done',
+      response: { id: 'resp-old' },
+    }));
+    expect(upstream.sent.map((raw) => JSON.parse(raw)).filter((frame) =>
+      frame.type === 'conversation.item.delete' || frame.type === 'response.create',
+    )).toEqual([
+      { type: 'conversation.item.delete', item_id: 'item-old' },
+      {
+        type: 'response.create',
+        response: { instructions: '只执行最新要求：从十倒数到一' },
+      },
+    ]);
+    expect(upstream.sent.map((raw) => JSON.parse(raw)).filter((frame) => frame.type === 'response.create'))
+      .toEqual([{
+        type: 'response.create',
+        response: { instructions: '只执行最新要求：从十倒数到一' },
+      }]);
+
+    await handle.close();
+  });
+
+  it('旧 response.done 先于当前用户 final 时不删除 item、不截断 ASR', async () => {
+    const handle = await qwenOmniTransport.connect({
+      apiKey: 'test-key',
+      config: { neoSessionId: 's1' },
+      onEvent: vi.fn(),
+      onAudio: vi.fn(),
+    });
+    if (handle.kind !== 'relay') throw new Error('unreachable');
+    const upstream = upstreams[upstreams.length - 1];
+    upstream.emit('message', JSON.stringify({
+      type: 'response.created',
+      response: { id: 'resp-old' },
+    }));
+    upstream.emit('message', JSON.stringify({
+      type: 'response.audio_transcript.delta',
+      response_id: 'resp-old',
+      item_id: 'item-old',
+      delta: '旧回答',
+    }));
+
+    expect(handle.interrupt()).toBe('resp-old');
+    upstream.emit('message', JSON.stringify({
+      type: 'response.done',
+      response: { id: 'resp-old' },
+    }));
+    expect(upstream.sent.map((raw) => JSON.parse(raw)).filter((frame) =>
+      frame.type === 'conversation.item.delete' || frame.type === 'response.create',
+    )).toHaveLength(0);
+
+    handle.respond('最新用户 final');
+    expect(upstream.sent.map((raw) => JSON.parse(raw)).filter((frame) =>
+      frame.type === 'conversation.item.delete' || frame.type === 'response.create',
+    )).toEqual([
+      { type: 'conversation.item.delete', item_id: 'item-old' },
+      { type: 'response.create', response: { instructions: '最新用户 final' } },
+    ]);
+
+    await handle.close();
+  });
+
   it('已提交轮次持续哑火时先 nudge，再发一次性 notice；看门狗 response.create 不算注入', async () => {
     vi.useFakeTimers();
     const events: VoiceEvent[] = [];
@@ -326,12 +512,13 @@ describe('VoiceTransport 契约（relay / direct 双跑）', () => {
     const sentBeforeCommit = upstream.sent.length;
 
     upstream.emit('message', JSON.stringify({ type: 'input_audio_buffer.committed' }));
+    handle.kind === 'relay' && handle.respond();
     await vi.advanceTimersByTimeAsync(VOICE_UPSTREAM_RESPONSE_TIMEOUT_MS);
 
     const firstTurnFrames = upstream.sent
       .slice(sentBeforeCommit)
       .map((raw) => JSON.parse(raw) as { type: string });
-    expect(firstTurnFrames.filter((frame) => frame.type === 'response.create')).toHaveLength(1);
+    expect(firstTurnFrames.filter((frame) => frame.type === 'response.create')).toHaveLength(2);
     expect(events.filter((event) => event.type === 'notice' && event.code === 'VOICE_MODEL_UNRESPONSIVE')).toHaveLength(0);
 
     upstream.emit('message', JSON.stringify({
@@ -344,12 +531,13 @@ describe('VoiceTransport 契约（relay / direct 双跑）', () => {
     expect(events.filter((event) => event.type === 'notice' && event.code === 'VOICE_MODEL_UNRESPONSIVE')).toHaveLength(1);
 
     upstream.emit('message', JSON.stringify({ type: 'input_audio_buffer.committed' }));
+    handle.kind === 'relay' && handle.respond();
     await vi.advanceTimersByTimeAsync(VOICE_UPSTREAM_RESPONSE_TIMEOUT_MS * 2);
     const responseCreates = upstream.sent
       .slice(sentBeforeCommit)
       .map((raw) => JSON.parse(raw) as { type: string })
       .filter((frame) => frame.type === 'response.create');
-    expect(responseCreates).toHaveLength(2);
+    expect(responseCreates).toHaveLength(4);
     expect(events.filter((event) => event.type === 'notice' && event.code === 'VOICE_MODEL_UNRESPONSIVE')).toHaveLength(1);
 
     await handle.close();

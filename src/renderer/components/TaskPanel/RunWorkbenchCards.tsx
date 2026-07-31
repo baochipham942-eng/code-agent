@@ -239,7 +239,15 @@ const LIVE_RUN_STATUSES: ReadonlySet<RunUiStatus> = new Set([
   'waiting_approval',
 ]);
 
-export const TaskDashboardSummary = ({ tasks, run }: { tasks: TaskRecord[]; run?: RunUiState | null }) => {
+export const TaskDashboardSummary = ({
+  tasks,
+  run,
+  showOutputRefs = true,
+}: {
+  tasks: TaskRecord[];
+  run?: RunUiState | null;
+  showOutputRefs?: boolean;
+}) => {
   const { t } = useI18n();
   const rw = t.taskStatusPanels.runWorkbench;
   if (tasks.length === 0) {
@@ -269,7 +277,7 @@ export const TaskDashboardSummary = ({ tasks, run }: { tasks: TaskRecord[]; run?
   return (
     <div className="space-y-2">
       {sessionTask ? (
-        <TaskRecordRow task={sessionTask} run={run} primary />
+        <TaskRecordRow task={sessionTask} run={run} primary showOutputRefs={showOutputRefs} />
       ) : (
         <div className="rounded-md border border-white/[0.05] bg-white/[0.015] px-2.5 py-2 text-[11px] text-zinc-600">
           {rw.noTasksInConversation}
@@ -289,7 +297,7 @@ export const TaskDashboardSummary = ({ tasks, run }: { tasks: TaskRecord[]; run?
           </div>
           <div className="space-y-1.5">
             {backgroundTasks.slice(0, 3).map((task) => (
-              <TaskRecordRow key={task.id} task={task} />
+              <TaskRecordRow key={task.id} task={task} showOutputRefs={showOutputRefs} />
             ))}
           </div>
         </div>
@@ -338,7 +346,17 @@ export const SubagentRunRows = ({ subagents }: { subagents: SubagentRunView[] })
   );
 };
 
-const TaskRecordRow = ({ task, run, primary = false }: { task: TaskRecord; run?: RunUiState | null; primary?: boolean }) => {
+const TaskRecordRow = ({
+  task,
+  run,
+  primary = false,
+  showOutputRefs = true,
+}: {
+  task: TaskRecord;
+  run?: RunUiState | null;
+  primary?: boolean;
+  showOutputRefs?: boolean;
+}) => {
   const { t } = useI18n();
   const rail = deriveTaskRailView(task, run);
   const dependencySummary = dependencySummaryLabel(rail.dependencySummary, t);
@@ -393,7 +411,7 @@ const TaskRecordRow = ({ task, run, primary = false }: { task: TaskRecord; run?:
         <div className="mt-1 truncate text-[11px] text-zinc-500">{detailLabel}：{rail.currentAction}</div>
       )}
 
-      {task.outputRefs && task.outputRefs.length > 0 && (
+      {showOutputRefs && task.outputRefs && task.outputRefs.length > 0 && (
         <TaskOutputRefRows refs={task.outputRefs} />
       )}
     </div>

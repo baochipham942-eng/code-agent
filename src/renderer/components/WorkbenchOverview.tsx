@@ -1,17 +1,16 @@
 // ============================================================================
-// WorkbenchOverview - 任务现场。
-// 有任务活动时：「任务进程 + 产物」双区。会话已有产物但无任务活动时仍展示
-// 产物区（跑完的任务/重开的会话不能让产物消失）。既无活动也无产物时不摆
-// 空产物壳，给任务现场叙事（运行中的任务会实时显示在这里），并把当前会话
-// workbenchSnapshot 里最近一次任务现场摘要作为「最近产物」预览挂出来。
+// WorkbenchOverview - 任务工作台。
+// 默认固定展示 Todo / 上下文 / 产物；产物被点击后切成专注预览，返回后恢复
+// 工作台。审批与 ask-user 问题留在会话链路，不投影到概览。
 // ============================================================================
 
-import React from 'react';
-import { Activity } from 'lucide-react';
+import React, { useEffect } from 'react';
+import { Activity, ArrowLeft } from 'lucide-react';
 import { PLAIN_CHAT_SUMMARY_LABEL } from '@shared/contract/sessionWorkspace';
 import { useI18n } from '../hooks/useI18n';
 import { useTaskActivity } from '../hooks/useTaskActivity';
 import { useWorkspacePreviewModel } from '../hooks/useWorkspacePreviewModel';
+import { useAppStore } from '../stores/appStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { TaskPanel } from './TaskPanel';
 import { WorkspacePreviewPanel } from './WorkspacePreviewPanel';
@@ -19,7 +18,13 @@ import { WorkspacePreviewPanel } from './WorkspacePreviewPanel';
 export const WorkbenchOverview: React.FC = () => {
   const { t } = useI18n();
   const { hasTaskActivity, agentTreeSnapshot } = useTaskActivity();
-  const hasArtifacts = useWorkspacePreviewModel().length > 0;
+  const workspacePreviewItems = useWorkspacePreviewModel();
+  const hasArtifacts = workspacePreviewItems.length > 0;
+  const selectedWorkspacePreviewId = useAppStore((state) => state.selectedWorkspacePreviewId);
+  const setSelectedWorkspacePreviewId = useAppStore((state) => state.setSelectedWorkspacePreviewId);
+  const hasSelectedArtifact = selectedWorkspacePreviewId
+    ? workspacePreviewItems.some((item) => item.id === selectedWorkspacePreviewId)
+    : false;
   // 最近一次任务现场摘要：纯对话（PLAIN_CHAT_SUMMARY_LABEL）不算产物现场，不挂预览。
   const recentSnapshotSummary = useSessionStore((state) => {
     const summary = state.sessions
@@ -27,6 +32,33 @@ export const WorkbenchOverview: React.FC = () => {
       ?.workbenchSnapshot?.summary?.trim();
     return summary && summary !== PLAIN_CHAT_SUMMARY_LABEL ? summary : null;
   });
+
+  useEffect(() => {
+    if (selectedWorkspacePreviewId && !hasSelectedArtifact) {
+      setSelectedWorkspacePreviewId(null);
+    }
+  }, [hasSelectedArtifact, selectedWorkspacePreviewId, setSelectedWorkspacePreviewId]);
+
+  if (selectedWorkspacePreviewId && hasSelectedArtifact) {
+    return (
+      <div
+        data-testid="workbench-overview-preview"
+        className="flex h-full min-h-0 flex-col overflow-hidden bg-zinc-900"
+      >
+        <button
+          type="button"
+          onClick={() => setSelectedWorkspacePreviewId(null)}
+          className="flex h-9 shrink-0 items-center gap-2 border-b border-white/[0.06] px-3 text-xs text-zinc-400 hover:bg-white/[0.03] hover:text-zinc-200"
+        >
+          <ArrowLeft className="h-3.5 w-3.5" />
+          {t.workbenchTabs.overviewBackLabel}
+        </button>
+        <div className="min-h-0 flex-1">
+          <WorkspacePreviewPanel overviewMode />
+        </div>
+      </div>
+    );
+  }
 
   if (!hasTaskActivity && !hasArtifacts) {
     return (
@@ -66,29 +98,13 @@ export const WorkbenchOverview: React.FC = () => {
       data-testid="workbench-overview-view"
       className="flex h-full min-h-0 flex-col overflow-hidden bg-zinc-900"
     >
-      {hasTaskActivity && (
-        <section
-          data-testid="workbench-overview-progress"
-          aria-label={t.workbenchTabs.overviewProgressLabel}
-          className="flex max-h-[45%] min-h-0 shrink-0 flex-col overflow-y-auto border-b border-white/[0.08]"
-        >
-          <h2 className="shrink-0 px-3 pt-2 text-[11px] font-medium uppercase tracking-wide text-zinc-500">
-            {t.workbenchTabs.overviewProgressLabel}
-          </h2>
-          <div className="min-h-0 flex-1">
-            <TaskPanel agentTreeSnapshot={agentTreeSnapshot} />
-          </div>
-        </section>
-      )}
       <section
-        data-testid="workbench-overview-artifacts"
-        aria-label={t.workbenchTabs.overviewArtifactsLabel}
+        data-testid="workbench-overview-workspace"
+        aria-label={t.workbenchTabs.overviewTitle}
         className="flex min-h-0 flex-1 flex-col"
       >
-        {/* 产物区不再顶一行「产物」小标题：下面那条 header 就写着产物名，它自己说明自己。
-            无障碍名仍由 section 的 aria-label 提供，没丢。 */}
         <div className="min-h-0 flex-1">
-          <WorkspacePreviewPanel />
+          <TaskPanel agentTreeSnapshot={agentTreeSnapshot} />
         </div>
       </section>
     </div>

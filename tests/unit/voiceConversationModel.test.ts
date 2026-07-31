@@ -14,7 +14,18 @@ const getSession = vi.fn(async (_sessionId: string) => ({ workingDirectory: '/re
 let lastOnEvent: ((event: VoiceEvent) => void) | null = null;
 const connect = vi.fn(async (input: Parameters<VoiceTransport['connect']>[0]) => {
   lastOnEvent = input.onEvent;
-  return { kind: 'relay', provider: 'qwen-omni', sendAudio: vi.fn(), commit: vi.fn(), interrupt: vi.fn(), updateInstructions: vi.fn(), close };
+  return {
+    kind: 'relay',
+    provider: 'qwen-omni',
+    sendAudio: vi.fn(),
+    commit: vi.fn(),
+    respond: vi.fn(),
+    injectItem: vi.fn(),
+    isResponding: vi.fn(() => false),
+    interrupt: vi.fn(),
+    updateInstructions: vi.fn(),
+    close,
+  };
 });
 
 // 设置真源的替身：每个用例直接改 value，不走 IPC。

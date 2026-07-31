@@ -93,4 +93,11 @@ describe('RunWorkbenchCards task log viewer', () => {
     expect((await screen.findByRole('alert')).textContent).toContain('日志读取失败');
     expect(screen.getByRole('button', { name: '刷新日志' })).toBeTruthy();
   });
+
+  it('can keep output references out of the Todo projection', () => {
+    render(<TaskDashboardSummary tasks={[logTask()]} showOutputRefs={false} />);
+
+    expect(screen.queryByTestId('task-output-refs')).toBeNull();
+    expect(screen.queryByRole('button', { name: '查看日志' })).toBeNull();
+  });
 });

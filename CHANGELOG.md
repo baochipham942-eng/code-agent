@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.29.2] - 2026-07-31
+
+### Fixed
+
+- **发布证据与 main 拓扑对齐**：在 v0.29.1 合并后的 main 提交上重新执行长会话、工具取消和真实 app-host 验收，使证据提交成为正式发布提交的祖先。v0.29.1 因 squash 合并后的证据来源校验失败而未产生分发制品，v0.29.2 是 0.29 功能集的实际分发版本。
+
 ## [0.29.1] - 2026-07-31
 
 ### Fixed

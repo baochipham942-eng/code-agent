@@ -10,6 +10,7 @@ vi.mock('../../../src/renderer/utils/logger', () => ({
 
 import type { VoiceInputDeviceSettings } from '../../../src/shared/contract/settings';
 import {
+  readPreferredVoiceInputAvailability,
   resolveVoiceInputDevice,
   VoiceAudioPipeline,
 } from '../../../src/renderer/services/voiceAudioPipeline';
@@ -183,5 +184,44 @@ describe('VoiceAudioPipeline 输入设备解析', () => {
     expect(getUserMedia).toHaveBeenCalledTimes(1);
     const constraints = getUserMedia.mock.calls[0][0];
     expect((constraints.audio as MediaTrackConstraints).deviceId).toBeUndefined();
+  });
+
+  it('枚举后指定设备在开流前失效时，再试一次系统默认', async () => {
+    const preferredFailure = Object.assign(new Error('device disappeared'), { name: 'NotFoundError' });
+    const getUserMedia = vi.fn()
+      .mockRejectedValueOnce(preferredFailure)
+      .mockResolvedValueOnce(fakeStream([]));
+    installMediaDevices(
+      getUserMedia,
+      async () => [audioInput('fresh-id', 'Studio Mic') as MediaDeviceInfo],
+    );
+
+    await makePipeline(preference).start();
+
+    expect(getUserMedia).toHaveBeenCalledTimes(2);
+    expect((getUserMedia.mock.calls[0][0].audio as MediaTrackConstraints).deviceId)
+      .toEqual({ ideal: 'fresh-id' });
+    expect((getUserMedia.mock.calls[1][0].audio as MediaTrackConstraints).deviceId)
+      .toBeUndefined();
+  });
+
+  it('设备可用性读取失败返回 unknown，不把瞬时错误当成拔出', async () => {
+    const mediaDevices = {
+      enumerateDevices: vi.fn(async () => {
+        throw new Error('temporary failure');
+      }),
+    } as unknown as MediaDevices;
+
+    await expect(readPreferredVoiceInputAvailability(preference, mediaDevices)).resolves.toBeNull();
+  });
+
+  it('设备恢复后按 label 识别为可用', async () => {
+    const mediaDevices = {
+      enumerateDevices: vi.fn(async () => [
+        audioInput('new-id', 'Studio Mic') as MediaDeviceInfo,
+      ]),
+    } as unknown as MediaDevices;
+
+    await expect(readPreferredVoiceInputAvailability(preference, mediaDevices)).resolves.toBe(true);
   });
 });

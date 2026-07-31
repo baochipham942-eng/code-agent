@@ -103,4 +103,98 @@ describe('VoiceApiKeyConfig', () => {
       );
     });
   });
+
+  it('传入 provider 时：标题与 service 槽都跟随该 Provider', async () => {
+    render(<VoiceApiKeyConfig provider={{ displayName: 'OpenAI Realtime', service: 'openai' }} />);
+
+    expect(await screen.findByText('OpenAI Realtime API Key')).toBeTruthy();
+    fireEvent.click(screen.getByTestId('voice-live-key-change'));
+    const input = await screen.findByTestId('voice-live-key-input');
+    fireEvent.change(input, { target: { value: 'sk-openai-123' } });
+    fireEvent.click(screen.getByTestId('voice-live-key-save'));
+    await waitFor(() => {
+      expect(invokeDomainMock).toHaveBeenCalledWith(
+        IPC_DOMAINS.SETTINGS,
+        'setServiceApiKey',
+        { service: 'openai', apiKey: 'sk-openai-123' },
+      );
+    });
+  });
+
+  it('DashScope profile：说明保持「实时语音/图片/口述共用」', async () => {
+    render(<VoiceApiKeyConfig />);
+    expect((await screen.findByTestId('voice-api-key-description')).textContent).toBe(
+      zh.voice.settings.apiKeyDescription,
+    );
+    expect(screen.getByTestId('voice-api-key-description').textContent).toContain('图片生成');
+  });
+
+  it('OpenAI profile：说明只谈复用 openai secure-storage 槽，不复用 DashScope 共用文案', async () => {
+    render(
+      <VoiceApiKeyConfig
+        provider={{ displayName: 'OpenAI Realtime', service: 'openai', profile: 'openai' }}
+      />,
+    );
+    const description = await screen.findByTestId('voice-api-key-description');
+    expect(description.textContent).toBe(zh.voice.settings.apiKeyDescriptionOpenAI);
+    expect(description.textContent).not.toContain('图片生成');
+    expect(description.textContent).not.toContain('口述转写');
+    expect(description.textContent).toContain('OpenAI Realtime');
+    expect(description.textContent).toMatch(/secure-storage/i);
+  });
+
+  it('自定义 profile：说明 Key 按 providerId 隔离、原值不回传', async () => {
+    render(
+      <VoiceApiKeyConfig
+        provider={{
+          displayName: 'Acme Realtime',
+          service: 'custom-realtime:custom-acme',
+          profile: 'custom',
+        }}
+      />,
+    );
+    const description = await screen.findByTestId('voice-api-key-description');
+    expect(description.textContent).toBe(zh.voice.settings.apiKeyDescriptionCustom);
+    expect(description.textContent).toContain('providerId');
+    expect(description.textContent).toContain('原值不回传');
+    expect(description.textContent).not.toContain('图片生成');
+  });
+
+  it('未显式传 profile 时由 service 推导：openai 不落到 DashScope 共用说明', async () => {
+    render(<VoiceApiKeyConfig provider={{ displayName: 'OpenAI Realtime', service: 'openai' }} />);
+    const description = await screen.findByTestId('voice-api-key-description');
+    expect(description.textContent).toBe(zh.voice.settings.apiKeyDescriptionOpenAI);
+    expect(description.textContent).not.toBe(zh.voice.settings.apiKeyDescription);
+  });
+
+  it('configured prop 为 true 时收起，覆盖全局 hook 的 false', async () => {
+    availability.configured = false;
+    render(<VoiceApiKeyConfig provider={{ displayName: 'OpenAI', service: 'openai' }} configured />);
+    await waitFor(() => expect(screen.getByTestId('voice-live-key-masked')).toBeTruthy());
+    expect(screen.queryByTestId('voice-live-key-input')).toBeNull();
+  });
+
+  it('configured prop 为 false 时展开，覆盖全局 hook 的 true', async () => {
+    availability.configured = true;
+    render(<VoiceApiKeyConfig provider={{ displayName: 'OpenAI', service: 'openai' }} configured={false} />);
+    expect(await screen.findByTestId('voice-live-key-input')).toBeTruthy();
+  });
+
+  it('保存 Key 成功后调用 onKeyChanged', async () => {
+    const onKeyChanged = vi.fn();
+    render(<VoiceApiKeyConfig provider={{ displayName: 'OpenAI', service: 'openai' }} configured={false} onKeyChanged={onKeyChanged} />);
+    const input = await screen.findByTestId('voice-live-key-input');
+    fireEvent.change(input, { target: { value: 'sk-openai' } });
+    fireEvent.click(screen.getByTestId('voice-live-key-save'));
+    await waitFor(() => expect(onKeyChanged).toHaveBeenCalledTimes(1));
+  });
+
+  it('清除 Key 成功后调用 onKeyChanged', async () => {
+    const onKeyChanged = vi.fn();
+    render(<VoiceApiKeyConfig provider={{ displayName: 'OpenAI', service: 'openai' }} configured onKeyChanged={onKeyChanged} />);
+    fireEvent.click(await screen.findByTestId('voice-live-key-change'));
+    fireEvent.click(screen.getByTestId('voice-live-key-save'));
+    fireEvent.click(await screen.findByText(zh.voice.settings.apiKeyClearConfirm));
+    await waitFor(() => expect(onKeyChanged).toHaveBeenCalledTimes(1));
+  });
 });

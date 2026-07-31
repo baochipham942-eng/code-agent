@@ -127,6 +127,29 @@ export async function resolveVoiceAudioCaptureConstraints(
   };
 }
 
+/**
+ * 只判断已配置设备当前是否可见。枚举失败返回 null，调用方不得据此切换设备：
+ * “读不到设备列表”与“设备确实拔掉”是两种状态，混在一起会让一次瞬时系统错误
+ * 把正在工作的采集管线切走。
+ */
+export async function readPreferredVoiceInputAvailability(
+  configured: unknown,
+  mediaDevices: MediaDevices = navigator.mediaDevices,
+): Promise<boolean | null> {
+  const preference = normalizeVoiceInputDevice(configured);
+  if (!preference || typeof mediaDevices.enumerateDevices !== 'function') return null;
+  try {
+    const resolution = resolveVoiceInputDevice(preference, await mediaDevices.enumerateDevices());
+    return resolution.match !== 'default';
+  } catch (error) {
+    logger.warn('input device availability read failed; keeping current capture', {
+      label: preference.label,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
+}
+
 export interface VoiceAudioPipelineCallbacks {
   /** 一帧上行音频（PCM16@16k 单声道）；静音/门关闭时是零帧。 */
   onFrame: (pcm16k: Int16Array) => void;
@@ -202,9 +225,24 @@ export class VoiceAudioPipeline implements VoiceAudioPipelineLike {
       const audio = this.inputDevice
         ? await resolveVoiceAudioCaptureConstraints(this.inputDevice)
         : { ...DEFAULT_CAPTURE_CONSTRAINTS };
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio,
-      });
+      let stream: MediaStream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ audio });
+      } catch (error) {
+        // 设备枚举与真正开流之间仍有竞态：USB 麦克风可能刚被拔掉，或驱动拒绝
+        // 指定 deviceId。仅在有设备偏好且并非权限拒绝时再试一次系统默认；
+        // 权限拒绝不能靠第二次请求“绕过”，否则会重复弹权限或制造误导。
+        const name = error instanceof Error ? error.name : 'UnknownError';
+        const hasExplicitDevice = 'deviceId' in audio && audio.deviceId !== undefined;
+        if (!this.inputDevice || !hasExplicitDevice || name === 'NotAllowedError') throw error;
+        logger.warn('configured input device open failed; retrying system default', {
+          label: this.inputDevice.label,
+          error: name,
+        });
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: { ...DEFAULT_CAPTURE_CONSTRAINTS },
+        });
+      }
       logger.info('getUserMedia acquired', { pipelineId: this.instanceId, tracks: stream.getTracks().length });
       // await 期间被 stop() 了：刚拿到的 stream 无人持有，必须就地停掉并返回。
       if (this.disposed) {

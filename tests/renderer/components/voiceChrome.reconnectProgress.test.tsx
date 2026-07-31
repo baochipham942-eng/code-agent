@@ -13,13 +13,6 @@ vi.mock('../../../src/renderer/hooks/useI18n', () => ({
 vi.mock('../../../src/renderer/services/voiceCallBridge', () => ({
   voiceCallBridge: { hangUp: vi.fn(), toggleMute: vi.fn(), manualTap: vi.fn() },
 }));
-vi.mock('../../../src/renderer/stores/agentRegistryStore', () => ({
-  useAgentRegistryStore: (selector: (state: { entries: Array<{ id: string; name: string }> }) => unknown) =>
-    selector({ entries: [{ id: 'lanxi', name: '岚析' }] }),
-}));
-vi.mock('../../../src/renderer/components/features/expert/SessionMemberBar', () => ({
-  useSessionMembers: () => [],
-}));
 
 import { VoiceChrome } from '../../../src/renderer/components/features/voice/VoiceChrome';
 import { useVoiceCallStore } from '../../../src/renderer/stores/voiceCallStore';
@@ -40,6 +33,8 @@ function enterReconnecting(attempt: number) {
   store.reconnectingChanged(true, { attempt, maxAttempts: MAX_ATTEMPTS });
   store.phaseChanged('connecting');
 }
+
+const ON_CALL_REGEX = /^通话中 \d{2}:\d{2}$/;
 
 describe('VoiceChrome 重连进度（F2）', () => {
   beforeEach(() => {
@@ -75,7 +70,7 @@ describe('VoiceChrome 重连进度（F2）', () => {
     expect(screen.getByTestId('voice-status').textContent).toBe(progressText(MAX_ATTEMPTS));
   });
 
-  it('重连成功：进度清零，状态回到正常通话文案', () => {
+  it('重连成功：进度清零，状态回到“通话中 mm:ss”', () => {
     enterReconnecting(2);
     render(<VoiceChrome sessionId="session-1" />);
     expect(screen.getByTestId('voice-status').textContent).toBe(progressText(2));
@@ -88,7 +83,7 @@ describe('VoiceChrome 重连进度（F2）', () => {
     const state = useVoiceCallStore.getState();
     expect(state.reconnectAttempt).toBe(0);
     expect(state.reconnectMaxAttempts).toBe(0);
-    expect(screen.getByTestId('voice-status').textContent).toBe(zh.voice.status.listening);
+    expect(screen.getByTestId('voice-status').textContent).toMatch(ON_CALL_REGEX);
     expect(screen.getByTestId('voice-status').textContent).not.toContain('重试');
   });
 

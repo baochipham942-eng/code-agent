@@ -78,6 +78,13 @@ export const zh = {
     download: '下载',
     archiveToLibrary: '归档到资料库',
     exportBundle: '导出文件包',
+    statusVerified: '已验证',
+    statusUnverified: '未验证',
+    statusFailed: '失败',
+    qualityValidated: '质量通过',
+    qualityNeedsReview: '待复核',
+    qualityFailed: '质量失败',
+    moreActions: '更多',
   },
 
   // 状态栏

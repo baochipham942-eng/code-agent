@@ -597,6 +597,10 @@ export const enSettingsCore = {
       clearAudioDescription: 'Delete locally retained retry audio without affecting sent messages.',
       postProcessingTitle: 'Lightly clean transcription text',
       postProcessingDescription: 'Remove common spoken pauses and tidy spacing while keeping the raw transcription for metadata tracking.',
+      vocabularyTitle: 'Dictation vocabulary',
+      vocabularyDescription: 'One term per line. Call transcription and task understanding will interpret text using these spellings; it does not guarantee recognition improvement. Overlong, empty, or duplicate terms are filtered automatically.',
+      vocabularyPlaceholder: 'e.g. a.txt\nnpm install\nZhang San',
+      vocabularyCount: 'Valid terms: {count}/100',
       saving: 'Saving',
       effectiveNextRecording: 'Settings take effect on the next recording',
       modes: {

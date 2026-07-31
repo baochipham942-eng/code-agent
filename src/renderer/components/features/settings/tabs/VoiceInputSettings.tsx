@@ -2,11 +2,12 @@
 // VoiceInputSettings - composer voice input settings
 // ============================================================================
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { AudioLines, Check, Cloud, Cpu, Mic, RotateCcw, SlidersHorizontal, Trash2, Wand2 } from 'lucide-react';
 import { IPC_DOMAINS } from '@shared/ipc';
 import type { AppSettings, SpeechInputSettings, SpeechRetainedAudioClearResult, SpeechTranscriptionMode } from '@shared/contract';
 import { DEFAULT_SPEECH_INPUT_SETTINGS, VOICE_INPUT_SETTINGS_UPDATED_EVENT } from '@shared/contract';
+import { VOICE_VOCABULARY_MAX_ENTRIES, VOICE_VOCABULARY_MAX_TERM_LENGTH } from '@shared/constants/voice';
 import ipcService from '../../../../services/ipcService';
 import { createLogger } from '../../../../utils/logger';
 import { useI18n } from '../../../../hooks/useI18n';
@@ -49,6 +50,20 @@ function mergeSpeechSettings(value?: Partial<SpeechInputSettings>): SpeechInputS
   };
 }
 
+/** 前端清洗规则与 Host `getVoiceVocabulary` 严格一致：trim、去空、稳定去重、超长丢弃、最多 100 条。 */
+export function cleanVocabularyInput(raw: string): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const line of raw.split('\n')) {
+    const term = line.trim();
+    if (!term || term.length > VOICE_VOCABULARY_MAX_TERM_LENGTH || seen.has(term)) continue;
+    seen.add(term);
+    result.push(term);
+    if (result.length >= VOICE_VOCABULARY_MAX_ENTRIES) break;
+  }
+  return result;
+}
+
 export const VoiceInputSettings: React.FC = () => {
   const { t } = useI18n();
   const voiceText = t.settings.voiceInput;
@@ -56,6 +71,9 @@ export const VoiceInputSettings: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const [clearingAudio, setClearingAudio] = useState(false);
   const [clearAudioMessage, setClearAudioMessage] = useState<string | null>(null);
+  const [vocabularyText, setVocabularyText] = useState('');
+
+  const vocabularyCount = useMemo(() => cleanVocabularyInput(vocabularyText).length, [vocabularyText]);
 
   useEffect(() => {
     let cancelled = false;
@@ -64,6 +82,8 @@ export const VoiceInputSettings: React.FC = () => {
         const appSettings = await ipcService.invokeDomain<AppSettings>(IPC_DOMAINS.SETTINGS, 'get');
         if (!cancelled) {
           setSettings(mergeSpeechSettings(appSettings.speech));
+          const cleaned = cleanVocabularyInput((appSettings.voice?.vocabulary ?? []).join('\n'));
+          setVocabularyText(cleaned.join('\n'));
         }
       } catch (error) {
         logger.error(voiceText.loadSettingsFailedLog, error);
@@ -89,6 +109,23 @@ export const VoiceInputSettings: React.FC = () => {
     } finally {
       setSaving(false);
     }
+  };
+
+  const saveVocabulary = async (cleaned: string[]) => {
+    try {
+      await ipcService.invokeDomain(IPC_DOMAINS.SETTINGS, 'set', {
+        voice: { vocabulary: cleaned },
+      } as Partial<AppSettings>);
+    } catch (error) {
+      logger.error(voiceText.saveSettingsFailedLog, error);
+    }
+  };
+
+  const normalizeVocabularyText = () => {
+    const cleaned = cleanVocabularyInput(vocabularyText);
+    const normalized = cleaned.join('\n');
+    if (normalized !== vocabularyText) setVocabularyText(normalized);
+    void saveVocabulary(cleaned);
   };
 
   const clearRetainedAudio = async () => {
@@ -286,6 +323,24 @@ export const VoiceInputSettings: React.FC = () => {
           </div>
           {settings.postProcessingEnabled && <Check className="h-4 w-4 text-zinc-200" />}
         </button>
+      </div>
+
+      {/* 口述词表：本地清洗后保存，按 Host 相同规则过滤 */}
+      <div className="border-t border-zinc-700 pt-4" data-testid="voice-vocabulary-section">
+        <h3 className="mb-1 text-sm font-medium text-zinc-200">{voiceText.vocabularyTitle}</h3>
+        <p className="mb-3 text-xs text-zinc-500">{voiceText.vocabularyDescription}</p>
+        <textarea
+          data-testid="voice-vocabulary"
+          value={vocabularyText}
+          onChange={(event) => setVocabularyText(event.target.value)}
+          onBlur={normalizeVocabularyText}
+          placeholder={voiceText.vocabularyPlaceholder}
+          rows={6}
+          className="w-full resize-y rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 outline-none placeholder:text-zinc-600 focus:border-primary-500"
+        />
+        <p className="mt-2 text-xs text-zinc-500" data-testid="voice-vocabulary-count">
+          {voiceText.vocabularyCount.replace('{count}', String(vocabularyCount))}
+        </p>
       </div>
 
       <div className="flex items-center gap-2 border-t border-zinc-700 pt-4 text-xs text-zinc-500">

@@ -102,6 +102,30 @@ describe('DesignImageToolbar 动词条', () => {
   });
 });
 
+describe('菜单锚定触发按钮（2026-08-01 返工#1）', () => {
+  it('三个下拉 + 两个浮层都与各自触发按钮同处一个锚点容器（相对定位的父级）', () => {
+    renderToolbar();
+    const pairs: Array<[string, string]> = [
+      ['design-toolbar-annotate', 'design-annotate-popover'],
+      ['design-toolbar-repaint', 'design-repaint-popover'],
+      ['design-toolbar-resize', 'design-resize-menu'],
+      ['design-toolbar-expand', 'design-expand-menu'],
+      ['design-toolbar-more', 'design-more-menu'],
+    ];
+    for (const [triggerId, menuId] of pairs) {
+      fireEvent.click(screen.getByTestId(triggerId));
+      const trigger = screen.getByTestId(triggerId);
+      const menu = screen.getByTestId(menuId);
+      // 菜单必须与触发按钮同在一个 relative 锚点容器内（不再挂在整条工具条下共用中心点）
+      expect(menu.parentElement).toBe(trigger.parentElement);
+      expect(menu.parentElement?.className).toContain('relative');
+      expect(menu.className).toContain('left-0');
+      expect(menu.className).not.toContain('-translate-x-1/2');
+      fireEvent.click(screen.getByTestId(triggerId)); // 收起，给下一对让路
+    }
+  });
+});
+
 describe('调整大小五档', () => {
   it('五档齐全：比例小方块 + 人话名字 + 灰色比例数字', () => {
     renderToolbar();

@@ -91,8 +91,13 @@ const PRESET_NAME_KEYS: Record<ResizeRatioPresetId, keyof Translations['design']
   '16:9': 'resizePresetWide',
 };
 
+// 菜单锚定触发按钮（2026-08-01 审美关返工#1）：每个下拉相对其触发按钮定位——左缘对齐、紧贴下方，
+// 不再五个菜单共用条中心（旧实现所有菜单都从同一 x 铺开，看不出从哪个按钮来）。
 const MENU_CLASS =
-  'pointer-events-auto absolute left-1/2 top-full z-20 mt-2 w-64 -translate-x-1/2 rounded-xl border border-white/[0.1] bg-zinc-900/95 p-2 shadow-xl backdrop-blur';
+  'pointer-events-auto absolute left-0 top-full z-20 mt-2 w-64 rounded-xl border border-white/[0.1] bg-zinc-900/95 p-2 shadow-xl backdrop-blur';
+
+// w-64 = 256px，右缘内收测量用（见 menuShift effect）。
+const MENU_WIDTH_PX = 256;
 
 export function DesignImageToolbar(props: DesignImageToolbarProps): React.ReactElement {
   const {
@@ -131,6 +136,10 @@ export function DesignImageToolbar(props: DesignImageToolbarProps): React.ReactE
 
   const [openMenu, setOpenMenu] = useState<MenuId>(null);
   const rootRef = useRef<HTMLDivElement>(null);
+  // 每个触发按钮的锚点容器（relative），菜单相对它定位。
+  const anchorRefs = useRef<Partial<Record<Exclude<MenuId, null>, HTMLDivElement | null>>>({});
+  // 窄栏下菜单超出外条右缘时的左收量（px）；0 = 与按钮左缘对齐。
+  const [menuShift, setMenuShift] = useState(0);
 
   // 外点关菜单（document 级监听，不铺全屏背板，避免 handrolled-modal 门）。
   useEffect(() => {
@@ -141,6 +150,30 @@ export function DesignImageToolbar(props: DesignImageToolbarProps): React.ReactE
     document.addEventListener('mousedown', onDown);
     return () => document.removeEventListener('mousedown', onDown);
   }, [openMenu]);
+
+  // 右缘内收：菜单与按钮左缘对齐后若超出外条右缘，向左收回条内（仍与按钮相交，对应关系可见）；
+  // 兜底不许收过头推出左缘。jsdom 下 getBoundingClientRect 全 0，直接跳过。
+  useEffect(() => {
+    if (!openMenu) return;
+    const anchor = anchorRefs.current[openMenu];
+    const root = rootRef.current;
+    if (!anchor || !root) return;
+    const a = anchor.getBoundingClientRect();
+    const r = root.getBoundingClientRect();
+    if (r.width === 0) return;
+    const overflow = a.left - r.left + MENU_WIDTH_PX - r.width;
+    const shift = overflow > 0 ? -(overflow + 4) : 0;
+    setMenuShift(Math.max(shift, -(a.left - r.left) + 4));
+  }, [openMenu]);
+
+  const anchorRef =
+    (id: Exclude<MenuId, null>) =>
+    (el: HTMLDivElement | null): void => {
+      anchorRefs.current[id] = el;
+    };
+  const menuStyle: React.CSSProperties | undefined = menuShift
+    ? { transform: `translateX(${menuShift}px)` }
+    : undefined;
 
   const toggle = (m: Exclude<MenuId, null>): void => {
     setOpenMenu((cur) => (cur === m ? null : m));
@@ -184,296 +217,312 @@ export function DesignImageToolbar(props: DesignImageToolbarProps): React.ReactE
     >
       <div className="pointer-events-auto relative flex flex-wrap items-center justify-center gap-1 rounded-xl border border-white/[0.1] bg-zinc-900/90 px-2 py-1.5 shadow-xl backdrop-blur">
         {/* ds-allow:start 动词条按钮为图标+文字组合 toggle/下拉触发器（active=bg-fuchsia-500/20 品牌色 toggle 态，非 Button variant），与同画布的 DiagramToolbar 裸按钮一致，design-mode W3 收口时统一迁 primitive */}
-        <button
-          type="button"
-          data-testid="design-toolbar-annotate"
-          aria-pressed={annotMode}
-          onClick={onAnnotateClick}
-          className={`inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs transition-colors ${
-            annotMode ? 'bg-fuchsia-500/20 text-fuchsia-200' : 'text-zinc-300 hover:bg-white/[0.06] hover:text-zinc-100'
-          }`}
-        >
-          <Pencil className="h-3.5 w-3.5" />
-          {t.design.annotMode}
-        </button>
-        <button
-          type="button"
-          data-testid="design-toolbar-repaint"
-          aria-expanded={openMenu === 'repaint'}
-          onClick={() => toggle('repaint')}
-          className={`inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs transition-colors ${
-            openMenu === 'repaint' || annotating
-              ? 'bg-fuchsia-500/20 text-fuchsia-200'
-              : 'text-zinc-300 hover:bg-white/[0.06] hover:text-zinc-100'
-          }`}
-        >
-          <SquareDashedMousePointer className="h-3.5 w-3.5" />
-          {t.design.editRegionBtn}
-        </button>
-        <button
-          type="button"
-          data-testid="design-toolbar-resize"
-          aria-expanded={openMenu === 'resize'}
-          onClick={() => toggle('resize')}
-          className={`inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs transition-colors ${
-            openMenu === 'resize'
-              ? 'bg-fuchsia-500/20 text-fuchsia-200'
-              : 'text-zinc-300 hover:bg-white/[0.06] hover:text-zinc-100'
-          }`}
-        >
-          <Scaling className="h-3.5 w-3.5" />
-          {t.design.imageToolbarResize}
-          <ChevronDown className="h-3 w-3 text-zinc-500" />
-        </button>
-        <button
-          type="button"
-          data-testid="design-toolbar-expand"
-          aria-expanded={openMenu === 'expand'}
-          onClick={() => toggle('expand')}
-          className={`inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs transition-colors ${
-            openMenu === 'expand'
-              ? 'bg-fuchsia-500/20 text-fuchsia-200'
-              : 'text-zinc-300 hover:bg-white/[0.06] hover:text-zinc-100'
-          }`}
-        >
-          <Maximize2 className="h-3.5 w-3.5" />
-          {t.design.expandTitle}
-          <ChevronDown className="h-3 w-3 text-zinc-500" />
-        </button>
-        <button
-          type="button"
-          data-testid="design-toolbar-more"
-          aria-expanded={openMenu === 'more'}
-          onClick={() => toggle('more')}
-          className={`inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs transition-colors ${
-            openMenu === 'more'
-              ? 'bg-fuchsia-500/20 text-fuchsia-200'
-              : 'text-zinc-300 hover:bg-white/[0.06] hover:text-zinc-100'
-          }`}
-        >
-          <MoreHorizontal className="h-3.5 w-3.5" />
-          {t.design.imageToolbarMore}
-        </button>
+        {/* 每个动词外套一个 relative 锚点容器：它的下拉/浮层锚在它自己正下方（返工#1），
+            菜单与按钮的对应关系一眼可见。 */}
+        <div ref={anchorRef('annotate')} className="relative">
+          <button
+            type="button"
+            data-testid="design-toolbar-annotate"
+            aria-pressed={annotMode}
+            onClick={onAnnotateClick}
+            className={`inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs transition-colors ${
+              annotMode ? 'bg-fuchsia-500/20 text-fuchsia-200' : 'text-zinc-300 hover:bg-white/[0.06] hover:text-zinc-100'
+            }`}
+          >
+            <Pencil className="h-3.5 w-3.5" />
+            {t.design.annotMode}
+          </button>
+
+          {/* 批注重绘浮层：工具选择 + 指令 + 成本 + CTA（模型选择收在「更多」）。 */}
+          {openMenu === 'annotate' && (
+            <div data-testid="design-annotate-popover" className={MENU_CLASS} style={menuStyle}>
+              <div className="flex gap-1 rounded-lg border border-white/[0.08] bg-white/[0.02] p-0.5">
+                {/* ds-allow:start 标注工具分段控件（active 用自定义 bg-white/[0.10]，非 Button variant） */}
+                {([
+                  ['pen', t.design.annotToolPen],
+                  ['arrow', t.design.annotToolArrow],
+                  ['rect', t.design.annotToolRect],
+                  ['text', t.design.annotToolText],
+                ] as Array<[AnnotTool, string]>).map(([tool, label]) => (
+                  <button
+                    key={tool}
+                    type="button"
+                    onClick={() => setAnnotTool(tool)}
+                    className={`flex-1 rounded-md px-1.5 py-1 text-[11px] transition-colors ${
+                      annotTool === tool ? 'bg-white/[0.10] text-zinc-100' : 'text-zinc-400 hover:text-zinc-200'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+                {/* ds-allow:end */}
+              </div>
+              <label className="mt-2 flex flex-col gap-1 text-[11px] text-zinc-500">
+                <span>{t.design.annotInstruction}</span>
+                <textarea
+                  value={annotInstruction}
+                  onChange={(e) => setAnnotInstruction(e.target.value)}
+                  placeholder={t.design.annotInstructionPlaceholder}
+                  rows={2}
+                  className="resize-none rounded-lg border border-white/[0.08] bg-white/[0.02] px-2.5 py-1.5 text-xs text-zinc-100 placeholder:text-zinc-600 focus:border-white/[0.2] focus:outline-none"
+                />
+              </label>
+              <div className="mt-2 text-[11px] text-zinc-500">
+                {t.design.costEstimateLabel}{' '}
+                <span className="font-mono text-emerald-300">{formatCny(estimateImageCostCny(effectiveAnnotModel))}</span>
+              </div>
+              {/* ds-allow:start 标注重绘 CTA 用设计区品牌色 bg-fuchsia-500/90（Button primary 蓝渐变会丢视觉语言） */}
+              <button
+                type="button"
+                data-testid="design-annot-redraw-btn"
+                onClick={() => runAndClose(onAnnotRedraw)}
+                disabled={generating || annotShapeCount === 0 || !annotInstruction.trim()}
+                className="mt-2 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-fuchsia-500/90 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-fuchsia-500 disabled:opacity-50"
+              >
+                {generating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+                {t.design.annotRedraw}
+              </button>
+              {/* ds-allow:end */}
+            </div>
+          )}
+        </div>
+
+        <div ref={anchorRef('repaint')} className="relative">
+          <button
+            type="button"
+            data-testid="design-toolbar-repaint"
+            aria-expanded={openMenu === 'repaint'}
+            onClick={() => toggle('repaint')}
+            className={`inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs transition-colors ${
+              openMenu === 'repaint' || annotating
+                ? 'bg-fuchsia-500/20 text-fuchsia-200'
+                : 'text-zinc-300 hover:bg-white/[0.06] hover:text-zinc-100'
+            }`}
+          >
+            <SquareDashedMousePointer className="h-3.5 w-3.5" />
+            {t.design.editRegionBtn}
+          </button>
+
+          {/* 局部重绘浮层：圈选开关 + 引导 + 指令 + CTA（原 288px 浮层的圈选部分原样搬入）。 */}
+          {openMenu === 'repaint' && (
+            <div data-testid="design-repaint-popover" className={MENU_CLASS} style={menuStyle}>
+              <div className="flex items-center justify-between">
+                {/* ds-allow:start 圈选开关用 toggle 态自定义填充（active=bg-red-500/20，idle=bg-white/[0.06]，非 Button variant）+ 清除标注用裸文字按钮 */}
+                <button
+                  type="button"
+                  data-testid="design-annotate-toggle"
+                  onClick={() => setAnnotating((v) => !v)}
+                  className={`inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs transition-colors ${
+                    annotating ? 'bg-red-500/20 text-red-200' : 'bg-white/[0.06] text-zinc-300 hover:text-zinc-100'
+                  }`}
+                >
+                  <SquareDashedMousePointer className="h-3.5 w-3.5" />
+                  {annotating ? t.design.annotateStop : t.design.annotateStart}
+                </button>
+                {annotationCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={onClearAnnotations}
+                    className="inline-flex items-center gap-1 text-xs text-zinc-500 hover:text-zinc-300"
+                  >
+                    <X className="h-3 w-3" />
+                    {t.design.clearAnnotations}（{annotationCount}）
+                  </button>
+                )}
+                {/* ds-allow:end */}
+              </div>
+              {annotating ? (
+                <p className="mt-2 text-[11px] leading-snug text-amber-300/80">{t.design.annotateHint}</p>
+              ) : (
+                annotationCount === 0 && (
+                  <p className="mt-2 text-[11px] leading-snug text-zinc-500">{t.design.annotateGuide}</p>
+                )
+              )}
+              <textarea
+                value={instruction}
+                onChange={(e) => setInstruction(e.target.value)}
+                placeholder={t.design.editInstructionPlaceholder}
+                rows={3}
+                className="mt-2 w-full resize-none rounded-lg border border-white/[0.08] bg-white/[0.02] px-2.5 py-1.5 text-xs text-zinc-100 placeholder:text-zinc-600 focus:border-white/[0.2] focus:outline-none"
+              />
+              {/* ds-allow:start 局部重绘 CTA 用设计区品牌色 bg-fuchsia-500/90（Button primary 蓝渐变会丢视觉语言） */}
+              <button
+                type="button"
+                data-testid="design-repaint-btn"
+                onClick={() => runAndClose(onRepaint)}
+                disabled={generating || annotationCount === 0 || !instruction.trim()}
+                className="mt-2 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-fuchsia-500/90 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-fuchsia-500 disabled:opacity-50"
+              >
+                {generating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+                {generating ? t.design.editingRegion : t.design.editRegionBtn}
+              </button>
+              {/* ds-allow:end */}
+            </div>
+          )}
+        </div>
+
+        <div ref={anchorRef('resize')} className="relative">
+          <button
+            type="button"
+            data-testid="design-toolbar-resize"
+            aria-expanded={openMenu === 'resize'}
+            onClick={() => toggle('resize')}
+            className={`inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs transition-colors ${
+              openMenu === 'resize'
+                ? 'bg-fuchsia-500/20 text-fuchsia-200'
+                : 'text-zinc-300 hover:bg-white/[0.06] hover:text-zinc-100'
+            }`}
+          >
+            <Scaling className="h-3.5 w-3.5" />
+            {t.design.imageToolbarResize}
+            <ChevronDown className="h-3 w-3 text-zinc-500" />
+          </button>
+
+          {/* 调整大小下拉：五档比例预设（比例小方块 + 人话名字 + 灰色比例数字）。
+              不可行档位禁用并展示原因；可行档位展示按实际步数算的成本预估。 */}
+          {openMenu === 'resize' && (
+            <div data-testid="design-resize-menu" className={MENU_CLASS} style={menuStyle}>
+              {/* ds-allow:start 比例预设菜单项为图标+双行文字复合行（含禁用原因/成本小灰字），非 Button variant 能表达 */}
+              {resizePresets.map(({ id, plan }) => {
+                const feasible = plan.feasible && plan.steps.length > 0;
+                const thumb = PRESET_THUMBS[id];
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    data-testid={`design-resize-preset-${id.replace(':', '-')}`}
+                    disabled={generating || !feasible}
+                    onClick={() => plan.feasible && runAndClose(() => onResizePreset(plan.steps))}
+                    className="mt-1 flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors first:mt-0 hover:bg-white/[0.06] disabled:opacity-50 disabled:hover:bg-transparent"
+                  >
+                    <span className="flex h-6 w-7 items-center justify-center">
+                      <span
+                        className="block rounded-sm border-[1.5px] border-zinc-400"
+                        style={{ width: thumb.w, height: thumb.h }}
+                      />
+                    </span>
+                    <span className="flex min-w-0 flex-1 flex-col">
+                      <span className="text-xs text-zinc-200">{t.design[PRESET_NAME_KEYS[id]] as string}</span>
+                      {!plan.feasible ? (
+                        <span className="text-[10px] leading-snug text-zinc-500">{plan.reason}</span>
+                      ) : plan.steps.length === 0 ? (
+                        <span className="text-[10px] leading-snug text-zinc-500">{t.design.resizeAlreadyRatio}</span>
+                      ) : (
+                        <span className="font-mono text-[10px] leading-snug text-emerald-300/80">
+                          {resizeCostHint(plan.steps)}
+                        </span>
+                      )}
+                    </span>
+                    <span className="ml-auto text-[11px] tabular-nums text-zinc-500">{id}</span>
+                  </button>
+                );
+              })}
+              {/* ds-allow:end */}
+            </div>
+          )}
+        </div>
+
+        <div ref={anchorRef('expand')} className="relative">
+          <button
+            type="button"
+            data-testid="design-toolbar-expand"
+            aria-expanded={openMenu === 'expand'}
+            onClick={() => toggle('expand')}
+            className={`inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs transition-colors ${
+              openMenu === 'expand'
+                ? 'bg-fuchsia-500/20 text-fuchsia-200'
+                : 'text-zinc-300 hover:bg-white/[0.06] hover:text-zinc-100'
+            }`}
+          >
+            <Maximize2 className="h-3.5 w-3.5" />
+            {t.design.expandTitle}
+            <ChevronDown className="h-3 w-3 text-zinc-500" />
+          </button>
+
+          {/* 扩图下拉：方向五选 + 倍率滑杆 + 扩展画布（去水印已收「更多」）。 */}
+          {openMenu === 'expand' && (
+            <div data-testid="design-expand-menu" className={MENU_CLASS} style={menuStyle}>
+              <DesignImageEditOps
+                t={t}
+                direction={expandDirection}
+                ratio={expandRatio}
+                generating={generating}
+                onDirectionChange={onExpandDirectionChange}
+                onRatioChange={onExpandRatioChange}
+                onExpand={() => runAndClose(onExpand)}
+              />
+            </div>
+          )}
+        </div>
+
+        <div ref={anchorRef('more')} className="relative">
+          <button
+            type="button"
+            data-testid="design-toolbar-more"
+            aria-expanded={openMenu === 'more'}
+            onClick={() => toggle('more')}
+            className={`inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs transition-colors ${
+              openMenu === 'more'
+                ? 'bg-fuchsia-500/20 text-fuchsia-200'
+                : 'text-zinc-300 hover:bg-white/[0.06] hover:text-zinc-100'
+            }`}
+          >
+            <MoreHorizontal className="h-3.5 w-3.5" />
+            {t.design.imageToolbarMore}
+          </button>
+
+          {/* 更多 ⋯：原 288px 浮层里的低频动作，对照 DesignImageEditPanel 逐项收编，一个不少。 */}
+          {openMenu === 'more' && (
+            <div data-testid="design-more-menu" className={MENU_CLASS} style={menuStyle}>
+              {/* ds-allow:start 更多菜单项为图标+文字菜单行（hover 态自定义，非 Button variant） */}
+              <button
+                type="button"
+                data-testid="design-more-remove-watermark"
+                onClick={() => runAndClose(onRemoveWatermark)}
+                disabled={generating}
+                className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-zinc-300 transition-colors hover:bg-white/[0.06] hover:text-zinc-100 disabled:opacity-50"
+              >
+                <Eraser className="h-3.5 w-3.5 text-zinc-500" />
+                {t.design.removeWatermarkBtn}
+              </button>
+              <button
+                type="button"
+                data-testid="design-more-export-image"
+                onClick={() => runAndClose(onExportImage)}
+                className="mt-1 flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-zinc-300 transition-colors hover:bg-white/[0.06] hover:text-zinc-100"
+              >
+                <Download className="h-3.5 w-3.5 text-zinc-500" />
+                {t.design.exportImage}
+              </button>
+              <button
+                type="button"
+                data-testid="design-more-export-pdf"
+                onClick={() => runAndClose(onExportPdf)}
+                className="mt-1 flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-zinc-300 transition-colors hover:bg-white/[0.06] hover:text-zinc-100"
+              >
+                <FileDown className="h-3.5 w-3.5 text-zinc-500" />
+                {t.design.exportImagePdf}
+              </button>
+              <button
+                type="button"
+                data-testid="design-more-generate-video"
+                onClick={() => runAndClose(onGenerateVideo)}
+                disabled={generating}
+                className="mt-1 flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-zinc-300 transition-colors hover:bg-white/[0.06] hover:text-zinc-100 disabled:opacity-50"
+              >
+                <Film className="h-3.5 w-3.5 text-zinc-500" />
+                {t.design.generateVideoFromImage}
+              </button>
+              {/* ds-allow:end */}
+              <div className="mt-2 flex items-center justify-between gap-2 border-t border-white/[0.08] px-2 pt-2">
+                <span className="shrink-0 whitespace-nowrap text-[11px] text-zinc-400">{t.design.annotModelSelectLabel}</span>
+                <AnnotModelSelect value={effectiveAnnotModel} onChange={setAnnotModel} />
+              </div>
+            </div>
+          )}
+        </div>
         {/* ds-allow:end */}
       </div>
-
-      {/* 批注重绘浮层：工具选择 + 指令 + 成本 + CTA（模型选择收在「更多」）。 */}
-      {openMenu === 'annotate' && (
-        <div data-testid="design-annotate-popover" className={MENU_CLASS}>
-          <div className="flex gap-1 rounded-lg border border-white/[0.08] bg-white/[0.02] p-0.5">
-            {/* ds-allow:start 标注工具分段控件（active 用自定义 bg-white/[0.10]，非 Button variant） */}
-            {([
-              ['pen', t.design.annotToolPen],
-              ['arrow', t.design.annotToolArrow],
-              ['rect', t.design.annotToolRect],
-              ['text', t.design.annotToolText],
-            ] as Array<[AnnotTool, string]>).map(([tool, label]) => (
-              <button
-                key={tool}
-                type="button"
-                onClick={() => setAnnotTool(tool)}
-                className={`flex-1 rounded-md px-1.5 py-1 text-[11px] transition-colors ${
-                  annotTool === tool ? 'bg-white/[0.10] text-zinc-100' : 'text-zinc-400 hover:text-zinc-200'
-                }`}
-              >
-                {label}
-              </button>
-            ))}
-            {/* ds-allow:end */}
-          </div>
-          <label className="mt-2 flex flex-col gap-1 text-[11px] text-zinc-500">
-            <span>{t.design.annotInstruction}</span>
-            <textarea
-              value={annotInstruction}
-              onChange={(e) => setAnnotInstruction(e.target.value)}
-              placeholder={t.design.annotInstructionPlaceholder}
-              rows={2}
-              className="resize-none rounded-lg border border-white/[0.08] bg-white/[0.02] px-2.5 py-1.5 text-xs text-zinc-100 placeholder:text-zinc-600 focus:border-white/[0.2] focus:outline-none"
-            />
-          </label>
-          <div className="mt-2 text-[11px] text-zinc-500">
-            {t.design.costEstimateLabel}{' '}
-            <span className="font-mono text-emerald-300">{formatCny(estimateImageCostCny(effectiveAnnotModel))}</span>
-          </div>
-          {/* ds-allow:start 标注重绘 CTA 用设计区品牌色 bg-fuchsia-500/90（Button primary 蓝渐变会丢视觉语言） */}
-          <button
-            type="button"
-            data-testid="design-annot-redraw-btn"
-            onClick={() => runAndClose(onAnnotRedraw)}
-            disabled={generating || annotShapeCount === 0 || !annotInstruction.trim()}
-            className="mt-2 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-fuchsia-500/90 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-fuchsia-500 disabled:opacity-50"
-          >
-            {generating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
-            {t.design.annotRedraw}
-          </button>
-          {/* ds-allow:end */}
-        </div>
-      )}
-
-      {/* 局部重绘浮层：圈选开关 + 引导 + 指令 + CTA（原 288px 浮层的圈选部分原样搬入）。 */}
-      {openMenu === 'repaint' && (
-        <div data-testid="design-repaint-popover" className={MENU_CLASS}>
-          <div className="flex items-center justify-between">
-            {/* ds-allow:start 圈选开关用 toggle 态自定义填充（active=bg-red-500/20，idle=bg-white/[0.06]，非 Button variant）+ 清除标注用裸文字按钮 */}
-            <button
-              type="button"
-              data-testid="design-annotate-toggle"
-              onClick={() => setAnnotating((v) => !v)}
-              className={`inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs transition-colors ${
-                annotating ? 'bg-red-500/20 text-red-200' : 'bg-white/[0.06] text-zinc-300 hover:text-zinc-100'
-              }`}
-            >
-              <SquareDashedMousePointer className="h-3.5 w-3.5" />
-              {annotating ? t.design.annotateStop : t.design.annotateStart}
-            </button>
-            {annotationCount > 0 && (
-              <button
-                type="button"
-                onClick={onClearAnnotations}
-                className="inline-flex items-center gap-1 text-xs text-zinc-500 hover:text-zinc-300"
-              >
-                <X className="h-3 w-3" />
-                {t.design.clearAnnotations}（{annotationCount}）
-              </button>
-            )}
-            {/* ds-allow:end */}
-          </div>
-          {annotating ? (
-            <p className="mt-2 text-[11px] leading-snug text-amber-300/80">{t.design.annotateHint}</p>
-          ) : (
-            annotationCount === 0 && (
-              <p className="mt-2 text-[11px] leading-snug text-zinc-500">{t.design.annotateGuide}</p>
-            )
-          )}
-          <textarea
-            value={instruction}
-            onChange={(e) => setInstruction(e.target.value)}
-            placeholder={t.design.editInstructionPlaceholder}
-            rows={3}
-            className="mt-2 w-full resize-none rounded-lg border border-white/[0.08] bg-white/[0.02] px-2.5 py-1.5 text-xs text-zinc-100 placeholder:text-zinc-600 focus:border-white/[0.2] focus:outline-none"
-          />
-          {/* ds-allow:start 局部重绘 CTA 用设计区品牌色 bg-fuchsia-500/90（Button primary 蓝渐变会丢视觉语言） */}
-          <button
-            type="button"
-            data-testid="design-repaint-btn"
-            onClick={() => runAndClose(onRepaint)}
-            disabled={generating || annotationCount === 0 || !instruction.trim()}
-            className="mt-2 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-fuchsia-500/90 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-fuchsia-500 disabled:opacity-50"
-          >
-            {generating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
-            {generating ? t.design.editingRegion : t.design.editRegionBtn}
-          </button>
-          {/* ds-allow:end */}
-        </div>
-      )}
-
-      {/* 调整大小下拉：五档比例预设（比例小方块 + 人话名字 + 灰色比例数字）。
-          不可行档位禁用并展示原因；可行档位展示按实际步数算的成本预估。 */}
-      {openMenu === 'resize' && (
-        <div data-testid="design-resize-menu" className={MENU_CLASS}>
-          {/* ds-allow:start 比例预设菜单项为图标+双行文字复合行（含禁用原因/成本小灰字），非 Button variant 能表达 */}
-          {resizePresets.map(({ id, plan }) => {
-            const feasible = plan.feasible && plan.steps.length > 0;
-            const thumb = PRESET_THUMBS[id];
-            return (
-              <button
-                key={id}
-                type="button"
-                data-testid={`design-resize-preset-${id.replace(':', '-')}`}
-                disabled={generating || !feasible}
-                onClick={() => plan.feasible && runAndClose(() => onResizePreset(plan.steps))}
-                className="mt-1 flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors first:mt-0 hover:bg-white/[0.06] disabled:opacity-50 disabled:hover:bg-transparent"
-              >
-                <span className="flex h-6 w-7 items-center justify-center">
-                  <span
-                    className="block rounded-sm border-[1.5px] border-zinc-400"
-                    style={{ width: thumb.w, height: thumb.h }}
-                  />
-                </span>
-                <span className="flex min-w-0 flex-1 flex-col">
-                  <span className="text-xs text-zinc-200">{t.design[PRESET_NAME_KEYS[id]] as string}</span>
-                  {!plan.feasible ? (
-                    <span className="text-[10px] leading-snug text-zinc-500">{plan.reason}</span>
-                  ) : plan.steps.length === 0 ? (
-                    <span className="text-[10px] leading-snug text-zinc-500">{t.design.resizeAlreadyRatio}</span>
-                  ) : (
-                    <span className="font-mono text-[10px] leading-snug text-emerald-300/80">
-                      {resizeCostHint(plan.steps)}
-                    </span>
-                  )}
-                </span>
-                <span className="ml-auto text-[11px] tabular-nums text-zinc-500">{id}</span>
-              </button>
-            );
-          })}
-          {/* ds-allow:end */}
-        </div>
-      )}
-
-      {/* 扩图下拉：方向五选 + 倍率滑杆 + 扩展画布（去水印已收「更多」）。 */}
-      {openMenu === 'expand' && (
-        <div data-testid="design-expand-menu" className={MENU_CLASS}>
-          <DesignImageEditOps
-            t={t}
-            direction={expandDirection}
-            ratio={expandRatio}
-            generating={generating}
-            onDirectionChange={onExpandDirectionChange}
-            onRatioChange={onExpandRatioChange}
-            onExpand={() => runAndClose(onExpand)}
-          />
-        </div>
-      )}
-
-      {/* 更多 ⋯：原 288px 浮层里的低频动作，对照 DesignImageEditPanel 逐项收编，一个不少。 */}
-      {openMenu === 'more' && (
-        <div data-testid="design-more-menu" className={MENU_CLASS}>
-          {/* ds-allow:start 更多菜单项为图标+文字菜单行（hover 态自定义，非 Button variant） */}
-          <button
-            type="button"
-            data-testid="design-more-remove-watermark"
-            onClick={() => runAndClose(onRemoveWatermark)}
-            disabled={generating}
-            className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-zinc-300 transition-colors hover:bg-white/[0.06] hover:text-zinc-100 disabled:opacity-50"
-          >
-            <Eraser className="h-3.5 w-3.5 text-zinc-500" />
-            {t.design.removeWatermarkBtn}
-          </button>
-          <button
-            type="button"
-            data-testid="design-more-export-image"
-            onClick={() => runAndClose(onExportImage)}
-            className="mt-1 flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-zinc-300 transition-colors hover:bg-white/[0.06] hover:text-zinc-100"
-          >
-            <Download className="h-3.5 w-3.5 text-zinc-500" />
-            {t.design.exportImage}
-          </button>
-          <button
-            type="button"
-            data-testid="design-more-export-pdf"
-            onClick={() => runAndClose(onExportPdf)}
-            className="mt-1 flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-zinc-300 transition-colors hover:bg-white/[0.06] hover:text-zinc-100"
-          >
-            <FileDown className="h-3.5 w-3.5 text-zinc-500" />
-            {t.design.exportImagePdf}
-          </button>
-          <button
-            type="button"
-            data-testid="design-more-generate-video"
-            onClick={() => runAndClose(onGenerateVideo)}
-            disabled={generating}
-            className="mt-1 flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-zinc-300 transition-colors hover:bg-white/[0.06] hover:text-zinc-100 disabled:opacity-50"
-          >
-            <Film className="h-3.5 w-3.5 text-zinc-500" />
-            {t.design.generateVideoFromImage}
-          </button>
-          {/* ds-allow:end */}
-          <div className="mt-2 flex items-center justify-between gap-2 border-t border-white/[0.08] px-2 pt-2">
-            <span className="shrink-0 whitespace-nowrap text-[11px] text-zinc-400">{t.design.annotModelSelectLabel}</span>
-            <AnnotModelSelect value={effectiveAnnotModel} onChange={setAnnotModel} />
-          </div>
-        </div>
-      )}
     </div>
   );
 }

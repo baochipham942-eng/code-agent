@@ -305,7 +305,7 @@ async function resolveFolderTrustGate(page: Page): Promise<'blocked' | 'not_show
     .getByRole('dialog')
     .filter({ hasText: /(?:信任这个项目文件夹|Trust this project folder)/ })
     .first();
-  const shown = await dialog.waitFor({ state: 'visible', timeout: 5_000 })
+  const shown = await dialog.waitFor({ state: 'visible', timeout: 10_000 })
     .then(() => true)
     .catch(() => false);
   if (!shown) return 'not_shown';
@@ -658,8 +658,20 @@ async function main(): Promise<void> {
 
     await installUiCancelRunInterception(page, uiCancelRunRequests);
     await installIsolatedFolderTrustSafetyRoute(page);
+    const folderTrustEvaluated = page.waitForResponse(
+      (response) => response.url().includes('/api/domain/folderTrust/get'),
+      { timeout: 20_000 },
+    ).catch(() => null);
     await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
     const renderer = await waitForRenderer(page);
+    const folderTrustEvaluationResponse = await folderTrustEvaluated;
+    if (!folderTrustEvaluationResponse?.ok()) {
+      failures.push(
+        `agent-runtime smoke did not receive a successful folder trust evaluation${
+          folderTrustEvaluationResponse ? ` (${folderTrustEvaluationResponse.status()})` : ''
+        }.`,
+      );
+    }
     const folderTrustDecision = await resolveFolderTrustGate(page);
     if (folderTrustDecision !== 'blocked') {
       failures.push('agent-runtime smoke did not explicitly block isolated project configuration.');

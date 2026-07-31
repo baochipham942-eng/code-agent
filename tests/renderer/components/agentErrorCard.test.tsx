@@ -103,9 +103,22 @@ describe('AgentErrorCard', () => {
     expect(screen.getByText(/4000K tokens/)).toBeTruthy();
   });
 
-  it('hides the detail line when no code/httpStatus/traceId present', () => {
-    const { container } = renderCard(makeError({ code: undefined, httpStatus: undefined, traceId: undefined }));
+  it('hides the detail line when no code/httpStatus/traceId/model present', () => {
+    const { container } = renderCard(makeError({
+      code: undefined,
+      httpStatus: undefined,
+      traceId: undefined,
+      modelId: undefined,
+      provider: undefined,
+    }));
     expect(container.querySelector('.font-mono')).toBeNull();
+  });
+
+  // 切过模型之后「这轮到底跑的谁」是最先要确认的事，所以它排在详情行第一位。
+  it('详情行第一项是这轮真跑的 provider/model', () => {
+    renderCard(makeError({ provider: 'custom-100xlabs', modelId: 'claude-opus-4-8' }));
+
+    expect(screen.getByText('实际使用 custom-100xlabs / claude-opus-4-8')).toBeTruthy();
   });
 
   it('retry re-sends the preceding user message through the registered sender', () => {

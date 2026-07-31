@@ -146,9 +146,9 @@ describe('SessionManager 自动标题', () => {
     const titleCalls: string[] = [];
     const proto = Object.getPrototypeOf(manager) as Record<string, (...args: unknown[]) => unknown>;
     const original = proto.maybeUpdateTitleForSession;
-    proto.maybeUpdateTitleForSession = function patched(this: unknown, sessionId: string, content: string) {
-      titleCalls.push(sessionId);
-      return original.call(this, sessionId, content);
+    proto.maybeUpdateTitleForSession = function patched(this: unknown, ...args: unknown[]) {
+      titleCalls.push(args[0] as string);
+      return original.apply(this, args);
     };
 
     (manager as unknown as { currentSessionId: string }).currentSessionId = target.id;

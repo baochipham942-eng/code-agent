@@ -138,6 +138,7 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
     [toolCalls],
   );
   const isFailureStatus = status === 'error' || status === 'partial';
+  const needsUserActionShell = isFailureStatus && hasEscalatedError;
   // 三态档位（ADR-043）：需介入失败/用户已展开 → 全展开；未冻结且流式中且有正在跑的
   // 一步且组内还没出现失败 → 中间档；其余 → 收起。中间档不进 aria-expanded 语义。
   const tier: 'collapsed' | 'truncated' | 'expanded' = forceExpandOnFailure || expanded
@@ -181,9 +182,9 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
         // 此前继承祖先的宽松行高，文字 glyph 在更高的行盒里下沉，chevron 看起来上飘。
         // UX round2 20i：ok 行文字从 zinc-600 提到 zinc-400（「搜索通话字幕原文」这类行太暗看不清）。
         className={`flex w-full min-w-0 items-center gap-1.5 rounded-md text-left text-[11px] leading-4 transition-colors group ${
-          status === 'ok'
-            ? 'px-1 py-0.5 text-zinc-400 hover:bg-surface-subtle hover:text-zinc-300'
-            : 'border border-white/[0.04] bg-white/[0.015] px-2 py-1 text-zinc-500 hover:border-white/[0.08] hover:bg-white/[0.03] hover:text-zinc-300'
+          needsUserActionShell
+            ? 'border border-red-400/30 bg-red-400/[0.05] px-2 py-1 text-zinc-500 hover:border-red-400/45 hover:bg-red-400/[0.08] hover:text-zinc-300'
+            : 'px-1 py-0.5 text-zinc-400 hover:bg-surface-subtle hover:text-zinc-300'
         }`}
         aria-expanded={ariaExpanded}
       >

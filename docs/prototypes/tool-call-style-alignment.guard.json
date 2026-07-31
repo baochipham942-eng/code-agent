@@ -1,0 +1,43 @@
+{
+  "name": "tool-call-style-alignment",
+  "mode": "new-mock",
+  "sourceMock": {
+    "html": "docs/prototypes/tool-call-style-alignment.html",
+    "screenshot": "artifacts/mock-guard/tool-call-style-alignment/source-focused.png"
+  },
+  "implementation": {
+    "url": "http://127.0.0.1:8765/docs/prototypes/tool-call-style-alignment.html",
+    "route": "/docs/prototypes/tool-call-style-alignment.html",
+    "screenshot": "artifacts/mock-guard/tool-call-style-alignment/implementation.jpg"
+  },
+  "viewports": [
+    {
+      "name": "desktop",
+      "width": 1536,
+      "height": 900
+    }
+  ],
+  "states": [
+    "all-states",
+    "ordinary-failure-expanded",
+    "escalated-failure-expanded",
+    "recovered"
+  ],
+  "allowedSelectors": [
+    ".tool-trace",
+    ".tool-group",
+    ".tool-header",
+    ".tool-detail",
+    ".state-switcher"
+  ],
+  "protectedSelectors": [],
+  "frozenFiles": [
+    "src/renderer/components/features/chat/ToolCallDisplay.tsx"
+  ],
+  "forbiddenCssTargets": [],
+  "thresholds": {
+    "fullPageMaxDiffRatio": 0.05,
+    "protectedRegionMaxDiffRatio": 0.003,
+    "pixelThreshold": 8
+  }
+}

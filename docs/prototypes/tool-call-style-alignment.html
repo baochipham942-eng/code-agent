@@ -1,0 +1,673 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Agent Neo · 工具调用样式对齐原型</title>
+  <link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css">
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #101012;
+      --surface: #171719;
+      --surface-raised: #1d1d20;
+      --surface-hover: #222226;
+      --border: #2a2a2e;
+      --border-strong: #35353a;
+      --text: #e7e7ea;
+      --text-muted: #a0a0a8;
+      --text-dim: #72727c;
+      --text-faint: #565660;
+      --blue: #55b7e9;
+      --green: #59c795;
+      --red: #f06f7f;
+      --red-bg: rgba(240, 111, 127, .055);
+      --red-border: rgba(240, 111, 127, .36);
+      --focus: #75c7ef;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body { height: 100%; }
+
+    body {
+      margin: 0;
+      overflow: hidden;
+      background: var(--bg);
+      color: var(--text);
+      font: 14px/1.5 -apple-system, BlinkMacSystemFont, "PingFang SC", "Segoe UI", sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    button, textarea { font: inherit; }
+    button { color: inherit; }
+
+    .app-shell {
+      display: grid;
+      grid-template-columns: 240px minmax(560px, 1fr) 300px;
+      height: 100vh;
+      background: var(--bg);
+    }
+
+    .session-sidebar {
+      min-width: 0;
+      border-right: 1px solid var(--border);
+      background: #131315;
+      padding: 14px 10px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      height: 38px;
+      padding: 0 10px;
+      color: #f0f0f2;
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .brand i { color: var(--text-muted); font-size: 18px; }
+
+    .new-task {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      width: 100%;
+      height: 34px;
+      margin: 8px 0 16px;
+      padding: 0 10px;
+      border: 1px solid var(--border-strong);
+      border-radius: 8px;
+      background: #1a1a1d;
+      color: #d6d6da;
+      cursor: pointer;
+    }
+
+    .section-label {
+      padding: 0 10px 7px;
+      color: var(--text-faint);
+      font-size: 11px;
+    }
+
+    .session-item {
+      display: block;
+      width: 100%;
+      margin-bottom: 2px;
+      padding: 9px 10px;
+      border: 0;
+      border-radius: 7px;
+      background: transparent;
+      color: var(--text-dim);
+      text-align: left;
+      cursor: pointer;
+    }
+
+    .session-item strong,
+    .session-item span {
+      display: block;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .session-item strong { color: inherit; font-size: 12.5px; font-weight: 500; }
+    .session-item span { margin-top: 2px; color: var(--text-faint); font-size: 11px; }
+    .session-item.active { background: #202024; color: #e3e3e6; }
+
+    .conversation-column {
+      display: grid;
+      grid-template-rows: 52px minmax(0, 1fr) auto;
+      min-width: 0;
+      background: var(--surface);
+    }
+
+    .conversation-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      border-bottom: 1px solid var(--border);
+      padding: 0 18px;
+    }
+
+    .conversation-title {
+      min-width: 0;
+      overflow: hidden;
+      color: #dedee2;
+      font-size: 13px;
+      font-weight: 550;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .header-actions { display: flex; gap: 4px; }
+
+    .icon-button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 30px;
+      height: 30px;
+      border: 0;
+      border-radius: 7px;
+      background: transparent;
+      color: var(--text-dim);
+      cursor: pointer;
+    }
+
+    .icon-button:hover { background: var(--surface-hover); color: var(--text); }
+
+    .conversation-scroll {
+      overflow: auto;
+      scrollbar-color: #343439 transparent;
+    }
+
+    .conversation-content {
+      width: min(820px, calc(100% - 40px));
+      margin: 0 auto;
+      padding: 36px 0 28px;
+    }
+
+    .user-message {
+      width: fit-content;
+      max-width: 76%;
+      margin-left: auto;
+      padding: 9px 13px;
+      border: 1px solid var(--border);
+      border-radius: 14px 14px 4px 14px;
+      background: #202024;
+      color: #d6d6da;
+      font-size: 13px;
+    }
+
+    .assistant-block { margin-top: 24px; }
+
+    .assistant-copy {
+      max-width: 690px;
+      margin: 0 0 18px;
+      color: #bebec5;
+      font-size: 13px;
+    }
+
+    .prototype-note {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      margin: 0 0 16px;
+      color: var(--text-dim);
+      font-size: 11.5px;
+    }
+
+    .prototype-note i { margin-top: 2px; color: var(--text-muted); }
+
+    .state-switcher {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      width: fit-content;
+      margin-bottom: 15px;
+      padding: 3px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #141416;
+    }
+
+    .state-switcher button {
+      height: 27px;
+      padding: 0 10px;
+      border: 0;
+      border-radius: 6px;
+      background: transparent;
+      color: var(--text-dim);
+      font-size: 11.5px;
+      cursor: pointer;
+    }
+
+    .state-switcher button:hover { color: var(--text-muted); }
+    .state-switcher button.active { background: #27272b; color: #e0e0e4; }
+    .state-switcher button:focus-visible,
+    .tool-header:focus-visible,
+    .icon-button:focus-visible,
+    .new-task:focus-visible {
+      outline: 2px solid var(--focus);
+      outline-offset: 2px;
+    }
+
+    .tool-trace {
+      display: grid;
+      gap: 3px;
+      width: 100%;
+    }
+
+    .tool-group {
+      min-width: 0;
+      border: 1px solid transparent;
+      border-radius: 8px;
+    }
+
+    .tool-group[hidden] { display: none; }
+
+    .tool-header {
+      display: grid;
+      grid-template-columns: 18px 10px minmax(0, auto) minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 7px;
+      min-height: 34px;
+      width: 100%;
+      padding: 4px 6px;
+      border: 0;
+      border-radius: 7px;
+      background: transparent;
+      color: var(--text-muted);
+      text-align: left;
+      cursor: pointer;
+    }
+
+    .tool-group.quiet-result .tool-header {
+      grid-template-columns: 18px minmax(0, 1fr) auto;
+    }
+
+    .tool-header:hover { background: rgba(255, 255, 255, .025); }
+
+    .tool-header .caret {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      color: #777781;
+      font-size: 14px;
+      transition: transform 120ms ease;
+    }
+
+    .tool-group.open .caret { transform: rotate(90deg); }
+
+    .status-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: #71717b;
+    }
+
+    .status-text { color: #8c8c95; white-space: nowrap; }
+    .tool-label { min-width: 0; overflow: hidden; color: #777781; text-overflow: ellipsis; white-space: nowrap; }
+    .tool-label code { color: #92929b; font: inherit; }
+    .tool-time { color: #55555e; font-size: 11px; white-space: nowrap; }
+
+    .tool-group.running .status-dot {
+      background: var(--blue);
+      box-shadow: 0 0 0 3px rgba(85, 183, 233, .09);
+    }
+
+    .tool-group.running .status-text { color: #78bfe2; }
+
+    .recovered-badge {
+      display: inline-flex;
+      align-items: center;
+      height: 19px;
+      margin-left: 3px;
+      padding: 0 6px;
+      border: 1px solid rgba(89, 199, 149, .18);
+      border-radius: 9px;
+      color: #77a990;
+      font-size: 10.5px;
+    }
+
+    .tool-detail {
+      display: none;
+      margin: 1px 14px 8px 29px;
+      padding: 5px 0 5px 13px;
+      border-left: 1px solid #38383e;
+      color: #777781;
+      font-size: 11.5px;
+    }
+
+    .tool-group.open .tool-detail { display: block; }
+
+    .detail-line {
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+      min-height: 22px;
+    }
+
+    .detail-line .key { flex: 0 0 72px; color: #5f5f68; }
+    .detail-line .value { min-width: 0; overflow-wrap: anywhere; color: #85858e; }
+
+    .tool-group.escalated {
+      border-color: var(--red-border);
+      background: var(--red-bg);
+    }
+
+    .tool-group.escalated .tool-header { min-height: 39px; padding: 6px 9px; }
+    .tool-group.escalated .tool-header:hover { background: rgba(240, 111, 127, .035); }
+    .tool-group.escalated .status-dot { background: var(--red); }
+    .tool-group.escalated .status-text,
+    .tool-group.escalated .tool-label code { color: #e88692; }
+    .tool-group.escalated .tool-detail { border-left-color: rgba(240, 111, 127, .48); color: #bc7d86; }
+    .tool-group.escalated .detail-line .key { color: #9a6870; }
+    .tool-group.escalated .detail-line .value { color: #c89098; }
+
+    .composer-wrap {
+      padding: 10px 18px 16px;
+      background: var(--surface);
+    }
+
+    .composer-shell {
+      width: min(820px, 100%);
+      margin: 0 auto;
+      border: 1px solid var(--border-strong);
+      border-radius: 13px;
+      background: #1b1b1e;
+      box-shadow: 0 10px 34px rgba(0, 0, 0, .18);
+    }
+
+    .composer-shell textarea {
+      display: block;
+      width: 100%;
+      height: 48px;
+      resize: none;
+      border: 0;
+      outline: 0;
+      padding: 13px 14px 4px;
+      background: transparent;
+      color: var(--text);
+    }
+
+    .composer-shell textarea::placeholder { color: #5e5e67; }
+
+    .composer-actions {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 39px;
+      padding: 0 8px;
+    }
+
+    .composer-actions .left,
+    .composer-actions .right { display: flex; align-items: center; gap: 2px; }
+
+    .send-button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      height: 28px;
+      border: 0;
+      border-radius: 8px;
+      background: #d8d8dc;
+      color: #202024;
+      cursor: pointer;
+    }
+
+    .right-overview {
+      min-width: 0;
+      border-left: 1px solid var(--border);
+      background: #131315;
+    }
+
+    .overview-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 52px;
+      padding: 0 16px;
+      border-bottom: 1px solid var(--border);
+      color: #d4d4d8;
+      font-size: 12.5px;
+      font-weight: 550;
+    }
+
+    .overview-section {
+      padding: 16px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .overview-label {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 11px;
+      color: var(--text-dim);
+      font-size: 11.5px;
+    }
+
+    .todo {
+      display: grid;
+      grid-template-columns: 16px minmax(0, 1fr);
+      gap: 7px;
+      margin-bottom: 10px;
+      color: #95959d;
+      font-size: 11.5px;
+    }
+
+    .todo i { margin-top: 2px; color: #666670; }
+    .todo.done { color: #686871; text-decoration: line-through; }
+    .todo.done i { color: #638c76; }
+
+    .overview-note {
+      color: #62626b;
+      font-size: 11px;
+      line-height: 1.6;
+    }
+
+    @media (max-width: 1080px) {
+      .app-shell { grid-template-columns: 210px minmax(520px, 1fr); }
+      .right-overview { display: none; }
+    }
+
+    @media (max-width: 760px) {
+      .app-shell { display: block; }
+      .session-sidebar, .right-overview { display: none; }
+      .conversation-column { height: 100vh; }
+      .conversation-content { width: calc(100% - 24px); padding-top: 24px; }
+      .state-switcher { max-width: 100%; overflow-x: auto; }
+      .state-switcher button { flex: 0 0 auto; }
+      .tool-time { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <main class="app-shell">
+    <aside class="session-sidebar" aria-label="会话列表">
+      <div class="brand"><i class="ph ph-sparkle" aria-hidden="true"></i><span>Agent Neo</span></div>
+      <button class="new-task"><i class="ph ph-plus" aria-hidden="true"></i><span>新任务</span></button>
+      <div class="section-label">今天</div>
+      <button class="session-item active">
+        <strong>实时语音 P1 与 X6</strong>
+        <span>工具调用样式对齐</span>
+      </button>
+      <button class="session-item">
+        <strong>季度销售数据周报</strong>
+        <span>读取任务状态失败</span>
+      </button>
+      <button class="session-item">
+        <strong>Provider 真机验收</strong>
+        <span>OpenAI Realtime</span>
+      </button>
+    </aside>
+
+    <section class="conversation-column">
+      <header class="conversation-header">
+        <div class="conversation-title">实时语音 P1 收口与 X6 Provider 通用化</div>
+        <div class="header-actions">
+          <button class="icon-button" aria-label="搜索会话"><i class="ph ph-magnifying-glass" aria-hidden="true"></i></button>
+          <button class="icon-button" aria-label="更多操作"><i class="ph ph-dots-three" aria-hidden="true"></i></button>
+        </div>
+      </header>
+
+      <div class="conversation-scroll">
+        <div class="conversation-content">
+          <div class="user-message">检查现状并继续推进，工具调用样式保持统一。</div>
+
+          <div class="assistant-block">
+            <p class="assistant-copy">正在读取现有实现和任务状态。普通失败保持安静，只有需要你处理的失败会主动展开。</p>
+
+            <div class="prototype-note">
+              <i class="ph ph-info" aria-hidden="true"></i>
+              <span>审核原型：切换筛选查看五类状态；点击普通行可展开详情。需介入失败固定展开。</span>
+            </div>
+
+            <nav class="state-switcher" aria-label="工具状态筛选">
+              <button class="active" data-filter="all">全部</button>
+              <button data-filter="success">成功</button>
+              <button data-filter="running">执行中</button>
+              <button data-filter="ordinary-error">普通失败</button>
+              <button data-filter="escalated">需介入</button>
+              <button data-filter="recovered">已恢复</button>
+            </nav>
+
+            <div class="tool-trace" id="toolTrace">
+              <article class="tool-group ordinary-error" data-state="ordinary-error">
+                <button class="tool-header" aria-expanded="false">
+                  <span class="caret"><i class="ph ph-caret-right" aria-hidden="true"></i></span>
+                  <span class="status-dot" aria-hidden="true"></span>
+                  <span class="status-text">失败</span>
+                  <span class="tool-label">使用了 <code>MemoryRead</code></span>
+                  <span class="tool-time">0.4 秒</span>
+                </button>
+                <div class="tool-detail">
+                  <div class="detail-line"><span class="key">结果</span><span class="value">没有找到与当前任务匹配的项目记忆，已继续使用仓库事实。</span></div>
+                </div>
+              </article>
+
+              <article class="tool-group ordinary-error" data-state="ordinary-error">
+                <button class="tool-header" aria-expanded="false">
+                  <span class="caret"><i class="ph ph-caret-right" aria-hidden="true"></i></span>
+                  <span class="status-dot" aria-hidden="true"></span>
+                  <span class="status-text">失败</span>
+                  <span class="tool-label">使用了 <code>MemoryRead</code></span>
+                  <span class="tool-time">0.3 秒</span>
+                </button>
+                <div class="tool-detail">
+                  <div class="detail-line"><span class="key">结果</span><span class="value">目标条目不存在。该失败不影响当前任务，也不要求用户处理。</span></div>
+                </div>
+              </article>
+
+              <article class="tool-group success quiet-result" data-state="success">
+                <button class="tool-header" aria-expanded="false">
+                  <span class="caret"><i class="ph ph-caret-right" aria-hidden="true"></i></span>
+                  <span class="tool-label">运行了 <code>2 条命令</code></span>
+                  <span class="tool-time">1.8 秒</span>
+                </button>
+                <div class="tool-detail">
+                  <div class="detail-line"><span class="key">读取</span><span class="value">ToolStepGroup.tsx</span></div>
+                  <div class="detail-line"><span class="key">检查</span><span class="value">当前分支与 origin/main 的差异</span></div>
+                </div>
+              </article>
+
+              <article class="tool-group running open" data-state="running">
+                <button class="tool-header" aria-expanded="true">
+                  <span class="caret"><i class="ph ph-caret-right" aria-hidden="true"></i></span>
+                  <span class="status-dot" aria-hidden="true"></span>
+                  <span class="status-text">执行中</span>
+                  <span class="tool-label">运行测试 <code>ToolStepGroup</code></span>
+                  <span class="tool-time">12 秒</span>
+                </button>
+                <div class="tool-detail">
+                  <div class="detail-line"><span class="key">当前步骤</span><span class="value">验证键盘展开、流式尾部和状态筛选</span></div>
+                  <div class="detail-line"><span class="key">最新输出</span><span class="value">ordinary error remains collapsed by default</span></div>
+                </div>
+              </article>
+
+              <article class="tool-group escalated open" data-state="escalated" data-lock-open="true">
+                <button class="tool-header" aria-expanded="true" aria-describedby="escalatedHint">
+                  <span class="caret"><i class="ph ph-caret-right" aria-hidden="true"></i></span>
+                  <span class="status-dot" aria-hidden="true"></span>
+                  <span class="status-text">需要处理</span>
+                  <span class="tool-label">OpenAI Realtime <code>额度不足</code></span>
+                  <span class="tool-time">刚刚</span>
+                </button>
+                <div class="tool-detail" id="escalatedHint">
+                  <div class="detail-line"><span class="key">影响</span><span class="value">无法建立新的实时语音连接。</span></div>
+                  <div class="detail-line"><span class="key">处理方式</span><span class="value">检查项目额度或更换具有 Realtime 权限的 Key 后重试。</span></div>
+                </div>
+              </article>
+
+              <article class="tool-group recovered quiet-result" data-state="recovered">
+                <button class="tool-header" aria-expanded="false">
+                  <span class="caret"><i class="ph ph-caret-right" aria-hidden="true"></i></span>
+                  <span class="tool-label">读取任务状态 <span class="recovered-badge">已恢复</span></span>
+                  <span class="tool-time">2.1 秒</span>
+                </button>
+                <div class="tool-detail">
+                  <div class="detail-line"><span class="key">恢复方式</span><span class="value">首次读取失败后短时重试成功，没有重复派发任务。</span></div>
+                </div>
+              </article>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="composer-wrap">
+        <div class="composer-shell">
+          <textarea aria-label="消息输入框" placeholder="输入消息…"></textarea>
+          <div class="composer-actions">
+            <div class="left">
+              <button class="icon-button" aria-label="添加附件"><i class="ph ph-paperclip" aria-hidden="true"></i></button>
+              <button class="icon-button" aria-label="语音输入"><i class="ph ph-waveform" aria-hidden="true"></i></button>
+            </div>
+            <div class="right">
+              <button class="send-button" aria-label="发送"><i class="ph ph-arrow-up" aria-hidden="true"></i></button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <aside class="right-overview" aria-label="任务概览">
+      <div class="overview-head">
+        <span>概览</span>
+        <button class="icon-button" aria-label="收起概览"><i class="ph ph-sidebar-simple" aria-hidden="true"></i></button>
+      </div>
+      <section class="overview-section">
+        <div class="overview-label"><span>任务</span><span>2 / 4</span></div>
+        <div class="todo done"><i class="ph ph-check-circle" aria-hidden="true"></i><span>核对当前工具调用状态语义</span></div>
+        <div class="todo done"><i class="ph ph-check-circle" aria-hidden="true"></i><span>确定普通失败与需介入失败的层级</span></div>
+        <div class="todo"><i class="ph ph-circle" aria-hidden="true"></i><span>审核工具调用 HTML 原型</span></div>
+        <div class="todo"><i class="ph ph-circle" aria-hidden="true"></i><span>确认后进入正式 UI 实现</span></div>
+      </section>
+      <section class="overview-section">
+        <div class="overview-label"><span>状态规则</span></div>
+        <div class="overview-note">右侧只保留任务状态，不重复展示工具输出或完成产物。工具详情留在会话流的原位置。</div>
+      </section>
+    </aside>
+  </main>
+
+  <script>
+    const toolGroups = [...document.querySelectorAll('.tool-group')];
+    const filterButtons = [...document.querySelectorAll('.state-switcher button')];
+
+    function setOpen(group, open) {
+      if (group.dataset.lockOpen === 'true') open = true;
+      group.classList.toggle('open', open);
+      group.querySelector('.tool-header').setAttribute('aria-expanded', String(open));
+    }
+
+    function toggleGroup(group) {
+      setOpen(group, !group.classList.contains('open'));
+    }
+
+    toolGroups.forEach((group) => {
+      const header = group.querySelector('.tool-header');
+      header.addEventListener('click', () => toggleGroup(group));
+      header.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          toggleGroup(group);
+        }
+      });
+    });
+
+    filterButtons.forEach((button) => {
+      button.addEventListener('click', () => {
+        filterButtons.forEach((item) => item.classList.remove('active'));
+        button.classList.add('active');
+        const filter = button.dataset.filter;
+        toolGroups.forEach((group) => {
+          group.hidden = filter !== 'all' && group.dataset.state !== filter;
+        });
+      });
+    });
+  </script>
+</body>
+</html>

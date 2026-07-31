@@ -75,7 +75,10 @@ export function classifyAgentError(
     code: typeof payload.code === 'string' ? payload.code : undefined,
     traceId: getStringPayloadField(payload, 'traceId') ?? getStringPayloadField(payload, 'requestId'),
     rawMessage: message,
-    modelId: context?.modelId,
+    // host 在失败事件里带的是这一轮真跑的模型，优先用它；context 是前端当前选中的
+    // 模型，刚切过模型时会指认一个根本没跑过的模型，只能当兜底。
+    modelId: getStringPayloadField(payload.details, 'model') ?? context?.modelId,
+    provider: getStringPayloadField(payload.details, 'provider'),
     timestamp: Date.now(),
   };
   const explicitStatus = getNumberPayloadField(payload, 'httpStatus')

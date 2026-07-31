@@ -76,7 +76,9 @@ export function buildAgentErrorReport(args: {
   if (error.httpStatus) lines.push(`${labels.httpStatus}: ${error.httpStatus}`);
   if (error.traceId) lines.push(`${labels.traceId}: ${error.traceId}`);
   if (sessionId) lines.push(`${labels.sessionId}: ${sessionId}`);
-  if (error.modelId) lines.push(`${labels.model}: ${error.modelId}`);
+  if (error.modelId) {
+    lines.push(`${labels.model}: ${error.provider ? `${error.provider} / ${error.modelId}` : error.modelId}`);
+  }
   lines.push(`${labels.timestamp}: ${new Date(error.timestamp).toISOString()}`);
   lines.push(`${labels.raw}: ${error.rawMessage}`);
   return lines.join('\n');
@@ -121,6 +123,11 @@ export const AgentErrorCard: React.FC<{
   }, [error, title, suggestion, sessionId, t]);
 
   const detailItems: string[] = [];
+  // 排第一：切过模型之后，"这轮到底跑的谁"是用户最先要确认的事。
+  const ranOn = error.provider && error.modelId
+    ? `${error.provider} / ${error.modelId}`
+    : error.modelId;
+  if (ranOn) detailItems.push(`${t.agentError.details.model} ${ranOn}`);
   if (error.code) detailItems.push(`${t.agentError.details.code} ${error.code}`);
   if (error.httpStatus) detailItems.push(`${t.agentError.details.httpStatus} ${error.httpStatus}`);
   if (error.traceId) detailItems.push(`${t.agentError.details.traceId} ${error.traceId}`);

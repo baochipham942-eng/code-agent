@@ -259,7 +259,10 @@ export interface AgentErrorMetadata {
   traceId?: string;
   /** 供应商/运行时的原始错误文本，进错误报告 */
   rawMessage: string;
+  /** 这一轮 host 真正跑的模型（不是前端当前选中的那个，两者在刚切模型时会不一致） */
   modelId?: string;
+  /** 同上，真正跑的 provider */
+  provider?: string;
   timestamp: number;
   /** context_length 专用：实际/上限 tokens，供卡片模板填空 */
   requestedTokens?: number;

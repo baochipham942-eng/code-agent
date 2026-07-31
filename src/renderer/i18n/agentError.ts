@@ -38,6 +38,7 @@ export const agentErrorZh = {
       },
     },
     details: {
+      model: '实际使用',
       code: '错误码',
       httpStatus: 'HTTP',
       traceId: 'Trace ID',
@@ -101,6 +102,7 @@ export const agentErrorEn: typeof agentErrorZh = {
       },
     },
     details: {
+      model: 'Ran on',
       code: 'Code',
       httpStatus: 'HTTP',
       traceId: 'Trace ID',

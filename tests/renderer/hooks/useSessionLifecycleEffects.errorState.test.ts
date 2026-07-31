@@ -31,6 +31,35 @@ describe('agent lifecycle error helpers', () => {
   });
 });
 
+describe('classifyAgentError 模型归属', () => {
+  it('用 host 报的实跑模型，而不是前端当前选中的模型', () => {
+    const error = classifyAgentError(
+      {
+        code: 'RUN_FAILED',
+        message: 'Cannot connect to API: Client network socket disconnected',
+        details: { provider: 'custom-100xlabs', model: 'claude-opus-4-8' },
+      },
+      { modelId: 'deepseek-v4-pro' },
+    );
+
+    expect(error).toMatchObject({
+      category: 'network',
+      provider: 'custom-100xlabs',
+      modelId: 'claude-opus-4-8',
+    });
+  });
+
+  it('host 没带模型时才回落到前端当前模型', () => {
+    const error = classifyAgentError(
+      { code: 'RUN_FAILED', message: 'boom' },
+      { modelId: 'deepseek-v4-pro' },
+    );
+
+    expect(error?.modelId).toBe('deepseek-v4-pro');
+    expect(error?.provider).toBeUndefined();
+  });
+});
+
 describe('classifyAgentError', () => {
   it('classifies context length errors with token details', () => {
     const error = classifyAgentError({

@@ -27,7 +27,11 @@ import ipcService from './ipcService';
 import { isNativeDesktopAvailable } from './nativeDesktop';
 import { NativeVoiceAudioPipeline } from './nativeVoiceAudioPipeline';
 import { maybeShowSpeakerEchoHint, showVoiceAecFallbackWarning } from './voiceEchoHint';
-import { VoiceAudioPipeline, type VoiceAudioPipelineLike } from './voiceAudioPipeline';
+import {
+  readPreferredVoiceInputAvailability,
+  VoiceAudioPipeline,
+  type VoiceAudioPipelineLike,
+} from './voiceAudioPipeline';
 import { computeRevealedSubtitle, resolvePartialRelease } from '../utils/voicePartialOverlay';
 import { selectVoiceFocusContext } from './voiceFocusContext';
 import { normalizeInterruptMode } from '../components/features/voice/voiceSettingsDerivation';
@@ -88,6 +92,11 @@ class VoiceCallBridge {
   private reconnectAttempt = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private inputDevice: VoiceInputDeviceSettings | undefined;
+  private interruptMode: VoiceInterruptMode = 'server_vad';
+  private echoCancellation: 'auto' | 'off' = 'auto';
+  private preferredInputAvailable: boolean | null = null;
+  private inputDeviceChangeHandler: (() => void) | null = null;
+  private inputDeviceSwitchQueue: Promise<void> = Promise.resolve();
 
   private store() {
     return useVoiceCallStore.getState();
@@ -322,11 +331,14 @@ class VoiceCallBridge {
     this.audioReady = null;
     this.pendingAudioDiagnostics = [];
     this.fallbackWarningShown = false;
+    this.stopInputDeviceMonitoring();
 
     const activeAgentId = readActiveAgentSessionMap()[sessionId];
     const { interruptMode, echoCancellation, inputDevice } = await readVoiceRuntimeSettings();
     if (useVoiceCallStore.getState().phase !== 'idle') return; // await 期间状态被改，别抢
     this.inputDevice = inputDevice;
+    this.interruptMode = interruptMode;
+    this.echoCancellation = echoCancellation;
     this.store().dialStarted(sessionId, activeAgentId, interruptMode);
     this.intentionalClose = false;
     this.reconnectAttempt = 0;
@@ -352,6 +364,7 @@ class VoiceCallBridge {
     ws.onopen = () => {
       opened = true;
       this.audioReady = this.startAudio(ws, interruptMode, echoCancellation);
+      void this.startInputDeviceMonitoring();
     };
 
     ws.onmessage = (event) => {
@@ -386,6 +399,7 @@ class VoiceCallBridge {
       this.audio?.stop();
       this.audio = null;
       this.audioReady = null;
+      this.stopInputDeviceMonitoring();
       // 音频没了，揭示进度再没有可绑的时间轴：就地放完剩余全文（host teardown / 断线重连同理）。
       this.flushReveal();
       if (this.ws === ws) this.ws = null;
@@ -576,6 +590,75 @@ class VoiceCallBridge {
     void maybeShowSpeakerEchoHint({ message: text.message, dontShowAgain: text.dontShowAgain });
   }
 
+  /**
+   * 通话中设备恢复/断开只重启采集管线，不重连 WS、也不重发任务。
+   * 设备枚举失败保持现状；只有“可用性确实翻转”才切一次，避免 devicechange 风暴。
+   */
+  private async startInputDeviceMonitoring(): Promise<void> {
+    this.stopInputDeviceMonitoring();
+    if (!this.inputDevice) return;
+    const monitoredWs = this.ws;
+    const monitoredInputDevice = this.inputDevice;
+    if (monitoredWs?.readyState !== WebSocket.OPEN) return;
+    const mediaDevices = navigator.mediaDevices;
+    if (typeof mediaDevices?.addEventListener !== 'function') return;
+    const initialAvailability = await readPreferredVoiceInputAvailability(monitoredInputDevice, mediaDevices);
+    // enumerateDevices may resolve after hangup/reconnect. Never attach an old
+    // call's listener to the next call.
+    if (
+      this.ws !== monitoredWs
+      || monitoredWs.readyState !== WebSocket.OPEN
+      || this.inputDevice !== monitoredInputDevice
+      || this.store().phase === 'idle'
+    ) return;
+    this.preferredInputAvailable = initialAvailability;
+    const handler = () => {
+      if (this.ws !== monitoredWs || this.inputDevice !== monitoredInputDevice || this.store().phase === 'idle') {
+        return;
+      }
+      this.inputDeviceSwitchQueue = this.inputDeviceSwitchQueue
+        .then(async () => {
+          if (this.ws !== monitoredWs || this.inputDevice !== monitoredInputDevice || this.store().phase === 'idle') {
+            return;
+          }
+          const next = await readPreferredVoiceInputAvailability(monitoredInputDevice, mediaDevices);
+          if (this.ws !== monitoredWs || this.inputDevice !== monitoredInputDevice || this.store().phase === 'idle') {
+            return;
+          }
+          if (next === null || next === this.preferredInputAvailable) return;
+          this.preferredInputAvailable = next;
+          await this.restartAudioForInputDeviceChange(monitoredWs);
+        })
+        .catch(() => undefined);
+    };
+    this.inputDeviceChangeHandler = handler;
+    mediaDevices.addEventListener('devicechange', handler);
+  }
+
+  private stopInputDeviceMonitoring(): void {
+    if (this.inputDeviceChangeHandler && navigator.mediaDevices?.removeEventListener) {
+      navigator.mediaDevices.removeEventListener('devicechange', this.inputDeviceChangeHandler);
+    }
+    this.inputDeviceChangeHandler = null;
+    this.preferredInputAvailable = null;
+  }
+
+  private async restartAudioForInputDeviceChange(ws: WebSocket): Promise<void> {
+    if (this.ws !== ws || ws.readyState !== WebSocket.OPEN || this.store().phase === 'idle') return;
+    const previous = this.audio;
+    previous?.stop();
+    if (this.audio === previous) this.audio = null;
+    const ready = this.startAudio(ws, this.interruptMode, this.echoCancellation);
+    this.audioReady = ready;
+    await ready;
+    if (this.ws !== ws || ws.readyState !== WebSocket.OPEN || !this.audio) return;
+    const state = this.store();
+    this.audio.setMuted(state.muted);
+    this.audio.setCaptureOpen(
+      this.interruptMode === 'server_vad' ? true : state.pttCaptureOn,
+    );
+  }
+
   private handleEvent(event: VoiceEvent, sessionId: string): void {
     switch (event.type) {
       case 'state':
@@ -663,6 +746,7 @@ class VoiceCallBridge {
         this.audio?.stop();
         this.audio = null;
         this.audioReady = null;
+        this.stopInputDeviceMonitoring();
         this.scheduleReload(sessionId, undefined, 800);
         this.scheduleHangupSummaryReload(sessionId);
         this.store().reset();
@@ -693,6 +777,7 @@ class VoiceCallBridge {
     this.audio?.stop();
     this.audio = null;
     this.audioReady = null;
+    this.stopInputDeviceMonitoring();
     const { sessionId } = this.store();
     if (sessionId) {
       this.scheduleReload(sessionId, undefined, 800);

@@ -290,9 +290,12 @@ const CAPABILITY_DOMAIN_ACTIONS = {
     'discover_models',
     'getHealthStatus',
     'get_thinking_capabilities',
+    'list_realtime_voice_providers',
     'run_diagnostics',
     'run_doctor',
+    'save_realtime_voice_provider',
     'test_connection',
+    'test_realtime_voice_provider',
   ],
   [IPC_DOMAINS.ROLES]: [
     'addBinding',

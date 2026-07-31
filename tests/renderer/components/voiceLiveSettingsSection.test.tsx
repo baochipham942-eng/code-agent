@@ -9,7 +9,6 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { zh } from '../../../src/renderer/i18n/zh';
 import type { AppSettings } from '../../../src/shared/contract';
-import { VOICE_LIVE_SETTINGS_UPDATED_EVENT } from '../../../src/shared/contract/voice';
 import { IPC_DOMAINS } from '../../../src/shared/ipc';
 
 const invokeDomainMock = vi.hoisted(() => vi.fn());
@@ -30,6 +29,9 @@ vi.mock('../../../src/renderer/services/ipcService', () => ({
 vi.mock('../../../src/renderer/components/features/voice/useVoiceLiveAvailability', () => ({
   useVoiceLiveAvailability: () => availability,
 }));
+vi.mock('../../../src/renderer/utils/logger', () => ({
+  createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
+}));
 
 import { VoiceLiveSettingsSection } from '../../../src/renderer/components/features/settings/tabs/VoiceLiveSettingsSection';
 
@@ -38,6 +40,24 @@ function settingsGet(voice?: AppSettings['voice']) {
     if (action === 'get') return Promise.resolve({ voice } as AppSettings);
     return Promise.resolve(undefined);
   });
+}
+
+function audioInput(deviceId: string, label: string): MediaDeviceInfo {
+  return { deviceId, kind: 'audioinput', label, groupId: '' } as unknown as MediaDeviceInfo;
+}
+
+function createMediaDevicesStub(initialDevices: MediaDeviceInfo[] = []) {
+  let devices = initialDevices;
+  let handler: (() => void) | null = null;
+  const stub = {
+    enumerateDevices: vi.fn(() => Promise.resolve(devices)),
+    addEventListener: vi.fn((_type: string, h: () => void) => { handler = h; }),
+    removeEventListener: vi.fn(() => { handler = null; }),
+    setDevices(next: MediaDeviceInfo[]) { devices = next; },
+    get handler() { return handler; },
+  };
+  (navigator as unknown as { mediaDevices: unknown }).mediaDevices = stub;
+  return stub;
 }
 
 describe('VoiceLiveSettingsSection', () => {
@@ -139,5 +159,88 @@ describe('VoiceLiveSettingsSection', () => {
       expect(payload.voice.live.echoCancellation).toBe('off');
     });
     expect(screen.getByText(zh.voice.settings.echoCancellationOffDesc)).toBeTruthy();
+  });
+
+  it('选择具体麦克风时保存 label + webDeviceId', async () => {
+    createMediaDevicesStub([audioInput('mic-2', 'Mic B')]);
+    settingsGet(undefined);
+    render(<VoiceLiveSettingsSection />);
+
+    const select = await screen.findByTestId('voice-input-device');
+    fireEvent.change(select, { target: { value: 'mic-2' } });
+
+    await waitFor(() => {
+      const setCall = invokeDomainMock.mock.calls.find(([, action]) => action === 'set');
+      expect(setCall).toBeTruthy();
+      const payload = setCall![2] as Partial<AppSettings>;
+      expect(payload.voice?.inputDevice).toEqual({ label: 'Mic B', webDeviceId: 'mic-2' });
+    });
+  });
+
+  it('选择系统默认时保存 voice.inputDevice = null', async () => {
+    createMediaDevicesStub([audioInput('mic-1', 'Mic A')]);
+    settingsGet({ inputDevice: { label: 'Mic A', webDeviceId: 'mic-1' } });
+    render(<VoiceLiveSettingsSection />);
+
+    const select = await screen.findByTestId('voice-input-device') as HTMLSelectElement;
+    expect(select.value).toBe('mic-1');
+
+    fireEvent.change(select, { target: { value: '' } });
+    await waitFor(() => {
+      const setCall = invokeDomainMock.mock.calls.find(([, action]) => action === 'set');
+      const payload = setCall![2] as Partial<AppSettings>;
+      expect(payload.voice?.inputDevice).toBeNull();
+    });
+  });
+
+  it('设备断开时显示回退系统默认且保留配置', async () => {
+    createMediaDevicesStub([]);
+    settingsGet({ inputDevice: { label: 'Mic A', webDeviceId: 'mic-1' } });
+    render(<VoiceLiveSettingsSection />);
+
+    const select = await screen.findByTestId('voice-input-device') as HTMLSelectElement;
+    await waitFor(() => expect(select.value).toBe(''));
+
+    const status = await screen.findByTestId('voice-input-device-status');
+    expect(status.textContent).toContain(zh.voice.settings.inputDeviceUnavailable);
+    expect(invokeDomainMock.mock.calls.some(([, action]) => action === 'set')).toBe(false);
+  });
+
+  it('设备初始可用时显示普通可用文案，不显示恢复文案', async () => {
+    createMediaDevicesStub([audioInput('mic-1', 'Mic A')]);
+    settingsGet({ inputDevice: { label: 'Mic A', webDeviceId: 'mic-1' } });
+    render(<VoiceLiveSettingsSection />);
+
+    const status = await screen.findByTestId('voice-input-device-status');
+    expect(status.textContent).toContain(zh.voice.settings.inputDeviceAvailable);
+    expect(status.textContent).not.toContain(zh.voice.settings.inputDeviceRecovered);
+  });
+
+  it('devicechange 从断开到恢复时显示恢复文案', async () => {
+    const stub = createMediaDevicesStub([]);
+    settingsGet({ inputDevice: { label: 'Mic A', webDeviceId: 'mic-1' } });
+    render(<VoiceLiveSettingsSection />);
+
+    await screen.findByText(zh.voice.settings.inputDeviceUnavailable);
+
+    stub.setDevices([audioInput('mic-1', 'Mic A')]);
+    stub.handler?.();
+
+    const status = await screen.findByTestId('voice-input-device-status');
+    await waitFor(() => expect(status.textContent).toContain(zh.voice.settings.inputDeviceRecovered));
+    const select = screen.getByTestId('voice-input-device') as HTMLSelectElement;
+    expect(select.value).toBe('mic-1');
+  });
+
+  it('枚举失败不清配置', async () => {
+    const stub = createMediaDevicesStub([]);
+    stub.enumerateDevices.mockRejectedValue(new Error('permission denied'));
+    settingsGet({ inputDevice: { label: 'Mic A', webDeviceId: 'mic-1' } });
+    render(<VoiceLiveSettingsSection />);
+
+    await waitFor(() => expect(stub.enumerateDevices).toHaveBeenCalled());
+    expect(invokeDomainMock.mock.calls.some(([, action]) => action === 'set')).toBe(false);
+    const status = await screen.findByTestId('voice-input-device-status');
+    expect(status.textContent).toContain(zh.voice.settings.inputDeviceEnumFailed);
   });
 });

@@ -79,6 +79,13 @@ export const en: Translations = {
     download: 'Download',
     archiveToLibrary: 'Archive to library',
     exportBundle: 'Export bundle',
+    statusVerified: 'Verified',
+    statusUnverified: 'Unverified',
+    statusFailed: 'Failed',
+    qualityValidated: 'Validated',
+    qualityNeedsReview: 'Needs review',
+    qualityFailed: 'Quality failed',
+    moreActions: 'More',
   },
 
   // Status bar

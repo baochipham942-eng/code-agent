@@ -7,21 +7,21 @@
 // 独立「实时语音」tab（VoiceLiveSettings 薄壳）；口述输入在「语音转文字」tab。
 // ============================================================================
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Check, ShieldCheck } from 'lucide-react';
 import { IPC_DOMAINS } from '@shared/ipc';
 import type { AppSettings } from '@shared/contract';
 import { VOICE_LIVE_SETTINGS_UPDATED_EVENT } from '@shared/contract/voice';
-import type { VoiceLiveSettings } from '@shared/contract/settings';
+import type { VoiceInputDeviceSettings, VoiceLiveSettings } from '@shared/contract/settings';
+import { normalizeVoiceInputDevice } from '@shared/voiceInputDevice';
 import { PROVIDER_MODELS, PROVIDER_MODELS_MAP } from '@shared/constants/models';
 import ipcService from '../../../../services/ipcService';
 import { createLogger } from '../../../../utils/logger';
 import { useI18n } from '../../../../hooks/useI18n';
-import { toast } from '../../../../hooks/useToast';
 import { Toggle } from '../../../primitives/Toggle';
-import { Button } from '../../../primitives';
 import { useVoiceLiveAvailability } from '../../voice/useVoiceLiveAvailability';
 import { deriveInterruptMode, deriveTurnDetection, deriveVadSensitivity } from '../../voice/voiceSettingsDerivation';
+import { resolveVoiceInputDevice } from '../../../../services/voiceAudioPipeline';
 
 const logger = createLogger('VoiceLiveSettings');
 
@@ -46,6 +46,12 @@ export const VoiceLiveSettingsSection: React.FC = () => {
   const [sensitivity, setSensitivity] = useState<VadSensitivity>('medium');
   const [executionModel, setExecutionModel] = useState<VoiceLiveSettings['executionModel']>(undefined);
   const [echoCancellation, setEchoCancellation] = useState<EchoCancellationMode>('auto');
+  const [inputDevices, setInputDevices] = useState<MediaDeviceInfo[]>([]);
+  const [inputDevice, setInputDevice] = useState<VoiceInputDeviceSettings | null>(null);
+  const [inputDeviceAvailable, setInputDeviceAvailable] = useState<boolean | null>(null);
+  const [inputDeviceRecovered, setInputDeviceRecovered] = useState(false);
+  const [inputDeviceEnumFailed, setInputDeviceEnumFailed] = useState(false);
+  const prevInputDeviceAvailableRef = useRef<boolean | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -60,10 +66,56 @@ export const VoiceLiveSettingsSection: React.FC = () => {
         setSensitivity(deriveVadSensitivity(voice));
         setExecutionModel(voice?.live?.executionModel);
         setEchoCancellation(voice?.live?.echoCancellation ?? 'auto');
+        setInputDevice(normalizeVoiceInputDevice(voice?.inputDevice) ?? null);
       })
       .catch((error) => logger.error('load voice live settings failed', error));
     return () => { cancelled = true; };
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    let removeListener: (() => void) | null = null;
+
+    const refresh = async (source: 'initial' | 'devicechange' = 'initial') => {
+      try {
+        if (typeof navigator === 'undefined' || !navigator.mediaDevices || typeof navigator.mediaDevices.enumerateDevices !== 'function') {
+          throw new Error('enumerateDevices is unavailable');
+        }
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        if (cancelled) return;
+        const audioInputs = devices.filter((device) => device.kind === 'audioinput');
+        setInputDevices(audioInputs);
+        setInputDeviceEnumFailed(false);
+        const nextAvailable = inputDevice
+          ? resolveVoiceInputDevice(inputDevice, audioInputs).match !== 'default'
+          : null;
+        const prevAvailable = prevInputDeviceAvailableRef.current;
+        setInputDeviceAvailable(nextAvailable);
+        prevInputDeviceAvailableRef.current = nextAvailable;
+        // 只有 devicechange 里「曾断开 → 又恢复」才显示恢复文案；初始可用只显示普通可用。
+        setInputDeviceRecovered(source === 'devicechange' && prevAvailable === false && nextAvailable === true);
+      } catch (error) {
+        if (cancelled) return;
+        logger.error('enumerate input devices failed', error);
+        setInputDeviceEnumFailed(true);
+        setInputDeviceAvailable(null);
+        prevInputDeviceAvailableRef.current = null;
+        setInputDeviceRecovered(false);
+      }
+    };
+
+    void refresh();
+    if (navigator?.mediaDevices?.addEventListener) {
+      const handler = () => { void refresh('devicechange'); };
+      navigator.mediaDevices.addEventListener('devicechange', handler);
+      removeListener = () => navigator.mediaDevices.removeEventListener('devicechange', handler);
+    }
+
+    return () => {
+      cancelled = true;
+      removeListener?.();
+    };
+  }, [inputDevice]);
 
   const persist = async (patch: Partial<VoiceLiveSettings>) => {
     const nextLive: VoiceLiveSettings = {
@@ -108,6 +160,17 @@ export const VoiceLiveSettingsSection: React.FC = () => {
     await persist({ executionModel: next });
   };
 
+  const persistInputDevice = async (next: VoiceInputDeviceSettings | null) => {
+    setInputDevice(next);
+    try {
+      await ipcService.invokeDomain(IPC_DOMAINS.SETTINGS, 'set', {
+        voice: { inputDevice: next },
+      } as Partial<AppSettings>);
+    } catch (error) {
+      logger.error('save input device failed', error);
+    }
+  };
+
   const interruptText: Record<InterruptMode, { label: string; desc: string }> = {
     server_vad: { label: text.interruptServerVad, desc: text.interruptServerVadDesc },
     manual: { label: text.interruptManual, desc: text.interruptManualDesc },
@@ -117,6 +180,17 @@ export const VoiceLiveSettingsSection: React.FC = () => {
     medium: text.sensitivityMedium,
     high: text.sensitivityHigh,
   };
+
+  const inputDeviceResolution = inputDevice ? resolveVoiceInputDevice(inputDevice, inputDevices) : undefined;
+  const selectedInputDeviceId = inputDeviceResolution?.match !== 'default' ? inputDeviceResolution?.deviceId ?? '' : '';
+  const inputDeviceStatus = (() => {
+    if (!inputDevice) return null;
+    if (inputDeviceEnumFailed) return text.inputDeviceEnumFailed;
+    if (inputDeviceRecovered) return text.inputDeviceRecovered;
+    if (inputDeviceAvailable === true) return text.inputDeviceAvailable;
+    if (inputDeviceAvailable === false) return text.inputDeviceUnavailable;
+    return null;
+  })();
 
   return (
     <div className="space-y-6" data-testid="voice-live-settings">
@@ -181,6 +255,37 @@ export const VoiceLiveSettingsSection: React.FC = () => {
             .replace('{minutes}', String(Math.round(usage.monthSeconds / 60)))
             .replace('{calls}', String(usage.monthCalls))}
         </p>
+      </div>
+
+      {/* 麦克风输入设备：显式选择或系统默认；断开时保留配置并回退 */}
+      <div className="border-t border-zinc-700 pt-4" data-testid="voice-input-device-section">
+        <h3 className="mb-1 text-sm font-medium text-zinc-200">{text.inputDeviceTitle}</h3>
+        <p className="mb-3 text-xs text-zinc-500">{text.inputDeviceDescription}</p>
+        <select
+          data-testid="voice-input-device"
+          value={selectedInputDeviceId}
+          onChange={(event) => {
+            const value = event.target.value;
+            if (!value) return void persistInputDevice(null);
+            const device = inputDevices.find((d) => d.deviceId === value);
+            if (!device) return;
+            return void persistInputDevice({
+              label: device.label.trim() || device.deviceId,
+              webDeviceId: device.deviceId,
+            });
+          }}
+          className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-primary-500"
+        >
+          <option value="">{text.inputDeviceDefault}</option>
+          {inputDevices.map((device) => (
+            <option key={device.deviceId} value={device.deviceId}>{device.label || device.deviceId}</option>
+          ))}
+        </select>
+        {inputDeviceStatus && (
+          <p className="mt-2 text-xs leading-5 text-zinc-500" data-testid="voice-input-device-status">
+            {inputDeviceStatus}
+          </p>
+        )}
       </div>
 
       <div className="border-t border-zinc-700 pt-4">

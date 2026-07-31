@@ -597,6 +597,10 @@ export const zhSettingsCore = {
       clearAudioDescription: '删除本机保留的重试音频，不影响已发送消息。',
       postProcessingTitle: '轻量整理转写文本',
       postProcessingDescription: '去掉常见口头停顿并整理空格，保留原始转写用于元数据追踪。',
+      vocabularyTitle: '口述词表',
+      vocabularyDescription: '每行一条。通话转写文本与派活理解会按这些拼写解释，不保证上游识别率提升。超长、空行或重复项会被自动过滤。',
+      vocabularyPlaceholder: '例如：a.txt\nnpm install\n张三',
+      vocabularyCount: '有效词条 {count}/100',
       saving: '正在保存',
       effectiveNextRecording: '设置会在下一次录音时生效',
       modes: {

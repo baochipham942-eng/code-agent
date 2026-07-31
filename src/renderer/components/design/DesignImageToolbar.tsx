@@ -471,10 +471,14 @@ export function DesignImageToolbar(props: DesignImageToolbarProps): React.ReactE
             {t.design.imageToolbarMore}
           </button>
 
-          {/* 更多 ⋯：原 288px 浮层里的低频动作，对照 DesignImageEditPanel 逐项收编，一个不少。 */}
+          {/* 更多 ⋯：原 288px 浮层里的低频动作，对照 DesignImageEditPanel 逐项收编，一个不少。
+              2026-08-01 返工#2：按用途分组带组标题（修图 / 导出这张 / 派生），不做杂物抽屉。 */}
           {openMenu === 'more' && (
             <div data-testid="design-more-menu" className={MENU_CLASS} style={menuStyle}>
               {/* ds-allow:start 更多菜单项为图标+文字菜单行（hover 态自定义，非 Button variant） */}
+              <p className="px-2 pb-1 text-[10px] font-medium uppercase tracking-wide text-zinc-500">
+                {t.design.moreGroupEdit}
+              </p>
               <button
                 type="button"
                 data-testid="design-more-remove-watermark"
@@ -485,11 +489,14 @@ export function DesignImageToolbar(props: DesignImageToolbarProps): React.ReactE
                 <Eraser className="h-3.5 w-3.5 text-zinc-500" />
                 {t.design.removeWatermarkBtn}
               </button>
+              <p className="mt-2 border-t border-white/[0.06] px-2 pb-1 pt-2 text-[10px] font-medium uppercase tracking-wide text-zinc-500">
+                {t.design.moreGroupExportThis}
+              </p>
               <button
                 type="button"
                 data-testid="design-more-export-image"
                 onClick={() => runAndClose(onExportImage)}
-                className="mt-1 flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-zinc-300 transition-colors hover:bg-white/[0.06] hover:text-zinc-100"
+                className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-zinc-300 transition-colors hover:bg-white/[0.06] hover:text-zinc-100"
               >
                 <Download className="h-3.5 w-3.5 text-zinc-500" />
                 {t.design.exportImage}
@@ -503,12 +510,15 @@ export function DesignImageToolbar(props: DesignImageToolbarProps): React.ReactE
                 <FileDown className="h-3.5 w-3.5 text-zinc-500" />
                 {t.design.exportImagePdf}
               </button>
+              <p className="mt-2 border-t border-white/[0.06] px-2 pb-1 pt-2 text-[10px] font-medium uppercase tracking-wide text-zinc-500">
+                {t.design.moreGroupDerive}
+              </p>
               <button
                 type="button"
                 data-testid="design-more-generate-video"
                 onClick={() => runAndClose(onGenerateVideo)}
                 disabled={generating}
-                className="mt-1 flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-zinc-300 transition-colors hover:bg-white/[0.06] hover:text-zinc-100 disabled:opacity-50"
+                className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-zinc-300 transition-colors hover:bg-white/[0.06] hover:text-zinc-100 disabled:opacity-50"
               >
                 <Film className="h-3.5 w-3.5 text-zinc-500" />
                 {t.design.generateVideoFromImage}

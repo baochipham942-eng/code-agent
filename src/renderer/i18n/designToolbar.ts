@@ -50,6 +50,10 @@ export const designToolbarZh = {
     resizeAlreadyRatio: '已是该比例',
     resizeCostHint: '预估 {cost} · {steps} 次付费扩图',
     annotModelSelectLabel: '标注模型选择',
+    // —— 「更多」分组标题（2026-08-01 审美关返工#2：按用途分组，不做杂物抽屉）——
+    moreGroupEdit: '修图',
+    moreGroupExportThis: '导出这张',
+    moreGroupDerive: '派生',
   },
 };
 
@@ -96,5 +100,8 @@ export const designToolbarEn = {
     resizeAlreadyRatio: 'Already this ratio',
     resizeCostHint: 'Est. {cost} · {steps} paid expand calls',
     annotModelSelectLabel: 'Annotation model',
+    moreGroupEdit: 'Edit',
+    moreGroupExportThis: 'Export this image',
+    moreGroupDerive: 'Derive',
   },
 };

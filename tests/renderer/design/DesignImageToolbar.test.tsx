@@ -197,10 +197,14 @@ describe('扩图下拉与更多菜单', () => {
     expect(screen.queryByTestId('design-expand-menu')).toBeNull();
   });
 
-  it('更多 ⋯ 对照原 288px 浮层低频动作一个不少', () => {
+  it('更多 ⋯ 对照原 288px 浮层低频动作一个不少，且按用途分组（返工#2）', () => {
     const props = renderToolbar();
     fireEvent.click(screen.getByTestId('design-toolbar-more'));
     const menu = screen.getByTestId('design-more-menu');
+    // 组标题：修图 / 导出这张 / 派生
+    for (const group of [zh.design.moreGroupEdit, zh.design.moreGroupExportThis, zh.design.moreGroupDerive]) {
+      expect(menu.textContent).toContain(group);
+    }
     // 去除水印 / 导出图片 / 导出 PDF / 生成视频 / 标注模型选择（逐项对照 DesignImageEditPanel 原有动作）
     expect(screen.getByTestId('design-more-remove-watermark').textContent).toContain(
       zh.design.removeWatermarkBtn,

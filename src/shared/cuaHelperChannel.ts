@@ -27,3 +27,19 @@ export const CUA_HELPER_APP_NAMES: readonly string[] = [
   CUA_HELPER_IDENTITY.production.appName,
   CUA_HELPER_IDENTITY.dev.appName,
 ].map((name) => `${name}.app`);
+
+/**
+ * 当前渠道的 helper 身份，源头与 scripts/lib/cua-channel.sh 完全一致（NEO_CHANNEL，
+ * 缺省=生产）。给构建期 / 验收期用——这两个场景跑在真实 shell 里，读得到 NEO_CHANNEL。
+ *
+ * 未知取值直接抛错，不回退到生产：验收断言拿错期望值等于把门拆了。
+ */
+export function cuaHelperIdentity(env: NodeJS.ProcessEnv = process.env): {
+  bundleId: string;
+  appName: string;
+} {
+  const raw = env.NEO_CHANNEL?.trim().toLowerCase();
+  if (!raw || raw === 'production') return CUA_HELPER_IDENTITY.production;
+  if (raw === 'dev') return CUA_HELPER_IDENTITY.dev;
+  throw new Error(`Unknown NEO_CHANNEL=${env.NEO_CHANNEL} (expected "production" or "dev")`);
+}

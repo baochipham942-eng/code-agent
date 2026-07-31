@@ -44,7 +44,7 @@ export function summarizeTodoProgress(tasks: TaskRecord[]): TodoProgressSummary 
   };
 }
 
-export type OverviewContextKind =
+type OverviewContextKind =
   | 'skill'
   | 'mcp'
   | 'connector'

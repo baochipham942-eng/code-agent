@@ -169,7 +169,10 @@ export interface VoiceAudioPipelineLike {
   start(): Promise<void>;
   stop(): void;
   enqueuePlayback(pcm24k: Int16Array): void;
+  pausePlayback?(): void;
+  resumePlayback?(): void;
   clearPlayback(): void;
+  getPlaybackState?(): { playing: boolean; playedMs: number; queuedMs: number };
 }
 
 export class VoiceAudioPipeline implements VoiceAudioPipelineLike {
@@ -183,6 +186,7 @@ export class VoiceAudioPipeline implements VoiceAudioPipelineLike {
   private playbackCtx: AudioContext | null = null;
   private nextStart = 0;
   private scheduled: AudioBufferSourceNode[] = [];
+  private playbackBaseTime: number | null = null;
 
   private muted = false;
   /** PTT/手动模式的采集门：关 = 发静音帧。 */
@@ -319,6 +323,7 @@ export class VoiceAudioPipeline implements VoiceAudioPipelineLike {
     this.playbackCtx = null;
     this.scheduled = [];
     this.nextStart = 0;
+    this.playbackBaseTime = null;
     this.resampleState = { pos: 0 };
     this.micLevel = 0;
     this.playbackLevel = 0;
@@ -336,6 +341,7 @@ export class VoiceAudioPipeline implements VoiceAudioPipelineLike {
     if (pcm24k.length === 0) return;
     const ctx = this.playbackCtx ?? new AudioContext();
     this.playbackCtx = ctx;
+    if (this.playbackBaseTime === null) this.playbackBaseTime = ctx.currentTime;
 
     const buffer = ctx.createBuffer(1, pcm24k.length, VOICE_DOWNSTREAM_SAMPLE_RATE);
     const channel = buffer.getChannelData(0);
@@ -360,7 +366,25 @@ export class VoiceAudioPipeline implements VoiceAudioPipelineLike {
     };
   }
 
-  /** barge-in：用户开口就掐掉正在播的回答。 */
+  pausePlayback(): void {
+    void this.playbackCtx?.suspend().catch(() => undefined);
+  }
+
+  resumePlayback(): void {
+    void this.playbackCtx?.resume().catch(() => undefined);
+  }
+
+  getPlaybackState(): { playing: boolean; playedMs: number; queuedMs: number } {
+    const ctx = this.playbackCtx;
+    if (!ctx || this.playbackBaseTime === null) return { playing: false, playedMs: 0, queuedMs: 0 };
+    return {
+      playing: this.scheduled.length > 0,
+      playedMs: Math.max(0, Math.round((ctx.currentTime - this.playbackBaseTime) * 1000)),
+      queuedMs: Math.max(0, Math.round((this.nextStart - ctx.currentTime) * 1000)),
+    };
+  }
+
+  /** 真打断确认后掐掉正在播的回答。 */
   clearPlayback(): void {
     this.scheduled.forEach((node) => {
       try {
@@ -371,6 +395,7 @@ export class VoiceAudioPipeline implements VoiceAudioPipelineLike {
     });
     this.scheduled = [];
     this.nextStart = this.playbackCtx?.currentTime ?? 0;
+    this.playbackBaseTime = null;
     this.playbackLevel = 0;
   }
 }

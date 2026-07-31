@@ -86,7 +86,7 @@ class VoiceCallBridge {
   private audioReady: Promise<'native_aec' | 'headphones'> | null = null;
   private pendingAudioDiagnostics: string[] = [];
   private fallbackWarningShown = false;
-  private reloadTimer: ReturnType<typeof setTimeout> | null = null;
+  private reloadTimers = new Map<'user' | 'assistant' | 'generic', ReturnType<typeof setTimeout>>();
   /** 用户显式挂断 vs 网络断开——只有后者才该重连。 */
   private intentionalClose = false;
   private reconnectAttempt = 0;
@@ -97,6 +97,10 @@ class VoiceCallBridge {
   private preferredInputAvailable: boolean | null = null;
   private inputDeviceChangeHandler: (() => void) | null = null;
   private inputDeviceSwitchQueue: Promise<void> = Promise.resolve();
+  private pausedCandidateId: string | null = null;
+  private playbackPausedAt = 0;
+  /** 有界取消墓碑：上游 cancel 后仍可能把旧 final/done 发完。 */
+  private cancelledResponseIds = new Set<string>();
 
   private store() {
     return useVoiceCallStore.getState();
@@ -112,28 +116,40 @@ class VoiceCallBridge {
    * 空窗会变成肉眼可见的闪断。所以：临时气泡先顶着 final 文本，等真消息上屏后再撤。
    */
   private settledPartials: { user?: string; assistant?: string } = {};
+  private settledAssistantResponseId: string | null = null;
 
-  /** 交接等待的截止时刻：真消息迟迟不落库时不能无限重拉。 */
-  private handoffDeadline = 0;
+  /** user/assistant 各自等待落库；一侧 final 不得取消另一侧交接。 */
+  private handoffDeadlines: Partial<Record<'user' | 'assistant', number>> = {};
 
-  private scheduleReload(sessionId: string, settled?: 'user' | 'assistant', delayMs = 500): void {
+  private scheduleReload(
+    sessionId: string,
+    settled?: 'user' | 'assistant',
+    delayMs = 500,
+    responseId?: string | null,
+  ): void {
     if (settled) {
       this.settledPartials[settled] = settled === 'user'
         ? this.store().partialUser
         : this.store().partialAssistant;
-      this.handoffDeadline = Date.now() + VOICE_PARTIAL_HANDOFF_MAX_WAIT_MS;
+      this.handoffDeadlines[settled] = Date.now() + VOICE_PARTIAL_HANDOFF_MAX_WAIT_MS;
+      if (settled === 'assistant') this.settledAssistantResponseId = responseId ?? null;
     }
-    if (this.reloadTimer) clearTimeout(this.reloadTimer);
-    this.reloadTimer = setTimeout(async () => {
-      this.reloadTimer = null;
+    const key = settled ?? 'generic';
+    const previous = this.reloadTimers.get(key);
+    if (previous) clearTimeout(previous);
+    const run = async () => {
+      this.reloadTimers.delete(key);
       await reloadVoiceSessionMessages(sessionId);
       // 真消息还没进消息流就撤气泡 = 空帧（R1 闪断）。继续顶着，隔一会儿再拉一次。
       // 一次拉不到是常态：host 落库比这里的 500ms 慢，且此前没有任何人会再拉第二次，
       // 于是那句话一直缺到挂断才被补拉回来——真机看到的「清空 → 再出现」就是这么来的。
-      if (!this.releaseSettledPartials() && Date.now() < this.handoffDeadline) {
-        this.scheduleReload(sessionId, undefined, delayMs);
+      this.releaseSettledPartials();
+      const deadline = settled ? this.handoffDeadlines[settled] ?? 0 : 0;
+      if (settled && this.settledPartials[settled] !== undefined && Date.now() < deadline) {
+        this.reloadTimers.set(key, setTimeout(run, delayMs));
       }
-    }, delayMs);
+    };
+    this.reloadTimers.set(key, setTimeout(run, delayMs));
   }
 
   /** @returns 待交接的临时气泡是否已全部撤完（false = 还得再等真消息）。 */
@@ -151,7 +167,10 @@ class VoiceCallBridge {
       },
     );
     if (patch.partialUser !== undefined) delete this.settledPartials.user;
-    if (patch.partialAssistant !== undefined) delete this.settledPartials.assistant;
+    if (patch.partialAssistant !== undefined) {
+      delete this.settledPartials.assistant;
+      this.settledAssistantResponseId = null;
+    }
     if (Object.keys(patch).length > 0) state.eventApplied(patch);
     return Object.keys(this.settledPartials).length === 0;
   }
@@ -188,8 +207,10 @@ class VoiceCallBridge {
   private lastPlayedSec = 0;
   /** 揭示完成后才交接真消息的那条会话（§7.5 落库仍只有 host 一个生产者）。 */
   private pendingHandoffSessionId: string | null = null;
+  private revealResponseId: string | null = null;
 
-  private startRevealCycle(): void {
+  private startRevealCycle(responseId?: string): void {
+    this.revealResponseId = responseId ?? null;
     this.revealFinalized = false;
     this.revealedText = '';
     this.lastPlayedSec = 0;
@@ -240,6 +261,7 @@ class VoiceCallBridge {
    * 待交接的真消息一律在这里补上，否则打断一次就再没人去拉那条已落库的消息。
    */
   private endRevealCycle(): void {
+    const responseId = this.revealResponseId;
     if (this.revealTimer !== null) {
       clearInterval(this.revealTimer);
       this.revealTimer = null;
@@ -250,9 +272,10 @@ class VoiceCallBridge {
     this.lastPlayedSec = 0;
     this.audioEnqueuedSec = 0;
     this.playbackEndsAt = 0;
+    this.revealResponseId = null;
     const sessionId = this.pendingHandoffSessionId;
     this.pendingHandoffSessionId = null;
-    if (sessionId) this.scheduleReload(sessionId, 'assistant');
+    if (sessionId) this.scheduleReload(sessionId, 'assistant', 500, responseId);
   }
 
   /**
@@ -325,6 +348,10 @@ class VoiceCallBridge {
     this.audio?.stop();
     this.audio = null;
     this.settledPartials = {};
+    this.settledAssistantResponseId = null;
+    for (const timer of this.reloadTimers.values()) clearTimeout(timer);
+    this.reloadTimers.clear();
+    this.handoffDeadlines = {};
     // 新一通电话不继承上一通的揭示残留，也不替上一通补交接。
     this.pendingHandoffSessionId = null;
     this.endRevealCycle();
@@ -332,6 +359,9 @@ class VoiceCallBridge {
     this.pendingAudioDiagnostics = [];
     this.fallbackWarningShown = false;
     this.stopInputDeviceMonitoring();
+    this.cancelledResponseIds.clear();
+    this.pausedCandidateId = null;
+    this.playbackPausedAt = 0;
 
     const activeAgentId = readActiveAgentSessionMap()[sessionId];
     const { interruptMode, echoCancellation, inputDevice } = await readVoiceRuntimeSettings();
@@ -687,17 +717,82 @@ class VoiceCallBridge {
         // closed 由 ws.onclose 统一收尾（host 关上游后会关 client）
         break;
       case 'speech.started':
-        this.audio?.clearPlayback(); // barge-in：用户开口就掐掉正在播的回答
-        // 播放队列被掐掉 = 剩下的文本永远不会被念出来，揭示器必须同步停，
-        // 否则它会对着一条不再播放的时间轴继续空转。
-        this.endRevealCycle();
+        {
+          const candidateId = event.candidateId ?? `legacy-${Date.now()}`;
+          const playback = this.audio?.getPlaybackState?.() ?? {
+            playing: this.store().assistantSpeaking,
+            playedMs: 0,
+            queuedMs: 0,
+          };
+          if (playback.playing) {
+            this.audio?.pausePlayback?.();
+            this.pausedCandidateId = candidateId;
+            this.playbackPausedAt = Date.now();
+          }
+          this.send({ type: 'interrupt.playback', candidateId, ...playback });
+        }
         this.store().eventApplied({
           userSpeaking: true,
-          assistantSpeaking: false,
-          // 已经收到 final、正顶着等真消息上屏的那句不能在这里抹掉（会闪断）；
-          // 只清「说到一半被打断」的在途文本。
-          ...(this.settledPartials.assistant === undefined ? { partialAssistant: '' } : {}),
         });
+        break;
+      case 'speech.stopped':
+      case 'response.created':
+        break;
+      case 'response.cancelled':
+        this.cancelledResponseIds.add(event.responseId);
+        while (this.cancelledResponseIds.size > 32) {
+          const oldest = this.cancelledResponseIds.values().next().value as string | undefined;
+          if (!oldest) break;
+          this.cancelledResponseIds.delete(oldest);
+        }
+        if (
+          this.revealResponseId === event.responseId
+          || this.settledAssistantResponseId === event.responseId
+        ) {
+          // 被取消的轮没有真消息可交接，先清 handoff 再停 reveal，避免 reload 把旧消息拉回来。
+          this.pendingHandoffSessionId = null;
+          const assistantReload = this.reloadTimers.get('assistant');
+          if (assistantReload) clearTimeout(assistantReload);
+          this.reloadTimers.delete('assistant');
+          delete this.settledPartials.assistant;
+          this.settledAssistantResponseId = null;
+          this.endRevealCycle();
+          this.store().eventApplied({ partialAssistant: '', assistantSpeaking: false });
+        }
+        break;
+      case 'interrupt.decision':
+        if (
+          event.classification === 'background'
+          || event.classification === 'acknowledgement'
+          || event.classification === 'short_fragment'
+        ) {
+          delete this.settledPartials.user;
+          this.store().eventApplied({ partialUser: '', userSpeaking: false });
+        }
+        if (event.action === 'resume') {
+          if (this.pausedCandidateId === event.candidateId) {
+            this.audio?.resumePlayback?.();
+            if (this.playbackPausedAt) this.playbackEndsAt += Date.now() - this.playbackPausedAt;
+            const playback = this.audio?.getPlaybackState?.();
+            this.store().eventApplied({
+              assistantSpeaking: playback?.playing ?? this.store().assistantSpeaking,
+            });
+          }
+        } else {
+          this.audio?.clearPlayback();
+          if (!event.responseId || this.revealResponseId === event.responseId) {
+            this.pendingHandoffSessionId = null;
+            this.endRevealCycle();
+            this.store().eventApplied({
+              assistantSpeaking: false,
+              ...(this.settledPartials.assistant === undefined ? { partialAssistant: '' } : {}),
+            });
+          }
+        }
+        if (this.pausedCandidateId === event.candidateId) {
+          this.pausedCandidateId = null;
+          this.playbackPausedAt = 0;
+        }
         break;
       case 'user.transcript':
         if (event.done) {
@@ -709,6 +804,7 @@ class VoiceCallBridge {
         }
         break;
       case 'assistant.transcript':
+        if (event.responseId && this.cancelledResponseIds.has(event.responseId)) break;
         if (event.done) {
           // final 是**内容真源，不是揭示时机**（批 X5.5-A4 设计修订）：已揭示的前缀若与 final
           // 不一致，以 final 为准静默替换；未揭示的部分继续按播放进度放出，不跳变到全文——
@@ -720,12 +816,21 @@ class VoiceCallBridge {
           if (this.revealTimer === null) this.flushReveal();
           else this.tickReveal();
         } else {
-          if (!this.revealTarget) this.startRevealCycle();
+          if (
+            this.revealTarget
+            && event.responseId
+            && this.revealResponseId
+            && event.responseId !== this.revealResponseId
+          ) {
+            this.endRevealCycle();
+          }
+          if (!this.revealTarget) this.startRevealCycle(event.responseId);
           this.revealTarget += event.text;
           this.ensureRevealTicker();
         }
         break;
       case 'response.done':
+        if (event.responseId && this.cancelledResponseIds.has(event.responseId)) break;
         this.store().eventApplied({
           assistantSpeaking: false,
           ttfa: { modelMs: event.ttfaModelMs, perceivedMs: event.ttfaPerceivedMs },

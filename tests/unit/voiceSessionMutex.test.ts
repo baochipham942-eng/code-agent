@@ -13,10 +13,16 @@ vi.mock('../../src/host/services/voice/voiceVocabulary', () => ({
 const close = vi.fn(async () => undefined);
 const sendAudio = vi.fn();
 const commitMock = vi.fn();
+const respondMock = vi.fn();
 const updateInstructions = vi.fn();
 const injectItem = vi.fn();
 let upstreamResponding = false;
 const isResponding = vi.fn(() => upstreamResponding);
+let interruptResponseId: string | null = null;
+const interruptMock = vi.fn(() => {
+  upstreamResponding = false;
+  return interruptResponseId;
+});
 const addMessageToSession = vi.fn(async (_sessionId: string, _message: Message) => undefined);
 const patchSessionMetadata = vi.fn(async (_sessionId: string, _patch: Record<string, unknown>) => true);
 const getSession = vi.fn(async (_sessionId: string) => ({ workingDirectory: '/repo/voice-session' }));
@@ -25,7 +31,18 @@ let lastOnAudio: ((frame: Buffer) => void) | null = null;
 const connect = vi.fn(async (input: Parameters<VoiceTransport['connect']>[0]) => {
   lastOnEvent = input.onEvent;
   lastOnAudio = input.onAudio;
-  return { kind: 'relay', provider: 'qwen-omni', sendAudio, commit: commitMock, interrupt: vi.fn(), updateInstructions, injectItem, isResponding, close };
+  return {
+    kind: 'relay',
+    provider: 'qwen-omni',
+    sendAudio,
+    commit: commitMock,
+    respond: respondMock,
+    interrupt: interruptMock,
+    updateInstructions,
+    injectItem,
+    isResponding,
+    close,
+  };
 });
 
 vi.mock('../../src/host/services/voice/qwenOmniTransport', () => ({ qwenOmniTransport: { id: 'qwen-omni', connect } }));
@@ -124,9 +141,12 @@ describe('voiceSessionService 互斥与挂断', () => {
     close.mockClear();
     sendAudio.mockClear();
     commitMock.mockClear();
+    respondMock.mockClear();
     updateInstructions.mockClear();
     injectItem.mockClear();
     isResponding.mockClear();
+    interruptMock.mockClear();
+    interruptResponseId = null;
     upstreamResponding = false;
     voiceLogger.info.mockClear();
     voiceLogger.warn.mockClear();
@@ -163,7 +183,18 @@ describe('voiceSessionService 互斥与挂断', () => {
     // 上游握手不是瞬时的：让它挂一拍，模拟真实的 await 窗口
     connect.mockImplementationOnce(async () => {
       await new Promise((resolve) => setTimeout(resolve, 20));
-      return { kind: 'relay', provider: 'qwen-omni', sendAudio, commit: commitMock, interrupt: vi.fn(), injectItem, isResponding, updateInstructions, close };
+      return {
+        kind: 'relay',
+        provider: 'qwen-omni',
+        sendAudio,
+        commit: commitMock,
+        respond: respondMock,
+        interrupt: vi.fn(),
+        injectItem,
+        isResponding,
+        updateInstructions,
+        close,
+      };
     });
 
     const a = new FakeClient();
@@ -417,6 +448,121 @@ describe('voiceSessionService 互斥与挂断', () => {
     nowSpy.mockRestore();
   });
 
+  it('真打断期间保留用户 final，只创建一次新回复，取消旧 assistant 不落库', async () => {
+    const client = new FakeClient();
+    await attachVoiceClient(client as never, 'session-interrupt');
+    interruptResponseId = 'resp-old';
+    upstreamResponding = true;
+
+    lastOnEvent?.({ type: 'response.created', responseId: 'resp-old' });
+    lastOnEvent?.({
+      type: 'assistant.transcript',
+      responseId: 'resp-old',
+      itemId: 'item-old',
+      text: '旧回答开头',
+      done: false,
+    });
+    lastOnEvent?.({ type: 'speech.started', candidateId: 'turn-2' });
+    client.emit('message', Buffer.from(JSON.stringify({
+      type: 'interrupt.playback',
+      candidateId: 'turn-2',
+      playing: true,
+      playedMs: 600,
+      queuedMs: 1600,
+    })), false);
+    lastOnEvent?.({ type: 'user.transcript', itemId: 'user-2', text: '等一下', done: false });
+
+    expect(interruptMock).toHaveBeenCalledTimes(1);
+    expect(client.sent.map((raw) => raw === '<binary>' ? null : JSON.parse(raw)).filter(Boolean)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: 'response.cancelled', responseId: 'resp-old' }),
+        expect.objectContaining({ type: 'interrupt.decision', action: 'cancel_discard', responseId: 'resp-old' }),
+      ]),
+    );
+
+    lastOnEvent?.({
+      type: 'assistant.transcript',
+      responseId: 'resp-old',
+      itemId: 'item-old',
+      text: '旧回答完整 final',
+      done: true,
+    });
+    lastOnEvent?.({ type: 'response.done', responseId: 'resp-old' });
+    lastOnEvent?.({
+      type: 'user.transcript',
+      itemId: 'user-2',
+      text: '等一下，改成从十倒数到一',
+      done: true,
+    });
+
+    expect(respondMock).toHaveBeenCalledTimes(1);
+    expect(respondMock).toHaveBeenCalledWith(expect.stringContaining('等一下，改成从十倒数到一'));
+
+    lastOnEvent?.({ type: 'response.created', responseId: 'resp-new' });
+    lastOnEvent?.({
+      type: 'assistant.transcript',
+      responseId: 'resp-new',
+      itemId: 'item-new',
+      text: '十、九、八、七、六、五、四、三、二、一',
+      done: true,
+    });
+    lastOnEvent?.({ type: 'response.done', responseId: 'resp-new' });
+
+    await vi.waitFor(() => {
+      const transcripts = addMessageToSession.mock.calls
+        .map(([, message]) => message)
+        .filter((message) => message.role === 'user' || message.role === 'assistant');
+      expect(transcripts).toHaveLength(2);
+    });
+    const transcripts = addMessageToSession.mock.calls
+      .map(([, message]) => message)
+      .filter((message) => message.role === 'user' || message.role === 'assistant');
+    expect(transcripts.map((message) => [message.role, message.content])).toEqual([
+      ['user', '等一下，改成从十倒数到一'],
+      ['assistant', '十、九、八、七、六、五、四、三、二、一'],
+    ]);
+    expect(transcripts[1].metadata?.voiceTranscript).toEqual({
+      responseId: 'resp-new',
+      itemId: 'item-new',
+    });
+    expect(transcripts.some((message) => message.content.includes('旧回答'))).toBe(false);
+  });
+
+  it('附和 final 恢复播放，不取消、不建回复、不落用户消息', async () => {
+    const client = new FakeClient();
+    await attachVoiceClient(client as never, 'session-ack');
+    upstreamResponding = true;
+
+    lastOnEvent?.({ type: 'response.created', responseId: 'resp-playing' });
+    lastOnEvent?.({ type: 'speech.started', candidateId: 'turn-ack' });
+    client.emit('message', Buffer.from(JSON.stringify({
+      type: 'interrupt.playback',
+      candidateId: 'turn-ack',
+      playing: true,
+      playedMs: 500,
+      queuedMs: 1500,
+    })), false);
+    lastOnEvent?.({
+      type: 'user.transcript',
+      itemId: 'user-ack',
+      text: '好的，知道了。',
+      done: true,
+    });
+
+    expect(interruptMock).not.toHaveBeenCalled();
+    expect(respondMock).not.toHaveBeenCalled();
+    expect(addMessageToSession).not.toHaveBeenCalled();
+    expect(client.sent.map((raw) => raw === '<binary>' ? null : JSON.parse(raw)).filter(Boolean)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'interrupt.decision',
+          classification: 'acknowledgement',
+          action: 'resume',
+        }),
+      ]),
+    );
+  });
+
 });
 
 describe('终态结论节制播报', () => {
@@ -638,7 +784,14 @@ describe('连续用户字幕合并（R5）', () => {
 
     lastOnEvent?.({ type: 'user.transcript', text: '帮我看一下', done: true });
     await vi.waitFor(() => expect(addMessageToSession).toHaveBeenCalledTimes(1));
-    lastOnEvent?.({ type: 'assistant.transcript', text: '好的。', done: true });
+    lastOnEvent?.({
+      type: 'assistant.transcript',
+      responseId: 'resp-merge-turn',
+      itemId: 'item-merge-turn',
+      text: '好的。',
+      done: true,
+    });
+    lastOnEvent?.({ type: 'response.done', responseId: 'resp-merge-turn' });
     await vi.waitFor(() => expect(addMessageToSession).toHaveBeenCalledTimes(2));
     lastOnEvent?.({ type: 'user.transcript', text: '这个文件', done: true });
     await vi.waitFor(() => expect(addMessageToSession).toHaveBeenCalledTimes(3));
@@ -757,7 +910,14 @@ describe('纯工具标签字幕不上屏不落库（R6）', () => {
 
     lastOnEvent?.({ type: 'assistant.transcript', text: '<end_call>', done: false });
     lastOnEvent?.({ type: 'assistant.transcript', text: ' 好的，这就去办', done: false });
-    lastOnEvent?.({ type: 'assistant.transcript', text: '<end_call> 好的，这就去办', done: true });
+    lastOnEvent?.({
+      type: 'assistant.transcript',
+      responseId: 'resp-tool-tag-mixed',
+      itemId: 'item-tool-tag-mixed',
+      text: '<end_call> 好的，这就去办',
+      done: true,
+    });
+    lastOnEvent?.({ type: 'response.done', responseId: 'resp-tool-tag-mixed' });
     await vi.waitFor(() => expect(addMessageToSession).toHaveBeenCalled());
 
     expect(assistantEvents(client).some((e) => e.text.includes('好的，这就去办'))).toBe(true);
@@ -816,7 +976,14 @@ describe('空对话不出通话摘要卡（A3）', () => {
     const client = new FakeClient();
     await attachVoiceClient(client as never, 'session-with-transcript');
     lastOnEvent?.({ type: 'user.transcript', text: '帮我看一下这个文件', done: true });
-    lastOnEvent?.({ type: 'assistant.transcript', text: '好的，我看看。', done: true });
+    lastOnEvent?.({
+      type: 'assistant.transcript',
+      responseId: 'resp-with-transcript',
+      itemId: 'item-with-transcript',
+      text: '好的，我看看。',
+      done: true,
+    });
+    lastOnEvent?.({ type: 'response.done', responseId: 'resp-with-transcript' });
     await vi.waitFor(() => expect(addMessageToSession).toHaveBeenCalledTimes(2));
 
     client.emit('message', Buffer.from(JSON.stringify({ type: 'end' })), false);

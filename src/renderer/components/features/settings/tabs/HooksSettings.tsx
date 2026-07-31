@@ -19,6 +19,8 @@ interface HookListItem {
   sources: Array<'global' | 'project'>;
   hookType: 'decision' | 'observer';
   parallel: boolean;
+  disabled: boolean;
+  key: string;
 }
 
 interface HookSummary {
@@ -87,6 +89,21 @@ export const HooksSettings: React.FC = () => {
       logger.error('Failed to open config', { err: e });
     }
   }, []);
+
+  // 停用只改 hooks.json 里的一个字段，配置留着；下次会话生效（与 hook 加载时机一致）。
+  const handleToggle = useCallback(async (item: HookListItem, enabled: boolean) => {
+    if (!summary) return;
+    const filePath = item.sources.includes('project') && summary.configPaths.project
+      ? summary.configPaths.project
+      : summary.configPaths.global;
+    try {
+      await invokeHook('setEnabled', { filePath, key: item.key, enabled });
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      logger.error('Failed to toggle hook', { err: e });
+    }
+  }, [summary, load]);
 
   const handleReveal = useCallback(async (filePath: string) => {
     try {
@@ -168,7 +185,13 @@ export const HooksSettings: React.FC = () => {
                 </div>
                 <div className="divide-y divide-zinc-800">
                   {items.map((item, idx) => (
-                    <HookRow key={`${event}-${idx}`} item={item} typeLabels={hooksText.typeLabels} />
+                    <HookRow
+                      key={`${event}-${idx}`}
+                      item={item}
+                      typeLabels={hooksText.typeLabels}
+                      toggleText={hooksText.toggle}
+                      onToggle={handleToggle}
+                    />
                   ))}
                 </div>
               </div>
@@ -249,10 +272,12 @@ const ConfigPathRow: React.FC<{
 const HookRow: React.FC<{
   item: HookListItem;
   typeLabels: Record<HookListItem['type'], string>;
-}> = ({ item, typeLabels }) => {
+  toggleText: { enable: string; disable: string; disabledBadge: string };
+  onToggle: (item: HookListItem, enabled: boolean) => void;
+}> = ({ item, typeLabels, toggleText, onToggle }) => {
   const badge = HOOK_TYPE_BADGE[item.type];
   return (
-    <div className="px-3 py-2.5">
+    <div className={`px-3 py-2.5 ${item.disabled ? 'opacity-50' : ''}`}>
       <div className="flex items-center gap-2 mb-1">
         <span className={`text-[10px] px-1.5 py-0.5 rounded border ${badge.color}`}>
           {typeLabels[item.type]}
@@ -266,9 +291,21 @@ const HookRow: React.FC<{
           {item.hookType === 'observer' ? 'observer' : 'decision'}
           {item.parallel && ' · parallel'}
         </span>
+        {item.disabled && (
+          <span className="text-[10px] px-1.5 py-0.5 rounded border border-zinc-600 text-zinc-400">
+            {toggleText.disabledBadge}
+          </span>
+        )}
         <span className="text-[10px] text-zinc-500 ml-auto">
           {item.sources.join(' + ')}
         </span>
+        <button
+          type="button"
+          onClick={() => onToggle(item, item.disabled)}
+          className="text-[10px] px-1.5 py-0.5 rounded border border-zinc-700 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200 transition-colors"
+        >
+          {item.disabled ? toggleText.enable : toggleText.disable}
+        </button>
       </div>
       <div className="text-xs text-zinc-300 font-mono break-all">{item.hint}</div>
     </div>

@@ -1,4 +1,5 @@
 import React, { useCallback, type Dispatch, type SetStateAction } from 'react';
+import { IPC_DOMAINS } from '@shared/ipc';
 import { useAppStore } from '../../../stores/appStore';
 import type { CreateSessionOptions, SessionWithMeta } from '../../../stores/sessionStore';
 import type { PendingSessionSearchJump } from '../../../stores/sessionUIStore';
@@ -20,6 +21,7 @@ import type {
   SidebarProjectGoalMeta,
   SidebarProjectMeta,
 } from '../../../utils/sidebarProjectSummary';
+import ipcService from '../../../services/ipcService';
 
 const SIDEBAR_GROUP_COLLAPSE_DELAY_MS = 160;
 
@@ -51,6 +53,7 @@ export interface UseSidebarSessionActionsParams {
 export interface SidebarSessionActions {
   handleToggleWorkspaceGroup: (workspaceKey: string, view: SidebarGroupExpansionView) => void;
   handleNewChat: () => Promise<void>;
+  handleNewIndependentSpace: () => Promise<void>;
   createWorkspaceChat: (workspaceKey: string, workingDirectory?: string) => Promise<void>;
   handleNewWorkspaceChat: (e: React.MouseEvent, workspaceKey: string, workingDirectory?: string) => Promise<void>;
   handleSelectSession: (sessionId: string) => Promise<void>;
@@ -192,6 +195,23 @@ export function useSidebarSessionActions(
     setWorkingDirectory,
     t,
   ]);
+
+  const handleNewIndependentSpace = useCallback(async () => {
+    if (isCreatingSession || creatingWorkspaceKey) {
+      return;
+    }
+    try {
+      const directory = await ipcService.invokeDomain<string | null>(
+        IPC_DOMAINS.WORKSPACE,
+        'selectDirectory',
+      );
+      if (directory) {
+        await createWorkspaceChat(directory, directory);
+      }
+    } catch (error) {
+      console.error('Failed to create independent space:', error);
+    }
+  }, [createWorkspaceChat, creatingWorkspaceKey, isCreatingSession]);
 
   const handleNewWorkspaceChat = async (
     e: React.MouseEvent,
@@ -401,6 +421,7 @@ export function useSidebarSessionActions(
   return {
     handleToggleWorkspaceGroup,
     handleNewChat,
+    handleNewIndependentSpace,
     createWorkspaceChat,
     handleNewWorkspaceChat,
     handleSelectSession,

@@ -91,4 +91,26 @@ describe('workbench view routing', () => {
       activePreviewTabId: fileTab.id,
     });
   });
+
+  it('reuses the same file preview tab instead of nesting or duplicating it', () => {
+    useAppStore.setState({
+      workingDirectory: '/workspace/project',
+      workbenchTabs: ['overview'],
+      activeWorkbenchTab: 'overview',
+      selectedWorkspacePreviewId: null,
+    });
+
+    useAppStore.getState().openPreview('dist/report.html');
+    const firstPreviewTabId = useAppStore.getState().activePreviewTabId;
+    useAppStore.getState().openWorkbenchTab('overview');
+    useAppStore.getState().openPreview('dist/report.html');
+
+    expect(useAppStore.getState()).toMatchObject({
+      workbenchTabs: ['overview', 'preview:/workspace/project/dist/report.html'],
+      activeWorkbenchTab: 'preview:/workspace/project/dist/report.html',
+      activePreviewTabId: firstPreviewTabId,
+      selectedWorkspacePreviewId: null,
+    });
+    expect(useAppStore.getState().previewTabs).toHaveLength(1);
+  });
 });

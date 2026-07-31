@@ -7,8 +7,6 @@ import type { CronJobDefinition, CronServiceStats } from '../../../src/shared/co
 const listJobs = vi.fn<() => Promise<CronJobDefinition[]>>();
 const getStats = vi.fn<() => Promise<CronServiceStats>>();
 const getExecutions = vi.fn().mockResolvedValue([]);
-const countPendingReview = vi.fn<() => Promise<number>>().mockResolvedValue(0);
-vi.mock('../../../src/renderer/services/sessionAutomationClient', () => ({ sessionAutomationClient: { countPendingReview: () => countPendingReview() } }));
 vi.mock('../../../src/renderer/services/cronClient', () => ({ cronClient: { listJobs: (...args: unknown[]) => listJobs(...(args as [])), getStats: (...args: unknown[]) => getStats(...(args as [])), getExecutions: (...args: unknown[]) => getExecutions(...(args as [])) } }));
 
 import { SidebarCapabilityZone } from '../../../src/renderer/components/features/sidebar/SidebarCapabilityZone';
@@ -22,7 +20,7 @@ function makeStats(running: number): CronServiceStats {
   return { totalJobs: 1, activeJobs: 1, jobsByStatus: { pending: 0, running, completed: 0, failed: 0, cancelled: 0, paused: 0, interrupted: 0 }, totalExecutions: 0, successfulExecutions: 0, failedExecutions: 0, successRate: 0, totalHeartbeats: 0, healthyHeartbeats: 0 };
 }
 afterEach(() => {
-  cleanup(); vi.clearAllMocks(); countPendingReview.mockResolvedValue(0);
+  cleanup(); vi.clearAllMocks();
   useCronStore.setState({ jobs: [], stats: null, selectedJobId: null, error: null });
   useAppStore.setState({ showCapabilityHub: false, capabilityHubTab: 'experts', showCronCenter: false });
 });
@@ -65,31 +63,23 @@ describe('SidebarCapabilityZone', () => {
     listJobs.mockResolvedValue([]); getStats.mockResolvedValue(makeStats(0)); render(<SidebarCapabilityZone />);
     expect(screen.getByTestId('sidebar-capability-automation').getAttribute('title')).toBe('按计划自动跑，结果回来给你过目');
   });
-  it('行内右槽显示下次运行时间，任务名收进悬浮提示', async () => {
+  it('自动化右侧不显示下次运行时间，计划信息只留在悬浮提示', async () => {
     listJobs.mockResolvedValue([makeJob({ nextRunAt: Date.now() + 3_600_000 })]); getStats.mockResolvedValue(makeStats(0)); render(<SidebarCapabilityZone />);
     const automation = screen.getByTestId('sidebar-capability-automation');
-    // 行内只留时间（今天 = HH:mm），完整「下次 {time} · {name}」在 title，两处一起钉
-    await waitFor(() => expect(automation.textContent).toMatch(/\d{2}:\d{2}/));
-    expect(automation.getAttribute('title')).toMatch(/下次 .+ · 英语单词/);
+    await waitFor(() => expect(automation.getAttribute('title')).toMatch(/下次 .+ · 英语单词/));
+    expect(automation.textContent).not.toMatch(/\d{2}:\d{2}/);
     expect(automation.textContent).not.toContain('英语单词');
   });
   it('启用任务数收进悬浮提示，禁用任务不参与计数', async () => {
     listJobs.mockResolvedValue([makeJob({ id: 'enabled', nextRunAt: undefined }), makeJob({ id: 'disabled', enabled: false, nextRunAt: undefined })]); getStats.mockResolvedValue(makeStats(0)); render(<SidebarCapabilityZone />);
     await waitFor(() => expect(screen.getByTestId('sidebar-capability-automation').getAttribute('title')).toBe('1 个任务'));
   });
-  it('running 圆点和待过目角标都属于自动化行，计划信息走悬浮提示、数量只由角标讲一次', async () => {
-    listJobs.mockResolvedValue([makeJob({ nextRunAt: Date.now() + 3_600_000 })]); getStats.mockResolvedValue(makeStats(1)); countPendingReview.mockResolvedValue(2); render(<SidebarCapabilityZone />);
+  it('只保留运行中圆点，右侧不再显示计划或待过目数字', async () => {
+    listJobs.mockResolvedValue([makeJob({ nextRunAt: Date.now() + 3_600_000 })]); getStats.mockResolvedValue(makeStats(1)); render(<SidebarCapabilityZone />);
     const automation = screen.getByTestId('sidebar-capability-automation');
     expect(await screen.findByTestId('sidebar-capability-automation-running')).toBeTruthy();
-    const badge = await screen.findByTestId('sidebar-capability-automation-pending');
-    expect(badge.textContent).toBe('2');
-    expect(automation.contains(badge)).toBe(true);
-    expect(screen.getByTestId('sidebar-capability-hub').contains(badge)).toBe(false);
-    // 推翻旧断言「有待过目就压过下次运行」：那样副标题写「2 条待过目」、角标又显示 2，
-    // 同一个数字讲两遍，还把唯一的计划信息挤掉了。现在角标讲数量（读屏靠 aria-label），
-    // 计划走 title 悬浮提示，行内右槽只显时间。裸数字回到行内文本里就会红。
-    expect(badge.getAttribute('aria-label')).toBe('2 条待过目');
-    expect(screen.queryByText('2 条待过目')).toBeNull();
+    expect(screen.queryByTestId('sidebar-capability-automation-pending')).toBeNull();
+    expect(automation.textContent).not.toMatch(/\d{2}:\d{2}/);
     expect(automation.getAttribute('title')).toMatch(/下次 .+ · 英语单词/);
   });
   it('能力中心入口仍打开专家 tab', () => {

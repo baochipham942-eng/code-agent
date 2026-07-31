@@ -4,14 +4,12 @@
 // 数据只读复用 cronStore，不新增数据通道。
 // ============================================================================
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import { Clock3, BookOpen, Boxes, FolderKanban } from 'lucide-react';
 import { useCronStore } from '../../../stores/cronStore';
 import { useAppStore } from '../../../stores/appStore';
 import { useI18n } from '../../../hooks/useI18n';
-import { sessionAutomationClient } from '../../../services/sessionAutomationClient';
 import { formatNextRun } from '../../../utils/formatNextRun';
-import { Badge } from '../../primitives/Badge';
 import { SidebarDoctorAlert } from './SidebarDoctorAlert';
 
 export const SidebarCapabilityZone: React.FC = () => {
@@ -34,15 +32,10 @@ export const SidebarCapabilityZone: React.FC = () => {
   const stats = useCronStore((state) => state.stats);
   const refresh = useCronStore((state) => state.refresh);
 
-  const [pendingCount, setPendingCount] = useState(0);
-
   useEffect(() => {
-    // 面板关闭时任务/待审大概率有变化，跟着刷新一次
+    // 面板关闭时任务大概率有变化，跟着刷新一次。
     if (showCronCenter) return;
     void refresh();
-    sessionAutomationClient.countPendingReview()
-      .then((count) => setPendingCount(count ?? 0))
-      .catch(() => setPendingCount(0));
   }, [showCronCenter, refresh]);
 
   const runningCount = stats?.jobsByStatus?.running ?? 0;
@@ -56,10 +49,7 @@ export const SidebarCapabilityZone: React.FC = () => {
     }
     return candidate;
   }, [enabledJobs]);
-  // 计划详情（下次运行+任务名 / 任务数 / 空态引导）只走 title 悬浮提示，
-  // 待过目数量交给右侧角标——同一个数字绝不在行内和角标各讲一遍。
-  // 行内保持与上行一致的单行节奏：标题 + 右槽下次运行时间。
-  const pendingLabel = cz.automationPending.replace('{count}', String(pendingCount));
+  // 计划详情只走 title 悬浮提示；侧栏行本身保持「图标 + 标题」的统一节奏。
   const subtitle = nextJob
     ? cz.automationNext.replace('{time}', formatNextRun(nextJob.at, language === 'zh' ? 'zh-CN' : 'en-US')).replace('{name}', nextJob.name)
     : enabledJobs.length > 0
@@ -131,14 +121,6 @@ export const SidebarCapabilityZone: React.FC = () => {
         <span className="min-w-0 flex-1 truncate text-sm text-zinc-300 group-hover:text-zinc-100">
           {cz.automation}
         </span>
-        {nextJob && (
-          <span className="flex-shrink-0 text-[11px] text-zinc-600 tabular-nums">
-            {formatNextRun(nextJob.at, language === 'zh' ? 'zh-CN' : 'en-US')}
-          </span>
-        )}
-        {/* 全栏唯一的两处彩色（这个角标 + running 圆点）= 要你处理的地方；
-            裸数字自己说不清是什么，读屏靠 aria-label。 */}
-        {pendingCount > 0 && <Badge className="border-amber-500/30 bg-amber-500/10 text-[11px] text-amber-300" data-testid="sidebar-capability-automation-pending" role="status" aria-label={pendingLabel} title={pendingLabel}>{pendingCount}</Badge>}
       </button>
       {/* 诊断问题徽标行：仅启动静默快检有 fail 项时出现，全绿不打扰 */}
       <SidebarDoctorAlert />

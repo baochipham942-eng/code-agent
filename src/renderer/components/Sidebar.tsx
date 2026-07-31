@@ -363,6 +363,7 @@ export const Sidebar: React.FC = () => {
   const {
     handleToggleWorkspaceGroup,
     handleNewChat,
+    handleNewIndependentSpace,
     createWorkspaceChat,
     handleNewWorkspaceChat,
     handleSelectSession,
@@ -712,6 +713,7 @@ export const Sidebar: React.FC = () => {
         sessionItemProps={sessionItemProps}
         // 快速对话分区节头「+」与顶部「新任务」同一动作
         handleNewChat={handleNewChat}
+        handleNewIndependentSpace={handleNewIndependentSpace}
       />
 
       {/* 多选模式底部操作栏 */}

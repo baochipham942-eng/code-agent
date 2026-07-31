@@ -134,6 +134,14 @@ describe('右栏默认那一屏是产物内容', () => {
     expect(screen.getByText('季度报告 的正文内容')).toBeTruthy();
   });
 
+  it('从概览直开产物时只显示产物，不带版本和项目归档入口', () => {
+    render(<WorkspacePreviewPanel overviewMode />);
+
+    expect(screen.getByText('季度报告 的正文内容')).toBeTruthy();
+    expect(screen.queryByTestId('workspace-preview-details-toggle')).toBeNull();
+    expect(screen.queryByRole('button', { name: '项目全部产物 · 1 会话' })).toBeNull();
+  });
+
   it('默认选中排序里的第一条（最新/最高优先级那条）', () => {
     render(<WorkspacePreviewPanel />);
 

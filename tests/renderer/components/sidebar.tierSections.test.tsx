@@ -94,6 +94,7 @@ function renderList(overrides: Record<string, unknown> = {}): string {
     },
     cloudBadge: false,
     handleNewChat: vi.fn(),
+    handleNewIndependentSpace: vi.fn(),
     ...overrides,
   } as unknown as React.ComponentProps<typeof SidebarSessionList>;
   return renderToStaticMarkup(React.createElement(SidebarSessionList, props));
@@ -106,7 +107,7 @@ describe('SidebarSessionList tier section headers', () => {
     appState.openProjectSpacePage.mockReset();
   });
 
-  it('renders each tier header as a keyboard-reachable toggle button with a persistent count', () => {
+  it('renders each tier header as a keyboard-reachable toggle without session counts', () => {
     const html = renderList();
 
     for (const tier of ['space', 'project', 'quick'] as const) {
@@ -115,23 +116,20 @@ describe('SidebarSessionList tier section headers', () => {
       expect(html).toContain(`data-testid="sidebar-tier-toggle-${tier}"`);
       expect(html).toContain('aria-expanded="true"');
     }
-    // 计数：space=1 / project=2 / quick=1
-    expect(html).toContain('>1</span>');
-    expect(html).toContain('>2</span>');
+    expect(html).not.toContain('tabular-nums');
     // 默认展开：组内容在
     expect(html).toContain('data-testid="sidebar-project-group-g-space"');
     expect(html).toContain('data-testid="sidebar-project-group-g-project"');
     expect(html).toContain('data-testid="sidebar-project-group-g-quick"');
   });
 
-  it('hides group content when collapsed but keeps the header count', () => {
+  it('hides group content when collapsed without adding a count', () => {
     sessionUiState.collapsedTiers = { project: true };
     const html = renderList();
 
     const section = html.match(/data-testid="sidebar-tier-project"[\s\S]*?<\/section>/)?.[0] ?? '';
     expect(section).toContain('aria-expanded="false"');
-    // 折叠态计数仍在
-    expect(section).toContain('>2</span>');
+    expect(section).not.toContain('tabular-nums');
     // 组内容消失
     expect(section).not.toContain('data-testid="sidebar-project-group-g-project"');
     // 其它分区不受影响
@@ -139,15 +137,15 @@ describe('SidebarSessionList tier section headers', () => {
     expect(html).toContain('data-testid="sidebar-project-group-g-quick"');
   });
 
-  it('renders a create button for space and quick tiers but not for project tier', () => {
+  it('renders a create button for all three tiers', () => {
     const html = renderList();
 
-    // 协作空间「+」→ 空间列表页（新建空间 Modal 所在）；快速对话「+」→ 新会话
+    // 协作空间「+」→ 空间列表页；独立空间「+」→ 选择工作目录；快速对话「+」→ 新会话。
     expect(html).toContain('data-testid="sidebar-tier-new-space"');
+    expect(html).toContain('data-testid="sidebar-tier-new-project"');
     expect(html).toContain('data-testid="sidebar-tier-new-quick"');
-    // 独立空间分区没有现成「新建项目」入口，不放「+」
-    expect(html).not.toContain('data-testid="sidebar-tier-new-project"');
     expect(html).toContain('新建协作空间');
+    expect(html).toContain('新建独立空间');
     expect(html).toContain('新建快速对话');
   });
 

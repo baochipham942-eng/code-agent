@@ -305,7 +305,7 @@ async function resolveFolderTrustGate(page: Page): Promise<'blocked' | 'not_show
     .getByRole('dialog')
     .filter({ hasText: /(?:信任这个项目文件夹|Trust this project folder)/ })
     .first();
-  const shown = await dialog.waitFor({ state: 'visible', timeout: 5_000 })
+  const shown = await dialog.waitFor({ state: 'visible', timeout: 10_000 })
     .then(() => true)
     .catch(() => false);
   if (!shown) return 'not_shown';
@@ -340,21 +340,7 @@ async function installIsolatedFolderTrustSafetyRoute(page: Page): Promise<void> 
       return;
     }
 
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        success: true,
-        data: {
-          state: 'blocked',
-          canonicalRealpath: process.cwd(),
-          displayPath: process.cwd(),
-          dangerousItems: [],
-          blockedItems: [],
-          identityChanged: false,
-        },
-      }),
-    });
+    await route.continue();
   });
 }
 
@@ -551,6 +537,10 @@ async function verifyRendererCancelClick(
     .then(() => true)
     .catch(() => false);
   let stopRequestedAt: number | null = null;
+  const cancelRequestPromise = page.waitForRequest(
+    (request) => request.url().includes('/api/cancel'),
+    { timeout: 3_000 },
+  ).catch(() => null);
   if (!stopButtonVisible) {
     failures.push('renderer cancel smoke did not render the stop button while the run was held.');
   } else {
@@ -569,17 +559,34 @@ async function verifyRendererCancelClick(
       );
     });
   }
+  const stubAfterCancelPromise = sessionId
+    ? waitForStubCancel(page, sessionId)
+    : Promise.resolve(null);
+  const uiCleanupPromise = stopButton.waitFor({ state: 'hidden', timeout: 5_000 })
+    .then(() => Date.now())
+    .catch(() => null);
+  const cancelRequest = await cancelRequestPromise;
+  if (!cancelRequest) {
+    failures.push('renderer stop button did not dispatch /api/cancel.');
+  } else {
+    const cancelBody = cancelRequest.postDataJSON() as { sessionId?: unknown } | null;
+    if (cancelBody?.sessionId !== sessionId) {
+      failures.push(
+        `renderer stop button cancelled session ${String(cancelBody?.sessionId)}, expected ${sessionId}.`,
+      );
+    }
+  }
 
-  const stubAfterCancel = sessionId ? await waitForStubCancel(page, sessionId) : null;
+  const [stubAfterCancel, uiClearedAt] = await Promise.all([
+    stubAfterCancelPromise,
+    uiCleanupPromise,
+  ]);
   const stubCancelled = Boolean(stubAfterCancel?.ok && (stubAfterCancel.cancelCount ?? 0) > 0 && stubAfterCancel.active === false);
   if (!stubCancelled) {
     failures.push(`renderer cancel smoke did not cancel the app-host loop stub: ${JSON.stringify(stubAfterCancel)}`);
   }
 
-  const stopButtonHiddenAfterCancel = await stopButton.waitFor({ state: 'hidden', timeout: 5_000 })
-    .then(() => true)
-    .catch(() => false);
-  const uiClearedAt = stopButtonHiddenAfterCancel ? Date.now() : null;
+  const stopButtonHiddenAfterCancel = uiClearedAt !== null;
   if (!stopButtonHiddenAfterCancel) {
     failures.push('renderer cancel smoke did not clear the stop button after cancel completed.');
   }
@@ -633,6 +640,13 @@ async function main(): Promise<void> {
   const appPort = getNumberOption(args, 'port') || await getFreePort();
   const baseUrl = `http://127.0.0.1:${appPort}`;
   const dataDir = mkdtempSync(join(tmpdir(), 'code-agent-agent-runtime-app-host-data-'));
+  const isolatedWorkingDirectory = join(dataDir, 'work');
+  const isolatedHooksDirectory = join(isolatedWorkingDirectory, '.code-agent', 'hooks');
+  mkdirSync(isolatedHooksDirectory, { recursive: true });
+  writeFileSync(
+    join(isolatedHooksDirectory, 'hooks.json'),
+    '{}\n',
+  );
   const appHost = startAppHost(appPort, dataDir);
   let chromeSession: SmokeChromeSession | null = null;
   const failures: string[] = [];
@@ -658,11 +672,34 @@ async function main(): Promise<void> {
 
     await installUiCancelRunInterception(page, uiCancelRunRequests);
     await installIsolatedFolderTrustSafetyRoute(page);
+    const folderTrustEvaluated = page.waitForResponse(
+      (response) => response.url().includes('/api/domain/folderTrust/get'),
+      { timeout: 20_000 },
+    ).catch(() => null);
     await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
     const renderer = await waitForRenderer(page);
+    const folderTrustEvaluationResponse = await folderTrustEvaluated;
+    const folderTrustEvaluation = await folderTrustEvaluationResponse?.json()
+      .catch(() => null) as {
+        data?: {
+          state?: string;
+          dangerousItems?: unknown[];
+        };
+      } | null | undefined;
+    if (!folderTrustEvaluationResponse?.ok()) {
+      failures.push(
+        `agent-runtime smoke did not receive a successful folder trust evaluation${
+          folderTrustEvaluationResponse ? ` (${folderTrustEvaluationResponse.status()})` : ''
+        }.`,
+      );
+    }
     const folderTrustDecision = await resolveFolderTrustGate(page);
     if (folderTrustDecision !== 'blocked') {
-      failures.push('agent-runtime smoke did not explicitly block isolated project configuration.');
+      failures.push(
+        'agent-runtime smoke did not explicitly block isolated project configuration '
+        + `(state=${folderTrustEvaluation?.data?.state ?? 'unknown'}, `
+        + `dangerousItems=${folderTrustEvaluation?.data?.dangerousItems?.length ?? 'unknown'}).`,
+      );
     }
 
     const authResponse = await fetchFromRenderer<{

@@ -1,18 +1,18 @@
 {
   "schemaVersion": 1,
   "smoke": "tool-cancel",
-  "generatedAt": "2026-07-21T12:57:42.353Z",
-  "gitHead": "8b3662aa40341f6661b83601b05aea389f527d56",
+  "generatedAt": "2026-07-31T10:18:57.250Z",
+  "gitHead": "ab159d86dc840711e2f824481fb25d8b514a31e9",
   "passed": true,
   "scenarios": {
     "Bash": {
       "passed": true,
-      "durationMs": 60,
+      "durationMs": 58,
       "terminalCleanup": true
     },
     "http_request": {
       "passed": true,
-      "durationMs": 4,
+      "durationMs": 3,
       "terminalCleanup": true
     }
   }

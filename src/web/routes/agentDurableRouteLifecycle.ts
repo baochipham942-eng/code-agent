@@ -217,6 +217,7 @@ export async function cancelDisconnectedAgentRouteRun(input: {
 export async function isDurableTerminalNativeControl(input: {
   readService?: DurableRunReadService;
   runRegistry: RunRegistry;
+  runId?: string;
   sessionId?: string;
 }): Promise<boolean> {
   if (!input.sessionId || !input.readService) return false;
@@ -228,5 +229,7 @@ export async function isDurableTerminalNativeControl(input: {
       engine: { kind: 'native' },
     };
   });
-  return view.source === 'durable' && view.terminal;
+  return view.source === 'durable'
+    && view.terminal
+    && (!input.runId || view.runId === input.runId);
 }

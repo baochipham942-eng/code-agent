@@ -22,6 +22,7 @@ async function waitForCancelSettlement(input: {
       const terminal = await isDurableTerminalNativeControl({
         readService: input.readService,
         runRegistry: input.runRegistry,
+        runId: input.runId,
         sessionId: input.sessionId,
       });
       if (terminal) {
@@ -45,16 +46,17 @@ export function registerAgentCancelRoute(
       return;
     }
     const { runId, sessionId } = parsedBody.data;
-    if (await isDurableTerminalNativeControl({
-      readService: getReadService?.(),
-      runRegistry,
-      sessionId,
-    })) {
-      res.json({ message: 'No active agent to cancel' });
-      return;
-    }
     const target = runRegistry.resolve({ runId, sessionId });
     if (!target) {
+      if (await isDurableTerminalNativeControl({
+        readService: getReadService?.(),
+        runRegistry,
+        runId,
+        sessionId,
+      })) {
+        res.json({ message: 'No active agent to cancel' });
+        return;
+      }
       const ambiguous = !runId && !sessionId && runRegistry.size > 1;
       res.status(ambiguous ? 409 : 200).json({
         message: ambiguous

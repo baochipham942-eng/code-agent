@@ -13,7 +13,10 @@ import type {
 import { IPC_CHANNELS, IPC_DOMAINS, type ManagedBrowserSessionChangedEvent } from '@shared/ipc';
 import { useAppStore } from '../stores/appStore';
 import { useComposerStore } from '../stores/composerStore';
+import { useSessionStore } from '../stores/sessionStore';
+import { useManagedBrowserOwnerStore } from '../stores/managedBrowserOwnerStore';
 import ipcService from '../services/ipcService';
+import { openSurfaceForArtifact } from '../services/surfaceIntentDispatcher';
 import {
   getFrontmostDesktopContext,
   getComputerSurfaceState,
@@ -111,6 +114,11 @@ export interface BrowserWorkbenchState {
   repairActions: BrowserWorkbenchRepairAction[];
   busyActionKind: BrowserWorkbenchRepairActionKind | null;
   actionError: string | null;
+  /**
+   * 当前托管浏览器是不是本会话启动的（B1·S4）。host 侧托管浏览器与 chat sessionId
+   * 无绑定，归属只在 renderer 记账；没在跑时视为归属本会话（没有别人的现场可串）。
+   */
+  ownedByCurrentSession: boolean;
 }
 
 function getPermissionStatus(
@@ -335,6 +343,9 @@ export function useWorkbenchBrowserSession(): BrowserWorkbenchState & {
 } {
   const mode = useComposerStore((state) => state.browserSessionMode);
   const setShowDesktopPanel = useAppStore((state) => state.setShowDesktopPanel);
+  const currentSessionId = useSessionStore((state) => state.currentSessionId);
+  const noteManagedBrowserSession = useManagedBrowserOwnerStore((state) => state.noteManagedBrowserSession);
+  const managedOwnerSessionId = useManagedBrowserOwnerStore((state) => state.ownerSessionId);
   const [managedSession, setManagedSession] = useState<ManagedBrowserSessionState>(EMPTY_MANAGED_BROWSER_SESSION);
   const [computerSurface, setComputerSurface] = useState<ComputerSurfaceState | null>(null);
   const [capabilities, setCapabilities] = useState<NativeDesktopCapabilities | null>(null);
@@ -425,6 +436,31 @@ export function useWorkbenchBrowserSession(): BrowserWorkbenchState & {
       unsubscribe?.();
     };
   }, [refresh]);
+
+  // B1·S3 auto-open：托管浏览器起来了就把右栏切到现场。
+  //
+  // ManagedBrowserSessionChangedEvent 的 payload 只有 { reason, session }，reason 是
+  // 'launch' | 'navigate' | … 这类动作名，**区分不出 agent 发起还是用户在 LocalOps
+  // 手动 launch**。故按工单退化路径加 mode !== 'none' 这道闸：browserSessionMode 换会话
+  // 会被 hydrateFromSession 重置成 none，等价于「用户没在本会话开浏览器能力就不抢焦点」。
+  // 抢焦点的节制（每轮一次 / 用户手动切走后不抢回）复用 surfaceIntent 既有礼仪。
+  // 归属记账在 store 里做，多个 hook 消费者同时观察也只有一个拿到 true。
+  useEffect(() => {
+    const isNewLaunch = noteManagedBrowserSession({
+      running: managedSession.running,
+      browserSessionId: managedSession.sessionId ?? null,
+      currentSessionId,
+    });
+    if (isNewLaunch && mode !== 'none') {
+      openSurfaceForArtifact({ artifact: { kind: 'managed-browser' } });
+    }
+  }, [
+    currentSessionId,
+    managedSession.running,
+    managedSession.sessionId,
+    mode,
+    noteManagedBrowserSession,
+  ]);
 
   useEffect(() => {
     if (mode === 'none' && !managedSession.running && !collectorStatus?.running) {
@@ -727,6 +763,7 @@ export function useWorkbenchBrowserSession(): BrowserWorkbenchState & {
     repairActions,
     busyActionKind,
     actionError,
+    ownedByCurrentSession: !managedSession.running || managedOwnerSessionId === currentSessionId,
     refresh,
     probePermissions,
     runRepairAction,

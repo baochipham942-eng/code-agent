@@ -3,12 +3,12 @@
   "mode": "new-mock",
   "sourceMock": {
     "html": "docs/prototypes/tool-call-style-alignment.html",
-    "screenshot": "artifacts/mock-guard/tool-call-style-alignment/source-focused.png"
+    "screenshot": "docs/acceptance/mock-guard/tool-call-style-alignment/source-focused.png"
   },
   "implementation": {
     "url": "http://127.0.0.1:8765/docs/prototypes/tool-call-style-alignment.html",
     "route": "/docs/prototypes/tool-call-style-alignment.html",
-    "screenshot": "artifacts/mock-guard/tool-call-style-alignment/implementation.jpg"
+    "screenshot": "docs/acceptance/mock-guard/tool-call-style-alignment/implementation.jpg"
   },
   "viewports": [
     {

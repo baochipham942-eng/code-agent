@@ -1,9 +1,9 @@
 # Tool Call Style Alignment · Design QA
 
-- source visual truth: `artifacts/mock-guard/tool-call-style-alignment/source-focused.png`
+- source visual truth: `docs/acceptance/mock-guard/tool-call-style-alignment/source-focused.png`
 - implementation: `docs/prototypes/tool-call-style-alignment.html`
-- implementation screenshot: `artifacts/mock-guard/tool-call-style-alignment/implementation.jpg`
-- focused comparison: `artifacts/mock-guard/tool-call-style-alignment/comparison.png`
+- implementation screenshot: `docs/acceptance/mock-guard/tool-call-style-alignment/implementation.jpg`
+- focused comparison: `docs/acceptance/mock-guard/tool-call-style-alignment/comparison.png`
 - viewport: 1280 × 720 CSS px, desktop dark mode
 - source pixels: 1532 × 244
 - implementation pixels: 1280 × 720
@@ -37,7 +37,7 @@ No actionable P0, P1, or P2 findings remain.
 
 - Initial prototype added `完成` and a status dot to successful and recovered rows.
 - Fix: success now reads only `运行了 2 条命令`; recovered now reads `读取任务状态` with a lightweight `已恢复` badge.
-- Post-fix evidence: `artifacts/mock-guard/tool-call-style-alignment/implementation.jpg`.
+- Post-fix evidence: `docs/acceptance/mock-guard/tool-call-style-alignment/implementation.jpg`.
 
 ## Follow-up Polish
 

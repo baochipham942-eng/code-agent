@@ -364,12 +364,6 @@ export function getRuntimeInputSuccessMessage(mode: RuntimeInputMode): string {
   return mode === 'redirect' ? '已改道处理' : '已加入当前任务';
 }
 
-export function getRuntimeInputQueuedMessage(mode: RuntimeInputMode): string {
-  return mode === 'redirect'
-    ? '已排队，本轮回复结束后按这条重新处理。'
-    : '已排队，本轮回复结束后作为下一条发送。';
-}
-
 /**
  * Resolve the session a send should bind to.
  * Awaits in-flight createSession so messages land on the new session the user just requested,
@@ -903,7 +897,8 @@ export function useAgentIPC({
             createdAt: persisted.createdAt,
             retryCount: persisted.retryCount,
           });
-          toast.info(getRuntimeInputQueuedMessage(runtimeInputMode));
+          // 入队结果由输入框上方的引导条自己呈现（「已引导 N 条 · 等待发送」），
+          // 再弹一条 toast 是同一件事说两遍。
         } catch (error) {
           logger.error('Queued input enqueue failed', error);
           addMessage({

@@ -119,7 +119,10 @@ describe('useAgent queued input retraction', () => {
     expect(toastMocks.info).not.toHaveBeenCalled();
   });
 
-  it('keeps the local item and informs the user when the host rejects retraction', async () => {
+  // 撤不回来 = 它已在发送途中、不再归队列管，卡片必须跟着撤下（host 侧「retract 只能
+  // 从 queued 成功」的不变量不变，改的只是前端呈现）。留着一张点了没用的「等待发送」卡，
+  // 比没有这张卡更让人以为还能操作——真机 2026-08-01 反馈。
+  it('drops the local card but still informs the user when the host rejects retraction', async () => {
     const queued = hostQueuedInput('sending-a');
     mockQueuedHost(queued, false);
     const hook = renderHook(() => useAgent());
@@ -132,8 +135,7 @@ describe('useAgent queued input retraction', () => {
       await hook.result.current.cancelQueuedRuntimeInput('sending-a');
     });
 
-    expect(hook.result.current.queuedRuntimeInputs.map((input) => input.id))
-      .toEqual(['sending-a']);
+    expect(hook.result.current.queuedRuntimeInputs).toEqual([]);
     expect(toastMocks.info).toHaveBeenCalledWith('这条消息已经开始发送，无法撤回。');
   });
 

@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import {
   getAgentSendFailureMessage,
   getRuntimeFollowupFailureMessage,
-  getRuntimeInputQueuedMessage,
   isRuntimeBusyStatus,
 } from '../../../src/renderer/hooks/agent/useAgentIPC';
 
@@ -32,8 +31,4 @@ describe('runtime follow-up helpers', () => {
     expect(getAgentSendFailureMessage(new Error('network down'))).toBe('Error: network down');
   });
 
-  it('uses queued-next-turn copy for runtime inputs', () => {
-    expect(getRuntimeInputQueuedMessage('supplement')).toContain('本轮回复结束后作为下一条发送');
-    expect(getRuntimeInputQueuedMessage('redirect')).toContain('本轮回复结束后按这条重新处理');
-  });
 });

@@ -148,22 +148,6 @@ export interface ChatInputHandle {
   focus: () => void;
 }
 
-export const RuntimeInputShortcutHint: React.FC<{ isProcessing: boolean; hasDraft: boolean }> = ({ isProcessing, hasDraft }) => {
-  const { t } = useI18n();
-  if (!isProcessing || !hasDraft) return null;
-
-  return (
-    <div
-      data-testid="runtime-input-shortcut-hint"
-      className="px-4 pb-2 -mt-1 text-right text-[11px] text-zinc-500"
-    >
-      {typeof navigator !== 'undefined' && navigator.platform.toUpperCase().indexOf('MAC') >= 0
-        ? t.chatInput.runtimeInputShortcutHintMac
-        : t.chatInput.runtimeInputShortcutHintWin}
-    </div>
-  );
-};
-
 // ============================================================================
 // 实时通话入口的槽位判定（单真源，组件外可测）
 // ============================================================================
@@ -1160,7 +1144,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
             onRemoveInlineChip={handleRemoveInlineChip}
             onInlineChipsChanged={handleInlineChipsChanged}
           />
-          <RuntimeInputShortcutHint isProcessing={Boolean(isProcessing)} hasDraft={Boolean(value.trim())} />
           {/* 底部工具栏。录音中这一行**原地变成波形条**（`+` 留在最左，波形铺中间，
               右侧 时长 + 停止 + 发送）——不在输入框上方另悬浮一条，也就不会出现
               两个发送键（产品负责人 2026-07-27 真机反馈，形态对齐 Codex composer）。

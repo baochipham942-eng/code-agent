@@ -6,6 +6,10 @@ import { BrowserAgentWindow } from '../../../src/renderer/components/workbench/B
 import { useAppStore } from '../../../src/renderer/stores/appStore';
 import type { useWorkbenchBrowserSession } from '../../../src/renderer/hooks/useWorkbenchBrowserSession';
 import type { LiveAgentPointerState } from '../../../src/renderer/hooks/useLiveAgentPointer';
+import type {
+  SurfaceLiveFrameStreamInput,
+  SurfaceLiveFrameStreamState,
+} from '../../../src/renderer/hooks/useSurfaceLiveFrames';
 
 type BrowserSessionState = ReturnType<typeof useWorkbenchBrowserSession>;
 
@@ -13,6 +17,8 @@ const runRepairAction = vi.fn(async () => undefined);
 
 let browserSessionState: BrowserSessionState;
 let pointerState: LiveAgentPointerState;
+let liveFrameState: SurfaceLiveFrameStreamState;
+let lastLiveFrameInput: SurfaceLiveFrameStreamInput | null = null;
 
 vi.mock('../../../src/renderer/hooks/useWorkbenchBrowserSession', () => ({
   useWorkbenchBrowserSession: () => browserSessionState,
@@ -20,6 +26,14 @@ vi.mock('../../../src/renderer/hooks/useWorkbenchBrowserSession', () => ({
 vi.mock('../../../src/renderer/hooks/useLiveAgentPointer', () => ({
   useLiveAgentPointer: () => pointerState,
 }));
+vi.mock('../../../src/renderer/hooks/useSurfaceLiveFrames', () => ({
+  useSurfaceLiveFrames: (input: SurfaceLiveFrameStreamInput) => {
+    lastLiveFrameInput = input;
+    return liveFrameState;
+  },
+}));
+
+const FRAME_DATA_URL = 'data:image/jpeg;base64,/9j/4AAQSkZJRg==';
 
 function buildBrowserSessionState(overrides: Partial<BrowserSessionState> = {}): BrowserSessionState {
   return {
@@ -33,6 +47,7 @@ function buildBrowserSessionState(overrides: Partial<BrowserSessionState> = {}):
     busyActionKind: null,
     actionError: null,
     ownedByCurrentSession: true,
+    browserSurfaceSessionId: null,
     refresh: async () => undefined,
     probePermissions: async () => undefined,
     runRepairAction,
@@ -40,27 +55,42 @@ function buildBrowserSessionState(overrides: Partial<BrowserSessionState> = {}):
   } as BrowserSessionState;
 }
 
-describe('BrowserAgentWindow', () => {
+describe('BrowserAgentWindow（B1-R·R1 图形化现场）', () => {
   beforeEach(() => {
     runRepairAction.mockClear();
-    useAppStore.setState({ language: 'zh', showLocalOpsPanel: false, localOpsTab: 'desktop' });
+    lastLiveFrameInput = null;
+    useAppStore.setState({
+      language: 'zh',
+      showLocalOpsPanel: false,
+      localOpsTab: 'desktop',
+      activeWorkbenchTab: 'browser',
+      workbenchCollapsed: false,
+    });
     pointerState = { event: null, lastEvent: null, isLive: false, timeline: [] };
+    liveFrameState = { frame: null, streaming: false, unavailableReason: null };
     browserSessionState = buildBrowserSessionState();
   });
 
   afterEach(() => cleanup());
 
-  it('未就绪：显示未启动状态 + 修复动作按钮，点击走 runRepairAction', () => {
+  it('无流空态：居中一句话提示 + 一个主按钮，不摆状态卡片堆', () => {
     browserSessionState = buildBrowserSessionState({
       blocked: true,
       blockedDetail: '托管浏览器还没启动',
-      repairActions: [{ kind: 'launch_managed_browser', label: '启动 Headless' }],
+      repairActions: [
+        { kind: 'launch_managed_browser', label: '启动 Headless' },
+        { kind: 'launch_managed_browser_visible', label: '启动 Visible' },
+      ],
     });
     render(<BrowserAgentWindow />);
 
-    expect(screen.getByTestId('browser-agent-window-status').textContent).toContain('未启动');
-    expect(screen.getByTestId('browser-agent-window-idle')).toBeTruthy();
+    expect(screen.getByTestId('browser-agent-window-empty')).toBeTruthy();
+    expect(screen.getByText('浏览器还没准备好')).toBeTruthy();
     expect(screen.getByText('托管浏览器还没启动')).toBeTruthy();
+    // 拆掉的卡片堆：状态条 / 指针时间线 / 常驻修复卡都不该再存在
+    expect(screen.queryByTestId('browser-agent-window-status')).toBeNull();
+    expect(screen.queryByTestId('browser-agent-window-repair')).toBeNull();
+    expect(screen.queryByText('操作记录')).toBeNull();
 
     fireEvent.click(screen.getByTestId('browser-agent-window-repair-launch_managed_browser'));
     expect(runRepairAction).toHaveBeenCalledWith({
@@ -69,7 +99,7 @@ describe('BrowserAgentWindow', () => {
     });
   });
 
-  it('running：状态条给出模式/标签页数/活动页，并渲染实时指针现场', () => {
+  it('有帧：全幅渲染页面画面 + 指针叠加，chrome 条给状态点/标题/URL', () => {
     browserSessionState = buildBrowserSessionState({
       managedSession: {
         running: true,
@@ -77,7 +107,22 @@ describe('BrowserAgentWindow', () => {
         activeTab: { id: 'tab-1', title: 'Example Domain', url: 'https://example.com/' },
       },
       preview: { mode: 'managed', title: 'Example Domain', url: 'https://example.com/' },
+      browserSurfaceSessionId: 'surface-1',
     });
+    liveFrameState = {
+      frame: {
+        version: 1,
+        conversationId: 'session-a',
+        surfaceSessionId: 'surface-1',
+        mimeType: 'image/jpeg',
+        dataUrl: FRAME_DATA_URL,
+        width: 960,
+        height: 600,
+        capturedAtMs: 1,
+      },
+      streaming: true,
+      unavailableReason: null,
+    };
     pointerState = {
       event: {
         id: 'pointer-1',
@@ -93,17 +138,81 @@ describe('BrowserAgentWindow', () => {
     } as unknown as LiveAgentPointerState;
     render(<BrowserAgentWindow />);
 
-    const status = screen.getByTestId('browser-agent-window-status');
-    expect(status.textContent).toContain('隔离托管浏览器');
-    expect(status.textContent).toContain('运行中');
-    expect(status.textContent).toContain('3 个标签页');
-    expect(status.textContent).toContain('https://example.com/');
-    // 有实时指针事件时不落空态，走 AgentPointerPreviewCard
-    expect(screen.queryByTestId('browser-agent-window-idle')).toBeNull();
+    const frame = screen.getByTestId('browser-agent-window-frame') as HTMLImageElement;
+    expect(frame.getAttribute('src')).toBe(FRAME_DATA_URL);
+    expect(frame.className).toContain('object-contain');
+    expect(screen.queryByTestId('browser-agent-window-empty')).toBeNull();
+
+    const chrome = screen.getByTestId('browser-agent-window-chrome');
+    expect(chrome.textContent).toContain('Example Domain');
+    expect(chrome.textContent).toContain('https://example.com/');
+    expect(screen.getByTestId('browser-agent-window-status-dot').getAttribute('title')).toBe('运行中');
+    // 指针叠加画在画面上
     expect(screen.getByLabelText(/Search/)).toBeTruthy();
   });
 
-  it('非归属会话：给只读归属标注，且不给修复动作按钮', () => {
+  it('tab 不可见（右栏收起）时把 visible 传 false —— 节流护栏不许后台开流', () => {
+    useAppStore.setState({ workbenchCollapsed: true });
+    browserSessionState = buildBrowserSessionState({
+      managedSession: { running: true, tabCount: 1, activeTab: null },
+      browserSurfaceSessionId: 'surface-1',
+    });
+    render(<BrowserAgentWindow />);
+
+    expect(lastLiveFrameInput).toMatchObject({ surfaceSessionId: 'surface-1', visible: false });
+  });
+
+  it('切到别的 workbench tab 时同样把 visible 传 false', () => {
+    useAppStore.setState({ activeWorkbenchTab: 'files' });
+    browserSessionState = buildBrowserSessionState({
+      managedSession: { running: true, tabCount: 1, activeTab: null },
+      browserSurfaceSessionId: 'surface-1',
+    });
+    render(<BrowserAgentWindow />);
+
+    expect(lastLiveFrameInput).toMatchObject({ visible: false });
+  });
+
+  it('可见 + 有 surface 会话时才请求开流', () => {
+    browserSessionState = buildBrowserSessionState({
+      managedSession: { running: true, tabCount: 1, activeTab: null },
+      browserSurfaceSessionId: 'surface-1',
+    });
+    render(<BrowserAgentWindow />);
+
+    expect(lastLiveFrameInput).toMatchObject({
+      surfaceSessionId: 'surface-1',
+      visible: true,
+      sessionRunning: true,
+    });
+  });
+
+  it('开不了流时落降级文案，指针仍然跟随', () => {
+    browserSessionState = buildBrowserSessionState({
+      managedSession: { running: true, tabCount: 1, activeTab: null },
+      browserSurfaceSessionId: 'surface-1',
+    });
+    liveFrameState = { frame: null, streaming: false, unavailableReason: 'no_active_page' };
+    pointerState = {
+      event: {
+        id: 'pointer-1',
+        surface: 'browser',
+        tone: 'browser',
+        phase: 'move',
+        targetLabel: 'Nav',
+        point: { x: 10, y: 10, unit: 'percent' },
+      },
+      lastEvent: null,
+      isLive: true,
+      timeline: [],
+    } as unknown as LiveAgentPointerState;
+    render(<BrowserAgentWindow />);
+
+    expect(screen.getByTestId('browser-agent-window-empty').textContent).toContain('暂时接不到实时画面');
+    expect(screen.getByLabelText(/Nav/)).toBeTruthy();
+  });
+
+  it('非归属会话：chrome 条给只读归属标注，且不给修复动作按钮', () => {
     browserSessionState = buildBrowserSessionState({
       managedSession: { running: true, tabCount: 1, activeTab: null },
       ownedByCurrentSession: false,
@@ -113,11 +222,15 @@ describe('BrowserAgentWindow', () => {
     render(<BrowserAgentWindow />);
 
     expect(screen.getByTestId('browser-agent-window-foreign')).toBeTruthy();
-    expect(screen.queryByTestId('browser-agent-window-repair')).toBeNull();
+    expect(screen.queryByTestId('browser-agent-window-repair-launch_managed_browser')).toBeNull();
   });
 
-  it('高级面板入口深链到 LocalOps 浏览器 tab，不在本页重造管理面板', () => {
+  it('高级设置收进 ⋯ 溢出菜单，深链到 LocalOps 浏览器 tab', () => {
     render(<BrowserAgentWindow />);
+    // 未展开菜单时深链入口不在 DOM 里 —— chrome 条上不该常驻管理按钮
+    expect(screen.queryByTestId('browser-agent-window-open-local-ops')).toBeNull();
+
+    fireEvent.click(screen.getByTestId('browser-agent-window-more'));
     fireEvent.click(screen.getByTestId('browser-agent-window-open-local-ops'));
 
     expect(useAppStore.getState()).toMatchObject({

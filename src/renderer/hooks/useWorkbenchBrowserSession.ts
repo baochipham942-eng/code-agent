@@ -15,6 +15,10 @@ import { useAppStore } from '../stores/appStore';
 import { useComposerStore } from '../stores/composerStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { useManagedBrowserOwnerStore } from '../stores/managedBrowserOwnerStore';
+import {
+  selectActiveBrowserSurfaceSessionV1,
+  useSurfaceExecutionStore,
+} from '../stores/surfaceExecutionStore';
 import ipcService from '../services/ipcService';
 import { openSurfaceForArtifact } from '../services/surfaceIntentDispatcher';
 import {
@@ -115,10 +119,13 @@ export interface BrowserWorkbenchState {
   busyActionKind: BrowserWorkbenchRepairActionKind | null;
   actionError: string | null;
   /**
-   * 当前托管浏览器是不是本会话启动的（B1·S4）。host 侧托管浏览器与 chat sessionId
-   * 无绑定，归属只在 renderer 记账；没在跑时视为归属本会话（没有别人的现场可串）。
+   * 当前托管浏览器是不是本会话的（B1·S4，B1-R·R2 升级）。有 browser surface 会话时
+   * 用它的 conversationId（host 给的真归属）；没有时退回 renderer 记账的猜测值。
+   * 没在跑时视为归属本会话（没有别人的现场可串）。
    */
   ownedByCurrentSession: boolean;
+  /** 本会话当前活跃的 browser surface 会话 id；没有为 null（R1 帧流的开流对象） */
+  browserSurfaceSessionId: string | null;
 }
 
 function getPermissionStatus(
@@ -345,7 +352,12 @@ export function useWorkbenchBrowserSession(): BrowserWorkbenchState & {
   const setShowDesktopPanel = useAppStore((state) => state.setShowDesktopPanel);
   const currentSessionId = useSessionStore((state) => state.currentSessionId);
   const noteManagedBrowserSession = useManagedBrowserOwnerStore((state) => state.noteManagedBrowserSession);
+  const noteBrowserSurfaceSession = useManagedBrowserOwnerStore((state) => state.noteBrowserSurfaceSession);
   const managedOwnerSessionId = useManagedBrowserOwnerStore((state) => state.ownerSessionId);
+  const browserSurfaceSession = useSurfaceExecutionStore(
+    (state) => selectActiveBrowserSurfaceSessionV1(state.sessionsByScope, currentSessionId),
+  );
+  const browserSurfaceSessionId = browserSurfaceSession?.session.sessionId ?? null;
   const [managedSession, setManagedSession] = useState<ManagedBrowserSessionState>(EMPTY_MANAGED_BROWSER_SESSION);
   const [computerSurface, setComputerSurface] = useState<ComputerSurfaceState | null>(null);
   const [capabilities, setCapabilities] = useState<NativeDesktopCapabilities | null>(null);
@@ -437,30 +449,37 @@ export function useWorkbenchBrowserSession(): BrowserWorkbenchState & {
     };
   }, [refresh]);
 
-  // B1·S3 auto-open：托管浏览器起来了就把右栏切到现场。
-  //
-  // ManagedBrowserSessionChangedEvent 的 payload 只有 { reason, session }，reason 是
-  // 'launch' | 'navigate' | … 这类动作名，**区分不出 agent 发起还是用户在 LocalOps
-  // 手动 launch**。故按工单退化路径加 mode !== 'none' 这道闸：browserSessionMode 换会话
-  // 会被 hydrateFromSession 重置成 none，等价于「用户没在本会话开浏览器能力就不抢焦点」。
-  // 抢焦点的节制（每轮一次 / 用户手动切走后不抢回）复用 surfaceIntent 既有礼仪。
-  // 归属记账在 store 里做，多个 hook 消费者同时观察也只有一个拿到 true。
+  // 托管浏览器 IPC 状态观察 —— 只更新归属标注的退化猜测值，不触发 auto-open。
   useEffect(() => {
-    const isNewLaunch = noteManagedBrowserSession({
+    noteManagedBrowserSession({
       running: managedSession.running,
       browserSessionId: managedSession.sessionId ?? null,
       currentSessionId,
     });
-    if (isNewLaunch && mode !== 'none') {
-      openSurfaceForArtifact({ artifact: { kind: 'managed-browser' } });
-    }
   }, [
     currentSessionId,
     managedSession.running,
     managedSession.sessionId,
-    mode,
     noteManagedBrowserSession,
   ]);
+
+  // B1-R·R2 auto-open：改挂 **browser surface 会话启动**，不再看 composer 模式。
+  //
+  // 旧闸是 composer 的 browserSessionMode !== 'none'，真机实测证伪：用户让 agent 自己
+  // 开浏览器时 composer 是 none，主路径永不触发。surface 会话自带 conversationId 与
+  // surface 类型，是 host 给的真信号——「本会话起了一个 browser surface 会话」正是
+  // 「agent 开了浏览器」。
+  //
+  // 抢焦点的节制（产物会话不匹配 fail-closed / 每轮只抢一次 / 用户手动切走后不抢回）
+  // 复用 surfaceIntent 既有礼仪，没有另造一套；会话级去重在 owner store 里做。
+  useEffect(() => {
+    if (noteBrowserSurfaceSession(browserSurfaceSessionId) && currentSessionId) {
+      openSurfaceForArtifact({
+        artifact: { kind: 'managed-browser' },
+        artifactSessionId: currentSessionId,
+      });
+    }
+  }, [browserSurfaceSessionId, currentSessionId, noteBrowserSurfaceSession]);
 
   useEffect(() => {
     if (mode === 'none' && !managedSession.running && !collectorStatus?.running) {
@@ -763,7 +782,12 @@ export function useWorkbenchBrowserSession(): BrowserWorkbenchState & {
     repairActions,
     busyActionKind,
     actionError,
-    ownedByCurrentSession: !managedSession.running || managedOwnerSessionId === currentSessionId,
+    // 有 surface 会话就是本会话的（选择器已按 conversationId 收窄），这是 host 侧真归属；
+    // 没有时才退回 renderer 记账的猜测值。
+    ownedByCurrentSession: Boolean(browserSurfaceSessionId)
+      || !managedSession.running
+      || managedOwnerSessionId === currentSessionId,
+    browserSurfaceSessionId,
     refresh,
     probePermissions,
     runRepairAction,

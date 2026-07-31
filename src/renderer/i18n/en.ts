@@ -548,6 +548,9 @@ export const en: Translations = {
         codebuddy_code: 'Sign in with the official WorkBuddy app before first use.',
         grok_cli: 'Run grok login to authorize your official account before first use.',
       },
+      sourceStatus: { available: 'Available', detected: 'Detected', needsLogin: 'Needs login', adapterPending: 'Adapter not open', notInstalled: 'Not installed', recommended: 'Recommended install', authUnverified: 'Login unverified', unavailable: 'Unavailable' },
+      sourceStatusDetail: { available: 'Ready to run · official login confirmed', detectedNeedsLogin: 'Detected · sign in with the official client first', detectedAdapterPending: 'Detected · execution is not enabled in this version', detectedAuthUnverified: 'Detected · login state cannot be confirmed safely', notInstalled: 'Integration supported · client not detected on this machine', adapterPending: 'Execution is not enabled in this version', recommended: 'Recommended for install and verification; never shown as installed', unavailable: 'Not selectable right now' },
+      notSwitchableHint: 'This source cannot be switched into the current session', recommendationOnlyHint: 'Recommendation only — not detected as installed on this machine', credentialOwnerOfficial: 'Credentials stay with the official client; Neo never shows or stores secrets',
     },
     // Settings page "Agent Engine model catalog" section (signed catalog + local default)
     catalogSection: {

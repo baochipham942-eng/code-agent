@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.29.1] - 2026-07-31
+
+### Fixed
+
+- **停止动作不再被旧运行记录遮挡**：同一会话启动新任务后，旧 Durable Run 的终态不会再让停止接口误报“没有活动任务”；取消会优先命中当前 RunRegistry，并按精确 `runId` 等待落盘收敛。
+- **发布稳定性证据刷新**：重新生成长会话、工具取消和真实 app-host 验收证据，覆盖目录信任阻断后的停止链路。v0.29.0 因证据过期被发布闸门拒绝且未产生分发制品，v0.29.1 是 0.29 功能集的实际分发版本。
+
 ## [0.29.0] - 2026-07-31
 
 ### Added

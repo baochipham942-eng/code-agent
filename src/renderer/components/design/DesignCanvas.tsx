@@ -12,8 +12,9 @@ import { useDesignStore } from './designStore';
 import { useDesignCanvasStore } from './designCanvasStore';
 import { useDesignCanvasGeneration, type ExpandDirection } from './useDesignCanvasGeneration';
 import { useDesignCanvasImport } from './useDesignCanvasImport';
+import { useDesignCanvasExports } from './useDesignCanvasExports';
 import { DesignCompareOverlay } from './DesignCompareOverlay';
-import { DesignImageEditPanel } from './DesignImageEditPanel';
+import { DesignImageToolbar } from './DesignImageToolbar';
 import { DesignLayerPanel } from './DesignLayerPanel';
 import { CanvasImage, KonvaVideoNode } from './DesignCanvasNodes';
 import { AnnotationLayer, reduceAnnot, type AnnotShape, type AnnotTool } from './AnnotationLayer';
@@ -32,8 +33,7 @@ import { DIAGRAM_DEFAULT_COLOR, type CanvasShape } from './designDiagramTypes';
 import { saveCanvasDoc } from './designCanvasPersistence';
 import { dispatchCanvasUndoKey } from './canvasUndoKeybinding';
 import { dispatchCanvasDeleteKey } from './canvasDeleteKeybinding';
-import { readWorkspaceImageAsDataUrl, exportImagePdf, exportCanvasPptx } from './designFiles';
-import { imagePdfExportName, canvasPptxExportName } from './designTypes';
+import type { ExpandStep } from './designCanvasResizeRatio';
 import { imageModelsWithCap } from '@shared/constants/visualModels';
 import { estimateImageCostCny, formatCny } from '@shared/media/imageCost';
 import {
@@ -109,6 +109,8 @@ export const DesignCanvas: React.FC<{ showErrorBar?: boolean }> = ({ showErrorBa
   const isShapeTool = diagramTool !== 'select' && diagramTool !== 'connect';
   const { editRegion, expand, removeWatermark, editByAnnotation, generateVideo } = useDesignCanvasGeneration();
   const { importFiles } = useDesignCanvasImport();
+  // 导出图片 / 单页 PDF / 全幅 PPTX（useDesignCanvasExports 抽出，逻辑未改）。
+  const { exportingPptx, exportImage, exportImagePdf, exportCanvasPptx } = useDesignCanvasExports();
 
   // 标注重绘态（B4）：模式开关/指令/模型全走 designStore 瞬时态，不持久化。
   // 模型独立于全局 imageModel（文生图默认）——选第 2 个 annotEdit 模型不应改用户文生图默认（B4 审查 Minor2）。
@@ -139,8 +141,6 @@ export const DesignCanvas: React.FC<{ showErrorBar?: boolean }> = ({ showErrorBa
   const dragStart = useRef<{ x: number; y: number } | null>(null);
   const [instruction, setInstruction] = useState('');
   const [comparing, setComparing] = useState(false);
-  // 画布全幅 PPTX 导出进行中（防重复点击 + 按钮态）。
-  const [exportingPptx, setExportingPptx] = useState(false);
   // T4 diff 证据浮层目标节点（locked 徽章点开）。
   const [diffNode, setDiffNode] = useState<CanvasImageNode | null>(null);
   const [playingVideo, setPlayingVideo] = useState<CanvasVideoNode | null>(null);
@@ -553,83 +553,6 @@ export const DesignCanvas: React.FC<{ showErrorBar?: boolean }> = ({ showErrorBa
     }));
   };
 
-  const onExport = async (node: CanvasImageNode): Promise<void> => {
-    setError(null);
-    try {
-      const url = /^(data:|https?:)/.test(node.src)
-        ? node.src
-        : runDir
-          ? await readWorkspaceImageAsDataUrl(`${runDir.replace(/\/+$/, '')}/${node.src}`)
-          : null;
-      if (!url) {
-        setError('图片导出失败，请确认原图仍在工作区后重试。');
-        return;
-      }
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = node.src.split('/').pop() || 'design.png';
-      a.click();
-    } catch {
-      setError('图片导出失败，请稍后重试。');
-    }
-  };
-
-  // 选中图节点 → 单页 PDF（主进程 pdfkit 图嵌）→ 落「下载」。
-  // 解析成 dataUrl 再传（data: 直用；相对路径经 readBinary 转 dataUrl）。
-  // pdfkit 需要图字节，纯 http URL（未落盘的 OSS 临时链接）不直接支持，跳过。
-  const onExportPdf = async (node: CanvasImageNode): Promise<void> => {
-    setError(null);
-    try {
-      const dataUrl = /^data:/.test(node.src)
-        ? node.src
-        : runDir && !/^https?:/.test(node.src)
-          ? await readWorkspaceImageAsDataUrl(`${runDir.replace(/\/+$/, '')}/${node.src}`)
-          : null;
-      if (!dataUrl) {
-        setError('PDF 导出失败，请确认原图仍在工作区后重试。');
-        return;
-      }
-      const result = await exportImagePdf({ dataUrl }, imagePdfExportName(Date.now()));
-      if (!result.filePath) {
-        setError(result.error ? `PDF 导出失败：${result.error}` : 'PDF 导出失败，请稍后重试。');
-      }
-    } catch {
-      setError('PDF 导出失败，请稍后重试。');
-    }
-  };
-
-  // 画布全部活动图节点 → 全幅 PPTX（每张 1 张全幅 slide）→ 落「下载」。
-  // 薄版：导出当前画布上全部可见（未淘汰）图节点，按画布顺序。逐张解析成 dataUrl
-  // （data: 直用；相对路径经 readBinary 转）后送主进程 pptxgenjs 拼装。
-  const onExportPptx = async (): Promise<void> => {
-    if (visibleNodes.length === 0 || exportingPptx) return;
-    setError(null);
-    setExportingPptx(true);
-    try {
-      const images: Array<{ dataUrl?: string }> = [];
-      for (const node of visibleNodes) {
-        const dataUrl = /^data:/.test(node.src)
-          ? node.src
-          : runDir && !/^https?:/.test(node.src)
-            ? await readWorkspaceImageAsDataUrl(`${runDir.replace(/\/+$/, '')}/${node.src}`)
-            : null;
-        if (dataUrl) images.push({ dataUrl });
-      }
-      if (images.length === 0) {
-        setError('PPTX 导出失败，请确认画布中的原图仍在工作区后重试。');
-        return;
-      }
-      const result = await exportCanvasPptx(images, canvasPptxExportName(Date.now()));
-      if (!result.filePath) {
-        setError(result.error ? `PPTX 导出失败：${result.error}` : 'PPTX 导出失败，请稍后重试。');
-      }
-    } catch {
-      setError('PPTX 导出失败，请稍后重试。');
-    } finally {
-      setExportingPptx(false);
-    }
-  };
-
   const onRepaint = async (): Promise<void> => {
     if (!selectedImageNode) return;
     const regions = annotations
@@ -671,6 +594,22 @@ export const DesignCanvas: React.FC<{ showErrorBar?: boolean }> = ({ showErrorBa
   const onRemoveWatermark = async (): Promise<void> => {
     if (!selectedImageNode) return;
     await removeWatermark({ baseNode: selectedImageNode });
+  };
+
+  // 调整大小（五档比例预设）：按 computeResizeExpandPlan 给出的 steps 顺序走现有 expand 管线，
+  // 每步落地的新 variant 作为下一步的底图。任一步失败即停（错误条已展示，中间版保留在画布上）。
+  // ponytail: 两步是 IPC 限制（expandDesignImage 一次只收单个 direction+ratio），IPC 支持四向独立 scale 后可降到一次
+  const onResizePreset = async (steps: ExpandStep[]): Promise<void> => {
+    let base = selectedImageNode;
+    if (!base || steps.length === 0) return;
+    for (const step of steps) {
+      const beforeIds = new Set(useDesignCanvasStore.getState().nodes.map((n) => n.id));
+      await expand({ baseNode: base, direction: step.direction, ratio: step.ratio });
+      if (useDesignCanvasStore.getState().error) return;
+      const landed = useDesignCanvasStore.getState().nodes.find((n) => !beforeIds.has(n.id));
+      if (!landed || !isImageNode(landed)) return;
+      base = landed;
+    }
   };
 
   const draftAndCommitted = draft ? [...annotations, draft] : annotations;
@@ -836,18 +775,55 @@ export const DesignCanvas: React.FC<{ showErrorBar?: boolean }> = ({ showErrorBa
       {/* ADR-026 三刀：已淘汰节点恢复入口（软删找回）。 */}
       <DiscardedNodesTray />
 
-      {/* 图解工具条（模式/调色板/删除）——消费 surface 只放工具选择，不放配置管理。 */}
-      <DiagramToolbar
-        tool={diagramTool}
-        onToolChange={(tl) => {
-          setDiagramTool(tl);
-          setSelectedDiagram(null);
-        }}
-        color={diagramColor}
-        onColorChange={setDiagramColor}
-        canDelete={selectedDiagram !== null}
-        onDelete={onDeleteSelectedDiagram}
-      />
+      {/* 顶栏按选中态反转（2026-07-31）：选中单个图节点 = 图像动词条（批注重绘/局部重绘/调整大小/扩图/更多），
+          否则维持图解工具条（模式/调色板/删除）——未选中态一个像素不动。 */}
+      {selectedImageNode ? (
+        <DesignImageToolbar
+          t={t}
+          generating={generating}
+          imageWidth={selectedImageNode.width}
+          imageHeight={selectedImageNode.height}
+          annotating={annotating}
+          setAnnotating={setAnnotating}
+          annotationCount={annotations.length}
+          onClearAnnotations={() => setAnnotations([])}
+          instruction={instruction}
+          setInstruction={setInstruction}
+          onRepaint={() => void onRepaint()}
+          onExportImage={() => void exportImage(selectedImageNode)}
+          onGenerateVideo={() => void generateVideo({ baseNode: selectedImageNode })}
+          onExportPdf={() => void exportImagePdf(selectedImageNode)}
+          expandDirection={expandDirection}
+          expandRatio={expandRatio}
+          onExpandDirectionChange={setExpandDirection}
+          onExpandRatioChange={setExpandRatio}
+          onExpand={() => void onExpand()}
+          onRemoveWatermark={() => void onRemoveWatermark()}
+          onResizePreset={(steps) => void onResizePreset(steps)}
+          annotMode={annotMode}
+          setAnnotMode={setAnnotMode}
+          annotTool={annotTool}
+          setAnnotTool={setAnnotTool}
+          effectiveAnnotModel={effectiveAnnotModel}
+          setAnnotModel={setAnnotModel}
+          annotInstruction={annotInstruction}
+          setAnnotInstruction={setAnnotInstruction}
+          annotShapeCount={annotShapes.length}
+          onAnnotRedraw={() => void onAnnotRedraw()}
+        />
+      ) : (
+        <DiagramToolbar
+          tool={diagramTool}
+          onToolChange={(tl) => {
+            setDiagramTool(tl);
+            setSelectedDiagram(null);
+          }}
+          color={diagramColor}
+          onColorChange={setDiagramColor}
+          canDelete={selectedDiagram !== null}
+          onDelete={onDeleteSelectedDiagram}
+        />
+      )}
 
       {/* 图解模式提示（connect/绘制时给一句引导）。 */}
       {diagramTool === 'connect' && (
@@ -948,7 +924,7 @@ export const DesignCanvas: React.FC<{ showErrorBar?: boolean }> = ({ showErrorBa
           {/* ds-allow:start 画布操作栏沿用旧裸 button 样式，与同栏导出图片/PDF 按钮一致；design-mode 整体 W3 收口时统一迁 primitive */}
           <button
             type="button"
-            onClick={() => void onExportPptx()}
+            onClick={() => void exportCanvasPptx()}
             disabled={exportingPptx}
             className="absolute right-4 top-4 inline-flex items-center gap-1.5 rounded-lg border border-white/[0.1] bg-zinc-900/90 px-3 py-1.5 text-xs text-zinc-300 shadow-xl backdrop-blur transition-colors hover:text-zinc-100 disabled:opacity-50"
           >
@@ -973,40 +949,6 @@ export const DesignCanvas: React.FC<{ showErrorBar?: boolean }> = ({ showErrorBa
         onDelete={(id) => deleteCanvasNodes([id])}
         onFocus={focusNode}
       />
-
-      {/* 选中图后的局部重绘面板（仅图节点；视频节点不显示图像编辑工具） */}
-      {selectedImageNode && (
-        <DesignImageEditPanel
-          t={t}
-          generating={generating}
-          annotating={annotating}
-          setAnnotating={setAnnotating}
-          annotationCount={annotations.length}
-          onClearAnnotations={() => setAnnotations([])}
-          instruction={instruction}
-          setInstruction={setInstruction}
-          onRepaint={() => void onRepaint()}
-          onExportImage={() => void onExport(selectedImageNode)}
-          onGenerateVideo={() => void generateVideo({ baseNode: selectedImageNode })}
-          onExportPdf={() => void onExportPdf(selectedImageNode)}
-          expandDirection={expandDirection}
-          expandRatio={expandRatio}
-          onExpandDirectionChange={setExpandDirection}
-          onExpandRatioChange={setExpandRatio}
-          onExpand={() => void onExpand()}
-          onRemoveWatermark={() => void onRemoveWatermark()}
-          annotMode={annotMode}
-          setAnnotMode={setAnnotMode}
-          annotTool={annotTool}
-          setAnnotTool={setAnnotTool}
-          effectiveAnnotModel={effectiveAnnotModel}
-          setAnnotModel={setAnnotModel}
-          annotInstruction={annotInstruction}
-          setAnnotInstruction={setAnnotInstruction}
-          annotShapeCount={annotShapes.length}
-          onAnnotRedraw={() => void onAnnotRedraw()}
-        />
-      )}
 
       {selectedIds.length === 0 && visibleNodes.length > 0 && (
         <div className="pointer-events-none absolute left-4 top-4 rounded-lg bg-zinc-900/70 px-3 py-1.5 text-[11px] text-zinc-400 backdrop-blur">

@@ -72,4 +72,6 @@ build_swift_tool system-audio-capture \
   -framework CoreMedia
 
 build_swift_tool voice-aec-io \
-  -framework AVFoundation
+  -framework AVFoundation \
+  -framework AudioToolbox \
+  -framework CoreAudio

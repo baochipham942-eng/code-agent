@@ -13,6 +13,7 @@ import {
   Maximize2,
   MoreHorizontal,
   Pencil,
+  Presentation,
   Scaling,
   Sparkles,
   SquareDashedMousePointer,
@@ -52,6 +53,9 @@ interface DesignImageToolbarProps {
   onExportImage: () => void;
   onGenerateVideo: () => void;
   onExportPdf: () => void;
+  // 画布全幅 PPTX（导的是整块画布所有节点，非选中这张——收在「更多 · 整个画布」组，返工#3）
+  onExportCanvasPptx: () => void;
+  exportingPptx: boolean;
   // T3 扩图 / 去水印
   expandDirection: ExpandDirection;
   expandRatio: number;
@@ -115,6 +119,8 @@ export function DesignImageToolbar(props: DesignImageToolbarProps): React.ReactE
     onExportImage,
     onGenerateVideo,
     onExportPdf,
+    onExportCanvasPptx,
+    exportingPptx,
     expandDirection,
     expandRatio,
     onExpandDirectionChange,
@@ -522,6 +528,24 @@ export function DesignImageToolbar(props: DesignImageToolbarProps): React.ReactE
               >
                 <Film className="h-3.5 w-3.5 text-zinc-500" />
                 {t.design.generateVideoFromImage}
+              </button>
+              {/* 整个画布：PPTX 导的是整块画布所有节点（非选中这张），单列一组避免误以为在导出当前图。 */}
+              <p className="mt-2 border-t border-white/[0.06] px-2 pb-1 pt-2 text-[10px] font-medium uppercase tracking-wide text-zinc-500">
+                {t.design.moreGroupCanvas}
+              </p>
+              <button
+                type="button"
+                data-testid="design-more-export-pptx"
+                onClick={() => runAndClose(onExportCanvasPptx)}
+                disabled={exportingPptx}
+                className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-zinc-300 transition-colors hover:bg-white/[0.06] hover:text-zinc-100 disabled:opacity-50"
+              >
+                {exportingPptx ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin text-zinc-500" />
+                ) : (
+                  <Presentation className="h-3.5 w-3.5 text-zinc-500" />
+                )}
+                {t.design.exportCanvasPptx}
               </button>
               {/* ds-allow:end */}
               <div className="mt-2 flex items-center justify-between gap-2 border-t border-white/[0.08] px-2 pt-2">

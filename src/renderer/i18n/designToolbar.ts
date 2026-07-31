@@ -54,6 +54,8 @@ export const designToolbarZh = {
     moreGroupEdit: '修图',
     moreGroupExportThis: '导出这张',
     moreGroupDerive: '派生',
+    // 「整个画布」组：导出 PPTX 导的是整块画布所有节点（非选中这张），单列一组避免与「导出这张」混淆（返工#3）
+    moreGroupCanvas: '整个画布',
   },
 };
 
@@ -103,5 +105,6 @@ export const designToolbarEn = {
     moreGroupEdit: 'Edit',
     moreGroupExportThis: 'Export this image',
     moreGroupDerive: 'Derive',
+    moreGroupCanvas: 'Whole canvas',
   },
 };

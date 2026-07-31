@@ -28,6 +28,8 @@ function renderToolbar(over: Partial<React.ComponentProps<typeof DesignImageTool
     onExportImage: vi.fn(),
     onGenerateVideo: vi.fn(),
     onExportPdf: vi.fn(),
+    onExportCanvasPptx: vi.fn(),
+    exportingPptx: false,
     expandDirection: 'all',
     expandRatio: 1.5,
     onExpandDirectionChange: vi.fn(),
@@ -201,11 +203,16 @@ describe('扩图下拉与更多菜单', () => {
     const props = renderToolbar();
     fireEvent.click(screen.getByTestId('design-toolbar-more'));
     const menu = screen.getByTestId('design-more-menu');
-    // 组标题：修图 / 导出这张 / 派生
-    for (const group of [zh.design.moreGroupEdit, zh.design.moreGroupExportThis, zh.design.moreGroupDerive]) {
+    // 组标题：修图 / 导出这张 / 派生 / 整个画布
+    for (const group of [
+      zh.design.moreGroupEdit,
+      zh.design.moreGroupExportThis,
+      zh.design.moreGroupDerive,
+      zh.design.moreGroupCanvas,
+    ]) {
       expect(menu.textContent).toContain(group);
     }
-    // 去除水印 / 导出图片 / 导出 PDF / 生成视频 / 标注模型选择（逐项对照 DesignImageEditPanel 原有动作）
+    // 去除水印 / 导出图片 / 导出 PDF / 生成视频 / 导出 PPTX / 标注模型选择（逐项对照 DesignImageEditPanel 原有动作 + 返工#3 收编的画布 PPTX）
     expect(screen.getByTestId('design-more-remove-watermark').textContent).toContain(
       zh.design.removeWatermarkBtn,
     );
@@ -213,6 +220,12 @@ describe('扩图下拉与更多菜单', () => {
     expect(screen.getByTestId('design-more-export-pdf').textContent).toContain(zh.design.exportImagePdf);
     expect(screen.getByTestId('design-more-generate-video').textContent).toContain(
       zh.design.generateVideoFromImage,
+    );
+    // 导出 PPTX 在「整个画布」组下（导的是整块画布，不是选中这张）
+    const pptxItem = screen.getByTestId('design-more-export-pptx');
+    expect(pptxItem.textContent).toContain(zh.design.exportCanvasPptx);
+    expect(menu.textContent?.indexOf(zh.design.moreGroupDerive)).toBeLessThan(
+      menu.textContent?.indexOf(zh.design.moreGroupCanvas) ?? 0,
     );
     expect(menu.textContent).toContain(zh.design.annotModelSelectLabel);
     expect(screen.getByTestId('annot-model-select')).toBeTruthy();

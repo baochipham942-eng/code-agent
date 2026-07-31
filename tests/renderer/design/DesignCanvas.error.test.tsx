@@ -56,13 +56,16 @@ vi.mock('../../../src/renderer/components/design/DesignImageToolbar', () => ({
   DesignImageToolbar: ({
     onExportImage,
     onExportPdf,
+    onExportCanvasPptx,
   }: {
     onExportImage: () => void;
     onExportPdf: () => void;
+    onExportCanvasPptx: () => void;
   }) => (
     <div>
       <button type="button" onClick={onExportImage}>测试导出图片</button>
       <button type="button" onClick={onExportPdf}>测试导出 PDF</button>
+      <button type="button" onClick={onExportCanvasPptx}>测试导出 PPTX</button>
     </div>
   ),
 }));
@@ -199,12 +202,12 @@ describe('DesignCanvas tab 错误条', () => {
     });
   });
 
-  it('整册 PPTX 导出失败时显示返回的失败原因', async () => {
+  it('整册 PPTX 导出失败时显示返回的失败原因（入口已收进动词条「更多 · 整个画布」）', async () => {
     setCanvas(imageNode('data:image/png;base64,AAAA'));
     designFiles.exportCanvasPptx.mockResolvedValue({ filePath: null, error: '没有下载目录权限' });
     render(<DesignCanvasTab />);
 
-    fireEvent.click(screen.getByRole('button', { name: /PPTX/ }));
+    fireEvent.click(screen.getByRole('button', { name: '测试导出 PPTX' }));
 
     await waitFor(() => {
       expect(screen.getByTestId('design-canvas-error-bar').textContent).toContain(

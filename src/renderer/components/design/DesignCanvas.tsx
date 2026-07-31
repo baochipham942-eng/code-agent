@@ -5,7 +5,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Stage, Layer, Rect as KonvaRect } from 'react-konva';
 import type Konva from 'konva';
-import { AlertCircle, Palette, Loader2, GitCompare, Presentation } from 'lucide-react';
+import { AlertCircle, Palette, GitCompare } from 'lucide-react';
 import { useI18n } from '../../hooks/useI18n';
 import { CloseButton } from '../primitives';
 import { useDesignStore } from './designStore';
@@ -793,6 +793,8 @@ export const DesignCanvas: React.FC<{ showErrorBar?: boolean }> = ({ showErrorBa
           onExportImage={() => void exportImage(selectedImageNode)}
           onGenerateVideo={() => void generateVideo({ baseNode: selectedImageNode })}
           onExportPdf={() => void exportImagePdf(selectedImageNode)}
+          onExportCanvasPptx={() => void exportCanvasPptx()}
+          exportingPptx={exportingPptx}
           expandDirection={expandDirection}
           expandRatio={expandRatio}
           onExpandDirectionChange={setExpandDirection}
@@ -917,27 +919,8 @@ export const DesignCanvas: React.FC<{ showErrorBar?: boolean }> = ({ showErrorBa
           );
         })()}
 
-      {/* 画布全幅 PPTX 导出（薄版）：当前画布上有图即显示，把全部活动图节点打成一份
-          全幅 deck（每张 1 张全幅 slide），给干系人打包。<1 张图时隐藏。 */}
-      {visibleNodes.length > 0 && (
-        <>
-          {/* ds-allow:start 画布操作栏沿用旧裸 button 样式，与同栏导出图片/PDF 按钮一致；design-mode 整体 W3 收口时统一迁 primitive */}
-          <button
-            type="button"
-            onClick={() => void exportCanvasPptx()}
-            disabled={exportingPptx}
-            className="absolute right-4 top-4 inline-flex items-center gap-1.5 rounded-lg border border-white/[0.1] bg-zinc-900/90 px-3 py-1.5 text-xs text-zinc-300 shadow-xl backdrop-blur transition-colors hover:text-zinc-100 disabled:opacity-50"
-          >
-            {exportingPptx ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <Presentation className="h-3.5 w-3.5" />
-            )}
-            {t.design.exportCanvasPptx}
-          </button>
-          {/* ds-allow:end */}
-        </>
-      )}
+      {/* 画布全幅 PPTX 导出入口已收进图像动词条「更多 ⋯ · 整个画布」组（2026-08-01 审美关返工#3），
+          不再占右上角独立按钮。 */}
 
       <DesignLayerPanel
         nodes={nodes}

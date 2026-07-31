@@ -233,10 +233,12 @@ export function DesignImageToolbar(props: DesignImageToolbarProps): React.ReactE
       className="pointer-events-none absolute left-2 right-2 top-4 z-20 flex justify-center"
     >
       <div className="pointer-events-auto relative flex flex-wrap items-center justify-center gap-1 rounded-xl border border-white/[0.1] bg-zinc-900/90 px-2 py-1.5 shadow-xl backdrop-blur">
-        {/* ds-allow:start 动词条按钮为图标+文字组合 toggle/下拉触发器（active=bg-fuchsia-500/20 品牌色 toggle 态，非 Button variant），与同画布的 DiagramToolbar 裸按钮一致，design-mode W3 收口时统一迁 primitive */}
         {/* 每个动词外套一个 relative 锚点容器：它的下拉/浮层锚在它自己正下方（返工#1），
-            菜单与按钮的对应关系一眼可见。 */}
+            菜单与按钮的对应关系一眼可见。
+            注意 ds-allow 区块不支持嵌套（checker 遇第一个 end 即出区），
+            故触发按钮的豁免拆成每按钮一个小区块，菜单各自的豁免块与之平级。 */}
         <div ref={anchorRef('annotate')} className="relative">
+          {/* ds-allow:start 动词条触发按钮为图标+文字组合 toggle/下拉触发器（active=bg-fuchsia-500/20 品牌色 toggle 态，非 Button variant），与同画布的 DiagramToolbar 裸按钮一致，design-mode W3 收口时统一迁 primitive */}
           <button
             type="button"
             data-testid="design-toolbar-annotate"
@@ -255,6 +257,7 @@ export function DesignImageToolbar(props: DesignImageToolbarProps): React.ReactE
             <Pencil className="h-3.5 w-3.5" />
             {t.design.annotMode}
           </button>
+          {/* ds-allow:end */}
 
           {/* 批注重绘浮层：工具选择 + 指令 + 模型选择（自「更多」挪入，控件跟着它服务的功能走，返工#4）
               + 成本 + CTA。无可用模型时只展示原因 + 灰显模型列表。 */}
@@ -330,6 +333,7 @@ export function DesignImageToolbar(props: DesignImageToolbarProps): React.ReactE
         </div>
 
         <div ref={anchorRef('repaint')} className="relative">
+          {/* ds-allow:start 动词条触发按钮为图标+文字组合 toggle/下拉触发器（active=bg-fuchsia-500/20 品牌色 toggle 态，非 Button variant），与同画布的 DiagramToolbar 裸按钮一致，design-mode W3 收口时统一迁 primitive */}
           <button
             type="button"
             data-testid="design-toolbar-repaint"
@@ -344,6 +348,7 @@ export function DesignImageToolbar(props: DesignImageToolbarProps): React.ReactE
             <SquareDashedMousePointer className="h-3.5 w-3.5" />
             {t.design.editRegionBtn}
           </button>
+          {/* ds-allow:end */}
 
           {/* 局部重绘浮层：圈选开关 + 引导 + 指令 + CTA（原 288px 浮层的圈选部分原样搬入）。 */}
           {openMenu === 'repaint' && (
@@ -404,6 +409,7 @@ export function DesignImageToolbar(props: DesignImageToolbarProps): React.ReactE
         </div>
 
         <div ref={anchorRef('resize')} className="relative">
+          {/* ds-allow:start 动词条触发按钮为图标+文字组合 toggle/下拉触发器（active=bg-fuchsia-500/20 品牌色 toggle 态，非 Button variant），与同画布的 DiagramToolbar 裸按钮一致，design-mode W3 收口时统一迁 primitive */}
           <button
             type="button"
             data-testid="design-toolbar-resize"
@@ -419,6 +425,7 @@ export function DesignImageToolbar(props: DesignImageToolbarProps): React.ReactE
             {t.design.imageToolbarResize}
             <ChevronDown className="h-3 w-3 text-zinc-500" />
           </button>
+          {/* ds-allow:end */}
 
           {/* 调整大小下拉：五档比例预设（比例小方块 + 人话名字 + 灰色比例数字）。
               不可行档位禁用并展示原因；可行档位展示按实际步数算的成本预估。 */}
@@ -465,6 +472,7 @@ export function DesignImageToolbar(props: DesignImageToolbarProps): React.ReactE
         </div>
 
         <div ref={anchorRef('expand')} className="relative">
+          {/* ds-allow:start 动词条触发按钮为图标+文字组合 toggle/下拉触发器（active=bg-fuchsia-500/20 品牌色 toggle 态，非 Button variant），与同画布的 DiagramToolbar 裸按钮一致，design-mode W3 收口时统一迁 primitive */}
           <button
             type="button"
             data-testid="design-toolbar-expand"
@@ -480,6 +488,7 @@ export function DesignImageToolbar(props: DesignImageToolbarProps): React.ReactE
             {t.design.expandTitle}
             <ChevronDown className="h-3 w-3 text-zinc-500" />
           </button>
+          {/* ds-allow:end */}
 
           {/* 扩图下拉：方向五选 + 倍率滑杆 + 扩展画布（去水印已收「更多」）。 */}
           {openMenu === 'expand' && (
@@ -498,6 +507,7 @@ export function DesignImageToolbar(props: DesignImageToolbarProps): React.ReactE
         </div>
 
         <div ref={anchorRef('more')} className="relative">
+          {/* ds-allow:start 动词条触发按钮为图标+文字组合 toggle/下拉触发器（active=bg-fuchsia-500/20 品牌色 toggle 态，非 Button variant），与同画布的 DiagramToolbar 裸按钮一致，design-mode W3 收口时统一迁 primitive */}
           <button
             type="button"
             data-testid="design-toolbar-more"
@@ -512,6 +522,7 @@ export function DesignImageToolbar(props: DesignImageToolbarProps): React.ReactE
             <MoreHorizontal className="h-3.5 w-3.5" />
             {t.design.imageToolbarMore}
           </button>
+          {/* ds-allow:end */}
 
           {/* 更多 ⋯：原 288px 浮层里的低频动作，对照 DesignImageEditPanel 逐项收编，一个不少。
               2026-08-01 返工#2：按用途分组带组标题（修图 / 导出这张 / 派生），不做杂物抽屉。 */}
@@ -587,7 +598,6 @@ export function DesignImageToolbar(props: DesignImageToolbarProps): React.ReactE
             </div>
           )}
         </div>
-        {/* ds-allow:end */}
       </div>
     </div>
   );

@@ -149,7 +149,7 @@ describe('调整大小五档', () => {
     expect(item.textContent).toContain('2');
     fireEvent.click(item);
     expect(props.onResizePreset).toHaveBeenCalledTimes(1);
-    const steps = props.onResizePreset.mock.calls[0][0];
+    const steps = vi.mocked(props.onResizePreset).mock.calls[0][0];
     expect(steps).toHaveLength(2);
     expect(steps[0].direction).toBe('up');
     expect(steps[1].direction).toBe('down');

@@ -132,7 +132,7 @@ export function DesignImageToolbar(props: DesignImageToolbarProps): React.ReactE
   const [openMenu, setOpenMenu] = useState<MenuId>(null);
   const rootRef = useRef<HTMLDivElement>(null);
 
-  // 外点关菜单（document 级监听，不铺 fixed inset-0 背板，避免 handrolled-modal 门）。
+  // 外点关菜单（document 级监听，不铺全屏背板，避免 handrolled-modal 门）。
   useEffect(() => {
     if (!openMenu) return;
     const onDown = (e: MouseEvent): void => {

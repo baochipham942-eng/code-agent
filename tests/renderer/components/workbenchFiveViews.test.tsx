@@ -10,8 +10,8 @@ vi.mock('../../../src/renderer/components/WorkbenchOverview', () => ({
 vi.mock('../../../src/renderer/components/features/explorer/FileExplorerPanel', () => ({
   FileExplorerPanel: () => <div data-testid="files-marker">files</div>,
 }));
-vi.mock('../../../src/renderer/components/BrowserPreviewPanel', () => ({
-  BrowserPreviewPanel: () => <div data-testid="browser-marker">browser</div>,
+vi.mock('../../../src/renderer/components/workbench/BrowserAgentWindow', () => ({
+  BrowserAgentWindow: () => <div data-testid="browser-marker">browser</div>,
 }));
 vi.mock('../../../src/renderer/components/design/DesignCanvasTab', () => ({
   DesignCanvasTab: () => <div data-testid="canvas-marker">canvas</div>,

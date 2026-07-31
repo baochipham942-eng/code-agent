@@ -1,7 +1,7 @@
 import React from 'react';
 import type { WorkbenchViewId } from '../stores/appStore';
 import { isPreviewWorkbenchView } from '../utils/workbenchViews';
-import { BrowserPreviewPanel } from './BrowserPreviewPanel';
+import { BrowserAgentWindow } from './workbench/BrowserAgentWindow';
 import { PreviewPanel } from './PreviewPanel';
 import { WorkbenchOverview } from './WorkbenchOverview';
 import { FileExplorerPanel } from './features/explorer/FileExplorerPanel';
@@ -30,7 +30,7 @@ export const WorkbenchViewContent: React.FC<WorkbenchViewContentProps> = ({
     );
   }
   if (activeView === 'browser') {
-    return <BrowserPreviewPanel />;
+    return <BrowserAgentWindow />;
   }
   if (activeView === 'design-canvas') {
     return (

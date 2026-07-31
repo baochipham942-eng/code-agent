@@ -11,11 +11,18 @@ interface BackgroundTaskStoreState {
   tasks: Task[];
   isLoading: boolean;
   error: string | null;
+  /** The ledger read failed. Kept separate from every task's real execution status. */
+  readFailure: {
+    message: string;
+    failedAt: number;
+  } | null;
+  readRetryNonce: number;
   lastLoadedAt: number | null;
 }
 
 interface BackgroundTaskStoreActions {
   refreshTasks: () => Promise<void>;
+  requestStatusReadRetry: () => void;
   drainNotifications: (sessionId: string) => Promise<TaskNotification[]>;
   setTasks: (tasks: Task[]) => void;
 }
@@ -26,6 +33,8 @@ export const useBackgroundTaskStore = create<BackgroundTaskStore>()((set) => ({
   tasks: [],
   isLoading: false,
   error: null,
+  readFailure: null,
+  readRetryNonce: 0,
   lastLoadedAt: null,
 
   refreshTasks: async () => {
@@ -43,15 +52,29 @@ export const useBackgroundTaskStore = create<BackgroundTaskStore>()((set) => ({
         tasks,
         isLoading: false,
         error: null,
+        readFailure: null,
         lastLoadedAt: Date.now(),
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      // 仅更新 UI 错误态；日志与退避交给调用方 poller（节流，避免后端不可达时刷屏）
-      set({ isLoading: false, error: message });
+      // Preserve the last known task status. A ledger read failure does not mean
+      // the task failed, and callers must stop automatic waiting until an
+      // explicit retry succeeds.
+      set({
+        isLoading: false,
+        error: message,
+        readFailure: {
+          message,
+          failedAt: Date.now(),
+        },
+      });
       throw error;
     }
   },
+
+  requestStatusReadRetry: () => set((state) => ({
+    readRetryNonce: state.readRetryNonce + 1,
+  })),
 
   drainNotifications: async (sessionId) => {
     if (!ipcService.isAvailable()) return [];
@@ -74,6 +97,8 @@ export const useBackgroundTaskStore = create<BackgroundTaskStore>()((set) => ({
 
   setTasks: (tasks) => set({
     tasks,
+    error: null,
+    readFailure: null,
     lastLoadedAt: Date.now(),
   }),
 }));

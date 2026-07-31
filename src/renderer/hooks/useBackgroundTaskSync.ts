@@ -45,39 +45,55 @@ export function useBackgroundTaskSync(options: UseBackgroundTaskSyncOptions = {}
   );
   const refreshTasks = useBackgroundTaskStore((state) => state.refreshTasks);
   const drainNotifications = useBackgroundTaskStore((state) => state.drainNotifications);
+  const readRetryNonce = useBackgroundTaskStore((state) => state.readRetryNonce);
   const currentSessionId = useSessionStore((state) => state.currentSessionId);
 
   useEffect(() => {
     if (!enabled) return;
 
+    let statusReadBlocked = false;
+    let stopPoller: (() => void) | undefined;
+
     const sync = async () => {
+      if (statusReadBlocked) return;
       await refreshTasks();
       if (!currentSessionId) return;
       const notifications = await drainNotifications(currentSessionId);
       notifications.forEach(showTaskNotification);
     };
 
+    const syncUntilReadFailure = async () => {
+      try {
+        await sync();
+      } catch (error) {
+        // A failed ledger read cannot prove that a task is still running.
+        // Freeze the last known projection and wait for an explicit user retry.
+        statusReadBlocked = true;
+        stopPoller?.();
+        throw error;
+      }
+    };
+
     let invalidationTimer: ReturnType<typeof setTimeout> | null = null;
     const unsubscribe = ipcService.on('agent:event', (event: AgentEventEnvelope) => {
       if (event.type !== 'background_task_ledger_changed') return;
+      if (statusReadBlocked) return;
       if (invalidationTimer !== null) clearTimeout(invalidationTimer);
       invalidationTimer = setTimeout(() => {
         invalidationTimer = null;
-        void sync().catch((error) => {
+        void syncUntilReadFailure().catch((error) => {
           logger.warn('Background task push sync failed', { error });
         });
       }, RENDERER_POLLING.BACKGROUND_TASK_INVALIDATION_DEBOUNCE);
     });
 
-    let stopPoller: (() => void) | undefined;
-
     if (pollInterval <= 0) {
-      void sync().catch((error) => {
+      void syncUntilReadFailure().catch((error) => {
         logger.warn('Initial background task sync failed', { error });
       });
     } else {
       // 推送负责及时刷新；轮询仅用于丢失推送后的追平。
-      const poller = createBackoffPoller(sync, {
+      const poller = createBackoffPoller(syncUntilReadFailure, {
         baseInterval: pollInterval,
         maxInterval: RENDERER_POLLING.MAX_BACKOFF,
         factor: RENDERER_POLLING.BACKOFF_FACTOR,
@@ -93,5 +109,5 @@ export function useBackgroundTaskSync(options: UseBackgroundTaskSyncOptions = {}
       stopPoller?.();
       if (invalidationTimer !== null) clearTimeout(invalidationTimer);
     };
-  }, [currentSessionId, drainNotifications, enabled, pollInterval, refreshTasks]);
+  }, [currentSessionId, drainNotifications, enabled, pollInterval, readRetryNonce, refreshTasks]);
 }

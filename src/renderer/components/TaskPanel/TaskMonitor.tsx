@@ -16,6 +16,8 @@ import type {
 } from '@shared/contract/turnTimeline';
 import { useSessionStore } from '../../stores/sessionStore';
 import { useAppStore } from '../../stores/appStore';
+import { useTaskStore } from '../../stores/taskStore';
+import { useBackgroundTaskStore } from '../../stores/backgroundTaskStore';
 import { useStatusRailModel, type StatusRailContextModel } from '../../hooks/useStatusRailModel';
 import { useRunWorkbenchModel } from '../../hooks/useRunWorkbenchModel';
 import { useCurrentTurnArtifactOwnership } from '../../hooks/useCurrentTurnArtifactOwnership';
@@ -58,6 +60,79 @@ import {
   type WorkbenchCapabilityTarget,
 } from '../../utils/workbenchCapabilitySheet';
 
+function StatusReadFailureBanner({
+  isLoading,
+  onRetry,
+  onCancel,
+  canCancel,
+}: {
+  isLoading: boolean;
+  onRetry: () => void;
+  onCancel: () => Promise<void>;
+  canCancel: boolean;
+}) {
+  const { t } = useI18n();
+  const m = t.taskStatusPanels.monitor;
+  const [cancelling, setCancelling] = useState(false);
+  const [cancelFailed, setCancelFailed] = useState(false);
+
+  const handleCancel = async (): Promise<void> => {
+    if (cancelling || isLoading || !canCancel) return;
+    setCancelling(true);
+    setCancelFailed(false);
+    try {
+      await onCancel();
+    } catch {
+      setCancelFailed(true);
+    } finally {
+      setCancelling(false);
+    }
+  };
+
+  const busy = isLoading || cancelling;
+
+  return (
+    <div
+      className="rounded-md border border-amber-500/20 bg-amber-500/[0.06] px-2.5 py-2"
+      role="status"
+      aria-live="polite"
+    >
+      <div className="flex items-start gap-2">
+        <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-amber-300" aria-hidden="true" />
+        <div className="min-w-0 flex-1">
+          <div className="text-xs font-medium text-amber-200">{m.statusReadFailed}</div>
+          <div className="mt-0.5 text-[11px] text-amber-200/70">{m.statusReadFailedHint}</div>
+        </div>
+      </div>
+      <div className="mt-2 flex items-center gap-2">
+        <button
+          type="button"
+          onClick={onRetry}
+          disabled={busy}
+          className="inline-flex items-center gap-1.5 rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-[11px] font-medium text-amber-200 transition-colors hover:bg-amber-500/15 disabled:cursor-not-allowed disabled:opacity-60"
+          aria-label={m.retryStatusRead}
+        >
+          {isLoading && <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />}
+          <span>{isLoading ? m.retryingStatusRead : m.retryStatusRead}</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => void handleCancel()}
+          disabled={busy || !canCancel}
+          className="inline-flex items-center gap-1.5 rounded-md border border-white/[0.08] bg-zinc-900/60 px-2 py-1 text-[11px] font-medium text-zinc-300 transition-colors hover:border-white/[0.14] hover:text-zinc-100 disabled:cursor-not-allowed disabled:opacity-60"
+          aria-label={m.cancelTask}
+        >
+          {cancelling && <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />}
+          <span>{cancelling ? m.cancellingTask : m.cancelTask}</span>
+        </button>
+      </div>
+      {cancelFailed && (
+        <div className="mt-2 text-[11px] text-red-300" role="alert">{m.cancelTaskFailed}</div>
+      )}
+    </div>
+  );
+}
+
 export const TaskMonitor: React.FC = () => {
   const { currentSessionId } = useSessionStore();
   const { workingDirectory } = useAppStore();
@@ -77,6 +152,10 @@ export const TaskMonitor: React.FC = () => {
 
   const model = useStatusRailModel();
   const runWorkbench = useRunWorkbenchModel();
+  const readFailure = useBackgroundTaskStore((state) => state.readFailure);
+  const backgroundTasksLoading = useBackgroundTaskStore((state) => state.isLoading);
+  const requestStatusReadRetry = useBackgroundTaskStore((state) => state.requestStatusReadRetry);
+  const cancelTask = useTaskStore((state) => state.cancelTask);
   const { context, outputs } = model;
   const blockedScopeCount = currentTurnCapabilityScope?.scope.blocked?.length ?? 0;
   const mcpNeedsAttention = blockedScopeCount > 0
@@ -214,10 +293,22 @@ export const TaskMonitor: React.FC = () => {
       <Card
         title={m.task}
         storageKey="task"
-        count={runWorkbench.tasks.length > 0 ? String(runWorkbench.tasks.length) : undefined}
+        count={runWorkbench.tasks.length > 0 && !readFailure ? String(runWorkbench.tasks.length) : undefined}
         highlight={runWorkbench.run.status === 'blocked' || runWorkbench.run.status === 'waiting_approval'}
       >
-        <TaskDashboardSummary tasks={runWorkbench.tasks} run={runWorkbench.run} />
+        {readFailure ? (
+          <StatusReadFailureBanner
+            isLoading={backgroundTasksLoading}
+            onRetry={requestStatusReadRetry}
+            onCancel={() => {
+              if (!currentSessionId) return Promise.resolve();
+              return cancelTask(currentSessionId);
+            }}
+            canCancel={Boolean(currentSessionId)}
+          />
+        ) : (
+          <TaskDashboardSummary tasks={runWorkbench.tasks} run={runWorkbench.run} />
+        )}
       </Card>
 
       {runWorkbench.subagents.length > 0 && (

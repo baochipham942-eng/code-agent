@@ -97,7 +97,7 @@ describe('handleExpandDesignImage', () => {
       handleExpandDesignImage({ baseImagePath: '', outputPath, direction: 'up', ratio: 1.5 }),
     ).rejects.toThrow('expandDesignImage');
     await expect(
-      // @ts-expect-error 故意缺 direction
+      // 缺 direction（新契约里 direction 可选，缺失走旧形态分支被 direction 闸拦下）
       handleExpandDesignImage({ baseImagePath, outputPath, ratio: 1.5 }),
     ).rejects.toThrow('expandDesignImage');
   });

@@ -17,6 +17,7 @@
 // 2026-07-26 UI 债收尾删掉单工具耗时后，formatDuration 那两层转出口没人要了，收到 2694。
 // 2026-07-27 批 G 清掉新组件的无人 default 转出口 + 未用类型出口，收到 2692。
 // 2026-07-27 Fork/Rewind 清掉 78 处新增死出口（含 23 处 repository barrel 转口），收到 2690。
+// 2026-07-31 X6 realtime provider 通用化移除 2 个旧死出口，收到 2687。
 // knip 版本锁 6.24.0（未入 devDependencies，避免 lockfile/共享 node_modules 变更；
 // CI 与本地统一走 npx knip@6.24.0，升版本须同步重测基线）。
 //
@@ -25,7 +26,7 @@
 import { spawnSync } from 'node:child_process';
 import process from 'node:process';
 
-const BASELINE_MAX = 2689;
+const BASELINE_MAX = 2687;
 const KNIP_VERSION = '6.24.0';
 
 const result = spawnSync(

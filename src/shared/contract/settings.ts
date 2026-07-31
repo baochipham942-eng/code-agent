@@ -16,20 +16,45 @@ import type { RoleProactivitySettings } from './roleAssets';
 import type { SpeechInputSettings } from './speech';
 import type { VoiceTurnDetectionConfig } from './voice';
 import type { KeybindingsSettings } from '../keybindings';
+import type { RealtimeVoiceProviderId } from '../constants/realtimeVoiceProviders';
+
+export interface CustomRealtimeVoiceProviderSettings {
+  /** Stable user-defined id. Keys are isolated by this id in secure storage. */
+  id: string;
+  displayName: string;
+  /** Exact WSS endpoint. `model` is added as a query parameter when absent. */
+  endpoint: string;
+  authStyle: 'bearer';
+  sessionShape: 'openai-realtime';
+  model: string;
+  voices: string[];
+  defaultVoice: string;
+  inputSampleRate: 16_000 | 24_000;
+  outputSampleRate: 24_000;
+  createdAt: number;
+  updatedAt: number;
+}
 
 /** 实时通话（Live Voice）UI 设置。全部可选，未配置 = 安全默认（入口隐藏、Provider 默认档）。 */
 export interface VoiceLiveSettings {
   /** 总开关：关 = Composer 不显示实时通话入口 */
   enabled?: boolean;
   /**
-   * 音色。**音色枚举与通话模型强绑定**（`src/shared/constants/voice.ts` 的实测白名单），
-   * 换模型必须重新真机验证白名单，别让这里写成自由文本。
+   * 实时语音 Provider。存量配置没有该字段时读取为 DashScope；
+   * 不在注册表里的值同样 fail-closed 到 DashScope。
+   */
+  providerId?: RealtimeVoiceProviderId;
+  /** Non-sensitive custom Provider metadata. API keys never enter settings. */
+  customProviders?: CustomRealtimeVoiceProviderSettings[];
+  /**
+   * 音色。枚举与当前 Provider profile 的通话模型强绑定；
+   * 读取时会归一到该 profile 的合法值，换模型必须同步归一音色。
    */
   voiceId?: string;
   /**
-   * 通话模型（负责听和说的实时模型）：只能是 `QWEN_OMNI_REALTIME_MODEL_OPTIONS`
-   * 白名单里的 id；未配置 / 表外 id = 回落 `QWEN_OMNI_REALTIME_MODEL`。
-   * **音色与它强绑定**：换模型时 voiceId 必须一起落到新模型的 voices 里。
+   * 通话模型（负责听和说的实时模型）：只能是当前 Provider profile
+   * 注册的模型；未配置 / 表外 id 会回落该 profile 的默认模型。
+   * 音色与模型强绑定：换模型时 voiceId 必须一起落到新模型的 voices 里。
    */
   conversationModel?: string;
   /** 通话语言；auto/未配置 = 跟随上游自动检测 */
@@ -199,8 +224,11 @@ export interface AppSettings {
     turnDetection?: VoiceTurnDetectionConfig;
     /** 口述专名词表；Host 会在注入前统一清洗与限长 */
     vocabulary?: string[];
-    /** 麦克风输入设备；设备消失或形状无效时采集链回落系统默认。 */
-    inputDevice?: VoiceInputDeviceSettings;
+    /**
+     * 麦克风输入设备；`null` 是用户明确选择「系统默认」的持久化清除值。
+     * 设备消失、配置缺失或形状无效时，采集链同样回落系统默认。
+     */
+    inputDevice?: VoiceInputDeviceSettings | null;
     /** 实时通话（Live Voice）UI 设置；运行时断句真源仍是上面的 turnDetection */
     live?: VoiceLiveSettings;
   };

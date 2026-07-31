@@ -71,6 +71,28 @@ export function assertSafeCustomBaseUrl(raw: string): string {
   return url.href.replace(/\/+$/, '');
 }
 
+/** Realtime custom Provider endpoints are public WSS URLs and may contain a model query. */
+export function assertSafeCustomWebSocketUrl(raw: string): string {
+  const trimmed = (raw ?? '').trim();
+  if (!trimmed) throw new Error('Realtime Provider endpoint 不能为空');
+  let url: URL;
+  try {
+    url = new URL(trimmed);
+  } catch {
+    throw new Error('Realtime Provider endpoint 非法');
+  }
+  if (url.protocol !== 'wss:') {
+    throw new Error('Realtime Provider endpoint 必须使用 wss');
+  }
+  if (url.username || url.password) {
+    throw new Error('Realtime Provider endpoint 不能内嵌账号密码');
+  }
+  if (isPrivateOrLocalHost(url.hostname)) {
+    throw new Error(`拒绝指向私网/环回/元数据地址的 Realtime Provider：${url.hostname}`);
+  }
+  return url.toString();
+}
+
 /**
  * 校验裸下载 URL：放行 http/https 公网（下载比出图宽松，允许 http），拒私网/非 http(s)。
  * 用于收口 downloadFile 这个 IPC 暴露的任意 URL fetch 入口。

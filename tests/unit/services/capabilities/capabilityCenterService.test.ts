@@ -947,26 +947,31 @@ describe('CapabilityCenterService', () => {
       getSettings: () => ({ connectors: { enabledNative: ['calendar'] } }),
       updateSettings: configUpdateSettings,
     } as never;
+    const toggleOptions = {
+      configService,
+      // Toggle delegation is a local-service contract; keep this unit test hermetic.
+      remoteCapabilityRegistryService: null,
+    };
 
-    await service.setEnabled({ id: 'skill:slides', kind: 'skill', enabled: true }, { configService });
+    await service.setEnabled({ id: 'skill:slides', kind: 'skill', enabled: true }, toggleOptions);
     expect(skillEnable).toHaveBeenCalledWith('slides');
     expect(skillRefresh).toHaveBeenCalled();
 
     // 黑名单语义：非 library 来源（如 project skill）也支持全局启停
-    await service.setEnabled({ id: 'skill:research', kind: 'skill', enabled: false }, { configService });
+    await service.setEnabled({ id: 'skill:research', kind: 'skill', enabled: false }, toggleOptions);
     expect(skillDisable).toHaveBeenCalledWith('research');
 
-    await service.setEnabled({ id: 'mcp:github', kind: 'mcp_template', enabled: false }, { configService });
+    await service.setEnabled({ id: 'mcp:github', kind: 'mcp_template', enabled: false }, toggleOptions);
     expect(mcpSetEnabled).toHaveBeenCalledWith('github', false);
     expect(clearMcpContext).toHaveBeenCalledWith('github');
 
-    await service.setEnabled({ id: 'connector:mail', kind: 'connector', enabled: true }, { configService });
+    await service.setEnabled({ id: 'connector:mail', kind: 'connector', enabled: true }, toggleOptions);
     expect(configUpdateSettings).toHaveBeenCalledWith({
       connectors: { enabledNative: ['calendar', 'mail'] },
     });
     expect(connectorConfigure).toHaveBeenCalledWith(['calendar', 'mail']);
 
-    await service.setEnabled({ id: 'channel:acct-1', kind: 'channel_adapter', enabled: false }, { configService });
+    await service.setEnabled({ id: 'channel:acct-1', kind: 'channel_adapter', enabled: false }, toggleOptions);
     expect(channelUpdateAccount).toHaveBeenCalledWith('acct-1', { enabled: false });
   });
 

@@ -102,8 +102,8 @@ describe('buildOverviewContextRows', () => {
       tools,
       memoryActivities,
       contextItems: [
-        { id: 'file-1', bucket: 'files', label: 'hello.html', path: '/tmp/hello.html', detail: 'Read' },
-        { id: 'file-2', bucket: 'files', label: 'hello.html', path: '/tmp/hello.html', detail: 'Write' },
+        { id: 'file-1', bucket: 'files', source: 'tool', label: 'hello.html', path: '/tmp/hello.html', detail: 'Read' },
+        { id: 'file-2', bucket: 'files', source: 'tool', label: 'hello.html', path: '/tmp/hello.html', detail: 'Write' },
       ],
     });
 

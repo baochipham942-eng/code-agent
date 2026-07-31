@@ -340,21 +340,7 @@ async function installIsolatedFolderTrustSafetyRoute(page: Page): Promise<void> 
       return;
     }
 
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        success: true,
-        data: {
-          state: 'blocked',
-          canonicalRealpath: process.cwd(),
-          displayPath: process.cwd(),
-          dangerousItems: [],
-          blockedItems: [],
-          identityChanged: false,
-        },
-      }),
-    });
+    await route.continue();
   });
 }
 
@@ -551,6 +537,10 @@ async function verifyRendererCancelClick(
     .then(() => true)
     .catch(() => false);
   let stopRequestedAt: number | null = null;
+  const cancelRequestPromise = page.waitForRequest(
+    (request) => request.url().includes('/api/cancel'),
+    { timeout: 3_000 },
+  ).catch(() => null);
   if (!stopButtonVisible) {
     failures.push('renderer cancel smoke did not render the stop button while the run was held.');
   } else {
@@ -568,6 +558,17 @@ async function verifyRendererCancelClick(
         + `visibleDialogs=${JSON.stringify(visibleDialogs)}`,
       );
     });
+  }
+  const cancelRequest = await cancelRequestPromise;
+  if (!cancelRequest) {
+    failures.push('renderer stop button did not dispatch /api/cancel.');
+  } else {
+    const cancelBody = cancelRequest.postDataJSON() as { sessionId?: unknown } | null;
+    if (cancelBody?.sessionId !== sessionId) {
+      failures.push(
+        `renderer stop button cancelled session ${String(cancelBody?.sessionId)}, expected ${sessionId}.`,
+      );
+    }
   }
 
   const stubAfterCancel = sessionId ? await waitForStubCancel(page, sessionId) : null;
@@ -633,6 +634,13 @@ async function main(): Promise<void> {
   const appPort = getNumberOption(args, 'port') || await getFreePort();
   const baseUrl = `http://127.0.0.1:${appPort}`;
   const dataDir = mkdtempSync(join(tmpdir(), 'code-agent-agent-runtime-app-host-data-'));
+  const isolatedWorkingDirectory = join(dataDir, 'work');
+  const isolatedHooksDirectory = join(isolatedWorkingDirectory, '.code-agent', 'hooks');
+  mkdirSync(isolatedHooksDirectory, { recursive: true });
+  writeFileSync(
+    join(isolatedHooksDirectory, 'hooks.json'),
+    '{}\n',
+  );
   const appHost = startAppHost(appPort, dataDir);
   let chromeSession: SmokeChromeSession | null = null;
   const failures: string[] = [];
@@ -665,6 +673,13 @@ async function main(): Promise<void> {
     await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
     const renderer = await waitForRenderer(page);
     const folderTrustEvaluationResponse = await folderTrustEvaluated;
+    const folderTrustEvaluation = await folderTrustEvaluationResponse?.json()
+      .catch(() => null) as {
+        data?: {
+          state?: string;
+          dangerousItems?: unknown[];
+        };
+      } | null | undefined;
     if (!folderTrustEvaluationResponse?.ok()) {
       failures.push(
         `agent-runtime smoke did not receive a successful folder trust evaluation${
@@ -674,7 +689,11 @@ async function main(): Promise<void> {
     }
     const folderTrustDecision = await resolveFolderTrustGate(page);
     if (folderTrustDecision !== 'blocked') {
-      failures.push('agent-runtime smoke did not explicitly block isolated project configuration.');
+      failures.push(
+        'agent-runtime smoke did not explicitly block isolated project configuration '
+        + `(state=${folderTrustEvaluation?.data?.state ?? 'unknown'}, `
+        + `dangerousItems=${folderTrustEvaluation?.data?.dangerousItems?.length ?? 'unknown'}).`,
+      );
     }
 
     const authResponse = await fetchFromRenderer<{

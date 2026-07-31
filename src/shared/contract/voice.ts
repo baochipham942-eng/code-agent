@@ -8,7 +8,7 @@
 // 直连上游）。见方案 §9.1/§9.2 与 §13.3 第 1 条。
 // ============================================================================
 
-export type VoiceProviderId = 'qwen-omni' | 'openai-realtime';
+export type VoiceProviderId = 'qwen-omni' | 'dashscope-qwen-omni' | 'openai-realtime' | (string & {});
 
 export type VoiceTurnDetectionConfig =
   | { type: 'server_vad'; threshold?: number; prefixPaddingMs?: number; silenceDurationMs?: number }

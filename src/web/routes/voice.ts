@@ -10,6 +10,11 @@ import { Router } from 'express';
 import type { Request, Response } from 'express';
 import type { VoiceStatusResponse } from '../../shared/contract/voice';
 import { getDashscopeApiKey } from '../../host/services/media/imageGenerationService';
+import { getConfigService } from '../../host/services/core/configService';
+import {
+  getRealtimeVoiceProviderApiKey,
+  resolveConfiguredRealtimeVoiceProfile,
+} from '../../host/services/voice/customRealtimeVoiceProviders';
 import { getActiveVoiceSessionId } from '../../host/services/voice/voiceSessionService';
 import { getVoiceUsageSummary } from '../../host/services/voice/voiceUsageLedger';
 
@@ -17,9 +22,17 @@ export function createVoiceRouter(): Router {
   const router = Router();
 
   router.get('/voice/status', (_req: Request, res: Response) => {
+    const settings = getConfigService().getSettings();
+    const profile = resolveConfiguredRealtimeVoiceProfile(
+      settings.voice?.live?.providerId,
+      settings.voice?.live,
+    );
+    const configured = profile.id === 'dashscope-qwen-omni'
+      ? Boolean(getDashscopeApiKey())
+      : Boolean(getRealtimeVoiceProviderApiKey(profile));
     const payload: VoiceStatusResponse = {
-      provider: 'qwen-omni',
-      configured: Boolean(getDashscopeApiKey()),
+      provider: profile.id,
+      configured,
       active: getActiveVoiceSessionId() !== null,
       usage: getVoiceUsageSummary(Date.now()),
     };

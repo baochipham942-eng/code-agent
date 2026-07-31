@@ -7,14 +7,25 @@
 // ============================================================================
 
 import type { WebSocket as WsSocket } from 'ws';
-import { resolveConversationModelOption, VOICE_DOWNSTREAM_SAMPLE_RATE, VOICE_END_CALL_GOODBYE_TIMEOUT_MS, VOICE_HANGUP_REACTION_WINDOW_MS, VOICE_INBOUND_AUDIO_STARTUP_TIMEOUT_MS, VOICE_RECONNECT_GRACE_MS, VOICE_SESSION_MAX_DURATION_MS, VOICE_TEARDOWN_DRAIN_MS, VOICE_TRANSCRIPT_MERGE_WINDOW_MS, VOICE_WS_CLOSE_TERMINAL } from '../../../shared/constants/voice';
+import { VOICE_DOWNSTREAM_SAMPLE_RATE, VOICE_END_CALL_GOODBYE_TIMEOUT_MS, VOICE_HANGUP_REACTION_WINDOW_MS, VOICE_INBOUND_AUDIO_STARTUP_TIMEOUT_MS, VOICE_RECONNECT_GRACE_MS, VOICE_SESSION_MAX_DURATION_MS, VOICE_TEARDOWN_DRAIN_MS, VOICE_TRANSCRIPT_MERGE_WINDOW_MS, VOICE_WS_CLOSE_TERMINAL } from '../../../shared/constants/voice';
+import {
+  REALTIME_VOICE_PROVIDER_PROFILES,
+  resolveRealtimeVoiceSelection,
+  type RealtimeVoiceProviderProfile,
+} from '../../../shared/constants/realtimeVoiceProviders';
 import type { VoiceClientCommand, VoiceEvent, VoiceFocusContext, VoiceTransportHandle, VoiceWorkItem, VoiceWorkNarration } from '../../../shared/contract/voice';
+import type { VoiceTransport } from '../../../shared/contract/voice';
 import { getDashscopeApiKey } from '../media/imageGenerationService';
 import { createLogger } from '../infra/logger';
 import { getConfigService } from '../core/configService';
 import { getSessionManager } from '../infra/sessionManager';
 import { getPermissionModeManager } from '../../permissions/modes';
 import { qwenOmniTransport } from './qwenOmniTransport';
+import { createRealtimeTransport } from './realtimeTransport';
+import {
+  getRealtimeVoiceProviderApiKey,
+  resolveConfiguredRealtimeVoiceProfile,
+} from './customRealtimeVoiceProviders';
 import { resolveVoiceRouting } from './voiceRouting';
 import { beginVoiceDispatch, endVoiceDispatch, pushVoiceTranscript, setVoiceDispatchFocus } from './voiceAgentCoordinator';
 import { composeVoiceInstructions, focusChanged } from './voiceContextAssembler';
@@ -87,6 +98,20 @@ interface ActiveSession {
 // ponytail: 单进程内一个模块级变量就是「全局单路」的全部实现（方案 §2.6）。
 // 多进程/多窗口场景真出现时再抬到共享状态。
 let active: ActiveSession | null = null;
+const openaiRealtimeTransport = createRealtimeTransport(
+  REALTIME_VOICE_PROVIDER_PROFILES['openai-realtime'],
+);
+
+function resolveVoiceTransport(profile: RealtimeVoiceProviderProfile): VoiceTransport {
+  if (profile.id === 'dashscope-qwen-omni') return qwenOmniTransport;
+  if (profile.id === 'openai-realtime') return openaiRealtimeTransport;
+  return createRealtimeTransport(profile);
+}
+
+function resolveVoiceApiKey(profile: RealtimeVoiceProviderProfile): string | undefined {
+  if (profile.id === 'dashscope-qwen-omni') return getDashscopeApiKey();
+  return getRealtimeVoiceProviderApiKey(profile);
+}
 // 建上游连接是 await，闸门必须在 await 之前就合上：只看 active 的话，两路并发拨号
 // 会同时通过检查、各建一条上游连接（都在计费，其中一条永远无人释放）。
 let connecting = false;
@@ -553,16 +578,22 @@ export async function attachVoiceClient(client: WsSocket, neoSessionId: string, 
     return;
   }
 
-  const apiKey = getDashscopeApiKey();
+  const liveSettings = readVoiceLiveSettings();
+  const profile = resolveConfiguredRealtimeVoiceProfile(liveSettings?.providerId, liveSettings);
+  const apiKey = resolveVoiceApiKey(profile);
   if (!apiKey) {
-    send(client, { type: 'error', code: 'VOICE_PROVIDER_UNCONFIGURED', message: '未配置 DashScope API Key' });
+    send(client, {
+      type: 'error',
+      code: 'VOICE_PROVIDER_UNCONFIGURED',
+      message: `未配置 ${profile.displayName} API Key`,
+    });
     closeClientTerminal(client);
     return;
   }
 
   connecting = true;
   try {
-    await connectAndBind(client, neoSessionId, apiKey, requestedAgentId);
+    await connectAndBind(client, neoSessionId, apiKey, profile, requestedAgentId);
   } finally {
     connecting = false;
   }
@@ -572,6 +603,7 @@ async function connectAndBind(
   client: WsSocket,
   neoSessionId: string,
   apiKey: string,
+  profile: RealtimeVoiceProviderProfile,
   requestedAgentId?: string,
 ): Promise<void> {
   const id = `voice-${Date.now()}-${++sessionSeq}`;
@@ -579,11 +611,23 @@ async function connectAndBind(
 
   const routing = resolveVoiceRouting(requestedAgentId);
   const liveSettings = readVoiceLiveSettings();
-  // 通话模型白名单解析：未配置 / 表外 id（手改 JSON）一律回落默认，表外 id 绝不上线。
-  const conversationModel = resolveConversationModelOption(liveSettings?.conversationModel);
-  if (liveSettings?.conversationModel && liveSettings.conversationModel !== conversationModel.id) {
+  // 模型/音色按所选 profile 联合解析；存量 providerId 缺省已在 profile 读取口回 DashScope。
+  const selection = resolveRealtimeVoiceSelection(
+    profile,
+    liveSettings?.conversationModel,
+    liveSettings?.voiceId,
+  );
+  if (liveSettings?.conversationModel && liveSettings.conversationModel !== selection.model.id) {
     logger.warn('conversation model not in whitelist, falling back to default', {
+      provider: profile.id,
       requested: liveSettings.conversationModel,
+    });
+  }
+  if (liveSettings?.voiceId && liveSettings.voiceId !== selection.voice) {
+    logger.warn('voice not in model whitelist, falling back to default', {
+      provider: profile.id,
+      model: selection.model.id,
+      requested: liveSettings.voiceId,
     });
   }
 
@@ -685,14 +729,14 @@ async function connectAndBind(
   });
   let upstream: VoiceTransportHandle;
   try {
-    upstream = await qwenOmniTransport.connect({
+    upstream = await resolveVoiceTransport(profile).connect({
       apiKey,
       config: {
         neoSessionId,
-        model: conversationModel.id,
+        model: selection.model.id,
         instructions: initialInstructions,
         tools: VOICE_TOOL_DEFINITIONS,
-        ...(liveSettings?.voiceId ? { voice: liveSettings.voiceId } : {}),
+        voice: selection.voice,
       },
       onEvent: (event) => {
         // R6：整条只有工具标签的助手字幕不上屏。流式期间按「累计到此刻」判，
@@ -809,7 +853,7 @@ async function connectAndBind(
     transcriptBuf,
     transcriptMerge,
     personaInstructions: baseInstructions,
-    conversationModel: conversationModel.id,
+    conversationModel: selection.model.id,
     focus: null,
     narration: {
       userSpeaking: false,

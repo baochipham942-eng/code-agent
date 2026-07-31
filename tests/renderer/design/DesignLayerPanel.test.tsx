@@ -82,6 +82,10 @@ describe('DesignLayerPanel', () => {
     expect(html).toContain('设为主版');
     expect(html).toContain('淘汰');
     expect(html).toContain('删除');
+    // 返工#5：X/Y/W/H/成本/父节点 收进默认折叠的 <details>（字段不删，只是默认不展示）
+    expect(html).toContain('<details data-testid="design-layer-details"');
+    expect(html).not.toContain('<details open');
+    expect(html).toContain('详情');
   });
 
   it('renders English copy through i18n', () => {

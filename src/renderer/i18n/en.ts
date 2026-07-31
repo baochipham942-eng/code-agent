@@ -305,6 +305,7 @@ export const en: Translations = {
     layerSetMain: 'Set main',
     layerDiscard: 'Discard',
     layerEmptyInspector: 'Select a layer or canvas node to inspect properties',
+    layerDetails: 'Details',
     deviceDesktop: 'Desktop',
     deviceTablet: 'Tablet',
     deviceMobile: 'Mobile',

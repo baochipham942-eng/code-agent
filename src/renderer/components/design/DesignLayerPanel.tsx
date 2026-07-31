@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Check, Film, Image as ImageIcon, Layers, LocateFixed, Trash2 } from 'lucide-react';
+import { Check, ChevronRight, Film, Image as ImageIcon, Layers, LocateFixed, Trash2 } from 'lucide-react';
 import {
   isReferenceNode,
   isVideoNode,
@@ -125,14 +125,22 @@ export const DesignLayerPanel: React.FC<{
               className="rounded-md border border-white/[0.08] bg-white/[0.04] px-2 py-1.5 text-xs text-zinc-100 outline-none focus:border-white/[0.24]"
             />
           </label>
-          <div className="mt-2 grid grid-cols-2 gap-2 text-[11px] text-zinc-500">
-            <div className="rounded-md bg-white/[0.03] p-2">X<br /><span className="text-zinc-200">{Math.round(selected.x)}</span></div>
-            <div className="rounded-md bg-white/[0.03] p-2">Y<br /><span className="text-zinc-200">{Math.round(selected.y)}</span></div>
-            <div className="rounded-md bg-white/[0.03] p-2">W<br /><span className="text-zinc-200">{Math.round(selected.width)}</span></div>
-            <div className="rounded-md bg-white/[0.03] p-2">H<br /><span className="text-zinc-200">{Math.round(selected.height)}</span></div>
-            <div className="rounded-md bg-white/[0.03] p-2">{t.design.layerCost}<br /><span className="text-zinc-200">{typeof selected.costCny === 'number' ? formatCny(selected.costCny) : '—'}</span></div>
-            <div className="rounded-md bg-white/[0.03] p-2">{t.design.layerParent}<br /><span className="text-zinc-200">{selected.parentId || '—'}</span></div>
-          </div>
+          {/* X/Y/W/H/成本/父节点 是工程字段（2026-08-01 审美关返工#5：「展示的信息是不是过于多了」），
+              收进默认折叠的 <details> 详情——字段一个不删，只是默认不展示。 */}
+          <details data-testid="design-layer-details" className="group mt-2">
+            <summary className="flex cursor-pointer select-none items-center gap-1 text-[11px] text-zinc-500 transition-colors hover:text-zinc-300 [&::-webkit-details-marker]:hidden">
+              <ChevronRight className="h-3 w-3 transition-transform group-open:rotate-90" />
+              {t.design.layerDetails}
+            </summary>
+            <div className="mt-2 grid grid-cols-2 gap-2 text-[11px] text-zinc-500">
+              <div className="rounded-md bg-white/[0.03] p-2">X<br /><span className="text-zinc-200">{Math.round(selected.x)}</span></div>
+              <div className="rounded-md bg-white/[0.03] p-2">Y<br /><span className="text-zinc-200">{Math.round(selected.y)}</span></div>
+              <div className="rounded-md bg-white/[0.03] p-2">W<br /><span className="text-zinc-200">{Math.round(selected.width)}</span></div>
+              <div className="rounded-md bg-white/[0.03] p-2">H<br /><span className="text-zinc-200">{Math.round(selected.height)}</span></div>
+              <div className="rounded-md bg-white/[0.03] p-2">{t.design.layerCost}<br /><span className="text-zinc-200">{typeof selected.costCny === 'number' ? formatCny(selected.costCny) : '—'}</span></div>
+              <div className="rounded-md bg-white/[0.03] p-2">{t.design.layerParent}<br /><span className="text-zinc-200">{selected.parentId || '—'}</span></div>
+            </div>
+          </details>
           <div className="mt-3 grid grid-cols-3 gap-2">
             <button
               type="button"

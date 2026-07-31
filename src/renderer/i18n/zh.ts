@@ -304,6 +304,7 @@ export const zh = {
     layerSetMain: '设为主版',
     layerDiscard: '淘汰',
     layerEmptyInspector: '选择一个图层或画布节点后查看属性',
+    layerDetails: '详情',
     deviceDesktop: '桌面',
     deviceTablet: '平板',
     deviceMobile: '手机',

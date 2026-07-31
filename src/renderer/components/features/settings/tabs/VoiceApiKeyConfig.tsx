@@ -29,13 +29,13 @@ const maskApiKey = (key: string) => (key.length > 8 ? `${key.substring(0, 8)}...
 export type VoiceApiKeyCopyProfile = 'dashscope' | 'openai' | 'custom';
 
 /** 从 secure-storage 槽名推导 copy profile；独立调用点不传 profile 时的 fallback。 */
-export function resolveVoiceApiKeyCopyProfile(service: string): VoiceApiKeyCopyProfile {
+function resolveVoiceApiKeyCopyProfile(service: string): VoiceApiKeyCopyProfile {
   if (service === 'openai') return 'openai';
   if (service === 'dashscope') return 'dashscope';
   return 'custom';
 }
 
-export interface VoiceApiKeyConfigProvider {
+interface VoiceApiKeyConfigProvider {
   /** Provider 显示名，用于标题/占位文案。 */
   displayName: string;
   /** 写入 secure storage 的槽位；也是 /api/voice/status configured 真相读取的槽。 */

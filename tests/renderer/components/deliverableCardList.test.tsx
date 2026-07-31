@@ -9,6 +9,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import type { DeliverableCardView } from '../../../src/shared/contract';
 
 const mocks = vi.hoisted(() => ({
+  language: 'zh' as 'zh' | 'en',
   openPreview: vi.fn(),
   openWorkspacePreview: vi.fn(),
   addLibraryItem: vi.fn(),
@@ -85,6 +86,7 @@ function baseCard(overrides: Partial<DeliverableCardView> = {}): DeliverableCard
       constraints: [],
       priorArtifacts: [],
       acceptance: [],
+      riskNotes: [],
     },
     contract: {
       purpose: 'summary',

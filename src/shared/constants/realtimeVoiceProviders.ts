@@ -1,6 +1,5 @@
 import type { ModelProvider } from '../contract/model';
 import type { CustomRealtimeVoiceProviderSettings } from '../contract/settings';
-import type { VoiceTurnDetectionConfig } from '../contract/voice';
 import {
   QWEN_OMNI_REALTIME_MODEL,
   QWEN_OMNI_REALTIME_MODEL_OPTIONS,
@@ -11,7 +10,7 @@ import {
 
 export type BuiltInRealtimeVoiceProviderId = 'dashscope-qwen-omni' | 'openai-realtime';
 export type RealtimeVoiceProviderId = BuiltInRealtimeVoiceProviderId | (string & {});
-export type RealtimeSessionShape = 'dashscope-compatible' | 'openai-realtime';
+type RealtimeSessionShape = 'dashscope-compatible' | 'openai-realtime';
 
 export interface RealtimeVoiceModelProfile {
   id: string;
@@ -132,9 +131,9 @@ export const REALTIME_VOICE_PROVIDER_PROFILES = {
   'openai-realtime': OPENAI_PROFILE,
 } as const satisfies Record<BuiltInRealtimeVoiceProviderId, RealtimeVoiceProviderProfile>;
 
-export const DEFAULT_REALTIME_VOICE_PROVIDER_ID: BuiltInRealtimeVoiceProviderId = 'dashscope-qwen-omni';
+const DEFAULT_REALTIME_VOICE_PROVIDER_ID: BuiltInRealtimeVoiceProviderId = 'dashscope-qwen-omni';
 
-export function resolveRealtimeVoiceProviderId(value: unknown): BuiltInRealtimeVoiceProviderId {
+function resolveRealtimeVoiceProviderId(value: unknown): BuiltInRealtimeVoiceProviderId {
   if (value === 'openai-realtime') return value;
   return DEFAULT_REALTIME_VOICE_PROVIDER_ID;
 }
@@ -200,14 +199,4 @@ export function resolveRealtimeVoiceSelection(
       ? provider.defaultVoice
       : model.voices[0];
   return { model, voice };
-}
-
-export function supportsTurnDetection(
-  profile: RealtimeVoiceProviderProfile,
-  config: VoiceTurnDetectionConfig,
-): boolean {
-  if (config === null) return true;
-  return config.type === 'semantic_vad'
-    ? profile.turnDetection.supportsSemanticVad
-    : profile.turnDetection.supportsServerVad;
 }

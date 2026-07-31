@@ -193,26 +193,12 @@ describe('buildLedgerTaskRecords', () => {
 
     expect(tasks[1]).toMatchObject({
       status: 'completed',
-      resumeHint: '最终输出：run-2.last.md',
-      outputRefs: [
-        {
-          type: 'log',
-          label: 'Claude Code log',
-          pathOrUrl: '/tmp/code-agent/run-2.log',
-          size: 0,
-        },
-        {
-          type: 'text',
-          label: 'Claude Code final message',
-          pathOrUrl: '/tmp/code-agent/run-2.last.md',
-        },
-      ],
+      resumeHint: undefined,
+      outputRefs: [],
     });
     expect(tasks[1].steps.map((step) => step.title)).toEqual([
       '已完成',
       '12s',
-      'Claude Code log：run-2.log',
-      'Claude Code final message：run-2.last.md',
     ]);
 
     expect(tasks[2]).toMatchObject({

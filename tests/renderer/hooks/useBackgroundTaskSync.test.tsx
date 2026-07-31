@@ -7,6 +7,7 @@ import { RENDERER_POLLING } from '../../../src/shared/constants';
 const backgroundTaskStore = vi.hoisted(() => ({
   refreshTasks: vi.fn(async () => {}),
   drainNotifications: vi.fn(async () => []),
+  readRetryNonce: 0,
 }));
 const sessionStore = vi.hoisted(() => ({ currentSessionId: 'session-current' as string | null }));
 const ipc = vi.hoisted(() => ({
@@ -14,9 +15,15 @@ const ipc = vi.hoisted(() => ({
   unsubscribe: vi.fn(),
 }));
 const transport = vi.hoisted(() => ({ native: true }));
-const poller = vi.hoisted(() => ({
-  create: vi.fn(() => ({ start: vi.fn(), stop: vi.fn() })),
-}));
+const poller = vi.hoisted(() => {
+  const start = vi.fn();
+  const stop = vi.fn();
+  return {
+    start,
+    stop,
+    create: vi.fn(() => ({ start, stop })),
+  };
+});
 
 vi.mock('../../../src/renderer/stores/backgroundTaskStore', () => ({
   useBackgroundTaskStore: (selector: (state: typeof backgroundTaskStore) => unknown) => (
@@ -56,6 +63,9 @@ describe('useBackgroundTaskSync', () => {
     ipc.handler = null;
     transport.native = true;
     sessionStore.currentSessionId = 'session-current';
+    backgroundTaskStore.readRetryNonce = 0;
+    backgroundTaskStore.refreshTasks.mockResolvedValue(undefined);
+    backgroundTaskStore.drainNotifications.mockResolvedValue([]);
   });
 
   afterEach(() => {
@@ -121,5 +131,19 @@ describe('useBackgroundTaskSync', () => {
       expect.objectContaining({ baseInterval: RENDERER_POLLING.BACKGROUND_TASK_BASE }),
     );
     httpView.unmount();
+  });
+
+  it('stops automatic polling after the first task-ledger read failure', async () => {
+    backgroundTaskStore.refreshTasks.mockRejectedValueOnce(new Error('ledger unavailable'));
+    renderHook(() => useBackgroundTaskSync());
+
+    const sync = poller.create.mock.calls.at(-1)?.[0] as () => Promise<void>;
+    await expect(sync()).rejects.toThrow('ledger unavailable');
+
+    expect(poller.stop).toHaveBeenCalledTimes(1);
+    backgroundTaskStore.refreshTasks.mockClear();
+
+    await expect(sync()).resolves.toBeUndefined();
+    expect(backgroundTaskStore.refreshTasks).not.toHaveBeenCalled();
   });
 });

@@ -235,7 +235,9 @@ export async function executeCreateSession(
       useAppStore.getState().syncActiveAgentForSession(session.id, { inheritCurrent: !previousSessionId });
       useAppStore.getState().syncWorkbenchForSession(session.id);
       set({
-        sessions: [newSessionWithMeta, ...get().sessions],
+        // host may broadcast SESSION_LIST_UPDATED before create() returns.
+        // Keep the optimistic insert at the top without rendering the same id twice.
+        sessions: [newSessionWithMeta, ...get().sessions.filter((item) => item.id !== session.id)],
         currentSessionId: session.id,
         messages: [],
         todos: [],

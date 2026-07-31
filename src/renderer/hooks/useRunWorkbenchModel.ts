@@ -308,6 +308,9 @@ function formatOutputRefStep(ref: TaskRecordOutputRef): string {
 }
 
 function backgroundTaskResumeHint(task: Task, outputRefs: TaskRecordOutputRef[]): string | undefined {
+  // 完成产物由会话流承担唯一展示；右侧概览只保留“已完成”状态。
+  // 这里若再返回 final ref/summary，TaskPanel 会把同一产物重新做成结果卡。
+  if (task.status === 'completed') return undefined;
   const recoveryPlan = recordFromMetadata(task.metadata, 'recoveryPlan');
   const recoverySummary = typeof recoveryPlan?.summary === 'string' ? recoveryPlan.summary : null;
   if (recoverySummary) return recoverySummary;
@@ -338,7 +341,7 @@ export function buildLedgerTaskRecords(tasks: Task[], currentSessionId: string |
     .slice(0, 8)
     .map((task) => {
       const status = backgroundTaskStatusToTaskStatus(task.status);
-      const outputRefs = buildTaskOutputRefs(task);
+      const outputRefs = task.status === 'completed' ? [] : buildTaskOutputRefs(task);
       const duration = formatBackgroundTaskDuration(task.durationMs);
       return {
         id: `background:${task.id}`,

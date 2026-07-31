@@ -1007,6 +1007,14 @@ async function main(): Promise<void> {
     } catch (err) {
       console.warn('[shutdown] devServerManager dispose failed:', err);
     }
+    // 干净关库：better-sqlite3 走 sqlite3_close 才会 checkpoint 并删掉 -wal/-shm，
+    // process.exit 直接杀进程只回收 fd，陈旧 -shm 会在下次启动越界映射触发 SIGBUS。
+    try {
+      const { getDatabase } = await import('../host/services/core/databaseService');
+      getDatabase().close();
+    } catch (err) {
+      console.warn('[shutdown] database close failed:', err);
+    }
     server.close();
     process.exit(0);
   };

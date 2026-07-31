@@ -559,6 +559,12 @@ async function verifyRendererCancelClick(
       );
     });
   }
+  const stubAfterCancelPromise = sessionId
+    ? waitForStubCancel(page, sessionId)
+    : Promise.resolve(null);
+  const uiCleanupPromise = stopButton.waitFor({ state: 'hidden', timeout: 5_000 })
+    .then(() => Date.now())
+    .catch(() => null);
   const cancelRequest = await cancelRequestPromise;
   if (!cancelRequest) {
     failures.push('renderer stop button did not dispatch /api/cancel.');
@@ -571,16 +577,16 @@ async function verifyRendererCancelClick(
     }
   }
 
-  const stubAfterCancel = sessionId ? await waitForStubCancel(page, sessionId) : null;
+  const [stubAfterCancel, uiClearedAt] = await Promise.all([
+    stubAfterCancelPromise,
+    uiCleanupPromise,
+  ]);
   const stubCancelled = Boolean(stubAfterCancel?.ok && (stubAfterCancel.cancelCount ?? 0) > 0 && stubAfterCancel.active === false);
   if (!stubCancelled) {
     failures.push(`renderer cancel smoke did not cancel the app-host loop stub: ${JSON.stringify(stubAfterCancel)}`);
   }
 
-  const stopButtonHiddenAfterCancel = await stopButton.waitFor({ state: 'hidden', timeout: 5_000 })
-    .then(() => true)
-    .catch(() => false);
-  const uiClearedAt = stopButtonHiddenAfterCancel ? Date.now() : null;
+  const stopButtonHiddenAfterCancel = uiClearedAt !== null;
   if (!stopButtonHiddenAfterCancel) {
     failures.push('renderer cancel smoke did not clear the stop button after cancel completed.');
   }

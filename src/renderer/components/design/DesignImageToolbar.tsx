@@ -92,7 +92,7 @@ const PRESET_NAME_KEYS: Record<ResizeRatioPresetId, keyof Translations['design']
 };
 
 const MENU_CLASS =
-  'absolute left-1/2 top-full z-20 mt-2 w-64 -translate-x-1/2 rounded-xl border border-white/[0.1] bg-zinc-900/95 p-2 shadow-xl backdrop-blur';
+  'pointer-events-auto absolute left-1/2 top-full z-20 mt-2 w-64 -translate-x-1/2 rounded-xl border border-white/[0.1] bg-zinc-900/95 p-2 shadow-xl backdrop-blur';
 
 export function DesignImageToolbar(props: DesignImageToolbarProps): React.ReactElement {
   const {
@@ -177,10 +177,12 @@ export function DesignImageToolbar(props: DesignImageToolbarProps): React.ReactE
     <div
       ref={rootRef}
       data-testid="design-image-toolbar"
-      // 与 DiagramToolbar 同槽位同质感（顶部黄金位），窄栏允许换行（同 D8 窄栏适配）。
-      className="absolute left-1/2 top-4 z-10 max-w-[calc(100%-1rem)] -translate-x-1/2"
+      // 外条满宽不收货（absolute left-1/2 的 shrink-to-fit 可用宽只有容器一半，700px 栏下 5 个
+      // 动词必换行、第二排撞图层面板——2026-07-31 探针实测）；内条居中 shrink-to-fit。
+      // z-20：下拉菜单要压过同为 z-10 但 DOM 序更靠后的图层面板（z 值只在各自 stacking context 内比）。
+      className="pointer-events-none absolute left-2 right-2 top-4 z-20 flex justify-center"
     >
-      <div className="relative flex flex-wrap items-center justify-center gap-1 rounded-xl border border-white/[0.1] bg-zinc-900/90 px-2 py-1.5 shadow-xl backdrop-blur">
+      <div className="pointer-events-auto relative flex flex-wrap items-center justify-center gap-1 rounded-xl border border-white/[0.1] bg-zinc-900/90 px-2 py-1.5 shadow-xl backdrop-blur">
         {/* ds-allow:start 动词条按钮为图标+文字组合 toggle/下拉触发器（active=bg-fuchsia-500/20 品牌色 toggle 态，非 Button variant），与同画布的 DiagramToolbar 裸按钮一致，design-mode W3 收口时统一迁 primitive */}
         <button
           type="button"
@@ -467,7 +469,7 @@ export function DesignImageToolbar(props: DesignImageToolbarProps): React.ReactE
           </button>
           {/* ds-allow:end */}
           <div className="mt-2 flex items-center justify-between gap-2 border-t border-white/[0.08] px-2 pt-2">
-            <span className="text-[11px] text-zinc-400">{t.design.annotModelSelectLabel}</span>
+            <span className="shrink-0 whitespace-nowrap text-[11px] text-zinc-400">{t.design.annotModelSelectLabel}</span>
             <AnnotModelSelect value={effectiveAnnotModel} onChange={setAnnotModel} />
           </div>
         </div>

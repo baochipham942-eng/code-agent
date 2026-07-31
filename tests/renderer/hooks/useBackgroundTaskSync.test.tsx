@@ -18,10 +18,15 @@ const transport = vi.hoisted(() => ({ native: true }));
 const poller = vi.hoisted(() => {
   const start = vi.fn();
   const stop = vi.fn();
+  const tasks: Array<() => Promise<void>> = [];
   return {
     start,
     stop,
-    create: vi.fn(() => ({ start, stop })),
+    tasks,
+    create: vi.fn((task: () => Promise<void>) => {
+      tasks.push(task);
+      return { start, stop };
+    }),
   };
 });
 
@@ -66,6 +71,7 @@ describe('useBackgroundTaskSync', () => {
     backgroundTaskStore.readRetryNonce = 0;
     backgroundTaskStore.refreshTasks.mockResolvedValue(undefined);
     backgroundTaskStore.drainNotifications.mockResolvedValue([]);
+    poller.tasks.length = 0;
   });
 
   afterEach(() => {
@@ -137,7 +143,8 @@ describe('useBackgroundTaskSync', () => {
     backgroundTaskStore.refreshTasks.mockRejectedValueOnce(new Error('ledger unavailable'));
     renderHook(() => useBackgroundTaskSync());
 
-    const sync = poller.create.mock.calls.at(-1)?.[0] as () => Promise<void>;
+    const sync = poller.tasks.at(-1);
+    if (!sync) throw new Error('Expected background task sync callback');
     await expect(sync()).rejects.toThrow('ledger unavailable');
 
     expect(poller.stop).toHaveBeenCalledTimes(1);

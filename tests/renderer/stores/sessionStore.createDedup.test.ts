@@ -16,15 +16,7 @@ function makeRawSession(id: string) {
   };
 }
 
-interface HarnessState {
-  sessions: SessionWithMeta[];
-  currentSessionId: string | null;
-  messages: never[];
-  todos: never[];
-  sessionTasks: never[];
-  switchSession: ReturnType<typeof vi.fn>;
-  updateSessionEngine: ReturnType<typeof vi.fn>;
-}
+type HarnessState = ReturnType<SessionCreateDeps['get']> & { sessionTasks: never[] };
 
 describe('executeCreateSession optimistic insert deduplication', () => {
   let state: HarnessState;
@@ -41,14 +33,14 @@ describe('executeCreateSession optimistic insert deduplication', () => {
       messages: [],
       todos: [],
       sessionTasks: [],
-      switchSession: vi.fn(),
-      updateSessionEngine: vi.fn(),
+      switchSession: vi.fn(async (_sessionId: string) => {}),
+      updateSessionEngine: vi.fn(async () => {}),
     };
     deps = {
       get: () => state,
       set: (partial) => {
         const patch = typeof partial === 'function' ? partial(state) : partial;
-        state = { ...state, ...patch } as HarnessState;
+        state = { ...state, ...patch };
       },
       invalidatePendingSessionSwitches: () => {},
       findReusableNewSessionDraft: () => null,

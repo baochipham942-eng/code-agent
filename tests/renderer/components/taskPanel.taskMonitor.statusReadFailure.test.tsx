@@ -14,7 +14,7 @@ const appState = {
 };
 
 const sessionState = {
-  currentSessionId: 'session-1',
+  currentSessionId: 'session-1' as string | null,
   sessions: [] as Array<any>,
   messages: [] as Array<any>,
   sessionTasks: [] as Array<any>,
@@ -238,9 +238,9 @@ describe('TaskMonitor 后台任务状态读取失败 UI', () => {
     const retryButton = screen.getByRole('button', { name: '重试读取' });
     const cancelButton = screen.getByRole('button', { name: '取消任务' });
 
-    expect(retryButton.disabled).toBe(true);
+    expect(retryButton.getAttribute('disabled')).not.toBeNull();
     expect(retryButton.textContent).toContain('重试中');
-    expect(cancelButton.disabled).toBe(true);
+    expect(cancelButton.getAttribute('disabled')).not.toBeNull();
   });
 
   it('无当前会话时取消按钮禁用', () => {
@@ -250,6 +250,6 @@ describe('TaskMonitor 后台任务状态读取失败 UI', () => {
     render(<TaskMonitor />);
     const cancelButton = screen.getByRole('button', { name: '取消任务' });
 
-    expect(cancelButton.disabled).toBe(true);
+    expect(cancelButton.getAttribute('disabled')).not.toBeNull();
   });
 });

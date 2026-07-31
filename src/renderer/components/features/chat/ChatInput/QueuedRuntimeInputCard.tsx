@@ -23,7 +23,7 @@ interface QueuedRuntimeInputCardItem {
 
 interface QueuedRuntimeInputCardProps {
   items: QueuedRuntimeInputCardItem[];
-  /** 会话运行中：这轮还没结束，排队项只能等，不给「立即发送」 */
+  /** 会话运行中：发送走的是转向（打断当轮把这条插进去），按钮文案随之变成「插队」 */
   isProcessing: boolean;
   onSend?: (id: string) => void;
   onCancel?: (id: string) => void;
@@ -85,17 +85,18 @@ export const QueuedRuntimeInputCard: React.FC<QueuedRuntimeInputCardProps> = ({
                   {t.chatInput.queuedAttachments.replace('{count}', String(item.attachmentsCount))}
                 </span>
               )}
-              {!isProcessing && (
-                <button
-                  type="button"
-                  data-testid={`queued-runtime-input-send-${item.id}`}
-                  onClick={() => onSend?.(item.id)}
-                  title={t.chatInput.queuedSendNowTitle}
-                  className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-zinc-500 hover:bg-white/[0.06] hover:text-zinc-200"
-                >
-                  <SendHorizontal className="h-3.5 w-3.5" />
-                </button>
-              )}
+              {/* 运行中也要能点：发送路径对 running 档走的是转向（steer），不是排队。
+                  #679 藏按钮是因为那时点了真发不出去；#773 实现转向后前提已失效，
+                  再藏着就等于把已实现的插队能力锁死。 */}
+              <button
+                type="button"
+                data-testid={`queued-runtime-input-send-${item.id}`}
+                onClick={() => onSend?.(item.id)}
+                title={isProcessing ? t.chatInput.queuedSteerNowTitle : t.chatInput.queuedSendNowTitle}
+                className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-zinc-500 hover:bg-white/[0.06] hover:text-zinc-200"
+              >
+                <SendHorizontal className="h-3.5 w-3.5" />
+              </button>
               <button
                 type="button"
                 data-testid={`queued-runtime-input-withdraw-${item.id}`}

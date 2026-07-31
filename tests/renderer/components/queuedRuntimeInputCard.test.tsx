@@ -6,7 +6,9 @@
 // 多条排队一条一个气泡占掉半屏。本门钉住新形态的三条硬要求：
 //   1. 卡片是输入框的兄弟节点，不在输入框容器里（结构性断言，见 chatInput 位置那条）
 //   2. 折叠态只露计数，不铺正文
-//   3. 运行中不给「立即发送」（那一档点了也发不出去，见 useAgent.queuedSendEligibility）
+//   3. 运行中给的是「插队发送」——#679 藏按钮是因为那时 running 档点了真发不出去；
+//      #773 实现了「回复中立即转向」后这个前提就没了，按钮必须跟着开，否则等于把
+//      已实现的插队能力锁死，用户只剩「排队等它跑完」一条路。
 
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -40,14 +42,19 @@ describe('QueuedRuntimeInputCard', () => {
     expect(screen.queryByTestId('queued-runtime-input-toggle')).toBeNull();
   });
 
-  it('运行中不给「立即发送」，撤回始终可用', () => {
+  it('运行中也能发（走插队/转向），撤回始终可用', () => {
     const onSend = vi.fn();
     const onCancel = vi.fn();
     render(
       <QueuedRuntimeInputCard items={items(1)} isProcessing onSend={onSend} onCancel={onCancel} />,
     );
 
-    expect(screen.queryByTestId('queued-runtime-input-send-queued-0')).toBeNull();
+    const sendButton = screen.getByTestId('queued-runtime-input-send-queued-0');
+    // 文案要区分：运行中点下去是打断当轮插进去，不是"等它跑完再发"
+    expect(sendButton.getAttribute('title')).toContain('插队');
+    fireEvent.click(sendButton);
+    expect(onSend).toHaveBeenCalledWith('queued-0');
+
     fireEvent.click(screen.getByTestId('queued-runtime-input-withdraw-queued-0'));
     expect(onCancel).toHaveBeenCalledWith('queued-0');
   });

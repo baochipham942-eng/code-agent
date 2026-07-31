@@ -891,7 +891,11 @@ describe('macOS release fail-closed gates', () => {
 
     expect(launchCuaMcp).toContain('/usr/bin/open -n -g "$APP_DIR" --args serve');
     expect(launchCuaMcp).toContain('CUA_DRIVER_RS_MCP_FORCE_PROXY=1');
-    expect(launchCuaMcp).toContain('com.agentneo.computeruse');
+    // bundle id 必须从 helper 自身 Info.plist 读出：写死会让生产包与 dev 包两份
+    // 拷贝共用 TCC 记账和 socket 路径（授权了仍反复弹窗，2026-07-31 实测）。
+    expect(launchCuaMcp).toContain("PlistBuddy -c 'Print :CFBundleIdentifier' \"$CONTENTS_DIR/Info.plist\"");
+    expect(launchCuaMcp).toContain('--host-bundle-id "$BUNDLE_ID"');
+    expect(launchCuaMcp).not.toContain('com.agentneo.computeruse');
     expect(launchCuaMcp).toContain('--socket "$SOCKET_PATH"');
     expect(launchCuaMcp).not.toContain('-a CuaDriver');
 

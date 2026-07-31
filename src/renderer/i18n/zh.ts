@@ -552,6 +552,20 @@ export const zh = {
         codebuddy_code: '首次使用前需在 WorkBuddy 官方客户端完成账号登录。',
         grok_cli: '首次使用前需运行 grok login 完成官方账号授权。',
       },
+      // listSources 探测来源状态（contract 字段派生，不按产品名分支）
+      sourceStatus: {
+        available: '可用', detected: '已检测', needsLogin: '需要登录', adapterPending: '适配未开放',
+        notInstalled: '未安装', recommended: '推荐安装', authUnverified: '登录未验证', unavailable: '暂不可用',
+      },
+      sourceStatusDetail: {
+        available: '已可执行 · 官方登录已确认', detectedNeedsLogin: '已检测 · 请先在官方客户端登录',
+        detectedAdapterPending: '已检测 · 当前版本尚未开放执行', detectedAuthUnverified: '已检测 · 登录状态无法安全确认',
+        notInstalled: '已支持接入 · 本机未检测到客户端', adapterPending: '当前版本尚未开放执行',
+        recommended: '推荐安装后验证，不会伪装成已安装', unavailable: '当前不可选',
+      },
+      notSwitchableHint: '该来源当前不可切换到会话',
+      recommendationOnlyHint: '仅推荐项，未在本机检测为已安装',
+      credentialOwnerOfficial: '凭证归官方客户端管理，Neo 不会展示或保存密钥',
     },
     // 设置页「Agent Engine 模型目录」section（签名目录发布 + 本机默认选择）
     catalogSection: {

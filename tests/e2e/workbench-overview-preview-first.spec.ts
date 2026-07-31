@@ -166,7 +166,7 @@ test('右栏概览有产物时：工作台分区稳定，点击后直接预览�
   await expect(workspace.getByText(firstMarker)).toHaveCount(0);
 
   // ② 点击产物就是打开，直接进入专注预览。
-  await workspace.getByRole('button', { name: '第一版流程图', exact: true }).click();
+  await workspace.getByRole('button', { name: '在工作区预览中打开: 第一版流程图', exact: true }).click();
   await expect(page.getByTestId('workbench-overview-preview')).toBeVisible({ timeout: 20_000 });
   await expect(page.getByText(firstMarker)).toBeVisible();
 

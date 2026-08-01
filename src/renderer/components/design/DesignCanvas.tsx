@@ -271,7 +271,9 @@ export const DesignCanvas: React.FC<{
     const ro = new ResizeObserver(update);
     ro.observe(bar);
     return () => ro.disconnect();
-  }, [imageBarActive]);
+    // 依赖里必须有 showEmptyGuide：空态（工单③）工具条整条不挂载，点「绘图」/有内容后才出现——
+    // 只在挂载时量一次的话，后出现的工具条永远量不到，窄栏下面板顶缘会钉在默认值 56 压住工具条。
+  }, [imageBarActive, showEmptyGuide]);
 
   // 容器尺寸跟随（Stage 需要显式像素宽高）。
   useEffect(() => {

@@ -24,6 +24,8 @@ import { getHttpsAgent } from '../../model/providers/providerHttp';
 const logger = createLogger('RealtimeVoice');
 const INJECTION_ACK_WINDOW_MS = 5_000;
 const RESPONSE_IDLE_TIMEOUT_CODE = 'response_idle_timeout';
+// Realtime 协议族的 provider 不保证必发 session.updated；超时降级是预期路径，不是建连失败。
+const INITIAL_SESSION_HANDSHAKE_TIMEOUT_MS = 8_000;
 
 interface UpstreamEvent {
   type: string;
@@ -298,14 +300,14 @@ export function createRealtimeTransport(profile: RealtimeVoiceProviderProfile): 
       ws.ping();
     }, VOICE_UPSTREAM_HEARTBEAT_INTERVAL_MS);
 
-    ws.send(JSON.stringify(buildSessionUpdate(profile, {
+    const initialSessionUpdate = buildSessionUpdate(profile, {
       model,
       voice: config.voice ?? profile.defaultVoice,
       instructions: config.instructions,
       // 没接执行出口就不注册工具：告诉模型有工具却没人执行，比不给工具更糟。
       tools: registeredTools,
       turnDetection: upstreamTurnDetection,
-    })));
+    });
 
     // TTFA 模型口径从上游 speech_stopped 开始；体感口径不是实测值，
     // 是按 server_vad 先等待 silence_duration_ms 才发 speech_stopped 这一机制推算。
@@ -421,6 +423,16 @@ export function createRealtimeTransport(profile: RealtimeVoiceProviderProfile): 
     let turn = 0;
     // tools 被上游静默丢弃的用户可见提示：一通电话只报一次，别每条 session.updated 刷。
     let toolsDroppedNotified = false;
+    const notifyToolsDropped = () => {
+      if (!registeredTools.length || toolsDroppedNotified) return;
+      toolsDroppedNotified = true;
+      onEvent({
+        type: 'notice',
+        code: 'VOICE_TOOLS_DROPPED',
+        message: `当前通话模型（${model}）不支持在通话中派活，这通电话只能聊天`,
+      });
+    };
+    let confirmInitialSessionHandshake: (() => void) | null = null;
     ws.on('message', (raw) => {
       // 合法事件、未知事件和偶发非 JSON 帧都证明链路仍有下行信号。
       markUpstreamSignal();
@@ -549,6 +561,7 @@ export function createRealtimeTransport(profile: RealtimeVoiceProviderProfile): 
           });
           break;
         case 'session.updated': {
+          confirmInitialSessionHandshake?.();
           // 上游到底收下了什么档：我们发 server_vad、它回 null，就是「说了没反应」
           // 的直接证据（发出去 ≠ 被采纳）。
           const session = event.session as {
@@ -573,14 +586,7 @@ export function createRealtimeTransport(profile: RealtimeVoiceProviderProfile): 
             // fail-loud 兜底：判据打在「上游真的回了什么」上，不打在白名单表里写了什么——
             // 表可能过期，上游行为可能变。只进日志用户看不见，必须让通话里的人当场知道
             // 「这通电话派不了活」，否则他只会觉得这玩意儿今天不肯干活。
-            if (!toolsDroppedNotified) {
-              toolsDroppedNotified = true;
-              onEvent({
-                type: 'notice',
-                code: 'VOICE_TOOLS_DROPPED',
-                message: `当前通话模型（${model}）不支持在通话中派活，这通电话只能聊天`,
-              });
-            }
+            notifyToolsDropped();
           }
           break;
         }
@@ -660,6 +666,38 @@ export function createRealtimeTransport(profile: RealtimeVoiceProviderProfile): 
       detail: err.message,
     }));
 
+    // 只守首次 connect 的唯一 live 出口。断线重连由 voiceSessionService 的 15s 宽限窗接管，
+    // 不会重复走这道 8s 闸。session.created 只证明 socket 会话存在，不能证明上面的
+    // session.update 已生效；仓内 provider 连接测试同样以 session.updated 回显作为确认。
+    const handshakeStartedAt = Date.now();
+    const initialSessionHandshake = new Promise<boolean>((resolve) => {
+      let settled = false;
+      const finish = (confirmed: boolean) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        confirmInitialSessionHandshake = null;
+        resolve(confirmed);
+      };
+      const timer = setTimeout(() => finish(false), INITIAL_SESSION_HANDSHAKE_TIMEOUT_MS);
+      confirmInitialSessionHandshake = () => finish(true);
+    });
+    ws.send(JSON.stringify(initialSessionUpdate));
+
+    const handshakeConfirmed = await initialSessionHandshake;
+    const handshakeWaitMs = Date.now() - handshakeStartedAt;
+    if (handshakeConfirmed) {
+      logger.info('initial session handshake confirmed', {
+        voiceSessionId: config.neoSessionId,
+        waitMs: handshakeWaitMs,
+      });
+    } else {
+      logger.info('initial session handshake timed out; continuing without tools', {
+        voiceSessionId: config.neoSessionId,
+        waitMs: handshakeWaitMs,
+      });
+      notifyToolsDropped();
+    }
     onEvent({ type: 'state', state: 'live' });
 
     return {

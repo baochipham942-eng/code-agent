@@ -42,6 +42,12 @@ export const VOICE_TOOL_DEFINITIONS: VoiceToolDefinition[] = [
       properties: {
         title: { type: 'string', description: '一句话任务标题，用于展示' },
         prompt: { type: 'string', description: '给执行侧的完整指令，要包含用户的原话要点' },
+        replace_current: {
+          type: 'boolean',
+          description:
+            '用户要**放弃**正在跑的那件、改做这件时传 true（「别等它了，改做…」「算了，换成…」）。'
+            + '只是给正在跑的那件补充要求或改方向，用 steer_task，不要传这个。',
+        },
       },
       required: ['title', 'prompt'],
     },
@@ -115,7 +121,15 @@ function toIntent(name: string, rawArguments: string): VoiceIntent | string {
       if (!args) return '任务参数解析失败，请重说一遍要做什么。';
       const prompt = str(args.prompt);
       if (!prompt) return '缺少任务内容，没有派发。';
-      return { kind: 'spawn_task', title: str(args.title) || prompt.slice(0, 30), prompt };
+      // 只认真正的 true。上游把布尔发成字符串 "false" 的情况不是没有，
+      // 而 `!!'false'` 是 true——那会让「派一件新活」变成「顶掉正在跑的活」。
+      const replaceCurrent = args.replace_current === true;
+      return {
+        kind: 'spawn_task',
+        title: str(args.title) || prompt.slice(0, 30),
+        prompt,
+        ...(replaceCurrent ? { replaceCurrent } : {}),
+      };
     }
     case 'steer_task': {
       const args = parseArgs(rawArguments);

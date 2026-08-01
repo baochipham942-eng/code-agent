@@ -213,7 +213,22 @@ jobs:
           # tests/unit 根目录文件（语音全套等）此前不在任何 PR 门里——#809 曾带着
           # 根目录一条红测绿灯合入（批 X 实撞）。glob 只取根级 *.test.ts，子目录仍由
           # 上面的显式列表覆盖，不重复跑。
-          npx vitest run tests/unit/agent tests/unit/ipc tests/unit/tools tests/unit/services tests/renderer 'tests/unit/*.test.ts' --retry=1 \
+          #
+          # 2026-08-01 实测更正：**vitest 的位置参数是子串匹配，不是 glob**。上一版这里
+          # 写的是加引号的 'tests/unit/*.test.ts'——引号挡住 shell 展开，vitest 拿到的是
+          # 带 `*` 的字面量，而 `*` 永远不出现在真实路径里，于是这条门从加进来那天起
+          # **匹配 0 个文件**：注释写着"根级已覆盖"，实际 28 个根级文件（语音全套 17 个）
+          # 一条都没跑过，#809 那个洞根本没被堵上。同款写法还骗过一次 tests/unit/host/**。
+          #
+          # 修法：不加引号，让 shell 展开成真实路径列表再交给 vitest。
+          # 展开为空时**必须报红**——空转正是上一版的失败模式，静默通过等于门自己失明。
+          ROOT_UNIT_TESTS=(tests/unit/*.test.ts)
+          if [ ! -e "${ROOT_UNIT_TESTS[0]}" ]; then
+            echo "::error::根级 tests/unit/*.test.ts 展开为空，这条门又空转了——修它，别绕过"
+            exit 1
+          fi
+          echo "根级单测文件 ${#ROOT_UNIT_TESTS[@]} 个进门"
+          npx vitest run tests/unit/agent tests/unit/host tests/unit/ipc tests/unit/tools tests/unit/services tests/renderer "${ROOT_UNIT_TESTS[@]}" --retry=1 \
             --exclude 'tests/unit/tools/modules/network/webSearch.test.ts' \
             --exclude 'tests/unit/agent/goalVerifyGate.test.ts'
 

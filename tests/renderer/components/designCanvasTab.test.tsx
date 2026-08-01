@@ -5,7 +5,8 @@
 //  1) WorkbenchTabId 接受 'design-canvas' 成员（经 appStore.openWorkbenchTab 验证）；
 //  2) DesignCanvasTab 挂载时执行画布恢复 effect——runDir 非空且
 //     nodes 为空 → 调 loadCanvasDoc(runDir)；runDir 为空 → 不调。
-//  3) 画布 tab 浮层挂载真实 DesignCostHistory，默认收起仍显示累计花费，展开后显示时间线。
+//  3) 图层面板 + 设计历史默认收起成右缘图标细边栏（2026-08-01 工单②）：
+//     常态只剩图 + 顶部条；点图标浮出（互斥），再点图标 / 点画布空白收回。
 // konva 在 jsdom 下不可渲染，故 mock 掉 ./DesignCanvas，测试只聚焦容器 + effect。
 // ---------------------------------------------------------------------------
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -14,8 +15,19 @@ import React from 'react';
 import type { CanvasImageNode } from '../../../src/renderer/components/design/designCanvasTypes';
 
 // ---- mock konva 画布本体（jsdom 下 Stage 渲染会炸），用占位替换 -------------
+// 占位捕获 props：layerPanelOpen（细边栏图层图标 ↔ 画布面板开关的接线）与
+// onCanvasBlankPointerDown（点画布空白收回面板），点击占位即视为「点画布空白」。
+const designCanvasProps = vi.hoisted(() => ({
+  current: null as { layerPanelOpen?: boolean; onCanvasBlankPointerDown?: () => void } | null,
+}));
 vi.mock('../../../src/renderer/components/design/DesignCanvas', () => ({
-  DesignCanvas: () => React.createElement('div', { 'data-testid': 'design-canvas-stub' }),
+  DesignCanvas: (props: { layerPanelOpen?: boolean; onCanvasBlankPointerDown?: () => void }) => {
+    designCanvasProps.current = props;
+    return React.createElement('div', {
+      'data-testid': 'design-canvas-stub',
+      onClick: () => props.onCanvasBlankPointerDown?.(),
+    });
+  },
 }));
 
 // ---- mock 持久化模块：拦 loadCanvasDoc 断言被调，并返回一个空 doc ----------
@@ -119,8 +131,34 @@ const imageNode = (
   costCny,
 });
 
-describe('DesignCanvasTab 成本与历史浮层', () => {
-  it('喂入真实画布节点后，展开态渲染版本时间线与准确累计花费', () => {
+describe('DesignCanvasTab 面板细边栏（工单②：图层/设计历史默认收起）', () => {
+  it('默认全部收起：无历史面板、无时间线、无累计花费，只剩右缘图标细边栏', () => {
+    storeState.nodes = [
+      imageNode('初版', 0.14, 1),
+      imageNode('高亮标题', 0.28, 2, '初版'),
+    ];
+
+    render(<DesignCanvasTab />);
+
+    expect(screen.queryByTestId('design-cost-history-dock')).toBeNull();
+    expect(screen.queryByText('初版')).toBeNull();
+    expect(screen.queryByText('¥0.42')).toBeNull();
+    // 细边栏两个图标都在（有节点 → 图层图标也在），且都是收起态
+    expect(screen.getByTestId('design-canvas-panel-rail')).toBeTruthy();
+    expect(screen.getByTestId('design-canvas-layers-toggle').getAttribute('aria-expanded')).toBe('false');
+    expect(screen.getByTestId('design-canvas-history-toggle').getAttribute('aria-expanded')).toBe('false');
+    // 图层面板默认不浮出
+    expect(designCanvasProps.current?.layerPanelOpen).toBe(false);
+  });
+
+  it('无节点时图层图标不出现（面板本身也是空态不渲染），历史图标仍在', () => {
+    storeState.nodes = [];
+    render(<DesignCanvasTab />);
+    expect(screen.queryByTestId('design-canvas-layers-toggle')).toBeNull();
+    expect(screen.getByTestId('design-canvas-history-toggle')).toBeTruthy();
+  });
+
+  it('点历史图标浮出面板：渲染版本时间线与准确累计花费；再点图标收回', () => {
     storeState.nodes = [
       imageNode('初版', 0.14, 1),
       imageNode('高亮标题', 0.28, 2, '初版'),
@@ -133,25 +171,29 @@ describe('DesignCanvasTab 成本与历史浮层', () => {
     expect(screen.getByText('初版')).toBeTruthy();
     expect(screen.getByText('高亮标题')).toBeTruthy();
     expect(screen.getByText('¥0.42')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: '收起设计历史' }));
+    expect(screen.queryByTestId('design-cost-history-dock')).toBeNull();
   });
 
-  it('默认收起时不渲染版本时间线，但仍显示真实节点的累计花费', () => {
-    storeState.nodes = [
-      imageNode('初版', 0.14, 1),
-      imageNode('高亮标题', 0.28, 2, '初版'),
-    ];
+  it('点图层图标 → DesignCanvas 收到 layerPanelOpen=true；点画布空白收回两块面板', () => {
+    storeState.nodes = [imageNode('初版', 0.14, 1)];
 
     render(<DesignCanvasTab />);
+    fireEvent.click(screen.getByRole('button', { name: '展开图层面板' }));
+    expect(designCanvasProps.current?.layerPanelOpen).toBe(true);
 
-    expect(screen.getByTestId('design-cost-history-content').dataset.collapsed).toBe('true');
-    expect(screen.getByRole('button', { name: '展开设计历史' }).getAttribute('aria-expanded')).toBe(
-      'false',
-    );
-    expect(screen.queryByText('初版')).toBeNull();
-    expect(screen.getByText('¥0.42')).toBeTruthy();
+    // 两面板互斥：图层浮出时点历史图标，图层收、历史开
+    fireEvent.click(screen.getByRole('button', { name: '展开设计历史' }));
+    expect(designCanvasProps.current?.layerPanelOpen).toBe(false);
+    expect(screen.getByTestId('design-cost-history-dock')).toBeTruthy();
+
+    // 点画布空白（stub 点击）→ 浮出面板收回
+    fireEvent.click(screen.getByTestId('design-canvas-stub'));
+    expect(screen.queryByTestId('design-cost-history-dock')).toBeNull();
   });
 
-  it('免费档节点在画布 tab 显示「免费」而非 ¥0.00', () => {
+  it('免费档节点在浮出的历史面板显示「免费」而非 ¥0.00', () => {
     storeState.nodes = [imageNode('免费版本', 0, 1)];
 
     render(<DesignCanvasTab />);

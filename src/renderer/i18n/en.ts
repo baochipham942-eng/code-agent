@@ -291,6 +291,8 @@ export const en: Translations = {
     referenceHint: 'Reference images are sent to the model as visual guidance on generate (Wanx supports 1; the first is used)',
     referenceBadge: 'Ref',
     layerPanelTitle: 'Layers',
+    layersExpand: 'Expand layers panel',
+    layersCollapse: 'Collapse layers panel',
     layerUnnamed: 'Untitled node',
     layerKindImage: 'Image',
     layerKindVideo: 'Video',

@@ -59,7 +59,13 @@ import {
 } from './canvasCameraInput';
 import { VideoPlayOverlay, DiffEvidenceOverlay } from './DesignCanvasOverlays';
 
-export const DesignCanvas: React.FC<{ showErrorBar?: boolean }> = ({ showErrorBar = false }) => {
+export const DesignCanvas: React.FC<{
+  showErrorBar?: boolean;
+  /** 图层面板浮出开关（2026-08-01 工单②）：默认收起，由 DesignCanvasTab 右缘细边栏图标控制。 */
+  layerPanelOpen?: boolean;
+  /** 点画布空白处（与清除选择同一判定）——DesignCanvasTab 借此收回浮出的面板。 */
+  onCanvasBlankPointerDown?: () => void;
+}> = ({ showErrorBar = false, layerPanelOpen: layerPanelOpenProp = false, onCanvasBlankPointerDown }) => {
   const { t } = useI18n();
   const wrapRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<Konva.Stage>(null);
@@ -523,10 +529,11 @@ export const DesignCanvas: React.FC<{ showErrorBar?: boolean }> = ({ showErrorBa
       }
     }
     if (!annotating) {
-      // 非标注/非绘制模式：点空白处清除选择（节点 + 图解）。
+      // 非标注/非绘制模式：点空白处清除选择（节点 + 图解），并通知外层收回浮出面板（工单②）。
       if (e.target === stageRef.current) {
         setSelected([]);
         setSelectedDiagram(null);
+        onCanvasBlankPointerDown?.();
       }
       return;
     }
@@ -654,13 +661,13 @@ export const DesignCanvas: React.FC<{ showErrorBar?: boolean }> = ({ showErrorBa
   const draftAndCommitted = draft ? [...annotations, draft] : annotations;
 
   // —— 顶条下方的垂直分区（2026-08-01 窄栏遮挡工单：三处不再抢同一块空间）——
-  // 右列：导出 PPTX 按钮钉在顶条实测底缘下；图层面板再让出按钮高度，叠在按钮下方。
+  // 右列：导出 PPTX 按钮钉在顶条实测底缘下；图层面板（浮出时）再让出按钮高度，叠在按钮下方。
   // 左槽：未选中引导 / 连线·绘制模式提示共用同一槽位（本就互斥），顶缘同右列、左对齐；
-  // 可用宽 = 栏宽 − 左右边距 −（图层面板在时）面板宽。不足 12rem 整条不显示——
+  // 可用宽 = 栏宽 − 左右边距 −（图层面板浮出时）面板宽 320 + 右缘偏移 48。不足 12rem 整条不显示——
   // 要么完整可读，要么干脆不显示，不许露一半被面板压住。
   const exportPptxVisible = !selectedImageNode && visibleNodes.length > 0;
-  const layerPanelOpen = nodes.length > 0;
-  const hintMaxWidth = size.w - 32 - (layerPanelOpen ? 336 : 0);
+  const layerPanelOpen = layerPanelOpenProp && nodes.length > 0;
+  const hintMaxWidth = size.w - 32 - (layerPanelOpen ? 368 : 0);
   const hintSlotFits = hintMaxWidth >= 192;
   const hintSlotStyle: React.CSSProperties = {
     top: topBarBottom + 8,
@@ -1012,17 +1019,22 @@ export const DesignCanvas: React.FC<{ showErrorBar?: boolean }> = ({ showErrorBa
         </>
       )}
 
-      <DesignLayerPanel
-        nodes={nodes}
-        selectedIds={selectedIds}
-        onSelect={(id, additive) => selectNode(id, additive)}
-        onRename={renameCanvasNode}
-        onSetChosen={setCanvasChosen}
-        onDiscard={discardCanvasNode}
-        onDelete={(id) => deleteCanvasNodes([id])}
-        onFocus={focusNode}
-        topOffset={layerPanelTop}
-      />
+      {/* 图层面板默认收起（2026-08-01 工单②）：由右缘细边栏图标浮出、压在画布上；
+          rightOffset 让开细边栏，保证「再点图标收回」全程可达。 */}
+      {layerPanelOpen && (
+        <DesignLayerPanel
+          nodes={nodes}
+          selectedIds={selectedIds}
+          onSelect={(id, additive) => selectNode(id, additive)}
+          onRename={renameCanvasNode}
+          onSetChosen={setCanvasChosen}
+          onDiscard={discardCanvasNode}
+          onDelete={(id) => deleteCanvasNodes([id])}
+          onFocus={focusNode}
+          topOffset={layerPanelTop}
+          rightOffset={48}
+        />
+      )}
 
       {/* 未选中引导（select 模式专属槽位）：顶缘钉在顶条实测底缘下，限宽躲开右列图层面板；
           可用宽不足 12rem 时整条不显示——要么完整可读，要么不显示，不许露一半被面板压住

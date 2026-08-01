@@ -290,6 +290,8 @@ export const zh = {
     referenceHint: '参考图会在生成时作为视觉参考一并发给模型（万相当前支持 1 张，多张取第一张）',
     referenceBadge: '参考',
     layerPanelTitle: '图层',
+    layersExpand: '展开图层面板',
+    layersCollapse: '收起图层面板',
     layerUnnamed: '未命名节点',
     layerKindImage: '图片',
     layerKindVideo: '视频',

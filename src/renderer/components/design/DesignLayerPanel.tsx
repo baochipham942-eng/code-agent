@@ -36,8 +36,10 @@ export const DesignLayerPanel: React.FC<{
   /** 面板顶缘（px，相对画布容器）。默认 56（top-14）；DesignCanvas 按顶条实测底缘动态传入，
       保证任意栏宽下面板不与顶条/导出按钮重叠（2026-08-01 窄栏遮挡工单）。 */
   topOffset?: number;
+  /** 面板右缘（px，相对画布容器）。默认 16（right-4）；从右缘细边栏浮出时传 48 让开细边栏。 */
+  rightOffset?: number;
   translations?: Translations;
-}> = ({ nodes, selectedIds, onSelect, onRename, onSetChosen, onDiscard, onDelete, onFocus, topOffset, translations }) => {
+}> = ({ nodes, selectedIds, onSelect, onRename, onSetChosen, onDiscard, onDelete, onFocus, topOffset, rightOffset, translations }) => {
   const { t: runtimeT } = useI18n();
   const t = translations ?? runtimeT;
   const ordered = useMemo(() => orderedLayerNodes(nodes), [nodes]);
@@ -58,8 +60,8 @@ export const DesignLayerPanel: React.FC<{
 
   return (
     <div
-      className="absolute right-4 z-10 flex max-h-[70%] w-80 flex-col overflow-hidden rounded-lg border border-white/[0.10] bg-zinc-950/85 text-xs text-zinc-200 shadow-2xl backdrop-blur"
-      style={{ top: topOffset ?? 56 }}
+      className="absolute z-10 flex max-h-[70%] w-80 flex-col overflow-hidden rounded-lg border border-white/[0.10] bg-zinc-950/85 text-xs text-zinc-200 shadow-2xl backdrop-blur"
+      style={{ top: topOffset ?? 56, right: rightOffset ?? 16 }}
     >
       <div className="flex items-center justify-between border-b border-white/[0.08] px-3 py-2">
         <div className="flex items-center gap-2 text-zinc-200">

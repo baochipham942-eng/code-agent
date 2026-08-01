@@ -370,7 +370,8 @@ export function useSidebarDerivedSessions(params: UseSidebarDerivedSessionsParam
   // 之后任何普通请求排在队尾永远轮不上 —— 用户在运行中发消息时 ensureModelConfigured 的
   // settings/get 就是这么挂死的，输入框已清空、消息三处无痕（2026-08-01 真机取证）。
   // 集合内容进 key，effect 内从 key 现拆 ids，引用变化不再参与判等。
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- 见上：数组引用参与判等即失效
+  // ⚠️ 别给这里加 eslint-disable react-hooks/exhaustive-deps：本仓库没启用 react-hooks
+  // 插件，豁免一条不存在的规则会让注释本身变成 error（"rule was not found"），顶穿 eslint 棘轮。
   useEffect(() => {
     const sessionIds = trajectoryQualityCandidateKey ? trajectoryQualityCandidateKey.split('\n') : [];
     if (!canOpenSessionReplay || sessionIds.length === 0) {

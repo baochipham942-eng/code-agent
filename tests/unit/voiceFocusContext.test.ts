@@ -7,6 +7,7 @@
 import { describe, expect, it } from 'vitest';
 import { selectVoiceFocusContext } from '../../src/renderer/services/voiceFocusContext';
 import { buildFocusBlock, composeVoiceInstructions, focusChanged } from '../../src/host/services/voice/voiceContextAssembler';
+import { buildSpeechPaceDirective } from '../../src/host/services/voice/voiceRouting';
 
 type FocusInput = Parameters<typeof selectVoiceFocusContext>[0];
 
@@ -125,5 +126,39 @@ describe('Focus 段组装（host）', () => {
     expect(focusChanged({ filePath: '/a' }, { filePath: '/a' })).toBe(false);
     expect(focusChanged({ filePath: '/a' }, { filePath: '/b' })).toBe(true);
     expect(focusChanged(null, {})).toBe(false);
+  });
+});
+
+describe('Speaking pace 指令（host）', () => {
+  it('未配置时返回空串', () => {
+    expect(buildSpeechPaceDirective(undefined)).toBe('');
+  });
+
+  it('normal 档返回空串', () => {
+    expect(buildSpeechPaceDirective('normal')).toBe('');
+  });
+
+  it('slow 档返回一行中文语速指令', () => {
+    expect(buildSpeechPaceDirective('slow')).toContain('放慢语速');
+  });
+
+  it('fast 档返回一行中文语速指令', () => {
+    expect(buildSpeechPaceDirective('fast')).toContain('加快语速');
+  });
+
+  it('normal 档与不传语速时逐字节相同', () => {
+    const persona = '你是牧之';
+    const focus = { view: 'preview:/repo/a.ts', filePath: '/repo/a.ts' };
+    expect(composeVoiceInstructions(persona, focus, 'normal'))
+      .toBe(composeVoiceInstructions(persona, focus));
+  });
+
+  it.each(['slow', 'fast'] as const)('语速句位于 persona 之后、Focus 段之前（%s）', (rate) => {
+    const persona = '你是牧之';
+    const pace = buildSpeechPaceDirective(rate);
+    const out = composeVoiceInstructions(persona, { view: 'preview:/repo/a.ts' }, rate);
+    expect(out.indexOf(persona)).toBe(0);
+    expect(out.indexOf(pace)).toBeGreaterThan(out.indexOf(persona));
+    expect(out.indexOf('[Context — Focus]')).toBeGreaterThan(out.indexOf(pace));
   });
 });

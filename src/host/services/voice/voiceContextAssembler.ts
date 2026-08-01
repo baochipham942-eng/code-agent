@@ -10,7 +10,9 @@
 // ============================================================================
 
 import type { VoiceFocusContext } from '../../../shared/contract/voice';
+import type { VoiceLiveSettings } from '../../../shared/contract/settings';
 import { buildVocabularyBlock } from './voiceVocabulary';
+import { buildSpeechPaceDirective } from './voiceRouting';
 
 const VIEW_LABEL: Record<string, string> = {
   overview: '概览',
@@ -39,9 +41,17 @@ export function buildFocusBlock(focus: VoiceFocusContext | null): string {
   ].join('\n');
 }
 
-/** 人设 + 焦点 + 口述词表。空块不留标题或空行。 */
-export function composeVoiceInstructions(persona: string, focus: VoiceFocusContext | null): string {
-  const blocks = [buildFocusBlock(focus), buildVocabularyBlock()].filter(Boolean);
+/** 人设 + 语速 + 焦点 + 口述词表。空块不留标题或空行。 */
+export function composeVoiceInstructions(
+  persona: string,
+  focus: VoiceFocusContext | null,
+  speechRate?: VoiceLiveSettings['speechRate'],
+): string {
+  const blocks = [
+    buildSpeechPaceDirective(speechRate),
+    buildFocusBlock(focus),
+    buildVocabularyBlock(),
+  ].filter(Boolean);
   return [persona, ...blocks].join('\n\n');
 }
 

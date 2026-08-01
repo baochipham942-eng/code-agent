@@ -15,6 +15,7 @@ import { resolveConnectionTestModel } from '../model/providerConnectionTest';
 import { isRuntimeProviderConfigured } from '../../shared/modelRuntime';
 import { resolveProviderIconAsset, saveProviderIconAsset } from '../services/providerIconAssets';
 import { handleDiscoverModels, type DiscoveredProviderModel, type DiscoverModelsResult } from './provider.ipc';
+import { refreshVoiceInstructions } from '../services/voice/voiceSessionService';
 import { extractDocxParagraphsFromBuffer } from '../tools/artifacts/docxParagraphLocator';
 import {
   resolveSheetCoordinate,
@@ -265,6 +266,10 @@ async function handleSet(
   if (!configService) throw new Error('Config service not initialized');
   const updates = extractSettingsUpdate(payload);
   await configService.updateSettings((updates ?? {}) as Partial<AppSettings>);
+  const liveUpdates = updates.voice?.live;
+  if (liveUpdates && Object.prototype.hasOwnProperty.call(liveUpdates, 'speechRate')) {
+    refreshVoiceInstructions();
+  }
 }
 
 async function handleTestApiKey(payload: { provider: string; apiKey: string }): Promise<{ success: boolean; error?: string }> {

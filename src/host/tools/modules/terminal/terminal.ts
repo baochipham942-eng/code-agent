@@ -229,7 +229,19 @@ class TerminalWriteHandler implements ToolHandler<Record<string, unknown>, strin
 
     onProgress?.({ stage: 'starting', detail: input.slice(0, 80) });
 
-    // 4) 注入对用户可见：先在终端里印出来是谁敲的，再真敲。顺序不能反——先写后回显的话，
+    // 4) 秘密 prompt 复检。审批是异步的，用户可能想了半分钟才点同意——这期间终端里正在跑的
+    //    东西完全可能已经走到密码提示上（`sudo apt install` 跑着跑着弹 [sudo] password:）。
+    //    只在审批前查一次是 TOCTOU：真正决定写进哪儿的是**此刻**的终端状态。
+    const beforeWrite = getTerminalSnapshot(sessionId);
+    if (!beforeWrite?.alive) {
+      return { ok: false, error: `The terminal for ${sessionId} has exited.`, code: 'TERMINAL_EXITED' };
+    }
+    if (isAwaitingSecretInput(beforeWrite.data)) {
+      ctx.logger.warn('terminal_write refused: secret prompt appeared while awaiting approval', { sessionId });
+      return { ok: false, error: SECRET_TAKEOVER_MESSAGE, code: 'NEEDS_USER_TAKEOVER' };
+    }
+
+    // 5) 注入对用户可见：先在终端里印出来是谁敲的，再真敲。顺序不能反——先写后回显的话，
     //    命令输出会跑在标注前面，用户看到的就是「结果先于来源」。
     const submit = args.submit !== false;
     annotateTerminalSession(sessionId, `\r\n\x1b[36m[Neo] ${input}\x1b[0m\r\n`);

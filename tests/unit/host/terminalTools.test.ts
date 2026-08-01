@@ -205,6 +205,21 @@ describe('secret prompt takeover (调研反面教材第二条)', () => {
     expect(written).toEqual([]);
   });
 
+  it('refuses when a password prompt appears while the user is still deciding on approval', async () => {
+    // 审批是异步的。审批前干净、审批后终端走到密码提示——真正决定写进哪儿的是此刻的状态。
+    const slowApproval: CanUseToolFn = async () => {
+      fakeSessions.set('chat-1', { data: 'installing…\n[sudo] password for linchen:', alive: true });
+      return { allow: true };
+    };
+
+    const result = await run(terminalWriteModule, { input: 'y' }, slowApproval);
+
+    expect(result.ok).toBe(false);
+    expect((result as { code: string }).code).toBe('NEEDS_USER_TAKEOVER');
+    expect(written).toEqual([]);
+    expect(annotated).toEqual([]);
+  });
+
   it('does not misfire on a password mentioned earlier in the scrollback', () => {
     expect(isAwaitingSecretInput('Password:\nlogged in ok\n$ ')).toBe(false);
   });

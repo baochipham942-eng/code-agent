@@ -190,7 +190,7 @@ describe('terminal_write visibility (红线：注入对用户可见)', () => {
     expect(annotated).toHaveLength(1);
     expect(annotated[0].text).toContain('[Neo] npm test');
     expect(written).toHaveLength(1);
-    expect(written[0].data).toBe('npm test\n');
+    expect(written[0].data).toBe('npm test\r');
   });
 
   it('records the echo in the shared buffer so the user still sees it after re-attaching', async () => {
@@ -199,8 +199,17 @@ describe('terminal_write visibility (红线：注入对用户可见)', () => {
     expect(fakeSessions.get('chat-1')!.data).toContain('[Neo] git status');
   });
 
-  it('does not press Enter when submit is false', async () => {
-    await run(terminalWriteModule, { input: 'partial', submit: false }, allow);
+  it('presses Enter as CR, not LF — full-screen TUIs only accept a real Enter keypress', async () => {
+    // 真机实录：给 Codex CLI（全屏 TUI）发「1」，发的是 \n，`> 1` 一直躺在 composer 里不提交。
+    // raw 模式下 Enter 的字节就是 13(CR)；10(LF) 被当普通字符收下。
+    await run(terminalWriteModule, { input: 'npm test' }, allow);
+
+    expect(written[0].data).toBe('npm test\r');
+    expect(written[0].data).not.toContain('\n');
+  });
+
+  it('does not press Enter when pressEnter is false', async () => {
+    await run(terminalWriteModule, { input: 'partial', pressEnter: false }, allow);
 
     expect(written[0].data).toBe('partial');
   });

@@ -19,6 +19,7 @@ import {
 } from '../../src/host/services/terminal/terminalSessionManager.ts';
 import {
   isAwaitingSecretInput,
+  readTerminalTail,
   terminalReadModule,
   terminalWriteModule,
 } from '../../src/host/tools/modules/terminal/terminal.ts';
@@ -86,6 +87,31 @@ async function main(): Promise<void> {
   check(
     '② 注入对用户可见（终端里印出 [Neo] …）',
     (getTerminalSnapshot(SESSION_ID)?.data ?? '').includes('[Neo] echo neo-agent-marker'),
+  );
+
+  // ③ 全屏 TUI 形态：raw 模式应用只认 CR(13) 当 Enter。
+  // 用 raw 模式读两个字节的 python 当最小 TUI 替身——比起真起一个 Codex CLI，
+  // 它直接把「到底哪个字节到达了应用」摆出来，正是缺陷本身。
+  // ponytail: 不起真 TUI，要验渲染另说；这里只验提交键语义。
+  const RAW_KEY_READER = 'python3 -c "import sys,tty,termios; fd=sys.stdin.fileno();'
+    + " old=termios.tcgetattr(fd); tty.setraw(fd); b=sys.stdin.read(2);"
+    + " termios.tcsetattr(fd,termios.TCSADRAIN,old);"
+    + " print('RAWKEYS='+','.join(str(ord(c)) for c in b))\"";
+  writeToTerminalSession(SESSION_ID, `${RAW_KEY_READER}\r`);
+  await new Promise((resolve) => setTimeout(resolve, 2_000));
+  const tuiWrite = await (await handlerOf(terminalWriteModule))
+    .execute({ input: 'x' }, ctx, approve);
+  check('③ 向 raw 模式应用写入成功', tuiWrite.ok, tuiWrite.ok ? '' : tuiWrite.error);
+  // ⚠️ 匹配必须带上数字：命令源码本身就含 `RAWKEYS=`，它会被 shell 立刻回显，
+  // 只匹配裸标记会命中回显那一行（今天第二次踩这个坑了）。
+  const KEYS_OUTPUT = /RAWKEYS=\d+,\d+/;
+  const sawKeys = await waitForOutput(KEYS_OUTPUT, 8_000);
+  const keyLine = readTerminalTail(getTerminalSnapshot(SESSION_ID)?.data ?? '', 40)
+    .split('\n').find((entry) => KEYS_OUTPUT.test(entry)) ?? '';
+  check(
+    '③ 提交键以 CR(13) 到达全屏 TUI，不是 LF(10)',
+    sawKeys && keyLine.includes('RAWKEYS=120,13'),
+    keyLine || '<超时——提交键从没到达 raw 应用>',
   );
 
   // 密码 prompt 拒填：必须用**真的会阻塞等输入**的命令。

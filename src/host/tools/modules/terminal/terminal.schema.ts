@@ -54,6 +54,8 @@ This shares the user's live session — it can act with their logged-in credenti
 
 If the terminal is sitting on a password, passphrase, PIN or verification-code prompt, this tool refuses: the user has to type that themselves. Do not try to work around it.
 
+A successful result means the keystrokes were delivered — NOT that the program accepted, understood or finished them. Always call terminal_read (or terminal_wait) afterwards and look at the screen before you tell the user anything about what happened. Never report "it received the input" or "it is processing" from the write result alone.
+
 ${ROUTING}`,
   inputSchema: {
     type: 'object',
@@ -66,9 +68,11 @@ ${ROUTING}`,
         type: 'string',
         description: 'Terminal to write to. Defaults to the current conversation\'s terminal.',
       },
-      submit: {
+      pressEnter: {
         type: 'boolean',
-        description: 'Append a newline so the input is submitted (default true). Set false to type without pressing Enter.',
+        description: 'Press Enter after the text (default true). Required to submit anything to a full-screen TUI '
+          + '(Codex CLI, claude, vim, less…): those read raw key events and only accept a real Enter keypress. '
+          + 'Set false only to type without submitting.',
       },
     },
     required: ['input'],

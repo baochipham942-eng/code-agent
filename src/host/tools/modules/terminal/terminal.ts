@@ -290,21 +290,26 @@ class TerminalWriteHandler implements ToolHandler<Record<string, unknown>, strin
 
     // 5) 注入对用户可见：先在终端里印出来是谁敲的，再真敲。顺序不能反——先写后回显的话，
     //    命令输出会跑在标注前面，用户看到的就是「结果先于来源」。
-    const submit = args.submit !== false;
+    const pressEnter = args.pressEnter !== false;
     annotateTerminalSession(sessionId, `\r\n\x1b[36m[Neo] ${input}\x1b[0m\r\n`);
 
-    const result = writeToTerminalSession(sessionId, submit ? `${input}\n` : input);
+    // 提交键必须是 CR(\r) 而不是 LF(\n)。全屏 TUI（Codex CLI / vim / less…）把终端设成 raw
+    // 模式直接读按键字节，Enter 就是 13；发 10 它当普通字符收下，文字停在输入框里不提交
+    // ——真机实录：给 Codex CLI 发「1」，`> 1` 一直躺在 composer 里。
+    // shell 那边不受影响：canonical 模式的行规程有 ICRNL，CR 照样当换行。
+    const result = writeToTerminalSession(sessionId, pressEnter ? `${input}\r` : input);
     if (!result.ok) {
       return { ok: false, error: result.error ?? 'write failed', code: 'WRITE_FAILED' };
     }
 
     onProgress?.({ stage: 'completing', percent: 100 });
-    ctx.logger.info('terminal_write injected', { sessionId, submit });
+    ctx.logger.info('terminal_write injected', { sessionId, pressEnter });
     return {
       ok: true,
-      output: `Typed into the terminal${submit ? ' and pressed Enter' : ' (not submitted)'}: ${input}\n`
-        + 'Use terminal_wait or terminal_read to see what it produced.',
-      meta: { sessionId, submit, injected: input, riskLevel: validation.riskLevel },
+      output: `Typed into the terminal${pressEnter ? ' and pressed Enter' : ' (Enter NOT pressed)'}: ${input}\n`
+        + 'This only means the keystrokes were delivered. Call terminal_read or terminal_wait and look at '
+        + 'the screen before saying anything about whether the program accepted or processed them.',
+      meta: { sessionId, pressEnter, injected: input, riskLevel: validation.riskLevel },
     };
   }
 }

@@ -321,7 +321,20 @@ const AssistantTextNode: React.FC<{
     || node.metadata?.turnQuality
     || node.metadata?.agentError,
   );
-  if (!hasRenderableContent) return null;
+  // 排查报告 §2 序列②：活动轮里「thinking 已结束但 content 尚空」的窗口——思考指示已经
+  // 灭了（TurnCard.tsx 的 isThinkingPhase 判定同一节点 thinking 也空），这条守卫又让节点
+  // 整节点不渲染，用户看到的是彻底的空白。只在这条活动轮窗口渲染一个轻占位，别的空壳
+  // （历史消息、仍在思考中的节点）保持原样不渲染，不动既有折叠/思考展示逻辑。
+  const isActiveEmptyGap =
+    turnStreaming && !hasRenderableContent && !(node.thinking || node.reasoning)?.trim();
+  if (!hasRenderableContent) {
+    if (!isActiveEmptyGap) return null;
+    return (
+      <div className="py-1" aria-label={t.chat.organizingReply}>
+        <span className="streaming-thinking-shimmer text-xs font-medium">{t.chat.organizingReply}</span>
+      </div>
+    );
+  }
 
   return (
     <div

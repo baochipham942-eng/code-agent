@@ -29,6 +29,7 @@ import type {
   TaskRecordOutputRef,
   ToolCapabilityView,
 } from '../../types/runWorkbench';
+import { isLiveRunStatus } from '../../utils/overviewRunHeader';
 import {
   deriveTaskRailView,
   type TaskRailDependencySummary,
@@ -38,7 +39,7 @@ import { useI18n } from '../../hooks/useI18n';
 import type { Translations } from '../../i18n';
 import { typedInvokeDomain } from '../../services/typedInvoke';
 
-function runStatusClass(status: RunUiStatus): string {
+export function runStatusClass(status: RunUiStatus): string {
   switch (status) {
     case 'completed':
       return 'border-emerald-500/20 bg-emerald-500/10 text-emerald-300';
@@ -229,16 +230,6 @@ function dependencySummaryLabel(
   return parts.length > 0 ? parts.join(t.taskPanel.taskDependencySummarySeparator) : null;
 }
 
-// run 处于这些状态说明有活跃回合在跑——即便 agent 还没产出计划/待办，
-// 面板也不该显示「暂无任务」（UI 审计 #8：运行中会话零反馈）。
-const LIVE_RUN_STATUSES: ReadonlySet<RunUiStatus> = new Set([
-  'planning',
-  'running',
-  'using_tools',
-  'verifying',
-  'waiting_approval',
-]);
-
 export const TaskDashboardSummary = ({
   tasks,
   run,
@@ -251,7 +242,9 @@ export const TaskDashboardSummary = ({
   const { t } = useI18n();
   const rw = t.taskStatusPanels.runWorkbench;
   if (tasks.length === 0) {
-    if (run && LIVE_RUN_STATUSES.has(run.status)) {
+    // 即便 agent 还没产出计划/待办，活跃回合也不该显示「暂无任务」
+    // （UI 审计 #8：运行中会话零反馈）。
+    if (run && isLiveRunStatus(run.status)) {
       return (
         <div
           data-testid="active-run-placeholder"

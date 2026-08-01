@@ -141,12 +141,7 @@ export class SurfaceExecutionRuntime {
     this.runRegistry = options.runRegistry || getApplicationRunRegistry();
     this.continuations = options.continuations || getSurfaceContinuationService();
     this.sessions = new SurfaceSessionManager({
-      assertActiveOwner: ({ access, ...identity }) => this.assertActiveRun(
-        identity,
-        'computer',
-        'surface-runtime',
-        access,
-      ),
+      assertActiveOwner: (owner) => this.assertActiveRun(owner, 'computer', 'surface-runtime', owner.access),
     });
     this.grants = new SurfaceAccessGrantService(this.sessions);
     this.browserTabLeases = new BrowserTabLeaseService(this.sessions);

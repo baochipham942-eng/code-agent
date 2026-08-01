@@ -56,6 +56,10 @@ const HEALTH_INTERVAL: Duration = Duration::from_millis(100);
 /// 显示,避免窗口永久隐藏。实测 renderer 首帧 ~2.5s,故兜底设 5s(既覆盖慢机、又远小于
 /// 原 10s,信号丢失时最坏也就 ~6s 出窗口而非 11s)。
 const RENDERER_READY_TIMEOUT: Duration = Duration::from_secs(5);
+/// 退出时先发 SIGTERM 让 webServer 走干净关库路径（checkpoint + 删 -wal/-shm），
+/// 超过这个时限还没退出才 SIGKILL 兜底。
+const GRACEFUL_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(3);
+const GRACEFUL_SHUTDOWN_POLL_INTERVAL: Duration = Duration::from_millis(100);
 const DEFAULT_CLOUD_API_URL: &str = "https://agentneo.vercel.app";
 const BUNDLED_RUNTIME_ROOT_ENV: &str = "AGENT_NEO_BUNDLED_RUNTIME_ROOT";
 const RESOURCE_DIR_ENV: &str = "AGENT_NEO_RESOURCE_DIR";
@@ -252,21 +256,56 @@ impl AppState {
         let mut guard = self.web_server.lock().expect("web_server mutex poisoned");
 
         let mut owned = guard.take()?;
-        let kill_result = owned.child.kill();
-        let wait_status = owned.child.wait().map(|status| status.to_string()).ok();
+        let (exit_reason, wait_status) = terminate_child(&mut owned.child);
         Some(DesktopShellProcessCleanup {
             owner: owned.owner.to_string(),
             pid: owned.pid,
             started_at: owned.started_at,
             cleaned_at: now_millis_string(),
-            exit_reason: match kill_result {
-                Ok(()) => "tauri-exit-cleanup".to_string(),
-                Err(error) => format!("cleanup-kill-failed:{error}"),
-            },
+            exit_reason,
             wait_status,
             stdin_eof_cleanup: owned.stdin_eof_cleanup,
         })
     }
+}
+
+/// 先发 SIGTERM 让 webServer 自己走干净关库路径，轮询最多 GRACEFUL_SHUTDOWN_TIMEOUT
+/// 等它退出；超时才 SIGKILL 兜底。exit_reason 区分 graceful/forced，是事后判断
+/// 「这次退出干不干净」的唯一证据。
+#[cfg(unix)]
+fn terminate_child(child: &mut Child) -> (String, Option<String>) {
+    let pid = child.id() as i32;
+    // SAFETY: pid 是刚 spawn 出、尚未被 wait 掉的子进程句柄，SIGTERM 是标准的
+    // 「请自行退出」信号，不涉及内存操作。
+    if unsafe { libc::kill(pid, libc::SIGTERM) } != 0 {
+        return force_kill(child, "forced-sigkill-sigterm-send-failed");
+    }
+
+    let deadline = Instant::now() + GRACEFUL_SHUTDOWN_TIMEOUT;
+    while Instant::now() < deadline {
+        match child.try_wait() {
+            Ok(Some(status)) => return ("graceful-sigterm".to_string(), Some(status.to_string())),
+            Ok(None) => thread::sleep(GRACEFUL_SHUTDOWN_POLL_INTERVAL),
+            Err(_) => break,
+        }
+    }
+
+    force_kill(child, "forced-sigkill-timeout")
+}
+
+/// Windows 没有 POSIX 信号语义，TerminateProcess（Child::kill）本身就是强杀；
+/// 优雅关闭需要 CREATE_NEW_PROCESS_GROUP + CTRL_BREAK_EVENT，超出本单范围。
+#[cfg(not(unix))]
+fn terminate_child(child: &mut Child) -> (String, Option<String>) {
+    force_kill(child, "forced-sigkill-no-signal-support")
+}
+
+fn force_kill(child: &mut Child, reason: &str) -> (String, Option<String>) {
+    if let Err(error) = child.kill() {
+        return (format!("cleanup-kill-failed:{error}"), None);
+    }
+    let wait_status = child.wait().map(|status| status.to_string()).ok();
+    (reason.to_string(), wait_status)
 }
 
 fn unique_paths(paths: Vec<PathBuf>) -> Vec<PathBuf> {

@@ -142,6 +142,22 @@ export function surfaceNeedsRecovery(session: RendererSurfaceSessionProjectionV1
   return event?.phase === 'recover' && event.status !== 'succeeded';
 }
 
+/**
+ * B1-R·R3 行内投影二分的「需要用户此刻动手」侧：等待授权 / 等待接管 /
+ * 失败恢复。判定只用投影里现成的状态位与事件相位，不新造状态机。
+ */
+export function surfaceNeedsInteraction(session: RendererSurfaceSessionProjectionV1): boolean {
+  return session.session.state === 'waiting_permission'
+    || surfaceNeedsTakeover(session)
+    || surfaceNeedsRecovery(session);
+}
+
+/** 紧凑状态条的目标文案：浏览器会话取域名（脱敏后），取不到返回 null 由调用方兜底。 */
+export function surfaceTargetDomain(target: SurfaceTargetRefV1 | undefined): string | null {
+  if (!target || target.kind !== 'browser') return null;
+  return safeSurfaceText(browserDomain(target.origin), '', 100) || null;
+}
+
 export function hasVerifiedInspection(evidence: SurfaceEvidenceCardV1): boolean {
   return evidence.inspection.analysisState === 'analyzed'
     && Boolean(evidence.inspection.inspectedBy)

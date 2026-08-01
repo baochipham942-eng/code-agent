@@ -22,7 +22,7 @@
 //
 // ============================================================================
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { unstable_batchedUpdates } from 'react-dom';
 import type { Message } from '@shared/contract';
 import type { QueuedInputSettledEvent } from '@shared/contract/queuedInput';
@@ -31,6 +31,7 @@ import { QueuedInputSchemas } from '@shared/ipc/schemas';
 import ipcService from '../services/ipcService';
 import { generateMessageId } from '@shared/utils/id';
 import { useAppStore } from '../stores/appStore';
+import { useRunControlStore } from '../stores/runControlStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { useTaskStore } from '../stores/taskStore';
 import { useStreamingMessageAccumulatorStore, type StreamingMessageDelta } from '../stores/streamingMessageAccumulatorStore';
@@ -689,6 +690,43 @@ export const useAgent = () => {
     setResearchDetected(null);
   }, [setResearchDetected]);
 
+  // 当前会话可见的排队项——ChatInput 的排队卡和右栏 Overview 队列必须是同一份，
+  // 否则两处对「还有几条在排队」各说各话。
+  const visibleQueuedRuntimeInputs = useMemo(() => (
+    currentSessionId
+      ? queuedRuntimeInputs.filter((item) => item.sessionId === currentSessionId)
+      : []
+  ), [currentSessionId, queuedRuntimeInputs]);
+
+  // 投影给右栏 Overview（T1）。队列在这里推是因为本 hook 是唯一写入方；
+  // 动作直接把既有回调交出去，Overview 侧不重新实现任何 IPC 链路。
+  useEffect(() => {
+    useRunControlStore.getState().publishQueue(
+      visibleQueuedRuntimeInputs.map((item) => ({
+        id: item.id,
+        content: item.content,
+        attachmentsCount: item.attachmentsCount,
+        sendFailed: item.sendFailed,
+      })),
+    );
+  }, [visibleQueuedRuntimeInputs]);
+
+  useEffect(() => {
+    useRunControlStore.getState().publishActions({
+      interrupt: cancel,
+      retractQueued: cancelQueuedRuntimeInput,
+      sendQueuedNow: sendQueuedRuntimeInput,
+    });
+  }, [cancel, cancelQueuedRuntimeInput, sendQueuedRuntimeInput]);
+
+  // 收摊只在真正卸载时做，不能挂在上面那个 effect 的 cleanup 上：那份 cleanup
+  // 每次回调身份变化都会跑一遍，会把还在排队的消息从 Overview 里抹掉，而队列
+  // effect 的依赖没变、不会重推——用户看到的就是「排队消息凭空消失」。
+  useEffect(() => () => {
+    useRunControlStore.getState().publishActions(null);
+    useRunControlStore.getState().publishQueue([]);
+  }, []);
+
   return {
     messages,
     isProcessing,
@@ -705,9 +743,7 @@ export const useAgent = () => {
     dismissResearchDetected,
     // 中断状态（Claude Code 风格）
     isInterrupting,
-    queuedRuntimeInputs: currentSessionId
-      ? queuedRuntimeInputs.filter((item) => item.sessionId === currentSessionId)
-      : [],
+    queuedRuntimeInputs: visibleQueuedRuntimeInputs,
     hydrateQueuedRuntimeInputs,
     cancelQueuedRuntimeInput,
     sendQueuedRuntimeInput,

@@ -4,7 +4,14 @@ import type { SessionWorkbenchSnapshot } from '@shared/contract/sessionWorkspace
 import { PLAIN_CHAT_SUMMARY_LABEL } from '@shared/contract/sessionWorkspace';
 import { useI18n } from '../../../hooks/useI18n';
 import type { Translations } from '../../../i18n';
+import { formatRelativeTime } from '../../../utils/i18nTime';
+import { isBlankNewSession, type SessionWithMeta } from '../../../stores/sessionStore';
 import { NeoBrandMark } from '../sidebar/NeoBrandMark';
+
+type ResumableSession = Pick<
+  SessionWithMeta,
+  'title' | 'updatedAt' | 'messageCount' | 'turnCount' | 'isArchived' | 'status'
+>;
 
 interface SuggestionItem {
   icon: React.ElementType;
@@ -49,17 +56,26 @@ export function buildDefaultSuggestions(t: Translations): SuggestionItem[] {
 }
 
 // 新会话欢迎页（示例建议 + 工作区上下文标签）——不是通用空态，别并进 primitives/EmptyState
+//
+// session：当前会话。空态首屏走到这里时，只有它是真·新会话才配渲染欢迎页；冷启动自动
+// 恢复的历史会话恰好没有内容时，必须明说「你在哪条会话里」——否则与真新会话像素级不可
+// 区分，用户以为自己新开了一条，首条消息却接在昨晚那条后面（2026-08-01 事故）。
+// 判定刻意放在本组件内而不是调用方：那样这条决策才被组件单测覆盖，不会被一次误删接线
+// 静默退回事故行为。
 export const NewSessionWelcome: React.FC<{
   onSend: (message: string) => void;
   workingDirectory?: string | null;
   workbenchSnapshot?: SessionWorkbenchSnapshot | null;
+  session?: ResumableSession | null;
 }> = ({
   onSend,
   workingDirectory,
   workbenchSnapshot,
+  session,
 }) => {
   const { t } = useI18n();
   const suggestions = buildDefaultSuggestions(t);
+  const resumedSession = session && !isBlankNewSession(session) ? session : null;
   // 纯对话（无工作区）是默认形态，不必再标「空白会话」——用户反馈看不懂、是噪音。
   // 只有继承了项目/工作区上下文时才显示上下文标签（"项目会话 · name"），告诉用户这条会话带了上下文。
   const hasWorkspaceContext = Boolean(workingDirectory?.trim());
@@ -76,9 +92,15 @@ export const NewSessionWelcome: React.FC<{
         <NeoBrandMark size={28} showWordmark={false} className="mb-4" />
         <div className="mb-5 flex items-center justify-between gap-4">
           <div className="min-w-0">
-            <h1 className="text-xl font-semibold text-zinc-100">{t.chat.welcomeTitle}</h1>
+            <h1 className="text-xl font-semibold text-zinc-100" data-testid="chat-welcome-title">
+              {resumedSession
+                ? t.chat.resumedEmptyTitle.replace('{title}', resumedSession.title)
+                : t.chat.welcomeTitle}
+            </h1>
             <p className="mt-1 text-sm text-zinc-500">
-              {t.chat.welcomeSubtitle}
+              {resumedSession
+                ? t.chat.resumedEmptySubtitle.replace('{time}', formatRelativeTime(t, resumedSession.updatedAt))
+                : t.chat.welcomeSubtitle}
             </p>
           </div>
           {/* 上下文标签只读展示（2026-07-29：目录 chip 入口已删——

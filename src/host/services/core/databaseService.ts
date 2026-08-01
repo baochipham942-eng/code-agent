@@ -13,6 +13,7 @@ import { applySchema } from './database/schema';
 import { applyConversationBranchSchema } from './database/schemaConversationBranch';
 import { applySessionForkPortabilitySchema } from './database/schemaSessionForkPortability';
 import { applyIndexes } from './database/indexes';
+import { checkWalShmConsistency } from './database/walShmConsistency';
 import { applySessionsMigrations, applyTelemetryTurnsMigrations, applyEvaluationCleanupMigration } from './database/migrations';
 import { DurableRunDatabaseSupport } from './database/durableRunDatabaseSupport';
 
@@ -332,6 +333,9 @@ export class DatabaseService extends DurableRunDatabaseSupport {
 
     const { step, summary } = createInitStepTimer();
 
+    // 开库前的 -shm 一致性检查：只报警不修复（见 walShmConsistency.ts 顶部注释）
+    checkWalShmConsistency(this.dbPath, logger);
+
     try {
       this.db = new Database(this.dbPath);
       this.db.pragma('journal_mode = WAL');
@@ -495,6 +499,11 @@ export class DatabaseService extends DurableRunDatabaseSupport {
    */
   getDb(): BetterSqlite3.Database | null {
     return this.db;
+  }
+
+  /** 库文件绝对路径 —— 供需要在别的进程里开同一个库的场景使用（如 VACUUM 子进程） */
+  getDbPath(): string {
+    return this.dbPath;
   }
 
   /**

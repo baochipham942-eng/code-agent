@@ -80,7 +80,7 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple: -s -k "${APPLE_KEYCHAIN_PASSWORD}" "${KEYCHAIN_PATH}"
           security find-identity -v -p codesigning "${KEYCHAIN_PATH}"
 
-      - name: Fetch and re-sign CUA driver 0.8.1
+      - name: Fetch and re-sign CUA driver 0.14.2
         env:
           CUA_SIGN_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
         run: CUA_FETCH_UPSTREAM=1 bash scripts/fetch-cua-driver.sh

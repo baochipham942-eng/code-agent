@@ -1014,6 +1014,10 @@ async function main(): Promise<void> {
     } catch (err) {
       console.warn('[shutdown] devServerManager dispose failed:', err);
     }
+    // 干净关库：只有最后一个连接 sqlite3_close 后 SQLite 才会 checkpoint 并删掉
+    // -wal/-shm；漏关任何一个，陈旧 -shm 会在下次启动被越界映射触发 SIGBUS。
+    // 连接清单登记在 webShutdownDatabases.ts，新增主库连接必须同步登记。
+    await (await import('./webShutdownDatabases')).closeAllDatabaseConnections();
     server.close();
     process.exit(0);
   };

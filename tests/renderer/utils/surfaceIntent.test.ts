@@ -143,6 +143,44 @@ describe('surface intent unified decision', () => {
     })).toEqual({ view: 'task-monitor' });
   });
 
+  it('托管浏览器起来了走同一套抢焦点礼仪：本轮首次打开 browser tab，第二次不再抢', () => {
+    expect(requestSurfaceIntent({
+      artifact: { kind: 'managed-browser' },
+      artifactSessionId: 'session-a',
+      currentSessionId: 'session-a',
+      turnId: 'turn-1',
+    })).toEqual({ view: 'browser' });
+    expect(useAppStore.getState().activeWorkbenchTab).toBeNull();
+
+    expect(requestSurfaceIntent({
+      artifact: { kind: 'managed-browser' },
+      artifactSessionId: 'session-a',
+      currentSessionId: 'session-a',
+      turnId: 'turn-1',
+    })).toBeNull();
+  });
+
+  it('托管浏览器经统一 dispatcher 打开 workbench browser tab', () => {
+    expect(openSurfaceForArtifact({
+      artifact: { kind: 'managed-browser' },
+      artifactSessionId: 'session-a',
+    })).toEqual({ view: 'browser' });
+    expect(useAppStore.getState().activeWorkbenchTab).toBe('browser');
+  });
+
+  it('用户手动切走后托管浏览器不抢回焦点', () => {
+    expect(openSurfaceForArtifact({
+      artifact: { kind: 'managed-browser' },
+      artifactSessionId: 'session-a',
+    })).toEqual({ view: 'browser' });
+    useAppStore.getState().openWorkbenchTab('files', { source: 'user' });
+    expect(openSurfaceForArtifact({
+      artifact: { kind: 'managed-browser' },
+      artifactSessionId: 'session-a',
+    })).toBeNull();
+    expect(useAppStore.getState().activeWorkbenchTab).toBe('files');
+  });
+
   it.each([
     {
       name: 'PPTX bridge',

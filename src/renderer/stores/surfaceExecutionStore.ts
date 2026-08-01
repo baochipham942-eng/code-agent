@@ -180,6 +180,34 @@ export function selectSurfaceExecutionRunSessionV1(
   return active ?? (includeTerminal ? sessions[0] ?? null : null);
 }
 
+/**
+ * B1-R：某个会话当前活着的 **browser** surface 会话。
+ *
+ * 与 selectSurfaceExecutionRunSessionV1 的区别是它按 surface 类型收窄——会话里同时
+ * 跑 computer surface 时，前者会把 computer 会话选出来，拿去开浏览器帧流就选错了对象。
+ * 终态（completed/failed）一律不返回：浏览器现场不该给已经收工的会话继续开流。
+ */
+export function selectActiveBrowserSurfaceSessionV1(
+  sessionsByScope: Record<string, RendererSurfaceSessionProjectionV1>,
+  conversationId: string | null,
+): RendererSurfaceSessionProjectionV1 | null {
+  const scopedConversationId = conversationId?.trim();
+  if (!scopedConversationId) return null;
+  return Object.values(sessionsByScope)
+    .filter((candidate) => (
+      candidate.scope.conversationId === scopedConversationId
+      && sessionOwnsScope(candidate)
+      && candidate.session.surface === 'browser'
+      && !TERMINAL_SURFACE_SESSION_STATES.has(candidate.session.state)
+    ))
+    .sort((left, right) => (
+      right.updatedAt - left.updatedAt
+      || right.session.heartbeatAt - left.session.heartbeatAt
+      || right.session.startedAt - left.session.startedAt
+      || surfaceExecutionScopeKeyV1(right.scope).localeCompare(surfaceExecutionScopeKeyV1(left.scope))
+    ))[0] ?? null;
+}
+
 export const useSurfaceExecutionStore = create<SurfaceExecutionStoreState>()((set, get) => ({
   nativeByConversation: {},
   compatibilityByConversation: {},

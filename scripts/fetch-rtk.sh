@@ -60,7 +60,7 @@ else
       EXPECT_BIN_SHA="$RTK_BIN_SHA256_X86_64_DARWIN"
       ;;
     *)
-      echo "❌ 不支持的 arch=$ARCH（仅 arm64 / x86_64）" >&2
+      echo "❌ 不支持的 arch=${ARCH}（仅 arm64 / x86_64）" >&2
       exit 1
       ;;
   esac
@@ -99,7 +99,7 @@ if [[ -x "$OUTPUT" ]]; then
     echo "✓ rtk $RTK_VERSION 已是目标版本（跳过下载）"
     exit 0
   fi
-  echo "→ 检测到旧版本 $EXISTING_VERSION，升级到 $RTK_VERSION"
+  echo "→ 检测到旧版本 ${EXISTING_VERSION}，升级到 ${RTK_VERSION}"
 fi
 
 if [[ "$PLATFORM" == "windows" ]]; then

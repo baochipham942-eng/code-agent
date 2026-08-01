@@ -39,6 +39,18 @@ describe('Surface Execution IPC', () => {
     })),
     control: vi.fn(async () => ({ version: 1 as const, snapshot })),
   };
+  const liveStream = {
+    start: vi.fn(async (request: { surfaceSessionId: string }) => ({
+      version: 1 as const,
+      surfaceSessionId: request.surfaceSessionId,
+      streaming: true,
+    })),
+    stop: vi.fn(async (surfaceSessionId: string) => ({
+      version: 1 as const,
+      surfaceSessionId,
+      streaming: false,
+    })),
+  };
   let server: http.Server | undefined;
 
   beforeEach(() => {
@@ -46,7 +58,7 @@ describe('Surface Execution IPC', () => {
     handlers.clear();
     registerSurfaceExecutionHandlers({
       handle: (channel: string, handler: WebRouteHandler) => handlers.set(channel, handler),
-    } as never, () => service as never);
+    } as never, () => service as never, () => liveStream as never);
   });
 
   afterEach(async () => {
@@ -263,5 +275,48 @@ describe('Surface Execution IPC', () => {
       },
     });
     expect(JSON.stringify(result)).not.toMatch(/foreign-surface-id|browser-secret|tab-secret|relay-secret/);
+  });
+
+  it('starts and stops the live frame stream with a scoped conversation (B1-R·R1)', async () => {
+    const handler = handlers.get(IPC_DOMAINS.SURFACE_EXECUTION) as WebRouteHandler;
+    const payload = {
+      version: 1,
+      conversationId: 'conversation-1',
+      surfaceSessionId: 'surface-1',
+      maxWidth: 900,
+    };
+
+    expect(await handler(null, { action: 'startLiveStream', payload })).toEqual({
+      success: true,
+      data: { version: 1, surfaceSessionId: 'surface-1', streaming: true },
+    });
+    expect(liveStream.start).toHaveBeenCalledWith({
+      version: 1,
+      conversationId: 'conversation-1',
+      surfaceSessionId: 'surface-1',
+      maxWidth: 900,
+    });
+
+    expect(await handler(null, { action: 'stopLiveStream', payload })).toEqual({
+      success: true,
+      data: { version: 1, surfaceSessionId: 'surface-1', streaming: false },
+    });
+    expect(liveStream.stop).toHaveBeenCalledWith('surface-1');
+  });
+
+  it('rejects live stream payloads that omit scope or smuggle extra authority fields', async () => {
+    const handler = handlers.get(IPC_DOMAINS.SURFACE_EXECUTION) as WebRouteHandler;
+    const rejected = [
+      { version: 1, surfaceSessionId: 'surface-1' },
+      { version: 1, conversationId: 'conversation-1' },
+      { version: 1, conversationId: 'conversation-1', surfaceSessionId: 'surface-1', agentId: 'agent-1' },
+      { version: 1, conversationId: 'conversation-1', surfaceSessionId: 'surface-1', maxWidth: -5 },
+    ];
+
+    for (const payload of rejected) {
+      const result = await handler(null, { action: 'startLiveStream', payload });
+      expect(result).toMatchObject({ success: false, error: { code: 'INVALID_ARGS' } });
+    }
+    expect(liveStream.start).not.toHaveBeenCalled();
   });
 });

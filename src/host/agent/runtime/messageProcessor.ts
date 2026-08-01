@@ -673,7 +673,7 @@ export class MessageProcessor {
       : [];
 
     if (unavailableToolCalls.length > 0) {
-      return handleUnavailableToolCalls(
+      const admission = await handleUnavailableToolCalls(
         {
           ctx: this.ctx,
           contextAssembly: this.contextAssembly,
@@ -684,6 +684,9 @@ export class MessageProcessor {
         unavailableToolCalls,
         visibleToolNames,
       );
+      // 'proceed' = deferred 工具已在本轮解锁，不要早退：往下走普通工具执行链，
+      // 让代执行与普通调用共用同一个 executeToolsWithHooks 入口（审批链零旁路）。
+      if (admission !== 'proceed') return admission;
     }
 
     logger.debug(` Tool calls received: ${toolCalls.length} calls`);

@@ -249,7 +249,10 @@ export const TurnCard: React.FC<TurnCardProps> = ({
   // 「completed + 有正文」，动作条会先闪一下。通话还在进行时、既无结局印章也无失败
   // 证据的任务轮不渲染动作条；挂断后（phase 回 idle）或印章落下后恢复。
   const suppressReplyActions =
-    isVoiceTurn && voiceCallInFlight && !turn.voiceWorkOutcome && !hasVoiceFailureEvidence;
+    (isVoiceTurn && voiceCallInFlight && !turn.voiceWorkOutcome && !hasVoiceFailureEvidence)
+    // 这一轮还在写就不摆动作条：答案没定稿时给出「复制/点赞/分叉」，等于请人给半句话
+    // 打分，而且正文每长一行动作条就往下跳一次（真机反馈 2026-08-01）。
+    || (isLastTurn && (Boolean(isSessionProcessing) || sessionIsRunning));
 
   const handleFork = async () => {
     if (!forkAnchor || isForking || isSessionProcessing || sessionIsRunning) return;

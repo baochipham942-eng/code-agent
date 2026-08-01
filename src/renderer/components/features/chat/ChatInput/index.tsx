@@ -63,6 +63,7 @@ import { startCreateRoleChat } from '../../../../utils/startCreateRoleChat';
 import { computeSlashMenuValue } from '../../../../utils/composerShortcuts';
 import { useSkillRecommendations } from './useSkillRecommendations';
 import { CapabilitySuggestionStrip } from './CapabilitySuggestionStrip';
+import { buildIactChipSendText } from './iactChipConfirmation';
 import { useI18n } from '../../../../hooks/useI18n';
 import { useAppStore } from '../../../../stores/appStore';
 import { useAppshotsStore } from '../../../../stores/appshotsStore';
@@ -519,7 +520,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     const handleSend = (e: Event) => {
       const text = (e as CustomEvent<string>).detail;
       if (text?.trim()) {
-        void onSend(buildEnvelope(text));
+        void onSend(buildEnvelope(buildIactChipSendText(t, text.trim())));
       }
     };
     const handleAdd = (e: Event) => {
@@ -543,7 +544,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
       window.removeEventListener('iact:add', handleAdd);
       window.removeEventListener('iact:run', handleRun);
     };
-  }, [buildEnvelope, onSend]);
+  }, [buildEnvelope, onSend, t]);
 
   // Clear suggestions when user starts typing
   useEffect(() => {

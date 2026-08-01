@@ -4,6 +4,7 @@ import type { SessionWorkbenchSnapshot } from '@shared/contract/sessionWorkspace
 import { PLAIN_CHAT_SUMMARY_LABEL } from '@shared/contract/sessionWorkspace';
 import { useI18n } from '../../../hooks/useI18n';
 import type { Translations } from '../../../i18n';
+import { formatRelativeTime } from '../../../utils/i18nTime';
 import { NeoBrandMark } from '../sidebar/NeoBrandMark';
 
 interface SuggestionItem {
@@ -49,14 +50,20 @@ export function buildDefaultSuggestions(t: Translations): SuggestionItem[] {
 }
 
 // 新会话欢迎页（示例建议 + 工作区上下文标签）——不是通用空态，别并进 primitives/EmptyState
+//
+// resumedSession：冷启动自动恢复的**历史**会话恰好没有内容时传它。此时首屏必须明说
+// 「你在哪条会话里」——否则与真新会话像素级不可区分，用户以为自己新开了一条，首条消息
+// 却接在昨晚那条后面（2026-08-01 事故）。
 export const NewSessionWelcome: React.FC<{
   onSend: (message: string) => void;
   workingDirectory?: string | null;
   workbenchSnapshot?: SessionWorkbenchSnapshot | null;
+  resumedSession?: { title: string; updatedAt: number } | null;
 }> = ({
   onSend,
   workingDirectory,
   workbenchSnapshot,
+  resumedSession,
 }) => {
   const { t } = useI18n();
   const suggestions = buildDefaultSuggestions(t);
@@ -76,9 +83,15 @@ export const NewSessionWelcome: React.FC<{
         <NeoBrandMark size={28} showWordmark={false} className="mb-4" />
         <div className="mb-5 flex items-center justify-between gap-4">
           <div className="min-w-0">
-            <h1 className="text-xl font-semibold text-zinc-100">{t.chat.welcomeTitle}</h1>
+            <h1 className="text-xl font-semibold text-zinc-100" data-testid="chat-welcome-title">
+              {resumedSession
+                ? t.chat.resumedEmptyTitle.replace('{title}', resumedSession.title)
+                : t.chat.welcomeTitle}
+            </h1>
             <p className="mt-1 text-sm text-zinc-500">
-              {t.chat.welcomeSubtitle}
+              {resumedSession
+                ? t.chat.resumedEmptySubtitle.replace('{time}', formatRelativeTime(t, resumedSession.updatedAt))
+                : t.chat.welcomeSubtitle}
             </p>
           </div>
           {/* 上下文标签只读展示（2026-07-29：目录 chip 入口已删——

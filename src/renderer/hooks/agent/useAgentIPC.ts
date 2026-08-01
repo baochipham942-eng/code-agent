@@ -35,7 +35,6 @@ import { useSessionStore } from '../../stores/sessionStore';
 import { useSwarmStore } from '../../stores/swarmStore';
 import { useTaskStore, type SessionStatus as TaskSessionStatus } from '../../stores/taskStore';
 import { useTurnExecutionStore } from '../../stores/turnExecutionStore';
-import { toast } from '../../hooks/useToast';
 import ipcService from '../../services/ipcService';
 import { typedInvokeDomain } from '../../services/typedInvoke';
 

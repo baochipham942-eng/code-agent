@@ -67,10 +67,69 @@ export function resolveNarrationSpeaker(agentId?: string): VoiceWorkNarration['s
   return displayName ? { agentId, displayName } : undefined;
 }
 
+/**
+ * 「停旧的」这个动作的四种回报（§1 打断异步确认）。
+ *
+ * 为什么台词整句在这里算好、而不是像终态那样在 formatNarration 里按状态拼：终态只有
+ * 三档且措辞已经稳定，而这四句的差别全在「新活派了没有」这个事实上——把它们劈成
+ * 「状态在契约里、措辞在 session 层」两半，就是给「说了停下其实没停」这类谎报留门。
+ * 一句话一个分支，整句可读，测试直接喂 kind 验字面量。
+ */
+export type VoiceStopAnnouncementKind =
+  /** 纯 cancel：旧的确认停稳了，没有新活 */
+  | 'stopped'
+  /** replace：旧的收尾了，新活已经开跑 */
+  | 'replaced'
+  /** 纯 cancel 超时：没停稳 */
+  | 'stop_timeout'
+  /** replace 超时：没停稳，**且新活没派**——这句必须说清楚，否则用户以为新活在跑 */
+  | 'replace_timeout';
+
+const STOP_ANNOUNCEMENT_LINES: Record<VoiceStopAnnouncementKind, (title: string) => string> = {
+  stopped: (title) => `现在对用户说：「『${title}』已经停下来了。」就说这一个意思。`,
+  replaced: (title) => [
+    `现在对用户说：「手上那件已经收尾了，我开始做『${title}』了，做完马上告诉你。」`,
+    `关于『${title}』你目前只知道「已经开始」。它的结果只会以 [BACKEND] 开头的消息送达；`,
+    '在收到那条消息之前，它没有做完，你也不知道任何进展。被问进度先调 get_active_tasks。',
+  ].join('\n'),
+  stop_timeout: (title) => [
+    `现在如实对用户说：「『${title}』我没能确认它停下来，它可能还在跑。」`,
+    '不要说它已经停了。要停就请用户再说一次。',
+  ].join('\n'),
+  replace_timeout: (title) => [
+    `现在如实对用户说：「手上那件我没能确认它停下来，所以『${title}』我没有开始做。」`,
+    '**这两件事都要说**：旧的没停稳、新的没派。绝不要说新的已经开始，也不要说旧的已经停了。',
+    '要做就请用户再说一次。',
+  ].join('\n'),
+};
+
+/**
+ * 组装「停旧的」回报事件。
+ *
+ * `workItemId` 必须与任何真实 work item 的 id **不同**——注入通道按 workItemId 去重
+ * （`spokenWorkItemIds`），拿新活的 id 播这句，会让那件活真正的终态回流被当成重复丢掉。
+ * 调用方负责传后缀过的合成 id，这里只做拼装。
+ */
+export function buildStopNarration(input: {
+  workItemId: string;
+  kind: VoiceStopAnnouncementKind;
+  title: string;
+  agentId?: string;
+}): VoiceWorkNarration {
+  const speaker = resolveNarrationSpeaker(input.agentId);
+  return {
+    workItemId: input.workItemId,
+    status: 'announcement',
+    title: input.title,
+    summary: STOP_ANNOUNCEMENT_LINES[input.kind](input.title),
+    ...(speaker ? { speaker } : {}),
+  };
+}
+
 /** 组装终态回流事件。summary 为空（模型一句话没留）时也照发——状态本身就是结论。 */
 export function buildWorkNarration(input: {
   workItemId: string;
-  status: VoiceWorkNarration['status'];
+  status: Exclude<VoiceWorkNarration['status'], 'announcement'>;
   title: string;
   conclusion: string;
   agentId?: string;

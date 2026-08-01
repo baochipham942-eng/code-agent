@@ -98,7 +98,7 @@ vi.mock('../../../src/host/prompts/builder', () => ({
 }));
 
 const { mockCheckpointNativeModelOperation } = vi.hoisted(() => ({
-  mockCheckpointNativeModelOperation: vi.fn(async () => {}),
+  mockCheckpointNativeModelOperation: vi.fn(async (_input: { status: string }) => {}),
 }));
 
 vi.mock('../../../src/host/app/applicationRunRegistry', () => ({
@@ -198,9 +198,11 @@ describe('inference Max Mode wiring', () => {
   // 真因是这次模型调用永远停在 dispatched，轮次收尾时 Durable Run 断言
   // 「completed runs cannot contain unresolved operations」抛错。
   it('推理被打断 → 这次模型调用要拿到终态(abandoned)，不留未了结操作', async () => {
-    const ctx = buildCtx({ maxMode: false } as any);
-    ctx.runtime.runId = 'run-steer-1';
-    ctx.runtime.messages = [{ id: 'user-1', role: 'user', content: '写长文', timestamp: 1 }];
+    const ctx = buildCtx({
+      maxMode: false,
+      runId: 'run-steer-1',
+      messages: [{ id: 'user-1', role: 'user', content: '写长文', timestamp: 1 }],
+    } as any);
     ctx.runtime.modelRouter.inference = vi.fn().mockImplementation(async () => {
       ctx.runtime.control.markCancelled();
       throw new Error('canceled');
@@ -208,24 +210,22 @@ describe('inference Max Mode wiring', () => {
 
     await inference(ctx);
 
-    const statuses = mockCheckpointNativeModelOperation.mock.calls.map(
-      (call) => (call[0] as { status: string }).status,
-    );
+    const statuses = mockCheckpointNativeModelOperation.mock.calls.map(([input]) => input.status);
     expect(statuses).toContain('dispatched');
     expect(statuses.at(-1)).toBe('abandoned');
   });
 
   it('推理真出错（非用户打断）→ 终态是 failed', async () => {
-    const ctx = buildCtx({ maxMode: false } as any);
-    ctx.runtime.runId = 'run-error-1';
-    ctx.runtime.messages = [{ id: 'user-1', role: 'user', content: '写长文', timestamp: 1 }];
+    const ctx = buildCtx({
+      maxMode: false,
+      runId: 'run-error-1',
+      messages: [{ id: 'user-1', role: 'user', content: '写长文', timestamp: 1 }],
+    } as any);
     ctx.runtime.modelRouter.inference = vi.fn().mockRejectedValue(new Error('provider exploded'));
 
     await expect(inference(ctx)).rejects.toThrow('provider exploded');
 
-    const statuses = mockCheckpointNativeModelOperation.mock.calls.map(
-      (call) => (call[0] as { status: string }).status,
-    );
+    const statuses = mockCheckpointNativeModelOperation.mock.calls.map(([input]) => input.status);
     expect(statuses.at(-1)).toBe('failed');
   });
 

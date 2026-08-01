@@ -326,7 +326,7 @@ const AssistantTextNode: React.FC<{
   // 整节点不渲染，用户看到的是彻底的空白。只在这条活动轮窗口渲染一个轻占位，别的空壳
   // （历史消息、仍在思考中的节点）保持原样不渲染，不动既有折叠/思考展示逻辑。
   const isActiveEmptyGap =
-    turnStreaming && !hasRenderableContent && !Boolean((node.thinking || node.reasoning)?.trim());
+    turnStreaming && !hasRenderableContent && !(node.thinking || node.reasoning)?.trim();
   if (!hasRenderableContent) {
     if (!isActiveEmptyGap) return null;
     return (

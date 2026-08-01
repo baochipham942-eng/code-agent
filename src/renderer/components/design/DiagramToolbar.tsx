@@ -156,7 +156,10 @@ export const DiagramToolbar: React.FC<DiagramToolbarProps> = ({
               data-testid="diagram-palette-popover"
               role="group"
               aria-label={t.design.diagramColor}
-              className="absolute left-0 top-full z-20 mt-2 flex gap-1 rounded-xl border border-white/[0.1] bg-zinc-900/95 p-2 shadow-xl backdrop-blur"
+              // right-0 向左展开（2026-08-02 收口工单）：调色板恰恰只在宽度紧张时才收成圆点，
+              // left-0 朝紧张那一侧（右）展开，第 5 个色块必被窗口右缘裁掉——两个条件永远同时成立。
+              // 调色板在工具条中段，向左展开必然落在工具条自身宽度内；同文件 ⋯ 菜单也是 right-0。
+              className="absolute right-0 top-full z-20 mt-2 flex gap-1 rounded-xl border border-white/[0.1] bg-zinc-900/95 p-2 shadow-xl backdrop-blur"
             >
               {swatches}
             </div>

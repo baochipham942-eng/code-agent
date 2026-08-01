@@ -37,6 +37,7 @@ export const DiagramToolbar: React.FC<DiagramToolbarProps> = ({
 }) => {
   const { t } = useI18n();
   const rootRef = useRef<HTMLDivElement>(null);
+  const deleteSegmentRef = useRef<HTMLDivElement>(null);
   const [openMenu, setOpenMenu] = useState<'palette' | 'more' | null>(null);
 
   const hasExport = Boolean(exportPptx);
@@ -49,6 +50,8 @@ export const DiagramToolbar: React.FC<DiagramToolbarProps> = ({
     containerRef: rootRef,
     itemIds,
     reserveWidth: 72,
+    fixedRef: deleteSegmentRef,
+    fixedElementCount: canDelete ? 1 : 0,
     gap: 4,
     chromeWidth: 18,
   });
@@ -108,7 +111,8 @@ export const DiagramToolbar: React.FC<DiagramToolbarProps> = ({
         className="pointer-events-auto flex max-w-full items-center justify-center gap-1 whitespace-nowrap rounded-xl border border-white/[0.1] bg-zinc-900/90 px-2 py-1.5 shadow-xl backdrop-blur"
       >
       <div ref={itemRef('tools')} className="flex shrink-0 items-center gap-1">
-        {tools.map((it) => (
+        <div className="flex shrink-0 items-center gap-1">
+          {tools.map((it) => (
           <button
             key={it.id}
             type="button"
@@ -123,9 +127,10 @@ export const DiagramToolbar: React.FC<DiagramToolbarProps> = ({
           >
             {it.icon}
           </button>
-        ))}
+          ))}
+        </div>
+        <div className="mx-1 h-5 w-px shrink-0 bg-white/[0.1]" />
       </div>
-      <div className="mx-1 h-5 w-px shrink-0 bg-white/[0.1]" />
       {/* 调色板（图解形状描边色）：宽栏平铺五色；窄栏收成「当前色」小圆点，点开浮层选色。 */}
       {!paletteCollapsed ? (
         <div ref={itemRef('palette')} className="flex shrink-0 items-center gap-1" role="group" aria-label={t.design.diagramColor}>
@@ -159,7 +164,7 @@ export const DiagramToolbar: React.FC<DiagramToolbarProps> = ({
         </div>
       )}
       {canDelete && (
-        <>
+        <div ref={deleteSegmentRef} className="flex shrink-0 items-center gap-1">
           <div className="mx-1 h-5 w-px shrink-0 bg-white/[0.1]" />
           <button
             type="button"
@@ -171,12 +176,12 @@ export const DiagramToolbar: React.FC<DiagramToolbarProps> = ({
           >
             <Trash2 className="h-4 w-4" />
           </button>
-        </>
+        </div>
       )}
       {exportPptx && !exportCollapsed && (
-        <>
+        <div ref={itemRef('export')} className="flex shrink-0 items-center gap-1">
           <div className="mx-1 h-5 w-px shrink-0 bg-white/[0.1]" />
-          <div ref={itemRef('export')} className="shrink-0">
+          <div className="shrink-0">
             {/* ds-allow:start 画布级导出按钮沿用工具条裸 button 风格，与相邻工具键一致；design-mode 整体 W3 收口时统一迁 primitive */}
             <button
               type="button"
@@ -194,7 +199,7 @@ export const DiagramToolbar: React.FC<DiagramToolbarProps> = ({
             </button>
             {/* ds-allow:end */}
           </div>
-        </>
+        </div>
       )}
       {exportPptx && exportCollapsed && (
         <>

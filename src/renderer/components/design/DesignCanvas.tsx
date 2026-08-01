@@ -53,7 +53,7 @@ import {
   type CanvasVideoNode,
 } from './designCanvasTypes';
 import {
-  classifyPointerDragIntent,
+  classifyCanvasPointerMode,
   classifyWheelIntent,
   panBy,
   panFromWheel,
@@ -139,6 +139,7 @@ export const DesignCanvas: React.FC<{
   // 标注图形（世界坐标）+ 当前工具，本地态（换图重置）。
   const [annotShapes, setAnnotShapes] = useState<AnnotShape[]>([]);
   const [annotTool, setAnnotTool] = useState<AnnotTool>('pen');
+  const annotDrawing = useRef(false);
   // 文字标注：画布内输入框（替代原生 window.prompt）。world=落点世界坐标，value=草稿文字。
   const [textDraft, setTextDraft] = useState<{ world: { x: number; y: number }; value: string } | null>(
     null,
@@ -501,7 +502,27 @@ export const DesignCanvas: React.FC<{
   // 圈选标注：mousedown 起框 → move 更新 → up 落框（仅 annotating 时）。
   // 图解绘制（shape 工具）也走 Stage 处理器（对所有点击触发，能在节点之上起笔）。
   const handleMouseDown = (e: Konva.KonvaEventObject<MouseEvent>): void => {
-    if (isShapeTool) {
+    const mode = classifyCanvasPointerMode({
+      annotationMode: annotMode && selectedImageNode !== null,
+      diagramDrawing: isShapeTool,
+      regionDrawing: annotating,
+      button: e.evt.button,
+      spaceKey: spaceDownRef.current,
+    });
+    if (mode === 'annotation') {
+      const w = worldFromPointer();
+      if (!w) return;
+      if (annotTool === 'text') {
+        setTextDraft({ world: w, value: '' });
+        return;
+      }
+      annotDrawing.current = true;
+      setAnnotShapes((current) =>
+        reduceAnnot(current, { type: 'down', tool: annotTool, x: w.x, y: w.y }),
+      );
+      return;
+    }
+    if (mode === 'diagram') {
       const w = worldFromPointer();
       if (!w) return;
       if (diagramTool === 'text') {
@@ -521,20 +542,16 @@ export const DesignCanvas: React.FC<{
       setDiagramDraft(next[0] ?? null);
       return;
     }
-    if (!annotating && !annotMode) {
+    if (mode === 'pan') {
       const stage = stageRef.current;
       const pointer = stage?.getPointerPosition();
-      const intent = classifyPointerDragIntent({
-        button: e.evt.button,
-        spaceKey: spaceDownRef.current,
-      });
-      if (pointer && intent === 'pan') {
+      if (pointer) {
         e.evt.preventDefault();
         panDragRef.current = pointer;
-        return;
       }
+      return;
     }
-    if (!annotating) {
+    if (mode === 'selection') {
       // 非标注/非绘制模式：点空白处清除选择（节点 + 图解），并通知外层收回浮出面板（工单②）。
       if (e.target === stageRef.current) {
         setSelected([]);
@@ -549,6 +566,12 @@ export const DesignCanvas: React.FC<{
     setDraft({ x: w.x, y: w.y, width: 0, height: 0 });
   };
   const handleMouseMove = (): void => {
+    if (annotDrawing.current) {
+      const w = worldFromPointer();
+      if (!w) return;
+      setAnnotShapes((current) => reduceAnnot(current, { type: 'move', x: w.x, y: w.y }));
+      return;
+    }
     if (panDragRef.current) {
       const pointer = stageRef.current?.getPointerPosition();
       if (!pointer) return;
@@ -570,6 +593,11 @@ export const DesignCanvas: React.FC<{
     setDraft(normalizeDragRect(dragStart.current.x, dragStart.current.y, w.x, w.y));
   };
   const handleMouseUp = (): void => {
+    if (annotDrawing.current) {
+      annotDrawing.current = false;
+      setAnnotShapes((current) => reduceAnnot(current, { type: 'up' }));
+      return;
+    }
     if (panDragRef.current) {
       panDragRef.current = null;
       return;
@@ -715,9 +743,10 @@ export const DesignCanvas: React.FC<{
           onMouseUp={handleMouseUp}
           onMouseLeave={() => {
             panDragRef.current = null;
+            annotDrawing.current = false;
           }}
         >
-          <Layer>
+          <Layer listening={!annotMode}>
             {visibleNodes.map((node) =>
               // 图节点走 CanvasImage；视频节点走 KonvaVideoNode（缩略图+播放徽标）。
               isVideoNode(node) ? (
@@ -758,7 +787,7 @@ export const DesignCanvas: React.FC<{
           </Layer>
           {/* 图解层（连线 + freeform 形状），始终渲染；绘制走 Stage 处理器，本层管渲染+选中+连接。 */}
           <DiagramLayer
-            tool={diagramTool}
+            tool={annotMode ? 'rect' : diagramTool}
             nodes={visibleNodes}
             connectors={connectors}
             shapes={shapes}
@@ -770,12 +799,7 @@ export const DesignCanvas: React.FC<{
             onRequestText={openDiagramText}
           />
           {annotMode && selectedImageNode && (
-            <AnnotationLayer
-              shapes={annotShapes}
-              onShapesChange={setAnnotShapes}
-              tool={annotTool}
-              onRequestText={(world) => setTextDraft({ world, value: '' })}
-            />
+            <AnnotationLayer shapes={annotShapes} />
           )}
           {/* ADR-026：agent 待审批提议的 ghost 虚影（蓝色虚线/半透明），点应用才落库。 */}
           {canvasProposal.pending && (

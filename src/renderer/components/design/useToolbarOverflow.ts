@@ -14,6 +14,12 @@ export interface ToolbarOverflowOptions<T extends string> {
   reserveWidth: number;
   /** 收折入口元素 ref（如图象动词条的「更多」锚点），实测其宽度替代 reserveWidth 兜底值。 */
   reserveRef?: React.RefObject<HTMLElement | null>;
+  /** 收折入口本来就常驻（如图像动词条的「更多」），全展开时也必须计入预算。 */
+  reserveAlways?: boolean;
+  /** 不参与收折但会占宽的条件段（如选中图解对象后出现的分隔条+删除键）。 */
+  fixedRef?: React.RefObject<HTMLElement | null>;
+  /** fixedRef 当前在场时的元素数，用于计算外层 gap。 */
+  fixedElementCount?: number;
   /** 相邻元素间距 px（对应条上 gap-*）。默认 4（gap-1）。 */
   gap?: number;
   /** 内条横向不可压缩部分（左右 padding + border）px。默认 0。 */
@@ -42,13 +48,20 @@ export function computeVisibleCount(
   chrome: number,
   hysteresis: number,
   prev: number,
+  extras: {
+    reserveAlways?: boolean;
+    fixedWidth?: number;
+    fixedElementCount?: number;
+  } = {},
 ): number {
   if (avail <= 0) return prev;
   const total = (k: number): number => {
     const collapsed = k < widths.length;
-    const elements = k + (collapsed ? 1 : 0);
-    let sum = chrome + widths.slice(0, k).reduce((a, b) => a + b, 0);
-    if (collapsed) sum += reserve;
+    const reservePresent = collapsed || extras.reserveAlways === true;
+    const fixedElementCount = extras.fixedElementCount ?? 0;
+    const elements = k + (reservePresent ? 1 : 0) + fixedElementCount;
+    let sum = chrome + (extras.fixedWidth ?? 0) + widths.slice(0, k).reduce((a, b) => a + b, 0);
+    if (reservePresent) sum += reserve;
     if (elements > 1) sum += gap * (elements - 1);
     return sum;
   };
@@ -66,6 +79,9 @@ export function useToolbarOverflow<T extends string>(
     itemIds,
     reserveWidth,
     reserveRef,
+    reserveAlways = false,
+    fixedRef,
+    fixedElementCount = 0,
     gap = 4,
     chromeWidth = 0,
     hysteresis = 8,
@@ -94,14 +110,25 @@ export function useToolbarOverflow<T extends string>(
     if (widths.some((w) => w <= 0)) return;
     const reserveEl = reserveRef?.current;
     const reserve = reserveEl && reserveEl.offsetWidth > 0 ? reserveEl.offsetWidth : reserveWidth;
-    const next = computeVisibleCount(widths, avail, reserve, gap, chromeWidth, hysteresis, prevCountRef.current);
+    const fixedEl = fixedRef?.current;
+    const fixedWidth = fixedEl && fixedEl.offsetWidth > 0 ? fixedEl.offsetWidth : 0;
+    const next = computeVisibleCount(
+      widths,
+      avail,
+      reserve,
+      gap,
+      chromeWidth,
+      hysteresis,
+      prevCountRef.current,
+      { reserveAlways, fixedWidth, fixedElementCount },
+    );
     prevCountRef.current = next;
     const nextSet = new Set(itemIds.slice(next));
     setOverflowed((cur) => {
       if (cur.size === nextSet.size && [...nextSet].every((id) => cur.has(id))) return cur;
       return nextSet;
     });
-  }, [containerRef, itemIds, reserveRef, reserveWidth, gap, chromeWidth, hysteresis]);
+  }, [containerRef, itemIds, reserveRef, reserveWidth, reserveAlways, fixedRef, fixedElementCount, gap, chromeWidth, hysteresis]);
 
   const itemRef = useCallback(
     (id: T) =>
@@ -123,9 +150,11 @@ export function useToolbarOverflow<T extends string>(
     if (!container) return;
     const ro = new ResizeObserver(() => recompute());
     ro.observe(container);
+    if (reserveRef?.current) ro.observe(reserveRef.current);
+    if (fixedRef?.current) ro.observe(fixedRef.current);
     return () => ro.disconnect();
     // idsKey 变化代表参与项集合变了（如 exportPptx 槽后出现），重挂观察并重算。
-  }, [containerRef, recompute, idsKey]);
+  }, [containerRef, recompute, idsKey, reserveRef, fixedRef]);
 
   return { overflowed, itemRef };
 }

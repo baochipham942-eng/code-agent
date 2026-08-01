@@ -115,7 +115,6 @@ describe('DesignImageToolbar 动词条', () => {
     }
     // 2026-08-01 B1：mask 通道固定走万相，用户选不了模型——选择器退役，留着就是个不生效的控件。
     expect(popover.querySelector('[data-testid="annot-model-select"]')).toBeNull();
-    expect(popover.textContent).not.toContain(zh.design.annotModelSelectLabel);
     // 无标注图形 + 无指令时 CTA 禁用（与原浮层逻辑一致）
     expect((screen.getByTestId('design-annot-redraw-btn') as HTMLButtonElement).disabled).toBe(true);
   });
@@ -326,7 +325,6 @@ describe('扩图下拉与更多菜单', () => {
       menu.textContent?.indexOf(zh.design.moreGroupCanvas) ?? 0,
     );
     // 标注模型选择已挪出「更多」（返工#4：进批注重绘浮层），更多菜单只剩分组动作
-    expect(menu.textContent).not.toContain(zh.design.annotModelSelectLabel);
     expect(menu.querySelector('[data-testid="annot-model-select"]')).toBeNull();
     // 动作可达：点导出图片调用回调并关菜单
     fireEvent.click(screen.getByTestId('design-more-export-image'));

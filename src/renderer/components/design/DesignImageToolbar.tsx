@@ -159,6 +159,7 @@ export function DesignImageToolbar(props: DesignImageToolbarProps): React.ReactE
     itemIds: VERB_IDS,
     reserveWidth: 76,
     reserveRef: moreAnchorRef,
+    reserveAlways: true,
     gap: 4,
     chromeWidth: 18,
   });

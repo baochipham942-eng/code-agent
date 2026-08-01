@@ -1,14 +1,12 @@
 // 设计画布的浮层/选择子组件（从 DesignCanvas 抽出，纯展示，无逻辑改动）：
 // - VideoPlayOverlay：P2 视频播放浮层（DOM，镜像 DiffEvidenceOverlay）
 // - DiffEvidenceOverlay：T4 diff 证据浮层（标红「模型偷改的未选区域」+ 度量）
-// - AnnotModelSelect：标注重绘模型下拉（cap 过滤 + key 可用性求交）
 // 文案走 i18n（t.design.*），不硬编码。
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Loader2, X } from 'lucide-react';
 import { IconButton } from '../primitives';
 import { useI18n } from '../../hooks/useI18n';
 import { readWorkspaceImageAsDataUrl, readWorkspaceBinaryAsBlobUrl } from './designFiles';
-import { imageModelsWithCap } from '@shared/constants/visualModels';
 import type { CanvasImageNode, CanvasVideoNode } from './designCanvasTypes';
 
 // P2 视频播放浮层（DOM，镜像 DiffEvidenceOverlay）：把 mp4 读成 data URL 喂 <video> 就地播放。
@@ -94,35 +92,5 @@ export const DiffEvidenceOverlay: React.FC<{
       )}
       <p className="max-w-md text-center text-[11px] leading-snug text-zinc-500">{t.design.diffEvidenceHint}</p>
     </div>
-  );
-};
-
-// 标注重绘模型下拉（cap 过滤）：仅列声明 annotEdit 能力的视觉模型，未配置 key 的灰显。
-// 可用性由父级（DesignCanvas 经 useVisualImageModelAvailability）统一拉取后传入——
-// 动词条算默认模型 / 无可用降级也用同一份，不重复发 IPC。null = 加载中（一律按未配置展示）。
-export const AnnotModelSelect: React.FC<{
-  value: string;
-  onChange: (id: string) => void;
-  availability: Record<string, boolean> | null;
-}> = ({ value, onChange, availability }) => {
-  const { t } = useI18n();
-  const capModels = useMemo(() => imageModelsWithCap('annotEdit'), []);
-  return (
-    <select
-      data-testid="annot-model-select"
-      aria-label={t.design.imageModel}
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      className="rounded-md border border-white/[0.10] bg-white/[0.04] px-2 py-1 text-xs text-zinc-200 focus:border-white/[0.3] focus:outline-none"
-    >
-      {capModels.map((m) => {
-        const available = availability?.[m.id] ?? false;
-        return (
-          <option key={m.id} value={m.id} disabled={!available}>
-            {available ? m.label : `${m.label}（${t.design.imageModelUnconfigured}）`}
-          </option>
-        );
-      })}
-    </select>
   );
 };

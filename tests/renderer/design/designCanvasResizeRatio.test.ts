@@ -101,6 +101,18 @@ describe('computeResizeExpandPlan — 可行范围没有因为改成一次调用
     const plan = computeResizeExpandPlan(1000, 330, 1);
     expect(plan.feasible).toBe(false);
   });
+
+  it('精确 scale=2 的边界值可行', () => {
+    const plan = computeResizeExpandPlan(300, 100, 1);
+    expect(plan.feasible).toBe(true);
+    if (!plan.feasible || !plan.scales) throw new Error('边界值应当可行');
+    expect(plan.scales.top).toBe(2);
+    expect(plan.scales.bottom).toBe(2);
+  });
+
+  it('scale 刚超 2 一点点就不可行', () => {
+    expect(computeResizeExpandPlan(301, 100, 1).feasible).toBe(false);
+  });
 });
 
 describe('computeResizeExpandPlan — 已达标（无需扩图）', () => {

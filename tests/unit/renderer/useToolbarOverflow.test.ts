@@ -45,4 +45,18 @@ describe('computeVisibleCount', () => {
     // prev=2，avail=175：total(2)=176 >175 → 收到 1（total(1)=112 ≤175）
     expect(computeVisibleCount([60, 60, 60], 175, 30, GAP, CHROME, HYST, 2)).toBe(1);
   });
+
+  it('常驻「更多」在全展开态也计入，刚好差它的宽度时必须收折', () => {
+    expect(computeVisibleCount([50, 50, 50], 180, 30, GAP, CHROME, HYST, 3, {
+      reserveAlways: true,
+    })).toBe(2);
+  });
+
+  it('条件删除段（含分隔条）计入实测宽度，出现后边界会立即收折', () => {
+    expect(computeVisibleCount([100, 50], 200, 30, GAP, CHROME, HYST, 2)).toBe(2);
+    expect(computeVisibleCount([100, 50], 200, 30, GAP, CHROME, HYST, 2, {
+      fixedWidth: 41,
+      fixedElementCount: 1,
+    })).toBe(1);
+  });
 });

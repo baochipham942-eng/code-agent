@@ -12,7 +12,7 @@ import type { Page } from 'playwright';
 //    正是想要的：静止时零开销）。
 // 2. 帧必须 ack，否则 Chrome 只发一帧就停。
 
-export interface PageScreencastOptions {
+interface PageScreencastOptions {
   maxWidth: number;
   maxHeight: number;
   quality: number;
@@ -21,7 +21,7 @@ export interface PageScreencastOptions {
   minIntervalMs: number;
 }
 
-export interface PageScreencastFrame {
+interface PageScreencastFrame {
   base64: string;
   width: number;
   height: number;

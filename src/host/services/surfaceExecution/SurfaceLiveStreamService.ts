@@ -146,7 +146,3 @@ export function getSurfaceLiveStreamService(): SurfaceLiveStreamService {
   surfaceLiveStreamService ??= new SurfaceLiveStreamService();
   return surfaceLiveStreamService;
 }
-
-export function resetSurfaceLiveStreamServiceForTests(): void {
-  surfaceLiveStreamService = null;
-}

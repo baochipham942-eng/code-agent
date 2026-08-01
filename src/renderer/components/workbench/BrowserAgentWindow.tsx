@@ -85,10 +85,24 @@ export const BrowserAgentWindow: React.FC = () => {
 
   const openAdvancedPanel = useCallback(() => openLocalOpsPanel('browser'), [openLocalOpsPanel]);
 
-  const { managedSession, preview, ownedByCurrentSession, browserSurfaceSessionId } = browserSession;
-  const running = managedSession.running;
-  const activeTitle = preview?.title || managedSession.activeTab?.title || null;
-  const activeUrl = preview?.url || managedSession.activeTab?.url || null;
+  const {
+    managedSession, preview, ownedByCurrentSession,
+    browserSurfaceSessionId, browserSurfaceTitle, browserSurfaceOrigin,
+  } = browserSession;
+  // chrome 条必须描述**画面里那扇窗**。有 surface 会话时它才是画面的来源，
+  // managedSession 说的是另一个（全局单例）浏览器，直接用会周期性跳回「未启动」。
+  const managedUrl = preview?.url || managedSession.activeTab?.url || null;
+  const running = Boolean(browserSurfaceSessionId) || managedSession.running;
+  const activeTitle = browserSurfaceSessionId
+    ? browserSurfaceTitle
+    : preview?.title || managedSession.activeTab?.title || null;
+  // surface 会话只报 origin（不含 path）。同源时才敢把 managedSession 的完整 URL 拿来
+  // 补全路径——不同源说明那是另一扇窗的地址，宁可只显示 origin 也不能显示错的。
+  const activeUrl = browserSurfaceSessionId
+    ? (managedUrl && browserSurfaceOrigin && managedUrl.startsWith(browserSurfaceOrigin)
+      ? managedUrl
+      : browserSurfaceOrigin)
+    : managedUrl;
   const pointerEvent = livePointer.event || livePointer.lastEvent;
   const modeLabel = browserSession.mode === 'managed'
     ? copy.modeManaged

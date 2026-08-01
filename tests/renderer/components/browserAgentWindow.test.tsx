@@ -48,6 +48,8 @@ function buildBrowserSessionState(overrides: Partial<BrowserSessionState> = {}):
     actionError: null,
     ownedByCurrentSession: true,
     browserSurfaceSessionId: null,
+    browserSurfaceTitle: null,
+    browserSurfaceOrigin: null,
     refresh: async () => undefined,
     probePermissions: async () => undefined,
     runRepairAction,
@@ -108,6 +110,8 @@ describe('BrowserAgentWindow（B1-R·R1 图形化现场）', () => {
       },
       preview: { mode: 'managed', title: 'Example Domain', url: 'https://example.com/' },
       browserSurfaceSessionId: 'surface-1',
+      browserSurfaceTitle: 'Example Domain',
+      browserSurfaceOrigin: 'https://example.com',
     });
     liveFrameState = {
       frame: {
@@ -149,6 +153,42 @@ describe('BrowserAgentWindow（B1-R·R1 图形化现场）', () => {
     expect(screen.getByTestId('browser-agent-window-status-dot').getAttribute('title')).toBe('运行中');
     // 指针叠加画在画面上
     expect(screen.getByLabelText(/Search/)).toBeTruthy();
+  });
+
+  it('chrome 条描述画面里那扇窗：managedSession 说「未启动」也不许把状态点跳灰', () => {
+    // managedSession 是 IPC 的全局默认单例，跟 agent 实际驱动的 surface 浏览器不是
+    // 同一个；5s 轮询会把它刷回 running=false，chrome 条不能跟着跳。
+    browserSessionState = buildBrowserSessionState({
+      managedSession: { running: false, tabCount: 0, activeTab: null },
+      browserSurfaceSessionId: 'surface-1',
+      browserSurfaceTitle: 'Wikipedia',
+      browserSurfaceOrigin: 'https://wikipedia.org',
+    });
+    render(<BrowserAgentWindow />);
+
+    expect(screen.getByTestId('browser-agent-window-status-dot').getAttribute('title')).toBe('运行中');
+    const chrome = screen.getByTestId('browser-agent-window-chrome');
+    expect(chrome.textContent).toContain('Wikipedia');
+    expect(chrome.textContent).toContain('https://wikipedia.org');
+  });
+
+  it('managedSession 的 URL 与画面那扇窗不同源时只显示 origin，不显示另一扇窗的地址', () => {
+    browserSessionState = buildBrowserSessionState({
+      managedSession: {
+        running: true,
+        tabCount: 1,
+        activeTab: { id: 'tab-1', title: '另一扇窗', url: 'https://other.example/secret' },
+      },
+      browserSurfaceSessionId: 'surface-1',
+      browserSurfaceTitle: 'Wikipedia',
+      browserSurfaceOrigin: 'https://wikipedia.org',
+    });
+    render(<BrowserAgentWindow />);
+
+    const chrome = screen.getByTestId('browser-agent-window-chrome');
+    expect(chrome.textContent).toContain('https://wikipedia.org');
+    expect(chrome.textContent).not.toContain('other.example');
+    expect(chrome.textContent).not.toContain('另一扇窗');
   });
 
   it('tab 不可见（右栏收起）时把 visible 传 false —— 节流护栏不许后台开流', () => {

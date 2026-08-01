@@ -126,6 +126,17 @@ export interface BrowserWorkbenchState {
   ownedByCurrentSession: boolean;
   /** 本会话当前活跃的 browser surface 会话 id；没有为 null（R1 帧流的开流对象） */
   browserSurfaceSessionId: string | null;
+  /**
+   * 帧流那扇窗自己报的标题 / origin。
+   *
+   * ⚠️ 必须与 managedSession 分开：agent 走 native 路径时驱动的是
+   * `getBrowserService('surface-<hash>')` 这个按 conversation/run/agent 隔离的实例，
+   * 而 `managedSession` 来自 IPC 的**全局默认单例**——两者是不同的浏览器。两边状态
+   * 靠广播事件混在一起，5 秒一次的轮询还会把单例状态盖回来，所以 chrome 条不能直接
+   * 用 managedSession，否则标题/状态点会周期性跳回「未启动」，跟画面对不上。
+   */
+  browserSurfaceTitle: string | null;
+  browserSurfaceOrigin: string | null;
 }
 
 function getPermissionStatus(
@@ -358,6 +369,10 @@ export function useWorkbenchBrowserSession(): BrowserWorkbenchState & {
     (state) => selectActiveBrowserSurfaceSessionV1(state.sessionsByScope, currentSessionId),
   );
   const browserSurfaceSessionId = browserSurfaceSession?.session.sessionId ?? null;
+  const browserSurfaceTarget = browserSurfaceSession?.session.activeTarget;
+  const browserSurfaceBrowserTarget = browserSurfaceTarget?.kind === 'browser'
+    ? browserSurfaceTarget
+    : null;
   const [managedSession, setManagedSession] = useState<ManagedBrowserSessionState>(EMPTY_MANAGED_BROWSER_SESSION);
   const [computerSurface, setComputerSurface] = useState<ComputerSurfaceState | null>(null);
   const [capabilities, setCapabilities] = useState<NativeDesktopCapabilities | null>(null);
@@ -788,6 +803,8 @@ export function useWorkbenchBrowserSession(): BrowserWorkbenchState & {
       || !managedSession.running
       || managedOwnerSessionId === currentSessionId,
     browserSurfaceSessionId,
+    browserSurfaceTitle: browserSurfaceBrowserTarget?.title || null,
+    browserSurfaceOrigin: browserSurfaceBrowserTarget?.origin || null,
     refresh,
     probePermissions,
     runRepairAction,

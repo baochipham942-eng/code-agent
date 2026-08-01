@@ -3,7 +3,8 @@ import type { ModelConfig } from '../../../../shared/contract/model';
 import { getConfiguredApplicationRunRegistry } from '../../../app/applicationRunRegistry';
 import { logger, type ContextAssemblyCtx } from './shared';
 
-export async function checkpointNativeModel(
+// 只给同文件的 withNativeModelOperation 用——生命周期四个点收在一处，不再单独对外开口。
+async function checkpointNativeModel(
   ctx: ContextAssemblyCtx,
   config: ModelConfig,
   phase: 'before_model_dispatch' | 'after_model_dispatch',

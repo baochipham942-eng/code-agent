@@ -11,7 +11,7 @@ import type { ToolCall } from '@shared/contract';
 import type { WorkbenchMessageMetadata } from '@shared/contract/conversationEnvelope';
 import type { TurnTimelineNode as TurnTimelinePayload } from '@shared/contract/turnTimeline';
 import { stripAppshotBlocks } from '@shared/contract/appshot';
-import { extractUserRequest } from '@shared/utils/turnScaffold';
+import { extractUserRequest, stripSystemReminderBlocks } from '@shared/utils/turnScaffold';
 import { MessageContent } from './MessageBubble/MessageContent';
 import { restoreNeoTagTokenForDisplay } from './MessageBubble/triggerTokenHighlight';
 import { ToolCallDisplay } from './MessageBubble/ToolCallDisplay/index';
@@ -146,7 +146,7 @@ const UserNode: React.FC<{
   // 用户原话——包装是模型面，用户界面显示原话（UX round2 20f，定义在 shared/utils/turnScaffold）。
   // @neo 落库正文被剥了前缀（它兼任模型 prompt），渲染时补回展示，重启后也能看到带色的 @neo
   const displayContent = restoreNeoTagTokenForDisplay(
-    stripAppshotBlocks(extractUserRequest(content || '')),
+    stripSystemReminderBlocks(stripAppshotBlocks(extractUserRequest(content || ''))),
     Boolean(isNeoTagMessage),
   );
 
@@ -321,7 +321,20 @@ const AssistantTextNode: React.FC<{
     || node.metadata?.turnQuality
     || node.metadata?.agentError,
   );
-  if (!hasRenderableContent) return null;
+  // 排查报告 §2 序列②：活动轮里「thinking 已结束但 content 尚空」的窗口——思考指示已经
+  // 灭了（TurnCard.tsx 的 isThinkingPhase 判定同一节点 thinking 也空），这条守卫又让节点
+  // 整节点不渲染，用户看到的是彻底的空白。只在这条活动轮窗口渲染一个轻占位，别的空壳
+  // （历史消息、仍在思考中的节点）保持原样不渲染，不动既有折叠/思考展示逻辑。
+  const isActiveEmptyGap =
+    turnStreaming && !hasRenderableContent && !(node.thinking || node.reasoning)?.trim();
+  if (!hasRenderableContent) {
+    if (!isActiveEmptyGap) return null;
+    return (
+      <div className="py-1" aria-label={t.chat.organizingReply}>
+        <span className="streaming-thinking-shimmer text-xs font-medium">{t.chat.organizingReply}</span>
+      </div>
+    );
+  }
 
   return (
     <div

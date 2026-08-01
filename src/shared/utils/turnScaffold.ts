@@ -31,3 +31,16 @@ export function extractUserRequest(message: string): string {
   if (open === -1) return message;
   return trimmed.slice(open + USER_REQUEST_OPEN.length, trimmed.length - USER_REQUEST_CLOSE.length).trim();
 }
+
+/**
+ * 展示层剥离 <system-reminder kind="...">...</system-reminder> 块（注入卫生工单，2026-08-01）。
+ * design-acceptance-contract-json / design-code-handoff-json 等几种 reminder 目前仍走 renderer
+ * 侧 prepend 进发出的 content（该注入语义本次不动），这些块因此会和用户原话一起落库/发出——
+ * 用户气泡渲染时只应看到自己的话，不该看到给模型的隐藏意图。只影响展示，不改存储/发送内容。
+ */
+export function stripSystemReminderBlocks(content: string): string {
+  return content
+    .replace(/\s*<system-reminder\b[^>]*>[\s\S]*?<\/system-reminder>\s*/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}

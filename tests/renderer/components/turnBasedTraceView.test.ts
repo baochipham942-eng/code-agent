@@ -567,13 +567,15 @@ describe('TurnBasedTraceView streaming scroll drivers', () => {
 
     // 进入瞬间没有任何把 focused turn 钉到视口顶部的程序滚动
     expect(mocks.scrollToIndex).not.toHaveBeenCalled();
-    // 首帧定位交给 Virtuoso：最后一条内容末尾对齐视口底部，无动画，底部锚定抗沉降
+    // 首帧定位交给 Virtuoso：最后一条内容末尾对齐视口底部，无动画
     expect(mocks.virtuosoProps.initialTopMostItemIndex).toEqual({
       index: 'LAST',
       align: 'end',
       behavior: 'auto',
     });
-    expect(mocks.virtuosoProps.alignToBottom).toBe(true);
+    // B1-R·R4：不再开 alignToBottom（marginTop:auto 会把不满一屏的短内容压到底部），
+    // 长会话落底仍由 initialTopMostItemIndex 保证
+    expect(mocks.virtuosoProps.alignToBottom).toBeFalsy();
   });
 
   it('streaming 会话进入：不再先把活动轮钉到视口顶部（首帧即底部，followOutput 持续吸底）', () => {

@@ -88,6 +88,34 @@ describe('workbenchTurnContext', () => {
     expect(blocks.join('\n')).not.toContain('<design_canvas>');
   });
 
+  // 注入卫生工单（2026-08-01）：画布会话冷启动引导按轮注入 systemPrompt/turnSystemContext，
+  // 不再靠 renderer 侧 prepend 进用户消息 content；canvasSnapshot 缺席即空画布态。
+  it('designCanvasActive 且无 canvasSnapshot：注入 design-canvas-session 引导，空态文案', () => {
+    const blocks = buildWorkbenchTurnSystemContext({ executionIntent: { designCanvasActive: true } });
+    const joined = blocks.join('\n');
+    expect(joined).toContain('design-canvas-session');
+    expect(joined).toContain('为空');
+  });
+
+  it('designCanvasActive 且有 canvasSnapshot：引导带非空文案', () => {
+    const blocks = buildWorkbenchTurnSystemContext({
+      executionIntent: { designCanvasActive: true },
+      canvasSnapshot: {
+        nodes: [{ id: 'n1', label: '登录页', x: 0, y: 0, width: 200, height: 400 }],
+        connectors: [],
+        shapeCount: 0,
+      },
+    });
+    const joined = blocks.join('\n');
+    expect(joined).toContain('design-canvas-session');
+    expect(joined).toContain('已有元素');
+  });
+
+  it('非 designCanvasActive：不注入 design-canvas-session 引导', () => {
+    const blocks = buildWorkbenchTurnSystemContext({ selectedSkillIds: ['x'] });
+    expect(blocks.join('\n')).not.toContain('design-canvas-session');
+  });
+
   it('buildWorkbenchCapabilityContextLines：只产出能力行，不含设计画布块', () => {
     const lines = buildWorkbenchCapabilityContextLines({
       selectedSkillIds: ['first-principles'],

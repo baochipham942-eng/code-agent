@@ -4,7 +4,8 @@ export type SurfaceArtifact =
   | { kind: 'workspace-preview'; itemId: string }
   | { kind: 'file-preview'; filePath: string }
   | { kind: 'design-canvas' }
-  | { kind: 'swarm-monitor' };
+  | { kind: 'swarm-monitor' }
+  | { kind: 'managed-browser' };
 
 export type SurfaceIntentView =
   | 'overview'
@@ -18,7 +19,8 @@ export type SurfaceIntentDecision =
   | { view: 'workspace-preview'; itemId: string }
   | { view: 'file-preview'; filePath: string }
   | { view: 'design-canvas' }
-  | { view: 'task-monitor' };
+  | { view: 'task-monitor' }
+  | { view: 'browser' };
 
 export interface SurfaceIntentInput {
   artifact: SurfaceArtifact;
@@ -51,6 +53,8 @@ export function decideSurfaceIntent(input: SurfaceIntentInput): SurfaceIntentDec
       return { view: 'design-canvas' };
     case 'swarm-monitor':
       return { view: 'task-monitor' };
+    case 'managed-browser':
+      return { view: 'browser' };
   }
 }
 
@@ -85,6 +89,7 @@ export function surfaceIntentViewForDecision(
 ): SurfaceIntentView {
   if (decision.view === 'workspace-preview' || decision.view === 'task-monitor') return 'overview';
   if (decision.view === 'file-preview') return 'preview';
+  if (decision.view === 'browser') return 'browser';
   return 'canvas';
 }
 

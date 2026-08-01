@@ -121,7 +121,6 @@ describe('Surface Execution unified Run status', () => {
       ['paused', '浏览器 · 已暂停'],
       ['waiting_human', '浏览器 · 等待你操作'],
       ['stopping', '浏览器 · 正在停止'],
-      ['completed', '浏览器 · 已完成'],
     ] as const) {
       setConversationState(state);
       await waitFor(() => {
@@ -131,6 +130,14 @@ describe('Surface Execution unified Run status', () => {
         expect(composer.textContent).toContain(label);
       });
     }
+
+    // 产品拍板（2026-08-01）：终态不常驻——completed 后两处状态都应消失，
+    // 结果由会话内行内紧凑条承载。
+    setConversationState('completed');
+    await waitFor(() => {
+      expect(screen.queryByTestId('surface-execution-sidebar-status')).toBeNull();
+      expect(screen.queryByTestId('surface-execution-composer-status')).toBeNull();
+    });
   });
 
   it('rejects a newer session whose run/agent/session ownership disagrees with its scope', () => {

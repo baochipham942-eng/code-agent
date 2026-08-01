@@ -4,7 +4,10 @@
 // 从 MessageProcessor.handleToolResponse 抽出（降 messageProcessor 行数 + 单一职责）。
 // 两条子路径：
 //   1) Graceful deferred-tool 自愈：非真实 artifact 修复期时，自动解锁被模型直接调用的
-//      deferred 工具（Task/AgentSpawn/...），回灌「已加载，请重新调用」让其下一轮带 schema 重试。
+//      deferred 工具（Task/AgentSpawn/WebFetch/...）。解锁后若这些调用本轮已可正常执行，
+//      返回 'proceed' 让 handleToolResponse 继续走普通工具链在同一轮内执行（不再合成
+//      「已加载，请重新调用」的失败结果白等一轮）；只有解锁不全或仍被刻意收窄的边界挡下
+//      时，才回落到旧的「让模型下一轮重试」话术。
 //   2) Artifact 修复期收窄：注入 admission-repair 提示 + 合成失败结果；触达死循环逃生门时
 //      走 forceFinal 收尾（'break'）。
 //
@@ -30,7 +33,11 @@ import {
   sanitizeToolResultForObservation,
 } from './messageProcessorHelpers';
 import { attachTurnQualityMetadata } from './turnQuality';
-import { buildStrictToolsetNotice } from '../../tools/skillBoundaryScope';
+import {
+  buildStrictToolsetNotice,
+  filterToolDefinitionsByStrictSkillBoundary,
+} from '../../tools/skillBoundaryScope';
+import { isToolNameAllowedByWorkbenchScope } from '../../tools/workbenchToolScope';
 
 export interface UnavailableToolCallsDeps {
   ctx: RuntimeContext;
@@ -40,7 +47,21 @@ export interface UnavailableToolCallsDeps {
 }
 
 /**
- * 调用前提：unavailableToolCalls.length > 0。每条路径都返回 'continue' | 'break'。
+ * 解锁之后这个工具还会不会被别的「刻意收窄」的门挡下（strict skill 边界 / workbench 作用域）。
+ * 只有答案为否，才允许在本轮直接代执行——否则代执行就等于拿自愈路径绕过那道门。
+ * 复用 inference 组装工具表时用的同两个过滤器，判据与「下一轮它会不会可见」完全同源。
+ */
+function isCallableAfterUnlock(ctx: RuntimeContext, toolName: string): boolean {
+  return (
+    filterToolDefinitionsByStrictSkillBoundary([{ name: toolName }], ctx.turn.skillToolBoundary).length > 0 &&
+    isToolNameAllowedByWorkbenchScope(toolName, ctx.toolScope)
+  );
+}
+
+/**
+ * 调用前提：unavailableToolCalls.length > 0。
+ * 返回 'proceed' = 已在本轮解锁且可直接执行，调用方继续走普通工具执行链；
+ * 'continue' / 'break' 语义同前（本轮已自行落账，不再执行工具）。
  */
 export async function handleUnavailableToolCalls(
   deps: UnavailableToolCallsDeps,
@@ -48,7 +69,7 @@ export async function handleUnavailableToolCalls(
   toolCalls: ToolCall[],
   unavailableToolCalls: ToolCall[],
   visibleToolNames: Set<string>,
-): Promise<'continue' | 'break'> {
+): Promise<'continue' | 'break' | 'proceed'> {
   const { ctx, contextAssembly, emitArtifactRepairStopError } = deps;
 
   // ── Graceful deferred-tool 自愈 ─────────────────────────────────
@@ -61,14 +82,26 @@ export async function handleUnavailableToolCalls(
   if (!isRealArtifactRepair) {
     const toolSearchService = getToolSearchService();
     const autoLoaded: string[] = [];
+    const unlockedCallIds = new Set<string>();
     for (const call of unavailableToolCalls) {
       const canonical = resolveToolAlias(call.name);
       const selection = toolSearchService.selectTool(canonical);
       if (selection.loadedTools.length > 0) {
         autoLoaded.push(...selection.loadedTools);
+        unlockedCallIds.add(call.id);
       }
     }
     if (autoLoaded.length > 0) {
+      // 本轮直接代执行：每个不可见调用都真被解锁、且解锁后没有别的门挡着，才交回普通
+      // 工具链执行。这里刻意不自己执行任何东西——审批 / commandSafety / hooks 全部靠
+      // handleToolResponse 那唯一一处 executeToolsWithHooks，与普通工具调用同一入口。
+      const allCallableNow = unavailableToolCalls.every(
+        (call) => unlockedCallIds.has(call.id) && isCallableAfterUnlock(ctx, call.name),
+      );
+      if (allCallableNow) {
+        return 'proceed';
+      }
+
       const loadedList = Array.from(new Set(autoLoaded)).join(', ');
       contextAssembly.injectSystemMessage(
         [

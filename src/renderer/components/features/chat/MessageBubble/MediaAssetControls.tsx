@@ -18,7 +18,6 @@ import { IPC_DOMAINS } from '@shared/ipc';
 import { resolveFileUrl } from '../../../../utils/resolveFileUrl';
 import { copyPathToClipboard, isWebMode } from '../../../../utils/platform';
 import { importAssetToCanvas } from '../../../design/importAssetToCanvas';
-import { useToolbarOverflow } from '../../../design/useToolbarOverflow';
 import { useAppStore } from '../../../../stores/appStore';
 import { toast } from '../../../../hooks/useToast';
 
@@ -189,8 +188,8 @@ async function saveMediaAsset(asset: SessionMediaAsset): Promise<void> {
   document.body.removeChild(link);
 }
 
-// 参与溢出收折的动作（显示顺序）；放不下时从末尾收起 ⇒ 收折优先级 Finder → 保存 → 打开 → 查看。
-// 「修改」「复制」不在此列：产品负责人拍板的两个常驻主动作，任何宽度下都不进溢出集。
+// 恒进 ⋯ 的动作（菜单里的显示顺序）。
+// 「修改」「复制」不在此列：产品负责人拍板的两个常驻主动作，永远直接露在条上。
 type MediaAssetOverflowId = 'lightbox' | 'open' | 'save' | 'reveal';
 export const MEDIA_ASSET_OVERFLOW_IDS: readonly MediaAssetOverflowId[] = [
   'lightbox',
@@ -212,12 +211,13 @@ export function MediaAssetActionBar({
     ? 'inline-flex h-7 w-7 items-center justify-center rounded-md text-zinc-400 transition-colors hover:bg-zinc-700/70 hover:text-zinc-100'
     : 'inline-flex items-center gap-1 rounded-md bg-zinc-800/70 px-2 py-1 text-xs text-zinc-300 transition-colors hover:bg-zinc-700 hover:text-zinc-100';
 
-  // B3 收尾（2026-08-02 工单）：溢出折叠——窄气泡里 6 个按钮 flex-wrap 换行成两三排。
-  // 接共享 hook 按实测可用宽度折叠，不写死断点；宽度回来双向铺回（hook 自带 8px 滞回）。
-  // 修改/复制 常驻段（fixedRef 计入预算）；可折叠项放不下的从末尾收进 ⋯ 菜单（图标+文字）。
+  // B3（2026-08-02 产品负责人拍板）：**固定规则，不做宽度自适应**——
+  // 默认只露「修改 + 复制」，查看/打开/保存/Finder 恒进 ⋯。
+  // 为什么不用 useToolbarOverflow：这条按钮组全部 10 个调用点都传 compact，
+  // 渲染出来是 28px 纯图标，6 个连间距才 ~188px，任何气泡都放得下——
+  // 「按实测宽度折叠」在这里会退化成「永不折叠」，等于拍板没落地（实拍验证过）。
+  // 宽度自适应留给带文字标签的工具条（DesignImageToolbar / DiagramToolbar），那里标签是真占宽。
   const rootRef = useRef<HTMLSpanElement>(null);
-  const fixedRef = useRef<HTMLSpanElement>(null);
-  const moreAnchorRef = useRef<HTMLSpanElement>(null);
   const [moreOpen, setMoreOpen] = useState(false);
 
   const itemIds = useMemo<readonly MediaAssetOverflowId[]>(() => {
@@ -225,15 +225,8 @@ export function MediaAssetActionBar({
     return MEDIA_ASSET_OVERFLOW_IDS.filter((id) => available.includes(id));
   }, [asset, onOpenLightbox]);
 
-  const { overflowed, itemRef } = useToolbarOverflow<MediaAssetOverflowId>({
-    containerRef: rootRef,
-    itemIds,
-    reserveWidth: 32,
-    reserveRef: moreAnchorRef,
-    fixedRef,
-    fixedElementCount: 1,
-    gap: 4,
-  });
+  // 恒定折叠：可折叠域里在场的项全部进 ⋯。
+  const overflowed = useMemo(() => new Set<MediaAssetOverflowId>(itemIds), [itemIds]);
 
   // 外点关菜单（document 级监听，不铺全屏背板，避免 handrolled-modal 门）。
   useEffect(() => {
@@ -245,7 +238,7 @@ export function MediaAssetActionBar({
     return () => document.removeEventListener('mousedown', onDown);
   }, [moreOpen]);
 
-  // ⋯ 只在有收折项时出现；宽度铺回全展开后它消失，菜单跟着关。
+  // 一个可折叠项都没有时 ⋯ 不渲染，菜单跟着关（如纯 dataURL 资产只有复制可用）。
   useEffect(() => {
     if (overflowed.size === 0) setMoreOpen(false);
   }, [overflowed]);
@@ -285,8 +278,8 @@ export function MediaAssetActionBar({
   };
 
   return (
-    // min-w-0：Lightbox 顶栏里这条是 flex item，默认 min-width:auto 不会缩到内容以下，
-    // hook 会永远量到「放得下」；whitespace-nowrap + 各段 shrink-0 同理（量被挤压后的宽度必误判）。
+    // whitespace-nowrap + 各段 shrink-0：这条恒为一排，不许 flex 挤压或折行。
+    // min-w-0：Lightbox 顶栏里这条是 flex item，默认 min-width:auto 会把兄弟元素顶宽。
     <span
       ref={rootRef}
       className="flex min-w-0 items-center gap-1 whitespace-nowrap"
@@ -296,8 +289,8 @@ export function MediaAssetActionBar({
       data-media-message-id={asset.messageId}
       data-media-tool-call-id={asset.toolCallId}
     >
-      {/* 常驻段：修改/复制 不参与收折（fixedRef 实测宽度计入预算）。 */}
-      <span ref={fixedRef} className="flex shrink-0 items-center gap-1">
+      {/* 常驻段：修改/复制 —— 拍板的两个主动作，任何宽度下都在场。 */}
+      <span className="flex shrink-0 items-center gap-1">
         {asset.kind === 'image' && !!asset.path && (
           // ds-allow:start 与同一条按钮组里既有的五个只读动作按钮（查看/复制/打开/保存/Finder）同款裸 button + buttonClass，单独换 primitive 会在同一行里高低宽窄不齐；这条按钮组整体迁 primitive 时一并处理
           <button
@@ -331,7 +324,7 @@ export function MediaAssetActionBar({
       {itemIds.map(
         (id) =>
           !overflowed.has(id) && (
-            <span key={id} ref={itemRef(id)} className="shrink-0">
+            <span key={id} className="shrink-0">
               <button
                 type="button"
                 className={buttonClass}
@@ -348,7 +341,7 @@ export function MediaAssetActionBar({
           ),
       )}
       {overflowed.size > 0 && (
-        <span ref={moreAnchorRef} className="relative shrink-0">
+        <span className="relative shrink-0">
           {/* ds-allow:start 溢出 ⋯ 触发按钮沿用本条按钮组裸 button + buttonClass 风格，与相邻按钮一致；这条按钮组整体迁 primitive 时一并处理 */}
           <button
             type="button"

@@ -52,7 +52,7 @@ describe('reduceAnnot 纯归约器', () => {
       { kind: 'rect', x: 1, y: 2, w: 3, h: 4, color: ANNOT_COLOR },
       { kind: 'text', x: 1, y: 2, text: '改这里', color: ANNOT_COLOR },
     ];
-    const layer = AnnotationLayer({ shapes }) as React.ReactElement<{ listening: boolean; children: React.ReactElement[] }>;
+    const layer = AnnotationLayer({ shapes }) as React.ReactElement<{ listening: boolean; children: React.ReactElement<{ listening?: boolean }>[] }>;
     expect(layer.props.listening).toBe(false);
     expect(layer.props.children).toHaveLength(4);
     for (const child of layer.props.children) expect(child.props.listening).toBe(false);

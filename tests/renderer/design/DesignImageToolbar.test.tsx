@@ -180,12 +180,15 @@ describe('调整大小五档', () => {
     expect(item.textContent).toContain(zh.design.resizeAlreadyRatio);
   });
 
-  it('不可行档禁用并显示原因，不静默（1000×100 → 1:1 需扩高 10 倍超上限）', () => {
+  it('不可行档禁用并显示原因（说人话，无内部机制词），不静默（1000×100 → 1:1 需扩高 10 倍超上限）', () => {
     const props = renderToolbar({ imageWidth: 1000, imageHeight: 100 });
     fireEvent.click(screen.getByTestId('design-toolbar-resize'));
     const item = screen.getByTestId('design-resize-preset-1-1');
     expect((item as HTMLButtonElement).disabled).toBe(true);
-    expect(item.textContent).toContain('超出扩图能力上限');
+    expect(item.textContent).toContain('太扁');
+    expect(item.textContent).toContain('超出能力');
+    expect(item.textContent).not.toContain('两步对称扩展');
+    expect(item.textContent).not.toContain('扩图能力上限');
     fireEvent.click(item);
     expect(props.onResizePreset).not.toHaveBeenCalled();
   });

@@ -97,12 +97,21 @@ describe('computeResizeExpandPlan — 不可用分支：非极端输入也可能
     const plan = computeResizeExpandPlan(900, 1600, RESIZE_RATIO_PRESETS['16:9']);
     expect(plan.feasible).toBe(false);
     if (plan.feasible) return;
-    expect(plan.reason).toContain('超出扩图能力上限');
+    // 用户视角说人话（2026-08-01 工单③）：形状描述 + 像素数字保留；内部机制词不出现
+    expect(plan.reason).toContain('太窄');
+    expect(plan.reason).toContain('横版');
+    expect(plan.reason).toContain('900px');
+    expect(plan.reason).toContain('超出能力');
+    expect(plan.reason).not.toContain('两步对称扩展');
+    expect(plan.reason).not.toContain('扩图能力上限');
   });
 
   it('横图 16:9 → 9:16（跨越到另一端）：同理不可用', () => {
     const plan = computeResizeExpandPlan(1600, 900, RESIZE_RATIO_PRESETS['9:16']);
     expect(plan.feasible).toBe(false);
+    if (plan.feasible) return;
+    expect(plan.reason).toContain('太扁');
+    expect(plan.reason).toContain('竖版');
   });
 
   it('极端长条（横向 3000x500）：5 档预设全部不可用', () => {

@@ -89,10 +89,16 @@ export function computeResizeExpandPlan(width: number, height: number, targetRat
   if (ratio1 > MAX_SCALE || ratio2 > MAX_SCALE) {
     // 等分两步对称扩展下，单边理论上限 ≈ 3× 原边长（ratio1 触顶时 primary=baseDim，
     // delta=2*baseDim，targetDim=baseDim+delta=3*baseDim）。
-    const maxAchievable = Math.floor(baseDim * (2 * MAX_SCALE - 1));
+    // reason 说人话（2026-08-01 工单③）：用户视角一句带过——什么形状变什么形状、要补多少、
+    // 超没超能力。像素数字保留（有信息量），内部机制词（两步对称扩展/扩图能力上限）不出现。
+    const factorRaw = targetDim / baseDim;
+    const factor = factorRaw >= 10 ? String(Math.round(factorRaw)) : factorRaw.toFixed(1).replace(/\.0$/, '');
     return {
       feasible: false,
-      reason: `目标${axis === 'width' ? '宽' : '高'}度需从 ${baseDim}px 扩到 ${targetDim}px，超出扩图能力上限（两步对称扩展约可达 ${maxAchievable}px）`,
+      reason:
+        axis === 'width'
+          ? `这张图太窄，变成横版需要把宽度从 ${baseDim}px 补到 ${targetDim}px（约 ${factor} 倍），超出能力`
+          : `这张图太扁，变成竖版需要把高度从 ${baseDim}px 补到 ${targetDim}px（约 ${factor} 倍），超出能力`,
     };
   }
 

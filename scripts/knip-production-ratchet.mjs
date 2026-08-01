@@ -27,7 +27,12 @@
 // 基线沿革：2026-07-25 建门，实测 132；同日 #676 把 retention 接进 webServer 后降到 131；
 // 同日删 41 个死 barrel（孤儿审计 D4）后降到 90；2026-07-26 删除旧 Host
 // main/bootstrap 及其两个专用辅助文件后降到 71，随即收紧；2026-07-27 复量为 67
-// （#735/#741 期间把 4 个文件接回生产链路或删除），收紧锁住战果。
+// （#735/#741 期间把 4 个文件接回生产链路或删除），收紧锁住战果；2026-08-01 删除死组件
+// TaskPanel/TaskMonitor.tsx（chip 改写与 TaskMonitor 删除工单③，无任何挂载点）后升到 69——
+// taskPanelUtils.ts / useToolProgress.ts 原本注释标注「Extracted from Progress.tsx AND
+// TaskMonitor.tsx」，TaskMonitor 是它俩唯一仍生产可达的消费方；TaskMonitor 一删，两个
+// util 就只剩 Progress.tsx 这个同样零消费者的既有死组件（早在本次改动前就已不可达，
+// 不在本工单授权范围内），遂随之转为不可达。非新增死代码，是既有死代码的传递暴露。
 //
 // 用法：node scripts/knip-production-ratchet.mjs
 
@@ -35,7 +40,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import process from 'node:process';
 
-const BASELINE_MAX = 67;
+const BASELINE_MAX = 69;
 const KNIP_VERSION = '6.24.0';
 const CONFIG = 'knip.production.json';
 

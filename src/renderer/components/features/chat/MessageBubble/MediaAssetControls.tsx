@@ -1,10 +1,11 @@
-import React from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Copy,
   Download,
   ExternalLink,
   Folder,
   Maximize2,
+  MoreHorizontal,
   Pencil,
   X,
 } from 'lucide-react';
@@ -17,6 +18,7 @@ import { IPC_DOMAINS } from '@shared/ipc';
 import { resolveFileUrl } from '../../../../utils/resolveFileUrl';
 import { copyPathToClipboard, isWebMode } from '../../../../utils/platform';
 import { importAssetToCanvas } from '../../../design/importAssetToCanvas';
+import { useToolbarOverflow } from '../../../design/useToolbarOverflow';
 import { useAppStore } from '../../../../stores/appStore';
 import { toast } from '../../../../hooks/useToast';
 
@@ -187,6 +189,16 @@ async function saveMediaAsset(asset: SessionMediaAsset): Promise<void> {
   document.body.removeChild(link);
 }
 
+// 参与溢出收折的动作（显示顺序）；放不下时从末尾收起 ⇒ 收折优先级 Finder → 保存 → 打开 → 查看。
+// 「修改」「复制」不在此列：产品负责人拍板的两个常驻主动作，任何宽度下都不进溢出集。
+type MediaAssetOverflowId = 'lightbox' | 'open' | 'save' | 'reveal';
+export const MEDIA_ASSET_OVERFLOW_IDS: readonly MediaAssetOverflowId[] = [
+  'lightbox',
+  'open',
+  'save',
+  'reveal',
+];
+
 export function MediaAssetActionBar({
   asset,
   onOpenLightbox,
@@ -196,105 +208,192 @@ export function MediaAssetActionBar({
   onOpenLightbox?: () => void;
   compact?: boolean;
 }) {
-  const actions = getMediaAssetAvailableActions(asset, { hasLightbox: Boolean(onOpenLightbox) });
-  const hasAction = (action: MediaAssetAction) => actions.includes(action);
   const buttonClass = compact
     ? 'inline-flex h-7 w-7 items-center justify-center rounded-md text-zinc-400 transition-colors hover:bg-zinc-700/70 hover:text-zinc-100'
     : 'inline-flex items-center gap-1 rounded-md bg-zinc-800/70 px-2 py-1 text-xs text-zinc-300 transition-colors hover:bg-zinc-700 hover:text-zinc-100';
 
+  // B3 收尾（2026-08-02 工单）：溢出折叠——窄气泡里 6 个按钮 flex-wrap 换行成两三排。
+  // 接共享 hook 按实测可用宽度折叠，不写死断点；宽度回来双向铺回（hook 自带 8px 滞回）。
+  // 修改/复制 常驻段（fixedRef 计入预算）；可折叠项放不下的从末尾收进 ⋯ 菜单（图标+文字）。
+  const rootRef = useRef<HTMLSpanElement>(null);
+  const fixedRef = useRef<HTMLSpanElement>(null);
+  const moreAnchorRef = useRef<HTMLSpanElement>(null);
+  const [moreOpen, setMoreOpen] = useState(false);
+
+  const itemIds = useMemo<readonly MediaAssetOverflowId[]>(() => {
+    const available = getMediaAssetAvailableActions(asset, { hasLightbox: Boolean(onOpenLightbox) });
+    return MEDIA_ASSET_OVERFLOW_IDS.filter((id) => available.includes(id));
+  }, [asset, onOpenLightbox]);
+
+  const { overflowed, itemRef } = useToolbarOverflow<MediaAssetOverflowId>({
+    containerRef: rootRef,
+    itemIds,
+    reserveWidth: 32,
+    reserveRef: moreAnchorRef,
+    fixedRef,
+    fixedElementCount: 1,
+    gap: 4,
+  });
+
+  // 外点关菜单（document 级监听，不铺全屏背板，避免 handrolled-modal 门）。
+  useEffect(() => {
+    if (!moreOpen) return;
+    const onDown = (e: MouseEvent): void => {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setMoreOpen(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [moreOpen]);
+
+  // ⋯ 只在有收折项时出现；宽度铺回全展开后它消失，菜单跟着关。
+  useEffect(() => {
+    if (overflowed.size === 0) setMoreOpen(false);
+  }, [overflowed]);
+
+  const OVERFLOW_META: Record<
+    MediaAssetOverflowId,
+    { icon: React.ReactNode; menuIcon: React.ReactNode; label: string; title: string; run: () => void }
+  > = {
+    lightbox: {
+      icon: <Maximize2 className="h-3.5 w-3.5" />,
+      menuIcon: <Maximize2 className="h-3.5 w-3.5 text-zinc-500" />,
+      label: '查看',
+      title: '放大查看',
+      run: () => onOpenLightbox?.(),
+    },
+    open: {
+      icon: <ExternalLink className="h-3.5 w-3.5" />,
+      menuIcon: <ExternalLink className="h-3.5 w-3.5 text-zinc-500" />,
+      label: '打开',
+      title: '打开',
+      run: () => void openMediaAsset(asset),
+    },
+    save: {
+      icon: <Download className="h-3.5 w-3.5" />,
+      menuIcon: <Download className="h-3.5 w-3.5 text-zinc-500" />,
+      label: '保存',
+      title: '保存',
+      run: () => void saveMediaAsset(asset),
+    },
+    reveal: {
+      icon: <Folder className="h-3.5 w-3.5" />,
+      menuIcon: <Folder className="h-3.5 w-3.5 text-zinc-500" />,
+      label: 'Finder',
+      title: '在 Finder 中显示',
+      run: () => void revealMediaAsset(asset),
+    },
+  };
+
   return (
+    // min-w-0：Lightbox 顶栏里这条是 flex item，默认 min-width:auto 不会缩到内容以下，
+    // hook 会永远量到「放得下」；whitespace-nowrap + 各段 shrink-0 同理（量被挤压后的宽度必误判）。
     <span
-      className="flex flex-wrap items-center gap-1"
+      ref={rootRef}
+      className="flex min-w-0 items-center gap-1 whitespace-nowrap"
       data-media-asset-id={asset.assetId}
       data-media-session-id={asset.sessionId}
       data-media-turn-id={asset.turnId}
       data-media-message-id={asset.messageId}
       data-media-tool-call-id={asset.toolCallId}
     >
-      {asset.kind === 'image' && !!asset.path && (
-        // ds-allow:start 与同一条按钮组里既有的五个只读动作按钮（查看/复制/打开/保存/Finder）同款裸 button + buttonClass，单独换 primitive 会在同一行里高低宽窄不齐；这条按钮组整体迁 primitive 时一并处理
-        <button
-          type="button"
-          className={`${buttonClass} text-fuchsia-200`}
-          onClick={(event) => {
-            event.stopPropagation();
-            void editMediaAssetInCanvas(asset);
-          }}
-          title="在设计画布里修改"
-          data-testid="media-asset-edit-in-canvas"
-        >
-          <Pencil className="h-3.5 w-3.5" />
-          {!compact && <span>修改</span>}
-        </button>
-        // ds-allow:end
-      )}
-      {onOpenLightbox && hasAction('lightbox') && (
-        <button
-          type="button"
-          className={buttonClass}
-          onClick={(event) => {
-            event.stopPropagation();
-            onOpenLightbox();
-          }}
-          title="放大查看"
-        >
-          <Maximize2 className="h-3.5 w-3.5" />
-          {!compact && <span>查看</span>}
-        </button>
-      )}
-      <button
-        type="button"
-        className={buttonClass}
-        onClick={(event) => {
-          event.stopPropagation();
-          void copyPathToClipboard(getCopyReference(asset));
-        }}
-        title="复制引用"
-      >
-        <Copy className="h-3.5 w-3.5" />
-        {!compact && <span>复制</span>}
-      </button>
-      {hasAction('open') && (
+      {/* 常驻段：修改/复制 不参与收折（fixedRef 实测宽度计入预算）。 */}
+      <span ref={fixedRef} className="flex shrink-0 items-center gap-1">
+        {asset.kind === 'image' && !!asset.path && (
+          // ds-allow:start 与同一条按钮组里既有的五个只读动作按钮（查看/复制/打开/保存/Finder）同款裸 button + buttonClass，单独换 primitive 会在同一行里高低宽窄不齐；这条按钮组整体迁 primitive 时一并处理
+          <button
+            type="button"
+            className={`${buttonClass} text-fuchsia-200`}
+            onClick={(event) => {
+              event.stopPropagation();
+              void editMediaAssetInCanvas(asset);
+            }}
+            title="在设计画布里修改"
+            data-testid="media-asset-edit-in-canvas"
+          >
+            <Pencil className="h-3.5 w-3.5" />
+            {!compact && <span>修改</span>}
+          </button>
+          // ds-allow:end
+        )}
         <button
           type="button"
           className={buttonClass}
           onClick={(event) => {
             event.stopPropagation();
-            void openMediaAsset(asset);
+            void copyPathToClipboard(getCopyReference(asset));
           }}
-          title="打开"
+          title="复制引用"
         >
-          <ExternalLink className="h-3.5 w-3.5" />
-          {!compact && <span>打开</span>}
+          <Copy className="h-3.5 w-3.5" />
+          {!compact && <span>复制</span>}
         </button>
+      </span>
+      {itemIds.map(
+        (id) =>
+          !overflowed.has(id) && (
+            <span key={id} ref={itemRef(id)} className="shrink-0">
+              <button
+                type="button"
+                className={buttonClass}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  OVERFLOW_META[id].run();
+                }}
+                title={OVERFLOW_META[id].title}
+              >
+                {OVERFLOW_META[id].icon}
+                {!compact && <span>{OVERFLOW_META[id].label}</span>}
+              </button>
+            </span>
+          ),
       )}
-      {hasAction('save') && (
-        <button
-          type="button"
-          className={buttonClass}
-          onClick={(event) => {
-            event.stopPropagation();
-            void saveMediaAsset(asset);
-          }}
-          title="保存"
-        >
-          <Download className="h-3.5 w-3.5" />
-          {!compact && <span>保存</span>}
-        </button>
-      )}
-      {hasAction('reveal') && (
-        <button
-          type="button"
-          className={buttonClass}
-          onClick={(event) => {
-            event.stopPropagation();
-            void revealMediaAsset(asset);
-          }}
-          title="在 Finder 中显示"
-        >
-          <Folder className="h-3.5 w-3.5" />
-          {!compact && <span>Finder</span>}
-        </button>
+      {overflowed.size > 0 && (
+        <span ref={moreAnchorRef} className="relative shrink-0">
+          {/* ds-allow:start 溢出 ⋯ 触发按钮沿用本条按钮组裸 button + buttonClass 风格，与相邻按钮一致；这条按钮组整体迁 primitive 时一并处理 */}
+          <button
+            type="button"
+            className={buttonClass}
+            onClick={(event) => {
+              event.stopPropagation();
+              setMoreOpen((v) => !v);
+            }}
+            title="更多"
+            aria-expanded={moreOpen}
+            data-testid="media-asset-overflow-more"
+          >
+            <MoreHorizontal className="h-3.5 w-3.5" />
+          </button>
+          {/* ds-allow:end */}
+          {moreOpen && (
+            <span
+              data-testid="media-asset-overflow-menu"
+              // right-0 向左展开：收折只在宽度紧张时发生，朝紧张那一侧（右）展开必被窗口右缘裁
+              // （同 DiagramToolbar 调色板浮层 2026-08-02 的修法）。
+              className="absolute right-0 top-full z-20 mt-2 w-40 rounded-xl border border-border-muted bg-zinc-900/95 p-1 shadow-xl backdrop-blur"
+            >
+              {/* ds-allow:start 溢出菜单项为图标+文字菜单行（文字一律保留，不降级纯图标；hover 态自定义，非 Button variant），与图像动词条「更多」菜单行一致 */}
+              {itemIds
+                .filter((id) => overflowed.has(id))
+                .map((id) => (
+                  <button
+                    key={id}
+                    type="button"
+                    data-testid={`media-asset-overflow-${id}`}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setMoreOpen(false);
+                      OVERFLOW_META[id].run();
+                    }}
+                    className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-zinc-300 transition-colors hover:bg-surface-hover hover:text-zinc-100"
+                  >
+                    {OVERFLOW_META[id].menuIcon}
+                    {OVERFLOW_META[id].label}
+                  </button>
+                ))}
+              {/* ds-allow:end */}
+            </span>
+          )}
+        </span>
       )}
     </span>
   );

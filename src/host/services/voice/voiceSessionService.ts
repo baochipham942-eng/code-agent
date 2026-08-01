@@ -351,6 +351,11 @@ async function reportWorkFailure(
  */
 function formatNarration(narration: VoiceWorkNarration): string {
   const who = narration.speaker ? `${narration.speaker.displayName}：` : '';
+  // 「停旧的」回报（§1）：整句台词已由 buildStopNarration 算好，这里不再拼词。
+  // 措辞只有一个家，避免「停稳了没有」这件事在两个模块里各写一半而说法打架。
+  if (narration.status === 'announcement') {
+    return `[BACKEND] ${who}${narration.summary}`;
+  }
   if (narration.status === 'failed') {
     const reason = narration.summary || '未给出原因';
     return `[BACKEND] ${who}「${narration.title}」失败了，没有完成，原因：${reason}。`

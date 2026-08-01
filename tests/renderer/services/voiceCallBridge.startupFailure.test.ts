@@ -99,6 +99,34 @@ describe('voiceStartupFailureTier 分档表', () => {
       expect(['actionable', 'silent']).toContain(tier);
     }
   });
+
+  // 上面那条只钉「键集齐、值是两个合法字符串之一」——**它管不住档位填错**。
+  // 2026-08-01 收口变异实测：把 MICROPHONE_PERMISSION_DENIED 从 actionable 翻成 silent，
+  // 全套测试照样绿。而档位填错的后果是静默的错误呈现（用户明明去开个权限就能打，
+  // 通话条却被直接收走、只剩一句转瞬即逝的 toast），恰恰是本单要消灭的那种失败。
+  //
+  // 所以整张表逐条钉死。每一条都是产品判断（"用户动得了手吗"），改它必须是显式决定：
+  // 改表就得改这里，在 diff 上看得见，而不是悄悄换个词。
+  it('逐条钉死每个 code 的档位——填错档位是静默的错误呈现', () => {
+    expect(VOICE_STARTUP_FAILURE_TIER).toEqual({
+      // 用户动得了手：换个窗口 / 去设置配 Key / 开权限 / 换设备 / 戴耳机
+      VOICE_SESSION_BUSY: 'actionable',
+      VOICE_PROVIDER_UNCONFIGURED: 'actionable',
+      MICROPHONE_PERMISSION_DENIED: 'actionable',
+      AUDIO_CAPTURE_FAILED: 'actionable',
+      NATIVE_AEC_FAILED: 'actionable',
+      // 通话中才产生，落不到启动失败出口；归 actionable = 保持既有呈现不变
+      VOICE_TOOLS_DROPPED: 'actionable',
+      VOICE_MODEL_UNRESPONSIVE: 'actionable',
+      VOICE_WORK_FAILED: 'actionable',
+      // 用户什么都做不了：上游 5xx / 429 / 连不上 / 退避耗尽
+      VOICE_UPSTREAM_UNAVAILABLE: 'silent',
+      UPSTREAM_SOCKET: 'silent',
+      UPSTREAM_ERROR: 'silent',
+      HANDSHAKE_FAILED: 'silent',
+      RECONNECT_FAILED: 'silent',
+    });
+  });
 });
 
 describe('voiceCallBridge 启动期失败分档', () => {

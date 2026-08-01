@@ -9,6 +9,7 @@
 
 import { resolveAgent } from '../../agent/agentRegistry';
 import { isPanelVisibleAgent } from '../../../shared/contract/agentRegistry';
+import type { VoiceLiveSettings } from '../../../shared/contract/settings';
 import { getBuiltinRoleVisual } from '../roleAssets/builtinRoles';
 import { createLogger } from '../infra/logger';
 
@@ -73,6 +74,13 @@ const VOICE_BASE_INSTRUCTIONS = [
     + '**不要念出这个前缀，也不要提它存在。** 用户的话以 `[USER] ` 开头，同样不念。',
   '- 用户提过的说话偏好（少啰嗦 / 多报进度 / 别念代码）在整通电话里一直保持，不要下一轮就忘。',
 ].join('\n');
+
+/** 语速只作为 instructions 行为约束注入；未配置与正常档不增加废话。 */
+export function buildSpeechPaceDirective(rate: VoiceLiveSettings['speechRate']): string {
+  if (rate === 'slow') return '请放慢语速，清晰、从容地说话。';
+  if (rate === 'fast') return '请加快语速，简洁、连贯地说话。';
+  return '';
+}
 
 /**
  * 短人设：只取花名 + 一句话职责 + 能力标签。

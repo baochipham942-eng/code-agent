@@ -83,6 +83,8 @@ interface ActiveSession {
   transcriptMerge: TranscriptMergeState;
   /** 通话身份的短人设，焦点刷新时要和 Focus 段一起重拼 */
   personaInstructions: string;
+  /** 当前已下发给上游的完整 instructions，用于语速/焦点刷新去重。 */
+  instructions: string;
   /** 本次通话真用的上游模型（设置白名单解析后），挂断摘要如实记它 */
   conversationModel: string;
   /** 用户此刻在看什么（Renderer 节流上报） */
@@ -780,7 +782,7 @@ async function connectAndBind(
     awaitingUserTurn: false,
   };
   const baseInstructions = withLanguageDirective(routing.personaInstructions, liveSettings?.language);
-  const initialInstructions = composeVoiceInstructions(baseInstructions, null);
+  const initialInstructions = composeVoiceInstructions(baseInstructions, null, liveSettings?.speechRate);
   // 上游回调一律经这个可变引用发：重连换的是 socket，不是通话。
   const clientRef = { current: client };
   /**
@@ -1061,6 +1063,7 @@ async function connectAndBind(
     transcriptBuf,
     transcriptMerge,
     personaInstructions: baseInstructions,
+    instructions: initialInstructions,
     conversationModel: selection.model.id,
     focus: null,
     interruption: {
@@ -1114,9 +1117,25 @@ function applyFocus(session: ActiveSession, focus: VoiceFocusContext): void {
   if (!changed) return;
   session.focus = focus;
   setVoiceDispatchFocus(focus);
-  const instructions = composeVoiceInstructions(session.personaInstructions, focus);
+  updateSessionInstructions(session);
+}
+
+function updateSessionInstructions(session: ActiveSession): void {
+  const instructions = composeVoiceInstructions(
+    session.personaInstructions,
+    session.focus,
+    readVoiceLiveSettings()?.speechRate,
+  );
+  if (instructions === session.instructions) return;
+  session.instructions = instructions;
   logger.info('instructions updated', { voiceSessionId: session.id, chars: instructions.length });
   session.upstream.updateInstructions(instructions);
+}
+
+/** 设置里改了通话语速时重发 instructions。无活跃通话 = no-op。 */
+export function refreshVoiceInstructions(): void {
+  if (!active) return;
+  updateSessionInstructions(active);
 }
 
 /** 一条 Renderer WS 的事件绑定。重连换 socket 时原样再绑一次。 */

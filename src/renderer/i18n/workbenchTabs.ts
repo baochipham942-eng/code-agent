@@ -24,6 +24,17 @@ export const workbenchTabsZh = {
     overviewContextLabel: '上下文',
     overviewArtifactsLabel: '产物',
     overviewContextEmpty: '本轮还没有使用 Skill、MCP 或 Memory',
+    // T1 Run header：跑起来时置顶的进度与干预条
+    overviewRunElapsedLabel: '已用时',
+    overviewRunInterrupt: '中断',
+    // T1 队列：跑中排队的用户消息
+    overviewQueueLabel: '排队消息',
+    overviewQueueSendNow: '立即发送',
+    overviewQueueRemove: '删除这条排队消息',
+    overviewQueueSendFailed: '发送失败',
+    overviewQueueAttachments: '{count} 个附件',
+    // T1 诊断下沉：AgentTree / 能力路由证据等 power-user 内容收进二级折叠，内容不删
+    overviewDiagnosticsLabel: '诊断详情',
     overviewBackLabel: '返回概览',
     // 概览空态：不摆空产物壳，告诉用户这里是任务现场；有最近任务现场摘要时挂「最近产物」预览
     overviewEmptyNarrative: '运行中的任务会实时显示在这里',
@@ -66,6 +77,14 @@ export const workbenchTabsEn: typeof workbenchTabsZh = {
     overviewContextLabel: 'Context',
     overviewArtifactsLabel: 'Deliverables',
     overviewContextEmpty: 'No Skill, MCP, or Memory used in this turn',
+    overviewRunElapsedLabel: 'Elapsed',
+    overviewRunInterrupt: 'Interrupt',
+    overviewQueueLabel: 'Queued messages',
+    overviewQueueSendNow: 'Send now',
+    overviewQueueRemove: 'Remove this queued message',
+    overviewQueueSendFailed: 'Send failed',
+    overviewQueueAttachments: '{count} attachments',
+    overviewDiagnosticsLabel: 'Diagnostics',
     overviewBackLabel: 'Back to overview',
     overviewEmptyNarrative: 'Running tasks show up here in real time',
     overviewEmptyRecentLabel: 'Latest output',

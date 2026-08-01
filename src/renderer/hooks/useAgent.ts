@@ -22,7 +22,7 @@
 //
 // ============================================================================
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { unstable_batchedUpdates } from 'react-dom';
 import type { Message } from '@shared/contract';
 import type { QueuedInputSettledEvent } from '@shared/contract/queuedInput';
@@ -31,6 +31,7 @@ import { QueuedInputSchemas } from '@shared/ipc/schemas';
 import ipcService from '../services/ipcService';
 import { generateMessageId } from '@shared/utils/id';
 import { useAppStore } from '../stores/appStore';
+import { useRunControlStore } from '../stores/runControlStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { useTaskStore } from '../stores/taskStore';
 import { useStreamingMessageAccumulatorStore, type StreamingMessageDelta } from '../stores/streamingMessageAccumulatorStore';
@@ -671,6 +672,41 @@ export const useAgent = () => {
     setResearchDetected(null);
   }, [setResearchDetected]);
 
+  // 当前会话可见的排队项——ChatInput 的排队卡和右栏 Overview 队列必须是同一份，
+  // 否则两处对「还有几条在排队」各说各话。
+  const visibleQueuedRuntimeInputs = useMemo(() => (
+    currentSessionId
+      ? queuedRuntimeInputs.filter((item) => item.sessionId === currentSessionId)
+      : []
+  ), [currentSessionId, queuedRuntimeInputs]);
+
+  // 投影给右栏 Overview（T1）。队列在这里推是因为本 hook 是唯一写入方；
+  // 动作直接把既有回调交出去，Overview 侧不重新实现任何 IPC 链路。
+  useEffect(() => {
+    useRunControlStore.getState().publishQueue(
+      visibleQueuedRuntimeInputs.map((item) => ({
+        id: item.id,
+        content: item.content,
+        attachmentsCount: item.attachmentsCount,
+        sendFailed: item.sendFailed,
+      })),
+    );
+  }, [visibleQueuedRuntimeInputs]);
+
+  useEffect(() => {
+    const store = useRunControlStore.getState();
+    store.publishActions({
+      interrupt: cancel,
+      retractQueued: cancelQueuedRuntimeInput,
+      sendQueuedNow: sendQueuedRuntimeInput,
+    });
+    // 聊天运行时卸载后动作就失效了，留着等于给 Overview 一批点了没反应的按钮。
+    return () => {
+      useRunControlStore.getState().publishActions(null);
+      useRunControlStore.getState().publishQueue([]);
+    };
+  }, [cancel, cancelQueuedRuntimeInput, sendQueuedRuntimeInput]);
+
   return {
     messages,
     isProcessing,
@@ -687,9 +723,7 @@ export const useAgent = () => {
     dismissResearchDetected,
     // 中断状态（Claude Code 风格）
     isInterrupting,
-    queuedRuntimeInputs: currentSessionId
-      ? queuedRuntimeInputs.filter((item) => item.sessionId === currentSessionId)
-      : [],
+    queuedRuntimeInputs: visibleQueuedRuntimeInputs,
     hydrateQueuedRuntimeInputs,
     cancelQueuedRuntimeInput,
     sendQueuedRuntimeInput,

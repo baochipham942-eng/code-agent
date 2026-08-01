@@ -4,16 +4,9 @@ import type { TaskProgressData } from '@shared/contract';
 import type { RunUiStatus } from '../types/runWorkbench';
 import { useAppStore } from '../stores/appStore';
 import { useSessionStore } from '../stores/sessionStore';
+import { isLiveRunStatus } from '../utils/overviewRunHeader';
 import { useAgentTreeSnapshot } from './useAgentTreeSnapshot';
 import { useRunWorkbenchModel } from './useRunWorkbenchModel';
-
-const LIVE_RUN_STATUSES: ReadonlySet<RunUiStatus> = new Set([
-  'planning',
-  'running',
-  'using_tools',
-  'verifying',
-  'waiting_approval',
-]);
 
 export interface TaskActivitySignals {
   agentNodeCount: number;
@@ -26,7 +19,7 @@ export function deriveHasTaskActivity(signals: TaskActivitySignals): boolean {
   return signals.agentNodeCount > 0
     || signals.taskCount > 0
     || Boolean(signals.taskProgress)
-    || LIVE_RUN_STATUSES.has(signals.runStatus);
+    || isLiveRunStatus(signals.runStatus);
 }
 
 export interface TaskActivity {

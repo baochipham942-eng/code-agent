@@ -130,9 +130,21 @@ function rememberClassification(message: string, result: TaskIntentClassificatio
   llmClassificationCache.set(message, result);
 }
 
+export interface ClassifyIntentOptions {
+  /**
+   * 允许为这次分类调 quick model。
+   *
+   * quick model 由 `settings.models.routing.fast` 决定，跟用户在会话里选的模型是两码事
+   * （缺省会回落到智谱）。用户没开「自动」时，等于我们背着他把消息交给了另一个供应商，
+   * 还要为此等 2-4 秒——产品负责人 2026-08-01 拍板：非自动档不做这种事，退回关键词判据。
+   */
+  allowQuickModel?: boolean;
+}
+
 export async function classifyIntent(
   message: string,
   _modelRouter: ModelRouter,
+  options: ClassifyIntentOptions = {},
 ): Promise<TaskIntentClassification> {
   // Step 1: Quick keyword check (0ms, 100% reliable)
   const quickResult = quickIntentCheck(message);
@@ -152,6 +164,11 @@ export async function classifyIntent(
   // 首响 3-4 秒。关键词档（Step 1）已经先筛过明显意图，这里只兜住关键词没覆盖的
   // 表述，而那种表述不会是一句「你好」。
   if (!needsLlmIntentClassification(message)) {
+    return { intent: 'general', references_past_context: false };
+  }
+
+  // 非自动档：不把消息交给另一个供应商的快模型，用关键词档的结论收场。
+  if (options.allowQuickModel === false) {
     return { intent: 'general', references_past_context: false };
   }
 

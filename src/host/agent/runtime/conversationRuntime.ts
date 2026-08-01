@@ -945,7 +945,12 @@ export class ConversationRuntime {
     // LLM-based intent classification (for research routing)
     if (complexityAnalysis.complexity === 'simple' || complexityAnalysis.complexity === 'moderate') {
       try {
-        const intent = await classifyIntent(userMessage, this.ctx.modelRouter);
+        // 只有「自动」档才允许为这个路由判断去调快模型：非自动档说明用户已经点名了
+        // 模型，背着他把消息交给另一个供应商、还让他等 2-4 秒，是不该做的事
+        // （产品负责人 2026-08-01）。记忆门那次分类不在此列——关掉它会让模型失忆。
+        const intent = await classifyIntent(userMessage, this.ctx.modelRouter, {
+          allowQuickModel: this.ctx.modelConfig.adaptive === true,
+        });
         logger.info('Intent classified', { intent, message: userMessage.substring(0, 50) });
 
         if (intent.intent === 'research') {

@@ -8,10 +8,11 @@
  *
  * 工具名必须精确大写驼峰（与 protocol schema name 一致），否则 agent 照着 select 会 not found。
  */
-export function formatDesignCanvasSessionReminder(): string {
+export function formatDesignCanvasSessionReminder(canvasEmpty: boolean): string {
+  const canvasState = canvasEmpty ? '为空' : '已有元素';
   return [
     '<system-reminder kind="design-canvas-session">',
-    '你正在一个「设计画布」协作会话中，右侧画布是与用户共同迭代的视觉产物面。',
+    `你正在一个「设计画布」协作会话中，右侧画布是与用户共同迭代的视觉产物面（画布当前${canvasState}）。`,
     '要在画布上创建或修改任何视觉内容（生成图片、添加/排布节点、连线、标注、出多个变体等），必须调用 ProposeCanvasOps 工具提议画布操作，由用户在画布上审批后落地；需要一次性产出多个变体供用户挑选时用 RequestDesignAutonomy。',
     '要生成视频（文生视频 / 图生视频）用 ProposeVideoOps 工具——它会在对话里向用户确认成本，确认后出视频并落到画布视频节点。',
     '要做演示稿 / 幻灯片（PPT）用 ProposeSlidesOps 工具——大纲排版免费，配图付费时会在对话里确认成本，生成后在预览 tab 打开。',
@@ -29,10 +30,11 @@ export function formatDesignCanvasSessionReminder(): string {
 export function composeDesignCanvasSystemPrompt(
   base: string | undefined,
   designCanvasActive: boolean | undefined,
+  canvasEmpty: boolean,
 ): string | undefined {
   if (!designCanvasActive) {
     return base;
   }
-  const reminder = formatDesignCanvasSessionReminder();
+  const reminder = formatDesignCanvasSessionReminder(canvasEmpty);
   return base ? `${base}\n\n${reminder}` : reminder;
 }

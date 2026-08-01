@@ -874,9 +874,12 @@ describe('macOS release fail-closed gates', () => {
     expect(sources.some((resource) => resource.startsWith('../scripts/Agent Neo Computer Use.app'))).toBe(false);
 
     expect(fetchCuaDriver).toContain('.tauri-resources.noindex');
-    expect(fetchCuaDriver).toContain('CUA_DRIVER_VERSION="0.8.1"');
+    expect(fetchCuaDriver).toContain('CUA_DRIVER_VERSION="0.14.2"');
     expect(fetchCuaDriver).toContain('cua-driver-rs-v${CUA_DRIVER_VERSION}');
-    expect(fetchCuaDriver).toContain('dc6f901b03be002a5b4137ceafd9d02cb0eb0df9265e771c6530e7cfc0a6a4f2');
+    expect(fetchCuaDriver).toContain('efc8f88a2f6e7424ab68d080331fd6aa94ef699153f2631d7a9214515151098c');
+    // 同一 release 还有个只含裸二进制的 -binary.tar.gz（31209b5f…），拿错会静默失败。
+    expect(fetchCuaDriver).toContain('-darwin-universal.tar.gz');
+    expect(fetchCuaDriver).not.toContain('-darwin-universal-binary.tar.gz');
     expect(fetchCuaDriver).toContain('codesign_with_timestamp_retry');
     expect(fetchCuaDriver).toContain('FETCHED_UPSTREAM=1');
     expect(fetchCuaDriver).toContain('agent-neo-computer-use-mcp.sh');
@@ -915,7 +918,12 @@ describe('macOS release fail-closed gates', () => {
     expect(gitignore).toContain('.tauri-resources.noindex/');
 
     expect(launchCuaMcp).toContain('/usr/bin/open -n -g "$APP_DIR" --args serve');
-    expect(launchCuaMcp).toContain('CUA_DRIVER_RS_MCP_FORCE_PROXY=1');
+    // 0.14.x 起 proxy 是 macOS 缺省，CUA_DRIVER_RS_MCP_FORCE_PROXY 已被上游删除；
+    // 保住 proxy 的唯一依据是「exec 那行不传 --direct」——上游 --direct 会把 MCP 拉回
+    // 进程内直跑，正是这个 helper 要消灭的 TCC 归属散架。逐行查，注释里提它不算。
+    expect(launchCuaMcp).toContain('exec "$DRIVER_BIN" mcp --socket "$SOCKET_PATH"\n');
+    const cuaMcpCode = launchCuaMcp.split('\n').filter((line) => !line.trimStart().startsWith('#'));
+    expect(cuaMcpCode.filter((line) => line.includes('--direct'))).toEqual([]);
     // bundle id 必须从 helper 自身 Info.plist 读出：写死会让生产包与 dev 包两份
     // 拷贝共用 TCC 记账和 socket 路径（授权了仍反复弹窗，2026-07-31 实测）。
     expect(launchCuaMcp).toContain("PlistBuddy -c 'Print :CFBundleIdentifier' \"$CONTENTS_DIR/Info.plist\"");
@@ -929,7 +937,7 @@ describe('macOS release fail-closed gates', () => {
     for (const workflow of [releaseWorkflow, x64Workflow]) {
       expect(workflow).toContain('CUA_FETCH_UPSTREAM=1 bash scripts/fetch-cua-driver.sh');
       expect(workflow.indexOf('Import Developer ID certificate')).toBeLessThan(
-        workflow.indexOf('Fetch and re-sign CUA driver 0.8.1'),
+        workflow.indexOf('Fetch and re-sign CUA driver 0.14.2'),
       );
     }
   });

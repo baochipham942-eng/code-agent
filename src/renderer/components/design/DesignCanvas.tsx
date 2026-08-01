@@ -40,6 +40,8 @@ import { imageModelsWithCap } from '@shared/constants/visualModels';
 import { estimateImageCostCny, formatCny } from '@shared/media/imageCost';
 import { DESIGN_IMAGE_MODELS } from '@shared/constants/pricing';
 import {
+  annotShapesToMaskGeometry,
+  hasMaskArea,
   normalizeDragRect,
   worldRectToImageRegion,
   type Rect,
@@ -653,9 +655,20 @@ export const DesignCanvas: React.FC<{
     }
   };
 
-  // 标注重绘：成本确认 → 调 editByAnnotation → 成功后清标注、退模式。
+  // 标注重绘：先校验有没有圈出可重绘区域 → 成本确认 → 调 editByAnnotation → 成功后清标注、退模式。
   const onAnnotRedraw = async (): Promise<void> => {
     if (!selectedImageNode || annotShapes.length === 0 || !annotInstruction.trim()) return;
+    // 2026-08-02 收口工单：校验必须排在付费确认之前——只画了文字标签没圈区域时，
+    // 旧顺序是先问「要花 ¥x 吗」、点了确定才被告知「请先圈出区域」。
+    // 可以在世界坐标上先判：editByAnnotation 里那道守卫判的是同一个几何，只是先过了
+    // shapesToNodeLocal（平移）和 composeAnnotOps（正比例缩放）——两者都是 1:1 映射、
+    // 不过滤不裁剪、缩放因子恒正，「有没有面积」这个布尔值在两个坐标系里恒等。
+    // 注意：editByAnnotation 内部那道守卫保留不动——它是拦付费空调用的最后一道闸，
+    // 这道是为了把提示提前给用户，两者不是二选一。
+    if (!hasMaskArea(annotShapesToMaskGeometry(annotShapes))) {
+      useDesignCanvasStore.getState().setError(t.design.errAnnotNoRegion);
+      return;
+    }
     // 成本按 mask 通道实际用的编辑模型算（万相 imageedit），不再按用户选的标注模型。
     const est = formatCny(estimateImageCostCny(DESIGN_IMAGE_MODELS.edit));
     if (!window.confirm(`${t.design.annotCostConfirm}（${est}）`)) return;

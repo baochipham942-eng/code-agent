@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   getAgentSendFailureMessage,
+  isSessionBusyRunConflict,
   getRuntimeFollowupFailureMessage,
   isRuntimeBusyStatus,
 } from '../../../src/renderer/hooks/agent/useAgentIPC';
@@ -31,4 +32,14 @@ describe('runtime follow-up helpers', () => {
     expect(getAgentSendFailureMessage(new Error('network down'))).toBe('Error: network down');
   });
 
+  // 这一档不是失败：模型上一轮已经答完（用户也看到了），只是 run 还没收干净。
+  // 判据必须认结构化 status，不能只靠中文文案——文案一改就静默失效。
+  it('recognises the session-busy run conflict from status and from the raw host message', () => {
+    expect(isSessionBusyRunConflict(Object.assign(new Error('云端代理请求失败 (409): x'), { status: 409 })))
+      .toBe(true);
+    expect(isSessionBusyRunConflict(new Error('Session s1 already has active run run-abc'))).toBe(true);
+    expect(isSessionBusyRunConflict(Object.assign(new Error('boom'), { status: 500 }))).toBe(false);
+    expect(isSessionBusyRunConflict(new Error('network down'))).toBe(false);
+    expect(isSessionBusyRunConflict(undefined)).toBe(false);
+  });
 });

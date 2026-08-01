@@ -52,6 +52,8 @@ export const designToolbarZh = {
     resizeCostHint: '预估 {cost} · 1 次扩图',
     annotModelSelectLabel: '标注模型选择',
     // —— 「更多」分组标题（2026-08-01 审美关返工#2：按用途分组，不做杂物抽屉）——
+    // K1 溢出折叠：窄栏收折的动词并进「更多」菜单顶部的「工具」组（与原更多合并成同一个菜单）
+    moreGroupTools: '工具',
     moreGroupEdit: '修图',
     moreGroupExportThis: '导出这张',
     moreGroupDerive: '派生',
@@ -110,6 +112,7 @@ export const designToolbarEn = {
     resizeAlreadyRatio: 'Already this ratio',
     resizeCostHint: 'Est. {cost} · 1 expand call',
     annotModelSelectLabel: 'Annotation model',
+    moreGroupTools: 'Tools',
     moreGroupEdit: 'Edit',
     moreGroupExportThis: 'Export this image',
     moreGroupDerive: 'Derive',

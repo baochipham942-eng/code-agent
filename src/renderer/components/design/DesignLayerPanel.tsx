@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Check, ChevronRight, Film, Image as ImageIcon, LocateFixed, Trash2 } from 'lucide-react';
+import { Archive, Check, ChevronRight, Film, Image as ImageIcon, LocateFixed, Trash2 } from 'lucide-react';
 import {
   isReferenceNode,
   isVideoNode,
@@ -135,12 +135,15 @@ export const DesignLayerPanel: React.FC<{
               <div className="rounded-md bg-white/[0.03] p-2">{t.design.layerParent}<br /><span className="text-zinc-200">{selected.parentId || '—'}</span></div>
             </div>
           </details>
-          <div className="mt-3 grid grid-cols-3 gap-2">
+          {/* K1 溢出折叠（2026-08-01）：窄栏下 grid-cols-3 会把「设为主版」劈成两行。
+              改 flex：主动作保文字并占满剩余宽；「淘汰」「删除」收图标 + title 悬停提示，
+              两个图标可区分（淘汰=归档 Archive、删除=垃圾桶 Trash2）。 */}
+          <div className="mt-3 flex gap-2">
             <button
               type="button"
               onClick={() => onSetChosen(selected.id)}
               disabled={selected.discarded}
-              className="inline-flex items-center justify-center gap-1.5 rounded-md border border-emerald-500/20 bg-emerald-500/10 px-2 py-1.5 text-xs text-emerald-200 disabled:opacity-40"
+              className="inline-flex flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-md border border-emerald-500/20 bg-emerald-500/10 px-2 py-1.5 text-xs text-emerald-200 disabled:opacity-40"
             >
               <Check className="h-3.5 w-3.5" />
               {t.design.layerSetMain}
@@ -149,19 +152,20 @@ export const DesignLayerPanel: React.FC<{
               type="button"
               onClick={() => onDiscard(selected.id)}
               disabled={selected.discarded}
-              className="inline-flex items-center justify-center gap-1.5 rounded-md border border-red-500/20 bg-red-500/10 px-2 py-1.5 text-xs text-red-200 disabled:opacity-40"
+              title={t.design.layerDiscard}
+              className="inline-flex items-center justify-center rounded-md border border-red-500/20 bg-red-500/10 px-2 py-1.5 text-xs text-red-200 disabled:opacity-40"
+              aria-label={`${t.design.layerDiscard} ${layerDisplayName(selected, t.design.layerUnnamed)}`}
             >
-              <Trash2 className="h-3.5 w-3.5" />
-              {t.design.layerDiscard}
+              <Archive className="h-3.5 w-3.5" />
             </button>
             <button
               type="button"
               onClick={() => onDelete(selected.id)}
-              className="inline-flex items-center justify-center gap-1.5 rounded-md border border-red-500/25 bg-red-500/15 px-2 py-1.5 text-xs text-red-100"
+              title={t.common.delete}
+              className="inline-flex items-center justify-center rounded-md border border-red-500/25 bg-red-500/15 px-2 py-1.5 text-xs text-red-100"
               aria-label={`${t.common.delete} ${layerDisplayName(selected, t.design.layerUnnamed)}`}
             >
               <Trash2 className="h-3.5 w-3.5" />
-              {t.common.delete}
             </button>
           </div>
         </div>

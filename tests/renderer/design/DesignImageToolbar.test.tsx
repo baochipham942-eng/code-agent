@@ -193,25 +193,41 @@ describe('调整大小五档', () => {
     expect(props.onResizePreset).not.toHaveBeenCalled();
   });
 
-  it('可行档按实际步数估成本（2 步 = 2 次付费扩图），点击按顺序回传 steps', () => {
+  it('可行档估一次扩图的钱，点击回传四向 scale（2026-08-01：由两次付费降为一次）', () => {
     const props = renderToolbar({ imageWidth: 1024, imageHeight: 1024 });
     fireEvent.click(screen.getByTestId('design-toolbar-resize'));
     const item = screen.getByTestId('design-resize-preset-9-16');
-    // 1024×1024 → 9:16：两步对称扩高，成本 = 2 × ¥0.14 = ¥0.28，不许只算一次
-    expect(item.textContent).toContain('¥0.28');
-    expect(item.textContent).toContain('2');
+    // 1024×1024 → 9:16：一次四向扩图，成本 = 1 × ¥0.14。旧实现要两步 ¥0.28，
+    // 这条同时钉住「不许再显示两次的价」——回退成两步调用会在这里红。
+    expect(item.textContent).toContain('¥0.14');
+    expect(item.textContent).toContain('1 次扩图');
+    expect(item.textContent).not.toContain('¥0.28');
     fireEvent.click(item);
     expect(props.onResizePreset).toHaveBeenCalledTimes(1);
-    const steps = vi.mocked(props.onResizePreset).mock.calls[0][0];
-    expect(steps).toHaveLength(2);
-    expect(steps[0].direction).toBe('up');
-    expect(steps[1].direction).toBe('down');
-    for (const s of steps) {
-      expect(s.ratio).toBeGreaterThanOrEqual(1);
-      expect(s.ratio).toBeLessThanOrEqual(2);
+    const scales = vi.mocked(props.onResizePreset).mock.calls[0][0];
+    expect(scales).not.toBeNull();
+    if (!scales) throw new Error('应当回传 scales');
+    // 变竖版 = 只抬高度两侧，宽度两侧保持 1
+    expect(scales.left).toBe(1);
+    expect(scales.right).toBe(1);
+    expect(scales.top).toBeGreaterThan(1);
+    expect(scales.top).toBeCloseTo(scales.bottom, 10);
+    for (const v of [scales.top, scales.bottom, scales.left, scales.right]) {
+      expect(v).toBeGreaterThanOrEqual(1);
+      expect(v).toBeLessThanOrEqual(2);
     }
     // 选档后菜单关闭
     expect(screen.queryByTestId('design-resize-menu')).toBeNull();
+  });
+
+  it('已是目标比例的档位：展示「已是该比例」且不发起调用', () => {
+    const props = renderToolbar({ imageWidth: 1024, imageHeight: 1024 });
+    fireEvent.click(screen.getByTestId('design-toolbar-resize'));
+    const item = screen.getByTestId('design-resize-preset-1-1');
+    expect(item.textContent).toContain('已是该比例');
+    expect(item.textContent).not.toContain('¥');
+    fireEvent.click(item);
+    expect(props.onResizePreset).not.toHaveBeenCalled();
   });
 });
 

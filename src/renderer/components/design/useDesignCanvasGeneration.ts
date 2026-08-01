@@ -78,10 +78,16 @@ export type ExpandDirection = 'up' | 'down' | 'left' | 'right' | 'all';
 export interface ExpandArgs {
   /** 被扩图的底图节点。 */
   baseNode: CanvasImageNode;
-  /** 扩展方向。 */
-  direction: ExpandDirection;
+  /** 扩展方向。与 scales 二选一：给了 scales 就不看这两个字段。 */
+  direction?: ExpandDirection;
   /** 扩展比例（1.0–2.0，单边外扩倍数）。 */
-  ratio: number;
+  ratio?: number;
+  /**
+   * 四向独立单边 scale（各 ∈[1,2]），一次调用即可表达「左右各扩一半」这类非对称外扩。
+   * 「调整大小」五档比例预设走这条（旧形态要两次付费出图才能做到同一件事）。
+   * 与 direction+ratio 二选一，两者都给以 scales 为准（与 host handleExpandDesignImage 同约定）。
+   */
+  scales?: { top: number; bottom: number; left: number; right: number };
   /** 可选补绘描述（缺省走 main 侧默认 prompt）。 */
   prompt?: string;
 }
@@ -409,7 +415,7 @@ export function useDesignCanvasGeneration(): {
 
   const expand = useCallback(
     async (args: ExpandArgs) => {
-      const { baseNode, direction, ratio, prompt } = args;
+      const { baseNode, direction, ratio, scales, prompt } = args;
       const runDir = useDesignCanvasStore.getState().runDir;
       if (!runDir) return;
       const assetRel = `${DESIGN_WORKSPACE.CANVAS_ASSETS_DIR}/expand-${Date.now()}.png`;
@@ -426,7 +432,11 @@ export function useDesignCanvasGeneration(): {
         const res = await window.domainAPI?.invoke<{ path: string; actualModel: string; costCny: number }>(
           IPC_DOMAINS.WORKSPACE,
           'expandDesignImage',
-          { baseImagePath: `${runDir}/${baseNode.src}`, outputPath: assetAbs, direction, ratio, prompt, selectionContext },
+          // scales 与 direction+ratio 二选一：给了 scales 就不带方向/倍率，避免两套语义同时到达 host
+          // 后靠优先级隐式决胜（host 侧确实以 scales 优先，但让 payload 自己说清楚更不容易出错）。
+          scales
+            ? { baseImagePath: `${runDir}/${baseNode.src}`, outputPath: assetAbs, scales, prompt, selectionContext }
+            : { baseImagePath: `${runDir}/${baseNode.src}`, outputPath: assetAbs, direction, ratio, prompt, selectionContext },
         );
         if (!res?.success) {
           throw new Error(res?.error?.message || t.design.errDispatch);

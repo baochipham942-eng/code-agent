@@ -39,7 +39,7 @@ function controllerDeps(): ProposalControllerDeps {
       const st = useDesignCanvasStore.getState();
       const live = new Set(st.nodes.filter((n) => !n.discarded).map((n) => n.id));
       const { toDiscard, applied, skipped } = planDiscards(live, nodeIds);
-      for (const id of toDiscard) st.discardNode(id);
+      for (const id of toDiscard) st.discardNode(id, 'agent');
       return { applied, skipped };
     },
     save: async () => {

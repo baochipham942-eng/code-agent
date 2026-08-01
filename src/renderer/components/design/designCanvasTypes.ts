@@ -2,6 +2,7 @@
 // 画布存档落 run 目录下的 canvas.json；图片落 assets/，节点只存相对路径，
 // 避免 JSON 内嵌 base64 膨胀（详见 内部文档 §2.2）。
 import type { RegionLockReport } from '@shared/contract/imageConsistency';
+import { isCanvasActor, type CanvasAttribution } from './canvasActor';
 import {
   normalizeConnector,
   normalizeShape,
@@ -14,7 +15,7 @@ import {
 export const DEFAULT_VIDEO_DURATION_SEC = 5;
 
 /** 画布节点公共基础字段（图像节点与视频节点共享）。 */
-export interface CanvasNodeBase {
+export interface CanvasNodeBase extends CanvasAttribution {
   id: string;
   /** 相对 run 目录的媒体文件路径（图片或视频，不内嵌 base64）。 */
   src: string;
@@ -124,7 +125,7 @@ function isFiniteNumber(v: unknown): v is number {
 }
 
 /** 规整公共基础字段（图像/视频节点共用）；校验失败返回 null。 */
-function normalizeBase(r: Record<string, unknown>): CanvasNodeBase | null {
+function normalizeBase(r: Record<string, unknown>, forceUserTouched: boolean): CanvasNodeBase | null {
   if (typeof r.id !== 'string' || r.id.length === 0) return null;
   if (typeof r.src !== 'string' || r.src.length === 0) return null;
   if (![r.x, r.y, r.width, r.height].every(isFiniteNumber)) return null;
@@ -136,7 +137,13 @@ function normalizeBase(r: Record<string, unknown>): CanvasNodeBase | null {
     width: r.width as number,
     height: r.height as number,
     createdAt: isFiniteNumber(r.createdAt) ? (r.createdAt as number) : 0,
+    createdBy: isCanvasActor(r.createdBy) ? r.createdBy : 'user',
   };
+  if (forceUserTouched || !isCanvasActor(r.createdBy)) {
+    base.userTouchedAt = 0;
+  } else if (isFiniteNumber(r.userTouchedAt) && (r.userTouchedAt as number) >= 0) {
+    base.userTouchedAt = r.userTouchedAt as number;
+  }
   if (typeof r.prompt === 'string') base.prompt = r.prompt;
   if (typeof r.parentId === 'string') base.parentId = r.parentId;
   if (r.chosen === true) base.chosen = true;
@@ -150,10 +157,10 @@ function normalizeBase(r: Record<string, unknown>): CanvasNodeBase | null {
 }
 
 /** 校验并规整一个节点；非法返回 null（由调用方过滤）。 */
-function normalizeNode(raw: unknown): CanvasNode | null {
+function normalizeNode(raw: unknown, forceUserTouched = false): CanvasNode | null {
   if (typeof raw !== 'object' || raw === null) return null;
   const r = raw as Record<string, unknown>;
-  const base = normalizeBase(r);
+  const base = normalizeBase(r, forceUserTouched);
   if (!base) return null;
 
   // 判断是否为视频节点：kind='video' 或 src 以 .mp4 结尾
@@ -224,34 +231,66 @@ export function serializeCanvasDoc(doc: DesignCanvasDoc): string {
  * 从 canvas.json 字符串反序列化；任何破损/缺字段都安全降级到默认值，
  * 不抛异常（画布存档损坏不应让设计模式整个崩溃）。
  */
-export function deserializeCanvasDoc(text: string | null | undefined): DesignCanvasDoc {
-  if (!text) return emptyCanvasDoc();
+export interface CanvasDocLoadResult {
+  doc: DesignCanvasDoc;
+  attributionDegraded: boolean;
+  reasons: string[];
+}
+
+function hasValidAttribution(raw: unknown): boolean {
+  if (typeof raw !== 'object' || raw === null) return false;
+  const r = raw as Record<string, unknown>;
+  return isCanvasActor(r.createdBy)
+    && (r.userTouchedAt === undefined || (isFiniteNumber(r.userTouchedAt) && r.userTouchedAt >= 0));
+}
+
+/**
+ * 带归因完整性报告的反序列化。任一实体归因缺失/非法时整卷降级为 userTouched，
+ * 让 store 外改写 canvas.json 无法绕过后续审批策略。
+ */
+export function deserializeCanvasDocWithReport(text: string | null | undefined): CanvasDocLoadResult {
+  if (!text) return { doc: emptyCanvasDoc(), attributionDegraded: false, reasons: [] };
   let parsed: unknown;
   try {
     parsed = JSON.parse(text);
   } catch {
-    return emptyCanvasDoc();
+    return { doc: emptyCanvasDoc(), attributionDegraded: true, reasons: ['invalid-json'] };
   }
-  if (typeof parsed !== 'object' || parsed === null) return emptyCanvasDoc();
+  if (typeof parsed !== 'object' || parsed === null) {
+    return { doc: emptyCanvasDoc(), attributionDegraded: true, reasons: ['invalid-root'] };
+  }
   const p = parsed as Record<string, unknown>;
+  const rawEntities = [
+    ...(Array.isArray(p.nodes) ? p.nodes : []),
+    ...(Array.isArray(p.connectors) ? p.connectors : []),
+    ...(Array.isArray(p.shapes) ? p.shapes : []),
+  ];
+  const reasons: string[] = [];
+  if (!Array.isArray(p.nodes)) reasons.push('nodes-not-array');
+  if (rawEntities.some((entity) => !hasValidAttribution(entity))) reasons.push('invalid-attribution');
+  const attributionDegraded = reasons.length > 0;
   const nodes = Array.isArray(p.nodes)
-    ? p.nodes.map(normalizeNode).filter((n): n is CanvasNode => n !== null)
+    ? p.nodes.map((node) => normalizeNode(node, attributionDegraded)).filter((n): n is CanvasNode => n !== null)
     : [];
   const doc: DesignCanvasDoc = { version: CANVAS_DOC_VERSION, nodes, camera: normalizeCamera(p.camera) };
   // 图解层（加法字段）：归一化 + 过滤悬空连线（端点节点必须存在）；仅非空时挂上，保持紧凑。
   const nodeIds = new Set(nodes.map((n) => n.id));
   const connectors = Array.isArray(p.connectors)
     ? pruneDanglingConnectors(
-        p.connectors.map(normalizeConnector).filter((c): c is CanvasConnector => c !== null),
+        p.connectors.map((connector) => normalizeConnector(connector, attributionDegraded)).filter((c): c is CanvasConnector => c !== null),
         nodeIds,
       )
     : [];
   if (connectors.length > 0) doc.connectors = connectors;
   const shapes = Array.isArray(p.shapes)
-    ? p.shapes.map(normalizeShape).filter((s): s is CanvasShape => s !== null)
+    ? p.shapes.map((shape) => normalizeShape(shape, attributionDegraded)).filter((s): s is CanvasShape => s !== null)
     : [];
   if (shapes.length > 0) doc.shapes = shapes;
-  return doc;
+  return { doc, attributionDegraded, reasons };
+}
+
+export function deserializeCanvasDoc(text: string | null | undefined): DesignCanvasDoc {
+  return deserializeCanvasDocWithReport(text).doc;
 }
 
 /** 计算下一个新节点的落点：放在现有节点最右侧 +gap（移植 make-real 的 x:maxX+60）。 */

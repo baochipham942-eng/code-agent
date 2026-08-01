@@ -4,7 +4,7 @@ import { useDesignCanvasStore } from '../../../src/renderer/components/design/de
 import type { DesignCanvasDoc, CanvasImageNode } from '../../../src/renderer/components/design/designCanvasTypes';
 import type { CanvasProposalOp } from '../../../src/shared/contract/canvasProposal';
 
-const n = (id: string): CanvasImageNode => ({ id, src: `assets/${id}.png`, x: 0, y: 0, width: 100, height: 100, createdAt: 1 });
+const n = (id: string): CanvasImageNode => ({ id, src: `assets/${id}.png`, x: 0, y: 0, width: 100, height: 100, createdAt: 1, createdBy: 'agent' });
 const doc = (nodes: CanvasImageNode[]): DesignCanvasDoc => ({ version: 1, nodes, camera: { x: 0, y: 0, scale: 1 } });
 const get = () => useDesignCanvasStore.getState();
 let seq = 0;

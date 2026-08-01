@@ -89,6 +89,7 @@ describe('DesignCanvasTab 画布恢复 effect', () => {
       width: 320,
       height: 180,
       createdAt: 1,
+      createdBy: 'user',
     }];
     render(<DesignCanvasTab />);
     expect(loadCanvasDoc).not.toHaveBeenCalled();
@@ -117,6 +118,7 @@ const imageNode = (
   parentId,
   label: id,
   costCny,
+  createdBy: 'user',
 });
 
 describe('DesignCanvasTab 成本与历史浮层', () => {

@@ -56,8 +56,10 @@ describe('media asset rendering', () => {
     expect(html).toContain('file:///repo/input.png');
     expect(html).toContain('data-media-session-id="session-attachment"');
     expect(html).toContain('data-media-message-id="user-1"');
-    expect(html).toContain('放大查看');
-    expect(html).toContain('保存');
+    // 2026-08-02 拍板：条上只露 修改/复制，查看/打开/保存/Finder 恒进 ⋯ 菜单
+    // （菜单未展开时不渲染），故这里断言动作入口本身在场，而不是被收起项的文案。
+    expect(html).toContain('复制引用');
+    expect(html).toContain('media-asset-overflow-more');
   });
 
   it('skips oversized inline attachment previews instead of rendering the data URL', () => {
@@ -138,7 +140,8 @@ describe('media asset rendering', () => {
     expect(html).toContain('data-media-turn-id="turn-tool"');
     expect(html).toContain('data-media-message-id="assistant-1"');
     expect(html).toContain('data-media-tool-call-id="tool-image"');
-    expect(html).toContain('保存');
+    // 同上：保存已收进 ⋯ 菜单，改断言 ⋯ 触发器在场。
+    expect(html).toContain('media-asset-overflow-more');
   });
 
   it('promotes generic media tool outputs instead of showing raw result payload', () => {
@@ -228,8 +231,9 @@ describe('media asset rendering', () => {
 
     expect(html).toContain('render.png');
     expect(html).toContain('file:///repo/render.png');
-    expect(html).toContain('放大查看');
-    expect(html).toContain('保存');
+    // 同上：查看/保存已收进 ⋯ 菜单。
+    expect(html).toContain('复制引用');
+    expect(html).toContain('media-asset-overflow-more');
     expect(html).not.toContain('Also modified');
   });
 

@@ -5,7 +5,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Stage, Layer, Rect as KonvaRect } from 'react-konva';
 import type Konva from 'konva';
-import { AlertCircle, Palette, GitCompare } from 'lucide-react';
+import { AlertCircle, Palette, Loader2, GitCompare, Presentation } from 'lucide-react';
 import { useI18n } from '../../hooks/useI18n';
 import { CloseButton } from '../primitives';
 import { useDesignStore } from './designStore';
@@ -935,8 +935,29 @@ export const DesignCanvas: React.FC<{ showErrorBar?: boolean }> = ({ showErrorBa
           );
         })()}
 
-      {/* 画布全幅 PPTX 导出入口已收进图像动词条「更多 ⋯ · 整个画布」组（2026-08-01 审美关返工#3），
-          不再占右上角独立按钮。 */}
+      {/* 画布全幅 PPTX 导出（薄版）：画布级动作，未选中图节点（含选中非图节点）时占右上角独立
+          按钮，保证无选中也可达；选中图节点时让位给图像动词条，入口收进「更多 ⋯ · 整个画布」组
+          （2026-08-01 返工#3 修正：上一版只在动词条里，未选中态导不了——功能倒退）。<1 张图时隐藏。 */}
+      {!selectedImageNode && visibleNodes.length > 0 && (
+        <>
+          {/* ds-allow:start 画布操作栏沿用旧裸 button 样式，与同栏导出图片/PDF 按钮一致；design-mode 整体 W3 收口时统一迁 primitive */}
+          <button
+            type="button"
+            data-testid="design-canvas-export-pptx"
+            onClick={() => void exportCanvasPptx()}
+            disabled={exportingPptx}
+            className="absolute right-4 top-4 inline-flex items-center gap-1.5 rounded-lg border border-white/[0.1] bg-zinc-900/90 px-3 py-1.5 text-xs text-zinc-300 shadow-xl backdrop-blur transition-colors hover:text-zinc-100 disabled:opacity-50"
+          >
+            {exportingPptx ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Presentation className="h-3.5 w-3.5" />
+            )}
+            {t.design.exportCanvasPptx}
+          </button>
+          {/* ds-allow:end */}
+        </>
+      )}
 
       <DesignLayerPanel
         nodes={nodes}

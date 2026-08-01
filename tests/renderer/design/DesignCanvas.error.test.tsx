@@ -219,6 +219,40 @@ describe('DesignCanvas tab 错误条', () => {
   });
 });
 
+describe('导出 PPTX 双向入口（2026-08-01 返工#3 修正）', () => {
+  // 画布级动作：未选中 / 选中非图节点时右上角独立按钮必须在场——上一版只收在动词条「更多」里，
+  // 未选中态动词条不出现，导出整个不可达（功能倒退）。选中图节点时按钮让位给动词条。
+  it('未选中态：右上「导出 PPTX」按钮在场且可点击触发导出', async () => {
+    useDesignCanvasStore.setState({
+      runDir: '/tmp/design-run',
+      nodes: [imageNode('data:image/png;base64,AAAA')],
+      connectors: [],
+      shapes: [],
+      camera: { x: 0, y: 0, scale: 1 },
+      selectedIds: [],
+      selectedDiagram: null,
+      generating: false,
+    });
+    designFiles.exportCanvasPptx.mockResolvedValue({ filePath: '/tmp/out.pptx' });
+    render(<DesignCanvasTab />);
+
+    const btn = await screen.findByTestId('design-canvas-export-pptx');
+    expect(btn.textContent).toContain('导出 PPTX');
+    fireEvent.click(btn);
+
+    await waitFor(() => expect(designFiles.exportCanvasPptx).toHaveBeenCalledTimes(1));
+  });
+
+  it('选中图节点：右上按钮让位，PPTX 入口改由动词条「更多 · 整个画布」承载', () => {
+    setCanvas(imageNode('data:image/png;base64,AAAA'));
+    render(<DesignCanvasTab />);
+
+    expect(screen.queryByTestId('design-canvas-export-pptx')).toBeNull();
+    // 动词条仍在（mock 渲染了它的 PPTX 入口）
+    expect(screen.getByRole('button', { name: '测试导出 PPTX' })).toBeTruthy();
+  });
+});
+
 describe('批注重绘默认模型（2026-08-01 返工#4）', () => {
   const stubModelAvailability = (available: boolean): void => {
     vi.stubGlobal('domainAPI', {

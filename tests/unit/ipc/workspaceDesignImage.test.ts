@@ -97,7 +97,7 @@ describe('handleExpandDesignImage', () => {
       handleExpandDesignImage({ baseImagePath: '', outputPath, direction: 'up', ratio: 1.5 }),
     ).rejects.toThrow('expandDesignImage');
     await expect(
-      // @ts-expect-error 故意缺 direction
+      // 缺 direction（新契约里 direction 可选，缺失走旧形态分支被 direction 闸拦下）
       handleExpandDesignImage({ baseImagePath, outputPath, ratio: 1.5 }),
     ).rejects.toThrow('expandDesignImage');
   });
@@ -139,6 +139,70 @@ describe('handleExpandDesignImage', () => {
       handleExpandDesignImage({ baseImagePath, outputPath, direction: 'all', ratio: 1.5 }),
     ).rejects.toThrow('DashScope');
   });
+
+  // 旧形态 ratio=1（滑块最小值）四向全 1 = 什么都不扩的付费空调用，与新形态共用同一道闸。
+  it('旧形态 ratio=1 被空操作闸拦下且不触发付费调用', async () => {
+    const svc = await import(SVC);
+    await expect(
+      handleExpandDesignImage({ baseImagePath, outputPath, direction: 'all', ratio: 1 }),
+    ).rejects.toThrow(/空操作/);
+    expect((svc.expandImage as unknown as { mock: { calls: unknown[] } }).mock.calls.length).toBe(0);
+  });
+});
+
+describe('handleExpandDesignImage — 四向独立 scale 形态', () => {
+  const expandCalls = async () =>
+    ((await import(SVC)).expandImage as unknown as { mock: { calls: unknown[][] } }).mock.calls;
+
+  it('四向 scale 原样透传给 expandImage，一次调用完成非对称外扩', async () => {
+    // 居中扩成更宽的比例：左右各扩一半（1.25+1.25-1 = 1.5 倍宽），旧形态要两次付费调用才能做到。
+    const res = await handleExpandDesignImage({
+      baseImagePath,
+      outputPath,
+      scales: { top: 1, bottom: 1, left: 1.25, right: 1.25 },
+    });
+    expect(res).toEqual({ path: outputPath, actualModel: 'wanx2.1-imageedit', costCny: 0.14 });
+    expect((await expandCalls())[0][0]).toMatchObject({
+      topScale: 1,
+      bottomScale: 1,
+      leftScale: 1.25,
+      rightScale: 1.25,
+    });
+    expect((await readFile(outputPath)).toString()).toBe('ABC');
+  });
+
+  it('给了 scales 时忽略 direction/ratio（新形态优先）', async () => {
+    await handleExpandDesignImage({
+      baseImagePath,
+      outputPath,
+      direction: 'up',
+      ratio: 2,
+      scales: { top: 1, bottom: 1, left: 1, right: 1.4 },
+    });
+    expect((await expandCalls())[0][0]).toMatchObject({ topScale: 1, bottomScale: 1, leftScale: 1, rightScale: 1.4 });
+  });
+
+  // 坏输入门：每一种都必须指名道姓报错且零付费调用（静默 clamp = 扩了个寂寞的空调用）。
+  const badScales: Array<[string, unknown, RegExp]> = [
+    ['上界越界', { top: 2.5, bottom: 1, left: 1, right: 1 }, /scales\.top/],
+    ['下界越界', { top: 1, bottom: 0.5, left: 1, right: 1 }, /scales\.bottom/],
+    ['NaN', { top: 1, bottom: 1, left: Number.NaN, right: 1 }, /scales\.left/],
+    ['Infinity', { top: 1, bottom: 1, left: 1, right: Number.POSITIVE_INFINITY }, /scales\.right/],
+    ['字符串数字', { top: '1.5', bottom: 1, left: 1, right: 1 }, /scales\.top/],
+    ['缺字段', { top: 1.5, bottom: 1, left: 1 }, /scales\.right/],
+    ['null 字段', { top: 1.5, bottom: 1, left: 1, right: null }, /scales\.right/],
+    ['scales 非对象', 'nope', /scales 须为/],
+    ['scales 为 null', null, /scales 须为/],
+    ['四向全 1（空操作）', { top: 1, bottom: 1, left: 1, right: 1 }, /空操作/],
+  ];
+  for (const [name, scales, pattern] of badScales) {
+    it(`坏输入「${name}」被拦下且不触发付费调用`, async () => {
+      await expect(
+        handleExpandDesignImage({ baseImagePath, outputPath, scales: scales as never }),
+      ).rejects.toThrow(pattern);
+      expect((await expandCalls()).length).toBe(0);
+    });
+  }
 });
 
 describe('handleRemoveWatermarkDesignImage', () => {

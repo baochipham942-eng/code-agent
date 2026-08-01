@@ -624,19 +624,19 @@ describe('ConversationRuntime', () => {
       expect(ctx.control.isCancelled).toBe(true);
     });
 
-    it('should abort the abort controller', () => {
+    it('should abort the abort controller', async () => {
       const controller = new AbortController();
       ctx.control.setInferenceAbortController(controller);
 
-      runtime.cancel();
+      await runtime.cancel();
       expect(controller.signal.aborted).toBe(true);
     });
 
-    it('should abort the run-level controller', () => {
+    it('should abort the run-level controller', async () => {
       const controller = new AbortController();
       ctx.control.setRunAbortController(controller);
 
-      runtime.cancel();
+      await runtime.cancel();
       expect(controller.signal.aborted).toBe(true);
     });
 
@@ -682,14 +682,35 @@ describe('ConversationRuntime', () => {
   });
 
   describe('steer', () => {
-    it('should abort controller and set needsReinference', () => {
+    it('should abort controller and set needsReinference', async () => {
       const controller = new AbortController();
       ctx.control.setInferenceAbortController(controller);
 
-      runtime.steer('new direction');
+      await runtime.steer('new direction');
 
       expect(controller.signal.aborted).toBe(true);
       expect(ctx.turn.needsReinference).toBe(true);
+    });
+
+    // 2026-08-01 真机：插队打断长任务后，被打断那一轮已经吐出来的 400+ 字
+    // 在库里一个字都没有——停止那条路留 partial，转向这条路只 abort 不留。
+    it('preserves the interrupted turn partial content before aborting', async () => {
+      const persistMessage = vi.fn();
+      const controller = new AbortController();
+      ctx.control.setInferenceAbortController(controller);
+      ctx.turn.appendStreamedContent('写了一半的长回答');
+      ctx.persistMessage = persistMessage;
+
+      await runtime.steer('插队消息');
+
+      const partial = ctx.messages.find((message) => message.content?.includes('写了一半的长回答'));
+      expect(partial).toMatchObject({
+        role: 'assistant',
+        content: '写了一半的长回答\n\n[已被新消息打断]',
+      });
+      expect(persistMessage).toHaveBeenCalledWith(partial);
+      expect(ctx.turn.lastStreamedContent).toBe('');
+      expect(controller.signal.aborted).toBe(true);
     });
 
     it('rejects steer after settlement without aborting or requesting reinference', async () => {
@@ -708,8 +729,8 @@ describe('ConversationRuntime', () => {
       expect((runtime as any).messageProcessor.injectSteerMessage).not.toHaveBeenCalled();
     });
 
-    it('passes the renderer optimistic message id to the steer injector', () => {
-      runtime.steer('new direction', 'client-message-1');
+    it('passes the renderer optimistic message id to the steer injector', async () => {
+      await runtime.steer('new direction', 'client-message-1');
 
       expect((runtime as any).messageProcessor.injectSteerMessage).toHaveBeenCalledWith(
         'new direction',
@@ -720,8 +741,8 @@ describe('ConversationRuntime', () => {
       );
     });
 
-    it('forwards the user-facing content so the steer message persists without scaffolding', () => {
-      runtime.steer('<notice/>\n\n<user_request>\n改成蓝色\n</user_request>', 'client-message-2', undefined, undefined, '改成蓝色');
+    it('forwards the user-facing content so the steer message persists without scaffolding', async () => {
+      await runtime.steer('<notice/>\n\n<user_request>\n改成蓝色\n</user_request>', 'client-message-2', undefined, undefined, '改成蓝色');
 
       expect((runtime as any).messageProcessor.injectSteerMessage).toHaveBeenCalledWith(
         '<notice/>\n\n<user_request>\n改成蓝色\n</user_request>',
@@ -739,9 +760,9 @@ describe('ConversationRuntime', () => {
 
       const result = runtime.steer('new direction');
 
+      await expect(result).rejects.toThrow('disk full');
       expect(controller.signal.aborted).toBe(true);
       expect(ctx.turn.needsReinference).toBe(true);
-      await expect(result).rejects.toThrow('disk full');
     });
   });
 

@@ -1097,30 +1097,37 @@ export class ConversationRuntime {
   // Control methods (cancel, interrupt, steer)
   // ========================================================================
 
+  /**
+   * 把已经吐出来的半截内容留住，再让 abort 生效。
+   *
+   * 必须 await — abort 触发后 inference Promise 立刻 reject，post-inference persist
+   * 路径不会再走，partial 不在这里落库就永远没了。停止(cancel)和转向(steer)都要走
+   * 这一条：2026-08-01 真机实测，转向那条路只 abortInference 不留 partial，被打断
+   * 那一轮写了一半的长回答在库里一个字都没有。
+   */
+  private async preserveStreamedPartial(suffix: string): Promise<void> {
+    if (!this.ctx.turn.lastStreamedContent) return;
+    const partialMessage: Message = {
+      id: generateMessageId(),
+      role: 'assistant',
+      content: this.ctx.turn.lastStreamedContent + suffix,
+      timestamp: Date.now(),
+    };
+    this.ctx.messages.push(partialMessage);
+    try {
+      await this.ctx.persistMessage?.(partialMessage);
+    } catch (err) {
+      logger.warn('[ConversationRuntime] persist partial before abort failed:', err);
+    }
+    this.ctx.turn.resetStreamedContent();
+  }
+
   async cancel(reason?: 'user' | 'session-switch'): Promise<void> {
     this.ctx.control.markCancelled();
 
-    // Preserve partial streaming content before aborting
-    if (this.ctx.turn.lastStreamedContent) {
-      const suffix = reason === 'session-switch'
-        ? '\n\n[未完成 — 切换会话中断]'
-        : '\n\n[cancelled]';
-      const partialMessage: Message = {
-        id: generateMessageId(),
-        role: 'assistant',
-        content: this.ctx.turn.lastStreamedContent + suffix,
-        timestamp: Date.now(),
-      };
-      this.ctx.messages.push(partialMessage);
-      // 必须 await — abort 触发后 inference Promise 立刻 reject，post-inference
-      // persist 路径不会再走，partial 必须在 abort 前落 DB
-      try {
-        await this.ctx.persistMessage?.(partialMessage);
-      } catch (err) {
-        logger.warn('[ConversationRuntime] persist partial on cancel failed:', err);
-      }
-      this.ctx.turn.resetStreamedContent();
-    }
+    await this.preserveStreamedPartial(
+      reason === 'session-switch' ? '\n\n[未完成 — 切换会话中断]' : '\n\n[cancelled]',
+    );
     this.ctx.control.abortInference();
     this.ctx.control.abortRun();
     this.releasePauseWaiters();
@@ -1156,6 +1163,8 @@ export class ConversationRuntime {
     if (this.ctx.control.isSettled) {
       throw new SteerRejectedError();
     }
+    // 先留住被打断那一轮已经写出来的内容，再 abort——顺序反了就等于丢字。
+    await this.preserveStreamedPartial('\n\n[已被新消息打断]');
     this.ctx.control.abortInference();
     const persisted = this.messageProcessor.injectSteerMessage(newMessage, clientMessageId, attachments, metadata, displayContent);
     this.ctx.turn.requestReinference();

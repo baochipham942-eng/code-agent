@@ -35,7 +35,7 @@ import { getSessionManager } from '../services';
 import type { PlanningService } from '../planning';
 import { DeepResearchMode, SemanticResearchOrchestrator } from '../research';
 import { analyzeTask } from './hybrid/taskRouter';
-import { classifyIntent } from '../routing/intentClassifier';
+import { classifyIntent, needsLlmIntentClassification } from '../routing/intentClassifier';
 import { getSessionStateManager } from '../session/sessionStateManager';
 import { getContextHealthService } from '../context/contextHealthService';
 import { ModelRouter } from '../model/modelRouter';
@@ -107,6 +107,7 @@ interface PendingSteerMessage {
 // ----------------------------------------------------------------------------
 // Agent Orchestrator
 // ----------------------------------------------------------------------------
+
 
 export class AgentOrchestrator {
   private configService: ConfigService;
@@ -293,7 +294,10 @@ export class AgentOrchestrator {
       if (analysis.taskType === 'research') {
         logger.info('Auto-detected research task (keyword match), routing to deep research pipeline');
         await this.runDeepResearchMode(content, options, sessionAwareOnEvent, modelConfig);
-      } else if (!['code', 'data', 'ppt', 'image', 'video'].includes(analysis.taskType)) {
+      } else if (
+        !['code', 'data', 'ppt', 'image', 'video'].includes(analysis.taskType)
+        && needsLlmIntentClassification(content)
+      ) {
         try {
           const modelRouter = new ModelRouter();
           const intent = await classifyIntent(content, modelRouter);

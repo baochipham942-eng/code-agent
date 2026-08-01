@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
 import {
   attachAgentErrorToLatestAssistant,
+  endsTheTurn,
   classifyAgentError,
   getAgentErrorMessage,
   isTerminalAgentError,
@@ -177,5 +178,25 @@ describe('attachAgentErrorToLatestAssistant 多出口覆盖', () => {
     const error = useSessionStore.getState().messages[0]?.metadata?.agentError;
     expect(error?.provider).toBe('openai');
     expect(error?.modelId).toBe('gpt-5-probe');
+  });
+});
+
+// 宿主自起的轮次（抽干排队消息）会在轮次开头广播一条 user 消息补气泡；
+// 那条一旦被当成轮末，屏幕当场显示空闲、停止按钮消失，而后台还在跑。
+describe('endsTheTurn', () => {
+  it('宿主补气泡的 user 消息不算轮末', () => {
+    expect(endsTheTurn({ id: 'q1', role: 'user', content: '排队消息' })).toBe(false);
+  });
+
+  it('没有工具调用的 assistant 消息算轮末', () => {
+    expect(endsTheTurn({ id: 'a1', role: 'assistant', content: '答完了' })).toBe(true);
+  });
+
+  it('带工具调用的 assistant 消息是轮中，不算轮末', () => {
+    expect(endsTheTurn({ id: 'a1', role: 'assistant', toolCalls: [{ id: 't1' }] })).toBe(false);
+  });
+
+  it('空载荷不算', () => {
+    expect(endsTheTurn(undefined)).toBe(false);
   });
 });

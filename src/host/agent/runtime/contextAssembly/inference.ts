@@ -75,7 +75,7 @@ import {
   isArtifactRepairWritePriority,
   startArtifactModelWaitProgress,
 } from './inferenceArtifactRepair';
-import { checkpointNativeModel } from './nativeModelCheckpoint';
+import { withNativeModelOperation } from './nativeModelCheckpoint';
 import { runInferenceWithTelemetry } from './inferenceTelemetry';
 // provider fallback 机制已抽到 inferenceProviderFallback.ts；以下两个为历史公开导出，
 // 测试从本模块取，保持 re-export 兼容。
@@ -841,48 +841,14 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
         artifactRepairWritePriority,
         artifactRepairFullRewritePriority,
       };
-      await checkpointNativeModel(ctx, requestConfig, 'before_model_dispatch', 'prepared');
-      await checkpointNativeModel(ctx, requestConfig, 'after_model_dispatch', 'dispatched');
-      if (ctx.runtime.maxMode && maxModeBudgetHeadroomOk()) {
-        response = await runMaxModeInference(
-          ctx,
-          modelMessages,
-          effectiveTools,
-          requestConfig,
-          streamCallback,
-          engineOptions,
-        );
-      } else {
-        response = await runEngineInference(
-          ctx,
-          modelMessages,
-          effectiveTools,
-          requestConfig,
-          streamCallback,
-          inferenceAbortController.signal,
-          engineOptions,
-        );
-      }
-      await checkpointNativeModel(ctx, requestConfig, 'after_model_dispatch', 'succeeded');
-    } catch (inferenceError) {
-      // 这次模型调用没跑完就得给它一个终态，否则它永远停在 dispatched，
-      // 而 Durable Run 不允许 completed 的轮次里留着未了结的操作——轮次收尾时
-      // assertRunEnvelope 抛「completed runs cannot contain unresolved operations」，
-      // 用户看到的是一张「运行失败」卡，而这一轮其实答完了（2026-08-01 真机：
-      // 插队打断长任务后，插队那条正确回答了，屏幕上却挂着运行失败）。
-      // 用户主动打断 = abandoned（不是失败），真出错才 failed。
-      const abandonedByUser = ctx.runtime.control.isCancelled
-        || ctx.runtime.control.isInterrupted
-        || inferenceAbortController.signal.aborted;
-      await checkpointNativeModel(
-        ctx,
-        requestConfig,
-        'after_model_dispatch',
-        abandonedByUser ? 'abandoned' : 'failed',
-      ).catch((checkpointError) => {
-        logger.warn('[AgentLoop] Failed to settle the native model operation after an inference error:', checkpointError);
-      });
-      throw inferenceError;
+      // 这次模型调用的整个生命周期（prepared → dispatched → succeeded/abandoned）
+      // 收在一处：没跑完也必须给终态，否则轮次收尾时 Durable Run 会因为「留着未了结
+      // 的操作」把一次成功的轮次报成运行失败。
+      response = await withNativeModelOperation(ctx, requestConfig, inferenceAbortController.signal, () => (
+        ctx.runtime.maxMode && maxModeBudgetHeadroomOk()
+          ? runMaxModeInference(ctx, modelMessages, effectiveTools, requestConfig, streamCallback, engineOptions)
+          : runEngineInference(ctx, modelMessages, effectiveTools, requestConfig, streamCallback, inferenceAbortController.signal, engineOptions)
+      ));
     } finally {
       stopArtifactProgress();
     }

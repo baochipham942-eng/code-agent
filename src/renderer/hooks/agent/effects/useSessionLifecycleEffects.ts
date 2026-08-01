@@ -181,6 +181,20 @@ export function attachAgentErrorToLatestAssistant(agentError: AgentErrorMetadata
   });
 }
 
+/**
+ * 这条 `message` 事件是不是「模型这一轮说完了」——只有它才该把运行态放下。
+ *
+ * 只认 assistant：宿主自起的轮次会在轮次**开头**广播一条 user 消息给前端补气泡，
+ * 把它当轮末就是当场显示空闲、停止按钮消失，而后台还在跑（C3 那一族的老症状）。
+ * 带 toolCalls 的 assistant 也不算——那是这一轮中间的工具调用。
+ */
+export function endsTheTurn(data: unknown): boolean {
+  if (!data || typeof data !== 'object') return false;
+  const message = data as { role?: string; toolCalls?: unknown[] };
+  if (message.role === 'user') return false;
+  return !message.toolCalls || message.toolCalls.length === 0;
+}
+
 function clearRuntimeSessionState(sessionId: string): void {
   const currentStatus = useTaskStore.getState().sessionStates[sessionId]?.status;
   const shouldClear: SessionStatus[] = ['running', 'paused', 'queued', 'cancelling'];
@@ -278,7 +292,7 @@ export const useSessionLifecycleEffects = ({
       switch (event.type) {
         case 'message':
           lastEventAtRef.current = Date.now();
-          if (event.data && (!event.data.toolCalls || event.data.toolCalls.length === 0)) {
+          if (endsTheTurn(event.data)) {
             clearSessionProcessing();
           }
           break;

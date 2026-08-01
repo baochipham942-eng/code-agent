@@ -25,7 +25,7 @@
 
 set -euo pipefail
 
-CUA_DRIVER_VERSION="0.8.1"
+CUA_DRIVER_VERSION="0.14.2"
 # 重签身份：默认本机 Developer ID；CI 用 CUA_SIGN_IDENTITY 覆盖为 secret 注入的证书。
 CUA_SIGN_IDENTITY="${CUA_SIGN_IDENTITY:-Developer ID Application: jay lem (D7CVTJ72NV)}"
 
@@ -48,10 +48,12 @@ fi
 
 # ── CI / 无本机源环境：拉取上游 universal release 后用 Neo 证书重签 ──
 # checksum 来自同一 GitHub release 的 checksums.txt；版本、URL、sha 三者共同锁定。
+# 同一 release 有两个 darwin-universal 归档：要带 CuaDriver.app 的这个，不是
+# `-binary.tar.gz`（只有裸二进制，重签流程会找不到 .app）。
 CUA_UPSTREAM_TAG="cua-driver-rs-v${CUA_DRIVER_VERSION}"
 CUA_UPSTREAM_ARCHIVE="cua-driver-rs-${CUA_DRIVER_VERSION}-darwin-universal.tar.gz"
 CUA_UPSTREAM_URL="https://github.com/trycua/cua/releases/download/${CUA_UPSTREAM_TAG}/${CUA_UPSTREAM_ARCHIVE}"
-CUA_UPSTREAM_SHA256="dc6f901b03be002a5b4137ceafd9d02cb0eb0df9265e771c6530e7cfc0a6a4f2"
+CUA_UPSTREAM_SHA256="efc8f88a2f6e7424ab68d080331fd6aa94ef699153f2631d7a9214515151098c"
 TMP_ROOT=""
 
 cleanup_tmp() {

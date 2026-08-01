@@ -984,9 +984,9 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
         initialTopMostItemIndex={projection.turns.length > 0
           ? { index: 'LAST' as const, align: 'end' as const, behavior: 'auto' as const }
           : undefined}
-        // 首帧后 item 实测高度替换 defaultItemHeight 估值时，从底部锚定修正，
-        // 避免「先底→内容撑开→位置漂移」的可见跳动
-        alignToBottom
+        // B1-R·R4：不开 alignToBottom。它给列表容器 marginTop:auto，把不满一屏的
+        // 短内容整体压到底部（紧贴 composer、上方大片空白）；去掉后短内容自然顶对齐。
+        // 长会话进入落底由 initialTopMostItemIndex（LAST/end）负责，不受影响。
         startReached={handleStartReached}
         overscan={300}
         increaseViewportBy={{ top: 200, bottom: 200 }}

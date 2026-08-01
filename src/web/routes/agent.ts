@@ -779,9 +779,11 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       }
 
       // 设计画布会话冷启动引导：按轮服务端注入 systemPrompt（不进用户 content，免污染历史提示词）。
+      // canvasSnapshot 只在画布非空时由 renderer 附带（withCanvasSnapshotContext），故其缺席即空画布。
       config.systemPrompt = composeDesignCanvasSystemPrompt(
         config.systemPrompt,
         config.executionIntent?.designCanvasActive,
+        !body.context?.canvasSnapshot,
       );
 
       // Fix: CLI config maps 'anthropic' but provider is 'claude'

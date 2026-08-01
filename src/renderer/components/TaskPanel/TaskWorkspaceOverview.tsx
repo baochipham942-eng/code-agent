@@ -22,6 +22,8 @@ import { EmptyState } from '../primitives';
 import { WorkbenchPill } from '../workbench/WorkbenchPrimitives';
 import { AgentTreeView } from '../features/agentTree/AgentTreeView';
 import { Card } from './Card';
+import { OverviewRunHeader } from './OverviewRunHeader';
+import { OverviewSteeringQueue } from './OverviewSteeringQueue';
 import {
   CurrentTurnArtifactOwnershipCard,
   OutputFileRows,
@@ -308,7 +310,12 @@ export const TaskWorkspaceOverview: React.FC<TaskWorkspaceOverviewProps> = ({
   };
 
   return (
+    // T1 主路径顺序：Run header（进度与干预）→ 队列 → Todo → 产物 → 诊断（二级折叠）。
     <div className="space-y-3" data-testid="task-workspace-overview">
+      <OverviewRunHeader />
+
+      <OverviewSteeringQueue />
+
       <Card
         title={t.workbenchTabs.overviewTodosLabel}
         storageKey="overview-todos"
@@ -335,21 +342,6 @@ export const TaskWorkspaceOverview: React.FC<TaskWorkspaceOverviewProps> = ({
       </Card>
 
       <Card
-        title={t.workbenchTabs.overviewContextLabel}
-        storageKey="overview-context"
-        count={String(contextRows.length + agentCount)}
-      >
-        <div className="space-y-2">
-          <AgentTreeView snapshot={agentTreeSnapshot} />
-          {contextRows.length > 0 ? (
-            <ContextRows rows={contextRows} />
-          ) : (
-            <EmptyState variant="inline" text={t.workbenchTabs.overviewContextEmpty} />
-          )}
-        </div>
-      </Card>
-
-      <Card
         title={t.workbenchTabs.overviewArtifactsLabel}
         storageKey="overview-artifacts"
         count={artifactCount > 0 ? String(artifactCount) : undefined}
@@ -372,6 +364,27 @@ export const TaskWorkspaceOverview: React.FC<TaskWorkspaceOverviewProps> = ({
         ) : (
           <EmptyState variant="inline" text={t.previewWorkspace.workspacePreview.noArtifactsYet} />
         )}
+      </Card>
+
+      {/* 诊断二级（T1）：AgentTree / 能力路由证据 / 上下文行对 power user 仍有价值，
+          内容一条不删，只是默认折叠、不再抢主视线（调研 §4.5）。 */}
+      <Card
+        title={t.workbenchTabs.overviewDiagnosticsLabel}
+        storageKey="overview-diagnostics"
+        defaultExpanded={false}
+        count={String(contextRows.length + agentCount)}
+      >
+        <div className="space-y-2" data-testid="overview-diagnostics-body">
+          <div className="text-[10px] font-medium uppercase tracking-wider text-zinc-600">
+            {t.workbenchTabs.overviewContextLabel}
+          </div>
+          <AgentTreeView snapshot={agentTreeSnapshot} />
+          {contextRows.length > 0 ? (
+            <ContextRows rows={contextRows} />
+          ) : (
+            <EmptyState variant="inline" text={t.workbenchTabs.overviewContextEmpty} />
+          )}
+        </div>
       </Card>
     </div>
   );

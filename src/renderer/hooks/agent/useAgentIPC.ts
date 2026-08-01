@@ -955,9 +955,10 @@ export function useAgentIPC({
         logger.debug('Calling invoke agent:send-message');
         const messagePayload: ConversationEnvelope = {
           ...envelope,
-          // 设计会话冷启动引导：普通/auto 路径的 content 直接发给 agent（design brief 走 context，
-          // 但 canvas-session 引导是 renderer 运行时 prepend，须进真正发出的 content）。
-          content: applyDesignCanvasSessionToContent(envelope.content, effectiveSessionId),
+          // 设计画布冷启动引导已改为服务端按轮注入 systemPrompt/turnSystemContext
+          // （context.executionIntent.designCanvasActive，见 canvasSessionReminder.ts），
+          // 不再 prepend 进 content——content 会被原样持久化+渲染为用户气泡，此前的
+          // renderer 侧 prepend 会把 <system-reminder> 全文泄漏进用户可见消息。
           clientMessageId: userMessage.id,
           context: contextWithDesignContext,
           sessionId: effectiveSessionId,

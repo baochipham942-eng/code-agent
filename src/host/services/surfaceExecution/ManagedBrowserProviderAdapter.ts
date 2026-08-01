@@ -140,6 +140,17 @@ export class ManagedBrowserProviderAdapter {
     return binding ? { ...binding, identity: { ...binding.identity }, target: { ...binding.target } } : null;
   }
 
+  /**
+   * 按 surface 会话 id 反查绑定（B1-R·R1 实时画面流用）。调用方拿到的是同一个
+   * BrowserService 引用（要用它的活 page 开 CDP screencast），不是拷贝。
+   */
+  findBindingBySurfaceSessionId(surfaceSessionId: string): Readonly<ManagedBrowserBinding> | null {
+    for (const binding of this.bindings.values()) {
+      if (binding.surfaceSessionId === surfaceSessionId) return binding;
+    }
+    return null;
+  }
+
   async execute(input: ManagedBrowserActionInput): Promise<ToolExecutionResult> {
     try {
       const binding = await this.ensureBinding(input.identity);

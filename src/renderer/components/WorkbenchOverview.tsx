@@ -11,6 +11,7 @@ import { useI18n } from '../hooks/useI18n';
 import { useTaskActivity } from '../hooks/useTaskActivity';
 import { useWorkspacePreviewModel } from '../hooks/useWorkspacePreviewModel';
 import { useAppStore } from '../stores/appStore';
+import { useRunControlStore } from '../stores/runControlStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { TaskPanel } from './TaskPanel';
 import { WorkspacePreviewPanel } from './WorkspacePreviewPanel';
@@ -20,6 +21,7 @@ export const WorkbenchOverview: React.FC = () => {
   const { hasTaskActivity, agentTreeSnapshot } = useTaskActivity();
   const workspacePreviewItems = useWorkspacePreviewModel();
   const hasArtifacts = workspacePreviewItems.length > 0;
+  const hasQueuedInputs = useRunControlStore((state) => state.queue.length > 0);
   const selectedWorkspacePreviewId = useAppStore((state) => state.selectedWorkspacePreviewId);
   const setSelectedWorkspacePreviewId = useAppStore((state) => state.setSelectedWorkspacePreviewId);
   const hasSelectedArtifact = selectedWorkspacePreviewId
@@ -60,7 +62,9 @@ export const WorkbenchOverview: React.FC = () => {
     );
   }
 
-  if (!hasTaskActivity && !hasArtifacts) {
+  // 排队消息必须始终可达（T1）：中断后 run 活动信号会落回 false，但队列还在，
+  // 只按 hasTaskActivity 判空态会把「可见、可删、可立即发送」直接锁死在空态后面。
+  if (!hasTaskActivity && !hasArtifacts && !hasQueuedInputs) {
     return (
       <div
         data-testid="workbench-overview-view"

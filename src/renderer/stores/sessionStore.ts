@@ -201,6 +201,12 @@ interface SessionState {
   streamSnapshot: StreamRecoverySnapshot | null;
   isLoading: boolean;
   /**
+   * 会话切换的消息投影 hydration 进行中（switchSession 的两条 IPC + 消息水合未落定）。
+   * 与 isLoading 分开：isLoading 被 loadSessions 等多处共用，骨架屏只认切换 hydration
+   * 这个窗口——加载中（骨架屏）/ 真空会话（#874 空态）/ 有内容 三态靠它消歧。
+   */
+  isHydratingSession: boolean;
+  /**
    * True while createSession() is in flight (including reusable-draft switch).
    * Composer freezes on this flag so send cannot bind to the pre-create currentSessionId.
    */
@@ -268,6 +274,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
     sessionTasks: [],
     streamSnapshot: null,
     isLoading: false,
+    isHydratingSession: false,
     isCreatingSession: false,
     error: null,
     unreadSessionIds: new Set<string>(),
@@ -368,6 +375,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
         isLoadingOlder: false,
         unreadSessionIds: nextUnreadIds,
         isLoading: true,
+        isHydratingSession: true,
         error: null,
       });
       try {
@@ -405,6 +413,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
             sessionTasks: sessionTasks || [],
             streamSnapshot,
             isLoading: false,
+            isHydratingSession: false,
             unreadSessionIds: nextUnreadIds,
             hasOlderMessages: totalCount > loadedMessages.length,
             isLoadingOlder: false,
@@ -424,6 +433,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
             sessionTasks: [],
             streamSnapshot: null,
             isLoading: false,
+            isHydratingSession: false,
           });
           useAppStore.getState().setContextHealth(null);
         }
@@ -432,7 +442,8 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
         if (switchVersion === _switchCounter) {
           set({
             error: error instanceof Error ? error.message : 'Failed to switch session',
-            isLoading: false
+            isLoading: false,
+            isHydratingSession: false,
           });
         }
       }

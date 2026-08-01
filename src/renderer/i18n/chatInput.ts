@@ -56,6 +56,7 @@ export const chatInputZh = {
     unknownError: '未知错误',
     effortTitleTemplate: '推理强度: {label}',
     modeSelectorTitleTemplate: '交互模式: {label}',
+    iactChipConfirmation: '我选择了建议项：『{label}』。请按该选项的语义继续；若该选项表示由我自行处理，则本轮到此为止，不要代替我执行。',
   },
   scheduleComposer: {
     title: '创建定时任务',
@@ -406,6 +407,7 @@ export const chatInputEn: typeof chatInputZh = {
     unknownError: 'Unknown error',
     effortTitleTemplate: 'Reasoning effort: {label}',
     modeSelectorTitleTemplate: 'Interaction mode: {label}',
+    iactChipConfirmation: 'I selected the suggested option: "{label}". Please continue based on what that option means — if it means I\'ll handle this myself, stop here for this turn and don\'t do it for me.',
   },
   scheduleComposer: {
     title: 'Create scheduled task',

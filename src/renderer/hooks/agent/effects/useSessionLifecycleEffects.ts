@@ -137,13 +137,19 @@ export function classifyAgentError(
  * 错误若发生在任何 assistant 草稿之前（如首轮请求直接 404），补一条空 assistant
  * 消息承载卡片——否则这次失败在会话区完全不可见。
  */
-function attachAgentErrorToLatestAssistant(agentError: AgentErrorMetadata): void {
+export function attachAgentErrorToLatestAssistant(agentError: AgentErrorMetadata): void {
   const store = useSessionStore.getState();
   const messages = store.messages;
   const lastMessage = messages[messages.length - 1];
   if (lastMessage?.role === 'assistant') {
+    // 一次失败会从多个出口各发一条 error，后到的会覆盖先到的。谁带了这一轮真跑的
+    // 模型谁更有信息量——别让一条「只有 message」的把带了 provider/model 的盖掉。
+    const existing = lastMessage.metadata?.agentError;
+    const merged: AgentErrorMetadata = existing?.provider && !agentError.provider
+      ? { ...agentError, provider: existing.provider, modelId: existing.modelId ?? agentError.modelId }
+      : agentError;
     store.updateMessage(lastMessage.id, {
-      metadata: { ...lastMessage.metadata, agentError },
+      metadata: { ...lastMessage.metadata, agentError: merged },
     });
     return;
   }

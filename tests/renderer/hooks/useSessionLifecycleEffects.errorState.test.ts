@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
 import {
+  attachAgentErrorToLatestAssistant,
   classifyAgentError,
   getAgentErrorMessage,
   isTerminalAgentError,
@@ -146,5 +148,34 @@ describe('classifyAgentError', () => {
       traceId: 'trace-abc',
       modelId: 'gpt-5.2',
     });
+  });
+});
+
+// 一次失败会从多个出口各发一条 error（agentOrchestrator 的 catch + runFinalizer 的
+// RUN_FAILED）。真机 2026-08-01：后到的那条没带模型，把先到的带对的盖成了「当前选中
+// 的模型」，卡片于是指认一个根本没跑过的模型。
+describe('attachAgentErrorToLatestAssistant 多出口覆盖', () => {
+  it('后到的错误没带模型时，保住先到的那条的 provider/model', () => {
+    useSessionStore.setState({
+      messages: [{ id: 'a1', role: 'assistant', content: '', timestamp: 1 }],
+    } as never);
+
+    attachAgentErrorToLatestAssistant({
+      category: 'generic',
+      rawMessage: 'boom',
+      timestamp: 2,
+      provider: 'openai',
+      modelId: 'gpt-5-probe',
+    });
+    attachAgentErrorToLatestAssistant({
+      category: 'generic',
+      rawMessage: 'boom',
+      timestamp: 3,
+      modelId: 'MiniMax-M3',
+    });
+
+    const error = useSessionStore.getState().messages[0]?.metadata?.agentError;
+    expect(error?.provider).toBe('openai');
+    expect(error?.modelId).toBe('gpt-5-probe');
   });
 });

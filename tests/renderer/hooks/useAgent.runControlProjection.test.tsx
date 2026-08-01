@@ -26,13 +26,19 @@ vi.mock('../../../src/renderer/hooks/agent/useAgentEffects', () => ({
   useAgentEffects: vi.fn(),
 }));
 
+// unstableCancel=true 时每次渲染返回一个新的 cancel，用来模拟上游回调身份变化。
+const unstableCancel = vi.hoisted(() => ({ enabled: false }));
+
 vi.mock('../../../src/renderer/hooks/agent/useAgentIPC', async (importOriginal) => {
   const actual = await importOriginal<
     typeof import('../../../src/renderer/hooks/agent/useAgentIPC')
   >();
   return {
     ...actual,
-    useAgentIPC: () => ({ sendMessage: sendMessageMock, cancel: cancelMock }),
+    useAgentIPC: () => ({
+      sendMessage: sendMessageMock,
+      cancel: unstableCancel.enabled ? (...args: unknown[]) => cancelMock(...args) : cancelMock,
+    }),
   };
 });
 
@@ -59,6 +65,7 @@ describe('useAgent → runControlStore projection', () => {
     typedInvokeDomainMock.mockReset();
     sendMessageMock.mockReset();
     cancelMock.mockReset();
+    unstableCancel.enabled = false;
     useRunControlStore.setState({ queue: [], actions: null });
     useSessionStore.setState({ currentSessionId: 'session-a', messages: [] });
     useAppStore.setState({
@@ -116,6 +123,21 @@ describe('useAgent → runControlStore projection', () => {
       { action: 'retract', payload: { id: 'queued-a' } },
     );
     expect(useRunControlStore.getState().queue).toEqual([]);
+  });
+
+  it('keeps the queue visible when the published callbacks change identity', async () => {
+    unstableCancel.enabled = true;
+    const hook = renderHook(() => useAgent());
+    await waitFor(() => {
+      expect(useRunControlStore.getState().queue).toHaveLength(1);
+    });
+    const firstInterrupt = useRunControlStore.getState().actions!.interrupt;
+
+    hook.rerender();
+
+    // 动作确实换了身份（说明这一轮 effect 真的重跑了），但排队消息不能跟着蒸发。
+    expect(useRunControlStore.getState().actions!.interrupt).not.toBe(firstInterrupt);
+    expect(useRunControlStore.getState().queue).toHaveLength(1);
   });
 
   it('drops actions and queue when the chat runtime unmounts', async () => {

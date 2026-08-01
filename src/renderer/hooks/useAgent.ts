@@ -694,18 +694,20 @@ export const useAgent = () => {
   }, [visibleQueuedRuntimeInputs]);
 
   useEffect(() => {
-    const store = useRunControlStore.getState();
-    store.publishActions({
+    useRunControlStore.getState().publishActions({
       interrupt: cancel,
       retractQueued: cancelQueuedRuntimeInput,
       sendQueuedNow: sendQueuedRuntimeInput,
     });
-    // 聊天运行时卸载后动作就失效了，留着等于给 Overview 一批点了没反应的按钮。
-    return () => {
-      useRunControlStore.getState().publishActions(null);
-      useRunControlStore.getState().publishQueue([]);
-    };
   }, [cancel, cancelQueuedRuntimeInput, sendQueuedRuntimeInput]);
+
+  // 收摊只在真正卸载时做，不能挂在上面那个 effect 的 cleanup 上：那份 cleanup
+  // 每次回调身份变化都会跑一遍，会把还在排队的消息从 Overview 里抹掉，而队列
+  // effect 的依赖没变、不会重推——用户看到的就是「排队消息凭空消失」。
+  useEffect(() => () => {
+    useRunControlStore.getState().publishActions(null);
+    useRunControlStore.getState().publishQueue([]);
+  }, []);
 
   return {
     messages,

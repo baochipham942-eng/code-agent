@@ -127,7 +127,8 @@ export interface ChatInputProps {
     attachmentsCount: number;
     createdAt: number;
   }>;
-  onCancelQueuedRuntimeInput?: (id: string) => void;
+  /** @returns 是否真的撤回成功——成功才把内容退回输入框（已发出去的不能退）。 */
+  onCancelQueuedRuntimeInput?: (id: string) => void | Promise<boolean>;
   onSendQueuedRuntimeInput?: (id: string) => void;
   /** 是否有 Plan */
   hasPlan?: boolean;
@@ -976,7 +977,14 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
           items={queuedRuntimeInputs}
           isProcessing={Boolean(isProcessing)}
           onSend={onSendQueuedRuntimeInput}
-          onCancel={onCancelQueuedRuntimeInput}
+          onCancel={async (id) => {
+            // 取消 = 这条没发出去，内容退回输入框，别让人重打一遍（真机反馈）。
+            const pending = queuedRuntimeInputs.find((item) => item.id === id);
+            const retracted = await onCancelQueuedRuntimeInput?.(id);
+            if (retracted && pending?.content) {
+              setValue((current) => (current.trim() ? `${current} ${pending.content}` : pending.content));
+            }
+          }}
         />
 
         {/* 实时通话 chrome：live 时底栏扩展（打字/附件入口保留在下方原处，§7.2） */}

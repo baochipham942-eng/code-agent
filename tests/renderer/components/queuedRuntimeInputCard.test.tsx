@@ -52,11 +52,21 @@ describe('QueuedRuntimeInputCard', () => {
     const sendButton = screen.getByTestId('queued-runtime-input-send-queued-0');
     // 文案要区分：运行中点下去是打断当轮插进去，不是"等它跑完再发"
     expect(sendButton.getAttribute('title')).toContain('插队');
+    // 主动作带文字标签——两个裸图标按钮认不出谁是谁（真机反馈 2026-08-01）
+    expect(sendButton.textContent).toContain('立即发送');
     fireEvent.click(sendButton);
     expect(onSend).toHaveBeenCalledWith('queued-0');
 
     fireEvent.click(screen.getByTestId('queued-runtime-input-withdraw-queued-0'));
     expect(onCancel).toHaveBeenCalledWith('queued-0');
+  });
+
+  it('取消按钮的提示要说明内容会退回输入框', () => {
+    render(<QueuedRuntimeInputCard items={items(1)} isProcessing={false} onCancel={vi.fn()} />);
+
+    expect(
+      screen.getByTestId('queued-runtime-input-withdraw-queued-0').getAttribute('title'),
+    ).toContain('退回输入框');
   });
 
   it('空闲时点发送把 id 交回去', () => {

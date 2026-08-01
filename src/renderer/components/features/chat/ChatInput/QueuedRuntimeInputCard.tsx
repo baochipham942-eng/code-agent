@@ -12,7 +12,7 @@
 // ============================================================================
 
 import React, { useState } from 'react';
-import { ChevronDown, ChevronUp, Clock3, CornerDownRight, SendHorizontal, X } from 'lucide-react';
+import { ChevronDown, ChevronUp, Clock3, CornerDownRight, Trash2 } from 'lucide-react';
 import { useI18n } from '../../../../hooks/useI18n';
 
 interface QueuedRuntimeInputCardItem {
@@ -87,24 +87,26 @@ export const QueuedRuntimeInputCard: React.FC<QueuedRuntimeInputCardProps> = ({
               )}
               {/* 运行中也要能点：发送路径对 running 档走的是转向（steer），不是排队。
                   #679 藏按钮是因为那时点了真发不出去；#773 实现转向后前提已失效，
-                  再藏着就等于把已实现的插队能力锁死。 */}
+                  再藏着就等于把已实现的插队能力锁死。
+                  带文字的主动作 + 纯图标的次动作，比两个裸箭头图标可读（真机反馈）。 */}
               <button
                 type="button"
                 data-testid={`queued-runtime-input-send-${item.id}`}
                 onClick={() => onSend?.(item.id)}
                 title={isProcessing ? t.chatInput.queuedSteerNowTitle : t.chatInput.queuedSendNowTitle}
-                className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-zinc-500 hover:bg-white/[0.06] hover:text-zinc-200"
+                className="inline-flex h-6 shrink-0 items-center gap-1 rounded-md px-1.5 text-[11px] text-zinc-400 hover:bg-white/[0.06] hover:text-zinc-100"
               >
-                <SendHorizontal className="h-3.5 w-3.5" />
+                <CornerDownRight className="h-3 w-3" />
+                {t.chatInput.queuedSendNowLabel}
               </button>
               <button
                 type="button"
                 data-testid={`queued-runtime-input-withdraw-${item.id}`}
                 onClick={() => onCancel?.(item.id)}
                 title={t.chatInput.queuedWithdrawTitle}
-                className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-zinc-500 hover:bg-white/[0.06] hover:text-zinc-200"
+                className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-zinc-500 hover:bg-white/[0.06] hover:text-zinc-200"
               >
-                <X className="h-3.5 w-3.5" />
+                <Trash2 className="h-3.5 w-3.5" />
               </button>
             </li>
           ))}

@@ -187,13 +187,14 @@ export const useAgent = () => {
     ]);
   }, [setQueuedRuntimeInputs]);
 
-  const cancelQueuedRuntimeInput = useCallback(async (id: string) => {
+  /** @returns 这条是否真的撤回成功——调用方据此把内容还回输入框（发出去的不能还）。 */
+  const cancelQueuedRuntimeInput = useCallback(async (id: string): Promise<boolean> => {
     const queued = queuedRuntimeInputsRef.current.find((item) => item.id === id);
-    if (!queued) return;
+    if (!queued) return false;
 
     if (queued.sendFailed) {
       setQueuedRuntimeInputs((current) => current.filter((item) => item.id !== id));
-      return;
+      return true;
     }
 
     try {
@@ -203,7 +204,7 @@ export const useAgent = () => {
       });
       if (!response.success) {
         toast.error(`撤回排队消息失败：${response.error.message}`);
-        return;
+        return false;
       }
       // 撤不回来 = 它已经在发送途中，不再归队列管。卡片也得跟着撤下去：
       // 留着一张点了没用的「等待发送」卡，比没有这张卡更让人以为还能操作。
@@ -211,9 +212,11 @@ export const useAgent = () => {
       if (!response.data.retracted) {
         toast.info('这条消息已经开始发送，无法撤回。');
       }
+      return response.data.retracted;
     } catch (error) {
       logger.error('Failed to retract queued runtime input', error, { id });
       toast.error(`撤回排队消息失败：${error instanceof Error ? error.message : String(error)}`);
+      return false;
     }
   }, [setQueuedRuntimeInputs]);
 

@@ -8,6 +8,10 @@ export const agentErrorZh = {
   agentError: {
     ariaLabel: '运行失败',
     categories: {
+      auth: {
+        title: '这个模型用不了：密钥无效或额度已用尽',
+        suggestion: '换一个模型继续，或去能力中心检查该供应商的 API Key 与余额。重试无效。',
+      },
       model_not_found: {
         title: '模型接口或模型名称不匹配',
         suggestion: '当前模型供应商返回 404/Not Found。请检查自定义模型的 Base URL、路径是否包含 /v1、模型 ID 是否正确；也可以先切换到其他模型后重试。',
@@ -72,6 +76,10 @@ export const agentErrorEn: typeof agentErrorZh = {
   agentError: {
     ariaLabel: 'Run failed',
     categories: {
+      auth: {
+        title: 'This model is unavailable: invalid key or quota exhausted',
+        suggestion: 'Switch to another model, or check the provider API key and balance. Retrying will not help.',
+      },
       model_not_found: {
         title: 'Model endpoint or model name mismatch',
         suggestion: 'The model provider returned 404/Not Found. Check the custom model Base URL, whether the path includes /v1, and whether the model ID is correct — or switch to another model and retry.',

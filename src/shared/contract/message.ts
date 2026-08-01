@@ -238,6 +238,8 @@ export interface AgentTeamMessageMetadata {
 
 /** 会话区错误卡片的错误分类（AgentErrorCard 按它决定文案和动作按钮）。 */
 export type AgentErrorCategory =
+  /** 密钥无效 / 额度用尽 —— 供应商多用 401 表达，重试没有意义，得换模型或去补额度 */
+  | 'auth'
   | 'model_not_found'
   | 'forbidden'
   | 'rate_limited'

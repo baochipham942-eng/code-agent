@@ -100,6 +100,23 @@ export function classifyAgentError(
     const normalized = message.trim().toLowerCase();
     const hasStatus = (status: number) => new RegExp(`\\b${status}\\b`).test(message);
 
+    // 401 / invalid key / 余额欠费：重试一万次也没用，单独一档，别混进「请重试一次」。
+    // 小米 mimo 额度用尽返回的就是 401 "Invalid API Key"（真机 2026-08-01）。
+    if (
+      hasStatus(401)
+      || normalized.includes('invalid api key')
+      || normalized.includes('incorrect api key')
+      || normalized.includes('unauthorized')
+      || normalized.includes('insufficient')
+      || normalized.includes('quota')
+      || normalized.includes('exceeded your current quota')
+      || normalized.includes('欠费')
+      || normalized.includes('额度')
+      || normalized.includes('余额')
+    ) {
+      return { ...base, category: 'auth', httpStatus: explicitStatus ?? 401 };
+    }
+
     if (normalized.includes('concurrency limit exceeded')) {
       return { ...base, category: 'concurrency', httpStatus: explicitStatus };
     }

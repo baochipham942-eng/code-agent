@@ -211,4 +211,12 @@ describe('resolveAgentErrorCopy / buildAgentErrorReport', () => {
     expect(report).not.toContain('Trace');
     expect(report).toContain('AI_APICallError: Not Found');
   });
+
+  // 额度用尽 / 密钥无效：重试一万次都是同一个 401，按钮不该出现
+  it('auth 档不给重试，只给换模型', () => {
+    renderCard(makeError({ category: 'auth' }));
+
+    expect(screen.queryByText('重试')).toBeNull();
+    expect(screen.getByText('切换模型')).toBeTruthy();
+  });
 });

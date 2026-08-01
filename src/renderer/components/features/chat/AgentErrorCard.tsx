@@ -19,6 +19,7 @@ import { useSessionStore } from '../../../stores/sessionStore';
 import { OPEN_MODEL_SWITCHER_EVENT } from '../../StatusBar/ModelSwitcher';
 
 const SWITCH_MODEL_CATEGORIES: ReadonlySet<AgentErrorCategory> = new Set([
+  'auth',
   'model_not_found',
   'forbidden',
   'rate_limited',
@@ -30,6 +31,16 @@ const NEW_SESSION_CATEGORIES: ReadonlySet<AgentErrorCategory> = new Set([
   'context_length',
   'generic',
 ]);
+
+/**
+ * 密钥无效 / 额度用尽这一档不给「重试」：重试一万次也是同一个 401，
+ * 摆一个按不出结果的按钮只会把人往错误方向引（真机 2026-08-01 反馈）。
+ */
+const NO_RETRY_CATEGORIES: ReadonlySet<AgentErrorCategory> = new Set(['auth']);
+
+function shouldShowRetry(category: AgentErrorCategory): boolean {
+  return !NO_RETRY_CATEGORIES.has(category);
+}
 
 function shouldShowSwitchModel(category: AgentErrorCategory): boolean {
   return SWITCH_MODEL_CATEGORIES.has(category);
@@ -155,16 +166,18 @@ export const AgentErrorCard: React.FC<{
       )}
 
       <div className="mt-2 flex flex-wrap items-center gap-1.5 pl-6">
-        <button /* ds-allow:button: 报错卡操作行是紧凑小按钮组，Button primitive 无此紧凑变体 */
-          type="button"
-          onClick={handleRetry}
-          disabled={isRunning}
-          title={isRunning ? t.agentError.actions.retryRunning : t.agentError.actions.retry}
-          className={ACTION_BUTTON_CLASS}
-        >
-          <RotateCcw className="h-3 w-3" />
-          {t.agentError.actions.retry}
-        </button>
+        {shouldShowRetry(error.category) && (
+          <button /* ds-allow:button: 报错卡操作行是紧凑小按钮组，Button primitive 无此紧凑变体 */
+            type="button"
+            onClick={handleRetry}
+            disabled={isRunning}
+            title={isRunning ? t.agentError.actions.retryRunning : t.agentError.actions.retry}
+            className={ACTION_BUTTON_CLASS}
+          >
+            <RotateCcw className="h-3 w-3" />
+            {t.agentError.actions.retry}
+          </button>
+        )}
         {shouldShowSwitchModel(error.category) && (
           <button /* ds-allow:button: 报错卡操作行是紧凑小按钮组，Button primitive 无此紧凑变体 */
             type="button"

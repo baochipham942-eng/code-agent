@@ -8,6 +8,8 @@ import { useTaskStore, type SessionStatus } from '../../../stores/taskStore';
 import ipcService from '../../../services/ipcService';
 import type { AgentEffectsProps } from '../useAgentEffects';
 import { getAgentEventSessionId, isAgentEventForCurrentSession } from '../agentEventSession';
+// 草稿清理规则只有一份：这里原来复制了一个同名函数，改了流式那份也修不到停止这条路。
+import { removeUncommittedAssistantDraft } from './useConversationStreamEffects';
 
 const logger = createLogger('useAgent');
 
@@ -189,17 +191,6 @@ function clearRuntimeSessionState(sessionId: string): void {
 
 function markRuntimeSessionCancelled(sessionId: string): void {
   useTaskStore.getState().updateSessionState(sessionId, { status: 'cancelled' });
-}
-
-function removeUncommittedAssistantDraft(
-  messages: Message[],
-  draftMessageId: string | null | undefined,
-): Message[] {
-  if (!draftMessageId) return messages;
-  const draft = messages.find((message) => message.id === draftMessageId);
-  if (draft?.role !== 'assistant') return messages;
-  if ((draft.toolCalls?.length || 0) > 0) return messages;
-  return messages.filter((message) => message.id !== draftMessageId);
 }
 
 function markLatestUserTurnCancelled(

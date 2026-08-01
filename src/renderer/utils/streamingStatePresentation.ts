@@ -225,5 +225,9 @@ export function shouldShowStreamingState(state: StreamingUiState): boolean {
     // 取消中不再单独铺一张横幅：顶部 run 徽章已经在说「正在停止 · 本轮已取消」，
     // 底下再来一张大黄卡写「正在清理本轮流式输出和未完成工具」，是同一件事说两遍，
     // 而取消本身只持续几秒——动静远大于信息量（真机反馈 2026-08-01）。
-    && state.status !== 'cancelling';
+    && state.status !== 'cancelling'
+    // 取消完成同理：「已取消」的徽章 + 大黄卡两条横幅上下叠着，两条都写「已取消」
+    // （2026-08-01 验收截图）。留徽章那一行，解释语（已停止这次回答…）由 run 徽章
+    // 右边的阶段位承担——一行说完，不再上下两条。
+    && state.status !== 'cancelled';
 }

@@ -940,7 +940,6 @@ function getTurnRunStatus(turn: TraceTurn, t: Translations, streamingState?: Str
 }
 
 function getTurnPhase(turn: TraceTurn): string | null {
-  if (hasCancelledRunMarker(turn)) return '本轮已取消';
 
   // 这里曾经用路由摘要当轮次阶段（「已指定 岚析 执行」），既是内部审计口径，又跟
   // 旁边的 Auto 徽章自相矛盾。阶段该说这一轮在做什么，落到下面的能力/工具描述。
@@ -1055,7 +1054,9 @@ export function shouldHideTurnRunHeader(statusKey: string, statusTone: string): 
 const TurnRunHeader: React.FC<{ turn: TraceTurn; streamingState?: StreamingUiState }> = ({ turn, streamingState }) => {
   const { t } = useI18n();
   const status = getTurnRunStatus(turn, t, streamingState);
-  const phase = getTurnPhase(turn);
+  // 取消态：徽章说「已取消」，阶段位说停了什么、留了什么——底下那张同样写「已取消」
+  // 的大黄卡已经收起，一行说完，不再上下叠两条（2026-08-01 验收截图）。
+  const phase = status.key === 'cancelled' ? t.turnRun.detail.cancelled : getTurnPhase(turn);
   const completionSignal = getTurnCompletionSignal(turn, t);
   const failedTool = turn.nodes.find((node) => node.type === 'tool_call' && node.toolCall?.success === false)?.toolCall;
   const hasPhase = Boolean(phase?.trim());

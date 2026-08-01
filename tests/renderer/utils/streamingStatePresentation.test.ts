@@ -206,7 +206,8 @@ describe('streamingStatePresentation', () => {
     // [cancelled] 标记落库，所以文案必须说「保留」，不能再声称「未保留半截内容」。
     expect(state.detail).toContain('保留在上面');
     expect(state.detail).not.toContain('未保留');
-    expect(shouldShowStreamingState(state)).toBe(true);
+    // 这句解释由 run 徽章那一行的阶段位承担；大黄卡收起，停止态只留一条横幅。
+    expect(shouldShowStreamingState(state)).toBe(false);
   });
 
   // detail 长句此前跟 label 同一批硬编码中文，但只有 label 迁了键——en 用户会看到
@@ -264,6 +265,16 @@ describe('streamingStatePresentation', () => {
       label: '正在停止',
       tone: 'warning',
       shouldAnimate: true,
+    } as never)).toBe(false);
+  });
+
+  // 2026-08-01 验收截图：两条都写「已取消」的横幅上下叠着。
+  it('取消完成同样只留 run 徽章那一行', () => {
+    expect(shouldShowStreamingState({
+      status: 'cancelled',
+      label: '已取消',
+      tone: 'warning',
+      shouldAnimate: false,
     } as never)).toBe(false);
   });
 });

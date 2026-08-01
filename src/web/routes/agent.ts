@@ -933,6 +933,14 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         },
       });
 
+      // 宿主自己起的轮次（抽干排队消息、断连后续跑）：这条用户消息只有宿主知道，
+      // 前端没有本地乐观副本，不广播的话屏幕上只有回答、没有对应的问题
+      // ——2026-08-01 验收截图里排队消息就是这样只剩「丙一收到」。
+      // 直连轮不发：前端发出去的那一刻已经自己上屏了。
+      if (!transport.connectedClient) {
+        runController.emitSSE('message', { ...userMsg, sessionId });
+      }
+
       try {
         const sb = await getSupabaseForSession();
         if (sb) {

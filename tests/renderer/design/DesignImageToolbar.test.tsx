@@ -12,6 +12,21 @@ import { DesignImageToolbar } from '../../../src/renderer/components/design/Desi
 import { zh } from '../../../src/renderer/i18n/zh';
 import { en } from '../../../src/renderer/i18n/en';
 
+// K1 溢出折叠：mock 共享 hook 的测量结果，直接驱动收折态（jsdom 量不到真实宽度）。
+// 默认空集 = 全平铺，既有用例不受影响；溢出用例自行往 overflowState 里塞 id。
+const overflowState = vi.hoisted(() => ({ overflowed: new Set<string>([]) }));
+vi.mock('../../../src/renderer/components/design/useToolbarOverflow', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../src/renderer/components/design/useToolbarOverflow')>()),
+  useToolbarOverflow: () => ({
+    overflowed: overflowState.overflowed,
+    itemRef: () => () => {},
+  }),
+}));
+
+afterEach(() => {
+  overflowState.overflowed = new Set<string>([]);
+});
+
 function renderToolbar(over: Partial<React.ComponentProps<typeof DesignImageToolbar>> = {}) {
   const props: React.ComponentProps<typeof DesignImageToolbar> = {
     t: zh,
@@ -212,6 +227,51 @@ describe('调整大小五档', () => {
     }
     // 选档后菜单关闭
     expect(screen.queryByTestId('design-resize-menu')).toBeNull();
+  });
+});
+
+describe('K1 溢出折叠（收折动词并入「更多 ⋯」同一菜单）', () => {
+  it('收折的动词不再平铺，出现在更多菜单顶部「工具」组，文字保留，且只有一个 ⋯', () => {
+    overflowState.overflowed = new Set(['resize', 'expand']);
+    renderToolbar();
+    // 平铺触发器消失
+    expect(screen.queryByTestId('design-toolbar-resize')).toBeNull();
+    expect(screen.queryByTestId('design-toolbar-expand')).toBeNull();
+    fireEvent.click(screen.getByTestId('design-toolbar-more'));
+    const menu = screen.getByTestId('design-more-menu');
+    // 并入同一个「更多」菜单（顶部「工具」组），文字一律保留
+    expect(menu.textContent).toContain(zh.design.moreGroupTools);
+    expect(screen.getByTestId('design-overflow-resize').textContent).toContain(zh.design.imageToolbarResize);
+    expect(screen.getByTestId('design-overflow-expand').textContent).toContain(zh.design.expandTitle);
+    expect(screen.getAllByTestId('design-toolbar-more')).toHaveLength(1);
+  });
+
+  it('收折动作可达：点菜单行打开对应下拉（浮层锚到「更多」锚点）', () => {
+    overflowState.overflowed = new Set(['resize']);
+    renderToolbar();
+    fireEvent.click(screen.getByTestId('design-toolbar-more'));
+    fireEvent.click(screen.getByTestId('design-overflow-resize'));
+    // 更多菜单关闭，调整大小下拉打开（五档齐全）
+    expect(screen.queryByTestId('design-more-menu')).toBeNull();
+    const menu = screen.getByTestId('design-resize-menu');
+    expect(menu.textContent).toContain(zh.design.resizePresetSquare);
+    // 浮层锚在「更多」触发按钮的锚点容器内（自己的锚点已不在 DOM）
+    expect(menu.parentElement).toBe(screen.getByTestId('design-toolbar-more').parentElement);
+  });
+
+  it('批注重绘收折后点击仍进 annotMode 并弹指令浮层', () => {
+    overflowState.overflowed = new Set(['annotate']);
+    const props = renderToolbar();
+    fireEvent.click(screen.getByTestId('design-toolbar-more'));
+    fireEvent.click(screen.getByTestId('design-overflow-annotate'));
+    expect(props.setAnnotMode).toHaveBeenCalledWith(true);
+    expect(screen.getByTestId('design-annotate-popover')).toBeTruthy();
+  });
+
+  it('全平铺时更多菜单没有「工具」组', () => {
+    renderToolbar();
+    fireEvent.click(screen.getByTestId('design-toolbar-more'));
+    expect(screen.getByTestId('design-more-menu').textContent).not.toContain(zh.design.moreGroupTools);
   });
 });
 

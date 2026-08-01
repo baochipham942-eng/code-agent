@@ -979,11 +979,13 @@ export function useAgentIPC({
         // 这不是失败，排到下一轮。复用 userMessage.id 当 clientMessageId，上屏去重
         // 会认出它是同一条，不会重复显示。
         if (isSessionBusyRunConflict(error)) {
-          setSessionProcessing(effectiveSessionId!, false);
-          useTaskStore.getState().updateSessionState(
-            effectiveSessionId!,
-            previousTaskState ?? { status: 'idle' },
-          );
+          if (effectiveSessionId) {
+            setSessionProcessing(effectiveSessionId, false);
+            useTaskStore.getState().updateSessionState(
+              effectiveSessionId,
+              previousTaskState ?? { status: 'idle' },
+            );
+          }
           await queueForNextTurn(userMessage.id);
           return;
         }

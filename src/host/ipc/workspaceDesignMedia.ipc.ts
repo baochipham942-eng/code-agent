@@ -9,7 +9,7 @@
 
 import path from 'path';
 import { promises as fsp } from 'fs';
-import { assertWithinDesignDir } from './workspaceDesignPaths';
+import { assertWithinDesignDir, assertWithinDesignImportSource } from './workspaceDesignPaths';
 import { estimateImageCostCny } from '../../shared/media/imageCost';
 import { estimateVideoCostCny } from '../../shared/media/videoCost';
 import { estimateMusicCostCny } from '../../shared/media/musicCost';
@@ -262,6 +262,99 @@ export async function handleEditImageByAnnotation(
   await fsp.mkdir(path.dirname(payload.outputPath), { recursive: true });
   await fsp.writeFile(payload.outputPath, Buffer.from(base64, 'base64'));
   return { path: payload.outputPath, actualModel, costCny: estimateImageCostCny(actualModel) };
+}
+
+// —— 按路径导入设计画布（对话里的图产物 →「修改」入口）——
+// 源文件在设计目录之外（会话工作区），所以除了 outputPath 的设计目录守卫，还要一道
+// 源路径守卫：限死在「当前活跃工作目录 + 设计目录」内，并先解析 symlink 再判定，
+// 否则这条 IPC 就是一个任意文件读取洞（读出来会被复制进设计目录，随后可能 base64 传给出图服务）。
+const IMPORTABLE_IMAGE_EXTENSIONS = new Set([
+  '.avif', '.gif', '.heic', '.heif', '.jpeg', '.jpg', '.png', '.svg', '.webp',
+]);
+
+function hasImportableImageMagic(bytes: Buffer, extension: string): boolean {
+  if (extension === '.png') {
+    return bytes.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+  }
+  if (extension === '.jpg' || extension === '.jpeg') {
+    return bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+  }
+  if (extension === '.gif') {
+    const signature = bytes.subarray(0, 6).toString('ascii');
+    return signature === 'GIF87a' || signature === 'GIF89a';
+  }
+  if (extension === '.webp') {
+    return bytes.subarray(0, 4).toString('ascii') === 'RIFF'
+      && bytes.subarray(8, 12).toString('ascii') === 'WEBP';
+  }
+  if (extension === '.avif' || extension === '.heic' || extension === '.heif') {
+    if (bytes.subarray(4, 8).toString('ascii') !== 'ftyp') return false;
+    const brands = bytes.subarray(8, 32).toString('ascii');
+    return extension === '.avif'
+      ? /avif|avis/.test(brands)
+      : /heic|heix|hevc|hevx|mif1|msf1/.test(brands);
+  }
+  if (extension === '.svg') {
+    const source = bytes.toString('utf8').replace(/^\uFEFF/, '').trimStart();
+    return /^(?:<\?xml[^>]*>\s*)?(?:<!--[\s\S]*?-->\s*)*<svg(?:\s|>)/i.test(source);
+  }
+  return false;
+}
+
+async function assertReadableImageFile(sourcePath: string): Promise<void> {
+  const extension = path.extname(sourcePath).toLowerCase();
+  if (!IMPORTABLE_IMAGE_EXTENSIONS.has(extension)) {
+    throw new Error(`sourcePath 不是受支持的图片类型：${extension || '缺少扩展名'}`);
+  }
+
+  let stat;
+  try {
+    stat = await fsp.stat(sourcePath);
+  } catch (error) {
+    const code = error && typeof error === 'object' && 'code' in error ? String(error.code) : '';
+    if (code === 'ENOENT') {
+      throw new Error(`sourcePath 源文件不存在：${sourcePath}`, { cause: error });
+    }
+    throw new Error(`sourcePath 源文件不可读：${sourcePath}`, { cause: error });
+  }
+  if (!stat.isFile()) throw new Error(`sourcePath 必须是可读图片文件：${sourcePath}`);
+
+  let handle;
+  try {
+    handle = await fsp.open(sourcePath, 'r');
+    const header = Buffer.alloc(512);
+    const { bytesRead } = await handle.read(header, 0, header.length, 0);
+    if (!hasImportableImageMagic(header.subarray(0, bytesRead), extension)) {
+      throw new Error(`sourcePath 不是有效的 ${extension} 图片：文件内容与扩展名不匹配`);
+    }
+  } catch (error) {
+    if (error instanceof Error && error.message.startsWith('sourcePath ')) throw error;
+    throw new Error(`sourcePath 源文件不可读：${sourcePath}`, { cause: error });
+  } finally {
+    await handle?.close();
+  }
+}
+
+/**
+ * 把会话工作区中的图片复制进设计资产目录。目标存在时覆盖：与 dataURL 导入保持一致，
+ * 让 renderer 在 IPC 回包丢失后的同路径重试具备幂等结果。
+ *
+ * 守卫返回的是解析过 symlink 的规范路径，**下面必须用它去读**——校验一个路径、
+ * 读另一个路径是这类守卫最典型的绕过方式。
+ */
+export async function handleImportDesignImageFromPath(
+  payload: { sourcePath: string; outputPath: string },
+  activeWorkspaceRoot?: string | null,
+): Promise<{ path: string }> {
+  if (!payload?.sourcePath || !payload?.outputPath) {
+    throw new Error('importDesignImageFromPath 需要 sourcePath 与 outputPath');
+  }
+  assertWithinDesignDir(payload.outputPath, 'outputPath');
+  const canonicalSourcePath = assertWithinDesignImportSource(payload.sourcePath, activeWorkspaceRoot);
+  await assertReadableImageFile(canonicalSourcePath);
+  await fsp.mkdir(path.dirname(payload.outputPath), { recursive: true });
+  await fsp.copyFile(canonicalSourcePath, payload.outputPath);
+  return { path: payload.outputPath };
 }
 
 // 设计画布导入用户自有图片（自由画布）：renderer 传 base64 dataURL → 写盘到 run 的 assets，

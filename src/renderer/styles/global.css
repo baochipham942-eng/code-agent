@@ -606,6 +606,18 @@ pre code {
   animation: streamingCaretPulse 1.2s ease-in-out infinite;
 }
 
+/* 尾段淡入（工单 2026-08-01 流式渲染自然化）：useSmoothStreamingText 每 ~120ms
+   落一个「词/短段」，消费层把最新一段包进 .streaming-tail-segment（key 随段首
+   下标变化，mount 时跑一次淡入）。直落的大块不包 span——保持即时可读。 */
+@keyframes streamingTailSegmentFade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.streaming-tail-segment {
+  animation: streamingTailSegmentFade 120ms ease-out;
+}
+
 /* 独立光标（无正文时由状态槽渲染，作为「还活着」的安静信号） */
 .streaming-caret {
   color: var(--brand-primary);
@@ -616,6 +628,7 @@ pre code {
 @media (prefers-reduced-motion: reduce) {
   .streaming-text > *,
   .streaming-text.with-caret > :last-child::after,
+  .streaming-tail-segment,
   .streaming-caret {
     animation: none;
   }

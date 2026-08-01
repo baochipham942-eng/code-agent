@@ -437,6 +437,10 @@ export function useKeyboardShortcuts(config: KeyboardShortcutsConfig = {}): void
           openWorkbenchTab('design-canvas');
           return true;
 
+        case 'terminal.open':
+          openWorkbenchTab('terminal');
+          return true;
+
         case 'computerUse.open':
           setShowComputerUsePanel(true);
           return true;

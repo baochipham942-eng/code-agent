@@ -17,6 +17,7 @@ const VIEW_LABEL: Record<string, string> = {
   files: '文件列表',
   browser: '浏览器',
   'design-canvas': '设计画布',
+  terminal: '终端',
 };
 
 function describeView(view: string): string {

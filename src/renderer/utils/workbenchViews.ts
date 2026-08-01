@@ -1,6 +1,6 @@
 // ============================================================================
 // Workbench view registry
-// The visible right rail has five view categories. Retired tab ids remain valid
+// The visible right rail has six view categories. Retired tab ids remain valid
 // deep-link inputs and are resolved here so callers do not own IA routing.
 // ============================================================================
 
@@ -11,6 +11,7 @@ export type WorkbenchViewId =
   | 'files'
   | 'browser'
   | 'design-canvas'
+  | 'terminal'
   | PreviewWorkbenchViewId;
 
 type LegacyWorkbenchTabId =

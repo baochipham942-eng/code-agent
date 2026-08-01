@@ -212,6 +212,8 @@
     "@types/papaparse": "^5.5.2",
     "@ui-tars/sdk": "^1.2.3",
     "@uiw/react-codemirror": "^4.25.9",
+    "@xterm/addon-fit": "^0.10.0",
+    "@xterm/xterm": "^5.5.0",
     "@xyflow/react": "^12.10.2",
     "ai": "^6.0.191",
     "avr-vad": "^1.0.10",

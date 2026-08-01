@@ -50,6 +50,7 @@ export type KeybindingActionId =
   | 'browser.open'
   | 'files.open'
   | 'designCanvas.open'
+  | 'terminal.open'
   | 'computerUse.open'
   | 'replay.open'
   | 'reviewQueue.open'

@@ -41,30 +41,77 @@ const WAIT_POLL_MS = 200;
 // 输出清洗
 // ----------------------------------------------------------------------------
 
-/* eslint-disable no-control-regex -- 清洗终端控制码本来就要匹配控制字符 */
-const OSC_SEQUENCE = /\x1b\][\s\S]*?(?:\x07|\x1b\\)/g;
-const CSI_SEQUENCE = /\x1b\[[0-9;?]*[ -/]*[@-~]/g;
-const OTHER_ESCAPE = /\x1b[@-Z\\-_]/g;
-/* eslint-enable no-control-regex */
-
 /**
  * 原始 PTY 输出 → 可以进模型上下文的纯文本。
  *
- * 不只是去颜色：进度条/spinner 靠 `\r` 反复重画同一行，光去 SGR 会留下一行几百次
- * 重复内容，比 ANSI 本身还费 token。所以 `\r` 覆盖也要按终端语义收敛成最终那一版。
+ * 不能只做正则替换。真 shell 的流长这样（zsh 实录）：
+ *   `%<79个空格>\r \r\r<SGR>prompt % \x1b[K\x1b[?2004he\becho hi\x1b[?2004l\r\r\nhi\r\n`
+ * `\r` 在这里是**光标回到行首**，后面的字符逐个覆盖上去；`\b` 是退一格。
+ * 早先按「取最后一个 \r 之后的内容」处理，等于把整行真内容全丢掉——实测一段带两条命令
+ * 和输出的会话被清洗成 4 个空行，模型看到的是一个空终端。所以这里按真实光标语义重放：
+ * 维护一行缓冲 + 列号，`\r` 归零、`\b` 退一格、`\x1b[K` 擦到行尾，其余字符写在光标处。
+ *
+ * ponytail: 只实现单行内的光标语义 + 擦行，不做光标定位（\x1b[H / \x1b[nA）。
+ * 全屏 TUI（vim/top）本来就不该指望读成通顺文本；要那个得上真 emulator，不是这里的活。
  */
 export function stripTerminalControlCodes(raw: string): string {
-  const withoutEscapes = raw
-    .replace(OSC_SEQUENCE, '')
-    .replace(CSI_SEQUENCE, '')
-    .replace(OTHER_ESCAPE, '');
-  return withoutEscapes
-    .split('\n')
-    .map((line) => {
-      const lastOverwrite = line.lastIndexOf('\r');
-      return lastOverwrite === -1 ? line : line.slice(lastOverwrite + 1);
-    })
-    .join('\n');
+  const lines: string[] = [];
+  let line = '';
+  let col = 0;
+
+  const put = (ch: string): void => {
+    if (col === line.length) line += ch;
+    else line = line.slice(0, col) + ch + line.slice(col + 1);
+    col += 1;
+  };
+  const endLine = (): void => {
+    lines.push(line);
+    line = '';
+    col = 0;
+  };
+
+  for (let i = 0; i < raw.length; i += 1) {
+    const ch = raw[i];
+
+    if (ch === '\x1b') {
+      const next = raw[i + 1];
+      if (next === '[') {
+        // CSI: ESC [ params intermediates final
+        let j = i + 2;
+        while (j < raw.length && /[0-9;?]/.test(raw[j])) j += 1;
+        const params = raw.slice(i + 2, j);
+        while (j < raw.length && /[ -/]/.test(raw[j])) j += 1;
+        const final = raw[j];
+        if (final === 'K') {
+          // erase in line: 0/缺省=光标到行尾，1=行首到光标，2=整行
+          if (params === '' || params === '0') line = line.slice(0, col);
+          else if (params === '1') line = ' '.repeat(col) + line.slice(col);
+          else if (params === '2') line = '';
+        }
+        i = j < raw.length ? j : raw.length;
+        continue;
+      }
+      if (next === ']') {
+        // OSC: 到 BEL 或 ESC \ 为止
+        let j = i + 2;
+        while (j < raw.length && raw[j] !== '\x07' && !(raw[j] === '\x1b' && raw[j + 1] === '\\')) j += 1;
+        i = raw[j] === '\x1b' ? j + 1 : j;
+        continue;
+      }
+      i += 1; // 其余两字符转义，整个丢掉
+      continue;
+    }
+
+    if (ch === '\n') { endLine(); continue; }
+    if (ch === '\r') { col = 0; continue; }
+    if (ch === '\b') { col = Math.max(0, col - 1); continue; }
+    if (ch === '\x07') continue; // 响铃不是内容
+    put(ch);
+  }
+  if (line.length > 0) lines.push(line);
+
+  // 覆盖会在行尾留下一串被顶出来的空格（prompt 重画的填充），逐行 trimEnd 掉
+  return lines.map((entry) => entry.replace(/\s+$/, '')).join('\n');
 }
 
 export function tailLines(text: string, count: number): string {

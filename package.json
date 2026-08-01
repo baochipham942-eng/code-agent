@@ -58,6 +58,7 @@
     "acceptance:surface-execution-controlled-complex": "npx tsx scripts/acceptance/surface-execution-controlled-complex-smoke.ts",
     "acceptance:surface-execution-gate-report": "npx tsx scripts/acceptance/surface-execution-gate-report.ts",
     "acceptance:agent-runtime-app-host": "npx tsx scripts/acceptance/agent-runtime-app-host-smoke.ts",
+    "acceptance:terminal-shared-pty": "npx tsx scripts/acceptance/terminal-shared-pty-smoke.ts",
     "acceptance:durable-run-s9": "tsx scripts/acceptance/durable-run-kill-restart.ts",
     "acceptance:agent-engine-selector": "npx tsx scripts/acceptance/agent-engine-selector-smoke.ts",
     "acceptance:claude-subscription-cli": "jiti scripts/acceptance/claude-subscription-cli-smoke.ts",

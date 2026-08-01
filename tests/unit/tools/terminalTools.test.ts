@@ -80,8 +80,32 @@ describe('output sanitation (红线：原始 ANSI 不得全量进上下文)', ()
     expect(stripTerminalControlCodes(raw)).toBe('greenplain');
   });
 
-  it('collapses \\r progress redraws to the final frame', () => {
-    expect(stripTerminalControlCodes('10%\r55%\r100% done\n')).toBe('100% done\n');
+  it('replays \\r as cursor-to-column-0 overwrite, not as truncation', () => {
+    // 进度条重画：后写的覆盖先写的，比先写的短时**留下未被覆盖的尾巴**——
+    // 这才是终端语义。早先按「取最后一个 \r 之后」处理，等于把整行真内容丢掉。
+    expect(stripTerminalControlCodes('10%\r55%\r100% done\n')).toBe('100% done');
+    expect(stripTerminalControlCodes('abcdef\rXY')).toBe('XYcdef');
+  });
+
+  it('replays \\b as backspace', () => {
+    expect(stripTerminalControlCodes('e\becho hi')).toBe('echo hi');
+  });
+
+  it('honours erase-in-line so a redrawn prompt does not keep its old tail', () => {
+    expect(stripTerminalControlCodes('stale text\rnew\x1b[K')).toBe('new');
+  });
+
+  // 回归夹具：真 zsh 交互会话的原始字节（node-pty 实录）。
+  // 旧实现把这段清洗成 4 个空行——模型看到的是一个空终端，而单测全绿。
+  it('keeps real zsh session content readable (regression fixture from a live pty)', () => {
+    const realZsh = '\x1b[1m\x1b[7m%\x1b[27m\x1b[1m\x1b[0m'
+      + ' '.repeat(79)
+      + '\r \r\r\x1b[0m\x1b[27m\x1b[24m\x1b[Jlinchen@host T % \x1b[K'
+      + '\x1b[?2004he\becho neo-user-marker\x1b[?2004l\r\r\nneo-user-marker\r\n';
+
+    const cleaned = stripTerminalControlCodes(realZsh);
+
+    expect(cleaned).toBe('linchen@host T % echo neo-user-marker\nneo-user-marker');
   });
 
   it('returns only the trailing N lines', () => {

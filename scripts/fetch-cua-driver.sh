@@ -168,7 +168,7 @@ PLIST="$DEST_APP/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName $CUA_APP_NAME" "$PLIST" 2>/dev/null \
   || /usr/libexec/PlistBuddy -c "Add :CFBundleDisplayName string $CUA_APP_NAME" "$PLIST"
 
-# MCP stdio 不能直接执行二进制：0.8.1 的默认 `mcp` 会用
+# MCP stdio 不能直接执行二进制：上游默认的 `mcp` 会用
 # `open -a CuaDriver` 重启上游 daemon，TCC 因而仍归属 com.trycua.driver。
 # launcher 随 app 一起签名，通过具体 bundle URL 拉起 Neo 专用 daemon。
 if [[ ! -f "$MCP_LAUNCHER_SOURCE" ]]; then

@@ -48,7 +48,7 @@ function resolveCuaMcpLaunch(command: string): Pick<MCPStdioServerConfig, 'comma
   }
 
   if (process.platform === 'darwin') {
-    // 开发态缺少签名 helper 时也禁止 0.8.1 默认 `mcp` 去启动旧 CuaDriver。
+    // 开发态缺少签名 helper 时也禁止上游默认 `mcp` 去启动旧 CuaDriver。
     // embedded 继承 Agent Neo 宿主的 TCC；发布态始终走上面的签名 launcher。
     return {
       command,

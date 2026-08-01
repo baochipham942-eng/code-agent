@@ -404,7 +404,7 @@ export class CuaStateAdapter {
     const structured = result.structured ?? parseJsonObject(result.output);
     if (!structured) throw new Error('cua-driver did not return structuredContent');
     const snapshotId = nonEmptyString(structured.snapshot_id);
-    if (!snapshotId) throw new Error('cua-driver snapshot_id missing; version 0.8.1+ is required');
+    if (!snapshotId) throw new Error('cua-driver snapshot_id missing; version 0.14.2+ is required');
     const generationAfter = this.driver.getGeneration();
     if (!generationAfter) throw new Error('cua-driver connection generation unavailable');
     if (generationBefore && generationAfter !== generationBefore) {

@@ -68,8 +68,16 @@ prepare_destination_root() {
   touch "$STAGING_ROOT/.metadata_never_index" 2>/dev/null || true
 }
 
+# 收尾步骤：主产物（重签好的 .app）此时已产出并通过校验，所以这里失败**不该致命**——
+# 但也不该无声。原写法 `>/dev/null 2>&1 || true` 两样都吞了：既看不到失败，也看不到原因，
+# 下一次构建再因为 staging 没登记而报个不相干的错，排查要从头来过。
+# 现在：仍然非致命，但把 stage 脚本的完整输出透出来。
 cleanup_legacy_script_app() {
-  bash "$SCRIPT_DIR/stage-cua-driver-resource.sh" >/dev/null 2>&1 || true
+  local stage_log
+  if ! stage_log="$(bash "$SCRIPT_DIR/stage-cua-driver-resource.sh" 2>&1)"; then
+    echo "⚠️ 旧 scripts/*.app 清理/登记未完成（不影响本次重签产物，但下次构建可能受影响）：" >&2
+    printf '%s\n' "$stage_log" | sed 's/^/    /' >&2
+  fi
 }
 
 # Apple 的 trusted timestamp 服务会间歇返回 errSecTimestampMissing。签名不能降级成

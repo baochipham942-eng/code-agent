@@ -65,7 +65,10 @@ type ToolCategory =
 const READ_TOOLS = new Set(['Read', 'read_file', 'read_pdf', 'read_xlsx', 'ReadDocument']);
 const WRITE_TOOLS = new Set(['Write', 'write_file']);
 const EDIT_TOOLS = new Set(['Edit', 'MultiEdit', 'edit_file', 'NotebookEdit', 'notebook_edit']);
-const BASH_TOOLS = new Set(['Bash', 'bash', 'Process', 'code_execute']);
+// terminal_write 归 bash 档：它就是「往终端敲了一条命令」，聊天里必须显示敲了什么
+// （本批「注入对用户可见」红线在会话侧的那一半）。只读的 terminal_read/list/wait
+// 不并进来——它们不是「运行了命令」，混进 ran 桶会谎报动作。
+const BASH_TOOLS = new Set(['Bash', 'bash', 'Process', 'code_execute', 'terminal_write']);
 const SEARCH_TOOLS = new Set(['Grep', 'Glob', 'academic_search', 'ocr_search']);
 const LISTDIR_TOOLS = new Set(['LS', 'list_directory']);
 const WEBSEARCH_TOOLS = new Set(['WebSearch']);
@@ -185,7 +188,8 @@ export function humanizeToolStep(
       return target ? h.edit.replace('{target}', target) : h.editFallback;
     }
     case 'bash': {
-      const command = takePreview(a.command);
+      // terminal_write 把命令放在 input 里，不是 command
+      const command = takePreview(a.command ?? a.input);
       return command ? h.bash.replace('{command}', command) : h.bashFallback;
     }
     case 'search': {

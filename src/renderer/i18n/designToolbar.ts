@@ -23,6 +23,7 @@ export const designToolbarZh = {
     removeWatermarkBtn: '去除水印',
     clearAnnotations: '清除标注',
     errNoAnnotation: '请先在图上框选要修改的区域',
+    errAnnotNoRegion: '请在图上圈出要修改的区域——只写文字标签不够，模型不知道改哪里',
     // —— B4 标注重绘（自 zh.ts 移入；annotMode 值随动词条文案从「标注重绘」改为「批注重绘」）——
     annotMode: '批注重绘',
     annotInstruction: '重绘指令',
@@ -48,7 +49,7 @@ export const designToolbarZh = {
     resizePresetLandscape: '横向',
     resizePresetWide: '宽屏',
     resizeAlreadyRatio: '已是该比例',
-    resizeCostHint: '预估 {cost} · {steps} 次付费扩图',
+    resizeCostHint: '预估 {cost} · 1 次扩图',
     annotModelSelectLabel: '标注模型选择',
     // —— 「更多」分组标题（2026-08-01 审美关返工#2：按用途分组，不做杂物抽屉）——
     moreGroupEdit: '修图',
@@ -80,6 +81,7 @@ export const designToolbarEn = {
     removeWatermarkBtn: 'Remove watermark',
     clearAnnotations: 'Clear marks',
     errNoAnnotation: 'Mark a region on the image first',
+    errAnnotNoRegion: 'Circle the area to change — a text label alone does not tell the model where',
     annotMode: 'Annotate & redraw',
     annotInstruction: 'Redraw instruction',
     annotInstructionPlaceholder: 'Describe how to redraw the marked spots, e.g. make the marked button bigger and orange',
@@ -102,7 +104,7 @@ export const designToolbarEn = {
     resizePresetLandscape: 'Landscape',
     resizePresetWide: 'Widescreen',
     resizeAlreadyRatio: 'Already this ratio',
-    resizeCostHint: 'Est. {cost} · {steps} paid expand calls',
+    resizeCostHint: 'Est. {cost} · 1 expand call',
     annotModelSelectLabel: 'Annotation model',
     moreGroupEdit: 'Edit',
     moreGroupExportThis: 'Export this image',

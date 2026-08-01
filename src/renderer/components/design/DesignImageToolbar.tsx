@@ -27,7 +27,7 @@ import type { ExpandDirection } from './useDesignCanvasGeneration';
 import {
   computeResizeExpandPlan,
   RESIZE_RATIO_PRESETS,
-  type ExpandStep,
+  type ResizeScales,
   type ResizeRatioPresetId,
 } from './designCanvasResizeRatio';
 import { estimateImageCostCny, formatCny } from '@shared/media/imageCost';
@@ -63,8 +63,8 @@ interface DesignImageToolbarProps {
   onExpandRatioChange: (r: number) => void;
   onExpand: () => void;
   onRemoveWatermark: () => void;
-  // 调整大小：五档比例预设 → expand 步骤计划（DesignCanvas 顺序执行）
-  onResizePreset: (steps: ExpandStep[]) => void;
+  // 调整大小：五档比例预设 → 一次 expand 调用的四向 scale（null = 已是该比例，不发起调用）
+  onResizePreset: (scales: ResizeScales | null) => void;
   // B4 标注重绘
   annotMode: boolean;
   setAnnotMode: (v: boolean) => void;
@@ -212,11 +212,9 @@ export function DesignImageToolbar(props: DesignImageToolbarProps): React.ReactE
     [imageWidth, imageHeight],
   );
 
-  // 成本预估按实际步数算（两步对称扩展 = 两次付费扩图），不许只算一次的钱。
-  const resizeCostHint = (steps: ExpandStep[]): string =>
-    t.design.resizeCostHint
-      .replace('{cost}', formatCny(steps.length * estimateImageCostCny(DESIGN_IMAGE_MODELS.edit)))
-      .replace('{steps}', String(steps.length));
+  // 成本预估 = 一次付费扩图（2026-08-01：四向 scale 一次调用，原两步对称扩展要付两次）。
+  const resizeCostHint = (): string =>
+    t.design.resizeCostHint.replace('{cost}', formatCny(estimateImageCostCny(DESIGN_IMAGE_MODELS.edit)));
 
   const runAndClose = (fn: () => void): void => {
     setOpenMenu(null);
@@ -433,7 +431,7 @@ export function DesignImageToolbar(props: DesignImageToolbarProps): React.ReactE
             <div data-testid="design-resize-menu" className={MENU_CLASS} style={menuStyle}>
               {/* ds-allow:start 比例预设菜单项为图标+双行文字复合行（含禁用原因/成本小灰字），非 Button variant 能表达 */}
               {resizePresets.map(({ id, plan }) => {
-                const feasible = plan.feasible && plan.steps.length > 0;
+                const feasible = plan.feasible && plan.scales !== null;
                 const thumb = PRESET_THUMBS[id];
                 return (
                   <button
@@ -441,7 +439,7 @@ export function DesignImageToolbar(props: DesignImageToolbarProps): React.ReactE
                     type="button"
                     data-testid={`design-resize-preset-${id.replace(':', '-')}`}
                     disabled={generating || !feasible}
-                    onClick={() => plan.feasible && runAndClose(() => onResizePreset(plan.steps))}
+                    onClick={() => plan.feasible && runAndClose(() => onResizePreset(plan.scales))}
                     className="mt-1 flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors first:mt-0 hover:bg-white/[0.06] disabled:opacity-50 disabled:hover:bg-transparent"
                   >
                     <span className="flex h-6 w-7 items-center justify-center">
@@ -454,11 +452,11 @@ export function DesignImageToolbar(props: DesignImageToolbarProps): React.ReactE
                       <span className="text-xs text-zinc-200">{t.design[PRESET_NAME_KEYS[id]] as string}</span>
                       {!plan.feasible ? (
                         <span className="text-[10px] leading-snug text-zinc-500">{plan.reason}</span>
-                      ) : plan.steps.length === 0 ? (
+                      ) : plan.scales === null ? (
                         <span className="text-[10px] leading-snug text-zinc-500">{t.design.resizeAlreadyRatio}</span>
                       ) : (
                         <span className="font-mono text-[10px] leading-snug text-emerald-300/80">
-                          {resizeCostHint(plan.steps)}
+                          {resizeCostHint()}
                         </span>
                       )}
                     </span>

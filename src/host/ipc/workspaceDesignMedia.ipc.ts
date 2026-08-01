@@ -16,7 +16,7 @@ import { estimateMusicCostCny } from '../../shared/media/musicCost';
 import { DESIGN_IMAGE_MODELS } from '../../shared/constants';
 import { imageEngineForModel, imageModelById, videoModelById } from '../../shared/constants/visualModels';
 import { DESIGN_FLUX_MODEL } from '../../shared/constants/pricing';
-import type { ExpandDirection } from '../services/media/imageGenerationService';
+import type { ExpandDirection, ExpandScales } from '../services/media/imageGenerationService';
 import {
   getCustomImageModel,
   getCustomModelApiKey,
@@ -448,34 +448,87 @@ export async function handleEditDesignImage(
   return { path: payload.outputPath, actualModel, costCny };
 }
 
-// 设计画布扩图（T3：wanx function=expand）：底图(磁盘)读成 base64 + 方向/比例 → 四向单边 scale
+// wanx 单边 scale 合法区间（与 service 侧 clampExpandScale 同界）与四向键名。
+const EXPAND_SCALE_MIN = 1;
+const EXPAND_SCALE_MAX = 2;
+const EXPAND_SCALE_KEYS = ['top', 'bottom', 'left', 'right'] as const;
+const VALID_EXPAND_DIRECTIONS: readonly ExpandDirection[] = ['up', 'down', 'left', 'right', 'all'];
+
+/**
+ * 扩图入参。两种形态二选一：
+ * - `scales`：四向独立单边 scale，各 ∈[1,2]。一次调用即可表达"左右各扩一半"这类非对称外扩
+ *   （旧形态要分两次付费出图才能做到）。给了 scales 就忽略 direction/ratio。
+ * - `direction` + `ratio`：单方向 + 单倍率（现役 renderer 消费方走这条，行为不变）。
+ */
+export type ExpandDesignImagePayload = {
+  baseImagePath: string;
+  outputPath: string;
+  prompt?: string;
+  direction?: ExpandDirection;
+  ratio?: number;
+  scales?: ExpandScales;
+};
+
+/**
+ * 校验四向 scale 入参并返回规整后的值。逐字段验有限数 + [1,2]：
+ * 非法值下游 clampExpandScale 会静默夹到边界，变成"扩了个寂寞"的付费空调用（codex-audit M2 同因）。
+ */
+function validateExpandScales(input: unknown): ExpandScales {
+  if (typeof input !== 'object' || input === null) {
+    throw new Error(`expandDesignImage: scales 须为含 top/bottom/left/right 的对象，收到「${String(input)}」`);
+  }
+  const raw = input as Record<string, unknown>;
+  const validated = { top: EXPAND_SCALE_MIN, bottom: EXPAND_SCALE_MIN, left: EXPAND_SCALE_MIN, right: EXPAND_SCALE_MIN };
+  for (const key of EXPAND_SCALE_KEYS) {
+    const value = raw[key];
+    if (typeof value !== 'number' || !Number.isFinite(value) || value < EXPAND_SCALE_MIN || value > EXPAND_SCALE_MAX) {
+      throw new Error(
+        `expandDesignImage: scales.${key} 须为 [${EXPAND_SCALE_MIN},${EXPAND_SCALE_MAX}] 区间内的有限数值，收到「${String(value)}」`,
+      );
+    }
+    validated[key] = value;
+  }
+  return validated;
+}
+
+// 设计画布扩图（T3：wanx function=expand）：底图(磁盘)读成 base64 + 四向单边 scale
 // → 通义万相外扩补绘 → 下载结果写盘 → 返回路径，由 renderer 回灌为新 variant（挂 T1 spine）。
 export async function handleExpandDesignImage(
-  payload: { baseImagePath: string; outputPath: string; direction: ExpandDirection; ratio: number; prompt?: string },
+  payload: ExpandDesignImagePayload,
 ): Promise<{ path: string; actualModel: string; costCny: number }> {
   if (!payload?.baseImagePath || !payload?.outputPath) {
     throw new Error('expandDesignImage 需要 baseImagePath / outputPath');
   }
   assertWithinDesignDir(payload.baseImagePath, 'baseImagePath');
   assertWithinDesignDir(payload.outputPath, 'outputPath');
-  // 校验 direction 在合法集合内：非法值会让 expandScalesForDirection 落 default(四向 1.0)，
-  // 即一次"扩了个寂寞"的付费空调用。在边界先拦掉（codex-audit M2）。
-  const VALID_EXPAND_DIRECTIONS: readonly ExpandDirection[] = ['up', 'down', 'left', 'right', 'all'];
-  if (!VALID_EXPAND_DIRECTIONS.includes(payload.direction)) {
-    throw new Error(`expandDesignImage: 非法 direction「${String(payload.direction)}」，须为 up/down/left/right/all`);
-  }
-  // ratio 须为有限数且在 [1,2]（NaN/越界否则被 service 静默 clamp 成空操作付费调用）。
-  if (!Number.isFinite(payload.ratio) || payload.ratio < 1 || payload.ratio > 2) {
-    throw new Error('expandDesignImage: ratio 须为 [1,2] 区间内的有限数值');
-  }
   const { expandImage, expandScalesForDirection, downloadImageAsBase64, isImageUrl, getDashscopeApiKey } = await import(
     '../services/media/imageGenerationService'
   );
+  let scales: ExpandScales;
+  if (payload.scales !== undefined) {
+    scales = validateExpandScales(payload.scales);
+  } else {
+    // 旧形态：校验 direction 在合法集合内——非法值会让 expandScalesForDirection 落 default(四向 1.0)，
+    // 即一次"扩了个寂寞"的付费空调用。在边界先拦掉（codex-audit M2）。
+    const { direction, ratio } = payload;
+    if (direction === undefined || !VALID_EXPAND_DIRECTIONS.includes(direction)) {
+      throw new Error(`expandDesignImage: 非法 direction「${String(direction)}」，须为 up/down/left/right/all`);
+    }
+    // ratio 须为有限数且在 [1,2]（NaN/越界否则被 service 静默 clamp 成空操作付费调用）。
+    if (typeof ratio !== 'number' || !Number.isFinite(ratio) || ratio < EXPAND_SCALE_MIN || ratio > EXPAND_SCALE_MAX) {
+      throw new Error('expandDesignImage: ratio 须为 [1,2] 区间内的有限数值');
+    }
+    scales = expandScalesForDirection(direction, ratio);
+  }
+  // 整体空操作同样是付费空调用：四向全 1（含旧形态 ratio=1，滑块最小值就能滑到）什么都不扩，
+  // 逐字段校验放行也要在这里拦下——两种形态共用这一道闸。
+  if (!EXPAND_SCALE_KEYS.some((key) => scales[key] > EXPAND_SCALE_MIN)) {
+    throw new Error('expandDesignImage: 四向 scale 全为 1（无任何外扩），拒绝空操作付费调用');
+  }
   const apiKey = getDashscopeApiKey();
   if (!apiKey) throw new Error('扩图需要百炼（DashScope）API Key。');
   const baseBuf = await fsp.readFile(payload.baseImagePath);
   const baseDataUrl = `data:image/png;base64,${baseBuf.toString('base64')}`;
-  const scales = expandScalesForDirection(payload.direction, payload.ratio);
   const { url, actualModel } = await expandImage({
     apiKey,
     prompt: payload.prompt?.trim() ? payload.prompt : '自然延伸画面背景，与原图风格一致',

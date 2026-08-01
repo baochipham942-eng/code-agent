@@ -34,7 +34,7 @@ import { DIAGRAM_DEFAULT_COLOR, type CanvasShape } from './designDiagramTypes';
 import { saveCanvasDoc } from './designCanvasPersistence';
 import { dispatchCanvasUndoKey } from './canvasUndoKeybinding';
 import { dispatchCanvasDeleteKey } from './canvasDeleteKeybinding';
-import type { ExpandStep } from './designCanvasResizeRatio';
+import type { ResizeScales } from './designCanvasResizeRatio';
 import { imageModelsWithCap } from '@shared/constants/visualModels';
 import { estimateImageCostCny, formatCny } from '@shared/media/imageCost';
 import {
@@ -660,20 +660,12 @@ export const DesignCanvas: React.FC<{
     await removeWatermark({ baseNode: selectedImageNode });
   };
 
-  // 调整大小（五档比例预设）：按 computeResizeExpandPlan 给出的 steps 顺序走现有 expand 管线，
-  // 每步落地的新 variant 作为下一步的底图。任一步失败即停（错误条已展示，中间版保留在画布上）。
-  // ponytail: 两步是 IPC 限制（expandDesignImage 一次只收单个 direction+ratio），IPC 支持四向独立 scale 后可降到一次
-  const onResizePreset = async (steps: ExpandStep[]): Promise<void> => {
-    let base = selectedImageNode;
-    if (!base || steps.length === 0) return;
-    for (const step of steps) {
-      const beforeIds = new Set(useDesignCanvasStore.getState().nodes.map((n) => n.id));
-      await expand({ baseNode: base, direction: step.direction, ratio: step.ratio });
-      if (useDesignCanvasStore.getState().error) return;
-      const landed = useDesignCanvasStore.getState().nodes.find((n) => !beforeIds.has(n.id));
-      if (!landed || !isImageNode(landed)) return;
-      base = landed;
-    }
+  // 调整大小（五档比例预设）：computeResizeExpandPlan 给出四向 scale，走一次 expand 调用。
+  // 2026-08-01 之前这里是两步串行（IPC 一次只收单个 direction+ratio），要付两次钱，而且第二步是
+  // 在第一步的生成结果上再生成、画质二次劣化。IPC 支持四向独立 scale 后降到一次。
+  const onResizePreset = async (scales: ResizeScales | null): Promise<void> => {
+    if (!selectedImageNode || !scales) return;
+    await expand({ baseNode: selectedImageNode, scales });
   };
 
   const draftAndCommitted = draft ? [...annotations, draft] : annotations;
@@ -880,7 +872,7 @@ export const DesignCanvas: React.FC<{
           onExpandRatioChange={setExpandRatio}
           onExpand={() => void onExpand()}
           onRemoveWatermark={() => void onRemoveWatermark()}
-          onResizePreset={(steps) => void onResizePreset(steps)}
+          onResizePreset={(scales) => void onResizePreset(scales)}
           annotMode={annotMode}
           setAnnotMode={setAnnotMode}
           annotTool={annotTool}

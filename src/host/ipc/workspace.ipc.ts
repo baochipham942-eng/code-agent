@@ -53,7 +53,6 @@ import {
   getGeminiApiKey,
   getArkApiKey,
 } from '../services/media/imageGenerationService';
-import type { ExpandDirection } from '../services/media/imageGenerationService';
 import {
   getCustomModelApiKey,
   listCustomImageModels,
@@ -88,6 +87,7 @@ import {
   handleGenerateDesignVideo,
   handleGenerateDesignMusic,
 } from './workspaceDesignMedia.ipc';
+import type { ExpandDesignImagePayload } from './workspaceDesignMedia.ipc';
 // 这些 handler 历史上是 workspace.ipc 的公开导出（测试与 index.ts 依赖），保持向后兼容。
 export {
   handleGenerateDesignImage,
@@ -935,7 +935,7 @@ export function registerWorkspaceHandlers(
           break;
         case 'expandDesignImage':
           data = await handleExpandDesignImage(
-            payload as { baseImagePath: string; outputPath: string; direction: ExpandDirection; ratio: number; prompt?: string },
+            payload as ExpandDesignImagePayload,
           );
           break;
         case 'removeWatermarkDesignImage':

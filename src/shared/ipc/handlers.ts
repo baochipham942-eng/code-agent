@@ -677,6 +677,7 @@ export interface IpcEventHandlers {
   [IPC_CHANNELS.MANAGED_BROWSER_SESSION_CHANGED]: (event: ManagedBrowserSessionChangedEvent) => void;
   [IPC_CHANNELS.SURFACE_LIVE_FRAME]: (frame: SurfaceLiveFrameV1) => void;
   [IPC_CHANNELS.TERMINAL_OUTPUT]: (event: { sessionId: string; data: string }) => void;
+  [IPC_CHANNELS.TERMINAL_REVEAL]: (event: { sessionId: string }) => void;
   // Background task events
   [IPC_CHANNELS.BACKGROUND_TASK_UPDATE]: (event: BackgroundTaskUpdateEvent) => void;
   // TaskManager runtime events

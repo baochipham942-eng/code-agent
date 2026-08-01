@@ -245,6 +245,7 @@ export const IPC_CHANNELS = {
   MANAGED_BROWSER_SESSION_CHANGED: 'desktop:managed-browser-session-changed',
   SURFACE_LIVE_FRAME: 'surface:live-frame',
   TERMINAL_OUTPUT: 'terminal:output',
+  TERMINAL_REVEAL: 'terminal:reveal',
 
   // Session status channels (multi-session parallel support)
   SESSION_STATUS_UPDATE: 'session:status:update',

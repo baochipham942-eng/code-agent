@@ -133,6 +133,13 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
   // 用户那个交互终端的读写桥（Term-P1）。刻意不进 CORE_TOOLS：只有真要驱动
   // 用户已登录的 CLI 时才需要，一次性命令仍然走 Bash。
   {
+    name: 'terminal_open',
+    shortDescription: '在右栏打开交互终端（没有就创建）',
+    tags: ['shell'],
+    aliases: ['terminal', 'open terminal', '打开终端', 'sidebar terminal'],
+    source: 'builtin',
+  },
+  {
     name: 'terminal_list',
     shortDescription: '列出用户打开的交互终端',
     tags: ['shell'],

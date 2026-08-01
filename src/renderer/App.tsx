@@ -49,6 +49,7 @@ import { useTaskSync } from './hooks/useTaskSync';
 import { useInAppValidationBridge } from './hooks/useInAppValidationBridge';
 import { useBackgroundTaskSync } from './hooks/useBackgroundTaskSync';
 import { useOpenPreviewBridge } from './hooks/useOpenPreviewBridge';
+import { useTerminalRevealBridge } from './hooks/useTerminalRevealBridge';
 import { useArtifactSurfaceIntent } from './hooks/useArtifactSurfaceIntent';
 import { Group as PanelGroup, Panel, Separator as ResizeHandle } from 'react-resizable-panels';
 import { MemoFloater } from './components/features/memo/MemoFloater';
@@ -268,6 +269,7 @@ export const App: React.FC = () => {
   useInAppValidationBridge();
   // 2b：监听 agent（ProposeSlidesOps 等）生成文档型产物后请求打开预览 tab（按当前会话过滤）。
   useOpenPreviewBridge();
+  useTerminalRevealBridge();
   useArtifactSurfaceIntent();
   useRendererBundleAutoReload();
 

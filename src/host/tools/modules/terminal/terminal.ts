@@ -18,6 +18,7 @@ import type {
 } from '../../../protocol/tools';
 import {
   terminalListSchema,
+  terminalOpenSchema,
   terminalReadSchema,
   terminalWaitSchema,
   terminalWriteSchema,
@@ -26,6 +27,8 @@ import {
   annotateTerminalSession,
   getTerminalSnapshot,
   listTerminalSessions,
+  openTerminalSession,
+  requestTerminalReveal,
   writeToTerminalSession,
 } from '../../../services/terminal/terminalSessionManager';
 import { validateCommand } from '../../../security';
@@ -175,6 +178,34 @@ function clamp(value: unknown, fallback: number, max: number): number {
 const NO_SESSION_HINT =
   'No terminal is open for this conversation. Ask the user to open the Terminal view in the right rail first '
   + '(they may also need to log in to the CLI you want to drive).';
+
+// ----------------------------------------------------------------------------
+// terminal_open
+// ----------------------------------------------------------------------------
+
+class TerminalOpenHandler implements ToolHandler<Record<string, unknown>, string> {
+  readonly schema = terminalOpenSchema;
+
+  async execute(_args: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult<string>> {
+    const sessionId = ctx.sessionId;
+    const existing = getTerminalSnapshot(sessionId);
+    const reused = Boolean(existing?.alive);
+
+    // 已经有活着的 PTY 就别再开一个——用户在里面登录过的东西都在那个终端里。
+    if (!reused) openTerminalSession({ sessionId, cwd: ctx.workingDir });
+    // 无论新开还是复用都请求亮出来：用户说「打开终端」，看到它才算打开了。
+    requestTerminalReveal(sessionId);
+
+    ctx.logger.info('terminal_open', { sessionId, reused });
+    return {
+      ok: true,
+      output: reused
+        ? 'The terminal for this conversation is already open; brought it into view.'
+        : 'Opened a terminal in the right rail for this conversation.',
+      meta: { sessionId, reused },
+    };
+  }
+}
 
 // ----------------------------------------------------------------------------
 // terminal_list
@@ -382,6 +413,11 @@ class TerminalWaitHandler implements ToolHandler<Record<string, unknown>, string
 }
 
 // ----------------------------------------------------------------------------
+
+export const terminalOpenModule: ToolModule<Record<string, unknown>, string> = {
+  schema: terminalOpenSchema,
+  createHandler: () => new TerminalOpenHandler(),
+};
 
 export const terminalListModule: ToolModule<Record<string, unknown>, string> = {
   schema: terminalListSchema,

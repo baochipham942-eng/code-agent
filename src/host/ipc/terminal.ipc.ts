@@ -14,6 +14,7 @@ import {
   getTerminalSnapshot,
   listTerminalSessions,
   onTerminalOutput,
+  onTerminalReveal,
   openTerminalSession,
   reapOrphanTerminals,
   resizeTerminalSession,
@@ -38,6 +39,9 @@ export function registerTerminalHandlers(ipcMain: IpcMain): void {
   if (!outputBridgeAttached) {
     onTerminalOutput((sessionId, data) => {
       broadcastToRenderer(IPC_CHANNELS.TERMINAL_OUTPUT, { sessionId, data });
+    });
+    onTerminalReveal((sessionId) => {
+      broadcastToRenderer(IPC_CHANNELS.TERMINAL_REVEAL, { sessionId });
     });
     outputBridgeAttached = true;
     // 上次进程被强杀留下的孤儿 PTY 在这里收割——注册期只跑一次。

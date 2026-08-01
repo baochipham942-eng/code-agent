@@ -16,7 +16,16 @@ const fakeSessions = new Map<string, FakeSession>();
 const written: Array<{ sessionId: string; data: string }> = [];
 const annotated: Array<{ sessionId: string; text: string }> = [];
 
+const opened: string[] = [];
+const revealed: string[] = [];
+
 vi.mock('../../../src/host/services/terminal/terminalSessionManager', () => ({
+  openTerminalSession: (opts: { sessionId: string }) => {
+    opened.push(opts.sessionId);
+    fakeSessions.set(opts.sessionId, { data: '', alive: true });
+    return { sessionId: opts.sessionId, data: '', cols: 80, rows: 24, alive: true, shell: '/bin/zsh', cwd: '/tmp', startedAt: 0 };
+  },
+  requestTerminalReveal: (sessionId: string) => { revealed.push(sessionId); },
   getTerminalSnapshot: (sessionId: string) => {
     const session = fakeSessions.get(sessionId);
     return session
@@ -39,6 +48,7 @@ vi.mock('../../../src/host/services/terminal/terminalSessionManager', () => ({
 
 const {
   isAwaitingSecretInput,
+  terminalOpenModule,
   readTerminalTail,
   stripTerminalControlCodes,
   terminalListModule,
@@ -72,6 +82,8 @@ beforeEach(() => {
   fakeSessions.set('chat-1', { data: '', alive: true });
   written.length = 0;
   annotated.length = 0;
+  opened.length = 0;
+  revealed.length = 0;
 });
 
 describe('output sanitation (红线：原始 ANSI 不得全量进上下文)', () => {
@@ -259,6 +271,47 @@ describe('secret prompt takeover (调研反面教材第二条)', () => {
 
   it('detects the prompt through ANSI styling', () => {
     expect(isAwaitingSecretInput('\x1b[1mPassword:\x1b[0m ')).toBe(true);
+  });
+});
+
+describe('terminal_open', () => {
+  it('creates the pty and asks the rail to reveal it when none exists', async () => {
+    fakeSessions.clear();
+
+    const result = await run(terminalOpenModule);
+
+    expect(result.ok).toBe(true);
+    expect(opened).toEqual(['chat-1']);
+    expect(revealed).toEqual(['chat-1']);
+  });
+
+  it('does not create a second pty when one is already alive', async () => {
+    const result = await run(terminalOpenModule);
+
+    expect(result.ok).toBe(true);
+    expect(opened).toEqual([]);
+    // 复用也要亮出来——用户说「打开终端」，看到它才算打开了。
+    expect(revealed).toEqual(['chat-1']);
+    expect((result as { output: string }).output).toContain('already open');
+  });
+
+  it('re-creates the pty when the previous shell has exited', async () => {
+    fakeSessions.set('chat-1', { data: '', alive: false });
+
+    await run(terminalOpenModule);
+
+    expect(opened).toEqual(['chat-1']);
+  });
+
+  it('needs no approval — opening an empty shell is not an approvable action', async () => {
+    const canUseTool = vi.fn<CanUseToolFn>(async () => ({ allow: true }));
+    await run(terminalOpenModule, {}, canUseTool);
+
+    expect(canUseTool).not.toHaveBeenCalled();
+    // requiresPermission 由 schema.permissionLevel !== 'read' 推导，这里钉死档位，
+    // 免得日后有人「顺手」升成 execute 又把审批弹窗带回来。
+    expect(terminalOpenModule.schema.permissionLevel).toBe('read');
+    expect(terminalOpenModule.schema.readOnly).toBe(false);
   });
 });
 

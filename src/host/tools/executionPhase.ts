@@ -85,6 +85,7 @@ const EXECUTE_TOOLS = new Set([
   'process_write',
   'process_submit',
   'process_kill',
+  'terminal_open',
   'terminal_write',
   'ppt_generate',
   'image_generate',

@@ -62,6 +62,29 @@ export function onTerminalOutput(listener: OutputListener): () => void {
   return () => outputListeners.delete(listener);
 }
 
+type RevealListener = (sessionId: string) => void;
+const revealListeners = new Set<RevealListener>();
+
+export function onTerminalReveal(listener: RevealListener): () => void {
+  revealListeners.add(listener);
+  return () => revealListeners.delete(listener);
+}
+
+/**
+ * 请求右栏把终端亮出来。只表达意图，不决定要不要真切过去——
+ * 抢焦点的节制（每轮一次 / 用户切走不抢回）在 renderer 的 surfaceIntent 那一套里，
+ * 这里再判一次就是两处产品决策点。
+ */
+export function requestTerminalReveal(sessionId: string): void {
+  for (const listener of revealListeners) {
+    try {
+      listener(sessionId);
+    } catch (err) {
+      logger.warn('terminal reveal listener threw', { sessionId, err });
+    }
+  }
+}
+
 function emitOutput(sessionId: string, data: string): void {
   for (const listener of outputListeners) {
     try {
@@ -354,4 +377,5 @@ export function listTerminalSessions(): TerminalSnapshot[] {
 export function __resetTerminalSessionsForTest(): void {
   sessions.clear();
   outputListeners.clear();
+  revealListeners.clear();
 }

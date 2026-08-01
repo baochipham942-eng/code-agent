@@ -38,6 +38,7 @@ import { grepSchema } from './shell/grep.schema';
 // terminal/
 import {
   terminalListSchema,
+  terminalOpenSchema,
   terminalReadSchema,
   terminalWaitSchema,
   terminalWriteSchema,
@@ -672,6 +673,10 @@ export function registerMigratedTools(
   );
 
   // terminal (4): 用户那个交互终端的读写桥（Term-P1）——与 bash 分流见各自 description
+  registry.register(
+    terminalOpenSchema,
+    async () => (await import('./terminal/terminal')).terminalOpenModule,
+  );
   registry.register(
     terminalListSchema,
     async () => (await import('./terminal/terminal')).terminalListModule,

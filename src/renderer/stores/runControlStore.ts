@@ -9,7 +9,7 @@
 
 import { create } from 'zustand';
 
-export interface RunControlQueueItem {
+interface RunControlQueueItem {
   id: string;
   content: string;
   attachmentsCount: number;
@@ -17,7 +17,7 @@ export interface RunControlQueueItem {
   sendFailed?: boolean;
 }
 
-export interface RunControlActions {
+interface RunControlActions {
   /** = useAgent().cancel */
   interrupt: () => void | Promise<void>;
   /** = useAgent().cancelQueuedRuntimeInput（host QueuedInput retract） */

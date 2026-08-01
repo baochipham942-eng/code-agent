@@ -31,8 +31,14 @@ import {
 import { estimateVideoCostCny } from '@shared/media/videoCost';
 import { formatCny } from '@shared/media/imageCost';
 import { resolveDesignDir, readWorkspaceImageAsDataUrl } from './designFiles';
-import { buildMaskDataUrl, type Rect } from './designCanvasMask';
-import { composeAnnotOps, exportAnnotatedPng } from './annotComposite';
+import {
+  buildMaskDataUrl,
+  buildAnnotMaskDataUrl,
+  annotShapesToMaskGeometry,
+  hasMaskArea,
+  type Rect,
+} from './designCanvasMask';
+import { composeAnnotOps } from './annotComposite';
 import type { AnnotShape } from './AnnotationLayer';
 import { placeCanvasNode, placeVariantNode, type CanvasPlacementOperation } from './canvasPlacement';
 import {
@@ -517,7 +523,21 @@ export function useDesignCanvasGeneration(): {
         displayH: baseNode.height,
         shapes: shapesToNodeLocal(shapes, baseNode),
       });
-      const annotatedImageDataUrl = await exportAnnotatedPng(sourceDataUrl, scaled, naturalW, naturalH);
+      // 2026-08-01 B1：不再把红线烧进原图当参考图。付费 A/B 实测证明那条路会让模型把红箭头/红
+      // 文字当画面内容照抄，红圈还被当成「要画成圆形」的形状提示，且加提示词前缀不能解决。
+      // 改走：干净原图 + 标注栅格化的 mask（改哪里）+ 指令（改成什么），复用 editDesignImage
+      // 的 description_edit_with_mask 通道，附带 T4 一致性锁定（未标注区域逐像素不变）。
+      const geo = annotShapesToMaskGeometry(scaled);
+      if (!hasMaskArea(geo)) {
+        // 只画了文字标签、没圈出任何区域：mask 全黑 = 什么都不重绘，拦下这次付费空调用。
+        useDesignCanvasStore.getState().setError(t.design.errAnnotNoRegion);
+        return;
+      }
+      const maskDataUrl = buildAnnotMaskDataUrl(naturalW, naturalH, geo);
+      // 文字标注是「标签」不是「区域」——它的语义并进指令，像素不进 mask。
+      const promptWithLabels = geo.labels.length
+        ? `${instruction}\n（图上标注文字：${geo.labels.join('、')}）`
+        : instruction;
 
       const assetRel = `${DESIGN_WORKSPACE.CANVAS_ASSETS_DIR}/annot-${Date.now()}.png`;
       const assetAbs = `${runDir}/${assetRel}`;
@@ -532,8 +552,14 @@ export function useDesignCanvasGeneration(): {
       try {
         const res = await window.domainAPI?.invoke<{ path: string; actualModel: string; costCny: number }>(
           IPC_DOMAINS.WORKSPACE,
-          'editImageByAnnotation',
-          { model, annotatedImageDataUrl, instruction, outputPath: assetAbs, selectionContext },
+          'editDesignImage',
+          {
+            prompt: promptWithLabels,
+            baseImagePath: `${runDir}/${baseNode.src}`, // 干净原图，不是烧了标注的图
+            maskDataUrl,
+            outputPath: assetAbs,
+            selectionContext,
+          },
         );
         if (!res?.success) {
           throw new Error(res?.error?.message || t.design.errDispatch);

@@ -23,6 +23,7 @@ export const designToolbarZh = {
     removeWatermarkBtn: '去除水印',
     clearAnnotations: '清除标注',
     errNoAnnotation: '请先在图上框选要修改的区域',
+    errAnnotNoRegion: '请在图上圈出要修改的区域——只写文字标签不够，模型不知道改哪里',
     // —— B4 标注重绘（自 zh.ts 移入；annotMode 值随动词条文案从「标注重绘」改为「批注重绘」）——
     annotMode: '批注重绘',
     annotInstruction: '重绘指令',
@@ -80,6 +81,7 @@ export const designToolbarEn = {
     removeWatermarkBtn: 'Remove watermark',
     clearAnnotations: 'Clear marks',
     errNoAnnotation: 'Mark a region on the image first',
+    errAnnotNoRegion: 'Circle the area to change — a text label alone does not tell the model where',
     annotMode: 'Annotate & redraw',
     annotInstruction: 'Redraw instruction',
     annotInstructionPlaceholder: 'Describe how to redraw the marked spots, e.g. make the marked button bigger and orange',

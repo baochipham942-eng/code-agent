@@ -964,7 +964,7 @@ async function main(): Promise<void> {
       `${signatureVerify.stdout}${signatureVerify.stderr}${signatureDetails.stdout}${signatureDetails.stderr}`,
       'utf8',
     );
-    assert(version.exitCode === 0 && version.stdout.trim() === 'cua-driver 0.8.1', `Unexpected helper version: ${version.stdout}${version.stderr}`);
+    assert(version.exitCode === 0 && version.stdout.trim() === 'cua-driver 0.14.2', `Unexpected helper version: ${version.stdout}${version.stderr}`);
     assert(signatureVerify.exitCode === 0, `codesign verification failed: ${signatureVerify.stderr}`);
     const signature = parseCodesign(`${signatureDetails.stdout}\n${signatureDetails.stderr}`);
     // 期望值随渠道走，但仍是精确串：退化成前缀/宽匹配等于把门拆了，

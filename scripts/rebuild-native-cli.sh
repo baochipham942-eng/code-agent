@@ -11,7 +11,7 @@
 # - CLI 代码通过 nativeBinding 选项加载这个文件
 # ============================================================================
 
-set -e
+set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
@@ -45,7 +45,13 @@ fi
 
 # 用系统 Node.js 重新编译
 cd node_modules/better-sqlite3
-npx --yes node-gyp rebuild --release 2>&1 | tail -3
+NODE_GYP_LOG="$BACKUP_DIR/node-gyp-rebuild.log"
+if ! npx --yes node-gyp rebuild --release > "$NODE_GYP_LOG" 2>&1; then
+  echo "node-gyp rebuild 失败，完整日志：" >&2
+  cat "$NODE_GYP_LOG" >&2
+  exit 1
+fi
+tail -3 "$NODE_GYP_LOG"
 
 cd "$PROJECT_ROOT"
 

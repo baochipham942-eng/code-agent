@@ -123,6 +123,7 @@ interface AgentRouterDeps extends AgentDurableRouteDeps {
   tryGetCLISessionManager?: () => Promise<AgentSessionManagerLike | null>;
   getSupabaseForSession: () => Promise<SupabaseAgentBinding | null>;
   registerQueuedInputStartupSweep?: (runStartupSweep: () => void) => void;
+  registerQueuedInputEnqueueHook?: (onEnqueued: (sessionId: string) => void) => void;
 }
 
 export type ActiveAgentLoop = RunControlTarget;
@@ -280,6 +281,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
     logger,
   });
   deps.registerQueuedInputStartupSweep?.(() => queuedInputDrain.runStartupSweep());
+  deps.registerQueuedInputEnqueueHook?.((sessionId) => queuedInputDrain.handleEnqueued(sessionId));
 
   // ── Agent Run (SSE streaming) ──────────────────────────────────────
   async function runAgentTurn(

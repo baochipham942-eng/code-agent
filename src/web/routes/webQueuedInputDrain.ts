@@ -34,6 +34,12 @@ interface WebQueuedInputDrainDependencies {
 
 export interface WebQueuedInputDrain {
   handleReleasedSession(sessionId: string): void;
+  /**
+   * 一条消息刚入队。若此刻这个 session 已经没有活跃 run，就得立刻抽——否则它会
+   * 一直躺在队列里没人管：release 时的那次 drain 早跑完了，而入队发生在那之后。
+   * 真机 2026-08-01：上一轮刚回复完就发下一条，消息进了排队卡但模型再也不回。
+   */
+  handleEnqueued(sessionId: string): void;
   runStartupSweep(): void;
 }
 
@@ -171,6 +177,16 @@ export function createWebQueuedInputDrain({
   };
 
   return {
+    handleEnqueued(sessionId: string): void {
+      // 有 run 在跑就什么都不做：那才是「排到下一轮」的正常语义，
+      // 由 release 时的 drain 负责。
+      if (hasActiveRun(sessionId)) return;
+      if (activeSessions.has(sessionId)) {
+        pendingReleasedSessions.add(sessionId);
+        return;
+      }
+      scheduleDrain(sessionId);
+    },
     handleReleasedSession(sessionId: string): void {
       if (activeSessions.has(sessionId)) {
         pendingReleasedSessions.add(sessionId);

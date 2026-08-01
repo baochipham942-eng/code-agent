@@ -30,6 +30,26 @@ const logger = createLogger('IntentClassifier');
 /** Classification timeout to prevent blocking main flow */
 const CLASSIFY_TIMEOUT_MS = 3000;
 
+/** 纯寒暄/确认，没有可分类的语义。 */
+const TRIVIAL_MESSAGE = /^(你好|您好|哈喽|hi|hello|hey|ok|okay|好|好的|行|嗯+|谢谢|多谢|thanks|thx|在吗?|test|测试)[\s!！。.~、]*$/i;
+/** 纯数字/标点，同上。 */
+const NO_SEMANTIC_CONTENT = /^[\d\s.,;:!?，。；：！？、~\-_=+*/\\|]+$/;
+
+/**
+ * 这条消息值不值得为它问一次小模型。
+ *
+ * 分类那一问走 quick model，在真正开始干活之前、每轮都要付（真机 2026-08-01 实测
+ * 2.3-4s）。但**不能按长度砍**：「把那个方案往下做」只有 8 个字，却正是最需要分类的
+ * 那种——它的 references_past_context 决定要不要把历史记忆注进去，砍掉就等于让模型
+ * 突然失忆。所以这里只放过真正没有语义可分的：寒暄、确认、纯数字标点。
+ */
+export function needsLlmIntentClassification(content: string): boolean {
+  const text = content.trim();
+  if (!text) return false;
+  if (TRIVIAL_MESSAGE.test(text)) return false;
+  return !NO_SEMANTIC_CONTENT.test(text);
+}
+
 export type TaskIntent = 'research' | 'code' | 'search' | 'data' | 'general';
 
 export interface TaskIntentClassification {
@@ -126,6 +146,14 @@ export async function classifyIntent(
 
   const cached = llmClassificationCache.get(message);
   if (cached) return cached;
+
+  // 太短又没有疑问句式的消息不值得为它等一次小模型（3s 超时 + 排队），它必然是
+  // general。这一问在真正开始干活之前，每轮都要付——真机 2026-08-01 实测吃掉
+  // 首响 3-4 秒。关键词档（Step 1）已经先筛过明显意图，这里只兜住关键词没覆盖的
+  // 表述，而那种表述不会是一句「你好」。
+  if (!needsLlmIntentClassification(message)) {
+    return { intent: 'general', references_past_context: false };
+  }
 
   // Step 2: LLM classification — 走 quickModel 直连官方 bigmodel.cn，
   // 避免 modelRouter 经 0ki 中转时 quick model 被 403

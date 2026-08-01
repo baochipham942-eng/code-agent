@@ -19,6 +19,8 @@ const appState = {
 
 const sessionState = {
   currentSessionId: 'session-1' as string | null,
+  // T1 之后 OverviewRunHeader 会在 store 里找当前会话标题（sessions.find）
+  sessions: [{ id: 'session-1', title: '测试会话' }] as Array<{ id: string; title: string }>,
 };
 
 const statusRailState = {

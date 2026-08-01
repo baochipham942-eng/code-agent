@@ -56,9 +56,6 @@ function renderToolbar(over: Partial<React.ComponentProps<typeof DesignImageTool
     setAnnotMode: vi.fn(),
     annotTool: 'pen',
     setAnnotTool: vi.fn(),
-    effectiveAnnotModel: 'wanx2.1-imageedit',
-    setAnnotModel: vi.fn(),
-    annotAvailability: null,
     annotModelUnavailable: false,
     annotInstruction: '',
     setAnnotInstruction: vi.fn(),
@@ -101,7 +98,7 @@ describe('DesignImageToolbar 动词条', () => {
     }
   });
 
-  it('批注重绘点击进 annotMode 并弹出指令浮层（工具四选 + 模型选择 + 成本 + CTA）', () => {
+  it('批注重绘点击进 annotMode 并弹出指令浮层（工具四选 + 成本 + CTA；模型选择已退役）', () => {
     const props = renderToolbar();
     fireEvent.click(screen.getByTestId('design-toolbar-annotate'));
     expect(props.setAnnotMode).toHaveBeenCalledWith(true);
@@ -113,12 +110,12 @@ describe('DesignImageToolbar 动词条', () => {
       zh.design.annotToolText,
       zh.design.annotInstruction,
       zh.design.costEstimateLabel,
-      zh.design.annotModelSelectLabel,
     ]) {
       expect(popover.textContent).toContain(label);
     }
-    // 标注模型选择已挪进批注重绘浮层（返工#4：控件跟着它服务的功能走）
-    expect(popover.querySelector('[data-testid="annot-model-select"]')).not.toBeNull();
+    // 2026-08-01 B1：mask 通道固定走万相，用户选不了模型——选择器退役，留着就是个不生效的控件。
+    expect(popover.querySelector('[data-testid="annot-model-select"]')).toBeNull();
+    expect(popover.textContent).not.toContain(zh.design.annotModelSelectLabel);
     // 无标注图形 + 无指令时 CTA 禁用（与原浮层逻辑一致）
     expect((screen.getByTestId('design-annot-redraw-btn') as HTMLButtonElement).disabled).toBe(true);
   });
@@ -126,8 +123,6 @@ describe('DesignImageToolbar 动词条', () => {
   it('无可用标注模型时降级：按钮禁用样式 + 浮层只展示原因，不进 annotMode、无 CTA（返工#4）', () => {
     const props = renderToolbar({
       annotModelUnavailable: true,
-      effectiveAnnotModel: '',
-      annotAvailability: { 'gpt-image-2': false, 'wanx2.1-imageedit': false },
     });
     const btn = screen.getByTestId('design-toolbar-annotate');
     expect(btn.getAttribute('aria-disabled')).toBe('true');
@@ -136,8 +131,8 @@ describe('DesignImageToolbar 动词条', () => {
     expect(props.setAnnotMode).not.toHaveBeenCalled();
     const popover = screen.getByTestId('design-annotate-popover');
     expect(popover.textContent).toContain(zh.design.annotNoAvailableModel);
-    // 灰显的模型列表仍在（可见「未配置 Key」），但没有重绘 CTA、没有指令输入
-    expect(popover.textContent).toContain(zh.design.imageModelUnconfigured);
+    // 2026-08-01 B1：降级态只留原因说明——模型列表随选择器一起退役（mask 通道固定走万相）
+    expect(popover.querySelector('[data-testid="annot-model-select"]')).toBeNull();
     expect(screen.queryByTestId('design-annot-redraw-btn')).toBeNull();
     expect(popover.querySelector('textarea')).toBeNull();
   });

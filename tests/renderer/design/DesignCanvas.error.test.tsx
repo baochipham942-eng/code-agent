@@ -265,26 +265,26 @@ describe('批注重绘默认模型（2026-08-01 返工#4）', () => {
     vi.stubGlobal('domainAPI', {
       invoke: vi.fn().mockResolvedValue({
         success: true,
-        data: { models: [{ id: 'gpt-image-2', label: 'GPT-image-2', available }] },
+        data: { models: [{ id: 'wanx-t2i', label: '通义万相', available }, { id: 'gpt-image-2', label: 'GPT-image-2', available: false }] },
       }),
     });
   };
 
-  it('唯一 annotEdit 模型配了 key → 默认生效模型就是它，入口不降级', async () => {
+  // 2026-08-01 B1：标注重绘改走 mask 通道（万相），判据从 annotEdit 换成 maskEdit。
+  // 这两条钉死「判据跟着实际通道走」——挂回 annotEdit 会让配了万相 key 的用户被误灰掉。
+  it('maskEdit 模型（万相）配了 key → 入口不降级，哪怕 annotEdit 模型没配 key', async () => {
     stubModelAvailability(true);
     setCanvas(imageNode('data:image/png;base64,AAAA'));
     render(<DesignCanvasTab />);
 
-    await waitFor(() => expect(toolbarProps.current?.effectiveAnnotModel).toBe('gpt-image-2'));
-    expect(toolbarProps.current?.annotModelUnavailable).toBe(false);
+    await waitFor(() => expect(toolbarProps.current?.annotModelUnavailable).toBe(false));
   });
 
-  it('唯一 annotEdit 模型没配 key → 生效模型置空 + annotModelUnavailable=true（默认档不许指向用不了的模型）', async () => {
+  it('maskEdit 模型没配 key → annotModelUnavailable=true（入口降级，不让用户点了才失败）', async () => {
     stubModelAvailability(false);
     setCanvas(imageNode('data:image/png;base64,AAAA'));
     render(<DesignCanvasTab />);
 
     await waitFor(() => expect(toolbarProps.current?.annotModelUnavailable).toBe(true));
-    expect(toolbarProps.current?.effectiveAnnotModel).toBe('');
   });
 });

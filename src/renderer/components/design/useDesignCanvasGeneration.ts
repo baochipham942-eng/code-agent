@@ -110,8 +110,6 @@ export interface EditByAnnotationArgs {
   shapes: AnnotShape[];
   /** 重绘指令（描述按标注要改成什么）。 */
   instruction: string;
-  /** 出图模型 id（须声明 annotEdit 能力，main 侧 cap 守门复核）。 */
-  model: string;
 }
 
 /** 把世界坐标标注偏移到底图局部坐标（减去节点左上角），供 composeAnnotOps 换算原图像素。 */
@@ -496,7 +494,7 @@ export function useDesignCanvasGeneration(): {
   // 结果落新 variant 挂 spine（parentId 锚血缘根，与 editRegion 同槽规则）。
   const editByAnnotation = useCallback(
     async (args: EditByAnnotationArgs) => {
-      const { baseNode, shapes, instruction, model } = args;
+      const { baseNode, shapes, instruction } = args;
       const runDir = useDesignCanvasStore.getState().runDir;
       if (!runDir) return;
       if (!instruction.trim()) {

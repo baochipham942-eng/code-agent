@@ -21,7 +21,6 @@ import {
 } from 'lucide-react';
 import type { Translations } from '../../i18n';
 import { DesignImageEditOps } from './DesignImageEditOps';
-import { AnnotModelSelect } from './DesignCanvasOverlays';
 import { type AnnotTool } from './AnnotationLayer';
 import type { ExpandDirection } from './useDesignCanvasGeneration';
 import {
@@ -75,10 +74,6 @@ interface DesignImageToolbarProps {
   setAnnotMode: (v: boolean) => void;
   annotTool: AnnotTool;
   setAnnotTool: (tool: AnnotTool) => void;
-  effectiveAnnotModel: string;
-  setAnnotModel: (id: string) => void;
-  /** 标注模型 key 可用性（DesignCanvas 经 useVisualImageModelAvailability 统一拉取）；null = 加载中。 */
-  annotAvailability: Record<string, boolean> | null;
   /** 一个可用标注模型都没有：批注重绘入口降级（禁用样式 + 原因说明），不让用户点了才失败。 */
   annotModelUnavailable: boolean;
   annotInstruction: string;
@@ -141,9 +136,6 @@ export function DesignImageToolbar(props: DesignImageToolbarProps): React.ReactE
     setAnnotMode,
     annotTool,
     setAnnotTool,
-    effectiveAnnotModel,
-    setAnnotModel,
-    annotAvailability,
     annotModelUnavailable,
     annotInstruction,
     setAnnotInstruction,
@@ -267,10 +259,6 @@ export function DesignImageToolbar(props: DesignImageToolbarProps): React.ReactE
           <p className="px-1 py-1 text-[11px] leading-snug text-amber-300/90">
             {t.design.annotNoAvailableModel}
           </p>
-          <div className="mt-1 flex items-center justify-between gap-2 px-1">
-            <span className="shrink-0 whitespace-nowrap text-[11px] text-zinc-400">{t.design.annotModelSelectLabel}</span>
-            <AnnotModelSelect value={effectiveAnnotModel} onChange={setAnnotModel} availability={annotAvailability} />
-          </div>
         </>
       ) : (
         <>
@@ -305,13 +293,9 @@ export function DesignImageToolbar(props: DesignImageToolbarProps): React.ReactE
           className="resize-none rounded-lg border border-white/[0.08] bg-white/[0.02] px-2.5 py-1.5 text-xs text-zinc-100 placeholder:text-zinc-600 focus:border-white/[0.2] focus:outline-none"
         />
       </label>
-      <div className="mt-2 flex items-center justify-between gap-2">
-        <span className="shrink-0 whitespace-nowrap text-[11px] text-zinc-400">{t.design.annotModelSelectLabel}</span>
-        <AnnotModelSelect value={effectiveAnnotModel} onChange={setAnnotModel} availability={annotAvailability} />
-      </div>
       <div className="mt-2 text-[11px] text-zinc-500">
         {t.design.costEstimateLabel}{' '}
-        <span className="font-mono text-emerald-300">{formatCny(estimateImageCostCny(effectiveAnnotModel))}</span>
+        <span className="font-mono text-emerald-300">{formatCny(estimateImageCostCny(DESIGN_IMAGE_MODELS.edit))}</span>
       </div>
       {/* ds-allow:start 标注重绘 CTA 用设计区品牌色 bg-fuchsia-500/90（Button primary 蓝渐变会丢视觉语言） */}
       <button

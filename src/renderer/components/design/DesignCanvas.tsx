@@ -38,6 +38,7 @@ import { dispatchCanvasDeleteKey } from './canvasDeleteKeybinding';
 import type { ResizeScales } from './designCanvasResizeRatio';
 import { imageModelsWithCap } from '@shared/constants/visualModels';
 import { estimateImageCostCny, formatCny } from '@shared/media/imageCost';
+import { DESIGN_IMAGE_MODELS } from '@shared/constants/pricing';
 import {
   normalizeDragRect,
   worldRectToImageRegion,
@@ -135,8 +136,6 @@ export const DesignCanvas: React.FC<{
   const setAnnotMode = useDesignStore((s) => s.setAnnotMode);
   const annotInstruction = useDesignStore((s) => s.annotInstruction);
   const setAnnotInstruction = useDesignStore((s) => s.setAnnotInstruction);
-  const annotModel = useDesignStore((s) => s.annotModel);
-  const setAnnotModel = useDesignStore((s) => s.setAnnotModel);
   // 标注图形（世界坐标）+ 当前工具，本地态（换图重置）。
   const [annotShapes, setAnnotShapes] = useState<AnnotShape[]>([]);
   const [annotTool, setAnnotTool] = useState<AnnotTool>('pen');
@@ -144,25 +143,15 @@ export const DesignCanvas: React.FC<{
   const [textDraft, setTextDraft] = useState<{ world: { x: number; y: number }; value: string } | null>(
     null,
   );
-  // 生效模型（cap ∩ key 可用性解析的唯一来源；2026-08-01 返工#4：默认必须指向当前可用的模型，
-  // 不许默认档指向没配 key 的模型让用户点了才失败）：
-  // 已选且仍可用 → 用之；否则取首个「可用」的 annotEdit 模型；可用性未回包时按旧行为回退首个 cap 模型。
+  // 可用性判据必须跟着**实际走的通道**走（2026-08-01 B1）：标注重绘改成「干净原图 + 标注 mask
+  // + 指令」后走的是 maskEdit 通道（万相），与局部重绘同一条，不再是 annotEdit（gpt-image-2）。
+  // 判据没跟着改的话，配了万相 key 但没配 gpt-image key 的用户会看到批注重绘被灰掉、实际却能用。
+  // 模型不再由用户在浮层里选（mask 通道固定走万相），故 annotModel/effectiveAnnotModel 一并退役。
   const annotAvailability = useVisualImageModelAvailability();
-  const annotCapModels = useMemo(() => imageModelsWithCap('annotEdit'), []);
-  const effectiveAnnotModel = useMemo(() => {
-    if (
-      annotModel &&
-      annotCapModels.some((m) => m.id === annotModel) &&
-      (annotAvailability == null || annotAvailability[annotModel])
-    ) {
-      return annotModel;
-    }
-    if (annotAvailability == null) return annotCapModels[0]?.id ?? '';
-    return annotCapModels.find((m) => annotAvailability[m.id])?.id ?? '';
-  }, [annotModel, annotCapModels, annotAvailability]);
+  const maskCapModels = useMemo(() => imageModelsWithCap('maskEdit'), []);
   // 一个可用模型都没有 → 动词条批注重绘入口降级（禁用 + 说明原因），不让用户点了才失败。
   const annotModelUnavailable =
-    annotAvailability != null && !annotCapModels.some((m) => annotAvailability[m.id]);
+    annotAvailability != null && !maskCapModels.some((m) => annotAvailability[m.id]);
 
   // 圈选标注本地态（世界坐标）。
   const [annotating, setAnnotating] = useState(false);
@@ -639,13 +628,13 @@ export const DesignCanvas: React.FC<{
   // 标注重绘：成本确认 → 调 editByAnnotation → 成功后清标注、退模式。
   const onAnnotRedraw = async (): Promise<void> => {
     if (!selectedImageNode || annotShapes.length === 0 || !annotInstruction.trim()) return;
-    const est = formatCny(estimateImageCostCny(effectiveAnnotModel));
+    // 成本按 mask 通道实际用的编辑模型算（万相 imageedit），不再按用户选的标注模型。
+    const est = formatCny(estimateImageCostCny(DESIGN_IMAGE_MODELS.edit));
     if (!window.confirm(`${t.design.annotCostConfirm}（${est}）`)) return;
     await editByAnnotation({
       baseNode: selectedImageNode,
       shapes: annotShapes,
       instruction: annotInstruction,
-      model: effectiveAnnotModel,
     });
     if (!useDesignCanvasStore.getState().error) {
       setAnnotShapes([]);
@@ -894,9 +883,6 @@ export const DesignCanvas: React.FC<{
           setAnnotMode={setAnnotMode}
           annotTool={annotTool}
           setAnnotTool={setAnnotTool}
-          effectiveAnnotModel={effectiveAnnotModel}
-          setAnnotModel={setAnnotModel}
-          annotAvailability={annotAvailability}
           annotModelUnavailable={annotModelUnavailable}
           annotInstruction={annotInstruction}
           setAnnotInstruction={setAnnotInstruction}

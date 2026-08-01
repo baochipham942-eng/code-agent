@@ -60,7 +60,7 @@ export const designToolbarZh = {
     // 「整个画布」组：导出 PPTX 导的是整块画布所有节点（非选中这张），单列一组避免与「导出这张」混淆（返工#3）
     moreGroupCanvas: '整个画布',
     // 无可用标注模型时的降级说明（返工#4：禁用批注重绘入口并说明原因，不让用户点了才失败）
-    annotNoAvailableModel: '没有可用的标注模型：请先在设置里配置图像模型的 API Key',
+    annotNoAvailableModel: '批注重绘需要先配好图像编辑模型的 API Key（能力中心 → 图像模型）',
     // —— 画布缩放控件（2026-08-01 K2：右下角读数 + 适配视口）——
     zoomLevel: '缩放比例',
     zoomFit: '适配视口',
@@ -117,7 +117,7 @@ export const designToolbarEn = {
     moreGroupExportThis: 'Export this image',
     moreGroupDerive: 'Derive',
     moreGroupCanvas: 'Whole canvas',
-    annotNoAvailableModel: 'No annotation model available: configure an image model API key in Settings first',
+    annotNoAvailableModel: 'Annotation redraw needs an image-editing model API key (Capability Hub → Image models)',
     zoomLevel: 'Zoom level',
     zoomFit: 'Fit to view',
     zoomCustom: 'Type a zoom percentage, Enter to apply',

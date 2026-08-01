@@ -244,6 +244,11 @@ function normalizedAgentId(context: CuaDriverCallContext): string {
   return context.agentId?.trim() || 'main';
 }
 
+// 也是 start_session / end_session 显式声明给 cua-driver 的 `session` id。
+// 0.14.x 起 session_id_of 只读调用方传的 `session`，不再回落 daemon 注入的
+// `_session_id`，且显式拒绝空串与字面量 "default"（cua-driver-core/src/session_tools.rs）。
+// 这里跟 ownerKey 同源（第二个分量逐字相同）：同一个 owner 必然算出同一个 id，
+// 所以 end 一定能对上 start 铸的那个会话。
 function normalizedSurfaceSessionId(context: CuaDriverCallContext): string {
   return context.surfaceSessionId?.trim()
     || `legacy-surface:${context.sessionId}:${normalizedRunId(context)}:${normalizedAgentId(context)}`;
@@ -298,7 +303,11 @@ export class CuaStateAdapter {
     }
     const key = ownerKey(context);
     if (this.startedOwners.has(key)) return;
-    const result = await this.driver.call('start_session', {}, context);
+    const result = await this.driver.call(
+      'start_session',
+      { session: normalizedSurfaceSessionId(context) },
+      context,
+    );
     if (!result.success) {
       throw new Error(result.error ?? result.output ?? 'cua-driver start_session failed');
     }
@@ -313,7 +322,11 @@ export class CuaStateAdapter {
     }
     let failure: Error | undefined;
     try {
-      const result = await this.driver.call('end_session', {}, context);
+      const result = await this.driver.call(
+        'end_session',
+        { session: normalizedSurfaceSessionId(context) },
+        context,
+      );
       if (!result.success) {
         failure = new Error(result.error ?? result.output ?? 'cua-driver end_session failed');
       }

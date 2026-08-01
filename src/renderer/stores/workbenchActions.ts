@@ -20,7 +20,6 @@ interface WorkbenchActionDependencies {
   set: StoreApi<AppState>['setState'];
   get: StoreApi<AppState>['getState'];
   nextPreviewTabTick: () => number;
-  stopDevServer: (sessionId?: string) => void;
 }
 
 const previewPathOf = (id: `preview:${string}`): string => id.slice('preview:'.length);
@@ -29,7 +28,6 @@ export function createWorkbenchActions({
   set,
   get,
   nextPreviewTabTick,
-  stopDevServer,
 }: WorkbenchActionDependencies): Pick<AppState, WorkbenchActionName> {
   return {
     syncWorkbenchForSession: (sessionId) => {
@@ -46,7 +44,7 @@ export function createWorkbenchActions({
       const restored = sessionId ? workbenchBySession[sessionId] : undefined;
       const workbenchTabs = (restored?.tabs ?? []).filter((view) => (
         !isPreviewWorkbenchView(view)
-        || state.previewTabs.some((tab) => tab.kind !== 'liveDev' && view === `preview:${tab.path}`)
+        || state.previewTabs.some((tab) => view === `preview:${tab.path}`)
       ));
       const restoredActive = restored?.active ?? null;
       const activeWorkbenchTab = restoredActive && !workbenchTabs.includes(restoredActive)
@@ -100,16 +98,11 @@ export function createWorkbenchActions({
             ? 'user'
             : options?.source ?? 'user'
           : state.taskWorkbenchOpenSource;
-        const targetPreview = view === 'browser'
-          ? state.previewTabs
-              .filter((tab) => tab.kind === 'liveDev')
-              .reduce<PreviewTab | null>(
-                (latest, tab) => (!latest || tab.lastActivatedAt > latest.lastActivatedAt ? tab : latest),
-                null,
-              )
-          : isPreviewWorkbenchView(view)
-            ? state.previewTabs.find((tab) => tab.kind !== 'liveDev' && tab.path === previewPathOf(view)) ?? null
-            : null;
+        // 'browser'（Agent 浏览器现场）不再借用 preview tab 状态（S2 归位）——
+        // liveDev 预览与文件预览统一走 `preview:${path}` 一对一 scheme。
+        const targetPreview = isPreviewWorkbenchView(view)
+          ? state.previewTabs.find((tab) => tab.path === previewPathOf(view)) ?? null
+          : null;
         const previewTabs = targetPreview
           ? state.previewTabs.map((tab) => (
               tab.id === targetPreview.id
@@ -148,36 +141,11 @@ export function createWorkbenchActions({
       if (target.kind !== 'workbench') return;
 
       const view = target.view;
-      if (view === 'browser') {
-        get().previewTabs
-          .filter((tab) => tab.kind === 'liveDev')
-          .forEach((tab) => stopDevServer(tab.devServerSessionId));
-        set((state) => {
-          const nextTabs = state.previewTabs.filter((tab) => tab.kind !== 'liveDev');
-          const nextWorkbench = state.workbenchTabs.filter((item) => item !== 'browser');
-          const nextPreview = nextTabs.reduce<PreviewTab | null>(
-            (latest, tab) => (!latest || tab.lastActivatedAt > latest.lastActivatedAt ? tab : latest),
-            null,
-          );
-          return {
-            ...state,
-            previewTabs: nextTabs,
-            activePreviewTabId: state.previewTabs.find((tab) => tab.id === state.activePreviewTabId)?.kind === 'liveDev'
-              ? nextPreview?.id ?? null
-              : state.activePreviewTabId,
-            workbenchTabs: nextWorkbench,
-            activeWorkbenchTab: state.activeWorkbenchTab === 'browser'
-              ? nextWorkbench[0] ?? null
-              : state.activeWorkbenchTab,
-          };
-        });
-        return;
-      }
-
+      // 'browser'（Agent 浏览器现场）不再关联 preview tab，落到下方通用分支即可
+      // （S2 归位）。liveDev 与文件预览统一走 `preview:${path}`，经 closePreviewTab
+      // 各自独立关闭，不再互相牵连。
       if (isPreviewWorkbenchView(view)) {
-        const match = get().previewTabs.find((tab) => (
-          tab.kind !== 'liveDev' && tab.path === previewPathOf(view)
-        ));
+        const match = get().previewTabs.find((tab) => tab.path === previewPathOf(view));
         if (match) {
           get().closePreviewTab(match.id);
           return;

@@ -40,9 +40,11 @@ const DOT_TONE: Record<SurfaceRunState, string> = {
 const SPINNING_STATES = new Set<SurfaceRunState>(['preparing', 'running', 'stopping']);
 
 export function useSurfaceExecutionRunSession(conversationId: string | null) {
+  // 产品拍板（2026-08-01）：composer 条与侧栏圆点只报进行中的 surface，
+  // 终态（completed/failed）不常驻——结果由会话内的行内紧凑条承载。
   return useSurfaceExecutionStore((state) => selectSurfaceExecutionRunSessionV1(
     state.sessionsByScope,
-    { conversationId },
+    { conversationId, includeTerminal: false },
   ));
 }
 

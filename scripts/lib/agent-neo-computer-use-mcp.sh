@@ -68,8 +68,19 @@ if ! daemon_ready; then
   exit 1
 fi
 
-# Force the stdio process to proxy through the branded daemon. If the daemon
-# disappears, fail closed instead of executing TCC-sensitive calls in the
-# shell-spawned process or falling back to the upstream default daemon.
-export CUA_DRIVER_RS_MCP_FORCE_PROXY=1
+# Proxy through the branded daemon rather than executing TCC-sensitive calls in
+# this shell-spawned process. Since 0.14.x that is the macOS default and cannot
+# be reached any other way from here: `--direct` is the only escape, and upstream
+# rejects `--direct` together with `--socket` (cua-driver/src/main.rs
+# mcp_uses_direct_runtime_for). The old CUA_DRIVER_RS_MCP_FORCE_PROXY override no
+# longer exists upstream.
+#
+# Upstream's run_mcp_via_daemon_proxy still has a relaunch branch that, when no
+# daemon is listening, launches the driver by a HARDCODED app NAME (bundle.rs
+# RELEASE_APP_NAME) instead of a bundle URL — exactly the ambiguous by-name
+# lookup this signed helper exists to kill, since it can resolve the upstream or
+# the Yansu install and prompt under the wrong brand. Neo never reaches it: the
+# ready gate above launches our own bundle by URL and polls `status` until the
+# daemon answers, so the proxy always finds it already listening — and if it does
+# not, we exit 1 above rather than letting upstream pick an app.
 exec "$DRIVER_BIN" mcp --socket "$SOCKET_PATH"

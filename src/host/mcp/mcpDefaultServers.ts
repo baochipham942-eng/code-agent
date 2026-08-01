@@ -48,7 +48,7 @@ function resolveCuaMcpLaunch(command: string): Pick<MCPStdioServerConfig, 'comma
   }
 
   if (process.platform === 'darwin') {
-    // 开发态缺少签名 helper 时也禁止 0.8.1 默认 `mcp` 去启动旧 CuaDriver。
+    // 开发态缺少签名 helper 时也禁止上游默认 `mcp` 去启动旧 CuaDriver。
     // embedded 继承 Agent Neo 宿主的 TCC；发布态始终走上面的签名 launcher。
     return {
       command,
@@ -251,9 +251,8 @@ export function getDefaultMCPServers(): MCPServerConfig[] {
       command: cuaMcpLaunch.command,
       args: cuaMcpLaunch.args,
       env: {
-        CUA_DRIVER_MCP_MODE: '1',
         CUA_DRIVER_RS_UPDATE_CHECK: '0',
-        // 0.8.1 默认启用产品遥测；Neo 的桌面能力保持显式 opt-in，不向上游发事件。
+        // 上游默认启用产品遥测；Neo 的桌面能力保持显式 opt-in，不向上游发事件。
         CUA_DRIVER_RS_TELEMETRY_ENABLED: 'false',
       },
       enabled: cuaEnabled && cuaSupported,

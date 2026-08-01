@@ -453,14 +453,16 @@ export function DesignImageToolbar(props: DesignImageToolbarProps): React.ReactE
       className="pointer-events-none absolute left-2 right-2 top-4 z-20 flex justify-center"
     >
       {/* K1 溢出折叠：内条不再 flex-wrap（换行会把条撑成两排），放不下的动词由
-          useToolbarOverflow 实测宽度后收进「更多 ⋯」，任何宽度下都只有一排。 */}
-      <div className="pointer-events-auto relative flex items-center justify-center gap-1 rounded-xl border border-white/[0.1] bg-zinc-900/90 px-2 py-1.5 shadow-xl backdrop-blur">
+          useToolbarOverflow 实测宽度后收进「更多 ⋯」，任何宽度下都只有一排。
+          whitespace-nowrap + 锚点 shrink-0：不许 flex 收缩/文字换行——否则 hook 量到的
+          是被挤压后的宽度，永远误判「放得下」（2026-08-01 验收实测翻车）。 */}
+      <div className="pointer-events-auto relative flex items-center justify-center gap-1 whitespace-nowrap rounded-xl border border-white/[0.1] bg-zinc-900/90 px-2 py-1.5 shadow-xl backdrop-blur">
         {/* 每个动词外套一个 relative 锚点容器：它的下拉/浮层锚在它自己正下方（返工#1），
             菜单与按钮的对应关系一眼可见。收折时整个锚点不渲染，动词以菜单行出现在「更多」里。
             注意 ds-allow 区块不支持嵌套（checker 遇第一个 end 即出区），
             故触发按钮的豁免拆成每按钮一个小区块，菜单各自的豁免块与之平级。 */}
         {!overflowed.has('annotate') && (
-          <div ref={verbAnchorRef('annotate')} className="relative">
+          <div ref={verbAnchorRef('annotate')} className="relative shrink-0">
             {/* ds-allow:start 动词条触发按钮为图标+文字组合 toggle/下拉触发器（active=bg-fuchsia-500/20 品牌色 toggle 态，非 Button variant），与同画布的 DiagramToolbar 裸按钮一致，design-mode W3 收口时统一迁 primitive */}
             <button
               type="button"
@@ -489,7 +491,7 @@ export function DesignImageToolbar(props: DesignImageToolbarProps): React.ReactE
         )}
 
         {!overflowed.has('repaint') && (
-          <div ref={verbAnchorRef('repaint')} className="relative">
+          <div ref={verbAnchorRef('repaint')} className="relative shrink-0">
             {/* ds-allow:start 动词条触发按钮为图标+文字组合 toggle/下拉触发器（active=bg-fuchsia-500/20 品牌色 toggle 态，非 Button variant），与同画布的 DiagramToolbar 裸按钮一致，design-mode W3 收口时统一迁 primitive */}
             <button
               type="button"
@@ -513,7 +515,7 @@ export function DesignImageToolbar(props: DesignImageToolbarProps): React.ReactE
         )}
 
         {!overflowed.has('resize') && (
-          <div ref={verbAnchorRef('resize')} className="relative">
+          <div ref={verbAnchorRef('resize')} className="relative shrink-0">
             {/* ds-allow:start 动词条触发按钮为图标+文字组合 toggle/下拉触发器（active=bg-fuchsia-500/20 品牌色 toggle 态，非 Button variant），与同画布的 DiagramToolbar 裸按钮一致，design-mode W3 收口时统一迁 primitive */}
             <button
               type="button"
@@ -539,7 +541,7 @@ export function DesignImageToolbar(props: DesignImageToolbarProps): React.ReactE
         )}
 
         {!overflowed.has('expand') && (
-          <div ref={verbAnchorRef('expand')} className="relative">
+          <div ref={verbAnchorRef('expand')} className="relative shrink-0">
             {/* ds-allow:start 动词条触发按钮为图标+文字组合 toggle/下拉触发器（active=bg-fuchsia-500/20 品牌色 toggle 态，非 Button variant），与同画布的 DiagramToolbar 裸按钮一致，design-mode W3 收口时统一迁 primitive */}
             <button
               type="button"
@@ -563,7 +565,7 @@ export function DesignImageToolbar(props: DesignImageToolbarProps): React.ReactE
           </div>
         )}
 
-        <div ref={anchorRef('more')} className="relative">
+        <div ref={anchorRef('more')} className="relative shrink-0">
           {/* ds-allow:start 动词条触发按钮为图标+文字组合 toggle/下拉触发器（active=bg-fuchsia-500/20 品牌色 toggle 态，非 Button variant），与同画布的 DiagramToolbar 裸按钮一致，design-mode W3 收口时统一迁 primitive */}
           <button
             type="button"

@@ -86,7 +86,7 @@ export const DiagramToolbar: React.FC<DiagramToolbarProps> = ({
         onColorChange(c);
         setOpenMenu(null);
       }}
-      className={`h-4 w-4 rounded-full border transition-transform ${
+      className={`h-4 w-4 shrink-0 rounded-full border transition-transform ${
         color === c ? 'scale-110 border-white' : 'border-white/30 hover:scale-105'
       }`}
       style={{ backgroundColor: c }}
@@ -99,11 +99,13 @@ export const DiagramToolbar: React.FC<DiagramToolbarProps> = ({
     // 外条 left-2 right-2 满宽 + 内条居中 shrink-to-fit（同 fc3c958 图像动词条修法）。
     // K1：内条不再 flex-wrap——放不下的由 useToolbarOverflow 实测后收折，任何宽度下只有一排。
     <div ref={rootRef} className="pointer-events-none absolute left-2 right-2 top-4 z-10 flex justify-center">
+      {/* whitespace-nowrap + 各段 shrink-0：不许 flex 收缩/文字换行——否则溢出 hook 量到的
+          是被挤压后的宽度，永远误判「放得下」（2026-08-01 验收实测翻车，同图像动词条）。 */}
       <div
         data-testid="diagram-toolbar"
-        className="pointer-events-auto flex max-w-full items-center justify-center gap-1 rounded-xl border border-white/[0.1] bg-zinc-900/90 px-2 py-1.5 shadow-xl backdrop-blur"
+        className="pointer-events-auto flex max-w-full items-center justify-center gap-1 whitespace-nowrap rounded-xl border border-white/[0.1] bg-zinc-900/90 px-2 py-1.5 shadow-xl backdrop-blur"
       >
-      <div ref={itemRef('tools')} className="flex items-center gap-1">
+      <div ref={itemRef('tools')} className="flex shrink-0 items-center gap-1">
         {tools.map((it) => (
           <button
             key={it.id}
@@ -121,14 +123,14 @@ export const DiagramToolbar: React.FC<DiagramToolbarProps> = ({
           </button>
         ))}
       </div>
-      <div className="mx-1 h-5 w-px bg-white/[0.1]" />
+      <div className="mx-1 h-5 w-px shrink-0 bg-white/[0.1]" />
       {/* 调色板（图解形状描边色）：宽栏平铺五色；窄栏收成「当前色」小圆点，点开浮层选色。 */}
       {!paletteCollapsed ? (
-        <div ref={itemRef('palette')} className="flex items-center gap-1" role="group" aria-label={t.design.diagramColor}>
+        <div ref={itemRef('palette')} className="flex shrink-0 items-center gap-1" role="group" aria-label={t.design.diagramColor}>
           {swatches}
         </div>
       ) : (
-        <div className="relative">
+        <div className="relative shrink-0">
           {/* ds-allow:start 调色板收折态「当前色」圆点按钮沿用工具键裸 button 风格，与相邻工具键一致；design-mode W3 收口时统一迁 primitive */}
           <button
             type="button"
@@ -137,7 +139,7 @@ export const DiagramToolbar: React.FC<DiagramToolbarProps> = ({
             aria-expanded={openMenu === 'palette'}
             data-testid="diagram-palette-dot"
             onClick={() => setOpenMenu((cur) => (cur === 'palette' ? null : 'palette'))}
-            className="inline-flex h-7 w-7 items-center justify-center rounded-md text-zinc-400 transition-colors hover:bg-white/[0.06] hover:text-zinc-100"
+            className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-zinc-400 transition-colors hover:bg-white/[0.06] hover:text-zinc-100"
           >
             <span className="block h-3.5 w-3.5 rounded-full border border-white/40" style={{ backgroundColor: color }} />
           </button>
@@ -156,14 +158,14 @@ export const DiagramToolbar: React.FC<DiagramToolbarProps> = ({
       )}
       {canDelete && (
         <>
-          <div className="mx-1 h-5 w-px bg-white/[0.1]" />
+          <div className="mx-1 h-5 w-px shrink-0 bg-white/[0.1]" />
           <button
             type="button"
             title={t.design.diagramDelete}
             aria-label={t.design.diagramDelete}
             data-testid="diagram-delete"
             onClick={onDelete}
-            className="inline-flex h-7 w-7 items-center justify-center rounded-md text-zinc-400 transition-colors hover:bg-red-500/20 hover:text-red-200"
+            className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-zinc-400 transition-colors hover:bg-red-500/20 hover:text-red-200"
           >
             <Trash2 className="h-4 w-4" />
           </button>
@@ -171,15 +173,15 @@ export const DiagramToolbar: React.FC<DiagramToolbarProps> = ({
       )}
       {exportPptx && !exportCollapsed && (
         <>
-          <div className="mx-1 h-5 w-px bg-white/[0.1]" />
-          <div ref={itemRef('export')}>
+          <div className="mx-1 h-5 w-px shrink-0 bg-white/[0.1]" />
+          <div ref={itemRef('export')} className="shrink-0">
             {/* ds-allow:start 画布级导出按钮沿用工具条裸 button 风格，与相邻工具键一致；design-mode 整体 W3 收口时统一迁 primitive */}
             <button
               type="button"
               data-testid="design-canvas-export-pptx"
               onClick={exportPptx.onExport}
               disabled={exportPptx.exporting}
-              className="inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-xs text-zinc-300 transition-colors hover:bg-white/[0.06] hover:text-zinc-100 disabled:opacity-50"
+              className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs text-zinc-300 transition-colors hover:bg-white/[0.06] hover:text-zinc-100 disabled:opacity-50"
             >
               {exportPptx.exporting ? (
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -194,8 +196,8 @@ export const DiagramToolbar: React.FC<DiagramToolbarProps> = ({
       )}
       {exportPptx && exportCollapsed && (
         <>
-          <div className="mx-1 h-5 w-px bg-white/[0.1]" />
-          <div className="relative">
+          <div className="mx-1 h-5 w-px shrink-0 bg-white/[0.1]" />
+          <div className="relative shrink-0">
             {/* ds-allow:start 溢出 ⋯ 触发按钮沿用工具键裸 button 风格（h-7 w-7 图标键），与相邻工具键一致；design-mode W3 收口时统一迁 primitive */}
             <button
               type="button"
@@ -204,7 +206,7 @@ export const DiagramToolbar: React.FC<DiagramToolbarProps> = ({
               aria-expanded={openMenu === 'more'}
               data-testid="diagram-toolbar-more"
               onClick={() => setOpenMenu((cur) => (cur === 'more' ? null : 'more'))}
-              className="inline-flex h-7 w-7 items-center justify-center rounded-md text-zinc-400 transition-colors hover:bg-white/[0.06] hover:text-zinc-100"
+              className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-zinc-400 transition-colors hover:bg-white/[0.06] hover:text-zinc-100"
             >
               <MoreHorizontal className="h-4 w-4" />
             </button>

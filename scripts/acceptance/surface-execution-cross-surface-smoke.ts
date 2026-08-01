@@ -18,6 +18,7 @@ import {
 import { createServer, type Server } from 'node:http';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
+import { cuaHelperIdentity } from '../../src/shared/cuaHelperChannel.ts';
 import type { Readable } from 'node:stream';
 import {
   getApplicationRunRegistry,
@@ -667,10 +668,11 @@ async function main(): Promise<void> {
   const outputDir = resolve(getStringOption(args, 'out')
     || mkdtempSync(join(tmpdir(), 'surface-execution-cross-proof-')));
   mkdirSync(outputDir, { recursive: true });
+  const helperIdentity = cuaHelperIdentity();
   const helperPath = resolve(getStringOption(args, 'helper') || join(
     '.tauri-resources.noindex',
     'scripts',
-    'Agent Neo Computer Use.app',
+    `${helperIdentity.appName}.app`,
     'Contents',
     'MacOS',
     'cua-driver',
@@ -835,10 +837,14 @@ async function main(): Promise<void> {
       `${signatureVerify.stdout}${signatureVerify.stderr}${signatureDetails.stdout}${signatureDetails.stderr}`,
       'utf8',
     );
-    assert(version.exitCode === 0 && version.stdout.trim() === 'cua-driver 0.8.1', 'Unexpected helper version');
+    assert(version.exitCode === 0 && version.stdout.trim() === 'cua-driver 0.14.2', 'Unexpected helper version');
     assert(signatureVerify.exitCode === 0, `codesign verification failed: ${signatureVerify.stderr}`);
     const signature = parseCodesign(`${signatureDetails.stdout}\n${signatureDetails.stderr}`);
-    assert(signature.identifier === 'com.agentneo.computeruse', `Unexpected helper id: ${signature.identifier}`);
+    // 期望值随渠道走，但仍是精确串（不退化成前缀/宽匹配）。
+    assert(
+      signature.identifier === helperIdentity.bundleId,
+      `Unexpected helper id: ${signature.identifier} (expected ${helperIdentity.bundleId})`,
+    );
     assert(signature.teamIdentifier === 'D7CVTJ72NV', `Unexpected helper team: ${signature.teamIdentifier}`);
     const server = getDefaultMCPServers().find((candidate) => candidate.name === CUA_DRIVER_SERVER_NAME);
     if (!server?.enabled) {

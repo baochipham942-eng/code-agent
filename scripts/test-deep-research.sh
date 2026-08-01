@@ -54,10 +54,18 @@ fi
 
 if [ "$needs_build" = true ]; then
   echo "[build] Building test bundle..."
+  ESBUILD_LOG="$(mktemp -t test-deep-research-esbuild.XXXXXX.log)"
   # shellcheck disable=SC2046
-  npx esbuild "$ENTRY" --bundle --platform=node --format=cjs \
+  if ! npx esbuild "$ENTRY" --bundle --platform=node --format=cjs \
     $(build_external_flags) \
-    --outfile="$BUNDLE" --sourcemap 2>&1 | tail -5
+    --outfile="$BUNDLE" --sourcemap > "$ESBUILD_LOG" 2>&1; then
+    echo "[build] esbuild 失败，完整日志：" >&2
+    cat "$ESBUILD_LOG" >&2
+    rm -f "$ESBUILD_LOG"
+    exit 1
+  fi
+  tail -5 "$ESBUILD_LOG"
+  rm -f "$ESBUILD_LOG"
   echo "[build] Done. $(wc -c < "$BUNDLE" | tr -d ' ') bytes"
 else
   echo "[build] Using cached bundle ($(wc -c < "$BUNDLE" | tr -d ' ') bytes)."

@@ -21,6 +21,13 @@ class FakeUpstream extends EventEmitter {
 
   send(data: string) {
     this.sent.push(data);
+    const event = JSON.parse(data) as { type?: string; session?: Record<string, unknown> };
+    if (event.type === 'session.update') {
+      queueMicrotask(() => this.emit('message', JSON.stringify({
+        type: 'session.updated',
+        session: event.session,
+      })));
+    }
   }
 
   ping() {

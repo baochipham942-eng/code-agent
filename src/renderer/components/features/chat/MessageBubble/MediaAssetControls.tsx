@@ -5,6 +5,7 @@ import {
   ExternalLink,
   Folder,
   Maximize2,
+  Pencil,
   X,
 } from 'lucide-react';
 import {
@@ -15,6 +16,9 @@ import {
 import { IPC_DOMAINS } from '@shared/ipc';
 import { resolveFileUrl } from '../../../../utils/resolveFileUrl';
 import { copyPathToClipboard, isWebMode } from '../../../../utils/platform';
+import { importAssetToCanvas } from '../../../design/importAssetToCanvas';
+import { useAppStore } from '../../../../stores/appStore';
+import { toast } from '../../../../hooks/useToast';
 
 export type MediaAssetAction = 'copy' | 'open' | 'save' | 'reveal' | 'lightbox';
 
@@ -106,6 +110,24 @@ export function getMediaAssetSourceSummary(asset: SessionMediaAsset): string {
   return `${sourceText}${parentText}${stateText}`;
 }
 
+/**
+ * 「修改」（2026-08-01 B3）：把这张图落进设计画布并选中，然后切到设计画布 tab——
+ * 顶栏直接就是那条图像动词条（批注重绘/局部重绘/调整大小/扩图）。
+ *
+ * 在此之前图产物下面五个按钮全是只读动作（查看/复制/打开/保存/Finder），
+ * 没有任何一条能「再改一版」，用户必须自己知道有设计画布这个 tab、自己切过去、自己把图弄进去。
+ */
+async function editMediaAssetInCanvas(asset: SessionMediaAsset): Promise<void> {
+  if (!asset.path) return;
+  const r = await importAssetToCanvas(asset.path);
+  if (!r.ok) {
+    // 失败要说人话且看得见——不能静默什么都不发生（用户会以为按钮坏了）。
+    toast.error(r.error ?? '把图放进画布失败');
+    return;
+  }
+  useAppStore.getState().openWorkbenchTab('design-canvas');
+}
+
 async function openMediaAsset(asset: SessionMediaAsset): Promise<void> {
   if (asset.path) {
     if (isWebMode()) {
@@ -189,6 +211,21 @@ export function MediaAssetActionBar({
       data-media-message-id={asset.messageId}
       data-media-tool-call-id={asset.toolCallId}
     >
+      {asset.kind === 'image' && !!asset.path && (
+        <button
+          type="button"
+          className={`${buttonClass} text-fuchsia-200`}
+          onClick={(event) => {
+            event.stopPropagation();
+            void editMediaAssetInCanvas(asset);
+          }}
+          title="在设计画布里修改"
+          data-testid="media-asset-edit-in-canvas"
+        >
+          <Pencil className="h-3.5 w-3.5" />
+          {!compact && <span>修改</span>}
+        </button>
+      )}
       {onOpenLightbox && hasAction('lightbox') && (
         <button
           type="button"

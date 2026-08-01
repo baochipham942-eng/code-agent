@@ -1,12 +1,12 @@
 // @vitest-environment jsdom
 // ---------------------------------------------------------------------------
-// DesignCanvas 空态（2026-08-01 工单③）：画布刚打开时主推「AI 生成图 → 精修」主线——
-// 一句话 + 两条主线入口（对话描述 / 拖入粘贴图），画图工具收进「绘图」入口，
-// 点开才展开画布级工具条；有内容后回到原行为。mock 集与 DesignCanvas.error.test 同源。
+// DesignCanvas 空态（2026-08-01 工单③ + K2 返工）：画布刚打开时主推「AI 生成图 → 精修」主线——
+// 一句话 + 两条主线入口（对话描述 / 拖入粘贴图）。K2：删掉「绘图」单向门（drawingOpen 不存在），
+// 空态引导与画布级图解工具条共存；有内容后引导消失、工具条照常。mock 集与 DesignCanvas.error.test 同源。
 // ---------------------------------------------------------------------------
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, render, screen } from '@testing-library/react';
 
 vi.mock('../../../src/renderer/components/design/designFiles', () => ({
   readWorkspaceImageAsDataUrl: vi.fn(),
@@ -150,32 +150,39 @@ afterEach(() => {
   setCanvas();
 });
 
-describe('DesignCanvas 空态（工单③）', () => {
-  it('空画布：主线引导在场（两条入口 + 绘图入口），画布级工具条不铺开', () => {
+describe('DesignCanvas 空态（工单③ + K2 共存返工）', () => {
+  it('空画布：空态引导与画布级图解工具条同时可见，「绘图」入口已不存在', () => {
     render(<DesignCanvasTab />);
 
     expect(screen.getByTestId('design-canvas-empty-guide')).toBeTruthy();
     expect(screen.getByText('在左边对话里描述你想要的设计')).toBeTruthy();
     expect(screen.getByText('拖入 / 粘贴一张图')).toBeTruthy();
-    expect(screen.getByTestId('design-canvas-drawing-entry')).toBeTruthy();
-    expect(screen.queryByTestId('diagram-toolbar-mock')).toBeNull();
+    expect(screen.getByTestId('diagram-toolbar-mock')).toBeTruthy();
+    expect(screen.queryByTestId('design-canvas-drawing-entry')).toBeNull();
+    // K2：空画布不渲染缩放控件（没内容可缩放，适配视口无意义）
+    expect(screen.queryByTestId('design-canvas-zoom-controls')).toBeNull();
   });
 
-  it('点「绘图」入口：引导让位，画布级工具条展开（画图能力不删，只降级呈现）', () => {
+  it('加图后引导消失、工具条还在；删光后引导回来（不再是单向门）', () => {
     render(<DesignCanvasTab />);
+    expect(screen.getByTestId('design-canvas-empty-guide')).toBeTruthy();
 
-    fireEvent.click(screen.getByTestId('design-canvas-drawing-entry'));
-
+    act(() => setCanvas([imageNode('初版')]));
     expect(screen.queryByTestId('design-canvas-empty-guide')).toBeNull();
+    expect(screen.getByTestId('diagram-toolbar-mock')).toBeTruthy();
+
+    act(() => setCanvas([]));
+    expect(screen.getByTestId('design-canvas-empty-guide')).toBeTruthy();
     expect(screen.getByTestId('diagram-toolbar-mock')).toBeTruthy();
   });
 
-  it('有内容后回到原行为：工具条（含导出 PPTX 槽）在场，空态引导不再出现', () => {
+  it('有内容后：工具条（含导出 PPTX 槽）在场，空态引导不出现，缩放控件在场', () => {
     setCanvas([imageNode('初版')]);
     render(<DesignCanvasTab />);
 
     expect(screen.queryByTestId('design-canvas-empty-guide')).toBeNull();
     expect(screen.getByTestId('diagram-toolbar-mock')).toBeTruthy();
     expect(screen.getByTestId('design-canvas-export-pptx')).toBeTruthy();
+    expect(screen.getByTestId('design-canvas-zoom-controls')).toBeTruthy();
   });
 });

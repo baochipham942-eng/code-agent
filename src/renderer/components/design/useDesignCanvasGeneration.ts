@@ -534,10 +534,10 @@ export function useDesignCanvasGeneration(): {
         return;
       }
       const maskDataUrl = buildAnnotMaskDataUrl(naturalW, naturalH, geo);
-      // 文字标注是「标签」不是「区域」——它的语义并进指令，像素不进 mask。
-      const promptWithLabels = geo.labels.length
-        ? `${instruction}\n（图上标注文字：${geo.labels.join('、')}）`
-        : instruction;
+      // 文字标注**不发给模型**：2026-08-01 第二轮付费实测——把标签文字并进 prompt（写成
+      // 「（图上标注文字：改这个）」）后，模型直接把「改这个」当成要画进图里的文字内容，
+      // 在画面上渲染出一个写着「改这个」的蓝色标签。标签是给用户自己看的批注，不是画面需求；
+      // 要改什么必须写在指令框里。geo.labels 保留供 UI 提示用，不进 prompt。
 
       const assetRel = `${DESIGN_WORKSPACE.CANVAS_ASSETS_DIR}/annot-${Date.now()}.png`;
       const assetAbs = `${runDir}/${assetRel}`;
@@ -554,7 +554,7 @@ export function useDesignCanvasGeneration(): {
           IPC_DOMAINS.WORKSPACE,
           'editDesignImage',
           {
-            prompt: promptWithLabels,
+            prompt: instruction,
             baseImagePath: `${runDir}/${baseNode.src}`, // 干净原图，不是烧了标注的图
             maskDataUrl,
             outputPath: assetAbs,

@@ -226,6 +226,31 @@ export const DesignCanvas: React.FC<{ showErrorBar?: boolean }> = ({ showErrorBa
     }
   };
 
+  // 顶条（图解工具条/图像动词条）实测底缘：窄栏下内条 flex-wrap 收成二/三排，底缘不再固定。
+  // 右列（导出 PPTX + 图层面板）和引导/提示文字都必须钉在它下面，否则窄栏下互相叠压——
+  // 402px 栏宽实测：导出按钮被工具条第二排调色板盖住、图层面板盖住工具条与引导文字
+  // （2026-08-01 窄栏遮挡工单，elementFromPoint 证据）。按工具条类型切换重挂观察。
+  const [topBarBottom, setTopBarBottom] = useState(56);
+  const imageBarActive = selectedImageNode !== null;
+  useEffect(() => {
+    const wrap = wrapRef.current;
+    if (!wrap) return;
+    const bar = wrap.querySelector<HTMLElement>(
+      '[data-testid="diagram-toolbar"], [data-testid="design-image-toolbar"]',
+    );
+    if (!bar) return;
+    const update = (): void => {
+      const wrapRect = wrap.getBoundingClientRect();
+      const barRect = bar.getBoundingClientRect();
+      if (barRect.height === 0) return; // jsdom 无布局，保持默认
+      setTopBarBottom(Math.round(barRect.bottom - wrapRect.top));
+    };
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(bar);
+    return () => ro.disconnect();
+  }, [imageBarActive]);
+
   // 容器尺寸跟随（Stage 需要显式像素宽高）。
   useEffect(() => {
     const el = wrapRef.current;
@@ -628,6 +653,21 @@ export const DesignCanvas: React.FC<{ showErrorBar?: boolean }> = ({ showErrorBa
 
   const draftAndCommitted = draft ? [...annotations, draft] : annotations;
 
+  // —— 顶条下方的垂直分区（2026-08-01 窄栏遮挡工单：三处不再抢同一块空间）——
+  // 右列：导出 PPTX 按钮钉在顶条实测底缘下；图层面板再让出按钮高度，叠在按钮下方。
+  // 左槽：未选中引导 / 连线·绘制模式提示共用同一槽位（本就互斥），顶缘同右列、左对齐；
+  // 可用宽 = 栏宽 − 左右边距 −（图层面板在时）面板宽。不足 12rem 整条不显示——
+  // 要么完整可读，要么干脆不显示，不许露一半被面板压住。
+  const exportPptxVisible = !selectedImageNode && visibleNodes.length > 0;
+  const layerPanelOpen = nodes.length > 0;
+  const hintMaxWidth = size.w - 32 - (layerPanelOpen ? 336 : 0);
+  const hintSlotFits = hintMaxWidth >= 192;
+  const hintSlotStyle: React.CSSProperties = {
+    top: topBarBottom + 8,
+    maxWidth: layerPanelOpen ? hintMaxWidth : 'calc(100% - 2rem)',
+  };
+  const layerPanelTop = topBarBottom + 8 + (exportPptxVisible ? 40 : 0);
+
   return (
     <div
       ref={wrapRef}
@@ -845,14 +885,23 @@ export const DesignCanvas: React.FC<{ showErrorBar?: boolean }> = ({ showErrorBa
         />
       )}
 
-      {/* 图解模式提示（connect/绘制时给一句引导）。 */}
-      {diagramTool === 'connect' && (
-        <div className="pointer-events-none absolute left-1/2 top-16 z-10 -translate-x-1/2 rounded-md bg-zinc-900/85 px-2.5 py-1 text-[11px] text-sky-200/90 shadow">
+      {/* 图解模式提示（connect/绘制时给一句引导）：与未选中引导共用左侧槽位（两种提示本就互斥），
+          顶缘钉在顶条实测底缘下——原 top-16 居中，窄栏二排工具条下会压住/被压，且居中位会撞右列。 */}
+      {diagramTool === 'connect' && hintSlotFits && (
+        <div
+          data-testid="design-canvas-diagram-hint"
+          className="pointer-events-none absolute left-4 z-10 rounded-md bg-zinc-900/85 px-2.5 py-1 text-[11px] text-sky-200/90 shadow"
+          style={hintSlotStyle}
+        >
           {t.design.diagramConnectHint}
         </div>
       )}
-      {isShapeTool && diagramTool !== 'text' && (
-        <div className="pointer-events-none absolute left-1/2 top-16 z-10 -translate-x-1/2 rounded-md bg-zinc-900/85 px-2.5 py-1 text-[11px] text-zinc-300 shadow">
+      {isShapeTool && diagramTool !== 'text' && hintSlotFits && (
+        <div
+          data-testid="design-canvas-diagram-hint"
+          className="pointer-events-none absolute left-4 z-10 rounded-md bg-zinc-900/85 px-2.5 py-1 text-[11px] text-zinc-300 shadow"
+          style={hintSlotStyle}
+        >
           {t.design.diagramDrawHint}
         </div>
       )}
@@ -937,10 +986,11 @@ export const DesignCanvas: React.FC<{ showErrorBar?: boolean }> = ({ showErrorBa
           );
         })()}
 
-      {/* 画布全幅 PPTX 导出（薄版）：画布级动作，未选中图节点（含选中非图节点）时占右上角独立
+      {/* 画布全幅 PPTX 导出（薄版）：画布级动作，未选中图节点（含选中非图节点）时占右列独立
           按钮，保证无选中也可达；选中图节点时让位给图像动词条，入口收进「更多 ⋯ · 整个画布」组
-          （2026-08-01 返工#3 修正：上一版只在动词条里，未选中态导不了——功能倒退）。<1 张图时隐藏。 */}
-      {!selectedImageNode && visibleNodes.length > 0 && (
+          （2026-08-01 返工#3 修正：上一版只在动词条里，未选中态导不了——功能倒退）。<1 张图时隐藏。
+          顶缘钉在顶条实测底缘下（原 top-4 在窄栏下被工具条二排收纳压住，402px 实测命中调色板）。 */}
+      {exportPptxVisible && (
         <>
           {/* ds-allow:start 画布操作栏沿用旧裸 button 样式，与同栏导出图片/PDF 按钮一致；design-mode 整体 W3 收口时统一迁 primitive */}
           <button
@@ -948,7 +998,8 @@ export const DesignCanvas: React.FC<{ showErrorBar?: boolean }> = ({ showErrorBa
             data-testid="design-canvas-export-pptx"
             onClick={() => void exportCanvasPptx()}
             disabled={exportingPptx}
-            className="absolute right-4 top-4 inline-flex items-center gap-1.5 rounded-lg border border-white/[0.1] bg-zinc-900/90 px-3 py-1.5 text-xs text-zinc-300 shadow-xl backdrop-blur transition-colors hover:text-zinc-100 disabled:opacity-50"
+            className="absolute right-4 z-10 inline-flex items-center gap-1.5 rounded-lg border border-white/[0.1] bg-zinc-900/90 px-3 py-1.5 text-xs text-zinc-300 shadow-xl backdrop-blur transition-colors hover:text-zinc-100 disabled:opacity-50"
+            style={{ top: topBarBottom + 8 }}
           >
             {exportingPptx ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -970,14 +1021,18 @@ export const DesignCanvas: React.FC<{ showErrorBar?: boolean }> = ({ showErrorBa
         onDiscard={discardCanvasNode}
         onDelete={(id) => deleteCanvasNodes([id])}
         onFocus={focusNode}
+        topOffset={layerPanelTop}
       />
 
-      {/* 未选中引导：原 top-4 与居中的 DiagramToolbar 同排，窄栏（700px）下被工具条压住只露半句
-          （2026-08-01 e5 证据）。挪到工具条下方并留足余量（top-24：320px 档工具条二排收纳时底缘
-          约 80px，也不许再压）；且只在 select 模式显示——连线/绘制模式该行居中位已被对应工具
-          引导占用，两条提示不能叠。限宽躲开右侧图层面板（w-80 + right-4），窄栏自动折行也不许被盖。 */}
-      {selectedIds.length === 0 && visibleNodes.length > 0 && diagramTool === 'select' && (
-        <div className="pointer-events-none absolute left-4 top-24 max-w-[max(12rem,calc(100%-22rem))] rounded-lg bg-zinc-900/70 px-3 py-1.5 text-[11px] leading-snug text-zinc-400 backdrop-blur">
+      {/* 未选中引导（select 模式专属槽位）：顶缘钉在顶条实测底缘下，限宽躲开右列图层面板；
+          可用宽不足 12rem 时整条不显示——要么完整可读，要么不显示，不许露一半被面板压住
+          （402px 实测引导被图层面板压掉大半只剩碎片）。连线/绘制模式本槽位让给对应工具提示。 */}
+      {selectedIds.length === 0 && visibleNodes.length > 0 && diagramTool === 'select' && hintSlotFits && (
+        <div
+          data-testid="design-canvas-select-hint"
+          className="pointer-events-none absolute left-4 rounded-lg bg-zinc-900/70 px-3 py-1.5 text-[11px] leading-snug text-zinc-400 backdrop-blur"
+          style={hintSlotStyle}
+        >
           {t.design.canvasSelectHint} · {t.design.compareHint}
         </div>
       )}

@@ -33,8 +33,11 @@ export const DesignLayerPanel: React.FC<{
   onDiscard: (id: string) => void;
   onDelete: (id: string) => void;
   onFocus: (id: string) => void;
+  /** 面板顶缘（px，相对画布容器）。默认 56（top-14）；DesignCanvas 按顶条实测底缘动态传入，
+      保证任意栏宽下面板不与顶条/导出按钮重叠（2026-08-01 窄栏遮挡工单）。 */
+  topOffset?: number;
   translations?: Translations;
-}> = ({ nodes, selectedIds, onSelect, onRename, onSetChosen, onDiscard, onDelete, onFocus, translations }) => {
+}> = ({ nodes, selectedIds, onSelect, onRename, onSetChosen, onDiscard, onDelete, onFocus, topOffset, translations }) => {
   const { t: runtimeT } = useI18n();
   const t = translations ?? runtimeT;
   const ordered = useMemo(() => orderedLayerNodes(nodes), [nodes]);
@@ -54,7 +57,10 @@ export const DesignLayerPanel: React.FC<{
   if (nodes.length === 0) return null;
 
   return (
-    <div className="absolute right-4 top-14 z-10 flex max-h-[70%] w-80 flex-col overflow-hidden rounded-lg border border-white/[0.10] bg-zinc-950/85 text-xs text-zinc-200 shadow-2xl backdrop-blur">
+    <div
+      className="absolute right-4 z-10 flex max-h-[70%] w-80 flex-col overflow-hidden rounded-lg border border-white/[0.10] bg-zinc-950/85 text-xs text-zinc-200 shadow-2xl backdrop-blur"
+      style={{ top: topOffset ?? 56 }}
+    >
       <div className="flex items-center justify-between border-b border-white/[0.08] px-3 py-2">
         <div className="flex items-center gap-2 text-zinc-200">
           <Layers className="h-3.5 w-3.5 text-fuchsia-300" />

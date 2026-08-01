@@ -38,7 +38,11 @@ const state = vi.hoisted(() => ({
   task: { sessionStates: {} as Record<string, { status: string }> },
 }));
 
-const ipc = vi.hoisted(() => ({ invoke: vi.fn(async () => ({})) }));
+// 参数类型要显式写出来：不写的话 mock.calls 被推成 []（零元组），
+// 后面按下标取 channel/payload 全是 TS2493，会顶穿 tests 棘轮门。
+const ipc = vi.hoisted(() => ({
+  invoke: vi.fn(async (_channel: string, _payload?: unknown): Promise<unknown> => ({})),
+}));
 const projectClient = vi.hoisted(() => ({
   getProjectDetail: vi.fn(async (projectId: string) => ({
     project: { id: projectId, name: 'P', status: 'active', description: '', updatedAt: 1 },

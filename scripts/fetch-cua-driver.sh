@@ -195,11 +195,38 @@ if [[ ! -f "$ENTITLEMENTS" ]]; then
 fi
 
 # 先签内部二进制，再签 .app（避免 --deep 的已知坑），统一 hardened runtime + timestamp
-codesign_with_timestamp_retry "$DEST_BIN"
+#
+# 不要按名字只签 cua-driver：0.14.2 起 CuaDriver.app 的 MacOS/ 下多了 cua-cursor-theme，
+# 旧写法把它漏在上游签名（team YCK386LBJ7）里，于是 .app 内嵌了另一个 team 的可执行文件。
+# 本地 `codesign --verify --strict` 仍会通过（nested component 沿用自身签名是合法的），
+# 但正式发版的 Developer ID 签名 + 公证会拒——**这个坑只在发版那一刻炸，本地门抓不到**。
+# 改为枚举 MacOS/ 下全部可执行文件，上游以后再加二进制也不会再漏。
+while IFS= read -r -d '' nested_bin; do
+  codesign_with_timestamp_retry "$nested_bin"
+done < <(find "$DEST_APP/Contents/MacOS" -type f -perm +111 -print0)
 codesign_with_timestamp_retry "$DEST_APP"
 
 # ── 验证 ────────────────────────────────────────────────────
 codesign --verify --strict --verbose=2 "$DEST_APP"
+
+# 门：.app 内不得残留其他 team 签名的可执行文件。
+# `--verify --strict` 对此是盲的（它接受 nested component 的自有签名），公证不是。
+# 期望值取自刚签好的 .app 自身，不另立常量，避免两处 team id 走偏。
+APP_TEAM="$(codesign -dv "$DEST_APP" 2>&1 | awk -F= '/^TeamIdentifier=/{print $2}')"
+if [[ -z "$APP_TEAM" ]]; then
+  echo "❌ 读不到 ${DEST_APP} 的 TeamIdentifier，无法校验嵌套二进制签名一致性" >&2
+  exit 1
+fi
+while IFS= read -r -d '' nested_bin; do
+  nested_team="$(codesign -dv "$nested_bin" 2>&1 | awk -F= '/^TeamIdentifier=/{print $2}')"
+  if [[ "$nested_team" != "$APP_TEAM" ]]; then
+    echo "❌ 嵌套可执行文件签名 team 不一致：${nested_bin}" >&2
+    echo "   实际=${nested_team:-<无签名>}，期望=${APP_TEAM}（与 .app 一致）" >&2
+    echo "   这会让正式发版公证被拒；请确认该文件已进入上面的重签循环。" >&2
+    exit 1
+  fi
+done < <(find "$DEST_APP/Contents/MacOS" -type f -perm +111 -print0)
+
 NEW_ID="$(codesign -dv "$DEST_APP" 2>&1 | awk -F= '/^Identifier=/{print $2}')"
 if [[ "$NEW_ID" != "$CUA_BUNDLE_ID" ]]; then
   echo "❌ 重签后 bundle id=${NEW_ID}，期望 ${CUA_BUNDLE_ID}" >&2

@@ -1081,6 +1081,15 @@ export async function initializeSessionStore(): Promise<void> {
       useTaskStore.getState().updateSessionState(sessionId, { status: 'idle' });
     }
 
+    // 对称的另一半：宿主说它开始跑了，前端就该亮。这条广播不挑连接，覆盖的是
+    // 「页面在 run 已经开跑之后才连上 SSE」那段窗口——那时首个 agent 事件早播完了，
+    // 新页面没有 Last-Event-ID 也不会重放（Kimi 独立诊断 2026-08-01 指出的纵深防御）。
+    // 只有终态分支、没有这一半的话，灭灯有人管、点灯没人管。
+    if (updates?.status === 'running') {
+      useAppStore.getState().setSessionProcessing(sessionId, true);
+      useTaskStore.getState().updateSessionState(sessionId, { status: 'running' });
+    }
+
     if (useSessionStore.getState().currentSessionId === sessionId && updates.workingDirectory !== undefined) {
       useAppStore.getState().setWorkingDirectory(updates.workingDirectory ?? null);
     }

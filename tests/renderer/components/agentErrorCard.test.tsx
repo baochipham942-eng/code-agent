@@ -115,10 +115,16 @@ describe('AgentErrorCard', () => {
   });
 
   // 切过模型之后「这轮到底跑的谁」是最先要确认的事，所以它排在详情行第一位。
-  it('详情行第一项是这轮真跑的 provider/model', () => {
+  // 拍板 2026-08-01「折中方案」：主视图只留「这一轮真跑的是哪个模型」（产品负责人的
+  // 原始诉求），provider id / 错误码 / HTTP / Trace ID 这些排障字段收进折叠区，
+  // 别跟两个有效按钮抢注意力。
+  it('主视图只留模型名，服务商 id 收进技术详情折叠区', () => {
     renderCard(makeError({ provider: 'custom-100xlabs', modelId: 'claude-opus-4-8' }));
 
-    expect(screen.getByText('实际使用 custom-100xlabs / claude-opus-4-8')).toBeTruthy();
+    expect(screen.getByText('实际使用 claude-opus-4-8')).toBeTruthy();
+    // provider 仍然拿得到，但在折叠区里
+    const details = screen.getByText('查看技术详情').closest('details');
+    expect(details?.textContent).toContain('custom-100xlabs');
   });
 
   it('retry re-sends the preceding user message through the registered sender', () => {

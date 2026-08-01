@@ -513,7 +513,14 @@ export const useAgent = () => {
         );
         return;
       }
-      if (!markResponse.data.marked) return;
+      if (!markResponse.data.marked) {
+        // 宿主说这条已经不是 queued 了（上一次点击、或宿主 drain 抢先把它抽走）。
+        // 这里原本直接 return——就是「点了没反应」：用户以为在插队，实际要等本轮
+        // 自然跑完才看到它被当普通排队发出去（独立验证 2026-08-01 实测）。
+        // 本文件反复栽在静默 return 上，任何一条不可发都要出声。
+        toast.info(t.chatInput.queuedSendAlreadyInFlight);
+        return;
+      }
 
       queuedRuntimeInputHydrationSuppressedIdsRef.current.add(id);
       setQueuedRuntimeInputs((current) => current.filter((item) => item.id !== id));
@@ -603,7 +610,14 @@ export const useAgent = () => {
         );
         return;
       }
-      if (!markResponse.data.marked) return;
+      if (!markResponse.data.marked) {
+        // 宿主说这条已经不是 queued 了（上一次点击、或宿主 drain 抢先把它抽走）。
+        // 这里原本直接 return——就是「点了没反应」：用户以为在插队，实际要等本轮
+        // 自然跑完才看到它被当普通排队发出去（独立验证 2026-08-01 实测）。
+        // 本文件反复栽在静默 return 上，任何一条不可发都要出声。
+        toast.info(t.chatInput.queuedSendAlreadyInFlight);
+        return;
+      }
 
       queuedRuntimeInputHydrationSuppressedIdsRef.current.add(id);
       setQueuedRuntimeInputs((current) => current.filter((item) => item.id !== id));

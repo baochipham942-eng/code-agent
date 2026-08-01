@@ -8,6 +8,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import { promises as nodeFsp } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -502,5 +503,48 @@ describe('handleImportDesignImageFromPath', () => {
     await expect(
       handleImportDesignImageFromPath({ sourcePath: fakePngPath, outputPath: importOutputPath }, workspaceRoot),
     ).rejects.toThrow(/sourcePath.*文件内容与扩展名不匹配/);
+  });
+
+  // 2026-08-01 对抗审计（Codex）实证并已修：先 canonicalize 校验、再 fsp.copyFile(路径) 是可绕过的——
+  // 两次解析之间把源路径换成指向允许根之外的 symlink，根外文件会被复制进设计目录。
+  // 修法是从校验时那个句柄读（句柄绑定 inode，路径之后怎么变都不影响）。这条钉死它不许回退。
+  it('TOCTOU：校验通过后替换源路径为根外 symlink，不得把根外文件复制进来', async () => {
+    const secretPath = join(outsideRoot, 'secret.txt');
+    await writeFile(secretPath, 'TOP_SECRET');
+    const realCopyFile = nodeFsp.copyFile.bind(nodeFsp);
+    const realWriteFile = nodeFsp.writeFile.bind(nodeFsp);
+    // 无论实现走 copyFile 还是 writeFile，都在真正落盘前掉包一次源路径。
+    const swap = async (): Promise<void> => {
+      await rm(sourcePath);
+      await symlink(secretPath, sourcePath);
+    };
+    const copySpy = vi.spyOn(nodeFsp, 'copyFile').mockImplementationOnce(async (f, t, m) => {
+      await swap();
+      return realCopyFile(f, t, m);
+    });
+    const writeSpy = vi.spyOn(nodeFsp, 'writeFile').mockImplementationOnce(async (f, d, o) => {
+      await swap();
+      return realWriteFile(f as never, d as never, o as never);
+    });
+    try {
+      await handleImportDesignImageFromPath(
+        { sourcePath, outputPath: importOutputPath },
+        workspaceRoot,
+      );
+      expect(await readFile(importOutputPath, 'utf8')).not.toContain('TOP_SECRET');
+    } finally {
+      copySpy.mockRestore();
+      writeSpy.mockRestore();
+    }
+  });
+
+  // SVG 是活动内容（<script> / 外链 <image href>），这条通道只收位图——审计发现后收窄。
+  it('拒绝 SVG（活动内容，不做净化直接不收）', async () => {
+    const svgPath = join(workspaceRoot, 'media', 'a.svg');
+    await mkdir(join(workspaceRoot, 'media'), { recursive: true });
+    await writeFile(svgPath, '<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>');
+    await expect(
+      handleImportDesignImageFromPath({ sourcePath: svgPath, outputPath: importOutputPath }, workspaceRoot),
+    ).rejects.toThrow(/sourcePath.*图片类型/);
   });
 });

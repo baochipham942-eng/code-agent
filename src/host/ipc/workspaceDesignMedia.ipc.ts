@@ -9,6 +9,7 @@
 
 import path from 'path';
 import { promises as fsp } from 'fs';
+import type { FileHandle } from 'fs/promises';
 import { assertWithinDesignDir, assertWithinDesignImportSource } from './workspaceDesignPaths';
 import { estimateImageCostCny } from '../../shared/media/imageCost';
 import { estimateVideoCostCny } from '../../shared/media/videoCost';
@@ -268,8 +269,10 @@ export async function handleEditImageByAnnotation(
 // 源文件在设计目录之外（会话工作区），所以除了 outputPath 的设计目录守卫，还要一道
 // 源路径守卫：限死在「当前活跃工作目录 + 设计目录」内，并先解析 symlink 再判定，
 // 否则这条 IPC 就是一个任意文件读取洞（读出来会被复制进设计目录，随后可能 base64 传给出图服务）。
+// 不收 .svg：SVG 是活动内容（可含 <script> 与外链 <image href>），做净化是个无底洞；
+// 而这条通道的用途是把对话里的**位图**产物拿进画布精修，下游编辑管线本来也只吃位图。
 const IMPORTABLE_IMAGE_EXTENSIONS = new Set([
-  '.avif', '.gif', '.heic', '.heif', '.jpeg', '.jpg', '.png', '.svg', '.webp',
+  '.avif', '.gif', '.heic', '.heif', '.jpeg', '.jpg', '.png', '.webp',
 ]);
 
 function hasImportableImageMagic(bytes: Buffer, extension: string): boolean {
@@ -294,14 +297,17 @@ function hasImportableImageMagic(bytes: Buffer, extension: string): boolean {
       ? /avif|avis/.test(brands)
       : /heic|heix|hevc|hevx|mif1|msf1/.test(brands);
   }
-  if (extension === '.svg') {
-    const source = bytes.toString('utf8').replace(/^\uFEFF/, '').trimStart();
-    return /^(?:<\?xml[^>]*>\s*)?(?:<!--[\s\S]*?-->\s*)*<svg(?:\s|>)/i.test(source);
-  }
   return false;
 }
 
-async function assertReadableImageFile(sourcePath: string): Promise<void> {
+/**
+ * 校验并**返回仍然打开的句柄**——调用方必须从这个句柄读，不许再按路径打开一次。
+ *
+ * 2026-08-01 对抗审计实证：先 `canonicalize` 校验、再 `fsp.copyFile(path)` 是可绕过的——
+ * 两次解析之间源路径可被换成指向允许根之外的 symlink，探针实测把根外文件复制进了设计目录。
+ * 句柄在校验时就绑定了具体 inode，之后无论路径怎么变都指向同一个被校验过的文件。
+ */
+async function assertReadableImageFile(sourcePath: string): Promise<FileHandle> {
   const extension = path.extname(sourcePath).toLowerCase();
   if (!IMPORTABLE_IMAGE_EXTENSIONS.has(extension)) {
     throw new Error(`sourcePath 不是受支持的图片类型：${extension || '缺少扩展名'}`);
@@ -319,19 +325,20 @@ async function assertReadableImageFile(sourcePath: string): Promise<void> {
   }
   if (!stat.isFile()) throw new Error(`sourcePath 必须是可读图片文件：${sourcePath}`);
 
-  let handle;
+  let handle: FileHandle | undefined;
   try {
     handle = await fsp.open(sourcePath, 'r');
     const header = Buffer.alloc(512);
+    // 定位读（position=0）不移动句柄读写位置，后续 readFile 仍从头读全文。
     const { bytesRead } = await handle.read(header, 0, header.length, 0);
     if (!hasImportableImageMagic(header.subarray(0, bytesRead), extension)) {
       throw new Error(`sourcePath 不是有效的 ${extension} 图片：文件内容与扩展名不匹配`);
     }
+    return handle;
   } catch (error) {
+    await handle?.close();
     if (error instanceof Error && error.message.startsWith('sourcePath ')) throw error;
     throw new Error(`sourcePath 源文件不可读：${sourcePath}`, { cause: error });
-  } finally {
-    await handle?.close();
   }
 }
 
@@ -351,9 +358,15 @@ export async function handleImportDesignImageFromPath(
   }
   assertWithinDesignDir(payload.outputPath, 'outputPath');
   const canonicalSourcePath = assertWithinDesignImportSource(payload.sourcePath, activeWorkspaceRoot);
-  await assertReadableImageFile(canonicalSourcePath);
-  await fsp.mkdir(path.dirname(payload.outputPath), { recursive: true });
-  await fsp.copyFile(canonicalSourcePath, payload.outputPath);
+  // 从校验时那个句柄读，不用 fsp.copyFile(路径)——后者会二次解析路径，留出掉包窗口（见函数注释）。
+  const handle = await assertReadableImageFile(canonicalSourcePath);
+  try {
+    const data = await handle.readFile();
+    await fsp.mkdir(path.dirname(payload.outputPath), { recursive: true });
+    await fsp.writeFile(payload.outputPath, data);
+  } finally {
+    await handle.close();
+  }
   return { path: payload.outputPath };
 }
 

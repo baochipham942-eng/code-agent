@@ -252,4 +252,15 @@ describe('streamingStatePresentation', () => {
     expect(state.status).toBe('stale');
     expect(state.shouldAnimate).toBe(false);
   });
+
+  // 取消只持续几秒，顶部 run 徽章已经在说「正在停止 · 本轮已取消」；底下再铺一张
+  // 大横幅是同一件事说两遍，动静远大于信息量（真机反馈 2026-08-01）。
+  it('取消中不再单独铺一张状态横幅', () => {
+    expect(shouldShowStreamingState({
+      status: 'cancelling',
+      label: '正在停止',
+      tone: 'warning',
+      shouldAnimate: true,
+    } as never)).toBe(false);
+  });
 });

@@ -221,5 +221,9 @@ export function shouldShowStreamingState(state: StreamingUiState): boolean {
     && state.status !== 'completed'
     && state.status !== 'drafting'
     && state.status !== 'using_tools'
-    && state.status !== 'waiting_tool';
+    && state.status !== 'waiting_tool'
+    // 取消中不再单独铺一张横幅：顶部 run 徽章已经在说「正在停止 · 本轮已取消」，
+    // 底下再来一张大黄卡写「正在清理本轮流式输出和未完成工具」，是同一件事说两遍，
+    // 而取消本身只持续几秒——动静远大于信息量（真机反馈 2026-08-01）。
+    && state.status !== 'cancelling';
 }

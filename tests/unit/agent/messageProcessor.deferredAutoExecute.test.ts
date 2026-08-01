@@ -244,24 +244,22 @@ describe('deferred 工具首调：解锁后同轮代执行', () => {
 
   it('代执行仍走审批/hook 闸：被 PreToolUse 拦下时工具执行器根本不会被调到', async () => {
     const toolExecutor = { execute: vi.fn() };
-    const ctx = buildCtx({
-      toolExecutor,
-      hookManager: {
-        triggerPreToolUse: vi.fn(async () => ({
-          shouldProceed: false,
-          message: 'notebook 写入需要人工确认',
-          results: [],
-          totalDuration: 1,
-        })),
-        triggerPostToolUse: vi.fn(async () => ({ shouldProceed: true, results: [], totalDuration: 0 })),
-      },
-    });
+    const hookManager = {
+      triggerPreToolUse: vi.fn(async () => ({
+        shouldProceed: false,
+        message: 'notebook 写入需要人工确认',
+        results: [],
+        totalDuration: 1,
+      })),
+      triggerPostToolUse: vi.fn(async () => ({ shouldProceed: true, results: [], totalDuration: 0 })),
+    };
+    const ctx = buildCtx({ toolExecutor, hookManager });
     const deps = buildDeps(ctx);
     const processor = makeProcessor(ctx, deps, makeRealEngine(ctx, deps));
 
     await processor.handleToolResponse(toolUseResponse([NOTEBOOK_EDIT_CALL]), false, 1, { endSpan: vi.fn() } as never);
 
-    expect(ctx.hookManager.triggerPreToolUse).toHaveBeenCalledWith(
+    expect(hookManager.triggerPreToolUse).toHaveBeenCalledWith(
       'notebook_edit',
       JSON.stringify(NOTEBOOK_EDIT_CALL.arguments),
       'runtime-session-1',
@@ -276,13 +274,11 @@ describe('deferred 工具首调：解锁后同轮代执行', () => {
     const toolExecutor = {
       execute: vi.fn(async (): Promise<ToolResult> => ({ toolCallId: '', success: true, output: 'edited' })),
     };
-    const ctx = buildCtx({
-      toolExecutor,
-      hookManager: {
-        triggerPreToolUse: vi.fn(async () => ({ shouldProceed: true, results: [], totalDuration: 0 })),
-        triggerPostToolUse: vi.fn(async () => ({ shouldProceed: true, results: [], totalDuration: 0 })),
-      },
-    });
+    const hookManager = {
+      triggerPreToolUse: vi.fn(async () => ({ shouldProceed: true, results: [], totalDuration: 0 })),
+      triggerPostToolUse: vi.fn(async () => ({ shouldProceed: true, results: [], totalDuration: 0 })),
+    };
+    const ctx = buildCtx({ toolExecutor, hookManager });
     const deps = buildDeps(ctx);
     const processor = makeProcessor(ctx, deps, makeRealEngine(ctx, deps));
 
@@ -291,7 +287,7 @@ describe('deferred 工具首调：解锁后同轮代执行', () => {
     expect(toolExecutor.execute).toHaveBeenCalledWith(
       'notebook_edit',
       NOTEBOOK_EDIT_CALL.arguments,
-      expect.objectContaining({ sessionId: 'runtime-session-1', hookManager: ctx.hookManager }),
+      expect.objectContaining({ sessionId: 'runtime-session-1', hookManager }),
     );
   });
 

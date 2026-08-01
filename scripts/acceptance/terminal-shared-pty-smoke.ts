@@ -14,12 +14,14 @@ import os from 'node:os';
 import {
   disposeTerminalSession,
   getTerminalSnapshot,
+  onTerminalReveal,
   openTerminalSession,
   writeToTerminalSession,
 } from '../../src/host/services/terminal/terminalSessionManager.ts';
 import {
   isAwaitingSecretInput,
   readTerminalTail,
+  terminalOpenModule,
   terminalReadModule,
   terminalWriteModule,
 } from '../../src/host/tools/modules/terminal/terminal.ts';
@@ -66,6 +68,22 @@ async function readTool(): Promise<string> {
 }
 
 async function main(): Promise<void> {
+  // ⓪ agent 自己开终端：走真 session manager，不是替身——单测里 openTerminalSession
+  // 是 mock，验不到「工具真能开出一个 shell」。
+  const reveals: string[] = [];
+  const stopWatching = onTerminalReveal((id) => reveals.push(id));
+  const openResult = await (await handlerOf(terminalOpenModule)).execute({}, ctx, approve);
+  check('⓪ terminal_open 开出真 PTY', openResult.ok && getTerminalSnapshot(SESSION_ID)?.alive === true);
+  check('⓪ terminal_open 请求右栏亮出终端', reveals.includes(SESSION_ID));
+  const beforeReuse = getTerminalSnapshot(SESSION_ID)?.startedAt;
+  await (await handlerOf(terminalOpenModule)).execute({}, ctx, approve);
+  check(
+    '⓪ 再开一次不换 PTY（用户在里面登录过的东西还在）',
+    getTerminalSnapshot(SESSION_ID)?.startedAt === beforeReuse,
+  );
+  stopWatching();
+  disposeTerminalSession(SESSION_ID);
+
   const snapshot = openTerminalSession({ sessionId: SESSION_ID, cwd: os.tmpdir() });
   check('① 真 PTY 起得来', snapshot.alive, `shell=${snapshot.shell}`);
 

@@ -15,9 +15,12 @@ import { createLogger } from '../host/services/infra/logger';
 const logger = createLogger('WebStartupRetention');
 
 /**
- * fire-and-forget 触发两项保留清理。
- * 不 await：dbRetention 的 VACUUM 会阻塞，不能进启动关键路径；两者均 best-effort，
- * 失败只 warn，绝不影响启动。
+ * fire-and-forget 触发两项保留清理。两者均 best-effort，失败只 warn，绝不影响启动。
+ *
+ * ⚠️ 这里的「不 await」**不是**防阻塞手段（2026-07-31 事故推翻了原注释的假设）：
+ * better-sqlite3 是同步 API，在本进程 `exec('VACUUM')` 会阻塞整个 event loop，
+ * 实测把 listen 堵死 59.3 秒 —— 不 await 只避开了 await 语义，避不开同步阻塞。
+ * 真正的防阻塞在 dbRetention 内部：全库 VACUUM 已移出本进程（dbVacuumSubprocess.ts）。
  */
 export function kickoffStartupRetention(): void {
   void import('../host/services/infra/logRetention')

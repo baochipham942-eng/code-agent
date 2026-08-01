@@ -769,7 +769,9 @@ describe('macOS release fail-closed gates', () => {
     expect(packageJson.scripts['desktop-shell:packaged-smoke']).toBe('node scripts/desktop-shell-packaged-smoke.mjs');
     expect(packageJson.scripts['release:post-publish']).toBe('node scripts/release-post-publish-verify.mjs');
     expect(packageJson.scripts['tauri:package']).toContain('npm run build && npm run verify:webserver-boot && npm run tauri:prebuild-cleanup');
-    expect(packageJson.scripts['tauri:package:dev']).toContain('npm run build && npm run verify:webserver-boot && npm run tauri:prebuild-cleanup');
+    // dev 包的 prebuild-cleanup 必须带 NEO_CHANNEL=dev，否则 stage 出来的是生产
+    // 那份 helper，两个渠道又回到共用一个 bundle id。
+    expect(packageJson.scripts['tauri:package:dev']).toContain('npm run build && npm run verify:webserver-boot && NEO_CHANNEL=dev npm run tauri:prebuild-cleanup');
     expect(packageJson.scripts['tauri:release:bundle']).toContain('bash scripts/tauri-release-bundle.sh');
     expect(packageJson.scripts['tauri:release:bundle']).toContain('npm run build && npm run verify:webserver-boot && npm run tauri:prebuild-cleanup');
     expect(packageJson.scripts['tauri:release:bundle']).toContain('npm run release:notarize-macos');
@@ -872,9 +874,12 @@ describe('macOS release fail-closed gates', () => {
     expect(sources.some((resource) => resource.startsWith('../scripts/Agent Neo Computer Use.app'))).toBe(false);
 
     expect(fetchCuaDriver).toContain('.tauri-resources.noindex');
-    expect(fetchCuaDriver).toContain('CUA_DRIVER_VERSION="0.8.1"');
+    expect(fetchCuaDriver).toContain('CUA_DRIVER_VERSION="0.14.2"');
     expect(fetchCuaDriver).toContain('cua-driver-rs-v${CUA_DRIVER_VERSION}');
-    expect(fetchCuaDriver).toContain('dc6f901b03be002a5b4137ceafd9d02cb0eb0df9265e771c6530e7cfc0a6a4f2');
+    expect(fetchCuaDriver).toContain('efc8f88a2f6e7424ab68d080331fd6aa94ef699153f2631d7a9214515151098c');
+    // 同一 release 还有个只含裸二进制的 -binary.tar.gz（31209b5f…），拿错会静默失败。
+    expect(fetchCuaDriver).toContain('-darwin-universal.tar.gz');
+    expect(fetchCuaDriver).not.toContain('-darwin-universal-binary.tar.gz');
     expect(fetchCuaDriver).toContain('codesign_with_timestamp_retry');
     expect(fetchCuaDriver).toContain('FETCHED_UPSTREAM=1');
     expect(fetchCuaDriver).toContain('agent-neo-computer-use-mcp.sh');
@@ -885,13 +890,45 @@ describe('macOS release fail-closed gates', () => {
     );
     expect(stageCuaDriver).toContain('LEGACY_APP');
     expect(stageCuaDriver).toContain('rm -rf "${LEGACY_APP}"');
+
+    // 渠道身份只有一个源头（scripts/lib/cua-channel.sh）：fetch / stage 各自写死
+    // 一份就是「改了 A 忘了 B」的温床，而两个渠道共用 bundle id 会让 TCC 把生产包
+    // 与 dev 包记成同一客户端（授权了仍重弹，2026-07-31 实测）。
+    const cuaChannel = readRepoFile('scripts/lib/cua-channel.sh');
+    expect(cuaChannel).toContain('CUA_BUNDLE_ID="com.agentneo.computeruse"');
+    expect(cuaChannel).toContain('CUA_APP_NAME="Agent Neo Computer Use"');
+    expect(cuaChannel).toContain('CUA_BUNDLE_ID="com.agentneo.computeruse.dev"');
+    expect(cuaChannel).toContain('CUA_APP_NAME="Agent Neo Computer Use Dev"');
+    expect(fetchCuaDriver).toContain('source "$SCRIPT_DIR/lib/cua-channel.sh"');
+    expect(stageCuaDriver).toContain('source "${SCRIPT_DIR}/lib/cua-channel.sh"');
+    expect(fetchCuaDriver).not.toContain('CUA_BUNDLE_ID="com.agentneo.computeruse"');
+    expect(stageCuaDriver).not.toContain('CUA_BUNDLE_ID="com.agentneo.computeruse"');
+
+    // dev 包必须打自己那份 helper，否则 cargo tauri build 找不到资源 / 运行时回退
+    // 到 PATH 上的裸 cua-driver。
+    const devConf = JSON.parse(readRepoFile('src-tauri/tauri.dev.conf.json')) as {
+      bundle?: { resources?: Record<string, string | null> };
+    };
+    const devResources = devConf.bundle?.resources ?? {};
+    expect(devResources['../.tauri-resources.noindex/scripts/Agent Neo Computer Use.app']).toBeNull();
+    expect(devResources['../.tauri-resources.noindex/scripts/Agent Neo Computer Use Dev.app'])
+      .toBe('scripts/Agent Neo Computer Use Dev.app');
     expect(cleanBundleApps).toContain('Agent Neo Computer Use');
     expect(cleanBundleApps).toContain('*/_up_/scripts/${HELPER_APP_NAME}.app');
     expect(gitignore).toContain('.tauri-resources.noindex/');
 
     expect(launchCuaMcp).toContain('/usr/bin/open -n -g "$APP_DIR" --args serve');
-    expect(launchCuaMcp).toContain('CUA_DRIVER_RS_MCP_FORCE_PROXY=1');
-    expect(launchCuaMcp).toContain('com.agentneo.computeruse');
+    // 0.14.x 起 proxy 是 macOS 缺省，CUA_DRIVER_RS_MCP_FORCE_PROXY 已被上游删除；
+    // 保住 proxy 的唯一依据是「exec 那行不传 --direct」——上游 --direct 会把 MCP 拉回
+    // 进程内直跑，正是这个 helper 要消灭的 TCC 归属散架。逐行查，注释里提它不算。
+    expect(launchCuaMcp).toContain('exec "$DRIVER_BIN" mcp --socket "$SOCKET_PATH"\n');
+    const cuaMcpCode = launchCuaMcp.split('\n').filter((line) => !line.trimStart().startsWith('#'));
+    expect(cuaMcpCode.filter((line) => line.includes('--direct'))).toEqual([]);
+    // bundle id 必须从 helper 自身 Info.plist 读出：写死会让生产包与 dev 包两份
+    // 拷贝共用 TCC 记账和 socket 路径（授权了仍反复弹窗，2026-07-31 实测）。
+    expect(launchCuaMcp).toContain("PlistBuddy -c 'Print :CFBundleIdentifier' \"$CONTENTS_DIR/Info.plist\"");
+    expect(launchCuaMcp).toContain('--host-bundle-id "$BUNDLE_ID"');
+    expect(launchCuaMcp).not.toContain('com.agentneo.computeruse');
     expect(launchCuaMcp).toContain('--socket "$SOCKET_PATH"');
     expect(launchCuaMcp).not.toContain('-a CuaDriver');
 
@@ -900,7 +937,7 @@ describe('macOS release fail-closed gates', () => {
     for (const workflow of [releaseWorkflow, x64Workflow]) {
       expect(workflow).toContain('CUA_FETCH_UPSTREAM=1 bash scripts/fetch-cua-driver.sh');
       expect(workflow.indexOf('Import Developer ID certificate')).toBeLessThan(
-        workflow.indexOf('Fetch and re-sign CUA driver 0.8.1'),
+        workflow.indexOf('Fetch and re-sign CUA driver 0.14.2'),
       );
     }
   });

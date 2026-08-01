@@ -110,6 +110,11 @@ const gates = [
     args: ['scripts/check-copy.mjs'],
   },
   {
+    ci: '本工单新增，local-only（未接入 CI workflow，见 2026-08-01 脚本报错路径先失明 REPORT 遗留项）',
+    command: 'node',
+    args: ['scripts/shell-fail-loud-lint.mjs'],
+  },
+  {
     ci: 'swarm-ci / smoke / Script gates (vitest tests/scripts)',
     command: 'npx',
     args: ['vitest', 'run', 'tests/scripts', '--retry=1'],

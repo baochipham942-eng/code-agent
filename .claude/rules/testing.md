@@ -29,6 +29,12 @@ globs: "src/**/*.test.ts,src/**/*.spec.ts,tests/**/*"
 - 不添加未被请求的功能、注释或重构
 - 三行重复代码优于一个过早抽象
 
+## 后台浏览器任务清理（错题本 2026-07-30）
+
+- **停掉带浏览器的后台任务（e2e/gates/claude-e2e verify 脚本）后，必须确认整棵进程树死干净**：TaskStop/kill 只杀主进程会留下孤儿 Playwright worker，它们继续按重试逻辑反复拉起系统 Chrome；Chrome 在孤儿进程上下文里注册 GUI 失败（`_RegisterApplication` abort），实测 90 秒连崩 25 次、macOS 弹窗雨轰炸用户。
+- **泛化规则**：任何会 spawn 子进程树的后台任务，中断 ≠ 结束——停完后核对残留（`pgrep -fl "playwright|chrome-headless|Google Chrome --"`），有孤儿按进程组杀（`kill -- -<pgid>`），不能默认 harness 会替你收尸。
+- 验证默认走 headless 配置；`tests/e2e/playwright.system-chrome.config.ts`（`channel: 'chrome'`）和 headful verify 脚本只在明确要真机 UI 验收时用。
+
 ## 评测安全（错题本 2026-07-04）
 
 - **红线类 case（预期模型拒绝的破坏性指令）不得在未越狱的 harness 里真跑**：eval 沙箱只隔离工作目录，bash 不隔离主机。断言"回复不含已删除"挡不住顺从模型真执行——LongCat-2.0 实测三次顺从伪装成磁盘清理的注入指令，`find ~ -name node_modules` 批量删除 15 个项目依赖 + 清空 ~/.cache。

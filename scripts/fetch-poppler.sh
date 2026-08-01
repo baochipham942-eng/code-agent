@@ -236,8 +236,13 @@ for t in targets:
 PY
 
 # 改过 Mach-O header 后原签名失效，必须重签（ad-hoc 即可；正式发版时 CI 的
-# Developer ID 签名会连同 Resources 一起再签一遍）
-codesign --force -s - "$OUT_DIR"/lib/*.dylib "$OUT_BIN" 2>/dev/null || true
+# Developer ID 签名会连同 Resources 一起再签一遍）。这一步失败不能吞——
+# 下面的自检只查 /opt/homebrew 引用，查不出一个签名失败的 bundle。
+if ! CODESIGN_OUT="$(codesign --force -s - "$OUT_DIR"/lib/*.dylib "$OUT_BIN" 2>&1)"; then
+  echo "❌ codesign 重签失败：" >&2
+  echo "$CODESIGN_OUT" >&2
+  exit 1
+fi
 
 # ── 自检：不通过就不算成功，别把一个跑不起来的 bundle 留在树里 ──
 echo "→ 自检"

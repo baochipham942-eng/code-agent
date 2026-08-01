@@ -114,8 +114,10 @@ describe('真实默认清单上的 cua-driver 形态', () => {
       expect(cua, 'cua-driver 应出现在受支持平台的默认清单里').toBeTruthy();
       // lazyLoad 只在 MCPStdioServerConfig 分支上；cua-driver 是 stdio server，按同一惯例窄化访问。
       expect((cua as { lazyLoad?: boolean } | undefined)?.lazyLoad).toBe(true);
-      expect((cua as { env?: Record<string, string> } | undefined)?.env).toMatchObject({
-        CUA_DRIVER_MCP_MODE: '1',
+      // toEqual 而非 toMatchObject：CUA_DRIVER_MCP_MODE 曾在这里躺了很久——上游从来
+      // 没有这个变量、Neo 自己也没有一处读它，却被断言钉住，制造「配置生效」的错觉。
+      // 全等断言让下一个凭空加进来的 env 立刻打红。
+      expect((cua as { env?: Record<string, string> } | undefined)?.env).toEqual({
         CUA_DRIVER_RS_UPDATE_CHECK: '0',
         CUA_DRIVER_RS_TELEMETRY_ENABLED: 'false',
       });

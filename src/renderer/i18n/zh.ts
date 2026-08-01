@@ -35,10 +35,10 @@ import { evalCenterZh } from './evalCenter';
 import { localOpsZh } from './localOps';
 import { onboardingZh } from './onboarding';
 import { workbenchTabsZh } from './workbenchTabs';
-import { activityPanelZh } from './activity';
+import { activityPanelZh, canvasActorZh } from './domains';
 
 export const zh = {
-  ...activityPanelZh,
+  ...canvasActorZh, ...activityPanelZh,
   ...capabilityHubZh,
   ...neoTopicsZh,
   ...projectSpaceZh,

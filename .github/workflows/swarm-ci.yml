@@ -173,7 +173,7 @@ jobs:
         # 保持同一手法，显式装。
         run: npx playwright install --with-deps chromium
 
-      - name: Main-chain vitest subset (agent / tools / ipc / services / renderer)
+      - name: Main-chain vitest subset (agent / tools / ipc / services / design / renderer)
         # 2026-07-25 建门。动机：全量 vitest 只在 push main 后的检测门里跑，PR 阶段完全
         # 看不见——`main-full-gate` 因此从 #636 起连红 15 个合并没人管（5 套件：partial
         # vi.mock 一加新导出就断 ×3、权限链上新增 DB 读未加守卫 ×1、人话改造后断言过期 ×1）。
@@ -228,7 +228,7 @@ jobs:
             exit 1
           fi
           echo "根级单测文件 ${#ROOT_UNIT_TESTS[@]} 个进门"
-          npx vitest run tests/unit/agent tests/unit/host tests/unit/ipc tests/unit/tools tests/unit/services tests/renderer "${ROOT_UNIT_TESTS[@]}" --retry=1 \
+          npx vitest run tests/unit/agent tests/unit/host tests/unit/ipc tests/unit/tools tests/unit/services tests/unit/design tests/renderer "${ROOT_UNIT_TESTS[@]}" --retry=1 \
             --exclude 'tests/unit/tools/modules/network/webSearch.test.ts' \
             --exclude 'tests/unit/agent/goalVerifyGate.test.ts'
 

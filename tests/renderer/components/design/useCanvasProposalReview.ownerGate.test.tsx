@@ -32,7 +32,7 @@ function fireAsk(request: CanvasOpProposal): void {
   cb(request);
 }
 
-const validOps: CanvasOpProposal['ops'] = [{ kind: 'moveNode', nodeId: 'n1', x: 1, y: 2 }];
+const validOps: CanvasOpProposal['ops'] = [{ kind: 'discardNode', nodeId: 'n1' }];
 
 beforeEach(() => {
   handlers.clear();

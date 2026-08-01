@@ -211,6 +211,33 @@ describe('orphan pty reaping', () => {
     expect(kill).not.toHaveBeenCalled();
   });
 
+  it('leaves alone the terminals of another host process that is still running', () => {
+    // 同一个 data dir 被两个 host 同时用（已知问题，互斥锁另有工单）。后起的那个不能
+    // 把先起那个正在用的终端当孤儿收了——用户会看到终端凭空全死。
+    // owner 用一个确定活着的 pid：当前进程自己不行（会被判成「就是我」），用 init(1)。
+    fs.writeFileSync(pidFile, JSON.stringify([{ pid: 424244, shell: '/bin/zsh', ownerPid: 1 }]));
+    execFileSyncMock.mockReturnValue('/bin/zsh\n');
+    const kill = vi.spyOn(process, 'kill').mockImplementation(() => true);
+
+    expect(reapOrphanTerminals()).toBe(0);
+    expect(kill).not.toHaveBeenCalledWith(424244, 'SIGKILL');
+    // 账不能被抹平：它还是别人的，下次仍要认得出来。
+    const remaining = JSON.parse(fs.readFileSync(pidFile, 'utf-8')) as Array<{ pid: number }>;
+    expect(remaining.map((entry) => entry.pid)).toEqual([424244]);
+  });
+
+  it('reaps a pid whose owning host process is gone', () => {
+    fs.writeFileSync(pidFile, JSON.stringify([{ pid: 424245, shell: '/bin/zsh', ownerPid: 999999 }]));
+    execFileSyncMock.mockReturnValue('/bin/zsh\n');
+    const kill = vi.spyOn(process, 'kill').mockImplementation((pid: number, signal?: unknown) => {
+      if (pid === 999999 && signal === 0) throw new Error('ESRCH');
+      return true;
+    });
+
+    expect(reapOrphanTerminals()).toBe(1);
+    expect(kill).toHaveBeenCalledWith(424245, 'SIGKILL');
+  });
+
   it('records live pids so the next startup can find orphans', () => {
     openTerminalSession({ sessionId: 's1', cwd: '/tmp' });
     const persisted = JSON.parse(fs.readFileSync(pidFile, 'utf-8')) as Array<{ pid: number }>;

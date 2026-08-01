@@ -130,6 +130,36 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     aliases: ['process', 'ps', 'kill', 'output', 'background', 'pty'],
     source: 'builtin',
   },
+  // 用户那个交互终端的读写桥（Term-P1）。刻意不进 CORE_TOOLS：只有真要驱动
+  // 用户已登录的 CLI 时才需要，一次性命令仍然走 Bash。
+  {
+    name: 'terminal_list',
+    shortDescription: '列出用户打开的交互终端',
+    tags: ['shell'],
+    aliases: ['terminal', 'tty', 'shell session'],
+    source: 'builtin',
+  },
+  {
+    name: 'terminal_read',
+    shortDescription: '读用户交互终端的近期输出（已清洗控制码）',
+    tags: ['shell'],
+    aliases: ['terminal', 'read terminal', 'tty output'],
+    source: 'builtin',
+  },
+  {
+    name: 'terminal_write',
+    shortDescription: '向用户交互终端输入（共享其登录态，过审批链）',
+    tags: ['shell'],
+    aliases: ['terminal', 'type in terminal', 'interactive cli', 'logged-in cli'],
+    source: 'builtin',
+  },
+  {
+    name: 'terminal_wait',
+    shortDescription: '等用户交互终端输出稳定或匹配到模式',
+    tags: ['shell'],
+    aliases: ['terminal', 'wait for output'],
+    source: 'builtin',
+  },
   {
     name: 'MCPUnified',
     shortDescription: 'MCP 服务器操作（调用/列表/资源/状态/添加）',

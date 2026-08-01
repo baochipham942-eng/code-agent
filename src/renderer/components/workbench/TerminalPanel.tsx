@@ -21,16 +21,16 @@ interface TerminalSnapshot {
   alive: boolean;
 }
 
-// xterm 不吃 CSS 变量，只吃具体色值；从主题变量现取，避免写死黑底与 Neo 主题打架。
-function readThemeColors(host: HTMLElement): { background: string; foreground: string } {
+// xterm 不吃 CSS 变量，只吃具体色值；从主题变量现取（Neo 有浅色主题，写死黑底会打架）。
+// 取不到就整个不传，让 xterm 用自己的默认——不写兜底色值，那等于把某一个主题硬编码进来。
+function readThemeColors(host: HTMLElement): { background?: string; foreground?: string } {
   const styles = getComputedStyle(host);
-  const background = styles.getPropertyValue('--color-surface-sunken').trim()
-    || styles.backgroundColor
-    || '#18181b';
-  const foreground = styles.getPropertyValue('--color-text-primary').trim()
-    || styles.color
-    || '#e4e4e7';
-  return { background, foreground };
+  const background = styles.getPropertyValue('--bg-deep').trim() || styles.backgroundColor;
+  const foreground = styles.getPropertyValue('--text-primary').trim() || styles.color;
+  return {
+    ...(background ? { background } : {}),
+    ...(foreground ? { foreground } : {}),
+  };
 }
 
 export const TerminalPanel: React.FC = () => {
@@ -59,13 +59,12 @@ export const TerminalPanel: React.FC = () => {
     const host = hostRef.current;
     if (!openedSessionId || !host) return undefined;
 
-    const theme = readThemeColors(host);
     const term = new Terminal({
       fontSize: 12,
       fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
       cursorBlink: true,
       convertEol: false,
-      theme: { background: theme.background, foreground: theme.foreground },
+      theme: readThemeColors(host),
     });
     const fit = new FitAddon();
     term.loadAddon(fit);

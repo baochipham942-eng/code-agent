@@ -8,6 +8,7 @@
 import type { IpcMain } from '../platform';
 import { broadcastToRenderer } from '../platform/windowBridge';
 import { IPC_CHANNELS, IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
+import { getHomeDir } from '../config/configPaths';
 import {
   disposeTerminalSession,
   getTerminalSnapshot,
@@ -49,7 +50,9 @@ export function registerTerminalHandlers(ipcMain: IpcMain): void {
       switch (req.action) {
         case 'open': {
           if (!sessionId) return { success: false, error: { code: 'INVALID_ARGS', message: '缺少 sessionId' } };
-          const cwd = readString(req.payload, 'cwd') || process.cwd();
+          // 没设工作目录时落到家目录，不是 process.cwd()——打包态由 launchd 拉起，
+          // cwd 是 `/`，终端一开就停在根目录上。
+          const cwd = readString(req.payload, 'cwd') || getHomeDir();
           const snapshot = openTerminalSession({
             sessionId,
             cwd,

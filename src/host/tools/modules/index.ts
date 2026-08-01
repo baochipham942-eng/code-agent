@@ -35,6 +35,13 @@ import { gitWorktreeSchema } from './shell/gitWorktree.schema';
 import { processSchema } from './shell/process.schema';
 import { bashSchema } from './shell/bash.schema';
 import { grepSchema } from './shell/grep.schema';
+// terminal/
+import {
+  terminalListSchema,
+  terminalReadSchema,
+  terminalWaitSchema,
+  terminalWriteSchema,
+} from './terminal/terminal.schema';
 
 // search/
 import { toolSearchSchema } from './search/toolSearch.schema';
@@ -662,6 +669,24 @@ export function registerMigratedTools(
   registry.register(
     grepSchema,
     async () => (await import('./shell/grep')).grepModule,
+  );
+
+  // terminal (4): 用户那个交互终端的读写桥（Term-P1）——与 bash 分流见各自 description
+  registry.register(
+    terminalListSchema,
+    async () => (await import('./terminal/terminal')).terminalListModule,
+  );
+  registry.register(
+    terminalReadSchema,
+    async () => (await import('./terminal/terminal')).terminalReadModule,
+  );
+  registry.register(
+    terminalWriteSchema,
+    async () => (await import('./terminal/terminal')).terminalWriteModule,
+  );
+  registry.register(
+    terminalWaitSchema,
+    async () => (await import('./terminal/terminal')).terminalWaitModule,
   );
 
   // lightMemory (3): MemoryRead / MemoryWrite / EpisodicRecall

@@ -16,6 +16,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { execFileSync } from 'child_process';
 import { getUserConfigDir } from '../../config/configPaths';
+// eslint-disable-next-line no-restricted-imports -- platform shell resolution, not a legacy tool impl（同 agent/scriptRuntime/sandbox.ts 先例）
 import { resolveWindowsShell } from '../../tools/shell/platformShell';
 import { createLogger } from '../infra/logger';
 
@@ -84,14 +85,18 @@ function appendToBuffer(session: TerminalSession, data: string): void {
 // 孤儿 PTY 收割
 //
 // app 被强杀（SIGKILL / 崩溃 / 覆盖安装）时 onExit 不会跑，PTY 子进程会活下来变孤儿。
-// 每次 create/dispose 都把活着的 pid 落盘，启动时读回来收割。
-// pid 会被系统复用，所以杀之前必须核对 comm 确实是我们记下的那个 shell——
-// 核不了（win32 无 ps）就不杀，宁可漏收一个也不能误杀用户的进程。
+// 每次 create/dispose 都把活着的 pid 落盘，启动时读回来收割。杀之前两道核对，缺一不可：
+//   1. 记账的那个 host 进程确实已经死了——同一个 data dir 可能被两个 host 同时用
+//      （已知问题，互斥锁另有工单），不核这条，后起的 host 会把先起那个正在用的终端全杀了；
+//   2. pid 现在确实还是我们记下的那个 shell——pid 会被系统复用，
+//      核不了（win32 无 ps）就不杀，宁可漏收一个孤儿也不能误杀用户的进程。
 // ----------------------------------------------------------------------------
 
 interface PersistedTerminalPid {
   pid: number;
   shell: string;
+  /** 开这个 PTY 的 host 进程；它还活着就说明这不是孤儿，是别人正在用的。 */
+  ownerPid: number;
 }
 
 function getPidFilePath(): string {
@@ -101,7 +106,7 @@ function getPidFilePath(): string {
 function persistLivePids(): void {
   const live: PersistedTerminalPid[] = [];
   for (const session of sessions.values()) {
-    if (session.alive) live.push({ pid: session.pty.pid, shell: session.shell });
+    if (session.alive) live.push({ pid: session.pty.pid, shell: session.shell, ownerPid: process.pid });
   }
   try {
     fs.mkdirSync(path.dirname(getPidFilePath()), { recursive: true });
@@ -115,10 +120,22 @@ function parsePersistedPids(raw: unknown): PersistedTerminalPid[] {
   if (!Array.isArray(raw)) return [];
   return raw.flatMap((entry) => {
     if (typeof entry !== 'object' || entry === null) return [];
-    const { pid, shell } = entry as Record<string, unknown>;
+    const { pid, shell, ownerPid } = entry as Record<string, unknown>;
     if (typeof pid !== 'number' || typeof shell !== 'string') return [];
-    return [{ pid, shell }];
+    // ownerPid 缺失＝旧版本写的记录，按「没有活着的 owner」处理，继续走 comm 核对。
+    return [{ pid, shell, ownerPid: typeof ownerPid === 'number' ? ownerPid : 0 }];
   });
+}
+
+/** 进程是否还活着（signal 0 不发信号，只探测存在性）。 */
+function isProcessAlive(pid: number): boolean {
+  if (pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** pid 当前是否真的还是我们记下的那个 shell（POSIX：核 comm；win32：核不了返回 false） */
@@ -145,7 +162,14 @@ export function reapOrphanTerminals(): number {
   }
 
   let reaped = 0;
+  const survivors: PersistedTerminalPid[] = [];
   for (const entry of parsePersistedPids(raw)) {
+    if (entry.ownerPid !== process.pid && isProcessAlive(entry.ownerPid)) {
+      // 另一个 host 还活着，这是它正在用的终端，不是孤儿。原样留在账上还给它。
+      survivors.push(entry);
+      logger.info('skipping terminal pty owned by a live host process', { pid: entry.pid, ownerPid: entry.ownerPid });
+      continue;
+    }
     if (!pidStillMatchesShell(entry.pid, entry.shell)) continue;
     try {
       process.kill(entry.pid, 'SIGKILL');
@@ -157,7 +181,7 @@ export function reapOrphanTerminals(): number {
   }
 
   try {
-    fs.writeFileSync(getPidFilePath(), '[]');
+    fs.writeFileSync(getPidFilePath(), JSON.stringify(survivors));
   } catch {
     /* 收割结果落盘失败不影响本次运行 */
   }
@@ -287,7 +311,7 @@ export function disposeTerminalSession(sessionId: string): boolean {
   return true;
 }
 
-export function disposeAllTerminalSessions(): void {
+function disposeAllTerminalSessions(): void {
   for (const sessionId of [...sessions.keys()]) disposeTerminalSession(sessionId);
 }
 
@@ -324,10 +348,6 @@ export function getTerminalSnapshot(sessionId: string): TerminalSnapshot | null 
 
 export function listTerminalSessions(): TerminalSnapshot[] {
   return [...sessions.values()].map((session) => ({ ...snapshotOf(session), data: '' }));
-}
-
-export function hasTerminalSession(sessionId: string): boolean {
-  return sessions.has(sessionId);
 }
 
 /** 测试用：清空全部状态（不 kill，测试里用的是 fake pty） */

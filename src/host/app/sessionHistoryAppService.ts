@@ -42,6 +42,7 @@ import type {
   RewindConversationResult,
 } from '../../shared/contract/sessionRewind';
 import type { TaskManager } from '../task';
+import { getContextHealthService } from '../context/contextHealthService';
 import { getAuthService } from '../services/auth/authService';
 import { getFileCheckpointService } from '../services/checkpoint';
 import { getDatabase } from '../services/core/databaseService';
@@ -85,6 +86,7 @@ export class SessionHistoryAppService {
       ownerUserId: getAuthService().getCurrentUser()?.id ?? null,
     });
     const result = await service.createFork(params);
+    getContextHealthService().cleanup(result.childSession.id);
     if (result.lineage.contextDeliveryMode === 'neo_native_prefix') {
       taskManager.setSessionContext(
         result.childSession.id,
@@ -401,6 +403,7 @@ export class SessionHistoryAppService {
       ownerUserId: getAuthService().getCurrentUser()?.id ?? null,
     }).rewindConversation(params);
     getSessionManager().invalidateSessionCache(params.sessionId);
+    getContextHealthService().cleanup(params.sessionId);
     return result;
   }
 
@@ -495,6 +498,7 @@ export class SessionHistoryAppService {
       ownerUserId: getAuthService().getCurrentUser()?.id ?? null,
     }).restoreConversation(params);
     getSessionManager().invalidateSessionCache(params.sessionId);
+    getContextHealthService().cleanup(params.sessionId);
     return result;
   }
 

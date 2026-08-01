@@ -20,6 +20,7 @@ import { UNSORTED_PROJECT_ID } from '@shared/contract/project';
 import { createLogger } from './logger';
 import { sanitizeSurfaceExecutionSessionExport } from '../../session/surfaceExecutionSessionExport';
 import { stripLegacyForkClaims } from '../sessionFork/portability';
+import { getContextHealthService } from '../../context/contextHealthService';
 
 import { Disposable, getServiceRegistry } from '../serviceRegistry';
 const logger = createLogger('SessionManager');
@@ -1011,6 +1012,7 @@ export class SessionManager implements Disposable {
     const db = getDatabase();
     this.assertAccessibleSession(sessionId);
     db.replaceMessages(sessionId, messages);
+    getContextHealthService().cleanup(sessionId);
 
     if (this.sessionCache.has(sessionId)) {
       const cached = this.sessionCache.get(sessionId)!;

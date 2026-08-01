@@ -7,7 +7,7 @@ import { useShallow } from 'zustand/shallow';
 import { useAppStore } from '../stores/appStore';
 import { useProjectChatSeedConsumption } from './features/chat/useProjectChatSeed';
 import { useComposerStore } from '../stores/composerStore';
-import { isBlankNewSession, useSessionStore } from '../stores/sessionStore';
+import { useSessionStore } from '../stores/sessionStore';
 import { useSessionUIStore } from '../stores/sessionUIStore';
 import { useStreamingMessageAccumulatorStore } from '../stores/streamingMessageAccumulatorStore';
 import { useTaskStore } from '../stores/taskStore';
@@ -144,12 +144,6 @@ export const ChatView: React.FC = () => {
   const currentSessionWorkingDirectory = currentSession
     ? currentSession.workingDirectory ?? null
     : appWorkingDirectory ?? null;
-  // 空态首屏的消歧：当前会话没有内容时，只有它真是新会话才配渲染欢迎页；带着旧标题/
-  // 旧消息计数的历史会话（冷启动自动恢复的那条）必须把「你在哪条会话里」写在脸上，
-  // 否则用户以为自己在新会话，首条消息接进了昨晚那条（2026-08-01 事故）。
-  const resumedEmptySession = currentSession && !isBlankNewSession(currentSession)
-    ? { title: currentSession.title, updatedAt: currentSession.updatedAt }
-    : null;
 
   useEffect(() => {
     ensureNeoWorkCardLiveUpdates();
@@ -792,7 +786,7 @@ export const ChatView: React.FC = () => {
                 onSend={handleSendMessage}
                 workingDirectory={currentSessionWorkingDirectory}
                 workbenchSnapshot={currentSession?.workbenchSnapshot}
-                resumedSession={resumedEmptySession}
+                session={currentSession}
               />
             ) : (
               <div className="h-full" aria-hidden />

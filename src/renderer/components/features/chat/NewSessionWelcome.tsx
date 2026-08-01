@@ -5,7 +5,13 @@ import { PLAIN_CHAT_SUMMARY_LABEL } from '@shared/contract/sessionWorkspace';
 import { useI18n } from '../../../hooks/useI18n';
 import type { Translations } from '../../../i18n';
 import { formatRelativeTime } from '../../../utils/i18nTime';
+import { isBlankNewSession, type SessionWithMeta } from '../../../stores/sessionStore';
 import { NeoBrandMark } from '../sidebar/NeoBrandMark';
+
+type ResumableSession = Pick<
+  SessionWithMeta,
+  'title' | 'updatedAt' | 'messageCount' | 'turnCount' | 'isArchived' | 'status'
+>;
 
 interface SuggestionItem {
   icon: React.ElementType;
@@ -51,22 +57,25 @@ export function buildDefaultSuggestions(t: Translations): SuggestionItem[] {
 
 // 新会话欢迎页（示例建议 + 工作区上下文标签）——不是通用空态，别并进 primitives/EmptyState
 //
-// resumedSession：冷启动自动恢复的**历史**会话恰好没有内容时传它。此时首屏必须明说
-// 「你在哪条会话里」——否则与真新会话像素级不可区分，用户以为自己新开了一条，首条消息
-// 却接在昨晚那条后面（2026-08-01 事故）。
+// session：当前会话。空态首屏走到这里时，只有它是真·新会话才配渲染欢迎页；冷启动自动
+// 恢复的历史会话恰好没有内容时，必须明说「你在哪条会话里」——否则与真新会话像素级不可
+// 区分，用户以为自己新开了一条，首条消息却接在昨晚那条后面（2026-08-01 事故）。
+// 判定刻意放在本组件内而不是调用方：那样这条决策才被组件单测覆盖，不会被一次误删接线
+// 静默退回事故行为。
 export const NewSessionWelcome: React.FC<{
   onSend: (message: string) => void;
   workingDirectory?: string | null;
   workbenchSnapshot?: SessionWorkbenchSnapshot | null;
-  resumedSession?: { title: string; updatedAt: number } | null;
+  session?: ResumableSession | null;
 }> = ({
   onSend,
   workingDirectory,
   workbenchSnapshot,
-  resumedSession,
+  session,
 }) => {
   const { t } = useI18n();
   const suggestions = buildDefaultSuggestions(t);
+  const resumedSession = session && !isBlankNewSession(session) ? session : null;
   // 纯对话（无工作区）是默认形态，不必再标「空白会话」——用户反馈看不懂、是噪音。
   // 只有继承了项目/工作区上下文时才显示上下文标签（"项目会话 · name"），告诉用户这条会话带了上下文。
   const hasWorkspaceContext = Boolean(workingDirectory?.trim());

@@ -16,6 +16,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
+import { cuaHelperIdentity } from '../../src/shared/cuaHelperChannel.ts';
 import type { Readable } from 'node:stream';
 import { CuaMcpDriverPort } from '../../src/host/mcp/cuaMcpDriverPort.ts';
 import {
@@ -876,10 +877,11 @@ async function main(): Promise<void> {
   const outputDir = resolve(getStringOption(args, 'out')
     || mkdtempSync(join(tmpdir(), 'surface-execution-computer-proof-')));
   mkdirSync(outputDir, { recursive: true });
+  const helperIdentity = cuaHelperIdentity();
   const helperPath = resolve(getStringOption(args, 'helper') || join(
     '.tauri-resources.noindex',
     'scripts',
-    'Agent Neo Computer Use.app',
+    `${helperIdentity.appName}.app`,
     'Contents',
     'MacOS',
     'cua-driver',
@@ -965,7 +967,12 @@ async function main(): Promise<void> {
     assert(version.exitCode === 0 && version.stdout.trim() === 'cua-driver 0.8.1', `Unexpected helper version: ${version.stdout}${version.stderr}`);
     assert(signatureVerify.exitCode === 0, `codesign verification failed: ${signatureVerify.stderr}`);
     const signature = parseCodesign(`${signatureDetails.stdout}\n${signatureDetails.stderr}`);
-    assert(signature.identifier === 'com.agentneo.computeruse', `Unexpected helper bundle id: ${signature.identifier}`);
+    // 期望值随渠道走，但仍是精确串：退化成前缀/宽匹配等于把门拆了，
+    // 生产与 dev 混用 bundle id 正是本轮要修的缺陷。
+    assert(
+      signature.identifier === helperIdentity.bundleId,
+      `Unexpected helper bundle id: ${signature.identifier} (expected ${helperIdentity.bundleId})`,
+    );
     assert(signature.teamIdentifier === 'D7CVTJ72NV', `Unexpected helper team id: ${signature.teamIdentifier}`);
     assertions.helperVersion081 = true;
     assertions.helperCodesignValid = true;

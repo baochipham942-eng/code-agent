@@ -8,6 +8,7 @@ import React from 'react';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { zh } from '../../../src/renderer/i18n/zh';
+import { en } from '../../../src/renderer/i18n/en';
 import type { AppSettings } from '../../../src/shared/contract';
 import { IPC_DOMAINS } from '../../../src/shared/ipc';
 
@@ -242,5 +243,35 @@ describe('VoiceLiveSettingsSection', () => {
     expect(invokeDomainMock.mock.calls.some(([, action]) => action === 'set')).toBe(false);
     const status = await screen.findByTestId('voice-input-device-status');
     expect(status.textContent).toContain(zh.voice.settings.inputDeviceEnumFailed);
+  });
+
+  // T7：语速三档（方案 §4.1 UI 半）。未配置 = normal（存量用户不该看到"什么都没选"）；
+  // 选中档位必须进 live.speechRate patch——T6 的通话中热更新靠 settings IPC 收到这个字段
+  // 触发，patch 里没有它 = 通话中改语速不生效。
+  it('语速未配置时显示 normal，三档都能选中并写 live.speechRate', async () => {
+    settingsGet({ live: { enabled: true } });
+    render(<VoiceLiveSettingsSection />);
+    const select = await screen.findByTestId('voice-speech-rate') as HTMLSelectElement;
+    expect(select.value).toBe('normal');
+
+    for (const rate of ['slow', 'normal', 'fast'] as const) {
+      invokeDomainMock.mockClear();
+      fireEvent.change(select, { target: { value: rate } });
+      await waitFor(() => {
+        const setCall = invokeDomainMock.mock.calls.find(([, action]) => action === 'set');
+        expect(setCall).toBeTruthy();
+        const payload = setCall![2] as { voice: { live: { speechRate?: string } } };
+        expect(payload.voice.live.speechRate).toBe(rate);
+      });
+    }
+  });
+
+  it('语速 helper 文案存在（中英各一条），如实提示可能不完全生效', async () => {
+    settingsGet({ live: { enabled: true } });
+    render(<VoiceLiveSettingsSection />);
+    await screen.findByTestId('voice-speech-rate');
+
+    expect(screen.getByText(zh.voice.settings.speechRateHelper)).toBeTruthy();
+    expect(en.voice.settings.speechRateHelper).toBeTruthy();
   });
 });

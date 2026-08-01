@@ -270,7 +270,10 @@ export const TurnCard: React.FC<TurnCardProps> = ({
   // 「completed + 有正文」，动作条会先闪一下。通话还在进行时、既无结局印章也无失败
   // 证据的任务轮不渲染动作条；挂断后（phase 回 idle）或印章落下后恢复。
   const suppressReplyActions =
-    isVoiceTurn && voiceCallInFlight && !turn.voiceWorkOutcome && !hasVoiceFailureEvidence;
+    (isVoiceTurn && voiceCallInFlight && !turn.voiceWorkOutcome && !hasVoiceFailureEvidence)
+    // 这一轮还在写就不摆动作条：答案没定稿时给出「复制/点赞/分叉」，等于请人给半句话
+    // 打分，而且正文每长一行动作条就往下跳一次（真机反馈 2026-08-01）。
+    || (isLastTurn && (Boolean(isSessionProcessing) || sessionIsRunning));
 
   const handleFork = async () => {
     if (!forkAnchor || isForking || isSessionProcessing || sessionIsRunning) return;
@@ -961,7 +964,6 @@ function getTurnRunStatus(turn: TraceTurn, t: Translations, streamingState?: Str
 }
 
 function getTurnPhase(turn: TraceTurn): string | null {
-  if (hasCancelledRunMarker(turn)) return '本轮已取消';
 
   // 这里曾经用路由摘要当轮次阶段（「已指定 岚析 执行」），既是内部审计口径，又跟
   // 旁边的 Auto 徽章自相矛盾。阶段该说这一轮在做什么，落到下面的能力/工具描述。
@@ -1076,7 +1078,9 @@ export function shouldHideTurnRunHeader(statusKey: string, statusTone: string): 
 const TurnRunHeader: React.FC<{ turn: TraceTurn; streamingState?: StreamingUiState }> = ({ turn, streamingState }) => {
   const { t } = useI18n();
   const status = getTurnRunStatus(turn, t, streamingState);
-  const phase = getTurnPhase(turn);
+  // 取消态：徽章说「已取消」，阶段位说停了什么、留了什么——底下那张同样写「已取消」
+  // 的大黄卡已经收起，一行说完，不再上下叠两条（2026-08-01 验收截图）。
+  const phase = status.key === 'cancelled' ? t.turnRun.detail.cancelled : getTurnPhase(turn);
   const completionSignal = getTurnCompletionSignal(turn, t);
   const failedTool = turn.nodes.find((node) => node.type === 'tool_call' && node.toolCall?.success === false)?.toolCall;
   const hasPhase = Boolean(phase?.trim());

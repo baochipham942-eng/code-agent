@@ -35,7 +35,7 @@ import { getSessionManager } from '../services';
 import type { PlanningService } from '../planning';
 import { DeepResearchMode, SemanticResearchOrchestrator } from '../research';
 import { analyzeTask } from './hybrid/taskRouter';
-import { classifyIntent } from '../routing/intentClassifier';
+import { classifyIntent, needsLlmIntentClassification } from '../routing/intentClassifier';
 import { getSessionStateManager } from '../session/sessionStateManager';
 import { getContextHealthService } from '../context/contextHealthService';
 import { ModelRouter } from '../model/modelRouter';
@@ -107,6 +107,7 @@ interface PendingSteerMessage {
 // ----------------------------------------------------------------------------
 // Agent Orchestrator
 // ----------------------------------------------------------------------------
+
 
 export class AgentOrchestrator {
   private configService: ConfigService;
@@ -293,7 +294,10 @@ export class AgentOrchestrator {
       if (analysis.taskType === 'research') {
         logger.info('Auto-detected research task (keyword match), routing to deep research pipeline');
         await this.runDeepResearchMode(content, options, sessionAwareOnEvent, modelConfig);
-      } else if (!['code', 'data', 'ppt', 'image', 'video'].includes(analysis.taskType)) {
+      } else if (
+        !['code', 'data', 'ppt', 'image', 'video'].includes(analysis.taskType)
+        && needsLlmIntentClassification(content)
+      ) {
         try {
           const modelRouter = new ModelRouter();
           const intent = await classifyIntent(content, modelRouter);
@@ -1024,6 +1028,13 @@ export class AgentOrchestrator {
         type: 'error',
         data: {
           message: error instanceof Error ? error.message : 'Unknown error',
+          // 同一次失败会经由多个出口各发一条 error（这里 + runFinalizer 的 RUN_FAILED）。
+          // 渲染侧按后到的覆盖，所以每一条都得带这一轮真跑的模型，缺一条就把前面
+          // 带对的那条盖掉——真机 2026-08-01：卡片指认了一个根本没跑过的模型。
+          details: {
+            provider: modelConfig.provider,
+            model: modelConfig.model,
+          },
         },
       });
       terminalError = error;

@@ -357,10 +357,14 @@ turnRun: {
     completed: '已完成',
   },
   detail: {
-    cancelling: '正在清理本轮流式输出和未完成工具',
+    cancelling: '正在停止这次回答',
     blocked: '本轮运行遇到错误，等待恢复或重新执行',
     resumable: '上次流式输出未完成，可从会话操作里继续',
-    cancelled: '本轮流式输出已停止，未保留半截内容',
+    // 原文写的是「未保留半截内容」，与实现相反：cancel() 会把已写出的内容连同
+    // [cancelled] 标记一起落库（真机实测点停止时屏幕约 360 字，库里存了 1492 字符）。
+    // 保留是对的——停止停的是这次输出，不是这个任务的记忆；用户已经看了一半，
+    // 抹掉等于白等。所以改文案对齐实现，而不是反过来砍掉保留。
+    cancelled: '已停止这次回答，已经写出来的内容都留着',
     waitingTool: '工具调用仍在返回结果',
     usingTools: '工具调用已开始，结果会并入当前回复',
     running: '内容正在流式写入当前回复',
@@ -793,10 +797,10 @@ turnRun: {
     completed: 'Completed',
   },
   detail: {
-    cancelling: 'Cleaning up this turn’s streaming output and unfinished tools',
+    cancelling: 'Stopping this reply',
     blocked: 'This turn ran into an error. Waiting to resume or retry.',
     resumable: 'The last stream was left unfinished. You can continue it from the session actions.',
-    cancelled: 'This turn’s stream was stopped; no partial content was kept.',
+    cancelled: 'Stopped this reply. What was already written is kept.',
     waitingTool: 'The tool call is still returning a result.',
     usingTools: 'A tool call has started; its result will be folded into the current reply.',
     running: 'Content is streaming into the current reply.',

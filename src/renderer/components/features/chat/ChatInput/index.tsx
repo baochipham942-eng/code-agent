@@ -128,7 +128,8 @@ export interface ChatInputProps {
     attachmentsCount: number;
     createdAt: number;
   }>;
-  onCancelQueuedRuntimeInput?: (id: string) => void;
+  /** @returns 是否真的撤回成功——成功才把内容退回输入框（已发出去的不能退）。 */
+  onCancelQueuedRuntimeInput?: (id: string) => void | Promise<boolean>;
   onSendQueuedRuntimeInput?: (id: string) => void;
   /** 是否有 Plan */
   hasPlan?: boolean;
@@ -148,22 +149,6 @@ export interface ChatInputHandle {
   setDraft: (draft: { content: string; attachments?: MessageAttachment[] }) => void;
   focus: () => void;
 }
-
-export const RuntimeInputShortcutHint: React.FC<{ isProcessing: boolean; hasDraft: boolean }> = ({ isProcessing, hasDraft }) => {
-  const { t } = useI18n();
-  if (!isProcessing || !hasDraft) return null;
-
-  return (
-    <div
-      data-testid="runtime-input-shortcut-hint"
-      className="px-4 pb-2 -mt-1 text-right text-[11px] text-zinc-500"
-    >
-      {typeof navigator !== 'undefined' && navigator.platform.toUpperCase().indexOf('MAC') >= 0
-        ? t.chatInput.runtimeInputShortcutHintMac
-        : t.chatInput.runtimeInputShortcutHintWin}
-    </div>
-  );
-};
 
 // ============================================================================
 // 实时通话入口的槽位判定（单真源，组件外可测）
@@ -993,7 +978,14 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
           items={queuedRuntimeInputs}
           isProcessing={Boolean(isProcessing)}
           onSend={onSendQueuedRuntimeInput}
-          onCancel={onCancelQueuedRuntimeInput}
+          onCancel={async (id) => {
+            // 取消 = 这条没发出去，内容退回输入框，别让人重打一遍（真机反馈）。
+            const pending = queuedRuntimeInputs.find((item) => item.id === id);
+            const retracted = await onCancelQueuedRuntimeInput?.(id);
+            if (retracted && pending?.content) {
+              setValue((current) => (current.trim() ? `${current} ${pending.content}` : pending.content));
+            }
+          }}
         />
 
         {/* 实时通话 chrome：live 时底栏扩展（打字/附件入口保留在下方原处，§7.2） */}
@@ -1161,7 +1153,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
             onRemoveInlineChip={handleRemoveInlineChip}
             onInlineChipsChanged={handleInlineChipsChanged}
           />
-          <RuntimeInputShortcutHint isProcessing={Boolean(isProcessing)} hasDraft={Boolean(value.trim())} />
           {/* 底部工具栏。录音中这一行**原地变成波形条**（`+` 留在最左，波形铺中间，
               右侧 时长 + 停止 + 发送）——不在输入框上方另悬浮一条，也就不会出现
               两个发送键（产品负责人 2026-07-27 真机反馈，形态对齐 Codex composer）。

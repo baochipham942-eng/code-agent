@@ -31,6 +31,7 @@ import type {
 import type {
   AssistantMessagePayload,
   MessageDeltaPayload,
+  UserMessagePayload,
   MessageSnapshotPayload,
   ModelFallbackPayload,
   NormalizedToolTokenSavingsMeasurementSource,
@@ -609,6 +610,24 @@ export function normalizeStreamTextPayload(data: unknown): StreamTextPayload | n
     content,
     ...(getStringField(data, 'turnId') ? { turnId: getStringField(data, 'turnId') } : {}),
     ...(getBooleanField(data, 'isMeta') ? { isMeta: true } : {}),
+  };
+}
+
+/**
+ * 宿主自起轮次广播回来的用户消息。只认 role==='user' + 有 id 有正文的形状，
+ * 其余一律返回 null，交给 assistant 分支——两边共用 `message` 事件名。
+ */
+export function normalizeUserMessagePayload(data: unknown): UserMessagePayload | null {
+  if (!isRecord(data) || data.role !== 'user') return null;
+  const id = getStringField(data, 'id');
+  const content = getStringField(data, 'content');
+  if (!id || content === undefined) return null;
+  return {
+    id,
+    content,
+    ...(getNumberField(data, 'timestamp') !== undefined ? { timestamp: getNumberField(data, 'timestamp') } : {}),
+    ...(Array.isArray(data.attachments) ? { attachments: data.attachments as UserMessagePayload['attachments'] } : {}),
+    ...(isRecord(data.metadata) ? { metadata: data.metadata as UserMessagePayload['metadata'] } : {}),
   };
 }
 

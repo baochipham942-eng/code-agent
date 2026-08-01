@@ -333,6 +333,11 @@ let durableRunRuntime: DurableRunApplicationRuntime | undefined;
 let durableRunRolloutPolicy = resolveDurableRunRollout({});
 let durableRunRolloutReady = false;
 const queuedInputStartupSweep = createQueuedInputStartupSweepGate();
+/**
+ * 路由层的 drain 实例晚于 IPC handler 注册才建出来，用模块作用域把钩子传过去。
+ * 没有它，「入队时 session 已空闲」的那条消息就没人抽（release 时的 drain 早跑完了）。
+ */
+let onQueuedInputEnqueued: ((sessionId: string) => void) | null = null;
 let webMcpInitialized = false;
 
 // createApp() 的 durable run 状态注入：函数形式保证 app.ts 读到的始终是最新值
@@ -774,6 +779,7 @@ function registerHandlers(): void {
     setCurrentSessionId: (id: string) => {
       currentSessionId = id;
     },
+    onQueuedInputEnqueued: (sessionId) => onQueuedInputEnqueued?.(sessionId),
   };
 
   // setupAllIpcHandlers 会同时处理:
@@ -953,6 +959,7 @@ async function main(): Promise<void> {
     getDurableRunRollout,
     getDurableRunReadService,
     registerQueuedInputStartupSweep: (runStartupSweep) => queuedInputStartupSweep.registerTrigger(runStartupSweep),
+    registerQueuedInputEnqueueHook: (onEnqueued) => { onQueuedInputEnqueued = onEnqueued; },
   });
   queuedInputStartupSweep.maybeRun();
 

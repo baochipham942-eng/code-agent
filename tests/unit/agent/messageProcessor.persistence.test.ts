@@ -93,6 +93,7 @@ function createProcessor(
 describe('MessageProcessor persistence', () => {
   beforeEach(() => {
     delete process.env.CODE_AGENT_CLI_MODE;
+    delete process.env.CODE_AGENT_WEB_MODE;
     sessionManagerState.addMessage.mockReset();
     sessionManagerState.addMessageToSession.mockReset();
     sessionManagerState.addMessageToSession.mockResolvedValue(undefined);
@@ -125,6 +126,43 @@ describe('MessageProcessor persistence', () => {
     }]);
     expect(sessionManagerState.addMessageToSession).toHaveBeenCalledWith('runtime-session-1', ctx.messages[0]);
     expect(sessionManagerState.addMessage).not.toHaveBeenCalled();
+  });
+
+  // 2026-08-01 真机：webServer（桌面 app 也跑它）为 keytar 安全设 CODE_AGENT_CLI_MODE=true，
+  // 而这里只看那一个标志就 return——产品主路径上每一条转向消息都被静默丢弃：
+  // 模型答了、队列 consumed、用户消息全库零行、日志里连一条错误都没有。
+  it('persists steer messages in web mode even though web sets the CLI-mode flag', async () => {
+    process.env.CODE_AGENT_CLI_MODE = 'true';
+    process.env.CODE_AGENT_WEB_MODE = 'true';
+    const ctx = {
+      stats: RunStatsState.forTest(),
+      contextHealth: ContextHealthState.forTest(),
+      sessionId: 'runtime-session-1',
+      messages: [],
+    };
+    const processor = createProcessor(ctx as DeepPartial<RuntimeContext>);
+
+    await processor.injectSteerMessage('C1Q1 立即发送', 'queued-input-1');
+
+    expect(sessionManagerState.addMessageToSession).toHaveBeenCalledWith(
+      'runtime-session-1',
+      expect.objectContaining({ id: 'queued-input-1', role: 'user', content: 'C1Q1 立即发送' }),
+    );
+  });
+
+  it('skips persistence only for a pure CLI run', async () => {
+    process.env.CODE_AGENT_CLI_MODE = 'true';
+    const ctx = {
+      stats: RunStatsState.forTest(),
+      contextHealth: ContextHealthState.forTest(),
+      sessionId: 'runtime-session-1',
+      messages: [],
+    };
+    const processor = createProcessor(ctx as DeepPartial<RuntimeContext>);
+
+    await processor.injectSteerMessage('cli steer');
+
+    expect(sessionManagerState.addMessageToSession).not.toHaveBeenCalled();
   });
 
   // 2026-07-28：steer 路径此前把「拼了 turnSystemContext 的模型面内容」当用户消息落库，

@@ -1,6 +1,6 @@
 // useAgentSessionLifecycleEffects - agent_complete, error, stream_end, message completion, research_detected, research_mode_started, interrupt_start, interrupt_acknowledged, interrupt_complete, stale processing cleanup
 import { useEffect } from 'react';
-import type { AgentErrorMetadata, AgentEventEnvelope, Message, ResearchDetectedData } from '@shared/contract';
+import type { AgentErrorMetadata, AgentEventEnvelope, ResearchDetectedData } from '@shared/contract';
 import { createLogger } from '../../../utils/logger';
 import { useAppStore } from '../../../stores/appStore';
 import { useSessionStore } from '../../../stores/sessionStore';
@@ -8,6 +8,8 @@ import { useTaskStore, type SessionStatus } from '../../../stores/taskStore';
 import ipcService from '../../../services/ipcService';
 import type { AgentEffectsProps } from '../useAgentEffects';
 import { getAgentEventSessionId, isAgentEventForCurrentSession } from '../agentEventSession';
+// 草稿清理规则只有一份：这里原来复制了一个同名函数，改了流式那份也修不到停止这条路。
+import { removeUncommittedAssistantDraft } from './useConversationStreamEffects';
 
 const logger = createLogger('useAgent');
 
@@ -75,7 +77,10 @@ export function classifyAgentError(
     code: typeof payload.code === 'string' ? payload.code : undefined,
     traceId: getStringPayloadField(payload, 'traceId') ?? getStringPayloadField(payload, 'requestId'),
     rawMessage: message,
-    modelId: context?.modelId,
+    // host 在失败事件里带的是这一轮真跑的模型，优先用它；context 是前端当前选中的
+    // 模型，刚切过模型时会指认一个根本没跑过的模型，只能当兜底。
+    modelId: getStringPayloadField(payload.details, 'model') ?? context?.modelId,
+    provider: getStringPayloadField(payload.details, 'provider'),
     timestamp: Date.now(),
   };
   const explicitStatus = getNumberPayloadField(payload, 'httpStatus')
@@ -96,6 +101,23 @@ export function classifyAgentError(
   if (isGenericRunFailure(payload)) {
     const normalized = message.trim().toLowerCase();
     const hasStatus = (status: number) => new RegExp(`\\b${status}\\b`).test(message);
+
+    // 401 / invalid key / 余额欠费：重试一万次也没用，单独一档，别混进「请重试一次」。
+    // 小米 mimo 额度用尽返回的就是 401 "Invalid API Key"（真机 2026-08-01）。
+    if (
+      hasStatus(401)
+      || normalized.includes('invalid api key')
+      || normalized.includes('incorrect api key')
+      || normalized.includes('unauthorized')
+      || normalized.includes('insufficient')
+      || normalized.includes('quota')
+      || normalized.includes('exceeded your current quota')
+      || normalized.includes('欠费')
+      || normalized.includes('额度')
+      || normalized.includes('余额')
+    ) {
+      return { ...base, category: 'auth', httpStatus: explicitStatus ?? 401 };
+    }
 
     if (normalized.includes('concurrency limit exceeded')) {
       return { ...base, category: 'concurrency', httpStatus: explicitStatus };
@@ -134,13 +156,19 @@ export function classifyAgentError(
  * 错误若发生在任何 assistant 草稿之前（如首轮请求直接 404），补一条空 assistant
  * 消息承载卡片——否则这次失败在会话区完全不可见。
  */
-function attachAgentErrorToLatestAssistant(agentError: AgentErrorMetadata): void {
+export function attachAgentErrorToLatestAssistant(agentError: AgentErrorMetadata): void {
   const store = useSessionStore.getState();
   const messages = store.messages;
   const lastMessage = messages[messages.length - 1];
   if (lastMessage?.role === 'assistant') {
+    // 一次失败会从多个出口各发一条 error，后到的会覆盖先到的。谁带了这一轮真跑的
+    // 模型谁更有信息量——别让一条「只有 message」的把带了 provider/model 的盖掉。
+    const existing = lastMessage.metadata?.agentError;
+    const merged: AgentErrorMetadata = existing?.provider && !agentError.provider
+      ? { ...agentError, provider: existing.provider, modelId: existing.modelId ?? agentError.modelId }
+      : agentError;
     store.updateMessage(lastMessage.id, {
-      metadata: { ...lastMessage.metadata, agentError },
+      metadata: { ...lastMessage.metadata, agentError: merged },
     });
     return;
   }
@@ -153,6 +181,20 @@ function attachAgentErrorToLatestAssistant(agentError: AgentErrorMetadata): void
   });
 }
 
+/**
+ * 这条 `message` 事件是不是「模型这一轮说完了」——只有它才该把运行态放下。
+ *
+ * 只认 assistant：宿主自起的轮次会在轮次**开头**广播一条 user 消息给前端补气泡，
+ * 把它当轮末就是当场显示空闲、停止按钮消失，而后台还在跑（C3 那一族的老症状）。
+ * 带 toolCalls 的 assistant 也不算——那是这一轮中间的工具调用。
+ */
+export function endsTheTurn(data: unknown): boolean {
+  if (!data || typeof data !== 'object') return false;
+  const message = data as { role?: string; toolCalls?: unknown[] };
+  if (message.role === 'user') return false;
+  return !message.toolCalls || message.toolCalls.length === 0;
+}
+
 function clearRuntimeSessionState(sessionId: string): void {
   const currentStatus = useTaskStore.getState().sessionStates[sessionId]?.status;
   const shouldClear: SessionStatus[] = ['running', 'paused', 'queued', 'cancelling'];
@@ -163,17 +205,6 @@ function clearRuntimeSessionState(sessionId: string): void {
 
 function markRuntimeSessionCancelled(sessionId: string): void {
   useTaskStore.getState().updateSessionState(sessionId, { status: 'cancelled' });
-}
-
-function removeUncommittedAssistantDraft(
-  messages: Message[],
-  draftMessageId: string | null | undefined,
-): Message[] {
-  if (!draftMessageId) return messages;
-  const draft = messages.find((message) => message.id === draftMessageId);
-  if (draft?.role !== 'assistant') return messages;
-  if ((draft.toolCalls?.length || 0) > 0) return messages;
-  return messages.filter((message) => message.id !== draftMessageId);
 }
 
 function markLatestUserTurnCancelled(
@@ -261,7 +292,7 @@ export const useSessionLifecycleEffects = ({
       switch (event.type) {
         case 'message':
           lastEventAtRef.current = Date.now();
-          if (event.data && (!event.data.toolCalls || event.data.toolCalls.length === 0)) {
+          if (endsTheTurn(event.data)) {
             clearSessionProcessing();
           }
           break;

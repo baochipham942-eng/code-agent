@@ -692,10 +692,11 @@ function dataUrlToBlob(dataUrl: string): Blob {
  * 而且那条路走的是万相 inpaint（另一个模型、另一套能力）。换通道 = 换功能，是倒退不是修复。
  */
 const ANNOT_PROMPT_PREFIX =
-  'The red marks drawn on this image (strokes, arrows, boxes, and text labels) are the user\'s ' +
-  'annotations indicating WHERE and WHAT to change. They are NOT part of the picture content. ' +
-  'Apply the instruction below at the annotated locations, and make sure the output image contains ' +
-  'none of the red annotation marks.\n\nInstruction: ';
+  '这张图上的红色标记（线条、箭头、方框、文字）是我给你的批注，用来指出「改哪里」和「改成什么」，' +
+  '它们不是画面本身的内容。请按下面的指令在被标记的位置修改，并确保输出的图里不保留任何红色批注痕迹。\n' +
+  'The red marks on this image are annotations indicating WHERE and WHAT to change; they are NOT part of ' +
+  'the picture. Apply the instruction below at the annotated locations, and make sure the output image ' +
+  'contains none of the red annotation marks.\n\n指令 / Instruction: '
 
 /**
  * 标注重绘：把 renderer 拍扁的 [原图+标注] 整图喂模型编辑端点。

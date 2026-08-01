@@ -5,7 +5,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Stage, Layer, Rect as KonvaRect } from 'react-konva';
 import type Konva from 'konva';
-import { AlertCircle, Palette, GitCompare } from 'lucide-react';
+import { AlertCircle, Palette, GitCompare, MessageSquare, ImagePlus, PenLine } from 'lucide-react';
 import { useI18n } from '../../hooks/useI18n';
 import { CloseButton } from '../primitives';
 import { useDesignStore } from './designStore';
@@ -179,6 +179,13 @@ export const DesignCanvas: React.FC<{
 
   // 淘汰(软删除)的节点落盘保留但不在画布上呈现/参与对比。
   const visibleNodes = useMemo(() => nodes.filter((n) => !n.discarded), [nodes]);
+
+  // 空态（2026-08-01 工单③）：画布刚打开什么都没有时，主推「AI 生成图 → 精修」主线，
+  // 画图工具不直接铺开——收进空态引导卡上的「绘图」入口，点开才展开画布级工具条。
+  // 判定含图解形状/连线：用户经「绘图」入口画了形状后，画布已有内容，不再算空态。
+  const [drawingOpen, setDrawingOpen] = useState(false);
+  const canvasBare = visibleNodes.length === 0 && shapes.length === 0 && connectors.length === 0;
+  const showEmptyGuide = canvasBare && !drawingOpen;
 
   // 单选→局部重绘面板；双选→A/B 对比。
   const selectedNode =
@@ -845,7 +852,7 @@ export const DesignCanvas: React.FC<{
 
       {/* 顶栏按选中态反转（2026-07-31）：选中单个图节点 = 图像动词条（批注重绘/局部重绘/调整大小/扩图/更多），
           否则维持画布级图解工具条（模式/调色板/删除 + 导出 PPTX——2026-08-01 工单②收进这条，
-          作用对象都是整块画布）。
+          作用对象都是整块画布）。空态（工单③）不铺开工具条——主推主线引导，工具收进「绘图」入口。
           2026-08-01 f1：图解工具条外条满宽修 shrink-to-fit 半宽换行（700px 栏不再莫名二排）。 */}
       {selectedImageNode ? (
         <DesignImageToolbar
@@ -885,7 +892,7 @@ export const DesignCanvas: React.FC<{
           annotShapeCount={annotShapes.length}
           onAnnotRedraw={() => void onAnnotRedraw()}
         />
-      ) : (
+      ) : showEmptyGuide ? null : (
         <DiagramToolbar
           tool={diagramTool}
           onToolChange={(tl) => {
@@ -954,11 +961,39 @@ export const DesignCanvas: React.FC<{
           );
         })()}
 
-      {visibleNodes.length === 0 && (
-        <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-2 px-8 text-sm text-zinc-500">
+      {/* 空态引导（2026-08-01 工单③）：画布刚打开时第一眼对的是主线「AI 生成图 → 精修」——
+          一句话说清这块画布是干什么的 + 两条主线入口（对话描述 / 拖入粘贴图）。
+          画图工具不在空态铺开，收进「绘图」入口，点开才展开画布级工具条（能力不删，只降级呈现）。
+          选「绘图」入口而非「有内容后才出现」：纯手绘流程图用户的需求不被堵死，入口成本一次点击。 */}
+      {showEmptyGuide && (
+        <div
+          data-testid="design-canvas-empty-guide"
+          className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-4 px-8 text-sm text-zinc-500"
+        >
           <Palette className="h-6 w-6 text-zinc-600" />
           {/* 窄栏下长文案会贴边溢出（2026-07-27 dogfood）：限宽 + 居中 + 行距 */}
           <span className="max-w-[36ch] text-center leading-relaxed">{t.design.canvasEmpty}</span>
+          <div className="flex flex-col gap-2 text-xs text-zinc-400">
+            <div className="flex items-center gap-2">
+              <MessageSquare className="h-3.5 w-3.5 shrink-0 text-sky-300" />
+              <span>{t.design.canvasEmptyChatEntry}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <ImagePlus className="h-3.5 w-3.5 shrink-0 text-emerald-300" />
+              <span>{t.design.canvasEmptyDropEntry}</span>
+            </div>
+          </div>
+          {/* ds-allow:start 空态「绘图」入口按钮与画布对比 CTA 同款裸 button（悬浮 rounded-full 胶囊样式，非 Button variant/形状） */}
+          <button
+            type="button"
+            data-testid="design-canvas-drawing-entry"
+            onClick={() => setDrawingOpen(true)}
+            className="pointer-events-auto inline-flex items-center gap-1.5 rounded-full border border-white/[0.12] bg-zinc-900/90 px-4 py-1.5 text-xs text-zinc-300 shadow-lg transition-colors hover:text-zinc-100"
+          >
+            <PenLine className="h-3.5 w-3.5" />
+            {t.design.canvasDrawingEntry}
+          </button>
+          {/* ds-allow:end */}
         </div>
       )}
 

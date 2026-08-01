@@ -204,6 +204,9 @@ export const zh = {
     previewEmpty: '填写需求并点「生成」，网页会在这里实时呈现',
     previewGenerating: '正在生成网页…',
     canvasEmpty: '在左侧对话里描述你想要的设计，AI 会把图生成到这块画布上。可平移、缩放。',
+    canvasEmptyChatEntry: '在左边对话里描述你想要的设计',
+    canvasEmptyDropEntry: '拖入 / 粘贴一张图',
+    canvasDrawingEntry: '绘图',
     canvasGenSoon: '画布已就绪。出图回灌与圈选标注迭代将在下一步接入',
     // 图像编辑词汇（圈选/标注/扩图/去水印/导出/成本）已拆入 ./designToolbar 域文件（1000 行门），
     // 经文件尾部 ...designToolbarZh.design 展开回本命名空间。

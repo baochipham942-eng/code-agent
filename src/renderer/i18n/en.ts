@@ -205,6 +205,9 @@ export const en: Translations = {
     previewEmpty: 'Fill in a requirement and click Generate — your web page renders here live',
     previewGenerating: 'Generating web page…',
     canvasEmpty: 'Describe what you want in the chat — AI generates designs onto this canvas. Pan & zoom to explore.',
+    canvasEmptyChatEntry: 'Describe the design you want in the chat on the left',
+    canvasEmptyDropEntry: 'Drag in or paste an image',
+    canvasDrawingEntry: 'Draw',
     canvasGenSoon: 'Canvas is ready. Image generation and lasso-annotation iteration land in the next step',
     // Image-edit vocabulary (annotate/lasso/expand/watermark/export/cost) moved to ./designToolbar
     // (1000-line gate); re-expanded at the end of this namespace via ...designToolbarEn.design.

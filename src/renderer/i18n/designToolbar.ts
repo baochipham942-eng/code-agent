@@ -59,6 +59,10 @@ export const designToolbarZh = {
     moreGroupCanvas: '整个画布',
     // 无可用标注模型时的降级说明（返工#4：禁用批注重绘入口并说明原因，不让用户点了才失败）
     annotNoAvailableModel: '没有可用的标注模型：请先在设置里配置图像模型的 API Key',
+    // —— 画布缩放控件（2026-08-01 K2：右下角读数 + 适配视口）——
+    zoomLevel: '缩放比例',
+    zoomFit: '适配视口',
+    zoomCustom: '输入缩放百分比，回车应用',
   },
 };
 
@@ -111,5 +115,8 @@ export const designToolbarEn = {
     moreGroupDerive: 'Derive',
     moreGroupCanvas: 'Whole canvas',
     annotNoAvailableModel: 'No annotation model available: configure an image model API key in Settings first',
+    zoomLevel: 'Zoom level',
+    zoomFit: 'Fit to view',
+    zoomCustom: 'Type a zoom percentage, Enter to apply',
   },
 };

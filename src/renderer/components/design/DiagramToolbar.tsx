@@ -35,12 +35,15 @@ export const DiagramToolbar: React.FC<DiagramToolbarProps> = ({
     { id: 'sticky', icon: <StickyNote className="h-4 w-4" />, label: t.design.diagramSticky },
   ];
   return (
-    <div
-      data-testid="diagram-toolbar"
-      // 窄栏适配（2026-07-26 打磨批 D D8）：7 工具+调色板一排约 350px，右栏（320px 档）
-      // 放不下。flex-wrap + max-w 限宽后窄栏自动二排收纳、宽栏一排维持现状。
-      className="absolute left-1/2 top-4 z-10 flex max-w-[calc(100%-1rem)] -translate-x-1/2 flex-wrap items-center justify-center gap-1 rounded-xl border border-white/[0.1] bg-zinc-900/90 px-2 py-1.5 shadow-xl backdrop-blur"
-    >
+    // 外条满宽不收货（2026-08-01 返工 f1）：absolute left-1/2 的 shrink-to-fit 可用宽只有容器一半，
+    // 700px 栏下 7 工具+调色板（一排约 350px）必换行成二排，第二排把左上的未选中引导提示盖住。
+    // 外条 left-2 right-2 满宽 + 内条居中 shrink-to-fit（同 fc3c958 图像动词条修法）；内条保留
+    // flex-wrap + max-w-full，320px 档仍自动二排收纳。
+    <div className="pointer-events-none absolute left-2 right-2 top-4 z-10 flex justify-center">
+      <div
+        data-testid="diagram-toolbar"
+        className="pointer-events-auto flex max-w-full flex-wrap items-center justify-center gap-1 rounded-xl border border-white/[0.1] bg-zinc-900/90 px-2 py-1.5 shadow-xl backdrop-blur"
+      >
       {tools.map((it) => (
         <button
           key={it.id}
@@ -89,6 +92,7 @@ export const DiagramToolbar: React.FC<DiagramToolbarProps> = ({
           </button>
         </>
       )}
+      </div>
     </div>
   );
 };

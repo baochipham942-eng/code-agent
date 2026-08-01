@@ -790,7 +790,9 @@ export const DesignCanvas: React.FC<{ showErrorBar?: boolean }> = ({ showErrorBa
       <DiscardedNodesTray />
 
       {/* 顶栏按选中态反转（2026-07-31）：选中单个图节点 = 图像动词条（批注重绘/局部重绘/调整大小/扩图/更多），
-          否则维持图解工具条（模式/调色板/删除）——未选中态一个像素不动。 */}
+          否则维持图解工具条（模式/调色板/删除）。
+          2026-08-01 f1：图解工具条外条满宽修 shrink-to-fit 半宽换行（700px 栏不再莫名二排）；
+          画布级「导出 PPTX」在未选中态回右上角（见下方独立按钮）。 */}
       {selectedImageNode ? (
         <DesignImageToolbar
           t={t}
@@ -970,8 +972,12 @@ export const DesignCanvas: React.FC<{ showErrorBar?: boolean }> = ({ showErrorBa
         onFocus={focusNode}
       />
 
-      {selectedIds.length === 0 && visibleNodes.length > 0 && (
-        <div className="pointer-events-none absolute left-4 top-4 rounded-lg bg-zinc-900/70 px-3 py-1.5 text-[11px] text-zinc-400 backdrop-blur">
+      {/* 未选中引导：原 top-4 与居中的 DiagramToolbar 同排，窄栏（700px）下被工具条压住只露半句
+          （2026-08-01 e5 证据）。挪到工具条下方并留足余量（top-24：320px 档工具条二排收纳时底缘
+          约 80px，也不许再压）；且只在 select 模式显示——连线/绘制模式该行居中位已被对应工具
+          引导占用，两条提示不能叠。限宽躲开右侧图层面板（w-80 + right-4），窄栏自动折行也不许被盖。 */}
+      {selectedIds.length === 0 && visibleNodes.length > 0 && diagramTool === 'select' && (
+        <div className="pointer-events-none absolute left-4 top-24 max-w-[max(12rem,calc(100%-22rem))] rounded-lg bg-zinc-900/70 px-3 py-1.5 text-[11px] leading-snug text-zinc-400 backdrop-blur">
           {t.design.canvasSelectHint} · {t.design.compareHint}
         </div>
       )}

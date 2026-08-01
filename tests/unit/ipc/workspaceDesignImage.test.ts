@@ -7,7 +7,7 @@
 // ============================================================================
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -62,11 +62,17 @@ import {
   handleListVisualImageModels,
   handleEditImageByAnnotation,
 } from '../../../src/host/ipc/workspace.ipc';
+import { handleImportDesignImageFromPath } from '../../../src/host/ipc/workspaceDesignMedia.ipc';
 
 let workDir: string;
 let designRoot: string;
 let baseImagePath: string;
 let outputPath: string;
+
+const VALID_PNG = Buffer.from([
+  0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+  0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+]);
 
 beforeEach(async () => {
   workDir = await mkdtemp(join(tmpdir(), 'design-image-ipc-'));
@@ -338,5 +344,99 @@ describe('handleEditImageByAnnotation', () => {
       handleEditImageByAnnotation({ model: 'gpt-image-2', annotatedImageDataUrl: 'data:image/png;base64,QUJD', instruction: 'x', outputPath: '/tmp/evil.png' }),
     ).rejects.toThrow(/越界/);
     expect((svc.editImageByAnnotation as any).mock.calls.length).toBe(0);
+  });
+});
+
+describe('handleImportDesignImageFromPath', () => {
+  let workspaceRoot: string;
+  let outsideRoot: string;
+  let sourcePath: string;
+  let importOutputPath: string;
+
+  beforeEach(async () => {
+    workspaceRoot = join(workDir, 'workspace');
+    outsideRoot = join(workDir, 'outside');
+    sourcePath = join(workspaceRoot, 'media', 'source.png');
+    importOutputPath = join(designRoot, 'run', 'assets', 'imported.png');
+    await mkdir(join(workspaceRoot, 'media'), { recursive: true });
+    await mkdir(outsideRoot, { recursive: true });
+    await writeFile(sourcePath, VALID_PNG);
+  });
+
+  it('拒绝用 .. 从当前工作目录穿越到允许根之外', async () => {
+    const outsidePath = join(outsideRoot, 'traversal.png');
+    await writeFile(outsidePath, VALID_PNG);
+    await mkdir(join(workspaceRoot, 'nested'), { recursive: true });
+    const traversalPath = `${workspaceRoot}/nested/../../outside/traversal.png`;
+
+    await expect(
+      handleImportDesignImageFromPath({ sourcePath: traversalPath, outputPath: importOutputPath }, workspaceRoot),
+    ).rejects.toThrow(/sourcePath.*越界/);
+  });
+
+  it('拒绝允许根之外伪装成图片的绝对路径', async () => {
+    const outsidePath = join(outsideRoot, 'absolute.png');
+    await writeFile(outsidePath, VALID_PNG);
+
+    await expect(
+      handleImportDesignImageFromPath({ sourcePath: outsidePath, outputPath: importOutputPath }, workspaceRoot),
+    ).rejects.toThrow(/sourcePath.*越界/);
+  });
+
+  it('拒绝当前工作目录内指向允许根之外的 symlink', async () => {
+    const outsidePath = join(outsideRoot, 'symlink-target.png');
+    const linkPath = join(workspaceRoot, 'media', 'escaped.png');
+    await writeFile(outsidePath, VALID_PNG);
+    await symlink(outsidePath, linkPath);
+
+    await expect(
+      handleImportDesignImageFromPath({ sourcePath: linkPath, outputPath: importOutputPath }, workspaceRoot),
+    ).rejects.toThrow(/sourcePath.*越界/);
+  });
+
+  it('复制允许根内的图片且源与目标逐字节相同', async () => {
+    const result = await handleImportDesignImageFromPath(
+      { sourcePath, outputPath: importOutputPath },
+      workspaceRoot,
+    );
+
+    expect(result).toEqual({ path: importOutputPath });
+    expect(await readFile(importOutputPath)).toEqual(VALID_PNG);
+  });
+
+  it('拒绝越出设计目录的 outputPath', async () => {
+    await expect(
+      handleImportDesignImageFromPath(
+        { sourcePath, outputPath: join(outsideRoot, 'output.png') },
+        workspaceRoot,
+      ),
+    ).rejects.toThrow(/outputPath.*越界/);
+  });
+
+  it('源文件不存在时指名 sourcePath 与问题', async () => {
+    await expect(
+      handleImportDesignImageFromPath(
+        { sourcePath: join(workspaceRoot, 'media', 'missing.png'), outputPath: importOutputPath },
+        workspaceRoot,
+      ),
+    ).rejects.toThrow(/sourcePath.*不存在/);
+  });
+
+  it('拒绝非图片扩展名', async () => {
+    const textPath = join(workspaceRoot, 'media', 'notes.txt');
+    await writeFile(textPath, 'not an image');
+
+    await expect(
+      handleImportDesignImageFromPath({ sourcePath: textPath, outputPath: importOutputPath }, workspaceRoot),
+    ).rejects.toThrow(/sourcePath.*图片类型/);
+  });
+
+  it('拒绝扩展名是图片但 magic bytes 不匹配的文件', async () => {
+    const fakePngPath = join(workspaceRoot, 'media', 'fake.png');
+    await writeFile(fakePngPath, 'plain text disguised as png');
+
+    await expect(
+      handleImportDesignImageFromPath({ sourcePath: fakePngPath, outputPath: importOutputPath }, workspaceRoot),
+    ).rejects.toThrow(/sourcePath.*文件内容与扩展名不匹配/);
   });
 });

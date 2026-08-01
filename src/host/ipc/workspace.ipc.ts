@@ -81,6 +81,7 @@ import {
   handleGenerateDesignImage,
   handleEditImageByAnnotation,
   handleImportDesignImage,
+  handleImportDesignImageFromPath,
   handleEditDesignImage,
   handleExpandDesignImage,
   handleRemoveWatermarkDesignImage,
@@ -925,6 +926,12 @@ export function registerWorkspaceHandlers(
           break;
         case 'importDesignImage':
           data = await handleImportDesignImage(payload as { dataUrl: string; outputPath: string });
+          break;
+        case 'importDesignImageFromPath':
+          data = await handleImportDesignImageFromPath(
+            payload as { sourcePath: string; outputPath: string },
+            getAppService()?.getWorkingDirectory(),
+          );
           break;
         case 'expandDesignImage':
           data = await handleExpandDesignImage(

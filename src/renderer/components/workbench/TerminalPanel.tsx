@@ -39,8 +39,9 @@ export const TerminalPanel: React.FC = () => {
   const currentSessionId = useSessionStore((state) => state.currentSessionId);
   const workingDirectory = useAppStore((state) => state.workingDirectory);
   const hostRef = useRef<HTMLDivElement | null>(null);
-  const termRef = useRef<Terminal | null>(null);
-  const fitRef = useRef<FitAddon | null>(null);
+  // cwd 只在建 PTY 那一刻有意义；放进 effect 依赖会让「用户改工作目录」白白重挂一次终端。
+  const workingDirectoryRef = useRef(workingDirectory);
+  workingDirectoryRef.current = workingDirectory;
   const [openedSessionId, setOpenedSessionId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -88,12 +89,18 @@ export const TerminalPanel: React.FC = () => {
     term.loadAddon(fit);
     term.open(host);
     fit.fit();
-    termRef.current = term;
-    fitRef.current = fit;
-
     let disposed = false;
+    // 挂载竞态：订阅必须早于 open（否则漏帧），但快照是「open 那一刻」的前缀，
+    // 这中间到达的实时块如果直接写下去，会先出现一次、再随快照重复一次。
+    // 所以先攒着，等快照写完再按序回放。
+    let snapshotWritten = false;
+    const pending: string[] = [];
     const unsubscribe = ipcService.on(IPC_CHANNELS.TERMINAL_OUTPUT, (event) => {
       if (event.sessionId !== openedSessionId) return;
+      if (!snapshotWritten) {
+        pending.push(event.data);
+        return;
+      }
       term.write(event.data);
     });
 
@@ -105,15 +112,21 @@ export const TerminalPanel: React.FC = () => {
       try {
         const snapshot = await invokeDomain<TerminalSnapshot>(IPC_DOMAINS.TERMINAL, 'open', {
           sessionId: openedSessionId,
-          cwd: workingDirectory ?? undefined,
+          cwd: workingDirectoryRef.current ?? undefined,
           cols: term.cols,
           rows: term.rows,
         });
         if (disposed) return;
-        // 重新挂载：先补历史画面，再接实时流（open 之后到订阅之间没有窗口——订阅先于 open）。
         if (snapshot?.data) term.write(snapshot.data);
       } catch (err) {
         if (!disposed) setError(err instanceof Error ? err.message : String(err));
+      } finally {
+        // 无论快照拿没拿到都要开闸，否则实时输出会永远卡在 pending 里。
+        if (!disposed) {
+          snapshotWritten = true;
+          for (const chunk of pending) term.write(chunk);
+          pending.length = 0;
+        }
       }
     })();
 
@@ -137,11 +150,9 @@ export const TerminalPanel: React.FC = () => {
       unsubscribe?.();
       keyDisposable.dispose();
       term.dispose();
-      termRef.current = null;
-      fitRef.current = null;
       // 只卸 UI，不 close PTY：切走再切回来要能看到期间跑完的输出。
     };
-  }, [openedSessionId, workingDirectory]);
+  }, [openedSessionId]);
 
   if (!openedSessionId) {
     return (

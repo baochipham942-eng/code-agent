@@ -88,6 +88,31 @@ describe('TerminalPanel session binding', () => {
     expect(await screen.findByTestId('workbench-terminal-empty')).toBeTruthy();
   });
 
+  it('replays live chunks after the snapshot instead of duplicating them', async () => {
+    // 订阅必须早于 open（不然漏帧），但快照是「open 那一刻」的前缀——这中间到的实时块
+    // 直接写下去会先出现一次、再随快照重复一次。这条钉住「先攒后放」。
+    let releaseOpen: (value: unknown) => void = () => {};
+    invokeDomain.mockImplementation((_domain, action) => {
+      if (action === 'snapshot') return Promise.resolve(aliveSnapshot('chat-1'));
+      if (action === 'open') return new Promise((resolve) => { releaseOpen = resolve; });
+      return Promise.resolve(null);
+    });
+
+    render(<TerminalPanel />);
+    await screen.findByTestId('workbench-terminal-live');
+
+    // open 还没返回，实时输出先到了
+    const listener = ipcOn.mock.calls.at(-1)?.[1] as (e: { sessionId: string; data: string }) => void;
+    act(() => { listener({ sessionId: 'chat-1', data: 'LIVE' }); });
+    expect(termWrite).not.toHaveBeenCalledWith('LIVE');
+
+    await act(async () => { releaseOpen(aliveSnapshot('chat-1')); });
+
+    const order = termWrite.mock.calls.map(([chunk]) => chunk as string);
+    expect(order).toEqual(['previous output\r\n', 'LIVE']);
+    expect(order.filter((chunk) => chunk === 'LIVE')).toHaveLength(1);
+  });
+
   it('opens the terminal for the newly selected conversation after a session switch', async () => {
     invokeDomain.mockImplementation((_domain, action, payload) => (
       (action === 'snapshot' || action === 'open') && (payload as { sessionId: string }).sessionId === 'chat-2'

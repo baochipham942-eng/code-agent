@@ -937,7 +937,7 @@ describe('macOS release fail-closed gates', () => {
     for (const workflow of [releaseWorkflow, x64Workflow]) {
       expect(workflow).toContain('CUA_FETCH_UPSTREAM=1 bash scripts/fetch-cua-driver.sh');
       expect(workflow.indexOf('Import Developer ID certificate')).toBeLessThan(
-        workflow.indexOf('Fetch and re-sign CUA driver 0.8.1'),
+        workflow.indexOf('Fetch and re-sign CUA driver 0.14.2'),
       );
     }
   });

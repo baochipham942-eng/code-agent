@@ -202,7 +202,10 @@ describe('streamingStatePresentation', () => {
 
     expect(hasCancelledRunMarker(turn)).toBe(true);
     expect(state.status).toBe('cancelled');
-    expect(state.detail).toContain('未保留半截内容');
+    // 停止语义：停的是这次输出，不是这个任务的记忆。cancel() 会把已写出的内容连同
+    // [cancelled] 标记落库，所以文案必须说「保留」，不能再声称「未保留半截内容」。
+    expect(state.detail).toContain('保留在上面');
+    expect(state.detail).not.toContain('未保留');
     expect(shouldShowStreamingState(state)).toBe(true);
   });
 

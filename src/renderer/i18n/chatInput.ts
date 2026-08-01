@@ -285,6 +285,7 @@ export const chatInputZh = {
   },
   chatInputSubmit: {
     scheduleParsingToast: '正在解析定时任务…',
+    sendStuckDraftRestored: '这条消息迟迟没有发出去，内容已经退回输入框。如果它稍后自己出现在对话里，就不用再发一次。',
     teamRecipeLaunchFailed: '团队没能启动，稍后再试',
     unnamedAutomation: '未命名自动化',
     resumeAfterWakeTitle: '唤醒后继续',
@@ -636,6 +637,7 @@ export const chatInputEn: typeof chatInputZh = {
   },
   chatInputSubmit: {
     scheduleParsingToast: 'Parsing the scheduled task…',
+    sendStuckDraftRestored: 'This message is taking too long to go out. Your text is back in the box — if it shows up in the conversation later, no need to send it again.',
     teamRecipeLaunchFailed: 'The team could not start — try again',
     unnamedAutomation: 'Unnamed automation',
     resumeAfterWakeTitle: 'Continue after wake-up',

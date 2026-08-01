@@ -98,7 +98,9 @@ export const DiagramToolbar: React.FC<DiagramToolbarProps> = ({
     // 700px 栏下 7 工具+调色板（一排约 350px）必换行成二排，第二排把左上的未选中引导提示盖住。
     // 外条 left-2 right-2 满宽 + 内条居中 shrink-to-fit（同 fc3c958 图像动词条修法）。
     // K1：内条不再 flex-wrap——放不下的由 useToolbarOverflow 实测后收折，任何宽度下只有一排。
-    <div ref={rootRef} className="pointer-events-none absolute left-2 right-2 top-4 z-10 flex justify-center">
+    // z-20（原 z-10 → K1 改）：调色板圆点浮层/⋯ 菜单要压过同为 z-10 但 DOM 序更靠后的
+    // 边栏面板（验收实测：浮层被面板压住点不到，同图像动词条 fc3c958 的修法）。
+    <div ref={rootRef} className="pointer-events-none absolute left-2 right-2 top-4 z-20 flex justify-center">
       {/* whitespace-nowrap + 各段 shrink-0：不许 flex 收缩/文字换行——否则溢出 hook 量到的
           是被挤压后的宽度，永远误判「放得下」（2026-08-01 验收实测翻车，同图像动词条）。 */}
       <div

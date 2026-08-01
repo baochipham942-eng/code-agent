@@ -15,6 +15,7 @@ import { mergeStreamSnapshotIntoMessages } from '../utils/streamRecoveryMessage'
 import ipcService from '../services/ipcService';
 import { useSessionUIStore } from './sessionUIStore';
 import { useAppStore } from './appStore';
+import { useTaskStore } from './taskStore';
 import { useAppshotsStore } from './appshotsStore';
 import { useDesignCanvasStore } from '../components/design/designCanvasStore';
 import { executeCreateSession } from './sessionCreate';
@@ -41,6 +42,15 @@ async function invokeAgentEngine<T>(action: string, payload?: unknown): Promise<
 let _switchCounter = 0;
 /** In-flight createSession promise — send path awaits to rebind to the new session. */
 let _pendingSessionCreate: Promise<Session | null> | null = null;
+
+/** run 已经收口的会话状态——收到这些就把前端的运行态放下。'archived' 不算 run 收尾，不在内。 */
+const TERMINAL_SESSION_STATUSES: ReadonlySet<string> = new Set([
+  'completed',
+  'error',
+  'interrupted',
+  'orphaned',
+  'idle',
+]);
 
 function invalidatePendingSessionSwitches(): void {
   _switchCounter += 1;
@@ -358,7 +368,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
       });
       try {
         const [session, sessionTasks] = await Promise.all([
-          invokeSession<Session & { messages?: Message[]; todos?: TodoItem[] } | null>('load', { sessionId }),
+          invokeSession<Session & { messages?: Message[]; todos?: TodoItem[]; activeRun?: boolean } | null>('load', { sessionId }),
           invokeSession<SessionTask[]>('getSessionTasks', { sessionId }),
         ]);
 
@@ -398,6 +408,14 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
               item.id === sessionId ? deriveCurrentSessionMeta(normalizedSession, loadedMessages) : item
             ),
           });
+          // 宿主说这个会话还有活跃 run（刷新/切回来时最常见）：前端的运行态是纯内存的，
+          // 不从宿主接回来就会显示空闲——而后台还在跑，停止按钮消失、排队卡还邀请你「立即发送」，
+          // 一点就跟正在跑的那轮撞车（2026-08-01 C3 真机）。终态由 run 收尾时广播的
+          // session:updated 负责清（见下面 SESSION_UPDATED 监听）。
+          if (session.activeRun) {
+            useAppStore.getState().setSessionProcessing(sessionId, true);
+            useTaskStore.getState().updateSessionState(sessionId, { status: 'running' });
+          }
           await refreshContextHealthForSession(sessionId, switchVersion);
         } else {
           // 后端返回 null/undefined — 仍然切换到该会话（显示空状态）
@@ -1053,6 +1071,15 @@ export async function initializeSessionStore(): Promise<void> {
           : session
       )),
     }));
+
+    // run 收尾时宿主一定会广播一次带终态的 session:updated（AgentRunController.updateSessionStatus），
+    // 而且是全局广播、不挑连接——这是「刷新后接回来的运行态」唯一的出口。没有它，
+    // switchSession 里按 activeRun 点亮的运行态会永远亮着（那一轮的 SSE 已经跟着旧页面断了，
+    // agent_complete 到不了这个新页面）。
+    if (updates?.status && TERMINAL_SESSION_STATUSES.has(updates.status)) {
+      useAppStore.getState().setSessionProcessing(sessionId, false);
+      useTaskStore.getState().updateSessionState(sessionId, { status: 'idle' });
+    }
 
     if (useSessionStore.getState().currentSessionId === sessionId && updates.workingDirectory !== undefined) {
       useAppStore.getState().setWorkingDirectory(updates.workingDirectory ?? null);

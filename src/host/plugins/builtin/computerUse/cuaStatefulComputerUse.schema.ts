@@ -2,7 +2,7 @@ import type { ToolSchema } from '../../../protocol/tools';
 
 export const cuaStatefulComputerUseSchema: ToolSchema = {
   name: 'computer_use',
-  description: `Stateful macOS computer use backed by cua-driver 0.8.1+.
+  description: `Stateful macOS computer use backed by cua-driver 0.14.2+.
 
 Use one operation at a time:
 1. list_roots to discover pid/windowId.

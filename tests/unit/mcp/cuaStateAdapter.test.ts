@@ -619,4 +619,58 @@ describe('CuaStateAdapter', () => {
     expect(rejected.response.result.error?.kind).toBe('stale_state');
     expect(driver.calls.filter((call) => call.toolName === 'click')).toHaveLength(0);
   });
+
+  // cua-driver 0.14.x 的 session_id_of 只读调用方显式传的 `session`，不再回落 daemon
+  // 注入的 `_session_id`，并显式拒绝空串与字面量 "default"。传错 = start_session 开局即死、
+  // end_session 结不掉会话。
+  describe('cua-driver 会话生命周期 id', () => {
+    const owner: CuaDriverCallContext = {
+      sessionId: 'conversation-1',
+      surfaceSessionId: 'surface_11111111-2222-3333-4444-555555555555',
+      runId: 'run-1',
+      agentId: 'agent-a',
+      toolCallId: 'lifecycle-1',
+    };
+
+    function lifecycleSessions(driver: FakeDriver, toolName: string): unknown[] {
+      return driver.calls
+        .filter((call) => call.toolName === toolName)
+        .map((call) => call.args.session);
+    }
+
+    it('start 与 end 传同一个非空、非 default 的 session id', async () => {
+      const driver = new FakeDriver();
+      const adapter = new CuaStateAdapter(driver);
+
+      await adapter.startSurfaceSession(owner);
+      await adapter.endSurfaceSession({ ...owner, toolCallId: 'lifecycle-2' });
+
+      const started = lifecycleSessions(driver, 'start_session');
+      const ended = lifecycleSessions(driver, 'end_session');
+      expect(started).toEqual([owner.surfaceSessionId]);
+      expect(ended).toEqual(started);
+      for (const id of [...started, ...ended]) {
+        expect(typeof id).toBe('string');
+        expect(id).not.toBe('');
+        expect(id).not.toBe('default');
+      }
+    });
+
+    it('缺 surfaceSessionId 的历史上下文仍配出稳定且可对上的 id', async () => {
+      const driver = new FakeDriver();
+      const adapter = new CuaStateAdapter(driver);
+      const legacy: CuaDriverCallContext = {
+        sessionId: 'conversation-1',
+        runId: 'run-1',
+        agentId: 'agent-a',
+        toolCallId: 'lifecycle-3',
+      };
+
+      // start 侧的显式前置校验挡住无 Surface 身份的上下文……
+      await expect(adapter.startSurfaceSession(legacy)).rejects.toThrow(/requires explicit session/);
+      // ……所以 end 侧也不会发出一个对不上的 end_session。
+      await adapter.endSurfaceSession(legacy);
+      expect(lifecycleSessions(driver, 'end_session')).toEqual([]);
+    });
+  });
 });

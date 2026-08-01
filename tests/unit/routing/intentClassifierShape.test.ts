@@ -24,3 +24,12 @@ describe('needsLlmIntentClassification', () => {
     expect(needsLlmIntentClassification('小米汽车怎么样？')).toBe(true);
   });
 });
+
+describe('classifyIntent 的快模型开关', () => {
+  it('allowQuickModel=false 时不调快模型，退回关键词档的结论', async () => {
+    const { classifyIntent } = await import('../../../src/host/routing/intentClassifier');
+    // 关键词档命中不了的表述，正常会去问快模型；关掉开关后应当直接 general
+    const result = await classifyIntent('把那个方案往下做', {} as never, { allowQuickModel: false });
+    expect(result).toEqual({ intent: 'general', references_past_context: false });
+  });
+});

@@ -60,7 +60,7 @@ else
       EXPECT_BIN_SHA="$UV_BIN_SHA256_X86_64_DARWIN"
       ;;
     *)
-      echo "❌ 不支持的 arch=$ARCH（仅 arm64 / x86_64）" >&2
+      echo "❌ 不支持的 arch=${ARCH}（仅 arm64 / x86_64）" >&2
       exit 1
       ;;
   esac

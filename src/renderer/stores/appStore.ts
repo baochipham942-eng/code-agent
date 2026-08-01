@@ -796,20 +796,16 @@ export const useAppStore = create<AppState>()((set, get) => ({
         lastActivatedAt: nextPreviewTabTick(),
         isLoaded: false,
       };
-      // LRU eviction when at capacity
+      // LRU eviction when at capacity — liveDev and file tabs now share the
+      // same one-tab-one-workbench-view scheme (`preview:${path}`), so eviction
+      // no longer needs to branch on kind.
       let carried = state.previewTabs;
       let workbenchCarried = state.workbenchTabs;
       if (carried.length >= MAX_PREVIEW_TABS) {
         const oldest = carried.reduce((a, b) => (a.lastActivatedAt <= b.lastActivatedAt ? a : b));
         carried = carried.filter((t) => t.id !== oldest.id);
-        if (oldest.kind === 'liveDev') {
-          if (!carried.some((candidate) => candidate.kind === 'liveDev')) {
-            workbenchCarried = workbenchCarried.filter((view) => view !== 'browser');
-          }
-        } else {
-          const evictedWorkbenchId: PreviewWorkbenchViewId = `preview:${oldest.path}`;
-          workbenchCarried = workbenchCarried.filter((w) => w !== evictedWorkbenchId);
-        }
+        const evictedWorkbenchId: PreviewWorkbenchViewId = `preview:${oldest.path}`;
+        workbenchCarried = workbenchCarried.filter((w) => w !== evictedWorkbenchId);
       }
       return {
         ...state,
@@ -836,8 +832,12 @@ export const useAppStore = create<AppState>()((set, get) => ({
   },
   setSelectedWorkspacePreviewId: (itemId) => set({ selectedWorkspacePreviewId: itemId }),
   openLivePreview: (devServerUrl, devServerSessionId, options) => {
-    noteSurfaceIntentNavigation('browser', options?.source ?? 'user');
+    // S2 归位（2026-07-31）：liveDev 预览曾借用 'browser' 这个 workbench view id
+    // 共享单一 tab-bar 槽位；'browser' 现在是 Agent 浏览器现场（BrowserAgentWindow）
+    // 专属 tab，liveDev 改走与文件预览同一套 `preview:${path}` 一对一 scheme。
+    noteSurfaceIntentNavigation('preview', options?.source ?? 'user');
     set((state) => {
+      const newWorkbenchId: PreviewWorkbenchViewId = `preview:${devServerUrl}`;
       const existing = state.previewTabs.find((t) => t.kind === 'liveDev' && t.path === devServerUrl);
       if (existing) {
         return {
@@ -853,10 +853,10 @@ export const useAppStore = create<AppState>()((set, get) => ({
                 }
               : t,
           ),
-          workbenchTabs: state.workbenchTabs.includes('browser')
+          workbenchTabs: state.workbenchTabs.includes(newWorkbenchId)
             ? state.workbenchTabs
-            : [...state.workbenchTabs, 'browser'],
-          activeWorkbenchTab: 'browser',
+            : [...state.workbenchTabs, newWorkbenchId],
+          activeWorkbenchTab: newWorkbenchId,
         };
       }
       const id = `ptab-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -878,19 +878,17 @@ export const useAppStore = create<AppState>()((set, get) => ({
       if (carried.length >= MAX_PREVIEW_TABS) {
         const oldest = carried.reduce((a, b) => (a.lastActivatedAt <= b.lastActivatedAt ? a : b));
         carried = carried.filter((t) => t.id !== oldest.id);
-        if (oldest.kind !== 'liveDev') {
-          const evictedWorkbenchId: PreviewWorkbenchViewId = `preview:${oldest.path}`;
-          workbenchCarried = workbenchCarried.filter((w) => w !== evictedWorkbenchId);
-        }
+        const evictedWorkbenchId: PreviewWorkbenchViewId = `preview:${oldest.path}`;
+        workbenchCarried = workbenchCarried.filter((w) => w !== evictedWorkbenchId);
       }
       return {
         ...state,
         previewTabs: [...carried, tab],
         activePreviewTabId: id,
-        workbenchTabs: workbenchCarried.includes('browser')
+        workbenchTabs: workbenchCarried.includes(newWorkbenchId)
           ? workbenchCarried
-          : [...workbenchCarried, 'browser'],
-        activeWorkbenchTab: 'browser',
+          : [...workbenchCarried, newWorkbenchId],
+        activeWorkbenchTab: newWorkbenchId,
       };
     });
   },
@@ -919,9 +917,9 @@ export const useAppStore = create<AppState>()((set, get) => ({
     set((state) => ({
       previewTabs: [],
       activePreviewTabId: null,
-      workbenchTabs: state.workbenchTabs.filter((w) => !isPreviewWorkbenchView(w) && w !== 'browser'),
-      activeWorkbenchTab: isPreviewWorkbenchView(state.activeWorkbenchTab) || state.activeWorkbenchTab === 'browser'
-        ? (state.workbenchTabs.find((w) => !isPreviewWorkbenchView(w) && w !== 'browser') ?? null)
+      workbenchTabs: state.workbenchTabs.filter((w) => !isPreviewWorkbenchView(w)),
+      activeWorkbenchTab: isPreviewWorkbenchView(state.activeWorkbenchTab)
+        ? (state.workbenchTabs.find((w) => !isPreviewWorkbenchView(w)) ?? null)
         : state.activeWorkbenchTab,
     }));
   },
@@ -931,16 +929,11 @@ export const useAppStore = create<AppState>()((set, get) => ({
       // V2-A: 关掉这个 tab 对应的 dev server（如果是 Code Agent 自起的）
       fireStopDevServer(closing?.devServerSessionId);
       const nextTabs = state.previewTabs.filter((t) => t.id !== id);
-      const closingWorkbenchId: WorkbenchViewId | null = closing
-        ? closing.kind === 'liveDev'
-          ? 'browser'
-          : `preview:${closing.path}`
-        : null;
-      const hasRemainingLivePreview = nextTabs.some((tab) => tab.kind === 'liveDev');
+      // liveDev 与 file 共享同一套一对一 `preview:${path}` scheme（S2 归位），
+      // 关闭逻辑不再需要按 kind 分支。
+      const closingWorkbenchId: WorkbenchViewId | null = closing ? `preview:${closing.path}` : null;
       const nextWorkbench = closingWorkbenchId
-        ? state.workbenchTabs.filter((view) => (
-            view !== closingWorkbenchId || (view === 'browser' && hasRemainingLivePreview)
-          ))
+        ? state.workbenchTabs.filter((view) => view !== closingWorkbenchId)
         : state.workbenchTabs;
 
       if (nextTabs.length === 0) {
@@ -966,9 +959,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
           a.lastActivatedAt >= b.lastActivatedAt ? a : b,
         );
         nextActiveId = survivor.id;
-        nextActiveWorkbench = survivor.kind === 'liveDev'
-          ? 'browser'
-          : `preview:${survivor.path}`;
+        nextActiveWorkbench = `preview:${survivor.path}`;
       }
       return {
         ...state,
@@ -988,11 +979,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
         previewTabs: state.previewTabs.map((t) =>
           t.id === id ? { ...t, lastActivatedAt: nextPreviewTabTick() } : t,
         ),
-        activeWorkbenchTab: target
-          ? target.kind === 'liveDev'
-            ? 'browser'
-            : `preview:${target.path}`
-          : state.activeWorkbenchTab,
+        activeWorkbenchTab: target ? `preview:${target.path}` : state.activeWorkbenchTab,
       };
     });
   },
@@ -1029,7 +1016,6 @@ export const useAppStore = create<AppState>()((set, get) => ({
     set,
     get,
     nextPreviewTabTick,
-    stopDevServer: fireStopDevServer,
   }),
 
   setWorkbenchCollapsed: (collapsed) => set({ workbenchCollapsed: collapsed, workbenchCollapsedByUser: collapsed }),

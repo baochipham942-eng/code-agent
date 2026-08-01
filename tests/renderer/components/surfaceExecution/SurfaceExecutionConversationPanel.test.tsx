@@ -22,6 +22,7 @@ describe('SurfaceExecutionConversationPanel', () => {
     const managed = surfaceSession({
       id: 'managed',
       title: '旅行网站首页',
+      state: 'waiting_permission',
       updatedAt: 9_000,
       evidence: [surfaceEvidence('shot-managed')],
       outputs: [{ ref: 'artifact-managed', kind: 'artifact', label: '旅行网站 HTML' }],
@@ -126,7 +127,7 @@ describe('SurfaceExecutionConversationPanel', () => {
   });
 
   it('filters wrong-conversation sessions and wrong-owner events before rendering', () => {
-    const owner = surfaceSession({ id: 'owner', title: 'Owner target' });
+    const owner = surfaceSession({ id: 'owner', title: 'Owner target', state: 'waiting_human' });
     const foreignScope = surfaceScope('foreign', 'conversation-2');
     owner.events.push(surfaceEvent(foreignScope, { userSummary: 'Foreign event must stay hidden' }));
 
@@ -162,6 +163,7 @@ describe('SurfaceExecutionConversationPanel', () => {
     const session = surfaceSession({
       id: 'safe',
       title: 'Safe target',
+      state: 'waiting_human',
       provider: 'browser_action selector=#password',
       evidence: [surfaceEvidence('grant-raw-evidence', {
         assetRef: 'data:image/png;base64,surface-secret-canary-asset',
@@ -206,7 +208,7 @@ describe('SurfaceExecutionConversationPanel', () => {
     render(
       <SurfaceExecutionConversationPanel
         conversationId="conversation-1"
-        sessions={[surfaceSession({ id: 'english', title: 'Checkout page' })]}
+        sessions={[surfaceSession({ id: 'english', title: 'Checkout page', state: 'waiting_human' })]}
       />,
     );
 
@@ -214,5 +216,71 @@ describe('SurfaceExecutionConversationPanel', () => {
     expect(screen.getByText('Live execution ledger')).toBeTruthy();
     expect(screen.getByText('Permission scope')).toBeTruthy();
     expect(screen.getByText('Execution timeline')).toBeTruthy();
+  });
+
+  // B1-R · R3：行内投影二分——常规态一行紧凑条，交互态保持完整卡
+  describe('B1-R · R3 compact projection', () => {
+    it('renders a one-line compact bar for routine running/completed browser sessions', () => {
+      render(
+        <SurfaceExecutionConversationPanel
+          conversationId="conversation-1"
+          sessions={[
+            surfaceSession({ id: 'managed', title: '旅行网站首页' }),
+            surfaceSession({ id: 'done', title: '结算页', state: 'completed', updatedAt: 6_000 }),
+          ]}
+          translations={surfaceExecutionZh}
+        />,
+      );
+
+      const bars = screen.getAllByTestId('surface-execution-compact-bar');
+      expect(bars).toHaveLength(2);
+      expect(bars[0].getAttribute('data-state')).toBe('completed');
+      expect(bars[0].textContent).toContain('浏览器 · 已完成');
+      expect(bars[1].getAttribute('data-state')).toBe('running');
+      expect(bars[1].textContent).toContain('浏览器 · 正在操作 managed.example.test');
+      expect(screen.queryByTestId('surface-execution-session')).toBeNull();
+      // 全部紧凑时连面板头（Surface 执行 / N 个执行会话 / 账本徽标）也一并省掉
+      expect(screen.queryByText('Surface 执行')).toBeNull();
+      expect(screen.queryByText('实时执行账本')).toBeNull();
+    });
+
+    it('keeps the full inline card when the session needs user interaction', () => {
+      render(
+        <SurfaceExecutionConversationPanel
+          conversationId="conversation-1"
+          sessions={[
+            surfaceSession({ id: 'managed', title: '旅行网站首页' }),
+            surfaceSession({ id: 'relay', title: '订单确认页', state: 'waiting_human', updatedAt: 6_000 }),
+          ]}
+          translations={surfaceExecutionZh}
+        />,
+      );
+
+      // 交互态完整卡不动，常规态仍收敛为紧凑条，面板头因完整卡存在而保留
+      expect(screen.getByTestId('surface-execution-session')).toBeTruthy();
+      expect(screen.getByTestId('surface-human-takeover-card')).toBeTruthy();
+      expect(screen.getAllByTestId('surface-execution-compact-bar')).toHaveLength(1);
+      expect(screen.getByText('2 个执行会话')).toBeTruthy();
+    });
+
+    it('opens the workbench browser tab when the compact bar is clicked', () => {
+      const original = useAppStore.getState().openWorkbenchTab;
+      const openWorkbenchTab = vi.fn();
+      useAppStore.setState({ openWorkbenchTab });
+      try {
+        render(
+          <SurfaceExecutionConversationPanel
+            conversationId="conversation-1"
+            sessions={[surfaceSession({ id: 'managed', title: '旅行网站首页' })]}
+            translations={surfaceExecutionZh}
+          />,
+        );
+
+        fireEvent.click(screen.getByTestId('surface-execution-compact-bar'));
+        expect(openWorkbenchTab).toHaveBeenCalledWith('browser', { source: 'user' });
+      } finally {
+        useAppStore.setState({ openWorkbenchTab: original });
+      }
+    });
   });
 });

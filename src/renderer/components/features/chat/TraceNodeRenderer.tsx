@@ -11,7 +11,7 @@ import type { ToolCall } from '@shared/contract';
 import type { WorkbenchMessageMetadata } from '@shared/contract/conversationEnvelope';
 import type { TurnTimelineNode as TurnTimelinePayload } from '@shared/contract/turnTimeline';
 import { stripAppshotBlocks } from '@shared/contract/appshot';
-import { extractUserRequest } from '@shared/utils/turnScaffold';
+import { extractUserRequest, stripSystemReminderBlocks } from '@shared/utils/turnScaffold';
 import { MessageContent } from './MessageBubble/MessageContent';
 import { restoreNeoTagTokenForDisplay } from './MessageBubble/triggerTokenHighlight';
 import { ToolCallDisplay } from './MessageBubble/ToolCallDisplay/index';
@@ -146,7 +146,7 @@ const UserNode: React.FC<{
   // 用户原话——包装是模型面，用户界面显示原话（UX round2 20f，定义在 shared/utils/turnScaffold）。
   // @neo 落库正文被剥了前缀（它兼任模型 prompt），渲染时补回展示，重启后也能看到带色的 @neo
   const displayContent = restoreNeoTagTokenForDisplay(
-    stripAppshotBlocks(extractUserRequest(content || '')),
+    stripSystemReminderBlocks(stripAppshotBlocks(extractUserRequest(content || ''))),
     Boolean(isNeoTagMessage),
   );
 

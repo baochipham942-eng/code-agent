@@ -135,9 +135,16 @@ function normalizeDraftDirectory(value?: string | null): string {
   return value?.trim() ?? '';
 }
 
-function isUntouchedNewSession(
-  session: Pick<SessionWithMeta, 'title' | 'messageCount' | 'turnCount' | 'isArchived' | 'workingDirectory' | 'status'>,
-  workingDirectory?: string | null,
+/**
+ * 「从没装过东西的真·新会话」。
+ *
+ * 冷启动会自动恢复 updated_at 最新的历史会话（见 initializeSessionStore）。那个会话若
+ * 恰好投影为空，界面上与真新会话不可区分，用户会以为自己在新会话里，首条消息却落进旧
+ * 会话（2026-08-01 事故）。欢迎页只对这个谓词为真的会话诚实——注意标题也要判：空会话
+ * 也可能带着旧标题（事故里的 a94592bc 就是 0 消息 + 「你好」标题）。
+ */
+export function isBlankNewSession(
+  session: Pick<SessionWithMeta, 'title' | 'messageCount' | 'turnCount' | 'isArchived' | 'status'>,
 ): boolean {
   if (session.isArchived || session.status === 'archived') {
     return false;
@@ -145,7 +152,14 @@ function isUntouchedNewSession(
   if ((session.title || '').trim() !== '新对话') {
     return false;
   }
-  if ((session.messageCount ?? 0) > 0 || (session.turnCount ?? 0) > 0) {
+  return (session.messageCount ?? 0) === 0 && (session.turnCount ?? 0) === 0;
+}
+
+function isUntouchedNewSession(
+  session: Pick<SessionWithMeta, 'title' | 'messageCount' | 'turnCount' | 'isArchived' | 'workingDirectory' | 'status'>,
+  workingDirectory?: string | null,
+): boolean {
+  if (!isBlankNewSession(session)) {
     return false;
   }
   return normalizeDraftDirectory(session.workingDirectory) === normalizeDraftDirectory(workingDirectory);

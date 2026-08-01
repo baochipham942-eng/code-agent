@@ -4,8 +4,10 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(dirname "${SCRIPT_DIR}")"
 
-CUA_APP_NAME="Agent Neo Computer Use"
-CUA_BUNDLE_ID="com.agentneo.computeruse"
+# 身份/产物名按 NEO_CHANNEL 派生（缺省=生产）。app_ready() 会校验 Info.plist 的
+# CFBundleIdentifier，写死值会导致换渠道后误判 not ready 而反复重建。
+# shellcheck source=lib/cua-channel.sh
+source "${SCRIPT_DIR}/lib/cua-channel.sh"
 STAGING_ROOT="${ROOT_DIR}/.tauri-resources.noindex"
 STAGED_APP="${STAGING_ROOT}/scripts/${CUA_APP_NAME}.app"
 LEGACY_APP="${SCRIPT_DIR}/${CUA_APP_NAME}.app"
@@ -65,10 +67,13 @@ if app_ready "${LEGACY_APP}"; then
   exit 0
 fi
 
+# 换渠道后必须带同一个 NEO_CHANNEL 去 fetch，否则重建出来的还是另一个渠道的产物。
+CHANNEL_PREFIX=""
+[[ "${NEO_CHANNEL:-production}" == "production" ]] || CHANNEL_PREFIX="NEO_CHANNEL=${NEO_CHANNEL} "
 cat >&2 <<EOF
-[stage-cua-driver-resource] missing staged ${CUA_APP_NAME}.app
+[stage-cua-driver-resource] missing staged ${CUA_APP_NAME}.app (bundle id ${CUA_BUNDLE_ID})
 Run one of:
-  CUA_FETCH_UPSTREAM=1 bash scripts/fetch-cua-driver.sh
-  bash scripts/fetch-cua-driver.sh
+  ${CHANNEL_PREFIX}CUA_FETCH_UPSTREAM=1 bash scripts/fetch-cua-driver.sh
+  ${CHANNEL_PREFIX}bash scripts/fetch-cua-driver.sh
 EOF
 exit 1

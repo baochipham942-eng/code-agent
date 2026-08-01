@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Check, ChevronRight, Film, Image as ImageIcon, Layers, LocateFixed, Trash2 } from 'lucide-react';
+import { Check, ChevronRight, Film, Image as ImageIcon, LocateFixed, Trash2 } from 'lucide-react';
 import {
   isReferenceNode,
   isVideoNode,
@@ -33,13 +33,8 @@ export const DesignLayerPanel: React.FC<{
   onDiscard: (id: string) => void;
   onDelete: (id: string) => void;
   onFocus: (id: string) => void;
-  /** 面板顶缘（px，相对画布容器）。默认 56（top-14）；DesignCanvas 按顶条实测底缘动态传入，
-      保证任意栏宽下面板不与顶条/导出按钮重叠（2026-08-01 窄栏遮挡工单）。 */
-  topOffset?: number;
-  /** 面板右缘（px，相对画布容器）。默认 16（right-4）；从右缘细边栏浮出时传 48 让开细边栏。 */
-  rightOffset?: number;
   translations?: Translations;
-}> = ({ nodes, selectedIds, onSelect, onRename, onSetChosen, onDiscard, onDelete, onFocus, topOffset, rightOffset, translations }) => {
+}> = ({ nodes, selectedIds, onSelect, onRename, onSetChosen, onDiscard, onDelete, onFocus, translations }) => {
   const { t: runtimeT } = useI18n();
   const t = translations ?? runtimeT;
   const ordered = useMemo(() => orderedLayerNodes(nodes), [nodes]);
@@ -56,23 +51,14 @@ export const DesignLayerPanel: React.FC<{
     if (next && next !== selected.label) onRename(selected.id, next);
   };
 
-  if (nodes.length === 0) return null;
+  // 纯内容组件（2026-08-01 工单①：图层/历史合并成一个边栏面板）——定位壳与 tab 条
+  // 由 DesignCanvasSidePanel 提供，这里只渲染图层 tab 的内容。
+  if (nodes.length === 0) {
+    return <p className="px-3 py-3 text-[11px] text-zinc-500">{t.design.layerPanelEmpty}</p>;
+  }
 
   return (
-    <div
-      className="absolute z-10 flex max-h-[70%] w-80 flex-col overflow-hidden rounded-lg border border-white/[0.10] bg-zinc-950/85 text-xs text-zinc-200 shadow-2xl backdrop-blur"
-      style={{ top: topOffset ?? 56, right: rightOffset ?? 16 }}
-    >
-      <div className="flex items-center justify-between border-b border-white/[0.08] px-3 py-2">
-        <div className="flex items-center gap-2 text-zinc-200">
-          <Layers className="h-3.5 w-3.5 text-fuchsia-300" />
-          <span>{t.design.layerPanelTitle}</span>
-        </div>
-        <span className="text-[11px] text-zinc-500">
-          {ordered.filter((node) => !node.discarded).length}/{ordered.length}
-        </span>
-      </div>
-
+    <div className="flex min-h-0 flex-col text-xs text-zinc-200">
       <div className="max-h-40 overflow-auto p-2">
         {ordered.map((node) => {
           const active = selectedIds.includes(node.id);

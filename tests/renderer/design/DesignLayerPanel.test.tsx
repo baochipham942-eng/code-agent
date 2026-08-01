@@ -71,8 +71,6 @@ describe('DesignLayerPanel', () => {
         onFocus={() => {}}
       />,
     );
-    expect(html).toContain('图层');
-    expect(html).toContain('1/2');
     expect(html).toContain('Hero');
     expect(html).toContain('主版');
     expect(html).toContain('已淘汰');
@@ -102,7 +100,6 @@ describe('DesignLayerPanel', () => {
         translations={en}
       />,
     );
-    expect(html).toContain('Layers');
     expect(html).toContain('Layer name');
     expect(html).toContain('Set main');
     expect(html).toContain('Discard');

@@ -72,8 +72,8 @@ vi.mock('../../../src/renderer/components/design/DesignImageToolbar', () => ({
   },
 }));
 
-vi.mock('../../../src/renderer/components/design/DesignLayerPanel', () => ({
-  DesignLayerPanel: () => null,
+vi.mock('../../../src/renderer/components/design/DesignCanvasSidePanel', () => ({
+  DesignCanvasSidePanel: () => null,
 }));
 
 vi.mock('../../../src/renderer/components/design/AnnotationLayer', () => ({

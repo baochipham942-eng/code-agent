@@ -16,10 +16,13 @@ import type { SurfaceExecutionConversationPanelProps } from './types';
 /**
  * B1-R·R3 行内投影二分：有右栏 workbench 浏览器现场后，行内只保留
  * 「需要用户此刻动手」的完整会话卡；常规执行中/已结束收敛为一行紧凑条。
- * 非 browser surface（本机电脑）右栏没有对应现场，保持完整卡。
+ * 非 browser surface（本机电脑）右栏没有对应现场，保持完整卡；
+ * 历史兼容记录（compat）没有可跳转的现场，同样保持完整卡。
  */
 function surfaceNeedsFullCard(session: RendererSurfaceSessionProjectionV1): boolean {
-  return session.session.surface !== 'browser' || surfaceNeedsInteraction(session);
+  return session.session.surface !== 'browser'
+    || session.source === 'compat'
+    || surfaceNeedsInteraction(session);
 }
 
 function eventBelongsToSession(

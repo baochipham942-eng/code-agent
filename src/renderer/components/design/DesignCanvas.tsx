@@ -5,7 +5,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Stage, Layer, Rect as KonvaRect } from 'react-konva';
 import type Konva from 'konva';
-import { AlertCircle, Palette, Loader2, GitCompare, Presentation } from 'lucide-react';
+import { AlertCircle, Palette, GitCompare } from 'lucide-react';
 import { useI18n } from '../../hooks/useI18n';
 import { CloseButton } from '../primitives';
 import { useDesignStore } from './designStore';
@@ -242,9 +242,9 @@ export const DesignCanvas: React.FC<{
   };
 
   // 顶条（图解工具条/图像动词条）实测底缘：窄栏下内条 flex-wrap 收成二/三排，底缘不再固定。
-  // 右列（导出 PPTX + 图层面板）和引导/提示文字都必须钉在它下面，否则窄栏下互相叠压——
-  // 402px 栏宽实测：导出按钮被工具条第二排调色板盖住、图层面板盖住工具条与引导文字
-  // （2026-08-01 窄栏遮挡工单，elementFromPoint 证据）。按工具条类型切换重挂观察。
+  // 边栏归一面板和提示文字都必须钉在它下面，否则窄栏下互相叠压——
+  // 402px 栏宽实测：图层面板盖住工具条（2026-08-01 窄栏遮挡工单，elementFromPoint 证据）。
+  // 按工具条类型切换重挂观察。
   const [topBarBottom, setTopBarBottom] = useState(56);
   const imageBarActive = selectedImageNode !== null;
   useEffect(() => {
@@ -670,18 +670,17 @@ export const DesignCanvas: React.FC<{
   const draftAndCommitted = draft ? [...annotations, draft] : annotations;
 
   // —— 顶条下方的垂直分区（2026-08-01 窄栏遮挡工单：三处不再抢同一块空间）——
-  // 右列：导出 PPTX 按钮钉在顶条实测底缘下；边栏归一面板（浮出时）再让出按钮高度，叠在按钮下方。
+  // 右列：边栏归一面板（浮出时）顶缘钉在顶条实测底缘下。
   // 左槽：连线/绘制模式提示专用，顶缘同右列、左对齐；
   // 可用宽 = 栏宽 − 左右边距 −（面板浮出时）面板宽 384 + 右缘偏移 48。不足 12rem 整条不显示——
   // 要么完整可读，要么干脆不显示，不许露一半被面板压住。
-  const exportPptxVisible = !selectedImageNode && visibleNodes.length > 0;
   const hintMaxWidth = size.w - 32 - (sidePanelOpen ? 432 : 0);
   const hintSlotFits = hintMaxWidth >= 192;
   const hintSlotStyle: React.CSSProperties = {
     top: topBarBottom + 8,
     maxWidth: sidePanelOpen ? hintMaxWidth : 'calc(100% - 2rem)',
   };
-  const sidePanelTop = topBarBottom + 8 + (exportPptxVisible ? 40 : 0);
+  const sidePanelTop = topBarBottom + 8;
 
   return (
     <div
@@ -845,9 +844,9 @@ export const DesignCanvas: React.FC<{
       <DiscardedNodesTray />
 
       {/* 顶栏按选中态反转（2026-07-31）：选中单个图节点 = 图像动词条（批注重绘/局部重绘/调整大小/扩图/更多），
-          否则维持图解工具条（模式/调色板/删除）。
-          2026-08-01 f1：图解工具条外条满宽修 shrink-to-fit 半宽换行（700px 栏不再莫名二排）；
-          画布级「导出 PPTX」在未选中态回右上角（见下方独立按钮）。 */}
+          否则维持画布级图解工具条（模式/调色板/删除 + 导出 PPTX——2026-08-01 工单②收进这条，
+          作用对象都是整块画布）。
+          2026-08-01 f1：图解工具条外条满宽修 shrink-to-fit 半宽换行（700px 栏不再莫名二排）。 */}
       {selectedImageNode ? (
         <DesignImageToolbar
           t={t}
@@ -897,6 +896,11 @@ export const DesignCanvas: React.FC<{
           onColorChange={setDiagramColor}
           canDelete={selectedDiagram !== null}
           onDelete={onDeleteSelectedDiagram}
+          exportPptx={
+            visibleNodes.length > 0
+              ? { exporting: exportingPptx, onExport: () => void exportCanvasPptx() }
+              : undefined
+          }
         />
       )}
 
@@ -1001,31 +1005,9 @@ export const DesignCanvas: React.FC<{
           );
         })()}
 
-      {/* 画布全幅 PPTX 导出（薄版）：画布级动作，未选中图节点（含选中非图节点）时占右列独立
-          按钮，保证无选中也可达；选中图节点时让位给图像动词条，入口收进「更多 ⋯ · 整个画布」组
-          （2026-08-01 返工#3 修正：上一版只在动词条里，未选中态导不了——功能倒退）。<1 张图时隐藏。
-          顶缘钉在顶条实测底缘下（原 top-4 在窄栏下被工具条二排收纳压住，402px 实测命中调色板）。 */}
-      {exportPptxVisible && (
-        <>
-          {/* ds-allow:start 画布操作栏沿用旧裸 button 样式，与同栏导出图片/PDF 按钮一致；design-mode 整体 W3 收口时统一迁 primitive */}
-          <button
-            type="button"
-            data-testid="design-canvas-export-pptx"
-            onClick={() => void exportCanvasPptx()}
-            disabled={exportingPptx}
-            className="absolute right-4 z-10 inline-flex items-center gap-1.5 rounded-lg border border-white/[0.1] bg-zinc-900/90 px-3 py-1.5 text-xs text-zinc-300 shadow-xl backdrop-blur transition-colors hover:text-zinc-100 disabled:opacity-50"
-            style={{ top: topBarBottom + 8 }}
-          >
-            {exportingPptx ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <Presentation className="h-3.5 w-3.5" />
-            )}
-            {t.design.exportCanvasPptx}
-          </button>
-          {/* ds-allow:end */}
-        </>
-      )}
+      {/* 画布全幅 PPTX 导出已收进画布级工具条（2026-08-01 工单②，见下方 DiagramToolbar 的
+          exportPptx 槽）——那条工具条作用对象是整块画布，导出整块画布所有节点属于这里；
+          选中图节点时的图级动词条维持「更多 · 整个画布」组入口。两种状态都可达。 */}
 
       {/* 边栏归一面板（2026-08-01 工单①：图层/历史同面板双 tab）默认收起：由右缘细边栏
           图标浮出、压在画布上；rightOffset 让开细边栏，保证「再点图标收回」全程可达。 */}

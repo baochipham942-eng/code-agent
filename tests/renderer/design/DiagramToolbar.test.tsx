@@ -52,4 +52,11 @@ describe('DiagramToolbar', () => {
     expect(html).toContain('连线'); // diagramConnect
     expect(html).toContain('便签'); // diagramSticky
   });
+
+  it('工单②：exportPptx 槽渲染画布级导出 PPTX 入口；不传则不渲染', () => {
+    expect(render()).not.toContain('design-canvas-export-pptx');
+    const html = render({ exportPptx: { exporting: false, onExport: () => {} } });
+    expect(html).toContain('data-testid="design-canvas-export-pptx"');
+    expect(html).toContain('导出 PPTX');
+  });
 });

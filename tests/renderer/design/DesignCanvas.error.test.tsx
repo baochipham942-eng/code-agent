@@ -102,7 +102,13 @@ vi.mock('../../../src/renderer/components/design/DiscardedNodesTray', () => ({
 }));
 
 vi.mock('../../../src/renderer/components/design/DiagramToolbar', () => ({
-  DiagramToolbar: () => null,
+  // 画布级工具条（含工单②收进来的导出 PPTX 槽）：按 props 渲染导出入口，验证接线。
+  DiagramToolbar: (props: { exportPptx?: { exporting: boolean; onExport: () => void } }) =>
+    props.exportPptx ? (
+      <button type="button" data-testid="design-canvas-export-pptx" onClick={props.exportPptx.onExport}>
+        导出 PPTX
+      </button>
+    ) : null,
 }));
 
 vi.mock('../../../src/renderer/components/design/DesignCanvasOverlays', () => ({
@@ -219,10 +225,11 @@ describe('DesignCanvas tab 错误条', () => {
   });
 });
 
-describe('导出 PPTX 双向入口（2026-08-01 返工#3 修正）', () => {
-  // 画布级动作：未选中 / 选中非图节点时右上角独立按钮必须在场——上一版只收在动词条「更多」里，
-  // 未选中态动词条不出现，导出整个不可达（功能倒退）。选中图节点时按钮让位给动词条。
-  it('未选中态：右上「导出 PPTX」按钮在场且可点击触发导出', async () => {
+describe('导出 PPTX 双向入口（2026-08-01 返工#3 修正 + 工单②归位）', () => {
+  // 画布级动作：未选中态入口在画布级工具条里（工单②从右上角独立按钮收进工具条）——
+  // 上一版只收在动词条「更多」里，未选中态动词条不出现，导出整个不可达（功能倒退）。
+  // 选中图节点时画布级工具条让位给动词条，PPTX 改由「更多 · 整个画布」承载。
+  it('未选中态：画布级工具条内「导出 PPTX」在场且可点击触发导出', async () => {
     useDesignCanvasStore.setState({
       runDir: '/tmp/design-run',
       nodes: [imageNode('data:image/png;base64,AAAA')],
@@ -243,7 +250,7 @@ describe('导出 PPTX 双向入口（2026-08-01 返工#3 修正）', () => {
     await waitFor(() => expect(designFiles.exportCanvasPptx).toHaveBeenCalledTimes(1));
   });
 
-  it('选中图节点：右上按钮让位，PPTX 入口改由动词条「更多 · 整个画布」承载', () => {
+  it('选中图节点：画布级工具条让位动词条，PPTX 入口改由「更多 · 整个画布」承载', () => {
     setCanvas(imageNode('data:image/png;base64,AAAA'));
     render(<DesignCanvasTab />);
 

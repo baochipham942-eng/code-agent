@@ -1,7 +1,9 @@
 // 图解工具条：模式切换（选择/连线/矩形/椭圆/线/文字/便签）+ 调色板 + 删除选中。
+// 未选中态这条就是「画布级工具条」——作用对象是整块画布的动作（导出 PPTX）也放这里
+// （2026-08-01 工单②：原先游离在右上角，跟工具条分离成两块）。
 // 配置/管理类不属此处——这是消费 surface，只放工具选择（feedback_neo_config_in_settings_ia）。
 import React from 'react';
-import { MousePointer2, Spline, Square, Circle, Minus, Type, StickyNote, Trash2 } from 'lucide-react';
+import { MousePointer2, Spline, Square, Circle, Minus, Type, StickyNote, Trash2, Loader2, Presentation } from 'lucide-react';
 import { useI18n } from '../../hooks/useI18n';
 import { DIAGRAM_PALETTE } from './designDiagramTypes';
 import type { DiagramCanvasTool } from './DiagramLayer';
@@ -14,6 +16,8 @@ interface DiagramToolbarProps {
   /** 有选中图解对象时显示删除按钮。 */
   canDelete: boolean;
   onDelete: () => void;
+  /** 画布级导出（整块画布 → PPTX）。画布上还没有图（无可导出内容）时不传。 */
+  exportPptx?: { exporting: boolean; onExport: () => void };
 }
 
 export const DiagramToolbar: React.FC<DiagramToolbarProps> = ({
@@ -23,6 +27,7 @@ export const DiagramToolbar: React.FC<DiagramToolbarProps> = ({
   onColorChange,
   canDelete,
   onDelete,
+  exportPptx,
 }) => {
   const { t } = useI18n();
   const tools: { id: DiagramCanvasTool; icon: React.ReactNode; label: string }[] = [
@@ -90,6 +95,27 @@ export const DiagramToolbar: React.FC<DiagramToolbarProps> = ({
           >
             <Trash2 className="h-4 w-4" />
           </button>
+        </>
+      )}
+      {exportPptx && (
+        <>
+          <div className="mx-1 h-5 w-px bg-white/[0.1]" />
+          {/* ds-allow:start 画布级导出按钮沿用工具条裸 button 风格，与相邻工具键一致；design-mode 整体 W3 收口时统一迁 primitive */}
+          <button
+            type="button"
+            data-testid="design-canvas-export-pptx"
+            onClick={exportPptx.onExport}
+            disabled={exportPptx.exporting}
+            className="inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-xs text-zinc-300 transition-colors hover:bg-white/[0.06] hover:text-zinc-100 disabled:opacity-50"
+          >
+            {exportPptx.exporting ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Presentation className="h-3.5 w-3.5" />
+            )}
+            {t.design.exportCanvasPptx}
+          </button>
+          {/* ds-allow:end */}
         </>
       )}
       </div>

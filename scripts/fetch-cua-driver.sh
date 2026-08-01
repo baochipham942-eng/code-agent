@@ -25,7 +25,7 @@
 
 set -euo pipefail
 
-CUA_DRIVER_VERSION="0.8.1"
+CUA_DRIVER_VERSION="0.14.2"
 # 重签身份：默认本机 Developer ID；CI 用 CUA_SIGN_IDENTITY 覆盖为 secret 注入的证书。
 CUA_SIGN_IDENTITY="${CUA_SIGN_IDENTITY:-Developer ID Application: jay lem (D7CVTJ72NV)}"
 
@@ -48,10 +48,12 @@ fi
 
 # ── CI / 无本机源环境：拉取上游 universal release 后用 Neo 证书重签 ──
 # checksum 来自同一 GitHub release 的 checksums.txt；版本、URL、sha 三者共同锁定。
+# 同一 release 有两个 darwin-universal 归档：要带 CuaDriver.app 的这个，不是
+# `-binary.tar.gz`（只有裸二进制，重签流程会找不到 .app）。
 CUA_UPSTREAM_TAG="cua-driver-rs-v${CUA_DRIVER_VERSION}"
 CUA_UPSTREAM_ARCHIVE="cua-driver-rs-${CUA_DRIVER_VERSION}-darwin-universal.tar.gz"
 CUA_UPSTREAM_URL="https://github.com/trycua/cua/releases/download/${CUA_UPSTREAM_TAG}/${CUA_UPSTREAM_ARCHIVE}"
-CUA_UPSTREAM_SHA256="dc6f901b03be002a5b4137ceafd9d02cb0eb0df9265e771c6530e7cfc0a6a4f2"
+CUA_UPSTREAM_SHA256="efc8f88a2f6e7424ab68d080331fd6aa94ef699153f2631d7a9214515151098c"
 TMP_ROOT=""
 
 cleanup_tmp() {
@@ -66,8 +68,16 @@ prepare_destination_root() {
   touch "$STAGING_ROOT/.metadata_never_index" 2>/dev/null || true
 }
 
+# 收尾步骤：主产物（重签好的 .app）此时已产出并通过校验，所以这里失败**不该致命**——
+# 但也不该无声。原写法 `>/dev/null 2>&1 || true` 两样都吞了：既看不到失败，也看不到原因，
+# 下一次构建再因为 staging 没登记而报个不相干的错，排查要从头来过。
+# 现在：仍然非致命，但把 stage 脚本的完整输出透出来。
 cleanup_legacy_script_app() {
-  bash "$SCRIPT_DIR/stage-cua-driver-resource.sh" >/dev/null 2>&1 || true
+  local stage_log
+  if ! stage_log="$(bash "$SCRIPT_DIR/stage-cua-driver-resource.sh" 2>&1)"; then
+    echo "⚠️ 旧 scripts/*.app 清理/登记未完成（不影响本次重签产物，但下次构建可能受影响）：" >&2
+    printf '%s\n' "$stage_log" | sed 's/^/    /' >&2
+  fi
 }
 
 # Apple 的 trusted timestamp 服务会间歇返回 errSecTimestampMissing。签名不能降级成
@@ -166,7 +176,7 @@ PLIST="$DEST_APP/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName $CUA_APP_NAME" "$PLIST" 2>/dev/null \
   || /usr/libexec/PlistBuddy -c "Add :CFBundleDisplayName string $CUA_APP_NAME" "$PLIST"
 
-# MCP stdio 不能直接执行二进制：0.8.1 的默认 `mcp` 会用
+# MCP stdio 不能直接执行二进制：上游默认的 `mcp` 会用
 # `open -a CuaDriver` 重启上游 daemon，TCC 因而仍归属 com.trycua.driver。
 # launcher 随 app 一起签名，通过具体 bundle URL 拉起 Neo 专用 daemon。
 if [[ ! -f "$MCP_LAUNCHER_SOURCE" ]]; then
@@ -193,11 +203,38 @@ if [[ ! -f "$ENTITLEMENTS" ]]; then
 fi
 
 # 先签内部二进制，再签 .app（避免 --deep 的已知坑），统一 hardened runtime + timestamp
-codesign_with_timestamp_retry "$DEST_BIN"
+#
+# 不要按名字只签 cua-driver：0.14.2 起 CuaDriver.app 的 MacOS/ 下多了 cua-cursor-theme，
+# 旧写法把它漏在上游签名（team YCK386LBJ7）里，于是 .app 内嵌了另一个 team 的可执行文件。
+# 本地 `codesign --verify --strict` 仍会通过（nested component 沿用自身签名是合法的），
+# 但正式发版的 Developer ID 签名 + 公证会拒——**这个坑只在发版那一刻炸，本地门抓不到**。
+# 改为枚举 MacOS/ 下全部可执行文件，上游以后再加二进制也不会再漏。
+while IFS= read -r -d '' nested_bin; do
+  codesign_with_timestamp_retry "$nested_bin"
+done < <(find "$DEST_APP/Contents/MacOS" -type f -perm +111 -print0)
 codesign_with_timestamp_retry "$DEST_APP"
 
 # ── 验证 ────────────────────────────────────────────────────
 codesign --verify --strict --verbose=2 "$DEST_APP"
+
+# 门：.app 内不得残留其他 team 签名的可执行文件。
+# `--verify --strict` 对此是盲的（它接受 nested component 的自有签名），公证不是。
+# 期望值取自刚签好的 .app 自身，不另立常量，避免两处 team id 走偏。
+APP_TEAM="$(codesign -dv "$DEST_APP" 2>&1 | awk -F= '/^TeamIdentifier=/{print $2}')"
+if [[ -z "$APP_TEAM" ]]; then
+  echo "❌ 读不到 ${DEST_APP} 的 TeamIdentifier，无法校验嵌套二进制签名一致性" >&2
+  exit 1
+fi
+while IFS= read -r -d '' nested_bin; do
+  nested_team="$(codesign -dv "$nested_bin" 2>&1 | awk -F= '/^TeamIdentifier=/{print $2}')"
+  if [[ "$nested_team" != "$APP_TEAM" ]]; then
+    echo "❌ 嵌套可执行文件签名 team 不一致：${nested_bin}" >&2
+    echo "   实际=${nested_team:-<无签名>}，期望=${APP_TEAM}（与 .app 一致）" >&2
+    echo "   这会让正式发版公证被拒；请确认该文件已进入上面的重签循环。" >&2
+    exit 1
+  fi
+done < <(find "$DEST_APP/Contents/MacOS" -type f -perm +111 -print0)
+
 NEW_ID="$(codesign -dv "$DEST_APP" 2>&1 | awk -F= '/^Identifier=/{print $2}')"
 if [[ "$NEW_ID" != "$CUA_BUNDLE_ID" ]]; then
   echo "❌ 重签后 bundle id=${NEW_ID}，期望 ${CUA_BUNDLE_ID}" >&2

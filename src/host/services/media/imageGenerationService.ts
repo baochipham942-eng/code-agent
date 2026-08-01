@@ -679,6 +679,25 @@ function dataUrlToBlob(dataUrl: string): Blob {
 }
 
 /**
+ * 标注图提示前缀（2026-08-01 B1）：告诉模型图上的红色标记是**用户的批注指令**，不是画面内容。
+ *
+ * 不加这段时，模型收到的只有「一张画着红线的图 + 用户原话指令」——没有任何线索能区分
+ * 「红线是指示」还是「红线是要画进去的东西」，红线会被当成图像内容复现进结果。
+ *
+ * 放在这一处 chokepoint：标注重绘只有这条出口（cap 守门只放行 gptimage engine），
+ * 所有调用方自动获得该前缀，不需要各自拼。
+ *
+ * 为什么不是「把标注栅格化成黑白 mask 走 editImageWithMask」：mask 只能表达 **哪块要改**，
+ * 表达不了 **改成什么**——箭头「把这个挪到那里」、文字「这儿写成 XX」的语义会整个丢掉，
+ * 而且那条路走的是万相 inpaint（另一个模型、另一套能力）。换通道 = 换功能，是倒退不是修复。
+ */
+const ANNOT_PROMPT_PREFIX =
+  'The red marks drawn on this image (strokes, arrows, boxes, and text labels) are the user\'s ' +
+  'annotations indicating WHERE and WHAT to change. They are NOT part of the picture content. ' +
+  'Apply the instruction below at the annotated locations, and make sure the output image contains ' +
+  'none of the red annotation marks.\n\nInstruction: ';
+
+/**
  * 标注重绘：把 renderer 拍扁的 [原图+标注] 整图喂模型编辑端点。
  * gptimage → OpenAI 兼容 /v1/images/edits（multipart：image+prompt+model）；取 b64。
  * 非 gptimage engine 暂不支持（cap 守门兜底，本期只实装 gpt-image-2）。
@@ -696,7 +715,7 @@ export async function editImageByAnnotation(input: {
   if (!cfg) throw new Error('gpt-image-2 需要在设置配置自定义端点 base 与 API Key。');
   const form = new FormData();
   form.append('model', GPTIMAGE_MODEL);
-  form.append('prompt', input.instruction);
+  form.append('prompt', ANNOT_PROMPT_PREFIX + input.instruction);
   form.append('n', '1');
   form.append('size', GPTIMAGE_DEFAULT_SIZE);
   form.append('image', dataUrlToBlob(input.annotatedImageDataUrl), 'annotated.png');

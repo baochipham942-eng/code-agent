@@ -12,6 +12,8 @@
 #   com.yansu.cuadriver，open -a 会歧义命中、弹错品牌。重签成自有 bundle id
 #   com.agentneo.computeruse + 名字 "Agent Neo Computer Use"，授权条目/弹窗即显示
 #   Agent Neo Computer Use，并消除多 CuaDriver 冲突。
+#   身份按渠道派生（NEO_CHANNEL=dev 走 .dev 后缀，见 scripts/lib/cua-channel.sh）：
+#   生产包与 dev 包共用一个 bundle id 时 TCC 会把两者记成同一客户端，授权了仍重弹。
 #
 # 设计原则（对齐 fetch-rtk.sh）:
 #   - 不 commit .app 进 git（产物在 .tauri-resources.noindex/，由 .gitignore 排除）
@@ -24,14 +26,14 @@
 set -euo pipefail
 
 CUA_DRIVER_VERSION="0.8.1"
-# 自有身份（弹窗/深链/图标都认这个 bundle id）
-CUA_BUNDLE_ID="com.agentneo.computeruse"
-CUA_APP_NAME="Agent Neo Computer Use"
 # 重签身份：默认本机 Developer ID；CI 用 CUA_SIGN_IDENTITY 覆盖为 secret 注入的证书。
 CUA_SIGN_IDENTITY="${CUA_SIGN_IDENTITY:-Developer ID Application: jay lem (D7CVTJ72NV)}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(dirname "$SCRIPT_DIR")"
+# 自有身份（弹窗/深链/图标都认这个 bundle id）。按 NEO_CHANNEL 派生，缺省=生产。
+# shellcheck source=lib/cua-channel.sh
+source "$SCRIPT_DIR/lib/cua-channel.sh"
 STAGING_ROOT="$ROOT_DIR/.tauri-resources.noindex"
 DEST_PARENT="$STAGING_ROOT/scripts"
 DEST_APP="$DEST_PARENT/$CUA_APP_NAME.app"
@@ -95,7 +97,7 @@ if [[ "${CUA_FETCH_UPSTREAM:-${CUA_FETCH_PREBUILT:-}}" == "1" ]]; then
   curl -fL --retry 3 -o "$TMP_TAR" "$CUA_UPSTREAM_URL"
   ACTUAL_SHA="$(shasum -a 256 "$TMP_TAR" | awk '{print $1}')"
   if [[ "$ACTUAL_SHA" != "$CUA_UPSTREAM_SHA256" ]]; then
-    echo "❌ sha256 不匹配: 实际=$ACTUAL_SHA 期望=$CUA_UPSTREAM_SHA256（供应链锁定，拒绝使用）" >&2
+    echo "❌ sha256 不匹配: 实际=${ACTUAL_SHA} 期望=${CUA_UPSTREAM_SHA256}（供应链锁定，拒绝使用）" >&2
     exit 1
   fi
   tar -xzf "$TMP_TAR" -C "$TMP_ROOT"
@@ -119,7 +121,7 @@ fi
 SOURCE_BIN="$SOURCE_APP/Contents/MacOS/cua-driver"
 SRC_VERSION="$("$SOURCE_BIN" --version 2>/dev/null | awk '{print $2}')" || SRC_VERSION=""
 if [[ "$SRC_VERSION" != "$CUA_DRIVER_VERSION" ]]; then
-  echo "❌ 源 cua-driver 版本=$SRC_VERSION，期望=$CUA_DRIVER_VERSION（供应链锁定）" >&2
+  echo "❌ 源 cua-driver 版本=${SRC_VERSION}，期望=${CUA_DRIVER_VERSION}（供应链锁定）" >&2
   echo "   升级官方驱动或调整 CUA_DRIVER_VERSION 后重试" >&2
   exit 1
 fi
@@ -186,7 +188,7 @@ install -m 0755 "$MCP_LAUNCHER_SOURCE" "$DEST_MCP_LAUNCHER"
 # Library Validation 会在运行时 SIGKILL（实测 exit 137）。专用 entitlements 关掉 LV。
 ENTITLEMENTS="$SCRIPT_DIR/cua-driver.entitlements"
 if [[ ! -f "$ENTITLEMENTS" ]]; then
-  echo "❌ 找不到 entitlements: $ENTITLEMENTS（应与本脚本同目录，随仓库提交）" >&2
+  echo "❌ 找不到 entitlements: ${ENTITLEMENTS}（应与本脚本同目录，随仓库提交）" >&2
   exit 1
 fi
 
@@ -198,7 +200,7 @@ codesign_with_timestamp_retry "$DEST_APP"
 codesign --verify --strict --verbose=2 "$DEST_APP"
 NEW_ID="$(codesign -dv "$DEST_APP" 2>&1 | awk -F= '/^Identifier=/{print $2}')"
 if [[ "$NEW_ID" != "$CUA_BUNDLE_ID" ]]; then
-  echo "❌ 重签后 bundle id=$NEW_ID，期望 $CUA_BUNDLE_ID" >&2
+  echo "❌ 重签后 bundle id=${NEW_ID}，期望 ${CUA_BUNDLE_ID}" >&2
   exit 1
 fi
 if [[ ! -x "$DEST_MCP_LAUNCHER" ]] || ! cmp -s "$MCP_LAUNCHER_SOURCE" "$DEST_MCP_LAUNCHER"; then

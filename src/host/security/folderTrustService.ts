@@ -535,9 +535,18 @@ function getTestDefaultProjectConfigTrust(): boolean | undefined {
   return undefined;
 }
 
-export function resetFolderTrustServiceForTest(): void {
+/**
+ * 关闭本服务持有的主库连接。退出路径必须调用 —— 本服务对
+ * `<userConfigDir>/code-agent.db` 开了一条独立连接，不关的话
+ * SQLite 不会删 -wal/-shm（见 src/web/webShutdownDatabases.ts）。
+ */
+export function closeFolderTrustService(): void {
   if (singleton) singleton.close();
   singleton = null;
+}
+
+export function resetFolderTrustServiceForTest(): void {
+  closeFolderTrustService();
 }
 
 export async function evaluateFolderTrust(workingDirectory: string): Promise<FolderTrustEvaluation> {

@@ -39,4 +39,13 @@ describe('design canvas session reminder (server-side affordance)', () => {
     expect(out).toContain('ProposeCanvasOps');
     expect(out).toContain('为空');
   });
+
+  // 注入卫生工单（2026-08-01）修 3：真机走查实证「通过侧边栏打开 example.com」在设计画布
+  // 会话被劫持成 ProposeCanvasOps 审批超时 5m38s——浏览网页不是画布视觉产物，补一条边界。
+  it('reminder 含边界句：浏览/打开网页不属于画布产物，改用浏览器 surface 工具', () => {
+    const r = formatDesignCanvasSessionReminder(true);
+    expect(r).toContain('浏览');
+    expect(r).toContain('浏览器 surface 工具');
+    expect(r).toContain('右栏浏览器 tab');
+  });
 });

@@ -28,7 +28,7 @@ const compactMocks = vi.hoisted(() => {
     getDb: vi.fn(() => null),
     getSession: vi.fn(() => null),
     getMessages: vi.fn(() => state.persistedMessages),
-    getRecentMessages: vi.fn(() => state.persistedMessages),
+    getRecentMessages: vi.fn((_sessionId: string, _messageLimit: number) => state.persistedMessages),
     saveSessionRuntimeState: vi.fn(),
   };
   const configService = {

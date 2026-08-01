@@ -59,4 +59,13 @@ describe('DiagramToolbar', () => {
     expect(html).toContain('data-testid="design-canvas-export-pptx"');
     expect(html).toContain('导出 PPTX');
   });
+
+  it('K1：量不到宽度（SSR）时全平铺——调色板展开、无圆点、无 ⋯', () => {
+    const html = render({ exportPptx: { exporting: false, onExport: () => {} } });
+    expect(html).not.toContain('diagram-palette-dot');
+    expect(html).not.toContain('diagram-toolbar-more');
+    for (const c of DIAGRAM_PALETTE) {
+      expect(html).toContain(`data-color="${c}"`);
+    }
+  });
 });

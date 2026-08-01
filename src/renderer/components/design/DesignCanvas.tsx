@@ -662,7 +662,7 @@ export const DesignCanvas: React.FC<{
 
   // —— 顶条下方的垂直分区（2026-08-01 窄栏遮挡工单：三处不再抢同一块空间）——
   // 右列：导出 PPTX 按钮钉在顶条实测底缘下；图层面板（浮出时）再让出按钮高度，叠在按钮下方。
-  // 左槽：未选中引导 / 连线·绘制模式提示共用同一槽位（本就互斥），顶缘同右列、左对齐；
+  // 左槽：连线/绘制模式提示专用，顶缘同右列、左对齐；
   // 可用宽 = 栏宽 − 左右边距 −（图层面板浮出时）面板宽 320 + 右缘偏移 48。不足 12rem 整条不显示——
   // 要么完整可读，要么干脆不显示，不许露一半被面板压住。
   const exportPptxVisible = !selectedImageNode && visibleNodes.length > 0;
@@ -892,7 +892,7 @@ export const DesignCanvas: React.FC<{
         />
       )}
 
-      {/* 图解模式提示（connect/绘制时给一句引导）：与未选中引导共用左侧槽位（两种提示本就互斥），
+      {/* 图解模式提示（connect/绘制时给一句引导）：左侧槽位，
           顶缘钉在顶条实测底缘下——原 top-16 居中，窄栏二排工具条下会压住/被压，且居中位会撞右列。 */}
       {diagramTool === 'connect' && hintSlotFits && (
         <div
@@ -1034,19 +1034,6 @@ export const DesignCanvas: React.FC<{
           topOffset={layerPanelTop}
           rightOffset={48}
         />
-      )}
-
-      {/* 未选中引导（select 模式专属槽位）：顶缘钉在顶条实测底缘下，限宽躲开右列图层面板；
-          可用宽不足 12rem 时整条不显示——要么完整可读，要么不显示，不许露一半被面板压住
-          （402px 实测引导被图层面板压掉大半只剩碎片）。连线/绘制模式本槽位让给对应工具提示。 */}
-      {selectedIds.length === 0 && visibleNodes.length > 0 && diagramTool === 'select' && hintSlotFits && (
-        <div
-          data-testid="design-canvas-select-hint"
-          className="pointer-events-none absolute left-4 rounded-lg bg-zinc-900/70 px-3 py-1.5 text-[11px] leading-snug text-zinc-400 backdrop-blur"
-          style={hintSlotStyle}
-        >
-          {t.design.canvasSelectHint} · {t.design.compareHint}
-        </div>
       )}
 
       {/* 双选 → A/B 对比入口 */}

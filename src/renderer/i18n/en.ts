@@ -206,11 +206,9 @@ export const en: Translations = {
     previewGenerating: 'Generating web page…',
     canvasEmpty: 'Describe what you want in the chat — AI generates designs onto this canvas. Pan & zoom to explore.',
     canvasGenSoon: 'Canvas is ready. Image generation and lasso-annotation iteration land in the next step',
-    canvasSelectHint: 'Select an image, then lasso a region for local repaint',
     // Image-edit vocabulary (annotate/lasso/expand/watermark/export/cost) moved to ./designToolbar
     // (1000-line gate); re-expanded at the end of this namespace via ...designToolbarEn.design.
     compareBtn: 'Compare these two',
-    compareHint: 'Shift-click two images for A/B compare',
     compareTitle: 'A/B version compare',
     setMainVersion: 'Set as main',
     discardVersion: 'Discard',

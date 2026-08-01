@@ -205,11 +205,9 @@ export const zh = {
     previewGenerating: '正在生成网页…',
     canvasEmpty: '在左侧对话里描述你想要的设计，AI 会把图生成到这块画布上。可平移、缩放。',
     canvasGenSoon: '画布已就绪。出图回灌与圈选标注迭代将在下一步接入',
-    canvasSelectHint: '点选一张图后可圈选区域做局部重绘',
     // 图像编辑词汇（圈选/标注/扩图/去水印/导出/成本）已拆入 ./designToolbar 域文件（1000 行门），
     // 经文件尾部 ...designToolbarZh.design 展开回本命名空间。
     compareBtn: '对比这两版',
-    compareHint: '按住 Shift 点选两张图进行 A/B 对比',
     compareTitle: 'A/B 版本对比',
     setMainVersion: '设为主版',
     discardVersion: '淘汰',

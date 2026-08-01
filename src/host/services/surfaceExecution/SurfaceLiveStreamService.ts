@@ -60,14 +60,12 @@ export class SurfaceLiveStreamService {
     await this.stopActive();
 
     const session = this.runtime.sessions.get(request.surfaceSessionId);
-    if (!session
-      || session.conversationId !== request.conversationId
-      || session.surface !== 'browser') {
+    if (session?.conversationId !== request.conversationId || session.surface !== 'browser') {
       return this.refused(request.surfaceSessionId, 'unsupported');
     }
 
     const binding = this.adapter.findBindingBySurfaceSessionId(request.surfaceSessionId);
-    if (!binding || !binding.browserService.isRunning()) {
+    if (!binding?.browserService.isRunning()) {
       return this.refused(request.surfaceSessionId, 'not_running');
     }
     const page = binding.browserService.getActiveTab()?.page;

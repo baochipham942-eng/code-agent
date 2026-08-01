@@ -44,15 +44,33 @@ export const TerminalPanel: React.FC = () => {
   const [openedSessionId, setOpenedSessionId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const openTerminal = useCallback(async () => {
+  const openTerminal = useCallback(() => {
     if (!currentSessionId) return;
     setError(null);
     setOpenedSessionId(currentSessionId);
   }, [currentSessionId]);
 
-  // 切会话 = 切实例：卸掉上一个会话的 xterm，别把两个会话的输出串在一块。
+  // 切会话 = 切实例：先卸掉上一个会话的 xterm（别把两个会话的输出串在一块），再问宿主
+  // 这个会话是不是已经有活着的 PTY——有就直接挂回去。PTY 活着却让用户重按一次「打开终端」，
+  // 是把「面板重新挂载」当成了「终端不存在」。
   useEffect(() => {
     setOpenedSessionId(null);
+    if (!currentSessionId) return undefined;
+
+    let cancelled = false;
+    void (async () => {
+      try {
+        const existing = await invokeDomain<TerminalSnapshot | null>(
+          IPC_DOMAINS.TERMINAL,
+          'snapshot',
+          { sessionId: currentSessionId },
+        );
+        if (!cancelled && existing?.alive) setOpenedSessionId(currentSessionId);
+      } catch {
+        /* 问不到就当没有，用户可以自己按「打开终端」 */
+      }
+    })();
+    return () => { cancelled = true; };
   }, [currentSessionId]);
 
   useEffect(() => {

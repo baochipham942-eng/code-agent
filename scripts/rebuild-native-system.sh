@@ -43,7 +43,15 @@ NPM_CACHE_DIR="$TEMP_DIR/npm-cache"
 
 cd "$TEMP_DIR"
 npm init -y --silent > /dev/null 2>&1
-npm install "better-sqlite3@$BETTER_SQLITE3_VERSION" --build-from-source --cache "$NPM_CACHE_DIR" --silent 2>&1 | tail -1
+NPM_INSTALL_LOG="$TEMP_DIR/npm-install.log"
+# 不加 --silent：npm 在 --silent 下会连 ECONNREFUSED 等失败信息一起吞掉（实测验证），
+# 靠这里的日志文件 + 分支输出来控制"成功时克制、失败时完整"，而不是靠 npm 自己的 loglevel。
+if ! npm install "better-sqlite3@$BETTER_SQLITE3_VERSION" --build-from-source --cache "$NPM_CACHE_DIR" > "$NPM_INSTALL_LOG" 2>&1; then
+  echo "npm install 失败，完整日志：" >&2
+  cat "$NPM_INSTALL_LOG" >&2
+  exit 1
+fi
+tail -1 "$NPM_INSTALL_LOG"
 
 # 复制编译产物到 dist/native/
 rm -rf "$NATIVE_DIR"

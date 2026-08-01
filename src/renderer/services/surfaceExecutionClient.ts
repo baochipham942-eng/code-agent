@@ -2,6 +2,8 @@ import type {
   SurfaceConversationSnapshotV1,
   SurfaceFramePayloadV1,
   SurfaceFrameRequestV1,
+  SurfaceLiveStreamRequestV1,
+  SurfaceLiveStreamStateV1,
   SurfaceOutputPayloadV1,
   SurfaceOutputRequestV1,
   SurfaceSessionControlRequestV1,
@@ -10,6 +12,7 @@ import type {
 import {
   isSurfaceConversationSnapshotV1,
   isSurfaceFramePayloadV1,
+  isSurfaceLiveStreamStateV1,
   isSurfaceOutputPayloadV1,
 } from '@shared/contract/surfaceExecution';
 import { IPC_DOMAINS } from '@shared/ipc';
@@ -63,6 +66,33 @@ export async function getSurfaceExecutionFrame(
     throw new Error('Invalid Surface Execution frame');
   }
   return frame;
+}
+
+async function invokeLiveStream(
+  action: 'startLiveStream' | 'stopLiveStream',
+  request: SurfaceLiveStreamRequestV1,
+): Promise<SurfaceLiveStreamStateV1> {
+  const state = await ipcService.invokeDomain<unknown>(
+    IPC_DOMAINS.SURFACE_EXECUTION,
+    action,
+    request,
+  );
+  if (!isSurfaceLiveStreamStateV1(state) || state.surfaceSessionId !== request.surfaceSessionId) {
+    throw new Error('Invalid Surface Execution live stream state');
+  }
+  return state;
+}
+
+export async function startSurfaceLiveStream(
+  request: SurfaceLiveStreamRequestV1,
+): Promise<SurfaceLiveStreamStateV1> {
+  return await invokeLiveStream('startLiveStream', request);
+}
+
+export async function stopSurfaceLiveStream(
+  request: SurfaceLiveStreamRequestV1,
+): Promise<SurfaceLiveStreamStateV1> {
+  return await invokeLiveStream('stopLiveStream', request);
 }
 
 export async function getSurfaceExecutionOutput(

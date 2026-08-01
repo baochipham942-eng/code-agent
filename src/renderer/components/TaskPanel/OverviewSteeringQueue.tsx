@@ -29,49 +29,49 @@ export const OverviewSteeringQueue: React.FC = () => {
       count={String(queue.length)}
     >
       <ul className="space-y-1" data-testid="overview-queue-rows">
-          {queue.map((item) => (
-            <li
-              key={item.id}
-              data-testid="overview-queue-row"
-              className="flex min-w-0 items-center gap-2 rounded-md px-1.5 py-1 hover:bg-white/[0.025]"
-            >
-              <span className="min-w-0 flex-1 truncate text-xs text-zinc-300" title={item.content}>
-                {item.content}
+        {queue.map((item) => (
+          <li
+            key={item.id}
+            data-testid="overview-queue-row"
+            className="flex min-w-0 items-center gap-2 rounded-md px-1.5 py-1 hover:bg-white/[0.025]"
+          >
+            <span className="min-w-0 flex-1 truncate text-xs text-zinc-300" title={item.content}>
+              {item.content}
+            </span>
+            {item.attachmentsCount > 0 && (
+              <span className="shrink-0 text-[10px] text-zinc-600">
+                {t.workbenchTabs.overviewQueueAttachments.replace('{count}', String(item.attachmentsCount))}
               </span>
-              {item.attachmentsCount > 0 && (
-                <span className="shrink-0 text-[10px] text-zinc-600">
-                  {t.workbenchTabs.overviewQueueAttachments.replace('{count}', String(item.attachmentsCount))}
-                </span>
-              )}
-              {item.sendFailed && (
-                <span className="shrink-0 text-[10px] text-amber-300">
-                  {t.workbenchTabs.overviewQueueSendFailed}
-                </span>
-              )}
-              {/* 发送失败的条目宿主已不接受重发，只留删除，不摆点了没反应的按钮 */}
-              {!item.sendFailed && actions && (
-                <IconButton
-                  size="sm"
-                  variant="ghost"
-                  data-testid={`overview-queue-send-${item.id}`}
-                  aria-label={t.workbenchTabs.overviewQueueSendNow}
-                  title={t.workbenchTabs.overviewQueueSendNow}
-                  icon={<SendHorizontal />}
-                  onClick={() => { void actions.sendQueuedNow(item.id); }}
-                />
-              )}
-              {actions && (
-                <IconButton
-                  size="sm"
-                  variant="ghost"
-                  data-testid={`overview-queue-remove-${item.id}`}
-                  aria-label={t.workbenchTabs.overviewQueueRemove}
-                  title={t.workbenchTabs.overviewQueueRemove}
-                  icon={<X />}
-                  onClick={() => { void actions.retractQueued(item.id); }}
-                />
-              )}
-            </li>
+            )}
+            {item.sendFailed && (
+              <span className="shrink-0 text-[10px] text-amber-300">
+                {t.workbenchTabs.overviewQueueSendFailed}
+              </span>
+            )}
+            {/* 发送失败的条目宿主已不接受重发，只留删除，不摆点了没反应的按钮 */}
+            {!item.sendFailed && actions && (
+              <IconButton
+                size="sm"
+                variant="ghost"
+                data-testid={`overview-queue-send-${item.id}`}
+                aria-label={t.workbenchTabs.overviewQueueSendNow}
+                title={t.workbenchTabs.overviewQueueSendNow}
+                icon={<SendHorizontal />}
+                onClick={() => { void actions.sendQueuedNow(item.id); }}
+              />
+            )}
+            {actions && (
+              <IconButton
+                size="sm"
+                variant="ghost"
+                data-testid={`overview-queue-remove-${item.id}`}
+                aria-label={t.workbenchTabs.overviewQueueRemove}
+                title={t.workbenchTabs.overviewQueueRemove}
+                icon={<X />}
+                onClick={() => { void actions.retractQueued(item.id); }}
+              />
+            )}
+          </li>
         ))}
       </ul>
     </Card>

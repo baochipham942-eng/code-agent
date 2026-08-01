@@ -104,7 +104,7 @@ export const TerminalPanel: React.FC = () => {
       term.write(event.data);
     });
 
-    const keyDisposable = term.onData((data) => {
+    const keyDisposable = term.onData((data: string) => {
       void invokeDomain(IPC_DOMAINS.TERMINAL, 'write', { sessionId: openedSessionId, data });
     });
 

@@ -769,22 +769,12 @@ export class SurfaceExecutionRuntime {
   // 把「下次泄漏」从看得见但复现不了，变成可取证。
   private assertSurfaceSessionOwnershipForLog(identity: SurfaceRuntimeIdentityV1): void {
     const claimedConversationId = identity.conversationId?.trim();
-    if (!claimedConversationId) {
-      surfaceOwnershipLogger.error('surface 会话创建时 conversationId 为空', {
-        runId: identity.runId,
-        agentId: identity.agentId,
-        stack: new Error().stack,
-      });
-      return;
-    }
-    const registeredConversationId = this.runRegistry.get(identity.runId)?.context.sessionId;
-    if (registeredConversationId && registeredConversationId !== claimedConversationId) {
-      surfaceOwnershipLogger.error('surface 会话归属与该 runId 登记的发起会话不一致', {
-        claimedConversationId,
-        registeredConversationId,
-        runId: identity.runId,
-        stack: new Error().stack,
-      });
+    const registeredConversationId = claimedConversationId ? this.runRegistry.get(identity.runId)?.context.sessionId : undefined;
+    if (!claimedConversationId || (registeredConversationId && registeredConversationId !== claimedConversationId)) {
+      surfaceOwnershipLogger.error(
+        claimedConversationId ? 'surface 会话归属与该 runId 登记的发起会话不一致' : 'surface 会话创建时 conversationId 为空',
+        { claimedConversationId, registeredConversationId, runId: identity.runId, agentId: identity.agentId, stack: new Error().stack },
+      );
     }
   }
 

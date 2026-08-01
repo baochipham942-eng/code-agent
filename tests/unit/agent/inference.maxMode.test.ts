@@ -97,6 +97,17 @@ vi.mock('../../../src/host/prompts/builder', () => ({
   needsArtifactTaskBrief: vi.fn().mockReturnValue(false),
 }));
 
+const { mockCheckpointNativeModelOperation } = vi.hoisted(() => ({
+  mockCheckpointNativeModelOperation: vi.fn(async () => {}),
+}));
+
+vi.mock('../../../src/host/app/applicationRunRegistry', () => ({
+  getConfiguredApplicationRunRegistry: () => ({
+    hasDurableOwner: () => true,
+    checkpointNativeModelOperation: mockCheckpointNativeModelOperation,
+  }),
+}));
+
 function buildCtx(overrides: Partial<ContextAssemblyCtx['runtime']> = {}): ContextAssemblyCtx {
   const modelRouter = {
     inference: vi.fn().mockResolvedValue({ type: 'text', content: 'single', finishReason: 'stop' }),
@@ -183,6 +194,41 @@ describe('inference Max Mode wiring', () => {
 
   // 异常路径漏记 token 修复：普通（非 Max Mode）推理中断时，本轮已派发请求的
   // input tokens 是真实沉没成本，必须记一次（此前 abort 分支直接返回空，零记账）。
+  // 2026-08-01 真机：插队打断长任务后，插队那条正确答了，屏幕上却挂着一张「运行失败」。
+  // 真因是这次模型调用永远停在 dispatched，轮次收尾时 Durable Run 断言
+  // 「completed runs cannot contain unresolved operations」抛错。
+  it('推理被打断 → 这次模型调用要拿到终态(abandoned)，不留未了结操作', async () => {
+    const ctx = buildCtx({ maxMode: false } as any);
+    ctx.runtime.runId = 'run-steer-1';
+    ctx.runtime.messages = [{ id: 'user-1', role: 'user', content: '写长文', timestamp: 1 }];
+    ctx.runtime.modelRouter.inference = vi.fn().mockImplementation(async () => {
+      ctx.runtime.control.markCancelled();
+      throw new Error('canceled');
+    });
+
+    await inference(ctx);
+
+    const statuses = mockCheckpointNativeModelOperation.mock.calls.map(
+      (call) => (call[0] as { status: string }).status,
+    );
+    expect(statuses).toContain('dispatched');
+    expect(statuses.at(-1)).toBe('abandoned');
+  });
+
+  it('推理真出错（非用户打断）→ 终态是 failed', async () => {
+    const ctx = buildCtx({ maxMode: false } as any);
+    ctx.runtime.runId = 'run-error-1';
+    ctx.runtime.messages = [{ id: 'user-1', role: 'user', content: '写长文', timestamp: 1 }];
+    ctx.runtime.modelRouter.inference = vi.fn().mockRejectedValue(new Error('provider exploded'));
+
+    await expect(inference(ctx)).rejects.toThrow('provider exploded');
+
+    const statuses = mockCheckpointNativeModelOperation.mock.calls.map(
+      (call) => (call[0] as { status: string }).status,
+    );
+    expect(statuses.at(-1)).toBe('failed');
+  });
+
   it('普通路径中断（取消）→ 记一次 input 沉没成本，不再静默漏记', async () => {
     const ctx = buildCtx({ maxMode: false } as any);
     ctx.runtime.modelRouter.inference = vi.fn().mockImplementation(async () => {

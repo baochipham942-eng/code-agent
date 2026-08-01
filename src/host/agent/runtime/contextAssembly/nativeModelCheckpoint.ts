@@ -7,7 +7,7 @@ export async function checkpointNativeModel(
   ctx: ContextAssemblyCtx,
   config: ModelConfig,
   phase: 'before_model_dispatch' | 'after_model_dispatch',
-  status: 'prepared' | 'dispatched' | 'succeeded',
+  status: 'prepared' | 'dispatched' | 'succeeded' | 'failed' | 'abandoned',
 ): Promise<void> {
   const runId = ctx.runtime.runId;
   const registry = getConfiguredApplicationRunRegistry();

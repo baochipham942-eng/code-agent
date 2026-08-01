@@ -864,6 +864,25 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
         );
       }
       await checkpointNativeModel(ctx, requestConfig, 'after_model_dispatch', 'succeeded');
+    } catch (inferenceError) {
+      // 这次模型调用没跑完就得给它一个终态，否则它永远停在 dispatched，
+      // 而 Durable Run 不允许 completed 的轮次里留着未了结的操作——轮次收尾时
+      // assertRunEnvelope 抛「completed runs cannot contain unresolved operations」，
+      // 用户看到的是一张「运行失败」卡，而这一轮其实答完了（2026-08-01 真机：
+      // 插队打断长任务后，插队那条正确回答了，屏幕上却挂着运行失败）。
+      // 用户主动打断 = abandoned（不是失败），真出错才 failed。
+      const abandonedByUser = ctx.runtime.control.isCancelled
+        || ctx.runtime.control.isInterrupted
+        || inferenceAbortController.signal.aborted;
+      await checkpointNativeModel(
+        ctx,
+        requestConfig,
+        'after_model_dispatch',
+        abandonedByUser ? 'abandoned' : 'failed',
+      ).catch((checkpointError) => {
+        logger.warn('[AgentLoop] Failed to settle the native model operation after an inference error:', checkpointError);
+      });
+      throw inferenceError;
     } finally {
       stopArtifactProgress();
     }

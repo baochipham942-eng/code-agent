@@ -204,7 +204,9 @@ describe('streamingStatePresentation', () => {
     expect(state.status).toBe('cancelled');
     // 停止语义：停的是这次输出，不是这个任务的记忆。cancel() 会把已写出的内容连同
     // [cancelled] 标记落库，所以文案必须说「保留」，不能再声称「未保留半截内容」。
-    expect(state.detail).toContain('保留在上面');
+    // 这句话现在长在 run 徽章那一行，正文在它下面——不能再说「在上面」。
+    expect(state.detail).toContain('都留着');
+    expect(state.detail).not.toContain('在上面');
     expect(state.detail).not.toContain('未保留');
     // 这句解释由 run 徽章那一行的阶段位承担；大黄卡收起，停止态只留一条横幅。
     expect(shouldShowStreamingState(state)).toBe(false);

@@ -1,6 +1,6 @@
 // useAgentSessionLifecycleEffects - agent_complete, error, stream_end, message completion, research_detected, research_mode_started, interrupt_start, interrupt_acknowledged, interrupt_complete, stale processing cleanup
 import { useEffect } from 'react';
-import type { AgentErrorMetadata, AgentEventEnvelope, Message, ResearchDetectedData } from '@shared/contract';
+import type { AgentErrorMetadata, AgentEventEnvelope, ResearchDetectedData } from '@shared/contract';
 import { createLogger } from '../../../utils/logger';
 import { useAppStore } from '../../../stores/appStore';
 import { useSessionStore } from '../../../stores/sessionStore';

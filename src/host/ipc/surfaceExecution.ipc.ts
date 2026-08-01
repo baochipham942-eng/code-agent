@@ -9,6 +9,8 @@ import type {
   SurfaceConversationSnapshotV1,
   SurfaceFramePayloadV1,
   SurfaceFrameRequestV1,
+  SurfaceLiveStreamRequestV1,
+  SurfaceLiveStreamStateV1,
   SurfaceOutputPayloadV1,
   SurfaceOutputRequestV1,
   SurfaceSessionControlActionV1,
@@ -21,6 +23,10 @@ import {
   type SurfaceConversationProjectionService,
 } from '../services/surfaceExecution/SurfaceConversationProjectionService';
 import { SurfaceExecutionRuntimeError } from '../services/surfaceExecution/SurfaceExecutionRuntimeError';
+import {
+  getSurfaceLiveStreamService,
+  type SurfaceLiveStreamService,
+} from '../services/surfaceExecution/SurfaceLiveStreamService';
 
 const logger = createLogger('SurfaceExecutionIPC');
 
@@ -28,6 +34,8 @@ type SurfaceExecutionProjectionApi = Pick<
   SurfaceConversationProjectionService,
   'getSnapshot' | 'getFrame' | 'getOutput' | 'control'
 >;
+
+type SurfaceLiveStreamApi = Pick<SurfaceLiveStreamService, 'start' | 'stop'>;
 
 const CONTROL_ACTIONS: readonly SurfaceSessionControlActionV1[] = [
   'pause',
@@ -41,6 +49,13 @@ const CONTROL_ACTIONS: readonly SurfaceSessionControlActionV1[] = [
 const SNAPSHOT_KEYS = new Set(['version', 'conversationId']);
 const FRAME_KEYS = new Set(['version', 'conversationId', 'surfaceSessionId', 'assetRef']);
 const OUTPUT_KEYS = new Set(['version', 'conversationId', 'surfaceSessionId', 'outputRef']);
+const LIVE_STREAM_KEYS = new Set([
+  'version',
+  'conversationId',
+  'surfaceSessionId',
+  'maxWidth',
+  'maxHeight',
+]);
 const CONTROL_KEYS = new Set([
   'version',
   'conversationId',
@@ -132,6 +147,28 @@ function parseOutputPayload(value: unknown): SurfaceOutputRequestV1 | null {
   };
 }
 
+function parseLiveStreamPayload(value: unknown): SurfaceLiveStreamRequestV1 | null {
+  const optionalBound = (bound: unknown): boolean => (
+    bound === undefined || (Number.isSafeInteger(bound) && Number(bound) > 0)
+  );
+  if (!isRecord(value)
+    || !hasOnlyKeys(value, LIVE_STREAM_KEYS)
+    || value.version !== 1
+    || !nonEmptyString(value.conversationId)
+    || !nonEmptyString(value.surfaceSessionId)
+    || !optionalBound(value.maxWidth)
+    || !optionalBound(value.maxHeight)) {
+    return null;
+  }
+  return {
+    version: 1,
+    conversationId: value.conversationId.trim(),
+    surfaceSessionId: value.surfaceSessionId.trim(),
+    ...(typeof value.maxWidth === 'number' ? { maxWidth: value.maxWidth } : {}),
+    ...(typeof value.maxHeight === 'number' ? { maxHeight: value.maxHeight } : {}),
+  };
+}
+
 function invalid<T = never>(message: string): IPCResponse<T> {
   return {
     success: false,
@@ -158,11 +195,13 @@ function surfaceFailure<T = never>(error: SurfaceExecutionRuntimeError): IPCResp
 export function registerSurfaceExecutionHandlers(
   ipcMain: IpcMain,
   getService: () => SurfaceExecutionProjectionApi = getSurfaceConversationProjectionService,
+  getLiveStream: () => SurfaceLiveStreamApi = getSurfaceLiveStreamService,
 ): void {
   ipcMain.handle(
     IPC_DOMAINS.SURFACE_EXECUTION,
     async (_event, request: IPCRequest): Promise<IPCResponse<
-      SurfaceConversationSnapshotV1 | SurfaceFramePayloadV1 | SurfaceOutputPayloadV1 | SurfaceSessionControlResultV1
+      SurfaceConversationSnapshotV1 | SurfaceFramePayloadV1 | SurfaceOutputPayloadV1
+      | SurfaceSessionControlResultV1 | SurfaceLiveStreamStateV1
     >> => {
       try {
         if (request?.action === 'getSnapshot') {
@@ -203,6 +242,18 @@ export function registerSurfaceExecutionHandlers(
           return {
             success: true,
             data: await getService().getOutput(payload),
+          };
+        }
+        if (request?.action === 'startLiveStream' || request?.action === 'stopLiveStream') {
+          const payload = parseLiveStreamPayload(request.payload);
+          if (!payload) {
+            return invalid('A scoped conversation and Surface session are required.');
+          }
+          return {
+            success: true,
+            data: request.action === 'startLiveStream'
+              ? await getLiveStream().start(payload)
+              : await getLiveStream().stop(payload.surfaceSessionId),
           };
         }
         return {

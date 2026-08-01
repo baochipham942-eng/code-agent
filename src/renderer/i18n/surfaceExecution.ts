@@ -107,6 +107,11 @@ export interface SurfaceExecutionTranslationsV1 {
     title: string;
     description: string;
   };
+  compact: {
+    active: string;
+    completed: string;
+    open: string;
+  };
   recovery: {
     title: string;
     description: string;
@@ -278,6 +283,7 @@ export const surfaceExecutionZh: SurfaceExecutionTranslationsV1 = {
     outputKind: { artifact: '产物', file: '文件', download: '下载', trace: '执行记录' },
   },
   takeover: { title: '需要你接管', description: 'Neo 已释放输入控制。完成操作后可继续执行。' },
+  compact: { active: '正在操作 {target}', completed: '已完成', open: '在右栏查看浏览器现场' },
   recovery: { title: '执行正在恢复', description: '目标状态发生变化，Neo 会基于新证据继续。' },
   controls: {
     label: '执行控制',
@@ -455,6 +461,7 @@ const surfaceExecutionEn: SurfaceExecutionTranslationsV1 = {
     outputKind: { artifact: 'Artifact', file: 'File', download: 'Download', trace: 'Execution record' },
   },
   takeover: { title: 'Your action is needed', description: 'Neo released input control. Resume when you are done.' },
+  compact: { active: 'Working on {target}', completed: 'Completed', open: 'View the live browser scene in the sidebar' },
   recovery: { title: 'Execution is recovering', description: 'The target changed. Neo will continue from fresh evidence.' },
   controls: {
     label: 'Execution controls',

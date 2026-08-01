@@ -19,6 +19,7 @@
     "codegen:game-skills": "node scripts/generate-game-skill-content.mjs",
     "lint": "eslint src --ext .ts,.tsx",
     "lint:eslint-ratchet": "node scripts/eslint-ratchet.mjs",
+    "lint:shell-fail-loud": "node scripts/shell-fail-loud-lint.mjs",
     "debt:report": "node scripts/architecture-debt-report.mjs",
     "gates:local": "node scripts/gates-local.mjs",
     "check:repository-structure": "node scripts/ci/check-repository-structure.mjs",

@@ -27,7 +27,9 @@ import type { Root, Link, Text, Parent, RootContent } from 'mdast';
  * （维基百科那种 `/wiki/A_(b)`）。而合法 URL 里的全角字符必然是百分号编码过的，
  * 裸的全角标点出现在 URL 里，实践中只有这一个成因。
  */
-const FULLWIDTH_PUNCTUATION = /[　-〿＀-￯‘’“”]/;
+// 写成显式转义而不是字面量：字面量以 U+3000 全角空格开头，会触发 no-irregular-whitespace，
+// 而全角空格本来也不该进这个类——上游对 Unicode 空白已经正确收尾了。故从 U+3001「、」起。
+const FULLWIDTH_PUNCTUATION = /[\u2018-\u201D\u3001-\u303F\uFF01-\uFFEF]/;
 
 /** 自动链接的形状：唯一子节点是文本，且文本与 url 同源（GFM autolink literal 的产物）。 */
 function isAutolinkLiteral(node: Link): boolean {

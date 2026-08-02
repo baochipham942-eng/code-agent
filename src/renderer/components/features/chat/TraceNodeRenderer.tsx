@@ -9,7 +9,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import type { TraceNode } from '@shared/contract/trace';
 import type { ToolCall } from '@shared/contract';
 import type { WorkbenchMessageMetadata } from '@shared/contract/conversationEnvelope';
-import type { TurnTimelineNode as TurnTimelinePayload } from '@shared/contract/turnTimeline';
+import type { TurnTimelineNode as TurnTimelinePayload, TurnTimelineTone } from '@shared/contract/turnTimeline';
 import { stripAppshotBlocks } from '@shared/contract/appshot';
 import { extractUserRequest, stripSystemReminderBlocks } from '@shared/utils/turnScaffold';
 import { MessageContent } from './MessageBubble/MessageContent';
@@ -485,10 +485,13 @@ const TurnTimelineNodeRenderer: React.FC<{ node: TraceNode; sessionId?: string }
     case 'blocked_capabilities':
       return <BlockedCapabilitiesNode timeline={node.turnTimeline} />;
     case 'routing_evidence':
-      // 路由是调试证据，且每轮内容一样。异常时右侧任务面板已有「路由异常」卡（只在
-      // warning/error 显示），主对话流不再铺这张。节点本身保留——产物归属和工作台
-      // 投影都从它取数。
-      return null;
+      // 路由正常时每轮内容一样，铺进主对话流是噪声——只有异常（warning/error）才值得
+      // 占版面，此时渲染 RoutingEvidenceNode 把异常步骤摆到主对话流里（原「路由异常」卡
+      // 随 TaskMonitor 一并删除后，异常曾长期对用户隐形）。节点本身必须保留：产物归属
+      // 和工作台投影都从它取数。
+      return node.turnTimeline.tone === 'warning' || node.turnTimeline.tone === 'error'
+        ? <RoutingEvidenceNode timeline={node.turnTimeline} />
+        : null;
     case 'hook_activity':
       return <HookActivityNode timeline={node.turnTimeline} />;
     case 'skill_activity':
@@ -541,6 +544,74 @@ const BlockedCapabilitiesNode: React.FC<{ timeline: TurnTimelinePayload }> = ({ 
           </div>
         ))}
       </div>
+    </div>
+  );
+};
+
+const ROUTING_STEP_DOT_CLASSES: Record<TurnTimelineTone, string> = {
+  error: 'bg-red-400',
+  warning: 'bg-amber-400',
+  success: 'bg-emerald-400',
+  info: 'bg-sky-400',
+  neutral: 'bg-zinc-500',
+};
+
+const RoutingEvidenceNode: React.FC<{ timeline: TurnTimelinePayload }> = ({ timeline }) => {
+  const { t } = useI18n();
+  const labels = t.turnRouting;
+  const evidence = timeline.routingEvidence;
+  if (!evidence) return null;
+
+  const modeLabel = evidence.mode === 'auto'
+    ? labels.modeAuto
+    : evidence.mode === 'direct'
+      ? labels.modeDirect
+      : labels.modeParallel;
+  const stepStatusLabels: Record<string, string> = {
+    requested: labels.statusRequested,
+    delivered: labels.statusDelivered,
+    missing: labels.statusMissing,
+    resolved: labels.statusResolved,
+    approved: labels.statusApproved,
+    rejected: labels.statusRejected,
+    started: labels.statusStarted,
+    fallback: labels.statusFallback,
+  };
+
+  return (
+    <div className={`rounded-lg border px-3 py-2 ${getTimelineContainerClass(timeline.tone)}`}>
+      <div className="mb-1 flex flex-wrap items-center gap-2 text-[11px] text-zinc-300">
+        <AlertTriangle className={`h-3.5 w-3.5 ${timeline.tone === 'error' ? 'text-red-300' : 'text-amber-300'}`} />
+        <span>{labels.title}</span>
+        <WorkbenchPill tone="neutral">{modeLabel}</WorkbenchPill>
+        {(evidence.agentNames || []).map((name) => (
+          <WorkbenchPill key={name} tone="agent">{name}</WorkbenchPill>
+        ))}
+      </div>
+      <div className="text-xs text-zinc-100">{evidence.summary}</div>
+      {evidence.steps.length > 0 && (
+        <div className="mt-2 space-y-1.5">
+          {evidence.steps.map((step, index) => (
+            <div key={`${step.status}-${step.label}-${index}`} className="flex items-start gap-2 rounded-md bg-black/10 px-2.5 py-2 text-[11px]">
+              <span className={`mt-[5px] h-1.5 w-1.5 shrink-0 rounded-full ${ROUTING_STEP_DOT_CLASSES[step.tone] || ROUTING_STEP_DOT_CLASSES.neutral}`} />
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {/* 异常步骤（warning/error）用红/琥珀色文案，一眼看出是哪一步挂的 */}
+                  <span className={step.tone === 'error' ? 'text-red-300' : step.tone === 'warning' ? 'text-amber-300' : 'text-zinc-200'}>
+                    {step.label}
+                  </span>
+                  <WorkbenchPill tone={step.tone === 'error' || step.tone === 'warning' ? 'info' : 'neutral'}>
+                    {stepStatusLabels[step.status] || step.status}
+                  </WorkbenchPill>
+                </div>
+                {step.detail && (
+                  <div className="mt-1 text-zinc-600">{step.detail}</div>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 };

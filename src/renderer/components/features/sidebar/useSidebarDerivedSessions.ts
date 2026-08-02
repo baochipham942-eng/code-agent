@@ -362,8 +362,19 @@ export function useSidebarDerivedSessions(params: UseSidebarDerivedSessionsParam
   );
   const trajectoryQualityCandidateKey = trajectoryQualityCandidateSessionIds.join('\n');
 
+  // 这条 effect 只在「候选会话集合真的变了」时才该重跑，判等靠上面那个 key 字符串。
+  // 依赖里绝不能带 trajectoryQualityCandidateSessionIds ——它是 baseFilteredSessions 派生的
+  // 新数组，而 baseFilteredSessions 依赖 sessionStates/sessionRuntimes，流式期间每来一个
+  // 事件就换一个引用。带上它 = key 的去重被彻底废掉：实测流式中 8 秒发了 50 次请求
+  // （约 160ms 一次），把浏览器对同一 origin 的连接池（HTTP/1.1 上限 6，SSE 已占 1）打满，
+  // 之后任何普通请求排在队尾永远轮不上 —— 用户在运行中发消息时 ensureModelConfigured 的
+  // settings/get 就是这么挂死的，输入框已清空、消息三处无痕（2026-08-01 真机取证）。
+  // 集合内容进 key，effect 内从 key 现拆 ids，引用变化不再参与判等。
+  // ⚠️ 别给这里加 eslint-disable react-hooks/exhaustive-deps：本仓库没启用 react-hooks
+  // 插件，豁免一条不存在的规则会让注释本身变成 error（"rule was not found"），顶穿 eslint 棘轮。
   useEffect(() => {
-    if (!canOpenSessionReplay || trajectoryQualityCandidateSessionIds.length === 0) {
+    const sessionIds = trajectoryQualityCandidateKey ? trajectoryQualityCandidateKey.split('\n') : [];
+    if (!canOpenSessionReplay || sessionIds.length === 0) {
       setTrajectoryQualityBySessionId({});
       return undefined;
     }
@@ -371,7 +382,7 @@ export function useSidebarDerivedSessions(params: UseSidebarDerivedSessionsParam
     let cancelled = false;
     void ipcService
       .invoke(IPC_CHANNELS.REPLAY_GET_TRAJECTORY_QUALITY, {
-        sessionIds: trajectoryQualityCandidateSessionIds,
+        sessionIds,
       })
       .then((itemsBySessionId) => {
         if (cancelled) return;
@@ -388,7 +399,7 @@ export function useSidebarDerivedSessions(params: UseSidebarDerivedSessionsParam
     return () => {
       cancelled = true;
     };
-  }, [canOpenSessionReplay, trajectoryQualityCandidateKey, trajectoryQualityCandidateSessionIds]);
+  }, [canOpenSessionReplay, trajectoryQualityCandidateKey]);
 
   // Pure workspace grouping (Codex-style): one bucket per workingDirectory,
   // sorted by latest activity; sessions without a workingDirectory go into a

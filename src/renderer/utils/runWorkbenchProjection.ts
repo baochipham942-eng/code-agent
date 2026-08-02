@@ -150,6 +150,8 @@ export function buildRunUiState(args: BuildRunWorkbenchModelInput): RunUiState {
     waitingApprovalId: args.pendingApprovalId || undefined,
     ...describeBlocked(firstBlockedReason(turn)),
     completionSignal: completionSignal(turn),
+    startedAt: turn?.startTime,
+    endedAt: turn?.endTime,
   };
 }
 

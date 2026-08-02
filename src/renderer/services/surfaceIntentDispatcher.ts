@@ -36,6 +36,9 @@ export function openSurfaceForArtifact(input: {
       appState.openWorkbenchTab('task', { source: 'auto' });
       appState.setTaskPanelTab('monitor');
       break;
+    case 'browser':
+      appState.openWorkbenchTab('browser', { source: 'auto' });
+      break;
   }
   return decision;
 }

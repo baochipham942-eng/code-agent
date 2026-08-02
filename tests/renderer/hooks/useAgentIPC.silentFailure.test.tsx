@@ -103,6 +103,43 @@ describe('useAgentIPC sendMessage silentFailure', () => {
     });
   });
 
+  // 撞上「上一轮已答完、run 还没收干净」的那几秒（host 409）：不是失败，排到下一轮。
+  // 之前这里会给用户弹一条「云端代理请求失败 (409)」，而模型其实答得好好的。
+  it('queues instead of erroring when the host says the session still has an active run', async () => {
+    const enqueueRuntimeInput = vi.fn<(input: QueuedRuntimeInput) => void>();
+    invokeMock.mockRejectedValueOnce(
+      Object.assign(new Error('云端代理请求失败 (409): Session s already has active run run-x'), { status: 409 }),
+    );
+    typedInvokeDomainMock.mockImplementationOnce(async (_schema, request) => ({
+      success: true,
+      data: {
+        id: (request as { payload: { id: string } }).payload.id,
+        sessionId: 'session-queued',
+        envelope: (request as { payload: { envelope: ConversationEnvelope } }).payload.envelope,
+        status: 'queued',
+        retryCount: 0,
+        createdAt: 1_700_000_000_000,
+        updatedAt: 1_700_000_000_000,
+      },
+    }));
+    const hook = renderSendHook({ enqueueRuntimeInput });
+
+    await act(async () => {
+      await hook.result.current.sendMessage(envelope);
+    });
+
+    expect(typedInvokeDomainMock).toHaveBeenCalledWith(
+      QueuedInputSchemas.ENQUEUE,
+      expect.objectContaining({ action: 'enqueue' }),
+    );
+    expect(enqueueRuntimeInput).toHaveBeenCalledTimes(1);
+    expect(
+      useSessionStore.getState().messages.filter((message) => message.role === 'assistant'),
+    ).toEqual([]);
+    // 会话不能卡在 running/error，否则后续消息全进排队却没有 run 去消费
+    expect(useTaskStore.getState().sessionStates['session-queued']?.status).toBe('idle');
+  });
+
   it('preserves a queued envelope clientMessageId in the host payload', async () => {
     invokeMock.mockResolvedValueOnce(undefined);
     const hook = renderSendHook();

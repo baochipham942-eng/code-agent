@@ -138,7 +138,7 @@ test('右栏概览空态保持轻量，旧的清单外壳已移除', async ({ pa
   await overview.screenshot({ path: 'tests/e2e/screenshots/workbench-overview-preview-first.png' });
 });
 
-// 有产物那一屏：概览先固定展示 Todo / 上下文 / 产物；点产物后直接进入专注预览。
+// 有产物那一屏：概览主视线固定展示 Todo / 产物（诊断在二级折叠区）；点产物后直接进入专注预览。
 // 产物由 sessionStore.messages 推导，e2e 跑生产构建（window.__neoAppStore 只在 DEV 挂），
 // 所以从外部按真实事件链注入带 artifacts 的 assistant 消息，而不是往 store 里塞。
 test('右栏概览有产物时：工作台分区稳定，点击后直接预览且不带旧详情区', async ({ page, request }) => {
@@ -157,13 +157,22 @@ test('右栏概览有产物时：工作台分区稳定，点击后直接预览�
     version: 1,
   }));
 
-  // ① 默认工作台：三个信息域固定存在，产物正文不抢占概览。
+  // ① 默认工作台：主视线分区固定存在，产物正文不抢占概览。
+  // T1 起上下文行/AgentTree 下沉进「诊断详情」二级折叠区，主视线只剩 Todo + 产物。
   const workspace = overview.getByTestId('task-workspace-overview');
   await expect(workspace).toBeVisible({ timeout: 20_000 });
   await expect(workspace.getByRole('button', { name: 'Todo', exact: true })).toBeVisible();
-  await expect(workspace.getByRole('button', { name: /上下文/ })).toBeVisible();
   await expect(workspace.getByRole('button', { name: /产物/ })).toBeVisible();
   await expect(workspace.getByText(firstMarker)).toHaveCount(0);
+
+  // ①b 诊断下沉：入口留在主视线，内容默认不占位；展开后上下文一条不少（内容只下沉不删除）。
+  const diagnostics = workspace.getByRole('button', { name: /诊断详情/ });
+  await expect(diagnostics).toBeVisible();
+  await expect(workspace.getByTestId('overview-diagnostics-body')).toHaveCount(0);
+  await diagnostics.click();
+  const diagnosticsBody = workspace.getByTestId('overview-diagnostics-body');
+  await expect(diagnosticsBody).toBeVisible();
+  await expect(diagnosticsBody.getByText('上下文', { exact: true })).toBeVisible();
 
   // ② 点击产物就是打开，直接进入专注预览。
   await workspace.getByRole('button', { name: '在工作区预览中打开: 第一版流程图', exact: true }).click();

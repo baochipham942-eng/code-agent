@@ -22,7 +22,7 @@
 //
 // ============================================================================
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { unstable_batchedUpdates } from 'react-dom';
 import type { Message } from '@shared/contract';
 import type { QueuedInputSettledEvent } from '@shared/contract/queuedInput';
@@ -31,6 +31,7 @@ import { QueuedInputSchemas } from '@shared/ipc/schemas';
 import ipcService from '../services/ipcService';
 import { generateMessageId } from '@shared/utils/id';
 import { useAppStore } from '../stores/appStore';
+import { useRunControlStore } from '../stores/runControlStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { useTaskStore } from '../stores/taskStore';
 import { useStreamingMessageAccumulatorStore, type StreamingMessageDelta } from '../stores/streamingMessageAccumulatorStore';
@@ -187,13 +188,14 @@ export const useAgent = () => {
     ]);
   }, [setQueuedRuntimeInputs]);
 
-  const cancelQueuedRuntimeInput = useCallback(async (id: string) => {
+  /** @returns 这条是否真的撤回成功——调用方据此把内容还回输入框（发出去的不能还）。 */
+  const cancelQueuedRuntimeInput = useCallback(async (id: string): Promise<boolean> => {
     const queued = queuedRuntimeInputsRef.current.find((item) => item.id === id);
-    if (!queued) return;
+    if (!queued) return false;
 
     if (queued.sendFailed) {
       setQueuedRuntimeInputs((current) => current.filter((item) => item.id !== id));
-      return;
+      return true;
     }
 
     try {
@@ -203,16 +205,19 @@ export const useAgent = () => {
       });
       if (!response.success) {
         toast.error(`撤回排队消息失败：${response.error.message}`);
-        return;
+        return false;
       }
+      // 撤不回来 = 它已经在发送途中，不再归队列管。卡片也得跟着撤下去：
+      // 留着一张点了没用的「等待发送」卡，比没有这张卡更让人以为还能操作。
+      setQueuedRuntimeInputs((current) => current.filter((item) => item.id !== id));
       if (!response.data.retracted) {
         toast.info('这条消息已经开始发送，无法撤回。');
-        return;
       }
-      setQueuedRuntimeInputs((current) => current.filter((item) => item.id !== id));
+      return response.data.retracted;
     } catch (error) {
       logger.error('Failed to retract queued runtime input', error, { id });
       toast.error(`撤回排队消息失败：${error instanceof Error ? error.message : String(error)}`);
+      return false;
     }
   }, [setQueuedRuntimeInputs]);
 
@@ -509,7 +514,14 @@ export const useAgent = () => {
         );
         return;
       }
-      if (!markResponse.data.marked) return;
+      if (!markResponse.data.marked) {
+        // 宿主说这条已经不是 queued 了（上一次点击、或宿主 drain 抢先把它抽走）。
+        // 这里原本直接 return——就是「点了没反应」：用户以为在插队，实际要等本轮
+        // 自然跑完才看到它被当普通排队发出去（独立验证 2026-08-01 实测）。
+        // 本文件反复栽在静默 return 上，任何一条不可发都要出声。
+        toast.info(t.chatInput.queuedSendAlreadyInFlight);
+        return;
+      }
 
       queuedRuntimeInputHydrationSuppressedIdsRef.current.add(id);
       setQueuedRuntimeInputs((current) => current.filter((item) => item.id !== id));
@@ -599,7 +611,14 @@ export const useAgent = () => {
         );
         return;
       }
-      if (!markResponse.data.marked) return;
+      if (!markResponse.data.marked) {
+        // 宿主说这条已经不是 queued 了（上一次点击、或宿主 drain 抢先把它抽走）。
+        // 这里原本直接 return——就是「点了没反应」：用户以为在插队，实际要等本轮
+        // 自然跑完才看到它被当普通排队发出去（独立验证 2026-08-01 实测）。
+        // 本文件反复栽在静默 return 上，任何一条不可发都要出声。
+        toast.info(t.chatInput.queuedSendAlreadyInFlight);
+        return;
+      }
 
       queuedRuntimeInputHydrationSuppressedIdsRef.current.add(id);
       setQueuedRuntimeInputs((current) => current.filter((item) => item.id !== id));
@@ -671,6 +690,43 @@ export const useAgent = () => {
     setResearchDetected(null);
   }, [setResearchDetected]);
 
+  // 当前会话可见的排队项——ChatInput 的排队卡和右栏 Overview 队列必须是同一份，
+  // 否则两处对「还有几条在排队」各说各话。
+  const visibleQueuedRuntimeInputs = useMemo(() => (
+    currentSessionId
+      ? queuedRuntimeInputs.filter((item) => item.sessionId === currentSessionId)
+      : []
+  ), [currentSessionId, queuedRuntimeInputs]);
+
+  // 投影给右栏 Overview（T1）。队列在这里推是因为本 hook 是唯一写入方；
+  // 动作直接把既有回调交出去，Overview 侧不重新实现任何 IPC 链路。
+  useEffect(() => {
+    useRunControlStore.getState().publishQueue(
+      visibleQueuedRuntimeInputs.map((item) => ({
+        id: item.id,
+        content: item.content,
+        attachmentsCount: item.attachmentsCount,
+        sendFailed: item.sendFailed,
+      })),
+    );
+  }, [visibleQueuedRuntimeInputs]);
+
+  useEffect(() => {
+    useRunControlStore.getState().publishActions({
+      interrupt: cancel,
+      retractQueued: cancelQueuedRuntimeInput,
+      sendQueuedNow: sendQueuedRuntimeInput,
+    });
+  }, [cancel, cancelQueuedRuntimeInput, sendQueuedRuntimeInput]);
+
+  // 收摊只在真正卸载时做，不能挂在上面那个 effect 的 cleanup 上：那份 cleanup
+  // 每次回调身份变化都会跑一遍，会把还在排队的消息从 Overview 里抹掉，而队列
+  // effect 的依赖没变、不会重推——用户看到的就是「排队消息凭空消失」。
+  useEffect(() => () => {
+    useRunControlStore.getState().publishActions(null);
+    useRunControlStore.getState().publishQueue([]);
+  }, []);
+
   return {
     messages,
     isProcessing,
@@ -687,9 +743,7 @@ export const useAgent = () => {
     dismissResearchDetected,
     // 中断状态（Claude Code 风格）
     isInterrupting,
-    queuedRuntimeInputs: currentSessionId
-      ? queuedRuntimeInputs.filter((item) => item.sessionId === currentSessionId)
-      : [],
+    queuedRuntimeInputs: visibleQueuedRuntimeInputs,
     hydrateQueuedRuntimeInputs,
     cancelQueuedRuntimeInput,
     sendQueuedRuntimeInput,

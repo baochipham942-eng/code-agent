@@ -238,6 +238,8 @@ export interface AgentTeamMessageMetadata {
 
 /** 会话区错误卡片的错误分类（AgentErrorCard 按它决定文案和动作按钮）。 */
 export type AgentErrorCategory =
+  /** 密钥无效 / 额度用尽 —— 供应商多用 401 表达，重试没有意义，得换模型或去补额度 */
+  | 'auth'
   | 'model_not_found'
   | 'forbidden'
   | 'rate_limited'
@@ -259,7 +261,10 @@ export interface AgentErrorMetadata {
   traceId?: string;
   /** 供应商/运行时的原始错误文本，进错误报告 */
   rawMessage: string;
+  /** 这一轮 host 真正跑的模型（不是前端当前选中的那个，两者在刚切模型时会不一致） */
   modelId?: string;
+  /** 同上，真正跑的 provider */
+  provider?: string;
   timestamp: number;
   /** context_length 专用：实际/上限 tokens，供卡片模板填空 */
   requestedTokens?: number;

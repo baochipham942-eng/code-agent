@@ -682,6 +682,15 @@ function lastNonVoiceSummaryNode(turn: TraceTurn): TraceNode | undefined {
   return undefined;
 }
 
+/** 本轮最后一条助手消息的 id —— 流式期间正在生长的那条。 */
+function lastAssistantMessageIdInTurn(turn: TraceTurn): string | undefined {
+  for (let index = turn.nodes.length - 1; index >= 0; index -= 1) {
+    const node = turn.nodes[index];
+    if (node.type === 'assistant_text' && node.messageId) return node.messageId;
+  }
+  return undefined;
+}
+
 function relocateActiveTurnReasoningToTail(turn: TraceTurn): void {
   const carrierIndex = turn.nodes.findIndex(
     (node) => node.type === 'assistant_text' && Boolean(node.reasoning || node.thinking),
@@ -689,6 +698,11 @@ function relocateActiveTurnReasoningToTail(turn: TraceTurn): void {
   if (carrierIndex < 0) return;
   const carrier = turn.nodes[carrierIndex];
   if (!carrier.messageId) return;
+  // 只搬**正在生长**的那条消息的思考（2026-08-01 症状 2）。尾置的目的是让流式思考贴住
+  // 视口底边、并与已落账的那半连成一块（PR #541）；已经写完的早期响应的思考不在生长，
+  // 搬它不服务任何目的，却会让那一块随着本轮新内容不断往下滑——用户看到的「块顺序反复
+  // 跳」有一大半是它。
+  if (carrier.messageId !== lastAssistantMessageIdInTurn(turn)) return;
   const hasTrailingDisplayNodes = turn.nodes
     .slice(carrierIndex + 1)
     .some((node) => node.type === 'assistant_text' || node.type === 'tool_call');

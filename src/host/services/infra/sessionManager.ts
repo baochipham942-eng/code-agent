@@ -41,6 +41,14 @@ function isVisibleHistoryMessage(message: Message): boolean {
   return !message.isMeta && message.visibility !== 'rewound';
 }
 
+/** 会话还没被命名过（自动标题只允许覆盖这一档，别的都是用户/上一轮的真标题）。 */
+function isDefaultSessionTitle(title: string): boolean {
+  return title === 'New Chat'
+    || title === 'New Session'
+    || title === '新对话'
+    || title.startsWith('Session ');
+}
+
 function isSessionForkAnchorCandidate(message: Message): boolean {
   return message.role === 'assistant'
     && !message.isMeta
@@ -114,7 +122,19 @@ export class SessionManager implements Disposable {
   }
 
   private normalizePromptForBackfill(content: string): string {
-    return content.replace(/\r\n/g, '\n').trim();
+    return content
+      .replace(/\r\n/g, '\n')
+      .trim()
+      .replace(/\bhttps?:\/\/[^\s<>"'`]+/giu, (rawUrl) => {
+        // telemetry_turns 没有保存 user message/clientMessageId，不能做稳定 ID join。
+        // 对两侧文本统一走 WHATWG URL canonicalization，消除补根路径斜杠、
+        // unicode host / punycode 等同一 URL 的序列化差异；解析失败则保持原文。
+        try {
+          return new URL(rawUrl).toString();
+        } catch {
+          return rawUrl;
+        }
+      });
   }
 
   private backfillMissingTelemetryUserPrompts(sessionId: string): number {
@@ -890,15 +910,11 @@ export class SessionManager implements Disposable {
       throw new Error('No current session');
     }
 
+    // 标题生成由 addMessageToSession 用显式 sessionId 触发，这里不再重复挂一次：
+    // 隐式读 this.currentSessionId 的那版会在 await 期间被切/建会话改掉，
+    // 把这条消息的标题写到别的会话头上（真机实证 2026-07-27：新建会话发「你好」，
+    // 7-11 的旧会话被改名成「你好」）。
     await this.addMessageToSession(this.currentSessionId, message);
-
-    // 自动更新会话标题（如果是第一条用户消息）
-    // fire-and-forget：标题生成调用 quick model，不阻塞主推理链路
-    if (isVisibleHistoryMessage(message) && message.role === 'user') {
-      void this.maybeUpdateTitle(message.content).catch(() => {
-        /* 静默降级 */
-      });
-    }
   }
 
   /**
@@ -1197,24 +1213,13 @@ export class SessionManager implements Disposable {
   }
 
   /**
-   * 根据第一条消息自动更新标题
-   */
-  private async maybeUpdateTitle(firstMessage: string): Promise<void> {
-    if (!this.currentSessionId) return;
-    await this.maybeUpdateTitleForSession(this.currentSessionId, firstMessage);
-  }
-
-  /**
-   * 多会话版本：根据指定 sessionId 的第一条用户消息生成标题。
-   * webServer 走 addMessageToSession 时由该函数兜底（addMessage 单会话路径已经在上面挂过）。
+   * 根据指定 sessionId 的第一条用户消息生成标题（所有 addMessage 路径都走这里）。
    */
   private async maybeUpdateTitleForSession(sessionId: string, firstMessage: string): Promise<void> {
     const session = await this.getSession(sessionId);
     if (!session) return;
 
-    const isDefaultTitle = session.title === 'New Chat' || session.title === 'New Session' || session.title.startsWith('Session ') || session.title === '新对话';
-
-    if (!(isDefaultTitle && session.messageCount <= 1)) return;
+    if (!(isDefaultSessionTitle(session.title) && session.messageCount <= 1)) return;
 
     const visibleMessage = stripAppshotBlocks(firstMessage);
     const titleSource = visibleMessage || (firstMessage.trim().startsWith('<appshot') ? 'Appshot 会话' : firstMessage);
@@ -1225,6 +1230,12 @@ export class SessionManager implements Disposable {
       title = firstLine.slice(0, 50);
       if (firstLine.length > 50) title += '...';
     }
+
+    // generateSmartTitle 要调小模型，实测能拖几十秒。这段窗口里目标会话可能已被
+    // 改名（用户手动重命名，或它先被别的路径命名过），此时再写就是覆盖用户的标题。
+    // 回来后重新读一次，仍是默认标题才落笔。
+    const latest = await this.getSession(sessionId);
+    if (!latest || !isDefaultSessionTitle(latest.title)) return;
 
     await this.updateSession(sessionId, { title });
   }

@@ -70,6 +70,25 @@ describe('TurnCard 回复动作条锚点对齐（X5.5-D3）', () => {
     expect(screen.queryByTestId('turn-fork-action')).toBeNull();
   });
 
+  // 真机 2026-08-01：正文还在流式写入（光标还在闪），复制/点赞/分叉已经摆出来了，
+  // 等于请人给半句话打分，而且正文每长一行动作条就往下跳一次。
+  it('最后一轮还在跑时不摆动作条，跑完才出现', () => {
+    const messages: Message[] = [
+      { id: 'u1', role: 'user', content: '你好', timestamp: 1_000 },
+      { id: 'a1', role: 'assistant', content: '正在写……', timestamp: 2_000 },
+    ];
+    const projection = projectTurns(messages, 'session-1', false);
+    const { rerender } = render(
+      <TurnCard turn={projection.turns[0]} sessionId="session-1" isLastTurn isSessionProcessing />,
+    );
+    expect(screen.queryByTestId('turn-reply-actions')).toBeNull();
+
+    rerender(
+      <TurnCard turn={projection.turns[0]} sessionId="session-1" isLastTurn isSessionProcessing={false} />,
+    );
+    expect(screen.getByTestId('turn-reply-actions')).toBeTruthy();
+  });
+
   it('completed 轮轮尾是正文：fork 与 feedback 共用同一个 eligible 锚点，一起出现', () => {
     const messages: Message[] = [
       { id: 'u1', role: 'user', content: '你好', timestamp: 1_000 },

@@ -15,6 +15,7 @@ import { mergeStreamSnapshotIntoMessages } from '../utils/streamRecoveryMessage'
 import ipcService from '../services/ipcService';
 import { useSessionUIStore } from './sessionUIStore';
 import { useAppStore } from './appStore';
+import { useTaskStore } from './taskStore';
 import { useAppshotsStore } from './appshotsStore';
 import { useDesignCanvasStore } from '../components/design/designCanvasStore';
 import { executeCreateSession } from './sessionCreate';
@@ -41,6 +42,15 @@ async function invokeAgentEngine<T>(action: string, payload?: unknown): Promise<
 let _switchCounter = 0;
 /** In-flight createSession promise — send path awaits to rebind to the new session. */
 let _pendingSessionCreate: Promise<Session | null> | null = null;
+
+/** run 已经收口的会话状态——收到这些就把前端的运行态放下。'archived' 不算 run 收尾，不在内。 */
+const TERMINAL_SESSION_STATUSES: ReadonlySet<string> = new Set([
+  'completed',
+  'error',
+  'interrupted',
+  'orphaned',
+  'idle',
+]);
 
 function invalidatePendingSessionSwitches(): void {
   _switchCounter += 1;
@@ -135,9 +145,16 @@ function normalizeDraftDirectory(value?: string | null): string {
   return value?.trim() ?? '';
 }
 
-function isUntouchedNewSession(
-  session: Pick<SessionWithMeta, 'title' | 'messageCount' | 'turnCount' | 'isArchived' | 'workingDirectory' | 'status'>,
-  workingDirectory?: string | null,
+/**
+ * 「从没装过东西的真·新会话」。
+ *
+ * 冷启动会自动恢复 updated_at 最新的历史会话（见 initializeSessionStore）。那个会话若
+ * 恰好投影为空，界面上与真新会话不可区分，用户会以为自己在新会话里，首条消息却落进旧
+ * 会话（2026-08-01 事故）。欢迎页只对这个谓词为真的会话诚实——注意标题也要判：空会话
+ * 也可能带着旧标题（事故里的 a94592bc 就是 0 消息 + 「你好」标题）。
+ */
+export function isBlankNewSession(
+  session: Pick<SessionWithMeta, 'title' | 'messageCount' | 'turnCount' | 'isArchived' | 'status'>,
 ): boolean {
   if (session.isArchived || session.status === 'archived') {
     return false;
@@ -145,7 +162,14 @@ function isUntouchedNewSession(
   if ((session.title || '').trim() !== '新对话') {
     return false;
   }
-  if ((session.messageCount ?? 0) > 0 || (session.turnCount ?? 0) > 0) {
+  return (session.messageCount ?? 0) === 0 && (session.turnCount ?? 0) === 0;
+}
+
+function isUntouchedNewSession(
+  session: Pick<SessionWithMeta, 'title' | 'messageCount' | 'turnCount' | 'isArchived' | 'workingDirectory' | 'status'>,
+  workingDirectory?: string | null,
+): boolean {
+  if (!isBlankNewSession(session)) {
     return false;
   }
   return normalizeDraftDirectory(session.workingDirectory) === normalizeDraftDirectory(workingDirectory);
@@ -358,7 +382,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
       });
       try {
         const [session, sessionTasks] = await Promise.all([
-          invokeSession<Session & { messages?: Message[]; todos?: TodoItem[] } | null>('load', { sessionId }),
+          invokeSession<Session & { messages?: Message[]; todos?: TodoItem[]; activeRun?: boolean } | null>('load', { sessionId }),
           invokeSession<SessionTask[]>('getSessionTasks', { sessionId }),
         ]);
 
@@ -398,6 +422,14 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
               item.id === sessionId ? deriveCurrentSessionMeta(normalizedSession, loadedMessages) : item
             ),
           });
+          // 宿主说这个会话还有活跃 run（刷新/切回来时最常见）：前端的运行态是纯内存的，
+          // 不从宿主接回来就会显示空闲——而后台还在跑，停止按钮消失、排队卡还邀请你「立即发送」，
+          // 一点就跟正在跑的那轮撞车（2026-08-01 C3 真机）。终态由 run 收尾时广播的
+          // session:updated 负责清（见下面 SESSION_UPDATED 监听）。
+          if (session.activeRun) {
+            useAppStore.getState().setSessionProcessing(sessionId, true);
+            useTaskStore.getState().updateSessionState(sessionId, { status: 'running' });
+          }
           await refreshContextHealthForSession(sessionId, switchVersion);
         } else {
           // 后端返回 null/undefined — 仍然切换到该会话（显示空状态）
@@ -1053,6 +1085,24 @@ export async function initializeSessionStore(): Promise<void> {
           : session
       )),
     }));
+
+    // run 收尾时宿主一定会广播一次带终态的 session:updated（AgentRunController.updateSessionStatus），
+    // 而且是全局广播、不挑连接——这是「刷新后接回来的运行态」唯一的出口。没有它，
+    // switchSession 里按 activeRun 点亮的运行态会永远亮着（那一轮的 SSE 已经跟着旧页面断了，
+    // agent_complete 到不了这个新页面）。
+    if (updates?.status && TERMINAL_SESSION_STATUSES.has(updates.status)) {
+      useAppStore.getState().setSessionProcessing(sessionId, false);
+      useTaskStore.getState().updateSessionState(sessionId, { status: 'idle' });
+    }
+
+    // 对称的另一半：宿主说它开始跑了，前端就该亮。这条广播不挑连接，覆盖的是
+    // 「页面在 run 已经开跑之后才连上 SSE」那段窗口——那时首个 agent 事件早播完了，
+    // 新页面没有 Last-Event-ID 也不会重放（Kimi 独立诊断 2026-08-01 指出的纵深防御）。
+    // 只有终态分支、没有这一半的话，灭灯有人管、点灯没人管。
+    if (updates?.status === 'running') {
+      useAppStore.getState().setSessionProcessing(sessionId, true);
+      useTaskStore.getState().updateSessionState(sessionId, { status: 'running' });
+    }
 
     if (useSessionStore.getState().currentSessionId === sessionId && updates.workingDirectory !== undefined) {
       useAppStore.getState().setWorkingDirectory(updates.workingDirectory ?? null);

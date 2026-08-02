@@ -95,6 +95,53 @@ describe('web queued input drain', () => {
     expect(triggerDrain).toHaveBeenCalledWith('session-release');
   });
 
+  // 真机 2026-08-01：上一轮刚回复完就发下一条，消息进了排队卡却再也没被发出去。
+  // 原因是 drain 只在 run release 时触发，而这条是在 release 之后才入队的——
+  // 那次 drain 早跑完了，没有任何人再来看这条。
+  it('入队时 session 已空闲就立刻抽，不必等下一次 release', async () => {
+    const repository = createRepository();
+    const ran: string[] = [];
+    const drain = createDrain({
+      repository,
+      hasActiveRun: () => false,
+      runEnvelope: async (envelope) => { ran.push(envelope.content); },
+    });
+
+    repository.enqueue({
+      id: 'queued-idle',
+      sessionId: 'session-idle',
+      envelope: { content: '入队时已空闲', sessionId: 'session-idle' },
+      now: 1,
+    });
+    drain.handleEnqueued('session-idle');
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(ran).toEqual(['入队时已空闲']);
+    expect(repository.getById('queued-idle')?.status).toBe('consumed');
+  });
+
+  it('入队时还有 run 在跑就不抽——那才是「排到下一轮」的正常语义', async () => {
+    const repository = createRepository();
+    const ran: string[] = [];
+    const drain = createDrain({
+      repository,
+      hasActiveRun: () => true,
+      runEnvelope: async (envelope) => { ran.push(envelope.content); },
+    });
+
+    repository.enqueue({
+      id: 'queued-busy',
+      sessionId: 'session-busy',
+      envelope: { content: '这条要等下一轮', sessionId: 'session-busy' },
+      now: 1,
+    });
+    drain.handleEnqueued('session-busy');
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(ran).toEqual([]);
+    expect(repository.getById('queued-busy')?.status).toBe('queued');
+  });
+
   it('runs with no SSE consumer attached and uses the persisted envelope identity', async () => {
     const repository = createRepository();
     repository.enqueue({

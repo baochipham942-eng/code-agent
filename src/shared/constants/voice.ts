@@ -306,6 +306,22 @@ export const VOICE_WORK_EVIDENCE_TIMEOUT_MS = 3_000;
 export const VOICE_NARRATION_MAX_CHARS = 120;
 
 /**
+ * 「停旧的」等终态事件的上限（ms，§1 打断原子性）。
+ *
+ * 这个值不是随便定的：防双跑的硬门是「确认终态前绝不 startRun」，所以超时的后果是
+ * **新活不派**——定太短会把正常的 cancel 判成失败、白白丢掉用户的替换意图；定太长
+ * 则用户在电话里干等。cancelTask 到 task_cancelled 正常是一次 orchestrator 中断，
+ * 5 秒足够覆盖，且与竞品的总等待窗同量级。
+ */
+export const VOICE_STOP_CONFIRM_TIMEOUT_MS = 5_000;
+
+/**
+ * 停不下来时重发 cancel 的次数。**只重发 cancel，不重发 startRun**——
+ * startRun 一次都还没发生过（硬门），这里重试的是「让旧的停下来」这个动作本身。
+ */
+export const VOICE_STOP_CONFIRM_RETRIES = 1;
+
+/**
  * 回头找「这一轮的结论」时往回翻几条消息。一轮 run 的尾部是 assistant 收尾语，
  * 中间隔的是工具调用消息；30 条足够跨过一轮的工具流，又不至于把上一件活的结论捞回来。
  */

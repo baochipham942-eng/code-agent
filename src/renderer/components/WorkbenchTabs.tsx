@@ -262,12 +262,13 @@ export const WorkbenchTabs: React.FC<{ children?: React.ReactNode; focusable?: b
     }
     const path = id.slice(PREVIEW_PREFIX.length);
     const previewTab = previewTabs.find((preview) => preview.path === path);
+    const isLiveDev = previewTab?.kind === 'liveDev';
     return {
       id,
       label: getFileName(path),
       title: path,
-      icon: FileText,
-      iconClassName: 'text-zinc-400',
+      icon: isLiveDev ? Globe2 : FileText,
+      iconClassName: isLiveDev ? 'text-emerald-400/80' : 'text-zinc-400',
       isDirty: previewTab ? previewTab.content !== previewTab.savedContent : false,
     };
   });

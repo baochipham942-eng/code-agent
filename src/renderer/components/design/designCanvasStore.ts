@@ -92,6 +92,12 @@ interface DesignCanvasState {
   resetCanvas: () => void;
   addNode: (node: CanvasEntityInput<CanvasNode>, actor?: CanvasActor) => void;
   updateNode: (id: string, patch: CanvasEntityPatch<Omit<CanvasNode, 'id'>>) => void;
+  /**
+   * 只打 userTouchedAt 戳、不进 Layer1 undo 历史的轻动作（用户 dragStart 时调用）。
+   * 不要用 updateNode(id, {}) 变通——那会多出一帧空撤销。
+   * 语义：用户开始拖的节点按定义已是「用户碰过」，打戳后 agent 后续对它排布走审批。
+   */
+  markNodeUserTouched: (id: string) => void;
   deleteNode: (id: string) => void;
   deleteNodes: (ids: readonly string[]) => void;
   /** 淘汰（软删除）：标记 discarded，节点落盘保留；若淘汰的是主版，自动把同槽最新活跃版升为主版。 */
@@ -308,6 +314,14 @@ export const useDesignCanvasStore = create<DesignCanvasState>()(
       };
     }),
   deleteNode: (id) => get().deleteNodes([id]),
+  markNodeUserTouched: (id) =>
+    set((s) => {
+      if (!s.nodes.some((n) => n.id === id)) return {}; // 无此节点：no-op（与 updateNode 一致）
+      // 只打戳，不动 editHistory：dragStart 打戳不是一次「编辑」，不该产生空撤销帧。
+      return {
+        nodes: s.nodes.map((n) => (n.id === id ? touchEntity(n, Date.now()) : n)),
+      };
+    }),
   deleteNodes: (ids) =>
     set((s) => {
       const idSet = new Set(ids);

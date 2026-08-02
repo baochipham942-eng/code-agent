@@ -25,6 +25,7 @@ import {
 } from './terminal.schema';
 import {
   annotateTerminalSession,
+  isTerminalOnAlternateScreen,
   getTerminalSnapshot,
   listTerminalSessions,
   openTerminalSession,
@@ -321,8 +322,13 @@ class TerminalWriteHandler implements ToolHandler<Record<string, unknown>, strin
 
     // 5) 注入对用户可见：先在终端里印出来是谁敲的，再真敲。顺序不能反——先写后回显的话，
     //    命令输出会跑在标注前面，用户看到的就是「结果先于来源」。
+    //    但全屏 TUI（Codex CLI / vim / less…）是例外：它在备用屏上整屏重绘，这行标注
+    //    活不过下一帧，用户只看到一次闪烁——噪音，没有可见性可言。此时不印，注入的
+    //    可见性由审批卡（写着完整命令）承担。普通 shell 下照旧印，它在那儿是留得住的。
     const pressEnter = args.pressEnter !== false;
-    annotateTerminalSession(sessionId, `\r\n\x1b[36m[Neo] ${input}\x1b[0m\r\n`);
+    if (!isTerminalOnAlternateScreen(sessionId)) {
+      annotateTerminalSession(sessionId, `\r\n\x1b[36m[Neo] ${input}\x1b[0m\r\n`);
+    }
 
     // 提交键必须是 CR(\r) 而不是 LF(\n)。全屏 TUI（Codex CLI / vim / less…）把终端设成 raw
     // 模式直接读按键字节，Enter 就是 13；发 10 它当普通字符收下，文字停在输入框里不提交

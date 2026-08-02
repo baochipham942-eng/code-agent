@@ -222,13 +222,18 @@ jobs:
           #
           # 修法：不加引号，让 shell 展开成真实路径列表再交给 vitest。
           # 展开为空时**必须报红**——空转正是上一版的失败模式，静默通过等于门自己失明。
+          #
+          # tests/unit/web 整目录仍在门外（43 个文件，多数拉 supertest 起服务，没在
+          # ubuntu 上验过，不敢一次性拉进来）。但 agentRunControllerBroadcast 是纯类单测、
+          # 零平台依赖，且它守的正是「事件到不到得了 renderer」这条反复出事的线
+          # （2026-08-01 C3 宿主自起轮次、2026-08-02 取消后 surface 不收敛），显式点名接门。
           ROOT_UNIT_TESTS=(tests/unit/*.test.ts)
           if [ ! -e "${ROOT_UNIT_TESTS[0]}" ]; then
             echo "::error::根级 tests/unit/*.test.ts 展开为空，这条门又空转了——修它，别绕过"
             exit 1
           fi
           echo "根级单测文件 ${#ROOT_UNIT_TESTS[@]} 个进门"
-          npx vitest run tests/unit/agent tests/unit/host tests/unit/ipc tests/unit/tools tests/unit/services tests/renderer "${ROOT_UNIT_TESTS[@]}" --retry=1 \
+          npx vitest run tests/unit/agent tests/unit/host tests/unit/ipc tests/unit/tools tests/unit/services tests/renderer "${ROOT_UNIT_TESTS[@]}" tests/unit/web/agentRunControllerBroadcast.test.ts --retry=1 \
             --exclude 'tests/unit/tools/modules/network/webSearch.test.ts' \
             --exclude 'tests/unit/agent/goalVerifyGate.test.ts'
 

@@ -827,6 +827,7 @@ export const DesignCanvas: React.FC<{
       {canvasProposal.pending && (
         <CanvasProposalReviewBar
           proposal={canvasProposal.pending}
+          approvalReason={canvasProposal.approvalReason}
           onApply={(ops) => void canvasProposal.apply(ops)}
           onReject={(fb) => void canvasProposal.reject(fb)}
         />

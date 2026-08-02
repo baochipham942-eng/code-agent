@@ -70,6 +70,8 @@ export async function importAssetToCanvas(sourcePath: string): Promise<ImportAss
     width,
     height,
     createdAt: Date.now(),
+    // 从会话里把图放进画布是用户动作，与拖入/粘贴导入同一档（useDesignCanvasImport 同款）。
+    createdBy: 'user',
   };
   useDesignCanvasStore.getState().addNode(node);
   // 选中它：用户点「修改」的意图就是马上对这张图动手，顶栏应当直接是那条图像动词条。

@@ -1,7 +1,6 @@
 // ============================================================================
 // English Translations
 // ============================================================================
-
 import type { Translations } from './zh';
 import { enSettings } from './enSettings';
 import { sessionReplayEn } from './sessionReplay';
@@ -37,10 +36,9 @@ import { evalCenterEn } from './evalCenter';
 import { localOpsEn } from './localOps';
 import { onboardingEn } from './onboarding';
 import { workbenchTabsEn } from './workbenchTabs';
-import { activityPanelEn } from './activity';
-
+import { activityPanelEn, canvasActorEn } from './domains';
 export const en: Translations = {
-  ...activityPanelEn,
+  ...canvasActorEn, ...activityPanelEn,
   ...capabilityHubEn,
   ...neoTopicsEn,
   ...projectSpaceEn,

@@ -20,6 +20,7 @@ import { UNSORTED_PROJECT_ID } from '@shared/contract/project';
 import { createLogger } from './logger';
 import { sanitizeSurfaceExecutionSessionExport } from '../../session/surfaceExecutionSessionExport';
 import { stripLegacyForkClaims } from '../sessionFork/portability';
+import { getContextHealthService } from '../../context/contextHealthService';
 
 import { Disposable, getServiceRegistry } from '../serviceRegistry';
 const logger = createLogger('SessionManager');
@@ -395,11 +396,15 @@ export class SessionManager implements Disposable {
         this.sessionCache.delete(sessionId);
       } else {
         const backfilled = this.backfillMissingTelemetryUserPrompts(sessionId);
-        if (backfilled > 0) {
+        const knownMessageCount = backfilled > 0
+          ? db.getSession(sessionId, { userId: ownerId })?.messageCount ?? cached.messages.length + backfilled
+          : cached.messageCount;
+        const requiredMessageCount = Math.min(messageLimit, knownMessageCount);
+        if (backfilled > 0 || cached.messages.length < requiredMessageCount) {
           const reloadLimit = Math.max(messageLimit, cached.messages.length + backfilled);
           cached.messages = db.getRecentMessages(sessionId, reloadLimit);
-          cached.messageCount = db.getSession(sessionId, { userId: ownerId })?.messageCount ?? cached.messages.length;
           this.updateCachedWorkbenchState(cached);
+          cached.messageCount = knownMessageCount;
         }
         return cached;
       }
@@ -1023,6 +1028,7 @@ export class SessionManager implements Disposable {
     const db = getDatabase();
     this.assertAccessibleSession(sessionId);
     db.replaceMessages(sessionId, messages);
+    getContextHealthService().cleanup(sessionId);
 
     if (this.sessionCache.has(sessionId)) {
       const cached = this.sessionCache.get(sessionId)!;

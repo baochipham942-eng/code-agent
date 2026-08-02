@@ -27,6 +27,7 @@ const baseNode: CanvasImageNode = {
   width: 100,
   height: 100,
   createdAt: 1,
+  createdBy: 'user',
 };
 
 class LoadedImage {

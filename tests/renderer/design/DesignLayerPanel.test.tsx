@@ -19,6 +19,7 @@ const image = (over: Partial<CanvasImageNode> = {}): CanvasImageNode => ({
   height: 200,
   createdAt: 1,
   ...over,
+  createdBy: over.createdBy ?? 'user',
 });
 
 const video = (over: Partial<CanvasVideoNode> = {}): CanvasVideoNode => ({
@@ -32,6 +33,7 @@ const video = (over: Partial<CanvasVideoNode> = {}): CanvasVideoNode => ({
   durationSec: 5,
   createdAt: 2,
   ...over,
+  createdBy: over.createdBy ?? 'user',
 });
 
 describe('DesignLayerPanel helpers', () => {

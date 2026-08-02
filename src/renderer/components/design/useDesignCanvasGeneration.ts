@@ -180,6 +180,7 @@ export function buildVariantNode(
     prompt: label,
     parentId: groupKey(baseNode),
     createdAt,
+    createdBy: 'user',
   };
 }
 
@@ -292,6 +293,7 @@ export function useDesignCanvasGeneration(): {
         height,
         prompt: form.requirement,
         createdAt: Date.now(),
+        createdBy: 'user',
         ...(typeof costCny === 'number' && costCny >= 0 ? { costCny } : {}),
       };
       useDesignCanvasStore.getState().addNode(node);
@@ -684,6 +686,7 @@ export function useDesignCanvasGeneration(): {
         prompt: form.requirement.trim() || undefined,
         parentId: mode === 'i2v' && baseNode ? groupKey(baseNode) : undefined,
         createdAt: Date.now(),
+        createdBy: 'user',
         ...(typeof costCny === 'number' && costCny >= 0 ? { costCny } : {}),
       };
       useDesignCanvasStore.getState().addNode(node);

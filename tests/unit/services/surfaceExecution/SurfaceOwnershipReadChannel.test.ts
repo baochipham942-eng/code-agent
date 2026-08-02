@@ -154,7 +154,7 @@ describe('Surface ownership read channel (取消后快照仍读得到，写路�
       identity.conversationId,
       runtime.snapshotConversation(identity.conversationId),
     );
-    expect(accepted).toBe(true);
+    expect(accepted).toBe('applied');
     const { sessionsByScope } = useSurfaceExecutionStore.getState();
 
     const runSession = selectSurfaceExecutionRunSessionV1(sessionsByScope, {

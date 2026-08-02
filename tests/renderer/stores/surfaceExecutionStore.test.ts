@@ -146,7 +146,7 @@ describe('surfaceExecutionStore', () => {
       sessions: [nativeSession(identity, 'native')],
       updatedAt: 30,
     };
-    expect(store.setNativeSnapshot('conversation-a', snapshot)).toBe(true);
+    expect(store.setNativeSnapshot('conversation-a', snapshot)).toBe('applied');
     expect(useSurfaceExecutionStore.getState().getSession(identity)).toMatchObject({
       source: 'live',
       writable: true,
@@ -172,7 +172,7 @@ describe('surfaceExecutionStore', () => {
       updatedAt: 10,
     };
 
-    expect(useSurfaceExecutionStore.getState().setNativeSnapshot('conversation-a', snapshot)).toBe(false);
+    expect(useSurfaceExecutionStore.getState().setNativeSnapshot('conversation-a', snapshot)).toBe('invalid');
     expect(useSurfaceExecutionStore.getState().nativeByConversation).toEqual({});
   });
 
@@ -192,9 +192,48 @@ describe('surfaceExecutionStore', () => {
     };
 
     const store = useSurfaceExecutionStore.getState();
-    expect(store.setNativeSnapshot('conversation-a', newer)).toBe(true);
-    expect(store.setNativeSnapshot('conversation-a', stale)).toBe(true);
+    expect(store.setNativeSnapshot('conversation-a', newer)).toBe('applied');
+    expect(store.setNativeSnapshot('conversation-a', stale)).toBe('stale');
 
+    expect(useSurfaceExecutionStore.getState().getSession(identity)).toMatchObject({
+      updatedAt: 50,
+      events: [expect.objectContaining({ userSummary: 'newer' })],
+    });
+  });
+
+  it('lets callers distinguish a discarded stale snapshot from an invalid one and from an applied write', () => {
+    const identity = scope('conversation-a', 'run-a', 'agent-a', 'surface-a');
+    const newer: SurfaceConversationSnapshotV1 = {
+      version: 1,
+      conversationId: 'conversation-a',
+      sessions: [{ ...nativeSession(identity, 'newer'), updatedAt: 50 }],
+      updatedAt: 50,
+    };
+    const stale: SurfaceConversationSnapshotV1 = {
+      version: 1,
+      conversationId: 'conversation-a',
+      sessions: [{ ...nativeSession(identity, 'stale'), updatedAt: 30 }],
+      updatedAt: 30,
+    };
+    const invalid: SurfaceConversationSnapshotV1 = {
+      version: 1,
+      conversationId: 'conversation-b',
+      sessions: [],
+      updatedAt: 10,
+    };
+
+    const store = useSurfaceExecutionStore.getState();
+    const appliedResult = store.setNativeSnapshot('conversation-a', newer);
+    const before = useSurfaceExecutionStore.getState().nativeByConversation['conversation-a'];
+
+    const staleResult = store.setNativeSnapshot('conversation-a', stale);
+    const invalidResult = store.setNativeSnapshot('conversation-a', invalid);
+
+    expect(appliedResult).toBe('applied');
+    expect(staleResult).toBe('stale');
+    expect(invalidResult).toBe('invalid');
+    expect(new Set([appliedResult, staleResult, invalidResult]).size).toBe(3);
+    expect(useSurfaceExecutionStore.getState().nativeByConversation['conversation-a']).toBe(before);
     expect(useSurfaceExecutionStore.getState().getSession(identity)).toMatchObject({
       updatedAt: 50,
       events: [expect.objectContaining({ userSummary: 'newer' })],

@@ -256,16 +256,19 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
           显隐用 group-focus-visible 而非 group-focus-within（2026-07-26 打磨批 D D3）：
           鼠标点击按钮后 Chrome 会留下 :focus（但不标 :focus-visible），focus-within
           因此粘滞——鼠标移开后动作簇仍常驻；键盘 Tab 聚焦照样命中 focus-visible，
-          可及性不受损。 */}
+          可及性不受损。
+          对齐三修（2026-08-01 真机截图）：补 z-10（对照 SidebarProjectGroup 同款 hover
+          簇，无 z-index 会被行内容压住/错位）；right-1.5 与行内容右缘（pr-1.5）同轨，
+          图标落在被它顶替的状态点同一竖轨；删掉死 class !p-1——Tailwind v4 的
+          important 是后缀写法（p-1!），前缀 !p-1 不生成任何 CSS，size="sm" 本就 p-1。 */}
       {!multiSelectMode && !isRenaming && (
-        <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-0.5 rounded-md bg-zinc-800 pl-2 shadow-[-8px_0_8px_-4px_rgba(24,24,27,0.95)] opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100">
+        <div className="absolute right-1.5 top-1/2 -translate-y-1/2 z-10 flex items-center gap-0.5 rounded-md bg-zinc-800 pl-2 shadow-[-8px_0_8px_-4px_rgba(24,24,27,0.95)] opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100">
           <IconButton
             icon={session.isArchived ? <ArchiveRestore className="w-3.5 h-3.5" /> : <Archive className="w-3.5 h-3.5" />}
             aria-label={`${session.isArchived ? s.unarchiveSession : s.archiveSession} ${displayTitle}`}
             onClick={(e) => handleArchiveSession(session.id, !!session.isArchived, e)}
             variant="ghost"
             size="sm"
-            className="!p-1"
             title={session.isArchived ? s.unarchive : s.archive}
           />
         </div>

@@ -1,32 +1,35 @@
-import React, { useState } from 'react';
-import type { LucideIcon } from 'lucide-react';
+// ============================================================================
+// KnowledgeInboxSection - 设置 → 记忆 的 Knowledge Inbox 独立分区
+// ============================================================================
+//
+// 2026-08-02 从 features/knowledge/KnowledgeMemoryPanel(.parts).tsx 搬入（整窗页壳子退役）。
+// Inbox 有写操作（采纳/编辑后采纳/忽略 → memoryInboxResolve IPC）、有列表、有编辑态，
+// 按工单放成 MemoryTab 的正常 SettingsSection（「文件管理」之后、诊断区之前），
+// 不塞进折叠诊断区。列表与状态机（editingId/draftById/statusById/errorById）整体搬，逻辑未改。
+
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { AlertCircle, Ban, Check, Inbox, PencilLine } from 'lucide-react';
+import { EmptyState } from '../../../primitives';
+import { SettingsSection } from '../SettingsLayout';
+import { useAppStore } from '../../../../stores/appStore';
+import { useSessionStore } from '../../../../stores/sessionStore';
+import { useI18n } from '../../../../hooks/useI18n';
+import { zh, type Translations } from '../../../../i18n';
 import {
-  AlertCircle,
-  Ban,
-  Check,
-  ChevronDown,
-  ChevronUp,
-  Database,
-  FileText,
-  MessageSquareText,
-  PencilLine,
-  Zap,
-} from 'lucide-react';
-import type { AuditItem, InboxItem, InboxStatus } from './KnowledgeMemoryPanel';
-import { Badge } from '../../primitives';
-import { useI18n } from '../../../hooks/useI18n';
-import { zh, type Translations } from '../../../i18n';
+  buildInboxItems,
+  buildMemoryInboxResolvePayload,
+  invokeMemoryAudit,
+  invokeMemoryInboxResolve,
+  type InboxItem,
+  type InboxStatus,
+  type MemoryAuditPayload,
+} from './memoryAuditClient';
 
 function formatTime(value: number | null, t: Translations = zh): string {
   if (!value) return t.knowledgeMemory.timeUnknown;
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return t.knowledgeMemory.timeUnknown;
   return date.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' });
-}
-
-function formatConfidence(value: number | undefined): string | null {
-  if (typeof value !== 'number' || !Number.isFinite(value)) return null;
-  return `${Math.round(value * 100)}%`;
 }
 
 export function KnowledgeInboxList({
@@ -179,84 +182,140 @@ function InboxStatusBadge({ status }: { status: InboxStatus }) {
   );
 }
 
-export function AuditRow({ item }: { item: AuditItem }) {
-  const { t } = useI18n();
-  const confidence = formatConfidence(item.confidence);
-  const [isExpanded, setIsExpanded] = useState(false);
-  const hasBody = Boolean(item.body?.trim());
-  return (
-    <article className="rounded-lg border border-zinc-800 bg-zinc-950/60 p-3">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-1.5">
-            <InjectionBadge value={item.injection} />
-            <span className="rounded border border-zinc-700 px-1.5 py-0.5 text-[11px] text-zinc-400">{item.scope}</span>
-            {confidence ? <span className="text-[11px] text-zinc-600">confidence {confidence}</span> : null}
-          </div>
-          <h4 className="mt-2 line-clamp-2 text-sm font-medium text-zinc-100">{item.title}</h4>
-        </div>
-        <span className="shrink-0 text-[11px] text-zinc-600">{formatTime(item.updatedAt, t)}</span>
-      </div>
-      <p className="mt-2 line-clamp-3 text-xs leading-5 text-zinc-400">{item.summary}</p>
-      <dl className="mt-3 grid grid-cols-1 gap-1 text-[11px] leading-4 text-zinc-500 lg:grid-cols-2">
-        <div>
-          <dt className="inline text-zinc-400">{t.knowledgeMemory.sourceLabelPrefix}</dt>
-          <dd className="inline break-all">{item.source}</dd>
-        </div>
-        <div>
-          <dt className="inline text-zinc-400">{t.knowledgeMemory.purposeLabelPrefix}</dt>
-          <dd className="inline">{item.purpose}</dd>
-        </div>
-        <div>
-          <dt className="inline text-zinc-400">{t.knowledgeMemory.typeLabelPrefix}</dt>
-          <dd className="inline">{item.origin}</dd>
-        </div>
-      </dl>
-      {hasBody ? (
-        <div className="mt-3 border-t border-zinc-800 pt-2">
-          <button
-            type="button"
-            onClick={() => setIsExpanded((value) => !value)}
-            className="inline-flex items-center gap-1.5 rounded-md px-1.5 py-1 text-[11px] text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200"
-          >
-            {isExpanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-            {isExpanded ? t.knowledgeMemory.collapseEvidence : t.knowledgeMemory.expandEvidence}
-          </button>
-          {isExpanded ? (
-            <pre className="mt-2 max-h-56 overflow-y-auto whitespace-pre-wrap rounded-md border border-zinc-800 bg-zinc-950 p-3 text-[11px] leading-5 text-zinc-300">
-              {item.body}
-            </pre>
-          ) : null}
-        </div>
-      ) : null}
-    </article>
-  );
-}
-
-function InjectionBadge({ value }: { value: AuditItem['injection'] }) {
-  const { t } = useI18n();
-  const labels: Record<AuditItem['injection'], { text: string; className: string; Icon: LucideIcon }> = {
-    'seed-candidate': { text: t.knowledgeMemory.injectionSeedCandidate, className: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300', Icon: Zap },
-    'memory-index': { text: t.knowledgeMemory.injectionIndexCandidate, className: 'border-sky-500/30 bg-sky-500/10 text-sky-300', Icon: FileText },
-    'recent-conversations': { text: t.knowledgeMemory.injectionRecentCandidate, className: 'border-amber-500/30 bg-amber-500/10 text-amber-300', Icon: MessageSquareText },
-    available: { text: t.knowledgeMemory.injectionOnDemand, className: 'border-zinc-700 bg-zinc-800/70 text-zinc-300', Icon: FileText },
-    stored: { text: t.knowledgeMemory.injectionStored, className: 'border-zinc-700 bg-zinc-800/70 text-zinc-400', Icon: Database },
-  };
-  const config = labels[value];
-  return (
-    <Badge className={`text-[11px] ${config.className}`}>
-      <config.Icon className="h-3 w-3" />
-      {config.text}
-    </Badge>
-  );
-}
-
-export function LoadingRows() {
+function LoadingRows() {
   return (
     <div className="space-y-2">
       {Array.from({ length: 4 }).map((_, index) => (
         <div key={index} className="h-24 animate-pulse rounded-lg border border-zinc-800 bg-zinc-950/60" />
       ))}
     </div>
+  );
+}
+
+export function KnowledgeInboxSection() {
+  const { t } = useI18n();
+  const workingDirectory = useAppStore((state) => state.workingDirectory);
+  const currentSessionId = useSessionStore((state) => state.currentSessionId);
+  const [data, setData] = useState<MemoryAuditPayload | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [editingInboxId, setEditingInboxId] = useState<string | null>(null);
+  const [draftByInboxId, setDraftByInboxId] = useState<Record<string, string>>({});
+  const [inboxStatusById, setInboxStatusById] = useState<Record<string, InboxStatus>>({});
+  const [inboxErrorById, setInboxErrorById] = useState<Record<string, string>>({});
+
+  const loadAudit = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const result = await invokeMemoryAudit({
+        projectPath: workingDirectory,
+        sessionId: currentSessionId,
+      });
+      setData(result);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      setData(null);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [currentSessionId, workingDirectory]);
+
+  useEffect(() => {
+    void loadAudit();
+  }, [loadAudit]);
+
+  const handleResolveInboxItem = useCallback(async (
+    item: InboxItem,
+    decision: 'approve' | 'reject',
+    content?: string,
+  ) => {
+    const runningStatus: InboxStatus = decision === 'approve' ? 'approving' : 'rejecting';
+    const doneStatus: InboxStatus = decision === 'approve' ? 'approved' : 'rejected';
+    setInboxStatusById((prev) => ({ ...prev, [item.id]: runningStatus }));
+    setInboxErrorById((prev) => {
+      const next = { ...prev };
+      delete next[item.id];
+      return next;
+    });
+    setError(null);
+
+    try {
+      await invokeMemoryInboxResolve(buildMemoryInboxResolvePayload(item, decision, {
+        content,
+        projectPath: workingDirectory,
+        sessionId: currentSessionId,
+      }));
+      setInboxStatusById((prev) => ({ ...prev, [item.id]: doneStatus }));
+      setEditingInboxId((current) => current === item.id ? null : current);
+      await loadAudit();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setInboxStatusById((prev) => {
+        const next = { ...prev };
+        delete next[item.id];
+        return next;
+      });
+      setInboxErrorById((prev) => ({ ...prev, [item.id]: message }));
+      setError(t.knowledgeMemory.inboxProcessFailed.replace('{message}', message));
+    }
+  }, [currentSessionId, loadAudit, t, workingDirectory]);
+
+  const handleStartEditInboxItem = useCallback((item: InboxItem) => {
+    setEditingInboxId(item.id);
+    setDraftByInboxId((prev) => ({
+      ...prev,
+      [item.id]: prev[item.id] ?? item.content,
+    }));
+  }, []);
+
+  const inboxItems = useMemo(() => data ? buildInboxItems(data, t) : [], [data, t]);
+
+  return (
+    <SettingsSection
+      title={t.knowledgeMemory.inboxSectionTitle}
+      description={t.knowledgeMemory.inboxSectionDescription}
+      actions={(
+        <span className="text-xs text-zinc-500">
+          {t.knowledgeMemory.countSuffix.replace('{count}', String(inboxItems.length))}
+        </span>
+      )}
+    >
+      <div
+        className="rounded-lg border border-zinc-700/70 bg-zinc-900/60 p-3"
+        data-testid="knowledge-inbox-section"
+      >
+        {error ? (
+          <div className="mb-3 flex items-center gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-200">
+            <AlertCircle className="h-4 w-4" />
+            {error}
+          </div>
+        ) : null}
+        {isLoading ? (
+          <LoadingRows />
+        ) : inboxItems.length === 0 ? (
+          <EmptyState
+            variant="panel"
+            icon={Inbox}
+            title={t.knowledgeMemory.inboxEmptyTitle}
+            text={t.knowledgeMemory.inboxEmptyText}
+          />
+        ) : (
+          <KnowledgeInboxList
+            items={inboxItems}
+            editingId={editingInboxId}
+            draftById={draftByInboxId}
+            statusById={inboxStatusById}
+            errorById={inboxErrorById}
+            onApprove={(item) => void handleResolveInboxItem(item, 'approve')}
+            onReject={(item) => void handleResolveInboxItem(item, 'reject')}
+            onEdit={handleStartEditInboxItem}
+            onDraftChange={(id, value) => setDraftByInboxId((prev) => ({ ...prev, [id]: value }))}
+            onCancelEdit={() => setEditingInboxId(null)}
+            onApproveEdit={(item, value) => void handleResolveInboxItem(item, 'approve', value)}
+          />
+        )}
+      </div>
+    </SettingsSection>
   );
 }

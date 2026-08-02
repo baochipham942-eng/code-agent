@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { EventEmitter } from 'events';
 import { isVoiceInputMessage, type Message } from '../../src/shared/contract/message';
 import type { VoiceEvent, VoiceTransport, VoiceWorkItem } from '../../src/shared/contract/voice';
-import { QWEN_OMNI_REALTIME_MODEL, VOICE_DOWNSTREAM_SAMPLE_RATE, VOICE_END_CALL_GOODBYE_TIMEOUT_MS, VOICE_HANGUP_REACTION_WINDOW_MS, VOICE_INBOUND_AUDIO_STARTUP_TIMEOUT_MS, VOICE_TRANSCRIPT_MERGE_WINDOW_MS, VOICE_WS_CLOSE_TERMINAL } from '../../src/shared/constants/voice';
+import { QWEN_OMNI_REALTIME_MODEL, VOICE_DOWNSTREAM_SAMPLE_RATE, VOICE_END_CALL_GOODBYE_TIMEOUT_MS, VOICE_HANGUP_REACTION_WINDOW_MS, VOICE_INBOUND_AUDIO_STARTUP_TIMEOUT_MS, VOICE_TRANSCRIPT_MERGE_WINDOW_MS, VOICE_WS_CLOSE_TERMINAL, VOICE_MILESTONE_FIRST_DELAY_MS, VOICE_MILESTONE_MAX_PER_WORK_ITEM, VOICE_MILESTONE_MIN_INTERVAL_MS, VOICE_MILESTONE_STALE_MS } from '../../src/shared/constants/voice';
 
 const vocabulary = vi.hoisted(() => ({ block: '' }));
 vi.mock('../../src/host/services/voice/voiceVocabulary', () => ({
@@ -90,7 +90,7 @@ vi.mock('../../src/host/hooks', () => ({
 const voiceDispatchProbe = vi.hoisted(() => ({
   narrate: null as null | ((narration: {
     workItemId: string;
-    status: 'done';
+    status: 'done' | 'milestone';
     title: string;
     summary: string;
   }) => void),
@@ -1495,5 +1495,149 @@ describe('实时语音会话标记（生产者接线）', () => {
     await attachVoiceClient(client as never, 'session-badge');
 
     await vi.waitFor(() => expect(patchSessionMetadata).toHaveBeenCalledWith('session-badge', { hadLiveVoice: true }));
+  });
+});
+
+// ============================================================================
+// §2 中途进度节流闸。
+//
+// 这一组**刻意不把输入一次性喂完**：闸的语义全在时间轴上（首条延迟 / 间隔下限 /
+// 保质期），一次性喂完只能证明「调用了几次」，证明不了「在正确的时刻放行/丢弃」。
+// X5.5 的教训就是这个——协议零字节改动时，一次性喂完的测试掩盖了速率缺陷。
+// 所以每条都按真实时间线推进 fake timer，并在推进**前后各断言一次**。
+// ============================================================================
+describe('中途进度节流闸（回放时间线）', () => {
+  const milestone = (n: number) => ({
+    workItemId: `work-1:milestone-${n}`,
+    status: 'milestone' as const,
+    title: '写周报',
+    summary: `第 ${n} 步做完了`,
+  });
+  const terminal = {
+    workItemId: 'work-1',
+    status: 'done' as const,
+    title: '写周报',
+    summary: '写完了。',
+  };
+
+  /** 派一件活：让 firstDispatchAt 落定，首条延迟才有基准。 */
+  const dispatch = () => voiceDispatchProbe.work?.({ id: 'work-1', title: '写周报', status: 'queued' });
+
+  beforeEach(() => {
+    injectItem.mockClear();
+    voiceDispatchProbe.narrate = null;
+    voiceDispatchProbe.work = null;
+    lastOnEvent = null;
+  });
+
+  afterEach(async () => {
+    // 先回真实计时器再收尾：teardown 里有排水窗等真定时器，假计时器下它永远等不到。
+    vi.useRealTimers();
+    await endActiveVoiceSession();
+  });
+
+  /** 建连必须在真实计时器下完成（连接链路自带定时器），连上之后再接管时间轴。 */
+  async function dialThenFreezeClock(sessionId: string): Promise<void> {
+    await attachVoiceClient(new FakeClient() as never, sessionId);
+    vi.useFakeTimers();
+  }
+
+  it('首条进度必须等过延迟窗——推进前不播，推进后才播', async () => {
+    await dialThenFreezeClock('session-milestone-delay');
+    dispatch();
+    injectItem.mockClear();
+
+    voiceDispatchProbe.narrate?.(milestone(1));
+    // 推进之前：一条都不许出去。派活开场白和第一条进度不该挤在同一口气里。
+    expect(injectItem).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(VOICE_MILESTONE_FIRST_DELAY_MS + 1);
+    voiceDispatchProbe.narrate?.(milestone(2));
+    expect(injectItem).toHaveBeenCalledTimes(1);
+  });
+
+  it('间隔窗内的第二条被丢；推过间隔窗才放行', async () => {
+    await dialThenFreezeClock('session-milestone-interval');
+    dispatch();
+    await vi.advanceTimersByTimeAsync(VOICE_MILESTONE_FIRST_DELAY_MS + 1);
+    injectItem.mockClear();
+
+    voiceDispatchProbe.narrate?.(milestone(1));
+    expect(injectItem).toHaveBeenCalledTimes(1);
+
+    // 间隔窗内：丢。
+    await vi.advanceTimersByTimeAsync(VOICE_MILESTONE_MIN_INTERVAL_MS - 1000);
+    voiceDispatchProbe.narrate?.(milestone(2));
+    expect(injectItem).toHaveBeenCalledTimes(1);
+
+    // 推过间隔窗：放行。
+    await vi.advanceTimersByTimeAsync(2000);
+    voiceDispatchProbe.narrate?.(milestone(3));
+    expect(injectItem).toHaveBeenCalledTimes(2);
+  });
+
+  it('每件活最多播上限条，之后一律沉默', async () => {
+    await dialThenFreezeClock('session-milestone-cap');
+    dispatch();
+    await vi.advanceTimersByTimeAsync(VOICE_MILESTONE_FIRST_DELAY_MS + 1);
+    injectItem.mockClear();
+
+    for (let n = 1; n <= VOICE_MILESTONE_MAX_PER_WORK_ITEM + 2; n += 1) {
+      voiceDispatchProbe.narrate?.(milestone(n));
+      await vi.advanceTimersByTimeAsync(VOICE_MILESTONE_MIN_INTERVAL_MS + 1);
+    }
+
+    expect(injectItem).toHaveBeenCalledTimes(VOICE_MILESTONE_MAX_PER_WORK_ITEM);
+  });
+
+  it('用户一开口，排队的进度当场全丢——但终态只排队不丢', async () => {
+    await dialThenFreezeClock('session-milestone-usertalk');
+    dispatch();
+    await vi.advanceTimersByTimeAsync(VOICE_MILESTONE_FIRST_DELAY_MS + 1);
+    injectItem.mockClear();
+
+    // 借「模型正在说」把两条都压进队列。**刻意不用 speech.started 入队**——那会预先
+    // 消耗掉终态的一轮压制额度，两轮满了它会被既有规则丢掉，测出来的就不是本条想测的事。
+    upstreamResponding = true;
+    voiceDispatchProbe.narrate?.(milestone(1));
+    voiceDispatchProbe.narrate?.(terminal);
+    expect(injectItem).not.toHaveBeenCalled();
+
+    // 用户开口：进度当场丢，终态只记一轮压制、留在队里
+    lastOnEvent?.({ type: 'speech.started' });
+    upstreamResponding = false;
+    lastOnEvent?.({ type: 'response.done' });
+
+    expect(injectItem).toHaveBeenCalledTimes(1);
+    expect(injectItem.mock.calls[0]?.[0]).toContain('写完了');
+  });
+
+  it('排队超过保质期的进度不播——终态不设保质期（正对照）', async () => {
+    await dialThenFreezeClock('session-milestone-stale');
+    dispatch();
+    await vi.advanceTimersByTimeAsync(VOICE_MILESTONE_FIRST_DELAY_MS + 1);
+    injectItem.mockClear();
+
+    lastOnEvent?.({ type: 'speech.started' });
+    voiceDispatchProbe.narrate?.(milestone(1));
+    voiceDispatchProbe.narrate?.(terminal);
+
+    // 静置超过保质期后再放行
+    await vi.advanceTimersByTimeAsync(VOICE_MILESTONE_STALE_MS + 1000);
+    lastOnEvent?.({ type: 'response.done' });
+
+    // 过期进度被丢，终态照播——没有这条正对照，一个「什么都不播」的实现也会通过上一条。
+    expect(injectItem).toHaveBeenCalledTimes(1);
+    expect(injectItem.mock.calls[0]?.[0]).toContain('写完了');
+  });
+
+  it('终态不受任何进度闸限制（正对照）', async () => {
+    await dialThenFreezeClock('session-milestone-terminal-free');
+    dispatch();
+    injectItem.mockClear();
+
+    // 首条延迟窗内、零间隔——进度会被丢，终态必须照播。
+    voiceDispatchProbe.narrate?.(terminal);
+    expect(injectItem).toHaveBeenCalledTimes(1);
   });
 });

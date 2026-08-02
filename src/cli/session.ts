@@ -212,6 +212,11 @@ export class CLISessionManager {
    * 删除会话
    */
   async deleteSession(sessionId: string): Promise<void> {
+    // CLI/web fallback 也可能删到同一 conversation id；先删本机终态帧，失败则保留会话。
+    const { deleteTerminalFramesForConversation } = await import(
+      '../host/services/surfaceExecution/TerminalFrameStore'
+    );
+    await deleteTerminalFramesForConversation(sessionId);
     if (await this.ensureDbReady()) {
       try {
         this.getDb()!.deleteSession(sessionId);

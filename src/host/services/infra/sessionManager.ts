@@ -594,6 +594,7 @@ export class SessionManager implements Disposable {
 
         if (cloudSession.is_deleted) {
           if (localSession && cloudSession.updated_at > localSession.updatedAt) {
+            await this.deleteTerminalFrames(cloudSession.id);
             db.deleteSession(cloudSession.id, {
               deletedAt: cloudSession.updated_at,
               syncOrigin: 'remote'
@@ -794,11 +795,32 @@ export class SessionManager implements Disposable {
   }
 
   /**
+   * 终态留影帧跟会话一起删：清掉盘上 surface-frames/<conv>/ 整个子目录。
+   * 失败必须阻断会话删除，避免数据库已标删除而敏感帧仍留盘。动态 import 保持
+   * surfaceExecution → infra 单向依赖（SurfaceConversationProjectionService 已 import
+   * 本模块，反向静态 import 会成环）。
+   */
+  private async deleteTerminalFrames(sessionId: string): Promise<void> {
+    try {
+      const { deleteTerminalFramesForConversation } = await import('../surfaceExecution/TerminalFrameStore');
+      await deleteTerminalFramesForConversation(sessionId);
+    } catch (error) {
+      logger.warn('Failed to delete terminal surface frames for session', {
+        sessionId,
+        message: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    }
+  }
+
+  /**
    * 删除会话
    */
   async deleteSession(sessionId: string): Promise<void> {
     const db = getDatabase();
     this.assertAccessibleSession(sessionId);
+    // 先删帧再写会话 tombstone。帧删失败时会话仍可见，不能让用户得到“已删除”假象。
+    await this.deleteTerminalFrames(sessionId);
     db.deleteSession(sessionId);
 
     // 清除缓存

@@ -13,7 +13,7 @@ import {
   resolveRealtimeVoiceSelection,
   type RealtimeVoiceProviderProfile,
 } from '../../../shared/constants/realtimeVoiceProviders';
-import type { VoiceClientCommand, VoiceEvent, VoiceFocusContext, VoiceInterruptClassification, VoiceTransportHandle, VoiceWorkItem } from '../../../shared/contract/voice';
+import type { VoiceClientCommand, VoiceEvent, VoiceFocusContext, VoiceInterruptClassification, VoiceTokenUsage, VoiceTransportHandle, VoiceWorkItem } from '../../../shared/contract/voice';
 import type { VoiceTransport } from '../../../shared/contract/voice';
 import { getDashscopeApiKey } from '../media/imageGenerationService';
 import { createLogger } from '../infra/logger';
@@ -29,7 +29,7 @@ import {
 import { resolveVoiceRouting } from './voiceRouting';
 import { beginVoiceDispatch, endVoiceDispatch, pushVoiceTranscript, setVoiceDispatchFocus } from './voiceAgentCoordinator';
 import { composeVoiceInstructions, focusChanged, type VoiceContinuityContext } from './voiceContextAssembler';
-import { recordVoiceCall } from './voiceUsageLedger';
+import { addTokenUsage, recordVoiceCall } from './voiceUsageLedger';
 import { consumeVoiceCallFailure, observeVoiceEventFailure, persistVoiceCallFailure } from './voiceFailurePersistence';
 import { VOICE_TOOL_DEFINITIONS, executeVoiceTool } from './voiceTools';
 import type { VoiceLiveSettings } from '../../../shared/contract/settings';
@@ -144,6 +144,8 @@ interface ActiveSession {
   cancelledResponseIds: Set<string>;
   /** assistant final 先暂存，到 response.done 且未取消时才落库。 */
   pendingAssistantFinals: Map<string, { text: string; itemId?: string }>;
+  /** 一通电话可有多轮 response；每轮 provider usage 在这里累加后随挂断入账。 */
+  tokenUsage?: VoiceTokenUsage;
   /** 终态播报只属于这通电话：压住、去重与已播记录都随 active 一起销毁。 */
   narration: NarrationState;
 }
@@ -555,7 +557,7 @@ async function teardown(reason: string): Promise<void> {
   const seconds = durationSec % 60;
   const durationText = minutes > 0 ? `${minutes} 分 ${seconds} 秒` : `${seconds} 秒`;
   // 用量账本无条件记：空通话也真按秒付了钱，不落卡不等于没发生。
-  if (!consumeVoiceCallFailure(session.id)) recordVoiceCall(endedAt, durationSec);
+  if (!consumeVoiceCallFailure(session.id)) recordVoiceCall(endedAt, durationSec, session.tokenUsage);
   // A3：零字幕通话不落摘要卡。2026-07-30 真机那通 16 秒空通话（自动重连拨出来的）
   // 在消息流里留了一张「这通电话没有对话内容」——那不是记录，是噪音。
   // 派过活的通话即使一句没说也照落：工作项才是那通电话的产物。
@@ -900,6 +902,9 @@ async function connectAndBind(
             }
           } else transcriptBuf.assistantByResponse.set(key, assistantBuffer + event.text);
         } else if (event.type === 'response.done') {
+          if (event.usage && active?.id === id) {
+            active.tokenUsage = addTokenUsage(active.tokenUsage, event.usage);
+          }
           const key = event.responseId ?? 'legacy';
           if (cancelledResponse) {
             transcriptBuf.assistantByResponse.delete(key);
@@ -1017,6 +1022,7 @@ async function connectAndBind(
     },
     cancelledResponseIds: new Set(),
     pendingAssistantFinals: new Map(),
+    tokenUsage: undefined,
     narration: createNarrationState(),
     maxDurationTimer: setTimeout(() => {
       logger.warn('session hit max duration, force closing', { voiceSessionId: id });

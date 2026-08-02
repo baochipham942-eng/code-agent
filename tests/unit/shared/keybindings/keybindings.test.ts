@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  KEYBINDING_DEFINITIONS,
   createDefaultKeybindingsSettings,
   detectKeybindingConflicts,
   detectKeybindingSystemWarnings,
@@ -9,6 +10,10 @@ import {
 } from '@shared/keybindings';
 
 describe('keybindings registry', () => {
+  it('registers the global Live call toggle action', () => {
+    expect(KEYBINDING_DEFINITIONS.some((definition) => definition.id === 'voice.callToggle')).toBe(true);
+  });
+
   it('defaults command palette to Cmd+K on macOS and leaves destructive clear chat unbound', () => {
     const settings = createDefaultKeybindingsSettings('darwin');
 

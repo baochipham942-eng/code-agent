@@ -249,8 +249,11 @@ export class SurfaceOutputRegistry {
     return this.toRef(entry);
   }
 
+  // projectRefs / describeRefs / listOwned 是纯枚举（不碰 surface、不派发、不改 session），
+  // 走只读属主通道：归属仍钉死，但 run 已取消/注销后照样读得到。会话快照与 durable 投影
+  // 都从这里进货，挂在行动闸上会让取消后的 UI 冻在 running（2026-08-02 排查报告 §2.2）。
   projectRefs(subject: SurfaceGrantSubjectV1, refs: readonly string[]): string[] {
-    this.sessions.requireOwned(subject.sessionId, subject);
+    this.sessions.requireOwnedForRead(subject.sessionId, subject);
     return Array.from(new Set(refs.flatMap((sourceRef) => {
       const owned = this.entries.get(this.refBySource.get(this.ownerSourceKey(subject, sourceRef)) || '');
       if (owned) return [owned.ref];
@@ -272,7 +275,7 @@ export class SurfaceOutputRegistry {
   }
 
   listOwned(subject: SurfaceGrantSubjectV1): SurfaceOutputRefV1[] {
-    this.sessions.requireOwned(subject.sessionId, subject);
+    this.sessions.requireOwnedForRead(subject.sessionId, subject);
     this.pruneExpired();
     return Array.from(this.entries.values())
       .filter((entry) => this.sameOwner(entry, subject))

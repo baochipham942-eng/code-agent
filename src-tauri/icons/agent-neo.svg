@@ -1,21 +1,21 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 48 48">
   <defs>
-    <linearGradient id="shell" x1="168" y1="122" x2="872" y2="902" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#030304"/>
-      <stop offset="1" stop-color="#17191f"/>
+    <linearGradient id="brick" x1="8" y1="8" x2="40" y2="40" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#16423f"/>
+      <stop offset="1" stop-color="#0b2422"/>
     </linearGradient>
-    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
-      <feDropShadow dx="0" dy="28" stdDeviation="38" flood-color="#000000" flood-opacity="0.28"/>
-    </filter>
+    <linearGradient id="glyph" x1="10" y1="10" x2="38" y2="38" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#7DF9E8"/>
+      <stop offset="1" stop-color="#14B8A6"/>
+    </linearGradient>
   </defs>
-  <g transform="translate(64 64) scale(0.875)">
-    <rect width="1024" height="1024" rx="228" fill="url(#shell)"/>
-    <rect width="1024" height="1024" rx="228" fill="#000000" fill-opacity="0.3"/>
-    <path
-      d="M286 744V280h118l238 286V280h116v464H640L402 458v286H286Z"
-      fill="#ffffff"
-    />
-    <circle cx="747" cy="741" r="52" fill="#29D6A3"/>
-    <circle cx="747" cy="741" r="92" fill="none" stroke="#29D6A3" stroke-opacity="0.3" stroke-width="24"/>
-  </g>
+  <!-- 深空砖 -->
+  <rect x="2" y="2" width="44" height="44" rx="11" fill="url(#brick)" stroke="#2dd4bf" stroke-opacity="0.3" stroke-width="1"/>
+  <!-- 顶部内高光 -->
+  <rect x="4" y="3" width="40" height="1.5" rx="0.75" fill="#ffffff" fill-opacity="0.09"/>
+  <!-- N2 星芒字形 -->
+  <path d="M15 33.5 V14.5 L33 33.5 V14.5" fill="none" stroke="url(#glyph)" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M37 6.5 L38.1 10 L41.6 11.1 L38.1 12.2 L37 15.7 L35.9 12.2 L32.4 11.1 L35.9 10 Z" fill="#A7F3D0"/>
+  <!-- 静态轨道环 -->
+  <circle cx="24" cy="24" r="27" fill="none" stroke="#5eead4" stroke-opacity="0.34" stroke-width="1"/>
 </svg>

@@ -31,8 +31,14 @@ import {
 import { estimateVideoCostCny } from '@shared/media/videoCost';
 import { formatCny } from '@shared/media/imageCost';
 import { resolveDesignDir, readWorkspaceImageAsDataUrl } from './designFiles';
-import { buildMaskDataUrl, type Rect } from './designCanvasMask';
-import { composeAnnotOps, exportAnnotatedPng } from './annotComposite';
+import {
+  buildMaskDataUrl,
+  buildAnnotMaskDataUrl,
+  annotShapesToMaskGeometry,
+  hasMaskArea,
+  type Rect,
+} from './designCanvasMask';
+import { composeAnnotOps } from './annotComposite';
 import type { AnnotShape } from './AnnotationLayer';
 import { placeCanvasNode, placeVariantNode, type CanvasPlacementOperation } from './canvasPlacement';
 import {
@@ -78,10 +84,16 @@ export type ExpandDirection = 'up' | 'down' | 'left' | 'right' | 'all';
 export interface ExpandArgs {
   /** 被扩图的底图节点。 */
   baseNode: CanvasImageNode;
-  /** 扩展方向。 */
-  direction: ExpandDirection;
+  /** 扩展方向。与 scales 二选一：给了 scales 就不看这两个字段。 */
+  direction?: ExpandDirection;
   /** 扩展比例（1.0–2.0，单边外扩倍数）。 */
-  ratio: number;
+  ratio?: number;
+  /**
+   * 四向独立单边 scale（各 ∈[1,2]），一次调用即可表达「左右各扩一半」这类非对称外扩。
+   * 「调整大小」五档比例预设走这条（旧形态要两次付费出图才能做到同一件事）。
+   * 与 direction+ratio 二选一，两者都给以 scales 为准（与 host handleExpandDesignImage 同约定）。
+   */
+  scales?: { top: number; bottom: number; left: number; right: number };
   /** 可选补绘描述（缺省走 main 侧默认 prompt）。 */
   prompt?: string;
 }
@@ -98,8 +110,6 @@ export interface EditByAnnotationArgs {
   shapes: AnnotShape[];
   /** 重绘指令（描述按标注要改成什么）。 */
   instruction: string;
-  /** 出图模型 id（须声明 annotEdit 能力，main 侧 cap 守门复核）。 */
-  model: string;
 }
 
 /** 把世界坐标标注偏移到底图局部坐标（减去节点左上角），供 composeAnnotOps 换算原图像素。 */
@@ -170,6 +180,7 @@ export function buildVariantNode(
     prompt: label,
     parentId: groupKey(baseNode),
     createdAt,
+    createdBy: 'user',
   };
 }
 
@@ -282,6 +293,7 @@ export function useDesignCanvasGeneration(): {
         height,
         prompt: form.requirement,
         createdAt: Date.now(),
+        createdBy: 'user',
         ...(typeof costCny === 'number' && costCny >= 0 ? { costCny } : {}),
       };
       useDesignCanvasStore.getState().addNode(node);
@@ -409,7 +421,7 @@ export function useDesignCanvasGeneration(): {
 
   const expand = useCallback(
     async (args: ExpandArgs) => {
-      const { baseNode, direction, ratio, prompt } = args;
+      const { baseNode, direction, ratio, scales, prompt } = args;
       const runDir = useDesignCanvasStore.getState().runDir;
       if (!runDir) return;
       const assetRel = `${DESIGN_WORKSPACE.CANVAS_ASSETS_DIR}/expand-${Date.now()}.png`;
@@ -426,7 +438,11 @@ export function useDesignCanvasGeneration(): {
         const res = await window.domainAPI?.invoke<{ path: string; actualModel: string; costCny: number }>(
           IPC_DOMAINS.WORKSPACE,
           'expandDesignImage',
-          { baseImagePath: `${runDir}/${baseNode.src}`, outputPath: assetAbs, direction, ratio, prompt, selectionContext },
+          // scales 与 direction+ratio 二选一：给了 scales 就不带方向/倍率，避免两套语义同时到达 host
+          // 后靠优先级隐式决胜（host 侧确实以 scales 优先，但让 payload 自己说清楚更不容易出错）。
+          scales
+            ? { baseImagePath: `${runDir}/${baseNode.src}`, outputPath: assetAbs, scales, prompt, selectionContext }
+            : { baseImagePath: `${runDir}/${baseNode.src}`, outputPath: assetAbs, direction, ratio, prompt, selectionContext },
         );
         if (!res?.success) {
           throw new Error(res?.error?.message || t.design.errDispatch);
@@ -480,7 +496,7 @@ export function useDesignCanvasGeneration(): {
   // 结果落新 variant 挂 spine（parentId 锚血缘根，与 editRegion 同槽规则）。
   const editByAnnotation = useCallback(
     async (args: EditByAnnotationArgs) => {
-      const { baseNode, shapes, instruction, model } = args;
+      const { baseNode, shapes, instruction } = args;
       const runDir = useDesignCanvasStore.getState().runDir;
       if (!runDir) return;
       if (!instruction.trim()) {
@@ -507,7 +523,21 @@ export function useDesignCanvasGeneration(): {
         displayH: baseNode.height,
         shapes: shapesToNodeLocal(shapes, baseNode),
       });
-      const annotatedImageDataUrl = await exportAnnotatedPng(sourceDataUrl, scaled, naturalW, naturalH);
+      // 2026-08-01 B1：不再把红线烧进原图当参考图。付费 A/B 实测证明那条路会让模型把红箭头/红
+      // 文字当画面内容照抄，红圈还被当成「要画成圆形」的形状提示，且加提示词前缀不能解决。
+      // 改走：干净原图 + 标注栅格化的 mask（改哪里）+ 指令（改成什么），复用 editDesignImage
+      // 的 description_edit_with_mask 通道，附带 T4 一致性锁定（未标注区域逐像素不变）。
+      const geo = annotShapesToMaskGeometry(scaled);
+      if (!hasMaskArea(geo)) {
+        // 只画了文字标签、没圈出任何区域：mask 全黑 = 什么都不重绘，拦下这次付费空调用。
+        useDesignCanvasStore.getState().setError(t.design.errAnnotNoRegion);
+        return;
+      }
+      const maskDataUrl = buildAnnotMaskDataUrl(naturalW, naturalH, geo);
+      // 文字标注**不发给模型**：2026-08-01 第二轮付费实测——把标签文字并进 prompt（写成
+      // 「（图上标注文字：改这个）」）后，模型直接把「改这个」当成要画进图里的文字内容，
+      // 在画面上渲染出一个写着「改这个」的蓝色标签。标签是给用户自己看的批注，不是画面需求；
+      // 要改什么必须写在指令框里。geo.labels 保留供 UI 提示用，不进 prompt。
 
       const assetRel = `${DESIGN_WORKSPACE.CANVAS_ASSETS_DIR}/annot-${Date.now()}.png`;
       const assetAbs = `${runDir}/${assetRel}`;
@@ -522,8 +552,14 @@ export function useDesignCanvasGeneration(): {
       try {
         const res = await window.domainAPI?.invoke<{ path: string; actualModel: string; costCny: number }>(
           IPC_DOMAINS.WORKSPACE,
-          'editImageByAnnotation',
-          { model, annotatedImageDataUrl, instruction, outputPath: assetAbs, selectionContext },
+          'editDesignImage',
+          {
+            prompt: instruction,
+            baseImagePath: `${runDir}/${baseNode.src}`, // 干净原图，不是烧了标注的图
+            maskDataUrl,
+            outputPath: assetAbs,
+            selectionContext,
+          },
         );
         if (!res?.success) {
           throw new Error(res?.error?.message || t.design.errDispatch);
@@ -650,6 +686,7 @@ export function useDesignCanvasGeneration(): {
         prompt: form.requirement.trim() || undefined,
         parentId: mode === 'i2v' && baseNode ? groupKey(baseNode) : undefined,
         createdAt: Date.now(),
+        createdBy: 'user',
         ...(typeof costCny === 'number' && costCny >= 0 ? { costCny } : {}),
       };
       useDesignCanvasStore.getState().addNode(node);

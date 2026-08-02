@@ -418,6 +418,10 @@ export const zhSettingsCore = {
           label: '新建会话',
           description: '创建一个新的对话会话',
         },
+        'voice.callToggle': {
+          label: '拨打/挂断实时通话',
+          description: '从系统任意位置唤起应用并拨打实时通话，通话中再次触发则挂断',
+        },
         'voice.toggle': {
           label: '语音输入',
           description: '开始或停止语音输入',

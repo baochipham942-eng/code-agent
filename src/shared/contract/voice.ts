@@ -70,8 +70,13 @@ export interface VoiceWorkNarration {
    * 回报（停稳了 / 没停稳 / 停稳后新活开始了）。它复用同一条注入通道与节制闸，所以
    * 走同一个类型；台词整句由 voiceNarration 的 buildStopNarration 算好放进 `summary`，
    * formatNarration 不再按状态拼词——**避免同一句话的措辞散在两个模块里各写一半**。
+   *
+   * `milestone`（§2 中途进度）与 announcement 的区别**不在措辞，在过期语义**——
+   * 它是过程量：被压住一分钟之后再播，说的是一分钟前的事，而用户关心的是现在。
+   * 所以节制闸对它多三条规矩：每件活最多三条、间隔下限、用户一开口就把排队的**全部丢掉**
+   * （终态只排队不丢）。单独成档就是为了让闸能一眼判出「这条过期了能丢」。
    */
-  status: 'done' | 'unverified' | 'failed' | 'announcement';
+  status: 'done' | 'unverified' | 'failed' | 'announcement' | 'milestone';
   title: string;
   /**
    * 已裁剪成「能用嘴说出来」的结论文本：代码块/表格换成一句指路，
@@ -94,6 +99,29 @@ export interface VoiceCallSummary {
   endedAt: number;
   /** 这通电话落库了多少条字幕。旧记录没有这个字段——字段缺失本身就是「旧版本通话」的判据。 */
   transcriptCount?: number;
+}
+
+export type VoiceCallFailureCode =
+  | 'VOICE_UPSTREAM_UNAVAILABLE'
+  | 'UPSTREAM_SOCKET'
+  | 'UPSTREAM_ERROR'
+  | 'VOICE_PROVIDER_UNCONFIGURED'
+  | 'VOICE_SESSION_BUSY'
+  | 'HANDSHAKE_FAILED'
+  | 'RECONNECT_FAILED';
+
+export type VoiceCallFailurePhase =
+  | 'admission'
+  | 'configuration'
+  | 'handshake'
+  | 'upstream'
+  | 'reconnect';
+
+/** Renderer 只能上报自身产生、且媒体 WS 已不可用的两种拨号失败。 */
+export interface RendererVoiceFailureReport {
+  neoSessionId: string;
+  code: 'HANDSHAKE_FAILED' | 'RECONNECT_FAILED';
+  phase: 'handshake' | 'reconnect';
 }
 
 /** 注册给通话 brain 的窄工具（方案 §6.2 模式 A）。JSON Schema 直接透给上游。 */
@@ -134,7 +162,7 @@ export interface VoiceStatusResponse {
   /** 全局单路互斥：当前是否有通话进行中 */
   active: boolean;
   /** 本月通话用量（只记账不设限，方案 §5.4；设置页展示用） */
-  usage: { monthSeconds: number; monthCalls: number };
+  usage: { monthSeconds: number; monthCalls: number; monthFailedAttempts: number };
 }
 
 /** 设置页「实时通话」组保存后广播的窗口事件（对齐 VOICE_INPUT_SETTINGS_UPDATED_EVENT 先例）。 */

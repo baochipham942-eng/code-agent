@@ -51,6 +51,35 @@ export function localHtmlHrefToPath(href: string | undefined): string | null {
   return /\.html?(?:[?#].*)?$/i.test(path) ? path : null;
 }
 
+// ============================================================================
+// IACT !send chip 渲染（2026-08-02 拍板 B+A 组合，设计稿 neo-iact-chip-design.html）：
+// 链接语义不穿按钮外观——单个 !send 是句中轻链接（A：品牌青字 + dotted 下划线，
+// 无边框无底衬，hover 才出底衬/实线/尾部 Send 图标）；同段 ≥2 个 !send 时选项
+// 摘出句外（B：正文降级为纯文本，段后渲染 ghost 选项行，与 DecisionCard 同构、
+// 首项品牌青）。点击行为不变：统一 dispatch iact:send，发送链路
+// （ChatInput + iactChipConfirmation 模板）不动。
+// ============================================================================
+
+function dispatchIactSend(text: string) {
+  window.dispatchEvent(new CustomEvent('iact:send', { detail: text }));
+}
+
+/**
+ * 提取段落 children 里 !send 链接的文案；非 !send 链接返回 null。
+ * 注意：p 层拿到的 children 是「未求值」的链接元素（type 为自定义 a renderer，
+ * props 是 { href, children }），不是 a renderer 返回的 button——因此按 href 识别；
+ * DOM 侧另有 data-iact-send 标记（button 上）供测试/排查。
+ */
+function iactSendTextOf(node: React.ReactNode): string | null {
+  if (!React.isValidElement(node)) return null;
+  const props = node.props as { href?: unknown; children?: React.ReactNode };
+  if (props.href !== '!send') return null;
+  const c = props.children;
+  return typeof c === 'string' ? c
+    : Array.isArray(c) ? c.map(x => (typeof x === 'string' ? x : '')).join('')
+    : String(c ?? '');
+}
+
 // Main message content component
 export const MessageContent: React.FC<MessageContentProps> = memo(function MessageContent({ content, isUser, isStreaming = false, messageId, mediaContext }) {
   const openPreview = useAppStore((state) => state.openPreview);
@@ -261,9 +290,45 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
         return <h6 className="text-xs font-medium text-zinc-400 mt-2 mb-1">{children}</h6>;
       },
 
-      // Paragraphs
+      // Paragraphs：同段 ≥2 个完整 !send 链接时摘出为段后选项行（B，2026-08-02 拍板）。
+      // 流式中途未写完的链接经 remend 兜底后 href 不是 !send，不会带标记，
+      // 因此选项行只在 ≥2 个链接完整出现后才出现——不提前、不闪烁；
+      // 跨段落各 1 个时互不影响，各自仍是句中轻链接（A）。
       p({ children }) {
-        return <p className="my-2.5">{children}</p>;
+        const nodes = React.Children.toArray(children);
+        const chipTexts = nodes.map(iactSendTextOf);
+        const optionTexts = chipTexts.filter((t): t is string => t !== null);
+        if (optionTexts.length < 2) {
+          return <p className="my-2.5">{children}</p>;
+        }
+        // 正文里的 chip 降级为纯文本，句子恢复干净；选项摘到段后成行。
+        const cleanNodes = nodes.map((node, i) =>
+          chipTexts[i] !== null
+            ? <React.Fragment key={(node as React.ReactElement).key ?? i}>{chipTexts[i]}</React.Fragment>
+            : node,
+        );
+        return (
+          <>
+            <p className="my-2.5">{cleanNodes}</p>
+            <div className="mt-2 flex flex-wrap gap-2" data-iact-options="">
+              {optionTexts.map((text, i) => (
+                <button /* ds-allow:button: IACT 选项行 ghost 按钮，与 DecisionCard 选项行同构 */
+                  key={`${i}-${text}`}
+                  type="button"
+                  onClick={() => dispatchIactSend(text)}
+                  className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg border text-[12.5px] transition-colors cursor-pointer ${
+                    i === 0
+                      ? 'border-primary-500/35 bg-zinc-800/50 text-primary-400 hover:bg-primary-500/10'
+                      : 'border-zinc-700 bg-zinc-800/50 text-zinc-300 hover:border-primary-500/50 hover:text-primary-400 hover:bg-primary-500/10'
+                  }`}
+                >
+                  {text}
+                  <Send className="w-3 h-3 opacity-50" />
+                </button>
+              ))}
+            </div>
+          </>
+        );
       },
 
       // Lists
@@ -294,6 +359,10 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
       // Links - with IACT protocol support for inline interactions
       a({ href, children }) {
         // IACT: [text](!send) — click to send text as user message
+        // 2026-08-02 拍板：轻链接形态（A）——品牌青字 + dotted 下划线，无边框无底衬；
+        // hover 才出底衬/实线/尾部 Send 图标（非 hover 时 opacity 0，空间预留不抖动）。
+        // data-iact-send 是 DOM 侧识别标记（测试/排查用）；p 层分组（B）按 href 扫描，
+        // 同段 ≥2 个时会被摘出为选项行。
         if (href === '!send') {
           const text = typeof children === 'string' ? children
             : Array.isArray(children) ? children.map(c => typeof c === 'string' ? c : '').join('')
@@ -301,14 +370,13 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
           return (
             <button
               type="button"
-              onClick={() => {
-                window.dispatchEvent(new CustomEvent('iact:send', { detail: text }));
-              }}
-              className="inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5 rounded-md bg-primary-500/10 text-primary-400 hover:bg-primary-500/20 hover:text-primary-300 border border-primary-500/20 hover:border-primary-500/40 transition-all cursor-pointer text-sm font-medium"
+              data-iact-send={text}
+              onClick={() => dispatchIactSend(text)}
+              className="group inline-flex items-center gap-0.5 px-0.5 rounded text-primary-400 font-medium underline decoration-dotted decoration-[rgba(45,212,191,0.45)] underline-offset-4 hover:bg-primary-500/10 hover:decoration-solid transition-colors cursor-pointer"
               title="点击发送"
             >
               {children}
-              <Send className="w-3 h-3 opacity-60" />
+              <Send className="w-[11px] h-[11px] opacity-0 group-hover:opacity-[0.55] transition-opacity" />
             </button>
           );
         }

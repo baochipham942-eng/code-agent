@@ -9,7 +9,7 @@ type DesignCanvasState = Parameters<typeof persistDesignCanvas>[0];
 // 属主隔离是跨会话泄漏防线，认领不匹配会话时重置画布为空再换属主。
 
 function makeNode(id: string): CanvasNode {
-  return { id, src: `${id}.png`, x: 0, y: 0, width: 100, height: 100, createdAt: Date.now() };
+  return { id, src: `${id}.png`, x: 0, y: 0, width: 100, height: 100, createdAt: Date.now(), createdBy: 'user' };
 }
 
 function resetStore(): void {

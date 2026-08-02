@@ -7,9 +7,10 @@
 // ============================================================================
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rename, rm, symlink, writeFile } from 'node:fs/promises';
+import { promises as nodeFsp } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 const SVC = '../../../src/host/services/media/imageGenerationService';
 
@@ -62,11 +63,20 @@ import {
   handleListVisualImageModels,
   handleEditImageByAnnotation,
 } from '../../../src/host/ipc/workspace.ipc';
+import {
+  handleImportDesignImage,
+  handleImportDesignImageFromPath,
+} from '../../../src/host/ipc/workspaceDesignMedia.ipc';
 
 let workDir: string;
 let designRoot: string;
 let baseImagePath: string;
 let outputPath: string;
+
+const VALID_PNG = Buffer.from([
+  0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+  0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+]);
 
 beforeEach(async () => {
   workDir = await mkdtemp(join(tmpdir(), 'design-image-ipc-'));
@@ -97,7 +107,7 @@ describe('handleExpandDesignImage', () => {
       handleExpandDesignImage({ baseImagePath: '', outputPath, direction: 'up', ratio: 1.5 }),
     ).rejects.toThrow('expandDesignImage');
     await expect(
-      // @ts-expect-error 故意缺 direction
+      // 缺 direction（新契约里 direction 可选，缺失走旧形态分支被 direction 闸拦下）
       handleExpandDesignImage({ baseImagePath, outputPath, ratio: 1.5 }),
     ).rejects.toThrow('expandDesignImage');
   });
@@ -139,6 +149,70 @@ describe('handleExpandDesignImage', () => {
       handleExpandDesignImage({ baseImagePath, outputPath, direction: 'all', ratio: 1.5 }),
     ).rejects.toThrow('DashScope');
   });
+
+  // 旧形态 ratio=1（滑块最小值）四向全 1 = 什么都不扩的付费空调用，与新形态共用同一道闸。
+  it('旧形态 ratio=1 被空操作闸拦下且不触发付费调用', async () => {
+    const svc = await import(SVC);
+    await expect(
+      handleExpandDesignImage({ baseImagePath, outputPath, direction: 'all', ratio: 1 }),
+    ).rejects.toThrow(/空操作/);
+    expect((svc.expandImage as unknown as { mock: { calls: unknown[] } }).mock.calls.length).toBe(0);
+  });
+});
+
+describe('handleExpandDesignImage — 四向独立 scale 形态', () => {
+  const expandCalls = async () =>
+    ((await import(SVC)).expandImage as unknown as { mock: { calls: unknown[][] } }).mock.calls;
+
+  it('四向 scale 原样透传给 expandImage，一次调用完成非对称外扩', async () => {
+    // 居中扩成更宽的比例：左右各扩一半（1.25+1.25-1 = 1.5 倍宽），旧形态要两次付费调用才能做到。
+    const res = await handleExpandDesignImage({
+      baseImagePath,
+      outputPath,
+      scales: { top: 1, bottom: 1, left: 1.25, right: 1.25 },
+    });
+    expect(res).toEqual({ path: outputPath, actualModel: 'wanx2.1-imageedit', costCny: 0.14 });
+    expect((await expandCalls())[0][0]).toMatchObject({
+      topScale: 1,
+      bottomScale: 1,
+      leftScale: 1.25,
+      rightScale: 1.25,
+    });
+    expect((await readFile(outputPath)).toString()).toBe('ABC');
+  });
+
+  it('给了 scales 时忽略 direction/ratio（新形态优先）', async () => {
+    await handleExpandDesignImage({
+      baseImagePath,
+      outputPath,
+      direction: 'up',
+      ratio: 2,
+      scales: { top: 1, bottom: 1, left: 1, right: 1.4 },
+    });
+    expect((await expandCalls())[0][0]).toMatchObject({ topScale: 1, bottomScale: 1, leftScale: 1, rightScale: 1.4 });
+  });
+
+  // 坏输入门：每一种都必须指名道姓报错且零付费调用（静默 clamp = 扩了个寂寞的空调用）。
+  const badScales: Array<[string, unknown, RegExp]> = [
+    ['上界越界', { top: 2.5, bottom: 1, left: 1, right: 1 }, /scales\.top/],
+    ['下界越界', { top: 1, bottom: 0.5, left: 1, right: 1 }, /scales\.bottom/],
+    ['NaN', { top: 1, bottom: 1, left: Number.NaN, right: 1 }, /scales\.left/],
+    ['Infinity', { top: 1, bottom: 1, left: 1, right: Number.POSITIVE_INFINITY }, /scales\.right/],
+    ['字符串数字', { top: '1.5', bottom: 1, left: 1, right: 1 }, /scales\.top/],
+    ['缺字段', { top: 1.5, bottom: 1, left: 1 }, /scales\.right/],
+    ['null 字段', { top: 1.5, bottom: 1, left: 1, right: null }, /scales\.right/],
+    ['scales 非对象', 'nope', /scales 须为/],
+    ['scales 为 null', null, /scales 须为/],
+    ['四向全 1（空操作）', { top: 1, bottom: 1, left: 1, right: 1 }, /空操作/],
+  ];
+  for (const [name, scales, pattern] of badScales) {
+    it(`坏输入「${name}」被拦下且不触发付费调用`, async () => {
+      await expect(
+        handleExpandDesignImage({ baseImagePath, outputPath, scales: scales as never }),
+      ).rejects.toThrow(pattern);
+      expect((await expandCalls()).length).toBe(0);
+    });
+  }
 });
 
 describe('handleRemoveWatermarkDesignImage', () => {
@@ -338,5 +412,202 @@ describe('handleEditImageByAnnotation', () => {
       handleEditImageByAnnotation({ model: 'gpt-image-2', annotatedImageDataUrl: 'data:image/png;base64,QUJD', instruction: 'x', outputPath: '/tmp/evil.png' }),
     ).rejects.toThrow(/越界/);
     expect((svc.editImageByAnnotation as any).mock.calls.length).toBe(0);
+  });
+});
+
+describe('handleImportDesignImageFromPath', () => {
+  let workspaceRoot: string;
+  let outsideRoot: string;
+  let sourcePath: string;
+  let importOutputPath: string;
+
+  beforeEach(async () => {
+    workspaceRoot = join(workDir, 'workspace');
+    outsideRoot = join(workDir, 'outside');
+    sourcePath = join(workspaceRoot, 'media', 'source.png');
+    importOutputPath = join(designRoot, 'run', 'assets', 'imported.png');
+    await mkdir(join(workspaceRoot, 'media'), { recursive: true });
+    await mkdir(outsideRoot, { recursive: true });
+    await writeFile(sourcePath, VALID_PNG);
+  });
+
+  it('拒绝用 .. 从当前工作目录穿越到允许根之外', async () => {
+    const outsidePath = join(outsideRoot, 'traversal.png');
+    await writeFile(outsidePath, VALID_PNG);
+    await mkdir(join(workspaceRoot, 'nested'), { recursive: true });
+    const traversalPath = `${workspaceRoot}/nested/../../outside/traversal.png`;
+
+    await expect(
+      handleImportDesignImageFromPath({ sourcePath: traversalPath, outputPath: importOutputPath }, workspaceRoot),
+    ).rejects.toThrow(/sourcePath.*越界/);
+  });
+
+  it('拒绝允许根之外伪装成图片的绝对路径', async () => {
+    const outsidePath = join(outsideRoot, 'absolute.png');
+    await writeFile(outsidePath, VALID_PNG);
+
+    await expect(
+      handleImportDesignImageFromPath({ sourcePath: outsidePath, outputPath: importOutputPath }, workspaceRoot),
+    ).rejects.toThrow(/sourcePath.*越界/);
+  });
+
+  it('拒绝当前工作目录内指向允许根之外的 symlink', async () => {
+    const outsidePath = join(outsideRoot, 'symlink-target.png');
+    const linkPath = join(workspaceRoot, 'media', 'escaped.png');
+    await writeFile(outsidePath, VALID_PNG);
+    await symlink(outsidePath, linkPath);
+
+    await expect(
+      handleImportDesignImageFromPath({ sourcePath: linkPath, outputPath: importOutputPath }, workspaceRoot),
+    ).rejects.toThrow(/sourcePath.*越界/);
+  });
+
+  it('复制允许根内的图片且源与目标逐字节相同', async () => {
+    const result = await handleImportDesignImageFromPath(
+      { sourcePath, outputPath: importOutputPath },
+      workspaceRoot,
+    );
+
+    expect(result).toEqual({ path: importOutputPath });
+    expect(await readFile(importOutputPath)).toEqual(VALID_PNG);
+  });
+
+  it('拒绝越出设计目录的 outputPath', async () => {
+    await expect(
+      handleImportDesignImageFromPath(
+        { sourcePath, outputPath: join(outsideRoot, 'output.png') },
+        workspaceRoot,
+      ),
+    ).rejects.toThrow(/outputPath.*越界/);
+  });
+
+  it('源文件不存在时指名 sourcePath 与问题', async () => {
+    await expect(
+      handleImportDesignImageFromPath(
+        { sourcePath: join(workspaceRoot, 'media', 'missing.png'), outputPath: importOutputPath },
+        workspaceRoot,
+      ),
+    ).rejects.toThrow(/sourcePath.*不存在/);
+  });
+
+  it('拒绝非图片扩展名', async () => {
+    const textPath = join(workspaceRoot, 'media', 'notes.txt');
+    await writeFile(textPath, 'not an image');
+
+    await expect(
+      handleImportDesignImageFromPath({ sourcePath: textPath, outputPath: importOutputPath }, workspaceRoot),
+    ).rejects.toThrow(/sourcePath.*图片类型/);
+  });
+
+  it('拒绝扩展名是图片但 magic bytes 不匹配的文件', async () => {
+    const fakePngPath = join(workspaceRoot, 'media', 'fake.png');
+    await writeFile(fakePngPath, 'plain text disguised as png');
+
+    await expect(
+      handleImportDesignImageFromPath({ sourcePath: fakePngPath, outputPath: importOutputPath }, workspaceRoot),
+    ).rejects.toThrow(/sourcePath.*文件内容与扩展名不匹配/);
+  });
+
+  it('TOCTOU 读侧：规范路径校验后、open 前掉包，不得把根外内容带进设计目录', async () => {
+    const secretPath = join(outsideRoot, 'secret.png');
+    const outsideSecret = Buffer.concat([VALID_PNG, Buffer.from('TOP_SECRET')]);
+    await writeFile(secretPath, outsideSecret);
+    const realOpen = nodeFsp.open.bind(nodeFsp);
+    const openSpy = vi.spyOn(nodeFsp, 'open').mockImplementationOnce(async (file, flags, mode) => {
+      await rm(sourcePath);
+      await symlink(secretPath, sourcePath);
+      return realOpen(file, flags, mode);
+    });
+    let thrown: unknown;
+    try {
+      await handleImportDesignImageFromPath(
+        { sourcePath, outputPath: importOutputPath },
+        workspaceRoot,
+      );
+    } catch (error) {
+      thrown = error;
+    } finally {
+      openSpy.mockRestore();
+    }
+
+    const imported = await readFile(importOutputPath).catch(() => null);
+    expect(imported).not.toEqual(outsideSecret);
+    expect(thrown).toEqual(expect.objectContaining({ message: expect.stringMatching(/sourcePath/) }));
+  });
+
+  it('TOCTOU 写侧：outputPath 校验后替换父目录，不得写到设计目录之外', async () => {
+    const outputParent = dirname(importOutputPath);
+    const parkedParent = join(designRoot, 'run', 'assets-parked');
+    const escapedParent = join(outsideRoot, 'escaped-output');
+    const escapedOutput = join(escapedParent, 'imported.png');
+    await mkdir(escapedParent, { recursive: true });
+    const realMkdir = nodeFsp.mkdir.bind(nodeFsp);
+    const mkdirSpy = vi.spyOn(nodeFsp, 'mkdir').mockImplementationOnce(async (dir, options) => {
+      const result = await realMkdir(dir, options);
+      await rename(outputParent, parkedParent);
+      await symlink(escapedParent, outputParent, 'dir');
+      return result;
+    });
+    let thrown: unknown;
+    try {
+      await handleImportDesignImageFromPath(
+        { sourcePath, outputPath: importOutputPath },
+        workspaceRoot,
+      );
+    } catch (error) {
+      thrown = error;
+    } finally {
+      mkdirSpy.mockRestore();
+    }
+
+    expect(await readFile(escapedOutput).catch(() => null)).toBeNull();
+    expect(await readdir(escapedParent)).toEqual([]);
+    expect(thrown).toEqual(expect.objectContaining({ message: expect.stringMatching(/outputPath/) }));
+  });
+
+  // SVG 是活动内容（<script> / 外链 <image href>），这条通道只收位图——审计发现后收窄。
+  it('拒绝 SVG（活动内容，不做净化直接不收）', async () => {
+    const svgPath = join(workspaceRoot, 'media', 'a.svg');
+    await mkdir(join(workspaceRoot, 'media'), { recursive: true });
+    await writeFile(svgPath, '<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>');
+    await expect(
+      handleImportDesignImageFromPath({ sourcePath: svgPath, outputPath: importOutputPath }, workspaceRoot),
+    ).rejects.toThrow(/sourcePath.*图片类型/);
+  });
+});
+
+describe('handleImportDesignImage dataURL 内容守卫', () => {
+  it('拒绝 SVG dataURL，不把活动内容落进设计资产目录', async () => {
+    const svgOutputPath = join(designRoot, 'run', 'assets', 'active.svg');
+    const svg = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>');
+    let thrown: unknown;
+    try {
+      await handleImportDesignImage({
+        dataUrl: `data:image/svg+xml;base64,${svg.toString('base64')}`,
+        outputPath: svgOutputPath,
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(await readFile(svgOutputPath).catch(() => null)).toBeNull();
+    expect(thrown).toEqual(expect.objectContaining({ message: expect.stringMatching(/dataUrl/) }));
+  });
+
+  it('拒绝伪造 image/png MIME 的非图片内容', async () => {
+    const fakePngOutputPath = join(designRoot, 'run', 'assets', 'fake.png');
+    const activeContent = Buffer.from('<script>alert(1)</script>');
+    let thrown: unknown;
+    try {
+      await handleImportDesignImage({
+        dataUrl: `data:image/png;base64,${activeContent.toString('base64')}`,
+        outputPath: fakePngOutputPath,
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(await readFile(fakePngOutputPath).catch(() => null)).toBeNull();
+    expect(thrown).toEqual(expect.objectContaining({ message: expect.stringMatching(/dataUrl/) }));
   });
 });

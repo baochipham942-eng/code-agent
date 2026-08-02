@@ -786,9 +786,12 @@ export const KnowledgeMemoryContent: React.FC = () => {
             {isLoading ? (
               <LoadingRows />
             ) : filteredAuditItems.length === 0 ? (
+              /* 星球空态（2026-08-02 星球品牌升级）：默认空态 = 木星（众星之王守宝库，
+                 "宝库等待第一颗珍藏"）；筛选无结果仍是纯图标空态，不配星。 */
               <EmptyState
                 variant="panel"
                 icon={Database}
+                planet={query.trim() ? undefined : { kind: 'jupiter' }}
                 title={query.trim() ? t.knowledgeMemory.auditEmptyTitleFiltered : t.knowledgeMemory.auditEmptyTitleDefault}
                 text={query.trim() ? t.knowledgeMemory.auditEmptyTextFiltered : t.knowledgeMemory.auditEmptyTextDefault}
               />

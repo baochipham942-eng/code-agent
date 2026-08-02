@@ -40,6 +40,7 @@ interface SurfaceSessionManagerOptions {
     conversationId: string;
     runId: string;
     agentId: string;
+    access: 'active' | 'read';
   }) => void;
 }
 
@@ -64,6 +65,7 @@ export class SurfaceSessionManager {
       conversationId: input.conversationId,
       runId: input.runId,
       agentId: input.agentId,
+      access: 'active',
     });
     if (input.capabilities.surface !== input.surface || input.capabilities.provider !== input.provider) {
       throw new Error('Surface capability manifest does not match the requested surface/provider.');
@@ -120,6 +122,22 @@ export class SurfaceSessionManager {
   }
 
   requireOwned(sessionId: string, owner: SurfaceSessionOwnerV1): InteractiveSurfaceSessionV1 {
+    return this.requireOwnedWithAccess(sessionId, owner, 'active');
+  }
+
+  /**
+   * 只读通道：归属身份照旧钉死（session 必须存在、未过期、runId/agentId 与 subject 相同），
+   * 但不要求 run 还活着。给快照/投影这类不碰 surface 的枚举用；写路径一律走 requireOwned。
+   */
+  requireOwnedForRead(sessionId: string, owner: SurfaceSessionOwnerV1): InteractiveSurfaceSessionV1 {
+    return this.requireOwnedWithAccess(sessionId, owner, 'read');
+  }
+
+  private requireOwnedWithAccess(
+    sessionId: string,
+    owner: SurfaceSessionOwnerV1,
+    access: 'active' | 'read',
+  ): InteractiveSurfaceSessionV1 {
     const session = this.requireStoredOwner(sessionId, owner);
     const cleanupOwner = this.cleanupOwner.getStore();
     const isCleanupOwner = cleanupOwner?.sessionId === sessionId
@@ -130,6 +148,7 @@ export class SurfaceSessionManager {
         conversationId: session.conversationId,
         runId: owner.runId,
         agentId: owner.agentId,
+        access,
       });
     }
     return structuredClone(session);

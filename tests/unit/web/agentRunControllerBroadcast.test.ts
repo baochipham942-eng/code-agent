@@ -19,9 +19,9 @@ vi.mock('../../../src/web/helpers/sse', () => ({
 
 const { AgentRunController } = await import('../../../src/web/routes/agentRunController');
 
-function createSink(): Response {
+function createSink(closed = false): Response {
   return {
-    writableEnded: false,
+    writableEnded: closed,
     destroyed: false,
     write: () => true,
     end: () => undefined,
@@ -30,9 +30,9 @@ function createSink(): Response {
   } as unknown as Response;
 }
 
-function createController(mirrorToBroadcast: boolean) {
+function createController(mirrorToBroadcast: boolean, streamClosed = false) {
   return new AgentRunController({
-    res: createSink(),
+    res: createSink(streamClosed),
     runId: 'run-1',
     sessionId: 'session-1',
     logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
@@ -40,6 +40,19 @@ function createController(mirrorToBroadcast: boolean) {
     mirrorToBroadcast,
   });
 }
+
+const surfaceEvent = {
+  version: 1,
+  eventId: 'surface_event_1',
+  sequence: 3,
+  phase: 'cleanup',
+  status: 'succeeded',
+  conversationId: 'session-1',
+  runId: 'run-1',
+  agentId: 'agent-a',
+  sessionId: 'session-1',
+  seq: 12,
+};
 
 describe('AgentRunController 广播镜像', () => {
   beforeEach(() => {
@@ -88,5 +101,54 @@ describe('AgentRunController 广播镜像', () => {
     createController(false).emitSSE('turn_start', { turnId: 't1' });
 
     expect(sendSSE).toHaveBeenCalledWith(expect.anything(), 'turn_start', { turnId: 't1' });
+  });
+});
+
+// ============================================================================
+// 取消/断流之后的 surface 终态兜底（2026-08-02 排查报告 §2.2 腿 A）
+//
+// 用户点取消 = renderer 关掉 per-run SSE。此后 finalizeRun→endRun 发出的 cleanup/
+// 终态 surface 事件在 emitSSE 处 canWriteSSE()=false 被整条丢弃，renderer 再也收不到
+// 「拉快照」的触发信号，行内紧凑条 / composer / chrome 绿点三处一起冻在 running。
+// ============================================================================
+describe('AgentRunController 断流后的 surface 终态兜底', () => {
+  beforeEach(() => {
+    broadcastSSE.mockClear();
+    sendSSE.mockClear();
+  });
+
+  it('per-run 流已关时，surface 终态事件仍要包成 agent:event 信封广播出去', () => {
+    createController(false, true).emitSSE('surface_execution', surfaceEvent);
+
+    // channel 名接错（比如直接 broadcastSSE('surface_execution', …)）时这条必红：
+    // 全局 /api/events 严格按 channel 名分发，renderer 只注册了 agent:event。
+    expect(broadcastSSE).toHaveBeenCalledWith('agent:event', {
+      type: 'surface_execution',
+      data: surfaceEvent,
+      sessionId: 'session-1',
+      seq: 12,
+    });
+    expect(broadcastSSE.mock.calls[0][0]).toBe('agent:event');
+    expect(sendSSE).not.toHaveBeenCalled();
+  });
+
+  it('per-run 流还开着时不兜底广播，避免重复投递', () => {
+    createController(false, false).emitSSE('surface_execution', surfaceEvent);
+
+    expect(broadcastSSE).not.toHaveBeenCalled();
+    expect(sendSSE).toHaveBeenCalledTimes(1);
+  });
+
+  it('兜底只覆盖 surface_execution，其余事件维持断流即丢的既有语义', () => {
+    createController(false, true).emitSSE('message_delta', { text: 'hi', sessionId: 'session-1' });
+
+    expect(broadcastSSE).not.toHaveBeenCalled();
+    expect(sendSSE).not.toHaveBeenCalled();
+  });
+
+  it('镜像轮不因为断流而广播两遍', () => {
+    createController(true, true).emitSSE('surface_execution', surfaceEvent);
+
+    expect(broadcastSSE).toHaveBeenCalledTimes(1);
   });
 });

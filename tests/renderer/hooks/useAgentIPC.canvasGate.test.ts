@@ -17,6 +17,7 @@ function makeNode(id: string): CanvasNode {
     width: 100,
     height: 100,
     createdAt: Date.now(),
+    createdBy: 'user',
   };
 }
 

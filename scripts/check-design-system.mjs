@@ -16,9 +16,11 @@
 //   7. local-display-primitive: 禁在 primitives/ 之外新增本地 EmptyState/Badge 定义
 //                             （A1 展示类 primitive 收敛，基线 0）；`ds-allow:primitive` 豁免
 //
-// 对比度断言（默认门已 enforce，--contrast 看明细）：四套主题 --brand-primary 按各自
-// 真实用法场景核对 WCAG ≥4.5:1。2026-07-02 产品负责人拍板方案 A：dark/light brand 加深
-// 至 teal-700 系（白字场景）；hc-dark 的 brand 是前景/描边用法，按"压 --bg-void"核对。
+// 对比度断言（默认门已 enforce，--contrast 看明细）：四套主题按各自真实用法场景
+// 核对 WCAG ≥4.5:1。2026-07-02 产品负责人拍板方案 A：dark/light brand 加深至
+// teal-700 系（白字场景）。2026-08-02 brand token 语义拆分：--brand-primary 恢复
+// 四主题恒等值 #0F766E（品牌表达专用，由下方品牌恒等断言锁死）；hc 两套的可读性
+// 职责移交 --accent-accessible（hc-dark 前景压 --bg-void、hc-light 前景压白底核对）。
 //
 // 用法：
 //   node scripts/check-design-system.mjs            # 校验，超基线则 exit 1
@@ -221,14 +223,17 @@ function contrastRatio(hexA, hexB) {
 }
 
 const CONTRAST_MIN = 4.5;
-// 每套主题 brand 色的真实用法场景（2026-07-02 方案 A 拍板口径）：
-// - dark / light / hc-light：brand 作按钮底色（白字）与 checked 控件底色（白勾/白 thumb）→ 对白色前景核对
-// - hc-dark：brand（cyan）是前景/描边用法（focus outline 压黑底），实际 UI 无"白字压 cyan"→ 对 --bg-void 核对
+// 品牌恒等值：--brand-primary 是品牌表达 token，四主题必须同值（2026-08-02 拆分拍板）。
+const BRAND_IDENTITY = '#0F766E';
+// 每套主题的可读性测量对象（2026-08-02 token 拆分后口径）：
+// - dark / light：brand 作按钮底色（白字）与 checked 控件底色（白勾/白 thumb）→ --brand-primary 对白色前景核对
+// - hc 两套：--brand-primary 只承担品牌表达，可读性职责在 --accent-accessible；
+//   hc-dark 是前景/描边用法（focus outline 压黑底）→ 对 --bg-void 核对；hc-light 压白底核对
 const CONTRAST_SCENARIOS = {
-  'dark': { against: '#FFFFFF', label: '白色前景（按钮白字/checked 白勾）' },
-  'light': { against: '#FFFFFF', label: '白色前景（按钮白字/checked 白勾）' },
-  'high-contrast-light': { against: '#FFFFFF', label: '白色前景（按钮白字/checked 白勾）' },
-  'high-contrast-dark': { against: 'bg-void', label: '前景用法压 --bg-void（focus outline/描边）' },
+  'dark': { token: '--brand-primary', against: '#FFFFFF', label: '白色前景（按钮白字/checked 白勾）' },
+  'light': { token: '--brand-primary', against: '#FFFFFF', label: '白色前景（按钮白字/checked 白勾）' },
+  'high-contrast-light': { token: '--accent-accessible', against: '#FFFFFF', label: 'accent-accessible 压白底（focus outline/链接/selection）' },
+  'high-contrast-dark': { token: '--accent-accessible', against: 'bg-void', label: 'accent-accessible 前景压 --bg-void（focus outline/描边/selection）' },
 };
 
 export function measureBrandContrast() {
@@ -238,17 +243,29 @@ export function measureBrandContrast() {
   for (const f of readdirSync(themesDir).filter((n) => n.endsWith('.css')).sort()) {
     const theme = f.replace('.css', '');
     const css = readFileSync(join(themesDir, f), 'utf8');
-    const m = css.match(/--brand-primary:\s*(#[0-9a-fA-F]{6})/);
-    if (!m) throw new Error(`[check-design-system] ${f} 里找不到 --brand-primary 的 hex 定义，测量失败`);
+    const brand = css.match(/--brand-primary:\s*(#[0-9a-fA-F]{6})/);
+    if (!brand) throw new Error(`[check-design-system] ${f} 里找不到 --brand-primary 的 hex 定义，测量失败`);
     const scenario = CONTRAST_SCENARIOS[theme];
     if (!scenario) throw new Error(`[check-design-system] 主题 ${theme} 没有登记对比度场景，请在 CONTRAST_SCENARIOS 补一行`);
+    const measured = scenario.token === '--brand-primary'
+      ? brand
+      : css.match(new RegExp(`${scenario.token}:\\s*(#[0-9a-fA-F]{6})`));
+    if (!measured) throw new Error(`[check-design-system] ${f} 里找不到 ${scenario.token} 的 hex 定义，测量失败`);
     let against = scenario.against;
     if (against === 'bg-void') {
       const bg = css.match(/--bg-void:\s*(#[0-9a-fA-F]{6})/);
       if (!bg) throw new Error(`[check-design-system] ${f} 里找不到 --bg-void 的 hex 定义，测量失败`);
       against = bg[1];
     }
-    results.push({ theme, brand: m[1], against, label: scenario.label, ratio: contrastRatio(m[1], against) });
+    results.push({
+      theme,
+      brand: brand[1],
+      token: scenario.token,
+      measured: measured[1],
+      against,
+      label: scenario.label,
+      ratio: contrastRatio(measured[1], against),
+    });
   }
   if (results.length === 0) throw new Error('[check-design-system] 未找到任何主题文件，测量失败');
   return results;
@@ -270,9 +287,9 @@ if (process.argv[1] && process.argv[1].endsWith('check-design-system.mjs')) {
     process.exit(0);
   }
   if (mode === '--contrast') {
-    console.log(`四套主题 --brand-primary 按各自用法场景的 WCAG 对比度（阈值 ${CONTRAST_MIN}:1）：`);
+    console.log(`四套主题可读性 token 按各自用法场景的 WCAG 对比度（阈值 ${CONTRAST_MIN}:1）：`);
     for (const r of measureBrandContrast()) {
-      console.log(`  ${r.ratio >= CONTRAST_MIN ? '✓' : '✗'} ${r.theme.padEnd(20)} ${r.brand} vs ${r.against} = ${r.ratio.toFixed(2)}:1  （${r.label}）`);
+      console.log(`  ${r.ratio >= CONTRAST_MIN ? '✓' : '✗'} ${r.theme.padEnd(20)} ${r.token} ${r.measured} vs ${r.against} = ${r.ratio.toFixed(2)}:1  （${r.label}）`);
     }
     process.exit(0);
   }
@@ -305,9 +322,17 @@ if (process.argv[1] && process.argv[1].endsWith('check-design-system.mjs')) {
   for (const r of measureBrandContrast()) {
     if (r.ratio < CONTRAST_MIN) {
       failed = true;
-      console.error(`✗ [brand-contrast] ${r.theme} ${r.brand} vs ${r.against} = ${r.ratio.toFixed(2)}:1 < ${CONTRAST_MIN}:1（${r.label}）`);
+      console.error(`✗ [brand-contrast] ${r.theme} ${r.token} ${r.measured} vs ${r.against} = ${r.ratio.toFixed(2)}:1 < ${CONTRAST_MIN}:1（${r.label}）`);
     } else {
-      console.log(`= [brand-contrast] ${r.theme} ${r.ratio.toFixed(2)}:1 达标`);
+      console.log(`= [brand-contrast] ${r.theme} ${r.token} ${r.ratio.toFixed(2)}:1 达标`);
+    }
+    // 品牌恒等硬断言：--brand-primary 是品牌表达 token，四主题必须同值；
+    // hc 可读性需求走 --accent-accessible，不许再靠改 brand 值解决
+    if (r.brand.toUpperCase() !== BRAND_IDENTITY) {
+      failed = true;
+      console.error(`✗ [brand-identity] ${r.theme} --brand-primary = ${r.brand}，应为品牌恒等值 ${BRAND_IDENTITY}（可读性场景请用 --accent-accessible）`);
+    } else {
+      console.log(`= [brand-identity] ${r.theme} --brand-primary = ${BRAND_IDENTITY} 恒等`);
     }
   }
 

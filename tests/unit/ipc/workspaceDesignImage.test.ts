@@ -7,10 +7,10 @@
 // ============================================================================
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rename, rm, symlink, writeFile } from 'node:fs/promises';
 import { promises as nodeFsp } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 const SVC = '../../../src/host/services/media/imageGenerationService';
 
@@ -63,7 +63,10 @@ import {
   handleListVisualImageModels,
   handleEditImageByAnnotation,
 } from '../../../src/host/ipc/workspace.ipc';
-import { handleImportDesignImageFromPath } from '../../../src/host/ipc/workspaceDesignMedia.ipc';
+import {
+  handleImportDesignImage,
+  handleImportDesignImageFromPath,
+} from '../../../src/host/ipc/workspaceDesignMedia.ipc';
 
 let workDir: string;
 let designRoot: string;
@@ -505,37 +508,61 @@ describe('handleImportDesignImageFromPath', () => {
     ).rejects.toThrow(/sourcePath.*文件内容与扩展名不匹配/);
   });
 
-  // 2026-08-01 对抗审计（Codex）实证并已修：先 canonicalize 校验、再 fsp.copyFile(路径) 是可绕过的——
-  // 两次解析之间把源路径换成指向允许根之外的 symlink，根外文件会被复制进设计目录。
-  // 修法是从校验时那个句柄读（句柄绑定 inode，路径之后怎么变都不影响）。这条钉死它不许回退。
-  it('TOCTOU：校验通过后替换源路径为根外 symlink，不得把根外文件复制进来', async () => {
-    const secretPath = join(outsideRoot, 'secret.txt');
-    await writeFile(secretPath, 'TOP_SECRET');
-    const realCopyFile = nodeFsp.copyFile.bind(nodeFsp);
-    const realWriteFile = nodeFsp.writeFile.bind(nodeFsp);
-    // 无论实现走 copyFile 还是 writeFile，都在真正落盘前掉包一次源路径。
-    const swap = async (): Promise<void> => {
+  it('TOCTOU 读侧：规范路径校验后、open 前掉包，不得把根外内容带进设计目录', async () => {
+    const secretPath = join(outsideRoot, 'secret.png');
+    const outsideSecret = Buffer.concat([VALID_PNG, Buffer.from('TOP_SECRET')]);
+    await writeFile(secretPath, outsideSecret);
+    const realOpen = nodeFsp.open.bind(nodeFsp);
+    const openSpy = vi.spyOn(nodeFsp, 'open').mockImplementationOnce(async (file, flags, mode) => {
       await rm(sourcePath);
       await symlink(secretPath, sourcePath);
-    };
-    const copySpy = vi.spyOn(nodeFsp, 'copyFile').mockImplementationOnce(async (f, t, m) => {
-      await swap();
-      return realCopyFile(f, t, m);
+      return realOpen(file, flags, mode);
     });
-    const writeSpy = vi.spyOn(nodeFsp, 'writeFile').mockImplementationOnce(async (f, d, o) => {
-      await swap();
-      return realWriteFile(f as never, d as never, o as never);
-    });
+    let thrown: unknown;
     try {
       await handleImportDesignImageFromPath(
         { sourcePath, outputPath: importOutputPath },
         workspaceRoot,
       );
-      expect(await readFile(importOutputPath, 'utf8')).not.toContain('TOP_SECRET');
+    } catch (error) {
+      thrown = error;
     } finally {
-      copySpy.mockRestore();
-      writeSpy.mockRestore();
+      openSpy.mockRestore();
     }
+
+    const imported = await readFile(importOutputPath).catch(() => null);
+    expect(imported).not.toEqual(outsideSecret);
+    expect(thrown).toEqual(expect.objectContaining({ message: expect.stringMatching(/sourcePath/) }));
+  });
+
+  it('TOCTOU 写侧：outputPath 校验后替换父目录，不得写到设计目录之外', async () => {
+    const outputParent = dirname(importOutputPath);
+    const parkedParent = join(designRoot, 'run', 'assets-parked');
+    const escapedParent = join(outsideRoot, 'escaped-output');
+    const escapedOutput = join(escapedParent, 'imported.png');
+    await mkdir(escapedParent, { recursive: true });
+    const realMkdir = nodeFsp.mkdir.bind(nodeFsp);
+    const mkdirSpy = vi.spyOn(nodeFsp, 'mkdir').mockImplementationOnce(async (dir, options) => {
+      const result = await realMkdir(dir, options);
+      await rename(outputParent, parkedParent);
+      await symlink(escapedParent, outputParent, 'dir');
+      return result;
+    });
+    let thrown: unknown;
+    try {
+      await handleImportDesignImageFromPath(
+        { sourcePath, outputPath: importOutputPath },
+        workspaceRoot,
+      );
+    } catch (error) {
+      thrown = error;
+    } finally {
+      mkdirSpy.mockRestore();
+    }
+
+    expect(await readFile(escapedOutput).catch(() => null)).toBeNull();
+    expect(await readdir(escapedParent)).toEqual([]);
+    expect(thrown).toEqual(expect.objectContaining({ message: expect.stringMatching(/outputPath/) }));
   });
 
   // SVG 是活动内容（<script> / 外链 <image href>），这条通道只收位图——审计发现后收窄。
@@ -546,5 +573,41 @@ describe('handleImportDesignImageFromPath', () => {
     await expect(
       handleImportDesignImageFromPath({ sourcePath: svgPath, outputPath: importOutputPath }, workspaceRoot),
     ).rejects.toThrow(/sourcePath.*图片类型/);
+  });
+});
+
+describe('handleImportDesignImage dataURL 内容守卫', () => {
+  it('拒绝 SVG dataURL，不把活动内容落进设计资产目录', async () => {
+    const svgOutputPath = join(designRoot, 'run', 'assets', 'active.svg');
+    const svg = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>');
+    let thrown: unknown;
+    try {
+      await handleImportDesignImage({
+        dataUrl: `data:image/svg+xml;base64,${svg.toString('base64')}`,
+        outputPath: svgOutputPath,
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(await readFile(svgOutputPath).catch(() => null)).toBeNull();
+    expect(thrown).toEqual(expect.objectContaining({ message: expect.stringMatching(/dataUrl/) }));
+  });
+
+  it('拒绝伪造 image/png MIME 的非图片内容', async () => {
+    const fakePngOutputPath = join(designRoot, 'run', 'assets', 'fake.png');
+    const activeContent = Buffer.from('<script>alert(1)</script>');
+    let thrown: unknown;
+    try {
+      await handleImportDesignImage({
+        dataUrl: `data:image/png;base64,${activeContent.toString('base64')}`,
+        outputPath: fakePngOutputPath,
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(await readFile(fakePngOutputPath).catch(() => null)).toBeNull();
+    expect(thrown).toEqual(expect.objectContaining({ message: expect.stringMatching(/dataUrl/) }));
   });
 });

@@ -12,7 +12,7 @@
 // 绝不在 renderer 手搓 message 塞进 sessionStore。
 // ============================================================================
 
-import type { VoiceMessageCode } from '@shared/contract/voice';
+import type { RendererVoiceFailureReport, VoiceMessageCode } from '@shared/contract/voice';
 import { VOICE_DOWNSTREAM_SAMPLE_RATE, VOICE_FOCUS_REPORT_MIN_INTERVAL_MS, VOICE_RECONNECT_BACKOFF_MS, VOICE_PARTIAL_HANDOFF_MAX_WAIT_MS, VOICE_STREAM_WS_PATH, VOICE_SUBTITLE_REVEAL_INTERVAL_MS, VOICE_SUBTITLE_STALL_FLUSH_MS, VOICE_TEARDOWN_DRAIN_MS, VOICE_WS_CLOSE_TERMINAL } from '@shared/constants/voice';
 import type { AppSettings, Message, VoiceInputDeviceSettings } from '@shared/contract';
 import type { VoiceClientCommand, VoiceEvent } from '@shared/contract/voice';
@@ -101,6 +101,8 @@ class VoiceCallBridge {
   private playbackPausedAt = 0;
   /** 有界取消墓碑：上游 cancel 后仍可能把旧 final/done 发完。 */
   private cancelledResponseIds = new Set<string>();
+  /** 同一次拨号每种失效只上报一次，避免 WebSocket error + close 双事件重复入账。 */
+  private reportedFailureCodes = new Set<RendererVoiceFailureReport['code']>();
 
   private store() {
     return useVoiceCallStore.getState();
@@ -108,6 +110,22 @@ class VoiceCallBridge {
 
   private send(command: VoiceClientCommand): void {
     if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify(command));
+  }
+
+  private reportConnectionFailure(
+    neoSessionId: string,
+    code: RendererVoiceFailureReport['code'],
+    phase: RendererVoiceFailureReport['phase'],
+  ): void {
+    if (this.reportedFailureCodes.has(code)) return;
+    this.reportedFailureCodes.add(code);
+    // 字幕落库只有 host 一个生产者。这里只上报受限失败事实，绝不在 renderer
+    // 手搓 message 塞进 sessionStore；持久化与失败分母都由 host 的统一出口完成。
+    void ipcService.invokeDomain(IPC_DOMAINS.VOICE, 'reportFailure', {
+      neoSessionId,
+      code,
+      phase,
+    } satisfies RendererVoiceFailureReport).catch(() => undefined);
   }
 
   /**
@@ -360,6 +378,7 @@ class VoiceCallBridge {
     this.fallbackWarningShown = false;
     this.stopInputDeviceMonitoring();
     this.cancelledResponseIds.clear();
+    this.reportedFailureCodes.clear();
     this.pausedCandidateId = null;
     this.playbackPausedAt = 0;
 
@@ -420,6 +439,7 @@ class VoiceCallBridge {
       // 重连尝试失败不算「握手失败」——它由 onclose 走退避，别在这里先把 phase 打成 error
       // 把重连路径掐死（那样第一次抖动就直接变成不可恢复）。
       if (!opened && !this.store().reconnecting) {
+        this.reportConnectionFailure(sessionId, 'HANDSHAKE_FAILED', 'handshake');
         this.store().phaseChanged('error');
         this.store().eventApplied({ error: { code: 'HANDSHAKE_FAILED', message: getT().voice.error.handshake } });
       }
@@ -438,6 +458,7 @@ class VoiceCallBridge {
       // 首次握手就没成：这不是断线，是压根没连上，重连也没意义。
       if (!opened && !this.store().reconnecting) {
         if (phase === 'connecting') {
+          this.reportConnectionFailure(sessionId, 'HANDSHAKE_FAILED', 'handshake');
           this.store().phaseChanged('error');
           this.store().eventApplied({ error: { code: 'HANDSHAKE_FAILED', message: getT().voice.error.handshake } });
         }
@@ -471,6 +492,7 @@ class VoiceCallBridge {
   ): boolean {
     const delay = VOICE_RECONNECT_BACKOFF_MS[this.reconnectAttempt];
     if (delay === undefined) {
+      this.reportConnectionFailure(sessionId, 'RECONNECT_FAILED', 'reconnect');
       this.store().phaseChanged('error');
       this.store().eventApplied({
         error: { code: 'RECONNECT_FAILED', message: getT().voice.error.reconnectFailed },

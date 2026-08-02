@@ -157,6 +157,42 @@ describe('refreshVoiceInstructions', () => {
     });
   });
 
+  it('挂断排水窗内才到的 response.done usage 仍随本通入账', async () => {
+    await attachVoiceClient(new FakeClient() as never, 'session-late-token-usage');
+    const connectInput = runtime.connect.mock.calls.at(-1)?.[0] as {
+      onEvent: (event: import('../../src/shared/contract/voice').VoiceEvent) => void;
+    };
+
+    const ending = endActiveVoiceSession();
+    expect(getActiveVoiceSessionId()).toBeNull();
+    connectInput.onEvent({
+      type: 'response.done',
+      responseId: 'late-r1',
+      usage: {
+        totalTokens: 377,
+        inputTokens: 336,
+        outputTokens: 41,
+        inputAudioTokens: 108,
+        inputTextTokens: 228,
+        outputAudioTokens: 32,
+        outputTextTokens: 9,
+      },
+    });
+    await vi.advanceTimersByTimeAsync(VOICE_TEARDOWN_DRAIN_MS);
+    await ending;
+
+    expect(recordVoiceCall).toHaveBeenCalledTimes(1);
+    expect(recordVoiceCall).toHaveBeenCalledWith(expect.any(Number), expect.any(Number), {
+      totalTokens: 377,
+      inputTokens: 336,
+      outputTokens: 41,
+      inputAudioTokens: 108,
+      inputTextTokens: 228,
+      outputAudioTokens: 32,
+      outputTextTokens: 9,
+    });
+  });
+
   it('无活跃通话时不抛错也不调用 upstream', () => {
     expect(() => refreshVoiceInstructions()).not.toThrow();
     expect(runtime.updateInstructions).not.toHaveBeenCalled();

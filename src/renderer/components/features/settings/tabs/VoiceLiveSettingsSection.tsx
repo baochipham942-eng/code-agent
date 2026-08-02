@@ -263,10 +263,11 @@ export const VoiceLiveSettingsSection: React.FC = () => {
       <div className="border-t border-zinc-700 pt-4">
         <h3 className="mb-1 text-sm font-medium text-zinc-200">{text.usageTitle}</h3>
         <p className="text-xs text-zinc-500" data-testid="voice-usage-summary">
-          {text.usageThisMonth
+          {(usage.monthTokens
+            ? text.usageThisMonth.replace('{tokens}', String(usage.monthTokens.totalTokens))
+            : text.usageThisMonthWithoutTokens)
             .replace('{minutes}', String(Math.round(usage.monthSeconds / 60)))
-            .replace('{calls}', String(usage.monthCalls))
-            .replace('{tokens}', usage.monthTokens ? String(usage.monthTokens.totalTokens) : text.usageTokensUnavailable)}
+            .replace('{calls}', String(usage.monthCalls))}
         </p>
       </div>
 

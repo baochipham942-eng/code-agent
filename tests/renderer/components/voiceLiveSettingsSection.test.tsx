@@ -159,6 +159,20 @@ describe('VoiceLiveSettingsSection', () => {
     availability.usage = { monthSeconds: 0, monthCalls: 0, monthFailedAttempts: 0 };
   });
 
+  it('没有 token 数据时整段 token 估算不出现，中英文模板保持同一语义', async () => {
+    availability.usage = { monthSeconds: 300, monthCalls: 1, monthFailedAttempts: 0 };
+    settingsGet(undefined);
+    render(<VoiceLiveSettingsSection />);
+
+    const summary = await screen.findByTestId('voice-usage-summary');
+    expect(summary.textContent).toBe('本月 5 分钟 · 1 通。用量估算，仅供参考，不代表账单。');
+    expect(summary.textContent).not.toContain('tokens');
+    expect(summary.textContent).not.toContain('约');
+    expect(en.voice.settings.usageThisMonthWithoutTokens).toBe(
+      '{minutes} min · {calls} calls this month. Usage estimate only; not a bill.',
+    );
+  });
+
   // key 配置三条断言已随组件迁往 voiceApiKeyConfig.test.tsx（批 X3：key 的家在「语音模型」tab 常驻）
 
   it('回声消除默认自动，可持久化为强制关', async () => {

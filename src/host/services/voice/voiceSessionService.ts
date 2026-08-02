@@ -144,8 +144,8 @@ interface ActiveSession {
   cancelledResponseIds: Set<string>;
   /** assistant final 先暂存，到 response.done 且未取消时才落库。 */
   pendingAssistantFinals: Map<string, { text: string; itemId?: string }>;
-  /** 一通电话可有多轮 response；每轮 provider usage 在这里累加后随挂断入账。 */
-  tokenUsage?: VoiceTokenUsage;
+  /** 一通电话可有多轮 response；排水窗结束前到达的 provider usage 都归入本通。 */
+  tokenUsage: { value?: VoiceTokenUsage; accepting: boolean };
   /** 终态播报只属于这通电话：压住、去重与已播记录都随 active 一起销毁。 */
   narration: NarrationState;
 }
@@ -538,6 +538,7 @@ async function teardown(reason: string): Promise<void> {
   // 上游会把这通电话说过的话全部丢掉（2026-07-26 真机：12s 通话落库只剩摘要）。
   // 窗口内 onEvent 照常把 final 落库；窗口结束后 done 仍没到的助手增量缓冲冲成 final。
   await new Promise((resolve) => setTimeout(resolve, VOICE_TEARDOWN_DRAIN_MS));
+  session.tokenUsage.accepting = false;
   for (const [responseId, pendingAssistant] of session.transcriptBuf.assistantByResponse) {
     if (!pendingAssistant.trim() || session.cancelledResponseIds.has(responseId)) continue;
     await persistTranscript(
@@ -557,7 +558,7 @@ async function teardown(reason: string): Promise<void> {
   const seconds = durationSec % 60;
   const durationText = minutes > 0 ? `${minutes} 分 ${seconds} 秒` : `${seconds} 秒`;
   // 用量账本无条件记：空通话也真按秒付了钱，不落卡不等于没发生。
-  if (!consumeVoiceCallFailure(session.id)) recordVoiceCall(endedAt, durationSec, session.tokenUsage);
+  if (!consumeVoiceCallFailure(session.id)) recordVoiceCall(endedAt, durationSec, session.tokenUsage.value);
   // A3：零字幕通话不落摘要卡。2026-07-30 真机那通 16 秒空通话（自动重连拨出来的）
   // 在消息流里留了一张「这通电话没有对话内容」——那不是记录，是噪音。
   // 派过活的通话即使一句没说也照落：工作项才是那通电话的产物。
@@ -674,6 +675,9 @@ async function connectAndBind(
 
   const transcriptBuf = { assistantByResponse: new Map<string, string>() };
   const transcriptMerge: TranscriptMergeState = { messageId: null, text: '', at: 0 };
+  // transport 回调属于这通上游连接，不能用全局 active 判断归属：显式挂断会先清 active，
+  // 但 response.done usage 仍可能在 1.5 秒排水窗内到达。
+  const tokenUsage = { value: undefined as VoiceTokenUsage | undefined, accepting: true };
   /**
    * 告别音频的播放计量（E2）。host 转发多少字节就是要播多久（PCM16@24k 单声道），
    * 播放起点 = 第一帧转发的时刻。不新造 renderer 回报协议——这点端到端延迟由反应窗兜住。
@@ -902,8 +906,8 @@ async function connectAndBind(
             }
           } else transcriptBuf.assistantByResponse.set(key, assistantBuffer + event.text);
         } else if (event.type === 'response.done') {
-          if (event.usage && active?.id === id) {
-            active.tokenUsage = addTokenUsage(active.tokenUsage, event.usage);
+          if (event.usage && tokenUsage.accepting) {
+            tokenUsage.value = addTokenUsage(tokenUsage.value, event.usage);
           }
           const key = event.responseId ?? 'legacy';
           if (cancelledResponse) {
@@ -1022,7 +1026,7 @@ async function connectAndBind(
     },
     cancelledResponseIds: new Set(),
     pendingAssistantFinals: new Map(),
-    tokenUsage: undefined,
+    tokenUsage,
     narration: createNarrationState(),
     maxDurationTimer: setTimeout(() => {
       logger.warn('session hit max duration, force closing', { voiceSessionId: id });

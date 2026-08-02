@@ -71,8 +71,6 @@ describe('DesignLayerPanel', () => {
         onFocus={() => {}}
       />,
     );
-    expect(html).toContain('图层');
-    expect(html).toContain('1/2');
     expect(html).toContain('Hero');
     expect(html).toContain('主版');
     expect(html).toContain('已淘汰');
@@ -82,6 +80,35 @@ describe('DesignLayerPanel', () => {
     expect(html).toContain('设为主版');
     expect(html).toContain('淘汰');
     expect(html).toContain('删除');
+    // 返工#5：X/Y/W/H/成本/父节点 收进默认折叠的 <details>（字段不删，只是默认不展示）
+    expect(html).toContain('<details data-testid="design-layer-details"');
+    expect(html).not.toContain('<details open');
+    expect(html).toContain('详情');
+  });
+
+  it('K1：设为主版保文字占满；淘汰/删除收图标 + title，且图标可区分（Archive vs Trash2）', () => {
+    const html = renderToStaticMarkup(
+      <DesignLayerPanel
+        nodes={[image({ id: 'hero', label: 'Hero' })]}
+        selectedIds={['hero']}
+        onSelect={() => {}}
+        onRename={() => {}}
+        onSetChosen={() => {}}
+        onDiscard={() => {}}
+        onDelete={() => {}}
+        onFocus={() => {}}
+      />,
+    );
+    // 主动作保文字
+    expect(html).toContain('设为主版');
+    // 淘汰/删除收图标 + title 悬停提示（文字只存在于 title/aria-label，不再是按钮文本节点）
+    expect(html).toContain('title="淘汰"');
+    expect(html).toContain('title="删除"');
+    expect(html).not.toContain('>淘汰</button>');
+    expect(html).not.toContain('>删除</button>');
+    // 两个图标必须可区分：淘汰=归档 Archive、删除=垃圾桶 Trash2
+    expect(html).toContain('lucide-archive');
+    expect(html).toContain('lucide-trash-2');
   });
 
   it('renders English copy through i18n', () => {
@@ -98,7 +125,6 @@ describe('DesignLayerPanel', () => {
         translations={en}
       />,
     );
-    expect(html).toContain('Layers');
     expect(html).toContain('Layer name');
     expect(html).toContain('Set main');
     expect(html).toContain('Discard');

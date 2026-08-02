@@ -474,6 +474,7 @@ const CAPABILITY_DOMAIN_ACTIONS = {
     'getDesignMdSummary',
     'getDesignSettings',
     'importDesignImage',
+    'importDesignImageFromPath',
     'inspectArchive',
     'inspectPresentation',
     'findFile',

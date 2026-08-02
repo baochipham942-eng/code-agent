@@ -151,15 +151,12 @@ export interface ChatInputHandle {
 }
 
 // ============================================================================
-// 实时通话入口的槽位判定（单真源，组件外可测）
+// composer 核心操作区判定（单真源，组件外可测）
 // ============================================================================
-//   primary   = 占输入框右侧主按钮位（空输入框 + 没在跑 + 空闲相位 + 入口可用）；
-//   secondary = 主位被停止键占用（正在跑）时退到停止键左边的次位——通话入口
-//               挂在原地、照常可拨，不是整个消失（X5.5 返工批 R4c 真机：一通挂断后
-//               派出去的活还在跑，isProcessing 把主位判给停止键，通话按钮「短暂消失、
-//               跑完（下一通前）才回来」）；
-//   none      = 通话中（VoiceChrome 接管）/ 无会话 / 总开关关 / 有草稿（发送键有事可做）。
-export type LiveVoiceSlot = 'primary' | 'secondary' | 'none';
+//   primary = 占输入框右侧主按钮位；
+//   none    = 通话中（VoiceChrome 接管）/ 无会话 / 总开关关 / 有草稿 / 正在跑，
+//             或已有消息但从未进行过实时通话的文字会话。
+export type LiveVoiceSlot = 'primary' | 'none';
 
 export function resolveLiveVoiceSlot(params: {
   hasContent: boolean;
@@ -167,10 +164,30 @@ export function resolveLiveVoiceSlot(params: {
   sessionId: string | null;
   enabled: boolean;
   phase: VoiceCallPhase;
+  hasMessages: boolean;
+  hadLiveVoice: boolean;
 }): LiveVoiceSlot {
   if (!params.sessionId || !params.enabled || params.phase !== 'idle') return 'none';
-  if (params.hasContent) return 'none';
-  return params.isProcessing ? 'secondary' : 'primary';
+  if (params.hasContent || params.isProcessing) return 'none';
+  if (params.hasMessages && !params.hadLiveVoice) return 'none';
+  return 'primary';
+}
+
+export const COMPOSER_CORE_ACTION_LIMIT = 2 as const;
+export type ComposerCoreAction = 'voice-input' | 'live-voice' | 'send' | 'stop';
+
+export function resolveComposerCoreActions(params: Parameters<typeof resolveLiveVoiceSlot>[0]): readonly ComposerCoreAction[] {
+  const liveVoiceSlot = resolveLiveVoiceSlot(params);
+  const primaryAction: ComposerCoreAction = liveVoiceSlot === 'primary'
+    ? 'live-voice'
+    : params.isProcessing && !params.hasContent
+      ? 'stop'
+      : 'send';
+
+  // 核心操作区只指 composer 工具栏右端两个同级操作项：口述输入 + 主操作。
+  // 附件「+」、身份/连接器/权限/模型、审批与提示 chip、VoiceChrome 状态条都不在此边界内。
+  // JSX 必须逐项消费这份列表，禁止在映射外另塞同级核心按钮。
+  return ['voice-input', primaryAction];
 }
 
 // ============================================================================
@@ -216,6 +233,9 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   const [slashFilter, setSlashFilter] = useState('');
   const [showSlashPopover, setShowSlashPopover] = useState(false);
   const currentSessionProjectId = useSessionStore((s) => s.sessions.find((x) => x.id === currentSessionId)?.projectId ?? null);
+  const currentSessionHadLiveVoice = useSessionStore((s) => (
+    s.sessions.find((session) => session.id === currentSessionId)?.metadata?.hadLiveVoice === true
+  ));
   const [pendingPromptCommand, setPendingPromptCommand] = useState<ComposerPromptCommandSelection | null>(null);
   const [pendingAgentSelection, setPendingAgentSelection] = useState<ComposerAgentSelection | null>(null);
   const [comboSuggestion, setComboSuggestion] = useState<{
@@ -330,7 +350,10 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   const viewingMemberId = useMemberViewStore((state) => state.viewingMemberId);
   const setViewingMemberId = useMemberViewStore((state) => state.setViewingMemberId);
   const setActiveAgentId = useAppStore((state) => state.setActiveAgentId);
-  const hasMessages = useSessionStore((state) => state.messages.length > 0);
+  const hasMessages = useSessionStore((state) => (
+    state.messages.length > 0
+    || (state.sessions.find((session) => session.id === currentSessionId)?.messageCount ?? 0) > 0
+  ));
   const swarmAgents = useSwarmStore((state) => state.agents);
   const selectedDirectAgents = useMemo(
     () => swarmAgents.filter((agent) => targetAgentIds.includes(agent.id)),
@@ -842,8 +865,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   // useBudgetStatus 不是定时轮询：仅在成本前进 / 流式结束时各拉一次，挂在 pill 侧。
 
   const hasContent = value.trim().length > 0 || attachments.length > 0 || Boolean(pendingCommand);
-  // 右侧主按钮的归属：只有「空输入框 + 没在跑 + 语音入口真能用」时才让给开通话，
-  // 其余情况发送键都有事可做（发送 / 停止），不能被换掉。
+  // 右侧主按钮的归属：空会话和已有实时通话身份的会话，在输入框为空、未运行时
+  // 可以显示通话；纯文字会话一旦有消息，入口整个隐藏。其余状态由发送/停止兜底。
   //
   // 不看 `configured`（2026-07-30 缺 key 降级）：没配 key 时主位照让，
   // LiveVoiceButton 自己渲染成「点我配 key」的引导态——能力不可用要降级提示，
@@ -855,17 +878,16 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   // 拿它决定按钮存不存在，就是让底栏在每次开新会话时换一次构成。
   // 这段窗口按钮照常在位，只是 disabled 置灰（两个按钮都真的会灰，见各自实现）。
   //
-  // X5.5 返工批 R4c：挂断后派出去的活还在跑（isProcessing）时，主位是停止键，
-  // 通话入口退次位（见 resolveLiveVoiceSlot）——挂断即回到可拨状态，
-  // 不再「按钮短暂消失、活跑完才回来」。
   const liveVoiceAvailability = useVoiceLiveAvailability();
   const liveVoiceCallPhase = useVoiceCallStore((state) => state.phase);
-  const liveVoiceSlot = resolveLiveVoiceSlot({
+  const composerCoreActions = resolveComposerCoreActions({
     hasContent,
     isProcessing: Boolean(isProcessing),
     sessionId: currentSessionId ?? null,
     enabled: liveVoiceAvailability.enabled,
     phase: liveVoiceCallPhase,
+    hasMessages,
+    hadLiveVoice: currentSessionHadLiveVoice,
   });
 
   return (
@@ -1215,53 +1237,41 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
               <ModelSwitcher currentModel={modelConfig.model} />
             </div>
 
-            {/* 口述输入按钮：常驻不卸载。禁用时置灰留在原位——卸载会让底栏少一格、
-                旁边所有东西横向平移，「切会话时按钮闪一下」就是这么来的。 */}
-            <VoiceInputButton
-              voice={voice}
-              disabled={disabled}
-            />
             {/*
-              右侧主按钮一个位置两种职能（2026-07-27 产品负责人拍板）：
-              输入框空着时是「开通话」，打了字才变「发送」——空输入框上摆一个
-              点了也没用的发送键，是这三个图标里最没用的那个。
-              正在跑 / 有内容 / 语音入口不可用时回退成发送键（那些状态下它有事可做）。
-              R4c 次位：正在跑（停止键占主位）时通话入口退到停止键左边的 ghost 次位，
-              挂在原地照常可拨——挂断后按钮立刻在，不随活跑完才回来。
+              核心操作区 = 工具栏右端同级的「口述输入 + 主操作」，上限 2 项。
+              这里逐项消费 resolveComposerCoreActions；附件 +、身份/连接器/权限/模型、
+              审批与提示 chip、上方 VoiceChrome 状态条不属于核心操作区。
             */}
-            {liveVoiceSlot === 'secondary' && (
-              <LiveVoiceButton
-                sessionId={currentSessionId ?? null}
-                hasMessages={hasMessages}
-                disabled={disabled && !isProcessing}
-                variant="ghost"
-                availability={{
-                  enabled: liveVoiceAvailability.enabled,
-                  configured: liveVoiceAvailability.configured,
-                }}
-              />
-            )}
-            {liveVoiceSlot === 'primary' ? (
-              <LiveVoiceButton
-                sessionId={currentSessionId ?? null}
-                hasMessages={hasMessages}
-                disabled={disabled}
-                variant="primary"
-                availability={{
-                  enabled: liveVoiceAvailability.enabled,
-                  configured: liveVoiceAvailability.configured,
-                }}
-              />
-            ) : (
-              <SendButton
-                disabled={disabled && !isProcessing}
-                isProcessing={isProcessing}
-                isInterrupting={isInterrupting}
-                hasContent={hasContent}
-                type="submit"
-                onStop={onStop}
-              />
-            )}
+            {composerCoreActions.map((action) => {
+              if (action === 'voice-input') {
+                return <VoiceInputButton key={action} voice={voice} disabled={disabled} />;
+              }
+              if (action === 'live-voice') {
+                return (
+                  <LiveVoiceButton
+                    key={action}
+                    sessionId={currentSessionId ?? null}
+                    hasMessages={hasMessages}
+                    disabled={disabled}
+                    availability={{
+                      enabled: liveVoiceAvailability.enabled,
+                      configured: liveVoiceAvailability.configured,
+                    }}
+                  />
+                );
+              }
+              return (
+                <SendButton
+                  key={action}
+                  disabled={disabled && !isProcessing}
+                  isProcessing={isProcessing}
+                  isInterrupting={isInterrupting}
+                  hasContent={hasContent}
+                  type="submit"
+                  onStop={onStop}
+                />
+              );
+            })}
             </>
             )}
           </div>

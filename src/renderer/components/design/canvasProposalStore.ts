@@ -14,6 +14,11 @@ interface PreAppliedCanvasProposal {
 
 interface CanvasProposalState {
   pending: CanvasOpProposal | null;
+  /**
+   * 本 store 收到当前 pending 提议的本地时间戳（Date.now()）。
+   * 协议零改动（CanvasOpProposal 不加字段）：陈旧判据「userTouchedAt > receivedAt」以此为基准。
+   */
+  receivedAt: number | null;
   preApplied: PreAppliedCanvasProposal | null;
   approvalReason: CanvasApprovalReason;
   /**
@@ -32,16 +37,18 @@ interface CanvasProposalState {
 
 export const useCanvasProposalStore = create<CanvasProposalState>((set) => ({
   pending: null,
+  receivedAt: null,
   preApplied: null,
   approvalReason: 'standard',
   applyingRequestId: null,
   setPending: (proposal, context) => set({
     pending: proposal,
+    receivedAt: Date.now(),
     preApplied: context?.preApplied ?? null,
     approvalReason: context?.approvalReason ?? 'standard',
   }),
   setApplying: (requestId) => set({ applyingRequestId: requestId }),
-  clear: () => set({ pending: null, preApplied: null, approvalReason: 'standard' }),
+  clear: () => set({ pending: null, receivedAt: null, preApplied: null, approvalReason: 'standard' }),
 }));
 
 // E2E/dev 调试钩子：真机测试用 setPending 模拟收到 agent 提议（同 window.__neo* 例）。

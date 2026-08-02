@@ -28,7 +28,9 @@ mod pip;
 mod traffic_lights;
 
 use appshots::{
-    appshots_read_image_data_url, appshots_report_composer_slot, appshots_set_enabled,
+    appshots_read_image_data_url, appshots_read_image_data_url_by_id, appshots_report_composer_slot,
+    appshots_set_enabled,
+    appshots_set_motion_enabled, appshots_set_target_session, appshots_skip_motion,
     appshots_trigger, AppshotsState,
 };
 use native_app_icon::desktop_get_app_icon;
@@ -2836,8 +2838,12 @@ mod global_hotkey_tests {
 
 fn setup_global_shortcut(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(target_os = "macos")]
-    appshots::setup_dual_command_hotkey(app.handle().clone())
-        .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
+    {
+        appshots::setup_dual_command_hotkey(app.handle().clone())
+            .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
+        appshots::enable_hover_when_inactive(app.handle());
+        appshots::enable_first_mouse_click(app.handle());
+    }
 
     Ok(())
 }
@@ -2893,8 +2899,12 @@ fn main() {
             desktop_get_app_icon,
             appshots_trigger,
             appshots_read_image_data_url,
+            appshots_read_image_data_url_by_id,
             appshots_report_composer_slot,
             appshots_set_enabled,
+            appshots_skip_motion,
+            appshots_set_target_session,
+            appshots_set_motion_enabled,
             pip_show,
             pip_frame,
             pip_controls,

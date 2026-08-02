@@ -30,6 +30,8 @@ import type {
   MessageAttachment,
   PresentationSummary,
 } from '@shared/contract';
+import type { AppshotCapture } from '@shared/contract/appshot';
+import { AppshotChip } from '../ChatInput/AppshotChip';
 import type { ChannelAttachment, RetryChannelMediaAttachmentResult } from '@shared/contract/channel';
 import { IPC_CHANNELS } from '@shared/ipc';
 import {
@@ -38,6 +40,10 @@ import {
   type SessionMediaContext,
 } from '@shared/utils/sessionMediaAssets';
 import ipcService from '../../../../services/ipcService';
+import {
+  invokeNativeCommandAction,
+  isNativeCommandRuntimeAvailable,
+} from '../../../../services/nativeCommandFacade';
 import { formatFileSize, FOLDER_SUMMARY_THRESHOLD, categoryLabels } from './utils';
 import { resolveFileUrl } from '../../../../utils/resolveFileUrl';
 import { SpreadsheetBlock } from './SpreadsheetBlock';
@@ -220,6 +226,29 @@ const AttachmentItem: React.FC<{
   const [retrying, setRetrying] = useState(false);
   useEffect(() => setDisplayAttachment(attachment), [attachment]);
 
+  // Appshot 会话回放：ledger 只存摘要（无 data/path），截图本体仍在 appshots 目录，
+  // 按 requestId 派生路径惰性还原（无绝对路径入 ledger）。仅在 image 类且 src 为空时触发。
+  const isAppshotAttachment = Boolean(displayAttachment.appshot) || displayAttachment.id.startsWith('appshot-');
+  const [lazyAppshotSrc, setLazyAppshotSrc] = useState('');
+  const mediaAssetForCheck = buildAttachmentMediaAsset(displayAttachment, mediaContext);
+  const rawImageSrc = mediaAssetForCheck
+    ? getRenderableMediaSrc(mediaAssetForCheck)
+    : displayAttachment.thumbnail || displayAttachment.data || (displayAttachment.path ? resolveFileUrl(displayAttachment.path) : '');
+  useEffect(() => {
+    if (!isAppshotAttachment || rawImageSrc || lazyAppshotSrc || !isNativeCommandRuntimeAvailable()) return;
+    const requestId = displayAttachment.id.replace(/^appshot-/, '');
+    if (!requestId) return;
+    let cancelled = false;
+    invokeNativeCommandAction('readAppshotImageDataUrlById', { requestId })
+      .then((dataUrl) => {
+        if (!cancelled) setLazyAppshotSrc(dataUrl);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [displayAttachment.id, isAppshotAttachment, rawImageSrc, lazyAppshotSrc]);
+
   const category = displayAttachment.category || (displayAttachment.type === 'image' ? 'image' : 'other');
   // 定点反馈要的是能交给 DocEdit 的本地绝对路径。渠道附件的 path 可能是 http(s) URL
   // （channelAgentBridge.pathFromAttachmentUrl 会把 URL 原样当 path），传给下游会让模型
@@ -287,6 +316,27 @@ const AttachmentItem: React.FC<{
     const imageSrc = mediaAsset
       ? getRenderableMediaSrc(mediaAsset)
       : displayAttachment.thumbnail || displayAttachment.data || (displayAttachment.path ? resolveFileUrl(displayAttachment.path) : '');
+    // Appshot 窗口截图：气泡里用与 composer 完全一致的 AppshotChip（同款卡片、点击开同一预览 Modal）
+    if (isAppshotAttachment) {
+      const meta = displayAttachment.appshot;
+      const requestId = displayAttachment.id.replace(/^appshot-/, '') || displayAttachment.id;
+      const capture: AppshotCapture = {
+        requestId,
+        appName: meta?.appName?.trim()
+          || displayAttachment.name.replace(/\s*(截图|screenshot)\.png$/i, '').trim()
+          || 'Appshot',
+        bundleId: meta?.bundleId ?? null,
+        windowTitle: meta?.windowTitle ?? null,
+        screenshotPath: displayAttachment.path ?? '',
+        screenshotDataUrl: (imageSrc || lazyAppshotSrc) || undefined,
+        axText: meta?.axText ?? null,
+        textSource: meta?.textSource ?? 'none',
+        textReady: true,
+        windowFrame: { x: 0, y: 0, width: 0, height: 0 },
+        capturedAtMs: 0,
+      };
+      return <AppshotChip capture={capture} />;
+    }
     return (
       <div className="group max-w-[220px] overflow-hidden rounded-xl border border-zinc-700 bg-zinc-900/80 shadow-lg">
         {imageSrc ? (

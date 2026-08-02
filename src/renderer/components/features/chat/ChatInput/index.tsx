@@ -426,7 +426,11 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     pendingAgentSelection,
   });
 
-  // 上报 composer 槽位给 Rust，作为 Appshot 飞入动画的落点（屏幕逻辑坐标）
+  // 上报 composer 槽位给 Rust，作为 Appshot 飞入动画的落点。
+  // 锚点渲染在 ComposerChipsRow 内（chip 缩略图位置），这里只负责测量上报：
+  // 只报「窗口视口内坐标」（getBoundingClientRect），不加 window.screenX/screenY——
+  // 它们在部分 macOS 环境是物理像素，与 CSS 逻辑像素混算会把落点打出屏幕；
+  // 屏幕坐标由 Rust 侧用主窗口 outer_position 换算（单位一致）。
   useEffect(() => {
     if (!isNativeCommandRuntimeAvailable()) return;
     const report = () => {
@@ -434,15 +438,21 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
       if (!el) return;
       const r = el.getBoundingClientRect();
       invokeNativeCommandAction('reportAppshotComposerSlot', {
-          slot: { x: r.left + window.screenX, y: r.top + window.screenY, width: 56, height: 56 },
+          slot: { x: r.left, y: r.top, width: r.width, height: r.height },
         })
         .catch(() => {});
     };
     const timer = window.setTimeout(report, 300);
     window.addEventListener('resize', report);
+    const composerEl = formRef.current;
+    const observer = typeof ResizeObserver !== 'undefined' && composerEl
+      ? new ResizeObserver(report)
+      : null;
+    if (observer && composerEl) observer.observe(composerEl);
     return () => {
       window.clearTimeout(timer);
       window.removeEventListener('resize', report);
+      observer?.disconnect();
     };
   }, []);
 
@@ -927,9 +937,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
         {/* 文件处理中提示 */}
         <ComposerUploadStatus active={isUploading} />
 
-        {/* Appshot 飞入动画落点锚（0 高，仅用于测量 composer 槽位屏幕坐标） */}
-        <div ref={appshotSlotRef} aria-hidden className="h-0" />
-
         {/* 拖放提示 */}
         {isDragOver && (
           <div className="absolute inset-0 flex items-center justify-center bg-zinc-800-950/90 backdrop-blur-sm z-10 rounded-xl border-2 border-dashed border-primary-500">
@@ -1147,6 +1154,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
               <ComposerChipsRow
                 pendingAppshot={pendingAppshot}
                 clearAppshot={clearAppshot}
+                appshotSlotRef={appshotSlotRef}
               />
             )}
             inlineChips={inlineChips}

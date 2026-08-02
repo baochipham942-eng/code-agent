@@ -130,7 +130,15 @@ export interface AgentEngineSourceDescriptor {
   command?: string;
   binaryPath?: string;
   version?: string;
+  /**
+   * 本机是否定位到了这个客户端的可执行文件。**只表示「找到了」**，不表示能用——
+   * 版本探测失败时它仍为 true，失败原因见 probeError。
+   * 曾经把「找到了但探测失败」也算作 detected=false，UI 因此对着一个装好的客户端
+   * 说「本机未检测到客户端」。
+   */
   detected: boolean;
+  /** 探测失败原因（找到了二进制但跑不通）。有值即表示这条结论是「暂时问不出来」，不是「没有」。 */
+  probeError?: string;
   selectable: boolean;
   authState: AgentEngineAuthState;
   modelSelection: ExternalEngineModelSelection;

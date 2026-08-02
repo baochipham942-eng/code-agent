@@ -113,7 +113,11 @@ export function resolveEngineSourceStatus(
   if (source.detected) {
     if (source.authState === 'needs_login') return 'detected_needs_login';
     if (source.evidence !== 'production') return 'detected_adapter_pending';
-    if (source.authState === 'not_checked') return 'detected_auth_unverified';
+    // unknown = 探测挂了没问出来，not_checked = 没探过；对用户都是「登录状态未确认」，
+    // 都不能说成「需要登录」。
+    if (source.authState === 'not_checked' || source.authState === 'unknown') {
+      return 'detected_auth_unverified';
+    }
     return 'detected_adapter_pending';
   }
   if (source.evidence === 'production') return 'not_installed';

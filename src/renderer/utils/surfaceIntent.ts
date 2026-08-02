@@ -5,7 +5,8 @@ export type SurfaceArtifact =
   | { kind: 'file-preview'; filePath: string }
   | { kind: 'design-canvas' }
   | { kind: 'swarm-monitor' }
-  | { kind: 'managed-browser' };
+  | { kind: 'managed-browser' }
+  | { kind: 'terminal' };
 
 export type SurfaceIntentView =
   | 'overview'
@@ -13,6 +14,7 @@ export type SurfaceIntentView =
   | 'browser'
   | 'canvas'
   | 'preview'
+  | 'terminal'
   | 'other';
 
 export type SurfaceIntentDecision =
@@ -20,7 +22,8 @@ export type SurfaceIntentDecision =
   | { view: 'file-preview'; filePath: string }
   | { view: 'design-canvas' }
   | { view: 'task-monitor' }
-  | { view: 'browser' };
+  | { view: 'browser' }
+  | { view: 'terminal' };
 
 export interface SurfaceIntentInput {
   artifact: SurfaceArtifact;
@@ -55,6 +58,8 @@ export function decideSurfaceIntent(input: SurfaceIntentInput): SurfaceIntentDec
       return { view: 'task-monitor' };
     case 'managed-browser':
       return { view: 'browser' };
+    case 'terminal':
+      return { view: 'terminal' };
   }
 }
 
@@ -81,6 +86,7 @@ export function surfaceIntentViewForWorkbenchTab(tabId: string | null): SurfaceI
   if (tabId === 'browser') return 'browser';
   if (tabId?.startsWith('preview:')) return 'preview';
   if (tabId === 'design-canvas') return 'canvas';
+  if (tabId === 'terminal') return 'terminal';
   return 'other';
 }
 
@@ -90,6 +96,7 @@ export function surfaceIntentViewForDecision(
   if (decision.view === 'workspace-preview' || decision.view === 'task-monitor') return 'overview';
   if (decision.view === 'file-preview') return 'preview';
   if (decision.view === 'browser') return 'browser';
+  if (decision.view === 'terminal') return 'terminal';
   return 'canvas';
 }
 

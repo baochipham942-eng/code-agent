@@ -96,6 +96,29 @@ export interface VoiceCallSummary {
   transcriptCount?: number;
 }
 
+export type VoiceCallFailureCode =
+  | 'VOICE_UPSTREAM_UNAVAILABLE'
+  | 'UPSTREAM_SOCKET'
+  | 'UPSTREAM_ERROR'
+  | 'VOICE_PROVIDER_UNCONFIGURED'
+  | 'VOICE_SESSION_BUSY'
+  | 'HANDSHAKE_FAILED'
+  | 'RECONNECT_FAILED';
+
+export type VoiceCallFailurePhase =
+  | 'admission'
+  | 'configuration'
+  | 'handshake'
+  | 'upstream'
+  | 'reconnect';
+
+/** Renderer 只能上报自身产生、且媒体 WS 已不可用的两种拨号失败。 */
+export interface RendererVoiceFailureReport {
+  neoSessionId: string;
+  code: 'HANDSHAKE_FAILED' | 'RECONNECT_FAILED';
+  phase: 'handshake' | 'reconnect';
+}
+
 /** 注册给通话 brain 的窄工具（方案 §6.2 模式 A）。JSON Schema 直接透给上游。 */
 export interface VoiceToolDefinition {
   type: 'function';
@@ -134,7 +157,7 @@ export interface VoiceStatusResponse {
   /** 全局单路互斥：当前是否有通话进行中 */
   active: boolean;
   /** 本月通话用量（只记账不设限，方案 §5.4；设置页展示用） */
-  usage: { monthSeconds: number; monthCalls: number };
+  usage: { monthSeconds: number; monthCalls: number; monthFailedAttempts: number };
 }
 
 /** 设置页「实时通话」组保存后广播的窗口事件（对齐 VOICE_INPUT_SETTINGS_UPDATED_EVENT 先例）。 */

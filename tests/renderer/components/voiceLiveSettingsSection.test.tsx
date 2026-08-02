@@ -17,7 +17,7 @@ const invokeDomainMock = vi.hoisted(() => vi.fn());
 const availability = vi.hoisted(() => ({
   enabled: true,
   configured: true,
-  usage: { monthSeconds: 0, monthCalls: 0 },
+  usage: { monthSeconds: 0, monthCalls: 0, monthFailedAttempts: 0 },
 }));
 
 vi.mock('../../../src/renderer/hooks/useI18n', () => ({
@@ -132,14 +132,14 @@ describe('VoiceLiveSettingsSection', () => {
   });
 
   it('本月通话用量按分钟显示（只记账不设限）', async () => {
-    availability.usage = { monthSeconds: 754, monthCalls: 11 };
+    availability.usage = { monthSeconds: 754, monthCalls: 11, monthFailedAttempts: 0 };
     settingsGet(undefined);
     render(<VoiceLiveSettingsSection />);
 
     const summary = await screen.findByTestId('voice-usage-summary');
     expect(summary.textContent).toContain('13');  // 754s ≈ 13 分钟
     expect(summary.textContent).toContain('11');
-    availability.usage = { monthSeconds: 0, monthCalls: 0 };
+    availability.usage = { monthSeconds: 0, monthCalls: 0, monthFailedAttempts: 0 };
   });
 
   // key 配置三条断言已随组件迁往 voiceApiKeyConfig.test.tsx（批 X3：key 的家在「语音模型」tab 常驻）

@@ -30,6 +30,7 @@ import { resolveVoiceRouting } from './voiceRouting';
 import { beginVoiceDispatch, endVoiceDispatch, pushVoiceTranscript, setVoiceDispatchFocus } from './voiceAgentCoordinator';
 import { composeVoiceInstructions, focusChanged, type VoiceContinuityContext } from './voiceContextAssembler';
 import { recordVoiceCall } from './voiceUsageLedger';
+import { consumeVoiceCallFailure, observeVoiceEventFailure, persistVoiceCallFailure } from './voiceFailurePersistence';
 import { VOICE_TOOL_DEFINITIONS, executeVoiceTool } from './voiceTools';
 import type { VoiceLiveSettings } from '../../../shared/contract/settings';
 import { describeWorkFailure } from './workFailureDescription';
@@ -667,7 +668,7 @@ async function teardown(reason: string): Promise<void> {
   const seconds = durationSec % 60;
   const durationText = minutes > 0 ? `${minutes} 分 ${seconds} 秒` : `${seconds} 秒`;
   // 用量账本无条件记：空通话也真按秒付了钱，不落卡不等于没发生。
-  recordVoiceCall(endedAt, durationSec);
+  if (!consumeVoiceCallFailure(session.id)) recordVoiceCall(endedAt, durationSec);
   // A3：零字幕通话不落摘要卡。2026-07-30 真机那通 16 秒空通话（自动重连拨出来的）
   // 在消息流里留了一张「这通电话没有对话内容」——那不是记录，是噪音。
   // 派过活的通话即使一句没说也照落：工作项才是那通电话的产物。
@@ -723,6 +724,7 @@ export async function attachVoiceClient(client: WsSocket, neoSessionId: string, 
   }
   if (active || connecting) {
     send(client, { type: 'error', code: 'VOICE_SESSION_BUSY', message: '已有一路通话在进行中' });
+    void persistVoiceCallFailure({ neoSessionId, code: 'VOICE_SESSION_BUSY', phase: 'admission' });
     closeClientTerminal(client);
     return;
   }
@@ -736,6 +738,7 @@ export async function attachVoiceClient(client: WsSocket, neoSessionId: string, 
       code: 'VOICE_PROVIDER_UNCONFIGURED',
       message: `未配置 ${profile.displayName} API Key`,
     });
+    void persistVoiceCallFailure({ neoSessionId, code: 'VOICE_PROVIDER_UNCONFIGURED', phase: 'configuration' });
     closeClientTerminal(client);
     return;
   }
@@ -1050,6 +1053,7 @@ async function connectAndBind(
           || (event.type === 'state' && event.state === 'closed')
         ) {
           if (active?.id === id) {
+            observeVoiceEventFailure(event, neoSessionId, id);
             const reason = event.type === 'session.ended'
               ? event.reason
               : event.type === 'error'
@@ -1079,6 +1083,7 @@ async function connectAndBind(
       message: 'upstream unavailable',
       detail: message,
     });
+    void persistVoiceCallFailure({ neoSessionId, voiceSessionId: id, code: 'VOICE_UPSTREAM_UNAVAILABLE', phase: 'handshake' });
     closeClientTerminal(client);
     return;
   }

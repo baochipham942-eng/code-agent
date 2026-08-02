@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { SurfaceConversationSnapshotV1 } from '../../../shared/contract/surfaceExecution';
+import { SURFACE_USER_BROWSER_AGENT_ID } from '../../../shared/contract/surfaceExecution';
 import { getApplicationRunRegistry } from '../../app/applicationRunRegistry';
 import type { RunHandle } from '../../runtime/runContext';
 import type { RunRegistry } from '../../runtime/runRegistry';
@@ -13,7 +14,6 @@ import {
   type SurfaceRuntimeIdentityV1,
 } from './SurfaceExecutionRuntime';
 
-const USER_BROWSER_AGENT_ID = 'user-browser-link';
 
 interface UserBrowserRun {
   handle: RunHandle;
@@ -72,7 +72,7 @@ export class UserBrowserLinkService {
         identity: {
           conversationId,
           runId: handle.context.runId,
-          agentId: USER_BROWSER_AGENT_ID,
+          agentId: SURFACE_USER_BROWSER_AGENT_ID,
         },
       };
       this.runs.set(conversationId, run);

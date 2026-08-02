@@ -13,6 +13,7 @@ import type {
   SurfaceObservationV1,
   SurfaceTargetRefV1,
 } from '../../../shared/contract/surfaceExecution';
+import { SURFACE_USER_BROWSER_AGENT_ID } from '../../../shared/contract/surfaceExecution';
 import {
   getSurfaceExecutionRuntime,
   type SurfaceExecutionRuntime,
@@ -251,12 +252,18 @@ export class ManagedBrowserProviderAdapter {
       return existing;
     }
 
-    // One conversation owns one physical browser window. Separate agent/user runs
-    // keep separate Surface sessions and RunHandles, while sharing the page so an
-    // explicit user navigation can be continued by the agent without switching
-    // windows or weakening Surface ownership.
+    // A user click and an agent run in the same conversation share ONE physical window,
+    // so the agent can keep working on the page the user just opened without weakening
+    // Surface ownership (each side keeps its own Surface session and RunHandle).
+    // Sharing is deliberately limited to pairs involving the user run: two agent runs in
+    // one conversation stay isolated exactly as before, because the rail only ever shows
+    // one of them and silent cross-navigation is worse than an unseen second window.
+    const isUserRun = (owner: SurfaceRuntimeIdentityV1) => (
+      owner.agentId === SURFACE_USER_BROWSER_AGENT_ID
+    );
     const shared = Array.from(this.bindings.values()).find((binding) => (
       binding.identity.conversationId === identity.conversationId
+      && (isUserRun(identity) || isUserRun(binding.identity))
       && binding.browserService.isRunning()
       && Boolean(binding.browserService.getActiveTab())
     ));

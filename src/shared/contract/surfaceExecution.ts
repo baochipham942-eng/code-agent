@@ -878,3 +878,10 @@ export function isSurfaceConversationSnapshotV1(
       && session.session.conversationId === snapshot.conversationId)
     && Number.isFinite(snapshot.updatedAt);
 }
+
+/**
+ * agentId of the lightweight run that owns a Surface session created by an explicit
+ * user click on a chat link. It is the only owner allowed to share one conversation's
+ * physical browser window with an agent run — agent↔agent runs stay isolated.
+ */
+export const SURFACE_USER_BROWSER_AGENT_ID = 'user-browser-link';

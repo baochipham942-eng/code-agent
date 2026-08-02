@@ -231,6 +231,27 @@ describe('ManagedBrowserProviderAdapter', () => {
     expect(release).toHaveBeenCalledOnce();
   });
 
+  it('keeps two agent sub-runs in one conversation on separate physical browsers', async () => {
+    const { identity, acquire, adapter } = createHarness();
+    // 同一 conversation + 同一 run 下的两个 sub-agent：右栏一次只显示一扇窗，
+    // 让它们共用一个页面等于互相静默改导航，比看不见第二扇窗更糟。
+    const siblingIdentity: SurfaceRuntimeIdentityV1 = { ...identity, agentId: 'agent-b' };
+    const navigate = (owner: SurfaceRuntimeIdentityV1, operationId: string) => adapter.execute({
+      identity: owner,
+      operationId,
+      action: 'navigate',
+      params: { action: 'navigate', url: 'https://example.test/sibling' },
+      async executeProvider() {
+        return { success: true, output: 'navigated' };
+      },
+    });
+
+    expect((await navigate(identity, 'agent-a-navigate')).success).toBe(true);
+    expect((await navigate(siblingIdentity, 'agent-b-navigate')).success).toBe(true);
+    expect(acquire).toHaveBeenCalledTimes(2);
+    expect(acquire.mock.calls[0][0]).not.toBe(acquire.mock.calls[1][0]);
+  });
+
   it('reports delivered mutation with a missing successor as ambiguous and non-replayable', async () => {
     const { identity, adapter } = createHarness(2);
     const result = await adapter.execute({

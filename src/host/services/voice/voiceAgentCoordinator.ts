@@ -645,7 +645,8 @@ function onAgentStreamEvent(state: LedgerState, sessionId: string, event: AgentE
   if (!narrate) return;
   // 一次事件里可能同时完成多条；只播最后一条——电话里连播三句进度就是碎碎念，
   // 而节制闸的每件活上限也会把后面的丢掉，不如在源头只取最新那条。
-  const step = completed[completed.length - 1]!;
+  const step = completed[completed.length - 1];
+  if (!step) return;
   narrate(buildMilestoneNarration({
     workItemId: `${pendingId}:milestone-${(state.milestoneSeq += 1)}`,
     title: item.title,

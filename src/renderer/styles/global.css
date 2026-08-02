@@ -1,6 +1,11 @@
 /* Import theme files - MUST be before tailwind import */
 @import './themes/dark.css';
 @import './themes/light.css';
+/* 高对比两套：2026-08-02 之前**从没被 import**，文件在磁盘上、design-system 门也一直
+   读它们报「对比度达标」，但它们从不进构建产物——选中高对比只会得到一个没有 token 定义的
+   裸状态。门验的是磁盘文件，不是包里的东西，所以这个洞被它自己的合格证盖了很久。 */
+@import './themes/high-contrast-dark.css';
+@import './themes/high-contrast-light.css';
 
 /* Tailwind v4：单条 @import 替代三条 @tailwind 指令；@config 复用现有 JS 配置（保留全套自定义 theme） */
 @import 'tailwindcss';

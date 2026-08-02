@@ -154,7 +154,7 @@ export const StreamingIndicator: React.FC<StreamingIndicatorProps> = ({
             className="flex items-center gap-1 px-2 py-0.5 text-xs text-zinc-400 hover:text-zinc-200 bg-zinc-500/10 hover:bg-zinc-500/20 border border-zinc-500/30 rounded transition-colors"
           >
             <StopCircle className="w-3 h-3" />
-            停止
+            {t.chat.longToolStop}
           </button>
         )}
       </div>

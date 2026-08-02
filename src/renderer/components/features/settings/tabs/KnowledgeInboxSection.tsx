@@ -182,7 +182,7 @@ function InboxStatusBadge({ status }: { status: InboxStatus }) {
   );
 }
 
-export function LoadingRows() {
+function LoadingRows() {
   return (
     <div className="space-y-2">
       {Array.from({ length: 4 }).map((_, index) => (

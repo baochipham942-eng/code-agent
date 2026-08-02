@@ -11,7 +11,7 @@ import ipcService from '../../../../services/ipcService';
 import { isWebMode } from '../../../../utils/platform';
 import { zh, type Translations } from '../../../../i18n';
 
-export interface LightMemoryFile {
+interface LightMemoryFile {
   filename: string;
   name: string;
   description: string;
@@ -20,7 +20,7 @@ export interface LightMemoryFile {
   updatedAt: string;
 }
 
-export interface LightMemoryStats {
+interface LightMemoryStats {
   totalFiles: number;
   byType: Record<string, number>;
   sessionStats: {

@@ -194,6 +194,12 @@ export interface AppState {
   settingsInitialTab: SettingsTab | null; // 打开设置时默认选中的 Tab
   settingsMemoryFocus: SettingsMemoryFocus | null;
   settingsCapabilityFocus: SettingsCapabilityFocus | null;
+  /**
+   * 「把光标放回输入框」的请求信号：递增即触发一次，ChatInput 监听变化后 focus。
+   * 用于「新建会话」落在一个已经打开的空白草稿上——此时没有任何可见变化，
+   * 点击看起来像没反应；聚焦输入框是这次点击唯一诚实的回执。
+   */
+  composerFocusNonce: number;
   // 对话式建角色：待发送的种子消息（入口触发，ChatView 在新会话就绪后自动发出）
   pendingRoleChatSeed: string | null;
   // 项目目标：从 Project 详情/控制台启动后，等目标 session 成为当前会话再自动发出 /goal envelope
@@ -341,6 +347,7 @@ export interface AppState {
   clearSettingsInitialTab: () => void; // 清除初始 Tab（设置页使用后调用）
   clearSettingsMemoryFocus: () => void;
   clearSettingsCapabilityFocus: () => void;
+  requestComposerFocus: () => void;
   setShowPromptManager: (show: boolean) => void;
   setShowWorkspace: (show: boolean) => void;
   setTaskPanelTab: (tab: TaskPanelTab) => void;
@@ -483,6 +490,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   settingsInitialTab: null,
   settingsMemoryFocus: null,
   settingsCapabilityFocus: null,
+  composerFocusNonce: 0,
   pendingRoleChatSeed: null,
   pendingProjectGoalChatSeed: null,
   showPromptManager: false,
@@ -618,6 +626,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   clearSettingsInitialTab: () => set({ settingsInitialTab: null }),
   clearSettingsMemoryFocus: () => set({ settingsMemoryFocus: null }),
   clearSettingsCapabilityFocus: () => set({ settingsCapabilityFocus: null }),
+  requestComposerFocus: () => set((state) => ({ composerFocusNonce: state.composerFocusNonce + 1 })),
   setShowWorkspace: (show) => set({ showWorkspace: show }),
   setTaskPanelTab: (tab) => set({ taskPanelTab: tab }),
   setShowAgentTeamPanel: (show) => set({ showAgentTeamPanel: show }),

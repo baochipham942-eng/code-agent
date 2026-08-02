@@ -155,6 +155,11 @@ export async function executeCreateSession(
         }
         if (get().currentSessionId !== reusableSession.id) {
           await get().switchSession(reusableSession.id);
+        } else {
+          // 复用的草稿就是当前会话：不切换、不新建，屏幕上一点变化都没有，
+          // 「新建会话」看起来像点了没反应（侧栏「新任务」与快速对话分区的 + 都走这条）。
+          // 用户已经身在他想要的那个空白会话里，唯一还缺的就是把光标交还给他。
+          useAppStore.getState().requestComposerFocus();
         }
         if (
           !options?.engine &&

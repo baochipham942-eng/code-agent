@@ -332,7 +332,9 @@ export const PlanetSphere: React.FC<PlanetSphereProps> = ({
 
   const surfaceStyle = (tex: string, fallback: boolean): React.CSSProperties => ({
     backgroundImage: tex ? `url(${tex})` : undefined,
-    backgroundSize: `var(--texw) ${size}px`,
+    // --texw 是本组件按球径算出来、在 planetStyle 里注入的运行时变量（见上方 '--texw'），
+    // 不是设计系统主题 token，不该也无法在四套主题里预先定义。
+    backgroundSize: `var(--texw) ${size}px`, /* token-scan-allow */
     // canvas 不可用（jsdom/极端环境）时的保底色，避免星球隐形（只给地表层，云层不盖底）
     backgroundColor: fallback && !tex ? 'rgba(148,163,184,.45)' : undefined,
   });
@@ -387,7 +389,8 @@ const PLANET_CSS = `
   position: absolute;
   inset: -5px;
   border-radius: 50%;
-  background: radial-gradient(var(--planet-glow) 0%, transparent 62%);
+  /* --planet-glow 是本组件按七态状态色注入的运行时变量，随状态变，不是设计系统主题 token。 */
+  background: radial-gradient(var(--planet-glow) 0%, transparent 62%); /* token-scan-allow */
   transform: scale(calc(.9 + var(--rms, 0) * .3));
   opacity: calc(.6 + var(--rms, 0) * .4);
   pointer-events: none;

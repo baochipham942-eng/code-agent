@@ -18,7 +18,7 @@ const invokeDomainMock = vi.hoisted(() => vi.fn());
 const availability = vi.hoisted(() => ({
   enabled: true,
   configured: true,
-  usage: { monthSeconds: 0, monthCalls: 0, monthFailedAttempts: 0 },
+  usage: { monthSeconds: 0, monthCalls: 0, monthFailedAttempts: 0 } as import('../../../src/shared/contract/voice').VoiceStatusResponse['usage'],
 }));
 
 vi.mock('../../../src/renderer/hooks/useI18n', () => ({
@@ -132,14 +132,30 @@ describe('VoiceLiveSettingsSection', () => {
     expect(cleared.voice?.live?.executionModel).toBeUndefined();
   });
 
-  it('本月通话用量按分钟显示（只记账不设限）', async () => {
-    availability.usage = { monthSeconds: 754, monthCalls: 11, monthFailedAttempts: 0 };
+  it('本月通话用量同时显示时长、通数与 token 估算', async () => {
+    availability.usage = {
+      monthSeconds: 754,
+      monthCalls: 11,
+      monthFailedAttempts: 0,
+      monthTokens: {
+        totalTokens: 377,
+        inputTokens: 336,
+        outputTokens: 41,
+        inputAudioTokens: 108,
+        inputTextTokens: 228,
+        outputAudioTokens: 32,
+        outputTextTokens: 9,
+      },
+    };
     settingsGet(undefined);
     render(<VoiceLiveSettingsSection />);
 
     const summary = await screen.findByTestId('voice-usage-summary');
     expect(summary.textContent).toContain('13');  // 754s ≈ 13 分钟
     expect(summary.textContent).toContain('11');
+    expect(summary.textContent).toContain('377');
+    expect(summary.textContent).toContain('估算');
+    expect(summary.textContent).toContain('不代表账单');
     availability.usage = { monthSeconds: 0, monthCalls: 0, monthFailedAttempts: 0 };
   });
 

@@ -8,6 +8,7 @@ const runtime = vi.hoisted(() => ({
   connect: vi.fn(),
   updateInstructions: vi.fn(),
 }));
+const recordVoiceCall = vi.hoisted(() => vi.fn());
 
 vi.mock('../../src/host/services/core/configService', () => ({
   getConfigService: () => ({ getSettings: () => runtime.settings }),
@@ -35,7 +36,9 @@ vi.mock('../../src/host/services/voice/voiceTools', () => ({
   executeVoiceTool: vi.fn(async () => ''),
 }));
 vi.mock('../../src/host/services/voice/voiceUsageLedger', () => ({
-  recordVoiceCall: vi.fn(),
+  recordVoiceCall,
+  addTokenUsage: (current: Record<string, number> | undefined, added: Record<string, number>) =>
+    Object.fromEntries(Object.entries(added).map(([key, value]) => [key, (current?.[key] ?? 0) + value])),
 }));
 vi.mock('../../src/host/services/infra/sessionManager', () => ({
   getSessionManager: () => ({
@@ -102,6 +105,7 @@ beforeEach(() => {
   runtime.settings.voice.live = {};
   runtime.connect.mockReset().mockResolvedValue(makeHandle());
   runtime.updateInstructions.mockClear();
+  recordVoiceCall.mockClear();
 });
 
 afterEach(async () => {
@@ -114,6 +118,45 @@ afterEach(async () => {
 });
 
 describe('refreshVoiceInstructions', () => {
+  it('一通电话的多轮 response usage 逐维累加后只入账一次', async () => {
+    const client = new FakeClient();
+    await attachVoiceClient(client as never, 'session-token-usage');
+    const connectInput = runtime.connect.mock.calls.at(-1)?.[0] as {
+      onEvent: (event: import('../../src/shared/contract/voice').VoiceEvent) => void;
+    };
+    connectInput.onEvent({
+      type: 'response.done',
+      responseId: 'r1',
+      usage: {
+        totalTokens: 100, inputTokens: 70, outputTokens: 30,
+        inputAudioTokens: 20, inputTextTokens: 50, outputAudioTokens: 25, outputTextTokens: 5,
+      },
+    });
+    connectInput.onEvent({
+      type: 'response.done',
+      responseId: 'r2',
+      usage: {
+        totalTokens: 40, inputTokens: 30, outputTokens: 10,
+        inputAudioTokens: 10, inputTextTokens: 20, outputAudioTokens: 8, outputTextTokens: 2,
+      },
+    });
+
+    const ending = endActiveVoiceSession();
+    await vi.advanceTimersByTimeAsync(VOICE_TEARDOWN_DRAIN_MS);
+    await ending;
+
+    expect(recordVoiceCall).toHaveBeenCalledTimes(1);
+    expect(recordVoiceCall).toHaveBeenCalledWith(expect.any(Number), expect.any(Number), {
+      totalTokens: 140,
+      inputTokens: 100,
+      outputTokens: 40,
+      inputAudioTokens: 30,
+      inputTextTokens: 70,
+      outputAudioTokens: 33,
+      outputTextTokens: 7,
+    });
+  });
+
   it('无活跃通话时不抛错也不调用 upstream', () => {
     expect(() => refreshVoiceInstructions()).not.toThrow();
     expect(runtime.updateInstructions).not.toHaveBeenCalled();

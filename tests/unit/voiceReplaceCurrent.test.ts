@@ -30,6 +30,7 @@ const runtime = vi.hoisted(() => ({
     _options: AgentRunOptions,
   ) => undefined),
   cancelTask: vi.fn(async (_sessionId: string) => undefined),
+  observeAgentEvents: (_o: unknown) => () => {},
   emit(type: string, sessionId = 'session-1', data?: unknown) {
     for (const listener of [...this.listeners]) listener({ type, sessionId, data });
   },
@@ -39,6 +40,9 @@ vi.mock('../../src/host/task', () => ({
   getTaskManager: () => ({
     on: (_event: string, listener: (event: FakeEvent) => void) => { runtime.listeners.add(listener); },
     off: (_event: string, listener: (event: FakeEvent) => void) => { runtime.listeners.delete(listener); },
+    // §2 进度旁路：真 TaskManager 有这个方法，替身不给就会让 ensureListener 走降级分支，
+    // 测到的就不是产品真实路径。
+    observeAgentEvents: runtime.observeAgentEvents,
     getSessionState: () => ({ status: runtime.status }),
     startTask: runtime.startTask,
     interruptAndContinue: vi.fn(),
@@ -277,6 +281,25 @@ describe('replace_current — 正对照与边界', () => {
 
     // 唯一该出声的是替换回报；旧活的 done 不念。
     expect(narrations.every((n) => n.status === 'announcement')).toBe(true);
+  });
+});
+
+describe('进度旁路接不上时，派活必须照常', () => {
+  it('observeAgentEvents 抛异常 → 活照样派出去，只是没有中途进度', async () => {
+    // 2026-08-02 实测：T5 把 observeAgentEvents 接进 ensureListener 后，替身缺这个方法
+    // 让**整条派活链**在 30 条测试里全炸。中途进度是锦上添花的功能，它接不上时
+    // 用户该失去的是「听不到进度」，不是「语音派活整个不能用」。这道门钉住这件事。
+    const spy = vi.spyOn(runtime, 'observeAgentEvents').mockImplementation(() => {
+      throw new Error('observer unavailable');
+    });
+    try {
+      runtime.status = 'idle';
+      const reply = await dispatchVoiceIntent({ kind: 'spawn_task', title: '建个文件', prompt: '建 a.txt' });
+      expect(runtime.startTask).toHaveBeenCalledTimes(1);
+      expect(reply).toContain('我已经开始做');
+    } finally {
+      spy.mockRestore();
+    }
   });
 });
 

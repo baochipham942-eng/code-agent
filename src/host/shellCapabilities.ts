@@ -387,9 +387,12 @@ const CAPABILITY_DOMAIN_ACTIONS = {
   ],
   [IPC_DOMAINS.SURFACE_EXECUTION]: [
     'control',
+    'deletePersistedTerminalFrames',
     'getFrame',
     'getOutput',
+    'getPersistedTerminalFrame',
     'getSnapshot',
+    'persistTerminalFrame',
   ],
   [IPC_DOMAINS.SETTINGS]: [
     'checkApiKeyConfigured',

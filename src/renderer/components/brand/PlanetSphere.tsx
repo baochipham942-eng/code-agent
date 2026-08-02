@@ -365,7 +365,6 @@ export const PlanetSphere: React.FC<PlanetSphereProps> = ({
   );
 };
 
-export default PlanetSphere;
 
 // ============================================================================
 // 样式（同 ThoughtDisplay 的内联 <style> 先例；作用域类名 neo-planet-* 不外溢）

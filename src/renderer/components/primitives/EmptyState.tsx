@@ -12,7 +12,7 @@ import { PlanetSphere, type PlanetKind } from '../brand/PlanetSphere';
 export type EmptyStateVariant = 'box' | 'panel' | 'plain' | 'inline';
 
 /** 星球空态（2026-08-02 星球品牌升级）：在原图标位渲染 34px PlanetSphere。 */
-export interface EmptyStatePlanet {
+interface EmptyStatePlanet {
   kind: PlanetKind;
   /** 辉光色（rgba 字符串）；缺省用中性灰蓝，不为场景硬编码状态色 */
   glowColor?: string;

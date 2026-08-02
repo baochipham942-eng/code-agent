@@ -64,7 +64,7 @@ import { recordMessageProcessorModelCallTelemetry } from './messageProcessorTele
 import { generateTruncationWarning } from './truncationPrompts';
 import { isToolDeniedForRun } from './toolRunPolicy';
 import { attachTurnQualityMetadata } from './turnQuality';
-
+import { wasMessagePersistedByContextAssembly } from './contextAssembly/systemContextStack';
 const logger = createLogger('MessageProcessor');
 type LangfuseSpanFacade = { endSpan(spanId: string, output?: unknown, level?: 'DEBUG' | 'DEFAULT' | 'WARNING' | 'ERROR', statusMessage?: string): void };
 function toAgentEventFromNudge(event: { type: string; data: unknown }): AgentEvent | null {
@@ -526,9 +526,7 @@ export class MessageProcessor {
       });
     }
     const assistantMessage = this.buildAssistantMessageFromResponse(response, finalContent);
-    if (handoffTail.found && assistantMessage.contentParts?.length) {
-      assistantMessage.contentParts = [{ type: 'text', text: finalContent }];
-    }
+    if (handoffTail.found && assistantMessage.contentParts?.length) assistantMessage.contentParts = [{ type: 'text', text: finalContent }];
 
     // Artifact extraction
     const artifacts = extractArtifacts(finalContent);
@@ -545,7 +543,7 @@ export class MessageProcessor {
     }
 
     await this.contextAssembly.addAndPersistMessage(assistantMessage);
-
+    if (wasMessagePersistedByContextAssembly(assistantMessage)) this.ctx.turn.resetStreamedContent();
     if (handoffTail.draft) {
       try {
         getHandoffProposalService().create({

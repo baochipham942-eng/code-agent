@@ -25,6 +25,7 @@ import { useTurnProjection } from '../hooks/useTurnProjection';
 import { useTurnExecutionClarity } from '../hooks/useTurnExecutionClarity';
 import { TurnBasedTraceView } from './features/chat/TurnBasedTraceView';
 import { NewSessionWelcome } from './features/chat/NewSessionWelcome';
+import { EmptySessionArea } from './features/chat/SessionSwitchSkeleton';
 import { MemberConversationView } from './features/expert/MemberConversationView';
 import { useMemberViewStore } from '../stores/memberViewStore';
 export { buildDefaultSuggestions } from './features/chat/NewSessionWelcome';
@@ -105,6 +106,7 @@ export const ChatView: React.FC = () => {
     sessions,
     hasOlderMessages,
     isLoading: isSessionLoading,
+    isHydratingSession,
     isCreatingSession,
     isLoadingOlder,
     loadOlderMessages,
@@ -778,19 +780,21 @@ export const ChatView: React.FC = () => {
           {viewingMemberId ? (
             <MemberConversationView sessionId={currentSessionId} />
           ) : projection.turns.length === 0 ? (
-            // 仅在「已确定当前会话 + 非加载中」时才渲染空状态默认页。
-            // 冷启动初始化（currentSessionId 尚为 null）或会话切换异步加载期间
-            // 渲染空白占位，避免闪现"新会话"默认页（见 switchSession/initializeSessionStore）。
-            currentSessionId && !isSessionLoading ? (
-              <NewSessionWelcome
-                onSend={handleSendMessage}
-                workingDirectory={currentSessionWorkingDirectory}
-                workbenchSnapshot={currentSession?.workbenchSnapshot}
-                session={currentSession}
-              />
-            ) : (
-              <div className="h-full" aria-hidden />
-            )
+            // 三态分明（工单 2026-08-01）：加载中（hydration 未完）→ 骨架屏；
+            // 真空会话（hydration 完成且零消息）→ #874 的「继续上次的会话」空态；
+            // 冷启动未定会话 → 空白占位。加载中绝不能误渲染成空态/欢迎页。
+            <EmptySessionArea
+              isHydratingSession={isHydratingSession}
+              settled={!!currentSessionId && !isSessionLoading}
+              welcome={
+                <NewSessionWelcome
+                  onSend={handleSendMessage}
+                  workingDirectory={currentSessionWorkingDirectory}
+                  workbenchSnapshot={currentSession?.workbenchSnapshot}
+                  session={currentSession}
+                />
+              }
+            />
           ) : (
             // 会话级错误边界：消息区一旦渲染失败（如虚拟列表反馈环打满 React 嵌套
             // 更新上限），只塌陷这一块并允许重试，不再让 App 级边界罩死整个应用。

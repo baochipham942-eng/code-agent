@@ -29,6 +29,13 @@ describe('humanizeToolStep — per-category snapshots (zh)', () => {
     expect(humanizeToolStep('Bash', { command: 'ls src/' }, zh, '列出源码目录')).toBe('列出源码目录');
   });
 
+  // 「注入对用户可见」红线在会话侧的一半：Neo 往用户终端敲了什么，聊天里要读得出来，
+  // 不能只显示一句「使用了 terminal_write」。
+  it('terminal_write: shows what was typed into the user terminal', () => {
+    expect(humanizeToolStep('terminal_write', { input: 'grok ask "hi"' }, zh))
+      .toBe('运行了命令 grok ask "hi"');
+  });
+
   it('search: Grep pattern', () => {
     expect(humanizeToolStep('Grep', { pattern: 'TODO' }, zh)).toBe('搜索了 TODO');
   });

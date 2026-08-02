@@ -24,7 +24,7 @@ async function fetchVoiceStatus(): Promise<VoiceStatusResponse | null> {
   }
 }
 
-const NO_USAGE: VoiceStatusResponse['usage'] = { monthSeconds: 0, monthCalls: 0 };
+const NO_USAGE: VoiceStatusResponse['usage'] = { monthSeconds: 0, monthCalls: 0, monthFailedAttempts: 0 };
 
 /**
  * 跨挂载记住上一次的结果。

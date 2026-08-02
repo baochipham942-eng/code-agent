@@ -50,9 +50,37 @@ interface TerminalSession {
   shell: string;
   cwd: string;
   startedAt: number;
+  /** 程序是否切到了备用屏（全屏 TUI）。见 updateAlternateScreen。 */
+  altScreen: boolean;
 }
 
 const sessions = new Map<string, TerminalSession>();
+
+/**
+ * 备用屏（alternate screen buffer）开关序列。全屏 TUI（Codex CLI / vim / less / htop…）
+ * 启动时切进去、退出时切回来，切进去之后整屏由它自己重绘。
+ * 1049 是现代终端的写法，47 / 1047 是老程序留下的两种旧写法，一并认。
+ */
+const ALT_SCREEN_TOGGLE = /\x1b\[\?(?:1049|1047|47)([hl])/g;
+
+/**
+ * 从一段 PTY 输出里更新备用屏状态：取最后一次开关为准（同一段里可能既进又出）。
+ *
+ * ponytail: 只认落在单个 chunk 内的完整序列。理论上转义序列可能被切在两个 chunk
+ * 中间，此时这一次切换会被漏掉。代价只是回显多印/少印一行（不影响注入本身），
+ * 真出问题再上跨 chunk 的残尾拼接。
+ */
+function updateAlternateScreen(session: TerminalSession, data: string): void {
+  ALT_SCREEN_TOGGLE.lastIndex = 0;
+  let last: string | null = null;
+  let match: RegExpExecArray | null;
+  while ((match = ALT_SCREEN_TOGGLE.exec(data)) !== null) {
+    last = match[1];
+  }
+  if (last !== null) {
+    session.altScreen = last === 'h';
+  }
+}
 
 type OutputListener = (sessionId: string, data: string) => void;
 const outputListeners = new Set<OutputListener>();
@@ -258,9 +286,11 @@ export function openTerminalSession(options: OpenTerminalOptions): TerminalSnaps
     shell,
     cwd: options.cwd,
     startedAt: Date.now(),
+    altScreen: false,
   };
 
   ptyProcess.onData((data) => {
+    updateAlternateScreen(session, data);
     appendToBuffer(session, data);
     emitOutput(session.sessionId, data);
   });
@@ -296,6 +326,14 @@ export function writeToTerminalSession(sessionId: string, data: string): { ok: b
  * Agent 注入命令时的可见回显走这里：用户在自己的终端里必须能看到「Neo 敲了什么」，
  * 而不是凭空冒出一行命令的执行结果。
  */
+/**
+ * 该会话此刻是不是停在全屏 TUI 里。用于决定注入回显该不该印——
+ * 备用屏下印进去的东西会被 TUI 的下一帧整屏重绘擦掉，只留一次闪烁。
+ */
+export function isTerminalOnAlternateScreen(sessionId: string): boolean {
+  return sessions.get(sessionId)?.altScreen === true;
+}
+
 export function annotateTerminalSession(sessionId: string, text: string): boolean {
   const session = sessions.get(sessionId);
   if (!session) return false;

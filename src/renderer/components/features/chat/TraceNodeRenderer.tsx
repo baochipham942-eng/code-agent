@@ -269,7 +269,7 @@ const AssistantTextNode: React.FC<{
   const [selectionCopy, setSelectionCopy] = useState<SelectionCopyState | null>(null);
   const messageId = node.messageId || (node.id.endsWith('-text') ? node.id.slice(0, -5) : node.id);
 
-  const { displayContent, isAnimating } = useSmoothStreamingText({
+  const { displayContent, isAnimating, tailStartIndex } = useSmoothStreamingText({
     content: node.content || '',
     isStreaming: Boolean(turnStreaming),
   });
@@ -400,6 +400,7 @@ const AssistantTextNode: React.FC<{
             isUser={false}
             isStreaming={Boolean(turnStreaming || isAnimating)}
             messageId={messageId}
+            streamingTailStart={tailStartIndex}
             mediaContext={{
               sessionId,
               messageId,

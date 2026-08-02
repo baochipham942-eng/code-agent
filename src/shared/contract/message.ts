@@ -114,6 +114,15 @@ export interface MessageAttachment {
   mediaState?: AttachmentMediaState;
   // 来源和处理元数据，例如渠道消息 ID、转写结果、下载状态
   metadata?: Record<string, unknown>;
+  // Appshot 窗口截图特有：来源 app 元数据，供气泡渲染 Codex 式大卡片（可选，向后兼容）
+  appshot?: {
+    appName?: string | null;
+    windowTitle?: string | null;
+    bundleId?: string | null;
+    /** AX/OCR 抽取的窗口文字（气泡预览 Modal 的「文字」页） */
+    axText?: string | null;
+    textSource?: 'ax' | 'ocr' | 'none';
+  };
 }
 
 // 消息来源类型

@@ -17,8 +17,12 @@ const DEFAULT_SINCE_VERSION = '0.16.93';
 
 const NATIVE_TAURI_COMMANDS = [
   'appshots_read_image_data_url',
+  'appshots_read_image_data_url_by_id',
   'appshots_report_composer_slot',
   'appshots_set_enabled',
+  'appshots_set_motion_enabled',
+  'appshots_set_target_session',
+  'appshots_skip_motion',
   'appshots_trigger',
   'check_for_update',
   'desktop_capture_screenshot',

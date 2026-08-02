@@ -2,7 +2,8 @@
 // Modal - Base modal component with customizable size and layout
 // ============================================================================
 
-import React, { useEffect, useId, useRef } from 'react';
+import React, { useEffect, useId, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import { useI18n } from '../../hooks/useI18n';
 import { BUTTON_PRIMARY_CLASS } from './Button';
@@ -88,6 +89,10 @@ export const Modal: React.FC<ModalProps> = ({
   const modalId = useId();
   const headerId = useId();
   const escapeHandlerRef = useRef<() => void>(() => undefined);
+  // mounted 前保持内联：SSR（renderToStaticMarkup 不支持 portal）与首帧先出内联，
+  // 挂载后再 portal 到 body（portal 是为了跳出 transform/filter 祖先对 fixed 的囚禁）。
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
 
   escapeHandlerRef.current = () => {
     if (closeOnEsc && onClose) {
@@ -175,7 +180,7 @@ export const Modal: React.FC<ModalProps> = ({
 
   const zIndexStyle = { zIndex };
 
-  return (
+  const tree = (
     <div className="fixed inset-0 flex items-center justify-center" style={zIndexStyle}>
       {/* Backdrop */}
       <div
@@ -237,6 +242,7 @@ export const Modal: React.FC<ModalProps> = ({
       </div>
     </div>
   );
+  return mounted ? createPortal(tree, document.body) : tree;
 };
 
 // ============================================================================

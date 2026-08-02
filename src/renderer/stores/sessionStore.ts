@@ -18,8 +18,10 @@ import { useAppStore } from './appStore';
 import { useTaskStore } from './taskStore';
 import { useAppshotsStore } from './appshotsStore';
 import { useDesignCanvasStore } from '../components/design/designCanvasStore';
-import { useSurfaceExecutionStore } from './surfaceExecutionStore';
-import { deletePersistedSurfaceTerminalFrames } from '../services/surfaceExecutionClient';
+import {
+  clearConversationTerminalFrames,
+  forgetConversationFramesInMemory,
+} from './sessionTerminalFrames';
 import { executeCreateSession } from './sessionCreate';
 
 const logger = createLogger('SessionStore');
@@ -519,7 +521,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
         // 清理该会话的设计态：design-active 标记 + 画布属主，避免悬空。
         useDesignCanvasStore.getState().releaseSessionDesignState(sessionId);
         // 终态留影的内存半跟会话一起删（盘上那一半由 host 会话删除收敛点负责）
-        useSurfaceExecutionStore.getState().clearConversation(sessionId);
+        forgetConversationFramesInMemory(sessionId);
         // 清理该会话的 per-session agent 选择（S3）
         useAppStore.getState().clearActiveAgentForSession(sessionId);
 
@@ -721,17 +723,9 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
     },
 
     clearCurrentSession: async () => {
-      const conversationId = get().currentSessionId;
-      if (conversationId) {
-        try {
-          await deletePersistedSurfaceTerminalFrames({ version: 1, conversationId });
-          useSurfaceExecutionStore.getState().clearConversation(conversationId);
-        } catch (error) {
-          logger.error('Failed to clear persisted terminal frames', error);
-          set({ error: error instanceof Error ? error.message : 'Failed to clear conversation' });
-          return;
-        }
-      }
+      // 盘上的帧没删掉就不能清界面——否则用户以为删了其实还在。
+      const frameError = await clearConversationTerminalFrames(get().currentSessionId);
+      if (frameError) { set({ error: frameError }); return; }
       useAppshotsStore.getState().clear();
       set({
         messages: [],

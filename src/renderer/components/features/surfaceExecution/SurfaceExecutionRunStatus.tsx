@@ -7,11 +7,6 @@ import {
   useSurfaceExecutionStore,
 } from '../../../stores/surfaceExecutionStore';
 import type { RendererSurfaceSessionProjectionV1 } from '../../../utils/surfaceExecutionProjection';
-import {
-  selectIsCurrentComposerInProgress,
-  useComposerNoticeStore,
-  useRegisterComposerInProgress,
-} from '../../../stores/composerNoticeStore';
 
 type SurfaceRunState = RendererSurfaceSessionProjectionV1['session']['state'];
 
@@ -40,8 +35,11 @@ const DOT_TONE: Record<SurfaceRunState, string> = {
 const SPINNING_STATES = new Set<SurfaceRunState>(['preparing', 'running', 'stopping']);
 
 export function useSurfaceExecutionRunSession(conversationId: string | null) {
-  // 产品拍板（2026-08-01）：composer 条与侧栏圆点只报进行中的 surface，
-  // 终态（completed/failed）不常驻——结果由会话内的行内紧凑条承载。
+  // 产品拍板（2026-08-01）：侧栏圆点只报进行中的 surface，终态（completed/failed）
+  // 不常驻——结果由会话内的行内紧凑条承载。
+  // 产品拍板（2026-08-02）：composer 上方那条常驻状态条已删。它跟对话流里的
+  // SurfaceExecutionCompactBar 报的是同一件事，而后者还带「操作到哪一步」，
+  // 复述一遍只是噪音。侧栏圆点留着——它的职责不同：告诉你**别的**会话在忙。
   return useSurfaceExecutionStore((state) => selectSurfaceExecutionRunSessionV1(
     state.sessionsByScope,
     { conversationId, includeTerminal: false },
@@ -50,12 +48,10 @@ export function useSurfaceExecutionRunSession(conversationId: string | null) {
 
 interface SurfaceExecutionRunStatusProps {
   session: RendererSurfaceSessionProjectionV1;
-  placement: 'sidebar' | 'composer';
 }
 
 export function SurfaceExecutionRunStatus({
   session,
-  placement,
 }: SurfaceExecutionRunStatusProps) {
   const { language } = useI18n();
   const copy = getSurfaceExecutionTranslations(language);
@@ -67,46 +63,17 @@ export function SurfaceExecutionRunStatus({
     <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${DOT_TONE[state]}`} aria-hidden />
   );
 
-  if (placement === 'sidebar') {
-    return (
-      <span
-        data-testid="surface-execution-sidebar-status"
-        data-placement="sidebar"
-        data-state={state}
-        data-surface={session.session.surface}
-        className={`inline-flex items-center ${STATE_TONE[state]}`}
-        aria-label={label}
-        title={label}
-      >
-        {marker}
-      </span>
-    );
-  }
-
   return (
-    <div
-      data-testid="surface-execution-composer-status"
-      data-placement="composer"
+    <span
+      data-testid="surface-execution-sidebar-status"
+      data-placement="sidebar"
       data-state={state}
       data-surface={session.session.surface}
-      className={`mb-2 flex items-center gap-1.5 px-2 text-[11px] ${STATE_TONE[state]}`}
+      className={`inline-flex items-center ${STATE_TONE[state]}`}
       aria-label={label}
+      title={label}
     >
       {marker}
-      <span>{label}</span>
-    </div>
+    </span>
   );
-}
-
-export function SurfaceExecutionComposerStatus({
-  conversationId,
-}: { conversationId: string | null }) {
-  const session = useSurfaceExecutionRunSession(conversationId);
-  useRegisterComposerInProgress('surface-execution', Boolean(session));
-  const isCurrentInProgress = useComposerNoticeStore((state) => (
-    selectIsCurrentComposerInProgress(state, 'surface-execution')
-  ));
-  return session && isCurrentInProgress
-    ? <SurfaceExecutionRunStatus session={session} placement="composer" />
-    : null;
 }

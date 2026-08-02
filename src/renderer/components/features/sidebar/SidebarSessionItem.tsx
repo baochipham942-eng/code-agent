@@ -219,7 +219,7 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
         {!isRenaming && (
           <span className="w-4 shrink-0 flex items-center justify-center transition-opacity duration-150 group-hover:opacity-0 group-focus-visible:opacity-0">
             {surfaceExecutionSession ? (
-              <SurfaceExecutionRunStatus session={surfaceExecutionSession} placement="sidebar" />
+              <SurfaceExecutionRunStatus session={surfaceExecutionSession} />
             ) : isRunning ? (
               <Loader2 className="w-3 h-3 text-emerald-400/80 animate-spin" aria-label={localizedStatusLabel} />
             ) : attentionDotClass ? (

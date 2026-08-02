@@ -105,7 +105,6 @@ import { buildMentionAttachment } from './mentionAttachment';
 import { AgentChip } from './AgentChip';
 import { MountedConnectorIcons } from './MountedConnectorIcons';
 import { getAgentSlashCommandQuery } from './agentCommand';
-import { SurfaceExecutionComposerStatus } from '../../surfaceExecution/SurfaceExecutionRunStatus';
 import { ComposerUploadStatus } from './ComposerUploadStatus';
 
 // ============================================================================
@@ -969,7 +968,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
           <SuggestionBar suggestions={suggestions} onSelect={handleSuggestionSelect} />
         )}
 
-        <SurfaceExecutionComposerStatus conversationId={currentSessionId} />
         <CapabilitySuggestionStrip
           skillRecommendations={skillRecommendations}
           capabilitySuggestions={capabilitySuggestions}

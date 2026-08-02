@@ -6,11 +6,15 @@
 // 模型读得到（上下文装配走 DB），用户屏幕上一片空白，事后翻历史也找不回。
 // 当下唯一的提示是几秒就消失的 toast，通话条又随挂断一起收走。
 //
-// 这组测试守两件事：
-//   1. 这一条确实投影出来了（漏白名单 = 红）；
-//   2. **白名单这个机制本身**——任何没被显式放行的 role:'system' 仍然被跳过。
-//      只断言第 1 条的话，下次有人把总闸改成「system 全放行」也是绿的，
-//      那等于用「全都漏出去」换掉了「漏一项」，门抓不住。
+// 这组测试守的是「这一条确实投影出来了」（摘掉白名单分支 = 红，已变异验证）。
+//
+// **写不出来的那条，如实记在这里**：本来还想守「白名单机制本身」——即有人把
+// `if (msg.role === 'system') continue;` 那道总闸拆掉时要报红。实测该变异**不会红**，
+// 因为它拆了也没用：总闸之后的每个分支都门在 role==='user' / 'assistant' 上，
+// 掉下去的 system 消息本来就产不出任何节点。那道 continue 是纯防御性的短路。
+// 所以这个盲区不是「测试没写好」，是它没有可观测的失败面——真正的风险变异是
+// **新增一个放行 system 的分支**，那属于新增代码，只能靠 review 拦，不能靠这里。
+// 留一条永远不会红的断言在这儿会冒充覆盖，故不留。
 // ============================================================================
 import { describe, expect, it } from 'vitest';
 import type { Message } from '../../../src/shared/contract';
@@ -69,17 +73,5 @@ describe('通话失败在聊天流里留得下痕（T3）', () => {
 
     expect(turns).toHaveLength(1);
     expect(turns[0]?.nodes.filter((n) => n.metadata?.voiceCallFailure)).toHaveLength(1);
-  });
-
-  it('白名单机制本身还在：没被显式放行的 role:system 仍然被跳过', () => {
-    // 这条是防「把总闸拆掉换取本用例变绿」的护栏。裸 system 消息（nudge / 恢复提示）
-    // 不该上屏；如果它也被投影出来，说明放行方式从「按 metadata 白名单」退化成了
-    // 「system 全放行」，本文件第一条用例照样绿，但产品行为已经错了。
-    const nodes = nodesOf([
-      { id: 'u1', role: 'user', content: '你好', timestamp: 1_000 },
-      { id: 'nudge', role: 'system', content: '这是不该上屏的内部提示', timestamp: 2_000 },
-    ]);
-
-    expect(nodes.some((node) => node.content === '这是不该上屏的内部提示')).toBe(false);
   });
 });

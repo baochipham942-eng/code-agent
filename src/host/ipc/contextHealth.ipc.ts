@@ -269,7 +269,8 @@ async function resolveMessagesForSession(
   }
 
   try {
-    return await getSessionManager().getMessages(sessionId);
+    const session = await getSessionManager().getSession(sessionId, Number.MAX_SAFE_INTEGER);
+    return session?.messages ?? null;
   } catch {
     // Web mode may not have an AppService, but the SessionManager/DB path is
     // still available after backend initialization.

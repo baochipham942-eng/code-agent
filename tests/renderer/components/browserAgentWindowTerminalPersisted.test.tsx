@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BrowserAgentWindow } from '../../../src/renderer/components/workbench/BrowserAgentWindow';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
@@ -163,6 +163,40 @@ describe('BrowserAgentWindow 终态留影：重启后从盘上读回', () => {
     const frameState = useSurfaceExecutionStore.getState().frameByScope[scopeKey];
     expect(frameState?.status).toBe('stale');
     expect(frameState?.dataUrl).toBe(DISK_FRAME_DATA_URL);
+  });
+
+  // 2026-08-02 真机验收抓到的形态：读回请求发出去了、HTTP 200 帧也回来了，屏幕却永远
+  // 停在摘要卡。原因是响应到达**之前**发生了一次重渲染——终态会话来自内联 selector，
+  // 每次 store 变动都是新对象，进依赖数组就让 effect 重跑、cleanup 把在途响应判成过期
+  // 丢掉；而「每个 scope 只试一次」的 ref 又挡死了重试。上面那条测试之所以绿，
+  // 是因为它的 promise 在任何重渲染之前就 resolve 了。
+  it('响应回来之前先重渲染一次：帧照样落地，不被当成过期丢掉', async () => {
+    seedTerminalSessionWithoutFrame();
+    let resolveRead: (value: { version: 1; frame: { dataUrl: string; bytes: number } }) => void = () => {};
+    mocks.getPersistedSurfaceTerminalFrame.mockReturnValue(new Promise((resolve) => {
+      resolveRead = resolve;
+    }));
+
+    render(<BrowserAgentWindow />);
+    await screen.findByTestId('browser-agent-window-terminal-summary');
+
+    // 在途期间来一次无关的 store 更新 —— 真机上这种更新每秒都在发生
+    await act(async () => {
+      useSurfaceExecutionStore.getState().setFrameState(
+        { conversationId: 'other-session', runId: 'r', agentId: 'a', surfaceSessionId: 's' },
+        { status: 'stale', dataUrl: 'data:image/jpeg;base64,zzz', updatedAt: 1 },
+      );
+    });
+
+    await act(async () => {
+      resolveRead({ version: 1, frame: { dataUrl: DISK_FRAME_DATA_URL, bytes: 1234 } });
+    });
+
+    const frame = await screen.findByTestId('browser-agent-window-terminal-frame') as HTMLImageElement;
+    expect(frame.getAttribute('src')).toBe(DISK_FRAME_DATA_URL);
+    expect(screen.queryByTestId('browser-agent-window-terminal-summary')).toBeNull();
+    // 只发一次请求：重渲染不该把它变成反复打 IPC
+    expect(mocks.getPersistedSurfaceTerminalFrame).toHaveBeenCalledTimes(1);
   });
 
   it('盘上也没帧：留在摘要卡兜底，不报错，且同一 scope 不重复请求', async () => {

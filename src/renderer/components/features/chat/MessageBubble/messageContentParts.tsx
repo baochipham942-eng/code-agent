@@ -780,7 +780,8 @@ export const MarkdownMediaImage = memo(function MarkdownMediaImage({
   }
 
   return (
-    <span className="my-2 inline-block max-w-full overflow-hidden rounded-lg border border-zinc-800 bg-zinc-950/60 align-top">
+    // group：操作条默认淡出，hover 这张图（整张卡片）才浮现（2026-08-02 产品负责人拍板）。
+    <span className="group my-2 inline-block max-w-full overflow-hidden rounded-lg border border-zinc-800 bg-zinc-950/60 align-top">
       <button
         type="button"
         className="block max-w-full cursor-zoom-in bg-transparent p-0"
@@ -794,7 +795,11 @@ export const MarkdownMediaImage = memo(function MarkdownMediaImage({
           loading="lazy"
         />
       </button>
-      <span className="flex items-center justify-end border-t border-zinc-800 bg-zinc-950/70 px-2 py-1">
+      {/* 只淡透明度、不改布局——否则 hover 时整段正文会跳。三个兜底缺一不可：
+          ① focus-within：键盘 Tab 进来时必须看得见，否则键盘用户永远够不到这些动作；
+          ② 触屏恒显（.media-actions-hover-reveal，规则写在 global.css）——那类设备根本没有 hover 态。
+          ③ 条目本身不 aria-hidden，只是视觉淡出，读屏仍可达。 */}
+      <span className="flex items-center justify-end border-t border-zinc-800 bg-zinc-950/70 px-2 py-1 opacity-0 transition-opacity duration-150 group-hover:opacity-100 focus-within:opacity-100 media-actions-hover-reveal">
         <MediaAssetActionBar
           asset={asset}
           compact

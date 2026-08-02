@@ -15,6 +15,7 @@ import {
   type CanvasShape,
 } from './designDiagramTypes';
 import { groupKey } from './variantSpine';
+import { clampCameraScale } from './canvasCameraInput';
 import {
   computeProposalResult,
   type ProposalApplyResult,
@@ -403,9 +404,7 @@ export const useDesignCanvasStore = create<DesignCanvasState>()(
     // 选中图解对象时清掉节点选择（互斥），反之亦然由 setSelected 处理。
     set(() => ({ selectedDiagram: sel, selectedIds: [] })),
   setCamera: (camera) =>
-    set((s) => ({
-      camera: typeof camera === 'function' ? camera(s.camera) : camera,
-    })),
+    set((s) => ({ camera: clampCameraScale(typeof camera === 'function' ? camera(s.camera) : camera) })),
   setSelected: (selectedIds) => set({ selectedIds, selectedDiagram: null }),
   setGenerating: (generating) => set({ generating }),
   setError: (error) => set({ error }),

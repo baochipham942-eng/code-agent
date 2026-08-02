@@ -225,8 +225,9 @@ export const SidebarSessionList: React.FC<SidebarSessionListProps> = ({
             return (
             <section key={section.tier} aria-label={tierLabels[section.tier]} data-testid={`sidebar-tier-${section.tier}`}>
               {/* 节头 = 折叠主钮（原生 button，Enter/Space 可达）+ 创建图标钮。
-                  图标钮是主钮的兄弟而非子元素，仍显式 stopPropagation 防未来结构调整误触折叠。 */}
-              <div className="flex items-center gap-1 px-1.5 pb-1">
+                  图标钮是主钮的兄弟而非子元素，仍显式 stopPropagation 防未来结构调整误触折叠。
+                  右侧 4px 内边距让 + 图标中心与会话行 trailing 状态轴（rowRight - 14px）重合。 */}
+              <div className="flex items-center gap-1 pl-1.5 pr-1 pb-1">
                 <button /* ds-allow:button: 分区节头折叠行（chevron+标题左对齐列表行形态），Button primitive 居中动作钮形状不适配行布局 */
                   type="button"
                   aria-expanded={!isCollapsed}

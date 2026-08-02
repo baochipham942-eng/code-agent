@@ -5,6 +5,20 @@
 
 :root[data-theme="high-contrast-dark"],
 .high-contrast-dark {
+  /* Zinc color scale - expanded extremes for high-contrast dark (RGB triplets) */
+  --zinc-50: 255 255 255;
+  --zinc-100: 244 244 244;
+  --zinc-200: 224 224 224;
+  --zinc-300: 200 200 200;
+  --zinc-400: 176 176 176;
+  --zinc-500: 144 144 144;
+  --zinc-600: 128 128 128;
+  --zinc-700: 112 112 112;
+  --zinc-800: 96 96 96;
+  --zinc-850: 48 48 48;
+  --zinc-900: 16 16 16;
+  --zinc-950: 0 0 0;
+
   /* Background layers - pure black base for maximum contrast */
   --bg-void: #000000;
   --bg-deep: #0A0A0A;

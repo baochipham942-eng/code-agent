@@ -32,6 +32,11 @@ export interface SurfaceFrameViewStateV1 {
   frameRef?: string;
   observationStateId?: string;
   assetRef?: string;
+  /**
+   * 终态留影：实时帧流里最后一帧的 JPEG dataUrl（仅内存，不持久化、不跨 reload）。
+   * 停流时状态标 'stale' 但本字段保留，BrowserAgentWindow 用它渲染置灰留影。
+   */
+  dataUrl?: string;
   updatedAt?: number;
   error?: string;
 }

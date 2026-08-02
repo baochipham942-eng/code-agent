@@ -734,6 +734,33 @@ export const MarkdownRenderer = memo(function markdownRenderer({
   );
 });
 
+/**
+ * markdown 渲染器按 CommonMark 规范会把图片 URL 里的非 ASCII 百分号编码一次。
+ * 这个已编码的串如果被直接当成**文件路径**存进 asset.path，后面 resolveFileUrl 的
+ * URLSearchParams 会再编码一次；服务器只解一次，拿到的是字面量 `%E4%B8%AD…`
+ * 当文件名 → fs.stat 找不到 → 404。英文名没东西可编码，所以只有中文/日文/空格/emoji
+ * 文件名会中招，长期没被发现。影响也不止显示：asset.path 同时供
+ * 「修改 / 复制引用 / Finder」使用，中文名的图这三个动作也全是错路径。
+ *
+ * 在这里解码而不是在 buildMarkdownMediaAsset 里解：那个函数还被
+ * markdownImageAssets() 用正则扫原文调用，那一路拿到的 src 本来就没编码，
+ * 统一解码会把两种来源混在一起。只有这里能确定「来自渲染器 ⇒ 必然编码过」。
+ *
+ * data:/http(s): 原样返回——它们的百分号编码是 URL 语义的一部分，解了反而错。
+ * 解码失败（文件名里有裸 `%`，如 `50%off.png`）时回退原串，不抛。
+ */
+export function decodeMarkdownImagePath(src: string | undefined): string | undefined {
+  if (!src) return src;
+  if (/^(data:|https?:|blob:)/i.test(src)) return src;
+  try {
+    const decoded = decodeURIComponent(src);
+    return decoded === src ? src : decoded;
+  } catch {
+    // 裸 % 不是合法转义序列，decodeURIComponent 会抛——这类文件名保持原样
+    return src;
+  }
+}
+
 export const MarkdownMediaImage = memo(function MarkdownMediaImage({
   src,
   alt,
@@ -746,12 +773,14 @@ export const MarkdownMediaImage = memo(function MarkdownMediaImage({
   mediaContext?: SessionMediaContext;
 }) {
   const [lightboxOpen, setLightboxOpen] = useState(false);
+  // 渲染器给的 src 是编码态；当文件路径用之前必须解回来（见 decodeMarkdownImagePath 注释）
+  const decodedSrc = useMemo(() => decodeMarkdownImagePath(src), [src]);
   const asset = useMemo(
-    () => buildMarkdownMediaAsset(src, alt, {
+    () => buildMarkdownMediaAsset(decodedSrc, alt, {
       ...mediaContext,
       messageId: mediaContext?.messageId || messageId,
     }),
-    [src, alt, mediaContext?.sessionId, mediaContext?.turnId, mediaContext?.messageId, messageId],
+    [decodedSrc, alt, mediaContext?.sessionId, mediaContext?.turnId, mediaContext?.messageId, messageId],
   );
 
   if (!asset) {

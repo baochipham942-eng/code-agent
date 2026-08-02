@@ -154,6 +154,17 @@ export type VoiceInterruptClassification =
   | 'short_fragment'
   | 'true_interrupt';
 
+/** Provider 在 response.done 上报的 token 用量，统一成与协议字段名无关的内部形状。 */
+export interface VoiceTokenUsage {
+  totalTokens: number;
+  inputTokens: number;
+  outputTokens: number;
+  inputAudioTokens: number;
+  inputTextTokens: number;
+  outputAudioTokens: number;
+  outputTextTokens: number;
+}
+
 /** GET /api/voice/status 的响应：LiveVoiceButton 可见性与占用态的 host 真相。 */
 export interface VoiceStatusResponse {
   provider: VoiceProviderId;
@@ -162,7 +173,13 @@ export interface VoiceStatusResponse {
   /** 全局单路互斥：当前是否有通话进行中 */
   active: boolean;
   /** 本月通话用量（只记账不设限，方案 §5.4；设置页展示用） */
-  usage: { monthSeconds: number; monthCalls: number; monthFailedAttempts: number };
+  usage: {
+    monthSeconds: number;
+    monthCalls: number;
+    monthFailedAttempts: number;
+    /** 可缺失：存量账本没有 token 字段，上游没报告 usage 时也不伪造 0。 */
+    monthTokens?: VoiceTokenUsage;
+  };
 }
 
 /** 设置页「实时通话」组保存后广播的窗口事件（对齐 VOICE_INPUT_SETTINGS_UPDATED_EVENT 先例）。 */
@@ -189,7 +206,14 @@ export type VoiceEvent =
       action: 'resume' | 'cancel_discard';
       responseId?: string;
     }
-  | { type: 'response.done'; responseId?: string; ttfaModelMs?: number; ttfaPerceivedMs?: number }
+  | {
+      type: 'response.done';
+      responseId?: string;
+      ttfaModelMs?: number;
+      ttfaPerceivedMs?: number;
+      /** 可缺失：上游未给或形状不认识时不把未知写成 0。 */
+      usage?: VoiceTokenUsage;
+    }
   /** Host 注入的 narration 在 response.create 确认窗内被上游拒绝；通话本身仍然存活。 */
   | { type: 'injection.rejected'; message: string }
   /** 语音派出的任务状态。Active Work 条消费（批 B），host 侧同时用它计通话摘要的 workItemCount。 */

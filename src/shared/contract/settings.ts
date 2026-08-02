@@ -293,7 +293,7 @@ export interface AppSettings {
     inheritanceMigrationAcked?: boolean;
   };
   ui: {
-    theme: 'light' | 'dark' | 'system';
+    theme: 'light' | 'dark' | 'system' | 'high-contrast-light' | 'high-contrast-dark';
     fontSize: number;
     showToolCalls: boolean;
     language: 'zh' | 'en';

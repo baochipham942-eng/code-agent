@@ -29,7 +29,6 @@ describe('appStore', () => {
       settingsInitialTab: null,
       settingsMemoryFocus: null,
       settingsCapabilityFocus: null,
-      showKnowledgeMemoryPanel: false,
       optionalUpdateInfo: null,
       showOptionalUpdateModal: false,
       goalRuns: {},
@@ -174,16 +173,6 @@ describe('appStore', () => {
         id: 'review-skill',
         nonce: expect.any(Number),
       },
-    });
-  });
-
-  it('opens the knowledge memory panel outside settings and closes the local ops page', () => {
-    useAppStore.setState({ showLocalOpsPanel: true });
-    useAppStore.getState().setShowKnowledgeMemoryPanel(true);
-
-    expect(useAppStore.getState()).toMatchObject({
-      showKnowledgeMemoryPanel: true,
-      showLocalOpsPanel: false,
     });
   });
 

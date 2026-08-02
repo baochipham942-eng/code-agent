@@ -18,6 +18,8 @@ const annotated: Array<{ sessionId: string; text: string }> = [];
 
 const opened: string[] = [];
 const revealed: string[] = [];
+/** 会话此刻在不在备用屏（全屏 TUI）。默认普通 shell。 */
+const onAlternateScreen = new Set<string>();
 
 vi.mock('../../../src/host/services/terminal/terminalSessionManager', () => ({
   openTerminalSession: (opts: { sessionId: string }) => {
@@ -44,6 +46,7 @@ vi.mock('../../../src/host/services/terminal/terminalSessionManager', () => ({
     fakeSessions.get(sessionId)!.data += text;
     return true;
   },
+  isTerminalOnAlternateScreen: (sessionId: string) => onAlternateScreen.has(sessionId),
 }));
 
 const {
@@ -84,6 +87,7 @@ beforeEach(() => {
   annotated.length = 0;
   opened.length = 0;
   revealed.length = 0;
+  onAlternateScreen.clear();
 });
 
 describe('output sanitation (红线：原始 ANSI 不得全量进上下文)', () => {
@@ -203,6 +207,29 @@ describe('terminal_write visibility (红线：注入对用户可见)', () => {
     expect(annotated[0].text).toContain('[Neo] npm test');
     expect(written).toHaveLength(1);
     expect(written[0].data).toBe('npm test\r');
+  });
+
+  // 全屏 TUI 在备用屏上整屏重绘，印进去的标注活不过下一帧——用户只看到一次闪烁。
+  // 那不是可见性，是噪音；此时不印，注入的可见性由审批卡（写着完整命令）承担。
+  it('skips the echo while the session sits in a full-screen TUI', async () => {
+    onAlternateScreen.add('chat-1');
+
+    await run(terminalWriteModule, { input: '1' }, allow);
+
+    expect(annotated).toHaveLength(0);
+    // 少印一行标注，绝不能少敲一次键：注入本身照常。
+    expect(written).toEqual([{ sessionId: 'chat-1', data: '1\r' }]);
+  });
+
+  it('goes back to echoing once the TUI leaves the alternate screen', async () => {
+    onAlternateScreen.add('chat-1');
+    await run(terminalWriteModule, { input: 'inside-tui' }, allow);
+    onAlternateScreen.delete('chat-1');
+
+    await run(terminalWriteModule, { input: 'back-in-shell' }, allow);
+
+    expect(annotated).toHaveLength(1);
+    expect(annotated[0].text).toContain('[Neo] back-in-shell');
   });
 
   it('records the echo in the shared buffer so the user still sees it after re-attaching', async () => {

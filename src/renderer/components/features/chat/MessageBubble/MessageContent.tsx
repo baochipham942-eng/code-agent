@@ -585,7 +585,7 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
       ? streamingTailStart
       : null;
     return (
-      <div className="text-sm leading-[1.7] break-words prose prose-invert prose-sm max-w-none streaming-text with-caret">
+      <div className="text-sm leading-[1.7] break-words prose prose-invert prose-sm max-w-none streaming-text">
         <span className="whitespace-pre-wrap">
           {tailStart === null ? plainText : (
             <>
@@ -600,8 +600,8 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
     );
   }
 
-  // 流式中的 markdown 内容才加揭示动画 + 内联呼吸光标；已完成消息不加（避免重播/常驻光标）
-  const streamingDecor = isStreaming ? ' streaming-text with-caret' : '';
+  // 流式中的 markdown 内容保留流式样式标记；已完成消息不加，避免重播。
+  const streamingDecor = isStreaming ? ' streaming-text' : '';
   return (
     <div
       className={`text-sm leading-[1.7] break-words prose prose-invert prose-sm max-w-none${streamingDecor}`}

@@ -6,6 +6,16 @@ import { useLiveAgentPointer } from '../../hooks/useLiveAgentPointer';
 import { useSurfaceLiveFrames } from '../../hooks/useSurfaceLiveFrames';
 import { useWorkbenchBrowserSession } from '../../hooks/useWorkbenchBrowserSession';
 import { useSessionStore } from '../../stores/sessionStore';
+import {
+  selectSurfaceExecutionRunSessionV1,
+  useSurfaceExecutionStore,
+} from '../../stores/surfaceExecutionStore';
+import { surfaceExecutionScopeKeyV1 } from '../../utils/surfaceExecutionProjection';
+import {
+  formatSurfaceExecutionCopy,
+  getSurfaceExecutionTranslations,
+} from '../../i18n/surfaceExecution';
+import type { SurfaceExecutionTranslationsV1 } from '../../i18n/surfaceExecution';
 import { Button, GhostButton, IconButton } from '../primitives';
 import { AgentPointerOverlay } from './AgentPointerOverlay';
 
@@ -15,6 +25,19 @@ import { AgentPointerOverlay } from './AgentPointerOverlay';
 // 从 ⋯ 深链过去。
 
 type Copy = ReturnType<typeof useI18n>['t']['workbenchTabs']['agentWindow'];
+
+/** 摘要卡用时：startedAt → projection updatedAt（裁定用 updatedAt，cleanup completedAt 依赖事件到达） */
+function formatTerminalDuration(
+  startedAt: number,
+  updatedAt: number,
+  copy: SurfaceExecutionTranslationsV1['terminal'],
+): string {
+  const seconds = Math.max(0, Math.round((updatedAt - startedAt) / 1000));
+  if (seconds < 60) return formatSurfaceExecutionCopy(copy.durationSeconds, { count: seconds });
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return formatSurfaceExecutionCopy(copy.durationMinutes, { count: minutes });
+  return formatSurfaceExecutionCopy(copy.durationHours, { count: Math.round(minutes / 60) });
+}
 
 const OverflowMenu: React.FC<{ copy: Copy; modeLabel: string; onOpenLocalOps: () => void }> = ({
   copy,
@@ -72,8 +95,9 @@ const OverflowMenu: React.FC<{ copy: Copy; modeLabel: string; onOpenLocalOps: ()
 };
 
 export const BrowserAgentWindow: React.FC = () => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const copy = t.workbenchTabs.agentWindow;
+  const surfaceCopy = getSurfaceExecutionTranslations(language);
   const browserSession = useWorkbenchBrowserSession();
   const livePointer = useLiveAgentPointer('browser');
   const openLocalOpsPanel = useAppStore((state) => state.openLocalOpsPanel);
@@ -89,20 +113,45 @@ export const BrowserAgentWindow: React.FC = () => {
     managedSession, preview, ownedByCurrentSession,
     browserSurfaceSessionId, browserSurfaceTitle, browserSurfaceOrigin,
   } = browserSession;
+  // 终态留影：展示层改用**含终态**的选择器拿会话（开流入参仍是上面排除终态的那个，
+  // 护栏不动）。只在「没有活跃 browser 会话 且 选中的是终态 browser 会话」时进留影/摘要卡。
+  const displaySurfaceSession = useSurfaceExecutionStore((state) => (
+    selectSurfaceExecutionRunSessionV1(state.sessionsByScope, { conversationId: currentSessionId })
+  ));
+  const terminalSurfaceSession = !browserSurfaceSessionId
+    && displaySurfaceSession?.session.surface === 'browser'
+    && (displaySurfaceSession.session.state === 'completed'
+      || displaySurfaceSession.session.state === 'failed')
+    ? displaySurfaceSession
+    : null;
+  const terminalScopeKey = terminalSurfaceSession
+    ? surfaceExecutionScopeKeyV1(terminalSurfaceSession.scope)
+    : null;
+  // 留影帧按 scope 键取——别的会话/别的 run 的帧隔离在别的键下，不会串现场。
+  const terminalFrameDataUrl = useSurfaceExecutionStore((state) => (
+    terminalScopeKey ? state.frameByScope[terminalScopeKey]?.dataUrl ?? null : null
+  ));
+  const terminalTarget = terminalSurfaceSession?.session.activeTarget;
+  const terminalBrowserTarget = terminalTarget?.kind === 'browser' ? terminalTarget : null;
   // chrome 条必须描述**画面里那扇窗**。有 surface 会话时它才是画面的来源，
   // managedSession 说的是另一个（全局单例）浏览器，直接用会周期性跳回「未启动」。
   const managedUrl = preview?.url || managedSession.activeTab?.url || null;
   const running = Boolean(browserSurfaceSessionId) || managedSession.running;
   const activeTitle = browserSurfaceSessionId
     ? browserSurfaceTitle
-    : preview?.title || managedSession.activeTab?.title || null;
+    : terminalSurfaceSession
+      ? terminalBrowserTarget?.title ?? null
+      : preview?.title || managedSession.activeTab?.title || null;
   // surface 会话只报 origin（不含 path）。同源时才敢把 managedSession 的完整 URL 拿来
   // 补全路径——不同源说明那是另一扇窗的地址，宁可只显示 origin 也不能显示错的。
+  // 终态会话同样只有 origin，刻意不补 path（reload 后 managedUrl 可能已是别的页面）。
   const activeUrl = browserSurfaceSessionId
     ? (managedUrl && browserSurfaceOrigin && managedUrl.startsWith(browserSurfaceOrigin)
       ? managedUrl
       : browserSurfaceOrigin)
-    : managedUrl;
+    : terminalSurfaceSession
+      ? terminalBrowserTarget?.origin ?? null
+      : managedUrl;
   const pointerEvent = livePointer.event || livePointer.lastEvent;
   const modeLabel = browserSession.mode === 'managed'
     ? copy.modeManaged
@@ -169,6 +218,54 @@ export const BrowserAgentWindow: React.FC = () => {
             alt={copy.livePicture}
             className="h-full w-full object-contain"
           />
+        ) : terminalSurfaceSession && terminalFrameDataUrl ? (
+          // 终态留影：停流前移交进 store 的最后一帧，置灰 +「已结束」角标。
+          <div data-testid="browser-agent-window-terminal" className="relative h-full w-full">
+            <img
+              data-testid="browser-agent-window-terminal-frame"
+              src={terminalFrameDataUrl}
+              alt={surfaceCopy.terminal.frameAlt}
+              className="h-full w-full object-contain grayscale opacity-60"
+            />
+            <span
+              data-testid="browser-agent-window-ended-badge"
+              className="absolute right-2 top-2 rounded-full border border-white/10 bg-zinc-900/80 px-2 py-0.5 text-[10px] text-zinc-300"
+            >
+              {surfaceCopy.terminal.badge}
+            </span>
+          </div>
+        ) : terminalSurfaceSession ? (
+          // 终态无留影帧（如 reload 后）：摘要卡兜底，不回「还没有打开页面」空态谎言。
+          <div
+            data-testid="browser-agent-window-terminal-summary"
+            className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center"
+          >
+            <span
+              data-testid="browser-agent-window-ended-badge"
+              className="rounded-full border border-white/10 bg-zinc-900/80 px-2 py-0.5 text-[10px] text-zinc-300"
+            >
+              {surfaceCopy.terminal.badge}
+              {' · '}
+              {surfaceCopy.state[terminalSurfaceSession.session.state]}
+            </span>
+            <div className="max-w-[320px] truncate text-xs text-zinc-300">
+              {terminalBrowserTarget?.title || surfaceCopy.terminal.untitled}
+            </div>
+            {terminalBrowserTarget?.origin && (
+              <div className="max-w-[320px] truncate text-[11px] text-zinc-500">
+                {terminalBrowserTarget.origin}
+              </div>
+            )}
+            <div className="text-[11px] text-zinc-600">
+              {formatSurfaceExecutionCopy(surfaceCopy.terminal.duration, {
+                time: formatTerminalDuration(
+                  terminalSurfaceSession.session.startedAt,
+                  terminalSurfaceSession.updatedAt,
+                  surfaceCopy.terminal,
+                ),
+              })}
+            </div>
+          </div>
         ) : (
           <div
             data-testid="browser-agent-window-empty"

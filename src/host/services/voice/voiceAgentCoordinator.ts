@@ -14,6 +14,8 @@
 // ============================================================================
 
 import type { TaskManagerEvent } from '../../task/TaskManager';
+import type { AgentEvent } from '../../../shared/contract/agent';
+import type { TodoItem } from '../../../shared/contract/planning';
 import type { VoiceFocusContext, VoiceWorkFailureMarker, VoiceWorkItem, VoiceWorkItemStatus, VoiceWorkNarration } from '../../../shared/contract/voice';
 import {
   VOICE_CONCLUSION_LOOKBACK_MESSAGES,
@@ -29,7 +31,7 @@ import { buildRoleContextBlock } from '../roleAssets/roleAssetService';
 import { withWorkbenchTurnSystemContext } from '../../app/workbenchTurnContext';
 import { getPermissionModeManager } from '../../permissions/modes';
 import { getConfigService } from '../core/configService';
-import { buildStopNarration, buildWorkNarration, resolveNarrationSpeaker, type VoiceStopAnnouncementKind } from './voiceNarration';
+import { buildMilestoneNarration, buildStopNarration, buildWorkNarration, resolveNarrationSpeaker, type VoiceStopAnnouncementKind } from './voiceNarration';
 import { describeWorkFailure } from './workFailureDescription';
 import { buildVocabularyBlock } from './voiceVocabulary';
 import { resolveVoiceWorkOutcome } from './voiceWorkEvidence';
@@ -142,6 +144,18 @@ interface LedgerState {
    * 停不下来时会从这里移除：那件活还活着，它的结局就还该被念。
    */
   supersededIds: Set<string>;
+  /**
+   * 上一次看到的 plan entries 快照（按 content 索引 status）。milestone 靠它做差分。
+   *
+   * 用 content 当键是因为 `TodoItem` 没有 id（`{content, status, activeForm}`）。
+   * 同一轮里两条同文案的 entry 会被折成一条——可接受:代价是少播一条进度,
+   * 而不是播一条错的。
+   */
+  todoSnapshot: Map<string, string>;
+  /** milestone 去重键的单调计数器。注入通道按 workItemId 去重，撞键就会静默丢播报。 */
+  milestoneSeq: number;
+  /** agent 事件流的退订函数；与 listener 同寿命，落终态时一起摘。 */
+  unobserveAgentEvents: (() => void) | null;
 }
 
 // ponytail: 通话是全局单路（voiceSessionService 的互斥），一个模块级账本就够，
@@ -205,6 +219,9 @@ export function beginVoiceDispatch(binding: VoiceDispatchBinding): void {
     transcript: [],
     pendingStop: null,
     supersededIds: new Set(),
+    todoSnapshot: new Map(),
+    milestoneSeq: 0,
+    unobserveAgentEvents: null,
   };
 }
 
@@ -251,7 +268,13 @@ function buildTranscriptBlock(entries: VoiceTranscriptEntry[]): string | null {
 async function ensureListener(state: LedgerState): Promise<void> {
   if (state.listenerAttached) return;
   state.listenerAttached = true;
-  (await taskManager()).on('event', state.listener);
+  const tm = await taskManager();
+  tm.on('event', state.listener);
+  // 中途进度（§2）走 agent 事件流旁路：TaskManagerEvent 只有 started/completed/error/
+  // cancelled 四个业务事件，**没有进度信号**；进度在 agent 流的 todo_update 里。
+  state.unobserveAgentEvents = tm.observeAgentEvents((sessionId, event) => {
+    onAgentStreamEvent(state, sessionId, event);
+  });
 }
 
 /**
@@ -287,6 +310,8 @@ function detachIfSettled(force: boolean): void {
   // 的生命周期事件全部落空。它和「有活没落终态」是同一类未结清。
   if (!force && (unsettled || state.emit || state.pendingStop)) return;
   if (state.pendingStop) clearTimeout(state.pendingStop.timer);
+  state.unobserveAgentEvents?.();
+  state.unobserveAgentEvents = null;
   if (state.listenerAttached) {
     void taskManager().then((tm) => tm.off('event', state.listener)).catch(() => undefined);
   }
@@ -587,6 +612,61 @@ async function settleCompletedWithEvidence(
   settle(state, workItemId, outcome);
 }
 
+/**
+ * agent 事件流旁路（§2）。只认 `todo_update`——它是 plan entries 的差分源。
+ *
+ * 为什么不用 TaskManagerEvent：那条流只有 started/completed/error/cancelled 四个业务事件，
+ * **没有任何进度信号**（已核实）。进度只在 agent 流里。
+ *
+ * 只在「本会话 + 有正在跑的语音派活」时才产 milestone：其它会话、以及用户自己在
+ * 键盘上发起的轮次，都不该往通话里插播。
+ */
+function onAgentStreamEvent(state: LedgerState, sessionId: string, event: AgentEvent): void {
+  if (ledger !== state) return;
+  if (sessionId !== state.neoSessionId) return;
+  if (event.type !== 'todo_update') return;
+  const pendingId = state.pendingId;
+  if (!pendingId) return;
+  const item = state.items.get(pendingId);
+  // 只给还在跑的活播进度；已落终态的活再播「这步做完了」就是在说过去的事。
+  if (!item || TERMINAL.includes(item.status)) return;
+
+  const completed = diffCompletedTodos(state.todoSnapshot, event.data as TodoItem[]);
+  if (!completed.length) return;
+  const narrate = state.narrate;
+  if (!narrate) return;
+  // 一次事件里可能同时完成多条；只播最后一条——电话里连播三句进度就是碎碎念，
+  // 而节制闸的每件活上限也会把后面的丢掉，不如在源头只取最新那条。
+  const step = completed[completed.length - 1]!;
+  narrate(buildMilestoneNarration({
+    workItemId: `${pendingId}:milestone-${(state.milestoneSeq += 1)}`,
+    title: item.title,
+    step,
+    ...(state.activeAgentId ? { agentId: state.activeAgentId } : {}),
+  }));
+}
+
+/**
+ * 差分出「这一轮新变成 completed」的 entry 文案，并就地更新快照。
+ *
+ * 只认「上一次不是 completed、这一次是」这个**跃迁**，不认「当前是 completed」——
+ * 后者会让同一条 entry 在每次 todo_update 里都被重新播报一遍。
+ */
+function diffCompletedTodos(snapshot: Map<string, string>, todos: TodoItem[]): string[] {
+  if (!Array.isArray(todos)) return [];
+  const freshlyCompleted: string[] = [];
+  for (const todo of todos) {
+    const content = typeof todo?.content === 'string' ? todo.content.trim() : '';
+    if (!content) continue;
+    const previous = snapshot.get(content);
+    snapshot.set(content, todo.status);
+    if (todo.status === 'completed' && previous !== undefined && previous !== 'completed') {
+      freshlyCompleted.push(content);
+    }
+  }
+  return freshlyCompleted;
+}
+
 function onTaskManagerEvent(event: TaskManagerEvent): void {
   const state = ledger;
   if (event.sessionId !== state?.neoSessionId) return;
@@ -691,6 +771,9 @@ async function startRun(state: LedgerState, title: string, prompt: string): Prom
   await ensureListener(state);
   const options = await buildRunOptions(state);
   const workItemId = newWorkItemId();
+  // 新的一件活从空快照起算：沿用上一件的快照会让新 run 首次 todo_update 里那些
+  // 「本来就是 completed」的 entry 被误判成刚刚完成，一开跑就播一串假进度。
+  state.todoSnapshot.clear();
   const speaker = resolveNarrationSpeaker(state.activeAgentId);
   upsert(state, { id: workItemId, title, status: 'queued' });
   state.pendingId = workItemId;

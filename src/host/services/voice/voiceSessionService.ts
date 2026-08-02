@@ -7,7 +7,7 @@
 // ============================================================================
 
 import type { WebSocket as WsSocket } from 'ws';
-import { resolveConversationModelOption, VOICE_DOWNSTREAM_SAMPLE_RATE, VOICE_END_CALL_GOODBYE_TIMEOUT_MS, VOICE_HANGUP_REACTION_WINDOW_MS, VOICE_INBOUND_AUDIO_STARTUP_TIMEOUT_MS, VOICE_RECONNECT_GRACE_MS, VOICE_SESSION_MAX_DURATION_MS, VOICE_TEARDOWN_DRAIN_MS, VOICE_TRANSCRIPT_MERGE_WINDOW_MS, VOICE_WS_CLOSE_TERMINAL } from '../../../shared/constants/voice';
+import { resolveConversationModelOption, VOICE_MILESTONE_FIRST_DELAY_MS, VOICE_MILESTONE_MAX_PER_WORK_ITEM, VOICE_MILESTONE_MIN_INTERVAL_MS, VOICE_MILESTONE_STALE_MS, VOICE_DOWNSTREAM_SAMPLE_RATE, VOICE_END_CALL_GOODBYE_TIMEOUT_MS, VOICE_HANGUP_REACTION_WINDOW_MS, VOICE_INBOUND_AUDIO_STARTUP_TIMEOUT_MS, VOICE_RECONNECT_GRACE_MS, VOICE_SESSION_MAX_DURATION_MS, VOICE_TEARDOWN_DRAIN_MS, VOICE_TRANSCRIPT_MERGE_WINDOW_MS, VOICE_WS_CLOSE_TERMINAL } from '../../../shared/constants/voice';
 import {
   REALTIME_VOICE_PROVIDER_PROFILES,
   resolveRealtimeVoiceSelection,
@@ -139,9 +139,15 @@ interface ActiveSession {
   /** 终态播报只属于这通电话：压住、去重与已播记录都随 active 一起销毁。 */
   narration: {
     userSpeaking: boolean;
-    queue: Map<string, { narration: VoiceWorkNarration; suppressedTurns: number; rejectionCount: number }>;
+    queue: Map<string, { narration: VoiceWorkNarration; suppressedTurns: number; rejectionCount: number; enqueuedAt: number }>;
     inFlight: { narration: VoiceWorkNarration; rejectionCount: number } | null;
     spokenWorkItemIds: Set<string>;
+    /** 每件活已经播出去的进度条数（§2 上限）。键是真实 workItemId，不是 milestone 合成键。 */
+    milestoneCounts: Map<string, number>;
+    /** 上一条进度真正注入的时刻；间隔下限据此判。0 = 本通电话还没播过进度。 */
+    lastMilestoneAt: number;
+    /** 本通电话第一次派活的时刻，用来兑现首条进度的最小延迟。 */
+    firstDispatchAt: number;
   };
 }
 
@@ -382,13 +388,62 @@ function injectNarration(session: ActiveSession, narration: VoiceWorkNarration, 
     return;
   }
   upstream.injectItem(formatNarration(narration));
+  // §4.3：注入侧同样带三元组，与派活侧对上就能还原一条完整链路。
+  logger.info('narration injected', {
+    workItemId: narration.workItemId,
+    voiceSessionId: session.id,
+    neoSessionId: session.neoSessionId,
+    status: narration.status,
+  });
   session.narration.inFlight = { narration, rejectionCount };
   session.narration.spokenWorkItemIds.add(narration.workItemId);
+  if (narration.status === 'milestone') {
+    const owner = milestoneOwner(narration.workItemId);
+    const state = session.narration;
+    state.milestoneCounts.set(owner, (state.milestoneCounts.get(owner) ?? 0) + 1);
+    // 间隔从**真正注入**那一刻起算，不从入队起算——被压住的那段时间不该消耗间隔额度。
+    state.lastMilestoneAt = Date.now();
+  }
+}
+
+/** milestone 合成键形如 `<workItemId>:milestone-<n>`；取回它属于哪件活。 */
+function milestoneOwner(workItemId: string): string {
+  const at = workItemId.indexOf(':milestone-');
+  return at === -1 ? workItemId : workItemId.slice(0, at);
+}
+
+/**
+ * 进度该不该播（§2 三条闸，缺一条就变成碎碎念）。
+ *
+ * 这三条只管进度，**终态一条都不受限**——结论永远值得说。
+ */
+function milestoneAllowed(session: ActiveSession, narration: VoiceWorkNarration, now: number): boolean {
+  const state = session.narration;
+  const owner = milestoneOwner(narration.workItemId);
+  if ((state.milestoneCounts.get(owner) ?? 0) >= VOICE_MILESTONE_MAX_PER_WORK_ITEM) {
+    logger.info('milestone dropped: per work item cap', { voiceSessionId: session.id, workItemId: owner });
+    return false;
+  }
+  // 首条延迟：不让「我开始做 X 了」和第一条进度挤在同一口气里。
+  if (state.firstDispatchAt && now - state.firstDispatchAt < VOICE_MILESTONE_FIRST_DELAY_MS) {
+    logger.info('milestone dropped: first delay window', { voiceSessionId: session.id });
+    return false;
+  }
+  if (state.lastMilestoneAt && now - state.lastMilestoneAt < VOICE_MILESTONE_MIN_INTERVAL_MS) {
+    logger.info('milestone dropped: min interval', { voiceSessionId: session.id });
+    return false;
+  }
+  return true;
 }
 
 function enqueueOrInjectNarration(session: ActiveSession, narration: VoiceWorkNarration): void {
   const state = session.narration;
   if (state.spokenWorkItemIds.has(narration.workItemId) || state.queue.has(narration.workItemId)) return;
+  const now = Date.now();
+  const isMilestone = narration.status === 'milestone';
+  // 进度的三条闸在**入口**判，不在出口——被闸掉的进度连队都不该排，
+  // 排了就会在用户说完话之后冒出来一句早已过期的进展。
+  if (isMilestone && !milestoneAllowed(session, narration, now)) return;
   const upstreamResponding = session.upstream.kind === 'relay' && session.upstream.isResponding();
   if (!state.userSpeaking && !upstreamResponding) {
     injectNarration(session, narration);
@@ -399,6 +454,7 @@ function enqueueOrInjectNarration(session: ActiveSession, narration: VoiceWorkNa
     narration,
     suppressedTurns: state.userSpeaking ? 1 : 0,
     rejectionCount: 0,
+    enqueuedAt: now,
   });
 }
 
@@ -406,6 +462,13 @@ function markNarrationUserTurn(session: ActiveSession): void {
   const state = session.narration;
   state.userSpeaking = true;
   for (const [workItemId, pending] of state.queue) {
+    // 用户一开口，排队的进度**当场全丢**（不等两轮）：他已经在说别的事了，
+    // 等他说完再补一句几十秒前的进展，是在打断他而不是在帮他。终态不丢，只排队。
+    if (pending.narration.status === 'milestone') {
+      state.queue.delete(workItemId);
+      logger.info('milestone dropped: user started speaking', { voiceSessionId: session.id, workItemId });
+      continue;
+    }
     pending.suppressedTurns += 1;
     if (pending.suppressedTurns < 2) continue;
     state.queue.delete(workItemId);
@@ -422,8 +485,17 @@ function flushNarrationQueue(session: ActiveSession): void {
   state.inFlight = null;
   // 每次 response.done 只放一条。injectItem 会立即请求下一次 response，
   // 一次清空多条会让这些 response.create 互相碰撞。
+  // 放行之前先把过期进度清掉：进度是过程量，滞留超过保质期就只会误导。
+  // 终态不设保质期——结论晚说也是实话。
+  const now = Date.now();
+  for (const [workItemId, pending] of state.queue) {
+    if (pending.narration.status !== 'milestone') continue;
+    if (now - pending.enqueuedAt < VOICE_MILESTONE_STALE_MS) continue;
+    state.queue.delete(workItemId);
+    logger.info('milestone dropped: stale', { voiceSessionId: session.id, workItemId });
+  }
   const next = state.queue.entries().next().value as
-    | [string, { narration: VoiceWorkNarration; suppressedTurns: number; rejectionCount: number }]
+    | [string, { narration: VoiceWorkNarration; suppressedTurns: number; rejectionCount: number; enqueuedAt: number }]
     | undefined;
   if (!next) return;
   state.queue.delete(next[0]);
@@ -447,11 +519,22 @@ function handleNarrationInjectionRejected(session: ActiveSession, message: strin
     });
     return;
   }
+  // 进度被拒就丢，不重试:重试意味着过一会儿播一条更陈旧的进展,而它本来就是过程量。
+  // 被拒这次仍然算消耗掉一格额度——这个偏差是**故意偏向安静**的:进度这个功能的风险
+  // 是碎碎念,不是少说一句。
+  if (narration.status === 'milestone') {
+    logger.info('milestone dropped: injection rejected, not retried', {
+      voiceSessionId: session.id,
+      workItemId: narration.workItemId,
+    });
+    return;
+  }
   state.spokenWorkItemIds.delete(narration.workItemId);
   state.queue.set(narration.workItemId, {
     narration,
     suppressedTurns: 0,
     rejectionCount: rejectionCount + 1,
+    enqueuedAt: Date.now(),
   });
   logger.info('narration injection rejected; queued one retry', {
     voiceSessionId: session.id,
@@ -869,7 +952,18 @@ async function connectAndBind(
     neoSessionId,
     activeAgentId: routing.activeAgentId,
     onWorkItem: (item) => {
-      if (active?.id === id && item.status === 'queued') active.workItemCount += 1;
+      if (active?.id === id && item.status === 'queued') {
+        active.workItemCount += 1;
+        // 首条进度的延迟基准（§2）：从这件活派出去那一刻起算。
+        active.narration.firstDispatchAt = Date.now();
+        // §4.3 三元组绑定：这一件活是哪通电话、哪个上游会话派出去的，
+        // 从日志就能还原「这句话属于哪个活的哪一轮」，不必再靠时间戳猜。
+        logger.info('voice work dispatched', {
+          workItemId: item.id,
+          voiceSessionId: id,
+          neoSessionId,
+        });
+      }
       send(clientRef.current, { type: 'work.upsert', item });
     },
     // G1（2026-07-28 真机，验收报告自评最严重）：账本早就把死掉的活标成 failed，
@@ -1124,6 +1218,9 @@ async function connectAndBind(
       queue: new Map(),
       inFlight: null,
       spokenWorkItemIds: new Set(),
+      milestoneCounts: new Map(),
+      lastMilestoneAt: 0,
+      firstDispatchAt: 0,
     },
     maxDurationTimer: setTimeout(() => {
       logger.warn('session hit max duration, force closing', { voiceSessionId: id });

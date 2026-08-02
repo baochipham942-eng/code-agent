@@ -126,6 +126,34 @@ export function buildStopNarration(input: {
   };
 }
 
+/**
+ * 中途进度台词（§2）。
+ *
+ * 只念**刚做完的那一步**，不念整个清单——电话里没人能记住五条待办。
+ * 措辞刻意不带任何完成语义的名词（「已完成」「已结束」），因为整件活还没做完；
+ * 本仓栽过三次「可润色的状态名词被润成已完成」。
+ */
+export function buildMilestoneNarration(input: {
+  workItemId: string;
+  title: string;
+  step: string;
+  agentId?: string;
+}): VoiceWorkNarration {
+  const speaker = resolveNarrationSpeaker(input.agentId);
+  const step = toSpokenSummary(input.step);
+  return {
+    workItemId: input.workItemId,
+    status: 'milestone',
+    title: input.title,
+    summary: [
+      `现在对用户说一句进度：「${step}，这步做完了，我接着往下做。」`,
+      '**整件事还没做完**，不要说它完成了、写好了、可以用了。',
+      '就说这一句，不要顺带汇报别的步骤，也不要念待办清单。',
+    ].join('\n'),
+    ...(speaker ? { speaker } : {}),
+  };
+}
+
 /** 组装终态回流事件。summary 为空（模型一句话没留）时也照发——状态本身就是结论。 */
 export function buildWorkNarration(input: {
   workItemId: string;

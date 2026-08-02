@@ -59,6 +59,7 @@ export const IPC_DOMAINS = {
   GENERATIVE_UI: 'domain:generativeUI', // Agent Neo native generative UI state/actions
   FOLDER_TRUST: 'domain:folderTrust', // 项目级配置目录信任门
   TEAM: 'domain:team', // 组队配方确定性启动
+  VOICE: 'domain:voice', // renderer 建连/重连失败的最小上报面
 } as const;
 
 export type IPCDomain = typeof IPC_DOMAINS[keyof typeof IPC_DOMAINS];

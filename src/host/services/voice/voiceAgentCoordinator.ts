@@ -272,9 +272,17 @@ async function ensureListener(state: LedgerState): Promise<void> {
   tm.on('event', state.listener);
   // 中途进度（§2）走 agent 事件流旁路：TaskManagerEvent 只有 started/completed/error/
   // cancelled 四个业务事件，**没有进度信号**；进度在 agent 流的 todo_update 里。
-  state.unobserveAgentEvents = tm.observeAgentEvents((sessionId, event) => {
-    onAgentStreamEvent(state, sessionId, event);
-  });
+  // 旁路接不上只该让用户听不到进度，**不该把派活整条链带走**——进度是锦上添花，
+  // 接在必经之路上等于用一个可选功能给主功能做了单点故障。
+  try {
+    state.unobserveAgentEvents = tm.observeAgentEvents((sessionId, event) => {
+      onAgentStreamEvent(state, sessionId, event);
+    });
+  } catch (err) {
+    logger.warn('milestone bypass unavailable; dispatch continues without progress', {
+      message: err instanceof Error ? err.message : 'unknown',
+    });
+  }
 }
 
 /**

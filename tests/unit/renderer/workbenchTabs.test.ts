@@ -16,7 +16,6 @@ describe('appStore workbench tabs', () => {
       capabilityHubTab: 'experts',
       showProjectCollaborationPage: false,
       projectCollaborationPageProjectId: null,
-      showKnowledgeMemoryPanel: false,
       showLocalOpsPanel: false,
       showEvalCenter: false,
     });
@@ -68,7 +67,6 @@ describe('appStore workbench tabs', () => {
 
   it('opens the project collaboration page with a project binding and closes sibling main panels', () => {
     useAppStore.setState({
-      showKnowledgeMemoryPanel: true,
       showLocalOpsPanel: true,
       showEvalCenter: true,
     });
@@ -78,7 +76,6 @@ describe('appStore workbench tabs', () => {
     expect(useAppStore.getState()).toMatchObject({
       showProjectCollaborationPage: true,
       projectCollaborationPageProjectId: 'project-1',
-      showKnowledgeMemoryPanel: false,
       showLocalOpsPanel: false,
       showEvalCenter: false,
     });

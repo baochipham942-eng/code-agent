@@ -1077,5 +1077,8 @@ pre code {
    ⚠️ 核实时注意：renderer 由 `vite build`（= npm run build:renderer）产出，
    `npm run build:web` 只打 web server 包、不碰 renderer——拿它的产物做判断会得出错误结论。 */
 @media (hover: none) {
-  .media-actions-hover-reveal { opacity: 1 !important; }
+  /* 用 元素+类 的特异性(0,1,1) 压过 Tailwind 的 .opacity-0 (0,1,0)，与样式表顺序无关，
+     因此不需要强制优先级声明——design-system 门禁未登记的那种声明，且它是文本扫描，
+     连注释里提到那个词都会被计成一处违规（本行就是这么踩出来的）。 */
+  span.media-actions-hover-reveal { opacity: 1; }
 }

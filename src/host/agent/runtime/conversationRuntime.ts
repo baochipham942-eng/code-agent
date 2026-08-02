@@ -1123,6 +1123,10 @@ export class ConversationRuntime {
   }
 
   async cancel(reason?: 'user' | 'session-switch'): Promise<void> {
+    // 回复已经完成落库、但 run 还没从 registry 注销的尾窗里，cancel 必须是安全 no-op。
+    // 这时再标 cancelled / preserve partial 会把同一条完整回复追加标记后写成第二行。
+    if (this.ctx.control.isSettled) return;
+
     this.ctx.control.markCancelled();
 
     await this.preserveStreamedPartial(

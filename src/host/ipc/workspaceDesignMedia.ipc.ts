@@ -8,15 +8,17 @@
 // ============================================================================
 
 import path from 'path';
-import { promises as fsp } from 'fs';
-import { assertWithinDesignDir } from './workspaceDesignPaths';
+import { constants, promises as fsp } from 'fs';
+import type { FileHandle } from 'fs/promises';
+import { randomUUID } from 'crypto';
+import { assertWithinDesignDir, assertWithinDesignImportSource } from './workspaceDesignPaths';
 import { estimateImageCostCny } from '../../shared/media/imageCost';
 import { estimateVideoCostCny } from '../../shared/media/videoCost';
 import { estimateMusicCostCny } from '../../shared/media/musicCost';
 import { DESIGN_IMAGE_MODELS } from '../../shared/constants';
 import { imageEngineForModel, imageModelById, videoModelById } from '../../shared/constants/visualModels';
 import { DESIGN_FLUX_MODEL } from '../../shared/constants/pricing';
-import type { ExpandDirection } from '../services/media/imageGenerationService';
+import type { ExpandDirection, ExpandScales } from '../services/media/imageGenerationService';
 import {
   getCustomImageModel,
   getCustomModelApiKey,
@@ -49,6 +51,87 @@ import type { AppSettings } from '../../shared/contract';
 
 // 幂等缓存命中校验：缓存产物文件已被删则视为失效重新生成，不返回死路径。
 const artifactExists = (p: string): Promise<boolean> => fsp.access(p).then(() => true, () => false);
+
+type FileIdentity = { dev: number; ino: number };
+
+function isSameFileIdentity(left: FileIdentity, right: FileIdentity): boolean {
+  return left.dev === right.dev && left.ino === right.ino;
+}
+
+async function assertHandleMatchesDesignPath(
+  handle: FileHandle,
+  filePath: string,
+  label: string,
+): Promise<FileIdentity> {
+  const handleStat = await handle.stat();
+  let pathStat;
+  let canonicalPath: string;
+  try {
+    pathStat = await fsp.lstat(filePath);
+    canonicalPath = await fsp.realpath(filePath);
+  } catch (error) {
+    throw new Error(`${label} 写入路径在落盘期间发生变化：${filePath}`, { cause: error });
+  }
+  if (!pathStat.isFile() || !isSameFileIdentity(handleStat, pathStat)) {
+    throw new Error(`${label} 写入路径在落盘期间被替换：${filePath}`);
+  }
+  try {
+    assertWithinDesignDir(canonicalPath, label);
+  } catch (error) {
+    throw new Error(`${label} 写入路径在落盘期间越出设计目录：${filePath}`, { cause: error });
+  }
+  return handleStat;
+}
+
+async function unlinkIfSameFile(filePath: string, identity: FileIdentity): Promise<void> {
+  try {
+    const stat = await fsp.lstat(filePath);
+    if (stat.isFile() && isSameFileIdentity(stat, identity)) await fsp.unlink(filePath);
+  } catch {
+    // 路径已经消失或再次被替换时不追删，避免误删攻击者换入的另一个文件。
+  }
+}
+
+/**
+ * 设计产物统一安全落盘：先创建不跟随 symlink 的独占临时文件，以句柄/路径 dev+ino 和
+ * realpath 自证它确实位于设计目录，再从句柄写入；最后 rename 替换目标（rename 不跟随
+ * 末级 symlink），并在句柄仍打开时复核最终落点。竞态命中时只按 inode 清理自己的文件。
+ */
+async function writeFileWithinDesignDir(
+  outputPath: string,
+  data: Uint8Array,
+  label = 'outputPath',
+): Promise<void> {
+  assertWithinDesignDir(outputPath, label);
+  const outputDir = path.dirname(outputPath);
+  await fsp.mkdir(outputDir, { recursive: true });
+  const tempPath = path.join(outputDir, `.${path.basename(outputPath)}.${randomUUID()}.tmp`);
+  let handle: FileHandle | undefined;
+  let identity: FileIdentity | undefined;
+  let renamed = false;
+  try {
+    handle = await fsp.open(
+      tempPath,
+      constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW,
+      0o600,
+    );
+    identity = await handle.stat();
+    await assertHandleMatchesDesignPath(handle, tempPath, label);
+    await handle.writeFile(data);
+    await assertHandleMatchesDesignPath(handle, tempPath, label);
+    await fsp.rename(tempPath, outputPath);
+    renamed = true;
+    await assertHandleMatchesDesignPath(handle, outputPath, label);
+  } catch (error) {
+    await handle?.close();
+    handle = undefined;
+    if (identity) await unlinkIfSameFile(renamed ? outputPath : tempPath, identity);
+    if (error instanceof Error && error.message.startsWith(`${label} `)) throw error;
+    throw new Error(`${label} 无法安全写入设计目录：${outputPath}`, { cause: error });
+  } finally {
+    await handle?.close();
+  }
+}
 
 // 解析设计草稿目录（Kun 借鉴：设计 tab 自动落盘，免去手动选工作目录）。
 // 设计产物是预览导向的草稿，统一放 app 托管目录 <home>/.code-agent/design，
@@ -128,8 +211,7 @@ async function generateDesignImageOnce(
     });
     const dataUrl = isImageUrl(imageData) ? await downloadImageAsBase64(imageData) : imageData;
     const buf = Buffer.from(dataUrl.replace(/^data:image\/\w+;base64,/, ''), 'base64');
-    await fsp.mkdir(path.dirname(payload.outputPath), { recursive: true });
-    await fsp.writeFile(payload.outputPath, buf);
+    await writeFileWithinDesignDir(payload.outputPath, buf);
     return { path: payload.outputPath, actualModel, costCny: estimateImageCostCny(actualModel) };
   }
 
@@ -149,8 +231,7 @@ async function generateDesignImageOnce(
       referenceImageDataUrl: payload.referenceImageDataUrl,
     });
     const refBuf = Buffer.from(imageData.replace(/^data:[^;]+;base64,/, ''), 'base64');
-    await fsp.mkdir(path.dirname(payload.outputPath), { recursive: true });
-    await fsp.writeFile(payload.outputPath, refBuf);
+    await writeFileWithinDesignDir(payload.outputPath, refBuf);
     return { path: payload.outputPath, actualModel, costCny: estimateImageCostCny(actualModel) };
   }
 
@@ -197,8 +278,7 @@ async function generateDesignImageOnce(
   const dataUrl = isImageUrl(imageData) ? await downloadImageAsBase64(imageData) : imageData;
   const base64 = dataUrl.replace(/^data:image\/\w+;base64,/, '');
   const buf = Buffer.from(base64, 'base64');
-  await fsp.mkdir(path.dirname(payload.outputPath), { recursive: true });
-  await fsp.writeFile(payload.outputPath, buf);
+  await writeFileWithinDesignDir(payload.outputPath, buf);
   // 实际花费权威源在 main：按真正落地的模型查价表（T2 BYOK 成本可见）。
   return { path: payload.outputPath, actualModel, costCny: estimateImageCostCny(actualModel) };
 }
@@ -228,8 +308,7 @@ async function generateDesignImageViaCustom(
   });
   const dataUrl = isImageUrl(imageData) ? await downloadImageAsBase64(imageData) : imageData;
   const base64 = dataUrl.replace(/^data:image\/\w+;base64,/, '');
-  await fsp.mkdir(path.dirname(payload.outputPath), { recursive: true });
-  await fsp.writeFile(payload.outputPath, Buffer.from(base64, 'base64'));
+  await writeFileWithinDesignDir(payload.outputPath, Buffer.from(base64, 'base64'));
   const costCny = custom.costCnyPerImage ?? estimateImageCostCny(custom.modelName);
   return { path: payload.outputPath, actualModel, costCny };
 }
@@ -259,9 +338,119 @@ export async function handleEditImageByAnnotation(
     engine, annotatedImageDataUrl: payload.annotatedImageDataUrl, instruction: payload.instruction,
   });
   const base64 = imageData.replace(/^data:image\/\w+;base64,/, '');
-  await fsp.mkdir(path.dirname(payload.outputPath), { recursive: true });
-  await fsp.writeFile(payload.outputPath, Buffer.from(base64, 'base64'));
+  await writeFileWithinDesignDir(payload.outputPath, Buffer.from(base64, 'base64'));
   return { path: payload.outputPath, actualModel, costCny: estimateImageCostCny(actualModel) };
+}
+
+// —— 按路径导入设计画布（对话里的图产物 →「修改」入口）——
+// 源文件在设计目录之外（会话工作区），所以除了 outputPath 的设计目录守卫，还要一道
+// 源路径守卫：限死在「当前活跃工作目录 + 设计目录」内，并先解析 symlink 再判定，
+// 否则这条 IPC 就是一个任意文件读取洞（读出来会被复制进设计目录，随后可能 base64 传给出图服务）。
+// 不收 .svg：SVG 是活动内容（可含 <script> 与外链 <image href>），做净化是个无底洞；
+// 而这条通道的用途是把对话里的**位图**产物拿进画布精修，下游编辑管线本来也只吃位图。
+const IMPORTABLE_IMAGE_EXTENSIONS = new Set([
+  '.avif', '.gif', '.heic', '.heif', '.jpeg', '.jpg', '.png', '.webp',
+]);
+
+function hasImportableImageMagic(bytes: Buffer, extension: string): boolean {
+  if (extension === '.png') {
+    return bytes.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+  }
+  if (extension === '.jpg' || extension === '.jpeg') {
+    return bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+  }
+  if (extension === '.gif') {
+    const signature = bytes.subarray(0, 6).toString('ascii');
+    return signature === 'GIF87a' || signature === 'GIF89a';
+  }
+  if (extension === '.webp') {
+    return bytes.subarray(0, 4).toString('ascii') === 'RIFF'
+      && bytes.subarray(8, 12).toString('ascii') === 'WEBP';
+  }
+  if (extension === '.avif' || extension === '.heic' || extension === '.heif') {
+    if (bytes.subarray(4, 8).toString('ascii') !== 'ftyp') return false;
+    const brands = bytes.subarray(8, 32).toString('ascii');
+    return extension === '.avif'
+      ? /avif|avis/.test(brands)
+      : /heic|heix|hevc|hevx|mif1|msf1/.test(brands);
+  }
+  return false;
+}
+
+/**
+ * 校验并**返回仍然打开的句柄**——调用方必须从这个句柄读，不许再按路径打开一次。
+ *
+ * 2026-08-01 对抗审计实证：先 `canonicalize` 校验、再 `fsp.copyFile(path)` 是可绕过的——
+ * 两次解析之间源路径可被换成指向允许根之外的 symlink，探针实测把根外文件复制进了设计目录。
+ * 这里先 lstat 记住规范路径对应的 inode，再用 O_NOFOLLOW 打开并以 handle.stat() 比对 dev/ino；
+ * 只有句柄确实绑定到已校验文件才继续。之后路径再变也不影响句柄所指向的 inode。
+ */
+async function assertReadableImageFile(sourcePath: string): Promise<FileHandle> {
+  const extension = path.extname(sourcePath).toLowerCase();
+  if (!IMPORTABLE_IMAGE_EXTENSIONS.has(extension)) {
+    throw new Error(`sourcePath 不是受支持的图片类型：${extension || '缺少扩展名'}`);
+  }
+
+  let expectedStat;
+  try {
+    expectedStat = await fsp.lstat(sourcePath);
+  } catch (error) {
+    const code = error && typeof error === 'object' && 'code' in error ? String(error.code) : '';
+    if (code === 'ENOENT') {
+      throw new Error(`sourcePath 源文件不存在：${sourcePath}`, { cause: error });
+    }
+    throw new Error(`sourcePath 源文件不可读：${sourcePath}`, { cause: error });
+  }
+  if (!expectedStat.isFile()) {
+    throw new Error(`sourcePath 必须是非符号链接的可读图片文件：${sourcePath}`);
+  }
+
+  let handle: FileHandle | undefined;
+  try {
+    handle = await fsp.open(sourcePath, constants.O_RDONLY | constants.O_NOFOLLOW);
+    const openedStat = await handle.stat();
+    if (!isSameFileIdentity(expectedStat, openedStat)) {
+      throw new Error(`sourcePath 在路径校验与打开之间被替换：${sourcePath}`);
+    }
+    const header = Buffer.alloc(512);
+    // 定位读（position=0）不移动句柄读写位置，后续 readFile 仍从头读全文。
+    const { bytesRead } = await handle.read(header, 0, header.length, 0);
+    if (!hasImportableImageMagic(header.subarray(0, bytesRead), extension)) {
+      throw new Error(`sourcePath 不是有效的 ${extension} 图片：文件内容与扩展名不匹配`);
+    }
+    return handle;
+  } catch (error) {
+    await handle?.close();
+    if (error instanceof Error && error.message.startsWith('sourcePath ')) throw error;
+    throw new Error(`sourcePath 在路径校验与打开之间发生变化或变成符号链接：${sourcePath}`, { cause: error });
+  }
+}
+
+/**
+ * 把会话工作区中的图片复制进设计资产目录。目标存在时覆盖：与 dataURL 导入保持一致，
+ * 让 renderer 在 IPC 回包丢失后的同路径重试具备幂等结果。
+ *
+ * 守卫返回的是解析过 symlink 的规范路径，**下面必须用它去读**——校验一个路径、
+ * 读另一个路径是这类守卫最典型的绕过方式。
+ */
+export async function handleImportDesignImageFromPath(
+  payload: { sourcePath: string; outputPath: string },
+  activeWorkspaceRoot?: string | null,
+): Promise<{ path: string }> {
+  if (!payload?.sourcePath || !payload?.outputPath) {
+    throw new Error('importDesignImageFromPath 需要 sourcePath 与 outputPath');
+  }
+  assertWithinDesignDir(payload.outputPath, 'outputPath');
+  const canonicalSourcePath = assertWithinDesignImportSource(payload.sourcePath, activeWorkspaceRoot);
+  // 从校验时那个句柄读，不用 fsp.copyFile(路径)——后者会二次解析路径，留出掉包窗口（见函数注释）。
+  const handle = await assertReadableImageFile(canonicalSourcePath);
+  try {
+    const data = await handle.readFile();
+    await writeFileWithinDesignDir(payload.outputPath, data);
+  } finally {
+    await handle.close();
+  }
+  return { path: payload.outputPath };
 }
 
 // 设计画布导入用户自有图片（自由画布）：renderer 传 base64 dataURL → 写盘到 run 的 assets，
@@ -273,9 +462,28 @@ export async function handleImportDesignImage(
     throw new Error('importDesignImage 需要 dataUrl 与 outputPath');
   }
   assertWithinDesignDir(payload.outputPath, 'outputPath');
-  const base64 = payload.dataUrl.replace(/^data:[^;]+;base64,/, '');
-  await fsp.mkdir(path.dirname(payload.outputPath), { recursive: true });
-  await fsp.writeFile(payload.outputPath, Buffer.from(base64, 'base64'));
+  const match = /^data:(image\/[a-z0-9.+-]+);base64,([a-z0-9+/]+={0,2})$/i.exec(payload.dataUrl);
+  if (!match) throw new Error('dataUrl 必须是有效的 base64 图片 data URL');
+  const [, mimeType, base64] = match;
+  const extension = path.extname(payload.outputPath).toLowerCase();
+  const allowedExtensionsByMime: Record<string, readonly string[]> = {
+    'image/avif': ['.avif'],
+    'image/gif': ['.gif'],
+    'image/heic': ['.heic'],
+    'image/heif': ['.heif'],
+    'image/jpeg': ['.jpg', '.jpeg'],
+    'image/png': ['.png'],
+    'image/webp': ['.webp'],
+  };
+  const allowedExtensions = allowedExtensionsByMime[mimeType.toLowerCase()];
+  if (!allowedExtensions?.includes(extension)) {
+    throw new Error(`dataUrl 图片类型 ${mimeType} 与 outputPath 扩展名 ${extension || '缺失'} 不匹配或不受支持`);
+  }
+  const image = Buffer.from(base64, 'base64');
+  if (!hasImportableImageMagic(image.subarray(0, 512), extension)) {
+    throw new Error(`dataUrl 文件内容与 outputPath 扩展名 ${extension} 不匹配`);
+  }
+  await writeFileWithinDesignDir(payload.outputPath, image);
   return { path: payload.outputPath };
 }
 
@@ -315,10 +523,8 @@ export async function handleEditDesignImage(
     maskImageDataUrl: payload.maskDataUrl,
   });
   const resultDataUrl = isImageUrl(url) ? await downloadImageAsBase64(url) : url;
-  // data URI 前缀用宽松匹配（与 handleImportDesignImage 一致），兼容任意 image MIME 子类型。
+  // 模型返回的 data URI 前缀用宽松匹配，兼容 provider 的任意 image MIME 子类型。
   const resultBuf = Buffer.from(resultDataUrl.replace(/^data:[^;]+;base64,/, ''), 'base64');
-  await fsp.mkdir(path.dirname(payload.outputPath), { recursive: true });
-
   // mask dataURL → buffer（renderer 已按 白=改/黑=留 栅格化）。
   const maskBuf = Buffer.from(payload.maskDataUrl.replace(/^data:[^;]+;base64,/, ''), 'base64');
   // 局部重绘固定走 wanx imageedit；实际花费按该模型查价表（T2 BYOK 成本可见）。
@@ -336,11 +542,11 @@ export async function handleEditDesignImage(
         epsilon: REGION_LOCK.EPSILON,
         sharp: sharpLoaded.sharp,
       });
-      await fsp.writeFile(payload.outputPath, gate.finalPng);
+      await writeFileWithinDesignDir(payload.outputPath, gate.finalPng);
       const consistency: RegionLockReport = { ...gate.report };
       if (gate.diffPng) {
         const diffPath = `${payload.outputPath}${REGION_LOCK.DIFF_SUFFIX}`;
-        await fsp.writeFile(diffPath, gate.diffPng);
+        await writeFileWithinDesignDir(diffPath, gate.diffPng, 'diffPath');
         consistency.diffPath = diffPath;
       }
       return { path: payload.outputPath, actualModel, costCny, consistency };
@@ -351,38 +557,91 @@ export async function handleEditDesignImage(
       onRegionLockGateError({ strict: regionLockStrict, cause: err });
     }
   }
-  await fsp.writeFile(payload.outputPath, resultBuf);
+  await writeFileWithinDesignDir(payload.outputPath, resultBuf);
   return { path: payload.outputPath, actualModel, costCny };
 }
 
-// 设计画布扩图（T3：wanx function=expand）：底图(磁盘)读成 base64 + 方向/比例 → 四向单边 scale
+// wanx 单边 scale 合法区间（与 service 侧 clampExpandScale 同界）与四向键名。
+const EXPAND_SCALE_MIN = 1;
+const EXPAND_SCALE_MAX = 2;
+const EXPAND_SCALE_KEYS = ['top', 'bottom', 'left', 'right'] as const;
+const VALID_EXPAND_DIRECTIONS: readonly ExpandDirection[] = ['up', 'down', 'left', 'right', 'all'];
+
+/**
+ * 扩图入参。两种形态二选一：
+ * - `scales`：四向独立单边 scale，各 ∈[1,2]。一次调用即可表达"左右各扩一半"这类非对称外扩
+ *   （旧形态要分两次付费出图才能做到）。给了 scales 就忽略 direction/ratio。
+ * - `direction` + `ratio`：单方向 + 单倍率（现役 renderer 消费方走这条，行为不变）。
+ */
+export type ExpandDesignImagePayload = {
+  baseImagePath: string;
+  outputPath: string;
+  prompt?: string;
+  direction?: ExpandDirection;
+  ratio?: number;
+  scales?: ExpandScales;
+};
+
+/**
+ * 校验四向 scale 入参并返回规整后的值。逐字段验有限数 + [1,2]：
+ * 非法值下游 clampExpandScale 会静默夹到边界，变成"扩了个寂寞"的付费空调用（codex-audit M2 同因）。
+ */
+function validateExpandScales(input: unknown): ExpandScales {
+  if (typeof input !== 'object' || input === null) {
+    throw new Error(`expandDesignImage: scales 须为含 top/bottom/left/right 的对象，收到「${String(input)}」`);
+  }
+  const raw = input as Record<string, unknown>;
+  const validated = { top: EXPAND_SCALE_MIN, bottom: EXPAND_SCALE_MIN, left: EXPAND_SCALE_MIN, right: EXPAND_SCALE_MIN };
+  for (const key of EXPAND_SCALE_KEYS) {
+    const value = raw[key];
+    if (typeof value !== 'number' || !Number.isFinite(value) || value < EXPAND_SCALE_MIN || value > EXPAND_SCALE_MAX) {
+      throw new Error(
+        `expandDesignImage: scales.${key} 须为 [${EXPAND_SCALE_MIN},${EXPAND_SCALE_MAX}] 区间内的有限数值，收到「${String(value)}」`,
+      );
+    }
+    validated[key] = value;
+  }
+  return validated;
+}
+
+// 设计画布扩图（T3：wanx function=expand）：底图(磁盘)读成 base64 + 四向单边 scale
 // → 通义万相外扩补绘 → 下载结果写盘 → 返回路径，由 renderer 回灌为新 variant（挂 T1 spine）。
 export async function handleExpandDesignImage(
-  payload: { baseImagePath: string; outputPath: string; direction: ExpandDirection; ratio: number; prompt?: string },
+  payload: ExpandDesignImagePayload,
 ): Promise<{ path: string; actualModel: string; costCny: number }> {
   if (!payload?.baseImagePath || !payload?.outputPath) {
     throw new Error('expandDesignImage 需要 baseImagePath / outputPath');
   }
   assertWithinDesignDir(payload.baseImagePath, 'baseImagePath');
   assertWithinDesignDir(payload.outputPath, 'outputPath');
-  // 校验 direction 在合法集合内：非法值会让 expandScalesForDirection 落 default(四向 1.0)，
-  // 即一次"扩了个寂寞"的付费空调用。在边界先拦掉（codex-audit M2）。
-  const VALID_EXPAND_DIRECTIONS: readonly ExpandDirection[] = ['up', 'down', 'left', 'right', 'all'];
-  if (!VALID_EXPAND_DIRECTIONS.includes(payload.direction)) {
-    throw new Error(`expandDesignImage: 非法 direction「${String(payload.direction)}」，须为 up/down/left/right/all`);
-  }
-  // ratio 须为有限数且在 [1,2]（NaN/越界否则被 service 静默 clamp 成空操作付费调用）。
-  if (!Number.isFinite(payload.ratio) || payload.ratio < 1 || payload.ratio > 2) {
-    throw new Error('expandDesignImage: ratio 须为 [1,2] 区间内的有限数值');
-  }
   const { expandImage, expandScalesForDirection, downloadImageAsBase64, isImageUrl, getDashscopeApiKey } = await import(
     '../services/media/imageGenerationService'
   );
+  let scales: ExpandScales;
+  if (payload.scales !== undefined) {
+    scales = validateExpandScales(payload.scales);
+  } else {
+    // 旧形态：校验 direction 在合法集合内——非法值会让 expandScalesForDirection 落 default(四向 1.0)，
+    // 即一次"扩了个寂寞"的付费空调用。在边界先拦掉（codex-audit M2）。
+    const { direction, ratio } = payload;
+    if (direction === undefined || !VALID_EXPAND_DIRECTIONS.includes(direction)) {
+      throw new Error(`expandDesignImage: 非法 direction「${String(direction)}」，须为 up/down/left/right/all`);
+    }
+    // ratio 须为有限数且在 [1,2]（NaN/越界否则被 service 静默 clamp 成空操作付费调用）。
+    if (typeof ratio !== 'number' || !Number.isFinite(ratio) || ratio < EXPAND_SCALE_MIN || ratio > EXPAND_SCALE_MAX) {
+      throw new Error('expandDesignImage: ratio 须为 [1,2] 区间内的有限数值');
+    }
+    scales = expandScalesForDirection(direction, ratio);
+  }
+  // 整体空操作同样是付费空调用：四向全 1（含旧形态 ratio=1，滑块最小值就能滑到）什么都不扩，
+  // 逐字段校验放行也要在这里拦下——两种形态共用这一道闸。
+  if (!EXPAND_SCALE_KEYS.some((key) => scales[key] > EXPAND_SCALE_MIN)) {
+    throw new Error('expandDesignImage: 四向 scale 全为 1（无任何外扩），拒绝空操作付费调用');
+  }
   const apiKey = getDashscopeApiKey();
   if (!apiKey) throw new Error('扩图需要百炼（DashScope）API Key。');
   const baseBuf = await fsp.readFile(payload.baseImagePath);
   const baseDataUrl = `data:image/png;base64,${baseBuf.toString('base64')}`;
-  const scales = expandScalesForDirection(payload.direction, payload.ratio);
   const { url, actualModel } = await expandImage({
     apiKey,
     prompt: payload.prompt?.trim() ? payload.prompt : '自然延伸画面背景，与原图风格一致',
@@ -394,8 +653,7 @@ export async function handleExpandDesignImage(
   });
   const resultDataUrl = isImageUrl(url) ? await downloadImageAsBase64(url) : url;
   const base64 = resultDataUrl.replace(/^data:image\/\w+;base64,/, '');
-  await fsp.mkdir(path.dirname(payload.outputPath), { recursive: true });
-  await fsp.writeFile(payload.outputPath, Buffer.from(base64, 'base64'));
+  await writeFileWithinDesignDir(payload.outputPath, Buffer.from(base64, 'base64'));
   // 成本透明补全：扩图是真实付费调用，回传实际模型 + 查价表成本，供 renderer 记一笔（与出图/编辑对称）。
   return { path: payload.outputPath, actualModel, costCny: estimateImageCostCny(actualModel) };
 }
@@ -424,8 +682,7 @@ export async function handleRemoveWatermarkDesignImage(
   });
   const resultDataUrl = isImageUrl(url) ? await downloadImageAsBase64(url) : url;
   const base64 = resultDataUrl.replace(/^data:image\/\w+;base64,/, '');
-  await fsp.mkdir(path.dirname(payload.outputPath), { recursive: true });
-  await fsp.writeFile(payload.outputPath, Buffer.from(base64, 'base64'));
+  await writeFileWithinDesignDir(payload.outputPath, Buffer.from(base64, 'base64'));
   // 成本透明补全：去水印是真实付费调用，回传实际模型 + 查价表成本，供 renderer 记一笔（与出图/编辑对称）。
   return { path: payload.outputPath, actualModel, costCny: estimateImageCostCny(actualModel) };
 }
@@ -504,8 +761,7 @@ async function generateDesignVideoOnce(
       baseUrl, apiKey, modelName: entry.modelName, mode: payload.mode, prompt: payload.prompt, imageDataUrl,
     });
     const buf = await downloadVideoAsBuffer(url);
-    await fsp.mkdir(path.dirname(payload.outputPath), { recursive: true });
-    await fsp.writeFile(payload.outputPath, buf);
+    await writeFileWithinDesignDir(payload.outputPath, buf);
     return { path: payload.outputPath, actualModel, costCny: estimateVideoCostCny(actualModel, durationSecOut), durationSec: durationSecOut };
   }
 
@@ -524,8 +780,7 @@ async function generateDesignVideoOnce(
       baseUrl, apiKey, modelName: customVideo.modelName, mode: payload.mode, prompt: payload.prompt, imageDataUrl,
     });
     const buf = await downloadVideoAsBuffer(url);
-    await fsp.mkdir(path.dirname(payload.outputPath), { recursive: true });
-    await fsp.writeFile(payload.outputPath, buf);
+    await writeFileWithinDesignDir(payload.outputPath, buf);
     const costCny = customVideo.costCnyPerVideo ?? estimateVideoCostCny(actualModel, durationSecOut);
     return { path: payload.outputPath, actualModel, costCny, durationSec: durationSecOut };
   }
@@ -543,8 +798,7 @@ async function generateDesignVideoOnce(
     const { buffer, actualModel, durationSec } = await generateVeoVideo({
       model: payload.model, mode: payload.mode, prompt: payload.prompt, imageDataUrl, durationSec: payload.durationSec,
     });
-    await fsp.mkdir(path.dirname(payload.outputPath), { recursive: true });
-    await fsp.writeFile(payload.outputPath, buffer);
+    await writeFileWithinDesignDir(payload.outputPath, buffer);
     return { path: payload.outputPath, actualModel, costCny: estimateVideoCostCny(actualModel, durationSec), durationSec };
   }
 
@@ -572,8 +826,7 @@ async function generateDesignVideoOnce(
   });
 
   const buf = await downloadVideoAsBuffer(url);
-  await fsp.mkdir(path.dirname(payload.outputPath), { recursive: true });
-  await fsp.writeFile(payload.outputPath, buf);
+  await writeFileWithinDesignDir(payload.outputPath, buf);
   return { path: payload.outputPath, actualModel, costCny: estimateVideoCostCny(actualModel, durationSec), durationSec };
 }
 
@@ -622,7 +875,6 @@ async function generateDesignMusicOnce(
     baseUrl, apiKey, modelName, prompt: payload.prompt, lyrics: payload.lyrics,
   });
   // 直接落 audioBuffer：MiniMax 音乐同步返回二进制，无 OSS url 下载步（与图像/视频不同）。
-  await fsp.mkdir(path.dirname(payload.outputPath), { recursive: true });
-  await fsp.writeFile(payload.outputPath, audioBuffer);
+  await writeFileWithinDesignDir(payload.outputPath, audioBuffer);
   return { path: payload.outputPath, actualModel, costCny: estimateMusicCostCny(actualModel) };
 }

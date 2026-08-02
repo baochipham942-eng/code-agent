@@ -123,7 +123,19 @@ export class SessionManager implements Disposable {
   }
 
   private normalizePromptForBackfill(content: string): string {
-    return content.replace(/\r\n/g, '\n').trim();
+    return content
+      .replace(/\r\n/g, '\n')
+      .trim()
+      .replace(/\bhttps?:\/\/[^\s<>"'`]+/giu, (rawUrl) => {
+        // telemetry_turns 没有保存 user message/clientMessageId，不能做稳定 ID join。
+        // 对两侧文本统一走 WHATWG URL canonicalization，消除补根路径斜杠、
+        // unicode host / punycode 等同一 URL 的序列化差异；解析失败则保持原文。
+        try {
+          return new URL(rawUrl).toString();
+        } catch {
+          return rawUrl;
+        }
+      });
   }
 
   private backfillMissingTelemetryUserPrompts(sessionId: string): number {

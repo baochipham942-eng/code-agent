@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   CANVAS_SCALE_MAX,
   CANVAS_SCALE_MIN,
+  classifyCanvasPointerMode,
   classifyPointerDragIntent,
   classifyWheelIntent,
   clamp,
@@ -59,5 +60,22 @@ describe('canvasCameraInput pointer drag classification', () => {
     expect(classifyPointerDragIntent({ button: 1 })).toBe('pan');
     expect(classifyPointerDragIntent({ button: 0, spaceKey: true })).toBe('pan');
     expect(classifyPointerDragIntent({ button: 0 })).toBe('none');
+  });
+
+  it('批注模式抢在图解绘制、平移和局部框选之前', () => {
+    expect(classifyCanvasPointerMode({
+      annotationMode: true,
+      diagramDrawing: true,
+      regionDrawing: true,
+      button: 1,
+      spaceKey: true,
+    })).toBe('annotation');
+  });
+
+  it('退出批注后原有图解绘制、平移、框选与普通选择意图逐项恢复', () => {
+    expect(classifyCanvasPointerMode({ annotationMode: false, diagramDrawing: true, button: 0 })).toBe('diagram');
+    expect(classifyCanvasPointerMode({ annotationMode: false, button: 1 })).toBe('pan');
+    expect(classifyCanvasPointerMode({ annotationMode: false, regionDrawing: true, button: 0 })).toBe('region');
+    expect(classifyCanvasPointerMode({ annotationMode: false, button: 0 })).toBe('selection');
   });
 });

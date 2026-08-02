@@ -165,10 +165,11 @@ export async function generateVideoToCanvas(
         prompt: prompt || undefined,
         parentId: mode === 'i2v' && baseNode ? groupKey(baseNode) : undefined,
         createdAt: Date.now(),
+        createdBy: 'agent',
         ...(poster ? { poster } : {}),
         ...(typeof costCny === 'number' && costCny >= 0 ? { costCny } : {}),
       };
-      useDesignCanvasStore.getState().addNode(node);
+      useDesignCanvasStore.getState().addNode(node, 'agent');
       await saveCanvasDoc(runDir, useDesignCanvasStore.getState().toDoc());
       useDesignCanvasStore.getState().clearEditHistory();
       useDesignCanvasStore.getState().setGenerating(false);

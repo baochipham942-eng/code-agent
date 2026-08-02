@@ -53,18 +53,25 @@ export interface VoiceWorkItem {
 /**
  * 发言人协议（W6）：一件活落终态后，「该念哪句、以谁的身份念」的唯一载体。
  *
- * 只在 done / failed 时产生——排队/开始跑不是结论，念了就是噪音（W6-6 门）。
+ * 只在终态或「用户刚要求的那个动作办完了」时产生——排队/开始跑不是结论，念了就是噪音（W6-6 门）。
  * 播不播、什么时候播由 voiceSessionService 的节制闸决定（W6-4），
  * 这里只负责把「念什么」算准。
  */
 export interface VoiceWorkNarration {
   workItemId: string;
   /**
-   * 只有终态；`cancelled` 是用户自己叫停的，他知道，不用回头念给他听。
+   * 终态三档 + 一档播报。
+   *
+   * 终态：`cancelled` 是用户自己叫停的，他知道，不用回头念给他听。
    * `unverified` 必须自成一档而不是并进 done——耳朵这一路和屏幕那一路要么一起说实话，
    * 要么就是「卡片写着待核验、耳机里说已经做完了」。
+   *
+   * `announcement`（§1 打断异步确认）不是某件活的结局，是「刚才那个动作办完了没有」的
+   * 回报（停稳了 / 没停稳 / 停稳后新活开始了）。它复用同一条注入通道与节制闸，所以
+   * 走同一个类型；台词整句由 voiceNarration 的 buildStopNarration 算好放进 `summary`，
+   * formatNarration 不再按状态拼词——**避免同一句话的措辞散在两个模块里各写一半**。
    */
-  status: 'done' | 'unverified' | 'failed';
+  status: 'done' | 'unverified' | 'failed' | 'announcement';
   title: string;
   /**
    * 已裁剪成「能用嘴说出来」的结论文本：代码块/表格换成一句指路，
@@ -87,6 +94,29 @@ export interface VoiceCallSummary {
   endedAt: number;
   /** 这通电话落库了多少条字幕。旧记录没有这个字段——字段缺失本身就是「旧版本通话」的判据。 */
   transcriptCount?: number;
+}
+
+export type VoiceCallFailureCode =
+  | 'VOICE_UPSTREAM_UNAVAILABLE'
+  | 'UPSTREAM_SOCKET'
+  | 'UPSTREAM_ERROR'
+  | 'VOICE_PROVIDER_UNCONFIGURED'
+  | 'VOICE_SESSION_BUSY'
+  | 'HANDSHAKE_FAILED'
+  | 'RECONNECT_FAILED';
+
+export type VoiceCallFailurePhase =
+  | 'admission'
+  | 'configuration'
+  | 'handshake'
+  | 'upstream'
+  | 'reconnect';
+
+/** Renderer 只能上报自身产生、且媒体 WS 已不可用的两种拨号失败。 */
+export interface RendererVoiceFailureReport {
+  neoSessionId: string;
+  code: 'HANDSHAKE_FAILED' | 'RECONNECT_FAILED';
+  phase: 'handshake' | 'reconnect';
 }
 
 /** 注册给通话 brain 的窄工具（方案 §6.2 模式 A）。JSON Schema 直接透给上游。 */
@@ -127,7 +157,7 @@ export interface VoiceStatusResponse {
   /** 全局单路互斥：当前是否有通话进行中 */
   active: boolean;
   /** 本月通话用量（只记账不设限，方案 §5.4；设置页展示用） */
-  usage: { monthSeconds: number; monthCalls: number };
+  usage: { monthSeconds: number; monthCalls: number; monthFailedAttempts: number };
 }
 
 /** 设置页「实时通话」组保存后广播的窗口事件（对齐 VOICE_INPUT_SETTINGS_UPDATED_EVENT 先例）。 */

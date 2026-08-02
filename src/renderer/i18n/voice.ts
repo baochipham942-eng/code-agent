@@ -60,7 +60,7 @@ export const voiceZh: VoiceTranslations = {
     },
     /** host 发来的提示/错误按 code 查这里；键集由 VoiceMessageCode 定型，少一条就 typecheck 红。 */
     messageByCode: {
-      VOICE_SESSION_BUSY: '已有一路通话在进行中',
+      VOICE_SESSION_BUSY: '通话正在另一个窗口进行，去那个窗口可以继续；在那里挂断后这里才能再拨',
       VOICE_PROVIDER_UNCONFIGURED: '还没配语音服务的 API Key，去设置里填一个就能打电话',
       VOICE_TOOLS_DROPPED: '当前实时语音模型不支持在通话中派活，这通电话只能聊天',
       VOICE_MODEL_UNRESPONSIVE: '模型没有回应，可以再说一遍，或挂断重拨',
@@ -198,6 +198,12 @@ export const voiceZh: VoiceTranslations = {
       sensitivityLow: '低',
       sensitivityMedium: '中',
       sensitivityHigh: '高',
+      speechRateTitle: '语速',
+      speechRateSlow: '慢',
+      speechRateNormal: '正常',
+      speechRateFast: '快',
+      /** T7：如实提示——speaking pace 是纯建议，不同语音服务遵从度不保证（方案 §2 不许虚假承诺）。 */
+      speechRateHelper: '这是给语音助手的说话建议：通话时它会尽量按所选语速说话，但不同语音服务的遵从程度不同，可能不会完全生效。',
       inputDeviceTitle: '麦克风',
       inputDeviceDescription: '选择实时语音使用的输入设备；设备断开时会自动回退到系统默认。',
       inputDeviceDefault: '系统默认',
@@ -290,7 +296,7 @@ export const voiceEn = {
     },
     /** host 发来的提示/错误按 code 查这里；键集由 VoiceMessageCode 定型，少一条就 typecheck 红。 */
     messageByCode: {
-      VOICE_SESSION_BUSY: 'Another call is already in progress',
+      VOICE_SESSION_BUSY: 'A call is already in progress in another window — continue there, or end it there and retry here',
       VOICE_PROVIDER_UNCONFIGURED: 'No API key for the voice service yet — add one in settings to start calling',
       VOICE_TOOLS_DROPPED: 'This Live Voice model cannot run tasks during a call, so this call is chat only',
       VOICE_MODEL_UNRESPONSIVE: 'The model did not respond. Try saying it again, or hang up and redial',
@@ -428,6 +434,12 @@ export const voiceEn = {
       sensitivityLow: 'Low',
       sensitivityMedium: 'Medium',
       sensitivityHigh: 'High',
+      speechRateTitle: 'Speech rate',
+      speechRateSlow: 'Slow',
+      speechRateNormal: 'Normal',
+      speechRateFast: 'Fast',
+      /** T7: honest disclosure — speaking pace is a suggestion; adherence varies by voice service. */
+      speechRateHelper: 'A speaking suggestion for the voice assistant: it will try to follow this pace during calls, but adherence varies by voice service and it may not take full effect.',
       inputDeviceTitle: 'Microphone',
       inputDeviceDescription: 'Choose the input device for Live Voice; it falls back to the system default when disconnected.',
       inputDeviceDefault: 'System default',

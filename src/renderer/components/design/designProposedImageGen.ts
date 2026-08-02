@@ -98,12 +98,13 @@ export async function generateProposedImage(
       height,
       prompt: op.prompt,
       createdAt: Date.now(),
+      createdBy: 'agent',
       // ADR-027：自主扇出时归入同一变体组（parentId=组首张 id），使 N 张成兄弟变体供人挑（setChosen 按 groupKey）。
       ...(opts?.parentId ? { parentId: opts.parentId } : {}),
       ...(typeof costCny === 'number' && costCny >= 0 ? { costCny } : {}),
     };
     // addNode 不落盘不清史：controller 在整批生成毕统一 save + 条件 clearEditHistory（混批顺序写死）。
-    useDesignCanvasStore.getState().addNode(node);
+    useDesignCanvasStore.getState().addNode(node, 'agent');
     return { ok: true, nodeId, ...(typeof costCny === 'number' && costCny >= 0 ? { costCny } : {}) };
   } catch {
     return { ok: false };

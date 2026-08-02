@@ -474,6 +474,11 @@ pre code {
     animation: none;
   }
 
+  /* 骨架屏 shimmer 扫光：reduced-motion 下静态占位不动效 */
+  .animate-shimmer {
+    animation: none;
+  }
+
   .popover-enter {
     animation: none;
   }
@@ -492,8 +497,7 @@ pre code {
 .typing-dot:nth-child(3) { animation-delay: 0.4s; }
 
 /* ----------------------------------------------------------------------------
-   流式文本：呼吸光标
-   - .with-caret 末块 ::after ：当前书写头处的呼吸光标，贯穿等待/流式
+   流式文本状态
 
    块级淡入（.streaming-text > * 挂 streamingTextReveal）已删除。它的注释原本写着
    「只在 mount 时跑一次，已完成的文字不会重播」——**这条不变量从来没成立过**：
@@ -509,14 +513,16 @@ pre code {
   50%      { opacity: 0.85; transform: scaleY(1.06); }
 }
 
-/* 末块内联光标（markdown / 纯文本两种 wrapper 通用） */
-.streaming-text.with-caret > :last-child::after {
-  content: "▎";
-  display: inline-block;
-  margin-left: 1px;
-  color: var(--brand-primary);
-  font-weight: 400;
-  animation: streamingCaretPulse 1.2s ease-in-out infinite;
+/* 尾段淡入（工单 2026-08-01 流式渲染自然化）：useSmoothStreamingText 每 ~120ms
+   落一个「词/短段」，消费层把最新一段包进 .streaming-tail-segment（key 随段首
+   下标变化，mount 时跑一次淡入）。直落的大块不包 span——保持即时可读。 */
+@keyframes streamingTailSegmentFade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.streaming-tail-segment {
+  animation: streamingTailSegmentFade 120ms ease-out;
 }
 
 /* 独立光标（无正文时由状态槽渲染，作为「还活着」的安静信号） */
@@ -528,11 +534,10 @@ pre code {
 
 @media (prefers-reduced-motion: reduce) {
   .streaming-text > *,
-  .streaming-text.with-caret > :last-child::after,
+  .streaming-tail-segment,
   .streaming-caret {
     animation: none;
   }
-  .streaming-text.with-caret > :last-child::after,
   .streaming-caret { opacity: 0.7; }
 }
 

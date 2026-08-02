@@ -81,7 +81,7 @@ function iactSendTextOf(node: React.ReactNode): string | null {
 }
 
 // Main message content component
-export const MessageContent: React.FC<MessageContentProps> = memo(function MessageContent({ content, isUser, isStreaming = false, messageId, mediaContext }) {
+export const MessageContent: React.FC<MessageContentProps> = memo(function MessageContent({ content, isUser, isStreaming = false, messageId, mediaContext, streamingTailStart }) {
   const openPreview = useAppStore((state) => state.openPreview);
   const workingDirectory = useAppStore((state) => state.workingDirectory);
   const streamingNeedsMarkdown = !isUser && isStreaming && shouldRenderStreamingContentAsMarkdown(content);
@@ -575,17 +575,33 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
   }
 
   if (isStreaming && !streamingNeedsMarkdown) {
+    const plainText = sanitizePlainTextFallback(filterSystemTags(content));
+    // 尾段淡入（工单 2026-08-01）：hook 每 ~120ms 落一个「词/短段」，把最新一段
+    // 包进 key 随段首下标变化的 span，mount 时跑一次 CSS 淡入；直落的大块不包、
+    // 立即可读。下标基于未过滤的 content，过滤后可能漂移，越界就不拆分（纯视觉）。
+    const tailStart = streamingTailStart != null
+      && streamingTailStart > 0
+      && streamingTailStart < plainText.length
+      ? streamingTailStart
+      : null;
     return (
-      <div className="text-sm leading-[1.7] break-words prose prose-invert prose-sm max-w-none streaming-text with-caret">
+      <div className="text-sm leading-[1.7] break-words prose prose-invert prose-sm max-w-none streaming-text">
         <span className="whitespace-pre-wrap">
-          {sanitizePlainTextFallback(filterSystemTags(content))}
+          {tailStart === null ? plainText : (
+            <>
+              {plainText.slice(0, tailStart)}
+              <span key={tailStart} className="streaming-tail-segment">
+                {plainText.slice(tailStart)}
+              </span>
+            </>
+          )}
         </span>
       </div>
     );
   }
 
-  // 流式中的 markdown 内容才加揭示动画 + 内联呼吸光标；已完成消息不加（避免重播/常驻光标）
-  const streamingDecor = isStreaming ? ' streaming-text with-caret' : '';
+  // 流式中的 markdown 内容保留流式样式标记；已完成消息不加，避免重播。
+  const streamingDecor = isStreaming ? ' streaming-text' : '';
   return (
     <div
       className={`text-sm leading-[1.7] break-words prose prose-invert prose-sm max-w-none${streamingDecor}`}

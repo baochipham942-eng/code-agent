@@ -102,6 +102,19 @@ export class RunRegistry implements AgentTeamDurableParentHost {
     return handle;
   }
 
+  /**
+   * Register a lightweight, non-durable owner without replacing the conversation's
+   * primary run index. Auxiliary runs are still full RunHandles and therefore pass
+   * runId + sessionId ownership checks, but getBySessionId() keeps resolving the
+   * agent/model run that owns conversation controls.
+   */
+  startAuxiliary(input: CreateRunContextInput): RunHandle {
+    const context = createRunContext(input);
+    const handle = createRunHandle(context);
+    this.registerHandle(handle, false);
+    return handle;
+  }
+
   /** Durable Native entry point. Existing synchronous start() remains for compatibility callers. */
   async startDurable(input: CreateRunContextInput, now = Date.now()): Promise<RunHandle> {
     const kernel = this.requireKernel();
@@ -549,19 +562,25 @@ export class RunRegistry implements AgentTeamDurableParentHost {
   }
 
   register(handle: RunHandle): void {
+    this.registerHandle(handle, true);
+  }
+
+  private registerHandle(handle: RunHandle, indexBySession: boolean): void {
     const { runId, sessionId } = handle.context;
     const existingRun = this.handlesByRunId.get(runId);
     if (existingRun && existingRun !== handle) {
       throw new Error(`Run id already registered: ${runId}`);
     }
 
-    const existingRunId = this.runIdBySessionId.get(sessionId);
-    if (existingRunId && existingRunId !== runId) {
-      throw new RunSessionConflictError(sessionId, existingRunId);
+    if (indexBySession) {
+      const existingRunId = this.runIdBySessionId.get(sessionId);
+      if (existingRunId && existingRunId !== runId) {
+        throw new RunSessionConflictError(sessionId, existingRunId);
+      }
     }
 
     this.handlesByRunId.set(runId, handle);
-    this.runIdBySessionId.set(sessionId, runId);
+    if (indexBySession) this.runIdBySessionId.set(sessionId, runId);
   }
 
   get(runId: string): RunHandle | undefined {

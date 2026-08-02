@@ -78,8 +78,9 @@ function createHarness(failSnapshotAt?: number) {
   };
   const fake = createFakeBrowser(failSnapshotAt);
   const release = vi.fn(async () => fake.close());
-  const adapter = new ManagedBrowserProviderAdapter(runtime, () => fake.service, release);
-  return { registry, runtime, identity, fake, release, adapter };
+  const acquire = vi.fn(() => fake.service);
+  const adapter = new ManagedBrowserProviderAdapter(runtime, acquire, release);
+  return { registry, runtime, identity, fake, acquire, release, adapter };
 }
 
 describe('ManagedBrowserProviderAdapter', () => {
@@ -193,6 +194,41 @@ describe('ManagedBrowserProviderAdapter', () => {
       },
     });
     expect(fake.close).toHaveBeenCalled();
+  });
+
+  it('shares one physical browser within a conversation while preserving separate run owners', async () => {
+    const { registry, runtime, identity, fake, acquire, release, adapter } = createHarness();
+    const userHandle = registry.startAuxiliary({
+      runId: 'run-user-browser',
+      sessionId: identity.conversationId,
+      workspace: process.cwd(),
+    });
+    const userIdentity: SurfaceRuntimeIdentityV1 = {
+      conversationId: identity.conversationId,
+      runId: userHandle.context.runId,
+      agentId: 'user-browser-link',
+    };
+    const navigate = (owner: SurfaceRuntimeIdentityV1, operationId: string) => adapter.execute({
+      identity: owner,
+      operationId,
+      action: 'navigate',
+      params: { action: 'navigate', url: 'https://example.test/after' },
+      async executeProvider(_signal, browserService) {
+        expect(browserService).toBe(fake.service);
+        return { success: true, output: 'navigated' };
+      },
+    });
+
+    expect((await navigate(identity, 'agent-navigate')).success).toBe(true);
+    expect((await navigate(userIdentity, 'user-navigate')).success).toBe(true);
+    expect(acquire).toHaveBeenCalledOnce();
+    expect(adapter.getBinding(identity)?.surfaceSessionId)
+      .not.toBe(adapter.getBinding(userIdentity)?.surfaceSessionId);
+
+    await runtime.endRun(identity);
+    expect(release).not.toHaveBeenCalled();
+    await runtime.endRun(userIdentity);
+    expect(release).toHaveBeenCalledOnce();
   });
 
   it('reports delivered mutation with a missing successor as ambiguous and non-replayable', async () => {

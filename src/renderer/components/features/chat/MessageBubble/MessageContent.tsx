@@ -8,11 +8,13 @@ import remend from 'remend';
 import type { Components } from 'react-markdown';
 import type { MessageContentProps } from './types';
 import { useAppStore } from '../../../../stores/appStore';
+import { useSessionStore } from '../../../../stores/sessionStore';
 import { wrapFilePathsInBackticks, wrapTicketsAsLinks } from './filePathProcessor';
 import { parseLeadingTriggerToken } from './triggerTokenHighlight';
 import { isWebMode, copyPathToClipboard, openExternalLink } from '../../../../utils/platform';
 import { isPreviewable } from '../../../../utils/previewable';
 import { LinkPreviewCard, isRawUrlLink } from './LinkPreviewCard';
+import { openHttpLinkInRail } from '../../../../services/userBrowserLink';
 import { ChartBlock, isChartSpecSource } from './ChartBlock';
 import { GenerativeUIBlock } from './GenerativeUIBlock';
 import { GenerativeUIHost } from '../GenerativeUI/GenerativeUIHost';
@@ -84,6 +86,7 @@ function iactSendTextOf(node: React.ReactNode): string | null {
 export const MessageContent: React.FC<MessageContentProps> = memo(function MessageContent({ content, isUser, isStreaming = false, messageId, mediaContext }) {
   const openPreview = useAppStore((state) => state.openPreview);
   const workingDirectory = useAppStore((state) => state.workingDirectory);
+  const currentSessionId = useSessionStore((state) => state.currentSessionId);
   const streamingNeedsMarkdown = !isUser && isStreaming && shouldRenderStreamingContentAsMarkdown(content);
   const markdownSource = useThrottledStreamingContent(content, streamingNeedsMarkdown);
   const deferCompletedLayout = shouldDeferTurnContentLayout({
@@ -145,6 +148,12 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
     }
     openPreview(fullPath);
   }, [openPreview, workingDirectory]);
+
+  const handleOpenHttpLink = useCallback((href: string) => openHttpLinkInRail({
+    href,
+    conversationId: mediaContext?.sessionId || currentSessionId,
+    workspace: workingDirectory,
+  }), [currentSessionId, mediaContext?.sessionId, workingDirectory]);
 
   // Filter out system tags, auto-link ticket IDs, wrap file paths,
   // then close incomplete markdown tokens for streaming-safe rendering
@@ -511,7 +520,7 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
         // raw URL（链接文字就是 URL 本身）：favicon + 下划线链接，帮用户一眼认站点。
         // 轻呈现——只有 16px 图标，没有 chip 边框/底色。
         if (href && isRawUrlLink(href, children)) {
-          return <LinkPreviewCard href={href} />;
+          return <LinkPreviewCard href={href} onOpen={handleOpenHttpLink} />;
         }
 
         // Regular links（带描述文字的内联链接）
@@ -521,7 +530,9 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
             href={href}
             target="_blank"
             rel="noopener noreferrer"
-            onClick={(e) => { if (openExternalLink(href)) e.preventDefault(); }}
+            onClick={(e) => {
+              if ((href && handleOpenHttpLink(href)) || openExternalLink(href)) e.preventDefault();
+            }}
             className="text-primary-400 hover:text-primary-300 underline underline-offset-2 cursor-pointer"
           >
             {children}
@@ -553,7 +564,7 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
         );
       },
     }),
-    [filteredContent, handleOpenFile, handlePreviewHtml, isStreaming, mediaContext?.sessionId, mediaContext?.turnId, mediaContext?.messageId, messageId]
+    [filteredContent, handleOpenFile, handleOpenHttpLink, handlePreviewHtml, isStreaming, mediaContext?.sessionId, mediaContext?.turnId, mediaContext?.messageId, messageId]
   );
 
   // For user messages, render as plain text (no markdown processing)

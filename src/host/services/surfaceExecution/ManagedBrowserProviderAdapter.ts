@@ -251,8 +251,17 @@ export class ManagedBrowserProviderAdapter {
       return existing;
     }
 
-    const serviceKey = managedBrowserServiceKey(identity);
-    const browserService = this.acquireBrowser(serviceKey);
+    // One conversation owns one physical browser window. Separate agent/user runs
+    // keep separate Surface sessions and RunHandles, while sharing the page so an
+    // explicit user navigation can be continued by the agent without switching
+    // windows or weakening Surface ownership.
+    const shared = Array.from(this.bindings.values()).find((binding) => (
+      binding.identity.conversationId === identity.conversationId
+      && binding.browserService.isRunning()
+      && Boolean(binding.browserService.getActiveTab())
+    ));
+    const serviceKey = shared?.serviceKey || managedBrowserServiceKey(identity);
+    const browserService = shared?.browserService || this.acquireBrowser(serviceKey);
     await browserService.ensureSession('about:blank', {
       profileMode: 'isolated',
       leaseOwner: `surface:${identity.runId}`,
@@ -287,16 +296,23 @@ export class ManagedBrowserProviderAdapter {
         userSummary: 'Prepared an isolated managed Browser Surface session',
       });
       this.runtime.registerCleanup(prepared.subject, async () => {
-        this.bindings.delete(key);
-        await this.releaseBrowser(serviceKey);
+        await this.releaseBinding(key, binding);
       });
       binding.predecessorStateId = observed.observation.stateId;
       return binding;
     } catch (error) {
-      this.bindings.delete(key);
-      await this.releaseBrowser(serviceKey).catch(() => undefined);
+      await this.releaseBinding(key, binding).catch(() => undefined);
       throw error;
     }
+  }
+
+  private async releaseBinding(key: string, binding: ManagedBrowserBinding): Promise<void> {
+    if (this.bindings.get(key) === binding) this.bindings.delete(key);
+    const stillShared = Array.from(this.bindings.values()).some((candidate) => (
+      candidate.serviceKey === binding.serviceKey
+      && candidate.browserService === binding.browserService
+    ));
+    if (!stillShared) await this.releaseBrowser(binding.serviceKey);
   }
 
   private async captureObservation(

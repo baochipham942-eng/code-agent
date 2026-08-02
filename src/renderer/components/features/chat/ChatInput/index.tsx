@@ -632,6 +632,14 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     requestAnimationFrame(() => inputAreaRef.current?.focus());
   }, []);
 
+  // 「新建会话」落在已经打开的空白草稿上时（没有切换、没有新行），store 递增
+  // composerFocusNonce 作为唯一回执——把光标交还输入框，别让那次点击石沉大海。
+  const composerFocusNonce = useAppStore((state) => state.composerFocusNonce);
+  useEffect(() => {
+    if (composerFocusNonce === 0) return;
+    focusComposer();
+  }, [composerFocusNonce, focusComposer]);
+
   // Agent 自动补全单元：@ mention 与 /agent 命令的 state / 派生 / 键盘导航 / 选择 handler
   const {
     selectedAgentMentionIndex,

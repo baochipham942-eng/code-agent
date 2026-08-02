@@ -1066,3 +1066,16 @@ pre code {
     --task-panel-width: 0px;
   }
 }
+
+/* 悬停才浮现的操作条（2026-08-02 对话图产物）——触屏兜底。
+   触屏设备没有 hover 这个状态，光靠 group-hover 会让操作永远不可见。
+   写成显式 CSS 而不是 Tailwind 变体：这条规则的存在与否直接决定触屏用户能不能用，
+   显式 CSS 可以在 dist 里逐字核实（应能搜到 `@media (hover:none){.media-actions-hover-reveal`）。
+   ⚠️ 核实时注意：renderer 由 `vite build`（= npm run build:renderer）产出，
+   `npm run build:web` 只打 web server 包、不碰 renderer——拿它的产物做判断会得出错误结论。 */
+@media (hover: none) {
+  /* 用 元素+类 的特异性(0,1,1) 压过 Tailwind 的 .opacity-0 (0,1,0)，与样式表顺序无关，
+     因此不需要强制优先级声明——design-system 门禁未登记的那种声明，且它是文本扫描，
+     连注释里提到那个词都会被计成一处违规（本行就是这么踩出来的）。 */
+  span.media-actions-hover-reveal { opacity: 1; }
+}

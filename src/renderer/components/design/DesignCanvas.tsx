@@ -5,16 +5,19 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Stage, Layer, Rect as KonvaRect } from 'react-konva';
 import type Konva from 'konva';
-import { AlertCircle, Palette, Loader2, GitCompare, Presentation } from 'lucide-react';
+import { AlertCircle, Palette, GitCompare, MessageSquare, ImagePlus } from 'lucide-react';
 import { useI18n } from '../../hooks/useI18n';
 import { CloseButton } from '../primitives';
 import { useDesignStore } from './designStore';
 import { useDesignCanvasStore } from './designCanvasStore';
 import { useDesignCanvasGeneration, type ExpandDirection } from './useDesignCanvasGeneration';
 import { useDesignCanvasImport } from './useDesignCanvasImport';
+import { useDesignCanvasExports } from './useDesignCanvasExports';
+import { useVisualImageModelAvailability } from './useVisualImageModelAvailability';
 import { DesignCompareOverlay } from './DesignCompareOverlay';
-import { DesignImageEditPanel } from './DesignImageEditPanel';
-import { DesignLayerPanel } from './DesignLayerPanel';
+import { DesignCanvasZoomControls } from './DesignCanvasZoomControls';
+import { DesignImageToolbar } from './DesignImageToolbar';
+import { DesignCanvasSidePanel, type DesignCanvasSidePanelTab } from './DesignCanvasSidePanel';
 import { CanvasImage, KonvaVideoNode } from './DesignCanvasNodes';
 import { AnnotationLayer, reduceAnnot, type AnnotShape, type AnnotTool } from './AnnotationLayer';
 import { DiagramLayer, type DiagramCanvasTool, type TextEditTarget } from './DiagramLayer';
@@ -32,11 +35,13 @@ import { DIAGRAM_DEFAULT_COLOR, type CanvasShape } from './designDiagramTypes';
 import { saveCanvasDoc } from './designCanvasPersistence';
 import { dispatchCanvasUndoKey } from './canvasUndoKeybinding';
 import { dispatchCanvasDeleteKey } from './canvasDeleteKeybinding';
-import { readWorkspaceImageAsDataUrl, exportImagePdf, exportCanvasPptx } from './designFiles';
-import { imagePdfExportName, canvasPptxExportName } from './designTypes';
+import type { ResizeScales } from './designCanvasResizeRatio';
 import { imageModelsWithCap } from '@shared/constants/visualModels';
 import { estimateImageCostCny, formatCny } from '@shared/media/imageCost';
+import { DESIGN_IMAGE_MODELS } from '@shared/constants/pricing';
 import {
+  annotShapesToMaskGeometry,
+  hasMaskArea,
   normalizeDragRect,
   worldRectToImageRegion,
   type Rect,
@@ -50,7 +55,7 @@ import {
   type CanvasVideoNode,
 } from './designCanvasTypes';
 import {
-  classifyPointerDragIntent,
+  classifyCanvasPointerMode,
   classifyWheelIntent,
   panBy,
   panFromWheel,
@@ -58,7 +63,22 @@ import {
 } from './canvasCameraInput';
 import { VideoPlayOverlay, DiffEvidenceOverlay } from './DesignCanvasOverlays';
 
-export const DesignCanvas: React.FC<{ showErrorBar?: boolean }> = ({ showErrorBar = false }) => {
+export const DesignCanvas: React.FC<{
+  showErrorBar?: boolean;
+  /** 边栏归一面板（图层/历史，2026-08-01 工单①）浮出开关：默认收起，由 DesignCanvasTab 右缘细边栏图标控制。 */
+  sidePanelOpen?: boolean;
+  /** 面板内当前 tab（图层 / 历史）。 */
+  sidePanelTab?: DesignCanvasSidePanelTab;
+  onSidePanelTabChange?: (tab: DesignCanvasSidePanelTab) => void;
+  /** 点画布空白处（与清除选择同一判定）——DesignCanvasTab 借此收回浮出的面板。 */
+  onCanvasBlankPointerDown?: () => void;
+}> = ({
+  showErrorBar = false,
+  sidePanelOpen = false,
+  sidePanelTab = 'layers',
+  onSidePanelTabChange,
+  onCanvasBlankPointerDown,
+}) => {
   const { t } = useI18n();
   const wrapRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<Konva.Stage>(null);
@@ -109,6 +129,8 @@ export const DesignCanvas: React.FC<{ showErrorBar?: boolean }> = ({ showErrorBa
   const isShapeTool = diagramTool !== 'select' && diagramTool !== 'connect';
   const { editRegion, expand, removeWatermark, editByAnnotation, generateVideo } = useDesignCanvasGeneration();
   const { importFiles } = useDesignCanvasImport();
+  // 导出图片 / 单页 PDF / 全幅 PPTX（useDesignCanvasExports 抽出，逻辑未改）。
+  const { exportingPptx, exportImage, exportImagePdf, exportCanvasPptx } = useDesignCanvasExports();
 
   // 标注重绘态（B4）：模式开关/指令/模型全走 designStore 瞬时态，不持久化。
   // 模型独立于全局 imageModel（文生图默认）——选第 2 个 annotEdit 模型不应改用户文生图默认（B4 审查 Minor2）。
@@ -116,21 +138,23 @@ export const DesignCanvas: React.FC<{ showErrorBar?: boolean }> = ({ showErrorBa
   const setAnnotMode = useDesignStore((s) => s.setAnnotMode);
   const annotInstruction = useDesignStore((s) => s.annotInstruction);
   const setAnnotInstruction = useDesignStore((s) => s.setAnnotInstruction);
-  const annotModel = useDesignStore((s) => s.annotModel);
-  const setAnnotModel = useDesignStore((s) => s.setAnnotModel);
   // 标注图形（世界坐标）+ 当前工具，本地态（换图重置）。
   const [annotShapes, setAnnotShapes] = useState<AnnotShape[]>([]);
   const [annotTool, setAnnotTool] = useState<AnnotTool>('pen');
+  const annotDrawing = useRef(false);
   // 文字标注：画布内输入框（替代原生 window.prompt）。world=落点世界坐标，value=草稿文字。
   const [textDraft, setTextDraft] = useState<{ world: { x: number; y: number }; value: string } | null>(
     null,
   );
-  // 生效模型（cap 解析的唯一来源）：已选且仍具 annotEdit 能力则用之，否则取首个 annotEdit 模型为默认。
-  // 保证下拉值、成本预估、送 IPC 的模型三处一致且必为 annotEdit-capable。
-  const effectiveAnnotModel = useMemo(() => {
-    const caps = imageModelsWithCap('annotEdit');
-    return annotModel && caps.some((m) => m.id === annotModel) ? annotModel : caps[0]?.id ?? '';
-  }, [annotModel]);
+  // 可用性判据必须跟着**实际走的通道**走（2026-08-01 B1）：标注重绘改成「干净原图 + 标注 mask
+  // + 指令」后走的是 maskEdit 通道（万相），与局部重绘同一条，不再是 annotEdit（gpt-image-2）。
+  // 判据没跟着改的话，配了万相 key 但没配 gpt-image key 的用户会看到批注重绘被灰掉、实际却能用。
+  // 模型不再由用户在浮层里选（mask 通道固定走万相），故 annotModel/effectiveAnnotModel 一并退役。
+  const annotAvailability = useVisualImageModelAvailability();
+  const maskCapModels = useMemo(() => imageModelsWithCap('maskEdit'), []);
+  // 一个可用模型都没有 → 动词条批注重绘入口降级（禁用 + 说明原因），不让用户点了才失败。
+  const annotModelUnavailable =
+    annotAvailability != null && !maskCapModels.some((m) => annotAvailability[m.id]);
 
   // 圈选标注本地态（世界坐标）。
   const [annotating, setAnnotating] = useState(false);
@@ -139,8 +163,6 @@ export const DesignCanvas: React.FC<{ showErrorBar?: boolean }> = ({ showErrorBa
   const dragStart = useRef<{ x: number; y: number } | null>(null);
   const [instruction, setInstruction] = useState('');
   const [comparing, setComparing] = useState(false);
-  // 画布全幅 PPTX 导出进行中（防重复点击 + 按钮态）。
-  const [exportingPptx, setExportingPptx] = useState(false);
   // T4 diff 证据浮层目标节点（locked 徽章点开）。
   const [diffNode, setDiffNode] = useState<CanvasImageNode | null>(null);
   const [playingVideo, setPlayingVideo] = useState<CanvasVideoNode | null>(null);
@@ -150,6 +172,11 @@ export const DesignCanvas: React.FC<{ showErrorBar?: boolean }> = ({ showErrorBa
 
   // 淘汰(软删除)的节点落盘保留但不在画布上呈现/参与对比。
   const visibleNodes = useMemo(() => nodes.filter((n) => !n.discarded), [nodes]);
+
+  // 空态（2026-08-01 工单③ + K2 返工）：画布刚打开什么都没有时，空态引导与画布级图解工具条
+  // 共存——工具条顶部原位、引导居中，不再是「绘图」入口的单向门（那个只能置 true 的开关已删）。
+  // 判定含图解形状/连线：画了形状后画布已有内容，引导自然消失。
+  const canvasBare = visibleNodes.length === 0 && shapes.length === 0 && connectors.length === 0;
 
   // 单选→局部重绘面板；双选→A/B 对比。
   const selectedNode =
@@ -211,6 +238,33 @@ export const DesignCanvas: React.FC<{ showErrorBar?: boolean }> = ({ showErrorBa
       setSelected([id]);
     }
   };
+
+  // 顶条（图解工具条/图像动词条）实测底缘：窄栏下内条 flex-wrap 收成二/三排，底缘不再固定。
+  // 边栏归一面板和提示文字都必须钉在它下面，否则窄栏下互相叠压——
+  // 402px 栏宽实测：图层面板盖住工具条（2026-08-01 窄栏遮挡工单，elementFromPoint 证据）。
+  // 按工具条类型切换重挂观察。
+  const [topBarBottom, setTopBarBottom] = useState(56);
+  const imageBarActive = selectedImageNode !== null;
+  useEffect(() => {
+    const wrap = wrapRef.current;
+    if (!wrap) return;
+    const bar = wrap.querySelector<HTMLElement>(
+      '[data-testid="diagram-toolbar"], [data-testid="design-image-toolbar"]',
+    );
+    if (!bar) return;
+    const update = (): void => {
+      const wrapRect = wrap.getBoundingClientRect();
+      const barRect = bar.getBoundingClientRect();
+      if (barRect.height === 0) return; // jsdom 无布局，保持默认
+      setTopBarBottom(Math.round(barRect.bottom - wrapRect.top));
+    };
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(bar);
+    return () => ro.disconnect();
+    // 依赖里必须有 canvasBare：空态（K2 前工具条不挂载；K2 后空态也挂）与选中态切换都会换工具条——
+    // 只在挂载时量一次的话，后出现的工具条永远量不到，窄栏下面板顶缘会钉在默认值 56 压住工具条。
+  }, [imageBarActive, canvasBare]);
 
   // 容器尺寸跟随（Stage 需要显式像素宽高）。
   useEffect(() => {
@@ -450,7 +504,27 @@ export const DesignCanvas: React.FC<{ showErrorBar?: boolean }> = ({ showErrorBa
   // 圈选标注：mousedown 起框 → move 更新 → up 落框（仅 annotating 时）。
   // 图解绘制（shape 工具）也走 Stage 处理器（对所有点击触发，能在节点之上起笔）。
   const handleMouseDown = (e: Konva.KonvaEventObject<MouseEvent>): void => {
-    if (isShapeTool) {
+    const mode = classifyCanvasPointerMode({
+      annotationMode: annotMode && selectedImageNode !== null,
+      diagramDrawing: isShapeTool,
+      regionDrawing: annotating,
+      button: e.evt.button,
+      spaceKey: spaceDownRef.current,
+    });
+    if (mode === 'annotation') {
+      const w = worldFromPointer();
+      if (!w) return;
+      if (annotTool === 'text') {
+        setTextDraft({ world: w, value: '' });
+        return;
+      }
+      annotDrawing.current = true;
+      setAnnotShapes((current) =>
+        reduceAnnot(current, { type: 'down', tool: annotTool, x: w.x, y: w.y }),
+      );
+      return;
+    }
+    if (mode === 'diagram') {
       const w = worldFromPointer();
       if (!w) return;
       if (diagramTool === 'text') {
@@ -470,24 +544,21 @@ export const DesignCanvas: React.FC<{ showErrorBar?: boolean }> = ({ showErrorBa
       setDiagramDraft(next[0] ?? null);
       return;
     }
-    if (!annotating && !annotMode) {
+    if (mode === 'pan') {
       const stage = stageRef.current;
       const pointer = stage?.getPointerPosition();
-      const intent = classifyPointerDragIntent({
-        button: e.evt.button,
-        spaceKey: spaceDownRef.current,
-      });
-      if (pointer && intent === 'pan') {
+      if (pointer) {
         e.evt.preventDefault();
         panDragRef.current = pointer;
-        return;
       }
+      return;
     }
-    if (!annotating) {
-      // 非标注/非绘制模式：点空白处清除选择（节点 + 图解）。
+    if (mode === 'selection') {
+      // 非标注/非绘制模式：点空白处清除选择（节点 + 图解），并通知外层收回浮出面板（工单②）。
       if (e.target === stageRef.current) {
         setSelected([]);
         setSelectedDiagram(null);
+        onCanvasBlankPointerDown?.();
       }
       return;
     }
@@ -497,6 +568,12 @@ export const DesignCanvas: React.FC<{ showErrorBar?: boolean }> = ({ showErrorBa
     setDraft({ x: w.x, y: w.y, width: 0, height: 0 });
   };
   const handleMouseMove = (): void => {
+    if (annotDrawing.current) {
+      const w = worldFromPointer();
+      if (!w) return;
+      setAnnotShapes((current) => reduceAnnot(current, { type: 'move', x: w.x, y: w.y }));
+      return;
+    }
     if (panDragRef.current) {
       const pointer = stageRef.current?.getPointerPosition();
       if (!pointer) return;
@@ -518,6 +595,11 @@ export const DesignCanvas: React.FC<{ showErrorBar?: boolean }> = ({ showErrorBa
     setDraft(normalizeDragRect(dragStart.current.x, dragStart.current.y, w.x, w.y));
   };
   const handleMouseUp = (): void => {
+    if (annotDrawing.current) {
+      annotDrawing.current = false;
+      setAnnotShapes((current) => reduceAnnot(current, { type: 'up' }));
+      return;
+    }
     if (panDragRef.current) {
       panDragRef.current = null;
       return;
@@ -542,6 +624,13 @@ export const DesignCanvas: React.FC<{ showErrorBar?: boolean }> = ({ showErrorBa
     dragStart.current = null;
   };
 
+  // 适配视口（K2 手动入口）：复用 computeFitCamera 把全部可见节点重新装进视口。
+  // 不改「节点数增加时自动 fit 一次」的既有行为——这只是新增的手动触发。
+  const fitView = (): void => {
+    const fit = computeFitCamera(visibleNodes, size.w, size.h);
+    if (fit) setCamera(fit);
+  };
+
   const focusNode = (id: string): void => {
     const node = useDesignCanvasStore.getState().nodes.find((candidate) => candidate.id === id);
     if (!node || size.w <= 0 || size.h <= 0) return;
@@ -551,83 +640,6 @@ export const DesignCanvas: React.FC<{ showErrorBar?: boolean }> = ({ showErrorBa
       x: size.w / 2 - (node.x + node.width / 2) * current.scale,
       y: size.h / 2 - (node.y + node.height / 2) * current.scale,
     }));
-  };
-
-  const onExport = async (node: CanvasImageNode): Promise<void> => {
-    setError(null);
-    try {
-      const url = /^(data:|https?:)/.test(node.src)
-        ? node.src
-        : runDir
-          ? await readWorkspaceImageAsDataUrl(`${runDir.replace(/\/+$/, '')}/${node.src}`)
-          : null;
-      if (!url) {
-        setError('图片导出失败，请确认原图仍在工作区后重试。');
-        return;
-      }
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = node.src.split('/').pop() || 'design.png';
-      a.click();
-    } catch {
-      setError('图片导出失败，请稍后重试。');
-    }
-  };
-
-  // 选中图节点 → 单页 PDF（主进程 pdfkit 图嵌）→ 落「下载」。
-  // 解析成 dataUrl 再传（data: 直用；相对路径经 readBinary 转 dataUrl）。
-  // pdfkit 需要图字节，纯 http URL（未落盘的 OSS 临时链接）不直接支持，跳过。
-  const onExportPdf = async (node: CanvasImageNode): Promise<void> => {
-    setError(null);
-    try {
-      const dataUrl = /^data:/.test(node.src)
-        ? node.src
-        : runDir && !/^https?:/.test(node.src)
-          ? await readWorkspaceImageAsDataUrl(`${runDir.replace(/\/+$/, '')}/${node.src}`)
-          : null;
-      if (!dataUrl) {
-        setError('PDF 导出失败，请确认原图仍在工作区后重试。');
-        return;
-      }
-      const result = await exportImagePdf({ dataUrl }, imagePdfExportName(Date.now()));
-      if (!result.filePath) {
-        setError(result.error ? `PDF 导出失败：${result.error}` : 'PDF 导出失败，请稍后重试。');
-      }
-    } catch {
-      setError('PDF 导出失败，请稍后重试。');
-    }
-  };
-
-  // 画布全部活动图节点 → 全幅 PPTX（每张 1 张全幅 slide）→ 落「下载」。
-  // 薄版：导出当前画布上全部可见（未淘汰）图节点，按画布顺序。逐张解析成 dataUrl
-  // （data: 直用；相对路径经 readBinary 转）后送主进程 pptxgenjs 拼装。
-  const onExportPptx = async (): Promise<void> => {
-    if (visibleNodes.length === 0 || exportingPptx) return;
-    setError(null);
-    setExportingPptx(true);
-    try {
-      const images: Array<{ dataUrl?: string }> = [];
-      for (const node of visibleNodes) {
-        const dataUrl = /^data:/.test(node.src)
-          ? node.src
-          : runDir && !/^https?:/.test(node.src)
-            ? await readWorkspaceImageAsDataUrl(`${runDir.replace(/\/+$/, '')}/${node.src}`)
-            : null;
-        if (dataUrl) images.push({ dataUrl });
-      }
-      if (images.length === 0) {
-        setError('PPTX 导出失败，请确认画布中的原图仍在工作区后重试。');
-        return;
-      }
-      const result = await exportCanvasPptx(images, canvasPptxExportName(Date.now()));
-      if (!result.filePath) {
-        setError(result.error ? `PPTX 导出失败：${result.error}` : 'PPTX 导出失败，请稍后重试。');
-      }
-    } catch {
-      setError('PPTX 导出失败，请稍后重试。');
-    } finally {
-      setExportingPptx(false);
-    }
   };
 
   const onRepaint = async (): Promise<void> => {
@@ -643,16 +655,27 @@ export const DesignCanvas: React.FC<{ showErrorBar?: boolean }> = ({ showErrorBa
     }
   };
 
-  // 标注重绘：成本确认 → 调 editByAnnotation → 成功后清标注、退模式。
+  // 标注重绘：先校验有没有圈出可重绘区域 → 成本确认 → 调 editByAnnotation → 成功后清标注、退模式。
   const onAnnotRedraw = async (): Promise<void> => {
     if (!selectedImageNode || annotShapes.length === 0 || !annotInstruction.trim()) return;
-    const est = formatCny(estimateImageCostCny(effectiveAnnotModel));
+    // 2026-08-02 收口工单：校验必须排在付费确认之前——只画了文字标签没圈区域时，
+    // 旧顺序是先问「要花 ¥x 吗」、点了确定才被告知「请先圈出区域」。
+    // 可以在世界坐标上先判：editByAnnotation 里那道守卫判的是同一个几何，只是先过了
+    // shapesToNodeLocal（平移）和 composeAnnotOps（正比例缩放）——两者都是 1:1 映射、
+    // 不过滤不裁剪、缩放因子恒正，「有没有面积」这个布尔值在两个坐标系里恒等。
+    // 注意：editByAnnotation 内部那道守卫保留不动——它是拦付费空调用的最后一道闸，
+    // 这道是为了把提示提前给用户，两者不是二选一。
+    if (!hasMaskArea(annotShapesToMaskGeometry(annotShapes))) {
+      useDesignCanvasStore.getState().setError(t.design.errAnnotNoRegion);
+      return;
+    }
+    // 成本按 mask 通道实际用的编辑模型算（万相 imageedit），不再按用户选的标注模型。
+    const est = formatCny(estimateImageCostCny(DESIGN_IMAGE_MODELS.edit));
     if (!window.confirm(`${t.design.annotCostConfirm}（${est}）`)) return;
     await editByAnnotation({
       baseNode: selectedImageNode,
       shapes: annotShapes,
       instruction: annotInstruction,
-      model: effectiveAnnotModel,
     });
     if (!useDesignCanvasStore.getState().error) {
       setAnnotShapes([]);
@@ -673,7 +696,28 @@ export const DesignCanvas: React.FC<{ showErrorBar?: boolean }> = ({ showErrorBa
     await removeWatermark({ baseNode: selectedImageNode });
   };
 
+  // 调整大小（五档比例预设）：computeResizeExpandPlan 给出四向 scale，走一次 expand 调用。
+  // 2026-08-01 之前这里是两步串行（IPC 一次只收单个 direction+ratio），要付两次钱，而且第二步是
+  // 在第一步的生成结果上再生成、画质二次劣化。IPC 支持四向独立 scale 后降到一次。
+  const onResizePreset = async (scales: ResizeScales | null): Promise<void> => {
+    if (!selectedImageNode || !scales) return;
+    await expand({ baseNode: selectedImageNode, scales });
+  };
+
   const draftAndCommitted = draft ? [...annotations, draft] : annotations;
+
+  // —— 顶条下方的垂直分区（2026-08-01 窄栏遮挡工单：三处不再抢同一块空间）——
+  // 右列：边栏归一面板（浮出时）顶缘钉在顶条实测底缘下。
+  // 左槽：连线/绘制模式提示专用，顶缘同右列、左对齐；
+  // 可用宽 = 栏宽 − 左右边距 −（面板浮出时）面板宽 384 + 右缘偏移 48。不足 12rem 整条不显示——
+  // 要么完整可读，要么干脆不显示，不许露一半被面板压住。
+  const hintMaxWidth = size.w - 32 - (sidePanelOpen ? 432 : 0);
+  const hintSlotFits = hintMaxWidth >= 192;
+  const hintSlotStyle: React.CSSProperties = {
+    top: topBarBottom + 8,
+    maxWidth: sidePanelOpen ? hintMaxWidth : 'calc(100% - 2rem)',
+  };
+  const sidePanelTop = topBarBottom + 8;
 
   return (
     <div
@@ -712,9 +756,10 @@ export const DesignCanvas: React.FC<{ showErrorBar?: boolean }> = ({ showErrorBa
           onMouseUp={handleMouseUp}
           onMouseLeave={() => {
             panDragRef.current = null;
+            annotDrawing.current = false;
           }}
         >
-          <Layer>
+          <Layer listening={!annotMode}>
             {visibleNodes.map((node) =>
               // 图节点走 CanvasImage；视频节点走 KonvaVideoNode（缩略图+播放徽标）。
               isVideoNode(node) ? (
@@ -755,7 +800,7 @@ export const DesignCanvas: React.FC<{ showErrorBar?: boolean }> = ({ showErrorBa
           </Layer>
           {/* 图解层（连线 + freeform 形状），始终渲染；绘制走 Stage 处理器，本层管渲染+选中+连接。 */}
           <DiagramLayer
-            tool={diagramTool}
+            tool={annotMode ? 'rect' : diagramTool}
             nodes={visibleNodes}
             connectors={connectors}
             shapes={shapes}
@@ -767,12 +812,7 @@ export const DesignCanvas: React.FC<{ showErrorBar?: boolean }> = ({ showErrorBa
             onRequestText={openDiagramText}
           />
           {annotMode && selectedImageNode && (
-            <AnnotationLayer
-              shapes={annotShapes}
-              onShapesChange={setAnnotShapes}
-              tool={annotTool}
-              onRequestText={(world) => setTextDraft({ world, value: '' })}
-            />
+            <AnnotationLayer shapes={annotShapes} />
           )}
           {/* ADR-026：agent 待审批提议的 ghost 虚影（蓝色虚线/半透明），点应用才落库。 */}
           {canvasProposal.pending && (
@@ -837,27 +877,92 @@ export const DesignCanvas: React.FC<{ showErrorBar?: boolean }> = ({ showErrorBa
       {/* ADR-026 三刀：已淘汰节点恢复入口（软删找回）。 */}
       <DiscardedNodesTray />
 
-      {/* 图解工具条（模式/调色板/删除）——消费 surface 只放工具选择，不放配置管理。 */}
-      <DiagramToolbar
-        tool={diagramTool}
-        onToolChange={(tl) => {
-          setDiagramTool(tl);
-          setSelectedDiagram(null);
-        }}
-        color={diagramColor}
-        onColorChange={setDiagramColor}
-        canDelete={selectedDiagram !== null}
-        onDelete={onDeleteSelectedDiagram}
-      />
+      {/* 缩放控件（2026-08-01 K2）：右下角悬浮——读数（档位菜单入口）+ 适配视口。
+          空画布不渲染：没内容可缩放，适配视口也无意义。 */}
+      {!canvasBare && (
+        <DesignCanvasZoomControls
+          camera={camera}
+          viewport={size}
+          onCameraChange={setCamera}
+          onFit={fitView}
+        />
+      )}
 
-      {/* 图解模式提示（connect/绘制时给一句引导）。 */}
-      {diagramTool === 'connect' && (
-        <div className="pointer-events-none absolute left-1/2 top-16 z-10 -translate-x-1/2 rounded-md bg-zinc-900/85 px-2.5 py-1 text-[11px] text-sky-200/90 shadow">
+      {/* 顶栏按选中态反转（2026-07-31）：选中单个图节点 = 图像动词条（批注重绘/局部重绘/调整大小/扩图/更多），
+          否则维持画布级图解工具条（模式/调色板/删除 + 导出 PPTX——2026-08-01 工单②收进这条，
+          作用对象都是整块画布）。K2 返工：空态也照常挂图解工具条，与空态引导共存。
+          2026-08-01 f1：图解工具条外条满宽修 shrink-to-fit 半宽换行（700px 栏不再莫名二排）。 */}
+      {selectedImageNode ? (
+        <DesignImageToolbar
+          t={t}
+          generating={generating}
+          imageWidth={selectedImageNode.width}
+          imageHeight={selectedImageNode.height}
+          annotating={annotating}
+          setAnnotating={setAnnotating}
+          annotationCount={annotations.length}
+          onClearAnnotations={() => setAnnotations([])}
+          instruction={instruction}
+          setInstruction={setInstruction}
+          onRepaint={() => void onRepaint()}
+          onExportImage={() => void exportImage(selectedImageNode)}
+          onGenerateVideo={() => void generateVideo({ baseNode: selectedImageNode })}
+          onExportPdf={() => void exportImagePdf(selectedImageNode)}
+          onExportCanvasPptx={() => void exportCanvasPptx()}
+          exportingPptx={exportingPptx}
+          expandDirection={expandDirection}
+          expandRatio={expandRatio}
+          onExpandDirectionChange={setExpandDirection}
+          onExpandRatioChange={setExpandRatio}
+          onExpand={() => void onExpand()}
+          onRemoveWatermark={() => void onRemoveWatermark()}
+          onResizePreset={(scales) => void onResizePreset(scales)}
+          annotMode={annotMode}
+          setAnnotMode={setAnnotMode}
+          annotTool={annotTool}
+          setAnnotTool={setAnnotTool}
+          annotModelUnavailable={annotModelUnavailable}
+          annotInstruction={annotInstruction}
+          setAnnotInstruction={setAnnotInstruction}
+          annotShapeCount={annotShapes.length}
+          onAnnotRedraw={() => void onAnnotRedraw()}
+        />
+      ) : (
+        <DiagramToolbar
+          tool={diagramTool}
+          onToolChange={(tl) => {
+            setDiagramTool(tl);
+            setSelectedDiagram(null);
+          }}
+          color={diagramColor}
+          onColorChange={setDiagramColor}
+          canDelete={selectedDiagram !== null}
+          onDelete={onDeleteSelectedDiagram}
+          exportPptx={
+            visibleNodes.length > 0
+              ? { exporting: exportingPptx, onExport: () => void exportCanvasPptx() }
+              : undefined
+          }
+        />
+      )}
+
+      {/* 图解模式提示（connect/绘制时给一句引导）：左侧槽位，
+          顶缘钉在顶条实测底缘下——原 top-16 居中，窄栏二排工具条下会压住/被压，且居中位会撞右列。 */}
+      {diagramTool === 'connect' && hintSlotFits && (
+        <div
+          data-testid="design-canvas-diagram-hint"
+          className="pointer-events-none absolute left-4 z-10 rounded-md bg-zinc-900/85 px-2.5 py-1 text-[11px] text-sky-200/90 shadow"
+          style={hintSlotStyle}
+        >
           {t.design.diagramConnectHint}
         </div>
       )}
-      {isShapeTool && diagramTool !== 'text' && (
-        <div className="pointer-events-none absolute left-1/2 top-16 z-10 -translate-x-1/2 rounded-md bg-zinc-900/85 px-2.5 py-1 text-[11px] text-zinc-300 shadow">
+      {isShapeTool && diagramTool !== 'text' && hintSlotFits && (
+        <div
+          data-testid="design-canvas-diagram-hint"
+          className="pointer-events-none absolute left-4 z-10 rounded-md bg-zinc-900/85 px-2.5 py-1 text-[11px] text-zinc-300 shadow"
+          style={hintSlotStyle}
+        >
           {t.design.diagramDrawHint}
         </div>
       )}
@@ -891,11 +996,27 @@ export const DesignCanvas: React.FC<{ showErrorBar?: boolean }> = ({ showErrorBa
           );
         })()}
 
-      {visibleNodes.length === 0 && (
-        <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-2 px-8 text-sm text-zinc-500">
+      {/* 空态引导（2026-08-01 工单③ + K2 返工）：画布刚打开时第一眼对的是主线「AI 生成图 → 精修」——
+          一句话说清这块画布是干什么的 + 两条主线入口（对话描述 / 拖入粘贴图）。
+          K2：删掉「绘图」单向门，引导与画布级图解工具条共存（工具条顶部原位、引导居中）。 */}
+      {canvasBare && (
+        <div
+          data-testid="design-canvas-empty-guide"
+          className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-4 px-8 text-sm text-zinc-500"
+        >
           <Palette className="h-6 w-6 text-zinc-600" />
           {/* 窄栏下长文案会贴边溢出（2026-07-27 dogfood）：限宽 + 居中 + 行距 */}
           <span className="max-w-[36ch] text-center leading-relaxed">{t.design.canvasEmpty}</span>
+          <div className="flex flex-col gap-2 text-xs text-zinc-400">
+            <div className="flex items-center gap-2">
+              <MessageSquare className="h-3.5 w-3.5 shrink-0 text-sky-300" />
+              <span>{t.design.canvasEmptyChatEntry}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <ImagePlus className="h-3.5 w-3.5 shrink-0 text-emerald-300" />
+              <span>{t.design.canvasEmptyDropEntry}</span>
+            </div>
+          </div>
         </div>
       )}
 
@@ -942,77 +1063,27 @@ export const DesignCanvas: React.FC<{ showErrorBar?: boolean }> = ({ showErrorBa
           );
         })()}
 
-      {/* 画布全幅 PPTX 导出（薄版）：当前画布上有图即显示，把全部活动图节点打成一份
-          全幅 deck（每张 1 张全幅 slide），给干系人打包。<1 张图时隐藏。 */}
-      {visibleNodes.length > 0 && (
-        <>
-          {/* ds-allow:start 画布操作栏沿用旧裸 button 样式，与同栏导出图片/PDF 按钮一致；design-mode 整体 W3 收口时统一迁 primitive */}
-          <button
-            type="button"
-            onClick={() => void onExportPptx()}
-            disabled={exportingPptx}
-            className="absolute right-4 top-4 inline-flex items-center gap-1.5 rounded-lg border border-white/[0.1] bg-zinc-900/90 px-3 py-1.5 text-xs text-zinc-300 shadow-xl backdrop-blur transition-colors hover:text-zinc-100 disabled:opacity-50"
-          >
-            {exportingPptx ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <Presentation className="h-3.5 w-3.5" />
-            )}
-            {t.design.exportCanvasPptx}
-          </button>
-          {/* ds-allow:end */}
-        </>
-      )}
+      {/* 画布全幅 PPTX 导出已收进画布级工具条（2026-08-01 工单②，见下方 DiagramToolbar 的
+          exportPptx 槽）——那条工具条作用对象是整块画布，导出整块画布所有节点属于这里；
+          选中图节点时的图级动词条维持「更多 · 整个画布」组入口。两种状态都可达。 */}
 
-      <DesignLayerPanel
-        nodes={nodes}
-        selectedIds={selectedIds}
-        onSelect={(id, additive) => selectNode(id, additive)}
-        onRename={renameCanvasNode}
-        onSetChosen={setCanvasChosen}
-        onDiscard={discardCanvasNode}
-        onDelete={(id) => deleteCanvasNodes([id])}
-        onFocus={focusNode}
-      />
-
-      {/* 选中图后的局部重绘面板（仅图节点；视频节点不显示图像编辑工具） */}
-      {selectedImageNode && (
-        <DesignImageEditPanel
-          t={t}
-          generating={generating}
-          annotating={annotating}
-          setAnnotating={setAnnotating}
-          annotationCount={annotations.length}
-          onClearAnnotations={() => setAnnotations([])}
-          instruction={instruction}
-          setInstruction={setInstruction}
-          onRepaint={() => void onRepaint()}
-          onExportImage={() => void onExport(selectedImageNode)}
-          onGenerateVideo={() => void generateVideo({ baseNode: selectedImageNode })}
-          onExportPdf={() => void onExportPdf(selectedImageNode)}
-          expandDirection={expandDirection}
-          expandRatio={expandRatio}
-          onExpandDirectionChange={setExpandDirection}
-          onExpandRatioChange={setExpandRatio}
-          onExpand={() => void onExpand()}
-          onRemoveWatermark={() => void onRemoveWatermark()}
-          annotMode={annotMode}
-          setAnnotMode={setAnnotMode}
-          annotTool={annotTool}
-          setAnnotTool={setAnnotTool}
-          effectiveAnnotModel={effectiveAnnotModel}
-          setAnnotModel={setAnnotModel}
-          annotInstruction={annotInstruction}
-          setAnnotInstruction={setAnnotInstruction}
-          annotShapeCount={annotShapes.length}
-          onAnnotRedraw={() => void onAnnotRedraw()}
+      {/* 边栏归一面板（2026-08-01 工单①：图层/历史同面板双 tab）默认收起：由右缘细边栏
+          图标浮出、压在画布上；rightOffset 让开细边栏，保证「再点图标收回」全程可达。 */}
+      {sidePanelOpen && (
+        <DesignCanvasSidePanel
+          tab={sidePanelTab}
+          onTabChange={(tab) => onSidePanelTabChange?.(tab)}
+          nodes={nodes}
+          selectedIds={selectedIds}
+          onSelect={(id, additive) => selectNode(id, additive)}
+          onRename={renameCanvasNode}
+          onSetChosen={setCanvasChosen}
+          onDiscard={discardCanvasNode}
+          onDelete={(id) => deleteCanvasNodes([id])}
+          onFocus={focusNode}
+          topOffset={sidePanelTop}
+          rightOffset={48}
         />
-      )}
-
-      {selectedIds.length === 0 && visibleNodes.length > 0 && (
-        <div className="pointer-events-none absolute left-4 top-4 rounded-lg bg-zinc-900/70 px-3 py-1.5 text-[11px] text-zinc-400 backdrop-blur">
-          {t.design.canvasSelectHint} · {t.design.compareHint}
-        </div>
       )}
 
       {/* 双选 → A/B 对比入口 */}

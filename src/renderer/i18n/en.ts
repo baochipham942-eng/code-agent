@@ -30,6 +30,7 @@ import { expertEn } from './expert';
 import { generativeUIEn } from './generativeUI';
 import { capabilityHubEn } from './capabilityHub';
 import { neoTopicsEn } from './neoTopics';
+import { designToolbarEn } from './designToolbar';
 import { projectSpaceEn } from './projectSpace';
 import { evalCenterEn } from './evalCenter';
 import { localOpsEn } from './localOps';
@@ -202,38 +203,12 @@ export const en: Translations = {
     previewEmpty: 'Fill in a requirement and click Generate — your web page renders here live',
     previewGenerating: 'Generating web page…',
     canvasEmpty: 'Describe what you want in the chat — AI generates designs onto this canvas. Pan & zoom to explore.',
+    canvasEmptyChatEntry: 'Describe the design you want in the chat on the left',
+    canvasEmptyDropEntry: 'Drag in or paste an image',
     canvasGenSoon: 'Canvas is ready. Image generation and lasso-annotation iteration land in the next step',
-    canvasSelectHint: 'Select an image, then lasso a region for local repaint',
-    annotateStart: 'Annotate',
-    annotateStop: 'Exit annotate',
-    annotateHint: 'Now drag on the image to mark regions to edit (multiple allowed)',
-    annotateGuide: 'Click Annotate, drag a box on the image to mark the region, then add an instruction',
-    editInstructionPlaceholder: 'Describe what the marked region should become, e.g. replace this with an orange round button',
-    editRegionBtn: 'Repaint region',
-    editingRegion: 'Repainting…',
-    expandTitle: 'Expand / Remove watermark',
-    expandBtn: 'Expand canvas',
-    expandDirUp: 'Up',
-    expandDirDown: 'Down',
-    expandDirLeft: 'Left',
-    expandDirRight: 'Right',
-    expandDirAll: 'All',
-    removeWatermarkBtn: 'Remove watermark',
-    clearAnnotations: 'Clear marks',
-    errNoAnnotation: 'Mark a region on the image first',
-    // B4 标注重绘
-    annotMode: 'Annotate & redraw',
-    annotInstruction: 'Redraw instruction',
-    annotInstructionPlaceholder: 'Describe how to redraw the marked spots, e.g. make the marked button bigger and orange',
-    annotRedraw: 'Redraw',
-    annotToolPen: 'Pen',
-    annotToolArrow: 'Arrow',
-    annotToolRect: 'Box',
-    annotToolText: 'Text',
-    annotTextPlaceholder: 'Type annotation text, Enter to confirm',
-    annotCostConfirm: 'Redraw with the annotated image? Billed to your BYOK key',
+    // Image-edit vocabulary (annotate/lasso/expand/watermark/export/cost) moved to ./designToolbar
+    // (1000-line gate); re-expanded at the end of this namespace via ...designToolbarEn.design.
     compareBtn: 'Compare these two',
-    compareHint: 'Shift-click two images for A/B compare',
     compareTitle: 'A/B version compare',
     setMainVersion: 'Set as main',
     discardVersion: 'Discard',
@@ -294,8 +269,6 @@ export const en: Translations = {
     aspectRatioLabel: 'Aspect ratio',
     imageModel: 'Image model',
     imageModelUnconfigured: 'No API key',
-    exportImage: 'Export image',
-    exportImagePdf: 'Export PDF',
     exportCanvasPptx: 'Export PPTX',
     diagramToolbarLabel: 'Diagram',
     diagramSelect: 'Select',
@@ -316,6 +289,9 @@ export const en: Translations = {
     referenceHint: 'Reference images are sent to the model as visual guidance on generate (Wanx supports 1; the first is used)',
     referenceBadge: 'Ref',
     layerPanelTitle: 'Layers',
+    sidePanelExpand: 'Expand canvas panel',
+    sidePanelCollapse: 'Collapse canvas panel',
+    layerPanelEmpty: 'No layers yet — generate or import an image and it shows up here',
     layerUnnamed: 'Untitled node',
     layerKindImage: 'Image',
     layerKindVideo: 'Video',
@@ -330,6 +306,7 @@ export const en: Translations = {
     layerSetMain: 'Set main',
     layerDiscard: 'Discard',
     layerEmptyInspector: 'Select a layer or canvas node to inspect properties',
+    layerDetails: 'Details',
     deviceDesktop: 'Desktop',
     deviceTablet: 'Tablet',
     deviceMobile: 'Mobile',
@@ -361,7 +338,6 @@ export const en: Translations = {
     errNoRequirement: 'Please enter a requirement first',
     errNoBaseImageForI2v: 'Image-to-video needs an image selected on the canvas',
     videoCostConfirm: 'This video will cost approximately',
-    generateVideoFromImage: 'Generate video',
     errResolveDir: 'Could not prepare the design draft directory, please retry',
     errDispatch: 'Failed to dispatch generation',
     errTimeout: 'Generation timed out — no prototype file detected',
@@ -369,15 +345,12 @@ export const en: Translations = {
     errNoPrototype: 'Generate or pick a prototype first',
     errNoInstruction: 'Enter a change request first',
     // T2 cost transparency + undo/redo trust UI
-    costEstimateLabel: 'Est. this run',
     costActualLabel: 'Spent',
     costFree: 'Free',
     costHint: 'Billed to your BYOK key, shown before each run',
     historyPanelTitle: 'Design history',
     historyPanelEmpty: 'After you generate or inpaint, each step shows up here as a nameable, rollback-able version',
     historyTotalSpend: 'Total spent',
-    historyExpand: 'Expand design history',
-    historyCollapse: 'Collapse design history',
     historyReferenceGroup: 'References',
     historyStepGenerate: 'Generate',
     historyStepEdit: 'Inpaint',
@@ -468,6 +441,8 @@ export const en: Translations = {
       apiKeyRequired: 'Please enter the API Key',
       saveFailed: 'Save failed; check the URL and key, then retry',
     },
+    // Image action bar / annotate / expand / export vocabulary (domain-file split, see header note)
+    ...designToolbarEn.design,
   },
 
   // Settings Modal

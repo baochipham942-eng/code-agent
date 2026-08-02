@@ -28,7 +28,7 @@ import {
 } from './customRealtimeVoiceProviders';
 import { resolveVoiceRouting } from './voiceRouting';
 import { beginVoiceDispatch, endVoiceDispatch, pushVoiceTranscript, setVoiceDispatchFocus } from './voiceAgentCoordinator';
-import { composeVoiceInstructions, focusChanged } from './voiceContextAssembler';
+import { composeVoiceInstructions, focusChanged, type VoiceContinuityContext } from './voiceContextAssembler';
 import { recordVoiceCall } from './voiceUsageLedger';
 import { VOICE_TOOL_DEFINITIONS, executeVoiceTool } from './voiceTools';
 import type { VoiceLiveSettings } from '../../../shared/contract/settings';
@@ -44,6 +44,33 @@ function readVoiceLiveSettings(): VoiceLiveSettings | undefined {
     return getConfigService().getSettings().voice?.live;
   } catch {
     return undefined;
+  }
+}
+
+/**
+ * 新拨号才读取连续性；宽限窗重连直接复用 active，不会重复扫消息流。
+ *
+ * TaskManager.sessionStates 是进程内 Map，app 重启后会回到 idle。此时即使 DB 里还有未结算的
+ * voiceDispatch，也宁可不注入 work item 半段，避免把陈旧记录伪报成仍在运行；transcript 半段
+ * 仍由 DB 正常恢复。消息读取或状态读取失败同样整体降级为空，不阻断拨号。
+ */
+async function loadVoiceContinuity(neoSessionId: string): Promise<VoiceContinuityContext | null> {
+  try {
+    // 严格顺序：消息源不可用时不要提前拉起 TaskManager 依赖树，降级路径不能留下悬空 import。
+    const messages = await getSessionManager().getMessages(neoSessionId);
+    const { getTaskManager } = await import('../../task');
+    return {
+      neoSessionId,
+      sourceSessionId: neoSessionId,
+      messages,
+      taskState: getTaskManager().getSessionState(neoSessionId),
+      now: Date.now(),
+    };
+  } catch (err) {
+    logger.warn('voice continuity unavailable', {
+      message: err instanceof Error ? err.message : 'unknown',
+    });
+    return null;
   }
 }
 
@@ -87,6 +114,8 @@ interface ActiveSession {
   instructions: string;
   /** 本次通话真用的上游模型（设置白名单解析后），挂断摘要如实记它 */
   conversationModel: string;
+  /** 新拨号时从 DB + TaskManager 取到的上一通上下文；焦点刷新重拼 instructions 时必须保留。 */
+  continuity: VoiceContinuityContext | null;
   /** 用户此刻在看什么（Renderer 节流上报） */
   focus: VoiceFocusContext | null;
   interruption: {
@@ -322,6 +351,11 @@ async function reportWorkFailure(
  */
 function formatNarration(narration: VoiceWorkNarration): string {
   const who = narration.speaker ? `${narration.speaker.displayName}：` : '';
+  // 「停旧的」回报（§1）：整句台词已由 buildStopNarration 算好，这里不再拼词。
+  // 措辞只有一个家，避免「停稳了没有」这件事在两个模块里各写一半而说法打架。
+  if (narration.status === 'announcement') {
+    return `[BACKEND] ${who}${narration.summary}`;
+  }
   if (narration.status === 'failed') {
     const reason = narration.summary || '未给出原因';
     return `[BACKEND] ${who}「${narration.title}」失败了，没有完成，原因：${reason}。`
@@ -782,7 +816,14 @@ async function connectAndBind(
     awaitingUserTurn: false,
   };
   const baseInstructions = withLanguageDirective(routing.personaInstructions, liveSettings?.language);
-  const initialInstructions = composeVoiceInstructions(baseInstructions, null, liveSettings?.speechRate);
+  const continuity = await loadVoiceContinuity(neoSessionId);
+  // Phase 3 才会新增真实设置字段；当前固定关闭，只预留 instructions 分支，不虚构截屏能力。
+  const screenContextEnabled = false;
+  const initialInstructions = composeVoiceInstructions(baseInstructions, null, {
+    continuity,
+    screenContextEnabled,
+    speechRate: liveSettings?.speechRate,
+  });
   // 上游回调一律经这个可变引用发：重连换的是 socket，不是通话。
   const clientRef = { current: client };
   /**
@@ -1065,6 +1106,7 @@ async function connectAndBind(
     personaInstructions: baseInstructions,
     instructions: initialInstructions,
     conversationModel: selection.model.id,
+    continuity,
     focus: null,
     interruption: {
       currentCandidateId: null,
@@ -1120,12 +1162,18 @@ function applyFocus(session: ActiveSession, focus: VoiceFocusContext): void {
   updateSessionInstructions(session);
 }
 
+/**
+ * 重拼并下发 instructions。焦点变化与设置改语速共用这一个出口。
+ *
+ * 语速**现读设置**而不是用建连快照：否则「改了语速但没切焦点」永远不生效。
+ * 逐字节没变就不发——上游每次刷新都有代价。
+ */
 function updateSessionInstructions(session: ActiveSession): void {
-  const instructions = composeVoiceInstructions(
-    session.personaInstructions,
-    session.focus,
-    readVoiceLiveSettings()?.speechRate,
-  );
+  const instructions = composeVoiceInstructions(session.personaInstructions, session.focus, {
+    continuity: session.continuity,
+    screenContextEnabled: false,
+    speechRate: readVoiceLiveSettings()?.speechRate,
+  });
   if (instructions === session.instructions) return;
   session.instructions = instructions;
   logger.info('instructions updated', { voiceSessionId: session.id, chars: instructions.length });

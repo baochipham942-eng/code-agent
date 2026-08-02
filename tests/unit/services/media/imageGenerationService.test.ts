@@ -251,7 +251,15 @@ describe('editImageByAnnotation — gptimage /v1/images/edits multipart 标注�
     expect(capturedUrl).toBe('https://example.test/v1/images/edits');
     expect(capturedBody).toBeInstanceOf(FormData);
     expect(capturedBody.get('model')).toBe('gpt-image-2');
-    expect(capturedBody.get('prompt')).toBe('把红圈处 logo 改成猫头');
+    // 2026-08-01 B1：prompt 不再是用户原话裸发——前面必须带「红色标记是批注不是画面内容」的前缀。
+    // 裸发时模型没有任何线索区分「红线是指示」与「红线是要画的东西」，会把红线复现进结果图。
+    const sentPrompt = capturedBody.get('prompt') as string;
+    expect(sentPrompt).not.toBe('把红圈处 logo 改成猫头'); // 钉死：回退成裸发这条会红
+    expect(sentPrompt).toContain('把红圈处 logo 改成猫头'); // 用户指令本身一字不改地在里面
+    expect(sentPrompt).toMatch(/red marks/i);
+    expect(sentPrompt).toMatch(/NOT part of the picture/i);
+    expect(sentPrompt).toMatch(/none of the red annotation marks/i);
+    expect(sentPrompt.indexOf('把红圈处 logo 改成猫头')).toBeGreaterThan(0); // 指令在前缀之后
     expect(capturedBody.get('image')).toBeInstanceOf(Blob);
   });
 

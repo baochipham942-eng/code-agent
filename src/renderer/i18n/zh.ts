@@ -30,6 +30,7 @@ import { expertZh } from './expert';
 import { generativeUIZh } from './generativeUI';
 import { capabilityHubZh } from './capabilityHub';
 import { neoTopicsZh } from './neoTopics';
+import { designToolbarZh } from './designToolbar';
 import { projectSpaceZh } from './projectSpace';
 import { evalCenterZh } from './evalCenter';
 import { localOpsZh } from './localOps';
@@ -203,38 +204,12 @@ export const zh = {
     previewEmpty: '填写需求并点「生成」，网页会在这里实时呈现',
     previewGenerating: '正在生成网页…',
     canvasEmpty: '在左侧对话里描述你想要的设计，AI 会把图生成到这块画布上。可平移、缩放。',
+    canvasEmptyChatEntry: '在左边对话里描述你想要的设计',
+    canvasEmptyDropEntry: '拖入 / 粘贴一张图',
     canvasGenSoon: '画布已就绪。出图回灌与圈选标注迭代将在下一步接入',
-    canvasSelectHint: '点选一张图后可圈选区域做局部重绘',
-    annotateStart: '圈选标注',
-    annotateStop: '退出圈选',
-    annotateHint: '现在在图上拖拽，框出要修改的区域（可多框）',
-    annotateGuide: '先点「圈选标注」，在图上拖框圈出要改的区域，再填指令',
-    editInstructionPlaceholder: '描述框选区域要改成什么，例如：把这块换成一个橙色的圆形按钮',
-    editRegionBtn: '局部重绘',
-    editingRegion: '重绘中…',
-    expandTitle: '扩图 / 去水印',
-    expandBtn: '扩展画布',
-    expandDirUp: '上',
-    expandDirDown: '下',
-    expandDirLeft: '左',
-    expandDirRight: '右',
-    expandDirAll: '四周',
-    removeWatermarkBtn: '去除水印',
-    clearAnnotations: '清除标注',
-    errNoAnnotation: '请先在图上框选要修改的区域',
-    // B4 标注重绘
-    annotMode: '标注重绘',
-    annotInstruction: '重绘指令',
-    annotInstructionPlaceholder: '描述标注处要怎么改，例如：把标的按钮改大并换成橙色',
-    annotRedraw: '重绘',
-    annotToolPen: '画笔',
-    annotToolArrow: '箭头',
-    annotToolRect: '方框',
-    annotToolText: '文字',
-    annotTextPlaceholder: '输入标注文字，回车确认',
-    annotCostConfirm: '用标注后的图重绘？按 BYOK 实际计费',
+    // 图像编辑词汇（圈选/标注/扩图/去水印/导出/成本）已拆入 ./designToolbar 域文件（1000 行门），
+    // 经文件尾部 ...designToolbarZh.design 展开回本命名空间。
     compareBtn: '对比这两版',
-    compareHint: '按住 Shift 点选两张图进行 A/B 对比',
     compareTitle: 'A/B 版本对比',
     setMainVersion: '设为主版',
     discardVersion: '淘汰',
@@ -295,8 +270,6 @@ export const zh = {
     aspectRatioLabel: '尺寸比例',
     imageModel: '生图模型',
     imageModelUnconfigured: '未配置 Key',
-    exportImage: '导出图片',
-    exportImagePdf: '导出 PDF',
     exportCanvasPptx: '导出 PPTX',
     diagramToolbarLabel: '图解',
     diagramSelect: '选择',
@@ -317,6 +290,9 @@ export const zh = {
     referenceHint: '参考图会在生成时作为视觉参考一并发给模型（万相当前支持 1 张，多张取第一张）',
     referenceBadge: '参考',
     layerPanelTitle: '图层',
+    sidePanelExpand: '展开画布面板',
+    sidePanelCollapse: '收起画布面板',
+    layerPanelEmpty: '还没有图层——生成或导入一张图后会出现在这里',
     layerUnnamed: '未命名节点',
     layerKindImage: '图片',
     layerKindVideo: '视频',
@@ -331,6 +307,7 @@ export const zh = {
     layerSetMain: '设为主版',
     layerDiscard: '淘汰',
     layerEmptyInspector: '选择一个图层或画布节点后查看属性',
+    layerDetails: '详情',
     deviceDesktop: '桌面',
     deviceTablet: '平板',
     deviceMobile: '手机',
@@ -362,7 +339,6 @@ export const zh = {
     errNoRequirement: '请先填写需求描述',
     errNoBaseImageForI2v: '图生视频需先在画布选中一张图片',
     videoCostConfirm: '本次视频生成预计花费',
-    generateVideoFromImage: '生成视频',
     errResolveDir: '无法准备设计草稿目录，请重试',
     errDispatch: '生成派发失败',
     errTimeout: '生成超时，未检测到原型文件',
@@ -370,15 +346,12 @@ export const zh = {
     errNoPrototype: '请先生成或选择一个原型',
     errNoInstruction: '请先填写修改要求',
     // T2 成本透明 + undo/redo 信任 UI
-    costEstimateLabel: '本次预估',
     costActualLabel: '本次花费',
     costFree: '免费',
     costHint: '按 BYOK 实际计费，出图前可见',
     historyPanelTitle: '设计历史',
     historyPanelEmpty: '生成或局部重绘后，每一步会作为可命名、可回滚的版本出现在这里',
     historyTotalSpend: '累计花费',
-    historyExpand: '展开设计历史',
-    historyCollapse: '收起设计历史',
     historyReferenceGroup: '参考图',
     historyStepGenerate: '生成',
     historyStepEdit: '局部重绘',
@@ -469,6 +442,8 @@ export const zh = {
       apiKeyRequired: '请填写 API Key',
       saveFailed: '保存失败，请检查地址和密钥后重试',
     },
+    // 图像动词条/圈选/标注/扩图/导出词汇（域文件拆分，见文件头注释）
+    ...designToolbarZh.design,
   },
 
   // Settings Modal

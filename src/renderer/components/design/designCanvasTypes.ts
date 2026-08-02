@@ -3,6 +3,7 @@
 // 避免 JSON 内嵌 base64 膨胀（详见 内部文档 §2.2）。
 import type { RegionLockReport } from '@shared/contract/imageConsistency';
 import { isCanvasActor, type CanvasAttribution } from './canvasActor';
+import { clamp } from './canvasCameraInput';
 import {
   normalizeConnector,
   normalizeShape,
@@ -339,7 +340,7 @@ export function computeFitCamera(
   const bboxW = maxX - minX;
   const bboxH = maxY - minY;
   // 退化 bbox（单点/零尺寸）：不缩放，仅居中。
-  const scale = bboxW > 0 && bboxH > 0 ? Math.min(viewW / bboxW, viewH / bboxH) * padding : 1;
+  const scale = clamp(bboxW > 0 && bboxH > 0 ? Math.min(viewW / bboxW, viewH / bboxH) * padding : 1);
   const cx = minX + bboxW / 2;
   const cy = minY + bboxH / 2;
   return { scale, x: viewW / 2 - cx * scale, y: viewH / 2 - cy * scale };

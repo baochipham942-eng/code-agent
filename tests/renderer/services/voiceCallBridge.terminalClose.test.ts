@@ -5,11 +5,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { VOICE_WS_CLOSE_TERMINAL } from '../../../src/shared/constants/voice';
 
-const toastMocks = vi.hoisted(() => ({ info: vi.fn() }));
+// error 是 T3 的 silent 档呈现要用的（收回 chrome + toast）；两批合体后这条路径会走到它。
+const toastMocks = vi.hoisted(() => ({ info: vi.fn(), error: vi.fn() }));
 const ipcMocks = vi.hoisted(() => ({ invokeDomain: vi.fn() }));
 
 vi.mock('../../../src/renderer/hooks/useToast', () => ({
-  toast: { info: toastMocks.info },
+  toast: { info: toastMocks.info, error: toastMocks.error },
 }));
 vi.mock('../../../src/renderer/services/ipcService', () => ({
   default: {

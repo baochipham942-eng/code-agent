@@ -2,7 +2,7 @@
 // Modal - Base modal component with customizable size and layout
 // ============================================================================
 
-import React, { useEffect, useId, useRef, useState } from 'react';
+import React, { useEffect, useId, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import { useI18n } from '../../hooks/useI18n';
@@ -66,6 +66,12 @@ export interface ModalProps {
   children: React.ReactNode;
   /** Z-index level (default: Z_LAYERS.modal) */
   zIndex?: number;
+  /**
+   * 为 true 时经 portal 挂到 body（跳出 transform/filter 祖先对 fixed 定位的囚禁，
+   * 如消息列表里的气泡弹窗）。默认 false 保持既有内联行为——全局改默认会让
+   * 「findBy 到节点→portal 重挂载→点击落空」类的时序竞态蔓延到所有 Modal 调用方。
+   */
+  portal?: boolean;
 }
 
 export const Modal: React.FC<ModalProps> = ({
@@ -83,16 +89,13 @@ export const Modal: React.FC<ModalProps> = ({
   className = '',
   children,
   zIndex = Z_LAYERS.modal,
+  portal = false,
 }) => {
   const { t } = useI18n();
   const modalRef = useRef<HTMLDivElement>(null);
   const modalId = useId();
   const headerId = useId();
   const escapeHandlerRef = useRef<() => void>(() => undefined);
-  // mounted 前保持内联：SSR（renderToStaticMarkup 不支持 portal）与首帧先出内联，
-  // 挂载后再 portal 到 body（portal 是为了跳出 transform/filter 祖先对 fixed 的囚禁）。
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
 
   escapeHandlerRef.current = () => {
     if (closeOnEsc && onClose) {
@@ -242,7 +245,7 @@ export const Modal: React.FC<ModalProps> = ({
       </div>
     </div>
   );
-  return mounted ? createPortal(tree, document.body) : tree;
+  return portal && typeof document !== 'undefined' ? createPortal(tree, document.body) : tree;
 };
 
 // ============================================================================

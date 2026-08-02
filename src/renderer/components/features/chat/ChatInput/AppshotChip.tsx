@@ -123,6 +123,7 @@ export const AppshotChip: React.FC<AppshotChipProps> = ({ capture, onRemove, res
         isOpen={previewOpen}
         onClose={() => setPreviewOpen(false)}
         size="full"
+        portal
         className="max-w-5xl"
         header={(
           <div className="flex min-w-0 flex-1 items-center gap-3">

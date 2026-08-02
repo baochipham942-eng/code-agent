@@ -231,6 +231,33 @@ describe('ManagedBrowserProviderAdapter', () => {
     expect(release).toHaveBeenCalledOnce();
   });
 
+  it('refreshes a stale observation before a URL-targeted mutation instead of failing', async () => {
+    // 真机实测（2026-08-02）：点开一个链接后静置 45s 再点下一个，必报
+    // "Observation is consumed, superseded, or expired." 且对用户完全隐形。
+    // 观测 TTL 30s，而 binding 跟着整个 conversation 长活——过一分钟再点链接是常态。
+    vi.useFakeTimers();
+    try {
+      const { identity, adapter } = createHarness();
+      const navigate = (operationId: string) => adapter.execute({
+        identity,
+        operationId,
+        action: 'navigate',
+        params: { action: 'navigate', url: 'https://example.test/after' },
+        async executeProvider() {
+          return { success: true, output: 'navigated' };
+        },
+      });
+
+      expect((await navigate('navigate-fresh')).success).toBe(true);
+      await vi.advanceTimersByTimeAsync(45_000);
+      const stale = await navigate('navigate-after-ttl');
+      expect(stale.success).toBe(true);
+      expect(stale.metadata?.surfaceExecutionErrorV1).toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('keeps two agent sub-runs in one conversation on separate physical browsers', async () => {
     const { identity, acquire, adapter } = createHarness();
     // 同一 conversation + 同一 run 下的两个 sub-agent：右栏一次只显示一扇窗，

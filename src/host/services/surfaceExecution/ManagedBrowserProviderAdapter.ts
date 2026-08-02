@@ -191,6 +191,17 @@ export class ManagedBrowserProviderAdapter {
         });
       }
 
+      // 观测默认 30s TTL，而一扇窗的 binding 跟着整个 conversation 长活。对**不依赖上一帧
+      // 元素引用**的变更（navigate / new_tab 这类：目标是 URL，不是某个 refId），观测过期
+      // 不该让这次动作失败——用户看完一个页面过一分钟再点下一个链接是常态。真机实测：
+      // 成功点击后静置 45s 再点必失败，且失败对用户完全隐形（渲染层只 logger.error）。
+      // 带 targetRef 的动作不走这条路：那种场景下「观测过期」正是这道闸该拦的东西。
+      if (!input.params.targetRef && !this.isPredecessorFresh(binding)) {
+        await this.captureObservation(binding, {
+          userSummary: `Refreshed a stale managed browser observation before ${input.action}`,
+        });
+      }
+
       const wrapped = await this.runtime.executeBrowserAction<ToolExecutionResult>({
         identity: input.identity,
         surfaceSessionId: binding.surfaceSessionId,
@@ -311,6 +322,16 @@ export class ManagedBrowserProviderAdapter {
       await this.releaseBinding(key, binding).catch(() => undefined);
       throw error;
     }
+  }
+
+  private isPredecessorFresh(binding: ManagedBrowserBinding): boolean {
+    const observation = this.runtime.observations.getOwned(
+      binding.predecessorStateId,
+      this.subject(binding),
+    );
+    return Boolean(observation)
+      && observation!.lifecycle === 'fresh'
+      && observation!.expiresAt > Date.now();
   }
 
   private async releaseBinding(key: string, binding: ManagedBrowserBinding): Promise<void> {

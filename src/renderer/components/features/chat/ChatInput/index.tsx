@@ -91,6 +91,7 @@ import { useDragAndDrop } from './useDragAndDrop';
 import { useChatInputEnvelope } from './useChatInputEnvelope';
 import { useChatInputAgentCommand } from './useChatInputAgentCommand';
 import { useChatInputSlashCommands } from './useChatInputSlashCommands';
+import { useComposerFocusRequest } from './useComposerFocusRequest';
 import { useChatInputSubmit } from './useChatInputSubmit';
 import { useChatInputComposerActions } from './useChatInputComposerActions';
 import {
@@ -631,6 +632,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   const focusComposer = useCallback(() => {
     requestAnimationFrame(() => inputAreaRef.current?.focus());
   }, []);
+
+  useComposerFocusRequest(focusComposer);
 
   // Agent 自动补全单元：@ mention 与 /agent 命令的 state / 派生 / 键盘导航 / 选择 handler
   const {

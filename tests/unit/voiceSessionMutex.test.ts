@@ -286,6 +286,13 @@ describe('voiceSessionService 互斥与挂断', () => {
     await attachVoiceClient(call as never, 'session-1');
     lastOnEvent?.({ type: 'error', code: 'UPSTREAM_ERROR', message: '上游炸了' });
     await vi.waitFor(() => expect(call.closeCode).toBe(VOICE_WS_CLOSE_TERMINAL), { timeout: 4000 });
+    expect(addMessageToSession.mock.calls
+      .map(([, message]) => message.metadata?.voiceCallFailure)
+      .find((failure) => failure?.code === 'UPSTREAM_ERROR')).toMatchObject({
+      code: 'UPSTREAM_ERROR',
+      phase: 'upstream',
+      neoSessionId: 'session-1',
+    });
 
     // ② 会话互斥抢占
     const holder = new FakeClient();
@@ -300,12 +307,16 @@ describe('voiceSessionService 互斥与挂断', () => {
     const upstreamDead = new FakeClient();
     await attachVoiceClient(upstreamDead as never, 'session-1');
     expect(upstreamDead.closeCode).toBe(VOICE_WS_CLOSE_TERMINAL);
+    await vi.waitFor(() => expect(addMessageToSession.mock.calls
+      .some(([, message]) => message.metadata?.voiceCallFailure?.code === 'VOICE_UPSTREAM_UNAVAILABLE')).toBe(true));
 
     // ④ 缺 provider key
     dashscopeKey.value = '';
     const unconfigured = new FakeClient();
     await attachVoiceClient(unconfigured as never, 'session-1');
     expect(unconfigured.closeCode).toBe(VOICE_WS_CLOSE_TERMINAL);
+    await vi.waitFor(() => expect(addMessageToSession.mock.calls
+      .some(([, message]) => message.metadata?.voiceCallFailure?.code === 'VOICE_PROVIDER_UNCONFIGURED')).toBe(true));
     dashscopeKey.value = 'test-key';
   }, 15_000);
 

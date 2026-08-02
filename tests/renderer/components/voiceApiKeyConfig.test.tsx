@@ -13,7 +13,7 @@ const invokeDomainMock = vi.hoisted(() => vi.fn());
 const availability = vi.hoisted(() => ({
   enabled: true,
   configured: true,
-  usage: { monthSeconds: 0, monthCalls: 0 },
+  usage: { monthSeconds: 0, monthCalls: 0, monthFailedAttempts: 0 },
 }));
 
 vi.mock('../../../src/renderer/hooks/useI18n', () => ({

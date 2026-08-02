@@ -20,6 +20,9 @@ vi.mock('../../../src/renderer/components/design/DesignCanvasTab', () => ({
 vi.mock('../../../src/renderer/components/PreviewPanel', () => ({
   PreviewPanel: () => <div data-testid="preview-marker">preview</div>,
 }));
+vi.mock('../../../src/renderer/components/workbench/TerminalPanel', () => ({
+  TerminalPanel: () => <div data-testid="terminal-marker">terminal</div>,
+}));
 vi.mock('../../../src/renderer/components/LivePreview/LivePreviewFrame', () => ({
   default: ({ devServerUrl }: { devServerUrl: string }) => (
     <div data-testid="live-dev-marker">{devServerUrl}</div>
@@ -31,12 +34,13 @@ afterEach(() => {
   useAppStore.setState({ previewTabs: [], activePreviewTabId: null });
 });
 
-describe('five workbench views', () => {
+describe('six workbench views', () => {
   it.each([
     ['overview', 'overview-marker'],
     ['files', 'files-marker'],
     ['browser', 'browser-marker'],
     ['design-canvas', 'canvas-marker'],
+    ['terminal', 'terminal-marker'],
     ['preview:/tmp/report.pdf', 'preview-marker'],
   ] as const)('renders the marker for %s and conditionally excludes the other views', async (activeView, marker) => {
     render(<WorkbenchViewContent activeView={activeView} onCloseFiles={vi.fn()} />);
@@ -47,6 +51,7 @@ describe('five workbench views', () => {
       'files-marker',
       'browser-marker',
       'canvas-marker',
+      'terminal-marker',
       'preview-marker',
     ]) {
       if (otherMarker === marker) continue;

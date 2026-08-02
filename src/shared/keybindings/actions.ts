@@ -309,7 +309,7 @@ export const KEYBINDING_DEFINITIONS = [
     enabledByDefault: true,
     defaultHotkeys: { darwin: 'Cmd+J', win32: 'Ctrl+J', linux: 'Ctrl+J' },
   },
-  // 右栏四个视图（概览 = statusRail.toggle）共用一套默认键：要么都有键、要么都没有。
+  // 右栏各视图（概览 = statusRail.toggle）共用一套默认键：要么都有键、要么都没有。
   // 此前只有概览配了默认键，浏览器 enabledByDefault: false、文件挂到 files.attach（附件选择器）、
   // 设计画布干脆没接 action，用户看到「概览 ⌘J」而其余三个静默无键。
   {
@@ -341,6 +341,16 @@ export const KEYBINDING_DEFINITIONS = [
     configurable: true,
     enabledByDefault: true,
     defaultHotkeys: { darwin: 'Cmd+Shift+D', win32: 'Ctrl+Shift+D', linux: 'Ctrl+Shift+D' },
+  },
+  {
+    id: 'terminal.open',
+    label: '打开终端',
+    description: '打开右栏会话终端视图',
+    category: 'workbench',
+    scope: 'workbench',
+    configurable: true,
+    enabledByDefault: true,
+    defaultHotkeys: { darwin: 'Cmd+Shift+K', win32: 'Ctrl+Shift+K', linux: 'Ctrl+Shift+K' },
   },
   {
     id: 'computerUse.open',

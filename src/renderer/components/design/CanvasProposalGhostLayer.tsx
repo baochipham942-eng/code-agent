@@ -9,6 +9,8 @@ const GHOST = '#3b82f6'; // ds-allow:viz 提议蓝
 const GHOST_FILL = 'rgba(59,130,246,0.12)'; // ds-allow:viz
 const DANGER = '#ef4444'; // ds-allow:viz 待淘汰红
 const DANGER_FILL = 'rgba(239,68,68,0.10)'; // ds-allow:viz
+const STALE = '#f59e0b'; // ds-allow:viz 陈旧警示琥珀（审批期间用户拖过目标节点）
+const STALE_FILL = 'rgba(245,158,11,0.08)'; // ds-allow:viz
 
 function centerOf(n: CanvasNode): { x: number; y: number } {
   return { x: n.x + n.width / 2, y: n.y + n.height / 2 };
@@ -17,7 +19,9 @@ function centerOf(n: CanvasNode): { x: number; y: number } {
 export const CanvasProposalGhostLayer: React.FC<{
   ops: CanvasProposalOp[];
   nodes: CanvasNode[];
-}> = ({ ops, nodes }) => {
+  /** 陈旧 moveNode 的目标节点 id 集——目标框/引导线换警示色 + 更弱描边，与普通预览区分。 */
+  staleNodeIds?: ReadonlySet<string>;
+}> = ({ ops, nodes, staleNodeIds }) => {
   const byId = new Map(nodes.map((n) => [n.id, n]));
   return (
     <Group listening={false} opacity={0.9}>
@@ -27,12 +31,15 @@ export const CanvasProposalGhostLayer: React.FC<{
             const n = byId.get(op.nodeId);
             if (!n) return null;
             const from = centerOf(n);
+            const stale = staleNodeIds?.has(op.nodeId) ?? false;
+            const stroke = stale ? STALE : GHOST;
+            const fill = stale ? STALE_FILL : GHOST_FILL;
             return (
               <Group key={i}>
-                {/* 目标位置的虚线框 */}
-                <Rect x={op.x} y={op.y} width={n.width} height={n.height} stroke={GHOST} strokeWidth={2} dash={[8, 6]} fill={GHOST_FILL} cornerRadius={4} />
+                {/* 目标位置的虚线框（陈旧：琥珀警示 + 更弱描边） */}
+                <Rect x={op.x} y={op.y} width={n.width} height={n.height} stroke={stroke} strokeWidth={stale ? 1 : 2} dash={[8, 6]} fill={fill} cornerRadius={4} />
                 {/* 从原位到目标的引导线 */}
-                <Line points={[from.x, from.y, op.x + n.width / 2, op.y + n.height / 2]} stroke={GHOST} strokeWidth={1.5} dash={[4, 4]} />
+                <Line points={[from.x, from.y, op.x + n.width / 2, op.y + n.height / 2]} stroke={stroke} strokeWidth={stale ? 1 : 1.5} dash={[4, 4]} />
               </Group>
             );
           }

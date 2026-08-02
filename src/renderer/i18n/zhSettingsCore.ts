@@ -538,6 +538,10 @@ export const zhSettingsCore = {
           label: '打开设计画布',
           description: '打开右栏设计画布视图',
         },
+        'terminal.open': {
+          label: '打开终端',
+          description: '打开右栏会话终端视图',
+        },
         'computerUse.open': {
           label: '打开 Computer Use',
           description: '打开 Computer Use 工作台',

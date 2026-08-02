@@ -429,6 +429,14 @@ const CAPABILITY_DOMAIN_ACTIONS = {
     'interrupt',
     'start',
   ],
+  [IPC_DOMAINS.TERMINAL]: [
+    'close',
+    'list',
+    'open',
+    'resize',
+    'snapshot',
+    'write',
+  ],
   [IPC_DOMAINS.TEAM]: [
     'confirmDraft',
     'knownRoles',
@@ -519,6 +527,7 @@ const HIGH_RISK_CAPABILITIES = new Set([
   makeShellCapabilityId(IPC_DOMAINS.DESKTOP, 'openManagedBrowserUrl'),
   makeShellCapabilityId(IPC_DOMAINS.SESSION, 'restoreWorkspaceFilesAtCheckpoint'),
   makeShellCapabilityId(IPC_DOMAINS.SURFACE_EXECUTION, 'control'),
+  makeShellCapabilityId(IPC_DOMAINS.TERMINAL, 'write'),
   makeShellCapabilityId(IPC_DOMAINS.WORKSPACE, 'writeFile'),
   makeTauriCommandCapabilityId('install_update'),
 ]);

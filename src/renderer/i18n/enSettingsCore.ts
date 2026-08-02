@@ -538,6 +538,10 @@ export const enSettingsCore = {
           label: 'Open Design Canvas',
           description: 'Open the design canvas in the right panel',
         },
+        'terminal.open': {
+          label: 'Open Terminal',
+          description: 'Open the session terminal in the right panel',
+        },
         'computerUse.open': {
           label: 'Open Computer Use',
           description: 'Open the Computer Use workbench',

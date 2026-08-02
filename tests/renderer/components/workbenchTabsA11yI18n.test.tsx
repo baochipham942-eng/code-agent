@@ -60,6 +60,7 @@ describe('WorkbenchTabs empty-state launcher', () => {
     expect(screen.getByTestId('open-workbench-view-files')).toBeTruthy();
     expect(screen.getByTestId('open-workbench-view-browser')).toBeTruthy();
     expect(screen.getByTestId('open-workbench-view-design-canvas')).toBeTruthy();
+    expect(screen.getByTestId('open-workbench-view-terminal')).toBeTruthy();
 
     fireEvent.click(screen.getByTestId('open-workbench-view-overview'));
 
@@ -119,12 +120,12 @@ describe('WorkbenchTabs empty-state launcher', () => {
   // 这条替换了旧断言「does not render shortcut chips for views without an enabled binding」。
   // 旧断言把「只有概览有键、浏览器/文件/设计画布静默无键」钉成了正确行为，正是 UI 债第 22 条
   // 说的不一致；产品负责人推翻了「加功能不还债」的原判定，判据改成：默认配置下四个视图
-  // 要么都有键、要么都没有。视图清单从 DOM 现取，将来加第五个视图漏配默认键同样会红。
+  // 要么都有键、要么都没有。视图清单从 DOM 现取，将来加第六个视图漏配默认键同样会红。
   it('gives every launchable view a shortcut chip in the default config', () => {
     render(<WorkbenchTabs />);
 
     const rows = screen.getAllByTestId(/^open-workbench-view-/);
-    expect(rows).toHaveLength(4);
+    expect(rows).toHaveLength(5);
     for (const row of rows) {
       const viewId = (row.getAttribute('data-testid') ?? '').replace('open-workbench-view-', '');
       expect(screen.getByTestId(`workbench-shortcut-${viewId}`).textContent).toBeTruthy();
@@ -195,7 +196,7 @@ describe('WorkbenchTabs tab 条形态（D6）', () => {
 
   it('全部视图都打开后不再渲染「＋」', () => {
     useAppStore.setState({
-      workbenchTabs: ['overview', 'files', 'browser', 'design-canvas'],
+      workbenchTabs: ['overview', 'files', 'browser', 'design-canvas', 'terminal'],
       activeWorkbenchTab: 'overview',
     });
     render(<WorkbenchTabs />);

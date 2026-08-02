@@ -63,6 +63,8 @@ function controllerDeps(): ProposalControllerDeps {
 export interface CanvasProposalReview {
   pending: CanvasOpProposal | null;
   approvalReason: CanvasApprovalReason;
+  /** pending 提议到达 renderer 的本地时间戳（陈旧判据基准）；无 pending 时为 null。 */
+  receivedAt: number | null;
   /** 是否有提议正在落地（含 Phase B 出图）——驱动画布忙态遮罩（R3 MED-1）。 */
   applying: boolean;
   apply: (selectedOps?: CanvasProposalOp[]) => Promise<ProposalApplyOutcome | void>;
@@ -78,6 +80,7 @@ function clearIfStill(requestId: string): void {
 export function useCanvasProposalReview(): CanvasProposalReview {
   const { t } = useI18n();
   const pending = useCanvasProposalStore((s) => s.pending);
+  const receivedAt = useCanvasProposalStore((s) => s.receivedAt);
   const approvalReason = useCanvasProposalStore((s) => s.approvalReason);
   const applyingRequestId = useCanvasProposalStore((s) => s.applyingRequestId);
   const setPending = useCanvasProposalStore((s) => s.setPending);
@@ -277,5 +280,5 @@ export function useCanvasProposalReview(): CanvasProposalReview {
     }
   }, []);
 
-  return { pending, approvalReason, applying: applyingRequestId !== null, apply, reject };
+  return { pending, approvalReason, receivedAt, applying: applyingRequestId !== null, apply, reject };
 }

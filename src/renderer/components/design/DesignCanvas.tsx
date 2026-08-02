@@ -25,6 +25,7 @@ import { CanvasProposalGhostLayer } from './CanvasProposalGhostLayer';
 import { CanvasProposalReviewBar } from './CanvasProposalReviewBar';
 import { DiscardedNodesTray } from './DiscardedNodesTray';
 import { useCanvasProposalReview } from './useCanvasProposalReview';
+import { staleMoveNodeIds } from './canvasProposalApproval';
 import { useAutonomyEnvelopeReview } from './useAutonomyEnvelopeReview';
 import { useCanvasVideoRequest } from './useCanvasVideoRequest';
 import { CanvasAutonomyReviewBar } from './CanvasAutonomyReviewBar';
@@ -105,6 +106,14 @@ export const DesignCanvas: React.FC<{
   const shapes = useDesignCanvasStore((s) => s.shapes);
   // ADR-026：订阅 agent 画布提议 + Apply/Reject 落地。
   const canvasProposal = useCanvasProposalReview();
+  // 陈旧检出：审批期间被用户拖过的 moveNode 目标（userTouchedAt > receivedAt），
+  // 审批卡如实标注 + 幽灵层换警示画法；落地语义不变（仍写 op.x/op.y）。
+  const proposalStaleNodeIds = useMemo(
+    () => (canvasProposal.pending && canvasProposal.receivedAt !== null
+      ? staleMoveNodeIds(canvasProposal.pending.ops, nodes, canvasProposal.receivedAt)
+      : undefined),
+    [canvasProposal.pending, canvasProposal.receivedAt, nodes],
+  );
   // ADR-027：订阅 agent 自主信封请求 + Grant/Decline；活跃信封态驱动进度/停止指示。
   const autonomy = useAutonomyEnvelopeReview();
   // 2b：订阅 agent 经 ProposeVideoOps 发来的出视频请求 → 落画布视频节点。
@@ -837,7 +846,7 @@ export const DesignCanvas: React.FC<{
           {/* ADR-026：agent 待审批提议的 ghost 虚影（蓝色虚线/半透明），点应用才落库。 */}
           {canvasProposal.pending && (
             <Layer listening={false}>
-              <CanvasProposalGhostLayer ops={canvasProposal.pending.ops} nodes={nodes} />
+              <CanvasProposalGhostLayer ops={canvasProposal.pending.ops} nodes={nodes} staleNodeIds={proposalStaleNodeIds} />
             </Layer>
           )}
         </Stage>
@@ -848,6 +857,7 @@ export const DesignCanvas: React.FC<{
         <CanvasProposalReviewBar
           proposal={canvasProposal.pending}
           approvalReason={canvasProposal.approvalReason}
+          staleNodeIds={proposalStaleNodeIds}
           onApply={(ops) => void canvasProposal.apply(ops)}
           onReject={(fb) => void canvasProposal.reject(fb)}
         />

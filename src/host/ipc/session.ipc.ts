@@ -16,6 +16,7 @@ import {
   listAdminReviewQueueItems,
   type AdminReviewQueueItem,
 } from '../../shared/contract/productClosure';
+import { disposeTerminalSession } from '../services/terminal/terminalSessionManager';
 import { getDefaultSearchManager } from '../session/search';
 import {
   getDefaultCache,
@@ -70,10 +71,14 @@ export function registerSessionHandlers(
         case 'load':
           data = await requireAppService().loadSession((payload as { sessionId: string }).sessionId);
           break;
-        case 'delete':
-          await requireAppService().deleteSession((payload as { sessionId: string }).sessionId);
+        case 'delete': {
+          const deletedSessionId = (payload as { sessionId: string }).sessionId;
+          await requireAppService().deleteSession(deletedSessionId);
+          // 会话没了，它那个长生命周期 PTY 不能继续挂着（没有超时会自己收它）。
+          disposeTerminalSession(deletedSessionId);
           data = null;
           break;
+        }
         case 'getMessages':
           data = await requireAppService().getMessages((payload as { sessionId: string }).sessionId);
           break;

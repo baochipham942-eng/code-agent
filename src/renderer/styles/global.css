@@ -464,6 +464,11 @@ pre code {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  /* 骨架屏 shimmer 扫光：reduced-motion 下静态占位不动效 */
+  .animate-shimmer {
+    animation: none;
+  }
+
   .popover-enter {
     animation: none;
   }

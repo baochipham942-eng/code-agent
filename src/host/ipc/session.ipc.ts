@@ -30,6 +30,7 @@ import { SessionRewindError } from '../../shared/contract/sessionRewind';
 import { ConversationBranchError } from '../../shared/contract/conversationBranch';
 import { SessionForkPortabilityError } from '../../shared/contract/sessionForkPortability';
 import { WorkspaceFileRestoreError } from '../../shared/contract/fileRestore';
+import { getUserBrowserLinkService } from '../services/surfaceExecution/UserBrowserLinkService';
 
 /** Inline stub — old memoryTriggerService removed */
 type SessionMemoryContext = unknown;
@@ -73,6 +74,12 @@ export function registerSessionHandlers(
           break;
         case 'delete': {
           const deletedSessionId = (payload as { sessionId: string }).sessionId;
+          await getUserBrowserLinkService().end(deletedSessionId, 'session-switch').catch((error) => {
+            logger.warn('Failed to end user browser run before deleting session', {
+              sessionId: deletedSessionId,
+              message: error instanceof Error ? error.message : String(error),
+            });
+          });
           await requireAppService().deleteSession(deletedSessionId);
           // 会话没了，它那个长生命周期 PTY 不能继续挂着（没有超时会自己收它）。
           disposeTerminalSession(deletedSessionId);

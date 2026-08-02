@@ -17,11 +17,10 @@ import { create } from 'zustand';
 type ComposerNoticeId = 'skill-draft' | 'role-draft' | 'team-recipe-draft';
 
 /** 「进行中」占用者。优先级只能由下面这张表表达，组件不得互相探测。 */
-type ComposerInProgressId = 'voice' | 'surface-execution' | 'upload';
+type ComposerInProgressId = 'voice' | 'upload';
 
 const COMPOSER_IN_PROGRESS_PRIORITY: readonly ComposerInProgressId[] = [
   'voice',
-  'surface-execution',
   'upload',
 ];
 

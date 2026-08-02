@@ -5,6 +5,7 @@ import {
   formatSurfaceExecutionCopy,
 } from '../../../i18n/surfaceExecution';
 import {
+  isUserOpenedSurfaceV1,
   surfaceExecutionScopeKeyV1,
   type RendererSurfaceSessionProjectionV1,
 } from '../../../utils/surfaceExecutionProjection';
@@ -49,6 +50,7 @@ function selectSurfaceConversationSessions(
     if (
       candidate.scope.conversationId !== conversationId
       || candidate.session.conversationId !== conversationId
+      || isUserOpenedSurfaceV1(candidate)
     ) continue;
     const isolated = {
       ...candidate,

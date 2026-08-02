@@ -19,6 +19,7 @@ import {
 import type { SurfaceExecutionTranslationsV1 } from '../../i18n/surfaceExecution';
 import { Button, GhostButton, IconButton } from '../primitives';
 import { AgentPointerOverlay } from './AgentPointerOverlay';
+import { closeUserBrowserLinkRun } from '../../services/userBrowserLink';
 
 // B1-R·R1：workbench「浏览器」tab = **一扇浏览器**，不是状态卡片堆。
 // 一条细 chrome（状态点 + 标题 + URL + ⋯）压顶，剩下全给实时画面；指针叠加直接画
@@ -107,6 +108,12 @@ export const BrowserAgentWindow: React.FC = () => {
   // 视图仍可能挂着，那种情况下开流就是后台无人看还在烧 CPU。
   const activeWorkbenchTab = useAppStore((state) => state.activeWorkbenchTab);
   const workbenchCollapsed = useAppStore((state) => state.workbenchCollapsed);
+
+  useEffect(() => {
+    if (workbenchCollapsed && currentSessionId) {
+      void closeUserBrowserLinkRun(currentSessionId, 'user');
+    }
+  }, [currentSessionId, workbenchCollapsed]);
 
   const openAdvancedPanel = useCallback(() => openLocalOpsPanel('browser'), [openLocalOpsPanel]);
 

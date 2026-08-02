@@ -209,6 +209,7 @@ export const chatInputZh = {
     textSourceAx: '已读取窗口文字',
     textSourceOcr: 'OCR 识别文字',
     textSourceNone: '仅截图 · 无文字',
+    recognizing: '识别中…',
     noTextFallback: '未读取到窗口文字',
     screenshotFilenameSuffix: ' 截图.png',
     viewAria: '查看 Appshot',
@@ -218,6 +219,8 @@ export const chatInputZh = {
     downloadAria: '下载截图',
     closeAria: '关闭',
     screenshotLoading: '截图仍在读取',
+    textChars: '{count} 字符',
+    textTruncated: '已截断',
   },
   suggestionBar: {
     categoryPlanStep: '计划步骤',
@@ -562,6 +565,7 @@ export const chatInputEn: typeof chatInputZh = {
     textSourceAx: 'Window text captured',
     textSourceOcr: 'OCR-recognized text',
     textSourceNone: 'Screenshot only · no text',
+    recognizing: 'Recognizing…',
     noTextFallback: 'No window text captured',
     screenshotFilenameSuffix: ' screenshot.png',
     viewAria: 'View Appshot',
@@ -571,6 +575,8 @@ export const chatInputEn: typeof chatInputZh = {
     downloadAria: 'Download screenshot',
     closeAria: 'Close',
     screenshotLoading: 'Screenshot is still loading',
+    textChars: '{count} chars',
+    textTruncated: 'Truncated',
   },
   suggestionBar: {
     categoryPlanStep: 'Plan step',

@@ -40,9 +40,11 @@ export function useSurfaceExecutionRunSession(conversationId: string | null) {
   // 产品拍板（2026-08-02）：composer 上方那条常驻状态条已删。它跟对话流里的
   // SurfaceExecutionCompactBar 报的是同一件事，而后者还带「操作到哪一步」，
   // 复述一遍只是噪音。侧栏圆点留着——它的职责不同：告诉你**别的**会话在忙。
+  // excludeUserOpened 只有「有人在干活」类提示才传——右栏 workbench 和画中画不传，
+  // 它们必须拿得到用户自己点开的那扇窗。
   return useSurfaceExecutionStore((state) => selectSurfaceExecutionRunSessionV1(
     state.sessionsByScope,
-    { conversationId, includeTerminal: false },
+    { conversationId, includeTerminal: false, excludeUserOpened: true },
   ));
 }
 

@@ -5,6 +5,7 @@ import type {
 } from '@shared/contract/surfaceExecution';
 import {
   buildSurfaceExecutionProjectionV1,
+  isUserOpenedSurfaceV1,
   surfaceExecutionScopeKeyV1,
 } from '../utils/surfaceExecutionProjection';
 import type {
@@ -77,6 +78,13 @@ export interface SurfaceExecutionSessionSelectorV1 {
 export interface SurfaceExecutionRunSessionSelectorV1 {
   conversationId: string | null;
   includeTerminal?: boolean;
+  /**
+   * 排除「用户点正文链接开出来的那扇窗」。**必须在挑选之前排除**，不能挑完再滤：
+   * 用户那扇窗可能正好是当选的那个，挑完再滤会把同会话里 agent 的窗一起藏掉
+   * （2026-08-02 被测试抓到过一次）。
+   * 默认 false —— 右栏 workbench 和画中画要拿到它，只有「有人在干活」类提示才传 true。
+   */
+  excludeUserOpened?: boolean;
 }
 
 interface SurfaceExecutionStoreState {
@@ -185,6 +193,7 @@ export function selectSurfaceExecutionRunSessionV1(
     .filter((candidate) => (
       candidate.scope.conversationId === conversationId
       && sessionOwnsScope(candidate)
+      && !(selector.excludeUserOpened && isUserOpenedSurfaceV1(candidate))
     ))
     .sort((left, right) => (
       right.updatedAt - left.updatedAt

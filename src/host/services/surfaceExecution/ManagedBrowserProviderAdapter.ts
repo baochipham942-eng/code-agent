@@ -329,9 +329,8 @@ export class ManagedBrowserProviderAdapter {
       binding.predecessorStateId,
       this.subject(binding),
     );
-    return Boolean(observation)
-      && observation!.lifecycle === 'fresh'
-      && observation!.expiresAt > Date.now();
+    if (!observation) return false;
+    return observation.lifecycle === 'fresh' && observation.expiresAt > Date.now();
   }
 
   private async releaseBinding(key: string, binding: ManagedBrowserBinding): Promise<void> {

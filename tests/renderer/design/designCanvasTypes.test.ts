@@ -6,6 +6,7 @@ import {
   nextNodePlacement,
   isReferenceNode,
   DEFAULT_CAMERA,
+  computeFitCamera,
   type CanvasImageNode,
   type DesignCanvasDoc,
 } from '../../../src/renderer/components/design/designCanvasTypes';
@@ -87,6 +88,16 @@ describe('nextNodePlacement', () => {
   it('放在最右节点右侧 +gap，沿用其 y', () => {
     const nodes = [node({ x: 0, width: 100, y: 0 }), node({ id: 'n2', x: 200, width: 100, y: 30 })];
     expect(nextNodePlacement(nodes, 60)).toEqual({ x: 360, y: 30 });
+  });
+});
+
+describe('computeFitCamera 缩放边界', () => {
+  it('极小节点 fit 不超过滚轮缩放的统一上限', () => {
+    expect(computeFitCamera([node({ width: 4, height: 4 })], 900, 900)?.scale).toBe(5);
+  });
+
+  it('超大节点 fit 不低于滚轮缩放的统一下限', () => {
+    expect(computeFitCamera([node({ width: 100_000, height: 100_000 })], 900, 900)?.scale).toBe(0.1);
   });
 });
 

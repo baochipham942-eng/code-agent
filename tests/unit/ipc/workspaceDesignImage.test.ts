@@ -7,7 +7,8 @@
 // ============================================================================
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import { promises as nodeFsp } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -62,11 +63,17 @@ import {
   handleListVisualImageModels,
   handleEditImageByAnnotation,
 } from '../../../src/host/ipc/workspace.ipc';
+import { handleImportDesignImageFromPath } from '../../../src/host/ipc/workspaceDesignMedia.ipc';
 
 let workDir: string;
 let designRoot: string;
 let baseImagePath: string;
 let outputPath: string;
+
+const VALID_PNG = Buffer.from([
+  0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+  0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+]);
 
 beforeEach(async () => {
   workDir = await mkdtemp(join(tmpdir(), 'design-image-ipc-'));
@@ -97,7 +104,7 @@ describe('handleExpandDesignImage', () => {
       handleExpandDesignImage({ baseImagePath: '', outputPath, direction: 'up', ratio: 1.5 }),
     ).rejects.toThrow('expandDesignImage');
     await expect(
-      // @ts-expect-error 故意缺 direction
+      // 缺 direction（新契约里 direction 可选，缺失走旧形态分支被 direction 闸拦下）
       handleExpandDesignImage({ baseImagePath, outputPath, ratio: 1.5 }),
     ).rejects.toThrow('expandDesignImage');
   });
@@ -139,6 +146,70 @@ describe('handleExpandDesignImage', () => {
       handleExpandDesignImage({ baseImagePath, outputPath, direction: 'all', ratio: 1.5 }),
     ).rejects.toThrow('DashScope');
   });
+
+  // 旧形态 ratio=1（滑块最小值）四向全 1 = 什么都不扩的付费空调用，与新形态共用同一道闸。
+  it('旧形态 ratio=1 被空操作闸拦下且不触发付费调用', async () => {
+    const svc = await import(SVC);
+    await expect(
+      handleExpandDesignImage({ baseImagePath, outputPath, direction: 'all', ratio: 1 }),
+    ).rejects.toThrow(/空操作/);
+    expect((svc.expandImage as unknown as { mock: { calls: unknown[] } }).mock.calls.length).toBe(0);
+  });
+});
+
+describe('handleExpandDesignImage — 四向独立 scale 形态', () => {
+  const expandCalls = async () =>
+    ((await import(SVC)).expandImage as unknown as { mock: { calls: unknown[][] } }).mock.calls;
+
+  it('四向 scale 原样透传给 expandImage，一次调用完成非对称外扩', async () => {
+    // 居中扩成更宽的比例：左右各扩一半（1.25+1.25-1 = 1.5 倍宽），旧形态要两次付费调用才能做到。
+    const res = await handleExpandDesignImage({
+      baseImagePath,
+      outputPath,
+      scales: { top: 1, bottom: 1, left: 1.25, right: 1.25 },
+    });
+    expect(res).toEqual({ path: outputPath, actualModel: 'wanx2.1-imageedit', costCny: 0.14 });
+    expect((await expandCalls())[0][0]).toMatchObject({
+      topScale: 1,
+      bottomScale: 1,
+      leftScale: 1.25,
+      rightScale: 1.25,
+    });
+    expect((await readFile(outputPath)).toString()).toBe('ABC');
+  });
+
+  it('给了 scales 时忽略 direction/ratio（新形态优先）', async () => {
+    await handleExpandDesignImage({
+      baseImagePath,
+      outputPath,
+      direction: 'up',
+      ratio: 2,
+      scales: { top: 1, bottom: 1, left: 1, right: 1.4 },
+    });
+    expect((await expandCalls())[0][0]).toMatchObject({ topScale: 1, bottomScale: 1, leftScale: 1, rightScale: 1.4 });
+  });
+
+  // 坏输入门：每一种都必须指名道姓报错且零付费调用（静默 clamp = 扩了个寂寞的空调用）。
+  const badScales: Array<[string, unknown, RegExp]> = [
+    ['上界越界', { top: 2.5, bottom: 1, left: 1, right: 1 }, /scales\.top/],
+    ['下界越界', { top: 1, bottom: 0.5, left: 1, right: 1 }, /scales\.bottom/],
+    ['NaN', { top: 1, bottom: 1, left: Number.NaN, right: 1 }, /scales\.left/],
+    ['Infinity', { top: 1, bottom: 1, left: 1, right: Number.POSITIVE_INFINITY }, /scales\.right/],
+    ['字符串数字', { top: '1.5', bottom: 1, left: 1, right: 1 }, /scales\.top/],
+    ['缺字段', { top: 1.5, bottom: 1, left: 1 }, /scales\.right/],
+    ['null 字段', { top: 1.5, bottom: 1, left: 1, right: null }, /scales\.right/],
+    ['scales 非对象', 'nope', /scales 须为/],
+    ['scales 为 null', null, /scales 须为/],
+    ['四向全 1（空操作）', { top: 1, bottom: 1, left: 1, right: 1 }, /空操作/],
+  ];
+  for (const [name, scales, pattern] of badScales) {
+    it(`坏输入「${name}」被拦下且不触发付费调用`, async () => {
+      await expect(
+        handleExpandDesignImage({ baseImagePath, outputPath, scales: scales as never }),
+      ).rejects.toThrow(pattern);
+      expect((await expandCalls()).length).toBe(0);
+    });
+  }
 });
 
 describe('handleRemoveWatermarkDesignImage', () => {
@@ -338,5 +409,142 @@ describe('handleEditImageByAnnotation', () => {
       handleEditImageByAnnotation({ model: 'gpt-image-2', annotatedImageDataUrl: 'data:image/png;base64,QUJD', instruction: 'x', outputPath: '/tmp/evil.png' }),
     ).rejects.toThrow(/越界/);
     expect((svc.editImageByAnnotation as any).mock.calls.length).toBe(0);
+  });
+});
+
+describe('handleImportDesignImageFromPath', () => {
+  let workspaceRoot: string;
+  let outsideRoot: string;
+  let sourcePath: string;
+  let importOutputPath: string;
+
+  beforeEach(async () => {
+    workspaceRoot = join(workDir, 'workspace');
+    outsideRoot = join(workDir, 'outside');
+    sourcePath = join(workspaceRoot, 'media', 'source.png');
+    importOutputPath = join(designRoot, 'run', 'assets', 'imported.png');
+    await mkdir(join(workspaceRoot, 'media'), { recursive: true });
+    await mkdir(outsideRoot, { recursive: true });
+    await writeFile(sourcePath, VALID_PNG);
+  });
+
+  it('拒绝用 .. 从当前工作目录穿越到允许根之外', async () => {
+    const outsidePath = join(outsideRoot, 'traversal.png');
+    await writeFile(outsidePath, VALID_PNG);
+    await mkdir(join(workspaceRoot, 'nested'), { recursive: true });
+    const traversalPath = `${workspaceRoot}/nested/../../outside/traversal.png`;
+
+    await expect(
+      handleImportDesignImageFromPath({ sourcePath: traversalPath, outputPath: importOutputPath }, workspaceRoot),
+    ).rejects.toThrow(/sourcePath.*越界/);
+  });
+
+  it('拒绝允许根之外伪装成图片的绝对路径', async () => {
+    const outsidePath = join(outsideRoot, 'absolute.png');
+    await writeFile(outsidePath, VALID_PNG);
+
+    await expect(
+      handleImportDesignImageFromPath({ sourcePath: outsidePath, outputPath: importOutputPath }, workspaceRoot),
+    ).rejects.toThrow(/sourcePath.*越界/);
+  });
+
+  it('拒绝当前工作目录内指向允许根之外的 symlink', async () => {
+    const outsidePath = join(outsideRoot, 'symlink-target.png');
+    const linkPath = join(workspaceRoot, 'media', 'escaped.png');
+    await writeFile(outsidePath, VALID_PNG);
+    await symlink(outsidePath, linkPath);
+
+    await expect(
+      handleImportDesignImageFromPath({ sourcePath: linkPath, outputPath: importOutputPath }, workspaceRoot),
+    ).rejects.toThrow(/sourcePath.*越界/);
+  });
+
+  it('复制允许根内的图片且源与目标逐字节相同', async () => {
+    const result = await handleImportDesignImageFromPath(
+      { sourcePath, outputPath: importOutputPath },
+      workspaceRoot,
+    );
+
+    expect(result).toEqual({ path: importOutputPath });
+    expect(await readFile(importOutputPath)).toEqual(VALID_PNG);
+  });
+
+  it('拒绝越出设计目录的 outputPath', async () => {
+    await expect(
+      handleImportDesignImageFromPath(
+        { sourcePath, outputPath: join(outsideRoot, 'output.png') },
+        workspaceRoot,
+      ),
+    ).rejects.toThrow(/outputPath.*越界/);
+  });
+
+  it('源文件不存在时指名 sourcePath 与问题', async () => {
+    await expect(
+      handleImportDesignImageFromPath(
+        { sourcePath: join(workspaceRoot, 'media', 'missing.png'), outputPath: importOutputPath },
+        workspaceRoot,
+      ),
+    ).rejects.toThrow(/sourcePath.*不存在/);
+  });
+
+  it('拒绝非图片扩展名', async () => {
+    const textPath = join(workspaceRoot, 'media', 'notes.txt');
+    await writeFile(textPath, 'not an image');
+
+    await expect(
+      handleImportDesignImageFromPath({ sourcePath: textPath, outputPath: importOutputPath }, workspaceRoot),
+    ).rejects.toThrow(/sourcePath.*图片类型/);
+  });
+
+  it('拒绝扩展名是图片但 magic bytes 不匹配的文件', async () => {
+    const fakePngPath = join(workspaceRoot, 'media', 'fake.png');
+    await writeFile(fakePngPath, 'plain text disguised as png');
+
+    await expect(
+      handleImportDesignImageFromPath({ sourcePath: fakePngPath, outputPath: importOutputPath }, workspaceRoot),
+    ).rejects.toThrow(/sourcePath.*文件内容与扩展名不匹配/);
+  });
+
+  // 2026-08-01 对抗审计（Codex）实证并已修：先 canonicalize 校验、再 fsp.copyFile(路径) 是可绕过的——
+  // 两次解析之间把源路径换成指向允许根之外的 symlink，根外文件会被复制进设计目录。
+  // 修法是从校验时那个句柄读（句柄绑定 inode，路径之后怎么变都不影响）。这条钉死它不许回退。
+  it('TOCTOU：校验通过后替换源路径为根外 symlink，不得把根外文件复制进来', async () => {
+    const secretPath = join(outsideRoot, 'secret.txt');
+    await writeFile(secretPath, 'TOP_SECRET');
+    const realCopyFile = nodeFsp.copyFile.bind(nodeFsp);
+    const realWriteFile = nodeFsp.writeFile.bind(nodeFsp);
+    // 无论实现走 copyFile 还是 writeFile，都在真正落盘前掉包一次源路径。
+    const swap = async (): Promise<void> => {
+      await rm(sourcePath);
+      await symlink(secretPath, sourcePath);
+    };
+    const copySpy = vi.spyOn(nodeFsp, 'copyFile').mockImplementationOnce(async (f, t, m) => {
+      await swap();
+      return realCopyFile(f, t, m);
+    });
+    const writeSpy = vi.spyOn(nodeFsp, 'writeFile').mockImplementationOnce(async (f, d, o) => {
+      await swap();
+      return realWriteFile(f as never, d as never, o as never);
+    });
+    try {
+      await handleImportDesignImageFromPath(
+        { sourcePath, outputPath: importOutputPath },
+        workspaceRoot,
+      );
+      expect(await readFile(importOutputPath, 'utf8')).not.toContain('TOP_SECRET');
+    } finally {
+      copySpy.mockRestore();
+      writeSpy.mockRestore();
+    }
+  });
+
+  // SVG 是活动内容（<script> / 外链 <image href>），这条通道只收位图——审计发现后收窄。
+  it('拒绝 SVG（活动内容，不做净化直接不收）', async () => {
+    const svgPath = join(workspaceRoot, 'media', 'a.svg');
+    await mkdir(join(workspaceRoot, 'media'), { recursive: true });
+    await writeFile(svgPath, '<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>');
+    await expect(
+      handleImportDesignImageFromPath({ sourcePath: svgPath, outputPath: importOutputPath }, workspaceRoot),
+    ).rejects.toThrow(/sourcePath.*图片类型/);
   });
 });

@@ -125,6 +125,9 @@ const CAPABILITY_DOMAIN_ACTIONS = {
     'stats',
     'wechatStatus',
   ],
+  [IPC_DOMAINS.VOICE]: [
+    'reportFailure',
+  ],
   [IPC_DOMAINS.CONNECTOR]: [
     'disconnect',
     'listNativeInventory',
@@ -519,7 +522,7 @@ const HIGH_RISK_CAPABILITIES = new Set([
 function inferRisk(domain: string, action: string): ShellCapabilityRisk {
   const id = makeShellCapabilityId(domain, action);
   if (HIGH_RISK_CAPABILITIES.has(id)) return 'high';
-  if (/^(add|archive|cancel|capture|clear|close|confirm|create|delete|disconnect|download|force|import|install|interrupt|open|pause|prepare|probe|refresh|reject|remove|rename|repair|reset|resume|resync|retry|save|select|send|set|sign|start|stop|switch|unarchive|update|write)/i.test(action)) {
+  if (/^(add|archive|cancel|capture|clear|close|confirm|create|delete|disconnect|download|force|import|install|interrupt|open|pause|prepare|probe|refresh|reject|remove|rename|repair|report|reset|resume|resync|retry|save|select|send|set|sign|start|stop|switch|unarchive|update|write)/i.test(action)) {
     return 'medium';
   }
   return 'low';

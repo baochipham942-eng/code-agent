@@ -8,7 +8,7 @@ import type { ModelDecisionEventData } from './modelDecision';
 import type { TurnQualitySummary } from './turnQuality';
 import type { SessionAutomationMessageMetadata } from './sessionAutomation';
 import type { ArtifactLocatorV1 } from './artifactLocator';
-import type { VoiceCallSummary } from './voice';
+import type { VoiceCallFailureCode, VoiceCallFailurePhase, VoiceCallSummary } from './voice';
 
 export type MessageRole = 'user' | 'assistant' | 'system' | 'tool';
 export type MessageVisibility = 'active' | 'rewound';
@@ -280,6 +280,14 @@ export interface MessageMetadata {
   /** 实时语音协议身份。取消轮的 tombstone 与 DB 投影都只认这组稳定 ID。 */
   voiceTranscript?: { responseId?: string; itemId?: string };
   voiceCallSummary?: VoiceCallSummary;
+  /** 建连或上游失败的持久留痕；只记结构化失败，不记音频与字幕。 */
+  voiceCallFailure?: {
+    code: VoiceCallFailureCode;
+    phase: VoiceCallFailurePhase;
+    timestamp: number;
+    neoSessionId: string;
+    voiceSessionId?: string;
+  };
   workbench?: WorkbenchMessageMetadata;
   skill?: SkillMessageMetadata;
   channel?: ChannelMessageMetadata;

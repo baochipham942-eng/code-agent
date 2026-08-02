@@ -196,6 +196,13 @@ export const DesignCanvas: React.FC<{ showErrorBar?: boolean }> = ({ showErrorBa
     persistCanvasDoc();
   }, [discardNode, persistCanvasDoc]);
 
+  // 用户拖动节点松手：落新坐标进 store（updateNode 自带 undo 帧 + userTouchedAt 戳）并落盘。
+  // ⚠️ persistCanvasDoc 必须调：canvas.json 落盘是调用点驱动，漏了拖完刷新回原位。
+  const moveCanvasNode = useCallback((id: string, pos: { x: number; y: number }): void => {
+    useDesignCanvasStore.getState().updateNode(id, pos);
+    persistCanvasDoc();
+  }, [persistCanvasDoc]);
+
   // 选择变化时退出对比浮层（除非仍是双选）。
   useEffect(() => {
     if (selectedIds.length !== 2) setComparing(false);
@@ -715,16 +722,26 @@ export const DesignCanvas: React.FC<{ showErrorBar?: boolean }> = ({ showErrorBa
           }}
         >
           <Layer>
-            {visibleNodes.map((node) =>
+            {visibleNodes.map((node) => {
+              // canDrag 只闸空格 pan 修饰键，刻意不闸 diagramTool==='select'（与形状不同）：
+              // 节点本就不受 diagramTool 限制（画连线工具下也能点选），拖动同理。别「顺手统一」。
+              const canDrag = !panModifierActive;
+              // dragStart 打 user 戳：正拖的节点按定义已被用户碰过，打戳后 agent 排布它走审批，
+              // 从根上关掉「拖动途中 agent 免批直落 moveNode」的并发窗口。此动作不进 undo 历史。
+              const stampDragStart = (): void =>
+                useDesignCanvasStore.getState().markNodeUserTouched(node.id);
               // 图节点走 CanvasImage；视频节点走 KonvaVideoNode（缩略图+播放徽标）。
-              isVideoNode(node) ? (
+              return isVideoNode(node) ? (
                 <KonvaVideoNode
                   key={node.id}
                   node={node}
                   runDir={runDir}
                   selected={selectedIds.includes(node.id)}
                   panModifierActive={panModifierActive}
+                  canDrag={canDrag}
                   onSelect={(additive) => selectNode(node.id, additive)}
+                  onDragStart={stampDragStart}
+                  onDragEnd={(pos) => moveCanvasNode(node.id, pos)}
                   onPlay={() => setPlayingVideo(node)}
                 />
               ) : (
@@ -734,11 +751,14 @@ export const DesignCanvas: React.FC<{ showErrorBar?: boolean }> = ({ showErrorBa
                   runDir={runDir}
                   selected={selectedIds.includes(node.id)}
                   panModifierActive={panModifierActive}
+                  canDrag={canDrag}
                   onSelect={(additive) => selectNode(node.id, additive)}
+                  onDragStart={stampDragStart}
+                  onDragEnd={(pos) => moveCanvasNode(node.id, pos)}
                   onViewDiff={setDiffNode}
                 />
-              ),
-            )}
+              );
+            })}
             {draftAndCommitted.map((r, i) => (
               <KonvaRect
                 key={i}

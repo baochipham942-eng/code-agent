@@ -261,10 +261,11 @@ export function deserializeCanvasDocWithReport(text: string | null | undefined):
     return { doc: emptyCanvasDoc(), attributionDegraded: true, reasons: ['invalid-root'] };
   }
   const p = parsed as Record<string, unknown>;
-  const rawEntities = [
-    ...(Array.isArray(p.nodes) ? p.nodes : []),
-    ...(Array.isArray(p.connectors) ? p.connectors : []),
-    ...(Array.isArray(p.shapes) ? p.shapes : []),
+  // 显式收成 unknown[]：Array.isArray 把 unknown 窄成 any[]，直接展开会引入 any（eslint no-unsafe-assignment）。
+  const rawEntities: unknown[] = [
+    ...(Array.isArray(p.nodes) ? (p.nodes as unknown[]) : []),
+    ...(Array.isArray(p.connectors) ? (p.connectors as unknown[]) : []),
+    ...(Array.isArray(p.shapes) ? (p.shapes as unknown[]) : []),
   ];
   const reasons: string[] = [];
   if (!Array.isArray(p.nodes)) reasons.push('nodes-not-array');

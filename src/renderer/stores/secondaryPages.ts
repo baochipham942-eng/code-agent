@@ -11,7 +11,6 @@
 // ============================================================================
 
 export const SECONDARY_PAGES_CLOSED = {
-  showKnowledgeMemoryPanel: false,
   showLibraryPanel: false,
   showCapabilityHub: false,
   showCronCenter: false,

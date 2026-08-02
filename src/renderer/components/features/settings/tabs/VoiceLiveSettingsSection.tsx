@@ -265,7 +265,8 @@ export const VoiceLiveSettingsSection: React.FC = () => {
         <p className="text-xs text-zinc-500" data-testid="voice-usage-summary">
           {text.usageThisMonth
             .replace('{minutes}', String(Math.round(usage.monthSeconds / 60)))
-            .replace('{calls}', String(usage.monthCalls))}
+            .replace('{calls}', String(usage.monthCalls))
+            .replace('{tokens}', usage.monthTokens ? String(usage.monthTokens.totalTokens) : text.usageTokensUnavailable)}
         </p>
       </div>
 

@@ -3,6 +3,7 @@
 // 避免 JSON 内嵌 base64 膨胀（详见 内部文档 §2.2）。
 import type { RegionLockReport } from '@shared/contract/imageConsistency';
 import { isCanvasActor, type CanvasAttribution } from './canvasActor';
+import { clamp } from './canvasCameraInput';
 import {
   normalizeConnector,
   normalizeShape,
@@ -260,10 +261,11 @@ export function deserializeCanvasDocWithReport(text: string | null | undefined):
     return { doc: emptyCanvasDoc(), attributionDegraded: true, reasons: ['invalid-root'] };
   }
   const p = parsed as Record<string, unknown>;
-  const rawEntities = [
-    ...(Array.isArray(p.nodes) ? p.nodes : []),
-    ...(Array.isArray(p.connectors) ? p.connectors : []),
-    ...(Array.isArray(p.shapes) ? p.shapes : []),
+  // 显式收成 unknown[]：Array.isArray 把 unknown 窄成 any[]，直接展开会引入 any（eslint no-unsafe-assignment）。
+  const rawEntities: unknown[] = [
+    ...(Array.isArray(p.nodes) ? (p.nodes as unknown[]) : []),
+    ...(Array.isArray(p.connectors) ? (p.connectors as unknown[]) : []),
+    ...(Array.isArray(p.shapes) ? (p.shapes as unknown[]) : []),
   ];
   const reasons: string[] = [];
   if (!Array.isArray(p.nodes)) reasons.push('nodes-not-array');
@@ -339,7 +341,7 @@ export function computeFitCamera(
   const bboxW = maxX - minX;
   const bboxH = maxY - minY;
   // 退化 bbox（单点/零尺寸）：不缩放，仅居中。
-  const scale = bboxW > 0 && bboxH > 0 ? Math.min(viewW / bboxW, viewH / bboxH) * padding : 1;
+  const scale = clamp(bboxW > 0 && bboxH > 0 ? Math.min(viewW / bboxW, viewH / bboxH) * padding : 1);
   const cx = minX + bboxW / 2;
   const cy = minY + bboxH / 2;
   return { scale, x: viewW / 2 - cx * scale, y: viewH / 2 - cy * scale };

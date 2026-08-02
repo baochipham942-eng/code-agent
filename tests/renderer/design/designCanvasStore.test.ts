@@ -198,6 +198,14 @@ describe('designCanvasStore setCamera', () => {
     }));
     expect(useDesignCanvasStore.getState().camera).toEqual({ x: 15, y: 20, scale: 2 });
   });
+
+  it('直接值和函数更新都 clamp 到统一缩放范围', () => {
+    const s = useDesignCanvasStore.getState();
+    s.setCamera({ x: 10, y: 20, scale: 200 });
+    expect(useDesignCanvasStore.getState().camera).toEqual({ x: 10, y: 20, scale: 5 });
+    s.setCamera((camera) => ({ ...camera, scale: 0.001 }));
+    expect(useDesignCanvasStore.getState().camera).toEqual({ x: 10, y: 20, scale: 0.1 });
+  });
 });
 
 describe('discardNode 升主版 tie-break（审计 R2 LOW symmetric）', () => {

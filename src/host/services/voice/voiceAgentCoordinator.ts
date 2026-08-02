@@ -15,7 +15,13 @@
 
 import type { TaskManagerEvent } from '../../task/TaskManager';
 import type { VoiceFocusContext, VoiceWorkFailureMarker, VoiceWorkItem, VoiceWorkItemStatus, VoiceWorkNarration } from '../../../shared/contract/voice';
-import { VOICE_CONCLUSION_LOOKBACK_MESSAGES, VOICE_RECENT_FILE_LIMIT, VOICE_SPAWN_TASK_MAX_ITERATIONS } from '../../../shared/constants/voice';
+import {
+  VOICE_CONCLUSION_LOOKBACK_MESSAGES,
+  VOICE_RECENT_FILE_LIMIT,
+  VOICE_SPAWN_TASK_MAX_ITERATIONS,
+  VOICE_STOP_CONFIRM_RETRIES,
+  VOICE_STOP_CONFIRM_TIMEOUT_MS,
+} from '../../../shared/constants/voice';
 import { getIncompleteTasks } from '../planning/taskStore';
 import { getSessionManager } from '../infra/sessionManager';
 import { createLogger } from '../infra/logger';
@@ -23,7 +29,7 @@ import { buildRoleContextBlock } from '../roleAssets/roleAssetService';
 import { withWorkbenchTurnSystemContext } from '../../app/workbenchTurnContext';
 import { getPermissionModeManager } from '../../permissions/modes';
 import { getConfigService } from '../core/configService';
-import { buildWorkNarration, resolveNarrationSpeaker } from './voiceNarration';
+import { buildStopNarration, buildWorkNarration, resolveNarrationSpeaker, type VoiceStopAnnouncementKind } from './voiceNarration';
 import { describeWorkFailure } from './workFailureDescription';
 import { buildVocabularyBlock } from './voiceVocabulary';
 import { resolveVoiceWorkOutcome } from './voiceWorkEvidence';
@@ -34,7 +40,11 @@ const logger = createLogger('VoiceCoordinator');
 export type VoiceIntent =
   | { kind: 'status' }
   | { kind: 'recent_files' }
-  | { kind: 'spawn_task'; title: string; prompt: string }
+  /**
+   * `replaceCurrent`：用户说的是「别等 X 了，改做 Y」——弃掉手上那件、换成这件。
+   * 与 steer_task（改方向、不弃活）是两件事，路由判别写在 voiceRouting 的 prompt 里。
+   */
+  | { kind: 'spawn_task'; title: string; prompt: string; replaceCurrent?: boolean }
   | { kind: 'steer_task'; instruction: string }
   | { kind: 'cancel_task' }
   | { kind: 'end_call' }
@@ -84,6 +94,25 @@ export interface VoiceDispatchBinding {
 
 const TERMINAL: readonly VoiceWorkItemStatus[] = ['done', 'unverified', 'failed', 'cancelled'];
 
+/**
+ * 一次「先把手上那件停下来」的在途请求（§1 打断原子性）。
+ *
+ * 存在的唯一理由是那道硬门：**确认旧的落终态之前，绝不 startRun**。所以「要停谁」
+ * 和「停稳之后要派什么」必须一起记着，等终态事件来了在同一处兑现——把它拆成
+ * 「先 cancel，然后在别处 setTimeout 里派新活」就等于把门开在两个地方。
+ */
+interface PendingStop {
+  /** 正在等它落终态的那件活 */
+  workItemId: string;
+  /** 那件活的标题，超时回报时要说清是谁没停稳 */
+  title: string;
+  /** 停稳后要派的新活；undefined = 纯 cancel_task，不派新活 */
+  next?: { title: string; prompt: string };
+  timer: NodeJS.Timeout;
+  /** 已重发 cancel 的次数，上限 VOICE_STOP_CONFIRM_RETRIES */
+  attempts: number;
+}
+
 interface LedgerState {
   neoSessionId: string;
   activeAgentId?: string;
@@ -105,6 +134,14 @@ interface LedgerState {
   focus: VoiceFocusContext | null;
   /** 近窗字幕原文（voiceSessionService 每落一条 final 就推一次），派活时随 run 一起交给执行侧。 */
   transcript: VoiceTranscriptEntry[];
+  /** 在途的「停旧的」请求；同时只可能有一件（通话是单路，手上也只有一件活）。 */
+  pendingStop: PendingStop | null;
+  /**
+   * 被顶掉的活：终态**不念给用户听**（他刚亲口说「别做那个了」，回头再播一遍它的结局
+   * 是噪音）。只压播报——onWorkFailed 留痕与落库照旧，屏幕那一路仍然说实话。
+   * 停不下来时会从这里移除：那件活还活着，它的结局就还该被念。
+   */
+  supersededIds: Set<string>;
 }
 
 // ponytail: 通话是全局单路（voiceSessionService 的互斥），一个模块级账本就够，
@@ -166,6 +203,8 @@ export function beginVoiceDispatch(binding: VoiceDispatchBinding): void {
     listenerAttached: false,
     focus: null,
     transcript: [],
+    pendingStop: null,
+    supersededIds: new Set(),
   };
 }
 
@@ -224,14 +263,30 @@ export function endVoiceDispatch(): void {
   if (!ledger) return;
   ledger.emit = null;
   ledger.narrate = null;
+  // 挂断 = 用户不要执行。在途的替换请求连同它待派的新活一起作废——「通话结束补派」
+  // 那条链已被整条删掉（产品负责人 2026-07-30），这里不许自己长回来。
+  abortPendingStop(ledger);
   detachIfSettled(false);
+}
+
+/** 撤掉在途的「停旧的」请求：停表 + 解除播报抑制。**不派任何新活。** */
+function abortPendingStop(state: LedgerState): void {
+  const stop = state.pendingStop;
+  if (!stop) return;
+  clearTimeout(stop.timer);
+  state.pendingStop = null;
+  state.supersededIds.delete(stop.workItemId);
+  logger.info('pending stop aborted', { workItemId: stop.workItemId, hadNext: !!stop.next });
 }
 
 function detachIfSettled(force: boolean): void {
   const state = ledger;
   if (!state) return;
   const unsettled = [...state.items.values()].some((item) => !TERMINAL.includes(item.status));
-  if (!force && (unsettled || state.emit)) return;
+  // pendingStop 在途 = 这条链还没走完（可能马上要 startRun），此刻丢账本会让新 run
+  // 的生命周期事件全部落空。它和「有活没落终态」是同一类未结清。
+  if (!force && (unsettled || state.emit || state.pendingStop)) return;
+  if (state.pendingStop) clearTimeout(state.pendingStop.timer);
   if (state.listenerAttached) {
     void taskManager().then((tm) => tm.off('event', state.listener)).catch(() => undefined);
   }
@@ -271,7 +326,10 @@ function settle(
   }
   // 发言人协议与挂断后可见性互斥：电话还在就念结论；电话已断就发一条带任务名的
   // 会话通知，让侧栏复用既有未读圆点。cancelled 是用户自己叫停的，不重复打扰。
-  if (status === 'done' || status === 'unverified' || status === 'failed') {
+  // 被顶掉的活不回头念结局（§1）：用户刚说完「别做那个了」，再播一遍它的下场是噪音。
+  // 只压耳朵这一路——onFailed 留痕和下面的落库照常，屏幕上仍然看得到真实结局。
+  const superseded = state.supersededIds.has(id);
+  if (!superseded && (status === 'done' || status === 'unverified' || status === 'failed')) {
     if (state.narrate === null) {
       void notifyVoiceWorkSettledAfterHangup(state, settled, status);
     } else {
@@ -285,7 +343,127 @@ function settle(
   }
   getPermissionModeManager().clearLiveVoiceSession(state.neoSessionId, runHoldId(id));
   if (state.pendingId === id) state.pendingId = null;
+  state.supersededIds.delete(id);
+  // 硬门的兑现处：等的那件活落终态了，这才轮到 startRun。必须排在 detachIfSettled 之前，
+  // 且 resolvePendingStop 全程把 pendingStop 挂着不放，账本才不会在派新活之前被丢掉。
+  resolvePendingStop(state, id);
   detachIfSettled(false);
+}
+
+// ============================================================================
+// 打断原子性（§1）：异步确认 + 注入回报
+// ============================================================================
+
+/** 播一条「停旧的」回报。合成 id 带后缀，不能占用真实 work item 的去重键。 */
+function announceStop(state: LedgerState, kind: VoiceStopAnnouncementKind, title: string, anchorId: string): void {
+  const narrate = state.narrate;
+  // 电话已挂：这句回报没人听，也不该落到挂断后通知里（那条通道是给「活的结局」的）。
+  if (!narrate) return;
+  narrate(buildStopNarration({
+    workItemId: `${anchorId}:stop-${kind}`,
+    kind,
+    title,
+    ...(state.activeAgentId ? { agentId: state.activeAgentId } : {}),
+  }));
+}
+
+/**
+ * 等的那件活落终态了。这是**唯一**允许把替换请求里的新活派出去的地方。
+ *
+ * pendingStop 直到新活真的 startRun 完（或确认没有新活）才置 null——中间这段 await
+ * 里它就是「这条链还没走完」的凭据，detachIfSettled 据此不丢账本。
+ */
+function resolvePendingStop(state: LedgerState, settledId: string): void {
+  const stop = state.pendingStop;
+  if (!stop || stop.workItemId !== settledId) return;
+  clearTimeout(stop.timer);
+  const next = stop.next;
+  if (!next) {
+    state.pendingStop = null;
+    logger.info('stop confirmed', { workItemId: stop.workItemId });
+    announceStop(state, 'stopped', stop.title, stop.workItemId);
+    return;
+  }
+  void (async () => {
+    try {
+      const workItemId = await startRun(state, next.title, next.prompt);
+      logger.info('replacement dispatched after stop confirmed', {
+        supersededId: stop.workItemId,
+        workItemId,
+      });
+      announceStop(state, 'replaced', next.title, workItemId);
+    } catch (err) {
+      // 派发失败必须出声：静默吞掉就是「用户说了换成 Y，旧的停了，新的没跑，谁都不知道」。
+      const message = err instanceof Error ? err.message : 'unknown';
+      logger.warn('replacement failed to dispatch after stop confirmed', { message });
+      announceStop(state, 'replace_timeout', next.title, stop.workItemId);
+    } finally {
+      state.pendingStop = null;
+      detachIfSettled(false);
+    }
+  })();
+}
+
+/**
+ * 等不到终态。重发 cancel 到上限，仍然等不到就**不派新活**并 fail-loud 回报。
+ *
+ * 「不派新活」是本条链的全部意义：防双跑的门只有一道，就是「没确认停稳绝不 startRun」。
+ * 这里宁可丢掉用户的替换意图（让他再说一次），也不能两件活同时跑。
+ */
+function onStopTimeout(state: LedgerState): void {
+  // 新通话已经换掉账本时，这张表属于上一通电话，不作数。
+  if (ledger !== state) return;
+  const stop = state.pendingStop;
+  if (!stop) return;
+  if (stop.attempts < VOICE_STOP_CONFIRM_RETRIES) {
+    stop.attempts += 1;
+    stop.timer = setTimeout(() => onStopTimeout(state), VOICE_STOP_CONFIRM_TIMEOUT_MS);
+    logger.warn('stop not confirmed, retrying cancel', {
+      workItemId: stop.workItemId,
+      attempt: stop.attempts,
+    });
+    void taskManager()
+      .then((tm) => tm.cancelTask(state.neoSessionId))
+      .catch((err: unknown) => {
+        logger.warn('retry cancel threw', { message: err instanceof Error ? err.message : 'unknown' });
+      });
+    return;
+  }
+  state.pendingStop = null;
+  // 它没停成，还活着——它的结局仍然该念给用户听，解除抑制。
+  state.supersededIds.delete(stop.workItemId);
+  logger.warn('stop confirmation timed out, replacement NOT dispatched', {
+    workItemId: stop.workItemId,
+    hadNext: !!stop.next,
+  });
+  announceStop(state, stop.next ? 'replace_timeout' : 'stop_timeout', stop.next?.title ?? stop.title, stop.workItemId);
+  detachIfSettled(false);
+}
+
+/** 武装一次「停旧的」：标记 superseded（仅替换场景）→ 发 cancel → 起表 → 立即返回台词。 */
+async function requestStop(
+  state: LedgerState,
+  target: { workItemId: string; title: string },
+  next?: { title: string; prompt: string },
+): Promise<void> {
+  const tm = await taskManager();
+  if (next) state.supersededIds.add(target.workItemId);
+  state.pendingStop = {
+    workItemId: target.workItemId,
+    title: target.title,
+    ...(next ? { next } : {}),
+    timer: setTimeout(() => onStopTimeout(state), VOICE_STOP_CONFIRM_TIMEOUT_MS),
+    attempts: 0,
+  };
+  logger.info('stop requested', { workItemId: target.workItemId, hasNext: !!next });
+  try {
+    await tm.cancelTask(state.neoSessionId);
+  } catch (err) {
+    // 不在这里回报：超时那条路是「没停稳」的唯一出口，两处都说会让用户听到两遍。
+    logger.warn('cancel threw, leaving it to the confirmation timer', {
+      message: err instanceof Error ? err.message : 'unknown',
+    });
+  }
 }
 
 /**
@@ -457,7 +635,7 @@ export async function dispatchVoiceIntent(intent: VoiceIntent): Promise<string> 
     case 'recent_files':
       return describeFocusedFiles(state);
     case 'spawn_task':
-      return spawnTask(state, intent.title, intent.prompt);
+      return spawnTask(state, intent.title, intent.prompt, intent.replaceCurrent);
     case 'steer_task':
       return steerTask(state, intent.instruction);
     case 'cancel_task':
@@ -542,13 +720,43 @@ async function startRun(state: LedgerState, title: string, prompt: string): Prom
 // （那条链还会把一段内部指令 prompt 显示给用户看）。
 // 保留的是「已派出任务的挂断后通知」与近窗字幕注入普通派活——它们与本条无关。
 
-async function spawnTask(state: LedgerState, title: string, prompt: string): Promise<string> {
+async function spawnTask(
+  state: LedgerState,
+  title: string,
+  prompt: string,
+  replaceCurrent?: boolean,
+): Promise<string> {
   const tm = await taskManager();
   const status = tm.getSessionState(state.neoSessionId).status;
-  // startTask 在 running/queued/paused/cancelling 时会抛。与其抛给通话 brain 一句
-  // 异常文本，不如把「现在有活在跑」这个事实说清楚，并告诉用户两条出路。
-  if (status === 'running' || status === 'queued' || status === 'paused' || status === 'cancelling') {
-    return `现在还有一件活在跑，没有派新的。要改方向就说「改成……」，要停就说「别做了」。`;
+  const busy = status === 'running' || status === 'queued' || status === 'paused' || status === 'cancelling';
+  if (busy) {
+    // 已经有一次「停旧的」在途：再来一次会把 pendingStop 覆盖掉，第一次的替换意图
+    // 就此蒸发（且它的定时器还挂着）。如实说，不排队。
+    if (state.pendingStop) {
+      return '上一件正在停，还没停稳，这次没有派新的。等我说停好了再讲一次要做什么。';
+    }
+    if (!replaceCurrent) {
+      // 没有替换意图：维持 fail-closed 拒新，并给出两条出路。
+      return `现在还有一件活在跑，没有派新的。要改方向就说「改成……」，要停就说「别做了」。`;
+    }
+    const pendingId = state.pendingId;
+    const pending = pendingId ? state.items.get(pendingId) : undefined;
+    if (!pendingId || !pending) {
+      // 会话在跑，但账本里没有对应的 work item（不是语音派出去的活）。此时无从等待
+      // 「那件活」的终态事件，硬门无法成立——不猜、不派。
+      logger.warn('replace requested but no voice work item is pending', { status });
+      return '现在有一件不是我派的活在跑，我没法替你顶掉它。等它结束，或者你先手动停掉。';
+    }
+    await requestStop(state, { workItemId: pendingId, title: pending.title }, { title, prompt });
+    // 立即返回,不阻塞对话（拍板 2026-08-01 异步确认式）。**这里绝不能说新活已经开始**——
+    // 它确实还没开始，而且可能永远不会开始（停不稳就不派）。台词只描述"正在停"这一件
+    // 已经真发生的事，结果由后续注入的回报兑现。
+    return [
+      `现在对用户说：「我正在把手上那件停下来，停稳了就开始做『${title}』。」就说这一个意思。`,
+      `**『${title}』现在还没有开始做**，不要说它已经开始、已经在跑、已经派出去了。`,
+      '停稳没停稳、新活开没开始，都会以 [BACKEND] 开头的消息告诉你；在那之前你什么都不知道。',
+      '用户如果追问，先调 get_active_tasks 看真实状态再回答。',
+    ].join('\n');
   }
   await startRun(state, title, prompt);
   // 谎报的根治（批 X ①，2026-07-30）：上一版返回「已经排上队，还在后台跑，没做完。
@@ -610,16 +818,35 @@ function endCall(state: LedgerState): string {
   return '挂断动作已经执行，通话马上结束。跟用户说一句简短的告别，不要再问别的。';
 }
 
+/**
+ * 停掉手上那件（§1.2）。
+ *
+ * 改成与 replace 同一套「异步确认 + 注入回报」：上一版工具立即返回「已经让 X 停下来了」，
+ * 而终态事件是之后才到的——说"停了"的那一刻并没有确认它停了，这就是一句 fail-open 的
+ * 谎报。现在返回值只说"正在停"（一件已经真发生的事），停没停稳由后续注入回报兑现。
+ */
 async function cancelTask(state: LedgerState): Promise<string> {
   const tm = await taskManager();
   const status = tm.getSessionState(state.neoSessionId).status;
   if (status !== 'running' && status !== 'queued' && status !== 'paused') {
     return '现在没有在跑的活，不用停。';
   }
-  const title = state.pendingId ? state.items.get(state.pendingId)?.title : undefined;
-  await tm.cancelTask(state.neoSessionId);
-  // 终态由 task_cancelled 事件落；这里只回话，不抢着改状态。
-  return title ? `已经让「${title}」停下来了。` : '已经让正在跑的活停下来了。';
+  if (state.pendingStop) {
+    return '已经在停了，还没停稳。停好了我会说。';
+  }
+  const pendingId = state.pendingId;
+  const pending = pendingId ? state.items.get(pendingId) : undefined;
+  if (!pendingId || !pending) {
+    // 不是语音派出去的活：照发 cancel，但没有可等的终态事件，不武装确认链，
+    // 也就不能承诺"停好了会告诉你"。
+    await tm.cancelTask(state.neoSessionId);
+    return '现在对用户说：「我已经发出了停止的指令。」不要说它已经停了——那件活不是我派的，我确认不了。';
+  }
+  await requestStop(state, { workItemId: pendingId, title: pending.title });
+  return [
+    `现在对用户说：「我正在让『${pending.title}』停下来。」就说这一个意思。`,
+    '**不要说它已经停了**——停没停稳会以 [BACKEND] 开头的消息告诉你，在那之前你不知道。',
+  ].join('\n');
 }
 
 // ============================================================================

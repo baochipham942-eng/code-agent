@@ -149,14 +149,14 @@ describe('Speaking pace 指令（host）', () => {
   it('normal 档与不传语速时逐字节相同', () => {
     const persona = '你是牧之';
     const focus = { view: 'preview:/repo/a.ts', filePath: '/repo/a.ts' };
-    expect(composeVoiceInstructions(persona, focus, 'normal'))
+    expect(composeVoiceInstructions(persona, focus, { speechRate: 'normal' }))
       .toBe(composeVoiceInstructions(persona, focus));
   });
 
   it.each(['slow', 'fast'] as const)('语速句位于 persona 之后、Focus 段之前（%s）', (rate) => {
     const persona = '你是牧之';
     const pace = buildSpeechPaceDirective(rate);
-    const out = composeVoiceInstructions(persona, { view: 'preview:/repo/a.ts' }, rate);
+    const out = composeVoiceInstructions(persona, { view: 'preview:/repo/a.ts' }, { speechRate: rate });
     expect(out.indexOf(persona)).toBe(0);
     expect(out.indexOf(pace)).toBeGreaterThan(out.indexOf(persona));
     expect(out.indexOf('[Context — Focus]')).toBeGreaterThan(out.indexOf(pace));

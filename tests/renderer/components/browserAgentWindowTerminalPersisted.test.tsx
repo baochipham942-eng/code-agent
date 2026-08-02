@@ -180,12 +180,11 @@ describe('BrowserAgentWindow 终态留影：重启后从盘上读回', () => {
     render(<BrowserAgentWindow />);
     await screen.findByTestId('browser-agent-window-terminal-summary');
 
-    // 在途期间来一次无关的 store 更新 —— 真机上这种更新每秒都在发生
+    // 在途期间投影再到一次 —— 重载后 host 快照陆续到达，真机上就是这个节奏。
+    // 必须动 sessionsByScope：终态会话对象从那里取，动 frameByScope 不会换它的身份，
+    // 也就复现不出 cleanup 提前把在途响应判死的那一幕（第一版测试就栽在这，变异不红）。
     await act(async () => {
-      useSurfaceExecutionStore.getState().setFrameState(
-        { conversationId: 'other-session', runId: 'r', agentId: 'a', surfaceSessionId: 's' },
-        { status: 'stale', dataUrl: 'data:image/jpeg;base64,zzz', updatedAt: 1 },
-      );
+      seedTerminalSessionWithoutFrame();
     });
 
     await act(async () => {

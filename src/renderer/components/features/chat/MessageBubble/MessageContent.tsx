@@ -8,11 +8,13 @@ import remend from 'remend';
 import type { Components } from 'react-markdown';
 import type { MessageContentProps } from './types';
 import { useAppStore } from '../../../../stores/appStore';
+import { useSessionStore } from '../../../../stores/sessionStore';
 import { wrapFilePathsInBackticks, wrapTicketsAsLinks } from './filePathProcessor';
 import { parseLeadingTriggerToken } from './triggerTokenHighlight';
 import { isWebMode, copyPathToClipboard, openExternalLink } from '../../../../utils/platform';
 import { isPreviewable } from '../../../../utils/previewable';
 import { LinkPreviewCard, isRawUrlLink } from './LinkPreviewCard';
+import { openHttpLinkInRail } from '../../../../services/userBrowserLink';
 import { ChartBlock, isChartSpecSource } from './ChartBlock';
 import { GenerativeUIBlock } from './GenerativeUIBlock';
 import { GenerativeUIHost } from '../GenerativeUI/GenerativeUIHost';
@@ -81,9 +83,10 @@ function iactSendTextOf(node: React.ReactNode): string | null {
 }
 
 // Main message content component
-export const MessageContent: React.FC<MessageContentProps> = memo(function MessageContent({ content, isUser, isStreaming = false, messageId, mediaContext }) {
+export const MessageContent: React.FC<MessageContentProps> = memo(function MessageContent({ content, isUser, isStreaming = false, messageId, mediaContext, streamingTailStart }) {
   const openPreview = useAppStore((state) => state.openPreview);
   const workingDirectory = useAppStore((state) => state.workingDirectory);
+  const currentSessionId = useSessionStore((state) => state.currentSessionId);
   const streamingNeedsMarkdown = !isUser && isStreaming && shouldRenderStreamingContentAsMarkdown(content);
   const markdownSource = useThrottledStreamingContent(content, streamingNeedsMarkdown);
   const deferCompletedLayout = shouldDeferTurnContentLayout({
@@ -145,6 +148,12 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
     }
     openPreview(fullPath);
   }, [openPreview, workingDirectory]);
+
+  const handleOpenHttpLink = useCallback((href: string) => openHttpLinkInRail({
+    href,
+    conversationId: mediaContext?.sessionId || currentSessionId,
+    workspace: workingDirectory,
+  }), [currentSessionId, mediaContext?.sessionId, workingDirectory]);
 
   // Filter out system tags, auto-link ticket IDs, wrap file paths,
   // then close incomplete markdown tokens for streaming-safe rendering
@@ -511,7 +520,7 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
         // raw URL（链接文字就是 URL 本身）：favicon + 下划线链接，帮用户一眼认站点。
         // 轻呈现——只有 16px 图标，没有 chip 边框/底色。
         if (href && isRawUrlLink(href, children)) {
-          return <LinkPreviewCard href={href} />;
+          return <LinkPreviewCard href={href} onOpen={handleOpenHttpLink} />;
         }
 
         // Regular links（带描述文字的内联链接）
@@ -521,7 +530,9 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
             href={href}
             target="_blank"
             rel="noopener noreferrer"
-            onClick={(e) => { if (openExternalLink(href)) e.preventDefault(); }}
+            onClick={(e) => {
+              if ((href && handleOpenHttpLink(href)) || openExternalLink(href)) e.preventDefault();
+            }}
             className="text-primary-400 hover:text-primary-300 underline underline-offset-2 cursor-pointer"
           >
             {children}
@@ -553,7 +564,7 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
         );
       },
     }),
-    [filteredContent, handleOpenFile, handlePreviewHtml, isStreaming, mediaContext?.sessionId, mediaContext?.turnId, mediaContext?.messageId, messageId]
+    [filteredContent, handleOpenFile, handleOpenHttpLink, handlePreviewHtml, isStreaming, mediaContext?.sessionId, mediaContext?.turnId, mediaContext?.messageId, messageId]
   );
 
   // For user messages, render as plain text (no markdown processing)
@@ -575,17 +586,33 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
   }
 
   if (isStreaming && !streamingNeedsMarkdown) {
+    const plainText = sanitizePlainTextFallback(filterSystemTags(content));
+    // 尾段淡入（工单 2026-08-01）：hook 每 ~120ms 落一个「词/短段」，把最新一段
+    // 包进 key 随段首下标变化的 span，mount 时跑一次 CSS 淡入；直落的大块不包、
+    // 立即可读。下标基于未过滤的 content，过滤后可能漂移，越界就不拆分（纯视觉）。
+    const tailStart = streamingTailStart != null
+      && streamingTailStart > 0
+      && streamingTailStart < plainText.length
+      ? streamingTailStart
+      : null;
     return (
-      <div className="text-sm leading-[1.7] break-words prose prose-invert prose-sm max-w-none streaming-text with-caret">
+      <div className="text-sm leading-[1.7] break-words prose prose-invert prose-sm max-w-none streaming-text">
         <span className="whitespace-pre-wrap">
-          {sanitizePlainTextFallback(filterSystemTags(content))}
+          {tailStart === null ? plainText : (
+            <>
+              {plainText.slice(0, tailStart)}
+              <span key={tailStart} className="streaming-tail-segment">
+                {plainText.slice(tailStart)}
+              </span>
+            </>
+          )}
         </span>
       </div>
     );
   }
 
-  // 流式中的 markdown 内容才加揭示动画 + 内联呼吸光标；已完成消息不加（避免重播/常驻光标）
-  const streamingDecor = isStreaming ? ' streaming-text with-caret' : '';
+  // 流式中的 markdown 内容保留流式样式标记；已完成消息不加，避免重播。
+  const streamingDecor = isStreaming ? ' streaming-text' : '';
   return (
     <div
       className={`text-sm leading-[1.7] break-words prose prose-invert prose-sm max-w-none${streamingDecor}`}

@@ -8,6 +8,10 @@ import { loadStreamSnapshot } from '../session/streamSnapshot';
 import { rehydrateModelOverrideFromSession } from '../session/modelOverridePersistence';
 import { resolveSessionDefaultModelConfig } from '../services/core/sessionDefaults';
 import { isExternalAgentEngine } from '../services/agentEngine';
+import { getUserBrowserLinkService } from '../services/surfaceExecution/UserBrowserLinkService';
+import { createLogger } from '../services/infra/logger';
+
+const logger = createLogger('SessionLifecycleAppService');
 
 type SessionLifecycleDependencies = {
   getTaskManager: () => TaskManager;
@@ -19,6 +23,18 @@ type SessionLifecycleDependencies = {
 
 export class SessionLifecycleAppService {
   constructor(private readonly deps: SessionLifecycleDependencies) {}
+
+  private async endPreviousUserBrowserRun(nextSessionId: string): Promise<void> {
+    const previousSessionId = this.deps.getCurrentSessionId();
+    if (!previousSessionId || previousSessionId === nextSessionId) return;
+    await getUserBrowserLinkService().end(previousSessionId, 'session-switch').catch((error) => {
+      logger.warn('Failed to end user browser run while switching sessions', {
+        previousSessionId,
+        nextSessionId,
+        message: error instanceof Error ? error.message : String(error),
+      });
+    });
+  }
 
   async createSession(config?: CreateSessionConfig): Promise<Session> {
     if (!this.deps.getConfigService()) throw new Error('Services not initialized');
@@ -45,6 +61,7 @@ export class SessionLifecycleAppService {
       metadata: config?.metadata,
     });
 
+    await this.endPreviousUserBrowserRun(session.id);
     sessionManager.setCurrentSession(session.id);
     this.deps.setCurrentSessionId(session.id);
 
@@ -63,6 +80,7 @@ export class SessionLifecycleAppService {
     const session = await getSessionManager().restoreSession(sessionId);
     if (!session) throw new Error(`Session ${sessionId} not found`);
 
+    await this.endPreviousUserBrowserRun(sessionId);
     this.deps.setCurrentSessionId(sessionId);
 
     const taskManager = this.deps.getTaskManager();

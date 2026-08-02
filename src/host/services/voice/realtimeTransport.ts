@@ -16,7 +16,12 @@ import {
   VOICE_UPSTREAM_SILENCE_TIMEOUT_MS,
 } from '../../../shared/constants/voice';
 import type { RealtimeVoiceProviderProfile } from '../../../shared/constants/realtimeVoiceProviders';
-import type { VoiceTransport, VoiceTransportHandle, VoiceTurnDetectionConfig } from '../../../shared/contract/voice';
+import type {
+  VoiceTokenUsage,
+  VoiceTransport,
+  VoiceTransportHandle,
+  VoiceTurnDetectionConfig,
+} from '../../../shared/contract/voice';
 import { getConfigService } from '../core/configService';
 import { createLogger } from '../infra/logger';
 import { getHttpsAgent } from '../../model/providers/providerHttp';
@@ -31,13 +36,86 @@ interface UpstreamEvent {
   type: string;
   response_id?: string;
   item_id?: string;
-  response?: { id?: string };
+  response?: { id?: string; usage?: unknown };
   item?: { id?: string };
   delta?: string;
   transcript?: string;
   audio?: string;
   error?: { code?: string; message?: string };
   [key: string]: unknown;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function tokenCount(record: Record<string, unknown>, key: string): number | undefined {
+  const value = record[key];
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : undefined;
+}
+
+function parseDashscopeUsage(raw: unknown): VoiceTokenUsage | undefined {
+  if (!isRecord(raw) || !isRecord(raw.input_tokens_details) || !isRecord(raw.output_tokens_details)) return undefined;
+  const totalTokens = tokenCount(raw, 'total_tokens');
+  const inputTokens = tokenCount(raw, 'input_tokens');
+  const outputTokens = tokenCount(raw, 'output_tokens');
+  const inputAudioTokens = tokenCount(raw.input_tokens_details, 'audio_tokens');
+  const inputTextTokens = tokenCount(raw.input_tokens_details, 'text_tokens');
+  const outputAudioTokens = tokenCount(raw.output_tokens_details, 'audio_tokens');
+  const outputTextTokens = tokenCount(raw.output_tokens_details, 'text_tokens');
+  if (
+    totalTokens === undefined
+    || inputTokens === undefined
+    || outputTokens === undefined
+    || inputAudioTokens === undefined
+    || inputTextTokens === undefined
+    || outputAudioTokens === undefined
+    || outputTextTokens === undefined
+  ) return undefined;
+  return {
+    totalTokens,
+    inputTokens,
+    outputTokens,
+    inputAudioTokens,
+    inputTextTokens,
+    outputAudioTokens,
+    outputTextTokens,
+  };
+}
+
+function parseOpenAIUsage(raw: unknown): VoiceTokenUsage | undefined {
+  if (!isRecord(raw) || !isRecord(raw.input_token_details) || !isRecord(raw.output_token_details)) return undefined;
+  const totalTokens = tokenCount(raw, 'total_tokens');
+  const inputTokens = tokenCount(raw, 'input_tokens');
+  const outputTokens = tokenCount(raw, 'output_tokens');
+  const inputAudioTokens = tokenCount(raw.input_token_details, 'audio_tokens');
+  const inputTextTokens = tokenCount(raw.input_token_details, 'text_tokens');
+  const outputAudioTokens = tokenCount(raw.output_token_details, 'audio_tokens');
+  const outputTextTokens = tokenCount(raw.output_token_details, 'text_tokens');
+  if (
+    totalTokens === undefined
+    || inputTokens === undefined
+    || outputTokens === undefined
+    || inputAudioTokens === undefined
+    || inputTextTokens === undefined
+    || outputAudioTokens === undefined
+    || outputTextTokens === undefined
+  ) return undefined;
+  return {
+    totalTokens,
+    inputTokens,
+    outputTokens,
+    inputAudioTokens,
+    inputTextTokens,
+    outputAudioTokens,
+    outputTextTokens,
+  };
+}
+
+function parseResponseUsage(profile: RealtimeVoiceProviderProfile, raw: unknown): VoiceTokenUsage | undefined {
+  return profile.sessionShape === 'dashscope-compatible'
+    ? parseDashscopeUsage(raw)
+    : parseOpenAIUsage(raw);
 }
 
 function responseIdOf(event: UpstreamEvent, fallback = ''): string {
@@ -597,6 +675,14 @@ export function createRealtimeTransport(profile: RealtimeVoiceProviderProfile): 
           break;
         case 'response.done': {
           const responseId = responseIdOf(event, activeResponseId || 'legacy-response');
+          const usage = parseResponseUsage(profile, event.response?.usage);
+          if (!usage) {
+            logger.warn('response.done usage missing or unrecognized', {
+              provider: profile.id,
+              sessionShape: profile.sessionShape,
+              hasUsage: event.response?.usage !== undefined,
+            });
+          }
           if (responseId === activeResponseId) activeResponseId = '';
           if (responseId) cancellingResponseIds.delete(responseId);
           if (responseId) responseItemIds.delete(responseId);
@@ -607,6 +693,7 @@ export function createRealtimeTransport(profile: RealtimeVoiceProviderProfile): 
               responseId,
               ...(ttfaModelMs !== undefined ? { ttfaModelMs } : {}),
               ...(ttfaPerceivedMs !== undefined ? { ttfaPerceivedMs } : {}),
+              ...(usage ? { usage } : {}),
             });
           }
           if (responseCreateQueued) sendResponseCreate();

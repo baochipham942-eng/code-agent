@@ -15,6 +15,8 @@ chat: {
   waitingSubagentFleet: '编队作业中，{count} 艘子舰并行',
   // 巡航信号（长任务 ≥45s）：{elapsed} 为 mm:ss 秒表，中性陈述「一切正常」
   longToolCruise: '深空巡航中 · 已航行 {elapsed} · 链路正常',
+  // 巡航信号旁的强制停止按钮
+  longToolStop: '停止',
   organizingReply: '正在组织回答…',
   thinkingDigest: '思考',
   thinkingSegments: ' · {count} 段',
@@ -464,6 +466,8 @@ chat: {
   waitingSubagentFleet: 'Fleet engaged, {count} subships in parallel',
   // Cruise signal (long-running tool ≥45s): {elapsed} is the mm:ss stopwatch, a neutral "all is well" statement
   longToolCruise: 'Deep-space cruise · {elapsed} elapsed · link nominal',
+  // Force-stop button next to the cruise signal
+  longToolStop: 'Stop',
   organizingReply: 'Organizing the reply…',
   thinkingDigest: 'Thinking',
   thinkingSegments: ' · {count} segments',

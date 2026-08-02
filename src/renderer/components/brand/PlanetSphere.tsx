@@ -9,7 +9,7 @@
 // 本组件是纯展示件：状态 → 星球/动效的映射在 VoiceChrome 的 VoicePlanet 里。
 // ============================================================================
 
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 
 export type PlanetKind = 'mercury' | 'earth' | 'sun' | 'jupiter';
 
@@ -30,6 +30,10 @@ export interface PlanetSphereProps {
   withOrbit?: boolean;
   /** 球径 px */
   size?: number;
+  /** 可拖拽旋转（带惯性与方向）：pointer 水平拖动改自转相位，松手按最近速度
+   *  惯性衰减。不做垂直俯仰（贴图高度=球径无余量，错位即露白）。
+   *  仅在主视觉位开启（空态页）；reduced-motion 下自动不生效。 */
+  interactive?: boolean;
 }
 
 // ============================================================================
@@ -314,11 +318,109 @@ export const PlanetSphere: React.FC<PlanetSphereProps> = ({
   glowColor,
   withOrbit = false,
   size = 22,
+  interactive = false,
 }) => {
   const texture = getTexture(kind);
   const cloudTexture = kind === 'earth' ? getTexture('clouds') : '';
   // 云层转速 = 地表 ×1.9（周期 ÷1.9）
   const cloudSpin = spinSeconds / 1.9;
+  const surfaceRef = useRef<HTMLSpanElement>(null);
+  const cloudsRef = useRef<HTMLSpanElement>(null);
+
+  // 拖拽旋转（interactive）：pointer 水平拖动改贴图相位（沿自转方向），
+  // 松手按最近速度惯性衰减。JS rAF 接管后 CSS 自转动画由 data-interactive
+  // 关闭（见 PLANET_CSS 尾部）。不做垂直俯仰：贴图高度=球径无余量，错位即露白。
+
+  useEffect(() => {
+    if (!interactive) return;
+    if (
+      typeof window !== 'undefined'
+      && typeof window.matchMedia === 'function'
+      && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    ) {
+      return; // reduced-motion：不接管，沿用内建停转
+    }
+    const surface = surfaceRef.current;
+    if (!surface) return;
+    const texw = size * 2;
+    const baseSX = texw / spinSeconds;
+    const baseCX = texw / cloudSpin;
+    let sx = 0;
+    let cx = 0;
+    let velX = 0;
+    let dragging = false;
+    let lastX = 0;
+    let lastT = 0;
+    let samples: Array<{ v: number }> = [];
+    let raf = 0;
+    let prev = performance.now();
+
+    // 只做水平自转：贴图横向是 360° 无缝世界图，怎么拖都不穿帮；
+    // 垂直方向没有贴图余量（图高 = 球径），错位即露白，不做俯仰。
+    const apply = () => {
+      surface.style.backgroundPosition = `${-sx}px 0px`;
+      if (cloudsRef.current) {
+        cloudsRef.current.style.backgroundPosition = `${-cx}px 0px`;
+      }
+    };
+    const step = (now: number) => {
+      const dt = Math.min(0.05, (now - prev) / 1000);
+      prev = now;
+      if (!dragging) {
+        velX *= Math.exp(-dt * 2.4);
+        if (Math.abs(velX) < 1) velX = 0;
+        sx += (baseSX + velX) * dt;
+        cx += (baseCX + velX * 1.9) * dt;
+      }
+      apply();
+      raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+
+    const onDown = (e: PointerEvent) => {
+      dragging = true;
+      velX = 0;
+      samples = [];
+      lastX = e.clientX;
+      lastT = e.timeStamp;
+      (e.currentTarget as Element).setPointerCapture?.(e.pointerId);
+    };
+    const onMove = (e: PointerEvent) => {
+      if (!dragging) return;
+      const dx = e.clientX - lastX;
+      const dt = Math.max(1, e.timeStamp - lastT) / 1000;
+      lastX = e.clientX;
+      lastT = e.timeStamp;
+      // 手指向右拖 → 贴图向右（pos.x 增大 = sx 减小），与自转方向同一坐标系
+      sx -= dx;
+      cx -= dx * 1.9;
+      samples.push({ v: -dx / dt });
+      if (samples.length > 5) samples.shift();
+      apply();
+    };
+    const onUp = () => {
+      if (!dragging) return;
+      dragging = false;
+      if (samples.length > 0) {
+        velX = samples.reduce((acc, s) => acc + s.v, 0) / samples.length;
+        velX = Math.max(-1400, Math.min(1400, velX));
+      }
+      samples = [];
+    };
+
+    const slot = surface.closest('.neo-planet-slot') ?? surface;
+    slot.addEventListener('pointerdown', onDown as EventListener);
+    window.addEventListener('pointermove', onMove as EventListener);
+    window.addEventListener('pointerup', onUp as EventListener);
+    window.addEventListener('pointercancel', onUp as EventListener);
+    return () => {
+      cancelAnimationFrame(raf);
+      slot.removeEventListener('pointerdown', onDown as EventListener);
+      window.removeEventListener('pointermove', onMove as EventListener);
+      window.removeEventListener('pointerup', onUp as EventListener);
+      window.removeEventListener('pointercancel', onUp as EventListener);
+    };
+  }, [interactive, size, spinSeconds, cloudSpin]);
 
   const slotStyle = {
     width: size,
@@ -345,14 +447,15 @@ export const PlanetSphere: React.FC<PlanetSphereProps> = ({
       className="neo-planet-slot"
       data-planet={kind}
       data-fx={fx}
+      data-interactive={interactive ? 'true' : undefined}
       style={slotStyle}
       role="img"
       aria-hidden="true"
       data-testid="voice-planet"
     >
       <span className="neo-planet">
-        <span className="neo-planet-surface" style={surfaceStyle(texture, true)} />
-        {kind === 'earth' && <span className="neo-planet-clouds" style={surfaceStyle(cloudTexture, false)} />}
+        <span className="neo-planet-surface" ref={surfaceRef} style={surfaceStyle(texture, true)} />
+        {kind === 'earth' && <span className="neo-planet-clouds" ref={cloudsRef} style={surfaceStyle(cloudTexture, false)} />}
         <span className="neo-planet-shade" />
       </span>
       {withOrbit && (
@@ -522,6 +625,19 @@ const PLANET_CSS = `
 }
 @keyframes neoPlanetOrbit {
   to { transform: rotate(360deg); }
+}
+
+/* 拖拽旋转（data-interactive）：CSS 自转交给 JS rAF 接管，指针样式提示可抓 */
+.neo-planet-slot[data-interactive='true'] {
+  cursor: grab;
+  touch-action: none;
+}
+.neo-planet-slot[data-interactive='true']:active {
+  cursor: grabbing;
+}
+.neo-planet-slot[data-interactive='true'] .neo-planet-surface,
+.neo-planet-slot[data-interactive='true'] .neo-planet-clouds {
+  animation: none;
 }
 
 /* reduced-motion：自转/呼吸/卫星全关，保留静态星球 + 颜色（选择器层级高于基础规则，直接覆盖） */

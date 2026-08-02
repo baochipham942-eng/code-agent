@@ -93,8 +93,6 @@ const appState = {
   setShowDesktopPanel: vi.fn(),
   showActivityPanel: false,
   setShowActivityPanel: vi.fn(),
-  showKnowledgeMemoryPanel: false,
-  setShowKnowledgeMemoryPanel: vi.fn(),
   showDAGPanel: false,
   setShowDAGPanel: vi.fn(),
 };

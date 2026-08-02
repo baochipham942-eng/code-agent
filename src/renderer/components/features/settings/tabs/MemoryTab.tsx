@@ -34,6 +34,8 @@ import { WebModeBanner } from '../WebModeBanner';
 import ipcService from '../../../../services/ipcService';
 import { useAppStore, type SettingsMemoryFocus } from '../../../../stores/appStore';
 import { MemoryEntriesManager } from './MemoryEntriesManager';
+import { KnowledgeInboxSection } from './KnowledgeInboxSection';
+import { MemoryDiagnosticsSection } from './MemoryDiagnosticsSections';
 import { useI18n } from '../../../../hooks/useI18n';
 import { localeForLanguage } from '../../../../utils/i18nTime';
 import { zh } from '../../../../i18n/zh';
@@ -958,11 +960,15 @@ export const MemoryTab: React.FC = () => {
         </SettingsSection>
       )}
 
+      <KnowledgeInboxSection />
+
       <SettingsDetails
         title={memoryText.files.diagnosticsTitle}
         description={memoryText.files.diagnosticsDescription}
       >
         <div className="space-y-4">
+          <MemoryDiagnosticsSection />
+
           {modelUsageRows.length > 0 && (
             <div>
               <div className="mb-2 flex items-center gap-1.5">

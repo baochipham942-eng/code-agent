@@ -51,4 +51,4 @@ export type { BadgeProps } from './Badge';
 
 // EmptyState
 export { EmptyState } from './EmptyState';
-export type { EmptyStateProps, EmptyStateVariant, EmptyStatePlanet } from './EmptyState';
+export type { EmptyStateProps } from './EmptyState';

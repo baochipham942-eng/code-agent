@@ -117,6 +117,7 @@ const imageNode = (id: string): CanvasImageNode => ({
   width: 320,
   height: 180,
   createdAt: 1,
+  createdBy: 'user',
 });
 
 function setCanvas(nodes: CanvasImageNode[] = []): void {

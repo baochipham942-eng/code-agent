@@ -131,6 +131,7 @@ const imageNode = (src: string): CanvasImageNode => ({
   width: 320,
   height: 180,
   createdAt: 1,
+  createdBy: 'user',
 });
 
 function setCanvas(node?: CanvasImageNode, error: string | null = null): void {

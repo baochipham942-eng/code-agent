@@ -111,6 +111,7 @@ describe('DesignCanvasTab 画布恢复 effect', () => {
       width: 320,
       height: 180,
       createdAt: 1,
+      createdBy: 'user',
     }];
     render(<DesignCanvasTab />);
     expect(loadCanvasDoc).not.toHaveBeenCalled();
@@ -139,6 +140,7 @@ const imageNode = (
   parentId,
   label: id,
   costCny,
+  createdBy: 'user',
 });
 
 describe('DesignCanvasTab 面板细边栏（工单①：图层/历史归一成单图标单面板双 tab）', () => {

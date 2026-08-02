@@ -23,6 +23,12 @@ import {
 } from './applyCanvasProposal';
 import type { CanvasProposalOp } from '../../../shared/contract/canvasProposal';
 import {
+  type CanvasActor,
+  type CanvasAttribution,
+  type CanvasEntityInput,
+  type CanvasEntityPatch,
+} from './canvasActor';
+import {
   emptyEditHistory,
   pushSnapshot,
   undoEdit as applyUndo,
@@ -84,12 +90,12 @@ interface DesignCanvasState {
   releaseSessionDesignState: (sessionId: string) => void;
   /** 清空到空画布（保留 runDir）。 */
   resetCanvas: () => void;
-  addNode: (node: CanvasNode) => void;
-  updateNode: (id: string, patch: Partial<Omit<CanvasNode, 'id'>>) => void;
+  addNode: (node: CanvasEntityInput<CanvasNode>, actor?: CanvasActor) => void;
+  updateNode: (id: string, patch: CanvasEntityPatch<Omit<CanvasNode, 'id'>>) => void;
   deleteNode: (id: string) => void;
   deleteNodes: (ids: readonly string[]) => void;
   /** 淘汰（软删除）：标记 discarded，节点落盘保留；若淘汰的是主版，自动把同槽最新活跃版升为主版。 */
-  discardNode: (id: string) => void;
+  discardNode: (id: string, actor?: CanvasActor) => void;
   /** 恢复（取消淘汰）：清掉 discarded 标记让节点重新可见（软删的找回路径，三刀）。 */
   restoreNode: (id: string) => void;
   /** 选为主版：标记该节点 chosen，并清除同版本槽（groupKey=parentId??id）其他节点的主版标记。 */
@@ -97,11 +103,11 @@ interface DesignCanvasState {
   /** 为某一步命名（T2 可逆命名步）：写入 label，不存在则静默无操作。 */
   renameNode: (id: string, label: string) => void;
   // —— 图解层（连线 / 形状），均为 Layer1 直接编辑，进编辑历史 ——
-  addConnector: (connector: CanvasConnector) => void;
-  updateConnector: (id: string, patch: Partial<Omit<CanvasConnector, 'id'>>) => void;
+  addConnector: (connector: CanvasEntityInput<CanvasConnector>) => void;
+  updateConnector: (id: string, patch: Partial<Omit<CanvasConnector, 'id' | keyof CanvasAttribution>>) => void;
   deleteConnector: (id: string) => void;
-  addShape: (shape: CanvasShape) => void;
-  updateShape: (id: string, patch: Partial<CanvasShape>) => void;
+  addShape: (shape: CanvasEntityInput<CanvasShape>) => void;
+  updateShape: (id: string, patch: CanvasEntityPatch<CanvasShape>) => void;
   deleteShape: (id: string) => void;
   /**
    * 应用一批 agent 提议 op（ADR-026 D3-B：整批=一个原子撤销单元）。
@@ -130,6 +136,43 @@ interface DesignCanvasState {
 /** 从当前 state 取一帧编辑快照（节点 + 图解层）。 */
 function snapshotOf(s: { nodes: CanvasNode[]; connectors: CanvasConnector[]; shapes: CanvasShape[] }): CanvasEditSnapshot {
   return { nodes: s.nodes, connectors: s.connectors, shapes: s.shapes };
+}
+
+function stampNewEntity<T extends CanvasAttribution>(
+  entity: CanvasEntityInput<T>,
+  actor: CanvasActor,
+  now: number,
+): T {
+  const { userTouchedAt: _ignoredTouch, createdBy: _ignoredCreator, ...content } = entity;
+  return {
+    ...content,
+    createdBy: actor,
+    ...(actor === 'user' ? { userTouchedAt: now } : {}),
+  } as unknown as T;
+}
+
+function touchEntity<T extends CanvasAttribution>(entity: T, now: number): T {
+  return { ...entity, userTouchedAt: now };
+}
+
+function comparableEntity(entity: CanvasAttribution & { id: string }): string {
+  const { userTouchedAt: _ignored, ...content } = entity;
+  return JSON.stringify(content);
+}
+
+/** undo/redo 也是用户动作：只给这一帧里真正变化/恢复的实体打戳。 */
+function touchChangedEntities<T extends CanvasAttribution & { id: string }>(
+  next: T[],
+  current: T[],
+  now: number,
+): T[] {
+  const currentById = new Map(current.map((entity) => [entity.id, entity]));
+  return next.map((entity) => {
+    const before = currentById.get(entity.id);
+    return !before || comparableEntity(before) !== comparableEntity(entity)
+      ? touchEntity(entity, now)
+      : entity;
+  });
 }
 
 /**
@@ -244,16 +287,24 @@ export const useDesignCanvasStore = create<DesignCanvasState>()(
   // addNode = 生成产物落画布，属 Layer2（variant spine），不进 Layer1 编辑历史。
   // 但它改了节点集，是一条新分支：清空 redo 栈（标准 undo/redo 不变式），
   // 否则 add 后 redo 会带着"当前态独有的新增节点"撞上 reconcileRedoFrame 的不追加语义而丢节点（修 HIGH-1 配套）。
-  addNode: (node) =>
-    set((s) => ({ nodes: [...s.nodes, node], editHistory: { ...s.editHistory, future: [] } })),
+  addNode: (node, actor = 'user') =>
+    set((s) => ({
+      nodes: [...s.nodes, stampNewEntity<CanvasNode>(node, actor, Date.now())],
+      editHistory: { ...s.editHistory, future: [] },
+    })),
   updateNode: (id, patch) =>
     set((s) => {
       if (!s.nodes.some((n) => n.id === id)) return {}; // 无此节点：不改、不留无谓撤销点
+      const now = Date.now();
       return {
         editHistory: pushSnapshot(s.editHistory, snapshotOf(s)), // 改前先快照（Layer1）
         // 判别联合 + 部分 patch 合并：TS 无法把 spread 结果窄回 CanvasNode union（已知限制），
         // 显式断言回 CanvasNode（非 any，保留判别字段）。
-        nodes: s.nodes.map((n) => (n.id === id ? ({ ...n, ...patch } as CanvasNode) : n)),
+        nodes: s.nodes.map((n) => (
+          n.id === id
+            ? touchEntity({ ...n, ...patch, id: n.id, createdBy: n.createdBy } as CanvasNode, now)
+            : n
+        )),
       };
     }),
   deleteNode: (id) => get().deleteNodes([id]),
@@ -271,7 +322,7 @@ export const useDesignCanvasStore = create<DesignCanvasState>()(
         selectedIds: s.selectedIds.filter((sid) => !idSet.has(sid)),
       };
     }),
-  discardNode: (id) =>
+  discardNode: (id, actor = 'user') =>
     set((s) => {
       const target = s.nodes.find((n) => n.id === id);
       if (!target) return {};
@@ -287,6 +338,11 @@ export const useDesignCanvasStore = create<DesignCanvasState>()(
           .sort((a, b) => b.createdAt - a.createdAt || b.id.localeCompare(a.id))[0];
         if (promote) nodes = nodes.map((n) => (n.id === promote.id ? { ...n, chosen: true } : n));
       }
+      if (actor === 'user') {
+        const changedIds = new Set(nodes.filter((node, index) => node !== s.nodes[index]).map((node) => node.id));
+        const now = Date.now();
+        nodes = nodes.map((node) => changedIds.has(node.id) ? touchEntity(node, now) : node);
+      }
       return { nodes, selectedIds: s.selectedIds.filter((sid) => sid !== id) };
     }),
   restoreNode: (id) =>
@@ -300,17 +356,19 @@ export const useDesignCanvasStore = create<DesignCanvasState>()(
         (n) => n.id !== id && !n.discarded && groupKey(n) === key && n.chosen,
       );
       const chosen = !slotHasChosen;
-      return { nodes: s.nodes.map((n) => (n.id === id ? { ...n, discarded: false, chosen } : n)) };
+      const now = Date.now();
+      return { nodes: s.nodes.map((n) => (n.id === id ? touchEntity({ ...n, discarded: false, chosen }, now) : n)) };
     }),
   setChosen: (id) =>
     set((s) => {
       const target = s.nodes.find((n) => n.id === id);
       if (!target) return {};
       const key = groupKey(target); // 同一版本槽 = groupKey(parentId ?? id)
+      const now = Date.now();
       return {
         nodes: s.nodes.map((n) => {
-          if (n.id === id) return { ...n, chosen: true };
-          if (groupKey(n) === key) return { ...n, chosen: false };
+          if (n.id === id) return touchEntity({ ...n, chosen: true }, now);
+          if (groupKey(n) === key) return touchEntity({ ...n, chosen: false }, now);
           return n;
         }),
       };
@@ -320,7 +378,7 @@ export const useDesignCanvasStore = create<DesignCanvasState>()(
       if (!s.nodes.some((n) => n.id === id)) return {};
       return {
         editHistory: pushSnapshot(s.editHistory, snapshotOf(s)),
-        nodes: s.nodes.map((n) => (n.id === id ? { ...n, label } : n)),
+        nodes: s.nodes.map((n) => (n.id === id ? touchEntity({ ...n, label }, Date.now()) : n)),
       };
     }),
   addConnector: (connector) =>
@@ -332,7 +390,7 @@ export const useDesignCanvasStore = create<DesignCanvasState>()(
       if (s.connectors.some((c) => c.id === connector.id)) return {};
       return {
         editHistory: pushSnapshot(s.editHistory, snapshotOf(s)),
-        connectors: [...s.connectors, connector],
+        connectors: [...s.connectors, stampNewEntity<CanvasConnector>(connector, 'user', Date.now())],
       };
     }),
   updateConnector: (id, patch) =>
@@ -342,7 +400,14 @@ export const useDesignCanvasStore = create<DesignCanvasState>()(
         editHistory: pushSnapshot(s.editHistory, snapshotOf(s)),
         // 保 id + 端点不被 patch 越权改写（端点改写可绕过 normalizeConnector 制造自环/悬空，修 skeptic LOW-1）。
         connectors: s.connectors.map((c) =>
-          c.id === id ? { ...c, ...patch, id: c.id, fromNodeId: c.fromNodeId, toNodeId: c.toNodeId } : c,
+          c.id === id ? touchEntity({
+            ...c,
+            ...patch,
+            id: c.id,
+            fromNodeId: c.fromNodeId,
+            toNodeId: c.toNodeId,
+            createdBy: c.createdBy,
+          }, Date.now()) : c,
         ),
       };
     }),
@@ -361,7 +426,7 @@ export const useDesignCanvasStore = create<DesignCanvasState>()(
       if (s.shapes.some((sh) => sh.id === shape.id)) return {};
       return {
         editHistory: pushSnapshot(s.editHistory, snapshotOf(s)),
-        shapes: [...s.shapes, shape],
+        shapes: [...s.shapes, stampNewEntity<CanvasShape>(shape, 'user', Date.now())],
       };
     }),
   updateShape: (id, patch) =>
@@ -370,7 +435,13 @@ export const useDesignCanvasStore = create<DesignCanvasState>()(
       return {
         editHistory: pushSnapshot(s.editHistory, snapshotOf(s)),
         // 保 id + kind 不被 patch 改写（kind 是判别字段，越权改写会破坏联合）。
-        shapes: s.shapes.map((sh) => (sh.id === id ? ({ ...sh, ...patch, id: sh.id, kind: sh.kind } as CanvasShape) : sh)),
+        shapes: s.shapes.map((sh) => (sh.id === id ? touchEntity({
+          ...sh,
+          ...patch,
+          id: sh.id,
+          kind: sh.kind,
+          createdBy: sh.createdBy,
+        } as CanvasShape, Date.now()) : sh)),
       };
     }),
   deleteShape: (id) =>
@@ -388,7 +459,11 @@ export const useDesignCanvasStore = create<DesignCanvasState>()(
     // 如审批期间用户拖动节点；与本 store 其它 action 一致）。结果经闭包带出。
     let result!: ProposalApplyResult;
     set((s) => {
-      result = computeProposalResult({ nodes: s.nodes, connectors: s.connectors, shapes: s.shapes }, ops, opts);
+      result = computeProposalResult(
+        { nodes: s.nodes, connectors: s.connectors, shapes: s.shapes },
+        ops,
+        { ...opts, actor: 'agent' },
+      );
       if (!result.changed) return {};
       // D3-B：Layer1 整批单次快照（应用前），整批一次 undo 撤完。
       return {
@@ -416,10 +491,14 @@ export const useDesignCanvasStore = create<DesignCanvasState>()(
     // connectors/shapes 整帧还原。
     const merged = reconcileUndoFrame(res.snapshot, snapshotOf(s));
     const nodeIds = new Set(merged.nodes.map((node) => node.id));
+    const now = Date.now();
+    const nodes = touchChangedEntities(merged.nodes, s.nodes, now);
+    const connectors = touchChangedEntities(pruneDanglingConnectors(merged.connectors, nodeIds), s.connectors, now);
+    const shapes = touchChangedEntities(merged.shapes, s.shapes, now);
     set({
-      nodes: merged.nodes,
-      connectors: pruneDanglingConnectors(merged.connectors, nodeIds),
-      shapes: merged.shapes,
+      nodes,
+      connectors,
+      shapes,
       editHistory: res.stack,
       selectedIds: s.selectedIds.filter((id) => nodeIds.has(id)),
       selectedDiagram: null,
@@ -432,10 +511,14 @@ export const useDesignCanvasStore = create<DesignCanvasState>()(
     // redo 用 redo 专用调和（不追加 current-only 节点，修 skeptic HIGH-1）。
     const merged = reconcileRedoFrame(res.snapshot, snapshotOf(s));
     const nodeIds = new Set(merged.nodes.map((node) => node.id));
+    const now = Date.now();
+    const nodes = touchChangedEntities(merged.nodes, s.nodes, now);
+    const connectors = touchChangedEntities(pruneDanglingConnectors(merged.connectors, nodeIds), s.connectors, now);
+    const shapes = touchChangedEntities(merged.shapes, s.shapes, now);
     set({
-      nodes: merged.nodes,
-      connectors: pruneDanglingConnectors(merged.connectors, nodeIds),
-      shapes: merged.shapes,
+      nodes,
+      connectors,
+      shapes,
       editHistory: res.stack,
       selectedIds: s.selectedIds.filter((id) => nodeIds.has(id)),
       selectedDiagram: null,

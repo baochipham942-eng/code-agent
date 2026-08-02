@@ -26,6 +26,7 @@ const imageNode = (
   width: 320,
   height: 180,
   createdAt,
+  createdBy: 'user',
   parentId,
   label: id,
   costCny,

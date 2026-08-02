@@ -11,6 +11,7 @@ const n = (id: string, parentId?: string): CanvasImageNode => ({
   height: 100,
   parentId,
   createdAt: 1,
+  createdBy: 'user',
 });
 
 const doc = (nodes: CanvasImageNode[]): DesignCanvasDoc => ({ version: 1, nodes, camera: { x: 0, y: 0, scale: 1 } });

@@ -8,8 +8,9 @@
 // ============================================================================
 
 import path from 'path';
-import { promises as fsp } from 'fs';
+import { constants, promises as fsp } from 'fs';
 import type { FileHandle } from 'fs/promises';
+import { randomUUID } from 'crypto';
 import { assertWithinDesignDir, assertWithinDesignImportSource } from './workspaceDesignPaths';
 import { estimateImageCostCny } from '../../shared/media/imageCost';
 import { estimateVideoCostCny } from '../../shared/media/videoCost';
@@ -50,6 +51,87 @@ import type { AppSettings } from '../../shared/contract';
 
 // 幂等缓存命中校验：缓存产物文件已被删则视为失效重新生成，不返回死路径。
 const artifactExists = (p: string): Promise<boolean> => fsp.access(p).then(() => true, () => false);
+
+type FileIdentity = { dev: number; ino: number };
+
+function isSameFileIdentity(left: FileIdentity, right: FileIdentity): boolean {
+  return left.dev === right.dev && left.ino === right.ino;
+}
+
+async function assertHandleMatchesDesignPath(
+  handle: FileHandle,
+  filePath: string,
+  label: string,
+): Promise<FileIdentity> {
+  const handleStat = await handle.stat();
+  let pathStat;
+  let canonicalPath: string;
+  try {
+    pathStat = await fsp.lstat(filePath);
+    canonicalPath = await fsp.realpath(filePath);
+  } catch (error) {
+    throw new Error(`${label} 写入路径在落盘期间发生变化：${filePath}`, { cause: error });
+  }
+  if (!pathStat.isFile() || !isSameFileIdentity(handleStat, pathStat)) {
+    throw new Error(`${label} 写入路径在落盘期间被替换：${filePath}`);
+  }
+  try {
+    assertWithinDesignDir(canonicalPath, label);
+  } catch (error) {
+    throw new Error(`${label} 写入路径在落盘期间越出设计目录：${filePath}`, { cause: error });
+  }
+  return handleStat;
+}
+
+async function unlinkIfSameFile(filePath: string, identity: FileIdentity): Promise<void> {
+  try {
+    const stat = await fsp.lstat(filePath);
+    if (stat.isFile() && isSameFileIdentity(stat, identity)) await fsp.unlink(filePath);
+  } catch {
+    // 路径已经消失或再次被替换时不追删，避免误删攻击者换入的另一个文件。
+  }
+}
+
+/**
+ * 设计产物统一安全落盘：先创建不跟随 symlink 的独占临时文件，以句柄/路径 dev+ino 和
+ * realpath 自证它确实位于设计目录，再从句柄写入；最后 rename 替换目标（rename 不跟随
+ * 末级 symlink），并在句柄仍打开时复核最终落点。竞态命中时只按 inode 清理自己的文件。
+ */
+async function writeFileWithinDesignDir(
+  outputPath: string,
+  data: Uint8Array,
+  label = 'outputPath',
+): Promise<void> {
+  assertWithinDesignDir(outputPath, label);
+  const outputDir = path.dirname(outputPath);
+  await fsp.mkdir(outputDir, { recursive: true });
+  const tempPath = path.join(outputDir, `.${path.basename(outputPath)}.${randomUUID()}.tmp`);
+  let handle: FileHandle | undefined;
+  let identity: FileIdentity | undefined;
+  let renamed = false;
+  try {
+    handle = await fsp.open(
+      tempPath,
+      constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW,
+      0o600,
+    );
+    identity = await handle.stat();
+    await assertHandleMatchesDesignPath(handle, tempPath, label);
+    await handle.writeFile(data);
+    await assertHandleMatchesDesignPath(handle, tempPath, label);
+    await fsp.rename(tempPath, outputPath);
+    renamed = true;
+    await assertHandleMatchesDesignPath(handle, outputPath, label);
+  } catch (error) {
+    await handle?.close();
+    handle = undefined;
+    if (identity) await unlinkIfSameFile(renamed ? outputPath : tempPath, identity);
+    if (error instanceof Error && error.message.startsWith(`${label} `)) throw error;
+    throw new Error(`${label} 无法安全写入设计目录：${outputPath}`, { cause: error });
+  } finally {
+    await handle?.close();
+  }
+}
 
 // 解析设计草稿目录（Kun 借鉴：设计 tab 自动落盘，免去手动选工作目录）。
 // 设计产物是预览导向的草稿，统一放 app 托管目录 <home>/.code-agent/design，
@@ -129,8 +211,7 @@ async function generateDesignImageOnce(
     });
     const dataUrl = isImageUrl(imageData) ? await downloadImageAsBase64(imageData) : imageData;
     const buf = Buffer.from(dataUrl.replace(/^data:image\/\w+;base64,/, ''), 'base64');
-    await fsp.mkdir(path.dirname(payload.outputPath), { recursive: true });
-    await fsp.writeFile(payload.outputPath, buf);
+    await writeFileWithinDesignDir(payload.outputPath, buf);
     return { path: payload.outputPath, actualModel, costCny: estimateImageCostCny(actualModel) };
   }
 
@@ -150,8 +231,7 @@ async function generateDesignImageOnce(
       referenceImageDataUrl: payload.referenceImageDataUrl,
     });
     const refBuf = Buffer.from(imageData.replace(/^data:[^;]+;base64,/, ''), 'base64');
-    await fsp.mkdir(path.dirname(payload.outputPath), { recursive: true });
-    await fsp.writeFile(payload.outputPath, refBuf);
+    await writeFileWithinDesignDir(payload.outputPath, refBuf);
     return { path: payload.outputPath, actualModel, costCny: estimateImageCostCny(actualModel) };
   }
 
@@ -198,8 +278,7 @@ async function generateDesignImageOnce(
   const dataUrl = isImageUrl(imageData) ? await downloadImageAsBase64(imageData) : imageData;
   const base64 = dataUrl.replace(/^data:image\/\w+;base64,/, '');
   const buf = Buffer.from(base64, 'base64');
-  await fsp.mkdir(path.dirname(payload.outputPath), { recursive: true });
-  await fsp.writeFile(payload.outputPath, buf);
+  await writeFileWithinDesignDir(payload.outputPath, buf);
   // 实际花费权威源在 main：按真正落地的模型查价表（T2 BYOK 成本可见）。
   return { path: payload.outputPath, actualModel, costCny: estimateImageCostCny(actualModel) };
 }
@@ -229,8 +308,7 @@ async function generateDesignImageViaCustom(
   });
   const dataUrl = isImageUrl(imageData) ? await downloadImageAsBase64(imageData) : imageData;
   const base64 = dataUrl.replace(/^data:image\/\w+;base64,/, '');
-  await fsp.mkdir(path.dirname(payload.outputPath), { recursive: true });
-  await fsp.writeFile(payload.outputPath, Buffer.from(base64, 'base64'));
+  await writeFileWithinDesignDir(payload.outputPath, Buffer.from(base64, 'base64'));
   const costCny = custom.costCnyPerImage ?? estimateImageCostCny(custom.modelName);
   return { path: payload.outputPath, actualModel, costCny };
 }
@@ -260,8 +338,7 @@ export async function handleEditImageByAnnotation(
     engine, annotatedImageDataUrl: payload.annotatedImageDataUrl, instruction: payload.instruction,
   });
   const base64 = imageData.replace(/^data:image\/\w+;base64,/, '');
-  await fsp.mkdir(path.dirname(payload.outputPath), { recursive: true });
-  await fsp.writeFile(payload.outputPath, Buffer.from(base64, 'base64'));
+  await writeFileWithinDesignDir(payload.outputPath, Buffer.from(base64, 'base64'));
   return { path: payload.outputPath, actualModel, costCny: estimateImageCostCny(actualModel) };
 }
 
@@ -305,7 +382,8 @@ function hasImportableImageMagic(bytes: Buffer, extension: string): boolean {
  *
  * 2026-08-01 对抗审计实证：先 `canonicalize` 校验、再 `fsp.copyFile(path)` 是可绕过的——
  * 两次解析之间源路径可被换成指向允许根之外的 symlink，探针实测把根外文件复制进了设计目录。
- * 句柄在校验时就绑定了具体 inode，之后无论路径怎么变都指向同一个被校验过的文件。
+ * 这里先 lstat 记住规范路径对应的 inode，再用 O_NOFOLLOW 打开并以 handle.stat() 比对 dev/ino；
+ * 只有句柄确实绑定到已校验文件才继续。之后路径再变也不影响句柄所指向的 inode。
  */
 async function assertReadableImageFile(sourcePath: string): Promise<FileHandle> {
   const extension = path.extname(sourcePath).toLowerCase();
@@ -313,9 +391,9 @@ async function assertReadableImageFile(sourcePath: string): Promise<FileHandle> 
     throw new Error(`sourcePath 不是受支持的图片类型：${extension || '缺少扩展名'}`);
   }
 
-  let stat;
+  let expectedStat;
   try {
-    stat = await fsp.stat(sourcePath);
+    expectedStat = await fsp.lstat(sourcePath);
   } catch (error) {
     const code = error && typeof error === 'object' && 'code' in error ? String(error.code) : '';
     if (code === 'ENOENT') {
@@ -323,11 +401,17 @@ async function assertReadableImageFile(sourcePath: string): Promise<FileHandle> 
     }
     throw new Error(`sourcePath 源文件不可读：${sourcePath}`, { cause: error });
   }
-  if (!stat.isFile()) throw new Error(`sourcePath 必须是可读图片文件：${sourcePath}`);
+  if (!expectedStat.isFile()) {
+    throw new Error(`sourcePath 必须是非符号链接的可读图片文件：${sourcePath}`);
+  }
 
   let handle: FileHandle | undefined;
   try {
-    handle = await fsp.open(sourcePath, 'r');
+    handle = await fsp.open(sourcePath, constants.O_RDONLY | constants.O_NOFOLLOW);
+    const openedStat = await handle.stat();
+    if (!isSameFileIdentity(expectedStat, openedStat)) {
+      throw new Error(`sourcePath 在路径校验与打开之间被替换：${sourcePath}`);
+    }
     const header = Buffer.alloc(512);
     // 定位读（position=0）不移动句柄读写位置，后续 readFile 仍从头读全文。
     const { bytesRead } = await handle.read(header, 0, header.length, 0);
@@ -338,7 +422,7 @@ async function assertReadableImageFile(sourcePath: string): Promise<FileHandle> 
   } catch (error) {
     await handle?.close();
     if (error instanceof Error && error.message.startsWith('sourcePath ')) throw error;
-    throw new Error(`sourcePath 源文件不可读：${sourcePath}`, { cause: error });
+    throw new Error(`sourcePath 在路径校验与打开之间发生变化或变成符号链接：${sourcePath}`, { cause: error });
   }
 }
 
@@ -362,8 +446,7 @@ export async function handleImportDesignImageFromPath(
   const handle = await assertReadableImageFile(canonicalSourcePath);
   try {
     const data = await handle.readFile();
-    await fsp.mkdir(path.dirname(payload.outputPath), { recursive: true });
-    await fsp.writeFile(payload.outputPath, data);
+    await writeFileWithinDesignDir(payload.outputPath, data);
   } finally {
     await handle.close();
   }
@@ -379,9 +462,28 @@ export async function handleImportDesignImage(
     throw new Error('importDesignImage 需要 dataUrl 与 outputPath');
   }
   assertWithinDesignDir(payload.outputPath, 'outputPath');
-  const base64 = payload.dataUrl.replace(/^data:[^;]+;base64,/, '');
-  await fsp.mkdir(path.dirname(payload.outputPath), { recursive: true });
-  await fsp.writeFile(payload.outputPath, Buffer.from(base64, 'base64'));
+  const match = /^data:(image\/[a-z0-9.+-]+);base64,([a-z0-9+/]+={0,2})$/i.exec(payload.dataUrl);
+  if (!match) throw new Error('dataUrl 必须是有效的 base64 图片 data URL');
+  const [, mimeType, base64] = match;
+  const extension = path.extname(payload.outputPath).toLowerCase();
+  const allowedExtensionsByMime: Record<string, readonly string[]> = {
+    'image/avif': ['.avif'],
+    'image/gif': ['.gif'],
+    'image/heic': ['.heic'],
+    'image/heif': ['.heif'],
+    'image/jpeg': ['.jpg', '.jpeg'],
+    'image/png': ['.png'],
+    'image/webp': ['.webp'],
+  };
+  const allowedExtensions = allowedExtensionsByMime[mimeType.toLowerCase()];
+  if (!allowedExtensions?.includes(extension)) {
+    throw new Error(`dataUrl 图片类型 ${mimeType} 与 outputPath 扩展名 ${extension || '缺失'} 不匹配或不受支持`);
+  }
+  const image = Buffer.from(base64, 'base64');
+  if (!hasImportableImageMagic(image.subarray(0, 512), extension)) {
+    throw new Error(`dataUrl 文件内容与 outputPath 扩展名 ${extension} 不匹配`);
+  }
+  await writeFileWithinDesignDir(payload.outputPath, image);
   return { path: payload.outputPath };
 }
 
@@ -421,10 +523,8 @@ export async function handleEditDesignImage(
     maskImageDataUrl: payload.maskDataUrl,
   });
   const resultDataUrl = isImageUrl(url) ? await downloadImageAsBase64(url) : url;
-  // data URI 前缀用宽松匹配（与 handleImportDesignImage 一致），兼容任意 image MIME 子类型。
+  // 模型返回的 data URI 前缀用宽松匹配，兼容 provider 的任意 image MIME 子类型。
   const resultBuf = Buffer.from(resultDataUrl.replace(/^data:[^;]+;base64,/, ''), 'base64');
-  await fsp.mkdir(path.dirname(payload.outputPath), { recursive: true });
-
   // mask dataURL → buffer（renderer 已按 白=改/黑=留 栅格化）。
   const maskBuf = Buffer.from(payload.maskDataUrl.replace(/^data:[^;]+;base64,/, ''), 'base64');
   // 局部重绘固定走 wanx imageedit；实际花费按该模型查价表（T2 BYOK 成本可见）。
@@ -442,11 +542,11 @@ export async function handleEditDesignImage(
         epsilon: REGION_LOCK.EPSILON,
         sharp: sharpLoaded.sharp,
       });
-      await fsp.writeFile(payload.outputPath, gate.finalPng);
+      await writeFileWithinDesignDir(payload.outputPath, gate.finalPng);
       const consistency: RegionLockReport = { ...gate.report };
       if (gate.diffPng) {
         const diffPath = `${payload.outputPath}${REGION_LOCK.DIFF_SUFFIX}`;
-        await fsp.writeFile(diffPath, gate.diffPng);
+        await writeFileWithinDesignDir(diffPath, gate.diffPng, 'diffPath');
         consistency.diffPath = diffPath;
       }
       return { path: payload.outputPath, actualModel, costCny, consistency };
@@ -457,7 +557,7 @@ export async function handleEditDesignImage(
       onRegionLockGateError({ strict: regionLockStrict, cause: err });
     }
   }
-  await fsp.writeFile(payload.outputPath, resultBuf);
+  await writeFileWithinDesignDir(payload.outputPath, resultBuf);
   return { path: payload.outputPath, actualModel, costCny };
 }
 
@@ -553,8 +653,7 @@ export async function handleExpandDesignImage(
   });
   const resultDataUrl = isImageUrl(url) ? await downloadImageAsBase64(url) : url;
   const base64 = resultDataUrl.replace(/^data:image\/\w+;base64,/, '');
-  await fsp.mkdir(path.dirname(payload.outputPath), { recursive: true });
-  await fsp.writeFile(payload.outputPath, Buffer.from(base64, 'base64'));
+  await writeFileWithinDesignDir(payload.outputPath, Buffer.from(base64, 'base64'));
   // 成本透明补全：扩图是真实付费调用，回传实际模型 + 查价表成本，供 renderer 记一笔（与出图/编辑对称）。
   return { path: payload.outputPath, actualModel, costCny: estimateImageCostCny(actualModel) };
 }
@@ -583,8 +682,7 @@ export async function handleRemoveWatermarkDesignImage(
   });
   const resultDataUrl = isImageUrl(url) ? await downloadImageAsBase64(url) : url;
   const base64 = resultDataUrl.replace(/^data:image\/\w+;base64,/, '');
-  await fsp.mkdir(path.dirname(payload.outputPath), { recursive: true });
-  await fsp.writeFile(payload.outputPath, Buffer.from(base64, 'base64'));
+  await writeFileWithinDesignDir(payload.outputPath, Buffer.from(base64, 'base64'));
   // 成本透明补全：去水印是真实付费调用，回传实际模型 + 查价表成本，供 renderer 记一笔（与出图/编辑对称）。
   return { path: payload.outputPath, actualModel, costCny: estimateImageCostCny(actualModel) };
 }
@@ -663,8 +761,7 @@ async function generateDesignVideoOnce(
       baseUrl, apiKey, modelName: entry.modelName, mode: payload.mode, prompt: payload.prompt, imageDataUrl,
     });
     const buf = await downloadVideoAsBuffer(url);
-    await fsp.mkdir(path.dirname(payload.outputPath), { recursive: true });
-    await fsp.writeFile(payload.outputPath, buf);
+    await writeFileWithinDesignDir(payload.outputPath, buf);
     return { path: payload.outputPath, actualModel, costCny: estimateVideoCostCny(actualModel, durationSecOut), durationSec: durationSecOut };
   }
 
@@ -683,8 +780,7 @@ async function generateDesignVideoOnce(
       baseUrl, apiKey, modelName: customVideo.modelName, mode: payload.mode, prompt: payload.prompt, imageDataUrl,
     });
     const buf = await downloadVideoAsBuffer(url);
-    await fsp.mkdir(path.dirname(payload.outputPath), { recursive: true });
-    await fsp.writeFile(payload.outputPath, buf);
+    await writeFileWithinDesignDir(payload.outputPath, buf);
     const costCny = customVideo.costCnyPerVideo ?? estimateVideoCostCny(actualModel, durationSecOut);
     return { path: payload.outputPath, actualModel, costCny, durationSec: durationSecOut };
   }
@@ -702,8 +798,7 @@ async function generateDesignVideoOnce(
     const { buffer, actualModel, durationSec } = await generateVeoVideo({
       model: payload.model, mode: payload.mode, prompt: payload.prompt, imageDataUrl, durationSec: payload.durationSec,
     });
-    await fsp.mkdir(path.dirname(payload.outputPath), { recursive: true });
-    await fsp.writeFile(payload.outputPath, buffer);
+    await writeFileWithinDesignDir(payload.outputPath, buffer);
     return { path: payload.outputPath, actualModel, costCny: estimateVideoCostCny(actualModel, durationSec), durationSec };
   }
 
@@ -731,8 +826,7 @@ async function generateDesignVideoOnce(
   });
 
   const buf = await downloadVideoAsBuffer(url);
-  await fsp.mkdir(path.dirname(payload.outputPath), { recursive: true });
-  await fsp.writeFile(payload.outputPath, buf);
+  await writeFileWithinDesignDir(payload.outputPath, buf);
   return { path: payload.outputPath, actualModel, costCny: estimateVideoCostCny(actualModel, durationSec), durationSec };
 }
 
@@ -781,7 +875,6 @@ async function generateDesignMusicOnce(
     baseUrl, apiKey, modelName, prompt: payload.prompt, lyrics: payload.lyrics,
   });
   // 直接落 audioBuffer：MiniMax 音乐同步返回二进制，无 OSS url 下载步（与图像/视频不同）。
-  await fsp.mkdir(path.dirname(payload.outputPath), { recursive: true });
-  await fsp.writeFile(payload.outputPath, audioBuffer);
+  await writeFileWithinDesignDir(payload.outputPath, audioBuffer);
   return { path: payload.outputPath, actualModel, costCny: estimateMusicCostCny(actualModel) };
 }

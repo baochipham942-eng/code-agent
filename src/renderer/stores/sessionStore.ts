@@ -42,6 +42,15 @@ async function invokeAgentEngine<T>(action: string, payload?: unknown): Promise<
 
 // switchSession 竞态保护计数器
 let _switchCounter = 0;
+/**
+ * 会话列表本地乐观变更版本号（归档/取消归档/删除时 +1）。
+ * 根因（2026-08-01 归档连点无响应）：host 每次归档都广播 SESSION_LIST_UPDATED，
+ * 而 invokeDomain 的 in-flight dedupe 会把第二次广播触发的 loadSessions 并进
+ * 第一次的在途 list 请求——拿到的是归档前的陈旧快照并写回 store，把刚乐观移除
+ * 的行复活。loadSessions 落地前比对本版本号：在途期间发生过本地变更就丢弃快照
+ * 重取，而不是把陈旧列表写回。
+ */
+let _sessionsLocalVersion = 0;
 /** In-flight createSession promise — send path awaits to rebind to the new session. */
 let _pendingSessionCreate: Promise<Session | null> | null = null;
 
@@ -213,6 +222,12 @@ interface SessionState {
   streamSnapshot: StreamRecoverySnapshot | null;
   isLoading: boolean;
   /**
+   * 会话切换的消息投影 hydration 进行中（switchSession 的两条 IPC + 消息水合未落定）。
+   * 与 isLoading 分开：isLoading 被 loadSessions 等多处共用，骨架屏只认切换 hydration
+   * 这个窗口——加载中（骨架屏）/ 真空会话（#874 空态）/ 有内容 三态靠它消歧。
+   */
+  isHydratingSession: boolean;
+  /**
    * True while createSession() is in flight (including reusable-draft switch).
    * Composer freezes on this flag so send cannot bind to the pre-create currentSessionId.
    */
@@ -280,6 +295,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
     sessionTasks: [],
     streamSnapshot: null,
     isLoading: false,
+    isHydratingSession: false,
     isCreatingSession: false,
     error: null,
     unreadSessionIds: new Set<string>(),
@@ -298,9 +314,17 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
       const silent = options?.silent ?? false;
       const { filter } = useSessionUIStore.getState();
       if (!silent) set({ isLoading: true, error: null });
+      // 在途期间若发生本地乐观变更（归档/删除等），拿到的是陈旧快照——落地前比对。
+      const localVersionAtStart = _sessionsLocalVersion;
       try {
         const includeArchived = filter === 'archived' || filter === 'all';
         const sessions = await invokeSession<Session[]>('list', { includeArchived });
+
+        if (localVersionAtStart !== _sessionsLocalVersion) {
+          // 快照陈旧（典型：归档①的广播触发本次 list，归档②在在途期间已乐观移除，
+          // 且 dedupe 把归档②的广播并进本次请求）——丢弃重取，别把旧列表写回。
+          return get().loadSessions(options);
+        }
 
         let sessionsWithMeta: SessionWithMeta[] = (sessions || []).map((session) =>
           normalizeSession(session as Session & { messageCount?: number; turnCount?: number })
@@ -380,6 +404,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
         isLoadingOlder: false,
         unreadSessionIds: nextUnreadIds,
         isLoading: true,
+        isHydratingSession: true,
         error: null,
       });
       try {
@@ -417,6 +442,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
             sessionTasks: sessionTasks || [],
             streamSnapshot,
             isLoading: false,
+            isHydratingSession: false,
             unreadSessionIds: nextUnreadIds,
             hasOlderMessages: totalCount > loadedMessages.length,
             isLoadingOlder: false,
@@ -444,6 +470,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
             sessionTasks: [],
             streamSnapshot: null,
             isLoading: false,
+            isHydratingSession: false,
           });
           useAppStore.getState().setContextHealth(null);
         }
@@ -452,7 +479,8 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
         if (switchVersion === _switchCounter) {
           set({
             error: error instanceof Error ? error.message : 'Failed to switch session',
-            isLoading: false
+            isLoading: false,
+            isHydratingSession: false,
           });
         }
       }
@@ -498,6 +526,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
         const { currentSessionId, sessions } = get();
         const newSessions = sessions.filter((s) => s.id !== sessionId);
 
+        _sessionsLocalVersion += 1;
         if (currentSessionId === sessionId) {
           if (newSessions.length > 0) {
             set({ sessions: newSessions });
@@ -517,42 +546,48 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
     },
 
     archiveSession: async (sessionId: string) => {
+      const { filter } = useSessionUIStore.getState();
+      const { currentSessionId, sessions } = get();
+      const previousSessions = sessions;
+
+      // 乐观更新（2026-08-01 归档连点无响应）：行先消失/置标，IPC 失败再回滚。
+      // 版本号 +1 让在途的 loadSessions 识别自己拿到的是陈旧快照（见 _sessionsLocalVersion）。
+      _sessionsLocalVersion += 1;
+      if (filter === 'active') {
+        set({ sessions: sessions.filter((s) => s.id !== sessionId) });
+      } else {
+        set({
+          sessions: sessions.map((s) =>
+            s.id === sessionId ? { ...s, isArchived: true, archivedAt: Date.now() } : s
+          ),
+        });
+      }
+
       try {
         await invokeSession('archive', { sessionId });
 
         // 清理该会话的设计态：design-active 标记 + 画布属主，避免悬空。
         useDesignCanvasStore.getState().releaseSessionDesignState(sessionId);
 
-        const { filter } = useSessionUIStore.getState();
-        const { currentSessionId, sessions } = get();
-
-        if (filter === 'active') {
-          const newSessions = sessions.filter((s) => s.id !== sessionId);
-
-          if (currentSessionId === sessionId) {
-            if (newSessions.length > 0) {
-              set({ sessions: newSessions });
-              await get().switchSession(newSessions[0].id);
-            } else {
-              useAppStore.getState().syncActiveAgentForSession(null);
-              useAppStore.getState().syncWorkbenchForSession(null);
-              set({ sessions: newSessions, currentSessionId: null, messages: [], todos: [], sessionTasks: [], streamSnapshot: null });
-            }
+        // 归档的是当前会话：IPC 落定后再切到下一条（切会话重，不进乐观路径）。
+        if (filter === 'active' && currentSessionId === sessionId) {
+          const remaining = get().sessions;
+          if (remaining.length > 0) {
+            await get().switchSession(remaining[0].id);
           } else {
-            set({ sessions: newSessions });
+            useAppStore.getState().syncActiveAgentForSession(null);
+            useAppStore.getState().syncWorkbenchForSession(null);
+            set({ currentSessionId: null, messages: [], todos: [], sessionTasks: [], streamSnapshot: null });
           }
-        } else {
-          set({
-            sessions: sessions.map((s) =>
-              s.id === sessionId ? { ...s, isArchived: true, archivedAt: Date.now() } : s
-            ),
-          });
         }
 
         logger.info('Session archived', { sessionId });
       } catch (error) {
         logger.error('Failed to archive session', error);
+        // 回滚乐观移除（版本号再 +1：回滚本身也是一次本地变更）。
+        _sessionsLocalVersion += 1;
         set({
+          sessions: previousSessions,
           error: error instanceof Error ? error.message : 'Failed to archive session',
         });
       }
@@ -565,6 +600,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
         const { filter } = useSessionUIStore.getState();
         const { sessions } = get();
 
+        _sessionsLocalVersion += 1;
         if (filter === 'archived') {
           set({
             sessions: sessions.filter((s) => s.id !== sessionId),

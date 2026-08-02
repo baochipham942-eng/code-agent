@@ -327,8 +327,10 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
     const surfaceIdentity = surfaceIdentityFromToolContext(context);
     const useManagedSurface = Boolean(surfaceIdentity) && action !== 'list_profiles';
     const managedAdapter = getManagedBrowserProviderAdapter();
-    // Native runs are isolated by conversation/run/agent. Legacy callers without
-    // a complete owner identity keep the historical per-agent compatibility path.
+    // Native Surface ownership remains isolated by conversation/run/agent. The
+    // adapter may share one physical window among legal owners in the same
+    // conversation so user navigation and the agent can continue one page.
+    // Legacy callers without a complete owner identity keep the historical path.
     const browserService = useManagedSurface && surfaceIdentity
       ? managedAdapter.getBrowserService(surfaceIdentity)
       : getBrowserService(context.agentId);

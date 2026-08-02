@@ -18,7 +18,7 @@ export const SMOOTH_STREAMING_TEXT_DEFAULTS = {
 const DEFAULT_FRAME_MS = 16;
 
 // CJK 表意文字 + 常用全角标点（段内字符）
-const CJK_CHAR_PATTERN = /[　-〿㐀-䶿一-鿿豈-﫿＀-￯]/;
+const CJK_CHAR_PATTERN = /[\u3000-\u303f\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uff00-\uffef]/;
 // 中文句读：短段切到标点（含）为止
 const CJK_BREAK_PATTERN = /[，。！？；：、…—·]/;
 

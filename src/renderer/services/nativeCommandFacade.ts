@@ -55,8 +55,24 @@ export interface NativeCommandActionMap {
     payload: { path: string };
     result: string;
   };
+  readAppshotImageDataUrlById: {
+    payload: { requestId: string };
+    result: string;
+  };
   reportAppshotComposerSlot: {
     payload: { slot: AppshotSlot };
+    result: unknown;
+  };
+  skipAppshotMotion: {
+    payload: { requestId: string };
+    result: unknown;
+  };
+  setAppshotsTargetSession: {
+    payload: { newSession: boolean };
+    result: unknown;
+  };
+  setAppshotsMotionEnabled: {
+    payload: { enabled: boolean };
     result: unknown;
   };
   setAppshotsEnabled: {
@@ -106,7 +122,11 @@ const NATIVE_COMMANDS: {
 } = {
   triggerAppshot: 'appshots_trigger',
   readAppshotImageDataUrl: 'appshots_read_image_data_url',
+  readAppshotImageDataUrlById: 'appshots_read_image_data_url_by_id',
   reportAppshotComposerSlot: 'appshots_report_composer_slot',
+  skipAppshotMotion: 'appshots_skip_motion',
+  setAppshotsTargetSession: 'appshots_set_target_session',
+  setAppshotsMotionEnabled: 'appshots_set_motion_enabled',
   setAppshotsEnabled: 'appshots_set_enabled',
   showPip: 'pip_show',
   framePip: 'pip_frame',

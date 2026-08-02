@@ -102,6 +102,11 @@ function getOnboardingEngineStatus(source: AgentEngineSourceDescriptor): {
     };
   }
   if (source.detected) {
+    // 找到了客户端但探测没跑通：这是「此刻问不出来」，不是「你没装」也不是「你没登录」。
+    // 说成后两者会让用户去装一个已经装好的东西、或去登一个已经登好的账号。
+    if (source.probeError) {
+      return { detail: '已检测到客户端 · 本机探测未完成，稍后重试', badge: '待重试' };
+    }
     if (source.evidence !== 'production') {
       if (source.authState === 'needs_login') {
         return {

@@ -133,7 +133,8 @@ export function EngineScopedModelPanel({
               : source.detected
                 ? source.authState === 'needs_login'
                   ? '已检测，需要登录'
-                  : source.authState === 'not_checked' && source.evidence === 'production'
+                  : (source.authState === 'not_checked' || source.authState === 'unknown')
+                    && source.evidence === 'production'
                     ? '已检测，登录状态未验证'
                     : '已检测，适配器未开放'
                 : source.recommendation?.label ?? '暂不可用';

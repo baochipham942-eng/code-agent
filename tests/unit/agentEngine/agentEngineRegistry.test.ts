@@ -8,6 +8,10 @@ const mocks = vi.hoisted(() => ({
   installed: new Set<string>(),
   authenticated: new Set<string>(),
   existingPaths: new Set<string>(),
+  /** 二进制在，但 `--version` 跑不通（超时/崩溃）——「装了却问不出来」。 */
+  versionProbeFails: new Set<string>(),
+  /** 二进制在、版本正常，但登录探测跑不通——「登录状态没问出来」，不等于没登录。 */
+  authProbeFails: new Set<string>(),
 }));
 
 vi.mock('node:fs/promises', () => ({
@@ -35,6 +39,15 @@ vi.mock('child_process', () => ({
     }
     // probeCommand: `<binaryPath> --version`
     const command = file.split('/').pop() ?? file;
+    const isVersionArgs = args.join(' ') === '--version';
+    if (mocks.versionProbeFails.has(command) && isVersionArgs) {
+      callback(new Error(`${command} --version timed out`));
+      return;
+    }
+    if (mocks.authProbeFails.has(command) && !isVersionArgs) {
+      callback(new Error(`${command} auth probe timed out`));
+      return;
+    }
     if (mocks.installed.has(command)) {
       if (args.join(' ') === 'login status') {
         callback(null, {
@@ -95,6 +108,8 @@ describe('AgentEngineRegistry mimo/kimi detection', () => {
     mocks.installed.clear();
     mocks.authenticated.clear();
     mocks.existingPaths.clear();
+    mocks.versionProbeFails.clear();
+    mocks.authProbeFails.clear();
   });
 
   afterEach(() => {
@@ -319,5 +334,78 @@ describe('AgentEngineRegistry mimo/kimi detection', () => {
       binaryPath,
       evidence: 'local_spike',
     });
+  });
+});
+
+// 2026-08-02：产品负责人截图里 Codex CLI / Kimi Code / Grok Build 显示「未安装」、
+// Claude Code 显示「需登录」，而这五个客户端在那台机器上全都装着且登录着。
+// 探测一旦有闪失，UI 就把它说成既成事实——让用户去装一个已经装好的东西、
+// 去登一个已经登好的账号。这组测试钉的是：**探测失败只能降级成「不确定」，
+// 不能升格成「否定」**。
+describe('AgentEngineRegistry 探测失败不得说成既成事实', () => {
+  beforeEach(() => {
+    mocks.installed.clear();
+    mocks.authenticated.clear();
+    mocks.existingPaths.clear();
+    mocks.versionProbeFails.clear();
+    mocks.authProbeFails.clear();
+  });
+
+  it('二进制找到了但 --version 跑不通：仍算已检测，并带上失败原因', async () => {
+    mocks.installed.add('kimi');
+    mocks.versionProbeFails.add('kimi');
+
+    const sources = await new AgentEngineRegistry({ cacheTtlMs: 0 }).listSources();
+    const kimi = sources.find((source) => source.manifestId === 'kimi_code');
+
+    // 找到了就是装了——这是「此刻问不出来」，不是「本机未检测到客户端」。
+    expect(kimi?.detected).toBe(true);
+    expect(kimi?.binaryPath).toBe('/usr/local/bin/kimi');
+    expect(kimi?.probeError).toBeTruthy();
+    // 权限一格没松：探测没跑通的东西依然不可选。
+    expect(kimi?.selectable).toBe(false);
+  });
+
+  it('登录探测超时：落 unknown，绝不落 needs_login', async () => {
+    mocks.installed.add('claude');
+    mocks.authenticated.add('claude');
+    mocks.authProbeFails.add('claude');
+
+    const sources = await new AgentEngineRegistry({ cacheTtlMs: 0 }).listSources();
+    const claude = sources.find((source) => source.manifestId === 'claude_code');
+
+    expect(claude?.detected).toBe(true);
+    expect(claude?.authState).toBe('unknown');
+    expect(claude?.authState).not.toBe('needs_login');
+    expect(claude?.selectable).toBe(false);
+    expect(claude?.auditNotes.some((note) => note.startsWith('Auth probe:'))).toBe(true);
+  });
+
+  it('探测跑通且答复是「没登录」时，needs_login 照旧成立', async () => {
+    mocks.installed.add('claude');
+    // 不加进 authenticated：探测正常返回 loggedIn:false
+
+    const sources = await new AgentEngineRegistry({ cacheTtlMs: 0 }).listSources();
+    const claude = sources.find((source) => source.manifestId === 'claude_code');
+
+    expect(claude?.authState).toBe('needs_login');
+  });
+
+  it('压根没探过（清单无 authProbe）仍是 not_checked，与探测失败区分得开', async () => {
+    mocks.installed.add('mimo');
+
+    const sources = await new AgentEngineRegistry({ cacheTtlMs: 0 }).listSources();
+    const mimo = sources.find((source) => source.manifestId === 'mimo_code');
+
+    expect(mimo?.detected).toBe(true);
+    expect(mimo?.authState).toBe('not_checked');
+  });
+
+  it('二进制真的不在时，才允许说未检测到', async () => {
+    const sources = await new AgentEngineRegistry({ cacheTtlMs: 0 }).listSources();
+    const grok = sources.find((source) => source.manifestId === 'grok_cli');
+
+    expect(grok?.detected).toBe(false);
+    expect(grok?.probeError).toBeUndefined();
   });
 });

@@ -39,7 +39,7 @@ describe('primitives convergence (EmptyState/Badge)', () => {
   const emptyStateCallSites = [
     'components/features/settings/tabs/PluginsSettings.tsx',
     'components/PlanningPanel.tsx',
-    'components/features/knowledge/KnowledgeMemoryPanel.tsx',
+    'components/features/settings/tabs/KnowledgeInboxSection.tsx',
     'components/TaskPanel/RunWorkbenchCards.tsx',
   ];
   for (const rel of emptyStateCallSites) {
@@ -53,7 +53,6 @@ describe('primitives convergence (EmptyState/Badge)', () => {
     'components/StatusBar/modelSwitcherHelpers.tsx',
     'components/features/settings/tabs/AgentEngineListSection.tsx',
     'components/features/projectCollaboration/ProjectCollaborationDetailPane.tsx',
-    'components/features/knowledge/KnowledgeMemoryPanel.parts.tsx',
     'components/workspacePreview/parts.tsx',
   ];
   for (const rel of badgeCallSites) {

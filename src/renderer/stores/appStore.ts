@@ -274,8 +274,6 @@ export interface AppState {
   // V2-A: DevServerLauncher 模态可见性。true 时 App 渲染 <DevServerLauncher />
   devServerLauncherOpen: boolean;
 
-  showKnowledgeMemoryPanel: boolean;
-
   // Batch 2 L3: 资料库全屏页可见性
   showLibraryPanel: boolean;
 
@@ -414,7 +412,6 @@ export interface AppState {
   setShowPlanningPanel: (show: boolean) => void;
   setShowDAGPanel: (show: boolean) => void;
   setShowLab: (show: boolean) => void;
-  setShowKnowledgeMemoryPanel: (show: boolean) => void;
   setShowLibraryPanel: (show: boolean) => void;
   openExpertRoleDetail: (roleId: string) => void;
   openPreview: (filePath: string, options?: OpenWorkbenchTabOptions) => void;
@@ -550,7 +547,6 @@ export const useAppStore = create<AppState>()((set, get) => ({
   showLab: false,
   devServerLauncherOpen: false,
 
-  showKnowledgeMemoryPanel: false,
   showLibraryPanel: false,
   expertDetailRoleId: null,
 
@@ -758,7 +754,6 @@ export const useAppStore = create<AppState>()((set, get) => ({
   setShowLab: (show) => set({ showLab: show }),
   openDevServerLauncher: () => set({ devServerLauncherOpen: true }),
   closeDevServerLauncher: () => set({ devServerLauncherOpen: false }),
-  setShowKnowledgeMemoryPanel: (show) => set({ ...(show ? SECONDARY_PAGES_CLOSED : {}), showKnowledgeMemoryPanel: show }),
   setShowLibraryPanel: (show) => set({ ...(show ? SECONDARY_PAGES_CLOSED : {}), showLibraryPanel: show }),
   openExpertRoleDetail: (roleId) => set({ ...SECONDARY_PAGES_CLOSED, expertDetailRoleId: roleId }),
 

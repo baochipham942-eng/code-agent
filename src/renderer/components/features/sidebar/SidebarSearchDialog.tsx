@@ -90,7 +90,7 @@ export const SidebarSearchDialog: React.FC<SidebarSearchDialogProps> = ({
           onChange={(event) => onQueryChange(event.target.value)}
           placeholder={sb.searchPlaceholder}
           aria-label={sb.searchInputAria}
-          leftIcon={<Search />}
+          leftIcon={<Search className="h-4 w-4" />}
           className="bg-zinc-800"
         />
 

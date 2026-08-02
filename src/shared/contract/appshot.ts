@@ -16,7 +16,7 @@ export interface AppshotWindowFrame {
 export type AppshotTextSource = 'ax' | 'ocr' | 'none';
 
 /** 飞入动效参数（随 image_ready 下发，便于前端 reduced-motion 与 chip 同步） */
-export interface AppshotMotionInfo {
+interface AppshotMotionInfo {
   durationMs: number;
   /** 飞入抵达落点（handoff 事件发出）距动画开始的毫秒数 */
   handoffAtMs: number;

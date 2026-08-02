@@ -11,7 +11,7 @@
 import { create } from 'zustand';
 import type { AppshotCapture, AppshotTextSource } from '@shared/contract/appshot';
 
-export type AppshotPhase = 'idle' | 'starting' | 'reserved' | 'visible' | 'enriched';
+type AppshotPhase = 'idle' | 'starting' | 'reserved' | 'visible' | 'enriched';
 
 interface AppshotsState {
   /** 当前待随下一条消息发送的 appshot（null = 无） */

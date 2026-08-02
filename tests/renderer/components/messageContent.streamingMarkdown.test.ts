@@ -62,6 +62,18 @@ describe('remend integration: streaming markdown', () => {
     }
   });
 
+  // B+A 选项行（messageContent.iactSendChip.test.tsx）的不闪烁前提：
+  // 流式中途未写完的第二个 !send 链接不得污染第一个完整链接——
+  // remend 保持 `[选项一](!send)` 原样，半成品链接只中和自身 href。
+  it('mid-stream incomplete second !send link leaves the first complete link intact', () => {
+    const partial = '需要[选项一](!send)还是[选';
+    const out = remend(partial);
+    expect(out).toContain('[选项一](!send)');
+    const html = renderStreaming(partial);
+    expect(html).toContain('>选项一</a>');
+    expect(html).not.toContain('[选项一](');
+  });
+
   it('preserves complete markdown unchanged (no false positive close)', () => {
     const complete =
       '完整的 **粗体** 和 [链接](https://example.com) 还有 `code` 和 ~~删除~~';

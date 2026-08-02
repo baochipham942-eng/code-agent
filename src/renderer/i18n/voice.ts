@@ -50,6 +50,26 @@ export const voiceZh: VoiceTranslations = {
       idleTimeout: '长时间没有对话，通话已自动结束',
       error: '通话异常',
     },
+    /** 星球七态：状态栏左侧星球对应的状态词（前置）与小字 hint（后置）；星球英文名不译。 */
+    planet: {
+      word: {
+        connecting: '连接中',
+        reconnecting: '重连中',
+        listening: '聆听中',
+        speaking: '表达中',
+        working: '思考中',
+        muted: '已静音',
+        error: '连接异常',
+      },
+      hint: {
+        earth: 'EARTH · 环绕母星',
+        sol: 'SOL · 发光回应',
+        jupiter: 'JUPITER · 风暴搅动',
+        mercury: 'MERCURY · 信号握手',
+        earthDark: 'EARTH DARK · 暂时熄灯',
+        alert: 'ALERT · 链路中断',
+      },
+    },
     error: {
       quota_voice: '语音配额不足',
       quota_agent: 'Agent 配额不足',
@@ -88,12 +108,12 @@ export const voiceZh: VoiceTranslations = {
       remaining: '还有 {n} 件',
     },
     call: {
-      summary: '通话摘要',
+      surveyTitle: '勘测报告 · 近地轨道',
       duration: '时长',
       workItems: '派出任务',
       participants: '参与专家',
-      minute: '分',
-      second: '秒',
+      /** P2 品牌叙事底部总计：{n}=展开区真实列出的字幕条数。数据模型没有稀有度/类型字段，不造标签。 */
+      treasureCount: '本次带回 {n} 件宝藏',
       expand: '展开文字记录',
       collapse: '收起文字记录',
       noTranscriptLegacy: '这通电话的文字记录未保留（旧版本通话）',
@@ -286,6 +306,26 @@ export const voiceEn = {
       idleTimeout: 'The call ended after a long period of inactivity',
       error: 'Call error',
     },
+    /** Planet seven-states: status word (prefix) and small hint (suffix) for the status bar planet; planet names stay in English. */
+    planet: {
+      word: {
+        connecting: 'Connecting',
+        reconnecting: 'Reconnecting',
+        listening: 'Listening',
+        speaking: 'Speaking',
+        working: 'Thinking',
+        muted: 'Muted',
+        error: 'Connection lost',
+      },
+      hint: {
+        earth: 'EARTH · Orbiting the home star',
+        sol: 'SOL · Glowing reply',
+        jupiter: 'JUPITER · Stirring the storm',
+        mercury: 'MERCURY · Signal handshake',
+        earthDark: 'EARTH DARK · Lights out for now',
+        alert: 'ALERT · Link down',
+      },
+    },
     error: {
       quota_voice: 'Voice quota exhausted',
       quota_agent: 'Agent quota exhausted',
@@ -324,12 +364,12 @@ export const voiceEn = {
       remaining: '{n} more',
     },
     call: {
-      summary: 'Call summary',
+      surveyTitle: 'Survey Report · Low Earth Orbit',
       duration: 'Duration',
       workItems: 'Tasks dispatched',
       participants: 'Participants',
-      minute: 'm',
-      second: 's',
+      /** P2 brand narrative footer total: {n}=transcript entries actually listed. The data model has no rarity/type field, so no rarity labels. */
+      treasureCount: 'Treasures brought back: {n}',
       expand: 'Show transcript',
       collapse: 'Hide transcript',
       noTranscriptLegacy: "This call's transcript wasn't kept (older app version)",

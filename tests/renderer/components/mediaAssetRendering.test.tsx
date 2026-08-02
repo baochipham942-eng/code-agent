@@ -33,6 +33,13 @@ describe('media asset rendering', () => {
     expect(html).toContain('复制引用');
     expect(html).toContain('diagram');
     expect(html).toContain('file:///repo/assets/diagram.png');
+    // 2026-08-02 拍板：正文图产物的操作条 hover 才浮现。三个无障碍兜底一个都不能被「简化」掉——
+    // 少了 focus-within 键盘用户永远够不到；少了触屏兜底类，触屏设备永远看不见。
+    // ⚠️ 本断言只证明 class 写进了 HTML，**不证明 Tailwind 生成了 CSS**——
+    // 任意变体 [@media(hover:none)] 就是这样静默失效的（编译产物里命中 0）。改这里必须回 dist CSS 核实。
+    expect(html).toContain('group-hover:opacity-100');
+    expect(html).toContain('focus-within:opacity-100');
+    expect(html).toContain('media-actions-hover-reveal');
   });
 
   it('renders attachment images with unified media ownership and actions', () => {

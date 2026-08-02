@@ -5,6 +5,7 @@ import { useI18n } from '../../hooks/useI18n';
 import { useLiveAgentPointer } from '../../hooks/useLiveAgentPointer';
 import { useSurfaceLiveFrames } from '../../hooks/useSurfaceLiveFrames';
 import { useWorkbenchBrowserSession } from '../../hooks/useWorkbenchBrowserSession';
+import { getPersistedSurfaceTerminalFrame } from '../../services/surfaceExecutionClient';
 import { useSessionStore } from '../../stores/sessionStore';
 import {
   selectSurfaceExecutionRunSessionV1,
@@ -163,6 +164,35 @@ export const BrowserAgentWindow: React.FC = () => {
     visible: activeWorkbenchTab === 'browser' && !workbenchCollapsed,
     sessionRunning: Boolean(browserSurfaceSessionId),
   });
+
+  // 重启/刷新后内存 frameByScope 是空的：终态会话还在（host 投影恢复），试着从盘上
+  // 把留影帧读回来补进 store（标 'stale'，三态渲染自然落留影）。每个 scope 只试一次，
+  // 读不到就保持摘要卡兜底，不重复打 IPC。
+  const persistedFrameTriedRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!terminalSurfaceSession || !terminalScopeKey || terminalFrameDataUrl) return undefined;
+    if (persistedFrameTriedRef.current.has(terminalScopeKey)) return undefined;
+    persistedFrameTriedRef.current.add(terminalScopeKey);
+    const { scope } = terminalSurfaceSession;
+    let cancelled = false;
+    void getPersistedSurfaceTerminalFrame({
+      version: 1,
+      conversationId: scope.conversationId,
+      surfaceSessionId: scope.surfaceSessionId,
+    })
+      .then((result) => {
+        if (cancelled || !result.frame) return;
+        useSurfaceExecutionStore.getState().setFrameState(scope, {
+          status: 'stale',
+          dataUrl: result.frame.dataUrl,
+          updatedAt: Date.now(),
+        });
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [terminalSurfaceSession, terminalScopeKey, terminalFrameDataUrl]);
 
   const [primaryRepair, ...secondaryRepairs] = ownedByCurrentSession
     ? browserSession.repairActions

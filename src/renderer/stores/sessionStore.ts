@@ -18,6 +18,8 @@ import { useAppStore } from './appStore';
 import { useTaskStore } from './taskStore';
 import { useAppshotsStore } from './appshotsStore';
 import { useDesignCanvasStore } from '../components/design/designCanvasStore';
+import { useSurfaceExecutionStore } from './surfaceExecutionStore';
+import { deletePersistedSurfaceTerminalFrames } from '../services/surfaceExecutionClient';
 import { executeCreateSession } from './sessionCreate';
 
 const logger = createLogger('SessionStore');
@@ -243,7 +245,7 @@ interface SessionActions {
   setTodos: (todos: TodoItem[]) => void;
   setSessionTasks: (tasks: SessionTask[]) => void;
   loadOlderMessages: () => Promise<void>;
-  clearCurrentSession: () => void;
+  clearCurrentSession: () => Promise<void>;
   updateSessionTitle: (sessionId: string, title: string) => void;
   updateSessionEngine: (sessionId: string, engine: Partial<AgentEngineSessionMetadata>) => Promise<void>;
   updateSessionMemoryMode: (sessionId: string, memoryMode: Session['memoryMode']) => Promise<void>;
@@ -488,6 +490,8 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 
         // 清理该会话的设计态：design-active 标记 + 画布属主，避免悬空。
         useDesignCanvasStore.getState().releaseSessionDesignState(sessionId);
+        // 终态留影的内存半跟会话一起删（盘上那一半由 host 会话删除收敛点负责）
+        useSurfaceExecutionStore.getState().clearConversation(sessionId);
         // 清理该会话的 per-session agent 选择（S3）
         useAppStore.getState().clearActiveAgentForSession(sessionId);
 
@@ -680,7 +684,18 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
       }
     },
 
-    clearCurrentSession: () => {
+    clearCurrentSession: async () => {
+      const conversationId = get().currentSessionId;
+      if (conversationId) {
+        try {
+          await deletePersistedSurfaceTerminalFrames({ version: 1, conversationId });
+          useSurfaceExecutionStore.getState().clearConversation(conversationId);
+        } catch (error) {
+          logger.error('Failed to clear persisted terminal frames', error);
+          set({ error: error instanceof Error ? error.message : 'Failed to clear conversation' });
+          return;
+        }
+      }
       useAppshotsStore.getState().clear();
       set({
         messages: [],

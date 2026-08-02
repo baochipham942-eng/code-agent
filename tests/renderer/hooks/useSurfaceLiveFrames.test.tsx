@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, renderHook, waitFor } from '@testing-library/react';
+import { act, cleanup, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type {
   SurfaceConversationSnapshotV1,
@@ -24,12 +24,18 @@ const stopSurfaceLiveStream = vi.fn(async (request: { surfaceSessionId: string }
   surfaceSessionId: request.surfaceSessionId,
   streaming: false,
 }));
+const persistSurfaceTerminalFrame = vi.fn(async (_request: unknown) => ({
+  version: 1 as const,
+  ok: true,
+  bytes: 3,
+}));
 
 const channelListeners = new Map<string, (payload: unknown) => void>();
 
 vi.mock('../../../src/renderer/services/surfaceExecutionClient', () => ({
   startSurfaceLiveStream: (request: { surfaceSessionId: string }) => startSurfaceLiveStream(request),
   stopSurfaceLiveStream: (request: { surfaceSessionId: string }) => stopSurfaceLiveStream(request),
+  persistSurfaceTerminalFrame: (request: unknown) => persistSurfaceTerminalFrame(request),
 }));
 
 vi.mock('../../../src/renderer/services/ipcService', () => ({
@@ -144,6 +150,7 @@ describe('useSurfaceLiveFrames', () => {
   beforeEach(() => {
     startSurfaceLiveStream.mockClear();
     stopSurfaceLiveStream.mockClear();
+    persistSurfaceTerminalFrame.mockClear();
     channelListeners.clear();
   });
 
@@ -230,6 +237,7 @@ describe('终态留影（帧留存进 frameByScope）', () => {
   beforeEach(() => {
     startSurfaceLiveStream.mockClear();
     stopSurfaceLiveStream.mockClear();
+    persistSurfaceTerminalFrame.mockClear();
     channelListeners.clear();
     useSurfaceExecutionStore.getState().reset();
     seedSurfaceSession();
@@ -263,11 +271,19 @@ describe('终态留影（帧留存进 frameByScope）', () => {
     // 并标 stale——留影靠的就是这份 dataUrl，删了留影就没了。
     rerender({ ...READY, visible: false });
     await waitFor(() => expect(stopSurfaceLiveStream).toHaveBeenCalled());
+    await waitFor(() => expect(persistSurfaceTerminalFrame).toHaveBeenCalledWith({
+      version: 1,
+      conversationId: 'session-a',
+      surfaceSessionId: 'surface-1',
+      dataUrl: 'data:image/jpeg;base64,BBBB',
+    }));
     expect(result.current.frame).toBeNull();
     expect(retainedFrameState()).toMatchObject({
       status: 'stale',
       dataUrl: 'data:image/jpeg;base64,BBBB',
     });
+    expect(persistSurfaceTerminalFrame.mock.invocationCallOrder[0])
+      .toBeLessThan(stopSurfaceLiveStream.mock.invocationCallOrder[0]);
   });
 
   it('停流时本地没有帧可移交：不删 scope 上已有的留影 dataUrl', async () => {
@@ -289,6 +305,54 @@ describe('终态留影（帧留存进 frameByScope）', () => {
       status: 'stale',
       dataUrl: 'data:image/jpeg;base64,KEEP',
     });
+  });
+
+  it('超出软上限的最后一帧先降到 800px 长边并重编码再落盘', async () => {
+    const compressed = 'data:image/jpeg;base64,COMPRESSED';
+    class FakeImage {
+      naturalWidth = 1600;
+      naturalHeight = 1200;
+      onload: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      set src(_value: string) {
+        queueMicrotask(() => this.onload?.());
+      }
+    }
+    vi.stubGlobal('Image', FakeImage);
+    const getContext = vi.spyOn(HTMLCanvasElement.prototype, 'getContext')
+      .mockReturnValue({ drawImage: vi.fn() } as never);
+    const toDataURL = vi.spyOn(HTMLCanvasElement.prototype, 'toDataURL')
+      .mockReturnValue(compressed);
+    try {
+      const { rerender, result } = renderHook(
+        (input: Parameters<typeof useSurfaceLiveFrames>[0]) => useSurfaceLiveFrames(input),
+        { initialProps: READY },
+      );
+      await waitFor(() => expect(result.current.streaming).toBe(true));
+      act(() => {
+        channelListeners.get(IPC_CHANNELS.SURFACE_LIVE_FRAME)?.(buildFrame({
+          dataUrl: `data:image/jpeg;base64,${'A'.repeat(600 * 1024)}`,
+        }));
+      });
+
+      rerender({ ...READY, visible: false });
+
+      await waitFor(() => expect(persistSurfaceTerminalFrame).toHaveBeenCalledWith({
+        version: 1,
+        conversationId: 'session-a',
+        surfaceSessionId: 'surface-1',
+        dataUrl: compressed,
+      }));
+      expect(getContext).toHaveBeenCalled();
+      const canvas = getContext.mock.contexts[0] as HTMLCanvasElement;
+      expect(canvas.width).toBe(800);
+      expect(canvas.height).toBe(600);
+      expect(toDataURL).toHaveBeenCalledWith('image/jpeg', 0.55);
+    } finally {
+      getContext.mockRestore();
+      toDataURL.mockRestore();
+      vi.unstubAllGlobals();
+    }
   });
 
   it('一帧都没收到且 scope 上无既有留影：停流不污染 store', async () => {

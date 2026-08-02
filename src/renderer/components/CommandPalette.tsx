@@ -108,7 +108,9 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose 
       icon: <Plus className="w-4 h-4" />,
       shortcut: getShortcutLabel('session.new'),
       category: 'session',
-      action: () => createSession(),
+      action: async () => {
+        await createSession();
+      },
     },
     {
       id: 'clear-chat',
@@ -117,7 +119,9 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose 
       icon: <Trash2 className="w-4 h-4" />,
       shortcut: getShortcutLabel('session.clear'),
       category: 'session',
-      action: () => clearCurrentSession(),
+      action: async () => {
+        await clearCurrentSession();
+      },
     },
     {
       id: 'archive-session',
@@ -288,9 +292,9 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose 
     setQuery('');
   }, [onClose]);
 
-  const confirmClearChat = useCallback(() => {
+  const confirmClearChat = useCallback(async () => {
     setIsClearConfirmationOpen(false);
-    clearCurrentSession();
+    await clearCurrentSession();
     onClose();
     setQuery('');
   }, [clearCurrentSession, onClose]);

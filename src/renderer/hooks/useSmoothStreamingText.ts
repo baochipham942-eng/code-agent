@@ -5,6 +5,10 @@ export const SMOOTH_STREAMING_TEXT_DEFAULTS = {
   DEFAULT_CPS: 50,
   MAX_CPS: 240,
   FLUSH_MAX_SECONDS: 4,
+  /** 收尾 flush 的目标窗口与速率上限：流式一结束就在 ~1.2s 内追平，
+      避免「正文已完、光标和操作栏还要等好几秒」的拖尾感。 */
+  FLUSH_WINDOW_SECONDS: 1.2,
+  FLUSH_MAX_CPS: 2000,
 } as const;
 
 const DEFAULT_FRAME_MS = 16;
@@ -42,12 +46,14 @@ export function computeSmoothStreamingNextContent(input: SmoothStreamingStepInpu
   const elapsedSeconds = Math.max(input.elapsedMs, DEFAULT_FRAME_MS) / 1000;
   const flushRemainingSeconds = Math.max((input.flushRemainingMs ?? 0) / 1000, elapsedSeconds);
   const catchupCps = input.isFlushing
-    ? backlog / flushRemainingSeconds
+    ? backlog / Math.min(flushRemainingSeconds, SMOOTH_STREAMING_TEXT_DEFAULTS.FLUSH_WINDOW_SECONDS)
     : SMOOTH_STREAMING_TEXT_DEFAULTS.DEFAULT_CPS + backlog / 6;
   const cps = clamp(
     catchupCps,
     SMOOTH_STREAMING_TEXT_DEFAULTS.MIN_CPS,
-    SMOOTH_STREAMING_TEXT_DEFAULTS.MAX_CPS,
+    input.isFlushing
+      ? SMOOTH_STREAMING_TEXT_DEFAULTS.FLUSH_MAX_CPS
+      : SMOOTH_STREAMING_TEXT_DEFAULTS.MAX_CPS,
   );
   const nextLength = Math.min(
     targetContent.length,

@@ -332,7 +332,10 @@ export const PlanetSphere: React.FC<PlanetSphereProps> = ({
 
   const surfaceStyle = (tex: string, fallback: boolean): React.CSSProperties => ({
     backgroundImage: tex ? `url(${tex})` : undefined,
-    backgroundSize: `var(--texw) ${size}px`,
+    // 下面两处豁免（行尾标记）：--texw / --planet-glow 不是设计 token，是本组件按实例算出来的
+    // 运行时值（贴图宽度 = 2×球径、辉光色 = 状态色），逐帧随 props 变，永远不可能
+    // 定义在四套主题里。走 global.css 补定义等于给它们编一个假的设计决策。
+    backgroundSize: `var(--texw) ${size}px`, // token-scan-allow
     // canvas 不可用（jsdom/极端环境）时的保底色，避免星球隐形（只给地表层，云层不盖底）
     backgroundColor: fallback && !tex ? 'rgba(148,163,184,.45)' : undefined,
   });
@@ -362,7 +365,6 @@ export const PlanetSphere: React.FC<PlanetSphereProps> = ({
   );
 };
 
-export default PlanetSphere;
 
 // ============================================================================
 // 样式（同 ThoughtDisplay 的内联 <style> 先例；作用域类名 neo-planet-* 不外溢）
@@ -387,7 +389,8 @@ const PLANET_CSS = `
   position: absolute;
   inset: -5px;
   border-radius: 50%;
-  background: radial-gradient(var(--planet-glow) 0%, transparent 62%);
+  /* 同上：--planet-glow 是 style 里按状态注入的运行时色值，豁免标记在行尾 */
+  background: radial-gradient(var(--planet-glow) 0%, transparent 62%); /* token-scan-allow */
   transform: scale(calc(.9 + var(--rms, 0) * .3));
   opacity: calc(.6 + var(--rms, 0) * .4);
   pointer-events: none;

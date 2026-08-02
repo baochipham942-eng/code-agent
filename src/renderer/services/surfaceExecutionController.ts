@@ -62,6 +62,8 @@ export async function executeSurfaceExecutionControl(
   const request: SurfaceSessionControlRequestV1 = { ...intent };
   try {
     const result = await dependencies.control(request);
+    // 返回值有意忽略：控制本身已成功（control 已 resolve），响应快照即使被当成
+    // 过期丢弃（'stale'），也只是 store 里已有更新的投影——属正常并发，无需处理。
     useSurfaceExecutionStore.getState().setNativeSnapshot(intent.conversationId, result.snapshot);
     const current = useSurfaceExecutionStore.getState();
     if (current.controlByScope[scopeKey]?.requestId === requestId) {

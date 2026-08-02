@@ -13,7 +13,7 @@ import {
   resolveRealtimeVoiceSelection,
   type RealtimeVoiceProviderProfile,
 } from '../../../shared/constants/realtimeVoiceProviders';
-import type { VoiceClientCommand, VoiceEvent, VoiceFocusContext, VoiceInterruptClassification, VoiceTransportHandle, VoiceWorkItem, VoiceWorkNarration } from '../../../shared/contract/voice';
+import type { VoiceClientCommand, VoiceEvent, VoiceFocusContext, VoiceInterruptClassification, VoiceTransportHandle, VoiceWorkItem } from '../../../shared/contract/voice';
 import type { VoiceTransport } from '../../../shared/contract/voice';
 import { getDashscopeApiKey } from '../media/imageGenerationService';
 import { createLogger } from '../infra/logger';
@@ -36,6 +36,14 @@ import type { VoiceLiveSettings } from '../../../shared/contract/settings';
 import { describeWorkFailure } from './workFailureDescription';
 import { detectHangupIntent } from './hangupIntent';
 import { decideVoiceInterrupt, shouldDisarmHangup } from './voiceTurnTaking';
+import {
+  createNarrationState,
+  enqueueOrInjectNarration,
+  flushNarrationQueue,
+  handleNarrationInjectionRejected,
+  markNarrationUserTurn,
+  type NarrationState,
+} from './voiceNarrationQueue';
 
 const logger = createLogger('VoiceSession');
 
@@ -137,12 +145,7 @@ interface ActiveSession {
   /** assistant final 先暂存，到 response.done 且未取消时才落库。 */
   pendingAssistantFinals: Map<string, { text: string; itemId?: string }>;
   /** 终态播报只属于这通电话：压住、去重与已播记录都随 active 一起销毁。 */
-  narration: {
-    userSpeaking: boolean;
-    queue: Map<string, { narration: VoiceWorkNarration; suppressedTurns: number; rejectionCount: number }>;
-    inFlight: { narration: VoiceWorkNarration; rejectionCount: number } | null;
-    spokenWorkItemIds: Set<string>;
-  };
+  narration: NarrationState;
 }
 
 // ponytail: 单进程内一个模块级变量就是「全局单路」的全部实现（方案 §2.6）。
@@ -342,122 +345,6 @@ async function reportWorkFailure(
   // （onWorkNarration → injectItem）。此前是往 instructions 里塞一段
   // <work_failed_notice>——instructions 是「你是谁」，一次性事件塞进去会变成
   // 永久人设，下一轮、下下轮它还在那儿。同一件事只留一条路。
-}
-
-/**
- * 终态回流 → 一句塞进实时会话的话（发言人协议 §2.2）。
- *
- * `[BACKEND] ` 前缀是给模型看的来源标记（用户消息带 `[USER] `），prompt 里明令不许念出来。
- * 措辞写死不留自由发挥空间：模型会把这段话当事实原样转述，失败尤其不能让它自己润色。
- */
-function formatNarration(narration: VoiceWorkNarration): string {
-  const who = narration.speaker ? `${narration.speaker.displayName}：` : '';
-  // 「停旧的」回报（§1）：整句台词已由 buildStopNarration 算好，这里不再拼词。
-  // 措辞只有一个家，避免「停稳了没有」这件事在两个模块里各写一半而说法打架。
-  if (narration.status === 'announcement') {
-    return `[BACKEND] ${who}${narration.summary}`;
-  }
-  if (narration.status === 'failed') {
-    const reason = narration.summary || '未给出原因';
-    return `[BACKEND] ${who}「${narration.title}」失败了，没有完成，原因：${reason}。`
-      + '如实告诉用户这件事失败了，绝不要说它已经完成、已经写入或已经生效。';
-  }
-  // 待核验（X5.5-A2-a）：run 跑完了但没留下任何产物。这一档最容易被润色成「做完了」，
-  // 所以和失败一样把台词写死，不给「已结束」这种可润色的状态名词留空间。
-  if (narration.status === 'unverified') {
-    return `[BACKEND] ${who}「${narration.title}」跑完了，但没有留下任何产物，不能算做完。${narration.summary}`.trim()
-      + '\n如实告诉用户这件事跑完了但还没核验，请他自己确认一下；'
-      + '绝不要说它已经完成、已经写入或已经生效。';
-  }
-  return `[BACKEND] ${who}「${narration.title}」做完了。${narration.summary}`.trim();
-}
-
-function injectNarration(session: ActiveSession, narration: VoiceWorkNarration, rejectionCount = 0): void {
-  if (session.narration.spokenWorkItemIds.has(narration.workItemId)) return;
-  const { upstream } = session;
-  if (upstream.kind !== 'relay') {
-    // WebRTC 形态媒体不经 Host，注入通道要走 Renderer 的 data channel，尚未实现。
-    // 静默 no-op = 用户永远等不到那句话且查不出为什么，必须留痕。
-    logger.warn('narration dropped: transport has no inject channel', { provider: upstream.provider });
-    return;
-  }
-  upstream.injectItem(formatNarration(narration));
-  session.narration.inFlight = { narration, rejectionCount };
-  session.narration.spokenWorkItemIds.add(narration.workItemId);
-}
-
-function enqueueOrInjectNarration(session: ActiveSession, narration: VoiceWorkNarration): void {
-  const state = session.narration;
-  if (state.spokenWorkItemIds.has(narration.workItemId) || state.queue.has(narration.workItemId)) return;
-  const upstreamResponding = session.upstream.kind === 'relay' && session.upstream.isResponding();
-  if (!state.userSpeaking && !upstreamResponding) {
-    injectNarration(session, narration);
-    return;
-  }
-  // 只把真实用户轮算进压制次数；单纯撞上模型响应窗不消耗用户轮额度。
-  state.queue.set(narration.workItemId, {
-    narration,
-    suppressedTurns: state.userSpeaking ? 1 : 0,
-    rejectionCount: 0,
-  });
-}
-
-function markNarrationUserTurn(session: ActiveSession): void {
-  const state = session.narration;
-  state.userSpeaking = true;
-  for (const [workItemId, pending] of state.queue) {
-    pending.suppressedTurns += 1;
-    if (pending.suppressedTurns < 2) continue;
-    state.queue.delete(workItemId);
-    logger.info('narration dropped after two suppressed user turns', {
-      voiceSessionId: session.id,
-      workItemId,
-    });
-  }
-}
-
-function flushNarrationQueue(session: ActiveSession): void {
-  const state = session.narration;
-  state.userSpeaking = false;
-  state.inFlight = null;
-  // 每次 response.done 只放一条。injectItem 会立即请求下一次 response，
-  // 一次清空多条会让这些 response.create 互相碰撞。
-  const next = state.queue.entries().next().value as
-    | [string, { narration: VoiceWorkNarration; suppressedTurns: number; rejectionCount: number }]
-    | undefined;
-  if (!next) return;
-  state.queue.delete(next[0]);
-  injectNarration(session, next[1].narration, next[1].rejectionCount);
-}
-
-function handleNarrationInjectionRejected(session: ActiveSession, message: string): void {
-  const state = session.narration;
-  const failed = state.inFlight;
-  state.inFlight = null;
-  if (!failed) {
-    logger.warn('unmatched narration injection rejection', { voiceSessionId: session.id, message });
-    return;
-  }
-  const { narration, rejectionCount } = failed;
-  if (rejectionCount >= 1) {
-    logger.warn('narration injection dropped after retry', {
-      voiceSessionId: session.id,
-      workItemId: narration.workItemId,
-      message,
-    });
-    return;
-  }
-  state.spokenWorkItemIds.delete(narration.workItemId);
-  state.queue.set(narration.workItemId, {
-    narration,
-    suppressedTurns: 0,
-    rejectionCount: rejectionCount + 1,
-  });
-  logger.info('narration injection rejected; queued one retry', {
-    voiceSessionId: session.id,
-    workItemId: narration.workItemId,
-    message,
-  });
 }
 
 /**
@@ -869,7 +756,18 @@ async function connectAndBind(
     neoSessionId,
     activeAgentId: routing.activeAgentId,
     onWorkItem: (item) => {
-      if (active?.id === id && item.status === 'queued') active.workItemCount += 1;
+      if (active?.id === id && item.status === 'queued') {
+        active.workItemCount += 1;
+        // 首条进度的延迟基准（§2）：从这件活派出去那一刻起算。
+        active.narration.firstDispatchAt = Date.now();
+        // §4.3 三元组绑定：这一件活是哪通电话、哪个上游会话派出去的，
+        // 从日志就能还原「这句话属于哪个活的哪一轮」，不必再靠时间戳猜。
+        logger.info('voice work dispatched', {
+          workItemId: item.id,
+          voiceSessionId: id,
+          neoSessionId,
+        });
+      }
       send(clientRef.current, { type: 'work.upsert', item });
     },
     // G1（2026-07-28 真机，验收报告自评最严重）：账本早就把死掉的活标成 failed，
@@ -1119,12 +1017,7 @@ async function connectAndBind(
     },
     cancelledResponseIds: new Set(),
     pendingAssistantFinals: new Map(),
-    narration: {
-      userSpeaking: false,
-      queue: new Map(),
-      inFlight: null,
-      spokenWorkItemIds: new Set(),
-    },
+    narration: createNarrationState(),
     maxDurationTimer: setTimeout(() => {
       logger.warn('session hit max duration, force closing', { voiceSessionId: id });
       void teardown('max-duration');

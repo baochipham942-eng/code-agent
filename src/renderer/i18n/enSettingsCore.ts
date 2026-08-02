@@ -418,6 +418,10 @@ export const enSettingsCore = {
           label: 'New session',
           description: 'Create a new conversation session',
         },
+        'voice.callToggle': {
+          label: 'Start / end Live call',
+          description: 'Bring the app forward and start a Live call from anywhere, or end the active call',
+        },
         'voice.toggle': {
           label: 'Voice input',
           description: 'Start or stop voice input',

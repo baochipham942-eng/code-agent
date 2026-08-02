@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Image as KonvaImage, Rect as KonvaRect, Text as KonvaText } from 'react-konva';
+import { Group, Image as KonvaImage, Rect as KonvaRect, Text as KonvaText } from 'react-konva';
 import type Konva from 'konva';
 import { useI18n } from '../../hooks/useI18n';
 import { readWorkspaceImageAsDataUrl, readWorkspaceBinaryAsBlobUrl } from './designFiles';
@@ -40,9 +40,12 @@ export const CanvasImage: React.FC<{
   runDir: string | null;
   selected: boolean;
   panModifierActive: boolean;
+  canDrag: boolean;
   onSelect: (additive: boolean) => void;
+  onDragStart: () => void;
+  onDragEnd: (pos: { x: number; y: number }) => void;
   onViewDiff: (node: CanvasImageNode) => void;
-}> = ({ node, runDir, selected, panModifierActive, onSelect, onViewDiff }) => {
+}> = ({ node, runDir, selected, panModifierActive, canDrag, onSelect, onDragStart, onDragEnd, onViewDiff }) => {
   const { t } = useI18n();
   const img = useNodeImage(runDir, node.src);
   if (!img) return null;
@@ -69,8 +72,9 @@ export const CanvasImage: React.FC<{
     const padX = fs * 0.55;
     const pillW = Math.round(label.length * fs * 0.62 + padX * 2);
     const pillH = Math.round(fs * 1.7);
-    const px = node.x + node.width - pillW - 8;
-    const py = node.y + 8;
+    // Group 内相对坐标（node.x/y 由外层 Group 承载）。
+    const px = node.width - pillW - 8;
+    const py = 8;
     const clickable = isLocked && Boolean(c.diffPath);
     const open = (): void => {
       if (clickable) onViewDiff(node);
@@ -104,11 +108,17 @@ export const CanvasImage: React.FC<{
     );
   })();
   return (
-    <>
+    // 整组包 Group 才能整体拖：主图/参考框/星标/选中框/徽章全部改相对坐标，
+    // e.target.x()/y() 是 Group 在 Layer 下的世界坐标（相机变换在 Stage 上，无需换算）。
+    <Group
+      x={node.x}
+      y={node.y}
+      draggable={canDrag}
+      onDragStart={onDragStart}
+      onDragEnd={(e) => onDragEnd({ x: e.target.x(), y: e.target.y() })}
+    >
       <KonvaImage
         image={img}
-        x={node.x}
-        y={node.y}
         width={node.width}
         height={node.height}
         onMouseDown={pick}
@@ -117,8 +127,6 @@ export const CanvasImage: React.FC<{
       {isReferenceNode(node) && (
         <>
           <KonvaRect
-            x={node.x}
-            y={node.y}
             width={node.width}
             height={node.height}
             stroke="#38bdf8" // ds-allow:viz konva 画布字面色，CSS 变量够不到（参考图 sky 标识）
@@ -127,8 +135,8 @@ export const CanvasImage: React.FC<{
             listening={false}
           />
           <KonvaRect
-            x={node.x + 6}
-            y={node.y + 6}
+            x={6}
+            y={6}
             width={Math.round(t.design.referenceBadge.length * badge * 0.62 + badge * 1.1)}
             height={Math.round(badge * 1.7)}
             fill="rgba(56,189,248,0.18)" // ds-allow:viz 参考徽章底
@@ -136,8 +144,8 @@ export const CanvasImage: React.FC<{
             listening={false}
           />
           <KonvaText
-            x={node.x + 6}
-            y={node.y + 6 + Math.round(badge * 0.42)}
+            x={6}
+            y={6 + Math.round(badge * 0.42)}
             width={Math.round(t.design.referenceBadge.length * badge * 0.62 + badge * 1.1)}
             align="center"
             text={t.design.referenceBadge}
@@ -150,8 +158,6 @@ export const CanvasImage: React.FC<{
       {node.chosen && (
         <>
           <KonvaRect
-            x={node.x}
-            y={node.y}
             width={node.width}
             height={node.height}
             stroke="#10b981" // ds-allow:viz konva 画布字面色，CSS 变量够不到
@@ -159,8 +165,8 @@ export const CanvasImage: React.FC<{
             listening={false}
           />
           <KonvaText
-            x={node.x + 8}
-            y={node.y + 8}
+            x={8}
+            y={8}
             text="★"
             fontSize={badge}
             fill="#10b981" // ds-allow:viz konva 画布字面色，CSS 变量够不到
@@ -170,8 +176,6 @@ export const CanvasImage: React.FC<{
       )}
       {selected && (
         <KonvaRect
-          x={node.x}
-          y={node.y}
           width={node.width}
           height={node.height}
           stroke="#e879f9" // ds-allow:viz konva 画布字面色，CSS 变量够不到
@@ -181,7 +185,7 @@ export const CanvasImage: React.FC<{
         />
       )}
       {consistencyBadge}
-    </>
+    </Group>
   );
 };
 
@@ -192,9 +196,12 @@ export const KonvaVideoNode: React.FC<{
   runDir: string | null;
   selected: boolean;
   panModifierActive: boolean;
+  canDrag: boolean;
   onSelect: (additive: boolean) => void;
+  onDragStart: () => void;
+  onDragEnd: (pos: { x: number; y: number }) => void;
   onPlay: () => void;
-}> = ({ node, runDir, selected, panModifierActive, onSelect, onPlay }) => {
+}> = ({ node, runDir, selected, panModifierActive, canDrag, onSelect, onDragStart, onDragEnd, onPlay }) => {
   // 老视频节点（封面落地前生成的）没有 poster：懒抽首帧补一张封面，避免画布上黑底看不出内容。
   const [lazyPoster, setLazyPoster] = useState<string | null>(null);
   useEffect(() => {
@@ -226,22 +233,27 @@ export const KonvaVideoNode: React.FC<{
     e.cancelBubble = true;
     onPlay();
   };
-  const cy = node.y + node.height / 2;
+  const cy = node.height / 2; // Group 内相对坐标（node.x/y 由外层 Group 承载）
   const glyph = Math.max(28, Math.round(Math.min(node.width, node.height) * 0.18));
   const durFs = Math.max(12, Math.round(node.width * 0.04));
   return (
-    <>
+    <Group
+      x={node.x}
+      y={node.y}
+      draggable={canDrag}
+      onDragStart={onDragStart}
+      onDragEnd={(e) => onDragEnd({ x: e.target.x(), y: e.target.y() })}
+    >
       {poster ? (
-        <KonvaImage image={poster} x={node.x} y={node.y} width={node.width} height={node.height} onMouseDown={pick} onTap={pick} />
+        <KonvaImage image={poster} width={node.width} height={node.height} onMouseDown={pick} onTap={pick} />
       ) : (
         <KonvaRect
-          x={node.x} y={node.y} width={node.width} height={node.height}
+          width={node.width} height={node.height}
           fill="#18181b" // ds-allow:viz konva 画布字面色，CSS 变量够不到
           cornerRadius={6} onMouseDown={pick} onTap={pick}
         />
       )}
       <KonvaText
-        x={node.x}
         y={cy - glyph / 2}
         width={node.width}
         align="center"
@@ -252,8 +264,8 @@ export const KonvaVideoNode: React.FC<{
         onTap={play}
       />
       <KonvaText
-        x={node.x + 8}
-        y={node.y + node.height - durFs * 1.6}
+        x={8}
+        y={node.height - durFs * 1.6}
         text={formatDurationLabel(node.durationSec)}
         fontSize={durFs}
         fill="rgba(255,255,255,0.85)"
@@ -261,18 +273,18 @@ export const KonvaVideoNode: React.FC<{
       />
       {node.chosen && (
         <KonvaRect
-          x={node.x} y={node.y} width={node.width} height={node.height}
+          width={node.width} height={node.height}
           stroke="#10b981" // ds-allow:viz konva 画布字面色，CSS 变量够不到
           strokeWidth={3} listening={false}
         />
       )}
       {selected && (
         <KonvaRect
-          x={node.x} y={node.y} width={node.width} height={node.height}
+          width={node.width} height={node.height}
           stroke="#e879f9" // ds-allow:viz konva 画布字面色，CSS 变量够不到
           strokeWidth={2} dash={[10, 6]} listening={false}
         />
       )}
-    </>
+    </Group>
   );
 };

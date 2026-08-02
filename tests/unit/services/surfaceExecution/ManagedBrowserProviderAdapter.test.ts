@@ -78,7 +78,7 @@ function createHarness(failSnapshotAt?: number) {
   };
   const fake = createFakeBrowser(failSnapshotAt);
   const release = vi.fn(async () => fake.close());
-  const acquire = vi.fn(() => fake.service);
+  const acquire = vi.fn((_serviceKey: string) => fake.service);
   const adapter = new ManagedBrowserProviderAdapter(runtime, acquire, release);
   return { registry, runtime, identity, fake, acquire, release, adapter };
 }

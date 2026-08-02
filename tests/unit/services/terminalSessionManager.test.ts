@@ -65,6 +65,7 @@ const {
   __resetTerminalSessionsForTest,
   annotateTerminalSession,
   disposeTerminalSession,
+  isTerminalOnAlternateScreen,
   getTerminalSnapshot,
   listTerminalSessions,
   onTerminalOutput,
@@ -242,5 +243,55 @@ describe('orphan pty reaping', () => {
     openTerminalSession({ sessionId: 's1', cwd: '/tmp' });
     const persisted = JSON.parse(fs.readFileSync(pidFile, 'utf-8')) as Array<{ pid: number }>;
     expect(persisted.map((entry) => entry.pid)).toContain(spawned[0].pid);
+  });
+});
+
+// 全屏 TUI 在备用屏上整屏重绘，注入回显印进去只闪一帧就被擦掉。
+// 认不出「现在在不在备用屏」，就没法决定那行 [Neo] 该不该印。
+describe('alternate screen tracking', () => {
+  it('starts on the normal screen', () => {
+    openTerminalSession({ sessionId: 's1', cwd: '/tmp' });
+
+    expect(isTerminalOnAlternateScreen('s1')).toBe(false);
+  });
+
+  it('follows the program in and back out of the alternate screen', () => {
+    openTerminalSession({ sessionId: 's1', cwd: '/tmp' });
+
+    spawned[0].emitData('\x1b[?1049h');
+    expect(isTerminalOnAlternateScreen('s1')).toBe(true);
+
+    spawned[0].emitData('\x1b[?1049l');
+    expect(isTerminalOnAlternateScreen('s1')).toBe(false);
+  });
+
+  it('takes the last toggle when one chunk both enters and leaves', () => {
+    openTerminalSession({ sessionId: 's1', cwd: '/tmp' });
+
+    spawned[0].emitData('\x1b[?1049lstuff\x1b[?1049h');
+    expect(isTerminalOnAlternateScreen('s1')).toBe(true);
+  });
+
+  it('also recognises the legacy 47 / 1047 spellings', () => {
+    openTerminalSession({ sessionId: 's1', cwd: '/tmp' });
+
+    spawned[0].emitData('\x1b[?47h');
+    expect(isTerminalOnAlternateScreen('s1')).toBe(true);
+    spawned[0].emitData('\x1b[?1047l');
+    expect(isTerminalOnAlternateScreen('s1')).toBe(false);
+  });
+
+  it('is per session — one TUI does not make every terminal look full-screen', () => {
+    openTerminalSession({ sessionId: 's1', cwd: '/tmp' });
+    openTerminalSession({ sessionId: 's2', cwd: '/tmp' });
+
+    spawned[0].emitData('\x1b[?1049h');
+
+    expect(isTerminalOnAlternateScreen('s1')).toBe(true);
+    expect(isTerminalOnAlternateScreen('s2')).toBe(false);
+  });
+
+  it('reports false for a session that does not exist', () => {
+    expect(isTerminalOnAlternateScreen('nope')).toBe(false);
   });
 });

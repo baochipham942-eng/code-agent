@@ -12,7 +12,14 @@ const database = vi.hoisted(() => ({
     modelConfig: { provider: 'openai', model: 'gpt-5.5' },
     createdAt: 1,
     updatedAt: 1,
+    messageCount: state.messages.get(sessionId)?.length ?? 0,
+    turnCount: state.messages.get(sessionId)?.filter((message) => message.role === 'user').length ?? 0,
   })),
+  getDb: vi.fn(() => null),
+  getRecentMessages: vi.fn((sessionId: string, messageLimit: number) => (
+    (state.messages.get(sessionId) ?? []).slice(-messageLimit)
+  )),
+  getTodos: vi.fn(() => []),
   replaceMessages: vi.fn((sessionId: string, messages: any[]) => {
     state.messages.set(sessionId, messages);
   }),
@@ -43,6 +50,60 @@ vi.mock('../../../../src/host/services/infra/toolCache', () => ({
 import { getContextHealthService } from '../../../../src/host/context/contextHealthService';
 import { resolveContextHealthForSession } from '../../../../src/host/ipc/contextHealth.ipc';
 import { SessionManager } from '../../../../src/host/services/infra/sessionManager';
+
+function messages(count: number) {
+  return Array.from({ length: count }, (_, index) => ({
+    id: `message-${index + 1}`,
+    role: index % 2 === 0 ? 'user' as const : 'assistant' as const,
+    content: `message ${index + 1}`,
+    timestamp: index + 1,
+  }));
+}
+
+describe('SessionManager cache messageLimit hydration', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    state.messages.clear();
+  });
+
+  it('reloads the full history after a one-message cache fill', async () => {
+    const sessionId = 'full-history-after-short-cache';
+    const persistedMessages = messages(100);
+    state.messages.set(sessionId, persistedMessages);
+    const manager = new SessionManager();
+
+    expect((await manager.getSession(sessionId, 1))?.messages).toHaveLength(1);
+    const fullSession = await manager.getSession(sessionId, Number.MAX_SAFE_INTEGER);
+
+    expect(fullSession?.messages).toEqual(persistedMessages);
+    expect(database.getRecentMessages).toHaveBeenNthCalledWith(2, sessionId, Number.MAX_SAFE_INTEGER);
+  });
+
+  it('reloads 80 messages after a one-message cache fill', async () => {
+    const sessionId = 'neo-tag-history-after-short-cache';
+    const persistedMessages = messages(100);
+    state.messages.set(sessionId, persistedMessages);
+    const manager = new SessionManager();
+
+    expect((await manager.getSession(sessionId, 1))?.messages).toHaveLength(1);
+    const expandedSession = await manager.getSession(sessionId, 80);
+
+    expect(expandedSession?.messages).toEqual(persistedMessages.slice(-80));
+    expect(database.getRecentMessages).toHaveBeenNthCalledWith(2, sessionId, 80);
+  });
+
+  it('does not reload when the session has fewer messages than the requested limit', async () => {
+    const sessionId = 'short-complete-history';
+    const persistedMessages = messages(3);
+    state.messages.set(sessionId, persistedMessages);
+    const manager = new SessionManager();
+
+    expect((await manager.getSession(sessionId, 80))?.messages).toEqual(persistedMessages);
+    expect((await manager.getSession(sessionId, 80))?.messages).toEqual(persistedMessages);
+
+    expect(database.getRecentMessages).toHaveBeenCalledTimes(1);
+  });
+});
 
 describe('SessionManager context health invalidation', () => {
   beforeEach(() => {

@@ -19,6 +19,15 @@ class FakeUpstream extends EventEmitter {
   sent: string[] = [];
   send(data: string) {
     this.sent.push(data);
+    const event = JSON.parse(data) as { type?: string; session?: Record<string, unknown> };
+    if (event.type === 'session.update' && sessionUpdatedReplyDelayMs !== null) {
+      const reply = () => this.emit('message', JSON.stringify({
+        type: 'session.updated',
+        session: event.session,
+      }));
+      if (sessionUpdatedReplyDelayMs === 0) queueMicrotask(reply);
+      else setTimeout(reply, sessionUpdatedReplyDelayMs);
+    }
   }
   ping() {
     this.emit('pong');
@@ -32,6 +41,13 @@ class FakeUpstream extends EventEmitter {
 }
 
 const upstreams: FakeUpstream[] = [];
+let sessionUpdatedReplyDelayMs: number | null = 0;
+const logger = vi.hoisted(() => ({
+  info: vi.fn(),
+  warn: vi.fn(),
+  error: vi.fn(),
+  debug: vi.fn(),
+}));
 const mockConfig = vi.hoisted(() => ({
   settings: {} as { voice?: { turnDetection?: VoiceTurnDetectionConfig; live?: { interrupt?: 'server_vad' | 'manual' } } },
 }));
@@ -49,7 +65,7 @@ vi.mock('ws', () => {
   return { default: MockWebSocket };
 });
 vi.mock('../../src/host/services/infra/logger', () => ({
-  createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
+  createLogger: () => logger,
 }));
 vi.mock('../../src/host/services/core/configService', () => ({
   getConfigService: () => ({ getSettings: () => mockConfig.settings }),
@@ -95,7 +111,9 @@ function readSessionUpdate(upstream: FakeUpstream): { session: { turn_detection?
 describe('VoiceTransport 契约（relay / direct 双跑）', () => {
   beforeEach(() => {
     upstreams.length = 0;
+    sessionUpdatedReplyDelayMs = 0;
     mockConfig.settings = {};
+    vi.clearAllMocks();
   });
 
   afterEach(() => {
@@ -875,6 +893,79 @@ describe('VoiceTransport 契约（relay / direct 双跑）', () => {
     expect(notices).toHaveLength(1);
     expect(notices[0]).toMatchObject({ type: 'notice', code: 'VOICE_TOOLS_DROPPED' });
 
+    await handle.close();
+  });
+
+  it('初始 session.update 8s 无回显仍宣布 live，并按无 tools 通话发 dropped notice', async () => {
+    vi.useFakeTimers();
+    sessionUpdatedReplyDelayMs = null;
+    const events: VoiceEvent[] = [];
+    const connecting = qwenOmniTransport.connect({
+      apiKey: 'test-key',
+      config: {
+        neoSessionId: 'handshake-timeout',
+        tools: [{
+          type: 'function',
+          name: 'get_active_tasks',
+          description: 'List active tasks',
+          parameters: { type: 'object', properties: {}, required: [] },
+        }],
+      },
+      onEvent: (event) => events.push(event),
+      onAudio: vi.fn(),
+      onToolCall: async () => 'ok',
+    });
+
+    await vi.advanceTimersByTimeAsync(0);
+    expect(events).not.toContainEqual({ type: 'state', state: 'live' });
+    await vi.advanceTimersByTimeAsync(7_999);
+    expect(events).not.toContainEqual({ type: 'state', state: 'live' });
+
+    await vi.advanceTimersByTimeAsync(1);
+    const handle = await connecting;
+    expect(events).toContainEqual({ type: 'state', state: 'live' });
+    expect(events).toContainEqual(expect.objectContaining({
+      type: 'notice',
+      code: 'VOICE_TOOLS_DROPPED',
+    }));
+    expect(logger.info).toHaveBeenCalledWith(
+      'initial session handshake timed out; continuing without tools',
+      { voiceSessionId: 'handshake-timeout', waitMs: 8_000 },
+    );
+    await handle.close();
+  });
+
+  it('初始 session.updated 到达即宣布 live，不等满 8s 且不发 dropped notice', async () => {
+    vi.useFakeTimers();
+    sessionUpdatedReplyDelayMs = 25;
+    const events: VoiceEvent[] = [];
+    const connecting = qwenOmniTransport.connect({
+      apiKey: 'test-key',
+      config: {
+        neoSessionId: 'handshake-confirmed',
+        tools: [{
+          type: 'function',
+          name: 'get_active_tasks',
+          description: 'List active tasks',
+          parameters: { type: 'object', properties: {}, required: [] },
+        }],
+      },
+      onEvent: (event) => events.push(event),
+      onAudio: vi.fn(),
+      onToolCall: async () => 'ok',
+    });
+
+    await vi.advanceTimersByTimeAsync(24);
+    expect(events).not.toContainEqual({ type: 'state', state: 'live' });
+
+    await vi.advanceTimersByTimeAsync(1);
+    const handle = await connecting;
+    expect(events).toContainEqual({ type: 'state', state: 'live' });
+    expect(events.filter((event) => event.type === 'notice')).toHaveLength(0);
+    expect(logger.info).toHaveBeenCalledWith(
+      'initial session handshake confirmed',
+      { voiceSessionId: 'handshake-confirmed', waitMs: 25 },
+    );
     await handle.close();
   });
 

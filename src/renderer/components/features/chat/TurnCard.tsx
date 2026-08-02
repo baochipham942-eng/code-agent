@@ -2,7 +2,7 @@
 // TurnCard - A single conversation turn (user prompt + assistant responses)
 // ============================================================================
 
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import type { TraceTurn, TraceNode } from '@shared/contract/trace';
 import type { StreamRecoverySnapshot } from '@shared/contract/session';
 import type { TurnHookActivity, TurnSkillActivity } from '@shared/contract/turnTimeline';
@@ -30,7 +30,7 @@ import {
 import { Button } from '../../primitives';
 import { UI } from '@shared/constants';
 import { TraceNodeRenderer } from './TraceNodeRenderer';
-import { StreamingIndicator, getRunningToolStartTime, getStreamingWaitingReason } from './StreamingIndicator';
+import { StreamingIndicator, getRunningSubagentCount, getRunningToolStartTime, getStreamingWaitingReason } from './StreamingIndicator';
 import { TurnDiffSummary } from './MessageBubble/TurnDiffSummary';
 import { isFileChangeCardOwnedNode } from '../../../utils/turnDiffSummary';
 import { TurnFeedback } from './TurnFeedback';
@@ -234,6 +234,27 @@ export const TurnCard: React.FC<TurnCardProps> = ({
     return { messageId };
   }, [isStreaming, turn.nodes]);
 
+  // 排查报告 §2 序列③④：点赞/分叉动作行此前按「node.content 原始全量非空」挂载，
+  // 与正文实际显示的打字机 displayContent 各走各的——turn 一 completed 按钮立刻出现，
+  // 正文却还在 flush 追帧（最长 4s），造成「按钮先于正文」的抢跑感。改为等打字机
+  // 追平：复用下方节点渲染早已在上报的 isAnimating 信号（useSmoothStreamingText 已暴露，
+  // 经 onStreamingDisplayUpdate 回调上抛），不新造判定逻辑，只是把这行按钮也接进去听。
+  // 注意比对用的是回调上报的原始 node.id，不是 feedbackAnchor/forkAnchor 里派生的 messageId。
+  const feedbackEligibleNodeId = useMemo(
+    () => turn.nodes.find((item) => item.feedbackEligible === true)?.id ?? null,
+    [turn.nodes],
+  );
+  const [anchorTypewriterCaughtUp, setAnchorTypewriterCaughtUp] = useState(true);
+  const handleAnchorStreamingDisplayUpdate = useCallback(
+    (nodeId: string, displayLength: number, isAnimating: boolean) => {
+      onStreamingDisplayUpdate?.(nodeId, displayLength, isAnimating);
+      if (nodeId === feedbackEligibleNodeId) {
+        setAnchorTypewriterCaughtUp(!isAnimating);
+      }
+    },
+    [onStreamingDisplayUpdate, feedbackEligibleNodeId],
+  );
+
   const hasVoiceFailureEvidence = useMemo(
     () => isVoiceTurn && (
       turn.status === 'error'
@@ -249,7 +270,10 @@ export const TurnCard: React.FC<TurnCardProps> = ({
   // 「completed + 有正文」，动作条会先闪一下。通话还在进行时、既无结局印章也无失败
   // 证据的任务轮不渲染动作条；挂断后（phase 回 idle）或印章落下后恢复。
   const suppressReplyActions =
-    isVoiceTurn && voiceCallInFlight && !turn.voiceWorkOutcome && !hasVoiceFailureEvidence;
+    (isVoiceTurn && voiceCallInFlight && !turn.voiceWorkOutcome && !hasVoiceFailureEvidence)
+    // 这一轮还在写就不摆动作条：答案没定稿时给出「复制/点赞/分叉」，等于请人给半句话
+    // 打分，而且正文每长一行动作条就往下跳一次（真机反馈 2026-08-01）。
+    || (isLastTurn && (Boolean(isSessionProcessing) || sessionIsRunning));
 
   const handleFork = async () => {
     if (!forkAnchor || isForking || isSessionProcessing || sessionIsRunning) return;
@@ -398,9 +422,10 @@ export const TurnCard: React.FC<TurnCardProps> = ({
               }
               const isNodeStreaming =
                 isStreaming && i === lastIndex && node.type === 'assistant_text';
+              // 不再要求外部传了 onStreamingDisplayUpdate 才上报——动作行的追平判定
+              // (handleAnchorStreamingDisplayUpdate) 自己也要听这个信号，与外部回调解耦。
               const shouldReportDisplayUpdate =
                 node.type === 'assistant_text' &&
-                Boolean(onStreamingDisplayUpdate) &&
                 (isNodeStreaming || (!isStreaming && node.id === foldedView?.finalTextNode?.id));
               return (
                 <TraceNodeRenderer
@@ -410,7 +435,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
                   attachments={node.attachments}
                   isStreaming={isNodeStreaming}
                   inVoiceDispatchCard={isVoiceTurn}
-                  onStreamingDisplayUpdate={shouldReportDisplayUpdate ? onStreamingDisplayUpdate : undefined}
+                  onStreamingDisplayUpdate={shouldReportDisplayUpdate ? handleAnchorStreamingDisplayUpdate : undefined}
                   onRewindUserPrompt={onRewindUserPrompt}
                   rewindDisabled={Boolean(isSessionProcessing)}
                 />
@@ -426,6 +451,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
                 showCaret={!lastNodeIsStreamingText}
                 isThinking={isThinkingPhase}
                 waitingReason={getStreamingWaitingReason(turn.nodes, streamingState.status)}
+                subagentCount={getRunningSubagentCount(turn.nodes)}
               />
             )}
           </>
@@ -440,6 +466,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
             showCaret={!lastNodeIsStreamingText}
             isThinking={isThinkingPhase}
             waitingReason={getStreamingWaitingReason(turn.nodes, streamingState.status)}
+            subagentCount={getRunningSubagentCount(turn.nodes)}
           />
         )}
 
@@ -450,7 +477,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
             sessionId={sessionId}
             attachments={foldedView.finalTextNode.attachments}
             inVoiceDispatchCard={isVoiceTurn}
-            onStreamingDisplayUpdate={onStreamingDisplayUpdate}
+            onStreamingDisplayUpdate={handleAnchorStreamingDisplayUpdate}
           />
         )}
 
@@ -471,8 +498,10 @@ export const TurnCard: React.FC<TurnCardProps> = ({
         {/* 评价对象是这一轮的回答，所以位置在整轮最后——挂在正文节点里会插在答案和
             它产出的文件卡之间，看起来像在给上面那一句话打分。
             操作行（复制/好评/差评/分叉）只在最后一轮常驻；历史轮 hover 进入该轮才显示，
-            避免多轮会话里每轮都拖一条操作行造成的割裂感（2026-07-29 产品反馈）。 */}
-        {(forkAnchor || feedbackAnchor) && !suppressReplyActions && (
+            避免多轮会话里每轮都拖一条操作行造成的割裂感（2026-07-29 产品反馈）。
+            anchorTypewriterCaughtUp：等正文打字机追平 content 再挂载，别让按钮抢跑在
+            仍在 flush 追帧的正文前面（排查报告 §2 序列③④）。 */}
+        {(forkAnchor || feedbackAnchor) && !suppressReplyActions && anchorTypewriterCaughtUp && (
           <div
             className={`flex items-center gap-2 ${isLastTurn ? '' : 'opacity-0 transition-opacity duration-150 group-hover/turncard:opacity-100'}`}
             data-testid="turn-reply-actions"
@@ -937,7 +966,6 @@ function getTurnRunStatus(turn: TraceTurn, t: Translations, streamingState?: Str
 }
 
 function getTurnPhase(turn: TraceTurn): string | null {
-  if (hasCancelledRunMarker(turn)) return '本轮已取消';
 
   // 这里曾经用路由摘要当轮次阶段（「已指定 岚析 执行」），既是内部审计口径，又跟
   // 旁边的 Auto 徽章自相矛盾。阶段该说这一轮在做什么，落到下面的能力/工具描述。
@@ -1052,7 +1080,9 @@ export function shouldHideTurnRunHeader(statusKey: string, statusTone: string): 
 const TurnRunHeader: React.FC<{ turn: TraceTurn; streamingState?: StreamingUiState }> = ({ turn, streamingState }) => {
   const { t } = useI18n();
   const status = getTurnRunStatus(turn, t, streamingState);
-  const phase = getTurnPhase(turn);
+  // 取消态：徽章说「已取消」，阶段位说停了什么、留了什么——底下那张同样写「已取消」
+  // 的大黄卡已经收起，一行说完，不再上下叠两条（2026-08-01 验收截图）。
+  const phase = status.key === 'cancelled' ? t.turnRun.detail.cancelled : getTurnPhase(turn);
   const completionSignal = getTurnCompletionSignal(turn, t);
   const failedTool = turn.nodes.find((node) => node.type === 'tool_call' && node.toolCall?.success === false)?.toolCall;
   const hasPhase = Boolean(phase?.trim());

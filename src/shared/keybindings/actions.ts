@@ -34,6 +34,17 @@ export const KEYBINDING_DEFINITIONS = [
     defaultHotkeys: { darwin: 'Cmd+N', win32: 'Ctrl+N', linux: 'Ctrl+N' },
   },
   {
+    id: 'voice.callToggle',
+    label: '拨打/挂断实时通话',
+    description: '从系统任意位置唤起应用并拨打实时通话，通话中再次触发则挂断',
+    category: 'global',
+    scope: 'global',
+    configurable: true,
+    enabledByDefault: false,
+    defaultHotkeys: { darwin: null, win32: null, linux: null },
+    risk: 'advanced',
+  },
+  {
     id: 'voice.toggle',
     label: '语音输入',
     description: '开始或停止语音输入',

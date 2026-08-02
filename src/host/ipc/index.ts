@@ -81,6 +81,7 @@ import { registerAlmaRegistryHandlers } from './almaRegistry.ipc';
 import { registerGenerativeUIHandlers } from './generativeUI.ipc';
 import { registerFolderTrustHandlers } from './folderTrust.ipc';
 import { registerTeamHandlers } from './team.ipc';
+import { registerVoiceHandlers } from './voice.ipc';
 import { getApplicationRunRegistry } from '../app/applicationRunRegistry';
 
 /**
@@ -94,6 +95,11 @@ export interface IpcDependencies {
   getTaskManager: () => TaskManager | null;
   getCurrentSessionId: () => string | null;
   setCurrentSessionId: (id: string) => void;
+  /**
+   * 一条消息刚入队时通知宿主。宿主据此判断「这个 session 现在是不是已经空闲」，
+   * 空闲就立刻抽——release 时的那次 drain 早于入队跑完，没有这条通知它会一直躺着。
+   */
+  onQueuedInputEnqueued?: (sessionId: string) => void;
 }
 
 /**
@@ -145,6 +151,7 @@ export function setupAllIpcHandlers(ipcMain: IpcMain, deps: IpcDependencies): vo
   registerGenerativeUIHandlers(ipcMain);
   registerFolderTrustHandlers(ipcMain, getAppService);
   registerTeamHandlers(ipcMain);
+  registerVoiceHandlers(ipcMain);
 
   // Connector handlers
   registerConnectorHandlers(ipcMain, getMainWindow, getConfigService);
@@ -208,6 +215,7 @@ export function setupAllIpcHandlers(ipcMain: IpcMain, deps: IpcDependencies): vo
   registerBackgroundHandlers(getMainWindow);
   registerBackgroundTaskLedgerHandlers(ipcMain);
   registerQueuedInputHandlers(ipcMain, {
+    onEnqueued: deps.onQueuedInputEnqueued,
     resolveModelSpec: (sessionId) => {
       const activeRunModelSpec = getApplicationRunRegistry().getModelSpecBySessionId(sessionId);
       if (activeRunModelSpec) return activeRunModelSpec;

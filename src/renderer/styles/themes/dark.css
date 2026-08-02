@@ -46,6 +46,11 @@
   --brand-primary-muted: rgba(15, 118, 110, 0.15);
   --brand-primary-glow: rgba(15, 118, 110, 0.25);
 
+  /* accent-accessible 回退：hc 两套主题用独立高饱和色承担可读性场景（focus/链接/
+     selection）；普通主题 brand 本身已过 4.5:1，直接回退到 brand，保证
+     text-accent-accessible 等 utility 在四主题下都有定义 */
+  --accent-accessible: var(--brand-primary);
+
   /* Semantic colors */
   --color-success: #4ADE80;
   --color-success-muted: rgba(74, 222, 128, 0.15);

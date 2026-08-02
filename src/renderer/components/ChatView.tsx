@@ -786,6 +786,7 @@ export const ChatView: React.FC = () => {
                 onSend={handleSendMessage}
                 workingDirectory={currentSessionWorkingDirectory}
                 workbenchSnapshot={currentSession?.workbenchSnapshot}
+                session={currentSession}
               />
             ) : (
               <div className="h-full" aria-hidden />

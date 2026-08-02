@@ -12,6 +12,7 @@ const image = (over: Partial<CanvasImageNode> = {}): CanvasImageNode => ({
   height: 80,
   createdAt: 1,
   ...over,
+  createdBy: over.createdBy ?? 'user',
 });
 
 const video = (over: Partial<CanvasVideoNode> = {}): CanvasVideoNode => ({
@@ -25,6 +26,7 @@ const video = (over: Partial<CanvasVideoNode> = {}): CanvasVideoNode => ({
   durationSec: 5,
   createdAt: 1,
   ...over,
+  createdBy: over.createdBy ?? 'user',
 });
 
 describe('canvasPlacement root/reference placement', () => {

@@ -11,11 +11,12 @@ const n = (id: string): CanvasImageNode => ({
   width: 100,
   height: 100,
   createdAt: 1,
+  createdBy: 'user',
 });
 
 const doc = (nodes: CanvasImageNode[]): DesignCanvasDoc => ({ version: 1, nodes, camera: { x: 0, y: 0, scale: 1 } });
-const conn = (id: string, from: string, to: string): CanvasConnector => ({ id, fromNodeId: from, toNodeId: to, createdAt: 1 });
-const rect = (id: string): CanvasShape => ({ id, kind: 'rect', x: 0, y: 0, width: 10, height: 10, color: '#64748b', createdAt: 1 });
+const conn = (id: string, from: string, to: string): CanvasConnector => ({ id, fromNodeId: from, toNodeId: to, createdAt: 1, createdBy: 'user' });
+const rect = (id: string): CanvasShape => ({ id, kind: 'rect', x: 0, y: 0, width: 10, height: 10, color: '#64748b', createdAt: 1, createdBy: 'user' });
 
 const get = () => useDesignCanvasStore.getState();
 

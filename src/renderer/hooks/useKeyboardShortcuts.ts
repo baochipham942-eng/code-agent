@@ -28,6 +28,8 @@ import {
 import { listenTauriEvent } from '../services/tauriPluginFacade';
 import { claimApprovalResponse, releaseApprovalResponse } from '../utils/approvalResponseGuard';
 import { claimDesignCanvasForSession } from '../components/design/designCanvasLaunch';
+import { voiceCallBridge } from '../services/voiceCallBridge';
+import { useVoiceCallStore } from '../stores/voiceCallStore';
 
 const logger = createLogger('KeyboardShortcuts');
 
@@ -415,6 +417,15 @@ export function useKeyboardShortcuts(config: KeyboardShortcutsConfig = {}): void
 
         case 'voice.toggle':
           await ipcService.unsafeInvoke(IPC_CHANNELS.VOICE_PASTE_TOGGLE);
+          return true;
+
+        case 'voice.callToggle':
+          if (useVoiceCallStore.getState().phase !== 'idle') {
+            voiceCallBridge.hangUp();
+            return true;
+          }
+          if (!currentSessionId) return false;
+          await voiceCallBridge.dial(currentSessionId);
           return true;
 
         case 'appshot.capture':

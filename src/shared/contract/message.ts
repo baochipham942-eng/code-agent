@@ -8,7 +8,7 @@ import type { ModelDecisionEventData } from './modelDecision';
 import type { TurnQualitySummary } from './turnQuality';
 import type { SessionAutomationMessageMetadata } from './sessionAutomation';
 import type { ArtifactLocatorV1 } from './artifactLocator';
-import type { VoiceCallSummary } from './voice';
+import type { VoiceCallFailureCode, VoiceCallFailurePhase, VoiceCallSummary } from './voice';
 
 export type MessageRole = 'user' | 'assistant' | 'system' | 'tool';
 export type MessageVisibility = 'active' | 'rewound';
@@ -238,6 +238,8 @@ export interface AgentTeamMessageMetadata {
 
 /** 会话区错误卡片的错误分类（AgentErrorCard 按它决定文案和动作按钮）。 */
 export type AgentErrorCategory =
+  /** 密钥无效 / 额度用尽 —— 供应商多用 401 表达，重试没有意义，得换模型或去补额度 */
+  | 'auth'
   | 'model_not_found'
   | 'forbidden'
   | 'rate_limited'
@@ -259,7 +261,10 @@ export interface AgentErrorMetadata {
   traceId?: string;
   /** 供应商/运行时的原始错误文本，进错误报告 */
   rawMessage: string;
+  /** 这一轮 host 真正跑的模型（不是前端当前选中的那个，两者在刚切模型时会不一致） */
   modelId?: string;
+  /** 同上，真正跑的 provider */
+  provider?: string;
   timestamp: number;
   /** context_length 专用：实际/上限 tokens，供卡片模板填空 */
   requestedTokens?: number;
@@ -275,6 +280,14 @@ export interface MessageMetadata {
   /** 实时语音协议身份。取消轮的 tombstone 与 DB 投影都只认这组稳定 ID。 */
   voiceTranscript?: { responseId?: string; itemId?: string };
   voiceCallSummary?: VoiceCallSummary;
+  /** 建连或上游失败的持久留痕；只记结构化失败，不记音频与字幕。 */
+  voiceCallFailure?: {
+    code: VoiceCallFailureCode;
+    phase: VoiceCallFailurePhase;
+    timestamp: number;
+    neoSessionId: string;
+    voiceSessionId?: string;
+  };
   workbench?: WorkbenchMessageMetadata;
   skill?: SkillMessageMetadata;
   channel?: ChannelMessageMetadata;

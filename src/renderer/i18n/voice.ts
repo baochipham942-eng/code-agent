@@ -50,6 +50,26 @@ export const voiceZh: VoiceTranslations = {
       idleTimeout: '长时间没有对话，通话已自动结束',
       error: '通话异常',
     },
+    /** 星球七态：状态栏左侧星球对应的状态词（前置）与小字 hint（后置）；星球英文名不译。 */
+    planet: {
+      word: {
+        connecting: '连接中',
+        reconnecting: '重连中',
+        listening: '聆听中',
+        speaking: '表达中',
+        working: '思考中',
+        muted: '已静音',
+        error: '连接异常',
+      },
+      hint: {
+        earth: 'EARTH · 环绕母星',
+        sol: 'SOL · 发光回应',
+        jupiter: 'JUPITER · 风暴搅动',
+        mercury: 'MERCURY · 信号握手',
+        earthDark: 'EARTH DARK · 暂时熄灯',
+        alert: 'ALERT · 链路中断',
+      },
+    },
     error: {
       quota_voice: '语音配额不足',
       quota_agent: 'Agent 配额不足',
@@ -60,7 +80,7 @@ export const voiceZh: VoiceTranslations = {
     },
     /** host 发来的提示/错误按 code 查这里；键集由 VoiceMessageCode 定型，少一条就 typecheck 红。 */
     messageByCode: {
-      VOICE_SESSION_BUSY: '已有一路通话在进行中',
+      VOICE_SESSION_BUSY: '通话正在另一个窗口进行，去那个窗口可以继续；在那里挂断后这里才能再拨',
       VOICE_PROVIDER_UNCONFIGURED: '还没配语音服务的 API Key，去设置里填一个就能打电话',
       VOICE_TOOLS_DROPPED: '当前实时语音模型不支持在通话中派活，这通电话只能聊天',
       VOICE_MODEL_UNRESPONSIVE: '模型没有回应，可以再说一遍，或挂断重拨',
@@ -88,12 +108,12 @@ export const voiceZh: VoiceTranslations = {
       remaining: '还有 {n} 件',
     },
     call: {
-      summary: '通话摘要',
+      surveyTitle: '勘测报告 · 近地轨道',
       duration: '时长',
       workItems: '派出任务',
       participants: '参与专家',
-      minute: '分',
-      second: '秒',
+      /** P2 品牌叙事底部总计：{n}=展开区真实列出的字幕条数。数据模型没有稀有度/类型字段，不造标签。 */
+      treasureCount: '本次带回 {n} 件宝藏',
       expand: '展开文字记录',
       collapse: '收起文字记录',
       noTranscriptLegacy: '这通电话的文字记录未保留（旧版本通话）',
@@ -198,6 +218,12 @@ export const voiceZh: VoiceTranslations = {
       sensitivityLow: '低',
       sensitivityMedium: '中',
       sensitivityHigh: '高',
+      speechRateTitle: '语速',
+      speechRateSlow: '慢',
+      speechRateNormal: '正常',
+      speechRateFast: '快',
+      /** T7：如实提示——speaking pace 是纯建议，不同语音服务遵从度不保证（方案 §2 不许虚假承诺）。 */
+      speechRateHelper: '这是给语音助手的说话建议：通话时它会尽量按所选语速说话，但不同语音服务的遵从程度不同，可能不会完全生效。',
       inputDeviceTitle: '麦克风',
       inputDeviceDescription: '选择实时语音使用的输入设备；设备断开时会自动回退到系统默认。',
       inputDeviceDefault: '系统默认',
@@ -280,6 +306,26 @@ export const voiceEn = {
       idleTimeout: 'The call ended after a long period of inactivity',
       error: 'Call error',
     },
+    /** Planet seven-states: status word (prefix) and small hint (suffix) for the status bar planet; planet names stay in English. */
+    planet: {
+      word: {
+        connecting: 'Connecting',
+        reconnecting: 'Reconnecting',
+        listening: 'Listening',
+        speaking: 'Speaking',
+        working: 'Thinking',
+        muted: 'Muted',
+        error: 'Connection lost',
+      },
+      hint: {
+        earth: 'EARTH · Orbiting the home star',
+        sol: 'SOL · Glowing reply',
+        jupiter: 'JUPITER · Stirring the storm',
+        mercury: 'MERCURY · Signal handshake',
+        earthDark: 'EARTH DARK · Lights out for now',
+        alert: 'ALERT · Link down',
+      },
+    },
     error: {
       quota_voice: 'Voice quota exhausted',
       quota_agent: 'Agent quota exhausted',
@@ -290,7 +336,7 @@ export const voiceEn = {
     },
     /** host 发来的提示/错误按 code 查这里；键集由 VoiceMessageCode 定型，少一条就 typecheck 红。 */
     messageByCode: {
-      VOICE_SESSION_BUSY: 'Another call is already in progress',
+      VOICE_SESSION_BUSY: 'A call is already in progress in another window — continue there, or end it there and retry here',
       VOICE_PROVIDER_UNCONFIGURED: 'No API key for the voice service yet — add one in settings to start calling',
       VOICE_TOOLS_DROPPED: 'This Live Voice model cannot run tasks during a call, so this call is chat only',
       VOICE_MODEL_UNRESPONSIVE: 'The model did not respond. Try saying it again, or hang up and redial',
@@ -318,12 +364,12 @@ export const voiceEn = {
       remaining: '{n} more',
     },
     call: {
-      summary: 'Call summary',
+      surveyTitle: 'Survey Report · Low Earth Orbit',
       duration: 'Duration',
       workItems: 'Tasks dispatched',
       participants: 'Participants',
-      minute: 'm',
-      second: 's',
+      /** P2 brand narrative footer total: {n}=transcript entries actually listed. The data model has no rarity/type field, so no rarity labels. */
+      treasureCount: 'Treasures brought back: {n}',
       expand: 'Show transcript',
       collapse: 'Hide transcript',
       noTranscriptLegacy: "This call's transcript wasn't kept (older app version)",
@@ -428,6 +474,12 @@ export const voiceEn = {
       sensitivityLow: 'Low',
       sensitivityMedium: 'Medium',
       sensitivityHigh: 'High',
+      speechRateTitle: 'Speech rate',
+      speechRateSlow: 'Slow',
+      speechRateNormal: 'Normal',
+      speechRateFast: 'Fast',
+      /** T7: honest disclosure — speaking pace is a suggestion; adherence varies by voice service. */
+      speechRateHelper: 'A speaking suggestion for the voice assistant: it will try to follow this pace during calls, but adherence varies by voice service and it may not take full effect.',
       inputDeviceTitle: 'Microphone',
       inputDeviceDescription: 'Choose the input device for Live Voice; it falls back to the system default when disconnected.',
       inputDeviceDefault: 'System default',

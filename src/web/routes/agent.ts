@@ -123,6 +123,7 @@ interface AgentRouterDeps extends AgentDurableRouteDeps {
   tryGetCLISessionManager?: () => Promise<AgentSessionManagerLike | null>;
   getSupabaseForSession: () => Promise<SupabaseAgentBinding | null>;
   registerQueuedInputStartupSweep?: (runStartupSweep: () => void) => void;
+  registerQueuedInputEnqueueHook?: (onEnqueued: (sessionId: string) => void) => void;
 }
 
 export type ActiveAgentLoop = RunControlTarget;
@@ -280,6 +281,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
     logger,
   });
   deps.registerQueuedInputStartupSweep?.(() => queuedInputDrain.runStartupSweep());
+  deps.registerQueuedInputEnqueueHook?.((sessionId) => queuedInputDrain.handleEnqueued(sessionId));
 
   // ── Agent Run (SSE streaming) ──────────────────────────────────────
   async function runAgentTurn(
@@ -779,9 +781,11 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       }
 
       // 设计画布会话冷启动引导：按轮服务端注入 systemPrompt（不进用户 content，免污染历史提示词）。
+      // canvasSnapshot 只在画布非空时由 renderer 附带（withCanvasSnapshotContext），故其缺席即空画布。
       config.systemPrompt = composeDesignCanvasSystemPrompt(
         config.systemPrompt,
         config.executionIntent?.designCanvasActive,
+        !body.context?.canvasSnapshot,
       );
 
       // Fix: CLI config maps 'anthropic' but provider is 'claude'
@@ -930,6 +934,14 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           metadata: userMsg.metadata,
         },
       });
+
+      // 宿主自己起的轮次（抽干排队消息、断连后续跑）：这条用户消息只有宿主知道，
+      // 前端没有本地乐观副本，不广播的话屏幕上只有回答、没有对应的问题
+      // ——2026-08-01 验收截图里排队消息就是这样只剩「丙一收到」。
+      // 直连轮不发：前端发出去的那一刻已经自己上屏了。
+      if (!transport.connectedClient) {
+        runController.emitSSE('message', { ...userMsg, sessionId });
+      }
 
       try {
         const sb = await getSupabaseForSession();

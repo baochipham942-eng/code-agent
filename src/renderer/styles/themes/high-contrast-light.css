@@ -25,11 +25,19 @@
   --text-disabled: #808080;
   --text-inverse: #FFFFFF;
 
-  /* Brand color - dark blue for visibility on white */
-  --brand-primary: #0000CC;
-  --brand-primary-hover: #000099;
-  --brand-primary-muted: rgba(0, 0, 204, 0.15);
-  --brand-primary-glow: rgba(0, 0, 204, 0.25);
+  /* Brand color - 品牌恒等色，四主题同值（与 dark/light 一致的 teal-700 家族）。
+     #0F766E 压白底对比度 ~4.7:1，过 AA 但达不到 hc 的 AAA 目标，因此不用于
+     正文级文字/焦点指示等可读性场景；可读性场景一律走下方 --accent-accessible。
+     --brand-primary 只承担品牌表达（logo、品牌装饰、填充按钮白字等）。 */
+  --brand-primary: #0F766E;
+  --brand-primary-hover: #115E59;
+  --brand-primary-muted: rgba(15, 118, 110, 0.12);
+  --brand-primary-glow: rgba(15, 118, 110, 0.2);
+
+  /* Accessible accent - 高对比可读性替代色（原 hc 的"高饱和品牌色"挪到这里）。
+     交互/文本类可读性 token（focus-ring、焦点描边、selection 等）指向它，
+     压白底对比度 ~8.6:1，满足 WCAG AAA。 */
+  --accent-accessible: #0000CC;
 
   /* Semantic colors - dark variants for light bg */
   --color-success: #006600;
@@ -51,7 +59,7 @@
   --border-subtle: rgba(0, 0, 0, 0.15);
   --border-default: rgba(0, 0, 0, 0.3);
   --border-strong: rgba(0, 0, 0, 0.5);
-  --border-focus: var(--brand-primary);
+  --border-focus: var(--accent-accessible);
   --border-faint: rgba(0, 0, 0, 0.15);
   --border-muted: rgba(0, 0, 0, 0.3);
   --border-hover: rgba(0, 0, 0, 0.5);
@@ -75,8 +83,8 @@
   /* Overlay */
   --overlay-backdrop: rgba(255, 255, 255, 0.9);
 
-  /* Selection */
-  --selection-bg: #0000CC;
+  /* Selection（可读性场景，走 accent-accessible） */
+  --selection-bg: var(--accent-accessible);
   --selection-text: #FFFFFF;
 
   /* Scrollbar */
@@ -91,16 +99,17 @@
   /* Input */
   --input-bg: #FFFFFF;
   --input-border: rgba(0, 0, 0, 0.3);
-  --input-border-focus: var(--brand-primary);
+  --input-border-focus: var(--accent-accessible);
   --input-placeholder: #606060;
 
-  /* Focus ring */
+  /* Focus ring（rgba 字面量与 --accent-accessible 同色系；
+     CSS 变量无法从 hex 派生 alpha 通道，改 accent 色时此处需同步） */
   --focus-ring: rgba(0, 0, 204, 0.5);
 }
 
 /* Enhanced focus styles */
 .high-contrast-light *:focus-visible {
-  outline: 3px solid var(--brand-primary) !important;
+  outline: 3px solid var(--accent-accessible) !important;
   outline-offset: 2px !important;
 }
 
@@ -111,7 +120,8 @@
 .high-contrast-light textarea:focus-visible,
 .high-contrast-light select:focus-visible,
 .high-contrast-light [tabindex]:focus-visible {
-  outline: 3px solid var(--brand-primary) !important;
+  outline: 3px solid var(--accent-accessible) !important;
   outline-offset: 2px !important;
+  /* glow 的 rgba 字面量与 --accent-accessible 同色系，改 accent 色时需同步 */
   box-shadow: 0 0 0 6px rgba(0, 0, 204, 0.2) !important;
 }

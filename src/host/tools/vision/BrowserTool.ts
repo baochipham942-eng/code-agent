@@ -79,6 +79,7 @@ browser opener actions. For full Playwright-based browser automation, use the br
 Routing contract:
 - Prefer lighter web_fetch/http/search/read tools for plain single-URL reading, article summaries, static page extraction, or URL lists.
 - Use Browser/browser_action when the task needs login/session state, form filling, clicking, upload/download, multi-page navigation, dynamic page state, screenshots, or visual verification.
+- If the user says "open/look at/check out" a page and expects to watch it happen, use browser_action — the workbench browser tab renders the page live; do not silently fall back to a text-only fetch.
 - Start with get_content/get_dom_snapshot/get_a11y_snapshot when possible; after a mutating browser action, refresh the DOM/a11y evidence before claiming the final page state.
 
 ## Simple OS-level browser control (browser_navigate):

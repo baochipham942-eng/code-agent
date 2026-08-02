@@ -64,6 +64,9 @@ import {
 } from './surfaceComputerRuntimeHelpers';
 import { publishSurfaceContinuationEvent } from './surfaceContinuationRuntime';
 import { assertSurfaceRunOwner } from './surfaceRunOwnership';
+import { createLogger } from '../infra/logger';
+
+const surfaceOwnershipLogger = createLogger('SurfaceExecutionRuntime.ownership');
 
 export interface SurfaceRuntimeIdentityV1 {
   conversationId: string;
@@ -138,7 +141,7 @@ export class SurfaceExecutionRuntime {
     this.runRegistry = options.runRegistry || getApplicationRunRegistry();
     this.continuations = options.continuations || getSurfaceContinuationService();
     this.sessions = new SurfaceSessionManager({
-      assertActiveOwner: (identity) => this.assertActiveRun(identity),
+      assertActiveOwner: (owner) => this.assertActiveRun(owner, 'computer', 'surface-runtime', owner.access),
     });
     this.grants = new SurfaceAccessGrantService(this.sessions);
     this.browserTabLeases = new BrowserTabLeaseService(this.sessions);
@@ -759,11 +762,28 @@ export class SurfaceExecutionRuntime {
     return projectSurfaceComputerError(input, this.findComputerSessionId(input.identity, provider));
   }
 
+  // 症状 4（跨会话状态泄漏）取证探针（排查报告 §4）：现行三层过滤代码本身是干净的，
+  // 泄漏源头未定。这里不改行为、不拦截——只在 surface 会话创建入口校验
+  // identity.conversationId（= 工具上下文的 context.sessionId）非空、且与该 runId
+  // 已登记的发起会话一致，不一致/为空时打一条结构化 error 日志（带两个 ID + 调用栈），
+  // 把「下次泄漏」从看得见但复现不了，变成可取证。
+  private assertSurfaceSessionOwnershipForLog(identity: SurfaceRuntimeIdentityV1): void {
+    const claimedConversationId = identity.conversationId?.trim();
+    const registeredConversationId = claimedConversationId ? this.runRegistry.get(identity.runId)?.context.sessionId : undefined;
+    if (!claimedConversationId || (registeredConversationId && registeredConversationId !== claimedConversationId)) {
+      surfaceOwnershipLogger.error(
+        claimedConversationId ? 'surface 会话归属与该 runId 登记的发起会话不一致' : 'surface 会话创建时 conversationId 为空',
+        { claimedConversationId, registeredConversationId, runId: identity.runId, agentId: identity.agentId, stack: new Error().stack },
+      );
+    }
+  }
+
   private ensureBrowserSession(
     identity: SurfaceRuntimeIdentityV1,
     provider: string,
     switchReason?: string,
   ): InteractiveSurfaceSessionV1 {
+    this.assertSurfaceSessionOwnershipForLog(identity);
     this.assertActiveRun(identity, 'browser', provider);
     let session = this.sessions.findActive({
       conversationId: identity.conversationId,
@@ -884,7 +904,7 @@ export class SurfaceExecutionRuntime {
     conversationId: string;
     runId: string;
     agentId: string;
-  }, surface: 'browser' | 'computer' = 'computer', provider = 'surface-runtime', mode: 'active' | 'cleanup' = 'active'): void {
+  }, surface: 'browser' | 'computer' = 'computer', provider = 'surface-runtime', mode: 'active' | 'cleanup' | 'read' = 'active'): void {
     assertSurfaceRunOwner({
       runRegistry: this.runRegistry,
       identity,

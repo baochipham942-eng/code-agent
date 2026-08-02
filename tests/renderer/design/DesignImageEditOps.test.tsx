@@ -1,6 +1,7 @@
 // ============================================================================
-// T3：DesignImageEditOps 渲染测试（SSR，无需 DOM）。验证扩图方向五选 + 比例 + 扩展/去水印
-// 按钮齐全、文案走 i18n、选中方向高亮、generating 时禁用。
+// T3：DesignImageEditOps 渲染测试（SSR，无需 DOM）。验证扩图方向五选 + 比例 + 扩展按钮
+// 齐全、文案走 i18n、选中方向高亮、generating 时禁用。
+// 2026-07-31 顶栏语义反转：去水印移出动词条「更多 ⋯」菜单（DesignImageToolbar），不在此组件。
 // ============================================================================
 
 import { describe, it, expect } from 'vitest';
@@ -20,23 +21,20 @@ function render(over: Partial<React.ComponentProps<typeof DesignImageEditOps>> =
       onDirectionChange={() => {}}
       onRatioChange={() => {}}
       onExpand={() => {}}
-      onRemoveWatermark={() => {}}
       {...over}
     />,
   );
 }
 
 describe('DesignImageEditOps', () => {
-  it('渲染五个方向 + 扩图 + 去水印控件，文案走 i18n', () => {
+  it('渲染五个方向 + 比例 + 扩展画布控件，文案走 i18n', () => {
     const html = render();
     for (const dir of ['up', 'down', 'left', 'right', 'all']) {
       expect(html).toContain(`data-testid="design-expand-dir-${dir}"`);
     }
     expect(html).toContain('data-testid="design-expand-ratio"');
     expect(html).toContain('data-testid="design-expand-btn"');
-    expect(html).toContain('data-testid="design-remove-watermark-btn"');
     expect(html).toContain(zh.design.expandBtn);
-    expect(html).toContain(zh.design.removeWatermarkBtn);
     expect(html).toContain(zh.design.expandDirAll);
     expect(html).toContain('1.5×');
   });
@@ -49,16 +47,15 @@ describe('DesignImageEditOps', () => {
     expect(segment).toContain('bg-fuchsia-500/30');
   });
 
-  it('generating 时按钮禁用', () => {
+  it('generating 时扩展按钮禁用', () => {
     const html = render({ generating: true });
-    // 两个操作按钮都带 disabled
-    const matches = html.match(/data-testid="design-(expand|remove-watermark)-btn"[^>]*disabled/g);
-    expect(matches?.length).toBe(2);
+    expect(html).toContain('data-testid="design-expand-btn"');
+    const btnIdx = html.indexOf('data-testid="design-expand-btn"');
+    expect(html.slice(btnIdx, btnIdx + 200)).toContain('disabled');
   });
 
   it('en 文案也对齐（i18n 两语种均有键）', () => {
     const html = render({ t: en });
     expect(html).toContain(en.design.expandBtn);
-    expect(html).toContain(en.design.removeWatermarkBtn);
   });
 });

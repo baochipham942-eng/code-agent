@@ -9,8 +9,9 @@
 // 消费方：正常会话右栏 WorkbenchTabs、空间右栏 ProjectConfigRail。
 // ============================================================================
 
-import React from 'react';
-import type { LucideIcon } from 'lucide-react';
+import React, { useEffect } from 'react';
+import { Maximize2, Minimize2, type LucideIcon } from 'lucide-react';
+import { IconButton } from '../primitives/IconButton';
 
 export interface RailTabItem {
   id: string;
@@ -38,6 +39,16 @@ export interface RailTabShellProps {
   stripRef?: React.Ref<HTMLDivElement>;
   /** tab 条右端动作区（＋/收起钮）；两态开关住同一位置，不随状态搬家 */
   trailing?: React.ReactNode;
+  /**
+   * 专注模式（2026-08-01 工单①）：给了 onToggleFocus 就在条右端画专注开关——
+   * 一个按钮、一个位置、两个状态（侧栏态 Maximize2 / 专注态 Minimize2，只换图标不搬家，
+   * 2026-07-27 房规）。Esc 退出专注态由壳统一接管。布局效果（聊天列收起）由调用方消费。
+   * 用开关就必须给两态称谓（IconButton 强制 aria-label；渲染处对 focusLabel 判空兜底）。
+   */
+  focused?: boolean;
+  onToggleFocus?: () => void;
+  focusEnterLabel?: string;
+  focusExitLabel?: string;
   /** 绝对定位弹层（＋菜单），渲染在条容器内、tablist 之外 */
   overlay?: React.ReactNode;
   /** 全高内容区；滚动/留白由调用方内容自己决定 */
@@ -53,9 +64,26 @@ export const RailTabShell: React.FC<RailTabShellProps> = ({
   contentTestId,
   stripRef,
   trailing,
+  focused = false,
+  onToggleFocus,
+  focusEnterLabel,
+  focusExitLabel,
   overlay,
   children,
-}) => (
+}) => {
+  // Esc 退出专注态（只在专注态挂监听；侧栏态的 Esc 不归壳管）
+  useEffect(() => {
+    if (!focused || !onToggleFocus) return;
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') onToggleFocus();
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [focused, onToggleFocus]);
+
+  const focusLabel = focused ? focusExitLabel : focusEnterLabel;
+
+  return (
   <div className="flex h-full min-h-0 flex-col">
     <div
       ref={stripRef}
@@ -99,10 +127,26 @@ export const RailTabShell: React.FC<RailTabShellProps> = ({
         })}
         {trailing}
       </div>
+      {/* 专注开关：条右端固定槽位，两态同住一个位置（只换图标/称谓，不搬家）。
+          focusLabel 判空兜底：有开关必须有称谓（IconButton 强制 aria-label）。 */}
+      {onToggleFocus && focusLabel && (
+        <IconButton
+          size="sm"
+          variant="ghost"
+          data-testid="rail-tab-shell-focus-toggle"
+          icon={focused ? <Minimize2 /> : <Maximize2 />}
+          aria-label={focusLabel}
+          aria-pressed={focused}
+          title={focusLabel}
+          onClick={onToggleFocus}
+          className="flex-shrink-0"
+        />
+      )}
       {overlay}
     </div>
     <div data-testid={contentTestId} className="min-h-0 min-w-0 flex-1">
       {children}
     </div>
   </div>
-);
+  );
+};

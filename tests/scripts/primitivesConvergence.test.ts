@@ -41,7 +41,6 @@ describe('primitives convergence (EmptyState/Badge)', () => {
     'components/PlanningPanel.tsx',
     'components/features/knowledge/KnowledgeMemoryPanel.tsx',
     'components/TaskPanel/RunWorkbenchCards.tsx',
-    'components/TaskPanel/TaskMonitor.tsx',
   ];
   for (const rel of emptyStateCallSites) {
     it(`${rel} 的 EmptyState import 自 primitives`, () => {

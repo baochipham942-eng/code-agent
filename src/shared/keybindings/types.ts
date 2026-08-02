@@ -21,6 +21,7 @@ export type KeybindingActionId =
   | 'app.toggle'
   | 'app.quickAsk'
   | 'session.new'
+  | 'voice.callToggle'
   | 'voice.toggle'
   | 'appshot.capture'
   | 'composer.send'

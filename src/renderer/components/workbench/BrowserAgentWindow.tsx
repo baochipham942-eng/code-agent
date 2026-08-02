@@ -5,6 +5,7 @@ import { useI18n } from '../../hooks/useI18n';
 import { useLiveAgentPointer } from '../../hooks/useLiveAgentPointer';
 import { useSurfaceLiveFrames } from '../../hooks/useSurfaceLiveFrames';
 import { useWorkbenchBrowserSession } from '../../hooks/useWorkbenchBrowserSession';
+import { getPersistedSurfaceTerminalFrame } from '../../services/surfaceExecutionClient';
 import { useSessionStore } from '../../stores/sessionStore';
 import {
   selectSurfaceExecutionRunSessionV1,
@@ -170,6 +171,39 @@ export const BrowserAgentWindow: React.FC = () => {
     visible: activeWorkbenchTab === 'browser' && !workbenchCollapsed,
     sessionRunning: Boolean(browserSurfaceSessionId),
   });
+
+  // 重启/刷新后内存 frameByScope 是空的：终态会话还在（host 投影恢复），试着从盘上
+  // 把留影帧读回来补进 store（标 'stale'，三态渲染自然落留影）。每个 scope 只试一次，
+  // 读不到就保持摘要卡兜底，不重复打 IPC。
+  const persistedFrameTriedRef = useRef<Set<string>>(new Set());
+  // scope 走 ref 而不是进依赖数组：terminalSurfaceSession 来自内联 selector，每次 store
+  // 变动都是**新对象**，进依赖数组会让 effect 每次渲染重跑。配上「每个 scope 只试一次」
+  // 的 ref，后果是读回请求发出去了、响应也回来了，却被 cleanup 判成过期丢掉，且永不重试
+  // ——真机实测正是这样：HTTP 200 帧完好，屏幕永远停在摘要卡。
+  const terminalScopeRef = useRef(terminalSurfaceSession?.scope ?? null);
+  terminalScopeRef.current = terminalSurfaceSession?.scope ?? null;
+  useEffect(() => {
+    const scope = terminalScopeRef.current;
+    if (!scope || !terminalScopeKey || terminalFrameDataUrl) return;
+    if (persistedFrameTriedRef.current.has(terminalScopeKey)) return;
+    persistedFrameTriedRef.current.add(terminalScopeKey);
+    void getPersistedSurfaceTerminalFrame({
+      version: 1,
+      conversationId: scope.conversationId,
+      surfaceSessionId: scope.surfaceSessionId,
+    })
+      .then((result) => {
+        // 不设 cancelled 守卫：帧是按 scope 键写进 store 的，即便这时用户已经切走，
+        // 写的也只是它自己那把键下的内容，不会串到别的现场；而丢弃它等于永久失去。
+        if (!result.frame) return;
+        useSurfaceExecutionStore.getState().setFrameState(scope, {
+          status: 'stale',
+          dataUrl: result.frame.dataUrl,
+          updatedAt: Date.now(),
+        });
+      })
+      .catch(() => undefined);
+  }, [terminalScopeKey, terminalFrameDataUrl]);
 
   const [primaryRepair, ...secondaryRepairs] = ownedByCurrentSession
     ? browserSession.repairActions

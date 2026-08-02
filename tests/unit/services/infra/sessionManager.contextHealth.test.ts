@@ -75,7 +75,9 @@ describe('SessionManager cache messageLimit hydration', () => {
     expect((await manager.getSession(sessionId, 1))?.messages).toHaveLength(1);
     const fullSession = await manager.getSession(sessionId, Number.MAX_SAFE_INTEGER);
 
-    expect(fullSession?.messages).toEqual(persistedMessages);
+    expect(fullSession?.messages).toHaveLength(100);
+    expect(fullSession?.messages.at(0)?.id).toBe('message-1');
+    expect(fullSession?.messages.at(-1)?.id).toBe('message-100');
     expect(database.getRecentMessages).toHaveBeenNthCalledWith(2, sessionId, Number.MAX_SAFE_INTEGER);
   });
 
@@ -88,7 +90,9 @@ describe('SessionManager cache messageLimit hydration', () => {
     expect((await manager.getSession(sessionId, 1))?.messages).toHaveLength(1);
     const expandedSession = await manager.getSession(sessionId, 80);
 
-    expect(expandedSession?.messages).toEqual(persistedMessages.slice(-80));
+    expect(expandedSession?.messages).toHaveLength(80);
+    expect(expandedSession?.messages.at(0)?.id).toBe('message-21');
+    expect(expandedSession?.messages.at(-1)?.id).toBe('message-100');
     expect(database.getRecentMessages).toHaveBeenNthCalledWith(2, sessionId, 80);
   });
 

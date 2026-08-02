@@ -257,12 +257,12 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
           鼠标点击按钮后 Chrome 会留下 :focus（但不标 :focus-visible），focus-within
           因此粘滞——鼠标移开后动作簇仍常驻；键盘 Tab 聚焦照样命中 focus-visible，
           可及性不受损。
-          对齐返工（2026-08-02 Chromium 几何读数）：状态点/徽章都居中于行尾 16px 槽，
-          共同轴距行右缘 14px（pr-1.5 + 半槽 8px）。归档按钮要以右缘落在这条轴上，
-          所以动作簇用 right-3.5；right-1.5 只把按钮盒右缘贴到内容右缘，会向右偏 8px。
-          top-1/2 + -translate-y-1/2 独立保证按钮继续沿行内竖向居中。 */}
+          对齐返工二（2026-08-02 真侧栏 Chromium 几何）：状态点/徽章圆心距行右缘 14px；
+          归档 svg 圆心距动作簇右缘 11px（IconButton p-1 + 14px 图标半径）。
+          所以簇右侧留 3px，3 + 11 = 14，让图标圆心与状态轴心对心；
+          top-1/2 + -translate-y-1/2 独立保证图标继续沿行内竖向居中。 */}
       {!multiSelectMode && !isRenaming && (
-        <div className="absolute right-3.5 top-1/2 -translate-y-1/2 z-10 flex items-center gap-0.5 rounded-md bg-zinc-800 pl-2 shadow-[-8px_0_8px_-4px_rgba(24,24,27,0.95)] opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100">
+        <div className="absolute right-[3px] top-1/2 -translate-y-1/2 z-10 flex items-center gap-0.5 rounded-md bg-zinc-800 pl-2 shadow-[-8px_0_8px_-4px_rgba(24,24,27,0.95)] opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100">
           <IconButton
             icon={session.isArchived ? <ArchiveRestore className="w-3.5 h-3.5" /> : <Archive className="w-3.5 h-3.5" />}
             aria-label={`${session.isArchived ? s.unarchiveSession : s.archiveSession} ${displayTitle}`}

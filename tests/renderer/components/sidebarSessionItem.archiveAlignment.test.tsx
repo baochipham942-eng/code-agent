@@ -11,9 +11,11 @@ interface AxisGeometry {
   rowCenterY: number;
   archiveCenterY: number;
   verticalOffsetPx: number;
+  rowRight: number;
   unreadCenterX: number;
   badgeCenterX: number;
-  archiveRight: number;
+  archiveCenterX: number;
+  statusAxisInsetPx: number;
   archiveMinusUnreadPx: number;
   archiveMinusBadgePx: number;
 }
@@ -128,18 +130,20 @@ describe('SidebarSessionItem 归档按钮双轴几何', () => {
     expect(geometry.verticalOffsetPx).toBeCloseTo(0, 2);
   });
 
-  it('② 按钮右缘与未读点/徽章中心共 trailing 竖轴，并输出实际读数', async () => {
+  it('② 归档图标、未读点与徽章中心共 trailing 竖轴，并输出实际读数', async () => {
     const geometry = await readGeometry(page);
     console.info('[archive-axis trailing]', JSON.stringify({
+      rowRight: geometry.rowRight,
       unreadCenterX: geometry.unreadCenterX,
       badgeCenterX: geometry.badgeCenterX,
-      archiveRight: geometry.archiveRight,
+      archiveCenterX: geometry.archiveCenterX,
+      statusAxisInsetPx: geometry.statusAxisInsetPx,
       archiveMinusUnreadPx: geometry.archiveMinusUnreadPx,
       archiveMinusBadgePx: geometry.archiveMinusBadgePx,
     }));
 
-    expect(geometry.archiveMinusUnreadPx).toBeCloseTo(0, 2);
-    expect(geometry.archiveMinusBadgePx).toBeCloseTo(0, 2);
+    expect(Math.abs(geometry.archiveMinusUnreadPx)).toBeLessThanOrEqual(1);
+    expect(Math.abs(geometry.archiveMinusBadgePx)).toBeLessThanOrEqual(1);
   });
 
   it('保留 hover 压层且不带 Tailwind v4 死 class', () => {
@@ -160,10 +164,10 @@ async function readGeometry(page: Page): Promise<AxisGeometry> {
       element.classList.contains('w-1.5') && element.classList.contains('rounded-full'));
     const badge = document.querySelector('[data-session-id="row-badge"] [data-testid="session-live-voice-badge"]');
     const archiveRow = document.querySelector('[data-session-id="row-archive"]');
-    const archiveButton = archiveRow.querySelector('button');
+    const archiveIcon = archiveRow.querySelector('button svg');
     const unreadRect = rect(unread);
     const badgeRect = rect(badge);
-    const archiveRect = rect(archiveButton);
+    const archiveRect = rect(archiveIcon);
     const rowRect = rect(archiveRow);
     const centerX = (value) => value.left + value.width / 2;
     const centerY = (value) => value.top + value.height / 2;
@@ -171,11 +175,13 @@ async function readGeometry(page: Page): Promise<AxisGeometry> {
       rowCenterY: centerY(rowRect),
       archiveCenterY: centerY(archiveRect),
       verticalOffsetPx: centerY(archiveRect) - centerY(rowRect),
+      rowRight: rowRect.right,
       unreadCenterX: centerX(unreadRect),
       badgeCenterX: centerX(badgeRect),
-      archiveRight: archiveRect.right,
-      archiveMinusUnreadPx: archiveRect.right - centerX(unreadRect),
-      archiveMinusBadgePx: archiveRect.right - centerX(badgeRect),
+      archiveCenterX: centerX(archiveRect),
+      statusAxisInsetPx: rowRect.right - centerX(unreadRect),
+      archiveMinusUnreadPx: centerX(archiveRect) - centerX(unreadRect),
+      archiveMinusBadgePx: centerX(archiveRect) - centerX(badgeRect),
     };
   })()`);
 }

@@ -574,6 +574,68 @@ describe('voiceSessionService 互斥与挂断', () => {
     );
   });
 
+  it('speech.stopped 宽限到点不把空文本定成 background，迟到 final 仍下发并落库', async () => {
+    vi.useFakeTimers();
+    try {
+      const client = new FakeClient();
+      await attachVoiceClient(client as never, 'session-late-user-final');
+      upstreamResponding = true;
+      interruptResponseId = 'resp-late-user-final';
+      lastOnEvent?.({ type: 'response.created', responseId: 'resp-late-user-final' });
+      lastOnEvent?.({ type: 'speech.started', candidateId: 'turn-late-user-final' });
+      client.emit('message', Buffer.from(JSON.stringify({
+        type: 'interrupt.playback',
+        candidateId: 'turn-late-user-final',
+        playing: true,
+        playedMs: 600,
+        queuedMs: 900,
+      })), false);
+      lastOnEvent?.({
+        type: 'speech.stopped',
+        candidateId: 'turn-late-user-final',
+        durationMs: 900,
+      });
+
+      const interruptDecisions = () => client.sent
+        .filter((raw) => raw !== '<binary>')
+        .map((raw) => JSON.parse(raw) as VoiceEvent)
+        .filter((event) => event.type === 'interrupt.decision');
+
+      await vi.advanceTimersByTimeAsync(1_199);
+      expect(interruptDecisions()).toHaveLength(0);
+      expect(addMessageToSession).not.toHaveBeenCalled();
+
+      await vi.advanceTimersByTimeAsync(1);
+      expect(interruptDecisions()).toHaveLength(0);
+      expect(addMessageToSession).not.toHaveBeenCalled();
+
+      lastOnEvent?.({
+        type: 'user.transcript',
+        itemId: 'user-late-user-final',
+        text: '请改成从一数到三',
+        done: true,
+      });
+      await vi.advanceTimersByTimeAsync(0);
+
+      const events = client.sent
+        .filter((raw) => raw !== '<binary>')
+        .map((raw) => JSON.parse(raw) as VoiceEvent);
+      expect(events).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          type: 'user.transcript',
+          itemId: 'user-late-user-final',
+          text: '请改成从一数到三',
+          done: true,
+        }),
+      ]));
+      expect(addMessageToSession.mock.calls.some(([, message]) => (
+        message.role === 'user' && message.content === '请改成从一数到三'
+      ))).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
 });
 
 describe('终态结论节制播报', () => {

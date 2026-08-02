@@ -826,7 +826,7 @@ async function connectAndBind(
             if (candidate.finalGraceTimer) clearTimeout(candidate.finalGraceTimer);
             candidate.finalGraceTimer = setTimeout(() => {
               if (active?.id !== id || candidate.decided) return;
-              evaluateInterrupt(active, '', 'final');
+              evaluateInterrupt(active, '', 'partial');
             }, 1_200);
           }
         }

@@ -44,6 +44,9 @@ vi.mock('../../src/host/task', () => ({
   getTaskManager: () => ({
     on: (_event: string, listener: (event: FakeEvent) => void) => { runtime.listeners.add(listener); },
     off: (_event: string, listener: (event: FakeEvent) => void) => { runtime.listeners.delete(listener); },
+    // §2 进度旁路：真 TaskManager 有这个方法，替身不给就会让 ensureListener 走降级分支，
+    // 测到的就不是产品真实路径。
+    observeAgentEvents: () => () => {},
     getSessionState: () => ({ status: runtime.status }),
     startTask: runtime.startTask,
     interruptAndContinue: runtime.interruptAndContinue,

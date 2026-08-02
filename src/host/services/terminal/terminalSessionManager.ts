@@ -61,25 +61,33 @@ const sessions = new Map<string, TerminalSession>();
  * 启动时切进去、退出时切回来，切进去之后整屏由它自己重绘。
  * 1049 是现代终端的写法，47 / 1047 是老程序留下的两种旧写法，一并认。
  */
-const ALT_SCREEN_TOGGLE = /\x1b\[\?(?:1049|1047|47)([hl])/g;
+const ALT_SCREEN_ENTER = ['\x1b[?1049h', '\x1b[?1047h', '\x1b[?47h'] as const;
+const ALT_SCREEN_LEAVE = ['\x1b[?1049l', '\x1b[?1047l', '\x1b[?47l'] as const;
+
+/** 一组序列在 data 里最后一次出现的位置；都没出现返回 -1。 */
+function lastIndexOfAny(data: string, needles: readonly string[]): number {
+  let last = -1;
+  for (const needle of needles) {
+    const at = data.lastIndexOf(needle);
+    if (at > last) last = at;
+  }
+  return last;
+}
 
 /**
  * 从一段 PTY 输出里更新备用屏状态：取最后一次开关为准（同一段里可能既进又出）。
+ * 用字符串查找而不是正则——正则字面量里写 \x1b 会撞 no-control-regex，
+ * 而这里要找的本来就是固定序列，indexOf 够用也更直白。
  *
  * ponytail: 只认落在单个 chunk 内的完整序列。理论上转义序列可能被切在两个 chunk
  * 中间，此时这一次切换会被漏掉。代价只是回显多印/少印一行（不影响注入本身），
  * 真出问题再上跨 chunk 的残尾拼接。
  */
 function updateAlternateScreen(session: TerminalSession, data: string): void {
-  ALT_SCREEN_TOGGLE.lastIndex = 0;
-  let last: string | null = null;
-  let match: RegExpExecArray | null;
-  while ((match = ALT_SCREEN_TOGGLE.exec(data)) !== null) {
-    last = match[1];
-  }
-  if (last !== null) {
-    session.altScreen = last === 'h';
-  }
+  const entered = lastIndexOfAny(data, ALT_SCREEN_ENTER);
+  const left = lastIndexOfAny(data, ALT_SCREEN_LEAVE);
+  if (entered < 0 && left < 0) return;
+  session.altScreen = entered > left;
 }
 
 type OutputListener = (sessionId: string, data: string) => void;

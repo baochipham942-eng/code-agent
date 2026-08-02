@@ -21,6 +21,7 @@ import {
   LayoutDashboard,
   Palette,
   Plus,
+  TerminalSquare,
   X,
   type LucideIcon,
 } from 'lucide-react';
@@ -78,6 +79,12 @@ const LAUNCHABLE_VIEWS: readonly LaunchableViewDefinition[] = [
     iconClassName: 'text-fuchsia-400/80',
     keybindingActionId: 'designCanvas.open',
   },
+  {
+    id: 'terminal',
+    icon: TerminalSquare,
+    iconClassName: 'text-sky-400/80',
+    keybindingActionId: 'terminal.open',
+  },
 ];
 
 function getFileName(path: string): string {
@@ -115,6 +122,7 @@ const WorkbenchViewLauncher: React.FC<WorkbenchViewLauncherProps> = ({
     if (id === 'overview') return t.workbenchTabs.overviewLabel;
     if (id === 'files') return t.workbenchTabs.filesLabel;
     if (id === 'browser') return t.workbenchTabs.browserLabel;
+    if (id === 'terminal') return t.workbenchTabs.terminal.label;
     return t.design.canvasTabLabel;
   };
 
@@ -124,6 +132,7 @@ const WorkbenchViewLauncher: React.FC<WorkbenchViewLauncherProps> = ({
     if (id === 'overview') return d.overview;
     if (id === 'files') return d.files;
     if (id === 'browser') return d.browser;
+    if (id === 'terminal') return d.terminal;
     return d.designCanvas;
   };
 
@@ -257,6 +266,16 @@ export const WorkbenchTabs: React.FC<{ children?: React.ReactNode; focusable?: b
         title: t.design.canvasTabLabel,
         icon: Palette,
         iconClassName: 'text-fuchsia-400/80',
+        isDirty: false,
+      };
+    }
+    if (id === 'terminal') {
+      return {
+        id,
+        label: t.workbenchTabs.terminal.label,
+        title: t.workbenchTabs.terminal.title,
+        icon: TerminalSquare,
+        iconClassName: 'text-sky-400/80',
         isDirty: false,
       };
     }

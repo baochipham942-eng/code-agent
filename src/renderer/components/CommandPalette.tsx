@@ -19,6 +19,7 @@ import {
   LayoutDashboard,
   Globe2,
   Palette,
+  TerminalSquare,
   Eye,
 } from 'lucide-react';
 import { useAppStore } from '../stores/appStore';
@@ -195,6 +196,14 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose 
       icon: <Palette className="w-4 h-4" />,
       category: 'view',
       action: () => openWorkbenchTab('design-canvas'),
+    },
+    {
+      id: 'open-workbench-terminal',
+      label: t.workbenchTabs.terminal.label,
+      description: t.workbenchTabs.terminal.title,
+      icon: <TerminalSquare className="w-4 h-4" />,
+      category: 'view',
+      action: () => openWorkbenchTab('terminal'),
     },
     ...(latestFilePreview ? [{
       id: 'open-workbench-preview',

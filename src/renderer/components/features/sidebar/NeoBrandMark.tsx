@@ -2,8 +2,15 @@
 // NeoBrandMark —— 侧栏顶部的 Neo 品牌标识（图形标 + 可选文字标）。
 // ============================================================================
 // 视觉 = N2 星芒：深空渐变圆角砖 + 直笔 N（青渐变描边）+ 收笔右上四点星芒，
-// 外加一圈静态轨道环。规格与 src-tauri/icons/agent-neo.svg、
-// src/renderer/assets/brand/ 下的三个标准变体同源（48×48 viewBox）。
+// 外加一圈静态轨道环（48×48 viewBox）。
+// 真源关系（2026-08-02 拍板「资产先行」，详见 docs/designs/design-system.md §4）：
+// 本组件的内联 SVG 是当前 UI 唯一真源；src/renderer/assets/brand/ 三变体与
+// src-tauri/icons/agent-neo.svg 是先行储备的定稿资产——inverse 供深底印刷/启动页、
+// monochrome 靠 currentColor 跟随文字色（经 img 标签/CSS 引用不继承宿主色，只有内联
+// 有意义），当前均无 UI 消费场景；color 变体图面与本组件一致。内联而非引用资产的
+// 原因：渐变 defs id 必须按实例唯一（侧栏/欢迎页/向导可多标同屏），animatedOrbit
+// 卫星点是 DOM 级 CSS 动效，静态资产文件表达不了。同步规则：改标先改三变体 +
+// src-tauri/icons/agent-neo.svg，再逐图元同步本文件，禁止只改一边。
 // 品牌色是固定字面色（深空砖在任何主题下都是深色底），不随 --brand-primary
 // 派生——这是与旧版「color-mix 派生」的有意差异，由品牌规范拍板。
 // 轨道环默认静态；animatedOrbit 开启后环上多一颗卫星点 6s/圈，

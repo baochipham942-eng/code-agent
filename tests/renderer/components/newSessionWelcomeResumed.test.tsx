@@ -24,7 +24,7 @@ function session(overrides: Partial<SessionWithMeta>): SessionWithMeta {
   } as SessionWithMeta;
 }
 
-const WELCOME_TITLE = '想完成什么？';
+const WELCOME_TITLE = '这次想去哪颗星球？';
 
 describe('空态首屏：真新会话给欢迎页，恢复的历史会话写明身份', () => {
   afterEach(() => cleanup());
@@ -53,5 +53,13 @@ describe('空态首屏：真新会话给欢迎页，恢复的历史会话写明�
   it('有内容的会话（即便标题是默认的）同样不算新会话', () => {
     render(<NewSessionWelcome onSend={vi.fn()} session={session({ messageCount: 3 })} />);
     expect(screen.getByTestId('chat-welcome-title').textContent).not.toBe(WELCOME_TITLE);
+  });
+
+  it('品牌区：42px 慢转地球单独作主视觉，不与品牌标并排（2026-08-02 修订：双标并置生硬）', () => {
+    const { container } = render(<NewSessionWelcome onSend={vi.fn()} />);
+    const planet = container.querySelector('[data-planet="earth"]') as HTMLElement | null;
+    expect(planet).toBeTruthy();
+    expect(planet?.style.width).toBe('42px');
+    expect(screen.queryByTestId('neo-brand-mark')).toBeNull();
   });
 });

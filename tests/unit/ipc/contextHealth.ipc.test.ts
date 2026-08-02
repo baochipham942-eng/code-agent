@@ -5,11 +5,21 @@ const compactMocks = vi.hoisted(() => {
   const state = {
     currentSessionId: 'session-1',
     persistedMessages: [] as any[],
+    cachedSession: null as { id: string; messages: any[] } | null,
   };
   const handlers = new Map<string, (event: unknown, ...args: any[]) => Promise<unknown>>();
   const sessionManager = {
     getCurrentSessionId: vi.fn(() => state.currentSessionId),
     getMessages: vi.fn(async () => state.persistedMessages),
+    getSession: vi.fn(async (sessionId: string, messageLimit: number) => {
+      if (state.cachedSession?.id === sessionId) {
+        return state.cachedSession;
+      }
+      const messages = messageLimit > 0 ? state.persistedMessages : [];
+      database.getRecentMessages(sessionId, messageLimit);
+      state.cachedSession = { id: sessionId, messages };
+      return state.cachedSession;
+    }),
     replaceMessages: vi.fn(async (_sessionId: string, messages: any[]) => {
       state.persistedMessages = messages;
     }),
@@ -18,6 +28,7 @@ const compactMocks = vi.hoisted(() => {
     getDb: vi.fn(() => null),
     getSession: vi.fn(() => null),
     getMessages: vi.fn(() => state.persistedMessages),
+    getRecentMessages: vi.fn((_sessionId: string, _messageLimit: number) => state.persistedMessages),
     saveSessionRuntimeState: vi.fn(),
   };
   const configService = {
@@ -204,6 +215,7 @@ describe('resolveContextHealthForSession', () => {
     initAutoCompressor({ preserveRecentCount: 10 });
     compactMocks.state.currentSessionId = 'session-1';
     compactMocks.state.persistedMessages = [];
+    compactMocks.state.cachedSession = null;
     compactMocks.configService.settings.contextCompression = {
       enabled: true,
       warningThreshold: 0.75,
@@ -257,6 +269,52 @@ describe('resolveContextHealthForSession', () => {
     expect(health.maxTokens).toBe(getContextWindow(DEFAULT_MODEL));
     expect(getContextHealthService().get(sessionId).currentTokens).toBe(health.currentTokens);
     expect(getSessionStateManager().getSummary(sessionId)?.contextHealth?.currentTokens).toBe(health.currentTokens);
+  });
+
+  it('reuses the hydrated session cache without reading messages from DB again', async () => {
+    const sessionId = 'session-health-cache-hit';
+    const messages: Message[] = [{
+      id: 'cached-message',
+      role: 'user',
+      content: '已经由 restoreSession 装进缓存的完整历史。'.repeat(80),
+      timestamp: 1,
+    }];
+    compactMocks.state.cachedSession = { id: sessionId, messages };
+
+    const health = await resolveContextHealthForSession(
+      { getAppService: () => null },
+      sessionId,
+    );
+
+    expect(health.breakdown.messages).toBeGreaterThan(0);
+    expect(compactMocks.sessionManager.getSession).toHaveBeenCalledWith(
+      sessionId,
+      Number.MAX_SAFE_INTEGER,
+    );
+    expect(compactMocks.database.getRecentMessages).not.toHaveBeenCalled();
+    expect(compactMocks.database.getMessages).not.toHaveBeenCalled();
+  });
+
+  it('falls back through getSession to DB when the session cache is cold', async () => {
+    const sessionId = 'session-health-cache-miss';
+    compactMocks.state.persistedMessages = [{
+      id: 'persisted-message',
+      role: 'assistant',
+      content: '缓存未命中时仍必须从数据库恢复真实上下文。'.repeat(80),
+      timestamp: 1,
+    }];
+
+    const health = await resolveContextHealthForSession(
+      { getAppService: () => null },
+      sessionId,
+    );
+
+    expect(health.breakdown.messages).toBeGreaterThan(0);
+    expect(compactMocks.database.getRecentMessages).toHaveBeenCalledWith(
+      sessionId,
+      Number.MAX_SAFE_INTEGER,
+    );
+    expect(compactMocks.state.cachedSession?.messages).toEqual(compactMocks.state.persistedMessages);
   });
 
   it('includes assistant tool call arguments when deriving context health', async () => {

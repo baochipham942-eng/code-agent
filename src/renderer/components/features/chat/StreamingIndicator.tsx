@@ -23,6 +23,10 @@ interface StreamingIndicatorProps {
   isThinking?: boolean;
   /** 等待期具名：'model'=等模型响应，'subagent'=等子任务。缺省时维持呼吸光标。 */
   waitingReason?: StreamingWaitingReason;
+  /** 真实并发子任务数（当前回合 trace 里仍在运行的子 agent 阻塞类工具调用数，
+      由 TurnCard 用 getRunningSubagentCount 算好传入）。≥2 才亮数字——
+      「编队/并行」对单个子任务不成立；缺省时用无数字版，不造数。 */
+  subagentCount?: number;
 }
 
 // 工具真正连续运行到这个时长，才是唯一值得提示的条件。
@@ -73,6 +77,18 @@ export function getStreamingWaitingReason(
   return undefined;
 }
 
+// 真实并发子任务数：与 getStreamingWaitingReason 同一判定——当前回合 trace 里
+// 仍在运行的子 agent 阻塞类工具调用数。后台子任务（工具调用已返回结果）不计：
+// 回合并没有阻塞在它们身上，等待具名也不会落在它们头上。
+export function getRunningSubagentCount(nodes: TraceNode[]): number {
+  return nodes.filter((node) => {
+    const toolCall = node.toolCall;
+    if (!toolCall || toolCall._streaming) return false;
+    if (toolCall.success !== undefined || toolCall.result !== undefined) return false;
+    return SUBAGENT_WAIT_TOOLS.has(toolCall.name.toLowerCase());
+  }).length;
+}
+
 export function getRunningToolStartTime(nodes: TraceNode[]): number | undefined {
   const runningStarts = nodes
     .filter((node) => {
@@ -92,9 +108,15 @@ export const StreamingIndicator: React.FC<StreamingIndicatorProps> = ({
   showCaret = true,
   isThinking = false,
   waitingReason,
+  subagentCount,
 }) => {
   const { t } = useI18n();
-  const [runningToolElapsed, setRunningToolElapsed] = useState<number | undefined>(undefined);
+  // 首帧就按 runningToolStartTime 初始化，避免挂载后先闪一帧 active 再升级。
+  const [runningToolElapsed, setRunningToolElapsed] = useState<number | undefined>(() =>
+    runningToolStartTime !== undefined
+      ? Math.floor((Date.now() - runningToolStartTime) / 1000)
+      : undefined,
+  );
 
   useEffect(() => {
     const update = () => {
@@ -111,15 +133,21 @@ export const StreamingIndicator: React.FC<StreamingIndicatorProps> = ({
 
   const { mode } = getStreamingIndicatorState(runningToolElapsed);
 
-  // 长跑工具 —— 唯一真正值得浮现的状态。中性、平静、信息性：不用警告色，不用惊悚措辞。
+  // 长跑工具（巡航信号）—— 唯一真正值得浮现的状态。中性、平静、信息性：
+  // 不用警告色，不用惊悚措辞；秒表是「陈述一切正常」，不是催促。
   if (mode === 'long-tool') {
+    // 文案带 {elapsed} 占位；秒表段保留 font-mono，跳秒不抖动。
+    const [cruiseBefore, cruiseAfter = ''] = t.chat.longToolCruise.split('{elapsed}');
     return (
       <div className="flex items-center gap-2 py-1 text-zinc-400">
         <span className="w-1.5 h-1.5 rounded-full bg-zinc-500 animate-pulse" />
-        <span className="text-xs">执行中</span>
-        {runningToolElapsed !== undefined && (
-          <span className="text-xs font-mono text-zinc-500">{formatElapsed(runningToolElapsed)}</span>
-        )}
+        <span className="text-xs">
+          {cruiseBefore}
+          {runningToolElapsed !== undefined && (
+            <span className="font-mono text-zinc-500">{formatElapsed(runningToolElapsed)}</span>
+          )}
+          {cruiseAfter}
+        </span>
         {onForceStop && (
           <button
             onClick={onForceStop}
@@ -146,10 +174,15 @@ export const StreamingIndicator: React.FC<StreamingIndicatorProps> = ({
     );
   }
 
-  // 具名等待：点名在等谁（等模型/等子任务），中性静态文字——比裸光标多一句交代，
+  // 具名等待（回响/编队信号）：点名在等谁，中性静态文字——比裸光标多一句交代，
   // 但依旧不放计时器：等待长短不该被演成焦虑。
   if (waitingReason) {
-    const label = waitingReason === 'subagent' ? t.chat.waitingSubagent : t.chat.waitingModel;
+    const label =
+      waitingReason === 'subagent'
+        ? subagentCount !== undefined && subagentCount >= 2
+          ? t.chat.waitingSubagentFleet.replace('{count}', String(subagentCount))
+          : t.chat.waitingSubagent
+        : t.chat.waitingModel;
     return (
       <div className="py-1 text-xs text-zinc-500" aria-label={label}>
         {label}

@@ -34,6 +34,9 @@ export default {
           muted: 'var(--brand-primary-muted)',
           glow: 'var(--brand-primary-glow)',
         },
+        // 高对比可读性替代色：hc 主题下是独立高饱和色，dark/light 回退到 brand。
+        // 用于 hc 场景里必须可读的品牌色文本/焦点场景（text-accent-accessible 等）
+        'accent-accessible': 'var(--accent-accessible)',
 
         // Semantic colors
         success: {

@@ -112,7 +112,8 @@ const codeBlockStyle = {
 const codeLineNumberStyle = {
   minWidth: '2.5em',
   paddingRight: '1em',
-  color: 'rgb(113 113 122)',
+  // 语义 token:dark 下等同原 rgb(113 113 122),light 下换深色保持可读
+  color: 'var(--text-tertiary)',
   userSelect: 'none',
 } as const;
 
@@ -332,7 +333,7 @@ export const CodeBlock = memo(function CodeBlock({
 
   return (
     <div
-      className="my-3 rounded-xl bg-zinc-800-950 overflow-hidden border border-zinc-700 shadow-lg"
+      className="my-3 rounded-xl bg-[var(--code-bg)] overflow-hidden border border-zinc-700 shadow-lg"
       data-code-block-lines={lines.length}
       data-code-highlighted-lines={collapsed ? 0 : highlightedLineCount}
       data-code-highlight-complete={isHighlightComplete ? 'true' : 'false'}

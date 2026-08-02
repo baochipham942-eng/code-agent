@@ -183,6 +183,14 @@ code-agent/
 >
 > **文档编辑统一**: DocEdit 统一入口，富文档为原子级增量编辑（Excel 14 操作 / PPT 8 操作 / Word 7 操作），SnapshotManager 提供快照回滚。
 
+### 2026-08-02 深空新栖地主题落地(品牌层)
+
+这一轮把 2026-05 的 Agent Neo 品牌层推进到"深空新栖地"主题:PlanetSphere 程序化星球资产、N2 星芒标与四个品牌橱窗(欢迎页/空态/实时语音七态/通话摘要)落地,六条设计 DNA 与四条转译原则补成可引用的设计规范。
+
+| 模块 | 当前闭环 | 关键文件 / 入口 |
+|------|---------|----------------|
+| Agent Neo 品牌层 | PlanetSphere 程序化星球(语音七态/欢迎页地球/空态 planet 属性)+ N2 星芒标(NeoBrandMark,assets/brand 三变体)+ 四橱窗集中;设计 DNA、转译原则、token/资产/词库收口为人读层规范,机器校验仍走 check-design-system ratchet 门 | [docs/designs/design-system.md](./designs/design-system.md)、`src/renderer/components/brand/PlanetSphere.tsx`、`src/renderer/components/features/sidebar/NeoBrandMark.tsx`、`scripts/check-design-system.mjs` |
+
 ### 2026-07-12 ~ 07-18 Durable 执行、客户端事件与启动路径收口
 
 这一轮把运行终态、客户端投影和桌面启动从多处“各自看起来正确”收敛为可追溯合同。长期边界是 durable store 决定运行事实，renderer 只按稳定身份投影，IPC 和事件层只保留真实消费路径，启动优化不能削弱 readiness 与回滚。

@@ -4,7 +4,8 @@ import { create } from 'zustand';
 import type { CanvasOpProposal } from '../../../shared/contract/canvasProposal';
 import type { CanvasApprovalReason } from './canvasProposalApproval';
 
-export interface PreAppliedCanvasProposal {
+/** 只在本文件内用（store 状态与 setPending 入参），不导出——导出即 knip 死出口。 */
+interface PreAppliedCanvasProposal {
   requestId: string;
   appliedCount: number;
   skippedCount: number;

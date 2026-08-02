@@ -28,6 +28,8 @@ import {
 import { listenTauriEvent } from '../services/tauriPluginFacade';
 import { claimApprovalResponse, releaseApprovalResponse } from '../utils/approvalResponseGuard';
 import { claimDesignCanvasForSession } from '../components/design/designCanvasLaunch';
+import { voiceCallBridge } from '../services/voiceCallBridge';
+import { useVoiceCallStore } from '../stores/voiceCallStore';
 
 const logger = createLogger('KeyboardShortcuts');
 
@@ -417,6 +419,15 @@ export function useKeyboardShortcuts(config: KeyboardShortcutsConfig = {}): void
           await ipcService.unsafeInvoke(IPC_CHANNELS.VOICE_PASTE_TOGGLE);
           return true;
 
+        case 'voice.callToggle':
+          if (useVoiceCallStore.getState().phase !== 'idle') {
+            voiceCallBridge.hangUp();
+            return true;
+          }
+          if (!currentSessionId) return false;
+          await voiceCallBridge.dial(currentSessionId);
+          return true;
+
         case 'appshot.capture':
           if (isNativeCommandRuntimeAvailable() && await invokeNativeCommandAction('triggerAppshot')) return true;
           setShowCapturePanel(true);
@@ -435,6 +446,10 @@ export function useKeyboardShortcuts(config: KeyboardShortcutsConfig = {}): void
           if (!currentSessionId) return false;
           claimDesignCanvasForSession(currentSessionId);
           openWorkbenchTab('design-canvas');
+          return true;
+
+        case 'terminal.open':
+          openWorkbenchTab('terminal');
           return true;
 
         case 'computerUse.open':

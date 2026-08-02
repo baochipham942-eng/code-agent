@@ -156,6 +156,11 @@ export function installSessionDomainHandler(deps: SessionDomainHandlerDependenci
             if (streamSnapshot?.sessionId === session.id) {
               (session as { streamSnapshot?: unknown }).streamSnapshot = streamSnapshot;
             }
+            // 前端的「这个会话在不在跑」是纯内存态，刷新即清零；宿主这边 runRegistry 才是真源。
+            // 不带这一条，刷新页面后前端一律显示空闲，而宿主可能还在跑同一轮——真机实测
+            // 断连后那一轮又跑了 51 秒，期间屏幕空闲、排队卡还显示「立即发送」，用户一点就撞车
+            // （2026-08-01 C3）。runtime-only 字段，跟 streamSnapshot 同款挂法，不进 DB。
+            (session as { activeRun?: boolean }).activeRun = deps.hasActiveRun(session.id);
           }
           data = session;
           break;

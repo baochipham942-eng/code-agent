@@ -2,9 +2,8 @@
 // 核心逻辑是纯归约器 reduceAnnot —— 把指针事件序列归约成 shapes 数组，
 // 不依赖 konva，可单测（见 tests/renderer/design/annotationLayer.test.tsx）。
 // 渲染组件遵循 DesignCanvas.tsx 的 react-konva 用法。
-import React, { useRef } from 'react';
+import React from 'react';
 import { Layer, Line, Arrow, Rect as KonvaRect, Text as KonvaText } from 'react-konva';
-import type Konva from 'konva';
 
 export type AnnotTool = 'pen' | 'arrow' | 'rect' | 'text';
 
@@ -87,60 +86,15 @@ export function reduceAnnot(shapes: AnnotShape[], evt: AnnotEvent): AnnotShape[]
 
 interface AnnotationLayerProps {
   shapes: AnnotShape[];
-  onShapesChange: (s: AnnotShape[]) => void;
-  tool: AnnotTool;
-  /** 文字工具点击时回调（世界坐标），由上层在画布内渲染输入框替代原生 window.prompt。 */
-  onRequestText?: (world: { x: number; y: number }) => void;
 }
 
 /**
- * 标注渲染层：把 shapes 画成红色 konva 图元，并把 Stage 指针事件
- * 经 reduceAnnot 归约后回传。挂在 DesignCanvas 的 <Stage> 内、与图层平级。
+ * 标注纯渲染层：把 shapes 画成红色 konva 图元。
+ * 指针事件由 DesignCanvas 的 Stage 处理器统一归约，避免兄弟 Layer 收不到命中节点的冒泡事件。
  */
-export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
-  shapes,
-  onShapesChange,
-  tool,
-  onRequestText,
-}) => {
-  // 是否正在拖拽进行中（pen/arrow/rect 需要 down→move→up）。
-  const drawing = useRef(false);
-
-  // 从 Stage 取当前世界坐标（与 DesignCanvas 的相机变换一致）。
-  const worldPoint = (e: Konva.KonvaEventObject<MouseEvent>): { x: number; y: number } | null => {
-    const stage = e.target.getStage();
-    const p = stage?.getRelativePointerPosition();
-    if (!p) return null;
-    return { x: p.x, y: p.y };
-  };
-
-  const handleDown = (e: Konva.KonvaEventObject<MouseEvent>): void => {
-    const w = worldPoint(e);
-    if (!w) return;
-    if (tool === 'text') {
-      // 文字工具：请上层在点击处渲染画布内输入框（替代原生 window.prompt，与深色 UI 一致）。
-      onRequestText?.(w);
-      return;
-    }
-    drawing.current = true;
-    onShapesChange(reduceAnnot(shapes, { type: 'down', tool, x: w.x, y: w.y }));
-  };
-
-  const handleMove = (e: Konva.KonvaEventObject<MouseEvent>): void => {
-    if (!drawing.current) return;
-    const w = worldPoint(e);
-    if (!w) return;
-    onShapesChange(reduceAnnot(shapes, { type: 'move', x: w.x, y: w.y }));
-  };
-
-  const handleUp = (): void => {
-    if (!drawing.current) return;
-    drawing.current = false;
-    onShapesChange(reduceAnnot(shapes, { type: 'up' }));
-  };
-
+export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({ shapes }) => {
   return (
-    <Layer onMouseDown={handleDown} onMouseMove={handleMove} onMouseUp={handleUp}>
+    <Layer listening={false}>
       {shapes.map((shape, i) => {
         switch (shape.kind) {
           case 'pen':

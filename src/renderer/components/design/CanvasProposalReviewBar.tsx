@@ -1,7 +1,7 @@
 // ADR-026 D2-A/三刀：画布提议审批条（DOM 浮层）。展示 agent 提议 + rationale，逐 op 勾选取舍，
 // 应用 / 拒绝（可带意见）。ghost 虚影（蓝=改/红=淘汰）由 CanvasProposalGhostLayer 画在画布上。
 import React, { useEffect, useMemo, useState } from 'react';
-import { Sparkles, Check, X, Trash2, Coins } from 'lucide-react';
+import { Sparkles, Check, X, Trash2, Coins, AlertTriangle } from 'lucide-react';
 import { useI18n } from '../../hooks/useI18n';
 import { Button } from '../primitives/Button';
 import type { CanvasOpProposal, CanvasProposalOp, CanvasProposalOpSource } from '@shared/contract';
@@ -9,6 +9,7 @@ import { isGenerateOp } from '@shared/contract';
 import { estimateImageCostCny, formatCny } from '@shared/media/imageCost';
 import { imageModelById } from '@shared/constants/visualModels';
 import { useDesignStore } from './designStore';
+import type { CanvasApprovalReason } from './canvasProposalApproval';
 
 interface OpLabels {
   move: string; connect: string; shape: string; rename: string; discard: string; generate: string;
@@ -112,7 +113,13 @@ export const CanvasProposalReviewBar: React.FC<{
   proposal: CanvasOpProposal;
   onApply: (selectedOps: CanvasProposalOp[]) => void | Promise<void>;
   onReject: (feedback?: string) => void | Promise<void>;
-}> = ({ proposal, onApply, onReject }) => {
+  approvalReason?: CanvasApprovalReason;
+  /**
+   * 陈旧 moveNode 的目标节点 id 集（审批期间被用户拖过，userTouchedAt > receivedAt）。
+   * 命中的 op 单独标注：批准后节点会移到 agent 原先算的位置，覆盖用户那次手动摆放。
+   */
+  staleNodeIds?: ReadonlySet<string>;
+}> = ({ proposal, onApply, onReject, approvalReason = 'standard', staleNodeIds }) => {
   const { t } = useI18n();
   const s = t.design;
   const [feedback, setFeedback] = useState('');
@@ -166,7 +173,9 @@ export const CanvasProposalReviewBar: React.FC<{
         <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-blue-400" />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <span className="text-sm font-medium text-zinc-100">{s.proposalTitle}</span>
+            <span className="text-sm font-medium text-zinc-100">
+              {approvalReason === 'user-touched' ? t.canvasActor.approvalUserTouchedTitle : s.proposalTitle}
+            </span>
             <span className="rounded-full bg-blue-500/15 px-2 py-0.5 text-[11px] text-blue-300">
               {s.proposalSelectedCount.replace('{n}', String(selected.size)).replace('{total}', String(proposal.ops.length))}
             </span>
@@ -174,7 +183,10 @@ export const CanvasProposalReviewBar: React.FC<{
           {proposal.rationale ? <p className="mt-1 text-xs leading-relaxed text-zinc-400">{proposal.rationale}</p> : null}
           {/* 逐 op 勾选 */}
           <ul className="mt-2 flex max-h-40 flex-col gap-1 overflow-y-auto">
-            {rows.map((row, i) => (
+            {rows.map((row, i) => {
+              const op = proposal.ops[i];
+              const stale = op.kind === 'moveNode' && (staleNodeIds?.has(op.nodeId) ?? false);
+              return (
               <li key={i}>
                 <label className="flex cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 text-xs hover:bg-white/[0.04]">
                   <input
@@ -187,6 +199,7 @@ export const CanvasProposalReviewBar: React.FC<{
                   />
                   {row.danger ? <Trash2 className="h-3 w-3 shrink-0 text-red-400" /> : null}
                   {row.paid ? <Coins className="h-3 w-3 shrink-0 text-amber-400" /> : null}
+                  {stale ? <AlertTriangle className="h-3 w-3 shrink-0 text-amber-400" /> : null}
                   <span className={`truncate ${row.danger ? 'text-red-300' : row.paid ? 'text-amber-200' : 'text-zinc-300'}`}>{row.text}</span>
                 </label>
                 <div data-testid={`proposal-op-explain-${i}`} className="ml-6 px-1.5 pb-1 text-[11px] leading-snug text-zinc-500">
@@ -194,8 +207,18 @@ export const CanvasProposalReviewBar: React.FC<{
                   <div>{row.impact}</div>
                   <div>{row.source}</div>
                 </div>
+                {stale ? (
+                  <div
+                    data-testid={`proposal-op-stale-${i}`}
+                    className="ml-6 mr-1.5 mb-1 flex items-start gap-1.5 rounded-md border border-amber-500/30 bg-amber-500/[0.08] px-2 py-1 text-[11px] leading-snug text-amber-200"
+                  >
+                    <AlertTriangle className="mt-px h-3 w-3 shrink-0" />
+                    <span>{t.canvasActor.staleMoveNotice}</span>
+                  </div>
+                ) : null}
               </li>
-            ))}
+              );
+            })}
           </ul>
           <p className="mt-1 text-[11px] leading-snug text-zinc-500">{s.proposalHint}</p>
           <input

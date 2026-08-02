@@ -12,7 +12,7 @@
 // 绝不在 renderer 手搓 message 塞进 sessionStore。
 // ============================================================================
 
-import type { VoiceMessageCode } from '@shared/contract/voice';
+import type { RendererVoiceFailureReport, VoiceMessageCode } from '@shared/contract/voice';
 import { VOICE_DOWNSTREAM_SAMPLE_RATE, VOICE_FOCUS_REPORT_MIN_INTERVAL_MS, VOICE_RECONNECT_BACKOFF_MS, VOICE_PARTIAL_HANDOFF_MAX_WAIT_MS, VOICE_STREAM_WS_PATH, VOICE_SUBTITLE_REVEAL_INTERVAL_MS, VOICE_SUBTITLE_STALL_FLUSH_MS, VOICE_TEARDOWN_DRAIN_MS, VOICE_WS_CLOSE_TERMINAL } from '@shared/constants/voice';
 import type { AppSettings, Message, VoiceInputDeviceSettings } from '@shared/contract';
 import type { VoiceClientCommand, VoiceEvent } from '@shared/contract/voice';
@@ -22,7 +22,9 @@ import { languages } from '../i18n';
 import { readActiveAgentSessionMap } from '../stores/activeAgentSessionMap';
 import { useAppStore } from '../stores/appStore';
 import { useSessionStore } from '../stores/sessionStore';
-import { useVoiceCallStore, type VoiceInterruptMode } from '../stores/voiceCallStore';
+import { useVoiceCallStore, type VoiceCallError, type VoiceInterruptMode } from '../stores/voiceCallStore';
+import { resolveVoiceMessage } from '../components/features/voice/resolveVoiceMessage';
+import { VOICE_STARTUP_FAILURE_TIER } from './voiceStartupFailureTier';
 import ipcService from './ipcService';
 import { isNativeDesktopAvailable } from './nativeDesktop';
 import { NativeVoiceAudioPipeline } from './nativeVoiceAudioPipeline';
@@ -89,6 +91,11 @@ class VoiceCallBridge {
   private reloadTimers = new Map<'user' | 'assistant' | 'generic', ReturnType<typeof setTimeout>>();
   /** 用户显式挂断 vs 网络断开——只有后者才该重连。 */
   private intentionalClose = false;
+  /**
+   * 本次拨号是否到达过 live（T3 启动期判据）。不能拿相位当判据：重连会把相位打回
+   * connecting，但那仍是同一通通话中——中途断线的失败呈现不归启动期分档管。
+   */
+  private hasGoneLive = false;
   private reconnectAttempt = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private inputDevice: VoiceInputDeviceSettings | undefined;
@@ -101,6 +108,8 @@ class VoiceCallBridge {
   private playbackPausedAt = 0;
   /** 有界取消墓碑：上游 cancel 后仍可能把旧 final/done 发完。 */
   private cancelledResponseIds = new Set<string>();
+  /** 同一次拨号每种失效只上报一次，避免 WebSocket error + close 双事件重复入账。 */
+  private reportedFailureCodes = new Set<RendererVoiceFailureReport['code']>();
 
   private store() {
     return useVoiceCallStore.getState();
@@ -108,6 +117,44 @@ class VoiceCallBridge {
 
   private send(command: VoiceClientCommand): void {
     if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify(command));
+  }
+
+  private reportConnectionFailure(
+    neoSessionId: string,
+    code: RendererVoiceFailureReport['code'],
+    phase: RendererVoiceFailureReport['phase'],
+  ): void {
+    if (this.reportedFailureCodes.has(code)) return;
+    this.reportedFailureCodes.add(code);
+    // 字幕落库只有 host 一个生产者。这里只上报受限失败事实，绝不在 renderer
+    // 手搓 message 塞进 sessionStore；持久化与失败分母都由 host 的统一出口完成。
+    void ipcService.invokeDomain(IPC_DOMAINS.VOICE, 'reportFailure', {
+      neoSessionId,
+      code,
+      phase,
+    } satisfies RendererVoiceFailureReport).catch(() => undefined);
+  }
+
+  /**
+   * 通话失败的统一呈现出口（T3 分档，方案 §4.2）。
+   *
+   * - 到过 live 之后的失败：一律保留既有 error 态（中途断线有重连退避，不归分档管）。
+   * - 从未到过 live 的 silent 档（用户修不了：上游 5xx / 429 / 握手失败）：收回通话
+   *   槽位（reset，不留 chrome）+ toast 告知——不留一条点不动的红色僵尸通话条。
+   * - actionable 档（用户能修：权限 / Key / 设备 / 他窗占用）：保留 error 态通话条
+   *   + 引导文案，由 End 按钮显式收尾（既有行为）。
+   */
+  private presentFailure(entry: VoiceCallError): void {
+    if (!this.hasGoneLive && VOICE_STARTUP_FAILURE_TIER[entry.code] === 'silent') {
+      // 槽位收回后这条 WS 留着也是僵尸；关掉它，onclose 看到 idle 相位会直接返回。
+      this.ws?.close();
+      this.ws = null;
+      this.store().reset();
+      toast.error(resolveVoiceMessage(getT(), entry));
+      return;
+    }
+    this.store().phaseChanged('error');
+    this.store().eventApplied({ error: entry });
   }
 
   /**
@@ -360,6 +407,7 @@ class VoiceCallBridge {
     this.fallbackWarningShown = false;
     this.stopInputDeviceMonitoring();
     this.cancelledResponseIds.clear();
+    this.reportedFailureCodes.clear();
     this.pausedCandidateId = null;
     this.playbackPausedAt = 0;
 
@@ -371,6 +419,7 @@ class VoiceCallBridge {
     this.echoCancellation = echoCancellation;
     this.store().dialStarted(sessionId, activeAgentId, interruptMode);
     this.intentionalClose = false;
+    this.hasGoneLive = false;
     this.reconnectAttempt = 0;
 
     this.openSocket(sessionId, activeAgentId, interruptMode, echoCancellation);
@@ -420,8 +469,9 @@ class VoiceCallBridge {
       // 重连尝试失败不算「握手失败」——它由 onclose 走退避，别在这里先把 phase 打成 error
       // 把重连路径掐死（那样第一次抖动就直接变成不可恢复）。
       if (!opened && !this.store().reconnecting) {
-        this.store().phaseChanged('error');
-        this.store().eventApplied({ error: { code: 'HANDSHAKE_FAILED', message: getT().voice.error.handshake } });
+        // 先上报（失败这件事必须落库，与怎么呈现无关），再按档位呈现。
+        this.reportConnectionFailure(sessionId, 'HANDSHAKE_FAILED', 'handshake');
+        this.presentFailure({ code: 'HANDSHAKE_FAILED', message: getT().voice.error.handshake });
       }
     };
 
@@ -438,8 +488,8 @@ class VoiceCallBridge {
       // 首次握手就没成：这不是断线，是压根没连上，重连也没意义。
       if (!opened && !this.store().reconnecting) {
         if (phase === 'connecting') {
-          this.store().phaseChanged('error');
-          this.store().eventApplied({ error: { code: 'HANDSHAKE_FAILED', message: getT().voice.error.handshake } });
+          this.reportConnectionFailure(sessionId, 'HANDSHAKE_FAILED', 'handshake');
+          this.presentFailure({ code: 'HANDSHAKE_FAILED', message: getT().voice.error.handshake });
         }
         return;
       }
@@ -455,6 +505,7 @@ class VoiceCallBridge {
       this.scheduleHangupSummaryReload(sessionId);
       // error 态不 reset：把错误留在 chrome 上给用户看，由 End 按钮显式收尾；
       // 否则上游报错一闪而过，用户只看到通话凭空消失。
+      // （启动期 silent 档失败在 presentFailure 里已直接 reset + toast，到不了 error 态。）
       if (phase !== 'error') this.store().reset();
     };
   }
@@ -471,10 +522,8 @@ class VoiceCallBridge {
   ): boolean {
     const delay = VOICE_RECONNECT_BACKOFF_MS[this.reconnectAttempt];
     if (delay === undefined) {
-      this.store().phaseChanged('error');
-      this.store().eventApplied({
-        error: { code: 'RECONNECT_FAILED', message: getT().voice.error.reconnectFailed },
-      });
+      this.reportConnectionFailure(sessionId, 'RECONNECT_FAILED', 'reconnect');
+      this.presentFailure({ code: 'RECONNECT_FAILED', message: getT().voice.error.reconnectFailed });
       return true;
     }
     this.reconnectAttempt += 1;
@@ -501,9 +550,8 @@ class VoiceCallBridge {
       },
       onLevels: (mic: number, playback: number) => this.store().levelsChanged(mic, playback),
       onError: (code: VoiceMessageCode, detail?: string) => {
-        this.store().phaseChanged('error');
         // message 只作兜底/排查；给用户看的文案由 resolveVoiceMessage 按 code 查 i18n。
-        this.store().eventApplied({ error: { code, message: detail ?? code } });
+        this.presentFailure({ code, message: detail ?? code });
       },
     };
   }
@@ -693,6 +741,7 @@ class VoiceCallBridge {
     switch (event.type) {
       case 'state':
         if (event.state === 'live') {
+          this.hasGoneLive = true;
           this.store().phaseChanged('live');
           // 接回来了：退避计数归零，下次抖动重新拿满次数。
           this.reconnectAttempt = 0;
@@ -858,9 +907,10 @@ class VoiceCallBridge {
         if (event.reason === 'idle-timeout') toast.info(getT().voice.status.idleTimeout);
         break;
       case 'error':
-        this.store().phaseChanged('error');
-        this.store().eventApplied({
-          error: { code: event.code, message: event.message, ...(event.detail ? { detail: event.detail } : {}) },
+        this.presentFailure({
+          code: event.code,
+          message: event.message,
+          ...(event.detail ? { detail: event.detail } : {}),
         });
         break;
       default:

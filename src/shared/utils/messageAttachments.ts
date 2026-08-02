@@ -81,6 +81,7 @@ export function sanitizeAttachmentForPersistence(attachment: MessageAttachment):
     folderStats: attachment.folderStats,
     mediaState: attachment.mediaState,
     metadata: attachment.metadata,
+    appshot: attachment.appshot,
   };
 }
 

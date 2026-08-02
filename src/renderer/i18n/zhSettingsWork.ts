@@ -833,6 +833,11 @@ export const zhSettingsWork = {
         revealTitle: '在 Finder 中显示',
         locate: '定位',
       },
+      toggle: {
+        enable: '启用',
+        disable: '停用',
+        disabledBadge: '已停用',
+      },
       typeLabels: {
         command: '命令',
         prompt: 'Prompt',

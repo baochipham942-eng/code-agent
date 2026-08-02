@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<!-- Appshot 飞入 overlay 常驻页（WebviewUrl::App 加载，与 pip.html 同款）。
+     参数分三路下发（单个大 eval 字符串会被静默丢弃，必须小块）：
+     __appshotFlyGeom(几何JSON) → __appshotImgChunk(base64 分片)×N → __appshotFlyStart() -->
+<html><head><meta charset="utf-8"/><style>
+  html,body{margin:0;padding:0;background:transparent;overflow:hidden;width:100vw;height:100vh}
+  .shot{position:absolute;will-change:transform,opacity,border-radius;
+    box-shadow:0 22px 70px rgba(0,0,0,.32),0 6px 18px rgba(0,0,0,.2);
+    background-size:cover;background-position:center;background-repeat:no-repeat;
+    pointer-events:none;transform-origin:center center;opacity:0}
+</style></head><body><script>
+var G=null, imgBuf='', shot=null;
+function r6(v){return Math.max(6,v)+'px';}
+window.__appshotFlyGeom = function(geom){
+  G=geom; imgBuf='';
+  if(shot){try{shot.remove();}catch(e){} shot=null;}
+  var src=G.src, radius=G.radius||12;
+  shot=document.createElement('div'); shot.className='shot';
+  shot.style.left=src.x+'px'; shot.style.top=src.y+'px';
+  shot.style.width=src.width+'px'; shot.style.height=src.height+'px';
+  shot.style.borderRadius=radius+'px';
+  // 直接挂 body：挂 #stage（height:0 容器）下 WKWebView 合成时不绘制子树（实测）
+  document.body.appendChild(shot);
+};
+window.__appshotImgChunk = function(c){ imgBuf+=c; };
+window.__appshotFlyStart = function(){
+  if(!G||!shot){return;}
+  var src=G.src, dst=G.dst, radius=G.radius||12, totalMs=G.durationMs||580;
+  shot.style.backgroundImage="url('data:image/png;base64,"+imgBuf+"')";
+  var sCx=src.x+src.width/2, sCy=src.y+src.height/2;
+  var dCx=dst.x+dst.width/2, dCy=dst.y+dst.height/2;
+  var dx=dCx-sCx, dy=dCy-sCy;
+  var sx=dst.width/src.width, sy=dst.height/src.height;
+  var liftScale=0.72, liftY=-28;
+  // rAF 手动插值（非 WAAPI）：WAAPI 走墙钟，窗口 display-link 暂停时动画会瞬间
+  // 跳到末帧触发 finished→shot.remove()——这就是飞入「从来没出现过」的根因。
+  // rAF + 钳制帧距（≤50ms）则暂停时只停不跳。
+  function run(){
+    var KEYS=[
+      // [p, tx, ty, sx, sy, br, op, easing]
+      [0.00, 0, 0, 1, 1, radius, 0, 'out'],
+      [0.06, 0, 0, 1, 1, radius, 1, 'out'],
+      [0.22, 0, liftY, liftScale, liftScale, Math.max(8,radius*.9), 1, 'out'],
+      [0.82, dx, dy, sx, sy, Math.max(6,radius*.6), 1, 'out'],
+      [0.90, dx, dy, sx*1.03, sy*1.03, Math.max(6,radius*.6), 1, 'lin'],
+      [0.95, dx, dy, sx, sy, Math.max(6,radius*.6), 1, 'lin'],
+      [1.00, dx, dy, sx, sy, Math.max(6,radius*.6), 0, 'lin']
+    ];
+    function easeOut(t){return 1-Math.pow(1-t,3);}
+    function apply(p){
+      var i=0;
+      while(i<KEYS.length-2 && p>KEYS[i+1][0]){i++;}
+      var a=KEYS[i], b=KEYS[i+1];
+      var seg=(p-a[0])/((b[0]-a[0])||1); seg=Math.max(0,Math.min(1,seg));
+      var t=b[7]==='out'?easeOut(seg):seg;
+      function L(j){return a[j]+(b[j]-a[j])*t;}
+      shot.style.transform='translate('+L(1)+'px,'+L(2)+'px) scale('+L(3)+','+L(4)+')';
+      shot.style.borderRadius=L(5)+'px';
+      shot.style.opacity=L(6);
+    }
+    var prev=null, acc=0;
+    function frame(ts){
+      if(prev===null){prev=ts;}
+      acc+=Math.min(50, ts-prev); prev=ts;
+      var p=Math.min(1, acc/totalMs);
+      apply(p);
+      if(p<1){requestAnimationFrame(frame);}
+      else{try{shot.remove();}catch(e){}}
+    }
+    requestAnimationFrame(frame);
+  }
+  var img=new Image(); img.onload=run; img.onerror=run;
+  img.src="data:image/png;base64,"+imgBuf;
+};
+</script></body></html>

@@ -109,6 +109,7 @@ interface IPCResponse<T = unknown> {
 | `domain:agents` | agentRegistry.ipc.ts | 自定义 Agent 注册中心（builtin + user + project）|
 | `domain:agentEngine` | agentEngine.ipc.ts | Native / Codex CLI / Claude Code execution engines |
 | `domain:capability` | capability.ipc.ts | Skill / MCP / Tool / Channel 能力中心 |
+| `domain:terminal` | terminal.ipc.ts | 会话级交互 shell（右栏终端 + Agent 经 terminal_* 读写同一个 PTY）；输出走推送通道 `terminal:output` |
 | ~~`evaluation:delivery-review:run`~~ | 已下线 | 5/19 随 evaluation 子系统删除；Workspace Preview 不再触发旧 Delivery Review |
 | `workflow:*` | workflow.ipc.ts | Dynamic Workflow 运行进度 + 跑前审批（专用 bridge，run/launch 双通道）|
 | `evaluation:run-harness-comparison` / `evaluation:list-experiments` | evaluation.ipc.ts | Harness 对照实验启动与实验列表（GAP-017，阶段四）|

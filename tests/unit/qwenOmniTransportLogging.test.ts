@@ -5,7 +5,15 @@ import { VOICE_UPSTREAM_HEARTBEAT_INTERVAL_MS, VOICE_UPSTREAM_SILENCE_TIMEOUT_MS
 class FakeUpstream extends EventEmitter {
   static OPEN = 1;
   readyState = 1;
-  send = vi.fn();
+  send = vi.fn((data: string) => {
+    const event = JSON.parse(data) as { type?: string; session?: Record<string, unknown> };
+    if (event.type === 'session.update') {
+      queueMicrotask(() => this.emit('message', JSON.stringify({
+        type: 'session.updated',
+        session: event.session,
+      })));
+    }
+  });
   ping = vi.fn();
   close() {
     this.readyState = 3;

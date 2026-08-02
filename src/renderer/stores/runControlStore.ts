@@ -20,8 +20,12 @@ interface RunControlQueueItem {
 interface RunControlActions {
   /** = useAgent().cancel */
   interrupt: () => void | Promise<void>;
-  /** = useAgent().cancelQueuedRuntimeInput（host QueuedInput retract） */
-  retractQueued: (id: string) => void | Promise<void>;
+  /**
+   * = useAgent().cancelQueuedRuntimeInput（host QueuedInput retract）
+   * 返回值是「这条真的撤回来了吗」——聊天区据此决定要不要把内容还回输入框；
+   * Overview 这边不关心，但类型不能把它掐掉。
+   */
+  retractQueued: (id: string) => void | Promise<void | boolean>;
   /** = useAgent().sendQueuedRuntimeInput（host markSending + steer/send） */
   sendQueuedNow: (id: string) => void | Promise<void>;
 }

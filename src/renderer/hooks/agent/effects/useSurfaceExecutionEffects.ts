@@ -4,6 +4,7 @@ import { isSurfaceExecutionEventV1 } from '@shared/contract/surfaceExecution';
 import { getSurfaceExecutionSnapshot } from '../../../services/surfaceExecutionClient';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { useSurfaceExecutionStore } from '../../../stores/surfaceExecutionStore';
+import type { SurfaceSnapshotApplyResultV1 } from '../../../stores/surfaceExecutionStore';
 import type { SurfaceExecutionCompatibilityEnvelopeV1 } from '../../../utils/surfaceExecutionProjection';
 import { createLogger } from '../../../utils/logger';
 import ipcService from '../../../services/ipcService';
@@ -28,7 +29,7 @@ interface SurfaceExecutionEffectsE2EDiagnostics {
   refreshSettledCount: number;
   lastRefreshReason: 'initial' | 'event' | null;
   lastRefreshConversationId: string | null;
-  lastRefreshResult: boolean | null;
+  lastRefreshResult: SurfaceSnapshotRefreshResult | null;
   lastError: string | null;
 }
 
@@ -85,7 +86,7 @@ function recordRefreshStart(
 function recordRefreshSettled(
   reason: 'initial' | 'event',
   conversationId: string,
-  result: boolean,
+  result: SurfaceSnapshotRefreshResult,
 ): void {
   updateSurfaceExecutionE2EDiagnostics((diagnostics) => {
     diagnostics.refreshSettledCount += 1;
@@ -132,13 +133,21 @@ export function buildSurfaceExecutionCompatibilityEnvelopes(
   });
 }
 
+/**
+ * 一次 `refresh()` 的结局。除透传 `setNativeSnapshot` 的落地结果外：
+ * - `'superseded'`：本次响应返回时代际已失效（有更新的刷新在跑），未触碰 store；
+ * - `'error'`：拉取快照抛错。
+ * 「过期丢弃」（`'stale'`）是正常并发现象，与 `'error'` 明确分开，不得共用同一个值。
+ */
+export type SurfaceSnapshotRefreshResult = SurfaceSnapshotApplyResultV1 | 'superseded' | 'error';
+
 export interface SurfaceSnapshotRefreshCoordinator {
-  refresh: (conversationId: string) => Promise<boolean>;
+  refresh: (conversationId: string) => Promise<SurfaceSnapshotRefreshResult>;
 }
 
 export function createSurfaceSnapshotRefreshCoordinator(deps: {
   fetchSnapshot: typeof getSurfaceExecutionSnapshot;
-  acceptSnapshot: (conversationId: string, snapshot: unknown) => boolean;
+  acceptSnapshot: (conversationId: string, snapshot: unknown) => SurfaceSnapshotApplyResultV1;
   onError?: (conversationId: string, error: unknown) => void;
 }): SurfaceSnapshotRefreshCoordinator {
   const generationByConversation = new Map<string, number>();
@@ -148,13 +157,13 @@ export function createSurfaceSnapshotRefreshCoordinator(deps: {
       generationByConversation.set(conversationId, generation);
       try {
         const snapshot = await deps.fetchSnapshot(conversationId);
-        if (generationByConversation.get(conversationId) !== generation) return false;
+        if (generationByConversation.get(conversationId) !== generation) return 'superseded';
         return deps.acceptSnapshot(conversationId, snapshot);
       } catch (error) {
         if (generationByConversation.get(conversationId) === generation) {
           deps.onError?.(conversationId, error);
         }
-        return false;
+        return 'error';
       }
     },
   };
@@ -177,7 +186,7 @@ export function useSurfaceExecutionEffects(currentSessionId: string | null): voi
       onError: (conversationId, error) => {
         updateSurfaceExecutionE2EDiagnostics((diagnostics) => {
           diagnostics.lastRefreshConversationId = conversationId;
-          diagnostics.lastRefreshResult = false;
+          diagnostics.lastRefreshResult = 'error';
           diagnostics.lastError = error instanceof Error ? error.message : String(error);
         });
         logger.warn('Failed to refresh Surface Execution snapshot', { conversationId, error });
@@ -187,7 +196,7 @@ export function useSurfaceExecutionEffects(currentSessionId: string | null): voi
 
   const refresh = useCallback((conversationId: string) => {
     const coordinator = coordinatorRef.current;
-    return coordinator ? coordinator.refresh(conversationId) : Promise.resolve(false);
+    return coordinator ? coordinator.refresh(conversationId) : Promise.resolve<SurfaceSnapshotRefreshResult>('superseded');
   }, []);
 
   useEffect(() => {

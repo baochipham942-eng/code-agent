@@ -5,7 +5,7 @@
 // ============================================================================
 
 import React, { useCallback } from 'react';
-import { ChevronRight, Cloud, Loader2, MessageSquare, Plus, Search } from 'lucide-react';
+import { ChevronRight, Cloud, Loader2, Plus } from 'lucide-react';
 import { PLAIN_CHAT_SUMMARY_LABEL } from '@shared/contract/sessionWorkspace';
 import { useI18n } from '../../../hooks/useI18n';
 import { useAppStore } from '../../../stores/appStore';
@@ -14,6 +14,7 @@ import type { SessionWithMeta } from '../../../stores/sessionStore';
 import { localeForLanguage } from '../../../utils/i18nTime';
 import { getDisplaySessionTitle, getSessionStatusPresentation } from '../../../utils/sessionPresentation';
 import { hasSessionDeliverySignals } from '../../../utils/sessionRecoveryHints';
+import { PlanetSphere } from '../../brand/PlanetSphere';
 import {
   buildSidebarSessionTierSections,
   type SidebarSessionTier,
@@ -189,16 +190,21 @@ export const SidebarSessionList: React.FC<SidebarSessionListProps> = ({
           <span className="text-xs text-zinc-500">{sb.loading}</span>
         </div>
       ) : !hasAnySessions ? (
+        /* 空态星球（2026-08-02 星球品牌升级）：列表空 = 地球（母星，"还没有勘测记录"），
+           替代原 MessageSquare 灰瓷砖；引导文案 startNewTask 保留。 */
         <div className="flex flex-col items-center justify-center h-full text-center px-4">
-          <div className="w-12 h-12 rounded-2xl bg-zinc-800 flex items-center justify-center mb-3">
-            <MessageSquare className="w-6 h-6 text-zinc-500" />
+          <div className="mb-3">
+            <PlanetSphere kind="earth" spinSeconds={24} glowColor="rgba(96,165,250,.20)" size={42} />
           </div>
           <p className="text-sm text-zinc-400 mb-1">{sb.noSessions}</p>
           <p className="text-xs text-zinc-500">{sb.startNewTask}</p>
         </div>
       ) : filteredSessionsEmpty && hasSearchFilters ? (
+        /* 搜索/筛选无结果 = 水星（最近太阳的孤星，"这片星域没有信号"），替代原 Search 图标。 */
         <div className="flex flex-col items-center justify-center py-12 text-center px-4">
-          <Search className="w-6 h-6 text-zinc-600 mb-2" />
+          <div className="mb-2">
+            <PlanetSphere kind="mercury" spinSeconds={20} glowColor="rgba(148,163,184,.18)" size={34} />
+          </div>
           <p className="text-sm text-zinc-500">
             {messageSearchLoading
               ? sb.searchingMessageContent

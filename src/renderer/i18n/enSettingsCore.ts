@@ -418,6 +418,10 @@ export const enSettingsCore = {
           label: 'New session',
           description: 'Create a new conversation session',
         },
+        'voice.callToggle': {
+          label: 'Start / end Live call',
+          description: 'Bring the app forward and start a Live call from anywhere, or end the active call',
+        },
         'voice.toggle': {
           label: 'Voice input',
           description: 'Start or stop voice input',
@@ -533,6 +537,10 @@ export const enSettingsCore = {
         'designCanvas.open': {
           label: 'Open Design Canvas',
           description: 'Open the design canvas in the right panel',
+        },
+        'terminal.open': {
+          label: 'Open Terminal',
+          description: 'Open the session terminal in the right panel',
         },
         'computerUse.open': {
           label: 'Open Computer Use',

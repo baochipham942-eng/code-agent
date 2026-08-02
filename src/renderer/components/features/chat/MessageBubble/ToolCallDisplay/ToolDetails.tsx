@@ -58,14 +58,14 @@ function stripAnsiCodes(str: string): string {
 }
 
 // JSON 语法高亮 - 仅用于结构化 JSON（参数 default 分支 / 对象型 result.output）。
-// 复用 MessageContent 同款 Prism + oneDark。纯文本/日志/带行号输出不走这里，
+// 复用 MessageContent 同款 Prism（palette 随 data-theme，见 prismTheme）。纯文本/日志/带行号输出不走这里，
 // 避免把 Read 的 "  1→code" 行号前缀或 Bash 日志当代码高亮弄乱。
 const JSON_HIGHLIGHT_STYLE: React.CSSProperties = {
   margin: 0,
   padding: '0.75rem',
   fontSize: '0.75rem',
   lineHeight: 1.5,
-  background: 'rgba(17, 24, 39, 0.5)',
+  background: 'var(--code-bg)',
   borderRadius: '0.5rem',
 };
 

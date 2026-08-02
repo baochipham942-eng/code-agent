@@ -287,6 +287,37 @@ export function projectTurns(
       continue;
     }
 
+    // 通话本身失败留痕（T3）：建连失败 / 通话中断时 host 落一条带 `metadata.voiceCallFailure`
+    // 的 role:'system' 消息。**这行 T9 起就一直在写，但投影层没放行**——白名单漏了它，于是
+    // 落到下面「system 一律 skip」那道总闸里：模型读得到（上下文装配走 DB），用户屏幕上
+    // 一片空白，事后翻历史也找不回。当下只有一个几秒就消失的 toast，通话条又随挂断一起收走。
+    // 归位方式与 voiceCallSummary 同级：通话级事件，挂当前轮，没有轮就独立成轮。
+    if (msg.role === 'system' && msg.metadata?.voiceCallFailure) {
+      const node: TraceNode = {
+        id: msg.id,
+        type: 'system',
+        subtype: 'error',
+        content: msg.content,
+        timestamp: msg.timestamp,
+        metadata: msg.metadata,
+      };
+      if (currentTurn) {
+        currentTurn.nodes.push(node);
+        currentTurn.endTime = msg.timestamp;
+      } else {
+        turnCounter++;
+        turns.push({
+          turnNumber: turnCounter,
+          turnId: `turn-${turnCounter}`,
+          nodes: [node],
+          status: 'completed',
+          startTime: msg.timestamp,
+          endTime: msg.timestamp,
+        });
+      }
+      continue;
+    }
+
     // 语音派活失败留痕（W6-5）：派出的 run 失败时 host 落一条带
     // `metadata.voiceWorkFailure` 的 role:'system' 消息。它不是对话内容，
     // 但**是那张任务卡的结局证据**——按 workItemId 对回对应的 voiceDispatch 轮，

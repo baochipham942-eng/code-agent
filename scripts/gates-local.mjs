@@ -153,6 +153,7 @@ const gates = [
       'vitest',
       'run',
       'tests/unit/agent',
+      'tests/unit/design',
       'tests/unit/ipc',
       'tests/unit/tools',
       'tests/unit/services',

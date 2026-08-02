@@ -21,6 +21,7 @@ import {
   LayoutDashboard,
   Palette,
   Plus,
+  TerminalSquare,
   X,
   type LucideIcon,
 } from 'lucide-react';
@@ -30,6 +31,7 @@ import {
   type KeybindingActionId,
 } from '@shared/keybindings';
 import { useAppStore, type WorkbenchViewId } from '../stores/appStore';
+import { useWorkbenchFocusStore } from '../stores/workbenchFocusStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { useI18n } from '../hooks/useI18n';
 import { useKeybindingsSettings } from '../hooks/useKeybindingsSettings';
@@ -77,6 +79,12 @@ const LAUNCHABLE_VIEWS: readonly LaunchableViewDefinition[] = [
     iconClassName: 'text-fuchsia-400/80',
     keybindingActionId: 'designCanvas.open',
   },
+  {
+    id: 'terminal',
+    icon: TerminalSquare,
+    iconClassName: 'text-sky-400/80',
+    keybindingActionId: 'terminal.open',
+  },
 ];
 
 function getFileName(path: string): string {
@@ -114,6 +122,7 @@ const WorkbenchViewLauncher: React.FC<WorkbenchViewLauncherProps> = ({
     if (id === 'overview') return t.workbenchTabs.overviewLabel;
     if (id === 'files') return t.workbenchTabs.filesLabel;
     if (id === 'browser') return t.workbenchTabs.browserLabel;
+    if (id === 'terminal') return t.workbenchTabs.terminal.label;
     return t.design.canvasTabLabel;
   };
 
@@ -123,6 +132,7 @@ const WorkbenchViewLauncher: React.FC<WorkbenchViewLauncherProps> = ({
     if (id === 'overview') return d.overview;
     if (id === 'files') return d.files;
     if (id === 'browser') return d.browser;
+    if (id === 'terminal') return d.terminal;
     return d.designCanvas;
   };
 
@@ -184,13 +194,18 @@ const WorkbenchViewLauncher: React.FC<WorkbenchViewLauncherProps> = ({
   );
 };
 
-export const WorkbenchTabs: React.FC<{ children?: React.ReactNode }> = ({ children }) => {
+export const WorkbenchTabs: React.FC<{ children?: React.ReactNode; focusable?: boolean }> = ({ children, focusable = false }) => {
   const { t } = useI18n();
   const workbenchTabs = useAppStore((s) => s.workbenchTabs);
   const activeWorkbenchTab = useAppStore((s) => s.activeWorkbenchTab);
   const previewTabs = useAppStore((s) => s.previewTabs);
   const closeWorkbenchTab = useAppStore((s) => s.closeWorkbenchTab);
   const openWorkbenchTab = useAppStore((s) => s.openWorkbenchTab);
+  // 专注模式（2026-08-01 工单①）：只在右栏独立成列时（App 传 focusable）提供开关；
+  // 窄屏 workbench 借住在聊天列里，没有「收起聊天列」的对象，不给开关。
+  // 状态在 workbenchFocusStore（不塞进 appStore：god-file 棘轮红线，且只是布局瞬时态）。
+  const workbenchFocused = useWorkbenchFocusStore((s) => s.workbenchFocused);
+  const setWorkbenchFocused = useWorkbenchFocusStore((s) => s.setWorkbenchFocused);
   const currentSessionId = useSessionStore((s) => s.currentSessionId);
   // 「＋」弹出层只列还没打开的视图；切换/关闭都在 tab 条上直接完成。
   const [menuOpen, setMenuOpen] = useState(false);
@@ -254,6 +269,16 @@ export const WorkbenchTabs: React.FC<{ children?: React.ReactNode }> = ({ childr
         isDirty: false,
       };
     }
+    if (id === 'terminal') {
+      return {
+        id,
+        label: t.workbenchTabs.terminal.label,
+        title: t.workbenchTabs.terminal.title,
+        icon: TerminalSquare,
+        iconClassName: 'text-sky-400/80',
+        isDirty: false,
+      };
+    }
     const path = id.slice(PREVIEW_PREFIX.length);
     const previewTab = previewTabs.find((preview) => preview.path === path);
     const isLiveDev = previewTab?.kind === 'liveDev';
@@ -269,6 +294,11 @@ export const WorkbenchTabs: React.FC<{ children?: React.ReactNode }> = ({ childr
 
   const activeMeta = metas.find((meta) => meta.id === activeWorkbenchTab) ?? metas[0] ?? null;
   const canAddAny = LAUNCHABLE_VIEWS.some((view) => !workbenchTabs.includes(view.id));
+
+  // 最后一个 tab 关掉后专注态没有对象——退回侧栏态，否则空 launcher 占满整窗且没有退出开关。
+  useEffect(() => {
+    if (metas.length === 0 && workbenchFocused) setWorkbenchFocused(false);
+  }, [metas.length, workbenchFocused, setWorkbenchFocused]);
 
   const openView = (id: LaunchableWorkbenchViewId) => {
     if (id === 'design-canvas') {
@@ -341,6 +371,10 @@ export const WorkbenchTabs: React.FC<{ children?: React.ReactNode }> = ({ childr
         ariaLabel={t.workbenchTabs.openViews}
         testId="workbench-view-selector"
         stripRef={toolbarRef}
+        focused={focusable ? workbenchFocused : undefined}
+        onToggleFocus={focusable ? () => setWorkbenchFocused(!workbenchFocused) : undefined}
+        focusEnterLabel={focusable ? t.workbenchTabs.focusEnter : undefined}
+        focusExitLabel={focusable ? t.workbenchTabs.focusExit : undefined}
         trailing={canAddAny ? (
           <IconButton
             size="sm"

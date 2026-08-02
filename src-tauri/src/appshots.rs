@@ -20,14 +20,14 @@ use std::process::Command;
 use std::sync::Mutex;
 #[cfg(target_os = "macos")]
 use std::sync::{
-    atomic::{AtomicBool, AtomicPtr, Ordering},
+    atomic::{AtomicBool, AtomicPtr, AtomicU64, Ordering},
     Arc,
 };
 #[cfg(target_os = "macos")]
 use std::time::Duration;
 use tauri::AppHandle;
 #[cfg(target_os = "macos")]
-use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
+use tauri::{webview::PageLoadEvent, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 
 /// 默认 Appshots 热键：同时按下左右 Command。
 pub const DEFAULT_APPSHOTS_SHORTCUT: &str = "LeftCmd+RightCmd";
@@ -57,6 +57,29 @@ static APPSHOTS_ENABLED: std::sync::atomic::AtomicBool = std::sync::atomic::Atom
 pub fn appshots_set_enabled(enabled: bool) {
     #[cfg(target_os = "macos")]
     APPSHOTS_ENABLED.store(enabled, std::sync::atomic::Ordering::SeqCst);
+    #[cfg(not(target_os = "macos"))]
+    let _ = enabled;
+}
+
+/// 发送目标=新会话（详设 §7 方案 A：new 时跳过飞入只落 chip）。前端在启动与设置变更时同步。
+#[cfg(target_os = "macos")]
+static APPSHOTS_TARGET_NEW: AtomicBool = AtomicBool::new(false);
+/// 动效总开关（OS reduced-motion 时前端同步为 false）。默认开。
+#[cfg(target_os = "macos")]
+static APPSHOTS_MOTION_ENABLED: AtomicBool = AtomicBool::new(true);
+
+#[tauri::command]
+pub fn appshots_set_target_session(new_session: bool) {
+    #[cfg(target_os = "macos")]
+    APPSHOTS_TARGET_NEW.store(new_session, std::sync::atomic::Ordering::SeqCst);
+    #[cfg(not(target_os = "macos"))]
+    let _ = new_session;
+}
+
+#[tauri::command]
+pub fn appshots_set_motion_enabled(enabled: bool) {
+    #[cfg(target_os = "macos")]
+    APPSHOTS_MOTION_ENABLED.store(enabled, std::sync::atomic::Ordering::SeqCst);
     #[cfg(not(target_os = "macos"))]
     let _ = enabled;
 }
@@ -110,6 +133,80 @@ pub fn trigger_capture(app: AppHandle) {
 #[cfg(target_os = "macos")]
 pub fn setup_dual_command_hotkey(app: AppHandle) -> Result<(), String> {
     dual_command_hotkey::install(app)
+}
+
+/// 让主窗口在未激活（非 key）时也接收 mouse-moved 事件。
+/// macOS 默认只有 key window 收 mouseMoved，WKWebView 的 CSS :hover 因此
+/// 在窗口未聚焦时不生效（Codex/Electron 无此问题）；打开后 hover 交互一致。
+#[cfg(target_os = "macos")]
+pub fn enable_hover_when_inactive(app: &AppHandle) {
+    use objc2_app_kit::NSWindow;
+    if let Some(window) = app.get_webview_window("main") {
+        if let Ok(ptr) = window.ns_window() {
+            unsafe {
+                let ns_window: &NSWindow = &*(ptr as *const NSWindow);
+                ns_window.setAcceptsMouseMovedEvents(true);
+            }
+            eprintln!("[appshot] 主窗口 acceptsMouseMovedEvents=true 已设置");
+        } else {
+            eprintln!("[appshot] 取主窗口 ns_window 失败，未聚焦 hover 不可用");
+        }
+    }
+}
+
+/// 让主窗口内所有视图在窗口未激活时也接受首次点击（不拿来激活窗口、直接进页面）。
+/// macOS 默认「第一击激活窗口、第二击才生效」（NSView.acceptsFirstMouse=NO），
+/// 表现为 composer chip 的删除按钮要点两次；对齐 Codex/Electron 的一次到位。
+/// 注意：命中测试落在 WebKit 内部子视图上，只 patch WKWebView 类无效，
+/// 必须遍历视图层级对每个 view 类注入。
+#[cfg(target_os = "macos")]
+pub fn enable_first_mouse_click(app: &AppHandle) {
+    use objc2::ffi::{class_replaceMethod, object_getClass};
+    use objc2::runtime::{AnyClass, AnyObject, Bool, Sel};
+    use objc2::sel;
+    use objc2_app_kit::{NSView, NSWindow};
+    use std::collections::HashSet;
+    use std::ffi::c_void;
+
+    unsafe extern "C-unwind" fn accepts_first_mouse_yes(
+        _this: *mut AnyObject,
+        _sel: Sel,
+        _event: *mut c_void,
+    ) -> Bool {
+        Bool::YES
+    }
+
+    fn patch_hierarchy(view: &NSView, patched: &mut HashSet<*const AnyClass>) {
+        unsafe {
+            let cls = object_getClass(view as *const NSView as *mut AnyObject);
+            if !cls.is_null() && patched.insert(cls) {
+                let imp: objc2::runtime::Imp = std::mem::transmute(
+                    accepts_first_mouse_yes
+                        as unsafe extern "C-unwind" fn(*mut AnyObject, Sel, *mut c_void) -> Bool,
+                );
+                class_replaceMethod(cls as *mut AnyClass, sel!(acceptsFirstMouse:), imp, c"B@:@".as_ptr());
+            }
+            for sub in view.subviews().iter() {
+                patch_hierarchy(&sub, patched);
+            }
+        }
+    }
+
+    let Some(window) = app.get_webview_window("main") else {
+        return;
+    };
+    let Ok(ptr) = window.ns_window() else {
+        eprintln!("[appshot] 取主窗口 ns_window 失败，首击直通未注入");
+        return;
+    };
+    unsafe {
+        let ns_window: &NSWindow = &*(ptr as *const NSWindow);
+        if let Some(content) = ns_window.contentView() {
+            let mut patched = HashSet::new();
+            patch_hierarchy(&content, &mut patched);
+            eprintln!("[appshot] acceptsFirstMouse=YES 已注入 {} 个视图类", patched.len());
+        }
+    }
 }
 
 #[cfg(target_os = "macos")]
@@ -291,9 +388,25 @@ pub fn appshots_read_image_data_url(path: String) -> Result<String, String> {
     read_png_data_url(&path)
 }
 
+/// 按 requestId 读截图 data URL（路径由 appshots 目录派生，前端无需知道数据目录）。
+/// 用于会话回放时气泡惰性还原图片——ledger 只存摘要，截图本体仍在 appshots 目录。
+#[cfg(target_os = "macos")]
+#[tauri::command]
+pub fn appshots_read_image_data_url_by_id(request_id: String) -> Result<String, String> {
+    let dir = appshots_dir()?;
+    let path = dir.join(format!("{request_id}.png"));
+    read_png_data_url(&path.to_string_lossy())
+}
+
 #[cfg(not(target_os = "macos"))]
 #[tauri::command]
 pub fn appshots_read_image_data_url(_path: String) -> Result<String, String> {
+    Err("Appshots 仅支持 macOS".to_string())
+}
+
+#[cfg(not(target_os = "macos"))]
+#[tauri::command]
+pub fn appshots_read_image_data_url_by_id(_request_id: String) -> Result<String, String> {
     Err("Appshots 仅支持 macOS".to_string())
 }
 
@@ -311,6 +424,9 @@ pub struct SlotRect {
 #[derive(Default)]
 pub struct AppshotsState {
     composer_slot: Mutex<Option<SlotRect>>,
+    /// 前端请求跳过飞入的 requestId（reduced-motion / targetSession=new）：
+    /// 命中后不建 overlay、立刻 handoff，让 chip 直接显形。
+    motion_skip: Mutex<std::collections::HashSet<String>>,
 }
 
 /// 前端在 composer 挂载/变化时上报输入框槽位（飞入动画的落点）。
@@ -323,6 +439,24 @@ pub fn appshots_report_composer_slot(
         .composer_slot
         .lock()
         .map_err(|e| format!("composer_slot 锁失败: {e}"))? = Some(slot);
+    Ok(())
+}
+
+/// 前端在 capture_starting 时按设置/系统偏好请求跳过本次飞入（详设 §7 方案 A + reduced-motion）。
+#[tauri::command]
+pub fn appshots_skip_motion(
+    state: tauri::State<'_, AppshotsState>,
+    request_id: String,
+) -> Result<(), String> {
+    let mut skip = state
+        .motion_skip
+        .lock()
+        .map_err(|e| format!("motion_skip 锁失败: {e}"))?;
+    // 防御性上限：捕获在 animate 前失败时条目不会被消费，避免无界增长。
+    if skip.len() >= 64 {
+        skip.clear();
+    }
+    skip.insert(request_id);
     Ok(())
 }
 
@@ -373,12 +507,42 @@ pub fn capture_now(app: &AppHandle) {
     };
 
     play_shutter_sound();
-    activate_main_window(app);
-    animate_overlay_best_effort(app, &png_path, window_frame);
+    // skip 决策源改为 Rust 侧直读（renderer 设置 IPC 启动早期会永久挂起，同步不可靠）：
+    // ① targetSession=new 读 config.json；② OS reduceMotion 读 defaults。每次捕获新鲜读取。
+    let target_new = read_appshots_target_new();
+    APPSHOTS_TARGET_NEW.store(target_new, Ordering::SeqCst);
+    APPSHOTS_MOTION_ENABLED.store(!read_reduce_motion(), Ordering::SeqCst);
+    // 主窗口前置不在此处做：挪到 overlay 起飞时（start_flight 内），
+    // 让飞入从源窗口上空起步、Neo 在飞行中段衔接前置（对齐 Codex 手感）；
+    // skip/失败路径由 animate 内的 bail_activate_and_handoff 兜底前置。
+
+    // 图先就绪：PNG 落盘 + 快门后即 emit（与飞入同时），文本通道随后经 text_ready 补齐。
+    let window_title = located.title.filter(|t| !t.trim().is_empty());
+    let screenshot_path = png_path.to_string_lossy().to_string();
+    let captured_at = now_ms();
+    let _ = app.emit(
+        "appshots:image_ready",
+        serde_json::json!({
+            "requestId": request_id,
+            "appName": located.app_name,
+            "bundleId": located.bundle_id,
+            "windowTitle": window_title,
+            "screenshotPath": screenshot_path,
+            "windowFrame": window_frame,
+            "capturedAtMs": captured_at,
+            "targetSession": if target_new { "new" } else { "current" },
+            "motion": { "durationMs": ANIM_DURATION_MS, "handoffAtMs": HANDOFF_AT_MS },
+        }),
+    );
+    animate_overlay_best_effort(app, &request_id, &png_path, window_frame);
 
     // 文本通道：AX 优先；AX 为空则本地 Vision OCR 兜底（免费 / 端上 / 零 token）。
+    // AX 原文先经 clean_ax_text 保守降噪（按行去重 / 单行限长 / 丢空白行）：
+    // 浏览器 tab 条、书签栏会在 AX 树里刷出大量重复短串。
     let mut text_source = "none";
-    let mut text = extract_ax_text(located.pid).unwrap_or_default();
+    let mut text = extract_ax_text(located.pid)
+        .map(|raw| clean_ax_text(&raw))
+        .unwrap_or_default();
     if text.trim().is_empty() {
         if let Some(ocr) = ocr_image(app, &png_path) {
             if !ocr.trim().is_empty() {
@@ -395,16 +559,26 @@ pub fn capture_now(app: &AppHandle) {
         Some(truncate_chars(text.trim(), AX_TEXT_MAX_CHARS))
     };
 
+    let _ = app.emit(
+        "appshots:text_ready",
+        serde_json::json!({
+            "requestId": request_id,
+            "axText": ax_text,
+            "textSource": text_source,
+        }),
+    );
+
+    // 兼容：全量 capture_ready 一期保留（image+text 都齐后再发，旧 listener 不炸）。
     let info = AppshotsCaptureInfo {
         request_id,
         app_name: located.app_name,
         bundle_id: located.bundle_id,
-        window_title: located.title.filter(|t| !t.trim().is_empty()),
-        screenshot_path: png_path.to_string_lossy().to_string(),
+        window_title,
+        screenshot_path,
         ax_text,
         text_source: text_source.to_string(),
         window_frame,
-        captured_at_ms: now_ms(),
+        captured_at_ms: captured_at,
     };
 
     let _ = app.emit("appshots:capture_ready", &info);
@@ -692,6 +866,16 @@ fn activate_main_window(app: &AppHandle) {
     }
 }
 
+/// 主窗口在屏幕上的原点（逻辑坐标）：outer_position 是物理像素，除以 scale_factor。
+/// 前端上报的 composer 槽位是视口内 CSS 坐标，加这个原点即得屏幕逻辑坐标。
+#[cfg(target_os = "macos")]
+fn main_window_origin_logical(app: &AppHandle) -> Option<(f64, f64)> {
+    let window = app.get_webview_window("main")?;
+    let pos = window.outer_position().ok()?;
+    let scale = window.scale_factor().ok()?;
+    Some((pos.x as f64 / scale, pos.y as f64 / scale))
+}
+
 /// appshots 截图落盘目录：~/.code-agent/appshots（与 native_desktop 的 base 解析一致）。
 #[cfg(target_os = "macos")]
 fn appshots_dir() -> Result<PathBuf, String> {
@@ -707,9 +891,38 @@ fn appshots_dir() -> Result<PathBuf, String> {
     Ok(dir)
 }
 
+/// 直读 config.json 的 appshots.targetSession（renderer 设置 IPC 启动早期会挂起，
+/// 同步通道不可靠；config.json 是设置的真实持久层，每次捕获新鲜读取即可）。
 #[cfg(target_os = "macos")]
-fn emit_error(app: &AppHandle, request_id: &str, code: &str, message: &str) {
-    eprintln!("[appshot] {code}: {message}");
+fn read_appshots_target_new() -> bool {
+    let base = if let Ok(dir) = std::env::var("CODE_AGENT_DATA_DIR") {
+        PathBuf::from(dir)
+    } else if let Ok(home) = std::env::var("HOME") {
+        PathBuf::from(home).join(".code-agent")
+    } else {
+        return false;
+    };
+    let Ok(raw) = std::fs::read_to_string(base.join("config.json")) else {
+        return false;
+    };
+    let Ok(json) = serde_json::from_str::<serde_json::Value>(&raw) else {
+        return false;
+    };
+    json.pointer("/appshots/targetSession").and_then(|v| v.as_str()) == Some("new")
+}
+
+/// 直读 macOS「减少动态效果」（com.apple.universalaccess reduceMotion）。
+#[cfg(target_os = "macos")]
+fn read_reduce_motion() -> bool {
+    Command::new("defaults")
+        .args(["read", "com.apple.universalaccess", "reduceMotion"])
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim() == "1")
+        .unwrap_or(false)
+}
+
+#[cfg(target_os = "macos")]
+fn emit_error(app: &AppHandle, request_id: &str, code: &str, message: &str) {    eprintln!("[appshot] {code}: {message}");
     let _ = app.emit(
         "appshots:error",
         serde_json::json!({ "requestId": request_id, "code": code, "message": message }),
@@ -735,34 +948,161 @@ fn truncate_chars(s: &str, max: usize) -> String {
     out
 }
 
+/// AX 文本保守降噪（swift 侧保持原样，清洗放 Rust 后处理）：
+/// 按行去重（全局 HashSet，保留首次出现顺序）、单行截到 300 字符、丢弃纯空白行。
+/// 只去完全重复的行，不做模糊匹配，避免误伤正文里合理的重复短句。
+#[cfg(target_os = "macos")]
+fn clean_ax_text(raw: &str) -> String {
+    const LINE_MAX_CHARS: usize = 300;
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut out: Vec<String> = Vec::new();
+    for line in raw.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let clipped: String = if trimmed.chars().count() > LINE_MAX_CHARS {
+            trimmed.chars().take(LINE_MAX_CHARS).collect()
+        } else {
+            trimmed.to_string()
+        };
+        if seen.insert(clipped.clone()) {
+            out.push(clipped);
+        }
+    }
+    out.join("\n")
+}
+
+#[cfg(all(test, target_os = "macos"))]
+mod clean_ax_text_tests {
+    use super::clean_ax_text;
+
+    #[test]
+    fn dedupes_repeated_lines_keeping_first_occurrence_order() {
+        let raw = "Tab One\nBookmark\nTab One\nBody text\nBookmark\nTab One";
+        assert_eq!(clean_ax_text(raw), "Tab One\nBookmark\nBody text");
+    }
+
+    #[test]
+    fn drops_blank_and_whitespace_only_lines() {
+        let raw = "alpha\n\n   \n\t\nbeta\n";
+        assert_eq!(clean_ax_text(raw), "alpha\nbeta");
+    }
+
+    #[test]
+    fn trims_line_edges_but_keeps_inner_spacing() {
+        let raw = "  hello world  \nhello world";
+        assert_eq!(clean_ax_text(raw), "hello world");
+    }
+
+    #[test]
+    fn clips_single_line_to_300_chars_on_char_boundary() {
+        let long_line: String = "汉".repeat(400);
+        let cleaned = clean_ax_text(&long_line);
+        assert_eq!(cleaned.chars().count(), 300);
+        assert!(cleaned.chars().all(|c| c == '汉'));
+    }
+
+    #[test]
+    fn dedupe_applies_after_clipping() {
+        let long_a = format!("{}a", "x".repeat(400));
+        let long_b = format!("{}b", "x".repeat(400));
+        // 两条都截到前 300 个 'x'，截断后内容相同 → 去重只留一条
+        let cleaned = clean_ax_text(&format!("{long_a}\n{long_b}"));
+        assert_eq!(cleaned, "x".repeat(300));
+    }
+
+    #[test]
+    fn empty_input_yields_empty_output() {
+        assert_eq!(clean_ax_text(""), "");
+        assert_eq!(clean_ax_text("\n  \n"), "");
+    }
+}
+
 // ---------------------------------------------------------------------------
 // 飞入动画 overlay（Phase 3）
 //
-// 在一个铺满主显示器、透明、鼠标穿透、置顶的临时 WebviewWindow 里，让截图从
-// 「源窗口在屏幕上的位置」收缩+上浮+飞向「composer 缩略图槽位」，落地淡出，由
-// composer 里真正的 chip 接管。动画用 Web Animations API，HTML 内自跑（参数在创建时
+// 在一个铺满显示器并集、透明、鼠标穿透、置顶的临时 WebviewWindow 里，让截图从
+// 「源窗口在屏幕上的位置」收缩+上浮+飞向「composer 缩略图槽位」；抵达落点（handoff）
+// 时 opacity 仍保持 1，由 composer 里已占位的 chip 零位移显形接管，overlay 再收尾关窗。动画用 Web Animations API，HTML 内自跑（参数在创建时
 // 内联进 data URL，免 eval 时序竞争）。
 //
 // 范围（MVP）：覆盖主显示器；坐标用屏幕逻辑坐标（CG 点 / getBoundingClientRect 同为
 // 左上原点逻辑像素）。已知限制（后续 3.1 细化）：① 跨多显示器或副屏窗口落点会偏；
 // ② 未用 objc2 抬 NSWindow level，盖不住全屏 Space 里的 app。两者都不影响核心链路。
-const ANIM_DURATION_MS: u64 = 1100;
+// 时长与 handoff 点按详设 §5.4：580ms 短行程，0.95 处（opacity 仍 1）emit handoff 交给 chip。
+const ANIM_DURATION_MS: u64 = 580;
+const HANDOFF_AT_MS: u64 = 551;
+
+/// 飞入抵达落点（或跳过/失败时的兜底）：通知 renderer 把 reserved chip 显形。
+#[cfg(target_os = "macos")]
+fn emit_handoff(app: &AppHandle, request_id: &str) {
+    let _ = app.emit(
+        "appshots:handoff",
+        serde_json::json!({ "requestId": request_id }),
+    );
+}
+
+/// animate 内 skip/失败兜底：前置主窗口（正常路径在 on_page_load 里做）+ 立刻 handoff。
+#[cfg(target_os = "macos")]
+fn bail_activate_and_handoff(app: &AppHandle, request_id: &str) {
+    activate_main_window(app);
+    emit_handoff(app, request_id);
+}
 
 #[cfg(target_os = "macos")]
-fn animate_overlay_best_effort(app: &AppHandle, screenshot_path: &PathBuf, src: ScreenRect) {
-    // 落点：前端上报的 composer 槽位（屏幕逻辑坐标）。没上报过就不演。
+fn animate_overlay_best_effort(app: &AppHandle, request_id: &str, screenshot_path: &PathBuf, src: ScreenRect) {
+    // 跳过飞入的场景（详设 §7 方案 A + reduced-motion）：不演飞入，立刻 handoff 让 chip 显形。
+    // 三来源：① 前端 per-request skip（motion_skip 集合）；② targetSession=new（APPSHOTS_TARGET_NEW）；
+    // ③ OS reduced-motion（APPSHOTS_MOTION_ENABLED=false）。②③ 由前端启动/变更时同步，无 IPC 竞态。
+    let skip = app
+        .state::<AppshotsState>()
+        .motion_skip
+        .lock()
+        .map(|mut s| s.remove(request_id))
+        .unwrap_or(false)
+        || APPSHOTS_TARGET_NEW.load(Ordering::SeqCst)
+        || !APPSHOTS_MOTION_ENABLED.load(Ordering::SeqCst);
+    if skip {
+        bail_activate_and_handoff(app, request_id);
+        return;
+    }
+
+    // 落点：animate 入口 re-read 一次最新 composer 槽位（前端上报的是**主窗口视口内**
+    // CSS 逻辑坐标；屏幕坐标 = 主窗口 outer_position（物理/scale→逻辑）+ 视口坐标。
+    // 不让前端加 window.screenX/screenY——它们在部分环境是物理像素，混算会把落点打出屏幕）。
+    // 没上报过就不演，但同样要 handoff——否则 chip 永远停在 reserved 不可见。
     let slot = match app.state::<AppshotsState>().composer_slot.lock() {
         Ok(guard) => match *guard {
             Some(s) => s,
-            None => return,
+            None => {
+                bail_activate_and_handoff(app, request_id);
+                return;
+            }
         },
-        Err(_) => return,
+        Err(_) => {
+            bail_activate_and_handoff(app, request_id);
+            return;
+        }
+    };
+    let slot = match main_window_origin_logical(app) {
+        Some((wx, wy)) => SlotRect {
+            x: slot.x + wx,
+            y: slot.y + wy,
+            ..slot
+        },
+        None => {
+            eprintln!("[appshot-overlay] 取不到主窗口位置，跳过飞入");
+            bail_activate_and_handoff(app, request_id);
+            return;
+        }
     };
 
     let image = match read_png_data_url(&screenshot_path.to_string_lossy()) {
         Ok(url) => url,
         Err(e) => {
             eprintln!("[appshot-overlay] 读图失败: {e}");
+            bail_activate_and_handoff(app, request_id);
             return;
         }
     };
@@ -772,6 +1112,7 @@ fn animate_overlay_best_effort(app: &AppHandle, screenshot_path: &PathBuf, src: 
     let monitors = app.available_monitors().unwrap_or_default();
     if monitors.is_empty() {
         eprintln!("[appshot-overlay] 无可用显示器");
+        bail_activate_and_handoff(app, request_id);
         return;
     }
     // 以主屏 scale 做物理→逻辑换算（同 DPI 多屏精确；混合 DPI 为近似，可接受）。
@@ -794,29 +1135,63 @@ fn animate_overlay_best_effort(app: &AppHandle, screenshot_path: &PathBuf, src: 
     let win_w = (max_x - min_x) as f64 / scale;
     let win_h = (max_y - min_y) as f64 / scale;
 
-    let params = serde_json::json!({
+    let geom = serde_json::json!({
         "src": { "x": src.x - origin_x, "y": src.y - origin_y, "width": src.width, "height": src.height },
         "dst": { "x": slot.x - origin_x, "y": slot.y - origin_y, "width": slot.width, "height": slot.height },
-        "imageDataUrl": image,
         "radius": 12,
         "durationMs": ANIM_DURATION_MS,
     });
-
-    let html = build_overlay_html(&params.to_string());
-    use base64::{engine::general_purpose::STANDARD, Engine as _};
-    let data_url = format!("data:text/html;base64,{}", STANDARD.encode(html.as_bytes()));
-    let url = match data_url.parse() {
-        Ok(u) => u,
-        Err(e) => {
-            eprintln!("[appshot-overlay] data URL 解析失败: {e}");
-            return;
-        }
+    let req = FlyRequest {
+        geom_json: geom.to_string(),
+        image_data_url: image,
+        request_id: request_id.to_string(),
     };
 
-    let label = format!("appshot-overlay-{}", now_ms());
-    let built = WebviewWindowBuilder::new(app, &label, WebviewUrl::External(url))
-        .position(origin_x, origin_y)
-        .inner_size(win_w, win_h)
+    // 复用常驻 overlay 窗（agent_halo 同款模式）：每次抓拍摄新建窗口，macOS 上 destroy
+    // 返回 Ok 仍残留僵尸窗（CGWindowList 持续增长）；常驻窗只 show/hide + eval 重启动画，
+    // 还省掉每次抓取的页面加载延迟（首次加载后静态 HTML 常驻）。
+    if !ensure_overlay_window(app, origin_x, origin_y, win_w, win_h) {
+        bail_activate_and_handoff(app, request_id);
+        return;
+    }
+    fly_overlay(app, req, origin_x, origin_y, win_w, win_h);
+}
+
+/// 一次飞入请求：几何参数（小 JSON）与截图 dataURL（大，分片下发）分离，
+/// 避免单个超大 eval 字符串被 WKWebView 静默丢弃。
+#[cfg(target_os = "macos")]
+struct FlyRequest {
+    geom_json: String,
+    image_data_url: String,
+    request_id: String,
+}
+
+/// 常驻 overlay 窗的固定 label 与状态：页面就绪标记、飞行代次（防旧计时器误关新动画）、
+/// 页面未就绪时排队的飞行请求。
+#[cfg(target_os = "macos")]
+const OVERLAY_LABEL: &str = "appshot-overlay";
+#[cfg(target_os = "macos")]
+static OVERLAY_READY: AtomicBool = AtomicBool::new(false);
+#[cfg(target_os = "macos")]
+static FLY_GENERATION: AtomicU64 = AtomicU64::new(0);
+#[cfg(target_os = "macos")]
+static PENDING_FLY: std::sync::Mutex<Option<(FlyRequest, u64)>> = std::sync::Mutex::new(None);
+
+/// 懒建常驻 overlay 窗（几何随首个捕获的显示器并集；后续飞行在 show 时刷新尺寸位置）。
+/// 页面用打包进 bundle 的静态 assets（public/appshot-overlay.html，与 pip.html 同款
+/// WebviewUrl::App）：data: URL 源上 WKWebView 不执行 eval，动画会静默不渲染。
+#[cfg(target_os = "macos")]
+fn ensure_overlay_window(app: &AppHandle, x: f64, y: f64, w: f64, h: f64) -> bool {
+    if app.get_webview_window(OVERLAY_LABEL).is_some() {
+        return true;
+    }
+    let built = WebviewWindowBuilder::new(
+        app,
+        OVERLAY_LABEL,
+        WebviewUrl::App(PathBuf::from("appshot-overlay.html")),
+    )
+        .position(x, y)
+        .inner_size(w, h)
         .transparent(true)
         .decorations(false)
         .always_on_top(true)
@@ -826,36 +1201,146 @@ fn animate_overlay_best_effort(app: &AppHandle, screenshot_path: &PathBuf, src: 
         .resizable(false)
         .closable(false)
         .minimizable(false)
-        .visible(true)
+        .visible(false)
+        .on_page_load(move |window, payload| {
+            if payload.event() != PageLoadEvent::Finished {
+                return;
+            }
+            OVERLAY_READY.store(true, Ordering::SeqCst);
+            eprintln!("[appshot-overlay] 常驻窗页面就绪");
+            // 显示一次后永不 hide：hidden/occluded 的 WKWebView 会暂停 rAF 与合成，
+            // 而 WAAPI 动画走墙钟——hide 后再 show，动画直接跳到末段（飞入不可见的根因）。
+            // 常驻窗透明+点击穿透+空 stage 时无任何视觉（与 agent_halo 常驻同理）。
+            let _ = window.show();
+            let app = window.app_handle().clone();
+            let pending = PENDING_FLY.lock().ok().and_then(|mut g| g.take());
+            if let Some((req, gen)) = pending {
+                if gen == FLY_GENERATION.load(Ordering::SeqCst) {
+                    start_flight(&app, req, gen);
+                }
+            }
+        })
         .build();
-
     let window = match built {
         Ok(w) => w,
         Err(e) => {
             eprintln!("[appshot-overlay] 创建 overlay 失败: {e}");
-            return;
+            return false;
         }
     };
     let _ = window.set_ignore_cursor_events(true);
-
     // 抬到 screen-saver 级 + 可进所有 Space，让动画盖过全屏 app。AppKit 调用必须回主线程。
     let app_for_level = app.clone();
-    let label_for_level = label.clone();
     let _ = app.run_on_main_thread(move || {
-        if let Some(w) = app_for_level.get_webview_window(&label_for_level) {
+        if let Some(w) = app_for_level.get_webview_window(OVERLAY_LABEL) {
             if let Ok(ptr) = w.ns_window() {
                 unsafe { raise_overlay_window_level(ptr) };
             }
         }
     });
+    true
+}
 
-    // 动画在 HTML 内自跑；演完按 label 关窗（duration + buffer）。
-    let app_handle = app.clone();
-    std::thread::spawn(move || {
-        std::thread::sleep(Duration::from_millis(ANIM_DURATION_MS + 500));
-        if let Some(w) = app_handle.get_webview_window(&label) {
-            let _ = w.close();
+/// 发起一次飞入：页面未就绪则排队（on_page_load 排空），否则直接 eval 重启动画。
+#[cfg(target_os = "macos")]
+fn fly_overlay(app: &AppHandle, req: FlyRequest, x: f64, y: f64, win_w: f64, win_h: f64) {
+    let gen = FLY_GENERATION.fetch_add(1, Ordering::SeqCst) + 1;
+    // 飞行前刷新常驻窗几何（显示器并集可能变化），与动画参数同源。
+    let app_for_geom = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        if let Some(overlay) = app_for_geom.get_webview_window(OVERLAY_LABEL) {
+            let _ = overlay.set_position(tauri::LogicalPosition::new(x, y));
+            let _ = overlay.set_size(tauri::LogicalSize::new(win_w, win_h));
         }
+    });
+    if !OVERLAY_READY.load(Ordering::SeqCst) {
+        let rid = req.request_id.clone();
+        if let Ok(mut g) = PENDING_FLY.lock() {
+            *g = Some((req, gen));
+        }
+        // 看门狗：页面永不就绪时兜底 handoff，防 chip 永远停在 reserved。
+        let app_handle = app.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(2000));
+            let still_pending = PENDING_FLY
+                .lock()
+                .map(|g| g.as_ref().is_some_and(|(_, g2)| *g2 == gen))
+                .unwrap_or(false);
+            if still_pending {
+                eprintln!("[appshot-overlay] 页面加载超时，兜底 handoff");
+                if let Ok(mut g) = PENDING_FLY.lock() {
+                    if g.as_ref().is_some_and(|(_, g2)| *g2 == gen) {
+                        *g = None;
+                    }
+                }
+                bail_activate_and_handoff(&app_handle, &rid);
+            }
+        });
+        return;
+    }
+    start_flight(app, req, gen);
+}
+
+/// eval 重启动画（几何 → 图片分片 → 启动）+ 显示常驻窗 + 前置主窗口 + handoff 计时（代次校验）。
+/// 分三路 eval 是因为单个超大 eval 字符串（内联 ~MB 级 base64）会被静默丢弃。
+#[cfg(target_os = "macos")]
+fn start_flight(app: &AppHandle, req: FlyRequest, gen: u64) {
+    let Some(window) = app.get_webview_window(OVERLAY_LABEL) else {
+        bail_activate_and_handoff(app, &req.request_id);
+        return;
+    };
+    let eval_or_bail = |script: &str| -> Result<(), ()> {
+        window.eval(script).map_err(|e| {
+            eprintln!("[appshot-overlay] eval 失败: {e}");
+        })
+    };
+    if eval_or_bail(&format!(
+        "window.__appshotFlyGeom&&window.__appshotFlyGeom({})",
+        req.geom_json
+    ))
+    .is_err()
+    {
+        bail_activate_and_handoff(app, &req.request_id);
+        return;
+    }
+    // 图片 base64 分片下发（64KB/片；base64 字符集不含引号，可安全内联单引号字符串）
+    let b64 = req
+        .image_data_url
+        .strip_prefix("data:image/png;base64,")
+        .unwrap_or(&req.image_data_url);
+    let mut failed = false;
+    for chunk in b64.as_bytes().chunks(64 * 1024) {
+        let s = String::from_utf8_lossy(chunk);
+        if eval_or_bail(&format!(
+            "window.__appshotImgChunk&&window.__appshotImgChunk('{s}')"
+        ))
+        .is_err()
+        {
+            failed = true;
+            break;
+        }
+    }
+    if failed
+        || eval_or_bail("window.__appshotFlyStart&&window.__appshotFlyStart()").is_err()
+    {
+        bail_activate_and_handoff(app, &req.request_id);
+        return;
+    }
+    // 此刻才前置主窗口：飞入从源窗口上空起步，Neo 在飞行中段（~300ms）衔接前置，
+    // 落点显形时 composer 已在画面中（对齐 Codex 手感）。
+    activate_main_window(app);
+    let _ = window.show();
+    eprintln!("[appshot-overlay] 起飞 rid={}", req.request_id);
+    let app_handle = app.clone();
+    let rid = req.request_id;
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(HANDOFF_AT_MS));
+        // 代次过期说明有新飞行接管，旧 handoff 丢弃。
+        if FLY_GENERATION.load(Ordering::SeqCst) == gen {
+            emit_handoff(&app_handle, &rid);
+        }
+        // 不 hide：常驻窗保持显示（防 WKWebView occlusion 暂停 rAF 导致动画跳段），
+        // 动画结束 stage 自动清空（shot.remove），无视觉残留。
     });
 }
 
@@ -877,51 +1362,3 @@ unsafe fn raise_overlay_window_level(ns_window_ptr: *mut std::ffi::c_void) {
             | NSWindowCollectionBehavior::IgnoresCycle,
     );
 }
-
-/// 构建 overlay HTML：参数在创建时内联，DOM 就绪即自跑动画（无需 eval）。
-#[cfg(target_os = "macos")]
-fn build_overlay_html(params_json: &str) -> String {
-    OVERLAY_HTML_TEMPLATE.replace("__APPSHOT_PARAMS__", params_json)
-}
-
-// 用占位符 + replace（而非 format!），避免 JS 里大量 `{}` 与 format! 冲突。
-#[cfg(target_os = "macos")]
-const OVERLAY_HTML_TEMPLATE: &str = r#"<!DOCTYPE html>
-<html><head><meta charset="utf-8"/><style>
-  html,body{margin:0;padding:0;background:transparent;overflow:hidden;width:100vw;height:100vh}
-  .shot{position:absolute;will-change:transform,opacity,border-radius;
-    box-shadow:0 22px 70px rgba(0,0,0,.32),0 6px 18px rgba(0,0,0,.2);
-    background-size:cover;background-position:center;background-repeat:no-repeat;
-    pointer-events:none;transform-origin:center center;opacity:0}
-</style></head><body><div id="stage"></div><script>
-(function(){
-  var P = __APPSHOT_PARAMS__;
-  var stage=document.getElementById('stage');
-  var src=P.src, dst=P.dst, radius=P.radius||12, totalMs=P.durationMs||1100;
-  if(!src||!dst||!P.imageDataUrl||src.width<1||src.height<1){return;}
-  var shot=document.createElement('div'); shot.className='shot';
-  shot.style.left=src.x+'px'; shot.style.top=src.y+'px';
-  shot.style.width=src.width+'px'; shot.style.height=src.height+'px';
-  shot.style.borderRadius=radius+'px';
-  shot.style.backgroundImage="url('"+P.imageDataUrl+"')";
-  stage.appendChild(shot);
-  var sCx=src.x+src.width/2, sCy=src.y+src.height/2;
-  var dCx=dst.x+dst.width/2, dCy=dst.y+dst.height/2;
-  var dx=dCx-sCx, dy=dCy-sCy;
-  var sx=dst.width/src.width, sy=dst.height/src.height;
-  var liftScale=0.5, liftY=-60;
-  function r6(v){return Math.max(6,v)+'px';}
-  function run(){
-    var anim=shot.animate([
-      {transform:'translate(0,0) scale(1,1)',borderRadius:radius+'px',opacity:0,offset:0,easing:'cubic-bezier(.22,.8,.36,1)'},
-      {transform:'translate(0,0) scale(1,1)',borderRadius:radius+'px',opacity:1,offset:.08,easing:'cubic-bezier(.32,.72,0,1)'},
-      {transform:'translate(0,'+liftY+'px) scale('+liftScale+','+liftScale+')',borderRadius:Math.max(8,radius*.9)+'px',opacity:1,offset:.36,easing:'cubic-bezier(.4,0,.2,1)'},
-      {transform:'translate('+dx+'px,'+dy+'px) scale('+sx+','+sy+')',borderRadius:r6(radius*.6),opacity:1,offset:.85,easing:'cubic-bezier(.34,1.1,.4,1)'},
-      {transform:'translate('+dx+'px,'+dy+'px) scale('+(sx*1.06)+','+(sy*1.06)+')',borderRadius:r6(radius*.6),opacity:1,offset:.93,easing:'cubic-bezier(.4,0,.2,1)'},
-      {transform:'translate('+dx+'px,'+dy+'px) scale('+sx+','+sy+')',borderRadius:r6(radius*.6),opacity:0,offset:1}
-    ],{duration:totalMs,easing:'linear',fill:'forwards'});
-    anim.finished.catch(function(){}).then(function(){try{shot.remove();}catch(e){}});
-  }
-  var img=new Image(); img.onload=run; img.onerror=run; img.src=P.imageDataUrl;
-})();
-</script></body></html>"#;

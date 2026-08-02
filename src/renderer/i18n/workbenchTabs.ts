@@ -8,6 +8,7 @@ export const workbenchTabsZh = {
       files: '工作目录里的文件',
       browser: 'Neo 打开的网页',
       designCanvas: '把想法摆成图，边看边改',
+      terminal: '一个能自己敲命令的终端，Neo 也用这一个',
     },
     chooseView: '选择当前视图',
     // D6 tab 条形态：「＋」按钮的称谓 + 脏预览圆点的悬浮提示
@@ -17,6 +18,9 @@ export const workbenchTabsZh = {
     closeView: '关闭 {view}',
     collapsePanel: '收起面板',
     expandPanel: '展开面板',
+    // 专注模式（2026-08-01 工单①）：一个按钮一个位置两个状态，Esc 退出
+    focusEnter: '专注模式：面板占满窗口',
+    focusExit: '退出专注模式（Esc）',
     overviewLabel: '概览',
     overviewTitle: '任务工作台',
     overviewProgressLabel: '任务进程',
@@ -65,6 +69,12 @@ export const workbenchTabsZh = {
     },
     previewLabel: '预览',
     previewTitle: '打开最近的文件产物',
+    terminal: {
+      label: '终端',
+      title: '会话终端',
+      emptyHint: '在这里开一个终端，自己敲命令；你登录过的命令行工具，Neo 接着就能用同一个登录态。',
+      openAction: '打开终端',
+    },
   },
 };
 
@@ -76,6 +86,7 @@ export const workbenchTabsEn: typeof workbenchTabsZh = {
       files: 'Files in the working directory',
       browser: 'Web pages Neo opened',
       designCanvas: 'Lay ideas out visually and edit as you go',
+      terminal: 'A terminal you can type in — Neo shares the same one',
     },
     availableViews: 'Available views',
     chooseView: 'Choose current view',
@@ -85,6 +96,8 @@ export const workbenchTabsEn: typeof workbenchTabsZh = {
     closeView: 'Close {view}',
     collapsePanel: 'Collapse panel',
     expandPanel: 'Expand panel',
+    focusEnter: 'Focus mode: panel fills the window',
+    focusExit: 'Exit focus mode (Esc)',
     overviewLabel: 'Overview',
     overviewTitle: 'Task workspace',
     overviewProgressLabel: 'Task progress',
@@ -128,5 +141,11 @@ export const workbenchTabsEn: typeof workbenchTabsZh = {
     },
     previewLabel: 'Preview',
     previewTitle: 'Open the latest file deliverable',
+    terminal: {
+      label: 'Terminal',
+      title: 'Session terminal',
+      emptyHint: 'Open a terminal and type in it yourself. Any CLI you log into here stays logged in for Neo too.',
+      openAction: 'Open terminal',
+    },
   },
 };

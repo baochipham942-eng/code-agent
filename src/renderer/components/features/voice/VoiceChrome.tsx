@@ -1,7 +1,8 @@
 // ============================================================================
 // VoiceChrome —— composer 内固定通话状态槽位
 //
-// 紧凑单行：正常已建连状态统一显示“通话中 mm:ss”+ 控制按钮；
+// 紧凑单行：左侧 22px 自转星球（七态映射见 PLANET_BY_VISUAL，P0「星球七态」拍板）
+// + 状态词 + “通话中 mm:ss”等既有文案 + 小字星球 hint + 控制按钮；
 // connecting / reconnecting / error 继续显示各自本地化状态与错误详情。
 // 不展示助手名、模型名、当前 work item 标题或剩余工作数。
 // ============================================================================
@@ -17,6 +18,83 @@ import {
   useRegisterComposerInProgress,
 } from '../../../stores/composerNoticeStore';
 import { resolveVoiceErrorTitle, resolveVoiceMessage } from './resolveVoiceMessage';
+import { PlanetSphere, type PlanetFx, type PlanetKind } from '../../brand/PlanetSphere';
+import type { VoiceTranslations } from '../../../i18n/voice';
+
+type PlanetHintKey = keyof VoiceTranslations['voice']['planet']['hint'];
+type PlanetWordKey = keyof VoiceTranslations['voice']['planet']['word'];
+
+interface PlanetSpec {
+  kind: PlanetKind;
+  /** 自转周期（秒/周） */
+  spinSeconds: number;
+  fx: PlanetFx;
+  glowColor: string;
+  withOrbit?: boolean;
+  hintKey: PlanetHintKey;
+}
+
+/**
+ * 七态 → 星球映射（P0 拍板）：连接/重连=水星（信号握手脉冲），聆听=地球
+ * （轨道环+卫星，RMS 驱动辉光），表达=太阳（日冕脉动），思考=木星（低频起伏），
+ * 静音=地球暗面，异常=当前星球停转染红。辉光色对齐 STATUS_COLOR 的状态色。
+ */
+const PLANET_BY_VISUAL: Record<Exclude<VoiceVisualState, 'idle' | 'error'>, PlanetSpec> = {
+  connecting: { kind: 'mercury', spinSeconds: 3.2, fx: 'pulse', glowColor: 'rgba(113,113,122,.5)', hintKey: 'mercury' },
+  reconnecting: { kind: 'mercury', spinSeconds: 3.2, fx: 'pulse', glowColor: 'rgba(251,191,36,.55)', hintKey: 'mercury' },
+  listening: { kind: 'earth', spinSeconds: 16, fx: 'rms', glowColor: 'rgba(52,211,153,.55)', withOrbit: true, hintKey: 'earth' },
+  speaking: { kind: 'sun', spinSeconds: 12, fx: 'corona', glowColor: 'rgba(45,212,191,.6)', hintKey: 'sol' },
+  working: { kind: 'jupiter', spinSeconds: 7, fx: 'sway', glowColor: 'rgba(251,191,36,.5)', hintKey: 'jupiter' },
+  muted: { kind: 'earth', spinSeconds: 40, fx: 'dark', glowColor: 'rgba(113,113,122,.4)', hintKey: 'earthDark' },
+};
+
+/**
+ * 真实电平 → 开方曲线 RMS。复用 DictationRecordingBar 已验证的模式：原始电平
+ * 进环形缓冲（120ms 一档的采集节拍会抖动），均值开方压低端后驱动视觉，不造假动画。
+ */
+const LEVEL_BUFFER_SIZE = 6;
+function useRmsLevel(raw: number): number {
+  const bufferRef = React.useRef<number[]>([]);
+  const [rms, setRms] = React.useState(0);
+  React.useEffect(() => {
+    const buf = bufferRef.current;
+    buf.push(raw);
+    if (buf.length > LEVEL_BUFFER_SIZE) buf.shift();
+    const avg = buf.reduce((sum, v) => sum + v, 0) / buf.length;
+    setRms(Math.sqrt(Math.min(1, Math.max(0, avg))));
+  }, [raw]);
+  return rms;
+}
+
+/**
+ * 状态栏星球槽位。listening 的辉光/微缩放由 store.micLevel（上行真实 RMS）驱动；
+ * speaking 用 store.playbackLevel（下行真实电平——voiceAudioPipeline /
+ * nativeVoiceAudioPipeline 都经 levelsChanged 上报），不是 CSS 假脉冲；
+ * corona 的 CSS 正弦脉动只是叠在真实电平上的底色呼吸。
+ * error 态保留出错前那颗星球（停转染红），所以记住最近一个非 error 的 spec。
+ */
+const VoicePlanet: React.FC<{ visual: Exclude<VoiceVisualState, 'idle'> }> = ({ visual }) => {
+  const micLevel = useVoiceCallStore((state) => state.micLevel);
+  const playbackLevel = useVoiceCallStore((state) => state.playbackLevel);
+  const rawLevel = visual === 'listening' ? micLevel : visual === 'speaking' ? playbackLevel : 0;
+  const rms = useRmsLevel(rawLevel);
+  const [lastSpec, setLastSpec] = React.useState<PlanetSpec>(PLANET_BY_VISUAL.listening);
+  React.useEffect(() => {
+    if (visual !== 'error') setLastSpec(PLANET_BY_VISUAL[visual]);
+  }, [visual]);
+  const spec = visual === 'error' ? { ...lastSpec, fx: 'alert' as PlanetFx } : PLANET_BY_VISUAL[visual];
+  return (
+    <PlanetSphere
+      kind={spec.kind}
+      spinSeconds={spec.spinSeconds}
+      fx={spec.fx}
+      glowColor={spec.glowColor}
+      withOrbit={spec.withOrbit}
+      rms={rms}
+      size={22}
+    />
+  );
+};
 
 const STATUS_COLOR: Record<Exclude<VoiceVisualState, 'idle'>, string> = {
   connecting: 'text-zinc-500',
@@ -78,6 +156,8 @@ export const VoiceChrome: React.FC<{ sessionId: string | null }> = ({ sessionId:
   })();
 
   const showManualControl = store.interruptMode === 'manual' && !isConnecting;
+  const statusWordKey: PlanetWordKey = visual;
+  const hintKey: PlanetHintKey = visual === 'error' ? 'alert' : PLANET_BY_VISUAL[visual].hintKey;
 
   return (
     <div
@@ -86,12 +166,20 @@ export const VoiceChrome: React.FC<{ sessionId: string | null }> = ({ sessionId:
       className="mb-2 rounded-xl border border-zinc-700/70 bg-zinc-900/80 px-3 py-[7px]"
     >
       <div className="flex items-center gap-3">
+        <VoicePlanet visual={visual} />
         <span
           data-testid="voice-status"
           title={visual === 'error' && store.error ? resolveVoiceErrorTitle(t, store.error) : statusText}
-          className={`flex min-w-0 flex-1 truncate text-[11.5px] tracking-[0.02em] ${STATUS_COLOR[visual]}`}
+          className={`flex min-w-0 flex-1 items-baseline truncate text-[11.5px] tracking-[0.02em] ${STATUS_COLOR[visual]}`}
         >
-          {statusText}
+          <span data-testid="voice-state-word" className="shrink-0">
+            {t.voice.planet.word[statusWordKey]}
+          </span>
+          <span className="shrink-0 opacity-50">&nbsp;·&nbsp;</span>
+          <span className="min-w-0 truncate">{statusText}</span>
+          <span data-testid="voice-state-hint" className="ml-1.5 shrink-0 text-[9.5px] tracking-[0.05em] opacity-55">
+            {t.voice.planet.hint[hintKey]}
+          </span>
         </span>
 
         {visual !== 'error' && showManualControl && (

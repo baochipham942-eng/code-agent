@@ -99,6 +99,38 @@ export interface UseChatInputSubmitParams {
  *   → ! shell 快捷 → onSend → 失败 restoreDraft 回滚）
  * 纯结构性抽取自 index.tsx，零行为改动。
  */
+/**
+ * composer 是「乐观清空 + 失败回滚」：先 setValue('')，onSend 返回 false 或抛错才 restoreDraft。
+ * 缺的一档是「永远不返回」——那样草稿再也回不来，用户看到输入框空了、以为发出去了，
+ * 而屏幕、messages、queued_inputs 三处都没有这条，刷新也不恢复（2026-08-01 真机取证：
+ * 侧栏请求风暴打满连接池 → ensureModelConfigured 的 settings/get 挂死 → sendMessage
+ * 从未被调用）。那条根因已修，但发送链路上任何一处挂住都会重演同一个「零痕迹」，
+ * 所以这里留一道兜底：超时就把草稿还回去并出声。
+ *
+ * 注意措辞：超时时我们并不知道它到底发没发出去，所以文案说的是「迟迟没有发出去」+
+ * 「如果稍后自己出现就不用再发」，不能承诺「没发出去」。重复远好于静默丢失——
+ * 重复用户看得见、能删；丢失看不见。
+ */
+const SEND_SETTLE_TIMEOUT_MS = 15_000;
+
+const SEND_TIMED_OUT = Symbol('send-timed-out');
+
+async function settleSendWithinTimeout(
+  send: boolean | Promise<boolean>,
+): Promise<boolean | typeof SEND_TIMED_OUT> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      Promise.resolve(send),
+      new Promise<typeof SEND_TIMED_OUT>((resolve) => {
+        timer = setTimeout(() => resolve(SEND_TIMED_OUT), SEND_SETTLE_TIMEOUT_MS);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 export function useChatInputSubmit(params: UseChatInputSubmitParams) {
   const { t } = useI18n();
   const {
@@ -500,23 +532,33 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
       clearPendingCommand();
       clearAppshot();
 
+      // 发送没走完（返回 false / 抛错 / 超时不返回）都走同一条回滚：草稿还回输入框。
+      // 只有超时那一档额外出声——另外两档调用方自己已经给了用户可见反馈。
+      const rollback = (timedOut: boolean): void => {
+        restoreDraft();
+        if (timedOut) toast.warning(t.chatInputSubmit.sendStuckDraftRestored);
+        inputAreaRef.current?.focus();
+      };
+
       // P3-18: Shell shortcut - ! prefix sends command to agent as bash request
       if (nextEnvelope.content.startsWith('!')) {
         const shellCmd = nextEnvelope.content.slice(1).trim();
         if (shellCmd) {
           try {
-            const sent = await onSend({
+            const sent = await settleSendWithinTimeout(onSend({
               content: `Execute this shell command and show the output: \`${shellCmd}\``,
               context: nextEnvelope.context,
-            });
+            }));
+            if (sent === SEND_TIMED_OUT) {
+              rollback(true);
+              return;
+            }
             if (!shouldClearComposerAfterSend(sent)) {
-              restoreDraft();
-              inputAreaRef.current?.focus();
+              rollback(false);
               return;
             }
           } catch {
-            restoreDraft();
-            inputAreaRef.current?.focus();
+            rollback(false);
             return;
           }
         }
@@ -524,15 +566,17 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
         try {
           const sent = opts?.steer && isProcessing && onSteer
             ? (await onSteer(nextEnvelope)) !== undefined
-            : await onSend(nextEnvelope);
+            : await settleSendWithinTimeout(onSend(nextEnvelope));
+          if (sent === SEND_TIMED_OUT) {
+            rollback(true);
+            return;
+          }
           if (!shouldClearComposerAfterSend(sent)) {
-            restoreDraft();
-            inputAreaRef.current?.focus();
+            rollback(false);
             return;
           }
         } catch {
-          restoreDraft();
-          inputAreaRef.current?.focus();
+          rollback(false);
           return;
         }
       }

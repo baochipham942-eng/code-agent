@@ -833,6 +833,11 @@ export const enSettingsWork = {
         revealTitle: 'Show in Finder',
         locate: 'Locate',
       },
+      toggle: {
+        enable: 'Enable',
+        disable: 'Disable',
+        disabledBadge: 'Disabled',
+      },
       typeLabels: {
         command: 'Command',
         prompt: 'Prompt',

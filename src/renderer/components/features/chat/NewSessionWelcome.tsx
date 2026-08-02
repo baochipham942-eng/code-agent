@@ -6,7 +6,7 @@ import { useI18n } from '../../../hooks/useI18n';
 import type { Translations } from '../../../i18n';
 import { formatRelativeTime } from '../../../utils/i18nTime';
 import { isBlankNewSession, type SessionWithMeta } from '../../../stores/sessionStore';
-import { NeoBrandMark } from '../sidebar/NeoBrandMark';
+import { PlanetSphere } from '../../brand/PlanetSphere';
 
 type ResumableSession = Pick<
   SessionWithMeta,
@@ -88,8 +88,14 @@ export const NewSessionWelcome: React.FC<{
     <div className="h-full flex flex-col items-center justify-center px-6 py-12">
       {/* max-w-3xl(768px) 与消息流/输入框同宽（2026-07-27 拍板）：首发消息后内容列不再跳 96px */}
       <div className="w-full max-w-3xl animate-fade-in">
-        {/* 品牌标入场（2026-07-26 空态品牌化）：用户第一眼页面此前没有任何品牌触点 */}
-        <NeoBrandMark size={28} showWordmark={false} className="mb-4" />
+        {/* 品牌区（2026-08-02 星球品牌升级拍板，同日修订）：42px 慢转地球（24s/周，
+            静态 fx）单独作主视觉——不与 NeoBrandMark 并排（双标并置生硬，且品牌标
+            在侧栏常驻，此处重复）。建议卡维持原样（用户否掉"航线"包装）；整页不加
+            星点纹理（舷窗原则：阅读区保持干净）。reduced-motion 停转由 PlanetSphere
+            内建 CSS 兜底，此处零处理。 */}
+        <div className="mb-4">
+          <PlanetSphere kind="earth" spinSeconds={24} glowColor="rgba(96,165,250,.20)" size={42} interactive />
+        </div>
         <div className="mb-5 flex items-center justify-between gap-4">
           <div className="min-w-0">
             <h1 className="text-xl font-semibold text-zinc-100" data-testid="chat-welcome-title">

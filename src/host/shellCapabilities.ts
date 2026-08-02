@@ -17,8 +17,12 @@ const DEFAULT_SINCE_VERSION = '0.16.93';
 
 const NATIVE_TAURI_COMMANDS = [
   'appshots_read_image_data_url',
+  'appshots_read_image_data_url_by_id',
   'appshots_report_composer_slot',
   'appshots_set_enabled',
+  'appshots_set_motion_enabled',
+  'appshots_set_target_session',
+  'appshots_skip_motion',
   'appshots_trigger',
   'check_for_update',
   'desktop_capture_screenshot',
@@ -124,6 +128,9 @@ const CAPABILITY_DOMAIN_ACTIONS = {
     'selectFiles',
     'stats',
     'wechatStatus',
+  ],
+  [IPC_DOMAINS.VOICE]: [
+    'reportFailure',
   ],
   [IPC_DOMAINS.CONNECTOR]: [
     'disconnect',
@@ -422,6 +429,14 @@ const CAPABILITY_DOMAIN_ACTIONS = {
     'interrupt',
     'start',
   ],
+  [IPC_DOMAINS.TERMINAL]: [
+    'close',
+    'list',
+    'open',
+    'resize',
+    'snapshot',
+    'write',
+  ],
   [IPC_DOMAINS.TEAM]: [
     'confirmDraft',
     'knownRoles',
@@ -471,6 +486,7 @@ const CAPABILITY_DOMAIN_ACTIONS = {
     'getDesignMdSummary',
     'getDesignSettings',
     'importDesignImage',
+    'importDesignImageFromPath',
     'inspectArchive',
     'inspectPresentation',
     'findFile',
@@ -511,6 +527,7 @@ const HIGH_RISK_CAPABILITIES = new Set([
   makeShellCapabilityId(IPC_DOMAINS.DESKTOP, 'openManagedBrowserUrl'),
   makeShellCapabilityId(IPC_DOMAINS.SESSION, 'restoreWorkspaceFilesAtCheckpoint'),
   makeShellCapabilityId(IPC_DOMAINS.SURFACE_EXECUTION, 'control'),
+  makeShellCapabilityId(IPC_DOMAINS.TERMINAL, 'write'),
   makeShellCapabilityId(IPC_DOMAINS.WORKSPACE, 'writeFile'),
   makeTauriCommandCapabilityId('install_update'),
 ]);
@@ -518,7 +535,7 @@ const HIGH_RISK_CAPABILITIES = new Set([
 function inferRisk(domain: string, action: string): ShellCapabilityRisk {
   const id = makeShellCapabilityId(domain, action);
   if (HIGH_RISK_CAPABILITIES.has(id)) return 'high';
-  if (/^(add|archive|cancel|capture|clear|close|confirm|create|delete|disconnect|download|force|import|install|interrupt|open|pause|prepare|probe|refresh|reject|remove|rename|repair|reset|resume|resync|retry|save|select|send|set|sign|start|stop|switch|unarchive|update|write)/i.test(action)) {
+  if (/^(add|archive|cancel|capture|clear|close|confirm|create|delete|disconnect|download|force|import|install|interrupt|open|pause|prepare|probe|refresh|reject|remove|rename|repair|report|reset|resume|resync|retry|save|select|send|set|sign|start|stop|switch|unarchive|update|write)/i.test(action)) {
     return 'medium';
   }
   return 'low';

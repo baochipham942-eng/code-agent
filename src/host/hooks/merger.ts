@@ -160,13 +160,32 @@ function deduplicateHooks(hooks: HookDefinition[]): HookDefinition[] {
 }
 
 /**
+ * 丢掉被停用的 hook 定义；整组都停用了就不返回这一组。
+ * 过滤放在这里而不是执行处：hasHooksForEvent 这类「有没有 hook 要跑」的判断
+ * 也走同一条出口，否则会出现「说有 hook 但一个都不跑」。
+ */
+function withoutDisabled(configs: MergedHookConfig[]): MergedHookConfig[] {
+  const result: MergedHookConfig[] = [];
+  for (const config of configs) {
+    const hooks = config.hooks.filter((hook) => !hook.disabled);
+    if (hooks.length === config.hooks.length) {
+      result.push(config);
+      continue;
+    }
+    // 只丢「本来有 hook、全被停用了」的组；本来就空的组保持原样（那是别处的语义，不归这里管）
+    if (hooks.length > 0) result.push({ ...config, hooks });
+  }
+  return result;
+}
+
+/**
  * Filter merged hooks by event type
  */
 export function getHooksForEvent(
   hooks: MergedHookConfig[],
   event: HookEvent
 ): MergedHookConfig[] {
-  return hooks.filter((h) => h.event === event);
+  return withoutDisabled(hooks.filter((h) => h.event === event));
 }
 
 /**
@@ -177,7 +196,7 @@ export function getHooksForTool(
   event: HookEvent,
   toolName: string
 ): MergedHookConfig[] {
-  return hooks.filter((h) => {
+  return withoutDisabled(hooks).filter((h) => {
     if (h.event !== event) return false;
 
     // When mcpServer is set, match against the MCP server name prefix
@@ -201,5 +220,5 @@ export function hasHooksForEvent(
   hooks: MergedHookConfig[],
   event: HookEvent
 ): boolean {
-  return hooks.some((h) => h.event === event);
+  return getHooksForEvent(hooks, event).length > 0;
 }

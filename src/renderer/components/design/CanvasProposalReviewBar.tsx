@@ -9,6 +9,7 @@ import { isGenerateOp } from '@shared/contract';
 import { estimateImageCostCny, formatCny } from '@shared/media/imageCost';
 import { imageModelById } from '@shared/constants/visualModels';
 import { useDesignStore } from './designStore';
+import type { CanvasApprovalReason } from './canvasProposalApproval';
 
 interface OpLabels {
   move: string; connect: string; shape: string; rename: string; discard: string; generate: string;
@@ -112,7 +113,8 @@ export const CanvasProposalReviewBar: React.FC<{
   proposal: CanvasOpProposal;
   onApply: (selectedOps: CanvasProposalOp[]) => void | Promise<void>;
   onReject: (feedback?: string) => void | Promise<void>;
-}> = ({ proposal, onApply, onReject }) => {
+  approvalReason?: CanvasApprovalReason;
+}> = ({ proposal, onApply, onReject, approvalReason = 'standard' }) => {
   const { t } = useI18n();
   const s = t.design;
   const [feedback, setFeedback] = useState('');
@@ -166,7 +168,9 @@ export const CanvasProposalReviewBar: React.FC<{
         <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-blue-400" />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <span className="text-sm font-medium text-zinc-100">{s.proposalTitle}</span>
+            <span className="text-sm font-medium text-zinc-100">
+              {approvalReason === 'user-touched' ? t.canvasActor.approvalUserTouchedTitle : s.proposalTitle}
+            </span>
             <span className="rounded-full bg-blue-500/15 px-2 py-0.5 text-[11px] text-blue-300">
               {s.proposalSelectedCount.replace('{n}', String(selected.size)).replace('{total}', String(proposal.ops.length))}
             </span>

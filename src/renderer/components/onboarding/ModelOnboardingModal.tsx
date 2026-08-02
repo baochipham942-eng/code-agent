@@ -1,7 +1,16 @@
+// ============================================================================
+// ModelOnboardingModal —— 首次启动模型配置向导（连接来源 → 默认模型 两步）
+//
+// P3 品牌升级「抵达新栖地」欢迎时刻（拍板 2026-08-02）：欢迎内容不独立成步，
+// 而是作为首步（step === 'source'）页面的上半区同屏渲染——侵入最小，不增加
+// 强制步骤、不改后续步骤；进入默认模型步即自然消失，配置完成后由既有
+// onboarding 触发条件保证不再出现。星球复用品牌件 PlanetSphere（地球，
+// 慢转 26s/周，静态 fx），reduced-motion 由组件内建停转。
+// ============================================================================
+
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   ArrowLeft,
-  Brain,
   Check,
   KeyRound,
   Loader2,
@@ -23,6 +32,8 @@ import type {
 import { IPC_DOMAINS } from '@shared/ipc';
 import { getProviderInfo } from '@shared/constants';
 import { Button, Input, Modal } from '../primitives';
+import { PlanetSphere } from '../brand/PlanetSphere';
+import { NeoBrandMark } from '../features/sidebar/NeoBrandMark';
 import ipcService from '../../services/ipcService';
 import { useI18n } from '../../hooks/useI18n';
 import { useAppStore } from '../../stores/appStore';
@@ -407,9 +418,9 @@ export const ModelOnboardingModal: React.FC<ModelOnboardingModalProps> = ({ onCo
       closeOnEsc={false}
       showCloseButton={false}
       headerIcon={(
-        <div className="rounded-lg bg-blue-500/10 p-2 text-blue-300">
-          <Brain className="h-6 w-6" />
-        </div>
+        /* 2026-08-02 修订：头部图标从通用 Brain 换成星芒 N 品牌标——
+           初始化向导是第一次亮相，必须有 Neo 自己的识别 */
+        <NeoBrandMark size={34} showWordmark={false} />
       )}
       footer={(
         <div className="flex w-full items-center justify-between gap-3">
@@ -463,6 +474,22 @@ export const ModelOnboardingModal: React.FC<ModelOnboardingModalProps> = ({ onCo
       )}
     >
       <div className="min-h-[540px] space-y-5">
+        {step === 'source' ? (
+          <section
+            className="flex flex-col items-center gap-3 pt-2 text-center"
+            data-testid="onboarding-welcome"
+          >
+            <PlanetSphere
+              kind="earth"
+              size={76}
+              spinSeconds={26}
+              fx="none"
+              glowColor="rgba(96,165,250,.18)"
+            />
+            <h2 className="text-lg font-semibold text-zinc-100">{text.welcomeTitle}</h2>
+            <p className="max-w-md text-sm text-zinc-500">{text.welcomeSubtitle}</p>
+          </section>
+        ) : null}
         <div className="grid grid-cols-2 gap-2 text-xs text-zinc-400" data-testid="onboarding-stepper">
           {ONBOARDING_STEPS.map((id, index) => {
             const active = step === id;

@@ -2569,12 +2569,18 @@ fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn focus_main_window(app_handle: &AppHandle) {
+fn focus_main_window(app_handle: &AppHandle) -> bool {
     if let Some(win) = app_handle.get_webview_window("main") {
-        win.show().ok();
-        win.unminimize().ok();
-        win.set_focus().ok();
+        if win.show().is_err() || win.unminimize().is_err() || win.set_focus().is_err() {
+            return false;
+        }
+
+        return matches!(win.is_visible(), Ok(true))
+            && matches!(win.is_minimized(), Ok(false))
+            && matches!(win.is_focused(), Ok(true));
     }
+
+    false
 }
 
 fn toggle_main_window(app_handle: &AppHandle) {
@@ -2606,6 +2612,23 @@ fn unregister_configurable_global_hotkeys(app_handle: &AppHandle, state: &Keybin
         {
             eprintln!("Failed to unregister keybinding hotkey {accelerator}: {error}");
         }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum GlobalHotkeyWindowAction {
+    Toggle,
+    Focus,
+    FocusBeforeEmit,
+    None,
+}
+
+fn global_hotkey_window_action(action_id: &str) -> GlobalHotkeyWindowAction {
+    match action_id {
+        "app.toggle" => GlobalHotkeyWindowAction::Toggle,
+        "app.quickAsk" | "session.new" => GlobalHotkeyWindowAction::Focus,
+        "voice.callToggle" => GlobalHotkeyWindowAction::FocusBeforeEmit,
+        _ => GlobalHotkeyWindowAction::None,
     }
 }
 
@@ -2716,10 +2739,24 @@ fn keybindings_set_global_hotkeys(
                     return;
                 }
 
-                match event_action_id.as_str() {
-                    "app.toggle" => toggle_main_window(app_handle),
-                    "app.quickAsk" | "session.new" => focus_main_window(app_handle),
-                    _ => {}
+                match global_hotkey_window_action(event_action_id.as_str()) {
+                    GlobalHotkeyWindowAction::Toggle => toggle_main_window(app_handle),
+                    GlobalHotkeyWindowAction::Focus => {
+                        let _ = focus_main_window(app_handle);
+                    }
+                    GlobalHotkeyWindowAction::FocusBeforeEmit => {
+                        // macOS 首次麦克风权限弹窗跟随前台窗口。Tauri/Wry 的 show、
+                        // unminimize、set_focus 均同步派发；再读回三个真实窗口状态，
+                        // 全部成立后才把拨号 action 交给 renderer。任一步失败都不请求 mic。
+                        if !focus_main_window(app_handle) {
+                            eprintln!(
+                                "Global hotkey {} suppressed because the main window is not visible and focused",
+                                event_action_id
+                            );
+                            return;
+                        }
+                    }
+                    GlobalHotkeyWindowAction::None => {}
                 }
 
                 app_handle
@@ -2764,6 +2801,39 @@ fn keybindings_set_global_hotkeys(
     }
 
     results
+}
+
+#[cfg(test)]
+mod global_hotkey_tests {
+    use super::{global_hotkey_window_action, GlobalHotkeyWindowAction};
+
+    #[test]
+    fn voice_call_toggle_requires_focus_before_emit() {
+        assert_eq!(
+            global_hotkey_window_action("voice.callToggle"),
+            GlobalHotkeyWindowAction::FocusBeforeEmit
+        );
+    }
+
+    #[test]
+    fn existing_global_hotkey_window_actions_keep_their_behavior() {
+        assert_eq!(
+            global_hotkey_window_action("app.toggle"),
+            GlobalHotkeyWindowAction::Toggle
+        );
+        assert_eq!(
+            global_hotkey_window_action("app.quickAsk"),
+            GlobalHotkeyWindowAction::Focus
+        );
+        assert_eq!(
+            global_hotkey_window_action("session.new"),
+            GlobalHotkeyWindowAction::Focus
+        );
+        assert_eq!(
+            global_hotkey_window_action("voice.toggle"),
+            GlobalHotkeyWindowAction::None
+        );
+    }
 }
 
 fn setup_global_shortcut(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {

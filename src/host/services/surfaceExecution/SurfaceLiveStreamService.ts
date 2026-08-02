@@ -5,6 +5,7 @@ import type {
 } from '../../../shared/contract/surfaceExecution';
 import { IPC_CHANNELS } from '../../../shared/ipc';
 import { broadcastToRenderer } from '../../platform/windowBridge';
+import { createLogger } from '../infra/logger';
 import {
   DEFAULT_PAGE_SCREENCAST_OPTIONS,
   clampScreencastBounds,
@@ -35,6 +36,13 @@ import {
 /** 让流自己有个上限——renderer 崩了/漏发 stop 时不至于永久烧 CPU。 */
 const MAX_STREAM_MS = 30 * 60_000;
 
+// 本文件此前**零日志语句**，2026-08-02 排查里「日志里没有」差点被当成「没发生」——
+// 舞台画面没了到底是流被停掉还是从没开起来，无从分辨。只在终态（停流）与异常
+// （拒开）打，正常帧一条不打，避免噪音。
+const logger = createLogger('SurfaceLiveStream');
+
+type LiveStreamStopReason = 'client_stop' | 'replaced' | 'watchdog_expiry';
+
 interface ActiveStream {
   conversationId: string;
   surfaceSessionId: string;
@@ -57,7 +65,7 @@ export class SurfaceLiveStreamService {
     if (this.active?.surfaceSessionId === request.surfaceSessionId) {
       return { version: 1, surfaceSessionId: request.surfaceSessionId, streaming: true };
     }
-    await this.stopActive();
+    await this.stopActive('replaced');
 
     const session = this.runtime.sessions.get(request.surfaceSessionId);
     if (session?.conversationId !== request.conversationId || session.surface !== 'browser') {
@@ -99,7 +107,7 @@ export class SurfaceLiveStreamService {
     }
 
     const expiryTimer = setTimeout(() => {
-      void this.stopActive();
+      void this.stopActive('watchdog_expiry');
     }, MAX_STREAM_MS);
     expiryTimer.unref?.();
     this.active = {
@@ -113,7 +121,7 @@ export class SurfaceLiveStreamService {
 
   async stop(surfaceSessionId: string): Promise<SurfaceLiveStreamStateV1> {
     if (this.active?.surfaceSessionId === surfaceSessionId) {
-      await this.stopActive();
+      await this.stopActive('client_stop');
     }
     return { version: 1, surfaceSessionId, streaming: false };
   }
@@ -122,18 +130,42 @@ export class SurfaceLiveStreamService {
     return this.active?.surfaceSessionId === surfaceSessionId;
   }
 
-  private async stopActive(): Promise<void> {
+  private async stopActive(reason: LiveStreamStopReason): Promise<void> {
     const active = this.active;
     if (!active) return;
     this.active = null;
     clearTimeout(active.expiryTimer);
-    await active.handle.stop().catch(() => undefined);
+    const session = this.runtime.sessions.get(active.surfaceSessionId);
+    logger.info('Surface live stream stopped', {
+      conversationId: active.conversationId,
+      surfaceSessionId: active.surfaceSessionId,
+      runId: session?.runId,
+      agentId: session?.agentId,
+      sessionState: session?.state,
+      reason,
+    });
+    await active.handle.stop().catch((error) => {
+      logger.warn('Surface live stream teardown failed', {
+        conversationId: active.conversationId,
+        surfaceSessionId: active.surfaceSessionId,
+        reason,
+        message: error instanceof Error ? error.message : String(error),
+      });
+    });
   }
 
   private refused(
     surfaceSessionId: string,
     reason: NonNullable<SurfaceLiveStreamStateV1['reason']>,
   ): SurfaceLiveStreamStateV1 {
+    const session = this.runtime.sessions.get(surfaceSessionId);
+    logger.warn('Surface live stream refused', {
+      surfaceSessionId,
+      runId: session?.runId,
+      agentId: session?.agentId,
+      sessionState: session?.state,
+      reason,
+    });
     return { version: 1, surfaceSessionId, streaming: false, reason };
   }
 }

@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48">
+  <defs>
+    <linearGradient id="brick" x1="8" y1="8" x2="40" y2="40" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#16423f"/>
+      <stop offset="1" stop-color="#0b2422"/>
+    </linearGradient>
+    <linearGradient id="glyph" x1="10" y1="10" x2="38" y2="38" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#7DF9E8"/>
+      <stop offset="1" stop-color="#14B8A6"/>
+    </linearGradient>
+  </defs>
+  <!-- 深空砖 -->
+  <rect x="2" y="2" width="44" height="44" rx="11" fill="url(#brick)" stroke="#2dd4bf" stroke-opacity="0.3" stroke-width="1"/>
+  <!-- 顶部内高光 -->
+  <rect x="4" y="3" width="40" height="1.5" rx="0.75" fill="#ffffff" fill-opacity="0.09"/>
+  <!-- N2 星芒字形 -->
+  <path d="M15 33.5 V14.5 L33 33.5 V14.5" fill="none" stroke="url(#glyph)" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M37 6.5 L38.1 10 L41.6 11.1 L38.1 12.2 L37 15.7 L35.9 12.2 L32.4 11.1 L35.9 10 Z" fill="#A7F3D0"/>
+  <!-- 静态轨道环 -->
+  <circle cx="24" cy="24" r="27" fill="none" stroke="#5eead4" stroke-opacity="0.34" stroke-width="1"/>
+</svg>

@@ -78,8 +78,20 @@ export class AgentRunController {
     return !this.deps.res.writableEnded && !this.deps.res.destroyed;
   }
 
+  /**
+   * per-run 流已经写不动了（用户点取消 = 关 SSE，或响应已 end），但这条事件必须到得了 renderer。
+   *
+   * surface_execution 是唯一一类「宿主还在往下跑、renderer 必须知道」的事件：surface 投影的
+   * 唯一进货渠道是「收到事件 → 拉全量快照」，终态/cleanup 事件丢了，行内紧凑条、composer
+   * 「执行中」、chrome 条绿点就一起冻在 running（2026-08-02 排查报告 §2.2 腿 A）。
+   * 直连轮已经关流 ⇒ 广播不会重复投递（canWriteSSE() 为真时不走这条）。
+   */
+  private shouldBroadcastAfterStreamClosed(event: string): boolean {
+    return event === 'surface_execution' && !this.deps.mirrorToBroadcast && !this.canWriteSSE();
+  }
+
   emitSSE(event: string, data: unknown): void {
-    if (this.deps.mirrorToBroadcast) {
+    if (this.deps.mirrorToBroadcast || this.shouldBroadcastAfterStreamClosed(event)) {
       // 必须包成 agent:event 信封再广播，不能把原始事件名当 channel 直接发。
       //
       // 直连轮走的是 /api/agent/run 的响应流：httpTransport 的 processStream 把流上每条

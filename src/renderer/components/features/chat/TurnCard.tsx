@@ -30,7 +30,7 @@ import {
 import { Button } from '../../primitives';
 import { UI } from '@shared/constants';
 import { TraceNodeRenderer } from './TraceNodeRenderer';
-import { StreamingIndicator, getRunningToolStartTime, getStreamingWaitingReason } from './StreamingIndicator';
+import { StreamingIndicator, getRunningSubagentCount, getRunningToolStartTime, getStreamingWaitingReason } from './StreamingIndicator';
 import { TurnDiffSummary } from './MessageBubble/TurnDiffSummary';
 import { isFileChangeCardOwnedNode } from '../../../utils/turnDiffSummary';
 import { TurnFeedback } from './TurnFeedback';
@@ -451,6 +451,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
                 showCaret={!lastNodeIsStreamingText}
                 isThinking={isThinkingPhase}
                 waitingReason={getStreamingWaitingReason(turn.nodes, streamingState.status)}
+                subagentCount={getRunningSubagentCount(turn.nodes)}
               />
             )}
           </>
@@ -465,6 +466,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
             showCaret={!lastNodeIsStreamingText}
             isThinking={isThinkingPhase}
             waitingReason={getStreamingWaitingReason(turn.nodes, streamingState.status)}
+            subagentCount={getRunningSubagentCount(turn.nodes)}
           />
         )}
 

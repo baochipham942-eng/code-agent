@@ -15,6 +15,7 @@ const node = (over: Partial<CanvasImageNode> = {}): CanvasImageNode => ({
   height: 200,
   createdAt: 5,
   ...over,
+  createdBy: over.createdBy ?? 'user',
 });
 
 describe('canvasNodeToVariant', () => {

@@ -6,6 +6,7 @@ import {
   nextNodePlacement,
   isReferenceNode,
   DEFAULT_CAMERA,
+  computeFitCamera,
   type CanvasImageNode,
   type DesignCanvasDoc,
 } from '../../../src/renderer/components/design/designCanvasTypes';
@@ -18,6 +19,7 @@ const node = (over: Partial<CanvasImageNode> = {}): CanvasImageNode => ({
   width: 100,
   height: 100,
   createdAt: 1,
+  createdBy: 'agent',
   ...over,
 });
 
@@ -41,6 +43,18 @@ describe('serialize/deserialize round-trip', () => {
     expect(back).toEqual(doc);
   });
 
+  it('三类实体归因字段 round-trip 不丢', () => {
+    const doc: DesignCanvasDoc = {
+      version: 1,
+      nodes: [node({ createdBy: 'agent', userTouchedAt: 10 })],
+      connectors: [{ id: 'c1', fromNodeId: 'n1', toNodeId: 'n2', createdAt: 2, createdBy: 'agent' }],
+      shapes: [{ id: 's1', kind: 'text', x: 1, y: 2, text: 'x', color: '#fff', createdAt: 3, createdBy: 'user', userTouchedAt: 11 }],
+      camera: DEFAULT_CAMERA,
+    };
+    doc.nodes.push(node({ id: 'n2' }));
+    expect(deserializeCanvasDoc(serializeCanvasDoc(doc))).toEqual(doc);
+  });
+
   it('chosen 非 true 不落字段（保持紧凑）', () => {
     const back = deserializeCanvasDoc(
       JSON.stringify({ nodes: [{ ...node(), chosen: false }], camera: DEFAULT_CAMERA }),
@@ -53,6 +67,23 @@ describe('deserializeCanvasDoc 容错', () => {
   it('null/空串 → 空文档', () => {
     expect(deserializeCanvasDoc(null)).toEqual(emptyCanvasDoc());
     expect(deserializeCanvasDoc('')).toEqual(emptyCanvasDoc());
+  });
+
+  it('历史存档缺 createdBy 时 fail-closed 为 userTouched', () => {
+    const legacy = { ...node() } as Record<string, unknown>;
+    delete legacy.createdBy;
+    const doc = deserializeCanvasDoc(JSON.stringify({ nodes: [legacy], camera: DEFAULT_CAMERA }));
+    expect(doc.nodes[0]).toMatchObject({ createdBy: 'user', userTouchedAt: 0 });
+  });
+
+  it('一处归因损坏时整卷实体全部 fail-closed', () => {
+    const damaged = { ...node({ id: 'bad' }) } as Record<string, unknown>;
+    delete damaged.createdBy;
+    const doc = deserializeCanvasDoc(JSON.stringify({
+      nodes: [node({ id: 'safe' }), damaged],
+      camera: DEFAULT_CAMERA,
+    }));
+    expect(doc.nodes.every((item) => item.userTouchedAt === 0)).toBe(true);
   });
 
   it('破损 JSON → 空文档，不抛', () => {
@@ -87,6 +118,16 @@ describe('nextNodePlacement', () => {
   it('放在最右节点右侧 +gap，沿用其 y', () => {
     const nodes = [node({ x: 0, width: 100, y: 0 }), node({ id: 'n2', x: 200, width: 100, y: 30 })];
     expect(nextNodePlacement(nodes, 60)).toEqual({ x: 360, y: 30 });
+  });
+});
+
+describe('computeFitCamera 缩放边界', () => {
+  it('极小节点 fit 不超过滚轮缩放的统一上限', () => {
+    expect(computeFitCamera([node({ width: 4, height: 4 })], 900, 900)?.scale).toBe(5);
+  });
+
+  it('超大节点 fit 不低于滚轮缩放的统一下限', () => {
+    expect(computeFitCamera([node({ width: 100_000, height: 100_000 })], 900, 900)?.scale).toBe(0.1);
   });
 });
 
@@ -146,8 +187,8 @@ describe('图解层 connectors/shapes 序列化（节点连线）', () => {
     const doc: DesignCanvasDoc = {
       version: 1,
       nodes: [node({ id: 'a' }), node({ id: 'b', x: 300 })],
-      connectors: [{ id: 'c1', fromNodeId: 'a', toNodeId: 'b', label: '下一步', createdAt: 2 }],
-      shapes: [{ id: 's1', kind: 'rect', x: 0, y: 0, width: 50, height: 50, color: '#64748b', createdAt: 3 }],
+      connectors: [{ id: 'c1', fromNodeId: 'a', toNodeId: 'b', label: '下一步', createdAt: 2, createdBy: 'agent' }],
+      shapes: [{ id: 's1', kind: 'rect', x: 0, y: 0, width: 50, height: 50, color: '#64748b', createdAt: 3, createdBy: 'agent' }],
       camera: DEFAULT_CAMERA,
     };
     const back = deserializeCanvasDoc(serializeCanvasDoc(doc));

@@ -7,8 +7,14 @@
 export const chatTranscriptZh = {
 chat: {
   thinking: '正在思考…',
-  waitingModel: '正在等待模型响应…',
-  waitingSubagent: '正在等待子任务…',
+  // 回响信号（等模型）
+  waitingModel: '信号传输中，正在等待模型回响…',
+  // 编队信号（等子任务）：无数字版——单个子任务或计数不可用时用
+  waitingSubagent: '编队作业中，子舰并行中',
+  // 编队信号带真实并发数版，{count} 来自当前回合仍在运行的子任务工具调用数
+  waitingSubagentFleet: '编队作业中，{count} 艘子舰并行',
+  // 巡航信号（长任务 ≥45s）：{elapsed} 为 mm:ss 秒表，中性陈述「一切正常」
+  longToolCruise: '深空巡航中 · 已航行 {elapsed} · 链路正常',
   organizingReply: '正在组织回答…',
   thinkingDigest: '思考',
   thinkingSegments: ' · {count} 段',
@@ -36,7 +42,7 @@ chat: {
   streamInterruptedText: '部分文本已保留为恢复快照。',
   retryTurn: '重试该轮',
   retryTurnInProgress: '重试中…',
-  welcomeTitle: '想完成什么？',
+  welcomeTitle: '这次想去哪颗星球？',
   welcomeSubtitle: '选一个示例，或者直接输入你想完成的事。',
   resumedEmptyTitle: '继续上次的会话：{title}',
   resumedEmptySubtitle: '{time} · 这条会话还没有内容。在这里发消息会接着它继续；想从头开始请点「新任务」。',
@@ -450,8 +456,14 @@ forkSourceHint: {
 export const chatTranscriptEn: typeof chatTranscriptZh = {
 chat: {
   thinking: 'Thinking…',
-  waitingModel: 'Waiting for the model…',
-  waitingSubagent: 'Waiting on a subtask…',
+  // Echo signal (waiting on the model)
+  waitingModel: 'Signal sent, awaiting model echo…',
+  // Fleet signal (waiting on subtasks): no-count version — single subtask or count unavailable
+  waitingSubagent: 'Fleet engaged, subships in parallel',
+  // Fleet signal with the real concurrency count; {count} comes from the turn's still-running subtask tool calls
+  waitingSubagentFleet: 'Fleet engaged, {count} subships in parallel',
+  // Cruise signal (long-running tool ≥45s): {elapsed} is the mm:ss stopwatch, a neutral "all is well" statement
+  longToolCruise: 'Deep-space cruise · {elapsed} elapsed · link nominal',
   organizingReply: 'Organizing the reply…',
   thinkingDigest: 'Thinking',
   thinkingSegments: ' · {count} segments',
@@ -479,7 +491,7 @@ chat: {
   streamInterruptedText: 'Partial text was kept as a recovery snapshot.',
   retryTurn: 'Retry this turn',
   retryTurnInProgress: 'Retrying…',
-  welcomeTitle: 'What do you want to get done?',
+  welcomeTitle: 'Which planet are we heading to?',
   welcomeSubtitle: 'Pick an example, or just type what you want to do.',
   resumedEmptyTitle: 'Picking up your last session: {title}',
   resumedEmptySubtitle: '{time} · This session has no content yet. Sending here continues it — click “New task” to start fresh.',

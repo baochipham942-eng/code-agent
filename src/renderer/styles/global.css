@@ -387,95 +387,6 @@ pre code {
   30% { transform: translateY(-3px); }
 }
 
-@keyframes voicePresenceOrbSpin {
-  to { transform: rotate(360deg); }
-}
-
-@keyframes voicePresenceOrbBreathe {
-  0%, 100% { transform: scale(1); opacity: 0.85; }
-  50% { transform: scale(1.14); opacity: 1; }
-}
-
-.voice-presence-orb-core {
-  animation: voicePresenceOrbSpin 9s linear infinite;
-}
-
-.voice-presence-orb-glow {
-  animation: voicePresenceOrbBreathe 3.4s ease-in-out infinite;
-}
-
-.voice-presence-orb[data-orb-state='listening'] .voice-presence-orb-core {
-  background: radial-gradient(38% 38% at 34% 30%, rgba(255,255,255,.5), transparent 62%),
-    conic-gradient(from 210deg, #0f766e, #2dd4bf, #34d399, #0f766e);
-}
-
-.voice-presence-orb[data-orb-state='listening'] .voice-presence-orb-glow {
-  background: radial-gradient(circle, rgba(45,212,191,.30), transparent 66%);
-}
-
-.voice-presence-orb[data-orb-state='speaking'] .voice-presence-orb-core {
-  background: radial-gradient(38% 38% at 34% 30%, rgba(255,255,255,.55), transparent 62%),
-    conic-gradient(from 40deg, #0e7490, #2dd4bf, #a5f3fc, #0e7490);
-  animation-duration: 4s;
-}
-
-.voice-presence-orb[data-orb-state='speaking'] .voice-presence-orb-glow {
-  background: radial-gradient(circle, rgba(45,212,191,.44), transparent 66%);
-  animation-duration: 1.4s;
-}
-
-.voice-presence-orb[data-orb-state='working'] .voice-presence-orb-core {
-  background: radial-gradient(38% 38% at 34% 30%, rgba(255,255,255,.4), transparent 62%),
-    conic-gradient(from 120deg, #92400e, #fbbf24, #fde68a, #92400e);
-}
-
-.voice-presence-orb[data-orb-state='working'] .voice-presence-orb-glow {
-  background: radial-gradient(circle, rgba(251,191,36,.32), transparent 66%);
-}
-
-.voice-presence-orb:is([data-orb-state='muted'], [data-orb-state='manual-ready']) .voice-presence-orb-core {
-  background: radial-gradient(38% 38% at 34% 30%, rgba(255,255,255,.14), transparent 62%),
-    conic-gradient(from 210deg, #3f3f46, #52525b, #3f3f46);
-  animation-duration: 24s;
-}
-
-.voice-presence-orb:is([data-orb-state='muted'], [data-orb-state='manual-ready']) .voice-presence-orb-glow {
-  opacity: 0;
-  animation: none;
-}
-
-.voice-presence-orb[data-orb-state='connecting'] .voice-presence-orb-core {
-  background: radial-gradient(38% 38% at 34% 30%, rgba(255,255,255,.2), transparent 62%),
-    conic-gradient(from 210deg, #3f3f46, #71717a, #3f3f46);
-  animation-duration: 2.2s;
-}
-
-.voice-presence-orb[data-orb-state='connecting'] .voice-presence-orb-glow {
-  background: radial-gradient(circle, rgba(161,161,170,.22), transparent 66%);
-  animation-duration: 1.1s;
-}
-
-.voice-presence-orb[data-orb-state='reconnecting'] .voice-presence-orb-core {
-  background: radial-gradient(38% 38% at 34% 30%, rgba(255,255,255,.25), transparent 62%),
-    conic-gradient(from 210deg, #78350f, #fbbf24, #78350f);
-  animation-duration: 2.2s;
-}
-
-.voice-presence-orb[data-orb-state='reconnecting'] .voice-presence-orb-glow {
-  background: radial-gradient(circle, rgba(251,191,36,.28), transparent 66%);
-  animation-duration: 1.1s;
-}
-
-.voice-presence-orb[data-orb-state='error'] .voice-presence-orb-core {
-  background: radial-gradient(38% 38% at 34% 30%, rgba(255,255,255,.25), transparent 62%),
-    conic-gradient(from 210deg, #7f1d1d, #f87171, #7f1d1d);
-  animation: none;
-}
-
-.voice-presence-orb[data-orb-state='error'] .voice-presence-orb-glow {
-  background: radial-gradient(circle, rgba(248,113,113,.30), transparent 66%);
-  animation: none;
-}
 
 .animate-fade-in {
   animation: fadeIn var(--duration-fast) var(--ease-out);
@@ -553,11 +464,6 @@ pre code {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .voice-presence-orb-core,
-  .voice-presence-orb-glow {
-    animation: none;
-  }
-
   .popover-enter {
     animation: none;
   }
@@ -1064,5 +970,42 @@ pre code {
   :root {
     --sidebar-width: 0px;
     --task-panel-width: 0px;
+  }
+}
+
+/* 悬停才浮现的操作条（2026-08-02 对话图产物）——触屏兜底。
+   触屏设备没有 hover 这个状态，光靠 group-hover 会让操作永远不可见。
+   写成显式 CSS 而不是 Tailwind 变体：这条规则的存在与否直接决定触屏用户能不能用，
+   显式 CSS 可以在 dist 里逐字核实（应能搜到 `@media (hover:none){.media-actions-hover-reveal`）。
+   ⚠️ 核实时注意：renderer 由 `vite build`（= npm run build:renderer）产出，
+   `npm run build:web` 只打 web server 包、不碰 renderer——拿它的产物做判断会得出错误结论。 */
+@media (hover: none) {
+  /* 用 元素+类 的特异性(0,1,1) 压过 Tailwind 的 .opacity-0 (0,1,0)，与样式表顺序无关，
+     因此不需要强制优先级声明——design-system 门禁未登记的那种声明，且它是文本扫描，
+     连注释里提到那个词都会被计成一处违规（本行就是这么踩出来的）。 */
+  span.media-actions-hover-reveal { opacity: 1; }
+}
+
+/* ============================================================================
+   NeoBrandMark 动效轨道环（N2 星芒）
+   - 卫星点绕砖心 6s/圈；transform-box: view-box 让旋转中心落在 SVG 视窗中心
+   - prefers-reduced-motion 下停转，环与卫星点保持静态
+   ============================================================================ */
+
+@keyframes neoOrbitSatelliteSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.neo-orbit-satellite {
+  transform-box: view-box;
+  transform-origin: 50% 50%;
+  animation: neoOrbitSatelliteSpin 6s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .neo-orbit-satellite {
+    animation: none;
   }
 }

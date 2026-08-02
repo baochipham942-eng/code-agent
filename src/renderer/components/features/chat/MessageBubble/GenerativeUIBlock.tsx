@@ -67,7 +67,8 @@ const SourceView = memo(function SourceView({ code }: { code: string }) {
           lineNumberStyle={{
             minWidth: '2.5em',
             paddingRight: '1em',
-            color: 'rgb(113 113 122)',
+            // 与 messageContentParts 的 codeLineNumberStyle 一致:语义 token 随主题
+            color: 'var(--text-tertiary)',
             userSelect: 'none',
           }}
           wrapLongLines={false}

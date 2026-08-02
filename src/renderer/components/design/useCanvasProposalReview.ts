@@ -22,6 +22,9 @@ import { useDesignAutonomyStore } from './designAutonomyStore';
 import { useDesignStore } from './designStore';
 import { useSessionStore } from '../../stores/sessionStore';
 import { openSurfaceForArtifact } from '../../services/surfaceIntentDispatcher';
+import { splitCanvasProposalOps, type CanvasApprovalReason } from './canvasProposalApproval';
+import { useI18n } from '../../hooks/useI18n';
+import { generateMessageId } from '@shared/utils/id';
 
 function makeGenId(): (kind: string, index: number) => string {
   // index 入 id 防同批/同毫秒碰撞（crypto 不可用的兜底路径也唯一）。
@@ -39,7 +42,7 @@ function controllerDeps(): ProposalControllerDeps {
       const st = useDesignCanvasStore.getState();
       const live = new Set(st.nodes.filter((n) => !n.discarded).map((n) => n.id));
       const { toDiscard, applied, skipped } = planDiscards(live, nodeIds);
-      for (const id of toDiscard) st.discardNode(id);
+      for (const id of toDiscard) st.discardNode(id, 'agent');
       return { applied, skipped };
     },
     save: async () => {
@@ -59,6 +62,7 @@ function controllerDeps(): ProposalControllerDeps {
 
 export interface CanvasProposalReview {
   pending: CanvasOpProposal | null;
+  approvalReason: CanvasApprovalReason;
   /** 是否有提议正在落地（含 Phase B 出图）——驱动画布忙态遮罩（R3 MED-1）。 */
   applying: boolean;
   apply: (selectedOps?: CanvasProposalOp[]) => Promise<ProposalApplyOutcome | void>;
@@ -72,9 +76,12 @@ function clearIfStill(requestId: string): void {
 }
 
 export function useCanvasProposalReview(): CanvasProposalReview {
+  const { t } = useI18n();
   const pending = useCanvasProposalStore((s) => s.pending);
+  const approvalReason = useCanvasProposalStore((s) => s.approvalReason);
   const applyingRequestId = useCanvasProposalStore((s) => s.applyingRequestId);
   const setPending = useCanvasProposalStore((s) => s.setPending);
+  const directApplyReceipt = t.canvasActor.directApplyReceipt;
 
   useEffect(() => {
     const unsubscribe = ipcService.on(IPC_CHANNELS.CANVAS_PROPOSAL_ASK, (request: CanvasOpProposal) => {
@@ -99,9 +106,13 @@ export function useCanvasProposalReview(): CanvasProposalReview {
         artifact: { kind: 'design-canvas' },
         artifactSessionId: request.sessionId,
       });
+      const split = splitCanvasProposalOps(request.ops, useDesignCanvasStore.getState().nodes);
       // ADR-027：有活跃信封 ∧ 非破坏性 → 自动应用（不弹人闸）；否则走 026 逐步人审批。
       const env = useDesignAutonomyStore.getState().envelope;
-      if (decideProposalHandling(request, env) === 'auto') {
+      const hasGenerate = request.ops.some((op) => op.kind === 'generateImage');
+      const hasPolicyApproval = split.approvalOps.some((op) => op.kind !== 'generateImage');
+      // 已批准的自主信封继续承接付费生成，但绝不能越过本层对删除/用户干预内容的审批判断。
+      if (hasGenerate && !hasPolicyApproval && decideProposalHandling(request, env) === 'auto') {
         const cs = useCanvasProposalStore.getState();
         // 单飞：已有提议在落地则退回人闸兜底（设 pending），不并发自动应用。
         if (cs.applyingRequestId) { cs.setPending(request); return; }
@@ -135,7 +146,59 @@ export function useCanvasProposalReview(): CanvasProposalReview {
         })();
         return;
       }
-      setPending(request);
+      if (split.directOps.length === 0) {
+        setPending(request, { approvalReason: split.approvalReason });
+        return;
+      }
+
+      // 分级落地：免批部分先以一个 applyProposalBatch 落地，因此整批只产生一个 undo 帧；
+      // 需审批部分留在 pending，直到用户单独裁决后才向 agent 汇总回应。
+      const proposalStore = useCanvasProposalStore.getState();
+      if (proposalStore.applyingRequestId) {
+        proposalStore.setPending(request, { approvalReason: split.approvalReason });
+        return;
+      }
+      proposalStore.setApplying(request.requestId);
+      void (async () => {
+        const deps = controllerDeps();
+        try {
+          const directProposal: CanvasOpProposal = { ...request, ops: split.directOps };
+          const outcome = await applyProposal(directProposal, { ...deps, respond: () => undefined });
+          if (outcome.appliedCount > 0) {
+            useSessionStore.getState().addMessage({
+              id: generateMessageId(),
+              role: 'assistant',
+              source: 'system',
+              content: directApplyReceipt.replace('{n}', String(outcome.appliedCount)),
+              timestamp: Date.now(),
+            });
+          }
+          if (split.approvalOps.length > 0) {
+            proposalStore.setPending(
+              { ...request, ops: split.approvalOps },
+              {
+                approvalReason: split.approvalReason,
+                preApplied: {
+                  requestId: request.requestId,
+                  appliedCount: outcome.appliedCount,
+                  skippedCount: outcome.skippedCount,
+                },
+              },
+            );
+          } else {
+            await deps.respond({
+              requestId: request.requestId,
+              verdict: 'apply',
+              appliedCount: outcome.appliedCount,
+              skippedCount: outcome.skippedCount,
+            });
+          }
+        } catch {
+          await deps.respond({ requestId: request.requestId, verdict: 'reject', feedback: '画布免批落地失败' });
+        } finally {
+          useCanvasProposalStore.getState().setApplying(null);
+        }
+      })();
     });
     // 审计 MED-3：agent abort/超时后撤掉审批条，避免孤儿提议被后点 Apply 触发付费生成。
     // 仅撤当前这条（requestId 匹配），不调 respond——agent 已不在监听。
@@ -151,7 +214,7 @@ export function useCanvasProposalReview(): CanvasProposalReview {
       unsubscribe?.();
       unsubCancel?.();
     };
-  }, [setPending]);
+  }, [directApplyReceipt, setPending]);
 
   const apply = useCallback(async (selectedOps?: CanvasProposalOp[]) => {
     const st = useCanvasProposalStore.getState();
@@ -160,7 +223,29 @@ export function useCanvasProposalReview(): CanvasProposalReview {
     if (!target || st.applyingRequestId) return;
     st.setApplying(target.requestId);
     try {
-      return await applyProposal(target, controllerDeps(), selectedOps);
+      const deps = controllerDeps();
+      const preApplied = st.preApplied;
+      const mergedDeps: ProposalControllerDeps = preApplied
+        ? {
+            ...deps,
+            respond: (decision) => deps.respond(decision.verdict === 'apply' ? {
+              ...decision,
+              appliedCount: preApplied.appliedCount + (decision.appliedCount ?? 0),
+              skippedCount: preApplied.skippedCount + (decision.skippedCount ?? 0),
+              ...((preApplied.costCny ?? 0) + (decision.costCny ?? 0) > 0
+                ? { costCny: (preApplied.costCny ?? 0) + (decision.costCny ?? 0) }
+                : {}),
+            } : decision),
+          }
+        : deps;
+      const outcome = await applyProposal(target, mergedDeps, selectedOps);
+      return preApplied
+        ? {
+            ...outcome,
+            appliedCount: preApplied.appliedCount + outcome.appliedCount,
+            skippedCount: preApplied.skippedCount + outcome.skippedCount,
+          }
+        : outcome;
     } finally {
       useCanvasProposalStore.getState().setApplying(null);
       clearIfStill(target.requestId); // R3 MED-2：只清自己这条，别误清并发新提议
@@ -173,12 +258,24 @@ export function useCanvasProposalReview(): CanvasProposalReview {
     if (!target || st.applyingRequestId) return; // 同闸：落地中不接受 Reject
     st.setApplying(target.requestId);
     try {
-      await rejectProposal(target, { respond: controllerDeps().respond }, feedback);
+      const deps = controllerDeps();
+      if (st.preApplied) {
+        await deps.respond({
+          requestId: target.requestId,
+          verdict: 'apply',
+          appliedCount: st.preApplied.appliedCount,
+          skippedCount: st.preApplied.skippedCount + target.ops.length,
+          ...(st.preApplied.costCny ? { costCny: st.preApplied.costCny } : {}),
+          ...(feedback?.trim() ? { feedback: feedback.trim() } : {}),
+        });
+      } else {
+        await rejectProposal(target, { respond: deps.respond }, feedback);
+      }
     } finally {
       useCanvasProposalStore.getState().setApplying(null);
       clearIfStill(target.requestId);
     }
   }, []);
 
-  return { pending, applying: applyingRequestId !== null, apply, reject };
+  return { pending, approvalReason, applying: applyingRequestId !== null, apply, reject };
 }

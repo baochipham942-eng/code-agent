@@ -6,7 +6,7 @@ import { CANVAS_SNAPSHOT_MAX_NODES } from '../../../src/shared/contract/canvasPr
 
 // over 可能带 kind: 'video' + durationSec 把节点变成另一支判别联合分支，Partial<CanvasNode> 在
 // 联合类型上按分支分发，spread 后 tsc 追不出"两支合一定满足其一"，这里按 fixture 惯例断言。
-const node = (id: string, over: Partial<CanvasNode> = {}): CanvasNode => ({ id, src: `a/${id}.png`, x: 1, y: 2, width: 100, height: 200, createdAt: 1, ...over } as CanvasNode);
+const node = (id: string, over: Partial<CanvasNode> = {}): CanvasNode => ({ id, src: `a/${id}.png`, x: 1, y: 2, width: 100, height: 200, createdAt: 1, ...over, createdBy: over.createdBy ?? 'user' } as CanvasNode);
 
 describe('buildCanvasSnapshot', () => {
   it('label 取 label || prompt；video kind 透传', () => {
@@ -27,7 +27,7 @@ describe('buildCanvasSnapshot', () => {
   it('连线只保留两端都在快照里的', () => {
     const snap = buildCanvasSnapshot({
       nodes: [node('a'), node('b'), node('gone', { discarded: true })],
-      connectors: [{ id: 'c1', fromNodeId: 'a', toNodeId: 'b', createdAt: 1 }, { id: 'c2', fromNodeId: 'a', toNodeId: 'gone', createdAt: 1 }],
+      connectors: [{ id: 'c1', fromNodeId: 'a', toNodeId: 'b', createdAt: 1, createdBy: 'user' }, { id: 'c2', fromNodeId: 'a', toNodeId: 'gone', createdAt: 1, createdBy: 'user' }],
       shapes: [],
     });
     expect(snap.connectors).toHaveLength(1);
@@ -35,7 +35,7 @@ describe('buildCanvasSnapshot', () => {
   });
 
   it('shapeCount = 形状数', () => {
-    const snap = buildCanvasSnapshot({ nodes: [node('a')], connectors: [], shapes: [{ id: 's', kind: 'rect', x: 0, y: 0, width: 1, height: 1, color: '#000', createdAt: 1 }] });
+    const snap = buildCanvasSnapshot({ nodes: [node('a')], connectors: [], shapes: [{ id: 's', kind: 'rect', x: 0, y: 0, width: 1, height: 1, color: '#000', createdAt: 1, createdBy: 'user' }] });
     expect(snap.shapeCount).toBe(1);
   });
 

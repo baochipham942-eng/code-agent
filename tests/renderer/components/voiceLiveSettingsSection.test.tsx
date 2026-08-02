@@ -8,6 +8,7 @@ import React from 'react';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { zh } from '../../../src/renderer/i18n/zh';
+import { en } from '../../../src/renderer/i18n/en';
 import type { AppSettings } from '../../../src/shared/contract';
 import { IPC_DOMAINS } from '../../../src/shared/ipc';
 
@@ -17,7 +18,7 @@ const invokeDomainMock = vi.hoisted(() => vi.fn());
 const availability = vi.hoisted(() => ({
   enabled: true,
   configured: true,
-  usage: { monthSeconds: 0, monthCalls: 0 },
+  usage: { monthSeconds: 0, monthCalls: 0, monthFailedAttempts: 0 },
 }));
 
 vi.mock('../../../src/renderer/hooks/useI18n', () => ({
@@ -132,14 +133,14 @@ describe('VoiceLiveSettingsSection', () => {
   });
 
   it('本月通话用量按分钟显示（只记账不设限）', async () => {
-    availability.usage = { monthSeconds: 754, monthCalls: 11 };
+    availability.usage = { monthSeconds: 754, monthCalls: 11, monthFailedAttempts: 0 };
     settingsGet(undefined);
     render(<VoiceLiveSettingsSection />);
 
     const summary = await screen.findByTestId('voice-usage-summary');
     expect(summary.textContent).toContain('13');  // 754s ≈ 13 分钟
     expect(summary.textContent).toContain('11');
-    availability.usage = { monthSeconds: 0, monthCalls: 0 };
+    availability.usage = { monthSeconds: 0, monthCalls: 0, monthFailedAttempts: 0 };
   });
 
   // key 配置三条断言已随组件迁往 voiceApiKeyConfig.test.tsx（批 X3：key 的家在「语音模型」tab 常驻）
@@ -242,5 +243,35 @@ describe('VoiceLiveSettingsSection', () => {
     expect(invokeDomainMock.mock.calls.some(([, action]) => action === 'set')).toBe(false);
     const status = await screen.findByTestId('voice-input-device-status');
     expect(status.textContent).toContain(zh.voice.settings.inputDeviceEnumFailed);
+  });
+
+  // T7：语速三档（方案 §4.1 UI 半）。未配置 = normal（存量用户不该看到"什么都没选"）；
+  // 选中档位必须进 live.speechRate patch——T6 的通话中热更新靠 settings IPC 收到这个字段
+  // 触发，patch 里没有它 = 通话中改语速不生效。
+  it('语速未配置时显示 normal，三档都能选中并写 live.speechRate', async () => {
+    settingsGet({ live: { enabled: true } });
+    render(<VoiceLiveSettingsSection />);
+    const select = await screen.findByTestId('voice-speech-rate') as HTMLSelectElement;
+    expect(select.value).toBe('normal');
+
+    for (const rate of ['slow', 'normal', 'fast'] as const) {
+      invokeDomainMock.mockClear();
+      fireEvent.change(select, { target: { value: rate } });
+      await waitFor(() => {
+        const setCall = invokeDomainMock.mock.calls.find(([, action]) => action === 'set');
+        expect(setCall).toBeTruthy();
+        const payload = setCall![2] as { voice: { live: { speechRate?: string } } };
+        expect(payload.voice.live.speechRate).toBe(rate);
+      });
+    }
+  });
+
+  it('语速 helper 文案存在（中英各一条），如实提示可能不完全生效', async () => {
+    settingsGet({ live: { enabled: true } });
+    render(<VoiceLiveSettingsSection />);
+    await screen.findByTestId('voice-speech-rate');
+
+    expect(screen.getByText(zh.voice.settings.speechRateHelper)).toBeTruthy();
+    expect(en.voice.settings.speechRateHelper).toBeTruthy();
   });
 });

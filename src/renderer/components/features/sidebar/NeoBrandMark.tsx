@@ -1,12 +1,13 @@
 // ============================================================================
 // NeoBrandMark —— 侧栏顶部的 Neo 品牌标识（图形标 + 可选文字标）。
 // ============================================================================
-// 配色全部由 --brand-primary 经 color-mix 派生，不写死任何 hex：
-//   * 字形 = 全色品牌 → 对比度靠设计系统已保证的 brand-contrast（四套主题均达标）
-//   * 底色 = 品牌 18% 透明 + 42% 描边环 → 给小尺寸足够存在感，又不吃掉字形对比
-// 实测过 dark / 高对比深色 / 高对比浅色 三套主题与 16/20/24/28px 四档尺寸。
-// 曾试过「实心品牌底 + 挖空字形」，在高对比浅色（品牌=深蓝）下字形几乎不可见——
-// CSS 无法按亮度分支选挖空色，故改用「低透底 + 全色字形」，靠背景对比天然成立。
+// 视觉 = N2 星芒：深空渐变圆角砖 + 直笔 N（青渐变描边）+ 收笔右上四点星芒，
+// 外加一圈静态轨道环。规格与 src-tauri/icons/agent-neo.svg、
+// src/renderer/assets/brand/ 下的三个标准变体同源（48×48 viewBox）。
+// 品牌色是固定字面色（深空砖在任何主题下都是深色底），不随 --brand-primary
+// 派生——这是与旧版「color-mix 派生」的有意差异，由品牌规范拍板。
+// 轨道环默认静态；animatedOrbit 开启后环上多一颗卫星点 6s/圈，
+// prefers-reduced-motion 时 CSS 侧自动停转（global.css .neo-orbit-satellite）。
 
 import React from 'react';
 
@@ -15,46 +16,66 @@ interface NeoBrandMarkProps {
   size?: number;
   /** 是否显示 "Neo" 文字标 */
   showWordmark?: boolean;
+  /** 开启轨道环卫星点动效（6s/圈；prefers-reduced-motion 下自动停转） */
+  animatedOrbit?: boolean;
   className?: string;
 }
 
 export const NeoBrandMark: React.FC<NeoBrandMarkProps> = ({
   size = 22,
   showWordmark = true,
+  animatedOrbit = false,
   className = '',
-}) => (
-  <span className={`flex items-center gap-2 ${className}`} data-testid="neo-brand-mark">
-    {/* ds-allow:start 品牌图形标在 16/20/24/28px 四档实测采用 7px 圆角，通用 radius token 会改变已验视觉比例 */}
-    <span
-      className="flex flex-shrink-0 items-center justify-center rounded-[7px]"
-      style={{
-        width: size,
-        height: size,
-        color: 'var(--brand-primary)',
-        background: 'color-mix(in srgb, var(--brand-primary) 18%, transparent)',
-        boxShadow: 'inset 0 0 0 1px color-mix(in srgb, var(--brand-primary) 42%, transparent)',
-      }}
-    >
-      <svg
-        width={Math.round(size * 0.64)}
-        height={Math.round(size * 0.64)}
-        viewBox="0 0 24 24"
-        fill="none"
-        aria-hidden="true"
-      >
-        {/* 单笔连续的 N：起笔上行、斜下、收笔上行，圆角端点让 16px 下仍不糊 */}
+}) => {
+  // 渐变/辉光 defs id 必须按实例唯一：侧栏与欢迎页可同时挂两个标
+  const uid = React.useId().replace(/:/g, '');
+  const brickId = `neo-brick-${uid}`;
+  const glyphId = `neo-glyph-${uid}`;
+
+  return (
+    <span className={`flex items-center gap-2 ${className}`} data-testid="neo-brand-mark">
+      {/* ds-allow:start 品牌图形标按规范使用固定字面品牌色（深空砖 + 星芒青渐变），与主题 token 解耦是有意决策 */}
+      <svg width={size} height={size} viewBox="0 0 48 48" fill="none" aria-hidden="true">
+        <defs>
+          <linearGradient id={brickId} x1="8" y1="8" x2="40" y2="40" gradientUnits="userSpaceOnUse">
+            <stop offset="0" stopColor="#16423f" />
+            <stop offset="1" stopColor="#0b2422" />
+          </linearGradient>
+          <linearGradient id={glyphId} x1="10" y1="10" x2="38" y2="38" gradientUnits="userSpaceOnUse">
+            <stop offset="0" stopColor="#7DF9E8" />
+            <stop offset="1" stopColor="#14B8A6" />
+          </linearGradient>
+        </defs>
+        {/* 深空砖 */}
+        <rect x="2" y="2" width="44" height="44" rx="11" fill={`url(#${brickId})`} stroke="#2dd4bf" strokeOpacity="0.3" strokeWidth="1" />
+        {/* 顶部内高光 */}
+        <rect x="4" y="3" width="40" height="1.5" rx="0.75" fill="#ffffff" fillOpacity="0.09" />
+        {/* N2 星芒字形 */}
         <path
-          d="M7.6 17.4V8.2c0-1.05 1.3-1.53 1.98-.72l5.44 6.52c.68.81 1.98.33 1.98-.72V6.6"
-          stroke="currentColor"
-          strokeWidth="3"
+          d="M15 33.5 V14.5 L33 33.5 V14.5"
+          stroke={`url(#${glyphId})`}
+          strokeWidth="3.2"
           strokeLinecap="round"
           strokeLinejoin="round"
         />
+        <path
+          d="M37 6.5 L38.1 10 L41.6 11.1 L38.1 12.2 L37 15.7 L35.9 12.2 L32.4 11.1 L35.9 10 Z"
+          fill="#A7F3D0"
+        />
+        {/* 轨道环（默认静态） */}
+        <circle cx="24" cy="24" r="27" stroke="#5eead4" strokeOpacity="0.34" strokeWidth="1" />
+        {/* 动效卫星点：2px 核心 + 辉光晕，绕砖心（viewBox 中心）旋转 */}
+        {animatedOrbit && (
+          <g className="neo-orbit-satellite">
+            <circle cx="43.1" cy="4.9" r="2.4" fill="#A0DCFF" fillOpacity="0.9" opacity="0.35" />
+            <circle cx="43.1" cy="4.9" r="1" fill="#E0F2FE" />
+          </g>
+        )}
       </svg>
+      {/* ds-allow:end */}
+      {showWordmark && (
+        <span className="text-[15px] font-semibold tracking-[-0.015em] text-zinc-100">Neo</span>
+      )}
     </span>
-    {/* ds-allow:end */}
-    {showWordmark && (
-      <span className="text-[15px] font-semibold tracking-[-0.015em] text-zinc-100">Neo</span>
-    )}
-  </span>
-);
+  );
+};

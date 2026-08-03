@@ -54,7 +54,7 @@ export function KindIcon({ kind }: { kind: WorkspacePreviewKind }) {
   switch (kind) {
     case 'document':
     case 'handoff':
-      return <FileText className={`${cls} text-sky-300`} />;
+      return <FileText className={`${cls} text-badge-info`} />;
     case 'spreadsheet':
       return <Table2 className={`${cls} text-emerald-300`} />;
     case 'message_draft':

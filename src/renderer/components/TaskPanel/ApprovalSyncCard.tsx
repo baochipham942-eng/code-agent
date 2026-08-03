@@ -120,7 +120,7 @@ export const ApprovalSyncCard: React.FC = () => {
           type="button"
           onClick={() => respond('allow_session')}
           disabled={dangerous}
-          className="inline-flex items-center justify-center gap-1 rounded-md border border-sky-500/20 bg-sky-500/10 px-2 py-1.5 text-[11px] text-sky-300 hover:bg-sky-500/15 disabled:cursor-not-allowed disabled:opacity-50"
+          className="inline-flex items-center justify-center gap-1 rounded-md border border-badge-info/20 bg-sky-500/10 px-2 py-1.5 text-[11px] text-badge-info hover:bg-sky-500/15 disabled:cursor-not-allowed disabled:opacity-50"
         >
           <Clock className="h-3 w-3" />
           {a.session}

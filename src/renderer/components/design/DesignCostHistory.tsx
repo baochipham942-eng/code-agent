@@ -111,10 +111,10 @@ export const DesignCostHistoryView: React.FC<DesignCostHistoryViewProps> = ({
         <>
           {/* 参考图分组：喂模型的视觉输入，独立于版本时间线（不占版本序号、不计花费）。 */}
           {referenceNodes.length > 0 && (
-            <div className="flex items-center gap-1.5 rounded-md border border-sky-400/20 bg-sky-400/[0.05] px-2 py-1 text-[11px] text-sky-200">
+            <div className="flex items-center gap-1.5 rounded-md border border-badge-info/20 bg-sky-400/[0.05] px-2 py-1 text-[11px] text-badge-info">
               <Images className="h-3 w-3 shrink-0" />
               <span className="flex-1">{t.design.historyReferenceGroup}</span>
-              <span className="font-mono text-sky-300">×{referenceNodes.length}</span>
+              <span className="font-mono text-badge-info">×{referenceNodes.length}</span>
             </div>
           )}
 

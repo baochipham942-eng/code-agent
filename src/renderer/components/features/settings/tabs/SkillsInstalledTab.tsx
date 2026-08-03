@@ -305,7 +305,7 @@ const SkillRow: React.FC<SkillRowProps> = ({
             {skill.name}
           </span>
           {hasProjectOverride && (
-            <span className="inline-flex shrink-0 items-center rounded-sm bg-sky-500/15 px-1.5 py-0.5 text-[10px] font-medium text-sky-300">
+            <span className="inline-flex shrink-0 items-center rounded-sm bg-sky-500/15 px-1.5 py-0.5 text-[10px] font-medium text-badge-info">
               {labels.projectOverrideBadge}
             </span>
           )}

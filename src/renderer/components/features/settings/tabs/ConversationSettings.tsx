@@ -204,7 +204,7 @@ export const ConversationSettings: React.FC = () => {
                 <CheckCircle2 className="w-3.5 h-3.5" />
                 {conversationText.features.manifestPrefix}{featureLabel(compressionState.features.manifest, conversationText.featureStates)}
               </span>
-              <span className="inline-flex items-center gap-1.5 rounded-md border border-sky-500/30 bg-sky-500/10 px-2 py-1 text-sky-300">
+              <span className="inline-flex items-center gap-1.5 rounded-md border border-badge-info/30 bg-sky-500/10 px-2 py-1 text-badge-info">
                 <RotateCcw className="w-3.5 h-3.5" />
                 {conversationText.features.hooksPrefix}{featureLabel(compressionState.features.hooks, conversationText.featureStates)}
               </span>

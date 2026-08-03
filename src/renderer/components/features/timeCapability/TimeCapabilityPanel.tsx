@@ -397,7 +397,7 @@ const TimeCapabilityPanel: React.FC = () => {
   return (
     <FullScreenPage testId="time-capability-panel" variant="inline">
       <FullScreenPageHeader
-        icon={<CalendarDays className="h-4 w-4 text-sky-300" />}
+        icon={<CalendarDays className="h-4 w-4 text-badge-info" />}
         title="Time & Capability"
         description="任务时间、Cron 运行、Calendar 状态和现场修复"
       />
@@ -477,7 +477,7 @@ const TimeCapabilityPanel: React.FC = () => {
             <div className="border-t border-zinc-800 px-4 py-4">
               <div className="mb-3 flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2">
-                  <CalendarDays className="h-4 w-4 text-sky-300" />
+                  <CalendarDays className="h-4 w-4 text-badge-info" />
                   <div className="text-sm font-medium text-zinc-100">Calendar connector</div>
                 </div>
                 <span className={`rounded-md border px-2 py-1 text-[11px] ${getToneClasses(calendarStatus.tone)}`}>
@@ -708,7 +708,7 @@ const CapabilityFixRow: React.FC<{
 
     {error && <div className="mt-2 text-[11px] text-badge-danger">{error}</div>}
     {!error && feedback && (
-      <div className={`mt-2 text-[11px] ${feedbackTone === 'success' ? 'text-emerald-300' : 'text-sky-300'}`}>
+      <div className={`mt-2 text-[11px] ${feedbackTone === 'success' ? 'text-emerald-300' : 'text-badge-info'}`}>
         {feedback}
       </div>
     )}

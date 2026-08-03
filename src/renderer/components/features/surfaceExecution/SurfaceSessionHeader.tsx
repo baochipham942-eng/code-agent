@@ -20,7 +20,7 @@ interface SurfaceSessionHeaderProps {
 }
 
 const STATE_TONE: Record<RendererSurfaceSessionProjectionV1['session']['state'], string> = {
-  preparing: 'border-sky-400/20 bg-sky-400/10 text-sky-200',
+  preparing: 'border-badge-info/20 bg-sky-400/10 text-badge-info',
   waiting_permission: 'border-amber-400/20 bg-amber-400/10 text-amber-200',
   running: 'border-emerald-400/20 bg-emerald-400/10 text-emerald-200',
   waiting_human: 'border-violet-400/20 bg-violet-400/10 text-violet-200',

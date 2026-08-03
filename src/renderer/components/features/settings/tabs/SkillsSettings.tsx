@@ -624,7 +624,7 @@ export const SkillsSettings: React.FC = () => {
       <WebModeBanner />
 
       {settingsCapabilityFocus?.kind === 'skill' && (
-        <div className="flex flex-col gap-2 rounded-lg border border-sky-500/20 bg-sky-500/[0.06] px-3 py-2 text-sm text-sky-100 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-2 rounded-lg border border-badge-info/20 bg-sky-500/[0.06] px-3 py-2 text-sm text-badge-info sm:flex-row sm:items-center sm:justify-between">
           <div>
             {skillsText.focusPromptPrefix}<span className="font-mono">{settingsCapabilityFocus.id}</span>
           </div>

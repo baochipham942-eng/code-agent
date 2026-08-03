@@ -132,7 +132,7 @@ export function KnowledgeInboxList({
                   type="button"
                   onClick={() => onEdit(item)}
                   disabled={isBusy}
-                  className="inline-flex h-7 items-center gap-1.5 rounded-md border border-sky-500/40 bg-sky-500/10 px-2.5 text-[11px] font-medium text-sky-200 hover:bg-sky-500/20 disabled:opacity-50"
+                  className="inline-flex h-7 items-center gap-1.5 rounded-md border border-badge-info/40 bg-sky-500/10 px-2.5 text-[11px] font-medium text-badge-info hover:bg-sky-500/20 disabled:opacity-50"
                 >
                   <PencilLine className="h-3.5 w-3.5" />
                   {t.knowledgeMemory.editAdopt}

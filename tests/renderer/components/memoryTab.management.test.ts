@@ -150,7 +150,7 @@ describe('MemoryTab management helpers', () => {
   it('builds import preview summary and keeps conflicts opt-in', () => {
     expect(buildMemoryImportSummary(importDryRun)).toEqual([
       { status: 'add', label: '新增', value: 2, className: 'text-emerald-300' },
-      { status: 'update', label: '更新', value: 1, className: 'text-sky-300' },
+      { status: 'update', label: '更新', value: 1, className: 'text-badge-info' },
       { status: 'conflict', label: '冲突', value: 1, className: 'text-amber-300' },
       { status: 'skip', label: '跳过', value: 1, className: 'text-zinc-400' },
     ]);

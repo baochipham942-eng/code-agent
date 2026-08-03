@@ -289,13 +289,13 @@ export const KeybindingsSettings: React.FC = () => {
       )}
 
       {systemWarnings.length > 0 && (
-        <div className="space-y-2 rounded-lg border border-sky-700/40 bg-sky-950/20 p-4">
-          <div className="flex items-center gap-2 text-sm font-medium text-sky-200">
+        <div className="space-y-2 rounded-lg border border-badge-info/40 bg-sky-950/20 p-4">
+          <div className="flex items-center gap-2 text-sm font-medium text-badge-info">
             <AlertTriangle className="h-4 w-4" />
             {keybindingsText.systemWarningTitle}
           </div>
           {systemWarnings.map((warning) => (
-            <div key={`${warning.actionId}:${warning.normalizedShortcut}`} className="text-xs text-sky-100/80">
+            <div key={`${warning.actionId}:${warning.normalizedShortcut}`} className="text-xs text-badge-info/80">
               {keybindingsText.actions[warning.actionId].label} · {formatShortcutForDisplay(warning.shortcut, platform)}：
               {getSystemReservedReason(keybindingsText, platform, warning.normalizedShortcut, warning.reason)}
             </div>
@@ -364,7 +364,7 @@ export const KeybindingsSettings: React.FC = () => {
                           </span>
                         )}
                         {hasSystemWarning && (
-                          <span className="rounded border border-sky-700/60 px-1.5 py-0.5 text-[11px] text-sky-200">
+                          <span className="rounded border border-badge-info/60 px-1.5 py-0.5 text-[11px] text-badge-info">
                             {keybindingsText.systemWarningBadge}
                           </span>
                         )}

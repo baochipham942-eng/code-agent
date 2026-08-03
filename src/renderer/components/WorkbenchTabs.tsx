@@ -82,7 +82,7 @@ const LAUNCHABLE_VIEWS: readonly LaunchableViewDefinition[] = [
   {
     id: 'terminal',
     icon: TerminalSquare,
-    iconClassName: 'text-sky-400/80',
+    iconClassName: 'text-badge-info/80',
     keybindingActionId: 'terminal.open',
   },
 ];
@@ -275,7 +275,7 @@ export const WorkbenchTabs: React.FC<{ children?: React.ReactNode; focusable?: b
         label: t.workbenchTabs.terminal.label,
         title: t.workbenchTabs.terminal.title,
         icon: TerminalSquare,
-        iconClassName: 'text-sky-400/80',
+        iconClassName: 'text-badge-info/80',
         isDirty: false,
       };
     }

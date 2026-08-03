@@ -266,7 +266,7 @@ export function SearchSettings() {
                           value={draft}
                           onChange={(event) => setKeyDrafts((prev) => ({ ...prev, [id]: event.target.value }))}
                           placeholder={searchText.keyPlaceholder}
-                          className="h-7 w-56 rounded border border-zinc-700 bg-zinc-950 px-2 text-xs text-zinc-200 outline-none placeholder:text-zinc-600 focus:border-sky-500/60"
+                          className="h-7 w-56 rounded border border-zinc-700 bg-zinc-950 px-2 text-xs text-zinc-200 outline-none placeholder:text-zinc-600 focus:border-badge-info/60"
                         />
                         <Button
                           variant="primary"
@@ -297,7 +297,7 @@ export function SearchSettings() {
           type="button"
           onClick={handleSave}
           disabled={saving}
-          className="inline-flex items-center gap-1.5 rounded-md border border-sky-500/30 bg-sky-500/10 px-3 py-1.5 text-xs text-sky-100 transition-colors hover:bg-sky-500/20 disabled:opacity-50"
+          className="inline-flex items-center gap-1.5 rounded-md border border-badge-info/30 bg-sky-500/10 px-3 py-1.5 text-xs text-badge-info transition-colors hover:bg-sky-500/20 disabled:opacity-50"
         >
           <Search className="h-3.5 w-3.5" />
           {saving ? searchText.saving : t.common.save}

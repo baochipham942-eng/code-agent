@@ -247,7 +247,7 @@ export function InAppValidationWorkspace(): React.ReactElement {
       {/* 工具条：运行 = 主操作（品牌色），Demo/重载 = 次级幽灵按钮 */}
       <div className="flex h-11 shrink-0 items-center gap-2 border-b border-slate-800 px-3">
         {ipcActive ? (
-          <span className="flex items-center gap-1 rounded border border-sky-500/30 bg-sky-500/10 px-2 py-0.5 text-xs text-sky-200">
+          <span className="flex items-center gap-1 rounded border border-badge-info/30 bg-sky-500/10 px-2 py-0.5 text-xs text-badge-info">
             <Radio className="h-3 w-3 animate-pulse" /> {v.ipcDriven}
           </span>
         ) : totalCount > 0 ? (

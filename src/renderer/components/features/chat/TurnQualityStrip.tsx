@@ -218,7 +218,7 @@ export const TurnQualityStrip: React.FC<TurnQualityStripProps> = ({ summary }) =
               <Brain className="h-3 w-3" />
               {memoryLabel(summary)}
             </span>
-            <span className="inline-flex min-w-0 items-center gap-1 rounded border border-sky-400/15 bg-sky-400/10 px-1.5 py-0.5 text-sky-200">
+            <span className="inline-flex min-w-0 items-center gap-1 rounded border border-badge-info/15 bg-sky-400/10 px-1.5 py-0.5 text-badge-info">
               <Cpu className="h-3 w-3 shrink-0" />
               <span className="truncate">{strategyLabel(summary)} · {formatModel(summary)}</span>
             </span>
@@ -254,10 +254,10 @@ export const TurnQualityStrip: React.FC<TurnQualityStripProps> = ({ summary }) =
             ))}
           </div>
           {(summary.strategy.reason || summary.strategy.complexity) && (
-            <div className="mb-2 rounded-md border border-sky-400/10 bg-sky-400/[0.04] px-2 py-1.5 text-sky-100/80">
+            <div className="mb-2 rounded-md border border-badge-info/10 bg-sky-400/[0.04] px-2 py-1.5 text-badge-info/80">
               {summary.strategy.reason || strategyLabel(summary)}
               {summary.strategy.complexity ? (
-                <span className="ml-2 text-sky-200/50">
+                <span className="ml-2 text-badge-info/50">
                   {summary.strategy.complexity.level} · {summary.strategy.complexity.score}
                 </span>
               ) : null}

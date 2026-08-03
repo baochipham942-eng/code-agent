@@ -689,7 +689,7 @@ export const IACTNavCard: React.FC<{ href: string; children: React.ReactNode }> 
     <button
       type="button"
       onClick={onClick}
-      className="inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5 rounded-md bg-sky-500/10 text-sky-400 hover:bg-sky-500/20 hover:text-sky-300 border border-sky-500/20 hover:border-sky-500/40 transition-all cursor-pointer text-sm font-medium"
+      className="inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5 rounded-md bg-sky-500/10 text-badge-info hover:bg-sky-500/20 hover:text-badge-info border border-badge-info/20 hover:border-badge-info/40 transition-all cursor-pointer text-sm font-medium"
       title={title}
     >
       <Icon className="w-3 h-3 opacity-60" />

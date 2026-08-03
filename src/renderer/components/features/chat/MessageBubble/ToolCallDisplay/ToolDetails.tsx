@@ -645,7 +645,7 @@ function BrowserComputerNextStepActions({ actions }: { actions: BrowserComputerN
           }}
           className={`flex w-full items-start gap-2 rounded-lg border px-3 py-2 text-left text-xs transition-colors ${
             action.executable
-              ? 'border-sky-500/20 bg-sky-500/10 text-sky-100 hover:bg-sky-500/15'
+              ? 'border-badge-info/20 bg-sky-500/10 text-badge-info hover:bg-sky-500/15'
               : 'border-zinc-700/50 bg-zinc-900/50 text-zinc-300'
           }`}
         >
@@ -663,7 +663,7 @@ function BrowserComputerNextStepActions({ actions }: { actions: BrowserComputerN
             outcome.status === 'failed'
               ? 'border-red-500/20 bg-red-500/10 text-badge-danger'
               : outcome.status === 'preparing'
-                ? 'border-sky-500/20 bg-sky-500/10 text-sky-100'
+                ? 'border-badge-info/20 bg-sky-500/10 text-badge-info'
                 : 'border-emerald-500/20 bg-emerald-500/10 text-emerald-100'
           }`}
         >
@@ -715,7 +715,7 @@ function GenericToolErrorActions({
             event.stopPropagation();
             createForkFromReply(messageId);
           }}
-          className="inline-flex items-center gap-1 rounded-md border border-sky-500/25 bg-sky-500/10 px-2 py-1 text-[11px] text-sky-100 transition-colors hover:bg-sky-500/20"
+          className="inline-flex items-center gap-1 rounded-md border border-badge-info/25 bg-sky-500/10 px-2 py-1 text-[11px] text-badge-info transition-colors hover:bg-sky-500/20"
         >
           <RotateCcw className="h-3 w-3" />
           从此重试

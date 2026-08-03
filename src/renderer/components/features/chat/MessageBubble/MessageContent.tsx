@@ -486,7 +486,7 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
             <button
               type="button"
               onClick={() => { navigator.clipboard.writeText(text); }}
-              className="text-sky-400 hover:text-sky-300 underline underline-offset-2 cursor-pointer font-mono text-[0.95em]"
+              className="text-badge-info hover:text-badge-info underline underline-offset-2 cursor-pointer font-mono text-[0.95em]"
               title={`点击复制 ${text}`}
             >
               {children}

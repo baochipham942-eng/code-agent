@@ -221,7 +221,7 @@ export function buildContextDistribution(
   if (contextView) {
     return [
       { label: 'System', value: contextView.tokenDistribution.system, tone: 'text-violet-300' },
-      { label: 'User', value: contextView.tokenDistribution.user, tone: 'text-sky-300' },
+      { label: 'User', value: contextView.tokenDistribution.user, tone: 'text-badge-info' },
       { label: 'Asst', value: contextView.tokenDistribution.assistant, tone: 'text-emerald-300' },
       { label: 'Tool', value: contextView.tokenDistribution.tool, tone: 'text-amber-300' },
     ];
@@ -230,7 +230,7 @@ export function buildContextDistribution(
   if (contextHealth) {
     return [
       { label: 'System', value: contextHealth.breakdown.systemPrompt, tone: 'text-violet-300' },
-      { label: 'Msgs', value: contextHealth.breakdown.messages, tone: 'text-sky-300' },
+      { label: 'Msgs', value: contextHealth.breakdown.messages, tone: 'text-badge-info' },
       { label: 'Tools', value: contextHealth.breakdown.toolResults, tone: 'text-amber-300' },
     ];
   }

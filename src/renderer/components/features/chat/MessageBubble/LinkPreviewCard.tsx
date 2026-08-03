@@ -48,7 +48,7 @@ export const LinkPreviewCard: React.FC<LinkPreviewCardProps> = ({ href, onOpen }
       rel="noopener noreferrer"
       title={href}
       onClick={(e) => { if (onOpen?.(href) || openExternalLink(href)) e.preventDefault(); }}
-      className="text-sky-400/80 hover:text-sky-300 underline decoration-sky-400/30 underline-offset-2 cursor-pointer break-all"
+      className="text-badge-info/80 hover:text-badge-info underline decoration-sky-400/30 underline-offset-2 cursor-pointer break-all"
     >
       {!faviconFailed && (
         <img

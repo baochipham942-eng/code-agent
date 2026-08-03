@@ -81,7 +81,7 @@ function kindIcon(kind: CapabilityKind): React.ReactNode {
     case 'skill':
       return <Sparkles className="h-4 w-4 text-amber-300" />;
     case 'mcp_template':
-      return <Plug className="h-4 w-4 text-sky-300" />;
+      return <Plug className="h-4 w-4 text-badge-info" />;
     case 'tool_bundle':
       return <Wrench className="h-4 w-4 text-violet-300" />;
     case 'channel_adapter':
@@ -113,7 +113,7 @@ function getRuntimeClass(runtime: CapabilityRuntimeState): string {
       return 'text-emerald-300';
     case 'lazy':
     case 'unknown':
-      return 'text-sky-300';
+      return 'text-badge-info';
     case 'blocked':
     case 'error':
       return 'text-badge-danger';
@@ -364,7 +364,7 @@ const CapabilityCard: React.FC<CapabilityCardProps> = ({ item, text, actionLoadi
                   <span className={`rounded border px-1.5 py-0.5 text-[11px] ${getAssessmentPriorityClass(assessment.priority)}`}>
                     {assessment.priority}
                   </span>
-                  <span className="rounded border border-sky-500/30 bg-sky-500/10 px-1.5 py-0.5 text-[11px] text-sky-200">
+                  <span className="rounded border border-badge-info/30 bg-sky-500/10 px-1.5 py-0.5 text-[11px] text-badge-info">
                     {formatAssessmentPortability(assessment.portability, text.assessmentPortability)}
                   </span>
                 </>
@@ -573,7 +573,7 @@ function getAssessmentPriorityClass(priority: CapabilityAssessmentPriorityValue)
     case 'P0':
       return 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200';
     case 'P1':
-      return 'border-sky-500/30 bg-sky-500/10 text-sky-200';
+      return 'border-badge-info/30 bg-sky-500/10 text-badge-info';
     case 'P2':
       return 'border-amber-500/30 bg-amber-500/10 text-amber-200';
     default:

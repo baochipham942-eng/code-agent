@@ -383,7 +383,7 @@ function getToolGroupStatusLabel(status: 'streaming' | 'partial' | 'error' | 'ok
 // hasEscalatedError=false（探索性失败，非用户需介入）一律用中性色，不顶红/顶黄——
 // 跟成功行视觉权重接近，agent 试错不该喊给用户看。
 function getToolGroupStatusClass(status: 'streaming' | 'partial' | 'error' | 'ok', hasEscalatedError: boolean): string {
-  if (status === 'streaming') return 'text-sky-300';
+  if (status === 'streaming') return 'text-badge-info';
   if (!hasEscalatedError && (status === 'partial' || status === 'error')) return 'text-zinc-500';
   if (status === 'partial') return 'text-amber-300';
   if (status === 'error') return 'text-badge-danger';

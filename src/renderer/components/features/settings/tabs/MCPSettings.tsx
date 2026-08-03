@@ -305,7 +305,7 @@ export const MCPSettings: React.FC = () => {
       case 'error':
         return <AlertCircle className="w-4 h-4 text-badge-danger" />;
       case 'lazy':
-        return <Plug className="w-4 h-4 text-sky-400" />;
+        return <Plug className="w-4 h-4 text-badge-info" />;
       default:
         return <Plug className="w-4 h-4 text-zinc-400" />;
     }
@@ -320,7 +320,7 @@ export const MCPSettings: React.FC = () => {
       case 'error':
         return 'border-red-500/30 bg-red-500/10 text-badge-danger';
       case 'lazy':
-        return 'border-sky-500/30 bg-sky-500/10 text-sky-300';
+        return 'border-badge-info/30 bg-sky-500/10 text-badge-info';
       default:
         return 'border-zinc-700 bg-zinc-800 text-zinc-400';
     }
@@ -373,7 +373,7 @@ export const MCPSettings: React.FC = () => {
       <WebModeBanner />
 
       {(settingsCapabilityFocus?.kind === 'mcp' || settingsCapabilityFocus?.kind === 'connector') && (
-        <div className="flex flex-col gap-2 rounded-lg border border-sky-500/20 bg-sky-500/[0.06] px-3 py-2 text-sm text-sky-100 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-2 rounded-lg border border-badge-info/20 bg-sky-500/[0.06] px-3 py-2 text-sm text-badge-info sm:flex-row sm:items-center sm:justify-between">
           <div>
             {mcpText.focusPromptPrefix}
             {settingsCapabilityFocus.kind === 'mcp' ? mcpText.focusPromptKindMcp : mcpText.focusPromptKindConnector}
@@ -479,7 +479,7 @@ export const MCPSettings: React.FC = () => {
                 message.type === 'success'
                   ? 'bg-green-500/10 text-green-400'
                   : message.type === 'info'
-                    ? 'bg-sky-500/10 text-sky-300'
+                    ? 'bg-sky-500/10 text-badge-info'
                     : 'bg-red-500/10 text-badge-danger'
               }`}
             >

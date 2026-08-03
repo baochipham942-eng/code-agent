@@ -11,7 +11,7 @@ import type { RendererSurfaceSessionProjectionV1 } from '../../../utils/surfaceE
 type SurfaceRunState = RendererSurfaceSessionProjectionV1['session']['state'];
 
 const STATE_TONE: Record<SurfaceRunState, string> = {
-  preparing: 'text-sky-300',
+  preparing: 'text-badge-info',
   waiting_permission: 'text-amber-300',
   running: 'text-emerald-300',
   waiting_human: 'text-violet-300',

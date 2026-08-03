@@ -17,7 +17,7 @@ const DISPLAY_PILL_TONE_CLASSES: Record<WorkbenchPillTone, string> = {
   neutral: 'border-white/[0.08] bg-zinc-900/60 text-zinc-400',
   agent: 'border-cyan-500/20 bg-cyan-500/10 text-cyan-300',
   skill: 'border-fuchsia-500/20 bg-fuchsia-500/10 text-fuchsia-200',
-  connector: 'border-sky-500/20 bg-sky-500/10 text-sky-200',
+  connector: 'border-badge-info/20 bg-sky-500/10 text-badge-info',
   mcp: 'border-emerald-500/20 bg-emerald-500/10 text-emerald-200',
   info: 'border-amber-500/20 bg-amber-500/10 text-amber-200',
 };
@@ -26,7 +26,7 @@ const SELECTED_PILL_TONE_CLASSES: Record<WorkbenchPillTone, string> = {
   neutral: 'border-zinc-500/40 bg-zinc-500/15 text-zinc-200',
   agent: 'border-cyan-500/40 bg-cyan-500/15 text-cyan-300',
   skill: 'border-fuchsia-500/40 bg-fuchsia-500/15 text-fuchsia-200',
-  connector: 'border-sky-500/40 bg-sky-500/15 text-sky-200',
+  connector: 'border-badge-info/40 bg-sky-500/15 text-badge-info',
   mcp: 'border-emerald-500/40 bg-emerald-500/15 text-emerald-200',
   info: 'border-amber-500/40 bg-amber-500/15 text-amber-200',
 };
@@ -256,7 +256,7 @@ export function WorkbenchReferenceRow({
         }`} />
       ) : (
         <Plug className={`w-3 h-3 flex-shrink-0 ${
-          reference.kind === 'connector' ? 'text-sky-400/70' : 'text-blue-400/70'
+          reference.kind === 'connector' ? 'text-badge-info/70' : 'text-blue-400/70'
         }`} />
       )}
       <span className="min-w-0 flex-1">

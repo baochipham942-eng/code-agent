@@ -65,7 +65,7 @@ const STATUS_LABELS: Record<WorkbenchRuntimeStatus, { en: string; zh: string; co
   lazy: {
     en: 'lazy',
     zh: '懒加载',
-    colorClass: 'text-sky-400',
+    colorClass: 'text-badge-info',
   },
 };
 
@@ -174,7 +174,7 @@ export function getWorkbenchCapabilityStatusPresentation(
     if (!capability.connected && capability.readiness === 'unchecked') {
       return {
         label: locale === 'zh' ? '待检查' : 'needs check',
-        colorClass: 'text-sky-400',
+        colorClass: 'text-badge-info',
       };
     }
 

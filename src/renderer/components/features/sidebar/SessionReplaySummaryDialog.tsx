@@ -557,7 +557,7 @@ export const SessionReplaySummaryDialog: React.FC<SessionReplaySummaryDialogProp
                         setUpdatingDatasetRole(null);
                       }
                     }}
-                    className={`rounded border px-1.5 py-0.5 text-[10px] font-medium transition-colors ${active ? 'border-sky-400/40 bg-sky-500/15 text-sky-100' : 'border-zinc-700 bg-zinc-950/40 text-zinc-400 hover:border-zinc-600 hover:text-zinc-200 disabled:opacity-50'}`}
+                    className={`rounded border px-1.5 py-0.5 text-[10px] font-medium transition-colors ${active ? 'border-badge-info/40 bg-sky-500/15 text-badge-info' : 'border-zinc-700 bg-zinc-950/40 text-zinc-400 hover:border-zinc-600 hover:text-zinc-200 disabled:opacity-50'}`}
                   >
                     {updatingDatasetRole === role ? '...' : roleLabel}
                   </button>

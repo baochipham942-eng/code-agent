@@ -297,14 +297,14 @@ export const BrowserSurfaceContent: React.FC = () => {
                       void handleOpen();
                     }
                   }}
-                  className="min-w-0 flex-1 rounded-md border border-white/[0.08] bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-hidden transition-colors placeholder:text-zinc-600 focus:border-sky-400/40"
+                  className="min-w-0 flex-1 rounded-md border border-white/[0.08] bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-hidden transition-colors placeholder:text-zinc-600 focus:border-badge-info/40"
                   placeholder="https://example.com"
                 />
                 <button
                   type="button"
                   onClick={handleOpen}
                   disabled={Boolean(busyAction)}
-                  className="inline-flex items-center gap-1.5 rounded-md border border-sky-500/30 bg-sky-500/15 px-3 py-2 text-sm text-sky-200 transition-colors hover:bg-sky-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="inline-flex items-center gap-1.5 rounded-md border border-badge-info/30 bg-sky-500/15 px-3 py-2 text-sm text-badge-info transition-colors hover:bg-sky-500/20 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {isBusy('open') ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ExternalLink className="h-3.5 w-3.5" />}
                   打开

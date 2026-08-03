@@ -15,7 +15,7 @@ import { IconButton } from '../../../primitives/IconButton';
 import { Button } from '../../../primitives/Button';
 
 const KIND_ICONS: Record<ExpertBindingKind, React.ReactNode> = {
-  file: <FileText className="h-3.5 w-3.5 text-sky-300" />,
+  file: <FileText className="h-3.5 w-3.5 text-badge-info" />,
   folder: <Folder className="h-3.5 w-3.5 text-amber-300" />,
   library_item: <Library className="h-3.5 w-3.5 text-emerald-300" />,
 };

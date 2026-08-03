@@ -442,7 +442,7 @@ function getPermissionToneClass(permission: ToolPermissionView): string {  switc
       return 'text-amber-300';
     case 'network':
     case 'mcp':
-      return 'text-sky-300';
+      return 'text-badge-info';
     case 'memory':
       return 'text-fuchsia-300';
     default:
@@ -500,7 +500,7 @@ function getActionPreviewRiskClass(risk: BrowserComputerActionPreview['risk']): 
     case 'read':
       return 'text-emerald-300';
     case 'browser_action':
-      return 'text-sky-300';
+      return 'text-badge-info';
     case 'desktop_input':
       return 'text-amber-300';
     default:

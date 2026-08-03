@@ -69,18 +69,18 @@ export const GoalConfirmCard: React.FC<GoalConfirmCardProps> = ({
 
   const canStart = goal.trim().length > 0 && !submitting;
 
-  const fieldClass = 'w-full rounded border border-sky-500/30 bg-zinc-800 px-2 py-1 text-xs text-zinc-200 outline-hidden focus:border-sky-500/50';
-  const labelClass = 'mb-1 block text-[10px] text-sky-200/60';
+  const fieldClass = 'w-full rounded border border-badge-info/30 bg-zinc-800 px-2 py-1 text-xs text-zinc-200 outline-hidden focus:border-badge-info/50';
+  const labelClass = 'mb-1 block text-[10px] text-badge-info/60';
 
   return (
     <div
       data-goal-composer
-      className="mb-2 rounded-lg border border-sky-500/20 bg-sky-500/10 px-3 py-3 animate-fadeIn"
+      className="mb-2 rounded-lg border border-badge-info/20 bg-sky-500/10 px-3 py-3 animate-fadeIn"
     >
       <div className="flex items-start gap-2">
-        <Target className="mt-0.5 h-4 w-4 shrink-0 text-sky-400" />
+        <Target className="mt-0.5 h-4 w-4 shrink-0 text-badge-info" />
         <div className="min-w-0 flex-1">
-          <div className="text-xs font-medium text-sky-300">{t.goalConfirm.title}</div>
+          <div className="text-xs font-medium text-badge-info">{t.goalConfirm.title}</div>
         </div>
         <button
           type="button"
@@ -126,14 +126,14 @@ export const GoalConfirmCard: React.FC<GoalConfirmCardProps> = ({
           type="button"
           data-goal-advanced-toggle
           onClick={() => setAdvancedOpen((open) => !open)}
-          className="flex items-center gap-1 text-[10px] text-sky-200/60 transition-colors hover:text-sky-200"
+          className="flex items-center gap-1 text-[10px] text-badge-info/60 transition-colors hover:text-badge-info"
         >
           {advancedOpen ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
           {t.goalConfirm.advancedToggle}
         </button>
 
         {advancedOpen && (
-          <div className="space-y-2 border-l border-sky-500/20 pl-2">
+          <div className="space-y-2 border-l border-badge-info/20 pl-2">
             <label className="block">
               <span className={labelClass}>{t.goalConfirm.verifyCustomLabel}</span>
               <input
@@ -227,7 +227,7 @@ export const GoalConfirmCard: React.FC<GoalConfirmCardProps> = ({
             data-goal-start
             onClick={() => canStart && onSubmit(draft)}
             disabled={!canStart}
-            className="flex items-center gap-1 rounded bg-sky-500/20 px-3 py-1 text-xs text-sky-100 transition-colors hover:bg-sky-500/30 disabled:opacity-50"
+            className="flex items-center gap-1 rounded bg-sky-500/20 px-3 py-1 text-xs text-badge-info transition-colors hover:bg-sky-500/30 disabled:opacity-50"
           >
             {submitting ? <Loader2 className="h-3 w-3 animate-spin" /> : <Target className="h-3 w-3" />}
             {t.goalConfirm.start}

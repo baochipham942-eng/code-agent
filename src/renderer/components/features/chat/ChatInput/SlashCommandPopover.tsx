@@ -923,7 +923,7 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
                         </span>
                       ) : null}
                       {connectorStatus || mcpStatus ? (
-                        <span className="shrink-0 rounded bg-sky-500/10 px-1.5 py-0.5 text-[10px] text-sky-300">
+                        <span className="shrink-0 rounded bg-sky-500/10 px-1.5 py-0.5 text-[10px] text-badge-info">
                           {connectorStatus || mcpStatus}
                         </span>
                       ) : null}

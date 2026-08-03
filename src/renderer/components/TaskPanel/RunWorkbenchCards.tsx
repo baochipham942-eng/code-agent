@@ -53,7 +53,7 @@ export function runStatusClass(status: RunUiStatus): string {
     case 'planning':
     case 'running':
     default:
-      return 'border-sky-500/20 bg-sky-500/10 text-sky-300';
+      return 'border-badge-info/20 bg-sky-500/10 text-badge-info';
   }
 }
 
@@ -99,7 +99,7 @@ function subagentStatusClass(status: SubagentRunView['status']): string {
       return 'text-amber-300';
     case 'running':
     default:
-      return 'text-sky-300';
+      return 'text-badge-info';
   }
 }
 
@@ -121,7 +121,7 @@ export const RunOverview = ({ model, onOpenMemory }: RunOverviewProps) => {
         {isCompleted ? (
           <span className="mt-1.5 h-1.5 w-1.5 flex-shrink-0 rounded-full bg-emerald-400/50" />
         ) : (
-          <Radio className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-sky-300" />
+          <Radio className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-badge-info" />
         )}
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
@@ -163,7 +163,7 @@ export const RunOverview = ({ model, onOpenMemory }: RunOverviewProps) => {
 function getTaskStatusClass(status: TaskRecord['status']): string {
   switch (status) {
     case 'in_progress':
-      return 'text-sky-300';
+      return 'text-badge-info';
     case 'completed':
       return 'text-emerald-300';
     case 'blocked':
@@ -250,7 +250,7 @@ export const TaskDashboardSummary = ({
           data-testid="active-run-placeholder"
           className="flex items-center gap-2 rounded-md border border-white/[0.06] bg-black/10 px-2.5 py-2"
         >
-          <Loader2 className="h-3.5 w-3.5 flex-shrink-0 animate-spin text-sky-300" />
+          <Loader2 className="h-3.5 w-3.5 flex-shrink-0 animate-spin text-badge-info" />
           <span className={`rounded-md border px-1.5 py-0.5 text-[10px] font-medium ${runStatusClass(run.status)}`}>
             {getRunUiStatusLabel(run.status, t)}
           </span>
@@ -436,7 +436,7 @@ const TaskChecklistHeader = ({ rail }: { rail: ReturnType<typeof deriveTaskRailV
 };
 
 function outputRefTone(type: TaskRecordOutputRef['type']): string {
-  if (type === 'log') return 'border-sky-500/20 bg-sky-500/10 text-sky-300';
+  if (type === 'log') return 'border-badge-info/20 bg-sky-500/10 text-badge-info';
   if (type === 'text' || type === 'report') return 'border-emerald-500/20 bg-emerald-500/10 text-emerald-300';
   if (type === 'trace' || type === 'replay') return 'border-violet-500/20 bg-violet-500/10 text-violet-300';
   return 'border-white/[0.08] bg-white/[0.03] text-zinc-400';
@@ -526,7 +526,7 @@ const TaskOutputRefRow = ({ outputRef: ref }: { outputRef: TaskRecordOutputRef }
         {canReadLog && (
           <button /* ds-allow:button: 日志展开/收起超小尺寸文本按钮（px-1 py-0.5 text-[10px]），primitive 最小 sm 仍更大 */
             type="button"
-            className="flex flex-shrink-0 items-center gap-1 rounded px-1 py-0.5 text-[10px] text-sky-300 hover:bg-sky-500/10"
+            className="flex flex-shrink-0 items-center gap-1 rounded px-1 py-0.5 text-[10px] text-badge-info hover:bg-sky-500/10"
             aria-expanded={expanded}
             onClick={toggleLog}
           >
@@ -640,7 +640,7 @@ const TaskRailStepRow = ({ step, muted = false }: { step: TaskRailStepView; mute
         )}
         {unlocksHint && (
           <span
-            className="min-w-0 flex-shrink truncate rounded border border-sky-400/15 bg-sky-400/5 px-1 py-0.5 text-[10px] text-sky-300/75"
+            className="min-w-0 flex-shrink truncate rounded border border-badge-info/15 bg-sky-400/5 px-1 py-0.5 text-[10px] text-badge-info/75"
             title={unlocksHint}
           >
             {unlocksHint}
@@ -723,7 +723,7 @@ function memoryActionLabel(action: MemoryActivityEvent['action']): string {
 
 function memoryActionClass(action: MemoryActivityEvent['action']): string {
   if (action === 'created') return 'border-emerald-500/20 bg-emerald-500/10 text-emerald-300';
-  if (action === 'updated') return 'border-sky-500/20 bg-sky-500/10 text-sky-300';
+  if (action === 'updated') return 'border-badge-info/20 bg-sky-500/10 text-badge-info';
   if (action === 'deleted') return 'border-red-500/20 bg-red-500/10 text-badge-danger';
   return 'border-violet-500/20 bg-violet-500/10 text-violet-300';
 }

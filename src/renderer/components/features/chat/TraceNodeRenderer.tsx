@@ -513,7 +513,7 @@ function getTimelineContainerClass(tone: TurnTimelinePayload['tone']): string {
     case 'error':
       return 'border-red-500/20 bg-red-500/10';
     case 'info':
-      return 'border-sky-500/20 bg-sky-500/10';
+      return 'border-badge-info/20 bg-sky-500/10';
     default:
       return 'border-border-muted bg-surface-subtle';
   }
@@ -651,7 +651,7 @@ const HookActivityNode: React.FC<{ timeline: TurnTimelinePayload }> = ({ timelin
         aria-expanded={expanded}
         title={expanded ? labels.collapse : labels.expand}
       >
-        <Wrench className="h-3.5 w-3.5 shrink-0 text-sky-300" />
+        <Wrench className="h-3.5 w-3.5 shrink-0 text-badge-info" />
         <span>{labels.title}</span>
         {expanded ? (
           <ChevronDown className="ml-auto h-3.5 w-3.5 shrink-0 text-zinc-600" />

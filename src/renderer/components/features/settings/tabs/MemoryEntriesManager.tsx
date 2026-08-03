@@ -410,7 +410,7 @@ export const MemoryEntriesManager: React.FC<{ onChanged?: () => void | Promise<v
                       {selectedEntry.source.sourceOfTruth === 'light_file' ? (
                         <FileText className="h-4 w-4 text-emerald-300" />
                       ) : (
-                        <Database className="h-4 w-4 text-sky-300" />
+                        <Database className="h-4 w-4 text-badge-info" />
                       )}
                       <span className="truncate">{getMemoryEntrySourceLabel(selectedEntry.source.sourceOfTruth)}</span>
                     </div>

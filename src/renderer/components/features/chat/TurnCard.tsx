@@ -1007,7 +1007,7 @@ function getToneClass(tone: 'neutral' | 'info' | 'success' | 'warning' | 'error'
     case 'error':
       return 'border-red-500/20 bg-red-500/10 text-status-error';
     case 'info':
-      return 'border-sky-500/20 bg-sky-500/10 text-sky-300';
+      return 'border-badge-info/20 bg-sky-500/10 text-badge-info';
     default:
       return 'border-border-muted bg-surface-subtle text-zinc-400';
   }

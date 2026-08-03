@@ -31,8 +31,8 @@ interface AgentTreeSnapshotViewProps {
 
 const STATUS_STYLE: Record<AgentTreeNodeStatus, { icon: React.ReactNode; className: string }> = {
   queued: { icon: <Circle className="h-3.5 w-3.5" />, className: 'text-zinc-500' },
-  running: { icon: <Loader2 className="h-3.5 w-3.5 animate-spin" />, className: 'text-sky-300' },
-  'running-recovered': { icon: <Loader2 className="h-3.5 w-3.5 animate-spin" />, className: 'text-sky-300' },
+  running: { icon: <Loader2 className="h-3.5 w-3.5 animate-spin" />, className: 'text-badge-info' },
+  'running-recovered': { icon: <Loader2 className="h-3.5 w-3.5 animate-spin" />, className: 'text-badge-info' },
   'dead-log-only': { icon: <FileText className="h-3.5 w-3.5" />, className: 'text-zinc-500' },
   completed: { icon: <CheckCircle2 className="h-3.5 w-3.5" />, className: 'text-emerald-300' },
   failed: { icon: <AlertCircle className="h-3.5 w-3.5" />, className: 'text-rose-300' },

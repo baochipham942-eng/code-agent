@@ -244,7 +244,7 @@ export const SidebarSessionList: React.FC<SidebarSessionListProps> = ({
                 </button>
                 {section.tier === 'space' && cloudBadge && (
                   <span className="flex-shrink-0" title={p.tierCloudBadgeTitle} data-testid="sidebar-tier-cloud-badge">
-                    <Cloud className="h-3.5 w-3.5 text-sky-400" aria-label={p.tierCloudBadgeTitle} />
+                    <Cloud className="h-3.5 w-3.5 text-badge-info" aria-label={p.tierCloudBadgeTitle} />
                   </span>
                 )}
                 {section.tier === 'space' && (

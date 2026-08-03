@@ -65,7 +65,7 @@ function getCapabilityIcon(capability: WorkbenchCapabilityRegistryItem): React.R
     case 'skill':
       return <Sparkles className="h-4 w-4 text-fuchsia-300" />;
     case 'connector':
-      return <Plug className="h-4 w-4 text-sky-300" />;
+      return <Plug className="h-4 w-4 text-badge-info" />;
     case 'mcp':
       return <Plug className="h-4 w-4 text-emerald-300" />;
     default:
@@ -339,7 +339,7 @@ export const WorkbenchCapabilitySheetLite: React.FC<WorkbenchCapabilitySheetLite
                 <div className="text-[11px] text-badge-danger">{actionError}</div>
               )}
               {feedback && !actionError && (
-                <div className={`text-[11px] ${feedback.tone === 'success' ? 'text-emerald-300' : 'text-sky-300'}`}>
+                <div className={`text-[11px] ${feedback.tone === 'success' ? 'text-emerald-300' : 'text-badge-info'}`}>
                   {feedback.message}
                 </div>
               )}

@@ -29,7 +29,7 @@ export const MountedConnectorIcons: React.FC = () => {
             onClick={() => removeCapability(capability)}
             title={capability.label}
             aria-label={t.chatInput.connectorIconRemoveAria.replace('{name}', capability.label)}
-            className="flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-full border border-zinc-700 bg-zinc-800/70 text-sky-400 transition-colors hover:border-zinc-500 hover:text-sky-300"
+            className="flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-full border border-zinc-700 bg-zinc-800/70 text-badge-info transition-colors hover:border-zinc-500 hover:text-badge-info"
           >
             <TypeIcon className="h-3 w-3" aria-hidden />
           </button>

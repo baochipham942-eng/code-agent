@@ -101,8 +101,8 @@ const IMPORT_STATUS_CONFIG: Record<MemoryImportV2DiffStatus, Omit<MemoryImportSt
     badgeClass: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300',
   },
   update: {
-    tone: 'text-sky-300',
-    badgeClass: 'border-sky-500/30 bg-sky-500/10 text-sky-300',
+    tone: 'text-badge-info',
+    badgeClass: 'border-badge-info/30 bg-sky-500/10 text-badge-info',
   },
   conflict: {
     tone: 'text-amber-300',

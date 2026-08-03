@@ -718,7 +718,7 @@ export const ChannelsSettings: React.FC = () => {
       case 'lark':
         return <MessageSquare className="w-4 h-4 text-emerald-400" />;
       case 'telegram':
-        return <MessageSquare className="w-4 h-4 text-sky-400" />;
+        return <MessageSquare className="w-4 h-4 text-badge-info" />;
       default:
         return <MessageSquare className="w-4 h-4 text-zinc-400" />;
     }

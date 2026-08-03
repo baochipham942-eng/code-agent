@@ -81,7 +81,7 @@ export const EvalCenterPage: React.FC = () => {
                 {key === 'validation' && showValidationBadge && (
                   <span
                     data-testid="eval-center-validation-badge"
-                    className="absolute -right-1 -top-1 rounded-full border border-sky-500/40 bg-sky-500/20 px-1 text-[9px] leading-3 text-sky-200"
+                    className="absolute -right-1 -top-1 rounded-full border border-badge-info/40 bg-sky-500/20 px-1 text-[9px] leading-3 text-badge-info"
                   >
                     {t.evalCenter.newRequestBadge}
                   </span>

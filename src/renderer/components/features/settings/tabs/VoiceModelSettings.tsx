@@ -341,7 +341,7 @@ export const VoiceModelSettings: React.FC = () => {
                 data-testid={`voice-model-voice-${voice}`}
                 onClick={() => void persistLive({ voiceId: voice })}
                 className={`flex w-full items-center gap-3 px-3 py-2 text-left text-sm transition-colors ${
-                  active ? 'bg-sky-500/10 text-sky-300' : 'text-zinc-300 hover:bg-zinc-800'
+                  active ? 'bg-sky-500/10 text-badge-info' : 'text-zinc-300 hover:bg-zinc-800'
                 }`}
               >
                 <span className="w-4 text-xs">{active ? '✓' : ''}</span>

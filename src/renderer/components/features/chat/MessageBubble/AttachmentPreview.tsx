@@ -136,7 +136,7 @@ const AttachmentStateBadge: React.FC<{
       : state.tone === 'danger'
         ? 'border-red-500/30 bg-red-500/10 text-badge-danger'
         : state.tone === 'active'
-          ? 'border-sky-500/30 bg-sky-500/10 text-sky-300'
+          ? 'border-badge-info/30 bg-sky-500/10 text-badge-info'
           : 'border-zinc-600 bg-zinc-800 text-zinc-400';
   const Icon = retrying ? Loader2 : state.tone === 'danger' ? AlertCircle : state.tone === 'success' ? CheckCircle : Loader2;
 

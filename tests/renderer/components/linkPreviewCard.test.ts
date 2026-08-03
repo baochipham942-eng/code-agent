@@ -38,7 +38,8 @@ describe('LinkPreviewCard（轻呈现 + favicon：raw URL 渲染为 16px 图标 
     );
     expect(html).toContain('favicons?domain=baochipham942.feishu.cn');
     expect(html).toContain('h-4 w-4');
-    expect(html).toContain('text-sky-400/80');
+    expect(html).toContain('text-badge-info/80');
+    expect(html).not.toContain('text-sky-400/80');
     expect(html).toContain('decoration-sky-400/30');
     expect(html).toContain('underline');
     expect(html).toContain('>https://baochipham942.feishu.cn/docx/abc</a>');

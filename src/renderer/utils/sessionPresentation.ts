@@ -19,7 +19,7 @@ export interface SessionStatusPresentation {
 const PRESENTATION: Record<SessionStatusKind, SessionStatusPresentation> = {
   // 每种状态用各自精确的词，不再把 error/paused/incomplete 全叫"待处理"（同词三义、且红色误导）。
   error:      { kind: 'error',      label: '出错',   toneClassName: 'text-badge-danger bg-red-500/10 border-red-500/20', showBadge: true },
-  background: { kind: 'background', label: '执行中', toneClassName: 'text-sky-300 bg-sky-500/10 border-sky-500/20', showBadge: true },
+  background: { kind: 'background', label: '执行中', toneClassName: 'text-badge-info bg-sky-500/10 border-badge-info/20', showBadge: true },
   paused:     { kind: 'paused',     label: '已暂停', toneClassName: 'text-amber-300 bg-amber-500/10 border-amber-500/20', showBadge: true },
   live:       { kind: 'live',       label: '执行中', toneClassName: 'text-emerald-300 bg-emerald-500/10 border-emerald-500/20', showBadge: true },
   approval:   { kind: 'approval',   label: '待确认', toneClassName: 'text-violet-300 bg-violet-500/10 border-violet-500/20', showBadge: true },

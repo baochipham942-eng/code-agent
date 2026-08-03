@@ -287,16 +287,16 @@ const MemoryAuditSummary: React.FC<{ audit: ReplayMemoryAudit }> = ({ audit }) =
 };
 
 const ModelDecisionSummary: React.FC<{ decision: ReplayModelDecision; audit?: ReplayMemoryAudit | null }> = ({ decision, audit }) => (
-  <div className="rounded-md border border-sky-400/10 bg-sky-400/[0.04] px-3 py-2">
+  <div className="rounded-md border border-badge-info/10 bg-sky-400/[0.04] px-3 py-2">
     <div className="flex flex-wrap items-center justify-between gap-2">
       <div className="min-w-0">
-        <div className="flex items-center gap-2 text-sm text-sky-100">
+        <div className="flex items-center gap-2 text-sm text-badge-info">
           <Cpu className="h-4 w-4" />
           <span className="truncate">{decision.provider}/{decision.model}</span>
         </div>
-        <div className="mt-1 text-[11px] text-sky-200/60">{strategyLabel(decision, audit)}</div>
+        <div className="mt-1 text-[11px] text-badge-info/60">{strategyLabel(decision, audit)}</div>
       </div>
-      <div className="font-mono text-[11px] text-sky-200/50">
+      <div className="font-mono text-[11px] text-badge-info/50">
         {formatNumber(decision.inputTokens)} in / {formatNumber(decision.outputTokens)} out
       </div>
     </div>
@@ -452,7 +452,7 @@ export const ReplayAuditPanelView: React.FC<ReplayAuditPanelViewProps> = ({
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
             <div className="flex items-center gap-2 text-sm font-medium text-zinc-100">
-              <ShieldCheck className="h-4 w-4 text-sky-300" />
+              <ShieldCheck className="h-4 w-4 text-badge-info" />
               Replay/Audit
             </div>
             <div className="mt-1 truncate text-xs text-zinc-500">

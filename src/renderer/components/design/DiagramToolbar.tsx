@@ -122,7 +122,7 @@ export const DiagramToolbar: React.FC<DiagramToolbarProps> = ({
             data-tool={it.id}
             onClick={() => onToolChange(it.id)}
             className={`inline-flex h-7 w-7 items-center justify-center rounded-md transition-colors ${
-              tool === it.id ? 'bg-sky-500/25 text-sky-200' : 'text-zinc-400 hover:bg-white/[0.06] hover:text-zinc-100'
+              tool === it.id ? 'bg-sky-500/25 text-badge-info' : 'text-zinc-400 hover:bg-white/[0.06] hover:text-zinc-100'
             }`}
           >
             {it.icon}

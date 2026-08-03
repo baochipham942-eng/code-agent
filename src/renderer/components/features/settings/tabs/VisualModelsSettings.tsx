@@ -97,7 +97,7 @@ export const BuiltinModelList: React.FC<{
           <li key={m.id}>
             <label
               className={`flex items-center gap-3 rounded-lg border px-3 py-2 transition-colors ${readOnly ? '' : 'cursor-pointer'} ${
-                isSelected ? 'border-sky-500/40 bg-sky-500/5' : 'border-zinc-800 bg-zinc-900/40 hover:border-zinc-600'
+                isSelected ? 'border-badge-info/40 bg-sky-500/5' : 'border-zinc-800 bg-zinc-900/40 hover:border-zinc-600'
               }`}
             >
               {!readOnly && (
@@ -116,7 +116,7 @@ export const BuiltinModelList: React.FC<{
                 </span>
               )}
               {isSelected && (
-                <span className="inline-flex items-center rounded-full bg-sky-500/15 px-2 py-0.5 text-[11px] font-medium text-sky-300">
+                <span className="inline-flex items-center rounded-full bg-sky-500/15 px-2 py-0.5 text-[11px] font-medium text-badge-info">
                   {defaultBadge}
                 </span>
               )}

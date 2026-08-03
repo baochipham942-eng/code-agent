@@ -981,7 +981,7 @@ export const DesignCanvas: React.FC<{
       {diagramTool === 'connect' && hintSlotFits && (
         <div
           data-testid="design-canvas-diagram-hint"
-          className="pointer-events-none absolute left-4 z-10 rounded-md bg-zinc-900/85 px-2.5 py-1 text-[11px] text-sky-200/90 shadow"
+          className="pointer-events-none absolute left-4 z-10 rounded-md bg-zinc-900/85 px-2.5 py-1 text-[11px] text-badge-info/90 shadow"
           style={hintSlotStyle}
         >
           {t.design.diagramConnectHint}
@@ -1020,7 +1020,7 @@ export const DesignCanvas: React.FC<{
               }}
               onBlur={commitDiagramText}
               placeholder={t.design.diagramTextPlaceholder}
-              className="absolute z-10 rounded border border-sky-400/60 bg-zinc-900/95 px-1.5 py-0.5 text-xs text-zinc-100 shadow-lg outline-none placeholder:text-zinc-500"
+              className="absolute z-10 rounded border border-badge-info/60 bg-zinc-900/95 px-1.5 py-0.5 text-xs text-zinc-100 shadow-lg outline-none placeholder:text-zinc-500"
               style={{ left: sx, top: sy, minWidth: 120 }}
             />
           );
@@ -1039,7 +1039,7 @@ export const DesignCanvas: React.FC<{
           <span className="max-w-[36ch] text-center leading-relaxed">{t.design.canvasEmpty}</span>
           <div className="flex flex-col gap-2 text-xs text-zinc-400">
             <div className="flex items-center gap-2">
-              <MessageSquare className="h-3.5 w-3.5 shrink-0 text-sky-300" />
+              <MessageSquare className="h-3.5 w-3.5 shrink-0 text-badge-info" />
               <span>{t.design.canvasEmptyChatEntry}</span>
             </div>
             <div className="flex items-center gap-2">

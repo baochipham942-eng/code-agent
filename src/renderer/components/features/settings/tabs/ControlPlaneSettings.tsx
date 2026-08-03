@@ -22,7 +22,7 @@ type ControlPlaneText = typeof zh.settings.controlPlane;
 
 const OUTCOME_CLASSES: Record<AdminControlPlaneAuditEventItem['outcome'], string> = {
   served: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300',
-  not_modified: 'border-sky-500/30 bg-sky-500/10 text-sky-300',
+  not_modified: 'border-badge-info/30 bg-sky-500/10 text-badge-info',
   head: 'border-zinc-600 bg-zinc-800 text-zinc-300',
   error: 'border-red-500/30 bg-red-500/10 text-badge-danger',
 };

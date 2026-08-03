@@ -75,7 +75,7 @@ export const DesignLayerPanel: React.FC<{
               >
                 <div className="flex items-center gap-2">
                   {isVideoNode(node) ? (
-                    <Film className="h-3.5 w-3.5 text-sky-300" />
+                    <Film className="h-3.5 w-3.5 text-badge-info" />
                   ) : (
                     <ImageIcon className="h-3.5 w-3.5 text-emerald-300" />
                   )}

@@ -90,8 +90,8 @@ export const GoalNoticeMessage: React.FC<GoalNoticeMessageProps> = ({ content })
 
   if (notice.kind === 'start') {
     return (
-      <div className="goal-notice my-1 flex items-center gap-2 rounded-md border border-sky-500/30 bg-sky-500/5 px-3 py-2 text-sm">
-        <Target className="h-4 w-4 flex-shrink-0 text-sky-400" />
+      <div className="goal-notice my-1 flex items-center gap-2 rounded-md border border-badge-info/30 bg-sky-500/5 px-3 py-2 text-sm">
+        <Target className="h-4 w-4 flex-shrink-0 text-badge-info" />
         <span className="text-zinc-300">
           {t.goalNotice.startPrefix}<span className="font-medium text-zinc-100">{notice.goal}</span>
         </span>

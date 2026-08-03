@@ -132,7 +132,7 @@ export function getNativeConnectorReadiness(
     case 'unchecked':
       return {
         label: labels.unchecked,
-        className: 'bg-sky-500/15 text-sky-300 border border-sky-500/25',
+        className: 'bg-sky-500/15 text-badge-info border border-badge-info/25',
       };
     default:
       return {
@@ -168,7 +168,7 @@ export function getRuntimeConnectorReadiness(
     case 'unchecked':
       return {
         label: labels.unchecked,
-        className: 'bg-sky-500/15 text-sky-300 border border-sky-500/25',
+        className: 'bg-sky-500/15 text-badge-info border border-badge-info/25',
       };
     default:
       return {
@@ -547,7 +547,7 @@ export const NativeConnectorsSection: React.FC = () => {
   return (
     <div className="bg-zinc-800 rounded-lg p-4 border border-zinc-700">
       <div className="flex items-center gap-2 mb-3">
-        <Plug className="w-4 h-4 text-sky-400" />
+        <Plug className="w-4 h-4 text-badge-info" />
         <h4 className="text-sm font-medium text-zinc-200">{connectorText.title}</h4>
         <span className="text-xs px-1.5 py-0.5 rounded bg-zinc-600 text-zinc-400">macOS</span>
       </div>

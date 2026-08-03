@@ -20,7 +20,7 @@ export const ModelStrategyRecommendationStrip: React.FC<ModelStrategyRecommendat
     className={`mb-2 flex items-center gap-2 rounded-lg border px-3 py-2 text-xs ${
       recommendation.tone === 'warning'
         ? 'border-amber-500/20 bg-amber-500/10 text-amber-200'
-        : 'border-sky-500/20 bg-sky-500/10 text-sky-200'
+        : 'border-badge-info/20 bg-sky-500/10 text-badge-info'
     }`}
     data-testid="model-strategy-recommendation"
   >
@@ -49,7 +49,7 @@ export const ModelStrategyRecommendationStrip: React.FC<ModelStrategyRecommendat
       <button
         type="button"
         onClick={onApply}
-        className="shrink-0 rounded border border-sky-400/30 bg-sky-400/10 px-2 py-1 text-[11px] font-medium text-sky-100 transition hover:bg-sky-400/20"
+        className="shrink-0 rounded border border-badge-info/30 bg-sky-400/10 px-2 py-1 text-[11px] font-medium text-badge-info transition hover:bg-sky-400/20"
       >
         {recommendation.primaryLabel ?? t.modelStrategy.primaryLabelSwitch}
       </button>

@@ -178,7 +178,7 @@ export function SurfaceEvidenceCard({ evidence, copy, language, scope }: Surface
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-1.5">
-            <span className="rounded bg-sky-400/10 px-1.5 py-0.5 text-[9px] font-medium text-sky-200">
+            <span className="rounded bg-sky-400/10 px-1.5 py-0.5 text-[9px] font-medium text-badge-info">
               {copy.evidence.kind[evidence.kind]}
             </span>
             <span className="text-[9px] text-zinc-600">{copy.evidence.source[evidence.source]}</span>

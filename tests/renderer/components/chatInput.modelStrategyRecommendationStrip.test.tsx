@@ -72,7 +72,7 @@ describe('ModelStrategyRecommendationStrip', () => {
       />,
     );
 
-    expect(html).toContain('border-sky-500/20');
+    expect(html).toContain('border-badge-info/20');
     expect(html).toContain('当前 provider 不可用');
     expect(html).toContain('保持当前');
     expect(html).not.toContain('采用建议');

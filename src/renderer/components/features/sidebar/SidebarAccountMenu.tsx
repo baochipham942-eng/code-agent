@@ -120,7 +120,7 @@ export const SidebarAccountMenu: React.FC<SidebarAccountMenuProps> = ({
           />
           <AccountMenuItem
             onClick={() => { setShowTimeCapabilityCenter(!showTimeCapabilityCenter); onClose(); }}
-            icon={<CalendarDays className={`w-4 h-4 ${showTimeCapabilityCenter ? 'text-sky-400' : 'text-sky-400/80'}`} />}
+            icon={<CalendarDays className={`w-4 h-4 ${showTimeCapabilityCenter ? 'text-badge-info' : 'text-badge-info/80'}`} />}
             label={sb.menuTimeCapability}
           />
           <AccountMenuItem

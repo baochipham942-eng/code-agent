@@ -215,6 +215,40 @@ describe('刚刚卡住 → worth-hearing', () => {
     expect(worthHearing()).toHaveLength(0);
   });
 
+  it('同一拍卡住好几条：只播最后一条，不连发', async () => {
+    await spawnRunning('写周报');
+    await pushTasks([task({ id: 't1', status: 'in_progress' }), task({ id: 't2', status: 'in_progress' })]);
+    narrations.length = 0;
+
+    await pushTasks([
+      task({ id: 't1', status: 'blocked', subject: '登录后台', blockedReason: '缺权限' }),
+      task({ id: 't2', status: 'blocked', subject: '导出报表', blockedReason: '站点拒绝' }),
+    ]);
+
+    // 注入一条就会立刻请求一次 response，同一拍连发多条会让 response.create 互相碰撞。
+    const spoken = worthHearing();
+    expect(spoken).toHaveLength(1);
+    expect(spoken[0]?.summary).toContain('导出报表');
+  });
+
+  it('同一拍里被略过的那条，之后不会被当成「刚刚卡住」补念', async () => {
+    await spawnRunning('写周报');
+    await pushTasks([task({ id: 't1', status: 'in_progress' }), task({ id: 't2', status: 'in_progress' })]);
+    await pushTasks([
+      task({ id: 't1', status: 'blocked', subject: '登录后台', blockedReason: '缺权限' }),
+      task({ id: 't2', status: 'blocked', subject: '导出报表', blockedReason: '站点拒绝' }),
+    ]);
+    narrations.length = 0;
+
+    await pushTasks([
+      task({ id: 't1', status: 'blocked', subject: '登录后台', blockedReason: '缺权限' }),
+      task({ id: 't2', status: 'blocked', subject: '导出报表', blockedReason: '站点拒绝' }),
+    ]);
+
+    // 快照必须把被略过的那条也记成 blocked，否则它会在下一轮诈尸。
+    expect(worthHearing()).toHaveLength(0);
+  });
+
   it('解开之后再次卡住，算新的一次转折', async () => {
     await spawnRunning('写周报');
     await pushTasks([task({ id: 't1', status: 'in_progress' })]);

@@ -694,24 +694,29 @@ function onAgentStreamEvent(state: LedgerState, sessionId: string, event: AgentE
 function announceNewlyBlocked(state: LedgerState, item: VoiceWorkItem, tasks: SessionTask[]): void {
   if (!Array.isArray(tasks)) return;
   const narrate = state.narrate;
+  let latest: SessionTask | undefined;
   for (const task of tasks) {
     const id = typeof task?.id === 'string' ? task.id : '';
     if (!id) continue;
     const previous = state.taskSnapshot.get(id);
+    // 快照无条件更新（哪怕已挂断、哪怕这条不播）：漏记一轮，下次就会把一条早就卡着的
+    // 任务当成「刚刚卡住」念出来。
     state.taskSnapshot.set(id, task.status);
-    // 快照更新照做、播报另说：narrate 为 null（已挂断）时也要记下这一轮的状态，
-    // 否则重新有人听的时候，一堆早就卡住的任务会被当成「刚刚卡住」一起涌出来。
-    if (!narrate) continue;
     if (task.status !== 'blocked' || previous === undefined || previous === 'blocked') continue;
-    narrate(buildBlockedNarration({
-      workItemId: `${item.id}:blocked-${(state.milestoneSeq += 1)}`,
-      title: item.title,
-      subject: task.subject,
-      // blockedReason 存的已经是过了清洗层的人话（机器噪音会被置空），这里不再洗一遍。
-      reason: task.blockedReason ?? '',
-      ...(state.activeAgentId ? { agentId: state.activeAgentId } : {}),
-    }));
+    latest = task;
   }
+  // 一次事件里可能同时卡住好几条，**只播最后一条**——与 todo_update 那条同一个理由：
+  // 电话里连播三句就是碎碎念，而且注入一条就会立刻请求一次 response，
+  // 同一拍连发多条会让这些 response.create 互相碰撞。少播一条，好过播乱一片。
+  if (!narrate || !latest) return;
+  narrate(buildBlockedNarration({
+    workItemId: `${item.id}:blocked-${(state.milestoneSeq += 1)}`,
+    title: item.title,
+    subject: latest.subject,
+    // blockedReason 存的已经是过了清洗层的人话（机器噪音会被置空），这里不再洗一遍。
+    reason: latest.blockedReason ?? '',
+    ...(state.activeAgentId ? { agentId: state.activeAgentId } : {}),
+  }));
 }
 
 /**

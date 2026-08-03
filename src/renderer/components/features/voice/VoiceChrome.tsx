@@ -169,6 +169,8 @@ export const VoiceChrome: React.FC<{ sessionId: string | null }> = ({ sessionId:
         <VoicePlanet visual={visual} />
         <span
           data-testid="voice-status"
+          role="status"
+          aria-live="polite"
           title={visual === 'error' && store.error ? resolveVoiceErrorTitle(t, store.error) : statusText}
           className={`flex min-w-0 flex-1 items-baseline truncate text-[11.5px] tracking-[0.02em] ${STATUS_COLOR[visual]}`}
         >
@@ -189,7 +191,7 @@ export const VoiceChrome: React.FC<{ sessionId: string | null }> = ({ sessionId:
             onClick={() => voiceCallBridge.manualTap()}
             className={`flex h-[30px] items-center whitespace-nowrap rounded-[var(--radius-xl)] border px-3 text-[11.5px] transition-colors ${
               store.pttCaptureOn
-                ? 'border-badge-success/50 bg-emerald-500/15 text-badge-success'
+                ? 'border-badge-success/50 bg-badge-success text-badge-success'
                 : 'border-zinc-700 bg-zinc-800 text-zinc-400 hover:border-zinc-600 hover:text-zinc-300'
             }`}
           >
@@ -209,8 +211,8 @@ export const VoiceChrome: React.FC<{ sessionId: string | null }> = ({ sessionId:
               isConnecting
                 ? 'cursor-not-allowed text-zinc-600'
                 : store.muted
-                  ? 'bg-amber-500/15 text-badge-warning'
-                  : 'bg-primary-500/15 text-badge-accent hover:bg-primary-500/20'
+                  ? 'bg-badge-warning text-badge-warning'
+                  : 'bg-badge-accent text-badge-accent hover:bg-[color-mix(in_srgb,var(--badge-accent-bg)_75%,var(--badge-accent-border))]'
             }`}
           >
             {store.muted ? <MicOff className="h-[15px] w-[15px]" /> : <Mic className="h-[15px] w-[15px]" />}
@@ -223,7 +225,7 @@ export const VoiceChrome: React.FC<{ sessionId: string | null }> = ({ sessionId:
           onClick={() => voiceCallBridge.hangUp()}
           title={t.voice.live.endTitle}
           aria-label={t.voice.live.endTitle}
-          className="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-[var(--radius-xl)] bg-red-500/15 text-badge-danger transition-colors hover:bg-red-500/20 hover:text-badge-danger"
+          className="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-[var(--radius-xl)] bg-badge-danger text-badge-danger transition-colors hover:bg-[color-mix(in_srgb,var(--badge-danger-bg)_75%,var(--badge-danger-border))] hover:text-badge-danger"
         >
           <X className="h-[15px] w-[15px]" />
         </button>

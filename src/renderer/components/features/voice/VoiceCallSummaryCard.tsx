@@ -55,8 +55,11 @@ export const VoiceCallSummaryCard: React.FC<{ summary: VoiceCallSummary }> = ({ 
 
   return (
     <div data-testid="voice-call-summary-card" className="py-1">
-      {/* P2 品牌叙事容器：1px 品牌青半透明描边 + 极浅 teal→透明纵向渐变底（rgba 字面量沿用 VoiceChrome/AgentPointerOverlay 先例，非 hex，不触 ds hex 门） */}
-      <div className="rounded-lg border border-[rgba(45,212,191,0.30)] bg-[linear-gradient(180deg,rgba(15,118,110,0.10),transparent)]">
+      {/* P2 品牌叙事容器：1px 品牌描边 + 极浅品牌色→透明纵向渐变底。描边/渐变都走主题
+          token（badge-accent 边框、brand-primary-muted 底色），hc 主题下自动换高对比色。
+          2026-08-03 之前这里是 rgba 字面量——不是为了设计，是因为 hex 门只认 6 位 hex、
+          rgba 不触门，刻意绕门导致品牌色偏离 token 体系。 */}
+      <div className="rounded-lg border border-badge-accent bg-[linear-gradient(180deg,var(--brand-primary-muted),transparent)]">
         <button /* ds-allow:button: 摘要卡整行即展开/收起开关（图标+文案复合内容，aria-expanded），非主操作按钮，沿用 bare 先例 */
           type="button"
           aria-expanded={expanded}

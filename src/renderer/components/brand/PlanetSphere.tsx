@@ -310,6 +310,20 @@ function getTexture(kind: PlanetKind | 'clouds'): string {
 // 组件
 // ============================================================================
 
+/** PLANET_CSS 单例注入：2026-08-03 之前每个实例都渲染一份 <style>（约 4KB），
+ *  多星球同屏重复注入。改为首个挂载的实例注入一次到 <head>，常驻不卸载
+ *  （样式与组件同生命周期语义：注入即全局生效，卸载任一个星球不应带走样式）。 */
+const PLANET_STYLE_ID = 'neo-planet-styles';
+
+function ensurePlanetStyles(): void {
+  if (typeof document === 'undefined') return;
+  if (document.getElementById(PLANET_STYLE_ID)) return;
+  const el = document.createElement('style');
+  el.id = PLANET_STYLE_ID;
+  el.textContent = PLANET_CSS;
+  document.head.appendChild(el);
+}
+
 export const PlanetSphere: React.FC<PlanetSphereProps> = ({
   kind,
   spinSeconds,
@@ -326,6 +340,10 @@ export const PlanetSphere: React.FC<PlanetSphereProps> = ({
   const cloudSpin = spinSeconds / 1.9;
   const surfaceRef = useRef<HTMLSpanElement>(null);
   const cloudsRef = useRef<HTMLSpanElement>(null);
+
+  useEffect(() => {
+    ensurePlanetStyles();
+  }, []);
 
   // 拖拽旋转（interactive）：pointer 水平拖动改贴图相位（沿自转方向），
   // 松手按最近速度惯性衰减。JS rAF 接管后 CSS 自转动画由 data-interactive
@@ -449,7 +467,6 @@ export const PlanetSphere: React.FC<PlanetSphereProps> = ({
       data-fx={fx}
       data-interactive={interactive ? 'true' : undefined}
       style={slotStyle}
-      role="img"
       aria-hidden="true"
       data-testid="voice-planet"
     >
@@ -463,14 +480,14 @@ export const PlanetSphere: React.FC<PlanetSphereProps> = ({
           <span className="neo-planet-moon" />
         </span>
       )}
-      <style>{PLANET_CSS}</style>
     </span>
   );
 };
 
 
 // ============================================================================
-// 样式（同 ThoughtDisplay 的内联 <style> 先例；作用域类名 neo-planet-* 不外溢）
+// 样式（经 ensurePlanetStyles 单例注入 <head>，多实例共享一份；作用域类名
+// neo-planet-* 不外溢）
 //
 // 自转 = background-position-x 从 0 走到 -1×--texw（贴图显示宽 = 2×球径，横向
 // repeat，走过一整张贴图即一周）。辉光 scale/opacity 由 CSS var --rms（真实
@@ -600,12 +617,13 @@ const PLANET_CSS = `
   opacity: .5;
 }
 
-/* 轨道环 + 3px 卫星（listening 地球：Neo 环绕母星） */
+/* 轨道环 + 3px 卫星（listening 地球：Neo 环绕母星）。
+   颜色跟 --text-primary 走 color-mix：白色字面量在浅色主题下会白压白隐形（2026-08-03）。 */
 .neo-planet-orbit {
   position: absolute;
   inset: -4px;
   border-radius: 50%;
-  border: 1px solid rgba(255,255,255,.16);
+  border: 1px solid color-mix(in srgb, var(--text-primary) 16%, transparent);
   pointer-events: none;
 }
 .neo-planet-moon {
@@ -621,7 +639,7 @@ const PLANET_CSS = `
   width: 3px;
   height: 3px;
   border-radius: 50%;
-  background: rgba(255,255,255,.85);
+  background: color-mix(in srgb, var(--text-primary) 85%, transparent);
 }
 @keyframes neoPlanetOrbit {
   to { transform: rotate(360deg); }

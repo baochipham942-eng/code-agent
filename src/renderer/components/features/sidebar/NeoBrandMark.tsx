@@ -69,7 +69,9 @@ export const NeoBrandMark: React.FC<NeoBrandMarkProps> = ({
           d="M37 6.5 L38.1 10 L41.6 11.1 L38.1 12.2 L37 15.7 L35.9 12.2 L32.4 11.1 L35.9 10 Z"
           fill="#A7F3D0"
         />
-        {/* 轨道环（默认静态） */}
+        {/* 轨道环（默认静态）。r=27 超出 48×48 viewBox 是有意出血：轨道寓意环绕砖体，
+            四角露出弧线、四边被裁。注意卫星点轨道半径就是 27（(43.1,4.9) 距中心
+            √(19.1²+19.1²)≈27.0），改 r 必须同步卫星坐标，否则卫星脱轨。 */}
         <circle cx="24" cy="24" r="27" stroke="#5eead4" strokeOpacity="0.34" strokeWidth="1" />
         {/* 动效卫星点：2px 核心 + 辉光晕，绕砖心（viewBox 中心）旋转 */}
         {animatedOrbit && (

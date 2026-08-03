@@ -6,6 +6,27 @@
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' blob: https://us-assets.i.posthog.com; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: https:; media-src 'self' blob: data:; connect-src 'self' https: http://localhost:* http://127.0.0.1:* wss: ws://localhost:* ws://127.0.0.1:*; frame-src 'self' https: http://localhost:* http://127.0.0.1:*;" />
     <link rel="icon" href="./favicon.ico" sizes="any" />
     <title></title>
+    <script>
+      // 首帧前解析主题，避免浅色/高对比用户启动闪一帧深色（FOUC）。
+      // 与 useTheme.ts 的解析逻辑保持一致：localStorage（key: code-agent-theme）优先，
+      // 'system' 跟随 prefers-color-scheme，未知/缺失回退 dark。后端 ui.theme 由
+      // App 启动后异步读回并同步 localStorage，首帧只能以 localStorage 快照为准。
+      (function () {
+        var stored = null;
+        try { stored = localStorage.getItem('code-agent-theme'); } catch (e) { /* 隐私模式等场景忽略 */ }
+        var explicit = ['light', 'dark', 'high-contrast-light', 'high-contrast-dark'];
+        var resolved = explicit.indexOf(stored) !== -1 ? stored
+          : stored === 'system'
+            ? (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+            : 'dark';
+        var root = document.documentElement;
+        root.setAttribute('data-theme', resolved);
+        root.classList.remove('light', 'dark', 'high-contrast-light', 'high-contrast-dark');
+        root.classList.add(resolved);
+        if (resolved === 'high-contrast-dark') root.classList.add('dark');
+        if (resolved === 'high-contrast-light') root.classList.add('light');
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

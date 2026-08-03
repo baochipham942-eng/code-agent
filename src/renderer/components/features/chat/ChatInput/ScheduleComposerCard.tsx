@@ -45,13 +45,13 @@ export const ScheduleComposerCard: React.FC<ScheduleComposerCardProps> = ({
   return (
     <div
       data-schedule-composer
-      className="mb-2 px-3 py-3 bg-indigo-500/10 border border-indigo-500/20 rounded-lg animate-fadeIn"
+      className="mb-2 px-3 py-3 bg-indigo-500/10 border border-badge-accent/20 rounded-lg animate-fadeIn"
     >
       <div className="flex items-start gap-2">
-        <Clock3 className="w-4 h-4 text-indigo-400 shrink-0 mt-0.5" />
+        <Clock3 className="w-4 h-4 text-badge-accent shrink-0 mt-0.5" />
         <div className="flex-1 min-w-0">
-          <div className="text-xs font-medium text-indigo-300">{t.scheduleComposer.title}</div>
-          <div className="mt-0.5 text-[11px] text-indigo-200/60 leading-relaxed">
+          <div className="text-xs font-medium text-badge-accent">{t.scheduleComposer.title}</div>
+          <div className="mt-0.5 text-[11px] text-badge-accent/60 leading-relaxed">
             {t.scheduleComposer.descLine1}
             {t.scheduleComposer.descLine2}
           </div>
@@ -75,12 +75,12 @@ export const ScheduleComposerCard: React.FC<ScheduleComposerCardProps> = ({
               type="button"
               data-schedule-template={template.id}
               onClick={() => pickTemplate(template)}
-              className="flex items-center gap-2 px-2.5 py-2 text-left bg-indigo-500/5 border border-indigo-500/20 rounded-md hover:bg-indigo-500/15 transition-colors"
+              className="flex items-center gap-2 px-2.5 py-2 text-left bg-indigo-500/5 border border-badge-accent/20 rounded-md hover:bg-indigo-500/15 transition-colors"
             >
               <span className="text-base leading-none">{template.emoji}</span>
               <span className="min-w-0">
-                <span className="block text-xs text-indigo-200 truncate">{template.name}</span>
-                <span className="block text-[10px] text-indigo-200/50 truncate">{template.blurb}</span>
+                <span className="block text-xs text-badge-accent truncate">{template.name}</span>
+                <span className="block text-[10px] text-badge-accent/50 truncate">{template.blurb}</span>
               </span>
             </button>
           ))}
@@ -88,14 +88,14 @@ export const ScheduleComposerCard: React.FC<ScheduleComposerCardProps> = ({
       ) : (
         // 第二步：填空 + 创建
         <div className="mt-2.5 space-y-2">
-          <div className="flex items-center gap-1.5 text-[11px] text-indigo-200/70">
+          <div className="flex items-center gap-1.5 text-[11px] text-badge-accent/70">
             <span className="text-sm leading-none">{selected.emoji}</span>
             <span>{selected.name}</span>
           </div>
 
           {selected.fields.map((field) => (
             <label key={field.key} className="block">
-              <span className="block mb-1 text-[10px] text-indigo-200/50">{field.label}</span>
+              <span className="block mb-1 text-[10px] text-badge-accent/50">{field.label}</span>
               {field.multiline ? (
                 <textarea
                   data-schedule-field={field.key}
@@ -103,7 +103,7 @@ export const ScheduleComposerCard: React.FC<ScheduleComposerCardProps> = ({
                   onChange={(e) => setValues((prev) => ({ ...prev, [field.key]: e.target.value }))}
                   placeholder={field.placeholder}
                   rows={2}
-                  className="w-full bg-zinc-800 border border-indigo-500/30 rounded px-2 py-1 text-xs text-zinc-200 outline-hidden focus:border-indigo-500/50 resize-none"
+                  className="w-full bg-zinc-800 border border-badge-accent/30 rounded px-2 py-1 text-xs text-zinc-200 outline-hidden focus:border-badge-accent/50 resize-none"
                   autoFocus
                 />
               ) : (
@@ -113,7 +113,7 @@ export const ScheduleComposerCard: React.FC<ScheduleComposerCardProps> = ({
                   value={values[field.key] ?? ''}
                   onChange={(e) => setValues((prev) => ({ ...prev, [field.key]: e.target.value }))}
                   placeholder={field.placeholder}
-                  className="w-full bg-zinc-800 border border-indigo-500/30 rounded px-2 py-1 text-xs text-zinc-200 outline-hidden focus:border-indigo-500/50"
+                  className="w-full bg-zinc-800 border border-badge-accent/30 rounded px-2 py-1 text-xs text-zinc-200 outline-hidden focus:border-badge-accent/50"
                 />
               )}
             </label>
@@ -121,18 +121,18 @@ export const ScheduleComposerCard: React.FC<ScheduleComposerCardProps> = ({
 
           {/* 预览将要创建的自然语言描述（自定义模式下即用户原文，不重复展示） */}
           {selected.id !== CUSTOM_TEMPLATE_ID && composed && (
-            <div className="text-[10px] text-indigo-200/40 leading-relaxed">{t.scheduleComposer.willCreate.replace('{composed}', composed)}</div>
+            <div className="text-[10px] text-badge-accent/40 leading-relaxed">{t.scheduleComposer.willCreate.replace('{composed}', composed)}</div>
           )}
 
           <label className="block">
-            <span className="block mb-1 text-[10px] text-indigo-200/50">{t.scheduleComposer.handoffLabel}</span>
+            <span className="block mb-1 text-[10px] text-badge-accent/50">{t.scheduleComposer.handoffLabel}</span>
             <textarea
               data-schedule-field="handoffPrompt"
               value={handoffPrompt}
               onChange={(e) => setHandoffPrompt(e.target.value)}
               placeholder={t.scheduleComposer.handoffPlaceholder}
               rows={2}
-              className="w-full bg-zinc-800 border border-indigo-500/30 rounded px-2 py-1 text-xs text-zinc-200 outline-hidden focus:border-indigo-500/50 resize-none"
+              className="w-full bg-zinc-800 border border-badge-accent/30 rounded px-2 py-1 text-xs text-zinc-200 outline-hidden focus:border-badge-accent/50 resize-none"
             />
           </label>
 
@@ -141,7 +141,7 @@ export const ScheduleComposerCard: React.FC<ScheduleComposerCardProps> = ({
               type="button"
               onClick={() => setSelected(null)}
               disabled={creating}
-              className="flex items-center gap-1 px-2 py-1 text-[11px] text-indigo-200/60 hover:text-indigo-200 transition-colors disabled:opacity-50"
+              className="flex items-center gap-1 px-2 py-1 text-[11px] text-badge-accent/60 hover:text-badge-accent transition-colors disabled:opacity-50"
             >
               <ChevronLeft className="w-3 h-3" />
               {t.scheduleComposer.switchTemplate}
@@ -152,7 +152,7 @@ export const ScheduleComposerCard: React.FC<ScheduleComposerCardProps> = ({
               data-schedule-create
               onClick={() => canCreate && onSubmit(composed, { handoffPrompt: handoffPrompt.trim() || undefined })}
               disabled={!canCreate}
-              className="flex items-center gap-1 px-3 py-1 text-xs bg-indigo-500/20 text-indigo-200 rounded hover:bg-indigo-500/30 transition-colors disabled:opacity-50"
+              className="flex items-center gap-1 px-3 py-1 text-xs bg-indigo-500/20 text-badge-accent rounded hover:bg-indigo-500/30 transition-colors disabled:opacity-50"
             >
               {creating ? <Loader2 className="w-3 h-3 animate-spin" /> : <Clock3 className="w-3 h-3" />}
               {t.scheduleComposer.createAction}

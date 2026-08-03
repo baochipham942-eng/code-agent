@@ -24,9 +24,9 @@ import { DecisionCard, type DecisionOption } from '../../DecisionCard';
 const AGENT_COLORS = [
   'text-badge-success',
   'text-badge-accent',
-  'text-cyan-400',
+  'text-badge-info',
   'text-badge-warning',
-  'text-pink-400',
+  'text-badge-accent',
   'text-badge-info',
 ] as const;
 
@@ -67,7 +67,7 @@ const LaunchPlanStats: React.FC<{ request: SwarmLaunchRequest }> = ({ request })
       Agent <span className="ml-1 text-zinc-200">{request.agentCount}</span>
     </div>
     <div className="rounded bg-zinc-800 px-2 py-1.5 text-zinc-400">
-      依赖 <span className="ml-1 text-cyan-300">{request.dependencyCount}</span>
+      依赖 <span className="ml-1 text-badge-info">{request.dependencyCount}</span>
     </div>
     <div className="rounded bg-zinc-800 px-2 py-1.5 text-zinc-400">
       写权限 <span className="ml-1 text-badge-warning">{request.writeAgentCount}</span>
@@ -96,7 +96,7 @@ const LaunchTaskList: React.FC<{ tasks: SwarmLaunchTaskPreview[] }> = ({ tasks }
               {task.writeAccess ? '可写' : '只读'}
             </span>
             {task.dependsOn && task.dependsOn.length > 0 && (
-              <span className="text-[10px] text-cyan-300">
+              <span className="text-[10px] text-badge-info">
                 依赖 {task.dependsOn.join(', ')}
               </span>
             )}

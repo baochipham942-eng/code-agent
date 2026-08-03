@@ -587,7 +587,9 @@ export const useAppStore = create<AppState>()((set, get) => ({
   contextHealthCollapsed: true, // 默认收起
 
   // Actions
-  setShowSettings: (show) => set({ showSettings: show }),
+  setShowSettings: (show) => set(show
+    ? { showSettings: true }
+    : { ...SECONDARY_PAGES_CLOSED, showSettings: false }),
   setPendingRoleChatSeed: (seed) => set({ pendingRoleChatSeed: seed }),
   setPendingProjectGoalChatSeed: (seed) => set({ pendingProjectGoalChatSeed: seed }),
   setShowPromptManager: (show) => set({ ...(show ? SECONDARY_PAGES_CLOSED : {}), showPromptManager: show }),

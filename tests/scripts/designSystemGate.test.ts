@@ -31,7 +31,7 @@ describe('design-system gate', () => {
 });
 
 describe('theme-blind bright foreground gate', () => {
-  it('只拦没有 dark: 变体的亮档彩色前景类，并保留完整类名', () => {
+  it('匹配任意色板，拦没有 dark: 变体的亮档彩色前景类，并保留完整类名', () => {
     expect(
       findThemeBlindBrightForegroundMatches('text-sky-300 dark:hover:text-blue-300 hover:text-red-400'),
     ).toEqual([
@@ -47,19 +47,32 @@ describe('theme-blind bright foreground gate', () => {
     ).toEqual(['Fixture.tsx:7 text-sky-300', 'Fixture.tsx:7 hover:text-red-400']);
   });
 
+  it('只对有主题变量支撑的 zinc 做全局豁免，其他色板仍需逐处判断', () => {
+    expect(
+      findThemeBlindBrightForegroundViolations(
+        'text-zinc-300 text-cyan-300 text-gray-300 text-brand-300',
+        'Fixture.tsx:8',
+      ),
+    ).toEqual([
+      'Fixture.tsx:8 text-cyan-300',
+      'Fixture.tsx:8 text-gray-300',
+      'Fixture.tsx:8 text-brand-300',
+    ]);
+  });
+
   it('沿用 ds-allow:color: 理由注释放行，其他规则的注释不串门', () => {
     expect(
       findThemeBlindBrightForegroundViolations(
         'text-sky-300 /* ds-allow:color: 深色画布固定底色 */',
-        'Fixture.tsx:8',
+        'Fixture.tsx:9',
       ),
     ).toEqual([]);
     expect(
       findThemeBlindBrightForegroundViolations(
         'text-sky-300 /* ds-allow:button: 这是按钮布局例外 */',
-        'Fixture.tsx:9',
+        'Fixture.tsx:10',
       ),
-    ).toEqual(['Fixture.tsx:9 text-sky-300']);
+    ).toEqual(['Fixture.tsx:10 text-sky-300']);
   });
 
   it('扫描根不存在时 fail loud', () => {

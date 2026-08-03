@@ -285,7 +285,7 @@ export const LibraryPanel: React.FC = () => {
   return (
     <FullScreenPage testId="library-panel" variant="inline">
       <FullScreenPageHeader
-        icon={<BookOpen className="h-4 w-4 text-indigo-300" />}
+        icon={<BookOpen className="h-4 w-4 text-badge-accent" />}
         title={t.library.panelTitle}
         description={t.library.panelDescription}
         actions={view === 'items' ? (

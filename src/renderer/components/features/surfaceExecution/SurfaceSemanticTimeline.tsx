@@ -38,7 +38,7 @@ function TimelineEvent({ event, copy }: {
       data-status={event.status}
       className={`relative rounded-lg border px-3 py-2.5 ${eventTone(event)}`}
     >
-      <span className="absolute -left-[17px] top-3 h-2 w-2 rounded-full border border-zinc-700 bg-zinc-400" />
+      <span className="absolute -left-[17px] top-3 h-2 w-2 rounded-full border border-zinc-700 bg-mark-neutral" />
       <div className="flex items-center justify-between gap-3">
         <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
           {copy.timeline.phase[event.phase]}

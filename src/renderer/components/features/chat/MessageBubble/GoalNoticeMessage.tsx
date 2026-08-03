@@ -48,7 +48,7 @@ function VerificationCardLine({ notice }: { notice: GoalNoticePayload }) {
   const tone = card.status === 'passed'
     ? 'text-badge-success/90'
     : card.status === 'failed'
-      ? 'text-rose-300/90'
+      ? 'text-badge-danger/90'
       : 'text-zinc-400';
   const refs = card.evidenceRefIds.length > 0
     ? `refs ${card.evidenceRefIds.slice(0, 3).join(', ')}${card.evidenceRefIds.length > 3 ? ` +${card.evidenceRefIds.length - 3}` : ''}`

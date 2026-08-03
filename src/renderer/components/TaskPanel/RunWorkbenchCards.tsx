@@ -119,7 +119,7 @@ export const RunOverview = ({ model, onOpenMemory }: RunOverviewProps) => {
     <div className="space-y-1.5">
       <div className="flex items-start gap-2 rounded-md border border-white/[0.06] bg-black/10 px-2.5 py-2">
         {isCompleted ? (
-          <span className="mt-1.5 h-1.5 w-1.5 flex-shrink-0 rounded-full bg-emerald-400/50" />
+          <span className="mt-1.5 h-1.5 w-1.5 flex-shrink-0 rounded-full bg-mark-success/50" />
         ) : (
           <Radio className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-badge-info" />
         )}

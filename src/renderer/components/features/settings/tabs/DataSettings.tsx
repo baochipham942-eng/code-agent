@@ -709,7 +709,7 @@ export const DataSettings: React.FC = () => {
                     disabled={isWebMode()}
                     className={`rounded border px-3 py-1.5 text-xs transition-colors ${
                       active
-                        ? 'border-indigo-500/50 bg-indigo-500/20 text-indigo-200'
+                        ? 'border-badge-accent/50 bg-indigo-500/20 text-badge-accent'
                         : 'border-zinc-700 bg-zinc-900 text-zinc-400 hover:bg-zinc-700'
                     } ${isWebMode() ? 'cursor-not-allowed opacity-50' : ''}`}
                   >

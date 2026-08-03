@@ -26,25 +26,25 @@ export const StatusIndicator: React.FC<StatusIndicatorProps> = ({ status }) => {
       icon: <CheckCircle className="w-4 h-4 text-badge-success" />,
       label: statusText.connected,
       color: 'text-badge-success',
-      dot: 'bg-green-400',
+      dot: 'bg-mark-success',
     },
     disconnected: {
       icon: <XCircle className="w-4 h-4 text-badge-danger" />,
       label: statusText.disconnected,
       color: 'text-badge-danger',
-      dot: 'bg-red-400',
+      dot: 'bg-mark-danger',
     },
     connecting: {
       icon: <Loader2 className="w-4 h-4 text-badge-warning animate-spin" />,
       label: statusText.connecting,
       color: 'text-badge-warning',
-      dot: 'bg-yellow-400',
+      dot: 'bg-mark-warning',
     },
     error: {
       icon: <XCircle className="w-4 h-4 text-badge-danger" />,
       label: statusText.error,
       color: 'text-badge-danger',
-      dot: 'bg-red-400',
+      dot: 'bg-mark-danger',
     },
   };
 

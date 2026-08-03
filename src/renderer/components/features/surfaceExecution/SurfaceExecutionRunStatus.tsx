@@ -22,14 +22,14 @@ const STATE_TONE: Record<SurfaceRunState, string> = {
 };
 
 const DOT_TONE: Record<SurfaceRunState, string> = {
-  preparing: 'bg-sky-400',
-  waiting_permission: 'bg-amber-400',
-  running: 'bg-emerald-400',
-  waiting_human: 'bg-violet-400',
-  paused: 'bg-amber-400',
-  stopping: 'bg-amber-400',
-  completed: 'bg-emerald-400',
-  failed: 'bg-red-400',
+  preparing: 'bg-mark-info',
+  waiting_permission: 'bg-mark-warning',
+  running: 'bg-mark-success',
+  waiting_human: 'bg-mark-accent',
+  paused: 'bg-mark-warning',
+  stopping: 'bg-mark-warning',
+  completed: 'bg-mark-success',
+  failed: 'bg-mark-danger',
 };
 
 const SPINNING_STATES = new Set<SurfaceRunState>(['preparing', 'running', 'stopping']);

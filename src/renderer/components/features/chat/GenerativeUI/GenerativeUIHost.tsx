@@ -49,9 +49,9 @@ function ManifestSurface({
     failed: '执行失败',
   };
   return (
-    <section className="mt-4 overflow-hidden rounded-xl border border-cyan-500/30 bg-cyan-950/10" aria-label="可信执行审批">
-      <div className="border-b border-cyan-500/20 px-4 py-3">
-        <div className="flex items-center gap-2 text-sm font-semibold text-cyan-100">
+    <section className="mt-4 overflow-hidden rounded-xl border border-badge-info/30 bg-badge-info" aria-label="可信执行审批">
+      <div className="border-b border-badge-info/20 px-4 py-3">
+        <div className="flex items-center gap-2 text-sm font-semibold text-badge-info">
           <ShieldCheck className="h-4 w-4" aria-hidden="true" />
           {manifest.title}
         </div>
@@ -72,7 +72,7 @@ function ManifestSurface({
           </div>
         ))}
       </div>
-      <div className="flex flex-col gap-3 border-t border-cyan-500/20 bg-zinc-950/60 px-4 py-3 min-[743px]:flex-row min-[743px]:items-center min-[743px]:justify-between">
+      <div className="flex flex-col gap-3 border-t border-badge-info/20 bg-zinc-950/60 px-4 py-3 min-[743px]:flex-row min-[743px]:items-center min-[743px]:justify-between">
         <div className="flex items-center gap-2 text-xs text-zinc-400" aria-live="polite">
           {manifest.status === 'completed' ? <CheckCircle2 className="h-4 w-4 text-badge-success" /> : null}
           {['rejected', 'expired', 'invalidated', 'orphaned', 'failed'].includes(manifest.status)

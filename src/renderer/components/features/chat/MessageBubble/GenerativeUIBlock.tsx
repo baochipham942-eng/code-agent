@@ -303,7 +303,7 @@ export const GenerativeUIBlock = memo(function GenerativeUIBlock({
             title={isStreaming && !editing ? t.generativeUI.editStreamingHint : undefined}
             data-testid="generative-ui-edit-toggle"
             className={`flex items-center gap-1.5 px-2 py-1 rounded-lg transition-all text-xs disabled:opacity-40 disabled:cursor-not-allowed ${
-              editing ? 'text-cyan-300 bg-zinc-700' : 'text-zinc-400 hover:bg-zinc-700 hover:text-zinc-200'
+              editing ? 'text-badge-info bg-zinc-700' : 'text-zinc-400 hover:bg-zinc-700 hover:text-zinc-200'
             }`}
           >
             <MousePointerClick className="w-3.5 h-3.5" />
@@ -363,7 +363,7 @@ export const GenerativeUIBlock = memo(function GenerativeUIBlock({
 
       {/* 编辑态没有 allow-scripts，JS 驱动的动效不会播放——如实说，不装作没这回事 */}
       {editing && !showSource && (
-        <div className="px-4 py-1.5 bg-cyan-500/5 border-b border-cyan-500/20 text-[11px] text-cyan-200/80">
+        <div className="px-4 py-1.5 bg-cyan-500/5 border-b border-badge-info/20 text-[11px] text-badge-info/80">
           {t.generativeUI.editHint}
         </div>
       )}

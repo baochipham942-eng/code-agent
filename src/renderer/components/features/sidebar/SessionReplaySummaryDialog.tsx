@@ -118,7 +118,7 @@ function getTrajectoryTierToneClassName(tier: AgentTrajectoryQualityTier): strin
     case 'G1':
       return 'border-badge-warning/25 bg-amber-500/10 text-badge-warning';
     default:
-      return 'border-rose-500/25 bg-rose-500/10 text-rose-200';
+      return 'border-badge-danger/25 bg-rose-500/10 text-badge-danger';
   }
 }
 
@@ -129,7 +129,7 @@ function getEvidenceControlToneClassName(trustLevel: EvidenceControlSummaryProje
     case 'partial':
       return 'border-badge-warning/25 bg-amber-500/10 text-badge-warning';
     default:
-      return 'border-rose-500/25 bg-rose-500/10 text-rose-300';
+      return 'border-badge-danger/25 bg-rose-500/10 text-badge-danger';
   }
 }
 
@@ -366,10 +366,10 @@ function formatBlockDetail(block: ReplayBlock, labels: SessionReplayLabels): str
 
 function getBlockToneClassName(block: ReplayBlock): string {
   if (block.type === 'error' || (block.type === 'tool_call' && block.toolCall?.success === false)) {
-    return 'border-rose-500/20 bg-rose-500/10 text-rose-200';
+    return 'border-badge-danger/20 bg-rose-500/10 text-badge-danger';
   }
   if (block.type === 'tool_call') {
-    return 'border-cyan-500/20 bg-cyan-500/10 text-cyan-200';
+    return 'border-badge-info/20 bg-cyan-500/10 text-badge-info';
   }
   if (block.type === 'model_call') {
     return 'border-badge-accent/20 bg-violet-500/10 text-badge-accent';
@@ -899,17 +899,17 @@ export const SessionReplaySummaryDialog: React.FC<SessionReplaySummaryDialogProp
               return (
                 <div
                   key={task.id}
-                  className={`rounded-md border p-2 ${focused ? 'border-cyan-300/40 bg-cyan-500/10' : 'border-cyan-500/15 bg-cyan-500/5'}`}
+                  className={`rounded-md border p-2 ${focused ? 'border-badge-info/40 bg-cyan-500/10' : 'border-badge-info/15 bg-cyan-500/5'}`}
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
-                      <div className="truncate font-medium text-cyan-200">{task.title}</div>
-                      <div className="mt-0.5 truncate text-[10px] text-cyan-200/60">{formatTaskStatus(task, labels)}</div>
-                      <div className="mt-0.5 truncate text-[10px] text-cyan-200/45">
+                      <div className="truncate font-medium text-badge-info">{task.title}</div>
+                      <div className="mt-0.5 truncate text-[10px] text-badge-info/60">{formatTaskStatus(task, labels)}</div>
+                      <div className="mt-0.5 truncate text-[10px] text-badge-info/45">
                         {formatBackgroundTaskMeta(task, labels)}
                       </div>
                     </div>
-                    <div className="shrink-0 text-right text-[10px] text-cyan-200/60">
+                    <div className="shrink-0 text-right text-[10px] text-badge-info/60">
                       <div>{task.source}</div>
                       {task.durationMs !== undefined && <div>{formatDuration(task.durationMs, labels)}</div>}
                       <button
@@ -920,7 +920,7 @@ export const SessionReplaySummaryDialog: React.FC<SessionReplaySummaryDialogProp
                           event.stopPropagation();
                           setFocusedReplayOwner(focused ? null : owner);
                         }}
-                        className="mt-1 rounded border border-cyan-500/20 bg-zinc-950/30 px-1.5 py-0.5 text-[10px] text-cyan-200/70 transition-colors hover:border-cyan-400/40 hover:bg-cyan-500/10 hover:text-cyan-100"
+                        className="mt-1 rounded border border-badge-info/20 bg-zinc-950/30 px-1.5 py-0.5 text-[10px] text-badge-info/70 transition-colors hover:border-badge-info/40 hover:bg-cyan-500/10 hover:text-badge-info"
                       >
                         {focused ? labels.dialog.focused : labels.dialog.focus}
                       </button>
@@ -949,13 +949,13 @@ export const SessionReplaySummaryDialog: React.FC<SessionReplaySummaryDialogProp
                       {task.events.slice(-3).map((event) => (
                         <div
                           key={event.id}
-                          className="rounded border border-cyan-500/10 bg-zinc-950/40 px-2 py-1 text-[10px]"
+                          className="rounded border border-badge-info/10 bg-zinc-950/40 px-2 py-1 text-[10px]"
                         >
                           <div className="flex items-center justify-between gap-2">
-                            <span className="min-w-0 truncate font-medium text-cyan-100">
+                            <span className="min-w-0 truncate font-medium text-badge-info">
                               {formatTaskEventLabel(event)}
                             </span>
-                            <span className="shrink-0 text-cyan-200/50">
+                            <span className="shrink-0 text-badge-info/50">
                               {new Date(event.timestamp).toLocaleTimeString()}
                             </span>
                           </div>

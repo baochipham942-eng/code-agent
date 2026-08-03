@@ -76,7 +76,7 @@ function getFileIcon(name: string, isDir: boolean) {
   if (['mp4', 'mov', 'webm', 'avi'].includes(ext))
     return <Film className={`${iconClass} text-badge-accent`} />;
   if (['mp3', 'wav', 'flac', 'aac'].includes(ext))
-    return <Music className={`${iconClass} text-pink-400`} />;
+    return <Music className={`${iconClass} text-badge-accent`} />;
   if (['zip', 'tar', 'gz', 'rar', '7z'].includes(ext))
     return <Archive className={`${iconClass} text-badge-warning`} />;
   return <File className={`${iconClass} text-zinc-500`} />;

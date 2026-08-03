@@ -55,8 +55,8 @@ export const LocalityFeedbackBar: React.FC<Props> = ({ anchor, locator, location
   }, [text, sending, sendPrompt, anchor, locator, onSubmitted]);
 
   return (
-    <div className="flex items-center gap-2 rounded-lg border border-cyan-500/30 bg-cyan-500/[0.06] px-3 py-2">
-      <span className="shrink-0 text-[11px] font-medium text-cyan-300">定点反馈 · {locationLabel}</span>
+    <div className="flex items-center gap-2 rounded-lg border border-badge-info/30 bg-cyan-500/[0.06] px-3 py-2">
+      <span className="shrink-0 text-[11px] font-medium text-badge-info">定点反馈 · {locationLabel}</span>
       <input
         type="text"
         value={text}
@@ -69,12 +69,12 @@ export const LocalityFeedbackBar: React.FC<Props> = ({ anchor, locator, location
         }}
         placeholder="这里改成…（回车发送）"
         disabled={sending}
-        className="flex-1 rounded border border-cyan-500/30 bg-zinc-900 px-2 py-1 text-xs text-zinc-200 placeholder-zinc-500 focus:border-cyan-400 focus:outline-none disabled:opacity-60"
+        className="flex-1 rounded border border-badge-info/30 bg-zinc-900 px-2 py-1 text-xs text-zinc-200 placeholder-zinc-500 focus:border-badge-info focus:outline-none disabled:opacity-60"
       />
       <button
         onClick={() => void submit()}
         disabled={sending || !text.trim()}
-        className="flex items-center gap-1 rounded bg-cyan-500/30 px-2.5 py-1 text-xs text-cyan-100 hover:bg-cyan-500/40 disabled:cursor-not-allowed disabled:opacity-40"
+        className="flex items-center gap-1 rounded bg-cyan-500/30 px-2.5 py-1 text-xs text-badge-info hover:bg-cyan-500/40 disabled:cursor-not-allowed disabled:opacity-40"
         title="把反馈发给 agent，针对选中位置定向修改"
       >
         <Send className="h-3 w-3" />

@@ -295,7 +295,7 @@ export function MediaAssetActionBar({
           // ds-allow:start 与同一条按钮组里既有的五个只读动作按钮（查看/复制/打开/保存/Finder）同款裸 button + buttonClass，单独换 primitive 会在同一行里高低宽窄不齐；这条按钮组整体迁 primitive 时一并处理
           <button
             type="button"
-            className={`${buttonClass} text-fuchsia-200`}
+            className={`${buttonClass} text-badge-accent`}
             onClick={(event) => {
               event.stopPropagation();
               void editMediaAssetInCanvas(asset);

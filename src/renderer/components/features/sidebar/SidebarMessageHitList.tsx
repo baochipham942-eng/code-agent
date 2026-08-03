@@ -40,7 +40,7 @@ export const SidebarMessageHitList: React.FC<SidebarMessageHitListProps> = ({
           key={`${sessionId}:${hit.messageId ?? hit.messageIndex ?? hit.timestamp}:${hit.matchOffset ?? 0}`}
           type="button"
           onClick={(event) => { void onSelectHit(event, sessionId, hit); }}
-          className="flex w-full min-w-0 items-center gap-1.5 rounded-md border border-zinc-800/80 bg-zinc-950/40 px-2 py-1 text-left text-[10px] text-zinc-500 transition-colors hover:border-cyan-500/30 hover:bg-cyan-500/10 hover:text-cyan-200"
+          className="flex w-full min-w-0 items-center gap-1.5 rounded-md border border-zinc-800/80 bg-zinc-950/40 px-2 py-1 text-left text-[10px] text-zinc-500 transition-colors hover:border-badge-info/30 hover:bg-cyan-500/10 hover:text-badge-info"
           title={hit.snippet}
         >
           <span className="shrink-0 text-zinc-600">

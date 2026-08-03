@@ -37,7 +37,7 @@ export const LocalBridgeSection: React.FC = () => {
         className="w-full flex items-center justify-between px-4 py-3 hover:bg-zinc-750 transition-colors"
       >
         <div className="flex items-center gap-3">
-          <Server className="w-4 h-4 text-indigo-400" />
+          <Server className="w-4 h-4 text-badge-accent" />
           <span className="text-sm font-medium text-zinc-200">{bridgeText.title}</span>
           <StatusIndicator status={status} />
         </div>

@@ -267,7 +267,7 @@ export const SidebarProjectDrawer: React.FC<SidebarProjectDrawerProps> = ({
                     >
                       {p.cancel}
                     </button>
-                    {editError && <span className="min-w-0 truncate text-[10px] text-rose-300">{editError}</span>}
+                    {editError && <span className="min-w-0 truncate text-[10px] text-badge-danger">{editError}</span>}
                   </div>
                 </div>
               ) : (
@@ -320,7 +320,7 @@ export const SidebarProjectDrawer: React.FC<SidebarProjectDrawerProps> = ({
             </div>
             <div className="rounded-md border border-zinc-800 bg-zinc-900/55 px-1.5 py-1.5">
               <div className="text-zinc-500">{p.statArtifacts}</div>
-              <div className="mt-0.5 text-xs font-medium text-cyan-200">{summary.artifactCount ?? visibleArtifacts.length}</div>
+              <div className="mt-0.5 text-xs font-medium text-badge-info">{summary.artifactCount ?? visibleArtifacts.length}</div>
             </div>
             <div className="rounded-md border border-zinc-800 bg-zinc-900/55 px-1.5 py-1.5">
               <div className="text-zinc-500">{p.statReview}</div>
@@ -426,7 +426,7 @@ export const SidebarProjectDrawer: React.FC<SidebarProjectDrawerProps> = ({
                       className="rounded-md border border-zinc-800 bg-zinc-900/45 px-2.5 py-2 text-left transition-colors enabled:hover:bg-zinc-800/70 disabled:cursor-default"
                     >
                       <div className="flex min-w-0 items-center gap-2">
-                        <Layers3 className="h-3.5 w-3.5 shrink-0 text-cyan-300/70" />
+                        <Layers3 className="h-3.5 w-3.5 shrink-0 text-badge-info/70" />
                         <span className="min-w-0 flex-1 truncate text-xs font-medium text-zinc-200">{artifact.title}</span>
                         {canOpen && <ArrowRight className="h-3.5 w-3.5 shrink-0 text-zinc-600" />}
                       </div>
@@ -496,7 +496,7 @@ export const SidebarProjectDrawer: React.FC<SidebarProjectDrawerProps> = ({
                         </span>
                       )}
                       {session.hasDeliverySignals && (
-                        <span className="rounded border border-cyan-500/20 bg-cyan-500/10 px-1.5 py-0.5 text-[10px] text-cyan-300">
+                        <span className="rounded border border-badge-info/20 bg-cyan-500/10 px-1.5 py-0.5 text-[10px] text-badge-info">
                           {p.deliverySignals}
                         </span>
                       )}

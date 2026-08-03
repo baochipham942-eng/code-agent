@@ -53,7 +53,7 @@ export const GoalStatusBarView: React.FC<{ run: GoalRunState; onTogglePause: () 
 
   return (
     <div className={`goal-status-bar mx-auto mb-1 flex w-full max-w-3xl items-center gap-2 rounded-md border px-3 py-1.5 text-xs ${accent}`}>
-      <Target className={`h-3.5 w-3.5 flex-shrink-0 ${paused ? 'text-slate-400' : 'text-badge-info'}`} />
+      <Target className={`h-3.5 w-3.5 flex-shrink-0 ${paused ? 'text-zinc-400' : 'text-badge-info'}`} />
       <span className="truncate text-zinc-300" title={run.goal}>
         {paused ? t.goalStatusBar.pausedPrefix : t.goalStatusBar.runningPrefix}
         <span className="text-zinc-100">{run.goal}</span>

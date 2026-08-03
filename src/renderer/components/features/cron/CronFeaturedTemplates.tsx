@@ -164,7 +164,7 @@ export const CronFeaturedTemplates: React.FC = () => {
                   {connectorStatuses.map((status) => (
                     <span key={status.id} className="inline-flex items-center gap-1 text-[11px]">
                       <span
-                        className={`h-1.5 w-1.5 rounded-full ${status.connected ? 'bg-emerald-400' : 'bg-zinc-600'}`}
+                        className={`h-1.5 w-1.5 rounded-full ${status.connected ? 'bg-mark-success' : 'bg-zinc-600'}`}
                         aria-hidden="true"
                       />
                       <span className={status.connected ? 'text-badge-success' : 'text-zinc-500'}>

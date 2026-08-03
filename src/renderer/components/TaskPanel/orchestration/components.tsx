@@ -268,7 +268,7 @@ export const AgentContextCard: React.FC<{
                 {snapshot.tools.map((name) => (
                   <span
                     key={`${agent.id}-tool-${name}`}
-                    className="rounded bg-zinc-900/80 px-1.5 py-0.5 font-mono text-[10px] text-cyan-300"
+                    className="rounded bg-zinc-900/80 px-1.5 py-0.5 font-mono text-[10px] text-badge-info"
                   >
                     {name}
                   </span>

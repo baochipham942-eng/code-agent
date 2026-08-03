@@ -229,12 +229,12 @@ function extractTopicLabel(segs: AudioSegment[], fallback: string): string {
 }
 
 const SPEAKER_COLORS = [
-  { bg: 'bg-blue-500/20', text: 'text-badge-info', dot: 'bg-blue-400' },
-  { bg: 'bg-emerald-500/20', text: 'text-badge-success', dot: 'bg-emerald-400' },
-  { bg: 'bg-purple-500/20', text: 'text-badge-accent', dot: 'bg-purple-400' },
-  { bg: 'bg-amber-500/20', text: 'text-badge-warning', dot: 'bg-amber-400' },
-  { bg: 'bg-rose-500/20', text: 'text-rose-300', dot: 'bg-rose-400' },
-  { bg: 'bg-cyan-500/20', text: 'text-cyan-300', dot: 'bg-cyan-400' },
+  { bg: 'bg-blue-500/20', text: 'text-badge-info', dot: 'bg-mark-info' },
+  { bg: 'bg-emerald-500/20', text: 'text-badge-success', dot: 'bg-mark-success' },
+  { bg: 'bg-purple-500/20', text: 'text-badge-accent', dot: 'bg-mark-accent' },
+  { bg: 'bg-amber-500/20', text: 'text-badge-warning', dot: 'bg-mark-warning' },
+  { bg: 'bg-rose-500/20', text: 'text-badge-danger', dot: 'bg-mark-danger' },
+  { bg: 'bg-cyan-500/20', text: 'text-badge-info', dot: 'bg-mark-info' },
 ];
 
 export function speakerStyle(id: number) {

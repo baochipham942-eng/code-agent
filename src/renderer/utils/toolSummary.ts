@@ -379,5 +379,5 @@ export function getToolStatusClass(toolCall: ToolCall): string {
     return 'text-badge-success'; // 成功
   }
 
-  return 'text-rose-400'; // 失败
+  return 'text-badge-danger'; // 失败
 }

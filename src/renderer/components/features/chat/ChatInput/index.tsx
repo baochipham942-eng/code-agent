@@ -951,10 +951,10 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
           <button
             type="button"
             onClick={onPlanClick}
-            className="flex items-center gap-2 px-3 py-2 mb-2 bg-indigo-500/10 border border-indigo-500/20 rounded-lg hover:bg-indigo-500/20 transition-colors w-full text-left"
+            className="flex items-center gap-2 px-3 py-2 mb-2 bg-indigo-500/10 border border-badge-accent/20 rounded-lg hover:bg-indigo-500/20 transition-colors w-full text-left"
           >
-            <FileText className="w-4 h-4 text-indigo-400" />
-            <span className="text-sm text-indigo-400">{t.chatInput.viewPlan}</span>
+            <FileText className="w-4 h-4 text-badge-accent" />
+            <span className="text-sm text-badge-accent">{t.chatInput.viewPlan}</span>
           </button>
         )}
 

@@ -175,11 +175,11 @@ export const DesignCostHistoryView: React.FC<DesignCostHistoryViewProps> = ({
                 <div
                   key={v.id}
                   className={`flex items-center gap-1.5 rounded-md px-1.5 py-1 text-[11px] ${
-                    isCurrent ? 'bg-fuchsia-400/10 text-fuchsia-100' : 'text-zinc-400'
+                    isCurrent ? 'bg-fuchsia-400/10 text-badge-accent' : 'text-zinc-400'
                   }`}
                 >
                   <CircleDot
-                    className={`h-3 w-3 shrink-0 ${isCurrent ? 'text-fuchsia-300' : 'text-zinc-600'}`}
+                    className={`h-3 w-3 shrink-0 ${isCurrent ? 'text-badge-accent' : 'text-zinc-600'}`}
                   />
                   {editing ? (
                     <input
@@ -207,7 +207,7 @@ export const DesignCostHistoryView: React.FC<DesignCostHistoryViewProps> = ({
                   </span>
                   {cost && <span className="shrink-0 font-mono text-badge-success/90">{cost}</span>}
                   {isCurrent && (
-                    <span className="shrink-0 text-[10px] text-fuchsia-300">{t.design.historyCurrent}</span>
+                    <span className="shrink-0 text-[10px] text-badge-accent">{t.design.historyCurrent}</span>
                   )}
                   {/* ds-allow:start 时间线行内图标按钮（保存=emerald/回滚=fuchsia hover 等自定义文字色，IconButton variant 文字色会冲突覆盖不可靠；且嵌在 text-[11px] 紧凑行内） */}
                   {editing ? (
@@ -234,7 +234,7 @@ export const DesignCostHistoryView: React.FC<DesignCostHistoryViewProps> = ({
                           type="button"
                           onClick={() => onSetChosen(v.id)}
                           title={t.design.historyRollbackTo}
-                          className="shrink-0 text-zinc-500 hover:text-fuchsia-200"
+                          className="shrink-0 text-zinc-500 hover:text-badge-accent"
                         >
                           <RotateCcw className="h-3 w-3" />
                         </button>

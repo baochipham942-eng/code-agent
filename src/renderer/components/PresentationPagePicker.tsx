@@ -132,7 +132,7 @@ export const PresentationPagePicker: React.FC<Props> = ({ title, filePath, outli
                 onClick={() => setSelectedIndex(index)}
                 className={`overflow-hidden rounded-md border text-left transition-colors ${
                   index === selectedIndex
-                    ? 'border-cyan-400 bg-cyan-500/10'
+                    ? 'border-badge-info bg-cyan-500/10'
                     : 'border-white/[0.08] bg-zinc-900/70 hover:border-white/[0.18]'
                 }`}
               >

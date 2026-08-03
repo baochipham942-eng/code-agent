@@ -26,7 +26,7 @@ export const languageConfig: Record<string, LanguageConfig> = {
   javascript: { color: 'text-badge-warning' },
   python: { color: 'text-badge-success' },
   rust: { color: 'text-badge-warning' },
-  go: { color: 'text-cyan-400' },
+  go: { color: 'text-badge-info' },
   bash: { color: 'text-badge-success' },
   shell: { color: 'text-badge-success' },
   json: { color: 'text-badge-warning' },

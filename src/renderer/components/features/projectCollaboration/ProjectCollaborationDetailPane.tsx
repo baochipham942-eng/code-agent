@@ -319,7 +319,7 @@ export const ProjectCollaborationDetailPane: React.FC<ProjectCollaborationDetail
       {/* 失败 */}
       {phase === 'failed' && errors.length > 0 && (
         <div
-          className="mt-3 rounded-md border border-rose-400/20 bg-rose-400/[0.06] px-3 py-2 text-[13px] leading-5 text-rose-100/90"
+          className="mt-3 rounded-md border border-badge-danger/20 bg-rose-400/[0.06] px-3 py-2 text-[13px] leading-5 text-badge-danger/90"
           data-testid="neo-topic-detail-failed"
         >
           {errors.map((error, index) => <div key={index}>{error}</div>)}
@@ -372,17 +372,17 @@ export const ProjectCollaborationDetailPane: React.FC<ProjectCollaborationDetail
       {/* 记忆候选 */}
       {pendingMemory.length > 0 && (
         <div className="mt-4" data-testid="neo-topic-detail-memory">
-          <div className="mb-1.5 flex items-center gap-1 text-[11px] font-medium text-fuchsia-200/70">
+          <div className="mb-1.5 flex items-center gap-1 text-[11px] font-medium text-badge-accent/70">
             <Brain className="h-3.5 w-3.5" />可记住
           </div>
           <div className="grid gap-1.5">
             {pendingMemory.map((candidate) => (
-              <div key={candidate.id} className="flex min-w-0 items-center justify-between gap-2 rounded-md border border-fuchsia-400/15 bg-fuchsia-400/[0.05] px-2.5 py-1.5 text-[12px] text-fuchsia-100/90">
+              <div key={candidate.id} className="flex min-w-0 items-center justify-between gap-2 rounded-md border border-badge-accent/15 bg-fuchsia-400/[0.05] px-2.5 py-1.5 text-[12px] text-badge-accent/90">
                 <span className="min-w-0 truncate">{candidate.text}</span>
                 <button
                   type="button"
                   onClick={() => onApproveMemory?.(candidate.id)}
-                  className="inline-flex shrink-0 items-center gap-1 rounded border border-fuchsia-400/25 bg-fuchsia-400/10 px-1.5 py-0.5 text-[11px] text-fuchsia-100 hover:bg-fuchsia-400/15"
+                  className="inline-flex shrink-0 items-center gap-1 rounded border border-badge-accent/25 bg-fuchsia-400/10 px-1.5 py-0.5 text-[11px] text-badge-accent hover:bg-fuchsia-400/15"
                   data-testid={`neo-topic-detail-approve-memory-${candidate.id}`}
                 >
                   写入记忆
@@ -427,7 +427,7 @@ export const ProjectCollaborationDetailPane: React.FC<ProjectCollaborationDetail
             </button>
           </div>
           {followUpError && (
-            <div className="mt-1.5 text-[11px] text-rose-300/90" data-testid="neo-topic-detail-followup-error">{followUpError}</div>
+            <div className="mt-1.5 text-[11px] text-badge-danger/90" data-testid="neo-topic-detail-followup-error">{followUpError}</div>
           )}
         </div>
       )}

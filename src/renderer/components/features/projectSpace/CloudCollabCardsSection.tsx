@@ -79,7 +79,7 @@ function CloudCardRow({ card }: { card: CloudCollabCard }) {
         <span>{new Date(card.updatedAt).toLocaleString()}</span>
         {card.dueAt != null && (
           <span
-            className={dueOverdue ? 'font-medium text-rose-300' : undefined}
+            className={dueOverdue ? 'font-medium text-badge-danger' : undefined}
             data-testid={`cloud-collab-due-${card.localCardId}`}
           >
             {t.neoTopics.duePrefix} {formatNeoTopicDueDay(card.dueAt)}
@@ -175,7 +175,7 @@ export const CloudCollabCardsSection: React.FC<CloudCollabCardsSectionProps> = (
           className={`mt-2 rounded border px-2 py-1 text-[11px] leading-5 ${
             resyncFeedback.kind === 'success'
               ? 'border-badge-success/25 bg-emerald-500/10 text-badge-success'
-              : 'border-rose-500/25 bg-rose-500/10 text-rose-100'
+              : 'border-badge-danger/25 bg-rose-500/10 text-badge-danger'
           }`}
           data-testid={`cloud-collab-resync-${resyncFeedback.kind}`}
           role={resyncFeedback.kind === 'error' ? 'alert' : 'status'}
@@ -192,11 +192,11 @@ export const CloudCollabCardsSection: React.FC<CloudCollabCardsSectionProps> = (
           </div>
         )}
         {loadState === 'error' && (
-          <div className="flex items-center justify-between gap-2 rounded border border-rose-500/25 bg-rose-500/10 px-2 py-1 text-[11px] leading-5 text-rose-100" data-testid="cloud-collab-load-error">
+          <div className="flex items-center justify-between gap-2 rounded border border-badge-danger/25 bg-rose-500/10 px-2 py-1 text-[11px] leading-5 text-badge-danger" data-testid="cloud-collab-load-error">
             <span className="min-w-0">{ps.cloudCardsLoadFailed}：{loadError}</span>
             <button /* ds-allow:button: 云卡加载失败区的内联重试，rose 警示语境无对应 Button 变体 */
               type="button"
-              className="shrink-0 rounded border border-rose-400/30 px-1.5 py-0.5 text-[10px] text-rose-200 hover:bg-rose-500/15"
+              className="shrink-0 rounded border border-badge-danger/30 px-1.5 py-0.5 text-[10px] text-badge-danger hover:bg-rose-500/15"
               data-testid="cloud-collab-retry"
               onClick={() => load()}
             >

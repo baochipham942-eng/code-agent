@@ -105,7 +105,7 @@ const AgentCard: React.FC<{
       }}
       className={`w-full text-left px-3 py-2.5 rounded-lg border transition-all cursor-pointer ${
         selected
-          ? 'border-cyan-500/40 bg-cyan-500/10 ring-1 ring-cyan-500/20'
+          ? 'border-badge-info/40 bg-cyan-500/10 ring-1 ring-[var(--badge-info-border)]'
           : `${colors.border} ${colors.bg} hover:border-zinc-500/50 hover:bg-zinc-800/60`
       }`}
       aria-pressed={selected}
@@ -350,8 +350,8 @@ export const SwarmMonitor: React.FC<SwarmMonitorProps> = ({ onClose }) => {
             {statistics.total} 个 Agent · {formatDuration(elapsedTime)}
           </p>
           {selectedAgent && (
-            <div className="mt-1 inline-flex items-center gap-1.5 rounded-full border border-cyan-500/20 bg-cyan-500/10 px-2 py-0.5 text-[11px] text-cyan-300">
-              <span className="text-cyan-400">当前选中</span>
+            <div className="mt-1 inline-flex items-center gap-1.5 rounded-full border border-badge-info/20 bg-cyan-500/10 px-2 py-0.5 text-[11px] text-badge-info">
+              <span className="text-badge-info">当前选中</span>
               <span className="max-w-[120px] truncate">{selectedAgent.name}</span>
             </div>
           )}
@@ -390,7 +390,7 @@ export const SwarmMonitor: React.FC<SwarmMonitorProps> = ({ onClose }) => {
             icon={<Zap className="w-4 h-4" />}
             label="总 Token"
             value={formatTokens(statistics.totalTokens)}
-            color="text-cyan-400"
+            color="text-badge-info"
           />
           <StatCard
             icon={<DollarSign className="w-4 h-4" />}
@@ -417,7 +417,7 @@ export const SwarmMonitor: React.FC<SwarmMonitorProps> = ({ onClose }) => {
               </div>
               <div className="flex justify-between">
                 <span className="text-zinc-500">并行加速比</span>
-                <span className="text-cyan-400 font-medium">{aggregation.speedup.toFixed(1)}x</span>
+                <span className="text-badge-info font-medium">{aggregation.speedup.toFixed(1)}x</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-zinc-500">总迭代</span>

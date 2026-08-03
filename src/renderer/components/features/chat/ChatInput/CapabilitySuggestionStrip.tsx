@@ -127,7 +127,7 @@ export const CapabilitySuggestionStrip: React.FC<CapabilitySuggestionStripProps>
 
   return (
     <div className="mb-2 flex flex-wrap items-center gap-1.5 rounded-xl border border-white/[0.08] bg-white/[0.025] px-2.5 py-2">
-      <Sparkles className="h-3.5 w-3.5 shrink-0 text-fuchsia-400" />
+      <Sparkles className="h-3.5 w-3.5 shrink-0 text-badge-accent" />
       <span className="shrink-0 text-[11px] text-zinc-500">{t.skillRecommendations.title}</span>
       {skillRecommendations.map((recommendation) => (
         recommendation.action === 'install' ? (
@@ -151,7 +151,7 @@ export const CapabilitySuggestionStrip: React.FC<CapabilitySuggestionStripProps>
             key={`skill-rec:${recommendation.skillName}`}
             type="button"
             onClick={() => onSkillMount(recommendation)}
-            className="inline-flex max-w-full items-center gap-1 rounded-md border border-fuchsia-400/20 bg-fuchsia-400/10 px-2 py-1 text-[11px] text-fuchsia-100 hover:border-fuchsia-400/40"
+            className="inline-flex max-w-full items-center gap-1 rounded-md border border-badge-accent/20 bg-fuchsia-400/10 px-2 py-1 text-[11px] text-badge-accent hover:border-badge-accent/40"
             title={recommendation.reason}
           >
             <span>{t.skillRecommendations.select}</span>

@@ -127,7 +127,7 @@ export const SkillInstallPreviewModal: React.FC<SkillInstallPreviewModalProps> =
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
               <h2 className="truncate text-lg font-semibold text-zinc-200">{repoName}</h2>
-              <span className="shrink-0 rounded border border-indigo-500/20 bg-indigo-500/10 px-1.5 py-0.5 text-[10px] text-indigo-300">
+              <span className="shrink-0 rounded border border-badge-accent/20 bg-indigo-500/10 px-1.5 py-0.5 text-[10px] text-badge-accent">
                 {sourceLabel}
               </span>
             </div>
@@ -202,7 +202,7 @@ export const SkillInstallPreviewModal: React.FC<SkillInstallPreviewModalProps> =
                       </span>
                     )}
                   </span>
-                  <span className="shrink-0 text-[11px] text-indigo-400">
+                  <span className="shrink-0 text-[11px] text-badge-accent">
                     {expanded ? previewText.hideContent : previewText.viewContent}
                   </span>
                 </button>

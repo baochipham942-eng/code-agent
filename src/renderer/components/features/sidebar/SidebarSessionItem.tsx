@@ -25,13 +25,13 @@ import {
 function getAttentionDotClassName(kind: string): string | null {
   switch (kind) {
     case 'error':
-      return 'bg-red-400';
+      return 'bg-mark-danger';
     case 'approval':
-      return 'bg-violet-400';
+      return 'bg-mark-accent';
     case 'paused':
-      return 'bg-amber-400';
+      return 'bg-mark-warning';
     case 'incomplete':
-      return 'bg-amber-400/60';
+      return 'bg-mark-warning/60';
     default:
       return null;
   }
@@ -225,7 +225,7 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
             ) : attentionDotClass ? (
               <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${attentionDotClass}`} aria-label={localizedStatusLabel} />
             ) : isUnread && !multiSelectMode ? (
-              <span className="w-1.5 h-1.5 rounded-full bg-purple-400 shrink-0" aria-label={s.unread} />
+              <span className="w-1.5 h-1.5 rounded-full bg-mark-accent shrink-0" aria-label={s.unread} />
             ) : forkParentSessionId && !multiSelectMode ? (
               <button /* ds-allow:button: 侧栏最右状态轴上的分叉身份小图标，Button primitive 动作按钮形状不适配列表行 */
                 type="button"

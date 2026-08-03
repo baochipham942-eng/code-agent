@@ -161,7 +161,7 @@ export const TurnDiffSummary: React.FC<TurnDiffSummaryProps> = ({ turn }) => {
           {(totalAdded > 0 || totalRemoved > 0) && (
             <div className="mt-0.5 flex items-center gap-1.5 text-xs">
               {totalAdded > 0 && <span className="text-badge-success">+{totalAdded}</span>}
-              {totalRemoved > 0 && <span className="text-rose-400">-{totalRemoved}</span>}
+              {totalRemoved > 0 && <span className="text-badge-danger">-{totalRemoved}</span>}
             </div>
           )}
         </div>
@@ -195,7 +195,7 @@ export const TurnDiffSummary: React.FC<TurnDiffSummaryProps> = ({ turn }) => {
         {undoState === 'error' && (
           <div className="flex items-center gap-1.5">
             <span
-              className="text-xs text-rose-400 truncate max-w-[160px]"
+              className="text-xs text-badge-danger truncate max-w-[160px]"
               title={undoError || t.turnDiff.undoFailed}
             >
               {t.turnDiff.undoFailed}
@@ -265,7 +265,7 @@ export const TurnDiffSummary: React.FC<TurnDiffSummaryProps> = ({ turn }) => {
                   </span>
                 )}
                 {fc.removed > 0 && (
-                  <span className="text-xs text-rose-400 flex-shrink-0">
+                  <span className="text-xs text-badge-danger flex-shrink-0">
                     -{fc.removed}
                   </span>
                 )}

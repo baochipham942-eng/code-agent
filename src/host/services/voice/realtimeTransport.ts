@@ -16,7 +16,12 @@ import {
   VOICE_UPSTREAM_SILENCE_TIMEOUT_MS,
 } from '../../../shared/constants/voice';
 import type { RealtimeVoiceProviderProfile } from '../../../shared/constants/realtimeVoiceProviders';
-import type { VoiceTransport, VoiceTransportHandle, VoiceTurnDetectionConfig } from '../../../shared/contract/voice';
+import type {
+  VoiceTokenUsage,
+  VoiceTransport,
+  VoiceTransportHandle,
+  VoiceTurnDetectionConfig,
+} from '../../../shared/contract/voice';
 import { getConfigService } from '../core/configService';
 import { createLogger } from '../infra/logger';
 import { getHttpsAgent } from '../../model/providers/providerHttp';
@@ -24,18 +29,93 @@ import { getHttpsAgent } from '../../model/providers/providerHttp';
 const logger = createLogger('RealtimeVoice');
 const INJECTION_ACK_WINDOW_MS = 5_000;
 const RESPONSE_IDLE_TIMEOUT_CODE = 'response_idle_timeout';
+// Realtime 协议族的 provider 不保证必发 session.updated；超时降级是预期路径，不是建连失败。
+const INITIAL_SESSION_HANDSHAKE_TIMEOUT_MS = 8_000;
 
 interface UpstreamEvent {
   type: string;
   response_id?: string;
   item_id?: string;
-  response?: { id?: string };
+  response?: { id?: string; usage?: unknown };
   item?: { id?: string };
   delta?: string;
   transcript?: string;
   audio?: string;
   error?: { code?: string; message?: string };
   [key: string]: unknown;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function tokenCount(record: Record<string, unknown>, key: string): number | undefined {
+  const value = record[key];
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : undefined;
+}
+
+function parseDashscopeUsage(raw: unknown): VoiceTokenUsage | undefined {
+  if (!isRecord(raw) || !isRecord(raw.input_tokens_details) || !isRecord(raw.output_tokens_details)) return undefined;
+  const totalTokens = tokenCount(raw, 'total_tokens');
+  const inputTokens = tokenCount(raw, 'input_tokens');
+  const outputTokens = tokenCount(raw, 'output_tokens');
+  const inputAudioTokens = tokenCount(raw.input_tokens_details, 'audio_tokens');
+  const inputTextTokens = tokenCount(raw.input_tokens_details, 'text_tokens');
+  const outputAudioTokens = tokenCount(raw.output_tokens_details, 'audio_tokens');
+  const outputTextTokens = tokenCount(raw.output_tokens_details, 'text_tokens');
+  if (
+    totalTokens === undefined
+    || inputTokens === undefined
+    || outputTokens === undefined
+    || inputAudioTokens === undefined
+    || inputTextTokens === undefined
+    || outputAudioTokens === undefined
+    || outputTextTokens === undefined
+  ) return undefined;
+  return {
+    totalTokens,
+    inputTokens,
+    outputTokens,
+    inputAudioTokens,
+    inputTextTokens,
+    outputAudioTokens,
+    outputTextTokens,
+  };
+}
+
+function parseOpenAIUsage(raw: unknown): VoiceTokenUsage | undefined {
+  if (!isRecord(raw) || !isRecord(raw.input_token_details) || !isRecord(raw.output_token_details)) return undefined;
+  const totalTokens = tokenCount(raw, 'total_tokens');
+  const inputTokens = tokenCount(raw, 'input_tokens');
+  const outputTokens = tokenCount(raw, 'output_tokens');
+  const inputAudioTokens = tokenCount(raw.input_token_details, 'audio_tokens');
+  const inputTextTokens = tokenCount(raw.input_token_details, 'text_tokens');
+  const outputAudioTokens = tokenCount(raw.output_token_details, 'audio_tokens');
+  const outputTextTokens = tokenCount(raw.output_token_details, 'text_tokens');
+  if (
+    totalTokens === undefined
+    || inputTokens === undefined
+    || outputTokens === undefined
+    || inputAudioTokens === undefined
+    || inputTextTokens === undefined
+    || outputAudioTokens === undefined
+    || outputTextTokens === undefined
+  ) return undefined;
+  return {
+    totalTokens,
+    inputTokens,
+    outputTokens,
+    inputAudioTokens,
+    inputTextTokens,
+    outputAudioTokens,
+    outputTextTokens,
+  };
+}
+
+function parseResponseUsage(profile: RealtimeVoiceProviderProfile, raw: unknown): VoiceTokenUsage | undefined {
+  return profile.sessionShape === 'dashscope-compatible'
+    ? parseDashscopeUsage(raw)
+    : parseOpenAIUsage(raw);
 }
 
 function responseIdOf(event: UpstreamEvent, fallback = ''): string {
@@ -298,14 +378,14 @@ export function createRealtimeTransport(profile: RealtimeVoiceProviderProfile): 
       ws.ping();
     }, VOICE_UPSTREAM_HEARTBEAT_INTERVAL_MS);
 
-    ws.send(JSON.stringify(buildSessionUpdate(profile, {
+    const initialSessionUpdate = buildSessionUpdate(profile, {
       model,
       voice: config.voice ?? profile.defaultVoice,
       instructions: config.instructions,
       // 没接执行出口就不注册工具：告诉模型有工具却没人执行，比不给工具更糟。
       tools: registeredTools,
       turnDetection: upstreamTurnDetection,
-    })));
+    });
 
     // TTFA 模型口径从上游 speech_stopped 开始；体感口径不是实测值，
     // 是按 server_vad 先等待 silence_duration_ms 才发 speech_stopped 这一机制推算。
@@ -322,6 +402,11 @@ export function createRealtimeTransport(profile: RealtimeVoiceProviderProfile): 
     let queuedResponseInstructions = '';
     let sentResponseInstructions = '';
     let pendingInjectionAt: number | null = null;
+    let pendingInjectionAck: {
+      resolve: () => void;
+      reject: (error: Error) => void;
+      timer: ReturnType<typeof setTimeout>;
+    } | null = null;
     let responseWatchdogTimer: ReturnType<typeof setTimeout> | null = null;
     let responseWatchdogNudged = false;
     let modelUnresponsiveNotified = false;
@@ -376,6 +461,56 @@ export function createRealtimeTransport(profile: RealtimeVoiceProviderProfile): 
       clearResponseWatchdog();
       scheduleResponseWatchdog();
     };
+    const settlePendingInjection = (error?: Error): void => {
+      const pending = pendingInjectionAck;
+      pendingInjectionAck = null;
+      pendingInjectionAt = null;
+      if (!pending) return;
+      clearTimeout(pending.timer);
+      if (error) pending.reject(error);
+      else pending.resolve();
+    };
+    const rejectPendingInjection = (message: string): void => {
+      settlePendingInjection(new Error(message));
+    };
+    const sendInjectedItem = (text: string, waitForAck: boolean): Promise<void> | undefined => {
+      if (ws.readyState !== WebSocket.OPEN) {
+        if (waitForAck) return Promise.reject(new Error('voice upstream is not open'));
+        return undefined;
+      }
+      // The upstream exposes only one injection rejection window. Serialise all
+      // injections at this transport boundary so a typed user message cannot be
+      // mistaken for a narration rejection (or vice versa).
+      if (pendingInjectionAt !== null) {
+        if (waitForAck) return Promise.reject(new Error('voice injection already in flight'));
+        return undefined;
+      }
+
+      pendingInjectionAt = Date.now();
+      let ack: Promise<void> | undefined;
+      if (waitForAck) {
+        ack = new Promise<void>((resolve, reject) => {
+          const timer = setTimeout(() => {
+            if (!pendingInjectionAck) return;
+            pendingInjectionAck = null;
+            pendingInjectionAt = null;
+            reject(new Error('voice injection acknowledgement timed out'));
+          }, INJECTION_ACK_WINDOW_MS);
+          pendingInjectionAck = { resolve, reject, timer };
+        });
+      }
+
+      try {
+        ws.send(JSON.stringify({
+          type: 'conversation.item.create',
+          item: { type: 'message', role: 'user', content: [{ type: 'input_text', text }] },
+        }));
+        ws.send(JSON.stringify({ type: 'response.create' }));
+      } catch (error) {
+        rejectPendingInjection(error instanceof Error ? error.message : 'voice injection failed');
+      }
+      return ack;
+    };
     const sendResponseCreate = () => {
       if (ws.readyState !== WebSocket.OPEN || activeResponseId || cancellingResponseIds.size > 0) return false;
       responseCreateQueued = false;
@@ -421,6 +556,16 @@ export function createRealtimeTransport(profile: RealtimeVoiceProviderProfile): 
     let turn = 0;
     // tools 被上游静默丢弃的用户可见提示：一通电话只报一次，别每条 session.updated 刷。
     let toolsDroppedNotified = false;
+    const notifyToolsDropped = () => {
+      if (!registeredTools.length || toolsDroppedNotified) return;
+      toolsDroppedNotified = true;
+      onEvent({
+        type: 'notice',
+        code: 'VOICE_TOOLS_DROPPED',
+        message: `当前通话模型（${model}）不支持在通话中派活，这通电话只能聊天`,
+      });
+    };
+    let confirmInitialSessionHandshake: (() => void) | null = null;
     ws.on('message', (raw) => {
       // 合法事件、未知事件和偶发非 JSON 帧都证明链路仍有下行信号。
       markUpstreamSignal();
@@ -444,7 +589,7 @@ export function createRealtimeTransport(profile: RealtimeVoiceProviderProfile): 
           const responseId = responseIdOf(event, 'legacy-response');
           activeResponseId = responseId;
           responseCreateQueued = false;
-          pendingInjectionAt = null;
+          settlePendingInjection();
           if (responseId) onEvent({ type: 'response.created', responseId });
           break;
         }
@@ -509,7 +654,13 @@ export function createRealtimeTransport(profile: RealtimeVoiceProviderProfile): 
             : typeof event.stash === 'string' ? event.stash : '';
           if (!stash) break;
           if (itemId) userTranscriptStash.set(itemId, stash);
-          onEvent({ type: 'user.transcript', text: stash, done: false, ...(itemId ? { itemId } : {}) });
+          onEvent({
+            type: 'user.transcript',
+            text: stash,
+            done: false,
+            ...(itemId ? { itemId } : {}),
+            ...(currentCandidateId ? { candidateId: currentCandidateId } : {}),
+          });
           break;
         }
         case 'conversation.item.input_audio_transcription.completed': {
@@ -528,7 +679,13 @@ export function createRealtimeTransport(profile: RealtimeVoiceProviderProfile): 
             });
           }
           if (itemId) userTranscriptStash.delete(itemId);
-          onEvent({ type: 'user.transcript', text, done: true, ...(itemId ? { itemId } : {}) });
+          onEvent({
+            type: 'user.transcript',
+            text,
+            done: true,
+            ...(itemId ? { itemId } : {}),
+            ...(currentCandidateId ? { candidateId: currentCandidateId } : {}),
+          });
           break;
         }
         case 'input_audio_buffer.speech_started':
@@ -549,6 +706,7 @@ export function createRealtimeTransport(profile: RealtimeVoiceProviderProfile): 
           });
           break;
         case 'session.updated': {
+          confirmInitialSessionHandshake?.();
           // 上游到底收下了什么档：我们发 server_vad、它回 null，就是「说了没反应」
           // 的直接证据（发出去 ≠ 被采纳）。
           const session = event.session as {
@@ -573,14 +731,7 @@ export function createRealtimeTransport(profile: RealtimeVoiceProviderProfile): 
             // fail-loud 兜底：判据打在「上游真的回了什么」上，不打在白名单表里写了什么——
             // 表可能过期，上游行为可能变。只进日志用户看不见，必须让通话里的人当场知道
             // 「这通电话派不了活」，否则他只会觉得这玩意儿今天不肯干活。
-            if (!toolsDroppedNotified) {
-              toolsDroppedNotified = true;
-              onEvent({
-                type: 'notice',
-                code: 'VOICE_TOOLS_DROPPED',
-                message: `当前通话模型（${model}）不支持在通话中派活，这通电话只能聊天`,
-              });
-            }
+            notifyToolsDropped();
           }
           break;
         }
@@ -591,6 +742,14 @@ export function createRealtimeTransport(profile: RealtimeVoiceProviderProfile): 
           break;
         case 'response.done': {
           const responseId = responseIdOf(event, activeResponseId || 'legacy-response');
+          const usage = parseResponseUsage(profile, event.response?.usage);
+          if (!usage) {
+            logger.warn('response.done usage missing or unrecognized', {
+              provider: profile.id,
+              sessionShape: profile.sessionShape,
+              hasUsage: event.response?.usage !== undefined,
+            });
+          }
           if (responseId === activeResponseId) activeResponseId = '';
           if (responseId) cancellingResponseIds.delete(responseId);
           if (responseId) responseItemIds.delete(responseId);
@@ -601,6 +760,7 @@ export function createRealtimeTransport(profile: RealtimeVoiceProviderProfile): 
               responseId,
               ...(ttfaModelMs !== undefined ? { ttfaModelMs } : {}),
               ...(ttfaPerceivedMs !== undefined ? { ttfaPerceivedMs } : {}),
+              ...(usage ? { usage } : {}),
             });
           }
           if (responseCreateQueued) sendResponseCreate();
@@ -629,10 +789,11 @@ export function createRealtimeTransport(profile: RealtimeVoiceProviderProfile): 
           // 解释在哪查不到（那句话当时只发给了渲染侧）。
           logger.warn('upstream error', { code: event.error?.code, message: event.error?.message });
           if (pendingInjectionAt !== null && Date.now() - pendingInjectionAt <= INJECTION_ACK_WINDOW_MS) {
-            pendingInjectionAt = null;
-            onEvent({ type: 'injection.rejected', message: event.error?.message ?? 'injection rejected' });
+            const message = event.error?.message ?? 'injection rejected';
+            rejectPendingInjection(message);
+            onEvent({ type: 'injection.rejected', message });
           } else {
-            pendingInjectionAt = null;
+            settlePendingInjection(new Error(event.error?.message ?? 'upstream error'));
             onEvent({
               type: 'error',
               // 上游自己的错误码不往外透传：它无法枚举，进不了 i18n 表，
@@ -651,15 +812,51 @@ export function createRealtimeTransport(profile: RealtimeVoiceProviderProfile): 
     ws.on('close', () => {
       clearHeartbeat();
       clearResponseWatchdog();
+      rejectPendingInjection('voice upstream closed during injection');
       onEvent({ type: 'state', state: 'closed' });
     });
-    ws.on('error', (err: Error) => onEvent({
-      type: 'error',
-      code: 'UPSTREAM_SOCKET',
-      message: 'upstream socket error',
-      detail: err.message,
-    }));
+    ws.on('error', (err: Error) => {
+      rejectPendingInjection(err.message);
+      onEvent({
+        type: 'error',
+        code: 'UPSTREAM_SOCKET',
+        message: 'upstream socket error',
+        detail: err.message,
+      });
+    });
 
+    // 只守首次 connect 的唯一 live 出口。断线重连由 voiceSessionService 的 15s 宽限窗接管，
+    // 不会重复走这道 8s 闸。session.created 只证明 socket 会话存在，不能证明上面的
+    // session.update 已生效；仓内 provider 连接测试同样以 session.updated 回显作为确认。
+    const handshakeStartedAt = Date.now();
+    const initialSessionHandshake = new Promise<boolean>((resolve) => {
+      let settled = false;
+      const finish = (confirmed: boolean) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        confirmInitialSessionHandshake = null;
+        resolve(confirmed);
+      };
+      const timer = setTimeout(() => finish(false), INITIAL_SESSION_HANDSHAKE_TIMEOUT_MS);
+      confirmInitialSessionHandshake = () => finish(true);
+    });
+    ws.send(JSON.stringify(initialSessionUpdate));
+
+    const handshakeConfirmed = await initialSessionHandshake;
+    const handshakeWaitMs = Date.now() - handshakeStartedAt;
+    if (handshakeConfirmed) {
+      logger.info('initial session handshake confirmed', {
+        voiceSessionId: config.neoSessionId,
+        waitMs: handshakeWaitMs,
+      });
+    } else {
+      logger.info('initial session handshake timed out; continuing without tools', {
+        voiceSessionId: config.neoSessionId,
+        waitMs: handshakeWaitMs,
+      });
+      notifyToolsDropped();
+    }
     onEvent({ type: 'state', state: 'live' });
 
     return {
@@ -690,15 +887,15 @@ export function createRealtimeTransport(profile: RealtimeVoiceProviderProfile): 
         sendResponseCreate();
       },
       injectItem(text: string) {
-        if (ws.readyState !== WebSocket.OPEN) return;
         // 与工具结果回灌同一套路：写进对话项后必须再发一次 response.create，
         // 否则模型收下了也不开口（handleToolCall 顶注是同一条踩坑）。
-        ws.send(JSON.stringify({
-          type: 'conversation.item.create',
-          item: { type: 'message', role: 'user', content: [{ type: 'input_text', text }] },
-        }));
-        pendingInjectionAt = Date.now();
-        ws.send(JSON.stringify({ type: 'response.create' }));
+        // narration 继续使用这个 fire-and-forget 入口；用户文字走下面的 ack 入口，
+        // 被拒时才能可靠回到 durable queue。
+        sendInjectedItem(text, false);
+      },
+      injectItemWithAck(text: string) {
+        const ack = sendInjectedItem(text, true);
+        return ack ?? Promise.reject(new Error('voice injection was not sent'));
       },
       isResponding() {
         return Boolean(activeResponseId);

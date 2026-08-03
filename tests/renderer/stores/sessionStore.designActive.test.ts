@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { useSessionStore, type SessionWithMeta } from '../../../src/renderer/stores/sessionStore';
 import { useDesignCanvasStore } from '../../../src/renderer/components/design/designCanvasStore';
+import { useSurfaceExecutionStore } from '../../../src/renderer/stores/surfaceExecutionStore';
+import { surfaceExecutionScopeKeyV1 } from '../../../src/renderer/utils/surfaceExecutionProjection';
 
 describe('designCanvasStore per-session design-active flag', () => {
   beforeEach(() => {
@@ -59,6 +61,7 @@ describe('sessionStore design-active + canvas owner cleanup on delete/archive', 
       ownerSessionId: 's1',
       designActiveSessions: new Set<string>(['s1']),
     });
+    useSurfaceExecutionStore.getState().reset();
   });
 
   it('deleteSession clears design-active flag for the deleted session', async () => {
@@ -70,6 +73,54 @@ describe('sessionStore design-active + canvas owner cleanup on delete/archive', 
     useDesignCanvasStore.setState({ ownerSessionId: 's1' });
     await useSessionStore.getState().deleteSession('s1');
     expect(useDesignCanvasStore.getState().ownerSessionId).toBeNull();
+  });
+
+  it('deleteSession clears terminal frames from the renderer store after host deletion succeeds', async () => {
+    const scope = {
+      conversationId: 's1',
+      runId: 'run-1',
+      agentId: 'agent-1',
+      surfaceSessionId: 'surface-1',
+    };
+    useSurfaceExecutionStore.getState().setFrameState(scope, {
+      status: 'stale',
+      dataUrl: 'data:image/jpeg;base64,AAAA',
+    });
+
+    await useSessionStore.getState().deleteSession('s1');
+
+    expect(useSurfaceExecutionStore.getState().frameByScope[surfaceExecutionScopeKeyV1(scope)])
+      .toBeUndefined();
+  });
+
+  it('clearCurrentSession deletes persisted frames before clearing the in-memory conversation', async () => {
+    const scope = {
+      conversationId: 's1',
+      runId: 'run-1',
+      agentId: 'agent-1',
+      surfaceSessionId: 'surface-1',
+    };
+    useSessionStore.setState({ currentSessionId: 's1' });
+    useSurfaceExecutionStore.getState().setFrameState(scope, {
+      status: 'stale',
+      dataUrl: 'data:image/jpeg;base64,AAAA',
+    });
+    mockDomainInvoke.mockImplementation(async (domain: string, action: string) => ({
+      success: true,
+      data: domain === 'domain:surfaceExecution' && action === 'deletePersistedTerminalFrames'
+        ? { version: 1, deleted: true }
+        : {},
+    }));
+
+    await useSessionStore.getState().clearCurrentSession();
+
+    expect(mockDomainInvoke).toHaveBeenCalledWith(
+      'domain:surfaceExecution',
+      'deletePersistedTerminalFrames',
+      { version: 1, conversationId: 's1' },
+    );
+    expect(useSurfaceExecutionStore.getState().frameByScope[surfaceExecutionScopeKeyV1(scope)])
+      .toBeUndefined();
   });
 
   it('archiveSession clears design-active flag for the archived session', async () => {

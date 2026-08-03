@@ -102,9 +102,9 @@ export const SessionRecapBanner: React.FC<{ sessionId: string | null }> = ({ ses
   return (
     <div
       role="status"
-      className="mx-4 mt-2 flex items-start gap-2 rounded-lg border border-sky-900/60 bg-sky-950/30 px-3 py-2 text-xs text-zinc-300"
+      className="mx-4 mt-2 flex items-start gap-2 rounded-lg border border-badge-info/60 bg-sky-950/30 px-3 py-2 text-xs text-zinc-300"
     >
-      <Sparkles className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-sky-300" />
+      <Sparkles className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-badge-info" />
       <span className="min-w-0 flex-1">
         <span className="text-zinc-500">{t.sessionRecap.prefix}</span>
         {recap.text}

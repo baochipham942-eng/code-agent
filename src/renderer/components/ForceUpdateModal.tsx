@@ -218,13 +218,13 @@ export const ForceUpdateModal: React.FC<ForceUpdateModalProps> = ({ updateInfo }
       closeOnEsc={false}
       showCloseButton={false}
       zIndex={Z_LAYERS.forceUpdateModal}
-      className="border-rose-500/30"
+      className="border-badge-danger/30"
       headerBgClass="bg-rose-500/5"
       header={
         <ModalHeader
           icon={<ShieldAlert className="w-5 h-5" />}
           iconBgClass="bg-rose-500/20"
-          iconColorClass="text-rose-400"
+          iconColorClass="text-badge-danger"
           title={n.forceTitle}
           subtitle={n.forceSubtitle}
           showCloseButton={false}
@@ -238,7 +238,7 @@ export const ForceUpdateModal: React.FC<ForceUpdateModalProps> = ({ updateInfo }
           <div className="space-y-4">
             <div className="flex items-start gap-4">
               <div className="w-12 h-12 rounded-full bg-indigo-500/20 flex items-center justify-center flex-shrink-0">
-                <Download className="w-6 h-6 text-indigo-400" />
+                <Download className="w-6 h-6 text-badge-accent" />
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-lg font-medium text-white">
@@ -265,8 +265,8 @@ export const ForceUpdateModal: React.FC<ForceUpdateModalProps> = ({ updateInfo }
               </div>
             )}
 
-            <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg p-3">
-              <p className="text-xs text-amber-200">
+            <div className="bg-amber-500/10 border border-badge-warning/20 rounded-lg p-3">
+              <p className="text-xs text-badge-warning">
                 {n.forceNote}
               </p>
             </div>
@@ -278,7 +278,7 @@ export const ForceUpdateModal: React.FC<ForceUpdateModalProps> = ({ updateInfo }
           <div className="space-y-4">
             <div className="flex items-center gap-4">
               <div className="w-12 h-12 rounded-full bg-cyan-500/20 flex items-center justify-center flex-shrink-0">
-                <Loader2 className="w-6 h-6 text-cyan-400 animate-spin" />
+                <Loader2 className="w-6 h-6 text-badge-info animate-spin" />
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-lg font-medium text-white">{n.downloading}</p>
@@ -287,7 +287,7 @@ export const ForceUpdateModal: React.FC<ForceUpdateModalProps> = ({ updateInfo }
                   {downloadProgress.bytesPerSecond > 0 && ` • ${formatSpeed(downloadProgress.bytesPerSecond)}`}
                 </p>
               </div>
-              <span className="text-xl font-mono font-bold text-cyan-400">
+              <span className="text-xl font-mono font-bold text-badge-info">
                 {downloadProgress.percent.toFixed(0)}%
               </span>
             </div>
@@ -311,7 +311,7 @@ export const ForceUpdateModal: React.FC<ForceUpdateModalProps> = ({ updateInfo }
           <div className="space-y-4">
             <div className="flex items-center gap-4">
               <div className="w-12 h-12 rounded-full bg-emerald-500/20 flex items-center justify-center flex-shrink-0">
-                <CheckCircle className="w-6 h-6 text-emerald-400" />
+                <CheckCircle className="w-6 h-6 text-badge-success" />
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-lg font-medium text-white">{n.downloadComplete}</p>
@@ -328,7 +328,7 @@ export const ForceUpdateModal: React.FC<ForceUpdateModalProps> = ({ updateInfo }
           <div className="space-y-4">
             <div className="flex items-center gap-4">
               <div className="w-12 h-12 rounded-full bg-rose-500/20 flex items-center justify-center flex-shrink-0">
-                <AlertCircle className="w-6 h-6 text-rose-400" />
+                <AlertCircle className="w-6 h-6 text-badge-danger" />
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-lg font-medium text-white">{n.downloadFailed}</p>

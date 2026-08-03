@@ -64,11 +64,11 @@ const ProseEditor: React.FC<{
           type="button"
           disabled={busy}
           onClick={() => void save()}
-          className="rounded bg-emerald-500/20 px-3 py-1.5 text-xs text-emerald-200 disabled:opacity-50"
+          className="rounded bg-emerald-500/20 px-3 py-1.5 text-xs text-badge-success disabled:opacity-50"
         >
           {busy ? text.saving : text.save}
         </button>
-        {error ? <div className="text-xs text-red-400">{error}</div> : null}
+        {error ? <div className="text-xs text-badge-danger">{error}</div> : null}
       </div>
     </SettingsSection>
   );

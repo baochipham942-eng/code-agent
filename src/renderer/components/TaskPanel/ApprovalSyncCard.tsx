@@ -87,10 +87,10 @@ export const ApprovalSyncCard: React.FC = () => {
   return (
     <div className="space-y-2">
       <div className={`rounded-md border px-2.5 py-2 ${
-        dangerous ? 'border-red-500/20 bg-red-500/[0.05]' : 'border-amber-500/20 bg-amber-500/[0.04]'
+        dangerous ? 'border-red-500/20 bg-red-500/[0.05]' : 'border-badge-warning/20 bg-amber-500/[0.04]'
       }`}>
         <div className="flex items-center gap-2">
-          <AlertTriangle className={`h-3.5 w-3.5 ${dangerous ? 'text-red-300' : 'text-amber-300'}`} />
+          <AlertTriangle className={`h-3.5 w-3.5 ${dangerous ? 'text-badge-danger' : 'text-badge-warning'}`} />
           <span className="text-xs font-medium text-zinc-200">{pendingPermissionRequest.tool}</span>
           <span className="ml-auto text-[10px] text-zinc-600">{pendingPermissionRequest.type}</span>
         </div>
@@ -111,7 +111,7 @@ export const ApprovalSyncCard: React.FC = () => {
         <button
           type="button"
           onClick={() => respond('allow')}
-          className="inline-flex items-center justify-center gap-1 rounded-md border border-emerald-500/20 bg-emerald-500/10 px-2 py-1.5 text-[11px] text-emerald-300 hover:bg-emerald-500/15"
+          className="inline-flex items-center justify-center gap-1 rounded-md border border-badge-success/20 bg-emerald-500/10 px-2 py-1.5 text-[11px] text-badge-success hover:bg-emerald-500/15"
         >
           <Check className="h-3 w-3" />
           {a.allow}
@@ -120,7 +120,7 @@ export const ApprovalSyncCard: React.FC = () => {
           type="button"
           onClick={() => respond('allow_session')}
           disabled={dangerous}
-          className="inline-flex items-center justify-center gap-1 rounded-md border border-sky-500/20 bg-sky-500/10 px-2 py-1.5 text-[11px] text-sky-300 hover:bg-sky-500/15 disabled:cursor-not-allowed disabled:opacity-50"
+          className="inline-flex items-center justify-center gap-1 rounded-md border border-badge-info/20 bg-sky-500/10 px-2 py-1.5 text-[11px] text-badge-info hover:bg-sky-500/15 disabled:cursor-not-allowed disabled:opacity-50"
         >
           <Clock className="h-3 w-3" />
           {a.session}
@@ -128,7 +128,7 @@ export const ApprovalSyncCard: React.FC = () => {
         <button
           type="button"
           onClick={() => respond('deny')}
-          className="inline-flex items-center justify-center gap-1 rounded-md border border-red-500/20 bg-red-500/10 px-2 py-1.5 text-[11px] text-red-300 hover:bg-red-500/15"
+          className="inline-flex items-center justify-center gap-1 rounded-md border border-red-500/20 bg-red-500/10 px-2 py-1.5 text-[11px] text-badge-danger hover:bg-red-500/15"
         >
           <X className="h-3 w-3" />
           {a.deny}

@@ -214,6 +214,29 @@ describe('RunRegistry', () => {
     expect(registry.size).toBe(1);
   });
 
+  it('registers an auxiliary owner without replacing the conversation primary run', () => {
+    const registry = new RunRegistry();
+    const primary = registry.start({
+      runId: 'run-primary',
+      sessionId: 'session-1',
+      workspace: '/tmp/native-run-workspace',
+    });
+    const auxiliary = registry.startAuxiliary({
+      runId: 'run-user-browser',
+      sessionId: 'session-1',
+      workspace: '/tmp/native-run-workspace',
+    });
+
+    expect(registry.getBySessionId('session-1')).toBe(primary);
+    expect(registry.resolve({ runId: auxiliary.context.runId, sessionId: 'session-1' }))
+      .toBe(auxiliary);
+    expect(registry.size).toBe(2);
+
+    expect(registry.unregister(auxiliary.context.runId, auxiliary)).toBe(true);
+    expect(registry.getBySessionId('session-1')).toBe(primary);
+    expect(registry.size).toBe(1);
+  });
+
   it('does not let a stale expected handle unregister a replacement run', () => {
     const registry = new RunRegistry();
     const staleHandle = registry.start({

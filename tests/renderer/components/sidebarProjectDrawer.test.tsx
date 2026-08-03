@@ -67,7 +67,7 @@ describe('SidebarProjectDrawer', () => {
             id: 'session-1',
             title: 'Session Native Workspace',
             statusLabel: '执行中',
-            statusToneClassName: 'text-sky-300 bg-sky-500/10 border-sky-500/20',
+            statusToneClassName: 'text-badge-info bg-sky-500/10 border-badge-info/20',
             showStatusBadge: true,
             typeLabel: '对话',
             summary: '工作区 · Browser',

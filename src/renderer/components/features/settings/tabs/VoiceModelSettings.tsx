@@ -236,8 +236,8 @@ export const VoiceModelSettings: React.FC = () => {
             data-testid="voice-provider-status"
             className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] ${
               currentProvider?.configured
-                ? 'bg-emerald-500/10 text-emerald-300'
-                : 'bg-amber-500/10 text-amber-300'
+                ? 'bg-emerald-500/10 text-badge-success'
+                : 'bg-amber-500/10 text-badge-warning'
             }`}
           >
             {currentProvider?.configured
@@ -250,7 +250,7 @@ export const VoiceModelSettings: React.FC = () => {
             data-testid="voice-provider-select"
             value={currentProvider?.id ?? ''}
             onChange={(event) => void persistProvider(event.target.value)}
-            className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-primary-500"
+            className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-accent-accessible"
           >
             {providers.map((provider) => (
               <option key={provider.id} value={provider.id}>{provider.displayName}</option>
@@ -282,7 +282,7 @@ export const VoiceModelSettings: React.FC = () => {
           />
         )}
         {!currentProvider?.configured && (
-          <p className="mt-2 text-xs text-amber-400/80" data-testid="voice-provider-missing-hint">
+          <p className="mt-2 text-xs text-badge-warning/80" data-testid="voice-provider-missing-hint">
             {text.providerMissingHint.replace('{name}', currentProvider?.displayName ?? 'DashScope')}
           </p>
         )}
@@ -311,14 +311,14 @@ export const VoiceModelSettings: React.FC = () => {
             data-testid="voice-conversation-model"
             value={currentModel?.id ?? ''}
             onChange={(event) => void persistConversationModel(event.target.value)}
-            className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-primary-500"
+            className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-accent-accessible"
           >
             {currentProvider?.models.map((model) => (
               <option key={model.id} value={model.id}>{model.displayName}</option>
             ))}
           </select>
           {currentModel && !currentModel.supportsTools && (
-            <p data-testid="voice-model-no-tools-warning" className="text-xs text-amber-400/80">
+            <p data-testid="voice-model-no-tools-warning" className="text-xs text-badge-warning/80">
               {text.modelNoToolsWarning}
             </p>
           )}
@@ -341,7 +341,7 @@ export const VoiceModelSettings: React.FC = () => {
                 data-testid={`voice-model-voice-${voice}`}
                 onClick={() => void persistLive({ voiceId: voice })}
                 className={`flex w-full items-center gap-3 px-3 py-2 text-left text-sm transition-colors ${
-                  active ? 'bg-sky-500/10 text-sky-300' : 'text-zinc-300 hover:bg-zinc-800'
+                  active ? 'bg-sky-500/10 text-badge-info' : 'text-zinc-300 hover:bg-zinc-800'
                 }`}
               >
                 <span className="w-4 text-xs">{active ? '✓' : ''}</span>
@@ -370,7 +370,7 @@ export const VoiceModelSettings: React.FC = () => {
             data-testid="voice-model-transcription-model"
             value={speech.localModel}
             onChange={(event) => void persistSpeech({ localModel: event.target.value })}
-            className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-primary-500"
+            className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-accent-accessible"
           >
             {TRANSCRIPTION_MODEL_OPTIONS.map((option) => (
               <option key={option.id} value={option.id}>{option.label}</option>
@@ -592,9 +592,9 @@ const AddCustomProviderPanel: React.FC<AddCustomProviderPanelProps> = ({ provide
 
           {compat === 'needs-code' ? (
             <div className="space-y-4">
-              <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-300">
+              <div className="rounded-lg border border-badge-warning/30 bg-amber-500/10 p-3 text-xs text-badge-warning">
                 <div className="mb-1 font-medium">{text.customProviderNeedsCodeTitle}</div>
-                <p className="leading-5 text-amber-300/80">{text.customProviderNeedsCodeDesc}</p>
+                <p className="leading-5 text-badge-warning/80">{text.customProviderNeedsCodeDesc}</p>
               </div>
               <div className="flex gap-2">
                 <Button variant="primary" size="sm" disabled data-testid="voice-add-provider-save">{text.customProviderSave}</Button>
@@ -610,7 +610,7 @@ const AddCustomProviderPanel: React.FC<AddCustomProviderPanelProps> = ({ provide
                   value={displayName}
                   onChange={(e) => handleDisplayNameChange(e.target.value)}
                   placeholder={text.customProviderDisplayNamePlaceholder}
-                  className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-primary-500"
+                  className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-accent-accessible"
                 />
               </label>
               <label className="block space-y-1">
@@ -620,7 +620,7 @@ const AddCustomProviderPanel: React.FC<AddCustomProviderPanelProps> = ({ provide
                   value={id}
                   onChange={(e) => handleIdChange(e.target.value)}
                   placeholder={text.customProviderIdPlaceholder}
-                  className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm font-mono text-zinc-200 outline-none focus:border-primary-500"
+                  className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm font-mono text-zinc-200 outline-none focus:border-accent-accessible"
                 />
                 <span className="text-[11px] text-zinc-500">{text.customProviderIdHint}</span>
               </label>
@@ -631,7 +631,7 @@ const AddCustomProviderPanel: React.FC<AddCustomProviderPanelProps> = ({ provide
                   value={endpoint}
                   onChange={(e) => { setEndpoint(e.target.value); invalidateTest(); }}
                   placeholder={text.customProviderEndpointPlaceholder}
-                  className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm font-mono text-zinc-200 outline-none focus:border-primary-500"
+                  className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm font-mono text-zinc-200 outline-none focus:border-accent-accessible"
                 />
               </label>
               <label className="block space-y-1">
@@ -645,7 +645,7 @@ const AddCustomProviderPanel: React.FC<AddCustomProviderPanelProps> = ({ provide
                     if (value === 'other') setCompat('needs-code');
                     invalidateTest();
                   }}
-                  className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-primary-500"
+                  className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-accent-accessible"
                 >
                   <option value="bearer">{text.customProviderAuthBearer}</option>
                   <option value="other">{text.customProviderAuthOther}</option>
@@ -659,7 +659,7 @@ const AddCustomProviderPanel: React.FC<AddCustomProviderPanelProps> = ({ provide
                   value={key}
                   onChange={(e) => { setKey(e.target.value); invalidateTest(); }}
                   placeholder={text.customProviderKeyPlaceholder}
-                  className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm font-mono text-zinc-200 outline-none focus:border-primary-500"
+                  className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm font-mono text-zinc-200 outline-none focus:border-accent-accessible"
                 />
                 <span className="text-[11px] text-zinc-500">{text.customProviderKeyHint}</span>
               </label>
@@ -670,7 +670,7 @@ const AddCustomProviderPanel: React.FC<AddCustomProviderPanelProps> = ({ provide
                   value={model}
                   onChange={(e) => { setModel(e.target.value); invalidateTest(); }}
                   placeholder={text.customProviderModelPlaceholder}
-                  className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm font-mono text-zinc-200 outline-none focus:border-primary-500"
+                  className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm font-mono text-zinc-200 outline-none focus:border-accent-accessible"
                 />
               </label>
               <label className="block space-y-1">
@@ -680,7 +680,7 @@ const AddCustomProviderPanel: React.FC<AddCustomProviderPanelProps> = ({ provide
                   value={voices}
                   onChange={(e) => { setVoices(e.target.value); invalidateTest(); }}
                   placeholder={text.customProviderVoicesPlaceholder}
-                  className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-primary-500"
+                  className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-accent-accessible"
                 />
                 <span className="text-[11px] text-zinc-500">{text.customProviderVoicesHint}</span>
               </label>
@@ -690,7 +690,7 @@ const AddCustomProviderPanel: React.FC<AddCustomProviderPanelProps> = ({ provide
                   data-testid="voice-add-provider-rate"
                   value={inputSampleRate}
                   onChange={(e) => { setInputSampleRate(Number(e.target.value) as 16_000 | 24_000); invalidateTest(); }}
-                  className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-primary-500"
+                  className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-accent-accessible"
                 >
                   <option value={16_000}>{text.customProviderSampleRate16k}</option>
                   <option value={24_000}>{text.customProviderSampleRate24k}</option>
@@ -711,8 +711,8 @@ const AddCustomProviderPanel: React.FC<AddCustomProviderPanelProps> = ({ provide
                 <span data-testid="voice-add-provider-test-status">
                   {testStatus === 'untested' && <span className="rounded-full bg-zinc-800 px-2 py-0.5 text-[11px] text-zinc-400">{text.untestedBadge}</span>}
                   {testStatus === 'testing' && <span className="text-[11px] text-zinc-400">{text.customProviderTesting}</span>}
-                  {testStatus === 'success' && <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[11px] text-emerald-300">{text.customProviderTestSuccess}</span>}
-                  {testStatus === 'failed' && <span className="rounded-full bg-rose-500/10 px-2 py-0.5 text-[11px] text-rose-300">{text.customProviderTestFailed}</span>}
+                  {testStatus === 'success' && <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[11px] text-badge-success">{text.customProviderTestSuccess}</span>}
+                  {testStatus === 'failed' && <span className="rounded-full bg-rose-500/10 px-2 py-0.5 text-[11px] text-badge-danger">{text.customProviderTestFailed}</span>}
                 </span>
               </div>
               <p className="text-[11px] text-zinc-500" data-testid="voice-add-provider-test-hint">

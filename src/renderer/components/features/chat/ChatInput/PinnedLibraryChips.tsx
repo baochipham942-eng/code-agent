@@ -75,7 +75,7 @@ export function PinnedLibraryChips() {
             event.preventDefault();
             removePin(item.id);
           }}
-          className="group inline-flex max-w-[220px] cursor-default items-center gap-1 rounded-full border border-indigo-500/30 bg-indigo-500/10 px-1.5 py-0.5 text-xs text-indigo-200 transition-colors hover:border-indigo-400/50"
+          className="group inline-flex max-w-[220px] cursor-default items-center gap-1 rounded-full border border-badge-accent/30 bg-indigo-500/10 px-1.5 py-0.5 text-xs text-badge-accent transition-colors hover:border-badge-accent/50"
         >
           <Pin className="h-4 w-4 shrink-0 p-0.5" aria-hidden />
           <span className="truncate">{item.title}</span>
@@ -84,7 +84,7 @@ export function PinnedLibraryChips() {
             tabIndex={-1}
             onClick={() => removePin(item.id)}
             aria-label={t.library.pinnedChipRemoveAria.replace('{title}', item.title)}
-            className="-mr-0.5 shrink-0 rounded-full p-0.5 text-indigo-300 opacity-0 transition-opacity hover:bg-indigo-400/20 hover:text-indigo-100 focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100"
+            className="-mr-0.5 shrink-0 rounded-full p-0.5 text-badge-accent opacity-0 transition-opacity hover:bg-indigo-400/20 hover:text-badge-accent focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100"
           >
             <X className="h-3 w-3" aria-hidden />
           </button>

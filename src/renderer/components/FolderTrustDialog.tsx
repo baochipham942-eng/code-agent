@@ -70,7 +70,7 @@ export const FolderTrustDialog: React.FC<FolderTrustDialogProps> = ({
       </div>
 
       {evaluation.identityChanged && (
-        <div className="rounded border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-amber-100">
+        <div className="rounded border border-badge-warning/30 bg-amber-500/10 px-3 py-2 text-badge-warning">
           {copy.identityChanged}
         </div>
       )}

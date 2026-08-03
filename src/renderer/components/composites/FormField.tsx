@@ -57,14 +57,14 @@ export const FormField: React.FC<FormFieldProps> = ({
         htmlFor={htmlFor}
       >
         {label}
-        {required && <span className="text-red-400 ml-1">*</span>}
+        {required && <span className="text-badge-danger ml-1">*</span>}
       </label>
       {enhancedChild}
       {hint && !error && (
         <p className="mt-1 text-xs text-zinc-500">{hint}</p>
       )}
       {error && (
-        <p className="mt-1 text-xs text-red-400">{error}</p>
+        <p className="mt-1 text-xs text-badge-danger">{error}</p>
       )}
     </div>
   );

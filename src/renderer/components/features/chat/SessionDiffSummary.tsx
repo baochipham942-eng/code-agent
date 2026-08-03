@@ -119,10 +119,10 @@ export const SessionDiffSummary: React.FC<SessionDiffSummaryProps> = ({ messages
               {fileChanges.length} file{fileChanges.length > 1 ? 's' : ''} changed
             </span>
             {totalAdded > 0 && (
-              <span className="text-xs text-emerald-400">+{totalAdded}</span>
+              <span className="text-xs text-badge-success">+{totalAdded}</span>
             )}
             {totalRemoved > 0 && (
-              <span className="text-xs text-rose-400">-{totalRemoved}</span>
+              <span className="text-xs text-badge-danger">-{totalRemoved}</span>
             )}
             <div className="flex-1" />
             <span className="text-xs text-zinc-500 flex items-center gap-1">
@@ -152,7 +152,7 @@ export const SessionDiffSummary: React.FC<SessionDiffSummaryProps> = ({ messages
                       {dirPath && <span className="text-zinc-600">{dirPath}/</span>}
                       <span className="text-zinc-300">{fileName}</span>
                       {fc.isNewFile && (
-                        <span className="ml-2 text-[10px] text-emerald-400/80">new</span>
+                        <span className="ml-2 text-[10px] text-badge-success/80">new</span>
                       )}
                       {fc.editCount > 1 && (
                         <span className="ml-2 text-[10px] text-zinc-500">
@@ -161,10 +161,10 @@ export const SessionDiffSummary: React.FC<SessionDiffSummaryProps> = ({ messages
                       )}
                     </span>
                     {fc.added > 0 && (
-                      <span className="text-emerald-400 flex-shrink-0">+{fc.added}</span>
+                      <span className="text-badge-success flex-shrink-0">+{fc.added}</span>
                     )}
                     {fc.removed > 0 && (
-                      <span className="text-rose-400 flex-shrink-0">-{fc.removed}</span>
+                      <span className="text-badge-danger flex-shrink-0">-{fc.removed}</span>
                     )}
                   </li>
                 );

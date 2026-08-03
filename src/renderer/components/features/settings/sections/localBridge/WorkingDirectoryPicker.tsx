@@ -125,7 +125,7 @@ export const WorkingDirectoryPicker: React.FC = () => {
         }}
         className={`w-full flex items-center gap-1.5 px-2 py-1 text-left text-sm rounded transition-colors ${
           selectedPath === node.path
-            ? 'bg-indigo-500/20 text-indigo-300'
+            ? 'bg-indigo-500/20 text-badge-accent'
             : 'text-zinc-300 hover:bg-zinc-700'
         }`}
         style={{ paddingLeft: `${depth * 16 + 8}px` }}
@@ -136,7 +136,7 @@ export const WorkingDirectoryPicker: React.FC = () => {
           <ChevronRight className="w-3 h-3 text-zinc-500 flex-shrink-0" />
         )}
         {node.isExpanded ? (
-          <FolderOpen className="w-4 h-4 text-yellow-400 flex-shrink-0" />
+          <FolderOpen className="w-4 h-4 text-badge-warning flex-shrink-0" />
         ) : (
           <Folder className="w-4 h-4 text-zinc-400 flex-shrink-0" />
         )}

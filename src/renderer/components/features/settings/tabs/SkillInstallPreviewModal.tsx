@@ -127,7 +127,7 @@ export const SkillInstallPreviewModal: React.FC<SkillInstallPreviewModalProps> =
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
               <h2 className="truncate text-lg font-semibold text-zinc-200">{repoName}</h2>
-              <span className="shrink-0 rounded border border-indigo-500/20 bg-indigo-500/10 px-1.5 py-0.5 text-[10px] text-indigo-300">
+              <span className="shrink-0 rounded border border-badge-accent/20 bg-indigo-500/10 px-1.5 py-0.5 text-[10px] text-badge-accent">
                 {sourceLabel}
               </span>
             </div>
@@ -155,19 +155,19 @@ export const SkillInstallPreviewModal: React.FC<SkillInstallPreviewModalProps> =
     >
       <div className="space-y-4">
         {/* 安全提示：skill 内容将注入模型上下文 */}
-        <div className="flex items-start gap-2 rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-300">
+        <div className="flex items-start gap-2 rounded-lg border border-badge-warning/20 bg-amber-500/10 px-3 py-2 text-xs text-badge-warning">
           <ShieldAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
           <span>{previewText.safetyNotice}</span>
         </div>
 
         {/* stage 警告 */}
         {warnings.length > 0 && (
-          <div className="rounded-lg border border-amber-500/20 bg-amber-500/[0.06] px-3 py-2">
-            <div className="flex items-center gap-1.5 text-xs font-medium text-amber-300">
+          <div className="rounded-lg border border-badge-warning/20 bg-amber-500/[0.06] px-3 py-2">
+            <div className="flex items-center gap-1.5 text-xs font-medium text-badge-warning">
               <AlertTriangle className="h-3.5 w-3.5" />
               {previewText.warningsTitle}
             </div>
-            <ul className="mt-1 list-disc space-y-0.5 pl-5 text-xs text-amber-200/80">
+            <ul className="mt-1 list-disc space-y-0.5 pl-5 text-xs text-badge-warning/80">
               {warnings.map((warning) => (
                 <li key={warning}>{warning}</li>
               ))}
@@ -202,7 +202,7 @@ export const SkillInstallPreviewModal: React.FC<SkillInstallPreviewModalProps> =
                       </span>
                     )}
                   </span>
-                  <span className="shrink-0 text-[11px] text-indigo-400">
+                  <span className="shrink-0 text-[11px] text-badge-accent">
                     {expanded ? previewText.hideContent : previewText.viewContent}
                   </span>
                 </button>
@@ -228,7 +228,7 @@ export const SkillInstallPreviewModal: React.FC<SkillInstallPreviewModalProps> =
 
         {/* confirm 失败：弹窗内展示，不静默 */}
         {confirmError && (
-          <div className="flex items-center gap-2 rounded-lg bg-red-500/10 px-3 py-2 text-xs text-red-400">
+          <div className="flex items-center gap-2 rounded-lg bg-red-500/10 px-3 py-2 text-xs text-badge-danger">
             <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
             {confirmError}
           </div>

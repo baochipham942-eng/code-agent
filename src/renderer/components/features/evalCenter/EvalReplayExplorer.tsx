@@ -114,7 +114,7 @@ export const EvalReplayExplorer: React.FC = () => {
                   <Eye className="h-3.5 w-3.5 shrink-0 text-zinc-600" />
                   <span className="min-w-0 flex-1 truncate">{getDisplaySessionTitle(session.title)}</span>
                   {session.id === currentSessionId && (
-                    <span className="shrink-0 rounded border border-sky-500/30 bg-sky-500/10 px-1 py-0.5 text-[10px] text-sky-300">
+                    <span className="shrink-0 rounded border border-badge-info/30 bg-sky-500/10 px-1 py-0.5 text-[10px] text-badge-info">
                       {r.currentSessionBadge}
                     </span>
                   )}

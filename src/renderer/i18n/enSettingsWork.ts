@@ -558,8 +558,8 @@ export const enSettingsWork = {
         },
         emptyContent: '(empty)',
         summaryTitle: 'File summary',
-        diagnosticsTitle: 'Session and model stats',
-        diagnosticsDescription: 'Model usage and recent sessions are diagnostic information and are collapsed by default.',
+        diagnosticsTitle: 'Diagnostics',
+        diagnosticsDescription: 'Injection traces, Light Memory health, and session stats are diagnostic information and are collapsed by default.',
         modelUsage: 'Model usage',
         recentConversations: 'Recent sessions',
         noStats: 'No session stats yet.',
@@ -832,6 +832,11 @@ export const enSettingsWork = {
         open: 'Open',
         revealTitle: 'Show in Finder',
         locate: 'Locate',
+      },
+      toggle: {
+        enable: 'Enable',
+        disable: 'Disable',
+        disabledBadge: 'Disabled',
       },
       typeLabels: {
         command: 'Command',

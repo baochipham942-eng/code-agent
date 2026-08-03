@@ -6,6 +6,7 @@ import type {
 } from '@shared/contract/agentTrajectory';
 import { useAppStore } from './appStore';
 import { useSessionStore, type SessionFilter } from './sessionStore';
+import { useSurfaceExecutionStore } from './surfaceExecutionStore';
 import type { SidebarSessionTier } from '../utils/sidebarSessionTiers';
 import { createLogger } from '../utils/logger';
 
@@ -16,6 +17,8 @@ async function deleteSession(id: string): Promise<void> {
   if (!response?.success) {
     throw new Error(response?.error?.message || 'Failed to delete session');
   }
+  // 终态留影的内存半跟会话一起删（盘上那一半由 host 会话删除收敛点负责）
+  useSurfaceExecutionStore.getState().clearConversation(id);
 }
 
 export type { SessionFilter };

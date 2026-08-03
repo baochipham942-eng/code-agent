@@ -68,7 +68,7 @@ export const ModelArchitecture: React.FC<Props> = ({ onComplete, onBack }) => {
           {/* 架构图 */}
           <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-700">
             <h3 className="text-sm font-semibold text-zinc-200 mb-4 flex items-center gap-2">
-              <Layers className="w-4 h-4 text-blue-400" />
+              <Layers className="w-4 h-4 text-badge-info" />
               {ma.diagramTitle}
             </h3>
 
@@ -83,7 +83,7 @@ export const ModelArchitecture: React.FC<Props> = ({ onComplete, onBack }) => {
                 onClick={() => setSelectedLayer('embedding')}
                 className={`w-full p-3 rounded-lg border transition-all ${
                   selectedLayer === 'embedding'
-                    ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-400'
+                    ? 'bg-emerald-500/20 border-badge-success/50 text-badge-success'
                     : 'bg-zinc-800 border-zinc-700 text-zinc-400 hover:border-zinc-600'
                 }`}
               >
@@ -105,7 +105,7 @@ export const ModelArchitecture: React.FC<Props> = ({ onComplete, onBack }) => {
                   onClick={() => setSelectedLayer('attention')}
                   className={`w-full p-2 rounded-lg border mb-2 transition-all ${
                     selectedLayer === 'attention'
-                      ? 'bg-blue-500/20 border-blue-500/50 text-blue-400'
+                      ? 'bg-blue-500/20 border-badge-info/50 text-badge-info'
                       : 'bg-zinc-800 border-zinc-700 text-zinc-400 hover:border-zinc-600'
                   }`}
                 >
@@ -120,7 +120,7 @@ export const ModelArchitecture: React.FC<Props> = ({ onComplete, onBack }) => {
                   onClick={() => setSelectedLayer('ffn')}
                   className={`w-full p-2 rounded-lg border transition-all ${
                     selectedLayer === 'ffn'
-                      ? 'bg-purple-500/20 border-purple-500/50 text-purple-400'
+                      ? 'bg-purple-500/20 border-badge-accent/50 text-badge-accent'
                       : 'bg-zinc-800 border-zinc-700 text-zinc-400 hover:border-zinc-600'
                   }`}
                 >
@@ -139,7 +139,7 @@ export const ModelArchitecture: React.FC<Props> = ({ onComplete, onBack }) => {
                 onClick={() => setSelectedLayer('output')}
                 className={`w-full p-3 rounded-lg border transition-all ${
                   selectedLayer === 'output'
-                    ? 'bg-amber-500/20 border-amber-500/50 text-amber-400'
+                    ? 'bg-amber-500/20 border-badge-warning/50 text-badge-warning'
                     : 'bg-zinc-800 border-zinc-700 text-zinc-400 hover:border-zinc-600'
                 }`}
               >
@@ -161,12 +161,12 @@ export const ModelArchitecture: React.FC<Props> = ({ onComplete, onBack }) => {
           </div>
 
           {/* 参数统计 */}
-          <div className="p-4 rounded-xl bg-gradient-to-br from-blue-500/10 to-indigo-500/10 border border-blue-500/20">
+          <div className="p-4 rounded-xl bg-gradient-to-br from-blue-500/10 to-indigo-500/10 border border-badge-info/20">
             <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
-              <Box className="w-4 h-4 text-blue-400" />
+              <Box className="w-4 h-4 text-badge-info" />
               {ma.paramsTitle}
             </h3>
-            <div className="text-3xl font-bold text-blue-400 mb-2">
+            <div className="text-3xl font-bold text-badge-info mb-2">
               {ma.paramsValue.replace('{count}', (totalParams / 1e6).toFixed(0))}
             </div>
             <div className="text-sm text-zinc-400">
@@ -184,20 +184,20 @@ export const ModelArchitecture: React.FC<Props> = ({ onComplete, onBack }) => {
           {selectedLayer && (
             <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-700 animate-fadeIn">
               <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
-                <Info className="w-4 h-4 text-emerald-400" />
+                <Info className="w-4 h-4 text-badge-success" />
                 {layerDetails[selectedLayer].title}
               </h3>
               <p className="text-sm text-zinc-400 mb-4 leading-relaxed">
                 {layerDetails[selectedLayer].description}
               </p>
-              <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 mb-3">
-                <div className="text-sm text-amber-300">
+              <div className="p-3 rounded-lg bg-amber-500/10 border border-badge-warning/20 mb-3">
+                <div className="text-sm text-badge-warning">
                   {layerDetails[selectedLayer].analogy}
                 </div>
               </div>
               <div className="p-3 rounded-lg bg-zinc-800">
                 <div className="text-xs text-zinc-500 mb-1">{ma.simpleLabel}</div>
-                <div className="text-sm text-emerald-400">
+                <div className="text-sm text-badge-success">
                   {layerDetails[selectedLayer].simple}
                 </div>
               </div>
@@ -207,15 +207,15 @@ export const ModelArchitecture: React.FC<Props> = ({ onComplete, onBack }) => {
           {/* 模型配置 */}
           <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-700">
             <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
-              <Zap className="w-4 h-4 text-amber-400" />
+              <Zap className="w-4 h-4 text-badge-warning" />
               {ma.configTitle}
             </h3>
             <div className="grid grid-cols-2 gap-3">
               {[
-                { label: ma.configLabels.vocabSize, value: modelConfig.vocabSize, color: 'text-emerald-400' },
-                { label: ma.configLabels.blockSize, value: modelConfig.blockSize, color: 'text-blue-400' },
-                { label: ma.configLabels.nLayer, value: modelConfig.nLayer, color: 'text-purple-400' },
-                { label: ma.configLabels.nHead, value: modelConfig.nHead, color: 'text-amber-400' },
+                { label: ma.configLabels.vocabSize, value: modelConfig.vocabSize, color: 'text-badge-success' },
+                { label: ma.configLabels.blockSize, value: modelConfig.blockSize, color: 'text-badge-info' },
+                { label: ma.configLabels.nLayer, value: modelConfig.nLayer, color: 'text-badge-accent' },
+                { label: ma.configLabels.nHead, value: modelConfig.nHead, color: 'text-badge-warning' },
               ].map((item) => (
                 <div key={item.label} className="p-3 rounded-lg bg-zinc-800">
                   <div className={`text-xl font-bold ${item.color}`}>{item.value}</div>
@@ -231,35 +231,35 @@ export const ModelArchitecture: React.FC<Props> = ({ onComplete, onBack }) => {
           {/* 工作流程 */}
           <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-700">
             <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
-              <span className="text-emerald-400">🔄</span>
+              <span className="text-badge-success">🔄</span>
               {ma.workflowTitle}
             </h3>
             <div className="space-y-3">
-              <div className="flex items-center gap-3 p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
+              <div className="flex items-center gap-3 p-3 rounded-lg bg-emerald-500/10 border border-badge-success/20">
                 <span className="text-2xl">📝</span>
                 <div>
-                  <div className="text-sm text-emerald-300 font-medium">{ma.workflowStep1Label}</div>
+                  <div className="text-sm text-badge-success font-medium">{ma.workflowStep1Label}</div>
                   <div className="text-xs text-zinc-400">{ma.workflowStep1Desc}</div>
                 </div>
               </div>
-              <div className="flex items-center gap-3 p-3 rounded-lg bg-blue-500/10 border border-blue-500/20">
+              <div className="flex items-center gap-3 p-3 rounded-lg bg-blue-500/10 border border-badge-info/20">
                 <span className="text-2xl">🔗</span>
                 <div>
-                  <div className="text-sm text-blue-300 font-medium">{ma.workflowStep2Label}</div>
+                  <div className="text-sm text-badge-info font-medium">{ma.workflowStep2Label}</div>
                   <div className="text-xs text-zinc-400">{ma.workflowStep2Desc}</div>
                 </div>
               </div>
-              <div className="flex items-center gap-3 p-3 rounded-lg bg-purple-500/10 border border-purple-500/20">
+              <div className="flex items-center gap-3 p-3 rounded-lg bg-purple-500/10 border border-badge-accent/20">
                 <span className="text-2xl">🧠</span>
                 <div>
-                  <div className="text-sm text-purple-300 font-medium">{ma.workflowStep3Label}</div>
+                  <div className="text-sm text-badge-accent font-medium">{ma.workflowStep3Label}</div>
                   <div className="text-xs text-zinc-400">{ma.workflowStep3Desc}</div>
                 </div>
               </div>
-              <div className="flex items-center gap-3 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
+              <div className="flex items-center gap-3 p-3 rounded-lg bg-amber-500/10 border border-badge-warning/20">
                 <span className="text-2xl">🎯</span>
                 <div>
-                  <div className="text-sm text-amber-300 font-medium">{ma.workflowStep4Label}</div>
+                  <div className="text-sm text-badge-warning font-medium">{ma.workflowStep4Label}</div>
                   <div className="text-xs text-zinc-400">{ma.workflowStep4Desc}</div>
                 </div>
               </div>
@@ -271,14 +271,14 @@ export const ModelArchitecture: React.FC<Props> = ({ onComplete, onBack }) => {
       {/* 专有名词解释 */}
       <div className="mt-8 p-4 rounded-xl bg-zinc-900 border border-zinc-700">
         <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
-          <span className="text-blue-400">📖</span>
+          <span className="text-badge-info">📖</span>
           {ma.termsTitle}
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           {ma.terms.map((term) => (
             <div key={term.en} className="p-3 rounded-lg bg-zinc-800">
               <div className="flex items-center gap-2 mb-1">
-                <span className="text-sm font-bold text-emerald-400">{term.en}</span>
+                <span className="text-sm font-bold text-badge-success">{term.en}</span>
                 <span className="text-xs text-zinc-500">|</span>
                 <span className="text-sm text-zinc-400">{term.zh}</span>
               </div>

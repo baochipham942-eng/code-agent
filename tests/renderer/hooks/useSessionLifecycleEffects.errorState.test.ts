@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
 import {
+  attachAgentErrorToLatestAssistant,
+  endsTheTurn,
   classifyAgentError,
   getAgentErrorMessage,
   isTerminalAgentError,
@@ -28,6 +31,35 @@ describe('agent lifecycle error helpers', () => {
   it('does not invent errors for empty payloads', () => {
     expect(getAgentErrorMessage({})).toBeNull();
     expect(classifyAgentError({})).toBeNull();
+  });
+});
+
+describe('classifyAgentError 模型归属', () => {
+  it('用 host 报的实跑模型，而不是前端当前选中的模型', () => {
+    const error = classifyAgentError(
+      {
+        code: 'RUN_FAILED',
+        message: 'Cannot connect to API: Client network socket disconnected',
+        details: { provider: 'custom-100xlabs', model: 'claude-opus-4-8' },
+      },
+      { modelId: 'deepseek-v4-pro' },
+    );
+
+    expect(error).toMatchObject({
+      category: 'network',
+      provider: 'custom-100xlabs',
+      modelId: 'claude-opus-4-8',
+    });
+  });
+
+  it('host 没带模型时才回落到前端当前模型', () => {
+    const error = classifyAgentError(
+      { code: 'RUN_FAILED', message: 'boom' },
+      { modelId: 'deepseek-v4-pro' },
+    );
+
+    expect(error?.modelId).toBe('deepseek-v4-pro');
+    expect(error?.provider).toBeUndefined();
   });
 });
 
@@ -117,5 +149,54 @@ describe('classifyAgentError', () => {
       traceId: 'trace-abc',
       modelId: 'gpt-5.2',
     });
+  });
+});
+
+// 一次失败会从多个出口各发一条 error（agentOrchestrator 的 catch + runFinalizer 的
+// RUN_FAILED）。真机 2026-08-01：后到的那条没带模型，把先到的带对的盖成了「当前选中
+// 的模型」，卡片于是指认一个根本没跑过的模型。
+describe('attachAgentErrorToLatestAssistant 多出口覆盖', () => {
+  it('后到的错误没带模型时，保住先到的那条的 provider/model', () => {
+    useSessionStore.setState({
+      messages: [{ id: 'a1', role: 'assistant', content: '', timestamp: 1 }],
+    } as never);
+
+    attachAgentErrorToLatestAssistant({
+      category: 'generic',
+      rawMessage: 'boom',
+      timestamp: 2,
+      provider: 'openai',
+      modelId: 'gpt-5-probe',
+    });
+    attachAgentErrorToLatestAssistant({
+      category: 'generic',
+      rawMessage: 'boom',
+      timestamp: 3,
+      modelId: 'MiniMax-M3',
+    });
+
+    const error = useSessionStore.getState().messages[0]?.metadata?.agentError;
+    expect(error?.provider).toBe('openai');
+    expect(error?.modelId).toBe('gpt-5-probe');
+  });
+});
+
+// 宿主自起的轮次（抽干排队消息）会在轮次开头广播一条 user 消息补气泡；
+// 那条一旦被当成轮末，屏幕当场显示空闲、停止按钮消失，而后台还在跑。
+describe('endsTheTurn', () => {
+  it('宿主补气泡的 user 消息不算轮末', () => {
+    expect(endsTheTurn({ id: 'q1', role: 'user', content: '排队消息' })).toBe(false);
+  });
+
+  it('没有工具调用的 assistant 消息算轮末', () => {
+    expect(endsTheTurn({ id: 'a1', role: 'assistant', content: '答完了' })).toBe(true);
+  });
+
+  it('带工具调用的 assistant 消息是轮中，不算轮末', () => {
+    expect(endsTheTurn({ id: 'a1', role: 'assistant', toolCalls: [{ id: 't1' }] })).toBe(false);
+  });
+
+  it('空载荷不算', () => {
+    expect(endsTheTurn(undefined)).toBe(false);
   });
 });

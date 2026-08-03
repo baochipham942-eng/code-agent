@@ -33,25 +33,26 @@ export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElemen
 
 const variantStyles: Record<ButtonVariant, string> = {
   primary: [
-    // teal-800→700 渐变：白字对比度浅端 5.47:1 / 深端 7.58:1（WCAG AA），勿回浅色系
+    // teal-800→700 渐变：白字对比度浅端 5.47:1 / 深端 7.58:1（WCAG AA）；
+    // hover 不落到 primary-600（白字仅 3.74:1）。
     'bg-gradient-to-r from-primary-800 to-primary-700',
-    'hover:from-primary-700 hover:to-primary-600',
+    'hover:from-primary-700 hover:to-primary-700',
     'text-white',
     'shadow-lg shadow-primary-700/20 hover:shadow-primary-700/30',
     'disabled:from-primary-800/50 disabled:to-primary-700/50',
   ].join(' '),
   secondary: [
-    'bg-zinc-600 hover:bg-zinc-500',
-    'text-zinc-200',
-    'disabled:bg-zinc-700',
+    'bg-btn-secondary hover:bg-btn-secondary-hover',
+    'text-btn-secondary',
+    'disabled:bg-btn-secondary-disabled disabled:text-btn-secondary-disabled',
   ].join(' '),
   ghost: [
-    'bg-transparent hover:bg-zinc-700',
+    'bg-transparent hover:bg-btn-ghost-hover',
     'text-zinc-400 hover:text-zinc-200',
     'disabled:text-zinc-600',
   ].join(' '),
   danger: [
-    'bg-red-600 hover:bg-red-500',
+    'bg-red-600 hover:bg-red-700',
     'text-white',
     'disabled:bg-red-600/50',
   ].join(' '),

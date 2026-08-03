@@ -12,7 +12,7 @@
 // 绝不在 renderer 手搓 message 塞进 sessionStore。
 // ============================================================================
 
-import type { VoiceMessageCode } from '@shared/contract/voice';
+import type { RendererVoiceFailureReport, VoiceMessageCode } from '@shared/contract/voice';
 import { VOICE_DOWNSTREAM_SAMPLE_RATE, VOICE_FOCUS_REPORT_MIN_INTERVAL_MS, VOICE_RECONNECT_BACKOFF_MS, VOICE_PARTIAL_HANDOFF_MAX_WAIT_MS, VOICE_STREAM_WS_PATH, VOICE_SUBTITLE_REVEAL_INTERVAL_MS, VOICE_SUBTITLE_STALL_FLUSH_MS, VOICE_TEARDOWN_DRAIN_MS, VOICE_WS_CLOSE_TERMINAL } from '@shared/constants/voice';
 import type { AppSettings, Message, VoiceInputDeviceSettings } from '@shared/contract';
 import type { VoiceClientCommand, VoiceEvent } from '@shared/contract/voice';
@@ -22,7 +22,9 @@ import { languages } from '../i18n';
 import { readActiveAgentSessionMap } from '../stores/activeAgentSessionMap';
 import { useAppStore } from '../stores/appStore';
 import { useSessionStore } from '../stores/sessionStore';
-import { useVoiceCallStore, type VoiceInterruptMode } from '../stores/voiceCallStore';
+import { useVoiceCallStore, type VoiceCallError, type VoiceInterruptMode } from '../stores/voiceCallStore';
+import { resolveVoiceMessage } from '../components/features/voice/resolveVoiceMessage';
+import { VOICE_STARTUP_FAILURE_TIER } from './voiceStartupFailureTier';
 import ipcService from './ipcService';
 import { isNativeDesktopAvailable } from './nativeDesktop';
 import { NativeVoiceAudioPipeline } from './nativeVoiceAudioPipeline';
@@ -48,6 +50,21 @@ function buildStreamUrl(sessionId: string, agentId?: string): string {
   if (typeof token === 'string') params.set('token', token);
   if (agentId) params.set('agentId', agentId);
   return `${scheme}://${window.location.host}${VOICE_STREAM_WS_PATH}?${params.toString()}`;
+}
+
+function joinUserTranscriptParts(prefix: string, current: string): string {
+  return [prefix.trim(), current.trim()].filter(Boolean).join(' ');
+}
+
+function removeUserTranscriptPrefix(text: string, prefix: string): string | undefined {
+  const normalizedText = text.trim();
+  const normalizedPrefix = prefix.trim();
+  if (!normalizedText || !normalizedPrefix) return undefined;
+  if (normalizedText === normalizedPrefix) return '';
+  if (!normalizedText.startsWith(normalizedPrefix)) return undefined;
+  const boundary = normalizedText[normalizedPrefix.length];
+  if (!boundary || !/\s/.test(boundary)) return undefined;
+  return normalizedText.slice(normalizedPrefix.length).trimStart();
 }
 
 async function readVoiceRuntimeSettings(): Promise<{
@@ -89,6 +106,11 @@ class VoiceCallBridge {
   private reloadTimers = new Map<'user' | 'assistant' | 'generic', ReturnType<typeof setTimeout>>();
   /** 用户显式挂断 vs 网络断开——只有后者才该重连。 */
   private intentionalClose = false;
+  /**
+   * 本次拨号是否到达过 live（T3 启动期判据）。不能拿相位当判据：重连会把相位打回
+   * connecting，但那仍是同一通通话中——中途断线的失败呈现不归启动期分档管。
+   */
+  private hasGoneLive = false;
   private reconnectAttempt = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private inputDevice: VoiceInputDeviceSettings | undefined;
@@ -101,6 +123,8 @@ class VoiceCallBridge {
   private playbackPausedAt = 0;
   /** 有界取消墓碑：上游 cancel 后仍可能把旧 final/done 发完。 */
   private cancelledResponseIds = new Set<string>();
+  /** 同一次拨号每种失效只上报一次，避免 WebSocket error + close 双事件重复入账。 */
+  private reportedFailureCodes = new Set<RendererVoiceFailureReport['code']>();
 
   private store() {
     return useVoiceCallStore.getState();
@@ -110,6 +134,44 @@ class VoiceCallBridge {
     if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify(command));
   }
 
+  private reportConnectionFailure(
+    neoSessionId: string,
+    code: RendererVoiceFailureReport['code'],
+    phase: RendererVoiceFailureReport['phase'],
+  ): void {
+    if (this.reportedFailureCodes.has(code)) return;
+    this.reportedFailureCodes.add(code);
+    // 字幕落库只有 host 一个生产者。这里只上报受限失败事实，绝不在 renderer
+    // 手搓 message 塞进 sessionStore；持久化与失败分母都由 host 的统一出口完成。
+    void ipcService.invokeDomain(IPC_DOMAINS.VOICE, 'reportFailure', {
+      neoSessionId,
+      code,
+      phase,
+    } satisfies RendererVoiceFailureReport).catch(() => undefined);
+  }
+
+  /**
+   * 通话失败的统一呈现出口（T3 分档，方案 §4.2）。
+   *
+   * - 到过 live 之后的失败：一律保留既有 error 态（中途断线有重连退避，不归分档管）。
+   * - 从未到过 live 的 silent 档（用户修不了：上游 5xx / 429 / 握手失败）：收回通话
+   *   槽位（reset，不留 chrome）+ toast 告知——不留一条点不动的红色僵尸通话条。
+   * - actionable 档（用户能修：权限 / Key / 设备 / 他窗占用）：保留 error 态通话条
+   *   + 引导文案，由 End 按钮显式收尾（既有行为）。
+   */
+  private presentFailure(entry: VoiceCallError): void {
+    if (!this.hasGoneLive && VOICE_STARTUP_FAILURE_TIER[entry.code] === 'silent') {
+      // 槽位收回后这条 WS 留着也是僵尸；关掉它，onclose 看到 idle 相位会直接返回。
+      this.ws?.close();
+      this.ws = null;
+      this.store().reset();
+      toast.error(resolveVoiceMessage(getT(), entry));
+      return;
+    }
+    this.store().phaseChanged('error');
+    this.store().eventApplied({ error: entry });
+  }
+
   /**
    * final 到了不立刻清 partial——清了就有一段「哪里都没有这句话」的空窗
    * （落库是异步的，这里还要等 500ms 才去拉消息）。partial 现在渲染成流尾的临时气泡，
@@ -117,9 +179,43 @@ class VoiceCallBridge {
    */
   private settledPartials: { user?: string; assistant?: string } = {};
   private settledAssistantResponseId: string | null = null;
+  /** 用户 ASR 的 stash 是每个 item 的累计值；renderer 需要把 item 间前缀保留下来。 */
+  private userTranscriptItemId: string | null = null;
+  private userTranscriptPrefix = '';
+  private userTranscriptSegment = '';
 
   /** user/assistant 各自等待落库；一侧 final 不得取消另一侧交接。 */
   private handoffDeadlines: Partial<Record<'user' | 'assistant', number>> = {};
+  /** response 切换时旧轮已 flush，新轮等旧真消息接手后再写入单槽位。 */
+  private assistantRevealBlockedUntil = 0;
+
+  private resetUserTranscriptAccumulator(): void {
+    this.userTranscriptItemId = null;
+    this.userTranscriptPrefix = '';
+    this.userTranscriptSegment = '';
+  }
+
+  private applyUserTranscript(event: Extract<VoiceEvent, { type: 'user.transcript' }>): string {
+    if (event.itemId && this.userTranscriptItemId && event.itemId !== this.userTranscriptItemId) {
+      this.userTranscriptPrefix = joinUserTranscriptParts(
+        this.userTranscriptPrefix,
+        this.userTranscriptSegment,
+      );
+      this.userTranscriptSegment = '';
+    }
+    if (event.itemId) this.userTranscriptItemId = event.itemId;
+    this.userTranscriptSegment = event.text;
+    return joinUserTranscriptParts(this.userTranscriptPrefix, this.userTranscriptSegment);
+  }
+
+  private releaseUserTranscriptPrefix(settled: string | undefined): void {
+    if (settled === undefined) return;
+    const current = joinUserTranscriptParts(this.userTranscriptPrefix, this.userTranscriptSegment);
+    const remainder = removeUserTranscriptPrefix(current, settled);
+    if (remainder === undefined) return;
+    this.userTranscriptPrefix = '';
+    this.userTranscriptSegment = remainder;
+  }
 
   private scheduleReload(
     sessionId: string,
@@ -156,8 +252,18 @@ class VoiceCallBridge {
   private releaseSettledPartials(): boolean {
     const state = this.store();
     const messages = useSessionStore.getState().messages;
-    const landed = (role: 'user' | 'assistant', text: string | undefined): boolean =>
-      text !== undefined && messages.some((m) => m.role === role && m.content.trim() === text.trim());
+    const landed = (role: 'user' | 'assistant', text: string | undefined): boolean => {
+      const fragment = text?.trim().replace(/\s+/g, ' ') ?? '';
+      if (!fragment) return false;
+      return messages.some((m) => {
+        if (m.role !== role) return false;
+        const content = m.content.trim().replace(/\s+/g, ' ');
+        if (content === fragment) return true;
+        // 单字符包含会把「好」误认成「好好」等别的真消息；合并判定只接受有辨识度的片段。
+        return fragment.length >= 2 && content.includes(fragment);
+      });
+    };
+    const settledUser = this.settledPartials.user;
     const patch = resolvePartialRelease(
       this.settledPartials,
       { user: state.partialUser, assistant: state.partialAssistant },
@@ -166,10 +272,14 @@ class VoiceCallBridge {
         assistant: landed('assistant', this.settledPartials.assistant),
       },
     );
-    if (patch.partialUser !== undefined) delete this.settledPartials.user;
+    if (patch.partialUser !== undefined) {
+      delete this.settledPartials.user;
+      this.releaseUserTranscriptPrefix(settledUser);
+    }
     if (patch.partialAssistant !== undefined) {
       delete this.settledPartials.assistant;
       this.settledAssistantResponseId = null;
+      this.assistantRevealBlockedUntil = 0;
     }
     if (Object.keys(patch).length > 0) state.eventApplied(patch);
     return Object.keys(this.settledPartials).length === 0;
@@ -211,6 +321,10 @@ class VoiceCallBridge {
 
   private startRevealCycle(responseId?: string): void {
     this.revealResponseId = responseId ?? null;
+    if (this.settledPartials.assistant !== undefined && this.assistantRevealBlockedUntil === 0) {
+      this.assistantRevealBlockedUntil = this.handoffDeadlines.assistant
+        ?? Date.now() + VOICE_PARTIAL_HANDOFF_MAX_WAIT_MS;
+    }
     this.revealFinalized = false;
     this.revealedText = '';
     this.lastPlayedSec = 0;
@@ -227,6 +341,10 @@ class VoiceCallBridge {
   }
 
   private tickReveal(): void {
+    if (this.assistantRevealBlockedUntil > 0) {
+      if (Date.now() < this.assistantRevealBlockedUntil) return;
+      this.assistantRevealBlockedUntil = 0;
+    }
     const backlogSec = Math.max(0, this.playbackEndsAt - Date.now()) / 1000;
     const playedSec = this.audioEnqueuedSec - backlogSec;
     // 停滞判据打在**播放进度**上，不打在揭示长度上：音频还在下发的那几秒里，
@@ -236,7 +354,10 @@ class VoiceCallBridge {
       this.lastPlayedSec = playedSec;
       this.revealStallAt = Date.now();
     }
-    const revealed = computeRevealedSubtitle(this.revealTarget, this.audioEnqueuedSec, playedSec);
+    const computed = computeRevealedSubtitle(this.revealTarget, this.audioEnqueuedSec, playedSec);
+    // 同一 response 内揭示长度只增不减。final 仍可用全等字符串替换已显示内容，
+    // 但 final 比累计 delta 短、或音频队列突跳令比例下降时，不得把屏幕往回拉。
+    const revealed = computed.length < this.revealedText.length ? this.revealedText : computed;
     if (revealed !== this.revealedText) {
       // 长度没变但内容变了（final 校正）也要写：这一步就是「防漂移」。
       this.revealedText = revealed;
@@ -252,7 +373,10 @@ class VoiceCallBridge {
 
   /** 立刻放完全文并结算（挂断 / teardown / 停滞兜底）。 */
   private flushReveal(): void {
-    if (this.revealTarget) this.store().eventApplied({ partialAssistant: this.revealTarget });
+    const flushed = this.revealTarget.length >= this.revealedText.length
+      ? this.revealTarget
+      : this.revealedText;
+    if (flushed) this.store().eventApplied({ partialAssistant: flushed });
     this.endRevealCycle();
   }
 
@@ -349,6 +473,8 @@ class VoiceCallBridge {
     this.audio = null;
     this.settledPartials = {};
     this.settledAssistantResponseId = null;
+    this.resetUserTranscriptAccumulator();
+    this.assistantRevealBlockedUntil = 0;
     for (const timer of this.reloadTimers.values()) clearTimeout(timer);
     this.reloadTimers.clear();
     this.handoffDeadlines = {};
@@ -360,6 +486,7 @@ class VoiceCallBridge {
     this.fallbackWarningShown = false;
     this.stopInputDeviceMonitoring();
     this.cancelledResponseIds.clear();
+    this.reportedFailureCodes.clear();
     this.pausedCandidateId = null;
     this.playbackPausedAt = 0;
 
@@ -371,6 +498,7 @@ class VoiceCallBridge {
     this.echoCancellation = echoCancellation;
     this.store().dialStarted(sessionId, activeAgentId, interruptMode);
     this.intentionalClose = false;
+    this.hasGoneLive = false;
     this.reconnectAttempt = 0;
 
     this.openSocket(sessionId, activeAgentId, interruptMode, echoCancellation);
@@ -420,8 +548,9 @@ class VoiceCallBridge {
       // 重连尝试失败不算「握手失败」——它由 onclose 走退避，别在这里先把 phase 打成 error
       // 把重连路径掐死（那样第一次抖动就直接变成不可恢复）。
       if (!opened && !this.store().reconnecting) {
-        this.store().phaseChanged('error');
-        this.store().eventApplied({ error: { code: 'HANDSHAKE_FAILED', message: getT().voice.error.handshake } });
+        // 先上报（失败这件事必须落库，与怎么呈现无关），再按档位呈现。
+        this.reportConnectionFailure(sessionId, 'HANDSHAKE_FAILED', 'handshake');
+        this.presentFailure({ code: 'HANDSHAKE_FAILED', message: getT().voice.error.handshake });
       }
     };
 
@@ -438,8 +567,8 @@ class VoiceCallBridge {
       // 首次握手就没成：这不是断线，是压根没连上，重连也没意义。
       if (!opened && !this.store().reconnecting) {
         if (phase === 'connecting') {
-          this.store().phaseChanged('error');
-          this.store().eventApplied({ error: { code: 'HANDSHAKE_FAILED', message: getT().voice.error.handshake } });
+          this.reportConnectionFailure(sessionId, 'HANDSHAKE_FAILED', 'handshake');
+          this.presentFailure({ code: 'HANDSHAKE_FAILED', message: getT().voice.error.handshake });
         }
         return;
       }
@@ -455,6 +584,7 @@ class VoiceCallBridge {
       this.scheduleHangupSummaryReload(sessionId);
       // error 态不 reset：把错误留在 chrome 上给用户看，由 End 按钮显式收尾；
       // 否则上游报错一闪而过，用户只看到通话凭空消失。
+      // （启动期 silent 档失败在 presentFailure 里已直接 reset + toast，到不了 error 态。）
       if (phase !== 'error') this.store().reset();
     };
   }
@@ -471,10 +601,8 @@ class VoiceCallBridge {
   ): boolean {
     const delay = VOICE_RECONNECT_BACKOFF_MS[this.reconnectAttempt];
     if (delay === undefined) {
-      this.store().phaseChanged('error');
-      this.store().eventApplied({
-        error: { code: 'RECONNECT_FAILED', message: getT().voice.error.reconnectFailed },
-      });
+      this.reportConnectionFailure(sessionId, 'RECONNECT_FAILED', 'reconnect');
+      this.presentFailure({ code: 'RECONNECT_FAILED', message: getT().voice.error.reconnectFailed });
       return true;
     }
     this.reconnectAttempt += 1;
@@ -501,9 +629,8 @@ class VoiceCallBridge {
       },
       onLevels: (mic: number, playback: number) => this.store().levelsChanged(mic, playback),
       onError: (code: VoiceMessageCode, detail?: string) => {
-        this.store().phaseChanged('error');
         // message 只作兜底/排查；给用户看的文案由 resolveVoiceMessage 按 code 查 i18n。
-        this.store().eventApplied({ error: { code, message: detail ?? code } });
+        this.presentFailure({ code, message: detail ?? code });
       },
     };
   }
@@ -693,6 +820,7 @@ class VoiceCallBridge {
     switch (event.type) {
       case 'state':
         if (event.state === 'live') {
+          this.hasGoneLive = true;
           this.store().phaseChanged('live');
           // 接回来了：退避计数归零，下次抖动重新拿满次数。
           this.reconnectAttempt = 0;
@@ -751,6 +879,7 @@ class VoiceCallBridge {
         ) {
           // 被取消的轮没有真消息可交接，先清 handoff 再停 reveal，避免 reload 把旧消息拉回来。
           this.pendingHandoffSessionId = null;
+          this.assistantRevealBlockedUntil = 0;
           const assistantReload = this.reloadTimers.get('assistant');
           if (assistantReload) clearTimeout(assistantReload);
           this.reloadTimers.delete('assistant');
@@ -767,6 +896,7 @@ class VoiceCallBridge {
           || event.classification === 'short_fragment'
         ) {
           delete this.settledPartials.user;
+          this.resetUserTranscriptAccumulator();
           this.store().eventApplied({ partialUser: '', userSpeaking: false });
         }
         if (event.action === 'resume') {
@@ -795,12 +925,15 @@ class VoiceCallBridge {
         }
         break;
       case 'user.transcript':
-        if (event.done) {
-          // 顶着 final 文本等真消息上屏（见 scheduleReload）；这里不清空
-          this.store().eventApplied({ userSpeaking: false, partialUser: event.text });
-          this.scheduleReload(sessionId, 'user');
-        } else {
-          this.store().eventApplied({ partialUser: event.text });
+        {
+          const partialUser = this.applyUserTranscript(event);
+          if (event.done) {
+            // 顶着 final 文本等真消息上屏（见 scheduleReload）；这里不清空
+            this.store().eventApplied({ userSpeaking: false, partialUser });
+            this.scheduleReload(sessionId, 'user');
+          } else {
+            this.store().eventApplied({ partialUser });
+          }
         }
         break;
       case 'assistant.transcript':
@@ -816,13 +949,12 @@ class VoiceCallBridge {
           if (this.revealTimer === null) this.flushReveal();
           else this.tickReveal();
         } else {
-          if (
-            this.revealTarget
-            && event.responseId
-            && this.revealResponseId
-            && event.responseId !== this.revealResponseId
-          ) {
-            this.endRevealCycle();
+          if (event.responseId && this.revealResponseId && event.responseId !== this.revealResponseId) {
+            this.flushReveal();
+            if (this.settledPartials.assistant !== undefined) {
+              this.assistantRevealBlockedUntil = this.handoffDeadlines.assistant
+                ?? Date.now() + VOICE_PARTIAL_HANDOFF_MAX_WAIT_MS;
+            }
           }
           if (!this.revealTarget) this.startRevealCycle(event.responseId);
           this.revealTarget += event.text;
@@ -858,9 +990,10 @@ class VoiceCallBridge {
         if (event.reason === 'idle-timeout') toast.info(getT().voice.status.idleTimeout);
         break;
       case 'error':
-        this.store().phaseChanged('error');
-        this.store().eventApplied({
-          error: { code: event.code, message: event.message, ...(event.detail ? { detail: event.detail } : {}) },
+        this.presentFailure({
+          code: event.code,
+          message: event.message,
+          ...(event.detail ? { detail: event.detail } : {}),
         });
         break;
       default:

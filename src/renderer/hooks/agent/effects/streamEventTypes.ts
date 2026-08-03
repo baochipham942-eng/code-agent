@@ -36,6 +36,15 @@ export interface MessageSnapshotPayload extends TurnIdPayload {
   reasoning?: string;
 }
 
+/** 宿主自起轮次广播回来的用户消息（前端没有本地乐观副本，只能从宿主接）。 */
+export interface UserMessagePayload {
+  id: string;
+  content: string;
+  timestamp?: number;
+  attachments?: Message['attachments'];
+  metadata?: Message['metadata'];
+}
+
 export interface AssistantMessagePayload extends TurnIdPayload {
   id?: string;
   content?: string;

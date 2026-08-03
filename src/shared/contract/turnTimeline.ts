@@ -111,7 +111,7 @@ export type RoutingEvidenceStepStatus =
   | 'started'
   | 'fallback';
 
-export interface TurnRoutingEvidenceStep {
+interface TurnRoutingEvidenceStep {
   status: RoutingEvidenceStepStatus;
   label: string;
   detail?: string;

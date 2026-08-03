@@ -28,9 +28,11 @@ const logger = createLogger('VoiceLiveSettings');
 type InterruptMode = NonNullable<VoiceLiveSettings['interrupt']>;
 type VadSensitivity = NonNullable<VoiceLiveSettings['vadSensitivity']>;
 type EchoCancellationMode = NonNullable<VoiceLiveSettings['echoCancellation']>;
+type SpeechRate = NonNullable<VoiceLiveSettings['speechRate']>;
 
 const INTERRUPT_OPTIONS: InterruptMode[] = ['server_vad', 'manual'];
 const SENSITIVITY_OPTIONS: VadSensitivity[] = ['low', 'medium', 'high'];
+const SPEECH_RATE_OPTIONS: SpeechRate[] = ['slow', 'normal', 'fast'];
 
 export const VoiceLiveSettingsSection: React.FC = () => {
   const { t } = useI18n();
@@ -46,6 +48,8 @@ export const VoiceLiveSettingsSection: React.FC = () => {
   const [sensitivity, setSensitivity] = useState<VadSensitivity>('medium');
   const [executionModel, setExecutionModel] = useState<VoiceLiveSettings['executionModel']>(undefined);
   const [echoCancellation, setEchoCancellation] = useState<EchoCancellationMode>('auto');
+  // 未配置 = normal（契约默认档），存量用户打开设置页不该看到"什么都没选"
+  const [speechRate, setSpeechRate] = useState<SpeechRate>('normal');
   const [inputDevices, setInputDevices] = useState<MediaDeviceInfo[]>([]);
   const [inputDevice, setInputDevice] = useState<VoiceInputDeviceSettings | null>(null);
   const [inputDeviceAvailable, setInputDeviceAvailable] = useState<boolean | null>(null);
@@ -66,6 +70,7 @@ export const VoiceLiveSettingsSection: React.FC = () => {
         setSensitivity(deriveVadSensitivity(voice));
         setExecutionModel(voice?.live?.executionModel);
         setEchoCancellation(voice?.live?.echoCancellation ?? 'auto');
+        setSpeechRate(voice?.live?.speechRate ?? 'normal');
         setInputDevice(normalizeVoiceInputDevice(voice?.inputDevice) ?? null);
       })
       .catch((error) => logger.error('load voice live settings failed', error));
@@ -126,6 +131,7 @@ export const VoiceLiveSettingsSection: React.FC = () => {
       vadSensitivity: sensitivity,
       ...(executionModel ? { executionModel } : {}),
       echoCancellation,
+      speechRate,
       ...patch,
     };
     // executionModel 清空 = 回到「跟随会话默认引擎」（把键去掉，不是写一个空值）
@@ -136,6 +142,7 @@ export const VoiceLiveSettingsSection: React.FC = () => {
     if (patch.interrupt !== undefined) setInterrupt(patch.interrupt);
     if (patch.vadSensitivity !== undefined) setSensitivity(patch.vadSensitivity);
     if (patch.echoCancellation !== undefined) setEchoCancellation(patch.echoCancellation);
+    if (patch.speechRate !== undefined) setSpeechRate(patch.speechRate);
 
     const nextInterrupt = patch.interrupt ?? interrupt;
     const nextSensitivity = patch.vadSensitivity ?? sensitivity;
@@ -180,6 +187,11 @@ export const VoiceLiveSettingsSection: React.FC = () => {
     medium: text.sensitivityMedium,
     high: text.sensitivityHigh,
   };
+  const speechRateText: Record<SpeechRate, string> = {
+    slow: text.speechRateSlow,
+    normal: text.speechRateNormal,
+    fast: text.speechRateFast,
+  };
 
   const inputDeviceResolution = inputDevice ? resolveVoiceInputDevice(inputDevice, inputDevices) : undefined;
   const selectedInputDeviceId = inputDeviceResolution?.match !== 'default' ? inputDeviceResolution?.deviceId ?? '' : '';
@@ -221,7 +233,7 @@ export const VoiceLiveSettingsSection: React.FC = () => {
               const first = PROVIDER_MODELS_MAP[provider]?.models[0]?.id;
               return void persistExecutionModel(first ? { provider, model: first } : undefined);
             }}
-            className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-primary-500"
+            className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-accent-accessible"
           >
             <option value="">{text.executionModelFollowSession}</option>
             {PROVIDER_MODELS.map((provider) => (
@@ -236,7 +248,7 @@ export const VoiceLiveSettingsSection: React.FC = () => {
               if (!executionModel) return;
               void persistExecutionModel({ provider: executionModel.provider, model: event.target.value });
             }}
-            className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-primary-500 disabled:opacity-40"
+            className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-accent-accessible disabled:opacity-40"
           >
             {executionModel
               ? (PROVIDER_MODELS_MAP[executionModel.provider]?.models ?? []).map((model) => (
@@ -251,7 +263,9 @@ export const VoiceLiveSettingsSection: React.FC = () => {
       <div className="border-t border-zinc-700 pt-4">
         <h3 className="mb-1 text-sm font-medium text-zinc-200">{text.usageTitle}</h3>
         <p className="text-xs text-zinc-500" data-testid="voice-usage-summary">
-          {text.usageThisMonth
+          {(usage.monthTokens
+            ? text.usageThisMonth.replace('{tokens}', String(usage.monthTokens.totalTokens))
+            : text.usageThisMonthWithoutTokens)
             .replace('{minutes}', String(Math.round(usage.monthSeconds / 60)))
             .replace('{calls}', String(usage.monthCalls))}
         </p>
@@ -274,7 +288,7 @@ export const VoiceLiveSettingsSection: React.FC = () => {
               webDeviceId: device.deviceId,
             });
           }}
-          className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-primary-500"
+          className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-accent-accessible"
         >
           <option value="">{text.inputDeviceDefault}</option>
           {inputDevices.map((device) => (
@@ -294,12 +308,31 @@ export const VoiceLiveSettingsSection: React.FC = () => {
           <select
             value={language}
             onChange={(event) => void persist({ language: event.target.value as NonNullable<VoiceLiveSettings['language']> })}
-            className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-primary-500"
+            className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-accent-accessible"
           >
             <option value="auto">{text.languageAuto}</option>
             <option value="zh">{text.languageZh}</option>
             <option value="en">{text.languageEn}</option>
           </select>
+        </label>
+      </div>
+
+      {/* 语速三档（T7）：控件形态照本 section 的 VAD 灵敏度 select；
+          helper 如实提示这是说话建议、遵从度因语音服务而异（方案 §2 不许虚假承诺） */}
+      <div className="border-t border-zinc-700 pt-4">
+        <label className="block space-y-2">
+          <span className="text-sm font-medium text-zinc-200">{text.speechRateTitle}</span>
+          <select
+            data-testid="voice-speech-rate"
+            value={speechRate}
+            onChange={(event) => void persist({ speechRate: event.target.value as SpeechRate })}
+            className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-accent-accessible"
+          >
+            {SPEECH_RATE_OPTIONS.map((option) => (
+              <option key={option} value={option}>{speechRateText[option]}</option>
+            ))}
+          </select>
+          <p className="text-xs leading-5 text-zinc-500">{text.speechRateHelper}</p>
         </label>
       </div>
 
@@ -312,7 +345,7 @@ export const VoiceLiveSettingsSection: React.FC = () => {
             onChange={(event) => void persist({
               echoCancellation: event.target.value as EchoCancellationMode,
             })}
-            className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-primary-500"
+            className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-accent-accessible"
           >
             <option value="auto">{text.echoCancellationAuto}</option>
             <option value="off">{text.echoCancellationOff}</option>
@@ -361,7 +394,7 @@ export const VoiceLiveSettingsSection: React.FC = () => {
               data-testid="voice-vad-sensitivity"
               value={sensitivity}
               onChange={(event) => void persist({ vadSensitivity: event.target.value as VadSensitivity })}
-              className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-primary-500"
+              className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-accent-accessible"
             >
               {SENSITIVITY_OPTIONS.map((option) => (
                 <option key={option} value={option}>{sensitivityText[option]}</option>

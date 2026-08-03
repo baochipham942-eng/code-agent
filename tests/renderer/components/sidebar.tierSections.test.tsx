@@ -151,3 +151,32 @@ describe('SidebarSessionList tier section headers', () => {
 
 
 });
+
+// 空态星球（2026-08-02 星球品牌升级）：列表空 = 地球，搜索/筛选无结果 = 水星。
+// PlanetSphere 在 node 渲染下走 try/catch 贴图兜底（无 document），静态 markup 安全。
+describe('SidebarSessionList 空态星球', () => {
+  it('会话列表空 = 地球 +「还没有勘测记录」，保留新任务引导', () => {
+    const html = renderList({ hasAnySessions: false, groups: [] });
+    expect(html).toContain('data-planet="earth"');
+    expect(html).toContain('还没有勘测记录');
+    expect(html).toContain('开始一个新任务');
+  });
+
+  it('搜索无结果 = 水星 +「这片星域没有信号」', () => {
+    const html = renderList({ filteredSessionsEmpty: true, hasSearchFilters: true, searchQuery: 'xyz' });
+    expect(html).toContain('data-planet="mercury"');
+    expect(html).toContain('这片星域没有信号');
+  });
+
+  it('状态筛选无结果同属 filteredSessionsEmpty 分支：同样配水星，文案走 noStatusSessions', () => {
+    const html = renderList({
+      filteredSessionsEmpty: true,
+      hasSearchFilters: true,
+      searchQuery: '',
+      sessionStatusFilter: 'running',
+      activeStatusFilterLabel: '运行中',
+    });
+    expect(html).toContain('data-planet="mercury"');
+    expect(html).toContain('当前没有运行中会话');
+  });
+});

@@ -57,11 +57,11 @@ export const ComboSkillCard: React.FC<ComboSkillCardProps> = ({
   };
 
   return (
-    <div className="flex items-center gap-2 px-3 py-2 mb-2 bg-amber-500/10 border border-amber-500/20 rounded-lg animate-fadeIn">
-      <Sparkles className="w-4 h-4 text-amber-400 flex-shrink-0" />
+    <div className="flex items-center gap-2 px-3 py-2 mb-2 bg-amber-500/10 border border-badge-warning/20 rounded-lg animate-fadeIn">
+      <Sparkles className="w-4 h-4 text-badge-warning flex-shrink-0" />
 
       <div className="flex-1 min-w-0">
-        <div className="text-xs text-amber-300">
+        <div className="text-xs text-badge-warning">
           {t.comboSkill.bannerPrefix}{suggestion.stepCount}{t.comboSkill.bannerMiddle}{suggestion.toolNames.length}{t.comboSkill.bannerSuffix}
         </div>
         {isEditing ? (
@@ -71,14 +71,14 @@ export const ComboSkillCard: React.FC<ComboSkillCardProps> = ({
             onChange={(e) => setName(e.target.value)}
             onBlur={() => setIsEditing(false)}
             onKeyDown={(e) => e.key === 'Enter' && setIsEditing(false)}
-            className="mt-1 w-full bg-zinc-800 border border-amber-500/30 rounded px-2 py-0.5 text-xs text-zinc-200 outline-hidden focus:border-amber-500/50"
+            className="mt-1 w-full bg-zinc-800 border border-badge-warning/30 rounded px-2 py-0.5 text-xs text-zinc-200 outline-hidden focus:border-badge-warning/50"
             autoFocus
           />
         ) : (
           <button
             type="button"
             onClick={() => setIsEditing(true)}
-            className="mt-0.5 text-xs text-amber-200/70 hover:text-amber-200 truncate block"
+            className="mt-0.5 text-xs text-badge-warning/70 hover:text-badge-warning truncate block"
             title={t.comboSkill.editNameTitle}
           >
             {t.comboSkill.saveAsPrefix}{name}{t.comboSkill.saveAsSuffix}
@@ -90,7 +90,7 @@ export const ComboSkillCard: React.FC<ComboSkillCardProps> = ({
         type="button"
         onClick={handleSave}
         disabled={isSaving || !name.trim()}
-        className="flex items-center gap-1 px-2 py-1 text-xs bg-amber-500/20 text-amber-300 rounded hover:bg-amber-500/30 transition-colors disabled:opacity-50"
+        className="flex items-center gap-1 px-2 py-1 text-xs bg-amber-500/20 text-badge-warning rounded hover:bg-amber-500/30 transition-colors disabled:opacity-50"
       >
         {isSaving ? (
           <Loader2 className="w-3 h-3 animate-spin" />

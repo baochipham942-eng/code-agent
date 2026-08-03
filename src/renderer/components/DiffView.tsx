@@ -178,16 +178,16 @@ export const DiffView: React.FC<DiffViewProps> = ({
       {/* 统计栏 */}
       <div className="diff-stats flex items-center gap-3 px-3 py-2 bg-[var(--bg-elevated)] border-b border-[var(--border-default)]">
         {fileName && (
-          <span className="text-gray-400 text-xs font-mono truncate flex-1">
+          <span className="text-zinc-400 text-xs font-mono truncate flex-1">
             {fileName}
           </span>
         )}
         <div className="flex items-center gap-2 text-xs">
           {stats.added > 0 && (
-            <span className="text-emerald-400">+{stats.added}</span>
+            <span className="text-badge-success">+{stats.added}</span>
           )}
           {stats.removed > 0 && (
-            <span className="text-rose-400">-{stats.removed}</span>
+            <span className="text-badge-danger">-{stats.removed}</span>
           )}
         </div>
       </div>
@@ -226,9 +226,9 @@ const DiffLineRow: React.FC<{ line: DiffLine }> = React.memo(function DiffLineRo
   const getGutterClass = () => {
     switch (line.type) {
       case 'added':
-        return 'text-emerald-500 bg-emerald-500/20';
+        return 'text-badge-success bg-emerald-500/20';
       case 'removed':
-        return 'text-rose-500 bg-rose-500/20';
+        return 'text-badge-danger bg-rose-500/20';
       case 'header':
         return 'text-gray-500 bg-[var(--bg-elevated)]';
       default:
@@ -252,13 +252,13 @@ const DiffLineRow: React.FC<{ line: DiffLine }> = React.memo(function DiffLineRo
   const getContentClass = () => {
     switch (line.type) {
       case 'added':
-        return 'text-emerald-300';
+        return 'text-badge-success';
       case 'removed':
-        return 'text-rose-300';
+        return 'text-badge-danger';
       case 'header':
         return 'text-gray-500 font-bold';
       default:
-        return 'text-gray-400';
+        return 'text-zinc-400';
     }
   };
 
@@ -329,10 +329,10 @@ export const DiffPreview: React.FC<{
       className="inline-flex items-center gap-1.5 text-xs hover:bg-[var(--bg-elevated)] px-2 py-1 rounded transition-colors"
     >
       {stats.added > 0 && (
-        <span className="text-emerald-400">+{stats.added}</span>
+        <span className="text-badge-success">+{stats.added}</span>
       )}
       {stats.removed > 0 && (
-        <span className="text-rose-400">-{stats.removed}</span>
+        <span className="text-badge-danger">-{stats.removed}</span>
       )}
       <span className="text-gray-500">行</span>
     </button>

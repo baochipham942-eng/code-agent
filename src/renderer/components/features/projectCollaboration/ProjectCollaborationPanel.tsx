@@ -124,7 +124,7 @@ function TopicRow({
         }
       }}
       className={`rounded-md border px-3 py-2 text-left outline-none transition-colors ${
-        isSelected ? 'border-emerald-500/45 bg-emerald-500/[0.07]' : 'border-zinc-800 bg-zinc-950/45 hover:border-zinc-700'
+        isSelected ? 'border-badge-success/45 bg-emerald-500/[0.07]' : 'border-zinc-800 bg-zinc-950/45 hover:border-zinc-700'
       }`}
       data-testid={`neo-topic-row-${workCard.id}`}
     >
@@ -153,7 +153,7 @@ function TopicRow({
         <span>{new Date(workCard.updatedAt).toLocaleString()}</span>
         {workCard.dueAt != null && (
           <span
-            className={dueOverdue ? 'font-medium text-rose-300' : undefined}
+            className={dueOverdue ? 'font-medium text-badge-danger' : undefined}
             data-testid={`neo-topic-due-${workCard.id}`}
           >
             {t.neoTopics.duePrefix} {formatNeoTopicDueDay(workCard.dueAt)}
@@ -315,7 +315,7 @@ export const ProjectCollaborationPanel: React.FC<ProjectCollaborationPanelProps>
             </div>
           )}
           {loadError && (
-            <div className="rounded border border-rose-500/25 bg-rose-500/10 px-2 py-1 text-[11px] leading-5 text-rose-100" data-testid="project-collab-load-error">
+            <div className="rounded border border-badge-danger/25 bg-rose-500/10 px-2 py-1 text-[11px] leading-5 text-badge-danger" data-testid="project-collab-load-error">
               {loadError}
             </div>
           )}
@@ -331,7 +331,7 @@ export const ProjectCollaborationPanel: React.FC<ProjectCollaborationPanelProps>
                 value={searchQuery}
                 onChange={(event) => setSearchQuery(event.target.value)}
                 placeholder="搜索 topic / 步骤 / 文件"
-                className="h-8 w-full rounded-md border border-zinc-800 bg-zinc-900 pl-8 pr-2 text-[12px] text-zinc-200 outline-none placeholder:text-zinc-600 focus:border-emerald-500/60"
+                className="h-8 w-full rounded-md border border-zinc-800 bg-zinc-900 pl-8 pr-2 text-[12px] text-zinc-200 outline-none placeholder:text-zinc-600 focus:border-badge-success/60"
                 data-testid="neo-topic-search"
               />
             </div>
@@ -343,7 +343,7 @@ export const ProjectCollaborationPanel: React.FC<ProjectCollaborationPanelProps>
                   onClick={() => setPhaseFilter(filter.id)}
                   className={`h-7 rounded-md border px-2 text-[11px] transition-colors ${
                     phaseFilter === filter.id
-                      ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-100'
+                      ? 'border-badge-success/40 bg-emerald-500/10 text-badge-success'
                       : 'border-zinc-800 bg-zinc-900 text-zinc-500 hover:border-zinc-700 hover:text-zinc-300'
                   }`}
                   data-testid={`neo-topic-filter-${filter.id}`}
@@ -364,7 +364,7 @@ export const ProjectCollaborationPanel: React.FC<ProjectCollaborationPanelProps>
               <select
                 value={sortMode}
                 onChange={(event) => setSortMode(event.target.value as NeoTopicSortMode)}
-                className="h-7 rounded-md border border-zinc-800 bg-zinc-900 px-1.5 text-[11px] text-zinc-400 outline-none focus:border-emerald-500/60"
+                className="h-7 rounded-md border border-zinc-800 bg-zinc-900 px-1.5 text-[11px] text-zinc-400 outline-none focus:border-badge-success/60"
                 data-testid="neo-topic-sort"
               >
                 <option value="recent">{t.neoTopics.sortRecent}</option>

@@ -802,6 +802,22 @@ describe('createAgentRouter', () => {
       expect.objectContaining({ id: 'drained-user', role: 'user', content: '运行排队轮次' }),
       expect.objectContaining({ role: 'assistant', content: '排队轮次已完成' }),
     ]);
+
+    // 宿主自起的这一轮，用户气泡只有宿主知道：不广播的话屏幕上只剩回答、没有问题
+    // （2026-08-01 验收截图）。走 agent:event 信封——全局 /api/events 按 channel 名
+    // 严格分发，拿原始事件名当 channel 发会被静默丢弃。
+    expect(mockBroadcastSSE).toHaveBeenCalledWith(
+      'agent:event',
+      expect.objectContaining({
+        type: 'message',
+        sessionId: 'session-disconnect-drain-persist',
+        data: expect.objectContaining({
+          id: 'drained-user',
+          role: 'user',
+          content: '运行排队轮次',
+        }),
+      }),
+    );
   });
 
   it('keeps a mid-turn steer persisted when disconnect cancellation settles the active run', async () => {

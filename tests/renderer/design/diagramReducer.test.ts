@@ -25,7 +25,7 @@ describe('reduceDiagram 拖拽盒型', () => {
     shapes = reduceDiagram(shapes, { type: 'move', x: 60, y: 40 });
     shapes = reduceDiagram(shapes, { type: 'up' });
     expect(shapes).toEqual([
-      { id: 'shape-1', kind: 'rect', x: 10, y: 10, width: 50, height: 30, color: '#64748b', createdAt: 100 },
+      { id: 'shape-1', kind: 'rect', x: 10, y: 10, width: 50, height: 30, color: '#64748b', createdAt: 100, createdBy: 'user' },
     ]);
   });
 
@@ -79,7 +79,7 @@ describe('reduceDiagram text 点击即落', () => {
     shapes = reduceDiagram(shapes, { type: 'move', x: 99, y: 99 });
     expect(shapes).toBe(afterDown); // move 对 text 无操作，返回原引用
     shapes = reduceDiagram(shapes, { type: 'up' });
-    expect(shapes[0]).toEqual({ id: 'shape-1', kind: 'text', x: 20, y: 30, text: '标题', color: '#64748b', createdAt: 100 });
+    expect(shapes[0]).toEqual({ id: 'shape-1', kind: 'text', x: 20, y: 30, text: '标题', color: '#64748b', createdAt: 100, createdBy: 'user' });
   });
 });
 
@@ -94,7 +94,7 @@ describe('不可变性', () => {
 
 describe('normalizeShapeBox', () => {
   it('line 原样返回', () => {
-    const line: CanvasShape = { id: 'l', kind: 'line', points: [0, 0, 1, 1], color: '#64748b', createdAt: 0 };
+    const line: CanvasShape = { id: 'l', kind: 'line', points: [0, 0, 1, 1], color: '#64748b', createdAt: 0, createdBy: 'user' };
     expect(normalizeShapeBox(line)).toBe(line);
   });
 });

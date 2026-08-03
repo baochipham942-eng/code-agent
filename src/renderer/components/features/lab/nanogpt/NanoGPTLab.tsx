@@ -158,7 +158,7 @@ export const NanoGPTLab: React.FC = () => {
                 onClick={() => setMode('simulation')}
                 className={`flex items-center gap-2 px-4 py-1.5 rounded-md text-sm font-medium transition-all ${
                   mode === 'simulation'
-                    ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                    ? 'bg-emerald-500/20 text-badge-success border border-badge-success/30'
                     : 'text-zinc-400 hover:text-zinc-200'
                 }`}
               >
@@ -169,7 +169,7 @@ export const NanoGPTLab: React.FC = () => {
                 onClick={() => setMode('real')}
                 className={`flex items-center gap-2 px-4 py-1.5 rounded-md text-sm font-medium transition-all ${
                   mode === 'real'
-                    ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
+                    ? 'bg-blue-500/20 text-badge-info border border-badge-info/30'
                     : 'text-zinc-400 hover:text-zinc-200'
                 }`}
               >
@@ -216,7 +216,7 @@ export const NanoGPTLab: React.FC = () => {
                     >
                       {/* New Badge */}
                       {stage.isNew && (
-                        <span className="absolute -top-2 -right-2 px-1.5 py-0.5 text-[10px] font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30 rounded">
+                        <span className="absolute -top-2 -right-2 px-1.5 py-0.5 text-[10px] font-bold bg-amber-500/20 text-badge-warning border border-badge-warning/30 rounded">
                           NEW
                         </span>
                       )}
@@ -224,8 +224,8 @@ export const NanoGPTLab: React.FC = () => {
                         className={`
                           w-10 h-10 rounded-full flex items-center justify-center
                           transition-all duration-300
-                          ${isCompleted ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-400' : ''}
-                          ${isCurrent ? 'bg-blue-500/20 border-blue-500/50 text-blue-400 ring-2 ring-blue-500/30' : ''}
+                          ${isCompleted ? 'bg-emerald-500/20 border-badge-success/50 text-badge-success' : ''}
+                          ${isCurrent ? 'bg-blue-500/20 border-badge-info/50 text-badge-info ring-2 ring-blue-500/30' : ''}
                           ${!isCompleted && !isCurrent ? 'bg-zinc-800 border-zinc-700 text-zinc-500' : ''}
                           border
                         `}
@@ -235,7 +235,7 @@ export const NanoGPTLab: React.FC = () => {
                       <span
                         className={`
                           text-xs font-medium
-                          ${isCurrent ? 'text-blue-400' : isCompleted ? 'text-emerald-400' : 'text-zinc-500'}
+                          ${isCurrent ? 'text-badge-info' : isCompleted ? 'text-badge-success' : 'text-zinc-500'}
                         `}
                       >
                         {stage.shortTitle}
@@ -266,8 +266,8 @@ export const NanoGPTLab: React.FC = () => {
                 <div
                   className={`w-8 h-8 rounded-lg flex items-center justify-center ${
                     currentStageConfig.isNew
-                      ? 'bg-amber-500/20 border border-amber-500/30 text-amber-400'
-                      : 'bg-blue-500/20 border border-blue-500/30 text-blue-400'
+                      ? 'bg-amber-500/20 border border-badge-warning/30 text-badge-warning'
+                      : 'bg-blue-500/20 border border-badge-info/30 text-badge-info'
                   }`}
                 >
                   {currentStageConfig.icon}
@@ -280,7 +280,7 @@ export const NanoGPTLab: React.FC = () => {
                         .replace('{title}', currentStageConfig.title)}
                     </h2>
                     {currentStageConfig.isNew && (
-                      <span className="px-2 py-0.5 text-xs font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30 rounded">
+                      <span className="px-2 py-0.5 text-xs font-bold bg-amber-500/20 text-badge-warning border border-badge-warning/30 rounded">
                         {t.labNanogpt.lab.coreNewBadge}
                       </span>
                     )}
@@ -297,7 +297,7 @@ export const NanoGPTLab: React.FC = () => {
           {/* Learning Point Footer */}
           <div className="px-6 py-3 border-t border-zinc-700 bg-zinc-900/30">
             <div className="max-w-5xl mx-auto flex items-center gap-2">
-              <span className="text-amber-400">💡</span>
+              <span className="text-badge-warning">💡</span>
               <span className="text-sm text-zinc-400">
                 <span className="text-zinc-400 font-medium">{t.labNanogpt.lab.learningPointLabel}</span>
                 {currentStageConfig.learningPoint}

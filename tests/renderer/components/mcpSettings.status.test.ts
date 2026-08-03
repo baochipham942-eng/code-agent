@@ -438,7 +438,7 @@ describe('MCPSettings status', () => {
 
     const githubDot = screen.getByTestId('mcp-server-status-dot-github');
     const slackDot = screen.getByTestId('mcp-server-status-dot-slack');
-    expect(githubDot.className).toContain('bg-emerald-400');
+    expect(githubDot.className).toContain('bg-mark-success');
     expect(slackDot.className).toContain('bg-zinc-600');
   });
 

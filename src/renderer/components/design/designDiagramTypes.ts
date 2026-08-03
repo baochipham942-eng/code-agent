@@ -2,6 +2,7 @@
 // 图解层 = 连线(connector) + freeform 形状(shape)，与 nodes 平级存 canvas.json，
 // 但不进 variant spine（无 chosen/discarded/parentId 语义，是图解脚手架非生成产物）。
 // 设计要点见 内部文档。
+import { isCanvasActor, type CanvasAttribution } from './canvasActor';
 
 /** 图解配色板（konva 画布字面色，CSS 变量够不到；与 AnnotationLayer 同例 ds-allow:viz）。 */
 export const DIAGRAM_PALETTE = [
@@ -22,7 +23,7 @@ export const DIAGRAM_TEXT_MAX = 2000;
  * 连线：锚到两端 nodeId，不存几何——渲染时按两端节点实时 box 算锚点，
  * 故节点移动自动跟随，无需回写。两端任一节点不存在 → 渲染层过滤（悬空保护）。
  */
-export interface CanvasConnector {
+export interface CanvasConnector extends CanvasAttribution {
   id: string;
   fromNodeId: string;
   toNodeId: string;
@@ -32,7 +33,7 @@ export interface CanvasConnector {
 }
 
 /** 矩形/椭圆/便签共享的盒型几何 + 文字。 */
-interface ShapeBoxBase {
+interface ShapeBoxBase extends CanvasAttribution {
   id: string;
   x: number;
   y: number;
@@ -52,7 +53,7 @@ export interface StickyShape extends ShapeBoxBase {
   kind: 'sticky';
   text: string;
 }
-export interface TextShape {
+export interface TextShape extends CanvasAttribution {
   id: string;
   kind: 'text';
   x: number;
@@ -61,7 +62,7 @@ export interface TextShape {
   color: string;
   createdAt: number;
 }
-export interface LineShape {
+export interface LineShape extends CanvasAttribution {
   id: string;
   kind: 'line';
   /** [x1,y1,x2,y2] 两端点（世界坐标）。 */
@@ -88,8 +89,17 @@ function normalizeText(v: unknown): string {
   return v.length > DIAGRAM_TEXT_MAX ? v.slice(0, DIAGRAM_TEXT_MAX) : v;
 }
 
+function normalizeAttribution(r: Record<string, unknown>, forceUserTouched: boolean): CanvasAttribution {
+  const attribution: CanvasAttribution = {
+    createdBy: isCanvasActor(r.createdBy) ? r.createdBy : 'user',
+  };
+  if (forceUserTouched || !isCanvasActor(r.createdBy)) attribution.userTouchedAt = 0;
+  else if (isFiniteNumber(r.userTouchedAt) && r.userTouchedAt >= 0) attribution.userTouchedAt = r.userTouchedAt;
+  return attribution;
+}
+
 /** 校验并归一化一条连线；非法（缺端点 id / 自环）返回 null。 */
-export function normalizeConnector(raw: unknown): CanvasConnector | null {
+export function normalizeConnector(raw: unknown, forceUserTouched = false): CanvasConnector | null {
   if (typeof raw !== 'object' || raw === null) return null;
   const r = raw as Record<string, unknown>;
   if (typeof r.id !== 'string' || r.id.length === 0) return null;
@@ -102,18 +112,20 @@ export function normalizeConnector(raw: unknown): CanvasConnector | null {
     fromNodeId: r.fromNodeId,
     toNodeId: r.toNodeId,
     createdAt: isFiniteNumber(r.createdAt) ? r.createdAt : 0,
+    ...normalizeAttribution(r, forceUserTouched),
   };
   if (typeof r.label === 'string' && r.label.length > 0) c.label = normalizeText(r.label);
   return c;
 }
 
 /** 校验并归一化一个形状；非法返回 null（由调用方过滤）。 */
-export function normalizeShape(raw: unknown): CanvasShape | null {
+export function normalizeShape(raw: unknown, forceUserTouched = false): CanvasShape | null {
   if (typeof raw !== 'object' || raw === null) return null;
   const r = raw as Record<string, unknown>;
   if (typeof r.id !== 'string' || r.id.length === 0) return null;
   const createdAt = isFiniteNumber(r.createdAt) ? r.createdAt : 0;
   const color = normalizeColor(r.color);
+  const attribution = normalizeAttribution(r, forceUserTouched);
 
   switch (r.kind) {
     case 'rect':
@@ -128,6 +140,7 @@ export function normalizeShape(raw: unknown): CanvasShape | null {
         height: r.height as number,
         color,
         createdAt,
+        ...attribution,
       };
       if (r.kind === 'sticky') return { ...box, kind: 'sticky', text: normalizeText(r.text) };
       return { ...box, kind: r.kind };
@@ -142,6 +155,7 @@ export function normalizeShape(raw: unknown): CanvasShape | null {
         text: normalizeText(r.text),
         color,
         createdAt,
+        ...attribution,
       };
     }
     case 'line': {
@@ -152,6 +166,7 @@ export function normalizeShape(raw: unknown): CanvasShape | null {
         points: [r.points[0], r.points[1], r.points[2], r.points[3]] as [number, number, number, number],
         color,
         createdAt,
+        ...attribution,
       };
     }
     default:

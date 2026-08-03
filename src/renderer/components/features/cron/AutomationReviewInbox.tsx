@@ -121,14 +121,14 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
           className="flex items-center gap-2 rounded-xl border border-zinc-800 bg-zinc-950/40 px-4 py-2.5 text-xs text-zinc-500"
           data-testid="automation-review-all-clear"
         >
-          <CircleCheck className="h-3.5 w-3.5 text-emerald-400" />
+          <CircleCheck className="h-3.5 w-3.5 text-badge-success" />
           {cc.inboxAllClear}
         </div>
       ) : (
-        <div className="max-h-[32vh] overflow-y-auto rounded-xl border border-amber-500/25 bg-amber-500/5 px-4 py-3">
+        <div className="max-h-[32vh] overflow-y-auto rounded-xl border border-badge-warning/25 bg-amber-500/5 px-4 py-3">
           {parked.length > 0 && (
             <div className="mb-3" data-testid="parked-approval-group">
-              <div className="mb-2 flex items-center gap-2 text-xs font-medium text-amber-300">
+              <div className="mb-2 flex items-center gap-2 text-xs font-medium text-badge-warning">
                 <ShieldAlert className="h-3.5 w-3.5" />
                 {cc.parkedTitle.replace('{count}', String(parked.length))}
               </div>
@@ -146,20 +146,20 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                   return (
                     <div
                       key={item.id}
-                      className={`flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-lg border ${isExternal ? 'border-orange-500/40 bg-orange-500/[0.03]' : 'border-zinc-800 bg-zinc-950/50'} px-3 py-2 ${isOrphaned ? 'opacity-50' : ''}`}
+                      className={`flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-lg border ${isExternal ? 'border-badge-warning/40 bg-orange-500/[0.03]' : 'border-zinc-800 bg-zinc-950/50'} px-3 py-2 ${isOrphaned ? 'opacity-50' : ''}`}
                       data-testid="parked-approval-item"
                     >
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-1.5 truncate text-sm text-zinc-200">
                           {item.displayTool ?? item.tool}
                           {isExternal && (
-                            <span className="shrink-0 rounded bg-orange-500/15 px-1.5 py-0.5 text-[10px] text-orange-300">
+                            <span className="shrink-0 rounded bg-orange-500/15 px-1.5 py-0.5 text-[10px] text-badge-warning">
                               {cc.parkedExternalBadge}
                             </span>
                           )}
                         </div>
                         {scopeNote && (
-                          <div className="truncate text-[11px] text-orange-300/80" data-testid="parked-scope-note">
+                          <div className="truncate text-[11px] text-badge-warning/80" data-testid="parked-scope-note">
                             {scopeNote}
                           </div>
                         )}
@@ -172,7 +172,7 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                           <button /* ds-allow:button: 收件箱行内超小文本按钮（py-1 text-xs） */
                             onClick={() => handleResolveParked(item, 'allow')}
                             disabled={busyId === item.id}
-                            className="inline-flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-xs text-emerald-400 transition-colors hover:bg-emerald-500/10 hover:text-emerald-300 disabled:opacity-50"
+                            className="inline-flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-xs text-badge-success transition-colors hover:bg-emerald-500/10 hover:text-badge-success disabled:opacity-50"
                             data-testid="parked-approve"
                           >
                             <Check className="h-3.5 w-3.5" />
@@ -182,7 +182,7 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                             <button /* ds-allow:button: 同上，收件箱行内超小文本按钮 */
                               onClick={() => handleResolveParked(item, 'allow_standing')}
                               disabled={busyId === item.id}
-                              className="inline-flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-xs text-amber-400 transition-colors hover:bg-amber-500/10 hover:text-amber-300 disabled:opacity-50"
+                              className="inline-flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-xs text-badge-warning transition-colors hover:bg-amber-500/10 hover:text-badge-warning disabled:opacity-50"
                               data-testid="parked-always-allow"
                               title={cc.parkedAlwaysAllow.replace('{target}', item.standingGrantTarget ?? '')}
                             >
@@ -209,7 +209,7 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
           )}
           {items.length > 0 && (
             <>
-              <div className="mb-2 flex items-center gap-2 text-xs font-medium text-amber-300">
+              <div className="mb-2 flex items-center gap-2 text-xs font-medium text-badge-warning">
                 <Inbox className="h-3.5 w-3.5" />
                 {cc.inboxTitle.replace('{count}', String(items.length))}
               </div>
@@ -232,7 +232,7 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                       <button /* ds-allow:button: 收件箱行内超小文本按钮（py-1 text-xs），primitive 最小 sm 仍更大 */
                         onClick={() => handleOpenResult(record)}
                         disabled={busyId === record.id}
-                        className="inline-flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-xs text-blue-400 transition-colors hover:bg-blue-500/10 hover:text-blue-300 disabled:opacity-50"
+                        className="inline-flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-xs text-badge-info transition-colors hover:bg-blue-500/10 hover:text-badge-info disabled:opacity-50"
                       >
                         <MessageSquareText className="h-3.5 w-3.5" />
                         {cc.inboxOpenResult}

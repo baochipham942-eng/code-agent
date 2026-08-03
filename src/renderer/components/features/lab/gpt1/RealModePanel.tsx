@@ -332,21 +332,21 @@ export const RealModePanel: React.FC = () => {
         {/* 环境状态卡片 */}
         <div className={`p-4 rounded-xl border ${
           checkingEnv ? 'bg-zinc-900 border-zinc-700' :
-          envReady ? 'bg-emerald-500/10 border-emerald-500/20' :
-          'bg-amber-500/10 border-amber-500/20'
+          envReady ? 'bg-emerald-500/10 border-badge-success/20' :
+          'bg-amber-500/10 border-badge-warning/20'
         }`}>
           <div className="flex items-start gap-3">
             {checkingEnv ? (
               <Loader2 className="w-5 h-5 text-zinc-400 animate-spin flex-shrink-0 mt-0.5" />
             ) : envReady ? (
-              <CheckCircle2 className="w-5 h-5 text-emerald-400 flex-shrink-0 mt-0.5" />
+              <CheckCircle2 className="w-5 h-5 text-badge-success flex-shrink-0 mt-0.5" />
             ) : (
-              <AlertCircle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
+              <AlertCircle className="w-5 h-5 text-badge-warning flex-shrink-0 mt-0.5" />
             )}
             <div className="flex-1">
               <h3 className={`text-sm font-medium mb-2 ${
                 checkingEnv ? 'text-zinc-200' :
-                envReady ? 'text-emerald-200' : 'text-amber-200'
+                envReady ? 'text-badge-success' : 'text-badge-warning'
               }`}>
                 {checkingEnv ? rm.envChecking :
                  envReady ? rm.envReady : rm.envIncomplete}
@@ -356,9 +356,9 @@ export const RealModePanel: React.FC = () => {
                 <div className="grid grid-cols-3 gap-3 text-xs">
                   <div className="flex items-center gap-2">
                     {pythonEnv.pythonInstalled ? (
-                      <Check className="w-3 h-3 text-emerald-400" />
+                      <Check className="w-3 h-3 text-badge-success" />
                     ) : (
-                      <XCircle className="w-3 h-3 text-red-400" />
+                      <XCircle className="w-3 h-3 text-badge-danger" />
                     )}
                     <span className="text-zinc-400">
                       {rm.pythonLabel.replace('{version}', pythonEnv.pythonVersion || rm.notInstalled)}
@@ -366,9 +366,9 @@ export const RealModePanel: React.FC = () => {
                   </div>
                   <div className="flex items-center gap-2">
                     {pythonEnv.pytorchInstalled ? (
-                      <Check className="w-3 h-3 text-emerald-400" />
+                      <Check className="w-3 h-3 text-badge-success" />
                     ) : (
-                      <XCircle className="w-3 h-3 text-red-400" />
+                      <XCircle className="w-3 h-3 text-badge-danger" />
                     )}
                     <span className="text-zinc-400">
                       {rm.pytorchLabel.replace('{version}', pythonEnv.pytorchVersion || rm.notInstalled)}
@@ -376,9 +376,9 @@ export const RealModePanel: React.FC = () => {
                   </div>
                   <div className="flex items-center gap-2">
                     {pythonEnv.sentencepieceInstalled ? (
-                      <Check className="w-3 h-3 text-emerald-400" />
+                      <Check className="w-3 h-3 text-badge-success" />
                     ) : (
-                      <XCircle className="w-3 h-3 text-red-400" />
+                      <XCircle className="w-3 h-3 text-badge-danger" />
                     )}
                     <span className="text-zinc-400">{rm.sentencepieceLabel}</span>
                   </div>
@@ -386,7 +386,7 @@ export const RealModePanel: React.FC = () => {
               )}
 
               {!checkingEnv && pythonEnv?.missingDependencies && pythonEnv.missingDependencies.length > 0 && (
-                <p className="text-xs text-amber-200/70 mt-2">
+                <p className="text-xs text-badge-warning/70 mt-2">
                   {rm.missingDepsLabel.replace('{list}', pythonEnv.missingDependencies.join(', '))}
                 </p>
               )}
@@ -410,7 +410,7 @@ export const RealModePanel: React.FC = () => {
             <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-700">
               <div className="flex items-center gap-2 mb-4">
                 <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
-                  projectUIStatus === 'downloaded' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-zinc-600 text-zinc-400'
+                  projectUIStatus === 'downloaded' ? 'bg-emerald-500/20 text-badge-success' : 'bg-zinc-600 text-zinc-400'
                 }`}>
                   {projectUIStatus === 'downloaded' ? <Check className="w-4 h-4" /> : '1'}
                 </div>
@@ -422,21 +422,21 @@ export const RealModePanel: React.FC = () => {
                   href="https://github.com/yolaucn/minimal-gpt1-pytorch"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex items-center gap-2 text-xs text-blue-400 hover:text-blue-300"
+                  className="flex items-center gap-2 text-xs text-badge-info hover:text-badge-info"
                 >
                   <ExternalLink className="w-3 h-3" />
                   yolaucn/minimal-gpt1-pytorch
                 </a>
 
                 {projectUIStatus === 'downloaded' && projectPath ? (
-                  <div className="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
-                    <div className="flex items-center gap-2 text-emerald-400 text-sm">
+                  <div className="p-3 rounded-lg bg-emerald-500/10 border border-badge-success/20">
+                    <div className="flex items-center gap-2 text-badge-success text-sm">
                       <Check className="w-4 h-4" />
                       <span>{rm.projectReadyLabel}</span>
                     </div>
                     <p className="text-xs text-zinc-500 mt-1 truncate">{projectPath}</p>
                     {projectStatus?.hasTrainedModel && (
-                      <p className="text-xs text-emerald-400/70 mt-1">{rm.hasTrainedModelLabel}</p>
+                      <p className="text-xs text-badge-success/70 mt-1">{rm.hasTrainedModelLabel}</p>
                     )}
                   </div>
                 ) : (
@@ -444,7 +444,7 @@ export const RealModePanel: React.FC = () => {
                     <button
                       onClick={handleDownloadProject}
                       disabled={projectUIStatus === 'downloading' || !envReady}
-                      className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-blue-500/20 border border-blue-500/30 text-blue-400 text-sm font-medium hover:bg-blue-500/30 disabled:opacity-50 transition-colors"
+                      className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-blue-500/20 border border-badge-info/30 text-badge-info text-sm font-medium hover:bg-blue-500/30 disabled:opacity-50 transition-colors"
                     >
                       {projectUIStatus === 'downloading' ? (
                         <Loader2 className="w-4 h-4 animate-spin" />
@@ -488,7 +488,7 @@ export const RealModePanel: React.FC = () => {
                     type="radio"
                     checked={!useCustomData}
                     onChange={() => setUseCustomData(false)}
-                    className="text-emerald-500"
+                    className="text-badge-success"
                   />
                   <div className="flex-1">
                     <div className="text-sm text-zinc-200">{rm.defaultDatasetLabel}</div>
@@ -503,12 +503,12 @@ export const RealModePanel: React.FC = () => {
                     type="radio"
                     checked={useCustomData}
                     onChange={() => setUseCustomData(true)}
-                    className="text-emerald-500"
+                    className="text-badge-success"
                   />
                   <div className="flex-1">
                     <div className="text-sm text-zinc-200">{rm.customDatasetLabel}</div>
                     {customDataFile ? (
-                      <div className="text-xs text-emerald-400">{customDataFile.name}</div>
+                      <div className="text-xs text-badge-success">{customDataFile.name}</div>
                     ) : (
                       <div className="text-xs text-zinc-500">{rm.customDatasetHint}</div>
                     )}
@@ -545,7 +545,7 @@ export const RealModePanel: React.FC = () => {
             <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-700">
               <div className="flex items-center gap-2 mb-4">
                 <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
-                  trainingUIStatus === 'completed' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-zinc-600 text-zinc-400'
+                  trainingUIStatus === 'completed' ? 'bg-emerald-500/20 text-badge-success' : 'bg-zinc-600 text-zinc-400'
                 }`}>
                   {trainingUIStatus === 'completed' ? <Check className="w-4 h-4" /> : '3'}
                 </div>
@@ -567,7 +567,7 @@ export const RealModePanel: React.FC = () => {
                   </div>
                   {currentLoss > 0 && (
                     <div className="text-xs text-zinc-500 mt-1">
-                      {rm.currentLossLabel}<span className="text-emerald-400">{currentLoss.toFixed(4)}</span>
+                      {rm.currentLossLabel}<span className="text-badge-success">{currentLoss.toFixed(4)}</span>
                     </div>
                   )}
                 </div>
@@ -577,7 +577,7 @@ export const RealModePanel: React.FC = () => {
                 {trainingUIStatus === 'training' ? (
                   <button
                     onClick={handleStopTraining}
-                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-red-500/20 border border-red-500/30 text-red-400 text-sm font-medium hover:bg-red-500/30 transition-colors"
+                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-red-500/20 border border-red-500/30 text-badge-danger text-sm font-medium hover:bg-red-500/30 transition-colors"
                   >
                     <Square className="w-4 h-4" />
                     {rm.stopTraining}
@@ -586,7 +586,7 @@ export const RealModePanel: React.FC = () => {
                   <button
                     onClick={handleStartTraining}
                     disabled={projectUIStatus !== 'downloaded' || trainingUIStatus === 'preparing' || !envReady}
-                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 text-sm font-medium hover:bg-emerald-500/30 disabled:opacity-50 transition-colors"
+                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-emerald-500/20 border border-badge-success/30 text-badge-success text-sm font-medium hover:bg-emerald-500/30 disabled:opacity-50 transition-colors"
                   >
                     {trainingUIStatus === 'preparing' ? (
                       <Loader2 className="w-4 h-4 animate-spin" />
@@ -628,9 +628,9 @@ export const RealModePanel: React.FC = () => {
                     <div
                       key={i}
                       className={`mb-1 ${
-                        log.type === 'error' ? 'text-red-400' :
-                        log.type === 'success' ? 'text-emerald-400' :
-                        log.type === 'progress' ? 'text-blue-400' :
+                        log.type === 'error' ? 'text-badge-danger' :
+                        log.type === 'success' ? 'text-badge-success' :
+                        log.type === 'progress' ? 'text-badge-info' :
                         'text-zinc-400'
                       }`}
                     >
@@ -667,7 +667,7 @@ export const RealModePanel: React.FC = () => {
                   <button
                     onClick={handleInference}
                     disabled={(!projectStatus?.hasTrainedModel && trainingUIStatus !== 'completed') || !inferenceInput.trim() || isInferencing}
-                    className="px-4 py-2 rounded-lg bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 text-sm font-medium hover:bg-emerald-500/30 disabled:opacity-50 transition-colors"
+                    className="px-4 py-2 rounded-lg bg-emerald-500/20 border border-badge-success/30 text-badge-success text-sm font-medium hover:bg-emerald-500/30 disabled:opacity-50 transition-colors"
                   >
                     {isInferencing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Cpu className="w-4 h-4" />}
                   </button>

@@ -77,7 +77,7 @@ export function SurfaceOutputEntry({ output, scope, copy }: SurfaceOutputEntryPr
         size="sm"
         disabled={!readable || state.status === 'loading'}
         aria-expanded={state.status === 'ready' ? expanded : false}
-        className="mt-1 px-0 py-0 text-[9px] text-sky-300 hover:bg-transparent hover:text-sky-200 active:scale-100 disabled:text-zinc-600"
+        className="mt-1 px-0 py-0 text-[9px] text-badge-info hover:bg-transparent hover:text-badge-info active:scale-100 disabled:text-zinc-600"
         onClick={toggle}
       >
         {!readable
@@ -104,7 +104,7 @@ export function SurfaceOutputEntry({ output, scope, copy }: SurfaceOutputEntryPr
             </pre>
           )}
           {state.payload.truncated && (
-            <p className="mt-1 text-[9px] text-amber-300">{copy.resources.truncatedOutput}</p>
+            <p className="mt-1 text-[9px] text-badge-warning">{copy.resources.truncatedOutput}</p>
           )}
         </div>
       )}

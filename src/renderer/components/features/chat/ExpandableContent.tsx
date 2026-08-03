@@ -46,7 +46,7 @@ export const ExpandableContent: React.FC<ExpandableContentProps> = ({
       {truncated && (
         <button
           onClick={() => setExpanded(true)}
-          className="mt-1 text-xs text-primary-400 hover:text-primary-300 transition-colors"
+          className="mt-1 text-xs text-accent-accessible hover:text-accent-accessible transition-colors"
         >
           展开更多 (共 {totalLines} 行)
         </button>

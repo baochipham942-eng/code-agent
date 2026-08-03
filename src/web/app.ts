@@ -69,6 +69,7 @@ export interface CreateAppDeps {
   getDurableRunRollout: () => { policy: DurableRunRolloutPolicy; ready: boolean };
   getDurableRunReadService: () => DurableRunReadService | undefined;
   registerQueuedInputStartupSweep?: (runStartupSweep: () => void) => void;
+  registerQueuedInputEnqueueHook?: (onEnqueued: (sessionId: string) => void) => void;
 }
 
 /**
@@ -177,6 +178,7 @@ export function createApp(deps: CreateAppDeps): express.Express {
     getDurableRunRollout: () => getDurableRunRollout(),
     getDurableRunReadService: () => getDurableRunReadService(),
     registerQueuedInputStartupSweep: deps.registerQueuedInputStartupSweep,
+    registerQueuedInputEnqueueHook: deps.registerQueuedInputEnqueueHook,
   }));
 
   app.use('/api', createBackgroundRouter({ logger }));

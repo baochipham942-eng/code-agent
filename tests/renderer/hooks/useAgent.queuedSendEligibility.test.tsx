@@ -231,4 +231,30 @@ describe('引导消息「发送」的可发判定与 sendMessage 同源', () => 
       await firstClick;
     });
   });
+
+  // 独立验证 2026-08-01 抓到的静默失败：宿主说这条已经不是 queued（上一次点击 / drain
+  // 抢先），前端直接 return——用户以为在插队，实际要等本轮自然跑完才看到它被当普通排队
+  // 发出去。本文件从头到尾的规矩就是「任何一条不可发都出声」，这条是漏网的。
+  it('宿主拒绝 markSending 时出声，不再静默 return', async () => {
+    typedInvokeDomainMock.mockImplementation(
+      async (_schema: unknown, request: { action: string }) => {
+        switch (request.action) {
+          case 'list':
+            return { success: true, data: [hostQueuedInput()] };
+          case 'markSending':
+            return { success: true, data: { marked: false } };
+          default:
+            return { success: true, data: undefined };
+        }
+      },
+    );
+    setSessionStatus('running');
+    const hook = await renderHydrated();
+
+    await act(async () => {
+      await hook.result.current.sendQueuedRuntimeInput('queued-a');
+    });
+
+    expect(toastInfoMock).toHaveBeenCalledWith(expect.stringContaining('已经在发送'));
+  });
 });

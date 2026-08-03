@@ -138,10 +138,10 @@ export const RoleDraftCard: React.FC<RoleDraftCardProps> = ({ drafts, onResolved
   if (drafts.length === 0) return null;
 
   return (
-    <div className="px-3 py-2 mb-2 bg-emerald-500/10 border border-emerald-500/20 rounded-lg animate-fadeIn">
+    <div className="px-3 py-2 mb-2 bg-emerald-500/10 border border-badge-success/20 rounded-lg animate-fadeIn">
       <div className="flex items-center gap-2 mb-1">
-        <UserPlus className="w-4 h-4 text-emerald-400 flex-shrink-0" />
-        <span className="text-xs text-emerald-300 flex-1">
+        <UserPlus className="w-4 h-4 text-badge-success flex-shrink-0" />
+        <span className="text-xs text-badge-success flex-1">
           {drafts.some((d) => d.editingRoleId)
             ? r.pendingEditBanner
             : r.pendingCreateBanner}
@@ -166,26 +166,26 @@ export const RoleDraftCard: React.FC<RoleDraftCardProps> = ({ drafts, onResolved
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-1.5">
                   {isEdit && (
-                    <span className="px-1.5 py-px text-[10px] rounded bg-amber-500/20 text-amber-300 flex-shrink-0">
+                    <span className="px-1.5 py-px text-[10px] rounded bg-amber-500/20 text-badge-warning flex-shrink-0">
                       {r.editBadge}
                     </span>
                   )}
-                  <span className="text-xs font-medium text-emerald-100 truncate" title={draft.roleId}>
+                  <span className="text-xs font-medium text-badge-success truncate" title={draft.roleId}>
                     {draft.roleId}
                   </span>
                   {draft.category && (
-                    <span className="px-1.5 py-px text-[10px] rounded bg-emerald-500/20 text-emerald-300 flex-shrink-0">
+                    <span className="px-1.5 py-px text-[10px] rounded bg-emerald-500/20 text-badge-success flex-shrink-0">
                       {draft.category}
                     </span>
                   )}
                 </div>
                 {draft.description && (
-                  <div className="text-[11px] text-emerald-200/70 truncate" title={draft.description}>
+                  <div className="text-[11px] text-badge-success/70 truncate" title={draft.description}>
                     {draft.description}
                   </div>
                 )}
                 {/* 权限面：确认前必须让用户看清这角色拿到哪些能力（设计 §8 安全） */}
-                <div className="text-[11px] text-emerald-200/50 truncate" title={toolsLine}>
+                <div className="text-[11px] text-badge-success/50 truncate" title={toolsLine}>
                   {r.capabilityPrefix}{toolsLine}
                 </div>
               </div>
@@ -194,7 +194,7 @@ export const RoleDraftCard: React.FC<RoleDraftCardProps> = ({ drafts, onResolved
                 type="button"
                 onClick={() => handleConfirm(draft.id)}
                 disabled={busyId !== null}
-                className="flex items-center gap-1 px-2 py-1 text-xs bg-emerald-500/20 text-emerald-300 rounded hover:bg-emerald-500/30 transition-colors disabled:opacity-50"
+                className="flex items-center gap-1 px-2 py-1 text-xs bg-emerald-500/20 text-badge-success rounded hover:bg-emerald-500/30 transition-colors disabled:opacity-50"
               >
                 {busyId === draft.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
                 {isEdit ? r.confirmEdit : r.confirmCreate}
@@ -213,13 +213,13 @@ export const RoleDraftCard: React.FC<RoleDraftCardProps> = ({ drafts, onResolved
             <button
               type="button"
               onClick={() => toggleExpand(draft.id)}
-              className="flex items-center gap-0.5 mt-0.5 text-[11px] text-emerald-300/70 hover:text-emerald-200 transition-colors"
+              className="flex items-center gap-0.5 mt-0.5 text-[11px] text-badge-success/70 hover:text-badge-success transition-colors"
             >
               {expanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
               {r.viewFullDefinition}
             </button>
             {expanded && (
-              <pre className="mt-1 p-2 text-[11px] text-emerald-100/80 bg-black/20 rounded max-h-48 overflow-auto whitespace-pre-wrap break-words">
+              <pre className="mt-1 p-2 text-[11px] text-badge-success/80 bg-black/20 rounded max-h-48 overflow-auto whitespace-pre-wrap break-words">
                 {definitions[draft.id] ?? r.loadingDefinition}
               </pre>
             )}

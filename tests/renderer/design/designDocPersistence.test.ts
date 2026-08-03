@@ -26,6 +26,7 @@ const image = (over: Partial<CanvasImageNode> = {}): CanvasImageNode => ({
   costCny: 0.14,
   createdAt: 1,
   ...over,
+  createdBy: over.createdBy ?? 'user',
 });
 
 const video = (over: Partial<CanvasVideoNode> = {}): CanvasVideoNode => ({
@@ -39,6 +40,7 @@ const video = (over: Partial<CanvasVideoNode> = {}): CanvasVideoNode => ({
   durationSec: 5,
   createdAt: 2,
   ...over,
+  createdBy: over.createdBy ?? 'user',
 });
 
 const doc = (nodes: CanvasNode[] = [image()]): DesignCanvasDoc => ({

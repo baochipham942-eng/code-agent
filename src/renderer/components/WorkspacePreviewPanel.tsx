@@ -479,7 +479,7 @@ export const WorkspacePreviewPanel: React.FC<WorkspacePreviewPanelProps> = ({
             >
               <OverflowAction
                 label={copied ? wp.copied : wp.copyPreview}
-                icon={copied ? <Check className="h-3.5 w-3.5 text-emerald-300" /> : <Copy className="h-3.5 w-3.5" />}
+                icon={copied ? <Check className="h-3.5 w-3.5 text-badge-success" /> : <Copy className="h-3.5 w-3.5" />}
                 disabled={!selected}
                 onClick={() => { void copySelected(); }}
               />
@@ -569,7 +569,7 @@ export const WorkspacePreviewPanel: React.FC<WorkspacePreviewPanelProps> = ({
             {projectArtifactsExpanded
               ? <ChevronDown className="h-3.5 w-3.5 text-zinc-500" />
               : <ChevronRight className="h-3.5 w-3.5 text-zinc-500" />}
-            <FileText className="h-4 w-4 text-violet-300" />
+            <FileText className="h-4 w-4 text-badge-accent" />
             <span className="min-w-0 flex-1 truncate text-xs font-medium text-zinc-300">
               {wp.projectArtifacts.replace('{sessions}', String(projectSessionCount))}
             </span>
@@ -582,7 +582,7 @@ export const WorkspacePreviewPanel: React.FC<WorkspacePreviewPanelProps> = ({
               {projectArtifactsLoading ? (
                 <div className="py-3 text-center text-xs text-zinc-500">{wp.loadingProjectArtifacts}</div>
               ) : projectArtifactsError ? (
-                <div className="py-3 text-center text-xs text-rose-300">{wp.projectArtifactsLoadFailed}</div>
+                <div className="py-3 text-center text-xs text-badge-danger">{wp.projectArtifactsLoadFailed}</div>
               ) : visibleProjectArtifacts.length === 0 ? (
                 <div className="py-3 text-center text-xs text-zinc-500">{wp.noProjectArtifacts}</div>
               ) : (
@@ -643,7 +643,7 @@ export const WorkspacePreviewPanel: React.FC<WorkspacePreviewPanelProps> = ({
         >
           <div className="flex min-h-full flex-col">
             {assetActionError && (
-              <div className="mx-4 mt-3 rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+              <div className="mx-4 mt-3 rounded-lg border border-badge-warning/20 bg-amber-500/10 px-3 py-2 text-xs text-badge-warning">
                 {assetActionError}
               </div>
             )}

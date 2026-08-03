@@ -16,6 +16,7 @@ import type {
 import {
   isSurfaceEvidenceCardV1,
   isSurfaceExecutionEventV1,
+  SURFACE_USER_BROWSER_AGENT_ID,
 } from '@shared/contract/surfaceExecution';
 import { sanitizeSurfaceExecutionEventV1 } from '@shared/utils/surfaceExecutionRedaction';
 
@@ -694,4 +695,21 @@ export function buildSurfaceExecutionProjectionV1(
     mode: sessions.length > 0 ? 'compatibility' : 'empty',
     updatedAt: Math.max(0, ...sessions.map((session) => session.updatedAt)),
   };
+}
+
+/**
+ * 用户点聊天正文里的链接开出来的那扇窗——它归 SURFACE_USER_BROWSER_AGENT_ID 这个
+ * 「用户拥有的轻量 run」所有。
+ *
+ * 产品拍板（2026-08-02）：这种 surface **不进任何「有人在干活」的提示**——不进对话流
+ * 卡片、不点亮侧栏圆点。理由是它压根不是 agent 在干活：用户自己点开一个页面，反馈就是
+ * 右栏那扇窗本身，再在对话记录里留一串「浏览器 · 已完成」只是噪音（点 6 次就 6 张）；
+ * 而它的 run 只要右栏开着就不终止，会让侧栏圆点永远转着，等于谎报「这个会话在忙」。
+ *
+ * 它仍然照常进右栏 workbench 的实时帧投影——那才是它该出现的地方。
+ */
+export function isUserOpenedSurfaceV1(
+  projection: Pick<RendererSurfaceSessionProjectionV1, 'scope'>,
+): boolean {
+  return projection.scope.agentId === SURFACE_USER_BROWSER_AGENT_ID;
 }

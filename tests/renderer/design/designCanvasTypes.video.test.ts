@@ -10,10 +10,10 @@ import {
   type DesignCanvasDoc,
 } from '../../../src/renderer/components/design/designCanvasTypes';
 
-const imageNode: CanvasImageNode = { id: 'i1', src: 'assets/a.png', x: 0, y: 0, width: 100, height: 100, createdAt: 1 };
+const imageNode: CanvasImageNode = { id: 'i1', src: 'assets/a.png', x: 0, y: 0, width: 100, height: 100, createdAt: 1, createdBy: 'agent' };
 const videoNode: CanvasVideoNode = {
   id: 'v1', kind: 'video', src: 'assets/v.mp4', x: 10, y: 0, width: 320, height: 180,
-  durationSec: 5, prompt: '猫', parentId: 'i1', costCny: 3.5, createdAt: 2,
+  durationSec: 5, prompt: '猫', parentId: 'i1', costCny: 3.5, createdAt: 2, createdBy: 'agent',
 };
 
 describe('CanvasVideoNode 序列化', () => {

@@ -20,9 +20,9 @@ interface PlanPanelProps {
 // 状态图标映射
 const STATUS_ICONS: Record<string, React.ReactNode> = {
   pending: <Circle className="w-4 h-4 text-zinc-500" />,
-  in_progress: <Loader2 className="w-4 h-4 text-yellow-400 animate-spin" />,
-  completed: <CheckCircle2 className="w-4 h-4 text-green-400" />,
-  blocked: <Circle className="w-4 h-4 text-red-400" />,
+  in_progress: <Loader2 className="w-4 h-4 text-badge-warning animate-spin" />,
+  completed: <CheckCircle2 className="w-4 h-4 text-badge-success" />,
+  blocked: <Circle className="w-4 h-4 text-badge-danger" />,
   skipped: <Circle className="w-4 h-4 text-zinc-600 line-through" />,
 };
 
@@ -38,7 +38,7 @@ const StepItem: React.FC<{ step: TaskStep }> = ({ step }) => (
         step.status === 'completed'
           ? 'text-zinc-500 line-through'
           : step.status === 'in_progress'
-            ? 'text-yellow-300'
+            ? 'text-badge-warning'
             : 'text-zinc-400'
       }`}
     >
@@ -56,7 +56,7 @@ const PhaseSection: React.FC<{ phase: TaskPhase }> = ({ phase }) => (
           phase.status === 'completed'
             ? 'text-zinc-500'
             : phase.status === 'in_progress'
-              ? 'text-yellow-300'
+              ? 'text-badge-warning'
               : 'text-zinc-200'
         }`}
       >
@@ -92,7 +92,7 @@ export const PlanPanel: React.FC<PlanPanelProps> = ({ plan, onClose }) => {
       header={
         <>
           <div className="p-2 bg-indigo-500/20 rounded-lg shrink-0">
-            <FileText className="w-5 h-5 text-indigo-400" />
+            <FileText className="w-5 h-5 text-badge-accent" />
           </div>
           <div className="flex-1 min-w-0">
             <h3 className="text-lg font-semibold text-zinc-200 truncate">{plan.title}</h3>

@@ -32,56 +32,56 @@ const LazyPrismCodeBlock = lazy(() => import('./PrismCodeBlock'));
 
 // Language display names and colors
 const languageConfig: Record<string, { color: string; name: string }> = {
-  typescript: { color: 'text-blue-400', name: 'TypeScript' },
-  ts: { color: 'text-blue-400', name: 'TypeScript' },
-  tsx: { color: 'text-blue-400', name: 'TSX' },
-  javascript: { color: 'text-yellow-400', name: 'JavaScript' },
-  js: { color: 'text-yellow-400', name: 'JavaScript' },
-  jsx: { color: 'text-yellow-400', name: 'JSX' },
-  python: { color: 'text-green-400', name: 'Python' },
-  py: { color: 'text-green-400', name: 'Python' },
-  rust: { color: 'text-orange-400', name: 'Rust' },
-  rs: { color: 'text-orange-400', name: 'Rust' },
-  go: { color: 'text-cyan-400', name: 'Go' },
-  bash: { color: 'text-emerald-400', name: 'Bash' },
-  shell: { color: 'text-emerald-400', name: 'Shell' },
-  sh: { color: 'text-emerald-400', name: 'Shell' },
-  zsh: { color: 'text-emerald-400', name: 'Zsh' },
-  json: { color: 'text-amber-400', name: 'JSON' },
-  html: { color: 'text-orange-400', name: 'HTML' },
-  css: { color: 'text-blue-400', name: 'CSS' },
-  scss: { color: 'text-pink-400', name: 'SCSS' },
-  sql: { color: 'text-purple-400', name: 'SQL' },
-  yaml: { color: 'text-red-400', name: 'YAML' },
-  yml: { color: 'text-red-400', name: 'YAML' },
+  typescript: { color: 'text-badge-info', name: 'TypeScript' },
+  ts: { color: 'text-badge-info', name: 'TypeScript' },
+  tsx: { color: 'text-badge-info', name: 'TSX' },
+  javascript: { color: 'text-badge-warning', name: 'JavaScript' },
+  js: { color: 'text-badge-warning', name: 'JavaScript' },
+  jsx: { color: 'text-badge-warning', name: 'JSX' },
+  python: { color: 'text-badge-success', name: 'Python' },
+  py: { color: 'text-badge-success', name: 'Python' },
+  rust: { color: 'text-badge-warning', name: 'Rust' },
+  rs: { color: 'text-badge-warning', name: 'Rust' },
+  go: { color: 'text-badge-info', name: 'Go' },
+  bash: { color: 'text-badge-success', name: 'Bash' },
+  shell: { color: 'text-badge-success', name: 'Shell' },
+  sh: { color: 'text-badge-success', name: 'Shell' },
+  zsh: { color: 'text-badge-success', name: 'Zsh' },
+  json: { color: 'text-badge-warning', name: 'JSON' },
+  html: { color: 'text-badge-warning', name: 'HTML' },
+  css: { color: 'text-badge-info', name: 'CSS' },
+  scss: { color: 'text-badge-accent', name: 'SCSS' },
+  sql: { color: 'text-badge-accent', name: 'SQL' },
+  yaml: { color: 'text-badge-danger', name: 'YAML' },
+  yml: { color: 'text-badge-danger', name: 'YAML' },
   markdown: { color: 'text-zinc-400', name: 'Markdown' },
   md: { color: 'text-zinc-400', name: 'Markdown' },
-  java: { color: 'text-red-400', name: 'Java' },
-  c: { color: 'text-blue-300', name: 'C' },
-  cpp: { color: 'text-blue-300', name: 'C++' },
-  csharp: { color: 'text-purple-400', name: 'C#' },
-  cs: { color: 'text-purple-400', name: 'C#' },
-  php: { color: 'text-indigo-400', name: 'PHP' },
-  ruby: { color: 'text-red-400', name: 'Ruby' },
-  rb: { color: 'text-red-400', name: 'Ruby' },
-  swift: { color: 'text-orange-400', name: 'Swift' },
-  kotlin: { color: 'text-purple-400', name: 'Kotlin' },
-  kt: { color: 'text-purple-400', name: 'Kotlin' },
-  dart: { color: 'text-cyan-400', name: 'Dart' },
+  java: { color: 'text-badge-danger', name: 'Java' },
+  c: { color: 'text-badge-info', name: 'C' },
+  cpp: { color: 'text-badge-info', name: 'C++' },
+  csharp: { color: 'text-badge-accent', name: 'C#' },
+  cs: { color: 'text-badge-accent', name: 'C#' },
+  php: { color: 'text-badge-accent', name: 'PHP' },
+  ruby: { color: 'text-badge-danger', name: 'Ruby' },
+  rb: { color: 'text-badge-danger', name: 'Ruby' },
+  swift: { color: 'text-badge-warning', name: 'Swift' },
+  kotlin: { color: 'text-badge-accent', name: 'Kotlin' },
+  kt: { color: 'text-badge-accent', name: 'Kotlin' },
+  dart: { color: 'text-badge-info', name: 'Dart' },
   diff: { color: 'text-zinc-400', name: 'Diff' },
-  xml: { color: 'text-orange-400', name: 'XML' },
+  xml: { color: 'text-badge-warning', name: 'XML' },
   toml: { color: 'text-zinc-400', name: 'TOML' },
   ini: { color: 'text-zinc-400', name: 'INI' },
-  dockerfile: { color: 'text-cyan-400', name: 'Dockerfile' },
-  docker: { color: 'text-cyan-400', name: 'Docker' },
-  graphql: { color: 'text-pink-400', name: 'GraphQL' },
-  gql: { color: 'text-pink-400', name: 'GraphQL' },
-  mermaid: { color: 'text-pink-300', name: 'Mermaid' },
-  chart: { color: 'text-emerald-400', name: 'Chart' },
-  spreadsheet: { color: 'text-emerald-400', name: 'Spreadsheet' },
-  document: { color: 'text-blue-400', name: 'Document' },
-  generative_ui: { color: 'text-violet-400', name: 'Generative UI' },
-  neo_ui: { color: 'text-violet-300', name: 'Neo Interactive UI' },
+  dockerfile: { color: 'text-badge-info', name: 'Dockerfile' },
+  docker: { color: 'text-badge-info', name: 'Docker' },
+  graphql: { color: 'text-badge-accent', name: 'GraphQL' },
+  gql: { color: 'text-badge-accent', name: 'GraphQL' },
+  mermaid: { color: 'text-badge-accent', name: 'Mermaid' },
+  chart: { color: 'text-badge-success', name: 'Chart' },
+  spreadsheet: { color: 'text-badge-success', name: 'Spreadsheet' },
+  document: { color: 'text-badge-info', name: 'Document' },
+  generative_ui: { color: 'text-badge-accent', name: 'Generative UI' },
+  neo_ui: { color: 'text-badge-accent', name: 'Neo Interactive UI' },
 };
 
 // MermaidDiagram 及其缩放/标注/高度缓存已拆到独立文件（大文件门），原有消费者从这里 re-export
@@ -112,7 +112,8 @@ const codeBlockStyle = {
 const codeLineNumberStyle = {
   minWidth: '2.5em',
   paddingRight: '1em',
-  color: 'rgb(113 113 122)',
+  // 语义 token:dark 下等同原 rgb(113 113 122),light 下换深色保持可读
+  color: 'var(--text-tertiary)',
   userSelect: 'none',
 } as const;
 
@@ -332,7 +333,7 @@ export const CodeBlock = memo(function CodeBlock({
 
   return (
     <div
-      className="my-3 rounded-xl bg-zinc-800-950 overflow-hidden border border-zinc-700 shadow-lg"
+      className="my-3 rounded-xl bg-[var(--code-bg)] overflow-hidden border border-zinc-700 shadow-lg"
       data-code-block-lines={lines.length}
       data-code-highlighted-lines={collapsed ? 0 : highlightedLineCount}
       data-code-highlight-complete={isHighlightComplete ? 'true' : 'false'}
@@ -368,8 +369,8 @@ export const CodeBlock = memo(function CodeBlock({
           >
             {copied ? (
               <>
-                <Check className="w-3.5 h-3.5 text-green-400" />
-                <span className="text-green-400">Copied!</span>
+                <Check className="w-3.5 h-3.5 text-badge-success" />
+                <span className="text-badge-success">Copied!</span>
               </>
             ) : (
               <>
@@ -541,7 +542,7 @@ export const InlineCode = memo(function InlineCode({
 
   return (
     <code
-      className="inline-flex items-baseline gap-0.5 mx-0.5 font-mono text-xs text-primary-300 hover:text-primary-200 cursor-pointer hover:underline underline-offset-2 transition-colors group"
+      className="inline-flex items-baseline gap-0.5 mx-0.5 font-mono text-xs text-accent-accessible hover:text-accent-accessible cursor-pointer hover:underline underline-offset-2 transition-colors group"
       onClick={() => {
         if (isHtml && onPreviewHtml) {
           onPreviewHtml(filePath);
@@ -648,7 +649,7 @@ export const IACTCopyButton: React.FC<{ children: React.ReactNode }> = ({ childr
       title="复制到剪贴板"
     >
       {children}
-      {copied ? <Check className="w-3 h-3 text-emerald-400" /> : <ClipboardCopy className="w-3 h-3 opacity-60" />}
+      {copied ? <Check className="w-3 h-3 text-badge-success" /> : <ClipboardCopy className="w-3 h-3 opacity-60" />}
     </button>
   );
 };
@@ -688,7 +689,7 @@ export const IACTNavCard: React.FC<{ href: string; children: React.ReactNode }> 
     <button
       type="button"
       onClick={onClick}
-      className="inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5 rounded-md bg-sky-500/10 text-sky-400 hover:bg-sky-500/20 hover:text-sky-300 border border-sky-500/20 hover:border-sky-500/40 transition-all cursor-pointer text-sm font-medium"
+      className="inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5 rounded-md bg-sky-500/10 text-badge-info hover:bg-sky-500/20 hover:text-badge-info border border-badge-info/20 hover:border-badge-info/40 transition-all cursor-pointer text-sm font-medium"
       title={title}
     >
       <Icon className="w-3 h-3 opacity-60" />
@@ -734,6 +735,33 @@ export const MarkdownRenderer = memo(function markdownRenderer({
   );
 });
 
+/**
+ * markdown 渲染器按 CommonMark 规范会把图片 URL 里的非 ASCII 百分号编码一次。
+ * 这个已编码的串如果被直接当成**文件路径**存进 asset.path，后面 resolveFileUrl 的
+ * URLSearchParams 会再编码一次；服务器只解一次，拿到的是字面量 `%E4%B8%AD…`
+ * 当文件名 → fs.stat 找不到 → 404。英文名没东西可编码，所以只有中文/日文/空格/emoji
+ * 文件名会中招，长期没被发现。影响也不止显示：asset.path 同时供
+ * 「修改 / 复制引用 / Finder」使用，中文名的图这三个动作也全是错路径。
+ *
+ * 在这里解码而不是在 buildMarkdownMediaAsset 里解：那个函数还被
+ * markdownImageAssets() 用正则扫原文调用，那一路拿到的 src 本来就没编码，
+ * 统一解码会把两种来源混在一起。只有这里能确定「来自渲染器 ⇒ 必然编码过」。
+ *
+ * data:/http(s): 原样返回——它们的百分号编码是 URL 语义的一部分，解了反而错。
+ * 解码失败（文件名里有裸 `%`，如 `50%off.png`）时回退原串，不抛。
+ */
+export function decodeMarkdownImagePath(src: string | undefined): string | undefined {
+  if (!src) return src;
+  if (/^(data:|https?:|blob:)/i.test(src)) return src;
+  try {
+    const decoded = decodeURIComponent(src);
+    return decoded === src ? src : decoded;
+  } catch {
+    // 裸 % 不是合法转义序列，decodeURIComponent 会抛——这类文件名保持原样
+    return src;
+  }
+}
+
 export const MarkdownMediaImage = memo(function MarkdownMediaImage({
   src,
   alt,
@@ -746,12 +774,14 @@ export const MarkdownMediaImage = memo(function MarkdownMediaImage({
   mediaContext?: SessionMediaContext;
 }) {
   const [lightboxOpen, setLightboxOpen] = useState(false);
+  // 渲染器给的 src 是编码态；当文件路径用之前必须解回来（见 decodeMarkdownImagePath 注释）
+  const decodedSrc = useMemo(() => decodeMarkdownImagePath(src), [src]);
   const asset = useMemo(
-    () => buildMarkdownMediaAsset(src, alt, {
+    () => buildMarkdownMediaAsset(decodedSrc, alt, {
       ...mediaContext,
       messageId: mediaContext?.messageId || messageId,
     }),
-    [src, alt, mediaContext?.sessionId, mediaContext?.turnId, mediaContext?.messageId, messageId],
+    [decodedSrc, alt, mediaContext?.sessionId, mediaContext?.turnId, mediaContext?.messageId, messageId],
   );
 
   if (!asset) {
@@ -780,7 +810,8 @@ export const MarkdownMediaImage = memo(function MarkdownMediaImage({
   }
 
   return (
-    <span className="my-2 inline-block max-w-full overflow-hidden rounded-lg border border-zinc-800 bg-zinc-950/60 align-top">
+    // group：操作条默认淡出，hover 这张图（整张卡片）才浮现（2026-08-02 产品负责人拍板）。
+    <span className="group my-2 inline-block max-w-full overflow-hidden rounded-lg border border-zinc-800 bg-zinc-950/60 align-top">
       <button
         type="button"
         className="block max-w-full cursor-zoom-in bg-transparent p-0"
@@ -794,7 +825,11 @@ export const MarkdownMediaImage = memo(function MarkdownMediaImage({
           loading="lazy"
         />
       </button>
-      <span className="flex items-center justify-end border-t border-zinc-800 bg-zinc-950/70 px-2 py-1">
+      {/* 只淡透明度、不改布局——否则 hover 时整段正文会跳。三个兜底缺一不可：
+          ① focus-within：键盘 Tab 进来时必须看得见，否则键盘用户永远够不到这些动作；
+          ② 触屏恒显（.media-actions-hover-reveal，规则写在 global.css）——那类设备根本没有 hover 态。
+          ③ 条目本身不 aria-hidden，只是视觉淡出，读屏仍可达。 */}
+      <span className="flex items-center justify-end border-t border-zinc-800 bg-zinc-950/70 px-2 py-1 opacity-0 transition-opacity duration-150 group-hover:opacity-100 focus-within:opacity-100 media-actions-hover-reveal">
         <MediaAssetActionBar
           asset={asset}
           compact

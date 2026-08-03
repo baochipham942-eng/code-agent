@@ -63,11 +63,11 @@ function getCapabilityKindLabel(capability: WorkbenchCapabilityRegistryItem): st
 function getCapabilityIcon(capability: WorkbenchCapabilityRegistryItem): React.ReactNode {
   switch (capability.kind) {
     case 'skill':
-      return <Sparkles className="h-4 w-4 text-fuchsia-300" />;
+      return <Sparkles className="h-4 w-4 text-badge-accent" />;
     case 'connector':
-      return <Plug className="h-4 w-4 text-sky-300" />;
+      return <Plug className="h-4 w-4 text-badge-info" />;
     case 'mcp':
-      return <Plug className="h-4 w-4 text-emerald-300" />;
+      return <Plug className="h-4 w-4 text-badge-success" />;
     default:
       return <Wrench className="h-4 w-4 text-zinc-300" />;
   }
@@ -295,7 +295,7 @@ export const WorkbenchCapabilitySheetLite: React.FC<WorkbenchCapabilitySheetLite
             <div className="flex items-start gap-2 text-[11px] text-zinc-300">
               <AlertTriangle
                 className={`mt-0.5 h-3.5 w-3.5 flex-shrink-0 ${
-                  effectiveBlockedReason.severity === 'error' ? 'text-red-300' : 'text-amber-300'
+                  effectiveBlockedReason.severity === 'error' ? 'text-badge-danger' : 'text-badge-warning'
                 }`}
               />
               <div className="space-y-1">
@@ -324,7 +324,7 @@ export const WorkbenchCapabilitySheetLite: React.FC<WorkbenchCapabilitySheetLite
                         disabled={loading}
                         className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-[11px] transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
                           action.emphasis === 'primary'
-                            ? 'border-amber-500/30 bg-amber-500/10 text-amber-200 hover:border-amber-500/50 hover:bg-amber-500/15'
+                            ? 'border-badge-warning/30 bg-amber-500/10 text-badge-warning hover:border-badge-warning/50 hover:bg-amber-500/15'
                             : 'border-white/[0.08] bg-zinc-900/60 text-zinc-300 hover:border-white/[0.14] hover:text-zinc-100'
                         }`}
                       >
@@ -336,10 +336,10 @@ export const WorkbenchCapabilitySheetLite: React.FC<WorkbenchCapabilitySheetLite
                 </div>
               )}
               {actionError && (
-                <div className="text-[11px] text-red-300">{actionError}</div>
+                <div className="text-[11px] text-badge-danger">{actionError}</div>
               )}
               {feedback && !actionError && (
-                <div className={`text-[11px] ${feedback.tone === 'success' ? 'text-emerald-300' : 'text-sky-300'}`}>
+                <div className={`text-[11px] ${feedback.tone === 'success' ? 'text-badge-success' : 'text-badge-info'}`}>
                   {feedback.message}
                 </div>
               )}

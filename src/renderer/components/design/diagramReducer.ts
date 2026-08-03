@@ -48,18 +48,18 @@ export function reduceDiagram(shapes: CanvasShape[], evt: DiagramDrawEvent): Can
       const { id, createdAt, color } = evt;
       switch (evt.tool) {
         case 'rect':
-          return [...shapes, { id, kind: 'rect', x: evt.x, y: evt.y, width: 0, height: 0, color, createdAt }];
+          return [...shapes, { id, kind: 'rect', x: evt.x, y: evt.y, width: 0, height: 0, color, createdAt, createdBy: 'user' }];
         case 'ellipse':
-          return [...shapes, { id, kind: 'ellipse', x: evt.x, y: evt.y, width: 0, height: 0, color, createdAt }];
+          return [...shapes, { id, kind: 'ellipse', x: evt.x, y: evt.y, width: 0, height: 0, color, createdAt, createdBy: 'user' }];
         case 'sticky':
           return [
             ...shapes,
-            { id, kind: 'sticky', x: evt.x, y: evt.y, width: 0, height: 0, color, createdAt, text: evt.text ?? '' },
+            { id, kind: 'sticky', x: evt.x, y: evt.y, width: 0, height: 0, color, createdAt, createdBy: 'user', text: evt.text ?? '' },
           ];
         case 'line':
-          return [...shapes, { id, kind: 'line', points: [evt.x, evt.y, evt.x, evt.y], color, createdAt }];
+          return [...shapes, { id, kind: 'line', points: [evt.x, evt.y, evt.x, evt.y], color, createdAt, createdBy: 'user' }];
         case 'text':
-          return [...shapes, { id, kind: 'text', x: evt.x, y: evt.y, text: evt.text ?? '', color, createdAt }];
+          return [...shapes, { id, kind: 'text', x: evt.x, y: evt.y, text: evt.text ?? '', color, createdAt, createdBy: 'user' }];
         default:
           return shapes;
       }

@@ -19,6 +19,7 @@ const BASE: CanvasImageNode = {
   width: 800,
   height: 600,
   createdAt: 1,
+  createdBy: 'user',
 };
 
 // 各操作的结果图（扩图结果尺寸大于原图；去水印同尺寸）。

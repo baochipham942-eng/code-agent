@@ -53,7 +53,6 @@ import {
   getGeminiApiKey,
   getArkApiKey,
 } from '../services/media/imageGenerationService';
-import type { ExpandDirection } from '../services/media/imageGenerationService';
 import {
   getCustomModelApiKey,
   listCustomImageModels,
@@ -72,6 +71,10 @@ import { assertSafeDownloadUrl } from '../security/ssrfGuard';
 import { promises as fsp } from 'fs';
 import { readDesignSettings, updateDesignSettings } from '../services/design/designSettings';
 import type { DesignSettings } from '../services/design/designSettings';
+import {
+  getUserBrowserLinkService,
+  type UserBrowserLinkService,
+} from '../services/surfaceExecution/UserBrowserLinkService';
 
 
 // 设计媒介生成 handlers（出图/参考图/标注重绘/导入/局部重绘/扩图/去水印/视频）
@@ -81,12 +84,14 @@ import {
   handleGenerateDesignImage,
   handleEditImageByAnnotation,
   handleImportDesignImage,
+  handleImportDesignImageFromPath,
   handleEditDesignImage,
   handleExpandDesignImage,
   handleRemoveWatermarkDesignImage,
   handleGenerateDesignVideo,
   handleGenerateDesignMusic,
 } from './workspaceDesignMedia.ipc';
+import type { ExpandDesignImagePayload } from './workspaceDesignMedia.ipc';
 // 这些 handler 历史上是 workspace.ipc 的公开导出（测试与 index.ts 依赖），保持向后兼容。
 export {
   handleGenerateDesignImage,
@@ -767,6 +772,7 @@ export function registerWorkspaceHandlers(
   getMainWindow: () => AppWindow | null,
   getAppService: () => AgentApplicationService | null,
   getConfigService: () => ConfigService | null,
+  getUserBrowserLinks: () => Pick<UserBrowserLinkService, 'open' | 'end'> = getUserBrowserLinkService,
 ): void {
   // ========== New Domain Handler (TASK-04) ==========
   ipcMain.handle(IPC_DOMAINS.WORKSPACE, async (_, request: IPCRequest): Promise<IPCResponse> => {
@@ -880,6 +886,19 @@ export function registerWorkspaceHandlers(
         case 'openExternal':
           data = await handleOpenExternal(payload as { url: string });
           break;
+        case 'openLinkInRail':
+          data = await getUserBrowserLinks().open(
+            payload as { conversationId: string; url: string; workspace: string },
+          );
+          break;
+        case 'closeLinkInRail': {
+          const closePayload = payload as { conversationId: string; reason?: 'user' | 'session-switch' };
+          data = await getUserBrowserLinks().end(
+            closePayload.conversationId,
+            closePayload.reason || 'user',
+          );
+          break;
+        }
         case 'showItemInFolder':
           data = await handleShowItemInFolder(payload as { filePath: string }, getAppService);
           break;
@@ -926,9 +945,15 @@ export function registerWorkspaceHandlers(
         case 'importDesignImage':
           data = await handleImportDesignImage(payload as { dataUrl: string; outputPath: string });
           break;
+        case 'importDesignImageFromPath':
+          data = await handleImportDesignImageFromPath(
+            payload as { sourcePath: string; outputPath: string },
+            getAppService()?.getWorkingDirectory(),
+          );
+          break;
         case 'expandDesignImage':
           data = await handleExpandDesignImage(
-            payload as { baseImagePath: string; outputPath: string; direction: ExpandDirection; ratio: number; prompt?: string },
+            payload as ExpandDesignImagePayload,
           );
           break;
         case 'removeWatermarkDesignImage':

@@ -416,33 +416,33 @@ export function getDesktopShellDiagnosticRows(
 }
 
 function getRuntimeAssetTone(asset: RuntimeAssetStatusEntry): string {
-  if (asset.state === 'installed') return 'text-green-300 bg-green-500/10 border-green-500/30';
-  if (asset.state === 'bundledFallback') return 'text-amber-300 bg-amber-500/10 border-amber-500/30';
+  if (asset.state === 'installed') return 'text-badge-success bg-green-500/10 border-badge-success/30';
+  if (asset.state === 'bundledFallback') return 'text-badge-warning bg-amber-500/10 border-badge-warning/30';
   return 'text-zinc-300 bg-zinc-700/40 border-zinc-600/60';
 }
 
 function getRendererBundleTone(status: RendererBundleStatus): string {
   if (status.disabled) return 'text-zinc-300 bg-zinc-700/40 border-zinc-600/60';
   const outcome = status.lastAttempt?.outcome;
-  if (outcome === 'applied') return 'text-green-300 bg-green-500/10 border-green-500/30';
+  if (outcome === 'applied') return 'text-badge-success bg-green-500/10 border-badge-success/30';
   if (outcome === 'rolled-back') return 'text-zinc-300 bg-zinc-700/40 border-zinc-600/60';
   if (outcome === 'skipped') return 'text-zinc-300 bg-zinc-700/40 border-zinc-600/60';
-  if (outcome === 'failed') return 'text-amber-300 bg-amber-500/10 border-amber-500/30';
+  if (outcome === 'failed') return 'text-badge-warning bg-amber-500/10 border-badge-warning/30';
   return 'text-zinc-300 bg-zinc-700/40 border-zinc-600/60';
 }
 
 function getDesktopShellTone(diagnostics: DesktopShellDiagnostics): string {
   if (diagnostics.boot.stage === 'failed' || diagnostics.issues.some((issue) => issue.severity === 'error')) {
-    return 'text-red-300 bg-red-500/10 border-red-500/30';
+    return 'text-badge-danger bg-red-500/10 border-red-500/30';
   }
   if (
     diagnostics.webServer.health !== 'ok' ||
     diagnostics.issues.some((issue) => issue.severity === 'warning') ||
     diagnostics.resources.some((resource) => resource.status !== 'present')
   ) {
-    return 'text-amber-300 bg-amber-500/10 border-amber-500/30';
+    return 'text-badge-warning bg-amber-500/10 border-badge-warning/30';
   }
-  return 'text-green-300 bg-green-500/10 border-green-500/30';
+  return 'text-badge-success bg-green-500/10 border-badge-success/30';
 }
 
 function hasNativeUpdateBridge(): boolean {
@@ -798,7 +798,7 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
             </div>
           </div>
           {runtimeAssetsError && (
-            <div className="mt-3 flex items-center gap-2 text-xs text-amber-300">
+            <div className="mt-3 flex items-center gap-2 text-xs text-badge-warning">
               <AlertCircle className="w-4 h-4" />
               <span>{runtimeAssetsError}</span>
             </div>
@@ -877,7 +877,7 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
             <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <div className="min-w-0 text-xs">
                 {rendererBundleActivationText && (
-                  <div className="text-amber-300">{rendererBundleActivationText}</div>
+                  <div className="text-badge-warning">{rendererBundleActivationText}</div>
                 )}
                 {rendererBundleReloadBlockedReason && (
                   <div className="mt-1 text-zinc-500">{rendererBundleReloadBlockedReason}</div>
@@ -909,12 +909,12 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
       {/* Update Status */}
       {visibleUpdateInfo && (
         <div className={`rounded-lg p-4 ${
-          visibleUpdateInfo.hasUpdate ? 'bg-indigo-500/10 border border-indigo-500/30' : 'bg-green-500/10 border border-green-500/30'
+          visibleUpdateInfo.hasUpdate ? 'bg-indigo-500/10 border border-badge-accent/30' : 'bg-green-500/10 border border-badge-success/30'
         }`}>
           {visibleUpdateInfo.hasUpdate ? (
             <div className="space-y-4">
               <div className="flex items-start gap-3">
-                <Download className="w-5 h-5 text-indigo-400 mt-0.5" />
+                <Download className="w-5 h-5 text-badge-accent mt-0.5" />
                 <div className="flex-1">
                   <div className="text-sm font-medium text-zinc-200">
                     {updateText.newVersion}: v{visibleUpdateInfo.latestVersion}
@@ -977,7 +977,7 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
             </div>
           ) : (
             <div className="flex items-center gap-3">
-              <CheckCircle className="w-5 h-5 text-green-400" />
+              <CheckCircle className="w-5 h-5 text-badge-success" />
               <span className="text-sm text-zinc-200">{updateText.upToDate}</span>
             </div>
           )}
@@ -986,7 +986,7 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
 
       {/* Installed, needs restart */}
       {installedNeedsRestart && (
-        <div className="flex items-center gap-2 p-3 rounded-lg bg-green-500/10 text-green-400">
+        <div className="flex items-center gap-2 p-3 rounded-lg bg-green-500/10 text-badge-success">
           <CheckCircle className="w-4 h-4" />
           <span className="text-sm">{updateText.install.installedNeedsRestart}</span>
         </div>
@@ -994,7 +994,7 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
 
       {/* Error Message */}
       {error && (
-        <div className="flex items-center gap-2 p-3 rounded-lg bg-red-500/10 text-red-400">
+        <div className="flex items-center gap-2 p-3 rounded-lg bg-red-500/10 text-badge-danger">
           <AlertCircle className="w-4 h-4" />
           <span className="text-sm">{error}</span>
         </div>

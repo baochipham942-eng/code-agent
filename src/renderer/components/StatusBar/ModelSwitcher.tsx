@@ -841,7 +841,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
                 className="
                   w-full px-2 py-1 text-xs
                   bg-zinc-900 border border-zinc-700 rounded
-                  text-gray-200 placeholder-gray-500
+                  text-zinc-200 placeholder-gray-500
                   outline-none focus:border-zinc-600
                 "
               />
@@ -875,11 +875,11 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
                       border-b border-zinc-700/50
                       hover:bg-zinc-700 transition-colors
                       ${activeOptionIndex === 0 ? 'bg-zinc-700/80' : ''}
-                      ${overrideAdaptive ? 'text-primary-300' : 'text-gray-200'}
+                      ${overrideAdaptive ? 'text-badge-accent' : 'text-zinc-200'}
                     `}
                   >
                     <div className="flex items-center gap-1.5">
-                      <Sparkles className="w-3 h-3 text-primary-400" />
+                      <Sparkles className="w-3 h-3 text-badge-accent" />
                       <span className="font-medium">自动</span>
                       <span className="text-gray-500 text-[10px] ml-auto">按任务、成本和能力切换</span>
                     </div>
@@ -905,7 +905,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
                           />
                           <span>{group.providerLabel || getProviderDisplayName(group.provider) || group.provider}</span>
                           {group.providerFavorite && (
-                            <Star className="h-3 w-3 fill-amber-300 text-amber-300" />
+                            <Star className="h-3 w-3 fill-badge-warning text-badge-warning" />
                           )}
                           <span
                             className={`ml-auto h-1.5 w-1.5 rounded-full ${group.healthSummary.dotClass}`}
@@ -927,21 +927,21 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
                                 w-full text-left px-3 py-1.5 text-xs
                                 hover:bg-zinc-700 transition-colors
                                 ${activeOptionIndex === index ? 'bg-zinc-700/80' : ''}
-                                ${selected ? 'text-purple-400' : 'text-gray-300'}
+                                ${selected ? 'text-badge-accent' : 'text-zinc-300'}
                               `}
                             >
                               <div className="flex items-center gap-1 flex-wrap">
                                 <span className="font-medium">{opt.label}</span>
                                 {isAgenticVerifiedModel(opt.model) ? (
                                   <span
-                                    className="inline-flex items-center gap-0.5 text-[10px] px-1 py-0.5 rounded bg-emerald-500/15 text-emerald-300"
+                                    className="inline-flex items-center gap-0.5 text-[10px] px-1 py-0.5 rounded bg-emerald-500/15 text-badge-success"
                                     title={modelText.verifiedBadgeTitle}
                                   >
                                     <BadgeCheck className="h-3 w-3" />
                                   </span>
                                 ) : (
                                   <span
-                                    className="inline-flex items-center gap-0.5 text-[10px] px-1 py-0.5 rounded bg-amber-500/10 text-amber-300/90"
+                                    className="inline-flex items-center gap-0.5 text-[10px] px-1 py-0.5 rounded bg-amber-500/10 text-badge-warning/90"
                                     title={modelText.unverifiedHint}
                                   >
                                     {modelText.unverifiedShort}
@@ -1028,7 +1028,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
           <button
             type="button"
             onClick={handleClear}
-            className="w-full text-left px-3 py-1.5 text-xs text-gray-500 hover:text-gray-300 hover:bg-zinc-700"
+            className="w-full text-left px-3 py-1.5 text-xs text-gray-500 hover:text-zinc-300 hover:bg-zinc-700"
           >
             恢复主任务模型
           </button>
@@ -1054,7 +1054,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
         className={`
           cursor-pointer truncate max-w-[200px] text-xs
           hover:text-white transition-colors
-          ${isOverridden ? 'text-amber-400' : 'text-zinc-400'}
+          ${isOverridden ? 'text-badge-warning' : 'text-zinc-400'}
         `}
         title={triggerTitle}
       >

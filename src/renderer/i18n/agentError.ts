@@ -8,6 +8,12 @@ export const agentErrorZh = {
   agentError: {
     ariaLabel: '运行失败',
     categories: {
+      auth: {
+        // 401 只能证明「没通过授权」，区分不出是密钥不对还是额度耗尽（Codex 验证 2026-08-01）。
+        // 把两个互斥原因并列写成确定结论，用户会照着错的那个去排查。
+        title: '这个模型暂时用不了：账号没通过授权',
+        suggestion: '可能是密钥填错、过期，或这个账号已经没有额度了。换一个模型继续，或去设置里检查这个模型的账号配置。重试无效。',
+      },
       model_not_found: {
         title: '模型接口或模型名称不匹配',
         suggestion: '当前模型供应商返回 404/Not Found。请检查自定义模型的 Base URL、路径是否包含 /v1、模型 ID 是否正确；也可以先切换到其他模型后重试。',
@@ -38,14 +44,18 @@ export const agentErrorZh = {
       },
     },
     details: {
+      model: '实际使用',
+      provider: '服务商',
       code: '错误码',
       httpStatus: 'HTTP',
       traceId: 'Trace ID',
+      technical: '查看技术详情',
     },
     actions: {
       retry: '重试',
       retryRunning: '会话运行中，稍后再试',
       switchModel: '切换模型',
+      checkAccount: '检查账号设置',
       newSession: '新开会话',
       copyReport: '复制错误报告',
       copied: '错误报告已复制',
@@ -71,6 +81,10 @@ export const agentErrorEn: typeof agentErrorZh = {
   agentError: {
     ariaLabel: 'Run failed',
     categories: {
+      auth: {
+        title: 'This model is unavailable: the account was not authorized',
+        suggestion: 'The key may be wrong or expired, or the account may be out of quota. Switch to another model, or check this model account in Settings. Retrying will not help.',
+      },
       model_not_found: {
         title: 'Model endpoint or model name mismatch',
         suggestion: 'The model provider returned 404/Not Found. Check the custom model Base URL, whether the path includes /v1, and whether the model ID is correct — or switch to another model and retry.',
@@ -101,14 +115,18 @@ export const agentErrorEn: typeof agentErrorZh = {
       },
     },
     details: {
+      model: 'Ran on',
+      provider: 'Provider',
       code: 'Code',
       httpStatus: 'HTTP',
       traceId: 'Trace ID',
+      technical: 'Technical details',
     },
     actions: {
       retry: 'Retry',
       retryRunning: 'Session is running, try again later',
       switchModel: 'Switch model',
+      checkAccount: 'Check account settings',
       newSession: 'New session',
       copyReport: 'Copy error report',
       copied: 'Error report copied',

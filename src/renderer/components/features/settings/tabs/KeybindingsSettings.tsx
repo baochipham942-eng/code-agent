@@ -12,6 +12,7 @@ import {
   getCurrentKeybindingPlatform,
   getDefaultKeybinding,
   mergeKeybindingsWithDefaults,
+  normalizeAccelerator,
   type KeybindingActionId,
   type KeybindingCategory,
   type KeybindingDefinition,
@@ -20,6 +21,11 @@ import {
   type KeybindingsSettings as KeybindingsSettingsContract,
 } from '@shared/keybindings';
 import ipcService from '../../../../services/ipcService';
+import type { GlobalHotkeyRegistrationResult } from '../../../../services/nativeCommandFacade';
+import {
+  getGlobalHotkeyRegistrationResults,
+  GLOBAL_HOTKEY_REGISTRATION_CHANGED_EVENT,
+} from '../../../../services/globalHotkeyRegistration';
 import { createLogger } from '../../../../utils/logger';
 import { emitKeybindingsChanged } from '../../../../hooks/useKeybindingsSettings';
 import { useI18n } from '../../../../hooks/useI18n';
@@ -55,6 +61,14 @@ function getSystemReservedReason(
   return reasons[shortcut] ?? fallback;
 }
 
+function indexRegistrationResults(
+  results: readonly GlobalHotkeyRegistrationResult[],
+): Partial<Record<KeybindingActionId, GlobalHotkeyRegistrationResult>> {
+  const indexed: Partial<Record<KeybindingActionId, GlobalHotkeyRegistrationResult>> = {};
+  for (const result of results) indexed[result.actionId] = result;
+  return indexed;
+}
+
 export const KeybindingsSettings: React.FC = () => {
   const { t } = useI18n();
   const keybindingsText = t.settings.keybindings;
@@ -67,6 +81,20 @@ export const KeybindingsSettings: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isResetConfirmOpen, setIsResetConfirmOpen] = useState(false);
+  const [registrationResults, setRegistrationResults] = useState<
+    Partial<Record<KeybindingActionId, GlobalHotkeyRegistrationResult>>
+  >(() => indexRegistrationResults(getGlobalHotkeyRegistrationResults()));
+
+  useEffect(() => {
+    const handleRegistrationChange = (event: Event) => {
+      const results = (event as CustomEvent<GlobalHotkeyRegistrationResult[]>).detail;
+      setRegistrationResults(indexRegistrationResults(results ?? []));
+    };
+    window.addEventListener(GLOBAL_HOTKEY_REGISTRATION_CHANGED_EVENT, handleRegistrationChange);
+    return () => {
+      window.removeEventListener(GLOBAL_HOTKEY_REGISTRATION_CHANGED_EVENT, handleRegistrationChange);
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -216,12 +244,12 @@ export const KeybindingsSettings: React.FC = () => {
             onClick={() => updateGlobalHotkeysEnabled(mergedKeybindings.globalHotkeysEnabled === false)}
             className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm transition-colors ${
               mergedKeybindings.globalHotkeysEnabled !== false
-                ? 'border-primary-600/70 bg-primary-500/10 text-primary-100'
+                ? 'border-badge-accent/70 bg-primary-500/10 text-badge-accent'
                 : 'border-zinc-700 text-zinc-400 hover:border-zinc-600 hover:bg-zinc-800'
             }`}
           >
             {keybindingsText.globalHotkeys}
-            <span className={`h-2 w-2 rounded-full ${mergedKeybindings.globalHotkeysEnabled !== false ? 'bg-primary-300' : 'bg-zinc-600'}`} />
+            <span className={`h-2 w-2 rounded-full ${mergedKeybindings.globalHotkeysEnabled !== false ? 'bg-mark-accent' : 'bg-zinc-600'}`} />
           </button>
           <button
             type="button"
@@ -235,15 +263,15 @@ export const KeybindingsSettings: React.FC = () => {
       </div>
 
       {loadError && (
-        <div className="flex items-center gap-2 rounded-lg border border-amber-700/50 bg-amber-950/30 px-3 py-2 text-sm text-amber-200">
+        <div className="flex items-center gap-2 rounded-lg border border-badge-warning/50 bg-amber-950/30 px-3 py-2 text-sm text-badge-warning">
           <AlertTriangle className="h-4 w-4" />
           {loadError}
         </div>
       )}
 
       {conflicts.length > 0 && (
-        <div className="space-y-2 rounded-lg border border-amber-700/50 bg-amber-950/30 p-4">
-          <div className="flex items-center gap-2 text-sm font-medium text-amber-200">
+        <div className="space-y-2 rounded-lg border border-badge-warning/50 bg-amber-950/30 p-4">
+          <div className="flex items-center gap-2 text-sm font-medium text-badge-warning">
             <AlertTriangle className="h-4 w-4" />
             {keybindingsText.conflictTitle}
           </div>
@@ -252,7 +280,7 @@ export const KeybindingsSettings: React.FC = () => {
               .map((actionId, index) => keybindingsText.actions[actionId]?.label ?? conflict.labels[index] ?? actionId)
               .join(' / ');
             return (
-              <div key={`${conflict.scope}:${conflict.normalizedShortcut}`} className="text-xs text-amber-100/80">
+              <div key={`${conflict.scope}:${conflict.normalizedShortcut}`} className="text-xs text-badge-warning/80">
                 {keybindingsText.scopes[conflict.scope]} · {formatShortcutForDisplay(conflict.shortcut, platform)}：{conflictLabels}
               </div>
             );
@@ -261,13 +289,13 @@ export const KeybindingsSettings: React.FC = () => {
       )}
 
       {systemWarnings.length > 0 && (
-        <div className="space-y-2 rounded-lg border border-sky-700/40 bg-sky-950/20 p-4">
-          <div className="flex items-center gap-2 text-sm font-medium text-sky-200">
+        <div className="space-y-2 rounded-lg border border-badge-info/40 bg-sky-950/20 p-4">
+          <div className="flex items-center gap-2 text-sm font-medium text-badge-info">
             <AlertTriangle className="h-4 w-4" />
             {keybindingsText.systemWarningTitle}
           </div>
           {systemWarnings.map((warning) => (
-            <div key={`${warning.actionId}:${warning.normalizedShortcut}`} className="text-xs text-sky-100/80">
+            <div key={`${warning.actionId}:${warning.normalizedShortcut}`} className="text-xs text-badge-info/80">
               {keybindingsText.actions[warning.actionId].label} · {formatShortcutForDisplay(warning.shortcut, platform)}：
               {getSystemReservedReason(keybindingsText, platform, warning.normalizedShortcut, warning.reason)}
             </div>
@@ -302,6 +330,13 @@ export const KeybindingsSettings: React.FC = () => {
                 const hasConflict = conflictActionIds.has(definition.id);
                 const hasSystemWarning = systemWarningActionIds.has(definition.id);
                 const defaultBinding = getDefaultKeybinding(definition.id, platform);
+                const registrationResult = registrationResults[definition.id];
+                const registrationFailure = registrationResult
+                  && !registrationResult.registered
+                  && normalizeAccelerator(registrationResult.accelerator, platform)
+                    === normalizeAccelerator(binding.accelerator, platform)
+                  ? registrationResult
+                  : null;
                 const shortcutLabel = recordingActionId === definition.id
                   ? keybindingsText.recording
                   : formatShortcutForDisplay(binding.accelerator, platform);
@@ -319,17 +354,17 @@ export const KeybindingsSettings: React.FC = () => {
                           {keybindingsText.scopes[definition.scope]}
                         </span>
                         {definition.risk === 'destructive' && (
-                          <span className="rounded border border-red-900/70 px-1.5 py-0.5 text-[11px] text-red-300">
+                          <span className="rounded border border-red-900/70 px-1.5 py-0.5 text-[11px] text-badge-danger">
                             {keybindingsText.destructiveRisk}
                           </span>
                         )}
                         {hasConflict && (
-                          <span className="rounded border border-amber-700/60 px-1.5 py-0.5 text-[11px] text-amber-200">
+                          <span className="rounded border border-badge-warning/60 px-1.5 py-0.5 text-[11px] text-badge-warning">
                             {keybindingsText.conflictBadge}
                           </span>
                         )}
                         {hasSystemWarning && (
-                          <span className="rounded border border-sky-700/60 px-1.5 py-0.5 text-[11px] text-sky-200">
+                          <span className="rounded border border-badge-info/60 px-1.5 py-0.5 text-[11px] text-badge-info">
                             {keybindingsText.systemWarningBadge}
                           </span>
                         )}
@@ -338,6 +373,19 @@ export const KeybindingsSettings: React.FC = () => {
                       <p className="mt-1 text-[11px] text-zinc-600">
                         {keybindingsText.defaultPrefix}{formatShortcutForDisplay(defaultBinding?.accelerator, platform)}
                       </p>
+                      {registrationFailure && (
+                        <p
+                          role="alert"
+                          data-testid={`keybinding-registration-error-${definition.id}`}
+                          className="mt-1 flex items-start gap-1 text-[11px] text-badge-danger"
+                        >
+                          <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
+                          <span className="break-words">
+                            {keybindingsText.registrationFailedPrefix}
+                            {registrationFailure.error ?? keybindingsText.registrationFailedUnknown}
+                          </span>
+                        </p>
+                      )}
                     </div>
 
                     <button
@@ -346,7 +394,7 @@ export const KeybindingsSettings: React.FC = () => {
                       onClick={() => setRecordingActionId(definition.id)}
                       className={`h-10 rounded-lg border px-3 text-sm transition-colors ${
                         recordingActionId === definition.id
-                          ? 'border-primary-500 bg-primary-500/10 text-primary-200'
+                          ? 'border-badge-accent bg-primary-500/10 text-badge-accent'
                           : 'border-zinc-700 bg-zinc-900 text-zinc-200 hover:border-zinc-600 hover:bg-zinc-800'
                       } disabled:cursor-not-allowed disabled:opacity-40`}
                     >

@@ -11,6 +11,7 @@ import {
   normalizeJsonSchema,
   convertToolsToOpenAI,
   convertToolsToClaude,
+  ORPHANED_TOOL_CALL_PLACEHOLDER,
 } from '../../../src/host/model/providers/shared';
 import type { ModelMessage } from '../../../src/host/model/types';
 import type { ToolDefinition } from '../../../src/shared/contract';
@@ -86,6 +87,17 @@ function makeTool(name: string, desc: string, schema: any): ToolDefinition {
 // ============================================================================
 // convertToOpenAIMessages
 // ============================================================================
+
+describe('孤儿 tool_call 占位不得对模型撒谎', () => {
+  // 曾经写的是 `[context compacted]`，而压缩根本不会制造孤儿：compactionService 选边界时
+  // 会把边界挪到 tool_call 之前避免拆散配对，activeToolResultPrune 是替换 content 不删条目。
+  // 真实来源只有「轮次在工具返回前就结束了」（停止/断连/崩溃）。两者对模型含义相反：
+  // 「被压缩了」暗示工具执行过了，模型会当作已完成往下走；真相是它可能根本没跑完。
+  it('不声称是上下文压缩，并明确不许假设工具成功了', () => {
+    expect(ORPHANED_TOOL_CALL_PLACEHOLDER.toLowerCase()).not.toContain('compact');
+    expect(ORPHANED_TOOL_CALL_PLACEHOLDER.toLowerCase()).toContain('do not assume it succeeded');
+  });
+});
 
 describe('convertToOpenAIMessages', () => {
   it('converts text-only user message', () => {
@@ -220,7 +232,7 @@ describe('convertToOpenAIMessages', () => {
     const toolMessages = result.filter((m: any) => m.role === 'tool');
     expect(toolMessages).toHaveLength(1);
     expect(toolMessages[0].tool_call_id).toBe('orphan_1');
-    expect(toolMessages[0].content).toBe('[context compacted]');
+    expect(toolMessages[0].content).toBe(ORPHANED_TOOL_CALL_PLACEHOLDER);
 
     // Order: assistant → tool(placeholder) → user
     const roles = result.map((m: any) => m.role);
@@ -261,7 +273,7 @@ describe('convertToOpenAIMessages', () => {
     expect(result[1]).toEqual({
       role: 'tool',
       tool_call_id: 'expected_call',
-      content: '[context compacted]',
+      content: ORPHANED_TOOL_CALL_PLACEHOLDER,
     });
     expect(result[2].role).toBe('user');
     expect(result[2].content).toContain('filtered_out_call');
@@ -313,7 +325,7 @@ describe('convertToClaudeMessages', () => {
     expect(result[1].content[0]).toEqual({
       type: 'tool_result',
       tool_use_id: 'tu_1',
-      content: '[context compacted]',
+      content: ORPHANED_TOOL_CALL_PLACEHOLDER,
     });
   });
 

@@ -279,8 +279,8 @@ export const MermaidDiagram = memo(function MermaidDiagram({ code }: { code: str
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-2 bg-zinc-800 border-b border-zinc-700">
         <div className="flex items-center gap-2">
-          <Code2 className="w-3.5 h-3.5 text-pink-300" />
-          <span className="text-xs font-medium text-pink-300">Mermaid</span>
+          <Code2 className="w-3.5 h-3.5 text-badge-accent" />
+          <span className="text-xs font-medium text-badge-accent">Mermaid</span>
         </div>
         <div className="flex items-center gap-1">
           <button
@@ -317,8 +317,8 @@ export const MermaidDiagram = memo(function MermaidDiagram({ code }: { code: str
           >
             {copied ? (
               <>
-                <Check className="w-3.5 h-3.5 text-green-400" />
-                <span className="text-green-400">{tm.copied}</span>
+                <Check className="w-3.5 h-3.5 text-badge-success" />
+                <span className="text-badge-success">{tm.copied}</span>
               </>
             ) : (
               <>
@@ -354,7 +354,7 @@ export const MermaidDiagram = memo(function MermaidDiagram({ code }: { code: str
         <div className="border-t border-zinc-700 bg-zinc-800/80 px-3 py-2">
           <div className="flex items-center justify-between mb-1.5">
             <span className="text-xs text-zinc-300 truncate">
-              <span className="text-pink-300">✏ {tm.selectedLabel}</span>
+              <span className="text-badge-accent">✏ {tm.selectedLabel}</span>
               <span className="font-medium">「{selectedLabel}」</span>
             </span>
             <button
@@ -375,12 +375,12 @@ export const MermaidDiagram = memo(function MermaidDiagram({ code }: { code: str
                 if (e.key === 'Escape') clearSelection();
               }}
               placeholder={tm.editPlaceholder}
-              className="flex-1 min-w-0 rounded-lg bg-zinc-900 border border-zinc-700 px-2.5 py-1.5 text-xs text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-pink-400/60"
+              className="flex-1 min-w-0 rounded-lg bg-zinc-900 border border-zinc-700 px-2.5 py-1.5 text-xs text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-badge-accent/60"
             />
             <button
               onClick={() => void handleSendEdit()}
               disabled={!canAnnotate || !instruction.trim() || sending || isProcessing}
-              className="px-3 py-1.5 rounded-lg text-xs font-medium bg-pink-500/20 text-pink-300 hover:bg-pink-500/30 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              className="px-3 py-1.5 rounded-lg text-xs font-medium bg-pink-500/20 text-badge-accent hover:bg-pink-500/30 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             >
               {tm.send}
             </button>

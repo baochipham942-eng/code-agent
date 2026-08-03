@@ -12,6 +12,7 @@ vi.mock('@renderer/components/features/chat/TraceNodeRenderer', () => ({
 vi.mock('@renderer/components/features/chat/StreamingIndicator', () => ({
   StreamingIndicator: () => null,
   getRunningToolStartTime: () => null,
+  getRunningSubagentCount: () => 0,
 }));
 
 vi.mock('@renderer/components/features/chat/MessageBubble/TurnDiffSummary', () => ({

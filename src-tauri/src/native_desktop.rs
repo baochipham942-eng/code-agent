@@ -14,6 +14,8 @@ use std::{
     thread::{self, JoinHandle},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
+#[cfg(target_os = "macos")]
+use std::sync::OnceLock;
 use tauri::{AppHandle, Emitter, Manager};
 
 #[derive(Serialize)]
@@ -486,6 +488,12 @@ extern "C" {
 #[cfg(target_os = "macos")]
 static SCREEN_CAPTURE_REQUESTED: AtomicBool = AtomicBool::new(false);
 
+/// Dev 包第一次查不到自己的麦克风授权时，会再查一次生产 Bundle。
+/// 生产 Bundle 的结果在本次进程内稳定，缓存它可以消掉每次进入页面的第二次 sqlite3 spawn；
+/// 当前 Dev Bundle 的查询仍每次执行，避免从系统设置返回后看不到新授权。
+#[cfg(target_os = "macos")]
+static PRODUCTION_MICROPHONE_AUTH_VALUE_CACHE: OnceLock<Mutex<Option<Option<String>>>> = OnceLock::new();
+
 fn current_bundle_id() -> Option<String> {
     env::var("CODE_AGENT_BUNDLE_ID")
         .ok()
@@ -555,6 +563,22 @@ fn query_tcc_auth_value(service: &str, bundle_id: &str) -> Option<String> {
     }
     let value = String::from_utf8_lossy(&output.stdout).trim().to_string();
     if value.is_empty() { None } else { Some(value) }
+}
+
+#[cfg(target_os = "macos")]
+fn cached_production_microphone_auth_value() -> Option<String> {
+    let cache = PRODUCTION_MICROPHONE_AUTH_VALUE_CACHE.get_or_init(|| Mutex::new(None));
+    if let Ok(guard) = cache.lock() {
+        if let Some(value) = guard.as_ref() {
+            return value.clone();
+        }
+    }
+
+    let value = query_tcc_auth_value("kTCCServiceMicrophone", "com.linchen.code-agent");
+    if let Ok(mut guard) = cache.lock() {
+        *guard = Some(value.clone());
+    }
+    value
 }
 
 fn tcc_auth_value_to_permission_state(value: Option<&str>) -> &'static str {
@@ -694,7 +718,7 @@ fn probe_microphone_permission() -> NativePermissionStatus {
     let current_value = query_tcc_auth_value("kTCCServiceMicrophone", &bundle_id);
     let current_state = tcc_auth_value_to_permission_state(current_value.as_deref());
     if current_state == "unknown" && bundle_id != "com.linchen.code-agent" {
-        let production_value = query_tcc_auth_value("kTCCServiceMicrophone", "com.linchen.code-agent");
+        let production_value = cached_production_microphone_auth_value();
         if tcc_auth_value_to_permission_state(production_value.as_deref()) == "granted" {
             return permission_status(
                 "microphone",
@@ -1402,17 +1426,26 @@ fn cleanup_native_desktop_storage(
 // 非 macOS：依赖的 frontmost_app_triplet/browser_context 等全是 macos cfg 函数，
 // 返回 Err 走调用方既有降级（IPC 报不支持 / 采集循环跳过），与本文件截图函数同风格
 #[cfg(not(target_os = "macos"))]
-fn capture_frontmost_context_snapshot() -> Result<FrontmostContextSnapshot, String> {
+fn capture_frontmost_context_snapshot(
+    _include_document_path: bool,
+) -> Result<FrontmostContextSnapshot, String> {
     Err("Desktop activity capture is only implemented on macOS.".to_string())
 }
 
 #[cfg(target_os = "macos")]
-fn capture_frontmost_context_snapshot() -> Result<FrontmostContextSnapshot, String> {
+fn capture_frontmost_context_snapshot(
+    include_document_path: bool,
+) -> Result<FrontmostContextSnapshot, String> {
     let (app_name, bundle_id, window_title) = frontmost_app_triplet()?;
     // Now that we have a stable signing certificate, per-app Automation permissions persist.
-    // Browser URL/title and document path are safe to query.
+    // The panel only needs browser/window context; AXDocument is reserved for the collector,
+    // where its filename feeds local activity derivation and evidence.
     let (browser_url, browser_title) = browser_context(&app_name).unwrap_or((None, None));
-    let document_path = frontmost_document_path().unwrap_or(None);
+    let document_path = if include_document_path {
+        frontmost_document_path().unwrap_or(None)
+    } else {
+        None
+    };
     let session = session_snapshot(&app_name).unwrap_or_default();
     let power = power_snapshot().unwrap_or_default();
 
@@ -1775,7 +1808,7 @@ fn read_recent_events_from_sqlite(
 }
 
 #[tauri::command]
-pub fn desktop_get_capabilities() -> Result<NativeDesktopCapabilities, String> {
+pub async fn desktop_get_capabilities() -> Result<NativeDesktopCapabilities, String> {
     let platform = env::consts::OS.to_string();
     let is_macos = cfg!(target_os = "macos");
 
@@ -1792,7 +1825,7 @@ pub fn desktop_get_capabilities() -> Result<NativeDesktopCapabilities, String> {
 }
 
 #[tauri::command]
-pub fn desktop_get_permission_status() -> Result<NativePermissionSnapshot, String> {
+pub async fn desktop_get_permission_status() -> Result<NativePermissionSnapshot, String> {
     let permissions = vec![
         probe_microphone_permission(),
         probe_screen_capture_permission(),
@@ -1810,8 +1843,8 @@ pub fn desktop_get_permission_status() -> Result<NativePermissionSnapshot, Strin
 }
 
 #[tauri::command]
-pub fn desktop_get_frontmost_context() -> Result<FrontmostContextSnapshot, String> {
-    capture_frontmost_context_snapshot()
+pub async fn desktop_get_frontmost_context() -> Result<FrontmostContextSnapshot, String> {
+    capture_frontmost_context_snapshot(false)
 }
 
 #[tauri::command]
@@ -1829,7 +1862,7 @@ pub fn desktop_capture_screenshot(
 }
 
 #[tauri::command]
-pub fn desktop_get_collector_status(
+pub async fn desktop_get_collector_status(
     app: tauri::AppHandle,
     state: tauri::State<'_, NativeDesktopState>,
 ) -> Result<NativeDesktopCollectorStatus, String> {
@@ -1943,7 +1976,7 @@ pub fn desktop_start_collector(
                 }
             }
 
-            let snapshot = match capture_frontmost_context_snapshot() {
+            let snapshot = match capture_frontmost_context_snapshot(true) {
                 Ok(snapshot) => snapshot,
                 Err(error) => {
                     if let Ok(mut shared) = shared.lock() {
@@ -2109,7 +2142,7 @@ pub fn desktop_stop_collector(
 }
 
 #[tauri::command]
-pub fn desktop_list_recent_events(
+pub async fn desktop_list_recent_events(
     app: tauri::AppHandle,
     state: tauri::State<'_, NativeDesktopState>,
     limit: Option<usize>,

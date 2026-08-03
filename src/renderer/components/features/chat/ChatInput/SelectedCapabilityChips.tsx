@@ -63,7 +63,7 @@ export function SelectedCapabilityChips() {
             }`}
           >
             {/* 类型图标（WorkBuddy 式）：skill 一眼可辨，不用名字首字母猜类型 */}
-            <Sparkles className="h-3.5 w-3.5 shrink-0 text-emerald-400" aria-hidden />
+            <Sparkles className="h-3.5 w-3.5 shrink-0 text-badge-success" aria-hidden />
             <span className="truncate">{capability.label}</span>
             <button
               type="button"

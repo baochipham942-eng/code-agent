@@ -163,11 +163,11 @@ const ChannelSummaryTile: React.FC<{
 }> = ({ label, value, tone = 'default' }) => {
   const toneClass =
     tone === 'success'
-      ? 'text-emerald-300'
+      ? 'text-badge-success'
       : tone === 'warning'
-        ? 'text-amber-300'
+        ? 'text-badge-warning'
         : tone === 'danger'
-          ? 'text-red-300'
+          ? 'text-badge-danger'
           : 'text-zinc-200';
 
   return (
@@ -302,7 +302,7 @@ export const ChannelModal: React.FC<ChannelModalProps> = ({
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="w-full px-3 py-2 bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-200 text-sm focus:outline-hidden focus:border-indigo-500"
+              className="w-full px-3 py-2 bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-200 text-sm focus:outline-hidden focus:border-badge-accent"
               placeholder={channelText.modal.namePlaceholder}
               required
             />
@@ -315,7 +315,7 @@ export const ChannelModal: React.FC<ChannelModalProps> = ({
               <select
                 value={type}
                 onChange={(e) => setType(e.target.value as ChannelType)}
-                className="w-full px-3 py-2 bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-200 text-sm focus:outline-hidden focus:border-indigo-500"
+                className="w-full px-3 py-2 bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-200 text-sm focus:outline-hidden focus:border-badge-accent"
               >
                 {channelTypes.map((ct) => (
                   <option key={ct.type} value={ct.type}>
@@ -331,7 +331,7 @@ export const ChannelModal: React.FC<ChannelModalProps> = ({
             <select
               value={privacyMode}
               onChange={(e) => setPrivacyMode(e.target.value as ChannelPrivacyMode)}
-              className="w-full px-3 py-2 bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-200 text-sm focus:outline-hidden focus:border-indigo-500"
+              className="w-full px-3 py-2 bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-200 text-sm focus:outline-hidden focus:border-badge-accent"
             >
               {privacyModeOptions.map((option) => (
                 <option key={option.value} value={option.value}>
@@ -353,7 +353,7 @@ export const ChannelModal: React.FC<ChannelModalProps> = ({
                   type="number"
                   value={apiPort}
                   onChange={(e) => setApiPort(e.target.value)}
-                  className="w-full px-3 py-2 bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-200 text-sm focus:outline-hidden focus:border-indigo-500"
+                  className="w-full px-3 py-2 bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-200 text-sm focus:outline-hidden focus:border-badge-accent"
                   placeholder="8080"
                   min={1}
                   max={65535}
@@ -374,7 +374,7 @@ export const ChannelModal: React.FC<ChannelModalProps> = ({
                   type={showSecrets ? 'text' : 'password'}
                   value={apiKey}
                   onChange={(e) => setApiKey(e.target.value)}
-                  className="w-full px-3 py-2 bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-200 text-sm focus:outline-hidden focus:border-indigo-500"
+                  className="w-full px-3 py-2 bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-200 text-sm focus:outline-hidden focus:border-badge-accent"
                   placeholder={channelText.modal.apiKeyPlaceholder}
                 />
               </div>
@@ -402,7 +402,7 @@ export const ChannelModal: React.FC<ChannelModalProps> = ({
                   type="text"
                   value={appId}
                   onChange={(e) => setAppId(e.target.value)}
-                  className="w-full px-3 py-2 bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-200 text-sm focus:outline-hidden focus:border-indigo-500"
+                  className="w-full px-3 py-2 bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-200 text-sm focus:outline-hidden focus:border-badge-accent"
                   placeholder="cli_xxxxxxxxxx"
                   required
                 />
@@ -422,7 +422,7 @@ export const ChannelModal: React.FC<ChannelModalProps> = ({
                   type={showSecrets ? 'text' : 'password'}
                   value={appSecret}
                   onChange={(e) => setAppSecret(e.target.value)}
-                  className="w-full px-3 py-2 bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-200 text-sm focus:outline-hidden focus:border-indigo-500"
+                  className="w-full px-3 py-2 bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-200 text-sm focus:outline-hidden focus:border-badge-accent"
                   required
                 />
               </div>
@@ -432,7 +432,7 @@ export const ChannelModal: React.FC<ChannelModalProps> = ({
                   type={showSecrets ? 'text' : 'password'}
                   value={encryptKey}
                   onChange={(e) => setEncryptKey(e.target.value)}
-                  className="w-full px-3 py-2 bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-200 text-sm focus:outline-hidden focus:border-indigo-500"
+                  className="w-full px-3 py-2 bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-200 text-sm focus:outline-hidden focus:border-badge-accent"
                 />
               </div>
               <div>
@@ -441,7 +441,7 @@ export const ChannelModal: React.FC<ChannelModalProps> = ({
                   type={showSecrets ? 'text' : 'password'}
                   value={verificationToken}
                   onChange={(e) => setVerificationToken(e.target.value)}
-                  className="w-full px-3 py-2 bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-200 text-sm focus:outline-hidden focus:border-indigo-500"
+                  className="w-full px-3 py-2 bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-200 text-sm focus:outline-hidden focus:border-badge-accent"
                 />
               </div>
               <div>
@@ -450,7 +450,7 @@ export const ChannelModal: React.FC<ChannelModalProps> = ({
                   type="number"
                   value={webhookPort}
                   onChange={(e) => setWebhookPort(e.target.value)}
-                  className="w-full px-3 py-2 bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-200 text-sm focus:outline-hidden focus:border-indigo-500"
+                  className="w-full px-3 py-2 bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-200 text-sm focus:outline-hidden focus:border-badge-accent"
                   placeholder="3200"
                   min={1}
                   max={65535}
@@ -461,8 +461,8 @@ export const ChannelModal: React.FC<ChannelModalProps> = ({
                   <strong className="text-zinc-400">{channelText.modal.configTipsTitle}</strong>
                 </p>
                 <ol className="text-xs text-zinc-500 mt-1 space-y-1 list-decimal list-inside">
-                  <li>{channelText.modal.larkLocalWebhookPrefix}<code className="text-indigo-400">http://localhost:{webhookPort}/webhook/feishu</code></li>
-                  <li>{channelText.modal.ngrokPrefix}<code className="text-indigo-400">ngrok http {webhookPort}</code></li>
+                  <li>{channelText.modal.larkLocalWebhookPrefix}<code className="text-badge-accent">http://localhost:{webhookPort}/webhook/feishu</code></li>
+                  <li>{channelText.modal.ngrokPrefix}<code className="text-badge-accent">ngrok http {webhookPort}</code></li>
                   <li>
                     {channelText.modal.callbackUrlPrefix}
                     {type === 'lark' ? channelText.modal.larkCallbackPlatform : channelText.modal.feishuCallbackPlatform}
@@ -491,7 +491,7 @@ export const ChannelModal: React.FC<ChannelModalProps> = ({
                   type={showSecrets ? 'text' : 'password'}
                   value={botToken}
                   onChange={(e) => setBotToken(e.target.value)}
-                  className="w-full px-3 py-2 bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-200 text-sm focus:outline-hidden focus:border-indigo-500"
+                  className="w-full px-3 py-2 bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-200 text-sm focus:outline-hidden focus:border-badge-accent"
                   placeholder={channelText.modal.botTokenPlaceholder}
                   required
                 />
@@ -502,7 +502,7 @@ export const ChannelModal: React.FC<ChannelModalProps> = ({
                   type="text"
                   value={tgProxyUrl}
                   onChange={(e) => setTgProxyUrl(e.target.value)}
-                  className="w-full px-3 py-2 bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-200 text-sm focus:outline-hidden focus:border-indigo-500"
+                  className="w-full px-3 py-2 bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-200 text-sm focus:outline-hidden focus:border-badge-accent"
                   placeholder={channelText.modal.proxyUrlPlaceholder}
                 />
               </div>
@@ -512,7 +512,7 @@ export const ChannelModal: React.FC<ChannelModalProps> = ({
                   type="text"
                   value={tgFallbackProxy}
                   onChange={(e) => setTgFallbackProxy(e.target.value)}
-                  className="w-full px-3 py-2 bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-200 text-sm focus:outline-hidden focus:border-indigo-500"
+                  className="w-full px-3 py-2 bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-200 text-sm focus:outline-hidden focus:border-badge-accent"
                   placeholder={channelText.modal.fallbackProxyUrlPlaceholder}
                 />
               </div>
@@ -522,7 +522,7 @@ export const ChannelModal: React.FC<ChannelModalProps> = ({
                   type="text"
                   value={tgAllowedUserIds}
                   onChange={(e) => setTgAllowedUserIds(e.target.value)}
-                  className="w-full px-3 py-2 bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-200 text-sm focus:outline-hidden focus:border-indigo-500"
+                  className="w-full px-3 py-2 bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-200 text-sm focus:outline-hidden focus:border-badge-accent"
                   placeholder={channelText.modal.allowedUserIdsPlaceholder}
                 />
               </div>
@@ -531,8 +531,8 @@ export const ChannelModal: React.FC<ChannelModalProps> = ({
                   <strong className="text-zinc-400">{channelText.modal.configTipsTitle}</strong>
                 </p>
                 <ol className="text-xs text-zinc-500 mt-1 space-y-1 list-decimal list-inside">
-                  <li>{channelText.modal.telegramTipSearchPrefix}<code className="text-indigo-400">@BotFather</code>{channelText.modal.telegramTipSearchSuffix}</li>
-                  <li>{channelText.modal.telegramTipNewBotPrefix}<code className="text-indigo-400">/newbot</code>{channelText.modal.telegramTipNewBotSuffix}</li>
+                  <li>{channelText.modal.telegramTipSearchPrefix}<code className="text-badge-accent">@BotFather</code>{channelText.modal.telegramTipSearchSuffix}</li>
+                  <li>{channelText.modal.telegramTipNewBotPrefix}<code className="text-badge-accent">/newbot</code>{channelText.modal.telegramTipNewBotSuffix}</li>
                   <li>{channelText.modal.telegramTipProxy}</li>
                   <li>{channelText.modal.telegramTipLongPolling}</li>
                 </ol>
@@ -686,11 +686,11 @@ export const ChannelsSettings: React.FC = () => {
   const getStatusColor = (status: ChannelAccount['status']): string => {
     switch (status) {
       case 'connected':
-        return 'text-green-400';
+        return 'text-badge-success';
       case 'connecting':
-        return 'text-yellow-400';
+        return 'text-badge-warning';
       case 'error':
-        return 'text-red-400';
+        return 'text-badge-danger';
       default:
         return 'text-zinc-400';
     }
@@ -712,13 +712,13 @@ export const ChannelsSettings: React.FC = () => {
   const getTypeIcon = (type: ChannelType) => {
     switch (type) {
       case 'http-api':
-        return <Globe className="w-4 h-4 text-indigo-400" />;
+        return <Globe className="w-4 h-4 text-badge-accent" />;
       case 'feishu':
-        return <MessageSquare className="w-4 h-4 text-blue-400" />;
+        return <MessageSquare className="w-4 h-4 text-badge-info" />;
       case 'lark':
-        return <MessageSquare className="w-4 h-4 text-emerald-400" />;
+        return <MessageSquare className="w-4 h-4 text-badge-success" />;
       case 'telegram':
-        return <MessageSquare className="w-4 h-4 text-sky-400" />;
+        return <MessageSquare className="w-4 h-4 text-badge-info" />;
       default:
         return <MessageSquare className="w-4 h-4 text-zinc-400" />;
     }
@@ -867,7 +867,7 @@ export const ChannelsSettings: React.FC = () => {
                         {getStatusText(account.status)}
                       </div>
                       {account.errorMessage && (
-                        <div className="mt-1 truncate text-xs text-red-400" title={account.errorMessage}>
+                        <div className="mt-1 truncate text-xs text-badge-danger" title={account.errorMessage}>
                           {account.errorMessage}
                         </div>
                       )}
@@ -889,7 +889,7 @@ export const ChannelsSettings: React.FC = () => {
                                 setMessage({ type: 'success', text: channelText.toast.apiKeyCopied });
                               }
                             }}
-                            className="shrink-0 text-indigo-400 transition-colors hover:text-indigo-300"
+                            className="shrink-0 text-badge-accent transition-colors hover:text-badge-accent"
                             title={channelText.actions.copyApiKey}
                           >
                             {channelText.actions.copy}
@@ -929,7 +929,7 @@ export const ChannelsSettings: React.FC = () => {
                         variant="ghost"
                         disabled={isWebMode()}
                         onClick={() => handleDelete(account.id)}
-                        leftIcon={<Trash2 className="w-3 h-3 text-red-400" />}
+                        leftIcon={<Trash2 className="w-3 h-3 text-badge-danger" />}
                       >
                         {channelText.actions.delete}
                       </Button>
@@ -946,7 +946,7 @@ export const ChannelsSettings: React.FC = () => {
       {message && (
         <div
           className={`flex items-center gap-2 p-3 rounded-lg ${
-            message.type === 'success' ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'
+            message.type === 'success' ? 'bg-green-500/10 text-badge-success' : 'bg-red-500/10 text-badge-danger'
           }`}
         >
           {message.type === 'success' ? (

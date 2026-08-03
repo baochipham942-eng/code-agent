@@ -2,26 +2,53 @@
 // 只持一个待审批提议（同一时刻 agent 阻塞等一个）；不挂 persist（运行时态）。
 import { create } from 'zustand';
 import type { CanvasOpProposal } from '../../../shared/contract/canvasProposal';
+import type { CanvasApprovalReason } from './canvasProposalApproval';
+
+/** 只在本文件内用（store 状态与 setPending 入参），不导出——导出即 knip 死出口。 */
+interface PreAppliedCanvasProposal {
+  requestId: string;
+  appliedCount: number;
+  skippedCount: number;
+  costCny?: number;
+}
 
 interface CanvasProposalState {
   pending: CanvasOpProposal | null;
+  /**
+   * 本 store 收到当前 pending 提议的本地时间戳（Date.now()）。
+   * 协议零改动（CanvasOpProposal 不加字段）：陈旧判据「userTouchedAt > receivedAt」以此为基准。
+   */
+  receivedAt: number | null;
+  preApplied: PreAppliedCanvasProposal | null;
+  approvalReason: CanvasApprovalReason;
   /**
    * 正在落地（含 Phase B 出图）的提议 requestId；null=空闲（R3 HIGH-1）。
    * 全局单例锁（store 级，跨组件重挂存活），在 apply/reject/cancel/clear 每个边界按 requestId 校验，
    * 防：重复点击 Apply 双付费、在途时 CANCEL 撤 UI、并发提议互相误清。
    */
   applyingRequestId: string | null;
-  setPending: (proposal: CanvasOpProposal) => void;
+  setPending: (
+    proposal: CanvasOpProposal,
+    context?: { preApplied?: PreAppliedCanvasProposal; approvalReason?: CanvasApprovalReason },
+  ) => void;
   setApplying: (requestId: string | null) => void;
   clear: () => void;
 }
 
 export const useCanvasProposalStore = create<CanvasProposalState>((set) => ({
   pending: null,
+  receivedAt: null,
+  preApplied: null,
+  approvalReason: 'standard',
   applyingRequestId: null,
-  setPending: (proposal) => set({ pending: proposal }),
+  setPending: (proposal, context) => set({
+    pending: proposal,
+    receivedAt: Date.now(),
+    preApplied: context?.preApplied ?? null,
+    approvalReason: context?.approvalReason ?? 'standard',
+  }),
   setApplying: (requestId) => set({ applyingRequestId: requestId }),
-  clear: () => set({ pending: null }),
+  clear: () => set({ pending: null, receivedAt: null, preApplied: null, approvalReason: 'standard' }),
 }));
 
 // E2E/dev 调试钩子：真机测试用 setPending 模拟收到 agent 提议（同 window.__neo* 例）。

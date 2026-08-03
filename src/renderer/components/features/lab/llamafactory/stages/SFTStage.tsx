@@ -204,14 +204,14 @@ export const SFTStage: React.FC<SFTStageProps> = ({ onComplete, onBack }) => {
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-6">
       {/* Introduction */}
-      <div className="bg-gradient-to-r from-orange-500/10 to-amber-500/10 rounded-lg border border-orange-500/20 p-4">
+      <div className="bg-gradient-to-r from-orange-500/10 to-amber-500/10 rounded-lg border border-badge-warning/20 p-4">
         <div className="flex items-start gap-3">
-          <GraduationCap className="w-5 h-5 text-orange-400 mt-0.5" />
+          <GraduationCap className="w-5 h-5 text-badge-warning mt-0.5" />
           <div>
             <h3 className="text-sm font-medium text-zinc-200 mb-2">{s.introTitle}</h3>
             <p className="text-sm text-zinc-400">
               {s.introDescPart1}
-              <span className="text-orange-400">{s.introDescHighlight}</span>{s.introDescEnd}
+              <span className="text-badge-warning">{s.introDescHighlight}</span>{s.introDescEnd}
             </p>
           </div>
         </div>
@@ -220,7 +220,7 @@ export const SFTStage: React.FC<SFTStageProps> = ({ onComplete, onBack }) => {
       {/* Data Format */}
       <div className="space-y-3">
         <h3 className="text-sm font-medium text-zinc-400 flex items-center gap-2">
-          <Database className="w-4 h-4 text-orange-400" />
+          <Database className="w-4 h-4 text-badge-warning" />
           {s.dataFormatSectionTitle}
         </h3>
         <div className="bg-zinc-900 rounded-lg border border-zinc-700 p-4">
@@ -232,7 +232,7 @@ export const SFTStage: React.FC<SFTStageProps> = ({ onComplete, onBack }) => {
                 className={`
                   px-4 py-2 rounded-lg text-sm transition-all
                   ${selectedFormat === idx
-                    ? 'bg-orange-500/20 text-orange-400 border border-orange-500/30'
+                    ? 'bg-orange-500/20 text-badge-warning border border-badge-warning/30'
                     : 'bg-zinc-800 text-zinc-500 border border-zinc-800 hover:border-zinc-600'
                   }
                 `}
@@ -256,9 +256,9 @@ export const SFTStage: React.FC<SFTStageProps> = ({ onComplete, onBack }) => {
                   <li key={check.name} className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       {check.status === 'pass' ? (
-                        <CheckCircle className="w-4 h-4 text-emerald-400" />
+                        <CheckCircle className="w-4 h-4 text-badge-success" />
                       ) : (
-                        <AlertTriangle className="w-4 h-4 text-amber-400" />
+                        <AlertTriangle className="w-4 h-4 text-badge-warning" />
                       )}
                       <span className="text-sm text-zinc-400">{check.name}</span>
                     </div>
@@ -269,8 +269,8 @@ export const SFTStage: React.FC<SFTStageProps> = ({ onComplete, onBack }) => {
             </div>
           </div>
 
-          <div className="mt-4 p-3 rounded-lg bg-blue-500/10 border border-blue-500/20">
-            <div className="text-xs text-blue-400">
+          <div className="mt-4 p-3 rounded-lg bg-blue-500/10 border border-badge-info/20">
+            <div className="text-xs text-badge-info">
               💡 <strong>{s.dataQualityAdviceLabel}</strong>{s.dataQualityAdviceText}
             </div>
           </div>
@@ -288,12 +288,12 @@ export const SFTStage: React.FC<SFTStageProps> = ({ onComplete, onBack }) => {
                   <span className="text-sm font-medium text-zinc-400">{param.name}</span>
                   <span className="text-xs text-zinc-500 ml-2">{param.zh}</span>
                 </div>
-                <span className="text-sm text-orange-400 font-mono">{param.default}</span>
+                <span className="text-sm text-badge-warning font-mono">{param.default}</span>
               </div>
               <p className="text-xs text-zinc-500 mb-2">{param.description}</p>
               <div className="flex items-center justify-between text-xs">
                 <span className="text-zinc-600">{s.rangeLabel}{param.range}</span>
-                <span className="text-amber-400">💡 {param.tip}</span>
+                <span className="text-badge-warning">💡 {param.tip}</span>
               </div>
             </div>
           ))}
@@ -313,7 +313,7 @@ export const SFTStage: React.FC<SFTStageProps> = ({ onComplete, onBack }) => {
               className={`
                 px-3 py-1.5 rounded-lg text-xs transition-all
                 ${scenario === 'overfit'
-                  ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                  ? 'bg-amber-500/20 text-badge-warning border border-badge-warning/30'
                   : 'bg-zinc-800 text-zinc-500 border border-zinc-800'
                 }
               `}
@@ -331,8 +331,8 @@ export const SFTStage: React.FC<SFTStageProps> = ({ onComplete, onBack }) => {
               className={`
                 flex items-center gap-2 px-4 py-2 rounded-lg text-sm transition-all
                 ${isTraining
-                  ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-                  : 'bg-orange-500/20 text-orange-400 border border-orange-500/30'
+                  ? 'bg-amber-500/20 text-badge-warning border border-badge-warning/30'
+                  : 'bg-orange-500/20 text-badge-warning border border-badge-warning/30'
                 }
               `}
             >
@@ -355,23 +355,23 @@ export const SFTStage: React.FC<SFTStageProps> = ({ onComplete, onBack }) => {
           <div className="grid grid-cols-4 gap-4 mb-4">
             <div className="text-center">
               <div className="text-xs text-zinc-500 mb-1">{s.trainingProgressLabel}</div>
-              <div className="text-xl font-bold text-orange-400">{trainingProgress}%</div>
+              <div className="text-xl font-bold text-badge-warning">{trainingProgress}%</div>
             </div>
             <div className="text-center">
               <div className="text-xs text-zinc-500 mb-1">{s.currentLossLabel}</div>
-              <div className={`text-xl font-bold ${scenario === 'overfit' && trainingProgress > 30 ? 'text-amber-400' : 'text-emerald-400'}`}>
+              <div className={`text-xl font-bold ${scenario === 'overfit' && trainingProgress > 30 ? 'text-badge-warning' : 'text-badge-success'}`}>
                 {lossHistory[lossHistory.length - 1]?.toFixed(3) || '2.500'}
               </div>
             </div>
             <div className="text-center">
               <div className="text-xs text-zinc-500 mb-1">{s.learningRateLabel}</div>
-              <div className="text-xl font-bold text-blue-400">2e-5</div>
+              <div className="text-xl font-bold text-badge-info">2e-5</div>
             </div>
             <div className="text-center">
               <div className="text-xs text-zinc-500 mb-1">{s.statusLabel}</div>
               <div className={`text-lg font-medium ${
-                isTraining ? 'text-amber-400' :
-                trainingProgress >= 100 ? 'text-emerald-400' : 'text-zinc-400'
+                isTraining ? 'text-badge-warning' :
+                trainingProgress >= 100 ? 'text-badge-success' : 'text-zinc-400'
               }`}>
                 {isTraining ? s.statusTraining : trainingProgress >= 100 ? s.statusDone : s.statusReady}
               </div>
@@ -382,7 +382,7 @@ export const SFTStage: React.FC<SFTStageProps> = ({ onComplete, onBack }) => {
           <div className="p-3 rounded-lg bg-zinc-950">
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs text-zinc-500">{s.lossCurveLabel}</span>
-              <span className={`text-xs ${scenario === 'overfit' ? 'text-amber-400' : 'text-emerald-400'}`}>
+              <span className={`text-xs ${scenario === 'overfit' ? 'text-badge-warning' : 'text-badge-success'}`}>
                 {scenario === 'overfit' ? s.overfitDetected : s.normalConverging}
               </span>
             </div>
@@ -400,11 +400,11 @@ export const SFTStage: React.FC<SFTStageProps> = ({ onComplete, onBack }) => {
 
           {/* Overfit Warning */}
           {scenario === 'overfit' && trainingProgress > 30 && (
-            <div className="mt-4 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
+            <div className="mt-4 p-3 rounded-lg bg-amber-500/10 border border-badge-warning/20">
               <div className="flex items-start gap-2">
-                <AlertTriangle className="w-4 h-4 text-amber-400 mt-0.5" />
+                <AlertTriangle className="w-4 h-4 text-badge-warning mt-0.5" />
                 <div>
-                  <div className="text-sm font-medium text-amber-400">{s.overfitWarningTitle}</div>
+                  <div className="text-sm font-medium text-badge-warning">{s.overfitWarningTitle}</div>
                   <p className="text-xs text-zinc-400 mt-1">
                     {s.overfitWarningDetail}
                   </p>
@@ -416,12 +416,12 @@ export const SFTStage: React.FC<SFTStageProps> = ({ onComplete, onBack }) => {
       </div>
 
       {/* Key Takeaways */}
-      <div className="bg-orange-500/5 rounded-lg border border-orange-500/20 p-4">
-        <h4 className="text-sm font-medium text-orange-400 mb-2">{s.takeawaysTitle}</h4>
+      <div className="bg-orange-500/5 rounded-lg border border-badge-warning/20 p-4">
+        <h4 className="text-sm font-medium text-badge-warning mb-2">{s.takeawaysTitle}</h4>
         <ul className="space-y-2 text-sm text-zinc-400">
           {s.takeaways.map((item) => (
             <li key={item.label} className="flex items-start gap-2">
-              <span className="text-orange-400">•</span>
+              <span className="text-badge-warning">•</span>
               <span><strong className="text-zinc-400">{item.label}</strong>：{item.text}</span>
             </li>
           ))}
@@ -431,14 +431,14 @@ export const SFTStage: React.FC<SFTStageProps> = ({ onComplete, onBack }) => {
       {/* 专有名词 */}
       <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-700">
         <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
-          <span className="text-blue-400">📖</span>
+          <span className="text-badge-info">📖</span>
           {s.glossaryTitle}
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           {s.glossary.map((term) => (
             <div key={term.en} className="p-3 rounded-lg bg-zinc-800">
               <div className="flex items-center gap-2 mb-1">
-                <span className="text-sm font-bold text-emerald-400">{term.en}</span>
+                <span className="text-sm font-bold text-badge-success">{term.en}</span>
                 <span className="text-xs text-zinc-500">|</span>
                 <span className="text-sm text-zinc-400">{term.zh}</span>
               </div>
@@ -459,7 +459,7 @@ export const SFTStage: React.FC<SFTStageProps> = ({ onComplete, onBack }) => {
         </button>
         <button
           onClick={onComplete}
-          className="flex items-center gap-2 px-5 py-2.5 bg-orange-500/20 text-orange-400 rounded-lg hover:bg-orange-500/30 border border-orange-500/30 transition-all font-medium"
+          className="flex items-center gap-2 px-5 py-2.5 bg-orange-500/20 text-badge-warning rounded-lg hover:bg-orange-500/30 border border-badge-warning/30 transition-all font-medium"
         >
           {s.nextButton}
           <ChevronRight className="w-4 h-4" />

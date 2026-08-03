@@ -74,22 +74,22 @@ function getStatusColors(percentage: number): {
     return {
       stroke: 'stroke-red-500',
       bg: 'stroke-red-500/20',
-      text: 'text-red-400',
+      text: 'text-badge-danger',
       glow: 'drop-shadow-[0_0_4px_rgba(239,68,68,0.5)]',
     };
   }
   if (percentage >= THRESHOLDS.warning) {
     return {
-      stroke: 'stroke-amber-500',
-      bg: 'stroke-amber-500/20',
-      text: 'text-amber-400',
+      stroke: 'stroke-badge-warning',
+      bg: 'stroke-badge-warning/20',
+      text: 'text-badge-warning',
       glow: 'drop-shadow-[0_0_4px_rgba(245,158,11,0.4)]',
     };
   }
   return {
-    stroke: 'stroke-primary-500',
-    bg: 'stroke-primary-500/20',
-    text: 'text-primary-400',
+    stroke: 'stroke-badge-accent',
+    bg: 'stroke-badge-accent/20',
+    text: 'text-badge-accent',
     glow: '',
   };
 }

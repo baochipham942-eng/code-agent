@@ -13,6 +13,7 @@ import type {
   SurfaceObservationV1,
   SurfaceTargetRefV1,
 } from '../../../shared/contract/surfaceExecution';
+import { SURFACE_USER_BROWSER_AGENT_ID } from '../../../shared/contract/surfaceExecution';
 import {
   getSurfaceExecutionRuntime,
   type SurfaceExecutionRuntime,
@@ -140,6 +141,17 @@ export class ManagedBrowserProviderAdapter {
     return binding ? { ...binding, identity: { ...binding.identity }, target: { ...binding.target } } : null;
   }
 
+  /**
+   * 按 surface 会话 id 反查绑定（B1-R·R1 实时画面流用）。调用方拿到的是同一个
+   * BrowserService 引用（要用它的活 page 开 CDP screencast），不是拷贝。
+   */
+  findBindingBySurfaceSessionId(surfaceSessionId: string): Readonly<ManagedBrowserBinding> | null {
+    for (const binding of this.bindings.values()) {
+      if (binding.surfaceSessionId === surfaceSessionId) return binding;
+    }
+    return null;
+  }
+
   async execute(input: ManagedBrowserActionInput): Promise<ToolExecutionResult> {
     try {
       const binding = await this.ensureBinding(input.identity);
@@ -176,6 +188,17 @@ export class ManagedBrowserProviderAdapter {
           observation: observation.observation,
           events: observation.events,
           session: observation.session,
+        });
+      }
+
+      // 观测默认 30s TTL，而一扇窗的 binding 跟着整个 conversation 长活。对**不依赖上一帧
+      // 元素引用**的变更（navigate / new_tab 这类：目标是 URL，不是某个 refId），观测过期
+      // 不该让这次动作失败——用户看完一个页面过一分钟再点下一个链接是常态。真机实测：
+      // 成功点击后静置 45s 再点必失败，且失败对用户完全隐形（渲染层只 logger.error）。
+      // 带 targetRef 的动作不走这条路：那种场景下「观测过期」正是这道闸该拦的东西。
+      if (!input.params.targetRef && !this.isPredecessorFresh(binding)) {
+        await this.captureObservation(binding, {
+          userSummary: `Refreshed a stale managed browser observation before ${input.action}`,
         });
       }
 
@@ -240,8 +263,23 @@ export class ManagedBrowserProviderAdapter {
       return existing;
     }
 
-    const serviceKey = managedBrowserServiceKey(identity);
-    const browserService = this.acquireBrowser(serviceKey);
+    // A user click and an agent run in the same conversation share ONE physical window,
+    // so the agent can keep working on the page the user just opened without weakening
+    // Surface ownership (each side keeps its own Surface session and RunHandle).
+    // Sharing is deliberately limited to pairs involving the user run: two agent runs in
+    // one conversation stay isolated exactly as before, because the rail only ever shows
+    // one of them and silent cross-navigation is worse than an unseen second window.
+    const isUserRun = (owner: SurfaceRuntimeIdentityV1) => (
+      owner.agentId === SURFACE_USER_BROWSER_AGENT_ID
+    );
+    const shared = Array.from(this.bindings.values()).find((binding) => (
+      binding.identity.conversationId === identity.conversationId
+      && (isUserRun(identity) || isUserRun(binding.identity))
+      && binding.browserService.isRunning()
+      && Boolean(binding.browserService.getActiveTab())
+    ));
+    const serviceKey = shared?.serviceKey || managedBrowserServiceKey(identity);
+    const browserService = shared?.browserService || this.acquireBrowser(serviceKey);
     await browserService.ensureSession('about:blank', {
       profileMode: 'isolated',
       leaseOwner: `surface:${identity.runId}`,
@@ -276,16 +314,32 @@ export class ManagedBrowserProviderAdapter {
         userSummary: 'Prepared an isolated managed Browser Surface session',
       });
       this.runtime.registerCleanup(prepared.subject, async () => {
-        this.bindings.delete(key);
-        await this.releaseBrowser(serviceKey);
+        await this.releaseBinding(key, binding);
       });
       binding.predecessorStateId = observed.observation.stateId;
       return binding;
     } catch (error) {
-      this.bindings.delete(key);
-      await this.releaseBrowser(serviceKey).catch(() => undefined);
+      await this.releaseBinding(key, binding).catch(() => undefined);
       throw error;
     }
+  }
+
+  private isPredecessorFresh(binding: ManagedBrowserBinding): boolean {
+    const observation = this.runtime.observations.getOwned(
+      binding.predecessorStateId,
+      this.subject(binding),
+    );
+    if (!observation) return false;
+    return observation.lifecycle === 'fresh' && observation.expiresAt > Date.now();
+  }
+
+  private async releaseBinding(key: string, binding: ManagedBrowserBinding): Promise<void> {
+    if (this.bindings.get(key) === binding) this.bindings.delete(key);
+    const stillShared = Array.from(this.bindings.values()).some((candidate) => (
+      candidate.serviceKey === binding.serviceKey
+      && candidate.browserService === binding.browserService
+    ));
+    if (!stillShared) await this.releaseBrowser(binding.serviceKey);
   }
 
   private async captureObservation(

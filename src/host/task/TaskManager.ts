@@ -155,6 +155,14 @@ export class TaskManager extends EventEmitter {
   private configService: ConfigService | null = null;
   private planningService: PlanningService | undefined;
   private onAgentEvent: ((sessionId: string, event: AgentEvent) => void) | null = null;
+  /**
+   * agent 事件流的旁路观察者（§2 语音中途进度）。
+   *
+   * `onAgentEvent` 是**单个**注入回调（createAgentRuntime 设一次），它是主消费者，
+   * 不能被抢。需要旁听这条流的模块（目前只有语音层）挂这里——只读、不影响主链、
+   * 抛异常也吞掉，观察者绝不许把 agent 循环带崩。
+   */
+  private agentEventObservers = new Set<(sessionId: string, event: AgentEvent) => void>();
   private runRegistry: RunRegistry | undefined;
 
   // 当前活跃会话 ID（用于 getAgentOrchestrator 兼容层）
@@ -548,6 +556,27 @@ export class TaskManager extends EventEmitter {
   }
 
   /**
+   * 旁听 agent 事件流。返回退订函数——**调用方必须在用完时退订**，
+   * 否则观察者会跟着模块级单例活到进程结束。
+   */
+  observeAgentEvents(observer: (sessionId: string, event: AgentEvent) => void): () => void {
+    this.agentEventObservers.add(observer);
+    return () => { this.agentEventObservers.delete(observer); };
+  }
+
+  /** 广播给旁路观察者。单个观察者抛异常只留痕，绝不影响主链与其它观察者。 */
+  private notifyAgentEventObservers(sessionId: string, event: AgentEvent): void {
+    if (!this.agentEventObservers.size) return;
+    for (const observer of [...this.agentEventObservers]) {
+      try {
+        observer(sessionId, event);
+      } catch (error) {
+        logger.warn('agent event observer threw', { error: String(error) });
+      }
+    }
+  }
+
+  /**
    * 设置当前活跃会话 ID
    */
   setCurrentSessionId(id: string | null): void {
@@ -876,6 +905,7 @@ export class TaskManager extends EventEmitter {
       this.onAgentEvent!(sessionId, { type: 'message_snapshot', data: finalSnapshot });
     }
     this.onAgentEvent!(sessionId, event);
+    this.notifyAgentEventObservers(sessionId, event);
 
     await this.persistEventToSession(sessionId, event, snapshot ?? finalSnapshot);
 

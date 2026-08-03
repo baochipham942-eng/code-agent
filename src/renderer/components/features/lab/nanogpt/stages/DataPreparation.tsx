@@ -82,14 +82,14 @@ export const DataPreparation: React.FC<DataPreparationProps> = ({ onComplete }) 
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-6">
       {/* 概念说明 */}
-      <div className="p-4 rounded-xl bg-gradient-to-r from-purple-500/10 to-blue-500/10 border border-purple-500/20">
+      <div className="p-4 rounded-xl bg-gradient-to-r from-purple-500/10 to-blue-500/10 border border-badge-accent/20">
         <div className="flex items-start gap-3">
-          <BookOpen className="w-5 h-5 text-purple-400 mt-0.5" />
+          <BookOpen className="w-5 h-5 text-badge-accent mt-0.5" />
           <div>
             <h3 className="text-sm font-medium text-zinc-200 mb-2">{dp.introTitle}</h3>
             <p className="text-sm text-zinc-400">
               {dp.introBodyPre}
-              <span className="text-purple-400">{dp.introBodyHighlight}</span>
+              <span className="text-badge-accent">{dp.introBodyHighlight}</span>
               {dp.introBodyPost}
             </p>
           </div>
@@ -105,21 +105,21 @@ export const DataPreparation: React.FC<DataPreparationProps> = ({ onComplete }) 
             onClick={() => setSelectedDataset('shakespeare')}
             className={`p-4 rounded-lg border text-left transition-all ${
               selectedDataset === 'shakespeare'
-                ? 'bg-emerald-500/10 border-emerald-500/50'
+                ? 'bg-emerald-500/10 border-badge-success/50'
                 : 'bg-zinc-800 border-zinc-700 hover:border-zinc-600'
             }`}
           >
             <div className="flex items-center gap-3 mb-2">
               <span className="text-2xl">📚</span>
-              <span className={`font-medium ${selectedDataset === 'shakespeare' ? 'text-emerald-400' : 'text-zinc-200'}`}>
+              <span className={`font-medium ${selectedDataset === 'shakespeare' ? 'text-badge-success' : 'text-zinc-200'}`}>
                 {dp.shakespeareName}
               </span>
-              <span className="text-xs px-2 py-0.5 rounded bg-blue-500/20 text-blue-400">{dp.shakespeareBadge}</span>
+              <span className="text-xs px-2 py-0.5 rounded bg-blue-500/20 text-badge-info">{dp.shakespeareBadge}</span>
             </div>
             <p className="text-xs text-zinc-500">
               {dp.shakespeareDesc}
             </p>
-            <p className="text-xs text-emerald-400/70 mt-1">
+            <p className="text-xs text-badge-success/70 mt-1">
               {dp.shakespeareHighlight}
             </p>
           </button>
@@ -129,21 +129,21 @@ export const DataPreparation: React.FC<DataPreparationProps> = ({ onComplete }) 
             onClick={() => setSelectedDataset('openwebtext')}
             className={`p-4 rounded-lg border text-left transition-all ${
               selectedDataset === 'openwebtext'
-                ? 'bg-emerald-500/10 border-emerald-500/50'
+                ? 'bg-emerald-500/10 border-badge-success/50'
                 : 'bg-zinc-800 border-zinc-700 hover:border-zinc-600'
             }`}
           >
             <div className="flex items-center gap-3 mb-2">
               <span className="text-2xl">🌐</span>
-              <span className={`font-medium ${selectedDataset === 'openwebtext' ? 'text-emerald-400' : 'text-zinc-200'}`}>
+              <span className={`font-medium ${selectedDataset === 'openwebtext' ? 'text-badge-success' : 'text-zinc-200'}`}>
                 {dp.openwebtextName}
               </span>
-              <span className="text-xs px-2 py-0.5 rounded bg-amber-500/20 text-amber-400">{dp.openwebtextBadge}</span>
+              <span className="text-xs px-2 py-0.5 rounded bg-amber-500/20 text-badge-warning">{dp.openwebtextBadge}</span>
             </div>
             <p className="text-xs text-zinc-500">
               {dp.openwebtextDesc}
             </p>
-            <p className="text-xs text-amber-400/70 mt-1">
+            <p className="text-xs text-badge-warning/70 mt-1">
               {dp.openwebtextHighlight}
             </p>
           </button>
@@ -184,7 +184,7 @@ export const DataPreparation: React.FC<DataPreparationProps> = ({ onComplete }) 
                 {key === 'valSize' && dp.statValSize}
                 {key === 'vocabType' && dp.statVocabType}
               </div>
-              <div className="text-sm font-medium text-emerald-400">{value}</div>
+              <div className="text-sm font-medium text-badge-success">{value}</div>
             </div>
           ))}
         </div>
@@ -207,13 +207,13 @@ export const DataPreparation: React.FC<DataPreparationProps> = ({ onComplete }) 
                   <div className="px-3 py-2 bg-zinc-800 rounded-lg text-base text-zinc-400 border border-zinc-700">
                     {token.char === '\n' ? dp.tokenEncodingNewline : token.char === ' ' ? dp.tokenEncodingSpace : token.char}
                   </div>
-                  <div className="text-xs text-emerald-400 mt-1 font-bold">#{token.id}</div>
+                  <div className="text-xs text-badge-success mt-1 font-bold">#{token.id}</div>
                 </div>
               ))}
               <div className="px-3 py-2 text-zinc-500 flex items-center">...</div>
             </div>
-            <div className="mt-4 p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
-              <div className="text-xs text-emerald-400">
+            <div className="mt-4 p-3 rounded-lg bg-emerald-500/10 border border-badge-success/20">
+              <div className="text-xs text-badge-success">
                 {/* ponytail: 「第」是24号「一」是47号 直接对应上面 tokenizedPreview 语料数据，随内容保留中文不迁移 */}
                 💡 就像给班级同学编学号一样！「第」是24号，「一」是47号…
               </div>
@@ -232,7 +232,7 @@ export const DataPreparation: React.FC<DataPreparationProps> = ({ onComplete }) 
             className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm transition-all ${
               isProcessing || preparationStep >= preparationSteps.length
                 ? 'bg-zinc-700 text-zinc-500 cursor-not-allowed'
-                : 'bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 border border-emerald-500/30'
+                : 'bg-emerald-500/20 text-badge-success hover:bg-emerald-500/30 border border-badge-success/30'
             }`}
           >
             <Play className="w-4 h-4" />
@@ -256,18 +256,18 @@ export const DataPreparation: React.FC<DataPreparationProps> = ({ onComplete }) 
                   <div
                     className={`w-10 h-10 rounded-full flex items-center justify-center border transition-all text-lg ${
                       idx < preparationStep
-                        ? 'bg-emerald-500/20 border-emerald-500/50'
+                        ? 'bg-emerald-500/20 border-badge-success/50'
                         : idx === preparationStep && isProcessing
-                          ? 'bg-blue-500/20 border-blue-500/50 animate-pulse'
+                          ? 'bg-blue-500/20 border-badge-info/50 animate-pulse'
                           : 'bg-zinc-800 border-zinc-700'
                     }`}
                   >
-                    {idx < preparationStep ? <Check className="w-5 h-5 text-emerald-400" /> : step.title.slice(0, 2)}
+                    {idx < preparationStep ? <Check className="w-5 h-5 text-badge-success" /> : step.title.slice(0, 2)}
                   </div>
                   <span className="text-[10px] text-zinc-500 text-center w-16">{step.desc}</span>
                 </div>
                 {idx < preparationSteps.length - 1 && (
-                  <ChevronRight className={`w-4 h-4 ${idx < preparationStep ? 'text-emerald-500' : 'text-zinc-600'}`} />
+                  <ChevronRight className={`w-4 h-4 ${idx < preparationStep ? 'text-badge-success' : 'text-zinc-600'}`} />
                 )}
               </React.Fragment>
             ))}
@@ -280,21 +280,21 @@ export const DataPreparation: React.FC<DataPreparationProps> = ({ onComplete }) 
         <div className="space-y-3">
           <h3 className="text-sm font-medium text-zinc-400">{dp.outputFilesLabel}</h3>
           <div className="grid grid-cols-3 gap-3">
-            <div className="bg-emerald-500/10 rounded-lg p-3 border border-emerald-500/20">
+            <div className="bg-emerald-500/10 rounded-lg p-3 border border-badge-success/20">
               <div className="flex items-center gap-2 mb-1">
                 <span className="text-lg">📗</span>
                 <span className="text-sm text-zinc-200">{dp.outputCard1Title}</span>
               </div>
               <p className="text-xs text-zinc-500">{dp.outputCard1Desc}</p>
             </div>
-            <div className="bg-blue-500/10 rounded-lg p-3 border border-blue-500/20">
+            <div className="bg-blue-500/10 rounded-lg p-3 border border-badge-info/20">
               <div className="flex items-center gap-2 mb-1">
                 <span className="text-lg">📘</span>
                 <span className="text-sm text-zinc-200">{dp.outputCard2Title}</span>
               </div>
               <p className="text-xs text-zinc-500">{dp.outputCard2Desc}</p>
             </div>
-            <div className="bg-purple-500/10 rounded-lg p-3 border border-purple-500/20">
+            <div className="bg-purple-500/10 rounded-lg p-3 border border-badge-accent/20">
               <div className="flex items-center gap-2 mb-1">
                 <span className="text-lg">📒</span>
                 <span className="text-sm text-zinc-200">{dp.outputCard3Title}</span>
@@ -302,7 +302,7 @@ export const DataPreparation: React.FC<DataPreparationProps> = ({ onComplete }) 
               <p className="text-xs text-zinc-500">{dp.outputCard3Desc}</p>
             </div>
           </div>
-          <p className="text-xs text-emerald-400 text-center">
+          <p className="text-xs text-badge-success text-center">
             {dp.outputFooter}
           </p>
         </div>
@@ -311,14 +311,14 @@ export const DataPreparation: React.FC<DataPreparationProps> = ({ onComplete }) 
       {/* 专有名词解释 */}
       <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-700">
         <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
-          <span className="text-blue-400">📖</span>
+          <span className="text-badge-info">📖</span>
           {dp.glossaryLabel}
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           {dp.glossary.map((term) => (
             <div key={term.en} className="p-3 rounded-lg bg-zinc-800">
               <div className="flex items-center gap-2 mb-1">
-                <span className="text-sm font-bold text-emerald-400">{term.en}</span>
+                <span className="text-sm font-bold text-badge-success">{term.en}</span>
                 <span className="text-xs text-zinc-500">|</span>
                 <span className="text-sm text-zinc-400">{term.label}</span>
               </div>
@@ -332,7 +332,7 @@ export const DataPreparation: React.FC<DataPreparationProps> = ({ onComplete }) 
       <div className="flex justify-end pt-4">
         <button
           onClick={onComplete}
-          className="flex items-center gap-2 px-5 py-2.5 bg-blue-500/20 text-blue-400 rounded-lg hover:bg-blue-500/30 border border-blue-500/30 transition-all font-medium"
+          className="flex items-center gap-2 px-5 py-2.5 bg-blue-500/20 text-badge-info rounded-lg hover:bg-blue-500/30 border border-badge-info/30 transition-all font-medium"
         >
           {dp.nextButton}
           <ChevronRight className="w-4 h-4" />

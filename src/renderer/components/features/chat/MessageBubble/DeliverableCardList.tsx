@@ -40,29 +40,29 @@ function iconForKind(kind: string): React.ReactNode {
   const cls = 'h-3.5 w-3.5 flex-shrink-0';
   switch (kind) {
     case 'chart':
-      return <BarChart3 className={`${cls} text-cyan-300`} />;
+      return <BarChart3 className={`${cls} text-badge-info`} />;
     case 'spreadsheet':
-      return <Table className={`${cls} text-emerald-300`} />;
+      return <Table className={`${cls} text-badge-success`} />;
     case 'document':
       return <FileText className={`${cls} text-zinc-300`} />;
     case 'audio':
-      return <Music className={`${cls} text-emerald-300`} />;
+      return <Music className={`${cls} text-badge-success`} />;
     case 'video':
-      return <Video className={`${cls} text-fuchsia-300`} />;
+      return <Video className={`${cls} text-badge-accent`} />;
     case 'archive':
-      return <Archive className={`${cls} text-amber-300`} />;
+      return <Archive className={`${cls} text-badge-warning`} />;
     case 'presentation':
-      return <Presentation className={`${cls} text-fuchsia-300`} />;
+      return <Presentation className={`${cls} text-badge-accent`} />;
     case 'generative_ui':
     case 'neo_ui':
     case 'generic_html':
-      return <Code className={`${cls} text-orange-300`} />;
+      return <Code className={`${cls} text-badge-warning`} />;
     case 'mermaid':
     case 'diagram':
-      return <GitBranch className={`${cls} text-violet-300`} />;
+      return <GitBranch className={`${cls} text-badge-accent`} />;
     case 'image':
     case 'web_snapshot':
-      return <ImageIcon className={`${cls} text-emerald-300`} />;
+      return <ImageIcon className={`${cls} text-badge-success`} />;
     default:
       return <File className={`${cls} text-zinc-400`} />;
   }
@@ -78,20 +78,20 @@ function statusMeta(card: DeliverableCardView, labels: ReturnType<typeof useI18n
   if (card.status === 'failed') {
     return {
       label: labels.statusFailed,
-      className: 'bg-rose-500/12 text-rose-300',
+      className: 'bg-rose-500/12 text-badge-danger',
       icon: <AlertTriangle className="h-3 w-3" />,
     };
   }
   if (card.status === 'verified') {
     return {
       label: labels.statusVerified,
-      className: 'bg-emerald-500/12 text-emerald-300',
+      className: 'bg-emerald-500/12 text-badge-success',
       icon: <CheckCircle2 className="h-3 w-3" />,
     };
   }
   return {
     label: labels.statusUnverified,
-    className: 'bg-amber-500/12 text-amber-300',
+    className: 'bg-amber-500/12 text-badge-warning',
     icon: <AlertTriangle className="h-3 w-3" />,
   };
 }
@@ -101,21 +101,21 @@ function qualityMeta(card: DeliverableCardView, labels: ReturnType<typeof useI18
   if (card.quality.status === 'failed') {
     return {
       label: labels.qualityFailed,
-      className: 'bg-rose-500/12 text-rose-300',
+      className: 'bg-rose-500/12 text-badge-danger',
       icon: <AlertTriangle className="h-3 w-3" />,
     };
   }
   if (card.quality.status === 'needs_review' || card.quality.status === 'degraded') {
     return {
       label: labels.qualityNeedsReview,
-      className: 'bg-amber-500/12 text-amber-300',
+      className: 'bg-amber-500/12 text-badge-warning',
       icon: <AlertTriangle className="h-3 w-3" />,
     };
   }
   if (card.quality.status === 'passed') {
     return {
       label: labels.qualityValidated,
-      className: 'bg-emerald-500/12 text-emerald-300',
+      className: 'bg-emerald-500/12 text-badge-success',
       icon: <CheckCircle2 className="h-3 w-3" />,
     };
   }
@@ -237,7 +237,7 @@ const CardRow: React.FC<CardRowProps> = ({ card, labels, openCard, runSecondaryA
   return (
     <div
       key={card.id}
-      className={`${cardChrome} ${clickable ? 'hover:border-cyan-500/25 hover:bg-cyan-500/[0.045]' : ''}`}
+      className={`${cardChrome} ${clickable ? 'hover:border-badge-info/25 hover:bg-cyan-500/[0.045]' : ''}`}
     >
       <div className="flex items-center gap-1">
         <button
@@ -281,7 +281,7 @@ const CardRow: React.FC<CardRowProps> = ({ card, labels, openCard, runSecondaryA
                   e.stopPropagation();
                   void runSecondaryAction(archiveAction, card);
                 }}
-                className="inline-flex h-6 items-center justify-center gap-1 rounded px-1.5 text-[11px] text-cyan-300 hover:bg-surface-hover hover:text-cyan-100"
+                className="inline-flex h-6 items-center justify-center gap-1 rounded px-1.5 text-[11px] text-badge-info hover:bg-surface-hover hover:text-badge-info"
                 title={archiveAction.reason || labels.archiveToLibrary}
                 aria-label={`${labels.archiveToLibrary}: ${card.title}`}
               >

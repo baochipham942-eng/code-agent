@@ -45,10 +45,10 @@ export const VersionInfo: React.FC<VersionInfoProps> = ({ version, latestVersion
         </div>
       )}
       {hasUpdate && (
-        <div className="mt-2 p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/30">
+        <div className="mt-2 p-3 rounded-lg bg-yellow-500/10 border border-badge-warning/30">
           <div className="flex items-center gap-2 mb-2">
-            <AlertTriangle className="w-4 h-4 text-yellow-400" />
-            <span className="text-sm text-yellow-400">{versionText.updateAvailable}</span>
+            <AlertTriangle className="w-4 h-4 text-badge-warning" />
+            <span className="text-sm text-badge-warning">{versionText.updateAvailable}</span>
           </div>
           <div className="flex items-center gap-2">
             <code className="flex-1 text-xs text-zinc-300 bg-zinc-800 px-2 py-1 rounded font-mono truncate">
@@ -60,13 +60,13 @@ export const VersionInfo: React.FC<VersionInfoProps> = ({ version, latestVersion
               title={versionText.copyDownloadLink}
             >
               {copied ? (
-                <Check className="w-3.5 h-3.5 text-green-400" />
+                <Check className="w-3.5 h-3.5 text-badge-success" />
               ) : (
                 <Copy className="w-3.5 h-3.5" />
               )}
             </button>
           </div>
-          {copied && <span className="text-xs text-green-400 mt-1 block">{versionText.copied}</span>}
+          {copied && <span className="text-xs text-badge-success mt-1 block">{versionText.copied}</span>}
         </div>
       )}
     </div>

@@ -59,9 +59,9 @@ export const SessionHeader: React.FC<SessionHeaderProps> = ({ session }) => {
         </div>
         <div className="flex items-center gap-1" title={h.toolSuccessRate}>
           {session.toolSuccessRate >= 0.8 ? (
-            <CheckCircle className="w-3.5 h-3.5 text-green-400" />
+            <CheckCircle className="w-3.5 h-3.5 text-badge-success" />
           ) : (
-            <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
+            <AlertTriangle className="w-3.5 h-3.5 text-badge-warning" />
           )}
           <span>{(session.toolSuccessRate * 100).toFixed(0)}%</span>
         </div>

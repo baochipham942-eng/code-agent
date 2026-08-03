@@ -204,7 +204,7 @@ const KeyValueEditor: React.FC<{
         <button
           type="button"
           onClick={handleAdd}
-          className="flex items-center gap-1 text-xs text-indigo-400 hover:text-indigo-300 transition-colors"
+          className="flex items-center gap-1 text-xs text-badge-accent hover:text-badge-accent transition-colors"
         >
           <Plus className="w-3 h-3" />
           {text.add}
@@ -239,7 +239,7 @@ const KeyValueEditor: React.FC<{
                 className="min-w-0 flex-1 bg-zinc-700 border border-zinc-600 rounded-lg px-3 py-1.5 text-xs text-zinc-200 placeholder:text-zinc-500 focus:outline-hidden focus:border-zinc-500"
               />
               {savedReference && (
-                <span className="shrink-0 text-[11px] text-emerald-400">
+                <span className="shrink-0 text-[11px] text-badge-success">
                   {text.savedCredentialHint}
                 </span>
               )}
@@ -257,7 +257,7 @@ const KeyValueEditor: React.FC<{
             <button
               type="button"
               onClick={() => handleRemove(key)}
-              className="p-1 text-zinc-500 hover:text-red-400 transition-colors"
+              className="p-1 text-zinc-500 hover:text-badge-danger transition-colors"
             >
               <Trash2 className="w-3.5 h-3.5" />
             </button>
@@ -433,7 +433,7 @@ export const McpServerEditor: React.FC<McpServerEditorProps> = ({
       onClose={installState === 'idle' ? handleClose : handleCancelInstall}
       title={editorText.title}
       size="lg"
-      headerIcon={<Server className="w-5 h-5 text-indigo-400" />}
+      headerIcon={<Server className="w-5 h-5 text-badge-accent" />}
       footer={
         installState === 'idle' ? (
           <ModalFooter
@@ -489,7 +489,7 @@ export const McpServerEditor: React.FC<McpServerEditorProps> = ({
                     flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium
                     transition-all duration-150
                     ${isActive
-                      ? 'bg-indigo-500/20 text-indigo-400'
+                      ? 'bg-indigo-500/20 text-badge-accent'
                       : 'text-zinc-500 hover:text-zinc-400 hover:bg-zinc-700/50'
                     }
                   `}
@@ -618,10 +618,10 @@ export const McpServerEditor: React.FC<McpServerEditorProps> = ({
               spellCheck={false}
             />
             {jsonError && (
-              <p className="text-xs text-red-400">{jsonError}</p>
+              <p className="text-xs text-badge-danger">{jsonError}</p>
             )}
             {ignoredJsonKeys.length > 0 && (
-              <p className="text-xs text-amber-400">
+              <p className="text-xs text-badge-warning">
                 {editorText.jsonIgnoredKeys.replace('{keys}', ignoredJsonKeys.join(', '))}
               </p>
             )}

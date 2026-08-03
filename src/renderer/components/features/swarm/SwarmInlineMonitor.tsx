@@ -22,12 +22,12 @@ import { useDurableSwarmRunDetail } from '../../../hooks/useDurableSwarmRunDetai
 import { swarmRunAgentRecordToState } from '../expert/SessionMemberBar';
 
 const AGENT_COLORS = [
-  'text-emerald-400',
-  'text-purple-400',
-  'text-cyan-400',
-  'text-amber-400',
-  'text-pink-400',
-  'text-blue-400',
+  'text-badge-success',
+  'text-badge-accent',
+  'text-badge-info',
+  'text-badge-warning',
+  'text-badge-accent',
+  'text-badge-info',
 ] as const;
 
 function colorFor(id: string): string {
@@ -47,10 +47,10 @@ const STATUS_TEXT: Record<AgentStatus, string> = {
 
 const STATUS_COLOR: Record<AgentStatus, string> = {
   pending: 'text-zinc-500',
-  ready: 'text-amber-400',
-  running: 'text-emerald-400',
+  ready: 'text-badge-warning',
+  running: 'text-badge-success',
   completed: 'text-zinc-500',
-  failed: 'text-red-400',
+  failed: 'text-badge-danger',
   cancelled: 'text-zinc-500',
 };
 
@@ -136,7 +136,7 @@ export function SwarmInlineMonitor() {
           <div className="ml-auto flex items-center gap-2">
             {totalTokens > 0 && (
               <span
-                className="flex items-center gap-1 text-cyan-400/80"
+                className="flex items-center gap-1 text-badge-info/80"
                 title="本次组队已花 Token（实时累计）"
               >
                 <Zap size={12} />
@@ -150,7 +150,7 @@ export function SwarmInlineMonitor() {
               className={`transition-colors ${
                 stopping
                   ? 'text-zinc-600 cursor-wait'
-                  : 'text-zinc-400 hover:text-red-400'
+                  : 'text-zinc-400 hover:text-badge-danger'
               } disabled:cursor-not-allowed disabled:opacity-50`}
               title={stopping ? '正在停止…' : `停止全部 ${activeAgents.length} 个 agent`}
             >

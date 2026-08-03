@@ -19,6 +19,7 @@ import {
   LayoutDashboard,
   Globe2,
   Palette,
+  TerminalSquare,
   Eye,
 } from 'lucide-react';
 import { useAppStore } from '../stores/appStore';
@@ -108,7 +109,9 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose 
       icon: <Plus className="w-4 h-4" />,
       shortcut: getShortcutLabel('session.new'),
       category: 'session',
-      action: () => createSession(),
+      action: async () => {
+        await createSession();
+      },
     },
     {
       id: 'clear-chat',
@@ -117,7 +120,9 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose 
       icon: <Trash2 className="w-4 h-4" />,
       shortcut: getShortcutLabel('session.clear'),
       category: 'session',
-      action: () => clearCurrentSession(),
+      action: async () => {
+        await clearCurrentSession();
+      },
     },
     {
       id: 'archive-session',
@@ -191,6 +196,14 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose 
       icon: <Palette className="w-4 h-4" />,
       category: 'view',
       action: () => openWorkbenchTab('design-canvas'),
+    },
+    {
+      id: 'open-workbench-terminal',
+      label: t.workbenchTabs.terminal.label,
+      description: t.workbenchTabs.terminal.title,
+      icon: <TerminalSquare className="w-4 h-4" />,
+      category: 'view',
+      action: () => openWorkbenchTab('terminal'),
     },
     ...(latestFilePreview ? [{
       id: 'open-workbench-preview',
@@ -288,9 +301,9 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose 
     setQuery('');
   }, [onClose]);
 
-  const confirmClearChat = useCallback(() => {
+  const confirmClearChat = useCallback(async () => {
     setIsClearConfirmationOpen(false);
-    clearCurrentSession();
+    await clearCurrentSession();
     onClose();
     setQuery('');
   }, [clearCurrentSession, onClose]);
@@ -425,7 +438,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose 
                             : 'text-zinc-400 hover:bg-zinc-800'
                         }`}
                       >
-                        <span className={isSelected ? 'text-primary-400' : 'text-zinc-500'}>
+                        <span className={isSelected ? 'text-accent-accessible' : 'text-zinc-500'}>
                           {cmd.icon}
                         </span>
                         <div className="flex-1 min-w-0">

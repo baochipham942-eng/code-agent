@@ -5,6 +5,7 @@
 
 import React, { useRef, useState, useEffect, useLayoutEffect, useCallback } from 'react';
 import { useAppStore } from './stores/appStore';
+import { useWorkbenchFocusStore } from './stores/workbenchFocusStore';
 import { useAuthStore, initializeAuthStore } from './stores/authStore';
 import { initializeAgentRegistryStore } from './stores/agentRegistryStore';
 import { useSessionStore } from './stores/sessionStore';
@@ -49,6 +50,7 @@ import { useTaskSync } from './hooks/useTaskSync';
 import { useInAppValidationBridge } from './hooks/useInAppValidationBridge';
 import { useBackgroundTaskSync } from './hooks/useBackgroundTaskSync';
 import { useOpenPreviewBridge } from './hooks/useOpenPreviewBridge';
+import { useTerminalRevealBridge } from './hooks/useTerminalRevealBridge';
 import { useArtifactSurfaceIntent } from './hooks/useArtifactSurfaceIntent';
 import { Group as PanelGroup, Panel, Separator as ResizeHandle } from 'react-resizable-panels';
 import { MemoFloater } from './components/features/memo/MemoFloater';
@@ -96,9 +98,6 @@ const LabPage = React.lazy(() => import('./components/features/lab/LabPage').the
 })));
 const CapturePanel = React.lazy(() => import('./components/features/capture').then((module) => ({
   default: module.CapturePanel,
-})));
-const KnowledgeMemoryPanel = React.lazy(() => import('./components/features/knowledge/KnowledgeMemoryPanel').then((module) => ({
-  default: module.KnowledgeMemoryPanel,
 })));
 const LibraryPanel = React.lazy(() => import('./components/features/knowledge/LibraryPanel').then((module) => ({
   default: module.LibraryPanel,
@@ -169,10 +168,8 @@ export const App: React.FC = () => {
     closeProjectCollaborationPage,
     showProjectSpacePage,
     closeProjectSpacePage,
-    showKnowledgeMemoryPanel,
     showLibraryPanel,
     showActivityPanel,
-    setShowActivityPanel,
     setShowSettings,
     setLanguage,
     setOptionalUpdateInfo,
@@ -203,6 +200,13 @@ export const App: React.FC = () => {
     windowWidth < WORKBENCH_MIN_VISIBLE_WIDTH &&
     workbenchTabs.length > 0 &&
     (isPreviewActive || activeWorkbenchTab === 'overview' || activeWorkbenchTab === 'browser');
+  // 专注模式（2026-08-01 工单①）只在右栏独立成列时生效：收起右栏/窄屏借住聊天列时退回侧栏态。
+  const workbenchFocused = useWorkbenchFocusStore((s) => s.workbenchFocused);
+  const setWorkbenchFocused = useWorkbenchFocusStore((s) => s.setWorkbenchFocused);
+  const workbenchFocusActive = workbenchFocused && showWorkbench;
+  useEffect(() => {
+    if (workbenchFocused && !showWorkbench) setWorkbenchFocused(false);
+  }, [workbenchFocused, showWorkbench, setWorkbenchFocused]);
   const appliedNarrowSidebarDefaultRef = useRef(false);
 
   const [mcpElicitation, setMcpElicitation] = useState<MCPElicitationRequest | null>(null);
@@ -268,6 +272,7 @@ export const App: React.FC = () => {
   useInAppValidationBridge();
   // 2b：监听 agent（ProposeSlidesOps 等）生成文档型产物后请求打开预览 tab（按当前会话过滤）。
   useOpenPreviewBridge();
+  useTerminalRevealBridge();
   useArtifactSurfaceIntent();
   useRendererBundleAutoReload();
 
@@ -832,22 +837,23 @@ export const App: React.FC = () => {
 
   // 侧栏是否真的在画（收起 / 非 standard 档都不画）——顶栏该不该存在跟着它走。
   const isSidebarVisible = isStandard && !sidebarCollapsed;
-  // 侧栏常驻的 inline 二级页（能力中心/资料库/自动化/专家详情/知识记忆/本机操作/评测中心，
+  // 侧栏常驻的 inline 二级页（能力中心/资料库/自动化/专家详情/本机操作/评测中心，
   // 以及 2026-07-29 起统一收进 inline 的账号菜单页：提示词库/Lab/时间能力/活动/
   // Neo 协同/桌面状态）在位时，顶栏收敛。评测中心 2026-07-27 拍板从 overlay 改 inline，一并计入。
+  // 知识记忆整窗页 2026-08-02 退役（内容并入设置 → 记忆）。
   // 设置页 2026-07-30 起是 overlay 整窗覆盖（X5.5-B1），本就不是 inline 页；仍留在名单里
   // 只为压住底下的顶栏不随设置开关抖动（覆盖层在位时它反正不可见）。
   const inlineSecondaryPageActive = Boolean(
-    expertDetailRoleId || showKnowledgeMemoryPanel || showLibraryPanel
+    expertDetailRoleId || showLibraryPanel
     || showCapabilityHub || showCronCenter || showLocalOpsPanel || showEvalCenter
     || showProjectSpacePage
     || showSettings || showPromptManager || showLab || showTimeCapabilityCenter
     || showActivityPanel || showProjectCollaborationPage || showDesktopPanel
   );
 
-  const renderWorkbenchContent = () => (
+  const renderWorkbenchContent = (focusable = false) => (
     <div className="flex flex-col h-full bg-zinc-900">
-      <WorkbenchTabs>
+      <WorkbenchTabs focusable={focusable}>
         {activeWorkbenchTab && (
           <div className="h-full min-h-0 overflow-hidden">
             <WorkbenchViewContent
@@ -913,11 +919,11 @@ export const App: React.FC = () => {
                 />
               ) : showActivityPanel ? (
                 <React.Suspense fallback={null}>
-                  <ActivityPanel onClose={() => setShowActivityPanel(false)} />
+                  <ActivityPanel />
                 </React.Suspense>
               ) : showTimeCapabilityCenter ? (
                 <React.Suspense fallback={null}>
-                  <TimeCapabilityPanel onClose={() => useAppStore.getState().setShowTimeCapabilityCenter(false)} />
+                  <TimeCapabilityPanel />
                 </React.Suspense>
               ) : showLab ? (
                 <React.Suspense fallback={null}>
@@ -931,10 +937,6 @@ export const App: React.FC = () => {
                 </React.Suspense>
               ) : expertDetailRoleId ? (
                 <RoleDetailPage roleId={expertDetailRoleId} />
-              ) : showKnowledgeMemoryPanel ? (
-                <React.Suspense fallback={null}>
-                  <KnowledgeMemoryPanel />
-                </React.Suspense>
               ) : showLibraryPanel ? (
                 <React.Suspense fallback={null}>
                   <LibraryPanel />
@@ -959,24 +961,33 @@ export const App: React.FC = () => {
                 </React.Suspense>
               ) : (
                 <PanelGroup orientation="horizontal" className="flex-1 min-h-0" id="main-layout">
-                  <Panel minSize="30" id="chat">
-                    <div className="flex flex-col h-full min-h-0 min-w-0 bg-zinc-900">
-                      {/* 正常会话的顶栏住在聊天列里（第四波②）：右栏展开时 workbench 列
-                          通顶、tab 条贴窗口最顶（WorkBuddy）；右栏开关仍在顶栏右端那组，
-                          两态同一行同一槽位（2026-07-27 房规：纵向不跳、顶栏单点可达）。 */}
-                      <TitleBar />
-                      {showNarrowWorkbench ? renderWorkbenchContent() : <ChatView />}
-                    </div>
-                  </Panel>
+                  {/* 专注态（2026-08-01 工单①）：聊天列整列收起，右栏占满窗口宽度；
+                      maxSize=35 只对侧栏态生效，专注态不约束（工单明确不改 maxSize）。 */}
+                  {!workbenchFocusActive && (
+                    <Panel minSize="30" id="chat">
+                      <div className="flex flex-col h-full min-h-0 min-w-0 bg-zinc-900">
+                        {/* 正常会话的顶栏住在聊天列里（第四波②）：右栏展开时 workbench 列
+                            通顶、tab 条贴窗口最顶（WorkBuddy）；右栏开关仍在顶栏右端那组，
+                            两态同一行同一槽位（2026-07-27 房规：纵向不跳、顶栏单点可达）。 */}
+                        <TitleBar />
+                        {showNarrowWorkbench ? renderWorkbenchContent() : <ChatView />}
+                      </div>
+                    </Panel>
+                  )}
 
-                  {showWorkbench && (
+                  {showWorkbench && !workbenchFocusActive && (
                     <ResizeHandle className="w-1 hover:w-1.5 bg-zinc-800 hover:bg-primary-500/50 transition-all cursor-col-resize" />
                   )}
                   {/* 2026-07-27 拍板（Kimi 三栏占比分析）：min 15%→22%（15% 在 1440 宽下仅
                       180px，任何视图都不可用）、max 45%→35%（2560 下 1044px 远超需要） */}
                   {showWorkbench && (
-                    <Panel defaultSize="32" minSize="22" maxSize="35" id="right-panel">
-                      {renderWorkbenchContent()}
+                    <Panel
+                      defaultSize="32"
+                      minSize="22"
+                      maxSize={workbenchFocusActive ? undefined : '35'}
+                      id="right-panel"
+                    >
+                      {renderWorkbenchContent(true)}
                     </Panel>
                   )}
                 </PanelGroup>

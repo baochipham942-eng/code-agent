@@ -6,6 +6,7 @@
 import type { CanvasNode } from './designCanvasTypes';
 import { type CanvasConnector, type CanvasShape, DIAGRAM_DEFAULT_COLOR } from './designDiagramTypes';
 import type { CanvasProposalOp, ProposedShape } from '../../../shared/contract/canvasProposal';
+import type { CanvasActor } from './canvasActor';
 
 export interface ProposalApplyState {
   nodes: CanvasNode[];
@@ -38,20 +39,22 @@ export interface ProposalApplyOpts {
   genId: (kind: string, index: number) => string;
   /** 新实体 createdAt（component 注入 Date.now）。 */
   now: number;
+  /** 提议入口固定为 agent；测试可显式覆盖以验证错误 actor 会被门抓住。 */
+  actor?: CanvasActor;
 }
 
-function shapeFromProposed(s: ProposedShape, id: string, createdAt: number): CanvasShape {
+function shapeFromProposed(s: ProposedShape, id: string, createdAt: number, createdBy: CanvasActor): CanvasShape {
   const color = s.color && s.color.length > 0 ? s.color : DIAGRAM_DEFAULT_COLOR;
   switch (s.kind) {
     case 'rect':
     case 'ellipse':
-      return { id, kind: s.kind, x: s.x, y: s.y, width: s.width, height: s.height, color, createdAt };
+      return { id, kind: s.kind, x: s.x, y: s.y, width: s.width, height: s.height, color, createdAt, createdBy };
     case 'sticky':
-      return { id, kind: 'sticky', x: s.x, y: s.y, width: s.width, height: s.height, text: s.text, color, createdAt };
+      return { id, kind: 'sticky', x: s.x, y: s.y, width: s.width, height: s.height, text: s.text, color, createdAt, createdBy };
     case 'text':
-      return { id, kind: 'text', x: s.x, y: s.y, text: s.text, color, createdAt };
+      return { id, kind: 'text', x: s.x, y: s.y, text: s.text, color, createdAt, createdBy };
     case 'line':
-      return { id, kind: 'line', points: s.points, color, createdAt };
+      return { id, kind: 'line', points: s.points, color, createdAt, createdBy };
   }
 }
 
@@ -91,6 +94,7 @@ export function computeProposalResult(
   ops: CanvasProposalOp[],
   opts: ProposalApplyOpts,
 ): ProposalApplyResult {
+  const actor = opts.actor ?? 'agent';
   const nodeIds = new Set(state.nodes.map((n) => n.id));
   let nodes = state.nodes;
   let connectors = state.connectors;
@@ -116,14 +120,14 @@ export function computeProposalResult(
         if (!nodeIds.has(op.fromNodeId) || !nodeIds.has(op.toNodeId)) { skipped.push({ index, kind: op.kind, reason: 'node-not-found' }); return; }
         const dup = connectors.some((c) => c.fromNodeId === op.fromNodeId && c.toNodeId === op.toNodeId);
         if (dup) { skipped.push({ index, kind: op.kind, reason: 'duplicate-connector' }); return; }
-        const c: CanvasConnector = { id: opts.genId('connector', index), fromNodeId: op.fromNodeId, toNodeId: op.toNodeId, createdAt: opts.now };
+        const c: CanvasConnector = { id: opts.genId('connector', index), fromNodeId: op.fromNodeId, toNodeId: op.toNodeId, createdAt: opts.now, createdBy: actor };
         if (op.label) c.label = op.label;
         connectors = [...connectors, c];
         applied.push({ index, kind: op.kind });
         return;
       }
       case 'addShape': {
-        shapes = [...shapes, shapeFromProposed(op.shape, opts.genId('shape', index), opts.now)];
+        shapes = [...shapes, shapeFromProposed(op.shape, opts.genId('shape', index), opts.now, actor)];
         applied.push({ index, kind: op.kind });
         return;
       }

@@ -590,7 +590,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   setShowSettings: (show) => set({ showSettings: show }),
   setPendingRoleChatSeed: (seed) => set({ pendingRoleChatSeed: seed }),
   setPendingProjectGoalChatSeed: (seed) => set({ pendingProjectGoalChatSeed: seed }),
-  setShowPromptManager: (show) => set({ showPromptManager: show }),
+  setShowPromptManager: (show) => set({ ...(show ? SECONDARY_PAGES_CLOSED : {}), showPromptManager: show }),
   // 落点判定收在 resolveSettingsDeepLink 一处（ADR-049 §收窄），store 只负责应用
   openSettingsTab: (tab) => {
     const noFocus = { settingsMemoryFocus: null, settingsCapabilityFocus: null };
@@ -670,7 +670,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
     }
   },
   setShowCapturePanel: (show) => set({ showCapturePanel: show }),
-  setShowDesktopPanel: (show) => set({ showDesktopPanel: show }),
+  setShowDesktopPanel: (show) => set({ ...(show ? SECONDARY_PAGES_CLOSED : {}), showDesktopPanel: show }),
   setShowLocalOpsPanel: (show) => set({ ...(show ? SECONDARY_PAGES_CLOSED : {}), showLocalOpsPanel: show }),
   openLocalOpsPanel: (tab) => set({
     ...SECONDARY_PAGES_CLOSED,
@@ -696,7 +696,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   openProjectSpacePage: () => set({ ...SECONDARY_PAGES_CLOSED, showProjectSpacePage: true }),
   closeProjectSpacePage: () => set({ showProjectSpacePage: false }),
   setPendingInAppValidationRequest: (request) => set({ pendingInAppValidationRequest: request }),
-  setShowActivityPanel: (show) => set({ showActivityPanel: show }),
+  setShowActivityPanel: (show) => set({ ...(show ? SECONDARY_PAGES_CLOSED : {}), showActivityPanel: show }),
   setShowCapabilityHub: (show) => set({ ...(show ? SECONDARY_PAGES_CLOSED : {}), showCapabilityHub: show }),
   openCapabilityHub: (tab) => set({
     ...SECONDARY_PAGES_CLOSED,
@@ -706,7 +706,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   }),
   closeSecondaryPages: () => set({ ...SECONDARY_PAGES_CLOSED }),
   setShowCronCenter: (show) => set({ ...(show ? SECONDARY_PAGES_CLOSED : {}), showCronCenter: show }),
-  setShowTimeCapabilityCenter: (show) => set({ showTimeCapabilityCenter: show }),
+  setShowTimeCapabilityCenter: (show) => set({ ...(show ? SECONDARY_PAGES_CLOSED : {}), showTimeCapabilityCenter: show }),
   setShowFileExplorer: (show) => {
     const state = get();
     if (show) state.openWorkbenchTab('files');
@@ -751,7 +751,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   setShowPlanningPanel: (show) => set({ showPlanningPanel: show }),
 
   setShowDAGPanel: (show) => set({ showDAGPanel: show }),
-  setShowLab: (show) => set({ showLab: show }),
+  setShowLab: (show) => set({ ...(show ? SECONDARY_PAGES_CLOSED : {}), showLab: show }),
   openDevServerLauncher: () => set({ devServerLauncherOpen: true }),
   closeDevServerLauncher: () => set({ devServerLauncherOpen: false }),
   setShowLibraryPanel: (show) => set({ ...(show ? SECONDARY_PAGES_CLOSED : {}), showLibraryPanel: show }),

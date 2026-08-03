@@ -39,8 +39,8 @@ const COLUMN_COLORS = [
   'bg-emerald-500/20 border-badge-success/40',
   'bg-amber-500/20 border-badge-warning/40',
   'bg-purple-500/20 border-badge-accent/40',
-  'bg-rose-500/20 border-rose-500/40',
-  'bg-cyan-500/20 border-cyan-500/40',
+  'bg-rose-500/20 border-badge-danger/40',
+  'bg-cyan-500/20 border-badge-info/40',
 ];
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -422,7 +422,7 @@ export const SpreadsheetBlock = memo(function SpreadsheetBlock({ spec: rawSpec, 
                         key={ci}
                         onClick={filePath != null ? () => setSelectedCell(cellRef) : undefined}
                         className={`px-3 py-1 border-r border-zinc-700/30 truncate max-w-[200px] ${
-                          isCellSelected ? 'bg-cyan-500/20 outline outline-1 outline-cyan-400' : isSelected ? 'bg-blue-500/5' : ''
+                          isCellSelected ? 'bg-cyan-500/20 outline outline-1 outline-[var(--badge-info-border)]' : isSelected ? 'bg-blue-500/5' : ''
                         } ${filePath != null ? 'cursor-pointer' : ''} ${isNum ? 'text-right tabular-nums text-zinc-300' : 'text-zinc-400'}`}
                         title={filePath != null ? `${cellRef} · ${formatCellValue(value)}（点选定点反馈）` : formatCellValue(value)}
                       >

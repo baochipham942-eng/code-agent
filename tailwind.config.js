@@ -116,6 +116,13 @@ export default {
         'badge-warning': 'var(--badge-warning-bg)',
         'badge-danger': 'var(--badge-danger-bg)',
         'badge-accent': 'var(--badge-accent-bg)',
+        // Solid status marks are separate from badge background washes.
+        'mark-info': 'var(--mark-info)',
+        'mark-success': 'var(--mark-success)',
+        'mark-warning': 'var(--mark-warning)',
+        'mark-danger': 'var(--mark-danger)',
+        'mark-accent': 'var(--mark-accent)',
+        'mark-neutral': 'var(--mark-neutral)',
         'btn-secondary': 'var(--btn-secondary-bg)',
         'btn-secondary-hover': 'var(--btn-secondary-bg-hover)',
         'btn-secondary-disabled': 'var(--btn-secondary-bg-disabled)',

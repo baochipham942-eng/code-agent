@@ -558,7 +558,7 @@ export const MCPSettings: React.FC = () => {
                             <span
                               data-testid={`mcp-server-status-dot-${server.id}`}
                               aria-hidden="true"
-                              className={`h-2 w-2 flex-shrink-0 rounded-full ${server.lifecycle.connectionState === 'connected' ? 'bg-emerald-400' : 'bg-zinc-600'}`}
+                              className={`h-2 w-2 flex-shrink-0 rounded-full ${server.lifecycle.connectionState === 'connected' ? 'bg-mark-success' : 'bg-zinc-600'}`}
                             />
                             {getStatusIcon(server.lifecycle.connectionState)}
                             <div className="min-w-0">
@@ -693,11 +693,11 @@ export const MCPSettings: React.FC = () => {
                     <div className="text-xs text-zinc-400">{mcpText.diagnostics.connectedServers}</div>
                   </div>
                   <div>
-                    <div className="text-2xl font-semibold text-indigo-400">{mcpStatus.toolCount}</div>
+                    <div className="text-2xl font-semibold text-badge-accent">{mcpStatus.toolCount}</div>
                     <div className="text-xs text-zinc-400">{mcpText.diagnostics.availableTools}</div>
                   </div>
                   <div>
-                    <div className="text-2xl font-semibold text-cyan-400">{mcpStatus.resourceCount}</div>
+                    <div className="text-2xl font-semibold text-badge-info">{mcpStatus.resourceCount}</div>
                     <div className="text-xs text-zinc-400">{mcpText.diagnostics.availableResources}</div>
                   </div>
                 </div>

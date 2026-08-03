@@ -336,7 +336,7 @@ export const LivePreviewFrame: React.FC<Props> = ({ tabId, devServerUrl }) => {
         {!isBrowserMode && (
           <span
             data-testid="live-preview-bridge-status"
-            className={`w-2 h-2 rounded-full ${bridgeReady ? 'bg-emerald-400' : 'bg-zinc-500'}`}
+            className={`w-2 h-2 rounded-full ${bridgeReady ? 'bg-mark-success' : 'bg-zinc-500'}`}
             title={bridgeReady ? 'Bridge connected' : 'Waiting for bridge...'}
           />
         )}

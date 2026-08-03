@@ -153,7 +153,7 @@ describe('ToolStepGroup 三态折叠预览（ADR-043 T2）', () => {
       />,
     );
     expect(document.body.innerHTML).toContain(EXPANDED_MARKER);
-    expect(document.body.innerHTML).toContain('bg-red-400');
+    expect(document.body.innerHTML).toContain('bg-mark-danger');
   });
 
   it('⑤ 探索性失败 → 保持收起，不因流式中而进中间档', () => {
@@ -232,6 +232,6 @@ describe('ToolStepGroup 三态折叠预览（ADR-043 T2）', () => {
     );
     expect(document.body.innerHTML).toContain(EXPANDED_MARKER);
     // Read 成功 + Bash 需介入失败 = partial 态，顶色是 amber（error 态才是 red）
-    expect(document.body.innerHTML).toContain('bg-amber-400');
+    expect(document.body.innerHTML).toContain('bg-mark-warning');
   });
 });

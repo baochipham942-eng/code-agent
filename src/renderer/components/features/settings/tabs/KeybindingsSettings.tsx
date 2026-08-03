@@ -249,7 +249,7 @@ export const KeybindingsSettings: React.FC = () => {
             }`}
           >
             {keybindingsText.globalHotkeys}
-            <span className={`h-2 w-2 rounded-full ${mergedKeybindings.globalHotkeysEnabled !== false ? 'bg-primary-300' : 'bg-zinc-600'}`} />
+            <span className={`h-2 w-2 rounded-full ${mergedKeybindings.globalHotkeysEnabled !== false ? 'bg-mark-accent' : 'bg-zinc-600'}`} />
           </button>
           <button
             type="button"

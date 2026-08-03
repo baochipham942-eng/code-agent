@@ -550,11 +550,11 @@ const BlockedCapabilitiesNode: React.FC<{ timeline: TurnTimelinePayload }> = ({ 
 };
 
 const ROUTING_STEP_DOT_CLASSES: Record<TurnTimelineTone, string> = {
-  error: 'bg-red-400',
-  warning: 'bg-amber-400',
-  success: 'bg-emerald-400',
-  info: 'bg-sky-400',
-  neutral: 'bg-zinc-500',
+  error: 'bg-mark-danger',
+  warning: 'bg-mark-warning',
+  success: 'bg-mark-success',
+  info: 'bg-mark-info',
+  neutral: 'bg-mark-neutral',
 };
 
 const RoutingEvidenceNode: React.FC<{ timeline: TurnTimelinePayload }> = ({ timeline }) => {
@@ -666,7 +666,7 @@ const HookActivityNode: React.FC<{ timeline: TurnTimelinePayload }> = ({ timelin
             <div key={`${item.event}-${item.toolName || 'event'}-${item.timestamp}-${index}`} className="flex items-start gap-2 rounded-md bg-black/10 px-2.5 py-2 text-[11px]">
               <span className={`mt-[5px] h-1.5 w-1.5 shrink-0 rounded-full ${
                 // 与 TurnCard 同一套语义：拦下是 hook 的正常决策（amber），只有执行出错才红
-                item.action === 'block' ? 'bg-amber-400' : (item.errorCount || 0) > 0 ? 'bg-red-400' : 'bg-emerald-400'
+                item.action === 'block' ? 'bg-mark-warning' : (item.errorCount || 0) > 0 ? 'bg-mark-danger' : 'bg-mark-success'
               }`} />
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-1.5">
@@ -711,14 +711,14 @@ const SkillActivityNode: React.FC<{ timeline: TurnTimelinePayload }> = ({ timeli
   return (
     <div className={`rounded-lg border px-3 py-2 ${getTimelineContainerClass(timeline.tone)}`}>
       <div className="mb-1 flex items-center gap-2 text-[11px] text-zinc-300">
-        <Wrench className="h-3.5 w-3.5 text-fuchsia-300" />
+        <Wrench className="h-3.5 w-3.5 text-badge-accent" />
         <span>Skills</span>
         <span className="text-zinc-500">{activity.summary.replace(/^Skill\s*/, '')}</span>
       </div>
       <div className="mt-2 space-y-1.5">
         {activity.items.map((item, index) => (
           <div key={`${item.skillId}-${item.action}-${index}`} className="flex items-start gap-2 rounded-md bg-black/10 px-2.5 py-2 text-[11px]">
-            <span className="mt-[5px] h-1.5 w-1.5 shrink-0 rounded-full bg-fuchsia-400" />
+            <span className="mt-[5px] h-1.5 w-1.5 shrink-0 rounded-full bg-mark-accent" />
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-1.5">
                 <WorkbenchPill tone="skill">{item.label}</WorkbenchPill>

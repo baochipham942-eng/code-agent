@@ -82,7 +82,7 @@ function stateTone(state?: ActivityProviderState): StatusItem['tone'] {
 function stateDotClass(state?: ActivityProviderState): string {
   if (state === 'running' || state === 'available') return 'text-badge-success';
   if (state === 'starting' || state === 'stopping') return 'text-badge-warning';
-  if (state === 'error' || state === 'unavailable') return 'text-rose-400';
+  if (state === 'error' || state === 'unavailable') return 'text-badge-danger';
   return 'text-zinc-500';
 }
 
@@ -184,7 +184,7 @@ function formatCapturedAt(
 
 function SourceBadge({ source }: { source: ActivityContextSourcePreview }) {
   const className = {
-    automatic_background: 'border-cyan-500/20 bg-cyan-500/10 text-cyan-300',
+    automatic_background: 'border-badge-info/20 bg-cyan-500/10 text-badge-info',
     manual_capture: 'border-badge-success/20 bg-emerald-500/10 text-badge-success',
     meeting_audio: 'border-badge-warning/20 bg-amber-500/10 text-badge-warning',
     screenshot_analysis: 'border-badge-accent/20 bg-purple-500/10 text-badge-accent',
@@ -219,7 +219,7 @@ export const ActivityContextPreviewPanel: React.FC<{
       <div className="mb-3 flex items-start justify-between gap-3">
         <div>
           <div className="flex items-center gap-2 text-sm font-medium text-zinc-100">
-            <Sparkles className="h-4 w-4 text-cyan-300" />
+            <Sparkles className="h-4 w-4 text-badge-info" />
             {activityText.title}
           </div>
           <div className="mt-1 flex items-center gap-1.5 text-xs text-zinc-500">

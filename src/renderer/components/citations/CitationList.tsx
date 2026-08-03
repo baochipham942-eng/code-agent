@@ -47,7 +47,7 @@ interface CitationChipProps {
 
 const TYPE_STYLES: Record<string, { bg: string; text: string; icon: React.ReactNode }> = {
   file: { bg: 'bg-blue-500/10', text: 'text-badge-info', icon: <FileText className="h-2.5 w-2.5" /> },
-  url: { bg: 'bg-cyan-500/10', text: 'text-cyan-400', icon: <Link className="h-2.5 w-2.5" /> },
+  url: { bg: 'bg-cyan-500/10', text: 'text-badge-info', icon: <Link className="h-2.5 w-2.5" /> },
   cell: { bg: 'bg-emerald-500/10', text: 'text-badge-success', icon: <Table2 className="h-2.5 w-2.5" /> },
   query: { bg: 'bg-amber-500/10', text: 'text-badge-warning', icon: <Search className="h-2.5 w-2.5" /> },
   memory: { bg: 'bg-purple-500/10', text: 'text-badge-accent', icon: <Brain className="h-2.5 w-2.5" /> },
@@ -129,7 +129,7 @@ export function CitationSummary({
       {remaining > 0 && (
         <button
           onClick={onViewAll}
-          className="text-[10px] text-gray-500 hover:text-gray-300 px-1"
+          className="text-[10px] text-gray-500 hover:text-zinc-300 px-1"
         >
           +{remaining}
         </button>

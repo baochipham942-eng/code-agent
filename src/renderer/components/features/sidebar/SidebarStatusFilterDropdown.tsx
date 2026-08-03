@@ -63,7 +63,7 @@ export const SidebarStatusFilterDropdown: React.FC<SidebarStatusFilterDropdownPr
       >
         <ListFilter className="h-4 w-4" />
         {hasActiveStatusDropdownFilter && (
-          <span className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-cyan-400" />
+          <span className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-badge-info" />
         )}
       </button>
       {statusFilterOpen && (
@@ -91,7 +91,7 @@ export const SidebarStatusFilterDropdown: React.FC<SidebarStatusFilterDropdownPr
                 }}
                 className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors hover:bg-zinc-700 ${active ? 'text-zinc-100' : 'text-zinc-400'}`}
               >
-                <Check className={`h-3.5 w-3.5 shrink-0 ${active ? 'text-cyan-400' : 'text-transparent'}`} />
+          <Check className={`h-3.5 w-3.5 shrink-0 ${active ? 'text-badge-info' : 'text-transparent'}`} />
                 <span>{option.label}</span>
               </button>
             );
@@ -128,7 +128,7 @@ export const SidebarStatusFilterDropdown: React.FC<SidebarStatusFilterDropdownPr
                       setSessionStatusFilter('review');
                       setTrajectoryTierFilter(active ? 'all' : option.id);
                     }}
-                    className={`rounded-md border px-1.5 py-0.5 text-[10px] transition-colors ${active ? 'border-cyan-500/40 bg-cyan-500/10 text-cyan-200' : 'border-zinc-700 bg-zinc-900/40 text-zinc-400 hover:border-zinc-600 hover:text-zinc-200'}`}
+                    className={`rounded-md border px-1.5 py-0.5 text-[10px] transition-colors ${active ? 'border-badge-info/40 bg-cyan-500/10 text-badge-info' : 'border-zinc-700 bg-zinc-900/40 text-zinc-400 hover:border-zinc-600 hover:text-zinc-200'}`}
                   >
                     {option.label}
                   </button>

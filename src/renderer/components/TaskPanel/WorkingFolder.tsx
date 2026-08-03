@@ -163,7 +163,7 @@ export const WorkingFolder: React.FC = () => {
                 </div>
               )}
               {composerWorkingDirectory && composerWorkingDirectory !== workingDirectory && (
-                <div className="mb-2 rounded-md border border-cyan-500/20 bg-cyan-500/5 px-2 py-1 text-[11px] text-cyan-300">
+                <div className="mb-2 rounded-md border border-badge-info/20 bg-cyan-500/5 px-2 py-1 text-[11px] text-badge-info">
                   {t.taskPanel.nextMessageWillUse.replace('{path}', composerWorkingDirectory)}
                 </div>
               )}

@@ -46,7 +46,7 @@ export function SurfaceExecutionCompactBar({ session, copy }: SurfaceExecutionCo
       ) : SPINNING_STATES.has(state) ? (
         <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-badge-success" aria-hidden />
       ) : (
-        <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-400" aria-hidden />
+        <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-mark-warning" aria-hidden />
       )}
       <span className="min-w-0 truncate">{label}</span>
       <ChevronRight className="ml-auto h-3 w-3 shrink-0 text-zinc-500" aria-hidden />

@@ -246,11 +246,11 @@ describe('getToolStatusClass', () => {
     expect(getToolStatusClass(tc)).toContain('text-badge-success');
   });
 
-  it('should return rose for failure', () => {
+  it('should return the danger semantic token for failure', () => {
     const tc = makeToolCall({
       name: 'Bash',
       result: { toolCallId: 'tc-1', success: false },
     });
-    expect(getToolStatusClass(tc)).toContain('rose');
+    expect(getToolStatusClass(tc)).toContain('text-badge-danger');
   });
 });

@@ -68,13 +68,13 @@ export const InlinePlanCard: React.FC<InlinePlanCardProps> = ({ plan }) => {
 
   return (
     <div className="mx-4 my-2">
-      <div className="bg-zinc-900 rounded-lg border border-indigo-500/30 overflow-hidden">
+      <div className="bg-zinc-900 rounded-lg border border-badge-accent/30 overflow-hidden">
         {/* Header - clickable to expand/collapse */}
         <button
           onClick={() => setExpanded(!expanded)}
           className="w-full flex items-center gap-2 px-3 py-2 hover:bg-zinc-800/50 transition-colors"
         >
-          <FileText className="w-4 h-4 text-indigo-400 flex-shrink-0" />
+          <FileText className="w-4 h-4 text-badge-accent flex-shrink-0" />
           <span className="text-sm font-medium text-zinc-200 truncate">{plan.title}</span>
           <span className="text-xs text-zinc-500 flex-shrink-0 ml-auto mr-2">
             {completedSteps}/{totalSteps}

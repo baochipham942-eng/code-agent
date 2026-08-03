@@ -44,10 +44,10 @@ export function InlineComposerChip({
       : t.chatInput.attachRemoveAria.replace('{name}', chip.label);
 
   const palette = chip.kind === 'command'
-    ? 'border-teal-500/30 bg-teal-500/10 text-teal-200 hover:border-teal-400/50'
+    ? 'border-badge-accent/30 bg-fuchsia-500/10 text-badge-accent hover:border-badge-accent/50'
     : 'border-zinc-700 bg-zinc-800/70 text-zinc-200 hover:border-zinc-500';
   const closeHover = chip.kind === 'command'
-    ? 'text-teal-300 hover:bg-teal-400/20 hover:text-teal-100'
+    ? 'text-badge-accent hover:bg-fuchsia-400/20 hover:text-badge-accent'
     : 'text-zinc-400 hover:bg-zinc-600/70 hover:text-zinc-100';
 
   const CommandIcon = chip.kind === 'command' ? (COMMAND_ICONS[chip.id] ?? Target) : null;

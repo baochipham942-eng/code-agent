@@ -153,7 +153,7 @@ function TopicRow({
         <span>{new Date(workCard.updatedAt).toLocaleString()}</span>
         {workCard.dueAt != null && (
           <span
-            className={dueOverdue ? 'font-medium text-rose-300' : undefined}
+            className={dueOverdue ? 'font-medium text-badge-danger' : undefined}
             data-testid={`neo-topic-due-${workCard.id}`}
           >
             {t.neoTopics.duePrefix} {formatNeoTopicDueDay(workCard.dueAt)}
@@ -315,7 +315,7 @@ export const ProjectCollaborationPanel: React.FC<ProjectCollaborationPanelProps>
             </div>
           )}
           {loadError && (
-            <div className="rounded border border-rose-500/25 bg-rose-500/10 px-2 py-1 text-[11px] leading-5 text-rose-100" data-testid="project-collab-load-error">
+            <div className="rounded border border-badge-danger/25 bg-rose-500/10 px-2 py-1 text-[11px] leading-5 text-badge-danger" data-testid="project-collab-load-error">
               {loadError}
             </div>
           )}

@@ -65,7 +65,7 @@ export const LiveVoiceButton: React.FC<LiveVoiceButtonProps> = ({ sessionId, has
           className="relative flex-shrink-0 w-9 h-9 rounded-xl flex items-center justify-center bg-zinc-800/60 text-zinc-500 transition-all duration-300 hover:bg-zinc-700/70 hover:text-zinc-400"
         >
           <AudioLines className="w-4 h-4" />
-          <span className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-amber-400" />
+          <span className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-mark-warning" />
         </button>
 
         {/* 引导层挂 portal 到 body：同 VoiceStartDialog 的教训，composer 祖先链上有

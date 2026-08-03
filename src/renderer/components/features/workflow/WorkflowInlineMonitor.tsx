@@ -94,7 +94,7 @@ export function WorkflowInlineMonitor() {
     <div className="w-full shrink-0 px-4">
       <div className="mx-auto max-w-3xl rounded-lg border border-zinc-700/70 bg-zinc-900/95 backdrop-blur-sm shadow-xl text-xs">
         <div className="flex items-center gap-2 px-3 py-2">
-          <GitBranch size={14} className={snap.status === 'failed' ? 'text-badge-danger' : 'text-cyan-400'} />
+          <GitBranch size={14} className={snap.status === 'failed' ? 'text-badge-danger' : 'text-badge-info'} />
           <span className="text-zinc-300">workflow</span>
           {snap.goal && <span className="text-zinc-500 truncate max-w-[40%]" title={snap.goal}>· {snap.goal}</span>}
           <div className="ml-auto flex items-center gap-2 text-zinc-500">
@@ -170,7 +170,7 @@ function WorkflowAgentRow({ agent }: { agent: ScriptRunAgentSnapshot }) {
           {agent.hasSchema && <span className="text-zinc-600 text-[10px]">judge</span>}
           {agent.cached && (
             <span
-              className="inline-flex items-center gap-0.5 text-cyan-400/80 text-[10px]"
+              className="inline-flex items-center gap-0.5 text-badge-info/80 text-[10px]"
               title="resumable 重放命中缓存：结果来自上一次运行，未重新调用模型（0 token）"
             >
               <Zap size={9} className="shrink-0" />cached

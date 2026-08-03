@@ -13,12 +13,12 @@ const AGENT_COLORS: Record<string, string> = {
   main: 'text-badge-info',
   coder: 'text-badge-success',
   reviewer: 'text-badge-warning',
-  explore: 'text-cyan-400',
+  explore: 'text-badge-info',
   plan: 'text-badge-accent',
   tester: 'text-badge-warning',
   debugger: 'text-badge-danger',
   documenter: 'text-badge-success',
-  architect: 'text-indigo-400',
+  architect: 'text-badge-accent',
   default: 'text-zinc-400',
 };
 

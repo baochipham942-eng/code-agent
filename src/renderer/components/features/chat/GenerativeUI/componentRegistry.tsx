@@ -84,7 +84,7 @@ function actionButtons(node: NeoUIComponentNodeV1, context: NeoUIComponentContex
           onClick={() => void context.dispatch(node, 'conversation.send', {
             text: text(props.sendText, text(props.submitText, text(props.label, 'Continue'))),
           })}
-          className="rounded-lg border border-cyan-500/40 bg-cyan-500/10 px-3 py-2 text-xs font-medium text-cyan-100 hover:bg-cyan-500/20 disabled:opacity-50"
+          className="rounded-lg border border-badge-info/40 bg-cyan-500/10 px-3 py-2 text-xs font-medium text-badge-info hover:bg-cyan-500/20 disabled:opacity-50"
         >
           {text(props.sendLabel, '发送')}
         </button>

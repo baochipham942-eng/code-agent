@@ -23,7 +23,7 @@ export const LocalOpsPage: React.FC = () => {
   return (
     <FullScreenPage testId="local-ops-page" variant="inline">
       <FullScreenPageHeader
-        icon={<MonitorSmartphone className="h-4 w-4 text-cyan-300" />}
+        icon={<MonitorSmartphone className="h-4 w-4 text-badge-info" />}
         title={t.localOps.title}
         description={t.localOps.description}
         actions={(

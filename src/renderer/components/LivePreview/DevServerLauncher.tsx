@@ -302,7 +302,7 @@ export const DevServerLauncher: React.FC = () => {
                   state.logs.slice(-50).map((log, i) => (
                     <div
                       key={`${log.ts}-${i}`}
-                      className={log.stream === 'stderr' ? 'text-rose-300' : ''}
+                      className={log.stream === 'stderr' ? 'text-badge-danger' : ''}
                     >
                       {log.line}
                     </div>
@@ -310,7 +310,7 @@ export const DevServerLauncher: React.FC = () => {
                 )}
               </div>
               {state.error && (
-                <div className="mt-1.5 text-[11px] text-rose-300" data-testid="dev-server-launcher-error">
+                <div className="mt-1.5 text-[11px] text-badge-danger" data-testid="dev-server-launcher-error">
                   {state.error}
                 </div>
               )}

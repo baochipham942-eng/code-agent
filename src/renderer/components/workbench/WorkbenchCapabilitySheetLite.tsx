@@ -63,7 +63,7 @@ function getCapabilityKindLabel(capability: WorkbenchCapabilityRegistryItem): st
 function getCapabilityIcon(capability: WorkbenchCapabilityRegistryItem): React.ReactNode {
   switch (capability.kind) {
     case 'skill':
-      return <Sparkles className="h-4 w-4 text-fuchsia-300" />;
+      return <Sparkles className="h-4 w-4 text-badge-accent" />;
     case 'connector':
       return <Plug className="h-4 w-4 text-badge-info" />;
     case 'mcp':

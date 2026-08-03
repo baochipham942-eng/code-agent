@@ -112,7 +112,7 @@ export const NEO_TOPIC_SORT_COMPARATORS: Record<NeoTopicSortMode, NeoTopicSortCo
 
 /** priority ≠ medium/undefined 时才出 chip；样式对齐既有 phase chip 的 border/bg 写法。 */
 export const NEO_WORK_CARD_PRIORITY_CHIP_STYLE: Record<'urgent' | 'high' | 'low', string> = {
-  urgent: 'border-rose-400/30 bg-rose-400/10 text-rose-200',
+  urgent: 'border-badge-danger/30 bg-rose-400/10 text-badge-danger',
   high: 'border-badge-warning/30 bg-amber-400/10 text-badge-warning',
   low: 'border-zinc-700 bg-zinc-900 text-zinc-400',
 };

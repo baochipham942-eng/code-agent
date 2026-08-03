@@ -63,16 +63,16 @@ export function getPermissionConfig(type: PermissionType): PermissionConfig {
     network: {
       icon: React.createElement(Globe, { size: 20 }),
       title: '网络请求',
-      color: 'text-cyan-400',
-      bgColor: 'bg-cyan-500/10',
-      borderColor: 'border-cyan-500/30',
+      color: 'text-badge-info',
+      bgColor: 'bg-badge-info',
+      borderColor: 'border-badge-info/30',
     },
     mcp: {
       icon: React.createElement(MessageSquare, { size: 20 }),
       title: 'MCP 工具',
-      color: 'text-indigo-400',
+      color: 'text-badge-accent',
       bgColor: 'bg-indigo-500/10',
-      borderColor: 'border-indigo-500/30',
+      borderColor: 'border-badge-accent/30',
     },
   };
 

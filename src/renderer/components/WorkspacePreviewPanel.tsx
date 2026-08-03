@@ -582,7 +582,7 @@ export const WorkspacePreviewPanel: React.FC<WorkspacePreviewPanelProps> = ({
               {projectArtifactsLoading ? (
                 <div className="py-3 text-center text-xs text-zinc-500">{wp.loadingProjectArtifacts}</div>
               ) : projectArtifactsError ? (
-                <div className="py-3 text-center text-xs text-rose-300">{wp.projectArtifactsLoadFailed}</div>
+                <div className="py-3 text-center text-xs text-badge-danger">{wp.projectArtifactsLoadFailed}</div>
               ) : visibleProjectArtifacts.length === 0 ? (
                 <div className="py-3 text-center text-xs text-zinc-500">{wp.noProjectArtifacts}</div>
               ) : (

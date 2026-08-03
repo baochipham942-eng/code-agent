@@ -88,7 +88,7 @@ export function TargetContextIcon({ targetContext, className = '' }: Props) {
   }
 
   if (kind === 'browser') {
-    return <Globe size={12} className={`text-cyan-400 ${className}`} aria-label={targetContext.label || 'Browser'} />;
+    return <Globe size={12} className={`text-badge-info ${className}`} aria-label={targetContext.label || 'Browser'} />;
   }
 
   if (kind === 'mcp_server') {

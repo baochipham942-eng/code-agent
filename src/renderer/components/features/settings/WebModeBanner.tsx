@@ -33,7 +33,7 @@ export const DesktopOnlyLabel: React.FC<{ children?: React.ReactNode }> = ({ chi
   return (
     <span className="inline-flex items-center gap-1">
       {children}
-      <span className="text-xs text-gray-400 dark:text-gray-500">{t.settings.webModeBanner.desktopOnlyLabel}</span>
+      <span className="text-xs text-zinc-400 dark:text-gray-500">{t.settings.webModeBanner.desktopOnlyLabel}</span>
     </span>
   );
 };

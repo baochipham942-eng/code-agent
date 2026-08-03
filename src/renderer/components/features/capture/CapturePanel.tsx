@@ -89,7 +89,7 @@ export const CapturePanel: React.FC = () => {
         {/* 顶栏 */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-700">
           <div className="flex items-center gap-2">
-            <BookOpen className="w-4 h-4 text-cyan-400" />
+            <BookOpen className="w-4 h-4 text-badge-info" />
             <h2 className="text-sm font-medium text-zinc-200">知识库</h2>
             <span className="text-xs text-zinc-500">
               {stats?.total ?? displayItems.length} 项
@@ -98,7 +98,7 @@ export const CapturePanel: React.FC = () => {
           <div className="flex items-center gap-1">
             <button
               onClick={() => setAddDialogOpen(true)}
-              className="flex items-center gap-1 px-2 py-1 text-xs text-zinc-400 hover:text-cyan-300 rounded-md hover:bg-zinc-700 transition-colors"
+              className="flex items-center gap-1 px-2 py-1 text-xs text-zinc-400 hover:text-badge-info rounded-md hover:bg-zinc-700 transition-colors"
               title="手动添加"
             >
               <Plus className="w-3.5 h-3.5" />
@@ -107,7 +107,7 @@ export const CapturePanel: React.FC = () => {
             <button
               onClick={importFiles}
               disabled={isImporting}
-              className="flex items-center gap-1 px-2 py-1 text-xs text-zinc-400 hover:text-cyan-300 rounded-md hover:bg-zinc-700 transition-colors disabled:opacity-50"
+              className="flex items-center gap-1 px-2 py-1 text-xs text-zinc-400 hover:text-badge-info rounded-md hover:bg-zinc-700 transition-colors disabled:opacity-50"
               title="导入本地文件"
             >
               <Upload className="w-3.5 h-3.5" />
@@ -141,7 +141,7 @@ export const CapturePanel: React.FC = () => {
                 onClick={() => setFilterSource(f.key)}
                 className={`flex items-center gap-1 px-2 py-1 text-xs rounded-md transition-colors ${
                   filterSource === f.key
-                    ? 'bg-cyan-500/20 text-cyan-300'
+                    ? 'bg-cyan-500/20 text-badge-info'
                     : 'text-zinc-500 hover:bg-zinc-700'
                 }`}
               >

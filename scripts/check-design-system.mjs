@@ -274,6 +274,78 @@ function contrastRatio(hexA, hexB) {
 }
 
 const CONTRAST_MIN = 4.5;
+const SECONDARY_BUTTON_HOVER_MIN = 1.2;
+
+const SECONDARY_BUTTON_STATES = [
+  { state: 'enabled', foreground: '--btn-secondary-fg', background: '--btn-secondary-bg' },
+  { state: 'hover', foreground: '--btn-secondary-fg', background: '--btn-secondary-bg-hover' },
+  { state: 'disabled', foreground: '--btn-secondary-fg-disabled', background: '--btn-secondary-bg-disabled' },
+];
+
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function parseRgbHex(hex) {
+  return [
+    parseInt(hex.slice(1, 3), 16),
+    parseInt(hex.slice(3, 5), 16),
+    parseInt(hex.slice(5, 7), 16),
+  ];
+}
+
+function parseCssColor(value, theme, token) {
+  const hex = value.match(/^#[0-9a-fA-F]{6}$/);
+  if (hex) return { rgb: parseRgbHex(value), alpha: 1 };
+
+  const rgba = value.match(/^rgba\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(0|1|0?\.\d+)\s*\)$/i);
+  if (rgba) {
+    return {
+      rgb: [Number(rgba[1]), Number(rgba[2]), Number(rgba[3])],
+      alpha: Number(rgba[4]),
+    };
+  }
+
+  throw new Error(`[check-design-system] ${theme} 的 ${token} 不是可计算的 hex/rgba：${value}`);
+}
+
+function readCssColor(css, theme, token) {
+  const match = css.match(new RegExp(`${escapeRegExp(token)}\\s*:\\s*([^;]+);`));
+  if (!match) throw new Error(`[check-design-system] ${theme} 里找不到 ${token}，对比度测量失败`);
+  return parseCssColor(match[1].trim(), theme, token);
+}
+
+function compositeRgb(foreground, background, alpha) {
+  return foreground.map((channel, index) => channel * alpha + background[index] * (1 - alpha));
+}
+
+function resolveThemeColor(css, theme, token, backdropToken = '--bg-surface', seen = new Set()) {
+  if (seen.has(token)) throw new Error(`[check-design-system] ${theme} 的颜色 token 循环引用：${[...seen, token].join(' → ')}`);
+  const nextSeen = new Set(seen).add(token);
+  const parsed = readCssColor(css, theme, token);
+  if (parsed.alpha === 1) return parsed.rgb;
+  const backdrop = resolveThemeColor(
+    css,
+    theme,
+    backdropToken === token ? '--bg-void' : backdropToken,
+    '--bg-void',
+    nextSeen,
+  );
+  return compositeRgb(parsed.rgb, backdrop, parsed.alpha);
+}
+
+function contrastRatioRgb(rgbA, rgbB) {
+  const luminance = (rgb) => {
+    const channels = rgb.map((channel) => {
+      const value = channel / 255;
+      return value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+    });
+    return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2];
+  };
+  const [l1, l2] = [luminance(rgbA), luminance(rgbB)].sort((a, b) => b - a);
+  return (l1 + 0.05) / (l2 + 0.05);
+}
+
 // 品牌恒等值：--brand-primary 是品牌表达 token，四主题必须同值（2026-08-02 拆分拍板）。
 const BRAND_IDENTITY = '#0F766E';
 // 每套主题的可读性测量对象（2026-08-02 token 拆分后口径）：
@@ -322,6 +394,46 @@ export function measureBrandContrast() {
   return results;
 }
 
+export function measureSecondaryButtonContrast(rendererRoot = SCAN_ROOT) {
+  const themesDir = join(rendererRoot, 'styles/themes');
+  if (!existsSync(themesDir)) throw new Error(`[check-design-system] 主题目录不存在：${themesDir}`);
+  const states = [];
+  const hover = [];
+  const themeFiles = readdirSync(themesDir).filter((name) => name.endsWith('.css')).sort();
+
+  for (const file of themeFiles) {
+    const theme = file.replace('.css', '');
+    const css = readFileSync(join(themesDir, file), 'utf8');
+    // 任何半透明按钮底都必须落到主题自己声明的 surface 上，禁止脚本偷偷假设白/黑背景。
+    resolveThemeColor(css, theme, '--bg-surface');
+    const measurements = new Map();
+
+    for (const definition of SECONDARY_BUTTON_STATES) {
+      const background = resolveThemeColor(css, theme, definition.background, '--bg-surface');
+      const foreground = resolveThemeColor(css, theme, definition.foreground, definition.background);
+      const measurement = {
+        theme,
+        state: definition.state,
+        foreground,
+        background,
+        ratio: contrastRatioRgb(foreground, background),
+      };
+      states.push(measurement);
+      measurements.set(definition.state, measurement);
+    }
+
+    const enabled = measurements.get('enabled');
+    const hovered = measurements.get('hover');
+    hover.push({
+      theme,
+      ratio: contrastRatioRgb(enabled.background, hovered.background),
+    });
+  }
+
+  if (themeFiles.length === 0) throw new Error('[check-design-system] 未找到任何主题文件，secondary 按钮测量失败');
+  return { states, hover };
+}
+
 function loadBaseline() {
   if (!existsSync(BASELINE_PATH)) return null;
   return JSON.parse(readFileSync(BASELINE_PATH, 'utf8'));
@@ -341,6 +453,14 @@ if (process.argv[1] && process.argv[1].endsWith('check-design-system.mjs')) {
     console.log(`四套主题可读性 token 按各自用法场景的 WCAG 对比度（阈值 ${CONTRAST_MIN}:1）：`);
     for (const r of measureBrandContrast()) {
       console.log(`  ${r.ratio >= CONTRAST_MIN ? '✓' : '✗'} ${r.theme.padEnd(20)} ${r.token} ${r.measured} vs ${r.against} = ${r.ratio.toFixed(2)}:1  （${r.label}）`);
+    }
+    const secondary = measureSecondaryButtonContrast();
+    console.log(`secondary 按钮四套主题状态对比度（阈值 ${CONTRAST_MIN}:1；hover/启用背景差异阈值 ${SECONDARY_BUTTON_HOVER_MIN}:1）：`);
+    for (const r of secondary.states) {
+      console.log(`  ${r.ratio >= CONTRAST_MIN ? '✓' : '✗'} ${r.theme.padEnd(20)} ${r.state.padEnd(8)} = ${r.ratio.toFixed(2)}:1`);
+    }
+    for (const r of secondary.hover) {
+      console.log(`  ${r.ratio >= SECONDARY_BUTTON_HOVER_MIN ? '✓' : '✗'} ${r.theme.padEnd(20)} hover/启用背景 = ${r.ratio.toFixed(2)}:1`);
     }
     process.exit(0);
   }
@@ -385,6 +505,24 @@ if (process.argv[1] && process.argv[1].endsWith('check-design-system.mjs')) {
       console.error(`✗ [brand-identity] ${r.theme} --brand-primary = ${r.brand}，应为品牌恒等值 ${BRAND_IDENTITY}（可读性场景请用 --accent-accessible）`);
     } else {
       console.log(`= [brand-identity] ${r.theme} --brand-primary = ${BRAND_IDENTITY} 恒等`);
+    }
+  }
+
+  const secondary = measureSecondaryButtonContrast();
+  for (const r of secondary.states) {
+    if (r.ratio < CONTRAST_MIN) {
+      failed = true;
+      console.error(`✗ [secondary-button-contrast] ${r.theme} ${r.state} = ${r.ratio.toFixed(2)}:1 < ${CONTRAST_MIN}:1`);
+    } else {
+      console.log(`= [secondary-button-contrast] ${r.theme} ${r.state} = ${r.ratio.toFixed(2)}:1 达标`);
+    }
+  }
+  for (const r of secondary.hover) {
+    if (r.ratio < SECONDARY_BUTTON_HOVER_MIN) {
+      failed = true;
+      console.error(`✗ [secondary-button-hover-difference] ${r.theme} hover/启用背景 = ${r.ratio.toFixed(2)}:1 < ${SECONDARY_BUTTON_HOVER_MIN}:1`);
+    } else {
+      console.log(`= [secondary-button-hover-difference] ${r.theme} hover/启用背景 = ${r.ratio.toFixed(2)}:1 可辨`);
     }
   }
 

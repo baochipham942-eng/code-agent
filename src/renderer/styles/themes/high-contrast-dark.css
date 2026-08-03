@@ -80,6 +80,15 @@
   --badge-accent-bg: rgba(0, 255, 255, 0.2);
   --badge-accent-border: rgba(0, 255, 255, 0.7);
 
+  /* Secondary button: high-contrast dark surface pair with a lighter hover
+     step and a readable disabled pair. */
+  --btn-secondary-bg: #404040;
+  --btn-secondary-fg: #FFFFFF;
+  --btn-secondary-bg-hover: #606060;
+  --btn-secondary-bg-disabled: #202020;
+  --btn-secondary-fg-disabled: #B0B0B0;
+  --btn-ghost-bg-hover: #606060;
+
   /* Chat status text colors */
   --status-text-success: #6EE7B7;
   --status-text-warning: #FCD34D;

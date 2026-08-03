@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-07-31T10:42:25.213Z",
+  "generatedAt": "2026-08-03T18:03:16.442Z",
   "environment": {
-    "gitHead": "8e375c460ee4e850d775bd05985c47921eb94882",
+    "gitHead": "15820e89870bd1fadf679e017c32f00c0898cfc9",
     "node": "v24.15.0",
     "platform": "darwin/arm64",
     "cpu": "Apple M1",
@@ -29,17 +29,17 @@
   },
   "scenarios": {
     "turns500": {
-      "interactiveMs": 48.3,
+      "interactiveMs": 36.2,
       "renderedTurns": 500
     },
     "turns1000": {
-      "updateMs": 91.6,
+      "updateMs": 75.3,
       "renderedTurns": 1000
     },
     "denseCodeStreaming": {
       "codeBlocks": 100,
       "updates": 20,
-      "durationMs": 2143.2
+      "durationMs": 2057
     },
     "historyPrepend": {
       "prependedTurns": 30,
@@ -53,7 +53,7 @@
     },
     "userScroll": {
       "retainedPosition": true,
-      "distanceFromBottomPx": 93392
+      "distanceFromBottomPx": 93492
     },
     "streamingFollow": {
       "resumedAtBottom": true,
@@ -65,21 +65,21 @@
       "targetVisible": true
     },
     "uiStateSimulation": {
-      "convergenceMs": 33.3,
+      "convergenceMs": 33.4,
       "terminal": true
     }
   },
   "mainThread": {
-    "longTaskCount": 16,
-    "longTaskMaxMs": 154,
-    "longTaskTotalMs": 1771,
+    "longTaskCount": 19,
+    "longTaskMaxMs": 163,
+    "longTaskTotalMs": 1866,
     "over500ms": 0
   },
   "memory": {
     "supported": true,
-    "baselineBytes": 27384820,
-    "peakBytes": 87554976,
-    "deltaBytes": 60170156
+    "baselineBytes": 32003335,
+    "peakBytes": 90520389,
+    "deltaBytes": 58517054
   },
   "gates": {
     "turns500Interactive": true,

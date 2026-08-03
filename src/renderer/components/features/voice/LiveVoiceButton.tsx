@@ -3,7 +3,8 @@
 //
 // 与 VoiceInputButton（口述输入）并列、职责分离（方案 §4.2 / 附录 B）：
 // 口述 = 说完转文字进草稿；实时通话 = 全双工通话 + 字幕 + 派活。
-// 空会话直接开；已有消息的会话先确认「延续上下文」（B1 产品决议）。
+// ChatInput 只会在空会话或已有实时通话身份的会话渲染本按钮；后者如有消息，
+// 仍沿用既有「延续上下文」确认。纯文字会话的入口由上游整体隐藏。
 // 通话进行中不渲染（VoiceChrome 接管底栏）。
 //
 // 缺 key 降级（2026-07-30，能力不可用要降级提示不是消失）：总开关开着但没配
@@ -25,14 +26,9 @@ import { VoiceStartDialog, isVoiceStartConfirmDismissed } from './VoiceStartDial
 
 export interface LiveVoiceButtonProps {
   sessionId: string | null;
-  /** 已有文字消息的会话要先确认延续上下文 */
+  /** 已有消息的语音会话先确认延续上下文 */
   hasMessages: boolean;
   disabled?: boolean;
-  /**
-   * `primary` = 它占的是输入框右侧主按钮那个位置（输入框空着时接替发送键）。
-   * 那个位置的按钮是这一行的视觉落点，用弱色 icon-only 会让整行没有终点。
-   */
-  variant?: 'ghost' | 'primary';
   /**
    * 可见性前提（设置总开关 + Provider 已配置），由 ChatInput 的单一
    * useVoiceLiveAvailability 实例传入。曾经组件内部各自再调一次这个 hook——
@@ -43,7 +39,7 @@ export interface LiveVoiceButtonProps {
   availability: { enabled: boolean; configured: boolean };
 }
 
-export const LiveVoiceButton: React.FC<LiveVoiceButtonProps> = ({ sessionId, hasMessages, disabled, variant = 'ghost', availability }) => {
+export const LiveVoiceButton: React.FC<LiveVoiceButtonProps> = ({ sessionId, hasMessages, disabled, availability }) => {
   const { t } = useI18n();
   const { enabled, configured } = availability;
   const phase = useVoiceCallStore((state) => state.phase);
@@ -66,14 +62,10 @@ export const LiveVoiceButton: React.FC<LiveVoiceButtonProps> = ({ sessionId, has
           onClick={() => setGuideOpen(true)}
           title={text.noKeyButtonTitle}
           aria-label={text.noKeyButtonTitle}
-          className={`relative flex-shrink-0 w-9 h-9 rounded-xl flex items-center justify-center transition-all duration-300 ${
-            variant === 'primary'
-              ? 'bg-zinc-800/60 text-zinc-500 hover:bg-zinc-700/70 hover:text-zinc-400'
-              : 'text-zinc-600 hover:text-zinc-500 hover:bg-zinc-800'
-          }`}
+          className="relative flex-shrink-0 w-9 h-9 rounded-xl flex items-center justify-center bg-zinc-800/60 text-zinc-500 transition-all duration-300 hover:bg-zinc-700/70 hover:text-zinc-400"
         >
           <AudioLines className="w-4 h-4" />
-          <span className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-amber-400" />
+          <span className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-mark-warning" />
         </button>
 
         {/* 引导层挂 portal 到 body：同 VoiceStartDialog 的教训，composer 祖先链上有
@@ -98,7 +90,7 @@ export const LiveVoiceButton: React.FC<LiveVoiceButtonProps> = ({ sessionId, has
             }
           >
             <div data-testid="voice-nokey-guide" className="flex flex-col gap-3">
-              <span className="flex h-11 w-11 items-center justify-center rounded-full bg-primary-500/10 text-primary-400">
+              <span className="flex h-11 w-11 items-center justify-center rounded-full bg-primary-500/10 text-badge-accent">
                 <AudioLines className="h-5 w-5" />
               </span>
               <div>
@@ -126,11 +118,7 @@ export const LiveVoiceButton: React.FC<LiveVoiceButtonProps> = ({ sessionId, has
         disabled={disabled}
         title={t.voice.live.startTitle}
         aria-label={t.voice.live.startTitle}
-        className={`flex-shrink-0 w-9 h-9 rounded-xl flex items-center justify-center transition-all duration-300 ${
-          variant === 'primary'
-            ? 'bg-zinc-700/70 text-zinc-200 hover:bg-zinc-600'
-            : 'text-zinc-500 hover:text-zinc-400 hover:bg-zinc-700'
-        } ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+        className={`flex-shrink-0 w-9 h-9 rounded-xl flex items-center justify-center bg-zinc-700/70 text-zinc-200 transition-all duration-300 hover:bg-zinc-600 ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
       >
         <AudioLines className="w-4 h-4" />
       </button>

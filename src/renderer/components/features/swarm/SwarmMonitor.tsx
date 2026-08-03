@@ -32,10 +32,10 @@ import { IPC_CHANNELS } from '../../../../shared/ipc/legacy-channels';
 // Agent 状态颜色映射
 const statusColors: Record<string, { bg: string; text: string; border: string }> = {
   pending: { bg: 'bg-zinc-600/10', text: 'text-zinc-400', border: 'border-zinc-600/30' },
-  ready: { bg: 'bg-blue-500/10', text: 'text-blue-400', border: 'border-blue-500/30' },
-  running: { bg: 'bg-amber-500/10', text: 'text-amber-400', border: 'border-amber-500/30' },
-  completed: { bg: 'bg-emerald-500/10', text: 'text-emerald-400', border: 'border-emerald-500/30' },
-  failed: { bg: 'bg-red-500/10', text: 'text-red-400', border: 'border-red-500/30' },
+  ready: { bg: 'bg-blue-500/10', text: 'text-badge-info', border: 'border-badge-info/30' },
+  running: { bg: 'bg-amber-500/10', text: 'text-badge-warning', border: 'border-badge-warning/30' },
+  completed: { bg: 'bg-emerald-500/10', text: 'text-badge-success', border: 'border-badge-success/30' },
+  failed: { bg: 'bg-red-500/10', text: 'text-badge-danger', border: 'border-red-500/30' },
   cancelled: { bg: 'bg-zinc-600/10', text: 'text-zinc-500', border: 'border-zinc-600/30' },
 };
 
@@ -105,7 +105,7 @@ const AgentCard: React.FC<{
       }}
       className={`w-full text-left px-3 py-2.5 rounded-lg border transition-all cursor-pointer ${
         selected
-          ? 'border-cyan-500/40 bg-cyan-500/10 ring-1 ring-cyan-500/20'
+          ? 'border-badge-info/40 bg-cyan-500/10 ring-1 ring-[var(--badge-info-border)]'
           : `${colors.border} ${colors.bg} hover:border-zinc-500/50 hover:bg-zinc-800/60`
       }`}
       aria-pressed={selected}
@@ -126,7 +126,7 @@ const AgentCard: React.FC<{
           <button
             type="button"
             onClick={handleStop}
-            className="p-1 rounded hover:bg-red-500/20 text-zinc-500 hover:text-red-400 transition-colors"
+            className="p-1 rounded hover:bg-red-500/20 text-zinc-500 hover:text-badge-danger transition-colors"
             title="Stop this subagent"
             aria-label={`Stop subagent ${agent.name}`}
           >
@@ -176,7 +176,7 @@ const AgentCard: React.FC<{
 
       {/* Error Message */}
       {agent.error && (
-        <div className="mt-1.5 text-xs text-red-400 truncate">
+        <div className="mt-1.5 text-xs text-badge-danger truncate">
           {agent.error}
         </div>
       )}
@@ -244,15 +244,15 @@ const VerificationBadge: React.FC<{ verification?: SwarmVerificationResult }> = 
   return (
     <div className={`mx-3 mb-3 px-3 py-2.5 rounded-lg border ${
       passed
-        ? 'border-emerald-500/30 bg-emerald-500/10'
+        ? 'border-badge-success/30 bg-emerald-500/10'
         : 'border-red-500/30 bg-red-500/10'
     }`}>
       <div className="flex items-center gap-2 mb-1">
         {passed
-          ? <CheckCircle className="w-4 h-4 text-emerald-400" />
-          : <XCircle className="w-4 h-4 text-red-400" />
+          ? <CheckCircle className="w-4 h-4 text-badge-success" />
+          : <XCircle className="w-4 h-4 text-badge-danger" />
         }
-        <span className={`text-sm font-medium ${passed ? 'text-emerald-300' : 'text-red-300'}`}>
+        <span className={`text-sm font-medium ${passed ? 'text-badge-success' : 'text-badge-danger'}`}>
           验证{passed ? '通过' : '未通过'}
         </span>
         <span className="text-xs text-zinc-500 ml-auto">
@@ -265,8 +265,8 @@ const VerificationBadge: React.FC<{ verification?: SwarmVerificationResult }> = 
             key={i}
             className={`text-xs px-1.5 py-0.5 rounded ${
               check.passed
-                ? 'bg-emerald-500/20 text-emerald-400'
-                : 'bg-red-500/20 text-red-400'
+                ? 'bg-emerald-500/20 text-badge-success'
+                : 'bg-red-500/20 text-badge-danger'
             }`}
             title={check.message}
           >
@@ -340,7 +340,7 @@ export const SwarmMonitor: React.FC<SwarmMonitorProps> = ({ onClose }) => {
           <h3 className="text-sm font-medium text-zinc-200 flex items-center gap-2">
             Swarm Monitor
             {isRunning && (
-              <span className="flex items-center gap-1 text-xs text-amber-400">
+              <span className="flex items-center gap-1 text-xs text-badge-warning">
                 <Loader2 className="w-3 h-3 animate-spin" />
                 运行中
               </span>
@@ -350,8 +350,8 @@ export const SwarmMonitor: React.FC<SwarmMonitorProps> = ({ onClose }) => {
             {statistics.total} 个 Agent · {formatDuration(elapsedTime)}
           </p>
           {selectedAgent && (
-            <div className="mt-1 inline-flex items-center gap-1.5 rounded-full border border-cyan-500/20 bg-cyan-500/10 px-2 py-0.5 text-[11px] text-cyan-300">
-              <span className="text-cyan-400">当前选中</span>
+            <div className="mt-1 inline-flex items-center gap-1.5 rounded-full border border-badge-info/20 bg-cyan-500/10 px-2 py-0.5 text-[11px] text-badge-info">
+              <span className="text-badge-info">当前选中</span>
               <span className="max-w-[120px] truncate">{selectedAgent.name}</span>
             </div>
           )}
@@ -374,7 +374,7 @@ export const SwarmMonitor: React.FC<SwarmMonitorProps> = ({ onClose }) => {
             label="并行峰值"
             value={statistics.parallelPeak}
             subValue={aggregation ? `${aggregation.speedup.toFixed(1)}x` : undefined}
-            color="text-amber-400"
+            color="text-badge-warning"
           />
           <StatCard
             icon={<CheckCircle className="w-4 h-4" />}
@@ -384,19 +384,19 @@ export const SwarmMonitor: React.FC<SwarmMonitorProps> = ({ onClose }) => {
               : statistics.completed
             }
             subValue={`${statistics.completed}/${statistics.total}`}
-            color="text-emerald-400"
+            color="text-badge-success"
           />
           <StatCard
             icon={<Zap className="w-4 h-4" />}
             label="总 Token"
             value={formatTokens(statistics.totalTokens)}
-            color="text-cyan-400"
+            color="text-badge-info"
           />
           <StatCard
             icon={<DollarSign className="w-4 h-4" />}
             label="总费用"
             value={aggregation ? `$${aggregation.totalCost.toFixed(4)}` : '-'}
-            color="text-violet-400"
+            color="text-badge-accent"
           />
         </div>
       </div>
@@ -407,17 +407,17 @@ export const SwarmMonitor: React.FC<SwarmMonitorProps> = ({ onClose }) => {
           {/* Summary */}
           <div className="px-3 py-2 border-b border-zinc-700">
             <div className="flex items-center gap-2 mb-1.5">
-              <TrendingUp className="w-3.5 h-3.5 text-violet-400" />
+              <TrendingUp className="w-3.5 h-3.5 text-badge-accent" />
               <span className="text-xs text-zinc-500 uppercase tracking-wider">聚合摘要</span>
             </div>
             <div className="space-y-1 text-xs">
               <div className="flex justify-between">
                 <span className="text-zinc-500">总耗时</span>
-                <span className="text-amber-400 font-medium">{(aggregation.totalDuration / 1000).toFixed(1)}s</span>
+                <span className="text-badge-warning font-medium">{(aggregation.totalDuration / 1000).toFixed(1)}s</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-zinc-500">并行加速比</span>
-                <span className="text-cyan-400 font-medium">{aggregation.speedup.toFixed(1)}x</span>
+                <span className="text-badge-info font-medium">{aggregation.speedup.toFixed(1)}x</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-zinc-500">总迭代</span>
@@ -430,7 +430,7 @@ export const SwarmMonitor: React.FC<SwarmMonitorProps> = ({ onClose }) => {
           {aggregation.filesChanged.length > 0 && (
             <div className="px-3 py-2 border-b border-zinc-700">
               <div className="flex items-center gap-2 mb-1.5">
-                <FileText className="w-3.5 h-3.5 text-violet-400" />
+                <FileText className="w-3.5 h-3.5 text-badge-accent" />
                 <span className="text-xs text-zinc-500 uppercase tracking-wider">
                   变更文件 ({aggregation.filesChanged.length})
                 </span>
@@ -438,7 +438,7 @@ export const SwarmMonitor: React.FC<SwarmMonitorProps> = ({ onClose }) => {
               <div className="space-y-0.5 max-h-24 overflow-y-auto">
                 {aggregation.filesChanged.map((f) => (
                   <div key={f} className="flex items-center gap-1.5 text-[11px]">
-                    <span className="text-[9px] px-1 py-0.5 rounded font-semibold bg-amber-500/10 text-amber-400">M</span>
+                    <span className="text-[9px] px-1 py-0.5 rounded font-semibold bg-amber-500/10 text-badge-warning">M</span>
                     <span className="text-zinc-400 font-mono truncate">{f}</span>
                   </div>
                 ))}
@@ -457,7 +457,7 @@ export const SwarmMonitor: React.FC<SwarmMonitorProps> = ({ onClose }) => {
         {groupedAgents.running.length > 0 && (
           <AgentSection
             title="运行中"
-            icon={<Loader2 className="w-3.5 h-3.5 animate-spin text-amber-400" />}
+            icon={<Loader2 className="w-3.5 h-3.5 animate-spin text-badge-warning" />}
             agents={groupedAgents.running}
             selectedAgentId={selectedSwarmAgentId}
             onAgentSelect={setSelectedSwarmAgentId}
@@ -480,7 +480,7 @@ export const SwarmMonitor: React.FC<SwarmMonitorProps> = ({ onClose }) => {
         {groupedAgents.completed.length > 0 && (
           <AgentSection
             title="已完成"
-            icon={<CheckCircle className="w-3.5 h-3.5 text-emerald-400" />}
+            icon={<CheckCircle className="w-3.5 h-3.5 text-badge-success" />}
             agents={groupedAgents.completed}
             selectedAgentId={selectedSwarmAgentId}
             onAgentSelect={setSelectedSwarmAgentId}
@@ -491,7 +491,7 @@ export const SwarmMonitor: React.FC<SwarmMonitorProps> = ({ onClose }) => {
         {groupedAgents.failed.length > 0 && (
           <AgentSection
             title="失败"
-            icon={<XCircle className="w-3.5 h-3.5 text-red-400" />}
+            icon={<XCircle className="w-3.5 h-3.5 text-badge-danger" />}
             agents={groupedAgents.failed}
             selectedAgentId={selectedSwarmAgentId}
             onAgentSelect={setSelectedSwarmAgentId}

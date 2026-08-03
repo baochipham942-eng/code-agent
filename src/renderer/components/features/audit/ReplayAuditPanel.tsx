@@ -45,11 +45,11 @@ function gradeTone(grade?: TurnQualityScoreSummary['grade']): string {
   switch (grade) {
     case 'excellent':
     case 'good':
-      return 'border-emerald-400/20 bg-emerald-400/10 text-emerald-200';
+      return 'border-badge-success/20 bg-emerald-400/10 text-badge-success';
     case 'watch':
-      return 'border-amber-400/20 bg-amber-400/10 text-amber-200';
+      return 'border-badge-warning/20 bg-amber-400/10 text-badge-warning';
     case 'risk':
-      return 'border-red-400/20 bg-red-400/10 text-red-200';
+      return 'border-badge-danger/20 bg-red-400/10 text-badge-danger';
     default:
       return 'border-zinc-700 bg-zinc-900/70 text-zinc-400';
   }
@@ -58,11 +58,11 @@ function gradeTone(grade?: TurnQualityScoreSummary['grade']): string {
 function dimensionTone(status?: TurnQualityScoreBreakdown['status']): string {
   switch (status) {
     case 'good':
-      return 'border-emerald-400/15 bg-emerald-400/[0.05]';
+      return 'border-badge-success/15 bg-emerald-400/[0.05]';
     case 'watch':
-      return 'border-amber-400/15 bg-amber-400/[0.05]';
+      return 'border-badge-warning/15 bg-amber-400/[0.05]';
     case 'risk':
-      return 'border-red-400/15 bg-red-400/[0.05]';
+      return 'border-badge-danger/15 bg-red-400/[0.05]';
     default:
       return 'border-white/[0.06] bg-white/[0.025]';
   }
@@ -221,7 +221,7 @@ const Metric: React.FC<{ icon: React.ReactNode; label: string; value: string }> 
 );
 
 const AgentScorecardRow: React.FC<{ scorecard: AgentQualityScorecard }> = ({ scorecard }) => (
-  <div className="rounded-md border border-fuchsia-400/10 bg-fuchsia-400/[0.04] px-3 py-2">
+  <div className="rounded-md border border-badge-accent/10 bg-fuchsia-400/[0.04] px-3 py-2">
     <div className="flex items-center justify-between gap-2">
       <div className="min-w-0">
         <div className="truncate text-sm text-zinc-200">{scorecard.agentName || scorecard.agentId || 'Main agent'}</div>
@@ -242,13 +242,13 @@ const MemoryAuditSummary: React.FC<{ audit: ReplayMemoryAudit }> = ({ audit }) =
   const items = getMemoryItems(audit);
   const injectedBlocks = audit.blocks.filter((block) => block.injected);
   return (
-    <div className="rounded-md border border-emerald-400/10 bg-emerald-400/[0.04] px-3 py-2">
+    <div className="rounded-md border border-badge-success/10 bg-emerald-400/[0.04] px-3 py-2">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2 text-sm text-emerald-100">
+        <div className="flex items-center gap-2 text-sm text-badge-success">
           <Brain className="h-4 w-4" />
           {audit.mode === 'off' ? '记忆关闭' : `记忆命中 ${items.length}`}
         </div>
-        <div className="flex flex-wrap gap-1.5 text-[11px] text-emerald-200/60">
+        <div className="flex flex-wrap gap-1.5 text-[11px] text-badge-success/60">
           <span>{injectedBlocks.length} blocks</span>
           {audit.suppressedEntryIds?.length ? <span>{audit.suppressedEntryIds.length} suppressed</span> : null}
         </div>
@@ -263,7 +263,7 @@ const MemoryAuditSummary: React.FC<{ audit: ReplayMemoryAudit }> = ({ audit }) =
               key={`${block.blockType}-${index}`}
               className={`rounded border px-1.5 py-0.5 text-[10px] ${
                 block.injected
-                  ? 'border-emerald-400/15 bg-emerald-400/10 text-emerald-200'
+                  ? 'border-badge-success/15 bg-emerald-400/10 text-badge-success'
                   : 'border-zinc-700 bg-zinc-900/70 text-zinc-500'
               }`}
             >
@@ -287,21 +287,21 @@ const MemoryAuditSummary: React.FC<{ audit: ReplayMemoryAudit }> = ({ audit }) =
 };
 
 const ModelDecisionSummary: React.FC<{ decision: ReplayModelDecision; audit?: ReplayMemoryAudit | null }> = ({ decision, audit }) => (
-  <div className="rounded-md border border-sky-400/10 bg-sky-400/[0.04] px-3 py-2">
+  <div className="rounded-md border border-badge-info/10 bg-sky-400/[0.04] px-3 py-2">
     <div className="flex flex-wrap items-center justify-between gap-2">
       <div className="min-w-0">
-        <div className="flex items-center gap-2 text-sm text-sky-100">
+        <div className="flex items-center gap-2 text-sm text-badge-info">
           <Cpu className="h-4 w-4" />
           <span className="truncate">{decision.provider}/{decision.model}</span>
         </div>
-        <div className="mt-1 text-[11px] text-sky-200/60">{strategyLabel(decision, audit)}</div>
+        <div className="mt-1 text-[11px] text-badge-info/60">{strategyLabel(decision, audit)}</div>
       </div>
-      <div className="font-mono text-[11px] text-sky-200/50">
+      <div className="font-mono text-[11px] text-badge-info/50">
         {formatNumber(decision.inputTokens)} in / {formatNumber(decision.outputTokens)} out
       </div>
     </div>
     {decision.fallbackFrom ? (
-      <div className="mt-1 text-[11px] text-amber-200/70">fallback from {decision.fallbackFrom}</div>
+      <div className="mt-1 text-[11px] text-badge-warning/70">fallback from {decision.fallbackFrom}</div>
     ) : null}
   </div>
 );
@@ -318,7 +318,7 @@ const ToolList: React.FC<{ tools: ReplayToolCall[] }> = ({ tools }) => {
         {tools.slice(0, 5).map((tool) => (
           <div key={tool.id} className="flex items-center justify-between gap-2 text-[11px]">
             <span className="truncate text-zinc-400">{tool.name}</span>
-            <span className={tool.success ? 'text-emerald-300/70' : 'text-red-300/70'}>
+            <span className={tool.success ? 'text-badge-success/70' : 'text-badge-danger/70'}>
               {tool.successKnown === false ? 'unknown' : tool.success ? 'ok' : 'failed'}
             </span>
           </div>
@@ -362,7 +362,7 @@ const TurnAuditRow: React.FC<{ turn: ReplayTurn }> = ({ turn }) => {
         ))}
         <ToolList tools={tools} />
         {errors.length ? (
-          <div className="rounded-md border border-red-400/15 bg-red-400/[0.05] px-3 py-2 text-[11px] text-red-200/80">
+          <div className="rounded-md border border-badge-danger/15 bg-red-400/[0.05] px-3 py-2 text-[11px] text-badge-danger/80">
             {errors.map((block, index) => (
               <div key={`${block.timestamp}-${index}`}>{compactText(block.content, 160)}</div>
             ))}
@@ -401,17 +401,17 @@ export const ReplayAuditPanelView: React.FC<ReplayAuditPanelViewProps> = ({
   if (error) {
     return (
       <div className="h-full overflow-y-auto bg-zinc-950 p-4">
-        <div className="rounded-md border border-red-400/20 bg-red-400/[0.06] p-4 text-sm text-red-100">
+        <div className="rounded-md border border-badge-danger/20 bg-red-400/[0.06] p-4 text-sm text-badge-danger">
           <div className="flex items-center gap-2">
             <AlertTriangle className="h-4 w-4" />
             Replay/Audit 加载失败
           </div>
-          <div className="mt-2 text-xs text-red-200/70">{error}</div>
+          <div className="mt-2 text-xs text-badge-danger/70">{error}</div>
           {onRefresh ? (
             <button
               type="button"
               onClick={onRefresh}
-              className="mt-3 inline-flex items-center gap-1.5 rounded-md border border-red-300/20 px-2 py-1 text-xs text-red-100 hover:bg-red-300/10"
+              className="mt-3 inline-flex items-center gap-1.5 rounded-md border border-badge-danger/20 px-2 py-1 text-xs text-badge-danger hover:bg-red-300/10"
             >
               <RefreshCw className="h-3.5 w-3.5" />
               重试
@@ -452,7 +452,7 @@ export const ReplayAuditPanelView: React.FC<ReplayAuditPanelViewProps> = ({
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
             <div className="flex items-center gap-2 text-sm font-medium text-zinc-100">
-              <ShieldCheck className="h-4 w-4 text-sky-300" />
+              <ShieldCheck className="h-4 w-4 text-badge-info" />
               Replay/Audit
             </div>
             <div className="mt-1 truncate text-xs text-zinc-500">

@@ -15,6 +15,7 @@ import type {
   MCPHttpStreamableServerConfig,
 } from './types';
 import { CUA_DRIVER_SERVER_NAME } from './types';
+import { CUA_HELPER_APP_NAMES } from '../../shared/cuaHelperChannel';
 import { createMemoryKVServer } from './servers/memoryKVServer';
 import { createCodeIndexServer } from './servers/codeIndexServer';
 import { loadMcpConfigFiles } from './mcpConfigFile';
@@ -24,21 +25,21 @@ const logger = createLogger('MCPDefaultServers');
 
 // 重签后的 cua-driver 二进制。fetch 脚本把开发态产物放进 noindex staging，
 // Tauri 打包时再映射回 bundle 内 scripts/ 下的标准 .app 路径。
-const CUA_BUNDLED_BIN_RELS = [
-  path.join('scripts', 'Agent Neo Computer Use.app', 'Contents', 'MacOS', 'cua-driver'),
-  path.join('.tauri-resources.noindex', 'scripts', 'Agent Neo Computer Use.app', 'Contents', 'MacOS', 'cua-driver'),
-];
-const CUA_APP_BIN_SUFFIX = path.join(
-  'Agent Neo Computer Use.app',
-  'Contents',
-  'MacOS',
-  'cua-driver',
+// 生产包与 dev 包的 helper 是两个不同 bundle id / 不同目录名的产物（TCC 记账要求，
+// 见 shared/cuaHelperChannel.ts），所以两个名字都要探。
+const CUA_APP_BIN_SUFFIXES = CUA_HELPER_APP_NAMES.map((appName) =>
+  path.join(appName, 'Contents', 'MacOS', 'cua-driver'),
 );
+const CUA_BUNDLED_BIN_RELS = CUA_APP_BIN_SUFFIXES.flatMap((suffix) => [
+  path.join('scripts', suffix),
+  path.join('.tauri-resources.noindex', 'scripts', suffix),
+]);
 const CUA_MCP_LAUNCHER_NAME = 'agent-neo-computer-use-mcp.sh';
 
 function resolveCuaMcpLaunch(command: string): Pick<MCPStdioServerConfig, 'command' | 'args'> {
   const normalizedCommand = path.normalize(command);
-  if (process.platform === 'darwin' && normalizedCommand.endsWith(CUA_APP_BIN_SUFFIX)) {
+  const isSignedHelperApp = CUA_APP_BIN_SUFFIXES.some((suffix) => normalizedCommand.endsWith(suffix));
+  if (process.platform === 'darwin' && isSignedHelperApp) {
     const appRoot = path.resolve(path.dirname(normalizedCommand), '..', '..');
     return {
       command: path.join(appRoot, 'Contents', 'Resources', CUA_MCP_LAUNCHER_NAME),
@@ -47,7 +48,7 @@ function resolveCuaMcpLaunch(command: string): Pick<MCPStdioServerConfig, 'comma
   }
 
   if (process.platform === 'darwin') {
-    // 开发态缺少签名 helper 时也禁止 0.8.1 默认 `mcp` 去启动旧 CuaDriver。
+    // 开发态缺少签名 helper 时也禁止上游默认 `mcp` 去启动旧 CuaDriver。
     // embedded 继承 Agent Neo 宿主的 TCC；发布态始终走上面的签名 launcher。
     return {
       command,
@@ -250,9 +251,8 @@ export function getDefaultMCPServers(): MCPServerConfig[] {
       command: cuaMcpLaunch.command,
       args: cuaMcpLaunch.args,
       env: {
-        CUA_DRIVER_MCP_MODE: '1',
         CUA_DRIVER_RS_UPDATE_CHECK: '0',
-        // 0.8.1 默认启用产品遥测；Neo 的桌面能力保持显式 opt-in，不向上游发事件。
+        // 上游默认启用产品遥测；Neo 的桌面能力保持显式 opt-in，不向上游发事件。
         CUA_DRIVER_RS_TELEMETRY_ENABLED: 'false',
       },
       enabled: cuaEnabled && cuaSupported,

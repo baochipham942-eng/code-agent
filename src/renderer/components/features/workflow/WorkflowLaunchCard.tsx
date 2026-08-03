@@ -22,10 +22,10 @@ import { DecisionCard, type DecisionOption } from '../../DecisionCard';
 function DimensionRow({ icon, label, text, warn }: { icon: React.ReactNode; label: string; text: string; warn?: boolean }) {
   return (
     <div className="flex items-start gap-2 py-1">
-      <div className={`pt-0.5 ${warn ? 'text-amber-400' : 'text-zinc-500'}`}>{icon}</div>
+      <div className={`pt-0.5 ${warn ? 'text-badge-warning' : 'text-zinc-500'}`}>{icon}</div>
       <div className="min-w-0 flex-1">
         <span className="text-zinc-400">{label}</span>
-        <span className={`ml-2 ${warn ? 'text-amber-300' : 'text-zinc-300'}`}>{text}</span>
+        <span className={`ml-2 ${warn ? 'text-badge-warning' : 'text-zinc-300'}`}>{text}</span>
       </div>
     </div>
   );
@@ -118,7 +118,7 @@ export function WorkflowLaunchCard() {
           </div>
 
           {request.writeHint && (
-            <div className="mt-1 flex items-center gap-2 border-t border-zinc-800 pt-2 text-amber-300">
+            <div className="mt-1 flex items-center gap-2 border-t border-zinc-800 pt-2 text-badge-warning">
               <AlertTriangle size={12} className="shrink-0" />
               <span>{w.writeHintWarning}</span>
             </div>

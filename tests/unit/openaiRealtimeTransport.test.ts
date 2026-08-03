@@ -21,6 +21,13 @@ class FakeUpstream extends EventEmitter {
 
   send(data: string) {
     this.sent.push(data);
+    const event = JSON.parse(data) as { type?: string; session?: Record<string, unknown> };
+    if (event.type === 'session.update') {
+      queueMicrotask(() => this.emit('message', JSON.stringify({
+        type: 'session.updated',
+        session: event.session,
+      })));
+    }
   }
 
   ping() {
@@ -136,6 +143,7 @@ describe('OpenAI Realtime provider profile', () => {
     await handle.close();
   });
 
+  // 上游必带 response_id，见 openai-node v7.3.0 schema。
   it('16k 上行帧升采样到 24k，OpenAI output_audio 事件归一为既有事件', async () => {
     const events: Array<{ type: string; text?: string }> = [];
     const audio: Buffer[] = [];
@@ -159,6 +167,7 @@ describe('OpenAI Realtime provider profile', () => {
     }));
     upstream.emit('message', JSON.stringify({
       type: 'response.output_audio_transcript.delta',
+      response_id: 'response-1',
       delta: '你好',
     }));
     upstream.emit('message', JSON.stringify({
@@ -177,9 +186,24 @@ describe('OpenAI Realtime provider profile', () => {
       transcript: '',
     }));
     expect(audio[0]).toEqual(Buffer.from([1, 2, 3, 4]));
-    expect(events).toContainEqual({ type: 'assistant.transcript', text: '你好', done: false });
-    expect(events).toContainEqual({ type: 'user.transcript', text: '多语言', done: false });
-    expect(events).toContainEqual({ type: 'user.transcript', text: '多语言', done: true });
+    expect(events).toContainEqual({
+      type: 'assistant.transcript',
+      text: '你好',
+      done: false,
+      responseId: 'response-1',
+    });
+    expect(events).toContainEqual({
+      type: 'user.transcript',
+      text: '多语言',
+      done: false,
+      itemId: 'user-1',
+    });
+    expect(events).toContainEqual({
+      type: 'user.transcript',
+      text: '多语言',
+      done: true,
+      itemId: 'user-1',
+    });
     await handle.close();
   });
 

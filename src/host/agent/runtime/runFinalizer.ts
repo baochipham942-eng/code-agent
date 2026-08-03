@@ -266,7 +266,18 @@ export class RunFinalizer {
       logCollector.agent('ERROR', `Agent run failed: ${errorMessage}`);
       this.ctx.onEvent({
         type: 'error',
-        data: { message: errorMessage, code: 'RUN_FAILED' },
+        data: {
+          message: errorMessage,
+          code: 'RUN_FAILED',
+          // 这一轮真正用的模型。失败时没有 turnQuality 可挂（那是成功轮才写的），
+          // 渲染侧只能拿前端 store 的"当前选中模型"顶上——用户刚切过模型时，
+          // 失败卡就会指认一个根本没跑过的模型（真机 2026-07-31：实跑 100xlabs
+          // 连接失败，卡片显示刚选的 deepseek）。
+          details: {
+            provider: this.ctx.modelConfig.provider,
+            model: this.ctx.modelConfig.model,
+          },
+        },
       });
 
       this.ctx.hookManager?.triggerStopFailure(
@@ -776,15 +787,14 @@ export class RunFinalizer {
       && judgment.source === 'llm'
       && judgment.durableFacts.length > 0
     ) {
-      writeDurableFacts(judgment.durableFacts)
-        .then(({ written, skipped }) => {
-          logger.info('[RunFinalizer] Durable facts persisted', { written, skipped });
-        })
-        .catch((error) => {
-          logger.warn('[RunFinalizer] Durable fact persistence failed', {
-            error: error instanceof Error ? error.message : String(error),
-          });
+      try {
+        const { written, skipped } = await writeDurableFacts(judgment.durableFacts);
+        logger.info('[RunFinalizer] Durable facts persisted', { written, skipped });
+      } catch (error) {
+        logger.warn('[RunFinalizer] Durable fact persistence failed', {
+          error: error instanceof Error ? error.message : String(error),
         });
+      }
     }
 
     // "只存值得留的" — skip trivial chats (greetings, "继续"/"ok", no-signal turns).

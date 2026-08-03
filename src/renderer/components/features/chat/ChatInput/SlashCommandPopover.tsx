@@ -903,7 +903,7 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
                       : 'text-zinc-400 hover:bg-zinc-800/50'
                   }`}
                 >
-                  <span className={i === selectedIndex ? 'text-primary-400' : 'text-zinc-500'}>
+                  <span className={i === selectedIndex ? 'text-accent-accessible' : 'text-zinc-500'}>
                     {usesInitialAvatar ? (
                       <RoleInitialAvatar roleId={cmd.id} name={cmd.label} className="h-4 w-4 text-[10px]" />
                     ) : cmd.icon}
@@ -918,12 +918,12 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
                         {cmd.slashText}
                       </span>
                       {skillStatus ? (
-                        <span className="shrink-0 rounded bg-emerald-500/10 px-1.5 py-0.5 text-[10px] text-emerald-300">
+                        <span className="shrink-0 rounded bg-emerald-500/10 px-1.5 py-0.5 text-[10px] text-badge-success">
                           {skillStatus}
                         </span>
                       ) : null}
                       {connectorStatus || mcpStatus ? (
-                        <span className="shrink-0 rounded bg-sky-500/10 px-1.5 py-0.5 text-[10px] text-sky-300">
+                        <span className="shrink-0 rounded bg-sky-500/10 px-1.5 py-0.5 text-[10px] text-badge-info">
                           {connectorStatus || mcpStatus}
                         </span>
                       ) : null}

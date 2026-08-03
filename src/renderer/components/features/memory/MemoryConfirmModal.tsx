@@ -28,9 +28,9 @@ export const MemoryConfirmModal: React.FC<MemoryConfirmModalProps> = ({
       <div className="bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl w-80 overflow-hidden">
         {/* Header */}
         <div className="flex items-center gap-2 px-4 py-3 bg-zinc-800 border-b border-zinc-700">
-          <Brain className="w-5 h-5 text-purple-400" />
+          <Brain className="w-5 h-5 text-badge-accent" />
           <span className="font-medium text-zinc-200">确认记忆</span>
-          <span className="ml-auto flex items-center gap-1 text-xs text-amber-400">
+          <span className="ml-auto flex items-center gap-1 text-xs text-badge-warning">
             <AlertTriangle className="w-3 h-3" />
             {confidencePercent}% 置信度
           </span>

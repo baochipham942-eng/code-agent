@@ -75,12 +75,12 @@ function getInviteStatus(
     return { label: labels.inactive, className: 'border-zinc-700 bg-zinc-800 text-zinc-400' };
   }
   if (invite.expiresAt && new Date(invite.expiresAt).getTime() < Date.now()) {
-    return { label: labels.expired, className: 'border-red-500/30 bg-red-500/10 text-red-300' };
+    return { label: labels.expired, className: 'border-red-500/30 bg-red-500/10 text-badge-danger' };
   }
   if (invite.remainingUses <= 0) {
-    return { label: labels.exhausted, className: 'border-amber-500/30 bg-amber-500/10 text-amber-300' };
+    return { label: labels.exhausted, className: 'border-badge-warning/30 bg-amber-500/10 text-badge-warning' };
   }
-  return { label: labels.usable, className: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300' };
+  return { label: labels.usable, className: 'border-badge-success/30 bg-emerald-500/10 text-badge-success' };
 }
 
 function normalizeCodeInput(value: string): string {
@@ -253,7 +253,7 @@ export const InviteCodesSettings: React.FC = () => {
             <div className="mt-1 text-xs text-zinc-500">{inviteText.summary.invites}</div>
           </div>
           <div className="rounded-lg border border-zinc-800 bg-zinc-900/60 px-4 py-3">
-            <div className="text-xl font-semibold text-emerald-300">{summary.usable}</div>
+            <div className="text-xl font-semibold text-badge-success">{summary.usable}</div>
             <div className="mt-1 text-xs text-zinc-500">{inviteText.statusLabels.usable}</div>
           </div>
           <div className="rounded-lg border border-zinc-800 bg-zinc-900/60 px-4 py-3">
@@ -267,14 +267,14 @@ export const InviteCodesSettings: React.FC = () => {
         </div>
 
         {unavailableReason && (
-          <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+          <div className="flex items-start gap-2 rounded-lg border border-badge-warning/30 bg-amber-500/10 px-3 py-2 text-xs text-badge-warning">
             <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
             <span>{unavailableReason}</span>
           </div>
         )}
 
         {error && (
-          <div className="flex items-start gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-200">
+          <div className="flex items-start gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-badge-danger">
             <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
             <span>{error}</span>
           </div>

@@ -117,22 +117,22 @@ export function getNativeConnectorReadiness(
     case 'ready':
       return {
         label: labels.ready,
-        className: 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/25',
+        className: 'bg-emerald-500/15 text-badge-success border border-badge-success/25',
       };
     case 'failed':
       return {
         label: labels.failed,
-        className: 'bg-red-500/15 text-red-300 border border-red-500/25',
+        className: 'bg-red-500/15 text-badge-danger border border-red-500/25',
       };
     case 'unavailable':
       return {
         label: labels.unavailable,
-        className: 'bg-amber-500/15 text-amber-300 border border-amber-500/25',
+        className: 'bg-amber-500/15 text-badge-warning border border-badge-warning/25',
       };
     case 'unchecked':
       return {
         label: labels.unchecked,
-        className: 'bg-sky-500/15 text-sky-300 border border-sky-500/25',
+        className: 'bg-sky-500/15 text-badge-info border border-badge-info/25',
       };
     default:
       return {
@@ -153,22 +153,22 @@ export function getRuntimeConnectorReadiness(
     case 'ready':
       return {
         label: labels.ready,
-        className: 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/25',
+        className: 'bg-emerald-500/15 text-badge-success border border-badge-success/25',
       };
     case 'failed':
       return {
         label: labels.failed,
-        className: 'bg-red-500/15 text-red-300 border border-red-500/25',
+        className: 'bg-red-500/15 text-badge-danger border border-red-500/25',
       };
     case 'unavailable':
       return {
         label: labels.unavailable,
-        className: 'bg-amber-500/15 text-amber-300 border border-amber-500/25',
+        className: 'bg-amber-500/15 text-badge-warning border border-badge-warning/25',
       };
     case 'unchecked':
       return {
         label: labels.unchecked,
-        className: 'bg-sky-500/15 text-sky-300 border border-sky-500/25',
+        className: 'bg-sky-500/15 text-badge-info border border-badge-info/25',
       };
     default:
       return {
@@ -289,7 +289,7 @@ export const NativeConnectorItems: React.FC<NativeConnectorItemsProps> = ({
                   {readiness.label}
                 </span>
                 {row.status?.connected && (
-                  <span className="text-[11px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-300">
+                  <span className="text-[11px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-badge-success">
                     {text.connected}
                   </span>
                 )}
@@ -300,7 +300,7 @@ export const NativeConnectorItems: React.FC<NativeConnectorItemsProps> = ({
                 {checkedAt ? `${text.lastCheckedPrefix}${checkedAt}` : ''}
               </div>
               {detail && (
-                <div className={`mt-1 text-xs ${row.status?.error ? 'text-red-300' : 'text-zinc-400'}`}>
+                <div className={`mt-1 text-xs ${row.status?.error ? 'text-badge-danger' : 'text-zinc-400'}`}>
                   {detail}
                 </div>
               )}
@@ -333,7 +333,7 @@ export const NativeConnectorItems: React.FC<NativeConnectorItemsProps> = ({
                     onClick={() => onLifecycleAction(row.id, action)}
                     className={`inline-flex items-center gap-1.5 rounded border px-2 py-1 text-[11px] transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
                       config.danger
-                        ? 'border-red-500/25 text-red-300 hover:bg-red-500/10'
+                        ? 'border-red-500/25 text-badge-danger hover:bg-red-500/10'
                         : 'border-zinc-600 text-zinc-300 hover:bg-zinc-800'
                     }`}
                     title={`${row.label} ${actionText.label}`}
@@ -390,7 +390,7 @@ export const RuntimeConnectorItems: React.FC<RuntimeConnectorItemsProps> = ({
                 {readiness.label}
               </span>
               {row.connected && (
-                <span className="text-[11px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-300">
+                <span className="text-[11px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-badge-success">
                   {text.connected}
                 </span>
               )}
@@ -404,7 +404,7 @@ export const RuntimeConnectorItems: React.FC<RuntimeConnectorItemsProps> = ({
               {text.availableActionsPrefix}{formatRuntimeActionLabels(lifecycleActions, text)}
             </div>
             {detail && (
-              <div className={`mt-1 text-xs ${row.error ? 'text-red-300' : 'text-zinc-400'}`}>
+              <div className={`mt-1 text-xs ${row.error ? 'text-badge-danger' : 'text-zinc-400'}`}>
                 {detail}
               </div>
             )}
@@ -547,7 +547,7 @@ export const NativeConnectorsSection: React.FC = () => {
   return (
     <div className="bg-zinc-800 rounded-lg p-4 border border-zinc-700">
       <div className="flex items-center gap-2 mb-3">
-        <Plug className="w-4 h-4 text-sky-400" />
+        <Plug className="w-4 h-4 text-badge-info" />
         <h4 className="text-sm font-medium text-zinc-200">{connectorText.title}</h4>
         <span className="text-xs px-1.5 py-0.5 rounded bg-zinc-600 text-zinc-400">macOS</span>
       </div>
@@ -587,7 +587,7 @@ export const NativeConnectorsSection: React.FC = () => {
       )}
 
       {error && (
-        <div className="mt-3 text-xs text-red-400">{connectorText.operationFailedPrefix}{error}</div>
+        <div className="mt-3 text-xs text-badge-danger">{connectorText.operationFailedPrefix}{error}</div>
       )}
     </div>
   );

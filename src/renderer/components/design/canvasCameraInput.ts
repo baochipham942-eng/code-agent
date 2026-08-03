@@ -22,11 +22,23 @@ export interface PointerDragLike {
   handTool?: boolean;
 }
 
+export type CanvasPointerMode = 'annotation' | 'diagram' | 'pan' | 'region' | 'selection';
+
+export interface CanvasPointerModeLike extends PointerDragLike {
+  annotationMode?: boolean;
+  diagramDrawing?: boolean;
+  regionDrawing?: boolean;
+}
+
 export function clamp(value: number, min = CANVAS_SCALE_MIN, max = CANVAS_SCALE_MAX): number {
   if (Number.isNaN(value)) return min;
   if (value === Infinity) return max;
   if (value === -Infinity) return min;
   return Math.min(max, Math.max(min, value));
+}
+
+export function clampCameraScale(camera: CanvasCamera): CanvasCamera {
+  return { ...camera, scale: clamp(camera.scale) };
 }
 
 export function normalizeDelta(
@@ -93,6 +105,15 @@ export function classifyPointerDragIntent(event: PointerDragLike): 'pan' | 'none
   if (event.handTool && event.button === 0) return 'pan';
   if (event.spaceKey && event.button === 0) return 'pan';
   return 'none';
+}
+
+/** Stage 指针事件的唯一优先级表：批注模式必须先于图解、平移和局部框选。 */
+export function classifyCanvasPointerMode(event: CanvasPointerModeLike): CanvasPointerMode {
+  if (event.annotationMode) return 'annotation';
+  if (event.diagramDrawing) return 'diagram';
+  if (classifyPointerDragIntent(event) === 'pan') return 'pan';
+  if (event.regionDrawing) return 'region';
+  return 'selection';
 }
 
 export function dragEndCamera(camera: CanvasCamera, position: { x: number; y: number }): CanvasCamera {

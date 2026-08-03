@@ -75,6 +75,7 @@ export function useDesignCanvasImport(): {
           width,
           height,
           createdAt: Date.now(),
+          createdBy: 'user',
         };
         if (options?.role === 'reference') node.role = 'reference';
         useDesignCanvasStore.getState().addNode(node);

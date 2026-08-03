@@ -3,6 +3,7 @@
 // ============================================================================
 
 import React, { useEffect, useId, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import { useI18n } from '../../hooks/useI18n';
 import { BUTTON_PRIMARY_CLASS } from './Button';
@@ -65,6 +66,12 @@ export interface ModalProps {
   children: React.ReactNode;
   /** Z-index level (default: Z_LAYERS.modal) */
   zIndex?: number;
+  /**
+   * 为 true 时经 portal 挂到 body（跳出 transform/filter 祖先对 fixed 定位的囚禁，
+   * 如消息列表里的气泡弹窗）。默认 false 保持既有内联行为——全局改默认会让
+   * 「findBy 到节点→portal 重挂载→点击落空」类的时序竞态蔓延到所有 Modal 调用方。
+   */
+  portal?: boolean;
 }
 
 export const Modal: React.FC<ModalProps> = ({
@@ -82,6 +89,7 @@ export const Modal: React.FC<ModalProps> = ({
   className = '',
   children,
   zIndex = Z_LAYERS.modal,
+  portal = false,
 }) => {
   const { t } = useI18n();
   const modalRef = useRef<HTMLDivElement>(null);
@@ -175,7 +183,7 @@ export const Modal: React.FC<ModalProps> = ({
 
   const zIndexStyle = { zIndex };
 
-  return (
+  const tree = (
     <div className="fixed inset-0 flex items-center justify-center" style={zIndexStyle}>
       {/* Backdrop */}
       <div
@@ -237,6 +245,7 @@ export const Modal: React.FC<ModalProps> = ({
       </div>
     </div>
   );
+  return portal && typeof document !== 'undefined' ? createPortal(tree, document.body) : tree;
 };
 
 // ============================================================================

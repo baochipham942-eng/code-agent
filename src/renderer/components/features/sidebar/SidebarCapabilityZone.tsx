@@ -116,7 +116,7 @@ export const SidebarCapabilityZone: React.FC = () => {
       >
         <span className="relative flex h-4 w-4 flex-shrink-0 items-center justify-center text-zinc-500">
           <Clock3 className="h-4 w-4" />
-          {runningCount > 0 && <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-emerald-400" data-testid="sidebar-capability-automation-running" />}
+          {runningCount > 0 && <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-mark-success" data-testid="sidebar-capability-automation-running" />}
         </span>
         <span className="min-w-0 flex-1 truncate text-sm text-zinc-300 group-hover:text-zinc-100">
           {cz.automation}

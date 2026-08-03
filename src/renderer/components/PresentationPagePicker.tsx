@@ -95,7 +95,7 @@ export const PresentationPagePicker: React.FC<Props> = ({ title, filePath, outli
   return (
     <div data-testid="presentation-page-picker" className="w-full max-w-2xl rounded-xl border border-zinc-700 bg-zinc-800/70 p-3">
       <div className="flex items-center gap-2 text-xs text-zinc-400">
-        <Presentation className="h-4 w-4 text-violet-400" />
+        <Presentation className="h-4 w-4 text-badge-accent" />
         <span className="min-w-0 flex-1 truncate font-medium text-zinc-200" title={title}>{title}</span>
         <span>{pages.length || outlinePages.length} 页</span>
       </div>
@@ -108,7 +108,7 @@ export const PresentationPagePicker: React.FC<Props> = ({ title, filePath, outli
       )}
 
       {(resolved?.state === 'libreoffice-missing' || resolved?.state === 'conversion-failed' || loadError) && (
-        <div className="mt-3 flex items-center gap-2 rounded border border-amber-500/20 bg-amber-500/[0.05] px-2.5 py-2 text-xs text-amber-200">
+        <div className="mt-3 flex items-center gap-2 rounded border border-badge-warning/20 bg-amber-500/[0.05] px-2.5 py-2 text-xs text-badge-warning">
           <ImageOff className="h-3.5 w-3.5 shrink-0" />
           {resolved?.state === 'libreoffice-missing'
             ? '本机没有 LibreOffice，已切换为可选文字大纲。'
@@ -132,7 +132,7 @@ export const PresentationPagePicker: React.FC<Props> = ({ title, filePath, outli
                 onClick={() => setSelectedIndex(index)}
                 className={`overflow-hidden rounded-md border text-left transition-colors ${
                   index === selectedIndex
-                    ? 'border-cyan-400 bg-cyan-500/10'
+                    ? 'border-badge-info bg-cyan-500/10'
                     : 'border-white/[0.08] bg-zinc-900/70 hover:border-white/[0.18]'
                 }`}
               >

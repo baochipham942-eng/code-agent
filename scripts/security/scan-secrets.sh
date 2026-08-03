@@ -126,13 +126,15 @@ done
 get_files() {
   case "$MODE" in
     staged)
-      git diff --cached --name-only --diff-filter=ACM 2>/dev/null || true
+      # 不吞 git 失败：这是安全扫描的文件枚举源，git 出错时若静默返回空，
+      # 下面的"no files to scan"分支会把它当成合法的"没有暂存文件"直接 exit 0 放行。
+      git diff --cached --name-only --diff-filter=ACM
       ;;
     all)
       git ls-files 2>/dev/null || find . -type f -not -path "./.git/*"
       ;;
     diff)
-      git diff --name-only --diff-filter=ACM "$DIFF_RANGE" 2>/dev/null || true
+      git diff --name-only --diff-filter=ACM "$DIFF_RANGE"
       ;;
     file)
       echo "$SINGLE_FILE"

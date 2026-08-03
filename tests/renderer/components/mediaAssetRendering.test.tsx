@@ -33,6 +33,13 @@ describe('media asset rendering', () => {
     expect(html).toContain('复制引用');
     expect(html).toContain('diagram');
     expect(html).toContain('file:///repo/assets/diagram.png');
+    // 2026-08-02 拍板：正文图产物的操作条 hover 才浮现。三个无障碍兜底一个都不能被「简化」掉——
+    // 少了 focus-within 键盘用户永远够不到；少了触屏兜底类，触屏设备永远看不见。
+    // ⚠️ 本断言只证明 class 写进了 HTML，**不证明 Tailwind 生成了 CSS**——
+    // 任意变体 [@media(hover:none)] 就是这样静默失效的（编译产物里命中 0）。改这里必须回 dist CSS 核实。
+    expect(html).toContain('group-hover:opacity-100');
+    expect(html).toContain('focus-within:opacity-100');
+    expect(html).toContain('media-actions-hover-reveal');
   });
 
   it('renders attachment images with unified media ownership and actions', () => {
@@ -56,8 +63,10 @@ describe('media asset rendering', () => {
     expect(html).toContain('file:///repo/input.png');
     expect(html).toContain('data-media-session-id="session-attachment"');
     expect(html).toContain('data-media-message-id="user-1"');
-    expect(html).toContain('放大查看');
-    expect(html).toContain('保存');
+    // 2026-08-02 拍板：条上只露 修改/复制，查看/打开/保存/Finder 恒进 ⋯ 菜单
+    // （菜单未展开时不渲染），故这里断言动作入口本身在场，而不是被收起项的文案。
+    expect(html).toContain('复制引用');
+    expect(html).toContain('media-asset-overflow-more');
   });
 
   it('skips oversized inline attachment previews instead of rendering the data URL', () => {
@@ -138,7 +147,8 @@ describe('media asset rendering', () => {
     expect(html).toContain('data-media-turn-id="turn-tool"');
     expect(html).toContain('data-media-message-id="assistant-1"');
     expect(html).toContain('data-media-tool-call-id="tool-image"');
-    expect(html).toContain('保存');
+    // 同上：保存已收进 ⋯ 菜单，改断言 ⋯ 触发器在场。
+    expect(html).toContain('media-asset-overflow-more');
   });
 
   it('promotes generic media tool outputs instead of showing raw result payload', () => {
@@ -228,8 +238,9 @@ describe('media asset rendering', () => {
 
     expect(html).toContain('render.png');
     expect(html).toContain('file:///repo/render.png');
-    expect(html).toContain('放大查看');
-    expect(html).toContain('保存');
+    // 同上：查看/保存已收进 ⋯ 菜单。
+    expect(html).toContain('复制引用');
+    expect(html).toContain('media-asset-overflow-more');
     expect(html).not.toContain('Also modified');
   });
 

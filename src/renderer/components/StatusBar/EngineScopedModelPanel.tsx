@@ -133,7 +133,8 @@ export function EngineScopedModelPanel({
               : source.detected
                 ? source.authState === 'needs_login'
                   ? '已检测，需要登录'
-                  : source.authState === 'not_checked' && source.evidence === 'production'
+                  : (source.authState === 'not_checked' || source.authState === 'unknown')
+                    && source.evidence === 'production'
                     ? '已检测，登录状态未验证'
                     : '已检测，适配器未开放'
                 : source.recommendation?.label ?? '暂不可用';
@@ -152,7 +153,7 @@ export function EngineScopedModelPanel({
                   <strong className="block truncate text-xs font-medium text-zinc-100">{source.label}</strong>
                   <span className="block truncate text-[10px] text-zinc-500">{state}</span>
                 </span>
-                {selected ? <Check className="h-4 w-4 text-primary-300" /> : null}
+                {selected ? <Check className="h-4 w-4 text-badge-accent" /> : null}
               </button>
             );
           })}
@@ -256,8 +257,8 @@ export function EngineScopedModelPanel({
               >
                 <span className="flex items-center gap-2">
                   <span className="font-medium">{model.label}</span>
-                  {model.recommended ? <span className="text-[10px] text-primary-300">推荐</span> : null}
-                  {currentModel === model.id ? <Check className="ml-auto h-3.5 w-3.5 text-primary-300" /> : null}
+                  {model.recommended ? <span className="text-[10px] text-badge-accent">推荐</span> : null}
+                  {currentModel === model.id ? <Check className="ml-auto h-3.5 w-3.5 text-badge-accent" /> : null}
                 </span>
                 <span className="mt-0.5 block text-[10px] text-zinc-500">
                   {model.disabledReason || model.capabilities.join(' · ')}

@@ -21,6 +21,7 @@ const capture: AppshotCapture = {
   screenshotDataUrl: 'data:image/png;base64,abc',
   axText: 'window text',
   textSource: 'ax',
+  textReady: true,
   windowFrame: { x: 0, y: 0, width: 600, height: 400 },
   capturedAtMs: 100,
 };
@@ -36,8 +37,100 @@ describe('AppshotChip', () => {
 
     expect(html).toContain('aria-label="查看 Appshot"');
     expect(html).toContain('aria-label="移除 Appshot"');
+    // 纯截图卡：app 名/窗口标题只在 alt/title 提示里，不占文字行
     expect(html).toContain('TextEdit');
     expect(html).toContain('Untitled');
-    expect(html).toContain('已读取窗口文字');
+    // 文字已就绪时不显示「识别中…」
+    expect(html).not.toContain('识别中…');
+  });
+
+  it('shows a soft recognizing pill until text_ready arrives', () => {
+    const html = renderToStaticMarkup(
+      React.createElement(AppshotChip, {
+        capture: { ...capture, textReady: false, textSource: 'none', axText: null },
+        onRemove: () => undefined,
+      }),
+    );
+
+    expect(html).toContain('识别中…');
+  });
+
+  it('stays invisible while reserved for the fly-in handoff', () => {
+    const html = renderToStaticMarkup(
+      React.createElement(AppshotChip, {
+        capture,
+        onRemove: () => undefined,
+        reserved: true,
+      }),
+    );
+
+    expect(html).toContain('w-fit opacity-0');
+    expect(html).toContain('aria-hidden="true"');
+    // 结构仍在 DOM（占位尺寸与落点一致），只是不可见
+    expect(html).toContain('aria-label="查看 Appshot"');
+  });
+
+  it('is visible immediately once handed off (no fade transition)', () => {
+    const html = renderToStaticMarkup(
+      React.createElement(AppshotChip, {
+        capture,
+        onRemove: () => undefined,
+        reserved: false,
+      }),
+    );
+
+    expect(html).not.toContain('w-fit opacity-0');
+    // 根节点不带 aria-hidden（lucide 图标自身除外）
+    expect(html.startsWith('<div class="relative group w-fit">')).toBe(true);
+  });
+
+  it('renders a single title line when windowTitle repeats the app name', () => {
+    const html = renderToStaticMarkup(
+      React.createElement(AppshotChip, {
+        capture: { ...capture, appName: 'ChatGPT', windowTitle: 'ChatGPT' },
+        onRemove: () => undefined,
+      }),
+    );
+
+    // 标题行只出现一次（避免 ChatGPT / ChatGPT 重复，app 名文字行省略）
+    expect(html.match(/truncate max-w-\[13\.5rem\] text-xs text-zinc-200">ChatGPT/g)?.length).toBe(1);
+  });
+
+  it('falls back to app name in the title line when windowTitle is empty', () => {
+    const html = renderToStaticMarkup(
+      React.createElement(AppshotChip, {
+        capture: { ...capture, windowTitle: null },
+        onRemove: () => undefined,
+      }),
+    );
+
+    expect(html).toContain('truncate max-w-[13.5rem] text-xs text-zinc-200">TextEdit</span>');
+  });
+
+  it('renders the large thumbnail at the fly-in landing slot size', () => {
+    const html = renderToStaticMarkup(
+      React.createElement(AppshotChip, {
+        capture,
+        onRemove: () => undefined,
+      }),
+    );
+
+    // 缩略图矩形 = ComposerChipsRow 落点锚（left/bottom 9px, w-60 h-[7.5rem]）的尺寸
+    expect(html).toContain('w-60 h-[7.5rem]');
+  });
+
+  it('fills the thumbnail rect instead of letterboxing the screenshot', () => {
+    const html = renderToStaticMarkup(
+      React.createElement(AppshotChip, {
+        capture,
+        onRemove: () => undefined,
+      }),
+    );
+
+    // 窗口截图多为 16:10 而落点框是 2:1；object-contain 会在左右留出 bg-black/30 空条
+    // （2026-08-03 产品负责人真机指出「图没撑满容器」）。会话区气泡复用同一个组件，
+    // 所以这条同时守住聊天窗与会话区两处。
+    expect(html).toContain('object-cover');
+    expect(html).not.toContain('object-contain');
   });
 });

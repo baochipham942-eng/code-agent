@@ -1,7 +1,16 @@
+// ============================================================================
+// ModelOnboardingModal —— 首次启动模型配置向导（连接来源 → 默认模型 两步）
+//
+// P3 品牌升级「抵达新栖地」欢迎时刻（拍板 2026-08-02）：欢迎内容不独立成步，
+// 而是作为首步（step === 'source'）页面的上半区同屏渲染——侵入最小，不增加
+// 强制步骤、不改后续步骤；进入默认模型步即自然消失，配置完成后由既有
+// onboarding 触发条件保证不再出现。星球复用品牌件 PlanetSphere（地球，
+// 慢转 26s/周，静态 fx），reduced-motion 由组件内建停转。
+// ============================================================================
+
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   ArrowLeft,
-  Brain,
   Check,
   KeyRound,
   Loader2,
@@ -23,6 +32,8 @@ import type {
 import { IPC_DOMAINS } from '@shared/ipc';
 import { getProviderInfo } from '@shared/constants';
 import { Button, Input, Modal } from '../primitives';
+import { PlanetSphere } from '../brand/PlanetSphere';
+import { NeoBrandMark } from '../features/sidebar/NeoBrandMark';
 import ipcService from '../../services/ipcService';
 import { useI18n } from '../../hooks/useI18n';
 import { useAppStore } from '../../stores/appStore';
@@ -91,6 +102,11 @@ function getOnboardingEngineStatus(source: AgentEngineSourceDescriptor): {
     };
   }
   if (source.detected) {
+    // 找到了客户端但探测没跑通：这是「此刻问不出来」，不是「你没装」也不是「你没登录」。
+    // 说成后两者会让用户去装一个已经装好的东西、或去登一个已经登好的账号。
+    if (source.probeError) {
+      return { detail: '已检测到客户端 · 本机探测未完成，稍后重试', badge: '待重试' };
+    }
     if (source.evidence !== 'production') {
       if (source.authState === 'needs_login') {
         return {
@@ -137,13 +153,13 @@ function OnboardingEngineCard({
         <strong className="block truncate text-sm text-zinc-100">{source.label}</strong>
         <span className="block truncate text-xs text-zinc-500">{status.detail}</span>
       </span>
-      <span className={source.selectable ? 'text-[11px] text-emerald-300' : 'text-[11px] text-zinc-500'}>
+      <span className={source.selectable ? 'text-[11px] text-badge-success' : 'text-[11px] text-zinc-500'}>
         {status.badge}
       </span>
     </>
   );
   const className = source.selectable
-    ? 'grid grid-cols-[32px_minmax(0,1fr)_auto] items-center gap-3 rounded-lg border border-zinc-800 bg-zinc-950/30 p-3 text-left transition hover:border-blue-400/60 hover:bg-blue-500/10'
+    ? 'grid grid-cols-[32px_minmax(0,1fr)_auto] items-center gap-3 rounded-lg border border-zinc-800 bg-zinc-950/30 p-3 text-left transition hover:border-badge-info/60 hover:bg-blue-500/10'
     : 'grid grid-cols-[32px_minmax(0,1fr)_auto] items-center gap-3 rounded-lg border border-zinc-800 bg-zinc-950/20 p-3 opacity-75';
 
   return source.selectable ? (
@@ -407,13 +423,13 @@ export const ModelOnboardingModal: React.FC<ModelOnboardingModalProps> = ({ onCo
       closeOnEsc={false}
       showCloseButton={false}
       headerIcon={(
-        <div className="rounded-lg bg-blue-500/10 p-2 text-blue-300">
-          <Brain className="h-6 w-6" />
-        </div>
+        /* 2026-08-02 修订：头部图标从通用 Brain 换成星芒 N 品牌标——
+           初始化向导是第一次亮相，必须有 Neo 自己的识别 */
+        <NeoBrandMark size={34} showWordmark={false} />
       )}
       footer={(
         <div className="flex w-full items-center justify-between gap-3">
-          <div className={`text-xs ${status === 'error' ? 'text-red-300' : 'text-zinc-500'}`}>
+          <div className={`text-xs ${status === 'error' ? 'text-badge-danger' : 'text-zinc-500'}`}>
             {isBusy ? <Loader2 className="mr-1 inline h-3.5 w-3.5 animate-spin" /> : null}
             {message || (route === 'subscription' ? '官方登录凭证始终由对应客户端管理' : text.keyStaysLocal)}
           </div>
@@ -463,6 +479,22 @@ export const ModelOnboardingModal: React.FC<ModelOnboardingModalProps> = ({ onCo
       )}
     >
       <div className="min-h-[540px] space-y-5">
+        {step === 'source' ? (
+          <section
+            className="flex flex-col items-center gap-3 pt-2 text-center"
+            data-testid="onboarding-welcome"
+          >
+            <PlanetSphere
+              kind="earth"
+              size={76}
+              spinSeconds={26}
+              fx="none"
+              glowColor="rgba(96,165,250,.18)"
+            />
+            <h2 className="text-lg font-semibold text-zinc-100">{text.welcomeTitle}</h2>
+            <p className="max-w-md text-sm text-zinc-500">{text.welcomeSubtitle}</p>
+          </section>
+        ) : null}
         <div className="grid grid-cols-2 gap-2 text-xs text-zinc-400" data-testid="onboarding-stepper">
           {ONBOARDING_STEPS.map((id, index) => {
             const active = step === id;
@@ -472,7 +504,7 @@ export const ModelOnboardingModal: React.FC<ModelOnboardingModalProps> = ({ onCo
                 key={id}
                 data-testid={`onboarding-step-${id}`}
                 data-active={active ? 'true' : 'false'}
-                className={`rounded-lg border px-3 py-2 ${active ? 'border-blue-400/60 bg-blue-500/10' : 'border-zinc-800 bg-zinc-950/40'}`}
+                className={`rounded-lg border px-3 py-2 ${active ? 'border-badge-info/60 bg-blue-500/10' : 'border-zinc-800 bg-zinc-950/40'}`}
               >
                 <div className="flex items-center gap-2">
                   <span className="grid h-5 w-5 place-items-center rounded-full bg-zinc-800 text-[11px] text-zinc-200">
@@ -504,7 +536,7 @@ export const ModelOnboardingModal: React.FC<ModelOnboardingModalProps> = ({ onCo
                 aria-controls="onboarding-subscription-panel"
                 className={`relative -mb-px flex-1 rounded-t-lg border px-3 py-2.5 text-sm font-medium ${
                   route === 'subscription'
-                    ? 'border-blue-400/60 border-b-zinc-900 bg-zinc-900 text-zinc-100'
+                    ? 'border-badge-info/60 border-b-zinc-900 bg-zinc-900 text-zinc-100'
                     : 'border-transparent border-b-zinc-700 text-zinc-500 hover:bg-zinc-900/50 hover:text-zinc-300'
                 }`}
               >
@@ -519,7 +551,7 @@ export const ModelOnboardingModal: React.FC<ModelOnboardingModalProps> = ({ onCo
                 aria-controls="onboarding-api-panel"
                 className={`relative -mb-px flex-1 rounded-t-lg border px-3 py-2.5 text-sm font-medium ${
                   route === 'api'
-                    ? 'border-blue-400/60 border-b-zinc-900 bg-zinc-900 text-zinc-100'
+                    ? 'border-badge-info/60 border-b-zinc-900 bg-zinc-900 text-zinc-100'
                     : 'border-transparent border-b-zinc-700 text-zinc-500 hover:bg-zinc-900/50 hover:text-zinc-300'
                 }`}
               >
@@ -598,7 +630,7 @@ export const ModelOnboardingModal: React.FC<ModelOnboardingModalProps> = ({ onCo
                         setStatus('idle');
                         setMessage('');
                       }}
-                      className={`rounded-lg border px-3 py-2 text-left ${selectedProvider === card.id ? 'border-blue-400/60 bg-blue-500/10' : 'border-zinc-800 bg-zinc-950/30'}`}
+                      className={`rounded-lg border px-3 py-2 text-left ${selectedProvider === card.id ? 'border-badge-info/60 bg-blue-500/10' : 'border-zinc-800 bg-zinc-950/30'}`}
                     >
                       <span className="text-sm font-medium text-zinc-100">{card.name}</span>
                       <span className="mt-0.5 block truncate text-xs text-zinc-500">{card.description}</span>
@@ -617,7 +649,7 @@ export const ModelOnboardingModal: React.FC<ModelOnboardingModalProps> = ({ onCo
                         setStatus('idle');
                         setMessage('');
                       }}
-                      className={`rounded-lg border p-3 text-left ${isCustom && customProtocol === option.protocol ? 'border-blue-400/60 bg-blue-500/10' : 'border-zinc-800 bg-zinc-950/30'}`}
+                      className={`rounded-lg border p-3 text-left ${isCustom && customProtocol === option.protocol ? 'border-badge-info/60 bg-blue-500/10' : 'border-zinc-800 bg-zinc-950/30'}`}
                     >
                       <span className="text-sm font-medium text-zinc-100">{option.label}</span>
                       <span className="mt-1 block text-xs text-zinc-500">{option.description}</span>
@@ -665,11 +697,11 @@ export const ModelOnboardingModal: React.FC<ModelOnboardingModalProps> = ({ onCo
               <button
                 type="button"
                 onClick={() => setSelectedModel('')}
-                className="w-full rounded-lg border border-blue-400/60 bg-blue-500/10 p-4 text-left"
+                className="w-full rounded-lg border border-badge-info/60 bg-blue-500/10 p-4 text-left"
                 data-client-default-model
               >
                 <span className="flex items-center gap-2 text-sm font-medium text-zinc-100">
-                  <Check className="h-4 w-4 text-blue-300" />
+                  <Check className="h-4 w-4 text-badge-info" />
                   客户端默认模型
                 </span>
                 <span className="mt-1 block text-xs text-zinc-500">官方客户端没有返回可枚举目录，模型选择继续由客户端管理。</span>
@@ -682,10 +714,10 @@ export const ModelOnboardingModal: React.FC<ModelOnboardingModalProps> = ({ onCo
                     type="button"
                     onClick={() => setSelectedModel(model.id)}
                     data-onboarding-model={model.id}
-                    className={`rounded-lg border p-3 text-left ${selectedModel === model.id ? 'border-blue-400/60 bg-blue-500/10' : 'border-zinc-800 bg-zinc-950/30'}`}
+                    className={`rounded-lg border p-3 text-left ${selectedModel === model.id ? 'border-badge-info/60 bg-blue-500/10' : 'border-zinc-800 bg-zinc-950/30'}`}
                   >
                     <span className="flex items-center gap-2 text-sm font-medium text-zinc-100">
-                      {selectedModel === model.id ? <Check className="h-4 w-4 text-blue-300" /> : null}
+                      {selectedModel === model.id ? <Check className="h-4 w-4 text-badge-info" /> : null}
                       {model.label}
                     </span>
                     <span className="mt-1 block text-xs text-zinc-500">{model.id}</span>

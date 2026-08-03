@@ -28,7 +28,9 @@ mod pip;
 mod traffic_lights;
 
 use appshots::{
-    appshots_read_image_data_url, appshots_report_composer_slot, appshots_set_enabled,
+    appshots_read_image_data_url, appshots_read_image_data_url_by_id, appshots_report_composer_slot,
+    appshots_set_enabled,
+    appshots_set_motion_enabled, appshots_set_target_session, appshots_skip_motion,
     appshots_trigger, AppshotsState,
 };
 use native_app_icon::desktop_get_app_icon;
@@ -56,12 +58,17 @@ const HEALTH_INTERVAL: Duration = Duration::from_millis(100);
 /// 显示,避免窗口永久隐藏。实测 renderer 首帧 ~2.5s,故兜底设 5s(既覆盖慢机、又远小于
 /// 原 10s,信号丢失时最坏也就 ~6s 出窗口而非 11s)。
 const RENDERER_READY_TIMEOUT: Duration = Duration::from_secs(5);
+/// 退出时先发 SIGTERM 让 webServer 走干净关库路径（checkpoint + 删 -wal/-shm），
+/// 超过这个时限还没退出才 SIGKILL 兜底。
+const GRACEFUL_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(3);
+const GRACEFUL_SHUTDOWN_POLL_INTERVAL: Duration = Duration::from_millis(100);
 const DEFAULT_CLOUD_API_URL: &str = "https://agentneo.vercel.app";
 const BUNDLED_RUNTIME_ROOT_ENV: &str = "AGENT_NEO_BUNDLED_RUNTIME_ROOT";
 const RESOURCE_DIR_ENV: &str = "AGENT_NEO_RESOURCE_DIR";
 const BOOT_DIAGNOSTICS_PATH_ENV: &str = "AGENT_NEO_TAURI_BOOT_DIAGNOSTICS_FILE";
 const BOOT_DIAGNOSTICS_FILE: &str = "desktop-shell-boot-latest.json";
 const SHELL_EVENTS_FILE: &str = "desktop-shell-events.ndjson";
+const GLOBAL_HOTKEY_FOCUS_RETRY_DELAYS_MS: &[u64] = &[0, 25, 50, 100, 200, 400, 800];
 const BUNDLED_NODE_PATHS: &[&[&str]] = &[
     &["dist", "bundled-node", "bin", "node"],
     &["dist", "bundled-node", "node"],
@@ -252,21 +259,56 @@ impl AppState {
         let mut guard = self.web_server.lock().expect("web_server mutex poisoned");
 
         let mut owned = guard.take()?;
-        let kill_result = owned.child.kill();
-        let wait_status = owned.child.wait().map(|status| status.to_string()).ok();
+        let (exit_reason, wait_status) = terminate_child(&mut owned.child);
         Some(DesktopShellProcessCleanup {
             owner: owned.owner.to_string(),
             pid: owned.pid,
             started_at: owned.started_at,
             cleaned_at: now_millis_string(),
-            exit_reason: match kill_result {
-                Ok(()) => "tauri-exit-cleanup".to_string(),
-                Err(error) => format!("cleanup-kill-failed:{error}"),
-            },
+            exit_reason,
             wait_status,
             stdin_eof_cleanup: owned.stdin_eof_cleanup,
         })
     }
+}
+
+/// 先发 SIGTERM 让 webServer 自己走干净关库路径，轮询最多 GRACEFUL_SHUTDOWN_TIMEOUT
+/// 等它退出；超时才 SIGKILL 兜底。exit_reason 区分 graceful/forced，是事后判断
+/// 「这次退出干不干净」的唯一证据。
+#[cfg(unix)]
+fn terminate_child(child: &mut Child) -> (String, Option<String>) {
+    let pid = child.id() as i32;
+    // SAFETY: pid 是刚 spawn 出、尚未被 wait 掉的子进程句柄，SIGTERM 是标准的
+    // 「请自行退出」信号，不涉及内存操作。
+    if unsafe { libc::kill(pid, libc::SIGTERM) } != 0 {
+        return force_kill(child, "forced-sigkill-sigterm-send-failed");
+    }
+
+    let deadline = Instant::now() + GRACEFUL_SHUTDOWN_TIMEOUT;
+    while Instant::now() < deadline {
+        match child.try_wait() {
+            Ok(Some(status)) => return ("graceful-sigterm".to_string(), Some(status.to_string())),
+            Ok(None) => thread::sleep(GRACEFUL_SHUTDOWN_POLL_INTERVAL),
+            Err(_) => break,
+        }
+    }
+
+    force_kill(child, "forced-sigkill-timeout")
+}
+
+/// Windows 没有 POSIX 信号语义，TerminateProcess（Child::kill）本身就是强杀；
+/// 优雅关闭需要 CREATE_NEW_PROCESS_GROUP + CTRL_BREAK_EVENT，超出本单范围。
+#[cfg(not(unix))]
+fn terminate_child(child: &mut Child) -> (String, Option<String>) {
+    force_kill(child, "forced-sigkill-no-signal-support")
+}
+
+fn force_kill(child: &mut Child, reason: &str) -> (String, Option<String>) {
+    if let Err(error) = child.kill() {
+        return (format!("cleanup-kill-failed:{error}"), None);
+    }
+    let wait_status = child.wait().map(|status| status.to_string()).ok();
+    (reason.to_string(), wait_status)
 }
 
 fn unique_paths(paths: Vec<PathBuf>) -> Vec<PathBuf> {
@@ -2528,12 +2570,33 @@ fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn focus_main_window(app_handle: &AppHandle) {
+fn request_main_window_focus(app_handle: &AppHandle) -> bool {
     if let Some(win) = app_handle.get_webview_window("main") {
-        win.show().ok();
-        win.unminimize().ok();
-        win.set_focus().ok();
+        return win.show().is_ok() && win.unminimize().is_ok() && win.set_focus().is_ok();
     }
+
+    false
+}
+
+fn main_window_is_ready(app_handle: &AppHandle) -> bool {
+    let Some(win) = app_handle.get_webview_window("main") else {
+        return false;
+    };
+    matches!(win.is_visible(), Ok(true))
+        && matches!(win.is_minimized(), Ok(false))
+        && matches!(win.is_focused(), Ok(true))
+}
+
+fn wait_for_main_window_focus(app_handle: &AppHandle) -> bool {
+    for delay_ms in GLOBAL_HOTKEY_FOCUS_RETRY_DELAYS_MS {
+        if *delay_ms > 0 {
+            thread::sleep(Duration::from_millis(*delay_ms));
+        }
+        if main_window_is_ready(app_handle) {
+            return true;
+        }
+    }
+    false
 }
 
 fn toggle_main_window(app_handle: &AppHandle) {
@@ -2565,6 +2628,123 @@ fn unregister_configurable_global_hotkeys(app_handle: &AppHandle, state: &Keybin
         {
             eprintln!("Failed to unregister keybinding hotkey {accelerator}: {error}");
         }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum GlobalHotkeyWindowAction {
+    Toggle,
+    Focus,
+    FocusBeforeEmit,
+    None,
+}
+
+fn global_hotkey_window_action(action_id: &str) -> GlobalHotkeyWindowAction {
+    match action_id {
+        "app.toggle" => GlobalHotkeyWindowAction::Toggle,
+        "app.quickAsk" | "session.new" => GlobalHotkeyWindowAction::Focus,
+        "voice.callToggle" => GlobalHotkeyWindowAction::FocusBeforeEmit,
+        _ => GlobalHotkeyWindowAction::None,
+    }
+}
+
+fn write_global_hotkey_registration_event(app: &AppHandle, result: &KeybindingGlobalHotkeyResult) {
+    let registered = result.registered;
+    append_shell_event_payload(
+        app,
+        serde_json::json!({
+            "schemaVersion": 1,
+            "source": "tauri-shell",
+            "generatedAt": now_millis_string(),
+            "level": if registered { "info" } else { "error" },
+            "event": "desktop-shell-global-hotkey-registration",
+            "message": if registered {
+                "global hotkey registered"
+            } else {
+                "global hotkey registration failed"
+            },
+            "appVersion": app.config().version,
+            "bundleId": app.config().identifier,
+            "channel": desktop_shell_channel(Some(&app.config().identifier), cfg!(debug_assertions)),
+            "actionId": result.action_id,
+            "accelerator": result.accelerator,
+            "registered": registered,
+            "error": result.error,
+        }),
+    );
+}
+
+fn write_global_hotkey_suppressed_event(
+    app: &AppHandle,
+    action_id: &str,
+    accelerator: &str,
+    reason: &str,
+) {
+    append_shell_event_payload(
+        app,
+        serde_json::json!({
+            "schemaVersion": 1,
+            "source": "tauri-shell",
+            "generatedAt": now_millis_string(),
+            "level": "warn",
+            "event": "desktop-shell-global-hotkey-suppressed",
+            "message": "global hotkey action suppressed before emit",
+            "appVersion": app.config().version,
+            "bundleId": app.config().identifier,
+            "channel": desktop_shell_channel(Some(&app.config().identifier), cfg!(debug_assertions)),
+            "actionId": action_id,
+            "accelerator": accelerator,
+            "reason": reason,
+        }),
+    );
+}
+
+fn write_global_hotkey_focus_timeout_event(app: &AppHandle, action_id: &str, accelerator: &str) {
+    append_shell_event_payload(
+        app,
+        serde_json::json!({
+            "schemaVersion": 1,
+            "source": "tauri-shell",
+            "generatedAt": now_millis_string(),
+            "level": "warn",
+            "event": "desktop-shell-global-hotkey-focus-timeout",
+            "message": "main window focus confirmation timed out; emitting global hotkey",
+            "appVersion": app.config().version,
+            "bundleId": app.config().identifier,
+            "channel": desktop_shell_channel(Some(&app.config().identifier), cfg!(debug_assertions)),
+            "actionId": action_id,
+            "accelerator": accelerator,
+            "emitted": true,
+            "focusReady": false,
+        }),
+    );
+}
+
+fn emit_global_hotkey_event(app: &AppHandle, action_id: &str, accelerator: &str) {
+    if let Err(error) = app.emit(
+        "keybindings:global_hotkey",
+        KeybindingGlobalHotkeyEvent {
+            action_id: action_id.to_string(),
+            accelerator: accelerator.to_string(),
+        },
+    ) {
+        append_shell_event_payload(
+            app,
+            serde_json::json!({
+                "schemaVersion": 1,
+                "source": "tauri-shell",
+                "generatedAt": now_millis_string(),
+                "level": "error",
+                "event": "desktop-shell-global-hotkey-emit-failed",
+                "message": "failed to emit global hotkey action",
+                "appVersion": app.config().version,
+                "bundleId": app.config().identifier,
+                "channel": desktop_shell_channel(Some(&app.config().identifier), cfg!(debug_assertions)),
+                "actionId": action_id,
+                "accelerator": accelerator,
+                "error": error.to_string(),
+            }),
+        );
     }
 }
 
@@ -2657,12 +2837,14 @@ fn keybindings_set_global_hotkeys(
         let accelerator = binding.accelerator.trim().to_string();
 
         if action_id.is_empty() || accelerator.is_empty() {
-            results.push(KeybindingGlobalHotkeyResult {
+            let result = KeybindingGlobalHotkeyResult {
                 action_id,
                 accelerator,
                 registered: false,
                 error: Some("Missing actionId or accelerator".to_string()),
-            });
+            };
+            write_global_hotkey_registration_event(&app, &result);
+            results.push(result);
             continue;
         }
 
@@ -2675,41 +2857,69 @@ fn keybindings_set_global_hotkeys(
                     return;
                 }
 
-                match event_action_id.as_str() {
-                    "app.toggle" => toggle_main_window(app_handle),
-                    "app.quickAsk" | "session.new" => focus_main_window(app_handle),
-                    _ => {}
+                match global_hotkey_window_action(event_action_id.as_str()) {
+                    GlobalHotkeyWindowAction::Toggle => toggle_main_window(app_handle),
+                    GlobalHotkeyWindowAction::Focus => {
+                        let _ = request_main_window_focus(app_handle);
+                    }
+                    GlobalHotkeyWindowAction::FocusBeforeEmit => {
+                        // macOS 首次麦克风权限弹窗跟随前台窗口。show、unminimize、set_focus
+                        // 先发出请求，再在有界窗口内等待 Window Server 的异步状态回写。
+                        // 同步读回失败只代表激活尚未完成，不能把拨号 action 静默吞掉。
+                        let app_handle = app_handle.clone();
+                        let action_id = event_action_id.clone();
+                        let accelerator = event_accelerator.clone();
+                        thread::spawn(move || {
+                            if !request_main_window_focus(&app_handle) {
+                                write_global_hotkey_suppressed_event(
+                                    &app_handle,
+                                    &action_id,
+                                    &accelerator,
+                                    "focus_request_failed",
+                                );
+                                return;
+                            }
+
+                            if !wait_for_main_window_focus(&app_handle) {
+                                write_global_hotkey_focus_timeout_event(
+                                    &app_handle,
+                                    &action_id,
+                                    &accelerator,
+                                );
+                            }
+
+                            emit_global_hotkey_event(&app_handle, &action_id, &accelerator);
+                        });
+                        return;
+                    }
+                    GlobalHotkeyWindowAction::None => {}
                 }
 
-                app_handle
-                    .emit(
-                        "keybindings:global_hotkey",
-                        KeybindingGlobalHotkeyEvent {
-                            action_id: event_action_id.clone(),
-                            accelerator: event_accelerator.clone(),
-                        },
-                    )
-                    .ok();
+                emit_global_hotkey_event(app_handle, &event_action_id, &event_accelerator);
             },
         );
 
         match register_result {
             Ok(()) => {
                 registered.push(accelerator.clone());
-                results.push(KeybindingGlobalHotkeyResult {
+                let result = KeybindingGlobalHotkeyResult {
                     action_id,
                     accelerator,
                     registered: true,
                     error: None,
-                });
+                };
+                write_global_hotkey_registration_event(&app, &result);
+                results.push(result);
             }
             Err(error) => {
-                results.push(KeybindingGlobalHotkeyResult {
+                let result = KeybindingGlobalHotkeyResult {
                     action_id,
                     accelerator,
                     registered: false,
                     error: Some(error.to_string()),
-                });
+                };
+                write_global_hotkey_registration_event(&app, &result);
+                results.push(result);
             }
         }
     }
@@ -2725,10 +2935,47 @@ fn keybindings_set_global_hotkeys(
     results
 }
 
+#[cfg(test)]
+mod global_hotkey_tests {
+    use super::{global_hotkey_window_action, GlobalHotkeyWindowAction};
+
+    #[test]
+    fn voice_call_toggle_requires_focus_before_emit() {
+        assert_eq!(
+            global_hotkey_window_action("voice.callToggle"),
+            GlobalHotkeyWindowAction::FocusBeforeEmit
+        );
+    }
+
+    #[test]
+    fn existing_global_hotkey_window_actions_keep_their_behavior() {
+        assert_eq!(
+            global_hotkey_window_action("app.toggle"),
+            GlobalHotkeyWindowAction::Toggle
+        );
+        assert_eq!(
+            global_hotkey_window_action("app.quickAsk"),
+            GlobalHotkeyWindowAction::Focus
+        );
+        assert_eq!(
+            global_hotkey_window_action("session.new"),
+            GlobalHotkeyWindowAction::Focus
+        );
+        assert_eq!(
+            global_hotkey_window_action("voice.toggle"),
+            GlobalHotkeyWindowAction::None
+        );
+    }
+}
+
 fn setup_global_shortcut(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(target_os = "macos")]
-    appshots::setup_dual_command_hotkey(app.handle().clone())
-        .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
+    {
+        appshots::setup_dual_command_hotkey(app.handle().clone())
+            .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
+        appshots::enable_hover_when_inactive(app.handle());
+        appshots::enable_first_mouse_click(app.handle());
+    }
 
     Ok(())
 }
@@ -2784,8 +3031,12 @@ fn main() {
             desktop_get_app_icon,
             appshots_trigger,
             appshots_read_image_data_url,
+            appshots_read_image_data_url_by_id,
             appshots_report_composer_slot,
             appshots_set_enabled,
+            appshots_skip_motion,
+            appshots_set_target_session,
+            appshots_set_motion_enabled,
             pip_show,
             pip_frame,
             pip_controls,

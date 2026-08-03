@@ -511,9 +511,9 @@ export class ConfigService implements IReadConfigService {
 
         // Restore theme
         if (keychainSettings.theme && typeof keychainSettings.theme === 'string') {
-          const validThemes = ['light', 'dark', 'system'];
+          const validThemes = ['light', 'dark', 'system', 'high-contrast-light', 'high-contrast-dark'];
           if (validThemes.includes(keychainSettings.theme)) {
-            this.settings.ui.theme = keychainSettings.theme as 'light' | 'dark' | 'system';
+            this.settings.ui.theme = keychainSettings.theme as AppSettings['ui']['theme'];
           }
         }
 

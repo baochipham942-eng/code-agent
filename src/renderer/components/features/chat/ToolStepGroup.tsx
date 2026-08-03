@@ -183,7 +183,7 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
         // UX round2 20i：ok 行文字从 zinc-600 提到 zinc-400（「搜索通话字幕原文」这类行太暗看不清）。
         className={`flex w-full min-w-0 items-center gap-1.5 rounded-md text-left text-[11px] leading-4 transition-colors group ${
           needsUserActionShell
-            ? 'border border-red-400/30 bg-red-400/[0.05] px-2 py-1 text-zinc-500 hover:border-red-400/45 hover:bg-red-400/[0.08] hover:text-zinc-300'
+            ? 'border border-badge-danger/30 bg-red-400/[0.05] px-2 py-1 text-zinc-500 hover:border-badge-danger/45 hover:bg-red-400/[0.08] hover:text-zinc-300'
             : 'px-1 py-0.5 text-zinc-400 hover:bg-surface-subtle hover:text-zinc-300'
         }`}
         aria-expanded={ariaExpanded}
@@ -195,13 +195,13 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
         )}
         {status === 'error' && (
           <span
-            className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${hasEscalatedError ? 'bg-red-400' : 'bg-zinc-500'}`}
+            className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${hasEscalatedError ? 'bg-mark-danger' : 'bg-zinc-500'}`}
             aria-label={t.toolGroup.statusFailed}
           />
         )}
         {status === 'partial' && (
           <span
-            className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${hasEscalatedError ? 'bg-amber-400' : 'bg-zinc-500'}`}
+            className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${hasEscalatedError ? 'bg-mark-warning' : 'bg-zinc-500'}`}
             aria-label={t.toolGroup.statusPartial}
           />
         )}
@@ -383,9 +383,9 @@ function getToolGroupStatusLabel(status: 'streaming' | 'partial' | 'error' | 'ok
 // hasEscalatedError=false（探索性失败，非用户需介入）一律用中性色，不顶红/顶黄——
 // 跟成功行视觉权重接近，agent 试错不该喊给用户看。
 function getToolGroupStatusClass(status: 'streaming' | 'partial' | 'error' | 'ok', hasEscalatedError: boolean): string {
-  if (status === 'streaming') return 'text-sky-300';
+  if (status === 'streaming') return 'text-badge-info';
   if (!hasEscalatedError && (status === 'partial' || status === 'error')) return 'text-zinc-500';
-  if (status === 'partial') return 'text-amber-300';
-  if (status === 'error') return 'text-red-300';
-  return 'text-emerald-300';
+  if (status === 'partial') return 'text-badge-warning';
+  if (status === 'error') return 'text-badge-danger';
+  return 'text-badge-success';
 }

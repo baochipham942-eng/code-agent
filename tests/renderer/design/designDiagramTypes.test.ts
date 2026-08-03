@@ -11,7 +11,7 @@ import {
 describe('normalizeConnector', () => {
   it('合法连线保留 + label', () => {
     const c = normalizeConnector({ id: 'c1', fromNodeId: 'a', toNodeId: 'b', label: '提交', createdAt: 5 });
-    expect(c).toEqual({ id: 'c1', fromNodeId: 'a', toNodeId: 'b', label: '提交', createdAt: 5 });
+    expect(c).toEqual({ id: 'c1', fromNodeId: 'a', toNodeId: 'b', label: '提交', createdAt: 5, createdBy: 'user', userTouchedAt: 0 });
   });
 
   it('缺端点 id → null', () => {
@@ -54,6 +54,8 @@ describe('normalizeShape', () => {
       height: 40,
       color: DIAGRAM_DEFAULT_COLOR,
       createdAt: 7,
+      createdBy: 'user',
+      userTouchedAt: 0,
     });
   });
 
@@ -79,7 +81,7 @@ describe('normalizeShape', () => {
 
   it('text 仅需 x/y/text', () => {
     const s = normalizeShape({ id: 's1', kind: 'text', x: 5, y: 6, text: '标题', color: '#ef4444' });
-    expect(s).toEqual({ id: 's1', kind: 'text', x: 5, y: 6, text: '标题', color: '#ef4444', createdAt: 0 });
+    expect(s).toEqual({ id: 's1', kind: 'text', x: 5, y: 6, text: '标题', color: '#ef4444', createdAt: 0, createdBy: 'user', userTouchedAt: 0 });
   });
 
   it('line 需要 4 个有限数点', () => {
@@ -115,6 +117,7 @@ describe('pruneDanglingConnectors', () => {
     toNodeId: 'b',
     createdAt: 0,
     ...over,
+    createdBy: over.createdBy ?? 'user',
   });
 
   it('两端都在 → 保留', () => {

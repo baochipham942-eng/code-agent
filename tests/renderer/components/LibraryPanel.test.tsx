@@ -36,16 +36,6 @@ vi.mock('../../../src/renderer/components/design/designFiles', () => ({
   extractBrandFromImage: (...args: unknown[]) => extractBrandFromImage(...(args as [])),
 }));
 
-// 记忆 tab 的嵌入内容在本测试里打桩：真实 KnowledgeMemoryContent 挂载即触发 memory IPC，
-// 嵌入行为由 knowledgeMemoryPanel.test.ts 与这里的 tab 切换断言共同覆盖。
-vi.mock('../../../src/renderer/components/features/knowledge/KnowledgeMemoryPanel', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../../src/renderer/components/features/knowledge/KnowledgeMemoryPanel')>();
-  return {
-    ...actual,
-    KnowledgeMemoryContent: () => <div data-testid="knowledge-memory-content-stub" />,
-  };
-});
-
 import { LibraryPanel } from '../../../src/renderer/components/features/knowledge/LibraryPanel';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
 import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
@@ -182,14 +172,13 @@ describe('LibraryPanel', () => {
   });
 
   // 2026-07-27 审美关：「记忆」从资料库撤走（记忆偏个人设置），家在设置 → 记忆。
-  // 资料库不该再有第二个入口，也不该再嵌 KnowledgeMemoryContent。
-  it('不再有「记忆」tab，也不嵌 KnowledgeMemoryContent', async () => {
+  // 2026-08-02 整窗页 KnowledgeMemoryPanel 退役，资料库不该再有第二个入口。
+  it('不再有「记忆」tab', async () => {
     listLibraryItems.mockResolvedValue([makeItem()]);
     render(<LibraryPanel />);
     await screen.findByText('Brief.pdf');
 
     expect(screen.queryByTestId('library-tab-memory')).toBeNull();
-    expect(screen.queryByTestId('knowledge-memory-content-stub')).toBeNull();
   });
 
   it('品牌套件从右侧次级入口进入，列出真实品牌且不改变资料条目筛选和计数', async () => {

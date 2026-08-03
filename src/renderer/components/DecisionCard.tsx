@@ -74,7 +74,7 @@ export function isEditableTarget(target: EventTarget | null): boolean {
 const SelectionIndicator: React.FC<{ selected: boolean }> = ({ selected }) => (
   <div
     className={`mt-0.5 w-4 h-4 rounded-full border-2 flex items-center justify-center ${
-      selected ? 'border-blue-500 bg-blue-500' : 'border-zinc-600'
+      selected ? 'border-badge-info bg-blue-500' : 'border-zinc-600'
     }`}
   >
     {selected && <Check className="w-3 h-3 text-white" />}
@@ -150,7 +150,7 @@ export const DecisionCard: React.FC<DecisionCardProps> = ({
         ref={cardRef}
         tabIndex={-1}
         className={`w-full max-w-3xl mx-auto bg-zinc-900 rounded-lg shadow-2xl border-2 outline-hidden ${
-          danger ? 'border-red-500' : 'border-blue-500/60'
+          danger ? 'border-red-500' : 'border-badge-info/60'
         }`}
       >
         {/* 头部：与 UserQuestionCard 同形（图标 + 标题），语义色区分常规/危险 */}
@@ -159,8 +159,8 @@ export const DecisionCard: React.FC<DecisionCardProps> = ({
             danger ? 'bg-red-500/10' : 'bg-blue-500/10'
           }`}
         >
-          <span className={`shrink-0 ${danger ? 'text-red-400' : 'text-blue-400'}`}>{icon}</span>
-          <span className={`text-sm font-medium ${danger ? 'text-red-300' : 'text-blue-300'}`}>
+          <span className={`shrink-0 ${danger ? 'text-badge-danger' : 'text-badge-info'}`}>{icon}</span>
+          <span className={`text-sm font-medium ${danger ? 'text-badge-danger' : 'text-badge-info'}`}>
             {title}
           </span>
           {headerMeta && <span className="text-xs text-zinc-500 truncate">{headerMeta}</span>}
@@ -169,8 +169,8 @@ export const DecisionCard: React.FC<DecisionCardProps> = ({
         {/* 危险警示行：替代旧 DangerWarning 嵌卡，只占一行高度 */}
         {danger && dangerWarning && (
           <div className="flex items-center gap-2 px-4 py-2 border-b border-zinc-800 bg-red-500/5">
-            <AlertTriangle className="w-4 h-4 text-red-400 shrink-0" />
-            <span className="text-xs text-red-300">{dangerWarning}</span>
+            <AlertTriangle className="w-4 h-4 text-badge-danger shrink-0" />
+            <span className="text-xs text-badge-danger">{dangerWarning}</span>
           </div>
         )}
 
@@ -186,7 +186,7 @@ export const DecisionCard: React.FC<DecisionCardProps> = ({
                 onClick={() => onSelect(option.id)}
                 className={`w-full p-2.5 rounded-lg border text-left transition-all ${
                   selectedId === option.id
-                    ? 'border-blue-500 bg-blue-500/10 ring-1 ring-blue-500/50'
+                    ? 'border-badge-info bg-blue-500/10 ring-1 ring-blue-500/50'
                     : 'border-zinc-700 hover:border-zinc-600 hover:bg-zinc-800'
                 }`}
               >

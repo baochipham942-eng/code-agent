@@ -17,6 +17,7 @@ import {
   isNativeCommandRuntimeAvailable,
 } from '../../../../services/nativeCommandFacade';
 import { useI18n } from '../../../../hooks/useI18n';
+import { useAppshotsStore } from '../../../../stores/appshotsStore';
 import { Toggle } from '../../../primitives/Toggle';
 
 const logger = createLogger('AppshotsSettings');
@@ -74,6 +75,11 @@ export const AppshotsSettings: React.FC = () => {
 
   const handleTarget = async (next: 'current' | 'new') => {
     setTarget(next);
+    // 同步给捕获链路：store 缓存（renderer 同步读）+ Rust 原子标志（skip 决策无 IPC 竞态）
+    useAppshotsStore.getState().setTargetSession(next);
+    if (isNativeCommandRuntimeAvailable()) {
+      void invokeNativeCommandAction('setAppshotsTargetSession', { newSession: next === 'new' }).catch(() => {});
+    }
     await persist(enabled, next);
   };
 

@@ -52,14 +52,14 @@ export const DataPreparation: React.FC<Props> = ({ onComplete }) => {
           {/* 概念说明 */}
           <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-700">
             <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
-              <FileText className="w-4 h-4 text-blue-400" />
+              <FileText className="w-4 h-4 text-badge-info" />
               {dp.whyTitle}
             </h3>
             <p className="text-sm text-zinc-400 leading-relaxed mb-3">
               {dp.whyIntro}
             </p>
             <p className="text-sm text-zinc-400 leading-relaxed">
-              {dp.methodPrefix}<span className="text-emerald-400">{dp.methodHighlight}</span>{dp.methodSuffix}
+              {dp.methodPrefix}<span className="text-badge-success">{dp.methodHighlight}</span>{dp.methodSuffix}
             </p>
           </div>
 
@@ -68,11 +68,11 @@ export const DataPreparation: React.FC<Props> = ({ onComplete }) => {
             <h3 className="text-sm font-semibold text-zinc-200 mb-3">{dp.formatTitle}</h3>
             <div className="bg-zinc-950 rounded-lg p-3 text-sm">
               <div className="flex gap-2 items-start mb-2">
-                <span className="text-blue-400 font-medium shrink-0">{dp.formatUserLabel}</span>
+                <span className="text-badge-info font-medium shrink-0">{dp.formatUserLabel}</span>
                 <span className="text-zinc-400">{dp.formatUserExample}</span>
               </div>
               <div className="flex gap-2 items-start">
-                <span className="text-emerald-400 font-medium shrink-0">{dp.formatAiLabel}</span>
+                <span className="text-badge-success font-medium shrink-0">{dp.formatAiLabel}</span>
                 <span className="text-zinc-400">{dp.formatAiExample}</span>
               </div>
             </div>
@@ -105,20 +105,20 @@ export const DataPreparation: React.FC<Props> = ({ onComplete }) => {
           {/* 数据准备过程 */}
           <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-700">
             <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
-              <span className="text-emerald-400">📝</span>
+              <span className="text-badge-success">📝</span>
               {dp.processTitle}
             </h3>
             <div className="space-y-3 text-sm">
               <div className="flex items-center gap-3 p-2 rounded-lg bg-zinc-800">
-                <span className="w-6 h-6 rounded-full bg-blue-500/20 text-blue-400 text-xs flex items-center justify-center font-bold">1</span>
+                <span className="w-6 h-6 rounded-full bg-blue-500/20 text-badge-info text-xs flex items-center justify-center font-bold">1</span>
                 <span className="text-zinc-400">{dp.processStep1.replace('{count}', String(dataStats.dialoguePatterns))}</span>
               </div>
               <div className="flex items-center gap-3 p-2 rounded-lg bg-zinc-800">
-                <span className="w-6 h-6 rounded-full bg-blue-500/20 text-blue-400 text-xs flex items-center justify-center font-bold">2</span>
+                <span className="w-6 h-6 rounded-full bg-blue-500/20 text-badge-info text-xs flex items-center justify-center font-bold">2</span>
                 <span className="text-zinc-400">{dp.processStep2.replace('{count}', String(dataStats.repetitions))}</span>
               </div>
               <div className="flex items-center gap-3 p-2 rounded-lg bg-zinc-800">
-                <span className="w-6 h-6 rounded-full bg-blue-500/20 text-blue-400 text-xs flex items-center justify-center font-bold">3</span>
+                <span className="w-6 h-6 rounded-full bg-blue-500/20 text-badge-info text-xs flex items-center justify-center font-bold">3</span>
                 <span className="text-zinc-400">{dp.processStep3.replace('{count}', (dataStats.totalTokens / 1000).toFixed(0))}</span>
               </div>
             </div>
@@ -128,26 +128,26 @@ export const DataPreparation: React.FC<Props> = ({ onComplete }) => {
         {/* 右侧：交互区域 */}
         <div className="space-y-6">
           {/* 数据统计卡片 */}
-          <div className="p-4 rounded-xl bg-gradient-to-br from-emerald-500/10 to-teal-500/10 border border-emerald-500/20">
+          <div className="p-4 rounded-xl bg-gradient-to-br from-emerald-500/10 to-teal-500/10 border border-badge-success/20">
             <h3 className="text-sm font-semibold text-zinc-200 mb-4 flex items-center gap-2">
-              <BarChart3 className="w-4 h-4 text-emerald-400" />
+              <BarChart3 className="w-4 h-4 text-badge-success" />
               {dp.statsTitle}
             </h3>
             <div className="grid grid-cols-2 gap-4">
               <div className="p-3 rounded-lg bg-zinc-900">
-                <div className="text-2xl font-bold text-emerald-400">{dataStats.dialoguePatterns}</div>
+                <div className="text-2xl font-bold text-badge-success">{dataStats.dialoguePatterns}</div>
                 <div className="text-xs text-zinc-500">{dp.statsPatterns}</div>
               </div>
               <div className="p-3 rounded-lg bg-zinc-900">
-                <div className="text-2xl font-bold text-blue-400">{dataStats.totalTokens.toLocaleString()}</div>
+                <div className="text-2xl font-bold text-badge-info">{dataStats.totalTokens.toLocaleString()}</div>
                 <div className="text-xs text-zinc-500">{dp.statsTokens}</div>
               </div>
               <div className="p-3 rounded-lg bg-zinc-900">
-                <div className="text-2xl font-bold text-amber-400">{dataStats.repetitions}x</div>
+                <div className="text-2xl font-bold text-badge-warning">{dataStats.repetitions}x</div>
                 <div className="text-xs text-zinc-500">{dp.statsRepetitions}</div>
               </div>
               <div className="p-3 rounded-lg bg-zinc-900">
-                <div className="text-2xl font-bold text-purple-400">{dataStats.vocabSize}</div>
+                <div className="text-2xl font-bold text-badge-accent">{dataStats.vocabSize}</div>
                 <div className="text-xs text-zinc-500">{dp.statsVocab}</div>
               </div>
             </div>
@@ -156,7 +156,7 @@ export const DataPreparation: React.FC<Props> = ({ onComplete }) => {
           {/* 数据预览 */}
           <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-700">
             <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
-              <Database className="w-4 h-4 text-blue-400" />
+              <Database className="w-4 h-4 text-badge-info" />
               {dp.previewTitle}
             </h3>
             <div className="space-y-3 max-h-64 overflow-y-auto">
@@ -165,20 +165,20 @@ export const DataPreparation: React.FC<Props> = ({ onComplete }) => {
                   key={index}
                   className={`p-3 rounded-lg ${
                     index >= sampleDialogues.length
-                      ? 'bg-emerald-500/10 border border-emerald-500/20'
+                      ? 'bg-emerald-500/10 border border-badge-success/20'
                       : 'bg-zinc-800'
                   }`}
                 >
                   <div className="text-xs">
-                    <span className="text-blue-400">{dp.previewUserPrefix}</span>
+                    <span className="text-badge-info">{dp.previewUserPrefix}</span>
                     <span className="text-zinc-400">{dialogue.user}</span>
                   </div>
                   <div className="text-xs mt-1">
-                    <span className="text-emerald-400">{dp.previewAssistantPrefix}</span>
+                    <span className="text-badge-success">{dp.previewAssistantPrefix}</span>
                     <span className="text-zinc-400">{dialogue.assistant}</span>
                   </div>
                   {index >= sampleDialogues.length && (
-                    <div className="text-xs text-emerald-400 mt-1">{dp.previewAddedBadge}</div>
+                    <div className="text-xs text-badge-success mt-1">{dp.previewAddedBadge}</div>
                   )}
                 </div>
               ))}
@@ -188,7 +188,7 @@ export const DataPreparation: React.FC<Props> = ({ onComplete }) => {
           {/* 添加自定义对话 */}
           <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-700">
             <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
-              <Plus className="w-4 h-4 text-emerald-400" />
+              <Plus className="w-4 h-4 text-badge-success" />
               {dp.addTitle}
             </h3>
             <div className="space-y-3">
@@ -199,7 +199,7 @@ export const DataPreparation: React.FC<Props> = ({ onComplete }) => {
                   value={customDialogue.user}
                   onChange={(e) => setCustomDialogue({ ...customDialogue, user: e.target.value })}
                   placeholder={dp.addUserPlaceholder}
-                  className="w-full px-3 py-2 rounded-lg bg-zinc-700 border border-zinc-700 text-sm text-zinc-200 placeholder-zinc-500 focus:outline-hidden focus:border-blue-500"
+                  className="w-full px-3 py-2 rounded-lg bg-zinc-700 border border-zinc-700 text-sm text-zinc-200 placeholder-zinc-500 focus:outline-hidden focus:border-badge-info"
                 />
               </div>
               <div>
@@ -209,13 +209,13 @@ export const DataPreparation: React.FC<Props> = ({ onComplete }) => {
                   value={customDialogue.assistant}
                   onChange={(e) => setCustomDialogue({ ...customDialogue, assistant: e.target.value })}
                   placeholder={dp.addAssistantPlaceholder}
-                  className="w-full px-3 py-2 rounded-lg bg-zinc-700 border border-zinc-700 text-sm text-zinc-200 placeholder-zinc-500 focus:outline-hidden focus:border-blue-500"
+                  className="w-full px-3 py-2 rounded-lg bg-zinc-700 border border-zinc-700 text-sm text-zinc-200 placeholder-zinc-500 focus:outline-hidden focus:border-badge-info"
                 />
               </div>
               <button
                 onClick={handleAddDialogue}
                 disabled={!customDialogue.user.trim() || !customDialogue.assistant.trim()}
-                className="w-full py-2 rounded-lg bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 text-sm font-medium hover:bg-emerald-500/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                className="w-full py-2 rounded-lg bg-emerald-500/20 border border-badge-success/30 text-badge-success text-sm font-medium hover:bg-emerald-500/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 {dp.addButton}
               </button>
@@ -227,14 +227,14 @@ export const DataPreparation: React.FC<Props> = ({ onComplete }) => {
       {/* 专有名词解释 */}
       <div className="mt-8 p-4 rounded-xl bg-zinc-900 border border-zinc-700">
         <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
-          <span className="text-blue-400">📖</span>
+          <span className="text-badge-info">📖</span>
           {dp.termsTitle}
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           {dp.terms.map((term) => (
             <div key={term.en} className="p-3 rounded-lg bg-zinc-800">
               <div className="flex items-center gap-2 mb-1">
-                <span className="text-sm font-bold text-emerald-400">{term.en}</span>
+                <span className="text-sm font-bold text-badge-success">{term.en}</span>
                 <span className="text-xs text-zinc-500">|</span>
                 <span className="text-sm text-zinc-400">{term.zh}</span>
               </div>

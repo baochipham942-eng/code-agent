@@ -63,6 +63,7 @@ import { startCreateRoleChat } from '../../../../utils/startCreateRoleChat';
 import { computeSlashMenuValue } from '../../../../utils/composerShortcuts';
 import { useSkillRecommendations } from './useSkillRecommendations';
 import { CapabilitySuggestionStrip } from './CapabilitySuggestionStrip';
+import { buildIactChipSendText } from './iactChipConfirmation';
 import { useI18n } from '../../../../hooks/useI18n';
 import { useAppStore } from '../../../../stores/appStore';
 import { useAppshotsStore } from '../../../../stores/appshotsStore';
@@ -90,6 +91,7 @@ import { useDragAndDrop } from './useDragAndDrop';
 import { useChatInputEnvelope } from './useChatInputEnvelope';
 import { useChatInputAgentCommand } from './useChatInputAgentCommand';
 import { useChatInputSlashCommands } from './useChatInputSlashCommands';
+import { useComposerFocusRequest } from './useComposerFocusRequest';
 import { useChatInputSubmit } from './useChatInputSubmit';
 import { useChatInputComposerActions } from './useChatInputComposerActions';
 import {
@@ -103,7 +105,6 @@ import { buildMentionAttachment } from './mentionAttachment';
 import { AgentChip } from './AgentChip';
 import { MountedConnectorIcons } from './MountedConnectorIcons';
 import { getAgentSlashCommandQuery } from './agentCommand';
-import { SurfaceExecutionComposerStatus } from '../../surfaceExecution/SurfaceExecutionRunStatus';
 import { ComposerUploadStatus } from './ComposerUploadStatus';
 
 // ============================================================================
@@ -127,7 +128,8 @@ export interface ChatInputProps {
     attachmentsCount: number;
     createdAt: number;
   }>;
-  onCancelQueuedRuntimeInput?: (id: string) => void;
+  /** @returns 是否真的撤回成功——成功才把内容退回输入框（已发出去的不能退）。 */
+  onCancelQueuedRuntimeInput?: (id: string) => void | Promise<boolean>;
   onSendQueuedRuntimeInput?: (id: string) => void;
   /** 是否有 Plan */
   hasPlan?: boolean;
@@ -148,32 +150,13 @@ export interface ChatInputHandle {
   focus: () => void;
 }
 
-export const RuntimeInputShortcutHint: React.FC<{ isProcessing: boolean; hasDraft: boolean }> = ({ isProcessing, hasDraft }) => {
-  const { t } = useI18n();
-  if (!isProcessing || !hasDraft) return null;
-
-  return (
-    <div
-      data-testid="runtime-input-shortcut-hint"
-      className="px-4 pb-2 -mt-1 text-right text-[11px] text-zinc-500"
-    >
-      {typeof navigator !== 'undefined' && navigator.platform.toUpperCase().indexOf('MAC') >= 0
-        ? t.chatInput.runtimeInputShortcutHintMac
-        : t.chatInput.runtimeInputShortcutHintWin}
-    </div>
-  );
-};
-
 // ============================================================================
-// 实时通话入口的槽位判定（单真源，组件外可测）
+// composer 核心操作区判定（单真源，组件外可测）
 // ============================================================================
-//   primary   = 占输入框右侧主按钮位（空输入框 + 没在跑 + 空闲相位 + 入口可用）；
-//   secondary = 主位被停止键占用（正在跑）时退到停止键左边的次位——通话入口
-//               挂在原地、照常可拨，不是整个消失（X5.5 返工批 R4c 真机：一通挂断后
-//               派出去的活还在跑，isProcessing 把主位判给停止键，通话按钮「短暂消失、
-//               跑完（下一通前）才回来」）；
-//   none      = 通话中（VoiceChrome 接管）/ 无会话 / 总开关关 / 有草稿（发送键有事可做）。
-export type LiveVoiceSlot = 'primary' | 'secondary' | 'none';
+//   primary = 占输入框右侧主按钮位；
+//   none    = 通话中（VoiceChrome 接管）/ 无会话 / 总开关关 / 有草稿 / 正在跑，
+//             或已有消息但从未进行过实时通话的文字会话。
+export type LiveVoiceSlot = 'primary' | 'none';
 
 export function resolveLiveVoiceSlot(params: {
   hasContent: boolean;
@@ -181,10 +164,30 @@ export function resolveLiveVoiceSlot(params: {
   sessionId: string | null;
   enabled: boolean;
   phase: VoiceCallPhase;
+  hasMessages: boolean;
+  hadLiveVoice: boolean;
 }): LiveVoiceSlot {
   if (!params.sessionId || !params.enabled || params.phase !== 'idle') return 'none';
-  if (params.hasContent) return 'none';
-  return params.isProcessing ? 'secondary' : 'primary';
+  if (params.hasContent || params.isProcessing) return 'none';
+  if (params.hasMessages && !params.hadLiveVoice) return 'none';
+  return 'primary';
+}
+
+export const COMPOSER_CORE_ACTION_LIMIT = 2 as const;
+export type ComposerCoreAction = 'voice-input' | 'live-voice' | 'send' | 'stop';
+
+export function resolveComposerCoreActions(params: Parameters<typeof resolveLiveVoiceSlot>[0]): readonly ComposerCoreAction[] {
+  const liveVoiceSlot = resolveLiveVoiceSlot(params);
+  const primaryAction: ComposerCoreAction = liveVoiceSlot === 'primary'
+    ? 'live-voice'
+    : params.isProcessing && !params.hasContent
+      ? 'stop'
+      : 'send';
+
+  // 核心操作区只指 composer 工具栏右端两个同级操作项：口述输入 + 主操作。
+  // 附件「+」、身份/连接器/权限/模型、审批与提示 chip、VoiceChrome 状态条都不在此边界内。
+  // JSX 必须逐项消费这份列表，禁止在映射外另塞同级核心按钮。
+  return ['voice-input', primaryAction];
 }
 
 // ============================================================================
@@ -230,6 +233,9 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   const [slashFilter, setSlashFilter] = useState('');
   const [showSlashPopover, setShowSlashPopover] = useState(false);
   const currentSessionProjectId = useSessionStore((s) => s.sessions.find((x) => x.id === currentSessionId)?.projectId ?? null);
+  const currentSessionHadLiveVoice = useSessionStore((s) => (
+    s.sessions.find((session) => session.id === currentSessionId)?.metadata?.hadLiveVoice === true
+  ));
   const [pendingPromptCommand, setPendingPromptCommand] = useState<ComposerPromptCommandSelection | null>(null);
   const [pendingAgentSelection, setPendingAgentSelection] = useState<ComposerAgentSelection | null>(null);
   const [comboSuggestion, setComboSuggestion] = useState<{
@@ -344,7 +350,10 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   const viewingMemberId = useMemberViewStore((state) => state.viewingMemberId);
   const setViewingMemberId = useMemberViewStore((state) => state.setViewingMemberId);
   const setActiveAgentId = useAppStore((state) => state.setActiveAgentId);
-  const hasMessages = useSessionStore((state) => state.messages.length > 0);
+  const hasMessages = useSessionStore((state) => (
+    state.messages.length > 0
+    || (state.sessions.find((session) => session.id === currentSessionId)?.messageCount ?? 0) > 0
+  ));
   const swarmAgents = useSwarmStore((state) => state.agents);
   const selectedDirectAgents = useMemo(
     () => swarmAgents.filter((agent) => targetAgentIds.includes(agent.id)),
@@ -440,7 +449,11 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     pendingAgentSelection,
   });
 
-  // 上报 composer 槽位给 Rust，作为 Appshot 飞入动画的落点（屏幕逻辑坐标）
+  // 上报 composer 槽位给 Rust，作为 Appshot 飞入动画的落点。
+  // 锚点渲染在 ComposerChipsRow 内（chip 缩略图位置），这里只负责测量上报：
+  // 只报「窗口视口内坐标」（getBoundingClientRect），不加 window.screenX/screenY——
+  // 它们在部分 macOS 环境是物理像素，与 CSS 逻辑像素混算会把落点打出屏幕；
+  // 屏幕坐标由 Rust 侧用主窗口 outer_position 换算（单位一致）。
   useEffect(() => {
     if (!isNativeCommandRuntimeAvailable()) return;
     const report = () => {
@@ -448,15 +461,21 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
       if (!el) return;
       const r = el.getBoundingClientRect();
       invokeNativeCommandAction('reportAppshotComposerSlot', {
-          slot: { x: r.left + window.screenX, y: r.top + window.screenY, width: 56, height: 56 },
+          slot: { x: r.left, y: r.top, width: r.width, height: r.height },
         })
         .catch(() => {});
     };
     const timer = window.setTimeout(report, 300);
     window.addEventListener('resize', report);
+    const composerEl = formRef.current;
+    const observer = typeof ResizeObserver !== 'undefined' && composerEl
+      ? new ResizeObserver(report)
+      : null;
+    if (observer && composerEl) observer.observe(composerEl);
     return () => {
       window.clearTimeout(timer);
       window.removeEventListener('resize', report);
+      observer?.disconnect();
     };
   }, []);
 
@@ -519,7 +538,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     const handleSend = (e: Event) => {
       const text = (e as CustomEvent<string>).detail;
       if (text?.trim()) {
-        void onSend(buildEnvelope(text));
+        void onSend(buildEnvelope(buildIactChipSendText(t, text.trim())));
       }
     };
     const handleAdd = (e: Event) => {
@@ -543,7 +562,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
       window.removeEventListener('iact:add', handleAdd);
       window.removeEventListener('iact:run', handleRun);
     };
-  }, [buildEnvelope, onSend]);
+  }, [buildEnvelope, onSend, t]);
 
   // Clear suggestions when user starts typing
   useEffect(() => {
@@ -635,6 +654,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   const focusComposer = useCallback(() => {
     requestAnimationFrame(() => inputAreaRef.current?.focus());
   }, []);
+
+  useComposerFocusRequest(focusComposer);
 
   // Agent 自动补全单元：@ mention 与 /agent 命令的 state / 派生 / 键盘导航 / 选择 handler
   const {
@@ -844,8 +865,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   // useBudgetStatus 不是定时轮询：仅在成本前进 / 流式结束时各拉一次，挂在 pill 侧。
 
   const hasContent = value.trim().length > 0 || attachments.length > 0 || Boolean(pendingCommand);
-  // 右侧主按钮的归属：只有「空输入框 + 没在跑 + 语音入口真能用」时才让给开通话，
-  // 其余情况发送键都有事可做（发送 / 停止），不能被换掉。
+  // 右侧主按钮的归属：空会话和已有实时通话身份的会话，在输入框为空、未运行时
+  // 可以显示通话；纯文字会话一旦有消息，入口整个隐藏。其余状态由发送/停止兜底。
   //
   // 不看 `configured`（2026-07-30 缺 key 降级）：没配 key 时主位照让，
   // LiveVoiceButton 自己渲染成「点我配 key」的引导态——能力不可用要降级提示，
@@ -857,17 +878,16 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   // 拿它决定按钮存不存在，就是让底栏在每次开新会话时换一次构成。
   // 这段窗口按钮照常在位，只是 disabled 置灰（两个按钮都真的会灰，见各自实现）。
   //
-  // X5.5 返工批 R4c：挂断后派出去的活还在跑（isProcessing）时，主位是停止键，
-  // 通话入口退次位（见 resolveLiveVoiceSlot）——挂断即回到可拨状态，
-  // 不再「按钮短暂消失、活跑完才回来」。
   const liveVoiceAvailability = useVoiceLiveAvailability();
   const liveVoiceCallPhase = useVoiceCallStore((state) => state.phase);
-  const liveVoiceSlot = resolveLiveVoiceSlot({
+  const composerCoreActions = resolveComposerCoreActions({
     hasContent,
     isProcessing: Boolean(isProcessing),
     sessionId: currentSessionId ?? null,
     enabled: liveVoiceAvailability.enabled,
     phase: liveVoiceCallPhase,
+    hasMessages,
+    hadLiveVoice: currentSessionHadLiveVoice,
   });
 
   return (
@@ -931,23 +951,20 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
           <button
             type="button"
             onClick={onPlanClick}
-            className="flex items-center gap-2 px-3 py-2 mb-2 bg-indigo-500/10 border border-indigo-500/20 rounded-lg hover:bg-indigo-500/20 transition-colors w-full text-left"
+            className="flex items-center gap-2 px-3 py-2 mb-2 bg-indigo-500/10 border border-badge-accent/20 rounded-lg hover:bg-indigo-500/20 transition-colors w-full text-left"
           >
-            <FileText className="w-4 h-4 text-indigo-400" />
-            <span className="text-sm text-indigo-400">{t.chatInput.viewPlan}</span>
+            <FileText className="w-4 h-4 text-badge-accent" />
+            <span className="text-sm text-badge-accent">{t.chatInput.viewPlan}</span>
           </button>
         )}
 
         {/* 文件处理中提示 */}
         <ComposerUploadStatus active={isUploading} />
 
-        {/* Appshot 飞入动画落点锚（0 高，仅用于测量 composer 槽位屏幕坐标） */}
-        <div ref={appshotSlotRef} aria-hidden className="h-0" />
-
         {/* 拖放提示 */}
         {isDragOver && (
-          <div className="absolute inset-0 flex items-center justify-center bg-zinc-800-950/90 backdrop-blur-sm z-10 rounded-xl border-2 border-dashed border-primary-500">
-            <div className="flex flex-col items-center gap-2 text-primary-400">
+          <div className="absolute inset-0 flex items-center justify-center bg-zinc-800-950/90 backdrop-blur-sm z-10 rounded-xl border-2 border-dashed border-accent-accessible">
+            <div className="flex flex-col items-center gap-2 text-accent-accessible">
               <Image className="w-8 h-8" />
               <span className="text-sm">{t.chat.dropFilesHere}</span>
             </div>
@@ -973,7 +990,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
           <SuggestionBar suggestions={suggestions} onSelect={handleSuggestionSelect} />
         )}
 
-        <SurfaceExecutionComposerStatus conversationId={currentSessionId} />
         <CapabilitySuggestionStrip
           skillRecommendations={skillRecommendations}
           capabilitySuggestions={capabilitySuggestions}
@@ -992,7 +1008,14 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
           items={queuedRuntimeInputs}
           isProcessing={Boolean(isProcessing)}
           onSend={onSendQueuedRuntimeInput}
-          onCancel={onCancelQueuedRuntimeInput}
+          onCancel={async (id) => {
+            // 取消 = 这条没发出去，内容退回输入框，别让人重打一遍（真机反馈）。
+            const pending = queuedRuntimeInputs.find((item) => item.id === id);
+            const retracted = await onCancelQueuedRuntimeInput?.(id);
+            if (retracted && pending?.content) {
+              setValue((current) => (current.trim() ? `${current} ${pending.content}` : pending.content));
+            }
+          }}
         />
 
         {/* 实时通话 chrome：live 时底栏扩展（打字/附件入口保留在下方原处，§7.2） */}
@@ -1081,7 +1104,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
               <button
                 type="button"
                 onClick={() => { setValue(''); void startCreateRoleChat(); }}
-                className="flex w-full items-center gap-1.5 border-t border-zinc-800 px-3 py-2 text-left text-xs text-emerald-300 transition-colors hover:bg-emerald-500/10"
+                className="flex w-full items-center gap-1.5 border-t border-zinc-800 px-3 py-2 text-left text-xs text-badge-success transition-colors hover:bg-emerald-500/10"
               >
                 <UserPlus className="h-3.5 w-3.5 shrink-0" />
                 {t.agentCommand.createRoleEntry}
@@ -1154,13 +1177,13 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
               <ComposerChipsRow
                 pendingAppshot={pendingAppshot}
                 clearAppshot={clearAppshot}
+                appshotSlotRef={appshotSlotRef}
               />
             )}
             inlineChips={inlineChips}
             onRemoveInlineChip={handleRemoveInlineChip}
             onInlineChipsChanged={handleInlineChipsChanged}
           />
-          <RuntimeInputShortcutHint isProcessing={Boolean(isProcessing)} hasDraft={Boolean(value.trim())} />
           {/* 底部工具栏。录音中这一行**原地变成波形条**（`+` 留在最左，波形铺中间，
               右侧 时长 + 停止 + 发送）——不在输入框上方另悬浮一条，也就不会出现
               两个发送键（产品负责人 2026-07-27 真机反馈，形态对齐 Codex composer）。
@@ -1214,53 +1237,41 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
               <ModelSwitcher currentModel={modelConfig.model} />
             </div>
 
-            {/* 口述输入按钮：常驻不卸载。禁用时置灰留在原位——卸载会让底栏少一格、
-                旁边所有东西横向平移，「切会话时按钮闪一下」就是这么来的。 */}
-            <VoiceInputButton
-              voice={voice}
-              disabled={disabled}
-            />
             {/*
-              右侧主按钮一个位置两种职能（2026-07-27 产品负责人拍板）：
-              输入框空着时是「开通话」，打了字才变「发送」——空输入框上摆一个
-              点了也没用的发送键，是这三个图标里最没用的那个。
-              正在跑 / 有内容 / 语音入口不可用时回退成发送键（那些状态下它有事可做）。
-              R4c 次位：正在跑（停止键占主位）时通话入口退到停止键左边的 ghost 次位，
-              挂在原地照常可拨——挂断后按钮立刻在，不随活跑完才回来。
+              核心操作区 = 工具栏右端同级的「口述输入 + 主操作」，上限 2 项。
+              这里逐项消费 resolveComposerCoreActions；附件 +、身份/连接器/权限/模型、
+              审批与提示 chip、上方 VoiceChrome 状态条不属于核心操作区。
             */}
-            {liveVoiceSlot === 'secondary' && (
-              <LiveVoiceButton
-                sessionId={currentSessionId ?? null}
-                hasMessages={hasMessages}
-                disabled={disabled && !isProcessing}
-                variant="ghost"
-                availability={{
-                  enabled: liveVoiceAvailability.enabled,
-                  configured: liveVoiceAvailability.configured,
-                }}
-              />
-            )}
-            {liveVoiceSlot === 'primary' ? (
-              <LiveVoiceButton
-                sessionId={currentSessionId ?? null}
-                hasMessages={hasMessages}
-                disabled={disabled}
-                variant="primary"
-                availability={{
-                  enabled: liveVoiceAvailability.enabled,
-                  configured: liveVoiceAvailability.configured,
-                }}
-              />
-            ) : (
-              <SendButton
-                disabled={disabled && !isProcessing}
-                isProcessing={isProcessing}
-                isInterrupting={isInterrupting}
-                hasContent={hasContent}
-                type="submit"
-                onStop={onStop}
-              />
-            )}
+            {composerCoreActions.map((action) => {
+              if (action === 'voice-input') {
+                return <VoiceInputButton key={action} voice={voice} disabled={disabled} />;
+              }
+              if (action === 'live-voice') {
+                return (
+                  <LiveVoiceButton
+                    key={action}
+                    sessionId={currentSessionId ?? null}
+                    hasMessages={hasMessages}
+                    disabled={disabled}
+                    availability={{
+                      enabled: liveVoiceAvailability.enabled,
+                      configured: liveVoiceAvailability.configured,
+                    }}
+                  />
+                );
+              }
+              return (
+                <SendButton
+                  key={action}
+                  disabled={disabled && !isProcessing}
+                  isProcessing={isProcessing}
+                  isInterrupting={isInterrupting}
+                  hasContent={hasContent}
+                  type="submit"
+                  onStop={onStop}
+                />
+              );
+            })}
             </>
             )}
           </div>

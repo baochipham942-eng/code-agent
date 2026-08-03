@@ -309,6 +309,8 @@ class SyncService implements Disposable {
 
         if (remote.is_deleted) {
           if (local && remote.updated_at > local.updatedAt) {
+            const { deleteTerminalFramesForConversation } = await import('../surfaceExecution/TerminalFrameStore');
+            await deleteTerminalFramesForConversation(remote.id);
             db.deleteSession(remote.id, {
               deletedAt: remote.updated_at,
               syncOrigin: 'remote'
@@ -381,6 +383,8 @@ class SyncService implements Disposable {
           sessionId: remote.id,
           error: err
         });
+        // tombstone 处理失败必须阻断本轮 sync，不能推进 cursor 后永远漏删盘上帧。
+        if (remote.is_deleted) throw err;
       }
     }
 

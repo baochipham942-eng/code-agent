@@ -34,6 +34,9 @@ export default {
           muted: 'var(--brand-primary-muted)',
           glow: 'var(--brand-primary-glow)',
         },
+        // 高对比可读性替代色：hc 主题下是独立高饱和色，dark/light 回退到 brand。
+        // 用于 hc 场景里必须可读的品牌色文本/焦点场景（text-accent-accessible 等）
+        'accent-accessible': 'var(--accent-accessible)',
 
         // Semantic colors
         success: {
@@ -94,6 +97,57 @@ export default {
           900: 'rgb(var(--zinc-900) / <alpha-value>)',
           950: 'rgb(var(--zinc-950) / <alpha-value>)',
         },
+      },
+
+      // Badge semantic utilities keep foreground, background, and border roles
+      // separate while sharing the same badge-* class name.
+      textColor: {
+        'badge-info': 'var(--badge-info-fg)',
+        'badge-success': 'var(--badge-success-fg)',
+        'badge-warning': 'var(--badge-warning-fg)',
+        'badge-danger': 'var(--badge-danger-fg)',
+        'badge-accent': 'var(--badge-accent-fg)',
+        'btn-secondary': 'var(--btn-secondary-fg)',
+        'btn-secondary-disabled': 'var(--btn-secondary-fg-disabled)',
+      },
+      backgroundColor: {
+        'badge-info': 'var(--badge-info-bg)',
+        'badge-success': 'var(--badge-success-bg)',
+        'badge-warning': 'var(--badge-warning-bg)',
+        'badge-danger': 'var(--badge-danger-bg)',
+        'badge-accent': 'var(--badge-accent-bg)',
+        // Solid status marks are separate from badge background washes.
+        'mark-info': 'var(--mark-info)',
+        'mark-success': 'var(--mark-success)',
+        'mark-warning': 'var(--mark-warning)',
+        'mark-danger': 'var(--mark-danger)',
+        'mark-accent': 'var(--mark-accent)',
+        'mark-neutral': 'var(--mark-neutral)',
+        'btn-secondary': 'var(--btn-secondary-bg)',
+        'btn-secondary-hover': 'var(--btn-secondary-bg-hover)',
+        'btn-secondary-disabled': 'var(--btn-secondary-bg-disabled)',
+        'btn-ghost-hover': 'var(--btn-ghost-bg-hover)',
+      },
+      borderColor: {
+        'badge-info': 'var(--badge-info-border)',
+        'badge-success': 'var(--badge-success-border)',
+        'badge-warning': 'var(--badge-warning-border)',
+        'badge-danger': 'var(--badge-danger-border)',
+        'badge-accent': 'var(--badge-accent-border)',
+      },
+      fill: {
+        'badge-info': 'var(--badge-info-fg)',
+        'badge-success': 'var(--badge-success-fg)',
+        'badge-warning': 'var(--badge-warning-fg)',
+        'badge-danger': 'var(--badge-danger-fg)',
+        'badge-accent': 'var(--badge-accent-fg)',
+      },
+      stroke: {
+        'badge-info': 'var(--badge-info-fg)',
+        'badge-success': 'var(--badge-success-fg)',
+        'badge-warning': 'var(--badge-warning-fg)',
+        'badge-danger': 'var(--badge-danger-fg)',
+        'badge-accent': 'var(--badge-accent-fg)',
       },
 
       fontFamily: {

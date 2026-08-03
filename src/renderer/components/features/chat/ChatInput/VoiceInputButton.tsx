@@ -185,7 +185,7 @@ export const VoiceInputButton: React.FC<VoiceInputButtonProps> = ({
       {status === 'error' && error && (
         <div className="absolute bottom-11 right-0 z-20 w-72 rounded-lg border border-zinc-700 bg-zinc-900 p-3 shadow-xl shadow-black/30">
           <div className="flex items-start gap-2">
-            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" />
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-badge-warning" />
             <div className="min-w-0 flex-1">
               <p className="break-words text-xs leading-5 text-zinc-200">{displayError}</p>
               <p className="mt-1 text-2xs text-zinc-500">

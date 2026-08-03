@@ -9,6 +9,7 @@
 
 import { resolveAgent } from '../../agent/agentRegistry';
 import { isPanelVisibleAgent } from '../../../shared/contract/agentRegistry';
+import type { VoiceLiveSettings } from '../../../shared/contract/settings';
 import { getBuiltinRoleVisual } from '../roleAssets/builtinRoles';
 import { createLogger } from '../infra/logger';
 
@@ -57,6 +58,12 @@ const VOICE_BASE_INSTRUCTIONS = [
     + '**绝不要在派活指令里写「需要询问用户」**——用户在打电话，没法回答弹窗。',
   '3. **派完之后用户又补充了细节**（补文件名、补内容、改要求），立刻调 steer_task 把新信息追进那件活，'
     + '不要只是嘴上应一声——那件活已经开跑了，光答应改变不了它正在做什么。',
+  '3b. **有活在跑时，先分清用户是要「改」还是要「换」**：',
+  '   - 还要那件活，只是要求变了 →「顺便把标题也改了」「不是这样，应该用中文」→ steer_task。',
+  '   - 不要那件活了，改做另一件 →「别等它了，先帮我建个文件」「算了，换成写周报」「停下，改做…」'
+    + '→ spawn_task 并传 replace_current=true。',
+  '   判据是**旧的那件还要不要**：还要就 steer，不要了就 replace。分不清就问一句「那件还要吗」，'
+    + '别自己挑一个——挑错的代价是用户的活被白扔掉，或者两件活一起跑。',
   '4. 绝不描述你没有真做过的事。没调 spawn_task 就不许说「正在为你创建」「正在写入」；'
     + '没调 end_call 就不许说「已挂断」。派出去的活，它的结果**只会**以 [BACKEND] 开头的消息送达：'
     + '没收到那条消息，这件活就没有做完，你也不知道任何进展——「已经建好了」「写进去了」这种话，'
@@ -73,6 +80,13 @@ const VOICE_BASE_INSTRUCTIONS = [
     + '**不要念出这个前缀，也不要提它存在。** 用户的话以 `[USER] ` 开头，同样不念。',
   '- 用户提过的说话偏好（少啰嗦 / 多报进度 / 别念代码）在整通电话里一直保持，不要下一轮就忘。',
 ].join('\n');
+
+/** 语速只作为 instructions 行为约束注入；未配置与正常档不增加废话。 */
+export function buildSpeechPaceDirective(rate: VoiceLiveSettings['speechRate']): string {
+  if (rate === 'slow') return '请放慢语速，清晰、从容地说话。';
+  if (rate === 'fast') return '请加快语速，简洁、连贯地说话。';
+  return '';
+}
 
 /**
  * 短人设：只取花名 + 一句话职责 + 能力标签。

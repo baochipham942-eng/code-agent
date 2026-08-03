@@ -23,16 +23,16 @@ const NO_PHASE = '__no_phase__';
 function StatusIcon({ status }: { status: ScriptRunAgentStatus }) {
   switch (status) {
     case 'running':
-      return <Loader2 size={12} className="text-emerald-400 animate-spin shrink-0" />;
+      return <Loader2 size={12} className="text-badge-success animate-spin shrink-0" />;
     case 'done':
       return <Check size={12} className="text-zinc-500 shrink-0" />;
     case 'error':
-      return <X size={12} className="text-red-400 shrink-0" />;
+      return <X size={12} className="text-badge-danger shrink-0" />;
     case 'skipped':
       return <MinusCircle size={12} className="text-zinc-600 shrink-0" />;
     case 'queued':
     default:
-      return <Circle size={12} className="text-amber-400 shrink-0" />;
+      return <Circle size={12} className="text-badge-warning shrink-0" />;
   }
 }
 
@@ -94,20 +94,20 @@ export function WorkflowInlineMonitor() {
     <div className="w-full shrink-0 px-4">
       <div className="mx-auto max-w-3xl rounded-lg border border-zinc-700/70 bg-zinc-900/95 backdrop-blur-sm shadow-xl text-xs">
         <div className="flex items-center gap-2 px-3 py-2">
-          <GitBranch size={14} className={snap.status === 'failed' ? 'text-red-400' : 'text-cyan-400'} />
+          <GitBranch size={14} className={snap.status === 'failed' ? 'text-badge-danger' : 'text-badge-info'} />
           <span className="text-zinc-300">workflow</span>
           {snap.goal && <span className="text-zinc-500 truncate max-w-[40%]" title={snap.goal}>· {snap.goal}</span>}
           <div className="ml-auto flex items-center gap-2 text-zinc-500">
-            {snap.runningCount > 0 && <span className="text-emerald-400">{snap.runningCount} running</span>}
+            {snap.runningCount > 0 && <span className="text-badge-success">{snap.runningCount} running</span>}
             {snap.doneCount > 0 && <span>{snap.doneCount} done</span>}
-            {snap.errorCount > 0 && <span className="text-red-400">{snap.errorCount} error</span>}
+            {snap.errorCount > 0 && <span className="text-badge-danger">{snap.errorCount} error</span>}
             {durationSec !== undefined && <span>{durationSec}s</span>}
             {snap.status === 'running' && (
               <button
                 type="button"
                 onClick={handleCancel}
                 disabled={cancelling}
-                className="text-zinc-500 hover:text-red-300 disabled:opacity-50 transition-colors"
+                className="text-zinc-500 hover:text-badge-danger disabled:opacity-50 transition-colors"
                 title="取消 workflow"
               >
                 <Square size={12} />
@@ -143,7 +143,7 @@ export function WorkflowInlineMonitor() {
               </div>
             ))}
             {snap.error && (
-              <div className="px-3 py-1.5 text-red-400 border-t border-zinc-700/40 mt-1">
+              <div className="px-3 py-1.5 text-badge-danger border-t border-zinc-700/40 mt-1">
                 {snap.error}
               </div>
             )}
@@ -163,14 +163,14 @@ function WorkflowAgentRow({ agent }: { agent: ScriptRunAgentSnapshot }) {
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
-          <span className={`font-medium ${agent.status === 'error' ? 'text-red-300' : 'text-zinc-200'}`}>
+          <span className={`font-medium ${agent.status === 'error' ? 'text-badge-danger' : 'text-zinc-200'}`}>
             {agent.label}
           </span>
           {agent.model && <span className="text-zinc-600 text-[10px]">{agent.model}</span>}
           {agent.hasSchema && <span className="text-zinc-600 text-[10px]">judge</span>}
           {agent.cached && (
             <span
-              className="inline-flex items-center gap-0.5 text-cyan-400/80 text-[10px]"
+              className="inline-flex items-center gap-0.5 text-badge-info/80 text-[10px]"
               title="resumable 重放命中缓存：结果来自上一次运行，未重新调用模型（0 token）"
             >
               <Zap size={9} className="shrink-0" />cached
@@ -178,7 +178,7 @@ function WorkflowAgentRow({ agent }: { agent: ScriptRunAgentSnapshot }) {
           )}
         </div>
         {detail && (
-          <div className={`truncate ${agent.status === 'error' ? 'text-red-400/80' : 'text-zinc-500'}`} title={detail}>
+          <div className={`truncate ${agent.status === 'error' ? 'text-badge-danger/80' : 'text-zinc-500'}`} title={detail}>
             {detail}
           </div>
         )}

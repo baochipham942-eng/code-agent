@@ -19,6 +19,8 @@ interface HookListItem {
   sources: Array<'global' | 'project'>;
   hookType: 'decision' | 'observer';
   parallel: boolean;
+  disabled: boolean;
+  key: string;
 }
 
 interface HookSummary {
@@ -36,10 +38,10 @@ async function invokeHook<T>(action: string, payload?: unknown): Promise<T> {
 }
 
 const HOOK_TYPE_BADGE: Record<HookListItem['type'], { color: string }> = {
-  command: { color: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30' },
-  prompt: { color: 'bg-violet-500/15 text-violet-300 border-violet-500/30' },
-  agent: { color: 'bg-blue-500/15 text-blue-300 border-blue-500/30' },
-  http: { color: 'bg-amber-500/15 text-amber-300 border-amber-500/30' },
+  command: { color: 'bg-emerald-500/15 text-badge-success border-badge-success/30' },
+  prompt: { color: 'bg-violet-500/15 text-badge-accent border-badge-accent/30' },
+  agent: { color: 'bg-blue-500/15 text-badge-info border-badge-info/30' },
+  http: { color: 'bg-amber-500/15 text-badge-warning border-badge-warning/30' },
 };
 
 export const HooksSettings: React.FC = () => {
@@ -88,6 +90,21 @@ export const HooksSettings: React.FC = () => {
     }
   }, []);
 
+  // 停用只改 hooks.json 里的一个字段，配置留着；下次会话生效（与 hook 加载时机一致）。
+  const handleToggle = useCallback(async (item: HookListItem, enabled: boolean) => {
+    if (!summary) return;
+    const filePath = item.sources.includes('project') && summary.configPaths.project
+      ? summary.configPaths.project
+      : summary.configPaths.global;
+    try {
+      await invokeHook('setEnabled', { filePath, key: item.key, enabled });
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      logger.error('Failed to toggle hook', { err: e });
+    }
+  }, [summary, load]);
+
   const handleReveal = useCallback(async (filePath: string) => {
     try {
       await invokeHook<{ revealed: string }>('revealConfigFolder', { filePath });
@@ -101,7 +118,7 @@ export const HooksSettings: React.FC = () => {
       <div className="flex items-start justify-between gap-4">
         <div>
           <h3 className="text-base font-semibold text-zinc-200 flex items-center gap-2">
-            <Plug className="w-4 h-4 text-amber-400" />
+            <Plug className="w-4 h-4 text-badge-warning" />
             {hooksText.title}
           </h3>
           <p className="text-xs text-zinc-500 mt-1">
@@ -142,7 +159,7 @@ export const HooksSettings: React.FC = () => {
       )}
 
       {error && (
-        <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+        <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-badge-danger">
           {hooksText.loadFailedPrefix}{error}
         </div>
       )}
@@ -168,7 +185,13 @@ export const HooksSettings: React.FC = () => {
                 </div>
                 <div className="divide-y divide-zinc-800">
                   {items.map((item, idx) => (
-                    <HookRow key={`${event}-${idx}`} item={item} typeLabels={hooksText.typeLabels} />
+                    <HookRow
+                      key={`${event}-${idx}`}
+                      item={item}
+                      typeLabels={hooksText.typeLabels}
+                      toggleText={hooksText.toggle}
+                      onToggle={handleToggle}
+                    />
                   ))}
                 </div>
               </div>
@@ -249,10 +272,12 @@ const ConfigPathRow: React.FC<{
 const HookRow: React.FC<{
   item: HookListItem;
   typeLabels: Record<HookListItem['type'], string>;
-}> = ({ item, typeLabels }) => {
+  toggleText: { enable: string; disable: string; disabledBadge: string };
+  onToggle: (item: HookListItem, enabled: boolean) => void;
+}> = ({ item, typeLabels, toggleText, onToggle }) => {
   const badge = HOOK_TYPE_BADGE[item.type];
   return (
-    <div className="px-3 py-2.5">
+    <div className={`px-3 py-2.5 ${item.disabled ? 'opacity-50' : ''}`}>
       <div className="flex items-center gap-2 mb-1">
         <span className={`text-[10px] px-1.5 py-0.5 rounded border ${badge.color}`}>
           {typeLabels[item.type]}
@@ -266,9 +291,21 @@ const HookRow: React.FC<{
           {item.hookType === 'observer' ? 'observer' : 'decision'}
           {item.parallel && ' · parallel'}
         </span>
+        {item.disabled && (
+          <span className="text-[10px] px-1.5 py-0.5 rounded border border-zinc-600 text-zinc-400">
+            {toggleText.disabledBadge}
+          </span>
+        )}
         <span className="text-[10px] text-zinc-500 ml-auto">
           {item.sources.join(' + ')}
         </span>
+        <button
+          type="button"
+          onClick={() => onToggle(item, item.disabled)}
+          className="text-[10px] px-1.5 py-0.5 rounded border border-zinc-700 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200 transition-colors"
+        >
+          {item.disabled ? toggleText.enable : toggleText.disable}
+        </button>
       </div>
       <div className="text-xs text-zinc-300 font-mono break-all">{item.hint}</div>
     </div>

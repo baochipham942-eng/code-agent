@@ -158,10 +158,10 @@ export const RLHFStage: React.FC<RLHFStageProps> = ({ onComplete, onBack }) => {
 
   const getColorClasses = (color: string) => {
     const colors: Record<string, { bg: string; border: string; text: string }> = {
-      blue: { bg: 'bg-blue-500/20', border: 'border-blue-500/30', text: 'text-blue-400' },
-      purple: { bg: 'bg-purple-500/20', border: 'border-purple-500/30', text: 'text-purple-400' },
-      emerald: { bg: 'bg-emerald-500/20', border: 'border-emerald-500/30', text: 'text-emerald-400' },
-      amber: { bg: 'bg-amber-500/20', border: 'border-amber-500/30', text: 'text-amber-400' },
+      blue: { bg: 'bg-blue-500/20', border: 'border-badge-info/30', text: 'text-badge-info' },
+      purple: { bg: 'bg-purple-500/20', border: 'border-badge-accent/30', text: 'text-badge-accent' },
+      emerald: { bg: 'bg-emerald-500/20', border: 'border-badge-success/30', text: 'text-badge-success' },
+      amber: { bg: 'bg-amber-500/20', border: 'border-badge-warning/30', text: 'text-badge-warning' },
     };
     return colors[color] || colors.blue;
   };
@@ -169,14 +169,14 @@ export const RLHFStage: React.FC<RLHFStageProps> = ({ onComplete, onBack }) => {
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-6">
       {/* Introduction */}
-      <div className="bg-gradient-to-r from-orange-500/10 to-amber-500/10 rounded-lg border border-orange-500/20 p-4">
+      <div className="bg-gradient-to-r from-orange-500/10 to-amber-500/10 rounded-lg border border-badge-warning/20 p-4">
         <div className="flex items-start gap-3">
-          <Brain className="w-5 h-5 text-orange-400 mt-0.5" />
+          <Brain className="w-5 h-5 text-badge-warning mt-0.5" />
           <div>
             <h3 className="text-sm font-medium text-zinc-200 mb-2">{r.introTitle}</h3>
             <p className="text-sm text-zinc-400">
-              <span className="text-orange-400">{r.introRlhfLabel}</span>{r.introRlhfText}
-              <span className="text-orange-400">{r.introRftLabel}</span>{r.introRftText}
+              <span className="text-badge-warning">{r.introRlhfLabel}</span>{r.introRlhfText}
+              <span className="text-badge-warning">{r.introRftLabel}</span>{r.introRftText}
             </p>
           </div>
         </div>
@@ -185,7 +185,7 @@ export const RLHFStage: React.FC<RLHFStageProps> = ({ onComplete, onBack }) => {
       {/* RLHF Three Steps */}
       <div className="space-y-3">
         <h3 className="text-sm font-medium text-zinc-400 flex items-center gap-2">
-          <Target className="w-4 h-4 text-orange-400" />
+          <Target className="w-4 h-4 text-badge-warning" />
           {r.threeStepsSectionTitle}
         </h3>
         <div className="bg-zinc-900 rounded-lg border border-zinc-700 p-4">
@@ -231,7 +231,7 @@ export const RLHFStage: React.FC<RLHFStageProps> = ({ onComplete, onBack }) => {
       <div className="space-y-3">
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-medium text-zinc-400 flex items-center gap-2">
-            <Trophy className="w-4 h-4 text-orange-400" />
+            <Trophy className="w-4 h-4 text-badge-warning" />
             {r.ppoSimSectionTitle}
           </h3>
           <div className="flex items-center gap-2">
@@ -246,8 +246,8 @@ export const RLHFStage: React.FC<RLHFStageProps> = ({ onComplete, onBack }) => {
               className={`
                 flex items-center gap-2 px-4 py-2 rounded-lg text-sm transition-all
                 ${isTraining
-                  ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-                  : 'bg-orange-500/20 text-orange-400 border border-orange-500/30'
+                  ? 'bg-amber-500/20 text-badge-warning border border-badge-warning/30'
+                  : 'bg-orange-500/20 text-badge-warning border border-badge-warning/30'
                 }
               `}
             >
@@ -270,19 +270,19 @@ export const RLHFStage: React.FC<RLHFStageProps> = ({ onComplete, onBack }) => {
           <div className="grid grid-cols-3 gap-4 mb-4">
             <div className="text-center">
               <div className="text-xs text-zinc-500 mb-1">{r.trainingStepsLabel}</div>
-              <div className="text-xl font-bold text-orange-400">{trainingStep}</div>
+              <div className="text-xl font-bold text-badge-warning">{trainingStep}</div>
             </div>
             <div className="text-center">
               <div className="text-xs text-zinc-500 mb-1">{r.currentRewardLabel}</div>
-              <div className="text-xl font-bold text-emerald-400">
+              <div className="text-xl font-bold text-badge-success">
                 {rewardHistory[rewardHistory.length - 1]?.toFixed(3) || '0.000'}
               </div>
             </div>
             <div className="text-center">
               <div className="text-xs text-zinc-500 mb-1">{r.statusLabel}</div>
               <div className={`text-lg font-medium ${
-                isTraining ? 'text-amber-400' :
-                trainingStep >= 100 ? 'text-emerald-400' : 'text-zinc-400'
+                isTraining ? 'text-badge-warning' :
+                trainingStep >= 100 ? 'text-badge-success' : 'text-zinc-400'
               }`}>
                 {isTraining ? r.statusOptimizing : trainingStep >= 100 ? r.statusConverged : r.statusReady}
               </div>
@@ -300,8 +300,8 @@ export const RLHFStage: React.FC<RLHFStageProps> = ({ onComplete, onBack }) => {
             />
           </div>
 
-          <div className="mt-3 p-2 rounded bg-blue-500/10 border border-blue-500/20">
-            <p className="text-xs text-blue-400">
+          <div className="mt-3 p-2 rounded bg-blue-500/10 border border-badge-info/20">
+            <p className="text-xs text-badge-info">
               {r.ppoHint}
             </p>
           </div>
@@ -311,13 +311,13 @@ export const RLHFStage: React.FC<RLHFStageProps> = ({ onComplete, onBack }) => {
       {/* RFT Section */}
       <div className="space-y-3">
         <h3 className="text-sm font-medium text-zinc-400 flex items-center gap-2">
-          <Zap className="w-4 h-4 text-orange-400" />
+          <Zap className="w-4 h-4 text-badge-warning" />
           {r.rftSectionTitle}
         </h3>
         <div className="bg-zinc-900 rounded-lg border border-zinc-700 p-4">
-          <div className="mb-4 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
+          <div className="mb-4 p-3 rounded-lg bg-amber-500/10 border border-badge-warning/20">
             <p className="text-sm text-zinc-400">
-              <span className="text-amber-400 font-medium">{r.rftLabel}</span> {r.rftIntroText}
+              <span className="text-badge-warning font-medium">{r.rftLabel}</span> {r.rftIntroText}
             </p>
           </div>
 
@@ -335,14 +335,14 @@ export const RLHFStage: React.FC<RLHFStageProps> = ({ onComplete, onBack }) => {
                   className={`
                     p-3 rounded-lg border
                     ${attempt.correct
-                      ? 'bg-emerald-500/10 border-emerald-500/20'
+                      ? 'bg-emerald-500/10 border-badge-success/20'
                       : 'bg-red-500/10 border-red-500/20'
                     }
                   `}
                 >
                   <div className="flex items-center justify-between mb-1">
                     <span className="text-xs text-zinc-500">{r.rftAttemptLabel} {idx + 1}</span>
-                    <span className={`text-xs font-medium ${attempt.correct ? 'text-emerald-400' : 'text-red-400'}`}>
+                    <span className={`text-xs font-medium ${attempt.correct ? 'text-badge-success' : 'text-badge-danger'}`}>
                       {attempt.correct ? r.rftCorrect : r.rftIncorrect}
                     </span>
                   </div>
@@ -386,15 +386,15 @@ export const RLHFStage: React.FC<RLHFStageProps> = ({ onComplete, onBack }) => {
 
                 <div className="space-y-2 text-xs">
                   <div>
-                    <span className="text-emerald-400">{r.prosLabel}</span>
+                    <span className="text-badge-success">{r.prosLabel}</span>
                     <span className="text-zinc-400">{method.pros.join('、')}</span>
                   </div>
                   <div>
-                    <span className="text-red-400">{r.consLabel}</span>
+                    <span className="text-badge-danger">{r.consLabel}</span>
                     <span className="text-zinc-400">{method.cons.join('、')}</span>
                   </div>
                   <div className="pt-2 border-t border-zinc-800">
-                    <span className="text-amber-400">{r.useCaseLabel}</span>
+                    <span className="text-badge-warning">{r.useCaseLabel}</span>
                     <span className="text-zinc-400">{method.useCase}</span>
                   </div>
                 </div>
@@ -405,12 +405,12 @@ export const RLHFStage: React.FC<RLHFStageProps> = ({ onComplete, onBack }) => {
       </div>
 
       {/* Key Takeaways */}
-      <div className="bg-orange-500/5 rounded-lg border border-orange-500/20 p-4">
-        <h4 className="text-sm font-medium text-orange-400 mb-2">{r.takeawaysTitle}</h4>
+      <div className="bg-orange-500/5 rounded-lg border border-badge-warning/20 p-4">
+        <h4 className="text-sm font-medium text-badge-warning mb-2">{r.takeawaysTitle}</h4>
         <ul className="space-y-2 text-sm text-zinc-400">
           {r.takeaways.map((item) => (
             <li key={item.label} className="flex items-start gap-2">
-              <span className="text-orange-400">•</span>
+              <span className="text-badge-warning">•</span>
               <span><strong className="text-zinc-400">{item.label}</strong>：{item.text}</span>
             </li>
           ))}
@@ -420,14 +420,14 @@ export const RLHFStage: React.FC<RLHFStageProps> = ({ onComplete, onBack }) => {
       {/* 专有名词 */}
       <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-700">
         <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
-          <span className="text-blue-400">📖</span>
+          <span className="text-badge-info">📖</span>
           {r.glossaryTitle}
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           {r.glossary.map((term) => (
             <div key={term.en} className="p-3 rounded-lg bg-zinc-800">
               <div className="flex items-center gap-2 mb-1">
-                <span className="text-sm font-bold text-emerald-400">{term.en}</span>
+                <span className="text-sm font-bold text-badge-success">{term.en}</span>
                 <span className="text-xs text-zinc-500">|</span>
                 <span className="text-sm text-zinc-400">{term.zh}</span>
               </div>
@@ -448,7 +448,7 @@ export const RLHFStage: React.FC<RLHFStageProps> = ({ onComplete, onBack }) => {
         </button>
         <button
           onClick={onComplete}
-          className="flex items-center gap-2 px-5 py-2.5 bg-orange-500/20 text-orange-400 rounded-lg hover:bg-orange-500/30 border border-orange-500/30 transition-all font-medium"
+          className="flex items-center gap-2 px-5 py-2.5 bg-orange-500/20 text-badge-warning rounded-lg hover:bg-orange-500/30 border border-badge-warning/30 transition-all font-medium"
         >
           {r.nextButton}
           <ChevronRight className="w-4 h-4" />

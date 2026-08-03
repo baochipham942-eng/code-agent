@@ -87,7 +87,7 @@ export const GenerativeUIEditPanel = memo(function GenerativeUIEditPanel({
       data-testid="generative-ui-selection-bar"
     >
       <div className="flex items-center gap-2">
-        <span className="shrink-0 rounded border border-cyan-500/30 bg-cyan-500/10 px-1.5 py-0.5 text-[11px] text-cyan-200">
+        <span className="shrink-0 rounded border border-badge-info/30 bg-cyan-500/10 px-1.5 py-0.5 text-[11px] text-badge-info">
           {`<${tag}>`}
         </span>
         <div className="min-w-0 flex-1">
@@ -98,7 +98,7 @@ export const GenerativeUIEditPanel = memo(function GenerativeUIEditPanel({
               onChange={(event) => handleText(event.target.value)}
               data-testid="generative-ui-text-input"
               aria-label={t.generativeUI.textLabel}
-              className="w-full rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-xs text-zinc-100 focus:border-cyan-500/50 focus:outline-none"
+              className="w-full rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-xs text-zinc-100 focus:border-badge-info/50 focus:outline-none"
             />
           ) : (
             <span className="text-[11px] text-zinc-500">{t.generativeUI.textNotEditable}</span>
@@ -124,7 +124,7 @@ export const GenerativeUIEditPanel = memo(function GenerativeUIEditPanel({
             value={fontSize}
             onChange={(event) => handleFontSize(Number(event.target.value))}
             data-testid="generative-ui-font-size-input"
-            className="w-14 rounded border border-zinc-700 bg-zinc-900 px-1.5 py-0.5 text-xs text-zinc-100 focus:border-cyan-500/50 focus:outline-none"
+            className="w-14 rounded border border-zinc-700 bg-zinc-900 px-1.5 py-0.5 text-xs text-zinc-100 focus:border-badge-info/50 focus:outline-none"
           />
         </label>
         <label className="flex items-center gap-1.5 text-[11px] text-zinc-400">

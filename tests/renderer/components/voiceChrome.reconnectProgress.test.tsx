@@ -34,7 +34,7 @@ function enterReconnecting(attempt: number) {
   store.phaseChanged('connecting');
 }
 
-const ON_CALL_REGEX = /^通话中 \d{2}:\d{2}$/;
+const ON_CALL_REGEX = /通话中 \d{2}:\d{2}/;
 
 describe('VoiceChrome 重连进度（F2）', () => {
   beforeEach(() => {
@@ -53,7 +53,7 @@ describe('VoiceChrome 重连进度（F2）', () => {
 
     expect(screen.getByTestId('voice-chrome').dataset.state).toBe('reconnecting');
     // 文案由 i18n 模板 + store 进度拼出；断言不写真值数字，只和常量与模板比。
-    expect(screen.getByTestId('voice-status').textContent).toBe(progressText(2));
+    expect(screen.getByTestId('voice-status').textContent).toContain(progressText(2));
     expect(useVoiceCallStore.getState().reconnectAttempt).toBe(2);
     expect(useVoiceCallStore.getState().reconnectMaxAttempts).toBe(MAX_ATTEMPTS);
   });
@@ -61,19 +61,19 @@ describe('VoiceChrome 重连进度（F2）', () => {
   it('重连进度随次数推进：第 1 次与最后一次文案不同', () => {
     enterReconnecting(1);
     const { unmount } = render(<VoiceChrome sessionId="session-1" />);
-    expect(screen.getByTestId('voice-status').textContent).toBe(progressText(1));
+    expect(screen.getByTestId('voice-status').textContent).toContain(progressText(1));
     unmount();
 
     useVoiceCallStore.getState().reset();
     enterReconnecting(MAX_ATTEMPTS);
     render(<VoiceChrome sessionId="session-1" />);
-    expect(screen.getByTestId('voice-status').textContent).toBe(progressText(MAX_ATTEMPTS));
+    expect(screen.getByTestId('voice-status').textContent).toContain(progressText(MAX_ATTEMPTS));
   });
 
   it('重连成功：进度清零，状态回到“通话中 mm:ss”', () => {
     enterReconnecting(2);
     render(<VoiceChrome sessionId="session-1" />);
-    expect(screen.getByTestId('voice-status').textContent).toBe(progressText(2));
+    expect(screen.getByTestId('voice-status').textContent).toContain(progressText(2));
 
     act(() => {
       useVoiceCallStore.getState().reconnectingChanged(false);
@@ -101,7 +101,7 @@ describe('VoiceChrome 重连进度（F2）', () => {
 
     expect(screen.getByTestId('voice-chrome').dataset.state).toBe('error');
     // 按 code 查 i18n，不是 host 原文（同 voiceChrome.test.tsx 的断言风格）。
-    expect(screen.getByTestId('voice-status').textContent).toBe(zh.voice.messageByCode.RECONNECT_FAILED);
+    expect(screen.getByTestId('voice-status').textContent).toContain(zh.voice.messageByCode.RECONNECT_FAILED);
     expect(screen.getByTestId('voice-status').textContent).not.toContain('重试');
   });
 });

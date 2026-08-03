@@ -624,19 +624,19 @@ describe('ConversationRuntime', () => {
       expect(ctx.control.isCancelled).toBe(true);
     });
 
-    it('should abort the abort controller', () => {
+    it('should abort the abort controller', async () => {
       const controller = new AbortController();
       ctx.control.setInferenceAbortController(controller);
 
-      runtime.cancel();
+      await runtime.cancel();
       expect(controller.signal.aborted).toBe(true);
     });
 
-    it('should abort the run-level controller', () => {
+    it('should abort the run-level controller', async () => {
       const controller = new AbortController();
       ctx.control.setRunAbortController(controller);
 
-      runtime.cancel();
+      await runtime.cancel();
       expect(controller.signal.aborted).toBe(true);
     });
 
@@ -653,6 +653,62 @@ describe('ConversationRuntime', () => {
       });
       expect(persistMessage).toHaveBeenCalledWith(ctx.messages.at(-1));
       expect(ctx.turn.lastStreamedContent).toBe('');
+    });
+
+    it('is a no-op when cancel lands after final persistence but before run unregister', async () => {
+      const completedMessage = {
+        id: 'assistant-completed-1',
+        role: 'assistant' as const,
+        content: '已经正常完成的回复',
+        timestamp: Date.now(),
+      };
+      const persistedMessages = [completedMessage];
+      const persistMessage = vi.fn(async (message) => {
+        persistedMessages.push(message);
+      });
+      const inferenceController = new AbortController();
+      const runController = new AbortController();
+      ctx.messages.push(completedMessage);
+      ctx.persistMessage = persistMessage;
+      ctx.turn.appendStreamedContent(completedMessage.content);
+      ctx.control.setInferenceAbortController(inferenceController);
+      ctx.control.setRunAbortController(runController);
+      ctx.control.markSettled();
+
+      await runtime.cancel('user');
+
+      expect(ctx.control.isCancelled).toBe(false);
+      expect(inferenceController.signal.aborted).toBe(false);
+      expect(runController.signal.aborted).toBe(false);
+      expect(persistMessage).not.toHaveBeenCalled();
+      expect(persistedMessages).toEqual([completedMessage]);
+      expect(ctx.messages).toEqual([completedMessage]);
+      expect(ctx.messages[0].content).not.toContain('[cancelled]');
+    });
+
+    it('does not rewrite a settled reply when session switch cancels the still-registered run', async () => {
+      const completedMessage = {
+        id: 'assistant-completed-switch-1',
+        role: 'assistant' as const,
+        content: '切换会话前已经落库的回复',
+        timestamp: Date.now(),
+      };
+      const persistedMessages = [completedMessage];
+      const persistMessage = vi.fn(async (message) => {
+        persistedMessages.push(message);
+      });
+      ctx.messages.push(completedMessage);
+      ctx.persistMessage = persistMessage;
+      ctx.turn.appendStreamedContent(completedMessage.content);
+      ctx.control.markSettled();
+
+      await runtime.cancel('session-switch');
+
+      expect(ctx.control.isCancelled).toBe(false);
+      expect(persistMessage).not.toHaveBeenCalled();
+      expect(persistedMessages).toEqual([completedMessage]);
+      expect(ctx.messages).toEqual([completedMessage]);
+      expect(ctx.messages[0].content).not.toContain('[未完成 — 切换会话中断]');
     });
   });
 
@@ -682,18 +738,49 @@ describe('ConversationRuntime', () => {
   });
 
   describe('steer', () => {
-    it('should abort controller and set needsReinference', () => {
+    it('should abort controller and set needsReinference', async () => {
       const controller = new AbortController();
       ctx.control.setInferenceAbortController(controller);
 
-      runtime.steer('new direction');
+      await runtime.steer('new direction');
 
       expect(controller.signal.aborted).toBe(true);
       expect(ctx.turn.needsReinference).toBe(true);
     });
 
+    // 2026-08-01 真机：插队打断长任务后，被打断那一轮已经吐出来的 400+ 字
+    // 在库里一个字都没有——停止那条路留 partial，转向这条路只 abort 不留。
+    it('preserves the interrupted turn partial content before aborting', async () => {
+      const persistMessage = vi.fn();
+      const controller = new AbortController();
+      ctx.control.setInferenceAbortController(controller);
+      ctx.turn.appendStreamedContent('写了一半的长回答');
+      ctx.persistMessage = persistMessage;
+
+      await runtime.steer('插队消息');
+
+      const partial = ctx.messages.find((message) => message.content?.includes('写了一半的长回答'));
+      expect(partial).toMatchObject({
+        role: 'assistant',
+        content: '写了一半的长回答\n\n[已被新消息打断]',
+      });
+      expect(persistMessage).toHaveBeenCalledWith(partial);
+      expect(ctx.turn.lastStreamedContent).toBe('');
+      expect(controller.signal.aborted).toBe(true);
+    });
+
     it('rejects steer after settlement without aborting or requesting reinference', async () => {
       const abortInference = vi.spyOn(ctx.control, 'abortInference');
+      const completedMessage = {
+        id: 'assistant-completed-steer-1',
+        role: 'assistant' as const,
+        content: '转向抵达前已经落库的回复',
+        timestamp: Date.now(),
+      };
+      const persistMessage = vi.fn();
+      ctx.messages.push(completedMessage);
+      ctx.persistMessage = persistMessage;
+      ctx.turn.appendStreamedContent(completedMessage.content);
       ctx.control.markSettled();
 
       const result = runtime.steer('late direction');
@@ -706,10 +793,13 @@ describe('ConversationRuntime', () => {
       expect(abortInference).not.toHaveBeenCalled();
       expect(ctx.turn.needsReinference).toBe(false);
       expect((runtime as any).messageProcessor.injectSteerMessage).not.toHaveBeenCalled();
+      expect(persistMessage).not.toHaveBeenCalled();
+      expect(ctx.messages).toEqual([completedMessage]);
+      expect(ctx.messages[0].content).not.toContain('[已被新消息打断]');
     });
 
-    it('passes the renderer optimistic message id to the steer injector', () => {
-      runtime.steer('new direction', 'client-message-1');
+    it('passes the renderer optimistic message id to the steer injector', async () => {
+      await runtime.steer('new direction', 'client-message-1');
 
       expect((runtime as any).messageProcessor.injectSteerMessage).toHaveBeenCalledWith(
         'new direction',
@@ -720,8 +810,8 @@ describe('ConversationRuntime', () => {
       );
     });
 
-    it('forwards the user-facing content so the steer message persists without scaffolding', () => {
-      runtime.steer('<notice/>\n\n<user_request>\n改成蓝色\n</user_request>', 'client-message-2', undefined, undefined, '改成蓝色');
+    it('forwards the user-facing content so the steer message persists without scaffolding', async () => {
+      await runtime.steer('<notice/>\n\n<user_request>\n改成蓝色\n</user_request>', 'client-message-2', undefined, undefined, '改成蓝色');
 
       expect((runtime as any).messageProcessor.injectSteerMessage).toHaveBeenCalledWith(
         '<notice/>\n\n<user_request>\n改成蓝色\n</user_request>',
@@ -739,9 +829,9 @@ describe('ConversationRuntime', () => {
 
       const result = runtime.steer('new direction');
 
+      await expect(result).rejects.toThrow('disk full');
       expect(controller.signal.aborted).toBe(true);
       expect(ctx.turn.needsReinference).toBe(true);
-      await expect(result).rejects.toThrow('disk full');
     });
   });
 

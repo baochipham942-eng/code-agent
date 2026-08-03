@@ -6,9 +6,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SurfaceSessionStateV1 } from '../../../../src/shared/contract/surfaceExecution';
 import { SidebarSessionItem } from '../../../../src/renderer/components/features/sidebar/SidebarSessionItem';
 import {
-  SurfaceExecutionComposerStatus,
-} from '../../../../src/renderer/components/features/surfaceExecution/SurfaceExecutionRunStatus';
-import {
   selectSurfaceExecutionRunSessionV1,
   useSurfaceExecutionStore,
 } from '../../../../src/renderer/stores/surfaceExecutionStore';
@@ -101,36 +98,32 @@ afterEach(() => {
 });
 
 describe('Surface Execution unified Run status', () => {
-  it('uses the same projected session in Sidebar and Composer through state transitions', async () => {
+  it('tracks the projected session in the Sidebar dot through state transitions', async () => {
     setConversationState('running');
-    render(
-      <>
-        <SidebarSessionItem {...sidebarProps()} />
-        <SurfaceExecutionComposerStatus conversationId="conversation-a" />
-      </>,
-    );
+    render(<SidebarSessionItem {...sidebarProps()} />);
 
     const sidebar = screen.getByTestId('surface-execution-sidebar-status');
-    const composer = screen.getByTestId('surface-execution-composer-status');
     expect(sidebar.getAttribute('data-state')).toBe('running');
     expect(sidebar.getAttribute('aria-label')).toBe('浏览器 · 执行中');
-    expect(composer.getAttribute('data-state')).toBe('running');
-    expect(composer.textContent).toContain('浏览器 · 执行中');
 
     for (const [state, label] of [
       ['paused', '浏览器 · 已暂停'],
       ['waiting_human', '浏览器 · 等待你操作'],
       ['stopping', '浏览器 · 正在停止'],
-      ['completed', '浏览器 · 已完成'],
     ] as const) {
       setConversationState(state);
       await waitFor(() => {
         expect(sidebar.getAttribute('data-state')).toBe(state);
         expect(sidebar.getAttribute('aria-label')).toBe(label);
-        expect(composer.getAttribute('data-state')).toBe(state);
-        expect(composer.textContent).toContain(label);
       });
     }
+
+    // 产品拍板（2026-08-01）：终态不常驻——completed 后圆点消失，
+    // 结果由会话内行内紧凑条承载。
+    setConversationState('completed');
+    await waitFor(() => {
+      expect(screen.queryByTestId('surface-execution-sidebar-status')).toBeNull();
+    });
   });
 
   it('rejects a newer session whose run/agent/session ownership disagrees with its scope', () => {
@@ -189,11 +182,22 @@ describe('Surface Execution unified Run status', () => {
     })).toBeNull();
   });
 
-  it('keeps the real ChatInput seam connected to the current conversation', () => {
-    const source = readFileSync(
+  // 产品拍板（2026-08-02）：composer 上方那条常驻 surface 状态条已删——它跟对话流里的
+  // SurfaceExecutionCompactBar 报同一件事，而后者还带「操作到哪一步」，复述一遍只是噪音。
+  // 钉死它别悄悄回来：整个 renderer 里不得再出现 composer 档位的 surface 状态。
+  it('keeps the composer free of a duplicated surface status strip', () => {
+    const chatInput = readFileSync(
       'src/renderer/components/features/chat/ChatInput/index.tsx',
       'utf8',
     );
-    expect(source).toContain('<SurfaceExecutionComposerStatus conversationId={currentSessionId} />');
+    expect(chatInput).not.toContain('SurfaceExecutionComposerStatus');
+
+    const runStatus = readFileSync(
+      'src/renderer/components/features/surfaceExecution/SurfaceExecutionRunStatus.tsx',
+      'utf8',
+    );
+    expect(runStatus).not.toContain('surface-execution-composer-status');
+    // 侧栏圆点是另一回事，必须还在：它告诉你**别的**会话在忙。
+    expect(runStatus).toContain('surface-execution-sidebar-status');
   });
 });

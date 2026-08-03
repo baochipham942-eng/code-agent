@@ -66,7 +66,7 @@ describe('SidebarSessionItem fork lineage marker', () => {
     });
 
     expect(html).toContain('data-testid="fork-lineage-marker"');
-    expect(html).toContain('text-violet-400');
+    expect(html).toContain('text-badge-accent');
     expect(html).toContain('源任务：source-session');
     expect(html.indexOf('分支任务')).toBeLessThan(
       html.indexOf('data-testid="fork-lineage-marker"'),
@@ -95,7 +95,7 @@ describe('SidebarSessionItem fork lineage marker', () => {
     );
 
     // 未读状态点在场
-    expect(html).toContain('bg-purple-400');
+    expect(html).toContain('bg-mark-accent');
     // 同一时刻分叉标记让位，不再另占一格
     expect(html).not.toContain('data-testid="fork-lineage-marker"');
   });

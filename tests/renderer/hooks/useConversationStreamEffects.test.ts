@@ -8,7 +8,7 @@ import {
 import { parseModelFallbackNotice } from '../../../src/renderer/components/features/chat/fallbackNotice';
 
 describe('removeUncommittedAssistantDraft', () => {
-  it('removes a streamed assistant draft that was never committed by a message event', () => {
+  it('removes an empty assistant draft that never produced anything', () => {
     const messages: Message[] = [
       {
         id: 'user-1',
@@ -19,7 +19,7 @@ describe('removeUncommittedAssistantDraft', () => {
       {
         id: 'turn-draft-1',
         role: 'assistant',
-        content: 'draft answer that validation rejected',
+        content: '',
         timestamp: 120,
       },
     ];
@@ -27,6 +27,41 @@ describe('removeUncommittedAssistantDraft', () => {
     expect(removeUncommittedAssistantDraft(messages, 'turn-draft-1')).toEqual([
       messages[0],
     ]);
+  });
+
+  // 2026-08-01 真机 2/2：停止后横幅写「已经写出来的内容保留在上面」，
+  // 而上面是空的——491 字的半截回答被这个函数连气泡一起删了。
+  it('keeps a draft that already streamed text to the screen', () => {
+    const messages: Message[] = [
+      {
+        id: 'user-1',
+        role: 'user',
+        content: '写一篇长文',
+        timestamp: 100,
+      },
+      {
+        id: 'turn-draft-1',
+        role: 'assistant',
+        content: '# 一条河的旅程\n\n我诞生于冰川裂缝...',
+        timestamp: 120,
+      },
+    ];
+
+    expect(removeUncommittedAssistantDraft(messages, 'turn-draft-1')).toBe(messages);
+  });
+
+  it('keeps a draft that only streamed reasoning', () => {
+    const messages: Message[] = [
+      {
+        id: 'turn-draft-1',
+        role: 'assistant',
+        content: '',
+        reasoning: '先梳理结构再动笔',
+        timestamp: 120,
+      },
+    ];
+
+    expect(removeUncommittedAssistantDraft(messages, 'turn-draft-1')).toBe(messages);
   });
 
   it('keeps committed tool turns because later iterations need their trace', () => {
@@ -76,7 +111,7 @@ describe('removeUncommittedAssistantDraft', () => {
     expect(removeUncommittedAssistantDraft(messages, null)).toBe(messages);
   });
 
-  it('drops the previous streamed draft when a new turn starts without any committed assistant message', () => {
+  it('drops the previous empty draft when a new turn starts without any committed assistant message', () => {
     let messages: Message[] = [
       {
         id: 'user-1',
@@ -87,7 +122,7 @@ describe('removeUncommittedAssistantDraft', () => {
       {
         id: 'turn-1',
         role: 'assistant',
-        content: 'draft that should disappear',
+        content: '',
         timestamp: 120,
         toolCalls: [],
       },
@@ -135,6 +170,98 @@ describe('removeUncommittedAssistantDraft', () => {
       },
     ]);
     expect(state.currentTurnMessageId).toBe('turn-2');
+  });
+});
+
+// 2026-08-01 验收截图：宿主抽干排队消息那一轮，屏幕上只有回答「丙一收到」，
+// 对应的问题一个字都没有——那条用户消息只有宿主知道，前端没有本地乐观副本。
+describe('applyConversationStreamEvent host-owned user message', () => {
+  const makeActions = (messagesRef: { current: Message[] }) => ({
+    addMessage: (message: Message) => {
+      messagesRef.current = [...messagesRef.current, message];
+    },
+    updateMessage: () => {},
+    setMessages: (next: Message[]) => {
+      messagesRef.current = next;
+    },
+    getMessages: () => messagesRef.current,
+    queueUpdate: () => {},
+    now: () => 500,
+    generateId: () => 'generated',
+  });
+
+  it('adds the user bubble broadcast by a host-started turn', () => {
+    const messagesRef = { current: [] as Message[] };
+
+    applyConversationStreamEvent(
+      {
+        type: 'message',
+        data: {
+          id: 'queued-input-1',
+          role: 'user',
+          content: 'C2QUEUED-RUN1 只回复四个字：丙一收到',
+          timestamp: 400,
+        },
+      },
+      { currentTurnMessageId: null, committedAssistantMessageIds: new Set<string>() },
+      makeActions(messagesRef),
+    );
+
+    expect(messagesRef.current).toEqual([
+      {
+        id: 'queued-input-1',
+        role: 'user',
+        content: 'C2QUEUED-RUN1 只回复四个字：丙一收到',
+        timestamp: 400,
+      },
+    ]);
+  });
+
+  it('is idempotent when the bubble is already on screen', () => {
+    const existing: Message = {
+      id: 'queued-input-1',
+      role: 'user',
+      content: '已经在屏幕上了',
+      timestamp: 400,
+    };
+    const messagesRef = { current: [existing] };
+
+    applyConversationStreamEvent(
+      {
+        type: 'message',
+        data: { id: 'queued-input-1', role: 'user', content: '已经在屏幕上了', timestamp: 400 },
+      },
+      { currentTurnMessageId: null, committedAssistantMessageIds: new Set<string>() },
+      makeActions(messagesRef),
+    );
+
+    expect(messagesRef.current).toEqual([existing]);
+  });
+
+  it('still merges assistant commits into the streaming draft', () => {
+    const messagesRef = {
+      current: [
+        { id: 'turn-1', role: 'assistant', content: '半截', timestamp: 300 } as Message,
+      ],
+    };
+
+    applyConversationStreamEvent(
+      {
+        type: 'message',
+        data: { id: 'turn-1', turnId: 'turn-1', content: '完整回答' },
+      },
+      { currentTurnMessageId: 'turn-1', committedAssistantMessageIds: new Set<string>() },
+      {
+        ...makeActions(messagesRef),
+        updateMessage: (id: string, changes: Partial<Message>) => {
+          messagesRef.current = messagesRef.current.map((message) => (
+            message.id === id ? { ...message, ...changes } : message
+          ));
+        },
+      },
+    );
+
+    expect(messagesRef.current[0].content).toBe('完整回答');
   });
 });
 

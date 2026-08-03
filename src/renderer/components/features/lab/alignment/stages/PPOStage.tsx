@@ -97,13 +97,13 @@ export const PPOStage: React.FC<PPOStageProps> = ({ onComplete, onBack }) => {
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-6">
       {/* Introduction */}
-      <div className="bg-gradient-to-r from-emerald-500/10 to-teal-500/10 rounded-lg border border-emerald-500/20 p-4">
+      <div className="bg-gradient-to-r from-emerald-500/10 to-teal-500/10 rounded-lg border border-badge-success/20 p-4">
         <div className="flex items-start gap-3">
-          <Zap className="w-5 h-5 text-emerald-400 mt-0.5" />
+          <Zap className="w-5 h-5 text-badge-success mt-0.5" />
           <div>
             <h3 className="text-sm font-medium text-zinc-200 mb-2">{s.introTitle}</h3>
             <p className="text-sm text-zinc-400">
-              {s.introPara1}<span className="text-emerald-400">{s.introHighlight}</span>
+              {s.introPara1}<span className="text-badge-success">{s.introHighlight}</span>
               {s.introPara2}
             </p>
           </div>
@@ -115,29 +115,29 @@ export const PPOStage: React.FC<PPOStageProps> = ({ onComplete, onBack }) => {
         <h3 className="text-sm font-medium text-zinc-400">{common.analogyTitle}</h3>
         <div className="bg-zinc-900 rounded-lg border border-zinc-700 p-4">
           <div className="grid grid-cols-4 gap-3 text-center">
-            <div className="p-3 bg-blue-500/10 rounded-lg border border-blue-500/20">
+            <div className="p-3 bg-blue-500/10 rounded-lg border border-badge-info/20">
               <div className="text-2xl mb-1">🎾</div>
-              <div className="text-xs text-blue-400">{s.analogyCards.practiceServe}</div>
+              <div className="text-xs text-badge-info">{s.analogyCards.practiceServe}</div>
             </div>
-            <div className="p-3 bg-amber-500/10 rounded-lg border border-amber-500/20">
+            <div className="p-3 bg-amber-500/10 rounded-lg border border-badge-warning/20">
               <div className="text-2xl mb-1">📊</div>
-              <div className="text-xs text-amber-400">{s.analogyCards.coachScores}</div>
+              <div className="text-xs text-badge-warning">{s.analogyCards.coachScores}</div>
             </div>
-            <div className="p-3 bg-purple-500/10 rounded-lg border border-purple-500/20">
+            <div className="p-3 bg-purple-500/10 rounded-lg border border-badge-accent/20">
               <div className="text-2xl mb-1">🔧</div>
-              <div className="text-xs text-purple-400">{s.analogyCards.adjustMove}</div>
+              <div className="text-xs text-badge-accent">{s.analogyCards.adjustMove}</div>
             </div>
-            <div className="p-3 bg-emerald-500/10 rounded-lg border border-emerald-500/20">
+            <div className="p-3 bg-emerald-500/10 rounded-lg border border-badge-success/20">
               <div className="text-2xl mb-1">🏆</div>
-              <div className="text-xs text-emerald-400">{s.analogyCards.gettingBetter}</div>
+              <div className="text-xs text-badge-success">{s.analogyCards.gettingBetter}</div>
             </div>
           </div>
           <div className="mt-3 p-3 bg-zinc-800 rounded-lg text-center">
             <p className="text-xs text-zinc-400">
-              {s.cycleIntro}<span className="text-blue-400">{s.cycleWrite}</span> →
-              <span className="text-amber-400">{s.cycleScore}</span> →
-              <span className="text-purple-400">{s.cycleAdjust}</span> →
-              <span className="text-emerald-400">{s.cycleImprove}</span>{s.cycleOutro}
+              {s.cycleIntro}<span className="text-badge-info">{s.cycleWrite}</span> →
+              <span className="text-badge-warning">{s.cycleScore}</span> →
+              <span className="text-badge-accent">{s.cycleAdjust}</span> →
+              <span className="text-badge-success">{s.cycleImprove}</span>{s.cycleOutro}
             </p>
           </div>
         </div>
@@ -158,8 +158,8 @@ export const PPOStage: React.FC<PPOStageProps> = ({ onComplete, onBack }) => {
               onClick={toggleAnimation}
               className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm transition-all ${
                 isAnimating
-                  ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-                  : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                  ? 'bg-amber-500/20 text-badge-warning border border-badge-warning/30'
+                  : 'bg-emerald-500/20 text-badge-success border border-badge-success/30'
               }`}
             >
               {isAnimating ? (
@@ -185,7 +185,7 @@ export const PPOStage: React.FC<PPOStageProps> = ({ onComplete, onBack }) => {
                 <div
                   className={`flex-1 p-3 rounded-lg transition-all duration-500 ${
                     idx === currentStepIndex
-                      ? 'bg-emerald-500/20 border border-emerald-500/30 scale-105'
+                      ? 'bg-emerald-500/20 border border-badge-success/30 scale-105'
                       : 'bg-zinc-800 border border-zinc-800'
                   }`}
                 >
@@ -193,7 +193,7 @@ export const PPOStage: React.FC<PPOStageProps> = ({ onComplete, onBack }) => {
                     <div className="text-2xl mb-1">{step.icon}</div>
                     <div
                       className={`text-xs font-medium ${
-                        idx === currentStepIndex ? 'text-emerald-400' : 'text-zinc-400'
+                        idx === currentStepIndex ? 'text-badge-success' : 'text-zinc-400'
                       }`}
                     >
                       {step.name}
@@ -203,7 +203,7 @@ export const PPOStage: React.FC<PPOStageProps> = ({ onComplete, onBack }) => {
                 {idx < ppoSteps.length - 1 && (
                   <ArrowRight
                     className={`w-4 h-4 mx-1 ${
-                      idx === currentStepIndex ? 'text-emerald-400' : 'text-zinc-600'
+                      idx === currentStepIndex ? 'text-badge-success' : 'text-zinc-600'
                     }`}
                   />
                 )}
@@ -218,7 +218,7 @@ export const PPOStage: React.FC<PPOStageProps> = ({ onComplete, onBack }) => {
               <span className="text-sm font-medium text-zinc-200">
                 {ppoSteps[currentStepIndex].name}
               </span>
-              <span className="text-xs px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400">
+              <span className="text-xs px-2 py-0.5 rounded bg-emerald-500/20 text-badge-success">
                 {ppoSteps[currentStepIndex].simpleExplain}
               </span>
             </div>
@@ -238,14 +238,14 @@ export const PPOStage: React.FC<PPOStageProps> = ({ onComplete, onBack }) => {
             </div>
             <div>
               <div className="text-xs text-zinc-500 mb-1">{s.qualityLabel}</div>
-              <div className="text-2xl font-bold text-emerald-400">{s.scoreValue.replace('{score}', String(currentTraining.score))}</div>
+              <div className="text-2xl font-bold text-badge-success">{s.scoreValue.replace('{score}', String(currentTraining.score))}</div>
             </div>
             <div>
               <div className="text-xs text-zinc-500 mb-1">{common.statusLabel}</div>
               <div className={`text-lg font-medium ${
-                currentTraining.score >= 90 ? 'text-emerald-400' :
-                currentTraining.score >= 70 ? 'text-blue-400' :
-                currentTraining.score >= 50 ? 'text-amber-400' : 'text-zinc-400'
+                currentTraining.score >= 90 ? 'text-badge-success' :
+                currentTraining.score >= 70 ? 'text-badge-info' :
+                currentTraining.score >= 50 ? 'text-badge-warning' : 'text-zinc-400'
               }`}>
                 {currentTraining.improvement}
               </div>
@@ -256,7 +256,7 @@ export const PPOStage: React.FC<PPOStageProps> = ({ onComplete, onBack }) => {
           <div className="space-y-2">
             <div className="flex items-center justify-between text-xs text-zinc-500">
               <span>{s.qualityProgressLabel}</span>
-              <span className="text-emerald-400">{currentTraining.score}%</span>
+              <span className="text-badge-success">{currentTraining.score}%</span>
             </div>
             <div className="h-4 bg-zinc-700 rounded-full overflow-hidden">
               <div
@@ -284,7 +284,7 @@ export const PPOStage: React.FC<PPOStageProps> = ({ onComplete, onBack }) => {
                 {s.onlyScoreText}
               </p>
             </div>
-            <div className="p-4 bg-emerald-500/10 rounded-lg border border-emerald-500/20">
+            <div className="p-4 bg-emerald-500/10 rounded-lg border border-badge-success/20">
               <div className="text-lg mb-2">{s.balanceTitle}</div>
               <p className="text-sm text-zinc-400">
                 {s.balanceText}
@@ -295,12 +295,12 @@ export const PPOStage: React.FC<PPOStageProps> = ({ onComplete, onBack }) => {
       </div>
 
       {/* Key Points */}
-      <div className="bg-emerald-500/5 rounded-lg border border-emerald-500/20 p-4">
-        <h4 className="text-sm font-medium text-emerald-400 mb-2">{common.summaryTitle}</h4>
+      <div className="bg-emerald-500/5 rounded-lg border border-badge-success/20 p-4">
+        <h4 className="text-sm font-medium text-badge-success mb-2">{common.summaryTitle}</h4>
         <ul className="space-y-2 text-sm text-zinc-400">
           {s.summaryPoints.map((point) => (
             <li key={point.title} className="flex items-start gap-2">
-              <span className="text-emerald-400">•</span>
+              <span className="text-badge-success">•</span>
               <span><strong className="text-zinc-400">{point.title}</strong>：{point.text}</span>
             </li>
           ))}
@@ -310,14 +310,14 @@ export const PPOStage: React.FC<PPOStageProps> = ({ onComplete, onBack }) => {
       {/* 专有名词解释 */}
       <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-700">
         <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
-          <span className="text-blue-400">📖</span>
+          <span className="text-badge-info">📖</span>
           {common.glossaryTitle}
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           {s.glossaryTerms.map((term) => (
             <div key={term.en} className="p-3 rounded-lg bg-zinc-800">
               <div className="flex items-center gap-2 mb-1">
-                <span className="text-sm font-bold text-emerald-400">{term.en}</span>
+                <span className="text-sm font-bold text-badge-success">{term.en}</span>
                 <span className="text-xs text-zinc-500">|</span>
                 <span className="text-sm text-zinc-400">{term.meaning}</span>
               </div>
@@ -338,7 +338,7 @@ export const PPOStage: React.FC<PPOStageProps> = ({ onComplete, onBack }) => {
         </button>
         <button
           onClick={onComplete}
-          className="flex items-center gap-2 px-5 py-2.5 bg-emerald-500/20 text-emerald-400 rounded-lg hover:bg-emerald-500/30 border border-emerald-500/30 transition-all font-medium"
+          className="flex items-center gap-2 px-5 py-2.5 bg-emerald-500/20 text-badge-success rounded-lg hover:bg-emerald-500/30 border border-badge-success/30 transition-all font-medium"
         >
           {s.nextButton}
           <ChevronRight className="w-4 h-4" />

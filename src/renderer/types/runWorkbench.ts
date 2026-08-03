@@ -32,6 +32,9 @@ export interface RunUiState {
   blockedReason?: string;
   blockedReasonCategory?: TaskBlockedCategory;
   completionSignal?: string;
+  /** 当前轮起止时间（来自 TraceTurn），Overview Run header 的用时来源 */
+  startedAt?: number;
+  endedAt?: number;
 }
 
 export interface LoopDecisionView {

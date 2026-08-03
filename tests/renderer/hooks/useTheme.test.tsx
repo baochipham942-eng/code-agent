@@ -80,6 +80,41 @@ describe('useTheme 初始状态', () => {
     expect(result.current.theme).toBe('system');
     expect(result.current.resolvedTheme).toBe('light');
   });
+
+  it('读取已存储的 high-contrast-dark 偏好：data-theme + 基类 dark + hc class', () => {
+    localStorage.setItem('code-agent-theme', 'high-contrast-dark');
+    const { result } = renderHook(() => useTheme());
+    expect(result.current.theme).toBe('high-contrast-dark');
+    expect(result.current.resolvedTheme).toBe('high-contrast-dark');
+    const root = document.documentElement;
+    expect(root.getAttribute('data-theme')).toBe('high-contrast-dark');
+    expect(root.classList.contains('high-contrast-dark')).toBe(true);
+    expect(root.classList.contains('dark')).toBe(true);
+    expect(root.classList.contains('light')).toBe(false);
+  });
+
+  it('读取已存储的 high-contrast-light 偏好：data-theme + 基类 light + hc class', () => {
+    localStorage.setItem('code-agent-theme', 'high-contrast-light');
+    const { result } = renderHook(() => useTheme());
+    expect(result.current.theme).toBe('high-contrast-light');
+    expect(result.current.resolvedTheme).toBe('high-contrast-light');
+    const root = document.documentElement;
+    expect(root.getAttribute('data-theme')).toBe('high-contrast-light');
+    expect(root.classList.contains('high-contrast-light')).toBe(true);
+    expect(root.classList.contains('light')).toBe(true);
+    expect(root.classList.contains('dark')).toBe(false);
+  });
+
+  it('未知/旧版 theme 值回退默认 dark，不炸（存量升级保护）', () => {
+    for (const legacy of ['sepia', 'auto-dark', 'BLUE', '']) {
+      localStorage.setItem('code-agent-theme', legacy);
+      const { result, unmount } = renderHook(() => useTheme());
+      expect(result.current.theme).toBe('dark');
+      expect(result.current.resolvedTheme).toBe('dark');
+      expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
+      unmount();
+    }
+  });
 });
 
 describe('setTheme / toggleTheme', () => {
@@ -89,6 +124,17 @@ describe('setTheme / toggleTheme', () => {
     expect(localStorage.getItem('code-agent-theme')).toBe('light');
     expect(result.current.theme).toBe('light');
     expect(document.documentElement.classList.contains('light')).toBe(true);
+  });
+
+  it('setTheme 支持高对比主题：持久化 + data-theme + 基类同步', () => {
+    const { result } = renderHook(() => useTheme());
+    act(() => result.current.setTheme('high-contrast-dark'));
+    expect(localStorage.getItem('code-agent-theme')).toBe('high-contrast-dark');
+    expect(result.current.resolvedTheme).toBe('high-contrast-dark');
+    const root = document.documentElement;
+    expect(root.getAttribute('data-theme')).toBe('high-contrast-dark');
+    expect(root.classList.contains('high-contrast-dark')).toBe(true);
+    expect(root.classList.contains('dark')).toBe(true);
   });
 
   it('toggleTheme 在 dark/light 间切换（忽略 system）', () => {

@@ -333,6 +333,11 @@ let durableRunRuntime: DurableRunApplicationRuntime | undefined;
 let durableRunRolloutPolicy = resolveDurableRunRollout({});
 let durableRunRolloutReady = false;
 const queuedInputStartupSweep = createQueuedInputStartupSweepGate();
+/**
+ * 路由层的 drain 实例晚于 IPC handler 注册才建出来，用模块作用域把钩子传过去。
+ * 没有它，「入队时 session 已空闲」的那条消息就没人抽（release 时的 drain 早跑完了）。
+ */
+let onQueuedInputEnqueued: ((sessionId: string) => void) | null = null;
 let webMcpInitialized = false;
 
 // createApp() 的 durable run 状态注入：函数形式保证 app.ts 读到的始终是最新值
@@ -774,6 +779,7 @@ function registerHandlers(): void {
     setCurrentSessionId: (id: string) => {
       currentSessionId = id;
     },
+    onQueuedInputEnqueued: (sessionId) => onQueuedInputEnqueued?.(sessionId),
   };
 
   // setupAllIpcHandlers 会同时处理:
@@ -953,6 +959,7 @@ async function main(): Promise<void> {
     getDurableRunRollout,
     getDurableRunReadService,
     registerQueuedInputStartupSweep: (runStartupSweep) => queuedInputStartupSweep.registerTrigger(runStartupSweep),
+    registerQueuedInputEnqueueHook: (onEnqueued) => { onQueuedInputEnqueued = onEnqueued; },
   });
   queuedInputStartupSweep.maybeRun();
 
@@ -1007,6 +1014,10 @@ async function main(): Promise<void> {
     } catch (err) {
       console.warn('[shutdown] devServerManager dispose failed:', err);
     }
+    // 干净关库：只有最后一个连接 sqlite3_close 后 SQLite 才会 checkpoint 并删掉
+    // -wal/-shm；漏关任何一个，陈旧 -shm 会在下次启动被越界映射触发 SIGBUS。
+    // 连接清单登记在 webShutdownDatabases.ts，新增主库连接必须同步登记。
+    await (await import('./webShutdownDatabases')).closeAllDatabaseConnections();
     server.close();
     process.exit(0);
   };

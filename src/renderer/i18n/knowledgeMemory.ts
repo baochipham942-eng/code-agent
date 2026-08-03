@@ -1,5 +1,7 @@
 // ============================================================================
-// Knowledge / Memory 面板词条（features/knowledge/KnowledgeMemoryPanel*）—— zh/en 同文件相邻维护。
+// Knowledge / Memory 词条（原 features/knowledge/KnowledgeMemoryPanel*；2026-08-02 整窗页
+// 壳子退役后，由设置 → 记忆的 KnowledgeInboxSection / MemoryDiagnosticsSections 使用）——
+// zh/en 同文件相邻维护。
 // 独立文件避免 zh.ts/en.ts 撞 max-lines 棘轮（同 chatInput.ts / sidebar.ts 先例）。
 // ============================================================================
 
@@ -8,6 +10,8 @@ export const knowledgeMemoryZh = {
     closeLabel: '关闭 Knowledge / Memory',
     refresh: '刷新',
     contextGlobal: '全局上下文',
+    inboxSectionTitle: 'Knowledge Inbox',
+    inboxSectionDescription: '待确认的知识候选：采纳后写入记忆，忽略后不再出现。',
     inboxProcessFailed: 'Knowledge Inbox 处理失败：{message}',
     lightRebuildFailed: 'Light Memory 重建失败：{message}',
     countSuffix: '{count} 条',
@@ -15,7 +19,7 @@ export const knowledgeMemoryZh = {
     inboxEmptyText: '没有发现可直接复用的候选链路；刷新会重新读取 Light Memory 和最近会话。',
     searchPlaceholder: '搜索记忆',
     auditEmptyTitleFiltered: '没有匹配的记忆',
-    auditEmptyTitleDefault: '暂无可审计记忆',
+    auditEmptyTitleDefault: '宝库等待第一颗珍藏',
     auditEmptyTextFiltered: '换个关键词再查。',
     auditEmptyTextDefault: '当前没有 Light Memory 文件、DB 记忆或最近会话摘要。',
     categoryUserPreferences: '用户偏好',
@@ -104,6 +108,8 @@ export const knowledgeMemoryEn: typeof knowledgeMemoryZh = {
     closeLabel: 'Close Knowledge / Memory',
     refresh: 'Refresh',
     contextGlobal: 'Global context',
+    inboxSectionTitle: 'Knowledge Inbox',
+    inboxSectionDescription: 'Knowledge candidates pending review: adopt to store them, ignore to dismiss.',
     inboxProcessFailed: 'Knowledge Inbox action failed: {message}',
     lightRebuildFailed: 'Light Memory rebuild failed: {message}',
     countSuffix: '{count} item(s)',
@@ -111,7 +117,7 @@ export const knowledgeMemoryEn: typeof knowledgeMemoryZh = {
     inboxEmptyText: 'No reusable candidates found; refreshing re-reads Light Memory and recent conversations.',
     searchPlaceholder: 'Search memory',
     auditEmptyTitleFiltered: 'No matching memory',
-    auditEmptyTitleDefault: 'No memory to audit yet',
+    auditEmptyTitleDefault: 'The vault awaits its first treasure',
     auditEmptyTextFiltered: 'Try a different keyword.',
     auditEmptyTextDefault: 'No Light Memory files, DB memories, or recent session summaries yet.',
     categoryUserPreferences: 'User preferences',

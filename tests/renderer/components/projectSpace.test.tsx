@@ -662,13 +662,14 @@ describe('ProjectConfigRail 项目配置（四卡竖排形态，第四波①回�
 
     // 点动作 → 评估未信任 → 弹既有完整信任框（按空间自己的工作目录评估，不是 app 当前目录）
     action.onClick();
+    // CI 高负载下默认 1s 窗口不够（真实时序竞态，非逻辑断言变化），统一放宽到 3s
     await waitFor(() =>
       expect(ipcService.invokeDomain).toHaveBeenCalledWith(
         IPC_DOMAINS.FOLDER_TRUST, 'get', { workingDirectory: '/tmp/ws' },
-      ),
+      ), { timeout: 3000 },
     );
     // 弹的是既有完整信任框（无 testid，按其真实按钮文案定位）
-    const trustButton = await screen.findByText('信任并加载');
+    const trustButton = await screen.findByText('信任并加载', undefined, { timeout: 3000 });
     fireEvent.click(trustButton);
 
     // 授权走空间目录 + 自动重放刚才的 SET
@@ -676,12 +677,12 @@ describe('ProjectConfigRail 项目配置（四卡竖排形态，第四波①回�
       expect(ipcService.invokeDomain).toHaveBeenCalledWith(
         IPC_DOMAINS.FOLDER_TRUST, 'set',
         { state: 'trusted', decidedBy: 'project-space-rail', workingDirectory: '/tmp/ws' },
-      ),
+      ), { timeout: 3000 },
     );
     await waitFor(() =>
       expect(vi.mocked(invokeSkillIPCOrThrow).mock.calls.filter(
         (call) => call[0] === SKILL_CHANNELS.SKILL_PROJECT_SET && call[1] === 'skill-a',
-      ).length).toBe(2),
+      ).length).toBe(2), { timeout: 3000 },
     );
   });
 

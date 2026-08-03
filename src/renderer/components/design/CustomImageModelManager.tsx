@@ -113,7 +113,7 @@ export const CustomImageModelManagerView: React.FC<CustomImageModelManagerViewPr
           />
         </label>
 
-        {error && <p className="text-xs text-red-400">{error}</p>}
+        {error && <p className="text-xs text-badge-danger">{error}</p>}
 
         <div className="flex items-center justify-between pt-2">
           <Button variant="ghost" size="sm" onClick={onBack}>
@@ -154,12 +154,12 @@ export const CustomImageModelManagerView: React.FC<CustomImageModelManagerViewPr
                 <span className="truncate text-[11px] text-zinc-500">{m.modelName} · {m.baseUrl}</span>
               </div>
               {m.available ? (
-                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[11px] font-medium text-emerald-300">
+                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[11px] font-medium text-badge-success">
                   <Check className="h-3 w-3" />
                   {s.availableBadge}
                 </span>
               ) : (
-                <span className="inline-flex items-center rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-medium text-amber-300">
+                <span className="inline-flex items-center rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-medium text-badge-warning">
                   {s.unconfiguredBadge}
                 </span>
               )}

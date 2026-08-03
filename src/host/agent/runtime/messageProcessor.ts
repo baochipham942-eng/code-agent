@@ -64,7 +64,7 @@ import { recordMessageProcessorModelCallTelemetry } from './messageProcessorTele
 import { generateTruncationWarning } from './truncationPrompts';
 import { isToolDeniedForRun } from './toolRunPolicy';
 import { attachTurnQualityMetadata } from './turnQuality';
-
+import { wasMessagePersistedByContextAssembly } from './contextAssembly/systemContextStack';
 const logger = createLogger('MessageProcessor');
 type LangfuseSpanFacade = { endSpan(spanId: string, output?: unknown, level?: 'DEBUG' | 'DEFAULT' | 'WARNING' | 'ERROR', statusMessage?: string): void };
 function toAgentEventFromNudge(event: { type: string; data: unknown }): AgentEvent | null {
@@ -526,9 +526,7 @@ export class MessageProcessor {
       });
     }
     const assistantMessage = this.buildAssistantMessageFromResponse(response, finalContent);
-    if (handoffTail.found && assistantMessage.contentParts?.length) {
-      assistantMessage.contentParts = [{ type: 'text', text: finalContent }];
-    }
+    if (handoffTail.found && assistantMessage.contentParts?.length) assistantMessage.contentParts = [{ type: 'text', text: finalContent }];
 
     // Artifact extraction
     const artifacts = extractArtifacts(finalContent);
@@ -545,7 +543,7 @@ export class MessageProcessor {
     }
 
     await this.contextAssembly.addAndPersistMessage(assistantMessage);
-
+    if (wasMessagePersistedByContextAssembly(assistantMessage)) this.ctx.turn.resetStreamedContent();
     if (handoffTail.draft) {
       try {
         getHandoffProposalService().create({
@@ -673,7 +671,7 @@ export class MessageProcessor {
       : [];
 
     if (unavailableToolCalls.length > 0) {
-      return handleUnavailableToolCalls(
+      const admission = await handleUnavailableToolCalls(
         {
           ctx: this.ctx,
           contextAssembly: this.contextAssembly,
@@ -684,6 +682,9 @@ export class MessageProcessor {
         unavailableToolCalls,
         visibleToolNames,
       );
+      // 'proceed' = deferred 工具已在本轮解锁，不要早退：往下走普通工具执行链，
+      // 让代执行与普通调用共用同一个 executeToolsWithHooks 入口（审批链零旁路）。
+      if (admission !== 'proceed') return admission;
     }
 
     logger.debug(` Tool calls received: ${toolCalls.length} calls`);
@@ -1171,7 +1172,12 @@ export class MessageProcessor {
     };
     this.ctx.messages.push(steerMessage);
 
-    if (process.env.CODE_AGENT_CLI_MODE === 'true') return;
+    // 只有纯 CLI 才跳过落库。webServer（桌面 app 也跑它）为了 keytar/原生模块安全
+    // 同样会设 CODE_AGENT_CLI_MODE=true，只看这一个标志等于**在产品主路径上静默丢弃
+    // 每一条转向消息**——2026-08-01 真机 2/2 复现：点排队卡「立即发送」后模型答了、
+    // 队列 consumed，而那条用户消息全库零行（错误也没有，因为这里根本没走到写库）。
+    // 判 CLI-only 的口径全仓统一：两个标志一起看（logger / nativeLoader / shellEnvironment 同款）。
+    if (process.env.CODE_AGENT_CLI_MODE === 'true' && process.env.CODE_AGENT_WEB_MODE !== 'true') return;
 
     // 同 id 同时间戳，只有 content 不同：渲染端拿到的是原话，模型上下文保留脚手架。
     const persistedMessage: Message =

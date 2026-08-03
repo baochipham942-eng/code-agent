@@ -81,7 +81,7 @@ export function Card({
 
   return (
     <div className={`bg-white/[0.02] backdrop-blur-sm rounded-lg border ${
-      highlight ? 'border-yellow-500/20' : 'border-white/[0.04]'
+      highlight ? 'border-badge-warning/20' : 'border-white/[0.04]'
     }`}>
       <div className="flex items-center w-full px-3 py-2 gap-1">
         <button

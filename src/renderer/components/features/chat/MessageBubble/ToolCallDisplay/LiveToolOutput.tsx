@@ -36,7 +36,7 @@ export function LiveToolOutput({ toolCall }: { toolCall: ToolCall }) {
         <span>Live output</span>
         <div className="flex-1 h-px bg-gray-700/50" />
       </div>
-      <pre className="text-xs text-gray-400 bg-gray-900/50 rounded-lg p-3 overflow-x-auto scrollbar-hidden border border-gray-800/50 whitespace-pre-wrap break-words">
+      <pre className="text-xs text-zinc-400 bg-gray-900/50 rounded-lg p-3 overflow-x-auto scrollbar-hidden border border-gray-800/50 whitespace-pre-wrap break-words">
         {omittedCount > 0 && `…省略 ${omittedCount} 行…\n`}
         {displayLines.join('\n')}
       </pre>

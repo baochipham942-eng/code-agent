@@ -68,14 +68,14 @@ export const CanvasAutonomyReviewBar: React.FC<{
   };
 
   return (
-    <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-50 w-[28rem] max-w-[92vw] rounded-xl border border-amber-300/60 bg-white/95 shadow-xl backdrop-blur dark:border-amber-500/40 dark:bg-neutral-900/95">
+    <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-50 w-[28rem] max-w-[92vw] rounded-xl border border-badge-warning/60 bg-white/95 shadow-xl backdrop-blur dark:border-badge-warning/40 dark:bg-neutral-900/95">
       <div className="flex items-center gap-2 px-4 pt-3 text-sm font-semibold text-neutral-800 dark:text-neutral-100">
-        <Sparkles className="h-4 w-4 text-amber-500" />
+        <Sparkles className="h-4 w-4 text-badge-warning" />
         {s.autonomyTitle}
       </div>
       <div className="px-4 pt-1 text-sm text-neutral-600 dark:text-neutral-300">{request.goal}</div>
       {request.rationale && (
-        <div className="px-4 pt-1 text-xs text-neutral-400 dark:text-neutral-500">{request.rationale}</div>
+        <div className="px-4 pt-1 text-xs text-zinc-400 dark:text-neutral-500">{request.rationale}</div>
       )}
 
       <div className="flex items-center gap-4 px-4 pt-3">
@@ -101,12 +101,12 @@ export const CanvasAutonomyReviewBar: React.FC<{
             className="w-20 rounded border border-neutral-300 bg-white px-2 py-1 text-sm dark:border-neutral-600 dark:bg-neutral-800"
           />
         </label>
-        <span className="ml-auto text-xs text-amber-600 dark:text-amber-400">
+        <span className="ml-auto text-xs text-badge-warning">
           {s.autonomyEstCost.replace('{amount}', formatCny(estCost))}
         </span>
       </div>
 
-      <div className="px-4 pt-2 text-[11px] leading-snug text-neutral-400 dark:text-neutral-500">{s.autonomyHint}</div>
+      <div className="px-4 pt-2 text-[11px] leading-snug text-zinc-400 dark:text-neutral-500">{s.autonomyHint}</div>
 
       {showDecline && (
         <div className="px-4 pt-2">

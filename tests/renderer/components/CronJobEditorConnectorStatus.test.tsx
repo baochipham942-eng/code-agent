@@ -65,6 +65,6 @@ describe('模板选择步骤：真实飞书模板的连接器状态点', () => {
     openTemplatePicker();
 
     const calendarCard = screen.getByText('飞书日程冲突监听').closest('button');
-    expect(calendarCard?.querySelector('.text-emerald-300')).toBeTruthy();
+    expect(calendarCard?.querySelector('.text-badge-success')).toBeTruthy();
   });
 });

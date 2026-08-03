@@ -7,7 +7,7 @@ import { DesignCostHistoryView } from '../../../src/renderer/components/design/D
 import type { CanvasImageNode } from '../../../src/renderer/components/design/designCanvasTypes';
 
 const N = (o: Partial<CanvasImageNode> & { id: string }): CanvasImageNode => ({
-  src: `assets/${o.id}.png`, x: 0, y: 0, width: 100, height: 100, createdAt: o.createdAt ?? 1, ...o,
+  src: `assets/${o.id}.png`, x: 0, y: 0, width: 100, height: 100, createdAt: o.createdAt ?? 1, ...o, createdBy: o.createdBy ?? 'user',
 });
 
 // generate(A) → edit(B) → edit(C)，主版定在中间版 B（chosen）→ 可 undo 到 A、redo 到 C。

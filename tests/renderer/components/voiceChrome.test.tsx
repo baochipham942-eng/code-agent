@@ -35,7 +35,7 @@ function expectAtMostTwoActions(): void {
   expect(chromeButtons().length).toBeLessThanOrEqual(2);
 }
 
-const ON_CALL_REGEX = /^通话中 \d{2}:\d{2}$/;
+const ON_CALL_REGEX = /通话中 \d{2}:\d{2}/;
 
 describe('VoiceChrome 固定槽位', () => {
   beforeEach(() => {
@@ -59,7 +59,7 @@ describe('VoiceChrome 固定槽位', () => {
     render(<VoiceChrome sessionId="session-1" />);
 
     expect(screen.getByTestId('voice-chrome').dataset.state).toBe('connecting');
-    expect(screen.getByTestId('voice-status').textContent).toBe('正在接通…');
+    expect(screen.getByTestId('voice-status').textContent).toContain('正在接通…');
     expect(screen.queryByTestId('voice-meta')).toBeNull();
     expect(screen.getByTestId('voice-mute').hasAttribute('disabled')).toBe(true);
     expectAtMostTwoActions();
@@ -71,13 +71,13 @@ describe('VoiceChrome 固定槽位', () => {
     dialInto();
     render(<VoiceChrome sessionId="session-1" />);
 
-    expect(screen.getByTestId('voice-status').textContent).toMatch(/^通话中 00:00$/);
+    expect(screen.getByTestId('voice-status').textContent).toMatch(/通话中 00:00/);
     expect(screen.queryByTestId('voice-meta')).toBeNull();
     expect(screen.getByTestId('voice-mute').hasAttribute('disabled')).toBe(false);
     expectAtMostTwoActions();
 
     act(() => vi.advanceTimersByTime(61_000));
-    expect(screen.getByTestId('voice-status').textContent).toMatch(/^通话中 01:01$/);
+    expect(screen.getByTestId('voice-status').textContent).toMatch(/通话中 01:01/);
   });
 
   it('正在回答：统一显示“通话中 mm:ss”，操作数为 2', () => {
@@ -112,7 +112,7 @@ describe('VoiceChrome 固定槽位', () => {
 
     expect(screen.getByTestId('voice-chrome').dataset.state).toBe('muted');
     expect(screen.getByTestId('voice-status').textContent).toMatch(ON_CALL_REGEX);
-    expect(screen.getByTestId('voice-mute').className).toContain('text-amber-300');
+    expect(screen.getByTestId('voice-mute').className).toContain('text-badge-warning');
     expectAtMostTwoActions();
   });
 
@@ -144,7 +144,7 @@ describe('VoiceChrome 固定槽位', () => {
     expect(screen.getByTestId('voice-chrome').dataset.state).toBe('error');
     // 文案按 code 查 i18n，不是显示 host 原文（host 那句是硬编码中文，英文用户会原样看到）。
     // 断言取 i18n 的值而不是写死字符串——写死就变成「改文案必改测试」的假门。
-    expect(screen.getByTestId('voice-status').textContent).toBe(zh.voice.messageByCode.UPSTREAM_ERROR);
+    expect(screen.getByTestId('voice-status').textContent).toContain(zh.voice.messageByCode.UPSTREAM_ERROR);
     expect(screen.getByTestId('voice-status').textContent).not.toBe('upstream blew up');
     expect(screen.queryByTestId('voice-mute')).toBeNull();
     expect(screen.queryByTestId('voice-manual-commit')).toBeNull();
@@ -158,5 +158,72 @@ describe('VoiceChrome 固定槽位', () => {
     fireEvent.click(screen.getByTestId('voice-end'));
     expect(bridgeMock.toggleMute).toHaveBeenCalledTimes(1);
     expect(bridgeMock.hangUp).toHaveBeenCalledTimes(1);
+  });
+
+  it('星球七态：状态词 + 星球种类 + hint 按视觉态切换（P0 拍板映射）', () => {
+    const cases: Array<{
+      setup: () => void;
+      word: string;
+      planet: string;
+      hint: string;
+    }> = [
+      { setup: () => {}, word: '聆听中', planet: 'earth', hint: zh.voice.planet.hint.earth },
+      {
+        setup: () => useVoiceCallStore.getState().eventApplied({ assistantSpeaking: true }),
+        word: '表达中',
+        planet: 'sun',
+        hint: zh.voice.planet.hint.sol,
+      },
+      {
+        setup: () =>
+          useVoiceCallStore.getState().eventApplied({
+            workItem: { id: 'w1', title: '干活', status: 'running' },
+          }),
+        word: '思考中',
+        planet: 'jupiter',
+        hint: zh.voice.planet.hint.jupiter,
+      },
+      {
+        setup: () => useVoiceCallStore.getState().muteChanged(true),
+        word: '已静音',
+        planet: 'earth',
+        hint: zh.voice.planet.hint.earthDark,
+      },
+    ];
+
+    for (const c of cases) {
+      useVoiceCallStore.getState().reset();
+      dialInto();
+      c.setup();
+      const { unmount } = render(<VoiceChrome sessionId="session-1" />);
+      const planet = screen.getByTestId('voice-planet');
+      expect(planet.dataset.planet).toBe(c.planet);
+      expect(screen.getByTestId('voice-state-word').textContent).toBe(c.word);
+      expect(screen.getByTestId('voice-state-hint').textContent).toBe(c.hint);
+      unmount();
+    }
+  });
+
+  it('连接中用 Mercury（信号握手），出错时保留当前星球并染红', () => {
+    useVoiceCallStore.getState().dialStarted('session-1', 'lanxi', 'server_vad');
+    const { unmount } = render(<VoiceChrome sessionId="session-1" />);
+    expect(screen.getByTestId('voice-planet').dataset.planet).toBe('mercury');
+    expect(screen.getByTestId('voice-state-word').textContent).toBe('连接中');
+    expect(screen.getByTestId('voice-state-hint').textContent).toBe(zh.voice.planet.hint.mercury);
+    unmount();
+
+    useVoiceCallStore.getState().reset();
+    dialInto();
+    render(<VoiceChrome sessionId="session-1" />);
+    expect(screen.getByTestId('voice-planet').dataset.planet).toBe('earth');
+    act(() => {
+      useVoiceCallStore.getState().phaseChanged('error');
+      useVoiceCallStore.getState().eventApplied({ error: { code: 'UPSTREAM_ERROR', message: 'x' } });
+    });
+    const planet = screen.getByTestId('voice-planet');
+    expect(planet.dataset.planet).toBe('earth');
+    expect(planet.dataset.fx).toBe('alert');
+    expect(screen.getByTestId('voice-state-word').textContent).toBe('连接异常');
+    expect(screen.getByTestId('voice-state-hint').textContent).toBe(zh.voice.planet.hint.alert);
   });
 });

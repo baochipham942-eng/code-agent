@@ -75,7 +75,7 @@ import {
   isArtifactRepairWritePriority,
   startArtifactModelWaitProgress,
 } from './inferenceArtifactRepair';
-import { checkpointNativeModel } from './nativeModelCheckpoint';
+import { withNativeModelOperation } from './nativeModelCheckpoint';
 import { runInferenceWithTelemetry } from './inferenceTelemetry';
 // provider fallback 机制已抽到 inferenceProviderFallback.ts；以下两个为历史公开导出，
 // 测试从本模块取，保持 re-export 兼容。
@@ -841,29 +841,14 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
         artifactRepairWritePriority,
         artifactRepairFullRewritePriority,
       };
-      await checkpointNativeModel(ctx, requestConfig, 'before_model_dispatch', 'prepared');
-      await checkpointNativeModel(ctx, requestConfig, 'after_model_dispatch', 'dispatched');
-      if (ctx.runtime.maxMode && maxModeBudgetHeadroomOk()) {
-        response = await runMaxModeInference(
-          ctx,
-          modelMessages,
-          effectiveTools,
-          requestConfig,
-          streamCallback,
-          engineOptions,
-        );
-      } else {
-        response = await runEngineInference(
-          ctx,
-          modelMessages,
-          effectiveTools,
-          requestConfig,
-          streamCallback,
-          inferenceAbortController.signal,
-          engineOptions,
-        );
-      }
-      await checkpointNativeModel(ctx, requestConfig, 'after_model_dispatch', 'succeeded');
+      // 这次模型调用的整个生命周期（prepared → dispatched → succeeded/abandoned）
+      // 收在一处：没跑完也必须给终态，否则轮次收尾时 Durable Run 会因为「留着未了结
+      // 的操作」把一次成功的轮次报成运行失败。
+      response = await withNativeModelOperation(ctx, requestConfig, inferenceAbortController.signal, () => (
+        ctx.runtime.maxMode && maxModeBudgetHeadroomOk()
+          ? runMaxModeInference(ctx, modelMessages, effectiveTools, requestConfig, streamCallback, engineOptions)
+          : runEngineInference(ctx, modelMessages, effectiveTools, requestConfig, streamCallback, inferenceAbortController.signal, engineOptions)
+      ));
     } finally {
       stopArtifactProgress();
     }

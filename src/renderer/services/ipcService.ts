@@ -149,6 +149,21 @@ export function isAvailable(): boolean {
   return !!commandApi();
 }
 
+/**
+ * 域 IPC 失败时抛出的错误，**保留宿主给的 error.code**。
+ *
+ * 宿主侧对已知错误类（ConversationBranchError / SessionForkError 等）会把 code 原样放进
+ * 信封（见 session.ipc.ts 的 catch）。此前这里只取 message 重新包 Error，code 在这一跳被丢掉，
+ * 于是渲染层想区分「预期状态」和「真故障」只能去抠 message 字符串——按名字枚举，改个文案就失效。
+ * 现在 code 跟着错误走，调用方按 code 判定即可。
+ */
+export class DomainInvokeError extends Error {
+  constructor(readonly code: string, message: string) {
+    super(message);
+    this.name = 'DomainInvokeError';
+  }
+}
+
 async function invokeDomainRaw<T = unknown>(
   domain: string,
   action: string,
@@ -156,7 +171,10 @@ async function invokeDomainRaw<T = unknown>(
 ): Promise<T> {
   const response = await domainApi()?.invoke<T>(domain, action, payload);
   if (!response?.success) {
-    throw new Error(response?.error?.message || `${domain}:${action} failed`);
+    throw new DomainInvokeError(
+      response?.error?.code || 'INTERNAL_ERROR',
+      response?.error?.message || `${domain}:${action} failed`,
+    );
   }
   return response.data as T;
 }

@@ -9,10 +9,10 @@ interface SurfaceSemanticTimelineProps {
 }
 
 function eventTone(event: SurfaceExecutionEventV1): string {
-  if (event.status === 'failed') return 'border-red-400/30 bg-red-400/5';
-  if (event.status === 'ambiguous') return 'border-amber-400/30 bg-amber-400/5';
-  if (event.phase === 'human') return 'border-violet-400/30 bg-violet-400/5';
-  if (event.phase === 'verify') return 'border-emerald-400/20 bg-emerald-400/[0.03]';
+  if (event.status === 'failed') return 'border-badge-danger/30 bg-red-400/5';
+  if (event.status === 'ambiguous') return 'border-badge-warning/30 bg-amber-400/5';
+  if (event.phase === 'human') return 'border-badge-accent/30 bg-violet-400/5';
+  if (event.phase === 'verify') return 'border-badge-success/20 bg-emerald-400/[0.03]';
   return 'border-white/[0.06] bg-white/[0.015]';
 }
 
@@ -38,7 +38,7 @@ function TimelineEvent({ event, copy }: {
       data-status={event.status}
       className={`relative rounded-lg border px-3 py-2.5 ${eventTone(event)}`}
     >
-      <span className="absolute -left-[17px] top-3 h-2 w-2 rounded-full border border-zinc-700 bg-zinc-400" />
+      <span className="absolute -left-[17px] top-3 h-2 w-2 rounded-full border border-zinc-700 bg-mark-neutral" />
       <div className="flex items-center justify-between gap-3">
         <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
           {copy.timeline.phase[event.phase]}

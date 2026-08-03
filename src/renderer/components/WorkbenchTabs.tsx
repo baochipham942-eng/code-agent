@@ -21,6 +21,7 @@ import {
   LayoutDashboard,
   Palette,
   Plus,
+  TerminalSquare,
   X,
   type LucideIcon,
 } from 'lucide-react';
@@ -56,27 +57,33 @@ const LAUNCHABLE_VIEWS: readonly LaunchableViewDefinition[] = [
   {
     id: 'overview',
     icon: LayoutDashboard,
-    iconClassName: 'text-cyan-400/80',
+    iconClassName: 'text-badge-info/80',
     keybindingActionId: 'statusRail.toggle',
   },
   {
     id: 'files',
     icon: FolderTree,
-    iconClassName: 'text-amber-400/80',
+    iconClassName: 'text-badge-warning/80',
     // 不是 files.attach——那是输入框的附件选择器（scope: 'composer'），不是「打开文件视图」。
     keybindingActionId: 'files.open',
   },
   {
     id: 'browser',
     icon: Globe2,
-    iconClassName: 'text-emerald-400/80',
+    iconClassName: 'text-badge-success/80',
     keybindingActionId: 'browser.open',
   },
   {
     id: 'design-canvas',
     icon: Palette,
-    iconClassName: 'text-fuchsia-400/80',
+    iconClassName: 'text-badge-accent/80',
     keybindingActionId: 'designCanvas.open',
+  },
+  {
+    id: 'terminal',
+    icon: TerminalSquare,
+    iconClassName: 'text-badge-info/80',
+    keybindingActionId: 'terminal.open',
   },
 ];
 
@@ -115,6 +122,7 @@ const WorkbenchViewLauncher: React.FC<WorkbenchViewLauncherProps> = ({
     if (id === 'overview') return t.workbenchTabs.overviewLabel;
     if (id === 'files') return t.workbenchTabs.filesLabel;
     if (id === 'browser') return t.workbenchTabs.browserLabel;
+    if (id === 'terminal') return t.workbenchTabs.terminal.label;
     return t.design.canvasTabLabel;
   };
 
@@ -124,6 +132,7 @@ const WorkbenchViewLauncher: React.FC<WorkbenchViewLauncherProps> = ({
     if (id === 'overview') return d.overview;
     if (id === 'files') return d.files;
     if (id === 'browser') return d.browser;
+    if (id === 'terminal') return d.terminal;
     return d.designCanvas;
   };
 
@@ -226,7 +235,7 @@ export const WorkbenchTabs: React.FC<{ children?: React.ReactNode; focusable?: b
         label: t.workbenchTabs.overviewLabel,
         title: t.workbenchTabs.overviewTitle,
         icon: LayoutDashboard,
-        iconClassName: 'text-cyan-400/80',
+        iconClassName: 'text-badge-info/80',
         isDirty: false,
       };
     }
@@ -236,7 +245,7 @@ export const WorkbenchTabs: React.FC<{ children?: React.ReactNode; focusable?: b
         label: t.workbenchTabs.filesLabel,
         title: t.workbenchTabs.filesTitle,
         icon: FolderTree,
-        iconClassName: 'text-amber-400/80',
+        iconClassName: 'text-badge-warning/80',
         isDirty: false,
       };
     }
@@ -246,7 +255,7 @@ export const WorkbenchTabs: React.FC<{ children?: React.ReactNode; focusable?: b
         label: t.workbenchTabs.browserLabel,
         title: t.workbenchTabs.browserTitle,
         icon: Globe2,
-        iconClassName: 'text-emerald-400/80',
+        iconClassName: 'text-badge-success/80',
         isDirty: false,
       };
     }
@@ -256,7 +265,17 @@ export const WorkbenchTabs: React.FC<{ children?: React.ReactNode; focusable?: b
         label: t.design.canvasTabLabel,
         title: t.design.canvasTabLabel,
         icon: Palette,
-        iconClassName: 'text-fuchsia-400/80',
+        iconClassName: 'text-badge-accent/80',
+        isDirty: false,
+      };
+    }
+    if (id === 'terminal') {
+      return {
+        id,
+        label: t.workbenchTabs.terminal.label,
+        title: t.workbenchTabs.terminal.title,
+        icon: TerminalSquare,
+        iconClassName: 'text-badge-info/80',
         isDirty: false,
       };
     }
@@ -268,7 +287,7 @@ export const WorkbenchTabs: React.FC<{ children?: React.ReactNode; focusable?: b
       label: getFileName(path),
       title: path,
       icon: isLiveDev ? Globe2 : FileText,
-      iconClassName: isLiveDev ? 'text-emerald-400/80' : 'text-zinc-400',
+      iconClassName: isLiveDev ? 'text-badge-success/80' : 'text-zinc-400',
       isDirty: previewTab ? previewTab.content !== previewTab.savedContent : false,
     };
   });
@@ -330,7 +349,7 @@ export const WorkbenchTabs: React.FC<{ children?: React.ReactNode; focusable?: b
           suffix: (
             <>
               {meta.isDirty && (
-                <span className="text-[10px] leading-none text-amber-400" title={t.workbenchTabs.unsavedChanges}>●</span>
+                <span className="text-[10px] leading-none text-badge-warning" title={t.workbenchTabs.unsavedChanges}>●</span>
               )}
               <button /* ds-allow:button: tab 内 10px 超小关闭钮（对齐 FileExplorerPanel TabBar 的 ×），primitive 变体不适配 */
                 type="button"

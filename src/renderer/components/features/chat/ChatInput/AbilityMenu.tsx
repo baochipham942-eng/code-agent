@@ -55,9 +55,9 @@ interface AbilityMenuProps {
 function getStatusToneClasses(tone?: BrowserWorkbenchStatusTone): string {
   switch (tone) {
     case 'ready':
-      return 'text-emerald-300';
+      return 'text-badge-success';
     case 'blocked':
-      return 'text-amber-300';
+      return 'text-badge-warning';
     default:
       return 'text-zinc-300';
   }
@@ -133,7 +133,7 @@ export const AbilityMenu: React.FC<AbilityMenuProps> = ({ disabled = false, defa
         data-testid="ability-menu-trigger"
         className={`inline-flex items-center gap-1 h-8 rounded-lg px-2 text-xs transition-colors ${
           hasActive
-            ? 'bg-primary-500/15 text-primary-200 hover:bg-primary-500/20'
+            ? 'bg-primary-500/15 text-badge-accent hover:bg-primary-500/20'
             : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-700/50'
         } ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
         aria-label={t.abilityMenu.summaryFallback}
@@ -162,7 +162,7 @@ export const AbilityMenu: React.FC<AbilityMenuProps> = ({ disabled = false, defa
                 data-testid={`ability-menu-routing-${mode}`}
                 className={`rounded-md px-2 py-1.5 text-xs transition-colors ${
                   routingMode === mode
-                    ? 'bg-primary-500/20 text-primary-200'
+                    ? 'bg-primary-500/20 text-badge-accent'
                     : 'bg-white/[0.03] text-zinc-400 hover:bg-white/[0.06] hover:text-zinc-200'
                 }`}
               >
@@ -184,7 +184,7 @@ export const AbilityMenu: React.FC<AbilityMenuProps> = ({ disabled = false, defa
                 data-testid={`ability-menu-browser-${mode}`}
                 className={`rounded-md px-2 py-1.5 text-xs transition-colors ${
                   browserSessionMode === mode
-                    ? 'bg-primary-500/20 text-primary-200'
+                    ? 'bg-primary-500/20 text-badge-accent'
                     : 'bg-white/[0.03] text-zinc-400 hover:bg-white/[0.06] hover:text-zinc-200'
                 }`}
               >
@@ -215,7 +215,7 @@ export const AbilityMenu: React.FC<AbilityMenuProps> = ({ disabled = false, defa
               type="button"
               onClick={handleOpenLivePreview}
               data-testid="ability-menu-live-preview-open"
-              className="flex-shrink-0 rounded-md bg-primary-500/15 px-3 py-1.5 text-xs text-primary-200 transition-colors hover:bg-primary-500/25"
+              className="flex-shrink-0 rounded-md bg-primary-500/15 px-3 py-1.5 text-xs text-badge-accent transition-colors hover:bg-primary-500/25"
             >
               Open
             </button>
@@ -231,7 +231,7 @@ export const AbilityMenu: React.FC<AbilityMenuProps> = ({ disabled = false, defa
                   <Monitor className="h-3 w-3" />
                   <span>{browserSessionMode === 'managed' ? 'Managed browser' : 'Computer surface'}</span>
                 </div>
-                <span className={browserSession.blocked ? 'text-amber-300' : 'text-emerald-300'}>
+                <span className={browserSession.blocked ? 'text-badge-warning' : 'text-badge-success'}>
                   {browserSession.blocked ? 'Blocked' : 'Ready'}
                 </span>
               </div>
@@ -268,9 +268,9 @@ export const AbilityMenu: React.FC<AbilityMenuProps> = ({ disabled = false, defa
                       >
                         <div className="flex min-w-0 items-center gap-1.5">
                           {tone === 'ready' ? (
-                            <CheckCircle2 className="h-3 w-3 flex-shrink-0 text-emerald-300" />
+                            <CheckCircle2 className="h-3 w-3 flex-shrink-0 text-badge-success" />
                           ) : tone === 'blocked' ? (
-                            <AlertTriangle className="h-3 w-3 flex-shrink-0 text-amber-300" />
+                            <AlertTriangle className="h-3 w-3 flex-shrink-0 text-badge-warning" />
                           ) : (
                             <Info className="h-3 w-3 flex-shrink-0 text-zinc-500" />
                           )}
@@ -286,7 +286,7 @@ export const AbilityMenu: React.FC<AbilityMenuProps> = ({ disabled = false, defa
               )}
 
               {browserOperationalHint && (
-                <div className={`mt-2 leading-relaxed ${browserSession.blocked ? 'text-amber-300' : 'text-zinc-500'}`}>
+                <div className={`mt-2 leading-relaxed ${browserSession.blocked ? 'text-badge-warning' : 'text-zinc-500'}`}>
                   {browserOperationalHint}
                 </div>
               )}
@@ -294,7 +294,7 @@ export const AbilityMenu: React.FC<AbilityMenuProps> = ({ disabled = false, defa
                 <div className="mt-1 leading-relaxed text-zinc-500">{browserSession.blockedHint}</div>
               )}
               {browserSession.actionError && (
-                <div className="mt-1 leading-relaxed text-red-300">{browserSession.actionError}</div>
+                <div className="mt-1 leading-relaxed text-badge-danger">{browserSession.actionError}</div>
               )}
 
               {browserSession.repairActions.length > 0 && (

@@ -233,7 +233,7 @@ export const VoiceLiveSettingsSection: React.FC = () => {
               const first = PROVIDER_MODELS_MAP[provider]?.models[0]?.id;
               return void persistExecutionModel(first ? { provider, model: first } : undefined);
             }}
-            className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-primary-500"
+            className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-accent-accessible"
           >
             <option value="">{text.executionModelFollowSession}</option>
             {PROVIDER_MODELS.map((provider) => (
@@ -248,7 +248,7 @@ export const VoiceLiveSettingsSection: React.FC = () => {
               if (!executionModel) return;
               void persistExecutionModel({ provider: executionModel.provider, model: event.target.value });
             }}
-            className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-primary-500 disabled:opacity-40"
+            className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-accent-accessible disabled:opacity-40"
           >
             {executionModel
               ? (PROVIDER_MODELS_MAP[executionModel.provider]?.models ?? []).map((model) => (
@@ -263,7 +263,9 @@ export const VoiceLiveSettingsSection: React.FC = () => {
       <div className="border-t border-zinc-700 pt-4">
         <h3 className="mb-1 text-sm font-medium text-zinc-200">{text.usageTitle}</h3>
         <p className="text-xs text-zinc-500" data-testid="voice-usage-summary">
-          {text.usageThisMonth
+          {(usage.monthTokens
+            ? text.usageThisMonth.replace('{tokens}', String(usage.monthTokens.totalTokens))
+            : text.usageThisMonthWithoutTokens)
             .replace('{minutes}', String(Math.round(usage.monthSeconds / 60)))
             .replace('{calls}', String(usage.monthCalls))}
         </p>
@@ -286,7 +288,7 @@ export const VoiceLiveSettingsSection: React.FC = () => {
               webDeviceId: device.deviceId,
             });
           }}
-          className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-primary-500"
+          className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-accent-accessible"
         >
           <option value="">{text.inputDeviceDefault}</option>
           {inputDevices.map((device) => (
@@ -306,7 +308,7 @@ export const VoiceLiveSettingsSection: React.FC = () => {
           <select
             value={language}
             onChange={(event) => void persist({ language: event.target.value as NonNullable<VoiceLiveSettings['language']> })}
-            className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-primary-500"
+            className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-accent-accessible"
           >
             <option value="auto">{text.languageAuto}</option>
             <option value="zh">{text.languageZh}</option>
@@ -324,7 +326,7 @@ export const VoiceLiveSettingsSection: React.FC = () => {
             data-testid="voice-speech-rate"
             value={speechRate}
             onChange={(event) => void persist({ speechRate: event.target.value as SpeechRate })}
-            className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-primary-500"
+            className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-accent-accessible"
           >
             {SPEECH_RATE_OPTIONS.map((option) => (
               <option key={option} value={option}>{speechRateText[option]}</option>
@@ -343,7 +345,7 @@ export const VoiceLiveSettingsSection: React.FC = () => {
             onChange={(event) => void persist({
               echoCancellation: event.target.value as EchoCancellationMode,
             })}
-            className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-primary-500"
+            className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-accent-accessible"
           >
             <option value="auto">{text.echoCancellationAuto}</option>
             <option value="off">{text.echoCancellationOff}</option>
@@ -392,7 +394,7 @@ export const VoiceLiveSettingsSection: React.FC = () => {
               data-testid="voice-vad-sensitivity"
               value={sensitivity}
               onChange={(event) => void persist({ vadSensitivity: event.target.value as VadSensitivity })}
-              className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-primary-500"
+              className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-accent-accessible"
             >
               {SENSITIVITY_OPTIONS.map((option) => (
                 <option key={option} value={option}>{sensitivityText[option]}</option>

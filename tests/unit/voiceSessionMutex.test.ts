@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { EventEmitter } from 'events';
 import { isVoiceInputMessage, type Message } from '../../src/shared/contract/message';
 import type { VoiceEvent, VoiceTransport, VoiceWorkItem } from '../../src/shared/contract/voice';
-import { QWEN_OMNI_REALTIME_MODEL, VOICE_DOWNSTREAM_SAMPLE_RATE, VOICE_END_CALL_GOODBYE_TIMEOUT_MS, VOICE_HANGUP_REACTION_WINDOW_MS, VOICE_INBOUND_AUDIO_STARTUP_TIMEOUT_MS, VOICE_TRANSCRIPT_MERGE_WINDOW_MS, VOICE_WS_CLOSE_TERMINAL } from '../../src/shared/constants/voice';
+import { QWEN_OMNI_REALTIME_MODEL, VOICE_DOWNSTREAM_SAMPLE_RATE, VOICE_END_CALL_GOODBYE_TIMEOUT_MS, VOICE_HANGUP_REACTION_WINDOW_MS, VOICE_INBOUND_AUDIO_STARTUP_TIMEOUT_MS, VOICE_TRANSCRIPT_MERGE_WINDOW_MS, VOICE_WS_CLOSE_TERMINAL, VOICE_MILESTONE_FIRST_DELAY_MS, VOICE_MILESTONE_MAX_PER_WORK_ITEM, VOICE_MILESTONE_MIN_INTERVAL_MS, VOICE_MILESTONE_STALE_MS } from '../../src/shared/constants/voice';
 
 const vocabulary = vi.hoisted(() => ({ block: '' }));
 vi.mock('../../src/host/services/voice/voiceVocabulary', () => ({
@@ -16,6 +16,7 @@ const commitMock = vi.fn();
 const respondMock = vi.fn();
 const updateInstructions = vi.fn();
 const injectItem = vi.fn();
+const injectItemWithAck = vi.fn(async (_text: string) => undefined);
 let upstreamResponding = false;
 const isResponding = vi.fn(() => upstreamResponding);
 let interruptResponseId: string | null = null;
@@ -40,6 +41,7 @@ const connect = vi.fn(async (input: Parameters<VoiceTransport['connect']>[0]) =>
     interrupt: interruptMock,
     updateInstructions,
     injectItem,
+    injectItemWithAck,
     isResponding,
     close,
   };
@@ -90,7 +92,7 @@ vi.mock('../../src/host/hooks', () => ({
 const voiceDispatchProbe = vi.hoisted(() => ({
   narrate: null as null | ((narration: {
     workItemId: string;
-    status: 'done';
+    status: 'done' | 'milestone';
     title: string;
     summary: string;
   }) => void),
@@ -110,7 +112,7 @@ vi.mock('../../src/host/services/voice/voiceAgentCoordinator', async (importOrig
   };
 });
 
-const { attachVoiceClient, getActiveVoiceSessionId, endActiveVoiceSession } = await import('../../src/host/services/voice/voiceSessionService');
+const { attachVoiceClient, getActiveVoiceSessionId, endActiveVoiceSession, injectVoiceUserText } = await import('../../src/host/services/voice/voiceSessionService');
 
 /** 最小 ws 替身：只要 readyState / OPEN / send / close / 事件。 */
 class FakeClient extends EventEmitter {
@@ -144,6 +146,8 @@ describe('voiceSessionService 互斥与挂断', () => {
     respondMock.mockClear();
     updateInstructions.mockClear();
     injectItem.mockClear();
+    injectItemWithAck.mockClear();
+    injectItemWithAck.mockImplementation(async (_text: string) => undefined);
     isResponding.mockClear();
     interruptMock.mockClear();
     interruptResponseId = null;
@@ -191,6 +195,7 @@ describe('voiceSessionService 互斥与挂断', () => {
         respond: respondMock,
         interrupt: vi.fn(),
         injectItem,
+        injectItemWithAck,
         isResponding,
         updateInstructions,
         close,
@@ -574,6 +579,253 @@ describe('voiceSessionService 互斥与挂断', () => {
     );
   });
 
+  it('1.2 秒宽限到点不把空文本定成 background，迟到 final 仍下发并落库', async () => {
+    vi.useFakeTimers();
+    try {
+      const client = new FakeClient();
+      await attachVoiceClient(client as never, 'session-late-user-final');
+      upstreamResponding = true;
+      interruptResponseId = 'resp-late-user-final';
+      lastOnEvent?.({ type: 'response.created', responseId: 'resp-late-user-final' });
+      lastOnEvent?.({ type: 'speech.started', candidateId: 'turn-late-user-final' });
+      client.emit('message', Buffer.from(JSON.stringify({
+        type: 'interrupt.playback',
+        candidateId: 'turn-late-user-final',
+        playing: true,
+        playedMs: 600,
+        queuedMs: 900,
+      })), false);
+      lastOnEvent?.({
+        type: 'speech.stopped',
+        candidateId: 'turn-late-user-final',
+        durationMs: 900,
+      });
+
+      const interruptDecisions = () => client.sent
+        .filter((raw) => raw !== '<binary>')
+        .map((raw) => JSON.parse(raw) as VoiceEvent)
+        .filter((event) => event.type === 'interrupt.decision');
+
+      await vi.advanceTimersByTimeAsync(1_199);
+      expect(interruptDecisions()).toHaveLength(0);
+      expect(addMessageToSession).not.toHaveBeenCalled();
+
+      await vi.advanceTimersByTimeAsync(1);
+      expect(interruptDecisions()).toHaveLength(0);
+      expect(addMessageToSession).not.toHaveBeenCalled();
+
+      lastOnEvent?.({
+        type: 'user.transcript',
+        itemId: 'user-late-user-final',
+        candidateId: 'turn-late-user-final',
+        text: '请改成从一数到三',
+        done: true,
+      });
+      await vi.advanceTimersByTimeAsync(0);
+
+      const events = client.sent
+        .filter((raw) => raw !== '<binary>')
+        .map((raw) => JSON.parse(raw) as VoiceEvent);
+      expect(events).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          type: 'user.transcript',
+          itemId: 'user-late-user-final',
+          text: '请改成从一数到三',
+          done: true,
+        }),
+      ]));
+      expect(addMessageToSession.mock.calls.some(([, message]) => (
+        message.role === 'user' && message.content === '请改成从一数到三'
+      ))).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('上一段 final 晚到且下一段已完成附和时，按 itemId 保留上一段字幕', async () => {
+    vi.useFakeTimers();
+    try {
+      const client = new FakeClient();
+      await attachVoiceClient(client as never, 'session-late-previous-candidate');
+      upstreamResponding = true;
+      interruptResponseId = 'resp-late-previous-candidate';
+      lastOnEvent?.({ type: 'response.created', responseId: 'resp-late-previous-candidate' });
+
+      lastOnEvent?.({ type: 'speech.started', candidateId: 'candidate-a' });
+      lastOnEvent?.({
+        type: 'user.transcript',
+        candidateId: 'candidate-a',
+        itemId: 'item-a',
+        text: '上一段还在转写',
+        done: false,
+      });
+      lastOnEvent?.({ type: 'speech.stopped', candidateId: 'candidate-a', durationMs: 900 });
+
+      const interruptDecisions = () => client.sent
+        .filter((raw) => raw !== '<binary>')
+        .map((raw) => JSON.parse(raw) as VoiceEvent)
+        .filter((event) => event.type === 'interrupt.decision');
+
+      await vi.advanceTimersByTimeAsync(1_199);
+      expect(interruptDecisions()).toHaveLength(0);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(interruptDecisions()).toHaveLength(0);
+
+      lastOnEvent?.({ type: 'speech.started', candidateId: 'candidate-b' });
+      client.emit('message', Buffer.from(JSON.stringify({
+        type: 'interrupt.playback',
+        candidateId: 'candidate-b',
+        playing: true,
+        playedMs: 400,
+        queuedMs: 800,
+      })), false);
+      lastOnEvent?.({
+        type: 'user.transcript',
+        candidateId: 'candidate-b',
+        itemId: 'item-b',
+        text: '好的，知道了',
+        done: true,
+      });
+
+      lastOnEvent?.({
+        type: 'user.transcript',
+        itemId: 'item-a',
+        text: '上一段改成从一数到三',
+        done: true,
+      });
+      await vi.advanceTimersByTimeAsync(0);
+
+      const events = client.sent
+        .filter((raw) => raw !== '<binary>')
+        .map((raw) => JSON.parse(raw) as VoiceEvent);
+      expect(events).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          type: 'interrupt.decision',
+          candidateId: 'candidate-a',
+          classification: 'true_interrupt',
+        }),
+        expect.objectContaining({
+          type: 'user.transcript',
+          itemId: 'item-a',
+          text: '上一段改成从一数到三',
+          done: true,
+        }),
+      ]));
+      expect(addMessageToSession.mock.calls.some(([, message]) => (
+        message.role === 'user' && message.content === '上一段改成从一数到三'
+      ))).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('空文本宽限兜底即使误产出终局分类，也不能抑制迟到 final 落库', async () => {
+    vi.useFakeTimers();
+    try {
+      const client = new FakeClient();
+      await attachVoiceClient(client as never, 'session-empty-fallback-guard');
+      upstreamResponding = true;
+      interruptResponseId = 'resp-empty-fallback-guard';
+      lastOnEvent?.({ type: 'response.created', responseId: 'resp-empty-fallback-guard' });
+      lastOnEvent?.({ type: 'speech.started', candidateId: 'candidate-empty-fallback' });
+      client.emit('message', Buffer.from(JSON.stringify({
+        type: 'interrupt.playback',
+        candidateId: 'candidate-empty-fallback',
+        playing: true,
+        playedMs: 600,
+        queuedMs: 900,
+      })), false);
+      lastOnEvent?.({
+        type: 'speech.stopped',
+        candidateId: 'candidate-empty-fallback',
+        durationMs: 900,
+      });
+
+      await vi.advanceTimersByTimeAsync(1_199);
+      expect(client.sent.filter((raw) => raw.includes('interrupt.decision'))).toHaveLength(0);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(client.sent.filter((raw) => raw.includes('interrupt.decision'))).toHaveLength(0);
+
+      lastOnEvent?.({
+        type: 'user.transcript',
+        candidateId: 'candidate-empty-fallback',
+        itemId: 'item-empty-fallback',
+        text: '好的，知道了',
+        done: true,
+      });
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(client.sent).toContainEqual(expect.stringContaining('好的，知道了'));
+      expect(addMessageToSession.mock.calls.some(([, message]) => (
+        message.role === 'user' && message.content === '好的，知道了'
+      ))).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+});
+
+describe('通话中打字注入（E）', () => {
+  beforeEach(() => {
+    injectItem.mockClear();
+    injectItemWithAck.mockClear();
+    injectItemWithAck.mockImplementation(async (_text: string) => undefined);
+    lastOnEvent = null;
+  });
+
+  afterEach(async () => {
+    await endActiveVoiceSession();
+  });
+
+  it('把原话以 [USER] 前缀送进通话 brain，并等待注入确认', async () => {
+    const client = new FakeClient();
+    await attachVoiceClient(client as never, 'session-typed-input');
+
+    const result = await injectVoiceUserText('session-typed-input', '别等了，改做 Y');
+
+    expect(result).toEqual({ outcome: 'injected' });
+    expect(injectItemWithAck).toHaveBeenCalledWith('[USER] 别等了，改做 Y');
+    expect(injectItem).not.toHaveBeenCalled();
+  });
+
+  it('VOICE_TOOLS_DROPPED 时 fail-closed 回退，不把用户话静默吞掉', async () => {
+    const client = new FakeClient();
+    await attachVoiceClient(client as never, 'session-typed-tools-dropped');
+    lastOnEvent?.({
+      type: 'notice',
+      code: 'VOICE_TOOLS_DROPPED',
+      message: 'tools dropped',
+    });
+
+    const result = await injectVoiceUserText('session-typed-tools-dropped', '改做 Y');
+
+    expect(result).toEqual({ outcome: 'fallback', reason: 'tools_unavailable' });
+    expect(injectItemWithAck).not.toHaveBeenCalled();
+  });
+
+  it('上游拒绝注入时返回 fallback，让 renderer 把同一条话放回 durable queue', async () => {
+    const client = new FakeClient();
+    await attachVoiceClient(client as never, 'session-typed-rejected');
+    injectItemWithAck.mockRejectedValueOnce(new Error('active response'));
+
+    const result = await injectVoiceUserText('session-typed-rejected', '改做 Y');
+
+    expect(result).toEqual({ outcome: 'fallback', reason: 'injection_rejected' });
+    expect(injectItemWithAck).toHaveBeenCalledTimes(1);
+  });
+
+  it('挂断开始后拒绝新的注入，不启动第二个文本轮', async () => {
+    const client = new FakeClient();
+    await attachVoiceClient(client as never, 'session-typed-hangup');
+    const ending = endActiveVoiceSession();
+
+    const result = await injectVoiceUserText('session-typed-hangup', '改做 Y');
+
+    expect(result).toEqual({ outcome: 'fallback', reason: 'no_active_call' });
+    expect(injectItemWithAck).not.toHaveBeenCalled();
+    await ending;
+  });
 });
 
 describe('终态结论节制播报', () => {
@@ -1495,5 +1747,149 @@ describe('实时语音会话标记（生产者接线）', () => {
     await attachVoiceClient(client as never, 'session-badge');
 
     await vi.waitFor(() => expect(patchSessionMetadata).toHaveBeenCalledWith('session-badge', { hadLiveVoice: true }));
+  });
+});
+
+// ============================================================================
+// §2 中途进度节流闸。
+//
+// 这一组**刻意不把输入一次性喂完**：闸的语义全在时间轴上（首条延迟 / 间隔下限 /
+// 保质期），一次性喂完只能证明「调用了几次」，证明不了「在正确的时刻放行/丢弃」。
+// X5.5 的教训就是这个——协议零字节改动时，一次性喂完的测试掩盖了速率缺陷。
+// 所以每条都按真实时间线推进 fake timer，并在推进**前后各断言一次**。
+// ============================================================================
+describe('中途进度节流闸（回放时间线）', () => {
+  const milestone = (n: number) => ({
+    workItemId: `work-1:milestone-${n}`,
+    status: 'milestone' as const,
+    title: '写周报',
+    summary: `第 ${n} 步做完了`,
+  });
+  const terminal = {
+    workItemId: 'work-1',
+    status: 'done' as const,
+    title: '写周报',
+    summary: '写完了。',
+  };
+
+  /** 派一件活：让 firstDispatchAt 落定，首条延迟才有基准。 */
+  const dispatch = () => voiceDispatchProbe.work?.({ id: 'work-1', title: '写周报', status: 'queued' });
+
+  beforeEach(() => {
+    injectItem.mockClear();
+    voiceDispatchProbe.narrate = null;
+    voiceDispatchProbe.work = null;
+    lastOnEvent = null;
+  });
+
+  afterEach(async () => {
+    // 先回真实计时器再收尾：teardown 里有排水窗等真定时器，假计时器下它永远等不到。
+    vi.useRealTimers();
+    await endActiveVoiceSession();
+  });
+
+  /** 建连必须在真实计时器下完成（连接链路自带定时器），连上之后再接管时间轴。 */
+  async function dialThenFreezeClock(sessionId: string): Promise<void> {
+    await attachVoiceClient(new FakeClient() as never, sessionId);
+    vi.useFakeTimers();
+  }
+
+  it('首条进度必须等过延迟窗——推进前不播，推进后才播', async () => {
+    await dialThenFreezeClock('session-milestone-delay');
+    dispatch();
+    injectItem.mockClear();
+
+    voiceDispatchProbe.narrate?.(milestone(1));
+    // 推进之前：一条都不许出去。派活开场白和第一条进度不该挤在同一口气里。
+    expect(injectItem).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(VOICE_MILESTONE_FIRST_DELAY_MS + 1);
+    voiceDispatchProbe.narrate?.(milestone(2));
+    expect(injectItem).toHaveBeenCalledTimes(1);
+  });
+
+  it('间隔窗内的第二条被丢；推过间隔窗才放行', async () => {
+    await dialThenFreezeClock('session-milestone-interval');
+    dispatch();
+    await vi.advanceTimersByTimeAsync(VOICE_MILESTONE_FIRST_DELAY_MS + 1);
+    injectItem.mockClear();
+
+    voiceDispatchProbe.narrate?.(milestone(1));
+    expect(injectItem).toHaveBeenCalledTimes(1);
+
+    // 间隔窗内：丢。
+    await vi.advanceTimersByTimeAsync(VOICE_MILESTONE_MIN_INTERVAL_MS - 1000);
+    voiceDispatchProbe.narrate?.(milestone(2));
+    expect(injectItem).toHaveBeenCalledTimes(1);
+
+    // 推过间隔窗：放行。
+    await vi.advanceTimersByTimeAsync(2000);
+    voiceDispatchProbe.narrate?.(milestone(3));
+    expect(injectItem).toHaveBeenCalledTimes(2);
+  });
+
+  it('每件活最多播上限条，之后一律沉默', async () => {
+    await dialThenFreezeClock('session-milestone-cap');
+    dispatch();
+    await vi.advanceTimersByTimeAsync(VOICE_MILESTONE_FIRST_DELAY_MS + 1);
+    injectItem.mockClear();
+
+    for (let n = 1; n <= VOICE_MILESTONE_MAX_PER_WORK_ITEM + 2; n += 1) {
+      voiceDispatchProbe.narrate?.(milestone(n));
+      await vi.advanceTimersByTimeAsync(VOICE_MILESTONE_MIN_INTERVAL_MS + 1);
+    }
+
+    expect(injectItem).toHaveBeenCalledTimes(VOICE_MILESTONE_MAX_PER_WORK_ITEM);
+  });
+
+  it('用户一开口，排队的进度当场全丢——但终态只排队不丢', async () => {
+    await dialThenFreezeClock('session-milestone-usertalk');
+    dispatch();
+    await vi.advanceTimersByTimeAsync(VOICE_MILESTONE_FIRST_DELAY_MS + 1);
+    injectItem.mockClear();
+
+    // 借「模型正在说」把两条都压进队列。**刻意不用 speech.started 入队**——那会预先
+    // 消耗掉终态的一轮压制额度，两轮满了它会被既有规则丢掉，测出来的就不是本条想测的事。
+    upstreamResponding = true;
+    voiceDispatchProbe.narrate?.(milestone(1));
+    voiceDispatchProbe.narrate?.(terminal);
+    expect(injectItem).not.toHaveBeenCalled();
+
+    // 用户开口：进度当场丢，终态只记一轮压制、留在队里
+    lastOnEvent?.({ type: 'speech.started' });
+    upstreamResponding = false;
+    lastOnEvent?.({ type: 'response.done' });
+
+    expect(injectItem).toHaveBeenCalledTimes(1);
+    expect(injectItem.mock.calls[0]?.[0]).toContain('写完了');
+  });
+
+  it('排队超过保质期的进度不播——终态不设保质期（正对照）', async () => {
+    await dialThenFreezeClock('session-milestone-stale');
+    dispatch();
+    await vi.advanceTimersByTimeAsync(VOICE_MILESTONE_FIRST_DELAY_MS + 1);
+    injectItem.mockClear();
+
+    lastOnEvent?.({ type: 'speech.started' });
+    voiceDispatchProbe.narrate?.(milestone(1));
+    voiceDispatchProbe.narrate?.(terminal);
+
+    // 静置超过保质期后再放行
+    await vi.advanceTimersByTimeAsync(VOICE_MILESTONE_STALE_MS + 1000);
+    lastOnEvent?.({ type: 'response.done' });
+
+    // 过期进度被丢，终态照播——没有这条正对照，一个「什么都不播」的实现也会通过上一条。
+    expect(injectItem).toHaveBeenCalledTimes(1);
+    expect(injectItem.mock.calls[0]?.[0]).toContain('写完了');
+  });
+
+  it('终态不受任何进度闸限制（正对照）', async () => {
+    await dialThenFreezeClock('session-milestone-terminal-free');
+    dispatch();
+    injectItem.mockClear();
+
+    // 首条延迟窗内、零间隔——进度会被丢，终态必须照播。
+    voiceDispatchProbe.narrate?.(terminal);
+    expect(injectItem).toHaveBeenCalledTimes(1);
   });
 });

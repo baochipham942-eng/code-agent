@@ -2,122 +2,17 @@ import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import {
-  buildAuditItems,
   buildInboxItems,
   buildMemoryInboxResolvePayload,
   hashInboxContent,
-  KnowledgeInboxList,
-  KnowledgeMemoryContent,
-  KnowledgeMemoryPanel,
+} from '../../../src/renderer/components/features/settings/tabs/memoryAuditClient';
+import { KnowledgeInboxList } from '../../../src/renderer/components/features/settings/tabs/KnowledgeInboxSection';
+import {
   LightMemoryHealthPanel,
   MemoryInjectionTraceList,
-} from '../../../src/renderer/components/features/knowledge/KnowledgeMemoryPanel';
+} from '../../../src/renderer/components/features/settings/tabs/MemoryDiagnosticsSections';
 
-describe('KnowledgeMemoryPanel projections', () => {
-  it('入口形态保留 FullScreenPage 外壳，内容组件可独立嵌入（资料库「记忆」tab）', () => {
-    // 静态渲染不触发 useEffect，不会发起 memory IPC
-    const pageHtml = renderToStaticMarkup(React.createElement(KnowledgeMemoryPanel));
-    expect(pageHtml).toContain('knowledge-memory-panel');
-    expect(pageHtml).toContain('knowledge-memory-content');
-    expect(pageHtml).toContain('Knowledge / Memory');
-
-    const contentHtml = renderToStaticMarkup(React.createElement(KnowledgeMemoryContent));
-    expect(contentHtml).toContain('knowledge-memory-content');
-    // 嵌入形态不带整窗外壳
-    expect(contentHtml).not.toContain('knowledge-memory-panel"');
-    expect(contentHtml).not.toContain('返回应用');
-  });
-
-  it('groups memory audit rows with source, purpose, and injection evidence', () => {
-    const auditItems = buildAuditItems({
-      projectPath: '/repo/code-agent',
-      sessionId: 'session-1',
-      lightFiles: [
-        {
-          filename: 'project_rules.md',
-          name: 'Project Rules',
-          description: 'Follow existing UI patterns',
-          type: 'project',
-          content: 'Use the left bottom menu.',
-          updatedAt: '2026-05-13T12:00:00.000Z',
-        },
-      ],
-      lightStats: {
-        totalFiles: 1,
-        byType: { project: 1 },
-        sessionStats: null,
-        recentConversations: [
-          '- **2026-05-13**: "Memory audit" — Light Memory, seed-memory',
-        ],
-      },
-      databaseMemories: [
-        {
-          id: 'mem-1',
-          type: 'user_preference',
-          category: 'preference',
-          content: '用户偏好中文回复',
-          summary: '中文回复',
-          source: 'user_defined',
-          projectPath: null,
-          sessionId: null,
-          confidence: 1,
-          accessCount: 0,
-          createdAt: 1778664000000,
-          updatedAt: 1778664000000,
-          lastAccessedAt: null,
-          metadata: {},
-        },
-        {
-          id: 'mem-2',
-          type: 'project_knowledge',
-          category: 'user_requirement',
-          content: '入口必须放在左下角展开菜单栏里',
-          summary: '左下角菜单入口',
-          source: 'session_extracted',
-          projectPath: '/repo/code-agent',
-          sessionId: 'session-1',
-          confidence: 0.92,
-          accessCount: 1,
-          createdAt: 1778664100000,
-          updatedAt: 1778664100000,
-          lastAccessedAt: null,
-          metadata: { flushEvent: 'preCompact' },
-        },
-      ],
-      seedCandidates: [
-        {
-          id: 'mem-2',
-          type: 'project_knowledge',
-          category: 'user_requirement',
-          content: '入口必须放在左下角展开菜单栏里',
-          summary: '左下角菜单入口',
-          source: 'session_extracted',
-          projectPath: '/repo/code-agent',
-          sessionId: 'session-1',
-          confidence: 0.92,
-          accessCount: 1,
-          createdAt: 1778664100000,
-          updatedAt: 1778664100000,
-          lastAccessedAt: null,
-          metadata: { flushEvent: 'preCompact' },
-        },
-      ],
-    });
-
-    expect(auditItems.some((item) => item.category === 'user_preferences')).toBe(true);
-    expect(auditItems.some((item) => item.category === 'project_rules')).toBe(true);
-    expect(auditItems.some((item) => item.category === 'recent_topics')).toBe(true);
-    expect(auditItems.some((item) => item.injection === 'memory-index')).toBe(true);
-    expect(auditItems.some((item) => item.injection === 'recent-conversations')).toBe(true);
-
-    const seedRow = auditItems.find((item) => item.injection === 'seed-candidate');
-    expect(seedRow).toMatchObject({
-      scope: '项目知识',
-      source: expect.stringContaining('/repo/code-agent'),
-    });
-    expect(seedRow?.purpose).toContain('seed-memory');
-  });
-
+describe('设置 → 记忆：Knowledge Inbox 与诊断分区（自 KnowledgeMemoryPanel 搬入）', () => {
   it('builds inbox candidates from extracted session memories and recent conversations', () => {
     const inboxItems = buildInboxItems({
       projectPath: '/repo/code-agent',

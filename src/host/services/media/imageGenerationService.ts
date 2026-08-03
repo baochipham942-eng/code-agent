@@ -12,7 +12,11 @@
 
 import { getConfigService } from '../core/configService';
 import { MODEL_API_ENDPOINTS } from '../../../shared/constants';
+import { IMAGE_PRICING_CNY } from '../../../shared/constants/pricing';
 import { isPrivateOrLocalHost } from '../../security/ssrfGuard';
+import { createLogger } from '../infra/logger';
+
+const logger = createLogger('ImageGenerationService');
 
 export type ImageEngine = 'cogview' | 'flux' | 'wanx' | 'gptimage';
 
@@ -148,6 +152,22 @@ export function getZhipuOfficialApiKey(): string | undefined {
   return undefined;
 }
 
+/**
+ * 智谱 CogView 生图模型 id：env（ZHIPU_IMAGE_MODEL）优先，再回落 config slot
+ * （'zhipu-image-model'，范式同 getGptImageConfig 的 'gptimage-base'——SecureStorage
+ * 槽位是 Settings UI / 未来配置入口，当前先靠 env 生效），都未配置则用内置默认版本。
+ * 目的：智谱侧某个带日期戳的具体版本下线/无资源包时，不必改代码发版——填新版本号即可恢复出图
+ * （2026-07-31 真实事故：cogview-4-250304 无可用资源包，被误判为账户欠费排查了半天）。
+ * 存量用户：两个来源都未设置时返回值与硬编码版本完全一致，零迁移成本、零行为变化。
+ */
+export function getZhipuImageModelId(): string {
+  const envOverride = process.env.ZHIPU_IMAGE_MODEL?.trim();
+  if (envOverride) return envOverride;
+  const configured = getConfigService().getApiKey('zhipu-image-model')?.trim();
+  if (configured) return configured;
+  return ZHIPU_IMAGE_MODELS.standard;
+}
+
 /** 百炼 DashScope key（通义万相用）。env 优先（验证场景），否则取 qwen/dashscope 槽位。 */
 export function getDashscopeApiKey(): string | undefined {
   const envKey = process.env.DASHSCOPE_API_KEY;
@@ -264,6 +284,7 @@ function extractImageFromResponse(result: { choices?: Array<{ message?: OpenRout
 
 async function callZhipuImageGeneration(
   apiKey: string,
+  model: string,
   prompt: string,
   aspectRatio: string,
   outerSignal: AbortSignal,
@@ -278,7 +299,7 @@ async function callZhipuImageGeneration(
   const size = sizeMap.get(aspectRatio) || '1024x1024';
 
   const requestBody = {
-    model: ZHIPU_IMAGE_MODELS.standard,
+    model,
     prompt,
     size,
   };
@@ -299,13 +320,16 @@ async function callZhipuImageGeneration(
 
   if (!response.ok) {
     const error = await response.text();
-    throw new Error(`智谱图像生成 API 错误: ${response.status} - ${error}`);
+    // 错误信息带上实际请求的模型 id：智谱侧「该版本无可用资源包」与「账户欠费」返回的错误码/文案
+    // 容易混淆（2026-07-31 真实事故），把模型 id 显式带出来，配置错的版本时用户一眼能看出是
+    // 配置问题而非余额问题，不必再去猜。
+    throw new Error(`智谱图像生成 API 错误（模型: ${model}）: ${response.status} - ${error}`);
   }
 
   const payload: unknown = await response.json();
   const url = parseZhipuImageUrl(payload);
   if (!url) {
-    throw new Error('智谱图像生成: 未返回图片 URL');
+    throw new Error(`智谱图像生成（模型: ${model}）: 未返回图片 URL`);
   }
   return { url };
 }
@@ -598,8 +622,17 @@ export async function generateImage(
     if (!zhipuApiKey) {
       throw new Error('图片生成需要智谱官方 API Key。');
     }
-    const result = await callZhipuImageGeneration(zhipuApiKey, safePrompt, aspectRatio, outerSignal);
-    return { imageData: result.url, actualModel: ZHIPU_IMAGE_MODELS.standard };
+    const model = getZhipuImageModelId();
+    // 价表（shared/constants/pricing.ts）按内置版本号钉的价；配置成非内置版本时查表会落空。
+    // estimateImageCostCny 已有 default 兜底（非 0），但那是静默的——这里显式记一条日志，
+    // 避免「成本按默认档估算」这件事完全无迹可查（陷阱：不许静默按 0/失真价计费）。
+    if (!Object.prototype.hasOwnProperty.call(IMAGE_PRICING_CNY, model)) {
+      logger.warn(
+        `智谱生图模型 "${model}" 不在价表中（非内置默认版本，疑似自定义配置），成本将按默认档 ¥${IMAGE_PRICING_CNY.default} 估算，非精确价，请核实实际账单或在价表补充该模型`,
+      );
+    }
+    const result = await callZhipuImageGeneration(zhipuApiKey, model, safePrompt, aspectRatio, outerSignal);
+    return { imageData: result.url, actualModel: model };
   }
 
   if (engine === 'gptimage') {

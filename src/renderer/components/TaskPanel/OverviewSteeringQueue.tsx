@@ -44,7 +44,7 @@ export const OverviewSteeringQueue: React.FC = () => {
               </span>
             )}
             {item.sendFailed && (
-              <span className="shrink-0 text-[10px] text-amber-300">
+              <span className="shrink-0 text-[10px] text-badge-warning">
                 {t.workbenchTabs.overviewQueueSendFailed}
               </span>
             )}

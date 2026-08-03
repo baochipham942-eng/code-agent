@@ -149,11 +149,15 @@ export const enSettingsCore = {
         dark: 'Dark',
         light: 'Light',
         auto: 'Auto',
+        highContrastDark: 'High Contrast Dark',
+        highContrastLight: 'High Contrast Light',
       },
       themeDescriptions: {
         dark: 'Dark background for working at night',
         light: 'Light background for daytime use',
         system: 'Switch automatically with your system setting',
+        highContrastDark: 'Dark theme with maximum contrast for readability',
+        highContrastLight: 'Light theme with maximum contrast for readability',
       },
       currentSystemThemePrefix: 'Current system theme: ',
       fontSize: 'Font size',
@@ -368,6 +372,8 @@ export const enSettingsCore = {
       resetShortcut: 'Restore this default',
       saving: 'Saving...',
       autosaveHint: 'Changes are saved automatically. System-level hotkeys will be re-registered in the desktop runtime; failed items stay in config and are logged for diagnostics.',
+      registrationFailedPrefix: 'Registration failed: ',
+      registrationFailedUnknown: 'Unknown registration error',
       categories: {
         global: 'Global launch',
         sessionEditing: 'Session editing',
@@ -417,6 +423,10 @@ export const enSettingsCore = {
         'session.new': {
           label: 'New session',
           description: 'Create a new conversation session',
+        },
+        'voice.callToggle': {
+          label: 'Start / end Live call',
+          description: 'Bring the app forward and start a Live call from anywhere, or end the active call',
         },
         'voice.toggle': {
           label: 'Voice input',
@@ -533,6 +543,10 @@ export const enSettingsCore = {
         'designCanvas.open': {
           label: 'Open Design Canvas',
           description: 'Open the design canvas in the right panel',
+        },
+        'terminal.open': {
+          label: 'Open Terminal',
+          description: 'Open the session terminal in the right panel',
         },
         'computerUse.open': {
           label: 'Open Computer Use',

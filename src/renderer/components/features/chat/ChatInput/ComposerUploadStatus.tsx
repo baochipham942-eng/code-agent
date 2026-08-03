@@ -18,10 +18,10 @@ export const ComposerUploadStatus: React.FC<{ active: boolean }> = ({ active }) 
   return (
     <div
       data-testid="composer-upload-status"
-      className="mb-2 flex items-center gap-2 rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2"
+      className="mb-2 flex items-center gap-2 rounded-lg border border-badge-warning/20 bg-amber-500/10 px-3 py-2"
     >
-      <div className="h-4 w-4 animate-spin rounded-full border-2 border-amber-400 border-t-transparent" />
-      <span className="text-sm text-amber-400">{t.chatInput.processingFiles}</span>
+      <div className="h-4 w-4 animate-spin rounded-full border-2 border-badge-warning border-t-transparent" />
+      <span className="text-sm text-badge-warning">{t.chatInput.processingFiles}</span>
     </div>
   );
 };

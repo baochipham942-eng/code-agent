@@ -160,7 +160,7 @@ export const VoiceApiKeyConfig: React.FC<VoiceApiKeyConfigProps> = ({ provider, 
             value={keyDraft}
             onChange={(event) => setKeyDraft(event.target.value)}
             placeholder={placeholder}
-            className="h-7 w-56 rounded border border-zinc-700 bg-zinc-950 px-2 text-xs text-zinc-200 outline-none placeholder:text-zinc-600 focus:border-sky-500/60"
+            className="h-7 w-56 rounded border border-zinc-700 bg-zinc-950 px-2 text-xs text-zinc-200 outline-none placeholder:text-zinc-600 focus:border-badge-info/60"
           />
           <Button
             variant="primary"

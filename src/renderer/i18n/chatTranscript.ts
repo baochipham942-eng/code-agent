@@ -15,6 +15,8 @@ chat: {
   waitingSubagentFleet: '编队作业中，{count} 艘子舰并行',
   // 巡航信号（长任务 ≥45s）：{elapsed} 为 mm:ss 秒表，中性陈述「一切正常」
   longToolCruise: '深空巡航中 · 已航行 {elapsed} · 链路正常',
+  // 巡航信号旁的强制停止按钮
+  longToolStop: '停止',
   organizingReply: '正在组织回答…',
   thinkingDigest: '思考',
   thinkingSegments: ' · {count} 段',
@@ -349,6 +351,23 @@ turnHooks: {
   sourceProject: '这个项目',
 },
 
+// 路由异常卡（TraceNodeRenderer 的 RoutingEvidenceNode）——只在路由 warning/error 时
+// 铺进主对话流；正常路由每轮内容一样，不渲染。
+turnRouting: {
+  title: '路由异常',
+  modeAuto: 'Auto 自动路由',
+  modeDirect: 'Direct 指定路由',
+  modeParallel: 'Parallel 并行编排',
+  statusRequested: '已请求',
+  statusDelivered: '已送达',
+  statusMissing: '未命中',
+  statusResolved: '已解析',
+  statusApproved: '已批准',
+  statusRejected: '已拒绝',
+  statusStarted: '已启动',
+  statusFallback: '已回落',
+},
+
 // 回合运行状态（TurnCard 顶部状态条 + 流式状态横幅）——两处消费同一套键，别建两套
 turnRun: {
   status: {
@@ -464,6 +483,8 @@ chat: {
   waitingSubagentFleet: 'Fleet engaged, {count} subships in parallel',
   // Cruise signal (long-running tool ≥45s): {elapsed} is the mm:ss stopwatch, a neutral "all is well" statement
   longToolCruise: 'Deep-space cruise · {elapsed} elapsed · link nominal',
+  // Force-stop button next to the cruise signal
+  longToolStop: 'Stop',
   organizingReply: 'Organizing the reply…',
   thinkingDigest: 'Thinking',
   thinkingSegments: ' · {count} segments',
@@ -794,6 +815,24 @@ turnHooks: {
   unnamed: 'Unnamed hook',
   sourceGlobal: 'your global settings',
   sourceProject: 'this project',
+},
+
+// Routing issue card (TraceNodeRenderer's RoutingEvidenceNode) — only rendered into
+// the main conversation flow when routing hits warning/error; normal routing is
+// identical every turn and stays hidden.
+turnRouting: {
+  title: 'Routing issue',
+  modeAuto: 'Auto routing',
+  modeDirect: 'Direct routing',
+  modeParallel: 'Parallel orchestration',
+  statusRequested: 'Requested',
+  statusDelivered: 'Delivered',
+  statusMissing: 'Missing',
+  statusResolved: 'Resolved',
+  statusApproved: 'Approved',
+  statusRejected: 'Rejected',
+  statusStarted: 'Started',
+  statusFallback: 'Fallback',
 },
 
 turnRun: {

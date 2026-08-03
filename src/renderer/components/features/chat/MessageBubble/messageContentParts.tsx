@@ -32,56 +32,56 @@ const LazyPrismCodeBlock = lazy(() => import('./PrismCodeBlock'));
 
 // Language display names and colors
 const languageConfig: Record<string, { color: string; name: string }> = {
-  typescript: { color: 'text-blue-400', name: 'TypeScript' },
-  ts: { color: 'text-blue-400', name: 'TypeScript' },
-  tsx: { color: 'text-blue-400', name: 'TSX' },
-  javascript: { color: 'text-yellow-400', name: 'JavaScript' },
-  js: { color: 'text-yellow-400', name: 'JavaScript' },
-  jsx: { color: 'text-yellow-400', name: 'JSX' },
-  python: { color: 'text-green-400', name: 'Python' },
-  py: { color: 'text-green-400', name: 'Python' },
-  rust: { color: 'text-orange-400', name: 'Rust' },
-  rs: { color: 'text-orange-400', name: 'Rust' },
-  go: { color: 'text-cyan-400', name: 'Go' },
-  bash: { color: 'text-emerald-400', name: 'Bash' },
-  shell: { color: 'text-emerald-400', name: 'Shell' },
-  sh: { color: 'text-emerald-400', name: 'Shell' },
-  zsh: { color: 'text-emerald-400', name: 'Zsh' },
-  json: { color: 'text-amber-400', name: 'JSON' },
-  html: { color: 'text-orange-400', name: 'HTML' },
-  css: { color: 'text-blue-400', name: 'CSS' },
-  scss: { color: 'text-pink-400', name: 'SCSS' },
-  sql: { color: 'text-purple-400', name: 'SQL' },
-  yaml: { color: 'text-red-400', name: 'YAML' },
-  yml: { color: 'text-red-400', name: 'YAML' },
+  typescript: { color: 'text-badge-info', name: 'TypeScript' },
+  ts: { color: 'text-badge-info', name: 'TypeScript' },
+  tsx: { color: 'text-badge-info', name: 'TSX' },
+  javascript: { color: 'text-badge-warning', name: 'JavaScript' },
+  js: { color: 'text-badge-warning', name: 'JavaScript' },
+  jsx: { color: 'text-badge-warning', name: 'JSX' },
+  python: { color: 'text-badge-success', name: 'Python' },
+  py: { color: 'text-badge-success', name: 'Python' },
+  rust: { color: 'text-badge-warning', name: 'Rust' },
+  rs: { color: 'text-badge-warning', name: 'Rust' },
+  go: { color: 'text-badge-info', name: 'Go' },
+  bash: { color: 'text-badge-success', name: 'Bash' },
+  shell: { color: 'text-badge-success', name: 'Shell' },
+  sh: { color: 'text-badge-success', name: 'Shell' },
+  zsh: { color: 'text-badge-success', name: 'Zsh' },
+  json: { color: 'text-badge-warning', name: 'JSON' },
+  html: { color: 'text-badge-warning', name: 'HTML' },
+  css: { color: 'text-badge-info', name: 'CSS' },
+  scss: { color: 'text-badge-accent', name: 'SCSS' },
+  sql: { color: 'text-badge-accent', name: 'SQL' },
+  yaml: { color: 'text-badge-danger', name: 'YAML' },
+  yml: { color: 'text-badge-danger', name: 'YAML' },
   markdown: { color: 'text-zinc-400', name: 'Markdown' },
   md: { color: 'text-zinc-400', name: 'Markdown' },
-  java: { color: 'text-red-400', name: 'Java' },
-  c: { color: 'text-blue-300', name: 'C' },
-  cpp: { color: 'text-blue-300', name: 'C++' },
-  csharp: { color: 'text-purple-400', name: 'C#' },
-  cs: { color: 'text-purple-400', name: 'C#' },
-  php: { color: 'text-indigo-400', name: 'PHP' },
-  ruby: { color: 'text-red-400', name: 'Ruby' },
-  rb: { color: 'text-red-400', name: 'Ruby' },
-  swift: { color: 'text-orange-400', name: 'Swift' },
-  kotlin: { color: 'text-purple-400', name: 'Kotlin' },
-  kt: { color: 'text-purple-400', name: 'Kotlin' },
-  dart: { color: 'text-cyan-400', name: 'Dart' },
+  java: { color: 'text-badge-danger', name: 'Java' },
+  c: { color: 'text-badge-info', name: 'C' },
+  cpp: { color: 'text-badge-info', name: 'C++' },
+  csharp: { color: 'text-badge-accent', name: 'C#' },
+  cs: { color: 'text-badge-accent', name: 'C#' },
+  php: { color: 'text-badge-accent', name: 'PHP' },
+  ruby: { color: 'text-badge-danger', name: 'Ruby' },
+  rb: { color: 'text-badge-danger', name: 'Ruby' },
+  swift: { color: 'text-badge-warning', name: 'Swift' },
+  kotlin: { color: 'text-badge-accent', name: 'Kotlin' },
+  kt: { color: 'text-badge-accent', name: 'Kotlin' },
+  dart: { color: 'text-badge-info', name: 'Dart' },
   diff: { color: 'text-zinc-400', name: 'Diff' },
-  xml: { color: 'text-orange-400', name: 'XML' },
+  xml: { color: 'text-badge-warning', name: 'XML' },
   toml: { color: 'text-zinc-400', name: 'TOML' },
   ini: { color: 'text-zinc-400', name: 'INI' },
-  dockerfile: { color: 'text-cyan-400', name: 'Dockerfile' },
-  docker: { color: 'text-cyan-400', name: 'Docker' },
-  graphql: { color: 'text-pink-400', name: 'GraphQL' },
-  gql: { color: 'text-pink-400', name: 'GraphQL' },
-  mermaid: { color: 'text-pink-300', name: 'Mermaid' },
-  chart: { color: 'text-emerald-400', name: 'Chart' },
-  spreadsheet: { color: 'text-emerald-400', name: 'Spreadsheet' },
-  document: { color: 'text-blue-400', name: 'Document' },
-  generative_ui: { color: 'text-violet-400', name: 'Generative UI' },
-  neo_ui: { color: 'text-violet-300', name: 'Neo Interactive UI' },
+  dockerfile: { color: 'text-badge-info', name: 'Dockerfile' },
+  docker: { color: 'text-badge-info', name: 'Docker' },
+  graphql: { color: 'text-badge-accent', name: 'GraphQL' },
+  gql: { color: 'text-badge-accent', name: 'GraphQL' },
+  mermaid: { color: 'text-badge-accent', name: 'Mermaid' },
+  chart: { color: 'text-badge-success', name: 'Chart' },
+  spreadsheet: { color: 'text-badge-success', name: 'Spreadsheet' },
+  document: { color: 'text-badge-info', name: 'Document' },
+  generative_ui: { color: 'text-badge-accent', name: 'Generative UI' },
+  neo_ui: { color: 'text-badge-accent', name: 'Neo Interactive UI' },
 };
 
 // MermaidDiagram 及其缩放/标注/高度缓存已拆到独立文件（大文件门），原有消费者从这里 re-export
@@ -369,8 +369,8 @@ export const CodeBlock = memo(function CodeBlock({
           >
             {copied ? (
               <>
-                <Check className="w-3.5 h-3.5 text-green-400" />
-                <span className="text-green-400">Copied!</span>
+                <Check className="w-3.5 h-3.5 text-badge-success" />
+                <span className="text-badge-success">Copied!</span>
               </>
             ) : (
               <>
@@ -542,7 +542,7 @@ export const InlineCode = memo(function InlineCode({
 
   return (
     <code
-      className="inline-flex items-baseline gap-0.5 mx-0.5 font-mono text-xs text-primary-300 hover:text-primary-200 cursor-pointer hover:underline underline-offset-2 transition-colors group"
+      className="inline-flex items-baseline gap-0.5 mx-0.5 font-mono text-xs text-accent-accessible hover:text-accent-accessible cursor-pointer hover:underline underline-offset-2 transition-colors group"
       onClick={() => {
         if (isHtml && onPreviewHtml) {
           onPreviewHtml(filePath);
@@ -649,7 +649,7 @@ export const IACTCopyButton: React.FC<{ children: React.ReactNode }> = ({ childr
       title="复制到剪贴板"
     >
       {children}
-      {copied ? <Check className="w-3 h-3 text-emerald-400" /> : <ClipboardCopy className="w-3 h-3 opacity-60" />}
+      {copied ? <Check className="w-3 h-3 text-badge-success" /> : <ClipboardCopy className="w-3 h-3 opacity-60" />}
     </button>
   );
 };
@@ -689,7 +689,7 @@ export const IACTNavCard: React.FC<{ href: string; children: React.ReactNode }> 
     <button
       type="button"
       onClick={onClick}
-      className="inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5 rounded-md bg-sky-500/10 text-sky-400 hover:bg-sky-500/20 hover:text-sky-300 border border-sky-500/20 hover:border-sky-500/40 transition-all cursor-pointer text-sm font-medium"
+      className="inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5 rounded-md bg-sky-500/10 text-badge-info hover:bg-sky-500/20 hover:text-badge-info border border-badge-info/20 hover:border-badge-info/40 transition-all cursor-pointer text-sm font-medium"
       title={title}
     >
       <Icon className="w-3 h-3 opacity-60" />

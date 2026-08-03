@@ -28,7 +28,7 @@ export const VOICE_CONTINUITY_TRANSCRIPT_LIMIT = 10;
 export const VOICE_CONTINUITY_MAX_AGE_MS = 2 * 60 * 60 * 1_000;
 
 /** 单条超出该长度时改用完整句子的摘录摘要，不能把半句话塞给通话模型。 */
-export const VOICE_CONTINUITY_TRANSCRIPT_CHAR_LIMIT = 240;
+const VOICE_CONTINUITY_TRANSCRIPT_CHAR_LIMIT = 240;
 
 export interface VoiceContinuityContext {
   neoSessionId: string;
@@ -54,6 +54,7 @@ const VIEW_LABEL: Record<string, string> = {
   files: '文件列表',
   browser: '浏览器',
   'design-canvas': '设计画布',
+  terminal: '终端',
 };
 
 function describeView(view: string): string {

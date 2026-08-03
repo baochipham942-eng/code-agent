@@ -54,35 +54,35 @@ export function KindIcon({ kind }: { kind: WorkspacePreviewKind }) {
   switch (kind) {
     case 'document':
     case 'handoff':
-      return <FileText className={`${cls} text-sky-300`} />;
+      return <FileText className={`${cls} text-badge-info`} />;
     case 'spreadsheet':
-      return <Table2 className={`${cls} text-emerald-300`} />;
+      return <Table2 className={`${cls} text-badge-success`} />;
     case 'message_draft':
-      return <Mail className={`${cls} text-amber-300`} />;
+      return <Mail className={`${cls} text-badge-warning`} />;
     case 'calendar_event':
     case 'reminder':
-      return <Calendar className={`${cls} text-violet-300`} />;
+      return <Calendar className={`${cls} text-badge-accent`} />;
     case 'web_snapshot':
     case 'image':
-      return <Image className={`${cls} text-cyan-300`} />;
+      return <Image className={`${cls} text-badge-info`} />;
     case 'audio':
-      return <Music className={`${cls} text-emerald-300`} />;
+      return <Music className={`${cls} text-badge-success`} />;
     case 'video':
-      return <Video className={`${cls} text-fuchsia-300`} />;
+      return <Video className={`${cls} text-badge-accent`} />;
     case 'archive':
-      return <Archive className={`${cls} text-amber-300`} />;
+      return <Archive className={`${cls} text-badge-warning`} />;
     case 'diff':
     case 'generic_html':
     case 'chart':
     case 'diagram':
-      return <Code2 className={`${cls} text-orange-300`} />;
+      return <Code2 className={`${cls} text-badge-warning`} />;
     case 'terminal':
       return <Terminal className={`${cls} text-zinc-300`} />;
     case 'question_form':
-      return <MessageSquare className={`${cls} text-cyan-300`} />;
+      return <MessageSquare className={`${cls} text-badge-info`} />;
     case 'design_ppt':
     case 'presentation':
-      return <Presentation className={`${cls} text-fuchsia-300`} />;
+      return <Presentation className={`${cls} text-badge-accent`} />;
     default:
       return <File className={`${cls} text-zinc-400`} />;
   }
@@ -123,7 +123,7 @@ function DirectionTokenMini({
 export function DesignBriefBadge({ brief }: { brief: DesignBrief }) {
   const tokens = tokensForBrief(brief);
   return (
-    <div className="mt-2 inline-flex max-w-full items-center gap-2 rounded-md border border-cyan-500/20 bg-cyan-500/[0.06] px-2 py-1 text-[11px] text-cyan-200">
+    <div className="mt-2 inline-flex max-w-full items-center gap-2 rounded-md border border-badge-info/20 bg-cyan-500/[0.06] px-2 py-1 text-[11px] text-badge-info">
       {tokens && <DirectionTokenMini tokens={tokens} />}
       <span className="truncate">{formatDesignBriefLabel(brief)}</span>
     </div>
@@ -146,7 +146,7 @@ export function PreviewListItem({
       onClick={onSelect}
       className={`w-full rounded-lg border px-3 py-2 text-left transition-colors ${
         active
-          ? 'border-cyan-500/35 bg-cyan-500/[0.07]'
+          ? 'border-badge-info/35 bg-cyan-500/[0.07]'
           : 'border-white/[0.06] bg-white/[0.025] hover:border-white/[0.14] hover:bg-white/[0.045]'
       }`}
       title={item.file?.path || item.title}
@@ -161,7 +161,7 @@ export function PreviewListItem({
           </div>
           {item.designBrief && (
             <div className="mt-1 min-w-0 space-y-0.5">
-              <div className="truncate text-[10px] text-cyan-300/80">
+              <div className="truncate text-[10px] text-badge-info/80">
                 {formatDesignBriefLabel(item.designBrief)}
               </div>
               {listTokens && <DirectionTokenMini tokens={listTokens} />}
@@ -343,7 +343,7 @@ function DesignPptPreview({ item }: { item: WorkspacePreviewItem }) {
           />
         </div>
       ) : (
-        <div className="rounded-lg border border-amber-500/20 bg-amber-500/[0.05] p-3 text-xs text-amber-200">
+        <div className="rounded-lg border border-badge-warning/20 bg-amber-500/[0.05] p-3 text-xs text-badge-warning">
           {spec?.screenshotError || p.noSlideScreenshots}
         </div>
       )}
@@ -365,7 +365,7 @@ function DesignPptPreview({ item }: { item: WorkspacePreviewItem }) {
               onClick={() => setSelectedIndex(index)}
               className={`overflow-hidden rounded-md border transition-colors ${
                 index === selectedIndex
-                  ? 'border-cyan-400 bg-cyan-500/10'
+                  ? 'border-badge-info bg-cyan-500/10'
                   : 'border-white/[0.08] bg-white/[0.025] hover:border-white/[0.16]'
               }`}
               title={p.slideN.replace('{n}', String(index + 1))}
@@ -425,7 +425,7 @@ export function RevisionPanel({
           className="flex min-w-0 items-center gap-2"
           title={selected.revision?.sha256 || undefined}
         >
-          <GitCompare className="h-3.5 w-3.5 shrink-0 text-cyan-300" />
+          <GitCompare className="h-3.5 w-3.5 shrink-0 text-badge-info" />
           <div className="truncate text-xs font-medium text-zinc-200">{p.versions}</div>
         </div>
         {selected.file?.path && (
@@ -451,7 +451,7 @@ export function RevisionPanel({
               onClick={() => onSelect(item.id)}
               className={`rounded-md border px-2 py-1 text-[11px] ${
                 item.id === selected.id
-                  ? 'border-cyan-500/35 bg-cyan-500/[0.08] text-cyan-200'
+                  ? 'border-badge-info/35 bg-cyan-500/[0.08] text-badge-info'
                   : 'border-white/[0.08] bg-zinc-900 text-zinc-400 hover:bg-zinc-800'
               }`}
               title={item.title}
@@ -484,12 +484,12 @@ export function RevisionPanel({
       )}
 
       {actionError && (
-        <div className="rounded border border-rose-500/20 bg-rose-500/10 px-2 py-1.5 text-[11px] text-rose-200">
+        <div className="rounded border border-badge-danger/20 bg-rose-500/10 px-2 py-1.5 text-[11px] text-badge-danger">
           {actionError}
         </div>
       )}
       {actionMessage && (
-        <div className="rounded border border-emerald-500/20 bg-emerald-500/10 px-2 py-1.5 text-[11px] text-emerald-200">
+        <div className="rounded border border-badge-success/20 bg-emerald-500/10 px-2 py-1.5 text-[11px] text-badge-success">
           {actionMessage}
         </div>
       )}

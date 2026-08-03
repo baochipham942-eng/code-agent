@@ -223,7 +223,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
             variant="ghost"
             leftIcon={
               copied ? (
-                <Check className="w-4 h-4 text-green-400" />
+                <Check className="w-4 h-4 text-badge-success" />
               ) : (
                 <Copy className="w-4 h-4" />
               )
@@ -288,7 +288,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
 
         {/* Success message */}
         {downloadedFile && (
-          <div className="flex items-center gap-2 p-3 rounded-lg bg-green-500/10 border border-green-500/20 text-green-400">
+          <div className="flex items-center gap-2 p-3 rounded-lg bg-green-500/10 border border-badge-success/20 text-badge-success">
             <Check className="w-4 h-4" />
             <span className="text-sm">已下载: {downloadedFile}</span>
           </div>

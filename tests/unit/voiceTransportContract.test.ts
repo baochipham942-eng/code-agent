@@ -10,6 +10,7 @@ import {
   QWEN_OMNI_REALTIME_MODEL,
   VOICE_UPSTREAM_RESPONSE_TIMEOUT_MS,
 } from '../../src/shared/constants/voice';
+import { REALTIME_VOICE_PROVIDER_PROFILES } from '../../src/shared/constants/realtimeVoiceProviders';
 
 /** 最小 ws 替身：qwenOmniTransport 只用到 open/error 事件、send、readyState、close。 */
 class FakeUpstream extends EventEmitter {
@@ -72,6 +73,8 @@ vi.mock('../../src/host/services/core/configService', () => ({
 }));
 
 const { qwenOmniTransport } = await import('../../src/host/services/voice/qwenOmniTransport');
+const { createRealtimeTransport } = await import('../../src/host/services/voice/realtimeTransport');
+const openaiRealtimeTransport = createRealtimeTransport(REALTIME_VOICE_PROVIDER_PROFILES['openai-realtime']);
 
 /**
  * direct 形态占位 adapter：真 OpenAI Realtime adapter 单独排批，这里只钉抽象
@@ -238,6 +241,7 @@ describe('VoiceTransport 契约（relay / direct 双跑）', () => {
     });
     const upstream = upstreams[upstreams.length - 1];
 
+    upstream.emit('message', JSON.stringify({ type: 'input_audio_buffer.speech_started' }));
     upstream.emit('message', JSON.stringify({
       type: 'conversation.item.input_audio_transcription.delta',
       item_id: 'item-1', text: '', stash: '你好',
@@ -249,7 +253,7 @@ describe('VoiceTransport 契约（relay / direct 双跑）', () => {
 
     const partials = events.filter((e) => e.type === 'user.transcript' && !e.done);
     expect(partials).toHaveLength(2);
-    expect(partials[1]).toMatchObject({ text: '你好，帮我', done: false });
+    expect(partials[1]).toMatchObject({ text: '你好，帮我', done: false, candidateId: 'turn-1' });
     await handle.close();
   });
 
@@ -325,6 +329,104 @@ describe('VoiceTransport 契约（relay / direct 双跑）', () => {
     expect(done).toMatchObject({ type: 'response.done', ttfaModelMs: 427, ttfaPerceivedMs: 1427 });
 
     nowSpy.mockRestore();
+    await handle.close();
+  });
+
+  it('DashScope response.done 只按复数 input_tokens_details/output_tokens_details 解析 usage', async () => {
+    const events: VoiceEvent[] = [];
+    const handle = await qwenOmniTransport.connect({
+      apiKey: 'test-key',
+      config: { neoSessionId: 's1' },
+      onEvent: (event) => events.push(event),
+      onAudio: vi.fn(),
+    });
+    upstreams.at(-1)?.emit('message', JSON.stringify({
+      type: 'response.done',
+      response: {
+        id: 'dash-usage',
+        usage: {
+          total_tokens: 377,
+          input_tokens: 336,
+          output_tokens: 41,
+          input_tokens_details: { text_tokens: 228, audio_tokens: 108 },
+          output_tokens_details: { text_tokens: 9, audio_tokens: 32 },
+        },
+      },
+    }));
+
+    expect(events.find((event) => event.type === 'response.done')).toMatchObject({
+      usage: {
+        totalTokens: 377,
+        inputTokens: 336,
+        outputTokens: 41,
+        inputAudioTokens: 108,
+        inputTextTokens: 228,
+        outputAudioTokens: 32,
+        outputTextTokens: 9,
+      },
+    });
+    await handle.close();
+  });
+
+  it('OpenAI response.done 只按单数 input_token_details/output_token_details 解析 usage', async () => {
+    const events: VoiceEvent[] = [];
+    const handle = await openaiRealtimeTransport.connect({
+      apiKey: 'test-key',
+      config: { neoSessionId: 's1' },
+      onEvent: (event) => events.push(event),
+      onAudio: vi.fn(),
+    });
+    upstreams.at(-1)?.emit('message', JSON.stringify({
+      type: 'response.done',
+      response: {
+        id: 'openai-usage',
+        usage: {
+          total_tokens: 253,
+          input_tokens: 132,
+          output_tokens: 121,
+          input_token_details: { text_tokens: 119, audio_tokens: 13, image_tokens: 0, cached_tokens: 64 },
+          output_token_details: { text_tokens: 30, audio_tokens: 91 },
+        },
+      },
+    }));
+
+    expect(events.find((event) => event.type === 'response.done')).toMatchObject({
+      usage: {
+        totalTokens: 253,
+        inputTokens: 132,
+        outputTokens: 121,
+        inputAudioTokens: 13,
+        inputTextTokens: 119,
+        outputAudioTokens: 91,
+        outputTextTokens: 30,
+      },
+    });
+    await handle.close();
+  });
+
+  it.each([
+    ['上游没给 usage', undefined],
+    ['usage 形状不认识', { total_tokens: 1, input_token_details: {}, output_token_details: {} }],
+  ])('%s 时 usage 留空并 warn', async (_label, usage) => {
+    const events: VoiceEvent[] = [];
+    const handle = await qwenOmniTransport.connect({
+      apiKey: 'test-key',
+      config: { neoSessionId: 's1' },
+      onEvent: (event) => events.push(event),
+      onAudio: vi.fn(),
+    });
+    upstreams.at(-1)?.emit('message', JSON.stringify({
+      type: 'response.done',
+      response: { id: 'unknown-usage', ...(usage === undefined ? {} : { usage }) },
+    }));
+
+    const done = events.find((event) => event.type === 'response.done');
+    expect(done).toBeDefined();
+    expect(done).not.toHaveProperty('usage');
+    expect(logger.warn).toHaveBeenCalledWith(
+      'response.done usage missing or unrecognized',
+      expect.objectContaining({ provider: 'dashscope-qwen-omni', hasUsage: usage !== undefined }),
+    );
     await handle.close();
   });
 
@@ -664,6 +766,35 @@ describe('VoiceTransport 契约（relay / direct 双跑）', () => {
       code: 'UPSTREAM_ERROR',
       message: 'upstream error',
       detail: 'connection failed',
+    });
+
+    await handle.close();
+  });
+
+  it('injectItemWithAck 在 response.created 时确认，injection.rejected 时拒绝', async () => {
+    const events: VoiceEvent[] = [];
+    const handle = await qwenOmniTransport.connect({
+      apiKey: 'test-key',
+      config: { neoSessionId: 's1' },
+      onEvent: (event) => events.push(event),
+      onAudio: vi.fn(),
+    });
+    if (handle.kind !== 'relay' || !handle.injectItemWithAck) throw new Error('missing relay injection ack');
+    const upstream = upstreams[upstreams.length - 1];
+
+    const accepted = handle.injectItemWithAck('[USER] 改做 Y');
+    upstream.emit('message', JSON.stringify({ type: 'response.created', response_id: 'response-1' }));
+    await expect(accepted).resolves.toBeUndefined();
+
+    const rejected = handle.injectItemWithAck('[USER] 再改一次');
+    upstream.emit('message', JSON.stringify({
+      type: 'error',
+      error: { message: 'Conversation already has an active response' },
+    }));
+    await expect(rejected).rejects.toThrow('Conversation already has an active response');
+    expect(events.at(-1)).toEqual({
+      type: 'injection.rejected',
+      message: 'Conversation already has an active response',
     });
 
     await handle.close();

@@ -190,7 +190,7 @@ export const DevServerLauncher: React.FC = () => {
       title="启动 Dev Server"
       size="xl"
       zIndex={Z_LAYERS.devServerModal}
-      headerIcon={<Play className="h-4 w-4 text-emerald-400" />}
+      headerIcon={<Play className="h-4 w-4 text-badge-success" />}
       footer={
         <>
           <Button variant="ghost" size="sm" onClick={handleCancel}>
@@ -251,8 +251,8 @@ export const DevServerLauncher: React.FC = () => {
             <div
               className={`rounded-md border px-3 py-2 text-xs ${
                 supported
-                  ? 'border-emerald-900/40 bg-emerald-950/20 text-emerald-200'
-                  : 'border-amber-900/40 bg-amber-950/20 text-amber-200'
+                  ? 'border-badge-success/40 bg-emerald-950/20 text-badge-success'
+                  : 'border-badge-warning/40 bg-amber-950/20 text-badge-warning'
               }`}
               data-testid="dev-server-launcher-detection"
             >
@@ -302,7 +302,7 @@ export const DevServerLauncher: React.FC = () => {
                   state.logs.slice(-50).map((log, i) => (
                     <div
                       key={`${log.ts}-${i}`}
-                      className={log.stream === 'stderr' ? 'text-rose-300' : ''}
+                      className={log.stream === 'stderr' ? 'text-badge-danger' : ''}
                     >
                       {log.line}
                     </div>
@@ -310,7 +310,7 @@ export const DevServerLauncher: React.FC = () => {
                 )}
               </div>
               {state.error && (
-                <div className="mt-1.5 text-[11px] text-rose-300" data-testid="dev-server-launcher-error">
+                <div className="mt-1.5 text-[11px] text-badge-danger" data-testid="dev-server-launcher-error">
                   {state.error}
                 </div>
               )}

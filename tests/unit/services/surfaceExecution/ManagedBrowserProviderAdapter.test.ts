@@ -78,8 +78,9 @@ function createHarness(failSnapshotAt?: number) {
   };
   const fake = createFakeBrowser(failSnapshotAt);
   const release = vi.fn(async () => fake.close());
-  const adapter = new ManagedBrowserProviderAdapter(runtime, () => fake.service, release);
-  return { registry, runtime, identity, fake, release, adapter };
+  const acquire = vi.fn((_serviceKey: string) => fake.service);
+  const adapter = new ManagedBrowserProviderAdapter(runtime, acquire, release);
+  return { registry, runtime, identity, fake, acquire, release, adapter };
 }
 
 describe('ManagedBrowserProviderAdapter', () => {
@@ -193,6 +194,89 @@ describe('ManagedBrowserProviderAdapter', () => {
       },
     });
     expect(fake.close).toHaveBeenCalled();
+  });
+
+  it('shares one physical browser within a conversation while preserving separate run owners', async () => {
+    const { registry, runtime, identity, fake, acquire, release, adapter } = createHarness();
+    const userHandle = registry.startAuxiliary({
+      runId: 'run-user-browser',
+      sessionId: identity.conversationId,
+      workspace: process.cwd(),
+    });
+    const userIdentity: SurfaceRuntimeIdentityV1 = {
+      conversationId: identity.conversationId,
+      runId: userHandle.context.runId,
+      agentId: 'user-browser-link',
+    };
+    const navigate = (owner: SurfaceRuntimeIdentityV1, operationId: string) => adapter.execute({
+      identity: owner,
+      operationId,
+      action: 'navigate',
+      params: { action: 'navigate', url: 'https://example.test/after' },
+      async executeProvider(_signal, browserService) {
+        expect(browserService).toBe(fake.service);
+        return { success: true, output: 'navigated' };
+      },
+    });
+
+    expect((await navigate(identity, 'agent-navigate')).success).toBe(true);
+    expect((await navigate(userIdentity, 'user-navigate')).success).toBe(true);
+    expect(acquire).toHaveBeenCalledOnce();
+    expect(adapter.getBinding(identity)?.surfaceSessionId)
+      .not.toBe(adapter.getBinding(userIdentity)?.surfaceSessionId);
+
+    await runtime.endRun(identity);
+    expect(release).not.toHaveBeenCalled();
+    await runtime.endRun(userIdentity);
+    expect(release).toHaveBeenCalledOnce();
+  });
+
+  it('refreshes a stale observation before a URL-targeted mutation instead of failing', async () => {
+    // 真机实测（2026-08-02）：点开一个链接后静置 45s 再点下一个，必报
+    // "Observation is consumed, superseded, or expired." 且对用户完全隐形。
+    // 观测 TTL 30s，而 binding 跟着整个 conversation 长活——过一分钟再点链接是常态。
+    vi.useFakeTimers();
+    try {
+      const { identity, adapter } = createHarness();
+      const navigate = (operationId: string) => adapter.execute({
+        identity,
+        operationId,
+        action: 'navigate',
+        params: { action: 'navigate', url: 'https://example.test/after' },
+        async executeProvider() {
+          return { success: true, output: 'navigated' };
+        },
+      });
+
+      expect((await navigate('navigate-fresh')).success).toBe(true);
+      await vi.advanceTimersByTimeAsync(45_000);
+      const stale = await navigate('navigate-after-ttl');
+      expect(stale.success).toBe(true);
+      expect(stale.metadata?.surfaceExecutionErrorV1).toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps two agent sub-runs in one conversation on separate physical browsers', async () => {
+    const { identity, acquire, adapter } = createHarness();
+    // 同一 conversation + 同一 run 下的两个 sub-agent：右栏一次只显示一扇窗，
+    // 让它们共用一个页面等于互相静默改导航，比看不见第二扇窗更糟。
+    const siblingIdentity: SurfaceRuntimeIdentityV1 = { ...identity, agentId: 'agent-b' };
+    const navigate = (owner: SurfaceRuntimeIdentityV1, operationId: string) => adapter.execute({
+      identity: owner,
+      operationId,
+      action: 'navigate',
+      params: { action: 'navigate', url: 'https://example.test/sibling' },
+      async executeProvider() {
+        return { success: true, output: 'navigated' };
+      },
+    });
+
+    expect((await navigate(identity, 'agent-a-navigate')).success).toBe(true);
+    expect((await navigate(siblingIdentity, 'agent-b-navigate')).success).toBe(true);
+    expect(acquire).toHaveBeenCalledTimes(2);
+    expect(acquire.mock.calls[0][0]).not.toBe(acquire.mock.calls[1][0]);
   });
 
   it('reports delivered mutation with a missing successor as ambiguous and non-replayable', async () => {

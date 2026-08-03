@@ -17,17 +17,27 @@ import { CONCISENESS_RULES } from '../../../src/host/prompts/identity';
 // 模板字符串插值走 Symbol.toPrimitive 强制求值成真字符串（同 staticPromptDecoding.test.ts 先例）。
 const RULES_TEXT = `${CONCISENESS_RULES}`;
 
+// 约束句 2026-08-03 压缩过一次（常驻层顶破 3000 token 上限，见 staticPromptDecoding.test.ts）。
+// 钉的是**三个语义要件**而不是逐字原文：① 禁止把「我自己来/不用你了」做成 chip；
+// ② 原因是 chip 文字会被原样当成用户下一条消息发回；③ 该写成正文。
+const CONSTRAINT_ANCHOR = 'Never make "I\'ll handle it myself"';
+
 describe('inline_actions: 禁止把「用户自理」选项生成为 !send chip', () => {
   it('钉了禁止把用户自理选项做成 chip 的约束', () => {
-    expect(RULES_TEXT).toContain('Never use `!send` for an option whose meaning is');
-    expect(RULES_TEXT).toContain('I (the user) will handle this myself');
+    // ① 禁止对象
+    expect(RULES_TEXT).toContain(CONSTRAINT_ANCHOR);
+    expect(RULES_TEXT).toContain('"nothing more needed"');
+    // ② 原因（chip 文字原样回灌成用户下一条消息）
+    expect(RULES_TEXT).toContain("returns\nverbatim as the user's next message");
+    // ③ 正确做法
+    expect(RULES_TEXT).toContain('Plain text only');
   });
 
   it('约束句落在 <inline_actions> 块内，且在 !send 语法说明之后', () => {
     const inlineActionsStart = RULES_TEXT.indexOf('<inline_actions>');
     const inlineActionsEnd = RULES_TEXT.indexOf('</inline_actions>');
     const sendSyntaxIndex = RULES_TEXT.indexOf('user clicks to send');
-    const constraintIndex = RULES_TEXT.indexOf('Never use `!send` for an option');
+    const constraintIndex = RULES_TEXT.indexOf(CONSTRAINT_ANCHOR);
 
     expect(inlineActionsStart).toBeGreaterThanOrEqual(0);
     expect(inlineActionsEnd).toBeGreaterThan(inlineActionsStart);

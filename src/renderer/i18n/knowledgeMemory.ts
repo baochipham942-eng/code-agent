@@ -1,5 +1,7 @@
 // ============================================================================
-// Knowledge / Memory 面板词条（features/knowledge/KnowledgeMemoryPanel*）—— zh/en 同文件相邻维护。
+// Knowledge / Memory 词条（原 features/knowledge/KnowledgeMemoryPanel*；2026-08-02 整窗页
+// 壳子退役后，由设置 → 记忆的 KnowledgeInboxSection / MemoryDiagnosticsSections 使用）——
+// zh/en 同文件相邻维护。
 // 独立文件避免 zh.ts/en.ts 撞 max-lines 棘轮（同 chatInput.ts / sidebar.ts 先例）。
 // ============================================================================
 
@@ -8,6 +10,8 @@ export const knowledgeMemoryZh = {
     closeLabel: '关闭 Knowledge / Memory',
     refresh: '刷新',
     contextGlobal: '全局上下文',
+    inboxSectionTitle: 'Knowledge Inbox',
+    inboxSectionDescription: '待确认的知识候选：采纳后写入记忆，忽略后不再出现。',
     inboxProcessFailed: 'Knowledge Inbox 处理失败：{message}',
     lightRebuildFailed: 'Light Memory 重建失败：{message}',
     countSuffix: '{count} 条',
@@ -104,6 +108,8 @@ export const knowledgeMemoryEn: typeof knowledgeMemoryZh = {
     closeLabel: 'Close Knowledge / Memory',
     refresh: 'Refresh',
     contextGlobal: 'Global context',
+    inboxSectionTitle: 'Knowledge Inbox',
+    inboxSectionDescription: 'Knowledge candidates pending review: adopt to store them, ignore to dismiss.',
     inboxProcessFailed: 'Knowledge Inbox action failed: {message}',
     lightRebuildFailed: 'Light Memory rebuild failed: {message}',
     countSuffix: '{count} item(s)',

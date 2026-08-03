@@ -112,6 +112,19 @@ export interface SurfaceExecutionTranslationsV1 {
     completed: string;
     open: string;
   };
+  terminal: {
+    /** 终态留影 / 摘要卡上的「已结束」角标 */
+    badge: string;
+    /** 置灰留影帧的 alt 文本 */
+    frameAlt: string;
+    /** 摘要卡：会话没报标题时的兜底 */
+    untitled: string;
+    /** 摘要卡：用时行（{time} 为已格式化的时长） */
+    duration: string;
+    durationSeconds: string;
+    durationMinutes: string;
+    durationHours: string;
+  };
   recovery: {
     title: string;
     description: string;
@@ -284,6 +297,15 @@ export const surfaceExecutionZh: SurfaceExecutionTranslationsV1 = {
   },
   takeover: { title: '需要你接管', description: 'Neo 已释放输入控制。完成操作后可继续执行。' },
   compact: { active: '正在操作 {target}', completed: '已完成', open: '在右栏查看浏览器现场' },
+  terminal: {
+    badge: '已结束',
+    frameAlt: 'Neo 结束操作前的最后一帧画面',
+    untitled: '未命名页面',
+    duration: '用时 {time}',
+    durationSeconds: '{count} 秒',
+    durationMinutes: '{count} 分钟',
+    durationHours: '{count} 小时',
+  },
   recovery: { title: '执行正在恢复', description: '目标状态发生变化，Neo 会基于新证据继续。' },
   controls: {
     label: '执行控制',
@@ -462,6 +484,15 @@ const surfaceExecutionEn: SurfaceExecutionTranslationsV1 = {
   },
   takeover: { title: 'Your action is needed', description: 'Neo released input control. Resume when you are done.' },
   compact: { active: 'Working on {target}', completed: 'Completed', open: 'View the live browser scene in the sidebar' },
+  terminal: {
+    badge: 'Ended',
+    frameAlt: 'The last frame before Neo finished',
+    untitled: 'Untitled page',
+    duration: 'Duration {time}',
+    durationSeconds: '{count}s',
+    durationMinutes: '{count} min',
+    durationHours: '{count} h',
+  },
   recovery: { title: 'Execution is recovering', description: 'The target changed. Neo will continue from fresh evidence.' },
   controls: {
     label: 'Execution controls',

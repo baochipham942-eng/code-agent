@@ -62,6 +62,7 @@ import { registerVoicePasteHandlers } from './voicePaste.ipc';
 import { registerContextHandlers } from './context.ipc';
 import { registerProviderHandlers } from './provider.ipc';
 import { registerLivePreviewHandlers } from './livePreview.ipc';
+import { registerTerminalHandlers } from './terminal.ipc';
 import { registerActivityHandlers } from './activity.ipc';
 import { registerInAppValidationHandlers } from './inAppValidation.ipc';
 import { registerPromptHandlers } from './prompt.ipc';
@@ -294,6 +295,9 @@ export function setupAllIpcHandlers(ipcMain: IpcMain, deps: IpcDependencies): vo
 
   // Live Preview handlers (click-to-source bridge 配合)
   registerLivePreviewHandlers(ipcMain);
+
+  // Terminal handlers (右栏交互 shell + Agent 共享 PTY)
+  registerTerminalHandlers(ipcMain);
 
   // Prompt handlers (提示词管理 + override)
   registerPromptHandlers(ipcMain);

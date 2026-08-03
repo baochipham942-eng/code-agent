@@ -126,16 +126,41 @@ describe('Surface Execution renderer effects', () => {
       fetchSnapshot,
       acceptSnapshot: (_conversationId, value) => {
         accepted.push((value as SurfaceConversationSnapshotV1).updatedAt);
-        return true;
+        return 'applied';
       },
     });
 
     const older = coordinator.refresh('conversation-1');
     const newer = coordinator.refresh('conversation-1');
     resolvers[1](snapshot('conversation-1', 20));
-    await expect(newer).resolves.toBe(true);
+    await expect(newer).resolves.toBe('applied');
     resolvers[0](snapshot('conversation-1', 10));
-    await expect(older).resolves.toBe(false);
+    await expect(older).resolves.toBe('superseded');
     expect(accepted).toEqual([20]);
+  });
+
+  it('reports a stale discard as a normal outcome without touching the error path', async () => {
+    const onError = vi.fn();
+    const coordinator = createSurfaceSnapshotRefreshCoordinator({
+      fetchSnapshot: async () => snapshot('conversation-1', 10),
+      acceptSnapshot: () => 'stale',
+      onError,
+    });
+
+    await expect(coordinator.refresh('conversation-1')).resolves.toBe('stale');
+    expect(onError).not.toHaveBeenCalled();
+  });
+
+  it('reports a fetch failure as an error, distinguishable from a stale discard', async () => {
+    const onError = vi.fn();
+    const failure = new Error('snapshot fetch failed');
+    const coordinator = createSurfaceSnapshotRefreshCoordinator({
+      fetchSnapshot: async () => { throw failure; },
+      acceptSnapshot: () => 'applied',
+      onError,
+    });
+
+    await expect(coordinator.refresh('conversation-1')).resolves.toBe('error');
+    expect(onError).toHaveBeenCalledWith('conversation-1', failure);
   });
 });

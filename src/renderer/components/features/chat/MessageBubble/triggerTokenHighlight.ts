@@ -22,12 +22,12 @@ const TRIGGER_TOKEN_RULES: Array<{ kind: TriggerTokenKind; pattern: RegExp; clas
   {
     kind: 'neo',
     pattern: /^@neo(?=\s|$)/i,
-    className: 'font-medium text-emerald-300',
+    className: 'font-medium text-badge-success',
   },
   {
     kind: 'goal',
     pattern: /^\/goal(?=\s|$)/,
-    className: 'font-medium text-amber-300',
+    className: 'font-medium text-badge-warning',
   },
   {
     kind: 'workflow',

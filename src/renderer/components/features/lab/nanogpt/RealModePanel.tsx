@@ -206,19 +206,19 @@ export const RealModePanel: React.FC = () => {
               <div className="space-y-2 text-xs">
                 <div className="flex items-center justify-between">
                   <span className="text-zinc-500">{nano.pythonLabel}</span>
-                  <span className={pythonEnv.pythonInstalled ? 'text-emerald-400' : 'text-red-400'}>
+                  <span className={pythonEnv.pythonInstalled ? 'text-badge-success' : 'text-badge-danger'}>
                     {pythonEnv.pythonInstalled ? pythonEnv.pythonVersion : nano.notInstalled}
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-zinc-500">{nano.pytorchLabel}</span>
-                  <span className={pythonEnv.pytorchInstalled ? 'text-emerald-400' : 'text-red-400'}>
+                  <span className={pythonEnv.pytorchInstalled ? 'text-badge-success' : 'text-badge-danger'}>
                     {pythonEnv.pytorchInstalled ? pythonEnv.pytorchVersion : nano.notInstalled}
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-zinc-500">{nano.tiktokenLabel}</span>
-                  <span className={pythonEnv.sentencepieceInstalled ? 'text-emerald-400' : 'text-amber-400'}>
+                  <span className={pythonEnv.sentencepieceInstalled ? 'text-badge-success' : 'text-badge-warning'}>
                     {pythonEnv.sentencepieceInstalled ? nano.installed : nano.needInstall}
                   </span>
                 </div>
@@ -242,7 +242,7 @@ export const RealModePanel: React.FC = () => {
                 <div className="flex items-center justify-between">
                   <span className="text-zinc-500">{nano.downloadedLabel}</span>
                   {projectStatus.downloaded ? (
-                    <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                    <CheckCircle2 className="w-4 h-4 text-badge-success" />
                   ) : (
                     <XCircle className="w-4 h-4 text-zinc-500" />
                   )}
@@ -258,7 +258,7 @@ export const RealModePanel: React.FC = () => {
                     <div className="flex items-center justify-between">
                       <span className="text-zinc-500">{nano.trainedModelLabel}</span>
                       {projectStatus.hasTrainedModel ? (
-                        <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                        <CheckCircle2 className="w-4 h-4 text-badge-success" />
                       ) : (
                         <span className="text-zinc-500">{nano.noneLabel}</span>
                       )}
@@ -283,7 +283,7 @@ export const RealModePanel: React.FC = () => {
             className={`w-full flex items-center justify-center gap-2 px-4 py-3 rounded-lg text-sm transition-all ${
               isDownloading
                 ? 'bg-zinc-700 text-zinc-500 cursor-not-allowed'
-                : 'bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 border border-blue-500/30'
+                : 'bg-blue-500/20 text-badge-info hover:bg-blue-500/30 border border-badge-info/30'
             }`}
           >
             {isDownloading ? (
@@ -317,7 +317,7 @@ export const RealModePanel: React.FC = () => {
                     onClick={() => setConfig((c) => ({ ...c, mode: 'finetune', initFrom: 'gpt2' }))}
                     className={`flex-1 px-3 py-2 rounded-lg text-xs transition-all ${
                       config.mode === 'finetune'
-                        ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                        ? 'bg-amber-500/20 text-badge-warning border border-badge-warning/30'
                         : 'bg-zinc-800 text-zinc-500 border border-zinc-800'
                     }`}
                   >
@@ -327,7 +327,7 @@ export const RealModePanel: React.FC = () => {
                     onClick={() => setConfig((c) => ({ ...c, mode: 'pretrain', initFrom: 'scratch' }))}
                     className={`flex-1 px-3 py-2 rounded-lg text-xs transition-all ${
                       config.mode === 'pretrain'
-                        ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
+                        ? 'bg-blue-500/20 text-badge-info border border-badge-info/30'
                         : 'bg-zinc-800 text-zinc-500 border border-zinc-800'
                     }`}
                   >
@@ -407,8 +407,8 @@ export const RealModePanel: React.FC = () => {
                   !pythonEnv?.pytorchInstalled
                     ? 'bg-zinc-700 text-zinc-500 cursor-not-allowed'
                     : isTraining
-                      ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30 border border-red-500/30'
-                      : 'bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 border border-emerald-500/30'
+                      ? 'bg-red-500/20 text-badge-danger hover:bg-red-500/30 border border-red-500/30'
+                      : 'bg-emerald-500/20 text-badge-success hover:bg-emerald-500/30 border border-badge-success/30'
                 }`}
               >
                 {isTraining ? (
@@ -442,7 +442,7 @@ export const RealModePanel: React.FC = () => {
                   </span>
                   {currentLoss !== null && (
                     <span className="text-zinc-500">
-                      {nano.lossLabel}: <span className="text-emerald-400">{currentLoss.toFixed(4)}</span>
+                      {nano.lossLabel}: <span className="text-badge-success">{currentLoss.toFixed(4)}</span>
                     </span>
                   )}
                 </div>

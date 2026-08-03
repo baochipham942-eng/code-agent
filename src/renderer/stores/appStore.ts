@@ -194,6 +194,12 @@ export interface AppState {
   settingsInitialTab: SettingsTab | null; // 打开设置时默认选中的 Tab
   settingsMemoryFocus: SettingsMemoryFocus | null;
   settingsCapabilityFocus: SettingsCapabilityFocus | null;
+  /**
+   * 「把光标放回输入框」的请求信号：递增即触发一次，ChatInput 监听变化后 focus。
+   * 用于「新建会话」落在一个已经打开的空白草稿上——此时没有任何可见变化，
+   * 点击看起来像没反应；聚焦输入框是这次点击唯一诚实的回执。
+   */
+  composerFocusNonce: number;
   // 对话式建角色：待发送的种子消息（入口触发，ChatView 在新会话就绪后自动发出）
   pendingRoleChatSeed: string | null;
   // 项目目标：从 Project 详情/控制台启动后，等目标 session 成为当前会话再自动发出 /goal envelope
@@ -268,8 +274,6 @@ export interface AppState {
   // V2-A: DevServerLauncher 模态可见性。true 时 App 渲染 <DevServerLauncher />
   devServerLauncherOpen: boolean;
 
-  showKnowledgeMemoryPanel: boolean;
-
   // Batch 2 L3: 资料库全屏页可见性
   showLibraryPanel: boolean;
 
@@ -341,6 +345,7 @@ export interface AppState {
   clearSettingsInitialTab: () => void; // 清除初始 Tab（设置页使用后调用）
   clearSettingsMemoryFocus: () => void;
   clearSettingsCapabilityFocus: () => void;
+  requestComposerFocus: () => void;
   setShowPromptManager: (show: boolean) => void;
   setShowWorkspace: (show: boolean) => void;
   setTaskPanelTab: (tab: TaskPanelTab) => void;
@@ -407,7 +412,6 @@ export interface AppState {
   setShowPlanningPanel: (show: boolean) => void;
   setShowDAGPanel: (show: boolean) => void;
   setShowLab: (show: boolean) => void;
-  setShowKnowledgeMemoryPanel: (show: boolean) => void;
   setShowLibraryPanel: (show: boolean) => void;
   openExpertRoleDetail: (roleId: string) => void;
   openPreview: (filePath: string, options?: OpenWorkbenchTabOptions) => void;
@@ -483,6 +487,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   settingsInitialTab: null,
   settingsMemoryFocus: null,
   settingsCapabilityFocus: null,
+  composerFocusNonce: 0,
   pendingRoleChatSeed: null,
   pendingProjectGoalChatSeed: null,
   showPromptManager: false,
@@ -542,7 +547,6 @@ export const useAppStore = create<AppState>()((set, get) => ({
   showLab: false,
   devServerLauncherOpen: false,
 
-  showKnowledgeMemoryPanel: false,
   showLibraryPanel: false,
   expertDetailRoleId: null,
 
@@ -583,10 +587,12 @@ export const useAppStore = create<AppState>()((set, get) => ({
   contextHealthCollapsed: true, // 默认收起
 
   // Actions
-  setShowSettings: (show) => set({ showSettings: show }),
+  setShowSettings: (show) => set(show
+    ? { showSettings: true }
+    : { ...SECONDARY_PAGES_CLOSED, showSettings: false }),
   setPendingRoleChatSeed: (seed) => set({ pendingRoleChatSeed: seed }),
   setPendingProjectGoalChatSeed: (seed) => set({ pendingProjectGoalChatSeed: seed }),
-  setShowPromptManager: (show) => set({ showPromptManager: show }),
+  setShowPromptManager: (show) => set({ ...(show ? SECONDARY_PAGES_CLOSED : {}), showPromptManager: show }),
   // 落点判定收在 resolveSettingsDeepLink 一处（ADR-049 §收窄），store 只负责应用
   openSettingsTab: (tab) => {
     const noFocus = { settingsMemoryFocus: null, settingsCapabilityFocus: null };
@@ -618,6 +624,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   clearSettingsInitialTab: () => set({ settingsInitialTab: null }),
   clearSettingsMemoryFocus: () => set({ settingsMemoryFocus: null }),
   clearSettingsCapabilityFocus: () => set({ settingsCapabilityFocus: null }),
+  requestComposerFocus: () => set((state) => ({ composerFocusNonce: state.composerFocusNonce + 1 })),
   setShowWorkspace: (show) => set({ showWorkspace: show }),
   setTaskPanelTab: (tab) => set({ taskPanelTab: tab }),
   setShowAgentTeamPanel: (show) => set({ showAgentTeamPanel: show }),
@@ -665,7 +672,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
     }
   },
   setShowCapturePanel: (show) => set({ showCapturePanel: show }),
-  setShowDesktopPanel: (show) => set({ showDesktopPanel: show }),
+  setShowDesktopPanel: (show) => set({ ...(show ? SECONDARY_PAGES_CLOSED : {}), showDesktopPanel: show }),
   setShowLocalOpsPanel: (show) => set({ ...(show ? SECONDARY_PAGES_CLOSED : {}), showLocalOpsPanel: show }),
   openLocalOpsPanel: (tab) => set({
     ...SECONDARY_PAGES_CLOSED,
@@ -691,7 +698,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   openProjectSpacePage: () => set({ ...SECONDARY_PAGES_CLOSED, showProjectSpacePage: true }),
   closeProjectSpacePage: () => set({ showProjectSpacePage: false }),
   setPendingInAppValidationRequest: (request) => set({ pendingInAppValidationRequest: request }),
-  setShowActivityPanel: (show) => set({ showActivityPanel: show }),
+  setShowActivityPanel: (show) => set({ ...(show ? SECONDARY_PAGES_CLOSED : {}), showActivityPanel: show }),
   setShowCapabilityHub: (show) => set({ ...(show ? SECONDARY_PAGES_CLOSED : {}), showCapabilityHub: show }),
   openCapabilityHub: (tab) => set({
     ...SECONDARY_PAGES_CLOSED,
@@ -701,7 +708,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   }),
   closeSecondaryPages: () => set({ ...SECONDARY_PAGES_CLOSED }),
   setShowCronCenter: (show) => set({ ...(show ? SECONDARY_PAGES_CLOSED : {}), showCronCenter: show }),
-  setShowTimeCapabilityCenter: (show) => set({ showTimeCapabilityCenter: show }),
+  setShowTimeCapabilityCenter: (show) => set({ ...(show ? SECONDARY_PAGES_CLOSED : {}), showTimeCapabilityCenter: show }),
   setShowFileExplorer: (show) => {
     const state = get();
     if (show) state.openWorkbenchTab('files');
@@ -746,10 +753,9 @@ export const useAppStore = create<AppState>()((set, get) => ({
   setShowPlanningPanel: (show) => set({ showPlanningPanel: show }),
 
   setShowDAGPanel: (show) => set({ showDAGPanel: show }),
-  setShowLab: (show) => set({ showLab: show }),
+  setShowLab: (show) => set({ ...(show ? SECONDARY_PAGES_CLOSED : {}), showLab: show }),
   openDevServerLauncher: () => set({ devServerLauncherOpen: true }),
   closeDevServerLauncher: () => set({ devServerLauncherOpen: false }),
-  setShowKnowledgeMemoryPanel: (show) => set({ ...(show ? SECONDARY_PAGES_CLOSED : {}), showKnowledgeMemoryPanel: show }),
   setShowLibraryPanel: (show) => set({ ...(show ? SECONDARY_PAGES_CLOSED : {}), showLibraryPanel: show }),
   openExpertRoleDetail: (roleId) => set({ ...SECONDARY_PAGES_CLOSED, expertDetailRoleId: roleId }),
 

@@ -13,6 +13,10 @@ const DesignCanvasTab = React.lazy(() => import('./design/DesignCanvasTab').then
 // S2 归位：liveDev 预览不再借用 'browser' 视图，改与文件预览同住 `preview:*`——
 // 这里按 activeTab.kind 分流到 LivePreviewFrame（直连 iframe/bridge，无文件工具栏）。
 const LivePreviewFrame = React.lazy(() => import('./LivePreview/LivePreviewFrame'));
+// xterm + 它那份 CSS 只在真开终端时才拉进来，别让不开终端的用户白付这份 bundle。
+const TerminalPanel = React.lazy(() => import('./workbench/TerminalPanel').then((module) => ({
+  default: module.TerminalPanel,
+})));
 
 export interface WorkbenchViewContentProps {
   activeView: WorkbenchViewId | null;
@@ -53,6 +57,15 @@ export const WorkbenchViewContent: React.FC<WorkbenchViewContentProps> = ({
       <div data-testid="workbench-canvas-view" className="h-full min-h-0">
         <React.Suspense fallback={null}>
           <DesignCanvasTab />
+        </React.Suspense>
+      </div>
+    );
+  }
+  if (activeView === 'terminal') {
+    return (
+      <div data-testid="workbench-terminal-view" className="h-full min-h-0">
+        <React.Suspense fallback={null}>
+          <TerminalPanel />
         </React.Suspense>
       </div>
     );

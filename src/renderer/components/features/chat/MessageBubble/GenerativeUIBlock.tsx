@@ -292,8 +292,8 @@ export const GenerativeUIBlock = memo(function GenerativeUIBlock({
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-2 bg-zinc-800 border-b border-zinc-700">
         <div className="flex items-center gap-2">
-          <Sparkles className="w-3.5 h-3.5 text-violet-400" />
-          <span className="text-xs font-medium text-violet-400">{t.generativeUI.generativeUI}</span>
+          <Sparkles className="w-3.5 h-3.5 text-badge-accent" />
+          <span className="text-xs font-medium text-badge-accent">{t.generativeUI.generativeUI}</span>
         </div>
         <div className="flex items-center gap-1">
           <button
@@ -303,7 +303,7 @@ export const GenerativeUIBlock = memo(function GenerativeUIBlock({
             title={isStreaming && !editing ? t.generativeUI.editStreamingHint : undefined}
             data-testid="generative-ui-edit-toggle"
             className={`flex items-center gap-1.5 px-2 py-1 rounded-lg transition-all text-xs disabled:opacity-40 disabled:cursor-not-allowed ${
-              editing ? 'text-cyan-300 bg-zinc-700' : 'text-zinc-400 hover:bg-zinc-700 hover:text-zinc-200'
+              editing ? 'text-badge-info bg-zinc-700' : 'text-zinc-400 hover:bg-zinc-700 hover:text-zinc-200'
             }`}
           >
             <MousePointerClick className="w-3.5 h-3.5" />
@@ -321,7 +321,7 @@ export const GenerativeUIBlock = memo(function GenerativeUIBlock({
               detachSelection();
             }}
             className={`flex items-center gap-1.5 px-2 py-1 rounded-lg hover:bg-zinc-700 transition-all text-xs ${
-              showSource ? 'text-violet-400 bg-zinc-700' : 'text-zinc-400 hover:text-zinc-200'
+              showSource ? 'text-badge-accent bg-zinc-700' : 'text-zinc-400 hover:text-zinc-200'
             }`}
           >
             <Code2 className="w-3.5 h-3.5" />
@@ -333,8 +333,8 @@ export const GenerativeUIBlock = memo(function GenerativeUIBlock({
           >
             {copied ? (
               <>
-                <Check className="w-3.5 h-3.5 text-green-400" />
-                <span className="text-green-400">{t.generativeUI.copied}</span>
+                <Check className="w-3.5 h-3.5 text-badge-success" />
+                <span className="text-badge-success">{t.generativeUI.copied}</span>
               </>
             ) : (
               <>
@@ -363,7 +363,7 @@ export const GenerativeUIBlock = memo(function GenerativeUIBlock({
 
       {/* 编辑态没有 allow-scripts，JS 驱动的动效不会播放——如实说，不装作没这回事 */}
       {editing && !showSource && (
-        <div className="px-4 py-1.5 bg-cyan-500/5 border-b border-cyan-500/20 text-[11px] text-cyan-200/80">
+        <div className="px-4 py-1.5 bg-cyan-500/5 border-b border-badge-info/20 text-[11px] text-badge-info/80">
           {t.generativeUI.editHint}
         </div>
       )}
@@ -371,7 +371,7 @@ export const GenerativeUIBlock = memo(function GenerativeUIBlock({
       {/* 对账没过：库里那份已经不是用户改的基准（云同步 / 另一处编辑），修改没落库 */}
       {conflict && !editing && (
         <div
-          className="px-4 py-2 border-b border-amber-500/20 bg-amber-500/5 text-[11px] text-amber-200"
+          className="px-4 py-2 border-b border-badge-warning/20 bg-amber-500/5 text-[11px] text-badge-warning"
           data-testid="generative-ui-conflict"
         >
           {t.generativeUI.editConflict}
@@ -429,7 +429,7 @@ export const GenerativeUIBlock = memo(function GenerativeUIBlock({
       )}
       {editing && !showSource && patchError && (
         <div
-          className="px-4 py-2 border-t border-amber-500/20 bg-amber-500/5 text-[11px] text-amber-200"
+          className="px-4 py-2 border-t border-badge-warning/20 bg-amber-500/5 text-[11px] text-badge-warning"
           data-testid="generative-ui-patch-error"
         >
           {t.generativeUI.patchFailed}

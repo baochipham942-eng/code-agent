@@ -155,6 +155,18 @@ describe('BrowserAgentWindow（B1-R·R1 图形化现场）', () => {
     expect(screen.getByLabelText(/Search/)).toBeTruthy();
   });
 
+  it('右上菜单的高级设置外链图标使用紧凑尺寸，不压住文字', () => {
+    render(<BrowserAgentWindow />);
+
+    fireEvent.click(screen.getByTestId('browser-agent-window-more'));
+
+    const icon = screen
+      .getByTestId('browser-agent-window-open-local-ops')
+      .querySelector('svg');
+    expect(icon?.classList.contains('h-3.5')).toBe(true);
+    expect(icon?.classList.contains('w-3.5')).toBe(true);
+  });
+
   it('chrome 条描述画面里那扇窗：managedSession 说「未启动」也不许把状态点跳灰', () => {
     // managedSession 是 IPC 的全局默认单例，跟 agent 实际驱动的 surface 浏览器不是
     // 同一个；5s 轮询会把它刷回 running=false，chrome 条不能跟着跳。

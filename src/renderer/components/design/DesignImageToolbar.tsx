@@ -257,7 +257,7 @@ export function DesignImageToolbar(props: DesignImageToolbarProps): React.ReactE
     <div data-testid="design-annotate-popover" className={MENU_CLASS} style={menuStyle}>
       {annotModelUnavailable ? (
         <>
-          <p className="px-1 py-1 text-[11px] leading-snug text-amber-300/90">
+          <p className="px-1 py-1 text-[11px] leading-snug text-badge-warning/90">
             {t.design.annotNoAvailableModel}
           </p>
         </>
@@ -296,7 +296,7 @@ export function DesignImageToolbar(props: DesignImageToolbarProps): React.ReactE
       </label>
       <div className="mt-2 text-[11px] text-zinc-500">
         {t.design.costEstimateLabel}{' '}
-        <span className="font-mono text-emerald-300">{formatCny(estimateImageCostCny(DESIGN_IMAGE_MODELS.edit))}</span>
+        <span className="font-mono text-badge-success">{formatCny(estimateImageCostCny(DESIGN_IMAGE_MODELS.edit))}</span>
       </div>
       {/* ds-allow:start 标注重绘 CTA 用设计区品牌色 bg-fuchsia-500/90（Button primary 蓝渐变会丢视觉语言） */}
       <button
@@ -324,7 +324,7 @@ export function DesignImageToolbar(props: DesignImageToolbarProps): React.ReactE
           data-testid="design-annotate-toggle"
           onClick={() => setAnnotating((v) => !v)}
           className={`inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs transition-colors ${
-            annotating ? 'bg-red-500/20 text-red-200' : 'bg-white/[0.06] text-zinc-300 hover:text-zinc-100'
+            annotating ? 'bg-red-500/20 text-badge-danger' : 'bg-white/[0.06] text-zinc-300 hover:text-zinc-100'
           }`}
         >
           <SquareDashedMousePointer className="h-3.5 w-3.5" />
@@ -343,7 +343,7 @@ export function DesignImageToolbar(props: DesignImageToolbarProps): React.ReactE
         {/* ds-allow:end */}
       </div>
       {annotating ? (
-        <p className="mt-2 text-[11px] leading-snug text-amber-300/80">{t.design.annotateHint}</p>
+        <p className="mt-2 text-[11px] leading-snug text-badge-warning/80">{t.design.annotateHint}</p>
       ) : (
         annotationCount === 0 && (
           <p className="mt-2 text-[11px] leading-snug text-zinc-500">{t.design.annotateGuide}</p>
@@ -399,7 +399,7 @@ export function DesignImageToolbar(props: DesignImageToolbarProps): React.ReactE
               ) : plan.scales === null ? (
                 <span className="text-[10px] leading-snug text-zinc-500">{t.design.resizeAlreadyRatio}</span>
               ) : (
-                <span className="font-mono text-[10px] leading-snug text-emerald-300/80">
+                <span className="font-mono text-[10px] leading-snug text-badge-success/80">
                   {resizeCostHint()}
                 </span>
               )}
@@ -458,7 +458,7 @@ export function DesignImageToolbar(props: DesignImageToolbarProps): React.ReactE
                 annotModelUnavailable
                   ? 'cursor-not-allowed text-zinc-600'
                   : annotMode
-                    ? 'bg-fuchsia-500/20 text-fuchsia-200'
+                    ? 'bg-fuchsia-500/20 text-badge-accent'
                     : 'text-zinc-300 hover:bg-white/[0.06] hover:text-zinc-100'
               }`}
             >
@@ -483,7 +483,7 @@ export function DesignImageToolbar(props: DesignImageToolbarProps): React.ReactE
               onClick={() => toggle('repaint')}
               className={`inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs transition-colors ${
                 openMenu === 'repaint' || annotating
-                  ? 'bg-fuchsia-500/20 text-fuchsia-200'
+                  ? 'bg-fuchsia-500/20 text-badge-accent'
                   : 'text-zinc-300 hover:bg-white/[0.06] hover:text-zinc-100'
               }`}
             >
@@ -507,7 +507,7 @@ export function DesignImageToolbar(props: DesignImageToolbarProps): React.ReactE
               onClick={() => toggle('resize')}
               className={`inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs transition-colors ${
                 openMenu === 'resize'
-                  ? 'bg-fuchsia-500/20 text-fuchsia-200'
+                  ? 'bg-fuchsia-500/20 text-badge-accent'
                   : 'text-zinc-300 hover:bg-white/[0.06] hover:text-zinc-100'
               }`}
             >
@@ -533,7 +533,7 @@ export function DesignImageToolbar(props: DesignImageToolbarProps): React.ReactE
               onClick={() => toggle('expand')}
               className={`inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs transition-colors ${
                 openMenu === 'expand'
-                  ? 'bg-fuchsia-500/20 text-fuchsia-200'
+                  ? 'bg-fuchsia-500/20 text-badge-accent'
                   : 'text-zinc-300 hover:bg-white/[0.06] hover:text-zinc-100'
               }`}
             >
@@ -557,7 +557,7 @@ export function DesignImageToolbar(props: DesignImageToolbarProps): React.ReactE
             onClick={() => toggle('more')}
             className={`inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs transition-colors ${
               openMenu === 'more'
-                ? 'bg-fuchsia-500/20 text-fuchsia-200'
+                ? 'bg-fuchsia-500/20 text-badge-accent'
                 : 'text-zinc-300 hover:bg-white/[0.06] hover:text-zinc-100'
             }`}
           >
@@ -591,7 +591,7 @@ export function DesignImageToolbar(props: DesignImageToolbarProps): React.ReactE
                       onClick={() => (id === 'annotate' ? onAnnotateClick() : toggle(id))}
                       className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-xs transition-colors hover:bg-white/[0.06] ${
                         id === 'annotate' && annotMode
-                          ? 'bg-fuchsia-500/20 text-fuchsia-200'
+                          ? 'bg-fuchsia-500/20 text-badge-accent'
                           : 'text-zinc-300 hover:text-zinc-100'
                       }`}
                     >

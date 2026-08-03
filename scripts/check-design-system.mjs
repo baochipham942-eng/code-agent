@@ -15,6 +15,8 @@
 //   6. important-unjustified: 禁无注册的 !important；`ds-allow:important <理由>` 登记后豁免
 //   7. local-display-primitive: 禁在 primitives/ 之外新增本地 EmptyState/Badge 定义
 //                             （A1 展示类 primitive 收敛，基线 0）；`ds-allow:primitive` 豁免
+//   8. theme-blind-bright-foreground: 禁新增未带 dark: 主题分支的亮档彩色前景类；
+//                             现存债务以棘轮锁住；`ds-allow:color` 豁免
 //
 // 对比度断言（默认门已 enforce，--contrast 看明细）：四套主题按各自真实用法场景
 // 核对 WCAG ≥4.5:1。2026-07-02 产品负责人拍板方案 A：dark/light brand 加深至
@@ -60,6 +62,15 @@ const BARE_RADIUS_CSS_RE = /border-radius:\s*\d+px/;
 const BARE_Z_TSX_RE = /z-\[(\d+)\]|zIndex:\s*(\d+)/;
 const BARE_Z_CSS_RE = /z-index:\s*(\d+)/;
 const IMPORTANT_RE = /!important/;
+// 亮档彩色前景类：300 档在浅色背景上尤其容易变成不可读的近白色。
+// 默认匹配任意色板名，新增色板自动进入门；再向左还原完整 Tailwind token，覆盖 dark:/hover:/任意变体组合。
+export const THEME_BLIND_BRIGHT_FOREGROUND_RE =
+  /(?<![\w-])text-[a-z][a-z0-9]*(?:-[a-z0-9]+)*-(?:100|200|300|400)(?![\w-])/g;
+
+const THEME_BLIND_BRIGHT_FOREGROUND_PALETTE_EXEMPTIONS = new Set([
+  // zinc 映射到 rgb(var(--zinc-*))，四套主题都提供反转后的值，亮档前景随主题安全变化。
+  'zinc',
+]);
 // 本地展示 primitive 定义（const/function EmptyState|Badge）——共享件在 components/primitives/，
 // 别再各自手搓。导出供契约测试对故意违例样本做红绿验证。
 export const LOCAL_DISPLAY_PRIMITIVE_RE = /\b(?:const|function)\s+(?:EmptyState|Badge)\b/;
@@ -70,6 +81,43 @@ function isAllowed(line, kinds) {
   for (const k of kinds) if (line.includes('ds-allow:' + k)) return true;
   // 裸 ds-allow（无 kind）放行任意规则，给特殊场景留口子但须显式
   return /ds-allow(?![:\w])/.test(line);
+}
+
+function classTokenStart(line, matchIndex) {
+  let start = matchIndex;
+  // 保留 `dark:`、任意变体 `[&:hover]:` 等前缀；在源码字符串/JSX 表达式边界停下。
+  while (start > 0 && !/[\s"'`<>{}(),;]/.test(line[start - 1])) start--;
+  return start;
+}
+
+export function findThemeBlindBrightForegroundMatches(line) {
+  return [...line.matchAll(THEME_BLIND_BRIGHT_FOREGROUND_RE)].map((match) => {
+    const coreClass = match[0];
+    const start = classTokenStart(line, match.index ?? 0);
+    return {
+      className: line.slice(start, (match.index ?? 0) + coreClass.length),
+      coreClass,
+    };
+  });
+}
+
+function hasDarkVariant(className) {
+  return className.split(':').some((variant) => variant === 'dark');
+}
+
+function brightForegroundPalette(coreClass) {
+  return coreClass.match(/^text-([a-z][a-z0-9]*(?:-[a-z0-9]+)*)-(?:100|200|300|400)$/)?.[1] ?? null;
+}
+
+function isBrightForegroundPaletteExempt(coreClass) {
+  return THEME_BLIND_BRIGHT_FOREGROUND_PALETTE_EXEMPTIONS.has(brightForegroundPalette(coreClass));
+}
+
+export function findThemeBlindBrightForegroundViolations(line, loc = '') {
+  if (isAllowed(line, ['color'])) return [];
+  return findThemeBlindBrightForegroundMatches(line)
+    .filter(({ className, coreClass }) => !hasDarkVariant(className) && !isBrightForegroundPaletteExempt(coreClass))
+    .map(({ className }) => (loc ? `${loc} ${className}` : className));
 }
 
 function* walk(dir, extRe = /\.tsx?$/) {
@@ -90,9 +138,9 @@ function loadZAllowlist() {
   return JSON.parse(readFileSync(ZINDEX_ALLOWLIST_PATH, 'utf8'));
 }
 
-export function scan() {
-  if (!existsSync(SCAN_ROOT)) {
-    throw new Error(`[check-design-system] 自检失败：扫描根不存在 ${SCAN_ROOT}。若目录结构调整过，请同步更新本脚本。`);
+export function scan(scanRoot = SCAN_ROOT) {
+  if (!existsSync(scanRoot)) {
+    throw new Error(`[check-design-system] 自检失败：扫描根不存在 ${scanRoot}。若目录结构调整过，请同步更新本脚本。`);
   }
   let tsxFileCount = 0;
   let cssFileCount = 0;
@@ -104,13 +152,15 @@ export function scan() {
     'bare-z-index': [],
     'important-unjustified': [],
     'local-display-primitive': [],
+    'theme-blind-bright-foreground': [],
     'stale-zindex-allowlist': [],
   };
+  let brightForegroundTargetCount = 0;
   // 裸 z-index 用法先收集（file+value），扫完后与 allowlist 双向核对
   const zUsages = [];
-  for (const file of walk(SCAN_ROOT)) {
+  for (const file of walk(scanRoot)) {
     tsxFileCount++;
-    const rel = relative(SCAN_ROOT, file);
+    const rel = relative(scanRoot, file);
     const inPrimitives = rel.startsWith('components/primitives/');
     const isModalPrimitive = rel === 'components/primitives/Modal.tsx';
     const isVizExempt = VIZ_EXEMPT.some((p) => rel.includes(p));
@@ -123,6 +173,8 @@ export function scan() {
     let inExemptRegion = false;
     lines.forEach((line, i) => {
       const loc = `${rel}:${i + 1}`;
+      const brightForegroundMatches = findThemeBlindBrightForegroundMatches(line);
+      brightForegroundTargetCount += brightForegroundMatches.length;
       if (line.includes('ds-allow:start')) inExemptRegion = true;
       if (inExemptRegion) {
         if (line.includes('ds-allow:end')) inExemptRegion = false;
@@ -157,13 +209,20 @@ export function scan() {
       if (LOCAL_DISPLAY_PRIMITIVE_RE.test(line) && !inPrimitives && !isAllowed(line, ['primitive'])) {
         violations['local-display-primitive'].push(loc);
       }
+      if (!isAllowed(line, ['color'])) {
+        brightForegroundMatches
+          .filter(({ className, coreClass }) => !hasDarkVariant(className) && !isBrightForegroundPaletteExempt(coreClass))
+          .forEach(({ className }) => {
+            violations['theme-blind-bright-foreground'].push(`${loc} ${className}`);
+          });
+      }
     });
   }
 
   // CSS 文件只跑三条新规则（hex/button/modal 语义不适用；主题定义文件的 hex 是合法 token 定义）
-  for (const file of walk(SCAN_ROOT, /\.css$/)) {
+  for (const file of walk(scanRoot, /\.css$/)) {
     cssFileCount++;
-    const rel = relative(SCAN_ROOT, file);
+    const rel = relative(scanRoot, file);
     const lines = readFileSync(file, 'utf8').split('\n');
     lines.forEach((line, i) => {
       const loc = `${rel}:${i + 1}`;
@@ -183,6 +242,11 @@ export function scan() {
   // 自检：扫到 0 个文件 = 门在空转（目录拆分/改名后静默恒绿），必须 fail loud
   if (tsxFileCount === 0 || cssFileCount === 0) {
     throw new Error(`[check-design-system] 自检失败：tsx/ts 文件 ${tsxFileCount} 个、css 文件 ${cssFileCount} 个，存在匹配数为 0 的扫描目标。若目录结构调整过，请同步更新本脚本。`);
+  }
+  if (brightForegroundTargetCount === 0) {
+    throw new Error(
+      `[check-design-system] 自检失败：亮档彩色前景扫描没有命中任何目标（扫描根 ${scanRoot}，文件后缀 .tsx/.ts，正则 ${THEME_BLIND_BRIGHT_FOREGROUND_RE}）。若正则或目录结构调整过，请同步更新本脚本。`,
+    );
   }
 
   // 双向 allowlist 核对：用法不在表内 → bare-z-index；表项在代码中找不到 → stale-zindex-allowlist
@@ -223,6 +287,88 @@ function contrastRatio(hexA, hexB) {
 }
 
 const CONTRAST_MIN = 4.5;
+const MARK_CONTRAST_MIN = 3;
+const SECONDARY_BUTTON_HOVER_MIN = 1.2;
+
+const MARK_CONTRAST_TOKENS = [
+  { name: 'info', token: '--mark-info' },
+  { name: 'success', token: '--mark-success' },
+  { name: 'warning', token: '--mark-warning' },
+  { name: 'danger', token: '--mark-danger' },
+  { name: 'accent', token: '--mark-accent' },
+  { name: 'neutral', token: '--mark-neutral' },
+];
+
+const SECONDARY_BUTTON_STATES = [
+  { state: 'enabled', foreground: '--btn-secondary-fg', background: '--btn-secondary-bg' },
+  { state: 'hover', foreground: '--btn-secondary-fg', background: '--btn-secondary-bg-hover' },
+  { state: 'disabled', foreground: '--btn-secondary-fg-disabled', background: '--btn-secondary-bg-disabled' },
+];
+
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function parseRgbHex(hex) {
+  return [
+    parseInt(hex.slice(1, 3), 16),
+    parseInt(hex.slice(3, 5), 16),
+    parseInt(hex.slice(5, 7), 16),
+  ];
+}
+
+function parseCssColor(value, theme, token) {
+  const hex = value.match(/^#[0-9a-fA-F]{6}$/);
+  if (hex) return { rgb: parseRgbHex(value), alpha: 1 };
+
+  const rgba = value.match(/^rgba\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(0|1|0?\.\d+)\s*\)$/i);
+  if (rgba) {
+    return {
+      rgb: [Number(rgba[1]), Number(rgba[2]), Number(rgba[3])],
+      alpha: Number(rgba[4]),
+    };
+  }
+
+  throw new Error(`[check-design-system] ${theme} 的 ${token} 不是可计算的 hex/rgba：${value}`);
+}
+
+function readCssColor(css, theme, token) {
+  const match = css.match(new RegExp(`${escapeRegExp(token)}\\s*:\\s*([^;]+);`));
+  if (!match) throw new Error(`[check-design-system] ${theme} 里找不到 ${token}，对比度测量失败`);
+  return parseCssColor(match[1].trim(), theme, token);
+}
+
+function compositeRgb(foreground, background, alpha) {
+  return foreground.map((channel, index) => channel * alpha + background[index] * (1 - alpha));
+}
+
+function resolveThemeColor(css, theme, token, backdropToken = '--bg-surface', seen = new Set()) {
+  if (seen.has(token)) throw new Error(`[check-design-system] ${theme} 的颜色 token 循环引用：${[...seen, token].join(' → ')}`);
+  const nextSeen = new Set(seen).add(token);
+  const parsed = readCssColor(css, theme, token);
+  if (parsed.alpha === 1) return parsed.rgb;
+  const backdrop = resolveThemeColor(
+    css,
+    theme,
+    backdropToken === token ? '--bg-void' : backdropToken,
+    '--bg-void',
+    nextSeen,
+  );
+  return compositeRgb(parsed.rgb, backdrop, parsed.alpha);
+}
+
+function contrastRatioRgb(rgbA, rgbB) {
+  const luminance = (rgb) => {
+    const channels = rgb.map((channel) => {
+      const value = channel / 255;
+      return value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+    });
+    return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2];
+  };
+  const [l1, l2] = [luminance(rgbA), luminance(rgbB)].sort((a, b) => b - a);
+  return (l1 + 0.05) / (l2 + 0.05);
+}
+
 // 品牌恒等值：--brand-primary 是品牌表达 token，四主题必须同值（2026-08-02 拆分拍板）。
 const BRAND_IDENTITY = '#0F766E';
 // 每套主题的可读性测量对象（2026-08-02 token 拆分后口径）：
@@ -271,6 +417,78 @@ export function measureBrandContrast() {
   return results;
 }
 
+export function measureSecondaryButtonContrast(rendererRoot = SCAN_ROOT) {
+  const themesDir = join(rendererRoot, 'styles/themes');
+  if (!existsSync(themesDir)) throw new Error(`[check-design-system] 主题目录不存在：${themesDir}`);
+  const states = [];
+  const hover = [];
+  const themeFiles = readdirSync(themesDir).filter((name) => name.endsWith('.css')).sort();
+
+  for (const file of themeFiles) {
+    const theme = file.replace('.css', '');
+    const css = readFileSync(join(themesDir, file), 'utf8');
+    // 任何半透明按钮底都必须落到主题自己声明的 surface 上，禁止脚本偷偷假设白/黑背景。
+    resolveThemeColor(css, theme, '--bg-surface');
+    const measurements = new Map();
+
+    for (const definition of SECONDARY_BUTTON_STATES) {
+      const background = resolveThemeColor(css, theme, definition.background, '--bg-surface');
+      const foreground = resolveThemeColor(css, theme, definition.foreground, definition.background);
+      const measurement = {
+        theme,
+        state: definition.state,
+        foreground,
+        background,
+        ratio: contrastRatioRgb(foreground, background),
+      };
+      states.push(measurement);
+      measurements.set(definition.state, measurement);
+    }
+
+    const enabled = measurements.get('enabled');
+    const hovered = measurements.get('hover');
+    hover.push({
+      theme,
+      ratio: contrastRatioRgb(enabled.background, hovered.background),
+    });
+  }
+
+  if (themeFiles.length === 0) throw new Error('[check-design-system] 未找到任何主题文件，secondary 按钮测量失败');
+  return { states, hover };
+}
+
+// Solid dots/marks are graphical interface elements, so their contrast floor is
+// 3:1 rather than the 4.5:1 text floor. Every migrated mark sits on a theme
+// surface; resolving the surface token here keeps the check tied to the actual
+// theme definition instead of a hard-coded white/black assumption.
+export function measureMarkContrast(rendererRoot = SCAN_ROOT) {
+  const themesDir = join(rendererRoot, 'styles/themes');
+  if (!existsSync(themesDir)) throw new Error(`[check-design-system] 主题目录不存在：${themesDir}`);
+  const themeFiles = readdirSync(themesDir).filter((name) => name.endsWith('.css')).sort();
+  const results = [];
+
+  for (const file of themeFiles) {
+    const theme = file.replace('.css', '');
+    const css = readFileSync(join(themesDir, file), 'utf8');
+    const background = resolveThemeColor(css, theme, '--bg-surface');
+    for (const definition of MARK_CONTRAST_TOKENS) {
+      const foreground = resolveThemeColor(css, theme, definition.token, '--bg-surface');
+      results.push({
+        theme,
+        name: definition.name,
+        token: definition.token,
+        foreground,
+        background,
+        against: '--bg-surface',
+        ratio: contrastRatioRgb(foreground, background),
+      });
+    }
+  }
+
+  if (themeFiles.length === 0) throw new Error('[check-design-system] 未找到任何主题文件，mark 对比度测量失败');
+  return results;
+}
+
 function loadBaseline() {
   if (!existsSync(BASELINE_PATH)) return null;
   return JSON.parse(readFileSync(BASELINE_PATH, 'utf8'));
@@ -290,6 +508,19 @@ if (process.argv[1] && process.argv[1].endsWith('check-design-system.mjs')) {
     console.log(`四套主题可读性 token 按各自用法场景的 WCAG 对比度（阈值 ${CONTRAST_MIN}:1）：`);
     for (const r of measureBrandContrast()) {
       console.log(`  ${r.ratio >= CONTRAST_MIN ? '✓' : '✗'} ${r.theme.padEnd(20)} ${r.token} ${r.measured} vs ${r.against} = ${r.ratio.toFixed(2)}:1  （${r.label}）`);
+    }
+    const secondary = measureSecondaryButtonContrast();
+    console.log(`secondary 按钮四套主题状态对比度（阈值 ${CONTRAST_MIN}:1；hover/启用背景差异阈值 ${SECONDARY_BUTTON_HOVER_MIN}:1）：`);
+    for (const r of secondary.states) {
+      console.log(`  ${r.ratio >= CONTRAST_MIN ? '✓' : '✗'} ${r.theme.padEnd(20)} ${r.state.padEnd(8)} = ${r.ratio.toFixed(2)}:1`);
+    }
+    for (const r of secondary.hover) {
+      console.log(`  ${r.ratio >= SECONDARY_BUTTON_HOVER_MIN ? '✓' : '✗'} ${r.theme.padEnd(20)} hover/启用背景 = ${r.ratio.toFixed(2)}:1`);
+    }
+    const marks = measureMarkContrast();
+    console.log(`实心状态点 mark token 四套主题对比度（阈值 ${MARK_CONTRAST_MIN}:1，压各主题 --bg-surface）：`);
+    for (const r of marks) {
+      console.log(`  ${r.ratio >= MARK_CONTRAST_MIN ? '✓' : '✗'} ${r.theme.padEnd(20)} ${r.token.padEnd(18)} vs ${r.against} = ${r.ratio.toFixed(2)}:1`);
     }
     process.exit(0);
   }
@@ -311,7 +542,8 @@ if (process.argv[1] && process.argv[1].endsWith('check-design-system.mjs')) {
     if (count > base) {
       failed = true;
       console.error(`✗ [${rule}] 新增违规：${count} > 基线 ${base}（+${count - base}）`);
-      v[rule].slice(0, 20).forEach((loc) => console.error(`    ${loc}`));
+      const locations = rule === 'theme-blind-bright-foreground' ? v[rule] : v[rule].slice(0, 20);
+      locations.forEach((loc) => console.error(`    ${loc}`));
     } else if (count < base) {
       console.log(`↓ [${rule}] 收口了：${count} < 基线 ${base}，跑 --update 降棘轮`);
     } else {
@@ -333,6 +565,34 @@ if (process.argv[1] && process.argv[1].endsWith('check-design-system.mjs')) {
       console.error(`✗ [brand-identity] ${r.theme} --brand-primary = ${r.brand}，应为品牌恒等值 ${BRAND_IDENTITY}（可读性场景请用 --accent-accessible）`);
     } else {
       console.log(`= [brand-identity] ${r.theme} --brand-primary = ${BRAND_IDENTITY} 恒等`);
+    }
+  }
+
+  const secondary = measureSecondaryButtonContrast();
+  for (const r of secondary.states) {
+    if (r.ratio < CONTRAST_MIN) {
+      failed = true;
+      console.error(`✗ [secondary-button-contrast] ${r.theme} ${r.state} = ${r.ratio.toFixed(2)}:1 < ${CONTRAST_MIN}:1`);
+    } else {
+      console.log(`= [secondary-button-contrast] ${r.theme} ${r.state} = ${r.ratio.toFixed(2)}:1 达标`);
+    }
+  }
+  for (const r of secondary.hover) {
+    if (r.ratio < SECONDARY_BUTTON_HOVER_MIN) {
+      failed = true;
+      console.error(`✗ [secondary-button-hover-difference] ${r.theme} hover/启用背景 = ${r.ratio.toFixed(2)}:1 < ${SECONDARY_BUTTON_HOVER_MIN}:1`);
+    } else {
+      console.log(`= [secondary-button-hover-difference] ${r.theme} hover/启用背景 = ${r.ratio.toFixed(2)}:1 可辨`);
+    }
+  }
+
+  const marks = measureMarkContrast();
+  for (const r of marks) {
+    if (r.ratio < MARK_CONTRAST_MIN) {
+      failed = true;
+      console.error(`✗ [mark-contrast] ${r.theme} ${r.token} vs ${r.against} = ${r.ratio.toFixed(2)}:1 < ${MARK_CONTRAST_MIN}:1`);
+    } else {
+      console.log(`= [mark-contrast] ${r.theme} ${r.token} ${r.ratio.toFixed(2)}:1 达标`);
     }
   }
 

@@ -50,6 +50,7 @@ import { useTaskSync } from './hooks/useTaskSync';
 import { useInAppValidationBridge } from './hooks/useInAppValidationBridge';
 import { useBackgroundTaskSync } from './hooks/useBackgroundTaskSync';
 import { useOpenPreviewBridge } from './hooks/useOpenPreviewBridge';
+import { useTerminalRevealBridge } from './hooks/useTerminalRevealBridge';
 import { useArtifactSurfaceIntent } from './hooks/useArtifactSurfaceIntent';
 import { Group as PanelGroup, Panel, Separator as ResizeHandle } from 'react-resizable-panels';
 import { MemoFloater } from './components/features/memo/MemoFloater';
@@ -97,9 +98,6 @@ const LabPage = React.lazy(() => import('./components/features/lab/LabPage').the
 })));
 const CapturePanel = React.lazy(() => import('./components/features/capture').then((module) => ({
   default: module.CapturePanel,
-})));
-const KnowledgeMemoryPanel = React.lazy(() => import('./components/features/knowledge/KnowledgeMemoryPanel').then((module) => ({
-  default: module.KnowledgeMemoryPanel,
 })));
 const LibraryPanel = React.lazy(() => import('./components/features/knowledge/LibraryPanel').then((module) => ({
   default: module.LibraryPanel,
@@ -170,10 +168,8 @@ export const App: React.FC = () => {
     closeProjectCollaborationPage,
     showProjectSpacePage,
     closeProjectSpacePage,
-    showKnowledgeMemoryPanel,
     showLibraryPanel,
     showActivityPanel,
-    setShowActivityPanel,
     setShowSettings,
     setLanguage,
     setOptionalUpdateInfo,
@@ -276,6 +272,7 @@ export const App: React.FC = () => {
   useInAppValidationBridge();
   // 2b：监听 agent（ProposeSlidesOps 等）生成文档型产物后请求打开预览 tab（按当前会话过滤）。
   useOpenPreviewBridge();
+  useTerminalRevealBridge();
   useArtifactSurfaceIntent();
   useRendererBundleAutoReload();
 
@@ -840,13 +837,14 @@ export const App: React.FC = () => {
 
   // 侧栏是否真的在画（收起 / 非 standard 档都不画）——顶栏该不该存在跟着它走。
   const isSidebarVisible = isStandard && !sidebarCollapsed;
-  // 侧栏常驻的 inline 二级页（能力中心/资料库/自动化/专家详情/知识记忆/本机操作/评测中心，
+  // 侧栏常驻的 inline 二级页（能力中心/资料库/自动化/专家详情/本机操作/评测中心，
   // 以及 2026-07-29 起统一收进 inline 的账号菜单页：提示词库/Lab/时间能力/活动/
   // Neo 协同/桌面状态）在位时，顶栏收敛。评测中心 2026-07-27 拍板从 overlay 改 inline，一并计入。
+  // 知识记忆整窗页 2026-08-02 退役（内容并入设置 → 记忆）。
   // 设置页 2026-07-30 起是 overlay 整窗覆盖（X5.5-B1），本就不是 inline 页；仍留在名单里
   // 只为压住底下的顶栏不随设置开关抖动（覆盖层在位时它反正不可见）。
   const inlineSecondaryPageActive = Boolean(
-    expertDetailRoleId || showKnowledgeMemoryPanel || showLibraryPanel
+    expertDetailRoleId || showLibraryPanel
     || showCapabilityHub || showCronCenter || showLocalOpsPanel || showEvalCenter
     || showProjectSpacePage
     || showSettings || showPromptManager || showLab || showTimeCapabilityCenter
@@ -921,11 +919,11 @@ export const App: React.FC = () => {
                 />
               ) : showActivityPanel ? (
                 <React.Suspense fallback={null}>
-                  <ActivityPanel onClose={() => setShowActivityPanel(false)} />
+                  <ActivityPanel />
                 </React.Suspense>
               ) : showTimeCapabilityCenter ? (
                 <React.Suspense fallback={null}>
-                  <TimeCapabilityPanel onClose={() => useAppStore.getState().setShowTimeCapabilityCenter(false)} />
+                  <TimeCapabilityPanel />
                 </React.Suspense>
               ) : showLab ? (
                 <React.Suspense fallback={null}>
@@ -939,10 +937,6 @@ export const App: React.FC = () => {
                 </React.Suspense>
               ) : expertDetailRoleId ? (
                 <RoleDetailPage roleId={expertDetailRoleId} />
-              ) : showKnowledgeMemoryPanel ? (
-                <React.Suspense fallback={null}>
-                  <KnowledgeMemoryPanel />
-                </React.Suspense>
               ) : showLibraryPanel ? (
                 <React.Suspense fallback={null}>
                   <LibraryPanel />

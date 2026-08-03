@@ -25,6 +25,7 @@ import { CanvasProposalGhostLayer } from './CanvasProposalGhostLayer';
 import { CanvasProposalReviewBar } from './CanvasProposalReviewBar';
 import { DiscardedNodesTray } from './DiscardedNodesTray';
 import { useCanvasProposalReview } from './useCanvasProposalReview';
+import { staleMoveNodeIds } from './canvasProposalApproval';
 import { useAutonomyEnvelopeReview } from './useAutonomyEnvelopeReview';
 import { useCanvasVideoRequest } from './useCanvasVideoRequest';
 import { CanvasAutonomyReviewBar } from './CanvasAutonomyReviewBar';
@@ -105,6 +106,14 @@ export const DesignCanvas: React.FC<{
   const shapes = useDesignCanvasStore((s) => s.shapes);
   // ADR-026：订阅 agent 画布提议 + Apply/Reject 落地。
   const canvasProposal = useCanvasProposalReview();
+  // 陈旧检出：审批期间被用户拖过的 moveNode 目标（userTouchedAt > receivedAt），
+  // 审批卡如实标注 + 幽灵层换警示画法；落地语义不变（仍写 op.x/op.y）。
+  const proposalStaleNodeIds = useMemo(
+    () => (canvasProposal.pending && canvasProposal.receivedAt !== null
+      ? staleMoveNodeIds(canvasProposal.pending.ops, nodes, canvasProposal.receivedAt)
+      : undefined),
+    [canvasProposal.pending, canvasProposal.receivedAt, nodes],
+  );
   // ADR-027：订阅 agent 自主信封请求 + Grant/Decline；活跃信封态驱动进度/停止指示。
   const autonomy = useAutonomyEnvelopeReview();
   // 2b：订阅 agent 经 ProposeVideoOps 发来的出视频请求 → 落画布视频节点。
@@ -222,6 +231,13 @@ export const DesignCanvas: React.FC<{
     discardNode(id);
     persistCanvasDoc();
   }, [discardNode, persistCanvasDoc]);
+
+  // 用户拖动节点松手：落新坐标进 store（updateNode 自带 undo 帧 + userTouchedAt 戳）并落盘。
+  // ⚠️ persistCanvasDoc 必须调：canvas.json 落盘是调用点驱动，漏了拖完刷新回原位。
+  const moveCanvasNode = useCallback((id: string, pos: { x: number; y: number }): void => {
+    useDesignCanvasStore.getState().updateNode(id, pos);
+    persistCanvasDoc();
+  }, [persistCanvasDoc]);
 
   // 选择变化时退出对比浮层（除非仍是双选）。
   useEffect(() => {
@@ -760,16 +776,26 @@ export const DesignCanvas: React.FC<{
           }}
         >
           <Layer listening={!annotMode}>
-            {visibleNodes.map((node) =>
+            {visibleNodes.map((node) => {
+              // canDrag 只闸空格 pan 修饰键，刻意不闸 diagramTool==='select'（与形状不同）：
+              // 节点本就不受 diagramTool 限制（画连线工具下也能点选），拖动同理。别「顺手统一」。
+              const canDrag = !panModifierActive;
+              // dragStart 打 user 戳：正拖的节点按定义已被用户碰过，打戳后 agent 排布它走审批，
+              // 从根上关掉「拖动途中 agent 免批直落 moveNode」的并发窗口。此动作不进 undo 历史。
+              const stampDragStart = (): void =>
+                useDesignCanvasStore.getState().markNodeUserTouched(node.id);
               // 图节点走 CanvasImage；视频节点走 KonvaVideoNode（缩略图+播放徽标）。
-              isVideoNode(node) ? (
+              return isVideoNode(node) ? (
                 <KonvaVideoNode
                   key={node.id}
                   node={node}
                   runDir={runDir}
                   selected={selectedIds.includes(node.id)}
                   panModifierActive={panModifierActive}
+                  canDrag={canDrag}
                   onSelect={(additive) => selectNode(node.id, additive)}
+                  onDragStart={stampDragStart}
+                  onDragEnd={(pos) => moveCanvasNode(node.id, pos)}
                   onPlay={() => setPlayingVideo(node)}
                 />
               ) : (
@@ -779,11 +805,14 @@ export const DesignCanvas: React.FC<{
                   runDir={runDir}
                   selected={selectedIds.includes(node.id)}
                   panModifierActive={panModifierActive}
+                  canDrag={canDrag}
                   onSelect={(additive) => selectNode(node.id, additive)}
+                  onDragStart={stampDragStart}
+                  onDragEnd={(pos) => moveCanvasNode(node.id, pos)}
                   onViewDiff={setDiffNode}
                 />
-              ),
-            )}
+              );
+            })}
             {draftAndCommitted.map((r, i) => (
               <KonvaRect
                 key={i}
@@ -817,7 +846,7 @@ export const DesignCanvas: React.FC<{
           {/* ADR-026：agent 待审批提议的 ghost 虚影（蓝色虚线/半透明），点应用才落库。 */}
           {canvasProposal.pending && (
             <Layer listening={false}>
-              <CanvasProposalGhostLayer ops={canvasProposal.pending.ops} nodes={nodes} />
+              <CanvasProposalGhostLayer ops={canvasProposal.pending.ops} nodes={nodes} staleNodeIds={proposalStaleNodeIds} />
             </Layer>
           )}
         </Stage>
@@ -828,6 +857,7 @@ export const DesignCanvas: React.FC<{
         <CanvasProposalReviewBar
           proposal={canvasProposal.pending}
           approvalReason={canvasProposal.approvalReason}
+          staleNodeIds={proposalStaleNodeIds}
           onApply={(ops) => void canvasProposal.apply(ops)}
           onReject={(fb) => void canvasProposal.reject(fb)}
         />
@@ -844,7 +874,7 @@ export const DesignCanvas: React.FC<{
 
       {/* ADR-027：自主进行中指示 + 停止（活跃信封时；审批条出现时不重叠）。 */}
       {autonomyEnvelope && !autonomy.pendingRequest && (
-        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-40 flex items-center gap-3 rounded-full border border-amber-300/60 bg-white/95 px-4 py-1.5 text-xs text-neutral-600 shadow-md backdrop-blur dark:border-amber-500/40 dark:bg-neutral-900/95 dark:text-neutral-300">
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-40 flex items-center gap-3 rounded-full border border-badge-warning/60 bg-white/95 px-4 py-1.5 text-xs text-neutral-600 shadow-md backdrop-blur dark:border-badge-warning/40 dark:bg-neutral-900/95 dark:text-neutral-300">
           <span>
             {t.design.autonomyRunning
               .replace('{used}', String(autonomyEnvelope.usedVariants))
@@ -852,7 +882,7 @@ export const DesignCanvas: React.FC<{
               .replace('{spent}', formatCny(autonomyEnvelope.spentCny))
               .replace('{cap}', formatCny(autonomyEnvelope.maxCny))}
           </span>
-          <button type="button" onClick={() => autonomyClear()} className="rounded-full px-2 py-0.5 text-amber-600 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-500/10">
+          <button type="button" onClick={() => autonomyClear()} className="rounded-full px-2 py-0.5 text-badge-warning hover:bg-amber-50 dark:hover:bg-amber-500/10">
             {t.design.autonomyStop}
           </button>
         </div>
@@ -863,7 +893,7 @@ export const DesignCanvas: React.FC<{
           data-testid="design-canvas-error-bar"
           className="pointer-events-auto absolute left-1/2 top-4 z-50 flex w-[min(640px,92%)] -translate-x-1/2 items-start gap-2 rounded-xl border border-red-500/30 bg-zinc-900/95 p-3 text-sm text-zinc-200 shadow-xl backdrop-blur"
         >
-          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-400" />
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-badge-danger" />
           <span className="min-w-0 flex-1 leading-relaxed">{error}</span>
           <CloseButton
             aria-label="关闭错误提示"
@@ -951,7 +981,7 @@ export const DesignCanvas: React.FC<{
       {diagramTool === 'connect' && hintSlotFits && (
         <div
           data-testid="design-canvas-diagram-hint"
-          className="pointer-events-none absolute left-4 z-10 rounded-md bg-zinc-900/85 px-2.5 py-1 text-[11px] text-sky-200/90 shadow"
+          className="pointer-events-none absolute left-4 z-10 rounded-md bg-zinc-900/85 px-2.5 py-1 text-[11px] text-badge-info/90 shadow"
           style={hintSlotStyle}
         >
           {t.design.diagramConnectHint}
@@ -990,7 +1020,7 @@ export const DesignCanvas: React.FC<{
               }}
               onBlur={commitDiagramText}
               placeholder={t.design.diagramTextPlaceholder}
-              className="absolute z-10 rounded border border-sky-400/60 bg-zinc-900/95 px-1.5 py-0.5 text-xs text-zinc-100 shadow-lg outline-none placeholder:text-zinc-500"
+              className="absolute z-10 rounded border border-badge-info/60 bg-zinc-900/95 px-1.5 py-0.5 text-xs text-zinc-100 shadow-lg outline-none placeholder:text-zinc-500"
               style={{ left: sx, top: sy, minWidth: 120 }}
             />
           );
@@ -1009,11 +1039,11 @@ export const DesignCanvas: React.FC<{
           <span className="max-w-[36ch] text-center leading-relaxed">{t.design.canvasEmpty}</span>
           <div className="flex flex-col gap-2 text-xs text-zinc-400">
             <div className="flex items-center gap-2">
-              <MessageSquare className="h-3.5 w-3.5 shrink-0 text-sky-300" />
+              <MessageSquare className="h-3.5 w-3.5 shrink-0 text-badge-info" />
               <span>{t.design.canvasEmptyChatEntry}</span>
             </div>
             <div className="flex items-center gap-2">
-              <ImagePlus className="h-3.5 w-3.5 shrink-0 text-emerald-300" />
+              <ImagePlus className="h-3.5 w-3.5 shrink-0 text-badge-success" />
               <span>{t.design.canvasEmptyDropEntry}</span>
             </div>
           </div>
@@ -1057,7 +1087,7 @@ export const DesignCanvas: React.FC<{
               onBlur={commit}
               placeholder={t.design.annotTextPlaceholder}
               // ds-allow:viz 标注输入框用红色描边呼应标注色，绝对定位于画布落点
-              className="absolute z-10 rounded border border-red-400/60 bg-zinc-900/95 px-1.5 py-0.5 text-xs text-red-200 shadow-lg outline-none placeholder:text-zinc-500"
+              className="absolute z-10 rounded border border-badge-danger/60 bg-zinc-900/95 px-1.5 py-0.5 text-xs text-badge-danger shadow-lg outline-none placeholder:text-zinc-500"
               style={{ left: sx, top: sy, minWidth: 120 }}
             />
           );

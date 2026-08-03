@@ -92,7 +92,7 @@ export const TurnFeedback: React.FC<Props> = ({ messageId, content }) => {
         disabled={submitting}
         className={`inline-flex h-6 w-6 items-center justify-center rounded-md border transition-colors disabled:opacity-50 ${
           rating === 1
-            ? 'border-emerald-400/30 bg-emerald-400/10 text-emerald-300'
+            ? 'border-badge-success/30 bg-emerald-400/10 text-badge-success'
             : 'border-transparent text-zinc-500 hover:border-zinc-700 hover:bg-zinc-800/70 hover:text-zinc-300'
         }`}
         title={t.turnFeedback.helpful}
@@ -107,7 +107,7 @@ export const TurnFeedback: React.FC<Props> = ({ messageId, content }) => {
         disabled={submitting}
         className={`inline-flex h-6 w-6 items-center justify-center rounded-md border transition-colors disabled:opacity-50 ${
           rating === -1
-            ? 'border-rose-400/30 bg-rose-400/10 text-rose-300'
+            ? 'border-badge-danger/30 bg-rose-400/10 text-badge-danger'
             : 'border-transparent text-zinc-500 hover:border-zinc-700 hover:bg-zinc-800/70 hover:text-zinc-300'
         }`}
         title={t.turnFeedback.problem}

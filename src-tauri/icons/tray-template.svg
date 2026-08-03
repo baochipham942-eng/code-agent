@@ -1,5 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
-  <path fill="#000" d="M6.5 25V7h4.6l10 11.9V7h4.4v18h-4.4l-10-11.9V25H6.5Z" />
-  <circle cx="24.1" cy="23.7" r="2.6" fill="#000" />
-  <circle cx="24.1" cy="23.7" r="4.6" fill="none" stroke="#000" stroke-width="1.8" />
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48">
+  <!-- N2 星芒模板剪影：N 字形 + 四点星芒，纯黑供 macOS 模板渲染（与 assets/brand/agent-neo-monochrome.svg 同图元） -->
+  <path d="M15 33.5 V14.5 L33 33.5 V14.5" fill="none" stroke="#000" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M37 6.5 L38.1 10 L41.6 11.1 L38.1 12.2 L37 15.7 L35.9 12.2 L32.4 11.1 L35.9 10 Z" fill="#000"/>
 </svg>

@@ -25,9 +25,12 @@ import {
   invokeNativeCommandAction,
   isNativeCommandRuntimeAvailable,
 } from '../services/nativeCommandFacade';
+import { publishGlobalHotkeyRegistrationResults } from '../services/globalHotkeyRegistration';
 import { listenTauriEvent } from '../services/tauriPluginFacade';
 import { claimApprovalResponse, releaseApprovalResponse } from '../utils/approvalResponseGuard';
 import { claimDesignCanvasForSession } from '../components/design/designCanvasLaunch';
+import { voiceCallBridge } from '../services/voiceCallBridge';
+import { useVoiceCallStore } from '../stores/voiceCallStore';
 
 const logger = createLogger('KeyboardShortcuts');
 
@@ -417,6 +420,15 @@ export function useKeyboardShortcuts(config: KeyboardShortcutsConfig = {}): void
           await ipcService.unsafeInvoke(IPC_CHANNELS.VOICE_PASTE_TOGGLE);
           return true;
 
+        case 'voice.callToggle':
+          if (useVoiceCallStore.getState().phase !== 'idle') {
+            voiceCallBridge.hangUp();
+            return true;
+          }
+          if (!currentSessionId) return false;
+          await voiceCallBridge.dial(currentSessionId);
+          return true;
+
         case 'appshot.capture':
           if (isNativeCommandRuntimeAvailable() && await invokeNativeCommandAction('triggerAppshot')) return true;
           setShowCapturePanel(true);
@@ -435,6 +447,10 @@ export function useKeyboardShortcuts(config: KeyboardShortcutsConfig = {}): void
           if (!currentSessionId) return false;
           claimDesignCanvasForSession(currentSessionId);
           openWorkbenchTab('design-canvas');
+          return true;
+
+        case 'terminal.open':
+          openWorkbenchTab('terminal');
           return true;
 
         case 'computerUse.open':
@@ -554,19 +570,37 @@ export function useKeyboardShortcuts(config: KeyboardShortcutsConfig = {}): void
   );
 
   useEffect(() => {
+    let cancelled = false;
+
     void (async () => {
       if (!isNativeCommandRuntimeAvailable()) return;
-      const results = await invokeNativeCommandAction('setGlobalHotkeys', { bindings: globalHotkeyBindings });
-      for (const result of results || []) {
-        if (!result.registered) {
-          logger.warn('Failed to register global hotkey', {
-            actionId: result.actionId,
-            accelerator: result.accelerator,
-            error: result.error,
-          });
+      try {
+        const results = await invokeNativeCommandAction('setGlobalHotkeys', { bindings: globalHotkeyBindings });
+        if (cancelled) return;
+        publishGlobalHotkeyRegistrationResults(results);
+        for (const result of results) {
+          if (!result.registered) {
+            logger.warn('Failed to register global hotkey', {
+              actionId: result.actionId,
+              accelerator: result.accelerator,
+              error: result.error,
+            });
+          }
         }
+      } catch (error) {
+        if (cancelled) return;
+        logger.error('Failed to configure global hotkeys', { error });
+        publishGlobalHotkeyRegistrationResults(globalHotkeyBindings.map((binding) => ({
+          ...binding,
+          registered: false,
+          error: error instanceof Error ? error.message : String(error),
+        })));
       }
     })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [globalHotkeyBindings]);
 
   useEffect(() => {

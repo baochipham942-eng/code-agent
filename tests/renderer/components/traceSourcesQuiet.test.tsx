@@ -56,8 +56,10 @@ describe('Sources (纯链接来源) 视觉降级 — 不长得像交付物卡', 
     expect(html).not.toContain('xingyun3d.csdn.net');
     // 不再有 success 绿色 chrome
     expect(html).not.toContain('border-emerald-500');
+    expect(html).not.toContain('border-badge-success');
     expect(html).not.toContain('bg-emerald-500');
     expect(html).not.toContain('text-emerald-300');
+    expect(html).not.toContain('text-badge-success');
     // 改用中性灰卡片
     expect(html).toContain('border-border-muted');
 
@@ -83,7 +85,7 @@ describe('Sources (纯链接来源) 视觉降级 — 不长得像交付物卡', 
       />,
     );
     expect(html).toContain('Outputs');
-    expect(html).toContain('border-emerald-500');
+    expect(html).toContain('border-badge-success');
   });
 
   it('文件+来源混合：文件进绿 Outputs，WebFetch 来源拆出到独立中性 Sources 块（不当产物）', () => {
@@ -93,7 +95,7 @@ describe('Sources (纯链接来源) 视觉降级 — 不长得像交付物卡', 
     // 两个区块都在：绿 Outputs（真文件产物）+ 中性 Sources（来源链接，默认折叠）
     expect(html).toContain('Outputs');
     expect(html).toContain('Sources');
-    expect(html).toContain('border-emerald-500'); // Outputs 绿
+    expect(html).toContain('border-badge-success'); // Outputs 绿
     expect(html).toContain('border-border-muted'); // Sources 中性灰
     // Sources 区出现在 Outputs 之后（来源在产物下方、降级呈现）
     expect(html.indexOf('Outputs')).toBeLessThan(html.indexOf('Sources'));

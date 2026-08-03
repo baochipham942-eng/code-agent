@@ -149,11 +149,15 @@ export const zhSettingsCore = {
         dark: '深色',
         light: '浅色',
         auto: '自动',
+        highContrastDark: '高对比深色',
+        highContrastLight: '高对比浅色',
       },
       themeDescriptions: {
         dark: '深色背景，适合夜间使用',
         light: '浅色背景，适合日间使用',
         system: '跟随系统设置自动切换',
+        highContrastDark: '最大对比度的深色主题，提升可读性',
+        highContrastLight: '最大对比度的浅色主题，提升可读性',
       },
       currentSystemThemePrefix: '当前系统主题：',
       fontSize: '字体大小',
@@ -368,6 +372,8 @@ export const zhSettingsCore = {
       resetShortcut: '恢复该项默认',
       saving: '正在保存…',
       autosaveHint: '修改会自动保存。系统级热键会在桌面运行时重新注册，失败项会保留在配置中并记录诊断日志。',
+      registrationFailedPrefix: '注册失败：',
+      registrationFailedUnknown: '未知注册错误',
       categories: {
         global: '全局唤起',
         sessionEditing: '会话编辑',
@@ -417,6 +423,10 @@ export const zhSettingsCore = {
         'session.new': {
           label: '新建会话',
           description: '创建一个新的对话会话',
+        },
+        'voice.callToggle': {
+          label: '拨打/挂断实时通话',
+          description: '从系统任意位置唤起应用并拨打实时通话，通话中再次触发则挂断',
         },
         'voice.toggle': {
           label: '语音输入',
@@ -533,6 +543,10 @@ export const zhSettingsCore = {
         'designCanvas.open': {
           label: '打开设计画布',
           description: '打开右栏设计画布视图',
+        },
+        'terminal.open': {
+          label: '打开终端',
+          description: '打开右栏会话终端视图',
         },
         'computerUse.open': {
           label: '打开 Computer Use',

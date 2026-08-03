@@ -21,13 +21,7 @@ const THEMES_DIR = path.join(RENDERER, 'styles/themes');
 const ALLOW = 'token-scan-allow';
 
 // 已知洞登记表（双向核对：洞补上了必须从表里删，防积压）。
-// zinc 刻度只在 dark/light 主题定义；hc 主题运行时靠 useTheme 给 root 挂 dark/light class
-// 借级联取到值（hc-dark 实际挂 light class），不算运行时未定义，但 hc 专属 zinc 刻度
-// 缺失是真实主题覆盖洞，补齐需要设计决策（hc 下该用什么灰阶），登记待产品负责人排期。
-const KNOWN_HOLES = new Set(
-  ['50', '100', '200', '300', '400', '500', '600', '700', '800', '850', '900', '950']
-    .map((n) => `--zinc-${n}`),
-);
+const KNOWN_HOLES = new Set();
 
 function* walk(dir, extRe) {
   for (const e of fs.readdirSync(dir, { withFileTypes: true })) {

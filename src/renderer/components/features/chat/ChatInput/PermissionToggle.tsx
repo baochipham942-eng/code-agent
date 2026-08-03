@@ -25,9 +25,9 @@ const TIER_ICONS: Record<SessionPermissionMode, React.ReactNode> = {
 
 const TIER_BUTTON_CLASS: Record<SessionPermissionMode, string> = {
   default: 'text-zinc-500 hover:text-zinc-400 hover:bg-white/[0.04]',
-  readOnly: 'bg-emerald-500/15 text-emerald-400',
-  acceptEdits: 'bg-amber-500/15 text-amber-400',
-  bypassPermissions: 'bg-red-500/20 text-red-400',
+  readOnly: 'bg-emerald-500/15 text-badge-success',
+  acceptEdits: 'bg-amber-500/15 text-badge-warning',
+  bypassPermissions: 'bg-red-500/20 text-badge-danger',
 };
 
 function isSessionPermissionMode(value: unknown): value is SessionPermissionMode {
@@ -148,7 +148,7 @@ export const PermissionToggle: React.FC<PermissionToggleProps> = ({ disabled }) 
               <span className="mt-0.5 shrink-0 text-zinc-300">{TIER_ICONS[tier]}</span>
               <span className="min-w-0">
                 {/* 最危险的那档在菜单里也要一眼看出来——只靠文字时它跟其他三档同权重 */}
-                <span className={`block text-xs font-medium ${tier === 'bypassPermissions' ? 'text-amber-400' : 'text-zinc-200'}`}>
+                <span className={`block text-xs font-medium ${tier === 'bypassPermissions' ? 'text-badge-warning' : 'text-zinc-200'}`}>
                   {modeTexts[tier].title}
                 </span>
                 <span className="block text-[11px] leading-snug text-zinc-500">{modeTexts[tier].operationScope}</span>

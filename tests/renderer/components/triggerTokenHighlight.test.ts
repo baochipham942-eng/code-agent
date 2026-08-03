@@ -9,7 +9,7 @@ describe('parseLeadingTriggerToken（核心功能触发词着色）', () => {
     const parsed = parseLeadingTriggerToken('@neo 帮我查上海FDE最新薪资');
     expect(parsed).toMatchObject({ token: '@neo', kind: 'neo' });
     expect(parsed?.rest).toBe(' 帮我查上海FDE最新薪资');
-    expect(parsed?.className).toContain('emerald');
+    expect(parsed?.className).toContain('text-badge-success');
 
     expect(parseLeadingTriggerToken('@Neo 做个事')?.token).toBe('@Neo');
   });
@@ -17,7 +17,7 @@ describe('parseLeadingTriggerToken（核心功能触发词着色）', () => {
   it('recognizes /goal and /workflow with their own styles', () => {
     const goal = parseLeadingTriggerToken('/goal 跑通全部测试 --verify "npm test"');
     expect(goal).toMatchObject({ token: '/goal', kind: 'goal' });
-    expect(goal?.className).toContain('amber');
+    expect(goal?.className).toContain('text-badge-warning');
 
     const workflow = parseLeadingTriggerToken('/workflow 扇出 5 个 agent 审代码');
     expect(workflow).toMatchObject({ token: '/workflow', kind: 'workflow' });

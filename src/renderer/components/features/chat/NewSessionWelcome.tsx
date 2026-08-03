@@ -94,7 +94,7 @@ export const NewSessionWelcome: React.FC<{
             星点纹理（舷窗原则：阅读区保持干净）。reduced-motion 停转由 PlanetSphere
             内建 CSS 兜底，此处零处理。 */}
         <div className="mb-4">
-          <PlanetSphere kind="earth" spinSeconds={24} glowColor="rgba(96,165,250,.20)" size={42} />
+          <PlanetSphere kind="earth" spinSeconds={24} glowColor="rgba(96,165,250,.20)" size={42} interactive />
         </div>
         <div className="mb-5 flex items-center justify-between gap-4">
           <div className="min-w-0">

@@ -112,7 +112,7 @@ describe('VoiceChrome 固定槽位', () => {
 
     expect(screen.getByTestId('voice-chrome').dataset.state).toBe('muted');
     expect(screen.getByTestId('voice-status').textContent).toMatch(ON_CALL_REGEX);
-    expect(screen.getByTestId('voice-mute').className).toContain('text-amber-300');
+    expect(screen.getByTestId('voice-mute').className).toContain('text-badge-warning');
     expectAtMostTwoActions();
   });
 

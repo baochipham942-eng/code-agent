@@ -1011,8 +1011,10 @@ export class DatabaseService extends DurableRunDatabaseSupport {
     this.ensureDb();
     return this.sessionRepo.getSessionPlanTitle(sessionId);
   }
-  clearAllSessions(): number {
+  async clearAllSessions(): Promise<number> {
     this.ensureDb();
+    const { deleteAllTerminalFrames } = await import('../surfaceExecution/TerminalFrameStore');
+    await deleteAllTerminalFrames();
     return this.sessionRepo.clearAllSessions();
   }
   markCrashedActiveSessions(now?: number): {
@@ -1022,8 +1024,10 @@ export class DatabaseService extends DurableRunDatabaseSupport {
     this.ensureDb();
     return this.sessionRepo.markCrashedActiveSessions(now);
   }
-  clearAllMessages(): number {
+  async clearAllMessages(): Promise<number> {
     this.ensureDb();
+    const { deleteAllTerminalFrames } = await import('../surfaceExecution/TerminalFrameStore');
+    await deleteAllTerminalFrames();
     return this.sessionRepo.clearAllMessages();
   }
   hasMessages(sessionId: string): boolean {

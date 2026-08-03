@@ -52,6 +52,21 @@ function buildStreamUrl(sessionId: string, agentId?: string): string {
   return `${scheme}://${window.location.host}${VOICE_STREAM_WS_PATH}?${params.toString()}`;
 }
 
+function joinUserTranscriptParts(prefix: string, current: string): string {
+  return [prefix.trim(), current.trim()].filter(Boolean).join(' ');
+}
+
+function removeUserTranscriptPrefix(text: string, prefix: string): string | undefined {
+  const normalizedText = text.trim();
+  const normalizedPrefix = prefix.trim();
+  if (!normalizedText || !normalizedPrefix) return undefined;
+  if (normalizedText === normalizedPrefix) return '';
+  if (!normalizedText.startsWith(normalizedPrefix)) return undefined;
+  const boundary = normalizedText[normalizedPrefix.length];
+  if (!boundary || !/\s/.test(boundary)) return undefined;
+  return normalizedText.slice(normalizedPrefix.length).trimStart();
+}
+
 async function readVoiceRuntimeSettings(): Promise<{
   interruptMode: VoiceInterruptMode;
   echoCancellation: 'auto' | 'off';
@@ -164,9 +179,43 @@ class VoiceCallBridge {
    */
   private settledPartials: { user?: string; assistant?: string } = {};
   private settledAssistantResponseId: string | null = null;
+  /** 用户 ASR 的 stash 是每个 item 的累计值；renderer 需要把 item 间前缀保留下来。 */
+  private userTranscriptItemId: string | null = null;
+  private userTranscriptPrefix = '';
+  private userTranscriptSegment = '';
 
   /** user/assistant 各自等待落库；一侧 final 不得取消另一侧交接。 */
   private handoffDeadlines: Partial<Record<'user' | 'assistant', number>> = {};
+  /** response 切换时旧轮已 flush，新轮等旧真消息接手后再写入单槽位。 */
+  private assistantRevealBlockedUntil = 0;
+
+  private resetUserTranscriptAccumulator(): void {
+    this.userTranscriptItemId = null;
+    this.userTranscriptPrefix = '';
+    this.userTranscriptSegment = '';
+  }
+
+  private applyUserTranscript(event: Extract<VoiceEvent, { type: 'user.transcript' }>): string {
+    if (event.itemId && this.userTranscriptItemId && event.itemId !== this.userTranscriptItemId) {
+      this.userTranscriptPrefix = joinUserTranscriptParts(
+        this.userTranscriptPrefix,
+        this.userTranscriptSegment,
+      );
+      this.userTranscriptSegment = '';
+    }
+    if (event.itemId) this.userTranscriptItemId = event.itemId;
+    this.userTranscriptSegment = event.text;
+    return joinUserTranscriptParts(this.userTranscriptPrefix, this.userTranscriptSegment);
+  }
+
+  private releaseUserTranscriptPrefix(settled: string | undefined): void {
+    if (settled === undefined) return;
+    const current = joinUserTranscriptParts(this.userTranscriptPrefix, this.userTranscriptSegment);
+    const remainder = removeUserTranscriptPrefix(current, settled);
+    if (remainder === undefined) return;
+    this.userTranscriptPrefix = '';
+    this.userTranscriptSegment = remainder;
+  }
 
   private scheduleReload(
     sessionId: string,
@@ -203,8 +252,18 @@ class VoiceCallBridge {
   private releaseSettledPartials(): boolean {
     const state = this.store();
     const messages = useSessionStore.getState().messages;
-    const landed = (role: 'user' | 'assistant', text: string | undefined): boolean =>
-      text !== undefined && messages.some((m) => m.role === role && m.content.trim() === text.trim());
+    const landed = (role: 'user' | 'assistant', text: string | undefined): boolean => {
+      const fragment = text?.trim().replace(/\s+/g, ' ') ?? '';
+      if (!fragment) return false;
+      return messages.some((m) => {
+        if (m.role !== role) return false;
+        const content = m.content.trim().replace(/\s+/g, ' ');
+        if (content === fragment) return true;
+        // 单字符包含会把「好」误认成「好好」等别的真消息；合并判定只接受有辨识度的片段。
+        return fragment.length >= 2 && content.includes(fragment);
+      });
+    };
+    const settledUser = this.settledPartials.user;
     const patch = resolvePartialRelease(
       this.settledPartials,
       { user: state.partialUser, assistant: state.partialAssistant },
@@ -213,10 +272,14 @@ class VoiceCallBridge {
         assistant: landed('assistant', this.settledPartials.assistant),
       },
     );
-    if (patch.partialUser !== undefined) delete this.settledPartials.user;
+    if (patch.partialUser !== undefined) {
+      delete this.settledPartials.user;
+      this.releaseUserTranscriptPrefix(settledUser);
+    }
     if (patch.partialAssistant !== undefined) {
       delete this.settledPartials.assistant;
       this.settledAssistantResponseId = null;
+      this.assistantRevealBlockedUntil = 0;
     }
     if (Object.keys(patch).length > 0) state.eventApplied(patch);
     return Object.keys(this.settledPartials).length === 0;
@@ -258,6 +321,10 @@ class VoiceCallBridge {
 
   private startRevealCycle(responseId?: string): void {
     this.revealResponseId = responseId ?? null;
+    if (this.settledPartials.assistant !== undefined && this.assistantRevealBlockedUntil === 0) {
+      this.assistantRevealBlockedUntil = this.handoffDeadlines.assistant
+        ?? Date.now() + VOICE_PARTIAL_HANDOFF_MAX_WAIT_MS;
+    }
     this.revealFinalized = false;
     this.revealedText = '';
     this.lastPlayedSec = 0;
@@ -274,6 +341,10 @@ class VoiceCallBridge {
   }
 
   private tickReveal(): void {
+    if (this.assistantRevealBlockedUntil > 0) {
+      if (Date.now() < this.assistantRevealBlockedUntil) return;
+      this.assistantRevealBlockedUntil = 0;
+    }
     const backlogSec = Math.max(0, this.playbackEndsAt - Date.now()) / 1000;
     const playedSec = this.audioEnqueuedSec - backlogSec;
     // 停滞判据打在**播放进度**上，不打在揭示长度上：音频还在下发的那几秒里，
@@ -283,7 +354,10 @@ class VoiceCallBridge {
       this.lastPlayedSec = playedSec;
       this.revealStallAt = Date.now();
     }
-    const revealed = computeRevealedSubtitle(this.revealTarget, this.audioEnqueuedSec, playedSec);
+    const computed = computeRevealedSubtitle(this.revealTarget, this.audioEnqueuedSec, playedSec);
+    // 同一 response 内揭示长度只增不减。final 仍可用全等字符串替换已显示内容，
+    // 但 final 比累计 delta 短、或音频队列突跳令比例下降时，不得把屏幕往回拉。
+    const revealed = computed.length < this.revealedText.length ? this.revealedText : computed;
     if (revealed !== this.revealedText) {
       // 长度没变但内容变了（final 校正）也要写：这一步就是「防漂移」。
       this.revealedText = revealed;
@@ -299,7 +373,10 @@ class VoiceCallBridge {
 
   /** 立刻放完全文并结算（挂断 / teardown / 停滞兜底）。 */
   private flushReveal(): void {
-    if (this.revealTarget) this.store().eventApplied({ partialAssistant: this.revealTarget });
+    const flushed = this.revealTarget.length >= this.revealedText.length
+      ? this.revealTarget
+      : this.revealedText;
+    if (flushed) this.store().eventApplied({ partialAssistant: flushed });
     this.endRevealCycle();
   }
 
@@ -396,6 +473,8 @@ class VoiceCallBridge {
     this.audio = null;
     this.settledPartials = {};
     this.settledAssistantResponseId = null;
+    this.resetUserTranscriptAccumulator();
+    this.assistantRevealBlockedUntil = 0;
     for (const timer of this.reloadTimers.values()) clearTimeout(timer);
     this.reloadTimers.clear();
     this.handoffDeadlines = {};
@@ -800,6 +879,7 @@ class VoiceCallBridge {
         ) {
           // 被取消的轮没有真消息可交接，先清 handoff 再停 reveal，避免 reload 把旧消息拉回来。
           this.pendingHandoffSessionId = null;
+          this.assistantRevealBlockedUntil = 0;
           const assistantReload = this.reloadTimers.get('assistant');
           if (assistantReload) clearTimeout(assistantReload);
           this.reloadTimers.delete('assistant');
@@ -816,6 +896,7 @@ class VoiceCallBridge {
           || event.classification === 'short_fragment'
         ) {
           delete this.settledPartials.user;
+          this.resetUserTranscriptAccumulator();
           this.store().eventApplied({ partialUser: '', userSpeaking: false });
         }
         if (event.action === 'resume') {
@@ -844,12 +925,15 @@ class VoiceCallBridge {
         }
         break;
       case 'user.transcript':
-        if (event.done) {
-          // 顶着 final 文本等真消息上屏（见 scheduleReload）；这里不清空
-          this.store().eventApplied({ userSpeaking: false, partialUser: event.text });
-          this.scheduleReload(sessionId, 'user');
-        } else {
-          this.store().eventApplied({ partialUser: event.text });
+        {
+          const partialUser = this.applyUserTranscript(event);
+          if (event.done) {
+            // 顶着 final 文本等真消息上屏（见 scheduleReload）；这里不清空
+            this.store().eventApplied({ userSpeaking: false, partialUser });
+            this.scheduleReload(sessionId, 'user');
+          } else {
+            this.store().eventApplied({ partialUser });
+          }
         }
         break;
       case 'assistant.transcript':
@@ -865,13 +949,12 @@ class VoiceCallBridge {
           if (this.revealTimer === null) this.flushReveal();
           else this.tickReveal();
         } else {
-          if (
-            this.revealTarget
-            && event.responseId
-            && this.revealResponseId
-            && event.responseId !== this.revealResponseId
-          ) {
-            this.endRevealCycle();
+          if (event.responseId && this.revealResponseId && event.responseId !== this.revealResponseId) {
+            this.flushReveal();
+            if (this.settledPartials.assistant !== undefined) {
+              this.assistantRevealBlockedUntil = this.handoffDeadlines.assistant
+                ?? Date.now() + VOICE_PARTIAL_HANDOFF_MAX_WAIT_MS;
+            }
           }
           if (!this.revealTarget) this.startRevealCycle(event.responseId);
           this.revealTarget += event.text;

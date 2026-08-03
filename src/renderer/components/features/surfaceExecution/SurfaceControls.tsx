@@ -79,7 +79,7 @@ export function SurfaceControls({ session, copy, onControl }: SurfaceControlsPro
         <p className="mt-2 text-[10px] text-zinc-600">{copy.controls.unavailable}</p>
       ) : null}
 
-      {failed && <p role="status" className="mt-2 text-[10px] text-red-300">{copy.controls.failed}</p>}
+      {failed && <p role="status" className="mt-2 text-[10px] text-badge-danger">{copy.controls.failed}</p>}
     </section>
   );
 }

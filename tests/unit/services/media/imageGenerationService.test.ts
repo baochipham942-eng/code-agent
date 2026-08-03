@@ -14,12 +14,21 @@ vi.mock('../../../../src/host/services/core/configService', () => ({
   getConfigService: () => ({ getApiKey: getApiKeyMock }),
 }));
 
+// mock logger：断言价表兜底时确有 warn 落地，且不让日志写文件/console 污染测试输出。
+const { loggerMock } = vi.hoisted(() => ({
+  loggerMock: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
+}));
+vi.mock('../../../../src/host/services/infra/logger', () => ({
+  createLogger: () => loggerMock,
+}));
+
 import {
   expandImage,
   removeWatermark,
   expandScalesForDirection,
   isSafeImageUrl,
   getArkApiKey,
+  getZhipuImageModelId,
 } from '../../../../src/host/services/media/imageGenerationService';
 
 function jsonResponse(obj: unknown): Response {
@@ -293,6 +302,97 @@ describe('editImageByAnnotation — gptimage /v1/images/edits multipart 标注�
     await expect(editImageByAnnotation({ engine: 'gptimage', annotatedImageDataUrl: 'data:image/png;base64,', instruction: 'x' }))
       .rejects.toThrow(/base64 为空/);
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('cogview engine — 智谱 CogView 生图模型 id 可配置（禁止钉死版本号）', () => {
+  const ENV_MODEL = 'ZHIPU_IMAGE_MODEL';
+  const ENV_ZHIPU_KEY = 'ZHIPU_OFFICIAL_API_KEY';
+
+  beforeEach(() => {
+    getApiKeyMock.mockReset();
+    getApiKeyMock.mockReturnValue(undefined);
+    loggerMock.warn.mockClear();
+    delete process.env[ENV_MODEL];
+    delete process.env[ENV_ZHIPU_KEY];
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    getApiKeyMock.mockReset();
+    delete process.env[ENV_MODEL];
+    delete process.env[ENV_ZHIPU_KEY];
+  });
+
+  it('未配置覆盖时用内置默认版本（存量用户零行为变化）', () => {
+    expect(getZhipuImageModelId()).toBe('cogview-4-250304');
+  });
+
+  it('env ZHIPU_IMAGE_MODEL 优先于 config slot 与内置默认', () => {
+    process.env[ENV_MODEL] = 'cogview-4-260101';
+    getApiKeyMock.mockImplementation((slot: string) => (slot === 'zhipu-image-model' ? 'cogview-4-config' : undefined));
+    expect(getZhipuImageModelId()).toBe('cogview-4-260101');
+  });
+
+  it('env 缺失时回落 config slot zhipu-image-model', () => {
+    getApiKeyMock.mockImplementation((slot: string) => (slot === 'zhipu-image-model' ? 'cogview-4-config' : undefined));
+    expect(getZhipuImageModelId()).toBe('cogview-4-config');
+  });
+
+  it('generateImage(cogview) 用覆盖后的模型 id 请求，且 actualModel 回传该 id（供价表查价）', async () => {
+    process.env[ENV_ZHIPU_KEY] = 'sk-zhipu';
+    process.env[ENV_MODEL] = 'cogview-4-260101';
+    let capturedBody: Record<string, unknown> | undefined;
+    const fetchMock = vi.fn().mockImplementation(async (_url: string, init: RequestInit) => {
+      capturedBody = JSON.parse(init.body as string);
+      return { ok: true, json: async () => ({ data: [{ url: 'https://cdn.example.com/out.png' }] }) };
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const { generateImage } = await import('../../../../src/host/services/media/imageGenerationService');
+    const r = await generateImage('cogview', '', '一只猫', '1:1');
+    expect(capturedBody?.model).toBe('cogview-4-260101');
+    expect(r.actualModel).toBe('cogview-4-260101');
+  });
+
+  it('非内置版本不在价表中时记一条 warn 日志（陷阱①：不许静默按 0/失真价计费）', async () => {
+    process.env[ENV_ZHIPU_KEY] = 'sk-zhipu';
+    process.env[ENV_MODEL] = 'cogview-4-未来版本';
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ data: [{ url: 'https://cdn.example.com/out.png' }] }),
+    }));
+    const { generateImage } = await import('../../../../src/host/services/media/imageGenerationService');
+    await generateImage('cogview', '', '一只猫', '1:1');
+    expect(loggerMock.warn).toHaveBeenCalledTimes(1);
+    expect(loggerMock.warn.mock.calls[0][0]).toContain('cogview-4-未来版本');
+  });
+
+  it('内置默认版本命中价表时不记 warn', async () => {
+    process.env[ENV_ZHIPU_KEY] = 'sk-zhipu';
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ data: [{ url: 'https://cdn.example.com/out.png' }] }),
+    }));
+    const { generateImage } = await import('../../../../src/host/services/media/imageGenerationService');
+    await generateImage('cogview', '', '一只猫', '1:1');
+    expect(loggerMock.warn).not.toHaveBeenCalled();
+  });
+
+  it('非 ok 响应把配置的模型 id 拼进异常，避免误判为余额问题（陷阱②）', async () => {
+    process.env[ENV_ZHIPU_KEY] = 'sk-zhipu';
+    process.env[ENV_MODEL] = 'cogview-4-已下线版本';
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: false,
+      status: 429,
+      text: async () => '{"code":"1113","message":"余额不足或无可用资源包,请充值。"}',
+    }));
+    const { generateImage } = await import('../../../../src/host/services/media/imageGenerationService');
+    await expect(generateImage('cogview', '', '一只猫', '1:1')).rejects.toThrow(/cogview-4-已下线版本/);
+  });
+
+  it('缺智谱 key 仍报缺 key（覆盖模型 id 不影响既有缺 key 校验）', async () => {
+    const { generateImage } = await import('../../../../src/host/services/media/imageGenerationService');
+    await expect(generateImage('cogview', '', 'x', '1:1')).rejects.toThrow(/智谱官方 API Key/);
   });
 });
 

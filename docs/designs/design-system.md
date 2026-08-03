@@ -198,13 +198,63 @@ fx 语义:`rms`=真实电平驱动;`pulse`=信号握手脉冲;`corona`=日冕脉
 - 欢迎页主视觉(`NewSessionWelcome.tsx`):地球 42px / 24s / 静态。
 - 空态(`EmptyState.tsx`):可选 `planet` 属性,34px / 20s。
 
-### NeoBrandMark 与 assets/brand 三变体
+### 可达性登记(哪些形态用户真的走得到)
+
+"接进去了"不等于"用户走得到"。星球升级批的空态里有两处触发条件很窄,不登记的话后人会
+把它们当常见状态去调,或者反过来当死代码删掉。**改这几处前先看这里。**
+
+| 形态 | 触发条件 | 用户实际能不能遇到 |
+|------|---------|------------------|
+| 侧栏空态 · 地球 | 会话列表为空(`SidebarSessionList.tsx`) | **几乎遇不到**——见下 |
+| 侧栏搜索无结果 · 水星 | 搜索/筛选无匹配 | 随时可达,正常状态 |
+| 语音七态 | 通话生命周期 | 通话中全部可达 |
+| 欢迎页地球 42px | 新会话欢迎页 | 常见 |
+| Knowledge/Memory 审计空态 · 木星 | `KnowledgeMemoryPanel` 右栏无记忆且无搜索词 | **不可达**——见下 |
+
+**侧栏地球空态是装饰性兜底,不是常见状态。** `sessionStore.ts` 的 `initializeSessionStore`
+是三选一分支:已有 `currentSessionId` 就保持,`sessions.length > 0` 走 `switchSession`,
+**只有列表真空才 `createSession('新对话')`**。所以首次启动(或用户手动清空全部会话)之后
+列表就再不为空,这个空态从此不出现;全仓也没有自动清理空会话的逻辑,那条空壳会一直留着,
+不会被清掉又重建。**全生命周期只会自动建这一条,不是每次启动建一条。**
+
+- 2026-08-02 产品负责人拍板:**承认它是装饰性兜底,不为了让它可见去改 boot 行为**。
+  改 boot 影响每个用户的每次启动(首屏从"有一条会话"变成空列表,输入框/工作目录/会话 id
+  都要能在无会话状态下工作),而收益只有"少一条空壳 + 让一个装饰空态可见",不划算。
+- 如果将来仍要改成懒建,**用它自己的理由单独立单**("启动要不要自动建空会话"是独立的产品
+  问题),不要拿这个空态当动机——那是让尾巴摇狗。
+
+**木星空态当前不可达**:它唯一的宿主 `KnowledgeMemoryPanel` 的入口
+`setShowKnowledgeMemoryPanel(true)` 零产品调用方(资料库「记忆」tab 2026-07-27 已撤)。
+去留见工单 `2026-08-02-KnowledgeMemoryPanel-并入设置记忆.md`(拍板:三块内容并入设置 →
+记忆,整窗页壳子退役)。**注意木星这颗星球本身是活的**——语音思考态在用,别连它一起删。
+
+### NeoBrandMark 与 assets/brand 三变体(资产先行,内联是当前唯一 UI 真源)
 
 `src/renderer/components/features/sidebar/NeoBrandMark.tsx`:N2 星芒标——深空渐变圆角砖 +
 直笔 N(青渐变描边)+ 收笔右上四点星芒 + 静态轨道环。Props:`size`(默认 22)、
-`showWordmark`、`animatedOrbit`(轨道卫星点 6s/圈)。静态资产在 `src/renderer/assets/brand/`:
-`agent-neo-color.svg` / `agent-neo-inverse.svg` / `agent-neo-monochrome.svg`,
-与 `src-tauri/icons/agent-neo.svg` 同源(48×48 viewBox)。
+`showWordmark`、`animatedOrbit`(轨道卫星点 6s/圈)。
+
+**资产先行(2026-08-02 拍板)。** `src/renderer/assets/brand/` 三变体
+(`agent-neo-color.svg` / `agent-neo-inverse.svg` / `agent-neo-monochrome.svg`)与
+`src-tauri/icons/agent-neo.svg` 是**先行储备的定稿资产**(48×48 viewBox),当前没有
+React 消费场景,不要硬接:
+
+- `inverse`(纯白字形):供深底印刷 / 启动页,等启动页或印刷物料场景落地时再接;
+- `monochrome`(`currentColor` 字形):设计意图是跟随文字色,但经 `<img>`/CSS 引用时
+  `currentColor` 不继承宿主上下文,只有内联 SVG 才有意义——等出现"商标跟随文字色"
+  的文字流场景时以内联方式接;
+- `color`:图面与 NeoBrandMark 内联一致(逐图元对拍过),供 tauri 图标、落地页
+  favicon、`iconAsset` 等**非内联**场景使用(`public/code-agent/agent-neo-mark.svg`
+  即其内容拷贝)。
+
+React 侧**当前唯一真源是 NeoBrandMark 内联 SVG**,不接资产文件的原因:渐变 defs id
+必须按实例唯一(侧栏 / 欢迎页 / 初始化向导可多标同屏,`React.useId` 派生),
+`animatedOrbit` 卫星点是 DOM 级 CSS 动效(`global.css .neo-orbit-satellite`)——
+静态资产文件两者都表达不了,硬接只能 `?raw` 内联 + 运行时改写 id,无视觉收益。
+
+**同步规则:改标先改三变体 + `src-tauri/icons/agent-neo.svg`(再重跑
+`cargo tauri icon` 与 tray/favicon 生成),然后逐图元同步 NeoBrandMark 内联,
+禁止只改一边。**
 
 - 拍板: 品牌标的色是**固定字面色**,不随 `--brand-primary` 派生(深空砖在任何主题下都是
   深色底)——这是与旧版 color-mix 派生的有意差异,守卫脚本里以 `ds-allow` 区块豁免登记。

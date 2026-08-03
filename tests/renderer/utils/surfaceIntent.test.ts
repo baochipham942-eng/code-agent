@@ -197,6 +197,13 @@ describe('surface intent unified decision', () => {
       },
     },
     {
+      name: 'terminal_open',
+      artifact: { kind: 'terminal' } as const,
+      assertState: () => {
+        expect(useAppStore.getState().activeWorkbenchTab).toBe('terminal');
+      },
+    },
+    {
       name: 'swarm root event',
       artifact: { kind: 'swarm-monitor' } as const,
       assertState: () => {
@@ -212,6 +219,38 @@ describe('surface intent unified decision', () => {
       artifactSessionId: 'session-a',
     })).not.toBeNull();
     assertState();
+  });
+
+  // 终端 auto-open 必须继承既有礼仪，而不是自带一套：每轮一次 + 用户切走不抢回。
+  it('终端每轮只自动亮一次', () => {
+    expect(openSurfaceForArtifact({
+      artifact: { kind: 'terminal' },
+      artifactSessionId: 'session-a',
+    })).toEqual({ view: 'terminal' });
+    expect(openSurfaceForArtifact({
+      artifact: { kind: 'terminal' },
+      artifactSessionId: 'session-a',
+    })).toBeNull();
+  });
+
+  it('用户手动切走后终端不抢回焦点', () => {
+    expect(openSurfaceForArtifact({
+      artifact: { kind: 'terminal' },
+      artifactSessionId: 'session-a',
+    })).toEqual({ view: 'terminal' });
+    useAppStore.getState().openWorkbenchTab('files', { source: 'user' });
+    expect(openSurfaceForArtifact({
+      artifact: { kind: 'terminal' },
+      artifactSessionId: 'session-a',
+    })).toBeNull();
+    expect(useAppStore.getState().activeWorkbenchTab).toBe('files');
+  });
+
+  it('别的会话的终端不抢前台焦点', () => {
+    expect(openSurfaceForArtifact({
+      artifact: { kind: 'terminal' },
+      artifactSessionId: 'session-b',
+    })).toBeNull();
   });
 
   it('新一轮恢复一次自动聚焦额度', () => {
@@ -234,6 +273,7 @@ describe('surface intent unified decision', () => {
     ['files', 'files'],
     ['browser', 'browser'],
     ['design-canvas', 'canvas'],
+    ['terminal', 'terminal'],
     ['preview:/tmp/report.pdf', 'preview'],
     ['task', 'overview'],
     ['workspace-preview', 'overview'],

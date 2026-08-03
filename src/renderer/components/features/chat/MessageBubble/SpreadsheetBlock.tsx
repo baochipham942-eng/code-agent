@@ -35,12 +35,12 @@ interface SpreadsheetSpec {
 
 const MAX_VISIBLE_ROWS = 40;
 const COLUMN_COLORS = [
-  'bg-blue-500/20 border-blue-500/40',
-  'bg-emerald-500/20 border-emerald-500/40',
-  'bg-amber-500/20 border-amber-500/40',
-  'bg-purple-500/20 border-purple-500/40',
-  'bg-rose-500/20 border-rose-500/40',
-  'bg-cyan-500/20 border-cyan-500/40',
+  'bg-blue-500/20 border-badge-info/40',
+  'bg-emerald-500/20 border-badge-success/40',
+  'bg-amber-500/20 border-badge-warning/40',
+  'bg-purple-500/20 border-badge-accent/40',
+  'bg-rose-500/20 border-badge-danger/40',
+  'bg-cyan-500/20 border-badge-info/40',
 ];
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -144,10 +144,10 @@ const ActionBar = memo(function ActionBar({
     : `${colNames.length} ${t.generativeUI.columns}`;
 
   const actions = [
-    { key: 'visualize', label: t.generativeUI.visualize, icon: BarChart3, color: 'text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 border-emerald-500/20' },
-    { key: 'pivot', label: t.generativeUI.pivot, icon: Table2, color: 'text-blue-400 bg-blue-500/10 hover:bg-blue-500/20 border-blue-500/20' },
-    { key: 'filter', label: t.generativeUI.filterAnalysis, icon: Filter, color: 'text-amber-400 bg-amber-500/10 hover:bg-amber-500/20 border-amber-500/20' },
-    { key: 'sort', label: t.generativeUI.sort, icon: ArrowUpDown, color: 'text-purple-400 bg-purple-500/10 hover:bg-purple-500/20 border-purple-500/20' },
+    { key: 'visualize', label: t.generativeUI.visualize, icon: BarChart3, color: 'text-badge-success bg-emerald-500/10 hover:bg-emerald-500/20 border-badge-success/20' },
+    { key: 'pivot', label: t.generativeUI.pivot, icon: Table2, color: 'text-badge-info bg-blue-500/10 hover:bg-blue-500/20 border-badge-info/20' },
+    { key: 'filter', label: t.generativeUI.filterAnalysis, icon: Filter, color: 'text-badge-warning bg-amber-500/10 hover:bg-amber-500/20 border-badge-warning/20' },
+    { key: 'sort', label: t.generativeUI.sort, icon: ArrowUpDown, color: 'text-badge-accent bg-purple-500/10 hover:bg-purple-500/20 border-badge-accent/20' },
   ];
 
   return (
@@ -327,8 +327,8 @@ export const SpreadsheetBlock = memo(function SpreadsheetBlock({ spec: rawSpec, 
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-2 bg-zinc-800 border-b border-zinc-700">
         <div className="flex items-center gap-2">
-          <Sheet className="w-3.5 h-3.5 text-emerald-400" />
-          <span className="text-xs font-medium text-emerald-400">
+          <Sheet className="w-3.5 h-3.5 text-badge-success" />
+          <span className="text-xs font-medium text-badge-success">
             {parsedSpec.title || sheet.name || t.generativeUI.spreadsheet}
           </span>
           <span className="text-xs text-zinc-500">
@@ -341,7 +341,7 @@ export const SpreadsheetBlock = memo(function SpreadsheetBlock({ spec: rawSpec, 
             className="flex items-center gap-1.5 px-2 py-1 rounded-lg hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200 transition-all text-xs"
           >
             {copied ? (
-              <><Check className="w-3.5 h-3.5 text-green-400" /><span className="text-green-400">{t.generativeUI.copied}</span></>
+              <><Check className="w-3.5 h-3.5 text-badge-success" /><span className="text-badge-success">{t.generativeUI.copied}</span></>
             ) : (
               <><Copy className="w-3.5 h-3.5" /><span>{t.generativeUI.copy}</span></>
             )}
@@ -358,7 +358,7 @@ export const SpreadsheetBlock = memo(function SpreadsheetBlock({ spec: rawSpec, 
 
       {/* Stats bar (when a numeric column is selected) */}
       {selectedStats && (
-        <div className="px-4 py-1.5 bg-blue-500/5 border-b border-zinc-700 text-xs text-blue-300">
+        <div className="px-4 py-1.5 bg-blue-500/5 border-b border-zinc-700 text-xs text-badge-info">
           {selectedStats}
         </div>
       )}
@@ -422,7 +422,7 @@ export const SpreadsheetBlock = memo(function SpreadsheetBlock({ spec: rawSpec, 
                         key={ci}
                         onClick={filePath != null ? () => setSelectedCell(cellRef) : undefined}
                         className={`px-3 py-1 border-r border-zinc-700/30 truncate max-w-[200px] ${
-                          isCellSelected ? 'bg-cyan-500/20 outline outline-1 outline-cyan-400' : isSelected ? 'bg-blue-500/5' : ''
+                          isCellSelected ? 'bg-cyan-500/20 outline outline-1 outline-[var(--badge-info-border)]' : isSelected ? 'bg-blue-500/5' : ''
                         } ${filePath != null ? 'cursor-pointer' : ''} ${isNum ? 'text-right tabular-nums text-zinc-300' : 'text-zinc-400'}`}
                         title={filePath != null ? `${cellRef} · ${formatCellValue(value)}（点选定点反馈）` : formatCellValue(value)}
                       >

@@ -48,6 +48,8 @@ export const WorkflowPanel = memo(({ onClose }: WorkflowPanelProps) => {
     onClose?.();
   }, [onClose]);
 
+  const inactiveDAGButtonClass = 'bg-gray-800 text-gray-400 hover:bg-gray-700'; // ds-allow:color: DAG 选择器非选中按钮自身固定为 bg-gray-800
+
   // 处理 DAG 选择
   const handleSelectDAG = useCallback(
     (dagId: string) => {
@@ -70,7 +72,7 @@ export const WorkflowPanel = memo(({ onClose }: WorkflowPanelProps) => {
   return (
     <FullScreenPage testId="workflow-panel">
       <FullScreenPageHeader
-        icon={<Workflow className="h-4 w-4 text-blue-400" />}
+        icon={<Workflow className="h-4 w-4 text-badge-info" />}
         title="Workflow"
         description="Agent 执行流程、DAG 状态和节点关系"
         onClose={handleClose}
@@ -90,7 +92,7 @@ export const WorkflowPanel = memo(({ onClose }: WorkflowPanelProps) => {
                     ${
                       currentDAG?.dagId === dag.dagId
                         ? 'bg-blue-600 text-white'
-                        : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+                        : inactiveDAGButtonClass
                     }
                   `}
                 >

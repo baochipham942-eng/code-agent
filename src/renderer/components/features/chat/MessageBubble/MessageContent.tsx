@@ -8,11 +8,13 @@ import remend from 'remend';
 import type { Components } from 'react-markdown';
 import type { MessageContentProps } from './types';
 import { useAppStore } from '../../../../stores/appStore';
+import { useSessionStore } from '../../../../stores/sessionStore';
 import { wrapFilePathsInBackticks, wrapTicketsAsLinks } from './filePathProcessor';
 import { parseLeadingTriggerToken } from './triggerTokenHighlight';
 import { isWebMode, copyPathToClipboard, openExternalLink } from '../../../../utils/platform';
 import { isPreviewable } from '../../../../utils/previewable';
 import { LinkPreviewCard, isRawUrlLink } from './LinkPreviewCard';
+import { openHttpLinkInRail } from '../../../../services/userBrowserLink';
 import { ChartBlock, isChartSpecSource } from './ChartBlock';
 import { GenerativeUIBlock } from './GenerativeUIBlock';
 import { GenerativeUIHost } from '../GenerativeUI/GenerativeUIHost';
@@ -81,9 +83,10 @@ function iactSendTextOf(node: React.ReactNode): string | null {
 }
 
 // Main message content component
-export const MessageContent: React.FC<MessageContentProps> = memo(function MessageContent({ content, isUser, isStreaming = false, messageId, mediaContext }) {
+export const MessageContent: React.FC<MessageContentProps> = memo(function MessageContent({ content, isUser, isStreaming = false, messageId, mediaContext, streamingTailStart }) {
   const openPreview = useAppStore((state) => state.openPreview);
   const workingDirectory = useAppStore((state) => state.workingDirectory);
+  const currentSessionId = useSessionStore((state) => state.currentSessionId);
   const streamingNeedsMarkdown = !isUser && isStreaming && shouldRenderStreamingContentAsMarkdown(content);
   const markdownSource = useThrottledStreamingContent(content, streamingNeedsMarkdown);
   const deferCompletedLayout = shouldDeferTurnContentLayout({
@@ -145,6 +148,12 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
     }
     openPreview(fullPath);
   }, [openPreview, workingDirectory]);
+
+  const handleOpenHttpLink = useCallback((href: string) => openHttpLinkInRail({
+    href,
+    conversationId: mediaContext?.sessionId || currentSessionId,
+    workspace: workingDirectory,
+  }), [currentSessionId, mediaContext?.sessionId, workingDirectory]);
 
   // Filter out system tags, auto-link ticket IDs, wrap file paths,
   // then close incomplete markdown tokens for streaming-safe rendering
@@ -318,8 +327,8 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
                   onClick={() => dispatchIactSend(text)}
                   className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg border text-[12.5px] transition-colors cursor-pointer ${
                     i === 0
-                      ? 'border-primary-500/35 bg-zinc-800/50 text-primary-400 hover:bg-primary-500/10'
-                      : 'border-zinc-700 bg-zinc-800/50 text-zinc-300 hover:border-primary-500/50 hover:text-primary-400 hover:bg-primary-500/10'
+                      ? 'border-accent-accessible/35 bg-zinc-800/50 text-accent-accessible hover:bg-primary-500/10'
+                      : 'border-zinc-700 bg-zinc-800/50 text-zinc-300 hover:border-accent-accessible/50 hover:text-accent-accessible hover:bg-primary-500/10'
                   }`}
                 >
                   {text}
@@ -345,7 +354,7 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
       // Blockquote
       blockquote({ children }) {
         return (
-          <blockquote className="my-2 pl-4 border-l-2 border-primary-500/50 text-zinc-400 italic">
+          <blockquote className="my-2 pl-4 border-l-2 border-badge-accent/50 text-zinc-400 italic">
             {children}
           </blockquote>
         );
@@ -372,7 +381,7 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
               type="button"
               data-iact-send={text}
               onClick={() => dispatchIactSend(text)}
-              className="group inline-flex items-center gap-0.5 px-0.5 rounded text-primary-400 font-medium underline decoration-dotted decoration-[rgba(45,212,191,0.45)] underline-offset-4 hover:bg-primary-500/10 hover:decoration-solid transition-colors cursor-pointer"
+              className="group inline-flex items-center gap-0.5 px-0.5 rounded text-accent-accessible font-medium underline decoration-dotted decoration-[rgba(45,212,191,0.45)] underline-offset-4 hover:bg-primary-500/10 hover:decoration-solid transition-colors cursor-pointer"
               title="点击发送"
             >
               {children}
@@ -392,7 +401,7 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
               onClick={() => {
                 window.dispatchEvent(new CustomEvent('iact:add', { detail: text }));
               }}
-              className="inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5 rounded-md bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 hover:text-amber-300 border border-amber-500/20 hover:border-amber-500/40 transition-all cursor-pointer text-sm font-medium"
+              className="inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5 rounded-md bg-amber-500/10 text-badge-warning hover:bg-amber-500/20 hover:text-badge-warning border border-badge-warning/20 hover:border-badge-warning/40 transition-all cursor-pointer text-sm font-medium"
               title="点击填入输入框"
             >
               {children}
@@ -412,7 +421,7 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
               onClick={() => {
                 window.dispatchEvent(new CustomEvent('iact:run', { detail: text }));
               }}
-              className="inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5 rounded-md bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 hover:text-emerald-300 border border-emerald-500/20 hover:border-emerald-500/40 transition-all cursor-pointer text-sm font-medium font-mono"
+              className="inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5 rounded-md bg-emerald-500/10 text-badge-success hover:bg-emerald-500/20 hover:text-badge-success border border-badge-success/20 hover:border-badge-success/40 transition-all cursor-pointer text-sm font-medium font-mono"
               title="点击执行命令"
             >
               <Terminal className="w-3 h-3 opacity-60" />
@@ -432,7 +441,7 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
               onClick={() => {
                 window.domainAPI?.invoke('workspace', 'openPath', { filePath: text });
               }}
-              className="inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5 rounded-md bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 hover:text-blue-300 border border-blue-500/20 hover:border-blue-500/40 transition-all cursor-pointer text-sm font-medium"
+              className="inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5 rounded-md bg-blue-500/10 text-badge-info hover:bg-blue-500/20 hover:text-badge-info border border-badge-info/20 hover:border-badge-info/40 transition-all cursor-pointer text-sm font-medium"
               title="打开文件"
             >
               <ExternalLink className="w-3 h-3 opacity-60" />
@@ -452,7 +461,7 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
               onClick={() => {
                 useAppStore.getState().openPreview(text);
               }}
-              className="inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5 rounded-md bg-violet-500/10 text-violet-400 hover:bg-violet-500/20 hover:text-violet-300 border border-violet-500/20 hover:border-violet-500/40 transition-all cursor-pointer text-sm font-medium"
+              className="inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5 rounded-md bg-violet-500/10 text-badge-accent hover:bg-violet-500/20 hover:text-badge-accent border border-badge-accent/20 hover:border-badge-accent/40 transition-all cursor-pointer text-sm font-medium"
               title="预览文件"
             >
               <Eye className="w-3 h-3 opacity-60" />
@@ -477,7 +486,7 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
             <button
               type="button"
               onClick={() => { navigator.clipboard.writeText(text); }}
-              className="text-sky-400 hover:text-sky-300 underline underline-offset-2 cursor-pointer font-mono text-[0.95em]"
+              className="text-badge-info hover:text-badge-info underline underline-offset-2 cursor-pointer font-mono text-[0.95em]"
               title={`点击复制 ${text}`}
             >
               {children}
@@ -499,11 +508,11 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
             <a
               href={href}
               onClick={(e) => { e.preventDefault(); handlePreviewHtml(htmlPreviewPath); }}
-              className="inline-flex items-center gap-1 text-primary-300 hover:text-primary-200 underline underline-offset-2 cursor-pointer"
+              className="inline-flex items-center gap-1 text-accent-accessible hover:text-accent-accessible underline underline-offset-2 cursor-pointer"
               title="点击预览"
             >
               {children}
-              <Play className="w-3 h-3 opacity-60 text-blue-400" />
+              <Play className="w-3 h-3 opacity-60 text-badge-info" />
             </a>
           );
         }
@@ -511,7 +520,7 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
         // raw URL（链接文字就是 URL 本身）：favicon + 下划线链接，帮用户一眼认站点。
         // 轻呈现——只有 16px 图标，没有 chip 边框/底色。
         if (href && isRawUrlLink(href, children)) {
-          return <LinkPreviewCard href={href} />;
+          return <LinkPreviewCard href={href} onOpen={handleOpenHttpLink} />;
         }
 
         // Regular links（带描述文字的内联链接）
@@ -521,8 +530,10 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
             href={href}
             target="_blank"
             rel="noopener noreferrer"
-            onClick={(e) => { if (openExternalLink(href)) e.preventDefault(); }}
-            className="text-primary-400 hover:text-primary-300 underline underline-offset-2 cursor-pointer"
+            onClick={(e) => {
+              if ((href && handleOpenHttpLink(href)) || openExternalLink(href)) e.preventDefault();
+            }}
+            className="text-accent-accessible hover:text-accent-accessible underline underline-offset-2 cursor-pointer"
           >
             {children}
           </a>
@@ -553,7 +564,7 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
         );
       },
     }),
-    [filteredContent, handleOpenFile, handlePreviewHtml, isStreaming, mediaContext?.sessionId, mediaContext?.turnId, mediaContext?.messageId, messageId]
+    [filteredContent, handleOpenFile, handleOpenHttpLink, handlePreviewHtml, isStreaming, mediaContext?.sessionId, mediaContext?.turnId, mediaContext?.messageId, messageId]
   );
 
   // For user messages, render as plain text (no markdown processing)
@@ -575,17 +586,33 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
   }
 
   if (isStreaming && !streamingNeedsMarkdown) {
+    const plainText = sanitizePlainTextFallback(filterSystemTags(content));
+    // 尾段淡入（工单 2026-08-01）：hook 每 ~120ms 落一个「词/短段」，把最新一段
+    // 包进 key 随段首下标变化的 span，mount 时跑一次 CSS 淡入；直落的大块不包、
+    // 立即可读。下标基于未过滤的 content，过滤后可能漂移，越界就不拆分（纯视觉）。
+    const tailStart = streamingTailStart != null
+      && streamingTailStart > 0
+      && streamingTailStart < plainText.length
+      ? streamingTailStart
+      : null;
     return (
-      <div className="text-sm leading-[1.7] break-words prose prose-invert prose-sm max-w-none streaming-text with-caret">
+      <div className="text-sm leading-[1.7] break-words prose prose-invert prose-sm max-w-none streaming-text">
         <span className="whitespace-pre-wrap">
-          {sanitizePlainTextFallback(filterSystemTags(content))}
+          {tailStart === null ? plainText : (
+            <>
+              {plainText.slice(0, tailStart)}
+              <span key={tailStart} className="streaming-tail-segment">
+                {plainText.slice(tailStart)}
+              </span>
+            </>
+          )}
         </span>
       </div>
     );
   }
 
-  // 流式中的 markdown 内容才加揭示动画 + 内联呼吸光标；已完成消息不加（避免重播/常驻光标）
-  const streamingDecor = isStreaming ? ' streaming-text with-caret' : '';
+  // 流式中的 markdown 内容保留流式样式标记；已完成消息不加，避免重播。
+  const streamingDecor = isStreaming ? ' streaming-text' : '';
   return (
     <div
       className={`text-sm leading-[1.7] break-words prose prose-invert prose-sm max-w-none${streamingDecor}`}

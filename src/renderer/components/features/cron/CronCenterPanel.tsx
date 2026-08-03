@@ -41,11 +41,11 @@ const StatusTile: React.FC<{ label: string; value: string; attention?: boolean; 
 }) => (
   <div
     className={`rounded-lg border px-4 py-3 ${
-      attention ? 'border-amber-500/30 bg-amber-500/10' : 'border-zinc-800 bg-zinc-900/70'
+      attention ? 'border-badge-warning/30 bg-amber-500/10' : 'border-zinc-800 bg-zinc-900/70'
     }`}
     data-testid={testId}
   >
-    <div className={`text-2xl font-semibold tabular-nums ${attention ? 'text-amber-300' : 'text-zinc-100'}`}>
+    <div className={`text-2xl font-semibold tabular-nums ${attention ? 'text-badge-warning' : 'text-zinc-100'}`}>
       {value}
     </div>
     <div className="mt-0.5 text-xs text-zinc-500">{label}</div>
@@ -121,7 +121,7 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
   return (
     <FullScreenPage testId="cron-center-panel" variant="inline">
       <FullScreenPageHeader
-        icon={<Clock3 className="h-4 w-4 text-amber-300" />}
+        icon={<Clock3 className="h-4 w-4 text-badge-warning" />}
         title={cc.title}
         description={cc.subtitle}
         actions={
@@ -142,7 +142,7 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
                 {key === 'runs' && pendingReviewCount > 0 && (
                   <span
                     data-testid="cron-center-runs-badge"
-                    className="absolute -right-1 -top-1 rounded-full border border-amber-500/40 bg-amber-500/20 px-1 text-[9px] leading-3 text-amber-200"
+                    className="absolute -right-1 -top-1 rounded-full border border-badge-warning/40 bg-amber-500/20 px-1 text-[9px] leading-3 text-badge-warning"
                   >
                     {pendingReviewCount}
                   </span>
@@ -176,7 +176,7 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
         <WebModeBanner />
 
         {error && (
-          <div className="border-b border-red-500/20 bg-red-500/10 px-6 py-2 text-sm text-red-300">
+          <div className="border-b border-red-500/20 bg-red-500/10 px-6 py-2 text-sm text-badge-danger">
             {error}
           </div>
         )}

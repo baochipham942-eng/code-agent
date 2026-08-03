@@ -64,7 +64,7 @@ export const DesignCanvasSidePanel: React.FC<{
             onClick={() => onTabChange(it.id)}
             className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs transition-colors ${
               tab === it.id
-                ? 'bg-fuchsia-500/15 text-fuchsia-100'
+                ? 'bg-fuchsia-500/15 text-badge-accent'
                 : 'text-zinc-400 hover:bg-white/[0.06] hover:text-zinc-100'
             }`}
           >

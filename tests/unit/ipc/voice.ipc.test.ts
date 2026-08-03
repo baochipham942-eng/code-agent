@@ -4,12 +4,16 @@ import type { Message } from '../../../src/shared/contract/message';
 
 const addMessageToSession = vi.fn(async (_sessionId: string, _message: Message) => undefined);
 const recordVoiceCallFailure = vi.fn();
+const injectVoiceUserText = vi.fn();
 
 vi.mock('../../../src/host/services/infra/sessionManager', () => ({
   getSessionManager: () => ({ addMessageToSession }),
 }));
 vi.mock('../../../src/host/services/voice/voiceUsageLedger', () => ({
   recordVoiceCallFailure,
+}));
+vi.mock('../../../src/host/services/voice/voiceSessionService', () => ({
+  injectVoiceUserText,
 }));
 vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({ warn: vi.fn() }),
@@ -25,6 +29,7 @@ describe('voice IPC failure report', () => {
   beforeEach(() => {
     addMessageToSession.mockClear();
     recordVoiceCallFailure.mockClear();
+    injectVoiceUserText.mockReset();
     registerVoiceHandlers({
       handle: (domain: string, registered: Handler) => {
         expect(domain).toBe(IPC_DOMAINS.VOICE);
@@ -60,5 +65,31 @@ describe('voice IPC failure report', () => {
     expect(response).toMatchObject({ success: false, error: { code: 'INVALID_ARGS' } });
     expect(addMessageToSession).not.toHaveBeenCalled();
     expect(recordVoiceCallFailure).not.toHaveBeenCalled();
+  });
+
+  it('把忙态打字注入交给 voice session，并透传 fallback 决策', async () => {
+    injectVoiceUserText.mockResolvedValueOnce({
+      outcome: 'fallback',
+      reason: 'injection_rejected',
+    });
+
+    await expect(handler({}, {
+      action: 'injectUserText',
+      payload: { neoSessionId: 'neo-session-1', text: '改做 Y' },
+    })).resolves.toEqual({
+      success: true,
+      data: { outcome: 'fallback', reason: 'injection_rejected' },
+    });
+    expect(injectVoiceUserText).toHaveBeenCalledWith('neo-session-1', '改做 Y');
+  });
+
+  it('拒绝空的打字注入请求', async () => {
+    const response = await handler({}, {
+      action: 'injectUserText',
+      payload: { neoSessionId: 'neo-session-1', text: '   ' },
+    });
+
+    expect(response).toMatchObject({ success: false, error: { code: 'INVALID_ARGS' } });
+    expect(injectVoiceUserText).not.toHaveBeenCalled();
   });
 });

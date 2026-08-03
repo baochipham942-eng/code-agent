@@ -4,11 +4,19 @@
 
 import { useState, useEffect, useCallback } from 'react';
 
-export type Theme = 'light' | 'dark' | 'system';
-export type ResolvedTheme = 'light' | 'dark';
+export type Theme = 'light' | 'dark' | 'system' | 'high-contrast-light' | 'high-contrast-dark';
+export type ResolvedTheme = 'light' | 'dark' | 'high-contrast-light' | 'high-contrast-dark';
+
+/** 除 'system' 外的全部可选主题值（system 只是档位，不是可应用的主题） */
+const EXPLICIT_THEMES: readonly ResolvedTheme[] = [
+  'light',
+  'dark',
+  'high-contrast-light',
+  'high-contrast-dark',
+];
 
 interface UseThemeReturn {
-  /** Current theme setting (light, dark, or system) */
+  /** Current theme setting (light, dark, system, or a high-contrast variant) */
   theme: Theme;
   /** Resolved theme based on system preference if theme is 'system' */
   resolvedTheme: ResolvedTheme;
@@ -36,10 +44,10 @@ function getSystemTheme(): ResolvedTheme {
 function getStoredTheme(): Theme {
   if (typeof window === 'undefined') return 'dark';
   const stored = localStorage.getItem(THEME_STORAGE_KEY);
-  if (stored === 'light' || stored === 'dark' || stored === 'system') {
-    return stored;
+  if (stored === 'system' || (EXPLICIT_THEMES as readonly string[]).includes(stored ?? '')) {
+    return stored as Theme;
   }
-  return 'dark'; // Default to dark
+  return 'dark'; // Default to dark（未知/旧值一律回退，不炸）
 }
 
 /**
@@ -54,13 +62,15 @@ function applyTheme(resolvedTheme: ResolvedTheme): void {
   // Update data-theme attribute
   root.setAttribute('data-theme', resolvedTheme);
 
-  // Update class for Tailwind
-  if (resolvedTheme === 'dark') {
+  // Update classes：亮暗基类给 Tailwind dark: 变体用；高对比主题额外挂上
+  // 同名 class，命中 .high-contrast-* 选择器（focus-visible 环、ChatView 的
+  // [.high-contrast-dark_&] 覆盖等只认 class 不认 data-theme 的规则）。
+  root.classList.remove('light', 'dark', 'high-contrast-light', 'high-contrast-dark');
+  root.classList.add(resolvedTheme);
+  if (resolvedTheme === 'high-contrast-dark') {
     root.classList.add('dark');
-    root.classList.remove('light');
-  } else {
+  } else if (resolvedTheme === 'high-contrast-light') {
     root.classList.add('light');
-    root.classList.remove('dark');
   }
 
   // Remove transition blocker after a frame
@@ -73,7 +83,9 @@ function applyTheme(resolvedTheme: ResolvedTheme): void {
 
 /**
  * Theme management hook
- * Supports light, dark, and system themes with persistence
+ * Supports light, dark, system, and high-contrast themes with persistence.
+ * 高对比只做显式选择：'system' 档只跟随 prefers-color-scheme（明暗），
+ * 不跟随 prefers-contrast——见工单 2026-08-02-高对比主题入口 的决策记录。
  */
 export function useTheme(): UseThemeReturn {
   const [theme, setThemeState] = useState<Theme>(getStoredTheme);

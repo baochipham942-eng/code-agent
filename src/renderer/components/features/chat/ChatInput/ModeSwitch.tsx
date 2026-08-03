@@ -59,7 +59,7 @@ export const ModeSwitch: React.FC<ModeSwitchProps> = ({
           flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium
           transition-all duration-200
           ${mode === 'deep-research'
-            ? 'bg-primary-500/20 text-primary-400 shadow-sm'
+            ? 'bg-primary-500/20 text-badge-accent shadow-sm'
             : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800-700/50'
           }
           ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}

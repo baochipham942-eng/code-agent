@@ -5,6 +5,7 @@ import type {
 } from '@shared/contract/surfaceExecution';
 import {
   buildSurfaceExecutionProjectionV1,
+  isUserOpenedSurfaceV1,
   surfaceExecutionScopeKeyV1,
 } from '../utils/surfaceExecutionProjection';
 import type {
@@ -13,6 +14,17 @@ import type {
   SurfaceExecutionCompatibilityEnvelopeV1,
   SurfaceExecutionScopeV1,
 } from '../utils/surfaceExecutionProjection';
+import { createLogger } from '../utils/logger';
+
+const logger = createLogger('SurfaceExecutionStore');
+
+/**
+ * `setNativeSnapshot` 的落地结果，三种结局必须可区分：
+ * - `'applied'`：快照已写入 store；
+ * - `'stale'`：快照比现存投影旧，被「旧不覆盖新」规则丢弃（正常并发现象，不是错误）；
+ * - `'invalid'`：快照未通过 `buildSurfaceExecutionProjectionV1` 校验，未写入。
+ */
+export type SurfaceSnapshotApplyResultV1 = 'applied' | 'stale' | 'invalid';
 
 export interface SurfaceFrameViewStateV1 {
   scope: SurfaceExecutionScopeV1;
@@ -21,6 +33,13 @@ export interface SurfaceFrameViewStateV1 {
   frameRef?: string;
   observationStateId?: string;
   assetRef?: string;
+  /**
+   * 终态留影：实时帧流里最后一帧的 JPEG dataUrl。本字段本身仍是纯内存（重启即空），
+   * 但同一帧在停流移交时已落盘（host TerminalFrameStore），重启后由
+   * BrowserAgentWindow 从盘上读回重新写进这里。
+   * 停流时状态标 'stale' 但本字段保留，BrowserAgentWindow 用它渲染置灰留影。
+   */
+  dataUrl?: string;
   updatedAt?: number;
   error?: string;
 }
@@ -59,6 +78,13 @@ export interface SurfaceExecutionSessionSelectorV1 {
 export interface SurfaceExecutionRunSessionSelectorV1 {
   conversationId: string | null;
   includeTerminal?: boolean;
+  /**
+   * 排除「用户点正文链接开出来的那扇窗」。**必须在挑选之前排除**，不能挑完再滤：
+   * 用户那扇窗可能正好是当选的那个，挑完再滤会把同会话里 agent 的窗一起藏掉
+   * （2026-08-02 被测试抓到过一次）。
+   * 默认 false —— 右栏 workbench 和画中画要拿到它，只有「有人在干活」类提示才传 true。
+   */
+  excludeUserOpened?: boolean;
 }
 
 interface SurfaceExecutionStoreState {
@@ -68,7 +94,7 @@ interface SurfaceExecutionStoreState {
   frameByScope: Record<string, SurfaceFrameViewStateV1>;
   evidenceByScope: Record<string, SurfaceEvidenceScopeStateV1>;
   controlByScope: Record<string, SurfaceControlRequestStateV1>;
-  setNativeSnapshot: (conversationId: string, snapshot: unknown) => boolean;
+  setNativeSnapshot: (conversationId: string, snapshot: unknown) => SurfaceSnapshotApplyResultV1;
   clearNativeSnapshot: (conversationId: string) => void;
   replaceCompatibility: (
     conversationId: string,
@@ -167,6 +193,7 @@ export function selectSurfaceExecutionRunSessionV1(
     .filter((candidate) => (
       candidate.scope.conversationId === conversationId
       && sessionOwnsScope(candidate)
+      && !(selector.excludeUserOpened && isUserOpenedSurfaceV1(candidate))
     ))
     .sort((left, right) => (
       right.updatedAt - left.updatedAt
@@ -218,10 +245,19 @@ export const useSurfaceExecutionStore = create<SurfaceExecutionStoreState>()((se
 
   setNativeSnapshot: (conversationId, snapshot) => {
     const projection = buildSurfaceExecutionProjectionV1({ conversationId, nativeSnapshot: snapshot });
-    if (projection.mode !== 'native') return false;
+    if (projection.mode !== 'native') return 'invalid';
+    const current = get().nativeByConversation[conversationId];
+    // 旧快照不覆盖新快照（正确的并发保护，勿动）；但丢弃必须有出口：
+    // 返回 'stale' 并留一条 debug 日志，调用方才能分辨「这次刷新其实没落地」。
+    if (current && projection.updatedAt < current.updatedAt) {
+      logger.debug('Discarded stale native Surface snapshot', {
+        conversationId,
+        discardedUpdatedAt: projection.updatedAt,
+        currentUpdatedAt: current.updatedAt,
+      });
+      return 'stale';
+    }
     set((state) => {
-      const current = state.nativeByConversation[conversationId];
-      if (current && projection.updatedAt < current.updatedAt) return state;
       const nativeByConversation = {
         ...state.nativeByConversation,
         [conversationId]: projection,
@@ -235,7 +271,7 @@ export const useSurfaceExecutionStore = create<SurfaceExecutionStoreState>()((se
         ),
       };
     });
-    return true;
+    return 'applied';
   },
 
   clearNativeSnapshot: (conversationId) => set((state) => {

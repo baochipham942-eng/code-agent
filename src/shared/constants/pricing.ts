@@ -60,7 +60,11 @@ export const DESIGN_FLUX_MODEL = 'black-forest-labs/flux.2-klein-4b';
  * 图像生成/编辑定价（每张，人民币元）。单一真源——禁在业务代码散落图像价格字面量。
  * key 为图像模型 id，必须与 imageGenerationService 返回的 actualModel 对齐。
  * - wanx 0.14/张：DashScope（百炼）实价，文生图与局部重绘同价。
- * - cogview-4：智谱公示价 0.06/张；cogview-3-flash 为免费档。
+ * - cogview-4：智谱公示价 0.06/张（key 为内置默认版本 'cogview-4-250304'）；
+ *   cogview-3-flash 为免费档。CogView 生图模型 id 可通过 ZHIPU_IMAGE_MODEL /
+ *   config slot 'zhipu-image-model' 覆盖（imageGenerationService.getZhipuImageModelId），
+ *   覆盖成非内置版本时查表落空，回落 default 并在 imageGenerationService 侧记 warn 日志，
+ *   不是精确价——新版本稳定后应在此补一条专属条目。
  * - 以下条目为保守估值，待真实账单验证后校正：
  *   - flux.2-klein-4b：OpenRouter schnell 档上界估算，避免低估成本提示。
  *   - gpt-image-2：GPT-Image 中转保守估值，落在 ¥0.1–0.3 区间取上界。

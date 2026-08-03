@@ -201,7 +201,7 @@ export const VoiceInputSettings: React.FC = () => {
           <select
             value={settings.language}
             onChange={(event) => persist({ language: event.target.value })}
-            className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-primary-500"
+            className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-accent-accessible"
           >
             {LANGUAGE_OPTION_IDS.map((id) => (
               <option key={id} value={id}>{voiceText.languages[id]}</option>
@@ -263,7 +263,7 @@ export const VoiceInputSettings: React.FC = () => {
                 value={settings.shortcut || ''}
                 onChange={(event) => persist({ shortcut: event.target.value.trim() })}
                 placeholder="Mod+Shift+V"
-                className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 outline-none placeholder:text-zinc-600 focus:border-primary-500"
+                className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 outline-none placeholder:text-zinc-600 focus:border-accent-accessible"
               />
             </label>
           </div>
@@ -336,7 +336,7 @@ export const VoiceInputSettings: React.FC = () => {
           onBlur={normalizeVocabularyText}
           placeholder={voiceText.vocabularyPlaceholder}
           rows={6}
-          className="w-full resize-y rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 outline-none placeholder:text-zinc-600 focus:border-primary-500"
+          className="w-full resize-y rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 outline-none placeholder:text-zinc-600 focus:border-accent-accessible"
         />
         <p className="mt-2 text-xs text-zinc-500" data-testid="voice-vocabulary-count">
           {voiceText.vocabularyCount.replace('{count}', String(vocabularyCount))}

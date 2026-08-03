@@ -84,7 +84,7 @@ function actionButtons(node: NeoUIComponentNodeV1, context: NeoUIComponentContex
           onClick={() => void context.dispatch(node, 'conversation.send', {
             text: text(props.sendText, text(props.submitText, text(props.label, 'Continue'))),
           })}
-          className="rounded-lg border border-cyan-500/40 bg-cyan-500/10 px-3 py-2 text-xs font-medium text-cyan-100 hover:bg-cyan-500/20 disabled:opacity-50"
+          className="rounded-lg border border-badge-info/40 bg-cyan-500/10 px-3 py-2 text-xs font-medium text-badge-info hover:bg-cyan-500/20 disabled:opacity-50"
         >
           {text(props.sendLabel, '发送')}
         </button>
@@ -126,7 +126,7 @@ const ChoiceGroup: Renderer = (node, context) => {
             <label
               key={String(value)}
               className={`flex cursor-pointer gap-3 rounded-xl border p-3 transition-colors ${
-                checked ? 'border-violet-400/70 bg-violet-500/10' : 'border-zinc-700 bg-zinc-900/60 hover:border-zinc-600'
+                checked ? 'border-badge-accent/70 bg-violet-500/10' : 'border-zinc-700 bg-zinc-900/60 hover:border-zinc-600'
               }`}
             >
               <input
@@ -170,7 +170,7 @@ const ParameterGroup: Renderer = (node, context) => {
           <label key={key} className="block rounded-xl border border-zinc-700 bg-zinc-900/50 p-3">
             <span className="mb-2 flex items-center justify-between gap-3 text-xs">
               <span className="font-medium text-zinc-200">{text(parameter.label, key)}</span>
-              <span className="font-mono text-violet-300">{value}{text(parameter.unit)}</span>
+              <span className="font-mono text-badge-accent">{value}{text(parameter.unit)}</span>
             </span>
             <input
               type="range"
@@ -247,7 +247,7 @@ const DiffReview: Renderer = (node, context) => {
       <h3 className="mb-3 text-sm font-semibold text-zinc-100">{text(props.label, '变更审阅')}</h3>
       <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
         <pre className="min-h-[150px] max-h-72 overflow-auto rounded-lg border border-red-500/20 bg-red-950/20 p-3 text-xs text-zinc-300">{text(props.before, 'No previous content')}</pre>
-        <pre className="min-h-[150px] max-h-72 overflow-auto rounded-lg border border-emerald-500/20 bg-emerald-950/20 p-3 text-xs text-zinc-300">{text(props.after, 'No proposed content')}</pre>
+        <pre className="min-h-[150px] max-h-72 overflow-auto rounded-lg border border-badge-success/20 bg-emerald-950/20 p-3 text-xs text-zinc-300">{text(props.after, 'No proposed content')}</pre>
       </div>
       {actionButtons(node, context)}
     </section>
@@ -255,8 +255,8 @@ const DiffReview: Renderer = (node, context) => {
 };
 
 const ModelExecutionSurface: Renderer = (node) => (
-  <section className="rounded-xl border border-amber-500/25 bg-amber-500/5 p-3" aria-label="Untrusted execution summary">
-    <div className="text-xs font-semibold text-amber-200">{text(node.props?.label, '执行范围说明')}</div>
+  <section className="rounded-xl border border-badge-warning/25 bg-amber-500/5 p-3" aria-label="Untrusted execution summary">
+    <div className="text-xs font-semibold text-badge-warning">{text(node.props?.label, '执行范围说明')}</div>
     <p className="mt-1 text-xs leading-relaxed text-zinc-400">
       {text(node.props?.summary, '可信审批控件将在 Host 完成范围校验后显示。')}
     </p>

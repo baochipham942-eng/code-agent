@@ -42,7 +42,7 @@ export function DesignImageEditOps(props: DesignImageEditOpsProps): React.ReactE
             onClick={() => onDirectionChange(key)}
             className={`rounded-md px-1 py-1 text-[11px] transition-colors ${
               direction === key
-                ? 'bg-fuchsia-500/30 text-fuchsia-100'
+                ? 'bg-fuchsia-500/30 text-badge-accent'
                 : 'bg-white/[0.06] text-zinc-300 hover:text-zinc-100'
             }`}
           >

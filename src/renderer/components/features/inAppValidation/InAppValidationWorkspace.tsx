@@ -247,15 +247,15 @@ export function InAppValidationWorkspace(): React.ReactElement {
       {/* 工具条：运行 = 主操作（品牌色），Demo/重载 = 次级幽灵按钮 */}
       <div className="flex h-11 shrink-0 items-center gap-2 border-b border-slate-800 px-3">
         {ipcActive ? (
-          <span className="flex items-center gap-1 rounded border border-sky-500/30 bg-sky-500/10 px-2 py-0.5 text-xs text-sky-200">
+          <span className="flex items-center gap-1 rounded border border-badge-info/30 bg-sky-500/10 px-2 py-0.5 text-xs text-badge-info">
             <Radio className="h-3 w-3 animate-pulse" /> {v.ipcDriven}
           </span>
         ) : totalCount > 0 ? (
           <span
             className={`rounded border px-2 py-0.5 text-xs ${
               allPassed
-                ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'
-                : 'border-rose-500/30 bg-rose-500/10 text-rose-200'
+                ? 'border-badge-success/30 bg-emerald-500/10 text-badge-success'
+                : 'border-badge-danger/30 bg-rose-500/10 text-badge-danger'
             }`}
           >
             {v.passedBadge.replace('{passed}', String(passedCount)).replace('{total}', String(totalCount))}
@@ -290,13 +290,13 @@ export function InAppValidationWorkspace(): React.ReactElement {
       {/* 脏保护横幅：held 请求等用户选择，期间不覆盖编辑、不自动执行 */}
       {heldRequest && (
         <div
-          className="flex shrink-0 items-center gap-3 border-b border-amber-500/30 bg-amber-500/10 px-3 py-2"
+          className="flex shrink-0 items-center gap-3 border-b border-badge-warning/30 bg-amber-500/10 px-3 py-2"
           data-testid="in-app-validation-held-request"
         >
-          <AlertTriangle className="h-4 w-4 shrink-0 text-amber-300" />
+          <AlertTriangle className="h-4 w-4 shrink-0 text-badge-warning" />
           <div className="min-w-0 flex-1">
-            <div className="text-xs font-medium text-amber-200">{v.heldTitle}</div>
-            <div className="text-[11px] text-amber-200/70">{v.heldBody}</div>
+            <div className="text-xs font-medium text-badge-warning">{v.heldTitle}</div>
+            <div className="text-[11px] text-badge-warning/70">{v.heldBody}</div>
           </div>
           <button /* ds-allow:button: 脏保护横幅主操作，品牌色实心按钮，Button primitive 无 12px 微尺寸变体 */
             type="button"
@@ -317,7 +317,7 @@ export function InAppValidationWorkspace(): React.ReactElement {
 
       <div className="flex min-h-0 flex-1">
         <div className="flex flex-1 flex-col border-r border-slate-800">
-          <div className="border-b border-slate-800 px-3 py-1 text-xs text-slate-400">{v.iframePreviewLabel}</div>
+          <div className="border-b border-slate-800 px-3 py-1 text-xs text-zinc-400">{v.iframePreviewLabel}</div>
           <iframe
             key={pendingRequest?.requestId || `manual-${manualReloadKey}`}
             ref={iframeRef}
@@ -331,11 +331,11 @@ export function InAppValidationWorkspace(): React.ReactElement {
 
         <div className="flex w-[480px] flex-col">
           <div className="flex shrink-0 flex-col border-b border-slate-800">
-            <div className="px-3 py-1 text-xs text-slate-400">{v.htmlSourceLabel}</div>
+            <div className="px-3 py-1 text-xs text-zinc-400">{v.htmlSourceLabel}</div>
             {/* 默认 12 行、可纵向拖拽加高（原 h-36 resize-none 压死高度） */}
             <textarea
               rows={12}
-              className="resize-y bg-slate-900 px-3 py-2 font-mono text-xs text-slate-100 outline-hidden"
+              className="resize-y bg-slate-900 px-3 py-2 font-mono text-xs text-slate-100 outline-hidden" /* ds-allow:color: HTML 源码编辑器由同一 textarea 的固定 bg-slate-900 承载深色画布 */
               value={htmlSource}
               onChange={(e) => {
                 setHtmlSource(e.target.value);
@@ -344,7 +344,7 @@ export function InAppValidationWorkspace(): React.ReactElement {
             />
           </div>
           <div className="flex min-h-0 flex-1 flex-col">
-            <div className="px-3 py-1 text-xs text-slate-400">{v.stepsLabel}</div>
+            <div className="px-3 py-1 text-xs text-zinc-400">{v.stepsLabel}</div>
             <StepsJsonEditor
               value={stepsText}
               onChange={(next) => {
@@ -361,17 +361,17 @@ export function InAppValidationWorkspace(): React.ReactElement {
                 className="sticky top-0 flex items-center gap-2 border-b border-slate-800 bg-slate-950 px-3 py-1.5"
                 data-testid="in-app-validation-result-summary"
               >
-                <span className={allPassed ? 'text-emerald-300' : 'text-zinc-300'}>
+                <span className={allPassed ? 'text-badge-success' : 'text-zinc-300'}>
                   {v.passedBadge.replace('{passed}', String(passedCount)).replace('{total}', String(totalCount))}
                 </span>
-                <span className={failedCount > 0 ? 'text-rose-300' : 'text-emerald-300'}>
+                <span className={failedCount > 0 ? 'text-badge-danger' : 'text-badge-success'}>
                   {failedCount > 0 ? v.failedSummary.replace('{n}', String(failedCount)) : v.allPassedSummary}
                 </span>
               </div>
             )}
             <div className="overflow-auto px-3 py-2">
               {error && (
-                <div className="mb-2 flex items-start gap-1 rounded bg-rose-900/40 p-2 text-rose-200">
+                <div className="mb-2 flex items-start gap-1 rounded bg-rose-900/40 p-2 text-badge-danger">
                   <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
                   <span>{error}</span>
                 </div>
@@ -380,7 +380,7 @@ export function InAppValidationWorkspace(): React.ReactElement {
                 <div className="space-y-2 text-slate-500">
                   <div>{v.emptyHint}</div>
                   <div>{v.emptySchemaTitle}</div>
-                  <pre className="overflow-x-auto rounded border border-slate-800 bg-slate-900 p-2 text-[11px] text-slate-400">{v.emptySchemaExample}</pre>
+                  <pre className="overflow-x-auto rounded border border-slate-800 bg-slate-900 p-2 text-[11px] text-slate-400" /* ds-allow:color: 空 schema 代码块的固定祖先是自身 bg-slate-900 */>{v.emptySchemaExample}</pre>
                 </div>
               )}
               {orderedResults.map(({ result, index }) => (
@@ -388,15 +388,15 @@ export function InAppValidationWorkspace(): React.ReactElement {
                   key={resultKeysRef.current[index] ?? index}
                   className={`mb-2 rounded border p-2 ${
                     result.passed
-                      ? 'border-emerald-800 bg-emerald-950/40'
-                      : 'border-rose-800 bg-rose-950/40'
+                      ? 'border-badge-success bg-emerald-950/40'
+                      : 'border-badge-danger bg-rose-950/40'
                   }`}
                 >
                   <div className="flex items-center gap-1">
                     {result.passed ? (
-                      <CheckCircle2 className="h-3 w-3 text-emerald-400" />
+                      <CheckCircle2 className="h-3 w-3 text-badge-success" />
                     ) : (
-                      <AlertTriangle className="h-3 w-3 text-rose-400" />
+                      <AlertTriangle className="h-3 w-3 text-badge-danger" />
                     )}
                     <span className="font-medium">
                       {result.label || result.action.type}
@@ -413,7 +413,7 @@ export function InAppValidationWorkspace(): React.ReactElement {
                     </ul>
                   )}
                   {result.failures.length > 0 && (
-                    <ul className="mt-1 list-disc pl-4 text-rose-300">
+                    <ul className="mt-1 list-disc pl-4 text-badge-danger">
                       {result.failures.map((failure, i) => (
                         <li key={i}>{failure}</li>
                       ))}

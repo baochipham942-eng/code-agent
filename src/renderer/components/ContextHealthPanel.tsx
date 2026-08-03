@@ -52,23 +52,23 @@ function getWarningColors(level: ContextHealthWarningLevel) {
     case 'critical':
       return {
         icon: AlertCircle,
-        iconColor: 'text-red-400',
+        iconColor: 'text-badge-danger',
         barColor: 'bg-red-500',
         bgColor: 'bg-red-500/10',
-        textColor: 'text-red-400',
+        textColor: 'text-badge-danger',
       };
     case 'warning':
       return {
         icon: AlertTriangle,
-        iconColor: 'text-yellow-400',
+        iconColor: 'text-badge-warning',
         barColor: 'bg-yellow-500',
         bgColor: 'bg-yellow-500/10',
-        textColor: 'text-yellow-400',
+        textColor: 'text-badge-warning',
       };
     default:
       return {
         icon: Activity,
-        iconColor: 'text-emerald-400',
+        iconColor: 'text-badge-success',
         barColor: 'bg-emerald-500',
         bgColor: '',
         textColor: 'text-zinc-400',
@@ -284,15 +284,15 @@ export const ContextHealthPanel: React.FC<ContextHealthPanelProps> = ({
           {/* GAP-023: 被预算丢弃的 prompt 块（能力可见化——agent 能力缩水时用户能看到原因） */}
           {(health.droppedPromptBlocks?.length ?? 0) > 0 && (
             <div className="flex items-start gap-2 p-2 bg-orange-500/20 rounded-md">
-              <AlertTriangle className="w-4 h-4 text-orange-400 flex-shrink-0 mt-0.5" />
-              <div className="min-w-0 flex-1 text-xs text-orange-300 space-y-1">
+              <AlertTriangle className="w-4 h-4 text-badge-warning flex-shrink-0 mt-0.5" />
+              <div className="min-w-0 flex-1 text-xs text-badge-warning space-y-1">
                 <div className="flex items-center justify-between gap-2">
                   <span>{ch.droppedBlocks} {health.droppedPromptBlocks?.length}</span>
                   <button
                     type="button"
                     onClick={() => setShowDroppedBlocks((value) => !value)}
                     aria-expanded={showDroppedBlocks}
-                    className="shrink-0 text-orange-300/70 hover:text-orange-200 transition-colors"
+                    className="shrink-0 text-badge-warning/70 hover:text-badge-warning transition-colors"
                   >
                     {showDroppedBlocks ? t.systemError.hideDetails : t.systemError.viewDetails}
                   </button>
@@ -302,7 +302,7 @@ export const ContextHealthPanel: React.FC<ContextHealthPanelProps> = ({
                     {health.droppedPromptBlocks?.map((block) => (
                       <span
                         key={block}
-                        className="px-1.5 py-0.5 bg-orange-500/20 rounded font-mono text-orange-200"
+                        className="px-1.5 py-0.5 bg-orange-500/20 rounded font-mono text-badge-warning"
                       >
                         {block}
                       </span>
@@ -316,8 +316,8 @@ export const ContextHealthPanel: React.FC<ContextHealthPanelProps> = ({
           {/* 警告提示 */}
           {health.warningLevel === 'critical' && (
             <div className="flex items-center gap-2 p-2 bg-red-500/20 rounded-md">
-              <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0" />
-              <span className="flex-1 text-xs text-red-300">
+              <AlertCircle className="w-4 h-4 text-badge-danger flex-shrink-0" />
+              <span className="flex-1 text-xs text-badge-danger">
                 {ch.nearlyExhausted}
               </span>
               {onCompact && (
@@ -326,7 +326,7 @@ export const ContextHealthPanel: React.FC<ContextHealthPanelProps> = ({
                   onClick={onCompact}
                   disabled={isCompacting}
                   title={ch.compactHint}
-                  className="shrink-0 inline-flex items-center gap-1 rounded-md border border-red-400/30 bg-red-500/10 px-2 py-1 text-xs font-medium text-red-200 transition-colors hover:bg-red-500/20 disabled:cursor-wait disabled:opacity-70"
+                  className="shrink-0 inline-flex items-center gap-1 rounded-md border border-badge-danger/30 bg-red-500/10 px-2 py-1 text-xs font-medium text-badge-danger transition-colors hover:bg-red-500/20 disabled:cursor-wait disabled:opacity-70"
                 >
                   {isCompacting ? (
                     <Loader2 className="w-3 h-3 animate-spin" />
@@ -341,8 +341,8 @@ export const ContextHealthPanel: React.FC<ContextHealthPanelProps> = ({
 
           {health.warningLevel === 'warning' && (
             <div className="flex items-center gap-2 p-2 bg-yellow-500/20 rounded-md">
-              <AlertTriangle className="w-4 h-4 text-yellow-400 flex-shrink-0" />
-              <span className="text-xs text-yellow-300">
+              <AlertTriangle className="w-4 h-4 text-badge-warning flex-shrink-0" />
+              <span className="text-xs text-badge-warning">
                 {ch.highUsage}
               </span>
             </div>
@@ -459,7 +459,7 @@ const NestedGroup: React.FC<{
                         className="opacity-0 group-hover:opacity-70 hover:opacity-100 focus-visible:opacity-100 group-focus-within:opacity-100 transition-opacity"
                         title={ch.unmountDisconnect}
                       >
-                        <XIcon className="w-3 h-3 text-zinc-500 hover:text-red-400" />
+                        <XIcon className="w-3 h-3 text-zinc-500 hover:text-badge-danger" />
                       </button>
                     )}
                   </div>

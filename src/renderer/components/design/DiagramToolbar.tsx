@@ -122,7 +122,7 @@ export const DiagramToolbar: React.FC<DiagramToolbarProps> = ({
             data-tool={it.id}
             onClick={() => onToolChange(it.id)}
             className={`inline-flex h-7 w-7 items-center justify-center rounded-md transition-colors ${
-              tool === it.id ? 'bg-sky-500/25 text-sky-200' : 'text-zinc-400 hover:bg-white/[0.06] hover:text-zinc-100'
+              tool === it.id ? 'bg-sky-500/25 text-badge-info' : 'text-zinc-400 hover:bg-white/[0.06] hover:text-zinc-100'
             }`}
           >
             {it.icon}
@@ -175,7 +175,7 @@ export const DiagramToolbar: React.FC<DiagramToolbarProps> = ({
             aria-label={t.design.diagramDelete}
             data-testid="diagram-delete"
             onClick={onDelete}
-            className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-zinc-400 transition-colors hover:bg-red-500/20 hover:text-red-200"
+            className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-zinc-400 transition-colors hover:bg-red-500/20 hover:text-badge-danger"
           >
             <Trash2 className="h-4 w-4" />
           </button>

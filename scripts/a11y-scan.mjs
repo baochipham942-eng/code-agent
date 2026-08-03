@@ -128,22 +128,29 @@ for (const file of files) {
 
   for (const tag of openingTags(content)) {
     const lower = tag.name.toLowerCase();
+    // 判规则前先剥掉标签内的块注释：JSX 里写 `<button className="…" /* 注释 */>` 时，
+    // 注释的结束符 `*/` 紧贴标签的 `>` 会拼出字面序列 `*/>`，其中含 `/>`，
+    // R2 的自闭合判据就会把这个有子节点的按钮误判成图标按钮
+    // （2026-08-03 实测：给 TaskDetailPanel 的 Show more 按钮加 ds-allow 注释后误报）。
+    // 任何找 `/>` 的正则都会被 `*/>` 骗到，所以剥在这一处，别让每条规则各自防。
+    // 豁免走 lineHasAllow 读原始行，不经过这里，因此不受影响。
+    const attrs = tag.text.replace(/\/\*[\s\S]*?\*\//g, ' ');
 
     // R1: <img> 缺 alt
-    if (lower === 'img' && !/\balt\s*=/.test(tag.text)) {
+    if (lower === 'img' && !/\balt\s*=/.test(attrs)) {
       addViolation(file, content, tag.index, 'R1 <img> 缺 alt');
     }
 
     // R2: 自闭合 <button/> 无 aria-label（无子节点 = 无可访问名）
-    if (lower === 'button' && /\/>\s*$/.test(tag.text)) {
-      if (!/\baria-label\s*=/.test(tag.text) && !/\baria-labelledby\s*=/.test(tag.text)) {
+    if (lower === 'button' && /\/>\s*$/.test(attrs)) {
+      if (!/\baria-label\s*=/.test(attrs) && !/\baria-labelledby\s*=/.test(attrs)) {
         addViolation(file, content, tag.index, 'R2 图标 <button/> 无 aria-label');
       }
     }
 
     // R3: <div>/<span> 有 onClick 但无 role 且无 tabIndex（键盘不可达）
-    if ((lower === 'div' || lower === 'span') && /\bonClick\s*=/.test(tag.text)) {
-      if (!/\brole\s*=/.test(tag.text) && !/\btabIndex\s*=/.test(tag.text)) {
+    if ((lower === 'div' || lower === 'span') && /\bonClick\s*=/.test(attrs)) {
+      if (!/\brole\s*=/.test(attrs) && !/\btabIndex\s*=/.test(attrs)) {
         addViolation(file, content, tag.index, 'R3 <div/span> onClick 无 role+tabIndex');
       }
     }

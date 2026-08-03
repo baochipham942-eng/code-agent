@@ -44,9 +44,10 @@ describe('IACT !send chip：B+A 组合', () => {
     expect(chips).toHaveLength(1);
     const chip = chips[0];
     expect(chip.dataset.iactSend).toBe('验证首击删除');
-    // 轻链接样式标识：dotted 下划线 + 品牌青字；无旧 pill 的边框类
+    // 轻链接样式标识：dotted 下划线 + 可读 accent 字；无旧 pill 的边框类
     expect(chip.className).toContain('decoration-dotted');
-    expect(chip.className).toContain('text-primary-400');
+    expect(chip.className).toContain('text-accent-accessible');
+    expect(chip.className).not.toContain('text-primary-400');
     expect(chip.className).not.toContain('border');
     // 无选项行
     expect(container.querySelector('[data-iact-options]')).toBeNull();
@@ -73,9 +74,11 @@ describe('IACT !send chip：B+A 组合', () => {
     expect(buttons).toHaveLength(2);
     expect(buttons[0].textContent).toContain('验证首击删除');
     expect(buttons[1].textContent).toContain('测试 appshot 语义识别');
-    // 首项品牌青；次项 zinc ghost 档
-    expect(buttons[0].className).toContain('border-primary-500/35');
-    expect(buttons[0].className).toContain('text-primary-400');
+    // 首项可读 accent；次项 zinc ghost 档
+    expect(buttons[0].className).toContain('border-accent-accessible/35');
+    expect(buttons[0].className).toContain('text-accent-accessible');
+    expect(buttons[0].className).not.toContain('border-primary-500/35');
+    expect(buttons[0].className).not.toContain('text-primary-400');
     expect(buttons[1].className).toContain('border-zinc-700');
     expect(buttons[1].className).toContain('text-zinc-300');
 

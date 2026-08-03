@@ -156,7 +156,7 @@ export const DirectoryPickerModal: React.FC<DirectoryPickerModalProps> = ({
         }}
         className={`w-full flex items-center gap-1.5 px-2 py-1.5 text-left text-sm rounded transition-colors ${
           selectedPath === node.path
-            ? 'bg-indigo-500/20 text-indigo-300'
+            ? 'bg-indigo-500/20 text-badge-accent'
             : 'text-zinc-300 hover:bg-zinc-700/50'
         }`}
         style={{ paddingLeft: `${depth * 16 + 12}px` }}
@@ -167,7 +167,7 @@ export const DirectoryPickerModal: React.FC<DirectoryPickerModalProps> = ({
           <ChevronRight className="w-3 h-3 text-zinc-500 flex-shrink-0" />
         )}
         {node.isExpanded ? (
-          <FolderOpen className="w-4 h-4 text-yellow-400 flex-shrink-0" />
+          <FolderOpen className="w-4 h-4 text-badge-warning flex-shrink-0" />
         ) : (
           <Folder className="w-4 h-4 text-zinc-400 flex-shrink-0" />
         )}
@@ -198,7 +198,7 @@ export const DirectoryPickerModal: React.FC<DirectoryPickerModalProps> = ({
       size="md"
       header={
         <>
-          <FolderTree className="w-5 h-5 text-indigo-400 shrink-0" />
+          <FolderTree className="w-5 h-5 text-badge-accent shrink-0" />
           <h2 className="flex-1 text-base font-medium text-zinc-200">
             选择工作目录
           </h2>
@@ -264,7 +264,7 @@ export const DirectoryPickerModal: React.FC<DirectoryPickerModalProps> = ({
       {selectedPath && (
         <div className="mt-3 px-3 py-2 rounded-lg bg-zinc-800 border border-zinc-700">
           <span className="text-xs text-zinc-500">选中路径</span>
-          <div className="text-sm text-indigo-300 font-mono truncate mt-0.5">
+          <div className="text-sm text-badge-accent font-mono truncate mt-0.5">
             {selectedPath}
           </div>
         </div>

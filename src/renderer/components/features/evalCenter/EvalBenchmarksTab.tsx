@@ -175,19 +175,19 @@ export const EvalBenchmarksTab: React.FC = () => {
           {delta !== undefined && (
             <span className={`flex items-center gap-1 rounded border px-1.5 py-0.5 ${
               delta < 0
-                ? 'border-rose-500/30 bg-rose-500/10 text-rose-200'
+                ? 'border-badge-danger/30 bg-rose-500/10 text-badge-danger'
                 : delta > 0
-                  ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'
+                  ? 'border-badge-success/30 bg-emerald-500/10 text-badge-success'
                   : 'border-zinc-700 bg-zinc-800 text-zinc-400'
             }`}>
               {delta < 0 ? <TrendingDown className="h-3 w-3" /> : delta > 0 ? <TrendingUp className="h-3 w-3" /> : <Minus className="h-3 w-3" />}
               {formatPercent(previousRate)} → {formatPercent(currentRate)}
             </span>
           )}
-          <span className="rounded border border-rose-500/30 bg-rose-500/10 px-1.5 py-0.5 text-rose-200">
+          <span className="rounded border border-badge-danger/30 bg-rose-500/10 px-1.5 py-0.5 text-badge-danger">
             {b.regressedCount.replace('{n}', String(regressed.length))}
           </span>
-          <span className="rounded border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 text-emerald-200">
+          <span className="rounded border border-badge-success/30 bg-emerald-500/10 px-1.5 py-0.5 text-badge-success">
             {b.fixedCount.replace('{n}', String(fixed.length))}
           </span>
           <span className="rounded border border-zinc-700 bg-zinc-800 px-1.5 py-0.5 text-zinc-400">
@@ -201,7 +201,7 @@ export const EvalBenchmarksTab: React.FC = () => {
             {comparison.transitions.map((tr) => (
               <li key={tr.caseId} className="flex items-center gap-2">
                 <span className={`rounded px-1.5 py-0.5 text-[10px] ${
-                  tr.kind === 'regressed' ? 'bg-rose-500/20 text-rose-300' : 'bg-emerald-500/20 text-emerald-300'
+                  tr.kind === 'regressed' ? 'bg-rose-500/20 text-badge-danger' : 'bg-emerald-500/20 text-badge-success'
                 }`}>
                   {tr.kind === 'regressed' ? b.caseStatusRegressed : b.caseStatusFixed}
                 </span>
@@ -252,7 +252,7 @@ export const EvalBenchmarksTab: React.FC = () => {
         <div className="px-3 py-8 text-center text-sm text-zinc-500">{t.settings.modal.loading}</div>
       )}
       {loadState === 'error' && (
-        <div className="px-3 py-8 text-center text-sm text-rose-300">
+        <div className="px-3 py-8 text-center text-sm text-badge-danger">
           {b.loadFailed.replace('{message}', loadError ?? '')}
         </div>
       )}

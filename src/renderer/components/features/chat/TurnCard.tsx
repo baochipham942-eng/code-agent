@@ -324,10 +324,10 @@ export const TurnCard: React.FC<TurnCardProps> = ({
         {/* Neo 以参与者身份回复（像 Claude Tag）：轻量身份标识挂在回复头部，会话里不出现工作卡 */}
         {isNeoTagTurn && (
           <div className="flex items-center gap-1.5 pt-0.5" data-testid="neo-turn-identity">
-            <span className="flex h-[18px] w-[18px] items-center justify-center rounded-full border border-emerald-500/30 bg-emerald-500/15">
-              <Sparkles className="h-2.5 w-2.5 text-emerald-300" />
+            <span className="flex h-[18px] w-[18px] items-center justify-center rounded-full border border-badge-success/30 bg-emerald-500/15">
+              <Sparkles className="h-2.5 w-2.5 text-badge-success" />
             </span>
-            <span className="text-[11px] font-medium text-emerald-200/90">Neo</span>
+            <span className="text-[11px] font-medium text-badge-success/90">Neo</span>
           </div>
         )}
 
@@ -523,7 +523,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
                 title={t.turnCard.createForkFromReply}
                 disabled={Boolean(isSessionProcessing) || sessionIsRunning || isForking}
                 onClick={() => void handleFork()}
-                className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-transparent text-zinc-500 transition-colors hover:border-violet-500/40 hover:bg-violet-500/10 hover:text-violet-300 focus:outline-hidden focus-visible:ring-1 focus-visible:ring-[var(--focus-ring)] disabled:opacity-50"
+                className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-transparent text-zinc-500 transition-colors hover:border-badge-accent/40 hover:bg-violet-500/10 hover:text-badge-accent focus:outline-hidden focus-visible:ring-1 focus-visible:ring-[var(--focus-ring)] disabled:opacity-50"
               >
                 {isForking
                   ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
@@ -614,7 +614,7 @@ const TurnCopyAction: React.FC<{ content: string }> = ({ content }) => {
       className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-transparent text-zinc-500 transition-colors hover:border-zinc-700 hover:bg-zinc-800/70 hover:text-zinc-300 focus:outline-hidden focus-visible:ring-1 focus-visible:ring-[var(--focus-ring)]"
     >
       {copied
-        ? <Check className="h-3.5 w-3.5 text-emerald-400" />
+        ? <Check className="h-3.5 w-3.5 text-badge-success" />
         : <Copy className="h-3.5 w-3.5" />}
     </button>
   );
@@ -758,7 +758,7 @@ const HookExecutionBanner: React.FC<{ activity: TurnHookActivity }> = ({ activit
                 {/* 决策原因（block/modify 的首行摘要，host 侧已截断+脱敏）是唯一上屏的
                     hook 文本；Stop hook 拦下收尾时这行就是「为什么还要求继续」。 */}
                 {item.reason && (item.action === 'block' || item.modified) && (
-                  <div className="mt-0.5 truncate text-amber-200/70" title={item.reason}>
+                  <div className="mt-0.5 truncate text-badge-warning/70" title={item.reason}>
                     {t.turnHooks.reason.replace('{reason}', item.reason)}
                   </div>
                 )}
@@ -1001,13 +1001,13 @@ function getTurnCompletionSignal(turn: TraceTurn, t: Translations): string | nul
 function getToneClass(tone: 'neutral' | 'info' | 'success' | 'warning' | 'error'): string {
   switch (tone) {
     case 'success':
-      return 'border-emerald-500/20 bg-emerald-500/10 text-status-success';
+      return 'border-badge-success/20 bg-emerald-500/10 text-status-success';
     case 'warning':
-      return 'border-amber-500/20 bg-amber-500/10 text-status-warning';
+      return 'border-badge-warning/20 bg-amber-500/10 text-status-warning';
     case 'error':
       return 'border-red-500/20 bg-red-500/10 text-status-error';
     case 'info':
-      return 'border-sky-500/20 bg-sky-500/10 text-sky-300';
+      return 'border-badge-info/20 bg-sky-500/10 text-badge-info';
     default:
       return 'border-border-muted bg-surface-subtle text-zinc-400';
   }
@@ -1016,9 +1016,9 @@ function getToneClass(tone: 'neutral' | 'info' | 'success' | 'warning' | 'error'
 function getHookIssueClass(tone: 'success' | 'warning' | 'error'): string {
   switch (tone) {
     case 'error':
-      return 'bg-red-500/10 text-red-300';
+      return 'bg-red-500/10 text-badge-danger';
     case 'warning':
-      return 'bg-amber-500/10 text-amber-300';
+      return 'bg-amber-500/10 text-badge-warning';
     default:
       return 'bg-zinc-800 text-zinc-400';
   }
@@ -1110,7 +1110,7 @@ const TurnRunHeader: React.FC<{ turn: TraceTurn; streamingState?: StreamingUiSta
         </div>
       )}
       {failedTool && (
-        <div className="inline-flex items-center gap-1 rounded-md bg-red-500/10 px-1.5 py-0.5 text-[11px] text-red-300" title={formatFailedToolTitle(failedTool)}>
+        <div className="inline-flex items-center gap-1 rounded-md bg-red-500/10 px-1.5 py-0.5 text-[11px] text-badge-danger" title={formatFailedToolTitle(failedTool)}>
           <XCircle className="h-3 w-3" />
           <span className="max-w-[120px] truncate">{failedTool.name}</span>
         </div>

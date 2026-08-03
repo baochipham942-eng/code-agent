@@ -13,7 +13,7 @@ import {
   resolveRealtimeVoiceSelection,
   type RealtimeVoiceProviderProfile,
 } from '../../../shared/constants/realtimeVoiceProviders';
-import type { VoiceClientCommand, VoiceEvent, VoiceFocusContext, VoiceInterruptClassification, VoiceTransportHandle, VoiceWorkItem, VoiceWorkNarration } from '../../../shared/contract/voice';
+import type { VoiceClientCommand, VoiceEvent, VoiceFocusContext, VoiceInterruptClassification, VoiceTokenUsage, VoiceTransportHandle, VoiceUserTextInjectionResult, VoiceWorkItem } from '../../../shared/contract/voice';
 import type { VoiceTransport } from '../../../shared/contract/voice';
 import { getDashscopeApiKey } from '../media/imageGenerationService';
 import { createLogger } from '../infra/logger';
@@ -29,13 +29,21 @@ import {
 import { resolveVoiceRouting } from './voiceRouting';
 import { beginVoiceDispatch, endVoiceDispatch, pushVoiceTranscript, setVoiceDispatchFocus } from './voiceAgentCoordinator';
 import { composeVoiceInstructions, focusChanged, type VoiceContinuityContext } from './voiceContextAssembler';
-import { recordVoiceCall } from './voiceUsageLedger';
+import { addTokenUsage, recordVoiceCall } from './voiceUsageLedger';
 import { consumeVoiceCallFailure, observeVoiceEventFailure, persistVoiceCallFailure } from './voiceFailurePersistence';
 import { VOICE_TOOL_DEFINITIONS, executeVoiceTool } from './voiceTools';
 import type { VoiceLiveSettings } from '../../../shared/contract/settings';
 import { describeWorkFailure } from './workFailureDescription';
 import { detectHangupIntent } from './hangupIntent';
 import { decideVoiceInterrupt, shouldDisarmHangup } from './voiceTurnTaking';
+import {
+  createNarrationState,
+  enqueueOrInjectNarration,
+  flushNarrationQueue,
+  handleNarrationInjectionRejected,
+  markNarrationUserTurn,
+  type NarrationState,
+} from './voiceNarrationQueue';
 
 const logger = createLogger('VoiceSession');
 
@@ -85,6 +93,20 @@ function withLanguageDirective(instructions: string, language: VoiceLiveSettings
   return instructions;
 }
 
+interface VoiceInterruptCandidate {
+  itemId?: string;
+  startedAt: number;
+  durationMs?: number;
+  assistantPlaying?: boolean;
+  classification?: VoiceInterruptClassification;
+  classificationSource?: 'empty-text-fallback' | 'transcript';
+  emptyTextFallbackObserved?: boolean;
+  decided: boolean;
+  cancelledResponseId?: string;
+  responseRequested: boolean;
+  finalGraceTimer?: NodeJS.Timeout;
+}
+
 interface ActiveSession {
   id: string;
   neoSessionId: string;
@@ -95,6 +117,10 @@ interface ActiveSession {
    */
   clientRef: { current: WsSocket };
   upstream: VoiceTransportHandle;
+  /** 上游是否真实收下了通话工具；VOICE_TOOLS_DROPPED 后 fail-closed。 */
+  voiceToolsAvailable: boolean;
+  /** teardown 已开始时，新的打字注入必须回退，不能再抢这通电话。 */
+  ending: boolean;
   maxDurationTimer: NodeJS.Timeout;
   /** 非 null = 客户端断了，正在宽限窗里等它回来 */
   graceTimer: NodeJS.Timeout | null;
@@ -121,28 +147,16 @@ interface ActiveSession {
   focus: VoiceFocusContext | null;
   interruption: {
     currentCandidateId: string | null;
-    candidates: Map<string, {
-      startedAt: number;
-      durationMs?: number;
-      assistantPlaying?: boolean;
-      classification?: VoiceInterruptClassification;
-      decided: boolean;
-      cancelledResponseId?: string;
-      responseRequested: boolean;
-      finalGraceTimer?: NodeJS.Timeout;
-    }>;
+    candidates: Map<string, VoiceInterruptCandidate>;
   };
   /** 上游 cancel 后仍可能把旧 delta/final/done 发完；Host 与 Renderer 各自 fail-closed。 */
   cancelledResponseIds: Set<string>;
   /** assistant final 先暂存，到 response.done 且未取消时才落库。 */
   pendingAssistantFinals: Map<string, { text: string; itemId?: string }>;
+  /** 一通电话可有多轮 response；排水窗结束前到达的 provider usage 都归入本通。 */
+  tokenUsage: { value?: VoiceTokenUsage; accepting: boolean };
   /** 终态播报只属于这通电话：压住、去重与已播记录都随 active 一起销毁。 */
-  narration: {
-    userSpeaking: boolean;
-    queue: Map<string, { narration: VoiceWorkNarration; suppressedTurns: number; rejectionCount: number }>;
-    inFlight: { narration: VoiceWorkNarration; rejectionCount: number } | null;
-    spokenWorkItemIds: Set<string>;
-  };
+  narration: NarrationState;
 }
 
 // ponytail: 单进程内一个模块级变量就是「全局单路」的全部实现（方案 §2.6）。
@@ -171,6 +185,55 @@ export function getActiveVoiceSessionId(): string | null {
   return active?.id ?? null;
 }
 
+/**
+ * 忙态文本的唯一通话注入口。renderer 不猜 replace/steer，直接把原话交给通话 brain。
+ * 任何 host 侧不能保证送达的情况都返回 fallback，由 renderer 复用已有 durable queue；
+ * 这条函数本身不创建文本轮，避免挂断竞态下凭空启动一轮 agent。
+ */
+export async function injectVoiceUserText(
+  neoSessionId: string,
+  text: string,
+): Promise<VoiceUserTextInjectionResult> {
+  const trimmed = text.trim();
+  if (!trimmed) return { outcome: 'fallback', reason: 'empty_text' };
+
+  if (active?.neoSessionId !== neoSessionId || active.ending || active.graceTimer) {
+    return { outcome: 'fallback', reason: 'no_active_call' };
+  }
+  const session = active;
+  if (!session.voiceToolsAvailable) {
+    logger.info('typed voice input falling back: tools unavailable', { voiceSessionId: session.id });
+    return { outcome: 'fallback', reason: 'tools_unavailable' };
+  }
+  if (session.upstream.kind !== 'relay') {
+    logger.info('typed voice input falling back: transport has no inject channel', {
+      voiceSessionId: session.id,
+      provider: session.upstream.provider,
+    });
+    return { outcome: 'fallback', reason: 'transport_unavailable' };
+  }
+
+  const injected = `[USER] ${trimmed}`;
+  try {
+    if (session.upstream.injectItemWithAck) {
+      await session.upstream.injectItemWithAck(injected);
+    } else {
+      // Legacy/fake relay handles have no ack surface. The production realtime
+      // transport implements injectItemWithAck; keep the old contract usable for
+      // adapters that only expose fire-and-forget injection.
+      session.upstream.injectItem(injected);
+    }
+    logger.info('typed voice input injected', { voiceSessionId: session.id });
+    return { outcome: 'injected' };
+  } catch (error) {
+    logger.warn('typed voice input injection rejected; renderer must queue it', {
+      voiceSessionId: session.id,
+      message: error instanceof Error ? error.message : 'unknown',
+    });
+    return { outcome: 'fallback', reason: 'injection_rejected' };
+  }
+}
+
 function send(client: WsSocket, event: VoiceEvent): void {
   if (client.readyState === client.OPEN) client.send(JSON.stringify(event));
 }
@@ -197,14 +260,42 @@ function requestResponse(session: ActiveSession, userFinal: string): void {
     : undefined);
 }
 
-function evaluateInterrupt(session: ActiveSession, text: string, stage: 'partial' | 'final'): void {
-  const candidateId = session.interruption.currentCandidateId;
+function findInterruptCandidateByItemId(
+  session: ActiveSession,
+  itemId?: string,
+): { candidateId: string; candidate: VoiceInterruptCandidate } | undefined {
+  if (!itemId) return undefined;
+  for (const [candidateId, candidate] of session.interruption.candidates) {
+    if (candidate.itemId === itemId) return { candidateId, candidate };
+  }
+  return undefined;
+}
+
+function resolveInterruptCandidate(
+  session: ActiveSession,
+  identity: { candidateId?: string; itemId?: string } = {},
+): { candidateId: string; candidate: VoiceInterruptCandidate } | undefined {
+  const byItemId = findInterruptCandidateByItemId(session, identity.itemId);
+  if (byItemId) return byItemId;
+  const candidateId = identity.candidateId ?? session.interruption.currentCandidateId;
+  if (!candidateId) return undefined;
+  const candidate = session.interruption.candidates.get(candidateId);
+  return candidate ? { candidateId, candidate } : undefined;
+}
+
+function evaluateInterrupt(
+  session: ActiveSession,
+  text: string,
+  stage: 'partial' | 'final',
+  identity: { candidateId?: string; itemId?: string; classificationSource?: 'empty-text-fallback' | 'transcript' } = {},
+): void {
+  const resolved = resolveInterruptCandidate(session, identity);
+  const candidateId = resolved?.candidateId;
   if (!candidateId) {
     if (stage === 'final' && text.trim()) requestResponse(session, text);
     return;
   }
-  const candidate = session.interruption.candidates.get(candidateId);
-  if (!candidate) return;
+  const candidate = resolved.candidate;
   if (stage === 'final' && candidate.finalGraceTimer) {
     clearTimeout(candidate.finalGraceTimer);
     candidate.finalGraceTimer = undefined;
@@ -220,6 +311,7 @@ function evaluateInterrupt(session: ActiveSession, text: string, stage: 'partial
   if (decision.terminal && !candidate.decided) {
     candidate.decided = true;
     candidate.classification = decision.classification;
+    candidate.classificationSource = identity.classificationSource ?? 'transcript';
     let cancelledResponseId: string | null = null;
     if (decision.cancel) {
       cancelledResponseId = session.upstream.interrupt();
@@ -342,122 +434,6 @@ async function reportWorkFailure(
   // （onWorkNarration → injectItem）。此前是往 instructions 里塞一段
   // <work_failed_notice>——instructions 是「你是谁」，一次性事件塞进去会变成
   // 永久人设，下一轮、下下轮它还在那儿。同一件事只留一条路。
-}
-
-/**
- * 终态回流 → 一句塞进实时会话的话（发言人协议 §2.2）。
- *
- * `[BACKEND] ` 前缀是给模型看的来源标记（用户消息带 `[USER] `），prompt 里明令不许念出来。
- * 措辞写死不留自由发挥空间：模型会把这段话当事实原样转述，失败尤其不能让它自己润色。
- */
-function formatNarration(narration: VoiceWorkNarration): string {
-  const who = narration.speaker ? `${narration.speaker.displayName}：` : '';
-  // 「停旧的」回报（§1）：整句台词已由 buildStopNarration 算好，这里不再拼词。
-  // 措辞只有一个家，避免「停稳了没有」这件事在两个模块里各写一半而说法打架。
-  if (narration.status === 'announcement') {
-    return `[BACKEND] ${who}${narration.summary}`;
-  }
-  if (narration.status === 'failed') {
-    const reason = narration.summary || '未给出原因';
-    return `[BACKEND] ${who}「${narration.title}」失败了，没有完成，原因：${reason}。`
-      + '如实告诉用户这件事失败了，绝不要说它已经完成、已经写入或已经生效。';
-  }
-  // 待核验（X5.5-A2-a）：run 跑完了但没留下任何产物。这一档最容易被润色成「做完了」，
-  // 所以和失败一样把台词写死，不给「已结束」这种可润色的状态名词留空间。
-  if (narration.status === 'unverified') {
-    return `[BACKEND] ${who}「${narration.title}」跑完了，但没有留下任何产物，不能算做完。${narration.summary}`.trim()
-      + '\n如实告诉用户这件事跑完了但还没核验，请他自己确认一下；'
-      + '绝不要说它已经完成、已经写入或已经生效。';
-  }
-  return `[BACKEND] ${who}「${narration.title}」做完了。${narration.summary}`.trim();
-}
-
-function injectNarration(session: ActiveSession, narration: VoiceWorkNarration, rejectionCount = 0): void {
-  if (session.narration.spokenWorkItemIds.has(narration.workItemId)) return;
-  const { upstream } = session;
-  if (upstream.kind !== 'relay') {
-    // WebRTC 形态媒体不经 Host，注入通道要走 Renderer 的 data channel，尚未实现。
-    // 静默 no-op = 用户永远等不到那句话且查不出为什么，必须留痕。
-    logger.warn('narration dropped: transport has no inject channel', { provider: upstream.provider });
-    return;
-  }
-  upstream.injectItem(formatNarration(narration));
-  session.narration.inFlight = { narration, rejectionCount };
-  session.narration.spokenWorkItemIds.add(narration.workItemId);
-}
-
-function enqueueOrInjectNarration(session: ActiveSession, narration: VoiceWorkNarration): void {
-  const state = session.narration;
-  if (state.spokenWorkItemIds.has(narration.workItemId) || state.queue.has(narration.workItemId)) return;
-  const upstreamResponding = session.upstream.kind === 'relay' && session.upstream.isResponding();
-  if (!state.userSpeaking && !upstreamResponding) {
-    injectNarration(session, narration);
-    return;
-  }
-  // 只把真实用户轮算进压制次数；单纯撞上模型响应窗不消耗用户轮额度。
-  state.queue.set(narration.workItemId, {
-    narration,
-    suppressedTurns: state.userSpeaking ? 1 : 0,
-    rejectionCount: 0,
-  });
-}
-
-function markNarrationUserTurn(session: ActiveSession): void {
-  const state = session.narration;
-  state.userSpeaking = true;
-  for (const [workItemId, pending] of state.queue) {
-    pending.suppressedTurns += 1;
-    if (pending.suppressedTurns < 2) continue;
-    state.queue.delete(workItemId);
-    logger.info('narration dropped after two suppressed user turns', {
-      voiceSessionId: session.id,
-      workItemId,
-    });
-  }
-}
-
-function flushNarrationQueue(session: ActiveSession): void {
-  const state = session.narration;
-  state.userSpeaking = false;
-  state.inFlight = null;
-  // 每次 response.done 只放一条。injectItem 会立即请求下一次 response，
-  // 一次清空多条会让这些 response.create 互相碰撞。
-  const next = state.queue.entries().next().value as
-    | [string, { narration: VoiceWorkNarration; suppressedTurns: number; rejectionCount: number }]
-    | undefined;
-  if (!next) return;
-  state.queue.delete(next[0]);
-  injectNarration(session, next[1].narration, next[1].rejectionCount);
-}
-
-function handleNarrationInjectionRejected(session: ActiveSession, message: string): void {
-  const state = session.narration;
-  const failed = state.inFlight;
-  state.inFlight = null;
-  if (!failed) {
-    logger.warn('unmatched narration injection rejection', { voiceSessionId: session.id, message });
-    return;
-  }
-  const { narration, rejectionCount } = failed;
-  if (rejectionCount >= 1) {
-    logger.warn('narration injection dropped after retry', {
-      voiceSessionId: session.id,
-      workItemId: narration.workItemId,
-      message,
-    });
-    return;
-  }
-  state.spokenWorkItemIds.delete(narration.workItemId);
-  state.queue.set(narration.workItemId, {
-    narration,
-    suppressedTurns: 0,
-    rejectionCount: rejectionCount + 1,
-  });
-  logger.info('narration injection rejected; queued one retry', {
-    voiceSessionId: session.id,
-    workItemId: narration.workItemId,
-    message,
-  });
 }
 
 /**
@@ -632,6 +608,7 @@ function beginReconnectGrace(sessionId: string): void {
 async function teardown(reason: string): Promise<void> {
   const session = active;
   if (!session) return;
+  session.ending = true;
   session.narration.queue.clear();
   active = null;
   clearTimeout(session.maxDurationTimer);
@@ -649,6 +626,7 @@ async function teardown(reason: string): Promise<void> {
   // 上游会把这通电话说过的话全部丢掉（2026-07-26 真机：12s 通话落库只剩摘要）。
   // 窗口内 onEvent 照常把 final 落库；窗口结束后 done 仍没到的助手增量缓冲冲成 final。
   await new Promise((resolve) => setTimeout(resolve, VOICE_TEARDOWN_DRAIN_MS));
+  session.tokenUsage.accepting = false;
   for (const [responseId, pendingAssistant] of session.transcriptBuf.assistantByResponse) {
     if (!pendingAssistant.trim() || session.cancelledResponseIds.has(responseId)) continue;
     await persistTranscript(
@@ -668,7 +646,7 @@ async function teardown(reason: string): Promise<void> {
   const seconds = durationSec % 60;
   const durationText = minutes > 0 ? `${minutes} 分 ${seconds} 秒` : `${seconds} 秒`;
   // 用量账本无条件记：空通话也真按秒付了钱，不落卡不等于没发生。
-  if (!consumeVoiceCallFailure(session.id)) recordVoiceCall(endedAt, durationSec);
+  if (!consumeVoiceCallFailure(session.id)) recordVoiceCall(endedAt, durationSec, session.tokenUsage.value);
   // A3：零字幕通话不落摘要卡。2026-07-30 真机那通 16 秒空通话（自动重连拨出来的）
   // 在消息流里留了一张「这通电话没有对话内容」——那不是记录，是噪音。
   // 派过活的通话即使一句没说也照落：工作项才是那通电话的产物。
@@ -785,6 +763,9 @@ async function connectAndBind(
 
   const transcriptBuf = { assistantByResponse: new Map<string, string>() };
   const transcriptMerge: TranscriptMergeState = { messageId: null, text: '', at: 0 };
+  // transport 回调属于这通上游连接，不能用全局 active 判断归属：显式挂断会先清 active，
+  // 但 response.done usage 仍可能在 1.5 秒排水窗内到达。
+  const tokenUsage = { value: undefined as VoiceTokenUsage | undefined, accepting: true };
   /**
    * 告别音频的播放计量（E2）。host 转发多少字节就是要播多久（PCM16@24k 单声道），
    * 播放起点 = 第一帧转发的时刻。不新造 renderer 回报协议——这点端到端延迟由反应窗兜住。
@@ -829,6 +810,7 @@ async function connectAndBind(
   });
   // 上游回调一律经这个可变引用发：重连换的是 socket，不是通话。
   const clientRef = { current: client };
+  let voiceToolsAvailable = VOICE_TOOL_DEFINITIONS.length > 0;
   /**
    * 收线的**唯一**入口——模型调 end_call 与 host 从用户字幕判出的挂断意图共用。
    *
@@ -869,7 +851,18 @@ async function connectAndBind(
     neoSessionId,
     activeAgentId: routing.activeAgentId,
     onWorkItem: (item) => {
-      if (active?.id === id && item.status === 'queued') active.workItemCount += 1;
+      if (active?.id === id && item.status === 'queued') {
+        active.workItemCount += 1;
+        // 首条进度的延迟基准（§2）：从这件活派出去那一刻起算。
+        active.narration.firstDispatchAt = Date.now();
+        // §4.3 三元组绑定：这一件活是哪通电话、哪个上游会话派出去的，
+        // 从日志就能还原「这句话属于哪个活的哪一轮」，不必再靠时间戳猜。
+        logger.info('voice work dispatched', {
+          workItemId: item.id,
+          voiceSessionId: id,
+          neoSessionId,
+        });
+      }
       send(clientRef.current, { type: 'work.upsert', item });
     },
     // G1（2026-07-28 真机，验收报告自评最严重）：账本早就把死掉的活标成 failed，
@@ -898,6 +891,10 @@ async function connectAndBind(
         voice: selection.voice,
       },
       onEvent: (event) => {
+        if (event.type === 'notice' && event.code === 'VOICE_TOOLS_DROPPED') {
+          voiceToolsAvailable = false;
+          if (active?.id === id) active.voiceToolsAvailable = false;
+        }
         if (active?.id === id && event.type === 'speech.started') {
           const candidateId = event.candidateId ?? `candidate-${Date.now()}`;
           active.interruption.currentCandidateId = candidateId;
@@ -921,8 +918,13 @@ async function connectAndBind(
             candidate.durationMs = event.durationMs;
             if (candidate.finalGraceTimer) clearTimeout(candidate.finalGraceTimer);
             candidate.finalGraceTimer = setTimeout(() => {
+              candidate.finalGraceTimer = undefined;
               if (active?.id !== id || candidate.decided) return;
-              evaluateInterrupt(active, '', 'final');
+              candidate.emptyTextFallbackObserved = true;
+              evaluateInterrupt(active, '', 'partial', {
+                ...(candidateId ? { candidateId } : {}),
+                classificationSource: 'empty-text-fallback',
+              });
             }, 1_200);
           }
         }
@@ -943,15 +945,25 @@ async function connectAndBind(
         // injection.rejected 是 Host 内部的重试信号；Renderer 没有用户动作要做。
         let suppressUserFragment = false;
         if (event.type === 'user.transcript') {
-          if (active?.id === id) evaluateInterrupt(active, event.text, event.done ? 'final' : 'partial');
-          if (event.done && active?.id === id) {
-            const candidateId = active.interruption.currentCandidateId;
-            const classification = candidateId
-              ? active.interruption.candidates.get(candidateId)?.classification
-              : undefined;
-            suppressUserFragment = classification === 'background'
-              || classification === 'acknowledgement'
-              || classification === 'short_fragment';
+          if (active?.id === id) {
+            const transcriptCandidate = resolveInterruptCandidate(active, {
+              candidateId: event.candidateId,
+              itemId: event.itemId,
+            });
+            if (event.itemId && transcriptCandidate) transcriptCandidate.candidate.itemId ??= event.itemId;
+            evaluateInterrupt(active, event.text, event.done ? 'final' : 'partial', {
+              candidateId: event.candidateId,
+              itemId: event.itemId,
+            });
+            if (event.done && event.itemId) {
+              const candidate = findInterruptCandidateByItemId(active, event.itemId)?.candidate;
+              const classification = candidate?.classification;
+              suppressUserFragment = !candidate?.emptyTextFallbackObserved
+                && candidate?.classificationSource !== 'empty-text-fallback'
+                && (classification === 'background'
+                  || classification === 'acknowledgement'
+                  || classification === 'short_fragment');
+            }
           }
         }
         if (
@@ -1002,6 +1014,9 @@ async function connectAndBind(
             }
           } else transcriptBuf.assistantByResponse.set(key, assistantBuffer + event.text);
         } else if (event.type === 'response.done') {
+          if (event.usage && tokenUsage.accepting) {
+            tokenUsage.value = addTokenUsage(tokenUsage.value, event.usage);
+          }
           const key = event.responseId ?? 'legacy';
           if (cancelledResponse) {
             transcriptBuf.assistantByResponse.delete(key);
@@ -1101,6 +1116,8 @@ async function connectAndBind(
     startedAt: Date.now(),
     clientRef,
     upstream,
+    voiceToolsAvailable,
+    ending: false,
     graceTimer: null,
     inboundAudioFrames: 0,
     inboundAudioWatchdogTimer: null,
@@ -1119,12 +1136,8 @@ async function connectAndBind(
     },
     cancelledResponseIds: new Set(),
     pendingAssistantFinals: new Map(),
-    narration: {
-      userSpeaking: false,
-      queue: new Map(),
-      inFlight: null,
-      spokenWorkItemIds: new Set(),
-    },
+    tokenUsage,
+    narration: createNarrationState(),
     maxDurationTimer: setTimeout(() => {
       logger.warn('session hit max duration, force closing', { voiceSessionId: id });
       void teardown('max-duration');

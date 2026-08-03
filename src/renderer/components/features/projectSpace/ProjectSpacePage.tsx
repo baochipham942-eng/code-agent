@@ -17,7 +17,7 @@ export interface ProjectSpacePageProps {
   onClose: () => void;
 }
 
-export const ProjectSpacePage: React.FC<ProjectSpacePageProps> = ({ onClose }) => {
+export const ProjectSpacePage: React.FC<ProjectSpacePageProps> = () => {
   const { t } = useI18n();
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const listRef = useRef<ProjectListViewHandle>(null);
@@ -33,10 +33,9 @@ export const ProjectSpacePage: React.FC<ProjectSpacePageProps> = ({ onClose }) =
         <>
           <FullScreenPageHeader
             variant="bar"
-            icon={<FolderKanban className="h-4 w-4 text-violet-300" />}
+            icon={<FolderKanban className="h-4 w-4 text-badge-accent" />}
             title={t.projectSpace.listTitle}
             description={t.projectSpace.listDescription}
-            onClose={onClose}
             // 「新建空间」住页头 actions 槽（规范位，爸 2026-07-30：按钮别在内容区乱飘）
             actions={(
               <PrimaryButton
@@ -57,4 +56,3 @@ export const ProjectSpacePage: React.FC<ProjectSpacePageProps> = ({ onClose }) =
     </FullScreenPage>
   );
 };
-

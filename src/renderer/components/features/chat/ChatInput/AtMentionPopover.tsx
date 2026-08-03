@@ -71,7 +71,7 @@ export const AtMentionPopover: React.FC<AtMentionPopoverProps> = ({
               onMouseEnter={() => onHover(index)}
               className={rowClass(index === selectedIndex)}
             >
-              <Pin className={`mt-0.5 h-3.5 w-3.5 shrink-0 ${row.pinned ? 'text-indigo-300' : 'text-zinc-600'}`} />
+              <Pin className={`mt-0.5 h-3.5 w-3.5 shrink-0 ${row.pinned ? 'text-badge-accent' : 'text-zinc-600'}`} />
               <span className="min-w-0 flex-1">
                 <span className="flex items-center gap-1.5 text-xs">
                   <span className="truncate">{row.item.title}</span>
@@ -83,7 +83,7 @@ export const AtMentionPopover: React.FC<AtMentionPopoverProps> = ({
                   {row.item.summary || row.item.pathOrUri}
                 </span>
               </span>
-              {row.pinned && <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-indigo-300" aria-label={t.mentionPanel.pinnedBadge} />}
+              {row.pinned && <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-badge-accent" aria-label={t.mentionPanel.pinnedBadge} />}
             </button>
           ))}
         </div>

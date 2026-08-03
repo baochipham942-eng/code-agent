@@ -16,7 +16,10 @@ import {
   listExternalEngineManifests,
   type ExternalEngineManifest,
 } from '../../../shared/externalEngineManifest';
+import { createLogger } from '../infra/logger';
 import { getShellPath } from '../infra/shellEnvironment';
+
+const logger = createLogger('AgentEngineRegistry');
 
 const execFileAsync = promisify(execFile);
 
@@ -25,6 +28,11 @@ interface CommandProbe {
   binaryPath?: string;
   version?: string;
   authenticated?: boolean;
+  /**
+   * 登录探测是否**给出了确定答复**。抛错 / 超时不算——那是「没问出来」，
+   * 不是「答复是否」。写成 true 会让 authState 落进 needs_login，
+   * 等于把「没能确认」说成「没登录」。
+   */
   authChecked?: boolean;
   authError?: string;
   error?: string;
@@ -111,7 +119,9 @@ export class AgentEngineRegistry {
     probe: CommandProbe | null,
   ): AgentEngineSourceDescriptor {
     const builtin = manifest.kind === 'native';
-    const detected = builtin || Boolean(probe?.binaryPath && !probe.error);
+    // 找到可执行文件 = 装了。版本探测失败不改变这个事实，只让它暂时不可用
+    // （selectable 依旧要求 authenticated，权限一格没松）。
+    const detected = builtin || Boolean(probe?.binaryPath);
     const adapterVerified = manifest.adapter.evidence === 'production'
       && Boolean(manifest.adapter.adapterId)
       && Boolean(manifest.kind);
@@ -125,13 +135,16 @@ export class AgentEngineRegistry {
       ...(probe?.binaryPath ? { binaryPath: probe.binaryPath } : {}),
       ...(probe?.version ? { version: probe.version } : {}),
       detected,
+      ...(probe?.binaryPath && probe.error ? { probeError: probe.error } : {}),
       selectable: detected && adapterVerified && authenticated,
-      authState: builtin
+      // needs_login 只留给「探测跑通了、答复是没登录」。探测本身挂掉走 unknown，
+      // 压根没探过才是 not_checked——三者对用户是三句不同的话，不能混。
+      authState: builtin || probe?.authenticated
         ? 'authenticated'
-        : probe?.authenticated
-          ? 'authenticated'
-          : probe?.authChecked
-            ? 'needs_login'
+        : probe?.authChecked
+          ? 'needs_login'
+          : probe?.authError
+            ? 'unknown'
             : 'not_checked',
       modelSelection: manifest.modelSelection,
       ...(manifest.iconAsset ? { iconAsset: manifest.iconAsset } : {}),
@@ -264,20 +277,32 @@ export class AgentEngineRegistry {
           authenticated,
           ...(!authenticated ? { authError: 'Official client login was not confirmed' } : {}),
         };
-      } catch {
+      } catch (authProbeError) {
+        // 登录探测挂了（多半是超时）≠ 用户没登录。authChecked 保持 false，
+        // authState 因而落到 'unknown'（UI：登录状态无法安全确认），
+        // 而不是对着一个登录得好好的客户端说「请先登录」。
+        const detail = authProbeError instanceof Error ? authProbeError.message : String(authProbeError);
+        logger.warn('agent engine auth probe failed; login state is unknown, not negative', {
+          command,
+          binaryPath,
+          detail,
+        });
         return {
           ...baseResult,
-          authChecked: true,
           authenticated: false,
-          authError: 'Official client login probe failed',
+          authError: `Official client login probe failed: ${detail}`,
         };
       }
     } catch (error) {
-      return {
+      // 找到了却跑不通。不留痕的话事后完全无法复盘——2026-08-02 排查
+      // 「明明装了却显示未安装」时，生产日志里一条探测记录都没有。
+      const detail = error instanceof Error ? error.message : String(error);
+      logger.warn('agent engine version probe failed; client is installed but unusable right now', {
         command,
         binaryPath,
-        error: error instanceof Error ? error.message : String(error),
-      };
+        detail,
+      });
+      return { command, binaryPath, error: detail };
     }
   }
 

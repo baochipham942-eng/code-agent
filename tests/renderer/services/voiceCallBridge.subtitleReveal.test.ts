@@ -257,6 +257,63 @@ describe('voiceCallBridge 字幕揭示绑播放进度', () => {
     ]));
   });
 
+  it('final 比 delta 累计更短时，已显示字幕不回缩', async () => {
+    const socket = await dialAndOpen();
+    vi.useFakeTimers();
+
+    burstDeltas(socket, '这是已经揭示到一半的较长旧字幕');
+    sendAudio(socket, 4);
+    await vi.advanceTimersByTimeAsync(2_000);
+    const beforeFinal = partial();
+    expect(beforeFinal.length).toBeGreaterThan(0);
+
+    sendEvent(socket, {
+      type: 'assistant.transcript',
+      responseId: 'resp-short-final',
+      itemId: 'item-short-final',
+      text: '短句',
+      done: true,
+    });
+
+    expect(partial().length).toBeGreaterThanOrEqual(beforeFinal.length);
+  });
+
+  it('换 responseId 时先 flush 旧轮，旧轮长字幕不会被新轮短前缀盖掉', async () => {
+    const socket = await dialAndOpen();
+    vi.useFakeTimers();
+
+    for (let i = 0; i < FULL_TEXT.length; i += 3) {
+      sendEvent(socket, {
+        type: 'assistant.transcript',
+        responseId: 'resp-old',
+        itemId: 'item-old',
+        text: FULL_TEXT.slice(i, i + 3),
+        done: false,
+      });
+    }
+    sendAudio(socket, AUDIO_SECONDS);
+    sendEvent(socket, {
+      type: 'assistant.transcript',
+      responseId: 'resp-old',
+      itemId: 'item-old',
+      text: FULL_TEXT,
+      done: true,
+    });
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    sendEvent(socket, {
+      type: 'assistant.transcript',
+      responseId: 'resp-new',
+      itemId: 'item-new',
+      text: '新轮短前缀',
+      done: false,
+    });
+    sendAudio(socket, 1);
+    await vi.advanceTimersByTimeAsync(300);
+
+    expect(partial()).toBe(FULL_TEXT);
+  });
+
   it('取消旧 response 不得吞掉交错到达的新 response 字幕', async () => {
     const socket = await dialAndOpen();
     vi.useFakeTimers();

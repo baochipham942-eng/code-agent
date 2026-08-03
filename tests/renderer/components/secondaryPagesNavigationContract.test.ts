@@ -8,7 +8,6 @@ const PRIMARY_PAGE_HEADERS = [
   ['活动', 'activity/ActivityPanel.tsx'],
   ['时间能力', 'timeCapability/TimeCapabilityPanel.tsx'],
   ['实验室', 'lab/LabPage.tsx'],
-  ['提示词管理', 'prompts/PromptManagerModal.tsx'],
   ['协作空间列表', 'projectSpace/ProjectSpacePage.tsx'],
   ['本机操作', 'localOps/LocalOpsPage.tsx'],
   ['评测中心', 'evalCenter/EvalCenterPage.tsx'],
@@ -42,5 +41,10 @@ describe('一级二级页与下钻页的返回按钮契约', () => {
     const props = fullScreenPageHeaderProps('projectSpace/ProjectSpaceView.tsx');
     expect(props).toContain('onClose={onBackToList}');
     expect(props).toContain('closeLabel={ps.backToList}');
+  });
+
+  it('提示词管理从设置打开时保留返回设置的入口，侧栏直达仍不加返回按钮', () => {
+    const props = fullScreenPageHeaderProps('prompts/PromptManagerModal.tsx');
+    expect(props).toContain('onClose={showSettings ? () => setShowPromptManager(false) : undefined}');
   });
 });

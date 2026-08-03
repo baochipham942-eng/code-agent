@@ -70,14 +70,17 @@ export const AppshotChip: React.FC<AppshotChipProps> = ({ capture, onRemove, res
           aria-label={t.appshotChip.viewAria}
         >
           {/* 缩略图矩形即飞入落点：ComposerChipsRow 的 appshotSlotRef 锚必须与其重合
-              （left 9px = border 1 + p-2 8；img w-60 h-[7.5rem]，其下缘距卡下缘 35px = gap-1.5 6 + 标题行 h-5 20 + p-2 8 + border 1） */}
+              （left 9px = border 1 + p-2 8；img w-60 h-[7.5rem]，其下缘距卡下缘 35px = gap-1.5 6 + 标题行 h-5 20 + p-2 8 + border 1）
+              缩略图用 object-cover 铺满这个矩形：窗口截图多为 16:10 而框是 2:1，object-contain 会在左右留出
+              bg-black/30 的空条（2026-08-03 产品负责人真机指出「图没撑满容器」）。裁掉的边缘不影响识别，
+              点开有完整预览 Modal。object-fit 不改变盒子尺寸，上面那套落点锚的像素账不受影响。 */}
           <div className="relative">
             {capture.screenshotDataUrl ? (
               <img
                 src={capture.screenshotDataUrl}
                 alt={appName}
                 title={windowTitle || appName}
-                className="w-60 h-[7.5rem] shrink-0 rounded-md bg-black/30 object-contain"
+                className="w-60 h-[7.5rem] shrink-0 rounded-md bg-black/30 object-cover"
               />
             ) : (
               <div className="w-60 h-[7.5rem] shrink-0 flex items-center justify-center rounded-md bg-zinc-800">

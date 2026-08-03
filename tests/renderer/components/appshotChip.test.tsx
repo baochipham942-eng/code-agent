@@ -118,4 +118,19 @@ describe('AppshotChip', () => {
     // 缩略图矩形 = ComposerChipsRow 落点锚（left/bottom 9px, w-60 h-[7.5rem]）的尺寸
     expect(html).toContain('w-60 h-[7.5rem]');
   });
+
+  it('fills the thumbnail rect instead of letterboxing the screenshot', () => {
+    const html = renderToStaticMarkup(
+      React.createElement(AppshotChip, {
+        capture,
+        onRemove: () => undefined,
+      }),
+    );
+
+    // 窗口截图多为 16:10 而落点框是 2:1；object-contain 会在左右留出 bg-black/30 空条
+    // （2026-08-03 产品负责人真机指出「图没撑满容器」）。会话区气泡复用同一个组件，
+    // 所以这条同时守住聊天窗与会话区两处。
+    expect(html).toContain('object-cover');
+    expect(html).not.toContain('object-contain');
+  });
 });

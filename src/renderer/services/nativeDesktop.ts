@@ -15,6 +15,7 @@ import type {
   NativePermissionSnapshot,
   NativePermissionStatus,
 } from '@shared/contract';
+import { invalidateComputerUseSnapshotForSystemSettings } from '../stores/computerUseStore';
 
 export interface NativeDesktopCapabilities {
   platform: string;
@@ -537,5 +538,6 @@ export async function readComputerSurfaceState(
 }
 
 export async function openNativeDesktopSystemSettings(kind: SettingsPaneKind): Promise<boolean> {
+  invalidateComputerUseSnapshotForSystemSettings();
   return invokeNativeDesktopAction('openSystemSettings', { kind });
 }

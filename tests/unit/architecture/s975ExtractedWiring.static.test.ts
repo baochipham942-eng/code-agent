@@ -23,6 +23,12 @@ const modules = [
   'src/web/routes/registerAgentCancelRoute.ts',
 ] as const;
 
+// 源码文本断言对格式化敏感：一次折行就能让 toContain 假红，而代码语义一个字没变。
+// 2026-07-31 #864 把 `view.source === 'durable' && view.terminal` 折成三行，
+// main 全量门因此从那天起连红 100 次运行。断言前把连续空白折成单空格，
+// 只比对 token 序列，不比对排版。（effectiveLines 仍读原始源码，它数的就是行。）
+const flat = (source: string) => source.replace(/\s+/g, ' ');
+
 function effectiveLines(source: string): number {
   return source.split(/\r?\n/).filter((line) => {
     const value = line.trim();
@@ -51,16 +57,16 @@ describe('S9.75 extracted wiring boundaries', () => {
   it('keeps Native model and tool checkpoints fail-closed', () => {
     const model = read('src/host/agent/runtime/contextAssembly/nativeModelCheckpoint.ts');
     const tool = read('src/host/tools/nativeToolCheckpoint.ts');
-    expect(model).toContain('requires a stable source message id');
-    expect(model).toContain("status === 'succeeded'");
-    expect(tool).toContain('requires a stable source message id');
-    expect(tool).toContain('providerOperationId: input.executionId');
-    expect(tool).toContain("status: success ? 'succeeded' : 'failed'");
+    expect(flat(model)).toContain('requires a stable source message id');
+    expect(flat(model)).toContain("status === 'succeeded'");
+    expect(flat(tool)).toContain('requires a stable source message id');
+    expect(flat(tool)).toContain('providerOperationId: input.executionId');
+    expect(flat(tool)).toContain("status: success ? 'succeeded' : 'failed'");
   });
 
   it('keeps Durable route reads and terminal lifecycle in extracted helpers', () => {
-    const lifecycle = read('src/web/routes/agentDurableRouteLifecycle.ts');
-    const cancel = read('src/web/routes/registerAgentCancelRoute.ts');
+    const lifecycle = flat(read('src/web/routes/agentDurableRouteLifecycle.ts'));
+    const cancel = flat(read('src/web/routes/registerAgentCancelRoute.ts'));
     expect(lifecycle).toContain('DURABLE_RUN_ROLLOUT_UNAVAILABLE');
     expect(lifecycle).toContain('releaseDurable');
     expect(lifecycle).toContain("view.source === 'durable' && view.terminal");
@@ -68,13 +74,13 @@ describe('S9.75 extracted wiring boundaries', () => {
   });
 
   it('keeps Graph, recovery, approval, and protocol ownership in one direction', () => {
-    expect(read('src/host/agent/agentTeamGraphCompatibility.ts'))
+    expect(flat(read('src/host/agent/agentTeamGraphCompatibility.ts')))
       .toContain('new GraphEventCompatibilityAdapter');
-    expect(read('src/host/agent/parallelAgentDurableRecovery.ts'))
+    expect(flat(read('src/host/agent/parallelAgentDurableRecovery.ts')))
       .toContain("classification === 'reuse_completed'");
-    expect(read('src/host/agent/agentTeamDurableLaunch.ts'))
+    expect(flat(read('src/host/agent/agentTeamDurableLaunch.ts')))
       .toContain('markApprovalWaiting');
-    expect(read('src/host/agent/subagentToolRuntime.ts'))
+    expect(flat(read('src/host/agent/subagentToolRuntime.ts')))
       .toContain('context.permission.request(request)');
   });
 });

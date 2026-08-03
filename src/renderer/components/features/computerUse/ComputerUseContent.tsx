@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import {
   AlertTriangle,
   AppWindow,
@@ -25,13 +25,7 @@ import {
   openNativeDesktopSystemSettings,
   readComputerSurfaceState,
   type ComputerSurfaceElementsResult,
-  type ComputerSurfaceObservationResult,
   type ComputerSurfaceState,
-  type DesktopActivityEvent,
-  type FrontmostContextSnapshot,
-  type NativeDesktopCapabilities,
-  type NativeDesktopCollectorStatus,
-  type NativePermissionSnapshot,
   type NativePermissionStatus,
 } from '../../../services/nativeDesktop';
 import { useLiveAgentPointer } from '../../../hooks/useLiveAgentPointer';
@@ -45,6 +39,17 @@ import {
   type ComputerUseTarget,
 } from '../../../utils/computerUseWorkbench';
 import { AgentPointerPreviewCard, AgentPointerTimelineList } from '../../workbench/AgentPointerOverlay';
+import {
+  COMPUTER_USE_SNAPSHOT_TTL_MS,
+  consumeComputerUseSystemSettingsRefresh,
+  getComputerUseSnapshot,
+  invalidateComputerUseSnapshot,
+  isComputerUseSnapshotStale,
+  isComputerUseSystemSettingsRefreshPending,
+  patchComputerUseSnapshot,
+  subscribeComputerUseSnapshot,
+  setComputerUseSnapshot,
+} from '../../../stores/computerUseStore';
 
 type StatusTone = 'ready' | 'blocked' | 'warning' | 'neutral';
 
@@ -213,103 +218,149 @@ function createUnavailableSurfaceState(): ComputerSurfaceState {
 // 不再自带 FullScreenPage 外壳；页面标题与关闭由外层页头负责，原页头的「诊断」角标和刷新按钮
 // 收进左栏顶部的工具行。
 export const ComputerUseContent: React.FC = () => {
-  const [nativeAvailable, setNativeAvailable] = useState(false);
-  const [capabilities, setCapabilities] = useState<NativeDesktopCapabilities | null>(null);
-  const [permissionSnapshot, setPermissionSnapshot] = useState<NativePermissionSnapshot | null>(null);
-  const [collectorStatus, setCollectorStatus] = useState<NativeDesktopCollectorStatus | null>(null);
-  const [frontmost, setFrontmost] = useState<FrontmostContextSnapshot | null>(null);
-  const [recentEvents, setRecentEvents] = useState<DesktopActivityEvent[]>([]);
-  const [surface, setSurface] = useState<ComputerSurfaceState | null>(null);
-  const [observation, setObservation] = useState<ComputerSurfaceObservationResult | null>(null);
-  const [desktopProviderError, setDesktopProviderError] = useState<string | null>(null);
-  const [observeError, setObserveError] = useState<string | null>(null);
+  const snapshot = useSyncExternalStore(
+    subscribeComputerUseSnapshot,
+    getComputerUseSnapshot,
+    getComputerUseSnapshot,
+  );
+  const nativeAvailable = snapshot?.nativeAvailable ?? false;
+  const capabilities = snapshot?.capabilities ?? null;
+  const permissionSnapshot = snapshot?.permissionSnapshot ?? null;
+  const collectorStatus = snapshot?.collectorStatus ?? null;
+  const frontmost = snapshot?.frontmost ?? null;
+  const recentEvents = snapshot?.recentEvents ?? [];
+  const surface = snapshot?.surface ?? null;
+  const observation = snapshot?.observation ?? null;
+  const desktopProviderError = snapshot?.desktopProviderError ?? null;
+  const observeError = snapshot?.observeError ?? null;
   const [elementsResult, setElementsResult] = useState<ComputerSurfaceElementsResult | null>(null);
   const [elementsError, setElementsError] = useState<string | null>(null);
   const [selectedTargetApp, setSelectedTargetApp] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => !getComputerUseSnapshot());
   const [refreshing, setRefreshing] = useState(false);
   const [elementsLoading, setElementsLoading] = useState(false);
+  const refreshInFlightRef = useRef<Promise<void> | null>(null);
   const livePointer = useLiveAgentPointer('computer');
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(() => {
+    if (refreshInFlightRef.current) return refreshInFlightRef.current;
+
     setRefreshing(true);
-    setDesktopProviderError(null);
-    setObserveError(null);
+    const previous = getComputerUseSnapshot();
     const hasNative = isNativeDesktopAvailable();
-    setNativeAvailable(hasNative);
+    const refreshPromise = (async () => {
+      if (!hasNative) {
+        setComputerUseSnapshot({
+          capturedAtMs: Date.now(),
+          nativeAvailable: false,
+          capabilities: null,
+          permissionSnapshot: null,
+          collectorStatus: null,
+          frontmost: null,
+          recentEvents: [],
+          surface: createUnavailableSurfaceState(),
+          observation: null,
+          desktopProviderError: 'Web 模式没有 native desktop bridge',
+          observeError: null,
+        });
+        return;
+      }
 
-    if (!hasNative) {
-      setSurface(createUnavailableSurfaceState());
-      setObservation(null);
-      setCapabilities(null);
-      setPermissionSnapshot(null);
-      setCollectorStatus(null);
-      setFrontmost(null);
-      setRecentEvents([]);
-      setDesktopProviderError('Web 模式没有 native desktop bridge');
-      setLoading(false);
-      setRefreshing(false);
-      return;
-    }
-
-    try {
-      const [surfaceResponse, observeResponse] = await Promise.allSettled([
+      const [
+        surfaceResponse,
+        observeResponse,
+        capabilitiesResult,
+        permissionsResult,
+        collectorResult,
+        frontmostResult,
+        eventsResult,
+      ] = await Promise.allSettled([
         readComputerSurfaceState(),
         observeComputerSurface({ includeScreenshot: false }),
+        getNativeDesktopCapabilities(),
+        getNativeDesktopPermissionStatus(),
+        getNativeDesktopCollectorStatus(),
+        getFrontmostDesktopContext(),
+        listRecentNativeDesktopEvents(40),
       ]);
 
-      let nextSurface: ComputerSurfaceState | null = null;
+      let nextSurface = previous?.surface ?? null;
+      let nextObservation = previous?.observation ?? null;
+      let desktopProviderError: string | null = null;
+      let observeError: string | null = null;
+      let refreshSucceeded = true;
+
       if (surfaceResponse.status === 'fulfilled') {
         if (surfaceResponse.value.success && surfaceResponse.value.data) {
           nextSurface = surfaceResponse.value.data;
         } else {
-          setDesktopProviderError(surfaceResponse.value.error?.message || 'Computer Surface state unavailable');
+          refreshSucceeded = false;
+          desktopProviderError = surfaceResponse.value.error?.message || 'Computer Surface state unavailable';
         }
       } else {
-        setDesktopProviderError(surfaceResponse.reason instanceof Error ? surfaceResponse.reason.message : String(surfaceResponse.reason));
+        refreshSucceeded = false;
+        desktopProviderError = surfaceResponse.reason instanceof Error ? surfaceResponse.reason.message : String(surfaceResponse.reason);
       }
 
       if (observeResponse.status === 'fulfilled') {
         const response = observeResponse.value;
         if (response.success && response.data) {
-          setObservation(response.data);
+          nextObservation = response.data;
           nextSurface = response.data.state || nextSurface;
         } else {
-          setObserveError(response.error?.message || 'observeComputerSurface failed');
+          refreshSucceeded = false;
+          observeError = response.error?.message || 'observeComputerSurface failed';
           if (response.data?.state) {
             nextSurface = response.data.state;
           }
         }
       } else {
-        setObserveError(observeResponse.reason instanceof Error ? observeResponse.reason.message : String(observeResponse.reason));
+        refreshSucceeded = false;
+        observeError = observeResponse.reason instanceof Error ? observeResponse.reason.message : String(observeResponse.reason);
       }
-      setSurface(nextSurface);
 
-      if (hasNative) {
-        const [capabilitiesResult, permissionsResult, collectorResult, frontmostResult, eventsResult] =
-          await Promise.allSettled([
-            getNativeDesktopCapabilities(),
-            getNativeDesktopPermissionStatus(),
-            getNativeDesktopCollectorStatus(),
-            getFrontmostDesktopContext(),
-            listRecentNativeDesktopEvents(40),
-          ]);
-        setCapabilities(capabilitiesResult.status === 'fulfilled' ? capabilitiesResult.value : null);
-        setPermissionSnapshot(permissionsResult.status === 'fulfilled' ? permissionsResult.value : null);
-        setCollectorStatus(collectorResult.status === 'fulfilled' ? collectorResult.value : null);
-        setFrontmost(frontmostResult.status === 'fulfilled' ? frontmostResult.value : null);
-        setRecentEvents(eventsResult.status === 'fulfilled' ? eventsResult.value : []);
-      } else {
-        setCapabilities(null);
-        setPermissionSnapshot(null);
-        setCollectorStatus(null);
-        setFrontmost(null);
-        setRecentEvents([]);
-      }
-    } finally {
+      const nextCapabilities = capabilitiesResult.status === 'fulfilled'
+        ? capabilitiesResult.value
+        : previous?.capabilities ?? null;
+      const nextPermissionSnapshot = permissionsResult.status === 'fulfilled'
+        ? permissionsResult.value
+        : previous?.permissionSnapshot ?? null;
+      const nextCollectorStatus = collectorResult.status === 'fulfilled'
+        ? collectorResult.value
+        : previous?.collectorStatus ?? null;
+      const nextFrontmost = frontmostResult.status === 'fulfilled'
+        ? frontmostResult.value
+        : previous?.frontmost ?? null;
+      const nextRecentEvents = eventsResult.status === 'fulfilled'
+        ? eventsResult.value
+        : previous?.recentEvents ?? [];
+
+      if (capabilitiesResult.status !== 'fulfilled') refreshSucceeded = false;
+      if (permissionsResult.status !== 'fulfilled') refreshSucceeded = false;
+      if (collectorResult.status !== 'fulfilled') refreshSucceeded = false;
+      if (frontmostResult.status !== 'fulfilled') refreshSucceeded = false;
+      if (eventsResult.status !== 'fulfilled') refreshSucceeded = false;
+
+      setComputerUseSnapshot({
+        capturedAtMs: refreshSucceeded ? Date.now() : previous?.capturedAtMs ?? 0,
+        nativeAvailable: true,
+        capabilities: nextCapabilities,
+        permissionSnapshot: nextPermissionSnapshot,
+        collectorStatus: nextCollectorStatus,
+        frontmost: nextFrontmost,
+        recentEvents: nextRecentEvents,
+        surface: nextSurface,
+        observation: nextObservation,
+        desktopProviderError,
+        observeError,
+      });
+    })().finally(() => {
       setLoading(false);
       setRefreshing(false);
-    }
+      refreshInFlightRef.current = null;
+    });
+    refreshInFlightRef.current = refreshPromise;
+    return refreshPromise;
   }, []);
 
   const loadElements = useCallback(async (targetApp: string | null) => {
@@ -329,14 +380,14 @@ export const ComputerUseContent: React.FC = () => {
       if (response.success && response.data) {
         setElementsResult(response.data);
         if (response.data.state) {
-          setSurface(response.data.state);
+          patchComputerUseSnapshot({ surface: response.data.state });
         }
       } else {
         setElementsError(response.error?.message || 'listComputerSurfaceElements failed');
         if (response.data) {
           setElementsResult(response.data);
           if (response.data.state) {
-            setSurface(response.data.state);
+            patchComputerUseSnapshot({ surface: response.data.state });
           }
         }
       }
@@ -348,7 +399,43 @@ export const ComputerUseContent: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    void refresh();
+    // 如果本页是在系统设置已经关闭后才重新挂载，消费掉旧的 pending 标记；
+    // stale effect 仍会立即触发一次后台刷新。
+    consumeComputerUseSystemSettingsRefresh();
+  }, []);
+
+  useEffect(() => {
+    if (isComputerUseSystemSettingsRefreshPending()) return;
+    const current = getComputerUseSnapshot();
+    if (!current || isComputerUseSnapshotStale(current)) {
+      void refresh();
+      return;
+    }
+
+    const remainingMs = current.capturedAtMs + COMPUTER_USE_SNAPSHOT_TTL_MS - Date.now();
+    if (remainingMs <= 0) return;
+    const timer = window.setTimeout(() => {
+      invalidateComputerUseSnapshot();
+      void refresh();
+    }, remainingMs);
+    return () => window.clearTimeout(timer);
+  }, [refresh, snapshot?.capturedAtMs]);
+
+  useEffect(() => {
+    const refreshAfterSystemSettings = () => {
+      if (document.visibilityState === 'hidden') return;
+      const returnedFromSystemSettings = consumeComputerUseSystemSettingsRefresh();
+      const current = getComputerUseSnapshot();
+      if (returnedFromSystemSettings || isComputerUseSnapshotStale(current)) {
+        void refresh();
+      }
+    };
+    window.addEventListener('focus', refreshAfterSystemSettings);
+    document.addEventListener('visibilitychange', refreshAfterSystemSettings);
+    return () => {
+      window.removeEventListener('focus', refreshAfterSystemSettings);
+      document.removeEventListener('visibilitychange', refreshAfterSystemSettings);
+    };
   }, [refresh]);
 
   const targets = useMemo(
@@ -473,7 +560,10 @@ export const ComputerUseContent: React.FC = () => {
               <StatusPill label="诊断" tone="neutral" />
               <button
                 type="button"
-                onClick={() => void refresh()}
+                onClick={() => {
+                  invalidateComputerUseSnapshot();
+                  void refresh();
+                }}
                 disabled={refreshing}
                 className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-zinc-700 bg-zinc-800 px-3 text-xs text-zinc-300 hover:bg-zinc-700 disabled:opacity-50"
               >

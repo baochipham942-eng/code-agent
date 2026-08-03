@@ -14,6 +14,8 @@ use std::{
     thread::{self, JoinHandle},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
+#[cfg(target_os = "macos")]
+use std::sync::OnceLock;
 use tauri::{AppHandle, Emitter, Manager};
 
 #[derive(Serialize)]
@@ -486,6 +488,12 @@ extern "C" {
 #[cfg(target_os = "macos")]
 static SCREEN_CAPTURE_REQUESTED: AtomicBool = AtomicBool::new(false);
 
+/// Dev 包第一次查不到自己的麦克风授权时，会再查一次生产 Bundle。
+/// 生产 Bundle 的结果在本次进程内稳定，缓存它可以消掉每次进入页面的第二次 sqlite3 spawn；
+/// 当前 Dev Bundle 的查询仍每次执行，避免从系统设置返回后看不到新授权。
+#[cfg(target_os = "macos")]
+static PRODUCTION_MICROPHONE_AUTH_VALUE_CACHE: OnceLock<Mutex<Option<Option<String>>>> = OnceLock::new();
+
 fn current_bundle_id() -> Option<String> {
     env::var("CODE_AGENT_BUNDLE_ID")
         .ok()
@@ -555,6 +563,22 @@ fn query_tcc_auth_value(service: &str, bundle_id: &str) -> Option<String> {
     }
     let value = String::from_utf8_lossy(&output.stdout).trim().to_string();
     if value.is_empty() { None } else { Some(value) }
+}
+
+#[cfg(target_os = "macos")]
+fn cached_production_microphone_auth_value() -> Option<String> {
+    let cache = PRODUCTION_MICROPHONE_AUTH_VALUE_CACHE.get_or_init(|| Mutex::new(None));
+    if let Ok(guard) = cache.lock() {
+        if let Some(value) = guard.as_ref() {
+            return value.clone();
+        }
+    }
+
+    let value = query_tcc_auth_value("kTCCServiceMicrophone", "com.linchen.code-agent");
+    if let Ok(mut guard) = cache.lock() {
+        *guard = Some(value.clone());
+    }
+    value
 }
 
 fn tcc_auth_value_to_permission_state(value: Option<&str>) -> &'static str {
@@ -694,7 +718,7 @@ fn probe_microphone_permission() -> NativePermissionStatus {
     let current_value = query_tcc_auth_value("kTCCServiceMicrophone", &bundle_id);
     let current_state = tcc_auth_value_to_permission_state(current_value.as_deref());
     if current_state == "unknown" && bundle_id != "com.linchen.code-agent" {
-        let production_value = query_tcc_auth_value("kTCCServiceMicrophone", "com.linchen.code-agent");
+        let production_value = cached_production_microphone_auth_value();
         if tcc_auth_value_to_permission_state(production_value.as_deref()) == "granted" {
             return permission_status(
                 "microphone",

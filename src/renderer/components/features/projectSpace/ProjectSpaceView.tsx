@@ -37,7 +37,7 @@ export interface ProjectSpaceViewProps {
 type SpaceTab = 'activity' | 'tasks' | 'assets';
 
 const STATUS_CHIP_CLASS: Record<ProjectActivityStatus, string> = {
-  active: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300',
+  active: 'border-badge-success/30 bg-emerald-500/10 text-badge-success',
   idle: 'border-zinc-700 bg-zinc-800/60 text-zinc-400',
   archived: 'border-amber-500/30 bg-amber-500/10 text-amber-300',
 };

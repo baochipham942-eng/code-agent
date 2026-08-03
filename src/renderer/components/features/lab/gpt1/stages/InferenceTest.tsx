@@ -110,7 +110,7 @@ export const InferenceTest: React.FC<Props> = ({ onBack }) => {
             <div className="space-y-3 text-sm text-zinc-400">
               <p>
                 {it.howPrefix}
-                <span className="text-emerald-400">{it.howHighlight}</span>{it.howSuffix}
+                <span className="text-badge-success">{it.howHighlight}</span>{it.howSuffix}
               </p>
               <ol className="space-y-2">
                 <li className="flex items-start gap-2">
@@ -143,7 +143,7 @@ export const InferenceTest: React.FC<Props> = ({ onBack }) => {
               <div>
                 <div className="flex justify-between mb-1">
                   <label className="text-xs text-zinc-400">{it.temperatureLabel}</label>
-                  <span className="text-xs font-bold text-emerald-400">
+                  <span className="text-xs font-bold text-badge-success">
                     {temperature < 0.5 ? it.temperatureLow : temperature < 1.0 ? it.temperatureMid : it.temperatureHigh}
                   </span>
                 </div>
@@ -230,8 +230,8 @@ export const InferenceTest: React.FC<Props> = ({ onBack }) => {
                 </div>
               </div>
               <div className="text-center text-zinc-600">{it.processPickArrow}</div>
-              <div className="p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
-                <div className="text-emerald-300">{it.processResult}</div>
+              <div className="p-2 rounded-lg bg-emerald-500/10 border border-badge-success/20">
+                <div className="text-badge-success">{it.processResult}</div>
               </div>
             </div>
           </div>
@@ -240,7 +240,7 @@ export const InferenceTest: React.FC<Props> = ({ onBack }) => {
         {/* 右侧：对话测试 */}
         <div className="space-y-6">
           {/* 对话窗口 */}
-          <div className="p-4 rounded-xl bg-gradient-to-br from-emerald-500/10 to-teal-500/10 border border-emerald-500/20 h-[500px] flex flex-col">
+          <div className="p-4 rounded-xl bg-gradient-to-br from-emerald-500/10 to-teal-500/10 border border-badge-success/20 h-[500px] flex flex-col">
             <h3 className="text-sm font-semibold text-zinc-200 mb-3">{it.chatTitle}</h3>
 
             {/* 消息列表 */}
@@ -340,7 +340,7 @@ export const InferenceTest: React.FC<Props> = ({ onBack }) => {
           {it.terms.map((term) => (
             <div key={term.en} className="p-3 rounded-lg bg-zinc-800">
               <div className="flex items-center gap-2 mb-1">
-                <span className="text-sm font-bold text-emerald-400">{term.en}</span>
+                <span className="text-sm font-bold text-badge-success">{term.en}</span>
                 <span className="text-xs text-zinc-500">|</span>
                 <span className="text-sm text-zinc-400">{term.zh}</span>
               </div>
@@ -359,7 +359,7 @@ export const InferenceTest: React.FC<Props> = ({ onBack }) => {
           <ChevronLeft className="w-4 h-4" />
           {it.backButton}
         </button>
-        <div className="flex items-center gap-2 text-sm text-emerald-400">
+        <div className="flex items-center gap-2 text-sm text-badge-success">
           <Sparkles className="w-4 h-4" />
           {it.completeLabel}
         </div>

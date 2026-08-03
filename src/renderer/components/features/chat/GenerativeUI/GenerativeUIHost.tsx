@@ -74,7 +74,7 @@ function ManifestSurface({
       </div>
       <div className="flex flex-col gap-3 border-t border-cyan-500/20 bg-zinc-950/60 px-4 py-3 min-[743px]:flex-row min-[743px]:items-center min-[743px]:justify-between">
         <div className="flex items-center gap-2 text-xs text-zinc-400" aria-live="polite">
-          {manifest.status === 'completed' ? <CheckCircle2 className="h-4 w-4 text-emerald-400" /> : null}
+          {manifest.status === 'completed' ? <CheckCircle2 className="h-4 w-4 text-badge-success" /> : null}
           {['rejected', 'expired', 'invalidated', 'orphaned', 'failed'].includes(manifest.status)
             ? <AlertTriangle className="h-4 w-4 text-amber-400" />
             : null}

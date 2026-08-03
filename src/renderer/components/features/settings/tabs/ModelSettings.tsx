@@ -917,7 +917,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange, 
                   </div>
                 </div>
                 <div className="flex items-center gap-4">
-                  <span className={`text-xs ${hasApiKey ? 'text-emerald-300' : 'text-amber-300'}`}>
+                  <span className={`text-xs ${hasApiKey ? 'text-badge-success' : 'text-amber-300'}`}>
                     {!needsApiKey ? modelText.header.noApiKey : hasApiKey ? modelText.header.apiKeySaved : modelText.header.waitingApiKey}
                   </span>
                   <label className="flex items-center gap-2 text-xs text-zinc-400" title={modelText.header.selectableTitle}>

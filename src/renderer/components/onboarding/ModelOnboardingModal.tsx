@@ -153,7 +153,7 @@ function OnboardingEngineCard({
         <strong className="block truncate text-sm text-zinc-100">{source.label}</strong>
         <span className="block truncate text-xs text-zinc-500">{status.detail}</span>
       </span>
-      <span className={source.selectable ? 'text-[11px] text-emerald-300' : 'text-[11px] text-zinc-500'}>
+      <span className={source.selectable ? 'text-[11px] text-badge-success' : 'text-[11px] text-zinc-500'}>
         {status.badge}
       </span>
     </>

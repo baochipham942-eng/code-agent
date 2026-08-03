@@ -15,7 +15,7 @@ const phaseClassName: Record<SwarmExecutionPhase, string> = {
   planning: 'bg-blue-500/15 text-blue-300',
   waiting_approval: 'bg-amber-500/15 text-amber-300',
   executing: 'bg-primary-500/15 text-primary-300',
-  completed: 'bg-emerald-500/15 text-emerald-300',
+  completed: 'bg-emerald-500/15 text-badge-success',
   failed: 'bg-red-500/15 text-badge-danger',
   cancelled: 'bg-zinc-700/60 text-zinc-300',
 };
@@ -39,7 +39,7 @@ export function getPhaseMeta(
 
 export const toneClassMap: Record<SwarmTimelineEvent['tone'], string> = {
   neutral: 'border-zinc-700 bg-zinc-800/70 text-zinc-300',
-  success: 'border-emerald-500/25 bg-emerald-500/10 text-emerald-200',
+  success: 'border-badge-success/25 bg-emerald-500/10 text-badge-success',
   warning: 'border-amber-500/25 bg-amber-500/10 text-amber-200',
   error: 'border-red-500/25 bg-red-500/10 text-badge-danger',
 };
@@ -93,7 +93,7 @@ export function getUsageToneClass(percent: number): string {
 export function getUsageTextClass(percent: number): string {
   if (percent >= 85) return 'text-badge-danger';
   if (percent >= 70) return 'text-amber-300';
-  return 'text-emerald-300';
+  return 'text-badge-success';
 }
 
 export function summarizeContextSources(messages: Message[]): ContextSourceSummary {
@@ -222,7 +222,7 @@ export function buildContextDistribution(
     return [
       { label: 'System', value: contextView.tokenDistribution.system, tone: 'text-violet-300' },
       { label: 'User', value: contextView.tokenDistribution.user, tone: 'text-badge-info' },
-      { label: 'Asst', value: contextView.tokenDistribution.assistant, tone: 'text-emerald-300' },
+      { label: 'Asst', value: contextView.tokenDistribution.assistant, tone: 'text-badge-success' },
       { label: 'Tool', value: contextView.tokenDistribution.tool, tone: 'text-amber-300' },
     ];
   }

@@ -230,7 +230,7 @@ function extractTopicLabel(segs: AudioSegment[], fallback: string): string {
 
 const SPEAKER_COLORS = [
   { bg: 'bg-blue-500/20', text: 'text-blue-300', dot: 'bg-blue-400' },
-  { bg: 'bg-emerald-500/20', text: 'text-emerald-300', dot: 'bg-emerald-400' },
+  { bg: 'bg-emerald-500/20', text: 'text-badge-success', dot: 'bg-emerald-400' },
   { bg: 'bg-purple-500/20', text: 'text-purple-300', dot: 'bg-purple-400' },
   { bg: 'bg-amber-500/20', text: 'text-amber-300', dot: 'bg-amber-400' },
   { bg: 'bg-rose-500/20', text: 'text-rose-300', dot: 'bg-rose-400' },

@@ -43,7 +43,7 @@ function memoryLabel(summary: TurnQualitySummary): string {
 function memoryTone(summary: TurnQualitySummary): string {
   return summary.memory.mode === 'off'
     ? 'border-zinc-700/70 bg-zinc-900/60 text-zinc-500'
-    : 'border-emerald-400/20 bg-emerald-400/10 text-emerald-200';
+    : 'border-badge-success/20 bg-emerald-400/10 text-badge-success';
 }
 
 function scoreTone(summary: TurnQualitySummary): string {
@@ -51,7 +51,7 @@ function scoreTone(summary: TurnQualitySummary): string {
   switch (grade) {
     case 'excellent':
     case 'good':
-      return 'border-emerald-400/20 bg-emerald-400/10 text-emerald-200';
+      return 'border-badge-success/20 bg-emerald-400/10 text-badge-success';
     case 'watch':
       return 'border-amber-400/20 bg-amber-400/10 text-amber-200';
     case 'risk':
@@ -289,7 +289,7 @@ export const TurnQualityStrip: React.FC<TurnQualityStripProps> = ({ summary }) =
                   key={`${block.blockType}-${block.trigger}-${index}`}
                   className={`rounded border px-1.5 py-0.5 ${
                     block.injected
-                      ? 'border-emerald-400/20 bg-emerald-400/10 text-emerald-200'
+                      ? 'border-badge-success/20 bg-emerald-400/10 text-badge-success'
                       : 'border-zinc-700 bg-zinc-900/60 text-zinc-500'
                   }`}
                   title={`${block.source} / ${block.trigger}`}

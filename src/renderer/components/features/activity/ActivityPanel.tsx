@@ -66,7 +66,7 @@ function getMode(): ActivityPanelMode {
 }
 
 function toneClass(tone: ActivityTone): string {
-  if (tone === 'ready') return 'border-emerald-500/20 bg-emerald-500/10 text-emerald-300';
+  if (tone === 'ready') return 'border-badge-success/20 bg-emerald-500/10 text-badge-success';
   if (tone === 'blocked') return 'border-amber-500/20 bg-amber-500/10 text-amber-300';
   return 'border-zinc-700 bg-zinc-800/70 text-zinc-300';
 }

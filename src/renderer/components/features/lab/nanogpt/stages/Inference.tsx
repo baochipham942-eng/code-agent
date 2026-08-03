@@ -171,7 +171,7 @@ export const Inference: React.FC<InferenceProps> = ({ onBack }) => {
             </div>
             <div className="text-center">
               <div className="text-2xl">⚖️</div>
-              <div className="text-xs text-emerald-400">{inf.tempBalanced}</div>
+              <div className="text-xs text-badge-success">{inf.tempBalanced}</div>
               <div className="text-xs text-zinc-600">{inf.tempBalancedDesc}</div>
             </div>
             <div className="text-center">
@@ -202,7 +202,7 @@ export const Inference: React.FC<InferenceProps> = ({ onBack }) => {
             />
             <div className="flex justify-between mt-2 text-xs">
               <span className="text-zinc-500">{inf.topKMin}</span>
-              <span className="text-emerald-400 font-bold">{config.topK} {inf.topKUnit}</span>
+              <span className="text-badge-success font-bold">{config.topK} {inf.topKUnit}</span>
               <span className="text-zinc-500">{inf.topKMax}</span>
             </div>
           </div>
@@ -288,7 +288,7 @@ export const Inference: React.FC<InferenceProps> = ({ onBack }) => {
                 className={`flex items-center gap-2 px-6 py-3 rounded-lg text-sm font-medium transition-all ${
                   isGenerating
                     ? 'bg-zinc-700 text-zinc-500 cursor-not-allowed'
-                    : 'bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 border border-emerald-500/30'
+                    : 'bg-emerald-500/20 text-badge-success hover:bg-emerald-500/30 border border-badge-success/30'
                 }`}
               >
                 <RefreshCw className={`w-4 h-4 ${isGenerating ? 'animate-spin' : ''}`} />
@@ -302,7 +302,7 @@ export const Inference: React.FC<InferenceProps> = ({ onBack }) => {
             <div className="text-xs text-zinc-600 mb-2">{inf.outputLabel}</div>
             <div className="text-base text-zinc-400 whitespace-pre-wrap leading-relaxed">
               {output || <span className="text-zinc-600">{inf.outputPlaceholder}</span>}
-              {isGenerating && <span className="animate-pulse text-emerald-400">|</span>}
+              {isGenerating && <span className="animate-pulse text-badge-success">|</span>}
             </div>
           </div>
         </div>
@@ -322,7 +322,7 @@ export const Inference: React.FC<InferenceProps> = ({ onBack }) => {
           <div className="flex items-start gap-2">
             <span className="text-xl">⚖️</span>
             <div>
-              <div className="text-emerald-400 font-medium">{inf.summaryMidLabel}</div>
+              <div className="text-badge-success font-medium">{inf.summaryMidLabel}</div>
               <div className="text-xs text-zinc-500">{inf.summaryMidDesc}</div>
             </div>
           </div>
@@ -337,9 +337,9 @@ export const Inference: React.FC<InferenceProps> = ({ onBack }) => {
       </div>
 
       {/* 恭喜完成 */}
-      <div className="p-6 rounded-xl bg-gradient-to-r from-emerald-500/10 to-blue-500/10 border border-emerald-500/20 text-center">
+      <div className="p-6 rounded-xl bg-gradient-to-r from-emerald-500/10 to-blue-500/10 border border-badge-success/20 text-center">
         <div className="text-4xl mb-3">🎉</div>
-        <h3 className="text-lg font-bold text-emerald-400 mb-2">{inf.congratsTitle}</h3>
+        <h3 className="text-lg font-bold text-badge-success mb-2">{inf.congratsTitle}</h3>
         <p className="text-sm text-zinc-400">
           {inf.congratsBodyLine1}
           <br />
@@ -357,7 +357,7 @@ export const Inference: React.FC<InferenceProps> = ({ onBack }) => {
           {inf.glossary.map((term) => (
             <div key={term.en} className="p-3 rounded-lg bg-zinc-800">
               <div className="flex items-center gap-2 mb-1">
-                <span className="text-sm font-bold text-emerald-400">{term.en}</span>
+                <span className="text-sm font-bold text-badge-success">{term.en}</span>
                 <span className="text-xs text-zinc-500">|</span>
                 <span className="text-sm text-zinc-400">{term.label}</span>
               </div>
@@ -376,7 +376,7 @@ export const Inference: React.FC<InferenceProps> = ({ onBack }) => {
           <ChevronLeft className="w-4 h-4" />
           {inf.backButton}
         </button>
-        <div className="text-sm text-emerald-400 flex items-center gap-2 font-medium">
+        <div className="text-sm text-badge-success flex items-center gap-2 font-medium">
           {inf.completedLabel}
         </div>
       </div>

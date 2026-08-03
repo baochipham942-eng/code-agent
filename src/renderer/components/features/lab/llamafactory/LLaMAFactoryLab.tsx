@@ -189,7 +189,7 @@ export const LLaMAFactoryLab: React.FC = () => {
                     className={`
                       w-12 h-12 rounded-full flex items-center justify-center
                       transition-all duration-300
-                      ${isCompleted ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-400' : ''}
+                      ${isCompleted ? 'bg-emerald-500/20 border-badge-success/50 text-badge-success' : ''}
                       ${isCurrent ? 'bg-orange-500/20 border-orange-500/50 text-orange-400 ring-2 ring-orange-500/30' : ''}
                       ${!isCompleted && !isCurrent ? 'bg-zinc-800 border-zinc-700 text-zinc-500' : ''}
                       border
@@ -200,7 +200,7 @@ export const LLaMAFactoryLab: React.FC = () => {
                   <span
                     className={`
                       text-xs font-medium
-                      ${isCurrent ? 'text-orange-400' : isCompleted ? 'text-emerald-400' : 'text-zinc-500'}
+                      ${isCurrent ? 'text-orange-400' : isCompleted ? 'text-badge-success' : 'text-zinc-500'}
                     `}
                   >
                     {stage.shortTitle}

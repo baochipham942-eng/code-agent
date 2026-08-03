@@ -172,7 +172,7 @@ export const TaskStatusBar: React.FC<TaskStatusBarProps> = ({ className = '' }) 
     >
       {/* 统计概览 */}
       <div className="flex items-center gap-2 text-zinc-400 shrink-0">
-        <Activity className="w-4 h-4 text-emerald-400" />
+        <Activity className="w-4 h-4 text-badge-success" />
         <span className="text-zinc-400 font-medium">
           {runningCount}/{stats.maxConcurrent}
         </span>
@@ -207,7 +207,7 @@ export const TaskStatusBar: React.FC<TaskStatusBarProps> = ({ className = '' }) 
           >
             {/* 状态指示器 */}
             {task.status === 'running' ? (
-              <Loader2 className="w-3 h-3 text-emerald-400 animate-spin" />
+              <Loader2 className="w-3 h-3 text-badge-success animate-spin" />
             ) : (
               <Clock className="w-3 h-3 text-amber-400" />
             )}

@@ -227,7 +227,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, onClo
                           className={`h-1.5 w-1.5 rounded-full ${status.connected ? 'bg-emerald-400' : 'bg-zinc-600'}`}
                           aria-hidden="true"
                         />
-                        <span className={status.connected ? 'text-emerald-300' : 'text-zinc-500'}>
+                        <span className={status.connected ? 'text-badge-success' : 'text-zinc-500'}>
                           {status.label}
                         </span>
                       </span>

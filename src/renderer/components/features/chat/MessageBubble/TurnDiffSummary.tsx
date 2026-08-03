@@ -160,7 +160,7 @@ export const TurnDiffSummary: React.FC<TurnDiffSummaryProps> = ({ turn }) => {
           </div>
           {(totalAdded > 0 || totalRemoved > 0) && (
             <div className="mt-0.5 flex items-center gap-1.5 text-xs">
-              {totalAdded > 0 && <span className="text-emerald-400">+{totalAdded}</span>}
+              {totalAdded > 0 && <span className="text-badge-success">+{totalAdded}</span>}
               {totalRemoved > 0 && <span className="text-rose-400">-{totalRemoved}</span>}
             </div>
           )}
@@ -187,7 +187,7 @@ export const TurnDiffSummary: React.FC<TurnDiffSummaryProps> = ({ turn }) => {
           </button>
         )}
         {undoState === 'done' && (
-          <span className="flex items-center gap-1 px-2 py-0.5 text-xs text-emerald-400">
+          <span className="flex items-center gap-1 px-2 py-0.5 text-xs text-badge-success">
             <Check className="w-3 h-3" />
             {t.turnDiff.undone}
           </span>
@@ -249,7 +249,7 @@ export const TurnDiffSummary: React.FC<TurnDiffSummaryProps> = ({ turn }) => {
                   {dirPath && <span className="text-zinc-600">{dirPath}/</span>}
                   <span className="text-zinc-300">{fileName}</span>
                   {fc.isNewFile && (
-                    <span className="ml-2 text-[10px] text-emerald-400/80">
+                    <span className="ml-2 text-[10px] text-badge-success/80">
                       {t.turnDiff.newFileBadge}
                     </span>
                   )}
@@ -260,7 +260,7 @@ export const TurnDiffSummary: React.FC<TurnDiffSummaryProps> = ({ turn }) => {
                   )}
                 </span>
                 {fc.added > 0 && (
-                  <span className="text-xs text-emerald-400 flex-shrink-0">
+                  <span className="text-xs text-badge-success flex-shrink-0">
                     +{fc.added}
                   </span>
                 )}

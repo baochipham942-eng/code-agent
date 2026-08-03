@@ -824,7 +824,7 @@ export const NativeDesktopSection: React.FC<NativeDesktopSectionProps> = ({
           </span>
           <div className={`px-1.5 py-0.5 rounded-full text-[10px] ${
             collectorStatus?.running
-              ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+              ? 'bg-emerald-500/10 text-badge-success border border-badge-success/20'
               : 'bg-zinc-700/40 text-zinc-500 border border-zinc-600/30'
           }`}>
             {collectorStatus?.running ? nativeDesktopText.status.collecting : nativeDesktopText.status.stopped}

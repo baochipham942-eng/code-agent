@@ -42,11 +42,11 @@ function iconForKind(kind: string): React.ReactNode {
     case 'chart':
       return <BarChart3 className={`${cls} text-cyan-300`} />;
     case 'spreadsheet':
-      return <Table className={`${cls} text-emerald-300`} />;
+      return <Table className={`${cls} text-badge-success`} />;
     case 'document':
       return <FileText className={`${cls} text-zinc-300`} />;
     case 'audio':
-      return <Music className={`${cls} text-emerald-300`} />;
+      return <Music className={`${cls} text-badge-success`} />;
     case 'video':
       return <Video className={`${cls} text-fuchsia-300`} />;
     case 'archive':
@@ -62,7 +62,7 @@ function iconForKind(kind: string): React.ReactNode {
       return <GitBranch className={`${cls} text-violet-300`} />;
     case 'image':
     case 'web_snapshot':
-      return <ImageIcon className={`${cls} text-emerald-300`} />;
+      return <ImageIcon className={`${cls} text-badge-success`} />;
     default:
       return <File className={`${cls} text-zinc-400`} />;
   }
@@ -85,7 +85,7 @@ function statusMeta(card: DeliverableCardView, labels: ReturnType<typeof useI18n
   if (card.status === 'verified') {
     return {
       label: labels.statusVerified,
-      className: 'bg-emerald-500/12 text-emerald-300',
+      className: 'bg-emerald-500/12 text-badge-success',
       icon: <CheckCircle2 className="h-3 w-3" />,
     };
   }
@@ -115,7 +115,7 @@ function qualityMeta(card: DeliverableCardView, labels: ReturnType<typeof useI18
   if (card.quality.status === 'passed') {
     return {
       label: labels.qualityValidated,
-      className: 'bg-emerald-500/12 text-emerald-300',
+      className: 'bg-emerald-500/12 text-badge-success',
       icon: <CheckCircle2 className="h-3 w-3" />,
     };
   }

@@ -52,7 +52,7 @@ const STATUS_META: Record<
   },
   completed: {
     label: '已完成',
-    tone: 'text-emerald-300 bg-emerald-500/10 border-emerald-500/30',
+    tone: 'text-badge-success bg-emerald-500/10 border-badge-success/30',
     icon: <CheckCircle className="w-3 h-3" />,
   },
   failed: {

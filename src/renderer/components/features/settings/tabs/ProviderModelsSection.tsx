@@ -81,7 +81,7 @@ function ModelRow({
             <span
               data-testid={`model-verified-badge-${model.id}`}
               title={modelText.verifiedBadgeTitle}
-              className="inline-flex items-center gap-1 rounded border border-emerald-400/40 bg-emerald-400/10 px-1.5 py-0.5 text-[10px] text-emerald-200"
+              className="inline-flex items-center gap-1 rounded border border-badge-success/40 bg-emerald-400/10 px-1.5 py-0.5 text-[10px] text-badge-success"
             >
               <BadgeCheck className="h-3 w-3" />
               {modelText.verifiedBadge}

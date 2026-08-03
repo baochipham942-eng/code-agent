@@ -160,7 +160,7 @@ export const RLHFStage: React.FC<RLHFStageProps> = ({ onComplete, onBack }) => {
     const colors: Record<string, { bg: string; border: string; text: string }> = {
       blue: { bg: 'bg-blue-500/20', border: 'border-blue-500/30', text: 'text-blue-400' },
       purple: { bg: 'bg-purple-500/20', border: 'border-purple-500/30', text: 'text-purple-400' },
-      emerald: { bg: 'bg-emerald-500/20', border: 'border-emerald-500/30', text: 'text-emerald-400' },
+      emerald: { bg: 'bg-emerald-500/20', border: 'border-badge-success/30', text: 'text-badge-success' },
       amber: { bg: 'bg-amber-500/20', border: 'border-amber-500/30', text: 'text-amber-400' },
     };
     return colors[color] || colors.blue;
@@ -274,7 +274,7 @@ export const RLHFStage: React.FC<RLHFStageProps> = ({ onComplete, onBack }) => {
             </div>
             <div className="text-center">
               <div className="text-xs text-zinc-500 mb-1">{r.currentRewardLabel}</div>
-              <div className="text-xl font-bold text-emerald-400">
+              <div className="text-xl font-bold text-badge-success">
                 {rewardHistory[rewardHistory.length - 1]?.toFixed(3) || '0.000'}
               </div>
             </div>
@@ -282,7 +282,7 @@ export const RLHFStage: React.FC<RLHFStageProps> = ({ onComplete, onBack }) => {
               <div className="text-xs text-zinc-500 mb-1">{r.statusLabel}</div>
               <div className={`text-lg font-medium ${
                 isTraining ? 'text-amber-400' :
-                trainingStep >= 100 ? 'text-emerald-400' : 'text-zinc-400'
+                trainingStep >= 100 ? 'text-badge-success' : 'text-zinc-400'
               }`}>
                 {isTraining ? r.statusOptimizing : trainingStep >= 100 ? r.statusConverged : r.statusReady}
               </div>
@@ -335,14 +335,14 @@ export const RLHFStage: React.FC<RLHFStageProps> = ({ onComplete, onBack }) => {
                   className={`
                     p-3 rounded-lg border
                     ${attempt.correct
-                      ? 'bg-emerald-500/10 border-emerald-500/20'
+                      ? 'bg-emerald-500/10 border-badge-success/20'
                       : 'bg-red-500/10 border-red-500/20'
                     }
                   `}
                 >
                   <div className="flex items-center justify-between mb-1">
                     <span className="text-xs text-zinc-500">{r.rftAttemptLabel} {idx + 1}</span>
-                    <span className={`text-xs font-medium ${attempt.correct ? 'text-emerald-400' : 'text-badge-danger'}`}>
+                    <span className={`text-xs font-medium ${attempt.correct ? 'text-badge-success' : 'text-badge-danger'}`}>
                       {attempt.correct ? r.rftCorrect : r.rftIncorrect}
                     </span>
                   </div>
@@ -386,7 +386,7 @@ export const RLHFStage: React.FC<RLHFStageProps> = ({ onComplete, onBack }) => {
 
                 <div className="space-y-2 text-xs">
                   <div>
-                    <span className="text-emerald-400">{r.prosLabel}</span>
+                    <span className="text-badge-success">{r.prosLabel}</span>
                     <span className="text-zinc-400">{method.pros.join('、')}</span>
                   </div>
                   <div>
@@ -427,7 +427,7 @@ export const RLHFStage: React.FC<RLHFStageProps> = ({ onComplete, onBack }) => {
           {r.glossary.map((term) => (
             <div key={term.en} className="p-3 rounded-lg bg-zinc-800">
               <div className="flex items-center gap-2 mb-1">
-                <span className="text-sm font-bold text-emerald-400">{term.en}</span>
+                <span className="text-sm font-bold text-badge-success">{term.en}</span>
                 <span className="text-xs text-zinc-500">|</span>
                 <span className="text-sm text-zinc-400">{term.zh}</span>
               </div>

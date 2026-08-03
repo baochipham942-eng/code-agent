@@ -73,7 +73,7 @@ function getBridgeLabel(bridge: ManagedBrowserExternalBridgeState | null | undef
 }
 
 function getStatusClass(ready: boolean): string {
-  return ready ? 'text-emerald-300' : 'text-amber-300';
+  return ready ? 'text-badge-success' : 'text-amber-300';
 }
 
 // 浏览器操作内容组件：嵌进「本机操作」合并页（features/localOps/LocalOpsPage）的浏览器 tab，
@@ -327,7 +327,7 @@ export const BrowserSurfaceContent: React.FC = () => {
                 {managedRows.length > 0 ? managedRows.map((row) => (
                   <div key={row.label} className="grid min-w-0 grid-cols-[72px,minmax(0,1fr)] gap-2 text-[11px]">
                     <span className="text-zinc-500">{row.label}</span>
-                    <span className={`truncate ${row.tone === 'ready' ? 'text-emerald-300' : row.tone === 'blocked' ? 'text-amber-300' : 'text-zinc-300'}`} title={row.title || row.value}>
+                    <span className={`truncate ${row.tone === 'ready' ? 'text-badge-success' : row.tone === 'blocked' ? 'text-amber-300' : 'text-zinc-300'}`} title={row.title || row.value}>
                       {row.value}
                     </span>
                   </div>
@@ -488,7 +488,7 @@ export const BrowserSurfaceContent: React.FC = () => {
 
           <section className="mt-3 rounded-lg border border-white/[0.08] bg-white/[0.02] p-3">
             <div className="mb-2 flex items-center gap-2 text-sm font-medium text-zinc-200">
-              <ShieldCheck className="h-4 w-4 text-emerald-300" />
+              <ShieldCheck className="h-4 w-4 text-badge-success" />
               登录态摘要
             </div>
             {accountState ? (
@@ -519,7 +519,7 @@ export const BrowserSurfaceContent: React.FC = () => {
           </section>
 
           {notice && (
-            <div className="mt-3 rounded-md border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-200">
+            <div className="mt-3 rounded-md border border-badge-success/20 bg-emerald-500/10 px-3 py-2 text-xs text-badge-success">
               {notice}
             </div>
           )}

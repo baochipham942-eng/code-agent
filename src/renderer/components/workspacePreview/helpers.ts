@@ -83,7 +83,7 @@ export function statusClass(status: WorkspacePreviewItem['status']): string {
   switch (status) {
     case 'draft': return 'bg-amber-500/10 text-amber-300 border-amber-500/20';
     case 'applied':
-    case 'sent': return 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20';
+    case 'sent': return 'bg-emerald-500/10 text-badge-success border-badge-success/20';
     case 'failed': return 'bg-red-500/10 text-badge-danger border-red-500/20';
     default: return 'bg-zinc-800 text-zinc-400 border-zinc-700';
   }

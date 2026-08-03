@@ -934,7 +934,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
                                 <span className="font-medium">{opt.label}</span>
                                 {isAgenticVerifiedModel(opt.model) ? (
                                   <span
-                                    className="inline-flex items-center gap-0.5 text-[10px] px-1 py-0.5 rounded bg-emerald-500/15 text-emerald-300"
+                                    className="inline-flex items-center gap-0.5 text-[10px] px-1 py-0.5 rounded bg-emerald-500/15 text-badge-success"
                                     title={modelText.verifiedBadgeTitle}
                                   >
                                     <BadgeCheck className="h-3 w-3" />

@@ -86,8 +86,8 @@ export const LabPage: React.FC = () => {
     <div className="flex-1 overflow-y-auto p-8">
       {/* Hero Section */}
       <div className="text-center mb-12">
-        {/* ds-allow:layout hero 图标 rounded-2xl+渐变属学习平台游戏化视觉，登记例外（见文件头） */}<div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-emerald-500/20 to-teal-500/20 border border-emerald-500/30 mb-4">
-          <FlaskConical className="w-8 h-8 text-emerald-400" />
+        {/* ds-allow:layout hero 图标 rounded-2xl+渐变属学习平台游戏化视觉，登记例外（见文件头） */}<div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-emerald-500/20 to-teal-500/20 border border-badge-success/30 mb-4">
+          <FlaskConical className="w-8 h-8 text-badge-success" />
         </div>
         <h1 className="text-2xl font-bold text-zinc-200 mb-2">{t.lab.heroTitle}</h1>
         <p className="text-zinc-400 max-w-xl mx-auto">
@@ -116,8 +116,8 @@ export const LabPage: React.FC = () => {
       <div className="mt-12 max-w-3xl mx-auto">
         <h2 className="text-lg font-semibold text-zinc-200 mb-4 text-center">{t.lab.recommendedPath}</h2>
         <div className="flex items-center justify-center gap-2 flex-wrap">
-          <div className="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
-            <span className="text-emerald-400 text-sm font-medium">{t.lab.pathSteps[0]}</span>
+          <div className="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-500/10 border border-badge-success/20">
+            <span className="text-badge-success text-sm font-medium">{t.lab.pathSteps[0]}</span>
           </div>
           <ChevronRight className="w-4 h-4 text-zinc-600" />
           <div className="flex items-center gap-2 px-4 py-2 rounded-lg bg-zinc-800 border border-zinc-700">
@@ -142,7 +142,7 @@ export const LabPage: React.FC = () => {
   return (
     <FullScreenPage testId="lab-page" variant="inline">
       <FullScreenPageHeader
-        icon={<FlaskConical className="h-4 w-4 text-emerald-300" />}
+        icon={<FlaskConical className="h-4 w-4 text-badge-success" />}
         title={currentLabTitle}
         description={currentLabDescription}
       />
@@ -222,7 +222,7 @@ const LabCardComponent: React.FC<{
       {/* Action hint */}
       {isAvailable && (
         <div className="mt-4 pt-4 border-t border-zinc-700">
-          <span className="text-sm text-emerald-400 flex items-center gap-1">
+          <span className="text-sm text-badge-success flex items-center gap-1">
             {startLearningLabel} <ChevronRight className="w-4 h-4" />
           </span>
         </div>

@@ -115,7 +115,7 @@ function BoundarySummary({ boundary, reason }: { boundary?: PermissionBoundary; 
             可能出云端
           </span>
         ) : (
-          <span className="shrink-0 rounded border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] text-emerald-200">
+          <span className="shrink-0 rounded border border-badge-success/30 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] text-badge-success">
             本地边界
           </span>
         )}

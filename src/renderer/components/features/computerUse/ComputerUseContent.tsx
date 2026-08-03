@@ -64,7 +64,7 @@ function formatTime(value?: number | null): string {
 function statusToneClass(tone: StatusTone): string {
   switch (tone) {
     case 'ready':
-      return 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300';
+      return 'border-badge-success/30 bg-emerald-500/10 text-badge-success';
     case 'blocked':
       return 'border-rose-500/30 bg-rose-500/10 text-rose-300';
     case 'warning':
@@ -655,7 +655,7 @@ export const ComputerUseContent: React.FC = () => {
                 <section className="rounded-lg border border-zinc-800 bg-zinc-950/30">
                   <div className="flex items-center justify-between border-b border-zinc-800 px-4 py-3">
                     <div className="flex items-center gap-2">
-                      <SquareMousePointer className="h-4 w-4 text-emerald-300" />
+                      <SquareMousePointer className="h-4 w-4 text-badge-success" />
                       <h3 className="text-sm font-medium text-zinc-200">AX Tree / 可操作元素</h3>
                     </div>
                     <button
@@ -738,7 +738,7 @@ export const ComputerUseContent: React.FC = () => {
               <aside className="space-y-4">
                 <section className="rounded-lg border border-zinc-800 bg-zinc-950/30">
                   <div className="flex items-center gap-2 border-b border-zinc-800 px-4 py-3">
-                    <ShieldCheck className="h-4 w-4 text-emerald-300" />
+                    <ShieldCheck className="h-4 w-4 text-badge-success" />
                     <h3 className="text-sm font-medium text-zinc-200">能力边界</h3>
                   </div>
                   <div className="space-y-2 p-4 text-xs leading-relaxed text-zinc-400">
@@ -812,7 +812,7 @@ export const ComputerUseContent: React.FC = () => {
                     </div>
                     <div className="flex items-center justify-between gap-3">
                       <span>Surface ready</span>
-                      <span className={surface?.ready ? 'text-emerald-300' : 'text-amber-300'}>
+                      <span className={surface?.ready ? 'text-badge-success' : 'text-amber-300'}>
                         {surface?.ready ? 'yes' : 'no / unknown'}
                       </span>
                     </div>

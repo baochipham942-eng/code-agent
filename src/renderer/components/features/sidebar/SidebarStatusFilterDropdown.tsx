@@ -112,7 +112,7 @@ export const SidebarStatusFilterDropdown: React.FC<SidebarStatusFilterDropdownPr
                       setSessionStatusFilter('review');
                       setTrajectoryReviewFilter(active ? 'all' : option.id);
                     }}
-                    className={`rounded-md border px-1.5 py-0.5 text-[10px] transition-colors ${active ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-200' : 'border-zinc-700 bg-zinc-900/40 text-zinc-400 hover:border-zinc-600 hover:text-zinc-200'}`}
+                    className={`rounded-md border px-1.5 py-0.5 text-[10px] transition-colors ${active ? 'border-badge-success/40 bg-emerald-500/10 text-badge-success' : 'border-zinc-700 bg-zinc-900/40 text-zinc-400 hover:border-zinc-600 hover:text-zinc-200'}`}
                   >
                     {option.label}
                   </button>

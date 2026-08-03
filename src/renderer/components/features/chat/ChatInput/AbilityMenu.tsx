@@ -55,7 +55,7 @@ interface AbilityMenuProps {
 function getStatusToneClasses(tone?: BrowserWorkbenchStatusTone): string {
   switch (tone) {
     case 'ready':
-      return 'text-emerald-300';
+      return 'text-badge-success';
     case 'blocked':
       return 'text-amber-300';
     default:
@@ -231,7 +231,7 @@ export const AbilityMenu: React.FC<AbilityMenuProps> = ({ disabled = false, defa
                   <Monitor className="h-3 w-3" />
                   <span>{browserSessionMode === 'managed' ? 'Managed browser' : 'Computer surface'}</span>
                 </div>
-                <span className={browserSession.blocked ? 'text-amber-300' : 'text-emerald-300'}>
+                <span className={browserSession.blocked ? 'text-amber-300' : 'text-badge-success'}>
                   {browserSession.blocked ? 'Blocked' : 'Ready'}
                 </span>
               </div>
@@ -268,7 +268,7 @@ export const AbilityMenu: React.FC<AbilityMenuProps> = ({ disabled = false, defa
                       >
                         <div className="flex min-w-0 items-center gap-1.5">
                           {tone === 'ready' ? (
-                            <CheckCircle2 className="h-3 w-3 flex-shrink-0 text-emerald-300" />
+                            <CheckCircle2 className="h-3 w-3 flex-shrink-0 text-badge-success" />
                           ) : tone === 'blocked' ? (
                             <AlertTriangle className="h-3 w-3 flex-shrink-0 text-amber-300" />
                           ) : (

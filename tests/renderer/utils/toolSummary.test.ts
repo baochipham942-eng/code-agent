@@ -238,12 +238,12 @@ describe('getToolStatusClass', () => {
     expect(getToolStatusClass(tc)).toContain('yellow');
   });
 
-  it('should return emerald for success', () => {
+  it('should return the success semantic token for success', () => {
     const tc = makeToolCall({
       name: 'Bash',
       result: { toolCallId: 'tc-1', success: true },
     });
-    expect(getToolStatusClass(tc)).toContain('emerald');
+    expect(getToolStatusClass(tc)).toContain('text-badge-success');
   });
 
   it('should return rose for failure', () => {

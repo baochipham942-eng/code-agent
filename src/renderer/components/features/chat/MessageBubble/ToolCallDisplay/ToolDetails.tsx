@@ -664,7 +664,7 @@ function BrowserComputerNextStepActions({ actions }: { actions: BrowserComputerN
               ? 'border-red-500/20 bg-red-500/10 text-badge-danger'
               : outcome.status === 'preparing'
                 ? 'border-badge-info/20 bg-sky-500/10 text-badge-info'
-                : 'border-emerald-500/20 bg-emerald-500/10 text-emerald-100'
+                : 'border-badge-success/20 bg-emerald-500/10 text-badge-success'
           }`}
         >
           {sanitizeBrowserComputerRecoveryText(outcome.text, actions)}

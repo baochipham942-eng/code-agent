@@ -67,7 +67,7 @@ export const Tokenizer: React.FC<TokenizerProps> = ({ onComplete, onBack }) => {
             <h3 className="text-sm font-medium text-zinc-200 mb-2">{tk.introTitle}</h3>
             <p className="text-sm text-zinc-400">
               {tk.introBodyPre}
-              <span className="text-emerald-400">{tk.introBodyHighlight1}</span>
+              <span className="text-badge-success">{tk.introBodyHighlight1}</span>
               {tk.introBodyMid}
               <span className="text-blue-400">{tk.introBodyHighlight2}</span>
               {tk.introBodyPost}
@@ -98,7 +98,7 @@ export const Tokenizer: React.FC<TokenizerProps> = ({ onComplete, onBack }) => {
             onClick={() => setActiveTab('char')}
             className={`flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm transition-all ${
               activeTab === 'char'
-                ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                ? 'bg-emerald-500/20 text-badge-success border border-badge-success/30'
                 : 'bg-zinc-800 text-zinc-400 border border-zinc-800 hover:border-zinc-600'
             }`}
           >
@@ -136,7 +136,7 @@ export const Tokenizer: React.FC<TokenizerProps> = ({ onComplete, onBack }) => {
                 <div
                   className={`px-3 py-2 rounded-lg text-base border ${
                     activeTab === 'char'
-                      ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                      ? 'bg-emerald-500/10 border-badge-success/30 text-badge-success'
                       : 'bg-blue-500/10 border-blue-500/30 text-blue-300'
                   }`}
                 >
@@ -144,7 +144,7 @@ export const Tokenizer: React.FC<TokenizerProps> = ({ onComplete, onBack }) => {
                 </div>
                 <div
                   className={`text-xs mt-1 font-bold ${
-                    activeTab === 'char' ? 'text-emerald-400' : 'text-blue-400'
+                    activeTab === 'char' ? 'text-badge-success' : 'text-blue-400'
                   }`}
                 >
                   #{token.id}
@@ -157,11 +157,11 @@ export const Tokenizer: React.FC<TokenizerProps> = ({ onComplete, onBack }) => {
           <div className="mt-4 pt-3 border-t border-zinc-700">
             <div className={`p-3 rounded-lg ${activeTab === 'char' ? 'bg-emerald-500/10' : 'bg-blue-500/10'}`}>
               <div className="flex items-center gap-4 text-sm">
-                <span className={activeTab === 'char' ? 'text-emerald-400' : 'text-blue-400'}>
+                <span className={activeTab === 'char' ? 'text-badge-success' : 'text-blue-400'}>
                   {tk.statsCountLabel} <strong>{activeTab === 'char' ? charTokens.length : bpeTokens.length}</strong> {tk.statsCountSuffix}
                 </span>
                 <span className="text-zinc-500">|</span>
-                <span className={activeTab === 'char' ? 'text-emerald-400' : 'text-blue-400'}>
+                <span className={activeTab === 'char' ? 'text-badge-success' : 'text-blue-400'}>
                   {tk.statsEfficiencyLabel}{comparisonData[activeTab].compression}
                 </span>
               </div>
@@ -179,7 +179,7 @@ export const Tokenizer: React.FC<TokenizerProps> = ({ onComplete, onBack }) => {
         <div
           className={`rounded-lg border p-4 transition-all ${
             activeTab === 'char'
-              ? 'bg-emerald-500/5 border-emerald-500/30'
+              ? 'bg-emerald-500/5 border-badge-success/30'
               : 'bg-zinc-700/20 border-zinc-800'
           }`}
         >
@@ -191,18 +191,18 @@ export const Tokenizer: React.FC<TokenizerProps> = ({ onComplete, onBack }) => {
           <div className="space-y-3 text-sm">
             <div className="flex justify-between">
               <span className="text-zinc-500">{tk.vocabSizeLabel}</span>
-              <span className="text-emerald-400 font-medium">{comparisonData.char.vocabSize}</span>
+              <span className="text-badge-success font-medium">{comparisonData.char.vocabSize}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-zinc-500">{tk.seqLengthLabel}</span>
-              <span className="text-emerald-400 font-medium">{comparisonData.char.seqLength}</span>
+              <span className="text-badge-success font-medium">{comparisonData.char.seqLength}</span>
             </div>
 
             <div className="pt-2 border-t border-zinc-800">
               <div className="text-zinc-400 mb-2 text-xs">{tk.prosLabel}</div>
               <ul className="space-y-1.5">
                 {comparisonData.char.pros.map((pro, idx) => (
-                  <li key={idx} className="flex items-center gap-2 text-emerald-400 text-xs">
+                  <li key={idx} className="flex items-center gap-2 text-badge-success text-xs">
                     <span>👍</span>
                     {pro}
                   </li>
@@ -251,7 +251,7 @@ export const Tokenizer: React.FC<TokenizerProps> = ({ onComplete, onBack }) => {
               <div className="text-zinc-400 mb-2 text-xs">{tk.prosLabel}</div>
               <ul className="space-y-1.5">
                 {comparisonData.bpe.pros.map((pro, idx) => (
-                  <li key={idx} className="flex items-center gap-2 text-emerald-400 text-xs">
+                  <li key={idx} className="flex items-center gap-2 text-badge-success text-xs">
                     <span>👍</span>
                     {pro}
                   </li>
@@ -330,7 +330,7 @@ export const Tokenizer: React.FC<TokenizerProps> = ({ onComplete, onBack }) => {
           {tk.glossary.map((term) => (
             <div key={term.en} className="p-3 rounded-lg bg-zinc-800">
               <div className="flex items-center gap-2 mb-1">
-                <span className="text-sm font-bold text-emerald-400">{term.en}</span>
+                <span className="text-sm font-bold text-badge-success">{term.en}</span>
                 <span className="text-xs text-zinc-500">|</span>
                 <span className="text-sm text-zinc-400">{term.label}</span>
               </div>

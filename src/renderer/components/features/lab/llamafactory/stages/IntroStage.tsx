@@ -58,7 +58,7 @@ export const IntroStage: React.FC<IntroStageProps> = ({ onComplete }) => {
       zinc: { bg: 'bg-zinc-600/20', border: 'border-zinc-600/30', text: 'text-zinc-400' },
       blue: { bg: 'bg-blue-500/20', border: 'border-blue-500/30', text: 'text-blue-400' },
       purple: { bg: 'bg-purple-500/20', border: 'border-purple-500/30', text: 'text-purple-400' },
-      emerald: { bg: 'bg-emerald-500/20', border: 'border-emerald-500/30', text: 'text-emerald-400' },
+      emerald: { bg: 'bg-emerald-500/20', border: 'border-badge-success/30', text: 'text-badge-success' },
       amber: { bg: 'bg-amber-500/20', border: 'border-amber-500/30', text: 'text-amber-400' },
       orange: { bg: 'bg-orange-500/20', border: 'border-orange-500/30', text: 'text-orange-400' },
     };
@@ -173,7 +173,7 @@ export const IntroStage: React.FC<IntroStageProps> = ({ onComplete }) => {
             className={`
               rounded-lg border transition-all cursor-pointer
               ${expandedDecision === 'can'
-                ? 'bg-emerald-500/10 border-emerald-500/30'
+                ? 'bg-emerald-500/10 border-badge-success/30'
                 : 'bg-zinc-800 border-zinc-800 hover:border-zinc-600'
               }
             `}
@@ -182,15 +182,15 @@ export const IntroStage: React.FC<IntroStageProps> = ({ onComplete }) => {
             <div className="p-4">
               <div className="flex items-center gap-2 mb-3">
                 <div className="w-6 h-6 rounded-full bg-emerald-500/20 flex items-center justify-center">
-                  <Check className="w-3 h-3 text-emerald-400" />
+                  <Check className="w-3 h-3 text-badge-success" />
                 </div>
-                <span className="text-sm font-medium text-emerald-400">{i.canDoLabel}</span>
+                <span className="text-sm font-medium text-badge-success">{i.canDoLabel}</span>
               </div>
               <ul className="space-y-2">
                 {canDo.map((item, idx) => (
                   <li key={idx} className="text-sm text-zinc-400">
                     <div className="flex items-start gap-2">
-                      <span className="text-emerald-400 mt-1">✓</span>
+                      <span className="text-badge-success mt-1">✓</span>
                       <div>
                         <span>{item.text}</span>
                         {expandedDecision === 'can' && (
@@ -290,7 +290,7 @@ export const IntroStage: React.FC<IntroStageProps> = ({ onComplete }) => {
           {i.glossary.map((term) => (
             <div key={term.en} className="p-3 rounded-lg bg-zinc-800">
               <div className="flex items-center gap-2 mb-1">
-                <span className="text-sm font-bold text-emerald-400">{term.en}</span>
+                <span className="text-sm font-bold text-badge-success">{term.en}</span>
                 <span className="text-xs text-zinc-500">|</span>
                 <span className="text-sm text-zinc-400">{term.zh}</span>
               </div>

@@ -80,7 +80,7 @@ const TodoStepItem: React.FC<{ step: TaskStep; index: number }> = ({ step, index
         {isInProgress ? (
           <Loader2 className="w-3.5 h-3.5 text-amber-400 animate-spin" />
         ) : isCompleted ? (
-          <CheckSquare className="w-3.5 h-3.5 text-emerald-400" />
+          <CheckSquare className="w-3.5 h-3.5 text-badge-success" />
         ) : (
           <Square className="w-3.5 h-3.5 text-zinc-500" />
         )}

@@ -21,7 +21,7 @@ const PRESENTATION: Record<SessionStatusKind, SessionStatusPresentation> = {
   error:      { kind: 'error',      label: '出错',   toneClassName: 'text-badge-danger bg-red-500/10 border-red-500/20', showBadge: true },
   background: { kind: 'background', label: '执行中', toneClassName: 'text-badge-info bg-sky-500/10 border-badge-info/20', showBadge: true },
   paused:     { kind: 'paused',     label: '已暂停', toneClassName: 'text-amber-300 bg-amber-500/10 border-amber-500/20', showBadge: true },
-  live:       { kind: 'live',       label: '执行中', toneClassName: 'text-emerald-300 bg-emerald-500/10 border-emerald-500/20', showBadge: true },
+  live:       { kind: 'live',       label: '执行中', toneClassName: 'text-badge-success bg-emerald-500/10 border-badge-success/20', showBadge: true },
   approval:   { kind: 'approval',   label: '待确认', toneClassName: 'text-violet-300 bg-violet-500/10 border-violet-500/20', showBadge: true },
   done:       { kind: 'done',       label: '已完成', toneClassName: 'text-zinc-300 bg-zinc-700/40 border-zinc-600/50', showBadge: false },
   incomplete: { kind: 'incomplete', label: '未完成', toneClassName: 'text-amber-300 bg-amber-500/10 border-amber-500/20', showBadge: true },

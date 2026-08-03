@@ -128,7 +128,7 @@ export const RolePackShelf: React.FC<RolePackShelfProps> = ({
                     <span className="flex flex-shrink-0 items-center gap-1">
                       {/* 签名云货架的来源标识是差异化卖点，保留并常驻 */}
                       <Badge data-testid={`role-pack-source-${entry.roleId}`} className="border-zinc-700 bg-zinc-800 text-[10px] text-zinc-400">{text.sourceBadge}</Badge>
-                      {item.installed ? <Badge className="border-emerald-500/30 bg-emerald-500/10 text-[10px] text-emerald-200">{text.installed}</Badge> : null}
+                      {item.installed ? <Badge className="border-badge-success/30 bg-emerald-500/10 text-[10px] text-badge-success">{text.installed}</Badge> : null}
                     </span>
                   </div>
                   {entry.description ? <p className="mt-2 line-clamp-2 text-xs leading-relaxed text-zinc-400">{entry.description}</p> : null}

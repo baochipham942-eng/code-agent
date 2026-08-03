@@ -141,6 +141,7 @@ describe('chat semantic theme tokens', () => {
     expect(chatView).not.toContain('hover:border-white/[0.18] hover:bg-white/[0.05]');
     expect(turnCard).not.toContain('border-white/[0.035] bg-white/[0.012]');
     expect(getToneClass).not.toContain('text-emerald-300');
+    expect(getToneClass).not.toContain('text-badge-success');
     expect(getToneClass).not.toContain('text-amber-300');
     expect(getToneClass).not.toContain('text-red-300');
     expect(toolStepGroup).not.toContain('hover:bg-white/[0.018]');

@@ -643,7 +643,7 @@ export const SkillsSettings: React.FC = () => {
         <div
           className={`flex items-center gap-2 rounded-lg p-3 ${
             message.type === 'success'
-              ? 'bg-emerald-500/10 text-emerald-400'
+              ? 'bg-emerald-500/10 text-badge-success'
               : 'bg-red-500/10 text-badge-danger'
           }`}
         >

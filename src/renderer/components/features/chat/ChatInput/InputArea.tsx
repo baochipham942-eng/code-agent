@@ -421,7 +421,7 @@ export const InputArea = forwardRef<InputAreaRef, InputAreaProps>(
     const placeholderConfig = {
       code: { text: t.chatInput.placeholderCode, colorClass: 'placeholder-zinc-500', textClass: 'text-zinc-500' },
       plan: { text: t.chatInput.placeholderPlan, colorClass: 'placeholder-amber-500/50', textClass: 'text-amber-500/50' },
-      ask: { text: t.chatInput.placeholderAsk, colorClass: 'placeholder-emerald-500/50', textClass: 'text-emerald-500/50' },
+      ask: { text: t.chatInput.placeholderAsk, colorClass: 'placeholder-emerald-500/50', textClass: 'text-badge-success/50' },
     };
     const baseConfig = placeholderConfig[interactionMode] ?? placeholderConfig.code;
     // 续轮用中性 placeholder：之前的 "@ 标记 agent" 提示在普通对话里造成困惑

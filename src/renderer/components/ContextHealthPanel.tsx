@@ -68,7 +68,7 @@ function getWarningColors(level: ContextHealthWarningLevel) {
     default:
       return {
         icon: Activity,
-        iconColor: 'text-emerald-400',
+        iconColor: 'text-badge-success',
         barColor: 'bg-emerald-500',
         bgColor: '',
         textColor: 'text-zinc-400',

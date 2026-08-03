@@ -110,7 +110,7 @@ export const RecommendedSkillCard: React.FC<RecommendedSkillCardProps> = ({
           {isBuiltin ? cardsText.builtinSkill : sourceRepoName ? `${cardsText.sourcePrefix}${sourceRepoName}` : ''}
         </span>
         {isBuiltin || isInstalled ? (
-          <span className="flex shrink-0 items-center gap-1 text-xs text-emerald-400">
+          <span className="flex shrink-0 items-center gap-1 text-xs text-badge-success">
             <Check className="w-3 h-3" />
             {isBuiltin ? cardsText.builtinInstalled : cardsText.installed}
           </span>
@@ -170,7 +170,7 @@ export const RoleBundleCard: React.FC<RoleBundleCardProps> = ({
       </div>
       <div className="flex items-center justify-end mt-auto">
         {isReady ? (
-          <span className="flex items-center gap-1 text-xs text-emerald-400">
+          <span className="flex items-center gap-1 text-xs text-badge-success">
             <Check className="w-3 h-3" />
             {cardsText.ready}
           </span>

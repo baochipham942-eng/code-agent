@@ -46,7 +46,7 @@ function VerificationCardLine({ notice }: { notice: GoalNoticePayload }) {
     `required ${card.requiredStatus}`,
   ];
   const tone = card.status === 'passed'
-    ? 'text-emerald-300/90'
+    ? 'text-badge-success/90'
     : card.status === 'failed'
       ? 'text-rose-300/90'
       : 'text-zinc-400';
@@ -101,9 +101,9 @@ export const GoalNoticeMessage: React.FC<GoalNoticeMessageProps> = ({ content })
 
   if (notice.kind === 'met') {
     return (
-      <div className="goal-notice my-1 flex flex-col gap-0.5 rounded-md border border-emerald-500/30 bg-emerald-500/5 px-3 py-2 text-sm">
+      <div className="goal-notice my-1 flex flex-col gap-0.5 rounded-md border border-badge-success/30 bg-emerald-500/5 px-3 py-2 text-sm">
         <div className="flex items-center gap-2">
-          <CheckCircle2 className="h-4 w-4 flex-shrink-0 text-emerald-400" />
+          <CheckCircle2 className="h-4 w-4 flex-shrink-0 text-badge-success" />
           <span className="text-zinc-300">
             {t.goalNotice.metPrefix}<span className="font-medium text-zinc-100">{notice.goal}</span>
           </span>

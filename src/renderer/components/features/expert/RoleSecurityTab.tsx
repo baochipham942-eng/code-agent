@@ -50,9 +50,9 @@ export const RoleSecurityTab: React.FC<RoleSecurityTabProps> = ({ equipment, onS
           aria-pressed={preset === null}
           disabled={saving}
           onClick={() => void commit(null)}
-          className={`flex w-full items-start gap-2 rounded-lg border p-3 text-left transition-colors ${preset === null ? 'border-emerald-500/60 bg-emerald-500/10' : 'border-zinc-700/60 hover:border-zinc-600'}`}
+          className={`flex w-full items-start gap-2 rounded-lg border p-3 text-left transition-colors ${preset === null ? 'border-badge-success/60 bg-emerald-500/10' : 'border-zinc-700/60 hover:border-zinc-600'}`}
         >
-          <Check className={`mt-0.5 h-4 w-4 shrink-0 ${preset === null ? 'text-emerald-300' : 'text-transparent'}`} />
+          <Check className={`mt-0.5 h-4 w-4 shrink-0 ${preset === null ? 'text-badge-success' : 'text-transparent'}`} />
           <span className="min-w-0">
             <span className="block text-sm text-zinc-200">{text.modeFollow}</span>
             <span className="mt-1 block text-xs text-zinc-500">{text.modeFollowHint}</span>
@@ -69,9 +69,9 @@ export const RoleSecurityTab: React.FC<RoleSecurityTabProps> = ({ equipment, onS
               aria-pressed={preset === key}
               disabled={saving}
               onClick={() => void commit(key)}
-              className={`flex w-full items-start gap-2 rounded-lg border p-3 text-left transition-colors ${preset === key ? 'border-emerald-500/60 bg-emerald-500/10' : 'border-zinc-700/60 hover:border-zinc-600'}`}
+              className={`flex w-full items-start gap-2 rounded-lg border p-3 text-left transition-colors ${preset === key ? 'border-badge-success/60 bg-emerald-500/10' : 'border-zinc-700/60 hover:border-zinc-600'}`}
             >
-              <Check className={`mt-0.5 h-4 w-4 shrink-0 ${preset === key ? 'text-emerald-300' : 'text-transparent'}`} />
+              <Check className={`mt-0.5 h-4 w-4 shrink-0 ${preset === key ? 'text-badge-success' : 'text-transparent'}`} />
               <span className="min-w-0">
                 <span className="block text-sm text-zinc-200">{text.presets[key].label}</span>
                 <span className="mt-1 block text-xs text-zinc-500">{text.presets[key].hint}</span>

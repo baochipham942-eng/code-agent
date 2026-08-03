@@ -117,7 +117,7 @@ export function getNativeConnectorReadiness(
     case 'ready':
       return {
         label: labels.ready,
-        className: 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/25',
+        className: 'bg-emerald-500/15 text-badge-success border border-badge-success/25',
       };
     case 'failed':
       return {
@@ -153,7 +153,7 @@ export function getRuntimeConnectorReadiness(
     case 'ready':
       return {
         label: labels.ready,
-        className: 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/25',
+        className: 'bg-emerald-500/15 text-badge-success border border-badge-success/25',
       };
     case 'failed':
       return {
@@ -289,7 +289,7 @@ export const NativeConnectorItems: React.FC<NativeConnectorItemsProps> = ({
                   {readiness.label}
                 </span>
                 {row.status?.connected && (
-                  <span className="text-[11px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-300">
+                  <span className="text-[11px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-badge-success">
                     {text.connected}
                   </span>
                 )}
@@ -390,7 +390,7 @@ export const RuntimeConnectorItems: React.FC<RuntimeConnectorItemsProps> = ({
                 {readiness.label}
               </span>
               {row.connected && (
-                <span className="text-[11px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-300">
+                <span className="text-[11px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-badge-success">
                   {text.connected}
                 </span>
               )}

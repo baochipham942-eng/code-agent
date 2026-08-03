@@ -193,7 +193,7 @@ export const AgentEngineModelCatalogSection: React.FC = () => {
                           model.disabledReason
                             ? 'border-zinc-700 bg-zinc-800 text-zinc-500'
                             : model.recommended
-                              ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300'
+                              ? 'border-badge-success/40 bg-emerald-500/10 text-badge-success'
                               : 'border-zinc-700 bg-zinc-800 text-zinc-300'
                         }`}
                         title={model.disabledReason || model.id}

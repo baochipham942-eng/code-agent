@@ -34,7 +34,7 @@ const STATUS_STYLE: Record<AgentTreeNodeStatus, { icon: React.ReactNode; classNa
   running: { icon: <Loader2 className="h-3.5 w-3.5 animate-spin" />, className: 'text-badge-info' },
   'running-recovered': { icon: <Loader2 className="h-3.5 w-3.5 animate-spin" />, className: 'text-badge-info' },
   'dead-log-only': { icon: <FileText className="h-3.5 w-3.5" />, className: 'text-zinc-500' },
-  completed: { icon: <CheckCircle2 className="h-3.5 w-3.5" />, className: 'text-emerald-300' },
+  completed: { icon: <CheckCircle2 className="h-3.5 w-3.5" />, className: 'text-badge-success' },
   failed: { icon: <AlertCircle className="h-3.5 w-3.5" />, className: 'text-rose-300' },
   cancelled: { icon: <Circle className="h-3.5 w-3.5" />, className: 'text-zinc-500' },
   killed: { icon: <AlertCircle className="h-3.5 w-3.5" />, className: 'text-rose-300' },
@@ -149,8 +149,8 @@ function NodeLine({
               </div>
             )}
             {hasWorktree && (
-              <div className="mt-2 space-y-1.5 rounded border border-emerald-500/10 bg-emerald-500/[0.04] px-2 py-2">
-                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-emerald-100">
+              <div className="mt-2 space-y-1.5 rounded border border-badge-success/10 bg-emerald-500/[0.04] px-2 py-2">
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-badge-success">
                   {worktree.path && (
                     <span className="inline-flex min-w-0 items-center gap-1">
                       <FolderGit2 className="h-3 w-3 flex-shrink-0" />
@@ -167,7 +167,7 @@ function NodeLine({
                     <button
                       type="button"
                       onClick={() => onReviewWorktree?.(node.id)}
-                      className="inline-flex items-center gap-1 rounded border border-emerald-400/20 px-2 py-0.5 text-[11px] text-emerald-100 hover:bg-emerald-400/10 disabled:opacity-50"
+                      className="inline-flex items-center gap-1 rounded border border-badge-success/20 px-2 py-0.5 text-[11px] text-badge-success hover:bg-emerald-400/10 disabled:opacity-50"
                       disabled={isReviewLoading}
                     >
                       {isReviewLoading ? <RefreshCw className="h-3 w-3 animate-spin" /> : <Eye className="h-3 w-3" />}
@@ -233,7 +233,7 @@ export const AgentTreeSnapshotView: React.FC<AgentTreeSnapshotViewProps> = ({
     <section className="rounded-md border border-white/[0.05] bg-white/[0.02] p-3">
       <div className="mb-2 flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0">
-          <GitBranch className="h-4 w-4 flex-shrink-0 text-emerald-300" />
+          <GitBranch className="h-4 w-4 flex-shrink-0 text-badge-success" />
           <h2 className="text-xs font-medium uppercase tracking-wide text-zinc-400">任务树</h2>
         </div>
         <div className="flex flex-wrap justify-end gap-1 text-[11px] text-zinc-500">

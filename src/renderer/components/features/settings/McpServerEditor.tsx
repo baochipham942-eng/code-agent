@@ -239,7 +239,7 @@ const KeyValueEditor: React.FC<{
                 className="min-w-0 flex-1 bg-zinc-700 border border-zinc-600 rounded-lg px-3 py-1.5 text-xs text-zinc-200 placeholder:text-zinc-500 focus:outline-hidden focus:border-zinc-500"
               />
               {savedReference && (
-                <span className="shrink-0 text-[11px] text-emerald-400">
+                <span className="shrink-0 text-[11px] text-badge-success">
                   {text.savedCredentialHint}
                 </span>
               )}

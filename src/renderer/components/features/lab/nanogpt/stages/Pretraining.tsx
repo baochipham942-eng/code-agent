@@ -204,23 +204,23 @@ export const Pretraining: React.FC<PretrainingProps> = ({ onComplete, onBack }) 
         <div className="grid grid-cols-5 gap-3">
           <div className="bg-zinc-800 rounded-lg p-3 border border-zinc-800">
             <div className="text-xs text-zinc-500 mb-1">{pt.planBatchLabel}</div>
-            <div className="text-sm font-medium text-emerald-400">{config.batchSize} {pt.planBatchSuffix}</div>
+            <div className="text-sm font-medium text-badge-success">{config.batchSize} {pt.planBatchSuffix}</div>
           </div>
           <div className="bg-zinc-800 rounded-lg p-3 border border-zinc-800">
             <div className="text-xs text-zinc-500 mb-1">{pt.planLrLabel}</div>
-            <div className="text-sm font-medium text-emerald-400">{pt.planLrValue}</div>
+            <div className="text-sm font-medium text-badge-success">{pt.planLrValue}</div>
           </div>
           <div className="bg-zinc-800 rounded-lg p-3 border border-zinc-800">
             <div className="text-xs text-zinc-500 mb-1">{pt.planItersLabel}</div>
-            <div className="text-sm font-medium text-emerald-400">{(config.maxIters / 1000).toFixed(0)}{pt.planItersSuffix}</div>
+            <div className="text-sm font-medium text-badge-success">{(config.maxIters / 1000).toFixed(0)}{pt.planItersSuffix}</div>
           </div>
           <div className="bg-zinc-800 rounded-lg p-3 border border-zinc-800">
             <div className="text-xs text-zinc-500 mb-1">{pt.planAccumLabel}</div>
-            <div className="text-sm font-medium text-emerald-400">{config.gradAccumSteps} {pt.planAccumSuffix}</div>
+            <div className="text-sm font-medium text-badge-success">{config.gradAccumSteps} {pt.planAccumSuffix}</div>
           </div>
           <div className="bg-zinc-800 rounded-lg p-3 border border-zinc-800">
             <div className="text-xs text-zinc-500 mb-1">{pt.planWarmupLabel}</div>
-            <div className="text-sm font-medium text-emerald-400">{config.warmupIters} {pt.planWarmupSuffix}</div>
+            <div className="text-sm font-medium text-badge-success">{config.warmupIters} {pt.planWarmupSuffix}</div>
           </div>
         </div>
       </div>
@@ -242,7 +242,7 @@ export const Pretraining: React.FC<PretrainingProps> = ({ onComplete, onBack }) 
               className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm transition-all ${
                 isTraining
                   ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-                  : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                  : 'bg-emerald-500/20 text-badge-success border border-badge-success/30'
               }`}
             >
               {isTraining ? (
@@ -274,7 +274,7 @@ export const Pretraining: React.FC<PretrainingProps> = ({ onComplete, onBack }) 
               </div>
             </div>
             <div className="text-xs text-zinc-500">
-              {pt.progressPrefix} <span className="text-emerald-400 font-bold">{currentStep.toLocaleString()}</span> {pt.progressSuffix}
+              {pt.progressPrefix} <span className="text-badge-success font-bold">{currentStep.toLocaleString()}</span> {pt.progressSuffix}
             </div>
           </div>
 
@@ -289,7 +289,7 @@ export const Pretraining: React.FC<PretrainingProps> = ({ onComplete, onBack }) 
           <div className="mt-4 pt-3 border-t border-zinc-700 grid grid-cols-4 gap-4">
             <div className="text-center p-2 bg-emerald-500/10 rounded-lg">
               <div className="text-xs text-zinc-500 mb-1">{pt.metricTrainLabel}</div>
-              <div className="text-xl font-bold text-emerald-400">{latestLoss}</div>
+              <div className="text-xl font-bold text-badge-success">{latestLoss}</div>
               <div className="text-xs text-zinc-600">{pt.metricLowerBetter}</div>
             </div>
             <div className="text-center p-2 bg-amber-500/10 rounded-lg">
@@ -366,7 +366,7 @@ export const Pretraining: React.FC<PretrainingProps> = ({ onComplete, onBack }) 
       </div>
 
       {/* 学习总结 */}
-      <div className="p-4 rounded-xl bg-gradient-to-r from-emerald-500/10 to-blue-500/10 border border-emerald-500/20">
+      <div className="p-4 rounded-xl bg-gradient-to-r from-emerald-500/10 to-blue-500/10 border border-badge-success/20">
         <h3 className="text-sm font-medium text-zinc-200 mb-2">{pt.summaryLabel}</h3>
         <p className="text-sm text-zinc-400">
           {pt.summaryBody}
@@ -383,7 +383,7 @@ export const Pretraining: React.FC<PretrainingProps> = ({ onComplete, onBack }) 
           {pt.glossary.map((term) => (
             <div key={term.en} className="p-3 rounded-lg bg-zinc-800">
               <div className="flex items-center gap-2 mb-1">
-                <span className="text-sm font-bold text-emerald-400">{term.en}</span>
+                <span className="text-sm font-bold text-badge-success">{term.en}</span>
                 <span className="text-xs text-zinc-500">|</span>
                 <span className="text-sm text-zinc-400">{term.label}</span>
               </div>

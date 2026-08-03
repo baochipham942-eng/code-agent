@@ -21,7 +21,7 @@ import { zh } from '../../../../i18n/zh';
 type ControlPlaneText = typeof zh.settings.controlPlane;
 
 const OUTCOME_CLASSES: Record<AdminControlPlaneAuditEventItem['outcome'], string> = {
-  served: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300',
+  served: 'border-badge-success/30 bg-emerald-500/10 text-badge-success',
   not_modified: 'border-badge-info/30 bg-sky-500/10 text-badge-info',
   head: 'border-zinc-600 bg-zinc-800 text-zinc-300',
   error: 'border-red-500/30 bg-red-500/10 text-badge-danger',
@@ -68,7 +68,7 @@ const SummaryTile: React.FC<{
     <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
       <div>
         <div className="text-zinc-500">{successLabel}</div>
-        <div className="mt-1 text-base font-semibold text-emerald-300">{item.servedCount}</div>
+        <div className="mt-1 text-base font-semibold text-badge-success">{item.servedCount}</div>
       </div>
       <div>
         <div className="text-zinc-500">{errorLabel}</div>
@@ -144,7 +144,7 @@ export const ControlPlaneSettings: React.FC = () => {
         )}
       >
         <div className="flex items-center gap-3 rounded-lg border border-zinc-800 bg-zinc-900/60 px-4 py-3">
-          <ShieldCheck className="h-4 w-4 text-emerald-300" />
+          <ShieldCheck className="h-4 w-4 text-badge-success" />
           <div>
             <div className="text-sm font-medium text-zinc-100">{controlText.latestVersionPrefix}{latestVersion}</div>
             <div className="mt-1 text-xs text-zinc-500">{controlText.auditDataDescription}</div>

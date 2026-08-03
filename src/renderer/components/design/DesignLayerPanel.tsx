@@ -77,10 +77,10 @@ export const DesignLayerPanel: React.FC<{
                   {isVideoNode(node) ? (
                     <Film className="h-3.5 w-3.5 text-badge-info" />
                   ) : (
-                    <ImageIcon className="h-3.5 w-3.5 text-emerald-300" />
+                    <ImageIcon className="h-3.5 w-3.5 text-badge-success" />
                   )}
                   <span className="truncate">{layerDisplayName(node, t.design.layerUnnamed)}</span>
-                  {node.chosen && <span className="rounded bg-emerald-500/15 px-1 text-[10px] text-emerald-300">{t.design.layerMainBadge}</span>}
+                  {node.chosen && <span className="rounded bg-emerald-500/15 px-1 text-[10px] text-badge-success">{t.design.layerMainBadge}</span>}
                   {node.discarded && <span className="rounded bg-zinc-700/60 px-1 text-[10px] text-zinc-400">{t.design.layerDiscardedBadge}</span>}
                 </div>
                 <div className="mt-1 flex gap-1 pl-5 text-[10px] text-zinc-500">
@@ -143,7 +143,7 @@ export const DesignLayerPanel: React.FC<{
               type="button"
               onClick={() => onSetChosen(selected.id)}
               disabled={selected.discarded}
-              className="inline-flex flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-md border border-emerald-500/20 bg-emerald-500/10 px-2 py-1.5 text-xs text-emerald-200 disabled:opacity-40"
+              className="inline-flex flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-md border border-badge-success/20 bg-emerald-500/10 px-2 py-1.5 text-xs text-badge-success disabled:opacity-40"
             >
               <Check className="h-3.5 w-3.5" />
               {t.design.layerSetMain}

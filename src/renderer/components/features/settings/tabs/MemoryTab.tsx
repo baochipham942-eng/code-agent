@@ -97,8 +97,8 @@ const TYPE_CONFIG: Record<string, Omit<MemoryTypeConfig, 'label'>> = {
 
 const IMPORT_STATUS_CONFIG: Record<MemoryImportV2DiffStatus, Omit<MemoryImportStatusConfig, 'label'>> = {
   add: {
-    tone: 'text-emerald-300',
-    badgeClass: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300',
+    tone: 'text-badge-success',
+    badgeClass: 'border-badge-success/30 bg-emerald-500/10 text-badge-success',
   },
   update: {
     tone: 'text-badge-info',
@@ -607,7 +607,7 @@ export const MemoryTab: React.FC = () => {
           <div className="flex flex-col gap-3 border-b border-zinc-800 px-3 py-3 lg:flex-row lg:items-center lg:justify-between">
             <div className="min-w-0">
               <div className="flex items-center gap-2 text-sm font-medium text-zinc-200">
-                <FileCheck2 className="h-4 w-4 text-emerald-300" />
+                <FileCheck2 className="h-4 w-4 text-badge-success" />
                 {importFileName || memoryText.import.noFileSelected}
               </div>
               <div className="mt-1 text-xs text-zinc-500">
@@ -653,7 +653,7 @@ export const MemoryTab: React.FC = () => {
                 type="button"
                 onClick={handleApplyImport}
                 disabled={!importPreview || !importBundle || importBusy !== null || importApplyCount === 0}
-                className="inline-flex items-center gap-1.5 rounded border border-emerald-500/40 bg-emerald-500/10 px-3 py-1.5 text-xs text-emerald-300 hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex items-center gap-1.5 rounded border border-badge-success/40 bg-emerald-500/10 px-3 py-1.5 text-xs text-badge-success hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {importBusy === 'apply' ? (
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -750,16 +750,16 @@ export const MemoryTab: React.FC = () => {
               )}
 
               {importResult && (
-                <div data-testid="memory-import-receipt" className="rounded border border-emerald-500/20 bg-emerald-500/10 px-3 py-3 text-xs text-emerald-100">
-                  <div className="font-medium text-emerald-200">
+                <div data-testid="memory-import-receipt" className="rounded border border-badge-success/20 bg-emerald-500/10 px-3 py-3 text-xs text-badge-success">
+                  <div className="font-medium text-badge-success">
                     {memoryText.import.receiptPrefix}{importResult.applied}{memoryText.import.receiptMiddle}{importResult.created}{memoryText.import.receiptCreatedMiddle}{importResult.updatedApplied}{memoryText.import.receiptUpdatedMiddle}{importResult.skippedApply}
                   </div>
-                  <div className="mt-2 text-emerald-100/80">
+                  <div className="mt-2 text-badge-success/80">
                     {memoryText.import.writtenFilesPrefix}{importResult.writtenFiles.length > 0 ? importResult.writtenFiles.slice(0, 4).join('、') : memoryText.import.none}
                     {importResult.writtenFiles.length > 4 ? `${memoryText.import.extraFilesPrefix}${importResult.writtenFiles.length}${memoryText.import.extraFilesSuffix}` : ''}
                   </div>
                   {importResult.mirrorRebuild && (
-                    <div className="mt-1 text-emerald-100/80">
+                    <div className="mt-1 text-badge-success/80">
                       {memoryText.import.mirrorPrefix}{importResult.mirrorRebuild.mirrored}/{importResult.mirrorRebuild.totalLightFiles}{memoryText.import.mirrorCreatedMiddle}{importResult.mirrorRebuild.created}{memoryText.import.mirrorUpdatedMiddle}{importResult.mirrorRebuild.updated}
                     </div>
                   )}

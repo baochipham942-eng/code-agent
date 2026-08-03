@@ -65,7 +65,7 @@ function getAttachmentIconConfig(category: AttachmentCategory | undefined): Atta
     case 'video':
       return { icon: <Video className={iconClass} />, color: 'text-cyan-400', label: '视频' };
     case 'excel':
-      return { icon: <Sheet className={iconClass} />, color: 'text-emerald-400', label: 'Excel' };
+      return { icon: <Sheet className={iconClass} />, color: 'text-badge-success', label: 'Excel' };
     case 'presentation':
       return { icon: <Presentation className={iconClass} />, color: 'text-violet-400', label: 'PPT' };
     case 'archive':
@@ -132,7 +132,7 @@ const AttachmentStateBadge: React.FC<{
 
   const toneClass =
     state.tone === 'success'
-      ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+      ? 'border-badge-success/30 bg-emerald-500/10 text-badge-success'
       : state.tone === 'danger'
         ? 'border-red-500/30 bg-red-500/10 text-badge-danger'
         : state.tone === 'active'

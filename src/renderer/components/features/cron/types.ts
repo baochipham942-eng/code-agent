@@ -366,7 +366,7 @@ export function formatActionSummary(job: CronJobDefinition): string {
 export function getExecutionStatusMeta(status: CronJobStatus): { label: string; className: string } {
   switch (status) {
     case 'completed':
-      return { label: '成功', className: 'text-emerald-300 bg-emerald-500/10' };
+      return { label: '成功', className: 'text-badge-success bg-emerald-500/10' };
     case 'running':
       return { label: '运行中', className: 'text-blue-300 bg-blue-500/10' };
     case 'failed':

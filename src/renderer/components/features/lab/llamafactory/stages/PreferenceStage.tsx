@@ -67,7 +67,7 @@ export const PreferenceStage: React.FC<PreferenceStageProps> = ({ onComplete, on
     const colors: Record<string, { bg: string; border: string; text: string; ring: string }> = {
       purple: { bg: 'bg-purple-500/20', border: 'border-purple-500/30', text: 'text-purple-400', ring: 'ring-purple-500/30' },
       blue: { bg: 'bg-blue-500/20', border: 'border-blue-500/30', text: 'text-blue-400', ring: 'ring-blue-500/30' },
-      emerald: { bg: 'bg-emerald-500/20', border: 'border-emerald-500/30', text: 'text-emerald-400', ring: 'ring-emerald-500/30' },
+      emerald: { bg: 'bg-emerald-500/20', border: 'border-badge-success/30', text: 'text-badge-success', ring: 'ring-emerald-500/30' },
       amber: { bg: 'bg-amber-500/20', border: 'border-amber-500/30', text: 'text-amber-400', ring: 'ring-amber-500/30' },
     };
     return colors[color] || colors.purple;
@@ -117,7 +117,7 @@ export const PreferenceStage: React.FC<PreferenceStageProps> = ({ onComplete, on
             >
               <div className="flex items-center gap-2 mb-2">
                 <span className="text-lg">A</span>
-                {userChoice === 'chosen' && <ThumbsUp className="w-4 h-4 text-emerald-400" />}
+                {userChoice === 'chosen' && <ThumbsUp className="w-4 h-4 text-badge-success" />}
               </div>
               <p className="text-sm text-zinc-400">{preferenceExample.chosen}</p>
             </button>
@@ -149,7 +149,7 @@ export const PreferenceStage: React.FC<PreferenceStageProps> = ({ onComplete, on
             `}>
               <p className="text-sm">
                 {userChoice === 'chosen' ? (
-                  <span className="text-emerald-400">
+                  <span className="text-badge-success">
                     {p.feedbackChosen}
                   </span>
                 ) : (
@@ -225,7 +225,7 @@ export const PreferenceStage: React.FC<PreferenceStageProps> = ({ onComplete, on
                       <code className="text-xs text-orange-400">{method.dataFormat}</code>
                     </div>
                     <div className="p-3 rounded-lg bg-zinc-800">
-                      <div className="text-xs text-emerald-400 mb-2">{p.prosLabel}</div>
+                      <div className="text-xs text-badge-success mb-2">{p.prosLabel}</div>
                       <ul className="space-y-1">
                         {method.pros.map((pro, idx) => (
                           <li key={idx} className="text-xs text-zinc-400">+ {pro}</li>
@@ -312,9 +312,9 @@ export const PreferenceStage: React.FC<PreferenceStageProps> = ({ onComplete, on
               <div className="text-xs text-zinc-500">{p.workflowDpo.desc}</div>
             </div>
             <ArrowRight className="w-6 h-6 text-zinc-600 mx-4" />
-            <div className="flex-1 text-center p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
+            <div className="flex-1 text-center p-3 rounded-lg bg-emerald-500/10 border border-badge-success/20">
               <div className="text-2xl mb-1">✅</div>
-              <div className="text-sm font-medium text-emerald-400">{p.workflowEval.title}</div>
+              <div className="text-sm font-medium text-badge-success">{p.workflowEval.title}</div>
               <div className="text-xs text-zinc-500">{p.workflowEval.desc}</div>
             </div>
           </div>
@@ -347,7 +347,7 @@ export const PreferenceStage: React.FC<PreferenceStageProps> = ({ onComplete, on
           {p.glossary.map((term) => (
             <div key={term.en} className="p-3 rounded-lg bg-zinc-800">
               <div className="flex items-center gap-2 mb-1">
-                <span className="text-sm font-bold text-emerald-400">{term.en}</span>
+                <span className="text-sm font-bold text-badge-success">{term.en}</span>
                 <span className="text-xs text-zinc-500">|</span>
                 <span className="text-sm text-zinc-400">{term.zh}</span>
               </div>

@@ -378,7 +378,7 @@ const WorkflowStagePreview: React.FC<{ preview: WorkflowStagePreviewData }> = ({
               className="space-y-0.5"
             >
               <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
-                <span className={stage.success === false ? 'text-badge-danger' : 'text-emerald-300'}>
+                <span className={stage.success === false ? 'text-badge-danger' : 'text-badge-success'}>
                   {stage.success === false ? '✗' : '↳'}
                 </span>
                 <span className="text-zinc-500">{index + 1}.</span>
@@ -389,7 +389,7 @@ const WorkflowStagePreview: React.FC<{ preview: WorkflowStagePreviewData }> = ({
                   <span>{role}</span>
                 )}
                 {policy && showPolicy && (
-                  <span className={policy === 'readonly' ? 'text-emerald-300' : 'text-zinc-500'}>
+                  <span className={policy === 'readonly' ? 'text-badge-success' : 'text-zinc-500'}>
                     {policy}
                   </span>
                 )}
@@ -435,7 +435,7 @@ const AskUserQuestionRecordBlock: React.FC<{ record: AskUserQuestionRecord }> = 
 
 function getPermissionToneClass(permission: ToolPermissionView): string {  switch (permission) {
     case 'read':
-      return 'text-emerald-300';
+      return 'text-badge-success';
     case 'write':
     case 'shell':
     case 'desktop':
@@ -498,7 +498,7 @@ const ToolExecutionMetaRow: React.FC<{ toolCall: ToolCall; status: ToolStatus; q
 function getActionPreviewRiskClass(risk: BrowserComputerActionPreview['risk']): string {
   switch (risk) {
     case 'read':
-      return 'text-emerald-300';
+      return 'text-badge-success';
     case 'browser_action':
       return 'text-badge-info';
     case 'desktop_input':

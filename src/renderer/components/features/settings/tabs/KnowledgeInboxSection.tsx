@@ -102,7 +102,7 @@ export function KnowledgeInboxList({
                     type="button"
                     onClick={() => onApproveEdit(item, draft)}
                     disabled={isBusy || !draft.trim()}
-                    className="inline-flex h-7 items-center gap-1.5 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2.5 text-[11px] font-medium text-emerald-200 hover:bg-emerald-500/20 disabled:opacity-50"
+                    className="inline-flex h-7 items-center gap-1.5 rounded-md border border-badge-success/40 bg-emerald-500/10 px-2.5 text-[11px] font-medium text-badge-success hover:bg-emerald-500/20 disabled:opacity-50"
                   >
                     <Check className="h-3.5 w-3.5" />
                     {t.knowledgeMemory.saveAdopt}
@@ -123,7 +123,7 @@ export function KnowledgeInboxList({
                   type="button"
                   onClick={() => onApprove(item)}
                   disabled={isBusy}
-                  className="inline-flex h-7 items-center gap-1.5 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2.5 text-[11px] font-medium text-emerald-200 hover:bg-emerald-500/20 disabled:opacity-50"
+                  className="inline-flex h-7 items-center gap-1.5 rounded-md border border-badge-success/40 bg-emerald-500/10 px-2.5 text-[11px] font-medium text-badge-success hover:bg-emerald-500/20 disabled:opacity-50"
                 >
                   <Check className="h-3.5 w-3.5" />
                   {t.knowledgeMemory.adopt}
@@ -171,7 +171,7 @@ function InboxStatusBadge({ status }: { status: InboxStatus }) {
     rejected: t.knowledgeMemory.inboxStatusRejected,
   };
   const tone = status === 'approved'
-    ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'
+    ? 'border-badge-success/30 bg-emerald-500/10 text-badge-success'
     : status === 'rejected'
       ? 'border-zinc-700 bg-zinc-900 text-zinc-400'
       : 'border-amber-500/30 bg-amber-500/10 text-amber-200';

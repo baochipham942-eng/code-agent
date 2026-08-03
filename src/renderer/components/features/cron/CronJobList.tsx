@@ -130,7 +130,7 @@ export const CronJobList: React.FC = () => {
                     </div>
                     <span
                       className={`shrink-0 rounded-full px-2 py-1 text-[11px] ${
-                        job.enabled ? 'bg-emerald-500/10 text-emerald-300' : 'bg-zinc-500/10 text-zinc-300'
+                        job.enabled ? 'bg-emerald-500/10 text-badge-success' : 'bg-zinc-500/10 text-zinc-300'
                       }`}
                     >
                       {job.enabled ? cc.enabled : cc.disabled}

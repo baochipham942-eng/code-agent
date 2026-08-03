@@ -43,10 +43,10 @@ const languageConfig: Record<string, { color: string; name: string }> = {
   rust: { color: 'text-orange-400', name: 'Rust' },
   rs: { color: 'text-orange-400', name: 'Rust' },
   go: { color: 'text-cyan-400', name: 'Go' },
-  bash: { color: 'text-emerald-400', name: 'Bash' },
-  shell: { color: 'text-emerald-400', name: 'Shell' },
-  sh: { color: 'text-emerald-400', name: 'Shell' },
-  zsh: { color: 'text-emerald-400', name: 'Zsh' },
+  bash: { color: 'text-badge-success', name: 'Bash' },
+  shell: { color: 'text-badge-success', name: 'Shell' },
+  sh: { color: 'text-badge-success', name: 'Shell' },
+  zsh: { color: 'text-badge-success', name: 'Zsh' },
   json: { color: 'text-amber-400', name: 'JSON' },
   html: { color: 'text-orange-400', name: 'HTML' },
   css: { color: 'text-blue-400', name: 'CSS' },
@@ -77,8 +77,8 @@ const languageConfig: Record<string, { color: string; name: string }> = {
   graphql: { color: 'text-pink-400', name: 'GraphQL' },
   gql: { color: 'text-pink-400', name: 'GraphQL' },
   mermaid: { color: 'text-pink-300', name: 'Mermaid' },
-  chart: { color: 'text-emerald-400', name: 'Chart' },
-  spreadsheet: { color: 'text-emerald-400', name: 'Spreadsheet' },
+  chart: { color: 'text-badge-success', name: 'Chart' },
+  spreadsheet: { color: 'text-badge-success', name: 'Spreadsheet' },
   document: { color: 'text-blue-400', name: 'Document' },
   generative_ui: { color: 'text-violet-400', name: 'Generative UI' },
   neo_ui: { color: 'text-violet-300', name: 'Neo Interactive UI' },
@@ -649,7 +649,7 @@ export const IACTCopyButton: React.FC<{ children: React.ReactNode }> = ({ childr
       title="复制到剪贴板"
     >
       {children}
-      {copied ? <Check className="w-3 h-3 text-emerald-400" /> : <ClipboardCopy className="w-3 h-3 opacity-60" />}
+      {copied ? <Check className="w-3 h-3 text-badge-success" /> : <ClipboardCopy className="w-3 h-3 opacity-60" />}
     </button>
   );
 };

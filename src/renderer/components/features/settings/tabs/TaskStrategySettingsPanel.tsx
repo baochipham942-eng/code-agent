@@ -136,7 +136,7 @@ export const TaskStrategySettingsPanel: React.FC<TaskStrategySettingsPanelProps>
           <span className="flex items-center gap-2 text-sm font-medium text-zinc-200">
             {strategyText.toggleTitle}
             {/* 本面板改动即存（persistTaskStrategy 立即落盘），与下方 staged Provider 表单区分 */}
-            <span className="shrink-0 rounded border border-emerald-500/30 bg-emerald-500/10 px-1 text-[10px] font-normal text-emerald-200">
+            <span className="shrink-0 rounded border border-badge-success/30 bg-emerald-500/10 px-1 text-[10px] font-normal text-badge-success">
               {strategyText.autoSaveBadge}
             </span>
           </span>

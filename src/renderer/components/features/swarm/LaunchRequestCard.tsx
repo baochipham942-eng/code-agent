@@ -22,7 +22,7 @@ import { DecisionCard, type DecisionOption } from '../../DecisionCard';
 // 给每个 agent 分配一种稳定颜色（按 task.id hash），让用户像 Codex 截图里
 // "Heisenberg (绿) / Rawls (紫)" 那样一眼区分不同 worker。
 const AGENT_COLORS = [
-  'text-emerald-400',
+  'text-badge-success',
   'text-purple-400',
   'text-cyan-400',
   'text-amber-400',
@@ -90,7 +90,7 @@ const LaunchTaskList: React.FC<{ tasks: SwarmLaunchTaskPreview[] }> = ({ tasks }
               className={`rounded-full px-1.5 py-0.5 text-[10px] ${
                 task.writeAccess
                   ? 'bg-amber-500/15 text-amber-300'
-                  : 'bg-emerald-500/15 text-emerald-300'
+                  : 'bg-emerald-500/15 text-badge-success'
               }`}
             >
               {task.writeAccess ? '可写' : '只读'}
@@ -197,7 +197,7 @@ export const LaunchRequestCard: React.FC<{ request: SwarmLaunchRequest }> = ({ r
   if (request.status !== 'pending') {
     const badgeClass =
       request.status === 'approved'
-        ? 'bg-emerald-500/15 text-emerald-300'
+        ? 'bg-emerald-500/15 text-badge-success'
         : 'bg-red-500/15 text-badge-danger';
     return (
       <div className="rounded-lg border border-white/[0.04] bg-zinc-800/70 p-3">

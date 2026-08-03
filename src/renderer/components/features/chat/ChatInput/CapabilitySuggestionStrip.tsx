@@ -136,7 +136,7 @@ export const CapabilitySuggestionStrip: React.FC<CapabilitySuggestionStripProps>
             type="button"
             disabled={installingSkillName === recommendation.skillName}
             onClick={() => onSkillInstall?.(recommendation)}
-            className="inline-flex max-w-full items-center gap-1 rounded-md border border-emerald-400/20 bg-emerald-400/10 px-2 py-1 text-[11px] text-emerald-100 hover:border-emerald-400/40 disabled:opacity-60"
+            className="inline-flex max-w-full items-center gap-1 rounded-md border border-badge-success/20 bg-emerald-400/10 px-2 py-1 text-[11px] text-badge-success hover:border-badge-success/40 disabled:opacity-60"
             title={recommendation.reason}
           >
             <span>

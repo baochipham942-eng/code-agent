@@ -45,7 +45,7 @@ const DiscussionIcon: React.FC<{ entry: SwarmTimelineEvent }> = ({ entry }) => {
     case 'decision':
       return <GitBranch className={`${cls} text-violet-400`} />;
     case 'result':
-      return <CheckCircle className={`${cls} text-emerald-400`} />;
+      return <CheckCircle className={`${cls} text-badge-success`} />;
     case 'status':
       return <Activity className={`${cls} text-cyan-400`} />;
     default:
@@ -58,7 +58,7 @@ const DiscussionIcon: React.FC<{ entry: SwarmTimelineEvent }> = ({ entry }) => {
 
 const discussionToneText: Record<SwarmTimelineEvent['tone'], string> = {
   neutral: 'text-zinc-300',
-  success: 'text-emerald-300',
+  success: 'text-badge-success',
   warning: 'text-amber-300',
   error: 'text-badge-danger',
 };

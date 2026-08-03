@@ -42,7 +42,7 @@ import { typedInvokeDomain } from '../../services/typedInvoke';
 export function runStatusClass(status: RunUiStatus): string {
   switch (status) {
     case 'completed':
-      return 'border-emerald-500/20 bg-emerald-500/10 text-emerald-300';
+      return 'border-badge-success/20 bg-emerald-500/10 text-badge-success';
     case 'waiting_approval':
     case 'using_tools':
     case 'verifying':
@@ -87,7 +87,7 @@ export function getRunUiStatusLabel(status: RunUiStatus, t: Translations): strin
 function subagentStatusClass(status: SubagentRunView['status']): string {
   switch (status) {
     case 'completed':
-      return 'text-emerald-300';
+      return 'text-badge-success';
     case 'failed':
     case 'blocked':
       return 'text-badge-danger';
@@ -165,7 +165,7 @@ function getTaskStatusClass(status: TaskRecord['status']): string {
     case 'in_progress':
       return 'text-badge-info';
     case 'completed':
-      return 'text-emerald-300';
+      return 'text-badge-success';
     case 'blocked':
       return 'text-badge-danger';
     case 'cancelled':
@@ -437,7 +437,7 @@ const TaskChecklistHeader = ({ rail }: { rail: ReturnType<typeof deriveTaskRailV
 
 function outputRefTone(type: TaskRecordOutputRef['type']): string {
   if (type === 'log') return 'border-badge-info/20 bg-sky-500/10 text-badge-info';
-  if (type === 'text' || type === 'report') return 'border-emerald-500/20 bg-emerald-500/10 text-emerald-300';
+  if (type === 'text' || type === 'report') return 'border-badge-success/20 bg-emerald-500/10 text-badge-success';
   if (type === 'trace' || type === 'replay') return 'border-violet-500/20 bg-violet-500/10 text-violet-300';
   return 'border-white/[0.08] bg-white/[0.03] text-zinc-400';
 }
@@ -705,7 +705,7 @@ export const ToolDiscoverySummary = ({ tools }: { tools: ToolCapabilityView[] })
               </div>
             )}
           </div>
-          <span className={`text-[10px] ${tool.callable ? 'text-emerald-300' : 'text-amber-300'}`}>
+          <span className={`text-[10px] ${tool.callable ? 'text-badge-success' : 'text-amber-300'}`}>
             {tool.callable ? 'callable' : 'blocked'}
           </span>
         </div>
@@ -722,7 +722,7 @@ function memoryActionLabel(action: MemoryActivityEvent['action']): string {
 }
 
 function memoryActionClass(action: MemoryActivityEvent['action']): string {
-  if (action === 'created') return 'border-emerald-500/20 bg-emerald-500/10 text-emerald-300';
+  if (action === 'created') return 'border-badge-success/20 bg-emerald-500/10 text-badge-success';
   if (action === 'updated') return 'border-badge-info/20 bg-sky-500/10 text-badge-info';
   if (action === 'deleted') return 'border-red-500/20 bg-red-500/10 text-badge-danger';
   return 'border-violet-500/20 bg-violet-500/10 text-violet-300';

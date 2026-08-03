@@ -221,7 +221,7 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
             {surfaceExecutionSession ? (
               <SurfaceExecutionRunStatus session={surfaceExecutionSession} />
             ) : isRunning ? (
-              <Loader2 className="w-3 h-3 text-emerald-400/80 animate-spin" aria-label={localizedStatusLabel} />
+              <Loader2 className="w-3 h-3 text-badge-success/80 animate-spin" aria-label={localizedStatusLabel} />
             ) : attentionDotClass ? (
               <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${attentionDotClass}`} aria-label={localizedStatusLabel} />
             ) : isUnread && !multiSelectMode ? (

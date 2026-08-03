@@ -47,7 +47,7 @@ export function LightMemoryHealthPanel({
   const statusTone = !health || isLoading
     ? 'border-zinc-700 bg-zinc-900 text-zinc-400'
     : issueCount === 0
-      ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'
+      ? 'border-badge-success/30 bg-emerald-500/10 text-badge-success'
       : 'border-amber-500/30 bg-amber-500/10 text-amber-200';
 
   return (
@@ -127,7 +127,7 @@ export function MemoryInjectionTraceList({ traces }: { traces: MemoryInjectionTr
           <div className="grid gap-1.5">
             {recentTraces.map((trace) => (
               <div key={trace.id} className="flex min-w-0 items-center gap-2 text-[11px] leading-4">
-                <span className={`shrink-0 rounded border px-1.5 py-0.5 ${trace.injected ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200' : 'border-zinc-700 bg-zinc-900 text-zinc-500'}`}>
+                <span className={`shrink-0 rounded border px-1.5 py-0.5 ${trace.injected ? 'border-badge-success/30 bg-emerald-500/10 text-badge-success' : 'border-zinc-700 bg-zinc-900 text-zinc-500'}`}>
                   {trace.injected ? t.knowledgeMemory.injectionTraceInjected : t.knowledgeMemory.injectionTraceNotInjected}
                 </span>
                 <span className="shrink-0 font-medium text-zinc-300">{trace.blockType}</span>

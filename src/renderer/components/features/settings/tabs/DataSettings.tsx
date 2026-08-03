@@ -224,7 +224,7 @@ function getRowIcon(rowId: DataManagementRow['id']): React.ReactNode {
 function getStatusClass(tone: DataManagementRow['statusTone']): string {
   if (tone === 'warning') return 'border-amber-500/30 bg-amber-500/10 text-amber-300';
   if (tone === 'info') return 'border-blue-500/30 bg-blue-500/10 text-blue-300';
-  return 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300';
+  return 'border-badge-success/30 bg-emerald-500/10 text-badge-success';
 }
 
 // 探针失败哨兵：不携带用户可见文案（展示层用 dataText.telemetry.notConnected 兜底），
@@ -620,7 +620,7 @@ export const DataSettings: React.FC = () => {
           ) : telemetrySummary.available ? (
             <div className="flex flex-wrap items-center gap-3 text-xs">
               {telemetrySummary.enabled ? (
-                <span className="inline-flex items-center gap-1.5 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 text-emerald-300">
+                <span className="inline-flex items-center gap-1.5 rounded-md border border-badge-success/30 bg-emerald-500/10 px-2 py-1 text-badge-success">
                   <Activity className="h-3.5 w-3.5" />
                   {dataText.telemetry.running}
                 </span>

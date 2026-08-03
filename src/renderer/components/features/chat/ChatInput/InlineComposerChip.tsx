@@ -68,7 +68,7 @@ export function InlineComposerChip({
       {chip.kind === 'command' && CommandIcon ? (
         <CommandIcon className="h-3.5 w-3.5 shrink-0" aria-hidden />
       ) : chip.kind === 'skill' ? (
-        <Sparkles className="h-3.5 w-3.5 shrink-0 text-emerald-400" aria-hidden />
+        <Sparkles className="h-3.5 w-3.5 shrink-0 text-badge-success" aria-hidden />
       ) : (
         <AttachmentIcon category={chip.category ?? 'document'} className="h-3.5 w-3.5 shrink-0" />
       )}

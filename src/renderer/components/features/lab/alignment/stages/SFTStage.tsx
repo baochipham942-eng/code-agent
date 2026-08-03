@@ -133,9 +133,9 @@ export const SFTStage: React.FC<SFTStageProps> = ({ onComplete }) => {
               <div className="text-sm font-medium text-purple-400">{s.analogyCards.learnFromAnswers.label}</div>
               <div className="text-xs text-zinc-500 mt-1">{s.analogyCards.learnFromAnswers.desc}</div>
             </div>
-            <div className="text-center p-4 bg-emerald-500/10 rounded-lg border border-emerald-500/20">
+            <div className="text-center p-4 bg-emerald-500/10 rounded-lg border border-badge-success/20">
               <div className="text-3xl mb-2">✨</div>
-              <div className="text-sm font-medium text-emerald-400">{s.analogyCards.trainedAi.label}</div>
+              <div className="text-sm font-medium text-badge-success">{s.analogyCards.trainedAi.label}</div>
               <div className="text-xs text-zinc-500 mt-1">{s.analogyCards.trainedAi.desc}</div>
             </div>
           </div>
@@ -178,11 +178,11 @@ export const SFTStage: React.FC<SFTStageProps> = ({ onComplete }) => {
           {/* Answer */}
           <div className="flex gap-3">
             <div className="w-8 h-8 rounded-full bg-emerald-500/20 flex items-center justify-center flex-shrink-0">
-              <Bot className="w-4 h-4 text-emerald-400" />
+              <Bot className="w-4 h-4 text-badge-success" />
             </div>
             <div className="flex-1">
-              <div className="text-xs text-emerald-400 mb-1">{s.standardAnswerLabel}</div>
-              <pre className="text-sm text-zinc-200 bg-emerald-500/10 rounded-lg p-3 border border-emerald-500/20 whitespace-pre-wrap">
+              <div className="text-xs text-badge-success mb-1">{s.standardAnswerLabel}</div>
+              <pre className="text-sm text-zinc-200 bg-emerald-500/10 rounded-lg p-3 border border-badge-success/20 whitespace-pre-wrap">
                 {currentExample.answer}
               </pre>
             </div>
@@ -238,11 +238,11 @@ export const SFTStage: React.FC<SFTStageProps> = ({ onComplete }) => {
             </div>
             <div>
               <div className="text-xs text-zinc-500 mb-1">{s.learnedCountLabel}</div>
-              <div className="text-2xl font-bold text-emerald-400">{s.learnedCountValue.replace('{count}', String(learnedCount))}</div>
+              <div className="text-2xl font-bold text-badge-success">{s.learnedCountValue.replace('{count}', String(learnedCount))}</div>
             </div>
             <div>
               <div className="text-xs text-zinc-500 mb-1">{common.statusLabel}</div>
-              <div className={`text-lg font-medium ${isTraining ? 'text-amber-400' : trainingStep >= 100 ? 'text-emerald-400' : 'text-zinc-400'}`}>
+              <div className={`text-lg font-medium ${isTraining ? 'text-amber-400' : trainingStep >= 100 ? 'text-badge-success' : 'text-zinc-400'}`}>
                 {isTraining ? s.statusTraining : trainingStep >= 100 ? s.statusDone : s.statusReady}
               </div>
             </div>
@@ -284,10 +284,10 @@ export const SFTStage: React.FC<SFTStageProps> = ({ onComplete }) => {
               <span className="text-sm font-medium text-purple-400">{s.afterLabel}</span>
             </div>
             <div className="mb-2 text-xs text-blue-400">{s.questionPrefix.replace('{question}', beforeAfterExamples[0].question)}</div>
-            <div className="bg-zinc-950/50 p-3 rounded text-sm text-emerald-400 whitespace-pre-wrap">
+            <div className="bg-zinc-950/50 p-3 rounded text-sm text-badge-success whitespace-pre-wrap">
               {beforeAfterExamples[0].after}
             </div>
-            <div className="mt-2 text-xs text-emerald-400">✓ {beforeAfterExamples[0].afterComment}</div>
+            <div className="mt-2 text-xs text-badge-success">✓ {beforeAfterExamples[0].afterComment}</div>
           </div>
         </div>
       </div>
@@ -315,7 +315,7 @@ export const SFTStage: React.FC<SFTStageProps> = ({ onComplete }) => {
           {s.glossaryTerms.map((term) => (
             <div key={term.en} className="p-3 rounded-lg bg-zinc-800">
               <div className="flex items-center gap-2 mb-1">
-                <span className="text-sm font-bold text-emerald-400">{term.en}</span>
+                <span className="text-sm font-bold text-badge-success">{term.en}</span>
                 <span className="text-xs text-zinc-500">|</span>
                 <span className="text-sm text-zinc-400">{term.meaning}</span>
               </div>

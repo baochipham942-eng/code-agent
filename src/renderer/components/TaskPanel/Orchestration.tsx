@@ -325,7 +325,7 @@ export const Orchestration: React.FC = () => {
             title={o.takeoverTooltip}
           >
             {delegateMode ? (
-              <ToggleRight className="w-3.5 h-3.5 text-emerald-400" />
+              <ToggleRight className="w-3.5 h-3.5 text-badge-success" />
             ) : (
               <ToggleLeft className="w-3.5 h-3.5 text-zinc-500" />
             )}
@@ -384,10 +384,10 @@ export const Orchestration: React.FC = () => {
             emphasis="text-cyan-300"
           />
           <MetricCard
-            icon={<FileText className="w-3.5 h-3.5 text-emerald-400" />}
+            icon={<FileText className="w-3.5 h-3.5 text-badge-success" />}
             label={o.changedFiles}
             value={aggregation?.filesChanged.length ?? 0}
-            emphasis="text-emerald-300"
+            emphasis="text-badge-success"
           />
         </div>
       </div>
@@ -485,10 +485,10 @@ export const Orchestration: React.FC = () => {
                   emphasis={getUsageTextClass(contextUsagePercent)}
                 />
                 <MetricCard
-                  icon={<Clock className="w-3.5 h-3.5 text-emerald-400" />}
+                  icon={<Clock className="w-3.5 h-3.5 text-badge-success" />}
                   label={o.estimatedRemaining}
                   value={contextHealth ? o.turnsRemaining.replace('{count}', String(contextHealth.estimatedTurnsRemaining)) : '—'}
-                  emphasis="text-emerald-300"
+                  emphasis="text-badge-success"
                 />
                 <MetricCard
                   icon={<Activity className="w-3.5 h-3.5 text-violet-400" />}
@@ -534,7 +534,7 @@ export const Orchestration: React.FC = () => {
                     {o.compressionCount} <span className="ml-1 text-zinc-200">{compressionCount}</span>
                   </div>
                   <div className="rounded bg-zinc-900/70 px-2 py-1.5 text-zinc-400">
-                    {o.savedToken} <span className="ml-1 text-emerald-300">{formatTokens(compressionSavedTokens)}</span>
+                    {o.savedToken} <span className="ml-1 text-badge-success">{formatTokens(compressionSavedTokens)}</span>
                   </div>
                   <div className="col-span-2 rounded bg-zinc-900/70 px-2 py-1.5 text-zinc-400">
                     {o.triggerLayer} <span className="ml-1 text-zinc-200">{compressionLayers.length > 0 ? compressionLayers.join(', ') : '—'}</span>
@@ -752,7 +752,7 @@ export const Orchestration: React.FC = () => {
                     {o.speedup} <span className="ml-1 text-cyan-300">{aggregation.speedup.toFixed(1)}x</span>
                   </div>
                   <div className="rounded bg-zinc-900/70 px-2 py-1.5 text-zinc-400">
-                    {o.successRate} <span className="ml-1 text-emerald-300">{(aggregation.successRate * 100).toFixed(0)}%</span>
+                    {o.successRate} <span className="ml-1 text-badge-success">{(aggregation.successRate * 100).toFixed(0)}%</span>
                   </div>
                 </div>
               </div>
@@ -762,7 +762,7 @@ export const Orchestration: React.FC = () => {
               <div className="rounded-lg border border-white/[0.04] bg-zinc-800/70 p-3">
                 <div className="flex items-center gap-2 text-sm font-medium text-zinc-100">
                   {verification.passed ? (
-                    <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                    <CheckCircle2 className="w-4 h-4 text-badge-success" />
                   ) : (
                     <XCircle className="w-4 h-4 text-badge-danger" />
                   )}
@@ -777,7 +777,7 @@ export const Orchestration: React.FC = () => {
                       key={`${check.name}-${check.passed}`}
                       className={`rounded px-1.5 py-0.5 text-[10px] ${
                         check.passed
-                          ? 'bg-emerald-500/15 text-emerald-300'
+                          ? 'bg-emerald-500/15 text-badge-success'
                           : 'bg-red-500/15 text-badge-danger'
                       }`}
                       title={check.message}

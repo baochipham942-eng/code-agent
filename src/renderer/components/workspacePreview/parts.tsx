@@ -56,7 +56,7 @@ export function KindIcon({ kind }: { kind: WorkspacePreviewKind }) {
     case 'handoff':
       return <FileText className={`${cls} text-badge-info`} />;
     case 'spreadsheet':
-      return <Table2 className={`${cls} text-emerald-300`} />;
+      return <Table2 className={`${cls} text-badge-success`} />;
     case 'message_draft':
       return <Mail className={`${cls} text-amber-300`} />;
     case 'calendar_event':
@@ -66,7 +66,7 @@ export function KindIcon({ kind }: { kind: WorkspacePreviewKind }) {
     case 'image':
       return <Image className={`${cls} text-cyan-300`} />;
     case 'audio':
-      return <Music className={`${cls} text-emerald-300`} />;
+      return <Music className={`${cls} text-badge-success`} />;
     case 'video':
       return <Video className={`${cls} text-fuchsia-300`} />;
     case 'archive':
@@ -489,7 +489,7 @@ export function RevisionPanel({
         </div>
       )}
       {actionMessage && (
-        <div className="rounded border border-emerald-500/20 bg-emerald-500/10 px-2 py-1.5 text-[11px] text-emerald-200">
+        <div className="rounded border border-badge-success/20 bg-emerald-500/10 px-2 py-1.5 text-[11px] text-badge-success">
           {actionMessage}
         </div>
       )}

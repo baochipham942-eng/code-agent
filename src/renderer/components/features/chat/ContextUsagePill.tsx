@@ -234,7 +234,7 @@ export const ContextUsagePill: React.FC = () => {
           )}
 
           {compactResult && (
-            <div className="mt-2 text-[11px] text-emerald-400">
+            <div className="mt-2 text-[11px] text-badge-success">
               {compactResult.totalSavedTokens > 0
                 ? ch.freedTokens.replace('{tokens}', formatTokens(compactResult.totalSavedTokens))
                 : ch.compactedCount.replace('{count}', String(compactResult.compressionCount))}

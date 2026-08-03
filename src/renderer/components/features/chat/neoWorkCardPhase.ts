@@ -31,7 +31,7 @@ export const NEO_WORK_CARD_PHASE_LABEL: Record<NeoWorkCardPhase, string> = {
 };
 
 export const NEO_WORK_CARD_PHASE_CHIP_STYLE: Record<NeoWorkCardPhase, string> = {
-  running: 'border-emerald-400/30 bg-emerald-400/10 text-emerald-200',
+  running: 'border-badge-success/30 bg-emerald-400/10 text-badge-success',
   needs_input: 'border-amber-400/30 bg-amber-400/10 text-amber-200',
   done: 'border-zinc-700 bg-zinc-900 text-zinc-300',
   failed: 'border-rose-400/30 bg-rose-400/10 text-rose-200',

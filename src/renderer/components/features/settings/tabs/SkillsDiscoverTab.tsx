@@ -96,7 +96,7 @@ const RegistryEntryCard: React.FC<{
             <h5 className="truncate text-sm font-medium text-zinc-200">
               {entry.displayName || entry.name}
             </h5>
-            <span className="shrink-0 rounded border border-emerald-500/20 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] text-emerald-300">
+            <span className="shrink-0 rounded border border-badge-success/20 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] text-badge-success">
               <ShieldCheck className="mr-0.5 inline h-3 w-3 align-[-2px]" />
               {entry.publisher}
             </span>
@@ -134,7 +134,7 @@ const RegistryEntryCard: React.FC<{
             </Button>
           ) : (
             <span className="flex items-center gap-1 text-xs text-zinc-500">
-              <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
+              <CheckCircle2 className="h-3.5 w-3.5 text-badge-success" />
               {labels.registryInstalled}
             </span>
           )}

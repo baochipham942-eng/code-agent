@@ -201,7 +201,7 @@ function getPermissionIcon(mode: PermissionMode): React.ReactNode {
 function getRiskClass(riskLevel: PermissionRiskLevel): string {
   if (riskLevel === 'high') return 'border-red-500/30 bg-red-500/10 text-badge-danger';
   if (riskLevel === 'medium') return 'border-amber-500/30 bg-amber-500/10 text-amber-300';
-  return 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300';
+  return 'border-badge-success/30 bg-emerald-500/10 text-badge-success';
 }
 
 function getErrorMessage(error: unknown, fallback: string): string {
@@ -226,7 +226,7 @@ function getRuleRows(ruleSummary: PermissionRuleSummary, text: GeneralSettingsTe
       label: 'Allow',
       caption: text.userRules.allowCaption,
       value: ruleSummary.allowCount,
-      color: 'text-emerald-300',
+      color: 'text-badge-success',
     },
   ];
 }
@@ -541,7 +541,7 @@ export const GeneralSettings: React.FC = () => {
                             <div className="flex items-center gap-2">
                               <span className="text-sm font-medium text-zinc-200">{row.title}</span>
                               {row.recommended ? (
-                                <span className="rounded border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 text-[11px] text-emerald-300">
+                                <span className="rounded border border-badge-success/30 bg-emerald-500/10 px-1.5 py-0.5 text-[11px] text-badge-success">
                                   {generalText.inheritanceSection.recommended}
                                 </span>
                               ) : null}
@@ -646,7 +646,7 @@ export const GeneralSettings: React.FC = () => {
                 />
               </div>
               <div>
-                <label className="mb-1 block text-xs text-emerald-300">{generalText.userRules.allowLabel}</label>
+                <label className="mb-1 block text-xs text-badge-success">{generalText.userRules.allowLabel}</label>
                 <textarea
                   value={allowRules}
                   onChange={(event) => setAllowRules(event.target.value)}
@@ -669,7 +669,7 @@ export const GeneralSettings: React.FC = () => {
         <div className="grid grid-cols-1 gap-3 text-xs text-zinc-400 md:grid-cols-2">
           <div className="rounded-lg border border-zinc-800 bg-zinc-950/30 p-3">
             <div className="mb-1 flex items-center gap-2 text-zinc-200">
-              <ShieldCheck className="h-4 w-4 text-emerald-300" />
+              <ShieldCheck className="h-4 w-4 text-badge-success" />
               {generalText.semantics.priorityTitle}
             </div>
             <p>{generalText.semantics.priorityDescription}</p>

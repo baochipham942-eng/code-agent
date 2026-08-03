@@ -507,7 +507,7 @@ const TurnTimelineNodeRenderer: React.FC<{ node: TraceNode; sessionId?: string }
 function getTimelineContainerClass(tone: TurnTimelinePayload['tone']): string {
   switch (tone) {
     case 'success':
-      return 'border-emerald-500/20 bg-emerald-500/10';
+      return 'border-badge-success/20 bg-emerald-500/10';
     case 'warning':
       return 'border-amber-500/20 bg-amber-500/10';
     case 'error':
@@ -784,7 +784,7 @@ const ArtifactOwnershipNode: React.FC<{ timeline: TurnTimelinePayload; sessionId
   const outputsCard = outputItems.length > 0 ? (
     <div className={`rounded-lg border px-3 py-2 ${getTimelineContainerClass(timeline.tone)}`}>
       <div className="mb-1.5 flex items-center gap-2 text-[11px] text-zinc-400">
-        <FileText className="h-3.5 w-3.5 text-emerald-300" />
+        <FileText className="h-3.5 w-3.5 text-badge-success" />
         <span>Outputs</span>
       </div>
       {fileItems.length > 0 && <FileArtifactCard items={fileItems} mediaContext={mediaContext} />}

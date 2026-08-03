@@ -36,7 +36,7 @@ interface StatusItem {
 }
 
 const toneClass: Record<StatusItem['tone'], string> = {
-  ready: 'border-emerald-500/20 bg-emerald-500/10 text-emerald-300',
+  ready: 'border-badge-success/20 bg-emerald-500/10 text-badge-success',
   idle: 'border-zinc-700/50 bg-zinc-800/50 text-zinc-300',
   blocked: 'border-amber-500/20 bg-amber-500/10 text-amber-300',
 };
@@ -80,7 +80,7 @@ function stateTone(state?: ActivityProviderState): StatusItem['tone'] {
 }
 
 function stateDotClass(state?: ActivityProviderState): string {
-  if (state === 'running' || state === 'available') return 'text-emerald-400';
+  if (state === 'running' || state === 'available') return 'text-badge-success';
   if (state === 'starting' || state === 'stopping') return 'text-amber-400';
   if (state === 'error' || state === 'unavailable') return 'text-rose-400';
   return 'text-zinc-500';
@@ -185,7 +185,7 @@ function formatCapturedAt(
 function SourceBadge({ source }: { source: ActivityContextSourcePreview }) {
   const className = {
     automatic_background: 'border-cyan-500/20 bg-cyan-500/10 text-cyan-300',
-    manual_capture: 'border-emerald-500/20 bg-emerald-500/10 text-emerald-300',
+    manual_capture: 'border-badge-success/20 bg-emerald-500/10 text-badge-success',
     meeting_audio: 'border-amber-500/20 bg-amber-500/10 text-amber-300',
     screenshot_analysis: 'border-purple-500/20 bg-purple-500/10 text-purple-300',
     unknown: 'border-zinc-600 bg-zinc-800 text-zinc-400',

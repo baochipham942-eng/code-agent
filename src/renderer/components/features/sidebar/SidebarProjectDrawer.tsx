@@ -110,7 +110,7 @@ function formatRelativeUpdatedAt(timestamp: number | undefined, language: Langua
 }
 
 function getGoalStatusIcon(status: SidebarProjectGoalMeta['status']): React.ReactNode {
-  if (status === 'met') return <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />;
+  if (status === 'met') return <CheckCircle2 className="h-3.5 w-3.5 text-badge-success" />;
   if (status === 'aborted') return <AlertTriangle className="h-3.5 w-3.5 text-amber-400" />;
   if (status === 'archived') return <Clock3 className="h-3.5 w-3.5 text-zinc-500" />;
   return <Target className="h-3.5 w-3.5 text-violet-300" />;

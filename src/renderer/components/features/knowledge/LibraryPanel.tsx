@@ -62,7 +62,7 @@ function parseTags(value: string): string[] {
 
 const KIND_ICONS: Record<LibraryItemKind, React.ReactNode> = {
   upload: <FileText className="h-3.5 w-3.5 text-badge-info" />,
-  artifact: <Package className="h-3.5 w-3.5 text-emerald-300" />,
+  artifact: <Package className="h-3.5 w-3.5 text-badge-success" />,
   capture: <BookOpen className="h-3.5 w-3.5 text-amber-300" />,
   external_ref: <Globe className="h-3.5 w-3.5 text-purple-300" />,
 };

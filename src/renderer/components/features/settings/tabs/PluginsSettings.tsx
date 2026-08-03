@@ -56,7 +56,7 @@ const SummaryTile: React.FC<{
   tone?: 'default' | 'success' | 'warning';
 }> = ({ label, value, tone = 'default' }) => {
   const valueClass = tone === 'success'
-    ? 'text-emerald-300'
+    ? 'text-badge-success'
     : tone === 'warning'
       ? 'text-amber-300'
       : 'text-zinc-100';
@@ -74,7 +74,7 @@ const Pill: React.FC<{
   tone?: 'default' | 'success' | 'warning' | 'danger';
 }> = ({ children, tone = 'default' }) => {
   const toneClass = tone === 'success'
-    ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+    ? 'border-badge-success/30 bg-emerald-500/10 text-badge-success'
     : tone === 'warning'
       ? 'border-amber-500/30 bg-amber-500/10 text-amber-300'
       : tone === 'danger'
@@ -331,7 +331,7 @@ export const PluginsSettings: React.FC = () => {
       {notice && (
         <div className={`flex items-start gap-2 rounded-lg border px-3 py-2 text-sm ${
           notice.type === 'success'
-            ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'
+            ? 'border-badge-success/30 bg-emerald-500/10 text-badge-success'
             : 'border-red-500/30 bg-red-500/10 text-badge-danger'
         }`}
         >
@@ -523,7 +523,7 @@ export const PluginsSettings: React.FC = () => {
                       className="shrink-0"
                     >
                       {installedPlugin ? (
-                        <PackageCheck className="h-5 w-5 text-emerald-300" />
+                        <PackageCheck className="h-5 w-5 text-badge-success" />
                       ) : installStates[spec] === 'installing' ? (
                         <div className="flex flex-col gap-2 sm:flex-row">
                           <Button
@@ -740,13 +740,13 @@ export const PluginsSettings: React.FC = () => {
       >
         <div className="grid gap-4 lg:grid-cols-2">
           <div>
-            <h4 className="mb-2 text-xs font-medium text-emerald-300">{pluginsText.visibleList.userVisibleTitle}</h4>
+            <h4 className="mb-2 text-xs font-medium text-badge-success">{pluginsText.visibleList.userVisibleTitle}</h4>
             {visibility.userVisible.length === 0 ? (
               <EmptyState text={pluginsText.visibleList.userVisibleEmpty} />
             ) : (
               <div className="space-y-2">
                 {visibility.userVisible.map((item) => (
-                  <div key={item.spec} className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-3">
+                  <div key={item.spec} className="rounded-lg border border-badge-success/20 bg-emerald-500/5 p-3">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="text-sm font-medium text-zinc-100">{item.spec}</span>
                       {item.scope && <Pill tone="success">{item.scope}</Pill>}

@@ -22,11 +22,11 @@ interface SurfaceSessionHeaderProps {
 const STATE_TONE: Record<RendererSurfaceSessionProjectionV1['session']['state'], string> = {
   preparing: 'border-badge-info/20 bg-sky-400/10 text-badge-info',
   waiting_permission: 'border-amber-400/20 bg-amber-400/10 text-amber-200',
-  running: 'border-emerald-400/20 bg-emerald-400/10 text-emerald-200',
+  running: 'border-badge-success/20 bg-emerald-400/10 text-badge-success',
   waiting_human: 'border-violet-400/20 bg-violet-400/10 text-violet-200',
   paused: 'border-zinc-400/20 bg-zinc-400/10 text-zinc-300',
   stopping: 'border-amber-400/20 bg-amber-400/10 text-amber-200',
-  completed: 'border-emerald-400/20 bg-emerald-400/10 text-emerald-200',
+  completed: 'border-badge-success/20 bg-emerald-400/10 text-badge-success',
   failed: 'border-badge-danger/20 bg-red-400/10 text-badge-danger',
 };
 

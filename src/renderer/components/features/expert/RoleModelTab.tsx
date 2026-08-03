@@ -75,13 +75,13 @@ export const RoleModelTab: React.FC<RoleModelTabProps> = ({ equipment, busy, onS
                 data-testid={`role-model-tier-${key}`}
                 aria-pressed={selected}
                 onClick={() => void commit({ model: key, modelOverride: null })}
-                className={`flex w-full items-start gap-3 rounded-lg border p-3 text-left transition-colors ${selected ? 'border-emerald-600/70 bg-emerald-900/20' : 'border-zinc-700/70 bg-zinc-900/40 hover:border-zinc-500'} ${disabled ? 'opacity-60' : ''}`}
+                className={`flex w-full items-start gap-3 rounded-lg border p-3 text-left transition-colors ${selected ? 'border-badge-success/70 bg-emerald-900/20' : 'border-zinc-700/70 bg-zinc-900/40 hover:border-zinc-500'} ${disabled ? 'opacity-60' : ''}`}
               >
-                <div className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border ${selected ? 'border-emerald-500' : 'border-zinc-600'}`}>
+                <div className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border ${selected ? 'border-badge-success' : 'border-zinc-600'}`}>
                   {selected ? <div className="h-2 w-2 rounded-full bg-emerald-500" /> : null}
                 </div>
                 <div className="min-w-0">
-                  <div className={`text-sm ${selected ? 'text-emerald-300' : 'text-zinc-300'}`}>{text.tiers[key].label}</div>
+                  <div className={`text-sm ${selected ? 'text-badge-success' : 'text-zinc-300'}`}>{text.tiers[key].label}</div>
                   <div className="mt-0.5 text-xs text-zinc-500">{text.tiers[key].hint}</div>
                 </div>
               </button>
@@ -111,9 +111,9 @@ export const RoleModelTab: React.FC<RoleModelTabProps> = ({ equipment, busy, onS
                         data-testid={`role-model-option-${option.provider}-${option.model}`}
                         aria-pressed={selected}
                         onClick={() => void commit({ model: tier, modelOverride: selected ? null : { provider: option.provider, model: option.model } })}
-                        className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors ${selected ? 'bg-emerald-900/25 text-emerald-200' : 'text-zinc-300 hover:bg-zinc-800/60'} ${disabled ? 'opacity-60' : ''}`}
+                        className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors ${selected ? 'bg-emerald-900/25 text-badge-success' : 'text-zinc-300 hover:bg-zinc-800/60'} ${disabled ? 'opacity-60' : ''}`}
                       >
-                        <Check className={`h-3.5 w-3.5 shrink-0 ${selected ? 'text-emerald-400' : 'text-transparent'}`} />
+                        <Check className={`h-3.5 w-3.5 shrink-0 ${selected ? 'text-badge-success' : 'text-transparent'}`} />
                         <span className="truncate">{option.label}</span>
                       </button>
                     );

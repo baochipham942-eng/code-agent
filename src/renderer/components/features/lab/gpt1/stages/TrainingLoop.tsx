@@ -218,7 +218,7 @@ export const TrainingLoop: React.FC<Props> = ({ onComplete, onBack }) => {
               <ol className="space-y-2">
                 <li className="flex items-start gap-2">
                   <span className="text-2xl">📝</span>
-                  <span><span className="text-emerald-300 font-medium">{tl.practiceStep1Label}</span>{tl.practiceStep1Desc}</span>
+                  <span><span className="text-badge-success font-medium">{tl.practiceStep1Label}</span>{tl.practiceStep1Desc}</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-2xl">❌</span>
@@ -246,7 +246,7 @@ export const TrainingLoop: React.FC<Props> = ({ onComplete, onBack }) => {
               <div>
                 <div className="flex justify-between mb-1">
                   <label className="text-xs text-zinc-400">{tl.batchSizeLabel}</label>
-                  <span className="text-xs font-bold text-emerald-400">{tl.batchSizeValue.replace('{count}', String(config.batchSize))}</span>
+                  <span className="text-xs font-bold text-badge-success">{tl.batchSizeValue.replace('{count}', String(config.batchSize))}</span>
                 </div>
                 <input
                   type="range"
@@ -314,8 +314,8 @@ export const TrainingLoop: React.FC<Props> = ({ onComplete, onBack }) => {
                   <div className="text-2xl font-bold text-badge-danger">{tl.lossStartValue}</div>
                   <div className="text-xs text-zinc-500">{tl.lossStartLabel}</div>
                 </div>
-                <div className="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-center">
-                  <div className="text-2xl font-bold text-emerald-400">{tl.lossEndValue}</div>
+                <div className="p-3 rounded-lg bg-emerald-500/10 border border-badge-success/20 text-center">
+                  <div className="text-2xl font-bold text-badge-success">{tl.lossEndValue}</div>
                   <div className="text-xs text-zinc-500">{tl.lossEndLabel}</div>
                 </div>
               </div>
@@ -337,7 +337,7 @@ export const TrainingLoop: React.FC<Props> = ({ onComplete, onBack }) => {
               {!isTraining || isPaused ? (
                 <button
                   onClick={startTraining}
-                  className="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 text-sm font-medium hover:bg-emerald-500/30 transition-colors"
+                  className="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-500/20 border border-badge-success/30 text-badge-success text-sm font-medium hover:bg-emerald-500/30 transition-colors"
                 >
                   <Play className="w-4 h-4" />
                   {currentStep > 0 ? tl.resumeButton : tl.startButton}
@@ -391,7 +391,7 @@ export const TrainingLoop: React.FC<Props> = ({ onComplete, onBack }) => {
                 <div className="text-xs text-zinc-500">{tl.currentLossLabel}</div>
               </div>
               <div className="p-3 rounded-lg bg-zinc-900">
-                <div className="text-2xl font-bold text-emerald-400">
+                <div className="text-2xl font-bold text-badge-success">
                   {lossHistory.length > 1
                     ? ((1 - currentLoss / lossHistory[0]) * 100).toFixed(1)
                     : 0}%
@@ -427,7 +427,7 @@ export const TrainingLoop: React.FC<Props> = ({ onComplete, onBack }) => {
                   <div key={i} className="text-zinc-400 p-1.5 rounded bg-zinc-800">
                     {tl.logEpochPrefix}<span className="text-blue-400 font-bold">{log.epoch}</span>{tl.logEpochSuffix}
                     {tl.logStepPrefix}<span className="text-purple-400">{log.step}</span>{tl.logStepSuffix}
-                    {tl.logLossPrefix}<span className="text-emerald-400 font-bold">{log.loss.toFixed(4)}</span>
+                    {tl.logLossPrefix}<span className="text-badge-success font-bold">{log.loss.toFixed(4)}</span>
                   </div>
                 ))
               ) : (
@@ -448,7 +448,7 @@ export const TrainingLoop: React.FC<Props> = ({ onComplete, onBack }) => {
           {tl.terms.map((term) => (
             <div key={term.en} className="p-3 rounded-lg bg-zinc-800">
               <div className="flex items-center gap-2 mb-1">
-                <span className="text-sm font-bold text-emerald-400">{term.en}</span>
+                <span className="text-sm font-bold text-badge-success">{term.en}</span>
                 <span className="text-xs text-zinc-500">|</span>
                 <span className="text-sm text-zinc-400">{term.zh}</span>
               </div>

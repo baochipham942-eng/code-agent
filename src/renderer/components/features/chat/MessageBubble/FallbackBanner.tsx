@@ -37,7 +37,7 @@ function formatProviderIdentity(identity: ModelProviderIdentity | undefined): st
 const stepTone: Record<ModelFallbackTraceStep['status'], string> = {
   tried: 'border-zinc-700/70 bg-zinc-900/60 text-zinc-300',
   skipped: 'border-zinc-700/70 bg-zinc-950/50 text-zinc-500 line-through decoration-zinc-600',
-  selected: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200',
+  selected: 'border-badge-success/30 bg-emerald-500/10 text-badge-success',
   exhausted: 'border-red-500/30 bg-red-500/10 text-badge-danger',
 };
 

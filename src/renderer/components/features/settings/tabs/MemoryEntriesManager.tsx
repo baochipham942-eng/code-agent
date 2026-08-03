@@ -302,7 +302,7 @@ export const MemoryEntriesManager: React.FC<{ onChanged?: () => void | Promise<v
         {message && (
           <div className={`border-b px-3 py-2 text-xs ${
             message.type === 'success'
-              ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-300'
+              ? 'border-badge-success/20 bg-emerald-500/10 text-badge-success'
               : 'border-red-500/20 bg-red-500/10 text-badge-danger'
           }`}
           >
@@ -408,7 +408,7 @@ export const MemoryEntriesManager: React.FC<{ onChanged?: () => void | Promise<v
                   <div className="min-w-0">
                     <div className="flex items-center gap-2 text-sm font-medium text-zinc-200">
                       {selectedEntry.source.sourceOfTruth === 'light_file' ? (
-                        <FileText className="h-4 w-4 text-emerald-300" />
+                        <FileText className="h-4 w-4 text-badge-success" />
                       ) : (
                         <Database className="h-4 w-4 text-badge-info" />
                       )}
@@ -483,7 +483,7 @@ export const MemoryEntriesManager: React.FC<{ onChanged?: () => void | Promise<v
                     type="button"
                     onClick={() => saveDraft()}
                     disabled={busy !== null}
-                    className="inline-flex items-center gap-1.5 rounded border border-emerald-500/40 bg-emerald-500/10 px-3 py-1.5 text-xs text-emerald-300 hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+                    className="inline-flex items-center gap-1.5 rounded border border-badge-success/40 bg-emerald-500/10 px-3 py-1.5 text-xs text-badge-success hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     {busy === 'save' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
                     {memoryText.entries.save}

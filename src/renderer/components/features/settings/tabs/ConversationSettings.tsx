@@ -200,7 +200,7 @@ export const ConversationSettings: React.FC = () => {
             </div>
 
             <div className="flex flex-wrap items-center gap-2 text-[11px] text-zinc-500">
-              <span className="inline-flex items-center gap-1.5 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 text-emerald-300">
+              <span className="inline-flex items-center gap-1.5 rounded-md border border-badge-success/30 bg-emerald-500/10 px-2 py-1 text-badge-success">
                 <CheckCircle2 className="w-3.5 h-3.5" />
                 {conversationText.features.manifestPrefix}{featureLabel(compressionState.features.manifest, conversationText.featureStates)}
               </span>
@@ -293,7 +293,7 @@ export const ConversationSettings: React.FC = () => {
                     onClick={() => updateCompression({ auditEnabled: !compressionState.config.auditEnabled })}
                     className={`inline-flex items-center justify-center gap-1.5 rounded-lg border px-2 py-1 text-xs transition-colors ${
                       compressionState.config.auditEnabled
-                        ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+                        ? 'border-badge-success/30 bg-emerald-500/10 text-badge-success'
                         : 'border-white/[0.08] bg-white/[0.02] text-zinc-400'
                     }`}
                   >

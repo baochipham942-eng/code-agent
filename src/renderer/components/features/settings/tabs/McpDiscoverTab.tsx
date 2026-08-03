@@ -124,7 +124,7 @@ const McpServerCard: React.FC<McpServerCardProps> = ({
               </span>
             )}
             {entry.chinaDirect && (
-              <span className="shrink-0 rounded bg-emerald-500/15 px-1.5 py-0.5 text-[10px] text-emerald-400">
+              <span className="shrink-0 rounded bg-emerald-500/15 px-1.5 py-0.5 text-[10px] text-badge-success">
                 {labels.chinaDirect}
               </span>
             )}

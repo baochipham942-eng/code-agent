@@ -163,7 +163,7 @@ export const MethodStage: React.FC<MethodStageProps> = ({ onComplete, onBack }) 
     const colors: Record<string, { bg: string; border: string; text: string }> = {
       purple: { bg: 'bg-purple-500/20', border: 'border-purple-500/30', text: 'text-purple-400' },
       blue: { bg: 'bg-blue-500/20', border: 'border-blue-500/30', text: 'text-blue-400' },
-      emerald: { bg: 'bg-emerald-500/20', border: 'border-emerald-500/30', text: 'text-emerald-400' },
+      emerald: { bg: 'bg-emerald-500/20', border: 'border-badge-success/30', text: 'text-badge-success' },
     };
     return colors[color] || colors.blue;
   };
@@ -219,11 +219,11 @@ export const MethodStage: React.FC<MethodStageProps> = ({ onComplete, onBack }) 
 
                 <div className="space-y-2">
                   <div>
-                    <div className="text-xs text-emerald-400 mb-1">{m.prosLabel}</div>
+                    <div className="text-xs text-badge-success mb-1">{m.prosLabel}</div>
                     <ul className="space-y-0.5">
                       {method.pros.map((pro, idx) => (
                         <li key={idx} className="text-xs text-zinc-500 flex items-center gap-1">
-                          <span className="text-emerald-400">+</span> {pro}
+                          <span className="text-badge-success">+</span> {pro}
                         </li>
                       ))}
                     </ul>
@@ -397,7 +397,7 @@ export const MethodStage: React.FC<MethodStageProps> = ({ onComplete, onBack }) 
           {m.glossary.map((term) => (
             <div key={term.en} className="p-3 rounded-lg bg-zinc-800">
               <div className="flex items-center gap-2 mb-1">
-                <span className="text-sm font-bold text-emerald-400">{term.en}</span>
+                <span className="text-sm font-bold text-badge-success">{term.en}</span>
                 <span className="text-xs text-zinc-500">|</span>
                 <span className="text-sm text-zinc-400">{term.zh}</span>
               </div>

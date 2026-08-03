@@ -102,7 +102,7 @@ export const DesignCostHistoryView: React.FC<DesignCostHistoryViewProps> = ({
         {hasSteps && (
           <span className="text-[11px] text-zinc-500">
             {t.design.historyTotalSpend}{' '}
-            <span className="font-mono text-emerald-300">{totalSpend === 0 ? t.design.costFree : formatCny(totalSpend)}</span>
+            <span className="font-mono text-badge-success">{totalSpend === 0 ? t.design.costFree : formatCny(totalSpend)}</span>
           </span>
         )}
       </div>
@@ -205,7 +205,7 @@ export const DesignCostHistoryView: React.FC<DesignCostHistoryViewProps> = ({
                   <span className="shrink-0 rounded bg-white/[0.06] px-1 py-px text-[10px] text-zinc-400">
                     {opLabel}
                   </span>
-                  {cost && <span className="shrink-0 font-mono text-emerald-300/90">{cost}</span>}
+                  {cost && <span className="shrink-0 font-mono text-badge-success/90">{cost}</span>}
                   {isCurrent && (
                     <span className="shrink-0 text-[10px] text-fuchsia-300">{t.design.historyCurrent}</span>
                   )}
@@ -215,7 +215,7 @@ export const DesignCostHistoryView: React.FC<DesignCostHistoryViewProps> = ({
                       type="button"
                       onClick={saveRename}
                       title={t.design.historyRenameSave}
-                      className="shrink-0 text-emerald-300 hover:text-emerald-200"
+                      className="shrink-0 text-badge-success hover:text-badge-success"
                     >
                       <Check className="h-3 w-3" />
                     </button>

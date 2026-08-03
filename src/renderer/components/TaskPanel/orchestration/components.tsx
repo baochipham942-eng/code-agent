@@ -96,7 +96,7 @@ export const AgentLaneCard: React.FC<{
   const al = t.taskStatusPanels.agentLane;
   const statusTone =
     agent.status === 'completed'
-      ? 'border-emerald-500/20'
+      ? 'border-badge-success/20'
       : agent.status === 'failed'
       ? 'border-red-500/20'
       : agent.status === 'running'
@@ -114,7 +114,7 @@ export const AgentLaneCard: React.FC<{
           {agent.status === 'running' ? (
             <Loader2 className="w-4 h-4 text-primary-400 animate-spin" />
           ) : agent.status === 'completed' ? (
-            <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+            <CheckCircle2 className="w-4 h-4 text-badge-success" />
           ) : agent.status === 'failed' ? (
             <XCircle className="w-4 h-4 text-badge-danger" />
           ) : (
@@ -332,7 +332,7 @@ export const ApprovalCard: React.FC<{
     review.status === 'pending'
       ? 'bg-amber-500/15 text-amber-300'
       : review.status === 'approved'
-      ? 'bg-emerald-500/15 text-emerald-300'
+      ? 'bg-emerald-500/15 text-badge-success'
       : 'bg-red-500/15 text-badge-danger';
 
   const handleApprove = async () => {
@@ -406,7 +406,7 @@ export const ApprovalCard: React.FC<{
             <button
               onClick={handleApprove}
               disabled={submitting !== null}
-              className="rounded-md bg-emerald-500/15 px-2.5 py-1.5 text-xs text-emerald-300 transition-colors hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+              className="rounded-md bg-emerald-500/15 px-2.5 py-1.5 text-xs text-badge-success transition-colors hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {submitting === 'approve' ? ac.approving : ac.approve}
             </button>

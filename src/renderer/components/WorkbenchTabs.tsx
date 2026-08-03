@@ -70,7 +70,7 @@ const LAUNCHABLE_VIEWS: readonly LaunchableViewDefinition[] = [
   {
     id: 'browser',
     icon: Globe2,
-    iconClassName: 'text-emerald-400/80',
+    iconClassName: 'text-badge-success/80',
     keybindingActionId: 'browser.open',
   },
   {
@@ -255,7 +255,7 @@ export const WorkbenchTabs: React.FC<{ children?: React.ReactNode; focusable?: b
         label: t.workbenchTabs.browserLabel,
         title: t.workbenchTabs.browserTitle,
         icon: Globe2,
-        iconClassName: 'text-emerald-400/80',
+        iconClassName: 'text-badge-success/80',
         isDirty: false,
       };
     }
@@ -287,7 +287,7 @@ export const WorkbenchTabs: React.FC<{ children?: React.ReactNode; focusable?: b
       label: getFileName(path),
       title: path,
       icon: isLiveDev ? Globe2 : FileText,
-      iconClassName: isLiveDev ? 'text-emerald-400/80' : 'text-zinc-400',
+      iconClassName: isLiveDev ? 'text-badge-success/80' : 'text-zinc-400',
       isDirty: previewTab ? previewTab.content !== previewTab.savedContent : false,
     };
   });

@@ -23,7 +23,7 @@ const NO_PHASE = '__no_phase__';
 function StatusIcon({ status }: { status: ScriptRunAgentStatus }) {
   switch (status) {
     case 'running':
-      return <Loader2 size={12} className="text-emerald-400 animate-spin shrink-0" />;
+      return <Loader2 size={12} className="text-badge-success animate-spin shrink-0" />;
     case 'done':
       return <Check size={12} className="text-zinc-500 shrink-0" />;
     case 'error':
@@ -98,7 +98,7 @@ export function WorkflowInlineMonitor() {
           <span className="text-zinc-300">workflow</span>
           {snap.goal && <span className="text-zinc-500 truncate max-w-[40%]" title={snap.goal}>· {snap.goal}</span>}
           <div className="ml-auto flex items-center gap-2 text-zinc-500">
-            {snap.runningCount > 0 && <span className="text-emerald-400">{snap.runningCount} running</span>}
+            {snap.runningCount > 0 && <span className="text-badge-success">{snap.runningCount} running</span>}
             {snap.doneCount > 0 && <span>{snap.doneCount} done</span>}
             {snap.errorCount > 0 && <span className="text-badge-danger">{snap.errorCount} error</span>}
             {durationSec !== undefined && <span>{durationSec}s</span>}

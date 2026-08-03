@@ -18,7 +18,7 @@ const DISPLAY_PILL_TONE_CLASSES: Record<WorkbenchPillTone, string> = {
   agent: 'border-cyan-500/20 bg-cyan-500/10 text-cyan-300',
   skill: 'border-fuchsia-500/20 bg-fuchsia-500/10 text-fuchsia-200',
   connector: 'border-badge-info/20 bg-sky-500/10 text-badge-info',
-  mcp: 'border-emerald-500/20 bg-emerald-500/10 text-emerald-200',
+  mcp: 'border-badge-success/20 bg-emerald-500/10 text-badge-success',
   info: 'border-amber-500/20 bg-amber-500/10 text-amber-200',
 };
 
@@ -27,7 +27,7 @@ const SELECTED_PILL_TONE_CLASSES: Record<WorkbenchPillTone, string> = {
   agent: 'border-cyan-500/40 bg-cyan-500/15 text-cyan-300',
   skill: 'border-fuchsia-500/40 bg-fuchsia-500/15 text-fuchsia-200',
   connector: 'border-badge-info/40 bg-sky-500/15 text-badge-info',
-  mcp: 'border-emerald-500/40 bg-emerald-500/15 text-emerald-200',
+  mcp: 'border-badge-success/40 bg-emerald-500/15 text-badge-success',
   info: 'border-amber-500/40 bg-amber-500/15 text-amber-200',
 };
 
@@ -252,7 +252,7 @@ export function WorkbenchReferenceRow({
     >
       {reference.kind === 'skill' ? (
         <Sparkles className={`w-3 h-3 flex-shrink-0 ${
-          reference.mounted ? 'text-purple-400/70' : 'text-emerald-400/70'
+          reference.mounted ? 'text-purple-400/70' : 'text-badge-success/70'
         }`} />
       ) : (
         <Plug className={`w-3 h-3 flex-shrink-0 ${

@@ -314,7 +314,7 @@ export const MCPSettings: React.FC = () => {
   const getStatusBadgeClass = (status: 'connected' | 'connecting' | 'disconnected' | 'error' | 'lazy' | 'not_applicable') => {
     switch (status) {
       case 'connected':
-        return 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300';
+        return 'border-badge-success/30 bg-emerald-500/10 text-badge-success';
       case 'connecting':
         return 'border-yellow-500/30 bg-yellow-500/10 text-yellow-300';
       case 'error':
@@ -594,7 +594,7 @@ export const MCPSettings: React.FC = () => {
                           {isOAuthServer && (
                             <div className="mt-1 text-[11px] leading-snug text-zinc-400">
                               {mcpText.management.oauthStatusLabel}
-                              <span className={server.hasOAuthTokens ? 'text-emerald-300' : 'text-amber-300'}>
+                              <span className={server.hasOAuthTokens ? 'text-badge-success' : 'text-amber-300'}>
                                 {server.hasOAuthTokens
                                   ? mcpText.management.oauthAuthorized
                                   : mcpText.management.oauthNotAuthorized}

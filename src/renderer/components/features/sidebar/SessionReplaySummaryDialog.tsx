@@ -114,7 +114,7 @@ function formatToolDistribution(replay: StructuredReplay, labels: SessionReplayL
 function getTrajectoryTierToneClassName(tier: AgentTrajectoryQualityTier): string {
   switch (tier) {
     case 'G2':
-      return 'border-emerald-500/25 bg-emerald-500/10 text-emerald-200';
+      return 'border-badge-success/25 bg-emerald-500/10 text-badge-success';
     case 'G1':
       return 'border-amber-500/25 bg-amber-500/10 text-amber-200';
     default:
@@ -125,7 +125,7 @@ function getTrajectoryTierToneClassName(tier: AgentTrajectoryQualityTier): strin
 function getEvidenceControlToneClassName(trustLevel: EvidenceControlSummaryProjection['trustLevel']): string {
   switch (trustLevel) {
     case 'strong':
-      return 'border-emerald-500/25 bg-emerald-500/10 text-emerald-300';
+      return 'border-badge-success/25 bg-emerald-500/10 text-badge-success';
     case 'partial':
       return 'border-amber-500/25 bg-amber-500/10 text-amber-300';
     default:

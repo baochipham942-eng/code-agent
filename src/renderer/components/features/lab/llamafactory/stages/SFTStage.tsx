@@ -256,7 +256,7 @@ export const SFTStage: React.FC<SFTStageProps> = ({ onComplete, onBack }) => {
                   <li key={check.name} className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       {check.status === 'pass' ? (
-                        <CheckCircle className="w-4 h-4 text-emerald-400" />
+                        <CheckCircle className="w-4 h-4 text-badge-success" />
                       ) : (
                         <AlertTriangle className="w-4 h-4 text-amber-400" />
                       )}
@@ -359,7 +359,7 @@ export const SFTStage: React.FC<SFTStageProps> = ({ onComplete, onBack }) => {
             </div>
             <div className="text-center">
               <div className="text-xs text-zinc-500 mb-1">{s.currentLossLabel}</div>
-              <div className={`text-xl font-bold ${scenario === 'overfit' && trainingProgress > 30 ? 'text-amber-400' : 'text-emerald-400'}`}>
+              <div className={`text-xl font-bold ${scenario === 'overfit' && trainingProgress > 30 ? 'text-amber-400' : 'text-badge-success'}`}>
                 {lossHistory[lossHistory.length - 1]?.toFixed(3) || '2.500'}
               </div>
             </div>
@@ -371,7 +371,7 @@ export const SFTStage: React.FC<SFTStageProps> = ({ onComplete, onBack }) => {
               <div className="text-xs text-zinc-500 mb-1">{s.statusLabel}</div>
               <div className={`text-lg font-medium ${
                 isTraining ? 'text-amber-400' :
-                trainingProgress >= 100 ? 'text-emerald-400' : 'text-zinc-400'
+                trainingProgress >= 100 ? 'text-badge-success' : 'text-zinc-400'
               }`}>
                 {isTraining ? s.statusTraining : trainingProgress >= 100 ? s.statusDone : s.statusReady}
               </div>
@@ -382,7 +382,7 @@ export const SFTStage: React.FC<SFTStageProps> = ({ onComplete, onBack }) => {
           <div className="p-3 rounded-lg bg-zinc-950">
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs text-zinc-500">{s.lossCurveLabel}</span>
-              <span className={`text-xs ${scenario === 'overfit' ? 'text-amber-400' : 'text-emerald-400'}`}>
+              <span className={`text-xs ${scenario === 'overfit' ? 'text-amber-400' : 'text-badge-success'}`}>
                 {scenario === 'overfit' ? s.overfitDetected : s.normalConverging}
               </span>
             </div>
@@ -438,7 +438,7 @@ export const SFTStage: React.FC<SFTStageProps> = ({ onComplete, onBack }) => {
           {s.glossary.map((term) => (
             <div key={term.en} className="p-3 rounded-lg bg-zinc-800">
               <div className="flex items-center gap-2 mb-1">
-                <span className="text-sm font-bold text-emerald-400">{term.en}</span>
+                <span className="text-sm font-bold text-badge-success">{term.en}</span>
                 <span className="text-xs text-zinc-500">|</span>
                 <span className="text-sm text-zinc-400">{term.zh}</span>
               </div>

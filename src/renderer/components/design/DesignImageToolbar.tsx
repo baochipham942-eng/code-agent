@@ -296,7 +296,7 @@ export function DesignImageToolbar(props: DesignImageToolbarProps): React.ReactE
       </label>
       <div className="mt-2 text-[11px] text-zinc-500">
         {t.design.costEstimateLabel}{' '}
-        <span className="font-mono text-emerald-300">{formatCny(estimateImageCostCny(DESIGN_IMAGE_MODELS.edit))}</span>
+        <span className="font-mono text-badge-success">{formatCny(estimateImageCostCny(DESIGN_IMAGE_MODELS.edit))}</span>
       </div>
       {/* ds-allow:start 标注重绘 CTA 用设计区品牌色 bg-fuchsia-500/90（Button primary 蓝渐变会丢视觉语言） */}
       <button
@@ -399,7 +399,7 @@ export function DesignImageToolbar(props: DesignImageToolbarProps): React.ReactE
               ) : plan.scales === null ? (
                 <span className="text-[10px] leading-snug text-zinc-500">{t.design.resizeAlreadyRatio}</span>
               ) : (
-                <span className="font-mono text-[10px] leading-snug text-emerald-300/80">
+                <span className="font-mono text-[10px] leading-snug text-badge-success/80">
                   {resizeCostHint()}
                 </span>
               )}

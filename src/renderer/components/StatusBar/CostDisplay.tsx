@@ -39,7 +39,7 @@ export function budgetCostColorClass(alertLevel?: BudgetAlertTone): string {
     case 'warning':
       return 'text-amber-400';
     default:
-      return 'text-emerald-400';
+      return 'text-badge-success';
   }
 }
 

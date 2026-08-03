@@ -254,7 +254,7 @@ export function InAppValidationWorkspace(): React.ReactElement {
           <span
             className={`rounded border px-2 py-0.5 text-xs ${
               allPassed
-                ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'
+                ? 'border-badge-success/30 bg-emerald-500/10 text-badge-success'
                 : 'border-rose-500/30 bg-rose-500/10 text-rose-200'
             }`}
           >
@@ -361,10 +361,10 @@ export function InAppValidationWorkspace(): React.ReactElement {
                 className="sticky top-0 flex items-center gap-2 border-b border-slate-800 bg-slate-950 px-3 py-1.5"
                 data-testid="in-app-validation-result-summary"
               >
-                <span className={allPassed ? 'text-emerald-300' : 'text-zinc-300'}>
+                <span className={allPassed ? 'text-badge-success' : 'text-zinc-300'}>
                   {v.passedBadge.replace('{passed}', String(passedCount)).replace('{total}', String(totalCount))}
                 </span>
-                <span className={failedCount > 0 ? 'text-rose-300' : 'text-emerald-300'}>
+                <span className={failedCount > 0 ? 'text-rose-300' : 'text-badge-success'}>
                   {failedCount > 0 ? v.failedSummary.replace('{n}', String(failedCount)) : v.allPassedSummary}
                 </span>
               </div>
@@ -388,13 +388,13 @@ export function InAppValidationWorkspace(): React.ReactElement {
                   key={resultKeysRef.current[index] ?? index}
                   className={`mb-2 rounded border p-2 ${
                     result.passed
-                      ? 'border-emerald-800 bg-emerald-950/40'
+                      ? 'border-badge-success bg-emerald-950/40'
                       : 'border-rose-800 bg-rose-950/40'
                   }`}
                 >
                   <div className="flex items-center gap-1">
                     {result.passed ? (
-                      <CheckCircle2 className="h-3 w-3 text-emerald-400" />
+                      <CheckCircle2 className="h-3 w-3 text-badge-success" />
                     ) : (
                       <AlertTriangle className="h-3 w-3 text-rose-400" />
                     )}

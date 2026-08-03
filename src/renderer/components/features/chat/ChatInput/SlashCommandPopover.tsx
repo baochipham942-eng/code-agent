@@ -918,7 +918,7 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
                         {cmd.slashText}
                       </span>
                       {skillStatus ? (
-                        <span className="shrink-0 rounded bg-emerald-500/10 px-1.5 py-0.5 text-[10px] text-emerald-300">
+                        <span className="shrink-0 rounded bg-emerald-500/10 px-1.5 py-0.5 text-[10px] text-badge-success">
                           {skillStatus}
                         </span>
                       ) : null}

@@ -27,7 +27,7 @@ export interface AppshotChipProps {
 function textSourceLabel(t: Translations, source: AppshotTextSource): { label: string; className: string } {
   switch (source) {
     case 'ax':
-      return { label: t.appshotChip.textSourceAx, className: 'text-emerald-400' };
+      return { label: t.appshotChip.textSourceAx, className: 'text-badge-success' };
     case 'ocr':
       return { label: t.appshotChip.textSourceOcr, className: 'text-amber-400' };
     default:

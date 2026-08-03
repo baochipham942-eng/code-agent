@@ -376,7 +376,7 @@ export function getToolStatusClass(toolCall: ToolCall): string {
   }
 
   if (toolCall.result.success) {
-    return 'text-emerald-400'; // 成功
+    return 'text-badge-success'; // 成功
   }
 
   return 'text-rose-400'; // 失败

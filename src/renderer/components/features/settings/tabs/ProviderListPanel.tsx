@@ -56,7 +56,7 @@ const ProviderMark: React.FC<{ row: ProviderManagementRow; size: 'sm' | 'md' }> 
 };
 
 const KEYLESS_READINESS_TONE: Record<ReturnType<typeof describeKeylessReadiness>['state'], string> = {
-  running: 'text-emerald-300',
+  running: 'text-badge-success',
   unavailable: 'text-amber-300',
   checking: 'text-zinc-500',
 };
@@ -70,7 +70,7 @@ const ConfiguredRowStatus: React.FC<{
   if (!row.keyless) {
     return (
       <>
-        <span className="text-emerald-300">{listText.keyStatus}</span> · {row.enabledModelCount}/{row.modelCount} {listText.modelUnit}
+        <span className="text-badge-success">{listText.keyStatus}</span> · {row.enabledModelCount}/{row.modelCount} {listText.modelUnit}
       </>
     );
   }

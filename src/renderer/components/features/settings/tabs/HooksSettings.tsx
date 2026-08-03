@@ -38,7 +38,7 @@ async function invokeHook<T>(action: string, payload?: unknown): Promise<T> {
 }
 
 const HOOK_TYPE_BADGE: Record<HookListItem['type'], { color: string }> = {
-  command: { color: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30' },
+  command: { color: 'bg-emerald-500/15 text-badge-success border-badge-success/30' },
   prompt: { color: 'bg-violet-500/15 text-violet-300 border-violet-500/30' },
   agent: { color: 'bg-blue-500/15 text-blue-300 border-blue-500/30' },
   http: { color: 'bg-amber-500/15 text-amber-300 border-amber-500/30' },

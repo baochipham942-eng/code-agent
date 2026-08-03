@@ -83,7 +83,7 @@ export const ModelArchitecture: React.FC<Props> = ({ onComplete, onBack }) => {
                 onClick={() => setSelectedLayer('embedding')}
                 className={`w-full p-3 rounded-lg border transition-all ${
                   selectedLayer === 'embedding'
-                    ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-400'
+                    ? 'bg-emerald-500/20 border-badge-success/50 text-badge-success'
                     : 'bg-zinc-800 border-zinc-700 text-zinc-400 hover:border-zinc-600'
                 }`}
               >
@@ -184,7 +184,7 @@ export const ModelArchitecture: React.FC<Props> = ({ onComplete, onBack }) => {
           {selectedLayer && (
             <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-700 animate-fadeIn">
               <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
-                <Info className="w-4 h-4 text-emerald-400" />
+                <Info className="w-4 h-4 text-badge-success" />
                 {layerDetails[selectedLayer].title}
               </h3>
               <p className="text-sm text-zinc-400 mb-4 leading-relaxed">
@@ -197,7 +197,7 @@ export const ModelArchitecture: React.FC<Props> = ({ onComplete, onBack }) => {
               </div>
               <div className="p-3 rounded-lg bg-zinc-800">
                 <div className="text-xs text-zinc-500 mb-1">{ma.simpleLabel}</div>
-                <div className="text-sm text-emerald-400">
+                <div className="text-sm text-badge-success">
                   {layerDetails[selectedLayer].simple}
                 </div>
               </div>
@@ -212,7 +212,7 @@ export const ModelArchitecture: React.FC<Props> = ({ onComplete, onBack }) => {
             </h3>
             <div className="grid grid-cols-2 gap-3">
               {[
-                { label: ma.configLabels.vocabSize, value: modelConfig.vocabSize, color: 'text-emerald-400' },
+                { label: ma.configLabels.vocabSize, value: modelConfig.vocabSize, color: 'text-badge-success' },
                 { label: ma.configLabels.blockSize, value: modelConfig.blockSize, color: 'text-blue-400' },
                 { label: ma.configLabels.nLayer, value: modelConfig.nLayer, color: 'text-purple-400' },
                 { label: ma.configLabels.nHead, value: modelConfig.nHead, color: 'text-amber-400' },
@@ -231,14 +231,14 @@ export const ModelArchitecture: React.FC<Props> = ({ onComplete, onBack }) => {
           {/* 工作流程 */}
           <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-700">
             <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
-              <span className="text-emerald-400">🔄</span>
+              <span className="text-badge-success">🔄</span>
               {ma.workflowTitle}
             </h3>
             <div className="space-y-3">
-              <div className="flex items-center gap-3 p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
+              <div className="flex items-center gap-3 p-3 rounded-lg bg-emerald-500/10 border border-badge-success/20">
                 <span className="text-2xl">📝</span>
                 <div>
-                  <div className="text-sm text-emerald-300 font-medium">{ma.workflowStep1Label}</div>
+                  <div className="text-sm text-badge-success font-medium">{ma.workflowStep1Label}</div>
                   <div className="text-xs text-zinc-400">{ma.workflowStep1Desc}</div>
                 </div>
               </div>
@@ -278,7 +278,7 @@ export const ModelArchitecture: React.FC<Props> = ({ onComplete, onBack }) => {
           {ma.terms.map((term) => (
             <div key={term.en} className="p-3 rounded-lg bg-zinc-800">
               <div className="flex items-center gap-2 mb-1">
-                <span className="text-sm font-bold text-emerald-400">{term.en}</span>
+                <span className="text-sm font-bold text-badge-success">{term.en}</span>
                 <span className="text-xs text-zinc-500">|</span>
                 <span className="text-sm text-zinc-400">{term.zh}</span>
               </div>

@@ -202,7 +202,7 @@ const EFFORT_OPTION_CONFIG: Record<EffortLevel, EffortOption> = {
     value: 'ultra_code',
     label: 'Ultra Code',
     shortLabel: 'Ultra',
-    color: 'text-emerald-300',
+    color: 'text-badge-success',
     tint: 'bg-emerald-500/15',
   },
 };
@@ -238,7 +238,7 @@ const PROVIDER_LOGO_BADGE_CLASSNAME = 'bg-zinc-100 text-zinc-950 border border-z
 export const CAPABILITY_CONFIG: Record<string, { icon: React.ReactNode; color: string }> = {
   code: {
     icon: <Code2 className="w-2.5 h-2.5" />,
-    color: 'bg-emerald-500/20 text-emerald-300',
+    color: 'bg-emerald-500/20 text-badge-success',
   },
   vision: {
     icon: <Eye className="w-2.5 h-2.5" />,
@@ -310,7 +310,7 @@ const PROVIDER_HEALTH_LABEL: Record<ProviderAvailabilityState, string> = {
 };
 
 const PROVIDER_HEALTH_BADGE_CLASS: Record<ProviderAvailabilityState, string> = {
-  healthy: 'border-emerald-500/20 bg-emerald-500/10 text-emerald-300',
+  healthy: 'border-badge-success/20 bg-emerald-500/10 text-badge-success',
   recovering: 'border-badge-info/20 bg-sky-500/10 text-badge-info',
   unknown: 'border-zinc-700 bg-zinc-900 text-zinc-500',
   degraded: 'border-amber-500/20 bg-amber-500/10 text-amber-300',
@@ -332,7 +332,7 @@ const PROVIDER_BILLING_DETAIL: Record<BillingMode, string> = {
 };
 
 const PROVIDER_BILLING_BADGE_CLASS: Record<BillingMode, string> = {
-  free: 'border-emerald-500/20 bg-emerald-500/10 text-emerald-300',
+  free: 'border-badge-success/20 bg-emerald-500/10 text-badge-success',
   plan: 'border-badge-info/20 bg-sky-500/10 text-badge-info',
   payg: 'border-amber-500/20 bg-amber-500/10 text-amber-300',
   unknown: 'border-zinc-700 bg-zinc-900 text-zinc-500',
@@ -423,7 +423,7 @@ export function ProviderBillingBadge({ summary }: { summary: ProviderBillingSumm
 const ENGINE_BILLING_BADGE_CLASS: Record<EngineBillingMode, string> = {
   subscription: 'border-badge-info/20 bg-sky-500/10 text-badge-info',
   api_key_payg: 'border-amber-500/20 bg-amber-500/10 text-amber-300',
-  free_tier: 'border-emerald-500/20 bg-emerald-500/10 text-emerald-300',
+  free_tier: 'border-badge-success/20 bg-emerald-500/10 text-badge-success',
   unknown: 'border-zinc-700 bg-zinc-900 text-zinc-500',
 };
 
@@ -486,7 +486,7 @@ export function getEngineModelCompatReasonText(
 }
 
 const ENGINE_RELIABILITY_TONE_CLASS: Record<string, string> = {
-  ready: 'border-emerald-500/20 bg-emerald-500/[0.08] text-emerald-200',
+  ready: 'border-badge-success/20 bg-emerald-500/[0.08] text-badge-success',
   warning: 'border-amber-500/20 bg-amber-500/[0.08] text-amber-200',
   error: 'border-red-500/20 bg-red-500/[0.08] text-badge-danger',
   info: 'border-badge-info/20 bg-sky-500/[0.08] text-badge-info',

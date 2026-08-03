@@ -111,7 +111,7 @@ export const CronFeaturedTemplates: React.FC = () => {
           const isPending = pendingId === template.id;
           const connectorStatuses = getTemplateConnectorStatuses(template, connectedConnectorIds);
           const cardStateClassName = isPending || isEnabled
-            ? 'border-emerald-500/30 bg-emerald-500/5'
+            ? 'border-badge-success/30 bg-emerald-500/5'
             : 'border-zinc-700/80 bg-zinc-900/80 hover:border-amber-400/50 hover:bg-zinc-900';
           const TemplateIcon = TEMPLATE_ICONS[template.id] ?? Sparkles;
           const enableLabel = isEnabled
@@ -167,7 +167,7 @@ export const CronFeaturedTemplates: React.FC = () => {
                         className={`h-1.5 w-1.5 rounded-full ${status.connected ? 'bg-emerald-400' : 'bg-zinc-600'}`}
                         aria-hidden="true"
                       />
-                      <span className={status.connected ? 'text-emerald-300' : 'text-zinc-500'}>
+                      <span className={status.connected ? 'text-badge-success' : 'text-zinc-500'}>
                         {status.label}{status.connected ? `·${cc.connectorConnected}` : `·${cc.connectorNotConnected}`}
                       </span>
                     </span>

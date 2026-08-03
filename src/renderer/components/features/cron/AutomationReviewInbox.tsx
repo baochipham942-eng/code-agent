@@ -121,7 +121,7 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
           className="flex items-center gap-2 rounded-xl border border-zinc-800 bg-zinc-950/40 px-4 py-2.5 text-xs text-zinc-500"
           data-testid="automation-review-all-clear"
         >
-          <CircleCheck className="h-3.5 w-3.5 text-emerald-400" />
+          <CircleCheck className="h-3.5 w-3.5 text-badge-success" />
           {cc.inboxAllClear}
         </div>
       ) : (
@@ -172,7 +172,7 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                           <button /* ds-allow:button: 收件箱行内超小文本按钮（py-1 text-xs） */
                             onClick={() => handleResolveParked(item, 'allow')}
                             disabled={busyId === item.id}
-                            className="inline-flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-xs text-emerald-400 transition-colors hover:bg-emerald-500/10 hover:text-emerald-300 disabled:opacity-50"
+                            className="inline-flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-xs text-badge-success transition-colors hover:bg-emerald-500/10 hover:text-badge-success disabled:opacity-50"
                             data-testid="parked-approve"
                           >
                             <Check className="h-3.5 w-3.5" />

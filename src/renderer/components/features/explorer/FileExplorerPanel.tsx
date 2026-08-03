@@ -68,7 +68,7 @@ function getFileIcon(name: string, isDir: boolean) {
   if (['md', 'txt', 'json', 'yaml', 'yml', 'toml', 'xml', 'csv'].includes(ext))
     return <FileText className={`${iconClass} text-zinc-400`} />;
   if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'ico'].includes(ext))
-    return <Image className={`${iconClass} text-emerald-400`} />;
+    return <Image className={`${iconClass} text-badge-success`} />;
   if (['xlsx', 'xls', 'numbers'].includes(ext))
     return <FileSpreadsheet className={`${iconClass} text-green-400`} />;
   if (['pptx', 'ppt', 'key'].includes(ext))

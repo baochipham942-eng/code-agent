@@ -1104,7 +1104,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
               <button
                 type="button"
                 onClick={() => { setValue(''); void startCreateRoleChat(); }}
-                className="flex w-full items-center gap-1.5 border-t border-zinc-800 px-3 py-2 text-left text-xs text-emerald-300 transition-colors hover:bg-emerald-500/10"
+                className="flex w-full items-center gap-1.5 border-t border-zinc-800 px-3 py-2 text-left text-xs text-badge-success transition-colors hover:bg-emerald-500/10"
               >
                 <UserPlus className="h-3.5 w-3.5 shrink-0" />
                 {t.agentCommand.createRoleEntry}

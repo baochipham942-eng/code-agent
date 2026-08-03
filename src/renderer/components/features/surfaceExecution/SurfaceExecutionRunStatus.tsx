@@ -13,11 +13,11 @@ type SurfaceRunState = RendererSurfaceSessionProjectionV1['session']['state'];
 const STATE_TONE: Record<SurfaceRunState, string> = {
   preparing: 'text-badge-info',
   waiting_permission: 'text-amber-300',
-  running: 'text-emerald-300',
+  running: 'text-badge-success',
   waiting_human: 'text-violet-300',
   paused: 'text-amber-300',
   stopping: 'text-amber-300',
-  completed: 'text-emerald-300',
+  completed: 'text-badge-success',
   failed: 'text-badge-danger',
 };
 

@@ -80,7 +80,7 @@ function getInviteStatus(
   if (invite.remainingUses <= 0) {
     return { label: labels.exhausted, className: 'border-amber-500/30 bg-amber-500/10 text-amber-300' };
   }
-  return { label: labels.usable, className: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300' };
+  return { label: labels.usable, className: 'border-badge-success/30 bg-emerald-500/10 text-badge-success' };
 }
 
 function normalizeCodeInput(value: string): string {
@@ -253,7 +253,7 @@ export const InviteCodesSettings: React.FC = () => {
             <div className="mt-1 text-xs text-zinc-500">{inviteText.summary.invites}</div>
           </div>
           <div className="rounded-lg border border-zinc-800 bg-zinc-900/60 px-4 py-3">
-            <div className="text-xl font-semibold text-emerald-300">{summary.usable}</div>
+            <div className="text-xl font-semibold text-badge-success">{summary.usable}</div>
             <div className="mt-1 text-xs text-zinc-500">{inviteText.statusLabels.usable}</div>
           </div>
           <div className="rounded-lg border border-zinc-800 bg-zinc-900/60 px-4 py-3">

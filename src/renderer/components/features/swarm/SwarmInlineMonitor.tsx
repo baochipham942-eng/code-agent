@@ -22,7 +22,7 @@ import { useDurableSwarmRunDetail } from '../../../hooks/useDurableSwarmRunDetai
 import { swarmRunAgentRecordToState } from '../expert/SessionMemberBar';
 
 const AGENT_COLORS = [
-  'text-emerald-400',
+  'text-badge-success',
   'text-purple-400',
   'text-cyan-400',
   'text-amber-400',
@@ -48,7 +48,7 @@ const STATUS_TEXT: Record<AgentStatus, string> = {
 const STATUS_COLOR: Record<AgentStatus, string> = {
   pending: 'text-zinc-500',
   ready: 'text-amber-400',
-  running: 'text-emerald-400',
+  running: 'text-badge-success',
   completed: 'text-zinc-500',
   failed: 'text-badge-danger',
   cancelled: 'text-zinc-500',

@@ -152,20 +152,20 @@ export const AlignmentComparison: React.FC<AlignmentComparisonProps> = ({ onBack
         </div>
 
         {/* RLHF Model */}
-        <div className="bg-emerald-500/5 rounded-lg border border-emerald-500/20 p-4">
+        <div className="bg-emerald-500/5 rounded-lg border border-badge-success/20 p-4">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
               <div className="text-lg">✨</div>
-              <span className="text-sm font-medium text-emerald-400">{s.stageCards.rlhf.label}</span>
+              <span className="text-sm font-medium text-badge-success">{s.stageCards.rlhf.label}</span>
             </div>
-            <span className="text-xs px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400">{s.stageCards.rlhf.badge}</span>
+            <span className="text-xs px-2 py-0.5 rounded bg-emerald-500/20 text-badge-success">{s.stageCards.rlhf.badge}</span>
           </div>
           <div className="bg-zinc-950/50 p-3 rounded-lg mb-3 min-h-[120px]">
-            <p className="text-sm text-emerald-300/80 whitespace-pre-wrap">{example.responses.rlhf}</p>
+            <p className="text-sm text-badge-success/80 whitespace-pre-wrap">{example.responses.rlhf}</p>
           </div>
-          <div className="flex items-center gap-2 p-2 rounded bg-emerald-500/10 border border-emerald-500/20">
-            <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
-            <span className="text-xs text-emerald-400">{example.comments.rlhf}</span>
+          <div className="flex items-center gap-2 p-2 rounded bg-emerald-500/10 border border-badge-success/20">
+            <CheckCircle2 className="w-4 h-4 text-badge-success flex-shrink-0" />
+            <span className="text-xs text-badge-success">{example.comments.rlhf}</span>
           </div>
         </div>
       </div>
@@ -199,10 +199,10 @@ export const AlignmentComparison: React.FC<AlignmentComparisonProps> = ({ onBack
           </div>
           <ArrowRight className="w-6 h-6 text-zinc-600 flex-shrink-0" />
           <div className="text-center flex-1 max-w-[140px]">
-            <div className="w-16 h-16 mx-auto rounded-full bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center mb-2">
+            <div className="w-16 h-16 mx-auto rounded-full bg-emerald-500/10 border border-badge-success/30 flex items-center justify-center mb-2">
               <span className="text-2xl">✨</span>
             </div>
-            <div className="text-sm text-emerald-400 font-medium">{s.evolutionSteps.practice.label}</div>
+            <div className="text-sm text-badge-success font-medium">{s.evolutionSteps.practice.label}</div>
             <div className="text-xs text-zinc-600">{s.evolutionSteps.practice.desc}</div>
           </div>
         </div>
@@ -230,7 +230,7 @@ export const AlignmentComparison: React.FC<AlignmentComparisonProps> = ({ onBack
             <Sparkles className="w-4 h-4 text-pink-400" />
             <p className="text-sm text-zinc-400">
               <strong className="text-pink-400">{s.alignmentWord}</strong>{s.finalText1}
-              <strong className="text-emerald-400">{s.finalHighlight}</strong>{s.finalText2}
+              <strong className="text-badge-success">{s.finalHighlight}</strong>{s.finalText2}
             </p>
           </div>
         </div>
@@ -246,7 +246,7 @@ export const AlignmentComparison: React.FC<AlignmentComparisonProps> = ({ onBack
           {s.glossaryTerms.map((term) => (
             <div key={term.en} className="p-3 rounded-lg bg-zinc-800">
               <div className="flex items-center gap-2 mb-1">
-                <span className="text-sm font-bold text-emerald-400">{term.en}</span>
+                <span className="text-sm font-bold text-badge-success">{term.en}</span>
                 <span className="text-xs text-zinc-500">|</span>
                 <span className="text-sm text-zinc-400">{term.meaning}</span>
               </div>

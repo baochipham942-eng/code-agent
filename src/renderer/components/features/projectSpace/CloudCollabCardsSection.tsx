@@ -174,7 +174,7 @@ export const CloudCollabCardsSection: React.FC<CloudCollabCardsSectionProps> = (
         <div
           className={`mt-2 rounded border px-2 py-1 text-[11px] leading-5 ${
             resyncFeedback.kind === 'success'
-              ? 'border-emerald-500/25 bg-emerald-500/10 text-emerald-100'
+              ? 'border-badge-success/25 bg-emerald-500/10 text-badge-success'
               : 'border-rose-500/25 bg-rose-500/10 text-rose-100'
           }`}
           data-testid={`cloud-collab-resync-${resyncFeedback.kind}`}

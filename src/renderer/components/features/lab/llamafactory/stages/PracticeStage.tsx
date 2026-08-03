@@ -141,7 +141,7 @@ export const PracticeStage: React.FC<PracticeStageProps> = ({ onBack }) => {
                   let bgClass = 'bg-zinc-800 border-zinc-800 hover:border-zinc-600';
                   if (showResult) {
                     if (isCorrect) {
-                      bgClass = 'bg-emerald-500/20 border-emerald-500/30';
+                      bgClass = 'bg-emerald-500/20 border-badge-success/30';
                     } else if (isSelected && !isCorrect) {
                       bgClass = 'bg-red-500/20 border-red-500/30';
                     }
@@ -159,7 +159,7 @@ export const PracticeStage: React.FC<PracticeStageProps> = ({ onBack }) => {
                       <div className="flex items-center justify-between">
                         <span className="text-sm text-zinc-400">{option.label}</span>
                         {showResult && isCorrect && (
-                          <CheckCircle className="w-4 h-4 text-emerald-400" />
+                          <CheckCircle className="w-4 h-4 text-badge-success" />
                         )}
                       </div>
                       {showResult && (
@@ -225,7 +225,7 @@ export const PracticeStage: React.FC<PracticeStageProps> = ({ onBack }) => {
               className={`
                 px-4 py-2 rounded-lg text-sm transition-all
                 ${showMergeAnimation
-                  ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                  ? 'bg-emerald-500/20 text-badge-success border border-badge-success/30'
                   : 'bg-orange-500/20 text-orange-400 border border-orange-500/30 hover:bg-orange-500/30'
                 }
               `}
@@ -256,17 +256,17 @@ export const PracticeStage: React.FC<PracticeStageProps> = ({ onBack }) => {
               <div className="text-xs text-zinc-500">{p.mergeLoraSize}</div>
             </div>
 
-            <ArrowRight className={`w-6 h-6 transition-all duration-500 ${showMergeAnimation ? 'text-emerald-400' : 'text-zinc-600'}`} />
+            <ArrowRight className={`w-6 h-6 transition-all duration-500 ${showMergeAnimation ? 'text-badge-success' : 'text-zinc-600'}`} />
 
             <div className={`
               p-4 rounded-lg border text-center transition-all duration-500
               ${showMergeAnimation
-                ? 'bg-emerald-500/10 border-emerald-500/30 scale-110'
+                ? 'bg-emerald-500/10 border-badge-success/30 scale-110'
                 : 'bg-zinc-800 border-zinc-800'
               }
             `}>
               <div className="text-2xl mb-1">✨</div>
-              <div className={`text-xs ${showMergeAnimation ? 'text-emerald-400' : 'text-zinc-400'}`}>{p.mergedModel}</div>
+              <div className={`text-xs ${showMergeAnimation ? 'text-badge-success' : 'text-zinc-400'}`}>{p.mergedModel}</div>
               <div className="text-xs text-zinc-500">{p.mergedModelParams}</div>
             </div>
           </div>
@@ -313,9 +313,9 @@ export const PracticeStage: React.FC<PracticeStageProps> = ({ onBack }) => {
       </div>
 
       {/* Congratulations */}
-      <div className="bg-gradient-to-r from-emerald-500/10 to-teal-500/10 rounded-lg border border-emerald-500/20 p-6 text-center">
+      <div className="bg-gradient-to-r from-emerald-500/10 to-teal-500/10 rounded-lg border border-badge-success/20 p-6 text-center">
         <div className="text-4xl mb-3">🎓</div>
-        <h3 className="text-lg font-bold text-emerald-400 mb-2">{p.congratsTitle}</h3>
+        <h3 className="text-lg font-bold text-badge-success mb-2">{p.congratsTitle}</h3>
         <p className="text-sm text-zinc-400 mb-4">
           {p.congratsDesc}
         </p>

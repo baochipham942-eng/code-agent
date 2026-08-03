@@ -79,7 +79,7 @@ export const TokenizerStage: React.FC<Props> = ({ onComplete, onBack }) => {
             </h3>
             <p className="text-sm text-zinc-400 leading-relaxed mb-3">
               {tk.whyPrefix}
-              <span className="text-emerald-400">{tk.whyHighlight}</span>
+              <span className="text-badge-success">{tk.whyHighlight}</span>
               {tk.whySuffix}
             </p>
             <p className="text-sm text-zinc-400 leading-relaxed">
@@ -91,10 +91,10 @@ export const TokenizerStage: React.FC<Props> = ({ onComplete, onBack }) => {
           <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-700">
             <h3 className="text-sm font-semibold text-zinc-200 mb-3">{tk.rulesTitle}</h3>
             <div className="space-y-3 text-sm text-zinc-400">
-              <div className="flex items-start gap-3 p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
+              <div className="flex items-start gap-3 p-3 rounded-lg bg-emerald-500/10 border border-badge-success/20">
                 <span className="text-xl">📖</span>
                 <div>
-                  <div className="text-emerald-300 font-medium">{tk.ruleCommonLabel}</div>
+                  <div className="text-badge-success font-medium">{tk.ruleCommonLabel}</div>
                   <div className="text-xs text-zinc-500 mt-1">{tk.ruleCommonDesc}</div>
                 </div>
               </div>
@@ -114,7 +114,7 @@ export const TokenizerStage: React.FC<Props> = ({ onComplete, onBack }) => {
             <div className="space-y-3">
               <div className="flex items-center justify-between p-3 rounded-lg bg-zinc-800">
                 <span className="text-sm text-zinc-400">{tk.vocabCountLabel}</span>
-                <span className="text-sm font-bold text-emerald-400">{tk.vocabCountValue}</span>
+                <span className="text-sm font-bold text-badge-success">{tk.vocabCountValue}</span>
               </div>
               <p className="text-xs text-zinc-500">
                 {tk.vocabHint}
@@ -134,7 +134,7 @@ export const TokenizerStage: React.FC<Props> = ({ onComplete, onBack }) => {
               <div className="p-3 rounded-lg bg-zinc-800">
                 <div className="text-xs text-zinc-500 mb-2">{tk.demoStep2Label}</div>
                 <div className="text-sm">
-                  <span className="text-emerald-400">{tk.demoStep2Example}</span>
+                  <span className="text-badge-success">{tk.demoStep2Example}</span>
                 </div>
               </div>
               <p className="text-xs text-zinc-500 text-center">
@@ -193,7 +193,7 @@ export const TokenizerStage: React.FC<Props> = ({ onComplete, onBack }) => {
                 <div className="text-xs text-zinc-500">{tk.liveTokenCount}</div>
               </div>
               <div className="p-3 rounded-lg bg-zinc-900 border border-zinc-700">
-                <div className="text-xl font-bold text-emerald-400">{inputText.length}</div>
+                <div className="text-xl font-bold text-badge-success">{inputText.length}</div>
                 <div className="text-xs text-zinc-500">{tk.liveCharCount}</div>
               </div>
             </div>
@@ -214,7 +214,7 @@ export const TokenizerStage: React.FC<Props> = ({ onComplete, onBack }) => {
                   <span className="text-zinc-400">
                     {token === '\n' ? tk.dictNewline : token === ' ' ? tk.dictSpace : token}
                   </span>
-                  <span className="text-emerald-400 font-bold">#{id}</span>
+                  <span className="text-badge-success font-bold">#{id}</span>
                 </div>
               ))}
             </div>
@@ -227,12 +227,12 @@ export const TokenizerStage: React.FC<Props> = ({ onComplete, onBack }) => {
           <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-700">
             <h3 className="text-sm font-semibold text-zinc-200 mb-3">{tk.convertTitle}</h3>
             <div className="space-y-3">
-              <div className="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
-                <div className="text-xs text-emerald-400 mb-1">{tk.encodeLabel}</div>
+              <div className="p-3 rounded-lg bg-emerald-500/10 border border-badge-success/20">
+                <div className="text-xs text-badge-success mb-1">{tk.encodeLabel}</div>
                 <div className="text-sm">
                   <span className="text-zinc-400">{tk.encodeExampleFrom}</span>
                   <span className="text-zinc-600 mx-2">{tk.encodeArrow}</span>
-                  <span className="text-emerald-400 font-bold">{tk.encodeExampleTo}</span>
+                  <span className="text-badge-success font-bold">{tk.encodeExampleTo}</span>
                 </div>
               </div>
               <div className="p-3 rounded-lg bg-blue-500/10 border border-blue-500/20">
@@ -261,7 +261,7 @@ export const TokenizerStage: React.FC<Props> = ({ onComplete, onBack }) => {
           {tk.terms.map((term) => (
             <div key={term.en} className="p-3 rounded-lg bg-zinc-800">
               <div className="flex items-center gap-2 mb-1">
-                <span className="text-sm font-bold text-emerald-400">{term.en}</span>
+                <span className="text-sm font-bold text-badge-success">{term.en}</span>
                 <span className="text-xs text-zinc-500">|</span>
                 <span className="text-sm text-zinc-400">{term.zh}</span>
               </div>

@@ -36,7 +36,7 @@ interface SpreadsheetSpec {
 const MAX_VISIBLE_ROWS = 40;
 const COLUMN_COLORS = [
   'bg-blue-500/20 border-blue-500/40',
-  'bg-emerald-500/20 border-emerald-500/40',
+  'bg-emerald-500/20 border-badge-success/40',
   'bg-amber-500/20 border-amber-500/40',
   'bg-purple-500/20 border-purple-500/40',
   'bg-rose-500/20 border-rose-500/40',
@@ -144,7 +144,7 @@ const ActionBar = memo(function ActionBar({
     : `${colNames.length} ${t.generativeUI.columns}`;
 
   const actions = [
-    { key: 'visualize', label: t.generativeUI.visualize, icon: BarChart3, color: 'text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 border-emerald-500/20' },
+    { key: 'visualize', label: t.generativeUI.visualize, icon: BarChart3, color: 'text-badge-success bg-emerald-500/10 hover:bg-emerald-500/20 border-badge-success/20' },
     { key: 'pivot', label: t.generativeUI.pivot, icon: Table2, color: 'text-blue-400 bg-blue-500/10 hover:bg-blue-500/20 border-blue-500/20' },
     { key: 'filter', label: t.generativeUI.filterAnalysis, icon: Filter, color: 'text-amber-400 bg-amber-500/10 hover:bg-amber-500/20 border-amber-500/20' },
     { key: 'sort', label: t.generativeUI.sort, icon: ArrowUpDown, color: 'text-purple-400 bg-purple-500/10 hover:bg-purple-500/20 border-purple-500/20' },
@@ -327,8 +327,8 @@ export const SpreadsheetBlock = memo(function SpreadsheetBlock({ spec: rawSpec, 
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-2 bg-zinc-800 border-b border-zinc-700">
         <div className="flex items-center gap-2">
-          <Sheet className="w-3.5 h-3.5 text-emerald-400" />
-          <span className="text-xs font-medium text-emerald-400">
+          <Sheet className="w-3.5 h-3.5 text-badge-success" />
+          <span className="text-xs font-medium text-badge-success">
             {parsedSpec.title || sheet.name || t.generativeUI.spreadsheet}
           </span>
           <span className="text-xs text-zinc-500">

@@ -11,8 +11,8 @@ describe('budgetCostColorClass', () => {
   });
 
   it('stays emerald for silent / none / undefined (budget healthy or disabled)', () => {
-    expect(budgetCostColorClass('silent')).toBe('text-emerald-400');
-    expect(budgetCostColorClass('none')).toBe('text-emerald-400');
-    expect(budgetCostColorClass(undefined)).toBe('text-emerald-400');
+    expect(budgetCostColorClass('silent')).toBe('text-badge-success');
+    expect(budgetCostColorClass('none')).toBe('text-badge-success');
+    expect(budgetCostColorClass(undefined)).toBe('text-badge-success');
   });
 });

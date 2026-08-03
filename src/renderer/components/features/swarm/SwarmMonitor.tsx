@@ -34,7 +34,7 @@ const statusColors: Record<string, { bg: string; text: string; border: string }>
   pending: { bg: 'bg-zinc-600/10', text: 'text-zinc-400', border: 'border-zinc-600/30' },
   ready: { bg: 'bg-blue-500/10', text: 'text-blue-400', border: 'border-blue-500/30' },
   running: { bg: 'bg-amber-500/10', text: 'text-amber-400', border: 'border-amber-500/30' },
-  completed: { bg: 'bg-emerald-500/10', text: 'text-emerald-400', border: 'border-emerald-500/30' },
+  completed: { bg: 'bg-emerald-500/10', text: 'text-badge-success', border: 'border-badge-success/30' },
   failed: { bg: 'bg-red-500/10', text: 'text-badge-danger', border: 'border-red-500/30' },
   cancelled: { bg: 'bg-zinc-600/10', text: 'text-zinc-500', border: 'border-zinc-600/30' },
 };
@@ -244,15 +244,15 @@ const VerificationBadge: React.FC<{ verification?: SwarmVerificationResult }> = 
   return (
     <div className={`mx-3 mb-3 px-3 py-2.5 rounded-lg border ${
       passed
-        ? 'border-emerald-500/30 bg-emerald-500/10'
+        ? 'border-badge-success/30 bg-emerald-500/10'
         : 'border-red-500/30 bg-red-500/10'
     }`}>
       <div className="flex items-center gap-2 mb-1">
         {passed
-          ? <CheckCircle className="w-4 h-4 text-emerald-400" />
+          ? <CheckCircle className="w-4 h-4 text-badge-success" />
           : <XCircle className="w-4 h-4 text-badge-danger" />
         }
-        <span className={`text-sm font-medium ${passed ? 'text-emerald-300' : 'text-badge-danger'}`}>
+        <span className={`text-sm font-medium ${passed ? 'text-badge-success' : 'text-badge-danger'}`}>
           验证{passed ? '通过' : '未通过'}
         </span>
         <span className="text-xs text-zinc-500 ml-auto">
@@ -265,7 +265,7 @@ const VerificationBadge: React.FC<{ verification?: SwarmVerificationResult }> = 
             key={i}
             className={`text-xs px-1.5 py-0.5 rounded ${
               check.passed
-                ? 'bg-emerald-500/20 text-emerald-400'
+                ? 'bg-emerald-500/20 text-badge-success'
                 : 'bg-red-500/20 text-badge-danger'
             }`}
             title={check.message}
@@ -384,7 +384,7 @@ export const SwarmMonitor: React.FC<SwarmMonitorProps> = ({ onClose }) => {
               : statistics.completed
             }
             subValue={`${statistics.completed}/${statistics.total}`}
-            color="text-emerald-400"
+            color="text-badge-success"
           />
           <StatCard
             icon={<Zap className="w-4 h-4" />}
@@ -480,7 +480,7 @@ export const SwarmMonitor: React.FC<SwarmMonitorProps> = ({ onClose }) => {
         {groupedAgents.completed.length > 0 && (
           <AgentSection
             title="已完成"
-            icon={<CheckCircle className="w-3.5 h-3.5 text-emerald-400" />}
+            icon={<CheckCircle className="w-3.5 h-3.5 text-badge-success" />}
             agents={groupedAgents.completed}
             selectedAgentId={selectedSwarmAgentId}
             onAgentSelect={setSelectedSwarmAgentId}

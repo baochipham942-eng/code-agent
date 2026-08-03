@@ -247,7 +247,7 @@ const DiffReview: Renderer = (node, context) => {
       <h3 className="mb-3 text-sm font-semibold text-zinc-100">{text(props.label, '变更审阅')}</h3>
       <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
         <pre className="min-h-[150px] max-h-72 overflow-auto rounded-lg border border-red-500/20 bg-red-950/20 p-3 text-xs text-zinc-300">{text(props.before, 'No previous content')}</pre>
-        <pre className="min-h-[150px] max-h-72 overflow-auto rounded-lg border border-emerald-500/20 bg-emerald-950/20 p-3 text-xs text-zinc-300">{text(props.after, 'No proposed content')}</pre>
+        <pre className="min-h-[150px] max-h-72 overflow-auto rounded-lg border border-badge-success/20 bg-emerald-950/20 p-3 text-xs text-zinc-300">{text(props.after, 'No proposed content')}</pre>
       </div>
       {actionButtons(node, context)}
     </section>

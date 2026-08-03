@@ -46,9 +46,9 @@ export const ModelArchitecture: React.FC<ModelArchitectureProps> = ({ onComplete
         <h3 className="text-sm font-medium text-zinc-400">{ma.howLabel}</h3>
         <div className="bg-zinc-900 rounded-lg border border-zinc-700 p-4">
           <div className="grid grid-cols-3 gap-4">
-            <div className="text-center p-4 bg-emerald-500/10 rounded-lg border border-emerald-500/20">
+            <div className="text-center p-4 bg-emerald-500/10 rounded-lg border border-badge-success/20">
               <div className="text-3xl mb-2">👁️</div>
-              <div className="text-sm font-medium text-emerald-400">{ma.step1Title}</div>
+              <div className="text-sm font-medium text-badge-success">{ma.step1Title}</div>
               <div className="text-xs text-zinc-500 mt-1">{ma.step1Desc}</div>
             </div>
             <div className="text-center p-4 bg-blue-500/10 rounded-lg border border-blue-500/20">
@@ -91,7 +91,7 @@ export const ModelArchitecture: React.FC<ModelArchitectureProps> = ({ onComplete
               <div className="text-xs text-zinc-500 mt-2">
                 {size.layers} {ma.layersSuffix} · {size.heads} {ma.headsSuffix}
               </div>
-              <div className="text-xs text-emerald-400/70 mt-1">
+              <div className="text-xs text-badge-success/70 mt-1">
                 {size.analogy}
               </div>
             </button>
@@ -109,9 +109,9 @@ export const ModelArchitecture: React.FC<ModelArchitectureProps> = ({ onComplete
           <div className="flex items-center justify-center gap-3">
             {/* Input Embedding */}
             <div className="flex flex-col items-center gap-2">
-              <div className="w-24 h-20 bg-gradient-to-b from-emerald-500/20 to-emerald-500/5 border border-emerald-500/30 rounded-lg flex flex-col items-center justify-center">
+              <div className="w-24 h-20 bg-gradient-to-b from-emerald-500/20 to-emerald-500/5 border border-badge-success/30 rounded-lg flex flex-col items-center justify-center">
                 <span className="text-2xl">👁️</span>
-                <span className="text-xs text-emerald-400 mt-1">{ma.embedLabel}</span>
+                <span className="text-xs text-badge-success mt-1">{ma.embedLabel}</span>
               </div>
             </div>
 
@@ -160,8 +160,8 @@ export const ModelArchitecture: React.FC<ModelArchitectureProps> = ({ onComplete
               <div className="text-sm text-blue-400 font-medium mb-1">{ma.attention1Label}</div>
               <div className="text-xs text-zinc-500">{ma.attention1Desc}</div>
             </div>
-            <div className="p-3 bg-emerald-500/10 rounded-lg border border-emerald-500/20">
-              <div className="text-sm text-emerald-400 font-medium mb-1">{ma.attention2Label}</div>
+            <div className="p-3 bg-emerald-500/10 rounded-lg border border-badge-success/20">
+              <div className="text-sm text-badge-success font-medium mb-1">{ma.attention2Label}</div>
               <div className="text-xs text-zinc-500">{ma.attention2Desc}</div>
             </div>
             <div className="p-3 bg-purple-500/10 rounded-lg border border-purple-500/20">
@@ -187,7 +187,7 @@ export const ModelArchitecture: React.FC<ModelArchitectureProps> = ({ onComplete
               <div className="text-xs text-zinc-500 mt-1">{ma.summaryNeuronsLabel}</div>
             </div>
             <div>
-              <div className="text-2xl font-bold text-emerald-400">{model.layers}</div>
+              <div className="text-2xl font-bold text-badge-success">{model.layers}</div>
               <div className="text-xs text-zinc-500 mt-1">{ma.summaryLayersLabel}</div>
             </div>
             <div>
@@ -212,7 +212,7 @@ export const ModelArchitecture: React.FC<ModelArchitectureProps> = ({ onComplete
           {ma.glossary.map((term) => (
             <div key={term.en} className="p-3 rounded-lg bg-zinc-800">
               <div className="flex items-center gap-2 mb-1">
-                <span className="text-sm font-bold text-emerald-400">{term.en}</span>
+                <span className="text-sm font-bold text-badge-success">{term.en}</span>
                 <span className="text-xs text-zinc-500">|</span>
                 <span className="text-sm text-zinc-400">{term.label}</span>
               </div>

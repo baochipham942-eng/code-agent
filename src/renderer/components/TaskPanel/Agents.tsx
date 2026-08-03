@@ -11,7 +11,7 @@ import { useI18n } from '../../hooks/useI18n';
 // Agent 角色颜色映射
 const AGENT_COLORS: Record<string, string> = {
   main: 'text-blue-400',
-  coder: 'text-emerald-400',
+  coder: 'text-badge-success',
   reviewer: 'text-amber-400',
   explore: 'text-cyan-400',
   plan: 'text-purple-400',
@@ -40,7 +40,7 @@ export const Agents: React.FC = () => {
   const patternInfoMap: Record<NonNullPattern, { icon: React.ReactNode; label: string; color: string }> = {
     single: { icon: <Bot className="w-3 h-3" />, label: t.taskPanel.patternSingle, color: 'text-zinc-400' },
     sequential: { icon: <Workflow className="w-3 h-3" />, label: t.taskPanel.patternSequential, color: 'text-blue-400' },
-    parallel: { icon: <Users className="w-3 h-3" />, label: t.taskPanel.patternParallel, color: 'text-emerald-400' },
+    parallel: { icon: <Users className="w-3 h-3" />, label: t.taskPanel.patternParallel, color: 'text-badge-success' },
     hierarchical: { icon: <GitBranch className="w-3 h-3" />, label: t.taskPanel.patternHierarchical, color: 'text-purple-400' },
   };
 

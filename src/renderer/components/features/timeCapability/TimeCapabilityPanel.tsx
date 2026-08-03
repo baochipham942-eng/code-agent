@@ -87,7 +87,7 @@ function formatCheckedAt(value?: number): string {
 function getToneClasses(tone: 'ready' | 'warning' | 'error' | 'neutral'): string {
   switch (tone) {
     case 'ready':
-      return 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300';
+      return 'border-badge-success/30 bg-emerald-500/10 text-badge-success';
     case 'warning':
       return 'border-amber-500/30 bg-amber-500/10 text-amber-300';
     case 'error':
@@ -628,7 +628,7 @@ const Metric: React.FC<{ label: string; value: string; tone?: 'error' | 'neutral
 const CapabilityStatusCell: React.FC<{ label: string; ready: boolean; detail: string }> = ({ label, ready, detail }) => (
   <div className="border border-zinc-800 bg-zinc-950/40 px-3 py-2">
     <div className="flex items-center gap-1.5 text-xs text-zinc-300">
-      {ready ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-300" /> : <ShieldAlert className="h-3.5 w-3.5 text-amber-300" />}
+      {ready ? <CheckCircle2 className="h-3.5 w-3.5 text-badge-success" /> : <ShieldAlert className="h-3.5 w-3.5 text-amber-300" />}
       {label}
     </div>
     <div className="mt-1 truncate text-[11px] text-zinc-500" title={detail}>{detail}</div>
@@ -708,7 +708,7 @@ const CapabilityFixRow: React.FC<{
 
     {error && <div className="mt-2 text-[11px] text-badge-danger">{error}</div>}
     {!error && feedback && (
-      <div className={`mt-2 text-[11px] ${feedbackTone === 'success' ? 'text-emerald-300' : 'text-badge-info'}`}>
+      <div className={`mt-2 text-[11px] ${feedbackTone === 'success' ? 'text-badge-success' : 'text-badge-info'}`}>
         {feedback}
       </div>
     )}

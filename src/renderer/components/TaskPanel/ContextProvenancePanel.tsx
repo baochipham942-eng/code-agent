@@ -39,7 +39,7 @@ const categoryLabels: Record<ContextProvenanceCategory, string> = {
 const sourceIcons: Record<ContextProvenanceListEntry['sourceType'], React.ReactNode> = {
   message: <MessageSquare className="w-4 h-4 text-primary-400" />,
   tool: <Link className="w-4 h-4 text-amber-400" />,
-  attachment: <Zap className="w-4 h-4 text-emerald-300" />,
+  attachment: <Zap className="w-4 h-4 text-badge-success" />,
   memory: <Activity className="w-4 h-4 text-violet-300" />,
   file: <Activity className="w-4 h-4 text-cyan-300" />,
 };
@@ -60,7 +60,7 @@ function inferCategory(entry: ContextProvenanceListEntry): ContextProvenanceCate
 
 function actionTone(action: ContextProvenanceAction): string {
   if (action === 'excluded') return 'text-amber-300 bg-amber-500/10 border-amber-500/25';
-  if (action === 'pinned' || action === 'retained') return 'text-emerald-300 bg-emerald-500/10 border-emerald-500/25';
+  if (action === 'pinned' || action === 'retained') return 'text-badge-success bg-emerald-500/10 border-badge-success/25';
   if (action === 'compressed') return 'text-cyan-300 bg-cyan-500/10 border-cyan-500/25';
   return 'text-zinc-300 bg-zinc-800/80 border-white/[0.06]';
 }

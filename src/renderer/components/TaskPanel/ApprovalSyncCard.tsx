@@ -111,7 +111,7 @@ export const ApprovalSyncCard: React.FC = () => {
         <button
           type="button"
           onClick={() => respond('allow')}
-          className="inline-flex items-center justify-center gap-1 rounded-md border border-emerald-500/20 bg-emerald-500/10 px-2 py-1.5 text-[11px] text-emerald-300 hover:bg-emerald-500/15"
+          className="inline-flex items-center justify-center gap-1 rounded-md border border-badge-success/20 bg-emerald-500/10 px-2 py-1.5 text-[11px] text-badge-success hover:bg-emerald-500/15"
         >
           <Check className="h-3 w-3" />
           {a.allow}

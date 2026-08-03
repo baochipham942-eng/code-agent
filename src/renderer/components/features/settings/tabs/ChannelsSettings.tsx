@@ -163,7 +163,7 @@ const ChannelSummaryTile: React.FC<{
 }> = ({ label, value, tone = 'default' }) => {
   const toneClass =
     tone === 'success'
-      ? 'text-emerald-300'
+      ? 'text-badge-success'
       : tone === 'warning'
         ? 'text-amber-300'
         : tone === 'danger'
@@ -716,7 +716,7 @@ export const ChannelsSettings: React.FC = () => {
       case 'feishu':
         return <MessageSquare className="w-4 h-4 text-blue-400" />;
       case 'lark':
-        return <MessageSquare className="w-4 h-4 text-emerald-400" />;
+        return <MessageSquare className="w-4 h-4 text-badge-success" />;
       case 'telegram':
         return <MessageSquare className="w-4 h-4 text-badge-info" />;
       default:

@@ -45,7 +45,7 @@ function gradeTone(grade?: TurnQualityScoreSummary['grade']): string {
   switch (grade) {
     case 'excellent':
     case 'good':
-      return 'border-emerald-400/20 bg-emerald-400/10 text-emerald-200';
+      return 'border-badge-success/20 bg-emerald-400/10 text-badge-success';
     case 'watch':
       return 'border-amber-400/20 bg-amber-400/10 text-amber-200';
     case 'risk':
@@ -58,7 +58,7 @@ function gradeTone(grade?: TurnQualityScoreSummary['grade']): string {
 function dimensionTone(status?: TurnQualityScoreBreakdown['status']): string {
   switch (status) {
     case 'good':
-      return 'border-emerald-400/15 bg-emerald-400/[0.05]';
+      return 'border-badge-success/15 bg-emerald-400/[0.05]';
     case 'watch':
       return 'border-amber-400/15 bg-amber-400/[0.05]';
     case 'risk':
@@ -242,13 +242,13 @@ const MemoryAuditSummary: React.FC<{ audit: ReplayMemoryAudit }> = ({ audit }) =
   const items = getMemoryItems(audit);
   const injectedBlocks = audit.blocks.filter((block) => block.injected);
   return (
-    <div className="rounded-md border border-emerald-400/10 bg-emerald-400/[0.04] px-3 py-2">
+    <div className="rounded-md border border-badge-success/10 bg-emerald-400/[0.04] px-3 py-2">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2 text-sm text-emerald-100">
+        <div className="flex items-center gap-2 text-sm text-badge-success">
           <Brain className="h-4 w-4" />
           {audit.mode === 'off' ? '记忆关闭' : `记忆命中 ${items.length}`}
         </div>
-        <div className="flex flex-wrap gap-1.5 text-[11px] text-emerald-200/60">
+        <div className="flex flex-wrap gap-1.5 text-[11px] text-badge-success/60">
           <span>{injectedBlocks.length} blocks</span>
           {audit.suppressedEntryIds?.length ? <span>{audit.suppressedEntryIds.length} suppressed</span> : null}
         </div>
@@ -263,7 +263,7 @@ const MemoryAuditSummary: React.FC<{ audit: ReplayMemoryAudit }> = ({ audit }) =
               key={`${block.blockType}-${index}`}
               className={`rounded border px-1.5 py-0.5 text-[10px] ${
                 block.injected
-                  ? 'border-emerald-400/15 bg-emerald-400/10 text-emerald-200'
+                  ? 'border-badge-success/15 bg-emerald-400/10 text-badge-success'
                   : 'border-zinc-700 bg-zinc-900/70 text-zinc-500'
               }`}
             >
@@ -318,7 +318,7 @@ const ToolList: React.FC<{ tools: ReplayToolCall[] }> = ({ tools }) => {
         {tools.slice(0, 5).map((tool) => (
           <div key={tool.id} className="flex items-center justify-between gap-2 text-[11px]">
             <span className="truncate text-zinc-400">{tool.name}</span>
-            <span className={tool.success ? 'text-emerald-300/70' : 'text-badge-danger/70'}>
+            <span className={tool.success ? 'text-badge-success/70' : 'text-badge-danger/70'}>
               {tool.successKnown === false ? 'unknown' : tool.success ? 'ok' : 'failed'}
             </span>
           </div>

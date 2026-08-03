@@ -236,7 +236,7 @@ export const VoiceModelSettings: React.FC = () => {
             data-testid="voice-provider-status"
             className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] ${
               currentProvider?.configured
-                ? 'bg-emerald-500/10 text-emerald-300'
+                ? 'bg-emerald-500/10 text-badge-success'
                 : 'bg-amber-500/10 text-amber-300'
             }`}
           >
@@ -711,7 +711,7 @@ const AddCustomProviderPanel: React.FC<AddCustomProviderPanelProps> = ({ provide
                 <span data-testid="voice-add-provider-test-status">
                   {testStatus === 'untested' && <span className="rounded-full bg-zinc-800 px-2 py-0.5 text-[11px] text-zinc-400">{text.untestedBadge}</span>}
                   {testStatus === 'testing' && <span className="text-[11px] text-zinc-400">{text.customProviderTesting}</span>}
-                  {testStatus === 'success' && <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[11px] text-emerald-300">{text.customProviderTestSuccess}</span>}
+                  {testStatus === 'success' && <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[11px] text-badge-success">{text.customProviderTestSuccess}</span>}
                   {testStatus === 'failed' && <span className="rounded-full bg-rose-500/10 px-2 py-0.5 text-[11px] text-rose-300">{text.customProviderTestFailed}</span>}
                 </span>
               </div>

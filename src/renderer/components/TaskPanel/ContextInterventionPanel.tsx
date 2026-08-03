@@ -20,7 +20,7 @@ import type { Translations } from '../../i18n';
 
 const selectionTone: Record<ContextSelectionMode, string> = {
   default: 'border-white/20 bg-white/5 text-zinc-100',
-  pinned: 'border-emerald-500/30 bg-emerald-500/5 text-emerald-200',
+  pinned: 'border-badge-success/30 bg-emerald-500/5 text-badge-success',
   excluded: 'border-amber-500/30 bg-amber-500/5 text-amber-200',
   retained: 'border-badge-info/30 bg-sky-500/5 text-badge-info',
 };
@@ -46,7 +46,7 @@ function getActionButtons(t: Translations): Array<{ action: ContextInterventionA
 
 const sourceIcons: Record<ContextSelectionMode, React.ReactNode> = {
   default: <FileText className="w-4 h-4 text-zinc-400" />,
-  pinned: <ShieldAlert className="w-4 h-4 text-emerald-400" />,
+  pinned: <ShieldAlert className="w-4 h-4 text-badge-success" />,
   excluded: <ShieldAlert className="w-4 h-4 text-amber-400" />,
   retained: <ShieldAlert className="w-4 h-4 text-badge-info" />,
 };

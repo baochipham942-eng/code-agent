@@ -479,7 +479,7 @@ export const WorkspacePreviewPanel: React.FC<WorkspacePreviewPanelProps> = ({
             >
               <OverflowAction
                 label={copied ? wp.copied : wp.copyPreview}
-                icon={copied ? <Check className="h-3.5 w-3.5 text-emerald-300" /> : <Copy className="h-3.5 w-3.5" />}
+                icon={copied ? <Check className="h-3.5 w-3.5 text-badge-success" /> : <Copy className="h-3.5 w-3.5" />}
                 disabled={!selected}
                 onClick={() => { void copySelected(); }}
               />

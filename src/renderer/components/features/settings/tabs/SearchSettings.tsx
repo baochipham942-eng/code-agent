@@ -169,10 +169,10 @@ export function SearchSettings() {
   }
 
   const keyStatus = (entry: SearchSourceCatalogEntry): { label: string; tone: string } => {
-    if (!entry.requiresKey) return { label: searchText.keyStatus.builtinFree, tone: 'text-emerald-300' };
+    if (!entry.requiresKey) return { label: searchText.keyStatus.builtinFree, tone: 'text-badge-success' };
     const hasKey = entry.serviceKey ? Boolean(serviceKeys[entry.serviceKey]) : false;
     return hasKey
-      ? { label: searchText.keyStatus.configured, tone: 'text-emerald-300' }
+      ? { label: searchText.keyStatus.configured, tone: 'text-badge-success' }
       : { label: searchText.keyStatus.required, tone: 'text-amber-300' };
   };
   const sourceTexts = searchText.sources as Record<string, { label: string; description: string } | undefined>;

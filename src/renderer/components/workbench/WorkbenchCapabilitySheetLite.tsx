@@ -67,7 +67,7 @@ function getCapabilityIcon(capability: WorkbenchCapabilityRegistryItem): React.R
     case 'connector':
       return <Plug className="h-4 w-4 text-badge-info" />;
     case 'mcp':
-      return <Plug className="h-4 w-4 text-emerald-300" />;
+      return <Plug className="h-4 w-4 text-badge-success" />;
     default:
       return <Wrench className="h-4 w-4 text-zinc-300" />;
   }
@@ -339,7 +339,7 @@ export const WorkbenchCapabilitySheetLite: React.FC<WorkbenchCapabilitySheetLite
                 <div className="text-[11px] text-badge-danger">{actionError}</div>
               )}
               {feedback && !actionError && (
-                <div className={`text-[11px] ${feedback.tone === 'success' ? 'text-emerald-300' : 'text-badge-info'}`}>
+                <div className={`text-[11px] ${feedback.tone === 'success' ? 'text-badge-success' : 'text-badge-info'}`}>
                   {feedback.message}
                 </div>
               )}

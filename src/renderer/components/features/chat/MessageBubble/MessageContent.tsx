@@ -421,7 +421,7 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
               onClick={() => {
                 window.dispatchEvent(new CustomEvent('iact:run', { detail: text }));
               }}
-              className="inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5 rounded-md bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 hover:text-emerald-300 border border-emerald-500/20 hover:border-emerald-500/40 transition-all cursor-pointer text-sm font-medium font-mono"
+              className="inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5 rounded-md bg-emerald-500/10 text-badge-success hover:bg-emerald-500/20 hover:text-badge-success border border-badge-success/20 hover:border-badge-success/40 transition-all cursor-pointer text-sm font-medium font-mono"
               title="点击执行命令"
             >
               <Terminal className="w-3 h-3 opacity-60" />

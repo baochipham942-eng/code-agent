@@ -70,7 +70,7 @@ const StatusBadge: React.FC<{ status: MemberPill['status'] }> = ({ status }) => 
     return <span data-testid="member-status-running" className="h-2.5 w-2.5 shrink-0 animate-spin rounded-full border border-zinc-500 border-t-transparent" />;
   }
   if (status === 'completed') {
-    return <span data-testid="member-status-completed" className="shrink-0 text-[11px] leading-none text-emerald-400">✓</span>;
+    return <span data-testid="member-status-completed" className="shrink-0 text-[11px] leading-none text-badge-success">✓</span>;
   }
   return <span data-testid="member-status-failed" className="shrink-0 text-[11px] leading-none text-badge-danger">✕</span>;
 };
@@ -279,7 +279,7 @@ export const SessionMemberBar: React.FC<{ sessionId: string | null }> = ({ sessi
             title={pill.profession ? `${pill.name} · ${pill.profession}` : pill.name}
             className={`flex shrink-0 items-center gap-1.5 rounded-full border py-1 pl-1 pr-2.5 text-left transition-colors ${
               voiceActive
-                ? 'border-emerald-400/70 bg-emerald-500/10 ring-1 ring-emerald-400/40'
+                ? 'border-badge-success/70 bg-emerald-500/10 ring-1 ring-emerald-400/40'
                 : viewingMemberId === pill.key
                   ? 'border-zinc-300 bg-zinc-800'
                   : 'border-zinc-700 bg-zinc-800/70 hover:border-zinc-500'

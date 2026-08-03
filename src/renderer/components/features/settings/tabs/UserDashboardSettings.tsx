@@ -21,7 +21,7 @@ type UserStatusFilter = 'all' | AdminUserDashboardItem['status'];
 const DEFAULT_USER_DASHBOARD_TEXT = zh.settings.users;
 
 const STATUS_CLASSES: Record<AdminUserDashboardItem['status'], string> = {
-  active: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300',
+  active: 'border-badge-success/30 bg-emerald-500/10 text-badge-success',
   suspended: 'border-amber-500/30 bg-amber-500/10 text-amber-300',
   deleted: 'border-red-500/30 bg-red-500/10 text-badge-danger',
 };
@@ -70,7 +70,7 @@ const SummaryTile: React.FC<{
   tone?: 'default' | 'success' | 'warning';
 }> = ({ label, value, tone = 'default' }) => {
   const valueClass = tone === 'success'
-    ? 'text-emerald-300'
+    ? 'text-badge-success'
     : tone === 'warning'
       ? 'text-amber-300'
       : 'text-zinc-100';
@@ -219,7 +219,7 @@ export const UserDashboardSettings: React.FC = () => {
         <div className="grid gap-3 md:grid-cols-2">
           <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-3">
             <div className="mb-2 flex items-center gap-2 text-xs font-medium text-zinc-300">
-              <Users className="h-3.5 w-3.5 text-emerald-300" />
+              <Users className="h-3.5 w-3.5 text-badge-success" />
               {userText.fields.connectedTitle}
             </div>
             <div className="text-xs leading-6 text-zinc-500">
@@ -340,7 +340,7 @@ export const UserDashboardSettings: React.FC = () => {
                         title={user.hasSharedRelay ? userText.sharedRelay.revokeTitle : userText.sharedRelay.grantTitle}
                         className={`rounded-md px-2 py-1 text-[11px] transition-colors disabled:opacity-50 ${
                           user.hasSharedRelay
-                            ? 'border border-emerald-500/30 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20'
+                            ? 'border border-badge-success/30 bg-emerald-500/10 text-badge-success hover:bg-emerald-500/20'
                             : 'border border-zinc-700 bg-zinc-800 text-zinc-400 hover:bg-zinc-700 hover:text-zinc-200'
                         }`}
                       >

@@ -9,7 +9,7 @@ describe('parseLeadingTriggerToken（核心功能触发词着色）', () => {
     const parsed = parseLeadingTriggerToken('@neo 帮我查上海FDE最新薪资');
     expect(parsed).toMatchObject({ token: '@neo', kind: 'neo' });
     expect(parsed?.rest).toBe(' 帮我查上海FDE最新薪资');
-    expect(parsed?.className).toContain('emerald');
+    expect(parsed?.className).toContain('text-badge-success');
 
     expect(parseLeadingTriggerToken('@Neo 做个事')?.token).toBe('@Neo');
   });

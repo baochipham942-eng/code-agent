@@ -99,7 +99,7 @@ const VoicePlanet: React.FC<{ visual: Exclude<VoiceVisualState, 'idle'> }> = ({ 
 const STATUS_COLOR: Record<Exclude<VoiceVisualState, 'idle'>, string> = {
   connecting: 'text-zinc-500',
   reconnecting: 'text-amber-400',
-  listening: 'text-emerald-400',
+  listening: 'text-badge-success',
   speaking: 'text-primary-400',
   working: 'text-amber-400',
   muted: 'text-zinc-500',
@@ -189,7 +189,7 @@ export const VoiceChrome: React.FC<{ sessionId: string | null }> = ({ sessionId:
             onClick={() => voiceCallBridge.manualTap()}
             className={`flex h-[30px] items-center whitespace-nowrap rounded-[var(--radius-xl)] border px-3 text-[11.5px] transition-colors ${
               store.pttCaptureOn
-                ? 'border-emerald-500/50 bg-emerald-500/15 text-emerald-300'
+                ? 'border-badge-success/50 bg-emerald-500/15 text-badge-success'
                 : 'border-zinc-700 bg-zinc-800 text-zinc-400 hover:border-zinc-600 hover:text-zinc-300'
             }`}
           >

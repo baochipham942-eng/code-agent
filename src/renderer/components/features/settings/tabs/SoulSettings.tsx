@@ -176,7 +176,7 @@ export const SoulSettings: React.FC = () => {
 
       {/* 安全说明 —— 拆分后安全红线始终生效 */}
       <div className="flex items-start gap-2 rounded-lg border border-zinc-800 bg-zinc-900/60 px-3 py-2.5">
-        <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-emerald-500" />
+        <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-badge-success" />
         <p className="text-xs text-zinc-400">
           {soulText.safetyPrefix}<span className="text-zinc-200">{soulText.safetyStrong}</span>{soulText.safetySuffix}
         </p>

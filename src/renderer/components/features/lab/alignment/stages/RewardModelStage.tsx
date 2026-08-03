@@ -111,9 +111,9 @@ export const RewardModelStage: React.FC<RewardModelStageProps> = ({ onComplete, 
               <div className="text-sm font-medium text-amber-400">{s.analogyCards.studentJudges.label}</div>
               <div className="text-xs text-zinc-500 mt-1">{s.analogyCards.studentJudges.desc}</div>
             </div>
-            <div className="p-4 bg-emerald-500/10 rounded-lg border border-emerald-500/20">
+            <div className="p-4 bg-emerald-500/10 rounded-lg border border-badge-success/20">
               <div className="text-3xl mb-2">✅</div>
-              <div className="text-sm font-medium text-emerald-400">{s.analogyCards.learnToScore.label}</div>
+              <div className="text-sm font-medium text-badge-success">{s.analogyCards.learnToScore.label}</div>
               <div className="text-xs text-zinc-500 mt-1">{s.analogyCards.learnToScore.desc}</div>
             </div>
           </div>
@@ -126,7 +126,7 @@ export const RewardModelStage: React.FC<RewardModelStageProps> = ({ onComplete, 
           <h3 className="text-sm font-medium text-zinc-400">{s.gameSectionTitle}</h3>
           <div className="flex items-center gap-2 text-xs">
             <span className="text-zinc-500">{s.questionCounter.replace('{current}', String(currentExample + 1)).replace('{total}', String(preferenceExamples.length))}</span>
-            <span className="text-emerald-400">{s.correctCounter.replace('{count}', String(correctCount))}</span>
+            <span className="text-badge-success">{s.correctCounter.replace('{count}', String(correctCount))}</span>
           </div>
         </div>
 
@@ -146,7 +146,7 @@ export const RewardModelStage: React.FC<RewardModelStageProps> = ({ onComplete, 
             className={`relative rounded-lg border p-4 transition-all ${
               showResult
                 ? example.preferredResponse === 'A'
-                  ? 'bg-emerald-500/10 border-emerald-500/30'
+                  ? 'bg-emerald-500/10 border-badge-success/30'
                   : 'bg-red-500/5 border-red-500/20'
                 : userChoice === 'A'
                   ? 'bg-blue-500/10 border-blue-500/30'
@@ -159,7 +159,7 @@ export const RewardModelStage: React.FC<RewardModelStageProps> = ({ onComplete, 
               {showResult && (
                 <span className={`text-xs px-2 py-0.5 rounded ${
                   example.preferredResponse === 'A'
-                    ? 'bg-emerald-500/20 text-emerald-400'
+                    ? 'bg-emerald-500/20 text-badge-success'
                     : 'bg-red-500/20 text-badge-danger'
                 }`}>
                   {example.labelA}
@@ -170,7 +170,7 @@ export const RewardModelStage: React.FC<RewardModelStageProps> = ({ onComplete, 
             {showResult && (
               <div className="mt-3 pt-3 border-t border-zinc-700 flex items-center gap-2">
                 {example.preferredResponse === 'A' ? (
-                  <><ThumbsUp className="w-4 h-4 text-emerald-400" /><span className="text-xs text-emerald-400">{s.betterAnswerLabel}</span></>
+                  <><ThumbsUp className="w-4 h-4 text-badge-success" /><span className="text-xs text-badge-success">{s.betterAnswerLabel}</span></>
                 ) : (
                   <><ThumbsDown className="w-4 h-4 text-badge-danger" /><span className="text-xs text-badge-danger">{s.notGoodEnoughLabel}</span></>
                 )}
@@ -183,7 +183,7 @@ export const RewardModelStage: React.FC<RewardModelStageProps> = ({ onComplete, 
             className={`relative rounded-lg border p-4 transition-all ${
               showResult
                 ? example.preferredResponse === 'B'
-                  ? 'bg-emerald-500/10 border-emerald-500/30'
+                  ? 'bg-emerald-500/10 border-badge-success/30'
                   : 'bg-red-500/5 border-red-500/20'
                 : userChoice === 'B'
                   ? 'bg-blue-500/10 border-blue-500/30'
@@ -196,7 +196,7 @@ export const RewardModelStage: React.FC<RewardModelStageProps> = ({ onComplete, 
               {showResult && (
                 <span className={`text-xs px-2 py-0.5 rounded ${
                   example.preferredResponse === 'B'
-                    ? 'bg-emerald-500/20 text-emerald-400'
+                    ? 'bg-emerald-500/20 text-badge-success'
                     : 'bg-red-500/20 text-badge-danger'
                 }`}>
                   {example.labelB}
@@ -207,7 +207,7 @@ export const RewardModelStage: React.FC<RewardModelStageProps> = ({ onComplete, 
             {showResult && (
               <div className="mt-3 pt-3 border-t border-zinc-700 flex items-center gap-2">
                 {example.preferredResponse === 'B' ? (
-                  <><ThumbsUp className="w-4 h-4 text-emerald-400" /><span className="text-xs text-emerald-400">{s.betterAnswerLabel}</span></>
+                  <><ThumbsUp className="w-4 h-4 text-badge-success" /><span className="text-xs text-badge-success">{s.betterAnswerLabel}</span></>
                 ) : (
                   <><ThumbsDown className="w-4 h-4 text-badge-danger" /><span className="text-xs text-badge-danger">{s.notGoodEnoughLabel}</span></>
                 )}
@@ -220,14 +220,14 @@ export const RewardModelStage: React.FC<RewardModelStageProps> = ({ onComplete, 
         {showResult && (
           <div className={`rounded-lg border p-4 ${
             userChoice === example.preferredResponse
-              ? 'bg-emerald-500/10 border-emerald-500/30'
+              ? 'bg-emerald-500/10 border-badge-success/30'
               : 'bg-amber-500/10 border-amber-500/30'
           }`}>
             <div className="flex items-center gap-2 mb-2">
               {userChoice === example.preferredResponse ? (
                 <>
                   <span className="text-lg">🎉</span>
-                  <span className="text-sm font-medium text-emerald-400">{s.correctFeedback}</span>
+                  <span className="text-sm font-medium text-badge-success">{s.correctFeedback}</span>
                 </>
               ) : (
                 <>
@@ -291,7 +291,7 @@ export const RewardModelStage: React.FC<RewardModelStageProps> = ({ onComplete, 
           <div className="mt-4 p-3 rounded-lg bg-zinc-800">
             <p className="text-xs text-zinc-400 text-center">
               {s.scoreExplainPrefix}<br />
-              <span className="text-emerald-400">{s.scoreExampleHigh}</span>{s.scoreOrConnector}<span className="text-badge-danger">{s.scoreExampleLow}</span>
+              <span className="text-badge-success">{s.scoreExampleHigh}</span>{s.scoreOrConnector}<span className="text-badge-danger">{s.scoreExampleLow}</span>
             </p>
           </div>
         </div>
@@ -320,7 +320,7 @@ export const RewardModelStage: React.FC<RewardModelStageProps> = ({ onComplete, 
           {s.glossaryTerms.map((term) => (
             <div key={term.en} className="p-3 rounded-lg bg-zinc-800">
               <div className="flex items-center gap-2 mb-1">
-                <span className="text-sm font-bold text-emerald-400">{term.en}</span>
+                <span className="text-sm font-bold text-badge-success">{term.en}</span>
                 <span className="text-xs text-zinc-500">|</span>
                 <span className="text-sm text-zinc-400">{term.meaning}</span>
               </div>

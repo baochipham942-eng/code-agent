@@ -372,6 +372,8 @@ export const zhSettingsCore = {
       resetShortcut: '恢复该项默认',
       saving: '正在保存…',
       autosaveHint: '修改会自动保存。系统级热键会在桌面运行时重新注册，失败项会保留在配置中并记录诊断日志。',
+      registrationFailedPrefix: '注册失败：',
+      registrationFailedUnknown: '未知注册错误',
       categories: {
         global: '全局唤起',
         sessionEditing: '会话编辑',

@@ -915,19 +915,24 @@ export function useAgentIPC({
 
       if (isCurrentSessionProcessing) {
         const voiceCall = useVoiceCallStore.getState();
-        const canInjectIntoVoiceCall = !attachments?.length
+        // 收成一个「可注入的会话 id」而不是布尔量：后面 payload 直接用它，
+        // 类型自然收窄，不必在调用点写非空断言。
+        const voiceInjectSessionId = !attachments?.length
           && voiceCall.phase === 'live'
-          && voiceCall.sessionId === effectiveSessionId;
-        const voiceFallbackMessageId = canInjectIntoVoiceCall
+          && effectiveSessionId
+          && voiceCall.sessionId === effectiveSessionId
+          ? effectiveSessionId
+          : undefined;
+        const voiceFallbackMessageId = voiceInjectSessionId !== undefined
           ? (envelope.clientMessageId ?? generateMessageId())
           : undefined;
 
-        if (canInjectIntoVoiceCall) {
+        if (voiceInjectSessionId !== undefined) {
           try {
             const injection = await typedInvokeDomain(VoiceSchemas.INJECT_USER_TEXT, {
               action: 'injectUserText',
               payload: {
-                neoSessionId: effectiveSessionId!,
+                neoSessionId: voiceInjectSessionId,
                 text: content,
               },
             });

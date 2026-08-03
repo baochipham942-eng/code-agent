@@ -197,10 +197,10 @@ export async function injectVoiceUserText(
   const trimmed = text.trim();
   if (!trimmed) return { outcome: 'fallback', reason: 'empty_text' };
 
-  const session = active;
-  if (!session || session.neoSessionId !== neoSessionId || session.ending || session.graceTimer) {
+  if (active?.neoSessionId !== neoSessionId || active.ending || active.graceTimer) {
     return { outcome: 'fallback', reason: 'no_active_call' };
   }
+  const session = active;
   if (!session.voiceToolsAvailable) {
     logger.info('typed voice input falling back: tools unavailable', { voiceSessionId: session.id });
     return { outcome: 'fallback', reason: 'tools_unavailable' };

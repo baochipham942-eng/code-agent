@@ -38,6 +38,8 @@ resign_app_if_possible() {
 warn_about_existing_install() {
   local installed_app="/Applications/$APP_NAME.app"
   local build_info="$installed_app/Contents/Resources/build-info.json"
+  local incoming_branch
+  local incoming_commit_short
   [ -d "$installed_app" ] || return 0
 
   if [ ! -f "$build_info" ]; then
@@ -45,18 +47,26 @@ warn_about_existing_install() {
     return 0
   fi
 
-  CURRENT_PROJECT_ROOT="$PROJECT_ROOT" EXISTING_BUILD_INFO="$build_info" node -e '
+  incoming_branch="$(git -C "$PROJECT_ROOT" symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
+  incoming_commit_short="$(git -C "$PROJECT_ROOT" rev-parse --short=7 HEAD 2>/dev/null || true)"
+
+  CURRENT_PROJECT_ROOT="$PROJECT_ROOT" \
+  INCOMING_BRANCH="$incoming_branch" \
+  INCOMING_COMMIT_SHORT="$incoming_commit_short" \
+  EXISTING_BUILD_INFO="$build_info" \
+  node -e '
     const fs = require("fs");
     try {
       const info = JSON.parse(fs.readFileSync(process.env.EXISTING_BUILD_INFO, "utf8"));
-      if (info.worktree !== process.env.CURRENT_PROJECT_ROOT) {
+      const existingInstalledFrom = info.installedFrom ?? info.worktree;
+      if (existingInstalledFrom !== process.env.CURRENT_PROJECT_ROOT) {
         console.warn([
           "",
           "============================================================",
-          "[install-dev] WARNING: 正在覆盖另一个 worktree 安装的开发包",
-          `  worktree: ${info.worktree ?? "null"}`,
-          `  build:    ${info.branch ?? "null"} @ ${info.commitShort ?? "null"}`,
-          `  builtAt:  ${info.builtAt ?? "null"}`,
+          "[install-dev] WARNING: 正在跨会话覆盖另一个 worktree 安装的开发包",
+          `  branch/commit: 槽位原有 ${info.branch ?? "null"} @ ${info.commitShort ?? "null"} | 本次安装 ${process.env.INCOMING_BRANCH || "null"} @ ${process.env.INCOMING_COMMIT_SHORT || "null"}`,
+          `  installedFrom: 槽位原有 ${existingInstalledFrom ?? "null"} | 本次安装 ${process.env.CURRENT_PROJECT_ROOT}`,
+          `  槽位 builtAt: ${info.builtAt ?? "null"}`,
           "============================================================",
           "",
         ].join("\n"));
@@ -98,6 +108,7 @@ write_build_info() {
   BUILD_COMMIT_SHORT="$commit_short" \
   BUILD_DIRTY="$dirty" \
   BUILD_WORKTREE="$worktree" \
+  BUILD_INSTALLED_FROM="$PROJECT_ROOT" \
   node -e '
     const fs = require("fs");
     const nullable = (value) => value || null;
@@ -108,6 +119,7 @@ write_build_info() {
       commitShort: nullable(process.env.BUILD_COMMIT_SHORT),
       dirty: process.env.BUILD_DIRTY === "" ? null : process.env.BUILD_DIRTY === "true",
       worktree: nullable(process.env.BUILD_WORKTREE),
+      installedFrom: nullable(process.env.BUILD_INSTALLED_FROM),
       builtAt: new Date().toISOString(),
     };
     fs.writeFileSync(process.env.BUILD_INFO_PATH, `${JSON.stringify(info, null, 2)}\n`);

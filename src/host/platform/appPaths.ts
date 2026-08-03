@@ -89,14 +89,18 @@ function nullableString(value: unknown): value is string | null {
 
 function parseBuildInfo(content: string): BuildInfo | null {
   const parsed: unknown = JSON.parse(content);
+  if (!isRecord(parsed)) return null;
+  const installedFrom = parsed.installedFrom === undefined
+    ? parsed.worktree
+    : parsed.installedFrom;
   if (
-    !isRecord(parsed)
-    || typeof parsed.appName !== 'string'
+    typeof parsed.appName !== 'string'
     || !nullableString(parsed.branch)
     || !nullableString(parsed.commit)
     || !nullableString(parsed.commitShort)
     || (typeof parsed.dirty !== 'boolean' && parsed.dirty !== null)
     || !nullableString(parsed.worktree)
+    || !nullableString(installedFrom)
     || typeof parsed.builtAt !== 'string'
   ) {
     return null;
@@ -108,6 +112,7 @@ function parseBuildInfo(content: string): BuildInfo | null {
     commitShort: parsed.commitShort,
     dirty: parsed.dirty,
     worktree: parsed.worktree,
+    installedFrom,
     builtAt: parsed.builtAt,
   };
 }

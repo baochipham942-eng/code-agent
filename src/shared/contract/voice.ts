@@ -191,7 +191,7 @@ export type VoiceEvent =
   /** 通话自然结束；与需要用户处理的 error 分流。 */
   | { type: 'session.ended'; reason: 'idle-timeout' }
   /** 用户说的话（上游 ASR），final 时 done=true */
-  | { type: 'user.transcript'; text: string; done: boolean; itemId?: string }
+  | { type: 'user.transcript'; text: string; done: boolean; itemId?: string; candidateId?: string }
   /** 助手说的话的字幕 */
   | { type: 'assistant.transcript'; text: string; done: boolean; responseId?: string; itemId?: string }
   | { type: 'response.created'; responseId: string }

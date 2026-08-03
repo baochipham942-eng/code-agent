@@ -99,9 +99,16 @@ export function createNarrationState(): NarrationState {
  */
 function formatNarration(narration: VoiceWorkNarration): string {
   const who = narration.speaker ? `${narration.speaker.displayName}：` : '';
-  // 「停旧的」回报（§1）：整句台词已由 buildStopNarration 算好，这里不再拼词。
-  // 措辞只有一个家，避免「停稳了没有」这件事在两个模块里各写一半而说法打架。
-  if (narration.status === 'announcement') {
+  // 整句台词已由 voiceNarration 算好的两档，这里一个字都不再拼：
+  //   - announcement（§1「停旧的」回报，buildStopNarration）
+  //   - milestone（§2 中途进度 / R3 卡点，buildMilestoneNarration / buildBlockedNarration）
+  // 措辞只有一个家，避免同一句话在两个模块里各写一半而说法打架。
+  //
+  // milestone 之前漏在这里，落到下面那句终态兜底模板，注入文本开头成了
+  // 「『X』做完了。」——而 summary 里紧接着写「整件事还没做完，不要说它完成了」，
+  // 同一段文本先断言做完再否认做完。本仓栽过三次「可润色状态名词被润成已完成」，
+  // 这个开头就是最好的润色素材。
+  if (narration.status === 'announcement' || narration.status === 'milestone') {
     return `[BACKEND] ${who}${narration.summary}`;
   }
   if (narration.status === 'failed') {

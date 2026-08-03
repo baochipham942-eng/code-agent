@@ -1886,6 +1886,22 @@ describe('中途进度节流闸（回放时间线）', () => {
     expect(injectItem.mock.calls[0]?.[0]).toContain('写完了');
   });
 
+  it('进度的注入文本就是算好的那整段台词，不套终态模板', async () => {
+    await dialThenFreezeClock('session-milestone-format');
+    dispatch();
+    await vi.advanceTimersByTimeAsync(VOICE_MILESTONE_FIRST_DELAY_MS + 1);
+    injectItem.mockClear();
+
+    voiceDispatchProbe.narrate?.(milestone(1));
+
+    // 正向等值断言：措辞只有一个家（voiceNarration），队列一个字都不该再加。
+    // 上一版 formatNarration 没有 milestone 分支，落到终态兜底模板，开头变成
+    // 「『写周报』做完了。」——而真实 summary 里紧接着写「整件事还没做完」。
+    // 这里不能用 not.toContain('做完了') 之类的宽否定：进度台词本身就含「这步做完了」
+    // （指单步），宽否定会误红，也会在措辞一改动就退化成永远成立的空断言。
+    expect(injectItem).toHaveBeenCalledWith(`[BACKEND] ${milestone(1).summary}`);
+  });
+
   it('终态不受任何进度闸限制（正对照）', async () => {
     await dialThenFreezeClock('session-milestone-terminal-free');
     dispatch();

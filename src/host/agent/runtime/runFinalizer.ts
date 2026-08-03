@@ -787,15 +787,14 @@ export class RunFinalizer {
       && judgment.source === 'llm'
       && judgment.durableFacts.length > 0
     ) {
-      writeDurableFacts(judgment.durableFacts)
-        .then(({ written, skipped }) => {
-          logger.info('[RunFinalizer] Durable facts persisted', { written, skipped });
-        })
-        .catch((error) => {
-          logger.warn('[RunFinalizer] Durable fact persistence failed', {
-            error: error instanceof Error ? error.message : String(error),
-          });
+      try {
+        const { written, skipped } = await writeDurableFacts(judgment.durableFacts);
+        logger.info('[RunFinalizer] Durable facts persisted', { written, skipped });
+      } catch (error) {
+        logger.warn('[RunFinalizer] Durable fact persistence failed', {
+          error: error instanceof Error ? error.message : String(error),
         });
+      }
     }
 
     // "只存值得留的" — skip trivial chats (greetings, "继续"/"ok", no-signal turns).

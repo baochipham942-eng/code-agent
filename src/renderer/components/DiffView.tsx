@@ -184,7 +184,7 @@ export const DiffView: React.FC<DiffViewProps> = ({
         )}
         <div className="flex items-center gap-2 text-xs">
           {stats.added > 0 && (
-            <span className="text-emerald-400">+{stats.added}</span>
+            <span className="text-badge-success">+{stats.added}</span>
           )}
           {stats.removed > 0 && (
             <span className="text-rose-400">-{stats.removed}</span>
@@ -226,7 +226,7 @@ const DiffLineRow: React.FC<{ line: DiffLine }> = React.memo(function DiffLineRo
   const getGutterClass = () => {
     switch (line.type) {
       case 'added':
-        return 'text-emerald-500 bg-emerald-500/20';
+        return 'text-badge-success bg-emerald-500/20';
       case 'removed':
         return 'text-rose-500 bg-rose-500/20';
       case 'header':
@@ -252,7 +252,7 @@ const DiffLineRow: React.FC<{ line: DiffLine }> = React.memo(function DiffLineRo
   const getContentClass = () => {
     switch (line.type) {
       case 'added':
-        return 'text-emerald-300';
+        return 'text-badge-success';
       case 'removed':
         return 'text-rose-300';
       case 'header':
@@ -329,7 +329,7 @@ export const DiffPreview: React.FC<{
       className="inline-flex items-center gap-1.5 text-xs hover:bg-[var(--bg-elevated)] px-2 py-1 rounded transition-colors"
     >
       {stats.added > 0 && (
-        <span className="text-emerald-400">+{stats.added}</span>
+        <span className="text-badge-success">+{stats.added}</span>
       )}
       {stats.removed > 0 && (
         <span className="text-rose-400">-{stats.removed}</span>

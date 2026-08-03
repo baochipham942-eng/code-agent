@@ -265,8 +265,8 @@ export const ForceUpdateModal: React.FC<ForceUpdateModalProps> = ({ updateInfo }
               </div>
             )}
 
-            <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg p-3">
-              <p className="text-xs text-amber-200">
+            <div className="bg-amber-500/10 border border-badge-warning/20 rounded-lg p-3">
+              <p className="text-xs text-badge-warning">
                 {n.forceNote}
               </p>
             </div>
@@ -311,7 +311,7 @@ export const ForceUpdateModal: React.FC<ForceUpdateModalProps> = ({ updateInfo }
           <div className="space-y-4">
             <div className="flex items-center gap-4">
               <div className="w-12 h-12 rounded-full bg-emerald-500/20 flex items-center justify-center flex-shrink-0">
-                <CheckCircle className="w-6 h-6 text-emerald-400" />
+                <CheckCircle className="w-6 h-6 text-badge-success" />
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-lg font-medium text-white">{n.downloadComplete}</p>

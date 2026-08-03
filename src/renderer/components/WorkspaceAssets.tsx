@@ -253,7 +253,7 @@ export function PromptAppLibrary({
         {presets.length > 0 && (
           <section>
             <div className="mb-2 flex items-center gap-2 text-xs font-semibold text-zinc-200">
-              <Sparkles className="h-3.5 w-3.5 text-violet-300" />
+              <Sparkles className="h-3.5 w-3.5 text-badge-accent" />
               {a.presets}
             </div>
             <div className="grid gap-2">
@@ -283,7 +283,7 @@ export function PromptAppLibrary({
                     <button
                       type="button"
                       onClick={() => onUsePreset(preset)}
-                      className="inline-flex items-center gap-1 rounded-md border border-violet-500/20 bg-violet-500/[0.08] px-2.5 py-1 text-xs text-violet-200 hover:bg-violet-500/[0.14]"
+                      className="inline-flex items-center gap-1 rounded-md border border-badge-accent/20 bg-violet-500/[0.08] px-2.5 py-1 text-xs text-badge-accent hover:bg-violet-500/[0.14]"
                     >
                       <Play className="h-3 w-3" />
                       {a.use}

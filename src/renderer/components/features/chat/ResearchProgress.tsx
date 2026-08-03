@@ -62,8 +62,8 @@ const PHASE_ICONS: Record<ResearchPhase, React.ReactNode> = {
   planning: <Brain className="w-5 h-5" />,
   researching: <Search className="w-5 h-5" />,
   reporting: <FileText className="w-5 h-5" />,
-  complete: <CheckCircle className="w-5 h-5 text-green-400" />,
-  error: <AlertCircle className="w-5 h-5 text-red-400" />,
+  complete: <CheckCircle className="w-5 h-5 text-badge-success" />,
+  error: <AlertCircle className="w-5 h-5 text-badge-danger" />,
 };
 
 const PHASE_LABELS: Record<ResearchPhase, string> = {
@@ -120,7 +120,7 @@ export const ResearchProgress: React.FC<ResearchProgressProps> = ({
       <div className="flex items-center gap-3 mb-3">
         <div className={`p-2 rounded-lg ${isActive ? 'bg-primary-500/20' : 'bg-zinc-800-700'}`}>
           {isActive ? (
-            <Loader2 className="w-5 h-5 text-primary-400 animate-spin" />
+            <Loader2 className="w-5 h-5 text-badge-accent animate-spin" />
           ) : (
             PHASE_ICONS[phase]
           )}
@@ -128,13 +128,13 @@ export const ResearchProgress: React.FC<ResearchProgressProps> = ({
 
         <div className="flex-1">
           <div className="flex items-center gap-2">
-            <Microscope className="w-4 h-4 text-primary-400" />
+            <Microscope className="w-4 h-4 text-badge-accent" />
             <span className="text-sm font-medium text-white">
               深度研究 - {PHASE_LABELS[phase]}
             </span>
             {/* 语义触发标识 */}
             {isSemanticTriggered && (
-              <span className="flex items-center gap-1 px-1.5 py-0.5 bg-amber-500/20 text-amber-400 text-2xs rounded-full">
+              <span className="flex items-center gap-1 px-1.5 py-0.5 bg-amber-500/20 text-badge-warning text-2xs rounded-full">
                 <Zap className="w-3 h-3" />
                 自动触发
               </span>
@@ -176,8 +176,8 @@ export const ResearchProgress: React.FC<ResearchProgressProps> = ({
                 'bg-zinc-600'
               }`} />
               <span className={`text-xs transition-colors ${
-                isCompleted ? 'text-green-400' :
-                isCurrent ? 'text-primary-400' :
+                isCompleted ? 'text-badge-success' :
+                isCurrent ? 'text-badge-accent' :
                 'text-zinc-600'
               }`}>
                 {PHASE_LABELS[p]}
@@ -241,13 +241,13 @@ export const ResearchProgress: React.FC<ResearchProgressProps> = ({
         <div className="mt-3 pt-3 border-t border-zinc-700">
           <div className="flex items-center gap-2 text-xs">
             {currentStep.status === 'running' && (
-              <Loader2 className="w-3 h-3 text-primary-400 animate-spin" />
+              <Loader2 className="w-3 h-3 text-badge-accent animate-spin" />
             )}
             {currentStep.status === 'completed' && (
-              <CheckCircle className="w-3 h-3 text-green-400" />
+              <CheckCircle className="w-3 h-3 text-badge-success" />
             )}
             {currentStep.status === 'failed' && (
-              <AlertCircle className="w-3 h-3 text-red-400" />
+              <AlertCircle className="w-3 h-3 text-badge-danger" />
             )}
             <span className="text-zinc-400">{currentStep.title}</span>
           </div>
@@ -261,7 +261,7 @@ export const ResearchProgress: React.FC<ResearchProgressProps> = ({
             <button
               type="button"
               onClick={onDeepen}
-              className="px-3 py-1.5 text-xs bg-primary-500/20 text-primary-400 rounded-md hover:bg-primary-500/30 transition-colors"
+              className="px-3 py-1.5 text-xs bg-primary-500/20 text-badge-accent rounded-md hover:bg-primary-500/30 transition-colors"
             >
               继续深入
             </button>
@@ -280,7 +280,7 @@ export const ResearchProgress: React.FC<ResearchProgressProps> = ({
 
       {/* 错误信息 */}
       {error && (
-        <div className="mt-3 p-2 bg-red-500/10 border border-red-500/20 rounded text-xs text-red-400">
+        <div className="mt-3 p-2 bg-red-500/10 border border-red-500/20 rounded text-xs text-badge-danger">
           {error}
         </div>
       )}

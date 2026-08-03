@@ -186,7 +186,7 @@ export const SidebarSessionList: React.FC<SidebarSessionListProps> = ({
     <div className="flex-1 overflow-y-scroll px-1 min-h-0 mr-[calc(var(--scrollbar-size)*-1)]" data-testid="sidebar-session-scroll">
       {isLoading && !hasAnySessions ? (
         <div className="flex flex-col items-center justify-center py-12 gap-3">
-          <Loader2 className="w-6 h-6 animate-spin text-primary-400" />
+          <Loader2 className="w-6 h-6 animate-spin text-badge-accent" />
           <span className="text-xs text-zinc-500">{sb.loading}</span>
         </div>
       ) : !hasAnySessions ? (
@@ -244,7 +244,7 @@ export const SidebarSessionList: React.FC<SidebarSessionListProps> = ({
                 </button>
                 {section.tier === 'space' && cloudBadge && (
                   <span className="flex-shrink-0" title={p.tierCloudBadgeTitle} data-testid="sidebar-tier-cloud-badge">
-                    <Cloud className="h-3.5 w-3.5 text-sky-400" aria-label={p.tierCloudBadgeTitle} />
+                    <Cloud className="h-3.5 w-3.5 text-badge-info" aria-label={p.tierCloudBadgeTitle} />
                   </span>
                 )}
                 {section.tier === 'space' && (

@@ -338,7 +338,7 @@ export const AppearanceSettings: React.FC = () => {
                   </div>
                 </div>
                 {language === lang.code && (
-                  <span className="px-2 py-0.5 text-xs rounded-full bg-primary-500/20 text-primary-400">
+                  <span className="px-2 py-0.5 text-xs rounded-full bg-primary-500/20 text-badge-accent">
                     {t.common.active}
                   </span>
                 )}

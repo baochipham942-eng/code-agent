@@ -70,7 +70,7 @@ export const WorkflowPanel = memo(({ onClose }: WorkflowPanelProps) => {
   return (
     <FullScreenPage testId="workflow-panel">
       <FullScreenPageHeader
-        icon={<Workflow className="h-4 w-4 text-blue-400" />}
+        icon={<Workflow className="h-4 w-4 text-badge-info" />}
         title="Workflow"
         description="Agent 执行流程、DAG 状态和节点关系"
         onClose={handleClose}

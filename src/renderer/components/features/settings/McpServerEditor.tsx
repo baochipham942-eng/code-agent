@@ -239,7 +239,7 @@ const KeyValueEditor: React.FC<{
                 className="min-w-0 flex-1 bg-zinc-700 border border-zinc-600 rounded-lg px-3 py-1.5 text-xs text-zinc-200 placeholder:text-zinc-500 focus:outline-hidden focus:border-zinc-500"
               />
               {savedReference && (
-                <span className="shrink-0 text-[11px] text-emerald-400">
+                <span className="shrink-0 text-[11px] text-badge-success">
                   {text.savedCredentialHint}
                 </span>
               )}
@@ -257,7 +257,7 @@ const KeyValueEditor: React.FC<{
             <button
               type="button"
               onClick={() => handleRemove(key)}
-              className="p-1 text-zinc-500 hover:text-red-400 transition-colors"
+              className="p-1 text-zinc-500 hover:text-badge-danger transition-colors"
             >
               <Trash2 className="w-3.5 h-3.5" />
             </button>
@@ -618,10 +618,10 @@ export const McpServerEditor: React.FC<McpServerEditorProps> = ({
               spellCheck={false}
             />
             {jsonError && (
-              <p className="text-xs text-red-400">{jsonError}</p>
+              <p className="text-xs text-badge-danger">{jsonError}</p>
             )}
             {ignoredJsonKeys.length > 0 && (
-              <p className="text-xs text-amber-400">
+              <p className="text-xs text-badge-warning">
                 {editorText.jsonIgnoredKeys.replace('{keys}', ignoredJsonKeys.join(', '))}
               </p>
             )}

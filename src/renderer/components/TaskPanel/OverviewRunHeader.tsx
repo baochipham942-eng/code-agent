@@ -57,7 +57,7 @@ export const OverviewRunHeader: React.FC = () => {
       className="flex min-w-0 items-center gap-2 rounded-lg border border-white/[0.06] bg-white/[0.03] px-3 py-2"
     >
       {model.live && (
-        <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-sky-300" />
+        <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-badge-info" />
       )}
       <div className="min-w-0 flex-1">
         <div

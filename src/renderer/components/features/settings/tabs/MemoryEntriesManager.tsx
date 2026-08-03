@@ -302,8 +302,8 @@ export const MemoryEntriesManager: React.FC<{ onChanged?: () => void | Promise<v
         {message && (
           <div className={`border-b px-3 py-2 text-xs ${
             message.type === 'success'
-              ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-300'
-              : 'border-red-500/20 bg-red-500/10 text-red-300'
+              ? 'border-badge-success/20 bg-emerald-500/10 text-badge-success'
+              : 'border-red-500/20 bg-red-500/10 text-badge-danger'
           }`}
           >
             {message.text}
@@ -408,9 +408,9 @@ export const MemoryEntriesManager: React.FC<{ onChanged?: () => void | Promise<v
                   <div className="min-w-0">
                     <div className="flex items-center gap-2 text-sm font-medium text-zinc-200">
                       {selectedEntry.source.sourceOfTruth === 'light_file' ? (
-                        <FileText className="h-4 w-4 text-emerald-300" />
+                        <FileText className="h-4 w-4 text-badge-success" />
                       ) : (
-                        <Database className="h-4 w-4 text-sky-300" />
+                        <Database className="h-4 w-4 text-badge-info" />
                       )}
                       <span className="truncate">{getMemoryEntrySourceLabel(selectedEntry.source.sourceOfTruth)}</span>
                     </div>
@@ -483,7 +483,7 @@ export const MemoryEntriesManager: React.FC<{ onChanged?: () => void | Promise<v
                     type="button"
                     onClick={() => saveDraft()}
                     disabled={busy !== null}
-                    className="inline-flex items-center gap-1.5 rounded border border-emerald-500/40 bg-emerald-500/10 px-3 py-1.5 text-xs text-emerald-300 hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+                    className="inline-flex items-center gap-1.5 rounded border border-badge-success/40 bg-emerald-500/10 px-3 py-1.5 text-xs text-badge-success hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     {busy === 'save' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
                     {memoryText.entries.save}
@@ -510,7 +510,7 @@ export const MemoryEntriesManager: React.FC<{ onChanged?: () => void | Promise<v
                         type="button"
                         onClick={deleteSelected}
                         disabled={busy !== null || isWebMode()}
-                        className="inline-flex items-center gap-1.5 rounded border border-red-500/40 bg-red-500/10 px-3 py-1.5 text-xs text-red-300 hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+                        className="inline-flex items-center gap-1.5 rounded border border-red-500/40 bg-red-500/10 px-3 py-1.5 text-xs text-badge-danger hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         {busy === 'delete' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
                         {memoryText.entries.confirmDelete}
@@ -520,7 +520,7 @@ export const MemoryEntriesManager: React.FC<{ onChanged?: () => void | Promise<v
                     <button
                       type="button"
                       onClick={() => setDeleteConfirmId(selectedEntry.id)}
-                      className="inline-flex items-center gap-1.5 rounded border border-zinc-700 px-3 py-1.5 text-xs text-zinc-400 hover:border-red-500/40 hover:bg-red-500/10 hover:text-red-300"
+                      className="inline-flex items-center gap-1.5 rounded border border-zinc-700 px-3 py-1.5 text-xs text-zinc-400 hover:border-red-500/40 hover:bg-red-500/10 hover:text-badge-danger"
                     >
                       <Trash2 className="h-3.5 w-3.5" />
                       {memoryText.entries.delete}

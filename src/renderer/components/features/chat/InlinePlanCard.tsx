@@ -13,9 +13,9 @@ interface InlinePlanCardProps {
 
 const STATUS_ICONS: Record<string, React.ReactNode> = {
   pending: <Circle className="w-3.5 h-3.5 text-zinc-500" />,
-  in_progress: <Loader2 className="w-3.5 h-3.5 text-yellow-400 animate-spin" />,
-  completed: <CheckCircle2 className="w-3.5 h-3.5 text-green-400" />,
-  blocked: <Circle className="w-3.5 h-3.5 text-red-400" />,
+  in_progress: <Loader2 className="w-3.5 h-3.5 text-badge-warning animate-spin" />,
+  completed: <CheckCircle2 className="w-3.5 h-3.5 text-badge-success" />,
+  blocked: <Circle className="w-3.5 h-3.5 text-badge-danger" />,
   skipped: <Circle className="w-3.5 h-3.5 text-zinc-600" />,
 };
 
@@ -27,7 +27,7 @@ const StepItem: React.FC<{ step: TaskStep }> = ({ step }) => (
         step.status === 'completed'
           ? 'text-zinc-500 line-through'
           : step.status === 'in_progress'
-            ? 'text-yellow-300'
+            ? 'text-badge-warning'
             : 'text-zinc-400'
       }`}
     >
@@ -45,7 +45,7 @@ const PhaseSection: React.FC<{ phase: TaskPhase }> = ({ phase }) => (
           phase.status === 'completed'
             ? 'text-zinc-500'
             : phase.status === 'in_progress'
-              ? 'text-yellow-300'
+              ? 'text-badge-warning'
               : 'text-zinc-200'
         }`}
       >

@@ -169,12 +169,12 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
       aria-label={s.openSession.replace('{title}', displayTitle)}
       data-session-id={session.id}
       title={new Date(latestActivityAt).toLocaleString(localeForLanguage(language))}
-      className={`group relative pl-0 pr-1.5 py-1.5 rounded-lg cursor-pointer transition-colors duration-150 ${isSelected && !multiSelectMode ? 'bg-zinc-700/60' : isChecked ? 'bg-blue-500/10 border border-blue-500/20' : 'hover:bg-zinc-800'}`}
+      className={`group relative pl-0 pr-1.5 py-1.5 rounded-lg cursor-pointer transition-colors duration-150 ${isSelected && !multiSelectMode ? 'bg-zinc-700/60' : isChecked ? 'bg-blue-500/10 border border-badge-info/20' : 'hover:bg-zinc-800'}`}
     >
       <div className="flex items-center gap-2">
         {/* 多选 Checkbox */}
         {multiSelectMode && (
-          isChecked ? <CheckSquare className="w-4 h-4 text-blue-400 shrink-0" /> : <Square className="w-4 h-4 text-zinc-500 shrink-0" />
+          isChecked ? <CheckSquare className="w-4 h-4 text-badge-info shrink-0" /> : <Square className="w-4 h-4 text-zinc-500 shrink-0" />
         )}
 
         {/* 前导槽：宽度恒定 16px，有没有置顶标记标题左缘都不动
@@ -182,7 +182,7 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
             未读点已挪到行尾状态列。 */}
         {!multiSelectMode && (
           <span className="w-4 shrink-0 flex items-center justify-center">
-            {isPinned && <Pin className="w-3 h-3 text-amber-500 -rotate-45" />}
+            {isPinned && <Pin className="w-3 h-3 text-badge-warning -rotate-45" />}
           </span>
         )}
 
@@ -195,7 +195,7 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
             onBlur={handleRenameSubmit}
             onKeyDown={handleRenameKeyDown}
             onClick={(e) => e.stopPropagation()}
-            className="flex-1 text-sm bg-zinc-600/80 text-zinc-200 px-1.5 py-0.5 rounded border border-zinc-600 focus:border-blue-500 focus:outline-hidden"
+            className="flex-1 text-sm bg-zinc-600/80 text-zinc-200 px-1.5 py-0.5 rounded border border-zinc-600 focus:border-badge-info focus:outline-hidden"
           />
         ) : (
           <span
@@ -221,7 +221,7 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
             {surfaceExecutionSession ? (
               <SurfaceExecutionRunStatus session={surfaceExecutionSession} />
             ) : isRunning ? (
-              <Loader2 className="w-3 h-3 text-emerald-400/80 animate-spin" aria-label={localizedStatusLabel} />
+              <Loader2 className="w-3 h-3 text-badge-success/80 animate-spin" aria-label={localizedStatusLabel} />
             ) : attentionDotClass ? (
               <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${attentionDotClass}`} aria-label={localizedStatusLabel} />
             ) : isUnread && !multiSelectMode ? (
@@ -236,7 +236,7 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
                   event.stopPropagation();
                   void handleSelectSession(forkParentSessionId);
                 }}
-                className="shrink-0 rounded p-0.5 text-violet-400 transition-colors hover:bg-violet-500/15 hover:text-violet-300 focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-violet-400"
+                className="shrink-0 rounded p-0.5 text-badge-accent transition-colors hover:bg-violet-500/15 hover:text-badge-accent focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-violet-400"
               >
                 <GitFork className="h-3.5 w-3.5" />
               </button>

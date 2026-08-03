@@ -20,7 +20,7 @@ export const ChatTraceFallback: React.FC = () => {
       role="alert"
       className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center"
     >
-      <AlertTriangle className="h-5 w-5 text-amber-500" aria-hidden />
+      <AlertTriangle className="h-5 w-5 text-badge-warning" aria-hidden />
       <p className="text-sm text-zinc-300">{t.traceView.renderFailedTitle}</p>
       <p className="text-xs text-zinc-500">{t.traceView.renderFailedHint}</p>
     </div>

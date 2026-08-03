@@ -438,7 +438,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose 
                             : 'text-zinc-400 hover:bg-zinc-800'
                         }`}
                       >
-                        <span className={isSelected ? 'text-primary-400' : 'text-zinc-500'}>
+                        <span className={isSelected ? 'text-accent-accessible' : 'text-zinc-500'}>
                           {cmd.icon}
                         </span>
                         <div className="flex-1 min-w-0">

@@ -43,7 +43,7 @@ function memoryLabel(summary: TurnQualitySummary): string {
 function memoryTone(summary: TurnQualitySummary): string {
   return summary.memory.mode === 'off'
     ? 'border-zinc-700/70 bg-zinc-900/60 text-zinc-500'
-    : 'border-emerald-400/20 bg-emerald-400/10 text-emerald-200';
+    : 'border-badge-success/20 bg-emerald-400/10 text-badge-success';
 }
 
 function scoreTone(summary: TurnQualitySummary): string {
@@ -51,11 +51,11 @@ function scoreTone(summary: TurnQualitySummary): string {
   switch (grade) {
     case 'excellent':
     case 'good':
-      return 'border-emerald-400/20 bg-emerald-400/10 text-emerald-200';
+      return 'border-badge-success/20 bg-emerald-400/10 text-badge-success';
     case 'watch':
-      return 'border-amber-400/20 bg-amber-400/10 text-amber-200';
+      return 'border-badge-warning/20 bg-amber-400/10 text-badge-warning';
     case 'risk':
-      return 'border-red-400/20 bg-red-400/10 text-red-200';
+      return 'border-badge-danger/20 bg-red-400/10 text-badge-danger';
     default:
       return 'border-zinc-700 bg-zinc-900/60 text-zinc-300';
   }
@@ -183,7 +183,7 @@ export const TurnQualityStrip: React.FC<TurnQualityStripProps> = ({ summary }) =
         )}
         {degradedAgentId && (
           <span
-            className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-amber-500/80"
+            className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-badge-warning/80"
             title={`${t.agentCommand.badgeNotAppliedTitlePrefix}${summary.capabilities?.agentName || 'default'}`}
           >
             <Bot className="h-3 w-3" />
@@ -218,7 +218,7 @@ export const TurnQualityStrip: React.FC<TurnQualityStripProps> = ({ summary }) =
               <Brain className="h-3 w-3" />
               {memoryLabel(summary)}
             </span>
-            <span className="inline-flex min-w-0 items-center gap-1 rounded border border-sky-400/15 bg-sky-400/10 px-1.5 py-0.5 text-sky-200">
+            <span className="inline-flex min-w-0 items-center gap-1 rounded border border-badge-info/15 bg-sky-400/10 px-1.5 py-0.5 text-badge-info">
               <Cpu className="h-3 w-3 shrink-0" />
               <span className="truncate">{strategyLabel(summary)} · {formatModel(summary)}</span>
             </span>
@@ -254,10 +254,10 @@ export const TurnQualityStrip: React.FC<TurnQualityStripProps> = ({ summary }) =
             ))}
           </div>
           {(summary.strategy.reason || summary.strategy.complexity) && (
-            <div className="mb-2 rounded-md border border-sky-400/10 bg-sky-400/[0.04] px-2 py-1.5 text-sky-100/80">
+            <div className="mb-2 rounded-md border border-badge-info/10 bg-sky-400/[0.04] px-2 py-1.5 text-badge-info/80">
               {summary.strategy.reason || strategyLabel(summary)}
               {summary.strategy.complexity ? (
-                <span className="ml-2 text-sky-200/50">
+                <span className="ml-2 text-badge-info/50">
                   {summary.strategy.complexity.level} · {summary.strategy.complexity.score}
                 </span>
               ) : null}
@@ -289,7 +289,7 @@ export const TurnQualityStrip: React.FC<TurnQualityStripProps> = ({ summary }) =
                   key={`${block.blockType}-${block.trigger}-${index}`}
                   className={`rounded border px-1.5 py-0.5 ${
                     block.injected
-                      ? 'border-emerald-400/20 bg-emerald-400/10 text-emerald-200'
+                      ? 'border-badge-success/20 bg-emerald-400/10 text-badge-success'
                       : 'border-zinc-700 bg-zinc-900/60 text-zinc-500'
                   }`}
                   title={`${block.source} / ${block.trigger}`}
@@ -344,7 +344,7 @@ export const TurnQualityStrip: React.FC<TurnQualityStripProps> = ({ summary }) =
             </div>
           )}
           {summary.warnings?.length ? (
-            <div className="mt-2 space-y-1 text-amber-300/80">
+            <div className="mt-2 space-y-1 text-badge-warning/80">
               {summary.warnings.map((warning) => (
                 <div key={warning}>{unescapeHtmlEntities(warning)}</div>
               ))}

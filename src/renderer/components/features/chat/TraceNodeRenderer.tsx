@@ -357,7 +357,7 @@ const AssistantTextNode: React.FC<{
             title="复制选中文本"
             aria-label="复制选中文本"
           >
-            {copied ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
+            {copied ? <Check className="w-3.5 h-3.5 text-badge-success" /> : <Copy className="w-3.5 h-3.5" />}
           </button>
         </div>
       )}
@@ -507,13 +507,13 @@ const TurnTimelineNodeRenderer: React.FC<{ node: TraceNode; sessionId?: string }
 function getTimelineContainerClass(tone: TurnTimelinePayload['tone']): string {
   switch (tone) {
     case 'success':
-      return 'border-emerald-500/20 bg-emerald-500/10';
+      return 'border-badge-success/20 bg-emerald-500/10';
     case 'warning':
-      return 'border-amber-500/20 bg-amber-500/10';
+      return 'border-badge-warning/20 bg-amber-500/10';
     case 'error':
       return 'border-red-500/20 bg-red-500/10';
     case 'info':
-      return 'border-sky-500/20 bg-sky-500/10';
+      return 'border-badge-info/20 bg-sky-500/10';
     default:
       return 'border-border-muted bg-surface-subtle';
   }
@@ -526,7 +526,7 @@ const BlockedCapabilitiesNode: React.FC<{ timeline: TurnTimelinePayload }> = ({ 
   return (
     <div className={`rounded-lg border px-3 py-2 ${getTimelineContainerClass(timeline.tone)}`}>
       <div className="mb-2 flex items-center gap-2 text-[11px] text-zinc-300">
-        <AlertTriangle className="h-3.5 w-3.5 text-amber-300" />
+        <AlertTriangle className="h-3.5 w-3.5 text-badge-warning" />
         <span>本轮选中的能力里有未生效项</span>
       </div>
       <div className="space-y-2">
@@ -536,7 +536,7 @@ const BlockedCapabilitiesNode: React.FC<{ timeline: TurnTimelinePayload }> = ({ 
               <WorkbenchPill tone={reason.kind === 'skill' ? 'skill' : reason.kind === 'connector' ? 'connector' : 'mcp'}>
                 {reason.label}
               </WorkbenchPill>
-              <span className={`text-[10px] ${reason.severity === 'error' ? 'text-red-300' : 'text-amber-300'}`}>
+              <span className={`text-[10px] ${reason.severity === 'error' ? 'text-badge-danger' : 'text-badge-warning'}`}>
                 {reason.code}
               </span>
             </div>
@@ -582,7 +582,7 @@ const RoutingEvidenceNode: React.FC<{ timeline: TurnTimelinePayload }> = ({ time
   return (
     <div className={`rounded-lg border px-3 py-2 ${getTimelineContainerClass(timeline.tone)}`}>
       <div className="mb-1 flex flex-wrap items-center gap-2 text-[11px] text-zinc-300">
-        <AlertTriangle className={`h-3.5 w-3.5 ${timeline.tone === 'error' ? 'text-red-300' : 'text-amber-300'}`} />
+        <AlertTriangle className={`h-3.5 w-3.5 ${timeline.tone === 'error' ? 'text-badge-danger' : 'text-badge-warning'}`} />
         <span>{labels.title}</span>
         <WorkbenchPill tone="neutral">{modeLabel}</WorkbenchPill>
         {(evidence.agentNames || []).map((name) => (
@@ -598,7 +598,7 @@ const RoutingEvidenceNode: React.FC<{ timeline: TurnTimelinePayload }> = ({ time
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-1.5">
                   {/* 异常步骤（warning/error）用红/琥珀色文案，一眼看出是哪一步挂的 */}
-                  <span className={step.tone === 'error' ? 'text-red-300' : step.tone === 'warning' ? 'text-amber-300' : 'text-zinc-200'}>
+                  <span className={step.tone === 'error' ? 'text-badge-danger' : step.tone === 'warning' ? 'text-badge-warning' : 'text-zinc-200'}>
                     {step.label}
                   </span>
                   <WorkbenchPill tone={step.tone === 'error' || step.tone === 'warning' ? 'info' : 'neutral'}>
@@ -651,7 +651,7 @@ const HookActivityNode: React.FC<{ timeline: TurnTimelinePayload }> = ({ timelin
         aria-expanded={expanded}
         title={expanded ? labels.collapse : labels.expand}
       >
-        <Wrench className="h-3.5 w-3.5 shrink-0 text-sky-300" />
+        <Wrench className="h-3.5 w-3.5 shrink-0 text-badge-info" />
         <span>{labels.title}</span>
         {expanded ? (
           <ChevronDown className="ml-auto h-3.5 w-3.5 shrink-0 text-zinc-600" />
@@ -784,7 +784,7 @@ const ArtifactOwnershipNode: React.FC<{ timeline: TurnTimelinePayload; sessionId
   const outputsCard = outputItems.length > 0 ? (
     <div className={`rounded-lg border px-3 py-2 ${getTimelineContainerClass(timeline.tone)}`}>
       <div className="mb-1.5 flex items-center gap-2 text-[11px] text-zinc-400">
-        <FileText className="h-3.5 w-3.5 text-emerald-300" />
+        <FileText className="h-3.5 w-3.5 text-badge-success" />
         <span>Outputs</span>
       </div>
       {fileItems.length > 0 && <FileArtifactCard items={fileItems} mediaContext={mediaContext} />}
@@ -836,15 +836,15 @@ const SystemErrorNode: React.FC<{ node: TraceNode }> = ({ node }) => {
   return (
     <div className="py-1">
       <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/20">
-        <AlertTriangle className="w-4 h-4 text-red-400 mt-0.5 shrink-0" />
+        <AlertTriangle className="w-4 h-4 text-badge-danger mt-0.5 shrink-0" />
         <div className="min-w-0 flex-1">
-          <div className="text-xs text-red-300">{summary}</div>
-          {detail && <div className="mt-0.5 text-[11px] text-red-300/70">{detail}</div>}
+          <div className="text-xs text-badge-danger">{summary}</div>
+          {detail && <div className="mt-0.5 text-[11px] text-badge-danger/70">{detail}</div>}
         </div>
         <button
           onClick={() => setExpanded(!expanded)}
           aria-expanded={expanded}
-          className="shrink-0 text-[11px] text-red-300/70 hover:text-red-300 transition-colors"
+          className="shrink-0 text-[11px] text-badge-danger/70 hover:text-badge-danger transition-colors"
         >
           {expanded ? t.systemError.hideDetails : t.systemError.viewDetails}
         </button>
@@ -867,18 +867,18 @@ const SystemNode: React.FC<{ node: TraceNode }> = ({ node }) => {
       <div className="py-1">
         <button
           onClick={() => setExpanded(!expanded)}
-          className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg bg-amber-500/10 border border-amber-500/20 hover:bg-amber-500/15 transition-colors"
+          className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg bg-amber-500/10 border border-badge-warning/20 hover:bg-amber-500/15 transition-colors"
         >
-          <Archive className="w-4 h-4 text-amber-400" />
-          <span className="text-xs font-medium text-amber-300">上下文已压缩</span>
+          <Archive className="w-4 h-4 text-badge-warning" />
+          <span className="text-xs font-medium text-badge-warning">上下文已压缩</span>
           {expanded ? (
-            <ChevronDown className="w-3.5 h-3.5 text-amber-400 ml-auto" />
+            <ChevronDown className="w-3.5 h-3.5 text-badge-warning ml-auto" />
           ) : (
-            <ChevronRight className="w-3.5 h-3.5 text-amber-400 ml-auto" />
+            <ChevronRight className="w-3.5 h-3.5 text-badge-warning ml-auto" />
           )}
         </button>
         {expanded && (
-          <div className="mt-2 px-3 py-2.5 rounded-md bg-amber-500/5 border border-amber-500/10">
+          <div className="mt-2 px-3 py-2.5 rounded-md bg-amber-500/5 border border-badge-warning/10">
             <ExpandableContent content={node.content} maxLines={30} />
           </div>
         )}

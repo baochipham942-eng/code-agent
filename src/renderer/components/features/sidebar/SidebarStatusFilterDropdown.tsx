@@ -112,7 +112,7 @@ export const SidebarStatusFilterDropdown: React.FC<SidebarStatusFilterDropdownPr
                       setSessionStatusFilter('review');
                       setTrajectoryReviewFilter(active ? 'all' : option.id);
                     }}
-                    className={`rounded-md border px-1.5 py-0.5 text-[10px] transition-colors ${active ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-200' : 'border-zinc-700 bg-zinc-900/40 text-zinc-400 hover:border-zinc-600 hover:text-zinc-200'}`}
+                    className={`rounded-md border px-1.5 py-0.5 text-[10px] transition-colors ${active ? 'border-badge-success/40 bg-emerald-500/10 text-badge-success' : 'border-zinc-700 bg-zinc-900/40 text-zinc-400 hover:border-zinc-600 hover:text-zinc-200'}`}
                   >
                     {option.label}
                   </button>
@@ -146,9 +146,9 @@ export const SidebarStatusFilterDropdown: React.FC<SidebarStatusFilterDropdownPr
                       setSessionStatusFilter('review');
                       setTrajectoryFailureFilter(active ? 'all' : option.id);
                     }}
-                    className={`flex items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-[11px] transition-colors ${active ? 'bg-amber-500/10 text-amber-200' : 'text-zinc-400 hover:bg-zinc-700/70 hover:text-zinc-200'}`}
+                    className={`flex items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-[11px] transition-colors ${active ? 'bg-amber-500/10 text-badge-warning' : 'text-zinc-400 hover:bg-zinc-700/70 hover:text-zinc-200'}`}
                   >
-                    <Check className={`h-3 w-3 shrink-0 ${active ? 'text-amber-300' : 'text-transparent'}`} />
+                    <Check className={`h-3 w-3 shrink-0 ${active ? 'text-badge-warning' : 'text-transparent'}`} />
                     <span className="truncate">{option.label}</span>
                   </button>
                 );

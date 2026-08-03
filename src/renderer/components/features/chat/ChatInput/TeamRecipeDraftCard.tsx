@@ -69,11 +69,11 @@ export const TeamRecipeDraftCard: React.FC<{ drafts: TeamRecipeDraftSummary[]; o
       toast.error(error instanceof Error ? error.message : text.draftProcessFailed);
     } finally { setBusyId(null); }
   };
-  return <div className="px-3 py-2 mb-2 bg-violet-500/10 border border-violet-500/20 rounded-lg animate-fadeIn" data-testid="team-recipe-draft-card">
-    <div className="flex items-center gap-2 mb-1"><UsersRound className="w-4 h-4 text-violet-300" /><span className="text-xs text-violet-200 flex-1">{text.draftPendingBanner}</span><button /* ds-allow:button: 草稿卡关闭是图标级瞬时操作 */ type="button" onClick={onDismiss} title={text.draftLater} className="p-0.5 text-zinc-500 hover:text-zinc-300"><X className="w-3.5 h-3.5" /></button></div>
-    {drafts.map((draft) => <div key={draft.id} className="py-1.5 border-t border-violet-500/10 first:border-t-0">
-      <div className="text-xs font-medium text-violet-100">{draft.name}</div>
-      <div className="flex min-w-0 flex-wrap items-center gap-1 text-[11px] text-violet-200/70">
+  return <div className="px-3 py-2 mb-2 bg-violet-500/10 border border-badge-accent/20 rounded-lg animate-fadeIn" data-testid="team-recipe-draft-card">
+    <div className="flex items-center gap-2 mb-1"><UsersRound className="w-4 h-4 text-badge-accent" /><span className="text-xs text-badge-accent flex-1">{text.draftPendingBanner}</span><button /* ds-allow:button: 草稿卡关闭是图标级瞬时操作 */ type="button" onClick={onDismiss} title={text.draftLater} className="p-0.5 text-zinc-500 hover:text-zinc-300"><X className="w-3.5 h-3.5" /></button></div>
+    {drafts.map((draft) => <div key={draft.id} className="py-1.5 border-t border-badge-accent/10 first:border-t-0">
+      <div className="text-xs font-medium text-badge-accent">{draft.name}</div>
+      <div className="flex min-w-0 flex-wrap items-center gap-1 text-[11px] text-badge-accent/70">
         {draft.lead
           ? (() => {
               // {lead} 在中英文文案里都居中，按占位符切两半，别拿 replace 抹平（会切坏句子）
@@ -85,8 +85,8 @@ export const TeamRecipeDraftCard: React.FC<{ drafts: TeamRecipeDraftSummary[]; o
       {draft.lead ? <div className="text-[11px] text-zinc-400">{draft.lead.briefTemplate}</div> : null}
       <div className="mt-1 text-[11px] text-zinc-300">{text.draftMembers}</div>
       <ul className="space-y-0.5 text-[11px] text-zinc-400">{draft.members.map((member, index) => <li key={`${member.id ?? member.roleId}-${index}`} className="min-w-0"><RoleLabel roleId={member.roleId} profession={professionOf(member.roleId)} />：{member.taskTemplate}</li>)}</ul>
-      {draft.unknownRoleNames?.length ? <div className="mt-1 text-[11px] text-amber-300" role="alert">{text.draftUnknownRoles.replace('{roles}', draft.unknownRoleNames.join('、'))} {text.draftUnknownActions}</div> : null}
-      <div className="mt-2 flex gap-2"><button /* ds-allow:button: 草稿确认需在卡内与放弃并列呈现 */ type="button" disabled={busyId !== null} onClick={() => void process(draft.id, 'confirmDraft')} className="flex items-center gap-1 px-2 py-1 text-xs bg-violet-500/20 text-violet-200 rounded disabled:opacity-50">{busyId === draft.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}{text.draftConfirm}</button><button /* ds-allow:button: 草稿放弃与确认构成同一行紧凑决策 */ type="button" disabled={busyId !== null} onClick={() => void process(draft.id, 'rejectDraft')} className="px-2 py-1 text-xs text-zinc-400 rounded disabled:opacity-50">{text.draftReject}</button></div>
+      {draft.unknownRoleNames?.length ? <div className="mt-1 text-[11px] text-badge-warning" role="alert">{text.draftUnknownRoles.replace('{roles}', draft.unknownRoleNames.join('、'))} {text.draftUnknownActions}</div> : null}
+      <div className="mt-2 flex gap-2"><button /* ds-allow:button: 草稿确认需在卡内与放弃并列呈现 */ type="button" disabled={busyId !== null} onClick={() => void process(draft.id, 'confirmDraft')} className="flex items-center gap-1 px-2 py-1 text-xs bg-violet-500/20 text-badge-accent rounded disabled:opacity-50">{busyId === draft.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}{text.draftConfirm}</button><button /* ds-allow:button: 草稿放弃与确认构成同一行紧凑决策 */ type="button" disabled={busyId !== null} onClick={() => void process(draft.id, 'rejectDraft')} className="px-2 py-1 text-xs text-zinc-400 rounded disabled:opacity-50">{text.draftReject}</button></div>
     </div>)}
   </div>;
 };

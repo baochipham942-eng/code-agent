@@ -44,9 +44,9 @@ export interface ProjectListViewHandle {
 }
 
 const STATUS_CHIP_CLASS: Record<ProjectActivityStatus, string> = {
-  active: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300',
+  active: 'border-badge-success/30 bg-emerald-500/10 text-badge-success',
   idle: 'border-zinc-700 bg-zinc-800/60 text-zinc-400',
-  archived: 'border-amber-500/30 bg-amber-500/10 text-amber-300',
+  archived: 'border-badge-warning/30 bg-amber-500/10 text-badge-warning',
 };
 
 type CreateSource = 'directory' | 'promote';
@@ -248,7 +248,7 @@ export const ProjectListView = React.forwardRef<ProjectListViewHandle, ProjectLi
                 <span className="flex min-w-0 items-center gap-2">
                   <span className="truncate text-sm text-zinc-200 group-hover:text-zinc-100">{project.name}</span>
                   {project.cloudProjectId ? (
-                    <Badge className="border-violet-500/30 bg-violet-500/10 text-[11px] text-violet-300" data-testid={`project-space-cloud-badge-${project.id}`}>
+                    <Badge className="border-badge-accent/30 bg-violet-500/10 text-[11px] text-badge-accent" data-testid={`project-space-cloud-badge-${project.id}`}>
                       {ps.cloudBadge}
                     </Badge>
                   ) : null}
@@ -266,7 +266,7 @@ export const ProjectListView = React.forwardRef<ProjectListViewHandle, ProjectLi
               </span>
               <span className="flex flex-shrink-0 items-center gap-3">
                 {project.activeTopicCount > 0 && (
-                  <Badge className="border-violet-500/30 bg-violet-500/10 text-[11px] text-violet-300" data-testid={`project-space-topic-count-${project.id}`}>
+                  <Badge className="border-badge-accent/30 bg-violet-500/10 text-[11px] text-badge-accent" data-testid={`project-space-topic-count-${project.id}`}>
                     {ps.activeTopicBadge.replace('{count}', String(project.activeTopicCount))}
                   </Badge>
                 )}

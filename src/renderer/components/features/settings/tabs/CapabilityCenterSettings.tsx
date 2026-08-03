@@ -77,19 +77,19 @@ const HEALTH_FILTERS: HealthFilter[] = ['all', 'ready', 'needs_config', 'disable
 function kindIcon(kind: CapabilityKind): React.ReactNode {
   switch (kind) {
     case 'agent_engine':
-      return <Terminal className="h-4 w-4 text-emerald-300" />;
+      return <Terminal className="h-4 w-4 text-badge-success" />;
     case 'skill':
-      return <Sparkles className="h-4 w-4 text-amber-300" />;
+      return <Sparkles className="h-4 w-4 text-badge-warning" />;
     case 'mcp_template':
-      return <Plug className="h-4 w-4 text-sky-300" />;
+      return <Plug className="h-4 w-4 text-badge-info" />;
     case 'tool_bundle':
-      return <Wrench className="h-4 w-4 text-violet-300" />;
+      return <Wrench className="h-4 w-4 text-badge-accent" />;
     case 'channel_adapter':
-      return <FileCog className="h-4 w-4 text-emerald-300" />;
+      return <FileCog className="h-4 w-4 text-badge-success" />;
     case 'workflow_recipe':
       return <Workflow className="h-4 w-4 text-cyan-300" />;
     case 'connector':
-      return <PackageCheck className="h-4 w-4 text-orange-300" />;
+      return <PackageCheck className="h-4 w-4 text-badge-warning" />;
     default:
       return <PackageCheck className="h-4 w-4 text-zinc-300" />;
   }
@@ -98,11 +98,11 @@ function kindIcon(kind: CapabilityKind): React.ReactNode {
 function getRiskClass(risk: CapabilityRiskTier): string {
   switch (risk) {
     case 'high':
-      return 'border-red-500/30 bg-red-500/10 text-red-300';
+      return 'border-red-500/30 bg-red-500/10 text-badge-danger';
     case 'medium':
-      return 'border-amber-500/30 bg-amber-500/10 text-amber-300';
+      return 'border-badge-warning/30 bg-amber-500/10 text-badge-warning';
     default:
-      return 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300';
+      return 'border-badge-success/30 bg-emerald-500/10 text-badge-success';
   }
 }
 
@@ -110,13 +110,13 @@ function getRuntimeClass(runtime: CapabilityRuntimeState): string {
   switch (runtime) {
     case 'ready':
     case 'connected':
-      return 'text-emerald-300';
+      return 'text-badge-success';
     case 'lazy':
     case 'unknown':
-      return 'text-sky-300';
+      return 'text-badge-info';
     case 'blocked':
     case 'error':
-      return 'text-red-300';
+      return 'text-badge-danger';
     default:
       return 'text-zinc-400';
   }
@@ -364,7 +364,7 @@ const CapabilityCard: React.FC<CapabilityCardProps> = ({ item, text, actionLoadi
                   <span className={`rounded border px-1.5 py-0.5 text-[11px] ${getAssessmentPriorityClass(assessment.priority)}`}>
                     {assessment.priority}
                   </span>
-                  <span className="rounded border border-sky-500/30 bg-sky-500/10 px-1.5 py-0.5 text-[11px] text-sky-200">
+                  <span className="rounded border border-badge-info/30 bg-sky-500/10 px-1.5 py-0.5 text-[11px] text-badge-info">
                     {formatAssessmentPortability(assessment.portability, text.assessmentPortability)}
                   </span>
                 </>
@@ -387,7 +387,7 @@ const CapabilityCard: React.FC<CapabilityCardProps> = ({ item, text, actionLoadi
               {item.metrics?.accounts !== undefined ? <span className="text-zinc-500">{item.metrics.accounts} account</span> : null}
             </div>
             {item.state.runtime === 'blocked' && item.actions.reason ? (
-              <div className="mt-2 flex items-start gap-2 rounded-lg border border-amber-500/20 bg-amber-500/10 px-2.5 py-1.5 text-[11px] leading-relaxed text-amber-200">
+              <div className="mt-2 flex items-start gap-2 rounded-lg border border-badge-warning/20 bg-amber-500/10 px-2.5 py-1.5 text-[11px] leading-relaxed text-badge-warning">
                 <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                 <span className="break-words">{item.actions.reason}</span>
               </div>
@@ -471,7 +471,7 @@ const CapabilityCard: React.FC<CapabilityCardProps> = ({ item, text, actionLoadi
       ) : null}
 
       {(missingConfig.length > 0 || item.state.error) && (
-        <div className="mt-3 flex items-start gap-2 rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+        <div className="mt-3 flex items-start gap-2 rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-badge-danger">
           <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
           <div className="min-w-0">
             {item.state.error ? <div className="truncate">{item.state.error}</div> : null}
@@ -571,11 +571,11 @@ type CapabilityAssessmentPriorityValue = NonNullable<CapabilityCenterItem['asses
 function getAssessmentPriorityClass(priority: CapabilityAssessmentPriorityValue): string {
   switch (priority) {
     case 'P0':
-      return 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200';
+      return 'border-badge-success/30 bg-emerald-500/10 text-badge-success';
     case 'P1':
-      return 'border-sky-500/30 bg-sky-500/10 text-sky-200';
+      return 'border-badge-info/30 bg-sky-500/10 text-badge-info';
     case 'P2':
-      return 'border-amber-500/30 bg-amber-500/10 text-amber-200';
+      return 'border-badge-warning/30 bg-amber-500/10 text-badge-warning';
     default:
       return 'border-zinc-600 bg-zinc-900 text-zinc-300';
   }
@@ -739,11 +739,11 @@ export const CapabilityCenterSettings: React.FC<CapabilityCenterSettingsProps> =
           title={capabilityText.registryWarnings.title}
           description={`${registryDiagnostics.length}${capabilityText.registryWarnings.descriptionSuffix}`}
         >
-          <div className="space-y-2 text-xs leading-relaxed text-amber-200">
+          <div className="space-y-2 text-xs leading-relaxed text-badge-warning">
             {registryDiagnostics.slice(0, 6).map((diagnostic) => (
               <div
                 key={`${diagnostic.code}:${diagnostic.path || ''}:${diagnostic.itemId || ''}:${diagnostic.message}`}
-                className="flex gap-2 rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2"
+                className="flex gap-2 rounded-lg border border-badge-warning/20 bg-amber-500/10 px-3 py-2"
               >
                 <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                 <span className="break-words">{formatDiagnostic(diagnostic)}</span>
@@ -817,14 +817,14 @@ export const CapabilityCenterSettings: React.FC<CapabilityCenterSettingsProps> =
           </div>
 
           {actionResult ? (
-            <div className="flex items-start gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-300">
+            <div className="flex items-start gap-2 rounded-lg border border-badge-success/30 bg-emerald-500/10 p-3 text-sm text-badge-success">
               <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
               <span>{actionResult.text}</span>
             </div>
           ) : null}
 
           {error ? (
-            <div className="flex items-start gap-2 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-300">
+            <div className="flex items-start gap-2 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-badge-danger">
               <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" />
               <span>{error}</span>
             </div>
@@ -863,11 +863,11 @@ export const CapabilityCenterSettings: React.FC<CapabilityCenterSettingsProps> =
       >
         <div className="space-y-2 text-xs leading-relaxed text-zinc-400">
           <div className="flex gap-2">
-            <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-400" />
+            <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-badge-success" />
             <span>{capabilityText.securityBoundary.skillBoundary}</span>
           </div>
           <div className="flex gap-2">
-            <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-400" />
+            <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-badge-success" />
             <span>{capabilityText.securityBoundary.templateBoundary}</span>
           </div>
         </div>

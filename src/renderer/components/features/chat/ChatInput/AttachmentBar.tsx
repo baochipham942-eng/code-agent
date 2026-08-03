@@ -22,25 +22,25 @@ export const AttachmentIcon: React.FC<{ category: AttachmentCategory; className?
   const iconClass = className ?? 'w-5 h-5';
   switch (category) {
     case 'pdf':
-      return <FileText className={`${iconClass} text-red-400`} />;
+      return <FileText className={`${iconClass} text-badge-danger`} />;
     case 'audio':
       return <Music className={`${iconClass} text-fuchsia-400`} />;
     case 'video':
       return <Video className={`${iconClass} text-cyan-400`} />;
     case 'presentation':
-      return <Presentation className={`${iconClass} text-violet-400`} />;
+      return <Presentation className={`${iconClass} text-badge-accent`} />;
     case 'archive':
-      return <Archive className={`${iconClass} text-yellow-400`} />;
+      return <Archive className={`${iconClass} text-badge-warning`} />;
     case 'code':
-      return <Code className={`${iconClass} text-blue-400`} />;
+      return <Code className={`${iconClass} text-badge-info`} />;
     case 'data':
-      return <Database className={`${iconClass} text-amber-400`} />;
+      return <Database className={`${iconClass} text-badge-warning`} />;
     case 'html':
-      return <Globe className={`${iconClass} text-orange-400`} />;
+      return <Globe className={`${iconClass} text-badge-warning`} />;
     case 'text':
       return <FileText className={`${iconClass} text-zinc-400`} />;
     case 'folder':
-      return <Folder className={`${iconClass} text-yellow-400`} />;
+      return <Folder className={`${iconClass} text-badge-warning`} />;
     default:
       return <File className={`${iconClass} text-zinc-500`} />;
   }

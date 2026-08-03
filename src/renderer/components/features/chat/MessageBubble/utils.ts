@@ -22,17 +22,17 @@ export function formatFileSize(bytes: number): string {
 
 // Language colors for code blocks
 export const languageConfig: Record<string, LanguageConfig> = {
-  typescript: { color: 'text-blue-400' },
-  javascript: { color: 'text-yellow-400' },
-  python: { color: 'text-green-400' },
-  rust: { color: 'text-orange-400' },
+  typescript: { color: 'text-badge-info' },
+  javascript: { color: 'text-badge-warning' },
+  python: { color: 'text-badge-success' },
+  rust: { color: 'text-badge-warning' },
   go: { color: 'text-cyan-400' },
-  bash: { color: 'text-emerald-400' },
-  shell: { color: 'text-emerald-400' },
-  json: { color: 'text-amber-400' },
-  html: { color: 'text-orange-400' },
-  css: { color: 'text-blue-400' },
-  sql: { color: 'text-purple-400' },
+  bash: { color: 'text-badge-success' },
+  shell: { color: 'text-badge-success' },
+  json: { color: 'text-badge-warning' },
+  html: { color: 'text-badge-warning' },
+  css: { color: 'text-badge-info' },
+  sql: { color: 'text-badge-accent' },
 };
 
 // Folder summary threshold

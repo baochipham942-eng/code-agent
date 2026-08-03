@@ -66,15 +66,15 @@ function StatusReadFailureBanner({
 
   return (
     <div
-      className="rounded-md border border-amber-500/20 bg-amber-500/[0.06] px-2.5 py-2"
+      className="rounded-md border border-badge-warning/20 bg-amber-500/[0.06] px-2.5 py-2"
       role="status"
       aria-live="polite"
     >
       <div className="flex items-start gap-2">
-        <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-amber-300" aria-hidden="true" />
+        <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-badge-warning" aria-hidden="true" />
         <div className="min-w-0 flex-1">
-          <div className="text-xs font-medium text-amber-200">{m.statusReadFailed}</div>
-          <div className="mt-0.5 text-[11px] text-amber-200/70">{m.statusReadFailedHint}</div>
+          <div className="text-xs font-medium text-badge-warning">{m.statusReadFailed}</div>
+          <div className="mt-0.5 text-[11px] text-badge-warning/70">{m.statusReadFailedHint}</div>
         </div>
       </div>
       <div className="mt-2 flex items-center gap-2">
@@ -82,7 +82,7 @@ function StatusReadFailureBanner({
           type="button"
           onClick={onRetry}
           disabled={busy}
-          className="inline-flex items-center gap-1.5 rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-[11px] font-medium text-amber-200 transition-colors hover:bg-amber-500/15 disabled:cursor-not-allowed disabled:opacity-60"
+          className="inline-flex items-center gap-1.5 rounded-md border border-badge-warning/30 bg-amber-500/10 px-2 py-1 text-[11px] font-medium text-badge-warning transition-colors hover:bg-amber-500/15 disabled:cursor-not-allowed disabled:opacity-60"
           aria-label={m.retryStatusRead}
         >
           {isLoading && <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />}
@@ -100,7 +100,7 @@ function StatusReadFailureBanner({
         </button>
       </div>
       {cancelFailed && (
-        <div className="mt-2 text-[11px] text-red-300" role="alert">{m.cancelTaskFailed}</div>
+        <div className="mt-2 text-[11px] text-badge-danger" role="alert">{m.cancelTaskFailed}</div>
       )}
     </div>
   );
@@ -249,7 +249,7 @@ function ContextRows({ rows }: { rows: OverviewContextRow[] }) {
           </span>
           {row.detail && (
             <span className={`max-w-[110px] truncate text-[10px] ${
-              row.blocked ? 'text-amber-300' : 'text-zinc-600'
+              row.blocked ? 'text-badge-warning' : 'text-zinc-600'
             }`}>
               {row.detail}
             </span>

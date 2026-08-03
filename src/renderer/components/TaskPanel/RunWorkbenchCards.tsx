@@ -42,18 +42,18 @@ import { typedInvokeDomain } from '../../services/typedInvoke';
 export function runStatusClass(status: RunUiStatus): string {
   switch (status) {
     case 'completed':
-      return 'border-emerald-500/20 bg-emerald-500/10 text-emerald-300';
+      return 'border-badge-success/20 bg-emerald-500/10 text-badge-success';
     case 'waiting_approval':
     case 'using_tools':
     case 'verifying':
-      return 'border-amber-500/20 bg-amber-500/10 text-amber-300';
+      return 'border-badge-warning/20 bg-amber-500/10 text-badge-warning';
     case 'blocked':
     case 'cancelled':
-      return 'border-red-500/20 bg-red-500/10 text-red-300';
+      return 'border-red-500/20 bg-red-500/10 text-badge-danger';
     case 'planning':
     case 'running':
     default:
-      return 'border-sky-500/20 bg-sky-500/10 text-sky-300';
+      return 'border-badge-info/20 bg-sky-500/10 text-badge-info';
   }
 }
 
@@ -87,19 +87,19 @@ export function getRunUiStatusLabel(status: RunUiStatus, t: Translations): strin
 function subagentStatusClass(status: SubagentRunView['status']): string {
   switch (status) {
     case 'completed':
-      return 'text-emerald-300';
+      return 'text-badge-success';
     case 'failed':
     case 'blocked':
-      return 'text-red-300';
+      return 'text-badge-danger';
     case 'cancelled':
       return 'text-zinc-600';
     case 'queued':
     case 'waiting_approval':
     case 'paused':
-      return 'text-amber-300';
+      return 'text-badge-warning';
     case 'running':
     default:
-      return 'text-sky-300';
+      return 'text-badge-info';
   }
 }
 
@@ -121,7 +121,7 @@ export const RunOverview = ({ model, onOpenMemory }: RunOverviewProps) => {
         {isCompleted ? (
           <span className="mt-1.5 h-1.5 w-1.5 flex-shrink-0 rounded-full bg-emerald-400/50" />
         ) : (
-          <Radio className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-sky-300" />
+          <Radio className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-badge-info" />
         )}
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
@@ -141,7 +141,7 @@ export const RunOverview = ({ model, onOpenMemory }: RunOverviewProps) => {
           )}
           {/* 与任务轨同口径（ADR-050）：agent 的人话优先，判成 raw 日志时退回类别文案 */}
           {runBlockedHint && (
-            <div className="mt-1 text-[11px] text-amber-300">{runBlockedHint}</div>
+            <div className="mt-1 text-[11px] text-badge-warning">{runBlockedHint}</div>
           )}
         </div>
       </div>
@@ -151,7 +151,7 @@ export const RunOverview = ({ model, onOpenMemory }: RunOverviewProps) => {
           type="button"
           onClick={onOpenMemory}
           data-testid="run-overview-memory-link"
-          className="text-[11px] text-zinc-500 underline-offset-2 hover:text-violet-300 hover:underline"
+          className="text-[11px] text-zinc-500 underline-offset-2 hover:text-badge-accent hover:underline"
         >
           Memory activity {memoryActivities.length}
         </button>
@@ -163,11 +163,11 @@ export const RunOverview = ({ model, onOpenMemory }: RunOverviewProps) => {
 function getTaskStatusClass(status: TaskRecord['status']): string {
   switch (status) {
     case 'in_progress':
-      return 'text-sky-300';
+      return 'text-badge-info';
     case 'completed':
-      return 'text-emerald-300';
+      return 'text-badge-success';
     case 'blocked':
-      return 'text-red-300';
+      return 'text-badge-danger';
     case 'cancelled':
       return 'text-zinc-600 line-through';
     default:
@@ -250,7 +250,7 @@ export const TaskDashboardSummary = ({
           data-testid="active-run-placeholder"
           className="flex items-center gap-2 rounded-md border border-white/[0.06] bg-black/10 px-2.5 py-2"
         >
-          <Loader2 className="h-3.5 w-3.5 flex-shrink-0 animate-spin text-sky-300" />
+          <Loader2 className="h-3.5 w-3.5 flex-shrink-0 animate-spin text-badge-info" />
           <span className={`rounded-md border px-1.5 py-0.5 text-[10px] font-medium ${runStatusClass(run.status)}`}>
             {getRunUiStatusLabel(run.status, t)}
           </span>
@@ -436,9 +436,9 @@ const TaskChecklistHeader = ({ rail }: { rail: ReturnType<typeof deriveTaskRailV
 };
 
 function outputRefTone(type: TaskRecordOutputRef['type']): string {
-  if (type === 'log') return 'border-sky-500/20 bg-sky-500/10 text-sky-300';
-  if (type === 'text' || type === 'report') return 'border-emerald-500/20 bg-emerald-500/10 text-emerald-300';
-  if (type === 'trace' || type === 'replay') return 'border-violet-500/20 bg-violet-500/10 text-violet-300';
+  if (type === 'log') return 'border-badge-info/20 bg-sky-500/10 text-badge-info';
+  if (type === 'text' || type === 'report') return 'border-badge-success/20 bg-emerald-500/10 text-badge-success';
+  if (type === 'trace' || type === 'replay') return 'border-badge-accent/20 bg-violet-500/10 text-badge-accent';
   return 'border-white/[0.08] bg-white/[0.03] text-zinc-400';
 }
 
@@ -515,7 +515,7 @@ const TaskOutputRefRow = ({ outputRef: ref }: { outputRef: TaskRecordOutputRef }
         <span className="min-w-0 flex-1 truncate text-[10px] text-zinc-300">{ref.label}</span>
         {ref.type === 'log' && ref.size === 0 ? (
           <span
-            className="flex-shrink-0 rounded border border-amber-500/20 bg-amber-500/10 px-1.5 py-0.5 text-[9px] text-amber-300"
+            className="flex-shrink-0 rounded border border-badge-warning/20 bg-amber-500/10 px-1.5 py-0.5 text-[9px] text-badge-warning"
             data-testid="task-output-ref-empty"
           >
             {rw.noOutput}
@@ -526,7 +526,7 @@ const TaskOutputRefRow = ({ outputRef: ref }: { outputRef: TaskRecordOutputRef }
         {canReadLog && (
           <button /* ds-allow:button: 日志展开/收起超小尺寸文本按钮（px-1 py-0.5 text-[10px]），primitive 最小 sm 仍更大 */
             type="button"
-            className="flex flex-shrink-0 items-center gap-1 rounded px-1 py-0.5 text-[10px] text-sky-300 hover:bg-sky-500/10"
+            className="flex flex-shrink-0 items-center gap-1 rounded px-1 py-0.5 text-[10px] text-badge-info hover:bg-sky-500/10"
             aria-expanded={expanded}
             onClick={toggleLog}
           >
@@ -556,10 +556,10 @@ const TaskOutputRefRow = ({ outputRef: ref }: { outputRef: TaskRecordOutputRef }
             <div className="text-[10px] text-zinc-500">{rw.loadingLog}</div>
           )}
           {logState.status === 'error' && (
-            <div className="text-[10px] text-red-300" role="alert">{rw.logLoadFailed}</div>
+            <div className="text-[10px] text-badge-danger" role="alert">{rw.logLoadFailed}</div>
           )}
           {logState.status === 'loaded' && (logState.content.length === 0 ? (
-            <div className="text-[10px] text-amber-300">{rw.noOutput}</div>
+            <div className="text-[10px] text-badge-warning">{rw.noOutput}</div>
           ) : (
             <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words rounded bg-black/20 p-2 font-mono text-[10px] text-zinc-300">
               {logState.content}
@@ -603,7 +603,7 @@ const TaskRailStepRow = ({ step, muted = false }: { step: TaskRailStepView; mute
         ) : step.status === 'in_progress' ? (
           <Loader2 className="h-4 w-4 animate-spin text-zinc-300" />
         ) : step.status === 'blocked' ? (
-          <AlertTriangle className="h-3.5 w-3.5 text-red-300" />
+          <AlertTriangle className="h-3.5 w-3.5 text-badge-danger" />
         ) : step.status === 'cancelled' ? (
           <XCircle className="h-4 w-4 text-zinc-500" />
         ) : (
@@ -623,7 +623,7 @@ const TaskRailStepRow = ({ step, muted = false }: { step: TaskRailStepView; mute
         </span>
         {stuckHint && (
           <span
-            className="min-w-0 flex-shrink truncate rounded border border-red-400/20 bg-red-400/5 px-1 py-0.5 text-[10px] text-red-300/85"
+            className="min-w-0 flex-shrink truncate rounded border border-badge-danger/20 bg-red-400/5 px-1 py-0.5 text-[10px] text-badge-danger/85"
             data-testid="task-rail-step-blocked-reason"
             title={stuckHint}
           >
@@ -632,7 +632,7 @@ const TaskRailStepRow = ({ step, muted = false }: { step: TaskRailStepView; mute
         )}
         {waitingHint && (
           <span
-            className="min-w-0 flex-shrink truncate rounded border border-amber-400/15 bg-amber-400/5 px-1 py-0.5 text-[10px] text-amber-300/80"
+            className="min-w-0 flex-shrink truncate rounded border border-badge-warning/15 bg-amber-400/5 px-1 py-0.5 text-[10px] text-badge-warning/80"
             title={waitingHint}
           >
             {waitingHint}
@@ -640,7 +640,7 @@ const TaskRailStepRow = ({ step, muted = false }: { step: TaskRailStepView; mute
         )}
         {unlocksHint && (
           <span
-            className="min-w-0 flex-shrink truncate rounded border border-sky-400/15 bg-sky-400/5 px-1 py-0.5 text-[10px] text-sky-300/75"
+            className="min-w-0 flex-shrink truncate rounded border border-badge-info/15 bg-sky-400/5 px-1 py-0.5 text-[10px] text-badge-info/75"
             title={unlocksHint}
           >
             {unlocksHint}
@@ -665,7 +665,7 @@ export const RunTimeline = ({ decisions }: { decisions: LoopDecisionView[] }) =>
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1.5">
               <span className="text-xs text-zinc-200">{decision.action}</span>
-              {decision.blockedReason && <AlertTriangle className="h-3 w-3 text-amber-300" />}
+              {decision.blockedReason && <AlertTriangle className="h-3 w-3 text-badge-warning" />}
             </div>
             <div className="mt-0.5 text-[11px] text-zinc-500">{decision.reason}</div>
             {decision.expectedNextAction && (
@@ -699,13 +699,13 @@ export const ToolDiscoverySummary = ({ tools }: { tools: ToolCapabilityView[] })
             <div className="truncate text-xs text-zinc-200">{tool.label}</div>
             {/* 同上：工具失败原因也不把 raw 输出怼给用户 */}
             {(tool.blockedReason || tool.blockedReasonCategory) && (
-              <div className="truncate text-[11px] text-amber-300">
+              <div className="truncate text-[11px] text-badge-warning">
                 {tool.blockedReason
                   || (tool.blockedReasonCategory ? t.taskPanel.taskBlockedReason[tool.blockedReasonCategory] : '')}
               </div>
             )}
           </div>
-          <span className={`text-[10px] ${tool.callable ? 'text-emerald-300' : 'text-amber-300'}`}>
+          <span className={`text-[10px] ${tool.callable ? 'text-badge-success' : 'text-badge-warning'}`}>
             {tool.callable ? 'callable' : 'blocked'}
           </span>
         </div>
@@ -722,10 +722,10 @@ function memoryActionLabel(action: MemoryActivityEvent['action']): string {
 }
 
 function memoryActionClass(action: MemoryActivityEvent['action']): string {
-  if (action === 'created') return 'border-emerald-500/20 bg-emerald-500/10 text-emerald-300';
-  if (action === 'updated') return 'border-sky-500/20 bg-sky-500/10 text-sky-300';
-  if (action === 'deleted') return 'border-red-500/20 bg-red-500/10 text-red-300';
-  return 'border-violet-500/20 bg-violet-500/10 text-violet-300';
+  if (action === 'created') return 'border-badge-success/20 bg-emerald-500/10 text-badge-success';
+  if (action === 'updated') return 'border-badge-info/20 bg-sky-500/10 text-badge-info';
+  if (action === 'deleted') return 'border-red-500/20 bg-red-500/10 text-badge-danger';
+  return 'border-badge-accent/20 bg-violet-500/10 text-badge-accent';
 }
 
 interface MemoryActivitySummaryProps {
@@ -742,7 +742,7 @@ export const MemoryActivitySummary = ({ activities, onOpenActivity }: MemoryActi
       {activities.map((activity) => {
         const content = (
           <>
-            <Brain className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-violet-300" />
+            <Brain className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-badge-accent" />
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-1.5">
                 <span className={`rounded border px-1.5 py-0.5 text-[10px] ${memoryActionClass(activity.action)}`}>
@@ -762,7 +762,7 @@ export const MemoryActivitySummary = ({ activities, onOpenActivity }: MemoryActi
               )}
             </div>
             {onOpenActivity && (
-              <ArrowUpRight className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-zinc-600 group-hover:text-violet-300" />
+              <ArrowUpRight className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-zinc-600 group-hover:text-badge-accent" />
             )}
           </>
         );

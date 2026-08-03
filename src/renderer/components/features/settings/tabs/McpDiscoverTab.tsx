@@ -124,7 +124,7 @@ const McpServerCard: React.FC<McpServerCardProps> = ({
               </span>
             )}
             {entry.chinaDirect && (
-              <span className="shrink-0 rounded bg-emerald-500/15 px-1.5 py-0.5 text-[10px] text-emerald-400">
+              <span className="shrink-0 rounded bg-emerald-500/15 px-1.5 py-0.5 text-[10px] text-badge-success">
                 {labels.chinaDirect}
               </span>
             )}
@@ -216,15 +216,15 @@ const ComputerUseCard: React.FC<ComputerUseCardProps> = ({
   labels,
   onOpenComputerUsePanel,
 }) => (
-  <div className="rounded-lg border border-amber-500/20 bg-amber-500/[0.04] p-3">
+  <div className="rounded-lg border border-badge-warning/20 bg-amber-500/[0.04] p-3">
     <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
-      <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-amber-500/20 bg-amber-500/10">
-        <Monitor className="h-4 w-4 text-amber-300" />
+      <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-badge-warning/20 bg-amber-500/10">
+        <Monitor className="h-4 w-4 text-badge-warning" />
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
           <h5 className="text-sm font-medium text-zinc-100">{labels.title}</h5>
-          <span className="rounded bg-red-500/10 px-1.5 py-0.5 text-[10px] text-red-300">
+          <span className="rounded bg-red-500/10 px-1.5 py-0.5 text-[10px] text-badge-danger">
             {labels.highPrivilegeBadge}
           </span>
         </div>
@@ -233,7 +233,7 @@ const ComputerUseCard: React.FC<ComputerUseCardProps> = ({
         </p>
         <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-zinc-500">
           <span className="inline-flex items-center gap-1">
-            <ShieldAlert className="h-3 w-3 text-amber-300" />
+            <ShieldAlert className="h-3 w-3 text-badge-warning" />
             {labels.defaultVisible}
           </span>
           <span>{existing ? (enabled ? labels.registeredEnabled : labels.registeredDisabled) : labels.unregistered}</span>

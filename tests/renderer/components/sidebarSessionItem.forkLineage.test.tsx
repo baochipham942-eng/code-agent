@@ -66,7 +66,7 @@ describe('SidebarSessionItem fork lineage marker', () => {
     });
 
     expect(html).toContain('data-testid="fork-lineage-marker"');
-    expect(html).toContain('text-violet-400');
+    expect(html).toContain('text-badge-accent');
     expect(html).toContain('源任务：source-session');
     expect(html.indexOf('分支任务')).toBeLessThan(
       html.indexOf('data-testid="fork-lineage-marker"'),

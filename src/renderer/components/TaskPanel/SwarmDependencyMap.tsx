@@ -203,7 +203,7 @@ const SwarmDependencyMap: React.FC<{
         <span>{dm.dependencyCount.replace('{count}', String(dagState.edges.length))}</span>
         <span>{dm.contextWarningCount.replace('{count}', String(warns.length))}</span>
         {warns.length > 0 && (
-          <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-amber-300">
+          <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-badge-warning">
             {dm.nearLimitWarning.replace('{count}', String(warns.length))}
           </span>
         )}

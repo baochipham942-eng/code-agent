@@ -299,13 +299,13 @@ export const MCPSettings: React.FC = () => {
   const getStatusIcon = (status: 'connected' | 'connecting' | 'disconnected' | 'error' | 'lazy' | 'not_applicable') => {
     switch (status) {
       case 'connected':
-        return <PlugZap className="w-4 h-4 text-green-400" />;
+        return <PlugZap className="w-4 h-4 text-badge-success" />;
       case 'connecting':
-        return <Loader2 className="w-4 h-4 text-yellow-400 animate-spin" />;
+        return <Loader2 className="w-4 h-4 text-badge-warning animate-spin" />;
       case 'error':
-        return <AlertCircle className="w-4 h-4 text-red-400" />;
+        return <AlertCircle className="w-4 h-4 text-badge-danger" />;
       case 'lazy':
-        return <Plug className="w-4 h-4 text-sky-400" />;
+        return <Plug className="w-4 h-4 text-badge-info" />;
       default:
         return <Plug className="w-4 h-4 text-zinc-400" />;
     }
@@ -314,13 +314,13 @@ export const MCPSettings: React.FC = () => {
   const getStatusBadgeClass = (status: 'connected' | 'connecting' | 'disconnected' | 'error' | 'lazy' | 'not_applicable') => {
     switch (status) {
       case 'connected':
-        return 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300';
+        return 'border-badge-success/30 bg-emerald-500/10 text-badge-success';
       case 'connecting':
-        return 'border-yellow-500/30 bg-yellow-500/10 text-yellow-300';
+        return 'border-badge-warning/30 bg-yellow-500/10 text-badge-warning';
       case 'error':
-        return 'border-red-500/30 bg-red-500/10 text-red-300';
+        return 'border-red-500/30 bg-red-500/10 text-badge-danger';
       case 'lazy':
-        return 'border-sky-500/30 bg-sky-500/10 text-sky-300';
+        return 'border-badge-info/30 bg-sky-500/10 text-badge-info';
       default:
         return 'border-zinc-700 bg-zinc-800 text-zinc-400';
     }
@@ -373,7 +373,7 @@ export const MCPSettings: React.FC = () => {
       <WebModeBanner />
 
       {(settingsCapabilityFocus?.kind === 'mcp' || settingsCapabilityFocus?.kind === 'connector') && (
-        <div className="flex flex-col gap-2 rounded-lg border border-sky-500/20 bg-sky-500/[0.06] px-3 py-2 text-sm text-sky-100 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-2 rounded-lg border border-badge-info/20 bg-sky-500/[0.06] px-3 py-2 text-sm text-badge-info sm:flex-row sm:items-center sm:justify-between">
           <div>
             {mcpText.focusPromptPrefix}
             {settingsCapabilityFocus.kind === 'mcp' ? mcpText.focusPromptKindMcp : mcpText.focusPromptKindConnector}
@@ -477,10 +477,10 @@ export const MCPSettings: React.FC = () => {
             <div
               className={`mx-3 mt-3 flex items-center gap-2 rounded-md px-3 py-2 ${
                 message.type === 'success'
-                  ? 'bg-green-500/10 text-green-400'
+                  ? 'bg-green-500/10 text-badge-success'
                   : message.type === 'info'
-                    ? 'bg-sky-500/10 text-sky-300'
-                    : 'bg-red-500/10 text-red-400'
+                    ? 'bg-sky-500/10 text-badge-info'
+                    : 'bg-red-500/10 text-badge-danger'
               }`}
             >
               {message.type === 'success' ? (
@@ -594,7 +594,7 @@ export const MCPSettings: React.FC = () => {
                           {isOAuthServer && (
                             <div className="mt-1 text-[11px] leading-snug text-zinc-400">
                               {mcpText.management.oauthStatusLabel}
-                              <span className={server.hasOAuthTokens ? 'text-emerald-300' : 'text-amber-300'}>
+                              <span className={server.hasOAuthTokens ? 'text-badge-success' : 'text-badge-warning'}>
                                 {server.hasOAuthTokens
                                   ? mcpText.management.oauthAuthorized
                                   : mcpText.management.oauthNotAuthorized}
@@ -605,22 +605,22 @@ export const MCPSettings: React.FC = () => {
                         <td className="max-w-[220px] px-3 py-3 align-middle">
                           {server.error ? (
                             <div>
-                              <span className="block truncate text-red-400" title={server.error}>
+                              <span className="block truncate text-badge-danger" title={server.error}>
                                 {server.error}
                               </span>
                               {requiresReauthorization && (
-                                <span className="mt-1 block text-[11px] text-amber-300">
+                                <span className="mt-1 block text-[11px] text-badge-warning">
                                   {getMcpAuthenticationRecoveryShortHint(server)}
                                 </span>
                               )}
                             </div>
                           ) : server.blockedReason ? (
                             <div>
-                              <span className="block truncate text-yellow-300" title={server.blockedReason.detail}>
+                              <span className="block truncate text-badge-warning" title={server.blockedReason.detail}>
                                 {server.blockedReason.detail}
                               </span>
                               {requiresReauthorization && (
-                                <span className="mt-1 block text-[11px] text-amber-300">
+                                <span className="mt-1 block text-[11px] text-badge-warning">
                                   {getMcpAuthenticationRecoveryShortHint(server)}
                                 </span>
                               )}

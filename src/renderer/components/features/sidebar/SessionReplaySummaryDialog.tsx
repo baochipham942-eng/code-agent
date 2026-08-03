@@ -114,9 +114,9 @@ function formatToolDistribution(replay: StructuredReplay, labels: SessionReplayL
 function getTrajectoryTierToneClassName(tier: AgentTrajectoryQualityTier): string {
   switch (tier) {
     case 'G2':
-      return 'border-emerald-500/25 bg-emerald-500/10 text-emerald-200';
+      return 'border-badge-success/25 bg-emerald-500/10 text-badge-success';
     case 'G1':
-      return 'border-amber-500/25 bg-amber-500/10 text-amber-200';
+      return 'border-badge-warning/25 bg-amber-500/10 text-badge-warning';
     default:
       return 'border-rose-500/25 bg-rose-500/10 text-rose-200';
   }
@@ -125,9 +125,9 @@ function getTrajectoryTierToneClassName(tier: AgentTrajectoryQualityTier): strin
 function getEvidenceControlToneClassName(trustLevel: EvidenceControlSummaryProjection['trustLevel']): string {
   switch (trustLevel) {
     case 'strong':
-      return 'border-emerald-500/25 bg-emerald-500/10 text-emerald-300';
+      return 'border-badge-success/25 bg-emerald-500/10 text-badge-success';
     case 'partial':
-      return 'border-amber-500/25 bg-amber-500/10 text-amber-300';
+      return 'border-badge-warning/25 bg-amber-500/10 text-badge-warning';
     default:
       return 'border-rose-500/25 bg-rose-500/10 text-rose-300';
   }
@@ -372,7 +372,7 @@ function getBlockToneClassName(block: ReplayBlock): string {
     return 'border-cyan-500/20 bg-cyan-500/10 text-cyan-200';
   }
   if (block.type === 'model_call') {
-    return 'border-violet-500/20 bg-violet-500/10 text-violet-200';
+    return 'border-badge-accent/20 bg-violet-500/10 text-badge-accent';
   }
   return 'border-zinc-800 bg-zinc-900/50 text-zinc-300';
 }
@@ -505,7 +505,7 @@ export const SessionReplaySummaryDialog: React.FC<SessionReplaySummaryDialogProp
       header={
         <>
           <div className="min-w-0 flex-1">
-            <div className="text-xs font-medium uppercase tracking-wide text-violet-300">Replay</div>
+            <div className="text-xs font-medium uppercase tracking-wide text-badge-accent">Replay</div>
             <h2 className="mt-1 truncate text-sm font-semibold text-zinc-100">{sessionTitle}</h2>
             <p className="mt-1 truncate text-[11px] text-zinc-500">{replay.traceIdentity.replayKey}</p>
           </div>
@@ -557,7 +557,7 @@ export const SessionReplaySummaryDialog: React.FC<SessionReplaySummaryDialogProp
                         setUpdatingDatasetRole(null);
                       }
                     }}
-                    className={`rounded border px-1.5 py-0.5 text-[10px] font-medium transition-colors ${active ? 'border-sky-400/40 bg-sky-500/15 text-sky-100' : 'border-zinc-700 bg-zinc-950/40 text-zinc-400 hover:border-zinc-600 hover:text-zinc-200 disabled:opacity-50'}`}
+                    className={`rounded border px-1.5 py-0.5 text-[10px] font-medium transition-colors ${active ? 'border-badge-info/40 bg-sky-500/15 text-badge-info' : 'border-zinc-700 bg-zinc-950/40 text-zinc-400 hover:border-zinc-600 hover:text-zinc-200 disabled:opacity-50'}`}
                   >
                     {updatingDatasetRole === role ? '...' : roleLabel}
                   </button>
@@ -616,13 +616,13 @@ export const SessionReplaySummaryDialog: React.FC<SessionReplaySummaryDialogProp
       </div>
 
       {trajectoryQuality.failures.length > 0 && (
-        <div className="mt-3 rounded-md border border-amber-500/20 bg-amber-500/10 p-2 text-xs">
-          <div className="text-amber-200">{labels.trajectoryGate}</div>
+        <div className="mt-3 rounded-md border border-badge-warning/20 bg-amber-500/10 p-2 text-xs">
+          <div className="text-badge-warning">{labels.trajectoryGate}</div>
           <div className="mt-1 flex flex-wrap gap-1">
             {trajectoryQuality.failures.slice(0, 12).map((failure) => (
               <span
                 key={failure}
-                className="rounded border border-amber-500/20 bg-zinc-950/30 px-1.5 py-0.5 text-[10px] text-amber-100/80"
+                className="rounded border border-badge-warning/20 bg-zinc-950/30 px-1.5 py-0.5 text-[10px] text-badge-warning/80"
               >
                 {failure}
               </span>
@@ -801,21 +801,21 @@ export const SessionReplaySummaryDialog: React.FC<SessionReplaySummaryDialogProp
               return (
                 <div
                   key={snapshot.runId}
-                  className={`rounded-md border p-2 ${focused ? 'border-violet-300/40 bg-violet-500/10' : 'border-violet-500/15 bg-violet-500/5'}`}
+                  className={`rounded-md border p-2 ${focused ? 'border-badge-accent/40 bg-violet-500/10' : 'border-badge-accent/15 bg-violet-500/5'}`}
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
-                      <div className="truncate font-medium text-violet-200">
+                      <div className="truncate font-medium text-badge-accent">
                         {snapshot.goal ? `Workflow: ${snapshot.goal}` : `Workflow ${snapshot.runId}`}
                       </div>
-                      <div className="mt-0.5 truncate text-[10px] text-violet-200/60">
+                      <div className="mt-0.5 truncate text-[10px] text-badge-accent/60">
                         {formatWorkflowStatus(snapshot, labels)}
                       </div>
-                      <div className="mt-0.5 truncate text-[10px] text-violet-200/45">
+                      <div className="mt-0.5 truncate text-[10px] text-badge-accent/45">
                         {formatWorkflowRunMeta(snapshot, labels)}
                       </div>
                     </div>
-                    <div className="shrink-0 text-right text-[10px] text-violet-200/60">
+                    <div className="shrink-0 text-right text-[10px] text-badge-accent/60">
                       <div>{formatWorkflowAgentSummary(snapshot)}</div>
                       {snapshot.durationMs !== undefined && <div>{formatDuration(snapshot.durationMs, labels)}</div>}
                       <button
@@ -826,7 +826,7 @@ export const SessionReplaySummaryDialog: React.FC<SessionReplaySummaryDialogProp
                           event.stopPropagation();
                           setFocusedReplayOwner(focused ? null : owner);
                         }}
-                        className="mt-1 rounded border border-violet-500/20 bg-zinc-950/30 px-1.5 py-0.5 text-[10px] text-violet-200/70 transition-colors hover:border-violet-400/40 hover:bg-violet-500/10 hover:text-violet-100"
+                        className="mt-1 rounded border border-badge-accent/20 bg-zinc-950/30 px-1.5 py-0.5 text-[10px] text-badge-accent/70 transition-colors hover:border-badge-accent/40 hover:bg-violet-500/10 hover:text-badge-accent"
                       >
                         {focused ? labels.dialog.focused : labels.dialog.focus}
                       </button>
@@ -849,13 +849,13 @@ export const SessionReplaySummaryDialog: React.FC<SessionReplaySummaryDialogProp
                         return (
                           <div
                             key={agent.id}
-                            className="rounded border border-violet-500/10 bg-zinc-950/40 px-2 py-1 text-[10px]"
+                            className="rounded border border-badge-accent/10 bg-zinc-950/40 px-2 py-1 text-[10px]"
                           >
                             <div className="flex items-center justify-between gap-2">
-                              <span className="min-w-0 truncate font-medium text-violet-100">
+                              <span className="min-w-0 truncate font-medium text-badge-accent">
                                 {agent.label || 'workflow agent'}
                               </span>
-                              <span className="shrink-0 text-violet-200/60">{formatWorkflowAgentStatus(agent, labels)}</span>
+                              <span className="shrink-0 text-badge-accent/60">{formatWorkflowAgentStatus(agent, labels)}</span>
                             </div>
                             <div className="mt-0.5 truncate text-zinc-500">{formatWorkflowAgentDetail(agent)}</div>
                             {body && <div className="mt-0.5 truncate text-zinc-400">{body}</div>}
@@ -870,8 +870,8 @@ export const SessionReplaySummaryDialog: React.FC<SessionReplaySummaryDialogProp
                     </div>
                   )}
                   {snapshot.logs.length > 0 && (
-                    <div className="mt-2 rounded border border-violet-500/10 bg-zinc-950/40 px-2 py-1">
-                      <div className="text-[10px] font-medium text-violet-100">Logs</div>
+                    <div className="mt-2 rounded border border-badge-accent/10 bg-zinc-950/40 px-2 py-1">
+                      <div className="text-[10px] font-medium text-badge-accent">Logs</div>
                       <div className="mt-1 grid gap-0.5 text-[10px] text-zinc-500">
                         {snapshot.logs.slice(-3).map((log, index) => (
                           <div key={`${snapshot.runId}:log:${index}`} className="truncate">
@@ -1043,7 +1043,7 @@ export const SessionReplaySummaryDialog: React.FC<SessionReplaySummaryDialogProp
       </div>
 
       {incompleteReasons.length > 0 && (
-        <div className="mt-3 rounded-md border border-amber-500/20 bg-amber-500/10 p-2 text-xs text-amber-200">
+        <div className="mt-3 rounded-md border border-badge-warning/20 bg-amber-500/10 p-2 text-xs text-badge-warning">
           {labels.incompletePrefix}
           {incompleteReasons.join(' · ')}
         </div>

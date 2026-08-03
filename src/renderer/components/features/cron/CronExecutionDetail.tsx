@@ -79,8 +79,8 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({ execut
 
       {execution.error && (
         <section className="mt-4">
-          <h5 className="mb-2 text-xs font-medium uppercase tracking-wide text-red-300">{cc.execError}</h5>
-          <pre className="max-h-40 overflow-auto rounded-lg border border-red-500/20 bg-red-500/10 p-3 text-xs text-red-100 whitespace-pre-wrap">
+          <h5 className="mb-2 text-xs font-medium uppercase tracking-wide text-badge-danger">{cc.execError}</h5>
+          <pre className="max-h-40 overflow-auto rounded-lg border border-red-500/20 bg-red-500/10 p-3 text-xs text-badge-danger whitespace-pre-wrap">
             {execution.error}
           </pre>
         </section>

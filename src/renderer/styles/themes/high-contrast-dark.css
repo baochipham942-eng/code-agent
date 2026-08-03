@@ -63,6 +63,23 @@
   --color-info: #00BFFF;
   --color-info-muted: rgba(0, 191, 255, 0.2);
 
+  /* Badge semantic tokens - saturated foregrounds with visible dark tints. */
+  --badge-info-fg: #00BFFF;
+  --badge-info-bg: rgba(0, 191, 255, 0.2);
+  --badge-info-border: rgba(0, 191, 255, 0.7);
+  --badge-success-fg: #00FF00;
+  --badge-success-bg: rgba(0, 255, 0, 0.2);
+  --badge-success-border: rgba(0, 255, 0, 0.7);
+  --badge-warning-fg: #FFFF00;
+  --badge-warning-bg: rgba(255, 255, 0, 0.2);
+  --badge-warning-border: rgba(255, 255, 0, 0.7);
+  --badge-danger-fg: #FF0000;
+  --badge-danger-bg: rgba(255, 0, 0, 0.08);
+  --badge-danger-border: rgba(255, 0, 0, 0.7);
+  --badge-accent-fg: #00FFFF;
+  --badge-accent-bg: rgba(0, 255, 255, 0.2);
+  --badge-accent-border: rgba(0, 255, 255, 0.7);
+
   /* Chat status text colors */
   --status-text-success: #6EE7B7;
   --status-text-warning: #FCD34D;

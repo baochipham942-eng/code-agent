@@ -72,11 +72,11 @@ function toDisplayMessageType(
 
 const StatusDot: React.FC<{ status: SwarmAgentState['status'] }> = ({ status }) => {
   const colors: Record<string, string> = {
-    running: 'text-amber-400 animate-pulse',
-    completed: 'text-emerald-400',
-    failed: 'text-red-400',
+    running: 'text-badge-warning animate-pulse',
+    completed: 'text-badge-success',
+    failed: 'text-badge-danger',
     pending: 'text-zinc-500',
-    ready: 'text-blue-400',
+    ready: 'text-badge-info',
     cancelled: 'text-zinc-600',
   };
 
@@ -119,10 +119,10 @@ const MessageItem: React.FC<{ message: TeammateMessageDisplay; currentAgentId?: 
   const isUser = message.from === 'user' || message.type === 'user';
 
   const typeIcons: Record<string, React.ReactNode> = {
-    coordination: <ArrowRightLeft className="w-3 h-3 text-blue-400" />,
-    handoff: <ArrowRightLeft className="w-3 h-3 text-amber-400" />,
-    query: <MessageSquare className="w-3 h-3 text-violet-400" />,
-    response: <MessageSquare className="w-3 h-3 text-emerald-400" />,
+    coordination: <ArrowRightLeft className="w-3 h-3 text-badge-info" />,
+    handoff: <ArrowRightLeft className="w-3 h-3 text-badge-warning" />,
+    query: <MessageSquare className="w-3 h-3 text-badge-accent" />,
+    response: <MessageSquare className="w-3 h-3 text-badge-success" />,
     broadcast: <Users className="w-3 h-3 text-cyan-400" />,
     user: <Users className="w-3 h-3 text-white" />,
   };
@@ -139,11 +139,11 @@ const MessageItem: React.FC<{ message: TeammateMessageDisplay; currentAgentId?: 
           isUser
             ? 'bg-cyan-500/20 border border-cyan-500/30 text-cyan-100'
             : isPlanApproved
-            ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-200'
+            ? 'bg-emerald-500/10 border border-badge-success/20 text-badge-success'
             : isPlanRejected
-            ? 'bg-red-500/10 border border-red-500/20 text-red-200'
+            ? 'bg-red-500/10 border border-red-500/20 text-badge-danger'
             : isPlanReview
-            ? 'bg-amber-500/10 border border-amber-500/20 text-amber-200'
+            ? 'bg-amber-500/10 border border-badge-warning/20 text-badge-warning'
             : isSent
             ? 'bg-zinc-700 border border-zinc-600/30 text-zinc-200'
             : 'bg-zinc-800 border border-zinc-800 text-zinc-400'
@@ -155,9 +155,9 @@ const MessageItem: React.FC<{ message: TeammateMessageDisplay; currentAgentId?: 
           <span className="font-medium text-zinc-400">
             {message.from === 'user' ? 'You' : message.from}
           </span>
-          {isPlanReview && <ShieldCheck className="w-3 h-3 text-amber-400" />}
-          {isPlanApproved && <ShieldCheck className="w-3 h-3 text-emerald-400" />}
-          {isPlanRejected && <ShieldX className="w-3 h-3 text-red-400" />}
+          {isPlanReview && <ShieldCheck className="w-3 h-3 text-badge-warning" />}
+          {isPlanApproved && <ShieldCheck className="w-3 h-3 text-badge-success" />}
+          {isPlanRejected && <ShieldX className="w-3 h-3 text-badge-danger" />}
           <span className="text-zinc-600 ml-auto">
             {new Date(message.timestamp).toLocaleTimeString()}
           </span>
@@ -488,7 +488,7 @@ export const AgentTeamPanel: React.FC<AgentTeamPanelProps> = ({
             </button>
           </div>
           {sendError && (
-            <div role="alert" className="mt-1.5 text-[11px] text-red-400">
+            <div role="alert" className="mt-1.5 text-[11px] text-badge-danger">
               {sendError}
             </div>
           )}

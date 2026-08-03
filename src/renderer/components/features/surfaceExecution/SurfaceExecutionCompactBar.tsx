@@ -42,9 +42,9 @@ export function SurfaceExecutionCompactBar({ session, copy }: SurfaceExecutionCo
       className="flex w-full items-center gap-2 rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-1.5 text-left text-xs text-zinc-400 transition-colors hover:bg-zinc-700 hover:text-zinc-200"
     >
       {state === 'completed' ? (
-        <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-400" aria-hidden />
+        <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-badge-success" aria-hidden />
       ) : SPINNING_STATES.has(state) ? (
-        <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-emerald-400" aria-hidden />
+        <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-badge-success" aria-hidden />
       ) : (
         <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-400" aria-hidden />
       )}

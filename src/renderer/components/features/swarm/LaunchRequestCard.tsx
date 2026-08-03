@@ -22,12 +22,12 @@ import { DecisionCard, type DecisionOption } from '../../DecisionCard';
 // 给每个 agent 分配一种稳定颜色（按 task.id hash），让用户像 Codex 截图里
 // "Heisenberg (绿) / Rawls (紫)" 那样一眼区分不同 worker。
 const AGENT_COLORS = [
-  'text-emerald-400',
-  'text-purple-400',
+  'text-badge-success',
+  'text-badge-accent',
   'text-cyan-400',
-  'text-amber-400',
+  'text-badge-warning',
   'text-pink-400',
-  'text-blue-400',
+  'text-badge-info',
 ] as const;
 
 function agentColorFor(taskId: string): string {
@@ -70,7 +70,7 @@ const LaunchPlanStats: React.FC<{ request: SwarmLaunchRequest }> = ({ request })
       依赖 <span className="ml-1 text-cyan-300">{request.dependencyCount}</span>
     </div>
     <div className="rounded bg-zinc-800 px-2 py-1.5 text-zinc-400">
-      写权限 <span className="ml-1 text-amber-300">{request.writeAgentCount}</span>
+      写权限 <span className="ml-1 text-badge-warning">{request.writeAgentCount}</span>
     </div>
   </div>
 );
@@ -89,8 +89,8 @@ const LaunchTaskList: React.FC<{ tasks: SwarmLaunchTaskPreview[] }> = ({ tasks }
             <span
               className={`rounded-full px-1.5 py-0.5 text-[10px] ${
                 task.writeAccess
-                  ? 'bg-amber-500/15 text-amber-300'
-                  : 'bg-emerald-500/15 text-emerald-300'
+                  ? 'bg-amber-500/15 text-badge-warning'
+                  : 'bg-emerald-500/15 text-badge-success'
               }`}
             >
               {task.writeAccess ? '可写' : '只读'}
@@ -197,12 +197,12 @@ export const LaunchRequestCard: React.FC<{ request: SwarmLaunchRequest }> = ({ r
   if (request.status !== 'pending') {
     const badgeClass =
       request.status === 'approved'
-        ? 'bg-emerald-500/15 text-emerald-300'
-        : 'bg-red-500/15 text-red-300';
+        ? 'bg-emerald-500/15 text-badge-success'
+        : 'bg-red-500/15 text-badge-danger';
     return (
       <div className="rounded-lg border border-white/[0.04] bg-zinc-800/70 p-3">
         <div className="flex items-center gap-2">
-          <GitBranch className="w-4 h-4 text-primary-400" />
+          <GitBranch className="w-4 h-4 text-badge-accent" />
           <div className="text-sm text-zinc-100 font-medium">
             {request.status === 'approved'
               ? `Spawning ${request.agentCount} agent${request.agentCount > 1 ? 's' : ''}`
@@ -273,7 +273,7 @@ export const LaunchRequestCard: React.FC<{ request: SwarmLaunchRequest }> = ({ r
             placeholder={s.feedbackPlaceholder}
             className="min-h-[72px] w-full resize-y rounded-lg border border-zinc-700 bg-zinc-800 px-2.5 py-2 text-xs text-zinc-200 placeholder-zinc-600 outline-hidden transition-colors focus:border-zinc-500"
           />
-          {error && <div className="mt-2 text-xs text-red-400">{error}</div>}
+          {error && <div className="mt-2 text-xs text-badge-danger">{error}</div>}
         </>
       }
     />

@@ -122,7 +122,7 @@ export const WorkingFolder: React.FC = () => {
         className="flex items-center w-full"
       >
         <div className="flex items-center gap-2 flex-1 min-w-0">
-          <FolderOpen className="w-4 h-4 text-amber-400 flex-shrink-0" />
+          <FolderOpen className="w-4 h-4 text-badge-warning flex-shrink-0" />
           <span className="text-xs font-medium text-zinc-400 uppercase tracking-wide">
             {t.taskPanel.workingFolder}
           </span>

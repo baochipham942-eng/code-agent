@@ -92,15 +92,15 @@ export function TargetContextIcon({ targetContext, className = '' }: Props) {
   }
 
   if (kind === 'mcp_server') {
-    return <Plug size={12} className={`text-purple-400 ${className}`} aria-label={targetContext.label || 'MCP'} />;
+    return <Plug size={12} className={`text-badge-accent ${className}`} aria-label={targetContext.label || 'MCP'} />;
   }
 
   if (kind === 'file') {
-    return <FileText size={12} className={`text-blue-400 ${className}`} aria-label={targetContext.label || 'File'} />;
+    return <FileText size={12} className={`text-badge-info ${className}`} aria-label={targetContext.label || 'File'} />;
   }
 
   if (kind === 'memory') {
-    return <Brain size={12} className={`text-amber-400 ${className}`} aria-label={targetContext.label || 'Memory'} />;
+    return <Brain size={12} className={`text-badge-warning ${className}`} aria-label={targetContext.label || 'Memory'} />;
   }
 
   // 兜底：未知 kind 用 MessageCircle

@@ -72,7 +72,7 @@ function ModelRow({
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-sm font-medium text-zinc-100">{model.label}</span>
           {isDefault && (
-            <span className="rounded border border-amber-400/40 bg-amber-400/10 px-1.5 py-0.5 text-[10px] text-amber-200">{modelText.defaultBadge}</span>
+            <span className="rounded border border-badge-warning/40 bg-amber-400/10 px-1.5 py-0.5 text-[10px] text-badge-warning">{modelText.defaultBadge}</span>
           )}
           <span className="rounded border border-zinc-700 bg-zinc-800 px-1.5 py-0.5 text-[10px] text-zinc-400">
             {model.source === 'discovered' ? modelText.sourceDiscovered : modelText.sourceBuiltin}
@@ -81,7 +81,7 @@ function ModelRow({
             <span
               data-testid={`model-verified-badge-${model.id}`}
               title={modelText.verifiedBadgeTitle}
-              className="inline-flex items-center gap-1 rounded border border-emerald-400/40 bg-emerald-400/10 px-1.5 py-0.5 text-[10px] text-emerald-200"
+              className="inline-flex items-center gap-1 rounded border border-badge-success/40 bg-emerald-400/10 px-1.5 py-0.5 text-[10px] text-badge-success"
             >
               <BadgeCheck className="h-3 w-3" />
               {modelText.verifiedBadge}
@@ -278,7 +278,7 @@ export function ProviderModelsSection({
                 <summary className="cursor-pointer px-3 py-2 text-xs text-zinc-400 hover:text-zinc-200">
                   {modelText.unverifiedGroup}（{unverified.length}）
                 </summary>
-                <p className="px-3 pb-2 text-[11px] leading-relaxed text-amber-300/80">
+                <p className="px-3 pb-2 text-[11px] leading-relaxed text-badge-warning/80">
                   {modelText.unverifiedHint}
                 </p>
                 <div className="divide-y divide-zinc-800 border-t border-zinc-800">

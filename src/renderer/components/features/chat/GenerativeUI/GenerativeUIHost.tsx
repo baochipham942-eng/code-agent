@@ -74,9 +74,9 @@ function ManifestSurface({
       </div>
       <div className="flex flex-col gap-3 border-t border-cyan-500/20 bg-zinc-950/60 px-4 py-3 min-[743px]:flex-row min-[743px]:items-center min-[743px]:justify-between">
         <div className="flex items-center gap-2 text-xs text-zinc-400" aria-live="polite">
-          {manifest.status === 'completed' ? <CheckCircle2 className="h-4 w-4 text-emerald-400" /> : null}
+          {manifest.status === 'completed' ? <CheckCircle2 className="h-4 w-4 text-badge-success" /> : null}
           {['rejected', 'expired', 'invalidated', 'orphaned', 'failed'].includes(manifest.status)
-            ? <AlertTriangle className="h-4 w-4 text-amber-400" />
+            ? <AlertTriangle className="h-4 w-4 text-badge-warning" />
             : null}
           {statusLabel[manifest.status]}
           {manifest.invalidationReason ? ` · ${manifest.invalidationReason}` : ''}
@@ -288,8 +288,8 @@ export const GenerativeUIHost = memo(function GenerativeUIHost({
 
   if (isStreaming) {
     return (
-      <div className="my-3 rounded-xl border border-violet-500/20 bg-violet-500/5 p-4" aria-label="交互组件生成中">
-        <div className="flex items-center gap-2 text-xs text-violet-200"><Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none" />交互组件生成中…</div>
+      <div className="my-3 rounded-xl border border-badge-accent/20 bg-violet-500/5 p-4" aria-label="交互组件生成中">
+        <div className="flex items-center gap-2 text-xs text-badge-accent"><Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none" />交互组件生成中…</div>
         {fallback && <p className="mt-2 text-xs text-zinc-400">{fallback}</p>}
       </div>
     );
@@ -298,7 +298,7 @@ export const GenerativeUIHost = memo(function GenerativeUIHost({
   if (!localParse.success || enabled === false || !sessionId || !messageId || (error !== null && !instance)) {
     return (
       <div className="my-3 rounded-xl border border-zinc-700 bg-zinc-900/70 p-4">
-        <div className="flex items-center gap-2 text-xs font-medium text-zinc-300"><AlertTriangle className="h-4 w-4 text-amber-400" />交互内容以只读方式显示</div>
+        <div className="flex items-center gap-2 text-xs font-medium text-zinc-300"><AlertTriangle className="h-4 w-4 text-badge-warning" />交互内容以只读方式显示</div>
         <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-zinc-300">{fallback || 'Interactive content is unavailable.'}</p>
         {error && <div className="mt-2 text-[11px] text-zinc-500">{error}</div>}
       </div>
@@ -307,7 +307,7 @@ export const GenerativeUIHost = memo(function GenerativeUIHost({
 
   if (!instance) {
     return (
-      <div className="my-3 rounded-xl border border-violet-500/20 bg-violet-500/5 p-4 text-xs text-zinc-400">
+      <div className="my-3 rounded-xl border border-badge-accent/20 bg-violet-500/5 p-4 text-xs text-zinc-400">
         <Loader2 className="mr-2 inline h-4 w-4 animate-spin motion-reduce:animate-none" />正在恢复交互状态…
       </div>
     );
@@ -316,7 +316,7 @@ export const GenerativeUIHost = memo(function GenerativeUIHost({
   const context: NeoUIComponentContext = { instance, busyNodeId, dispatch };
   const focusedNode = instance.spec.components.find((node) => node.id === focusedNodeId) ?? null;
   return (
-    <div className="my-3 w-full rounded-2xl border border-violet-500/25 bg-zinc-900/80 p-3 shadow-lg sm:p-4" data-testid="neo-ui-host">
+    <div className="my-3 w-full rounded-2xl border border-badge-accent/25 bg-zinc-900/80 p-3 shadow-lg sm:p-4" data-testid="neo-ui-host">
       <header className="mb-4">
         <div className="text-sm font-semibold text-zinc-100">{instance.spec.title || 'Agent Neo 交互组件'}</div>
         {instance.spec.summary && <p className="mt-1 text-xs leading-relaxed text-zinc-400">{instance.spec.summary}</p>}
@@ -343,7 +343,7 @@ export const GenerativeUIHost = memo(function GenerativeUIHost({
         <ManifestSurface surface={hostSurface} resolving={resolvingManifest} onResolve={resolveManifest} />
       )}
       {error && (
-        <div className="mt-3 rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-xs text-amber-200" role="status">
+        <div className="mt-3 rounded-lg border border-badge-warning/20 bg-amber-500/5 px-3 py-2 text-xs text-badge-warning" role="status">
           {error}
         </div>
       )}

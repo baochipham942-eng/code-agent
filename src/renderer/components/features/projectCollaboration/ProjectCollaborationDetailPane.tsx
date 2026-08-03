@@ -81,7 +81,7 @@ const RoundItem: React.FC<{
             <button
               type="button"
               onClick={() => onOpenConversation(round.conversationId!)}
-              className="inline-flex items-center gap-0.5 rounded border border-zinc-800 bg-zinc-900 px-1 py-0.5 text-[10px] text-zinc-500 hover:border-emerald-500/30 hover:text-emerald-200"
+              className="inline-flex items-center gap-0.5 rounded border border-zinc-800 bg-zinc-900 px-1 py-0.5 text-[10px] text-zinc-500 hover:border-badge-success/30 hover:text-badge-success"
               data-testid={`neo-topic-round-open-${index}`}
             >
               <MessageSquare className="h-2.5 w-2.5" />打开会话
@@ -90,8 +90,8 @@ const RoundItem: React.FC<{
         </span>
       </div>
       <div className="mt-2 flex items-start gap-1.5">
-        <span className="mt-0.5 flex h-[16px] w-[16px] shrink-0 items-center justify-center rounded-full border border-emerald-500/30 bg-emerald-500/15">
-          <Sparkles className="h-2 w-2 text-emerald-300" />
+        <span className="mt-0.5 flex h-[16px] w-[16px] shrink-0 items-center justify-center rounded-full border border-badge-success/30 bg-emerald-500/15">
+          <Sparkles className="h-2 w-2 text-badge-success" />
         </span>
         {round.reply ? (
           <div className="min-w-0 flex-1 text-[12px] leading-5 text-zinc-400">
@@ -100,7 +100,7 @@ const RoundItem: React.FC<{
               <button
                 type="button"
                 onClick={() => setExpanded(!expanded)}
-                className="ml-1 inline-flex items-center gap-0.5 text-[11px] text-emerald-300/80 hover:text-emerald-200"
+                className="ml-1 inline-flex items-center gap-0.5 text-[11px] text-badge-success/80 hover:text-badge-success"
               >
                 {expanded ? <>收起<ChevronDown className="h-3 w-3" /></> : <>展开<ChevronRight className="h-3 w-3" /></>}
               </button>
@@ -239,7 +239,7 @@ export const ProjectCollaborationDetailPane: React.FC<ProjectCollaborationDetail
     <div className="px-4 py-4" data-testid="neo-topic-detail">
       {/* 头 */}
       <div className="flex items-start gap-2">
-        <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-emerald-300" />
+        <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-badge-success" />
         <div className="min-w-0 flex-1">
           <h3 className="text-sm font-semibold leading-6 text-zinc-100">{workCard.title}</h3>
           <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-zinc-500">
@@ -252,7 +252,7 @@ export const ProjectCollaborationDetailPane: React.FC<ProjectCollaborationDetail
             <select
               value={workCard.priority ?? 'medium'}
               onChange={(event) => handlePriorityChange(event.target.value)}
-              className="h-6 rounded-md border border-zinc-800 bg-zinc-900 px-1 text-[11px] text-zinc-400 outline-none focus:border-emerald-500/60"
+              className="h-6 rounded-md border border-zinc-800 bg-zinc-900 px-1 text-[11px] text-zinc-400 outline-none focus:border-badge-success/60"
               data-testid="neo-topic-detail-priority"
             >
               <option value="urgent">{t.neoTopics.priorityUrgent}</option>
@@ -266,7 +266,7 @@ export const ProjectCollaborationDetailPane: React.FC<ProjectCollaborationDetail
                 type="date"
                 value={toDateInputValue(workCard.dueAt)}
                 onChange={(event) => handleDueAtChange(event.target.value)}
-                className="h-6 rounded-md border border-zinc-800 bg-zinc-900 px-1 text-[11px] text-zinc-400 outline-none focus:border-emerald-500/60"
+                className="h-6 rounded-md border border-zinc-800 bg-zinc-900 px-1 text-[11px] text-zinc-400 outline-none focus:border-badge-success/60"
                 data-testid="neo-topic-detail-due"
               />
             </label>
@@ -277,7 +277,7 @@ export const ProjectCollaborationDetailPane: React.FC<ProjectCollaborationDetail
             <button
               type="button"
               onClick={() => onOpenConversation(primaryConversationId)}
-              className="inline-flex h-7 items-center gap-1 rounded-md border border-emerald-500/25 bg-emerald-500/10 px-2 text-xs text-emerald-200 hover:bg-emerald-500/15"
+              className="inline-flex h-7 items-center gap-1 rounded-md border border-badge-success/25 bg-emerald-500/10 px-2 text-xs text-badge-success hover:bg-emerald-500/15"
               data-testid="neo-topic-detail-open-conversation"
             >
               <MessageSquare className="h-3 w-3" />打开会话
@@ -298,16 +298,16 @@ export const ProjectCollaborationDetailPane: React.FC<ProjectCollaborationDetail
 
       {/* 进行中 */}
       {phase === 'running' && (
-        <div className="mt-3 flex items-start gap-1.5 text-[13px] leading-5 text-emerald-100/90">
-          <Loader2 className="mt-0.5 h-3.5 w-3.5 shrink-0 animate-spin text-emerald-300" />
+        <div className="mt-3 flex items-start gap-1.5 text-[13px] leading-5 text-badge-success/90">
+          <Loader2 className="mt-0.5 h-3.5 w-3.5 shrink-0 animate-spin text-badge-success" />
           <span>Neo 正在处理…</span>
         </div>
       )}
 
       {/* 待你确认 */}
       {phase === 'needs_input' && (
-        <div className="mt-3 rounded-md border border-amber-400/20 bg-amber-400/[0.06] px-3 py-2 text-[13px] leading-5 text-amber-100/90">
-          <div className="mb-1 flex items-center gap-1 text-amber-200/80"><HelpCircle className="h-3.5 w-3.5" />待你确认</div>
+        <div className="mt-3 rounded-md border border-badge-warning/20 bg-amber-400/[0.06] px-3 py-2 text-[13px] leading-5 text-badge-warning/90">
+          <div className="mb-1 flex items-center gap-1 text-badge-warning/80"><HelpCircle className="h-3.5 w-3.5" />待你确认</div>
           {blockedReason
             ? <div data-testid="neo-topic-detail-blocked-reason">{blockedReason}</div>
             : openQuestions.length > 0
@@ -350,7 +350,7 @@ export const ProjectCollaborationDetailPane: React.FC<ProjectCollaborationDetail
         <ul className="mt-4 grid gap-1.5" data-testid="neo-topic-detail-checklist">
           {checklist.map((item, index) => (
             <li key={`${index}-${item}`} className="flex items-start gap-1.5 text-[13px] leading-5 text-zinc-300">
-              <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-400" />
+              <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-badge-success" />
               <span className="min-w-0">{item}</span>
             </li>
           ))}
@@ -400,7 +400,7 @@ export const ProjectCollaborationDetailPane: React.FC<ProjectCollaborationDetail
             <button /* ds-allow:button: 「接着做」是面板既有小按钮写法的延续（紧凑 border chip），Button primitive 变体不适配 */
               type="button"
               onClick={handleFollowUpInChat}
-              className="mb-2 inline-flex h-7 items-center gap-1 rounded-md border border-emerald-500/25 bg-emerald-500/10 px-2 text-xs text-emerald-200 hover:bg-emerald-500/15"
+              className="mb-2 inline-flex h-7 items-center gap-1 rounded-md border border-badge-success/25 bg-emerald-500/10 px-2 text-xs text-badge-success hover:bg-emerald-500/15"
               data-testid="neo-topic-detail-followup-chat"
             >
               <MessageSquare className="h-3 w-3" />{t.neoTopics.followUp}
@@ -413,14 +413,14 @@ export const ProjectCollaborationDetailPane: React.FC<ProjectCollaborationDetail
               onChange={(event) => setFollowUpText(event.target.value)}
               onKeyDown={(event) => { if (event.key === 'Enter') void sendFollowUp(); }}
               placeholder="接着交代 Neo…"
-              className="h-8 min-w-0 flex-1 rounded-md border border-zinc-800 bg-zinc-950/60 px-2.5 text-[12px] text-zinc-200 placeholder:text-zinc-600 focus:border-emerald-500/40 focus:outline-none"
+              className="h-8 min-w-0 flex-1 rounded-md border border-zinc-800 bg-zinc-950/60 px-2.5 text-[12px] text-zinc-200 placeholder:text-zinc-600 focus:border-badge-success/40 focus:outline-none"
               data-testid="neo-topic-detail-followup-input"
             />
             <button
               type="button"
               onClick={() => void sendFollowUp()}
               disabled={followUpSending || !followUpText.trim()}
-              className="inline-flex h-8 shrink-0 items-center gap-1 rounded-md border border-emerald-500/25 bg-emerald-500/10 px-2.5 text-xs text-emerald-200 hover:bg-emerald-500/15 disabled:opacity-40"
+              className="inline-flex h-8 shrink-0 items-center gap-1 rounded-md border border-badge-success/25 bg-emerald-500/10 px-2.5 text-xs text-badge-success hover:bg-emerald-500/15 disabled:opacity-40"
               data-testid="neo-topic-detail-followup-send"
             >
               {followUpSending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3" />}续一轮

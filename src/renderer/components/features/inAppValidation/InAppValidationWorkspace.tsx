@@ -247,14 +247,14 @@ export function InAppValidationWorkspace(): React.ReactElement {
       {/* 工具条：运行 = 主操作（品牌色），Demo/重载 = 次级幽灵按钮 */}
       <div className="flex h-11 shrink-0 items-center gap-2 border-b border-slate-800 px-3">
         {ipcActive ? (
-          <span className="flex items-center gap-1 rounded border border-sky-500/30 bg-sky-500/10 px-2 py-0.5 text-xs text-sky-200">
+          <span className="flex items-center gap-1 rounded border border-badge-info/30 bg-sky-500/10 px-2 py-0.5 text-xs text-badge-info">
             <Radio className="h-3 w-3 animate-pulse" /> {v.ipcDriven}
           </span>
         ) : totalCount > 0 ? (
           <span
             className={`rounded border px-2 py-0.5 text-xs ${
               allPassed
-                ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'
+                ? 'border-badge-success/30 bg-emerald-500/10 text-badge-success'
                 : 'border-rose-500/30 bg-rose-500/10 text-rose-200'
             }`}
           >
@@ -290,13 +290,13 @@ export function InAppValidationWorkspace(): React.ReactElement {
       {/* 脏保护横幅：held 请求等用户选择，期间不覆盖编辑、不自动执行 */}
       {heldRequest && (
         <div
-          className="flex shrink-0 items-center gap-3 border-b border-amber-500/30 bg-amber-500/10 px-3 py-2"
+          className="flex shrink-0 items-center gap-3 border-b border-badge-warning/30 bg-amber-500/10 px-3 py-2"
           data-testid="in-app-validation-held-request"
         >
-          <AlertTriangle className="h-4 w-4 shrink-0 text-amber-300" />
+          <AlertTriangle className="h-4 w-4 shrink-0 text-badge-warning" />
           <div className="min-w-0 flex-1">
-            <div className="text-xs font-medium text-amber-200">{v.heldTitle}</div>
-            <div className="text-[11px] text-amber-200/70">{v.heldBody}</div>
+            <div className="text-xs font-medium text-badge-warning">{v.heldTitle}</div>
+            <div className="text-[11px] text-badge-warning/70">{v.heldBody}</div>
           </div>
           <button /* ds-allow:button: 脏保护横幅主操作，品牌色实心按钮，Button primitive 无 12px 微尺寸变体 */
             type="button"
@@ -361,10 +361,10 @@ export function InAppValidationWorkspace(): React.ReactElement {
                 className="sticky top-0 flex items-center gap-2 border-b border-slate-800 bg-slate-950 px-3 py-1.5"
                 data-testid="in-app-validation-result-summary"
               >
-                <span className={allPassed ? 'text-emerald-300' : 'text-zinc-300'}>
+                <span className={allPassed ? 'text-badge-success' : 'text-zinc-300'}>
                   {v.passedBadge.replace('{passed}', String(passedCount)).replace('{total}', String(totalCount))}
                 </span>
-                <span className={failedCount > 0 ? 'text-rose-300' : 'text-emerald-300'}>
+                <span className={failedCount > 0 ? 'text-rose-300' : 'text-badge-success'}>
                   {failedCount > 0 ? v.failedSummary.replace('{n}', String(failedCount)) : v.allPassedSummary}
                 </span>
               </div>
@@ -388,13 +388,13 @@ export function InAppValidationWorkspace(): React.ReactElement {
                   key={resultKeysRef.current[index] ?? index}
                   className={`mb-2 rounded border p-2 ${
                     result.passed
-                      ? 'border-emerald-800 bg-emerald-950/40'
+                      ? 'border-badge-success bg-emerald-950/40'
                       : 'border-rose-800 bg-rose-950/40'
                   }`}
                 >
                   <div className="flex items-center gap-1">
                     {result.passed ? (
-                      <CheckCircle2 className="h-3 w-3 text-emerald-400" />
+                      <CheckCircle2 className="h-3 w-3 text-badge-success" />
                     ) : (
                       <AlertTriangle className="h-3 w-3 text-rose-400" />
                     )}

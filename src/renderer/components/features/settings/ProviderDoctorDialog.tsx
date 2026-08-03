@@ -96,15 +96,15 @@ const CATEGORY_ORDER: DoctorCategory[] = [
 
 const STATUS_STYLES: Record<DoctorStatus, { badge: string; dot: string }> = {
   pass: {
-    badge: 'bg-green-500/15 text-green-400 border-green-500/30',
+    badge: 'bg-green-500/15 text-badge-success border-badge-success/30',
     dot: 'bg-green-400',
   },
   warn: {
-    badge: 'bg-amber-500/15 text-amber-400 border-amber-500/30',
+    badge: 'bg-amber-500/15 text-badge-warning border-badge-warning/30',
     dot: 'bg-amber-400',
   },
   fail: {
-    badge: 'bg-red-500/15 text-red-400 border-red-500/30',
+    badge: 'bg-red-500/15 text-badge-danger border-red-500/30',
     dot: 'bg-red-400',
   },
   skip: {
@@ -169,7 +169,7 @@ const DoctorItemRow: React.FC<{
       {hasDetails && expanded && (
         <div className="px-3 pb-2.5 pt-0 space-y-1.5">
           {item.suggestion && (
-            <div className="text-xs text-amber-300/90 bg-amber-900/15 border border-amber-700/30 rounded p-2">
+            <div className="text-xs text-badge-warning/90 bg-amber-900/15 border border-badge-warning/30 rounded p-2">
               {suggestionPrefix}{item.suggestion}
             </div>
           )}
@@ -240,7 +240,7 @@ export const ProviderDoctorDialog: React.FC<ProviderDoctorDialogProps> = ({
       onClose={onClose}
       title={doctorText.title}
       size="lg"
-      headerIcon={<Stethoscope className="w-5 h-5 text-blue-400" />}
+      headerIcon={<Stethoscope className="w-5 h-5 text-badge-info" />}
       footer={
         <div className="flex w-full items-center justify-between">
           <div>
@@ -281,15 +281,15 @@ export const ProviderDoctorDialog: React.FC<ProviderDoctorDialogProps> = ({
       {/* Summary bar */}
       {report && (
         <div className="flex items-center gap-4 mb-4 px-3 py-2.5 rounded-lg bg-zinc-800/60 border border-zinc-700/50 flex-wrap">
-          <span className="flex items-center gap-1.5 text-sm text-green-400">
+          <span className="flex items-center gap-1.5 text-sm text-badge-success">
             <span className="inline-block w-2 h-2 rounded-full bg-green-400" />
             {report.summary.pass}{doctorText.summary.passSuffix}
           </span>
-          <span className="flex items-center gap-1.5 text-sm text-amber-400">
+          <span className="flex items-center gap-1.5 text-sm text-badge-warning">
             <span className="inline-block w-2 h-2 rounded-full bg-amber-400" />
             {report.summary.warn}{doctorText.summary.warnSuffix}
           </span>
-          <span className="flex items-center gap-1.5 text-sm text-red-400">
+          <span className="flex items-center gap-1.5 text-sm text-badge-danger">
             <span className="inline-block w-2 h-2 rounded-full bg-red-400" />
             {report.summary.fail}{doctorText.summary.failSuffix}
           </span>

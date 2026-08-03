@@ -91,7 +91,7 @@ export const CronFeaturedTemplates: React.FC = () => {
       data-testid="cron-featured-templates"
     >
       <div className="mb-3 flex items-center gap-2">
-        <Sparkles className="h-4 w-4 text-amber-300" />
+        <Sparkles className="h-4 w-4 text-badge-warning" />
         <div>
           <h3 className="text-sm font-medium text-zinc-100">{cc.templatesTitle}</h3>
           <p className="mt-0.5 text-xs text-zinc-500">{cc.templatesSubtitle}</p>
@@ -99,7 +99,7 @@ export const CronFeaturedTemplates: React.FC = () => {
       </div>
 
       {error && (
-        <div className="mb-3 rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm text-red-300">
+        <div className="mb-3 rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm text-badge-danger">
           {error}
         </div>
       )}
@@ -111,8 +111,8 @@ export const CronFeaturedTemplates: React.FC = () => {
           const isPending = pendingId === template.id;
           const connectorStatuses = getTemplateConnectorStatuses(template, connectedConnectorIds);
           const cardStateClassName = isPending || isEnabled
-            ? 'border-emerald-500/30 bg-emerald-500/5'
-            : 'border-zinc-700/80 bg-zinc-900/80 hover:border-amber-400/50 hover:bg-zinc-900';
+            ? 'border-badge-success/30 bg-emerald-500/5'
+            : 'border-zinc-700/80 bg-zinc-900/80 hover:border-badge-warning/50 hover:bg-zinc-900';
           const TemplateIcon = TEMPLATE_ICONS[template.id] ?? Sparkles;
           const enableLabel = isEnabled
             ? cc.templateEnabled
@@ -141,7 +141,7 @@ export const CronFeaturedTemplates: React.FC = () => {
                 <span className="min-w-0 flex-1">
                   <span className="block text-sm font-medium text-zinc-100">{template.name}</span>
                   <span className="mt-1 block text-xs text-zinc-400">{template.description}</span>
-                  <span className="mt-1.5 block text-[11px] text-amber-300/90">
+                  <span className="mt-1.5 block text-[11px] text-badge-warning/90">
                     {template.scheduleLabel}
                   </span>
                 </span>
@@ -167,7 +167,7 @@ export const CronFeaturedTemplates: React.FC = () => {
                         className={`h-1.5 w-1.5 rounded-full ${status.connected ? 'bg-emerald-400' : 'bg-zinc-600'}`}
                         aria-hidden="true"
                       />
-                      <span className={status.connected ? 'text-emerald-300' : 'text-zinc-500'}>
+                      <span className={status.connected ? 'text-badge-success' : 'text-zinc-500'}>
                         {status.label}{status.connected ? `·${cc.connectorConnected}` : `·${cc.connectorNotConnected}`}
                       </span>
                     </span>
@@ -176,7 +176,7 @@ export const CronFeaturedTemplates: React.FC = () => {
               )}
 
               {gateHint?.templateId === template.id && (
-                <div className="flex flex-wrap items-center gap-1.5 pl-12 text-[11px] text-amber-300">
+                <div className="flex flex-wrap items-center gap-1.5 pl-12 text-[11px] text-badge-warning">
                   <span>
                     {cc.connectorNeededHint.replace(
                       '{name}',
@@ -186,7 +186,7 @@ export const CronFeaturedTemplates: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => openSettingsTab('mcp')}
-                    className="underline decoration-dotted hover:text-amber-200"
+                    className="underline decoration-dotted hover:text-badge-warning"
                   >
                     {cc.connectorConnectAction}
                   </button>

@@ -77,8 +77,8 @@ export function RequestDetails({ request }: RequestDetailsProps) {
           <pre
             className="
               text-xs p-2 rounded
-              bg-amber-500/10 border border-amber-500/20
-              text-amber-300
+              bg-amber-500/10 border border-badge-warning/20
+              text-badge-warning
               overflow-x-auto max-h-32
               whitespace-pre-wrap break-all
             "
@@ -111,11 +111,11 @@ function BoundarySummary({ boundary, reason }: { boundary?: PermissionBoundary; 
           </div>
         </div>
         {boundary.cloud.includes('外部') || boundary.cloud.includes('云端') ? (
-          <span className="shrink-0 rounded border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-amber-200">
+          <span className="shrink-0 rounded border border-badge-warning/30 bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-badge-warning">
             可能出云端
           </span>
         ) : (
-          <span className="shrink-0 rounded border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] text-emerald-200">
+          <span className="shrink-0 rounded border border-badge-success/30 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] text-badge-success">
             本地边界
           </span>
         )}
@@ -215,7 +215,7 @@ function ConfirmationDiffPreview({ before, after, summary, filePath }: Confirmat
         <div className="text-xs text-zinc-500">{summary}</div>
         <button
           onClick={() => setExpanded(!expanded)}
-          className="text-[10px] text-blue-400 hover:text-blue-300"
+          className="text-[10px] text-badge-info hover:text-badge-info"
         >
           {expanded ? '收起' : '展开 Diff'}
         </button>
@@ -247,11 +247,11 @@ function DetailItem({ label, value, isPath, isCode, isUrl, isDangerous }: Detail
           ${
             isCode
               ? isDangerous
-                ? 'bg-red-500/10 border border-red-500/20 text-red-300'
+                ? 'bg-red-500/10 border border-red-500/20 text-badge-danger'
                 : 'bg-zinc-700 border border-zinc-700 text-zinc-400'
               : ''
           }
-          ${isPath ? 'bg-zinc-800 text-blue-400' : ''}
+          ${isPath ? 'bg-zinc-800 text-badge-info' : ''}
           ${isUrl ? 'bg-zinc-800 text-cyan-400' : ''}
           ${!isCode && !isPath && !isUrl ? 'bg-zinc-800 text-zinc-400' : ''}
         `}

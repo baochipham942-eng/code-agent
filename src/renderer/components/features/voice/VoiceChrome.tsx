@@ -98,12 +98,12 @@ const VoicePlanet: React.FC<{ visual: Exclude<VoiceVisualState, 'idle'> }> = ({ 
 
 const STATUS_COLOR: Record<Exclude<VoiceVisualState, 'idle'>, string> = {
   connecting: 'text-zinc-500',
-  reconnecting: 'text-amber-400',
-  listening: 'text-emerald-400',
-  speaking: 'text-primary-400',
-  working: 'text-amber-400',
+  reconnecting: 'text-badge-warning',
+  listening: 'text-badge-success',
+  speaking: 'text-badge-accent',
+  working: 'text-badge-warning',
   muted: 'text-zinc-500',
-  error: 'text-red-400',
+  error: 'text-badge-danger',
 };
 
 function formatCallDuration(startedAt: number | null, now: number): string {
@@ -189,7 +189,7 @@ export const VoiceChrome: React.FC<{ sessionId: string | null }> = ({ sessionId:
             onClick={() => voiceCallBridge.manualTap()}
             className={`flex h-[30px] items-center whitespace-nowrap rounded-[var(--radius-xl)] border px-3 text-[11.5px] transition-colors ${
               store.pttCaptureOn
-                ? 'border-emerald-500/50 bg-emerald-500/15 text-emerald-300'
+                ? 'border-badge-success/50 bg-emerald-500/15 text-badge-success'
                 : 'border-zinc-700 bg-zinc-800 text-zinc-400 hover:border-zinc-600 hover:text-zinc-300'
             }`}
           >
@@ -209,8 +209,8 @@ export const VoiceChrome: React.FC<{ sessionId: string | null }> = ({ sessionId:
               isConnecting
                 ? 'cursor-not-allowed text-zinc-600'
                 : store.muted
-                  ? 'bg-amber-500/15 text-amber-300'
-                  : 'bg-primary-500/15 text-primary-400 hover:bg-primary-500/20'
+                  ? 'bg-amber-500/15 text-badge-warning'
+                  : 'bg-primary-500/15 text-badge-accent hover:bg-primary-500/20'
             }`}
           >
             {store.muted ? <MicOff className="h-[15px] w-[15px]" /> : <Mic className="h-[15px] w-[15px]" />}
@@ -223,7 +223,7 @@ export const VoiceChrome: React.FC<{ sessionId: string | null }> = ({ sessionId:
           onClick={() => voiceCallBridge.hangUp()}
           title={t.voice.live.endTitle}
           aria-label={t.voice.live.endTitle}
-          className="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-[var(--radius-xl)] bg-red-500/15 text-red-300 transition-colors hover:bg-red-500/20 hover:text-red-200"
+          className="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-[var(--radius-xl)] bg-red-500/15 text-badge-danger transition-colors hover:bg-red-500/20 hover:text-badge-danger"
         >
           <X className="h-[15px] w-[15px]" />
         </button>
@@ -231,10 +231,10 @@ export const VoiceChrome: React.FC<{ sessionId: string | null }> = ({ sessionId:
 
       {/* 一次性提示（如 tools 被上游静默丢弃）：不抢 error 态，通话继续，但用户必须当场看见 */}
       {store.notice && (
-        <div data-testid="voice-call-notice" className="mt-1.5 text-xs leading-5 text-amber-300">
+        <div data-testid="voice-call-notice" className="mt-1.5 text-xs leading-5 text-badge-warning">
           <p>{resolveVoiceMessage(t, store.notice)}</p>
           {store.notice.detail && (
-            <details className="mt-1 text-[11px] text-amber-300/75">
+            <details className="mt-1 text-[11px] text-badge-warning/75">
               <summary className="cursor-pointer select-none">{t.systemError.viewDetails}</summary>
               <pre className="mt-1 whitespace-pre-wrap break-words font-mono">{store.notice.detail}</pre>
             </details>

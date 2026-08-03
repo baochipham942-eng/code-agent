@@ -42,13 +42,13 @@ const variantStyles: Record<IconButtonVariant, string> = {
   ].join(' '),
   danger: [
     'bg-transparent hover:bg-red-500/10',
-    'text-zinc-500 hover:text-red-400',
+    'text-zinc-500 hover:text-badge-danger',
     'disabled:text-zinc-600',
   ].join(' '),
   active: [
     'bg-blue-500/20',
-    'text-blue-400',
-    'disabled:text-blue-400/50',
+    'text-badge-info',
+    'disabled:text-badge-info/50',
   ].join(' '),
   outline: [
     'bg-transparent hover:bg-white/5',

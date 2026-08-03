@@ -42,27 +42,27 @@ function iconForKind(kind: string): React.ReactNode {
     case 'chart':
       return <BarChart3 className={`${cls} text-cyan-300`} />;
     case 'spreadsheet':
-      return <Table className={`${cls} text-emerald-300`} />;
+      return <Table className={`${cls} text-badge-success`} />;
     case 'document':
       return <FileText className={`${cls} text-zinc-300`} />;
     case 'audio':
-      return <Music className={`${cls} text-emerald-300`} />;
+      return <Music className={`${cls} text-badge-success`} />;
     case 'video':
       return <Video className={`${cls} text-fuchsia-300`} />;
     case 'archive':
-      return <Archive className={`${cls} text-amber-300`} />;
+      return <Archive className={`${cls} text-badge-warning`} />;
     case 'presentation':
       return <Presentation className={`${cls} text-fuchsia-300`} />;
     case 'generative_ui':
     case 'neo_ui':
     case 'generic_html':
-      return <Code className={`${cls} text-orange-300`} />;
+      return <Code className={`${cls} text-badge-warning`} />;
     case 'mermaid':
     case 'diagram':
-      return <GitBranch className={`${cls} text-violet-300`} />;
+      return <GitBranch className={`${cls} text-badge-accent`} />;
     case 'image':
     case 'web_snapshot':
-      return <ImageIcon className={`${cls} text-emerald-300`} />;
+      return <ImageIcon className={`${cls} text-badge-success`} />;
     default:
       return <File className={`${cls} text-zinc-400`} />;
   }
@@ -85,13 +85,13 @@ function statusMeta(card: DeliverableCardView, labels: ReturnType<typeof useI18n
   if (card.status === 'verified') {
     return {
       label: labels.statusVerified,
-      className: 'bg-emerald-500/12 text-emerald-300',
+      className: 'bg-emerald-500/12 text-badge-success',
       icon: <CheckCircle2 className="h-3 w-3" />,
     };
   }
   return {
     label: labels.statusUnverified,
-    className: 'bg-amber-500/12 text-amber-300',
+    className: 'bg-amber-500/12 text-badge-warning',
     icon: <AlertTriangle className="h-3 w-3" />,
   };
 }
@@ -108,14 +108,14 @@ function qualityMeta(card: DeliverableCardView, labels: ReturnType<typeof useI18
   if (card.quality.status === 'needs_review' || card.quality.status === 'degraded') {
     return {
       label: labels.qualityNeedsReview,
-      className: 'bg-amber-500/12 text-amber-300',
+      className: 'bg-amber-500/12 text-badge-warning',
       icon: <AlertTriangle className="h-3 w-3" />,
     };
   }
   if (card.quality.status === 'passed') {
     return {
       label: labels.qualityValidated,
-      className: 'bg-emerald-500/12 text-emerald-300',
+      className: 'bg-emerald-500/12 text-badge-success',
       icon: <CheckCircle2 className="h-3 w-3" />,
     };
   }

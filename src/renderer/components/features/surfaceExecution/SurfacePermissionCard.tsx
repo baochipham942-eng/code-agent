@@ -11,10 +11,10 @@ interface SurfacePermissionCardProps {
 }
 
 const GRANT_TONE = {
-  active: 'text-emerald-300',
+  active: 'text-badge-success',
   consumed: 'text-zinc-400',
-  revoked: 'text-red-300',
-  expired: 'text-amber-300',
+  revoked: 'text-badge-danger',
+  expired: 'text-badge-warning',
   none: 'text-zinc-500',
 } as const;
 

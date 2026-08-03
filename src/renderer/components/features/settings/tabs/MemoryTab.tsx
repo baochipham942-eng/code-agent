@@ -88,25 +88,25 @@ type MemoryImportStatusConfig = {
 
 // Memory type config
 const TYPE_CONFIG: Record<string, Omit<MemoryTypeConfig, 'label'>> = {
-  user: { icon: '👤', color: 'text-blue-400' },
-  feedback: { icon: '💬', color: 'text-amber-400' },
-  project: { icon: '📁', color: 'text-green-400' },
-  reference: { icon: '🔗', color: 'text-purple-400' },
+  user: { icon: '👤', color: 'text-badge-info' },
+  feedback: { icon: '💬', color: 'text-badge-warning' },
+  project: { icon: '📁', color: 'text-badge-success' },
+  reference: { icon: '🔗', color: 'text-badge-accent' },
   unknown: { icon: '📄', color: 'text-zinc-400' },
 };
 
 const IMPORT_STATUS_CONFIG: Record<MemoryImportV2DiffStatus, Omit<MemoryImportStatusConfig, 'label'>> = {
   add: {
-    tone: 'text-emerald-300',
-    badgeClass: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300',
+    tone: 'text-badge-success',
+    badgeClass: 'border-badge-success/30 bg-emerald-500/10 text-badge-success',
   },
   update: {
-    tone: 'text-sky-300',
-    badgeClass: 'border-sky-500/30 bg-sky-500/10 text-sky-300',
+    tone: 'text-badge-info',
+    badgeClass: 'border-badge-info/30 bg-sky-500/10 text-badge-info',
   },
   conflict: {
-    tone: 'text-amber-300',
-    badgeClass: 'border-amber-500/30 bg-amber-500/10 text-amber-300',
+    tone: 'text-badge-warning',
+    badgeClass: 'border-badge-warning/30 bg-amber-500/10 text-badge-warning',
   },
   skip: {
     tone: 'text-zinc-400',
@@ -584,8 +584,8 @@ export const MemoryTab: React.FC = () => {
         <div
           className={`flex items-center gap-2 rounded-lg p-3 text-xs ${
             message.type === 'success'
-              ? 'bg-green-500/10 text-green-400'
-              : 'bg-red-500/10 text-red-400'
+              ? 'bg-green-500/10 text-badge-success'
+              : 'bg-red-500/10 text-badge-danger'
           }`}
         >
           {message.type === 'success' ? (
@@ -607,7 +607,7 @@ export const MemoryTab: React.FC = () => {
           <div className="flex flex-col gap-3 border-b border-zinc-800 px-3 py-3 lg:flex-row lg:items-center lg:justify-between">
             <div className="min-w-0">
               <div className="flex items-center gap-2 text-sm font-medium text-zinc-200">
-                <FileCheck2 className="h-4 w-4 text-emerald-300" />
+                <FileCheck2 className="h-4 w-4 text-badge-success" />
                 {importFileName || memoryText.import.noFileSelected}
               </div>
               <div className="mt-1 text-xs text-zinc-500">
@@ -653,7 +653,7 @@ export const MemoryTab: React.FC = () => {
                 type="button"
                 onClick={handleApplyImport}
                 disabled={!importPreview || !importBundle || importBusy !== null || importApplyCount === 0}
-                className="inline-flex items-center gap-1.5 rounded border border-emerald-500/40 bg-emerald-500/10 px-3 py-1.5 text-xs text-emerald-300 hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex items-center gap-1.5 rounded border border-badge-success/40 bg-emerald-500/10 px-3 py-1.5 text-xs text-badge-success hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {importBusy === 'apply' ? (
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -666,7 +666,7 @@ export const MemoryTab: React.FC = () => {
           </div>
 
           {importError && (
-            <div className="flex items-center gap-2 border-b border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+            <div className="flex items-center gap-2 border-b border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-badge-danger">
               <AlertCircle className="h-4 w-4" />
               {importError}
             </div>
@@ -684,13 +684,13 @@ export const MemoryTab: React.FC = () => {
               </div>
 
               <div className="flex flex-col gap-2 rounded border border-zinc-800 bg-zinc-950/40 px-3 py-2 text-xs text-zinc-400 lg:flex-row lg:items-center lg:justify-between">
-                <label className={`inline-flex items-center gap-2 ${importPreview.conflicted > 0 ? 'text-amber-300' : 'text-zinc-500'}`}>
+                <label className={`inline-flex items-center gap-2 ${importPreview.conflicted > 0 ? 'text-badge-warning' : 'text-zinc-500'}`}>
                   <input
                     type="checkbox"
                     checked={allowImportConflicts}
                     disabled={importPreview.conflicted === 0 || importBusy !== null}
                     onChange={(event) => setAllowImportConflicts(event.target.checked)}
-                    className="h-3.5 w-3.5 rounded border-zinc-700 bg-zinc-900 text-amber-400"
+                    className="h-3.5 w-3.5 rounded border-zinc-700 bg-zinc-900 text-badge-warning"
                   />
                   {memoryText.import.includeConflicts}
                 </label>
@@ -750,16 +750,16 @@ export const MemoryTab: React.FC = () => {
               )}
 
               {importResult && (
-                <div data-testid="memory-import-receipt" className="rounded border border-emerald-500/20 bg-emerald-500/10 px-3 py-3 text-xs text-emerald-100">
-                  <div className="font-medium text-emerald-200">
+                <div data-testid="memory-import-receipt" className="rounded border border-badge-success/20 bg-emerald-500/10 px-3 py-3 text-xs text-badge-success">
+                  <div className="font-medium text-badge-success">
                     {memoryText.import.receiptPrefix}{importResult.applied}{memoryText.import.receiptMiddle}{importResult.created}{memoryText.import.receiptCreatedMiddle}{importResult.updatedApplied}{memoryText.import.receiptUpdatedMiddle}{importResult.skippedApply}
                   </div>
-                  <div className="mt-2 text-emerald-100/80">
+                  <div className="mt-2 text-badge-success/80">
                     {memoryText.import.writtenFilesPrefix}{importResult.writtenFiles.length > 0 ? importResult.writtenFiles.slice(0, 4).join('、') : memoryText.import.none}
                     {importResult.writtenFiles.length > 4 ? `${memoryText.import.extraFilesPrefix}${importResult.writtenFiles.length}${memoryText.import.extraFilesSuffix}` : ''}
                   </div>
                   {importResult.mirrorRebuild && (
-                    <div className="mt-1 text-emerald-100/80">
+                    <div className="mt-1 text-badge-success/80">
                       {memoryText.import.mirrorPrefix}{importResult.mirrorRebuild.mirrored}/{importResult.mirrorRebuild.totalLightFiles}{memoryText.import.mirrorCreatedMiddle}{importResult.mirrorRebuild.created}{memoryText.import.mirrorUpdatedMiddle}{importResult.mirrorRebuild.updated}
                     </div>
                   )}
@@ -876,7 +876,7 @@ export const MemoryTab: React.FC = () => {
                                   event.stopPropagation();
                                   handleDelete(row.filename);
                                 }}
-                                className="rounded border border-red-500/40 bg-red-500/10 px-2 py-1 text-red-300 hover:bg-red-500/20 disabled:opacity-50"
+                                className="rounded border border-red-500/40 bg-red-500/10 px-2 py-1 text-badge-danger hover:bg-red-500/20 disabled:opacity-50"
                                 disabled={isWebMode()}
                               >
                                 {memoryText.files.confirm}
@@ -889,7 +889,7 @@ export const MemoryTab: React.FC = () => {
                                 event.stopPropagation();
                                 setDeletingFile(row.filename);
                               }}
-                              className="inline-flex items-center gap-1 rounded border border-zinc-700 px-2 py-1 text-zinc-400 hover:border-red-500/40 hover:bg-red-500/10 hover:text-red-300"
+                              className="inline-flex items-center gap-1 rounded border border-zinc-700 px-2 py-1 text-zinc-400 hover:border-red-500/40 hover:bg-red-500/10 hover:text-badge-danger"
                               title={memoryText.files.delete}
                             >
                               <Trash2 className="h-3 w-3" />

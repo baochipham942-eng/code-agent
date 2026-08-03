@@ -323,7 +323,7 @@ export const AgentEngineListSection: React.FC = () => {
                   </dl>
 
                   {row.installHint ? (
-                    <div className="mt-2 rounded border border-amber-500/20 bg-amber-500/[0.06] px-2 py-1.5 text-[11px] text-amber-200">
+                    <div className="mt-2 rounded border border-badge-warning/20 bg-amber-500/[0.06] px-2 py-1.5 text-[11px] text-badge-warning">
                       <span className="font-medium">{section.installHintTitle}：</span>
                       {row.installHint}
                     </div>

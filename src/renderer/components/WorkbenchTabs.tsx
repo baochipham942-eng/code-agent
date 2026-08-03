@@ -63,14 +63,14 @@ const LAUNCHABLE_VIEWS: readonly LaunchableViewDefinition[] = [
   {
     id: 'files',
     icon: FolderTree,
-    iconClassName: 'text-amber-400/80',
+    iconClassName: 'text-badge-warning/80',
     // 不是 files.attach——那是输入框的附件选择器（scope: 'composer'），不是「打开文件视图」。
     keybindingActionId: 'files.open',
   },
   {
     id: 'browser',
     icon: Globe2,
-    iconClassName: 'text-emerald-400/80',
+    iconClassName: 'text-badge-success/80',
     keybindingActionId: 'browser.open',
   },
   {
@@ -82,7 +82,7 @@ const LAUNCHABLE_VIEWS: readonly LaunchableViewDefinition[] = [
   {
     id: 'terminal',
     icon: TerminalSquare,
-    iconClassName: 'text-sky-400/80',
+    iconClassName: 'text-badge-info/80',
     keybindingActionId: 'terminal.open',
   },
 ];
@@ -245,7 +245,7 @@ export const WorkbenchTabs: React.FC<{ children?: React.ReactNode; focusable?: b
         label: t.workbenchTabs.filesLabel,
         title: t.workbenchTabs.filesTitle,
         icon: FolderTree,
-        iconClassName: 'text-amber-400/80',
+        iconClassName: 'text-badge-warning/80',
         isDirty: false,
       };
     }
@@ -255,7 +255,7 @@ export const WorkbenchTabs: React.FC<{ children?: React.ReactNode; focusable?: b
         label: t.workbenchTabs.browserLabel,
         title: t.workbenchTabs.browserTitle,
         icon: Globe2,
-        iconClassName: 'text-emerald-400/80',
+        iconClassName: 'text-badge-success/80',
         isDirty: false,
       };
     }
@@ -275,7 +275,7 @@ export const WorkbenchTabs: React.FC<{ children?: React.ReactNode; focusable?: b
         label: t.workbenchTabs.terminal.label,
         title: t.workbenchTabs.terminal.title,
         icon: TerminalSquare,
-        iconClassName: 'text-sky-400/80',
+        iconClassName: 'text-badge-info/80',
         isDirty: false,
       };
     }
@@ -287,7 +287,7 @@ export const WorkbenchTabs: React.FC<{ children?: React.ReactNode; focusable?: b
       label: getFileName(path),
       title: path,
       icon: isLiveDev ? Globe2 : FileText,
-      iconClassName: isLiveDev ? 'text-emerald-400/80' : 'text-zinc-400',
+      iconClassName: isLiveDev ? 'text-badge-success/80' : 'text-zinc-400',
       isDirty: previewTab ? previewTab.content !== previewTab.savedContent : false,
     };
   });
@@ -349,7 +349,7 @@ export const WorkbenchTabs: React.FC<{ children?: React.ReactNode; focusable?: b
           suffix: (
             <>
               {meta.isDirty && (
-                <span className="text-[10px] leading-none text-amber-400" title={t.workbenchTabs.unsavedChanges}>●</span>
+                <span className="text-[10px] leading-none text-badge-warning" title={t.workbenchTabs.unsavedChanges}>●</span>
               )}
               <button /* ds-allow:button: tab 内 10px 超小关闭钮（对齐 FileExplorerPanel TabBar 的 ×），primitive 变体不适配 */
                 type="button"

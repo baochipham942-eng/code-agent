@@ -305,13 +305,13 @@ const SkillRow: React.FC<SkillRowProps> = ({
             {skill.name}
           </span>
           {hasProjectOverride && (
-            <span className="inline-flex shrink-0 items-center rounded-sm bg-sky-500/15 px-1.5 py-0.5 text-[10px] font-medium text-sky-300">
+            <span className="inline-flex shrink-0 items-center rounded-sm bg-sky-500/15 px-1.5 py-0.5 text-[10px] font-medium text-badge-info">
               {labels.projectOverrideBadge}
             </span>
           )}
           {hasMissingDeps && (
             <span
-              className="inline-flex shrink-0 items-center gap-1 text-[11px] text-amber-400"
+              className="inline-flex shrink-0 items-center gap-1 text-[11px] text-badge-warning"
               title={`${labels.missingDependenciesTitlePrefix}${missingDepsTitle}`}
             >
               <AlertTriangle className="h-3 w-3" />
@@ -390,7 +390,7 @@ export const SkillsInstalledTab: React.FC<SkillsInstalledTabProps> = ({
             </span>
           )}
           {summary.missingDependencySkills > 0 && (
-            <span className="text-amber-400">
+            <span className="text-badge-warning">
               {installedText.summaryMissingDependenciesPrefix}{summary.missingDependencySkills}{installedText.summaryMissingDependenciesSuffix}
             </span>
           )}
@@ -434,7 +434,7 @@ export const SkillsInstalledTab: React.FC<SkillsInstalledTabProps> = ({
                 {/* 组头 */}
                 <div className="flex items-center justify-between gap-3 border-b border-zinc-700/60 bg-zinc-800/60 px-3 py-2">
                   <div className="flex min-w-0 items-center gap-2">
-                    {group.kind === 'library' && <BookOpen className="h-3.5 w-3.5 shrink-0 text-amber-300" />}
+                    {group.kind === 'library' && <BookOpen className="h-3.5 w-3.5 shrink-0 text-badge-warning" />}
                     <span className="truncate text-xs font-medium text-zinc-300">
                       {group.label}
                     </span>
@@ -459,7 +459,7 @@ export const SkillsInstalledTab: React.FC<SkillsInstalledTabProps> = ({
                         loading={isRemoving}
                         leftIcon={!isRemoving ? <Trash2 className="h-3 w-3" /> : undefined}
                         disabled={isUpdating || isWebMode()}
-                        className="text-red-400 hover:bg-red-500/10 hover:text-red-300"
+                        className="text-badge-danger hover:bg-red-500/10 hover:text-badge-danger"
                       >
                         {t.common.delete}
                       </Button>

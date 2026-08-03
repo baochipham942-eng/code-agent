@@ -963,8 +963,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
 
         {/* 拖放提示 */}
         {isDragOver && (
-          <div className="absolute inset-0 flex items-center justify-center bg-zinc-800-950/90 backdrop-blur-sm z-10 rounded-xl border-2 border-dashed border-primary-500">
-            <div className="flex flex-col items-center gap-2 text-primary-400">
+          <div className="absolute inset-0 flex items-center justify-center bg-zinc-800-950/90 backdrop-blur-sm z-10 rounded-xl border-2 border-dashed border-accent-accessible">
+            <div className="flex flex-col items-center gap-2 text-accent-accessible">
               <Image className="w-8 h-8" />
               <span className="text-sm">{t.chat.dropFilesHere}</span>
             </div>
@@ -1104,7 +1104,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
               <button
                 type="button"
                 onClick={() => { setValue(''); void startCreateRoleChat(); }}
-                className="flex w-full items-center gap-1.5 border-t border-zinc-800 px-3 py-2 text-left text-xs text-emerald-300 transition-colors hover:bg-emerald-500/10"
+                className="flex w-full items-center gap-1.5 border-t border-zinc-800 px-3 py-2 text-left text-xs text-badge-success transition-colors hover:bg-emerald-500/10"
               >
                 <UserPlus className="h-3.5 w-3.5 shrink-0" />
                 {t.agentCommand.createRoleEntry}

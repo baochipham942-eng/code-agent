@@ -229,7 +229,7 @@ export function ToolDetails({ toolCall, compact, mediaContext }: Props) {
                 {isEditFile && !showDiff && (
                   <button
                     onClick={() => setShowDiff(true)}
-                    className="text-blue-400 hover:text-blue-300 px-2 transition-colors"
+                    className="text-badge-info hover:text-badge-info px-2 transition-colors"
                   >
                     View Diff
                   </button>
@@ -332,16 +332,16 @@ export function ToolDetails({ toolCall, compact, mediaContext }: Props) {
                 />
               )}
               {humanError && !safeBrowserComputerResult ? (
-                <div className="rounded-lg border border-amber-500/20 bg-amber-500/[0.04] p-3 text-xs">
-                  <div className="font-medium text-amber-200/90">{humanError.summary}</div>
+                <div className="rounded-lg border border-badge-warning/20 bg-amber-500/[0.04] p-3 text-xs">
+                  <div className="font-medium text-badge-warning/90">{humanError.summary}</div>
                   {humanError.detail && (
-                    <div className="mt-1 text-amber-100/60">{humanError.detail}</div>
+                    <div className="mt-1 text-badge-warning/60">{humanError.detail}</div>
                   )}
                   {humanError.settingsHint && (
                     <button
                       type="button"
                       onClick={() => openSettingsTab('model')}
-                      className="mt-2 inline-flex items-center gap-1 rounded-md border border-amber-400/25 bg-amber-400/10 px-2 py-1 text-[11px] text-amber-100 transition-colors hover:bg-amber-400/20"
+                      className="mt-2 inline-flex items-center gap-1 rounded-md border border-badge-warning/25 bg-amber-400/10 px-2 py-1 text-[11px] text-badge-warning transition-colors hover:bg-amber-400/20"
                     >
                       去「设置 &gt; Service API Keys」换 key ›
                     </button>
@@ -380,7 +380,7 @@ export function ToolDetails({ toolCall, compact, mediaContext }: Props) {
                   className={`text-xs bg-gray-900/50 rounded-lg p-3 overflow-x-auto scrollbar-hidden border transition-colors duration-200 whitespace-pre-wrap break-words ${
                     result.success
                       ? 'text-gray-400 border-gray-800/50'
-                      : 'text-red-300 border-red-500/20'
+                      : 'text-badge-danger border-red-500/20'
                   }`}
                 />
               )}
@@ -645,7 +645,7 @@ function BrowserComputerNextStepActions({ actions }: { actions: BrowserComputerN
           }}
           className={`flex w-full items-start gap-2 rounded-lg border px-3 py-2 text-left text-xs transition-colors ${
             action.executable
-              ? 'border-sky-500/20 bg-sky-500/10 text-sky-100 hover:bg-sky-500/15'
+              ? 'border-badge-info/20 bg-sky-500/10 text-badge-info hover:bg-sky-500/15'
               : 'border-zinc-700/50 bg-zinc-900/50 text-zinc-300'
           }`}
         >
@@ -661,10 +661,10 @@ function BrowserComputerNextStepActions({ actions }: { actions: BrowserComputerN
           data-testid="browser-computer-recovery-outcome"
           className={`whitespace-pre-wrap rounded-lg border p-2 text-[11px] ${
             outcome.status === 'failed'
-              ? 'border-red-500/20 bg-red-500/10 text-red-100'
+              ? 'border-red-500/20 bg-red-500/10 text-badge-danger'
               : outcome.status === 'preparing'
-                ? 'border-sky-500/20 bg-sky-500/10 text-sky-100'
-                : 'border-emerald-500/20 bg-emerald-500/10 text-emerald-100'
+                ? 'border-badge-info/20 bg-sky-500/10 text-badge-info'
+                : 'border-badge-success/20 bg-emerald-500/10 text-badge-success'
           }`}
         >
           {sanitizeBrowserComputerRecoveryText(outcome.text, actions)}
@@ -704,7 +704,7 @@ function GenericToolErrorActions({
         }}
         className="inline-flex items-center gap-1 rounded-md border border-zinc-700/60 bg-zinc-800/60 px-2 py-1 text-[11px] text-zinc-300 transition-colors hover:bg-zinc-700/60"
       >
-        {copied ? <Check className="h-3 w-3 text-green-400" /> : <Copy className="h-3 w-3" />}
+        {copied ? <Check className="h-3 w-3 text-badge-success" /> : <Copy className="h-3 w-3" />}
         {copied ? '已复制' : '复制错误'}
       </button>
       {canRetry && messageId && (
@@ -715,7 +715,7 @@ function GenericToolErrorActions({
             event.stopPropagation();
             createForkFromReply(messageId);
           }}
-          className="inline-flex items-center gap-1 rounded-md border border-sky-500/25 bg-sky-500/10 px-2 py-1 text-[11px] text-sky-100 transition-colors hover:bg-sky-500/20"
+          className="inline-flex items-center gap-1 rounded-md border border-badge-info/25 bg-sky-500/10 px-2 py-1 text-[11px] text-badge-info transition-colors hover:bg-sky-500/20"
         >
           <RotateCcw className="h-3 w-3" />
           从此重试

@@ -162,10 +162,10 @@ export const AgentErrorCard: React.FC<{
       className="my-1 rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2.5"
     >
       <div className="flex items-start gap-2">
-        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-red-400" />
+        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-badge-danger" />
         <div className="min-w-0 flex-1">
-          <div className="text-xs font-medium text-red-300">{title}</div>
-          <div className="mt-1 text-[11px] leading-relaxed text-red-300/80">{suggestion}</div>
+          <div className="text-xs font-medium text-badge-danger">{title}</div>
+          <div className="mt-1 text-[11px] leading-relaxed text-badge-danger/80">{suggestion}</div>
         </div>
       </div>
 

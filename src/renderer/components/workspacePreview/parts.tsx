@@ -54,28 +54,28 @@ export function KindIcon({ kind }: { kind: WorkspacePreviewKind }) {
   switch (kind) {
     case 'document':
     case 'handoff':
-      return <FileText className={`${cls} text-sky-300`} />;
+      return <FileText className={`${cls} text-badge-info`} />;
     case 'spreadsheet':
-      return <Table2 className={`${cls} text-emerald-300`} />;
+      return <Table2 className={`${cls} text-badge-success`} />;
     case 'message_draft':
-      return <Mail className={`${cls} text-amber-300`} />;
+      return <Mail className={`${cls} text-badge-warning`} />;
     case 'calendar_event':
     case 'reminder':
-      return <Calendar className={`${cls} text-violet-300`} />;
+      return <Calendar className={`${cls} text-badge-accent`} />;
     case 'web_snapshot':
     case 'image':
       return <Image className={`${cls} text-cyan-300`} />;
     case 'audio':
-      return <Music className={`${cls} text-emerald-300`} />;
+      return <Music className={`${cls} text-badge-success`} />;
     case 'video':
       return <Video className={`${cls} text-fuchsia-300`} />;
     case 'archive':
-      return <Archive className={`${cls} text-amber-300`} />;
+      return <Archive className={`${cls} text-badge-warning`} />;
     case 'diff':
     case 'generic_html':
     case 'chart':
     case 'diagram':
-      return <Code2 className={`${cls} text-orange-300`} />;
+      return <Code2 className={`${cls} text-badge-warning`} />;
     case 'terminal':
       return <Terminal className={`${cls} text-zinc-300`} />;
     case 'question_form':
@@ -343,7 +343,7 @@ function DesignPptPreview({ item }: { item: WorkspacePreviewItem }) {
           />
         </div>
       ) : (
-        <div className="rounded-lg border border-amber-500/20 bg-amber-500/[0.05] p-3 text-xs text-amber-200">
+        <div className="rounded-lg border border-badge-warning/20 bg-amber-500/[0.05] p-3 text-xs text-badge-warning">
           {spec?.screenshotError || p.noSlideScreenshots}
         </div>
       )}
@@ -489,7 +489,7 @@ export function RevisionPanel({
         </div>
       )}
       {actionMessage && (
-        <div className="rounded border border-emerald-500/20 bg-emerald-500/10 px-2 py-1.5 text-[11px] text-emerald-200">
+        <div className="rounded border border-badge-success/20 bg-emerald-500/10 px-2 py-1.5 text-[11px] text-badge-success">
           {actionMessage}
         </div>
       )}

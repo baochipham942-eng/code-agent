@@ -46,7 +46,7 @@ function VerificationCardLine({ notice }: { notice: GoalNoticePayload }) {
     `required ${card.requiredStatus}`,
   ];
   const tone = card.status === 'passed'
-    ? 'text-emerald-300/90'
+    ? 'text-badge-success/90'
     : card.status === 'failed'
       ? 'text-rose-300/90'
       : 'text-zinc-400';
@@ -71,7 +71,7 @@ function DegradedBadge({ notice }: { notice: GoalNoticePayload }) {
   if (!notice.degraded) return null;
   return (
     <div className="pl-6 flex flex-col gap-0.5">
-      <span className="inline-flex w-fit items-center rounded-sm bg-amber-500/10 px-1.5 py-0.5 text-[11px] text-amber-300/80">
+      <span className="inline-flex w-fit items-center rounded-sm bg-amber-500/10 px-1.5 py-0.5 text-[11px] text-badge-warning/80">
         {t.goalNotice.degradedBadge}
       </span>
       {notice.degradedReason && (
@@ -90,8 +90,8 @@ export const GoalNoticeMessage: React.FC<GoalNoticeMessageProps> = ({ content })
 
   if (notice.kind === 'start') {
     return (
-      <div className="goal-notice my-1 flex items-center gap-2 rounded-md border border-sky-500/30 bg-sky-500/5 px-3 py-2 text-sm">
-        <Target className="h-4 w-4 flex-shrink-0 text-sky-400" />
+      <div className="goal-notice my-1 flex items-center gap-2 rounded-md border border-badge-info/30 bg-sky-500/5 px-3 py-2 text-sm">
+        <Target className="h-4 w-4 flex-shrink-0 text-badge-info" />
         <span className="text-zinc-300">
           {t.goalNotice.startPrefix}<span className="font-medium text-zinc-100">{notice.goal}</span>
         </span>
@@ -101,9 +101,9 @@ export const GoalNoticeMessage: React.FC<GoalNoticeMessageProps> = ({ content })
 
   if (notice.kind === 'met') {
     return (
-      <div className="goal-notice my-1 flex flex-col gap-0.5 rounded-md border border-emerald-500/30 bg-emerald-500/5 px-3 py-2 text-sm">
+      <div className="goal-notice my-1 flex flex-col gap-0.5 rounded-md border border-badge-success/30 bg-emerald-500/5 px-3 py-2 text-sm">
         <div className="flex items-center gap-2">
-          <CheckCircle2 className="h-4 w-4 flex-shrink-0 text-emerald-400" />
+          <CheckCircle2 className="h-4 w-4 flex-shrink-0 text-badge-success" />
           <span className="text-zinc-300">
             {t.goalNotice.metPrefix}<span className="font-medium text-zinc-100">{notice.goal}</span>
           </span>
@@ -119,14 +119,14 @@ export const GoalNoticeMessage: React.FC<GoalNoticeMessageProps> = ({ content })
 
   // aborted
   return (
-    <div className="goal-notice my-1 flex flex-col gap-0.5 rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-sm">
+    <div className="goal-notice my-1 flex flex-col gap-0.5 rounded-md border border-badge-warning/30 bg-amber-500/5 px-3 py-2 text-sm">
       <div className="flex items-center gap-2">
-        <AlertTriangle className="h-4 w-4 flex-shrink-0 text-amber-400" />
+        <AlertTriangle className="h-4 w-4 flex-shrink-0 text-badge-warning" />
         <span className="text-zinc-300">
           {t.goalNotice.abortedPrefix}<span className="font-medium text-zinc-100">{notice.goal}</span>
         </span>
       </div>
-      {notice.reason && <div className="pl-6 text-[11px] text-amber-300/80">{notice.reason}</div>}
+      {notice.reason && <div className="pl-6 text-[11px] text-badge-warning/80">{notice.reason}</div>}
       <div className="pl-6">
         <MetaLine notice={notice} />
       </div>

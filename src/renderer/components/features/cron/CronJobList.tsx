@@ -112,7 +112,7 @@ export const CronJobList: React.FC = () => {
                   onClick={() => selectJob(job.id)}
                   className={`w-full rounded-xl border p-3 text-left transition-colors ${
                     isSelected
-                      ? 'border-blue-500/40 bg-blue-500/10'
+                      ? 'border-badge-info/40 bg-blue-500/10'
                       : 'border-zinc-800 bg-zinc-900/60 hover:border-zinc-700 hover:bg-zinc-900'
                   }`}
                 >
@@ -130,7 +130,7 @@ export const CronJobList: React.FC = () => {
                     </div>
                     <span
                       className={`shrink-0 rounded-full px-2 py-1 text-[11px] ${
-                        job.enabled ? 'bg-emerald-500/10 text-emerald-300' : 'bg-zinc-500/10 text-zinc-300'
+                        job.enabled ? 'bg-emerald-500/10 text-badge-success' : 'bg-zinc-500/10 text-zinc-300'
                       }`}
                     >
                       {job.enabled ? cc.enabled : cc.disabled}

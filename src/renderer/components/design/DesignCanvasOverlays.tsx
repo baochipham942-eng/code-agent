@@ -76,7 +76,7 @@ export const DiffEvidenceOverlay: React.FC<{
   const c = node.consistency;
   return (
     <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 bg-zinc-950/85 p-6">
-      <div className="flex items-center gap-2 text-sm text-amber-300">
+      <div className="flex items-center gap-2 text-sm text-badge-warning">
         <span>{t.design.diffEvidenceTitle}</span>
         <IconButton onClick={onClose} aria-label={t.design.diffClose} icon={<X size={16} />} />
       </div>
@@ -86,7 +86,7 @@ export const DiffEvidenceOverlay: React.FC<{
         </p>
       )}
       {url ? (
-        <img src={url} alt="diff" className="max-h-[70%] max-w-[90%] rounded border border-amber-500/40" />
+        <img src={url} alt="diff" className="max-h-[70%] max-w-[90%] rounded border border-badge-warning/40" />
       ) : (
         <Loader2 className="animate-spin text-zinc-500" size={20} />
       )}

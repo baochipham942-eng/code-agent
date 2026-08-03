@@ -84,7 +84,7 @@ export const NeoWorkCardInlineCard: React.FC<{ detail: NeoWorkCardDetail }> = ({
 
   return (
     <div
-      className="w-full max-w-3xl rounded-lg border border-emerald-400/20 bg-zinc-900/70 px-3.5 py-3 text-sm"
+      className="w-full max-w-3xl rounded-lg border border-badge-success/20 bg-zinc-900/70 px-3.5 py-3 text-sm"
       data-testid="neo-work-card"
       data-work-card-id={workCard.id}
       data-work-card-status={workCard.status}
@@ -92,8 +92,8 @@ export const NeoWorkCardInlineCard: React.FC<{ detail: NeoWorkCardDetail }> = ({
     >
       {/* 头：Neo + 标题 + 相位 chip（融进 thread 的一条回复，不是独立大卡） */}
       <div className="flex items-center gap-2">
-        <Sparkles className="h-4 w-4 shrink-0 text-emerald-300" />
-        <span className="shrink-0 text-[11px] font-medium uppercase tracking-wide text-emerald-200/80">Neo</span>
+        <Sparkles className="h-4 w-4 shrink-0 text-badge-success" />
+        <span className="shrink-0 text-[11px] font-medium uppercase tracking-wide text-badge-success/80">Neo</span>
         <span className="min-w-0 flex-1 truncate font-medium text-zinc-100">{workCard.title}</span>
         <span
           className={`inline-flex shrink-0 items-center gap-1 rounded-md border px-2 py-0.5 text-xs font-medium ${PHASE_CHIP_STYLE[phase]}`}
@@ -111,7 +111,7 @@ export const NeoWorkCardInlineCard: React.FC<{ detail: NeoWorkCardDetail }> = ({
         <ul className="mt-2.5 grid gap-1" data-testid="neo-work-card-checklist">
           {checklist.map((item, index) => (
             <li key={`${index}-${item}`} className="flex items-start gap-1.5 text-[13px] leading-5 text-zinc-300">
-              <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-400" />
+              <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-badge-success" />
               <span className="min-w-0">{item}</span>
             </li>
           ))}
@@ -121,10 +121,10 @@ export const NeoWorkCardInlineCard: React.FC<{ detail: NeoWorkCardDetail }> = ({
       {/* 进行中项 ⏳ */}
       {phase === 'running' && (
         <div
-          className="mt-2 flex items-start gap-1.5 text-[13px] leading-5 text-emerald-100/90"
+          className="mt-2 flex items-start gap-1.5 text-[13px] leading-5 text-badge-success/90"
           data-testid="neo-work-card-progress"
         >
-          <Loader2 className="mt-0.5 h-3.5 w-3.5 shrink-0 animate-spin text-emerald-300" />
+          <Loader2 className="mt-0.5 h-3.5 w-3.5 shrink-0 animate-spin text-badge-success" />
           <span className="min-w-0">{progressText}</span>
         </div>
       )}
@@ -139,7 +139,7 @@ export const NeoWorkCardInlineCard: React.FC<{ detail: NeoWorkCardDetail }> = ({
       {/* 待你确认 */}
       {phase === 'needs_input' && openQuestions.length > 0 && (
         <div
-          className="mt-2 rounded-md border border-amber-400/20 bg-amber-400/[0.06] px-2.5 py-2 text-[13px] leading-5 text-amber-100/90"
+          className="mt-2 rounded-md border border-badge-warning/20 bg-amber-400/[0.06] px-2.5 py-2 text-[13px] leading-5 text-badge-warning/90"
           data-testid="neo-work-card-needs-input"
         >
           {openQuestions.map((question, index) => (

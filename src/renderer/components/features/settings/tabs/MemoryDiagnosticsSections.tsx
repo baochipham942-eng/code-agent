@@ -47,8 +47,8 @@ export function LightMemoryHealthPanel({
   const statusTone = !health || isLoading
     ? 'border-zinc-700 bg-zinc-900 text-zinc-400'
     : issueCount === 0
-      ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'
-      : 'border-amber-500/30 bg-amber-500/10 text-amber-200';
+      ? 'border-badge-success/30 bg-emerald-500/10 text-badge-success'
+      : 'border-badge-warning/30 bg-amber-500/10 text-badge-warning';
 
   return (
     <div data-testid="light-memory-health-panel">
@@ -75,7 +75,7 @@ export function LightMemoryHealthPanel({
           <HealthMetric label={t.knowledgeMemory.healthMetricIssues} value={issueCount} />
         </div>
         {issuePreview.length > 0 ? (
-          <div className="space-y-1 rounded-md border border-amber-500/20 bg-amber-500/10 px-2.5 py-2 text-[11px] leading-4 text-amber-100">
+          <div className="space-y-1 rounded-md border border-badge-warning/20 bg-amber-500/10 px-2.5 py-2 text-[11px] leading-4 text-badge-warning">
             {issuePreview.map((item) => (
               <div key={item} className="flex gap-1.5">
                 <AlertCircle className="mt-0.5 h-3 w-3 shrink-0" />
@@ -127,7 +127,7 @@ export function MemoryInjectionTraceList({ traces }: { traces: MemoryInjectionTr
           <div className="grid gap-1.5">
             {recentTraces.map((trace) => (
               <div key={trace.id} className="flex min-w-0 items-center gap-2 text-[11px] leading-4">
-                <span className={`shrink-0 rounded border px-1.5 py-0.5 ${trace.injected ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200' : 'border-zinc-700 bg-zinc-900 text-zinc-500'}`}>
+                <span className={`shrink-0 rounded border px-1.5 py-0.5 ${trace.injected ? 'border-badge-success/30 bg-emerald-500/10 text-badge-success' : 'border-zinc-700 bg-zinc-900 text-zinc-500'}`}>
                   {trace.injected ? t.knowledgeMemory.injectionTraceInjected : t.knowledgeMemory.injectionTraceNotInjected}
                 </span>
                 <span className="shrink-0 font-medium text-zinc-300">{trace.blockType}</span>
@@ -204,7 +204,7 @@ export function MemoryDiagnosticsSection() {
   return (
     <div className="space-y-4" data-testid="memory-diagnostics-section">
       {error ? (
-        <div className="flex items-center gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-200">
+        <div className="flex items-center gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-badge-danger">
           <AlertCircle className="h-4 w-4" />
           {error}
         </div>

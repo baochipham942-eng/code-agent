@@ -45,7 +45,7 @@ export const ProjectInviteModal: React.FC<ProjectInviteModalProps> = ({ state, i
             {ps.inviteCreating}
           </p>
         ) : state.status === 'error' ? (
-          <p className="py-4 text-center text-sm text-red-400" data-testid="project-space-invite-error">
+          <p className="py-4 text-center text-sm text-badge-danger" data-testid="project-space-invite-error">
             {ps.inviteFailed}: {state.error}
           </p>
         ) : state.invite ? (

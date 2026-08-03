@@ -33,7 +33,7 @@ export const ProjectSpacePage: React.FC<ProjectSpacePageProps> = () => {
         <>
           <FullScreenPageHeader
             variant="bar"
-            icon={<FolderKanban className="h-4 w-4 text-violet-300" />}
+            icon={<FolderKanban className="h-4 w-4 text-badge-accent" />}
             title={t.projectSpace.listTitle}
             description={t.projectSpace.listDescription}
             // 「新建空间」住页头 actions 槽（规范位，爸 2026-07-30：按钮别在内容区乱飘）

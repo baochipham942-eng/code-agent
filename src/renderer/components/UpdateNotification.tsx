@@ -360,7 +360,7 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({
               <div className="space-y-4">
                 <div className="flex items-center gap-4">
                   <div className="w-12 h-12 rounded-full bg-emerald-500/20 flex items-center justify-center flex-shrink-0">
-                    <CheckCircle className="w-6 h-6 text-emerald-400" />
+                    <CheckCircle className="w-6 h-6 text-badge-success" />
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-lg font-medium text-white">{n.downloadComplete}</p>
@@ -377,7 +377,7 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({
               <div className="space-y-4">
                 <div className="flex items-center gap-4">
                   <div className="w-12 h-12 rounded-full bg-emerald-500/20 flex items-center justify-center flex-shrink-0">
-                    <CheckCircle className="w-6 h-6 text-emerald-400" />
+                    <CheckCircle className="w-6 h-6 text-badge-success" />
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-lg font-medium text-white">{n.openedUpdatePage}</p>

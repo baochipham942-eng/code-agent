@@ -24,20 +24,20 @@ import { buildEngineBillingSummary, type EngineBillingSummary } from '../../../S
 
 /** 安装状态徽标的视觉色板（与 ModelSwitcher 引擎徽标同语义：内置/已装=正向，未装=中性灰）。 */
 const INSTALL_STATE_BADGE_CLASS: Record<AgentEngineInstallState, string> = {
-  builtin: 'border-sky-500/20 bg-sky-500/10 text-sky-300',
-  installed: 'border-emerald-500/20 bg-emerald-500/10 text-emerald-300',
+  builtin: 'border-badge-info/20 bg-sky-500/10 text-badge-info',
+  installed: 'border-badge-success/20 bg-emerald-500/10 text-badge-success',
   missing: 'border-zinc-700 bg-zinc-800 text-zinc-500',
 };
 
 /** 探测来源状态徽标色板（contract 派生，非产品名分支）。 */
 const SOURCE_STATUS_BADGE_CLASS = {
-  available: 'border-emerald-500/20 bg-emerald-500/10 text-emerald-300',
-  detected: 'border-sky-500/20 bg-sky-500/10 text-sky-300',
-  needsLogin: 'border-amber-500/20 bg-amber-500/10 text-amber-300',
+  available: 'border-badge-success/20 bg-emerald-500/10 text-badge-success',
+  detected: 'border-badge-info/20 bg-sky-500/10 text-badge-info',
+  needsLogin: 'border-badge-warning/20 bg-amber-500/10 text-badge-warning',
   adapterPending: 'border-zinc-600 bg-zinc-800 text-zinc-400',
   notInstalled: 'border-zinc-700 bg-zinc-800 text-zinc-500',
-  recommended: 'border-violet-500/20 bg-violet-500/10 text-violet-300',
-  authUnverified: 'border-amber-500/20 bg-amber-500/10 text-amber-200',
+  recommended: 'border-badge-accent/20 bg-violet-500/10 text-badge-accent',
+  authUnverified: 'border-badge-warning/20 bg-amber-500/10 text-badge-warning',
   unavailable: 'border-zinc-700 bg-zinc-900 text-zinc-500',
 } as const;
 

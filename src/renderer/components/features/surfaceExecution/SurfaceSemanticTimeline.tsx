@@ -9,10 +9,10 @@ interface SurfaceSemanticTimelineProps {
 }
 
 function eventTone(event: SurfaceExecutionEventV1): string {
-  if (event.status === 'failed') return 'border-red-400/30 bg-red-400/5';
-  if (event.status === 'ambiguous') return 'border-amber-400/30 bg-amber-400/5';
-  if (event.phase === 'human') return 'border-violet-400/30 bg-violet-400/5';
-  if (event.phase === 'verify') return 'border-emerald-400/20 bg-emerald-400/[0.03]';
+  if (event.status === 'failed') return 'border-badge-danger/30 bg-red-400/5';
+  if (event.status === 'ambiguous') return 'border-badge-warning/30 bg-amber-400/5';
+  if (event.phase === 'human') return 'border-badge-accent/30 bg-violet-400/5';
+  if (event.phase === 'verify') return 'border-badge-success/20 bg-emerald-400/[0.03]';
   return 'border-white/[0.06] bg-white/[0.015]';
 }
 

@@ -32,14 +32,14 @@ const MODE_OPTIONS: ModeOption[] = [
     value: 'plan',
     label: 'Plan',
     icon: <ClipboardList className="w-3 h-3" />,
-    color: 'text-amber-400',
+    color: 'text-badge-warning',
     bgColor: 'bg-amber-500/20',
   },
   {
     value: 'ask',
     label: 'Ask',
     icon: <MessageCircleQuestion className="w-3 h-3" />,
-    color: 'text-green-400',
+    color: 'text-badge-success',
     bgColor: 'bg-green-500/20',
   },
 ];

@@ -87,11 +87,11 @@ function formatCheckedAt(value?: number): string {
 function getToneClasses(tone: 'ready' | 'warning' | 'error' | 'neutral'): string {
   switch (tone) {
     case 'ready':
-      return 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300';
+      return 'border-badge-success/30 bg-emerald-500/10 text-badge-success';
     case 'warning':
-      return 'border-amber-500/30 bg-amber-500/10 text-amber-300';
+      return 'border-badge-warning/30 bg-amber-500/10 text-badge-warning';
     case 'error':
-      return 'border-red-500/30 bg-red-500/10 text-red-300';
+      return 'border-red-500/30 bg-red-500/10 text-badge-danger';
     default:
       return 'border-zinc-700 bg-zinc-900/70 text-zinc-300';
   }
@@ -369,7 +369,7 @@ const TimeCapabilityPanel: React.FC = () => {
           <div className="truncate text-sm font-medium text-zinc-100">{job.name}</div>
           <div className="mt-1 truncate text-xs text-zinc-500">{formatScheduleSummary(job)} · {formatActionSummary(job)}</div>
           {options?.showError && latest?.error && (
-            <div className="mt-1 line-clamp-2 text-xs text-red-300">{latest.error}</div>
+            <div className="mt-1 line-clamp-2 text-xs text-badge-danger">{latest.error}</div>
           )}
         </div>
         <div className="text-xs text-zinc-400">
@@ -385,7 +385,7 @@ const TimeCapabilityPanel: React.FC = () => {
           type="button"
           onClick={() => void handleTriggerJob(job.id)}
           disabled={isTriggering}
-          className="inline-flex items-center justify-center gap-1.5 rounded-md border border-blue-500/30 px-2.5 py-1.5 text-xs text-blue-300 transition-colors hover:bg-blue-500/10 disabled:cursor-not-allowed disabled:opacity-60"
+          className="inline-flex items-center justify-center gap-1.5 rounded-md border border-badge-info/30 px-2.5 py-1.5 text-xs text-badge-info transition-colors hover:bg-blue-500/10 disabled:cursor-not-allowed disabled:opacity-60"
         >
           {isTriggering ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
           手动触发
@@ -397,7 +397,7 @@ const TimeCapabilityPanel: React.FC = () => {
   return (
     <FullScreenPage testId="time-capability-panel" variant="inline">
       <FullScreenPageHeader
-        icon={<CalendarDays className="h-4 w-4 text-sky-300" />}
+        icon={<CalendarDays className="h-4 w-4 text-badge-info" />}
         title="Time & Capability"
         description="任务时间、Cron 运行、Calendar 状态和现场修复"
       />
@@ -407,7 +407,7 @@ const TimeCapabilityPanel: React.FC = () => {
           <section className="min-w-0 border border-zinc-800 bg-zinc-900/40">
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-800 px-4 py-3">
               <div className="flex items-center gap-2">
-                <Clock3 className="h-4 w-4 text-amber-300" />
+                <Clock3 className="h-4 w-4 text-badge-warning" />
                 <h3 className="text-sm font-semibold text-zinc-100">Time Workbench</h3>
               </div>
               <div className="flex items-center gap-2">
@@ -439,7 +439,7 @@ const TimeCapabilityPanel: React.FC = () => {
             </div>
 
             {error && (
-              <div className="border-t border-red-500/20 bg-red-500/10 px-4 py-2 text-sm text-red-300">
+              <div className="border-t border-red-500/20 bg-red-500/10 px-4 py-2 text-sm text-badge-danger">
                 {error}
               </div>
             )}
@@ -477,7 +477,7 @@ const TimeCapabilityPanel: React.FC = () => {
             <div className="border-t border-zinc-800 px-4 py-4">
               <div className="mb-3 flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2">
-                  <CalendarDays className="h-4 w-4 text-sky-300" />
+                  <CalendarDays className="h-4 w-4 text-badge-info" />
                   <div className="text-sm font-medium text-zinc-100">Calendar connector</div>
                 </div>
                 <span className={`rounded-md border px-2 py-1 text-[11px] ${getToneClasses(calendarStatus.tone)}`}>
@@ -529,7 +529,7 @@ const TimeCapabilityPanel: React.FC = () => {
                 </>
               )}
               {calendarError && (
-                <div className="mt-3 text-xs text-red-300">{calendarError}</div>
+                <div className="mt-3 text-xs text-badge-danger">{calendarError}</div>
               )}
             </div>
           </section>
@@ -537,7 +537,7 @@ const TimeCapabilityPanel: React.FC = () => {
           <section className="min-w-0 border border-zinc-800 bg-zinc-900/40">
             <div className="flex items-center justify-between gap-3 border-b border-zinc-800 px-4 py-3">
               <div className="flex items-center gap-2">
-                <Wrench className="h-4 w-4 text-amber-300" />
+                <Wrench className="h-4 w-4 text-badge-warning" />
                 <h3 className="text-sm font-semibold text-zinc-100">Capability Fix</h3>
               </div>
               <span className={`rounded-md border px-2 py-1 text-[11px] ${getToneClasses(fixItems.length > 0 ? 'warning' : 'ready')}`}>
@@ -621,14 +621,14 @@ const TimeCapabilityPanel: React.FC = () => {
 const Metric: React.FC<{ label: string; value: string; tone?: 'error' | 'neutral' }> = ({ label, value, tone = 'neutral' }) => (
   <div className="px-4 py-3">
     <div className="text-[11px] text-zinc-500">{label}</div>
-    <div className={`mt-1 text-xl font-semibold ${tone === 'error' ? 'text-red-300' : 'text-zinc-100'}`}>{value}</div>
+    <div className={`mt-1 text-xl font-semibold ${tone === 'error' ? 'text-badge-danger' : 'text-zinc-100'}`}>{value}</div>
   </div>
 );
 
 const CapabilityStatusCell: React.FC<{ label: string; ready: boolean; detail: string }> = ({ label, ready, detail }) => (
   <div className="border border-zinc-800 bg-zinc-950/40 px-3 py-2">
     <div className="flex items-center gap-1.5 text-xs text-zinc-300">
-      {ready ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-300" /> : <ShieldAlert className="h-3.5 w-3.5 text-amber-300" />}
+      {ready ? <CheckCircle2 className="h-3.5 w-3.5 text-badge-success" /> : <ShieldAlert className="h-3.5 w-3.5 text-badge-warning" />}
       {label}
     </div>
     <div className="mt-1 truncate text-[11px] text-zinc-500" title={detail}>{detail}</div>
@@ -673,9 +673,9 @@ const CapabilityFixRow: React.FC<{
         {hint && <div className="mt-1 line-clamp-2 text-[11px] text-zinc-500">{hint}</div>}
       </div>
       {tone === 'error' ? (
-        <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-300" />
+        <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-badge-danger" />
       ) : (
-        <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-300" />
+        <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-badge-warning" />
       )}
     </div>
 
@@ -692,7 +692,7 @@ const CapabilityFixRow: React.FC<{
               disabled={loading}
               className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-[11px] transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
                 action.emphasis === 'primary'
-                  ? 'border-blue-500/30 text-blue-300 hover:bg-blue-500/10'
+                  ? 'border-badge-info/30 text-badge-info hover:bg-blue-500/10'
                   : 'border-zinc-700 text-zinc-300 hover:bg-zinc-800'
               }`}
             >
@@ -706,9 +706,9 @@ const CapabilityFixRow: React.FC<{
       <div className="mt-2 text-[11px] text-zinc-500">没有可直接执行的修复动作。</div>
     )}
 
-    {error && <div className="mt-2 text-[11px] text-red-300">{error}</div>}
+    {error && <div className="mt-2 text-[11px] text-badge-danger">{error}</div>}
     {!error && feedback && (
-      <div className={`mt-2 text-[11px] ${feedbackTone === 'success' ? 'text-emerald-300' : 'text-sky-300'}`}>
+      <div className={`mt-2 text-[11px] ${feedbackTone === 'success' ? 'text-badge-success' : 'text-badge-info'}`}>
         {feedback}
       </div>
     )}

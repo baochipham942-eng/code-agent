@@ -361,7 +361,7 @@ const WorkflowStagePreview: React.FC<{ preview: WorkflowStagePreviewData }> = ({
             {total} 个子智能体
           </span>
           <span>{completed}/{total} 完成</span>
-          {failed > 0 && <span className="text-red-300">{failed} 失败</span>}
+          {failed > 0 && <span className="text-badge-danger">{failed} 失败</span>}
         </div>
       )}
       <div className="space-y-0.5">
@@ -378,7 +378,7 @@ const WorkflowStagePreview: React.FC<{ preview: WorkflowStagePreviewData }> = ({
               className="space-y-0.5"
             >
               <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
-                <span className={stage.success === false ? 'text-red-300' : 'text-emerald-300'}>
+                <span className={stage.success === false ? 'text-badge-danger' : 'text-emerald-300'}>
                   {stage.success === false ? '✗' : '↳'}
                 </span>
                 <span className="text-zinc-500">{index + 1}.</span>
@@ -397,7 +397,7 @@ const WorkflowStagePreview: React.FC<{ preview: WorkflowStagePreviewData }> = ({
                 {duration && <span>{duration}</span>}
               </div>
               {stage.error && (
-                <div className="ml-9 break-words text-red-300">
+                <div className="ml-9 break-words text-badge-danger">
                   {stage.error}
                 </div>
               )}
@@ -489,7 +489,7 @@ const ToolExecutionMetaRow: React.FC<{ toolCall: ToolCall; status: ToolStatus; q
         <span className={getPermissionToneClass(permission)}>{permissionLabel}</span>
       )}
       {recoveryHint && (
-        <span className={status === 'error' && !quietError ? 'text-red-300' : 'text-zinc-600'}>{recoveryHint}</span>
+        <span className={status === 'error' && !quietError ? 'text-badge-danger' : 'text-zinc-600'}>{recoveryHint}</span>
       )}
     </div>
   );
@@ -559,7 +559,7 @@ function BashOutputPreview({ toolCall, status, quietError }: { toolCall: ToolCal
     <div className="ml-6 mt-0.5 mb-0.5">
       <pre
         className={`text-xs font-mono leading-relaxed overflow-x-auto scrollbar-hidden whitespace-pre-wrap break-words ${
-          isError ? 'text-red-400/80' : 'text-zinc-500'
+          isError ? 'text-badge-danger/80' : 'text-zinc-500'
         }`}
       >
         {displayLines.join('\n')}

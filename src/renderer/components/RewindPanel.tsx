@@ -116,7 +116,7 @@ export const RewindPanel: React.FC<RewindPanelProps> = ({ isOpen, onClose }) => 
       }
     >
       {rewindError && (
-        <div role="alert" className="mb-3 rounded-lg border border-red-700/50 bg-red-950/30 px-3 py-2 text-sm text-red-200">
+        <div role="alert" className="mb-3 rounded-lg border border-red-700/50 bg-red-950/30 px-3 py-2 text-sm text-badge-danger">
           {r.rewindFailedPrefix.replace('{message}', rewindError)}
         </div>
       )}
@@ -168,7 +168,7 @@ export const RewindPanel: React.FC<RewindPanelProps> = ({ isOpen, onClose }) => 
               <div key={i} className="flex items-center gap-2 text-xs">
                 <span className={
                   f.status === 'added' ? 'text-green-400' :
-                  f.status === 'deleted' ? 'text-red-400' :
+                  f.status === 'deleted' ? 'text-badge-danger' :
                   'text-yellow-400'
                 }>
                   {f.status === 'added' ? '+' : f.status === 'deleted' ? '-' : '~'}

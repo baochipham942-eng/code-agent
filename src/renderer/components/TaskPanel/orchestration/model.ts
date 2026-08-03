@@ -16,7 +16,7 @@ const phaseClassName: Record<SwarmExecutionPhase, string> = {
   waiting_approval: 'bg-amber-500/15 text-amber-300',
   executing: 'bg-primary-500/15 text-primary-300',
   completed: 'bg-emerald-500/15 text-emerald-300',
-  failed: 'bg-red-500/15 text-red-300',
+  failed: 'bg-red-500/15 text-badge-danger',
   cancelled: 'bg-zinc-700/60 text-zinc-300',
 };
 
@@ -41,7 +41,7 @@ export const toneClassMap: Record<SwarmTimelineEvent['tone'], string> = {
   neutral: 'border-zinc-700 bg-zinc-800/70 text-zinc-300',
   success: 'border-emerald-500/25 bg-emerald-500/10 text-emerald-200',
   warning: 'border-amber-500/25 bg-amber-500/10 text-amber-200',
-  error: 'border-red-500/25 bg-red-500/10 text-red-200',
+  error: 'border-red-500/25 bg-red-500/10 text-badge-danger',
 };
 
 export interface ContextSourceSummary {
@@ -91,7 +91,7 @@ export function getUsageToneClass(percent: number): string {
 }
 
 export function getUsageTextClass(percent: number): string {
-  if (percent >= 85) return 'text-red-300';
+  if (percent >= 85) return 'text-badge-danger';
   if (percent >= 70) return 'text-amber-300';
   return 'text-emerald-300';
 }

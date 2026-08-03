@@ -354,7 +354,7 @@ export const KeybindingsSettings: React.FC = () => {
                           {keybindingsText.scopes[definition.scope]}
                         </span>
                         {definition.risk === 'destructive' && (
-                          <span className="rounded border border-red-900/70 px-1.5 py-0.5 text-[11px] text-red-300">
+                          <span className="rounded border border-red-900/70 px-1.5 py-0.5 text-[11px] text-badge-danger">
                             {keybindingsText.destructiveRisk}
                           </span>
                         )}

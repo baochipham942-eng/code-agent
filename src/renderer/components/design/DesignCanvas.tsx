@@ -893,7 +893,7 @@ export const DesignCanvas: React.FC<{
           data-testid="design-canvas-error-bar"
           className="pointer-events-auto absolute left-1/2 top-4 z-50 flex w-[min(640px,92%)] -translate-x-1/2 items-start gap-2 rounded-xl border border-red-500/30 bg-zinc-900/95 p-3 text-sm text-zinc-200 shadow-xl backdrop-blur"
         >
-          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-400" />
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-badge-danger" />
           <span className="min-w-0 flex-1 leading-relaxed">{error}</span>
           <CloseButton
             aria-label="关闭错误提示"
@@ -1087,7 +1087,7 @@ export const DesignCanvas: React.FC<{
               onBlur={commit}
               placeholder={t.design.annotTextPlaceholder}
               // ds-allow:viz 标注输入框用红色描边呼应标注色，绝对定位于画布落点
-              className="absolute z-10 rounded border border-red-400/60 bg-zinc-900/95 px-1.5 py-0.5 text-xs text-red-200 shadow-lg outline-none placeholder:text-zinc-500"
+              className="absolute z-10 rounded border border-badge-danger/60 bg-zinc-900/95 px-1.5 py-0.5 text-xs text-badge-danger shadow-lg outline-none placeholder:text-zinc-500"
               style={{ left: sx, top: sy, minWidth: 120 }}
             />
           );

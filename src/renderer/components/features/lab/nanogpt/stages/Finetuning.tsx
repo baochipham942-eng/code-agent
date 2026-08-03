@@ -202,7 +202,7 @@ export const Finetuning: React.FC<FinetuningProps> = ({ onComplete, onBack }) =>
             <div className="space-y-2 text-sm">
               <div className="flex justify-between">
                 <span className="text-zinc-500">{ft.startLossLabel}</span>
-                <span className="text-red-400 font-bold">{comparisonData.scratch.startLoss}</span>
+                <span className="text-badge-danger font-bold">{comparisonData.scratch.startLoss}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-zinc-500">{ft.finalLossLabel}</span>

@@ -60,7 +60,7 @@ const discussionToneText: Record<SwarmTimelineEvent['tone'], string> = {
   neutral: 'text-zinc-300',
   success: 'text-emerald-300',
   warning: 'text-amber-300',
-  error: 'text-red-300',
+  error: 'text-badge-danger',
 };
 
 const DiscussionEntry: React.FC<{ entry: SwarmTimelineEvent }> = ({ entry }) => (

@@ -183,7 +183,7 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
         // UX round2 20i：ok 行文字从 zinc-600 提到 zinc-400（「搜索通话字幕原文」这类行太暗看不清）。
         className={`flex w-full min-w-0 items-center gap-1.5 rounded-md text-left text-[11px] leading-4 transition-colors group ${
           needsUserActionShell
-            ? 'border border-red-400/30 bg-red-400/[0.05] px-2 py-1 text-zinc-500 hover:border-red-400/45 hover:bg-red-400/[0.08] hover:text-zinc-300'
+            ? 'border border-badge-danger/30 bg-red-400/[0.05] px-2 py-1 text-zinc-500 hover:border-badge-danger/45 hover:bg-red-400/[0.08] hover:text-zinc-300'
             : 'px-1 py-0.5 text-zinc-400 hover:bg-surface-subtle hover:text-zinc-300'
         }`}
         aria-expanded={ariaExpanded}
@@ -386,6 +386,6 @@ function getToolGroupStatusClass(status: 'streaming' | 'partial' | 'error' | 'ok
   if (status === 'streaming') return 'text-sky-300';
   if (!hasEscalatedError && (status === 'partial' || status === 'error')) return 'text-zinc-500';
   if (status === 'partial') return 'text-amber-300';
-  if (status === 'error') return 'text-red-300';
+  if (status === 'error') return 'text-badge-danger';
   return 'text-emerald-300';
 }

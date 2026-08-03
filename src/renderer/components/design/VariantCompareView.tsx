@@ -92,7 +92,7 @@ const Pane: React.FC<{
         <button
           type="button"
           onClick={onDiscard}
-          className="inline-flex items-center justify-center gap-1.5 rounded-md border border-white/[0.1] px-2 py-1.5 text-xs text-zinc-400 hover:text-red-300"
+          className="inline-flex items-center justify-center gap-1.5 rounded-md border border-white/[0.1] px-2 py-1.5 text-xs text-zinc-400 hover:text-badge-danger"
         >
           <Trash2 className="h-3.5 w-3.5" /> {t.design.discardVersion}
         </button>

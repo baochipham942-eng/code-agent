@@ -380,7 +380,7 @@ export function ToolDetails({ toolCall, compact, mediaContext }: Props) {
                   className={`text-xs bg-gray-900/50 rounded-lg p-3 overflow-x-auto scrollbar-hidden border transition-colors duration-200 whitespace-pre-wrap break-words ${
                     result.success
                       ? 'text-gray-400 border-gray-800/50'
-                      : 'text-red-300 border-red-500/20'
+                      : 'text-badge-danger border-red-500/20'
                   }`}
                 />
               )}
@@ -661,7 +661,7 @@ function BrowserComputerNextStepActions({ actions }: { actions: BrowserComputerN
           data-testid="browser-computer-recovery-outcome"
           className={`whitespace-pre-wrap rounded-lg border p-2 text-[11px] ${
             outcome.status === 'failed'
-              ? 'border-red-500/20 bg-red-500/10 text-red-100'
+              ? 'border-red-500/20 bg-red-500/10 text-badge-danger'
               : outcome.status === 'preparing'
                 ? 'border-sky-500/20 bg-sky-500/10 text-sky-100'
                 : 'border-emerald-500/20 bg-emerald-500/10 text-emerald-100'

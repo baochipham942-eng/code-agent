@@ -228,7 +228,7 @@ export const SkillInstallPreviewModal: React.FC<SkillInstallPreviewModalProps> =
 
         {/* confirm 失败：弹窗内展示，不静默 */}
         {confirmError && (
-          <div className="flex items-center gap-2 rounded-lg bg-red-500/10 px-3 py-2 text-xs text-red-400">
+          <div className="flex items-center gap-2 rounded-lg bg-red-500/10 px-3 py-2 text-xs text-badge-danger">
             <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
             {confirmError}
           </div>

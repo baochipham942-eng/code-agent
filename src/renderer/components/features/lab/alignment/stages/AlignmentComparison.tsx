@@ -128,8 +128,8 @@ export const AlignmentComparison: React.FC<AlignmentComparisonProps> = ({ onBack
             <p className="text-sm text-zinc-500 whitespace-pre-wrap">{example.responses.base}</p>
           </div>
           <div className="flex items-center gap-2 p-2 rounded bg-red-500/10 border border-red-500/20">
-            <XCircle className="w-4 h-4 text-red-400 flex-shrink-0" />
-            <span className="text-xs text-red-400">{example.comments.base}</span>
+            <XCircle className="w-4 h-4 text-badge-danger flex-shrink-0" />
+            <span className="text-xs text-badge-danger">{example.comments.base}</span>
           </div>
         </div>
 

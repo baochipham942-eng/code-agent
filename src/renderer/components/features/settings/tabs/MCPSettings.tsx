@@ -303,7 +303,7 @@ export const MCPSettings: React.FC = () => {
       case 'connecting':
         return <Loader2 className="w-4 h-4 text-yellow-400 animate-spin" />;
       case 'error':
-        return <AlertCircle className="w-4 h-4 text-red-400" />;
+        return <AlertCircle className="w-4 h-4 text-badge-danger" />;
       case 'lazy':
         return <Plug className="w-4 h-4 text-sky-400" />;
       default:
@@ -318,7 +318,7 @@ export const MCPSettings: React.FC = () => {
       case 'connecting':
         return 'border-yellow-500/30 bg-yellow-500/10 text-yellow-300';
       case 'error':
-        return 'border-red-500/30 bg-red-500/10 text-red-300';
+        return 'border-red-500/30 bg-red-500/10 text-badge-danger';
       case 'lazy':
         return 'border-sky-500/30 bg-sky-500/10 text-sky-300';
       default:
@@ -480,7 +480,7 @@ export const MCPSettings: React.FC = () => {
                   ? 'bg-green-500/10 text-green-400'
                   : message.type === 'info'
                     ? 'bg-sky-500/10 text-sky-300'
-                    : 'bg-red-500/10 text-red-400'
+                    : 'bg-red-500/10 text-badge-danger'
               }`}
             >
               {message.type === 'success' ? (
@@ -605,7 +605,7 @@ export const MCPSettings: React.FC = () => {
                         <td className="max-w-[220px] px-3 py-3 align-middle">
                           {server.error ? (
                             <div>
-                              <span className="block truncate text-red-400" title={server.error}>
+                              <span className="block truncate text-badge-danger" title={server.error}>
                                 {server.error}
                               </span>
                               {requiresReauthorization && (

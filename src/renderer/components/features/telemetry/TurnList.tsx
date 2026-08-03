@@ -17,7 +17,7 @@ interface TurnListProps {
 
 const INTENT_COLORS: Record<string, string> = {
   code_generation: 'bg-blue-500/20 text-blue-400',
-  bug_fix: 'bg-red-500/20 text-red-400',
+  bug_fix: 'bg-red-500/20 text-badge-danger',
   search: 'bg-cyan-500/20 text-cyan-400',
   conversation: 'bg-zinc-600/20 text-zinc-400',
   explanation: 'bg-purple-500/20 text-purple-400',
@@ -29,7 +29,7 @@ const OutcomeIcon: React.FC<{ status: string }> = ({ status }) => {
   switch (status) {
     case 'success': return <CheckCircle className="w-3.5 h-3.5 text-green-400" />;
     case 'partial': return <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />;
-    case 'failure': return <XCircle className="w-3.5 h-3.5 text-red-400" />;
+    case 'failure': return <XCircle className="w-3.5 h-3.5 text-badge-danger" />;
     default: return <HelpCircle className="w-3.5 h-3.5 text-zinc-500" />;
   }
 };

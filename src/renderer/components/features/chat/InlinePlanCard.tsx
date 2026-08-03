@@ -15,7 +15,7 @@ const STATUS_ICONS: Record<string, React.ReactNode> = {
   pending: <Circle className="w-3.5 h-3.5 text-zinc-500" />,
   in_progress: <Loader2 className="w-3.5 h-3.5 text-yellow-400 animate-spin" />,
   completed: <CheckCircle2 className="w-3.5 h-3.5 text-green-400" />,
-  blocked: <Circle className="w-3.5 h-3.5 text-red-400" />,
+  blocked: <Circle className="w-3.5 h-3.5 text-badge-danger" />,
   skipped: <Circle className="w-3.5 h-3.5 text-zinc-600" />,
 };
 

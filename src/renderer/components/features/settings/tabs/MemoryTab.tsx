@@ -585,7 +585,7 @@ export const MemoryTab: React.FC = () => {
           className={`flex items-center gap-2 rounded-lg p-3 text-xs ${
             message.type === 'success'
               ? 'bg-green-500/10 text-green-400'
-              : 'bg-red-500/10 text-red-400'
+              : 'bg-red-500/10 text-badge-danger'
           }`}
         >
           {message.type === 'success' ? (
@@ -666,7 +666,7 @@ export const MemoryTab: React.FC = () => {
           </div>
 
           {importError && (
-            <div className="flex items-center gap-2 border-b border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+            <div className="flex items-center gap-2 border-b border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-badge-danger">
               <AlertCircle className="h-4 w-4" />
               {importError}
             </div>
@@ -876,7 +876,7 @@ export const MemoryTab: React.FC = () => {
                                   event.stopPropagation();
                                   handleDelete(row.filename);
                                 }}
-                                className="rounded border border-red-500/40 bg-red-500/10 px-2 py-1 text-red-300 hover:bg-red-500/20 disabled:opacity-50"
+                                className="rounded border border-red-500/40 bg-red-500/10 px-2 py-1 text-badge-danger hover:bg-red-500/20 disabled:opacity-50"
                                 disabled={isWebMode()}
                               >
                                 {memoryText.files.confirm}
@@ -889,7 +889,7 @@ export const MemoryTab: React.FC = () => {
                                 event.stopPropagation();
                                 setDeletingFile(row.filename);
                               }}
-                              className="inline-flex items-center gap-1 rounded border border-zinc-700 px-2 py-1 text-zinc-400 hover:border-red-500/40 hover:bg-red-500/10 hover:text-red-300"
+                              className="inline-flex items-center gap-1 rounded border border-zinc-700 px-2 py-1 text-zinc-400 hover:border-red-500/40 hover:bg-red-500/10 hover:text-badge-danger"
                               title={memoryText.files.delete}
                             >
                               <Trash2 className="h-3 w-3" />

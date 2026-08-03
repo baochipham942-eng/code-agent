@@ -3,7 +3,7 @@ import { budgetCostColorClass } from '../../../src/renderer/components/StatusBar
 
 describe('budgetCostColorClass', () => {
   it('uses red at blocked (>=100%)', () => {
-    expect(budgetCostColorClass('blocked')).toBe('text-red-400');
+    expect(budgetCostColorClass('blocked')).toBe('text-badge-danger');
   });
 
   it('uses amber at warning (85-90%)', () => {

@@ -197,10 +197,10 @@ export const CanvasProposalReviewBar: React.FC<{
                     disabled={busy}
                     className="h-3.5 w-3.5 accent-blue-500"
                   />
-                  {row.danger ? <Trash2 className="h-3 w-3 shrink-0 text-red-400" /> : null}
+                  {row.danger ? <Trash2 className="h-3 w-3 shrink-0 text-badge-danger" /> : null}
                   {row.paid ? <Coins className="h-3 w-3 shrink-0 text-amber-400" /> : null}
                   {stale ? <AlertTriangle className="h-3 w-3 shrink-0 text-amber-400" /> : null}
-                  <span className={`truncate ${row.danger ? 'text-red-300' : row.paid ? 'text-amber-200' : 'text-zinc-300'}`}>{row.text}</span>
+                  <span className={`truncate ${row.danger ? 'text-badge-danger' : row.paid ? 'text-amber-200' : 'text-zinc-300'}`}>{row.text}</span>
                 </label>
                 <div data-testid={`proposal-op-explain-${i}`} className="ml-6 px-1.5 pb-1 text-[11px] leading-snug text-zinc-500">
                   <div>{row.intent}</div>

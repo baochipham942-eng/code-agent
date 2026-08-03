@@ -29,9 +29,9 @@ export const StatusIndicator: React.FC<StatusIndicatorProps> = ({ status }) => {
       dot: 'bg-green-400',
     },
     disconnected: {
-      icon: <XCircle className="w-4 h-4 text-red-400" />,
+      icon: <XCircle className="w-4 h-4 text-badge-danger" />,
       label: statusText.disconnected,
-      color: 'text-red-400',
+      color: 'text-badge-danger',
       dot: 'bg-red-400',
     },
     connecting: {
@@ -41,9 +41,9 @@ export const StatusIndicator: React.FC<StatusIndicatorProps> = ({ status }) => {
       dot: 'bg-yellow-400',
     },
     error: {
-      icon: <XCircle className="w-4 h-4 text-red-400" />,
+      icon: <XCircle className="w-4 h-4 text-badge-danger" />,
       label: statusText.error,
-      color: 'text-red-400',
+      color: 'text-badge-danger',
       dot: 'bg-red-400',
     },
   };

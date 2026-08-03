@@ -59,7 +59,7 @@ const CATEGORY_ICONS: Record<DoctorCategory, React.FC<{ className?: string }>> =
 const STATUS_STYLES: Record<DoctorStatus, { badge: string }> = {
   pass: { badge: 'bg-green-500/15 text-green-400 border-green-500/30' },
   warn: { badge: 'bg-amber-500/15 text-amber-400 border-amber-500/30' },
-  fail: { badge: 'bg-red-500/15 text-red-400 border-red-500/30' },
+  fail: { badge: 'bg-red-500/15 text-badge-danger border-red-500/30' },
   skip: { badge: 'bg-zinc-500/15 text-zinc-400 border-zinc-500/30' },
 };
 
@@ -235,7 +235,7 @@ export const DoctorSettings: React.FC = () => {
             <span className="inline-block w-2 h-2 rounded-full bg-amber-400" />
             {report.summary.warn}{doctorText.summary.warnSuffix}
           </span>
-          <span className="flex items-center gap-1.5 text-sm text-red-400">
+          <span className="flex items-center gap-1.5 text-sm text-badge-danger">
             <span className="inline-block w-2 h-2 rounded-full bg-red-400" />
             {report.summary.fail}{doctorText.summary.failSuffix}
           </span>
@@ -253,7 +253,7 @@ export const DoctorSettings: React.FC = () => {
       {!report && !isRunning && lastError && (
         <div className="flex flex-col items-center justify-center py-12 text-zinc-500">
           <Stethoscope className="w-12 h-12 mb-3 opacity-30" />
-          <p className="text-sm text-red-400">{doctorText.toast.failedPrefix}{lastError}</p>
+          <p className="text-sm text-badge-danger">{doctorText.toast.failedPrefix}{lastError}</p>
         </div>
       )}
 

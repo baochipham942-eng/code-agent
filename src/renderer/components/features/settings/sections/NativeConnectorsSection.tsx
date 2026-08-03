@@ -122,7 +122,7 @@ export function getNativeConnectorReadiness(
     case 'failed':
       return {
         label: labels.failed,
-        className: 'bg-red-500/15 text-red-300 border border-red-500/25',
+        className: 'bg-red-500/15 text-badge-danger border border-red-500/25',
       };
     case 'unavailable':
       return {
@@ -158,7 +158,7 @@ export function getRuntimeConnectorReadiness(
     case 'failed':
       return {
         label: labels.failed,
-        className: 'bg-red-500/15 text-red-300 border border-red-500/25',
+        className: 'bg-red-500/15 text-badge-danger border border-red-500/25',
       };
     case 'unavailable':
       return {
@@ -300,7 +300,7 @@ export const NativeConnectorItems: React.FC<NativeConnectorItemsProps> = ({
                 {checkedAt ? `${text.lastCheckedPrefix}${checkedAt}` : ''}
               </div>
               {detail && (
-                <div className={`mt-1 text-xs ${row.status?.error ? 'text-red-300' : 'text-zinc-400'}`}>
+                <div className={`mt-1 text-xs ${row.status?.error ? 'text-badge-danger' : 'text-zinc-400'}`}>
                   {detail}
                 </div>
               )}
@@ -333,7 +333,7 @@ export const NativeConnectorItems: React.FC<NativeConnectorItemsProps> = ({
                     onClick={() => onLifecycleAction(row.id, action)}
                     className={`inline-flex items-center gap-1.5 rounded border px-2 py-1 text-[11px] transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
                       config.danger
-                        ? 'border-red-500/25 text-red-300 hover:bg-red-500/10'
+                        ? 'border-red-500/25 text-badge-danger hover:bg-red-500/10'
                         : 'border-zinc-600 text-zinc-300 hover:bg-zinc-800'
                     }`}
                     title={`${row.label} ${actionText.label}`}
@@ -404,7 +404,7 @@ export const RuntimeConnectorItems: React.FC<RuntimeConnectorItemsProps> = ({
               {text.availableActionsPrefix}{formatRuntimeActionLabels(lifecycleActions, text)}
             </div>
             {detail && (
-              <div className={`mt-1 text-xs ${row.error ? 'text-red-300' : 'text-zinc-400'}`}>
+              <div className={`mt-1 text-xs ${row.error ? 'text-badge-danger' : 'text-zinc-400'}`}>
                 {detail}
               </div>
             )}
@@ -587,7 +587,7 @@ export const NativeConnectorsSection: React.FC = () => {
       )}
 
       {error && (
-        <div className="mt-3 text-xs text-red-400">{connectorText.operationFailedPrefix}{error}</div>
+        <div className="mt-3 text-xs text-badge-danger">{connectorText.operationFailedPrefix}{error}</div>
       )}
     </div>
   );

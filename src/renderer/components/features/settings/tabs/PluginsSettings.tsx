@@ -78,7 +78,7 @@ const Pill: React.FC<{
     : tone === 'warning'
       ? 'border-amber-500/30 bg-amber-500/10 text-amber-300'
       : tone === 'danger'
-        ? 'border-red-500/30 bg-red-500/10 text-red-300'
+        ? 'border-red-500/30 bg-red-500/10 text-badge-danger'
         : 'border-zinc-700 bg-zinc-800 text-zinc-300';
 
   return (
@@ -332,7 +332,7 @@ export const PluginsSettings: React.FC = () => {
         <div className={`flex items-start gap-2 rounded-lg border px-3 py-2 text-sm ${
           notice.type === 'success'
             ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'
-            : 'border-red-500/30 bg-red-500/10 text-red-200'
+            : 'border-red-500/30 bg-red-500/10 text-badge-danger'
         }`}
         >
           {notice.type === 'success' ? <CheckCircle className="mt-0.5 h-4 w-4 shrink-0" /> : <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />}

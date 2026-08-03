@@ -135,7 +135,7 @@ export const PreferenceStage: React.FC<PreferenceStageProps> = ({ onComplete, on
             >
               <div className="flex items-center gap-2 mb-2">
                 <span className="text-lg">B</span>
-                {userChoice === 'rejected' && <ThumbsDown className="w-4 h-4 text-red-400" />}
+                {userChoice === 'rejected' && <ThumbsDown className="w-4 h-4 text-badge-danger" />}
               </div>
               <p className="text-sm text-zinc-400">{preferenceExample.rejected}</p>
             </button>
@@ -233,7 +233,7 @@ export const PreferenceStage: React.FC<PreferenceStageProps> = ({ onComplete, on
                       </ul>
                     </div>
                     <div className="p-3 rounded-lg bg-zinc-800">
-                      <div className="text-xs text-red-400 mb-2">{p.consLabel}</div>
+                      <div className="text-xs text-badge-danger mb-2">{p.consLabel}</div>
                       <ul className="space-y-1">
                         {method.cons.map((con, idx) => (
                           <li key={idx} className="text-xs text-zinc-400">- {con}</li>

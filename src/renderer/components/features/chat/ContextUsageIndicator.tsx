@@ -74,7 +74,7 @@ function getStatusColors(percentage: number): {
     return {
       stroke: 'stroke-red-500',
       bg: 'stroke-red-500/20',
-      text: 'text-red-400',
+      text: 'text-badge-danger',
       glow: 'drop-shadow-[0_0_4px_rgba(239,68,68,0.5)]',
     };
   }

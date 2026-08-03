@@ -61,7 +61,7 @@ describe('路由异常卡 — 异常铺进主对话流，正常不铺', () => {
     expect(html).toContain('默认助手');
     // 步骤全部可见，挂掉那一步是红文案 + 红色圆点
     expect(html).toContain('code-reviewer 未注册');
-    expect(html).toContain('text-red-300');
+    expect(html).toContain('text-badge-danger');
     expect(html).toContain('bg-red-400');
     expect(html).toContain('注册表里找不到该 agent');
     expect(html).toContain('未命中');

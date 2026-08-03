@@ -433,7 +433,7 @@ function getRendererBundleTone(status: RendererBundleStatus): string {
 
 function getDesktopShellTone(diagnostics: DesktopShellDiagnostics): string {
   if (diagnostics.boot.stage === 'failed' || diagnostics.issues.some((issue) => issue.severity === 'error')) {
-    return 'text-red-300 bg-red-500/10 border-red-500/30';
+    return 'text-badge-danger bg-red-500/10 border-red-500/30';
   }
   if (
     diagnostics.webServer.health !== 'ok' ||
@@ -994,7 +994,7 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
 
       {/* Error Message */}
       {error && (
-        <div className="flex items-center gap-2 p-3 rounded-lg bg-red-500/10 text-red-400">
+        <div className="flex items-center gap-2 p-3 rounded-lg bg-red-500/10 text-badge-danger">
           <AlertCircle className="w-4 h-4" />
           <span className="text-sm">{error}</span>
         </div>

@@ -159,8 +159,8 @@ export const DecisionCard: React.FC<DecisionCardProps> = ({
             danger ? 'bg-red-500/10' : 'bg-blue-500/10'
           }`}
         >
-          <span className={`shrink-0 ${danger ? 'text-red-400' : 'text-blue-400'}`}>{icon}</span>
-          <span className={`text-sm font-medium ${danger ? 'text-red-300' : 'text-blue-300'}`}>
+          <span className={`shrink-0 ${danger ? 'text-badge-danger' : 'text-blue-400'}`}>{icon}</span>
+          <span className={`text-sm font-medium ${danger ? 'text-badge-danger' : 'text-blue-300'}`}>
             {title}
           </span>
           {headerMeta && <span className="text-xs text-zinc-500 truncate">{headerMeta}</span>}
@@ -169,8 +169,8 @@ export const DecisionCard: React.FC<DecisionCardProps> = ({
         {/* 危险警示行：替代旧 DangerWarning 嵌卡，只占一行高度 */}
         {danger && dangerWarning && (
           <div className="flex items-center gap-2 px-4 py-2 border-b border-zinc-800 bg-red-500/5">
-            <AlertTriangle className="w-4 h-4 text-red-400 shrink-0" />
-            <span className="text-xs text-red-300">{dangerWarning}</span>
+            <AlertTriangle className="w-4 h-4 text-badge-danger shrink-0" />
+            <span className="text-xs text-badge-danger">{dangerWarning}</span>
           </div>
         )}
 

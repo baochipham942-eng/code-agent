@@ -33,7 +33,7 @@ const variantConfig: Record<
   danger: {
     icon: <ShieldAlert className="w-6 h-6" />,
     iconBgClass: 'bg-red-500/10',
-    iconColorClass: 'text-red-400',
+    iconColorClass: 'text-badge-danger',
     confirmColorClass: BUTTON_DANGER_CLASS,
   },
 };

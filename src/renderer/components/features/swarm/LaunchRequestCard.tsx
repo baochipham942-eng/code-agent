@@ -198,7 +198,7 @@ export const LaunchRequestCard: React.FC<{ request: SwarmLaunchRequest }> = ({ r
     const badgeClass =
       request.status === 'approved'
         ? 'bg-emerald-500/15 text-emerald-300'
-        : 'bg-red-500/15 text-red-300';
+        : 'bg-red-500/15 text-badge-danger';
     return (
       <div className="rounded-lg border border-white/[0.04] bg-zinc-800/70 p-3">
         <div className="flex items-center gap-2">
@@ -273,7 +273,7 @@ export const LaunchRequestCard: React.FC<{ request: SwarmLaunchRequest }> = ({ r
             placeholder={s.feedbackPlaceholder}
             className="min-h-[72px] w-full resize-y rounded-lg border border-zinc-700 bg-zinc-800 px-2.5 py-2 text-xs text-zinc-200 placeholder-zinc-600 outline-hidden transition-colors focus:border-zinc-500"
           />
-          {error && <div className="mt-2 text-xs text-red-400">{error}</div>}
+          {error && <div className="mt-2 text-xs text-badge-danger">{error}</div>}
         </>
       }
     />

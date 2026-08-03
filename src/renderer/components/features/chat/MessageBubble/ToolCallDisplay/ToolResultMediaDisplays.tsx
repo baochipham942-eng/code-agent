@@ -229,7 +229,7 @@ export function GenericMediaResultDisplay({
           <div className="truncate text-xs font-medium text-zinc-200">{fileName}</div>
           <div className="truncate text-[11px] text-zinc-500">{sourceText}</div>
           {asset.error && (
-            <div className="mt-0.5 truncate text-[11px] text-red-300" title={asset.error}>
+            <div className="mt-0.5 truncate text-[11px] text-badge-danger" title={asset.error}>
               {asset.error}
             </div>
           )}

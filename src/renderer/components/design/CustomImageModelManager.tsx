@@ -113,7 +113,7 @@ export const CustomImageModelManagerView: React.FC<CustomImageModelManagerViewPr
           />
         </label>
 
-        {error && <p className="text-xs text-red-400">{error}</p>}
+        {error && <p className="text-xs text-badge-danger">{error}</p>}
 
         <div className="flex items-center justify-between pt-2">
           <Button variant="ghost" size="sm" onClick={onBack}>

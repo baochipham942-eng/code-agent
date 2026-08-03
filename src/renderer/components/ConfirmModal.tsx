@@ -43,7 +43,7 @@ export const ToolCreateConfirmModal: React.FC<ToolCreateConfirmModalProps> = ({
         <ModalHeader
           icon={isDangerous ? <AlertTriangle className="w-6 h-6" /> : <Shield className="w-6 h-6" />}
           iconBgClass={isDangerous ? 'bg-red-500/20' : 'bg-indigo-500/20'}
-          iconColorClass={isDangerous ? 'text-red-400' : 'text-indigo-400'}
+          iconColorClass={isDangerous ? 'text-badge-danger' : 'text-indigo-400'}
           title="创建动态工具"
           subtitle="AI 请求创建以下工具"
           onClose={onDeny}
@@ -72,8 +72,8 @@ export const ToolCreateConfirmModal: React.FC<ToolCreateConfirmModalProps> = ({
         {/* Warning for bash_script */}
         {isDangerous && (
           <div className="flex items-start gap-3 p-3 rounded-lg bg-red-500/10 border border-red-500/30">
-            <AlertTriangle className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
-            <div className="text-sm text-red-300">
+            <AlertTriangle className="w-5 h-5 text-badge-danger shrink-0 mt-0.5" />
+            <div className="text-sm text-badge-danger">
               此工具类型为 <code className="px-1 bg-red-500/20 rounded">bash_script</code>，可以执行系统命令。请仔细确认后再允许。
             </div>
           </div>
@@ -88,7 +88,7 @@ export const ToolCreateConfirmModal: React.FC<ToolCreateConfirmModalProps> = ({
           <div className="flex items-start gap-2">
             <span className="text-xs text-zinc-500 w-16 shrink-0">类型:</span>
             <span className={`text-sm font-mono px-2 py-0.5 rounded ${
-              isDangerous ? 'bg-red-500/20 text-red-300' : 'bg-zinc-700 text-zinc-400'
+              isDangerous ? 'bg-red-500/20 text-badge-danger' : 'bg-zinc-700 text-zinc-400'
             }`}>
               {request.type}
             </span>
@@ -105,7 +105,7 @@ export const ToolCreateConfirmModal: React.FC<ToolCreateConfirmModalProps> = ({
             <span className="text-xs text-zinc-500">代码预览:</span>
             <pre className={`text-xs p-3 rounded-lg border overflow-x-auto max-h-40 ${
               isDangerous
-                ? 'bg-red-500/10 border-red-500/20 text-red-300'
+                ? 'bg-red-500/10 border-red-500/20 text-badge-danger'
                 : 'bg-zinc-800 border-zinc-700 text-zinc-400'
             }`}>
               {(request.code || request.script || '').slice(0, UI.PREVIEW_TEXT_MAX_LENGTH)}

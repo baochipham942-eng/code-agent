@@ -72,7 +72,7 @@ const StatusBadge: React.FC<{ status: MemberPill['status'] }> = ({ status }) => 
   if (status === 'completed') {
     return <span data-testid="member-status-completed" className="shrink-0 text-[11px] leading-none text-emerald-400">✓</span>;
   }
-  return <span data-testid="member-status-failed" className="shrink-0 text-[11px] leading-none text-red-400">✕</span>;
+  return <span data-testid="member-status-failed" className="shrink-0 text-[11px] leading-none text-badge-danger">✕</span>;
 };
 
 /**

@@ -49,7 +49,7 @@ export function runStatusClass(status: RunUiStatus): string {
       return 'border-amber-500/20 bg-amber-500/10 text-amber-300';
     case 'blocked':
     case 'cancelled':
-      return 'border-red-500/20 bg-red-500/10 text-red-300';
+      return 'border-red-500/20 bg-red-500/10 text-badge-danger';
     case 'planning':
     case 'running':
     default:
@@ -90,7 +90,7 @@ function subagentStatusClass(status: SubagentRunView['status']): string {
       return 'text-emerald-300';
     case 'failed':
     case 'blocked':
-      return 'text-red-300';
+      return 'text-badge-danger';
     case 'cancelled':
       return 'text-zinc-600';
     case 'queued':
@@ -167,7 +167,7 @@ function getTaskStatusClass(status: TaskRecord['status']): string {
     case 'completed':
       return 'text-emerald-300';
     case 'blocked':
-      return 'text-red-300';
+      return 'text-badge-danger';
     case 'cancelled':
       return 'text-zinc-600 line-through';
     default:
@@ -556,7 +556,7 @@ const TaskOutputRefRow = ({ outputRef: ref }: { outputRef: TaskRecordOutputRef }
             <div className="text-[10px] text-zinc-500">{rw.loadingLog}</div>
           )}
           {logState.status === 'error' && (
-            <div className="text-[10px] text-red-300" role="alert">{rw.logLoadFailed}</div>
+            <div className="text-[10px] text-badge-danger" role="alert">{rw.logLoadFailed}</div>
           )}
           {logState.status === 'loaded' && (logState.content.length === 0 ? (
             <div className="text-[10px] text-amber-300">{rw.noOutput}</div>
@@ -603,7 +603,7 @@ const TaskRailStepRow = ({ step, muted = false }: { step: TaskRailStepView; mute
         ) : step.status === 'in_progress' ? (
           <Loader2 className="h-4 w-4 animate-spin text-zinc-300" />
         ) : step.status === 'blocked' ? (
-          <AlertTriangle className="h-3.5 w-3.5 text-red-300" />
+          <AlertTriangle className="h-3.5 w-3.5 text-badge-danger" />
         ) : step.status === 'cancelled' ? (
           <XCircle className="h-4 w-4 text-zinc-500" />
         ) : (
@@ -623,7 +623,7 @@ const TaskRailStepRow = ({ step, muted = false }: { step: TaskRailStepView; mute
         </span>
         {stuckHint && (
           <span
-            className="min-w-0 flex-shrink truncate rounded border border-red-400/20 bg-red-400/5 px-1 py-0.5 text-[10px] text-red-300/85"
+            className="min-w-0 flex-shrink truncate rounded border border-badge-danger/20 bg-red-400/5 px-1 py-0.5 text-[10px] text-badge-danger/85"
             data-testid="task-rail-step-blocked-reason"
             title={stuckHint}
           >
@@ -724,7 +724,7 @@ function memoryActionLabel(action: MemoryActivityEvent['action']): string {
 function memoryActionClass(action: MemoryActivityEvent['action']): string {
   if (action === 'created') return 'border-emerald-500/20 bg-emerald-500/10 text-emerald-300';
   if (action === 'updated') return 'border-sky-500/20 bg-sky-500/10 text-sky-300';
-  if (action === 'deleted') return 'border-red-500/20 bg-red-500/10 text-red-300';
+  if (action === 'deleted') return 'border-red-500/20 bg-red-500/10 text-badge-danger';
   return 'border-violet-500/20 bg-violet-500/10 text-violet-300';
 }
 

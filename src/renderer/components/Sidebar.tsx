@@ -726,7 +726,7 @@ export const Sidebar: React.FC = () => {
             </button>
             <button
               onClick={batchDelete}
-              className="flex items-center gap-1 text-xs text-red-400 hover:text-red-300 transition-colors"
+              className="flex items-center gap-1 text-xs text-badge-danger hover:text-badge-danger transition-colors"
             >
               <Trash2 className="w-3.5 h-3.5" />
               {sb.delete}

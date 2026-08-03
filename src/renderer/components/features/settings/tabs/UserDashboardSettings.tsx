@@ -23,7 +23,7 @@ const DEFAULT_USER_DASHBOARD_TEXT = zh.settings.users;
 const STATUS_CLASSES: Record<AdminUserDashboardItem['status'], string> = {
   active: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300',
   suspended: 'border-amber-500/30 bg-amber-500/10 text-amber-300',
-  deleted: 'border-red-500/30 bg-red-500/10 text-red-300',
+  deleted: 'border-red-500/30 bg-red-500/10 text-badge-danger',
 };
 
 const STATUS_FILTERS: UserStatusFilter[] = ['all', 'active', 'suspended', 'deleted'];
@@ -208,7 +208,7 @@ export const UserDashboardSettings: React.FC = () => {
         )}
 
         {error && (
-          <div className="flex items-start gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-200">
+          <div className="flex items-start gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-badge-danger">
             <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
             <span>{error}</span>
           </div>

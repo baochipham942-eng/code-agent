@@ -358,7 +358,7 @@ export const RealModePanel: React.FC = () => {
                     {pythonEnv.pythonInstalled ? (
                       <Check className="w-3 h-3 text-emerald-400" />
                     ) : (
-                      <XCircle className="w-3 h-3 text-red-400" />
+                      <XCircle className="w-3 h-3 text-badge-danger" />
                     )}
                     <span className="text-zinc-400">
                       {rm.pythonLabel.replace('{version}', pythonEnv.pythonVersion || rm.notInstalled)}
@@ -368,7 +368,7 @@ export const RealModePanel: React.FC = () => {
                     {pythonEnv.pytorchInstalled ? (
                       <Check className="w-3 h-3 text-emerald-400" />
                     ) : (
-                      <XCircle className="w-3 h-3 text-red-400" />
+                      <XCircle className="w-3 h-3 text-badge-danger" />
                     )}
                     <span className="text-zinc-400">
                       {rm.pytorchLabel.replace('{version}', pythonEnv.pytorchVersion || rm.notInstalled)}
@@ -378,7 +378,7 @@ export const RealModePanel: React.FC = () => {
                     {pythonEnv.sentencepieceInstalled ? (
                       <Check className="w-3 h-3 text-emerald-400" />
                     ) : (
-                      <XCircle className="w-3 h-3 text-red-400" />
+                      <XCircle className="w-3 h-3 text-badge-danger" />
                     )}
                     <span className="text-zinc-400">{rm.sentencepieceLabel}</span>
                   </div>
@@ -577,7 +577,7 @@ export const RealModePanel: React.FC = () => {
                 {trainingUIStatus === 'training' ? (
                   <button
                     onClick={handleStopTraining}
-                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-red-500/20 border border-red-500/30 text-red-400 text-sm font-medium hover:bg-red-500/30 transition-colors"
+                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-red-500/20 border border-red-500/30 text-badge-danger text-sm font-medium hover:bg-red-500/30 transition-colors"
                   >
                     <Square className="w-4 h-4" />
                     {rm.stopTraining}
@@ -628,7 +628,7 @@ export const RealModePanel: React.FC = () => {
                     <div
                       key={i}
                       className={`mb-1 ${
-                        log.type === 'error' ? 'text-red-400' :
+                        log.type === 'error' ? 'text-badge-danger' :
                         log.type === 'success' ? 'text-emerald-400' :
                         log.type === 'progress' ? 'text-blue-400' :
                         'text-zinc-400'

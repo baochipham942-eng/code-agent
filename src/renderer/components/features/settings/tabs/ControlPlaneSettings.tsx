@@ -24,7 +24,7 @@ const OUTCOME_CLASSES: Record<AdminControlPlaneAuditEventItem['outcome'], string
   served: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300',
   not_modified: 'border-sky-500/30 bg-sky-500/10 text-sky-300',
   head: 'border-zinc-600 bg-zinc-800 text-zinc-300',
-  error: 'border-red-500/30 bg-red-500/10 text-red-300',
+  error: 'border-red-500/30 bg-red-500/10 text-badge-danger',
 };
 
 function formatDate(value?: string, locale: string = localeForLanguage('zh')): string {
@@ -72,7 +72,7 @@ const SummaryTile: React.FC<{
       </div>
       <div>
         <div className="text-zinc-500">{errorLabel}</div>
-        <div className="mt-1 text-base font-semibold text-red-300">{item.errorCount}</div>
+        <div className="mt-1 text-base font-semibold text-badge-danger">{item.errorCount}</div>
       </div>
     </div>
     <div className="mt-3 truncate font-mono text-[11px] text-zinc-500" title={item.contentHash}>
@@ -159,7 +159,7 @@ export const ControlPlaneSettings: React.FC = () => {
         )}
 
         {error && (
-          <div className="flex items-start gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-200">
+          <div className="flex items-start gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-badge-danger">
             <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
             <span>{error}</span>
           </div>

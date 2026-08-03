@@ -167,7 +167,7 @@ const ChannelSummaryTile: React.FC<{
       : tone === 'warning'
         ? 'text-amber-300'
         : tone === 'danger'
-          ? 'text-red-300'
+          ? 'text-badge-danger'
           : 'text-zinc-200';
 
   return (
@@ -690,7 +690,7 @@ export const ChannelsSettings: React.FC = () => {
       case 'connecting':
         return 'text-yellow-400';
       case 'error':
-        return 'text-red-400';
+        return 'text-badge-danger';
       default:
         return 'text-zinc-400';
     }
@@ -867,7 +867,7 @@ export const ChannelsSettings: React.FC = () => {
                         {getStatusText(account.status)}
                       </div>
                       {account.errorMessage && (
-                        <div className="mt-1 truncate text-xs text-red-400" title={account.errorMessage}>
+                        <div className="mt-1 truncate text-xs text-badge-danger" title={account.errorMessage}>
                           {account.errorMessage}
                         </div>
                       )}
@@ -929,7 +929,7 @@ export const ChannelsSettings: React.FC = () => {
                         variant="ghost"
                         disabled={isWebMode()}
                         onClick={() => handleDelete(account.id)}
-                        leftIcon={<Trash2 className="w-3 h-3 text-red-400" />}
+                        leftIcon={<Trash2 className="w-3 h-3 text-badge-danger" />}
                       >
                         {channelText.actions.delete}
                       </Button>
@@ -946,7 +946,7 @@ export const ChannelsSettings: React.FC = () => {
       {message && (
         <div
           className={`flex items-center gap-2 p-3 rounded-lg ${
-            message.type === 'success' ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'
+            message.type === 'success' ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-badge-danger'
           }`}
         >
           {message.type === 'success' ? (

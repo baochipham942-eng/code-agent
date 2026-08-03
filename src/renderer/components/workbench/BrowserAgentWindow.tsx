@@ -325,7 +325,7 @@ export const BrowserAgentWindow: React.FC = () => {
               {primaryRepair ? browserSession.blockedDetail || copy.idleHint : copy.idleHint}
             </div>
             {browserSession.actionError && (
-              <div className="text-[11px] leading-relaxed text-red-300">
+              <div className="text-[11px] leading-relaxed text-badge-danger">
                 {browserSession.actionError}
               </div>
             )}

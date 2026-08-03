@@ -46,7 +46,7 @@ function ElicitationField({
         />
         <div className="flex-1">
           <span className="text-sm font-medium text-zinc-200">{label}</span>
-          {isRequired && <span className="text-red-400 ml-1">*</span>}
+          {isRequired && <span className="text-badge-danger ml-1">*</span>}
           {schema.description && (
             <p className="text-xs text-zinc-400 mt-0.5">{schema.description}</p>
           )}
@@ -60,7 +60,7 @@ function ElicitationField({
       <div className="space-y-1">
         <label className="text-sm font-medium text-zinc-200">
           {label}
-          {isRequired && <span className="text-red-400 ml-1">*</span>}
+          {isRequired && <span className="text-badge-danger ml-1">*</span>}
         </label>
         {schema.description && (
           <p className="text-xs text-zinc-400">{schema.description}</p>
@@ -103,7 +103,7 @@ function ElicitationField({
       <div className="space-y-1">
         <label className="text-sm font-medium text-zinc-200">
           {label}
-          {isRequired && <span className="text-red-400 ml-1">*</span>}
+          {isRequired && <span className="text-badge-danger ml-1">*</span>}
         </label>
         {schema.description && (
           <p className="text-xs text-zinc-400">{schema.description}</p>
@@ -134,7 +134,7 @@ function ElicitationField({
     <div className="space-y-1">
       <label className="text-sm font-medium text-zinc-200">
         {label}
-        {isRequired && <span className="text-red-400 ml-1">*</span>}
+        {isRequired && <span className="text-badge-danger ml-1">*</span>}
       </label>
       {schema.description && (
         <p className="text-xs text-zinc-400">{schema.description}</p>

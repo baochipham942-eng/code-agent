@@ -22,7 +22,7 @@ const typeConfig = {
   danger: {
     icon: <AlertTriangle className="w-6 h-6" />,
     iconBg: 'bg-red-500/10',
-    iconColor: 'text-red-400',
+    iconColor: 'text-badge-danger',
     confirmBg: BUTTON_DANGER_CLASS,
     headerBg: 'bg-red-500/10',
   },

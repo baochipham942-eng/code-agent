@@ -206,13 +206,13 @@ export const RealModePanel: React.FC = () => {
               <div className="space-y-2 text-xs">
                 <div className="flex items-center justify-between">
                   <span className="text-zinc-500">{nano.pythonLabel}</span>
-                  <span className={pythonEnv.pythonInstalled ? 'text-emerald-400' : 'text-red-400'}>
+                  <span className={pythonEnv.pythonInstalled ? 'text-emerald-400' : 'text-badge-danger'}>
                     {pythonEnv.pythonInstalled ? pythonEnv.pythonVersion : nano.notInstalled}
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-zinc-500">{nano.pytorchLabel}</span>
-                  <span className={pythonEnv.pytorchInstalled ? 'text-emerald-400' : 'text-red-400'}>
+                  <span className={pythonEnv.pytorchInstalled ? 'text-emerald-400' : 'text-badge-danger'}>
                     {pythonEnv.pytorchInstalled ? pythonEnv.pytorchVersion : nano.notInstalled}
                   </span>
                 </div>
@@ -407,7 +407,7 @@ export const RealModePanel: React.FC = () => {
                   !pythonEnv?.pytorchInstalled
                     ? 'bg-zinc-700 text-zinc-500 cursor-not-allowed'
                     : isTraining
-                      ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30 border border-red-500/30'
+                      ? 'bg-red-500/20 text-badge-danger hover:bg-red-500/30 border border-red-500/30'
                       : 'bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 border border-emerald-500/30'
                 }`}
               >

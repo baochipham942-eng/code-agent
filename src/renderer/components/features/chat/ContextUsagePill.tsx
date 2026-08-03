@@ -35,7 +35,7 @@ function toneFromPercent(pct: number): Tone {
 const TONE_STYLES: Record<Tone, { ring: string; text: string; hoverBg: string }> = {
   normal: { ring: 'stroke-zinc-500', text: 'text-zinc-400', hoverBg: 'hover:bg-zinc-700/30' },
   warning: { ring: 'stroke-yellow-500', text: 'text-yellow-400', hoverBg: 'hover:bg-yellow-500/10' },
-  critical: { ring: 'stroke-red-500', text: 'text-red-400', hoverBg: 'hover:bg-red-500/10' },
+  critical: { ring: 'stroke-red-500', text: 'text-badge-danger', hoverBg: 'hover:bg-red-500/10' },
 };
 
 export const ContextUsagePill: React.FC = () => {
@@ -241,7 +241,7 @@ export const ContextUsagePill: React.FC = () => {
             </div>
           )}
           {compactError && (
-            <div className="mt-2 text-[11px] text-red-400">{compactError}</div>
+            <div className="mt-2 text-[11px] text-badge-danger">{compactError}</div>
           )}
         </div>
       )}

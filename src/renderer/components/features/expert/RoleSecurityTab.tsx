@@ -91,7 +91,7 @@ export const RoleSecurityTab: React.FC<RoleSecurityTabProps> = ({ equipment, onS
         </div>
 
         {saving ? <div className="text-xs text-zinc-500">{text.saving}</div> : null}
-        {error ? <div className="text-xs text-red-400">{error}</div> : null}
+        {error ? <div className="text-xs text-badge-danger">{error}</div> : null}
       </div>
     </SettingsSection>
   );

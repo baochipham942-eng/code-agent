@@ -324,7 +324,7 @@ export function DesignImageToolbar(props: DesignImageToolbarProps): React.ReactE
           data-testid="design-annotate-toggle"
           onClick={() => setAnnotating((v) => !v)}
           className={`inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs transition-colors ${
-            annotating ? 'bg-red-500/20 text-red-200' : 'bg-white/[0.06] text-zinc-300 hover:text-zinc-100'
+            annotating ? 'bg-red-500/20 text-badge-danger' : 'bg-white/[0.06] text-zinc-300 hover:text-zinc-100'
           }`}
         >
           <SquareDashedMousePointer className="h-3.5 w-3.5" />

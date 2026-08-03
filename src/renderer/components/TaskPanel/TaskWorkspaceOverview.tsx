@@ -100,7 +100,7 @@ function StatusReadFailureBanner({
         </button>
       </div>
       {cancelFailed && (
-        <div className="mt-2 text-[11px] text-red-300" role="alert">{m.cancelTaskFailed}</div>
+        <div className="mt-2 text-[11px] text-badge-danger" role="alert">{m.cancelTaskFailed}</div>
       )}
     </div>
   );

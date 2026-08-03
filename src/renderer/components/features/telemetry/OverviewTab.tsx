@@ -52,7 +52,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({ session, toolStats, in
         <StatCard icon={Activity} label={s.turnCount} value={session.turnCount} iconColor="text-blue-400" />
         <StatCard icon={Cpu} label={s.totalTokens} value={formatTokens(session.totalTokens)} iconColor="text-cyan-400" />
         <StatCard icon={Wrench} label={s.toolCalls} value={session.totalToolCalls} iconColor="text-green-400" />
-        <StatCard icon={AlertTriangle} label={s.errorCount} value={session.totalErrors} iconColor="text-red-400" />
+        <StatCard icon={AlertTriangle} label={s.errorCount} value={session.totalErrors} iconColor="text-badge-danger" />
       </div>
 
       {/* Intent Distribution */}

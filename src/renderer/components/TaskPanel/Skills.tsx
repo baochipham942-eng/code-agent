@@ -129,7 +129,7 @@ export const Skills: React.FC = () => {
                         <button
                           onClick={() => unmountSkill(skill.id)}
                           disabled={loading}
-                          className="p-0.5 text-zinc-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all"
+                          className="p-0.5 text-zinc-500 hover:text-badge-danger opacity-0 group-hover:opacity-100 transition-all"
                           title={t.taskPanel.unmountSkill}
                         >
                           <Minus className="w-3 h-3" />

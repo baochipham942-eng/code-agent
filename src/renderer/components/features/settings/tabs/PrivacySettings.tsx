@@ -73,11 +73,11 @@ function getSetupStateLabel(
 
 function getSetupLogLineClass(entry: { stream: 'stdout' | 'stderr'; line: string }): string {
   const line = entry.line.trim();
-  if (line.startsWith('❌')) return 'text-red-400';
+  if (line.startsWith('❌')) return 'text-badge-danger';
   if (line.startsWith('▷ STEP:')) return 'text-cyan-300';
   if (line.startsWith('✓')) return 'text-green-400';
   if (entry.stream === 'stderr' && /\b(error|failed|failure|fatal|exception|traceback)\b/i.test(line)) {
-    return 'text-red-400';
+    return 'text-badge-danger';
   }
   return entry.stream === 'stderr' ? 'text-zinc-400' : 'text-zinc-300';
 }
@@ -398,7 +398,7 @@ const PrivacySettings: React.FC<PrivacySettingsProps> = ({ onNavigateSettings })
           </div>
 
           {error && (
-            <div className="flex items-start gap-2 rounded-lg border border-red-900/40 bg-red-950/30 p-3 text-sm text-red-300">
+            <div className="flex items-start gap-2 rounded-lg border border-red-900/40 bg-red-950/30 p-3 text-sm text-badge-danger">
               <XCircle className="mt-0.5 h-4 w-4 shrink-0" />
               <div className="flex-1 whitespace-pre-wrap break-words">{error}</div>
             </div>

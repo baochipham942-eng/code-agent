@@ -171,7 +171,7 @@ export const TerminalPanel: React.FC = () => {
 
   return (
     <div data-testid="workbench-terminal-live" className="flex h-full min-h-0 flex-col">
-      {error && <div className="px-3 py-1.5 text-[11px] text-red-400">{error}</div>}
+      {error && <div className="px-3 py-1.5 text-[11px] text-badge-danger">{error}</div>}
       <div ref={hostRef} className="min-h-0 flex-1 overflow-hidden px-2 py-1" />
     </div>
   );

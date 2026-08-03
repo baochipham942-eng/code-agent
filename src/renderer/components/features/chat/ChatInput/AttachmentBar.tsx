@@ -22,7 +22,7 @@ export const AttachmentIcon: React.FC<{ category: AttachmentCategory; className?
   const iconClass = className ?? 'w-5 h-5';
   switch (category) {
     case 'pdf':
-      return <FileText className={`${iconClass} text-red-400`} />;
+      return <FileText className={`${iconClass} text-badge-danger`} />;
     case 'audio':
       return <Music className={`${iconClass} text-fuchsia-400`} />;
     case 'video':

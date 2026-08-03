@@ -119,7 +119,7 @@ export const AgentStatsBar: React.FC<AgentStatsBarProps> = ({
 
   // Context usage color
   const getUsageColor = (pct: number) => {
-    if (pct >= 90) return 'text-red-400';
+    if (pct >= 90) return 'text-badge-danger';
     if (pct >= 70) return 'text-amber-400';
     return 'text-zinc-400';
   };

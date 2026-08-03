@@ -224,7 +224,7 @@ const ComputerUseCard: React.FC<ComputerUseCardProps> = ({
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
           <h5 className="text-sm font-medium text-zinc-100">{labels.title}</h5>
-          <span className="rounded bg-red-500/10 px-1.5 py-0.5 text-[10px] text-red-300">
+          <span className="rounded bg-red-500/10 px-1.5 py-0.5 text-[10px] text-badge-danger">
             {labels.highPrivilegeBadge}
           </span>
         </div>

@@ -51,7 +51,7 @@ const PhaseStatusIcon: React.FC<{ status: TaskPhaseStatus }> = ({ status }) => {
     case 'in_progress':
       return <Loader2 className="w-4 h-4 text-blue-400 animate-spin" />;
     case 'blocked':
-      return <XCircle className="w-4 h-4 text-red-400" />;
+      return <XCircle className="w-4 h-4 text-badge-danger" />;
     default:
       return <Circle className="w-4 h-4 text-zinc-500" />;
   }
@@ -211,7 +211,7 @@ export const PlanningPanel: React.FC<PlanningPanelProps> = ({ plan, onRefresh: _
 
         {/* Blocked warning */}
         {metadata.blockedSteps > 0 && (
-          <div className="mt-2 flex items-center gap-1 text-xs text-red-400">
+          <div className="mt-2 flex items-center gap-1 text-xs text-badge-danger">
             <XCircle className="w-3 h-3" />
             <span>{p.blockedCount.replace('{count}', String(metadata.blockedSteps))}</span>
           </div>

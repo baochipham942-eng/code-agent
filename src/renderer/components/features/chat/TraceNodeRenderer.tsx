@@ -536,7 +536,7 @@ const BlockedCapabilitiesNode: React.FC<{ timeline: TurnTimelinePayload }> = ({ 
               <WorkbenchPill tone={reason.kind === 'skill' ? 'skill' : reason.kind === 'connector' ? 'connector' : 'mcp'}>
                 {reason.label}
               </WorkbenchPill>
-              <span className={`text-[10px] ${reason.severity === 'error' ? 'text-red-300' : 'text-amber-300'}`}>
+              <span className={`text-[10px] ${reason.severity === 'error' ? 'text-badge-danger' : 'text-amber-300'}`}>
                 {reason.code}
               </span>
             </div>
@@ -582,7 +582,7 @@ const RoutingEvidenceNode: React.FC<{ timeline: TurnTimelinePayload }> = ({ time
   return (
     <div className={`rounded-lg border px-3 py-2 ${getTimelineContainerClass(timeline.tone)}`}>
       <div className="mb-1 flex flex-wrap items-center gap-2 text-[11px] text-zinc-300">
-        <AlertTriangle className={`h-3.5 w-3.5 ${timeline.tone === 'error' ? 'text-red-300' : 'text-amber-300'}`} />
+        <AlertTriangle className={`h-3.5 w-3.5 ${timeline.tone === 'error' ? 'text-badge-danger' : 'text-amber-300'}`} />
         <span>{labels.title}</span>
         <WorkbenchPill tone="neutral">{modeLabel}</WorkbenchPill>
         {(evidence.agentNames || []).map((name) => (
@@ -598,7 +598,7 @@ const RoutingEvidenceNode: React.FC<{ timeline: TurnTimelinePayload }> = ({ time
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-1.5">
                   {/* 异常步骤（warning/error）用红/琥珀色文案，一眼看出是哪一步挂的 */}
-                  <span className={step.tone === 'error' ? 'text-red-300' : step.tone === 'warning' ? 'text-amber-300' : 'text-zinc-200'}>
+                  <span className={step.tone === 'error' ? 'text-badge-danger' : step.tone === 'warning' ? 'text-amber-300' : 'text-zinc-200'}>
                     {step.label}
                   </span>
                   <WorkbenchPill tone={step.tone === 'error' || step.tone === 'warning' ? 'info' : 'neutral'}>
@@ -836,15 +836,15 @@ const SystemErrorNode: React.FC<{ node: TraceNode }> = ({ node }) => {
   return (
     <div className="py-1">
       <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/20">
-        <AlertTriangle className="w-4 h-4 text-red-400 mt-0.5 shrink-0" />
+        <AlertTriangle className="w-4 h-4 text-badge-danger mt-0.5 shrink-0" />
         <div className="min-w-0 flex-1">
-          <div className="text-xs text-red-300">{summary}</div>
-          {detail && <div className="mt-0.5 text-[11px] text-red-300/70">{detail}</div>}
+          <div className="text-xs text-badge-danger">{summary}</div>
+          {detail && <div className="mt-0.5 text-[11px] text-badge-danger/70">{detail}</div>}
         </div>
         <button
           onClick={() => setExpanded(!expanded)}
           aria-expanded={expanded}
-          className="shrink-0 text-[11px] text-red-300/70 hover:text-red-300 transition-colors"
+          className="shrink-0 text-[11px] text-badge-danger/70 hover:text-badge-danger transition-colors"
         >
           {expanded ? t.systemError.hideDetails : t.systemError.viewDetails}
         </button>

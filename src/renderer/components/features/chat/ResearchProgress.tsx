@@ -63,7 +63,7 @@ const PHASE_ICONS: Record<ResearchPhase, React.ReactNode> = {
   researching: <Search className="w-5 h-5" />,
   reporting: <FileText className="w-5 h-5" />,
   complete: <CheckCircle className="w-5 h-5 text-green-400" />,
-  error: <AlertCircle className="w-5 h-5 text-red-400" />,
+  error: <AlertCircle className="w-5 h-5 text-badge-danger" />,
 };
 
 const PHASE_LABELS: Record<ResearchPhase, string> = {
@@ -247,7 +247,7 @@ export const ResearchProgress: React.FC<ResearchProgressProps> = ({
               <CheckCircle className="w-3 h-3 text-green-400" />
             )}
             {currentStep.status === 'failed' && (
-              <AlertCircle className="w-3 h-3 text-red-400" />
+              <AlertCircle className="w-3 h-3 text-badge-danger" />
             )}
             <span className="text-zinc-400">{currentStep.title}</span>
           </div>
@@ -280,7 +280,7 @@ export const ResearchProgress: React.FC<ResearchProgressProps> = ({
 
       {/* 错误信息 */}
       {error && (
-        <div className="mt-3 p-2 bg-red-500/10 border border-red-500/20 rounded text-xs text-red-400">
+        <div className="mt-3 p-2 bg-red-500/10 border border-red-500/20 rounded text-xs text-badge-danger">
           {error}
         </div>
       )}

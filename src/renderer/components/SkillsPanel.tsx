@@ -68,7 +68,7 @@ const MountedSkillItem: React.FC<MountedSkillItemProps> = ({
       onClick={onUnmount}
       disabled={loading}
       aria-label={sk.unmountSkillAria.replace('{name}', mount.skillName)}
-      className="p-1 text-zinc-500 hover:text-red-400 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 group-focus-within:opacity-100 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+      className="p-1 text-zinc-500 hover:text-badge-danger opacity-0 group-hover:opacity-100 focus-visible:opacity-100 group-focus-within:opacity-100 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
       title={sk.unmount}
     >
       <Minus className="w-3.5 h-3.5" />
@@ -240,7 +240,7 @@ export const SkillsPanel: React.FC = () => {
 
       {/* 错误提示 */}
       {error && (
-        <div className="px-3 py-2 bg-red-900/20 border-b border-red-800/50 flex items-center gap-2 text-xs text-red-400">
+        <div className="px-3 py-2 bg-red-900/20 border-b border-red-800/50 flex items-center gap-2 text-xs text-badge-danger">
           <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
           <span className="truncate">{error}</span>
         </div>

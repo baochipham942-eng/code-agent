@@ -391,9 +391,9 @@ export function PreviewErrorState({
     <div className="flex items-center justify-center h-full bg-zinc-700">
       <div className="flex flex-col items-center gap-3 text-center px-4">
         <div className="w-12 h-12 rounded-full bg-red-500/20 flex items-center justify-center">
-          <X className="w-6 h-6 text-red-400" />
+          <X className="w-6 h-6 text-badge-danger" />
         </div>
-        <span className="text-sm text-red-400" title={detail ?? undefined}>{message}</span>
+        <span className="text-sm text-badge-danger" title={detail ?? undefined}>{message}</span>
         <button
           onClick={onRetry}
           className="px-4 py-2 rounded-lg bg-zinc-600 text-zinc-200 text-sm hover:bg-zinc-500 transition-colors"

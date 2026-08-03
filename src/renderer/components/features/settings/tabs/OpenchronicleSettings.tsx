@@ -198,7 +198,7 @@ export const OpenchronicleSettings: React.FC<OpenchronicleSettingsProps> = ({ em
         </div>
 
         {(error || status?.lastError) && (
-          <div className="mt-3 p-2 bg-red-900/30 border border-red-700 rounded text-xs text-red-200">
+          <div className="mt-3 p-2 bg-red-900/30 border border-red-700 rounded text-xs text-badge-danger">
             {error || status?.lastError}
           </div>
         )}

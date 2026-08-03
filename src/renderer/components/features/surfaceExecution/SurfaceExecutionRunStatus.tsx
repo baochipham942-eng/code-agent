@@ -18,7 +18,7 @@ const STATE_TONE: Record<SurfaceRunState, string> = {
   paused: 'text-amber-300',
   stopping: 'text-amber-300',
   completed: 'text-emerald-300',
-  failed: 'text-red-300',
+  failed: 'text-badge-danger',
 };
 
 const DOT_TONE: Record<SurfaceRunState, string> = {

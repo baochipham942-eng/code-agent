@@ -459,7 +459,7 @@ export const SkillsInstalledTab: React.FC<SkillsInstalledTabProps> = ({
                         loading={isRemoving}
                         leftIcon={!isRemoving ? <Trash2 className="h-3 w-3" /> : undefined}
                         disabled={isUpdating || isWebMode()}
-                        className="text-red-400 hover:bg-red-500/10 hover:text-red-300"
+                        className="text-badge-danger hover:bg-red-500/10 hover:text-badge-danger"
                       >
                         {t.common.delete}
                       </Button>

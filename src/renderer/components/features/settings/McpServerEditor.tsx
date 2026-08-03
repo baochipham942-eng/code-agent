@@ -257,7 +257,7 @@ const KeyValueEditor: React.FC<{
             <button
               type="button"
               onClick={() => handleRemove(key)}
-              className="p-1 text-zinc-500 hover:text-red-400 transition-colors"
+              className="p-1 text-zinc-500 hover:text-badge-danger transition-colors"
             >
               <Trash2 className="w-3.5 h-3.5" />
             </button>
@@ -618,7 +618,7 @@ export const McpServerEditor: React.FC<McpServerEditorProps> = ({
               spellCheck={false}
             />
             {jsonError && (
-              <p className="text-xs text-red-400">{jsonError}</p>
+              <p className="text-xs text-badge-danger">{jsonError}</p>
             )}
             {ignoredJsonKeys.length > 0 && (
               <p className="text-xs text-amber-400">

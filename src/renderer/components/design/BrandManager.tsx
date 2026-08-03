@@ -322,7 +322,7 @@ export const BrandManagerView: React.FC<BrandManagerViewProps> = ({
           onChange={(doNotCopy) => onFormChange({ ...form, doNotCopy })}
         />
 
-        {error && <p className="text-xs text-red-400">{error}</p>}
+        {error && <p className="text-xs text-badge-danger">{error}</p>}
 
         <div className="flex items-center justify-between pt-2">
           <Button variant="ghost" size="sm" onClick={onBack}>

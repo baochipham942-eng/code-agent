@@ -55,7 +55,7 @@ export const ProjectMembersCard: React.FC<ProjectMembersCardProps> = ({ projectI
         {state.status === 'loading' ? (
           <span className="text-xs text-zinc-600" data-testid="project-space-members-loading">{ps.membersLoading}</span>
         ) : state.status === 'error' ? (
-          <span className="text-xs text-red-400" data-testid="project-space-members-error">{ps.membersLoadFailed}</span>
+          <span className="text-xs text-badge-danger" data-testid="project-space-members-error">{ps.membersLoadFailed}</span>
         ) : state.members.length === 0 ? (
           <span className="text-xs text-zinc-600" data-testid="project-space-members-empty">{ps.membersEmpty}</span>
         ) : (

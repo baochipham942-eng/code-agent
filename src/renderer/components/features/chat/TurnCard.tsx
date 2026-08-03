@@ -1016,7 +1016,7 @@ function getToneClass(tone: 'neutral' | 'info' | 'success' | 'warning' | 'error'
 function getHookIssueClass(tone: 'success' | 'warning' | 'error'): string {
   switch (tone) {
     case 'error':
-      return 'bg-red-500/10 text-red-300';
+      return 'bg-red-500/10 text-badge-danger';
     case 'warning':
       return 'bg-amber-500/10 text-amber-300';
     default:
@@ -1110,7 +1110,7 @@ const TurnRunHeader: React.FC<{ turn: TraceTurn; streamingState?: StreamingUiSta
         </div>
       )}
       {failedTool && (
-        <div className="inline-flex items-center gap-1 rounded-md bg-red-500/10 px-1.5 py-0.5 text-[11px] text-red-300" title={formatFailedToolTitle(failedTool)}>
+        <div className="inline-flex items-center gap-1 rounded-md bg-red-500/10 px-1.5 py-0.5 text-[11px] text-badge-danger" title={formatFailedToolTitle(failedTool)}>
           <XCircle className="h-3 w-3" />
           <span className="max-w-[120px] truncate">{failedTool.name}</span>
         </div>

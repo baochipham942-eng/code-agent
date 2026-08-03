@@ -499,7 +499,7 @@ export const DataSettings: React.FC = () => {
 
       {message && (
         <div className={`flex items-center gap-2 rounded-lg p-3 ${
-          message.type === 'success' ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'
+          message.type === 'success' ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-badge-danger'
         }`}
         >
           {message.type === 'success' ? <CheckCircle className="h-4 w-4" /> : <AlertCircle className="h-4 w-4" />}
@@ -645,7 +645,7 @@ export const DataSettings: React.FC = () => {
               </span>
               {telemetrySummary.lastUploadError && (
                 <span
-                  className="inline-flex items-center gap-1.5 rounded-md border border-red-500/30 bg-red-500/10 px-2 py-1 text-red-300"
+                  className="inline-flex items-center gap-1.5 rounded-md border border-red-500/30 bg-red-500/10 px-2 py-1 text-badge-danger"
                   title={telemetrySummary.lastUploadError}
                 >
                   {dataText.telemetry.uploadFailedSummary

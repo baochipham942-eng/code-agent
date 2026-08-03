@@ -86,7 +86,7 @@ export const CaptureCard: React.FC<CaptureCardProps> = ({ item, isSelected, onSe
           )}
           <button
             onClick={(e) => { e.stopPropagation(); onDelete(item.id); }}
-            className="p-1 text-zinc-500 hover:text-red-400 transition-colors"
+            className="p-1 text-zinc-500 hover:text-badge-danger transition-colors"
             title="删除"
           >
             <Trash2 className="w-3.5 h-3.5" />

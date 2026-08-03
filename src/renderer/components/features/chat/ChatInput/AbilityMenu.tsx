@@ -294,7 +294,7 @@ export const AbilityMenu: React.FC<AbilityMenuProps> = ({ disabled = false, defa
                 <div className="mt-1 leading-relaxed text-zinc-500">{browserSession.blockedHint}</div>
               )}
               {browserSession.actionError && (
-                <div className="mt-1 leading-relaxed text-red-300">{browserSession.actionError}</div>
+                <div className="mt-1 leading-relaxed text-badge-danger">{browserSession.actionError}</div>
               )}
 
               {browserSession.repairActions.length > 0 && (

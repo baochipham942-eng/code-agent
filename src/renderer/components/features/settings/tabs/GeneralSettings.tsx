@@ -199,7 +199,7 @@ function getPermissionIcon(mode: PermissionMode): React.ReactNode {
 }
 
 function getRiskClass(riskLevel: PermissionRiskLevel): string {
-  if (riskLevel === 'high') return 'border-red-500/30 bg-red-500/10 text-red-300';
+  if (riskLevel === 'high') return 'border-red-500/30 bg-red-500/10 text-badge-danger';
   if (riskLevel === 'medium') return 'border-amber-500/30 bg-amber-500/10 text-amber-300';
   return 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300';
 }
@@ -214,7 +214,7 @@ function getRuleRows(ruleSummary: PermissionRuleSummary, text: GeneralSettingsTe
       label: 'Deny',
       caption: text.userRules.denyCaption,
       value: ruleSummary.denyCount,
-      color: 'text-red-300',
+      color: 'text-badge-danger',
     },
     {
       label: 'Ask',
@@ -494,10 +494,10 @@ export const GeneralSettings: React.FC = () => {
         {permissionMode === 'bypassPermissions' && (
           <div className="rounded-lg border border-red-500/20 bg-red-500/10 p-3">
             <div className="flex items-start gap-2">
-              <ShieldOff className="mt-0.5 h-4 w-4 shrink-0 text-red-400" />
+              <ShieldOff className="mt-0.5 h-4 w-4 shrink-0 text-badge-danger" />
               <div>
-                <h4 className="text-sm font-medium text-red-300">{generalText.bypassWarning.title}</h4>
-                <p className="mt-1 text-xs text-red-400/70">
+                <h4 className="text-sm font-medium text-badge-danger">{generalText.bypassWarning.title}</h4>
+                <p className="mt-1 text-xs text-badge-danger/70">
                   {generalText.bypassWarning.description}
                 </p>
               </div>
@@ -622,7 +622,7 @@ export const GeneralSettings: React.FC = () => {
 
             <div className="grid grid-cols-1 gap-3">
               <div>
-                <label className="mb-1 block text-xs text-red-300">{generalText.userRules.denyLabel}</label>
+                <label className="mb-1 block text-xs text-badge-danger">{generalText.userRules.denyLabel}</label>
                 <textarea
                   value={denyRules}
                   onChange={(event) => setDenyRules(event.target.value)}

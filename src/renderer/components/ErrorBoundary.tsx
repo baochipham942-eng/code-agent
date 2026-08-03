@@ -65,7 +65,7 @@ export class ErrorBoundary extends Component<Props, State> {
             {/* 错误图标 */}
             <div className="flex justify-center mb-6">
               <div className="w-16 h-16 rounded-full bg-red-500/20 flex items-center justify-center">
-                <AlertTriangle className="w-8 h-8 text-red-400" />
+                <AlertTriangle className="w-8 h-8 text-badge-danger" />
               </div>
             </div>
 
@@ -81,7 +81,7 @@ export class ErrorBoundary extends Component<Props, State> {
                 <summary className="cursor-pointer text-zinc-500 hover:text-zinc-400 text-sm">
                   {t.errorBoundary.viewDetails}
                 </summary>
-                <div className="mt-2 p-3 bg-zinc-700 rounded-lg text-xs font-mono text-red-300 overflow-auto max-h-32">
+                <div className="mt-2 p-3 bg-zinc-700 rounded-lg text-xs font-mono text-badge-danger overflow-auto max-h-32">
                   <p className="font-semibold">{this.state.error.name}: {this.state.error.message}</p>
                   {this.state.errorInfo?.componentStack && (
                     <pre className="mt-2 text-zinc-500 whitespace-pre-wrap">

@@ -137,7 +137,7 @@ export const TurnDetail: React.FC<TurnDetailProps> = ({ turn, modelCalls, toolCa
                   {tc.success ? (
                     <CheckCircle className="w-3 h-3 text-green-400 shrink-0" />
                   ) : (
-                    <XCircle className="w-3 h-3 text-red-400 shrink-0" />
+                    <XCircle className="w-3 h-3 text-badge-danger shrink-0" />
                   )}
                   <span className="text-zinc-400 font-mono">{tc.name}</span>
                   {tc.parallel && <span className="text-[9px] bg-blue-500/20 text-blue-400 px-1 rounded">{d.parallelBadge}</span>}

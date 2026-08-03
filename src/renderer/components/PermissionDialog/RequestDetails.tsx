@@ -247,7 +247,7 @@ function DetailItem({ label, value, isPath, isCode, isUrl, isDangerous }: Detail
           ${
             isCode
               ? isDangerous
-                ? 'bg-red-500/10 border border-red-500/20 text-red-300'
+                ? 'bg-red-500/10 border border-red-500/20 text-badge-danger'
                 : 'bg-zinc-700 border border-zinc-700 text-zinc-400'
               : ''
           }

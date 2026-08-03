@@ -91,7 +91,7 @@ function getToneClasses(tone: 'ready' | 'warning' | 'error' | 'neutral'): string
     case 'warning':
       return 'border-amber-500/30 bg-amber-500/10 text-amber-300';
     case 'error':
-      return 'border-red-500/30 bg-red-500/10 text-red-300';
+      return 'border-red-500/30 bg-red-500/10 text-badge-danger';
     default:
       return 'border-zinc-700 bg-zinc-900/70 text-zinc-300';
   }
@@ -369,7 +369,7 @@ const TimeCapabilityPanel: React.FC = () => {
           <div className="truncate text-sm font-medium text-zinc-100">{job.name}</div>
           <div className="mt-1 truncate text-xs text-zinc-500">{formatScheduleSummary(job)} · {formatActionSummary(job)}</div>
           {options?.showError && latest?.error && (
-            <div className="mt-1 line-clamp-2 text-xs text-red-300">{latest.error}</div>
+            <div className="mt-1 line-clamp-2 text-xs text-badge-danger">{latest.error}</div>
           )}
         </div>
         <div className="text-xs text-zinc-400">
@@ -439,7 +439,7 @@ const TimeCapabilityPanel: React.FC = () => {
             </div>
 
             {error && (
-              <div className="border-t border-red-500/20 bg-red-500/10 px-4 py-2 text-sm text-red-300">
+              <div className="border-t border-red-500/20 bg-red-500/10 px-4 py-2 text-sm text-badge-danger">
                 {error}
               </div>
             )}
@@ -529,7 +529,7 @@ const TimeCapabilityPanel: React.FC = () => {
                 </>
               )}
               {calendarError && (
-                <div className="mt-3 text-xs text-red-300">{calendarError}</div>
+                <div className="mt-3 text-xs text-badge-danger">{calendarError}</div>
               )}
             </div>
           </section>
@@ -621,7 +621,7 @@ const TimeCapabilityPanel: React.FC = () => {
 const Metric: React.FC<{ label: string; value: string; tone?: 'error' | 'neutral' }> = ({ label, value, tone = 'neutral' }) => (
   <div className="px-4 py-3">
     <div className="text-[11px] text-zinc-500">{label}</div>
-    <div className={`mt-1 text-xl font-semibold ${tone === 'error' ? 'text-red-300' : 'text-zinc-100'}`}>{value}</div>
+    <div className={`mt-1 text-xl font-semibold ${tone === 'error' ? 'text-badge-danger' : 'text-zinc-100'}`}>{value}</div>
   </div>
 );
 
@@ -673,7 +673,7 @@ const CapabilityFixRow: React.FC<{
         {hint && <div className="mt-1 line-clamp-2 text-[11px] text-zinc-500">{hint}</div>}
       </div>
       {tone === 'error' ? (
-        <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-300" />
+        <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-badge-danger" />
       ) : (
         <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-300" />
       )}
@@ -706,7 +706,7 @@ const CapabilityFixRow: React.FC<{
       <div className="mt-2 text-[11px] text-zinc-500">没有可直接执行的修复动作。</div>
     )}
 
-    {error && <div className="mt-2 text-[11px] text-red-300">{error}</div>}
+    {error && <div className="mt-2 text-[11px] text-badge-danger">{error}</div>}
     {!error && feedback && (
       <div className={`mt-2 text-[11px] ${feedbackTone === 'success' ? 'text-emerald-300' : 'text-sky-300'}`}>
         {feedback}

@@ -175,7 +175,7 @@ export const DiagramToolbar: React.FC<DiagramToolbarProps> = ({
             aria-label={t.design.diagramDelete}
             data-testid="diagram-delete"
             onClick={onDelete}
-            className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-zinc-400 transition-colors hover:bg-red-500/20 hover:text-red-200"
+            className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-zinc-400 transition-colors hover:bg-red-500/20 hover:text-badge-danger"
           >
             <Trash2 className="h-4 w-4" />
           </button>

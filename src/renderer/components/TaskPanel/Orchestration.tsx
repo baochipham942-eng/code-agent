@@ -372,10 +372,10 @@ export const Orchestration: React.FC = () => {
             emphasis={pendingLaunches.length + pendingReviews.length > 0 ? 'text-amber-300' : 'text-zinc-200'}
           />
           <MetricCard
-            icon={<Ban className="w-3.5 h-3.5 text-red-400" />}
+            icon={<Ban className="w-3.5 h-3.5 text-badge-danger" />}
             label={o.blocking}
             value={agents.filter((agent) => agent.status === 'failed' || agent.status === 'cancelled').length}
-            emphasis="text-red-300"
+            emphasis="text-badge-danger"
           />
           <MetricCard
             icon={<Zap className="w-3.5 h-3.5 text-cyan-400" />}
@@ -764,7 +764,7 @@ export const Orchestration: React.FC = () => {
                   {verification.passed ? (
                     <CheckCircle2 className="w-4 h-4 text-emerald-400" />
                   ) : (
-                    <XCircle className="w-4 h-4 text-red-400" />
+                    <XCircle className="w-4 h-4 text-badge-danger" />
                   )}
                   {verification.passed ? o.verifyPassed : o.verifyFailed}
                   <span className="ml-auto text-xs text-zinc-500">
@@ -778,7 +778,7 @@ export const Orchestration: React.FC = () => {
                       className={`rounded px-1.5 py-0.5 text-[10px] ${
                         check.passed
                           ? 'bg-emerald-500/15 text-emerald-300'
-                          : 'bg-red-500/15 text-red-300'
+                          : 'bg-red-500/15 text-badge-danger'
                       }`}
                       title={check.message}
                     >

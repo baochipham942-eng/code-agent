@@ -153,7 +153,7 @@ export const DesignLayerPanel: React.FC<{
               onClick={() => onDiscard(selected.id)}
               disabled={selected.discarded}
               title={t.design.layerDiscard}
-              className="inline-flex items-center justify-center rounded-md border border-red-500/20 bg-red-500/10 px-2 py-1.5 text-xs text-red-200 disabled:opacity-40"
+              className="inline-flex items-center justify-center rounded-md border border-red-500/20 bg-red-500/10 px-2 py-1.5 text-xs text-badge-danger disabled:opacity-40"
               aria-label={`${t.design.layerDiscard} ${layerDisplayName(selected, t.design.layerUnnamed)}`}
             >
               <Archive className="h-3.5 w-3.5" />
@@ -162,7 +162,7 @@ export const DesignLayerPanel: React.FC<{
               type="button"
               onClick={() => onDelete(selected.id)}
               title={t.common.delete}
-              className="inline-flex items-center justify-center rounded-md border border-red-500/25 bg-red-500/15 px-2 py-1.5 text-xs text-red-100"
+              className="inline-flex items-center justify-center rounded-md border border-red-500/25 bg-red-500/15 px-2 py-1.5 text-xs text-badge-danger"
               aria-label={`${t.common.delete} ${layerDisplayName(selected, t.design.layerUnnamed)}`}
             >
               <Trash2 className="h-3.5 w-3.5" />

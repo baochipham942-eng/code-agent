@@ -295,7 +295,7 @@ export const WorkbenchCapabilitySheetLite: React.FC<WorkbenchCapabilitySheetLite
             <div className="flex items-start gap-2 text-[11px] text-zinc-300">
               <AlertTriangle
                 className={`mt-0.5 h-3.5 w-3.5 flex-shrink-0 ${
-                  effectiveBlockedReason.severity === 'error' ? 'text-red-300' : 'text-amber-300'
+                  effectiveBlockedReason.severity === 'error' ? 'text-badge-danger' : 'text-amber-300'
                 }`}
               />
               <div className="space-y-1">
@@ -336,7 +336,7 @@ export const WorkbenchCapabilitySheetLite: React.FC<WorkbenchCapabilitySheetLite
                 </div>
               )}
               {actionError && (
-                <div className="text-[11px] text-red-300">{actionError}</div>
+                <div className="text-[11px] text-badge-danger">{actionError}</div>
               )}
               {feedback && !actionError && (
                 <div className={`text-[11px] ${feedback.tone === 'success' ? 'text-emerald-300' : 'text-sky-300'}`}>

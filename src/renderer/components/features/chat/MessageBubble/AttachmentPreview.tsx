@@ -59,7 +59,7 @@ function getAttachmentIconConfig(category: AttachmentCategory | undefined): Atta
   const iconClass = 'w-5 h-5 shrink-0';
   switch (category) {
     case 'pdf':
-      return { icon: <FileText className={iconClass} />, color: 'text-red-400', label: 'PDF' };
+      return { icon: <FileText className={iconClass} />, color: 'text-badge-danger', label: 'PDF' };
     case 'audio':
       return { icon: <Music className={iconClass} />, color: 'text-fuchsia-400', label: '音频' };
     case 'video':
@@ -134,7 +134,7 @@ const AttachmentStateBadge: React.FC<{
     state.tone === 'success'
       ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
       : state.tone === 'danger'
-        ? 'border-red-500/30 bg-red-500/10 text-red-300'
+        ? 'border-red-500/30 bg-red-500/10 text-badge-danger'
         : state.tone === 'active'
           ? 'border-sky-500/30 bg-sky-500/10 text-sky-300'
           : 'border-zinc-600 bg-zinc-800 text-zinc-400';
@@ -147,7 +147,7 @@ const AttachmentStateBadge: React.FC<{
       {state.tone === 'danger' && onRetry && (
         <button
           type="button"
-          className="ml-1 inline-flex items-center gap-0.5 rounded px-1 text-[10px] text-red-200 hover:bg-red-500/15"
+          className="ml-1 inline-flex items-center gap-0.5 rounded px-1 text-[10px] text-badge-danger hover:bg-red-500/15"
           onClick={(event) => {
             event.stopPropagation();
             onRetry();

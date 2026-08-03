@@ -314,7 +314,7 @@ const PROVIDER_HEALTH_BADGE_CLASS: Record<ProviderAvailabilityState, string> = {
   recovering: 'border-sky-500/20 bg-sky-500/10 text-sky-300',
   unknown: 'border-zinc-700 bg-zinc-900 text-zinc-500',
   degraded: 'border-amber-500/20 bg-amber-500/10 text-amber-300',
-  unavailable: 'border-red-500/20 bg-red-500/10 text-red-300',
+  unavailable: 'border-red-500/20 bg-red-500/10 text-badge-danger',
 };
 
 const PROVIDER_BILLING_LABEL: Record<BillingMode, string> = {
@@ -488,7 +488,7 @@ export function getEngineModelCompatReasonText(
 const ENGINE_RELIABILITY_TONE_CLASS: Record<string, string> = {
   ready: 'border-emerald-500/20 bg-emerald-500/[0.08] text-emerald-200',
   warning: 'border-amber-500/20 bg-amber-500/[0.08] text-amber-200',
-  error: 'border-red-500/20 bg-red-500/[0.08] text-red-200',
+  error: 'border-red-500/20 bg-red-500/[0.08] text-badge-danger',
   info: 'border-sky-500/20 bg-sky-500/[0.08] text-sky-200',
 };
 

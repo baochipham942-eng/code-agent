@@ -29,7 +29,7 @@ const EVENT_COLORS: Record<string, string> = {
   tool_call_start: 'text-blue-400 bg-blue-500/10',
   tool_call_end: 'text-blue-400 bg-blue-500/10',
   message: 'text-cyan-400 bg-cyan-500/10',
-  error: 'text-red-400 bg-red-500/10',
+  error: 'text-badge-danger bg-red-500/10',
   stream_reasoning: 'text-purple-400 bg-purple-500/10',
   notification: 'text-amber-400 bg-amber-500/10',
 };

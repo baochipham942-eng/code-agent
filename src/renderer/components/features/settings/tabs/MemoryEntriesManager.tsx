@@ -303,7 +303,7 @@ export const MemoryEntriesManager: React.FC<{ onChanged?: () => void | Promise<v
           <div className={`border-b px-3 py-2 text-xs ${
             message.type === 'success'
               ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-300'
-              : 'border-red-500/20 bg-red-500/10 text-red-300'
+              : 'border-red-500/20 bg-red-500/10 text-badge-danger'
           }`}
           >
             {message.text}
@@ -510,7 +510,7 @@ export const MemoryEntriesManager: React.FC<{ onChanged?: () => void | Promise<v
                         type="button"
                         onClick={deleteSelected}
                         disabled={busy !== null || isWebMode()}
-                        className="inline-flex items-center gap-1.5 rounded border border-red-500/40 bg-red-500/10 px-3 py-1.5 text-xs text-red-300 hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+                        className="inline-flex items-center gap-1.5 rounded border border-red-500/40 bg-red-500/10 px-3 py-1.5 text-xs text-badge-danger hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         {busy === 'delete' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
                         {memoryText.entries.confirmDelete}
@@ -520,7 +520,7 @@ export const MemoryEntriesManager: React.FC<{ onChanged?: () => void | Promise<v
                     <button
                       type="button"
                       onClick={() => setDeleteConfirmId(selectedEntry.id)}
-                      className="inline-flex items-center gap-1.5 rounded border border-zinc-700 px-3 py-1.5 text-xs text-zinc-400 hover:border-red-500/40 hover:bg-red-500/10 hover:text-red-300"
+                      className="inline-flex items-center gap-1.5 rounded border border-zinc-700 px-3 py-1.5 text-xs text-zinc-400 hover:border-red-500/40 hover:bg-red-500/10 hover:text-badge-danger"
                     >
                       <Trash2 className="h-3.5 w-3.5" />
                       {memoryText.entries.delete}

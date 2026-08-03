@@ -16,7 +16,7 @@ const ICON_MAP: Record<ToastType, React.ReactNode> = {
 
 const COLOR_MAP: Record<ToastType, string> = {
   success: 'border-green-500/40 text-green-400',
-  error: 'border-red-500/40 text-red-400',
+  error: 'border-red-500/40 text-badge-danger',
   info: 'border-blue-500/40 text-blue-400',
   warning: 'border-yellow-500/40 text-yellow-400',
 };

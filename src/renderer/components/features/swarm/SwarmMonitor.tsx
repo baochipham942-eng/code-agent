@@ -35,7 +35,7 @@ const statusColors: Record<string, { bg: string; text: string; border: string }>
   ready: { bg: 'bg-blue-500/10', text: 'text-blue-400', border: 'border-blue-500/30' },
   running: { bg: 'bg-amber-500/10', text: 'text-amber-400', border: 'border-amber-500/30' },
   completed: { bg: 'bg-emerald-500/10', text: 'text-emerald-400', border: 'border-emerald-500/30' },
-  failed: { bg: 'bg-red-500/10', text: 'text-red-400', border: 'border-red-500/30' },
+  failed: { bg: 'bg-red-500/10', text: 'text-badge-danger', border: 'border-red-500/30' },
   cancelled: { bg: 'bg-zinc-600/10', text: 'text-zinc-500', border: 'border-zinc-600/30' },
 };
 
@@ -126,7 +126,7 @@ const AgentCard: React.FC<{
           <button
             type="button"
             onClick={handleStop}
-            className="p-1 rounded hover:bg-red-500/20 text-zinc-500 hover:text-red-400 transition-colors"
+            className="p-1 rounded hover:bg-red-500/20 text-zinc-500 hover:text-badge-danger transition-colors"
             title="Stop this subagent"
             aria-label={`Stop subagent ${agent.name}`}
           >
@@ -176,7 +176,7 @@ const AgentCard: React.FC<{
 
       {/* Error Message */}
       {agent.error && (
-        <div className="mt-1.5 text-xs text-red-400 truncate">
+        <div className="mt-1.5 text-xs text-badge-danger truncate">
           {agent.error}
         </div>
       )}
@@ -250,9 +250,9 @@ const VerificationBadge: React.FC<{ verification?: SwarmVerificationResult }> = 
       <div className="flex items-center gap-2 mb-1">
         {passed
           ? <CheckCircle className="w-4 h-4 text-emerald-400" />
-          : <XCircle className="w-4 h-4 text-red-400" />
+          : <XCircle className="w-4 h-4 text-badge-danger" />
         }
-        <span className={`text-sm font-medium ${passed ? 'text-emerald-300' : 'text-red-300'}`}>
+        <span className={`text-sm font-medium ${passed ? 'text-emerald-300' : 'text-badge-danger'}`}>
           验证{passed ? '通过' : '未通过'}
         </span>
         <span className="text-xs text-zinc-500 ml-auto">
@@ -266,7 +266,7 @@ const VerificationBadge: React.FC<{ verification?: SwarmVerificationResult }> = 
             className={`text-xs px-1.5 py-0.5 rounded ${
               check.passed
                 ? 'bg-emerald-500/20 text-emerald-400'
-                : 'bg-red-500/20 text-red-400'
+                : 'bg-red-500/20 text-badge-danger'
             }`}
             title={check.message}
           >
@@ -491,7 +491,7 @@ export const SwarmMonitor: React.FC<SwarmMonitorProps> = ({ onClose }) => {
         {groupedAgents.failed.length > 0 && (
           <AgentSection
             title="失败"
-            icon={<XCircle className="w-3.5 h-3.5 text-red-400" />}
+            icon={<XCircle className="w-3.5 h-3.5 text-badge-danger" />}
             agents={groupedAgents.failed}
             selectedAgentId={selectedSwarmAgentId}
             onAgentSelect={setSelectedSwarmAgentId}

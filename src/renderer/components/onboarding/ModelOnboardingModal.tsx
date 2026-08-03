@@ -429,7 +429,7 @@ export const ModelOnboardingModal: React.FC<ModelOnboardingModalProps> = ({ onCo
       )}
       footer={(
         <div className="flex w-full items-center justify-between gap-3">
-          <div className={`text-xs ${status === 'error' ? 'text-red-300' : 'text-zinc-500'}`}>
+          <div className={`text-xs ${status === 'error' ? 'text-badge-danger' : 'text-zinc-500'}`}>
             {isBusy ? <Loader2 className="mr-1 inline h-3.5 w-3.5 animate-spin" /> : null}
             {message || (route === 'subscription' ? '官方登录凭证始终由对应客户端管理' : text.keyStaysLocal)}
           </div>

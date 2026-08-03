@@ -74,7 +74,7 @@ const StatusDot: React.FC<{ status: SwarmAgentState['status'] }> = ({ status }) 
   const colors: Record<string, string> = {
     running: 'text-amber-400 animate-pulse',
     completed: 'text-emerald-400',
-    failed: 'text-red-400',
+    failed: 'text-badge-danger',
     pending: 'text-zinc-500',
     ready: 'text-blue-400',
     cancelled: 'text-zinc-600',
@@ -141,7 +141,7 @@ const MessageItem: React.FC<{ message: TeammateMessageDisplay; currentAgentId?: 
             : isPlanApproved
             ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-200'
             : isPlanRejected
-            ? 'bg-red-500/10 border border-red-500/20 text-red-200'
+            ? 'bg-red-500/10 border border-red-500/20 text-badge-danger'
             : isPlanReview
             ? 'bg-amber-500/10 border border-amber-500/20 text-amber-200'
             : isSent
@@ -157,7 +157,7 @@ const MessageItem: React.FC<{ message: TeammateMessageDisplay; currentAgentId?: 
           </span>
           {isPlanReview && <ShieldCheck className="w-3 h-3 text-amber-400" />}
           {isPlanApproved && <ShieldCheck className="w-3 h-3 text-emerald-400" />}
-          {isPlanRejected && <ShieldX className="w-3 h-3 text-red-400" />}
+          {isPlanRejected && <ShieldX className="w-3 h-3 text-badge-danger" />}
           <span className="text-zinc-600 ml-auto">
             {new Date(message.timestamp).toLocaleTimeString()}
           </span>
@@ -488,7 +488,7 @@ export const AgentTeamPanel: React.FC<AgentTeamPanelProps> = ({
             </button>
           </div>
           {sendError && (
-            <div role="alert" className="mt-1.5 text-[11px] text-red-400">
+            <div role="alert" className="mt-1.5 text-[11px] text-badge-danger">
               {sendError}
             </div>
           )}

@@ -176,7 +176,7 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
         <WebModeBanner />
 
         {error && (
-          <div className="border-b border-red-500/20 bg-red-500/10 px-6 py-2 text-sm text-red-300">
+          <div className="border-b border-red-500/20 bg-red-500/10 px-6 py-2 text-sm text-badge-danger">
             {error}
           </div>
         )}

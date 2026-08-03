@@ -287,7 +287,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, onClo
         </div>
 
         {errors.form && (
-          <div className="mt-4 rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm text-red-300">
+          <div className="mt-4 rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm text-badge-danger">
             {errors.form}
           </div>
         )}
@@ -406,7 +406,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, onClo
       </div>
 
       {errors.form && (
-        <div className="mb-4 rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm text-red-300">
+        <div className="mb-4 rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm text-badge-danger">
           {errors.form}
         </div>
       )}

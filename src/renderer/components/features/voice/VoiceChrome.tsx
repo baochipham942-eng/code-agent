@@ -103,7 +103,7 @@ const STATUS_COLOR: Record<Exclude<VoiceVisualState, 'idle'>, string> = {
   speaking: 'text-primary-400',
   working: 'text-amber-400',
   muted: 'text-zinc-500',
-  error: 'text-red-400',
+  error: 'text-badge-danger',
 };
 
 function formatCallDuration(startedAt: number | null, now: number): string {
@@ -223,7 +223,7 @@ export const VoiceChrome: React.FC<{ sessionId: string | null }> = ({ sessionId:
           onClick={() => voiceCallBridge.hangUp()}
           title={t.voice.live.endTitle}
           aria-label={t.voice.live.endTitle}
-          className="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-[var(--radius-xl)] bg-red-500/15 text-red-300 transition-colors hover:bg-red-500/20 hover:text-red-200"
+          className="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-[var(--radius-xl)] bg-red-500/15 text-badge-danger transition-colors hover:bg-red-500/20 hover:text-badge-danger"
         >
           <X className="h-[15px] w-[15px]" />
         </button>

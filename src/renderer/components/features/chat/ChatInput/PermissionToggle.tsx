@@ -27,7 +27,7 @@ const TIER_BUTTON_CLASS: Record<SessionPermissionMode, string> = {
   default: 'text-zinc-500 hover:text-zinc-400 hover:bg-white/[0.04]',
   readOnly: 'bg-emerald-500/15 text-emerald-400',
   acceptEdits: 'bg-amber-500/15 text-amber-400',
-  bypassPermissions: 'bg-red-500/20 text-red-400',
+  bypassPermissions: 'bg-red-500/20 text-badge-danger',
 };
 
 function isSessionPermissionMode(value: unknown): value is SessionPermissionMode {

@@ -60,7 +60,7 @@ export const LoopStatusBar: React.FC<LoopStatusBarProps> = ({ sessionId }) => {
           <button
             type="button"
             onClick={() => void stop(l.id)}
-            className="flex shrink-0 items-center gap-1 rounded-md bg-blue-500/20 px-2 py-0.5 text-blue-100 hover:bg-red-500/30 hover:text-red-100"
+            className="flex shrink-0 items-center gap-1 rounded-md bg-blue-500/20 px-2 py-0.5 text-blue-100 hover:bg-red-500/30 hover:text-badge-danger"
           >
             <Square size={11} />
             {t.loopStatusBar.stop}

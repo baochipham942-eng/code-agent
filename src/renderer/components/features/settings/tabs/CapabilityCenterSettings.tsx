@@ -98,7 +98,7 @@ function kindIcon(kind: CapabilityKind): React.ReactNode {
 function getRiskClass(risk: CapabilityRiskTier): string {
   switch (risk) {
     case 'high':
-      return 'border-red-500/30 bg-red-500/10 text-red-300';
+      return 'border-red-500/30 bg-red-500/10 text-badge-danger';
     case 'medium':
       return 'border-amber-500/30 bg-amber-500/10 text-amber-300';
     default:
@@ -116,7 +116,7 @@ function getRuntimeClass(runtime: CapabilityRuntimeState): string {
       return 'text-sky-300';
     case 'blocked':
     case 'error':
-      return 'text-red-300';
+      return 'text-badge-danger';
     default:
       return 'text-zinc-400';
   }
@@ -471,7 +471,7 @@ const CapabilityCard: React.FC<CapabilityCardProps> = ({ item, text, actionLoadi
       ) : null}
 
       {(missingConfig.length > 0 || item.state.error) && (
-        <div className="mt-3 flex items-start gap-2 rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+        <div className="mt-3 flex items-start gap-2 rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-badge-danger">
           <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
           <div className="min-w-0">
             {item.state.error ? <div className="truncate">{item.state.error}</div> : null}
@@ -824,7 +824,7 @@ export const CapabilityCenterSettings: React.FC<CapabilityCenterSettingsProps> =
           ) : null}
 
           {error ? (
-            <div className="flex items-start gap-2 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-300">
+            <div className="flex items-start gap-2 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-badge-danger">
               <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" />
               <span>{error}</span>
             </div>

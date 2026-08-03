@@ -104,7 +104,7 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
 
     // Border and focus styles
     if (hasError) {
-      baseClasses.push('border-red-500', 'focus:border-red-400', 'focus:ring-2', 'focus:ring-red-500/50');
+      baseClasses.push('border-red-500', 'focus:border-badge-danger', 'focus:ring-2', 'focus:ring-red-500/50');
     } else {
       baseClasses.push('border-zinc-700', 'focus:border-zinc-600', 'focus:ring-2', 'focus:ring-blue-500/50', 'focus:border-blue-500');
     }
@@ -131,7 +131,7 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
           {...props}
         />
         {errorMessage && (
-          <p className="mt-1 text-xs text-red-400">{errorMessage}</p>
+          <p className="mt-1 text-xs text-badge-danger">{errorMessage}</p>
         )}
       </div>
     );

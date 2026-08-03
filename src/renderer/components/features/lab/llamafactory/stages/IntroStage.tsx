@@ -218,15 +218,15 @@ export const IntroStage: React.FC<IntroStageProps> = ({ onComplete }) => {
             <div className="p-4">
               <div className="flex items-center gap-2 mb-3">
                 <div className="w-6 h-6 rounded-full bg-red-500/20 flex items-center justify-center">
-                  <X className="w-3 h-3 text-red-400" />
+                  <X className="w-3 h-3 text-badge-danger" />
                 </div>
-                <span className="text-sm font-medium text-red-400">{i.cannotDoLabel}</span>
+                <span className="text-sm font-medium text-badge-danger">{i.cannotDoLabel}</span>
               </div>
               <ul className="space-y-2">
                 {cannotDo.map((item, idx) => (
                   <li key={idx} className="text-sm text-zinc-400">
                     <div className="flex items-start gap-2">
-                      <span className="text-red-400 mt-1">✗</span>
+                      <span className="text-badge-danger mt-1">✗</span>
                       <div>
                         <span>{item.text}</span>
                         {expandedDecision === 'cannot' && (

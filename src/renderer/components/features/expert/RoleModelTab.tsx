@@ -136,7 +136,7 @@ export const RoleModelTab: React.FC<RoleModelTabProps> = ({ equipment, busy, onS
         ) : null}
       </SettingsSection>
 
-      {error ? <div className="text-xs text-red-400">{error}</div> : null}
+      {error ? <div className="text-xs text-badge-danger">{error}</div> : null}
     </section>
   );
 };

@@ -229,11 +229,11 @@ export const MethodStage: React.FC<MethodStageProps> = ({ onComplete, onBack }) 
                     </ul>
                   </div>
                   <div>
-                    <div className="text-xs text-red-400 mb-1">{m.consLabel}</div>
+                    <div className="text-xs text-badge-danger mb-1">{m.consLabel}</div>
                     <ul className="space-y-0.5">
                       {method.cons.map((con, idx) => (
                         <li key={idx} className="text-xs text-zinc-500 flex items-center gap-1">
-                          <span className="text-red-400">-</span> {con}
+                          <span className="text-badge-danger">-</span> {con}
                         </li>
                       ))}
                     </ul>

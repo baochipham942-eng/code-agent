@@ -150,7 +150,7 @@ export function KnowledgeInboxList({
             )}
 
             {errorById[item.id] ? (
-              <div className="mt-3 flex items-start gap-2 rounded-md border border-red-500/30 bg-red-500/10 px-2.5 py-2 text-[11px] leading-4 text-red-200">
+              <div className="mt-3 flex items-start gap-2 rounded-md border border-red-500/30 bg-red-500/10 px-2.5 py-2 text-[11px] leading-4 text-badge-danger">
                 <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                 <span>{errorById[item.id]}</span>
               </div>
@@ -286,7 +286,7 @@ export function KnowledgeInboxSection() {
         data-testid="knowledge-inbox-section"
       >
         {error ? (
-          <div className="mb-3 flex items-center gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-200">
+          <div className="mb-3 flex items-center gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-badge-danger">
             <AlertCircle className="h-4 w-4" />
             {error}
           </div>

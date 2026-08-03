@@ -274,7 +274,7 @@ export const SFTStage: React.FC<SFTStageProps> = ({ onComplete }) => {
             <div className="bg-zinc-950/50 p-3 rounded text-sm text-zinc-500 whitespace-pre-wrap">
               {beforeAfterExamples[0].before}
             </div>
-            <div className="mt-2 text-xs text-red-400">❌ {beforeAfterExamples[0].beforeComment}</div>
+            <div className="mt-2 text-xs text-badge-danger">❌ {beforeAfterExamples[0].beforeComment}</div>
           </div>
 
           {/* After SFT */}

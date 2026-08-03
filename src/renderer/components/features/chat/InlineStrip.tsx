@@ -37,7 +37,7 @@ export const InlineStrip: React.FC = () => {
       <div className="absolute inset-x-0 top-1/2 flex -translate-y-1/2 justify-center pointer-events-none">
         <div className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-3 py-1 text-xs shadow-lg ${
           isError
-            ? 'bg-red-500/10 text-red-300 ring-1 ring-red-500/20'
+            ? 'bg-red-500/10 text-badge-danger ring-1 ring-red-500/20'
             : 'bg-zinc-800 text-zinc-300 ring-1 ring-border-muted'
         }`}>
           {isActive && <Loader2 className="h-3.5 w-3.5 animate-spin text-yellow-400" />}

@@ -122,6 +122,20 @@ export default {
         'badge-danger': 'var(--badge-danger-border)',
         'badge-accent': 'var(--badge-accent-border)',
       },
+      fill: {
+        'badge-info': 'var(--badge-info-fg)',
+        'badge-success': 'var(--badge-success-fg)',
+        'badge-warning': 'var(--badge-warning-fg)',
+        'badge-danger': 'var(--badge-danger-fg)',
+        'badge-accent': 'var(--badge-accent-fg)',
+      },
+      stroke: {
+        'badge-info': 'var(--badge-info-fg)',
+        'badge-success': 'var(--badge-success-fg)',
+        'badge-warning': 'var(--badge-warning-fg)',
+        'badge-danger': 'var(--badge-danger-fg)',
+        'badge-accent': 'var(--badge-accent-fg)',
+      },
 
       fontFamily: {
         sans: ['Inter', 'Source Han Sans', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],

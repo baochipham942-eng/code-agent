@@ -60,7 +60,7 @@ const STATUS_LABELS: Record<WorkbenchRuntimeStatus, { en: string; zh: string; co
   error: {
     en: 'error',
     zh: '错误',
-    colorClass: 'text-red-400',
+    colorClass: 'text-badge-danger',
   },
   lazy: {
     en: 'lazy',
@@ -166,7 +166,7 @@ export function getWorkbenchCapabilityStatusPresentation(
 
     return {
       label: locale === 'zh' ? '当前不可用' : 'unavailable',
-      colorClass: 'text-red-400',
+      colorClass: 'text-badge-danger',
     };
   }
 
@@ -181,7 +181,7 @@ export function getWorkbenchCapabilityStatusPresentation(
     if (!capability.connected && capability.readiness === 'failed') {
       return {
         label: locale === 'zh' ? '检查失败' : 'check failed',
-        colorClass: 'text-red-400',
+        colorClass: 'text-badge-danger',
       };
     }
 

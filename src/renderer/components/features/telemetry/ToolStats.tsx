@@ -51,8 +51,8 @@ export const ToolStats: React.FC<ToolStatsProps> = ({ stats }) => {
                 </div>
                 {stat.failCount > 0 && (
                   <div className="flex items-center gap-1 text-[10px]">
-                    <XCircle className="w-2.5 h-2.5 text-red-400" />
-                    <span className="text-red-400">{stat.failCount}</span>
+                    <XCircle className="w-2.5 h-2.5 text-badge-danger" />
+                    <span className="text-badge-danger">{stat.failCount}</span>
                   </div>
                 )}
               </div>

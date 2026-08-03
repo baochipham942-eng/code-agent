@@ -370,7 +370,7 @@ export function getExecutionStatusMeta(status: CronJobStatus): { label: string; 
     case 'running':
       return { label: '运行中', className: 'text-blue-300 bg-blue-500/10' };
     case 'failed':
-      return { label: '失败', className: 'text-red-300 bg-red-500/10' };
+      return { label: '失败', className: 'text-badge-danger bg-red-500/10' };
     case 'cancelled':
       return { label: '已取消', className: 'text-zinc-300 bg-zinc-500/10' };
     case 'paused':

@@ -76,7 +76,7 @@ const ActionBar = memo(function ActionBar({
     { key: 'rewrite', label: t.generativeUI.rewrite, icon: Pencil, color: 'text-blue-400 bg-blue-500/10 hover:bg-blue-500/20 border-blue-500/20' },
     { key: 'simplify', label: t.generativeUI.simplify, icon: Scissors, color: 'text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 border-emerald-500/20' },
     { key: 'insert_after', label: t.generativeUI.insertAfter, icon: ListPlus, color: 'text-purple-400 bg-purple-500/10 hover:bg-purple-500/20 border-purple-500/20' },
-    { key: 'delete', label: t.common.delete, icon: Trash2, color: 'text-red-400 bg-red-500/10 hover:bg-red-500/20 border-red-500/20' },
+    { key: 'delete', label: t.common.delete, icon: Trash2, color: 'text-badge-danger bg-red-500/10 hover:bg-red-500/20 border-red-500/20' },
   ];
 
   return (

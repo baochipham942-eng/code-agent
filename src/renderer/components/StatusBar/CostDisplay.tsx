@@ -35,7 +35,7 @@ function formatCost(cost: number): string {
 export function budgetCostColorClass(alertLevel?: BudgetAlertTone): string {
   switch (alertLevel) {
     case 'blocked':
-      return 'text-red-400';
+      return 'text-badge-danger';
     case 'warning':
       return 'text-amber-400';
     default:

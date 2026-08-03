@@ -214,7 +214,7 @@ export const Tokenizer: React.FC<TokenizerProps> = ({ onComplete, onBack }) => {
               <div className="text-zinc-400 mb-2 text-xs">{tk.consLabel}</div>
               <ul className="space-y-1.5">
                 {comparisonData.char.cons.map((con, idx) => (
-                  <li key={idx} className="flex items-center gap-2 text-red-400 text-xs">
+                  <li key={idx} className="flex items-center gap-2 text-badge-danger text-xs">
                     <span>👎</span>
                     {con}
                   </li>
@@ -263,7 +263,7 @@ export const Tokenizer: React.FC<TokenizerProps> = ({ onComplete, onBack }) => {
               <div className="text-zinc-400 mb-2 text-xs">{tk.consLabel}</div>
               <ul className="space-y-1.5">
                 {comparisonData.bpe.cons.map((con, idx) => (
-                  <li key={idx} className="flex items-center gap-2 text-red-400 text-xs">
+                  <li key={idx} className="flex items-center gap-2 text-badge-danger text-xs">
                     <span>👎</span>
                     {con}
                   </li>

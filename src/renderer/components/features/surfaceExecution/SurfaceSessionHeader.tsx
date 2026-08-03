@@ -27,7 +27,7 @@ const STATE_TONE: Record<RendererSurfaceSessionProjectionV1['session']['state'],
   paused: 'border-zinc-400/20 bg-zinc-400/10 text-zinc-300',
   stopping: 'border-amber-400/20 bg-amber-400/10 text-amber-200',
   completed: 'border-emerald-400/20 bg-emerald-400/10 text-emerald-200',
-  failed: 'border-red-400/20 bg-red-400/10 text-red-200',
+  failed: 'border-badge-danger/20 bg-red-400/10 text-badge-danger',
 };
 
 function MetadataItem({ label, value }: { label: string; value: string }) {

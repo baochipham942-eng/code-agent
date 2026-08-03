@@ -342,7 +342,7 @@ export const RLHFStage: React.FC<RLHFStageProps> = ({ onComplete, onBack }) => {
                 >
                   <div className="flex items-center justify-between mb-1">
                     <span className="text-xs text-zinc-500">{r.rftAttemptLabel} {idx + 1}</span>
-                    <span className={`text-xs font-medium ${attempt.correct ? 'text-emerald-400' : 'text-red-400'}`}>
+                    <span className={`text-xs font-medium ${attempt.correct ? 'text-emerald-400' : 'text-badge-danger'}`}>
                       {attempt.correct ? r.rftCorrect : r.rftIncorrect}
                     </span>
                   </div>
@@ -390,7 +390,7 @@ export const RLHFStage: React.FC<RLHFStageProps> = ({ onComplete, onBack }) => {
                     <span className="text-zinc-400">{method.pros.join('、')}</span>
                   </div>
                   <div>
-                    <span className="text-red-400">{r.consLabel}</span>
+                    <span className="text-badge-danger">{r.consLabel}</span>
                     <span className="text-zinc-400">{method.cons.join('、')}</span>
                   </div>
                   <div className="pt-2 border-t border-zinc-800">

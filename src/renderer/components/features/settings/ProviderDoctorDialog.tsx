@@ -104,7 +104,7 @@ const STATUS_STYLES: Record<DoctorStatus, { badge: string; dot: string }> = {
     dot: 'bg-amber-400',
   },
   fail: {
-    badge: 'bg-red-500/15 text-red-400 border-red-500/30',
+    badge: 'bg-red-500/15 text-badge-danger border-red-500/30',
     dot: 'bg-red-400',
   },
   skip: {
@@ -289,7 +289,7 @@ export const ProviderDoctorDialog: React.FC<ProviderDoctorDialogProps> = ({
             <span className="inline-block w-2 h-2 rounded-full bg-amber-400" />
             {report.summary.warn}{doctorText.summary.warnSuffix}
           </span>
-          <span className="flex items-center gap-1.5 text-sm text-red-400">
+          <span className="flex items-center gap-1.5 text-sm text-badge-danger">
             <span className="inline-block w-2 h-2 rounded-full bg-red-400" />
             {report.summary.fail}{doctorText.summary.failSuffix}
           </span>

@@ -192,7 +192,7 @@ function shareabilityLabel(
 }
 
 function safetySeverityClass(severity: ConfigSafetySeverity): string {
-  if (severity === 'critical') return 'border-red-500/30 bg-red-500/10 text-red-300';
+  if (severity === 'critical') return 'border-red-500/30 bg-red-500/10 text-badge-danger';
   if (severity === 'warning') return 'border-amber-500/30 bg-amber-500/10 text-amber-300';
   return 'border-blue-500/30 bg-blue-500/10 text-blue-300';
 }

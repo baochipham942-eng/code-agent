@@ -42,7 +42,7 @@ export function getPermissionConfig(type: PermissionType): PermissionConfig {
     file_delete: {
       icon: React.createElement(Trash2, { size: 20 }),
       title: '删除文件',
-      color: 'text-red-400',
+      color: 'text-badge-danger',
       bgColor: 'bg-red-500/10',
       borderColor: 'border-red-500/30',
     },
@@ -56,7 +56,7 @@ export function getPermissionConfig(type: PermissionType): PermissionConfig {
     dangerous_command: {
       icon: React.createElement(AlertTriangle, { size: 20 }),
       title: '危险命令',
-      color: 'text-red-400',
+      color: 'text-badge-danger',
       bgColor: 'bg-red-500/10',
       borderColor: 'border-red-500/30',
     },

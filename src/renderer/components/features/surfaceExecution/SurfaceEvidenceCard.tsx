@@ -33,7 +33,7 @@ interface EvidenceAxisProps {
 
 function axisTone(state: string): string {
   if (state === 'captured' || state === 'analyzed' || state === 'verified') return 'text-emerald-300';
-  if (state === 'blocked' || state === 'failed' || state === 'rejected') return 'text-red-300';
+  if (state === 'blocked' || state === 'failed' || state === 'rejected') return 'text-badge-danger';
   if (state === 'analyzing' || state === 'inconclusive' || state === 'incomplete') return 'text-amber-300';
   return 'text-zinc-500';
 }

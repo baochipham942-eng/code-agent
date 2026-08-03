@@ -16,7 +16,7 @@ const AGENT_COLORS: Record<string, string> = {
   explore: 'text-cyan-400',
   plan: 'text-purple-400',
   tester: 'text-orange-400',
-  debugger: 'text-red-400',
+  debugger: 'text-badge-danger',
   documenter: 'text-green-400',
   architect: 'text-indigo-400',
   default: 'text-zinc-400',

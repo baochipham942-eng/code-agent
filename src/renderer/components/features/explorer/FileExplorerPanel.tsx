@@ -169,7 +169,7 @@ const CreateInputRow: React.FC<{
       />
       {error && (
         <span
-          className="text-[10px] text-red-400 flex-shrink-0 cursor-help"
+          className="text-[10px] text-badge-danger flex-shrink-0 cursor-help"
           title={error}
         >
           !

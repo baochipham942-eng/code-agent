@@ -52,7 +52,7 @@ export const SecurityLevelConfig: React.FC = () => {
           <span>{securityText.l2Description}</span>
         </div>
         <div className="flex items-start gap-2">
-          <span className="text-red-400 font-medium flex-shrink-0">{securityText.l3}</span>
+          <span className="text-badge-danger font-medium flex-shrink-0">{securityText.l3}</span>
           <span>{securityText.l3Description}</span>
         </div>
       </div>

@@ -644,7 +644,7 @@ export const SkillsSettings: React.FC = () => {
           className={`flex items-center gap-2 rounded-lg p-3 ${
             message.type === 'success'
               ? 'bg-emerald-500/10 text-emerald-400'
-              : 'bg-red-500/10 text-red-400'
+              : 'bg-red-500/10 text-badge-danger'
           }`}
         >
           {message.type === 'success' ? (
@@ -722,7 +722,7 @@ export const SkillsSettings: React.FC = () => {
           />
           <p className="text-xs text-zinc-500">{skillsText.customDescription}</p>
           {customError && (
-            <div className="flex items-center gap-2 text-xs text-red-400">
+            <div className="flex items-center gap-2 text-xs text-badge-danger">
               <AlertCircle className="h-3 w-3 shrink-0" />
               {customError}
             </div>

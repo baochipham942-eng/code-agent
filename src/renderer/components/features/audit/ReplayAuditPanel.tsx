@@ -49,7 +49,7 @@ function gradeTone(grade?: TurnQualityScoreSummary['grade']): string {
     case 'watch':
       return 'border-amber-400/20 bg-amber-400/10 text-amber-200';
     case 'risk':
-      return 'border-red-400/20 bg-red-400/10 text-red-200';
+      return 'border-badge-danger/20 bg-red-400/10 text-badge-danger';
     default:
       return 'border-zinc-700 bg-zinc-900/70 text-zinc-400';
   }
@@ -62,7 +62,7 @@ function dimensionTone(status?: TurnQualityScoreBreakdown['status']): string {
     case 'watch':
       return 'border-amber-400/15 bg-amber-400/[0.05]';
     case 'risk':
-      return 'border-red-400/15 bg-red-400/[0.05]';
+      return 'border-badge-danger/15 bg-red-400/[0.05]';
     default:
       return 'border-white/[0.06] bg-white/[0.025]';
   }
@@ -318,7 +318,7 @@ const ToolList: React.FC<{ tools: ReplayToolCall[] }> = ({ tools }) => {
         {tools.slice(0, 5).map((tool) => (
           <div key={tool.id} className="flex items-center justify-between gap-2 text-[11px]">
             <span className="truncate text-zinc-400">{tool.name}</span>
-            <span className={tool.success ? 'text-emerald-300/70' : 'text-red-300/70'}>
+            <span className={tool.success ? 'text-emerald-300/70' : 'text-badge-danger/70'}>
               {tool.successKnown === false ? 'unknown' : tool.success ? 'ok' : 'failed'}
             </span>
           </div>
@@ -362,7 +362,7 @@ const TurnAuditRow: React.FC<{ turn: ReplayTurn }> = ({ turn }) => {
         ))}
         <ToolList tools={tools} />
         {errors.length ? (
-          <div className="rounded-md border border-red-400/15 bg-red-400/[0.05] px-3 py-2 text-[11px] text-red-200/80">
+          <div className="rounded-md border border-badge-danger/15 bg-red-400/[0.05] px-3 py-2 text-[11px] text-badge-danger/80">
             {errors.map((block, index) => (
               <div key={`${block.timestamp}-${index}`}>{compactText(block.content, 160)}</div>
             ))}
@@ -401,17 +401,17 @@ export const ReplayAuditPanelView: React.FC<ReplayAuditPanelViewProps> = ({
   if (error) {
     return (
       <div className="h-full overflow-y-auto bg-zinc-950 p-4">
-        <div className="rounded-md border border-red-400/20 bg-red-400/[0.06] p-4 text-sm text-red-100">
+        <div className="rounded-md border border-badge-danger/20 bg-red-400/[0.06] p-4 text-sm text-badge-danger">
           <div className="flex items-center gap-2">
             <AlertTriangle className="h-4 w-4" />
             Replay/Audit 加载失败
           </div>
-          <div className="mt-2 text-xs text-red-200/70">{error}</div>
+          <div className="mt-2 text-xs text-badge-danger/70">{error}</div>
           {onRefresh ? (
             <button
               type="button"
               onClick={onRefresh}
-              className="mt-3 inline-flex items-center gap-1.5 rounded-md border border-red-300/20 px-2 py-1 text-xs text-red-100 hover:bg-red-300/10"
+              className="mt-3 inline-flex items-center gap-1.5 rounded-md border border-badge-danger/20 px-2 py-1 text-xs text-badge-danger hover:bg-red-300/10"
             >
               <RefreshCw className="h-3.5 w-3.5" />
               重试

@@ -74,7 +74,7 @@
   --badge-warning-bg: rgba(255, 255, 0, 0.2);
   --badge-warning-border: rgba(255, 255, 0, 0.7);
   --badge-danger-fg: #FF0000;
-  --badge-danger-bg: rgba(255, 0, 0, 0.08);
+  --badge-danger-bg: rgba(255, 0, 0, 0.2);
   --badge-danger-border: rgba(255, 0, 0, 0.7);
   --badge-accent-fg: #00FFFF;
   --badge-accent-bg: rgba(0, 255, 255, 0.2);

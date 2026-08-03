@@ -6,7 +6,7 @@ import type { RestoreConversationRewindResult } from '@shared/contract/sessionRe
 import { IPC_DOMAINS } from '@shared/ipc';
 import { useI18n } from '../../../hooks/useI18n';
 import { toast } from '../../../hooks/useToast';
-import ipcService from '../../../services/ipcService';
+import ipcService, { DomainInvokeError } from '../../../services/ipcService';
 
 interface ActiveConversationRewindBannerProps {
   sessionId: string | null;
@@ -36,16 +36,28 @@ export const ActiveConversationRewindBanner: React.FC<ActiveConversationRewindBa
   // 用户消息（rewind 只藏锚点之后的消息），所以一次 includeRewound:false 调用就够：
   // openRewindIds 给横幅，最后一条可见 user 消息给「回到哪条」的原文摘录。
   const readActiveRewind = useCallback(async (expectedSessionId: string): Promise<{ rewindId: string | null; excerpt: string | null }> => {
-    const replay = await ipcService.invokeDomain<ConversationReplay>(
-      IPC_DOMAINS.SESSION,
-      'replayConversationBranch',
-      {
-        sessionId: expectedSessionId,
-        options: { includeRewound: false },
-      },
-    );
+    let replay: ConversationReplay;
+    try {
+      replay = await ipcService.invokeDomain<ConversationReplay>(
+        IPC_DOMAINS.SESSION,
+        'replayConversationBranch',
+        {
+          sessionId: expectedSessionId,
+          options: { includeRewound: false },
+        },
+      );
+    } catch (error) {
+      // 从没写过消息的会话还没有不可变分支（分支是首条消息落库时懒建的），宿主会抛
+      // BRANCH_NOT_FOUND。对「这个会话有没有未完成的 rewind」这个问题，答案就是「没有」——
+      // 这是预期状态，不是故障，不该刷 console。其它错误照旧上抛给调用方告警。
+      if (error instanceof DomainInvokeError && error.code === 'BRANCH_NOT_FOUND') {
+        return { rewindId: null, excerpt: null };
+      }
+      throw error;
+    }
     const rewindId = latestOpenRewindId(replay);
     if (!rewindId) return { rewindId: null, excerpt: null };
+
     const anchor = [...replay.messages].reverse().find((entry) => entry.message.role === 'user');
     const raw = anchor?.message.content?.replace(/\s+/g, ' ').trim() ?? '';
     const excerpt = raw.length > 24 ? `${raw.slice(0, 24)}…` : raw || null;

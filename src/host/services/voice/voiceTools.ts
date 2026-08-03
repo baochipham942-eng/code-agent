@@ -49,6 +49,17 @@ export const VOICE_TOOL_DEFINITIONS: VoiceToolDefinition[] = [
   },
   {
     type: 'function',
+    name: 'capture_screen_context',
+    description:
+      '拍一张用户此刻的屏幕，留给之后派出去的活看。'
+      + '**只在用户明确指屏时调**（「你看下我屏幕上这个」「我屏幕上这个」「看看我现在开着的这个」）；'
+      + '他没提屏幕就不要拍，更不要为了「看看情况」反复拍——那是在偷看。'
+      + '**拍到的画面不会给你**：你看不见里面有什么，不要描述它，也不要说「我看到…」。'
+      + '它会自动跟着你下一次 spawn_task / steer_task 交给执行侧，由执行侧去看。',
+    parameters: { type: 'object', properties: {}, required: [] },
+  },
+  {
+    type: 'function',
     name: 'spawn_task',
     description:
       '把一件需要真干活的事派给执行侧（读写文件、跑命令、多步任务都走这里）。'
@@ -133,6 +144,8 @@ function toIntent(name: string, rawArguments: string): VoiceIntent | string {
       return { kind: 'status' };
     case 'get_current_file_summary':
       return { kind: 'recent_files' };
+    case 'capture_screen_context':
+      return { kind: 'capture_screen' };
     case 'cancel_task': {
       // 参数解析失败不能退化成「停手上那件」：那正是本条要防的误伤。没给参数（'{}'）
       // 与给了但解析不出来是两回事，后者一律拒绝重来。

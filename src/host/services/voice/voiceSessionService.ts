@@ -29,6 +29,7 @@ import {
 import { resolveVoiceRouting } from './voiceRouting';
 import { beginVoiceDispatch, endVoiceDispatch, pushVoiceTranscript, setVoiceDispatchFocus } from './voiceAgentCoordinator';
 import { composeVoiceInstructions, focusChanged, type VoiceContinuityContext } from './voiceContextAssembler';
+import { isVoiceScreenContextSupported } from './voiceScreenContext';
 import { addTokenUsage, recordVoiceCall } from './voiceUsageLedger';
 import { consumeVoiceCallFailure, observeVoiceEventFailure, persistVoiceCallFailure } from './voiceFailurePersistence';
 import { VOICE_TOOL_DEFINITIONS, executeVoiceTool } from './voiceTools';
@@ -803,8 +804,8 @@ async function connectAndBind(
   };
   const baseInstructions = withLanguageDirective(routing.personaInstructions, liveSettings?.language);
   const continuity = await loadVoiceContinuity(neoSessionId);
-  // Phase 3 才会新增真实设置字段；当前固定关闭，只预留 instructions 分支，不虚构截屏能力。
-  const screenContextEnabled = false;
+  // Phase 3：跟着这台机器真有没有这个能力走。能力与文案同一个判据，不虚构截屏能力。
+  const screenContextEnabled = isVoiceScreenContextSupported();
   const initialInstructions = composeVoiceInstructions(baseInstructions, null, {
     continuity,
     screenContextEnabled,
@@ -851,6 +852,7 @@ async function connectAndBind(
   // 晚绑一步那次调用会落到「通话还没就绪」的兜底上。
   beginVoiceDispatch({
     neoSessionId,
+    voiceSessionId: id,
     activeAgentId: routing.activeAgentId,
     onWorkItem: (item) => {
       if (active?.id === id && item.status === 'queued') {
@@ -1191,7 +1193,7 @@ function applyFocus(session: ActiveSession, focus: VoiceFocusContext): void {
 function updateSessionInstructions(session: ActiveSession): void {
   const instructions = composeVoiceInstructions(session.personaInstructions, session.focus, {
     continuity: session.continuity,
-    screenContextEnabled: false,
+    screenContextEnabled: isVoiceScreenContextSupported(),
     speechRate: readVoiceLiveSettings()?.speechRate,
   });
   if (instructions === session.instructions) return;

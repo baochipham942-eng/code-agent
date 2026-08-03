@@ -72,6 +72,7 @@ const endCalls: number[] = [];
 function bind(): void {
   beginVoiceDispatch({
     neoSessionId: 'session-1',
+    voiceSessionId: 'voice-1',
     onWorkItem: () => {},
     onWorkFailed: () => {},
     onEndCall: () => endCalls.push(1),

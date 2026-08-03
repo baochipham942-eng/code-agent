@@ -17,9 +17,12 @@ import type { TaskManagerEvent } from '../../task/TaskManager';
 import type { AgentEvent } from '../../../shared/contract/agent';
 import type { SessionTask, TodoItem } from '../../../shared/contract/planning';
 import type { VoiceFocusContext, VoiceWorkFailureMarker, VoiceWorkItem, VoiceWorkItemStatus, VoiceWorkNarration } from '../../../shared/contract/voice';
+import type { AppshotCapture } from '../../../shared/contract/appshot';
+import { buildAppshotAttachment, buildAppshotXml } from '../../../shared/contract/appshot';
 import {
   VOICE_CONCLUSION_LOOKBACK_MESSAGES,
   VOICE_RECENT_FILE_LIMIT,
+  VOICE_SCREEN_CONTEXT_TTL_MS,
   VOICE_SPAWN_TASK_MAX_ITERATIONS,
   VOICE_STOP_CONFIRM_RETRIES,
   VOICE_STOP_CONFIRM_TIMEOUT_MS,
@@ -36,13 +39,20 @@ import { describeWorkFailure } from './workFailureDescription';
 import { buildVocabularyBlock } from './voiceVocabulary';
 import { resolveVoiceWorkOutcome } from './voiceWorkEvidence';
 import { recordVoiceWorkEvent } from './voiceTelemetry';
+import { captureVoiceScreenContext, type VoiceScreenCaptureFailure } from './voiceScreenContext';
 
 const logger = createLogger('VoiceCoordinator');
 
-/** 方案 §6.3。share_context 归批 H 的焦点上报，appshot 是 Phase 3，都不在这里。 */
+/** 方案 §6.3。share_context 归批 H 的焦点上报（文本焦点，不含像素）。 */
 export type VoiceIntent =
   | { kind: 'status' }
   | { kind: 'recent_files' }
+  /**
+   * 看屏（Appshots Phase 3）：采一张用户此刻的屏幕，**不给通话 brain 看**，
+   * 挂在账本上等下一次派活捎给执行侧。通话 brain 零写权限的底线没变——
+   * 这个动作只往临时目录写一张自己的截图，不碰用户的任何文件。
+   */
+  | { kind: 'capture_screen' }
   /**
    * `replaceCurrent`：用户说的是「别等 X 了，改做 Y」——弃掉手上那件、换成这件。
    * 与 steer_task（改方向、不弃活）是两件事，路由判别写在 voiceRouting 的 prompt 里。
@@ -74,6 +84,12 @@ const TRANSCRIPT_ENTRY_MAX_CHARS = 240;
 
 export interface VoiceDispatchBinding {
   neoSessionId: string;
+  /**
+   * 这通电话的 id（`voice-<ts>-<seq>`，合成串不含用户内容）。
+   * 只作遥测/日志维度：看屏这类动作发生在派活**之前**，没有 workItemId 可挂，
+   * 不给它一个维度就等于这条链在观测上不存在。
+   */
+  voiceSessionId: string;
   /** 派活时带上的专家身份；undefined = 会话默认 agent（自动路由） */
   activeAgentId?: string;
   /** work item 变化推给 Renderer 的 Active Work 条 */
@@ -122,6 +138,7 @@ interface PendingStop {
 
 interface LedgerState {
   neoSessionId: string;
+  voiceSessionId: string;
   activeAgentId?: string;
   /** 通话挂断后置 null：只记账、不再往已关闭的 WS 推。 */
   emit: ((item: VoiceWorkItem) => void) | null;
@@ -141,6 +158,13 @@ interface LedgerState {
   focus: VoiceFocusContext | null;
   /** 近窗字幕原文（voiceSessionService 每落一条 final 就推一次），派活时随 run 一起交给执行侧。 */
   transcript: VoiceTranscriptEntry[];
+  /**
+   * 已经采到、还没跟着任何一次派活出去的屏幕截图（Phase 3）。
+   *
+   * **一次性**：附到某一轮 run 上就清掉。不这么做的话，用户指过一次屏，之后每一件活
+   * 都会拖着同一张旧图——执行侧会拿它当「用户现在看的东西」，那是在悄悄喂错事实。
+   */
+  pendingScreen: AppshotCapture | null;
   /** 在途的「停旧的」请求；同时只可能有一件（通话是单路，手上也只有一件活）。 */
   pendingStop: PendingStop | null;
   /**
@@ -216,6 +240,7 @@ export function beginVoiceDispatch(binding: VoiceDispatchBinding): void {
   if (ledger) detachIfSettled(true);
   ledger = {
     neoSessionId: binding.neoSessionId,
+    voiceSessionId: binding.voiceSessionId,
     activeAgentId: binding.activeAgentId,
     emit: binding.onWorkItem,
     onFailed: binding.onWorkFailed,
@@ -228,6 +253,7 @@ export function beginVoiceDispatch(binding: VoiceDispatchBinding): void {
     listenerAttached: false,
     focus: null,
     transcript: [],
+    pendingScreen: null,
     pendingStop: null,
     supersededIds: new Set(),
     todoSnapshot: new Map(),
@@ -306,6 +332,9 @@ export function endVoiceDispatch(): void {
   if (!ledger) return;
   ledger.emit = null;
   ledger.narrate = null;
+  // 电话都挂了，那张屏幕截图不该再跟着后面的活跑出去：它是这通电话里「他此刻在看的
+  // 东西」，通话结束它就不再是任何人的当下。
+  ledger.pendingScreen = null;
   // 挂断 = 用户不要执行。在途的替换请求连同它待派的新活一起作废——「通话结束补派」
   // 那条链已被整条删掉（产品负责人 2026-07-30），这里不许自己长回来。
   abortPendingStop(ledger);
@@ -787,6 +816,8 @@ export async function dispatchVoiceIntent(intent: VoiceIntent): Promise<string> 
       return describeStatus(state);
     case 'recent_files':
       return describeFocusedFiles(state);
+    case 'capture_screen':
+      return captureScreenContext(state);
     case 'spawn_task':
       return spawnTask(state, intent.title, intent.prompt, intent.replaceCurrent);
     case 'steer_task':
@@ -800,28 +831,61 @@ export async function dispatchVoiceIntent(intent: VoiceIntent): Promise<string> 
   }
 }
 
-/** 派活/改方向共用的一轮 run 选项：身份链与文本轮同源（#637 链，两件事缺一不可）。 */
-async function buildRunOptions(state: LedgerState) {
+/**
+ * 取走待附着的屏幕上下文。**一次性**：拿到就从账本上摘掉，不管这一轮最后用没用上。
+ *
+ * 过了保质期就当没有：三分钟前的屏幕配一件毫不相干的新活，是在悄悄给执行侧喂错的
+ * 事实。丢掉是「看得见的失败」（执行侧会说它没看到图），留着是「看不见的错」。
+ */
+function takePendingScreen(state: LedgerState): AppshotCapture | null {
+  const pending = state.pendingScreen;
+  if (!pending) return null;
+  state.pendingScreen = null;
+  const ageMs = Date.now() - pending.capturedAtMs;
+  if (ageMs > VOICE_SCREEN_CONTEXT_TTL_MS) {
+    logger.info('screen context expired before any dispatch, dropped', { ageMs });
+    return null;
+  }
+  return pending;
+}
+
+/**
+ * 派活/改方向共用的一轮 run 载荷：身份链与文本轮同源（#637 链，两件事缺一不可），
+ * 外加这一轮该捎上的屏幕上下文。
+ *
+ * 选项和附件**一起返回**是刻意的：屏幕上下文要同时进 turnSystemContext（那段说明）和
+ * attachments（那张图），拆成两个函数就会出现「某个调用点只记得取一半」的活。
+ */
+async function buildRunPayload(state: LedgerState) {
   const roleContextBlock = state.activeAgentId
     ? await buildRoleContextBlock(state.activeAgentId).catch(() => null)
     : null;
   // 近窗字幕走 turnSystemContext 而不是拼进 prompt：prompt 那条消息会原样显示在会话里，
   // 把带噪原文塞进去等于把内部载荷泄漏到用户眼前（本仓刚修过一轮 `<...>` 标签外泄）。
   const transcriptBlock = buildTranscriptBlock(state.transcript);
-  const systemBlocks = [roleContextBlock, transcriptBlock].filter((block): block is string => !!block);
+  // 屏幕上下文同理走 turnSystemContext——`<appshot>` 块是给模型看的载荷，不是用户的话。
+  const screen = takePendingScreen(state);
+  const screenBlock = screen ? buildAppshotXml(screen, 'voice') : null;
+  const systemBlocks = [roleContextBlock, transcriptBlock, screenBlock]
+    .filter((block): block is string => !!block);
+  // 图走 attachments 那条既有管线（converter 认 `appshot-` 前缀，转成模型 image content）。
+  const screenAttachment = screen ? buildAppshotAttachment(screen) : null;
   // 执行引擎与通话模型分离（§6.1）：没配就不传，行为与批 H 之前完全一致。
   const executionModel = readVoiceExecutionModel();
   // mode 在返回值里必须是确定的字面量：withWorkbenchTurnSystemContext 的返回类型把它
   // 放宽成可选，而 AgentRunOptions 要求必填。在这里一次收窄，两个调用点都不用各自补。
   return {
-    ...(executionModel ? { modelSpec: executionModel } : {}),
-    ...withWorkbenchTurnSystemContext({
+    options: {
+      ...(executionModel ? { modelSpec: executionModel } : {}),
+      ...withWorkbenchTurnSystemContext({
+        mode: 'normal' as const,
+        ...(state.activeAgentId ? { agentOverrideId: state.activeAgentId } : {}),
+        ...(systemBlocks.length ? { turnSystemContext: systemBlocks } : {}),
+        maxIterations: VOICE_SPAWN_TASK_MAX_ITERATIONS,
+      }),
       mode: 'normal' as const,
-      ...(state.activeAgentId ? { agentOverrideId: state.activeAgentId } : {}),
-      ...(systemBlocks.length ? { turnSystemContext: systemBlocks } : {}),
-      maxIterations: VOICE_SPAWN_TASK_MAX_ITERATIONS,
-    }),
-    mode: 'normal' as const,
+    },
+    ...(screenAttachment ? { attachments: [screenAttachment] } : {}),
   };
 }
 
@@ -842,7 +906,7 @@ function newWorkItemId(): string {
 async function startRun(state: LedgerState, title: string, prompt: string): Promise<string> {
   const tm = await taskManager();
   await ensureListener(state);
-  const options = await buildRunOptions(state);
+  const { options, attachments } = await buildRunPayload(state);
   const workItemId = newWorkItemId();
   // 新的一件活从空快照起算：沿用上一件的快照会让新 run 首次 todo_update 里那些
   // 「本来就是 completed」的 entry 被误判成刚刚完成，一开跑就播一串假进度。
@@ -852,6 +916,14 @@ async function startRun(state: LedgerState, title: string, prompt: string): Prom
   state.taskSnapshot.clear();
   const speaker = resolveNarrationSpeaker(state.activeAgentId);
   upsert(state, { id: workItemId, title, status: 'queued' });
+  // §4.3 三元组绑定：这一件活是哪通电话、哪条 Neo 会话派出去的。从日志就能还原
+  // 「这句话属于哪个活的哪一轮」，不必再靠时间戳猜（原先记在 voiceSessionService 的
+  // UI 回流回调上，账本拿到 voiceSessionId 之后挪到真正派活的这一处）。
+  logger.info('voice work dispatched', {
+    workItemId,
+    voiceSessionId: state.voiceSessionId,
+    neoSessionId: state.neoSessionId,
+  });
   // §4.3 的三元组此前只进日志（#903）。派活是这条链的起点，遥测在这里落一条，
   // 后面口播/丢弃两类事件才有同一个 workItemId 可以对上。
   recordVoiceWorkEvent({ phase: 'dispatch', workItemId });
@@ -863,7 +935,7 @@ async function startRun(state: LedgerState, title: string, prompt: string): Prom
     // 第 5 个参数落在 startTask 建的那条 role:'user' 消息上。必须标记 voiceDispatch——
     // prompt 是通话 brain 改写出来的，不是用户原话（用户原话是字幕那条），
     // 不标就会顶着用户身份显示在右边。
-    .startTask(state.neoSessionId, prompt, undefined, options, {
+    .startTask(state.neoSessionId, prompt, attachments, options, {
       // 署名和语音层回流用同一个解析器（voiceNarration），两处不许各算各的：
       // 屏幕上写「牧之」而耳朵里听到别的名字，比不署名更糟。
       voiceDispatch: { title, workItemId, ...(speaker ? { speaker } : {}) },
@@ -949,6 +1021,77 @@ function spawnSpeechDirective(title: string): string {
 }
 
 // ============================================================================
+// 看屏（Appshots Phase 3）：采一张，挂账本，等下一次派活捎走
+// ============================================================================
+
+/** 系统设置里那条路。三处失败文案共用一份措辞，免得各写一半各指一处。 */
+const SCREEN_PERMISSION_PATH = '「系统设置 → 隐私与安全性 → 屏幕录制」里允许 Neo（勾完要把 Neo 重开一次）';
+
+/**
+ * 没拍到时回给通话 brain 的话。
+ *
+ * 三条共同的硬要求：**先说没拍到**，再说去哪开权限，最后明令不许描述画面。
+ * 这条链上最坏的失败不是拍不到，是拍不到却回一句听起来像成功的话——那样模型会顺着
+ * 编一段「你屏幕上这个按钮」，而用户根本没法分辨它在瞎说。
+ */
+function screenCaptureFailureSpeech(reason: VoiceScreenCaptureFailure): string {
+  const deny = '**你没有拿到任何画面**，不许描述屏幕上有什么，也不许说「我看到…」。';
+  switch (reason) {
+    case 'unsupported_platform':
+      return [
+        '没能拍到屏幕：这台电脑不支持看屏（这个能力只有 macOS 有）。',
+        '现在对用户说：「我在这台机器上看不了你的屏幕，你直接讲给我听吧。」',
+        deny,
+      ].join('\n');
+    case 'no_permission':
+      return [
+        '没能拍到屏幕：系统没给屏幕录制权限。',
+        `现在对用户说：「我没能拍到你的屏幕，要先去${SCREEN_PERMISSION_PATH}，弄好了再叫我。」`,
+        deny,
+      ].join('\n');
+    case 'capture_failed':
+      return [
+        '没能拍到屏幕：这次截图失败了。',
+        `现在对用户说：「我没能拍到你的屏幕，可以再说一次让我重试；一直不行的话，去${SCREEN_PERMISSION_PATH}看看。」`,
+        deny,
+      ].join('\n');
+  }
+}
+
+/** 拍到之后回给通话 brain 的话。重点全在「你看不到它」——它确实看不到。 */
+function screenCapturedSpeech(capture: AppshotCapture): string {
+  const frontmost = capture.appName
+    ? `（前台是 ${capture.appName}${capture.windowTitle ? ` · ${capture.windowTitle}` : ''}）`
+    : '';
+  return [
+    `已经拍下用户此刻的屏幕${frontmost}。`,
+    '**这张图不会给你看**：你不知道画面里有什么，不要描述它，也不要说「我看到…」。',
+    '它会自动跟着你下一次 spawn_task / steer_task 交给执行侧，由执行侧去看图。',
+    '所以：用户要你就这张图做点什么，直接调 spawn_task 把事情派出去（图会自己带上，不用你转述画面）；',
+    '他只是先让你知道他在看什么，就说「我拍下来了，你要我做什么？」。',
+  ].join('\n');
+}
+
+async function captureScreenContext(state: LedgerState): Promise<string> {
+  const result = await captureVoiceScreenContext();
+  // 三态都留痕：这条链在真机上唯一的症状是「说了看屏但什么都没发生」，
+  // 没有这条记录就只能靠用户复述来判断它到底采没采到。
+  recordVoiceWorkEvent({
+    phase: 'screen_capture',
+    voiceSessionId: state.voiceSessionId,
+    outcome: result.ok ? 'captured' : result.reason,
+  });
+  if (!result.ok) {
+    logger.warn('screen context capture rejected', { reason: result.reason });
+    return screenCaptureFailureSpeech(result.reason);
+  }
+  // 上一张还没被派活捎走就又拍了一张：以新的为准（用户重新指了一次屏）。
+  if (state.pendingScreen) logger.info('screen context replaced before dispatch');
+  state.pendingScreen = result.capture;
+  return screenCapturedSpeech(result.capture);
+}
+
+// ============================================================================
 // 定向（R2）：编号 → 那件活，对不上就拒绝
 // ============================================================================
 
@@ -1025,7 +1168,8 @@ async function steerTask(state: LedgerState, instruction: string, target?: strin
     return `刚才没有在跑的活，「${title}」按新任务开始做了。\n${spawnSpeechDirective(title)}`;
   }
 
-  await tm.interruptAndContinue(state.neoSessionId, instruction, undefined, await buildRunOptions(state));
+  const { options, attachments } = await buildRunPayload(state);
+  await tm.interruptAndContinue(state.neoSessionId, instruction, attachments, options);
   const title = pending?.title ?? '进行中的任务';
   return [
     `现在对用户说：「『${title}』我已经按你的新要求改了方向，做完马上告诉你。」`,

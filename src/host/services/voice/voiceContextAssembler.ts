@@ -40,7 +40,7 @@ export interface VoiceContinuityContext {
 
 export interface VoiceInstructionContext {
   continuity?: VoiceContinuityContext | null;
-  /** Phase 3 才会有真实设置契约；本单只保留 instructions 形状，调用方固定传 false。 */
+  /** 这台机器能不能看屏（Phase 3）。调用方一律传 isVoiceScreenContextSupported()，不要自己算。 */
   screenContextEnabled?: boolean;
   /**
    * 通话语速（T6/§4.1）。**必须每次现读设置再传进来**，不能烤进建连时的快照——
@@ -77,12 +77,24 @@ export function buildFocusBlock(focus: VoiceFocusContext | null): string {
   ].join('\n');
 }
 
-/** Phase 3 占位：只声明能请求看屏，不暗示当前已经取得屏幕内容。 */
+/**
+ * 看屏策略（Appshots Phase 3 的策略双写之一）。
+ *
+ * `enabled` 跟着**这台机器有没有这个能力**走（见 voiceScreenContext 的同一个判据），
+ * 不是跟着某个偏好走：关着的时候一个字都不提看屏，免得通话 brain 张口就许一个
+ * 执行侧兑现不了的承诺——「语音脑说能看、执行脑不能看」正是这条要防的错位。
+ *
+ * 措辞的两个硬点：① 只在用户明确指屏时才拍；② 拍到的画面它自己看不见。
+ * 第二条必须写死在这里而不是只写在工具描述里——真机上模型顺嘴描述画面的冲动，
+ * 是这条链最容易出的谎。
+ */
 export function buildScreenContextBlock(enabled: boolean): string {
   if (!enabled) return '';
   return [
     '[Context — Screen]',
-    '用户说“这个”“屏幕上”时，我可以请用户允许我看屏幕；在真正看到之前不猜。',
+    '用户明确指屏时（「你看下我屏幕上这个」「我屏幕上」「看看我现在开着的这个」），调 capture_screen_context 拍一张他此刻的屏幕。',
+    '**只在他明确指屏时调**：他没提屏幕就不要拍，也不要为了「看看情况」定期拍——那是偷看。',
+    '拍到的画面**不会给你看**，它只跟着你之后派出去的活交给执行侧。所以任何时候都不要描述屏幕上有什么，也不要说「我看到…」。',
   ].join('\n');
 }
 

@@ -93,6 +93,7 @@ let failHookThrows: boolean;
 function bind(): void {
   beginVoiceDispatch({
     neoSessionId: 'session-1',
+    voiceSessionId: 'voice-1',
     onWorkItem: (item) => { upserts.push({ ...item }); },
     onEndCall: () => {},
     onWorkNarration: () => {},

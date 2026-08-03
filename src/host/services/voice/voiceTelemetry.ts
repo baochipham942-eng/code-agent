@@ -40,9 +40,24 @@ export type VoiceNarrationDropReason =
   /** 该形态的 transport 没有注入通道（WebRTC 直连形态尚未实现） */
   | 'no_inject_channel';
 
+/**
+ * 看屏采集的三态（Appshots Phase 3）。与 VoiceScreenCaptureFailure 同词表 + 一个成功档。
+ * 同样是受控词表，不许在调用处拼串。
+ */
+export type VoiceScreenCaptureOutcome =
+  | 'captured'
+  | 'no_permission'
+  | 'unsupported_platform'
+  | 'capture_failed';
+
 type VoiceWorkEvent =
   /** 一件活派出去了 */
   | { phase: 'dispatch'; workItemId: string }
+  /**
+   * 通话里采了一次屏幕上下文。**没有 workItemId**——采集发生在派活之前，此刻还没有活；
+   * 维度换成 voiceSessionId（`voice-<ts>-<seq>` 合成串，同样不含用户内容）。
+   */
+  | { phase: 'screen_capture'; voiceSessionId: string; outcome: VoiceScreenCaptureOutcome }
   /** 一条播报真的塞进通话了 */
   | { phase: 'narration_spoken'; workItemId: string; status: VoiceWorkNarration['status']; worthHearing: boolean }
   /** 一条播报被丢了 */
@@ -65,11 +80,16 @@ export function recordVoiceWorkEvent(event: VoiceWorkEvent): void {
     const telemetry = getTelemetryService();
     const span = telemetry.startSpan('voice_work', 'internal', {
       'voice_work.phase': event.phase,
-      'voice_work.work_item_id': event.workItemId,
-      ...(event.phase === 'dispatch' ? {} : {
+      ...(event.phase === 'screen_capture'
+        ? {
+            'voice_work.voice_session_id': event.voiceSessionId,
+            'voice_work.capture_outcome': event.outcome,
+          }
+        : { 'voice_work.work_item_id': event.workItemId }),
+      ...(event.phase === 'narration_spoken' || event.phase === 'narration_dropped' ? {
         'voice_work.narration_status': event.status,
         'voice_work.worth_hearing': event.worthHearing,
-      }),
+      } : {}),
       ...(event.phase === 'narration_dropped' ? { 'voice_work.drop_reason': event.reason } : {}),
     });
     telemetry.endSpan(span.spanId, 'ok');

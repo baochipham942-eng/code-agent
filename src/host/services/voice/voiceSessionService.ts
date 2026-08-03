@@ -29,6 +29,7 @@ import {
 import { resolveVoiceRouting } from './voiceRouting';
 import { beginVoiceDispatch, endVoiceDispatch, pushVoiceTranscript, setVoiceDispatchFocus } from './voiceAgentCoordinator';
 import { composeVoiceInstructions, focusChanged, type VoiceContinuityContext } from './voiceContextAssembler';
+import { isVoiceScreenContextSupported } from './voiceScreenContext';
 import { addTokenUsage, recordVoiceCall } from './voiceUsageLedger';
 import { consumeVoiceCallFailure, observeVoiceEventFailure, persistVoiceCallFailure } from './voiceFailurePersistence';
 import { VOICE_TOOL_DEFINITIONS, executeVoiceTool } from './voiceTools';
@@ -803,11 +804,10 @@ async function connectAndBind(
   };
   const baseInstructions = withLanguageDirective(routing.personaInstructions, liveSettings?.language);
   const continuity = await loadVoiceContinuity(neoSessionId);
-  // Phase 3 才会新增真实设置字段；当前固定关闭，只预留 instructions 分支，不虚构截屏能力。
-  const screenContextEnabled = false;
   const initialInstructions = composeVoiceInstructions(baseInstructions, null, {
+    // Phase 3：跟着这台机器真有没有这个能力走。能力与文案同一个判据，不虚构截屏能力。
+    screenContextEnabled: isVoiceScreenContextSupported(),
     continuity,
-    screenContextEnabled,
     speechRate: liveSettings?.speechRate,
   });
   // 上游回调一律经这个可变引用发：重连换的是 socket，不是通话。
@@ -851,19 +851,15 @@ async function connectAndBind(
   // 晚绑一步那次调用会落到「通话还没就绪」的兜底上。
   beginVoiceDispatch({
     neoSessionId,
+    voiceSessionId: id,
     activeAgentId: routing.activeAgentId,
     onWorkItem: (item) => {
       if (active?.id === id && item.status === 'queued') {
         active.workItemCount += 1;
         // 首条进度的延迟基准（§2）：从这件活派出去那一刻起算。
         active.narration.firstDispatchAt = Date.now();
-        // §4.3 三元组绑定：这一件活是哪通电话、哪个上游会话派出去的，
-        // 从日志就能还原「这句话属于哪个活的哪一轮」，不必再靠时间戳猜。
-        logger.info('voice work dispatched', {
-          workItemId: item.id,
-          voiceSessionId: id,
-          neoSessionId,
-        });
+        // §4.3 的三元组绑定日志已挪进 coordinator 的 startRun：账本现在自己拿得到
+        // voiceSessionId，在真正派活那一处记，比在这条 UI 回流上转记准确。
       }
       send(clientRef.current, { type: 'work.upsert', item });
     },
@@ -1191,7 +1187,7 @@ function applyFocus(session: ActiveSession, focus: VoiceFocusContext): void {
 function updateSessionInstructions(session: ActiveSession): void {
   const instructions = composeVoiceInstructions(session.personaInstructions, session.focus, {
     continuity: session.continuity,
-    screenContextEnabled: false,
+    screenContextEnabled: isVoiceScreenContextSupported(),
     speechRate: readVoiceLiveSettings()?.speechRate,
   });
   if (instructions === session.instructions) return;

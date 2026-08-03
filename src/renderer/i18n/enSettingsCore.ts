@@ -372,6 +372,8 @@ export const enSettingsCore = {
       resetShortcut: 'Restore this default',
       saving: 'Saving...',
       autosaveHint: 'Changes are saved automatically. System-level hotkeys will be re-registered in the desktop runtime; failed items stay in config and are logged for diagnostics.',
+      registrationFailedPrefix: 'Registration failed: ',
+      registrationFailedUnknown: 'Unknown registration error',
       categories: {
         global: 'Global launch',
         sessionEditing: 'Session editing',

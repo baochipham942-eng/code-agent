@@ -106,7 +106,7 @@ const LoadingLine: React.FC<{ text: string }> = ({ text }) => (
   </div>
 );
 
-export const ActivityPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
+export const ActivityPanel: React.FC = () => {
   const { t } = useI18n();
   const ap = t.activityPanel;
   const [providers, setProviders] = useState<ActivityProviderDescriptor[]>([]);
@@ -219,7 +219,6 @@ export const ActivityPanel: React.FC<{ onClose: () => void }> = ({ onClose }) =>
         title="Activity"
         description={ap.header.description}
         badge={<Pill tone={model.modeTone}>{model.modeLabel}</Pill>}
-        onClose={onClose}
         actions={(
           <button
             type="button"

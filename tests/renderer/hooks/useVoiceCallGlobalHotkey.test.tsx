@@ -3,6 +3,7 @@ import React from 'react';
 import { cleanup, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { KeybindingActionId } from '../../../src/shared/keybindings';
+import { GLOBAL_HOTKEY_REGISTRATION_CHANGED_EVENT } from '../../../src/renderer/services/globalHotkeyRegistration';
 
 const dial = vi.hoisted(() => vi.fn());
 const hangUp = vi.hoisted(() => vi.fn());
@@ -129,5 +130,22 @@ describe('voice.callToggle global hotkey', () => {
 
     await waitFor(() => expect(hangUp).toHaveBeenCalledTimes(1));
     expect(dial).not.toHaveBeenCalled();
+  });
+
+  it('publishes an invoke failure so settings can show why registration failed', async () => {
+    const registrationChange = vi.fn();
+    window.addEventListener(GLOBAL_HOTKEY_REGISTRATION_CHANGED_EVENT, registrationChange);
+    invokeNativeCommandAction.mockRejectedValueOnce(new Error('native command unavailable'));
+
+    renderHook(() => useKeyboardShortcuts());
+
+    await waitFor(() => expect(registrationChange).toHaveBeenCalledTimes(1));
+    expect((registrationChange.mock.calls[0][0] as CustomEvent).detail).toEqual([{
+      actionId: 'voice.callToggle',
+      accelerator: 'Cmd+Shift+V',
+      registered: false,
+      error: 'native command unavailable',
+    }]);
+    window.removeEventListener(GLOBAL_HOTKEY_REGISTRATION_CHANGED_EVENT, registrationChange);
   });
 });

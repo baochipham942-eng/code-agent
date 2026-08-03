@@ -241,6 +241,7 @@ describe('VoiceTransport 契约（relay / direct 双跑）', () => {
     });
     const upstream = upstreams[upstreams.length - 1];
 
+    upstream.emit('message', JSON.stringify({ type: 'input_audio_buffer.speech_started' }));
     upstream.emit('message', JSON.stringify({
       type: 'conversation.item.input_audio_transcription.delta',
       item_id: 'item-1', text: '', stash: '你好',
@@ -252,7 +253,7 @@ describe('VoiceTransport 契约（relay / direct 双跑）', () => {
 
     const partials = events.filter((e) => e.type === 'user.transcript' && !e.done);
     expect(partials).toHaveLength(2);
-    expect(partials[1]).toMatchObject({ text: '你好，帮我', done: false });
+    expect(partials[1]).toMatchObject({ text: '你好，帮我', done: false, candidateId: 'turn-1' });
     await handle.close();
   });
 

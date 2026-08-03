@@ -739,7 +739,9 @@ async function connectAndBind(
   const id = `voice-${Date.now()}-${++sessionSeq}`;
   send(client, { type: 'state', state: 'connecting' });
 
-  const routing = resolveVoiceRouting(requestedAgentId);
+  // 用户没点名时的默认收件人 = 会话 metadata.teamLead（语音批 B）。取值留在建连处，
+  // resolveVoiceRouting 保持纯函数；无 DB / 非团会话时拿到 undefined，行为同以往。
+  const routing = resolveVoiceRouting(requestedAgentId, getSessionManager().getSessionMetadata(neoSessionId));
   const liveSettings = readVoiceLiveSettings();
   // 模型/音色按所选 profile 联合解析；存量 providerId 缺省已在 profile 读取口回 DashScope。
   const selection = resolveRealtimeVoiceSelection(

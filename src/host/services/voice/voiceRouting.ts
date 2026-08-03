@@ -9,6 +9,7 @@
 
 import { resolveAgent } from '../../agent/agentRegistry';
 import { isPanelVisibleAgent } from '../../../shared/contract/agentRegistry';
+import { readPersistedTeamLead } from '../../../shared/contract/teamRecipe';
 import type { VoiceLiveSettings } from '../../../shared/contract/settings';
 import { getBuiltinRoleVisual } from '../roleAssets/builtinRoles';
 import { createLogger } from '../infra/logger';
@@ -125,25 +126,55 @@ function isSystemInternalAgent(agentId: string): boolean {
 }
 
 /**
+ * 团会话的默认收件人 = 会话级 lead（sessions.metadata.teamLead，组队发起时写入）。
+ *
+ * 判据比显式点名严一档：显式传上来的 id 查不到时照传（下游各自兜底），因为那是用户
+ * 自己选的，我们没有推翻它的依据；默认收件人反过来——**没有任何人点过名**，是我们
+ * 替用户认的人，认错就是让一位他没选的专家接了电话。所以这里 fail-closed：
+ * 解析不出真身、或解析出来是面板选不到的系统型内置，一律回落无专家基线，宁少不多。
+ */
+function resolveTeamLeadDefault(sessionMetadata?: Record<string, unknown>): string | undefined {
+  const roleId = readPersistedTeamLead(sessionMetadata)?.roleId;
+  if (!roleId) return undefined;
+  if (!getBuiltinRoleVisual(roleId) && !resolveAgent(roleId)) {
+    logger.info('team lead is not resolvable, treating call as no-expert', { teamLeadRoleId: roleId });
+    return undefined;
+  }
+  if (isSystemInternalAgent(roleId)) {
+    logger.info('team lead is a system-internal builtin, treating call as no-expert', { teamLeadRoleId: roleId });
+    return undefined;
+  }
+  return roleId;
+}
+
+/**
  * 建连时解析通话身份。
  *
  * requestedAgentId 来自 Renderer 的 activeAgentId：单专家会话 = 那位专家；
- * 用户没选 = undefined，走会话默认 agent。
+ * 用户没选 = undefined。
  *
- * 团会话的会话级 lead 已记录在 sessions.metadata.teamLead，D2 所需数据已就绪。
- * 本函数仍只按 Renderer 显式传入的 activeAgentId 路由；「默认收件人 = Lead」的读取与
- * 接线留给语音批 B，不在这里提前改变现有通话路由。
+ * 优先级（语音批 B）：显式 activeAgentId > 会话 metadata.teamLead > 无专家基线。
+ * 团会话里用户不点名就直接打过来时，接电话的是主理人——和文本路径同一个真源
+ * （readPersistedTeamLead，成员条的 isLead 也读它），署名/人设因此自动一致。
+ *
+ * sessionMetadata 由调用方（建连处）取好传进来：本函数保持纯函数，不开 DB。
  */
-export function resolveVoiceRouting(requestedAgentId?: string): VoiceRoutingState {
+export function resolveVoiceRouting(
+  requestedAgentId?: string,
+  sessionMetadata?: Record<string, unknown>,
+): VoiceRoutingState {
   const candidate = requestedAgentId?.trim() || undefined;
   // 「activeAgentId 有值」≠「用户点名了专家」（批 X §5，2026-07-29 真机：任务卡署名
   // Dream，而 dream 是面板都选不到的系统型内置 agent，用户不可能点名它）。
   // 判据复用面板同一个真源 isPanelVisibleAgent：用户选不到的，语音层就不许当专家
   // ——不署名、不套人设、派活不锁身份。机制判据，不按名字枚举。
-  const activeAgentId = candidate && !isSystemInternalAgent(candidate) ? candidate : undefined;
-  if (candidate && !activeAgentId) {
+  const explicitAgentId = candidate && !isSystemInternalAgent(candidate) ? candidate : undefined;
+  if (candidate && !explicitAgentId) {
     logger.info('requested agent is a system-internal builtin, treating call as no-expert', { requestedAgentId: candidate });
   }
+  // 显式 id 被判成脏映射时**继续往下走 lead 默认**：那本来就不是用户点的名，
+  // 「用户没点名」正是 lead 默认要接管的情形。
+  const activeAgentId = explicitAgentId ?? resolveTeamLeadDefault(sessionMetadata);
   if (!activeAgentId) return { personaInstructions: VOICE_BASE_INSTRUCTIONS };
 
   const persona = buildShortPersona(activeAgentId);

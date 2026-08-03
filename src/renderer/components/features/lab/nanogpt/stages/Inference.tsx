@@ -122,16 +122,16 @@ export const Inference: React.FC<InferenceProps> = ({ onBack }) => {
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-6">
       {/* Introduction */}
-      <div className="bg-gradient-to-r from-blue-500/10 to-cyan-500/10 rounded-lg border border-blue-500/20 p-4">
+      <div className="bg-gradient-to-r from-blue-500/10 to-cyan-500/10 rounded-lg border border-badge-info/20 p-4">
         <div className="flex items-start gap-3">
-          <MessageSquare className="w-5 h-5 text-blue-400 mt-0.5" />
+          <MessageSquare className="w-5 h-5 text-badge-info mt-0.5" />
           <div>
             <h3 className="text-sm font-medium text-zinc-200 mb-2">{inf.introTitle}</h3>
             <p className="text-sm text-zinc-400">
               {inf.introBodyPre}
               <span className="text-badge-warning">{inf.introBodyHighlight1}</span>
               {inf.introBodyMid}
-              <span className="text-blue-400">{inf.introBodyHighlight2}</span>
+              <span className="text-badge-info">{inf.introBodyHighlight2}</span>
               {inf.introBodyPost}
             </p>
           </div>
@@ -166,7 +166,7 @@ export const Inference: React.FC<InferenceProps> = ({ onBack }) => {
           <div className="flex justify-between mt-3">
             <div className="text-center">
               <div className="text-2xl">🤖</div>
-              <div className="text-xs text-blue-400">{inf.tempConservative}</div>
+              <div className="text-xs text-badge-info">{inf.tempConservative}</div>
               <div className="text-xs text-zinc-600">{inf.tempConservativeDesc}</div>
             </div>
             <div className="text-center">
@@ -225,7 +225,7 @@ export const Inference: React.FC<InferenceProps> = ({ onBack }) => {
             />
             <div className="flex justify-between mt-2 text-xs">
               <span className="text-zinc-500">{inf.maxTokensMin}</span>
-              <span className="text-blue-400 font-bold">{config.maxTokens} {inf.maxTokensUnit}</span>
+              <span className="text-badge-info font-bold">{config.maxTokens} {inf.maxTokensUnit}</span>
               <span className="text-zinc-500">{inf.maxTokensMax}</span>
             </div>
           </div>
@@ -280,7 +280,7 @@ export const Inference: React.FC<InferenceProps> = ({ onBack }) => {
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
                 placeholder={inf.promptPlaceholder}
-                className="flex-1 px-4 py-3 bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-200 focus:outline-hidden focus:border-blue-500/50"
+                className="flex-1 px-4 py-3 bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-200 focus:outline-hidden focus:border-badge-info/50"
               />
               <button
                 onClick={handleGenerate}
@@ -309,13 +309,13 @@ export const Inference: React.FC<InferenceProps> = ({ onBack }) => {
       </div>
 
       {/* Simple Summary */}
-      <div className="p-4 rounded-xl bg-gradient-to-r from-blue-500/10 to-purple-500/10 border border-blue-500/20">
+      <div className="p-4 rounded-xl bg-gradient-to-r from-blue-500/10 to-purple-500/10 border border-badge-info/20">
         <h3 className="text-sm font-medium text-zinc-200 mb-3">{inf.summaryLabel}</h3>
         <div className="grid grid-cols-3 gap-4 text-sm">
           <div className="flex items-start gap-2">
             <span className="text-xl">🤖</span>
             <div>
-              <div className="text-blue-400 font-medium">{inf.summaryLowLabel}</div>
+              <div className="text-badge-info font-medium">{inf.summaryLowLabel}</div>
               <div className="text-xs text-zinc-500">{inf.summaryLowDesc}</div>
             </div>
           </div>
@@ -350,7 +350,7 @@ export const Inference: React.FC<InferenceProps> = ({ onBack }) => {
       {/* 专有名词解释 */}
       <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-700">
         <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
-          <span className="text-blue-400">📖</span>
+          <span className="text-badge-info">📖</span>
           {inf.glossaryLabel}
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">

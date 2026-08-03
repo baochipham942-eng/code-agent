@@ -167,16 +167,16 @@ export const CanvasProposalReviewBar: React.FC<{
   return (
     <div
       data-testid="canvas-proposal-bar"
-      className="pointer-events-auto absolute bottom-4 left-1/2 z-30 w-[min(640px,92%)] -translate-x-1/2 rounded-xl border border-blue-500/30 bg-zinc-900/95 p-3 shadow-xl backdrop-blur"
+      className="pointer-events-auto absolute bottom-4 left-1/2 z-30 w-[min(640px,92%)] -translate-x-1/2 rounded-xl border border-badge-info/30 bg-zinc-900/95 p-3 shadow-xl backdrop-blur"
     >
       <div className="flex items-start gap-2">
-        <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-blue-400" />
+        <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-badge-info" />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <span className="text-sm font-medium text-zinc-100">
               {approvalReason === 'user-touched' ? t.canvasActor.approvalUserTouchedTitle : s.proposalTitle}
             </span>
-            <span className="rounded-full bg-blue-500/15 px-2 py-0.5 text-[11px] text-blue-300">
+            <span className="rounded-full bg-blue-500/15 px-2 py-0.5 text-[11px] text-badge-info">
               {s.proposalSelectedCount.replace('{n}', String(selected.size)).replace('{total}', String(proposal.ops.length))}
             </span>
           </div>
@@ -226,7 +226,7 @@ export const CanvasProposalReviewBar: React.FC<{
             onChange={(e) => setFeedback(e.target.value)}
             placeholder={s.proposalFeedbackPlaceholder}
             disabled={busy}
-            className="mt-2 w-full rounded-md border border-white/10 bg-white/[0.04] px-2 py-1 text-xs text-zinc-200 placeholder:text-zinc-600 focus:border-blue-500/40 focus:outline-none"
+            className="mt-2 w-full rounded-md border border-white/10 bg-white/[0.04] px-2 py-1 text-xs text-zinc-200 placeholder:text-zinc-600 focus:border-badge-info/40 focus:outline-none"
           />
         </div>
       </div>

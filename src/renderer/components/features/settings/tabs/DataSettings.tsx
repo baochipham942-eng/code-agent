@@ -223,7 +223,7 @@ function getRowIcon(rowId: DataManagementRow['id']): React.ReactNode {
 
 function getStatusClass(tone: DataManagementRow['statusTone']): string {
   if (tone === 'warning') return 'border-badge-warning/30 bg-amber-500/10 text-badge-warning';
-  if (tone === 'info') return 'border-blue-500/30 bg-blue-500/10 text-blue-300';
+  if (tone === 'info') return 'border-badge-info/30 bg-blue-500/10 text-badge-info';
   return 'border-badge-success/30 bg-emerald-500/10 text-badge-success';
 }
 

@@ -22,7 +22,7 @@ export function formatFileSize(bytes: number): string {
 
 // Language colors for code blocks
 export const languageConfig: Record<string, LanguageConfig> = {
-  typescript: { color: 'text-blue-400' },
+  typescript: { color: 'text-badge-info' },
   javascript: { color: 'text-badge-warning' },
   python: { color: 'text-badge-success' },
   rust: { color: 'text-badge-warning' },
@@ -31,7 +31,7 @@ export const languageConfig: Record<string, LanguageConfig> = {
   shell: { color: 'text-badge-success' },
   json: { color: 'text-badge-warning' },
   html: { color: 'text-badge-warning' },
-  css: { color: 'text-blue-400' },
+  css: { color: 'text-badge-info' },
   sql: { color: 'text-badge-accent' },
 };
 

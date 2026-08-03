@@ -99,7 +99,7 @@ const ConfiguredRow: React.FC<{
       onClick={onSelect}
       className={`flex w-full items-center gap-2.5 rounded-lg border px-2.5 py-2 text-left transition ${
         selected
-          ? 'border-blue-400/40 bg-blue-500/10'
+          ? 'border-badge-info/40 bg-blue-500/10'
           : 'border-transparent hover:bg-zinc-800/60'
       }`}
     >
@@ -132,13 +132,13 @@ const UnconfiguredRow: React.FC<{
       onClick={onSelect}
       className={`group flex w-full items-center gap-2.5 rounded-lg border px-2.5 py-1.5 text-left transition ${
         selected
-          ? 'border-blue-400/40 bg-blue-500/10'
+          ? 'border-badge-info/40 bg-blue-500/10'
           : 'border-transparent hover:bg-zinc-800/60'
       }`}
     >
       <ProviderMark row={row} size="sm" />
       <span className="min-w-0 flex-1 truncate text-xs text-zinc-400">{row.name}</span>
-      <span className={`shrink-0 text-[11px] ${selected ? 'text-blue-400' : 'text-zinc-600 group-hover:text-blue-400'}`}>
+      <span className={`shrink-0 text-[11px] ${selected ? 'text-badge-info' : 'text-zinc-600 group-hover:text-badge-info'}`}>
         {listText.addKey}
       </span>
     </button>

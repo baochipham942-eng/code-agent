@@ -88,7 +88,7 @@ type MemoryImportStatusConfig = {
 
 // Memory type config
 const TYPE_CONFIG: Record<string, Omit<MemoryTypeConfig, 'label'>> = {
-  user: { icon: '👤', color: 'text-blue-400' },
+  user: { icon: '👤', color: 'text-badge-info' },
   feedback: { icon: '💬', color: 'text-badge-warning' },
   project: { icon: '📁', color: 'text-badge-success' },
   reference: { icon: '🔗', color: 'text-badge-accent' },

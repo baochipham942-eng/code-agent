@@ -51,9 +51,9 @@ export const ModelArchitecture: React.FC<ModelArchitectureProps> = ({ onComplete
               <div className="text-sm font-medium text-badge-success">{ma.step1Title}</div>
               <div className="text-xs text-zinc-500 mt-1">{ma.step1Desc}</div>
             </div>
-            <div className="text-center p-4 bg-blue-500/10 rounded-lg border border-blue-500/20">
+            <div className="text-center p-4 bg-blue-500/10 rounded-lg border border-badge-info/20">
               <div className="text-3xl mb-2">🤔</div>
-              <div className="text-sm font-medium text-blue-400">{ma.step2Title}</div>
+              <div className="text-sm font-medium text-badge-info">{ma.step2Title}</div>
               <div className="text-xs text-zinc-500 mt-1">{ma.step2Desc}</div>
             </div>
             <div className="text-center p-4 bg-purple-500/10 rounded-lg border border-badge-accent/20">
@@ -82,12 +82,12 @@ export const ModelArchitecture: React.FC<ModelArchitectureProps> = ({ onComplete
               onClick={() => setSelectedSize(key)}
               className={`p-4 rounded-lg border text-left transition-all ${
                 selectedSize === key
-                  ? 'bg-blue-500/10 border-blue-500/50'
+                  ? 'bg-blue-500/10 border-badge-info/50'
                   : 'bg-zinc-800 border-zinc-800 hover:border-zinc-600'
               }`}
             >
               <div className="text-sm font-medium text-zinc-200 mb-1">{size.name}{ma.brainSuffix}</div>
-              <div className="text-lg font-bold text-blue-400">{size.params} {ma.neuronSuffix}</div>
+              <div className="text-lg font-bold text-badge-info">{size.params} {ma.neuronSuffix}</div>
               <div className="text-xs text-zinc-500 mt-2">
                 {size.layers} {ma.layersSuffix} · {size.heads} {ma.headsSuffix}
               </div>
@@ -120,11 +120,11 @@ export const ModelArchitecture: React.FC<ModelArchitectureProps> = ({ onComplete
             {/* Transformer Blocks */}
             <div className="flex flex-col items-center gap-2">
               <div className="relative">
-                <div className="w-36 h-20 bg-gradient-to-b from-blue-500/20 to-blue-500/5 border border-blue-500/30 rounded-lg flex flex-col items-center justify-center">
-                  <Layers className="w-5 h-5 text-blue-400 mb-1" />
-                  <span className="text-xs text-blue-400">{ma.transformerLabel}</span>
+                <div className="w-36 h-20 bg-gradient-to-b from-blue-500/20 to-blue-500/5 border border-badge-info/30 rounded-lg flex flex-col items-center justify-center">
+                  <Layers className="w-5 h-5 text-badge-info mb-1" />
+                  <span className="text-xs text-badge-info">{ma.transformerLabel}</span>
                 </div>
-                <div className="absolute -bottom-3 left-1/2 transform -translate-x-1/2 px-3 py-1 bg-blue-500/20 rounded-full text-xs text-blue-400 font-medium">
+                <div className="absolute -bottom-3 left-1/2 transform -translate-x-1/2 px-3 py-1 bg-blue-500/20 rounded-full text-xs text-badge-info font-medium">
                   × {model.layers} {ma.layersCountSuffix}
                 </div>
               </div>
@@ -142,8 +142,8 @@ export const ModelArchitecture: React.FC<ModelArchitectureProps> = ({ onComplete
           </div>
 
           <div className="mt-6 text-center text-xs text-zinc-500">
-            {ma.vizFooterPart1}{model.name}{ma.vizFooterPart2}<span className="text-blue-400 font-bold">{model.layers}</span>{ma.vizFooterPart3}
-            <span className="text-blue-400 font-bold">{model.heads}</span>{ma.vizFooterPart4}
+            {ma.vizFooterPart1}{model.name}{ma.vizFooterPart2}<span className="text-badge-info font-bold">{model.layers}</span>{ma.vizFooterPart3}
+            <span className="text-badge-info font-bold">{model.heads}</span>{ma.vizFooterPart4}
           </div>
         </div>
       </div>
@@ -156,8 +156,8 @@ export const ModelArchitecture: React.FC<ModelArchitectureProps> = ({ onComplete
             {ma.attentionIntro}
           </p>
           <div className="grid grid-cols-3 gap-3">
-            <div className="p-3 bg-blue-500/10 rounded-lg border border-blue-500/20">
-              <div className="text-sm text-blue-400 font-medium mb-1">{ma.attention1Label}</div>
+            <div className="p-3 bg-blue-500/10 rounded-lg border border-badge-info/20">
+              <div className="text-sm text-badge-info font-medium mb-1">{ma.attention1Label}</div>
               <div className="text-xs text-zinc-500">{ma.attention1Desc}</div>
             </div>
             <div className="p-3 bg-emerald-500/10 rounded-lg border border-badge-success/20">
@@ -180,10 +180,10 @@ export const ModelArchitecture: React.FC<ModelArchitectureProps> = ({ onComplete
       {/* 总结 */}
       <div className="space-y-3">
         <h3 className="text-sm font-medium text-zinc-400">{ma.summaryLabel}</h3>
-        <div className="bg-gradient-to-r from-blue-500/10 to-purple-500/10 rounded-lg border border-blue-500/20 p-4">
+        <div className="bg-gradient-to-r from-blue-500/10 to-purple-500/10 rounded-lg border border-badge-info/20 p-4">
           <div className="grid grid-cols-4 gap-4 text-center">
             <div>
-              <div className="text-2xl font-bold text-blue-400">{model.params}</div>
+              <div className="text-2xl font-bold text-badge-info">{model.params}</div>
               <div className="text-xs text-zinc-500 mt-1">{ma.summaryNeuronsLabel}</div>
             </div>
             <div>
@@ -205,7 +205,7 @@ export const ModelArchitecture: React.FC<ModelArchitectureProps> = ({ onComplete
       {/* 专有名词解释 */}
       <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-700">
         <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
-          <span className="text-blue-400">📖</span>
+          <span className="text-badge-info">📖</span>
           {ma.glossaryLabel}
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -233,7 +233,7 @@ export const ModelArchitecture: React.FC<ModelArchitectureProps> = ({ onComplete
         </button>
         <button
           onClick={onComplete}
-          className="flex items-center gap-2 px-5 py-2.5 bg-blue-500/20 text-blue-400 rounded-lg hover:bg-blue-500/30 border border-blue-500/30 transition-all font-medium"
+          className="flex items-center gap-2 px-5 py-2.5 bg-blue-500/20 text-badge-info rounded-lg hover:bg-blue-500/30 border border-badge-info/30 transition-all font-medium"
         >
           {ma.nextButton}
           <ChevronRight className="w-4 h-4" />

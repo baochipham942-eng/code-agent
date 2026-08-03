@@ -71,7 +71,7 @@ function getAttachmentIconConfig(category: AttachmentCategory | undefined): Atta
     case 'archive':
       return { icon: <Archive className={iconClass} />, color: 'text-badge-warning', label: '压缩包' };
     case 'code':
-      return { icon: <FileCode className={iconClass} />, color: 'text-blue-400', label: '代码' };
+      return { icon: <FileCode className={iconClass} />, color: 'text-badge-info', label: '代码' };
     case 'data':
       return { icon: <Database className={iconClass} />, color: 'text-badge-warning', label: '数据' };
     case 'html':

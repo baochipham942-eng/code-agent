@@ -112,7 +112,7 @@ export const CronJobList: React.FC = () => {
                   onClick={() => selectJob(job.id)}
                   className={`w-full rounded-xl border p-3 text-left transition-colors ${
                     isSelected
-                      ? 'border-blue-500/40 bg-blue-500/10'
+                      ? 'border-badge-info/40 bg-blue-500/10'
                       : 'border-zinc-800 bg-zinc-900/60 hover:border-zinc-700 hover:bg-zinc-900'
                   }`}
                 >

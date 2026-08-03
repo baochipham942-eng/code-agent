@@ -21,9 +21,9 @@ export function getPermissionConfig(type: PermissionType): PermissionConfig {
     file_read: {
       icon: React.createElement(FileText, { size: 20 }),
       title: '读取文件',
-      color: 'text-blue-400',
+      color: 'text-badge-info',
       bgColor: 'bg-blue-500/10',
-      borderColor: 'border-blue-500/30',
+      borderColor: 'border-badge-info/30',
     },
     file_write: {
       icon: React.createElement(FilePlus, { size: 20 }),

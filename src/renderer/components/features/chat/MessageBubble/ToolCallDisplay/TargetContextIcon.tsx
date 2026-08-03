@@ -96,7 +96,7 @@ export function TargetContextIcon({ targetContext, className = '' }: Props) {
   }
 
   if (kind === 'file') {
-    return <FileText size={12} className={`text-blue-400 ${className}`} aria-label={targetContext.label || 'File'} />;
+    return <FileText size={12} className={`text-badge-info ${className}`} aria-label={targetContext.label || 'File'} />;
   }
 
   if (kind === 'memory') {

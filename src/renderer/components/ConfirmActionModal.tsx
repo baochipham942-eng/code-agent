@@ -36,7 +36,7 @@ const typeConfig = {
   info: {
     icon: <Info className="w-6 h-6" />,
     iconBg: 'bg-blue-500/10',
-    iconColor: 'text-blue-400',
+    iconColor: 'text-badge-info',
     confirmBg: BUTTON_PRIMARY_CLASS,
     headerBg: 'bg-blue-500/10',
   },

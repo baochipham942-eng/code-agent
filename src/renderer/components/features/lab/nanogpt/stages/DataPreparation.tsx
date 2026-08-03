@@ -114,7 +114,7 @@ export const DataPreparation: React.FC<DataPreparationProps> = ({ onComplete }) 
               <span className={`font-medium ${selectedDataset === 'shakespeare' ? 'text-badge-success' : 'text-zinc-200'}`}>
                 {dp.shakespeareName}
               </span>
-              <span className="text-xs px-2 py-0.5 rounded bg-blue-500/20 text-blue-400">{dp.shakespeareBadge}</span>
+              <span className="text-xs px-2 py-0.5 rounded bg-blue-500/20 text-badge-info">{dp.shakespeareBadge}</span>
             </div>
             <p className="text-xs text-zinc-500">
               {dp.shakespeareDesc}
@@ -258,7 +258,7 @@ export const DataPreparation: React.FC<DataPreparationProps> = ({ onComplete }) 
                       idx < preparationStep
                         ? 'bg-emerald-500/20 border-badge-success/50'
                         : idx === preparationStep && isProcessing
-                          ? 'bg-blue-500/20 border-blue-500/50 animate-pulse'
+                          ? 'bg-blue-500/20 border-badge-info/50 animate-pulse'
                           : 'bg-zinc-800 border-zinc-700'
                     }`}
                   >
@@ -287,7 +287,7 @@ export const DataPreparation: React.FC<DataPreparationProps> = ({ onComplete }) 
               </div>
               <p className="text-xs text-zinc-500">{dp.outputCard1Desc}</p>
             </div>
-            <div className="bg-blue-500/10 rounded-lg p-3 border border-blue-500/20">
+            <div className="bg-blue-500/10 rounded-lg p-3 border border-badge-info/20">
               <div className="flex items-center gap-2 mb-1">
                 <span className="text-lg">📘</span>
                 <span className="text-sm text-zinc-200">{dp.outputCard2Title}</span>
@@ -311,7 +311,7 @@ export const DataPreparation: React.FC<DataPreparationProps> = ({ onComplete }) 
       {/* 专有名词解释 */}
       <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-700">
         <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
-          <span className="text-blue-400">📖</span>
+          <span className="text-badge-info">📖</span>
           {dp.glossaryLabel}
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -332,7 +332,7 @@ export const DataPreparation: React.FC<DataPreparationProps> = ({ onComplete }) 
       <div className="flex justify-end pt-4">
         <button
           onClick={onComplete}
-          className="flex items-center gap-2 px-5 py-2.5 bg-blue-500/20 text-blue-400 rounded-lg hover:bg-blue-500/30 border border-blue-500/30 transition-all font-medium"
+          className="flex items-center gap-2 px-5 py-2.5 bg-blue-500/20 text-badge-info rounded-lg hover:bg-blue-500/30 border border-badge-info/30 transition-all font-medium"
         >
           {dp.nextButton}
           <ChevronRight className="w-4 h-4" />

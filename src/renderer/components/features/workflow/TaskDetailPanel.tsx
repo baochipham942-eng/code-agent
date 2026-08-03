@@ -168,7 +168,7 @@ export const TaskDetailPanel = memo(({ task, onClose }: TaskDetailPanelProps) =>
         {task.failure && (
           <Section title="Error" variant="error">
             <div className="space-y-2">
-              <p className="text-sm text-red-300">{task.failure.message}</p>
+              <p className="text-sm text-badge-danger">{task.failure.message}</p>
               {task.failure.code && (
                 <InfoRow label="Code" value={task.failure.code} />
               )}
@@ -214,7 +214,7 @@ const Section = memo(({
   >
     <h3
       className={`text-xs font-semibold uppercase mb-2 ${
-        variant === 'error' ? 'text-red-400' : 'text-gray-500'
+        variant === 'error' ? 'text-badge-danger' : 'text-gray-500'
       }`}
     >
       {title}

@@ -299,7 +299,7 @@ export const Pretraining: React.FC<PretrainingProps> = ({ onComplete, onBack }) 
             </div>
             <div className="text-center p-2 bg-blue-500/10 rounded-lg">
               <div className="text-xs text-zinc-500 mb-1">{pt.metricLrLabel}</div>
-              <div className="text-xl font-bold text-blue-400">
+              <div className="text-xl font-bold text-badge-info">
                 {currentLr > 0 ? pt.metricLrActive : pt.metricLrInactive}
               </div>
               <div className="text-xs text-zinc-600">{pt.metricLrHint}</div>
@@ -376,7 +376,7 @@ export const Pretraining: React.FC<PretrainingProps> = ({ onComplete, onBack }) 
       {/* 专有名词解释 */}
       <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-700">
         <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
-          <span className="text-blue-400">📖</span>
+          <span className="text-badge-info">📖</span>
           {pt.glossaryLabel}
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">

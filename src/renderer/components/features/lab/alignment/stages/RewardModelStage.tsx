@@ -133,8 +133,8 @@ export const RewardModelStage: React.FC<RewardModelStageProps> = ({ onComplete, 
         {/* Prompt */}
         <div className="bg-zinc-900 rounded-lg border border-zinc-700 p-4">
           <div className="flex items-center gap-2 mb-2">
-            <Sparkles className="w-4 h-4 text-blue-400" />
-            <span className="text-sm text-blue-400">{common.userSaidLabel}</span>
+            <Sparkles className="w-4 h-4 text-badge-info" />
+            <span className="text-sm text-badge-info">{common.userSaidLabel}</span>
           </div>
           <p className="text-base text-zinc-200">{example.prompt}</p>
         </div>
@@ -149,7 +149,7 @@ export const RewardModelStage: React.FC<RewardModelStageProps> = ({ onComplete, 
                   ? 'bg-emerald-500/10 border-badge-success/30'
                   : 'bg-red-500/5 border-red-500/20'
                 : userChoice === 'A'
-                  ? 'bg-blue-500/10 border-blue-500/30'
+                  ? 'bg-blue-500/10 border-badge-info/30'
                   : 'bg-zinc-900 border-zinc-700 hover:border-zinc-600 cursor-pointer'
             }`}
             onClick={() => !showResult && handleChoice('A')}
@@ -186,7 +186,7 @@ export const RewardModelStage: React.FC<RewardModelStageProps> = ({ onComplete, 
                   ? 'bg-emerald-500/10 border-badge-success/30'
                   : 'bg-red-500/5 border-red-500/20'
                 : userChoice === 'B'
-                  ? 'bg-blue-500/10 border-blue-500/30'
+                  ? 'bg-blue-500/10 border-badge-info/30'
                   : 'bg-zinc-900 border-zinc-700 hover:border-zinc-600 cursor-pointer'
             }`}
             onClick={() => !showResult && handleChoice('B')}
@@ -273,9 +273,9 @@ export const RewardModelStage: React.FC<RewardModelStageProps> = ({ onComplete, 
         <h3 className="text-sm font-medium text-zinc-400">{s.howItWorksTitle}</h3>
         <div className="bg-zinc-900 rounded-lg border border-zinc-700 p-4">
           <div className="flex items-center justify-center gap-3">
-            <div className="text-center p-3 bg-blue-500/10 rounded-lg border border-blue-500/20 flex-1">
+            <div className="text-center p-3 bg-blue-500/10 rounded-lg border border-badge-info/20 flex-1">
               <div className="text-2xl mb-1">📝</div>
-              <div className="text-xs text-blue-400">{s.flowSteps.seeResponse}</div>
+              <div className="text-xs text-badge-info">{s.flowSteps.seeResponse}</div>
             </div>
             <ChevronRight className="w-4 h-4 text-zinc-600" />
             <div className="text-center p-3 bg-purple-500/10 rounded-lg border border-badge-accent/20 flex-1">
@@ -313,7 +313,7 @@ export const RewardModelStage: React.FC<RewardModelStageProps> = ({ onComplete, 
       {/* 专有名词解释 */}
       <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-700">
         <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
-          <span className="text-blue-400">📖</span>
+          <span className="text-badge-info">📖</span>
           {common.glossaryTitle}
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">

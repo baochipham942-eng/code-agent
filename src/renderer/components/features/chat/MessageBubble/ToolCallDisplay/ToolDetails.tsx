@@ -229,7 +229,7 @@ export function ToolDetails({ toolCall, compact, mediaContext }: Props) {
                 {isEditFile && !showDiff && (
                   <button
                     onClick={() => setShowDiff(true)}
-                    className="text-blue-400 hover:text-blue-300 px-2 transition-colors"
+                    className="text-badge-info hover:text-badge-info px-2 transition-colors"
                   >
                     View Diff
                   </button>

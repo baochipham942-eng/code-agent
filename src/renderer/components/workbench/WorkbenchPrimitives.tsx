@@ -256,7 +256,7 @@ export function WorkbenchReferenceRow({
         }`} />
       ) : (
         <Plug className={`w-3 h-3 flex-shrink-0 ${
-          reference.kind === 'connector' ? 'text-badge-info/70' : 'text-blue-400/70'
+          reference.kind === 'connector' ? 'text-badge-info/70' : 'text-badge-info/70'
         }`} />
       )}
       <span className="min-w-0 flex-1">

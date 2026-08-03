@@ -144,7 +144,7 @@ export const EvalTelemetryTab: React.FC = () => {
               aria-selected={isActive}
               data-testid={`eval-telemetry-subtab-${tab.id}`}
               onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center gap-1.5 border-b-2 px-3 py-2 text-xs transition-colors ${isActive ? 'border-blue-500 text-blue-400' : 'border-transparent text-zinc-500 hover:text-zinc-400'}`}
+              className={`flex items-center gap-1.5 border-b-2 px-3 py-2 text-xs transition-colors ${isActive ? 'border-badge-info text-badge-info' : 'border-transparent text-zinc-500 hover:text-zinc-400'}`}
             >
               <Icon className="h-3.5 w-3.5" />
               {tab.label}

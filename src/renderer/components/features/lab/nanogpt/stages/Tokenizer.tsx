@@ -60,16 +60,16 @@ export const Tokenizer: React.FC<TokenizerProps> = ({ onComplete, onBack }) => {
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-6">
       {/* Introduction */}
-      <div className="bg-gradient-to-r from-blue-500/10 to-purple-500/10 rounded-lg border border-blue-500/20 p-4">
+      <div className="bg-gradient-to-r from-blue-500/10 to-purple-500/10 rounded-lg border border-badge-info/20 p-4">
         <div className="flex items-start gap-3">
-          <BookOpen className="w-5 h-5 text-blue-400 mt-0.5" />
+          <BookOpen className="w-5 h-5 text-badge-info mt-0.5" />
           <div>
             <h3 className="text-sm font-medium text-zinc-200 mb-2">{tk.introTitle}</h3>
             <p className="text-sm text-zinc-400">
               {tk.introBodyPre}
               <span className="text-badge-success">{tk.introBodyHighlight1}</span>
               {tk.introBodyMid}
-              <span className="text-blue-400">{tk.introBodyHighlight2}</span>
+              <span className="text-badge-info">{tk.introBodyHighlight2}</span>
               {tk.introBodyPost}
             </p>
           </div>
@@ -83,7 +83,7 @@ export const Tokenizer: React.FC<TokenizerProps> = ({ onComplete, onBack }) => {
           type="text"
           value={inputText}
           onChange={(e) => setInputText(e.target.value)}
-          className="w-full px-4 py-3 bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-200 focus:outline-hidden focus:border-blue-500/50"
+          className="w-full px-4 py-3 bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-200 focus:outline-hidden focus:border-badge-info/50"
           placeholder={tk.inputPlaceholder}
         />
       </div>
@@ -109,7 +109,7 @@ export const Tokenizer: React.FC<TokenizerProps> = ({ onComplete, onBack }) => {
             onClick={() => setActiveTab('bpe')}
             className={`flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm transition-all ${
               activeTab === 'bpe'
-                ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
+                ? 'bg-blue-500/20 text-badge-info border border-badge-info/30'
                 : 'bg-zinc-800 text-zinc-400 border border-zinc-800 hover:border-zinc-600'
             }`}
           >
@@ -137,14 +137,14 @@ export const Tokenizer: React.FC<TokenizerProps> = ({ onComplete, onBack }) => {
                   className={`px-3 py-2 rounded-lg text-base border ${
                     activeTab === 'char'
                       ? 'bg-emerald-500/10 border-badge-success/30 text-badge-success'
-                      : 'bg-blue-500/10 border-blue-500/30 text-blue-300'
+                      : 'bg-blue-500/10 border-badge-info/30 text-badge-info'
                   }`}
                 >
                   {token.text}
                 </div>
                 <div
                   className={`text-xs mt-1 font-bold ${
-                    activeTab === 'char' ? 'text-badge-success' : 'text-blue-400'
+                    activeTab === 'char' ? 'text-badge-success' : 'text-badge-info'
                   }`}
                 >
                   #{token.id}
@@ -157,11 +157,11 @@ export const Tokenizer: React.FC<TokenizerProps> = ({ onComplete, onBack }) => {
           <div className="mt-4 pt-3 border-t border-zinc-700">
             <div className={`p-3 rounded-lg ${activeTab === 'char' ? 'bg-emerald-500/10' : 'bg-blue-500/10'}`}>
               <div className="flex items-center gap-4 text-sm">
-                <span className={activeTab === 'char' ? 'text-badge-success' : 'text-blue-400'}>
+                <span className={activeTab === 'char' ? 'text-badge-success' : 'text-badge-info'}>
                   {tk.statsCountLabel} <strong>{activeTab === 'char' ? charTokens.length : bpeTokens.length}</strong> {tk.statsCountSuffix}
                 </span>
                 <span className="text-zinc-500">|</span>
-                <span className={activeTab === 'char' ? 'text-badge-success' : 'text-blue-400'}>
+                <span className={activeTab === 'char' ? 'text-badge-success' : 'text-badge-info'}>
                   {tk.statsEfficiencyLabel}{comparisonData[activeTab].compression}
                 </span>
               </div>
@@ -228,7 +228,7 @@ export const Tokenizer: React.FC<TokenizerProps> = ({ onComplete, onBack }) => {
         <div
           className={`rounded-lg border p-4 transition-all ${
             activeTab === 'bpe'
-              ? 'bg-blue-500/5 border-blue-500/30'
+              ? 'bg-blue-500/5 border-badge-info/30'
               : 'bg-zinc-700/20 border-zinc-800'
           }`}
         >
@@ -240,11 +240,11 @@ export const Tokenizer: React.FC<TokenizerProps> = ({ onComplete, onBack }) => {
           <div className="space-y-3 text-sm">
             <div className="flex justify-between">
               <span className="text-zinc-500">{tk.vocabSizeLabel}</span>
-              <span className="text-blue-400 font-medium">{comparisonData.bpe.vocabSize}</span>
+              <span className="text-badge-info font-medium">{comparisonData.bpe.vocabSize}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-zinc-500">{tk.seqLengthLabel}</span>
-              <span className="text-blue-400 font-medium">{comparisonData.bpe.seqLength}</span>
+              <span className="text-badge-info font-medium">{comparisonData.bpe.seqLength}</span>
             </div>
 
             <div className="pt-2 border-t border-zinc-800">
@@ -312,8 +312,8 @@ export const Tokenizer: React.FC<TokenizerProps> = ({ onComplete, onBack }) => {
             </div>
           </div>
 
-          <div className="mt-4 p-3 rounded-lg bg-blue-500/10 border border-blue-500/20">
-            <div className="text-xs text-blue-400">
+          <div className="mt-4 p-3 rounded-lg bg-blue-500/10 border border-badge-info/20">
+            <div className="text-xs text-badge-info">
               {tk.algoFooter}
             </div>
           </div>
@@ -323,7 +323,7 @@ export const Tokenizer: React.FC<TokenizerProps> = ({ onComplete, onBack }) => {
       {/* 专有名词解释 */}
       <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-700">
         <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
-          <span className="text-blue-400">📖</span>
+          <span className="text-badge-info">📖</span>
           {tk.glossaryLabel}
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -351,7 +351,7 @@ export const Tokenizer: React.FC<TokenizerProps> = ({ onComplete, onBack }) => {
         </button>
         <button
           onClick={onComplete}
-          className="flex items-center gap-2 px-5 py-2.5 bg-blue-500/20 text-blue-400 rounded-lg hover:bg-blue-500/30 border border-blue-500/30 transition-all font-medium"
+          className="flex items-center gap-2 px-5 py-2.5 bg-blue-500/20 text-badge-info rounded-lg hover:bg-blue-500/30 border border-badge-info/30 transition-all font-medium"
         >
           {tk.nextButton}
           <ChevronRight className="w-4 h-4" />

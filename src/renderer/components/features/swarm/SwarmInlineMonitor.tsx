@@ -27,7 +27,7 @@ const AGENT_COLORS = [
   'text-cyan-400',
   'text-badge-warning',
   'text-pink-400',
-  'text-blue-400',
+  'text-badge-info',
 ] as const;
 
 function colorFor(id: string): string {

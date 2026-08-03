@@ -76,7 +76,7 @@ const StatusDot: React.FC<{ status: SwarmAgentState['status'] }> = ({ status }) 
     completed: 'text-badge-success',
     failed: 'text-badge-danger',
     pending: 'text-zinc-500',
-    ready: 'text-blue-400',
+    ready: 'text-badge-info',
     cancelled: 'text-zinc-600',
   };
 
@@ -119,7 +119,7 @@ const MessageItem: React.FC<{ message: TeammateMessageDisplay; currentAgentId?: 
   const isUser = message.from === 'user' || message.type === 'user';
 
   const typeIcons: Record<string, React.ReactNode> = {
-    coordination: <ArrowRightLeft className="w-3 h-3 text-blue-400" />,
+    coordination: <ArrowRightLeft className="w-3 h-3 text-badge-info" />,
     handoff: <ArrowRightLeft className="w-3 h-3 text-badge-warning" />,
     query: <MessageSquare className="w-3 h-3 text-badge-accent" />,
     response: <MessageSquare className="w-3 h-3 text-badge-success" />,

@@ -74,7 +74,7 @@ function ElicitationField({
                 onClick={() => onChange(name, option)}
                 className={`w-full p-2 rounded-lg border text-left text-sm transition-all ${
                   value === option
-                    ? 'border-blue-500 bg-blue-500/10 ring-1 ring-blue-500/50'
+                    ? 'border-badge-info bg-blue-500/10 ring-1 ring-blue-500/50'
                     : 'border-zinc-700 hover:border-zinc-600 hover:bg-zinc-800'
                 }`}
               >
@@ -82,7 +82,7 @@ function ElicitationField({
                   <div
                     className={`w-3.5 h-3.5 rounded-full border-2 flex items-center justify-center ${
                       value === option
-                        ? 'border-blue-500 bg-blue-500'
+                        ? 'border-badge-info bg-blue-500'
                         : 'border-zinc-600'
                     }`}
                   >
@@ -123,7 +123,7 @@ function ElicitationField({
               onChange(name, num);
             }
           }}
-          className="w-full px-3 py-2 rounded-lg border border-zinc-700 bg-zinc-800 text-zinc-200 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-hidden"
+          className="w-full px-3 py-2 rounded-lg border border-zinc-700 bg-zinc-800 text-zinc-200 text-sm focus:border-badge-info focus:ring-1 focus:ring-blue-500 outline-hidden"
         />
       </div>
     );
@@ -145,7 +145,7 @@ function ElicitationField({
         placeholder={schema.default !== undefined ? String(schema.default) : ''}
         maxLength={schema.maxLength}
         onChange={(e) => onChange(name, e.target.value)}
-        className="w-full px-3 py-2 rounded-lg border border-zinc-700 bg-zinc-800 text-zinc-200 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-hidden"
+        className="w-full px-3 py-2 rounded-lg border border-zinc-700 bg-zinc-800 text-zinc-200 text-sm focus:border-badge-info focus:ring-1 focus:ring-blue-500 outline-hidden"
       />
     </div>
   );

@@ -106,7 +106,7 @@ const RegistryEntryCard: React.FC<{
               </span>
             )}
             {hasUpdate && (
-              <span className="shrink-0 rounded border border-blue-500/20 bg-blue-500/10 px-1.5 py-0.5 text-[10px] text-blue-300">
+              <span className="shrink-0 rounded border border-badge-info/20 bg-blue-500/10 px-1.5 py-0.5 text-[10px] text-badge-info">
                 {labels.registryHasUpdate}
               </span>
             )}
@@ -312,7 +312,7 @@ export const SkillsDiscoverTab: React.FC<SkillsDiscoverTabProps> = ({
               href="https://skillsmp.com"
               target="_blank"
               rel="noopener noreferrer"
-              className="text-blue-400 hover:text-blue-300"
+              className="text-badge-info hover:text-badge-info"
             >
               SkillsMP
             </a>

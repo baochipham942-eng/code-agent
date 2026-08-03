@@ -35,7 +35,7 @@ interface SpreadsheetSpec {
 
 const MAX_VISIBLE_ROWS = 40;
 const COLUMN_COLORS = [
-  'bg-blue-500/20 border-blue-500/40',
+  'bg-blue-500/20 border-badge-info/40',
   'bg-emerald-500/20 border-badge-success/40',
   'bg-amber-500/20 border-badge-warning/40',
   'bg-purple-500/20 border-badge-accent/40',
@@ -145,7 +145,7 @@ const ActionBar = memo(function ActionBar({
 
   const actions = [
     { key: 'visualize', label: t.generativeUI.visualize, icon: BarChart3, color: 'text-badge-success bg-emerald-500/10 hover:bg-emerald-500/20 border-badge-success/20' },
-    { key: 'pivot', label: t.generativeUI.pivot, icon: Table2, color: 'text-blue-400 bg-blue-500/10 hover:bg-blue-500/20 border-blue-500/20' },
+    { key: 'pivot', label: t.generativeUI.pivot, icon: Table2, color: 'text-badge-info bg-blue-500/10 hover:bg-blue-500/20 border-badge-info/20' },
     { key: 'filter', label: t.generativeUI.filterAnalysis, icon: Filter, color: 'text-badge-warning bg-amber-500/10 hover:bg-amber-500/20 border-badge-warning/20' },
     { key: 'sort', label: t.generativeUI.sort, icon: ArrowUpDown, color: 'text-badge-accent bg-purple-500/10 hover:bg-purple-500/20 border-badge-accent/20' },
   ];
@@ -358,7 +358,7 @@ export const SpreadsheetBlock = memo(function SpreadsheetBlock({ spec: rawSpec, 
 
       {/* Stats bar (when a numeric column is selected) */}
       {selectedStats && (
-        <div className="px-4 py-1.5 bg-blue-500/5 border-b border-zinc-700 text-xs text-blue-300">
+        <div className="px-4 py-1.5 bg-blue-500/5 border-b border-zinc-700 text-xs text-badge-info">
           {selectedStats}
         </div>
       )}

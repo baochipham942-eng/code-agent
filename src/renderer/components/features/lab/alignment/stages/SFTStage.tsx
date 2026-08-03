@@ -165,11 +165,11 @@ export const SFTStage: React.FC<SFTStageProps> = ({ onComplete }) => {
           {/* Question */}
           <div className="flex gap-3">
             <div className="w-8 h-8 rounded-full bg-blue-500/20 flex items-center justify-center flex-shrink-0">
-              <User className="w-4 h-4 text-blue-400" />
+              <User className="w-4 h-4 text-badge-info" />
             </div>
             <div className="flex-1">
-              <div className="text-xs text-blue-400 mb-1">{s.userAskedLabel}</div>
-              <p className="text-sm text-zinc-200 bg-blue-500/10 rounded-lg p-3 border border-blue-500/20">
+              <div className="text-xs text-badge-info mb-1">{s.userAskedLabel}</div>
+              <p className="text-sm text-zinc-200 bg-blue-500/10 rounded-lg p-3 border border-badge-info/20">
                 {currentExample.question}
               </p>
             </div>
@@ -270,7 +270,7 @@ export const SFTStage: React.FC<SFTStageProps> = ({ onComplete }) => {
               <Bot className="w-4 h-4 text-zinc-500" />
               <span className="text-sm font-medium text-zinc-400">{s.beforeLabel}</span>
             </div>
-            <div className="mb-2 text-xs text-blue-400">{s.questionPrefix.replace('{question}', beforeAfterExamples[0].question)}</div>
+            <div className="mb-2 text-xs text-badge-info">{s.questionPrefix.replace('{question}', beforeAfterExamples[0].question)}</div>
             <div className="bg-zinc-950/50 p-3 rounded text-sm text-zinc-500 whitespace-pre-wrap">
               {beforeAfterExamples[0].before}
             </div>
@@ -283,7 +283,7 @@ export const SFTStage: React.FC<SFTStageProps> = ({ onComplete }) => {
               <Bot className="w-4 h-4 text-badge-accent" />
               <span className="text-sm font-medium text-badge-accent">{s.afterLabel}</span>
             </div>
-            <div className="mb-2 text-xs text-blue-400">{s.questionPrefix.replace('{question}', beforeAfterExamples[0].question)}</div>
+            <div className="mb-2 text-xs text-badge-info">{s.questionPrefix.replace('{question}', beforeAfterExamples[0].question)}</div>
             <div className="bg-zinc-950/50 p-3 rounded text-sm text-badge-success whitespace-pre-wrap">
               {beforeAfterExamples[0].after}
             </div>
@@ -308,7 +308,7 @@ export const SFTStage: React.FC<SFTStageProps> = ({ onComplete }) => {
       {/* 专有名词解释 */}
       <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-700">
         <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
-          <span className="text-blue-400">📖</span>
+          <span className="text-badge-info">📖</span>
           {common.glossaryTitle}
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">

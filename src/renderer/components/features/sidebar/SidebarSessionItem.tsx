@@ -169,12 +169,12 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
       aria-label={s.openSession.replace('{title}', displayTitle)}
       data-session-id={session.id}
       title={new Date(latestActivityAt).toLocaleString(localeForLanguage(language))}
-      className={`group relative pl-0 pr-1.5 py-1.5 rounded-lg cursor-pointer transition-colors duration-150 ${isSelected && !multiSelectMode ? 'bg-zinc-700/60' : isChecked ? 'bg-blue-500/10 border border-blue-500/20' : 'hover:bg-zinc-800'}`}
+      className={`group relative pl-0 pr-1.5 py-1.5 rounded-lg cursor-pointer transition-colors duration-150 ${isSelected && !multiSelectMode ? 'bg-zinc-700/60' : isChecked ? 'bg-blue-500/10 border border-badge-info/20' : 'hover:bg-zinc-800'}`}
     >
       <div className="flex items-center gap-2">
         {/* 多选 Checkbox */}
         {multiSelectMode && (
-          isChecked ? <CheckSquare className="w-4 h-4 text-blue-400 shrink-0" /> : <Square className="w-4 h-4 text-zinc-500 shrink-0" />
+          isChecked ? <CheckSquare className="w-4 h-4 text-badge-info shrink-0" /> : <Square className="w-4 h-4 text-zinc-500 shrink-0" />
         )}
 
         {/* 前导槽：宽度恒定 16px，有没有置顶标记标题左缘都不动
@@ -195,7 +195,7 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
             onBlur={handleRenameSubmit}
             onKeyDown={handleRenameKeyDown}
             onClick={(e) => e.stopPropagation()}
-            className="flex-1 text-sm bg-zinc-600/80 text-zinc-200 px-1.5 py-0.5 rounded border border-zinc-600 focus:border-blue-500 focus:outline-hidden"
+            className="flex-1 text-sm bg-zinc-600/80 text-zinc-200 px-1.5 py-0.5 rounded border border-zinc-600 focus:border-badge-info focus:outline-hidden"
           />
         ) : (
           <span

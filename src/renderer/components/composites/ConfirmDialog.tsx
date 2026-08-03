@@ -21,7 +21,7 @@ const variantConfig: Record<
   info: {
     icon: <Info className="w-6 h-6" />,
     iconBgClass: 'bg-blue-500/10',
-    iconColorClass: 'text-blue-400',
+    iconColorClass: 'text-badge-info',
     confirmColorClass: BUTTON_PRIMARY_CLASS,
   },
   warning: {

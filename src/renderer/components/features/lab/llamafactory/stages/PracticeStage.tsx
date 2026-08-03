@@ -128,7 +128,7 @@ export const PracticeStage: React.FC<PracticeStageProps> = ({ onBack }) => {
           {!quizCompleted ? (
             <>
               {/* Question */}
-              <div className="mb-4 p-3 rounded-lg bg-blue-500/10 border border-blue-500/20">
+              <div className="mb-4 p-3 rounded-lg bg-blue-500/10 border border-badge-info/20">
                 <p className="text-sm text-zinc-200">{scenarios[currentQuestion].question}</p>
               </div>
 
@@ -249,10 +249,10 @@ export const PracticeStage: React.FC<PracticeStageProps> = ({ onBack }) => {
 
             <div className={`
               p-4 rounded-lg border text-center transition-all duration-500
-              ${showMergeAnimation ? 'opacity-50' : 'bg-blue-500/10 border-blue-500/20'}
+              ${showMergeAnimation ? 'opacity-50' : 'bg-blue-500/10 border-badge-info/20'}
             `}>
               <div className="text-2xl mb-1">🎯</div>
-              <div className="text-xs text-blue-400">{p.mergeLoraWeights}</div>
+              <div className="text-xs text-badge-info">{p.mergeLoraWeights}</div>
               <div className="text-xs text-zinc-500">{p.mergeLoraSize}</div>
             </div>
 

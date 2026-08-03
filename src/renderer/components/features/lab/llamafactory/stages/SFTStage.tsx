@@ -269,8 +269,8 @@ export const SFTStage: React.FC<SFTStageProps> = ({ onComplete, onBack }) => {
             </div>
           </div>
 
-          <div className="mt-4 p-3 rounded-lg bg-blue-500/10 border border-blue-500/20">
-            <div className="text-xs text-blue-400">
+          <div className="mt-4 p-3 rounded-lg bg-blue-500/10 border border-badge-info/20">
+            <div className="text-xs text-badge-info">
               💡 <strong>{s.dataQualityAdviceLabel}</strong>{s.dataQualityAdviceText}
             </div>
           </div>
@@ -365,7 +365,7 @@ export const SFTStage: React.FC<SFTStageProps> = ({ onComplete, onBack }) => {
             </div>
             <div className="text-center">
               <div className="text-xs text-zinc-500 mb-1">{s.learningRateLabel}</div>
-              <div className="text-xl font-bold text-blue-400">2e-5</div>
+              <div className="text-xl font-bold text-badge-info">2e-5</div>
             </div>
             <div className="text-center">
               <div className="text-xs text-zinc-500 mb-1">{s.statusLabel}</div>
@@ -431,7 +431,7 @@ export const SFTStage: React.FC<SFTStageProps> = ({ onComplete, onBack }) => {
       {/* 专有名词 */}
       <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-700">
         <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
-          <span className="text-blue-400">📖</span>
+          <span className="text-badge-info">📖</span>
           {s.glossaryTitle}
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">

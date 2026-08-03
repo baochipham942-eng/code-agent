@@ -169,7 +169,7 @@ export const NanoGPTLab: React.FC = () => {
                 onClick={() => setMode('real')}
                 className={`flex items-center gap-2 px-4 py-1.5 rounded-md text-sm font-medium transition-all ${
                   mode === 'real'
-                    ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
+                    ? 'bg-blue-500/20 text-badge-info border border-badge-info/30'
                     : 'text-zinc-400 hover:text-zinc-200'
                 }`}
               >
@@ -225,7 +225,7 @@ export const NanoGPTLab: React.FC = () => {
                           w-10 h-10 rounded-full flex items-center justify-center
                           transition-all duration-300
                           ${isCompleted ? 'bg-emerald-500/20 border-badge-success/50 text-badge-success' : ''}
-                          ${isCurrent ? 'bg-blue-500/20 border-blue-500/50 text-blue-400 ring-2 ring-blue-500/30' : ''}
+                          ${isCurrent ? 'bg-blue-500/20 border-badge-info/50 text-badge-info ring-2 ring-blue-500/30' : ''}
                           ${!isCompleted && !isCurrent ? 'bg-zinc-800 border-zinc-700 text-zinc-500' : ''}
                           border
                         `}
@@ -235,7 +235,7 @@ export const NanoGPTLab: React.FC = () => {
                       <span
                         className={`
                           text-xs font-medium
-                          ${isCurrent ? 'text-blue-400' : isCompleted ? 'text-badge-success' : 'text-zinc-500'}
+                          ${isCurrent ? 'text-badge-info' : isCompleted ? 'text-badge-success' : 'text-zinc-500'}
                         `}
                       >
                         {stage.shortTitle}
@@ -267,7 +267,7 @@ export const NanoGPTLab: React.FC = () => {
                   className={`w-8 h-8 rounded-lg flex items-center justify-center ${
                     currentStageConfig.isNew
                       ? 'bg-amber-500/20 border border-badge-warning/30 text-badge-warning'
-                      : 'bg-blue-500/20 border border-blue-500/30 text-blue-400'
+                      : 'bg-blue-500/20 border border-badge-info/30 text-badge-info'
                   }`}
                 >
                   {currentStageConfig.icon}

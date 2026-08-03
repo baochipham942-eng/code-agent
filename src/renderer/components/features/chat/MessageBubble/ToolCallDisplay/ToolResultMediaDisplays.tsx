@@ -276,7 +276,7 @@ export function FileResultDisplay({
         return 'text-badge-accent bg-purple-500/10 border-badge-accent/30';
       case 'html':
       case 'htm':
-        return 'text-blue-400 bg-blue-500/10 border-blue-500/30';
+        return 'text-badge-info bg-blue-500/10 border-badge-info/30';
       default:
         return 'text-gray-400 bg-gray-500/10 border-gray-500/30';
     }
@@ -317,7 +317,7 @@ export function FileResultDisplay({
         {canPreview && (
           <button
             onClick={onPreview}
-            className="flex items-center gap-1 px-2 py-1 rounded-lg bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 text-xs"
+            className="flex items-center gap-1 px-2 py-1 rounded-lg bg-blue-500/20 text-badge-info hover:bg-blue-500/30 text-xs"
           >
             <Play className="w-3 h-3" />
             Preview

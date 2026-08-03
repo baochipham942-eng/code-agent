@@ -210,7 +210,7 @@ export const TrainingLoop: React.FC<Props> = ({ onComplete, onBack }) => {
           {/* 概念说明 */}
           <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-700">
             <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
-              <RotateCcw className="w-4 h-4 text-blue-400" />
+              <RotateCcw className="w-4 h-4 text-badge-info" />
               {tl.practiceTitle}
             </h3>
             <div className="space-y-3 text-sm text-zinc-400">
@@ -230,7 +230,7 @@ export const TrainingLoop: React.FC<Props> = ({ onComplete, onBack }) => {
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-2xl">✏️</span>
-                  <span><span className="text-blue-300 font-medium">{tl.practiceStep4Label}</span>{tl.practiceStep4Desc}</span>
+                  <span><span className="text-badge-info font-medium">{tl.practiceStep4Label}</span>{tl.practiceStep4Desc}</span>
                 </li>
               </ol>
               <p className="text-xs text-zinc-500 mt-2">
@@ -264,7 +264,7 @@ export const TrainingLoop: React.FC<Props> = ({ onComplete, onBack }) => {
               <div>
                 <div className="flex justify-between mb-1">
                   <label className="text-xs text-zinc-400">{tl.lrLabel}</label>
-                  <span className="text-xs font-bold text-blue-400">{config.learningRate > 0.001 ? tl.lrBig : config.learningRate > 0.0001 ? tl.lrMedium : tl.lrSmall}</span>
+                  <span className="text-xs font-bold text-badge-info">{config.learningRate > 0.001 ? tl.lrBig : config.learningRate > 0.0001 ? tl.lrMedium : tl.lrSmall}</span>
                 </div>
                 <input
                   type="range"
@@ -329,7 +329,7 @@ export const TrainingLoop: React.FC<Props> = ({ onComplete, onBack }) => {
         {/* 右侧：训练控制台 */}
         <div className="space-y-6">
           {/* 训练控制 */}
-          <div className="p-4 rounded-xl bg-gradient-to-br from-blue-500/10 to-indigo-500/10 border border-blue-500/20">
+          <div className="p-4 rounded-xl bg-gradient-to-br from-blue-500/10 to-indigo-500/10 border border-badge-info/20">
             <h3 className="text-sm font-semibold text-zinc-200 mb-4">{tl.controlTitle}</h3>
 
             {/* 控制按钮 */}
@@ -387,7 +387,7 @@ export const TrainingLoop: React.FC<Props> = ({ onComplete, onBack }) => {
             {/* 实时指标 */}
             <div className="grid grid-cols-2 gap-3">
               <div className="p-3 rounded-lg bg-zinc-900">
-                <div className="text-2xl font-bold text-blue-400">{currentLoss.toFixed(4)}</div>
+                <div className="text-2xl font-bold text-badge-info">{currentLoss.toFixed(4)}</div>
                 <div className="text-xs text-zinc-500">{tl.currentLossLabel}</div>
               </div>
               <div className="p-3 rounded-lg bg-zinc-900">
@@ -404,7 +404,7 @@ export const TrainingLoop: React.FC<Props> = ({ onComplete, onBack }) => {
           {/* 错误率变化图 */}
           <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-700">
             <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
-              <TrendingDown className="w-4 h-4 text-blue-400" />
+              <TrendingDown className="w-4 h-4 text-badge-info" />
               {tl.chartTitle}
             </h3>
             <div className="bg-zinc-950 rounded-lg p-2">
@@ -425,7 +425,7 @@ export const TrainingLoop: React.FC<Props> = ({ onComplete, onBack }) => {
               {logs.length > 0 ? (
                 logs.map((log, i) => (
                   <div key={i} className="text-zinc-400 p-1.5 rounded bg-zinc-800">
-                    {tl.logEpochPrefix}<span className="text-blue-400 font-bold">{log.epoch}</span>{tl.logEpochSuffix}
+                    {tl.logEpochPrefix}<span className="text-badge-info font-bold">{log.epoch}</span>{tl.logEpochSuffix}
                     {tl.logStepPrefix}<span className="text-badge-accent">{log.step}</span>{tl.logStepSuffix}
                     {tl.logLossPrefix}<span className="text-badge-success font-bold">{log.loss.toFixed(4)}</span>
                   </div>
@@ -441,7 +441,7 @@ export const TrainingLoop: React.FC<Props> = ({ onComplete, onBack }) => {
       {/* 专有名词解释 */}
       <div className="mt-8 p-4 rounded-xl bg-zinc-900 border border-zinc-700">
         <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
-          <span className="text-blue-400">📖</span>
+          <span className="text-badge-info">📖</span>
           {tl.termsTitle}
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">

@@ -32,7 +32,7 @@ import { IPC_CHANNELS } from '../../../../shared/ipc/legacy-channels';
 // Agent 状态颜色映射
 const statusColors: Record<string, { bg: string; text: string; border: string }> = {
   pending: { bg: 'bg-zinc-600/10', text: 'text-zinc-400', border: 'border-zinc-600/30' },
-  ready: { bg: 'bg-blue-500/10', text: 'text-blue-400', border: 'border-blue-500/30' },
+  ready: { bg: 'bg-blue-500/10', text: 'text-badge-info', border: 'border-badge-info/30' },
   running: { bg: 'bg-amber-500/10', text: 'text-badge-warning', border: 'border-badge-warning/30' },
   completed: { bg: 'bg-emerald-500/10', text: 'text-badge-success', border: 'border-badge-success/30' },
   failed: { bg: 'bg-red-500/10', text: 'text-badge-danger', border: 'border-red-500/30' },

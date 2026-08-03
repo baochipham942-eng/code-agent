@@ -84,7 +84,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
     if (hasError) {
       baseClasses.push('border-red-500', 'focus:border-badge-danger', 'focus:ring-2', 'focus:ring-red-500/50');
     } else {
-      baseClasses.push('border-zinc-700', 'focus:border-zinc-600', 'focus:ring-2', 'focus:ring-blue-500/50', 'focus:border-blue-500');
+      baseClasses.push('border-zinc-700', 'focus:border-zinc-600', 'focus:ring-2', 'focus:ring-blue-500/50', 'focus:border-badge-info');
     }
 
     // Disabled styles

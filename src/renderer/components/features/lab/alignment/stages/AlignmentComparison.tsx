@@ -107,8 +107,8 @@ export const AlignmentComparison: React.FC<AlignmentComparisonProps> = ({ onBack
       {/* Prompt */}
       <div className="bg-zinc-900 rounded-lg border border-zinc-700 p-4">
         <div className="flex items-center gap-2 mb-2">
-          <MessageSquare className="w-4 h-4 text-blue-400" />
-          <span className="text-sm text-blue-400">{common.userSaidLabel}</span>
+          <MessageSquare className="w-4 h-4 text-badge-info" />
+          <span className="text-sm text-badge-info">{common.userSaidLabel}</span>
         </div>
         <p className="text-base text-zinc-200">{example.prompt}</p>
       </div>
@@ -239,7 +239,7 @@ export const AlignmentComparison: React.FC<AlignmentComparisonProps> = ({ onBack
       {/* 专有名词解释 */}
       <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-700">
         <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
-          <span className="text-blue-400">📖</span>
+          <span className="text-badge-info">📖</span>
           {common.glossaryTitle}
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">

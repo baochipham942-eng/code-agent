@@ -714,7 +714,7 @@ export const ChannelsSettings: React.FC = () => {
       case 'http-api':
         return <Globe className="w-4 h-4 text-indigo-400" />;
       case 'feishu':
-        return <MessageSquare className="w-4 h-4 text-blue-400" />;
+        return <MessageSquare className="w-4 h-4 text-badge-info" />;
       case 'lark':
         return <MessageSquare className="w-4 h-4 text-badge-success" />;
       case 'telegram':

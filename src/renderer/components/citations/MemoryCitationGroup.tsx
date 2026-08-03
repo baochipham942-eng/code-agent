@@ -74,7 +74,7 @@ function MemoryCitationRow({ citation }: { citation: Citation }) {
         <button
           type="button"
           onClick={handleClick}
-          className="text-blue-400 hover:underline font-mono"
+          className="text-badge-info hover:underline font-mono"
           title={citation.source}
         >
           {citation.label}

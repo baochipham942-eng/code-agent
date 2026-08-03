@@ -422,7 +422,7 @@ export const RealModePanel: React.FC = () => {
                   href="https://github.com/yolaucn/minimal-gpt1-pytorch"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex items-center gap-2 text-xs text-blue-400 hover:text-blue-300"
+                  className="flex items-center gap-2 text-xs text-badge-info hover:text-badge-info"
                 >
                   <ExternalLink className="w-3 h-3" />
                   yolaucn/minimal-gpt1-pytorch
@@ -444,7 +444,7 @@ export const RealModePanel: React.FC = () => {
                     <button
                       onClick={handleDownloadProject}
                       disabled={projectUIStatus === 'downloading' || !envReady}
-                      className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-blue-500/20 border border-blue-500/30 text-blue-400 text-sm font-medium hover:bg-blue-500/30 disabled:opacity-50 transition-colors"
+                      className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-blue-500/20 border border-badge-info/30 text-badge-info text-sm font-medium hover:bg-blue-500/30 disabled:opacity-50 transition-colors"
                     >
                       {projectUIStatus === 'downloading' ? (
                         <Loader2 className="w-4 h-4 animate-spin" />
@@ -630,7 +630,7 @@ export const RealModePanel: React.FC = () => {
                       className={`mb-1 ${
                         log.type === 'error' ? 'text-badge-danger' :
                         log.type === 'success' ? 'text-badge-success' :
-                        log.type === 'progress' ? 'text-blue-400' :
+                        log.type === 'progress' ? 'text-badge-info' :
                         'text-zinc-400'
                       }`}
                     >

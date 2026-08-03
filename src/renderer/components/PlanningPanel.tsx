@@ -35,7 +35,7 @@ const StepStatusIcon: React.FC<{ status: TaskStepStatus }> = ({ status }) => {
     case 'completed':
       return <CheckCircle2 className="w-4 h-4 text-badge-success" />;
     case 'in_progress':
-      return <Loader2 className="w-4 h-4 text-blue-400 animate-spin" />;
+      return <Loader2 className="w-4 h-4 text-badge-info animate-spin" />;
     case 'skipped':
       return <SkipForward className="w-4 h-4 text-zinc-500" />;
     default:
@@ -49,7 +49,7 @@ const PhaseStatusIcon: React.FC<{ status: TaskPhaseStatus }> = ({ status }) => {
     case 'completed':
       return <CheckCircle2 className="w-4 h-4 text-badge-success" />;
     case 'in_progress':
-      return <Loader2 className="w-4 h-4 text-blue-400 animate-spin" />;
+      return <Loader2 className="w-4 h-4 text-badge-info animate-spin" />;
     case 'blocked':
       return <XCircle className="w-4 h-4 text-badge-danger" />;
     default:
@@ -105,7 +105,7 @@ const PhaseItem: React.FC<{ phase: TaskPhase; defaultExpanded?: boolean }> = ({
       case 'completed':
         return 'border-badge-success/30 bg-green-500/5';
       case 'in_progress':
-        return 'border-blue-500/30 bg-blue-500/5';
+        return 'border-badge-info/30 bg-blue-500/5';
       case 'blocked':
         return 'border-red-500/30 bg-red-500/5';
       default:

@@ -68,7 +68,7 @@ export const ModelArchitecture: React.FC<Props> = ({ onComplete, onBack }) => {
           {/* 架构图 */}
           <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-700">
             <h3 className="text-sm font-semibold text-zinc-200 mb-4 flex items-center gap-2">
-              <Layers className="w-4 h-4 text-blue-400" />
+              <Layers className="w-4 h-4 text-badge-info" />
               {ma.diagramTitle}
             </h3>
 
@@ -105,7 +105,7 @@ export const ModelArchitecture: React.FC<Props> = ({ onComplete, onBack }) => {
                   onClick={() => setSelectedLayer('attention')}
                   className={`w-full p-2 rounded-lg border mb-2 transition-all ${
                     selectedLayer === 'attention'
-                      ? 'bg-blue-500/20 border-blue-500/50 text-blue-400'
+                      ? 'bg-blue-500/20 border-badge-info/50 text-badge-info'
                       : 'bg-zinc-800 border-zinc-700 text-zinc-400 hover:border-zinc-600'
                   }`}
                 >
@@ -161,12 +161,12 @@ export const ModelArchitecture: React.FC<Props> = ({ onComplete, onBack }) => {
           </div>
 
           {/* 参数统计 */}
-          <div className="p-4 rounded-xl bg-gradient-to-br from-blue-500/10 to-indigo-500/10 border border-blue-500/20">
+          <div className="p-4 rounded-xl bg-gradient-to-br from-blue-500/10 to-indigo-500/10 border border-badge-info/20">
             <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
-              <Box className="w-4 h-4 text-blue-400" />
+              <Box className="w-4 h-4 text-badge-info" />
               {ma.paramsTitle}
             </h3>
-            <div className="text-3xl font-bold text-blue-400 mb-2">
+            <div className="text-3xl font-bold text-badge-info mb-2">
               {ma.paramsValue.replace('{count}', (totalParams / 1e6).toFixed(0))}
             </div>
             <div className="text-sm text-zinc-400">
@@ -213,7 +213,7 @@ export const ModelArchitecture: React.FC<Props> = ({ onComplete, onBack }) => {
             <div className="grid grid-cols-2 gap-3">
               {[
                 { label: ma.configLabels.vocabSize, value: modelConfig.vocabSize, color: 'text-badge-success' },
-                { label: ma.configLabels.blockSize, value: modelConfig.blockSize, color: 'text-blue-400' },
+                { label: ma.configLabels.blockSize, value: modelConfig.blockSize, color: 'text-badge-info' },
                 { label: ma.configLabels.nLayer, value: modelConfig.nLayer, color: 'text-badge-accent' },
                 { label: ma.configLabels.nHead, value: modelConfig.nHead, color: 'text-badge-warning' },
               ].map((item) => (
@@ -242,10 +242,10 @@ export const ModelArchitecture: React.FC<Props> = ({ onComplete, onBack }) => {
                   <div className="text-xs text-zinc-400">{ma.workflowStep1Desc}</div>
                 </div>
               </div>
-              <div className="flex items-center gap-3 p-3 rounded-lg bg-blue-500/10 border border-blue-500/20">
+              <div className="flex items-center gap-3 p-3 rounded-lg bg-blue-500/10 border border-badge-info/20">
                 <span className="text-2xl">🔗</span>
                 <div>
-                  <div className="text-sm text-blue-300 font-medium">{ma.workflowStep2Label}</div>
+                  <div className="text-sm text-badge-info font-medium">{ma.workflowStep2Label}</div>
                   <div className="text-xs text-zinc-400">{ma.workflowStep2Desc}</div>
                 </div>
               </div>
@@ -271,7 +271,7 @@ export const ModelArchitecture: React.FC<Props> = ({ onComplete, onBack }) => {
       {/* 专有名词解释 */}
       <div className="mt-8 p-4 rounded-xl bg-zinc-900 border border-zinc-700">
         <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
-          <span className="text-blue-400">📖</span>
+          <span className="text-badge-info">📖</span>
           {ma.termsTitle}
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">

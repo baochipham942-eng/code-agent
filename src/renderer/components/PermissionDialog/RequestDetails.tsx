@@ -215,7 +215,7 @@ function ConfirmationDiffPreview({ before, after, summary, filePath }: Confirmat
         <div className="text-xs text-zinc-500">{summary}</div>
         <button
           onClick={() => setExpanded(!expanded)}
-          className="text-[10px] text-blue-400 hover:text-blue-300"
+          className="text-[10px] text-badge-info hover:text-badge-info"
         >
           {expanded ? '收起' : '展开 Diff'}
         </button>
@@ -251,7 +251,7 @@ function DetailItem({ label, value, isPath, isCode, isUrl, isDangerous }: Detail
                 : 'bg-zinc-700 border border-zinc-700 text-zinc-400'
               : ''
           }
-          ${isPath ? 'bg-zinc-800 text-blue-400' : ''}
+          ${isPath ? 'bg-zinc-800 text-badge-info' : ''}
           ${isUrl ? 'bg-zinc-800 text-cyan-400' : ''}
           ${!isCode && !isPath && !isUrl ? 'bg-zinc-800 text-zinc-400' : ''}
         `}

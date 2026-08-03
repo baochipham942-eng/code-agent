@@ -64,7 +64,7 @@ function getFileIcon(name: string, isDir: boolean) {
   const ext = name.split('.').pop()?.toLowerCase() ?? '';
   const iconClass = 'w-3.5 h-3.5 flex-shrink-0';
   if (['ts', 'tsx', 'js', 'jsx', 'py', 'rs', 'go', 'java', 'rb', 'vue', 'css', 'scss', 'html'].includes(ext))
-    return <Code2 className={`${iconClass} text-blue-400`} />;
+    return <Code2 className={`${iconClass} text-badge-info`} />;
   if (['md', 'txt', 'json', 'yaml', 'yml', 'toml', 'xml', 'csv'].includes(ext))
     return <FileText className={`${iconClass} text-zinc-400`} />;
   if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'ico'].includes(ext))

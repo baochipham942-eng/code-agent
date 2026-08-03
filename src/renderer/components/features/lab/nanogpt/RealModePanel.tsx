@@ -283,7 +283,7 @@ export const RealModePanel: React.FC = () => {
             className={`w-full flex items-center justify-center gap-2 px-4 py-3 rounded-lg text-sm transition-all ${
               isDownloading
                 ? 'bg-zinc-700 text-zinc-500 cursor-not-allowed'
-                : 'bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 border border-blue-500/30'
+                : 'bg-blue-500/20 text-badge-info hover:bg-blue-500/30 border border-badge-info/30'
             }`}
           >
             {isDownloading ? (
@@ -327,7 +327,7 @@ export const RealModePanel: React.FC = () => {
                     onClick={() => setConfig((c) => ({ ...c, mode: 'pretrain', initFrom: 'scratch' }))}
                     className={`flex-1 px-3 py-2 rounded-lg text-xs transition-all ${
                       config.mode === 'pretrain'
-                        ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
+                        ? 'bg-blue-500/20 text-badge-info border border-badge-info/30'
                         : 'bg-zinc-800 text-zinc-500 border border-zinc-800'
                     }`}
                   >

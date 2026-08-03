@@ -265,7 +265,7 @@ export const Finetuning: React.FC<FinetuningProps> = ({ onComplete, onBack }) =>
                 className={`w-14 h-14 rounded-full flex items-center justify-center border transition-all ${
                   downloadedWeights
                     ? 'bg-emerald-500/20 border-badge-success/50'
-                    : 'bg-blue-500/20 border-blue-500/50 hover:bg-blue-500/30 cursor-pointer'
+                    : 'bg-blue-500/20 border-badge-info/50 hover:bg-blue-500/30 cursor-pointer'
                 }`}
               >
                 {downloadedWeights ? <Check className="w-6 h-6 text-badge-success" /> : <span className="text-2xl">📥</span>}
@@ -415,7 +415,7 @@ export const Finetuning: React.FC<FinetuningProps> = ({ onComplete, onBack }) =>
             </div>
             <div className="text-center p-2 bg-blue-500/10 rounded-lg">
               <div className="text-xs text-zinc-500 mb-1">{ft.roundsMetricLabel}</div>
-              <div className="text-lg font-bold text-blue-400">
+              <div className="text-lg font-bold text-badge-info">
                 {currentStep.toLocaleString()} / {config.maxIters.toLocaleString()}
               </div>
             </div>
@@ -478,7 +478,7 @@ export const Finetuning: React.FC<FinetuningProps> = ({ onComplete, onBack }) =>
       {/* 专有名词解释 */}
       <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-700">
         <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
-          <span className="text-blue-400">📖</span>
+          <span className="text-badge-info">📖</span>
           {ft.glossaryLabel}
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -506,7 +506,7 @@ export const Finetuning: React.FC<FinetuningProps> = ({ onComplete, onBack }) =>
         </button>
         <button
           onClick={onComplete}
-          className="flex items-center gap-2 px-5 py-2.5 bg-blue-500/20 text-blue-400 rounded-lg hover:bg-blue-500/30 border border-blue-500/30 transition-all font-medium"
+          className="flex items-center gap-2 px-5 py-2.5 bg-blue-500/20 text-badge-info rounded-lg hover:bg-blue-500/30 border border-badge-info/30 transition-all font-medium"
         >
           {ft.nextButton}
           <ChevronRight className="w-4 h-4" />

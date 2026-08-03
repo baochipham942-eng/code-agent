@@ -139,7 +139,7 @@ export const RewindPanel: React.FC<RewindPanelProps> = ({ isOpen, onClose }) => 
               }}
               className={`w-full p-3 rounded-lg border cursor-pointer text-left transition-colors ${
                 selectedMessageId === cp.messageId
-                  ? 'border-blue-500/50 bg-blue-500/10'
+                  ? 'border-badge-info/50 bg-blue-500/10'
                   : 'border-zinc-700 hover:border-zinc-600'
               }`}
             >

@@ -174,7 +174,7 @@ const EFFORT_OPTION_CONFIG: Record<EffortLevel, EffortOption> = {
     value: 'medium',
     label: 'Med',
     shortLabel: '中',
-    color: 'text-blue-400',
+    color: 'text-badge-info',
     tint: 'bg-blue-500/15',
   },
   high: {
@@ -246,7 +246,7 @@ export const CAPABILITY_CONFIG: Record<string, { icon: React.ReactNode; color: s
   },
   tool: {
     icon: <Wrench className="w-2.5 h-2.5" />,
-    color: 'bg-blue-500/20 text-blue-300',
+    color: 'bg-blue-500/20 text-badge-info',
   },
   reasoning: {
     icon: <Brain className="w-2.5 h-2.5" />,

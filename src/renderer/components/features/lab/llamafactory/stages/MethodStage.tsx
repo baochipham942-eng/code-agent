@@ -106,10 +106,10 @@ const LoRAVisualization: React.FC<{ rank: number; originalWeightLabel: string; f
       {/* B matrix */}
       <div className="flex flex-col items-center">
         <div
-          className="bg-blue-500/30 rounded border border-blue-500/50"
+          className="bg-blue-500/30 rounded border border-badge-info/50"
           style={{ width: scaledRank * 2, height: originalDim }}
         >
-          <div className="w-full h-full flex items-center justify-center text-xs text-blue-400">
+          <div className="w-full h-full flex items-center justify-center text-xs text-badge-info">
             B
           </div>
         </div>
@@ -162,7 +162,7 @@ export const MethodStage: React.FC<MethodStageProps> = ({ onComplete, onBack }) 
   const getColorClasses = (color: string) => {
     const colors: Record<string, { bg: string; border: string; text: string }> = {
       purple: { bg: 'bg-purple-500/20', border: 'border-badge-accent/30', text: 'text-badge-accent' },
-      blue: { bg: 'bg-blue-500/20', border: 'border-blue-500/30', text: 'text-blue-400' },
+      blue: { bg: 'bg-blue-500/20', border: 'border-badge-info/30', text: 'text-badge-info' },
       emerald: { bg: 'bg-emerald-500/20', border: 'border-badge-success/30', text: 'text-badge-success' },
     };
     return colors[color] || colors.blue;
@@ -259,9 +259,9 @@ export const MethodStage: React.FC<MethodStageProps> = ({ onComplete, onBack }) 
           {m.loraVisualizationTitle}
         </h3>
         <div className="bg-zinc-900 rounded-lg border border-zinc-700 p-4">
-          <div className="mb-4 p-3 rounded-lg bg-blue-500/10 border border-blue-500/20">
+          <div className="mb-4 p-3 rounded-lg bg-blue-500/10 border border-badge-info/20">
             <p className="text-sm text-zinc-400">
-              <span className="text-blue-400 font-medium">{m.loraCoreIdeaLabel}</span>{m.loraCoreIdeaText}
+              <span className="text-badge-info font-medium">{m.loraCoreIdeaLabel}</span>{m.loraCoreIdeaText}
             </p>
             <div className="mt-2 text-xs text-zinc-500">
               {m.loraFormulaLabel}<sub>0</sub> + ΔW ≈ W<sub>0</sub> + B × A
@@ -390,7 +390,7 @@ export const MethodStage: React.FC<MethodStageProps> = ({ onComplete, onBack }) 
       {/* 专有名词 */}
       <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-700">
         <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
-          <span className="text-blue-400">📖</span>
+          <span className="text-badge-info">📖</span>
           {m.glossaryTitle}
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">

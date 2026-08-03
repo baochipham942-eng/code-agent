@@ -377,7 +377,7 @@ export const KeybindingsSettings: React.FC = () => {
                         <p
                           role="alert"
                           data-testid={`keybinding-registration-error-${definition.id}`}
-                          className="mt-1 flex items-start gap-1 text-[11px] text-red-300"
+                          className="mt-1 flex items-start gap-1 text-[11px] text-badge-danger"
                         >
                           <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
                           <span className="break-words">

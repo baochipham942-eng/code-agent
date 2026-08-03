@@ -52,7 +52,7 @@ const DiscussionIcon: React.FC<{ entry: SwarmTimelineEvent }> = ({ entry }) => {
       break;
   }
   if (entry.type === 'swarm:user:message') return <UserCog className={`${cls} text-cyan-400`} />;
-  if (entry.type === 'swarm:agent:message') return <Send className={`${cls} text-blue-400`} />;
+  if (entry.type === 'swarm:agent:message') return <Send className={`${cls} text-badge-info`} />;
   return <MessagesSquare className={`${cls} text-zinc-400`} />;
 };
 

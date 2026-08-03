@@ -240,7 +240,7 @@ export const ProviderDoctorDialog: React.FC<ProviderDoctorDialogProps> = ({
       onClose={onClose}
       title={doctorText.title}
       size="lg"
-      headerIcon={<Stethoscope className="w-5 h-5 text-blue-400" />}
+      headerIcon={<Stethoscope className="w-5 h-5 text-badge-info" />}
       footer={
         <div className="flex w-full items-center justify-between">
           <div>

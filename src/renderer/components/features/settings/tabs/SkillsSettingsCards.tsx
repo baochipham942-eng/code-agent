@@ -44,7 +44,7 @@ export const RecommendedRepoCard: React.FC<RecommendedRepoCardProps> = ({
   return (
     <div className="bg-zinc-800 rounded-lg border border-zinc-700 p-4 flex items-center justify-between">
       <div className="flex items-center gap-3">
-        <Package className="w-5 h-5 text-blue-400 shrink-0" />
+        <Package className="w-5 h-5 text-badge-info shrink-0" />
         <div>
           <h4 className="text-sm font-medium text-zinc-200">{repo.name}</h4>
           {repo.description && (
@@ -97,7 +97,7 @@ export const RecommendedSkillCard: React.FC<RecommendedSkillCardProps> = ({
           <div className="flex items-center gap-2">
             <h5 className="text-sm font-medium text-zinc-200 truncate">{entry.displayName}</h5>
             {entry.badge && (
-              <span className="shrink-0 rounded bg-blue-500/15 px-1.5 py-0.5 text-[10px] text-blue-400">
+              <span className="shrink-0 rounded bg-blue-500/15 px-1.5 py-0.5 text-[10px] text-badge-info">
                 {entry.badge}
               </span>
             )}
@@ -220,7 +220,7 @@ export const SkillSearchResultCard: React.FC<SkillSearchResultCardProps> = ({
               href={skill.skillUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-sm font-medium text-zinc-200 truncate hover:text-blue-400"
+              className="text-sm font-medium text-zinc-200 truncate hover:text-badge-info"
             >
               {skill.name}
             </a>

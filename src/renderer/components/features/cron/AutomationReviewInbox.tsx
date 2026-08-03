@@ -232,7 +232,7 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                       <button /* ds-allow:button: 收件箱行内超小文本按钮（py-1 text-xs），primitive 最小 sm 仍更大 */
                         onClick={() => handleOpenResult(record)}
                         disabled={busyId === record.id}
-                        className="inline-flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-xs text-blue-400 transition-colors hover:bg-blue-500/10 hover:text-blue-300 disabled:opacity-50"
+                        className="inline-flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-xs text-badge-info transition-colors hover:bg-blue-500/10 hover:text-badge-info disabled:opacity-50"
                       >
                         <MessageSquareText className="h-3.5 w-3.5" />
                         {cc.inboxOpenResult}

@@ -104,7 +104,7 @@ export const InferenceTest: React.FC<Props> = ({ onBack }) => {
           {/* 概念说明 */}
           <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-700">
             <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
-              <Sparkles className="w-4 h-4 text-blue-400" />
+              <Sparkles className="w-4 h-4 text-badge-info" />
               {it.howTitle}
             </h3>
             <div className="space-y-3 text-sm text-zinc-400">
@@ -164,7 +164,7 @@ export const InferenceTest: React.FC<Props> = ({ onBack }) => {
               <div>
                 <div className="flex justify-between mb-1">
                   <label className="text-xs text-zinc-400">{it.topKLabel}</label>
-                  <span className="text-xs font-bold text-blue-400">{it.topKValue.replace('{count}', String(topK))}</span>
+                  <span className="text-xs font-bold text-badge-info">{it.topKValue.replace('{count}', String(topK))}</span>
                 </div>
                 <input
                   type="range"
@@ -219,8 +219,8 @@ export const InferenceTest: React.FC<Props> = ({ onBack }) => {
           <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-700">
             <h3 className="text-sm font-semibold text-zinc-200 mb-3">{it.processTitle}</h3>
             <div className="space-y-2 text-sm">
-              <div className="p-2 rounded-lg bg-blue-500/10 border border-blue-500/20">
-                <div className="text-blue-300">{it.processYouSay}</div>
+              <div className="p-2 rounded-lg bg-blue-500/10 border border-badge-info/20">
+                <div className="text-badge-info">{it.processYouSay}</div>
               </div>
               <div className="text-center text-zinc-600">{it.processThinkArrow}</div>
               <div className="p-2 rounded-lg bg-zinc-800">
@@ -272,7 +272,7 @@ export const InferenceTest: React.FC<Props> = ({ onBack }) => {
                     <div
                       className={`max-w-[80%] px-4 py-2 rounded-2xl ${
                         msg.role === 'user'
-                          ? 'bg-blue-500/20 text-blue-100 rounded-br-md'
+                          ? 'bg-blue-500/20 text-badge-info rounded-br-md'
                           : 'bg-zinc-800 text-zinc-200 rounded-bl-md'
                       }`}
                     >
@@ -333,7 +333,7 @@ export const InferenceTest: React.FC<Props> = ({ onBack }) => {
       {/* 专有名词解释 */}
       <div className="mt-8 p-4 rounded-xl bg-zinc-900 border border-zinc-700">
         <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
-          <span className="text-blue-400">📖</span>
+          <span className="text-badge-info">📖</span>
           {it.termsTitle}
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">

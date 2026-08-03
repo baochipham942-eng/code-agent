@@ -66,7 +66,7 @@ export const PreferenceStage: React.FC<PreferenceStageProps> = ({ onComplete, on
   const getColorClasses = (color: string, _isActive: boolean) => {
     const colors: Record<string, { bg: string; border: string; text: string; ring: string }> = {
       purple: { bg: 'bg-purple-500/20', border: 'border-badge-accent/30', text: 'text-badge-accent', ring: 'ring-purple-500/30' },
-      blue: { bg: 'bg-blue-500/20', border: 'border-blue-500/30', text: 'text-blue-400', ring: 'ring-blue-500/30' },
+      blue: { bg: 'bg-blue-500/20', border: 'border-badge-info/30', text: 'text-badge-info', ring: 'ring-blue-500/30' },
       emerald: { bg: 'bg-emerald-500/20', border: 'border-badge-success/30', text: 'text-badge-success', ring: 'ring-emerald-500/30' },
       amber: { bg: 'bg-amber-500/20', border: 'border-badge-warning/30', text: 'text-badge-warning', ring: 'ring-amber-500/30' },
     };
@@ -97,8 +97,8 @@ export const PreferenceStage: React.FC<PreferenceStageProps> = ({ onComplete, on
         </h3>
         <div className="bg-zinc-900 rounded-lg border border-zinc-700 p-4">
           {/* Prompt */}
-          <div className="mb-4 p-3 rounded-lg bg-blue-500/10 border border-blue-500/20">
-            <div className="text-xs text-blue-400 mb-1">{p.userQuestionLabel}</div>
+          <div className="mb-4 p-3 rounded-lg bg-blue-500/10 border border-badge-info/20">
+            <div className="text-xs text-badge-info mb-1">{p.userQuestionLabel}</div>
             <p className="text-sm text-zinc-200">{preferenceExample.prompt}</p>
           </div>
 
@@ -270,8 +270,8 @@ export const PreferenceStage: React.FC<PreferenceStageProps> = ({ onComplete, on
           <div className="bg-zinc-900 rounded-lg border border-zinc-700 p-4">
             {comparisonExamples.map((example, idx) => (
               <div key={idx}>
-                <div className="mb-3 p-2 rounded bg-blue-500/10 border border-blue-500/20">
-                  <span className="text-xs text-blue-400">{p.comparisonQuestionLabel}</span>
+                <div className="mb-3 p-2 rounded bg-blue-500/10 border border-badge-info/20">
+                  <span className="text-xs text-badge-info">{p.comparisonQuestionLabel}</span>
                   <span className="text-sm text-zinc-400 ml-2">{example.prompt}</span>
                 </div>
 
@@ -300,9 +300,9 @@ export const PreferenceStage: React.FC<PreferenceStageProps> = ({ onComplete, on
         <h3 className="text-sm font-medium text-zinc-400">{p.workflowSectionTitle}</h3>
         <div className="bg-zinc-900 rounded-lg border border-zinc-700 p-4">
           <div className="flex items-center justify-between">
-            <div className="flex-1 text-center p-3 rounded-lg bg-blue-500/10 border border-blue-500/20">
+            <div className="flex-1 text-center p-3 rounded-lg bg-blue-500/10 border border-badge-info/20">
               <div className="text-2xl mb-1">📝</div>
-              <div className="text-sm font-medium text-blue-400">{p.workflowSft.title}</div>
+              <div className="text-sm font-medium text-badge-info">{p.workflowSft.title}</div>
               <div className="text-xs text-zinc-500">{p.workflowSft.desc}</div>
             </div>
             <ArrowRight className="w-6 h-6 text-zinc-600 mx-4" />
@@ -340,7 +340,7 @@ export const PreferenceStage: React.FC<PreferenceStageProps> = ({ onComplete, on
       {/* 专有名词 */}
       <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-700">
         <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
-          <span className="text-blue-400">📖</span>
+          <span className="text-badge-info">📖</span>
           {p.glossaryTitle}
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">

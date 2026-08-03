@@ -32,9 +32,9 @@ const LazyPrismCodeBlock = lazy(() => import('./PrismCodeBlock'));
 
 // Language display names and colors
 const languageConfig: Record<string, { color: string; name: string }> = {
-  typescript: { color: 'text-blue-400', name: 'TypeScript' },
-  ts: { color: 'text-blue-400', name: 'TypeScript' },
-  tsx: { color: 'text-blue-400', name: 'TSX' },
+  typescript: { color: 'text-badge-info', name: 'TypeScript' },
+  ts: { color: 'text-badge-info', name: 'TypeScript' },
+  tsx: { color: 'text-badge-info', name: 'TSX' },
   javascript: { color: 'text-badge-warning', name: 'JavaScript' },
   js: { color: 'text-badge-warning', name: 'JavaScript' },
   jsx: { color: 'text-badge-warning', name: 'JSX' },
@@ -49,7 +49,7 @@ const languageConfig: Record<string, { color: string; name: string }> = {
   zsh: { color: 'text-badge-success', name: 'Zsh' },
   json: { color: 'text-badge-warning', name: 'JSON' },
   html: { color: 'text-badge-warning', name: 'HTML' },
-  css: { color: 'text-blue-400', name: 'CSS' },
+  css: { color: 'text-badge-info', name: 'CSS' },
   scss: { color: 'text-pink-400', name: 'SCSS' },
   sql: { color: 'text-badge-accent', name: 'SQL' },
   yaml: { color: 'text-badge-danger', name: 'YAML' },
@@ -57,8 +57,8 @@ const languageConfig: Record<string, { color: string; name: string }> = {
   markdown: { color: 'text-zinc-400', name: 'Markdown' },
   md: { color: 'text-zinc-400', name: 'Markdown' },
   java: { color: 'text-badge-danger', name: 'Java' },
-  c: { color: 'text-blue-300', name: 'C' },
-  cpp: { color: 'text-blue-300', name: 'C++' },
+  c: { color: 'text-badge-info', name: 'C' },
+  cpp: { color: 'text-badge-info', name: 'C++' },
   csharp: { color: 'text-badge-accent', name: 'C#' },
   cs: { color: 'text-badge-accent', name: 'C#' },
   php: { color: 'text-indigo-400', name: 'PHP' },
@@ -79,7 +79,7 @@ const languageConfig: Record<string, { color: string; name: string }> = {
   mermaid: { color: 'text-pink-300', name: 'Mermaid' },
   chart: { color: 'text-badge-success', name: 'Chart' },
   spreadsheet: { color: 'text-badge-success', name: 'Spreadsheet' },
-  document: { color: 'text-blue-400', name: 'Document' },
+  document: { color: 'text-badge-info', name: 'Document' },
   generative_ui: { color: 'text-badge-accent', name: 'Generative UI' },
   neo_ui: { color: 'text-badge-accent', name: 'Neo Interactive UI' },
 };

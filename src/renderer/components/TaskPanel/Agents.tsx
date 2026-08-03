@@ -10,7 +10,7 @@ import { useI18n } from '../../hooks/useI18n';
 
 // Agent 角色颜色映射
 const AGENT_COLORS: Record<string, string> = {
-  main: 'text-blue-400',
+  main: 'text-badge-info',
   coder: 'text-badge-success',
   reviewer: 'text-badge-warning',
   explore: 'text-cyan-400',
@@ -39,7 +39,7 @@ export const Agents: React.FC = () => {
   // 协作模式信息（使用 i18n）
   const patternInfoMap: Record<NonNullPattern, { icon: React.ReactNode; label: string; color: string }> = {
     single: { icon: <Bot className="w-3 h-3" />, label: t.taskPanel.patternSingle, color: 'text-zinc-400' },
-    sequential: { icon: <Workflow className="w-3 h-3" />, label: t.taskPanel.patternSequential, color: 'text-blue-400' },
+    sequential: { icon: <Workflow className="w-3 h-3" />, label: t.taskPanel.patternSequential, color: 'text-badge-info' },
     parallel: { icon: <Users className="w-3 h-3" />, label: t.taskPanel.patternParallel, color: 'text-badge-success' },
     hierarchical: { icon: <GitBranch className="w-3 h-3" />, label: t.taskPanel.patternHierarchical, color: 'text-badge-accent' },
   };
@@ -54,7 +54,7 @@ export const Agents: React.FC = () => {
         className="flex items-center w-full"
       >
         <div className="flex items-center gap-2 flex-1 min-w-0">
-          <Bot className="w-4 h-4 text-blue-400 flex-shrink-0" />
+          <Bot className="w-4 h-4 text-badge-info flex-shrink-0" />
           <span className="text-xs font-medium text-zinc-400 uppercase tracking-wide">
             {t.taskPanel.agents}
           </span>

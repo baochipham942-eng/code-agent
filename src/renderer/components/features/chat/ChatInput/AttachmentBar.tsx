@@ -32,7 +32,7 @@ export const AttachmentIcon: React.FC<{ category: AttachmentCategory; className?
     case 'archive':
       return <Archive className={`${iconClass} text-badge-warning`} />;
     case 'code':
-      return <Code className={`${iconClass} text-blue-400`} />;
+      return <Code className={`${iconClass} text-badge-info`} />;
     case 'data':
       return <Database className={`${iconClass} text-badge-warning`} />;
     case 'html':

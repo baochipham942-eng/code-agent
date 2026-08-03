@@ -12,7 +12,7 @@ import type { Translations } from '../../../i18n';
 
 const phaseClassName: Record<SwarmExecutionPhase, string> = {
   idle: 'bg-zinc-700/60 text-zinc-300',
-  planning: 'bg-blue-500/15 text-blue-300',
+  planning: 'bg-blue-500/15 text-badge-info',
   waiting_approval: 'bg-amber-500/15 text-badge-warning',
   executing: 'bg-primary-500/15 text-badge-accent',
   completed: 'bg-emerald-500/15 text-badge-success',

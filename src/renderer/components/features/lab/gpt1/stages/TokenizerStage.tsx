@@ -74,7 +74,7 @@ export const TokenizerStage: React.FC<Props> = ({ onComplete, onBack }) => {
           {/* 概念说明 */}
           <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-700">
             <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
-              <BookOpen className="w-4 h-4 text-blue-400" />
+              <BookOpen className="w-4 h-4 text-badge-info" />
               {tk.whyTitle}
             </h3>
             <p className="text-sm text-zinc-400 leading-relaxed mb-3">
@@ -98,10 +98,10 @@ export const TokenizerStage: React.FC<Props> = ({ onComplete, onBack }) => {
                   <div className="text-xs text-zinc-500 mt-1">{tk.ruleCommonDesc}</div>
                 </div>
               </div>
-              <div className="flex items-start gap-3 p-3 rounded-lg bg-blue-500/10 border border-blue-500/20">
+              <div className="flex items-start gap-3 p-3 rounded-lg bg-blue-500/10 border border-badge-info/20">
                 <span className="text-xl">✂️</span>
                 <div>
-                  <div className="text-blue-300 font-medium">{tk.ruleRareLabel}</div>
+                  <div className="text-badge-info font-medium">{tk.ruleRareLabel}</div>
                   <div className="text-xs text-zinc-500 mt-1">{tk.ruleRareDesc}</div>
                 </div>
               </div>
@@ -147,9 +147,9 @@ export const TokenizerStage: React.FC<Props> = ({ onComplete, onBack }) => {
         {/* 右侧：交互区域 */}
         <div className="space-y-6">
           {/* 实时分词演示 */}
-          <div className="p-4 rounded-xl bg-gradient-to-br from-blue-500/10 to-indigo-500/10 border border-blue-500/20">
+          <div className="p-4 rounded-xl bg-gradient-to-br from-blue-500/10 to-indigo-500/10 border border-badge-info/20">
             <h3 className="text-sm font-semibold text-zinc-200 mb-4 flex items-center gap-2">
-              <Zap className="w-4 h-4 text-blue-400" />
+              <Zap className="w-4 h-4 text-badge-info" />
               {tk.liveTitle}
             </h3>
 
@@ -161,7 +161,7 @@ export const TokenizerStage: React.FC<Props> = ({ onComplete, onBack }) => {
                 value={inputText}
                 onChange={(e) => setInputText(e.target.value)}
                 placeholder={tk.liveInputPlaceholder}
-                className="w-full px-3 py-2 rounded-lg bg-zinc-900 border border-zinc-700 text-sm text-zinc-200 placeholder-zinc-500 focus:outline-hidden focus:border-blue-500"
+                className="w-full px-3 py-2 rounded-lg bg-zinc-900 border border-zinc-700 text-sm text-zinc-200 placeholder-zinc-500 focus:outline-hidden focus:border-badge-info"
               />
             </div>
 
@@ -177,7 +177,7 @@ export const TokenizerStage: React.FC<Props> = ({ onComplete, onBack }) => {
                     <span className="text-sm text-zinc-200 font-medium">
                       {token.token === '\n' ? '\\n' : token.token === ' ' ? '␣' : token.token}
                     </span>
-                    <span className="text-xs text-blue-400 font-mono">{token.id}</span>
+                    <span className="text-xs text-badge-info font-mono">{token.id}</span>
                   </div>
                 ))}
                 {tokens.length === 0 && (
@@ -189,7 +189,7 @@ export const TokenizerStage: React.FC<Props> = ({ onComplete, onBack }) => {
             {/* 统计信息 */}
             <div className="grid grid-cols-2 gap-3">
               <div className="p-3 rounded-lg bg-zinc-900 border border-zinc-700">
-                <div className="text-xl font-bold text-blue-400">{tokens.length}</div>
+                <div className="text-xl font-bold text-badge-info">{tokens.length}</div>
                 <div className="text-xs text-zinc-500">{tk.liveTokenCount}</div>
               </div>
               <div className="p-3 rounded-lg bg-zinc-900 border border-zinc-700">
@@ -235,10 +235,10 @@ export const TokenizerStage: React.FC<Props> = ({ onComplete, onBack }) => {
                   <span className="text-badge-success font-bold">{tk.encodeExampleTo}</span>
                 </div>
               </div>
-              <div className="p-3 rounded-lg bg-blue-500/10 border border-blue-500/20">
-                <div className="text-xs text-blue-400 mb-1">{tk.decodeLabel}</div>
+              <div className="p-3 rounded-lg bg-blue-500/10 border border-badge-info/20">
+                <div className="text-xs text-badge-info mb-1">{tk.decodeLabel}</div>
                 <div className="text-sm">
-                  <span className="text-blue-400 font-bold">{tk.decodeExampleFrom}</span>
+                  <span className="text-badge-info font-bold">{tk.decodeExampleFrom}</span>
                   <span className="text-zinc-600 mx-2">{tk.decodeArrow}</span>
                   <span className="text-zinc-400">{tk.decodeExampleTo}</span>
                 </div>
@@ -254,7 +254,7 @@ export const TokenizerStage: React.FC<Props> = ({ onComplete, onBack }) => {
       {/* 专有名词解释 */}
       <div className="mt-8 p-4 rounded-xl bg-zinc-900 border border-zinc-700">
         <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
-          <span className="text-blue-400">📖</span>
+          <span className="text-badge-info">📖</span>
           {tk.termsTitle}
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">

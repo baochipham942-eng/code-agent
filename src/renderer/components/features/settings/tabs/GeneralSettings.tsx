@@ -354,12 +354,12 @@ export const GeneralSettings: React.FC = () => {
       <WebModeBanner />
 
       {showMigrationBanner && (
-        <div className="rounded-lg border border-blue-500/30 bg-blue-500/10 p-3">
+        <div className="rounded-lg border border-badge-info/30 bg-blue-500/10 p-3">
           <div className="flex items-start gap-2">
-            <Info className="mt-0.5 h-4 w-4 shrink-0 text-blue-400" />
+            <Info className="mt-0.5 h-4 w-4 shrink-0 text-badge-info" />
             <div className="min-w-0 flex-1">
-              <h4 className="text-sm font-medium text-blue-300">{generalText.migration.title}</h4>
-              <p className="mt-1 text-xs leading-relaxed text-blue-400/80">
+              <h4 className="text-sm font-medium text-badge-info">{generalText.migration.title}</h4>
+              <p className="mt-1 text-xs leading-relaxed text-badge-info/80">
                 {generalText.migration.description}
               </p>
               <div className="mt-2 flex items-center gap-2">
@@ -367,7 +367,7 @@ export const GeneralSettings: React.FC = () => {
                   type="button"
                   onClick={handleAckMigration}
                   disabled={isWebMode()}
-                  className="rounded border border-blue-500/40 bg-blue-500/10 px-2 py-1 text-xs text-blue-200 hover:bg-blue-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="rounded border border-badge-info/40 bg-blue-500/10 px-2 py-1 text-xs text-badge-info hover:bg-blue-500/20 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {generalText.migration.acknowledge}
                 </button>
@@ -375,7 +375,7 @@ export const GeneralSettings: React.FC = () => {
                   href="https://github.com/baochipham942-eng/code-agent/releases/latest"
                   target="_blank"
                   rel="noreferrer"
-                  className="text-xs text-blue-400 underline hover:text-blue-300"
+                  className="text-xs text-badge-info underline hover:text-badge-info"
                 >
                   {generalText.migration.releaseNotes}
                 </a>
@@ -385,7 +385,7 @@ export const GeneralSettings: React.FC = () => {
               type="button"
               onClick={handleAckMigration}
               disabled={isWebMode()}
-              className="text-blue-300/60 hover:text-blue-200 disabled:cursor-not-allowed disabled:opacity-50"
+              className="text-badge-info/60 hover:text-badge-info disabled:cursor-not-allowed disabled:opacity-50"
               aria-label={t.common.close}
             >
               <X className="h-4 w-4" />
@@ -455,7 +455,7 @@ export const GeneralSettings: React.FC = () => {
                       </td>
                       <td className="px-3 py-3 align-middle">
                         {row.selected ? (
-                          <span className="inline-flex items-center gap-1 rounded border border-blue-500/30 bg-blue-500/10 px-2 py-1 text-blue-300">
+                          <span className="inline-flex items-center gap-1 rounded border border-badge-info/30 bg-blue-500/10 px-2 py-1 text-badge-info">
                             <CheckCircle className="h-3 w-3" />
                             {generalText.controlPlane.currentEnabled}
                           </span>
@@ -676,7 +676,7 @@ export const GeneralSettings: React.FC = () => {
           </div>
           <div className="rounded-lg border border-zinc-800 bg-zinc-950/30 p-3">
             <div className="mb-1 flex items-center gap-2 text-zinc-200">
-              <Bot className="h-4 w-4 text-blue-300" />
+              <Bot className="h-4 w-4 text-badge-info" />
               {generalText.semantics.boundaryTitle}
             </div>
             <p>{generalText.semantics.boundaryDescription}</p>

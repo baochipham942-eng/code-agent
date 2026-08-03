@@ -441,7 +441,7 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
               onClick={() => {
                 window.domainAPI?.invoke('workspace', 'openPath', { filePath: text });
               }}
-              className="inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5 rounded-md bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 hover:text-blue-300 border border-blue-500/20 hover:border-blue-500/40 transition-all cursor-pointer text-sm font-medium"
+              className="inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5 rounded-md bg-blue-500/10 text-badge-info hover:bg-blue-500/20 hover:text-badge-info border border-badge-info/20 hover:border-badge-info/40 transition-all cursor-pointer text-sm font-medium"
               title="打开文件"
             >
               <ExternalLink className="w-3 h-3 opacity-60" />
@@ -512,7 +512,7 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
               title="点击预览"
             >
               {children}
-              <Play className="w-3 h-3 opacity-60 text-blue-400" />
+              <Play className="w-3 h-3 opacity-60 text-badge-info" />
             </a>
           );
         }

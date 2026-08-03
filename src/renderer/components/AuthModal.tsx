@@ -224,7 +224,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               onClick={() => handleModeChange('signin')}
               className={`flex-1 pb-2 text-sm transition-colors ${
                 mode === 'signin'
-                  ? 'text-blue-400 border-b-2 border-blue-400'
+                  ? 'text-badge-info border-b-2 border-badge-info'
                   : 'text-zinc-400 hover:text-zinc-200'
               }`}
             >
@@ -235,7 +235,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               onClick={() => handleModeChange('signup')}
               className={`flex-1 pb-2 text-sm transition-colors ${
                 mode === 'signup'
-                  ? 'text-blue-400 border-b-2 border-blue-400'
+                  ? 'text-badge-info border-b-2 border-badge-info'
                   : 'text-zinc-400 hover:text-zinc-200'
               }`}
             >
@@ -305,7 +305,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 <button
                   type="button"
                   onClick={() => handleModeChange('reset')}
-                  className="text-sm text-zinc-400 hover:text-blue-400 transition-colors"
+                  className="text-sm text-zinc-400 hover:text-badge-info transition-colors"
                 >
                   <KeyRound className="w-3 h-3 inline mr-1" />
                   忘记密码？

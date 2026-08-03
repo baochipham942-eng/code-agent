@@ -73,7 +73,7 @@ const ActionBar = memo(function ActionBar({
     : paragraph.type === 'list-item' ? t.generativeUI.listItem : t.generativeUI.paragraph;
 
   const actions = [
-    { key: 'rewrite', label: t.generativeUI.rewrite, icon: Pencil, color: 'text-blue-400 bg-blue-500/10 hover:bg-blue-500/20 border-blue-500/20' },
+    { key: 'rewrite', label: t.generativeUI.rewrite, icon: Pencil, color: 'text-badge-info bg-blue-500/10 hover:bg-blue-500/20 border-badge-info/20' },
     { key: 'simplify', label: t.generativeUI.simplify, icon: Scissors, color: 'text-badge-success bg-emerald-500/10 hover:bg-emerald-500/20 border-badge-success/20' },
     { key: 'insert_after', label: t.generativeUI.insertAfter, icon: ListPlus, color: 'text-badge-accent bg-purple-500/10 hover:bg-purple-500/20 border-badge-accent/20' },
     { key: 'delete', label: t.common.delete, icon: Trash2, color: 'text-badge-danger bg-red-500/10 hover:bg-red-500/20 border-red-500/20' },
@@ -229,8 +229,8 @@ export const DocumentBlock = memo(function DocumentBlock({
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-2 bg-zinc-800 border-b border-zinc-700">
         <div className="flex items-center gap-2">
-          <FileText className="w-3.5 h-3.5 text-blue-400" />
-          <span className="text-xs font-medium text-blue-400">
+          <FileText className="w-3.5 h-3.5 text-badge-info" />
+          <span className="text-xs font-medium text-badge-info">
             {parsedSpec.title || t.generativeUI.document}
           </span>
           <span className="text-xs text-zinc-500">

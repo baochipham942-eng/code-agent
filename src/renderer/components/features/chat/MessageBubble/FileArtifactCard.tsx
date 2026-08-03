@@ -43,7 +43,7 @@ function pickIcon(ext: string): React.ReactNode {
   const cls = 'h-3.5 w-3.5 flex-shrink-0';
   if (['md', 'mdx', 'txt'].includes(ext)) return <FileText className={`${cls} text-zinc-400`} />;
   if (['html', 'htm'].includes(ext)) return <Code className={`${cls} text-badge-warning`} />;
-  if (['jsx', 'tsx', 'js', 'ts'].includes(ext)) return <Code className={`${cls} text-blue-400`} />;
+  if (['jsx', 'tsx', 'js', 'ts'].includes(ext)) return <Code className={`${cls} text-badge-info`} />;
   if (['csv', 'tsv'].includes(ext)) return <FileSpreadsheet className={`${cls} text-badge-success`} />;
   if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'].includes(ext)) return <ImageIcon className={`${cls} text-badge-success`} />;
   return <File className={`${cls} text-zinc-500`} />;

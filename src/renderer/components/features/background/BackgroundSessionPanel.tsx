@@ -21,7 +21,7 @@ const BackgroundSessionItem: React.FC<{
   onForeground: () => void;
 }> = ({ session, onForeground }) => {
   const statusIcon = {
-    running: <Loader2 className="w-4 h-4 animate-spin text-blue-400" />,
+    running: <Loader2 className="w-4 h-4 animate-spin text-badge-info" />,
     completed: <CheckCircle className="w-4 h-4 text-badge-success" />,
     failed: <XCircle className="w-4 h-4 text-badge-danger" />,
   }[session.status];
@@ -69,7 +69,7 @@ export const BackgroundSessionPanel: React.FC = () => {
         onClick={() => setIsMinimized(false)}
         className="fixed bottom-4 right-4 flex items-center gap-2 px-3 py-2 bg-zinc-700 hover:bg-zinc-600/90 backdrop-blur-sm border border-zinc-700 rounded-full shadow-lg transition-colors z-50"
       >
-        <Loader2 className="w-4 h-4 animate-spin text-blue-400" />
+        <Loader2 className="w-4 h-4 animate-spin text-badge-info" />
         <span className="text-sm text-zinc-200">
           {backgroundSessions.length} 个后台任务
         </span>

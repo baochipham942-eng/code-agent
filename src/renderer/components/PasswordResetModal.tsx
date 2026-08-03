@@ -86,7 +86,7 @@ export const PasswordResetModal: React.FC = () => {
       ) : (
         /* Reset form */
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="flex items-center gap-2 p-3 rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-400 text-sm mb-4">
+          <div className="flex items-center gap-2 p-3 rounded-lg bg-blue-500/10 border border-badge-info/20 text-badge-info text-sm mb-4">
             <KeyRound className="w-4 h-4 flex-shrink-0" />
             <span>请设置您的新密码</span>
           </div>

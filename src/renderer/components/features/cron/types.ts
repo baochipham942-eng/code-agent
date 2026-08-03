@@ -368,7 +368,7 @@ export function getExecutionStatusMeta(status: CronJobStatus): { label: string; 
     case 'completed':
       return { label: '成功', className: 'text-badge-success bg-emerald-500/10' };
     case 'running':
-      return { label: '运行中', className: 'text-blue-300 bg-blue-500/10' };
+      return { label: '运行中', className: 'text-badge-info bg-blue-500/10' };
     case 'failed':
       return { label: '失败', className: 'text-badge-danger bg-red-500/10' };
     case 'cancelled':

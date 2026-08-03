@@ -47,8 +47,8 @@ const variantStyles: Record<IconButtonVariant, string> = {
   ].join(' '),
   active: [
     'bg-blue-500/20',
-    'text-blue-400',
-    'disabled:text-blue-400/50',
+    'text-badge-info',
+    'disabled:text-badge-info/50',
   ].join(' '),
   outline: [
     'bg-transparent hover:bg-white/5',

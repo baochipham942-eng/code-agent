@@ -143,7 +143,7 @@ export function buildConfigScopeTiles(summary: ConfigScopeSummary | null): Confi
 function scopeStatusClass(status: ConfigScopeItemStatus): string {
   if (status === 'active') return 'border-badge-success/30 bg-emerald-500/10 text-badge-success';
   if (status === 'warning') return 'border-badge-warning/30 bg-amber-500/10 text-badge-warning';
-  if (status === 'present') return 'border-blue-500/30 bg-blue-500/10 text-blue-300';
+  if (status === 'present') return 'border-badge-info/30 bg-blue-500/10 text-badge-info';
   return 'border-zinc-700 bg-zinc-900 text-zinc-500';
 }
 
@@ -175,7 +175,7 @@ function scopeLayerLabel(
 }
 
 function scopeLayerClass(layerId: ConfigScopeLayerId): string {
-  if (layerId === 'user') return 'border-blue-500/30 bg-blue-500/10 text-blue-300';
+  if (layerId === 'user') return 'border-badge-info/30 bg-blue-500/10 text-badge-info';
   if (layerId === 'project') return 'border-badge-success/30 bg-emerald-500/10 text-badge-success';
   if (layerId === 'local') return 'border-badge-warning/30 bg-amber-500/10 text-badge-warning';
   return 'border-zinc-600 bg-zinc-800 text-zinc-300';
@@ -194,7 +194,7 @@ function shareabilityLabel(
 function safetySeverityClass(severity: ConfigSafetySeverity): string {
   if (severity === 'critical') return 'border-red-500/30 bg-red-500/10 text-badge-danger';
   if (severity === 'warning') return 'border-badge-warning/30 bg-amber-500/10 text-badge-warning';
-  return 'border-blue-500/30 bg-blue-500/10 text-blue-300';
+  return 'border-badge-info/30 bg-blue-500/10 text-badge-info';
 }
 
 function safetySeverityLabel(

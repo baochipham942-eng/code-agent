@@ -45,7 +45,7 @@ export const LoopStatusBar: React.FC<LoopStatusBarProps> = ({ sessionId }) => {
       {running.map((l) => (
         <div
           key={l.id}
-          className="flex items-center gap-2 rounded-lg border border-blue-500/30 bg-blue-500/10 px-3 py-1.5 text-xs text-blue-200"
+          className="flex items-center gap-2 rounded-lg border border-badge-info/30 bg-blue-500/10 px-3 py-1.5 text-xs text-badge-info"
         >
           <RefreshCw size={13} className="shrink-0 animate-spin" />
           <span className="shrink-0 font-medium">
@@ -54,13 +54,13 @@ export const LoopStatusBar: React.FC<LoopStatusBarProps> = ({ sessionId }) => {
               ? t.loopStatusBar.intervalSuffix.replace('{s}', String(Math.round(l.intervalMs / 1000)))
               : t.loopStatusBar.selfPacedSuffix}
           </span>
-          <span className="min-w-0 flex-1 truncate text-blue-300/80" title={l.prompt}>
+          <span className="min-w-0 flex-1 truncate text-badge-info/80" title={l.prompt}>
             {l.prompt}
           </span>
           <button
             type="button"
             onClick={() => void stop(l.id)}
-            className="flex shrink-0 items-center gap-1 rounded-md bg-blue-500/20 px-2 py-0.5 text-blue-100 hover:bg-red-500/30 hover:text-badge-danger"
+            className="flex shrink-0 items-center gap-1 rounded-md bg-blue-500/20 px-2 py-0.5 text-badge-info hover:bg-red-500/30 hover:text-badge-danger"
           >
             <Square size={11} />
             {t.loopStatusBar.stop}

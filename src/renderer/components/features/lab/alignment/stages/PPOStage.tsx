@@ -115,9 +115,9 @@ export const PPOStage: React.FC<PPOStageProps> = ({ onComplete, onBack }) => {
         <h3 className="text-sm font-medium text-zinc-400">{common.analogyTitle}</h3>
         <div className="bg-zinc-900 rounded-lg border border-zinc-700 p-4">
           <div className="grid grid-cols-4 gap-3 text-center">
-            <div className="p-3 bg-blue-500/10 rounded-lg border border-blue-500/20">
+            <div className="p-3 bg-blue-500/10 rounded-lg border border-badge-info/20">
               <div className="text-2xl mb-1">🎾</div>
-              <div className="text-xs text-blue-400">{s.analogyCards.practiceServe}</div>
+              <div className="text-xs text-badge-info">{s.analogyCards.practiceServe}</div>
             </div>
             <div className="p-3 bg-amber-500/10 rounded-lg border border-badge-warning/20">
               <div className="text-2xl mb-1">📊</div>
@@ -134,7 +134,7 @@ export const PPOStage: React.FC<PPOStageProps> = ({ onComplete, onBack }) => {
           </div>
           <div className="mt-3 p-3 bg-zinc-800 rounded-lg text-center">
             <p className="text-xs text-zinc-400">
-              {s.cycleIntro}<span className="text-blue-400">{s.cycleWrite}</span> →
+              {s.cycleIntro}<span className="text-badge-info">{s.cycleWrite}</span> →
               <span className="text-badge-warning">{s.cycleScore}</span> →
               <span className="text-badge-accent">{s.cycleAdjust}</span> →
               <span className="text-badge-success">{s.cycleImprove}</span>{s.cycleOutro}
@@ -244,7 +244,7 @@ export const PPOStage: React.FC<PPOStageProps> = ({ onComplete, onBack }) => {
               <div className="text-xs text-zinc-500 mb-1">{common.statusLabel}</div>
               <div className={`text-lg font-medium ${
                 currentTraining.score >= 90 ? 'text-badge-success' :
-                currentTraining.score >= 70 ? 'text-blue-400' :
+                currentTraining.score >= 70 ? 'text-badge-info' :
                 currentTraining.score >= 50 ? 'text-badge-warning' : 'text-zinc-400'
               }`}>
                 {currentTraining.improvement}
@@ -310,7 +310,7 @@ export const PPOStage: React.FC<PPOStageProps> = ({ onComplete, onBack }) => {
       {/* 专有名词解释 */}
       <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-700">
         <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
-          <span className="text-blue-400">📖</span>
+          <span className="text-badge-info">📖</span>
           {common.glossaryTitle}
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">

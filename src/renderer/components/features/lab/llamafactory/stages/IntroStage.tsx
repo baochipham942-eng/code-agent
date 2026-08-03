@@ -56,7 +56,7 @@ export const IntroStage: React.FC<IntroStageProps> = ({ onComplete }) => {
   const getColorClasses = (color: string, _isActive: boolean) => {
     const colors: Record<string, { bg: string; border: string; text: string }> = {
       zinc: { bg: 'bg-zinc-600/20', border: 'border-zinc-600/30', text: 'text-zinc-400' },
-      blue: { bg: 'bg-blue-500/20', border: 'border-blue-500/30', text: 'text-blue-400' },
+      blue: { bg: 'bg-blue-500/20', border: 'border-badge-info/30', text: 'text-badge-info' },
       purple: { bg: 'bg-purple-500/20', border: 'border-badge-accent/30', text: 'text-badge-accent' },
       emerald: { bg: 'bg-emerald-500/20', border: 'border-badge-success/30', text: 'text-badge-success' },
       amber: { bg: 'bg-amber-500/20', border: 'border-badge-warning/30', text: 'text-badge-warning' },
@@ -283,7 +283,7 @@ export const IntroStage: React.FC<IntroStageProps> = ({ onComplete }) => {
       {/* 专有名词 */}
       <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-700">
         <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
-          <span className="text-blue-400">📖</span>
+          <span className="text-badge-info">📖</span>
           {i.glossaryTitle}
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">

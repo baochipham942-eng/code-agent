@@ -314,7 +314,7 @@ const CrossSessionResultRow: React.FC<{
           {item.sessionTitle || item.sessionId.slice(0, 8)}
         </span>
         <span className={`text-[10px] px-1.5 py-0.5 rounded ${
-          item.role === 'user' ? 'bg-blue-900/40 text-blue-400' : 'bg-emerald-900/40 text-badge-success'
+          item.role === 'user' ? 'bg-blue-900/40 text-badge-info' : 'bg-emerald-900/40 text-badge-success'
         }`}>
           {roleLabel}
         </span>
@@ -330,4 +330,3 @@ const CrossSessionResultRow: React.FC<{
     </button>
   );
 };
-

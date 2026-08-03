@@ -385,7 +385,7 @@ const TimeCapabilityPanel: React.FC = () => {
           type="button"
           onClick={() => void handleTriggerJob(job.id)}
           disabled={isTriggering}
-          className="inline-flex items-center justify-center gap-1.5 rounded-md border border-blue-500/30 px-2.5 py-1.5 text-xs text-blue-300 transition-colors hover:bg-blue-500/10 disabled:cursor-not-allowed disabled:opacity-60"
+          className="inline-flex items-center justify-center gap-1.5 rounded-md border border-badge-info/30 px-2.5 py-1.5 text-xs text-badge-info transition-colors hover:bg-blue-500/10 disabled:cursor-not-allowed disabled:opacity-60"
         >
           {isTriggering ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
           手动触发
@@ -692,7 +692,7 @@ const CapabilityFixRow: React.FC<{
               disabled={loading}
               className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-[11px] transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
                 action.emphasis === 'primary'
-                  ? 'border-blue-500/30 text-blue-300 hover:bg-blue-500/10'
+                  ? 'border-badge-info/30 text-badge-info hover:bg-blue-500/10'
                   : 'border-zinc-700 text-zinc-300 hover:bg-zinc-800'
               }`}
             >

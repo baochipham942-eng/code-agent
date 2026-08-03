@@ -215,7 +215,7 @@ export const ActivityPanel: React.FC = () => {
   return (
     <FullScreenPage testId="activity-panel" variant="inline">
       <FullScreenPageHeader
-        icon={<Activity className="h-4 w-4 text-cyan-300" />}
+        icon={<Activity className="h-4 w-4 text-badge-info" />}
         title="Activity"
         description={ap.header.description}
         badge={<Pill tone={model.modeTone}>{model.modeLabel}</Pill>}

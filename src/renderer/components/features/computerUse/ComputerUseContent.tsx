@@ -66,9 +66,9 @@ function statusToneClass(tone: StatusTone): string {
     case 'ready':
       return 'border-badge-success/30 bg-emerald-500/10 text-badge-success';
     case 'blocked':
-      return 'border-rose-500/30 bg-rose-500/10 text-rose-300';
+      return 'border-badge-danger/30 bg-badge-danger text-badge-danger';
     case 'warning':
-      return 'border-badge-warning/30 bg-amber-500/10 text-badge-warning';
+      return 'border-badge-warning/30 bg-badge-warning text-badge-warning';
     default:
       return 'border-zinc-700/60 bg-zinc-800/70 text-zinc-400';
   }
@@ -160,8 +160,8 @@ function targetSourceLabel(source: ComputerUseTarget['source']): string {
 }
 
 function failureToneClass(tone: ComputerUseFailureExplanation['tone']): string {
-  if (tone === 'blocked') return 'border-rose-500/20 bg-rose-500/10 text-rose-100';
-  if (tone === 'warning') return 'border-badge-warning/20 bg-amber-500/10 text-badge-warning';
+  if (tone === 'blocked') return 'border-badge-danger/20 bg-badge-danger text-badge-danger';
+  if (tone === 'warning') return 'border-badge-warning/20 bg-badge-warning text-badge-warning';
   return 'border-zinc-700/60 bg-zinc-900/60 text-zinc-300';
 }
 
@@ -543,7 +543,7 @@ export const ComputerUseContent: React.FC = () => {
               {/* Accessibility = 必需。cua 走 AX 树优先，授权弹窗显示重签后的「Agent Neo Computer Use」 */}
               <div className="rounded-lg border border-zinc-800 bg-zinc-950/40 p-3">
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-sm text-zinc-200">Accessibility <span className="text-[10px] text-cyan-300">必需</span></span>
+                  <span className="text-sm text-zinc-200">Accessibility <span className="text-[10px] text-badge-info">必需</span></span>
                   <StatusPill label={permissionLabel(accessibilityPermission)} tone={permissionTone(accessibilityPermission)} />
                 </div>
                 <p className="mt-1 text-xs leading-relaxed text-zinc-500">
@@ -556,7 +556,7 @@ export const ComputerUseContent: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => void openNativeDesktopSystemSettings('accessibility')}
-                    className="mt-2 inline-flex h-7 items-center gap-1.5 rounded-md border border-cyan-700/60 bg-cyan-500/10 px-2.5 text-[11px] text-cyan-200 hover:bg-cyan-500/20"
+                    className="mt-2 inline-flex h-7 items-center gap-1.5 rounded-md border border-badge-info/60 bg-badge-info px-2.5 text-[11px] text-badge-info hover:bg-badge-info"
                   >
                     <ShieldCheck className="h-3 w-3" />
                     开启辅助功能权限
@@ -606,7 +606,7 @@ export const ComputerUseContent: React.FC = () => {
                 <section className="rounded-lg border border-zinc-800 bg-zinc-950/30">
                   <div className="flex items-center justify-between border-b border-zinc-800 px-4 py-3">
                     <div className="flex items-center gap-2">
-                      <AppWindow className="h-4 w-4 text-cyan-300" />
+                      <AppWindow className="h-4 w-4 text-badge-info" />
                       <h3 className="text-sm font-medium text-zinc-200">App / Window 候选</h3>
                     </div>
                     <span className="text-[11px] text-zinc-500">{targets.length} 个候选</span>
@@ -625,11 +625,11 @@ export const ComputerUseContent: React.FC = () => {
                             type="button"
                             onClick={() => setSelectedTargetApp(target.appName)}
                             className={`flex w-full items-start gap-3 px-4 py-3 text-left transition-colors ${
-                              selected ? 'bg-cyan-500/10' : 'hover:bg-zinc-800/40'
+                              selected ? 'bg-badge-info' : 'hover:bg-zinc-800/40'
                             }`}
                           >
                             <div className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${
-                              selected ? 'bg-cyan-500/20 text-cyan-200' : 'bg-zinc-800 text-zinc-500'
+                              selected ? 'bg-badge-info text-badge-info' : 'bg-zinc-800 text-zinc-500'
                             }`}>
                               <AppWindow className="h-4 w-4" />
                             </div>
@@ -689,7 +689,7 @@ export const ComputerUseContent: React.FC = () => {
                       <p className="mt-2 text-xs text-badge-warning">{axQuality.reasons.slice(0, 2).join('；')}</p>
                     )}
                     {elementsError && (
-                      <p className="mt-2 text-xs text-rose-300">{elementsError}</p>
+                      <p className="mt-2 text-xs text-badge-danger">{elementsError}</p>
                     )}
                   </div>
                   {elementsLoading ? (
@@ -750,7 +750,7 @@ export const ComputerUseContent: React.FC = () => {
 
                 <section className="rounded-lg border border-zinc-800 bg-zinc-950/30">
                   <div className="flex items-center gap-2 border-b border-zinc-800 px-4 py-3">
-                    <MousePointerClick className="h-4 w-4 text-cyan-300" />
+                    <MousePointerClick className="h-4 w-4 text-badge-info" />
                     <h3 className="text-sm font-medium text-zinc-200">最近一次 Tool Call</h3>
                   </div>
                   {actionSummary?.preview ? (
@@ -770,12 +770,12 @@ export const ComputerUseContent: React.FC = () => {
                         <p className="text-xs text-zinc-400">{actionSummary.resultSummary}</p>
                       )}
                       {actionSummary.trace.failureKind && (
-                        <p className="rounded-lg border border-rose-500/20 bg-rose-500/10 p-2 text-xs text-rose-200">
+                        <p className="rounded-lg border border-badge-danger/20 bg-badge-danger p-2 text-xs text-badge-danger">
                           {actionSummary.trace.failureKind}
                         </p>
                       )}
                       {actionSummary.trace.recommendedAction && (
-                        <p className="rounded-lg border border-badge-warning/20 bg-amber-500/10 p-2 text-xs text-badge-warning">
+                        <p className="rounded-lg border border-badge-warning/20 bg-badge-warning p-2 text-xs text-badge-warning">
                           {actionSummary.trace.recommendedAction}
                         </p>
                       )}

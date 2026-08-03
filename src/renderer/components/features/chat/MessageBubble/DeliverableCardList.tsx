@@ -40,7 +40,7 @@ function iconForKind(kind: string): React.ReactNode {
   const cls = 'h-3.5 w-3.5 flex-shrink-0';
   switch (kind) {
     case 'chart':
-      return <BarChart3 className={`${cls} text-cyan-300`} />;
+      return <BarChart3 className={`${cls} text-badge-info`} />;
     case 'spreadsheet':
       return <Table className={`${cls} text-badge-success`} />;
     case 'document':
@@ -237,7 +237,7 @@ const CardRow: React.FC<CardRowProps> = ({ card, labels, openCard, runSecondaryA
   return (
     <div
       key={card.id}
-      className={`${cardChrome} ${clickable ? 'hover:border-cyan-500/25 hover:bg-cyan-500/[0.045]' : ''}`}
+      className={`${cardChrome} ${clickable ? 'hover:border-badge-info/25 hover:bg-cyan-500/[0.045]' : ''}`}
     >
       <div className="flex items-center gap-1">
         <button
@@ -281,7 +281,7 @@ const CardRow: React.FC<CardRowProps> = ({ card, labels, openCard, runSecondaryA
                   e.stopPropagation();
                   void runSecondaryAction(archiveAction, card);
                 }}
-                className="inline-flex h-6 items-center justify-center gap-1 rounded px-1.5 text-[11px] text-cyan-300 hover:bg-surface-hover hover:text-cyan-100"
+                className="inline-flex h-6 items-center justify-center gap-1 rounded px-1.5 text-[11px] text-badge-info hover:bg-surface-hover hover:text-badge-info"
                 title={archiveAction.reason || labels.archiveToLibrary}
                 aria-label={`${labels.archiveToLibrary}: ${card.title}`}
               >

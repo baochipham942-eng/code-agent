@@ -86,7 +86,7 @@ export function AssetTabButton({
       onClick={onClick}
       className={`inline-flex items-center gap-1 rounded-md border px-2.5 py-1 text-xs transition-colors ${
         active
-          ? 'border-cyan-500/30 bg-cyan-500/10 text-cyan-200'
+          ? 'border-badge-info/30 bg-cyan-500/10 text-badge-info'
           : 'border-white/[0.08] bg-white/[0.025] text-zinc-400 hover:bg-white/[0.05] hover:text-zinc-200'
       }`}
     >
@@ -114,7 +114,7 @@ export function AssetToolbarButton({
   onClick: () => void;
 }) {
   const activeClass = tone === 'cyan'
-    ? 'border-cyan-500/30 bg-cyan-500/[0.10] text-cyan-200'
+    ? 'border-badge-info/30 bg-cyan-500/[0.10] text-badge-info'
     : 'border-white/[0.14] bg-white/[0.07] text-zinc-100';
   return (
     <button
@@ -213,7 +213,7 @@ export function PromptAppLibrary({
         {recipes.length > 0 && (
           <section>
             <div className="mb-2 flex items-center gap-2 text-xs font-semibold text-zinc-200">
-              <LayoutGrid className="h-3.5 w-3.5 text-cyan-300" />
+              <LayoutGrid className="h-3.5 w-3.5 text-badge-info" />
               {a.recipes}
             </div>
             <div className="grid gap-2">
@@ -238,7 +238,7 @@ export function PromptAppLibrary({
                     <button
                       type="button"
                       onClick={() => onUseRecipe(recipe)}
-                      className="inline-flex items-center gap-1 rounded-md border border-cyan-500/20 bg-cyan-500/[0.08] px-2.5 py-1 text-xs text-cyan-200 hover:bg-cyan-500/[0.14]"
+                      className="inline-flex items-center gap-1 rounded-md border border-badge-info/20 bg-cyan-500/[0.08] px-2.5 py-1 text-xs text-badge-info hover:bg-cyan-500/[0.14]"
                     >
                       <Play className="h-3 w-3" />
                       {a.use}

@@ -87,7 +87,7 @@ function kindIcon(kind: CapabilityKind): React.ReactNode {
     case 'channel_adapter':
       return <FileCog className="h-4 w-4 text-badge-success" />;
     case 'workflow_recipe':
-      return <Workflow className="h-4 w-4 text-cyan-300" />;
+      return <Workflow className="h-4 w-4 text-badge-info" />;
     case 'connector':
       return <PackageCheck className="h-4 w-4 text-badge-warning" />;
     default:

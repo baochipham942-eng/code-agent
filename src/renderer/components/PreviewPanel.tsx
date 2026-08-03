@@ -360,7 +360,7 @@ function DesignPptScreenshots({ artifact }: { artifact: DesignPptScreenshotArtif
               title={pv.slideN.replace('{n}', String(index + 1))}
               className={`overflow-hidden rounded-md border transition-colors ${
                 index === selected
-                  ? 'border-cyan-400 bg-cyan-500/10'
+                  ? 'border-badge-info bg-cyan-500/10'
                   : 'border-white/[0.08] bg-white/[0.025] hover:border-white/[0.16]'
               }`}
             >
@@ -553,7 +553,7 @@ export function StaticHtmlPreview({
           title={selectionMode ? pv.selectElementActiveHint : pv.selectElement}
           className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs transition-colors ${
             selectionMode
-              ? 'border-cyan-400/40 bg-cyan-400/10 text-cyan-200'
+              ? 'border-badge-info/40 bg-cyan-400/10 text-badge-info'
               : 'border-white/[0.08] text-zinc-400 hover:text-zinc-200'
           }`}
         >

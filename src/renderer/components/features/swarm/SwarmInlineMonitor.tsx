@@ -24,7 +24,7 @@ import { swarmRunAgentRecordToState } from '../expert/SessionMemberBar';
 const AGENT_COLORS = [
   'text-badge-success',
   'text-badge-accent',
-  'text-cyan-400',
+  'text-badge-info',
   'text-badge-warning',
   'text-pink-400',
   'text-badge-info',
@@ -136,7 +136,7 @@ export function SwarmInlineMonitor() {
           <div className="ml-auto flex items-center gap-2">
             {totalTokens > 0 && (
               <span
-                className="flex items-center gap-1 text-cyan-400/80"
+                className="flex items-center gap-1 text-badge-info/80"
                 title="本次组队已花 Token（实时累计）"
               >
                 <Zap size={12} />

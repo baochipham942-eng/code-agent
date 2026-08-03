@@ -195,17 +195,17 @@ export function QuestionFormPreview({ item }: { item: WorkspacePreviewItem }) {
   }
 
   const inputClass =
-    'w-full rounded-md border border-white/[0.08] bg-zinc-900/60 px-2 py-1.5 text-xs text-zinc-100 outline-hidden focus:border-cyan-500/40';
+    'w-full rounded-md border border-white/[0.08] bg-zinc-900/60 px-2 py-1.5 text-xs text-zinc-100 outline-hidden focus:border-badge-info/40';
   const labelClass = 'block text-[11px] font-medium uppercase tracking-wide text-zinc-400';
 
   return (
     <form
       onSubmit={handleSubmit}
-      className="space-y-3 rounded-lg border border-cyan-500/20 bg-cyan-500/[0.03] p-4 text-zinc-200"
+      className="space-y-3 rounded-lg border border-badge-info/20 bg-cyan-500/[0.03] p-4 text-zinc-200"
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <div className="text-sm font-semibold text-cyan-200">{tf.title}</div>
+          <div className="text-sm font-semibold text-badge-info">{tf.title}</div>
           <div className="mt-0.5 text-[11px] text-zinc-400">{tf.subtitle}</div>
         </div>
         {/* 逃生口：别学 Open Design 生成前 6 决策的摩擦 */}
@@ -259,8 +259,8 @@ export function QuestionFormPreview({ item }: { item: WorkspacePreviewItem }) {
         </div>
 
         {isReferenceMode ? (
-          <div className="rounded-lg border border-dashed border-cyan-500/25 bg-cyan-500/[0.04] p-3">
-            <div className="flex items-center gap-2 text-xs font-semibold text-cyan-100">
+          <div className="rounded-lg border border-dashed border-badge-info/25 bg-cyan-500/[0.04] p-3">
+            <div className="flex items-center gap-2 text-xs font-semibold text-badge-info">
               <ImageDown className="h-4 w-4" />
               {tf.referenceTitle}
             </div>
@@ -348,7 +348,7 @@ export function QuestionFormPreview({ item }: { item: WorkspacePreviewItem }) {
           className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
             !ready || submitted
               ? 'cursor-not-allowed border border-white/[0.06] bg-zinc-800 text-zinc-500'
-              : 'border border-cyan-500/30 bg-cyan-500/15 text-cyan-100 hover:bg-cyan-500/25'
+              : 'border border-badge-info/30 bg-cyan-500/15 text-badge-info hover:bg-cyan-500/25'
           }`}
         >
           {submitted ? tf.submitted : tf.submit}
@@ -378,7 +378,7 @@ function ModeTab({
       disabled={disabled}
       className={`flex flex-1 items-center justify-center gap-1.5 rounded-md border px-2 py-1.5 text-[11px] font-medium transition-colors ${
         active
-          ? 'border-cyan-400/60 bg-cyan-500/15 text-cyan-100'
+          ? 'border-badge-info/60 bg-cyan-500/15 text-badge-info'
           : 'border-white/[0.08] bg-zinc-950/30 text-zinc-400 hover:border-white/[0.18] hover:text-zinc-200'
       } ${disabled ? 'cursor-not-allowed opacity-70' : ''}`}
     >
@@ -414,7 +414,7 @@ function DirectionCard({
       disabled={disabled}
       className={`min-h-[142px] rounded-lg border p-3 text-left transition-all ${
         selected
-          ? 'border-cyan-400/70 bg-cyan-500/[0.08] ring-1 ring-cyan-400/40'
+          ? 'border-badge-info/70 bg-cyan-500/[0.08] ring-1 ring-[var(--badge-info-border)]'
           : 'border-white/[0.08] bg-zinc-950/30 hover:border-white/[0.18] hover:bg-white/[0.035]'
       } ${disabled ? 'cursor-not-allowed opacity-70' : ''}`}
     >
@@ -425,7 +425,7 @@ function DirectionCard({
         </div>
         <span
           className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border ${
-            selected ? 'border-cyan-300 bg-cyan-400 text-zinc-950' : 'border-zinc-700 text-transparent'
+            selected ? 'border-badge-info bg-cyan-400 text-zinc-950' : 'border-zinc-700 text-transparent'
           }`}
         >
           <Check className="h-3.5 w-3.5" />

@@ -378,10 +378,10 @@ export const Orchestration: React.FC = () => {
             emphasis="text-badge-danger"
           />
           <MetricCard
-            icon={<Zap className="w-3.5 h-3.5 text-cyan-400" />}
+            icon={<Zap className="w-3.5 h-3.5 text-badge-info" />}
             label={o.totalToken}
             value={formatTokens(statistics.totalTokens)}
-            emphasis="text-cyan-300"
+            emphasis="text-badge-info"
           />
           <MetricCard
             icon={<FileText className="w-3.5 h-3.5 text-badge-success" />}
@@ -479,7 +479,7 @@ export const Orchestration: React.FC = () => {
 
               <div className="mt-3 grid grid-cols-2 gap-2">
                 <MetricCard
-                  icon={<Zap className="w-3.5 h-3.5 text-cyan-400" />}
+                  icon={<Zap className="w-3.5 h-3.5 text-badge-info" />}
                   label={o.contextBudget}
                   value={`${formatTokens(contextTotalTokens)} / ${formatTokens(contextMaxTokens)}`}
                   emphasis={getUsageTextClass(contextUsagePercent)}
@@ -576,7 +576,7 @@ export const Orchestration: React.FC = () => {
                       {contextSources.tools.length > 0 ? contextSources.tools.map((name) => (
                         <span
                           key={name}
-                          className="rounded bg-zinc-900/80 px-1.5 py-0.5 font-mono text-[10px] text-cyan-300"
+                          className="rounded bg-zinc-900/80 px-1.5 py-0.5 font-mono text-[10px] text-badge-info"
                         >
                           {name}
                         </span>
@@ -749,7 +749,7 @@ export const Orchestration: React.FC = () => {
                 <div className="mt-2 text-xs leading-6 text-zinc-400">{aggregation.summary}</div>
                 <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
                   <div className="rounded bg-zinc-900/70 px-2 py-1.5 text-zinc-400">
-                    {o.speedup} <span className="ml-1 text-cyan-300">{aggregation.speedup.toFixed(1)}x</span>
+                    {o.speedup} <span className="ml-1 text-badge-info">{aggregation.speedup.toFixed(1)}x</span>
                   </div>
                   <div className="rounded bg-zinc-900/70 px-2 py-1.5 text-zinc-400">
                     {o.successRate} <span className="ml-1 text-badge-success">{(aggregation.successRate * 100).toFixed(0)}%</span>

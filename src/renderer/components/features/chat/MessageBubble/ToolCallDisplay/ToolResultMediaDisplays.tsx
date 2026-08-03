@@ -406,7 +406,7 @@ export function VideoResultDisplay({
     .join(' · ');
 
   return (
-    <div className="rounded-lg border border-cyan-500/30 bg-cyan-500/5 overflow-hidden">
+    <div className="rounded-lg border border-badge-info/30 bg-cyan-500/5 overflow-hidden">
       {/* Video preview area */}
       <div className="relative aspect-video bg-gray-900/50">
         {showCover && coverSrc ? (
@@ -434,18 +434,18 @@ export function VideoResultDisplay({
           />
         ) : (
           <div className="w-full h-full flex items-center justify-center">
-            <Video className="w-12 h-12 text-cyan-500/50" />
+            <Video className="w-12 h-12 text-badge-info/50" />
           </div>
         )}
       </div>
 
       {/* Info bar */}
-      <div className="flex items-center gap-2 p-2 bg-gray-900/50 border-t border-cyan-500/20">
-        <div className="p-1.5 rounded-lg bg-cyan-500/10 text-cyan-400">
+      <div className="flex items-center gap-2 p-2 bg-gray-900/50 border-t border-badge-info/20">
+        <div className="p-1.5 rounded-lg bg-cyan-500/10 text-badge-info">
           <Video className="w-4 h-4" />
         </div>
         <div className="flex-1 min-w-0">
-          <div className="text-xs text-cyan-400 truncate font-medium">
+          <div className="text-xs text-badge-info truncate font-medium">
             {fileName}
           </div>
           {infoText && (

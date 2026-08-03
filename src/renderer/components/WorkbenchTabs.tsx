@@ -57,7 +57,7 @@ const LAUNCHABLE_VIEWS: readonly LaunchableViewDefinition[] = [
   {
     id: 'overview',
     icon: LayoutDashboard,
-    iconClassName: 'text-cyan-400/80',
+    iconClassName: 'text-badge-info/80',
     keybindingActionId: 'statusRail.toggle',
   },
   {
@@ -235,7 +235,7 @@ export const WorkbenchTabs: React.FC<{ children?: React.ReactNode; focusable?: b
         label: t.workbenchTabs.overviewLabel,
         title: t.workbenchTabs.overviewTitle,
         icon: LayoutDashboard,
-        iconClassName: 'text-cyan-400/80',
+        iconClassName: 'text-badge-info/80',
         isDirty: false,
       };
     }

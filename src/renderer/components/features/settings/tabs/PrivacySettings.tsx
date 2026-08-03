@@ -74,7 +74,7 @@ function getSetupStateLabel(
 function getSetupLogLineClass(entry: { stream: 'stdout' | 'stderr'; line: string }): string {
   const line = entry.line.trim();
   if (line.startsWith('❌')) return 'text-badge-danger';
-  if (line.startsWith('▷ STEP:')) return 'text-cyan-300';
+  if (line.startsWith('▷ STEP:')) return 'text-badge-info';
   if (line.startsWith('✓')) return 'text-badge-success';
   if (entry.stream === 'stderr' && /\b(error|failed|failure|fatal|exception|traceback)\b/i.test(line)) {
     return 'text-badge-danger';

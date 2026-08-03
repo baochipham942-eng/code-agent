@@ -47,11 +47,11 @@ const DiscussionIcon: React.FC<{ entry: SwarmTimelineEvent }> = ({ entry }) => {
     case 'result':
       return <CheckCircle className={`${cls} text-badge-success`} />;
     case 'status':
-      return <Activity className={`${cls} text-cyan-400`} />;
+      return <Activity className={`${cls} text-badge-info`} />;
     default:
       break;
   }
-  if (entry.type === 'swarm:user:message') return <UserCog className={`${cls} text-cyan-400`} />;
+  if (entry.type === 'swarm:user:message') return <UserCog className={`${cls} text-badge-info`} />;
   if (entry.type === 'swarm:agent:message') return <Send className={`${cls} text-badge-info`} />;
   return <MessagesSquare className={`${cls} text-zinc-400`} />;
 };
@@ -119,7 +119,7 @@ export function DiscussionStream({ previewCount = 3 }: DiscussionStreamProps) {
         className="w-full flex items-center gap-1.5 px-3 py-1.5 hover:bg-zinc-800/40 transition-colors"
         title={expanded ? '折叠讨论流' : '展开完整讨论流'}
       >
-        <MessagesSquare size={12} className="text-cyan-400" />
+        <MessagesSquare size={12} className="text-badge-info" />
         <span className="text-[11px] text-zinc-400">讨论流</span>
         <span className="text-[10px] text-zinc-600">({eventLog.length})</span>
         <span className="ml-auto text-zinc-500">

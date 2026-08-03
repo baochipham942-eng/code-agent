@@ -252,7 +252,7 @@ function DetailItem({ label, value, isPath, isCode, isUrl, isDangerous }: Detail
               : ''
           }
           ${isPath ? 'bg-zinc-800 text-badge-info' : ''}
-          ${isUrl ? 'bg-zinc-800 text-cyan-400' : ''}
+          ${isUrl ? 'bg-zinc-800 text-badge-info' : ''}
           ${!isCode && !isPath && !isUrl ? 'bg-zinc-800 text-zinc-400' : ''}
         `}
         title={value}

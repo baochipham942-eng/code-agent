@@ -697,7 +697,7 @@ export const MCPSettings: React.FC = () => {
                     <div className="text-xs text-zinc-400">{mcpText.diagnostics.availableTools}</div>
                   </div>
                   <div>
-                    <div className="text-2xl font-semibold text-cyan-400">{mcpStatus.resourceCount}</div>
+                    <div className="text-2xl font-semibold text-badge-info">{mcpStatus.resourceCount}</div>
                     <div className="text-xs text-zinc-400">{mcpText.diagnostics.availableResources}</div>
                   </div>
                 </div>

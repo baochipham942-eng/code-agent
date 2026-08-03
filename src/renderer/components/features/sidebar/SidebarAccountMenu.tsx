@@ -72,12 +72,12 @@ export const SidebarAccountMenu: React.FC<SidebarAccountMenuProps> = ({
       <AccountMenuLabel>{sb.menuCommon}</AccountMenuLabel>
       <AccountMenuItem
         onClick={() => { setShowActivityPanel(true); onClose(); }}
-        icon={<Activity className={`w-4 h-4 ${showActivityPanel ? 'text-cyan-400' : 'text-cyan-400/80'}`} />}
+        icon={<Activity className={`w-4 h-4 ${showActivityPanel ? 'text-badge-info' : 'text-badge-info/80'}`} />}
         label={sb.menuActivity}
       />
       <AccountMenuItem
         onClick={() => { openLocalOpsPanel('desktop'); onClose(); }}
-        icon={<MonitorSmartphone className={`w-4 h-4 ${showLocalOpsPanel ? 'text-cyan-400' : 'text-cyan-400/80'}`} />}
+        icon={<MonitorSmartphone className={`w-4 h-4 ${showLocalOpsPanel ? 'text-badge-info' : 'text-badge-info/80'}`} />}
         label={sb.menuLocalOps}
       />
       {/* 「协作请求（@neo）」入口已拿掉（爸 2026-07-29）：topic 目录的家=协作空间页任务 tab */}
@@ -125,7 +125,7 @@ export const SidebarAccountMenu: React.FC<SidebarAccountMenuProps> = ({
           />
           <AccountMenuItem
             onClick={() => { setShowDesktopPanel(!showDesktopPanel); onClose(); }}
-            icon={<Monitor className={`w-4 h-4 ${showDesktopPanel ? 'text-cyan-400' : 'text-cyan-400/80'}`} />}
+            icon={<Monitor className={`w-4 h-4 ${showDesktopPanel ? 'text-badge-info' : 'text-badge-info/80'}`} />}
             label={sb.menuDesktopCapture}
           />
         </div>

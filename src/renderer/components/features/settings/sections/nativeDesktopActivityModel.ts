@@ -234,7 +234,7 @@ const SPEAKER_COLORS = [
   { bg: 'bg-purple-500/20', text: 'text-badge-accent', dot: 'bg-purple-400' },
   { bg: 'bg-amber-500/20', text: 'text-badge-warning', dot: 'bg-amber-400' },
   { bg: 'bg-rose-500/20', text: 'text-rose-300', dot: 'bg-rose-400' },
-  { bg: 'bg-cyan-500/20', text: 'text-cyan-300', dot: 'bg-cyan-400' },
+  { bg: 'bg-cyan-500/20', text: 'text-badge-info', dot: 'bg-badge-info' },
 ];
 
 export function speakerStyle(id: number) {

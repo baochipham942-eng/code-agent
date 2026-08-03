@@ -28,7 +28,7 @@ const EVENT_COLORS: Record<string, string> = {
   turn_end: 'text-zinc-400 bg-zinc-600/10',
   tool_call_start: 'text-badge-info bg-blue-500/10',
   tool_call_end: 'text-badge-info bg-blue-500/10',
-  message: 'text-cyan-400 bg-cyan-500/10',
+  message: 'text-badge-info bg-cyan-500/10',
   error: 'text-badge-danger bg-red-500/10',
   stream_reasoning: 'text-badge-accent bg-purple-500/10',
   notification: 'text-badge-warning bg-amber-500/10',

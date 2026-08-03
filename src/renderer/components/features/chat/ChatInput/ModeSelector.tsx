@@ -25,8 +25,8 @@ const MODE_OPTIONS: ModeOption[] = [
     value: 'code',
     label: 'Code',
     icon: <Terminal className="w-3 h-3" />,
-    color: 'text-cyan-400',
-    bgColor: 'bg-cyan-500/20',
+    color: 'text-badge-info',
+    bgColor: 'bg-badge-info',
   },
   {
     value: 'plan',

@@ -26,7 +26,7 @@ export const AttachmentIcon: React.FC<{ category: AttachmentCategory; className?
     case 'audio':
       return <Music className={`${iconClass} text-fuchsia-400`} />;
     case 'video':
-      return <Video className={`${iconClass} text-cyan-400`} />;
+      return <Video className={`${iconClass} text-badge-info`} />;
     case 'presentation':
       return <Presentation className={`${iconClass} text-badge-accent`} />;
     case 'archive':

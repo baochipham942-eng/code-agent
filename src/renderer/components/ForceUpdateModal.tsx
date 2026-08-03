@@ -278,7 +278,7 @@ export const ForceUpdateModal: React.FC<ForceUpdateModalProps> = ({ updateInfo }
           <div className="space-y-4">
             <div className="flex items-center gap-4">
               <div className="w-12 h-12 rounded-full bg-cyan-500/20 flex items-center justify-center flex-shrink-0">
-                <Loader2 className="w-6 h-6 text-cyan-400 animate-spin" />
+                <Loader2 className="w-6 h-6 text-badge-info animate-spin" />
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-lg font-medium text-white">{n.downloading}</p>
@@ -287,7 +287,7 @@ export const ForceUpdateModal: React.FC<ForceUpdateModalProps> = ({ updateInfo }
                   {downloadProgress.bytesPerSecond > 0 && ` • ${formatSpeed(downloadProgress.bytesPerSecond)}`}
                 </p>
               </div>
-              <span className="text-xl font-mono font-bold text-cyan-400">
+              <span className="text-xl font-mono font-bold text-badge-info">
                 {downloadProgress.percent.toFixed(0)}%
               </span>
             </div>

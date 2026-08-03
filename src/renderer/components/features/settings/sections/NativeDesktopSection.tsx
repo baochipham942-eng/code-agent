@@ -126,7 +126,7 @@ const HourSlot: React.FC<{
       disabled={!hasActivity}
       className={`w-full text-left px-3 py-1.5 flex items-center gap-2 transition-colors ${
         selected
-          ? 'bg-cyan-500/10 border-r-2 border-cyan-400'
+          ? 'bg-cyan-500/10 border-r-2 border-badge-info'
           : hasActivity
             ? 'hover:bg-zinc-800/60'
             : ''
@@ -244,7 +244,7 @@ const MeetingDetailPanel: React.FC<{
                 onClick={() => scrollToTopic(idx)}
                 className={`w-full text-left px-2.5 py-2 rounded-lg transition-colors ${
                   activeTopic === idx
-                    ? 'bg-cyan-500/10 border border-cyan-500/20'
+                    ? 'bg-cyan-500/10 border border-badge-info/20'
                     : 'hover:bg-zinc-800/60 border border-transparent'
                 }`}
               >
@@ -612,9 +612,9 @@ const HourDetailPanel: React.FC<{
         if (allAnalyses.length === 0) return null;
         return (
           <div className="px-5 pt-4 pb-2">
-            <div className="rounded-xl border border-cyan-500/20 bg-cyan-500/5 overflow-hidden">
-              <div className="flex items-center gap-2.5 px-4 py-3 border-b border-cyan-500/10">
-                <Eye className="w-4 h-4 text-cyan-400" />
+            <div className="rounded-xl border border-badge-info/20 bg-cyan-500/5 overflow-hidden">
+              <div className="flex items-center gap-2.5 px-4 py-3 border-b border-badge-info/10">
+                <Eye className="w-4 h-4 text-badge-info" />
                 <div className="flex-1">
                   <div className="text-sm font-medium text-zinc-200">{text.visualAnalysis}</div>
                   <div className="text-[11px] text-zinc-500">
@@ -818,7 +818,7 @@ export const NativeDesktopSection: React.FC<NativeDesktopSectionProps> = ({
           : 'border-zinc-700/50 px-4 py-2.5'
       }`}>
         <div className="flex items-center gap-2.5">
-          <Monitor className="w-4 h-4 text-cyan-400" />
+          <Monitor className="w-4 h-4 text-badge-info" />
           <span className={fullscreen ? 'text-base font-semibold text-zinc-100' : 'text-sm font-medium text-zinc-200'}>
             {nativeDesktopText.title}
           </span>

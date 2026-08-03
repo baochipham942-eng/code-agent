@@ -1775,7 +1775,7 @@ fn read_recent_events_from_sqlite(
 }
 
 #[tauri::command]
-pub fn desktop_get_capabilities() -> Result<NativeDesktopCapabilities, String> {
+pub async fn desktop_get_capabilities() -> Result<NativeDesktopCapabilities, String> {
     let platform = env::consts::OS.to_string();
     let is_macos = cfg!(target_os = "macos");
 
@@ -1792,7 +1792,7 @@ pub fn desktop_get_capabilities() -> Result<NativeDesktopCapabilities, String> {
 }
 
 #[tauri::command]
-pub fn desktop_get_permission_status() -> Result<NativePermissionSnapshot, String> {
+pub async fn desktop_get_permission_status() -> Result<NativePermissionSnapshot, String> {
     let permissions = vec![
         probe_microphone_permission(),
         probe_screen_capture_permission(),
@@ -1810,7 +1810,7 @@ pub fn desktop_get_permission_status() -> Result<NativePermissionSnapshot, Strin
 }
 
 #[tauri::command]
-pub fn desktop_get_frontmost_context() -> Result<FrontmostContextSnapshot, String> {
+pub async fn desktop_get_frontmost_context() -> Result<FrontmostContextSnapshot, String> {
     capture_frontmost_context_snapshot()
 }
 
@@ -1829,7 +1829,7 @@ pub fn desktop_capture_screenshot(
 }
 
 #[tauri::command]
-pub fn desktop_get_collector_status(
+pub async fn desktop_get_collector_status(
     app: tauri::AppHandle,
     state: tauri::State<'_, NativeDesktopState>,
 ) -> Result<NativeDesktopCollectorStatus, String> {
@@ -2109,7 +2109,7 @@ pub fn desktop_stop_collector(
 }
 
 #[tauri::command]
-pub fn desktop_list_recent_events(
+pub async fn desktop_list_recent_events(
     app: tauri::AppHandle,
     state: tauri::State<'_, NativeDesktopState>,
     limit: Option<usize>,

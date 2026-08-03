@@ -68,6 +68,7 @@ const RESOURCE_DIR_ENV: &str = "AGENT_NEO_RESOURCE_DIR";
 const BOOT_DIAGNOSTICS_PATH_ENV: &str = "AGENT_NEO_TAURI_BOOT_DIAGNOSTICS_FILE";
 const BOOT_DIAGNOSTICS_FILE: &str = "desktop-shell-boot-latest.json";
 const SHELL_EVENTS_FILE: &str = "desktop-shell-events.ndjson";
+const GLOBAL_HOTKEY_FOCUS_RETRY_DELAYS_MS: &[u64] = &[0, 25, 50, 100, 200, 400, 800];
 const BUNDLED_NODE_PATHS: &[&[&str]] = &[
     &["dist", "bundled-node", "bin", "node"],
     &["dist", "bundled-node", "node"],
@@ -2569,17 +2570,32 @@ fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn focus_main_window(app_handle: &AppHandle) -> bool {
+fn request_main_window_focus(app_handle: &AppHandle) -> bool {
     if let Some(win) = app_handle.get_webview_window("main") {
-        if win.show().is_err() || win.unminimize().is_err() || win.set_focus().is_err() {
-            return false;
-        }
-
-        return matches!(win.is_visible(), Ok(true))
-            && matches!(win.is_minimized(), Ok(false))
-            && matches!(win.is_focused(), Ok(true));
+        return win.show().is_ok() && win.unminimize().is_ok() && win.set_focus().is_ok();
     }
 
+    false
+}
+
+fn main_window_is_ready(app_handle: &AppHandle) -> bool {
+    let Some(win) = app_handle.get_webview_window("main") else {
+        return false;
+    };
+    matches!(win.is_visible(), Ok(true))
+        && matches!(win.is_minimized(), Ok(false))
+        && matches!(win.is_focused(), Ok(true))
+}
+
+fn wait_for_main_window_focus(app_handle: &AppHandle) -> bool {
+    for delay_ms in GLOBAL_HOTKEY_FOCUS_RETRY_DELAYS_MS {
+        if *delay_ms > 0 {
+            thread::sleep(Duration::from_millis(*delay_ms));
+        }
+        if main_window_is_ready(app_handle) {
+            return true;
+        }
+    }
     false
 }
 
@@ -2629,6 +2645,106 @@ fn global_hotkey_window_action(action_id: &str) -> GlobalHotkeyWindowAction {
         "app.quickAsk" | "session.new" => GlobalHotkeyWindowAction::Focus,
         "voice.callToggle" => GlobalHotkeyWindowAction::FocusBeforeEmit,
         _ => GlobalHotkeyWindowAction::None,
+    }
+}
+
+fn write_global_hotkey_registration_event(app: &AppHandle, result: &KeybindingGlobalHotkeyResult) {
+    let registered = result.registered;
+    append_shell_event_payload(
+        app,
+        serde_json::json!({
+            "schemaVersion": 1,
+            "source": "tauri-shell",
+            "generatedAt": now_millis_string(),
+            "level": if registered { "info" } else { "error" },
+            "event": "desktop-shell-global-hotkey-registration",
+            "message": if registered {
+                "global hotkey registered"
+            } else {
+                "global hotkey registration failed"
+            },
+            "appVersion": app.config().version,
+            "bundleId": app.config().identifier,
+            "channel": desktop_shell_channel(Some(&app.config().identifier), cfg!(debug_assertions)),
+            "actionId": result.action_id,
+            "accelerator": result.accelerator,
+            "registered": registered,
+            "error": result.error,
+        }),
+    );
+}
+
+fn write_global_hotkey_suppressed_event(
+    app: &AppHandle,
+    action_id: &str,
+    accelerator: &str,
+    reason: &str,
+) {
+    append_shell_event_payload(
+        app,
+        serde_json::json!({
+            "schemaVersion": 1,
+            "source": "tauri-shell",
+            "generatedAt": now_millis_string(),
+            "level": "warn",
+            "event": "desktop-shell-global-hotkey-suppressed",
+            "message": "global hotkey action suppressed before emit",
+            "appVersion": app.config().version,
+            "bundleId": app.config().identifier,
+            "channel": desktop_shell_channel(Some(&app.config().identifier), cfg!(debug_assertions)),
+            "actionId": action_id,
+            "accelerator": accelerator,
+            "reason": reason,
+        }),
+    );
+}
+
+fn write_global_hotkey_focus_timeout_event(app: &AppHandle, action_id: &str, accelerator: &str) {
+    append_shell_event_payload(
+        app,
+        serde_json::json!({
+            "schemaVersion": 1,
+            "source": "tauri-shell",
+            "generatedAt": now_millis_string(),
+            "level": "warn",
+            "event": "desktop-shell-global-hotkey-focus-timeout",
+            "message": "main window focus confirmation timed out; emitting global hotkey",
+            "appVersion": app.config().version,
+            "bundleId": app.config().identifier,
+            "channel": desktop_shell_channel(Some(&app.config().identifier), cfg!(debug_assertions)),
+            "actionId": action_id,
+            "accelerator": accelerator,
+            "emitted": true,
+            "focusReady": false,
+        }),
+    );
+}
+
+fn emit_global_hotkey_event(app: &AppHandle, action_id: &str, accelerator: &str) {
+    if let Err(error) = app.emit(
+        "keybindings:global_hotkey",
+        KeybindingGlobalHotkeyEvent {
+            action_id: action_id.to_string(),
+            accelerator: accelerator.to_string(),
+        },
+    ) {
+        append_shell_event_payload(
+            app,
+            serde_json::json!({
+                "schemaVersion": 1,
+                "source": "tauri-shell",
+                "generatedAt": now_millis_string(),
+                "level": "error",
+                "event": "desktop-shell-global-hotkey-emit-failed",
+                "message": "failed to emit global hotkey action",
+                "appVersion": app.config().version,
+                "bundleId": app.config().identifier,
+                "channel": desktop_shell_channel(Some(&app.config().identifier), cfg!(debug_assertions)),
+                "actionId": action_id,
+                "accelerator": accelerator,
+                "error": error.to_string(),
+            }),
+        );
     }
 }
 
@@ -2721,12 +2837,14 @@ fn keybindings_set_global_hotkeys(
         let accelerator = binding.accelerator.trim().to_string();
 
         if action_id.is_empty() || accelerator.is_empty() {
-            results.push(KeybindingGlobalHotkeyResult {
+            let result = KeybindingGlobalHotkeyResult {
                 action_id,
                 accelerator,
                 registered: false,
                 error: Some("Missing actionId or accelerator".to_string()),
-            });
+            };
+            write_global_hotkey_registration_event(&app, &result);
+            results.push(result);
             continue;
         }
 
@@ -2742,52 +2860,66 @@ fn keybindings_set_global_hotkeys(
                 match global_hotkey_window_action(event_action_id.as_str()) {
                     GlobalHotkeyWindowAction::Toggle => toggle_main_window(app_handle),
                     GlobalHotkeyWindowAction::Focus => {
-                        let _ = focus_main_window(app_handle);
+                        let _ = request_main_window_focus(app_handle);
                     }
                     GlobalHotkeyWindowAction::FocusBeforeEmit => {
-                        // macOS 首次麦克风权限弹窗跟随前台窗口。Tauri/Wry 的 show、
-                        // unminimize、set_focus 均同步派发；再读回三个真实窗口状态，
-                        // 全部成立后才把拨号 action 交给 renderer。任一步失败都不请求 mic。
-                        if !focus_main_window(app_handle) {
-                            eprintln!(
-                                "Global hotkey {} suppressed because the main window is not visible and focused",
-                                event_action_id
-                            );
-                            return;
-                        }
+                        // macOS 首次麦克风权限弹窗跟随前台窗口。show、unminimize、set_focus
+                        // 先发出请求，再在有界窗口内等待 Window Server 的异步状态回写。
+                        // 同步读回失败只代表激活尚未完成，不能把拨号 action 静默吞掉。
+                        let app_handle = app_handle.clone();
+                        let action_id = event_action_id.clone();
+                        let accelerator = event_accelerator.clone();
+                        thread::spawn(move || {
+                            if !request_main_window_focus(&app_handle) {
+                                write_global_hotkey_suppressed_event(
+                                    &app_handle,
+                                    &action_id,
+                                    &accelerator,
+                                    "focus_request_failed",
+                                );
+                                return;
+                            }
+
+                            if !wait_for_main_window_focus(&app_handle) {
+                                write_global_hotkey_focus_timeout_event(
+                                    &app_handle,
+                                    &action_id,
+                                    &accelerator,
+                                );
+                            }
+
+                            emit_global_hotkey_event(&app_handle, &action_id, &accelerator);
+                        });
+                        return;
                     }
                     GlobalHotkeyWindowAction::None => {}
                 }
 
-                app_handle
-                    .emit(
-                        "keybindings:global_hotkey",
-                        KeybindingGlobalHotkeyEvent {
-                            action_id: event_action_id.clone(),
-                            accelerator: event_accelerator.clone(),
-                        },
-                    )
-                    .ok();
+                emit_global_hotkey_event(app_handle, &event_action_id, &event_accelerator);
             },
         );
 
         match register_result {
             Ok(()) => {
                 registered.push(accelerator.clone());
-                results.push(KeybindingGlobalHotkeyResult {
+                let result = KeybindingGlobalHotkeyResult {
                     action_id,
                     accelerator,
                     registered: true,
                     error: None,
-                });
+                };
+                write_global_hotkey_registration_event(&app, &result);
+                results.push(result);
             }
             Err(error) => {
-                results.push(KeybindingGlobalHotkeyResult {
+                let result = KeybindingGlobalHotkeyResult {
                     action_id,
                     accelerator,
                     registered: false,
                     error: Some(error.to_string()),
-                });
+                };
+                write_global_hotkey_registration_event(&app, &result);
+                results.push(result);
             }
         }
     }

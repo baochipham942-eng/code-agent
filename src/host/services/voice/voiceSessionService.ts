@@ -13,7 +13,7 @@ import {
   resolveRealtimeVoiceSelection,
   type RealtimeVoiceProviderProfile,
 } from '../../../shared/constants/realtimeVoiceProviders';
-import type { VoiceClientCommand, VoiceEvent, VoiceFocusContext, VoiceInterruptClassification, VoiceTokenUsage, VoiceTransportHandle, VoiceWorkItem } from '../../../shared/contract/voice';
+import type { VoiceClientCommand, VoiceEvent, VoiceFocusContext, VoiceInterruptClassification, VoiceTokenUsage, VoiceTransportHandle, VoiceUserTextInjectionResult, VoiceWorkItem } from '../../../shared/contract/voice';
 import type { VoiceTransport } from '../../../shared/contract/voice';
 import { getDashscopeApiKey } from '../media/imageGenerationService';
 import { createLogger } from '../infra/logger';
@@ -117,6 +117,10 @@ interface ActiveSession {
    */
   clientRef: { current: WsSocket };
   upstream: VoiceTransportHandle;
+  /** 上游是否真实收下了通话工具；VOICE_TOOLS_DROPPED 后 fail-closed。 */
+  voiceToolsAvailable: boolean;
+  /** teardown 已开始时，新的打字注入必须回退，不能再抢这通电话。 */
+  ending: boolean;
   maxDurationTimer: NodeJS.Timeout;
   /** 非 null = 客户端断了，正在宽限窗里等它回来 */
   graceTimer: NodeJS.Timeout | null;
@@ -179,6 +183,55 @@ let sessionSeq = 0;
 
 export function getActiveVoiceSessionId(): string | null {
   return active?.id ?? null;
+}
+
+/**
+ * 忙态文本的唯一通话注入口。renderer 不猜 replace/steer，直接把原话交给通话 brain。
+ * 任何 host 侧不能保证送达的情况都返回 fallback，由 renderer 复用已有 durable queue；
+ * 这条函数本身不创建文本轮，避免挂断竞态下凭空启动一轮 agent。
+ */
+export async function injectVoiceUserText(
+  neoSessionId: string,
+  text: string,
+): Promise<VoiceUserTextInjectionResult> {
+  const trimmed = text.trim();
+  if (!trimmed) return { outcome: 'fallback', reason: 'empty_text' };
+
+  if (active?.neoSessionId !== neoSessionId || active.ending || active.graceTimer) {
+    return { outcome: 'fallback', reason: 'no_active_call' };
+  }
+  const session = active;
+  if (!session.voiceToolsAvailable) {
+    logger.info('typed voice input falling back: tools unavailable', { voiceSessionId: session.id });
+    return { outcome: 'fallback', reason: 'tools_unavailable' };
+  }
+  if (session.upstream.kind !== 'relay') {
+    logger.info('typed voice input falling back: transport has no inject channel', {
+      voiceSessionId: session.id,
+      provider: session.upstream.provider,
+    });
+    return { outcome: 'fallback', reason: 'transport_unavailable' };
+  }
+
+  const injected = `[USER] ${trimmed}`;
+  try {
+    if (session.upstream.injectItemWithAck) {
+      await session.upstream.injectItemWithAck(injected);
+    } else {
+      // Legacy/fake relay handles have no ack surface. The production realtime
+      // transport implements injectItemWithAck; keep the old contract usable for
+      // adapters that only expose fire-and-forget injection.
+      session.upstream.injectItem(injected);
+    }
+    logger.info('typed voice input injected', { voiceSessionId: session.id });
+    return { outcome: 'injected' };
+  } catch (error) {
+    logger.warn('typed voice input injection rejected; renderer must queue it', {
+      voiceSessionId: session.id,
+      message: error instanceof Error ? error.message : 'unknown',
+    });
+    return { outcome: 'fallback', reason: 'injection_rejected' };
+  }
 }
 
 function send(client: WsSocket, event: VoiceEvent): void {
@@ -555,6 +608,7 @@ function beginReconnectGrace(sessionId: string): void {
 async function teardown(reason: string): Promise<void> {
   const session = active;
   if (!session) return;
+  session.ending = true;
   session.narration.queue.clear();
   active = null;
   clearTimeout(session.maxDurationTimer);
@@ -756,6 +810,7 @@ async function connectAndBind(
   });
   // 上游回调一律经这个可变引用发：重连换的是 socket，不是通话。
   const clientRef = { current: client };
+  let voiceToolsAvailable = VOICE_TOOL_DEFINITIONS.length > 0;
   /**
    * 收线的**唯一**入口——模型调 end_call 与 host 从用户字幕判出的挂断意图共用。
    *
@@ -836,6 +891,10 @@ async function connectAndBind(
         voice: selection.voice,
       },
       onEvent: (event) => {
+        if (event.type === 'notice' && event.code === 'VOICE_TOOLS_DROPPED') {
+          voiceToolsAvailable = false;
+          if (active?.id === id) active.voiceToolsAvailable = false;
+        }
         if (active?.id === id && event.type === 'speech.started') {
           const candidateId = event.candidateId ?? `candidate-${Date.now()}`;
           active.interruption.currentCandidateId = candidateId;
@@ -1057,6 +1116,8 @@ async function connectAndBind(
     startedAt: Date.now(),
     clientRef,
     upstream,
+    voiceToolsAvailable,
+    ending: false,
     graceTimer: null,
     inboundAudioFrames: 0,
     inboundAudioWatchdogTimer: null,

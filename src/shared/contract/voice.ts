@@ -296,6 +296,19 @@ export type VoiceClientCommand =
   /** 原生 AEC sidecar 的受控生命周期诊断码；不传音频、字幕或本地路径。 */
   | { type: 'audio_diagnostic'; code: string };
 
+/** Renderer 忙态打字注入通话的 host 决策。fallback 由 renderer 复用 durable queue。 */
+export type VoiceUserTextInjectionResult =
+  | { outcome: 'injected' }
+  | {
+      outcome: 'fallback';
+      reason:
+        | 'empty_text'
+        | 'no_active_call'
+        | 'tools_unavailable'
+        | 'transport_unavailable'
+        | 'injection_rejected';
+    };
+
 interface VoiceTransportHandleBase {
   readonly provider: VoiceProviderId;
   /** 打断当前回复，并返回被取消的上游 response identity。 */
@@ -336,8 +349,13 @@ export type VoiceTransportHandle =
        * 走会话项而不是改 instructions：instructions 是「你是谁」，一件活的结论是
        * 「刚发生了什么」，塞进 instructions 会让它变成永久人设的一部分，下一轮还在。
        * 角色用 user 而不是 assistant——模型只会顺着自己说过的话往下说，不会去转述它。
-       */
+      */
       injectItem(text: string): void;
+      /**
+       * 注入一条外部用户文字并等待上游确认 response.create 已被接受。
+       * 只有 relay transport 提供这个确认面；拒绝或挂断会 reject，调用方必须回退，不能丢话。
+       */
+      injectItemWithAck?: (text: string) => Promise<void>;
       /** 上游已创建回复、但尚未发出对应 response.done。注入前用它避开 active response 窗口。 */
       isResponding(): boolean;
     })

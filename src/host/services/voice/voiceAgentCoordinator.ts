@@ -47,8 +47,12 @@ export type VoiceIntent =
    * 与 steer_task（改方向、不弃活）是两件事，路由判别写在 voiceRouting 的 prompt 里。
    */
   | { kind: 'spawn_task'; title: string; prompt: string; replaceCurrent?: boolean }
-  | { kind: 'steer_task'; instruction: string }
-  | { kind: 'cancel_task' }
+  /**
+   * `target`：用户点名了要作用在哪一件活上（get_active_tasks 列出的编号）。
+   * 不给 = 手上正在跑的那件（原语义，零行为变化）。给了但对不上就拒绝，见 rejectMismatchedTarget。
+   */
+  | { kind: 'steer_task'; instruction: string; target?: string }
+  | { kind: 'cancel_task'; target?: string }
   | { kind: 'end_call' }
   | { kind: 'current_time' };
 
@@ -651,6 +655,7 @@ function onAgentStreamEvent(state: LedgerState, sessionId: string, event: AgentE
     workItemId: `${pendingId}:milestone-${(state.milestoneSeq += 1)}`,
     title: item.title,
     step,
+    ...(liveWorkCount(state) > 1 ? { attributed: true } : {}),
     ...(state.activeAgentId ? { agentId: state.activeAgentId } : {}),
   }));
 }
@@ -726,9 +731,9 @@ export async function dispatchVoiceIntent(intent: VoiceIntent): Promise<string> 
     case 'spawn_task':
       return spawnTask(state, intent.title, intent.prompt, intent.replaceCurrent);
     case 'steer_task':
-      return steerTask(state, intent.instruction);
+      return steerTask(state, intent.instruction, intent.target);
     case 'cancel_task':
-      return cancelTask(state);
+      return cancelTask(state, intent.target);
     case 'end_call':
       return endCall(state);
     case 'current_time':
@@ -878,7 +883,71 @@ function spawnSpeechDirective(title: string): string {
   ].join('\n');
 }
 
-async function steerTask(state: LedgerState, instruction: string): Promise<string> {
+// ============================================================================
+// 定向（R2）：编号 → 那件活，对不上就拒绝
+// ============================================================================
+
+/**
+ * 播给用户的编号 = 这件活在账本里的**登记次序**（items 只 set 不 delete，一通电话里恒定）。
+ *
+ * 刻意不用「当前存活项里的第几个」：活会陆续落终态，那种编号每落一件就整体前移——
+ * 用户听到的「2 号」和他下一句说出口的「2 号」可能已经不是同一件事，而这条链上编错号
+ * 的代价是停错活。代价是号码会有断档（3 件跑完后新的一件是「4」），听着略怪但不会指错。
+ */
+function ordinalOf(state: LedgerState, workItemId: string): number {
+  return [...state.items.keys()].indexOf(workItemId) + 1;
+}
+
+/** 编号/id → 那件活。认不出一律 undefined，绝不猜。 */
+function resolveTargetItem(state: LedgerState, target: string): VoiceWorkItem | undefined {
+  const byId = state.items.get(target);
+  if (byId) return byId;
+  // 只认「整串里恰好一个数字」（"2"、"2号"、"第2个"）。「1 或 2」这种有两个数字的
+  // 一律认不出——用户自己都没说定，我们更不该替他挑一个。
+  const matched = /^\D*(\d+)\D*$/.exec(target);
+  if (!matched?.[1]) return undefined;
+  const id = [...state.items.keys()][Number(matched[1]) - 1];
+  return id ? state.items.get(id) : undefined;
+}
+
+/**
+ * 定向校验。**只在给了 target 时做事**——不给就返回 null 放行，走原来那条路，零行为变化。
+ *
+ * 返回字符串 = 拒绝的台词。查无此活、已经结束、或指到的不是手上那件，**一律拒绝，
+ * 绝不退回当前活**：用户想停 2 号却把 1 号停了，比什么都不做糟得多。这道门是
+ * fail-closed 的全部意义，把它改成「找不到就作用于当前活」就等于把门拆了。
+ *
+ * 为什么「不是手上那件」也要拒：通话这条线是单路的——TaskManager 的 cancel /
+ * interruptAndContinue 都按会话粒度生效，根本没有「只停第 2 件」这种操作。能停的
+ * 只有手上那件，所以这里只能如实说停不了，而不是假装停了别的。
+ */
+function rejectMismatchedTarget(
+  state: LedgerState,
+  target: string | undefined,
+  action: '改方向' | '停',
+): string | null {
+  if (!target) return null;
+  const wanted = resolveTargetItem(state, target);
+  if (!wanted) {
+    return `我这边没有编号是「${target}」的活，什么都没动。先调 get_active_tasks 看一下有哪几件，再报编号。`;
+  }
+  if (TERMINAL.includes(wanted.status)) {
+    return `「${wanted.title}」已经${statusText(wanted.status)}了，不用再${action}它。`;
+  }
+  if (wanted.id !== state.pendingId) {
+    const current = state.pendingId ? state.items.get(state.pendingId) : undefined;
+    return [
+      `「${wanted.title}」不是我手上正在跑的那件，我${action}不了它——这通电话一次只握得住一件活。`,
+      current ? `现在跑的是「${current.title}」。` : '现在手上没有正在跑的活。',
+      '如实告诉用户这件事，不要说你已经动了它。',
+    ].join('');
+  }
+  return null;
+}
+
+async function steerTask(state: LedgerState, instruction: string, target?: string): Promise<string> {
+  const mismatch = rejectMismatchedTarget(state, target, '改方向');
+  if (mismatch) return mismatch;
   const tm = await taskManager();
   const status = tm.getSessionState(state.neoSessionId).status;
   const pending = state.pendingId ? state.items.get(state.pendingId) : undefined;
@@ -917,7 +986,9 @@ function endCall(state: LedgerState): string {
  * 而终态事件是之后才到的——说"停了"的那一刻并没有确认它停了，这就是一句 fail-open 的
  * 谎报。现在返回值只说"正在停"（一件已经真发生的事），停没停稳由后续注入回报兑现。
  */
-async function cancelTask(state: LedgerState): Promise<string> {
+async function cancelTask(state: LedgerState, target?: string): Promise<string> {
+  const mismatch = rejectMismatchedTarget(state, target, '停');
+  if (mismatch) return mismatch;
   const tm = await taskManager();
   const status = tm.getSessionState(state.neoSessionId).status;
   if (status !== 'running' && status !== 'queued' && status !== 'paused') {
@@ -960,13 +1031,37 @@ function describeCurrentTime(): string {
   return `现在是${text}。`;
 }
 
+/**
+ * 「现在在跑什么」。分两组，因为这两组**能不能被指挥是不一样的**：
+ *
+ * 上面一组是我派出去的 run，带编号，可以拿编号定向 steer / cancel；下面一组是执行侧
+ * 计划里的条目，它们不是 run，停不了也改不了。上一版把两组平铺成同一串 `- xxx`，
+ * 通话 brain 无从分辨，只能把「停掉那个」翻译成「停手上那件」——指挥台的第一课是
+ * 先让人看清哪些东西是可以被指的。
+ */
 function describeStatus(state: LedgerState): string {
   const lines: string[] = [];
   const live = [...state.items.values()].filter((item) => !TERMINAL.includes(item.status));
-  for (const item of live) lines.push(`- ${item.title}（${statusText(item.status)}）`);
-  for (const task of getIncompleteTasks(state.neoSessionId)) lines.push(`- ${task.subject}（${task.status}）`);
+  if (live.length) {
+    lines.push('我派出去的活（要改方向或叫停，把编号传给 target）：');
+    for (const item of live) {
+      lines.push(`${ordinalOf(state, item.id)}. ${item.title}（${statusText(item.status)}）`);
+    }
+  }
+  const planned = getIncompleteTasks(state.neoSessionId);
+  if (planned.length) {
+    lines.push('执行侧计划里还没做完的（这些不是我派的活，改不了也停不了）：');
+    for (const task of planned) lines.push(`- ${task.subject}（${task.status}）`);
+  }
   if (!lines.length) return '当前没有进行中的任务。';
   return lines.join('\n');
+}
+
+/** 此刻有几件活还没落终态。>1 时口播必须点名是哪件的进度，否则用户不知道在讲谁。 */
+function liveWorkCount(state: LedgerState): number {
+  let count = 0;
+  for (const item of state.items.values()) if (!TERMINAL.includes(item.status)) count += 1;
+  return count;
 }
 
 function statusText(status: VoiceWorkItemStatus): string {

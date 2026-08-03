@@ -138,15 +138,25 @@ export function buildMilestoneNarration(input: {
   title: string;
   step: string;
   agentId?: string;
+  /**
+   * 同时有不止一件活没落终态：这一句必须点名是哪件的进度。
+   *
+   * 只在多活时点名，不是无脑都带上：只有一件活在跑时说「『写周报』这边，草稿列完了」，
+   * 是在回答没有人问的问题。归属信息的价值全部来自「有歧义」这个前提。
+   */
+  attributed?: boolean;
 }): VoiceWorkNarration {
   const speaker = resolveNarrationSpeaker(input.agentId);
   const step = toSpokenSummary(input.step);
+  const progress = input.attributed
+    ? `「${input.title}」这边，${step}，这步做完了，我接着往下做。`
+    : `${step}，这步做完了，我接着往下做。`;
   return {
     workItemId: input.workItemId,
     status: 'milestone',
     title: input.title,
     summary: [
-      `现在对用户说一句进度：「${step}，这步做完了，我接着往下做。」`,
+      `现在对用户说一句进度：「${progress}」`,
       '**整件事还没做完**，不要说它完成了、写好了、可以用了。',
       '就说这一句，不要顺带汇报别的步骤，也不要念待办清单。',
     ].join('\n'),

@@ -37,19 +37,19 @@ export function buildDefaultSuggestions(t: Translations): SuggestionItem[] {
     {
       icon: BarChart3,
       ...t.chat.suggestions.chart,
-      accent: 'bg-white/[0.03] border-white/[0.08]',
+      accent: 'bg-[color-mix(in_srgb,var(--text-primary)_3%,transparent)] border-[color-mix(in_srgb,var(--text-primary)_8%,transparent)]',
       iconColor: 'text-zinc-400',
     },
     {
       icon: Search,
       ...t.chat.suggestions.briefing,
-      accent: 'bg-white/[0.03] border-white/[0.08]',
+      accent: 'bg-[color-mix(in_srgb,var(--text-primary)_3%,transparent)] border-[color-mix(in_srgb,var(--text-primary)_8%,transparent)]',
       iconColor: 'text-zinc-400',
     },
     {
       icon: HardDrive,
       ...t.chat.suggestions.disk,
-      accent: 'bg-white/[0.03] border-white/[0.08]',
+      accent: 'bg-[color-mix(in_srgb,var(--text-primary)_3%,transparent)] border-[color-mix(in_srgb,var(--text-primary)_8%,transparent)]',
       iconColor: 'text-zinc-400',
     },
   ];
@@ -113,7 +113,7 @@ export const NewSessionWelcome: React.FC<{
               目录选择收进侧栏「项目」区的新建项目流程与项目行 ⋯ 菜单）。 */}
           {contextLabel && (
             <span
-              className="shrink-0 rounded-md border border-white/[0.08] bg-white/[0.03] px-2 py-1 text-[11px] font-medium text-zinc-400"
+              className="shrink-0 rounded-md border border-[color-mix(in_srgb,var(--text-primary)_8%,transparent)] bg-[color-mix(in_srgb,var(--text-primary)_3%,transparent)] px-2 py-1 text-[11px] font-medium text-zinc-400"
             >
               {contextLabel}
             </span>
@@ -210,7 +210,7 @@ const SuggestionCard: React.FC<SuggestionCardProps> = ({
       style={{ animationDelay: `${delay}ms` }}
     >
       <div className="mb-3 flex items-center justify-between gap-3">
-        <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/[0.08] bg-black/20">
+        <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-[color-mix(in_srgb,var(--text-primary)_8%,transparent)] bg-black/20">
           <Icon className={`h-4 w-4 ${iconColor}`} />
         </div>
         <ArrowRight className="h-4 w-4 text-zinc-600 transition-colors group-hover:text-zinc-300" />

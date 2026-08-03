@@ -145,12 +145,12 @@ export const SoulSettings: React.FC = () => {
       <div>
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-2">
-            <Fingerprint className="h-4 w-4 text-primary-400" />
+            <Fingerprint className="h-4 w-4 text-badge-accent" />
             <h3 className="text-sm font-medium text-zinc-200">{soulText.title}</h3>
             <span
               className={`ml-1 rounded-full px-2 py-0.5 text-xs ${
                 isCustom
-                  ? 'bg-primary-500/20 text-primary-400'
+                  ? 'bg-primary-500/20 text-badge-accent'
                   : 'bg-zinc-700 text-zinc-400'
               }`}
             >
@@ -176,7 +176,7 @@ export const SoulSettings: React.FC = () => {
 
       {/* 安全说明 —— 拆分后安全红线始终生效 */}
       <div className="flex items-start gap-2 rounded-lg border border-zinc-800 bg-zinc-900/60 px-3 py-2.5">
-        <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-emerald-500" />
+        <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-badge-success" />
         <p className="text-xs text-zinc-400">
           {soulText.safetyPrefix}<span className="text-zinc-200">{soulText.safetyStrong}</span>{soulText.safetySuffix}
         </p>
@@ -202,7 +202,7 @@ export const SoulSettings: React.FC = () => {
       </div>
 
       {error && (
-        <div className="rounded-lg border border-red-900/50 bg-red-950/40 px-3 py-2 text-xs text-red-400">
+        <div className="rounded-lg border border-red-900/50 bg-red-950/40 px-3 py-2 text-xs text-badge-danger">
           {soulText.errorPrefix}{error}
         </div>
       )}

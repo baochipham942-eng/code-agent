@@ -166,6 +166,26 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('two-step onboarding', () => {
+  it('greets first-run users with the habitat welcome above the first step', async () => {
+    render(<ModelOnboardingModal onComplete={vi.fn()} />);
+    await screen.findByTestId('onboarding-subscription-sources');
+
+    const welcome = screen.getByTestId('onboarding-welcome');
+    expect(welcome.querySelector('[data-planet="earth"]')).toBeTruthy();
+    expect(welcome.textContent).toContain('抵达新栖地。');
+    expect(welcome.textContent).toContain('Neo 是你地球之外的新居所。');
+    expect(screen.getByTestId('onboarding-step-source').getAttribute('data-active')).toBe('true');
+  });
+
+  it('drops the habitat welcome once configuration advances to the model step', async () => {
+    render(<ModelOnboardingModal onComplete={vi.fn()} />);
+    fireEvent.click(await screen.findByTestId('onboarding-subscription-sources')
+      .then((section) => section.querySelector('[data-onboarding-engine="codex_cli"]')!));
+
+    expect(screen.getByTestId('onboarding-step-model').getAttribute('data-active')).toBe('true');
+    expect(screen.queryByTestId('onboarding-welcome')).toBeNull();
+  });
+
   it('contains only source and default-model steps', async () => {
     render(<ModelOnboardingModal onComplete={vi.fn()} />);
     await screen.findByTestId('onboarding-subscription-sources');

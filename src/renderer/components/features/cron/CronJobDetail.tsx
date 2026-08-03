@@ -139,14 +139,14 @@ export const CronJobDetail: React.FC<CronJobDetailProps> = ({ job }) => {
             <button /* ds-allow:button: 同上，超小文本按钮组（蓝色语义） */
               onClick={handleTrigger}
               disabled={isTriggering}
-              className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs text-blue-400 transition-colors hover:bg-blue-500/10 hover:text-blue-300 disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs text-badge-info transition-colors hover:bg-blue-500/10 hover:text-badge-info disabled:opacity-50"
             >
               <Play className="h-3.5 w-3.5" />
               {isTriggering ? cc.triggering : cc.trigger}
             </button>
             <button /* ds-allow:button: 同上，超小文本按钮组（红色语义） */
               onClick={handleDelete}
-              className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs text-zinc-500 transition-colors hover:bg-red-500/10 hover:text-red-400"
+              className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs text-zinc-500 transition-colors hover:bg-red-500/10 hover:text-badge-danger"
             >
               <Trash2 className="h-3.5 w-3.5" />
               {cc.delete}
@@ -201,7 +201,7 @@ export const CronJobDetail: React.FC<CronJobDetailProps> = ({ job }) => {
 
       <div className="min-h-0 flex-1 overflow-hidden p-5">
         <div className="mb-3 flex items-center gap-2">
-          <Activity className="h-4 w-4 text-blue-300" />
+          <Activity className="h-4 w-4 text-badge-info" />
           <h4 className="text-sm font-medium text-zinc-100">{cc.historyTitle}</h4>
         </div>
         {executions.length === 0 ? (

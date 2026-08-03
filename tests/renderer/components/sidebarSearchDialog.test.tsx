@@ -79,6 +79,8 @@ describe('SidebarSearchDialog', () => {
     expect(
       screen.getByRole('textbox', { name: '搜索会话标题与消息内容' }).getAttribute('type'),
     ).toBe('text');
+    expect(screen.getByRole('textbox', { name: '搜索会话标题与消息内容' }).parentElement?.querySelector('svg')?.classList.contains('h-4')).toBe(true);
+    expect(screen.getByRole('textbox', { name: '搜索会话标题与消息内容' }).parentElement?.querySelector('svg')?.classList.contains('w-4')).toBe(true);
   });
 
   it('selects a session and conditionally removes the dialog from the DOM', async () => {

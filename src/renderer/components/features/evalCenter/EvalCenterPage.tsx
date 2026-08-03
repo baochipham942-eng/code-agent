@@ -62,7 +62,7 @@ export const EvalCenterPage: React.FC = () => {
     // 2026-07-27 拍板改 inline（侧栏常驻）：与其他二级页一致，返回语义交给侧栏
     <FullScreenPage testId="eval-center-page" variant="inline">
       <FullScreenPageHeader
-        icon={<Gauge className="h-4 w-4 text-amber-300" />}
+        icon={<Gauge className="h-4 w-4 text-badge-warning" />}
         title={t.evalCenter.title}
         description={t.evalCenter.description}
         actions={canAccess ? (
@@ -81,7 +81,7 @@ export const EvalCenterPage: React.FC = () => {
                 {key === 'validation' && showValidationBadge && (
                   <span
                     data-testid="eval-center-validation-badge"
-                    className="absolute -right-1 -top-1 rounded-full border border-sky-500/40 bg-sky-500/20 px-1 text-[9px] leading-3 text-sky-200"
+                    className="absolute -right-1 -top-1 rounded-full border border-badge-info/40 bg-sky-500/20 px-1 text-[9px] leading-3 text-badge-info"
                   >
                     {t.evalCenter.newRequestBadge}
                   </span>

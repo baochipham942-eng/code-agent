@@ -134,7 +134,7 @@ export function buildWorkbenchTurnSystemContext(
 
   // R1 冷启动引导：设计画布会话激活即注入（即使画布空）——服务端按轮注入，不进用户消息。
   if (context.executionIntent?.designCanvasActive) {
-    lines.push(formatDesignCanvasSessionReminder());
+    lines.push(formatDesignCanvasSessionReminder(!context.canvasSnapshot));
   }
 
   lines.push(...buildWorkbenchCapabilityContextLines(context));

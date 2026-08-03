@@ -73,11 +73,11 @@ function getSetupStateLabel(
 
 function getSetupLogLineClass(entry: { stream: 'stdout' | 'stderr'; line: string }): string {
   const line = entry.line.trim();
-  if (line.startsWith('❌')) return 'text-red-400';
-  if (line.startsWith('▷ STEP:')) return 'text-cyan-300';
-  if (line.startsWith('✓')) return 'text-green-400';
+  if (line.startsWith('❌')) return 'text-badge-danger';
+  if (line.startsWith('▷ STEP:')) return 'text-badge-info';
+  if (line.startsWith('✓')) return 'text-badge-success';
   if (entry.stream === 'stderr' && /\b(error|failed|failure|fatal|exception|traceback)\b/i.test(line)) {
-    return 'text-red-400';
+    return 'text-badge-danger';
   }
   return entry.stream === 'stderr' ? 'text-zinc-400' : 'text-zinc-300';
 }
@@ -369,7 +369,7 @@ const PrivacySettings: React.FC<PrivacySettingsProps> = ({ onNavigateSettings })
           <div className="flex items-center gap-3 rounded-lg border border-zinc-800 bg-zinc-900/40 p-3">
             {isReadyGreen ? (
               <>
-                <ShieldCheck className="h-5 w-5 text-green-400" />
+                <ShieldCheck className="h-5 w-5 text-badge-success" />
                 <div className="text-sm">
                   <div className="text-zinc-200 font-medium">{privacyText.status.readyTitle}</div>
                   <div className="text-xs text-zinc-400 mt-0.5">
@@ -398,7 +398,7 @@ const PrivacySettings: React.FC<PrivacySettingsProps> = ({ onNavigateSettings })
           </div>
 
           {error && (
-            <div className="flex items-start gap-2 rounded-lg border border-red-900/40 bg-red-950/30 p-3 text-sm text-red-300">
+            <div className="flex items-start gap-2 rounded-lg border border-red-900/40 bg-red-950/30 p-3 text-sm text-badge-danger">
               <XCircle className="mt-0.5 h-4 w-4 shrink-0" />
               <div className="flex-1 whitespace-pre-wrap break-words">{error}</div>
             </div>

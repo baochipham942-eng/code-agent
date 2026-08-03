@@ -59,12 +59,12 @@ function formatTokens(count: number): string {
 const CompactionIndicator: React.FC<{ status: CompactionStatus }> = ({ status }) => {
   if (status.isCompacting) {
     return (
-      <div className="flex items-center gap-2 px-3 py-1.5 bg-amber-500/10 border border-amber-500/20 rounded-lg animate-pulse">
-        <span className="text-amber-400 text-sm font-bold">&#10035;</span>
-        <span className="text-amber-300 text-xs font-medium">
+      <div className="flex items-center gap-2 px-3 py-1.5 bg-amber-500/10 border border-badge-warning/20 rounded-lg animate-pulse">
+        <span className="text-badge-warning text-sm font-bold">&#10035;</span>
+        <span className="text-badge-warning text-xs font-medium">
           Compacting conversation...
           {status.tokensBefore != null && (
-            <span className="text-amber-400/70 ml-1">
+            <span className="text-badge-warning/70 ml-1">
               ({'\u2191'} {formatTokens(status.tokensBefore)} tokens)
             </span>
           )}
@@ -75,12 +75,12 @@ const CompactionIndicator: React.FC<{ status: CompactionStatus }> = ({ status })
 
   if (status.showResult && status.tokensBefore != null && status.tokensAfter != null) {
     return (
-      <div className="flex items-center gap-2 px-3 py-1.5 bg-emerald-500/10 border border-emerald-500/20 rounded-lg transition-opacity duration-1000">
-        <span className="text-emerald-400 text-sm font-bold">&#10035;</span>
-        <span className="text-emerald-300 text-xs font-medium">
+      <div className="flex items-center gap-2 px-3 py-1.5 bg-emerald-500/10 border border-badge-success/20 rounded-lg transition-opacity duration-1000">
+        <span className="text-badge-success text-sm font-bold">&#10035;</span>
+        <span className="text-badge-success text-xs font-medium">
           Compacted: {formatTokens(status.tokensBefore)} {'\u2192'} {formatTokens(status.tokensAfter)} tokens
           {status.duration_ms != null && (
-            <span className="text-emerald-400/70 ml-1">
+            <span className="text-badge-success/70 ml-1">
               ({formatDuration(status.duration_ms)})
             </span>
           )}
@@ -119,8 +119,8 @@ export const AgentStatsBar: React.FC<AgentStatsBarProps> = ({
 
   // Context usage color
   const getUsageColor = (pct: number) => {
-    if (pct >= 90) return 'text-red-400';
-    if (pct >= 70) return 'text-amber-400';
+    if (pct >= 90) return 'text-badge-danger';
+    if (pct >= 70) return 'text-badge-warning';
     return 'text-zinc-400';
   };
 

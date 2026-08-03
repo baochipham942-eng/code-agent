@@ -1,5 +1,8 @@
 import express from 'express';
 import http from 'node:http';
+import * as fs from 'node:fs/promises';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { IPC_DOMAINS, type IPCRequest } from '../../../src/shared/ipc';
 import type { SurfaceConversationSnapshotV1 } from '../../../src/shared/contract/surfaceExecution';
@@ -13,6 +16,48 @@ const snapshot: SurfaceConversationSnapshotV1 = {
   conversationId: 'conversation-1',
   sessions: [],
   updatedAt: 100,
+};
+
+const terminalSnapshot: SurfaceConversationSnapshotV1 = {
+  ...snapshot,
+  sessions: [{
+    version: 1,
+    session: {
+      version: 1,
+      sessionId: 'surface-1',
+      conversationId: 'conversation-1',
+      runId: 'run-1',
+      agentId: 'agent-1',
+      surface: 'browser',
+      provider: 'managed',
+      capabilities: {
+        version: 1,
+        surface: 'browser',
+        provider: 'managed',
+        protocolVersion: '2',
+        operations: ['observe'],
+        observationKinds: ['screenshot'],
+        supports: {
+          cancel: true,
+          pause: false,
+          takeover: true,
+          cleanup: true,
+          successorObservation: false,
+        },
+      },
+      state: 'completed',
+      startedAt: 1,
+      heartbeatAt: 2,
+    },
+    grant: { state: 'none', capabilities: [], actionClasses: [], dataScopes: [] },
+    events: [],
+    evidence: [],
+    outputs: [],
+    availableControls: [],
+    source: 'persisted',
+    writable: false,
+    updatedAt: 2,
+  }],
 };
 
 describe('Surface Execution IPC', () => {
@@ -39,6 +84,18 @@ describe('Surface Execution IPC', () => {
     })),
     control: vi.fn(async () => ({ version: 1 as const, snapshot })),
   };
+  const liveStream = {
+    start: vi.fn(async (request: { surfaceSessionId: string }) => ({
+      version: 1 as const,
+      surfaceSessionId: request.surfaceSessionId,
+      streaming: true,
+    })),
+    stop: vi.fn(async (surfaceSessionId: string) => ({
+      version: 1 as const,
+      surfaceSessionId,
+      streaming: false,
+    })),
+  };
   let server: http.Server | undefined;
 
   beforeEach(() => {
@@ -46,7 +103,7 @@ describe('Surface Execution IPC', () => {
     handlers.clear();
     registerSurfaceExecutionHandlers({
       handle: (channel: string, handler: WebRouteHandler) => handlers.set(channel, handler),
-    } as never, () => service as never);
+    } as never, () => service as never, () => liveStream as never);
   });
 
   afterEach(async () => {
@@ -263,5 +320,150 @@ describe('Surface Execution IPC', () => {
       },
     });
     expect(JSON.stringify(result)).not.toMatch(/foreign-surface-id|browser-secret|tab-secret|relay-secret/);
+  });
+
+  it('starts and stops the live frame stream with a scoped conversation (B1-R·R1)', async () => {
+    const handler = handlers.get(IPC_DOMAINS.SURFACE_EXECUTION) as WebRouteHandler;
+    const payload = {
+      version: 1,
+      conversationId: 'conversation-1',
+      surfaceSessionId: 'surface-1',
+      maxWidth: 900,
+    };
+
+    expect(await handler(null, { action: 'startLiveStream', payload })).toEqual({
+      success: true,
+      data: { version: 1, surfaceSessionId: 'surface-1', streaming: true },
+    });
+    expect(liveStream.start).toHaveBeenCalledWith({
+      version: 1,
+      conversationId: 'conversation-1',
+      surfaceSessionId: 'surface-1',
+      maxWidth: 900,
+    });
+
+    expect(await handler(null, { action: 'stopLiveStream', payload })).toEqual({
+      success: true,
+      data: { version: 1, surfaceSessionId: 'surface-1', streaming: false },
+    });
+    expect(liveStream.stop).toHaveBeenCalledWith('surface-1');
+  });
+
+  it('rejects live stream payloads that omit scope or smuggle extra authority fields', async () => {
+    const handler = handlers.get(IPC_DOMAINS.SURFACE_EXECUTION) as WebRouteHandler;
+    const rejected = [
+      { version: 1, surfaceSessionId: 'surface-1' },
+      { version: 1, conversationId: 'conversation-1' },
+      { version: 1, conversationId: 'conversation-1', surfaceSessionId: 'surface-1', agentId: 'agent-1' },
+      { version: 1, conversationId: 'conversation-1', surfaceSessionId: 'surface-1', maxWidth: -5 },
+    ];
+
+    for (const payload of rejected) {
+      const result = await handler(null, { action: 'startLiveStream', payload });
+      expect(result).toMatchObject({ success: false, error: { code: 'INVALID_ARGS' } });
+    }
+    expect(liveStream.start).not.toHaveBeenCalled();
+  });
+
+  it('persists, reads, and deletes a terminal frame only through an owner-scoped Surface session', async () => {
+    const previousDataDir = process.env.CODE_AGENT_DATA_DIR;
+    const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'surface-frame-ipc-'));
+    process.env.CODE_AGENT_DATA_DIR = dataDir;
+    service.getSnapshot.mockResolvedValue(terminalSnapshot);
+    const handler = handlers.get(IPC_DOMAINS.SURFACE_EXECUTION) as WebRouteHandler;
+    const selector = {
+      version: 1,
+      conversationId: 'conversation-1',
+      surfaceSessionId: 'surface-1',
+    };
+    try {
+      await expect(handler(null, {
+        action: 'persistTerminalFrame',
+        payload: { ...selector, dataUrl: 'data:image/jpeg;base64,/9j/2Q==' },
+      })).resolves.toEqual({
+        success: true,
+        data: { version: 1, ok: true, bytes: 4 },
+      });
+
+      await expect(handler(null, {
+        action: 'getPersistedTerminalFrame',
+        payload: selector,
+      })).resolves.toEqual({
+        success: true,
+        data: {
+          version: 1,
+          frame: { dataUrl: 'data:image/jpeg;base64,/9j/2Q==', bytes: 4 },
+        },
+      });
+
+      await expect(handler(null, {
+        action: 'deletePersistedTerminalFrames',
+        payload: { version: 1, conversationId: 'conversation-1' },
+      })).resolves.toEqual({
+        success: true,
+        data: { version: 1, deleted: true },
+      });
+      await expect(handler(null, {
+        action: 'getPersistedTerminalFrame',
+        payload: selector,
+      })).resolves.toEqual({
+        success: true,
+        data: { version: 1, frame: null },
+      });
+    } finally {
+      if (previousDataDir === undefined) delete process.env.CODE_AGENT_DATA_DIR;
+      else process.env.CODE_AGENT_DATA_DIR = previousDataDir;
+      await fs.rm(dataDir, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects terminal frame reads when the Surface session is not owned by the conversation', async () => {
+    const handler = handlers.get(IPC_DOMAINS.SURFACE_EXECUTION) as WebRouteHandler;
+    service.getSnapshot.mockResolvedValue(snapshot);
+
+    await expect(handler(null, {
+      action: 'getPersistedTerminalFrame',
+      payload: {
+        version: 1,
+        conversationId: 'conversation-1',
+        surfaceSessionId: 'surface-foreign',
+      },
+    })).resolves.toMatchObject({
+      success: false,
+      error: { code: 'SURFACE_TARGET_NOT_OWNED' },
+    });
+  });
+
+  it('rejects oversized, invalid-base64, and non-JPEG terminal frame payloads without writing', async () => {
+    const handler = handlers.get(IPC_DOMAINS.SURFACE_EXECUTION) as WebRouteHandler;
+    service.getSnapshot.mockResolvedValue(terminalSnapshot);
+    const base = {
+      version: 1,
+      conversationId: 'conversation-1',
+      surfaceSessionId: 'surface-1',
+    };
+    const oversized = `data:image/jpeg;base64,${Buffer.alloc(1024 * 1024 + 1, 0xab).toString('base64')}`;
+
+    await expect(handler(null, {
+      action: 'persistTerminalFrame',
+      payload: { ...base, dataUrl: oversized },
+    })).resolves.toMatchObject({
+      success: true,
+      data: { version: 1, ok: false, reason: expect.stringContaining('exceeds') },
+    });
+    await expect(handler(null, {
+      action: 'persistTerminalFrame',
+      payload: { ...base, dataUrl: 'data:image/jpeg;base64,***=' },
+    })).resolves.toMatchObject({
+      success: true,
+      data: { version: 1, ok: false, reason: 'invalid base64 frame payload' },
+    });
+    await expect(handler(null, {
+      action: 'persistTerminalFrame',
+      payload: { ...base, dataUrl: `data:image/jpeg;base64,${Buffer.from('nope').toString('base64')}` },
+    })).resolves.toMatchObject({
+      success: true,
+      data: { version: 1, ok: false, reason: expect.stringContaining('not a JPEG') },
+    });
   });
 });

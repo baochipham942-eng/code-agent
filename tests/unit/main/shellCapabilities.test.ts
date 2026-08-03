@@ -36,9 +36,13 @@ describe('shell capabilities', () => {
     ['domain:memory', 'memoryEntryUpdate'],
     ['domain:session', 'restoreWorkspaceFilesAtCheckpoint'],
     ['domain:surfaceExecution', 'control'],
+    ['domain:surfaceExecution', 'deletePersistedTerminalFrames'],
     ['domain:surfaceExecution', 'getFrame'],
     ['domain:surfaceExecution', 'getOutput'],
+    ['domain:surfaceExecution', 'getPersistedTerminalFrame'],
     ['domain:surfaceExecution', 'getSnapshot'],
+    ['domain:surfaceExecution', 'persistTerminalFrame'],
+    ['domain:voice', 'reportFailure'],
   ])('advertises newly registered handler %s/%s in the capability manifest', (domain, action) => {
     const supported = new Set(getShellCapabilityIds());
     expect(supported.has(makeShellCapabilityId(domain, action))).toBe(true);

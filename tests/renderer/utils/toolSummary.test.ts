@@ -233,24 +233,24 @@ describe('getToolStatusText', () => {
 // ============================================================================
 
 describe('getToolStatusClass', () => {
-  it('should return yellow for pending', () => {
+  it('should return the warning semantic token for pending', () => {
     const tc = makeToolCall({ name: 'Bash' });
-    expect(getToolStatusClass(tc)).toContain('yellow');
+    expect(getToolStatusClass(tc)).toContain('text-badge-warning');
   });
 
-  it('should return emerald for success', () => {
+  it('should return the success semantic token for success', () => {
     const tc = makeToolCall({
       name: 'Bash',
       result: { toolCallId: 'tc-1', success: true },
     });
-    expect(getToolStatusClass(tc)).toContain('emerald');
+    expect(getToolStatusClass(tc)).toContain('text-badge-success');
   });
 
-  it('should return rose for failure', () => {
+  it('should return the danger semantic token for failure', () => {
     const tc = makeToolCall({
       name: 'Bash',
       result: { toolCallId: 'tc-1', success: false },
     });
-    expect(getToolStatusClass(tc)).toContain('rose');
+    expect(getToolStatusClass(tc)).toContain('text-badge-danger');
   });
 });

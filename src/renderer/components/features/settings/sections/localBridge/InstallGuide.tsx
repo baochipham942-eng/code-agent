@@ -50,13 +50,13 @@ const CommandBlock: React.FC<CommandBlockProps> = ({ label, command, copyTitle, 
           title={copyTitle}
         >
           {copied ? (
-            <Check className="w-3.5 h-3.5 text-green-400" />
+            <Check className="w-3.5 h-3.5 text-badge-success" />
           ) : (
             <Copy className="w-3.5 h-3.5" />
           )}
         </button>
       </div>
-      {copied && <span className="text-xs text-green-400">{copiedLabel}</span>}
+      {copied && <span className="text-xs text-badge-success">{copiedLabel}</span>}
     </div>
   );
 };

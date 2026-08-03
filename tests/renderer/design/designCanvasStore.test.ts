@@ -11,6 +11,7 @@ const n = (id: string, parentId?: string): CanvasImageNode => ({
   height: 100,
   parentId,
   createdAt: 1,
+  createdBy: 'user',
 });
 
 const doc = (nodes: CanvasImageNode[]): DesignCanvasDoc => ({ version: 1, nodes, camera: { x: 0, y: 0, scale: 1 } });
@@ -196,6 +197,14 @@ describe('designCanvasStore setCamera', () => {
       scale: camera.scale * 2,
     }));
     expect(useDesignCanvasStore.getState().camera).toEqual({ x: 15, y: 20, scale: 2 });
+  });
+
+  it('直接值和函数更新都 clamp 到统一缩放范围', () => {
+    const s = useDesignCanvasStore.getState();
+    s.setCamera({ x: 10, y: 20, scale: 200 });
+    expect(useDesignCanvasStore.getState().camera).toEqual({ x: 10, y: 20, scale: 5 });
+    s.setCamera((camera) => ({ ...camera, scale: 0.001 }));
+    expect(useDesignCanvasStore.getState().camera).toEqual({ x: 10, y: 20, scale: 0.1 });
   });
 });
 

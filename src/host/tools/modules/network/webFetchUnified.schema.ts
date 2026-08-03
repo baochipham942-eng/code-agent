@@ -7,6 +7,7 @@ export const webFetchUnifiedSchema: ToolSchema = {
   description: `Unified web request tool combining smart page fetching and raw HTTP API calls.
 
 Use this only when you already have a specific URL. If you still need to discover URLs, call WebSearch first.
+Use this for extracting text content to analyze, not for "open/look at" requests where the user expects to watch the page live — route those to the Browser tool instead so the workbench browser tab shows it happening.
 
 Actions:
 - fetch: Fetch a URL and extract information using AI-powered content extraction.

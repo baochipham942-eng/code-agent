@@ -8,6 +8,15 @@ import type { ChannelAccount } from '../../../../src/shared/contract/channel';
 import type { CapabilityCenterItem } from '../../../../src/shared/contract/capability';
 import type { ControlPlaneEnvelope } from '../../../../src/shared/contract/controlPlane';
 
+// 本文件几条用例原先没传 remoteCapabilityRegistryService，于是落到真实单例
+// getRemoteCapabilityRegistryService()。实测（去掉下面的 opt-out 反复对拍三次）：走真实
+// 单例这条路每条要 ~4s，传 null 走 opt-out 只要 ~20ms，稳定复现。这 4s 在 30s 默认超时下
+// 平时够用，机器一忙就冲破 → 随机红（2026-07-31 gates 上抓到）。
+//
+// ⚠️ 那 ~4s 具体耗在哪还没定死：已排除真实网络（在 fetch 上插过探针，一次都没被调用——
+// readRegistry() 在没有控制面公钥时就早退了），怀疑是该单例路径上的懒加载/模块初始化。
+// 没查清之前不要把这里的 opt-out 去掉。
+
 const skillEnable = vi.fn();
 const skillDisable = vi.fn();
 const skillRefresh = vi.fn();
@@ -733,7 +742,7 @@ describe('CapabilityCenterService', () => {
       updateSettings: configUpdateSettings,
     } as never;
 
-    const inventory = await service.listCapabilities({ workingDirectory: workspace, configService });
+    const inventory = await service.listCapabilities({ workingDirectory: workspace, configService, remoteCapabilityRegistryService: null });
     const blockingCodes = inventory.diagnostics
       ?.filter((entry) => entry.blocking)
       .map((entry) => entry.code);
@@ -770,11 +779,11 @@ describe('CapabilityCenterService', () => {
 
     await expect(service.installDraft(
       { id: 'curated:mcp_template%3Amissing-trust-mcp', kind: 'mcp_template' },
-      { workingDirectory: workspace, configService },
+      { workingDirectory: workspace, configService, remoteCapabilityRegistryService: null },
     )).rejects.toThrow('missing_content_hash');
     await expect(service.installDraft(
       { id: 'curated:mcp_template%3Amismatched-trust-mcp', kind: 'mcp_template' },
-      { workingDirectory: workspace, configService },
+      { workingDirectory: workspace, configService, remoteCapabilityRegistryService: null },
     )).rejects.toThrow('content_hash_mismatch');
     expect(mcpAddServer).not.toHaveBeenCalled();
     await fs.rm(workspace, { recursive: true, force: true });
@@ -1017,12 +1026,12 @@ describe('CapabilityCenterService', () => {
 
     await expect(service.installDraft(
       { id: 'curated:mcp_template%3Aparameterized-mcp', kind: 'mcp_template' },
-      { workingDirectory: workspace, configService },
+      { workingDirectory: workspace, configService, remoteCapabilityRegistryService: null },
     )).rejects.toThrow('allowedRoot');
 
     const afterInstall = await service.installDraft(
       { id: 'curated:mcp_template%3Aparameterized-mcp', kind: 'mcp_template', inputs: { allowedRoot: '/tmp/capability-root' } },
-      { workingDirectory: workspace, configService },
+      { workingDirectory: workspace, configService, remoteCapabilityRegistryService: null },
     );
 
     const persisted = JSON.parse(
@@ -1071,7 +1080,7 @@ describe('CapabilityCenterService', () => {
 
     await service.removeDraft(
       { id: 'curated:mcp_template%3Aparameterized-mcp', kind: 'mcp_template' },
-      { workingDirectory: workspace, configService },
+      { workingDirectory: workspace, configService, remoteCapabilityRegistryService: null },
     );
     const rolledBack = JSON.parse(
       await fs.readFile(path.join(workspace, '.code-agent', 'mcp.json'), 'utf8'),

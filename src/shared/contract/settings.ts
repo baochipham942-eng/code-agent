@@ -78,6 +78,8 @@ export interface VoiceLiveSettings {
   executionModel?: { provider: string; model: string };
   /** 回声消除：auto 优先原生 AEC；off 强制走耳机模式。未配置 = auto。 */
   echoCancellation?: 'auto' | 'off';
+  /** 通话语速。纯 instructions 指令，遵从度按 Provider 不保证。未配置 = normal。 */
+  speechRate?: 'slow' | 'normal' | 'fast';
 }
 
 /**
@@ -291,7 +293,7 @@ export interface AppSettings {
     inheritanceMigrationAcked?: boolean;
   };
   ui: {
-    theme: 'light' | 'dark' | 'system';
+    theme: 'light' | 'dark' | 'system' | 'high-contrast-light' | 'high-contrast-dark';
     fontSize: number;
     showToolCalls: boolean;
     language: 'zh' | 'en';

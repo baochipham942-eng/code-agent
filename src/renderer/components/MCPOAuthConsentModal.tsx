@@ -59,7 +59,7 @@ export const MCPOAuthConsentModal: React.FC<Props> = ({ request, onClose }) => {
       size="lg"
       title={text.title}
       headerBgClass="bg-emerald-500/10"
-      headerIcon={<ShieldCheck className="w-5 h-5 text-emerald-400" />}
+      headerIcon={<ShieldCheck className="w-5 h-5 text-badge-success" />}
       footer={
         <ModalFooter
           cancelText={text.decline}

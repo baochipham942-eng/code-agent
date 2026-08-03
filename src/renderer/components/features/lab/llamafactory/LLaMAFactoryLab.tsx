@@ -134,7 +134,7 @@ export const LLaMAFactoryLab: React.FC = () => {
         {Array.from({ length: 4 }).map((_, i) => (
           <span
             key={i}
-            className={`text-[10px] ${i < level ? 'text-amber-400' : 'text-zinc-600'}`}
+            className={`text-[10px] ${i < level ? 'text-badge-warning' : 'text-zinc-600'}`}
           >
             ★
           </span>
@@ -149,9 +149,9 @@ export const LLaMAFactoryLab: React.FC = () => {
       <div className="px-6 py-3 border-b border-zinc-700 bg-zinc-900/30">
         <div className="max-w-5xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <Sparkles className="w-4 h-4 text-orange-400" />
+            <Sparkles className="w-4 h-4 text-badge-warning" />
             <span className="text-sm text-zinc-400">{t.labLlamafactory.lab.conceptDemoMode}</span>
-            <span className="text-xs px-2 py-0.5 rounded bg-orange-500/20 text-orange-400 border border-orange-500/30">
+            <span className="text-xs px-2 py-0.5 rounded bg-orange-500/20 text-badge-warning border border-badge-warning/30">
               {t.labLlamafactory.lab.noRealTrainingNeeded}
             </span>
           </div>
@@ -189,8 +189,8 @@ export const LLaMAFactoryLab: React.FC = () => {
                     className={`
                       w-12 h-12 rounded-full flex items-center justify-center
                       transition-all duration-300
-                      ${isCompleted ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-400' : ''}
-                      ${isCurrent ? 'bg-orange-500/20 border-orange-500/50 text-orange-400 ring-2 ring-orange-500/30' : ''}
+                      ${isCompleted ? 'bg-emerald-500/20 border-badge-success/50 text-badge-success' : ''}
+                      ${isCurrent ? 'bg-orange-500/20 border-badge-warning/50 text-badge-warning ring-2 ring-orange-500/30' : ''}
                       ${!isCompleted && !isCurrent ? 'bg-zinc-800 border-zinc-700 text-zinc-500' : ''}
                       border
                     `}
@@ -200,7 +200,7 @@ export const LLaMAFactoryLab: React.FC = () => {
                   <span
                     className={`
                       text-xs font-medium
-                      ${isCurrent ? 'text-orange-400' : isCompleted ? 'text-emerald-400' : 'text-zinc-500'}
+                      ${isCurrent ? 'text-badge-warning' : isCompleted ? 'text-badge-success' : 'text-zinc-500'}
                     `}
                   >
                     {stage.shortTitle}
@@ -228,7 +228,7 @@ export const LLaMAFactoryLab: React.FC = () => {
       <div className="px-6 py-4 bg-zinc-900">
         <div className="max-w-5xl mx-auto">
           <div className="flex items-center gap-3 mb-2">
-            <div className="w-8 h-8 rounded-lg bg-orange-500/20 border border-orange-500/30 flex items-center justify-center text-orange-400">
+            <div className="w-8 h-8 rounded-lg bg-orange-500/20 border border-badge-warning/30 flex items-center justify-center text-badge-warning">
               {currentStageConfig.icon}
             </div>
             <div>
@@ -250,7 +250,7 @@ export const LLaMAFactoryLab: React.FC = () => {
       {/* Learning Point Footer */}
       <div className="px-6 py-3 border-t border-zinc-700 bg-zinc-900/30">
         <div className="max-w-5xl mx-auto flex items-center gap-2">
-          <span className="text-orange-400">💡</span>
+          <span className="text-badge-warning">💡</span>
           <span className="text-sm text-zinc-400">
             <span className="text-zinc-400 font-medium">{t.labLlamafactory.lab.learningPointLabel}</span>
             {currentStageConfig.learningPoint}

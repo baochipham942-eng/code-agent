@@ -46,6 +46,8 @@ function invalidState(message: string) {
 
 export interface QueuedInputHandlerDependencies {
   resolveModelSpec?: (sessionId: string) => ConversationModelSpec | undefined;
+  /** 入队完成后通知宿主：若该 session 此刻已空闲，宿主要立刻把它抽走。 */
+  onEnqueued?: (sessionId: string) => void;
 }
 
 function stampModelSpec(
@@ -91,6 +93,7 @@ export function registerQueuedInputHandlers(
               },
             } satisfies IPCResponse;
           }
+          deps.onEnqueued?.(payload.sessionId);
           return { success: true, data: toQueuedInput(record) } satisfies IPCResponse;
         }
 

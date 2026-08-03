@@ -39,9 +39,9 @@ export const Context: React.FC = () => {
           let icon: React.ReactNode;
           // Use category for folder detection, type for image/file
           if (attachment.type === 'image') {
-            icon = <Image className="w-3.5 h-3.5 text-purple-400" />;
+            icon = <Image className="w-3.5 h-3.5 text-badge-accent" />;
           } else if (attachment.category === 'folder') {
-            icon = <FolderArchive className="w-3.5 h-3.5 text-amber-400" />;
+            icon = <FolderArchive className="w-3.5 h-3.5 text-badge-warning" />;
           } else {
             icon = <FileText className="w-3.5 h-3.5 text-zinc-400" />;
           }
@@ -62,7 +62,7 @@ export const Context: React.FC = () => {
           contextItems.push({
             type: 'tool',
             name: toolCall.name,
-            icon: <Wrench className="w-3.5 h-3.5 text-primary-400" />,
+            icon: <Wrench className="w-3.5 h-3.5 text-badge-accent" />,
             details: toolCall.arguments as Record<string, unknown>,
           });
         }
@@ -121,7 +121,7 @@ export const Context: React.FC = () => {
         className="flex items-center w-full"
       >
         <div className="flex items-center gap-2 flex-1 min-w-0">
-          <Layers className="w-4 h-4 text-primary-400 flex-shrink-0" />
+          <Layers className="w-4 h-4 text-badge-accent flex-shrink-0" />
           <span className="text-xs font-medium text-zinc-400 uppercase tracking-wide">
             {t.taskPanel.context}
           </span>

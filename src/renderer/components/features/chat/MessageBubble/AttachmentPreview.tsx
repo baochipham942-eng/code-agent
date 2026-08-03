@@ -30,6 +30,8 @@ import type {
   MessageAttachment,
   PresentationSummary,
 } from '@shared/contract';
+import type { AppshotCapture } from '@shared/contract/appshot';
+import { AppshotChip } from '../ChatInput/AppshotChip';
 import type { ChannelAttachment, RetryChannelMediaAttachmentResult } from '@shared/contract/channel';
 import { IPC_CHANNELS } from '@shared/ipc';
 import {
@@ -38,6 +40,10 @@ import {
   type SessionMediaContext,
 } from '@shared/utils/sessionMediaAssets';
 import ipcService from '../../../../services/ipcService';
+import {
+  invokeNativeCommandAction,
+  isNativeCommandRuntimeAvailable,
+} from '../../../../services/nativeCommandFacade';
 import { formatFileSize, FOLDER_SUMMARY_THRESHOLD, categoryLabels } from './utils';
 import { resolveFileUrl } from '../../../../utils/resolveFileUrl';
 import { SpreadsheetBlock } from './SpreadsheetBlock';
@@ -53,23 +59,23 @@ function getAttachmentIconConfig(category: AttachmentCategory | undefined): Atta
   const iconClass = 'w-5 h-5 shrink-0';
   switch (category) {
     case 'pdf':
-      return { icon: <FileText className={iconClass} />, color: 'text-red-400', label: 'PDF' };
+      return { icon: <FileText className={iconClass} />, color: 'text-badge-danger', label: 'PDF' };
     case 'audio':
-      return { icon: <Music className={iconClass} />, color: 'text-fuchsia-400', label: '音频' };
+      return { icon: <Music className={iconClass} />, color: 'text-badge-accent', label: '音频' };
     case 'video':
-      return { icon: <Video className={iconClass} />, color: 'text-cyan-400', label: '视频' };
+      return { icon: <Video className={iconClass} />, color: 'text-badge-info', label: '视频' };
     case 'excel':
-      return { icon: <Sheet className={iconClass} />, color: 'text-emerald-400', label: 'Excel' };
+      return { icon: <Sheet className={iconClass} />, color: 'text-badge-success', label: 'Excel' };
     case 'presentation':
-      return { icon: <Presentation className={iconClass} />, color: 'text-violet-400', label: 'PPT' };
+      return { icon: <Presentation className={iconClass} />, color: 'text-badge-accent', label: 'PPT' };
     case 'archive':
-      return { icon: <Archive className={iconClass} />, color: 'text-yellow-400', label: '压缩包' };
+      return { icon: <Archive className={iconClass} />, color: 'text-badge-warning', label: '压缩包' };
     case 'code':
-      return { icon: <FileCode className={iconClass} />, color: 'text-blue-400', label: '代码' };
+      return { icon: <FileCode className={iconClass} />, color: 'text-badge-info', label: '代码' };
     case 'data':
-      return { icon: <Database className={iconClass} />, color: 'text-amber-400', label: '数据' };
+      return { icon: <Database className={iconClass} />, color: 'text-badge-warning', label: '数据' };
     case 'html':
-      return { icon: <Globe className={iconClass} />, color: 'text-orange-400', label: 'HTML' };
+      return { icon: <Globe className={iconClass} />, color: 'text-badge-warning', label: 'HTML' };
     case 'text':
       return { icon: <FileText className={iconClass} />, color: 'text-zinc-400', label: '文本' };
     default:
@@ -126,11 +132,11 @@ const AttachmentStateBadge: React.FC<{
 
   const toneClass =
     state.tone === 'success'
-      ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+      ? 'border-badge-success/30 bg-emerald-500/10 text-badge-success'
       : state.tone === 'danger'
-        ? 'border-red-500/30 bg-red-500/10 text-red-300'
+        ? 'border-red-500/30 bg-red-500/10 text-badge-danger'
         : state.tone === 'active'
-          ? 'border-sky-500/30 bg-sky-500/10 text-sky-300'
+          ? 'border-badge-info/30 bg-sky-500/10 text-badge-info'
           : 'border-zinc-600 bg-zinc-800 text-zinc-400';
   const Icon = retrying ? Loader2 : state.tone === 'danger' ? AlertCircle : state.tone === 'success' ? CheckCircle : Loader2;
 
@@ -141,7 +147,7 @@ const AttachmentStateBadge: React.FC<{
       {state.tone === 'danger' && onRetry && (
         <button
           type="button"
-          className="ml-1 inline-flex items-center gap-0.5 rounded px-1 text-[10px] text-red-200 hover:bg-red-500/15"
+          className="ml-1 inline-flex items-center gap-0.5 rounded px-1 text-[10px] text-badge-danger hover:bg-red-500/15"
           onClick={(event) => {
             event.stopPropagation();
             onRetry();
@@ -220,6 +226,29 @@ const AttachmentItem: React.FC<{
   const [retrying, setRetrying] = useState(false);
   useEffect(() => setDisplayAttachment(attachment), [attachment]);
 
+  // Appshot 会话回放：ledger 只存摘要（无 data/path），截图本体仍在 appshots 目录，
+  // 按 requestId 派生路径惰性还原（无绝对路径入 ledger）。仅在 image 类且 src 为空时触发。
+  const isAppshotAttachment = Boolean(displayAttachment.appshot) || displayAttachment.id.startsWith('appshot-');
+  const [lazyAppshotSrc, setLazyAppshotSrc] = useState('');
+  const mediaAssetForCheck = buildAttachmentMediaAsset(displayAttachment, mediaContext);
+  const rawImageSrc = mediaAssetForCheck
+    ? getRenderableMediaSrc(mediaAssetForCheck)
+    : displayAttachment.thumbnail || displayAttachment.data || (displayAttachment.path ? resolveFileUrl(displayAttachment.path) : '');
+  useEffect(() => {
+    if (!isAppshotAttachment || rawImageSrc || lazyAppshotSrc || !isNativeCommandRuntimeAvailable()) return;
+    const requestId = displayAttachment.id.replace(/^appshot-/, '');
+    if (!requestId) return;
+    let cancelled = false;
+    invokeNativeCommandAction('readAppshotImageDataUrlById', { requestId })
+      .then((dataUrl) => {
+        if (!cancelled) setLazyAppshotSrc(dataUrl);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [displayAttachment.id, isAppshotAttachment, rawImageSrc, lazyAppshotSrc]);
+
   const category = displayAttachment.category || (displayAttachment.type === 'image' ? 'image' : 'other');
   // 定点反馈要的是能交给 DocEdit 的本地绝对路径。渠道附件的 path 可能是 http(s) URL
   // （channelAgentBridge.pathFromAttachmentUrl 会把 URL 原样当 path），传给下游会让模型
@@ -287,6 +316,27 @@ const AttachmentItem: React.FC<{
     const imageSrc = mediaAsset
       ? getRenderableMediaSrc(mediaAsset)
       : displayAttachment.thumbnail || displayAttachment.data || (displayAttachment.path ? resolveFileUrl(displayAttachment.path) : '');
+    // Appshot 窗口截图：气泡里用与 composer 完全一致的 AppshotChip（同款卡片、点击开同一预览 Modal）
+    if (isAppshotAttachment) {
+      const meta = displayAttachment.appshot;
+      const requestId = displayAttachment.id.replace(/^appshot-/, '') || displayAttachment.id;
+      const capture: AppshotCapture = {
+        requestId,
+        appName: meta?.appName?.trim()
+          || displayAttachment.name.replace(/\s*(截图|screenshot)\.png$/i, '').trim()
+          || 'Appshot',
+        bundleId: meta?.bundleId ?? null,
+        windowTitle: meta?.windowTitle ?? null,
+        screenshotPath: displayAttachment.path ?? '',
+        screenshotDataUrl: (imageSrc || lazyAppshotSrc) || undefined,
+        axText: meta?.axText ?? null,
+        textSource: meta?.textSource ?? 'none',
+        textReady: true,
+        windowFrame: { x: 0, y: 0, width: 0, height: 0 },
+        capturedAtMs: 0,
+      };
+      return <AppshotChip capture={capture} />;
+    }
     return (
       <div className="group max-w-[220px] overflow-hidden rounded-xl border border-zinc-700 bg-zinc-900/80 shadow-lg">
         {imageSrc ? (
@@ -297,7 +347,7 @@ const AttachmentItem: React.FC<{
             <img
               src={imageSrc}
               alt={displayAttachment.name}
-              className="max-h-[150px] w-full object-cover transition-colors group-hover:border-primary-500/50"
+              className="max-h-[150px] w-full object-cover transition-colors group-hover:border-badge-accent/50"
             />
             <div className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 transition-opacity group-hover:opacity-100">
               <ImageIcon className="w-6 h-6 text-white" />
@@ -332,7 +382,7 @@ const AttachmentItem: React.FC<{
     return (
       <div className="max-w-[260px] rounded-xl border border-zinc-700 bg-zinc-700/60 px-3 py-2">
         <div className="mb-2 flex items-center gap-2 text-xs text-zinc-300">
-          <Music className="h-4 w-4 text-fuchsia-400" />
+          <Music className="h-4 w-4 text-badge-accent" />
           <span className="truncate" title={displayAttachment.name}>{displayAttachment.name}</span>
           {stateBadge}
         </div>
@@ -374,7 +424,7 @@ const AttachmentItem: React.FC<{
           </div>
         )}
         <div className="flex items-center gap-2 px-3 py-2 text-xs text-zinc-300">
-          <Video className="h-4 w-4 shrink-0 text-cyan-400" />
+          <Video className="h-4 w-4 shrink-0 text-badge-info" />
           <span className="truncate" title={displayAttachment.name}>{displayAttachment.name}</span>
           {stateBadge}
           {mediaAsset && (
@@ -413,7 +463,7 @@ const AttachmentItem: React.FC<{
     const dangerCount = archiveManifest?.dangerousEntries?.length || 0;
     return (
       <div className="flex max-w-[240px] items-start gap-2 rounded-xl border border-zinc-700 bg-zinc-700/60 px-3 py-2">
-        <Archive className="mt-0.5 h-5 w-5 shrink-0 text-yellow-400" />
+        <Archive className="mt-0.5 h-5 w-5 shrink-0 text-badge-warning" />
         <div className="min-w-0 flex-1">
           <div className="truncate text-sm text-zinc-200" title={displayAttachment.name}>
             {displayAttachment.name}
@@ -425,7 +475,7 @@ const AttachmentItem: React.FC<{
           </div>
           {stateBadge}
           {archiveManifest && (
-            <div className={`mt-1 truncate text-xs ${dangerCount > 0 ? 'text-amber-300' : 'text-zinc-400'}`}>
+            <div className={`mt-1 truncate text-xs ${dangerCount > 0 ? 'text-badge-warning' : 'text-zinc-400'}`}>
               {archiveManifest.supported
                 ? `${archiveManifest.entries.length}${archiveManifest.truncated ? '+' : ''} 项清单`
                 : archiveManifest.note}
@@ -502,7 +552,7 @@ export const AttachmentDisplay: React.FC<AttachmentDisplayProps> = ({ attachment
           onClick={() => setIsExpanded(true)}
         >
           <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-primary-500/20 to-accent-purple/20">
-            <FolderSearch className="h-5 w-5 text-primary-400" />
+            <FolderSearch className="h-5 w-5 text-badge-accent" />
           </div>
           <div className="min-w-0 flex-1">
             <div className="text-sm font-medium text-zinc-200">

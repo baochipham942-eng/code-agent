@@ -26,8 +26,8 @@ export interface SkillDraftSummary {
 /** 来源徽标文案 + 配色（区分 telemetry 经验蒸馏 vs LLM 自沉淀） */
 function originBadge(t: Translations, origin?: SkillDraftOrigin): { label: string; className: string } {
   return origin === 'llm-review'
-    ? { label: t.skillDraft.originLlm, className: 'bg-violet-500/20 text-violet-300' }
-    : { label: t.skillDraft.originTelemetry, className: 'bg-sky-500/20 text-sky-300' };
+    ? { label: t.skillDraft.originLlm, className: 'bg-violet-500/20 text-badge-accent' }
+    : { label: t.skillDraft.originTelemetry, className: 'bg-sky-500/20 text-badge-info' };
 }
 
 /**
@@ -120,10 +120,10 @@ export const SkillDraftCard: React.FC<SkillDraftCardProps> = ({
   if (drafts.length === 0) return null;
 
   return (
-    <div className="px-3 py-2 mb-2 bg-sky-500/10 border border-sky-500/20 rounded-lg animate-fadeIn">
+    <div className="px-3 py-2 mb-2 bg-sky-500/10 border border-badge-info/20 rounded-lg animate-fadeIn">
       <div className="flex items-center gap-2 mb-1">
-        <FlaskConical className="w-4 h-4 text-sky-400 flex-shrink-0" />
-        <span className="text-xs text-sky-300 flex-1">
+        <FlaskConical className="w-4 h-4 text-badge-info flex-shrink-0" />
+        <span className="text-xs text-badge-info flex-1">
           {s.bannerPrefix}{drafts.length}{s.bannerSuffix}
         </span>
         <button
@@ -149,11 +149,11 @@ export const SkillDraftCard: React.FC<SkillDraftCardProps> = ({
               <span className={`px-1.5 py-px text-[10px] rounded flex-shrink-0 ${badge.className}`}>
                 {badge.label}
               </span>
-              <span className="text-xs text-sky-200 truncate" title={draft.name}>
+              <span className="text-xs text-badge-info truncate" title={draft.name}>
                 {draft.name}
               </span>
             </div>
-            <div className="text-[11px] text-sky-200/60 truncate" title={subtitle}>
+            <div className="text-[11px] text-badge-info/60 truncate" title={subtitle}>
               {subtitle}
             </div>
           </div>
@@ -162,7 +162,7 @@ export const SkillDraftCard: React.FC<SkillDraftCardProps> = ({
             type="button"
             onClick={() => handleConfirm(draft.id)}
             disabled={busyId !== null}
-            className="flex items-center gap-1 px-2 py-1 text-xs bg-sky-500/20 text-sky-300 rounded hover:bg-sky-500/30 transition-colors disabled:opacity-50"
+            className="flex items-center gap-1 px-2 py-1 text-xs bg-sky-500/20 text-badge-info rounded hover:bg-sky-500/30 transition-colors disabled:opacity-50"
           >
             {busyId === draft.id ? (
               <Loader2 className="w-3 h-3 animate-spin" />

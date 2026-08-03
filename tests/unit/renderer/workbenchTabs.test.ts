@@ -16,7 +16,6 @@ describe('appStore workbench tabs', () => {
       capabilityHubTab: 'experts',
       showProjectCollaborationPage: false,
       projectCollaborationPageProjectId: null,
-      showKnowledgeMemoryPanel: false,
       showLocalOpsPanel: false,
       showEvalCenter: false,
     });
@@ -68,7 +67,6 @@ describe('appStore workbench tabs', () => {
 
   it('opens the project collaboration page with a project binding and closes sibling main panels', () => {
     useAppStore.setState({
-      showKnowledgeMemoryPanel: true,
       showLocalOpsPanel: true,
       showEvalCenter: true,
     });
@@ -78,7 +76,6 @@ describe('appStore workbench tabs', () => {
     expect(useAppStore.getState()).toMatchObject({
       showProjectCollaborationPage: true,
       projectCollaborationPageProjectId: 'project-1',
-      showKnowledgeMemoryPanel: false,
       showLocalOpsPanel: false,
       showEvalCenter: false,
     });
@@ -299,19 +296,19 @@ describe('appStore workbench tabs', () => {
     expect(useAppStore.getState().activeWorkbenchTab).toBe('preview:/tmp/a.md');
   });
 
-  it('opens live URLs in the Browser view and keeps file artifacts in Preview', () => {
+  it('opens live dev preview under preview:<url> and keeps file artifacts in their own preview:<path> tab', () => {
     const { openLivePreview, openPreview } = useAppStore.getState();
 
     openLivePreview('http://127.0.0.1:4173', 'server-1');
     expect(useAppStore.getState()).toMatchObject({
-      workbenchTabs: ['browser'],
-      activeWorkbenchTab: 'browser',
+      workbenchTabs: ['preview:http://127.0.0.1:4173'],
+      activeWorkbenchTab: 'preview:http://127.0.0.1:4173',
     });
-    expect(useAppStore.getState().workbenchTabs).not.toContain('preview:http://127.0.0.1:4173');
+    expect(useAppStore.getState().workbenchTabs).not.toContain('browser');
 
     openPreview('/tmp/report.pdf');
     expect(useAppStore.getState().activeWorkbenchTab).toBe('preview:/tmp/report.pdf');
-    expect(useAppStore.getState().workbenchTabs).toEqual(['browser', 'preview:/tmp/report.pdf']);
+    expect(useAppStore.getState().workbenchTabs).toEqual(['preview:http://127.0.0.1:4173', 'preview:/tmp/report.pdf']);
   });
 
   // 批P 第四波④：空间 composer 发起的新会话右栏自动展开成空 launcher——根因是

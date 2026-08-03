@@ -5,7 +5,7 @@ import type { CanvasNode } from '../../../src/renderer/components/design/designC
 import type { CanvasProposalOp } from '../../../src/shared/contract/canvasProposal';
 
 function node(id: string, x = 0, y = 0): CanvasNode {
-  return { id, src: `assets/${id}.png`, x, y, width: 100, height: 100, createdAt: 1 };
+  return { id, src: `assets/${id}.png`, x, y, width: 100, height: 100, createdAt: 1, createdBy: 'agent' };
 }
 function emptyState(nodes: CanvasNode[]): ProposalApplyState {
   return { nodes, connectors: [], shapes: [] };
@@ -65,7 +65,7 @@ describe('computeProposalResult — addConnector', () => {
   it('同向重复连线：跳过 duplicate-connector', () => {
     const state: ProposalApplyState = {
       nodes: [node('a'), node('b')],
-      connectors: [{ id: 'c0', fromNodeId: 'a', toNodeId: 'b', createdAt: 1 }],
+      connectors: [{ id: 'c0', fromNodeId: 'a', toNodeId: 'b', createdAt: 1, createdBy: 'agent' }],
       shapes: [],
     };
     const r = computeProposalResult(state, [{ kind: 'addConnector', fromNodeId: 'a', toNodeId: 'b' }], OPTS);
@@ -76,7 +76,7 @@ describe('computeProposalResult — addConnector', () => {
   it('反向不算重复（a→b 存在时 b→a 仍可加）', () => {
     const state: ProposalApplyState = {
       nodes: [node('a'), node('b')],
-      connectors: [{ id: 'c0', fromNodeId: 'a', toNodeId: 'b', createdAt: 1 }],
+      connectors: [{ id: 'c0', fromNodeId: 'a', toNodeId: 'b', createdAt: 1, createdBy: 'agent' }],
       shapes: [],
     };
     const r = computeProposalResult(state, [{ kind: 'addConnector', fromNodeId: 'b', toNodeId: 'a' }], OPTS);

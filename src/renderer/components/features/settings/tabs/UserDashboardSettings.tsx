@@ -21,9 +21,9 @@ type UserStatusFilter = 'all' | AdminUserDashboardItem['status'];
 const DEFAULT_USER_DASHBOARD_TEXT = zh.settings.users;
 
 const STATUS_CLASSES: Record<AdminUserDashboardItem['status'], string> = {
-  active: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300',
-  suspended: 'border-amber-500/30 bg-amber-500/10 text-amber-300',
-  deleted: 'border-red-500/30 bg-red-500/10 text-red-300',
+  active: 'border-badge-success/30 bg-emerald-500/10 text-badge-success',
+  suspended: 'border-badge-warning/30 bg-amber-500/10 text-badge-warning',
+  deleted: 'border-red-500/30 bg-red-500/10 text-badge-danger',
 };
 
 const STATUS_FILTERS: UserStatusFilter[] = ['all', 'active', 'suspended', 'deleted'];
@@ -70,9 +70,9 @@ const SummaryTile: React.FC<{
   tone?: 'default' | 'success' | 'warning';
 }> = ({ label, value, tone = 'default' }) => {
   const valueClass = tone === 'success'
-    ? 'text-emerald-300'
+    ? 'text-badge-success'
     : tone === 'warning'
-      ? 'text-amber-300'
+      ? 'text-badge-warning'
       : 'text-zinc-100';
 
   return (
@@ -201,14 +201,14 @@ export const UserDashboardSettings: React.FC = () => {
         </div>
 
         {unavailableReason && (
-          <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+          <div className="flex items-start gap-2 rounded-lg border border-badge-warning/30 bg-amber-500/10 px-3 py-2 text-xs text-badge-warning">
             <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
             <span>{unavailableReason}</span>
           </div>
         )}
 
         {error && (
-          <div className="flex items-start gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-200">
+          <div className="flex items-start gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-badge-danger">
             <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
             <span>{error}</span>
           </div>
@@ -219,7 +219,7 @@ export const UserDashboardSettings: React.FC = () => {
         <div className="grid gap-3 md:grid-cols-2">
           <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-3">
             <div className="mb-2 flex items-center gap-2 text-xs font-medium text-zinc-300">
-              <Users className="h-3.5 w-3.5 text-emerald-300" />
+              <Users className="h-3.5 w-3.5 text-badge-success" />
               {userText.fields.connectedTitle}
             </div>
             <div className="text-xs leading-6 text-zinc-500">
@@ -228,7 +228,7 @@ export const UserDashboardSettings: React.FC = () => {
           </div>
           <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-3">
             <div className="mb-2 flex items-center gap-2 text-xs font-medium text-zinc-300">
-              <Shield className="h-3.5 w-3.5 text-amber-300" />
+              <Shield className="h-3.5 w-3.5 text-badge-warning" />
               {userText.fields.excludedTitle}
             </div>
             <div className="text-xs leading-6 text-zinc-500">
@@ -295,7 +295,7 @@ export const UserDashboardSettings: React.FC = () => {
                     <td className="px-3 py-3">
                       <div className="flex flex-wrap items-center gap-2">
                         {user.isAdmin ? (
-                          <span className="rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-[11px] text-amber-300">
+                          <span className="rounded-md border border-badge-warning/30 bg-amber-500/10 px-2 py-1 text-[11px] text-badge-warning">
                             Admin
                           </span>
                         ) : (
@@ -315,7 +315,7 @@ export const UserDashboardSettings: React.FC = () => {
                           className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
                             user.isAdmin
                               ? 'border-zinc-700 bg-zinc-800 text-zinc-400 hover:bg-zinc-700 hover:text-zinc-200'
-                              : 'border-amber-500/30 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20'
+                              : 'border-badge-warning/30 bg-amber-500/10 text-badge-warning hover:bg-amber-500/20'
                           }`}
                         >
                           <ShieldCheck className="h-3 w-3" />
@@ -340,7 +340,7 @@ export const UserDashboardSettings: React.FC = () => {
                         title={user.hasSharedRelay ? userText.sharedRelay.revokeTitle : userText.sharedRelay.grantTitle}
                         className={`rounded-md px-2 py-1 text-[11px] transition-colors disabled:opacity-50 ${
                           user.hasSharedRelay
-                            ? 'border border-emerald-500/30 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20'
+                            ? 'border border-badge-success/30 bg-emerald-500/10 text-badge-success hover:bg-emerald-500/20'
                             : 'border border-zinc-700 bg-zinc-800 text-zinc-400 hover:bg-zinc-700 hover:text-zinc-200'
                         }`}
                       >

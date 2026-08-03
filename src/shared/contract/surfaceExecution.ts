@@ -365,6 +365,83 @@ export interface SurfaceFramePayloadV1 {
   height?: number;
 }
 
+/**
+ * B1-R·R1 图形化现场：renderer 请求把某个 browser surface 会话的实时画面推过来。
+ * 与 SurfaceFrameRequestV1（按 assetRef 取一张已落盘的证据帧）不同，这条是活流，
+ * 帧只走内存/IPC，不进 SurfaceFrameRegistry、不落盘。
+ */
+export interface SurfaceLiveStreamRequestV1 {
+  version: 1;
+  conversationId: string;
+  surfaceSessionId: string;
+  /** 面板尺寸级别的上限，host 会夹到安全区间；缺省用默认档 */
+  maxWidth?: number;
+  maxHeight?: number;
+}
+
+export interface SurfaceLiveStreamStateV1 {
+  version: 1;
+  surfaceSessionId: string;
+  streaming: boolean;
+  /** 没能开流时给出原因，供 UI 落到「退档/不可用」文案而不是空白 */
+  reason?: 'not_running' | 'no_active_page' | 'unsupported';
+}
+
+export interface SurfaceLiveFrameV1 {
+  version: 1;
+  conversationId: string;
+  surfaceSessionId: string;
+  mimeType: 'image/jpeg';
+  dataUrl: string;
+  width: number;
+  height: number;
+  capturedAtMs: number;
+}
+
+/**
+ * 终态留影落盘：renderer 在停流移交（frameByScope 标 stale）的同时，把最后一帧
+ * JPEG dataUrl 发给 host 持久化到 <userConfigDir>/surface-frames/ 下。
+ * 与 SurfaceLiveFrameV1 不同：那条是活流、只走内存；这条帧随会话落盘、随会话删除。
+ */
+export interface SurfaceTerminalFramePersistRequestV1 {
+  version: 1;
+  conversationId: string;
+  surfaceSessionId: string;
+  /** 必须是 data:image/jpeg;base64,... ；host 端 decoded bytes 硬上限 1MB */
+  dataUrl: string;
+}
+
+export interface SurfaceTerminalFramePersistResultV1 {
+  version: 1;
+  ok: boolean;
+  /** ok=true 时落盘的字节数 */
+  bytes?: number;
+  /** ok=false 时的拒绝原因（非 JPEG / 超限等），供 renderer 记日志 */
+  reason?: string;
+}
+
+export interface SurfaceTerminalFrameGetRequestV1 {
+  version: 1;
+  conversationId: string;
+  surfaceSessionId: string;
+}
+
+export interface SurfaceTerminalFrameGetResultV1 {
+  version: 1;
+  /** 按 (conversationId, surfaceSessionId) 双键读回；无帧为 null */
+  frame: { dataUrl: string; bytes: number } | null;
+}
+
+export interface SurfaceTerminalFramesDeleteRequestV1 {
+  version: 1;
+  conversationId: string;
+}
+
+export interface SurfaceTerminalFramesDeleteResultV1 {
+  version: 1;
+  deleted: true;
+}
+
 export interface SurfaceOutputRequestV1 {
   version: 1;
   conversationId: string;
@@ -600,6 +677,65 @@ export function isSurfaceFramePayloadV1(value: unknown): value is SurfaceFramePa
     && (frame.height === undefined || (Number.isSafeInteger(frame.height) && Number(frame.height) > 0));
 }
 
+export function isSurfaceTerminalFramePersistResultV1(
+  value: unknown,
+): value is SurfaceTerminalFramePersistResultV1 {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const result = value as Partial<SurfaceTerminalFramePersistResultV1>;
+  return result.version === 1
+    && typeof result.ok === 'boolean'
+    && (result.bytes === undefined || (Number.isSafeInteger(result.bytes) && Number(result.bytes) > 0))
+    && (result.reason === undefined || typeof result.reason === 'string')
+    && (result.ok ? Number.isSafeInteger(result.bytes) : typeof result.reason === 'string');
+}
+
+export function isSurfaceTerminalFrameGetResultV1(
+  value: unknown,
+): value is SurfaceTerminalFrameGetResultV1 {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const result = value as Partial<SurfaceTerminalFrameGetResultV1>;
+  if (result.version !== 1) return false;
+  if (result.frame === null) return true;
+  if (!result.frame || typeof result.frame !== 'object' || Array.isArray(result.frame)) return false;
+  const frame = result.frame as { dataUrl?: unknown; bytes?: unknown };
+  return typeof frame.dataUrl === 'string'
+    && /^data:image\/jpeg;base64,/.test(frame.dataUrl)
+    && Number.isSafeInteger(frame.bytes)
+    && Number(frame.bytes) > 0;
+}
+
+export function isSurfaceTerminalFramesDeleteResultV1(
+  value: unknown,
+): value is SurfaceTerminalFramesDeleteResultV1 {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const result = value as Partial<SurfaceTerminalFramesDeleteResultV1>;
+  return result.version === 1 && result.deleted === true;
+}
+
+export function isSurfaceLiveFrameV1(value: unknown): value is SurfaceLiveFrameV1 {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const frame = value as Partial<SurfaceLiveFrameV1>;
+  return frame.version === 1
+    && typeof frame.conversationId === 'string' && frame.conversationId.length > 0
+    && typeof frame.surfaceSessionId === 'string' && frame.surfaceSessionId.length > 0
+    && frame.mimeType === 'image/jpeg'
+    && typeof frame.dataUrl === 'string'
+    && /^data:image\/jpeg;base64,/.test(frame.dataUrl)
+    && Number.isSafeInteger(frame.width) && Number(frame.width) > 0
+    && Number.isSafeInteger(frame.height) && Number(frame.height) > 0
+    && Number.isFinite(frame.capturedAtMs);
+}
+
+export function isSurfaceLiveStreamStateV1(value: unknown): value is SurfaceLiveStreamStateV1 {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const state = value as Partial<SurfaceLiveStreamStateV1>;
+  return state.version === 1
+    && typeof state.surfaceSessionId === 'string' && state.surfaceSessionId.length > 0
+    && typeof state.streaming === 'boolean'
+    && (state.reason === undefined
+      || ['not_running', 'no_active_page', 'unsupported'].includes(state.reason));
+}
+
 export function isSurfaceOutputPayloadV1(value: unknown): value is SurfaceOutputPayloadV1 {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const output = value as Partial<SurfaceOutputPayloadV1> & Record<string, unknown>;
@@ -742,3 +878,10 @@ export function isSurfaceConversationSnapshotV1(
       && session.session.conversationId === snapshot.conversationId)
     && Number.isFinite(snapshot.updatedAt);
 }
+
+/**
+ * agentId of the lightweight run that owns a Surface session created by an explicit
+ * user click on a chat link. It is the only owner allowed to share one conversation's
+ * physical browser window with an agent run — agent↔agent runs stay isolated.
+ */
+export const SURFACE_USER_BROWSER_AGENT_ID = 'user-browser-link';

@@ -25,13 +25,13 @@ import {
 function getAttentionDotClassName(kind: string): string | null {
   switch (kind) {
     case 'error':
-      return 'bg-red-400';
+      return 'bg-mark-danger';
     case 'approval':
-      return 'bg-violet-400';
+      return 'bg-mark-accent';
     case 'paused':
-      return 'bg-amber-400';
+      return 'bg-mark-warning';
     case 'incomplete':
-      return 'bg-amber-400/60';
+      return 'bg-mark-warning/60';
     default:
       return null;
   }
@@ -169,12 +169,12 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
       aria-label={s.openSession.replace('{title}', displayTitle)}
       data-session-id={session.id}
       title={new Date(latestActivityAt).toLocaleString(localeForLanguage(language))}
-      className={`group relative pl-0 pr-1.5 py-1.5 rounded-lg cursor-pointer transition-colors duration-150 ${isSelected && !multiSelectMode ? 'bg-zinc-700/60' : isChecked ? 'bg-blue-500/10 border border-blue-500/20' : 'hover:bg-zinc-800'}`}
+      className={`group relative pl-0 pr-1.5 py-1.5 rounded-lg cursor-pointer transition-colors duration-150 ${isSelected && !multiSelectMode ? 'bg-zinc-700/60' : isChecked ? 'bg-blue-500/10 border border-badge-info/20' : 'hover:bg-zinc-800'}`}
     >
       <div className="flex items-center gap-2">
         {/* 多选 Checkbox */}
         {multiSelectMode && (
-          isChecked ? <CheckSquare className="w-4 h-4 text-blue-400 shrink-0" /> : <Square className="w-4 h-4 text-zinc-500 shrink-0" />
+          isChecked ? <CheckSquare className="w-4 h-4 text-badge-info shrink-0" /> : <Square className="w-4 h-4 text-zinc-500 shrink-0" />
         )}
 
         {/* 前导槽：宽度恒定 16px，有没有置顶标记标题左缘都不动
@@ -182,7 +182,7 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
             未读点已挪到行尾状态列。 */}
         {!multiSelectMode && (
           <span className="w-4 shrink-0 flex items-center justify-center">
-            {isPinned && <Pin className="w-3 h-3 text-amber-500 -rotate-45" />}
+            {isPinned && <Pin className="w-3 h-3 text-badge-warning -rotate-45" />}
           </span>
         )}
 
@@ -195,7 +195,7 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
             onBlur={handleRenameSubmit}
             onKeyDown={handleRenameKeyDown}
             onClick={(e) => e.stopPropagation()}
-            className="flex-1 text-sm bg-zinc-600/80 text-zinc-200 px-1.5 py-0.5 rounded border border-zinc-600 focus:border-blue-500 focus:outline-hidden"
+            className="flex-1 text-sm bg-zinc-600/80 text-zinc-200 px-1.5 py-0.5 rounded border border-zinc-600 focus:border-badge-info focus:outline-hidden"
           />
         ) : (
           <span
@@ -219,13 +219,13 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
         {!isRenaming && (
           <span className="w-4 shrink-0 flex items-center justify-center transition-opacity duration-150 group-hover:opacity-0 group-focus-visible:opacity-0">
             {surfaceExecutionSession ? (
-              <SurfaceExecutionRunStatus session={surfaceExecutionSession} placement="sidebar" />
+              <SurfaceExecutionRunStatus session={surfaceExecutionSession} />
             ) : isRunning ? (
-              <Loader2 className="w-3 h-3 text-emerald-400/80 animate-spin" aria-label={localizedStatusLabel} />
+              <Loader2 className="w-3 h-3 text-badge-success/80 animate-spin" aria-label={localizedStatusLabel} />
             ) : attentionDotClass ? (
               <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${attentionDotClass}`} aria-label={localizedStatusLabel} />
             ) : isUnread && !multiSelectMode ? (
-              <span className="w-1.5 h-1.5 rounded-full bg-purple-400 shrink-0" aria-label={s.unread} />
+              <span className="w-1.5 h-1.5 rounded-full bg-mark-accent shrink-0" aria-label={s.unread} />
             ) : forkParentSessionId && !multiSelectMode ? (
               <button /* ds-allow:button: 侧栏最右状态轴上的分叉身份小图标，Button primitive 动作按钮形状不适配列表行 */
                 type="button"
@@ -236,7 +236,7 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
                   event.stopPropagation();
                   void handleSelectSession(forkParentSessionId);
                 }}
-                className="shrink-0 rounded p-0.5 text-violet-400 transition-colors hover:bg-violet-500/15 hover:text-violet-300 focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-violet-400"
+                className="shrink-0 rounded p-0.5 text-badge-accent transition-colors hover:bg-violet-500/15 hover:text-badge-accent focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-violet-400"
               >
                 <GitFork className="h-3.5 w-3.5" />
               </button>
@@ -256,16 +256,19 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
           显隐用 group-focus-visible 而非 group-focus-within（2026-07-26 打磨批 D D3）：
           鼠标点击按钮后 Chrome 会留下 :focus（但不标 :focus-visible），focus-within
           因此粘滞——鼠标移开后动作簇仍常驻；键盘 Tab 聚焦照样命中 focus-visible，
-          可及性不受损。 */}
+          可及性不受损。
+          对齐返工二（2026-08-02 真侧栏 Chromium 几何）：状态点/徽章圆心距行右缘 14px；
+          归档 svg 圆心距动作簇右缘 11px（IconButton p-1 + 14px 图标半径）。
+          所以簇右侧留 3px，3 + 11 = 14，让图标圆心与状态轴心对心；
+          top-1/2 + -translate-y-1/2 独立保证图标继续沿行内竖向居中。 */}
       {!multiSelectMode && !isRenaming && (
-        <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-0.5 rounded-md bg-zinc-800 pl-2 shadow-[-8px_0_8px_-4px_rgba(24,24,27,0.95)] opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100">
+        <div className="absolute right-[3px] top-1/2 -translate-y-1/2 z-10 flex items-center gap-0.5 rounded-md bg-zinc-800 pl-2 shadow-[-8px_0_8px_-4px_rgba(24,24,27,0.95)] opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100">
           <IconButton
             icon={session.isArchived ? <ArchiveRestore className="w-3.5 h-3.5" /> : <Archive className="w-3.5 h-3.5" />}
             aria-label={`${session.isArchived ? s.unarchiveSession : s.archiveSession} ${displayTitle}`}
             onClick={(e) => handleArchiveSession(session.id, !!session.isArchived, e)}
             variant="ghost"
             size="sm"
-            className="!p-1"
             title={session.isArchived ? s.unarchive : s.archive}
           />
         </div>

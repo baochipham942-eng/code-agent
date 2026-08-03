@@ -113,7 +113,7 @@ describe('AbilityMenu browser readiness', () => {
     expect(html).toContain('检查/授权屏幕录制');
     expect(html).toContain('授权辅助功能');
     expect(html).toContain('text-zinc-300');
-    expect(html).toContain('text-amber-300');
+    expect(html).toContain('text-badge-warning');
   });
 
   it('keeps ConversationSettings as the context-compression page without browser or routing config', () => {

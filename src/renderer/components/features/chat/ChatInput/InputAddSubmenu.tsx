@@ -108,9 +108,9 @@ export const InputAddSubmenu: React.FC<InputAddSubmenuProps> = ({ scope, items, 
                   </span>
                   <span className="block truncate text-[10px] text-zinc-500">{item.description || t.inputAddMenu.submenuNoDescription}</span>
                 </span>
-                {item.selected && <Check className="h-3.5 w-3.5 shrink-0 text-emerald-300" aria-label={t.inputAddMenu.selectedAria} />}
+                {item.selected && <Check className="h-3.5 w-3.5 shrink-0 text-badge-success" aria-label={t.inputAddMenu.selectedAria} />}
               </button>
-              <button /* ds-allow:button: 每行 pin 是独立的状态切换，避免嵌套在选择行按钮中 */ type="button" aria-label={pinned ? t.inputAddMenu.unpinAria : t.inputAddMenu.pinAria} aria-pressed={pinned} onClick={(event) => { event.stopPropagation(); togglePin(item.id); }} className={`mr-2 shrink-0 rounded p-1 text-zinc-500 transition-colors hover:bg-zinc-600 hover:text-zinc-200 ${pinned ? 'opacity-100 text-sky-300' : 'opacity-0 group-hover:opacity-100 focus-visible:opacity-100'}`}>
+              <button /* ds-allow:button: 每行 pin 是独立的状态切换，避免嵌套在选择行按钮中 */ type="button" aria-label={pinned ? t.inputAddMenu.unpinAria : t.inputAddMenu.pinAria} aria-pressed={pinned} onClick={(event) => { event.stopPropagation(); togglePin(item.id); }} className={`mr-2 shrink-0 rounded p-1 text-zinc-500 transition-colors hover:bg-zinc-600 hover:text-zinc-200 ${pinned ? 'opacity-100 text-badge-info' : 'opacity-0 group-hover:opacity-100 focus-visible:opacity-100'}`}>
                 <Pin className={`h-3.5 w-3.5 ${pinned ? 'fill-current' : ''}`} />
               </button>
             </div>
@@ -129,7 +129,7 @@ export const InputAddSubmenu: React.FC<InputAddSubmenuProps> = ({ scope, items, 
               key={action.label}
               type="button"
               onClick={action.onClick}
-              className="w-full px-3 py-2 text-left text-xs text-sky-300 hover:bg-zinc-700/70"
+              className="w-full px-3 py-2 text-left text-xs text-badge-info hover:bg-zinc-700/70"
             >
               {action.label}
             </button>

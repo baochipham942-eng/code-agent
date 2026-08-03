@@ -45,7 +45,7 @@ const STATUS_LABELS: Record<WorkbenchRuntimeStatus, { en: string; zh: string; co
   connected: {
     en: 'connected',
     zh: '已连接',
-    colorClass: 'text-green-400',
+    colorClass: 'text-badge-success',
   },
   disconnected: {
     en: 'disconnected',
@@ -55,17 +55,17 @@ const STATUS_LABELS: Record<WorkbenchRuntimeStatus, { en: string; zh: string; co
   connecting: {
     en: 'connecting',
     zh: '连接中',
-    colorClass: 'text-yellow-400',
+    colorClass: 'text-badge-warning',
   },
   error: {
     en: 'error',
     zh: '错误',
-    colorClass: 'text-red-400',
+    colorClass: 'text-badge-danger',
   },
   lazy: {
     en: 'lazy',
     zh: '懒加载',
-    colorClass: 'text-sky-400',
+    colorClass: 'text-badge-info',
   },
 };
 
@@ -153,20 +153,20 @@ export function getWorkbenchCapabilityStatusPresentation(
     if (capability.lifecycle.mountState === 'mounted') {
       return {
         label: locale === 'zh' ? '已挂载' : 'mounted',
-        colorClass: 'text-green-400',
+        colorClass: 'text-badge-success',
       };
     }
 
     if (capability.lifecycle.installState === 'installed') {
       return {
         label: locale === 'zh' ? '已安装未挂载' : 'installed, not mounted',
-        colorClass: 'text-amber-400',
+        colorClass: 'text-badge-warning',
       };
     }
 
     return {
       label: locale === 'zh' ? '当前不可用' : 'unavailable',
-      colorClass: 'text-red-400',
+      colorClass: 'text-badge-danger',
     };
   }
 
@@ -174,14 +174,14 @@ export function getWorkbenchCapabilityStatusPresentation(
     if (!capability.connected && capability.readiness === 'unchecked') {
       return {
         label: locale === 'zh' ? '待检查' : 'needs check',
-        colorClass: 'text-sky-400',
+        colorClass: 'text-badge-info',
       };
     }
 
     if (!capability.connected && capability.readiness === 'failed') {
       return {
         label: locale === 'zh' ? '检查失败' : 'check failed',
-        colorClass: 'text-red-400',
+        colorClass: 'text-badge-danger',
       };
     }
 

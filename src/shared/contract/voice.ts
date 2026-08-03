@@ -53,18 +53,30 @@ export interface VoiceWorkItem {
 /**
  * 发言人协议（W6）：一件活落终态后，「该念哪句、以谁的身份念」的唯一载体。
  *
- * 只在 done / failed 时产生——排队/开始跑不是结论，念了就是噪音（W6-6 门）。
+ * 只在终态或「用户刚要求的那个动作办完了」时产生——排队/开始跑不是结论，念了就是噪音（W6-6 门）。
  * 播不播、什么时候播由 voiceSessionService 的节制闸决定（W6-4），
  * 这里只负责把「念什么」算准。
  */
 export interface VoiceWorkNarration {
   workItemId: string;
   /**
-   * 只有终态；`cancelled` 是用户自己叫停的，他知道，不用回头念给他听。
+   * 终态三档 + 一档播报。
+   *
+   * 终态：`cancelled` 是用户自己叫停的，他知道，不用回头念给他听。
    * `unverified` 必须自成一档而不是并进 done——耳朵这一路和屏幕那一路要么一起说实话，
    * 要么就是「卡片写着待核验、耳机里说已经做完了」。
+   *
+   * `announcement`（§1 打断异步确认）不是某件活的结局，是「刚才那个动作办完了没有」的
+   * 回报（停稳了 / 没停稳 / 停稳后新活开始了）。它复用同一条注入通道与节制闸，所以
+   * 走同一个类型；台词整句由 voiceNarration 的 buildStopNarration 算好放进 `summary`，
+   * formatNarration 不再按状态拼词——**避免同一句话的措辞散在两个模块里各写一半**。
+   *
+   * `milestone`（§2 中途进度）与 announcement 的区别**不在措辞，在过期语义**——
+   * 它是过程量：被压住一分钟之后再播，说的是一分钟前的事，而用户关心的是现在。
+   * 所以节制闸对它多三条规矩：每件活最多三条、间隔下限、用户一开口就把排队的**全部丢掉**
+   * （终态只排队不丢）。单独成档就是为了让闸能一眼判出「这条过期了能丢」。
    */
-  status: 'done' | 'unverified' | 'failed';
+  status: 'done' | 'unverified' | 'failed' | 'announcement' | 'milestone';
   title: string;
   /**
    * 已裁剪成「能用嘴说出来」的结论文本：代码块/表格换成一句指路，
@@ -87,6 +99,29 @@ export interface VoiceCallSummary {
   endedAt: number;
   /** 这通电话落库了多少条字幕。旧记录没有这个字段——字段缺失本身就是「旧版本通话」的判据。 */
   transcriptCount?: number;
+}
+
+export type VoiceCallFailureCode =
+  | 'VOICE_UPSTREAM_UNAVAILABLE'
+  | 'UPSTREAM_SOCKET'
+  | 'UPSTREAM_ERROR'
+  | 'VOICE_PROVIDER_UNCONFIGURED'
+  | 'VOICE_SESSION_BUSY'
+  | 'HANDSHAKE_FAILED'
+  | 'RECONNECT_FAILED';
+
+export type VoiceCallFailurePhase =
+  | 'admission'
+  | 'configuration'
+  | 'handshake'
+  | 'upstream'
+  | 'reconnect';
+
+/** Renderer 只能上报自身产生、且媒体 WS 已不可用的两种拨号失败。 */
+export interface RendererVoiceFailureReport {
+  neoSessionId: string;
+  code: 'HANDSHAKE_FAILED' | 'RECONNECT_FAILED';
+  phase: 'handshake' | 'reconnect';
 }
 
 /** 注册给通话 brain 的窄工具（方案 §6.2 模式 A）。JSON Schema 直接透给上游。 */
@@ -119,6 +154,17 @@ export type VoiceInterruptClassification =
   | 'short_fragment'
   | 'true_interrupt';
 
+/** Provider 在 response.done 上报的 token 用量，统一成与协议字段名无关的内部形状。 */
+export interface VoiceTokenUsage {
+  totalTokens: number;
+  inputTokens: number;
+  outputTokens: number;
+  inputAudioTokens: number;
+  inputTextTokens: number;
+  outputAudioTokens: number;
+  outputTextTokens: number;
+}
+
 /** GET /api/voice/status 的响应：LiveVoiceButton 可见性与占用态的 host 真相。 */
 export interface VoiceStatusResponse {
   provider: VoiceProviderId;
@@ -127,7 +173,13 @@ export interface VoiceStatusResponse {
   /** 全局单路互斥：当前是否有通话进行中 */
   active: boolean;
   /** 本月通话用量（只记账不设限，方案 §5.4；设置页展示用） */
-  usage: { monthSeconds: number; monthCalls: number };
+  usage: {
+    monthSeconds: number;
+    monthCalls: number;
+    monthFailedAttempts: number;
+    /** 可缺失：存量账本没有 token 字段，上游没报告 usage 时也不伪造 0。 */
+    monthTokens?: VoiceTokenUsage;
+  };
 }
 
 /** 设置页「实时通话」组保存后广播的窗口事件（对齐 VOICE_INPUT_SETTINGS_UPDATED_EVENT 先例）。 */
@@ -139,7 +191,7 @@ export type VoiceEvent =
   /** 通话自然结束；与需要用户处理的 error 分流。 */
   | { type: 'session.ended'; reason: 'idle-timeout' }
   /** 用户说的话（上游 ASR），final 时 done=true */
-  | { type: 'user.transcript'; text: string; done: boolean; itemId?: string }
+  | { type: 'user.transcript'; text: string; done: boolean; itemId?: string; candidateId?: string }
   /** 助手说的话的字幕 */
   | { type: 'assistant.transcript'; text: string; done: boolean; responseId?: string; itemId?: string }
   | { type: 'response.created'; responseId: string }
@@ -154,7 +206,14 @@ export type VoiceEvent =
       action: 'resume' | 'cancel_discard';
       responseId?: string;
     }
-  | { type: 'response.done'; responseId?: string; ttfaModelMs?: number; ttfaPerceivedMs?: number }
+  | {
+      type: 'response.done';
+      responseId?: string;
+      ttfaModelMs?: number;
+      ttfaPerceivedMs?: number;
+      /** 可缺失：上游未给或形状不认识时不把未知写成 0。 */
+      usage?: VoiceTokenUsage;
+    }
   /** Host 注入的 narration 在 response.create 确认窗内被上游拒绝；通话本身仍然存活。 */
   | { type: 'injection.rejected'; message: string }
   /** 语音派出的任务状态。Active Work 条消费（批 B），host 侧同时用它计通话摘要的 workItemCount。 */
@@ -237,6 +296,19 @@ export type VoiceClientCommand =
   /** 原生 AEC sidecar 的受控生命周期诊断码；不传音频、字幕或本地路径。 */
   | { type: 'audio_diagnostic'; code: string };
 
+/** Renderer 忙态打字注入通话的 host 决策。fallback 由 renderer 复用 durable queue。 */
+export type VoiceUserTextInjectionResult =
+  | { outcome: 'injected' }
+  | {
+      outcome: 'fallback';
+      reason:
+        | 'empty_text'
+        | 'no_active_call'
+        | 'tools_unavailable'
+        | 'transport_unavailable'
+        | 'injection_rejected';
+    };
+
 interface VoiceTransportHandleBase {
   readonly provider: VoiceProviderId;
   /** 打断当前回复，并返回被取消的上游 response identity。 */
@@ -277,8 +349,13 @@ export type VoiceTransportHandle =
        * 走会话项而不是改 instructions：instructions 是「你是谁」，一件活的结论是
        * 「刚发生了什么」，塞进 instructions 会让它变成永久人设的一部分，下一轮还在。
        * 角色用 user 而不是 assistant——模型只会顺着自己说过的话往下说，不会去转述它。
-       */
+      */
       injectItem(text: string): void;
+      /**
+       * 注入一条外部用户文字并等待上游确认 response.create 已被接受。
+       * 只有 relay transport 提供这个确认面；拒绝或挂断会 reject，调用方必须回退，不能丢话。
+       */
+      injectItemWithAck?: (text: string) => Promise<void>;
       /** 上游已创建回复、但尚未发出对应 response.done。注入前用它避开 active response 窗口。 */
       isResponding(): boolean;
     })

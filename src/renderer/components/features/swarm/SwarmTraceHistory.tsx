@@ -47,17 +47,17 @@ const STATUS_META: Record<
 > = {
   running: {
     label: '运行中',
-    tone: 'text-amber-300 bg-amber-500/10 border-amber-500/30',
+    tone: 'text-badge-warning bg-amber-500/10 border-badge-warning/30',
     icon: <Loader2 className="w-3 h-3 animate-spin" />,
   },
   completed: {
     label: '已完成',
-    tone: 'text-emerald-300 bg-emerald-500/10 border-emerald-500/30',
+    tone: 'text-badge-success bg-emerald-500/10 border-badge-success/30',
     icon: <CheckCircle className="w-3 h-3" />,
   },
   failed: {
     label: '失败',
-    tone: 'text-red-300 bg-red-500/10 border-red-500/30',
+    tone: 'text-badge-danger bg-red-500/10 border-red-500/30',
     icon: <XCircle className="w-3 h-3" />,
   },
   cancelled: {
@@ -206,7 +206,7 @@ export const SwarmTraceHistory: React.FC<Props> = ({ sessionId, limit = 20, comp
     <div className="bg-white/[0.02] backdrop-blur-sm rounded-xl border border-white/[0.04]">
       <div className={`${sectionPadding} flex items-center justify-between border-b border-white/[0.04]`}>
         <div className="flex items-center gap-2">
-          <History className="w-4 h-4 text-primary-400" />
+          <History className="w-4 h-4 text-badge-accent" />
           <span className="text-sm font-medium text-zinc-200">历史 Swarm 运行</span>
           <span className="text-xs text-zinc-500">({runs.length})</span>
         </div>
@@ -221,7 +221,7 @@ export const SwarmTraceHistory: React.FC<Props> = ({ sessionId, limit = 20, comp
       </div>
 
       {error && (
-        <div className="px-4 py-2 text-xs text-red-400 bg-red-500/5 border-b border-red-500/20">
+        <div className="px-4 py-2 text-xs text-badge-danger bg-red-500/5 border-b border-red-500/20">
           加载失败: {error}
         </div>
       )}
@@ -371,7 +371,7 @@ const SwarmRunDetailView: React.FC<{
           )}
 
           {detail.run.errorSummary && (
-            <div className="px-4 py-2 text-[11px] text-red-300 bg-red-500/5 border-b border-red-500/20">
+            <div className="px-4 py-2 text-[11px] text-badge-danger bg-red-500/5 border-b border-red-500/20">
               错误：{detail.run.errorSummary}
             </div>
           )}
@@ -408,7 +408,7 @@ const SwarmRunDetailView: React.FC<{
                     </span>
                     {a.error && (
                       <span
-                        className="text-red-400 truncate max-w-[80px]"
+                        className="text-badge-danger truncate max-w-[80px]"
                         title={a.error}
                       >
                         {a.failureCategory ?? 'err'}
@@ -435,8 +435,8 @@ const SwarmRunDetailView: React.FC<{
                     +{((e.timestamp - detail.run.startedAt) / 1000).toFixed(1)}s
                   </span>
                   <span className={`font-medium flex-shrink-0 w-32 truncate ${
-                    e.level === 'error' ? 'text-red-300' :
-                    e.level === 'warn' ? 'text-amber-300' :
+                    e.level === 'error' ? 'text-badge-danger' :
+                    e.level === 'warn' ? 'text-badge-warning' :
                     'text-zinc-300'
                   }`}>
                     {e.title}

@@ -79,9 +79,9 @@ function getArtifactKindLabel(kind: SidebarProjectArtifactMeta['kind'], t: Trans
 }
 
 function getGoalStatusIcon(status: SidebarProjectGoalMeta['status']): React.ReactNode {
-  if (status === 'met') return <CheckCircle2 className="h-3 w-3 text-emerald-500" />;
-  if (status === 'aborted') return <XCircle className="h-3 w-3 text-rose-500" />;
-  return <Clock3 className="h-3 w-3 text-amber-500" />;
+  if (status === 'met') return <CheckCircle2 className="h-3 w-3 text-badge-success" />;
+  if (status === 'aborted') return <XCircle className="h-3 w-3 text-badge-danger" />;
+  return <Clock3 className="h-3 w-3 text-badge-warning" />;
 }
 
 function getGoalCounts(goals: SidebarProjectGoalMeta[] | undefined): Record<SidebarProjectGoalMeta['status'], number> {
@@ -328,7 +328,7 @@ export const SidebarProjectDetail: React.FC<SidebarProjectDetailProps> = ({
       </div>
 
       {actionError && (
-        <div role="alert" className="mt-2 rounded border border-rose-500/20 bg-rose-500/10 px-2 py-1 text-[10px] text-rose-300">
+        <div role="alert" className="mt-2 rounded border border-badge-danger/20 bg-rose-500/10 px-2 py-1 text-[10px] text-badge-danger">
           {actionError}
         </div>
       )}
@@ -508,7 +508,7 @@ export const SidebarProjectDetail: React.FC<SidebarProjectDetailProps> = ({
                       onClick={() => void handleRemoveRole(roleId)}
                       aria-label={p.removeRole.replace('{role}', roleId)}
                       title={p.removeRole.replace('{role}', roleId)}
-                      className="shrink-0 rounded text-zinc-600 hover:text-rose-400 disabled:opacity-50"
+                      className="shrink-0 rounded text-zinc-600 hover:text-badge-danger disabled:opacity-50"
                     >
                       <X className="h-2.5 w-2.5" />
                     </button>

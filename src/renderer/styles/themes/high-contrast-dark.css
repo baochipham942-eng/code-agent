@@ -5,6 +5,20 @@
 
 :root[data-theme="high-contrast-dark"],
 .high-contrast-dark {
+  /* Zinc color scale - expanded extremes for high-contrast dark (RGB triplets) */
+  --zinc-50: 255 255 255;
+  --zinc-100: 244 244 244;
+  --zinc-200: 224 224 224;
+  --zinc-300: 200 200 200;
+  --zinc-400: 176 176 176;
+  --zinc-500: 144 144 144;
+  --zinc-600: 128 128 128;
+  --zinc-700: 112 112 112;
+  --zinc-800: 96 96 96;
+  --zinc-850: 48 48 48;
+  --zinc-900: 16 16 16;
+  --zinc-950: 0 0 0;
+
   /* Background layers - pure black base for maximum contrast */
   --bg-void: #000000;
   --bg-deep: #0A0A0A;
@@ -25,11 +39,19 @@
   --text-disabled: #808080;
   --text-inverse: #000000;
 
-  /* Brand color - high contrast cyan */
-  --brand-primary: #00FFFF;
-  --brand-primary-hover: #00CCCC;
-  --brand-primary-muted: rgba(0, 255, 255, 0.2);
-  --brand-primary-glow: rgba(0, 255, 255, 0.3);
+  /* Brand color - 品牌恒等色，四主题同值（与 dark/light 一致的 teal-700 家族）。
+     注意：#0F766E 压 hc 黑底对比度仅 ~3.8:1，不用于正文级文字/焦点指示等可读性
+     场景；可读性场景一律走下方 --accent-accessible。--brand-primary 只承担品牌
+     表达（logo、品牌装饰、深色底上的填充按钮等以白字搭配的场景）。 */
+  --brand-primary: #0F766E;
+  --brand-primary-hover: #115E59;
+  --brand-primary-muted: rgba(15, 118, 110, 0.15);
+  --brand-primary-glow: rgba(15, 118, 110, 0.25);
+
+  /* Accessible accent - 高对比可读性替代色（原 hc 的"高饱和品牌色"挪到这里）。
+     交互/文本类可读性 token（focus-ring、焦点描边、selection 等）指向它，
+     压 --bg-void 对比度 ~19.6:1，满足 WCAG AAA。 */
+  --accent-accessible: #00FFFF;
 
   /* Semantic colors - saturated for visibility */
   --color-success: #00FF00;
@@ -41,6 +63,42 @@
   --color-info: #00BFFF;
   --color-info-muted: rgba(0, 191, 255, 0.2);
 
+  /* Badge semantic tokens - saturated foregrounds with visible dark tints. */
+  --badge-info-fg: #00BFFF;
+  --badge-info-bg: rgba(0, 191, 255, 0.2);
+  --badge-info-border: rgba(0, 191, 255, 0.7);
+  --badge-success-fg: #00FF00;
+  --badge-success-bg: rgba(0, 255, 0, 0.2);
+  --badge-success-border: rgba(0, 255, 0, 0.7);
+  --badge-warning-fg: #FFFF00;
+  --badge-warning-bg: rgba(255, 255, 0, 0.2);
+  --badge-warning-border: rgba(255, 255, 0, 0.7);
+  --badge-danger-fg: #FF0000;
+  --badge-danger-bg: rgba(255, 0, 0, 0.08);
+  --badge-danger-border: rgba(255, 0, 0, 0.7);
+  --badge-accent-fg: #00FFFF;
+  --badge-accent-bg: rgba(0, 255, 255, 0.2);
+  --badge-accent-border: rgba(0, 255, 255, 0.7);
+
+  /* Solid status marks - bright colors for dots and compact indicators.
+     These are intentionally separate from badge-* backgrounds: a mark is the
+     visible shape itself, not a quiet wash behind text. */
+  --mark-info: #00BFFF;
+  --mark-success: #00FF00;
+  --mark-warning: #FFFF00;
+  --mark-danger: #FF0000;
+  --mark-accent: #00FFFF;
+  --mark-neutral: #B0B0B0;
+
+  /* Secondary button: high-contrast dark surface pair with a lighter hover
+     step and a readable disabled pair. */
+  --btn-secondary-bg: #404040;
+  --btn-secondary-fg: #FFFFFF;
+  --btn-secondary-bg-hover: #606060;
+  --btn-secondary-bg-disabled: #202020;
+  --btn-secondary-fg-disabled: #B0B0B0;
+  --btn-ghost-bg-hover: #606060;
+
   /* Chat status text colors */
   --status-text-success: #6EE7B7;
   --status-text-warning: #FCD34D;
@@ -51,7 +109,7 @@
   --border-subtle: rgba(255, 255, 255, 0.15);
   --border-default: rgba(255, 255, 255, 0.3);
   --border-strong: rgba(255, 255, 255, 0.5);
-  --border-focus: var(--brand-primary);
+  --border-focus: var(--accent-accessible);
   --border-faint: rgba(255, 255, 255, 0.15);
   --border-muted: rgba(255, 255, 255, 0.3);
   --border-hover: rgba(255, 255, 255, 0.5);
@@ -75,8 +133,8 @@
   /* Overlay */
   --overlay-backdrop: rgba(0, 0, 0, 0.9);
 
-  /* Selection - high visibility */
-  --selection-bg: #00FFFF;
+  /* Selection - high visibility（可读性场景，走 accent-accessible） */
+  --selection-bg: var(--accent-accessible);
   --selection-text: #000000;
 
   /* Scrollbar - visible */
@@ -91,16 +149,17 @@
   /* Input */
   --input-bg: #0A0A0A;
   --input-border: rgba(255, 255, 255, 0.3);
-  --input-border-focus: var(--brand-primary);
+  --input-border-focus: var(--accent-accessible);
   --input-placeholder: #808080;
 
-  /* Focus ring - thick and visible */
+  /* Focus ring - thick and visible（rgba 字面量与 --accent-accessible 同色系；
+     CSS 变量无法从 hex 派生 alpha 通道，改 accent 色时此处需同步） */
   --focus-ring: rgba(0, 255, 255, 0.8);
 }
 
 /* Enhanced focus styles */
 .high-contrast-dark *:focus-visible {
-  outline: 3px solid var(--brand-primary) !important;
+  outline: 3px solid var(--accent-accessible) !important;
   outline-offset: 2px !important;
 }
 
@@ -111,7 +170,8 @@
 .high-contrast-dark textarea:focus-visible,
 .high-contrast-dark select:focus-visible,
 .high-contrast-dark [tabindex]:focus-visible {
-  outline: 3px solid var(--brand-primary) !important;
+  outline: 3px solid var(--accent-accessible) !important;
   outline-offset: 2px !important;
+  /* glow 的 rgba 字面量与 --accent-accessible 同色系，改 accent 色时需同步 */
   box-shadow: 0 0 0 6px rgba(0, 255, 255, 0.3) !important;
 }

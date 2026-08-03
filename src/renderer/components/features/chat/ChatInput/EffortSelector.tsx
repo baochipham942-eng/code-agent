@@ -32,14 +32,14 @@ const EFFORT_OPTIONS: EffortOption[] = [
     value: 'medium',
     label: 'Med',
     icon: <Zap className="w-3 h-3" />,
-    color: 'text-blue-400',
+    color: 'text-badge-info',
     bgColor: 'bg-blue-500/20',
   },
   {
     value: 'high',
     label: 'High',
     icon: <Flame className="w-3 h-3" />,
-    color: 'text-amber-400',
+    color: 'text-badge-warning',
     bgColor: 'bg-amber-500/20',
   },
 ];

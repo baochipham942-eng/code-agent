@@ -409,9 +409,9 @@ describe('topic 元数据展示（S1）', () => {
     expect(screen.queryByTestId('neo-topic-priority-d')).toBeNull();
 
     // 过期且未到终态 → 标红；未过期 / 已到终态 → 不标红
-    expect(screen.getByTestId('neo-topic-due-u').className).toContain('text-rose-300');
-    expect(screen.getByTestId('neo-topic-due-n').className ?? '').not.toContain('text-rose-300');
-    expect(screen.getByTestId('neo-topic-due-d').className ?? '').not.toContain('text-rose-300');
+    expect(screen.getByTestId('neo-topic-due-u').className).toContain('text-badge-danger');
+    expect(screen.getByTestId('neo-topic-due-n').className ?? '').not.toContain('text-badge-danger');
+    expect(screen.getByTestId('neo-topic-due-d').className ?? '').not.toContain('text-badge-danger');
   });
 
   it('detail shows blockedReason instead of guessing from delta risks', () => {

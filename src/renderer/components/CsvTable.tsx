@@ -117,7 +117,7 @@ const CsvTable: React.FC<CsvTableProps> = ({ content, delimiter }) => {
   return (
     <div className="flex flex-col h-full bg-zinc-900 text-zinc-200">
       {parseError && (
-        <div className="px-3 py-1.5 text-[11px] text-amber-400 bg-amber-500/10 border-b border-amber-500/20">
+        <div className="px-3 py-1.5 text-[11px] text-badge-warning bg-amber-500/10 border-b border-badge-warning/20">
           解析告警：{parseError}
         </div>
       )}
@@ -142,8 +142,8 @@ const CsvTable: React.FC<CsvTableProps> = ({ content, delimiter }) => {
                     <span className="truncate">{col}</span>
                     {sort?.column === col ? (
                       sort.direction === 'asc'
-                        ? <ArrowUp className="w-3 h-3 text-primary-400 flex-shrink-0" />
-                        : <ArrowDown className="w-3 h-3 text-primary-400 flex-shrink-0" />
+                        ? <ArrowUp className="w-3 h-3 text-badge-accent flex-shrink-0" />
+                        : <ArrowDown className="w-3 h-3 text-badge-accent flex-shrink-0" />
                     ) : (
                       <ArrowUpDown className="w-3 h-3 text-zinc-600 flex-shrink-0" />
                     )}

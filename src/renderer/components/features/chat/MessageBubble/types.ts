@@ -12,6 +12,12 @@ export interface MessageContentProps {
   isStreaming?: boolean;
   messageId?: string;
   mediaContext?: SessionMediaContext;
+  /**
+   * useSmoothStreamingText 上报的尾段起始下标：纯文本流式路径把该下标之后
+   * 的最新段落包进淡入 span；null/越界时不拆分。markdown 路径忽略（块级淡入
+   * 已由 .streaming-text > * 负责）。
+   */
+  streamingTailStart?: number | null;
 }
 
 export interface ToolCallDisplayProps {

@@ -64,7 +64,7 @@ export const PasswordResetModal: React.FC = () => {
     >
       {/* Error message */}
       {error && (
-        <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
+        <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-badge-danger text-sm">
           {error}
         </div>
       )}
@@ -72,7 +72,7 @@ export const PasswordResetModal: React.FC = () => {
       {success ? (
         /* Success message */
         <div className="py-6 text-center space-y-4">
-          <CheckCircle className="w-12 h-12 text-green-500 mx-auto" />
+          <CheckCircle className="w-12 h-12 text-badge-success mx-auto" />
           <div className="space-y-2">
             <p className="text-zinc-200 font-medium">密码已更新</p>
             <p className="text-zinc-400 text-sm">
@@ -86,7 +86,7 @@ export const PasswordResetModal: React.FC = () => {
       ) : (
         /* Reset form */
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="flex items-center gap-2 p-3 rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-400 text-sm mb-4">
+          <div className="flex items-center gap-2 p-3 rounded-lg bg-blue-500/10 border border-badge-info/20 text-badge-info text-sm mb-4">
             <KeyRound className="w-4 h-4 flex-shrink-0" />
             <span>请设置您的新密码</span>
           </div>

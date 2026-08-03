@@ -172,15 +172,15 @@ export const TaskStatusBar: React.FC<TaskStatusBarProps> = ({ className = '' }) 
     >
       {/* 统计概览 */}
       <div className="flex items-center gap-2 text-zinc-400 shrink-0">
-        <Activity className="w-4 h-4 text-emerald-400" />
+        <Activity className="w-4 h-4 text-badge-success" />
         <span className="text-zinc-400 font-medium">
           {runningCount}/{stats.maxConcurrent}
         </span>
         {queuedCount > 0 && (
           <>
             <span className="text-zinc-600">|</span>
-            <Layers className="w-3.5 h-3.5 text-amber-400" />
-            <span className="text-amber-400">{queuedCount}</span>
+            <Layers className="w-3.5 h-3.5 text-badge-warning" />
+            <span className="text-badge-warning">{queuedCount}</span>
           </>
         )}
       </div>
@@ -207,9 +207,9 @@ export const TaskStatusBar: React.FC<TaskStatusBarProps> = ({ className = '' }) 
           >
             {/* 状态指示器 */}
             {task.status === 'running' ? (
-              <Loader2 className="w-3 h-3 text-emerald-400 animate-spin" />
+              <Loader2 className="w-3 h-3 text-badge-success animate-spin" />
             ) : (
-              <Clock className="w-3 h-3 text-amber-400" />
+              <Clock className="w-3 h-3 text-badge-warning" />
             )}
 
             {/* 会话名称 */}
@@ -222,7 +222,7 @@ export const TaskStatusBar: React.FC<TaskStatusBarProps> = ({ className = '' }) 
               </span>
             )}
             {task.status === 'queued' && task.queuePosition !== undefined && (
-              <span className="text-2xs text-amber-500 ml-0.5">#{task.queuePosition}</span>
+              <span className="text-2xs text-badge-warning ml-0.5">#{task.queuePosition}</span>
             )}
 
             {/* 切换指示 */}
@@ -238,12 +238,12 @@ export const TaskStatusBar: React.FC<TaskStatusBarProps> = ({ className = '' }) 
           <div className="w-px h-4 bg-zinc-700" />
           <button
             onClick={openSelectedSwarmAgent}
-            className="flex items-center gap-1.5 rounded-md border border-primary-500/20 bg-primary-500/10 px-2 py-1 text-xs text-primary-300 transition-colors hover:bg-primary-500/15"
+            className="flex items-center gap-1.5 rounded-md border border-badge-accent/20 bg-primary-500/10 px-2 py-1 text-xs text-badge-accent transition-colors hover:bg-primary-500/15"
             title={selectedSwarmAgent ? `打开 ${selectedSwarmAgent.name}` : '打开多 Agent 编排视图'}
           >
             <GitBranch className="w-3 h-3" />
             <span>Swarm</span>
-            <span className="text-primary-200/90">{swarmLabel}</span>
+            <span className="text-badge-accent/90">{swarmLabel}</span>
           </button>
         </>
       )}

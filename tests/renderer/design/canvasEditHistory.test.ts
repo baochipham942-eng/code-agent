@@ -16,11 +16,11 @@ import {
 } from '@renderer/components/design/canvasEditHistory';
 
 function node(id: string, label?: string): CanvasNode {
-  return { id, src: `assets/${id}.png`, x: 0, y: 0, width: 10, height: 10, createdAt: 1, ...(label ? { label } : {}) };
+  return { id, src: `assets/${id}.png`, x: 0, y: 0, width: 10, height: 10, createdAt: 1, createdBy: 'user', ...(label ? { label } : {}) };
 }
 
 function nodeAt(id: string, over: Partial<CanvasNode> = {}): CanvasNode {
-  return { id, src: `assets/${id}.png`, x: 0, y: 0, width: 10, height: 10, createdAt: 1, ...over } as CanvasNode;
+  return { id, src: `assets/${id}.png`, x: 0, y: 0, width: 10, height: 10, createdAt: 1, ...over, createdBy: over.createdBy ?? 'user' } as CanvasNode;
 }
 
 /** 快照构造助手：默认空图解层。 */
@@ -119,8 +119,8 @@ describe('canvasEditHistory', () => {
 });
 
 describe('图解层 connectors/shapes 进同一撤销栈', () => {
-  const conn = (id: string): CanvasConnector => ({ id, fromNodeId: 'a', toNodeId: 'b', createdAt: 1 });
-  const rect = (id: string): CanvasShape => ({ id, kind: 'rect', x: 0, y: 0, width: 10, height: 10, color: '#64748b', createdAt: 1 });
+  const conn = (id: string): CanvasConnector => ({ id, fromNodeId: 'a', toNodeId: 'b', createdAt: 1, createdBy: 'user' });
+  const rect = (id: string): CanvasShape => ({ id, kind: 'rect', x: 0, y: 0, width: 10, height: 10, color: '#64748b', createdAt: 1, createdBy: 'user' });
 
   it('快照深拷贝守住 connectors/shapes', () => {
     const before = snap([], [conn('c1')], [rect('s1')]);
@@ -178,8 +178,8 @@ describe('reconcileUndoFrame（还原帧 × 当前态调和，修 HIGH-1）', ()
   });
 
   it('connectors/shapes 整帧还原（取 frame，不取 current）', () => {
-    const frame = snap([nodeAt('A')], [{ id: 'c1', fromNodeId: 'A', toNodeId: 'Z', createdAt: 1 }], []);
-    const current = snap([nodeAt('A')], [], [{ id: 's9', kind: 'text', x: 0, y: 0, text: 'x', color: '#64748b', createdAt: 1 }]);
+    const frame = snap([nodeAt('A')], [{ id: 'c1', fromNodeId: 'A', toNodeId: 'Z', createdAt: 1, createdBy: 'user' }], []);
+    const current = snap([nodeAt('A')], [], [{ id: 's9', kind: 'text', x: 0, y: 0, text: 'x', color: '#64748b', createdAt: 1, createdBy: 'user' }]);
     const out = reconcileUndoFrame(frame, current);
     expect(out.connectors.map((c) => c.id)).toEqual(['c1']);
     expect(out.shapes).toEqual([]);
@@ -206,7 +206,7 @@ describe('reconcileRedoFrame（redo 专用，不追加 current-only 节点，修
 
   it('connectors/shapes 整帧还原', () => {
     const out = reconcileRedoFrame(
-      snap([nodeAt('A')], [{ id: 'c1', fromNodeId: 'A', toNodeId: 'B', createdAt: 1 }]),
+      snap([nodeAt('A')], [{ id: 'c1', fromNodeId: 'A', toNodeId: 'B', createdAt: 1, createdBy: 'user' }]),
       snap([nodeAt('A')], []),
     );
     expect(out.connectors.map((c) => c.id)).toEqual(['c1']);

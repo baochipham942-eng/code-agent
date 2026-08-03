@@ -7,7 +7,8 @@
 //   + 「品牌套件」次级入口（原 section tab 降级为入口按钮，不再是并列分区）。
 // - 次行：类型 chips = 全部 + LIBRARY_ITEM_KINDS（contract 推导，样式对齐原 kind filter）。
 // 「记忆」tab 已撤（2026-07-27 审美关：记忆偏个人设置，不算资料库）——
-// 家在设置 → 记忆（深链 openSettingsTab('memory')），独立整窗页 KnowledgeMemoryPanel 也仍在。
+// 家在设置 → 记忆（深链 openSettingsTab('memory')）；独立整窗页 KnowledgeMemoryPanel
+// 2026-08-02 退役，Inbox/诊断能力并入设置 → 记忆。
 // 带进对话在聊天输入区做（@ 面板的资料库组 / PinnedLibraryChips），本页只管资产面。
 // 布局契约（2026-07-27 UX 收尾 1.4）：内容区走 PageContent（全宽 + px-6 py-4），
 // 两行工具带对齐同一横向节奏 px-6；
@@ -42,7 +43,7 @@ const closeEmbeddedBrandManager = () => undefined;
 // 页面视图：items = 条目列表；brands = 品牌套件管理（次级入口打开）。
 // 「记忆」tab 已撤（2026-07-27 审美关：记忆是个人设置不是资料库）——它的家在
 // 设置 → 记忆（SettingsModal 的 MemoryTab，深链 openSettingsTab('memory')），
-// 独立整窗页 KnowledgeMemoryPanel 也仍在。一个能力只留一个家。
+// 整窗页 KnowledgeMemoryPanel 2026-08-02 退役后，这是唯一的家。一个能力只留一个家。
 type LibraryView = 'items' | 'brands';
 
 interface LibraryItemDraft {
@@ -60,10 +61,10 @@ function parseTags(value: string): string[] {
 }
 
 const KIND_ICONS: Record<LibraryItemKind, React.ReactNode> = {
-  upload: <FileText className="h-3.5 w-3.5 text-sky-300" />,
-  artifact: <Package className="h-3.5 w-3.5 text-emerald-300" />,
-  capture: <BookOpen className="h-3.5 w-3.5 text-amber-300" />,
-  external_ref: <Globe className="h-3.5 w-3.5 text-purple-300" />,
+  upload: <FileText className="h-3.5 w-3.5 text-badge-info" />,
+  artifact: <Package className="h-3.5 w-3.5 text-badge-success" />,
+  capture: <BookOpen className="h-3.5 w-3.5 text-badge-warning" />,
+  external_ref: <Globe className="h-3.5 w-3.5 text-badge-accent" />,
 };
 
 type LibraryGroup = {
@@ -284,7 +285,7 @@ export const LibraryPanel: React.FC = () => {
   return (
     <FullScreenPage testId="library-panel" variant="inline">
       <FullScreenPageHeader
-        icon={<BookOpen className="h-4 w-4 text-indigo-300" />}
+        icon={<BookOpen className="h-4 w-4 text-badge-accent" />}
         title={t.library.panelTitle}
         description={t.library.panelDescription}
         actions={view === 'items' ? (
@@ -465,7 +466,7 @@ export const LibraryPanel: React.FC = () => {
                           <td className="px-3 py-2.5 text-zinc-400">{kindLabels[item.kind]}</td>
                           <td className="truncate px-3 py-2.5 text-zinc-400">{item.sourceRoleId || t.library.sourceUpload}</td>
                           <td className="px-3 py-2.5 text-zinc-500">{new Date(item.updatedAt).toLocaleDateString(language === 'zh' ? 'zh-CN' : 'en-US')}</td>
-                          <td className="px-3 py-2.5"><div className="flex items-center gap-1"><IconButton variant="ghost" size="sm" data-testid={`library-preview-${item.id}`} onClick={() => handlePreview(item)} title={t.library.preview} aria-label={t.library.preview} icon={<Eye className="h-3.5 w-3.5" />} /><IconButton variant="ghost" size="sm" data-testid={`library-edit-${item.id}`} onClick={() => openEdit(item)} title={t.library.edit} aria-label={t.library.edit} icon={<Pencil className="h-3.5 w-3.5" />} /><IconButton variant="danger" size="sm" data-testid={`library-delete-${item.id}`} onClick={() => void handleDelete(item.id)} className={confirmingDelete === item.id ? 'bg-red-500/20 text-red-300' : ''} title={confirmingDelete === item.id ? t.library.deleteConfirm : t.library.deleteAction} aria-label={confirmingDelete === item.id ? t.library.deleteConfirm : t.library.deleteAction} icon={<Trash2 className="h-3.5 w-3.5" />} /></div></td>
+                          <td className="px-3 py-2.5"><div className="flex items-center gap-1"><IconButton variant="ghost" size="sm" data-testid={`library-preview-${item.id}`} onClick={() => handlePreview(item)} title={t.library.preview} aria-label={t.library.preview} icon={<Eye className="h-3.5 w-3.5" />} /><IconButton variant="ghost" size="sm" data-testid={`library-edit-${item.id}`} onClick={() => openEdit(item)} title={t.library.edit} aria-label={t.library.edit} icon={<Pencil className="h-3.5 w-3.5" />} /><IconButton variant="danger" size="sm" data-testid={`library-delete-${item.id}`} onClick={() => void handleDelete(item.id)} className={confirmingDelete === item.id ? 'bg-red-500/20 text-badge-danger' : ''} title={confirmingDelete === item.id ? t.library.deleteConfirm : t.library.deleteAction} aria-label={confirmingDelete === item.id ? t.library.deleteConfirm : t.library.deleteAction} icon={<Trash2 className="h-3.5 w-3.5" />} /></div></td>
                         </tr>
                       ))}
                     </tbody>

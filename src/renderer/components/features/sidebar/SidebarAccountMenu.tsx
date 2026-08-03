@@ -72,26 +72,26 @@ export const SidebarAccountMenu: React.FC<SidebarAccountMenuProps> = ({
       <AccountMenuLabel>{sb.menuCommon}</AccountMenuLabel>
       <AccountMenuItem
         onClick={() => { setShowActivityPanel(true); onClose(); }}
-        icon={<Activity className={`w-4 h-4 ${showActivityPanel ? 'text-cyan-400' : 'text-cyan-400/80'}`} />}
+        icon={<Activity className={`w-4 h-4 ${showActivityPanel ? 'text-badge-info' : 'text-badge-info/80'}`} />}
         label={sb.menuActivity}
       />
       <AccountMenuItem
         onClick={() => { openLocalOpsPanel('desktop'); onClose(); }}
-        icon={<MonitorSmartphone className={`w-4 h-4 ${showLocalOpsPanel ? 'text-cyan-400' : 'text-cyan-400/80'}`} />}
+        icon={<MonitorSmartphone className={`w-4 h-4 ${showLocalOpsPanel ? 'text-badge-info' : 'text-badge-info/80'}`} />}
         label={sb.menuLocalOps}
       />
       {/* 「协作请求（@neo）」入口已拿掉（爸 2026-07-29）：topic 目录的家=协作空间页任务 tab */}
       {canOpenEvalCenter && (
         <AccountMenuItem
           onClick={() => { openEvalCenter(); onClose(); }}
-          icon={<Gauge className={`w-4 h-4 ${showEvalCenter ? 'text-amber-400' : 'text-amber-400/80'}`} />}
+          icon={<Gauge className={`w-4 h-4 ${showEvalCenter ? 'text-badge-warning' : 'text-badge-warning/80'}`} />}
           label={sb.menuEvalCenter}
         />
       )}
       {canOpenPromptManager && (
         <AccountMenuItem
           onClick={() => { setShowPromptManager(true); onClose(); }}
-          icon={<ScrollText className="w-4 h-4 text-violet-400/80" />}
+          icon={<ScrollText className="w-4 h-4 text-badge-accent/80" />}
           label={sb.menuPromptManager}
           testId="user-menu-open-prompt-manager"
         />
@@ -106,7 +106,7 @@ export const SidebarAccountMenu: React.FC<SidebarAccountMenuProps> = ({
         <ChevronRight className={`h-3.5 w-3.5 transition-transform ${advancedToolsOpen ? 'rotate-90' : ''}`} />
         <span className="min-w-0 flex-1 text-left">{sb.advancedTools}</span>
         {hasActiveAdvancedTool && (
-          <span className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] text-emerald-300">
+          <span className="rounded-full border border-badge-success/20 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] text-badge-success">
             {sb.advancedToolsRunning}
           </span>
         )}
@@ -115,17 +115,17 @@ export const SidebarAccountMenu: React.FC<SidebarAccountMenuProps> = ({
         <div className="pb-1">
           <AccountMenuItem
             onClick={() => { setShowLab(true); onClose(); }}
-            icon={<FlaskConical className={`w-4 h-4 ${showLab ? 'text-emerald-400' : 'text-emerald-400/80'}`} />}
+            icon={<FlaskConical className={`w-4 h-4 ${showLab ? 'text-badge-success' : 'text-badge-success/80'}`} />}
             label={sb.menuModelTraining}
           />
           <AccountMenuItem
             onClick={() => { setShowTimeCapabilityCenter(!showTimeCapabilityCenter); onClose(); }}
-            icon={<CalendarDays className={`w-4 h-4 ${showTimeCapabilityCenter ? 'text-sky-400' : 'text-sky-400/80'}`} />}
+            icon={<CalendarDays className={`w-4 h-4 ${showTimeCapabilityCenter ? 'text-badge-info' : 'text-badge-info/80'}`} />}
             label={sb.menuTimeCapability}
           />
           <AccountMenuItem
             onClick={() => { setShowDesktopPanel(!showDesktopPanel); onClose(); }}
-            icon={<Monitor className={`w-4 h-4 ${showDesktopPanel ? 'text-cyan-400' : 'text-cyan-400/80'}`} />}
+            icon={<Monitor className={`w-4 h-4 ${showDesktopPanel ? 'text-badge-info' : 'text-badge-info/80'}`} />}
             label={sb.menuDesktopCapture}
           />
         </div>

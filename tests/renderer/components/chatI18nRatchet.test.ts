@@ -106,7 +106,6 @@ const MIGRATED: string[] = [
   'RewindPanel.tsx',
   'SkillsPanel.tsx',
   'ContextHealthPanel.tsx',
-  'TaskPanel/TaskMonitor.tsx',
   'TaskPanel/Orchestration.tsx',
   'TaskPanel/RunWorkbenchCards.tsx',
   'TaskPanel/ApprovalSyncCard.tsx',

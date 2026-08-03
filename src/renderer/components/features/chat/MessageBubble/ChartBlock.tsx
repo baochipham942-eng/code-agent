@@ -33,8 +33,8 @@ export const ChartBlock = memo(function ChartBlock({ spec: rawSpec }: { spec: st
     <div className="my-3 rounded-xl bg-zinc-900 overflow-hidden border border-zinc-700 shadow-lg">
       <div className="flex items-center justify-between gap-3 px-4 py-2 bg-zinc-800 border-b border-zinc-700">
         <div className="flex min-w-0 items-center gap-2">
-          <BarChart3 className="w-3.5 h-3.5 shrink-0 text-emerald-400" />
-          <span className="min-w-0 truncate text-xs font-medium text-emerald-400">
+          <BarChart3 className="w-3.5 h-3.5 shrink-0 text-badge-success" />
+          <span className="min-w-0 truncate text-xs font-medium text-badge-success">
             {parsedSpec.title || t.generativeUI.chart}
           </span>
         </div>
@@ -44,8 +44,8 @@ export const ChartBlock = memo(function ChartBlock({ spec: rawSpec }: { spec: st
         >
           {copied ? (
             <>
-              <Check className="w-3.5 h-3.5 text-green-400" />
-              <span className="text-green-400">{t.generativeUI.copied}</span>
+              <Check className="w-3.5 h-3.5 text-badge-success" />
+              <span className="text-badge-success">{t.generativeUI.copied}</span>
             </>
           ) : (
             <>

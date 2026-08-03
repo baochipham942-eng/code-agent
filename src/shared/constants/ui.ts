@@ -90,4 +90,10 @@ export const TELEMETRY_RETENTION = {
   MAX_AGE_MS: 14 * 24 * 60 * 60 * 1000,
   /** VACUUM 节流间隔(毫秒):两次全库 VACUUM 至少间隔这么久,避免每次启动都阻塞回收 */
   VACUUM_MIN_INTERVAL_MS: 7 * 24 * 60 * 60 * 1000,
+  /** VACUUM 子进程等待排他锁的最长时间(毫秒):主进程有活跃写时不立刻 SQLITE_BUSY */
+  VACUUM_BUSY_TIMEOUT_MS: 30 * 1000,
+  /** VACUUM 子进程整体超时(毫秒):1.6GB 库实测约 60s,留足余量后强杀避免僵尸 */
+  VACUUM_TIMEOUT_MS: 30 * 60 * 1000,
+  /** VACUUM 所需空闲磁盘 = 库体积 × 该倍数(全库重写 = 一份副本 + WAL) */
+  VACUUM_FREE_SPACE_FACTOR: 2.5,
 } as const;

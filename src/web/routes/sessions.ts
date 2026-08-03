@@ -365,6 +365,11 @@ export function createSessionsRouter(deps: SessionsRouterDeps): Router {
         // Supabase 降级：软删除（设置 is_deleted = true）
         const sb = await getSupabaseForSession();
         if (sb) {
+          // 本机帧先删；失败时不要向用户报告会话已删但敏感帧仍在。
+          const { deleteTerminalFramesForConversation } = await import(
+            '../../host/services/surfaceExecution/TerminalFrameStore'
+          );
+          await deleteTerminalFramesForConversation(sessionId);
           const now = Date.now();
           const { error: sessionDeleteError } = await sb.supabase
             .from('sessions')

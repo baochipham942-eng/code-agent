@@ -12,6 +12,7 @@ vi.mock('../../../src/renderer/components/features/chat/TraceNodeRenderer', () =
 vi.mock('../../../src/renderer/components/features/chat/StreamingIndicator', () => ({
   StreamingIndicator: () => null,
   getRunningToolStartTime: () => null,
+  getRunningSubagentCount: () => 0,
   getStreamingWaitingReason: () => undefined,
 }));
 
@@ -66,6 +67,7 @@ describe('TurnCard hook activity', () => {
     expect(html).not.toContain('正在使用工具');
     expect(html).not.toContain('工具调用已开始');
     expect(html).not.toContain('text-amber-300');
+    expect(html).not.toContain('text-badge-warning');
     expect(html).not.toContain('bg-amber-500/10');
   });
 

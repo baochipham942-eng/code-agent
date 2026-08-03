@@ -32,9 +32,9 @@ interface EvidenceAxisProps {
 }
 
 function axisTone(state: string): string {
-  if (state === 'captured' || state === 'analyzed' || state === 'verified') return 'text-emerald-300';
-  if (state === 'blocked' || state === 'failed' || state === 'rejected') return 'text-red-300';
-  if (state === 'analyzing' || state === 'inconclusive' || state === 'incomplete') return 'text-amber-300';
+  if (state === 'captured' || state === 'analyzed' || state === 'verified') return 'text-badge-success';
+  if (state === 'blocked' || state === 'failed' || state === 'rejected') return 'text-badge-danger';
+  if (state === 'analyzing' || state === 'inconclusive' || state === 'incomplete') return 'text-badge-warning';
   return 'text-zinc-500';
 }
 
@@ -178,7 +178,7 @@ export function SurfaceEvidenceCard({ evidence, copy, language, scope }: Surface
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-1.5">
-            <span className="rounded bg-sky-400/10 px-1.5 py-0.5 text-[9px] font-medium text-sky-200">
+            <span className="rounded bg-sky-400/10 px-1.5 py-0.5 text-[9px] font-medium text-badge-info">
               {copy.evidence.kind[evidence.kind]}
             </span>
             <span className="text-[9px] text-zinc-600">{copy.evidence.source[evidence.source]}</span>

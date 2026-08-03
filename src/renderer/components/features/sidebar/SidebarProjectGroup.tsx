@@ -246,8 +246,9 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
             新建沿用侧栏左上角新任务的 SquarePen 图标。仍是默认隐藏、hover/聚焦浮现 +
             绝对定位覆盖右侧（不占流内宽度，避免窄侧栏挤叠流内徽标），未分类组不渲染。
             底色跟分组头同步（2026-07-29：默认 zinc-950 与侧栏底色齐平，hover 才提亮到
-            zinc-900）——盖住行内内容靠的是不透明底色，底色错一拍就会露出一条异色补丁。 */}
-        <div className="absolute right-1 top-1/2 z-10 hidden -translate-y-1/2 items-center rounded-md bg-zinc-950 pl-1 transition-colors group-hover:bg-zinc-900 group-hover:flex group-focus-within:flex">
+            zinc-900）——盖住行内内容靠的是不透明底色，底色错一拍就会露出一条异色补丁。
+            右侧 2px inset 让最右新建图标中心与会话行 trailing 状态轴（rowRight - 14px）重合。 */}
+        <div className="absolute right-0.5 top-1/2 z-10 hidden -translate-y-1/2 items-center rounded-md bg-zinc-950 pl-1 transition-colors group-hover:bg-zinc-900 group-hover:flex group-focus-within:flex">
         {!group.isUncategorized && (
           <>
           <div className="relative" ref={menuRef}>

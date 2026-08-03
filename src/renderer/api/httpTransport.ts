@@ -568,7 +568,12 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
             console.warn('[HttpTransport] local auth token expired:', authError.message);
             throw new Error(authError.message);
           }
-          throw new Error(`云端代理请求失败 (${response.status}): ${errorMessage}`);
+          // 带上 status：调用方要能区分「这个 session 正忙」（409，可排队重发）
+          // 和真正的失败。只留一句人话字符串的话，上层只能去正则匹配错误文案。
+          throw Object.assign(
+            new Error(`云端代理请求失败 (${response.status}): ${errorMessage}`),
+            { status: response.status },
+          );
         }
         clearAuthTokenReloadAttempt();
 

@@ -294,7 +294,7 @@ function ArchivePreview({ content }: { content: string }) {
                 <td className="min-w-0 px-3 py-2">
                   <div className="flex min-w-0 items-center gap-2" style={{ paddingLeft: `${Math.min(entry.depth, 8) * 12}px` }}>
                     {entry.isDirectory
-                      ? <Folder className="h-3.5 w-3.5 shrink-0 text-amber-300" />
+                      ? <Folder className="h-3.5 w-3.5 shrink-0 text-badge-warning" />
                       : <File className="h-3.5 w-3.5 shrink-0 text-zinc-500" />}
                     <span className="truncate font-mono">{entry.name}</span>
                   </div>
@@ -360,7 +360,7 @@ function DesignPptScreenshots({ artifact }: { artifact: DesignPptScreenshotArtif
               title={pv.slideN.replace('{n}', String(index + 1))}
               className={`overflow-hidden rounded-md border transition-colors ${
                 index === selected
-                  ? 'border-cyan-400 bg-cyan-500/10'
+                  ? 'border-badge-info bg-cyan-500/10'
                   : 'border-white/[0.08] bg-white/[0.025] hover:border-white/[0.16]'
               }`}
             >
@@ -391,9 +391,9 @@ export function PreviewErrorState({
     <div className="flex items-center justify-center h-full bg-zinc-700">
       <div className="flex flex-col items-center gap-3 text-center px-4">
         <div className="w-12 h-12 rounded-full bg-red-500/20 flex items-center justify-center">
-          <X className="w-6 h-6 text-red-400" />
+          <X className="w-6 h-6 text-badge-danger" />
         </div>
-        <span className="text-sm text-red-400" title={detail ?? undefined}>{message}</span>
+        <span className="text-sm text-badge-danger" title={detail ?? undefined}>{message}</span>
         <button
           onClick={onRetry}
           className="px-4 py-2 rounded-lg bg-zinc-600 text-zinc-200 text-sm hover:bg-zinc-500 transition-colors"
@@ -553,7 +553,7 @@ export function StaticHtmlPreview({
           title={selectionMode ? pv.selectElementActiveHint : pv.selectElement}
           className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs transition-colors ${
             selectionMode
-              ? 'border-cyan-400/40 bg-cyan-400/10 text-cyan-200'
+              ? 'border-badge-info/40 bg-cyan-400/10 text-badge-info'
               : 'border-white/[0.08] text-zinc-400 hover:text-zinc-200'
           }`}
         >
@@ -865,7 +865,7 @@ export const PreviewPanel: React.FC = () => {
               onClick={() => updatePreviewTabMode(activeTab.id, mode === 'edit' ? 'preview' : 'edit')}
               className={`p-1.5 rounded transition-colors ${
                 mode === 'edit'
-                  ? 'bg-primary-500/20 text-primary-300 hover:bg-primary-500/30'
+                  ? 'bg-primary-500/20 text-badge-accent hover:bg-primary-500/30'
                   : 'hover:bg-zinc-600 text-zinc-400 hover:text-zinc-200'
               }`}
               title={mode === 'edit' ? pv.switchToPreview : pv.switchToEdit}

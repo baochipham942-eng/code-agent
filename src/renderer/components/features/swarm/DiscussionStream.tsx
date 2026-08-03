@@ -41,26 +41,26 @@ const DiscussionIcon: React.FC<{ entry: SwarmTimelineEvent }> = ({ entry }) => {
   const cls = 'w-3 h-3 shrink-0';
   switch (entry.contextKind) {
     case 'finding':
-      return <Lightbulb className={`${cls} text-amber-400`} />;
+      return <Lightbulb className={`${cls} text-badge-warning`} />;
     case 'decision':
-      return <GitBranch className={`${cls} text-violet-400`} />;
+      return <GitBranch className={`${cls} text-badge-accent`} />;
     case 'result':
-      return <CheckCircle className={`${cls} text-emerald-400`} />;
+      return <CheckCircle className={`${cls} text-badge-success`} />;
     case 'status':
-      return <Activity className={`${cls} text-cyan-400`} />;
+      return <Activity className={`${cls} text-badge-info`} />;
     default:
       break;
   }
-  if (entry.type === 'swarm:user:message') return <UserCog className={`${cls} text-cyan-400`} />;
-  if (entry.type === 'swarm:agent:message') return <Send className={`${cls} text-blue-400`} />;
+  if (entry.type === 'swarm:user:message') return <UserCog className={`${cls} text-badge-info`} />;
+  if (entry.type === 'swarm:agent:message') return <Send className={`${cls} text-badge-info`} />;
   return <MessagesSquare className={`${cls} text-zinc-400`} />;
 };
 
 const discussionToneText: Record<SwarmTimelineEvent['tone'], string> = {
   neutral: 'text-zinc-300',
-  success: 'text-emerald-300',
-  warning: 'text-amber-300',
-  error: 'text-red-300',
+  success: 'text-badge-success',
+  warning: 'text-badge-warning',
+  error: 'text-badge-danger',
 };
 
 const DiscussionEntry: React.FC<{ entry: SwarmTimelineEvent }> = ({ entry }) => (
@@ -70,7 +70,7 @@ const DiscussionEntry: React.FC<{ entry: SwarmTimelineEvent }> = ({ entry }) => 
     data-highlight={entry.highlight ? 'true' : 'false'}
     className={`mx-2 my-1 rounded-md border px-2 py-1 ${
       entry.highlight
-        ? 'border-violet-500/40 bg-violet-500/10 ring-1 ring-violet-500/20'
+        ? 'border-badge-accent/40 bg-violet-500/10 ring-1 ring-violet-500/20'
         : 'border-zinc-700/50 bg-zinc-800/40'
     }`}
   >
@@ -80,7 +80,7 @@ const DiscussionEntry: React.FC<{ entry: SwarmTimelineEvent }> = ({ entry }) => 
         {entry.title}
       </span>
       {entry.highlight && (
-        <span className="text-[9px] px-1 py-0.5 rounded bg-violet-500/20 text-violet-300 font-semibold whitespace-nowrap">
+        <span className="text-[9px] px-1 py-0.5 rounded bg-violet-500/20 text-badge-accent font-semibold whitespace-nowrap">
           决策点
         </span>
       )}
@@ -119,7 +119,7 @@ export function DiscussionStream({ previewCount = 3 }: DiscussionStreamProps) {
         className="w-full flex items-center gap-1.5 px-3 py-1.5 hover:bg-zinc-800/40 transition-colors"
         title={expanded ? '折叠讨论流' : '展开完整讨论流'}
       >
-        <MessagesSquare size={12} className="text-cyan-400" />
+        <MessagesSquare size={12} className="text-badge-info" />
         <span className="text-[11px] text-zinc-400">讨论流</span>
         <span className="text-[10px] text-zinc-600">({eventLog.length})</span>
         <span className="ml-auto text-zinc-500">

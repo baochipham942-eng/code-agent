@@ -187,6 +187,22 @@ describe('partial 与真消息的交接（批 H）', () => {
     expect(resolvePartialRelease({ assistant: '好的' }, { user: '', assistant: '好的' }, { user: false, assistant: false }))
       .toEqual({});
   });
+
+  it('合并行落地时只剥掉已定稿前缀，保留尚未落库的当前段', () => {
+    expect(resolvePartialRelease(
+      { user: 'aaaa' },
+      { user: 'aaaa bbbb', assistant: '' },
+      { user: true, assistant: false },
+    )).toEqual({ partialUser: 'bbbb' });
+  });
+
+  it('已定稿前缀不是当前气泡的完整开头时不误剥', () => {
+    expect(resolvePartialRelease(
+      { user: 'aaaa' },
+      { user: 'xaaaa bbbb', assistant: '' },
+      { user: true, assistant: false },
+    )).toEqual({});
+  });
 });
 
 // 语音派出的那条指令不是用户说的话——它是通话 brain 改写后发给执行引擎的。

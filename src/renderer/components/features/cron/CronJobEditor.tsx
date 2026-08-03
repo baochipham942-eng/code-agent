@@ -224,10 +224,10 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, onClo
                     {connectorStatuses.map((status) => (
                       <span key={status.id} className="inline-flex items-center gap-1 text-[11px]">
                         <span
-                          className={`h-1.5 w-1.5 rounded-full ${status.connected ? 'bg-emerald-400' : 'bg-zinc-600'}`}
+                          className={`h-1.5 w-1.5 rounded-full ${status.connected ? 'bg-mark-success' : 'bg-zinc-600'}`}
                           aria-hidden="true"
                         />
-                        <span className={status.connected ? 'text-emerald-300' : 'text-zinc-500'}>
+                        <span className={status.connected ? 'text-badge-success' : 'text-zinc-500'}>
                           {status.label}
                         </span>
                       </span>
@@ -287,7 +287,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, onClo
         </div>
 
         {errors.form && (
-          <div className="mt-4 rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm text-red-300">
+          <div className="mt-4 rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm text-badge-danger">
             {errors.form}
           </div>
         )}
@@ -308,7 +308,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, onClo
             if (missingConnectors.length === 0) return null;
             return (
               <div
-                className="flex flex-wrap items-center gap-1.5 rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-300"
+                className="flex flex-wrap items-center gap-1.5 rounded-lg border border-badge-warning/20 bg-amber-500/10 px-3 py-2 text-xs text-badge-warning"
                 data-testid="cron-template-connector-gate-hint"
               >
                 <span>
@@ -320,7 +320,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, onClo
                 <button
                   type="button"
                   onClick={() => openSettingsTab('mcp')}
-                  className="underline decoration-dotted hover:text-amber-200"
+                  className="underline decoration-dotted hover:text-badge-warning"
                 >
                   {cc.connectorConnectAction}
                 </button>
@@ -406,7 +406,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, onClo
       </div>
 
       {errors.form && (
-        <div className="mb-4 rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm text-red-300">
+        <div className="mb-4 rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm text-badge-danger">
           {errors.form}
         </div>
       )}

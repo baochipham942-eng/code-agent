@@ -366,17 +366,17 @@ export function formatActionSummary(job: CronJobDefinition): string {
 export function getExecutionStatusMeta(status: CronJobStatus): { label: string; className: string } {
   switch (status) {
     case 'completed':
-      return { label: '成功', className: 'text-emerald-300 bg-emerald-500/10' };
+      return { label: '成功', className: 'text-badge-success bg-emerald-500/10' };
     case 'running':
-      return { label: '运行中', className: 'text-blue-300 bg-blue-500/10' };
+      return { label: '运行中', className: 'text-badge-info bg-blue-500/10' };
     case 'failed':
-      return { label: '失败', className: 'text-red-300 bg-red-500/10' };
+      return { label: '失败', className: 'text-badge-danger bg-red-500/10' };
     case 'cancelled':
       return { label: '已取消', className: 'text-zinc-300 bg-zinc-500/10' };
     case 'paused':
-      return { label: '已暂停', className: 'text-yellow-300 bg-yellow-500/10' };
+      return { label: '已暂停', className: 'text-badge-warning bg-yellow-500/10' };
     case 'interrupted':
-      return { label: '已中断', className: 'text-orange-300 bg-orange-500/10' };
+      return { label: '已中断', className: 'text-badge-warning bg-orange-500/10' };
     default:
       return { label: '待执行', className: 'text-zinc-300 bg-zinc-500/10' };
   }

@@ -322,7 +322,7 @@ export const BrandManagerView: React.FC<BrandManagerViewProps> = ({
           onChange={(doNotCopy) => onFormChange({ ...form, doNotCopy })}
         />
 
-        {error && <p className="text-xs text-red-400">{error}</p>}
+        {error && <p className="text-xs text-badge-danger">{error}</p>}
 
         <div className="flex items-center justify-between pt-2">
           <Button variant="ghost" size="sm" onClick={onBack}>
@@ -362,7 +362,7 @@ export const BrandManagerView: React.FC<BrandManagerViewProps> = ({
               >
                 <span className="min-w-0 flex-1 truncate text-sm text-zinc-200">{b.name}</span>
                 {isActive && (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[11px] font-medium text-emerald-300">
+                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[11px] font-medium text-badge-success">
                     <Check className="h-3 w-3" />
                     {s.activeBadge}
                   </span>

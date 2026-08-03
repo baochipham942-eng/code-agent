@@ -289,7 +289,13 @@ export function handleNarrationInjectionRejected(session: NarrationSession, mess
   }
   const { narration, rejectionCount } = failed;
   if (rejectionCount >= 1) {
-    logger.warn('narration injection dropped after retry', { voiceSessionId: session.id, message });
+    // workItemId 留在这条 warn 里：上游拒绝原因（message）只有这一条带，
+    // 排查时要靠它和 workItemId 一起才能定位是哪件活的哪次注入被拒。
+    logger.warn('narration injection dropped after retry', {
+      voiceSessionId: session.id,
+      workItemId: narration.workItemId,
+      message,
+    });
     dropNarration(session, narration, 'injection_retry_exhausted');
     return;
   }

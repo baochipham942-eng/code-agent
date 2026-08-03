@@ -935,9 +935,11 @@ describe('终态结论节制播报', () => {
     lastOnEvent?.({ type: 'response.done' });
 
     expect(injectItem).not.toHaveBeenCalled();
+    // R5 起九个丢弃分支共用一个出口，原因从消息串挪进 reason 字段（受控词表）。
+    // 断言跟着挪到新形状，并**多钉一个 reason**：守的东西没少，还多了一档。
     expect(voiceLogger.info).toHaveBeenCalledWith(
-      'narration dropped after two suppressed user turns',
-      expect.objectContaining({ workItemId: narration.workItemId }),
+      'narration dropped',
+      expect.objectContaining({ workItemId: narration.workItemId, reason: 'suppressed_two_turns' }),
     );
   });
 

@@ -84,30 +84,81 @@ export const WIDE_SETTINGS_TABS = new Set<SettingsTab>([
   'workspace',
 ]);
 
-// Tab Components
-import { GeneralSettings } from './tabs/GeneralSettings';
-import { ConversationSettings } from './tabs/ConversationSettings';
-import { VoiceInputSettings } from './tabs/VoiceInputSettings';
-import { VoiceLiveSettings } from './tabs/VoiceLiveSettings';
-import { VoiceModelSettings } from './tabs/VoiceModelSettings';
-import { KeybindingsSettings } from './tabs/KeybindingsSettings';
-import { WorkspaceSettings } from './tabs/WorkspaceSettings';
-import { AppshotsSettings } from './tabs/AppshotsSettings';
-import { ModelSettings } from './tabs/ModelSettings';
-import { VisualModelsSettings } from './tabs/VisualModelsSettings';
-import { SearchSettings } from './tabs/SearchSettings';
-import { AgentEngineSettings } from './tabs/AgentEngineSettings';
-import { AppearanceSettings } from './tabs/AppearanceSettings';
-import { SoulSettings } from './tabs/SoulSettings';
-import { DataSettings } from './tabs/DataSettings';
-import { UpdateSettings } from './tabs/UpdateSettings';
-import { MemoryTab } from './tabs/MemoryTab';
-import { ChannelsSettings } from './tabs/ChannelsSettings';
-import { HooksSettings } from './tabs/HooksSettings';
-import { AboutSettings } from './tabs/AboutSettings';
-import { ScreenMemorySettings } from './tabs/ScreenMemorySettings';
-import PrivacySettings from './tabs/PrivacySettings';
-import { DoctorSettings } from './tabs/DoctorSettings';
+// Tab Components: the settings shell loads only the active tab. Keep the shell
+// itself eager so opening settings does not add another lazy boundary.
+const GeneralSettings = React.lazy(() => import('./tabs/GeneralSettings').then(({ GeneralSettings: component }) => ({
+  default: component,
+})));
+const ConversationSettings = React.lazy(() => import('./tabs/ConversationSettings').then(({ ConversationSettings: component }) => ({
+  default: component,
+})));
+const VoiceInputSettings = React.lazy(() => import('./tabs/VoiceInputSettings'));
+const VoiceLiveSettings = React.lazy(() => import('./tabs/VoiceLiveSettings'));
+const VoiceModelSettings = React.lazy(() => import('./tabs/VoiceModelSettings'));
+const KeybindingsSettings = React.lazy(() => import('./tabs/KeybindingsSettings').then(({ KeybindingsSettings: component }) => ({
+  default: component,
+})));
+const WorkspaceSettings = React.lazy(() => import('./tabs/WorkspaceSettings').then(({ WorkspaceSettings: component }) => ({
+  default: component,
+})));
+const AppshotsSettings = React.lazy(() => import('./tabs/AppshotsSettings'));
+const ModelSettings = React.lazy(() => import('./tabs/ModelSettings').then(({ ModelSettings: component }) => ({
+  default: component,
+})));
+const VisualModelsSettings = React.lazy(() => import('./tabs/VisualModelsSettings'));
+const SearchSettings = React.lazy(() => import('./tabs/SearchSettings').then(({ SearchSettings: component }) => ({
+  default: component,
+})));
+const AgentEngineSettings = React.lazy(() => import('./tabs/AgentEngineSettings').then(({ AgentEngineSettings: component }) => ({
+  default: component,
+})));
+const AppearanceSettings = React.lazy(() => import('./tabs/AppearanceSettings').then(({ AppearanceSettings: component }) => ({
+  default: component,
+})));
+const SoulSettings = React.lazy(() => import('./tabs/SoulSettings').then(({ SoulSettings: component }) => ({
+  default: component,
+})));
+const DataSettings = React.lazy(() => import('./tabs/DataSettings').then(({ DataSettings: component }) => ({
+  default: component,
+})));
+const UpdateSettings = React.lazy(() => import('./tabs/UpdateSettings').then(({ UpdateSettings: component }) => ({
+  default: component,
+})));
+const MemoryTab = React.lazy(() => import('./tabs/MemoryTab').then(({ MemoryTab: component }) => ({
+  default: component,
+})));
+const ChannelsSettings = React.lazy(() => import('./tabs/ChannelsSettings').then(({ ChannelsSettings: component }) => ({
+  default: component,
+})));
+const HooksSettings = React.lazy(() => import('./tabs/HooksSettings').then(({ HooksSettings: component }) => ({
+  default: component,
+})));
+const AboutSettings = React.lazy(() => import('./tabs/AboutSettings').then(({ AboutSettings: component }) => ({
+  default: component,
+})));
+const ScreenMemorySettings = React.lazy(() => import('./tabs/ScreenMemorySettings').then(({ ScreenMemorySettings: component }) => ({
+  default: component,
+})));
+const PrivacySettings = React.lazy(() => import('./tabs/PrivacySettings'));
+const DoctorSettings = React.lazy(() => import('./tabs/DoctorSettings').then(({ DoctorSettings: component }) => ({
+  default: component,
+})));
+
+// 沿用仓库既有的固定尺寸 pulse/shimmer 占位范式；固定最小高度避免切 tab 时内容区塌陷。
+function SettingsTabSkeleton() {
+  return (
+    <div
+      aria-hidden="true"
+      data-testid="settings-tab-skeleton"
+      className="min-h-[540px] space-y-5"
+    >
+      <div className="h-7 w-1/3 animate-pulse rounded-lg bg-zinc-800/40" />
+      <div className="h-24 animate-pulse rounded-lg border border-zinc-800 bg-zinc-950/60" />
+      <div className="h-36 animate-pulse rounded-lg border border-zinc-800 bg-zinc-950/60" />
+      <div className="h-20 w-4/5 animate-pulse rounded-lg border border-zinc-800 bg-zinc-950/60" />
+    </div>
+  );
+}
 // 用户管理 / 邀请码 / 控制平面 / 能力治理四个 tab 已迁 admin-console（2026-07 方案 9C），
 // 组件文件保留在 ./tabs 下待清死代码，但设置页不再 import、不提供任何入口。
 import ipcService from '../../../services/ipcService';
@@ -485,37 +536,39 @@ export const SettingsModal: React.FC = () => {
               </div>
             </div>
 
-            {activeTab === 'general' && <GeneralSettings />}
-            {activeTab === 'doctor' && <DoctorSettings />}
-            {activeTab === 'conversation' && <ConversationSettings />}
-            {activeTab === 'search' && <SearchSettings />}
-            {activeTab === 'voiceLive' && <VoiceLiveSettings />}
-            {activeTab === 'voiceInput' && <VoiceInputSettings />}
-            {activeTab === 'voiceModel' && <VoiceModelSettings />}
-            {activeTab === 'keybindings' && <KeybindingsSettings />}
-            {activeTab === 'workspace' && <WorkspaceSettings />}
-            {activeTab === 'appshots' && <AppshotsSettings />}
-            {activeTab === 'model' && (
-              <ModelSettings config={modelConfig} onChange={setModelConfig} onDirtyChange={setModelFormDirty} />
-            )}
-            {activeTab === 'visualModels' && <VisualModelsSettings />}
-            {activeTab === 'agentEngine' && <AgentEngineSettings />}
-            {activeTab === 'appearance' && <AppearanceSettings />}
-            {activeTab === 'soul' && <SoulSettings />}
-            {activeTab === 'cache' && <DataSettings />}
-            {activeTab === 'channels' && <ChannelsSettings />}
-            {activeTab === 'hooks' && <HooksSettings />}
-            {activeTab === 'memory' && <MemoryTab />}
-            {activeTab === 'openchronicle' && <ScreenMemorySettings />}
-            {activeTab === 'privacy' && <PrivacySettings onNavigateSettings={handleSearchNavigate} />}
-            {showUpdateTab && activeTab === 'update' && (
-              <UpdateSettings
-                updateInfo={optionalUpdateInfo}
-                onUpdateInfoChange={setOptionalUpdateInfo}
-                onShowUpdateModal={() => setShowUpdateModal(true)}
-              />
-            )}
-            {activeTab === 'about' && <AboutSettings />}
+            <React.Suspense fallback={<SettingsTabSkeleton />}>
+              {activeTab === 'general' && <GeneralSettings />}
+              {activeTab === 'doctor' && <DoctorSettings />}
+              {activeTab === 'conversation' && <ConversationSettings />}
+              {activeTab === 'search' && <SearchSettings />}
+              {activeTab === 'voiceLive' && <VoiceLiveSettings />}
+              {activeTab === 'voiceInput' && <VoiceInputSettings />}
+              {activeTab === 'voiceModel' && <VoiceModelSettings />}
+              {activeTab === 'keybindings' && <KeybindingsSettings />}
+              {activeTab === 'workspace' && <WorkspaceSettings />}
+              {activeTab === 'appshots' && <AppshotsSettings />}
+              {activeTab === 'model' && (
+                <ModelSettings config={modelConfig} onChange={setModelConfig} onDirtyChange={setModelFormDirty} />
+              )}
+              {activeTab === 'visualModels' && <VisualModelsSettings />}
+              {activeTab === 'agentEngine' && <AgentEngineSettings />}
+              {activeTab === 'appearance' && <AppearanceSettings />}
+              {activeTab === 'soul' && <SoulSettings />}
+              {activeTab === 'cache' && <DataSettings />}
+              {activeTab === 'channels' && <ChannelsSettings />}
+              {activeTab === 'hooks' && <HooksSettings />}
+              {activeTab === 'memory' && <MemoryTab />}
+              {activeTab === 'openchronicle' && <ScreenMemorySettings />}
+              {activeTab === 'privacy' && <PrivacySettings onNavigateSettings={handleSearchNavigate} />}
+              {showUpdateTab && activeTab === 'update' && (
+                <UpdateSettings
+                  updateInfo={optionalUpdateInfo}
+                  onUpdateInfoChange={setOptionalUpdateInfo}
+                  onShowUpdateModal={() => setShowUpdateModal(true)}
+                />
+              )}
+              {activeTab === 'about' && <AboutSettings />}
+            </React.Suspense>
           </div>
         </main>
       </div>

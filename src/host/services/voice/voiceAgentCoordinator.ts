@@ -916,6 +916,14 @@ async function startRun(state: LedgerState, title: string, prompt: string): Prom
   state.taskSnapshot.clear();
   const speaker = resolveNarrationSpeaker(state.activeAgentId);
   upsert(state, { id: workItemId, title, status: 'queued' });
+  // §4.3 三元组绑定：这一件活是哪通电话、哪条 Neo 会话派出去的。从日志就能还原
+  // 「这句话属于哪个活的哪一轮」，不必再靠时间戳猜（原先记在 voiceSessionService 的
+  // UI 回流回调上，账本拿到 voiceSessionId 之后挪到真正派活的这一处）。
+  logger.info('voice work dispatched', {
+    workItemId,
+    voiceSessionId: state.voiceSessionId,
+    neoSessionId: state.neoSessionId,
+  });
   // §4.3 的三元组此前只进日志（#903）。派活是这条链的起点，遥测在这里落一条，
   // 后面口播/丢弃两类事件才有同一个 workItemId 可以对上。
   recordVoiceWorkEvent({ phase: 'dispatch', workItemId });

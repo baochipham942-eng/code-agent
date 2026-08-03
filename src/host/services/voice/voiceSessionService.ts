@@ -804,11 +804,10 @@ async function connectAndBind(
   };
   const baseInstructions = withLanguageDirective(routing.personaInstructions, liveSettings?.language);
   const continuity = await loadVoiceContinuity(neoSessionId);
-  // Phase 3：跟着这台机器真有没有这个能力走。能力与文案同一个判据，不虚构截屏能力。
-  const screenContextEnabled = isVoiceScreenContextSupported();
   const initialInstructions = composeVoiceInstructions(baseInstructions, null, {
+    // Phase 3：跟着这台机器真有没有这个能力走。能力与文案同一个判据，不虚构截屏能力。
+    screenContextEnabled: isVoiceScreenContextSupported(),
     continuity,
-    screenContextEnabled,
     speechRate: liveSettings?.speechRate,
   });
   // 上游回调一律经这个可变引用发：重连换的是 socket，不是通话。
@@ -859,13 +858,8 @@ async function connectAndBind(
         active.workItemCount += 1;
         // 首条进度的延迟基准（§2）：从这件活派出去那一刻起算。
         active.narration.firstDispatchAt = Date.now();
-        // §4.3 三元组绑定：这一件活是哪通电话、哪个上游会话派出去的，
-        // 从日志就能还原「这句话属于哪个活的哪一轮」，不必再靠时间戳猜。
-        logger.info('voice work dispatched', {
-          workItemId: item.id,
-          voiceSessionId: id,
-          neoSessionId,
-        });
+        // §4.3 的三元组绑定日志已挪进 coordinator 的 startRun：账本现在自己拿得到
+        // voiceSessionId，在真正派活那一处记，比在这条 UI 回流上转记准确。
       }
       send(clientRef.current, { type: 'work.upsert', item });
     },

@@ -65,6 +65,27 @@ describe('keybindings registry', () => {
     expect(eventToAccelerator({ key: 'Shift', shiftKey: true }, 'darwin')).toBeNull();
   });
 
+  it('uses the physical letter or digit key when macOS Option composes event.key', () => {
+    expect(eventToAccelerator({ key: '®', code: 'KeyR', metaKey: true, altKey: true }, 'darwin'))
+      .toBe('Cmd+Alt+R');
+    expect(eventToAccelerator({ key: '√', code: 'Digit1', metaKey: true, altKey: true }, 'darwin'))
+      .toBe('Cmd+Alt+1');
+    expect(eventToAccelerator({ key: '∂', code: 'KeyD', ctrlKey: true, altKey: true }, 'darwin'))
+      .toBe('Ctrl+Alt+D');
+  });
+
+  it('falls back to event.key when a keyboard event has no code', () => {
+    expect(eventToAccelerator({ key: 'r', metaKey: true, altKey: true }, 'darwin'))
+      .toBe('Cmd+Alt+R');
+  });
+
+  it('keeps non-alphanumeric event.key handling unchanged with Alt', () => {
+    expect(eventToAccelerator({ key: 'ArrowUp', code: 'ArrowUp', altKey: true }, 'darwin'))
+      .toBe('Alt+ArrowUp');
+    expect(eventToAccelerator({ key: 'F1', code: 'F1', altKey: true }, 'darwin'))
+      .toBe('Alt+F1');
+  });
+
   it('formats shortcuts for display per platform', () => {
     const macSettings = createDefaultKeybindingsSettings('darwin');
     const windowsSettings = createDefaultKeybindingsSettings('win32');

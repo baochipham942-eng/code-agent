@@ -67,6 +67,16 @@ export interface AppshotCapture {
   capturedAtMs: number;
 }
 
+/**
+ * 这张图是怎么来的。
+ *
+ * 只影响 XML 里那一句「这是什么」——两条来路的事实不同，说错就是对执行侧撒谎：
+ * `hotkey` 是用户双击 Command 截的**某个窗口**，`voice` 是他在通话里说「看下我屏幕上
+ * 这个」时采的**整屏**。刻意做成枚举而不是自由文案：措辞一旦能在调用处拼，
+ * 两条来路迟早各写各的。
+ */
+export type AppshotOrigin = 'hotkey' | 'voice';
+
 const APPSHOT_TEXT_MAX = 4000;
 
 function escapeXmlAttr(value: string): string {
@@ -77,18 +87,27 @@ function escapeXmlAttr(value: string): string {
     .replace(/>/g, '&gt;');
 }
 
+/** 「这张图是什么」那一句。两条来路各说各的事实，不共用一句含糊的话。 */
+function describeAppshotOrigin(origin: AppshotOrigin, header: string): string {
+  if (origin === 'voice') {
+    return `用户正在和你实时通话，他说「看下我屏幕上这个」，这是那一刻他的**整屏**截图`
+      + `${header ? `（前台是 ${header}）` : ''}。他嘴里的「这个」「屏幕上这个」指的就是画面里的东西。`;
+  }
+  return `用户刚刚用快捷键主动截取了「${header}」这个窗口的屏幕，作为本条消息的上下文（通常是用户当前关注的焦点）。`;
+}
+
 /**
  * 把 appshot 的窗口文本打包成隐藏 XML 块，提交时前置到用户消息发给模型。
  * 即使没有 axText 也输出（带 app/窗口名/捕获时间与「用户主动截取的上下文」语义，
  * 截图自身仍会作为图片附件发送，供视觉模型看）。
  */
-export function buildAppshotXml(capture: AppshotCapture): string {
+export function buildAppshotXml(capture: AppshotCapture, origin: AppshotOrigin = 'hotkey'): string {
   const text = (capture.axText ?? '').trim();
   const header = `${capture.appName}${capture.windowTitle ? ` · ${capture.windowTitle}` : ''}`;
   const app = escapeXmlAttr(capture.bundleId ?? '');
   const name = escapeXmlAttr(capture.appName);
   const captured = escapeXmlAttr(new Date(capture.capturedAtMs).toISOString());
-  const context = `用户刚刚用快捷键主动截取了「${header}」这个窗口的屏幕，作为本条消息的上下文（通常是用户当前关注的焦点）。`;
+  const context = describeAppshotOrigin(origin, header);
   if (!text) {
     return `<appshot app="${app}" name="${name}" captured="${captured}">\n${context}\n</appshot>`;
   }

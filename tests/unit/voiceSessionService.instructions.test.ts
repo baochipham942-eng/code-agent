@@ -44,6 +44,8 @@ vi.mock('../../src/host/services/infra/sessionManager', () => ({
   getSessionManager: () => ({
     addMessageToSession: vi.fn(async () => undefined),
     patchSessionMetadata: vi.fn(async () => undefined),
+    // 建连时读 teamLead 用（语音批 B）。本文件钉的是 instructions 组装，不是团会话路由。
+    getSessionMetadata: vi.fn(() => undefined),
   }),
 }));
 vi.mock('../../src/host/permissions/modes', () => ({

@@ -263,7 +263,7 @@ export const App: React.FC = () => {
 
 
   // Theme Hook - 初始化主题系统
-  useTheme();
+  const { setTheme } = useTheme();
 
   // Task state 同步：mount 时拉取后端 sessionStates + 30s 兜底轮询
   // 防止 dev server 重启 / 网络断开导致前端 isProcessing 卡住不放
@@ -449,6 +449,14 @@ export const App: React.FC = () => {
           logger.info('Loaded language setting', { language: settings.ui.language });
         }
 
+        // 加载主题设置：后端 ui.theme 是权威持久化（keychain 同步、CLI 可写），
+        // localStorage 只是首帧防 FOUC 的快照；不一致时以后端为准并回写 localStorage。
+        // 2026-08-03 之前这里不读回 theme，AppearanceSettings 写进后端的那份是死数据。
+        if (settings?.ui?.theme && settings.ui.theme !== localStorage.getItem('code-agent-theme')) {
+          setTheme(settings.ui.theme);
+          logger.info('Loaded theme setting', { theme: settings.ui.theme });
+        }
+
         // 加载界面设置（渐进披露级别）
         if (settings?.ui?.disclosureLevel) {
           setDisclosureLevel(settings.ui.disclosureLevel);
@@ -488,7 +496,7 @@ export const App: React.FC = () => {
       }
     };
     loadSettings();
-  }, [setLanguage, setModelConfig, setDisclosureLevel]);
+  }, [setLanguage, setModelConfig, setDisclosureLevel, setTheme]);
 
   const refreshFolderTrust = useCallback(async () => {
     try {

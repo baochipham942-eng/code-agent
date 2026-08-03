@@ -4,7 +4,10 @@ export default {
     './src/renderer/**/*.{js,ts,jsx,tsx}',
     './src/renderer/index.html',
   ],
-  darkMode: ['class', '[data-theme="dark"]'],
+  // dark: 变体按 data-theme 判定亮暗（不认 .dark class）：dark 与 high-contrast-dark
+  // 都是深色主题，dark: 在两者下都要命中；light / high-contrast-light 下不命中。
+  // 2026-08-03 之前这里只有 [data-theme="dark"]，hc-dark 下 dark: 全部失效取浅色分支。
+  darkMode: ['class', ':is([data-theme="dark"], [data-theme="high-contrast-dark"])'],
   theme: {
     extend: {
       colors: {

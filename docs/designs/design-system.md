@@ -110,7 +110,7 @@ Neo 的视觉身份是**深空新栖地**:界面是一艘飞船的舷窗,品牌�
 
 | 橱窗 | 落地形态 | 出处 |
 |------|----------|------|
-| 新会话欢迎页 | 42px 慢转地球主视觉 + NeoBrandMark 伴随小标 | `NewSessionWelcome.tsx` |
+| 新会话欢迎页 | 42px 慢转地球单独作主视觉（不与 NeoBrandMark 并置——双标并置生硬，且品牌标在侧栏常驻，此处不重复，2026-08-02 同日修订） | `NewSessionWelcome.tsx` |
 | 空状态 | EmptyState 可选 `planet` 属性(如侧栏会话空 = 地球) | `EmptyState.tsx`、`SidebarSessionList.tsx` |
 | 实时语音 | 22px 星球七态状态栏 | `VoiceChrome.tsx` |
 | 通话摘要 | "勘测报告 · 近地轨道"摘要卡 | `VoiceCallSummaryCard.tsx` |

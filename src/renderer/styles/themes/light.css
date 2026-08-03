@@ -33,11 +33,13 @@
   --surface-subtle: rgba(0, 0, 0, 0.018);
   --surface-hover: rgba(0, 0, 0, 0.05);
 
-  /* Text hierarchy */
+  /* Text hierarchy（镜像 dark 的 zinc 阶梯：900/600/500/400。
+     2026-08-03 之前 tertiary 与 secondary 同值 #52525B、disabled 占着 500 档，
+     层级少一档，疑似笔误，按阶梯补齐。） */
   --text-primary: #18181B;
   --text-secondary: #52525B;
-  --text-tertiary: #52525B;
-  --text-disabled: #71717A;
+  --text-tertiary: #71717A;
+  --text-disabled: #A1A1AA;
   --text-inverse: #F4F4F5;
 
   /* Brand color - Teal（teal-700 系：白色前景对比度 ≥4.5:1，见 check-design-system --contrast） */

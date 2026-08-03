@@ -170,7 +170,6 @@ export const App: React.FC = () => {
     closeProjectSpacePage,
     showLibraryPanel,
     showActivityPanel,
-    setShowActivityPanel,
     setShowSettings,
     setLanguage,
     setOptionalUpdateInfo,
@@ -920,11 +919,11 @@ export const App: React.FC = () => {
                 />
               ) : showActivityPanel ? (
                 <React.Suspense fallback={null}>
-                  <ActivityPanel onClose={() => setShowActivityPanel(false)} />
+                  <ActivityPanel />
                 </React.Suspense>
               ) : showTimeCapabilityCenter ? (
                 <React.Suspense fallback={null}>
-                  <TimeCapabilityPanel onClose={() => useAppStore.getState().setShowTimeCapabilityCenter(false)} />
+                  <TimeCapabilityPanel />
                 </React.Suspense>
               ) : showLab ? (
                 <React.Suspense fallback={null}>

@@ -9,7 +9,6 @@
 
 import React, { useState } from 'react';
 import { FlaskConical, Sparkles, Lock, ChevronRight } from 'lucide-react';
-import { useAppStore } from '../../../stores/appStore';
 import { useI18n } from '../../../hooks/useI18n';
 import type { Translations } from '../../../i18n/zh';
 import { GPT1Lab } from './gpt1/GPT1Lab';
@@ -73,7 +72,6 @@ function buildLabCards(t: Translations): LabCard[] {
 }
 
 export const LabPage: React.FC = () => {
-  const { setShowLab } = useAppStore();
   const { t } = useI18n();
   const [currentLab, setCurrentLab] = useState<LabType>('home');
   const labCards = buildLabCards(t);
@@ -147,7 +145,6 @@ export const LabPage: React.FC = () => {
         icon={<FlaskConical className="h-4 w-4 text-emerald-300" />}
         title={currentLabTitle}
         description={currentLabDescription}
-        onClose={() => setShowLab(false)}
       />
 
       {/* Content */}

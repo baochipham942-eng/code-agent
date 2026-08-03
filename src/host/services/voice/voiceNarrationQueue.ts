@@ -114,9 +114,18 @@ function injectNarration(session: NarrationSession, narration: VoiceWorkNarratio
   }
 }
 
-/** milestone 合成键形如 `<workItemId>:milestone-<n>`；取回它属于哪件活。 */
+/**
+ * 合成键形如 `<workItemId>:<某种后缀>-<n>`（`:milestone-`、`:blocked-`、`:stop-`…）；
+ * 取回它属于哪件活。
+ *
+ * **按第一个冒号切，不按后缀名枚举**：上一版写死认 `:milestone-`，于是 R3 加
+ * `:blocked-` 前缀的那一刻，每条卡点播报都被算成「另一件活」，per-item 上限对它
+ * 整个失效——一件活能把整通电话说满，而日志里看不出任何异常。真实 workItemId 由
+ * `voice-work-<ts>-<rand>` 生成，本身不含冒号，所以按冒号切是稳的，且以后再加什么
+ * 后缀都默认被算进同一件活，不用回来改这里。
+ */
 function milestoneOwner(workItemId: string): string {
-  const at = workItemId.indexOf(':milestone-');
+  const at = workItemId.indexOf(':');
   return at === -1 ? workItemId : workItemId.slice(0, at);
 }
 
@@ -124,13 +133,36 @@ function milestoneOwner(workItemId: string): string {
  * 进度该不该播（§2 三条闸，缺一条就变成碎碎念）。
  *
  * 这三条只管进度，**终态一条都不受限**——结论永远值得说。
+ *
+ * worth-hearing（R3）在这三条上各让一步，**且只在这三条上**：
+ *   - 首条延迟窗、最小间隔：直接豁免。这两条防的是碎碎念，而转折点不是碎碎念。
+ *   - per-item 上限：允许**超一格**，不是无限。上限防的是一件活把整通电话说满，
+ *     这个风险对转折点同样成立；但「三条进度已经播满，第四条是『这事要花钱』」
+ *     被静默吞掉，是把最该听见的那条正好挡在门外。让一格 + 留痕是两害相权。
+ *
+ * userSpeaking 抢占不在这里，也不该在这里被豁免——见 enqueueOrInjectNarration。
  */
 function milestoneAllowed(session: NarrationSession, narration: VoiceWorkNarration, now: number): boolean {
   const state = session.narration;
   const owner = milestoneOwner(narration.workItemId);
-  if ((state.milestoneCounts.get(owner) ?? 0) >= VOICE_MILESTONE_MAX_PER_WORK_ITEM) {
-    logger.info('milestone dropped: per work item cap', { voiceSessionId: session.id, workItemId: owner });
+  const worthHearing = narration.worthHearing === true;
+  const spoken = state.milestoneCounts.get(owner) ?? 0;
+  const cap = VOICE_MILESTONE_MAX_PER_WORK_ITEM + (worthHearing ? 1 : 0);
+  if (spoken >= cap) {
+    logger.info('milestone dropped: per work item cap', { voiceSessionId: session.id, workItemId: owner, worthHearing });
     return false;
+  }
+  if (worthHearing) {
+    // 超额那一格必须留痕：不然「上限之外还播了一条」这件事在日志里查不到，
+    // 而它正是将来判断「这个豁免有没有被滥用」的唯一依据。
+    if (spoken >= VOICE_MILESTONE_MAX_PER_WORK_ITEM) {
+      logger.info('milestone over cap: worth-hearing overflow slot used', {
+        voiceSessionId: session.id,
+        workItemId: owner,
+        spoken,
+      });
+    }
+    return true;
   }
   // 首条延迟：不让「我开始做 X 了」和第一条进度挤在同一口气里。
   if (state.firstDispatchAt && now - state.firstDispatchAt < VOICE_MILESTONE_FIRST_DELAY_MS) {
@@ -153,6 +185,8 @@ export function enqueueOrInjectNarration(session: NarrationSession, narration: V
   // 排了就会在用户说完话之后冒出来一句早已过期的进展。
   if (isMilestone && !milestoneAllowed(session, narration, now)) return;
   const upstreamResponding = session.upstream.kind === 'relay' && session.upstream.isResponding();
+  // 这里**没有** worthHearing 分支，而且不许长出来（R3 硬边界）：用户正在说话时，
+  // 再重要的转折也只能排队等他说完。「重要」是相对其它播报说的，不是相对用户说的。
   if (!state.userSpeaking && !upstreamResponding) {
     injectNarration(session, narration);
     return;

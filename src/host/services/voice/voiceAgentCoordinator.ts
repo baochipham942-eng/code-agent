@@ -15,7 +15,7 @@
 
 import type { TaskManagerEvent } from '../../task/TaskManager';
 import type { AgentEvent } from '../../../shared/contract/agent';
-import type { TodoItem } from '../../../shared/contract/planning';
+import type { SessionTask, TodoItem } from '../../../shared/contract/planning';
 import type { VoiceFocusContext, VoiceWorkFailureMarker, VoiceWorkItem, VoiceWorkItemStatus, VoiceWorkNarration } from '../../../shared/contract/voice';
 import {
   VOICE_CONCLUSION_LOOKBACK_MESSAGES,
@@ -31,7 +31,7 @@ import { buildRoleContextBlock } from '../roleAssets/roleAssetService';
 import { withWorkbenchTurnSystemContext } from '../../app/workbenchTurnContext';
 import { getPermissionModeManager } from '../../permissions/modes';
 import { getConfigService } from '../core/configService';
-import { buildMilestoneNarration, buildStopNarration, buildWorkNarration, resolveNarrationSpeaker, type VoiceStopAnnouncementKind } from './voiceNarration';
+import { buildBlockedNarration, buildMilestoneNarration, buildStopNarration, buildWorkNarration, resolveNarrationSpeaker, type VoiceStopAnnouncementKind } from './voiceNarration';
 import { describeWorkFailure } from './workFailureDescription';
 import { buildVocabularyBlock } from './voiceVocabulary';
 import { resolveVoiceWorkOutcome } from './voiceWorkEvidence';
@@ -156,6 +156,12 @@ interface LedgerState {
    * 而不是播一条错的。
    */
   todoSnapshot: Map<string, string>;
+  /**
+   * 上一次看到的执行侧任务轨快照（按 task id 索引 status）。worth-hearing 靠它认
+   * 「刚刚卡住」这个跃迁——task_update 每次带全量列表，不做差分就会把同一条卡点
+   * 在后续每个事件里反复念一遍。
+   */
+  taskSnapshot: Map<string, string>;
   /** milestone 去重键的单调计数器。注入通道按 workItemId 去重，撞键就会静默丢播报。 */
   milestoneSeq: number;
   /** agent 事件流的退订函数；与 listener 同寿命，落终态时一起摘。 */
@@ -224,6 +230,7 @@ export function beginVoiceDispatch(binding: VoiceDispatchBinding): void {
     pendingStop: null,
     supersededIds: new Set(),
     todoSnapshot: new Map(),
+    taskSnapshot: new Map(),
     milestoneSeq: 0,
     unobserveAgentEvents: null,
   };
@@ -625,7 +632,9 @@ async function settleCompletedWithEvidence(
 }
 
 /**
- * agent 事件流旁路（§2）。只认 `todo_update`——它是 plan entries 的差分源。
+ * agent 事件流旁路（§2 + R3）。认两种事件：
+ *   - `todo_update`：plan entries 的差分源，产普通进度。
+ *   - `task_update`：执行侧任务轨，从中捞「刚刚卡住」的那一下，产 worth-hearing 进度。
  *
  * 为什么不用 TaskManagerEvent：那条流只有 started/completed/error/cancelled 四个业务事件，
  * **没有任何进度信号**（已核实）。进度只在 agent 流里。
@@ -636,12 +645,17 @@ async function settleCompletedWithEvidence(
 function onAgentStreamEvent(state: LedgerState, sessionId: string, event: AgentEvent): void {
   if (ledger !== state) return;
   if (sessionId !== state.neoSessionId) return;
-  if (event.type !== 'todo_update') return;
+  if (event.type !== 'todo_update' && event.type !== 'task_update') return;
   const pendingId = state.pendingId;
   if (!pendingId) return;
   const item = state.items.get(pendingId);
   // 只给还在跑的活播进度；已落终态的活再播「这步做完了」就是在说过去的事。
   if (!item || TERMINAL.includes(item.status)) return;
+
+  if (event.type === 'task_update') {
+    announceNewlyBlocked(state, item, event.data.tasks);
+    return;
+  }
 
   const completed = diffCompletedTodos(state.todoSnapshot, event.data as TodoItem[]);
   if (!completed.length) return;
@@ -658,6 +672,45 @@ function onAgentStreamEvent(state: LedgerState, sessionId: string, event: AgentE
     ...(liveWorkCount(state) > 1 ? { attributed: true } : {}),
     ...(state.activeAgentId ? { agentId: state.activeAgentId } : {}),
   }));
+}
+
+/**
+ * 执行侧「这条值得听」的唯一取值口（R3 打标处）。
+ *
+ * **判据：只认任务轨上「刚刚变成 blocked」的那一下。** 这一档对应的正是
+ * 「方案不可行 / 要花钱 / 被外部阻塞 / 需要用户决策」——执行侧的 prompt 规矩
+ * （prompts/rules/taskManagement.ts）已经把 blocked 定义成「卡在外部障碍（缺权限/
+ * 站点拒绝/缺信息）」并强制带人话原因，所以这里不需要给执行侧再发明一套「重要性」
+ * 词汇：它早就有了一个用得很克制的表达方式，接上就行。
+ *
+ * 反过来说，**别的都不标**：一步做完了不标（那是普通进度），任务被创建、被改名、
+ * 被完成、被取消都不标。标记一旦泛化成「进展重要的时候标一下」，节制闸就等于没有——
+ * 每个生产者都觉得自己那条重要。
+ *
+ * 只认**跃迁**（上一次不是 blocked、这一次是），不认「当前是 blocked」：task_update
+ * 每次带全量任务列表，认后者会让同一条卡点在后续每个事件里被反复播报。
+ */
+function announceNewlyBlocked(state: LedgerState, item: VoiceWorkItem, tasks: SessionTask[]): void {
+  if (!Array.isArray(tasks)) return;
+  const narrate = state.narrate;
+  for (const task of tasks) {
+    const id = typeof task?.id === 'string' ? task.id : '';
+    if (!id) continue;
+    const previous = state.taskSnapshot.get(id);
+    state.taskSnapshot.set(id, task.status);
+    // 快照更新照做、播报另说：narrate 为 null（已挂断）时也要记下这一轮的状态，
+    // 否则重新有人听的时候，一堆早就卡住的任务会被当成「刚刚卡住」一起涌出来。
+    if (!narrate) continue;
+    if (task.status !== 'blocked' || previous === undefined || previous === 'blocked') continue;
+    narrate(buildBlockedNarration({
+      workItemId: `${item.id}:blocked-${(state.milestoneSeq += 1)}`,
+      title: item.title,
+      subject: task.subject,
+      // blockedReason 存的已经是过了清洗层的人话（机器噪音会被置空），这里不再洗一遍。
+      reason: task.blockedReason ?? '',
+      ...(state.activeAgentId ? { agentId: state.activeAgentId } : {}),
+    }));
+  }
 }
 
 /**
@@ -787,7 +840,10 @@ async function startRun(state: LedgerState, title: string, prompt: string): Prom
   const workItemId = newWorkItemId();
   // 新的一件活从空快照起算：沿用上一件的快照会让新 run 首次 todo_update 里那些
   // 「本来就是 completed」的 entry 被误判成刚刚完成，一开跑就播一串假进度。
+  // 任务轨同理：首次 task_update 只播种不播报（认跃迁要求上一次存在），
+  // 所以开跑时那些「本来就卡着」的任务不会被当成刚刚卡住一起涌出来。
   state.todoSnapshot.clear();
+  state.taskSnapshot.clear();
   const speaker = resolveNarrationSpeaker(state.activeAgentId);
   upsert(state, { id: workItemId, title, status: 'queued' });
   state.pendingId = workItemId;

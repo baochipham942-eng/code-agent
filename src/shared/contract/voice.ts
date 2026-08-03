@@ -88,6 +88,19 @@ export interface VoiceWorkNarration {
    * 不冒充任何人格（W6-6 门）。
    */
   speaker?: { agentId: string; displayName: string };
+  /**
+   * 执行侧标记「这条值得听」（R3）。**只加权，不新开出口**——带标记的仍是一条
+   * `milestone`，仍然走同一条队列、同一个注入通道，只是节制闸对它松两格：
+   * 可以豁免首条延迟窗与最小间隔，per-item 上限允许超一格（超额必留痕）。
+   *
+   * **绝不豁免 userSpeaking 抢占**：用户正在说话时它照样被压住 / 被丢弃。
+   * 「重要」是相对其它播报而言的，不是相对用户而言的——插用户的话没有任何一档重要性
+   * 配得上。这条是本标记的硬边界，改了它这个功能就从「让转折被听见」变成「抢麦」。
+   *
+   * 什么才配打这个标记见 voiceAgentCoordinator 的打标处：默认不标，只有
+   * 「方案不可行 / 要花钱 / 被外部阻塞 / 需要用户决策」这类转折才标。
+   */
+  worthHearing?: true;
 }
 
 export interface VoiceCallSummary {

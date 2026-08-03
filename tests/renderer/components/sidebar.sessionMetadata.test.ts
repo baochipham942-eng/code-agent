@@ -114,6 +114,10 @@ const sessionUiState = {
   setPendingSearchJump: vi.fn(),
   expandedWorkspaces: {} as Record<string, boolean>,
   setWorkspaceExpanded: vi.fn(),
+  collapsedTiers: {} as Record<string, boolean>,
+  setTierCollapsed: vi.fn(),
+  soloTier: null as string | null,
+  setSoloTier: vi.fn(),
   softDelete: vi.fn(),
   undoDelete: vi.fn(),
   pendingDelete: null,
@@ -125,6 +129,7 @@ const appState = {
   openSettingsTab: vi.fn(),
   setShowEvalCenter: vi.fn(),
   openWorkspacePreview: vi.fn(),
+  openProjectSpacePage: vi.fn(),
   pendingPermissionRequest: null as unknown,
   pendingPermissionSessionId: null as string | null,
   queuedPermissionRequests: {} as Record<string, any[]>,
@@ -221,11 +226,14 @@ describe('Sidebar session metadata', () => {
     // PR#287 极简重构：会话行只保留标题+时间，workbenchSnapshot.summary
     // （"工作区 · Browser"）等摘要行不再常驻渲染。
     expect(html).not.toContain('工作区 · Browser');
+    // 2026-07-28 侧栏工作区入口重构：分组头操作收敛为「⋯」菜单 +「新建」两钮，
+    // 原控制台/详情/产物等独立 aria-label 收进 ⋯ 菜单（点击才渲染，静态标记里不出现）。
+    expect(html).toContain('aria-label="code-agent 更多操作"');
     expect(html).toContain('aria-label="在 code-agent 新建会话"');
-    expect(html).toContain('aria-label="打开 code-agent 项目控制台"');
-    expect(html).toContain('aria-label="展开 code-agent 项目详情"');
-    expect(html).toContain('aria-label="打开 code-agent 产物与资产"');
-    expect(html).toContain('aria-label="打开 Session Native Workspace 的产物与资产"');
+    // 菜单未展开时，菜单项文案不该出现在静态标记里（文案已去项目名，2026-07-28 拍板）
+    expect(html).not.toContain('打开项目控制台');
+    // 2026-07-29：会话行 hover 只留归档，Replay/产物图标已撤（入口在右键菜单与项目 ⋯ 菜单）。
+    expect(html).not.toContain('aria-label="打开 Session Native Workspace 的产物与资产"');
     // 2026-07-02 分组头未完成态改为右对齐"色球+数字"(title/aria 带全文)，不再渲染"N 未完成"文字胶囊
     expect(html).toContain('1 个未完成');
     expect(html).not.toContain('1 未完成');
@@ -234,7 +242,8 @@ describe('Sidebar session metadata', () => {
     expect(html).not.toContain('1 执行中');
     expect(html).not.toContain('1 会话');
     expect(html).not.toContain('PR #17');
-    expect(html).toContain('产物');
+    // （原「产物」断言锚在行内 hover 产物图标上，2026-07-29 随 18d 撤除——
+    //  产物入口现在只经分组 ⋯ 菜单，点击才渲染，静态标记里不再有常驻锚点。）
   });
 
   it('exposes the status filter entry (icon dropdown) for admins', () => {
@@ -311,7 +320,7 @@ describe('Sidebar session metadata', () => {
       expect(html).toContain('Session Native Workspace');
       // D-10: 普通用户看不到状态筛选 tab，但程序化设置的筛选仍生效。
       expect(html).not.toContain('交付线索');
-      expect(html).toContain('产物');
+      // 2026-07-29：行内 hover「产物」图标已撤（hover 只留归档），交付线索仍由筛选结果本身承载。
       expect(html).toContain('aria-label="在 code-agent 新建会话"');
       expect(html).not.toContain('Finished Session');
     } finally {

@@ -34,6 +34,11 @@ vi.mock('../../../src/renderer/hooks/useToast', () => ({
   useToastStore: { getState: () => ({ addToast: vi.fn() }) },
 }));
 
+const submitSteerEnvelopeMock = vi.hoisted(() => vi.fn());
+vi.mock('../../../src/renderer/components/features/chat/chatViewSteer', () => ({
+  submitSteerEnvelope: submitSteerEnvelopeMock,
+}));
+
 vi.mock('../../../src/renderer/hooks/agent/useAgentEffects', () => ({
   useAgentEffects: vi.fn(),
 }));
@@ -148,6 +153,28 @@ describe('引导消息「发送」的可发判定与 sendMessage 同源', () => 
     expect(String(toastInfoMock.mock.calls[0]?.[0] ?? '')).not.toHaveLength(0);
   });
 
+  // 2026-07-27 产品负责人拍板 A：模型回复中点「发送」= 立即转向，
+  // 不再只弹一句「等它跑完」。这条钉住「running 时真的走转向」，
+  // 与上面那条 paused/cancelling 硬拒的门方向相反、互为边界。
+  it('会话正在回复中时走立即转向，而不是只弹提示', async () => {
+    submitSteerEnvelopeMock.mockResolvedValueOnce({ outcome: 'steered' });
+    const hook = await renderHydrated();
+    setSessionStatus('running');
+
+    await act(async () => {
+      await hook.result.current.sendQueuedRuntimeInput('queued-a');
+    });
+
+    expect(submitSteerEnvelopeMock).toHaveBeenCalledTimes(1);
+    expect(typedInvokeDomainMock).toHaveBeenCalledWith(
+      QueuedInputSchemas.MARK_SENDING,
+      { action: 'markSending', payload: { id: 'queued-a' } },
+    );
+    // 转向成功后卡片必须消失，且不能走回「排队重发」老路
+    expect(hook.result.current.queuedRuntimeInputs.map((input) => input.id)).toEqual([]);
+    expect(sendMessageMock).not.toHaveBeenCalled();
+  });
+
   it('会话空闲时照常发送（不误伤正常路径）', async () => {
     const hook = await renderHydrated();
 
@@ -203,5 +230,31 @@ describe('引导消息「发送」的可发判定与 sendMessage 同源', () => 
       releaseMarkSending();
       await firstClick;
     });
+  });
+
+  // 独立验证 2026-08-01 抓到的静默失败：宿主说这条已经不是 queued（上一次点击 / drain
+  // 抢先），前端直接 return——用户以为在插队，实际要等本轮自然跑完才看到它被当普通排队
+  // 发出去。本文件从头到尾的规矩就是「任何一条不可发都出声」，这条是漏网的。
+  it('宿主拒绝 markSending 时出声，不再静默 return', async () => {
+    typedInvokeDomainMock.mockImplementation(
+      async (_schema: unknown, request: { action: string }) => {
+        switch (request.action) {
+          case 'list':
+            return { success: true, data: [hostQueuedInput()] };
+          case 'markSending':
+            return { success: true, data: { marked: false } };
+          default:
+            return { success: true, data: undefined };
+        }
+      },
+    );
+    setSessionStatus('running');
+    const hook = await renderHydrated();
+
+    await act(async () => {
+      await hook.result.current.sendQueuedRuntimeInput('queued-a');
+    });
+
+    expect(toastInfoMock).toHaveBeenCalledWith(expect.stringContaining('已经在发送'));
   });
 });

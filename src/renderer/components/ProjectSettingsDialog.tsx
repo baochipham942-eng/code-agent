@@ -175,7 +175,7 @@ export const ProjectSettingsDialog: React.FC<ProjectSettingsDialogProps> = ({
     >
       <div className="flex max-h-[86vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl border border-zinc-700 bg-zinc-950 shadow-2xl">
         <header className="flex items-center gap-2 border-b border-zinc-800 px-4 py-3">
-          <Settings2 className="h-4 w-4 text-violet-300" />
+          <Settings2 className="h-4 w-4 text-badge-accent" />
           <h2 className="flex-1 text-sm font-semibold text-zinc-100">{copy.title}</h2>
           <button type="button" onClick={onClose} aria-label={copy.close}><X className="h-4 w-4 text-zinc-400" /></button>
         </header>
@@ -224,14 +224,14 @@ export const ProjectSettingsDialog: React.FC<ProjectSettingsDialogProps> = ({
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
                       <span className="truncate text-zinc-200">{source.path}</span>
-                      {source.role === 'primary' && <span className="rounded bg-violet-500/15 px-1.5 py-0.5 text-[10px] text-violet-200">Primary</span>}
+                      {source.role === 'primary' && <span className="rounded bg-violet-500/15 px-1.5 py-0.5 text-[10px] text-badge-accent">Primary</span>}
                     </div>
-                    <span className={source.trustState === 'trusted' ? 'text-[10px] text-zinc-500' : 'text-[10px] text-rose-300'}>
+                    <span className={source.trustState === 'trusted' ? 'text-[10px] text-zinc-500' : 'text-[10px] text-badge-danger'}>
                       {source.trustState === 'trusted' ? copy.trusted : copy.blocked}
                     </span>
                   </div>
                   {source.role !== 'primary' && (
-                    <button type="button" onClick={() => remove(index)} className="text-zinc-500 hover:text-rose-300">{copy.remove}</button>
+                    <button type="button" onClick={() => remove(index)} className="text-zinc-500 hover:text-badge-danger">{copy.remove}</button>
                   )}
                 </div>
                 <div className="flex items-center gap-2">
@@ -251,16 +251,16 @@ export const ProjectSettingsDialog: React.FC<ProjectSettingsDialogProps> = ({
                 </div>
               </div>
             ))}
-            {!primary && <p className="text-rose-300">{copy.primaryRequired}</p>}
+            {!primary && <p className="text-badge-danger">{copy.primaryRequired}</p>}
           </section>
-          <div className="flex items-start gap-2 rounded-md border border-amber-500/20 bg-amber-500/5 p-2 text-amber-200">
+          <div className="flex items-start gap-2 rounded-md border border-badge-warning/20 bg-amber-500/5 p-2 text-badge-warning">
             <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
             {copy.immutableRun}
           </div>
-          {error && <p role="alert" className="rounded-md bg-rose-500/10 p-2 text-rose-300">{error}</p>}
+          {error && <p role="alert" className="rounded-md bg-rose-500/10 p-2 text-badge-danger">{error}</p>}
         </div>
         <footer className="flex items-center gap-2 border-t border-zinc-800 px-4 py-3">
-          <button type="button" onClick={() => { void handleDelete(); }} className="inline-flex items-center gap-1 text-rose-300 hover:text-rose-200">
+          <button type="button" onClick={() => { void handleDelete(); }} className="inline-flex items-center gap-1 text-badge-danger hover:text-badge-danger">
             <Trash2 className="h-3.5 w-3.5" /> {copy.deleteProject}
           </button>
           <span className="flex-1" />

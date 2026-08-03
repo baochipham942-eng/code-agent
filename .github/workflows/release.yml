@@ -92,8 +92,8 @@ jobs:
         run: cargo install tauri-cli@2.10.1 --locked
 
       - name: Build native helpers + fetch immutable sidecars (Tauri bundle resources)
-        # tauri.conf.json bundles three Swift Mach-O helpers (system-audio-capture, vision-ocr,
-        # vision-tagger) AND fetched sidecar binaries (rtk, uv, poppler) AND the resigned CUA app. All are
+        # tauri.conf.json bundles four Swift Mach-O helpers (system-audio-capture, voice-aec-io,
+        # vision-ocr, vision-tagger) AND fetched sidecar binaries (rtk, uv, poppler) AND the resigned CUA app. All are
         # build artifacts NOT committed to the repo. A fresh CI checkout must produce every one or
         # `tauri build` fails with "resource path doesn't exist" — this is exactly why v0.16.89
         # (2026-06-01) failed: rtk/uv were added to bundle resources after the last green run but
@@ -135,7 +135,7 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple: -s -k "${APPLE_KEYCHAIN_PASSWORD}" "${KEYCHAIN_PATH}"
           security find-identity -v -p codesigning "${KEYCHAIN_PATH}"
 
-      - name: Fetch and re-sign CUA driver 0.8.1
+      - name: Fetch and re-sign CUA driver 0.14.2
         env:
           CUA_SIGN_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
         run: CUA_FETCH_UPSTREAM=1 bash scripts/fetch-cua-driver.sh

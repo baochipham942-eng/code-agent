@@ -8,7 +8,7 @@
 // ============================================================================
 
 import React, { useEffect, useState } from 'react';
-import { Target, Loader2, Pause, Play } from 'lucide-react';
+import { Target, Loader2, Pause, Play, Clock } from 'lucide-react';
 import { useAppStore, type GoalRunState } from '../../../stores/appStore';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { invokeDomain } from '../../../services/ipcService';
@@ -49,22 +49,25 @@ export const GoalStatusBarView: React.FC<{ run: GoalRunState; onTogglePause: () 
 
   const accent = paused
     ? 'border-slate-500/30 bg-slate-500/[0.07]'
-    : 'border-sky-500/30 bg-sky-500/[0.07]';
+    : 'border-badge-info/30 bg-sky-500/[0.07]';
 
   return (
     <div className={`goal-status-bar mx-auto mb-1 flex w-full max-w-3xl items-center gap-2 rounded-md border px-3 py-1.5 text-xs ${accent}`}>
-      <Target className={`h-3.5 w-3.5 flex-shrink-0 ${paused ? 'text-slate-400' : 'text-sky-400'}`} />
+      <Target className={`h-3.5 w-3.5 flex-shrink-0 ${paused ? 'text-zinc-400' : 'text-badge-info'}`} />
       <span className="truncate text-zinc-300" title={run.goal}>
         {paused ? t.goalStatusBar.pausedPrefix : t.goalStatusBar.runningPrefix}
         <span className="text-zinc-100">{run.goal}</span>
       </span>
       <span className="ml-auto flex flex-shrink-0 items-center gap-2 text-zinc-400">
-        {!paused && <Loader2 className="h-3 w-3 animate-spin text-sky-400" />}
-        <span title={t.goalStatusBar.elapsedTitle}>⏱ {elapsed}</span>
+        {!paused && <Loader2 className="h-3 w-3 animate-spin text-badge-info" />}
+        <span title={t.goalStatusBar.elapsedTitle} className="flex items-center gap-1">
+          <Clock className="h-3 w-3" />
+          {elapsed}
+        </span>
         {remainingMs !== undefined && (
           <span
             title={t.goalStatusBar.remainingTitle}
-            className={remainingMs <= 60_000 ? 'text-amber-300' : undefined}
+            className={remainingMs <= 60_000 ? 'text-badge-warning' : undefined}
           >
             {t.goalStatusBar.remainingPrefix}{formatElapsed(Math.max(0, remainingMs))}
           </span>
@@ -79,7 +82,7 @@ export const GoalStatusBarView: React.FC<{ run: GoalRunState; onTogglePause: () 
             {run.tokensUsed.toLocaleString()}/{run.tokenBudget.toLocaleString()} tok
           </span>
         )}
-        {!paused && gateHint && <span className="text-sky-300">{gateHint}</span>}
+        {!paused && gateHint && <span className="text-badge-info">{gateHint}</span>}
         <button
           type="button"
           data-goal-toggle-pause

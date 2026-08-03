@@ -2,7 +2,7 @@
 // Settings Types
 // ============================================================================
 
-import type { ExternalAgentEngineKind } from './agentEngine';
+import type { AgentEngineKind, ExternalAgentEngineKind } from './agentEngine';
 import type {
   ModelConfig,
   ModelProvider,
@@ -16,27 +16,79 @@ import type { RoleProactivitySettings } from './roleAssets';
 import type { SpeechInputSettings } from './speech';
 import type { VoiceTurnDetectionConfig } from './voice';
 import type { KeybindingsSettings } from '../keybindings';
+import type { RealtimeVoiceProviderId } from '../constants/realtimeVoiceProviders';
+
+export interface CustomRealtimeVoiceProviderSettings {
+  /** Stable user-defined id. Keys are isolated by this id in secure storage. */
+  id: string;
+  displayName: string;
+  /** Exact WSS endpoint. `model` is added as a query parameter when absent. */
+  endpoint: string;
+  authStyle: 'bearer';
+  sessionShape: 'openai-realtime';
+  model: string;
+  voices: string[];
+  defaultVoice: string;
+  inputSampleRate: 16_000 | 24_000;
+  outputSampleRate: 24_000;
+  createdAt: number;
+  updatedAt: number;
+}
 
 /** 实时通话（Live Voice）UI 设置。全部可选，未配置 = 安全默认（入口隐藏、Provider 默认档）。 */
 export interface VoiceLiveSettings {
   /** 总开关：关 = Composer 不显示实时通话入口 */
   enabled?: boolean;
   /**
-   * 音色。**音色枚举与通话模型强绑定**（`src/shared/constants/voice.ts` 的实测白名单），
-   * 换模型必须重新真机验证白名单，别让这里写成自由文本。
+   * 实时语音 Provider。存量配置没有该字段时读取为 DashScope；
+   * 不在注册表里的值同样 fail-closed 到 DashScope。
+   */
+  providerId?: RealtimeVoiceProviderId;
+  /** Non-sensitive custom Provider metadata. API keys never enter settings. */
+  customProviders?: CustomRealtimeVoiceProviderSettings[];
+  /**
+   * 音色。枚举与当前 Provider profile 的通话模型强绑定；
+   * 读取时会归一到该 profile 的合法值，换模型必须同步归一音色。
    */
   voiceId?: string;
+  /**
+   * 通话模型（负责听和说的实时模型）：只能是当前 Provider profile
+   * 注册的模型；未配置 / 表外 id 会回落该 profile 的默认模型。
+   * 音色与模型强绑定：换模型时 voiceId 必须一起落到新模型的 voices 里。
+   */
+  conversationModel?: string;
   /** 通话语言；auto/未配置 = 跟随上游自动检测 */
   language?: 'auto' | 'zh' | 'en';
   /**
    * 打断方式：
    * - `server_vad`（默认）：全双工自动断句，灵敏度由 vadSensitivity 映射 turn_detection.threshold；
-   * - `push_to_talk`：按住说话、松开提交（turn_detection = null + commit）；
-   * - `manual`：点按开始、再点按提交（同为 turn_detection = null + commit，仅交互不同）。
+   * - `manual`：点按开始说话、再点按提交（turn_detection = null + commit），背景有人声时用。
+   *
+   * 2026-07-27 删掉 `push_to_talk`（按住说话）：它相对 `manual` 只多一条「松手必关麦」，
+   * 代价是整通电话手被按在按钮上，桌面端不值。历史值由 normalizeInterruptMode 迁到 manual。
    */
-  interrupt?: 'server_vad' | 'push_to_talk' | 'manual';
+  interrupt?: 'server_vad' | 'manual';
   /** server_vad 灵敏度档位：high 灵敏（threshold 0.3）/ medium（0.5）/ low 迟钝（0.7） */
   vadSensitivity?: 'low' | 'medium' | 'high';
+  /**
+   * 语音派活时的执行引擎（方案 §6.1 双脑：通话模型只负责听说，干活是另一个模型）。
+   * 未配置 = 跟随会话默认引擎，与批 H 之前的行为完全一致。
+   * 通话模型（听说）在上面的 conversationModel 配，白名单见 QWEN_OMNI_REALTIME_MODEL_OPTIONS。
+   */
+  executionModel?: { provider: string; model: string };
+  /** 回声消除：auto 优先原生 AEC；off 强制走耳机模式。未配置 = auto。 */
+  echoCancellation?: 'auto' | 'off';
+  /** 通话语速。纯 instructions 指令，遵从度按 Provider 不保证。未配置 = normal。 */
+  speechRate?: 'slow' | 'normal' | 'fast';
+}
+
+/**
+ * 语音采集输入设备。WebRTC deviceId 与 CoreAudio UID 不互通，因此 label 是
+ * Web / 原生两条采集链的持久化对账键；webDeviceId 只作 Web 路快速命中缓存。
+ */
+export interface VoiceInputDeviceSettings {
+  label: string;
+  webDeviceId?: string;
 }
 
 export interface ModelEntrySettings {
@@ -148,6 +200,10 @@ export interface AppSettings {
     };
     taskStrategy?: TaskModelStrategySettings;
   };
+  onboarding?: {
+    completedAt?: number;
+    defaultEngine?: AgentEngineKind;
+  };
   // 联网搜索源配置（ADR-026）。全部可选，未配置 = 现状行为不变。
   // 注：搜索 API key 仍由 secureStorage / configService 管，不存于此。
   search?: {
@@ -168,6 +224,13 @@ export interface AppSettings {
   voice?: {
     /** 上游断句策略；null 表示手动 commit 模式 */
     turnDetection?: VoiceTurnDetectionConfig;
+    /** 口述专名词表；Host 会在注入前统一清洗与限长 */
+    vocabulary?: string[];
+    /**
+     * 麦克风输入设备；`null` 是用户明确选择「系统默认」的持久化清除值。
+     * 设备消失、配置缺失或形状无效时，采集链同样回落系统默认。
+     */
+    inputDevice?: VoiceInputDeviceSettings | null;
     /** 实时通话（Live Voice）UI 设置；运行时断句真源仍是上面的 turnDetection */
     live?: VoiceLiveSettings;
   };
@@ -230,7 +293,7 @@ export interface AppSettings {
     inheritanceMigrationAcked?: boolean;
   };
   ui: {
-    theme: 'light' | 'dark' | 'system';
+    theme: 'light' | 'dark' | 'system' | 'high-contrast-light' | 'high-contrast-dark';
     fontSize: number;
     showToolCalls: boolean;
     language: 'zh' | 'en';

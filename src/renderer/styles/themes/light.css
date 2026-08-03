@@ -13,7 +13,7 @@
   --zinc-300: 63 63 70;
   --zinc-400: 82 82 91;
   --zinc-500: 113 113 122;
-  --zinc-600: 161 161 170;
+  --zinc-600: 113 113 122;
   --zinc-700: 212 212 216;
   --zinc-800: 244 244 245;
   --zinc-850: 250 250 250;
@@ -46,6 +46,11 @@
   --brand-primary-muted: rgba(15, 118, 110, 0.12);
   --brand-primary-glow: rgba(15, 118, 110, 0.2);
 
+  /* accent-accessible 回退：hc 两套主题用独立高饱和色承担可读性场景（focus/链接/
+     selection）；普通主题 brand 本身已过 4.5:1，直接回退到 brand，保证
+     text-accent-accessible 等 utility 在四主题下都有定义 */
+  --accent-accessible: var(--brand-primary);
+
   /* Semantic colors */
   --color-success: #22C55E;
   --color-success-muted: rgba(34, 197, 94, 0.12);
@@ -55,6 +60,42 @@
   --color-error-muted: rgba(239, 68, 68, 0.12);
   --color-info: #3B82F6;
   --color-info-muted: rgba(59, 130, 246, 0.12);
+
+  /* Badge semantic tokens - 700 foregrounds on quiet light tints. */
+  --badge-info-fg: #0369A1;
+  --badge-info-bg: #F0F9FF;
+  --badge-info-border: rgba(3, 105, 161, 0.35);
+  --badge-success-fg: #047857;
+  --badge-success-bg: #ECFDF5;
+  --badge-success-border: rgba(4, 120, 87, 0.35);
+  --badge-warning-fg: #B45309;
+  --badge-warning-bg: #FFFBEB;
+  --badge-warning-border: rgba(180, 83, 9, 0.35);
+  --badge-danger-fg: #B91C1C;
+  --badge-danger-bg: #FEF2F2;
+  --badge-danger-border: rgba(185, 28, 28, 0.35);
+  --badge-accent-fg: #0F766E;
+  --badge-accent-bg: #F0FDFA;
+  --badge-accent-border: rgba(15, 118, 110, 0.35);
+
+  /* Solid status marks - strong foreground colors for dots and compact indicators.
+     These are intentionally separate from badge-* backgrounds: a mark is the
+     visible shape itself, not a quiet wash behind text. */
+  --mark-info: #0369A1;
+  --mark-success: #047857;
+  --mark-warning: #B45309;
+  --mark-danger: #B91C1C;
+  --mark-accent: #0F766E;
+  --mark-neutral: #52525B;
+
+  /* Secondary button: light surface with dark text; hover is intentionally a
+     separate, visibly darker surface instead of reusing the zinc scale pair. */
+  --btn-secondary-bg: #E4E4E7;
+  --btn-secondary-fg: #27272A;
+  --btn-secondary-bg-hover: #C4C4C8;
+  --btn-secondary-bg-disabled: #F4F4F5;
+  --btn-secondary-fg-disabled: #52525B;
+  --btn-ghost-bg-hover: #D4D4D8;
 
   /* Chat status text colors */
   --status-text-success: #047857;
@@ -77,6 +118,16 @@
   --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
   --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.1);
   --shadow-xl: 0 16px 48px rgba(0, 0, 0, 0.12);
+
+  /* Elevation 阶梯（2026-07-28 品质感打磨）：亮色下亮度差拉不开，层级主要靠投影。
+     与 dark.css 同名 token，消费方同为 global.css 的 elevation/composer 类。 */
+  --elevation-l0: #FAFAFA;
+  --elevation-l1: #FFFFFF;
+  --elevation-l2: #FFFFFF;
+  --elevation-l3: #FFFFFF;
+  --shadow-l2: 0 8px 24px rgba(0, 0, 0, 0.12);
+  --shadow-l3: 0 4px 16px rgba(0, 0, 0, 0.14);
+  --shadow-composer: 0 4px 24px rgba(0, 0, 0, 0.08);
 
   /* Overlay */
   --overlay-backdrop: rgba(0, 0, 0, 0.4);

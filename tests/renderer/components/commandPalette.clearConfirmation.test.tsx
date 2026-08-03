@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 const appActions = vi.hoisted(() => ({
   setShowSettings: vi.fn(),
@@ -49,6 +49,7 @@ import { CommandPalette } from '../../../src/renderer/components/CommandPalette'
 beforeEach(() => {
   Object.values(appActions).forEach((mock) => mock.mockReset());
   Object.values(sessionActions).forEach((mock) => mock.mockReset());
+  sessionActions.clearCurrentSession.mockResolvedValue(undefined);
   Element.prototype.scrollIntoView = vi.fn();
 });
 
@@ -74,7 +75,7 @@ describe('CommandPalette clear-chat confirmation', () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
-  it('clears and closes only after confirming a clear-chat command selected with Enter', () => {
+  it('clears and closes only after confirming a clear-chat command selected with Enter', async () => {
     const onClose = vi.fn();
     render(<CommandPalette isOpen onClose={onClose} />);
     const input = screen.getByPlaceholderText('搜索命令…');
@@ -90,7 +91,7 @@ describe('CommandPalette clear-chat confirmation', () => {
     fireEvent.click(screen.getByRole('button', { name: '清空对话' }));
 
     expect(sessionActions.clearCurrentSession).toHaveBeenCalledTimes(1);
-    expect(onClose).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
   });
 
   it('keeps other commands immediate', () => {

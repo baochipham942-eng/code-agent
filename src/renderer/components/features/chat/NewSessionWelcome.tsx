@@ -4,7 +4,14 @@ import type { SessionWorkbenchSnapshot } from '@shared/contract/sessionWorkspace
 import { PLAIN_CHAT_SUMMARY_LABEL } from '@shared/contract/sessionWorkspace';
 import { useI18n } from '../../../hooks/useI18n';
 import type { Translations } from '../../../i18n';
-import { NeoBrandMark } from '../sidebar/NeoBrandMark';
+import { formatRelativeTime } from '../../../utils/i18nTime';
+import { isBlankNewSession, type SessionWithMeta } from '../../../stores/sessionStore';
+import { PlanetSphere } from '../../brand/PlanetSphere';
+
+type ResumableSession = Pick<
+  SessionWithMeta,
+  'title' | 'updatedAt' | 'messageCount' | 'turnCount' | 'isArchived' | 'status'
+>;
 
 interface SuggestionItem {
   icon: React.ElementType;
@@ -49,41 +56,63 @@ export function buildDefaultSuggestions(t: Translations): SuggestionItem[] {
 }
 
 // 新会话欢迎页（示例建议 + 工作区上下文标签）——不是通用空态，别并进 primitives/EmptyState
+//
+// session：当前会话。空态首屏走到这里时，只有它是真·新会话才配渲染欢迎页；冷启动自动
+// 恢复的历史会话恰好没有内容时，必须明说「你在哪条会话里」——否则与真新会话像素级不可
+// 区分，用户以为自己新开了一条，首条消息却接在昨晚那条后面（2026-08-01 事故）。
+// 判定刻意放在本组件内而不是调用方：那样这条决策才被组件单测覆盖，不会被一次误删接线
+// 静默退回事故行为。
 export const NewSessionWelcome: React.FC<{
   onSend: (message: string) => void;
   workingDirectory?: string | null;
   workbenchSnapshot?: SessionWorkbenchSnapshot | null;
+  session?: ResumableSession | null;
 }> = ({
   onSend,
   workingDirectory,
   workbenchSnapshot,
+  session,
 }) => {
   const { t } = useI18n();
   const suggestions = buildDefaultSuggestions(t);
+  const resumedSession = session && !isBlankNewSession(session) ? session : null;
   // 纯对话（无工作区）是默认形态，不必再标「空白会话」——用户反馈看不懂、是噪音。
   // 只有继承了项目/工作区上下文时才显示上下文标签（"项目会话 · name"），告诉用户这条会话带了上下文。
   const hasWorkspaceContext = Boolean(workingDirectory?.trim());
   const contextLabel = hasWorkspaceContext ? formatNewSessionContextLabel(t, workingDirectory) : null;
-  const contextTitle = hasWorkspaceContext ? t.chat.inheritedWorkspace.replace('{path}', workingDirectory!.trim()) : '';
   const contextDetails = hasWorkspaceContext
     ? buildNewSessionContextDetails(t, workbenchSnapshot)
     : null;
 
   return (
     <div className="h-full flex flex-col items-center justify-center px-6 py-12">
-      <div className="w-full max-w-2xl animate-fade-in">
-        {/* 品牌标入场（2026-07-26 空态品牌化）：用户第一眼页面此前没有任何品牌触点 */}
-        <NeoBrandMark size={28} showWordmark={false} className="mb-4" />
+      {/* max-w-3xl(768px) 与消息流/输入框同宽（2026-07-27 拍板）：首发消息后内容列不再跳 96px */}
+      <div className="w-full max-w-3xl animate-fade-in">
+        {/* 品牌区（2026-08-02 星球品牌升级拍板，同日修订）：42px 慢转地球（24s/周，
+            静态 fx）单独作主视觉——不与 NeoBrandMark 并排（双标并置生硬，且品牌标
+            在侧栏常驻，此处重复）。建议卡维持原样（用户否掉"航线"包装）；整页不加
+            星点纹理（舷窗原则：阅读区保持干净）。reduced-motion 停转由 PlanetSphere
+            内建 CSS 兜底，此处零处理。 */}
+        <div className="mb-4">
+          <PlanetSphere kind="earth" spinSeconds={24} glowColor="rgba(96,165,250,.20)" size={42} interactive />
+        </div>
         <div className="mb-5 flex items-center justify-between gap-4">
           <div className="min-w-0">
-            <h1 className="text-xl font-semibold text-zinc-100">{t.chat.welcomeTitle}</h1>
+            <h1 className="text-xl font-semibold text-zinc-100" data-testid="chat-welcome-title">
+              {resumedSession
+                ? t.chat.resumedEmptyTitle.replace('{title}', resumedSession.title)
+                : t.chat.welcomeTitle}
+            </h1>
             <p className="mt-1 text-sm text-zinc-500">
-              {t.chat.welcomeSubtitle}
+              {resumedSession
+                ? t.chat.resumedEmptySubtitle.replace('{time}', formatRelativeTime(t, resumedSession.updatedAt))
+                : t.chat.welcomeSubtitle}
             </p>
           </div>
+          {/* 上下文标签只读展示（2026-07-29：目录 chip 入口已删——
+              目录选择收进侧栏「项目」区的新建项目流程与项目行 ⋯ 菜单）。 */}
           {contextLabel && (
             <span
-              title={contextTitle}
               className="shrink-0 rounded-md border border-white/[0.08] bg-white/[0.03] px-2 py-1 text-[11px] font-medium text-zinc-400"
             >
               {contextLabel}
@@ -144,9 +173,9 @@ function buildNewSessionContextDetails(t: Translations, snapshot?: SessionWorkbe
   const skillCount = snapshot.skillIds?.length ?? 0;
   const connectorCount = snapshot.connectorIds?.length ?? 0;
   const mcpCount = snapshot.mcpServerIds?.length ?? 0;
-  if (skillCount > 0) parts.push(`${skillCount} Skill`);
-  if (connectorCount > 0) parts.push(`${connectorCount} Connector`);
-  if (mcpCount > 0) parts.push(`${mcpCount} MCP`);
+  if (skillCount > 0) parts.push(t.chat.skillCount.replace('{count}', String(skillCount)));
+  if (connectorCount > 0) parts.push(t.chat.connectorCount.replace('{count}', String(connectorCount)));
+  if (mcpCount > 0) parts.push(t.chat.mcpCount.replace('{count}', String(mcpCount)));
 
   return parts.length > 0 ? t.chat.inheritedPrefix.replace('{parts}', parts.join(' · ')) : null;
 }

@@ -19,6 +19,7 @@ import {
   ChevronDown,
   ChevronRight,
   X,
+  AudioLines,
   Image as ImageIcon,
   Palette,
   Fingerprint,
@@ -39,6 +40,7 @@ import {
   Stethoscope,
   Terminal,
   Mic,
+  Phone,
   Search,
 } from 'lucide-react';
 import { useAppStore } from '../../../stores/appStore';
@@ -82,28 +84,81 @@ export const WIDE_SETTINGS_TABS = new Set<SettingsTab>([
   'workspace',
 ]);
 
-// Tab Components
-import { GeneralSettings } from './tabs/GeneralSettings';
-import { ConversationSettings } from './tabs/ConversationSettings';
-import { VoiceInputSettings } from './tabs/VoiceInputSettings';
-import { KeybindingsSettings } from './tabs/KeybindingsSettings';
-import { WorkspaceSettings } from './tabs/WorkspaceSettings';
-import { AppshotsSettings } from './tabs/AppshotsSettings';
-import { ModelSettings } from './tabs/ModelSettings';
-import { VisualModelsSettings } from './tabs/VisualModelsSettings';
-import { SearchSettings } from './tabs/SearchSettings';
-import { AgentEngineSettings } from './tabs/AgentEngineSettings';
-import { AppearanceSettings } from './tabs/AppearanceSettings';
-import { SoulSettings } from './tabs/SoulSettings';
-import { DataSettings } from './tabs/DataSettings';
-import { UpdateSettings } from './tabs/UpdateSettings';
-import { MemoryTab } from './tabs/MemoryTab';
-import { ChannelsSettings } from './tabs/ChannelsSettings';
-import { HooksSettings } from './tabs/HooksSettings';
-import { AboutSettings } from './tabs/AboutSettings';
-import { ScreenMemorySettings } from './tabs/ScreenMemorySettings';
-import PrivacySettings from './tabs/PrivacySettings';
-import { DoctorSettings } from './tabs/DoctorSettings';
+// Tab Components: the settings shell loads only the active tab. Keep the shell
+// itself eager so opening settings does not add another lazy boundary.
+const GeneralSettings = React.lazy(() => import('./tabs/GeneralSettings').then(({ GeneralSettings: component }) => ({
+  default: component,
+})));
+const ConversationSettings = React.lazy(() => import('./tabs/ConversationSettings').then(({ ConversationSettings: component }) => ({
+  default: component,
+})));
+const VoiceInputSettings = React.lazy(() => import('./tabs/VoiceInputSettings'));
+const VoiceLiveSettings = React.lazy(() => import('./tabs/VoiceLiveSettings'));
+const VoiceModelSettings = React.lazy(() => import('./tabs/VoiceModelSettings'));
+const KeybindingsSettings = React.lazy(() => import('./tabs/KeybindingsSettings').then(({ KeybindingsSettings: component }) => ({
+  default: component,
+})));
+const WorkspaceSettings = React.lazy(() => import('./tabs/WorkspaceSettings').then(({ WorkspaceSettings: component }) => ({
+  default: component,
+})));
+const AppshotsSettings = React.lazy(() => import('./tabs/AppshotsSettings'));
+const ModelSettings = React.lazy(() => import('./tabs/ModelSettings').then(({ ModelSettings: component }) => ({
+  default: component,
+})));
+const VisualModelsSettings = React.lazy(() => import('./tabs/VisualModelsSettings'));
+const SearchSettings = React.lazy(() => import('./tabs/SearchSettings').then(({ SearchSettings: component }) => ({
+  default: component,
+})));
+const AgentEngineSettings = React.lazy(() => import('./tabs/AgentEngineSettings').then(({ AgentEngineSettings: component }) => ({
+  default: component,
+})));
+const AppearanceSettings = React.lazy(() => import('./tabs/AppearanceSettings').then(({ AppearanceSettings: component }) => ({
+  default: component,
+})));
+const SoulSettings = React.lazy(() => import('./tabs/SoulSettings').then(({ SoulSettings: component }) => ({
+  default: component,
+})));
+const DataSettings = React.lazy(() => import('./tabs/DataSettings').then(({ DataSettings: component }) => ({
+  default: component,
+})));
+const UpdateSettings = React.lazy(() => import('./tabs/UpdateSettings').then(({ UpdateSettings: component }) => ({
+  default: component,
+})));
+const MemoryTab = React.lazy(() => import('./tabs/MemoryTab').then(({ MemoryTab: component }) => ({
+  default: component,
+})));
+const ChannelsSettings = React.lazy(() => import('./tabs/ChannelsSettings').then(({ ChannelsSettings: component }) => ({
+  default: component,
+})));
+const HooksSettings = React.lazy(() => import('./tabs/HooksSettings').then(({ HooksSettings: component }) => ({
+  default: component,
+})));
+const AboutSettings = React.lazy(() => import('./tabs/AboutSettings').then(({ AboutSettings: component }) => ({
+  default: component,
+})));
+const ScreenMemorySettings = React.lazy(() => import('./tabs/ScreenMemorySettings').then(({ ScreenMemorySettings: component }) => ({
+  default: component,
+})));
+const PrivacySettings = React.lazy(() => import('./tabs/PrivacySettings'));
+const DoctorSettings = React.lazy(() => import('./tabs/DoctorSettings').then(({ DoctorSettings: component }) => ({
+  default: component,
+})));
+
+// 沿用仓库既有的固定尺寸 pulse/shimmer 占位范式；固定最小高度避免切 tab 时内容区塌陷。
+function SettingsTabSkeleton() {
+  return (
+    <div
+      aria-hidden="true"
+      data-testid="settings-tab-skeleton"
+      className="min-h-[540px] space-y-5"
+    >
+      <div className="h-7 w-1/3 animate-pulse rounded-lg bg-zinc-800/40" />
+      <div className="h-24 animate-pulse rounded-lg border border-zinc-800 bg-zinc-950/60" />
+      <div className="h-36 animate-pulse rounded-lg border border-zinc-800 bg-zinc-950/60" />
+      <div className="h-20 w-4/5 animate-pulse rounded-lg border border-zinc-800 bg-zinc-950/60" />
+    </div>
+  );
+}
 // 用户管理 / 邀请码 / 控制平面 / 能力治理四个 tab 已迁 admin-console（2026-07 方案 9C），
 // 组件文件保留在 ./tabs 下待清死代码，但设置页不再 import、不提供任何入口。
 import ipcService from '../../../services/ipcService';
@@ -143,6 +198,9 @@ export function buildSettingsTabGroups({
     // 模型与能力
     { id: 'model', label: t.settings.tabs.model, icon: <Brain className="w-4 h-4" /> },
     { id: 'visualModels', label: t.settings.tabs.visualModels, icon: <ImageIcon className="w-4 h-4" /> },
+    // T1（2026-07-28 拍板）：通话模型/音色/转写模型从 voiceLive/voiceInput 收拢到这里，
+    // 两个旧 tab 只留使用偏好（一个能力只有一个家、消费路径只选不配）。
+    { id: 'voiceModel', label: t.settings.tabs.voiceModel, icon: <AudioLines className="w-4 h-4" /> },
     { id: 'search', label: t.settings.tabs.search, icon: <Search className="w-4 h-4" /> },
     { id: 'soul', label: t.settings.tabs.soul, icon: <Fingerprint className="w-4 h-4" /> },
     // 基础偏好
@@ -151,6 +209,7 @@ export function buildSettingsTabGroups({
     { id: 'doctor', label: t.settings.tabs.doctor, icon: <Stethoscope className="w-4 h-4" /> },
     { id: 'conversation', label: t.settings.tabs.conversation, icon: <FoldVertical className="w-4 h-4" /> },
     { id: 'keybindings', label: t.settings.tabs.keybindings, icon: <Keyboard className="w-4 h-4" /> },
+    { id: 'voiceLive', label: t.settings.tabs.voiceLive, icon: <Phone className="w-4 h-4" /> },
     { id: 'voiceInput', label: t.settings.tabs.voiceInput, icon: <Mic className="w-4 h-4" /> },
     // 工作与协作
     { id: 'workspace', label: t.settings.tabs.workspace, icon: <FolderOpen className="w-4 h-4" /> },
@@ -365,23 +424,31 @@ export const SettingsModal: React.FC = () => {
   return (
     <FullScreenPage
       role="dialog"
-      aria-modal="true"
       aria-label={t.settings.title}
       testId="settings-panel"
-      className="h-screen overflow-hidden animate-fadeIn"
+      variant="overlay"
+      className="overflow-hidden animate-fadeIn"
     >
       <div className="flex h-full min-h-0">
         <aside className="flex w-[280px] shrink-0 flex-col border-r border-zinc-800 bg-zinc-900/95">
-          <div className="px-4 pb-3 pt-5">
-            <button
-              type="button"
-              onClick={handleClose}
-              className="mb-5 inline-flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-300 focus:outline-hidden"
-            >
-              <ChevronLeft className="h-4 w-4" />
-              <span>{t.settings.backToApp}</span>
-            </button>
-            <SettingsSearch onNavigate={handleSearchNavigate} access={accessSubject} />
+          {/* 整窗覆盖后侧栏/顶栏都被盖住，本行顶起拖拽区（控件逐个 no-drag，
+              同 TitleBar 套路），不然设置打开期间窗口拖不动 */}
+          <div
+            data-tauri-drag-region
+            className="px-4 pb-3 pt-5"
+            style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
+          >
+            <div style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+              <button
+                type="button"
+                onClick={handleClose}
+                className="mb-5 inline-flex h-8 items-center gap-2 rounded-lg px-3 text-sm text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-300 focus:outline-hidden"
+              >
+                <ChevronLeft className="h-4 w-4" />
+                <span>{t.settings.backToApp}</span>
+              </button>
+              <SettingsSearch onNavigate={handleSearchNavigate} access={accessSubject} />
+            </div>
           </div>
 
           <nav className="min-h-0 flex-1 space-y-3 overflow-y-auto px-3 pb-5">
@@ -428,7 +495,7 @@ export const SettingsModal: React.FC = () => {
                         {tab.label}
                       </span>
                       {tab.id === 'model' && modelFormDirty && (
-                        <span className="shrink-0 rounded border border-amber-500/30 bg-amber-500/10 px-1 text-[10px] text-amber-200">
+                        <span className="shrink-0 rounded border border-badge-warning/30 bg-amber-500/10 px-1 text-[10px] text-badge-warning">
                           {t.settings.unsavedChanges.badge}
                         </span>
                       )}
@@ -445,7 +512,9 @@ export const SettingsModal: React.FC = () => {
 
         <main className="min-w-0 flex-1 overflow-y-auto bg-zinc-950">
           <div className={`mx-auto min-h-full px-8 pb-16 pt-8 ${contentWidthClass}`}>
-            <div className="mb-6 flex items-start justify-between gap-6">
+            {/* 页顶标题行即窗口拖拽区（二级页在位时右侧 TitleBar 不渲染）：
+                ="deep" 让整行可拖、双击缩放；X 关闭钮是 button，Tauri 自动豁免 */}
+            <div data-tauri-drag-region="deep" className="mb-6 flex items-start justify-between gap-6">
               <div>
                 <h2 id="settings-page-title" className="text-2xl font-semibold text-zinc-100">
                   {activeTabConfig?.label || t.settings.title}
@@ -456,44 +525,50 @@ export const SettingsModal: React.FC = () => {
                   </p>
                 )}
               </div>
-              <IconButton
-                icon={<X className="h-5 w-5" />}
-                aria-label={t.common.close}
-                onClick={handleClose}
-                variant="ghost"
-                size="lg"
-              />
+              <div style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+                <IconButton
+                  icon={<X className="h-5 w-5" />}
+                  aria-label={t.common.close}
+                  onClick={handleClose}
+                  variant="ghost"
+                  size="lg"
+                />
+              </div>
             </div>
 
-            {activeTab === 'general' && <GeneralSettings />}
-            {activeTab === 'doctor' && <DoctorSettings />}
-            {activeTab === 'conversation' && <ConversationSettings />}
-            {activeTab === 'search' && <SearchSettings />}
-            {activeTab === 'voiceInput' && <VoiceInputSettings />}
-            {activeTab === 'keybindings' && <KeybindingsSettings />}
-            {activeTab === 'workspace' && <WorkspaceSettings />}
-            {activeTab === 'appshots' && <AppshotsSettings />}
-            {activeTab === 'model' && (
-              <ModelSettings config={modelConfig} onChange={setModelConfig} onDirtyChange={setModelFormDirty} />
-            )}
-            {activeTab === 'visualModels' && <VisualModelsSettings />}
-            {activeTab === 'agentEngine' && <AgentEngineSettings />}
-            {activeTab === 'appearance' && <AppearanceSettings />}
-            {activeTab === 'soul' && <SoulSettings />}
-            {activeTab === 'cache' && <DataSettings />}
-            {activeTab === 'channels' && <ChannelsSettings />}
-            {activeTab === 'hooks' && <HooksSettings />}
-            {activeTab === 'memory' && <MemoryTab />}
-            {activeTab === 'openchronicle' && <ScreenMemorySettings />}
-            {activeTab === 'privacy' && <PrivacySettings onNavigateSettings={handleSearchNavigate} />}
-            {showUpdateTab && activeTab === 'update' && (
-              <UpdateSettings
-                updateInfo={optionalUpdateInfo}
-                onUpdateInfoChange={setOptionalUpdateInfo}
-                onShowUpdateModal={() => setShowUpdateModal(true)}
-              />
-            )}
-            {activeTab === 'about' && <AboutSettings />}
+            <React.Suspense fallback={<SettingsTabSkeleton />}>
+              {activeTab === 'general' && <GeneralSettings />}
+              {activeTab === 'doctor' && <DoctorSettings />}
+              {activeTab === 'conversation' && <ConversationSettings />}
+              {activeTab === 'search' && <SearchSettings />}
+              {activeTab === 'voiceLive' && <VoiceLiveSettings />}
+              {activeTab === 'voiceInput' && <VoiceInputSettings />}
+              {activeTab === 'voiceModel' && <VoiceModelSettings />}
+              {activeTab === 'keybindings' && <KeybindingsSettings />}
+              {activeTab === 'workspace' && <WorkspaceSettings />}
+              {activeTab === 'appshots' && <AppshotsSettings />}
+              {activeTab === 'model' && (
+                <ModelSettings config={modelConfig} onChange={setModelConfig} onDirtyChange={setModelFormDirty} />
+              )}
+              {activeTab === 'visualModels' && <VisualModelsSettings />}
+              {activeTab === 'agentEngine' && <AgentEngineSettings />}
+              {activeTab === 'appearance' && <AppearanceSettings />}
+              {activeTab === 'soul' && <SoulSettings />}
+              {activeTab === 'cache' && <DataSettings />}
+              {activeTab === 'channels' && <ChannelsSettings />}
+              {activeTab === 'hooks' && <HooksSettings />}
+              {activeTab === 'memory' && <MemoryTab />}
+              {activeTab === 'openchronicle' && <ScreenMemorySettings />}
+              {activeTab === 'privacy' && <PrivacySettings onNavigateSettings={handleSearchNavigate} />}
+              {showUpdateTab && activeTab === 'update' && (
+                <UpdateSettings
+                  updateInfo={optionalUpdateInfo}
+                  onUpdateInfoChange={setOptionalUpdateInfo}
+                  onShowUpdateModal={() => setShowUpdateModal(true)}
+                />
+              )}
+              {activeTab === 'about' && <AboutSettings />}
+            </React.Suspense>
           </div>
         </main>
       </div>

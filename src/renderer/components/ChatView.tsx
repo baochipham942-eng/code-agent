@@ -5,13 +5,13 @@
 import React, { useCallback, useRef, useState, useEffect } from 'react';
 import { useShallow } from 'zustand/shallow';
 import { useAppStore } from '../stores/appStore';
+import { useProjectChatSeedConsumption } from './features/chat/useProjectChatSeed';
 import { useComposerStore } from '../stores/composerStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { useSessionUIStore } from '../stores/sessionUIStore';
 import { useStreamingMessageAccumulatorStore } from '../stores/streamingMessageAccumulatorStore';
 import { useTaskStore } from '../stores/taskStore';
 import { useSwarmStore } from '../stores/swarmStore';
-import { useAuthStore } from '../stores/authStore';
 import {
   ensureNeoWorkCardLiveUpdates,
   isNeoWorkCardAwaitingRuntimeTerminal,
@@ -25,6 +25,7 @@ import { useTurnProjection } from '../hooks/useTurnProjection';
 import { useTurnExecutionClarity } from '../hooks/useTurnExecutionClarity';
 import { TurnBasedTraceView } from './features/chat/TurnBasedTraceView';
 import { NewSessionWelcome } from './features/chat/NewSessionWelcome';
+import { EmptySessionArea } from './features/chat/SessionSwitchSkeleton';
 import { MemberConversationView } from './features/expert/MemberConversationView';
 import { useMemberViewStore } from '../stores/memberViewStore';
 export { buildDefaultSuggestions } from './features/chat/NewSessionWelcome';
@@ -32,10 +33,13 @@ import { SurfaceExecutionChatPanel } from './features/surfaceExecution/SurfaceEx
 import { PinnedTodoBar } from './features/chat/PinnedTodoBar';
 import { SessionRecapBanner } from './features/chat/SessionRecapBanner';
 import { ForkSourceHint } from './features/chat/ForkSourceHint';
+import { ChatTraceFallback } from './features/chat/ChatTraceFallback';
+import { ErrorBoundary } from './ErrorBoundary';
 import { ActiveConversationRewindBanner } from './features/chat/ActiveConversationRewindBanner';
 import { ChatInput } from './features/chat/ChatInput';
 import { UserQuestionCard } from './UserQuestionCard';
-import { TranscriptPartialLine } from './features/voice/TranscriptPartialLine';
+import { applyVoicePartialsToProjection } from '../utils/voicePartialOverlay';
+import { useVoiceCallStore } from '../stores/voiceCallStore';
 import { GoalStatusBar } from './features/chat/GoalStatusBar';
 import { buildGoalNoticeMessage } from './features/chat/goalNotice';
 import type { ChatInputHandle } from './features/chat/ChatInput';
@@ -78,12 +82,6 @@ import { recordStreamingPerformanceCounter } from '../utils/streamingPerformance
 import { findSearchMatchForPendingJump } from '../utils/sessionSearchJump';
 import { buildProjectGoalChatStart } from '../utils/projectGoalChatSeed';
 import { isDragPointInsideVisibleRect } from '../utils/dragBounds';
-import {
-  buildNeoTagContinuationMessage,
-  buildNeoTagSourceMessage,
-  submitNeoTagContinuation,
-  submitNeoTagDraft,
-} from './features/chat/neoTagSubmit';
 import { Image, AlertTriangle, MessageSquare, X } from 'lucide-react';
 
 export async function handleQueuedSteerOutcome(
@@ -98,6 +96,8 @@ export async function handleQueuedSteerOutcome(
 export const ChatView: React.FC = () => {
   const { t } = useI18n();
   const appWorkingDirectory = useAppStore((state) => state.workingDirectory);
+  const setAppWorkingDirectory = useAppStore((state) => state.setWorkingDirectory);
+  const setComposerWorkingDirectory = useComposerStore((state) => state.setWorkingDirectory);
   const viewingMemberId = useMemberViewStore((state) => state.viewingMemberId);
   const setTaskPlan = useAppStore((state) => state.setTaskPlan);
   const openSettingsTab = useAppStore((state) => state.openSettingsTab);
@@ -106,6 +106,7 @@ export const ChatView: React.FC = () => {
     sessions,
     hasOlderMessages,
     isLoading: isSessionLoading,
+    isHydratingSession,
     isCreatingSession,
     isLoadingOlder,
     loadOlderMessages,
@@ -117,11 +118,9 @@ export const ChatView: React.FC = () => {
   const launchRequests = useSwarmStore((state) => state.launchRequests);
   // 订阅节流快照而非原始 entries：原始 entries 每 token 变一次，会把投影重算推到 token 频率
   const streamingMessageEntries = useStreamingMessageAccumulatorStore((state) => state.visibleEntries);
-  const authUser = useAuthStore((state) => state.user);
   const neoWorkCards = useNeoWorkCardStore(useShallow((state) =>
     selectNeoWorkCardDetailsForConversation(state, currentSessionId),
   ));
-  const runNeoTag = useNeoWorkCardStore((state) => state.createAndRun);
   const loadNeoWorkCardsForConversation = useNeoWorkCardStore((state) => state.loadForConversation);
   const {
     messages,
@@ -388,12 +387,56 @@ export const ChatView: React.FC = () => {
 
   const { requireAuthAsync } = useRequireAuth();
 
+  // 目录选择并入新任务流程（批C2）：沿用原 SidebarWorkspaceRow 的同一条数据通道——
+  // composer + appStore 同写，并持久化到当前会话，让工作区分组归位、agent 拿到正确 cwd。
+  const applyWorkingDirectory = React.useCallback(async (selectedPath: string) => {
+    setComposerWorkingDirectory(selectedPath);
+    setAppWorkingDirectory(selectedPath);
+    const sessionId = useSessionStore.getState().currentSessionId;
+    if (sessionId) {
+      try {
+        await window.domainAPI?.invoke(IPC_DOMAINS.SESSION, 'update', {
+          sessionId,
+          updates: { workingDirectory: selectedPath },
+        });
+      } catch (err) {
+        console.error('Failed to persist session workingDirectory:', err);
+      }
+    }
+  }, [setAppWorkingDirectory, setComposerWorkingDirectory]);
+
   // Turn-based trace projection
   const baseProjection = useTurnProjection(messages, currentSessionId, effectiveIsProcessing, launchRequests, neoWorkCards);
   const clarityProjection = useTurnExecutionClarity(baseProjection);
+  // 通话 partial：只叠加在「正在通话的那条会话」上，且不写任何 store（§7.5）
+  const voiceCallPhase = useVoiceCallStore((state) => state.phase);
+  const voiceCallSessionId = useVoiceCallStore((state) => state.sessionId);
+  const voicePartialUser = useVoiceCallStore((state) => state.partialUser);
+  const voicePartialAssistant = useVoiceCallStore((state) => state.partialAssistant);
+  const voiceStartedAt = useVoiceCallStore((state) => state.startedAt);
+  // 必须 memo：这个元素是 TurnBasedTraceView 的 itemContent 依赖，每渲染新建一个
+  // 就等于每次 ChatView 重渲染都往 react-virtuoso 的 store 里发布一份新 itemContent。
+  // virtuoso 每渲染在 layout effect 里全量发布 props，发布即通知订阅者
+  // （useSyncExternalStore → forceStoreRerender），于是"ChatView 渲染"被放大成
+  // 同步嵌套更新；只要上游有一条高频重渲染源，就会打满 React 的 50 层嵌套上限。
+  const forkSourceHint = React.useMemo(
+    () => <ForkSourceHint sessionId={currentSessionId} />,
+    [currentSessionId],
+  );
   const projection = React.useMemo(
-    () => applyStreamingMessageDeltasToProjection(clarityProjection, messages, streamingMessageEntries),
-    [clarityProjection, messages, streamingMessageEntries],
+    () => applyVoicePartialsToProjection(
+      applyStreamingMessageDeltasToProjection(clarityProjection, messages, streamingMessageEntries),
+      {
+        live: voiceCallPhase === 'live' && voiceCallSessionId === currentSessionId,
+        user: voicePartialUser,
+        assistant: voicePartialAssistant,
+        startedAt: voiceStartedAt,
+      },
+    ),
+    [
+      clarityProjection, messages, streamingMessageEntries, currentSessionId,
+      voiceCallPhase, voiceCallSessionId, voicePartialUser, voicePartialAssistant, voiceStartedAt,
+    ],
   );
 
   useEffect(() => {
@@ -538,63 +581,9 @@ export const ChatView: React.FC = () => {
   }, [openSettingsTab, t]);
 
   // 发送消息需要登录
+  // @neo 提交分支已移除（2026-07-29 拍板）：输入框不再有工作卡/续接交互，
+  // @neo 字样按普通文本消息发送；工作卡从 Neo 协同页发起。
   const handleSendEnvelope = useCallback(async (envelope: ConversationEnvelope): Promise<boolean> => {
-    const neoResult = await requireAuthAsync(async () => {
-      if (!currentSessionId) return null;
-      try {
-        // @neo 跨会话续接（ADR-035）：chip 即意图 —— 有续接目标就走同卡追加轮，
-        // 执行落当前会话（过程流式可见），本地补显同 ID 去重。
-        const continuationTarget = useNeoWorkCardStore.getState().continuationTarget;
-        if (continuationTarget) {
-          const continuation = await submitNeoTagContinuation({
-            envelope,
-            conversationId: currentSessionId,
-            continuationTarget,
-            requesterUserId: authUser?.id ?? 'local-user',
-            runContinuation: useNeoWorkCardStore.getState().continueAndRun,
-          });
-          const roundMessage = buildNeoTagContinuationMessage({
-            envelope,
-            conversationId: currentSessionId,
-            workCardId: continuationTarget.workCardId,
-            roundTurnId: continuation.roundTurnId,
-          });
-          if (!messagesRef.current.some((message) => message.id === roundMessage.id)) {
-            useSessionStore.getState().addMessage(roundMessage);
-          }
-          useNeoWorkCardStore.getState().setContinuationTarget(null);
-          return true;
-        }
-        const result = await submitNeoTagDraft({
-          envelope,
-          sourceConversationId: currentSessionId,
-          projectId: currentSession?.projectId ?? null,
-          workspacePath: currentSessionWorkingDirectory,
-          requesterUserId: authUser?.id ?? 'local-user',
-          runNeoTag,
-        });
-        if (!result) return null;
-        // @neo = 正常 agent 聊天：用户那句原话按普通用户消息进会话（BUG1）。
-        // host 落库的用户消息与这里同 ID（sourceTurnId），reload 不会出现双份。
-        const sourceMessage = buildNeoTagSourceMessage({
-          envelope,
-          sourceConversationId: currentSessionId,
-          result,
-        });
-        if (!messagesRef.current.some((message) => message.id === sourceMessage.id)) {
-          useSessionStore.getState().addMessage(sourceMessage);
-        }
-        // 轻量化重设计:@neo = 正常 agent 聊天,不弹 toast(回复直接流式出现在对话里)。
-        return true;
-      } catch (error) {
-        toast.error(error instanceof Error ? error.message : String(error));
-        return false;
-      }
-    });
-    if (neoResult !== null && neoResult !== undefined) {
-      return neoResult === true;
-    }
-
     const didSend = await requireAuthAsync(async () => {
       const modelReady = await ensureModelConfigured();
       if (!modelReady) return false;
@@ -603,11 +592,7 @@ export const ChatView: React.FC = () => {
     });
     return didSend === true;
   }, [
-    authUser?.id,
-    runNeoTag,
-    currentSession?.projectId,
     currentSessionId,
-    currentSessionWorkingDirectory,
     ensureModelConfigured,
     requireAuthAsync,
     sendMessage,
@@ -670,6 +655,12 @@ export const ChatView: React.FC = () => {
     });
   }, [pendingProjectGoalChatSeed, currentSessionId, effectiveIsProcessing, buildEnvelope, handleSendEnvelope]);
 
+  // 项目协作空间底部输入框：composer 已建好新会话、乐观上屏首条用户消息（落地即在
+  // 时间线上）并落 seed（完整 envelope，clientMessageId 与乐观消息同 id）。
+  // 消费端抽到 useProjectChatSeed（可单测）：目标会话就绪后把 envelope 真正发给 agent
+  // （sendMessage 按 id 去重不双份）；发送失败回滚乐观消息。
+  useProjectChatSeedConsumption({ currentSessionId, effectiveIsProcessing, handleSendEnvelope });
+
   const handleRequestPromptRewind = useCallback((messageId: string, content: string) => {
     if (!currentSessionId) return;
     if (effectiveIsProcessing) {
@@ -696,7 +687,6 @@ export const ChatView: React.FC = () => {
       chatInputRef.current?.setDraft(result.draft);
       setPendingPromptRewind(null);
       setRewindRefreshToken((token) => token + 1);
-      toast.warning(t.chat.rewindSuccess);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : String(error));
     } finally {
@@ -716,19 +706,23 @@ export const ChatView: React.FC = () => {
       {/* Global drag overlay — captures events directly to avoid iframe drag counter desync */}
       {isGlobalDragOver && (
         <div
-          className="absolute inset-0 flex items-center justify-center bg-zinc-900/80 backdrop-blur-sm z-50 border-2 border-dashed border-primary-500 rounded-xl"
+          className="absolute inset-0 flex items-center justify-center bg-zinc-900/80 backdrop-blur-sm z-50 border-2 border-dashed border-accent-accessible rounded-xl"
           onDragOver={handleGlobalDragOver}
           onDragLeave={handleGlobalDragLeave}
           onDrop={handleGlobalDrop}
         >
-          <div className="flex flex-col items-center gap-3 text-primary-400 pointer-events-none">
+          <div className="flex flex-col items-center gap-3 text-accent-accessible pointer-events-none">
             <Image className="w-12 h-12" />
             <span className="text-lg font-medium">{t.chat.dropFilesHere}</span>
           </div>
         </div>
       )}
-      {/* Main Chat */}
-      <div className="flex-1 min-h-0 flex flex-col min-w-0">
+      {/* Main Chat
+          pr 让出一条滚动条宽的窄带（现象 9 右轨对齐，Sidebar 2026-07-27 同款先例）：
+          消息列表滚动、底栏/横幅不滚动——全局 6px 占位式滚动条一出现，
+          滚动区内容盒就比兄弟块窄 6px，摘要卡 ∨ / 错误条 ✕ / 发送 ↑ 于是不同轴。
+          主栏统一缩到内轨，trace 滚动容器再用负 margin 把窄带要回（见下）。 */}
+      <div className="flex-1 min-h-0 flex flex-col min-w-0 pr-[var(--scrollbar-size)]">
         {/* Task Status Bar - 显示多任务状态 */}
         <TaskStatusBar className="shrink-0 mx-4 mt-2" />
         {/* Todo Progress Panel 已移至右侧 TaskInfo 面板 */}
@@ -777,36 +771,49 @@ export const ChatView: React.FC = () => {
 
         <SurfaceExecutionChatPanel conversationId={currentSessionId} />
 
-        {/* Messages - Turn-based trace view（查看某位成员时整块换成他的对话） */}
-        <div className="flex-1 min-h-0 overflow-hidden">
+        {/* Messages - Turn-based trace view（查看某位成员时整块换成他的对话）
+            负 margin 把主栏让出的滚动条窄带要回：Virtuoso 滚动条摆进窄带，
+            内容盒回到与 composer/横幅相同的内轨；配合 global.css 对该 scroller 的
+            overflow-y:scroll 恒定占位，右轨与「列表是否溢出」无关（现象 9）。
+            负 margin 只能加在这层——它自己有 overflow-hidden，加到子级会被裁掉。 */}
+        <div className="flex-1 min-h-0 overflow-hidden mr-[calc(var(--scrollbar-size)*-1)]">
           {viewingMemberId ? (
             <MemberConversationView sessionId={currentSessionId} />
           ) : projection.turns.length === 0 ? (
-            // 仅在「已确定当前会话 + 非加载中」时才渲染空状态默认页。
-            // 冷启动初始化（currentSessionId 尚为 null）或会话切换异步加载期间
-            // 渲染空白占位，避免闪现"新会话"默认页（见 switchSession/initializeSessionStore）。
-            currentSessionId && !isSessionLoading ? (
-              <NewSessionWelcome
-                onSend={handleSendMessage}
-                workingDirectory={currentSessionWorkingDirectory}
-                workbenchSnapshot={currentSession?.workbenchSnapshot}
-              />
-            ) : (
-              <div className="h-full" aria-hidden />
-            )
-          ) : (
-            <TurnBasedTraceView
-              projection={projection}
-              hasOlderMessages={hasOlderMessages}
-              isLoadingOlder={isLoadingOlder}
-              onLoadOlder={loadOlderMessages}
-              searchMatches={searchMatches}
-              activeMatchIndex={activeMatchIndex}
-              onRewindUserPrompt={handleRequestPromptRewind}
-              beforeFirstUserMessage={
-                <ForkSourceHint sessionId={currentSessionId} />
+            // 三态分明（工单 2026-08-01）：加载中（hydration 未完）→ 骨架屏；
+            // 真空会话（hydration 完成且零消息）→ #874 的「继续上次的会话」空态；
+            // 冷启动未定会话 → 空白占位。加载中绝不能误渲染成空态/欢迎页。
+            <EmptySessionArea
+              isHydratingSession={isHydratingSession}
+              settled={!!currentSessionId && !isSessionLoading}
+              welcome={
+                <NewSessionWelcome
+                  onSend={handleSendMessage}
+                  workingDirectory={currentSessionWorkingDirectory}
+                  workbenchSnapshot={currentSession?.workbenchSnapshot}
+                  session={currentSession}
+                />
               }
             />
+          ) : (
+            // 会话级错误边界：消息区一旦渲染失败（如虚拟列表反馈环打满 React 嵌套
+            // 更新上限），只塌陷这一块并允许重试，不再让 App 级边界罩死整个应用。
+            // key 绑会话 —— 切走再切回自动复位，不用用户手动点重试。
+            <ErrorBoundary
+              key={currentSessionId ?? 'no-session'}
+              fallback={<ChatTraceFallback />}
+            >
+              <TurnBasedTraceView
+                projection={projection}
+                hasOlderMessages={hasOlderMessages}
+                isLoadingOlder={isLoadingOlder}
+                onLoadOlder={loadOlderMessages}
+                searchMatches={searchMatches}
+                activeMatchIndex={activeMatchIndex}
+                onRewindUserPrompt={handleRequestPromptRewind}
+                beforeFirstUserMessage={forkSourceHint}
+              />
+            </ErrorBoundary>
           )}
         </div>
 
@@ -845,9 +852,13 @@ export const ChatView: React.FC = () => {
           )}
 
           {/* 工作目录选择弹窗 (Phase 4) */}
+          {/* onSelect 真正落盘（此前只关弹窗把选择丢掉了——批C2 顺带修正） */}
           <DirectoryPickerModal
             isOpen={showDirPicker}
-            onSelect={() => setShowDirPicker(false)}
+            onSelect={(directory) => {
+              setShowDirPicker(false);
+              void applyWorkingDirectory(directory);
+            }}
             onClose={() => setShowDirPicker(false)}
           />
 
@@ -870,9 +881,6 @@ export const ChatView: React.FC = () => {
 
           {/* /goal 运行进度条（独立一行，仅 goal 运行中显示） */}
           <GoalStatusBar />
-
-          {/* 通话中 partial 字幕（final 由 host 落库后自然进消息流，§7.5） */}
-          <TranscriptPartialLine />
 
           {/* G2 打断式选项卡：有待答问题时遮盖/替换输入区（拍板形态，非 Modal 非内联卡） */}
           {pendingUserQuestion && (
@@ -985,8 +993,10 @@ export const StreamRecoveryBanner: React.FC<{
 
   return (
     <div className="px-4 pt-3">
-      <div className="max-w-3xl mx-auto flex items-start gap-3 rounded-lg border border-amber-500/25 bg-amber-500/10 px-4 py-3 text-sm text-status-warning-soft">
-        <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0 text-status-warning-soft dark:text-amber-300 [.high-contrast-dark_&]:text-amber-300" />
+      {/* bar 内边距对齐 composer/摘要卡的 px-3：✕ 右缘 = −1(border)−12 = −13px，
+          与摘要卡 ∨、发送 ↑ 同一条右轨（现象 9）。 */}
+      <div className="max-w-3xl mx-auto flex items-start gap-3 rounded-lg border border-badge-warning/25 bg-amber-500/10 px-3 py-3 text-sm text-status-warning-soft">
+        <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0 text-status-warning-soft dark:text-badge-warning [.high-contrast-dark_&]:text-badge-warning" />
         <div className="min-w-0 flex-1">
           <div className="font-medium">{t.chat.streamInterruptedTitle}</div>
           <div className="mt-1 text-status-warning-soft dark:text-status-warning-soft/80 [.high-contrast-dark_&]:text-status-warning-soft/80">
@@ -1004,7 +1014,7 @@ export const StreamRecoveryBanner: React.FC<{
               type="button"
               onClick={handleRetryClick}
               disabled={isRetrying}
-              className="mt-2 inline-flex items-center rounded-md border border-amber-400/30 bg-amber-500/10 px-2 py-1 text-xs font-medium text-status-warning-soft transition-colors hover:bg-amber-500/20 disabled:cursor-wait disabled:opacity-70"
+              className="mt-2 inline-flex items-center rounded-md border border-badge-warning/30 bg-amber-500/10 px-2 py-1 text-xs font-medium text-status-warning-soft transition-colors hover:bg-amber-500/20 disabled:cursor-wait disabled:opacity-70"
             >
               {isRetrying ? t.chat.retryTurnInProgress : t.chat.retryTurn}
             </button>

@@ -73,12 +73,13 @@ export class SwarmTraceRepository implements SwarmTraceRepo {
 
   startRun(input: StartRunInput): void {
     this.db.prepare(`
-      INSERT OR REPLACE INTO swarm_runs (
+      INSERT INTO swarm_runs (
         id, session_id, coordinator, status, started_at, ended_at,
         total_agents, completed_count, failed_count, parallel_peak,
         total_tokens_in, total_tokens_out, total_tool_calls, total_cost_usd,
         trigger, error_summary, aggregation_json, tags_json
       ) VALUES (?, ?, ?, 'running', ?, NULL, ?, 0, 0, 0, 0, 0, 0, 0, ?, NULL, NULL, '[]')
+      ON CONFLICT(id) DO NOTHING
     `).run(
       input.id,
       input.sessionId,
@@ -103,7 +104,7 @@ export class SwarmTraceRepository implements SwarmTraceRepo {
         total_cost_usd = ?,
         error_summary = ?,
         aggregation_json = ?
-      WHERE id = ?
+      WHERE id = ? AND status = 'running'
     `).run(
       input.status,
       input.endedAt,
@@ -121,6 +122,8 @@ export class SwarmTraceRepository implements SwarmTraceRepo {
   }
 
   upsertAgent(input: UpsertAgentInput): void {
+    const run = this.db.prepare('SELECT status FROM swarm_runs WHERE id = ?').get(input.runId) as { status?: string } | undefined;
+    if (run?.status !== 'running') return;
     this.db.prepare(`
       INSERT INTO swarm_run_agents (
         run_id, agent_id, name, role, status,
@@ -150,6 +153,7 @@ export class SwarmTraceRepository implements SwarmTraceRepo {
         final_output = excluded.final_output,
         final_output_truncated = excluded.final_output_truncated,
         final_output_archive_item_id = excluded.final_output_archive_item_id
+      WHERE swarm_run_agents.status NOT IN ('completed', 'failed', 'cancelled')
     `).run(
       input.runId,
       input.agentId,

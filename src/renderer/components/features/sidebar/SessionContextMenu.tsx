@@ -92,7 +92,7 @@ export const SessionContextMenu: React.FC<SessionContextMenuProps> = ({
   return (
     <div
       ref={menuRef}
-      className="fixed min-w-[160px] py-1 bg-zinc-900 border border-zinc-700/80 rounded-lg shadow-xl"
+      className="fixed min-w-[160px] py-1 elevation-l2 popover-enter rounded-lg"
       style={{ left: pos.left, top: pos.top, zIndex: Z_LAYERS.contextMenu }}
     >
       {items.map((item, index) => (
@@ -107,7 +107,7 @@ export const SessionContextMenu: React.FC<SessionContextMenuProps> = ({
           disabled={item.disabled}
           className={`w-full flex items-center gap-2 px-3 py-1.5 text-sm transition-colors ${
             item.danger
-              ? 'text-red-400 hover:bg-red-500/10 hover:text-red-300'
+              ? 'text-badge-danger hover:bg-red-500/10 hover:text-badge-danger'
               : 'text-zinc-400 hover:bg-zinc-700 hover:text-zinc-200'
           } ${item.disabled ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}`}
         >

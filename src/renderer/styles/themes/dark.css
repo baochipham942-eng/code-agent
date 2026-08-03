@@ -46,6 +46,11 @@
   --brand-primary-muted: rgba(15, 118, 110, 0.15);
   --brand-primary-glow: rgba(15, 118, 110, 0.25);
 
+  /* accent-accessible 回退：hc 两套主题用独立高饱和色承担可读性场景（focus/链接/
+     selection）；普通主题 brand 本身已过 4.5:1，直接回退到 brand，保证
+     text-accent-accessible 等 utility 在四主题下都有定义 */
+  --accent-accessible: var(--brand-primary);
+
   /* Semantic colors */
   --color-success: #4ADE80;
   --color-success-muted: rgba(74, 222, 128, 0.15);
@@ -55,6 +60,42 @@
   --color-error-muted: rgba(248, 113, 113, 0.15);
   --color-info: #60A5FA;
   --color-info-muted: rgba(96, 165, 250, 0.15);
+
+  /* Badge semantic tokens - keep the existing light-on-dark palette. */
+  --badge-info-fg: #7DD3FC;
+  --badge-info-bg: rgba(14, 165, 233, 0.15);
+  --badge-info-border: rgba(14, 165, 233, 0.35);
+  --badge-success-fg: #6EE7B7;
+  --badge-success-bg: rgba(16, 185, 129, 0.15);
+  --badge-success-border: rgba(16, 185, 129, 0.35);
+  --badge-warning-fg: #FCD34D;
+  --badge-warning-bg: rgba(245, 158, 11, 0.15);
+  --badge-warning-border: rgba(245, 158, 11, 0.35);
+  --badge-danger-fg: #FCA5A5;
+  --badge-danger-bg: rgba(239, 68, 68, 0.15);
+  --badge-danger-border: rgba(239, 68, 68, 0.35);
+  --badge-accent-fg: #5EEAD4;
+  --badge-accent-bg: rgba(20, 184, 166, 0.15);
+  --badge-accent-border: rgba(20, 184, 166, 0.35);
+
+  /* Solid status marks - bright colors for dots and compact indicators.
+     These are intentionally separate from badge-* backgrounds: a mark is the
+     visible shape itself, not a quiet wash behind text. */
+  --mark-info: #7DD3FC;
+  --mark-success: #6EE7B7;
+  --mark-warning: #FCD34D;
+  --mark-danger: #FCA5A5;
+  --mark-accent: #5EEAD4;
+  --mark-neutral: #A1A1AA;
+
+  /* Secondary button: dark surface with bright text; hover is a lighter
+     surface and stays above the 4.5:1 text contrast floor. */
+  --btn-secondary-bg: #52525B;
+  --btn-secondary-fg: #FFFFFF;
+  --btn-secondary-bg-hover: #71717A;
+  --btn-secondary-bg-disabled: #27272A;
+  --btn-secondary-fg-disabled: #A1A1AA;
+  --btn-ghost-bg-hover: #3F3F46;
 
   /* Chat status text colors */
   --status-text-success: #6EE7B7;
@@ -77,6 +118,17 @@
   --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.5);
   --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.6);
   --shadow-xl: 0 16px 48px rgba(0, 0, 0, 0.7);
+
+  /* Elevation 亮度阶梯（2026-07-28 品质感打磨拍板）：暗色下层级靠亮度+投影，不靠描边。
+     L0 底座 → L1 卡片 → L2 浮层（菜单/popover）→ L3 toast/浮动 pill。
+     消费方：global.css 的 .elevation-l2/.elevation-l3/.composer-elevated。 */
+  --elevation-l0: #101012;
+  --elevation-l1: #18181B;
+  --elevation-l2: #1F1F23;
+  --elevation-l3: #26262B;
+  --shadow-l2: 0 8px 24px rgba(0, 0, 0, 0.45);
+  --shadow-l3: 0 4px 16px rgba(0, 0, 0, 0.5);
+  --shadow-composer: 0 4px 24px rgba(0, 0, 0, 0.35);
 
   /* Overlay */
   --overlay-backdrop: rgba(0, 0, 0, 0.6);

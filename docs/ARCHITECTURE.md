@@ -113,6 +113,7 @@
 | 047 | 组队配方采用主理人编排，确定性 coordinator 作为降级路径 | accepted |
 | 050 | MCP 配置里的凭据引用（`secureref:`） | accepted |
 | 051 | 能力中心连接器持久化到用户级，不绑工作目录 | accepted |
+| 053 | 通话态权限档跟随会话选择，不再抬严到 readOnly | accepted |
 
 > **ADR-040 执行状态（2026-07-18）**：Word / PPT / Excel locator、共享 picker、generated-PPT resolver 与隐私安全 telemetry 已随 #377/#385 合入 `main`。Poppler `26.07.0` 双原生架构候选由 run `29412794021` 产出并发布到项目控制的不可变 OSS 前缀，`config/poppler-sidecar.lock.json` 已为 `ready`，Poppler promotion stop-ship 已解除；正式版本仍需走常规签名、公证、DMG 与安装版验收。
 
@@ -181,6 +182,14 @@ code-agent/
 > **工具合并**: 31 个独立延迟工具合并为统一工具（Process, MCPUnified, TaskManager 等），使用 action 参数分发。详见 ADR-006。
 >
 > **文档编辑统一**: DocEdit 统一入口，富文档为原子级增量编辑（Excel 14 操作 / PPT 8 操作 / Word 7 操作），SnapshotManager 提供快照回滚。
+
+### 2026-08-02 深空新栖地主题落地(品牌层)
+
+这一轮把 2026-05 的 Agent Neo 品牌层推进到"深空新栖地"主题:PlanetSphere 程序化星球资产、N2 星芒标与四个品牌橱窗(欢迎页/空态/实时语音七态/通话摘要)落地,六条设计 DNA 与四条转译原则补成可引用的设计规范。
+
+| 模块 | 当前闭环 | 关键文件 / 入口 |
+|------|---------|----------------|
+| Agent Neo 品牌层 | PlanetSphere 程序化星球(语音七态/欢迎页地球/空态 planet 属性)+ N2 星芒标(NeoBrandMark,assets/brand 三变体)+ 四橱窗集中;设计 DNA、转译原则、token/资产/词库收口为人读层规范,机器校验仍走 check-design-system ratchet 门 | [docs/designs/design-system.md](./designs/design-system.md)、`src/renderer/components/brand/PlanetSphere.tsx`、`src/renderer/components/features/sidebar/NeoBrandMark.tsx`、`scripts/check-design-system.mjs` |
 
 ### 2026-07-12 ~ 07-18 Durable 执行、客户端事件与启动路径收口
 
@@ -611,7 +620,7 @@ findElementByLocation(location) 遍历 [data-code-agent-source] 匹配
 | Live Preview V2-A/B | `devServerManager` 能探测并启动本地 dev server，DevServerLauncher 作为模态入口；bridge protocol 升级到 0.3.0，选中元素带 `className` 与 `computedStyle`；TweakPanel 支持 spacing/color/fontSize/radius/align 5 类 Tailwind 原子改写；V2-C Next.js App Router 支持按 ADR-012 延期 | `devServerManager.ts`、`LivePreviewFrame.tsx`、`TweakPanel.tsx`、`tweakWriter.ts`、`tailwindCategories.ts` |
 | Browser / Computer Workbench | in-app managed browser 已从 smoke 级推进到生产化基线：BrowserSession/Profile/AccountState/Artifact/Lease/Proxy、TargetRef/stale recovery、download/upload、fixture-only recipe benchmark 全部有 acceptance；Computer Surface 增加 background AX 与 background CGEvent 两条受控验证路径；2026-06-26 起 Browser/Computer proof 持久化为 `EvidenceRef` 时间线并带 Neo virtual pointer；**ADR-041** 增加本机 Chromium profile Cookie 导入、Chrome Relay 扩展附着、`browser_action.engine` auto/managed/relay 与 dual-engine proof finalizer | `browserService.ts`、`browserProvider.ts`、`browserAction.ts`、`browserActionFinalize.ts`、`browserRelayService.ts`、`relayActionFacade.ts`、`browserProfileImportService.ts`、`computerUse.ts`、`desktop.ts`、`browserComputerProofStore.ts`、`BrowserSurfacePanel.tsx`、`resources/browser-relay-extension/*`、`docs/architecture/decisions/ADR-041-browser-login-reuse-parity.md`、`docs/acceptance/browser-login-reuse-parity.md` |
 | Activity Providers | OpenChronicle 与 Tauri Native Desktop 不再各自直塞 prompt；新增 provider-neutral `ActivityContextProvider`、`ActivityProvider` contract、prompt formatter 与 renderer preview。OpenChronicle 仍是外部 daemon provider，Tauri Native Desktop 是 bundled provider | `activityContextProvider.ts`、`activityProviderRegistry.ts`、`activityPromptFormatter.ts`、`activityContext.ts`、`activityProvider.ts` |
-| Semantic Tool UI | 工具 input schema 强制注入 `_meta.shortDescription`；provider parser 抽出 `_meta` 写到 ToolCall 顶层并剥离执行参数；SessionRepository 对无 `_meta` 的历史/弱模型工具调用生成 fallback shortDescription。前端用语义标题、target icon、memory citation 折叠卡、会话 diff 聚合卡和 URL favicon chip 改善可读性 | `prompts/builder.ts`、`model/providers/shared.ts`、`SessionRepository.ts`、`ToolHeader.tsx`、`MemoryCitationGroup.tsx`、`SessionDiffSummary.tsx`、`LinkPreviewCard.tsx` |
+| Semantic Tool UI | 工具 input schema 强制注入 `_meta.shortDescription`；provider parser 抽出 `_meta` 写到 ToolCall 顶层并剥离执行参数；SessionRepository 对无 `_meta` 的历史/弱模型工具调用生成 fallback shortDescription。前端用语义标题、target icon、memory citation 折叠卡、会话 diff 聚合卡和 URL favicon 链接 改善可读性 | `prompts/builder.ts`、`model/providers/shared.ts`、`SessionRepository.ts`、`ToolHeader.tsx`、`MemoryCitationGroup.tsx`、`SessionDiffSummary.tsx`、`LinkPreviewCard.tsx` |
 | Eval / model 协议修复 | 评测实验支持 SSE 进度、行点击进详情、fatal inference error 熔断、DB 去重；multi-turn adapter 真保留 messages；recent memory 在评测中隔离；thinking-mode provider 补齐 `reasoning_content` history 字段；`max_tool_calls` 从 critical gate 降为 weighted score | `testRunner.ts`、`agentAdapter.ts`、`retryStrategy.ts`、`providers/shared.ts`、`docs/knowledge/eval-tracking.md`、`docs/knowledge/bug-fixes.md` |
 
 #### Live Preview V2 当前边界

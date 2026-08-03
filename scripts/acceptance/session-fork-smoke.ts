@@ -1275,7 +1275,13 @@ async function runWebAcceptance(input: {
     anchorUserMessageId: 'hidden-u2',
     idempotencyKey: 'acceptance-hidden-anchor-rewind',
   });
-  requireCheck(hiddenRewind.hiddenMessageCount === 3, 'Rewind hides anchor and later messages without deletion');
+  requireCheck(
+    hiddenRewind.hiddenMessageCount === 2
+      && hiddenRewind.activeMessages.map((message) => message.id).join(',')
+        === 'hidden-u1,hidden-a1,hidden-u2',
+    'Rewind keeps the anchor active and hides only later messages without deletion',
+    hiddenRewind,
+  );
   countsBefore = readDatabaseCounts(dbPath);
   const hiddenBefore = readSourceDatabaseSnapshot(dbPath, hiddenSource.id);
   await expectDomainFailure(server, 'fork', {
@@ -1344,8 +1350,11 @@ async function runWebAcceptance(input: {
     idempotencyKey: 'acceptance-rewind-u2',
   });
   requireCheck(
-    rewind.hiddenMessageCount === 3
-      && rewind.activeMessages.map((message) => message.id).join(',') === 'rewind-u1,rewind-a1'
+    rewind.hiddenMessageCount === 2
+      && rewind.activeMessages.map((message) => message.id).join(',')
+        === 'rewind-u1,rewind-a1,rewind-u2'
+      && rewind.draft.content === ''
+      && rewind.draft.attachments === undefined
       && rewind.workspaceChanged === false
       && rewind.filesRestored === 0
       && rewind.filesDeleted === 0,
@@ -1494,7 +1503,8 @@ async function verifyRestartAndRestore(input: {
     sessionId: input.rewind.sessionId,
   });
   requireCheck(
-    activeAfterRestart.map((message) => message.id).join(',') === 'rewind-u1,rewind-a1',
+    activeAfterRestart.map((message) => message.id).join(',')
+      === 'rewind-u1,rewind-a1,rewind-u2',
     'soft-hidden Rewind projection survives restart',
     activeAfterRestart.map((message) => message.id),
   );
@@ -1507,7 +1517,7 @@ async function verifyRestartAndRestore(input: {
     },
   );
   requireCheck(
-    restored.restoredMessageCount === 3
+    restored.restoredMessageCount === 2
       && restored.activeMessages.map((message) => message.id).join(',')
         === 'rewind-u1,rewind-a1,rewind-u2,rewind-a2,rewind-u3'
       && restored.workspaceChanged === false,
@@ -1635,8 +1645,12 @@ async function runDesktopIpcAcceptance(input: {
       idempotencyKey: 'acceptance-desktop-rewind',
     });
     requireCheck(
-      rewind.hiddenMessageCount === 3
-        && runtimeContexts.get(input.sessionId)?.length === 2
+      rewind.hiddenMessageCount === 2
+        && rewind.activeMessages.map((message) => message.id).join(',')
+          === 'desktop-u1,desktop-a1,desktop-u2'
+        && rewind.draft.content === ''
+        && rewind.draft.attachments === undefined
+        && runtimeContexts.get(input.sessionId)?.length === 3
         && rewind.workspaceChanged === false,
       'Desktop IPC executes history-only Rewind through AgentAppService',
       rewind,
@@ -1649,7 +1663,7 @@ async function runDesktopIpcAcceptance(input: {
       },
     );
     requireCheck(
-      restored.restoredMessageCount === 3
+      restored.restoredMessageCount === 2
         && runtimeContexts.get(input.sessionId)?.length === 5
         && restored.workspaceChanged === false,
       'Desktop IPC executes explicit Rewind restore through AgentAppService',

@@ -4,6 +4,7 @@ import {
   extractNeoTopicRounds,
   mergeTopicRounds,
   topicConversationIds,
+  topicPrimaryConversationId,
 } from '../../../src/shared/neoTag/topicRounds';
 
 function msg(over: Partial<Message>): Message {
@@ -57,5 +58,26 @@ describe('shared topicRounds', () => {
       ],
     } as never);
     expect(ids).toEqual(['conv_A', 'conv_B']);
+  });
+
+  it('topicPrimaryConversationId = 最近一轮落点（最后一条带归属的 delta）', () => {
+    expect(topicPrimaryConversationId({
+      workCard: { sourceConversationId: 'conv_A' },
+      deltas: [{ conversationId: 'conv_A' }, { conversationId: 'conv_B' }],
+    })).toBe('conv_B');
+  });
+
+  it('topicPrimaryConversationId 跳过无归属的 review 记账 delta', () => {
+    expect(topicPrimaryConversationId({
+      workCard: { sourceConversationId: 'conv_A' },
+      deltas: [{ conversationId: 'conv_B' }, { conversationId: undefined }],
+    })).toBe('conv_B');
+  });
+
+  it('topicPrimaryConversationId 老卡（无任何归属）回退源会话', () => {
+    expect(topicPrimaryConversationId({
+      workCard: { sourceConversationId: 'conv_A' },
+      deltas: [],
+    })).toBe('conv_A');
   });
 });

@@ -8,6 +8,17 @@ import { useStatusStore } from '../../../stores/statusStore';
 import { useTurnExecutionStore } from '../../../stores/turnExecutionStore';
 import { applyRoutingDegradationSignal } from '../../../utils/routingDegradation';
 import { useAppStore } from '../../../stores/appStore';
+import { useTaskStore } from '../../../stores/taskStore';
+
+/**
+ * 这些 agent 事件不构成「宿主还在跑」的证据：终态由各自分支负责把运行态放下，
+ * 在这里抢先点亮会让刚结束的轮次又闪一下运行中。
+ */
+const LIVE_STATE_NEUTRAL_AGENT_EVENTS: ReadonlySet<string> = new Set([
+  'agent_complete',
+  'agent_cancelled',
+  'error',
+]);
 import { buildGoalNoticeMessage } from '../../../components/features/chat/goalNotice';
 import { buildModelFallbackNoticeMessage } from '../../../components/features/chat/fallbackNotice';
 import ipcService from '../../../services/ipcService';
@@ -18,6 +29,7 @@ import {
   getBooleanField,
   isRecord,
   normalizeAssistantMessagePayload,
+  normalizeHookStartedData,
   normalizeHookTriggerData,
   normalizeMessageDeltaPayload,
   normalizeMessageSnapshotPayload,
@@ -26,10 +38,19 @@ import {
   normalizeRoutingResolvedPayload,
   normalizeStreamTextPayload,
   normalizeTurnIdPayload,
+  normalizeUserMessagePayload,
 } from './streamEventNormalizers';
 
 const logger = createLogger('useAgent');
 
+/**
+ * 清掉「什么都没产出」的空草稿气泡（轮次起了个头就被打断/换轮）。
+ *
+ * 只清空的：已经吐到屏幕上的字**不许删**。停止那一刻横幅明写「已经写出来的内容
+ * 保留在上面」，而这个函数把 491 字的半截回答连同气泡一起删了，上面什么都不剩
+ * ——当着用户面许一个看得见的空头承诺（2026-08-01 真机 2/2）。宿主侧现在停止和
+ * 转向都会把半截内容落库，屏幕留住它才和数据层一致。
+ */
 export function removeUncommittedAssistantDraft(
   messages: Message[],
   draftMessageId: string | null | undefined,
@@ -41,6 +62,11 @@ export function removeUncommittedAssistantDraft(
 
   const hasToolCalls = (draft.toolCalls?.length || 0) > 0;
   if (hasToolCalls) return messages;
+
+  const hasVisibleOutput = Boolean(
+    draft.content?.trim() || draft.reasoning?.trim() || draft.thinking?.trim(),
+  );
+  if (hasVisibleOutput) return messages;
 
   return messages.filter((message) => message.id !== draftMessageId);
 }
@@ -259,6 +285,24 @@ export function applyConversationStreamEvent(
 
     case 'message':
       {
+        // 宿主自起轮次的用户气泡（抽干排队消息 / 断连后续跑）：这条消息前端没有
+        // 本地副本，只能从宿主接。按 id 幂等——直连轮不会走到这里，即便重复到达
+        // 也不会多出一个气泡。
+        const userMessage = normalizeUserMessagePayload(event.data);
+        if (userMessage) {
+          if (!getFreshMessages().some((message) => message.id === userMessage.id)) {
+            actions.addMessage({
+              id: userMessage.id,
+              role: 'user',
+              content: userMessage.content,
+              timestamp: userMessage.timestamp ?? now(),
+              ...(userMessage.attachments ? { attachments: userMessage.attachments } : {}),
+              ...(userMessage.metadata ? { metadata: userMessage.metadata } : {}),
+            });
+          }
+          break;
+        }
+
         const messageData = normalizeAssistantMessagePayload(event.data);
         if (!messageData) break;
         const targetMessageId = messageData.turnId || state.currentTurnMessageId;
@@ -383,11 +427,31 @@ export const useConversationStreamEffects = ({
         }
       };
 
+      // 以宿主为准补齐运行态：只要收到一个属于某会话的「还在跑」类事件，而前端却认为它空闲，
+      // 那就是前端错了——轮次不一定由前端发起（队列抽干、崩溃恢复、别的窗口）。
+      //
+      // 不能只认 turn_start：刷新后是全新页面，没有 Last-Event-ID 就不重放，turn_start
+      // 往往在 SSE 连上之前就广播完了，新页面只接得到中段的增量事件（2026-08-01 C3 真机：
+      // 刷新后宿主 drain 起的那一轮全程在写库，屏幕却一直空闲、排队卡还邀请你「立即发送」）。
+      // 终态事件不在此列——它们由各自分支负责把运行态放下。
+      if (
+        eventSessionId
+        && !LIVE_STATE_NEUTRAL_AGENT_EVENTS.has(event.type)
+        && !useAppStore.getState().isSessionProcessing(eventSessionId)
+      ) {
+        useAppStore.getState().setSessionProcessing(eventSessionId, true);
+        useTaskStore.getState().updateSessionState(eventSessionId, { status: 'running' });
+      }
+
       switch (event.type) {
         case 'agent_complete':
         case 'agent_cancelled':
         case 'error':
         case 'stream_end':
+          // running 兜底：agent 终态/错误后不会再有配对的 hook_trigger，撤下悬挂的指示
+          if (eventSessionId) {
+            useTurnExecutionStore.getState().clearHookRunning(eventSessionId);
+          }
           flushRef.current();
           flushStreamingMessages();
           return;
@@ -548,6 +612,10 @@ export const useConversationStreamEffects = ({
         case 'turn_end':
           lastEventAtRef.current = Date.now();
           logHandledEvent();
+          // running 兜底：本轮结束（含被取消/报错收尾）后不应再有在跑的 hook 批次
+          if (eventSessionId) {
+            useTurnExecutionStore.getState().clearHookRunning(eventSessionId);
+          }
           if (!isCurrentSessionEvent) {
             break;
           }
@@ -615,6 +683,17 @@ export const useConversationStreamEffects = ({
             const hookData = normalizeHookTriggerData(event.data);
             if (eventSessionId && hookData) {
               useTurnExecutionStore.getState().recordHookActivity(eventSessionId, hookData);
+            }
+          }
+          break;
+
+        case 'hook_started':
+          lastEventAtRef.current = Date.now();
+          logHandledEvent();
+          {
+            const hookStart = normalizeHookStartedData(event.data);
+            if (eventSessionId && hookStart) {
+              useTurnExecutionStore.getState().recordHookStart(eventSessionId, hookStart);
             }
           }
           break;

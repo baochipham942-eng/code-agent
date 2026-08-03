@@ -4,39 +4,27 @@
 // 数据只读复用 cronStore，不新增数据通道。
 // ============================================================================
 
-import React, { useEffect, useMemo, useState } from 'react';
-import { Clock3, BookOpen, Boxes } from 'lucide-react';
+import React, { useEffect, useMemo } from 'react';
+import { Clock3, BookOpen, Boxes, FolderKanban } from 'lucide-react';
 import { useCronStore } from '../../../stores/cronStore';
 import { useAppStore } from '../../../stores/appStore';
 import { useI18n } from '../../../hooks/useI18n';
-import { sessionAutomationClient } from '../../../services/sessionAutomationClient';
-import { Badge } from '../../primitives/Badge';
+import { formatNextRun } from '../../../utils/formatNextRun';
 import { SidebarDoctorAlert } from './SidebarDoctorAlert';
-
-/** 下次运行时间：今天只显 HH:mm，其他日期带月日 */
-function formatNextRun(ts: number, locale: string): string {
-  const date = new Date(ts);
-  const now = new Date();
-  const sameDay = date.getFullYear() === now.getFullYear()
-    && date.getMonth() === now.getMonth()
-    && date.getDate() === now.getDate();
-  const time = date.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' });
-  if (sameDay) return time;
-  return `${date.toLocaleDateString(locale, { month: 'numeric', day: 'numeric' })} ${time}`;
-}
 
 export const SidebarCapabilityZone: React.FC = () => {
   const { t, language } = useI18n();
   const cz = t.sidebar.capabilityZone;
-  const { showCronCenter, showCapabilityHub, showLibraryPanel, expertDetailRoleId, openCapabilityHub, setShowCronCenter, setShowLibraryPanel } = useAppStore();
+  const { showCronCenter, showCapabilityHub, showLibraryPanel, showProjectSpacePage, expertDetailRoleId, openCapabilityHub, openProjectSpacePage, setShowCronCenter, setShowLibraryPanel } = useAppStore();
   // 二级页迁入右侧内容区后，返回语义 = 侧栏直接切换，所以这三行要能读出「我现在在哪」。
   // 专家详情是能力中心的下钻页，归到能力中心一栏亮。
   const activeRow = expertDetailRoleId || showCapabilityHub ? 'hub'
     : showLibraryPanel ? 'library'
     : showCronCenter ? 'automation'
+    : showProjectSpacePage ? 'projects'
     : null;
-  const rowClass = (key: 'hub' | 'library' | 'automation') => (
-    `group flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors ${
+  const rowClass = (key: 'hub' | 'library' | 'automation' | 'projects') => (
+    `group flex w-full items-center gap-2.5 rounded-lg px-1.5 py-1.5 text-left transition-colors ${
       activeRow === key ? 'bg-zinc-800 text-zinc-100' : 'hover:bg-zinc-800/70'
     }`
   );
@@ -44,15 +32,10 @@ export const SidebarCapabilityZone: React.FC = () => {
   const stats = useCronStore((state) => state.stats);
   const refresh = useCronStore((state) => state.refresh);
 
-  const [pendingCount, setPendingCount] = useState(0);
-
   useEffect(() => {
-    // 面板关闭时任务/待审大概率有变化，跟着刷新一次
+    // 面板关闭时任务大概率有变化，跟着刷新一次。
     if (showCronCenter) return;
     void refresh();
-    sessionAutomationClient.countPendingReview()
-      .then((count) => setPendingCount(count ?? 0))
-      .catch(() => setPendingCount(0));
   }, [showCronCenter, refresh]);
 
   const runningCount = stats?.jobsByStatus?.running ?? 0;
@@ -66,20 +49,18 @@ export const SidebarCapabilityZone: React.FC = () => {
     }
     return candidate;
   }, [enabledJobs]);
-  // 计划详情（下次运行+任务名 / 任务数 / 空态引导）只走 title 悬浮提示，
-  // 待过目数量交给右侧角标——同一个数字绝不在行内和角标各讲一遍。
-  // 行内保持与上行一致的单行节奏：标题 + 右槽下次运行时间。
-  const pendingLabel = cz.automationPending.replace('{count}', String(pendingCount));
+  // 计划详情只走 title 悬浮提示；侧栏行本身保持「图标 + 标题」的统一节奏。
   const subtitle = nextJob
     ? cz.automationNext.replace('{time}', formatNextRun(nextJob.at, language === 'zh' ? 'zh-CN' : 'en-US')).replace('{name}', nextJob.name)
     : enabledJobs.length > 0
       ? cz.automationCount.replace('{count}', String(enabledJobs.length))
       : cz.automationEmpty;
 
-  // pb-2 = 侧栏唯一的区间断点（入口区 ‖ 会话列表，8px）：
+  // pb-2 = 入口区 ‖ 会话列表的区间断点（8px）；会话列表内三分区之间沿用同一 8px
+  // （SidebarSessionList 外层 gap-2，批P 第五波① 统一垂直节奏）。
   // 入口行之间零间距等距排列，靠行本身的对齐表达同组，不再每层 pb-1 糊成一个面。
   return (
-    <div className="px-2 pb-2 flex-shrink-0" data-testid="sidebar-capability-zone">
+    <div className="px-1 pb-2 flex-shrink-0" data-testid="sidebar-capability-zone">
       {/* 能力中心入口 */}
       <button /* ds-allow:button: 侧栏能力区单行列表行（裸图标+标题+chevron 左对齐布局），Button primitive 是居中动作按钮形状，变体不适配列表行 */
         type="button"
@@ -95,6 +76,20 @@ export const SidebarCapabilityZone: React.FC = () => {
         <Boxes className="h-4 w-4 flex-shrink-0 text-zinc-500" />
         <span className="min-w-0 flex-1 truncate text-sm text-zinc-300 group-hover:text-zinc-100">
           {cz.capabilityHub}
+        </span>
+      </button>
+      {/* 协作空间入口（批P）：爸 2026-07-30 拍板挪到能力中心下面 */}
+      <button /* ds-allow:button: 侧栏能力区单行列表行（裸图标+标题+chevron 左对齐布局），Button primitive 是居中动作按钮形状，变体不适配列表行 */
+        type="button"
+        onClick={() => openProjectSpacePage()}
+        data-testid="sidebar-capability-projects"
+        aria-current={activeRow === 'projects' ? 'page' : undefined}
+        title={t.projectSpace.sidebarSubtitle}
+        className={rowClass('projects')}
+      >
+        <FolderKanban className="h-4 w-4 flex-shrink-0 text-zinc-500" />
+        <span className="min-w-0 flex-1 truncate text-sm text-zinc-300 group-hover:text-zinc-100">
+          {t.projectSpace.sidebarEntry}
         </span>
       </button>
       {/* Batch 2 L3: 资料库槽位点亮 */}
@@ -121,19 +116,11 @@ export const SidebarCapabilityZone: React.FC = () => {
       >
         <span className="relative flex h-4 w-4 flex-shrink-0 items-center justify-center text-zinc-500">
           <Clock3 className="h-4 w-4" />
-          {runningCount > 0 && <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-emerald-400" data-testid="sidebar-capability-automation-running" />}
+          {runningCount > 0 && <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-mark-success" data-testid="sidebar-capability-automation-running" />}
         </span>
         <span className="min-w-0 flex-1 truncate text-sm text-zinc-300 group-hover:text-zinc-100">
           {cz.automation}
         </span>
-        {nextJob && (
-          <span className="flex-shrink-0 text-[11px] text-zinc-600 tabular-nums">
-            {formatNextRun(nextJob.at, language === 'zh' ? 'zh-CN' : 'en-US')}
-          </span>
-        )}
-        {/* 全栏唯一的两处彩色（这个角标 + running 圆点）= 要你处理的地方；
-            裸数字自己说不清是什么，读屏靠 aria-label。 */}
-        {pendingCount > 0 && <Badge className="border-amber-500/30 bg-amber-500/10 text-[11px] text-amber-300" data-testid="sidebar-capability-automation-pending" role="status" aria-label={pendingLabel} title={pendingLabel}>{pendingCount}</Badge>}
       </button>
       {/* 诊断问题徽标行：仅启动静默快检有 fail 项时出现，全绿不打扰 */}
       <SidebarDoctorAlert />

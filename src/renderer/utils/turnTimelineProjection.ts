@@ -13,7 +13,7 @@ import {
   snapshotFromWorkbenchMetadata,
 } from '@shared/contract/turnTimeline';
 import type { WorkbenchCapabilities } from '../hooks/useWorkbenchCapabilities';
-import type { HookActivityEvent, RoutingEvidenceEvent } from '../stores/turnExecutionStore';
+import type { HookActivityEvent, HookRunningEvent, RoutingEvidenceEvent } from '../stores/turnExecutionStore';
 import type { SwarmTimelineEvent } from '../stores/swarmStore';
 import { buildArtifactOwnershipItems } from './artifactOwnership';
 import { buildWorkbenchCapabilityScope } from './workbenchScopeInspector';
@@ -25,6 +25,8 @@ interface ProjectionArgs {
   swarmEvents: SwarmTimelineEvent[];
   routingEvents: RoutingEvidenceEvent[];
   hookEvents?: HookActivityEvent[];
+  /** 当前会话正在执行的 hook 批次（hook_started 未配对 hook_trigger）。 */
+  hookRunning?: HookRunningEvent | null;
 }
 
 interface TurnWindow {
@@ -66,6 +68,7 @@ function buildHookActivity(
   turn: TraceTurn,
   window: TurnWindow,
   hookEvents: HookActivityEvent[] = [],
+  hookRunning?: HookRunningEvent | null,
 ): TurnHookActivity | undefined {
   const eventWindow = getTurnEventWindow(turn, window);
   const relevantEvents = hookEvents
@@ -76,8 +79,17 @@ function buildHookActivity(
     })
     .sort((left, right) => left.timestamp - right.timestamp);
 
+  // 在跑的批次归属判断与落账事件同一套口径：优先 turnId，退回时间窗。
+  const running = hookRunning && (
+    hookRunning.turnId
+      ? hasRuntimeTurnId(turn, hookRunning.turnId)
+      : isWithinWindow(hookRunning.timestamp, eventWindow)
+  )
+    ? { event: hookRunning.event, ...(hookRunning.names?.length ? { names: hookRunning.names } : {}) }
+    : undefined;
+
   if (relevantEvents.length === 0) {
-    return undefined;
+    return running ? { summary: '', items: [], running } : undefined;
   }
 
   const totalHooks = relevantEvents.reduce((sum, event) => sum + event.hookCount, 0);
@@ -110,9 +122,11 @@ function buildHookActivity(
       ...(event.names?.length ? { names: event.names } : {}),
       ...(event.modified ? { modified: true } : {}),
       ...(event.errorCount ? { errorCount: event.errorCount } : {}),
+      ...(event.reason ? { reason: event.reason } : {}),
       ...(event.toolName ? { toolName: event.toolName } : {}),
       ...(event.matcher ? { matcher: event.matcher } : {}),
     })),
+    ...(running ? { running } : {}),
   };
 }
 
@@ -167,19 +181,9 @@ function buildSkillActivity(
   turn: TraceTurn,
   capabilities: WorkbenchCapabilities,
 ): TurnSkillActivity | undefined {
-  const userNode = turn.nodes.find((node) => node.type === 'user');
-  const selectedSkillIds = userNode?.metadata?.workbench?.selectedSkillIds || [];
+  // 「挂载」项不展示（2026-07-29 产品反馈）：用户挂载的 skill 由模型在回答里自然说明，
+  // 卡片只保留模型真实触发/写入 skill 的记录。
   const items: TurnSkillActivity['items'] = [];
-
-  for (const skillId of selectedSkillIds) {
-    addSkillActivityItem(items, {
-      timestamp: userNode?.timestamp || turn.startTime,
-      skillId,
-      label: getSkillLabel(skillId, capabilities),
-      action: 'selected',
-      detail: '已写入本轮 workbench 偏好',
-    });
-  }
 
   for (const node of turn.nodes) {
     if (node.subtype === 'skill_status') {
@@ -256,14 +260,17 @@ function buildSkillActivity(
   const selectedCount = orderedItems.filter((item) => item.action === 'selected').length;
   const triggeredCount = orderedItems.filter((item) => item.action === 'triggered').length;
   const writtenCount = orderedItems.filter((item) => item.action === 'written').length;
+  const namesOf = (action: TurnSkillActivityAction) =>
+    orderedItems.filter((item) => item.action === action).map((item) => item.label);
+  // 纯文字描述（「挂载了 xxx skill」），不堆 挂载/触发/写入 这类技术计数
   const summaryParts = [
-    triggeredCount > 0 ? `触发 ${triggeredCount}` : '',
-    writtenCount > 0 ? `写入 ${writtenCount}` : '',
-    selectedCount > 0 ? `写入偏好 ${selectedCount}` : '',
+    triggeredCount > 0 ? `触发了 ${namesOf('triggered').join('、')} skill` : '',
+    writtenCount > 0 ? `${namesOf('written').join('、')} skill 已写入` : '',
+    selectedCount > 0 ? `挂载了 ${namesOf('selected').join('、')} skill` : '',
   ].filter(Boolean);
 
   return {
-    summary: `Skill ${summaryParts.join(' · ')}`,
+    summary: `Skill ${summaryParts.join('；')}`,
     items: orderedItems,
   };
 }
@@ -542,20 +549,9 @@ function buildRoutingEvidence(
     || buildParallelRoutingEvidence(turn, window, launchRequests, swarmEvents);
 }
 
-function withoutWorkbenchMetadata(node: TraceNode): TraceNode {
-  if (!node.metadata?.workbench) {
-    return node;
-  }
-
-  return {
-    ...node,
-    metadata: {
-      ...node.metadata,
-      workbench: undefined,
-    },
-  };
-}
-
+// 注意：userNode 的 metadata.workbench 必须原样保留——遥测/能力审计与 skill 活动卡
+// 都直接读它。workbench_snapshot 时间线节点在主对话流里渲染为 null
+// （TraceNodeRenderer TurnTimelineNodeRenderer），剥掉 metadata 只会丢数据，不会让画面更干净。
 function enrichTurn(
   turn: TraceTurn,
   index: number,
@@ -583,7 +579,7 @@ function enrichTurn(
     args.swarmEvents,
     args.routingEvents,
   );
-  const hookActivity = buildHookActivity(turn, window, args.hookEvents);
+  const hookActivity = buildHookActivity(turn, window, args.hookEvents, args.hookRunning);
   const skillActivity = buildSkillActivity(turn, args.capabilities);
   const artifactOwnership = buildArtifactOwnershipItems(turn, routingEvidence);
 
@@ -594,7 +590,7 @@ function enrichTurn(
   const nextNodes: TraceNode[] = [];
 
   turn.nodes.forEach((node, nodeIndex) => {
-    nextNodes.push(nodeIndex === userIndex && snapshot ? withoutWorkbenchMetadata(node) : node);
+    nextNodes.push(node);
 
     if (nodeIndex !== userIndex) {
       return;
@@ -700,6 +696,7 @@ export function buildTurnExecutionClarityProjection(args: ProjectionArgs): Trace
       swarmEvents,
       routingEvents: args.routingEvents,
       hookEvents: args.hookEvents || [],
+      hookRunning: args.hookRunning ?? null,
     })),
   };
 }

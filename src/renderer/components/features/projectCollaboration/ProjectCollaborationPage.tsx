@@ -20,11 +20,11 @@ export const ProjectCollaborationPage: React.FC<ProjectCollaborationPageProps> =
   }, [onClose]);
 
   return (
-    <FullScreenPage testId="project-collaboration-page">
+    <FullScreenPage testId="project-collaboration-page" variant="inline">
       <FullScreenPageHeader
-        icon={<UsersRound className="h-4 w-4 text-violet-300" />}
+        icon={<UsersRound className="h-4 w-4 text-badge-accent" />}
         title="Neo 协同"
-        description={projectId ? `Project work cards · ${projectId}` : '所有 @neo topic'}
+        description={projectId ? `所有 @neo topic · ${projectId}` : '所有 @neo topic'}
         onClose={onClose}
       />
       <div className="min-h-0 flex-1">

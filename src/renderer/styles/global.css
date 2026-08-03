@@ -1,6 +1,11 @@
 /* Import theme files - MUST be before tailwind import */
 @import './themes/dark.css';
 @import './themes/light.css';
+/* 高对比两套：2026-08-02 之前**从没被 import**，文件在磁盘上、design-system 门也一直
+   读它们报「对比度达标」，但它们从不进构建产物——选中高对比只会得到一个没有 token 定义的
+   裸状态。门验的是磁盘文件，不是包里的东西，所以这个洞被它自己的合格证盖了很久。 */
+@import './themes/high-contrast-dark.css';
+@import './themes/high-contrast-light.css';
 
 /* Tailwind v4：单条 @import 替代三条 @tailwind 指令；@config 复用现有 JS 配置（保留全套自定义 theme） */
 @import 'tailwindcss';
@@ -133,9 +138,15 @@ body.theme-switching * {
    Scrollbar
    ============================================================================ */
 
+/* 滚动条占位宽度的唯一真源。凡是要把"滚动区"与"不滚动的兄弟块"排到同一条轨上的地方
+   （如侧栏：列表滚动、顶行/能力区/账号行不滚动），都引用它，别再各写一个 6px。 */
+:root {
+  --scrollbar-size: 6px;
+}
+
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: var(--scrollbar-size);
+  height: var(--scrollbar-size);
 }
 
 ::-webkit-scrollbar-track {
@@ -165,6 +176,13 @@ body.theme-switching * {
 .scrollbar-hidden * {
   scrollbar-width: none;
   -ms-overflow-style: none;
+}
+
+/* 聊天主栏右轨对齐（现象 9）：trace 滚动条恒定占位，与列表是否溢出无关。
+   Virtuoso 内联写了 overflowY:auto，类名压不过，只能在这里点名。
+   布局配合：ChatView 主栏 pr 让出窄带 + TurnBasedTraceView 负 margin 要回。 */
+[data-virtuoso-first-item-index] [data-virtuoso-scroller='true'] {
+  overflow-y: scroll !important; /* ds-allow:important Virtuoso 在 scroller 上内联写死 overflowY:auto，内联样式只有它能压，别无他法 */
 }
 
 .scrollbar-hidden::-webkit-scrollbar,
@@ -262,6 +280,17 @@ pre code {
 /* ============================================================================
    Animations
    ============================================================================ */
+
+@keyframes popoverEnter {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
 
 @keyframes fadeIn {
   from { opacity: 0; }
@@ -363,6 +392,7 @@ pre code {
   30% { transform: translateY(-3px); }
 }
 
+
 .animate-fade-in {
   animation: fadeIn var(--duration-fast) var(--ease-out);
 }
@@ -439,6 +469,20 @@ pre code {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  /* 骨架屏 shimmer 扫光：reduced-motion 下静态占位不动效 */
+  .animate-shimmer {
+    animation: none;
+  }
+
+  /* 骨架屏 shimmer 扫光：reduced-motion 下静态占位不动效 */
+  .animate-shimmer {
+    animation: none;
+  }
+
+  .popover-enter {
+    animation: none;
+  }
+
   .sidebar-project-rows {
     transition: none;
   }
@@ -453,34 +497,32 @@ pre code {
 .typing-dot:nth-child(3) { animation-delay: 0.4s; }
 
 /* ----------------------------------------------------------------------------
-   流式文本：Alma 式平滑揭示 + 呼吸光标
-   - .streaming-text > *  ：新出现的块级元素淡入上浮（只在 mount 时跑一次，
-     已完成的文字不会重播；仅作用于流式中的 assistant 内容）
-   - .with-caret 末块 ::after ：当前书写头处的呼吸光标，贯穿等待/流式
-   ---------------------------------------------------------------------------- */
+   流式文本状态
 
-@keyframes streamingTextReveal {
-  from { opacity: 0; transform: translateY(3px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
+   块级淡入（.streaming-text > * 挂 streamingTextReveal）已删除。它的注释原本写着
+   「只在 mount 时跑一次，已完成的文字不会重播」——**这条不变量从来没成立过**：
+   markdown 每 ~150ms 刷新一次就整段重建块，于是每次刷新所有块的淡入一起重放。
+   2026-08-02 真机采样 22/22 次命中，流式期间全部块的 opacity 长期在 0.00–0.62
+   之间反复跳，从未稳定到 1 —— 屏幕上就是「整段正文偏暗 + 一直在闪」，正在写的
+   那一行反而最难读（产品负责人真机反馈）。
+   要恢复这个效果，得先解决「刷新不重建已完成的块」这个前提，否则装回来还是重放。
+   ---------------------------------------------------------------------------- */
 
 @keyframes streamingCaretPulse {
   0%, 100% { opacity: 0.3;  transform: scaleY(1); }
   50%      { opacity: 0.85; transform: scaleY(1.06); }
 }
 
-.streaming-text > * {
-  animation: streamingTextReveal 0.38s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+/* 尾段淡入（工单 2026-08-01 流式渲染自然化）：useSmoothStreamingText 每 ~120ms
+   落一个「词/短段」，消费层把最新一段包进 .streaming-tail-segment（key 随段首
+   下标变化，mount 时跑一次淡入）。直落的大块不包 span——保持即时可读。 */
+@keyframes streamingTailSegmentFade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
 }
 
-/* 末块内联光标（markdown / 纯文本两种 wrapper 通用） */
-.streaming-text.with-caret > :last-child::after {
-  content: "▎";
-  display: inline-block;
-  margin-left: 1px;
-  color: var(--brand-primary);
-  font-weight: 400;
-  animation: streamingCaretPulse 1.2s ease-in-out infinite;
+.streaming-tail-segment {
+  animation: streamingTailSegmentFade 120ms ease-out;
 }
 
 /* 独立光标（无正文时由状态槽渲染，作为「还活着」的安静信号） */
@@ -492,11 +534,10 @@ pre code {
 
 @media (prefers-reduced-motion: reduce) {
   .streaming-text > *,
-  .streaming-text.with-caret > :last-child::after,
+  .streaming-tail-segment,
   .streaming-caret {
     animation: none;
   }
-  .streaming-text.with-caret > :last-child::after,
   .streaming-caret { opacity: 0.7; }
 }
 
@@ -541,6 +582,24 @@ pre code {
     animation: none;
     background-image: none;
     color: var(--cc-muted);
+  }
+}
+
+/* 慢 hook 的 running 指示：>300ms 才淡入（对齐 Codex 的 >300ms 才显示 shimmer）。
+   用 animation-delay 而不是 JS 定时器——批次一结束指示就随 projection 移除，
+   300ms 内完成的 hook 这行从未可见，零痕迹。 */
+@keyframes hookRunningFadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.hook-running-enter {
+  animation: hookRunningFadeIn 0.2s ease-out 0.3s both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hook-running-enter {
+    animation-delay: 0s;
   }
 }
 
@@ -641,6 +700,15 @@ pre code {
   .btn-icon:hover {
     color: var(--text-primary);
     background-color: var(--bg-hover);
+  }
+
+  /* 2026-07-28 品质感打磨④：按钮/菜单项 :active 下压，100ms 内有反馈 */
+  .btn-icon:active {
+    transform: scale(0.97);
+  }
+
+  .list-item:active {
+    transform: scale(0.98);
   }
 
   /* ----------------------------------------
@@ -762,6 +830,50 @@ pre code {
   }
 
   /* ----------------------------------------
+     Elevation 层级（2026-07-28 品质感打磨拍板）
+     暗色下层级靠亮度阶梯 + 投影，不靠描边。色值/投影的唯一真源是
+     themes/*.css 的 --elevation-l* / --shadow-l* token；这里只做组装。
+     放 components 层：toast 等场景用语义 border 色 utility 覆盖描边色。
+     ---------------------------------------- */
+  .elevation-l2 {
+    background-color: var(--elevation-l2);
+    border: 1px solid var(--border-default);
+    box-shadow: var(--shadow-l2);
+  }
+
+  .elevation-l3 {
+    background-color: var(--elevation-l3);
+    border: 1px solid var(--border-default);
+    box-shadow: var(--shadow-l3);
+  }
+
+  /* 浮层入场：opacity + 4px 上浮，140ms ease-out，别瞬现 */
+  .popover-enter {
+    animation: popoverEnter 140ms var(--ease-out) both;
+  }
+
+  /* composer 浮起：输入框抬到 L1（聚焦 L2）+ 投影，聚焦时描边微亮 */
+  .composer-elevated {
+    background-color: var(--elevation-l1);
+    border: 1px solid var(--border-default);
+    box-shadow: var(--shadow-composer);
+    transition:
+      background-color var(--duration-fast) var(--ease-out),
+      border-color var(--duration-fast) var(--ease-out);
+  }
+
+  .composer-elevated:focus-within {
+    background-color: var(--elevation-l2);
+    border-color: var(--border-hover);
+  }
+
+  /* composer 上方滚动渐隐：聊天文字「淡入」到框后，而不是被硬切 */
+  .chat-scroll-fade {
+    -webkit-mask-image: linear-gradient(to bottom, black calc(100% - 28px), transparent 100%);
+    mask-image: linear-gradient(to bottom, black calc(100% - 28px), transparent 100%);
+  }
+
+  /* ----------------------------------------
      Modal
      ---------------------------------------- */
   .modal-backdrop {
@@ -873,5 +985,42 @@ pre code {
   :root {
     --sidebar-width: 0px;
     --task-panel-width: 0px;
+  }
+}
+
+/* 悬停才浮现的操作条（2026-08-02 对话图产物）——触屏兜底。
+   触屏设备没有 hover 这个状态，光靠 group-hover 会让操作永远不可见。
+   写成显式 CSS 而不是 Tailwind 变体：这条规则的存在与否直接决定触屏用户能不能用，
+   显式 CSS 可以在 dist 里逐字核实（应能搜到 `@media (hover:none){.media-actions-hover-reveal`）。
+   ⚠️ 核实时注意：renderer 由 `vite build`（= npm run build:renderer）产出，
+   `npm run build:web` 只打 web server 包、不碰 renderer——拿它的产物做判断会得出错误结论。 */
+@media (hover: none) {
+  /* 用 元素+类 的特异性(0,1,1) 压过 Tailwind 的 .opacity-0 (0,1,0)，与样式表顺序无关，
+     因此不需要强制优先级声明——design-system 门禁未登记的那种声明，且它是文本扫描，
+     连注释里提到那个词都会被计成一处违规（本行就是这么踩出来的）。 */
+  span.media-actions-hover-reveal { opacity: 1; }
+}
+
+/* ============================================================================
+   NeoBrandMark 动效轨道环（N2 星芒）
+   - 卫星点绕砖心 6s/圈；transform-box: view-box 让旋转中心落在 SVG 视窗中心
+   - prefers-reduced-motion 下停转，环与卫星点保持静态
+   ============================================================================ */
+
+@keyframes neoOrbitSatelliteSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.neo-orbit-satellite {
+  transform-box: view-box;
+  transform-origin: 50% 50%;
+  animation: neoOrbitSatelliteSpin 6s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .neo-orbit-satellite {
+    animation: none;
   }
 }

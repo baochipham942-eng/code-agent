@@ -199,9 +199,9 @@ function getPermissionIcon(mode: PermissionMode): React.ReactNode {
 }
 
 function getRiskClass(riskLevel: PermissionRiskLevel): string {
-  if (riskLevel === 'high') return 'border-red-500/30 bg-red-500/10 text-red-300';
-  if (riskLevel === 'medium') return 'border-amber-500/30 bg-amber-500/10 text-amber-300';
-  return 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300';
+  if (riskLevel === 'high') return 'border-red-500/30 bg-red-500/10 text-badge-danger';
+  if (riskLevel === 'medium') return 'border-badge-warning/30 bg-amber-500/10 text-badge-warning';
+  return 'border-badge-success/30 bg-emerald-500/10 text-badge-success';
 }
 
 function getErrorMessage(error: unknown, fallback: string): string {
@@ -214,19 +214,19 @@ function getRuleRows(ruleSummary: PermissionRuleSummary, text: GeneralSettingsTe
       label: 'Deny',
       caption: text.userRules.denyCaption,
       value: ruleSummary.denyCount,
-      color: 'text-red-300',
+      color: 'text-badge-danger',
     },
     {
       label: 'Ask',
       caption: text.userRules.askCaption,
       value: ruleSummary.askCount,
-      color: 'text-amber-300',
+      color: 'text-badge-warning',
     },
     {
       label: 'Allow',
       caption: text.userRules.allowCaption,
       value: ruleSummary.allowCount,
-      color: 'text-emerald-300',
+      color: 'text-badge-success',
     },
   ];
 }
@@ -354,12 +354,12 @@ export const GeneralSettings: React.FC = () => {
       <WebModeBanner />
 
       {showMigrationBanner && (
-        <div className="rounded-lg border border-blue-500/30 bg-blue-500/10 p-3">
+        <div className="rounded-lg border border-badge-info/30 bg-blue-500/10 p-3">
           <div className="flex items-start gap-2">
-            <Info className="mt-0.5 h-4 w-4 shrink-0 text-blue-400" />
+            <Info className="mt-0.5 h-4 w-4 shrink-0 text-badge-info" />
             <div className="min-w-0 flex-1">
-              <h4 className="text-sm font-medium text-blue-300">{generalText.migration.title}</h4>
-              <p className="mt-1 text-xs leading-relaxed text-blue-400/80">
+              <h4 className="text-sm font-medium text-badge-info">{generalText.migration.title}</h4>
+              <p className="mt-1 text-xs leading-relaxed text-badge-info/80">
                 {generalText.migration.description}
               </p>
               <div className="mt-2 flex items-center gap-2">
@@ -367,7 +367,7 @@ export const GeneralSettings: React.FC = () => {
                   type="button"
                   onClick={handleAckMigration}
                   disabled={isWebMode()}
-                  className="rounded border border-blue-500/40 bg-blue-500/10 px-2 py-1 text-xs text-blue-200 hover:bg-blue-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="rounded border border-badge-info/40 bg-blue-500/10 px-2 py-1 text-xs text-badge-info hover:bg-blue-500/20 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {generalText.migration.acknowledge}
                 </button>
@@ -375,7 +375,7 @@ export const GeneralSettings: React.FC = () => {
                   href="https://github.com/baochipham942-eng/code-agent/releases/latest"
                   target="_blank"
                   rel="noreferrer"
-                  className="text-xs text-blue-400 underline hover:text-blue-300"
+                  className="text-xs text-badge-info underline hover:text-badge-info"
                 >
                   {generalText.migration.releaseNotes}
                 </a>
@@ -385,7 +385,7 @@ export const GeneralSettings: React.FC = () => {
               type="button"
               onClick={handleAckMigration}
               disabled={isWebMode()}
-              className="text-blue-300/60 hover:text-blue-200 disabled:cursor-not-allowed disabled:opacity-50"
+              className="text-badge-info/60 hover:text-badge-info disabled:cursor-not-allowed disabled:opacity-50"
               aria-label={t.common.close}
             >
               <X className="h-4 w-4" />
@@ -455,7 +455,7 @@ export const GeneralSettings: React.FC = () => {
                       </td>
                       <td className="px-3 py-3 align-middle">
                         {row.selected ? (
-                          <span className="inline-flex items-center gap-1 rounded border border-blue-500/30 bg-blue-500/10 px-2 py-1 text-blue-300">
+                          <span className="inline-flex items-center gap-1 rounded border border-badge-info/30 bg-blue-500/10 px-2 py-1 text-badge-info">
                             <CheckCircle className="h-3 w-3" />
                             {generalText.controlPlane.currentEnabled}
                           </span>
@@ -494,10 +494,10 @@ export const GeneralSettings: React.FC = () => {
         {permissionMode === 'bypassPermissions' && (
           <div className="rounded-lg border border-red-500/20 bg-red-500/10 p-3">
             <div className="flex items-start gap-2">
-              <ShieldOff className="mt-0.5 h-4 w-4 shrink-0 text-red-400" />
+              <ShieldOff className="mt-0.5 h-4 w-4 shrink-0 text-badge-danger" />
               <div>
-                <h4 className="text-sm font-medium text-red-300">{generalText.bypassWarning.title}</h4>
-                <p className="mt-1 text-xs text-red-400/70">
+                <h4 className="text-sm font-medium text-badge-danger">{generalText.bypassWarning.title}</h4>
+                <p className="mt-1 text-xs text-badge-danger/70">
                   {generalText.bypassWarning.description}
                 </p>
               </div>
@@ -541,14 +541,14 @@ export const GeneralSettings: React.FC = () => {
                             <div className="flex items-center gap-2">
                               <span className="text-sm font-medium text-zinc-200">{row.title}</span>
                               {row.recommended ? (
-                                <span className="rounded border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 text-[11px] text-emerald-300">
+                                <span className="rounded border border-badge-success/30 bg-emerald-500/10 px-1.5 py-0.5 text-[11px] text-badge-success">
                                   {generalText.inheritanceSection.recommended}
                                 </span>
                               ) : null}
                             </div>
                             <div className="mt-1 max-w-[420px] text-zinc-500">{row.description}</div>
                             {row.warning ? (
-                              <div className="mt-1 flex items-center gap-1 text-amber-300/90">
+                              <div className="mt-1 flex items-center gap-1 text-badge-warning/90">
                                 <AlertTriangle className="h-3 w-3" />
                                 <span>{row.warning}</span>
                               </div>
@@ -622,7 +622,7 @@ export const GeneralSettings: React.FC = () => {
 
             <div className="grid grid-cols-1 gap-3">
               <div>
-                <label className="mb-1 block text-xs text-red-300">{generalText.userRules.denyLabel}</label>
+                <label className="mb-1 block text-xs text-badge-danger">{generalText.userRules.denyLabel}</label>
                 <textarea
                   value={denyRules}
                   onChange={(event) => setDenyRules(event.target.value)}
@@ -634,7 +634,7 @@ export const GeneralSettings: React.FC = () => {
                 />
               </div>
               <div>
-                <label className="mb-1 block text-xs text-amber-300">{generalText.userRules.askLabel}</label>
+                <label className="mb-1 block text-xs text-badge-warning">{generalText.userRules.askLabel}</label>
                 <textarea
                   value={askRules}
                   onChange={(event) => setAskRules(event.target.value)}
@@ -642,11 +642,11 @@ export const GeneralSettings: React.FC = () => {
                   disabled={isWebMode()}
                   placeholder={'Bash(git push *)\nWrite(*.env)'}
                   rows={3}
-                  className="w-full rounded border border-zinc-700 bg-zinc-900 px-2 py-1.5 font-mono text-xs text-zinc-200 outline-hidden focus:border-amber-500/50 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="w-full rounded border border-zinc-700 bg-zinc-900 px-2 py-1.5 font-mono text-xs text-zinc-200 outline-hidden focus:border-badge-warning/50 disabled:cursor-not-allowed disabled:opacity-50"
                 />
               </div>
               <div>
-                <label className="mb-1 block text-xs text-emerald-300">{generalText.userRules.allowLabel}</label>
+                <label className="mb-1 block text-xs text-badge-success">{generalText.userRules.allowLabel}</label>
                 <textarea
                   value={allowRules}
                   onChange={(event) => setAllowRules(event.target.value)}
@@ -669,14 +669,14 @@ export const GeneralSettings: React.FC = () => {
         <div className="grid grid-cols-1 gap-3 text-xs text-zinc-400 md:grid-cols-2">
           <div className="rounded-lg border border-zinc-800 bg-zinc-950/30 p-3">
             <div className="mb-1 flex items-center gap-2 text-zinc-200">
-              <ShieldCheck className="h-4 w-4 text-emerald-300" />
+              <ShieldCheck className="h-4 w-4 text-badge-success" />
               {generalText.semantics.priorityTitle}
             </div>
             <p>{generalText.semantics.priorityDescription}</p>
           </div>
           <div className="rounded-lg border border-zinc-800 bg-zinc-950/30 p-3">
             <div className="mb-1 flex items-center gap-2 text-zinc-200">
-              <Bot className="h-4 w-4 text-blue-300" />
+              <Bot className="h-4 w-4 text-badge-info" />
               {generalText.semantics.boundaryTitle}
             </div>
             <p>{generalText.semantics.boundaryDescription}</p>

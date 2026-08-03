@@ -17,6 +17,7 @@ import { getUserConfigDir } from '../config/configPaths';
 import { computeArtifactRevision } from '../tools/artifacts/artifactLocatorHost';
 import { loadPresentationPackageIndex } from '../tools/artifacts/presentationPackageIndex';
 import { convertToScreenshots, isLibreOfficeAvailable } from '../tools/media/ppt/visualReview';
+import { PRESENTATION_PREVIEW_CACHE_DIRNAME } from '../tools/media/ppt/constants';
 
 interface WorkspaceBundleFileInput {
   path: string;
@@ -320,7 +321,7 @@ async function buildPresentationPagePreview(
   }
 
   const cacheRoot = dependencies.cacheRoot
-    ?? path.join(getUserConfigDir(), 'cache', 'presentation-page-previews');
+    ?? path.join(getUserConfigDir(), 'cache', PRESENTATION_PREVIEW_CACHE_DIRNAME);
   const cacheDir = path.join(cacheRoot, revision.value);
   const manifestPath = path.join(cacheDir, 'manifest.json');
   const cached = await readCachedScreenshots(manifestPath, revision.value, pages.length);

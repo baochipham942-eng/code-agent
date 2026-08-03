@@ -1,8 +1,9 @@
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   AlertTriangle,
   Archive,
   BarChart3,
+  BookOpen,
   CheckCircle2,
   Code,
   Copy,
@@ -14,6 +15,7 @@ import {
   FolderOpen,
   GitBranch,
   Image as ImageIcon,
+  MoreHorizontal,
   Music,
   Presentation,
   Table,
@@ -28,7 +30,6 @@ import ipcService from '../../../../services/ipcService';
 import { IPC_DOMAINS } from '@shared/ipc';
 import { toast } from '../../../../hooks/useToast';
 import { useI18n } from '../../../../hooks/useI18n';
-import { BookOpen } from 'lucide-react';
 
 interface Props {
   cards: DeliverableCardView[];
@@ -39,83 +40,89 @@ function iconForKind(kind: string): React.ReactNode {
   const cls = 'h-3.5 w-3.5 flex-shrink-0';
   switch (kind) {
     case 'chart':
-      return <BarChart3 className={`${cls} text-cyan-300`} />;
+      return <BarChart3 className={`${cls} text-badge-info`} />;
     case 'spreadsheet':
-      return <Table className={`${cls} text-emerald-300`} />;
+      return <Table className={`${cls} text-badge-success`} />;
     case 'document':
       return <FileText className={`${cls} text-zinc-300`} />;
     case 'audio':
-      return <Music className={`${cls} text-emerald-300`} />;
+      return <Music className={`${cls} text-badge-success`} />;
     case 'video':
-      return <Video className={`${cls} text-fuchsia-300`} />;
+      return <Video className={`${cls} text-badge-accent`} />;
     case 'archive':
-      return <Archive className={`${cls} text-amber-300`} />;
+      return <Archive className={`${cls} text-badge-warning`} />;
     case 'presentation':
-      return <Presentation className={`${cls} text-fuchsia-300`} />;
+      return <Presentation className={`${cls} text-badge-accent`} />;
     case 'generative_ui':
     case 'neo_ui':
     case 'generic_html':
-      return <Code className={`${cls} text-orange-300`} />;
+      return <Code className={`${cls} text-badge-warning`} />;
     case 'mermaid':
     case 'diagram':
-      return <GitBranch className={`${cls} text-violet-300`} />;
+      return <GitBranch className={`${cls} text-badge-accent`} />;
     case 'image':
     case 'web_snapshot':
-      return <ImageIcon className={`${cls} text-emerald-300`} />;
+      return <ImageIcon className={`${cls} text-badge-success`} />;
     default:
       return <File className={`${cls} text-zinc-400`} />;
   }
 }
 
-function statusMeta(card: DeliverableCardView): { label: string; className: string; icon: React.ReactNode } {
+interface StatusMeta {
+  label: string;
+  className: string;
+  icon: React.ReactNode;
+}
+
+function statusMeta(card: DeliverableCardView, labels: ReturnType<typeof useI18n>['t']['deliverable']): StatusMeta {
   if (card.status === 'failed') {
     return {
-      label: 'Failed',
-      className: 'bg-rose-500/12 text-rose-300',
+      label: labels.statusFailed,
+      className: 'bg-rose-500/12 text-badge-danger',
       icon: <AlertTriangle className="h-3 w-3" />,
     };
   }
   if (card.status === 'verified') {
     return {
-      label: 'Verified',
-      className: 'bg-emerald-500/12 text-emerald-300',
+      label: labels.statusVerified,
+      className: 'bg-emerald-500/12 text-badge-success',
       icon: <CheckCircle2 className="h-3 w-3" />,
     };
   }
   return {
-    label: 'Unverified',
-    className: 'bg-amber-500/12 text-amber-300',
+    label: labels.statusUnverified,
+    className: 'bg-amber-500/12 text-badge-warning',
     icon: <AlertTriangle className="h-3 w-3" />,
   };
 }
 
-function qualityMeta(card: DeliverableCardView): { label: string; className: string; icon: React.ReactNode } | null {
+function qualityMeta(card: DeliverableCardView, labels: ReturnType<typeof useI18n>['t']['deliverable']): StatusMeta | null {
   if (!card.quality) return null;
   if (card.quality.status === 'failed') {
     return {
-      label: 'Quality failed',
-      className: 'bg-rose-500/12 text-rose-300',
+      label: labels.qualityFailed,
+      className: 'bg-rose-500/12 text-badge-danger',
       icon: <AlertTriangle className="h-3 w-3" />,
     };
   }
   if (card.quality.status === 'needs_review' || card.quality.status === 'degraded') {
     return {
-      label: 'Needs review',
-      className: 'bg-amber-500/12 text-amber-300',
+      label: labels.qualityNeedsReview,
+      className: 'bg-amber-500/12 text-badge-warning',
       icon: <AlertTriangle className="h-3 w-3" />,
     };
   }
   if (card.quality.status === 'passed') {
     return {
-      label: 'Validated',
-      className: 'bg-emerald-500/12 text-emerald-300',
+      label: labels.qualityValidated,
+      className: 'bg-emerald-500/12 text-badge-success',
       icon: <CheckCircle2 className="h-3 w-3" />,
     };
   }
   return null;
 }
 
-function actionLabel(card: DeliverableCardView, labels: { workspacePreview: string; filePreview: string; externalLink: string }): string {
+function actionLabel(card: DeliverableCardView, labels: ReturnType<typeof useI18n>['t']['deliverable']): string {
   switch (card.openTarget.kind) {
     case 'workspace-preview':
       return labels.workspacePreview;
@@ -143,6 +150,194 @@ function secondaryActionKey(action: DeliverableSecondaryAction): string {
       return 'secondary-action';
   }
 }
+
+function secondaryIcon(action: DeliverableSecondaryAction): React.ReactNode {
+  const cls = 'h-3.5 w-3.5';
+  switch (action.kind) {
+    case 'reveal-file':
+      return <FolderOpen className={cls} />;
+    case 'download-url':
+      return <Download className={cls} />;
+    case 'export-bundle':
+      return <Archive className={cls} />;
+    case 'archive-to-library':
+      return <BookOpen className={cls} />;
+    case 'copy-reference':
+      return <Copy className={cls} />;
+    case 'open-file':
+      return <ExternalLink className={cls} />;
+    default:
+      return <Copy className={cls} />;
+  }
+}
+
+function secondaryActionLabel(
+  action: DeliverableSecondaryAction,
+  labels: ReturnType<typeof useI18n>['t']['deliverable'],
+): string {
+  switch (action.kind) {
+    case 'reveal-file':
+      return labels.reveal;
+    case 'open-file':
+      return labels.openFile;
+    case 'copy-reference':
+      return labels.copyReference;
+    case 'download-url':
+      return labels.download;
+    case 'archive-to-library':
+      return labels.archiveToLibrary;
+    case 'export-bundle':
+      return labels.exportBundle;
+  }
+}
+
+interface CardRowProps {
+  card: DeliverableCardView;
+  labels: ReturnType<typeof useI18n>['t']['deliverable'];
+  openCard: (card: DeliverableCardView) => void;
+  runSecondaryAction: (action: DeliverableSecondaryAction, card: DeliverableCardView) => Promise<void>;
+}
+
+const CardRow: React.FC<CardRowProps> = ({ card, labels, openCard, runSecondaryAction }) => {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onPointerDown = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuOpen(false);
+      }
+    };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setMenuOpen(false);
+    };
+    document.addEventListener('mousedown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [menuOpen]);
+
+  const status = statusMeta(card, labels);
+  const quality = qualityMeta(card, labels);
+  const clickable = card.openTarget.kind !== 'none';
+  const cardChrome = 'rounded-md border border-border-muted bg-surface-subtle transition-colors';
+
+  const allActions = card.secondaryActions?.filter((action) => !action.disabled) ?? [];
+  const archiveAction = allActions.find((action) => action.kind === 'archive-to-library');
+  const overflowActions = allActions.filter((action) => action.kind !== 'archive-to-library');
+
+  const handleActionClick = (action: DeliverableSecondaryAction) => {
+    setMenuOpen(false);
+    void runSecondaryAction(action, card);
+  };
+
+  return (
+    <div
+      key={card.id}
+      className={`${cardChrome} ${clickable ? 'hover:border-badge-info/25 hover:bg-cyan-500/[0.045]' : ''}`}
+    >
+      <div className="flex items-center gap-1">
+        <button
+          type="button"
+          onClick={() => clickable && openCard(card)}
+          className="flex min-w-0 flex-1 items-center gap-2 px-2.5 py-1.5 text-left disabled:cursor-default"
+          title={actionLabel(card, labels)}
+          aria-label={`${actionLabel(card, labels)}: ${card.title}`}
+          disabled={!clickable}
+        >
+          {iconForKind(card.kind)}
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-xs font-medium text-zinc-100">{card.title}</div>
+            <div className="truncate text-[11px] leading-4 text-zinc-500">{card.description}</div>
+          </div>
+          {quality && (
+            <span
+              className={`inline-flex flex-shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium ${quality.className}`}
+              title={card.quality?.summary}
+            >
+              {quality.icon}
+              {quality.label}
+            </span>
+          )}
+          <span className={`inline-flex flex-shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium ${status.className}`}>
+            {status.icon}
+            {status.label}
+          </span>
+          {clickable && (
+            card.openTarget.kind === 'external'
+              ? <ExternalLink className="h-3.5 w-3.5 flex-shrink-0 text-zinc-500" />
+              : <Eye className="h-3.5 w-3.5 flex-shrink-0 text-zinc-500" />
+          )}
+        </button>
+        {(archiveAction || overflowActions.length > 0) && (
+          <div className="flex flex-shrink-0 items-center gap-0.5 pr-1.5">
+            {archiveAction && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void runSecondaryAction(archiveAction, card);
+                }}
+                className="inline-flex h-6 items-center justify-center gap-1 rounded px-1.5 text-[11px] text-badge-info hover:bg-surface-hover hover:text-badge-info"
+                title={archiveAction.reason || labels.archiveToLibrary}
+                aria-label={`${labels.archiveToLibrary}: ${card.title}`}
+              >
+                <BookOpen className="h-3.5 w-3.5" />
+                <span>{labels.archiveToLibrary}</span>
+              </button>
+            )}
+            {overflowActions.length > 0 && (
+              <div className="relative" ref={menuRef}>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setMenuOpen((value) => !value);
+                  }}
+                  className="inline-flex h-6 w-6 items-center justify-center rounded text-zinc-500 hover:bg-surface-hover hover:text-zinc-200"
+                  aria-label={`${labels.moreActions}: ${card.title}`}
+                  title={labels.moreActions}
+                  aria-haspopup="menu"
+                  aria-expanded={menuOpen}
+                >
+                  <MoreHorizontal className="h-3.5 w-3.5" />
+                </button>
+                {menuOpen && (
+                  <div
+                    role="menu"
+                    aria-label={`${labels.moreActions}: ${card.title}`}
+                    className="absolute right-0 top-full z-30 mt-1 min-w-[160px] rounded-lg border border-border-muted bg-surface-subtle py-1 shadow-xl"
+                  >
+                    {overflowActions.map((action) => (
+                      <button
+                        key={secondaryActionKey(action)}
+                        type="button"
+                        role="menuitem"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleActionClick(action);
+                        }}
+                        className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-zinc-400 transition-colors hover:bg-surface-hover hover:text-zinc-200"
+                        title={action.reason || secondaryActionLabel(action, labels)}
+                        aria-label={`${secondaryActionLabel(action, labels)}: ${card.title}`}
+                      >
+                        {secondaryIcon(action)}
+                        <span className="truncate">{secondaryActionLabel(action, labels)}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
 
 export const DeliverableCardList: React.FC<Props> = ({ cards, className = 'mt-2' }) => {
   const { t } = useI18n();
@@ -260,120 +455,17 @@ export const DeliverableCardList: React.FC<Props> = ({ cards, className = 'mt-2'
     }
   };
 
-  const secondaryIcon = (action: DeliverableSecondaryAction): React.ReactNode => {
-    const cls = 'h-3.5 w-3.5';
-    switch (action.kind) {
-      case 'reveal-file':
-        return <FolderOpen className={cls} />;
-      case 'download-url':
-        return <Download className={cls} />;
-      case 'export-bundle':
-        return <Archive className={cls} />;
-      case 'archive-to-library':
-        return <BookOpen className={cls} />;
-      case 'copy-reference':
-        return <Copy className={cls} />;
-      case 'open-file':
-        return <ExternalLink className={cls} />;
-      default:
-        return <Copy className={cls} />;
-    }
-  };
-
-  const secondaryActionLabel = (action: DeliverableSecondaryAction): string => {
-    switch (action.kind) {
-      case 'reveal-file':
-        return deliverableLabels.reveal;
-      case 'open-file':
-        return deliverableLabels.openFile;
-      case 'copy-reference':
-        return deliverableLabels.copyReference;
-      case 'download-url':
-        return deliverableLabels.download;
-      case 'archive-to-library':
-        return deliverableLabels.archiveToLibrary;
-      case 'export-bundle':
-        return deliverableLabels.exportBundle;
-    }
-  };
-
   return (
     <div className={`${className} space-y-1.5`}>
-      {cards.map((card) => {
-        const status = statusMeta(card);
-        const quality = qualityMeta(card);
-        const clickable = card.openTarget.kind !== 'none';
-        const content = (
-          <>
-            {iconForKind(card.kind)}
-            <div className="min-w-0 flex-1">
-              <div className="truncate text-xs font-medium text-zinc-100">{card.title}</div>
-              <div className="truncate text-[11px] leading-4 text-zinc-500">{card.description}</div>
-            </div>
-            {quality && (
-              <span
-                className={`inline-flex flex-shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium ${quality.className}`}
-                title={card.quality?.summary}
-              >
-                {quality.icon}
-                {quality.label}
-              </span>
-            )}
-            <span className={`inline-flex flex-shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium ${status.className}`}>
-              {status.icon}
-              {status.label}
-            </span>
-            {clickable && (
-              card.openTarget.kind === 'external'
-                ? <ExternalLink className="h-3.5 w-3.5 flex-shrink-0 text-zinc-500" />
-                : <Eye className="h-3.5 w-3.5 flex-shrink-0 text-zinc-500" />
-            )}
-          </>
-        );
-        const secondaryActions = card.secondaryActions?.filter((action) => !action.disabled) ?? [];
-        const cardChrome = 'rounded-md border border-border-muted bg-surface-subtle transition-colors';
-
-        return (
-          <div
-            key={card.id}
-            className={`${cardChrome} ${clickable ? 'hover:border-cyan-500/25 hover:bg-cyan-500/[0.045]' : ''}`}
-          >
-            <div className="flex items-center gap-1">
-              <button
-                type="button"
-                onClick={() => clickable && openCard(card)}
-                className="flex min-w-0 flex-1 items-center gap-2 px-2.5 py-1.5 text-left disabled:cursor-default"
-                title={actionLabel(card, deliverableLabels)}
-                aria-label={`${actionLabel(card, deliverableLabels)}: ${card.title}`}
-                disabled={!clickable}
-              >
-                {content}
-              </button>
-              {secondaryActions.length > 0 && (
-                <div className="flex flex-shrink-0 items-center gap-0.5 pr-1.5">
-                  {secondaryActions.map((action) => (
-                    <button
-                      key={secondaryActionKey(action)}
-                      type="button"
-                      onClick={() => void runSecondaryAction(action, card)}
-                      className={`inline-flex h-6 items-center justify-center rounded text-zinc-500 hover:bg-surface-hover hover:text-zinc-200 ${
-                        action.kind === 'archive-to-library' ? 'gap-1 px-1.5 text-cyan-300 hover:text-cyan-100' : 'w-6'
-                      }`}
-                      title={action.reason || secondaryActionLabel(action)}
-                      aria-label={`${secondaryActionLabel(action)}: ${card.title}`}
-                    >
-                      {secondaryIcon(action)}
-                      {action.kind === 'archive-to-library' && (
-                        <span className="text-[11px]">{secondaryActionLabel(action)}</span>
-                      )}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        );
-      })}
+      {cards.map((card) => (
+        <CardRow
+          key={card.id}
+          card={card}
+          labels={deliverableLabels}
+          openCard={openCard}
+          runSecondaryAction={runSecondaryAction}
+        />
+      ))}
     </div>
   );
 };

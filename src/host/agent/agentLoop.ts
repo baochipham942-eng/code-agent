@@ -237,7 +237,13 @@ export class AgentLoop {
     return this.promptProfile;
   }
 
-  async run(userMessage: string): Promise<void> {
+  /**
+   * @param userMessage 送给模型的内容，可能已被调用方拼上 turnSystemContext 脚手架。
+   * @param displayPrompt 用户那句原话。只用于 telemetry 的 `user_prompt`——那一列会被
+   *   sessionManager 的 backfill 反向写回用户消息流（2026-07-28 真机：语音通话的
+   *   `<live_voice_permission_notice>` 整块就是这么露给用户的）。省略时按 userMessage 处理。
+   */
+  async run(userMessage: string, displayPrompt?: string): Promise<void> {
     // 轮级只判定一次；普通预定义 agent（如 explore）不会取得角色记忆写入身份。
     this.ctx.persistentRoleId = await resolvePersistentRoleId(this.ctx.agentId);
     // 每条 user 消息开新的工具 repair 失败统计窗口（Kimi 借鉴 #1）
@@ -245,10 +251,10 @@ export class AgentLoop {
     if (this.ctx.runTraceContext) {
       return withRunTraceContext(
         this.ctx.runTraceContext,
-        () => this.conversationRuntime.run(userMessage),
+        () => this.conversationRuntime.run(userMessage, displayPrompt),
       );
     }
-    return this.conversationRuntime.run(userMessage);
+    return this.conversationRuntime.run(userMessage, displayPrompt);
   }
 
   setPlanMode(active: boolean): void {
@@ -304,8 +310,9 @@ export class AgentLoop {
     clientMessageId?: string,
     attachments?: MessageAttachment[],
     metadata?: MessageMetadata,
+    displayContent?: string,
   ): Promise<void> {
-    await this.conversationRuntime.steer(newMessage, clientMessageId, attachments, metadata);
+    await this.conversationRuntime.steer(newMessage, clientMessageId, attachments, metadata, displayContent);
   }
 
   wasInterrupted(): boolean {

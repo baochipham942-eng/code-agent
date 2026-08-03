@@ -186,6 +186,9 @@ export const LIBREOFFICE_SEARCH_PATHS = [
 /** 预览截断长度 */
 export const PREVIEW_CODE_TRUNCATE = 200;
 
+/** pptx 逐页预览截图缓存目录名（位于 <userData>/cache/ 下；web 层 /api/screenshot 白名单与其同源引用，禁止各写一份魔法字符串） */
+export const PRESENTATION_PREVIEW_CACHE_DIRNAME = 'presentation-page-previews';
+
 // ---- 默认回退值 ----
 
 /** 主题缺失时的回退颜色（hex 无 #） */

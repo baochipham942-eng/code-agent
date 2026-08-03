@@ -23,7 +23,7 @@ import {
 } from '@shared/contract/designHandoff';
 import { directionTokens } from '@/design/direction-tokens';
 import { IPC_CHANNELS } from '@shared/ipc';
-import { QueuedInputSchemas } from '@shared/ipc/schemas';
+import { QueuedInputSchemas, VoiceSchemas } from '@shared/ipc/schemas';
 import type { SwarmAgentState } from '@shared/contract/swarm';
 import { createLogger } from '../../utils/logger';
 import { useAppStore } from '../../stores/appStore';
@@ -34,8 +34,8 @@ import { isReferenceNode, isVideoNode, type CanvasNode } from '../../components/
 import { useSessionStore } from '../../stores/sessionStore';
 import { useSwarmStore } from '../../stores/swarmStore';
 import { useTaskStore, type SessionStatus as TaskSessionStatus } from '../../stores/taskStore';
+import { useVoiceCallStore } from '../../stores/voiceCallStore';
 import { useTurnExecutionStore } from '../../stores/turnExecutionStore';
-import { toast } from '../../hooks/useToast';
 import ipcService from '../../services/ipcService';
 import { typedInvokeDomain } from '../../services/typedInvoke';
 
@@ -360,14 +360,22 @@ export function getRuntimeInputMode(context?: ConversationEnvelopeContext): Runt
   return context?.runtimeInput?.mode === 'redirect' ? 'redirect' : 'supplement';
 }
 
-export function getRuntimeInputSuccessMessage(mode: RuntimeInputMode): string {
-  return mode === 'redirect' ? '已改道处理' : '已加入当前任务';
+/**
+ * 「这个 session 还有一轮没收干净」——host 的 RunSessionConflictError 经 HTTP 出来是 409。
+ *
+ * 它不是失败：模型上一轮已经答完了（用户也看到了），只是 agent_complete 到流关闭之间
+ * 还有几秒收尾，run 仍占着 session。撞上这几秒的消息应该排队等下一轮，而不是给用户
+ * 弹一条「云端代理请求失败」——真机 2026-08-01：回复答完 3 秒后发下一条就撞上。
+ */
+export function isSessionBusyRunConflict(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null) return false;
+  if ((error as { status?: unknown }).status === 409) return true;
+  const message = error instanceof Error ? error.message : '';
+  return message.includes('already has active run');
 }
 
-export function getRuntimeInputQueuedMessage(mode: RuntimeInputMode): string {
-  return mode === 'redirect'
-    ? '已排队，本轮回复结束后按这条重新处理。'
-    : '已排队，本轮回复结束后作为下一条发送。';
+export function getRuntimeInputSuccessMessage(mode: RuntimeInputMode): string {
+  return mode === 'redirect' ? '已改道处理' : '已加入当前任务';
 }
 
 /**
@@ -539,6 +547,9 @@ function toWorkbenchMetadata(
       ...context.selectedPromptCommand,
       hints: context.selectedPromptCommand.hints ? [...context.selectedPromptCommand.hints] : undefined,
     };
+  }
+  if (context.pendingCommand) {
+    metadata.pendingCommand = { ...context.pendingCommand };
   }
   if (context.routing) {
     metadata.routingMode = context.routing.mode;
@@ -844,29 +855,18 @@ export function useAgentIPC({
         throw new Error('Session is already cancelling');
       }
 
-      // 运行中发送的新输入默认排到下一轮，当前流式回复继续完成。
-      if (isCurrentSessionProcessing) {
+      // 排到下一轮：当前流式回复继续完成，这条等下一轮。
+      // 抽成函数是因为有两个入口——① 前端已知在跑；② 前端以为空闲、host 说这一轮还没
+      // 收干净（409）。后者同样不是失败，走同一条队列，run 一释放 drain 就把它发出去。
+      const queueForNextTurn = async (clientMessageId?: string): Promise<void> => {
         const runtimeInputMode = getRuntimeInputMode(contextWithDesignContext);
-        logger.info('sendMessage - session processing, queueing runtime input for next turn', {
-          isCurrentSessionProcessing,
-          runtimeInputMode,
-        });
-
-        const queuedMessageId = generateMessageId();
+        const queuedMessageId = clientMessageId ?? generateMessageId();
         const queuedContext: ConversationEnvelopeContext | undefined = contextWithDesignContext
           ? {
               ...contextWithDesignContext,
-              runtimeInput: {
-                mode: runtimeInputMode,
-                delivery: 'queued_next_turn',
-              },
+              runtimeInput: { mode: runtimeInputMode, delivery: 'queued_next_turn' },
             }
-          : {
-              runtimeInput: {
-                mode: runtimeInputMode,
-                delivery: 'queued_next_turn',
-              },
-            };
+          : { runtimeInput: { mode: runtimeInputMode, delivery: 'queued_next_turn' } };
         const queuedEnvelope: ConversationEnvelope = {
           ...envelope,
           // 设计会话冷启动引导不在这里 prepend：排队项稍后由 sendQueuedRuntimeInput 重新走
@@ -900,7 +900,8 @@ export function useAgentIPC({
             createdAt: persisted.createdAt,
             retryCount: persisted.retryCount,
           });
-          toast.info(getRuntimeInputQueuedMessage(runtimeInputMode));
+          // 入队结果由输入框上方的引导条自己呈现（「已引导 N 条 · 等待发送」），
+          // 再弹一条 toast 是同一件事说两遍。
         } catch (error) {
           logger.error('Queued input enqueue failed', error);
           addMessage({
@@ -910,6 +911,53 @@ export function useAgentIPC({
             timestamp: Date.now(),
           });
         }
+      };
+
+      if (isCurrentSessionProcessing) {
+        const voiceCall = useVoiceCallStore.getState();
+        // 收成一个「可注入的会话 id」而不是布尔量：后面 payload 直接用它，
+        // 类型自然收窄，不必在调用点写非空断言。
+        const voiceInjectSessionId = !attachments?.length
+          && voiceCall.phase === 'live'
+          && effectiveSessionId
+          && voiceCall.sessionId === effectiveSessionId
+          ? effectiveSessionId
+          : undefined;
+        const voiceFallbackMessageId = voiceInjectSessionId !== undefined
+          ? (envelope.clientMessageId ?? generateMessageId())
+          : undefined;
+
+        if (voiceInjectSessionId !== undefined) {
+          try {
+            const injection = await typedInvokeDomain(VoiceSchemas.INJECT_USER_TEXT, {
+              action: 'injectUserText',
+              payload: {
+                neoSessionId: voiceInjectSessionId,
+                text: content,
+              },
+            });
+            if (injection.success && injection.data.outcome === 'injected') {
+              logger.info('sendMessage - routed busy text into live voice call');
+              return;
+            }
+            logger.info('sendMessage - voice text injection fell back to durable queue', {
+              reason: injection.success
+                ? injection.data.outcome === 'fallback' ? injection.data.reason : injection.data.outcome
+                : injection.error.code,
+            });
+          } catch (error) {
+            // The typed path must have a durable escape hatch even if the voice
+            // bridge itself is unavailable during teardown.
+            logger.warn('sendMessage - voice text injection failed; queueing input', {
+              message: error instanceof Error ? error.message : String(error),
+            });
+          }
+        } else {
+          logger.info('sendMessage - session processing, queueing runtime input for next turn', {
+            isCurrentSessionProcessing,
+          });
+        }
+        await queueForNextTurn(voiceFallbackMessageId);
         return;
       }
 
@@ -923,7 +971,11 @@ export function useAgentIPC({
         metadata: toMessageMetadata(contextWithDesignContext),
       };
       logger.debug('Adding user message', { id: userMessage.id, attachmentsCount: attachments?.length || 0 });
-      addMessage(userMessage);
+      // 乐观上屏去重：协作空间 composer 在切会话前已把同 id 消息放上时间线（落地即
+      // 进行中态），这里再 append 就是双份——时间线上已有同 id 就跳过（neo 流程同款判法）。
+      if (!useSessionStore.getState().messages.some((message) => message.id === userMessage.id)) {
+        addMessage(userMessage);
+      }
 
       // 不再预创建 assistant placeholder
       // 后端会在每轮迭代开始时发送 turn_start 事件，前端据此创建消息
@@ -948,9 +1000,10 @@ export function useAgentIPC({
         logger.debug('Calling invoke agent:send-message');
         const messagePayload: ConversationEnvelope = {
           ...envelope,
-          // 设计会话冷启动引导：普通/auto 路径的 content 直接发给 agent（design brief 走 context，
-          // 但 canvas-session 引导是 renderer 运行时 prepend，须进真正发出的 content）。
-          content: applyDesignCanvasSessionToContent(envelope.content, effectiveSessionId),
+          // 设计画布冷启动引导已改为服务端按轮注入 systemPrompt/turnSystemContext
+          // （context.executionIntent.designCanvasActive，见 canvasSessionReminder.ts），
+          // 不再 prepend 进 content——content 会被原样持久化+渲染为用户气泡，此前的
+          // renderer 侧 prepend 会把 <system-reminder> 全文泄漏进用户可见消息。
           clientMessageId: userMessage.id,
           context: contextWithDesignContext,
           sessionId: effectiveSessionId,
@@ -963,6 +1016,20 @@ export function useAgentIPC({
         logger.debug('invoke returned');
       } catch (error) {
         logger.error('Agent error', error);
+        // 撞上上一轮的收尾窗口（agent_complete 已发、流还没关，run 仍占着 session）：
+        // 这不是失败，排到下一轮。复用 userMessage.id 当 clientMessageId，上屏去重
+        // 会认出它是同一条，不会重复显示。
+        if (isSessionBusyRunConflict(error)) {
+          if (effectiveSessionId) {
+            setSessionProcessing(effectiveSessionId, false);
+            useTaskStore.getState().updateSessionState(
+              effectiveSessionId,
+              previousTaskState ?? { status: 'idle' },
+            );
+          }
+          await queueForNextTurn(userMessage.id);
+          return;
+        }
         if (options?.silentFailure === true) {
           if (effectiveSessionId) {
             setSessionProcessing(effectiveSessionId, false);

@@ -111,7 +111,7 @@ export type RoutingEvidenceStepStatus =
   | 'started'
   | 'fallback';
 
-export interface TurnRoutingEvidenceStep {
+interface TurnRoutingEvidenceStep {
   status: RoutingEvidenceStepStatus;
   label: string;
   detail?: string;
@@ -143,13 +143,25 @@ export interface TurnHookActivityItem {
   errorCount?: number;
   // 这里刻意没有 message：hook 的 stdout 是任意内容（实测漏过整份记忆索引原文），
   // 渲染层拿不到它才是真正守得住的做法，加过滤守不住。要看原文去日志。
+  /**
+   * block/modify 的决策原因摘要（host 侧已首行截断 120 字 + 脱敏）。
+   * 这是上面「message 不上屏」原则的唯一例外：单行、有界、可解释，不是原始输出。
+   */
+  reason?: string;
   toolName?: string;
   matcher?: string;
+}
+
+/** 正在执行的 hook 批次（hook_started 已到达、配对 hook_trigger 未到达）。 */
+export interface TurnHookRunning {
+  event: string;
+  names?: string[];
 }
 
 export interface TurnHookActivity {
   summary: string;
   items: TurnHookActivityItem[];
+  running?: TurnHookRunning;
 }
 
 export type TurnSkillActivityAction = 'selected' | 'triggered' | 'written';

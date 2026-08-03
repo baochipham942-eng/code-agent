@@ -64,7 +64,7 @@ import { recordMessageProcessorModelCallTelemetry } from './messageProcessorTele
 import { generateTruncationWarning } from './truncationPrompts';
 import { isToolDeniedForRun } from './toolRunPolicy';
 import { attachTurnQualityMetadata } from './turnQuality';
-
+import { wasMessagePersistedByContextAssembly } from './contextAssembly/systemContextStack';
 const logger = createLogger('MessageProcessor');
 type LangfuseSpanFacade = { endSpan(spanId: string, output?: unknown, level?: 'DEBUG' | 'DEFAULT' | 'WARNING' | 'ERROR', statusMessage?: string): void };
 function toAgentEventFromNudge(event: { type: string; data: unknown }): AgentEvent | null {
@@ -526,9 +526,7 @@ export class MessageProcessor {
       });
     }
     const assistantMessage = this.buildAssistantMessageFromResponse(response, finalContent);
-    if (handoffTail.found && assistantMessage.contentParts?.length) {
-      assistantMessage.contentParts = [{ type: 'text', text: finalContent }];
-    }
+    if (handoffTail.found && assistantMessage.contentParts?.length) assistantMessage.contentParts = [{ type: 'text', text: finalContent }];
 
     // Artifact extraction
     const artifacts = extractArtifacts(finalContent);
@@ -545,7 +543,7 @@ export class MessageProcessor {
     }
 
     await this.contextAssembly.addAndPersistMessage(assistantMessage);
-
+    if (wasMessagePersistedByContextAssembly(assistantMessage)) this.ctx.turn.resetStreamedContent();
     if (handoffTail.draft) {
       try {
         getHandoffProposalService().create({
@@ -673,7 +671,7 @@ export class MessageProcessor {
       : [];
 
     if (unavailableToolCalls.length > 0) {
-      return handleUnavailableToolCalls(
+      const admission = await handleUnavailableToolCalls(
         {
           ctx: this.ctx,
           contextAssembly: this.contextAssembly,
@@ -684,6 +682,9 @@ export class MessageProcessor {
         unavailableToolCalls,
         visibleToolNames,
       );
+      // 'proceed' = deferred 工具已在本轮解锁，不要早退：往下走普通工具执行链，
+      // 让代执行与普通调用共用同一个 executeToolsWithHooks 入口（审批链零旁路）。
+      if (admission !== 'proceed') return admission;
     }
 
     logger.debug(` Tool calls received: ${toolCalls.length} calls`);
@@ -1145,28 +1146,48 @@ export class MessageProcessor {
 
   /**
    * Inject steer message into conversation history.
+   *
+   * 模型面与展示面必须分开（2026-07-28 真机：语音派活把 <live_voice_permission_notice>
+   * 和 <user_request> 整块脚手架显示给了用户）。`newMessage` 是拼好 turnSystemContext
+   * 的模型面内容，只进 ctx.messages；`displayContent` 是用户/语音那句原话，落库和渲染
+   * 用它。普通 sendMessage 路径本来就是这么分的，steer 路径此前把两者合成了一条。
+   * 不传 displayContent 时行为与从前完全一致（web steer 传的就是原话）。
    */
   async injectSteerMessage(
     newMessage: string,
     clientMessageId?: string,
     attachments?: MessageAttachment[],
     metadata?: MessageMetadata,
+    displayContent?: string,
   ): Promise<void> {
+    const id = clientMessageId ?? generateMessageId();
+    const timestamp = Date.now();
     const steerMessage: Message = {
-      id: clientMessageId ?? generateMessageId(),
+      id,
       role: 'user',
       content: newMessage,
-      timestamp: Date.now(),
+      timestamp,
       attachments,
       metadata,
     };
     this.ctx.messages.push(steerMessage);
 
-    if (process.env.CODE_AGENT_CLI_MODE === 'true') return;
+    // 只有纯 CLI 才跳过落库。webServer（桌面 app 也跑它）为了 keytar/原生模块安全
+    // 同样会设 CODE_AGENT_CLI_MODE=true，只看这一个标志等于**在产品主路径上静默丢弃
+    // 每一条转向消息**——2026-08-01 真机 2/2 复现：点排队卡「立即发送」后模型答了、
+    // 队列 consumed，而那条用户消息全库零行（错误也没有，因为这里根本没走到写库）。
+    // 判 CLI-only 的口径全仓统一：两个标志一起看（logger / nativeLoader / shellEnvironment 同款）。
+    if (process.env.CODE_AGENT_CLI_MODE === 'true' && process.env.CODE_AGENT_WEB_MODE !== 'true') return;
+
+    // 同 id 同时间戳，只有 content 不同：渲染端拿到的是原话，模型上下文保留脚手架。
+    const persistedMessage: Message =
+      displayContent === undefined || displayContent === newMessage
+        ? steerMessage
+        : { ...steerMessage, content: displayContent };
 
     const sessionManager = getSessionManager();
     try {
-      await sessionManager.addMessageToSession(this.ctx.sessionId, steerMessage);
+      await sessionManager.addMessageToSession(this.ctx.sessionId, persistedMessage);
     } catch (err: unknown) {
       logger.error('[AgentLoop] Failed to persist steer message:', err);
       throw err;

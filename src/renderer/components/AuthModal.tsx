@@ -161,7 +161,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     >
       {/* Error message */}
       {error && (
-        <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
+        <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-badge-danger text-sm">
           {error}
         </div>
       )}
@@ -181,7 +181,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           {resetEmailSent ? (
             /* Success message */
             <div className="py-6 text-center space-y-4">
-              <CheckCircle className="w-12 h-12 text-green-500 mx-auto" />
+              <CheckCircle className="w-12 h-12 text-badge-success mx-auto" />
               <div className="space-y-2">
                 <p className="text-zinc-200 font-medium">重置链接已发送</p>
                 <p className="text-zinc-400 text-sm">
@@ -224,7 +224,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               onClick={() => handleModeChange('signin')}
               className={`flex-1 pb-2 text-sm transition-colors ${
                 mode === 'signin'
-                  ? 'text-blue-400 border-b-2 border-blue-400'
+                  ? 'text-badge-info border-b-2 border-badge-info'
                   : 'text-zinc-400 hover:text-zinc-200'
               }`}
             >
@@ -235,7 +235,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               onClick={() => handleModeChange('signup')}
               className={`flex-1 pb-2 text-sm transition-colors ${
                 mode === 'signup'
-                  ? 'text-blue-400 border-b-2 border-blue-400'
+                  ? 'text-badge-info border-b-2 border-badge-info'
                   : 'text-zinc-400 hover:text-zinc-200'
               }`}
             >
@@ -305,7 +305,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 <button
                   type="button"
                   onClick={() => handleModeChange('reset')}
-                  className="text-sm text-zinc-400 hover:text-blue-400 transition-colors"
+                  className="text-sm text-zinc-400 hover:text-badge-info transition-colors"
                 >
                   <KeyRound className="w-3 h-3 inline mr-1" />
                   忘记密码？

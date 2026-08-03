@@ -1,220 +1,246 @@
 // ============================================================================
-// VoiceChrome —— 通话中底栏（B2/B6）
+// VoiceChrome —— composer 内固定通话状态槽位
 //
-// live 时 Composer 输入框上方扩展出的通话 chrome：小型 presence（波形柔光，
-// 明确不做全屏 orb，§7.2）、ActiveExpertChip、Mute、End、双向电平条、
-// PTT/点按按钮（interruptMode 快照决定形态）。打字与附件入口保留在下方原处。
-// 七态与动效照 §7.3 表；prefers-reduced-motion 下只靠颜色/文案（motion-safe 前缀）。
+// 紧凑单行：左侧 22px 自转星球（七态映射见 PLANET_BY_VISUAL，P0「星球七态」拍板）
+// + 状态词 + “通话中 mm:ss”等既有文案 + 小字星球 hint + 控制按钮；
+// connecting / reconnecting / error 继续显示各自本地化状态与错误详情。
+// 不展示助手名、模型名、当前 work item 标题或剩余工作数。
 // ============================================================================
 
-import React from 'react';
-import { Mic, MicOff, Phone } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { Mic, MicOff, X } from 'lucide-react';
 import { selectVoiceVisualState, useVoiceCallStore, type VoiceVisualState } from '../../../stores/voiceCallStore';
 import { voiceCallBridge } from '../../../services/voiceCallBridge';
 import { useI18n } from '../../../hooks/useI18n';
-import { useAgentRegistryStore } from '../../../stores/agentRegistryStore';
-import { useSessionMembers } from '../expert/SessionMemberBar';
+import {
+  selectIsCurrentComposerInProgress,
+  useComposerNoticeStore,
+  useRegisterComposerInProgress,
+} from '../../../stores/composerNoticeStore';
+import { resolveVoiceErrorTitle, resolveVoiceMessage } from './resolveVoiceMessage';
+import { PlanetSphere, type PlanetFx, type PlanetKind } from '../../brand/PlanetSphere';
+import type { VoiceTranslations } from '../../../i18n/voice';
 
-const STATE_COLOR: Record<VoiceVisualState, string> = {
-  idle: 'text-zinc-500',
-  connecting: 'text-zinc-400',
-  listening: 'text-emerald-400',
-  speaking: 'text-primary-400',
-  working: 'text-amber-400',
+type PlanetHintKey = keyof VoiceTranslations['voice']['planet']['hint'];
+type PlanetWordKey = keyof VoiceTranslations['voice']['planet']['word'];
+
+interface PlanetSpec {
+  kind: PlanetKind;
+  /** 自转周期（秒/周） */
+  spinSeconds: number;
+  fx: PlanetFx;
+  glowColor: string;
+  withOrbit?: boolean;
+  hintKey: PlanetHintKey;
+}
+
+/**
+ * 七态 → 星球映射（P0 拍板）：连接/重连=水星（信号握手脉冲），聆听=地球
+ * （轨道环+卫星，RMS 驱动辉光），表达=太阳（日冕脉动），思考=木星（低频起伏），
+ * 静音=地球暗面，异常=当前星球停转染红。辉光色对齐 STATUS_COLOR 的状态色。
+ */
+const PLANET_BY_VISUAL: Record<Exclude<VoiceVisualState, 'idle' | 'error'>, PlanetSpec> = {
+  connecting: { kind: 'mercury', spinSeconds: 3.2, fx: 'pulse', glowColor: 'rgba(113,113,122,.5)', hintKey: 'mercury' },
+  reconnecting: { kind: 'mercury', spinSeconds: 3.2, fx: 'pulse', glowColor: 'rgba(251,191,36,.55)', hintKey: 'mercury' },
+  listening: { kind: 'earth', spinSeconds: 16, fx: 'rms', glowColor: 'rgba(52,211,153,.55)', withOrbit: true, hintKey: 'earth' },
+  speaking: { kind: 'sun', spinSeconds: 12, fx: 'corona', glowColor: 'rgba(45,212,191,.6)', hintKey: 'sol' },
+  working: { kind: 'jupiter', spinSeconds: 7, fx: 'sway', glowColor: 'rgba(251,191,36,.5)', hintKey: 'jupiter' },
+  muted: { kind: 'earth', spinSeconds: 40, fx: 'dark', glowColor: 'rgba(113,113,122,.4)', hintKey: 'earthDark' },
+};
+
+/**
+ * 真实电平 → 开方曲线 RMS。复用 DictationRecordingBar 已验证的模式：原始电平
+ * 进环形缓冲（120ms 一档的采集节拍会抖动），均值开方压低端后驱动视觉，不造假动画。
+ */
+const LEVEL_BUFFER_SIZE = 6;
+function useRmsLevel(raw: number): number {
+  const bufferRef = React.useRef<number[]>([]);
+  const [rms, setRms] = React.useState(0);
+  React.useEffect(() => {
+    const buf = bufferRef.current;
+    buf.push(raw);
+    if (buf.length > LEVEL_BUFFER_SIZE) buf.shift();
+    const avg = buf.reduce((sum, v) => sum + v, 0) / buf.length;
+    setRms(Math.sqrt(Math.min(1, Math.max(0, avg))));
+  }, [raw]);
+  return rms;
+}
+
+/**
+ * 状态栏星球槽位。listening 的辉光/微缩放由 store.micLevel（上行真实 RMS）驱动；
+ * speaking 用 store.playbackLevel（下行真实电平——voiceAudioPipeline /
+ * nativeVoiceAudioPipeline 都经 levelsChanged 上报），不是 CSS 假脉冲；
+ * corona 的 CSS 正弦脉动只是叠在真实电平上的底色呼吸。
+ * error 态保留出错前那颗星球（停转染红），所以记住最近一个非 error 的 spec。
+ */
+const VoicePlanet: React.FC<{ visual: Exclude<VoiceVisualState, 'idle'> }> = ({ visual }) => {
+  const micLevel = useVoiceCallStore((state) => state.micLevel);
+  const playbackLevel = useVoiceCallStore((state) => state.playbackLevel);
+  const rawLevel = visual === 'listening' ? micLevel : visual === 'speaking' ? playbackLevel : 0;
+  const rms = useRmsLevel(rawLevel);
+  const [lastSpec, setLastSpec] = React.useState<PlanetSpec>(PLANET_BY_VISUAL.listening);
+  React.useEffect(() => {
+    if (visual !== 'error') setLastSpec(PLANET_BY_VISUAL[visual]);
+  }, [visual]);
+  const spec = visual === 'error' ? { ...lastSpec, fx: 'alert' as PlanetFx } : PLANET_BY_VISUAL[visual];
+  return (
+    <PlanetSphere
+      kind={spec.kind}
+      spinSeconds={spec.spinSeconds}
+      fx={spec.fx}
+      glowColor={spec.glowColor}
+      withOrbit={spec.withOrbit}
+      rms={rms}
+      size={22}
+    />
+  );
+};
+
+const STATUS_COLOR: Record<Exclude<VoiceVisualState, 'idle'>, string> = {
+  connecting: 'text-zinc-500',
+  reconnecting: 'text-badge-warning',
+  listening: 'text-badge-success',
+  speaking: 'text-badge-accent',
+  working: 'text-badge-warning',
   muted: 'text-zinc-500',
-  error: 'text-red-400',
+  error: 'text-badge-danger',
 };
 
-const BAR_COUNT = 5;
+function formatCallDuration(startedAt: number | null, now: number): string {
+  const elapsedSeconds = startedAt === null ? 0 : Math.max(0, Math.floor((now - startedAt) / 1_000));
+  const minutes = Math.floor(elapsedSeconds / 60);
+  const seconds = elapsedSeconds % 60;
+  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+}
 
-/** 小型 presence：五根波形条，电平驱动高度；reduced-motion 下退成纯色呼吸点。 */
-const PresenceWave: React.FC<{ state: VoiceVisualState; level: number }> = ({ state, level }) => {
-  if (state === 'error') {
-    return <span data-testid="voice-presence" className="h-2 w-2 rounded-full bg-red-500" aria-hidden />;
-  }
-  if (state === 'connecting') {
-    return (
-      <span
-        data-testid="voice-presence"
-        className="h-2 w-2 rounded-full bg-zinc-400 motion-safe:animate-ping"
-        aria-hidden
-      />
-    );
-  }
-  const base = state === 'muted' || state === 'idle' ? 0 : level;
-  return (
-    <span data-testid="voice-presence" className="flex h-4 items-end gap-0.5" aria-hidden>
-      {Array.from({ length: BAR_COUNT }, (_, i) => {
-        const factor = [0.5, 0.85, 1, 0.85, 0.5][i];
-        const height = 3 + Math.min(1, base * 3) * 13 * factor;
-        return (
-          <span
-            key={i}
-            className={`w-0.5 rounded-full transition-[height] duration-150 motion-reduce:transition-none ${
-              state === 'muted' ? 'bg-zinc-600' : state === 'speaking' ? 'bg-primary-400' : 'bg-emerald-400'
-            }`}
-            style={{ height: `${height}px` }}
-          />
-        );
-      })}
-    </span>
-  );
-};
+function useCallDuration(startedAt: number | null): string {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (startedAt === null) return undefined;
+    setNow(Date.now());
+    const timer = window.setInterval(() => setNow(Date.now()), 1_000);
+    return () => window.clearInterval(timer);
+  }, [startedAt]);
+  return formatCallDuration(startedAt, now);
+}
 
-const LevelMeter: React.FC<{ value: number; tone: 'mic' | 'playback'; label: string }> = ({ value, tone, label }) => (
-  <span className="flex w-14 items-center gap-1" title={label}>
-    <span className="h-1 w-full overflow-hidden rounded bg-zinc-700/70">
-      <span
-        className={`block h-1 rounded transition-[width] duration-100 motion-reduce:transition-none ${
-          tone === 'mic' ? 'bg-emerald-500' : 'bg-primary-400'
-        }`}
-        style={{ width: `${Math.min(100, Math.round(value * 400))}%` }}
-      />
-    </span>
-  </span>
-);
-
-/** 「与 {花名} 通话」/ 团会话「指挥 · Lead {花名} · N 成员」（§6.7.7）。 */
-const ActiveExpertChip: React.FC<{ sessionId: string | null }> = ({ sessionId }) => {
-  const { t } = useI18n();
-  const activeAgentId = useVoiceCallStore((state) => state.activeAgentId);
-  const agentEntries = useAgentRegistryStore((state) => state.entries);
-  const members = useSessionMembers(sessionId);
-
-  let label: string;
-  if (members.length > 1) {
-    const lead = members.find((pill) => pill.isLead) ?? members[0];
-    label = t.voice.team.command_mode.replace('{name}', lead.name).replace('{n}', String(members.length));
-  } else if (activeAgentId) {
-    const name = agentEntries.find((entry) => entry.id === activeAgentId)?.name ?? activeAgentId;
-    label = t.voice.expert.with_name.replace('{name}', name);
-  } else {
-    label = t.voice.expert.default_assistant;
-  }
-
-  return (
-    <span data-testid="voice-active-expert" className="truncate text-xs font-medium text-zinc-200">
-      {label}
-    </span>
-  );
-};
-
-const WorkStrip: React.FC = () => {
-  const { t } = useI18n();
-  const workItems = useVoiceCallStore((state) => state.workItems);
-  if (workItems.length === 0) return null;
-  return (
-    <span className="flex min-w-0 items-center gap-1.5">
-      {workItems.map((item) => (
-        <span
-          key={item.id}
-          data-testid={`voice-work-item-${item.status}`}
-          title={item.detail ?? item.title}
-          className={`max-w-40 truncate rounded-full border px-2 py-0.5 text-[11px] ${
-            item.status === 'failed'
-              ? 'border-red-500/30 bg-red-500/10 text-red-300'
-              : 'border-amber-500/30 bg-amber-500/10 text-amber-300'
-          }`}
-        >
-          {item.status === 'failed' ? t.voice.work.failed : t.voice.work.queued} · {item.title}
-        </span>
-      ))}
-    </span>
-  );
-};
-
-export const VoiceChrome: React.FC<{ sessionId: string | null }> = ({ sessionId }) => {
+export const VoiceChrome: React.FC<{ sessionId: string | null }> = ({ sessionId: _sessionId }) => {
   const { t } = useI18n();
   const store = useVoiceCallStore();
   const visual = selectVoiceVisualState(store);
-  if (visual === 'idle') return null;
+  const duration = useCallDuration(store.startedAt);
+  useRegisterComposerInProgress('voice', visual !== 'idle');
+  const isCurrentInProgress = useComposerNoticeStore((state) => (
+    selectIsCurrentComposerInProgress(state, 'voice')
+  ));
 
-  const statusText =
-    visual === 'error'
-      ? (store.error?.message ?? t.voice.status.error)
-      : t.voice.status[visual as Exclude<VoiceVisualState, 'idle' | 'error'>];
+  if (visual === 'idle' || !isCurrentInProgress) return null;
 
-  const level = visual === 'speaking' ? store.playbackLevel : store.micLevel;
+  const isConnecting = visual === 'connecting' || visual === 'reconnecting';
+
+  const statusText = (() => {
+    if (visual === 'error') {
+      return store.error ? resolveVoiceMessage(t, store.error) : t.voice.status.error;
+    }
+    if (visual === 'reconnecting') {
+      return store.reconnectMaxAttempts > 0
+        ? t.voice.status.reconnectingProgress
+            .replace('{n}', String(store.reconnectAttempt))
+            .replace('{m}', String(store.reconnectMaxAttempts))
+        : t.voice.status.reconnecting;
+    }
+    if (visual === 'connecting') {
+      return t.voice.status.connecting;
+    }
+    return `${t.voice.status.onCall} ${duration}`;
+  })();
+
+  const showManualControl = store.interruptMode === 'manual' && !isConnecting;
+  const statusWordKey: PlanetWordKey = visual;
+  const hintKey: PlanetHintKey = visual === 'error' ? 'alert' : PLANET_BY_VISUAL[visual].hintKey;
 
   return (
     <div
       data-testid="voice-chrome"
       data-state={visual}
-      className="mb-2 flex items-center gap-3 rounded-xl border border-zinc-700/70 bg-zinc-900/80 px-3 py-2"
+      className="mb-2 rounded-xl border border-zinc-700/70 bg-zinc-900/80 px-3 py-[7px]"
     >
-      <PresenceWave state={visual} level={level} />
-      <span data-testid="voice-status" className={`shrink-0 text-xs ${STATE_COLOR[visual]}`}>
-        {statusText}
-      </span>
-      {/* 错误态整行只留错误信息与结束按钮，别让「与 X 通话」和报错文案打架 */}
-      {visual !== 'error' && <ActiveExpertChip sessionId={sessionId} />}
-      {visual !== 'error' && <WorkStrip />}
-
-      <span className="flex-1" />
-
-      {/* 双向电平：上 = 麦克风，下 = 助手 */}
-      <span className="hidden sm:flex flex-col gap-1" aria-hidden>
-        <LevelMeter value={store.micLevel} tone="mic" label={t.voice.status.listening} />
-        <LevelMeter value={store.playbackLevel} tone="playback" label={t.voice.status.speaking} />
-      </span>
-
-      {store.interruptMode === 'push_to_talk' && (
-        <button /* ds-allow:button: PTT 按住说话按钮，pointer 按住/松开语义 + 双态样式，Button primitive 不支持 */
-          type="button"
-          data-testid="voice-ptt"
-          onPointerDown={() => voiceCallBridge.pttDown()}
-          onPointerUp={() => voiceCallBridge.pttUp()}
-          onPointerLeave={() => voiceCallBridge.pttUp()}
-          className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs transition-colors select-none ${
-            store.pttCaptureOn
-              ? 'border-emerald-500/50 bg-emerald-500/15 text-emerald-300'
-              : 'border-zinc-600 bg-zinc-800 text-zinc-300 hover:border-zinc-500'
-          }`}
+      <div className="flex items-center gap-3">
+        <VoicePlanet visual={visual} />
+        <span
+          data-testid="voice-status"
+          title={visual === 'error' && store.error ? resolveVoiceErrorTitle(t, store.error) : statusText}
+          className={`flex min-w-0 flex-1 items-baseline truncate text-[11.5px] tracking-[0.02em] ${STATUS_COLOR[visual]}`}
         >
-          <Mic className="h-3.5 w-3.5" />
-          {store.pttCaptureOn ? t.voice.live.releaseToSend : t.voice.live.holdToTalk}
-        </button>
-      )}
-      {store.interruptMode === 'manual' && (
-        <button /* ds-allow:button: 点按说话按钮，双态样式与 PTT 同构，Button primitive 的居中按钮形态不适配 */
+          <span data-testid="voice-state-word" className="shrink-0">
+            {t.voice.planet.word[statusWordKey]}
+          </span>
+          <span className="shrink-0 opacity-50">&nbsp;·&nbsp;</span>
+          <span className="min-w-0 truncate">{statusText}</span>
+          <span data-testid="voice-state-hint" className="ml-1.5 shrink-0 text-[9.5px] tracking-[0.05em] opacity-55">
+            {t.voice.planet.hint[hintKey]}
+          </span>
+        </span>
+
+        {visual !== 'error' && showManualControl && (
+          <button /* ds-allow:button: 通话条文字操作键，Button primitive 没有这套紧凑双态形态 */
+            type="button"
+            data-testid="voice-manual-commit"
+            onClick={() => voiceCallBridge.manualTap()}
+            className={`flex h-[30px] items-center whitespace-nowrap rounded-[var(--radius-xl)] border px-3 text-[11.5px] transition-colors ${
+              store.pttCaptureOn
+                ? 'border-badge-success/50 bg-emerald-500/15 text-badge-success'
+                : 'border-zinc-700 bg-zinc-800 text-zinc-400 hover:border-zinc-600 hover:text-zinc-300'
+            }`}
+          >
+            {store.pttCaptureOn ? t.voice.live.tapDone : t.voice.live.tapToTalk}
+          </button>
+        )}
+
+        {visual !== 'error' && !showManualControl && (
+          <button /* ds-allow:button: 通话条麦克风 icon-only 按钮，与样机状态色绑定 */
+            type="button"
+            data-testid="voice-mute"
+            disabled={isConnecting}
+            onClick={() => voiceCallBridge.toggleMute()}
+            title={store.muted ? t.voice.live.unmute : t.voice.live.mute}
+            aria-label={store.muted ? t.voice.live.unmute : t.voice.live.mute}
+            className={`flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-[var(--radius-xl)] transition-colors ${
+              isConnecting
+                ? 'cursor-not-allowed text-zinc-600'
+                : store.muted
+                  ? 'bg-amber-500/15 text-badge-warning'
+                  : 'bg-primary-500/15 text-badge-accent hover:bg-primary-500/20'
+            }`}
+          >
+            {store.muted ? <MicOff className="h-[15px] w-[15px]" /> : <Mic className="h-[15px] w-[15px]" />}
+          </button>
+        )}
+
+        <button /* ds-allow:button: 通话条挂断 icon-only 按钮，Button primitive 没有红色 30px 变体 */
           type="button"
-          data-testid="voice-manual-commit"
-          onClick={() => voiceCallBridge.manualTap()}
-          className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs transition-colors ${
-            store.pttCaptureOn
-              ? 'border-emerald-500/50 bg-emerald-500/15 text-emerald-300'
-              : 'border-zinc-600 bg-zinc-800 text-zinc-300 hover:border-zinc-500'
-          }`}
+          data-testid="voice-end"
+          onClick={() => voiceCallBridge.hangUp()}
+          title={t.voice.live.endTitle}
+          aria-label={t.voice.live.endTitle}
+          className="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-[var(--radius-xl)] bg-red-500/15 text-badge-danger transition-colors hover:bg-red-500/20 hover:text-badge-danger"
         >
-          <Mic className="h-3.5 w-3.5" />
-          {store.pttCaptureOn ? t.voice.live.tapToSend : t.voice.live.tapToTalk}
+          <X className="h-[15px] w-[15px]" />
         </button>
+      </div>
+
+      {/* 一次性提示（如 tools 被上游静默丢弃）：不抢 error 态，通话继续，但用户必须当场看见 */}
+      {store.notice && (
+        <div data-testid="voice-call-notice" className="mt-1.5 text-xs leading-5 text-badge-warning">
+          <p>{resolveVoiceMessage(t, store.notice)}</p>
+          {store.notice.detail && (
+            <details className="mt-1 text-[11px] text-badge-warning/75">
+              <summary className="cursor-pointer select-none">{t.systemError.viewDetails}</summary>
+              <pre className="mt-1 whitespace-pre-wrap break-words font-mono">{store.notice.detail}</pre>
+            </details>
+          )}
+        </div>
       )}
-
-      <button /* ds-allow:button: 静音 icon-only 按钮，与 composer 既有 icon 按钮同语言 */
-        type="button"
-        data-testid="voice-mute"
-        onClick={() => voiceCallBridge.toggleMute()}
-        title={store.muted ? t.voice.live.unmute : t.voice.live.mute}
-        aria-label={store.muted ? t.voice.live.unmute : t.voice.live.mute}
-        className={`flex h-8 w-8 items-center justify-center rounded-lg transition-colors ${
-          store.muted ? 'bg-amber-500/15 text-amber-300' : 'text-zinc-400 hover:bg-zinc-700 hover:text-zinc-200'
-        }`}
-      >
-        {store.muted ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
-      </button>
-
-      <button /* ds-allow:button: 挂断按钮，通话 chrome 特有的红色小型形态，Button primitive 无此变体 */
-        type="button"
-        data-testid="voice-end"
-        onClick={() => voiceCallBridge.hangUp()}
-        title={t.voice.live.endTitle}
-        aria-label={t.voice.live.endTitle}
-        className="flex h-8 items-center gap-1.5 rounded-lg bg-red-500/90 px-2.5 text-xs font-medium text-white transition-colors hover:bg-red-500"
-      >
-        <Phone className="h-3.5 w-3.5" />
-        {t.voice.live.end}
-      </button>
     </div>
   );
 };

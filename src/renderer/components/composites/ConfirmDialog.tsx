@@ -21,19 +21,19 @@ const variantConfig: Record<
   info: {
     icon: <Info className="w-6 h-6" />,
     iconBgClass: 'bg-blue-500/10',
-    iconColorClass: 'text-blue-400',
+    iconColorClass: 'text-badge-info',
     confirmColorClass: BUTTON_PRIMARY_CLASS,
   },
   warning: {
     icon: <AlertTriangle className="w-6 h-6" />,
     iconBgClass: 'bg-amber-500/10',
-    iconColorClass: 'text-amber-400',
+    iconColorClass: 'text-badge-warning',
     confirmColorClass: 'bg-amber-600 hover:bg-amber-500',
   },
   danger: {
     icon: <ShieldAlert className="w-6 h-6" />,
     iconBgClass: 'bg-red-500/10',
-    iconColorClass: 'text-red-400',
+    iconColorClass: 'text-badge-danger',
     confirmColorClass: BUTTON_DANGER_CLASS,
   },
 };

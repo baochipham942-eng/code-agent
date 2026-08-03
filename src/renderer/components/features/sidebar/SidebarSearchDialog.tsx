@@ -2,7 +2,6 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2, MessageSquareText, Search } from 'lucide-react';
 import type { SessionWithMeta } from '../../../stores/sessionStore';
 import { useI18n } from '../../../hooks/useI18n';
-import { formatRelativeTime } from '../../../utils/i18nTime';
 import { getDisplaySessionTitle } from '../../../utils/sessionPresentation';
 import type {
   SidebarMessageSearchHitGroup,
@@ -91,7 +90,7 @@ export const SidebarSearchDialog: React.FC<SidebarSearchDialogProps> = ({
           onChange={(event) => onQueryChange(event.target.value)}
           placeholder={sb.searchPlaceholder}
           aria-label={sb.searchInputAria}
-          leftIcon={<Search />}
+          leftIcon={<Search className="h-4 w-4" />}
           className="bg-zinc-800"
         />
 
@@ -103,7 +102,7 @@ export const SidebarSearchDialog: React.FC<SidebarSearchDialogProps> = ({
               onClick={() => setSearchScope('current-project')}
               className={`rounded-md border px-2.5 py-1 text-xs font-medium transition-colors ${
                 effectiveSearchScope === 'current-project'
-                  ? 'border-cyan-500/40 bg-cyan-500/10 text-cyan-200'
+                  ? 'border-badge-info/40 bg-cyan-500/10 text-badge-info'
                   : 'border-zinc-700 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300'
               }`}
             >
@@ -116,7 +115,7 @@ export const SidebarSearchDialog: React.FC<SidebarSearchDialogProps> = ({
             onClick={() => setSearchScope('all')}
             className={`rounded-md border px-2.5 py-1 text-xs font-medium transition-colors ${
               effectiveSearchScope === 'all'
-                ? 'border-cyan-500/40 bg-cyan-500/10 text-cyan-200'
+                  ? 'border-badge-info/40 bg-cyan-500/10 text-badge-info'
                 : 'border-zinc-700 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300'
             }`}
           >
@@ -161,20 +160,20 @@ export const SidebarSearchDialog: React.FC<SidebarSearchDialogProps> = ({
                     }`}
                   >
                     <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-cyan-500/10">
-                      <MessageSquareText className="h-4 w-4 text-cyan-400/90" />
+                      <MessageSquareText className="h-4 w-4 text-badge-info/90" />
                     </span>
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-sm">
                         {getDisplaySessionTitle(session.title)}
                         {session.id === currentSessionId && (
-                          <span className="ml-2 text-[11px] text-cyan-400">{sb.currentSession}</span>
+                          <span className="ml-2 text-[11px] text-badge-info">{sb.currentSession}</span>
                         )}
                       </span>
-                      <span className="block truncate text-[11px] text-zinc-500">
-                        {hitGroup
-                          ? sb.messageHits.replace('{count}', String(hitGroup.totalHitCount))
-                          : formatRelativeTime(t, session.updatedAt)}
-                      </span>
+                      {hitGroup && (
+                        <span className="block truncate text-[11px] text-zinc-500">
+                          {sb.messageHits.replace('{count}', String(hitGroup.totalHitCount))}
+                        </span>
+                      )}
                     </span>
                   </button>
                 );

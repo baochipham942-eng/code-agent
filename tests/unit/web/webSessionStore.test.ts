@@ -99,7 +99,13 @@ describe('WebSessionStore', () => {
   it('loadSessionHistoryForRun hydrates a cold cache from SessionManager', async () => {
     const getMessages = vi.fn(async () => [
       { id: 'user-1', role: 'user', content: '上一轮', timestamp: 1 },
-      { id: 'tool-1', role: 'tool', content: '工具结果', timestamp: 2 },
+      {
+        id: 'tool-1',
+        role: 'tool',
+        content: '工具结果',
+        timestamp: 2,
+        toolResults: [{ toolCallId: 'call-1', success: true, output: 'ok', duration: 1 }],
+      },
       { id: 'assistant-1', role: 'assistant', content: '回答', timestamp: 3 },
     ] as Message[]);
     const tryGetSessionManager = vi.fn(async () => ({ getMessages }));
@@ -111,7 +117,10 @@ describe('WebSessionStore', () => {
     expect(tryGetSessionManager).toHaveBeenCalledTimes(1);
     expect(getMessages).toHaveBeenCalledWith('session-cold');
     expect(getDatabase).not.toHaveBeenCalled();
-    expect(history.map((message) => message.id)).toEqual(['user-1', 'assistant-1']);
+    expect(history.map((message) => message.id)).toEqual(['user-1', 'tool-1', 'assistant-1']);
+    expect(history[1]?.toolResults).toEqual([
+      expect.objectContaining({ toolCallId: 'call-1', success: true, output: 'ok' }),
+    ]);
     expect(sessionMessages.get('session-cold')).toEqual(history);
   });
 
@@ -414,6 +423,7 @@ describe('WebSessionStore', () => {
         role: 'tool',
         content: '工具结果',
         timestamp: 31,
+        toolResults: [{ toolCallId: 'call-db', success: false, error: 'failed', duration: 1 }],
       },
       {
         id: 'loop-final',
@@ -472,6 +482,19 @@ describe('WebSessionStore', () => {
         content: '数据库中的用户消息',
         timestamp: 30,
         toolCalls: undefined,
+        thinking: undefined,
+        contentParts: undefined,
+        artifacts: undefined,
+        attachments: undefined,
+        metadata: undefined,
+      },
+      {
+        id: 'tool-db',
+        role: 'tool',
+        content: '工具结果',
+        timestamp: 31,
+        toolCalls: undefined,
+        toolResults: [{ toolCallId: 'call-db', success: false, error: 'failed', duration: 1 }],
         thinking: undefined,
         contentParts: undefined,
         artifacts: undefined,

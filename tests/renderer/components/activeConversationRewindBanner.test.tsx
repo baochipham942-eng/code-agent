@@ -8,11 +8,16 @@ const mocks = vi.hoisted(() => ({
   invokeDomain: vi.fn(),
 }));
 
-vi.mock('../../../src/renderer/services/ipcService', () => ({
-  default: {
-    invokeDomain: mocks.invokeDomain,
-  },
-}));
+// DomainInvokeError 取真类：组件用 instanceof 判定，mock 里换个同名壳会让判定恒假、测试假绿。
+vi.mock('../../../src/renderer/services/ipcService', async () => {
+  const actual = await vi.importActual<typeof import('../../../src/renderer/services/ipcService')>(
+    '../../../src/renderer/services/ipcService',
+  );
+  return {
+    default: { invokeDomain: mocks.invokeDomain },
+    DomainInvokeError: actual.DomainInvokeError,
+  };
+});
 
 vi.mock('../../../src/renderer/hooks/useI18n', async () => {
   const { zh } = await import('../../../src/renderer/i18n/zh');
@@ -43,7 +48,9 @@ describe('ActiveConversationRewindBanner', () => {
           anchorEntryId: null,
           createdAt: 1,
         },
-        messages: [],
+        messages: [
+          { ordinal: 0, entryId: 'e1', projectedMessageId: 'u1', sourceSessionId: 'session-1', sourceMessageId: 'u1', aliasKind: 'native', message: { id: 'u1', role: 'user', content: '最初的问题', timestamp: 1 } },
+        ],
         openRewindIds: ['rewind-older', 'rewind-latest'],
         ledgerEventCount: 4,
       })
@@ -86,7 +93,7 @@ describe('ActiveConversationRewindBanner', () => {
       />,
     );
 
-    expect((await screen.findByRole('status')).textContent).toContain('已回退到这条提示词');
+    expect((await screen.findByRole('status')).textContent).toContain('已回退到「最初的问题」');
     expect(mocks.invokeDomain).toHaveBeenNthCalledWith(
       1,
       IPC_DOMAINS.SESSION,
@@ -188,5 +195,32 @@ describe('ActiveConversationRewindBanner', () => {
     });
 
     await waitFor(() => expect(screen.queryByRole('status')).toBeNull());
+  });
+
+  it('treats BRANCH_NOT_FOUND as “this session has no rewind” without logging noise', async () => {
+    const { DomainInvokeError } = await import('../../../src/renderer/services/ipcService');
+    mocks.invokeDomain.mockRejectedValueOnce(
+      new DomainInvokeError('BRANCH_NOT_FOUND', 'BRANCH_NOT_FOUND: no immutable branch exists for session-3'),
+    );
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    render(<ActiveConversationRewindBanner sessionId="session-3" onRestored={vi.fn()} />);
+
+    await waitFor(() => expect(mocks.invokeDomain).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(screen.queryByRole('status')).toBeNull());
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it('still surfaces genuine read failures (fail-loud 不被上一条顺手关掉)', async () => {
+    const { DomainInvokeError } = await import('../../../src/renderer/services/ipcService');
+    mocks.invokeDomain.mockRejectedValueOnce(new DomainInvokeError('INTERNAL_ERROR', 'db is on fire'));
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    render(<ActiveConversationRewindBanner sessionId="session-4" onRestored={vi.fn()} />);
+
+    await waitFor(() => expect(warn).toHaveBeenCalled());
+    expect(screen.queryByRole('status')).toBeNull();
+    warn.mockRestore();
   });
 });

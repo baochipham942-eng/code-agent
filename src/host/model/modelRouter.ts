@@ -14,7 +14,7 @@ import type {
 import type { TaskModelStrategySettings } from '../../shared/contract/settings';
 import { PROVIDER_REGISTRY } from './providerRegistry';
 import { AGENT_DEFAULT_MODEL, DEFAULT_PROVIDER, DEFAULT_MODELS } from '../../shared/constants';
-import { isFallbackEligible, abortableSleep } from './providers/retryStrategy';
+import { isFallbackEligible, abortableSleep, isCancellationError } from './providers/retryStrategy';
 import { getSettingsProviderBaseUrl } from './providers/providerResolution';
 import { getModelMaxOutputTokens } from '../../shared/constants';
 import { createLogger } from '../services/infra/logger';
@@ -885,12 +885,27 @@ export class ModelRouter {
         : timedAbort.controller
       : null;
     const effectiveSignal = combined?.signal ?? signal;
+    const healthMonitor = getProviderHealthMonitor();
+    const observationCount = healthMonitor.getObservationCount(config.provider);
+    const startedAt = Date.now();
     try {
       if (effectiveSignal?.aborted) {
         throw new Error('Request was cancelled before starting');
       }
-      return await provider.inference(messages, tools, config, onStream, effectiveSignal, options);
+      const response = await provider.inference(messages, tools, config, onStream, effectiveSignal, options);
+      // Legacy providers do not all use the shared retry wrapper. Fill the
+      // canonical provider key only when the inner path recorded nothing.
+      if (healthMonitor.getObservationCount(config.provider) === observationCount) {
+        healthMonitor.recordSuccess(config.provider, Date.now() - startedAt);
+      }
+      return response;
     } catch (error) {
+      if (healthMonitor.getObservationCount(config.provider) === observationCount) {
+        healthMonitor.recordFailure(config.provider, {
+          cancelled: signal?.aborted === true
+            || (timedAbort?.controller.signal.aborted !== true && isCancellationError(error)),
+        });
+      }
       if (timedAbort?.controller.signal.aborted && !signal?.aborted) {
         throw new Error(`${config.provider} request timeout after ${timeoutMs}ms`, { cause: error });
       }

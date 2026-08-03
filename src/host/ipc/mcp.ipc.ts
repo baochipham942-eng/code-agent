@@ -24,10 +24,38 @@ import {
 import { getContextHealthService } from '../context/contextHealthService';
 import { getCloudConfigService } from '../services/cloud';
 import { getConfigService } from '../services/core/configService';
+import { getSecureStorage } from '../services/core/secureStorage';
 import { extractSecrets } from '../mcp/secretRef';
 import { createLogger } from '../services/infra/logger';
 
 const logger = createLogger('MCP.ipc');
+const activeMcpInstalls = new Map<string, AbortController>();
+
+class McpInstallInProgressError extends Error {
+  readonly code = 'INSTALL_IN_PROGRESS';
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof Error && error.name === 'AbortError';
+}
+
+function runMcpInstall<T>(
+  serverName: string,
+  operation: (signal: AbortSignal) => Promise<T>,
+): Promise<T> {
+  if (activeMcpInstalls.has(serverName)) {
+    return Promise.reject(new McpInstallInProgressError(
+      `MCP server "${serverName}" installation is already in progress`,
+    ));
+  }
+  const controller = new AbortController();
+  activeMcpInstalls.set(serverName, controller);
+  return operation(controller.signal).finally(() => {
+    if (activeMcpInstalls.get(serverName) === controller) {
+      activeMcpInstalls.delete(serverName);
+    }
+  });
+}
 
 const BLOCKED_STDIO_COMMANDS = new Set([
   'rm',
@@ -426,6 +454,7 @@ async function handleAddServer(
   payload: unknown,
   workingDirectory: string | undefined,
   scope: McpSettingsServerScope,
+  signal?: AbortSignal,
 ): Promise<unknown> {
   const payloadRecord = asRecord(payload, 'payload');
   let serverConfig = normalizeMcpSettingsServerConfig(payloadRecord.config ?? payloadRecord);
@@ -438,6 +467,8 @@ async function handleAddServer(
   const secretHeaderKeys = optionalStringArray(payloadRecord.secretHeaderKeys, 'secretHeaderKeys') || [];
   const integrationId = `mcp_${serverConfig.name}`;
   const extractedSecrets: Record<string, string> = {};
+  const configService = getConfigService();
+  const previousIntegration = configService.getIntegration(integrationId);
 
   if ((serverConfig.type === undefined || serverConfig.type === 'stdio') && serverConfig.env) {
     const { sanitized, extracted } = extractSecrets(
@@ -475,17 +506,38 @@ async function handleAddServer(
     persisted = await persistMcpSettingsServerConfig(workingDirectory, serverConfig);
   }
 
+  let integrationWritten = false;
+  let runtimeAdded = false;
   try {
+    signal?.throwIfAborted();
     if (Object.keys(extractedSecrets).length > 0) {
-      await getConfigService().setIntegration(integrationId, extractedSecrets);
+      await configService.setIntegration(integrationId, extractedSecrets);
+      integrationWritten = true;
+      signal?.throwIfAborted();
     }
     getMCPClient().addServer({ ...serverConfig, scope: 'runtime' });
+    runtimeAdded = true;
+    signal?.throwIfAborted();
   } catch (err) {
     // 失败回滚（A5）：配置文件已经写入了这一条，但凭证/运行时注册没跟上——
     // 留着就是"配置里有、MCPClient 不认得"的孤儿条目。回滚删掉刚写入的那条。
     await removeMcpServerConfigFromPath(persisted.filePath, serverConfig.name).catch((rollbackErr) => {
       logger.warn(`Failed to roll back MCP server config for "${serverConfig.name}" after add failure:`, rollbackErr);
     });
+    if (runtimeAdded || signal?.aborted) {
+      await getMCPClient().removeServer(serverConfig.name).catch((rollbackErr) => {
+        logger.warn(`Failed to remove MCP server "${serverConfig.name}" after add rollback:`, rollbackErr);
+      });
+    }
+    if (integrationWritten) {
+      if (previousIntegration) {
+        await configService.setIntegration(integrationId, previousIntegration).catch((rollbackErr) => {
+          logger.warn(`Failed to restore credentials for "${serverConfig.name}" after add rollback:`, rollbackErr);
+        });
+      } else {
+        getSecureStorage().delete(`integration.${integrationId}` as `integration.${string}`);
+      }
+    }
     throw err;
   }
 
@@ -517,10 +569,24 @@ async function handleSetServerEnabled(
   serverName: string,
   enabled: boolean,
   workingDirectory?: string,
+  signal?: AbortSignal,
 ): Promise<void> {
-  await getMCPClient().setServerEnabled(serverName, enabled);
-  // 持久化 enabled，否则重启读回旧值（飞书启用后重启变回 disabled → Tool not found）。
-  await updateMcpServerEnabledInConfigFiles(serverName, enabled, workingDirectory);
+  const client = getMCPClient();
+  try {
+    await client.setServerEnabled(serverName, enabled, signal);
+    signal?.throwIfAborted();
+    // 持久化 enabled，否则重启读回旧值（飞书启用后重启变回 disabled → Tool not found）。
+    await updateMcpServerEnabledInConfigFiles(serverName, enabled, workingDirectory);
+    signal?.throwIfAborted();
+  } catch (error) {
+    if (signal?.aborted || isAbortError(error)) {
+      await client.disconnect(serverName).catch(() => {});
+      await Promise.resolve(client.setServerEnabled(serverName, false)).catch(() => {});
+      await updateMcpServerEnabledInConfigFiles(serverName, false, workingDirectory);
+      getContextHealthService().clearMcpServerAcrossSessions(serverName);
+    }
+    throw error;
+  }
   // 被禁用后跨 session 清掉 bySource.mcp[serverName] 占用，让 ContextPanel UI 立即反映
   if (!enabled) {
     getContextHealthService().clearMcpServerAcrossSessions(serverName);
@@ -608,7 +674,21 @@ export function registerMcpHandlers(ipcMain: IpcMain, options: RegisterMcpHandle
           if (scope === 'project' && !workingDirectory) {
             throw new Error('Working directory is unavailable');
           }
-          data = await handleAddServer(payload, workingDirectory, scope);
+          const config = asRecord(payload.config ?? payload, 'config');
+          const serverName = readRequiredString(config, 'name', 'Server name is required');
+          data = await runMcpInstall(
+            serverName,
+            (signal) => handleAddServer(payload, workingDirectory, scope, signal),
+          );
+          break;
+        }
+        case 'cancelServerInstall': {
+          const payload = request.payload as { serverName: string };
+          const controller = activeMcpInstalls.get(payload.serverName);
+          if (controller) {
+            controller.abort(new DOMException('MCP server installation cancelled', 'AbortError'));
+          }
+          data = { cancelled: Boolean(controller) };
           break;
         }
         case 'removeServer': {
@@ -619,7 +699,23 @@ export function registerMcpHandlers(ipcMain: IpcMain, options: RegisterMcpHandle
         }
         case 'setServerEnabled': {
           const payload = request.payload as { serverName: string; enabled: boolean };
-          await handleSetServerEnabled(payload.serverName, payload.enabled, options.getWorkingDirectory?.());
+          if (payload.enabled) {
+            await runMcpInstall(
+              payload.serverName,
+              (signal) => handleSetServerEnabled(
+                payload.serverName,
+                true,
+                options.getWorkingDirectory?.(),
+                signal,
+              ),
+            );
+          } else {
+            await handleSetServerEnabled(
+              payload.serverName,
+              false,
+              options.getWorkingDirectory?.(),
+            );
+          }
           data = { success: true };
           break;
         }
@@ -643,7 +739,12 @@ export function registerMcpHandlers(ipcMain: IpcMain, options: RegisterMcpHandle
 
       return { success: true, data };
     } catch (error) {
-      return { success: false, error: { code: 'INTERNAL_ERROR', message: error instanceof Error ? error.message : String(error) } };
+      const code = error instanceof McpInstallInProgressError
+        ? error.code
+        : isAbortError(error)
+          ? 'CANCELLED'
+          : 'INTERNAL_ERROR';
+      return { success: false, error: { code, message: error instanceof Error ? error.message : String(error) } };
     }
   });
 

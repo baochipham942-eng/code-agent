@@ -1,12 +1,10 @@
+import type { Client, Tool, Resource, Prompt } from '@modelcontextprotocol/client';
+
 // ============================================================================
 // MCP Tool Registry - 工具/资源/提示的发现、注册和调用
 // ============================================================================
-
-import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import type { Tool, Resource, Prompt } from '@modelcontextprotocol/sdk/types.js';
 import type { ToolDefinition, ToolResult } from '../../shared/contract';
 import { createLogger } from '../services/infra/logger';
-import { withTimeout } from '../services/infra/timeoutController';
 import { maskSensitiveData } from '../security';
 import { MCP_TIMEOUTS } from '../../shared/constants';
 import { spillToolResultArchive, buildSpillNotice } from '../utils/toolResultSpill';
@@ -28,6 +26,8 @@ import {
   getActiveRunTraceContext,
   serializeRunTraceContext,
 } from '../telemetry/runTraceContext';
+import { isMcpToolReadOnly } from './mcpToolSafety';
+import { MCP_TASKS_EXTENSION_ID } from './mcpTransport';
 
 const logger = createLogger('MCPToolRegistry');
 
@@ -84,7 +84,7 @@ function mapMCPAnnotationsToPermission(
     return { requiresPermission: true, permissionLevel: 'execute', readOnly: false };
   }
 
-  if (annotations?.readOnlyHint && !annotations.openWorldHint) {
+  if (isMcpToolReadOnly(annotations) && !annotations?.openWorldHint) {
     return { requiresPermission: false, permissionLevel: 'read', readOnly: true };
   }
 
@@ -140,6 +140,12 @@ function isMcpContent(value: unknown): value is { type?: string; text?: string; 
     && (record.text === undefined || typeof record.text === 'string')
     && (record.mimeType === undefined || typeof record.mimeType === 'string')
   );
+}
+
+function objectRecord(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === 'object'
+    ? value as Record<string, unknown>
+    : undefined;
 }
 
 function mcpContentToText(value: unknown, includeNonText: boolean): string {
@@ -205,11 +211,13 @@ export class MCPToolRegistry {
    */
   async discoverCapabilities(serverName: string, client: Client): Promise<void> {
     const capabilities = client.getServerCapabilities();
-    const tasks = capabilities?.tasks;
+    const tasks = objectRecord(capabilities?.extensions?.[MCP_TASKS_EXTENSION_ID]);
+    const requests = objectRecord(tasks?.requests);
+    const tools = objectRecord(requests?.tools);
     this.serverTaskCapabilities.set(serverName, {
-      toolsCall: Boolean(tasks?.requests?.tools?.call),
-      list: Boolean(tasks?.list),
+      toolsCall: Boolean(tools?.call),
       cancel: Boolean(tasks?.cancel),
+      update: Boolean(tasks?.update),
     });
     const shouldProbe = (capability: 'tools' | 'resources' | 'prompts') =>
       !capabilities || Boolean(capabilities[capability]);
@@ -465,6 +473,12 @@ export class MCPToolRegistry {
     return map;
   }
 
+  getToolAnnotations(serverName: string, toolName: string): MCPToolAnnotations | undefined {
+    return this.tools.find(
+      (tool) => tool.serverName === serverName && tool.name === toolName,
+    )?.annotations;
+  }
+
   getTaskCapabilityDeclaration(serverName: string, toolName: string): {
     server: MCPServerTaskCapabilities;
     toolTaskSupport?: MCPToolExecution['taskSupport'];
@@ -542,16 +556,11 @@ export class MCPToolRegistry {
     logger.info(`Calling MCP tool: ${serverName}/${toolName}`, { args: redactLogArgs(args), timeoutMs });
 
     try {
-      // withTimeout 自动清理 timer
-      const result = await withTimeout(
-        client.callTool({
-          name: toolName,
-          arguments: args,
-          _meta: activeMcpRequestMeta(),
-        }, undefined, { timeout: timeoutMs, signal: abortSignal }),
-        timeoutMs,
-        `MCP tool call timed out after ${timeoutMs}ms`,
-      );
+      const result = await client.callTool({
+        name: toolName,
+        arguments: args,
+        _meta: activeMcpRequestMeta(),
+      }, { timeout: timeoutMs, signal: abortSignal });
 
       logger.info(`MCP tool completed: ${serverName}/${toolName}`, { duration: Date.now() - startTime });
 
@@ -602,15 +611,9 @@ export class MCPToolRegistry {
     }
 
     try {
-      // withTimeout 自动清理 timer
-      const retryResult = await withTimeout(
-        client.callTool(
-          { name: toolName, arguments: args, _meta: activeMcpRequestMeta() },
-          undefined,
-          { timeout: MCP_TIMEOUTS.TOOL_RETRY, signal: abortSignal },
-        ),
-        MCP_TIMEOUTS.TOOL_RETRY,
-        `MCP tool call retry timed out after ${MCP_TIMEOUTS.TOOL_RETRY}ms`,
+      const retryResult = await client.callTool(
+        { name: toolName, arguments: args, _meta: activeMcpRequestMeta() },
+        { timeout: MCP_TIMEOUTS.TOOL_RETRY, signal: abortSignal },
       );
 
       logger.info(`MCP tool retry succeeded: ${serverName}/${toolName}`);

@@ -7,6 +7,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { AlertCircle, Check, Loader2, Plus, RefreshCw } from 'lucide-react';
 import { Button, Input, Modal } from '../../../primitives';
 import { SKILL_CHANNELS } from '@shared/ipc/channels';
+import { IPC_DOMAINS } from '@shared/ipc';
 import type {
   LocalSkillLibrary,
   SkillCatalogPayload,
@@ -25,12 +26,15 @@ import { isWebMode } from '../../../../utils/platform';
 import { useAppStore } from '../../../../stores/appStore';
 import { useI18n } from '../../../../hooks/useI18n';
 import { WebModeBanner } from '../WebModeBanner';
-import { invokeSkillIPC } from '../../../../services/invokeSkillIPC';
+import { describeSkillIpcError, invokeSkillIPC, invokeSkillIPCOrThrow, isSkillFolderTrustError } from '../../../../services/invokeSkillIPC';
+import ipcService from '../../../../services/ipcService';
+import { FolderTrustDialog, type FolderTrustEvaluationView } from '../../../FolderTrustDialog';
 import { SkillsInstalledTab } from './SkillsInstalledTab';
 import type { InstalledSkill, ProjectOverrideValue } from './SkillsInstalledTab';
 import { SkillsDiscoverTab } from './SkillsDiscoverTab';
 import type { SkillsMPSearchResult } from './SkillsSettingsCards';
 import { SkillInstallPreviewModal, mapRepoInstallError } from './SkillInstallPreviewModal';
+import { HubTabHeader } from '../../capabilityHub/HubTabHeader';
 
 // 分组/摘要工具函数集中在 SkillsInstalledTab，测试也从那里引用
 export {
@@ -77,11 +81,22 @@ export const SkillsSettings: React.FC = () => {
   const [customError, setCustomError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
-  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [message, setMessage] = useState<{
+    type: 'success' | 'error';
+    text: string;
+    /** 信任类错误（目录未信任/失效）标记：错误条内联「确认信任」按钮，且不参与 3s 自动消失 */
+    trustError?: boolean;
+    /** 信任授权成功后的原地重试（重新应用乐观更新 + 重发 IPC） */
+    retry?: () => Promise<void>;
+  } | null>(null);
+  // 信任弹窗：复用既有 FolderTrustDialog 的完整评估（禁自制简化版），授权成功自动重试
+  const [trustEvaluation, setTrustEvaluation] = useState<FolderTrustEvaluationView | null>(null);
+  const [trustBusy, setTrustBusy] = useState(false);
 
   // 官方市场货架状态
   const [registryItems, setRegistryItems] = useState<SkillRegistryListItem[]>([]);
   const [registryError, setRegistryError] = useState<string | null>(null);
+  const [registryLoading, setRegistryLoading] = useState(false);
 
   // SkillsMP 搜索状态
   const [searchQuery, setSearchQuery] = useState('');
@@ -96,14 +111,18 @@ export const SkillsSettings: React.FC = () => {
     }
   }, [settingsCapabilityFocus?.kind, settingsCapabilityFocus?.nonce]);
 
-  // 加载数据
+  // 加载数据。本地四项毫秒级、并行拉完即撤整页 spinner；
+  // 官方货架走控制面网络（冷路径实测 2.2s，是此前整页转圈 3.5s 的大头），
+  // 拆成独立小态不阻塞页面——已安装列表先可用，货架区自己转圈。
   const loadData = useCallback(async () => {
     try {
       setLoading(true);
-      const libs = await invokeSkillIPC(SKILL_CHANNELS.REPO_LIST);
-      const skills = await invokeSkillIPC(SKILL_CHANNELS.SKILL_LIST);
-      const repos = await invokeSkillIPC(SKILL_CHANNELS.RECOMMENDED_REPOS);
-      const remoteCatalog = await invokeSkillIPC(SKILL_CHANNELS.CATALOG);
+      const [libs, skills, repos, remoteCatalog] = await Promise.all([
+        invokeSkillIPC(SKILL_CHANNELS.REPO_LIST),
+        invokeSkillIPC(SKILL_CHANNELS.SKILL_LIST),
+        invokeSkillIPC(SKILL_CHANNELS.RECOMMENDED_REPOS),
+        invokeSkillIPC(SKILL_CHANNELS.CATALOG),
+      ]);
       setLibraries(libs || []);
       setDiscoveredSkills(skills || []);
       if (remoteCatalog) {
@@ -112,17 +131,23 @@ export const SkillsSettings: React.FC = () => {
       // 推荐列表里排除已安装的仓库
       const installedIds = new Set((libs || []).map((l) => l.repoId));
       setRecommendedRepos((repos || []).filter((r) => !installedIds.has(r.id)));
-      // 官方市场货架（签名 registry；离线/校验失败为空货架 + 原因码）
-      const registry = await invokeSkillIPC(
-        SKILL_CHANNELS.REGISTRY_LIST
-      );
-      setRegistryItems(registry?.items || []);
-      setRegistryError(registry?.error || null);
     } catch (err) {
       logger.error('Failed to load skill data', err);
       setMessage({ type: 'error', text: skillsText.loadFailed });
     } finally {
       setLoading(false);
+    }
+    // 官方市场货架（签名 registry；离线/校验失败为空货架 + 原因码）
+    setRegistryLoading(true);
+    try {
+      const registry = await invokeSkillIPC(SKILL_CHANNELS.REGISTRY_LIST);
+      setRegistryItems(registry?.items || []);
+      setRegistryError(registry?.error || null);
+    } catch (err) {
+      logger.error('Failed to load skill registry shelf', err);
+      setRegistryError('fetch_failed');
+    } finally {
+      setRegistryLoading(false);
     }
   }, [skillsText.loadFailed]);
 
@@ -130,9 +155,9 @@ export const SkillsSettings: React.FC = () => {
     loadData();
   }, [loadData]);
 
-  // 消息自动消失
+  // 消息自动消失（信任类错误带「确认信任」操作入口，不自动消失，等用户处置）
   useEffect(() => {
-    if (message) {
+    if (message && !message.trustError) {
       const timer = setTimeout(() => setMessage(null), 3000);
       return () => clearTimeout(timer);
     }
@@ -149,14 +174,14 @@ export const SkillsSettings: React.FC = () => {
       )
     );
     try {
-      await invokeSkillIPC(
+      await invokeSkillIPCOrThrow(
         enabled ? SKILL_CHANNELS.SKILL_ENABLE : SKILL_CHANNELS.SKILL_DISABLE,
         skillName
       );
     } catch (err) {
       logger.error('Failed to toggle skill', err);
       setDiscoveredSkills(previous);
-      setMessage({ type: 'error', text: skillsText.actionFailed });
+      setMessage({ type: 'error', text: describeSkillIpcError(err, skillsText.actionFailed) });
     }
   };
 
@@ -164,27 +189,107 @@ export const SkillsSettings: React.FC = () => {
   const handleProjectOverrideChange = async (skillName: string, value: ProjectOverrideValue) => {
     const previous = discoveredSkills;
     const nextOverride: boolean | null = value === 'follow' ? null : value === 'on';
-    setDiscoveredSkills((current) =>
-      current.map((skill) =>
-        skill.name === skillName
-          ? {
-              ...skill,
-              projectOverride: nextOverride,
-              enabled: nextOverride ?? skill.globalEnabled ?? skill.enabled !== false,
-            }
-          : skill,
-      )
-    );
+    const applyOptimistic = () =>
+      setDiscoveredSkills((current) =>
+        current.map((skill) =>
+          skill.name === skillName
+            ? {
+                ...skill,
+                projectOverride: nextOverride,
+                enabled: nextOverride ?? skill.globalEnabled ?? skill.enabled !== false,
+              }
+            : skill,
+        )
+      );
+    const sendIpc = () =>
+      nextOverride === null
+        ? invokeSkillIPCOrThrow(SKILL_CHANNELS.SKILL_PROJECT_CLEAR, skillName)
+        : invokeSkillIPCOrThrow(SKILL_CHANNELS.SKILL_PROJECT_SET, skillName, nextOverride);
+    applyOptimistic();
     try {
-      if (nextOverride === null) {
-        await invokeSkillIPC(SKILL_CHANNELS.SKILL_PROJECT_CLEAR, skillName);
-      } else {
-        await invokeSkillIPC(SKILL_CHANNELS.SKILL_PROJECT_SET, skillName, nextOverride);
-      }
+      await sendIpc();
     } catch (err) {
       logger.error('Failed to change project skill override', err);
       setDiscoveredSkills(previous);
-      setMessage({ type: 'error', text: skillsText.actionFailed });
+      if (isSkillFolderTrustError(err)) {
+        // 信任类错误（未信任/identityChanged 失效）：错误条带「确认信任」原地修复入口，
+        // 授权成功后自动重试——重试 = 重新应用乐观更新 + 重发 SET/CLEAR IPC
+        setMessage({
+          type: 'error',
+          text: describeSkillIpcError(err, skillsText.actionFailed),
+          trustError: true,
+          retry: async () => {
+            applyOptimistic();
+            try {
+              await sendIpc();
+            } catch (retryErr) {
+              logger.error('Failed to retry project skill override after trust', retryErr);
+              setDiscoveredSkills(previous);
+              setMessage({
+                type: 'error',
+                text: describeSkillIpcError(retryErr, skillsText.actionFailed),
+              });
+              throw retryErr;
+            }
+          },
+        });
+      } else {
+        setMessage({ type: 'error', text: describeSkillIpcError(err, skillsText.actionFailed) });
+      }
+    }
+  };
+
+  // 授权确认后：清错误条、执行暂存的重试、刷新技能列表（重试失败已在闭包内回滚并报错）
+  const runPendingTrustRetry = useCallback(async () => {
+    const retry = message?.trustError ? message.retry : undefined;
+    setMessage(null);
+    try {
+      await retry?.();
+      await loadData();
+    } catch {
+      // retry 闭包已回滚乐观更新并给出错误条
+    }
+  }, [message, loadData]);
+
+  // 「确认信任」：取当前目录评估，原地拉起既有 FolderTrustDialog（完整评估 + 危险项清单）
+  const handleOpenTrustDialog = async () => {
+    try {
+      const evaluation = await ipcService.invokeDomain<FolderTrustEvaluationView>(
+        IPC_DOMAINS.FOLDER_TRUST,
+        'get',
+      );
+      if (evaluation.state === 'trusted') {
+        // 目录已被别处授权：不必弹窗，直接重试
+        await runPendingTrustRetry();
+        return;
+      }
+      setTrustEvaluation(evaluation);
+    } catch (err) {
+      logger.error('Failed to evaluate folder trust', err);
+      setMessage({ type: 'error', text: describeSkillIpcError(err, skillsText.actionFailed) });
+    }
+  };
+
+  // 信任/阻止决定（语义对齐 App.tsx setFolderTrustDecision）；授权成功自动执行暂存的重试
+  const handleTrustDecision = async (state: 'trusted' | 'blocked') => {
+    setTrustBusy(true);
+    try {
+      const evaluation = await ipcService.invokeDomain<FolderTrustEvaluationView>(
+        IPC_DOMAINS.FOLDER_TRUST,
+        'set',
+        { state, decidedBy: 'skills-settings' },
+      );
+      if (evaluation.state === 'trusted') {
+        setTrustEvaluation(null);
+        await runPendingTrustRetry();
+      } else {
+        setTrustEvaluation(evaluation);
+      }
+    } catch (err) {
+      logger.error('Failed to update folder trust', err);
+      setMessage({ type: 'error', text: describeSkillIpcError(err, skillsText.actionFailed) });
+    } finally {
+      setTrustBusy(false);
     }
   };
 
@@ -193,7 +298,7 @@ export const SkillsSettings: React.FC = () => {
     setActionLoading(`registry-${item.entry.name}`);
     setMessage(null);
     try {
-      const result = await invokeSkillIPC(
+      const result = await invokeSkillIPCOrThrow(
         SKILL_CHANNELS.REGISTRY_INSTALL,
         item.entry.name
       );
@@ -208,7 +313,7 @@ export const SkillsSettings: React.FC = () => {
       }
     } catch (err) {
       logger.error('Failed to install from registry', err);
-      setMessage({ type: 'error', text: skillsText.installFailed });
+      setMessage({ type: 'error', text: describeSkillIpcError(err, skillsText.installFailed) });
     } finally {
       setActionLoading(null);
     }
@@ -219,7 +324,7 @@ export const SkillsSettings: React.FC = () => {
     setActionLoading(repo.id);
     setMessage(null);
     try {
-      const result = await invokeSkillIPC(
+      const result = await invokeSkillIPCOrThrow(
         SKILL_CHANNELS.REPO_DOWNLOAD,
         repo
       );
@@ -232,7 +337,7 @@ export const SkillsSettings: React.FC = () => {
       }
     } catch (err) {
       logger.error('Failed to download repo', err);
-      setMessage({ type: 'error', text: skillsText.installFailed });
+      setMessage({ type: 'error', text: describeSkillIpcError(err, skillsText.installFailed) });
     } finally {
       setActionLoading(null);
     }
@@ -260,7 +365,7 @@ export const SkillsSettings: React.FC = () => {
           failures.push(repoId);
           continue;
         }
-        const result = await invokeSkillIPC(
+        const result = await invokeSkillIPCOrThrow(
           SKILL_CHANNELS.REPO_DOWNLOAD,
           repo
         );
@@ -277,7 +382,7 @@ export const SkillsSettings: React.FC = () => {
       await loadData();
     } catch (err) {
       logger.error('Failed to install bundle', err);
-      setMessage({ type: 'error', text: skillsText.installFailed });
+      setMessage({ type: 'error', text: describeSkillIpcError(err, skillsText.installFailed) });
     } finally {
       setActionLoading(null);
     }
@@ -288,7 +393,7 @@ export const SkillsSettings: React.FC = () => {
     setActionLoading(repoId);
     setMessage(null);
     try {
-      const result = await invokeSkillIPC(
+      const result = await invokeSkillIPCOrThrow(
         SKILL_CHANNELS.REPO_UPDATE,
         repoId
       );
@@ -303,7 +408,7 @@ export const SkillsSettings: React.FC = () => {
       }
     } catch (err) {
       logger.error('Failed to update repo', err);
-      setMessage({ type: 'error', text: skillsText.updateFailed });
+      setMessage({ type: 'error', text: describeSkillIpcError(err, skillsText.updateFailed) });
     } finally {
       setActionLoading(null);
     }
@@ -315,7 +420,7 @@ export const SkillsSettings: React.FC = () => {
     setActionLoading(`remove-${repoId}`);
     setMessage(null);
     try {
-      await invokeSkillIPC(
+      await invokeSkillIPCOrThrow(
         SKILL_CHANNELS.REPO_REMOVE,
         repoId
       );
@@ -323,7 +428,7 @@ export const SkillsSettings: React.FC = () => {
       await loadData();
     } catch (err) {
       logger.error('Failed to remove repo', err);
-      setMessage({ type: 'error', text: skillsText.removeFailed });
+      setMessage({ type: 'error', text: describeSkillIpcError(err, skillsText.removeFailed) });
     } finally {
       setActionLoading(null);
     }
@@ -344,7 +449,7 @@ export const SkillsSettings: React.FC = () => {
     setActionLoading('custom');
     setCustomError(null);
     try {
-      const result = await invokeSkillIPC(
+      const result = await invokeSkillIPCOrThrow(
         SKILL_CHANNELS.REPO_STAGE,
         url
       );
@@ -360,7 +465,7 @@ export const SkillsSettings: React.FC = () => {
       }
     } catch (err) {
       logger.error('Failed to stage custom repo', err);
-      setCustomError(skillsText.addFailed);
+      setCustomError(describeSkillIpcError(err, skillsText.addFailed));
     } finally {
       setActionLoading(null);
     }
@@ -376,7 +481,7 @@ export const SkillsSettings: React.FC = () => {
     setSearchResults([]);
 
     try {
-      const result = await invokeSkillIPC(
+      const result = await invokeSkillIPCOrThrow(
         SKILL_CHANNELS.SKILLSMP_SEARCH,
         query,
         10
@@ -399,7 +504,7 @@ export const SkillsSettings: React.FC = () => {
       }
     } catch (err) {
       logger.error('SkillsMP search failed', err);
-      setSearchError(skillsText.searchServiceUnavailable);
+      setSearchError(describeSkillIpcError(err, skillsText.searchServiceUnavailable));
     } finally {
       setIsSearching(false);
     }
@@ -425,7 +530,7 @@ export const SkillsSettings: React.FC = () => {
     setMessage(null);
 
     try {
-      const result = await invokeSkillIPC(
+      const result = await invokeSkillIPCOrThrow(
         SKILL_CHANNELS.REPO_ADD_CUSTOM,
         repoUrl
       );
@@ -439,28 +544,87 @@ export const SkillsSettings: React.FC = () => {
       }
     } catch (err) {
       logger.error('Failed to install skill from SkillsMP', err);
-      setMessage({ type: 'error', text: skillsText.installFailed });
+      setMessage({ type: 'error', text: describeSkillIpcError(err, skillsText.installFailed) });
     } finally {
       setActionLoading(null);
     }
   };
 
+  // 页头走四 tab 共用的 HubTabHeader：大标题「技能」与操作簇（添加技能 / 已安装|发现安装 /
+  // 刷新）同一行（2026-07-27 产品负责人验收拍板：「放一行不行吗」）。加载中也渲染页头，
+  // 与其余三个 tab 一致，避免标题闪现。
+  const hubHeader = (
+    <HubTabHeader
+      testId="skills-hub-header"
+      title={t.capabilityHub.tabSkills}
+      actions={(
+        <>
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => {
+              setCustomUrl('');
+              setCustomError(null);
+              setAddSkillModalOpen(true);
+            }}
+            leftIcon={<Plus className="h-3 w-3" />}
+          >
+            {skillsText.addSkill}
+          </Button>
+          <div className="flex items-center gap-1 rounded-lg bg-zinc-800/80 p-1">
+            {([
+              ['installed', `${skillsText.installedTabPrefix}${discoveredSkills.length}${skillsText.installedTabSuffix}`],
+              ['discover', skillsText.discoverTab],
+            ] as Array<[SkillsViewTab, string]>).map(([tab, label]) => (
+              <button
+                key={tab}
+                type="button"
+                role="tab"
+                aria-selected={activeTab === tab}
+                onClick={() => setActiveTab(tab)}
+                className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                  activeTab === tab
+                    ? 'bg-zinc-700 text-zinc-100'
+                    : 'text-zinc-400 hover:text-zinc-200'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={loadData}
+            disabled={loading}
+            leftIcon={<RefreshCw className="h-3 w-3" />}
+          >
+            {skillsText.refresh}
+          </Button>
+        </>
+      )}
+    />
+  );
+
   // 加载中
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-12">
-        <Loader2 className="h-6 w-6 animate-spin text-zinc-400" />
+      <div>
+        {hubHeader}
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="h-6 w-6 animate-spin text-zinc-400" />
+        </div>
       </div>
     );
   }
 
   return (
-    // 弹窗头部已展示「Skills / 能力与连接」标题，内容区直接从 Tab 开始，不再叠标题
     <div className="space-y-6">
+      {hubHeader}
       <WebModeBanner />
 
       {settingsCapabilityFocus?.kind === 'skill' && (
-        <div className="flex flex-col gap-2 rounded-lg border border-sky-500/20 bg-sky-500/[0.06] px-3 py-2 text-sm text-sky-100 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-2 rounded-lg border border-badge-info/20 bg-sky-500/[0.06] px-3 py-2 text-sm text-badge-info sm:flex-row sm:items-center sm:justify-between">
           <div>
             {skillsText.focusPromptPrefix}<span className="font-mono">{settingsCapabilityFocus.id}</span>
           </div>
@@ -474,13 +638,13 @@ export const SkillsSettings: React.FC = () => {
         </div>
       )}
 
-      {/* 操作结果消息 */}
+      {/* 操作结果消息（信任类错误内联「确认信任」原地修复入口） */}
       {message && (
         <div
           className={`flex items-center gap-2 rounded-lg p-3 ${
             message.type === 'success'
-              ? 'bg-emerald-500/10 text-emerald-400'
-              : 'bg-red-500/10 text-red-400'
+              ? 'bg-emerald-500/10 text-badge-success'
+              : 'bg-red-500/10 text-badge-danger'
           }`}
         >
           {message.type === 'success' ? (
@@ -489,54 +653,18 @@ export const SkillsSettings: React.FC = () => {
             <AlertCircle className="h-4 w-4" />
           )}
           <span className="text-sm">{message.text}</span>
+          {message.trustError && (
+            <Button
+              size="sm"
+              variant="secondary"
+              className="ml-auto shrink-0"
+              onClick={() => { void handleOpenTrustDialog(); }}
+            >
+              {skillsText.confirmTrust}
+            </Button>
+          )}
         </div>
       )}
-
-      {/* Tab 切换 + 刷新 + 添加技能 */}
-      <div className="flex items-center justify-end gap-3">
-        <Button
-          size="sm"
-          variant="secondary"
-          onClick={() => {
-            setCustomUrl('');
-            setCustomError(null);
-            setAddSkillModalOpen(true);
-          }}
-          leftIcon={<Plus className="h-3 w-3" />}
-        >
-          {skillsText.addSkill}
-        </Button>
-        <div className="flex items-center gap-1 rounded-lg bg-zinc-800/80 p-1">
-          {([
-            ['installed', `${skillsText.installedTabPrefix}${discoveredSkills.length}${skillsText.installedTabSuffix}`],
-            ['discover', skillsText.discoverTab],
-          ] as Array<[SkillsViewTab, string]>).map(([tab, label]) => (
-            <button
-              key={tab}
-              type="button"
-              role="tab"
-              aria-selected={activeTab === tab}
-              onClick={() => setActiveTab(tab)}
-              className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-                activeTab === tab
-                  ? 'bg-zinc-700 text-zinc-100'
-                  : 'text-zinc-400 hover:text-zinc-200'
-              }`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-        <Button
-          size="sm"
-          variant="ghost"
-          onClick={loadData}
-          disabled={loading}
-          leftIcon={<RefreshCw className="h-3 w-3" />}
-        >
-          {skillsText.refresh}
-        </Button>
-      </div>
 
       {/* Tab 内容 */}
       {activeTab === 'installed' ? (
@@ -553,6 +681,7 @@ export const SkillsSettings: React.FC = () => {
         <SkillsDiscoverTab
           registryItems={registryItems}
           registryError={registryError}
+          registryLoading={registryLoading}
           onInstallRegistryEntry={handleInstallRegistryEntry}
           catalog={catalog}
           recommendedRepos={recommendedRepos}
@@ -593,7 +722,7 @@ export const SkillsSettings: React.FC = () => {
           />
           <p className="text-xs text-zinc-500">{skillsText.customDescription}</p>
           {customError && (
-            <div className="flex items-center gap-2 text-xs text-red-400">
+            <div className="flex items-center gap-2 text-xs text-badge-danger">
               <AlertCircle className="h-3 w-3 shrink-0" />
               {customError}
             </div>
@@ -612,6 +741,18 @@ export const SkillsSettings: React.FC = () => {
           </div>
         </div>
       </Modal>
+
+      {/* 目录信任确认：复用既有 FolderTrustDialog 完整评估（requireDangerousItems=false——
+          技能信任门在零危险项的未信任/失效目录也拦，identityChanged 可能零危险项）。
+          「打开设置」语义对齐 App.tsx（那里是打开全局设置；此处本就在设置内，等价于关窗留下错误条） */}
+      <FolderTrustDialog
+        evaluation={trustEvaluation}
+        isBusy={trustBusy}
+        requireDangerousItems={false}
+        onTrust={() => { void handleTrustDecision('trusted'); }}
+        onBlock={() => { void handleTrustDecision('blocked'); }}
+        onOpenSettings={() => setTrustEvaluation(null)}
+      />
 
       {/* 自定义库装前预览：stage 成功后弹出，确认才落库，关闭即 cancel */}
       {stagedPreview && (

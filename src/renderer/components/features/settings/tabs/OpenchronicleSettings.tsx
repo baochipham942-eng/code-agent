@@ -147,7 +147,7 @@ export const OpenchronicleSettings: React.FC<OpenchronicleSettingsProps> = ({ em
           {openchronicleText.header.introPrefix}<code className="text-xs bg-zinc-800 px-1 rounded">OpenChronicle</code>{openchronicleText.header.introMiddle}
           {openchronicleText.header.introSuffix}
         </p>
-        <p className="text-xs text-amber-400 mt-2 flex items-start gap-1">
+        <p className="text-xs text-badge-warning mt-2 flex items-start gap-1">
           <AlertTriangle className="w-3 h-3 mt-0.5 shrink-0" />
           {openchronicleText.header.warning}
         </p>
@@ -182,7 +182,7 @@ export const OpenchronicleSettings: React.FC<OpenchronicleSettingsProps> = ({ em
           <div>
             <div className="text-zinc-400">{openchronicleText.status.mcpEndpoint}</div>
             <div className="mt-1">
-              <span className={status?.mcpHealthy ? 'text-green-400' : 'text-zinc-500'}>
+              <span className={status?.mcpHealthy ? 'text-badge-success' : 'text-zinc-500'}>
                 {status?.mcpHealthy ? openchronicleText.status.connected : openchronicleText.status.disconnected}
               </span>
             </div>
@@ -198,7 +198,7 @@ export const OpenchronicleSettings: React.FC<OpenchronicleSettingsProps> = ({ em
         </div>
 
         {(error || status?.lastError) && (
-          <div className="mt-3 p-2 bg-red-900/30 border border-red-700 rounded text-xs text-red-200">
+          <div className="mt-3 p-2 bg-red-900/30 border border-red-700 rounded text-xs text-badge-danger">
             {error || status?.lastError}
           </div>
         )}

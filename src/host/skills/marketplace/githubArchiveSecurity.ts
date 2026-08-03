@@ -17,8 +17,10 @@ export interface ZipExtractionResult {
 export async function downloadArchive(
   url: string,
   maxBytes = MAX_GITHUB_ARCHIVE_BYTES,
+  signal?: AbortSignal,
 ): Promise<Buffer> {
-  const response = await fetch(url);
+  signal?.throwIfAborted();
+  const response = signal ? await fetch(url, { signal }) : await fetch(url);
   if (!response.ok) {
     throw new Error(`GitHub archive download failed (${response.status}) for ${url}`);
   }
@@ -35,6 +37,7 @@ export async function downloadArchive(
   if (response.body) {
     const reader = response.body.getReader();
     while (true) {
+      signal?.throwIfAborted();
       const { done, value } = await reader.read();
       if (done) break;
       receivedBytes += value.byteLength;
@@ -101,12 +104,18 @@ export function assertTrustedArchiveHash(
   }
 }
 
-export async function extractZipSafely(archive: Buffer, destDir: string): Promise<ZipExtractionResult> {
+export async function extractZipSafely(
+  archive: Buffer,
+  destDir: string,
+  signal?: AbortSignal,
+): Promise<ZipExtractionResult> {
+  signal?.throwIfAborted();
   const zip = await JSZip.loadAsync(archive);
   const entries = Object.values(zip.files);
   const symlinkEntries = new Set<string>();
 
   for (const entry of entries) {
+    signal?.throwIfAborted();
     const originalName = (entry as typeof entry & { unsafeOriginalName?: string }).unsafeOriginalName
       ?? entry.name;
     assertSafeZipEntry(originalName);
@@ -118,6 +127,7 @@ export async function extractZipSafely(archive: Buffer, destDir: string): Promis
 
   await fs.mkdir(destDir, { recursive: true });
   for (const entry of entries) {
+    signal?.throwIfAborted();
     if (symlinkEntries.has(entry.name)) continue;
     const outputPath = path.join(destDir, entry.name);
     if (entry.dir) {

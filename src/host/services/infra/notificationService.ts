@@ -26,6 +26,14 @@ export interface TaskNotificationData {
   succeeded?: boolean;
 }
 
+/** 只在本文件内当 notifyVoiceWorkSettled 的参数类型用；导出无人引用会顶爆 knip 零余量棘轮。 */
+interface VoiceWorkSettledNotificationData {
+  sessionId: string;
+  taskTitle: string;
+  status: 'done' | 'unverified' | 'failed';
+  detail?: string;
+}
+
 export interface RecordedNotification {
   id: string;
   type: 'needs_input' | 'task_complete' | 'task_failed';
@@ -93,7 +101,13 @@ class NotificationService implements Disposable {
    * 图标与身份，点击经 onAction 跳到对应会话。替代旧的 osascript（无图标、点击不回调）。
    * dry-run 下只记录不投递（E2E 用 getRecent 断言，不真弹）。
    */
-  private deliver(payload: { id: string; title: string; body: string; sessionId: string }): void {
+  private deliver(payload: {
+    id: string;
+    title: string;
+    body: string;
+    sessionId: string;
+    markSessionUnread?: boolean;
+  }): void {
     if (this.isDryRun()) return;
     broadcastToRenderer(IPC_CHANNELS.NOTIFICATION_SHOW, {
       ...payload,
@@ -173,6 +187,50 @@ class NotificationService implements Disposable {
     });
     this.deliver({ id: entry.id, title: entry.title, body: entry.body, sessionId: data.sessionId });
     logger.info('Notification sent', { sessionTitle });
+  }
+
+  /**
+   * 语音派出的活在通话挂断后才落终态：强制投递一条带任务名的通知，并让侧栏
+   * 把目标会话接到既有未读圆点。调用方负责用通话账本判定是否已经挂断。
+   */
+  notifyVoiceWorkSettled(data: VoiceWorkSettledNotificationData): void {
+    const succeeded = data.status === 'done';
+    // 待核验按「完成类」投递（它不是失败，别用红色语气吓人），但标题正文一个字都不许
+    // 说「完成了」——通知是第四条用户可见出口，与卡片/播报同口径（X5.5-A2-a）。
+    const intent: NotificationIntent = data.status === 'failed' ? 'task_failed' : 'task_complete';
+    if (!this.isIntentAllowed(intent)) return;
+    if (!this.shouldNotify(true)) {
+      logger.debug('Skip voice work notification - notifications unavailable');
+      return;
+    }
+
+    const headline = succeeded
+      ? '语音任务完成'
+      : data.status === 'unverified' ? '语音任务已结束 · 待核验' : '语音任务失败';
+    const title = `${headline} - ${data.taskTitle}`;
+    const body = succeeded
+      ? '这件语音派出的任务在通话结束后完成了。'
+      : data.status === 'unverified'
+        ? '这件语音派出的任务在通话结束后跑完了，但没有留下产物，请你自己确认一下结果。'
+        : `这件语音派出的任务在通话结束后失败了：${data.detail?.trim() || '未给出原因'}`;
+    const entry = this.record({
+      type: intent,
+      sessionId: data.sessionId,
+      title,
+      body,
+    });
+    this.deliver({
+      id: entry.id,
+      title: entry.title,
+      body: entry.body,
+      sessionId: data.sessionId,
+      markSessionUnread: true,
+    });
+    logger.info('Voice work settlement notification sent', {
+      sessionId: data.sessionId,
+      taskTitle: data.taskTitle,
+      status: data.status,
+    });
   }
 
   /**

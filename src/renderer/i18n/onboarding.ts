@@ -41,6 +41,8 @@ export const onboardingZh = {
     doneAutomationHint: '比如「每天早上把昨天的数据汇总成一页」',
     doneStartCta: '开始工作',
     doneStartHint: '直接进对话，说一句你想要的产物',
+    welcomeTitle: '抵达新栖地。',
+    welcomeSubtitle: 'Neo 是你地球之外的新居所。花一分钟配好引擎，我们就出发。',
   },
 };
 
@@ -87,5 +89,7 @@ export const onboardingEn = {
     doneAutomationHint: 'e.g. "every morning, summarise yesterday\'s numbers into one page"',
     doneStartCta: 'Start working',
     doneStartHint: 'Go straight to chat and describe what you want made',
+    welcomeTitle: 'Welcome to your new habitat.',
+    welcomeSubtitle: 'Neo is your new home beyond Earth. Take a minute to set up your engine and we lift off.',
   },
 };

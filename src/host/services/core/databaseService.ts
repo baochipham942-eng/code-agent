@@ -13,6 +13,7 @@ import { applySchema } from './database/schema';
 import { applyConversationBranchSchema } from './database/schemaConversationBranch';
 import { applySessionForkPortabilitySchema } from './database/schemaSessionForkPortability';
 import { applyIndexes } from './database/indexes';
+import { checkWalShmConsistency } from './database/walShmConsistency';
 import { applySessionsMigrations, applyTelemetryTurnsMigrations, applyEvaluationCleanupMigration } from './database/migrations';
 import { DurableRunDatabaseSupport } from './database/durableRunDatabaseSupport';
 
@@ -332,6 +333,9 @@ export class DatabaseService extends DurableRunDatabaseSupport {
 
     const { step, summary } = createInitStepTimer();
 
+    // 开库前的 -shm 一致性检查：只报警不修复（见 walShmConsistency.ts 顶部注释）
+    checkWalShmConsistency(this.dbPath, logger);
+
     try {
       this.db = new Database(this.dbPath);
       this.db.pragma('journal_mode = WAL');
@@ -495,6 +499,11 @@ export class DatabaseService extends DurableRunDatabaseSupport {
    */
   getDb(): BetterSqlite3.Database | null {
     return this.db;
+  }
+
+  /** 库文件绝对路径 —— 供需要在别的进程里开同一个库的场景使用（如 VACUUM 子进程） */
+  getDbPath(): string {
+    return this.dbPath;
   }
 
   /**
@@ -661,10 +670,10 @@ export class DatabaseService extends DurableRunDatabaseSupport {
       stored = null;
     }
     const rebuilt = rebuildRunDetail(this.getSwarmLedgerByRun(runId));
-    // 仅当账本含 run_closed（重建状态非 running）才用 ledger 作真理源——否则是"半套账本"
-    // (运行中崩溃: 有 run_started 无 run_closed)，此时回退 rollup 缓存，避免把不完整的
-    // "运行中"重建盖掉 rollup 里可能更完整的已完成数据（对抗审查 HIGH-1）。
-    if (!rebuilt || rebuilt.run.status === 'running') return stored;
+    if (!rebuilt) return stored;
+    // 活跃 run 也以 ledger 为真；仅保留一条崩溃兼容：历史 rollup 已终态而旧账本
+    // 缺 run_closed 时，不能把完整终态降回 running。
+    if (rebuilt.run.status === 'running' && stored && stored.run.status !== 'running') return stored;
     return { run: rebuilt.run, agents: rebuilt.agents, events: stored?.events ?? [] };
   }
 
@@ -1002,8 +1011,10 @@ export class DatabaseService extends DurableRunDatabaseSupport {
     this.ensureDb();
     return this.sessionRepo.getSessionPlanTitle(sessionId);
   }
-  clearAllSessions(): number {
+  async clearAllSessions(): Promise<number> {
     this.ensureDb();
+    const { deleteAllTerminalFrames } = await import('../surfaceExecution/TerminalFrameStore');
+    await deleteAllTerminalFrames();
     return this.sessionRepo.clearAllSessions();
   }
   markCrashedActiveSessions(now?: number): {
@@ -1013,8 +1024,10 @@ export class DatabaseService extends DurableRunDatabaseSupport {
     this.ensureDb();
     return this.sessionRepo.markCrashedActiveSessions(now);
   }
-  clearAllMessages(): number {
+  async clearAllMessages(): Promise<number> {
     this.ensureDb();
+    const { deleteAllTerminalFrames } = await import('../surfaceExecution/TerminalFrameStore');
+    await deleteAllTerminalFrames();
     return this.sessionRepo.clearAllMessages();
   }
   hasMessages(sessionId: string): boolean {
@@ -1048,6 +1061,11 @@ export class DatabaseService extends DurableRunDatabaseSupport {
   getMessages(sessionId: string, limit?: number, offset?: number, options?: { includeRewound?: boolean }): Message[] {
     this.ensureDb();
     return this.sessionRepo.getMessages(sessionId, limit, offset, options);
+  }
+
+  getLatestUserAuthorId(sessionId: string): string | null {
+    this.ensureDb();
+    return this.sessionRepo.getLatestUserAuthorId(sessionId);
   }
   getMessageCount(sessionId: string, options?: { includeRewound?: boolean }): number {
     this.ensureDb();
@@ -2183,8 +2201,7 @@ export class DatabaseService extends DurableRunDatabaseSupport {
       const expectedOwnerScopeId = input.ownerUserId
         ?? LOCAL_SESSION_FORK_OWNER_SCOPE_ID;
       if (
-        !importRow
-        || importRow.target_owner_scope_id !== expectedOwnerScopeId
+        importRow?.target_owner_scope_id !== expectedOwnerScopeId
         || importRow.target_project_id !== targetProjectId
         || importRow.source_export_id !== sourceExportId
         || JSON.stringify(storedSessionIds) !== JSON.stringify([...sessionIds].sort())

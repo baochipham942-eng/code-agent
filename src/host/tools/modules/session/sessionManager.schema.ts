@@ -8,11 +8,13 @@ Actions:
 - list: List sessions. Supports scope="active" | "archived" | "all", query, limit, and currentWorkingDirectoryOnly.
 - get: Inspect one session by ID.
 - create: Create a new session without making it current. Defaults to inheriting the current session's model and working directory.
+- fork: Branch from a completed assistant reply into a new child session without changing or polluting the source session. Use when the user wants to explore a new direction based on a particular reply. Defaults to the current session and its latest completed assistant reply.
 - archive: Archive another non-running session.
 - unarchive: Restore an archived session.
 - rename: Rename another session.
 
 Safety:
+- fork preserves the source session, refuses running sessions, and always shares the source session's current workspace.
 - archive refuses the current session.
 - archive refuses running, queued, paused, or cancelling sessions.
 - delete is intentionally not supported.`,
@@ -21,12 +23,16 @@ Safety:
     properties: {
       action: {
         type: 'string',
-        enum: ['list', 'get', 'create', 'archive', 'unarchive', 'rename'],
+        enum: ['list', 'get', 'create', 'fork', 'archive', 'unarchive', 'rename'],
         description: 'Session management action to perform',
       },
       sessionId: {
         type: 'string',
-        description: '[get, archive, unarchive, rename] Target session ID',
+        description: '[get, archive, unarchive, rename] Target session ID. [fork] Source session ID; omit to use the current session.',
+      },
+      anchorMessageId: {
+        type: 'string',
+        description: '[fork] Completed assistant message ID to branch from; omit to use the latest completed persisted assistant reply.',
       },
       title: {
         type: 'string',

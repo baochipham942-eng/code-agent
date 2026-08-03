@@ -56,6 +56,7 @@ function createSchema(db: BetterSqlite3.Database): void {
       timestamp INTEGER NOT NULL DEFAULT 0,
       is_meta INTEGER NOT NULL DEFAULT 0,
       visibility TEXT NOT NULL DEFAULT 'active',
+      author_user_id TEXT,
       synced_at INTEGER
     );
   `);
@@ -136,6 +137,28 @@ describe('SessionRepository Agent Engine metadata', () => {
     );
 
     expect(repo.getSession('owned-session')?.userId).toBe('user-1');
+  });
+
+  it('reads the latest active user message author for collaboration turns', () => {
+    repo.createSession(makeSession({ id: 'collab-session', userId: 'owner-user' }));
+    db.prepare(`
+      INSERT INTO messages (id, session_id, role, content, timestamp, author_user_id)
+      VALUES
+        ('user-old', 'collab-session', 'user', 'old', 1, 'member-old'),
+        ('user-current', 'collab-session', 'user', 'current', 2, 'member-current')
+    `).run();
+
+    expect(repo.getLatestUserAuthorId('collab-session')).toBe('member-current');
+  });
+
+  it('falls back to the session owner when author_user_id is absent', () => {
+    repo.createSession(makeSession({ id: 'owner-fallback', userId: 'owner-user' }));
+    db.prepare(`
+      INSERT INTO messages (id, session_id, role, content, timestamp)
+      VALUES ('user-current', 'owner-fallback', 'user', 'current', 2)
+    `).run();
+
+    expect(repo.getLatestUserAuthorId('owner-fallback')).toBe('owner-user');
   });
 
   it('scopes session reads and lists by owner user id', () => {

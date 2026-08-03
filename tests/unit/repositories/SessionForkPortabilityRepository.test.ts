@@ -134,7 +134,7 @@ function seedLineage(
     sharedAssistantAttachments,
     'active',
   );
-  insertMessage.run('cu2', 'child', 'user', 'hidden suffix', 3, null, 'rewound');
+  insertMessage.run('cu2', 'child', 'user', 'rewind anchor', 3, null, 'active');
 
   db.prepare(`
     INSERT INTO session_forks (
@@ -294,8 +294,8 @@ function seedLineage(
       files_restored, files_deleted, errors_json, idempotency_key,
       request_digest, status, restored_at, created_at
     ) VALUES (
-      'rewind-child-cu2', 'child', 'cu2', 'hidden suffix', 3,
-      NULL, 1, '["cu2"]', 0, 0, '[]', 'rewind-child-key',
+      'rewind-child-cu2', 'child', 'cu2', 'rewind anchor', 3,
+      NULL, 0, '[]', 0, 0, '[]', 'rewind-child-key',
       'rewind-child-digest', 'completed', NULL, 3
     )
   `).run();
@@ -649,7 +649,7 @@ describe('SessionForkPortabilityRepository', () => {
     ))).toEqual([plan.messageIdMap.u1, plan.messageIdMap.a1]);
     expect(branchRepo.replay(importedChildId, boundary).messages.map((message) => (
       message.projectedMessageId
-    ))).toEqual([plan.messageIdMap.cu1, plan.messageIdMap.ca1]);
+    ))).toEqual([plan.messageIdMap.cu1, plan.messageIdMap.ca1, plan.messageIdMap.cu2]);
     expect(branchRepo.compareBranches({
       leftSessionId: plan.sessionIdMap.root,
       rightSessionId: importedChildId,
@@ -657,7 +657,7 @@ describe('SessionForkPortabilityRepository', () => {
     })).toMatchObject({
       sharedPrefixLength: 2,
       leftOnly: [],
-      rightOnly: [],
+      rightOnly: [expect.objectContaining({ projectedMessageId: plan.messageIdMap.cu2 })],
     });
     expect(branchRepo.auditLineage(importedChildId, boundary)).toMatchObject({
       status: 'healthy',
@@ -871,16 +871,11 @@ describe('SessionForkPortabilityRepository', () => {
       idempotencyKey: 'append:evo-child-u3',
       createdAt: 109,
     });
-    db.prepare(`
-      UPDATE messages
-      SET visibility = 'rewound', hidden_by_rewind_id = 'evo-rewind', hidden_at = 110
-      WHERE id = 'evo-child-u3'
-    `).run();
     branchRepository.recordRewind({
       sessionId: 'evo-child',
       boundary,
       anchorMessageId: 'evo-child-u3',
-      hiddenMessageIds: ['evo-child-u3'],
+      hiddenMessageIds: [],
       rewindId: 'evo-rewind',
       idempotencyKey: 'rewind:evo-child-u3',
       createdAt: 110,
@@ -927,7 +922,7 @@ describe('SessionForkPortabilityRepository', () => {
       rightSessionId: importedChildId,
       boundary,
     }).sharedPrefixLength).toBe(4);
-    expect(branchRepository.replay(importedChildId, boundary).messages).toHaveLength(4);
+    expect(branchRepository.replay(importedChildId, boundary).messages).toHaveLength(5);
     expect(branchRepository.replay(
       importedChildId,
       boundary,
@@ -1133,7 +1128,7 @@ describe('SessionForkPortabilityRepository', () => {
       db.prepare(`
         UPDATE messages
         SET visibility = 'rewound', hidden_by_rewind_id = 'source-missing', hidden_at = 30
-        WHERE session_id = 'child' AND id = 'ca1'
+        WHERE session_id = 'child' AND id = 'cu2'
       `).run();
     } else if (issueType === 'PROJECTION_ALIAS_EXTRA') {
       db.prepare(`

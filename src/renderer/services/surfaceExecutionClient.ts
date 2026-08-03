@@ -2,15 +2,27 @@ import type {
   SurfaceConversationSnapshotV1,
   SurfaceFramePayloadV1,
   SurfaceFrameRequestV1,
+  SurfaceLiveStreamRequestV1,
+  SurfaceLiveStreamStateV1,
   SurfaceOutputPayloadV1,
   SurfaceOutputRequestV1,
   SurfaceSessionControlRequestV1,
   SurfaceSessionControlResultV1,
+  SurfaceTerminalFrameGetRequestV1,
+  SurfaceTerminalFrameGetResultV1,
+  SurfaceTerminalFramePersistRequestV1,
+  SurfaceTerminalFramePersistResultV1,
+  SurfaceTerminalFramesDeleteRequestV1,
+  SurfaceTerminalFramesDeleteResultV1,
 } from '@shared/contract/surfaceExecution';
 import {
   isSurfaceConversationSnapshotV1,
   isSurfaceFramePayloadV1,
+  isSurfaceLiveStreamStateV1,
   isSurfaceOutputPayloadV1,
+  isSurfaceTerminalFrameGetResultV1,
+  isSurfaceTerminalFramePersistResultV1,
+  isSurfaceTerminalFramesDeleteResultV1,
 } from '@shared/contract/surfaceExecution';
 import { IPC_DOMAINS } from '@shared/ipc';
 import ipcService from './ipcService';
@@ -65,6 +77,33 @@ export async function getSurfaceExecutionFrame(
   return frame;
 }
 
+async function invokeLiveStream(
+  action: 'startLiveStream' | 'stopLiveStream',
+  request: SurfaceLiveStreamRequestV1,
+): Promise<SurfaceLiveStreamStateV1> {
+  const state = await ipcService.invokeDomain<unknown>(
+    IPC_DOMAINS.SURFACE_EXECUTION,
+    action,
+    request,
+  );
+  if (!isSurfaceLiveStreamStateV1(state) || state.surfaceSessionId !== request.surfaceSessionId) {
+    throw new Error('Invalid Surface Execution live stream state');
+  }
+  return state;
+}
+
+export async function startSurfaceLiveStream(
+  request: SurfaceLiveStreamRequestV1,
+): Promise<SurfaceLiveStreamStateV1> {
+  return await invokeLiveStream('startLiveStream', request);
+}
+
+export async function stopSurfaceLiveStream(
+  request: SurfaceLiveStreamRequestV1,
+): Promise<SurfaceLiveStreamStateV1> {
+  return await invokeLiveStream('stopLiveStream', request);
+}
+
 export async function getSurfaceExecutionOutput(
   request: SurfaceOutputRequestV1,
 ): Promise<SurfaceOutputPayloadV1> {
@@ -77,4 +116,47 @@ export async function getSurfaceExecutionOutput(
     throw new Error('Invalid Surface Execution output');
   }
   return output;
+}
+
+/** 终态留影落盘：ok=false 是业务拒收（非 JPEG / 超限），不抛错，由调用方决定要不要记日志 */
+export async function persistSurfaceTerminalFrame(
+  request: SurfaceTerminalFramePersistRequestV1,
+): Promise<SurfaceTerminalFramePersistResultV1> {
+  const result = await ipcService.invokeDomain<unknown>(
+    IPC_DOMAINS.SURFACE_EXECUTION,
+    'persistTerminalFrame',
+    request,
+  );
+  if (!isSurfaceTerminalFramePersistResultV1(result)) {
+    throw new Error('Invalid Surface Execution terminal frame persist result');
+  }
+  return result;
+}
+
+export async function getPersistedSurfaceTerminalFrame(
+  request: SurfaceTerminalFrameGetRequestV1,
+): Promise<SurfaceTerminalFrameGetResultV1> {
+  const result = await ipcService.invokeDomain<unknown>(
+    IPC_DOMAINS.SURFACE_EXECUTION,
+    'getPersistedTerminalFrame',
+    request,
+  );
+  if (!isSurfaceTerminalFrameGetResultV1(result)) {
+    throw new Error('Invalid Surface Execution persisted terminal frame result');
+  }
+  return result;
+}
+
+export async function deletePersistedSurfaceTerminalFrames(
+  request: SurfaceTerminalFramesDeleteRequestV1,
+): Promise<SurfaceTerminalFramesDeleteResultV1> {
+  const result = await ipcService.invokeDomain<unknown>(
+    IPC_DOMAINS.SURFACE_EXECUTION,
+    'deletePersistedTerminalFrames',
+    request,
+  );
+  if (!isSurfaceTerminalFramesDeleteResultV1(result)) {
+    throw new Error('Invalid Surface Execution terminal frame delete result');
+  }
+  return result;
 }

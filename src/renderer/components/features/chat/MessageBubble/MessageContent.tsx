@@ -8,9 +8,13 @@ import remend from 'remend';
 import type { Components } from 'react-markdown';
 import type { MessageContentProps } from './types';
 import { useAppStore } from '../../../../stores/appStore';
+import { useSessionStore } from '../../../../stores/sessionStore';
 import { wrapFilePathsInBackticks, wrapTicketsAsLinks } from './filePathProcessor';
 import { parseLeadingTriggerToken } from './triggerTokenHighlight';
 import { isWebMode, copyPathToClipboard, openExternalLink } from '../../../../utils/platform';
+import { isPreviewable } from '../../../../utils/previewable';
+import { LinkPreviewCard, isRawUrlLink } from './LinkPreviewCard';
+import { openHttpLinkInRail } from '../../../../services/userBrowserLink';
 import { ChartBlock, isChartSpecSource } from './ChartBlock';
 import { GenerativeUIBlock } from './GenerativeUIBlock';
 import { GenerativeUIHost } from '../GenerativeUI/GenerativeUIHost';
@@ -33,6 +37,8 @@ import {
   MarkdownMediaImage,
   MarkdownRenderer,
   filterSystemTags,
+  sanitizePlainTextFallback,
+  stripRawHtmlOutsideCode,
 } from './messageContentParts';
 
 /**
@@ -47,10 +53,40 @@ export function localHtmlHrefToPath(href: string | undefined): string | null {
   return /\.html?(?:[?#].*)?$/i.test(path) ? path : null;
 }
 
+// ============================================================================
+// IACT !send chip 渲染（2026-08-02 拍板 B+A 组合，设计稿 neo-iact-chip-design.html）：
+// 链接语义不穿按钮外观——单个 !send 是句中轻链接（A：品牌青字 + dotted 下划线，
+// 无边框无底衬，hover 才出底衬/实线/尾部 Send 图标）；同段 ≥2 个 !send 时选项
+// 摘出句外（B：正文降级为纯文本，段后渲染 ghost 选项行，与 DecisionCard 同构、
+// 首项品牌青）。点击行为不变：统一 dispatch iact:send，发送链路
+// （ChatInput + iactChipConfirmation 模板）不动。
+// ============================================================================
+
+function dispatchIactSend(text: string) {
+  window.dispatchEvent(new CustomEvent('iact:send', { detail: text }));
+}
+
+/**
+ * 提取段落 children 里 !send 链接的文案；非 !send 链接返回 null。
+ * 注意：p 层拿到的 children 是「未求值」的链接元素（type 为自定义 a renderer，
+ * props 是 { href, children }），不是 a renderer 返回的 button——因此按 href 识别；
+ * DOM 侧另有 data-iact-send 标记（button 上）供测试/排查。
+ */
+function iactSendTextOf(node: React.ReactNode): string | null {
+  if (!React.isValidElement(node)) return null;
+  const props = node.props as { href?: unknown; children?: React.ReactNode };
+  if (props.href !== '!send') return null;
+  const c = props.children;
+  return typeof c === 'string' ? c
+    : Array.isArray(c) ? c.map(x => (typeof x === 'string' ? x : '')).join('')
+    : String(c ?? '');
+}
+
 // Main message content component
-export const MessageContent: React.FC<MessageContentProps> = memo(function MessageContent({ content, isUser, isStreaming = false, messageId, mediaContext }) {
+export const MessageContent: React.FC<MessageContentProps> = memo(function MessageContent({ content, isUser, isStreaming = false, messageId, mediaContext, streamingTailStart }) {
   const openPreview = useAppStore((state) => state.openPreview);
   const workingDirectory = useAppStore((state) => state.workingDirectory);
+  const currentSessionId = useSessionStore((state) => state.currentSessionId);
   const streamingNeedsMarkdown = !isUser && isStreaming && shouldRenderStreamingContentAsMarkdown(content);
   const markdownSource = useThrottledStreamingContent(content, streamingNeedsMarkdown);
   const deferCompletedLayout = shouldDeferTurnContentLayout({
@@ -69,13 +105,29 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
     );
   });
 
-  // Handle opening a file externally
+  // 点击文件链接进 app 内预览（PreviewPanel），不再直接打开本地文件；
+  // 裸文件名（模型很少写全路径）先按名字在工作目录里找回真实路径；
+  // 类型不支持预览时才回退系统打开（桌面）/ 复制路径（web）。
   const handleOpenFile = useCallback(async (filePath: string, lineNumber?: number) => {
     try {
       // Resolve relative paths
       let fullPath = filePath;
       if (!filePath.startsWith('/') && !filePath.startsWith('~')) {
         fullPath = workingDirectory ? `${workingDirectory}/${filePath}` : filePath;
+        // 裸文件名（无目录段）：workingDirectory 直拼基本必错，按名字找回真实路径
+        if (workingDirectory && !filePath.includes('/')) {
+          try {
+            const response = await window.domainAPI?.invoke<Array<{ path: string }>>(
+              'workspace', 'findFile', { dirPath: workingDirectory, name: filePath },
+            );
+            const found = response?.success && response.data?.length ? response.data[0] : null;
+            if (found) fullPath = found.path;
+          } catch { /* 找回失败就用直拼路径，交给预览层报错 */ }
+        }
+      }
+      if (isPreviewable(fullPath)) {
+        openPreview(fullPath);
+        return;
       }
       if (isWebMode()) {
         await copyPathToClipboard(fullPath);
@@ -85,7 +137,7 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
     } catch (error) {
       console.error('Failed to open file:', error);
     }
-  }, [workingDirectory]);
+  }, [workingDirectory, openPreview]);
 
   // Handle previewing HTML in-app
   const handlePreviewHtml = useCallback((filePath: string) => {
@@ -97,11 +149,18 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
     openPreview(fullPath);
   }, [openPreview, workingDirectory]);
 
+  const handleOpenHttpLink = useCallback((href: string) => openHttpLinkInRail({
+    href,
+    conversationId: mediaContext?.sessionId || currentSessionId,
+    workspace: workingDirectory,
+  }), [currentSessionId, mediaContext?.sessionId, workingDirectory]);
+
   // Filter out system tags, auto-link ticket IDs, wrap file paths,
   // then close incomplete markdown tokens for streaming-safe rendering
   const filteredContent = useMemo(() => {
     const cleaned = filterSystemTags(markdownSource);
-    const withTickets = wrapTicketsAsLinks(cleaned);
+    const noRawHtml = stripRawHtmlOutsideCode(cleaned);
+    const withTickets = wrapTicketsAsLinks(noRawHtml);
     const wrapped = wrapFilePathsInBackticks(withTickets);
     return remend(wrapped);
   }, [markdownSource]);
@@ -189,13 +248,14 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
           </div>
         );
       },
+      // 轻呈现表格：thead 无亮底（11px 小字灰）、无竖向边框、只留横向行分隔线、无斑马纹
       thead({ children }) {
-        return <thead className="bg-zinc-800">{children}</thead>;
+        return <thead>{children}</thead>;
       },
       th({ children, style }) {
         return (
           <th
-            className="px-3 py-2 text-left font-semibold text-zinc-200 border border-zinc-700"
+            className="px-2 py-1.5 text-left text-[11px] font-medium text-zinc-500"
             style={style}
           >
             {children}
@@ -206,12 +266,12 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
         return <tbody>{children}</tbody>;
       },
       tr({ children }) {
-        return <tr className="even:bg-zinc-700/20 odd:bg-zinc-900/30">{children}</tr>;
+        return <tr className="border-b border-zinc-800">{children}</tr>;
       },
       td({ children, style }) {
         return (
           <td
-            className="px-3 py-2 text-zinc-400 border border-zinc-700"
+            className="px-2 py-1.5 text-zinc-400"
             style={style}
           >
             {children}
@@ -219,15 +279,15 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
         );
       },
 
-      // Headings
+      // 会话内标题压平：H1-H3 统一 13.5px semibold，只用 margin 分层，不给更大字号/更亮颜色
       h1({ children }) {
-        return <h1 className="text-xl font-bold text-zinc-200 mt-4 mb-2">{children}</h1>;
+        return <h1 className="text-[13.5px] font-semibold text-zinc-200 mt-3.5 mb-1.5">{children}</h1>;
       },
       h2({ children }) {
-        return <h2 className="text-lg font-bold text-zinc-200 mt-3 mb-2">{children}</h2>;
+        return <h2 className="text-[13.5px] font-semibold text-zinc-200 mt-3.5 mb-1.5">{children}</h2>;
       },
       h3({ children }) {
-        return <h3 className="text-base font-semibold text-zinc-200 mt-3 mb-1">{children}</h3>;
+        return <h3 className="text-[13.5px] font-semibold text-zinc-200 mt-3.5 mb-1.5">{children}</h3>;
       },
       h4({ children }) {
         return <h4 className="text-sm font-semibold text-zinc-200 mt-2 mb-1">{children}</h4>;
@@ -239,17 +299,53 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
         return <h6 className="text-xs font-medium text-zinc-400 mt-2 mb-1">{children}</h6>;
       },
 
-      // Paragraphs
+      // Paragraphs：同段 ≥2 个完整 !send 链接时摘出为段后选项行（B，2026-08-02 拍板）。
+      // 流式中途未写完的链接经 remend 兜底后 href 不是 !send，不会带标记，
+      // 因此选项行只在 ≥2 个链接完整出现后才出现——不提前、不闪烁；
+      // 跨段落各 1 个时互不影响，各自仍是句中轻链接（A）。
       p({ children }) {
-        return <p className="my-1">{children}</p>;
+        const nodes = React.Children.toArray(children);
+        const chipTexts = nodes.map(iactSendTextOf);
+        const optionTexts = chipTexts.filter((t): t is string => t !== null);
+        if (optionTexts.length < 2) {
+          return <p className="my-2.5">{children}</p>;
+        }
+        // 正文里的 chip 降级为纯文本，句子恢复干净；选项摘到段后成行。
+        const cleanNodes = nodes.map((node, i) =>
+          chipTexts[i] !== null
+            ? <React.Fragment key={(node as React.ReactElement).key ?? i}>{chipTexts[i]}</React.Fragment>
+            : node,
+        );
+        return (
+          <>
+            <p className="my-2.5">{cleanNodes}</p>
+            <div className="mt-2 flex flex-wrap gap-2" data-iact-options="">
+              {optionTexts.map((text, i) => (
+                <button /* ds-allow:button: IACT 选项行 ghost 按钮，与 DecisionCard 选项行同构 */
+                  key={`${i}-${text}`}
+                  type="button"
+                  onClick={() => dispatchIactSend(text)}
+                  className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg border text-[12.5px] transition-colors cursor-pointer ${
+                    i === 0
+                      ? 'border-accent-accessible/35 bg-zinc-800/50 text-accent-accessible hover:bg-primary-500/10'
+                      : 'border-zinc-700 bg-zinc-800/50 text-zinc-300 hover:border-accent-accessible/50 hover:text-accent-accessible hover:bg-primary-500/10'
+                  }`}
+                >
+                  {text}
+                  <Send className="w-3 h-3 opacity-50" />
+                </button>
+              ))}
+            </div>
+          </>
+        );
       },
 
       // Lists
       ul({ children }) {
-        return <ul className="my-2 pl-5 space-y-1 list-disc">{children}</ul>;
+        return <ul className="my-2 pl-5 space-y-1 list-disc marker:text-zinc-600">{children}</ul>;
       },
       ol({ children }) {
-        return <ol className="my-2 pl-5 space-y-1 list-decimal">{children}</ol>;
+        return <ol className="my-2 pl-5 space-y-1 list-decimal marker:text-zinc-600">{children}</ol>;
       },
       li({ children }) {
         return <li className="text-zinc-400">{children}</li>;
@@ -258,7 +354,7 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
       // Blockquote
       blockquote({ children }) {
         return (
-          <blockquote className="my-2 pl-4 border-l-2 border-primary-500/50 text-zinc-400 italic">
+          <blockquote className="my-2 pl-4 border-l-2 border-badge-accent/50 text-zinc-400 italic">
             {children}
           </blockquote>
         );
@@ -272,6 +368,10 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
       // Links - with IACT protocol support for inline interactions
       a({ href, children }) {
         // IACT: [text](!send) — click to send text as user message
+        // 2026-08-02 拍板：轻链接形态（A）——品牌青字 + dotted 下划线，无边框无底衬；
+        // hover 才出底衬/实线/尾部 Send 图标（非 hover 时 opacity 0，空间预留不抖动）。
+        // data-iact-send 是 DOM 侧识别标记（测试/排查用）；p 层分组（B）按 href 扫描，
+        // 同段 ≥2 个时会被摘出为选项行。
         if (href === '!send') {
           const text = typeof children === 'string' ? children
             : Array.isArray(children) ? children.map(c => typeof c === 'string' ? c : '').join('')
@@ -279,14 +379,13 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
           return (
             <button
               type="button"
-              onClick={() => {
-                window.dispatchEvent(new CustomEvent('iact:send', { detail: text }));
-              }}
-              className="inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5 rounded-md bg-primary-500/10 text-primary-400 hover:bg-primary-500/20 hover:text-primary-300 border border-primary-500/20 hover:border-primary-500/40 transition-all cursor-pointer text-sm font-medium"
+              data-iact-send={text}
+              onClick={() => dispatchIactSend(text)}
+              className="group inline-flex items-center gap-0.5 px-0.5 rounded text-accent-accessible font-medium underline decoration-dotted decoration-[rgba(45,212,191,0.45)] underline-offset-4 hover:bg-primary-500/10 hover:decoration-solid transition-colors cursor-pointer"
               title="点击发送"
             >
               {children}
-              <Send className="w-3 h-3 opacity-60" />
+              <Send className="w-[11px] h-[11px] opacity-0 group-hover:opacity-[0.55] transition-opacity" />
             </button>
           );
         }
@@ -302,7 +401,7 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
               onClick={() => {
                 window.dispatchEvent(new CustomEvent('iact:add', { detail: text }));
               }}
-              className="inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5 rounded-md bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 hover:text-amber-300 border border-amber-500/20 hover:border-amber-500/40 transition-all cursor-pointer text-sm font-medium"
+              className="inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5 rounded-md bg-amber-500/10 text-badge-warning hover:bg-amber-500/20 hover:text-badge-warning border border-badge-warning/20 hover:border-badge-warning/40 transition-all cursor-pointer text-sm font-medium"
               title="点击填入输入框"
             >
               {children}
@@ -322,7 +421,7 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
               onClick={() => {
                 window.dispatchEvent(new CustomEvent('iact:run', { detail: text }));
               }}
-              className="inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5 rounded-md bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 hover:text-emerald-300 border border-emerald-500/20 hover:border-emerald-500/40 transition-all cursor-pointer text-sm font-medium font-mono"
+              className="inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5 rounded-md bg-emerald-500/10 text-badge-success hover:bg-emerald-500/20 hover:text-badge-success border border-badge-success/20 hover:border-badge-success/40 transition-all cursor-pointer text-sm font-medium font-mono"
               title="点击执行命令"
             >
               <Terminal className="w-3 h-3 opacity-60" />
@@ -342,7 +441,7 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
               onClick={() => {
                 window.domainAPI?.invoke('workspace', 'openPath', { filePath: text });
               }}
-              className="inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5 rounded-md bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 hover:text-blue-300 border border-blue-500/20 hover:border-blue-500/40 transition-all cursor-pointer text-sm font-medium"
+              className="inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5 rounded-md bg-blue-500/10 text-badge-info hover:bg-blue-500/20 hover:text-badge-info border border-badge-info/20 hover:border-badge-info/40 transition-all cursor-pointer text-sm font-medium"
               title="打开文件"
             >
               <ExternalLink className="w-3 h-3 opacity-60" />
@@ -362,7 +461,7 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
               onClick={() => {
                 useAppStore.getState().openPreview(text);
               }}
-              className="inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5 rounded-md bg-violet-500/10 text-violet-400 hover:bg-violet-500/20 hover:text-violet-300 border border-violet-500/20 hover:border-violet-500/40 transition-all cursor-pointer text-sm font-medium"
+              className="inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5 rounded-md bg-violet-500/10 text-badge-accent hover:bg-violet-500/20 hover:text-badge-accent border border-badge-accent/20 hover:border-badge-accent/40 transition-all cursor-pointer text-sm font-medium"
               title="预览文件"
             >
               <Eye className="w-3 h-3 opacity-60" />
@@ -387,7 +486,7 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
             <button
               type="button"
               onClick={() => { navigator.clipboard.writeText(text); }}
-              className="text-sky-400 hover:text-sky-300 underline underline-offset-2 cursor-pointer font-mono text-[0.95em]"
+              className="text-badge-info hover:text-badge-info underline underline-offset-2 cursor-pointer font-mono text-[0.95em]"
               title={`点击复制 ${text}`}
             >
               {children}
@@ -409,13 +508,19 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
             <a
               href={href}
               onClick={(e) => { e.preventDefault(); handlePreviewHtml(htmlPreviewPath); }}
-              className="inline-flex items-center gap-1 text-primary-300 hover:text-primary-200 underline underline-offset-2 cursor-pointer"
+              className="inline-flex items-center gap-1 text-accent-accessible hover:text-accent-accessible underline underline-offset-2 cursor-pointer"
               title="点击预览"
             >
               {children}
-              <Play className="w-3 h-3 opacity-60 text-blue-400" />
+              <Play className="w-3 h-3 opacity-60 text-badge-info" />
             </a>
           );
+        }
+
+        // raw URL（链接文字就是 URL 本身）：favicon + 下划线链接，帮用户一眼认站点。
+        // 轻呈现——只有 16px 图标，没有 chip 边框/底色。
+        if (href && isRawUrlLink(href, children)) {
+          return <LinkPreviewCard href={href} onOpen={handleOpenHttpLink} />;
         }
 
         // Regular links（带描述文字的内联链接）
@@ -425,8 +530,10 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
             href={href}
             target="_blank"
             rel="noopener noreferrer"
-            onClick={(e) => { if (openExternalLink(href)) e.preventDefault(); }}
-            className="text-primary-400 hover:text-primary-300 underline underline-offset-2 cursor-pointer"
+            onClick={(e) => {
+              if ((href && handleOpenHttpLink(href)) || openExternalLink(href)) e.preventDefault();
+            }}
+            className="text-accent-accessible hover:text-accent-accessible underline underline-offset-2 cursor-pointer"
           >
             {children}
           </a>
@@ -434,8 +541,9 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
       },
 
       // Text formatting
+      // strong 只给字重不提色：颜色继承所在正文（text-inherit），任何容器下都与正文同色
       strong({ children }) {
-        return <strong className="font-semibold text-zinc-200">{children}</strong>;
+        return <strong className="font-semibold text-inherit">{children}</strong>;
       },
       em({ children }) {
         return <em className="italic text-zinc-200">{children}</em>;
@@ -456,7 +564,7 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
         );
       },
     }),
-    [filteredContent, handleOpenFile, handlePreviewHtml, isStreaming, mediaContext?.sessionId, mediaContext?.turnId, mediaContext?.messageId, messageId]
+    [filteredContent, handleOpenFile, handleOpenHttpLink, handlePreviewHtml, isStreaming, mediaContext?.sessionId, mediaContext?.turnId, mediaContext?.messageId, messageId]
   );
 
   // For user messages, render as plain text (no markdown processing)
@@ -478,20 +586,36 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
   }
 
   if (isStreaming && !streamingNeedsMarkdown) {
+    const plainText = sanitizePlainTextFallback(filterSystemTags(content));
+    // 尾段淡入（工单 2026-08-01）：hook 每 ~120ms 落一个「词/短段」，把最新一段
+    // 包进 key 随段首下标变化的 span，mount 时跑一次 CSS 淡入；直落的大块不包、
+    // 立即可读。下标基于未过滤的 content，过滤后可能漂移，越界就不拆分（纯视觉）。
+    const tailStart = streamingTailStart != null
+      && streamingTailStart > 0
+      && streamingTailStart < plainText.length
+      ? streamingTailStart
+      : null;
     return (
-      <div className="text-sm leading-relaxed break-words prose prose-invert prose-sm max-w-none streaming-text with-caret">
+      <div className="text-sm leading-[1.7] break-words prose prose-invert prose-sm max-w-none streaming-text">
         <span className="whitespace-pre-wrap">
-          {filterSystemTags(content)}
+          {tailStart === null ? plainText : (
+            <>
+              {plainText.slice(0, tailStart)}
+              <span key={tailStart} className="streaming-tail-segment">
+                {plainText.slice(tailStart)}
+              </span>
+            </>
+          )}
         </span>
       </div>
     );
   }
 
-  // 流式中的 markdown 内容才加揭示动画 + 内联呼吸光标；已完成消息不加（避免重播/常驻光标）
-  const streamingDecor = isStreaming ? ' streaming-text with-caret' : '';
+  // 流式中的 markdown 内容保留流式样式标记；已完成消息不加，避免重播。
+  const streamingDecor = isStreaming ? ' streaming-text' : '';
   return (
     <div
-      className={`text-sm leading-relaxed break-words prose prose-invert prose-sm max-w-none${streamingDecor}`}
+      className={`text-sm leading-[1.7] break-words prose prose-invert prose-sm max-w-none${streamingDecor}`}
       data-turn-heavy-content={deferCompletedLayout ? 'true' : undefined}
       style={deferCompletedLayout ? deferredTurnContentStyle : undefined}
     >

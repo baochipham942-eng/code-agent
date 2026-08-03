@@ -7,6 +7,10 @@
 // - 「＋」弹出可打开视图列表（复用 WorkbenchViewLauncher popover 形态）；
 // - 概览/文件等常驻视图可关语义沿用旧下拉（每个视图都可关，不新发明）；
 // - 右侧「收起面板」不动（D5 去重后的唯一收起 affordance）。
+//
+// 结构（批P 返工第二波）：tab 条收敛进共享壳 RailTabShell（样式制度唯一真源，
+// 与空间右栏同壳防漂移），内容区经 children 注入；行为零变化——tab 集合/＋弹层/
+// 脏预览确认/空态 launcher/顶栏收起全保留，纯结构收敛。
 // ============================================================================
 
 import React, { useEffect, useRef, useState } from 'react';
@@ -16,8 +20,8 @@ import {
   Globe2,
   LayoutDashboard,
   Palette,
-  PanelRightClose,
   Plus,
+  TerminalSquare,
   X,
   type LucideIcon,
 } from 'lucide-react';
@@ -27,11 +31,13 @@ import {
   type KeybindingActionId,
 } from '@shared/keybindings';
 import { useAppStore, type WorkbenchViewId } from '../stores/appStore';
+import { useWorkbenchFocusStore } from '../stores/workbenchFocusStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { useI18n } from '../hooks/useI18n';
 import { useKeybindingsSettings } from '../hooks/useKeybindingsSettings';
 import { claimDesignCanvasForSession } from './design/designCanvasLaunch';
 import { ConfirmDialog } from './composites/ConfirmDialog';
+import { RailTabShell } from './composites/RailTabShell';
 import { IconButton } from './primitives/IconButton';
 
 const PREVIEW_PREFIX = 'preview:';
@@ -51,27 +57,33 @@ const LAUNCHABLE_VIEWS: readonly LaunchableViewDefinition[] = [
   {
     id: 'overview',
     icon: LayoutDashboard,
-    iconClassName: 'text-cyan-400/80',
+    iconClassName: 'text-badge-info/80',
     keybindingActionId: 'statusRail.toggle',
   },
   {
     id: 'files',
     icon: FolderTree,
-    iconClassName: 'text-amber-400/80',
+    iconClassName: 'text-badge-warning/80',
     // 不是 files.attach——那是输入框的附件选择器（scope: 'composer'），不是「打开文件视图」。
     keybindingActionId: 'files.open',
   },
   {
     id: 'browser',
     icon: Globe2,
-    iconClassName: 'text-emerald-400/80',
+    iconClassName: 'text-badge-success/80',
     keybindingActionId: 'browser.open',
   },
   {
     id: 'design-canvas',
     icon: Palette,
-    iconClassName: 'text-fuchsia-400/80',
+    iconClassName: 'text-badge-accent/80',
     keybindingActionId: 'designCanvas.open',
+  },
+  {
+    id: 'terminal',
+    icon: TerminalSquare,
+    iconClassName: 'text-badge-info/80',
+    keybindingActionId: 'terminal.open',
   },
 ];
 
@@ -110,6 +122,7 @@ const WorkbenchViewLauncher: React.FC<WorkbenchViewLauncherProps> = ({
     if (id === 'overview') return t.workbenchTabs.overviewLabel;
     if (id === 'files') return t.workbenchTabs.filesLabel;
     if (id === 'browser') return t.workbenchTabs.browserLabel;
+    if (id === 'terminal') return t.workbenchTabs.terminal.label;
     return t.design.canvasTabLabel;
   };
 
@@ -119,6 +132,7 @@ const WorkbenchViewLauncher: React.FC<WorkbenchViewLauncherProps> = ({
     if (id === 'overview') return d.overview;
     if (id === 'files') return d.files;
     if (id === 'browser') return d.browser;
+    if (id === 'terminal') return d.terminal;
     return d.designCanvas;
   };
 
@@ -180,15 +194,19 @@ const WorkbenchViewLauncher: React.FC<WorkbenchViewLauncherProps> = ({
   );
 };
 
-export const WorkbenchTabs: React.FC = () => {
+export const WorkbenchTabs: React.FC<{ children?: React.ReactNode; focusable?: boolean }> = ({ children, focusable = false }) => {
   const { t } = useI18n();
   const workbenchTabs = useAppStore((s) => s.workbenchTabs);
   const activeWorkbenchTab = useAppStore((s) => s.activeWorkbenchTab);
   const previewTabs = useAppStore((s) => s.previewTabs);
   const closeWorkbenchTab = useAppStore((s) => s.closeWorkbenchTab);
   const openWorkbenchTab = useAppStore((s) => s.openWorkbenchTab);
+  // 专注模式（2026-08-01 工单①）：只在右栏独立成列时（App 传 focusable）提供开关；
+  // 窄屏 workbench 借住在聊天列里，没有「收起聊天列」的对象，不给开关。
+  // 状态在 workbenchFocusStore（不塞进 appStore：god-file 棘轮红线，且只是布局瞬时态）。
+  const workbenchFocused = useWorkbenchFocusStore((s) => s.workbenchFocused);
+  const setWorkbenchFocused = useWorkbenchFocusStore((s) => s.setWorkbenchFocused);
   const currentSessionId = useSessionStore((s) => s.currentSessionId);
-  const setWorkbenchCollapsed = useAppStore((s) => s.setWorkbenchCollapsed);
   // 「＋」弹出层只列还没打开的视图；切换/关闭都在 tab 条上直接完成。
   const [menuOpen, setMenuOpen] = useState(false);
   const [pendingClose, setPendingClose] = useState<TabMeta | null>(null);
@@ -217,7 +235,7 @@ export const WorkbenchTabs: React.FC = () => {
         label: t.workbenchTabs.overviewLabel,
         title: t.workbenchTabs.overviewTitle,
         icon: LayoutDashboard,
-        iconClassName: 'text-cyan-400/80',
+        iconClassName: 'text-badge-info/80',
         isDirty: false,
       };
     }
@@ -227,7 +245,7 @@ export const WorkbenchTabs: React.FC = () => {
         label: t.workbenchTabs.filesLabel,
         title: t.workbenchTabs.filesTitle,
         icon: FolderTree,
-        iconClassName: 'text-amber-400/80',
+        iconClassName: 'text-badge-warning/80',
         isDirty: false,
       };
     }
@@ -237,7 +255,7 @@ export const WorkbenchTabs: React.FC = () => {
         label: t.workbenchTabs.browserLabel,
         title: t.workbenchTabs.browserTitle,
         icon: Globe2,
-        iconClassName: 'text-emerald-400/80',
+        iconClassName: 'text-badge-success/80',
         isDirty: false,
       };
     }
@@ -247,24 +265,40 @@ export const WorkbenchTabs: React.FC = () => {
         label: t.design.canvasTabLabel,
         title: t.design.canvasTabLabel,
         icon: Palette,
-        iconClassName: 'text-fuchsia-400/80',
+        iconClassName: 'text-badge-accent/80',
+        isDirty: false,
+      };
+    }
+    if (id === 'terminal') {
+      return {
+        id,
+        label: t.workbenchTabs.terminal.label,
+        title: t.workbenchTabs.terminal.title,
+        icon: TerminalSquare,
+        iconClassName: 'text-badge-info/80',
         isDirty: false,
       };
     }
     const path = id.slice(PREVIEW_PREFIX.length);
     const previewTab = previewTabs.find((preview) => preview.path === path);
+    const isLiveDev = previewTab?.kind === 'liveDev';
     return {
       id,
       label: getFileName(path),
       title: path,
-      icon: FileText,
-      iconClassName: 'text-zinc-400',
+      icon: isLiveDev ? Globe2 : FileText,
+      iconClassName: isLiveDev ? 'text-badge-success/80' : 'text-zinc-400',
       isDirty: previewTab ? previewTab.content !== previewTab.savedContent : false,
     };
   });
 
   const activeMeta = metas.find((meta) => meta.id === activeWorkbenchTab) ?? metas[0] ?? null;
   const canAddAny = LAUNCHABLE_VIEWS.some((view) => !workbenchTabs.includes(view.id));
+
+  // 最后一个 tab 关掉后专注态没有对象——退回侧栏态，否则空 launcher 占满整窗且没有退出开关。
+  useEffect(() => {
+    if (metas.length === 0 && workbenchFocused) setWorkbenchFocused(false);
+  }, [metas.length, workbenchFocused, setWorkbenchFocused]);
 
   const openView = (id: LaunchableWorkbenchViewId) => {
     if (id === 'design-canvas') {
@@ -283,6 +317,10 @@ export const WorkbenchTabs: React.FC = () => {
     closeWorkbenchTab(meta.id);
   };
 
+  // 收起右栏的入口不在这里：它和「展开」同住顶栏那一个位置（TitleBar），两态只换图标不换位置。
+  // 曾经收起钮在本工具条上，于是它在空态（本分支早退、整条工具条不画）直接消失、右栏关不掉；
+  // 补回来之后又暴露出更根本的毛病——开关一开一收在两行之间跳。两个症状同一个根因：
+  // 一个开关的两态不该分居两处（2026-07-27 产品负责人：「为什么纵向位置会变？」）。
   if (metas.length === 0) {
     return (
       <WorkbenchViewLauncher
@@ -294,90 +332,62 @@ export const WorkbenchTabs: React.FC = () => {
     );
   }
 
-  const selectView = (id: WorkbenchViewId) => {
-    openWorkbenchTab(id, { source: 'user' });
+  const selectView = (id: string) => {
+    openWorkbenchTab(id as WorkbenchViewId, { source: 'user' });
     setMenuOpen(false);
   };
 
   return (
     <>
-      <div
-        ref={toolbarRef}
-        data-testid="workbench-view-selector"
-        className="relative flex items-center gap-1 border-b border-zinc-700 bg-zinc-900 px-2 py-1.5"
-      >
-        {/* tab 条：样式对齐 FileExplorerPanel TabBar（rounded-t 小 tab + hover × + ＋） */}
-        <div
-          role="tablist"
-          aria-label={t.workbenchTabs.openViews}
-          className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto scrollbar-none"
-        >
-          {metas.map((meta) => {
-            const Icon = meta.icon;
-            const isActive = meta.id === activeMeta?.id;
-            return (
-              <div
-                key={meta.id}
-                role="tab"
-                aria-selected={isActive}
-                tabIndex={0}
-                data-testid={`workbench-tab-${meta.id}`}
-                onClick={() => selectView(meta.id)}
-                onKeyDown={(event) => {
-                  if (event.key !== 'Enter' && event.key !== ' ') return;
-                  event.preventDefault();
-                  selectView(meta.id);
+      <RailTabShell
+        tabs={metas.map((meta) => ({
+          id: meta.id,
+          label: meta.label,
+          icon: meta.icon,
+          iconClassName: meta.iconClassName,
+          testId: `workbench-tab-${meta.id}`,
+          suffix: (
+            <>
+              {meta.isDirty && (
+                <span className="text-[10px] leading-none text-badge-warning" title={t.workbenchTabs.unsavedChanges}>●</span>
+              )}
+              <button /* ds-allow:button: tab 内 10px 超小关闭钮（对齐 FileExplorerPanel TabBar 的 ×），primitive 变体不适配 */
+                type="button"
+                aria-label={t.workbenchTabs.closeView.replace('{view}', meta.label)}
+                title={t.workbenchTabs.closeView.replace('{view}', meta.label)}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  requestClose(meta);
                 }}
-                className={`group flex max-w-[140px] cursor-pointer items-center gap-1.5 rounded-t px-2 py-1 text-xs transition-colors ${
-                  isActive
-                    ? 'bg-zinc-800 text-zinc-200'
-                    : 'text-zinc-500 hover:bg-zinc-800/50 hover:text-zinc-300'
-                }`}
+                className="flex-shrink-0 rounded p-0.5 opacity-0 transition-opacity hover:bg-zinc-700 focus-visible:opacity-100 group-hover:opacity-100"
               >
-                <Icon className={`h-3.5 w-3.5 flex-shrink-0 ${meta.iconClassName}`} />
-                <span className="truncate">{meta.label}</span>
-                {meta.isDirty && (
-                  <span className="text-[10px] leading-none text-amber-400" title={t.workbenchTabs.unsavedChanges}>●</span>
-                )}
-                <button /* ds-allow:button: tab 内 10px 超小关闭钮（对齐 FileExplorerPanel TabBar 的 ×），primitive 变体不适配 */
-                  type="button"
-                  aria-label={t.workbenchTabs.closeView.replace('{view}', meta.label)}
-                  title={t.workbenchTabs.closeView.replace('{view}', meta.label)}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    requestClose(meta);
-                  }}
-                  className="flex-shrink-0 rounded p-0.5 opacity-0 transition-opacity hover:bg-zinc-700 focus-visible:opacity-100 group-hover:opacity-100"
-                >
-                  <X className="h-2.5 w-2.5" />
-                </button>
-              </div>
-            );
-          })}
-          {canAddAny && (
-            <IconButton
-              size="sm"
-              variant="ghost"
-              icon={<Plus />}
-              aria-label={t.workbenchTabs.addView}
-              title={t.workbenchTabs.addView}
-              aria-haspopup="true"
-              aria-expanded={menuOpen}
-              onClick={() => setMenuOpen((open) => !open)}
-            />
-          )}
-        </div>
-
-        <IconButton
-          size="sm"
-          variant="ghost"
-          icon={<PanelRightClose />}
-          aria-label={t.workbenchTabs.collapsePanel}
-          title={t.workbenchTabs.collapsePanel}
-          onClick={() => setWorkbenchCollapsed(true)}
-        />
-
-        {menuOpen && (
+                <X className="h-2.5 w-2.5" />
+              </button>
+            </>
+          ),
+        }))}
+        activeTabId={activeMeta?.id ?? null}
+        onSelectTab={selectView}
+        ariaLabel={t.workbenchTabs.openViews}
+        testId="workbench-view-selector"
+        stripRef={toolbarRef}
+        focused={focusable ? workbenchFocused : undefined}
+        onToggleFocus={focusable ? () => setWorkbenchFocused(!workbenchFocused) : undefined}
+        focusEnterLabel={focusable ? t.workbenchTabs.focusEnter : undefined}
+        focusExitLabel={focusable ? t.workbenchTabs.focusExit : undefined}
+        trailing={canAddAny ? (
+          <IconButton
+            size="sm"
+            variant="ghost"
+            icon={<Plus />}
+            aria-label={t.workbenchTabs.addView}
+            title={t.workbenchTabs.addView}
+            aria-haspopup="true"
+            aria-expanded={menuOpen}
+            onClick={() => setMenuOpen((open) => !open)}
+          />
+        ) : undefined}
+        overlay={menuOpen ? (
           <div
             data-testid="workbench-view-menu"
             className="absolute left-2 top-full z-40 mt-1 w-64 rounded-lg border border-zinc-700 bg-zinc-900 p-1.5 shadow-xl"
@@ -389,8 +399,10 @@ export const WorkbenchTabs: React.FC = () => {
               onOpen={openView}
             />
           </div>
-        )}
-      </div>
+        ) : undefined}
+      >
+        {children}
+      </RailTabShell>
 
       <ConfirmDialog
         isOpen={pendingClose !== null}

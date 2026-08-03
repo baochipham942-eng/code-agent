@@ -5,6 +5,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { ToolDefinition } from '../../src/shared/contract';
 import { readXlsxSchema } from '../../src/host/tools/modules/network/readXlsx.schema';
+import { writeSchema } from '../../src/host/tools/modules/file/write.schema';
 
 // Mock services
 vi.mock('../../src/host/services', () => ({
@@ -184,23 +185,55 @@ describe('ToolExecutor', () => {
       expect(mockExecuteCalls).toBe(0);
     });
 
-    it('缺少必填字段应该返回结构化 missing_required 错误', async () => {
+    it('必填 string 的显式空串是合法值（Write.content 建空白文件）', async () => {
       setMockTool({
-        inputSchema: {
-          type: 'object',
-          properties: {
-            file_path: { type: 'string', description: 'Excel 文件路径' },
-          },
-          required: ['file_path'],
-        },
+        name: writeSchema.name,
+        inputSchema: writeSchema.inputSchema,
       });
 
-      const result = await executor.execute('test_tool', { file_path: '   ' }, {});
+      const result = await executor.execute('Write', {
+        file_path: '/tmp/empty.txt',
+        content: '',
+      }, {});
+
+      expect(result.success).toBe(true);
+      expect(mockExecuteCalls).toBe(1);
+    });
+
+    it('必填 string 的 undefined 仍返回结构化 missing_required 错误', async () => {
+      setMockTool({
+        name: writeSchema.name,
+        inputSchema: writeSchema.inputSchema,
+      });
+
+      const result = await executor.execute('Write', {
+        file_path: '/tmp/empty.txt',
+        content: undefined,
+      }, {});
 
       expect(result.success).toBe(false);
-      expect(result.error).toContain('field_path=file_path');
+      expect(result.error).toContain('field_path=content');
       expect(result.error).toContain('expected=string');
-      expect(result.error).toContain('bad_value="   "');
+      expect(result.error).toContain('bad_value=undefined');
+      expect(result.error).toContain('category=missing_required');
+      expect(mockExecuteCalls).toBe(0);
+    });
+
+    it('必填 string 的 null 仍返回结构化 missing_required 错误', async () => {
+      setMockTool({
+        name: writeSchema.name,
+        inputSchema: writeSchema.inputSchema,
+      });
+
+      const result = await executor.execute('Write', {
+        file_path: '/tmp/empty.txt',
+        content: null,
+      }, {});
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('field_path=content');
+      expect(result.error).toContain('expected=string');
+      expect(result.error).toContain('bad_value=null');
       expect(result.error).toContain('category=missing_required');
       expect(mockExecuteCalls).toBe(0);
     });

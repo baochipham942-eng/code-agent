@@ -14,7 +14,6 @@
 import { useMemo } from 'react';
 import { useAppStore } from '../stores/appStore';
 import { useSessionStore, type SessionWithMeta } from '../stores/sessionStore';
-import { useSwarmStore } from '../stores/swarmStore';
 import { useTaskStore } from '../stores/taskStore';
 import { useBackgroundTaskStore } from '../stores/backgroundTaskStore';
 import { useWorkflowStore } from '../stores/workflowStore';
@@ -27,6 +26,7 @@ import type {
   TaskRecordOutputRef,
 } from '../types/runWorkbench';
 import type { ScriptRunAgentSnapshot, ScriptRunSnapshot } from '@shared/contract/scriptRun';
+import type { SwarmRunAgentRecord } from '@shared/contract/swarmTrace';
 import type { Task } from '@shared/contract/backgroundTask';
 import {
   getLongTaskStatusLabel,
@@ -46,6 +46,7 @@ import {
   buildSessionTaskRecord,
   buildToolCapabilityViews,
 } from '../utils/runWorkbenchProjection';
+import { useDurableSwarmRunDetail } from './useDurableSwarmRunDetail';
 
 /**
  * SessionStatusKind（侧栏唯一分类器的 kind）→ TaskRecord 状态。
@@ -307,6 +308,9 @@ function formatOutputRefStep(ref: TaskRecordOutputRef): string {
 }
 
 function backgroundTaskResumeHint(task: Task, outputRefs: TaskRecordOutputRef[]): string | undefined {
+  // 完成产物由会话流承担唯一展示；右侧概览只保留“已完成”状态。
+  // 这里若再返回 final ref/summary，TaskPanel 会把同一产物重新做成结果卡。
+  if (task.status === 'completed') return undefined;
   const recoveryPlan = recordFromMetadata(task.metadata, 'recoveryPlan');
   const recoverySummary = typeof recoveryPlan?.summary === 'string' ? recoveryPlan.summary : null;
   if (recoverySummary) return recoverySummary;
@@ -337,7 +341,7 @@ export function buildLedgerTaskRecords(tasks: Task[], currentSessionId: string |
     .slice(0, 8)
     .map((task) => {
       const status = backgroundTaskStatusToTaskStatus(task.status);
-      const outputRefs = buildTaskOutputRefs(task);
+      const outputRefs = task.status === 'completed' ? [] : buildTaskOutputRefs(task);
       const duration = formatBackgroundTaskDuration(task.durationMs);
       return {
         id: `background:${task.id}`,
@@ -366,23 +370,22 @@ export function buildLedgerTaskRecords(tasks: Task[], currentSessionId: string |
     });
 }
 
-function buildSubagentViews(args: {
+export function buildDurableSubagentViews(args: {
   runId: string | null;
-  agents: ReturnType<typeof useSwarmStore.getState>['agents'];
+  agents: SwarmRunAgentRecord[];
   selectedAgentId: string | null;
 }): SubagentRunView[] {
   return args.agents.map((agent) => {
-    const status = normalizeLongTaskStatus(agent.status || 'idle');
+    const status = normalizeLongTaskStatus(agent.status);
     return {
-      id: agent.id,
+      id: agent.agentId,
       parentRunId: args.runId,
       role: agent.name || agent.role || 'Agent',
-      model: 'model' in agent && typeof agent.model === 'string' ? agent.model : undefined,
       status,
-      inputSummary: agent.role || '等待任务',
-      lastOutput: agent.lastReport || (agent.id === args.selectedAgentId ? '当前选中' : ''),
-      resultSummary: agent.resultPreview,
-      handoff: agent.error,
+      inputSummary: agent.dispatchedTask || agent.role || '等待任务',
+      lastOutput: agent.finalOutput || (agent.agentId === args.selectedAgentId ? '当前选中' : ''),
+      resultSummary: agent.finalOutput,
+      handoff: agent.error ?? undefined,
     };
   });
 }
@@ -395,11 +398,11 @@ export function useRunWorkbenchModel(): RunWorkbenchModel {
   const sessionTaskProgress = useAppStore((state) => state.sessionTaskProgress);
   const pendingPermissionRequest = useAppStore((state) => state.pendingPermissionRequest);
   const pendingPermissionSessionId = useAppStore((state) => state.pendingPermissionSessionId);
-  const agents = useSwarmStore((state) => state.agents);
   const selectedSwarmAgentId = useAppStore((state) => state.selectedSwarmAgentId);
   const backgroundTasks = useBackgroundTaskStore((state) => state.tasks);
   const workflowSnapshot = useWorkflowStore((state) => state.activeSnapshot(currentSessionId ?? undefined));
   const sessionTasks = useSessionStore((state) => state.sessionTasks);
+  const durableSwarmDetail = useDurableSwarmRunDetail(currentSessionId);
 
   const taskProgress = currentSessionId ? sessionTaskProgress[currentSessionId] ?? null : null;
   const sessionStatus = currentSessionId ? sessionStates[currentSessionId]?.status ?? null : null;
@@ -437,18 +440,18 @@ export function useRunWorkbenchModel(): RunWorkbenchModel {
         ...(workflowTask ? [workflowTask] : []),
         ...ledgerTasks,
       ],
-      subagents: buildSubagentViews({
+      subagents: buildDurableSubagentViews({
         runId: run.identity.runId,
-        agents,
+        agents: durableSwarmDetail?.agents ?? [],
         selectedAgentId: selectedSwarmAgentId,
       }).concat(workflowSubagents),
       memoryActivities: buildMemoryActivityEvents(projection),
       outputs: buildOutputArtifactViews(projection),
     };
   }, [
-    agents,
     backgroundTasks,
     currentSessionId,
+    durableSwarmDetail,
     pendingApprovalId,
     projection,
     selectedSwarmAgentId,

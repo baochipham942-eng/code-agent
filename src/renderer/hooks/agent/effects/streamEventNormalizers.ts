@@ -6,6 +6,7 @@ import type {
   AgentEngineFailureDiagnostics,
   AgentEngineReliability,
   HookTriggerEventData,
+  HookStartedEventData,
   Message,
   ModelCapabilityNeed,
   ModelCostPolicy,
@@ -30,6 +31,7 @@ import type {
 import type {
   AssistantMessagePayload,
   MessageDeltaPayload,
+  UserMessagePayload,
   MessageSnapshotPayload,
   ModelFallbackPayload,
   NormalizedToolTokenSavingsMeasurementSource,
@@ -611,6 +613,24 @@ export function normalizeStreamTextPayload(data: unknown): StreamTextPayload | n
   };
 }
 
+/**
+ * 宿主自起轮次广播回来的用户消息。只认 role==='user' + 有 id 有正文的形状，
+ * 其余一律返回 null，交给 assistant 分支——两边共用 `message` 事件名。
+ */
+export function normalizeUserMessagePayload(data: unknown): UserMessagePayload | null {
+  if (!isRecord(data) || data.role !== 'user') return null;
+  const id = getStringField(data, 'id');
+  const content = getStringField(data, 'content');
+  if (!id || content === undefined) return null;
+  return {
+    id,
+    content,
+    ...(getNumberField(data, 'timestamp') !== undefined ? { timestamp: getNumberField(data, 'timestamp') } : {}),
+    ...(Array.isArray(data.attachments) ? { attachments: data.attachments as UserMessagePayload['attachments'] } : {}),
+    ...(isRecord(data.metadata) ? { metadata: data.metadata as UserMessagePayload['metadata'] } : {}),
+  };
+}
+
 export function normalizeMessageDeltaPayload(data: unknown): MessageDeltaPayload | null {
   if (!isRecord(data) || data.role !== 'assistant') return null;
   const text = getStringField(data, 'text');
@@ -854,8 +874,37 @@ export function normalizeHookTriggerData(data: unknown): HookTriggerEventData | 
     modified: Boolean(raw.modified),
     sources,
     hookType,
+    ...(Array.isArray(raw.names)
+      ? { names: raw.names.filter((name): name is string => typeof name === 'string') }
+      : {}),
     ...(typeof raw.errorCount === 'number' ? { errorCount: raw.errorCount } : {}),
-    ...(typeof raw.message === 'string' ? { message: raw.message } : {}),
+    // message 刻意不透传：hook 的完整输出是任意文本（实测漏过整份记忆索引），
+    // 只留 host 观测日志；渲染层唯一允许看到的 hook 文本是单行决策摘要 reason。
+    // 纵深防御——即使投影/组件失守，store 里也根本没有 message 可拿。
+    ...(typeof raw.reason === 'string' ? { reason: raw.reason } : {}),
+    ...(typeof raw.sessionId === 'string' ? { sessionId: raw.sessionId } : {}),
+    ...(typeof raw.turnId === 'string' ? { turnId: raw.turnId } : {}),
+    ...(typeof raw.toolName === 'string' ? { toolName: raw.toolName } : {}),
+    ...(typeof raw.matcher === 'string' ? { matcher: raw.matcher } : {}),
+  };
+}
+
+export function normalizeHookStartedData(data: unknown): HookStartedEventData | null {
+  if (!data || typeof data !== 'object') {
+    return null;
+  }
+
+  const raw = data as Partial<HookStartedEventData>;
+  if (typeof raw.timestamp !== 'number' || typeof raw.event !== 'string') {
+    return null;
+  }
+
+  return {
+    timestamp: raw.timestamp,
+    event: raw.event,
+    ...(Array.isArray(raw.names)
+      ? { names: raw.names.filter((name): name is string => typeof name === 'string') }
+      : {}),
     ...(typeof raw.sessionId === 'string' ? { sessionId: raw.sessionId } : {}),
     ...(typeof raw.turnId === 'string' ? { turnId: raw.turnId } : {}),
     ...(typeof raw.toolName === 'string' ? { toolName: raw.toolName } : {}),

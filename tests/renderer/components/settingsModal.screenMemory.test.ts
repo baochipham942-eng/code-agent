@@ -70,6 +70,7 @@ describe('SettingsModal screen memory tab visibility', () => {
     expect(groups[0].tabs.map((tab) => tab.id)).toEqual([
       'model',
       'visualModels',
+      'voiceModel',
       'search',
       'soul',
     ]);
@@ -80,6 +81,7 @@ describe('SettingsModal screen memory tab visibility', () => {
       'doctor',
       'conversation',
       'keybindings',
+      'voiceLive',
       'voiceInput',
     ]);
     expect(groups[2].tabs.map((tab) => tab.id)).toEqual([

@@ -56,6 +56,10 @@ const sessionUiState = {
   pendingDelete: null,
   expandedWorkspaces: {},
   setWorkspaceExpanded: vi.fn(),
+  collapsedTiers: {},
+  setTierCollapsed: vi.fn(),
+  soloTier: null,
+  setSoloTier: vi.fn(),
 };
 
 const appState = {
@@ -65,6 +69,7 @@ const appState = {
   setShowEvalCenter: vi.fn(),
   showProjectCollaborationPage: false,
   openProjectCollaborationPage: vi.fn(),
+  openProjectSpacePage: vi.fn(),
   optionalUpdateInfo: null as any,
   setShowOptionalUpdateModal: vi.fn(),
 };
@@ -125,9 +130,9 @@ describe('Sidebar new session button', () => {
     const html = renderToStaticMarkup(React.createElement(Sidebar));
     const newTaskButtonHtml = html.match(/<button[^>]*data-testid="sidebar-new-task"[^>]*>.*?<\/button>/)?.[0] ?? '';
 
-    // 2026-07-27 审美关：品牌标从侧栏头行下架（产品负责人：品牌标识暂无合适位置，
-    // 先不展示）；空态欢迎页那处品牌触点仍在，本行只剩右侧功能图标 = Codex 参照形态。
-    expect(html).not.toContain('data-testid="neo-brand-mark"');
+    // 2026-07-27 批C2：品牌标改条件展示——红绿灯不在场（全屏/浏览器/非 Tauri 壳）时
+    // 回到侧栏头行左槽。jsdom 无 __TAURI_INTERNALS__ = 浏览器态，品牌标应在。
+    expect(html).toContain('data-testid="neo-brand-mark"');
     expect(html).toContain('新任务');
     // D2（打磨批 D）：实现语义 tooltip 已删，行内只剩「新任务」一个称谓。
     expect(html).not.toContain('新建任务（纯对话，不继承项目上下文）');
@@ -158,10 +163,15 @@ describe('Sidebar new session button', () => {
     expect(html).toContain('查看 Agent Neo v0.16.89 更新内容');
   });
 
-  it('wires the lower account menu to the project collaboration page', () => {
-    const source = readFileSync(resolve(process.cwd(), 'src/renderer/components/Sidebar.tsx'), 'utf8');
+  // 「协作请求（@neo）」入口 2026-07-29 爸拍板拿掉：topic 目录的家=协作空间页任务 tab。
+  // 反向钉死防复活：菜单里不许再出现该入口的接线。
+  it('account menu no longer wires the removed project collaboration entry', () => {
+    const menu = readFileSync(
+      resolve(process.cwd(), 'src/renderer/components/features/sidebar/SidebarAccountMenu.tsx'),
+      'utf8',
+    );
 
-    expect(source).toContain('openProjectCollaborationPage(currentSessionProjectId)');
-    expect(source).toContain('label={sb.menuNeoCollab}');
+    expect(menu).not.toContain('openProjectCollaborationPage');
+    expect(menu).not.toContain('menuNeoCollab');
   });
 });

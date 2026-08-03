@@ -77,6 +77,42 @@ describe('SwarmLedgerRepository（3b 协同事件账本 · append-only 真理源
     } finally { db.close(); }
   });
 
+  it('终态门闩：completed 后的迟到 failed snapshot 与第二个 run_closed 都被拒绝', () => {
+    const db = freshDb();
+    try {
+      const repo = new SwarmLedgerRepository(db);
+      expect(repo.append(started)).toBe(true);
+      expect(repo.append(agentSnap('a1', 1, 10))).toBe(true);
+      expect(repo.append({
+        ...agentSnap('a1', 2, 20),
+        payload: { ...agentSnap('a1', 2, 20).payload, status: 'failed', error: 'late failure' },
+      })).toBe(false);
+      expect(repo.append({
+        runId: 'run-1', sessionId: 's1', seq: 3, kind: 'run_closed', agentId: null,
+        payload: {
+          status: 'completed', endedAt: 200, completedCount: 1, failedCount: 0,
+          parallelPeak: 1, totalTokensIn: 10, totalTokensOut: 50, totalToolCalls: 3,
+          totalCostUsd: 0.01, errorSummary: null, aggregation: null, tags: [],
+        },
+        recordedAt: 200,
+      })).toBe(true);
+      expect(repo.append({
+        runId: 'run-1', sessionId: 's1', seq: 4, kind: 'run_closed', agentId: null,
+        payload: {
+          status: 'failed', endedAt: 300, completedCount: 0, failedCount: 1,
+          parallelPeak: 1, totalTokensIn: 10, totalTokensOut: 50, totalToolCalls: 3,
+          totalCostUsd: 0.01, errorSummary: 'late failure', aggregation: null, tags: [],
+        },
+        recordedAt: 300,
+      })).toBe(false);
+
+      const events = repo.getByRun('run-1');
+      expect(events.filter((event) => event.kind === 'agent_snapshot').at(-1)?.payload?.status).toBe('completed');
+      expect(events.filter((event) => event.kind === 'run_closed')).toHaveLength(1);
+      expect(events.at(-1)?.payload?.status).toBe('completed');
+    } finally { db.close(); }
+  });
+
   it('append-only 不变量：仓储不暴露任何 update/delete 方法', () => {
     const db = freshDb();
     try {

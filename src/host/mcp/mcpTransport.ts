@@ -1,15 +1,19 @@
+import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
+import {
+  Client,
+  InMemoryResponseCacheStore,
+  SdkError,
+  SdkErrorCode,
+  SdkHttpError,
+  SSEClientTransport,
+  StreamableHTTPClientTransport,
+} from '@modelcontextprotocol/client';
+import type { ListChangedHandlers, OAuthClientProvider, Transport } from '@modelcontextprotocol/client';
+
 // ============================================================================
 // MCP Transport - 传输层创建和连接管理
 // 支持 Stdio / SSE / HTTP Streamable 三种外部传输协议
 // ============================================================================
-
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import type { ListChangedHandlers } from '@modelcontextprotocol/sdk/types.js';
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
-import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
-import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
-import type { OAuthClientProvider } from '@modelcontextprotocol/sdk/client/auth.js';
-import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import { fetch as undiciFetch, ProxyAgent } from 'undici';
 import { createLogger } from '../services/infra/logger';
 import { sanitizeEnv } from '../utils/sanitizeEnv';
@@ -21,6 +25,14 @@ import type {
 import { isStdioConfig, isSSEConfig, isHttpStreamableConfig } from './types';
 
 const logger = createLogger('MCPTransport');
+export const MCP_TASKS_EXTENSION_ID = 'io.modelcontextprotocol/tasks';
+/**
+ * Thirty seconds removes repeated registry round trips during reconnect/startup bursts without
+ * hiding server changes for minutes when notifications are unavailable. A shorter value gives
+ * little protection from the ~1.6s registry path; a longer value increases stale-list exposure.
+ */
+export const MCP_RESPONSE_CACHE_DEFAULT_TTL_MS = 30_000;
+const sharedMcpResponseCacheStore = new InMemoryResponseCacheStore();
 
 // Connection timeout constants (configured in shared/constants.ts)
 export const SSE_CONNECT_TIMEOUT = MCP_TIMEOUTS.SSE_CONNECT;
@@ -29,6 +41,50 @@ export const STDIO_FIRST_RUN_TIMEOUT = MCP_TIMEOUTS.FIRST_RUN;
 export const REMOTE_MCP_CONNECT_MAX_ATTEMPTS = 2;
 export const REMOTE_MCP_CONNECT_RETRY_DELAY_MS = 400;
 const mcpProxyAgents = new Map<string, ProxyAgent>();
+const RETRYABLE_SDK_ERROR_CODES = new Set<string>([
+  SdkErrorCode.NotConnected,
+  SdkErrorCode.RequestTimeout,
+  SdkErrorCode.ConnectionClosed,
+  SdkErrorCode.SendFailed,
+  SdkErrorCode.EraNegotiationFailed,
+]);
+const RETRYABLE_SYSTEM_ERROR_CODES = new Set([
+  'ECONNRESET',
+  'ETIMEDOUT',
+  'EAI_AGAIN',
+  'ENETUNREACH',
+  'EPIPE',
+]);
+
+function errorRecord(error: unknown): Record<string, unknown> | undefined {
+  return error && typeof error === 'object' ? error as Record<string, unknown> : undefined;
+}
+
+function findSystemErrorCode(error: unknown): string | undefined {
+  let current = errorRecord(error);
+  const visited = new Set<object>();
+  while (current && !visited.has(current)) {
+    visited.add(current);
+    if (typeof current.code === 'string' && RETRYABLE_SYSTEM_ERROR_CODES.has(current.code)) {
+      return current.code;
+    }
+    current = errorRecord(current.cause);
+  }
+  return undefined;
+}
+
+function sdkErrorCode(error: unknown): string | undefined {
+  const code = errorRecord(error)?.code;
+  return typeof code === 'string' ? code : undefined;
+}
+
+function retryableHttpStatus(error: unknown): boolean {
+  const status = SdkHttpError.isInstance(error)
+    ? error.status
+    : errorRecord(error)?.status;
+  return typeof status === 'number'
+    && (status === 408 || status === 429 || status >= 500);
+}
 
 function headersWithoutAuthorization(headers: Record<string, string>): Record<string, string> | undefined {
   const sanitized = Object.fromEntries(
@@ -77,18 +133,14 @@ function createRemoteMCPFetch(target: URL): typeof globalThis.fetch | undefined 
 }
 
 export function isRetryableRemoteMCPConnectionError(error: unknown): boolean {
-  const message = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
-  const normalized = message.toLowerCase();
-  return [
-    'fetch failed',
-    'econnreset',
-    'etimedout',
-    'eai_again',
-    'enetunreach',
-    'socket hang up',
-    'other side closed',
-    'terminated',
-  ].some((marker) => normalized.includes(marker));
+  return RETRYABLE_SDK_ERROR_CODES.has(sdkErrorCode(error) ?? '')
+    || retryableHttpStatus(error)
+    || findSystemErrorCode(error) !== undefined;
+}
+
+export function isMcpToolConnectionInterruptionError(error: unknown): boolean {
+  const code = errorRecord(error)?.code;
+  return isRetryableRemoteMCPConnectionError(error) || code === -32001;
 }
 
 export async function retryTransientRemoteMCPConnection<T>(
@@ -97,15 +149,18 @@ export async function retryTransientRemoteMCPConnection<T>(
     maxAttempts?: number;
     retryDelayMs?: number;
     onRetry?: (error: unknown, nextAttempt: number) => void;
+    signal?: AbortSignal;
   } = {},
 ): Promise<T> {
   const maxAttempts = Math.max(1, options.maxAttempts ?? REMOTE_MCP_CONNECT_MAX_ATTEMPTS);
   const retryDelayMs = Math.max(0, options.retryDelayMs ?? REMOTE_MCP_CONNECT_RETRY_DELAY_MS);
 
   for (let attemptNumber = 1; attemptNumber <= maxAttempts; attemptNumber += 1) {
+    options.signal?.throwIfAborted();
     try {
       return await attempt(attemptNumber);
     } catch (error) {
+      options.signal?.throwIfAborted();
       if (attemptNumber >= maxAttempts || !isRetryableRemoteMCPConnectionError(error)) {
         throw error;
       }
@@ -294,15 +349,19 @@ export function createMCPSDKClient(listChangedHandlers?: ListChangedHandlers): C
       version: '0.1.0',
     },
     {
+      versionNegotiation: { mode: 'auto' },
       capabilities: {
         elicitation: {
           form: {},
         },
-        tasks: {
-          list: {},
-          cancel: {},
+        extensions: {
+          [MCP_TASKS_EXTENSION_ID]: {},
         },
       },
+      responseCacheStore: sharedMcpResponseCacheStore,
+      // Neo is a single-user desktop process, so the SDK's default '' partition is the safe
+      // single-tenant posture. Do not bind this cache to OAuth subjects without multi-user hosting.
+      defaultCacheTtlMs: MCP_RESPONSE_CACHE_DEFAULT_TTL_MS,
       ...(listChangedHandlers ? { listChanged: listChangedHandlers } : {}),
     }
   );
@@ -316,13 +375,28 @@ export async function connectWithTimeout(
   transport: Transport,
   config: MCPServerConfig,
   connectTimeout: number,
+  signal?: AbortSignal,
 ): Promise<void> {
   return new Promise<void>((resolve, reject) => {
     let isSettled = false;
+    const cleanup = () => {
+      clearTimeout(timeoutId);
+      signal?.removeEventListener('abort', handleAbort);
+    };
+    const handleAbort = () => {
+      if (isSettled) return;
+      isSettled = true;
+      cleanup();
+      void transport.close().catch(() => {});
+      reject(signal?.reason instanceof Error
+        ? signal.reason
+        : new DOMException('MCP connection cancelled', 'AbortError'));
+    };
 
     const timeoutId = setTimeout(() => {
       if (!isSettled) {
         isSettled = true;
+        cleanup();
         // 超时时尝试关闭 transport，防止资源泄漏
         transport.close().catch(() => {
           // 忽略关闭错误
@@ -338,22 +412,32 @@ export async function connectWithTimeout(
             errorMsg += `Try running 'npx -y ${packageName}' manually to pre-download the package.`;
           }
         }
-        reject(new Error(errorMsg));
+        reject(new SdkError(
+          SdkErrorCode.RequestTimeout,
+          errorMsg,
+          { serverName: config.name, timeoutMs: connectTimeout },
+        ));
       }
     }, connectTimeout);
+
+    if (signal?.aborted) {
+      handleAbort();
+      return;
+    }
+    signal?.addEventListener('abort', handleAbort, { once: true });
 
     client.connect(transport)
       .then(() => {
         if (!isSettled) {
           isSettled = true;
-          clearTimeout(timeoutId);
+          cleanup();
           resolve();
         }
       })
       .catch((err) => {
         if (!isSettled) {
           isSettled = true;
-          clearTimeout(timeoutId);
+          cleanup();
           reject(err);
         }
       });

@@ -14,7 +14,7 @@ import { useI18n } from '../../../hooks/useI18n';
 import { Badge } from '../../primitives/Badge';
 import { Button } from '../../primitives/Button';
 import { EmptyState } from '../../primitives/EmptyState';
-import { RoleIcon } from '../shared/RoleIcon';
+import { RoleAvatarTile } from './RoleAvatarTile';
 
 export interface RolePackHealthNoticeProps {
   /** 缺省表示该角色不是云下发包，直接不渲染（省掉调用方的 has + 非空断言） */
@@ -33,12 +33,12 @@ export const RolePackHealthNotice: React.FC<RolePackHealthNoticeProps> = ({ item
   return (
     <div className="space-y-1.5">
       {item.installState === 'degraded' ? (
-        <div data-testid={`role-pack-degraded-${item.entry.roleId}`} className="rounded-md border border-amber-500/30 bg-amber-500/10 p-2">
-          <div className="flex items-center gap-1.5 text-xs text-amber-200">
+        <div data-testid={`role-pack-degraded-${item.entry.roleId}`} className="rounded-md border border-badge-warning/30 bg-amber-500/10 p-2">
+          <div className="flex items-center gap-1.5 text-xs text-badge-warning">
             <AlertTriangle className="h-3.5 w-3.5" />
             <span>{text.degraded.replace('{count}', String(missingSkills.length))}</span>
           </div>
-          <p data-testid={`role-pack-missing-skills-${item.entry.roleId}`} className="mt-1 text-[11px] leading-relaxed text-amber-100/80">
+          <p data-testid={`role-pack-missing-skills-${item.entry.roleId}`} className="mt-1 text-[11px] leading-relaxed text-badge-warning/80">
             {text.missingSkills.replace('{skills}', missingSkills.join('、'))}
           </p>
           <Button
@@ -56,7 +56,7 @@ export const RolePackHealthNotice: React.FC<RolePackHealthNoticeProps> = ({ item
         </div>
       ) : null}
       {item.locallyModified ? (
-        <p data-testid={`role-pack-locally-modified-${item.entry.roleId}`} className="text-[11px] leading-relaxed text-amber-200/80">
+        <p data-testid={`role-pack-locally-modified-${item.entry.roleId}`} className="text-[11px] leading-relaxed text-badge-warning/80">
           {text.locallyModified}
         </p>
       ) : null}
@@ -119,9 +119,7 @@ export const RolePackShelf: React.FC<RolePackShelfProps> = ({
                 <div>
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex items-center gap-2.5">
-                      <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg bg-violet-500/10">
-                        <RoleIcon name={entry.visual.icon} className="h-5 w-5" />
-                      </span>
+                      <RoleAvatarTile roleId={entry.roleId} icon={entry.visual.icon} name={entry.displayName} />
                       <span className="min-w-0">
                         <span className="block truncate text-sm font-medium text-zinc-100">{entry.displayName || entry.roleId}</span>
                         <span className="block truncate text-xs text-zinc-500">{entry.visual.profession}</span>
@@ -130,7 +128,7 @@ export const RolePackShelf: React.FC<RolePackShelfProps> = ({
                     <span className="flex flex-shrink-0 items-center gap-1">
                       {/* 签名云货架的来源标识是差异化卖点，保留并常驻 */}
                       <Badge data-testid={`role-pack-source-${entry.roleId}`} className="border-zinc-700 bg-zinc-800 text-[10px] text-zinc-400">{text.sourceBadge}</Badge>
-                      {item.installed ? <Badge className="border-emerald-500/30 bg-emerald-500/10 text-[10px] text-emerald-200">{text.installed}</Badge> : null}
+                      {item.installed ? <Badge className="border-badge-success/30 bg-emerald-500/10 text-[10px] text-badge-success">{text.installed}</Badge> : null}
                     </span>
                   </div>
                   {entry.description ? <p className="mt-2 line-clamp-2 text-xs leading-relaxed text-zinc-400">{entry.description}</p> : null}

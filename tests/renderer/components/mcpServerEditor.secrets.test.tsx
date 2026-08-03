@@ -53,7 +53,8 @@ describe('McpServerEditor credential fields', () => {
         BASE_URL: 'https://api.example.test',
       },
     });
-    const passwordInput = container.querySelector<HTMLInputElement>('input[type="password"]');
+    // Modal 已 portal 到 body，查询走 document 而非 container
+    const passwordInput = document.querySelector<HTMLInputElement>('input[type="password"]');
 
     expect(passwordInput?.value).toBe('sk-test-secret');
     saveEditor();
@@ -163,7 +164,7 @@ describe('McpServerEditor credential fields', () => {
         APP_SECRET: secretReference,
       },
     });
-    const keyInput = Array.from(container.querySelectorAll('input')).find(
+    const keyInput = Array.from(document.querySelectorAll('input')).find(
       (input) => input.value === 'APP_SECRET',
     );
     const valueInput = keyInput?.parentElement?.querySelector<HTMLInputElement>('input[type="password"]');

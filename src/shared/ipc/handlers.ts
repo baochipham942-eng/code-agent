@@ -3,6 +3,7 @@
 // ============================================================================
 
 import type { AgentsChangedEvent } from '../contract/agentRegistry';
+import type { QueuedInputSettledEvent } from '../contract/queuedInput';
 import type { SkillDraftOrigin } from '../contract/agent';
 import type { ParsedSkill } from '../contract/agentSkill';
 import type { Message, PermissionResponse, Session, SessionTask, FileInfo, AppSettings, AgentEventEnvelope, TaskPlan, Finding, ErrorRecord, PlanningState, UserQuestionRequest, UserQuestionResponse, CanvasOpProposal, CanvasProposalDecision, CanvasVideoRequest, CanvasVideoDecision, AutonomyEnvelopeRequest, AutonomyEnvelopeDecision, MCPElicitationRequest, MCPElicitationResponse, MCPOAuthConsentRequest, MCPOAuthConsentResponse, AuthUser, AuthStatus, AuthSessionTrustState, SyncStatus, DeviceInfo, UpdateInfo, DownloadProgress } from '../contract';
@@ -19,12 +20,13 @@ import type { ModelFallbackStrategy, ModelFallbackTraceStep } from '../contract/
 
 import type { ContextInterventionRequest, ContextInterventionSetRequest, ContextInterventionSnapshot, ContextViewRequest, ContextViewResponse } from '../contract/contextView';
 import type { ManagedBrowserSessionState } from '../contract/desktop';
+import type { SurfaceLiveFrameV1 } from '../contract/surfaceExecution';
 
 import type { DAGVisualizationEvent } from '../contract/dagVisualization';
 import type { ScriptRunEvent, WorkflowLaunchEvent } from '../contract/scriptRun';
 import { DAG_CHANNELS, SKILL_CHANNELS } from './channels';
 
-import type { TelemetrySession, TelemetryTurn, TelemetryModelCall, TelemetryToolCall, TelemetryTimelineEvent, TelemetrySessionListItem, TelemetrySessionListOptions, TelemetryToolStat, TelemetryIntentStat, TelemetryCostBucket, TelemetryCostByPeriodOptions, TelemetryPushEvent, TelemetryHealth, ComputerSurfaceReliabilitySummary, TelemetryFeedbackSubmitRequest, TelemetryFeedbackSubmitResult } from '../contract/telemetry';
+import type { TelemetrySession, TelemetryTurn, TelemetryModelCall, TelemetryToolCall, TelemetryTimelineEvent, TelemetrySessionListItem, TelemetrySessionListOptions, TelemetryToolStat, TelemetryIntentStat, TelemetryCostBucket, TelemetryCostByPeriodOptions, TelemetryPushEvent, TelemetryHealth, ComputerSurfaceReliabilitySummary, TelemetryFeedbackSubmitRequest, TelemetryFeedbackSubmitResult, TelemetryFeedbackRating } from '../contract/telemetry';
 
 import type { ChannelAccount, ChannelInboxItem, ChannelType, AddChannelAccountRequest, UpdateChannelAccountRequest, RetryChannelMediaAttachmentRequest, RetryChannelMediaAttachmentResult } from '../contract/channel';
 
@@ -245,15 +247,15 @@ export interface IpcInvokeHandlers {
   [SKILL_CHANNELS.REPO_CANCEL]: (stageId: string) => Promise<void>;
   [SKILL_CHANNELS.REGISTRY_LIST]: () => Promise<{ items: SkillRegistryListItem[]; error?: string }>;
   [SKILL_CHANNELS.REGISTRY_INSTALL]: (name: string) => Promise<{ success: boolean; error?: string }>;
-  [SKILL_CHANNELS.SKILL_LIST]: () => Promise<Array<ParsedSkill & {
+  [SKILL_CHANNELS.SKILL_LIST]: (workspacePath?: string) => Promise<Array<ParsedSkill & {
     globalEnabled: boolean;
     projectOverride: boolean | null;
     enabled: boolean;
   }>>;
   [SKILL_CHANNELS.SKILL_ENABLE]: (skillName: string) => Promise<void>;
   [SKILL_CHANNELS.SKILL_DISABLE]: (skillName: string) => Promise<void>;
-  [SKILL_CHANNELS.SKILL_PROJECT_SET]: (skillName: string, enabled: boolean) => Promise<void>;
-  [SKILL_CHANNELS.SKILL_PROJECT_CLEAR]: (skillName: string) => Promise<void>;
+  [SKILL_CHANNELS.SKILL_PROJECT_SET]: (skillName: string, enabled: boolean, workspacePath?: string) => Promise<void>;
+  [SKILL_CHANNELS.SKILL_PROJECT_CLEAR]: (skillName: string, workspacePath?: string) => Promise<void>;
   [SKILL_CHANNELS.SESSION_MOUNT]: (sessionId: string, skillName: string, libraryId: string) => Promise<boolean>;
   [SKILL_CHANNELS.SESSION_UNMOUNT]: (sessionId: string, skillName: string) => Promise<boolean>;
   [SKILL_CHANNELS.SESSION_LIST]: (sessionId: string) => Promise<SessionSkillMount[]>;
@@ -341,6 +343,7 @@ export interface IpcInvokeHandlers {
   [IPC_CHANNELS.MARKETPLACE_LIST_PLUGINS]: (marketplaceId?: string) => Promise<MarketplaceResult<MarketplacePluginEntry[]>>;
   [IPC_CHANNELS.MARKETPLACE_SEARCH_PLUGINS]: (query: string) => Promise<MarketplaceResult<MarketplacePluginEntry[]>>;
   [IPC_CHANNELS.MARKETPLACE_INSTALL_PLUGIN]: (spec: string, options?: { scope?: 'user' | 'project'; projectPath?: string }) => Promise<PluginInstallResult>;
+  [IPC_CHANNELS.MARKETPLACE_CANCEL_INSTALL]: (spec: string) => Promise<MarketplaceResult<{ cancelled: boolean }>>;
   [IPC_CHANNELS.MARKETPLACE_UNINSTALL_PLUGIN]: (pluginId: string, scope?: 'user' | 'project') => Promise<MarketplaceResult<void>>;
   [IPC_CHANNELS.MARKETPLACE_LIST_INSTALLED]: (scope?: 'user' | 'project' | 'all') => Promise<MarketplaceResult<InstalledPlugin[]>>;
   [IPC_CHANNELS.MARKETPLACE_ENABLE_PLUGIN]: (pluginId: string) => Promise<MarketplaceResult<void>>;
@@ -521,6 +524,7 @@ export interface IpcInvokeHandlers {
   } | null>;
   [IPC_CHANNELS.TELEMETRY_DELETE_SESSION]: (sessionId: string) => Promise<boolean>;
 	  [IPC_CHANNELS.TELEMETRY_SUBMIT_FEEDBACK]: (payload: TelemetryFeedbackSubmitRequest) => Promise<TelemetryFeedbackSubmitResult>;
+	  [IPC_CHANNELS.TELEMETRY_GET_SESSION_FEEDBACK]: (sessionId: string) => Promise<TelemetryFeedbackRating[]>;
 	  [IPC_CHANNELS.REPLAY_GET_STRUCTURED_DATA]: (sessionId: string) => Promise<unknown>;
 	  [IPC_CHANNELS.REPLAY_GET_TRAJECTORY_QUALITY]: (payload: AgentTrajectoryQualitySummariesRequest) => Promise<Record<string, AgentTrajectorySessionQualitySummary>>;
 	  [IPC_CHANNELS.REPLAY_UPDATE_TRAJECTORY_COLLECTION]: (payload: AgentTrajectoryCollectionUpdateRequest) => Promise<AgentTrajectorySessionQualitySummary>;
@@ -576,6 +580,11 @@ export interface NotificationShowEvent {
   title: string;
   body: string;
   sessionId: string;
+  /**
+   * 这条通知同时代表目标会话出现了用户尚未查看的新结果。
+   * Renderer 只把它接到既有 session unread 状态，不另建通知账本。
+   */
+  markSessionUnread?: boolean;
 }
 
 export type MCPEventType = 'connection_errors' | 'server_connected' | 'server_disconnected' | 'capabilities_changed';
@@ -650,6 +659,7 @@ export interface IpcEventHandlers {
   [IPC_CHANNELS.AUTH_PASSWORD_RESET_CALLBACK]: (data: { accessToken: string; refreshToken: string }) => void;
   [IPC_CHANNELS.POSTHOG_IDENTITY]: (data: { distinctId: string | null }) => void;
   [IPC_CHANNELS.SYNC_EVENT]: (status: SyncStatus) => void;
+  [IPC_CHANNELS.QUEUED_INPUT_SETTLED]: (settled: QueuedInputSettledEvent) => void;
   [IPC_CHANNELS.SESSION_UPDATED]: (event: SessionUpdatedEvent) => void;
   [IPC_CHANNELS.SESSION_LIST_UPDATED]: () => void;
   [IPC_CHANNELS.WORKSPACE_CURRENT_CHANGED]: (event: { dir: string | null }) => void;
@@ -665,6 +675,9 @@ export interface IpcEventHandlers {
   [IPC_CHANNELS.STATUS_CONTEXT_UPDATE]: (event: { percent: number }) => void;
   [IPC_CHANNELS.STATUS_GIT_UPDATE]: (event: { branch: string | null; changes: { staged: number; unstaged: number; untracked: number } | null }) => void;
   [IPC_CHANNELS.MANAGED_BROWSER_SESSION_CHANGED]: (event: ManagedBrowserSessionChangedEvent) => void;
+  [IPC_CHANNELS.SURFACE_LIVE_FRAME]: (frame: SurfaceLiveFrameV1) => void;
+  [IPC_CHANNELS.TERMINAL_OUTPUT]: (event: { sessionId: string; data: string }) => void;
+  [IPC_CHANNELS.TERMINAL_REVEAL]: (event: { sessionId: string }) => void;
   // Background task events
   [IPC_CHANNELS.BACKGROUND_TASK_UPDATE]: (event: BackgroundTaskUpdateEvent) => void;
   // TaskManager runtime events

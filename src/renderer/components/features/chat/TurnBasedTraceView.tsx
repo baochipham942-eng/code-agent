@@ -15,6 +15,7 @@ import { useSessionStore } from '../../../stores/sessionStore';
 import { useTaskStore } from '../../../stores/taskStore';
 import { recordStreamingPerformanceCounter } from '../../../utils/streamingPerformanceMetrics';
 import { useI18n } from '../../../hooks/useI18n';
+import { SessionModelsContext } from './sessionModelsContext';
 
 interface TurnBasedTraceViewProps {
   projection: TraceProjection;
@@ -30,6 +31,12 @@ interface TurnBasedTraceViewProps {
 
 export const ACTIVE_DISPLAY_SCROLL_INTERVAL_MS = 80;
 export const USER_SCROLL_PROGRAMMATIC_PAUSE_MS = 280;
+// 跟随恢复（followOutput 重新钉底）的抑制窗口，比普通程序滚动抑制长。
+// 真机证据（2026-07-28 用户反馈）：触控板惯性拉到最底、手停后页面快速抖几下——
+// 280ms 一到期，惯性/橡皮筋的最后几帧还在微沉降，followOutput='auto' 抢先钉底，
+// 与沉降尾巴对抢形成抖动。拉长到 800ms，沉降干净后再钉；流式期间用户上翻后
+// 回底的跟随恢复最多晚半秒，可接受。
+export const USER_SCROLL_FOLLOW_REENGAGE_PAUSE_MS = 800;
 
 export function getFocusedTurnIndex(projection: TraceProjection): number {
   if (projection.turns.length === 0) return -1;
@@ -200,6 +207,10 @@ export function getTraceNodeSelector(nodeId: string, nodeType: string): string {
 
 const TRACE_TURN_ANCHOR_SELECTOR = '[data-trace-turn-id]';
 
+// 默认值必须是模块级常量：写成 `searchMatches = []` 的话，调用方不传时每次渲染
+// 都是新数组，itemContent 跟着换身份，等于每渲染往 virtuoso store 发布一次新 props。
+const NO_SEARCH_MATCHES: SearchMatch[] = [];
+
 export function getTraceTurnSelector(turnId: string): string {
   return `[data-trace-turn-id="${escapeAttributeSelector(turnId)}"]`;
 }
@@ -267,7 +278,7 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
   hasOlderMessages,
   isLoadingOlder,
   onLoadOlder,
-  searchMatches = [],
+  searchMatches = NO_SEARCH_MATCHES,
   activeMatchIndex = 0,
   onRewindUserPrompt,
   beforeFirstUserMessage,
@@ -279,6 +290,11 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
   const prevActiveMatchRef = useRef(-1);
   const prevFocusedTurnRef = useRef<string | null>(null);
   const prevAssistantAnchorRef = useRef<string | null>(null);
+  // 进入/切换会话检测：进入落点由 Virtuoso（key=sessionId 重挂载 +
+  // initialTopMostItemIndex 底部对齐）负责，focus/anchor 两个 effect 在
+  // 进入瞬间不得再把 focused turn 钉到视口顶部（末轮长于一屏时会落在中段）。
+  const prevFocusSessionRef = useRef<string | null>(null);
+  const prevAnchorSessionRef = useRef<string | null>(null);
   const historyListRef = useRef<{ sessionId: string; firstTurnId: string | null; firstItemIndex: number }>({
     sessionId: projection.sessionId,
     firstTurnId: projection.turns[0]?.turnId ?? null,
@@ -287,6 +303,7 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
   const activeDisplayScrollCancelRef = useRef<(() => void) | null>(null);
   const activeDisplayScrollLastAtRef = useRef(0);
   const userScrollSuppressUntilRef = useRef(0);
+  const userScrollLastInteractionAtRef = useRef(0);
   const touchStartYRef = useRef<number | null>(null);
   const keepActiveOutputVisibleRef = useRef(false);
   const historyPrependInProgressRef = useRef(false);
@@ -338,6 +355,20 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
   const hasOutputFollowTurnOutput = outputFollowTurnIndex >= 0 && Boolean(outputFollowRevision);
 
   const firstTurnId = projection.turns[0]?.turnId ?? null;
+
+  // 会话内各轮实际使用过的模型集合（TurnQualityStrip 据此判断徽标是否在重复
+  // 全会话唯一的模型名——单模型会话里每轮印同一个名字是纯噪音，直接隐藏）。
+  const sessionModels = useMemo(() => {
+    const models = new Set<string>();
+    for (const turn of projection.turns) {
+      for (const node of turn.nodes) {
+        const strategy = node.metadata?.turnQuality?.strategy;
+        const model = strategy?.model || strategy?.requestedModel;
+        if (model) models.add(model);
+      }
+    }
+    return models;
+  }, [projection.turns]);
   const previousHistoryList = historyListRef.current;
   const prependedTurnCount = previousHistoryList.sessionId === projection.sessionId
     ? getPrependedTurnCount(previousHistoryList.firstTurnId, projection.turns)
@@ -454,7 +485,17 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
     isProgrammaticScrollSuppressed(userScrollSuppressUntilRef.current, Date.now())
   ), []);
 
+  // 跟随恢复专用：窗口比普通程序滚动抑制长（USER_SCROLL_FOLLOW_REENGAGE_PAUSE_MS），
+  // 让惯性/橡皮筋沉降干净后才允许 followOutput 重新钉底，防底部抖动。
+  const isFollowReengageSuppressed = useCallback(() => (
+    isProgrammaticScrollSuppressed(
+      getUserScrollSuppressionUntil(userScrollLastInteractionAtRef.current, USER_SCROLL_FOLLOW_REENGAGE_PAUSE_MS),
+      Date.now(),
+    )
+  ), []);
+
   const markUserScrollInteraction = useCallback((now = Date.now()) => {
+    userScrollLastInteractionAtRef.current = now;
     userScrollSuppressUntilRef.current = getUserScrollSuppressionUntil(now);
     activeDisplayScrollCancelRef.current?.();
     activeDisplayScrollCancelRef.current = null;
@@ -594,10 +635,18 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
   useEffect(() => {
     if (focusedTurnIndex < 0 || !focusedTurnId) return;
 
+    const isSessionEntry = prevFocusSessionRef.current !== projection.sessionId;
+    prevFocusSessionRef.current = projection.sessionId;
+
     const focusKey = `${projection.sessionId}:${focusedTurnId}`;
     if (prevFocusedTurnRef.current === focusKey) return;
     prevFocusedTurnRef.current = focusKey;
     keepActiveOutputVisibleRef.current = projection.activeTurnIndex === focusedTurnIndex;
+
+    // 会话进入/切换：落点交给 Virtuoso 重挂载后的 initialTopMostItemIndex
+    // （末条 align:'end'，首帧即底部），这里只同步跟随状态，不再把 focused turn
+    // 钉到视口顶部。同一会话内 focused turn 变化（新轮开始）仍维持顶置。
+    if (isSessionEntry) return;
 
     const scroll = () => {
       virtuosoRef.current?.scrollToIndex({
@@ -621,6 +670,9 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
   ), [projection]);
 
   useEffect(() => {
+    const isSessionEntry = prevAnchorSessionRef.current !== projection.sessionId;
+    prevAnchorSessionRef.current = projection.sessionId;
+
     if (!activeAssistantAnchor || !focusedTurnId) return;
 
     // focusKey 只到 turn 粒度，不带 anchorNodeId：流式 overlay 的临时节点
@@ -636,6 +688,9 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
     if (keepActiveOutputVisibleRef.current) return;
 
     keepActiveOutputVisibleRef.current = projection.activeTurnIndex === activeAssistantAnchor.turnIndex;
+
+    // 会话进入/切换：落点由底部对齐负责，不把 assistant 锚点顶到视口上方。
+    if (isSessionEntry) return;
 
     const scroll = () => {
       virtuosoRef.current?.scrollToIndex({
@@ -823,10 +878,10 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
       return shouldFollowTurnOutput(
         isAtBottom,
         hasOutputFollowTurnOutput && keepActiveOutputVisibleRef.current,
-        isUserScrollSuppressed(),
+        isFollowReengageSuppressed(),
       );
     },
-    [hasOutputFollowTurnOutput, isUserScrollSuppressed],
+    [hasOutputFollowTurnOutput, isFollowReengageSuppressed],
   );
 
   // 一键回到底部并恢复跟随；抵达底部后 atBottomStateChange 会重新置位 keepActiveOutputVisible
@@ -863,6 +918,7 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
               forceExpanded={hasSearchMatch}
               highlightActive={isActiveMatchTurn}
               isActiveTurn={isStreaming}
+              isLastTurn={isLast}
               sessionStatus={exposesSessionRuntime ? sessionStatus : null}
               isSessionProcessing={exposesSessionRuntime ? isProjectionSessionProcessing : false}
               streamSnapshot={projectionStreamSnapshot}
@@ -899,13 +955,16 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
   ), []);
 
   return (
+    <SessionModelsContext.Provider value={sessionModels}>
     <div className="relative h-full min-h-0" data-virtuoso-first-item-index={firstItemIndex}>
       <Virtuoso
+        // key=sessionId：切换会话时重挂载，使 initialTopMostItemIndex 对每个会话都生效
         ref={virtuosoRef}
+        key={projection.sessionId}
         role="log"
         aria-live="polite"
         aria-label={t.traceView.conversationLog}
-        className="h-full min-h-0 pt-3 pb-0 overflow-x-hidden"
+        className="h-full min-h-0 pt-3 pb-0 overflow-x-hidden chat-scroll-fade"
         scrollerRef={handleScrollerRef}
         data={projection.turns}
         firstItemIndex={firstItemIndex}
@@ -920,7 +979,14 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
           }
         }}
         atBottomThreshold={96}
-        initialTopMostItemIndex={focusedTurnIndex >= 0 ? focusedTurnIndex : undefined}
+        // 进入/切换会话首帧即底部：定位到最后一条内容的末尾（而非 focused turn
+        // 的顶部——末轮长于一屏时顶置会让用户落在中段）。behavior:'auto' 无动画。
+        initialTopMostItemIndex={projection.turns.length > 0
+          ? { index: 'LAST' as const, align: 'end' as const, behavior: 'auto' as const }
+          : undefined}
+        // B1-R·R4：不开 alignToBottom。它给列表容器 marginTop:auto，把不满一屏的
+        // 短内容整体压到底部（紧贴 composer、上方大片空白）；去掉后短内容自然顶对齐。
+        // 长会话进入落底由 initialTopMostItemIndex（LAST/end）负责，不受影响。
         startReached={handleStartReached}
         overscan={300}
         increaseViewportBy={{ top: 200, bottom: 200 }}
@@ -941,5 +1007,6 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
         </button>
       )}
     </div>
+    </SessionModelsContext.Provider>
   );
 };

@@ -2,6 +2,7 @@ import { TEAM_RECIPES } from '@shared/constants/teamRecipeCatalog';
 import { SERVICE_TIMEOUTS } from '@shared/constants/timeouts';
 import {
   TEAM_LEAD_METADATA_KEY,
+  teamRecipeMemberKey,
   validateTeamRecipe,
   type PersistedTeamLead,
   type TeamRecipe,
@@ -40,6 +41,8 @@ interface TeamRecipeLaunchInput {
   sessionId: string;
   recipeId: string;
   topic: string;
+  /** 成员条 standby 阶段被 × 掉的成员键（member 的 id ?? roleId；lead 用 roleId），启动时真正少起这些人 */
+  excludeMemberKeys?: string[];
 }
 
 interface ValidatedTeamRecipeLaunch extends TeamRecipeLaunchInput {
@@ -301,11 +304,34 @@ async function launchTeamRecipeViaLead(input: ValidatedTeamRecipeLaunch): Promis
   }
 }
 
+/**
+ * 待命期被 × 掉的成员在这里真正剔除（纯函数，供单测锁定口径）：
+ * lead 被排除则自然降级到确定性路径；指向被排除成员的 dependsOn 一并摘掉，
+ * 避免 unknown-dependency 校验误伤留下的成员。
+ */
+export function applyExcludedMembers(recipe: TeamRecipe, excludeMemberKeys?: string[]): TeamRecipe {
+  const excludedKeys = new Set(excludeMemberKeys ?? []);
+  if (excludedKeys.size === 0) return recipe;
+  return {
+    ...recipe,
+    lead: recipe.lead && excludedKeys.has(recipe.lead.roleId) ? undefined : recipe.lead,
+    members: recipe.members
+      .filter((member) => !excludedKeys.has(teamRecipeMemberKey(member)))
+      .map((member) => ({
+        ...member,
+        dependsOn: member.dependsOn?.filter((dependency) => !excludedKeys.has(dependency)),
+      })),
+  };
+}
+
 /** 用户点配方：lead 配方由主理人主会话轮自己起团；其余走确定性 durable 路径。 */
 export async function launchTeamRecipe(args: TeamRecipeLaunchInput): Promise<LaunchTeamRecipeResult> {
-  const recipe = getTeamRecipeService().get(args.recipeId)
+  const baseRecipe = getTeamRecipeService().get(args.recipeId)
     ?? TEAM_RECIPES.find((candidate) => candidate.id === args.recipeId);
-  if (!recipe) return { ok: false, error: '配方不存在' };
+  if (!baseRecipe) return { ok: false, error: '配方不存在' };
+
+  const recipe = applyExcludedMembers(baseRecipe, args.excludeMemberKeys);
+  if (!recipe.members.length) return { ok: false, error: '待命成员已全部移除，团队无人可起' };
 
   // 启动期沿用「全部可解析 agent」这一既有口径，不收窄为持久化角色：
   // 收窄会让"存的时候合法、跑的时候被拒"，且本片的边界是只改查表顺序。

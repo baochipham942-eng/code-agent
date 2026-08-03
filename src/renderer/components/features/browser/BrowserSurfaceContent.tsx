@@ -73,7 +73,7 @@ function getBridgeLabel(bridge: ManagedBrowserExternalBridgeState | null | undef
 }
 
 function getStatusClass(ready: boolean): string {
-  return ready ? 'text-emerald-300' : 'text-amber-300';
+  return ready ? 'text-badge-success' : 'text-badge-warning';
 }
 
 // 浏览器操作内容组件：嵌进「本机操作」合并页（features/localOps/LocalOpsPage）的浏览器 tab，
@@ -297,14 +297,14 @@ export const BrowserSurfaceContent: React.FC = () => {
                       void handleOpen();
                     }
                   }}
-                  className="min-w-0 flex-1 rounded-md border border-white/[0.08] bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-hidden transition-colors placeholder:text-zinc-600 focus:border-sky-400/40"
+                  className="min-w-0 flex-1 rounded-md border border-white/[0.08] bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-hidden transition-colors placeholder:text-zinc-600 focus:border-badge-info/40"
                   placeholder="https://example.com"
                 />
                 <button
                   type="button"
                   onClick={handleOpen}
                   disabled={Boolean(busyAction)}
-                  className="inline-flex items-center gap-1.5 rounded-md border border-sky-500/30 bg-sky-500/15 px-3 py-2 text-sm text-sky-200 transition-colors hover:bg-sky-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="inline-flex items-center gap-1.5 rounded-md border border-badge-info/30 bg-sky-500/15 px-3 py-2 text-sm text-badge-info transition-colors hover:bg-sky-500/20 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {isBusy('open') ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ExternalLink className="h-3.5 w-3.5" />}
                   打开
@@ -327,7 +327,7 @@ export const BrowserSurfaceContent: React.FC = () => {
                 {managedRows.length > 0 ? managedRows.map((row) => (
                   <div key={row.label} className="grid min-w-0 grid-cols-[72px,minmax(0,1fr)] gap-2 text-[11px]">
                     <span className="text-zinc-500">{row.label}</span>
-                    <span className={`truncate ${row.tone === 'ready' ? 'text-emerald-300' : row.tone === 'blocked' ? 'text-amber-300' : 'text-zinc-300'}`} title={row.title || row.value}>
+                    <span className={`truncate ${row.tone === 'ready' ? 'text-badge-success' : row.tone === 'blocked' ? 'text-badge-warning' : 'text-zinc-300'}`} title={row.title || row.value}>
                       {row.value}
                     </span>
                   </div>
@@ -341,7 +341,7 @@ export const BrowserSurfaceContent: React.FC = () => {
               <div className="mb-3 flex items-center justify-between gap-2">
                 <div>
                   <div className="flex items-center gap-2 text-sm font-medium text-zinc-200">
-                    <PlugZap className="h-3.5 w-3.5 text-violet-300" />
+                    <PlugZap className="h-3.5 w-3.5 text-badge-accent" />
                     Chrome Relay
                   </div>
                   <div className="text-[11px] text-zinc-500">接真实 Chrome 标签页和现有登录态</div>
@@ -383,7 +383,7 @@ export const BrowserSurfaceContent: React.FC = () => {
               <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                 <div>
                   <div className="flex items-center gap-2 text-sm font-medium text-zinc-200">
-                    <KeyRound className="h-3.5 w-3.5 text-amber-300" />
+                    <KeyRound className="h-3.5 w-3.5 text-badge-warning" />
                     复用浏览器登录
                   </div>
                   <div className="text-[11px] text-zinc-500">
@@ -427,7 +427,7 @@ export const BrowserSurfaceContent: React.FC = () => {
                         key={key}
                         className={`flex cursor-pointer items-start gap-2 rounded-md border px-2 py-1.5 text-[11px] transition-colors ${
                           selected
-                            ? 'border-amber-400/40 bg-amber-500/10 text-zinc-100'
+                            ? 'border-badge-warning/40 bg-amber-500/10 text-zinc-100'
                             : 'border-white/[0.06] bg-black/10 text-zinc-300 hover:border-white/[0.12]'
                         }`}
                       >
@@ -488,7 +488,7 @@ export const BrowserSurfaceContent: React.FC = () => {
 
           <section className="mt-3 rounded-lg border border-white/[0.08] bg-white/[0.02] p-3">
             <div className="mb-2 flex items-center gap-2 text-sm font-medium text-zinc-200">
-              <ShieldCheck className="h-4 w-4 text-emerald-300" />
+              <ShieldCheck className="h-4 w-4 text-badge-success" />
               登录态摘要
             </div>
             {accountState ? (
@@ -519,12 +519,12 @@ export const BrowserSurfaceContent: React.FC = () => {
           </section>
 
           {notice && (
-            <div className="mt-3 rounded-md border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-200">
+            <div className="mt-3 rounded-md border border-badge-success/20 bg-emerald-500/10 px-3 py-2 text-xs text-badge-success">
               {notice}
             </div>
           )}
           {error && (
-            <div className="mt-3 rounded-md border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-200">
+            <div className="mt-3 rounded-md border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-badge-danger">
               {error}
             </div>
           )}

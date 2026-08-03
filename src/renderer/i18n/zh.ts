@@ -13,8 +13,10 @@ import { cronCenterZh } from './cronCenter';
 import { previewWorkspaceZh } from './previewWorkspace';
 import { modalPrimitivesZh } from './modalPrimitives';
 import { userQuestionZh } from './userQuestion';
+import { decisionCardZh } from './decisionCard';
 import { taskStatusPanelsZh } from './taskStatusPanels';
 import { noticesZh } from './notices';
+import { agentErrorZh } from './agentError';
 import { labZh } from './lab';
 import { labGpt1Zh } from './labGpt1';
 import { labNanogptZh } from './labNanogpt';
@@ -27,15 +29,20 @@ import { rolePackZh } from './rolePack';
 import { expertZh } from './expert';
 import { generativeUIZh } from './generativeUI';
 import { capabilityHubZh } from './capabilityHub';
+import { neoTopicsZh } from './neoTopics';
+import { designToolbarZh } from './designToolbar';
+import { projectSpaceZh } from './projectSpace';
 import { evalCenterZh } from './evalCenter';
 import { localOpsZh } from './localOps';
 import { onboardingZh } from './onboarding';
 import { workbenchTabsZh } from './workbenchTabs';
-import { activityPanelZh } from './activity';
+import { activityPanelZh, canvasActorZh } from './domains';
 
 export const zh = {
-  ...activityPanelZh,
+  ...canvasActorZh, ...activityPanelZh,
   ...capabilityHubZh,
+  ...neoTopicsZh,
+  ...projectSpaceZh,
   ...evalCenterZh,
   ...localOpsZh,
   ...onboardingZh,
@@ -72,6 +79,13 @@ export const zh = {
     download: '下载',
     archiveToLibrary: '归档到资料库',
     exportBundle: '导出文件包',
+    statusVerified: '已验证',
+    statusUnverified: '未验证',
+    statusFailed: '失败',
+    qualityValidated: '质量通过',
+    qualityNeedsReview: '待复核',
+    qualityFailed: '质量失败',
+    moreActions: '更多',
   },
 
   // 状态栏
@@ -91,19 +105,21 @@ export const zh = {
     realpath: '真实路径',
     detected: '发现的项目级配置',
     identityChanged: '这个路径曾被信任，但目录身份已经变化，需要重新确认。',
+    emptyDangerNote: '未发现需要逐项确认的危险配置，但该目录尚未被信任（或信任已失效）。确认后才会加载项目级配置。',
     trust: '信任并加载',
     block: '阻止项目配置',
     openSettings: '打开设置',
     saving: '保存中…',
+    saveFailed: '保存失败，决定没有生效',
     risks: {
-      execution: '执行',
-      mcp: 'MCP',
-      agent: 'Agent',
-      skill: 'Skill',
+      execution: '命令执行',
+      mcp: 'MCP 服务',
+      agent: 'Agent 定义',
+      skill: 'Skill 定义',
       prompt: '提示词',
-      policy: '策略',
-      preference: '偏好',
-      diagnostic: '配置',
+      policy: '安全策略',
+      preference: '偏好设置',
+      diagnostic: '其他配置',
     },
   },
 
@@ -188,38 +204,12 @@ export const zh = {
     previewEmpty: '填写需求并点「生成」，网页会在这里实时呈现',
     previewGenerating: '正在生成网页…',
     canvasEmpty: '在左侧对话里描述你想要的设计，AI 会把图生成到这块画布上。可平移、缩放。',
+    canvasEmptyChatEntry: '在左边对话里描述你想要的设计',
+    canvasEmptyDropEntry: '拖入 / 粘贴一张图',
     canvasGenSoon: '画布已就绪。出图回灌与圈选标注迭代将在下一步接入',
-    canvasSelectHint: '点选一张图后可圈选区域做局部重绘',
-    annotateStart: '圈选标注',
-    annotateStop: '退出圈选',
-    annotateHint: '现在在图上拖拽，框出要修改的区域（可多框）',
-    annotateGuide: '先点「圈选标注」，在图上拖框圈出要改的区域，再填指令',
-    editInstructionPlaceholder: '描述框选区域要改成什么，例如：把这块换成一个橙色的圆形按钮',
-    editRegionBtn: '局部重绘',
-    editingRegion: '重绘中…',
-    expandTitle: '扩图 / 去水印',
-    expandBtn: '扩展画布',
-    expandDirUp: '上',
-    expandDirDown: '下',
-    expandDirLeft: '左',
-    expandDirRight: '右',
-    expandDirAll: '四周',
-    removeWatermarkBtn: '去除水印',
-    clearAnnotations: '清除标注',
-    errNoAnnotation: '请先在图上框选要修改的区域',
-    // B4 标注重绘
-    annotMode: '标注重绘',
-    annotInstruction: '重绘指令',
-    annotInstructionPlaceholder: '描述标注处要怎么改，例如：把标的按钮改大并换成橙色',
-    annotRedraw: '重绘',
-    annotToolPen: '画笔',
-    annotToolArrow: '箭头',
-    annotToolRect: '方框',
-    annotToolText: '文字',
-    annotTextPlaceholder: '输入标注文字，回车确认',
-    annotCostConfirm: '用标注后的图重绘？按 BYOK 实际计费',
+    // 图像编辑词汇（圈选/标注/扩图/去水印/导出/成本）已拆入 ./designToolbar 域文件（1000 行门），
+    // 经文件尾部 ...designToolbarZh.design 展开回本命名空间。
     compareBtn: '对比这两版',
-    compareHint: '按住 Shift 点选两张图进行 A/B 对比',
     compareTitle: 'A/B 版本对比',
     setMainVersion: '设为主版',
     discardVersion: '淘汰',
@@ -280,8 +270,6 @@ export const zh = {
     aspectRatioLabel: '尺寸比例',
     imageModel: '生图模型',
     imageModelUnconfigured: '未配置 Key',
-    exportImage: '导出图片',
-    exportImagePdf: '导出 PDF',
     exportCanvasPptx: '导出 PPTX',
     diagramToolbarLabel: '图解',
     diagramSelect: '选择',
@@ -302,6 +290,9 @@ export const zh = {
     referenceHint: '参考图会在生成时作为视觉参考一并发给模型（万相当前支持 1 张，多张取第一张）',
     referenceBadge: '参考',
     layerPanelTitle: '图层',
+    sidePanelExpand: '展开画布面板',
+    sidePanelCollapse: '收起画布面板',
+    layerPanelEmpty: '还没有图层——生成或导入一张图后会出现在这里',
     layerUnnamed: '未命名节点',
     layerKindImage: '图片',
     layerKindVideo: '视频',
@@ -316,6 +307,7 @@ export const zh = {
     layerSetMain: '设为主版',
     layerDiscard: '淘汰',
     layerEmptyInspector: '选择一个图层或画布节点后查看属性',
+    layerDetails: '详情',
     deviceDesktop: '桌面',
     deviceTablet: '平板',
     deviceMobile: '手机',
@@ -347,7 +339,6 @@ export const zh = {
     errNoRequirement: '请先填写需求描述',
     errNoBaseImageForI2v: '图生视频需先在画布选中一张图片',
     videoCostConfirm: '本次视频生成预计花费',
-    generateVideoFromImage: '生成视频',
     errResolveDir: '无法准备设计草稿目录，请重试',
     errDispatch: '生成派发失败',
     errTimeout: '生成超时，未检测到原型文件',
@@ -355,15 +346,12 @@ export const zh = {
     errNoPrototype: '请先生成或选择一个原型',
     errNoInstruction: '请先填写修改要求',
     // T2 成本透明 + undo/redo 信任 UI
-    costEstimateLabel: '本次预估',
     costActualLabel: '本次花费',
     costFree: '免费',
     costHint: '按 BYOK 实际计费，出图前可见',
     historyPanelTitle: '设计历史',
     historyPanelEmpty: '生成或局部重绘后，每一步会作为可命名、可回滚的版本出现在这里',
     historyTotalSpend: '累计花费',
-    historyExpand: '展开设计历史',
-    historyCollapse: '收起设计历史',
     historyReferenceGroup: '参考图',
     historyStepGenerate: '生成',
     historyStepEdit: '局部重绘',
@@ -454,6 +442,8 @@ export const zh = {
       apiKeyRequired: '请填写 API Key',
       saveFailed: '保存失败，请检查地址和密钥后重试',
     },
+    // 图像动词条/圈选/标注/扩图/导出词汇（域文件拆分，见文件头注释）
+    ...designToolbarZh.design,
   },
 
   // Settings Modal
@@ -524,6 +514,8 @@ export const zh = {
         claude_code: '安装 Claude Code CLI 后将 claude 加入 PATH，再点「检测引擎」。',
         mimo_code: '安装 MiMo-Code CLI 后将 mimo 加入 PATH，再点「检测引擎」。',
         kimi_code: '安装 Kimi Code CLI 后将 kimi 加入 PATH，再点「检测引擎」。',
+        codebuddy_code: '安装 WorkBuddy 后，Neo 会自动检测应用内置 CLI。',
+        grok_cli: '安装 Grok Build CLI 后将 grok 加入 PATH，再点「检测引擎」。',
       },
       // 登录提示（外部引擎吃订阅，需各自登录）
       loginHintTitle: '登录提示',
@@ -532,7 +524,23 @@ export const zh = {
         claude_code: '首次使用前需用 Claude Code 自身的登录命令完成账号授权。',
         mimo_code: '首次使用前需运行 mimo providers login 完成账号授权。',
         kimi_code: '首次使用前需运行 kimi login 完成账号授权。',
+        codebuddy_code: '首次使用前需在 WorkBuddy 官方客户端完成账号登录。',
+        grok_cli: '首次使用前需运行 grok login 完成官方账号授权。',
       },
+      // listSources 探测来源状态（contract 字段派生，不按产品名分支）
+      sourceStatus: {
+        available: '可用', detected: '已检测', needsLogin: '需要登录', adapterPending: '适配未开放',
+        notInstalled: '未安装', recommended: '推荐安装', authUnverified: '登录未验证', unavailable: '暂不可用',
+      },
+      sourceStatusDetail: {
+        available: '已可执行 · 官方登录已确认', detectedNeedsLogin: '已检测 · 请先在官方客户端登录',
+        detectedAdapterPending: '已检测 · 当前版本尚未开放执行', detectedAuthUnverified: '已检测 · 登录状态无法安全确认',
+        notInstalled: '已支持接入 · 本机未检测到客户端', adapterPending: '当前版本尚未开放执行',
+        recommended: '推荐安装后验证，不会伪装成已安装', unavailable: '当前不可选',
+      },
+      notSwitchableHint: '该来源当前不可切换到会话',
+      recommendationOnlyHint: '仅推荐项，未在本机检测为已安装',
+      credentialOwnerOfficial: '凭证归官方客户端管理，Neo 不会展示或保存密钥',
     },
     // 设置页「Agent Engine 模型目录」section（签名目录发布 + 本机默认选择）
     catalogSection: {
@@ -794,7 +802,6 @@ export const zh = {
 
   // /agent 命令与面板
   agentCommand: {
-    defaultDescription: '恢复自动路由',
     roleGroupLabel: '角色',
     createRoleEntry: '新建角色…',
     switchedToPrefix: '已切到 ',
@@ -803,6 +810,7 @@ export const zh = {
     chipTitlePrefix: '当前 agent: ',
     chipTitleSuffix: '。输入 /agent 切换。',
     chipAriaLabel: '当前 agent',
+    chipRemoveAria: '移除专家 {name}，恢复自动路由',
     badgeNotAppliedSuffix: ' 未生效',
     badgeNotAppliedTitlePrefix: '指定的 agent 本轮未生效，实际执行: ',
     degradedToastPrefix: '指定的 agent ',
@@ -902,8 +910,10 @@ export const zh = {
   ...previewWorkspaceZh,
   ...modalPrimitivesZh,
   ...userQuestionZh,
+  ...decisionCardZh,
   ...taskStatusPanelsZh,
   ...noticesZh,
+  ...agentErrorZh,
   ...labZh,
   ...labGpt1Zh,
   ...labNanogptZh,
@@ -951,20 +961,6 @@ export const zh = {
     removeAria: '移除能力：{name}',
   },
 
-  inlineWorkbenchBar: {
-    skillsSummary: '技能 {selected}/{total}',
-    connectorsSummary: '连接器 {selected}/{total}',
-    mcpSummary: 'MCP 服务 {selected}/{total}',
-    capabilities: '能力',
-    expandCapabilitiesAria: '展开能力列表',
-    collapseCapabilitiesAria: '收起能力列表',
-    auto: '自动',
-    manual: '手动',
-    autoTitle: '系统自动选择可用能力',
-    manualTitle: '手动限定本轮能力范围',
-    noMountedSkills: '当前会话还没有已挂载的技能。',
-  },
-
   commandPalette: {
     ariaLabel: '命令面板',
     searchPlaceholder: '搜索命令…',
@@ -995,8 +991,6 @@ export const zh = {
       prefillPromptWithArgs: '预填后补参数',
       prefillPrompt: '预填 prompt',
       setAgentForTurn: '设为本轮 agent',
-      restoreAutoAgent: '恢复自动 agent',
-      defaultAgentDescription: '恢复自动路由',
       mountedSkillPrefix: '已挂载 Skill',
       selectForTurn: '选入本轮',
       mountAndSelect: '挂载并选入本轮',

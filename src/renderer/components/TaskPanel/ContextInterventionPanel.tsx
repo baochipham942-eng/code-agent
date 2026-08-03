@@ -20,9 +20,9 @@ import type { Translations } from '../../i18n';
 
 const selectionTone: Record<ContextSelectionMode, string> = {
   default: 'border-white/20 bg-white/5 text-zinc-100',
-  pinned: 'border-emerald-500/30 bg-emerald-500/5 text-emerald-200',
-  excluded: 'border-amber-500/30 bg-amber-500/5 text-amber-200',
-  retained: 'border-sky-500/30 bg-sky-500/5 text-sky-200',
+  pinned: 'border-badge-success/30 bg-emerald-500/5 text-badge-success',
+  excluded: 'border-badge-warning/30 bg-amber-500/5 text-badge-warning',
+  retained: 'border-badge-info/30 bg-sky-500/5 text-badge-info',
 };
 
 function getSelectionLabels(t: Translations): Record<ContextSelectionMode, { label: string; tone: string }> {
@@ -46,9 +46,9 @@ function getActionButtons(t: Translations): Array<{ action: ContextInterventionA
 
 const sourceIcons: Record<ContextSelectionMode, React.ReactNode> = {
   default: <FileText className="w-4 h-4 text-zinc-400" />,
-  pinned: <ShieldAlert className="w-4 h-4 text-emerald-400" />,
-  excluded: <ShieldAlert className="w-4 h-4 text-amber-400" />,
-  retained: <ShieldAlert className="w-4 h-4 text-sky-400" />,
+  pinned: <ShieldAlert className="w-4 h-4 text-badge-success" />,
+  excluded: <ShieldAlert className="w-4 h-4 text-badge-warning" />,
+  retained: <ShieldAlert className="w-4 h-4 text-badge-info" />,
 };
 
 const getSourceDetail = (item: ContextItemView, t: Translations) => {
@@ -85,7 +85,7 @@ export const ContextInterventionPanel: React.FC<Props> = ({
   return (
     <div className="rounded-lg border border-white/[0.04] bg-zinc-900/70 p-3">
       <div className="flex items-center gap-2">
-        <ShieldAlert className="w-4 h-4 text-amber-400" />
+        <ShieldAlert className="w-4 h-4 text-badge-warning" />
         <div className="text-sm font-medium text-zinc-100">{ci.title}</div>
         <span className="text-[10px] text-zinc-500">pin / exclude / retain</span>
       </div>

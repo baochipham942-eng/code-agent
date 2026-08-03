@@ -10,6 +10,8 @@ import { DOCTOR_FIX_CODES } from '../../../shared/constants/doctor';
 import { getUserConfigDir } from '../../config/configPaths';
 import type { DoctorItem } from '../types';
 
+const REQUIRED_SESSION_COLUMNS = ['id', 'title', 'is_deleted', 'is_archived'] as const;
+
 export function checkNodeVersion(): DoctorItem {
   const version = process.version;
   const major = parseInt(version.slice(1).split('.')[0], 10);
@@ -53,6 +55,34 @@ export async function checkDatabase(): Promise<DoctorItem> {
   try {
     const stats = await stat(dbPath);
     const sizeMB = (stats.size / (1024 * 1024)).toFixed(1);
+    const { getDatabase } = await import('../../services/core/databaseService');
+    const db = getDatabase().getDb();
+    if (!db) {
+      return {
+        category: 'database',
+        name: 'SQLite database',
+        status: 'warn',
+        message: `${sizeMB} MB · schema check unavailable`,
+        details: dbPath,
+        suggestion: '数据库连接尚未初始化，请在应用启动完成后重试诊断',
+      };
+    }
+    const columns = db.prepare('PRAGMA table_info(sessions)').all() as Array<{ name?: unknown }>;
+    const columnNames = new Set(
+      columns.map((column) => column.name).filter((name): name is string => typeof name === 'string'),
+    );
+    const missingColumns = REQUIRED_SESSION_COLUMNS.filter((column) => !columnNames.has(column));
+    if (missingColumns.length > 0) {
+      return {
+        category: 'database',
+        name: 'SQLite database',
+        status: 'fail',
+        message: `sessions schema missing: ${missingColumns.join(', ')}`,
+        details: `${sizeMB} MB · ${dbPath}`,
+        suggestion: '重启应用以执行数据库迁移；若仍失败，请备份后检查数据库',
+        fix: { code: DOCTOR_FIX_CODES.OPEN_DATA_DIRECTORY },
+      };
+    }
     return {
       category: 'database',
       name: 'SQLite database',

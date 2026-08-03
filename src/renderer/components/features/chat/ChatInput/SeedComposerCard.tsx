@@ -59,10 +59,10 @@ export const SeedComposerCard: React.FC<SeedComposerCardProps> = ({
   };
 
   return (
-    <div data-seed-composer className="mb-2 rounded-lg border border-sky-500/20 bg-sky-500/10 px-3 py-3 animate-fadeIn">
+    <div data-seed-composer className="mb-2 rounded-lg border border-badge-info/20 bg-sky-500/10 px-3 py-3 animate-fadeIn">
       <div className="flex items-start gap-2">
-        <Target className="mt-0.5 h-4 w-4 shrink-0 text-sky-400" />
-        <div className="min-w-0 flex-1 text-xs font-medium text-sky-300">{title}</div>
+        <Target className="mt-0.5 h-4 w-4 shrink-0 text-badge-info" />
+        <div className="min-w-0 flex-1 text-xs font-medium text-badge-info">{title}</div>
         <button /* ds-allow:button: 种子确认卡关闭图标，primitive 最小尺寸会破坏紧凑卡片 */ type="button" onClick={onDismiss} className="p-0.5 text-zinc-500 transition-colors hover:text-zinc-300" title={t.seedComposer.cancel}>
           <X className="h-3.5 w-3.5" />
         </button>
@@ -81,14 +81,14 @@ export const SeedComposerCard: React.FC<SeedComposerCardProps> = ({
           placeholder={placeholder}
           rows={2}
           autoFocus
-          className="w-full resize-none rounded border border-sky-500/30 bg-zinc-800 px-2 py-1 text-xs text-zinc-200 outline-hidden focus:border-sky-500/50"
+          className="w-full resize-none rounded border border-badge-info/30 bg-zinc-800 px-2 py-1 text-xs text-zinc-200 outline-hidden focus:border-badge-info/50"
         />
-        {hint && <div className="text-[10px] text-sky-200/60">{hint}</div>}
+        {hint && <div className="text-[10px] text-badge-info/60">{hint}</div>}
         <div className="flex items-center justify-end gap-2 pt-0.5">
-          <button /* ds-allow:button: 种子确认卡取消动作，紧凑文本按钮 */ type="button" onClick={onDismiss} disabled={submitting} className="px-2 py-1 text-xs text-sky-200/60 transition-colors hover:text-sky-200 disabled:opacity-50">
+          <button /* ds-allow:button: 种子确认卡取消动作，紧凑文本按钮 */ type="button" onClick={onDismiss} disabled={submitting} className="px-2 py-1 text-xs text-badge-info/60 transition-colors hover:text-badge-info disabled:opacity-50">
             {t.seedComposer.cancel}
           </button>
-          <button /* ds-allow:button: 种子确认卡启动动作，紧凑确认按钮 */ type="button" data-seed-composer-start onClick={submit} disabled={!canStart} className="flex items-center gap-1 rounded bg-sky-500/20 px-3 py-1 text-xs text-sky-100 transition-colors hover:bg-sky-500/30 disabled:opacity-50">
+          <button /* ds-allow:button: 种子确认卡启动动作，紧凑确认按钮 */ type="button" data-seed-composer-start onClick={submit} disabled={!canStart} className="flex items-center gap-1 rounded bg-sky-500/20 px-3 py-1 text-xs text-badge-info transition-colors hover:bg-sky-500/30 disabled:opacity-50">
             {submitting ? <Loader2 className="h-3 w-3 animate-spin" /> : <Target className="h-3 w-3" />}
             {t.seedComposer.start}
           </button>

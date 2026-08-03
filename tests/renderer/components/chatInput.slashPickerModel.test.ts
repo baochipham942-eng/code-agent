@@ -36,7 +36,8 @@ const agents: AgentListEntry[] = [
     id: 'reviewer',
     name: 'Reviewer',
     description: 'Reviews code quality.',
-    source: 'builtin',
+    // 传统内置 agent 已从用户可选入口隐藏；候选生成用例统一走自建 agent
+    source: 'user',
     modelTier: 'balanced',
     readonly: true,
     tools: [],
@@ -234,8 +235,8 @@ describe('slash picker model', () => {
 
     const agentCandidates = createAgentCandidates(agents, pickerEn);
     expect(agentCandidates.find((c) => c.agentId === 'reviewer')?.effectLabel).toBe(pickerEn.setAgentForTurn);
-    expect(agentCandidates.find((c) => c.agentId === null)?.effectLabel).toBe(pickerEn.restoreAutoAgent);
-    expect(agentCandidates.find((c) => c.agentId === null)?.description).toBe(pickerEn.defaultAgentDescription);
+    // 2026-07-29 起 AGENTS 组不再有 Default 项（恢复默认路由 = 删掉底栏专家 chip）
+    expect(agentCandidates.find((c) => c.agentId === null)).toBeUndefined();
 
     const skills = createSkillCandidates({
       availableSkills: [makeSkill({ basePath: '/repo/libraries/office/docx' })],

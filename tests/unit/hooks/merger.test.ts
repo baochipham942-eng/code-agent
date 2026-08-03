@@ -257,6 +257,42 @@ describe('Hook Merger', () => {
       expect(result).toHaveLength(2);
     });
 
+    // 设置页的「停用」只在配置里打个标记，配置本身留着（删了要重打一遍）。
+    // 过滤必须在这条查询出口上做：hasHooksForEvent 也走它，否则会出现
+    // 「说有 hook 要跑，实际一个都不跑」。
+    it('停用的 hook 不参与执行，整组都停用就不返回这一组', () => {
+      const withDisabled: MergedHookConfig[] = [
+        {
+          event: 'SessionStart',
+          matcher: null,
+          hooks: [
+            { type: 'command', command: 'on.sh' },
+            { type: 'command', command: 'off.sh', disabled: true },
+          ],
+          sources: ['global'],
+          parallel: false,
+          hookType: 'observer',
+        },
+        {
+          event: 'SessionStart',
+          matcher: null,
+          hooks: [{ type: 'command', command: 'all-off.sh', disabled: true }],
+          sources: ['global'],
+          parallel: false,
+          hookType: 'observer',
+        },
+      ];
+
+      const result = getHooksForEvent(withDisabled, 'SessionStart');
+      expect(result).toHaveLength(1);
+      expect(result[0].hooks.map((hook) => hook.command)).toEqual(['on.sh']);
+      expect(hasHooksForEvent(withDisabled, 'SessionStart')).toBe(true);
+
+      const allOff = withDisabled.slice(1);
+      expect(getHooksForEvent(allOff, 'SessionStart')).toHaveLength(0);
+      expect(hasHooksForEvent(allOff, 'SessionStart')).toBe(false);
+    });
+
     it('should return empty for non-existent event', () => {
       const result = getHooksForEvent(hooks, 'Stop');
       expect(result).toHaveLength(0);

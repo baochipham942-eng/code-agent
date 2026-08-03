@@ -36,6 +36,14 @@ const composerState = vi.hoisted(() => ({
   selectedSkillIds: [],
   selectedConnectorIds: [],
 }));
+const registryDefs = vi.hoisted(() => ({
+  defs: [] as Array<{
+    id: string;
+    name: string;
+    description: string;
+    handler: (...args: unknown[]) => unknown;
+  }>,
+}));
 const modeState = vi.hoisted(() => ({
   setInteractionMode: vi.fn(),
   setEffortLevel: vi.fn(),
@@ -82,7 +90,7 @@ vi.mock('@shared/keybindings', () => ({
 }));
 vi.mock('@shared/commands', () => ({
   initializeCommands: vi.fn(),
-  getCommandRegistry: () => ({ list: () => [] }),
+  getCommandRegistry: () => ({ list: () => registryDefs.defs }),
 }));
 vi.mock('../../../src/renderer/services/ipcService', () => ({
   invoke: vi.fn(() => Promise.resolve()),
@@ -94,6 +102,7 @@ import { SlashCommandPopover } from '../../../src/renderer/components/features/c
 
 beforeEach(() => {
   vi.restoreAllMocks();
+  registryDefs.defs = [];
   Element.prototype.scrollIntoView = vi.fn();
 });
 
@@ -127,5 +136,58 @@ describe('SlashCommandPopover 候选行呈现', () => {
     const offenders = Array.from(document.querySelectorAll('[data-slash-command-id] span'))
       .filter((el) => kindWords.has((el.textContent || '').trim()));
     expect(offenders).toHaveLength(0);
+  });
+
+  it('注册表的 skills 命令（技能列表 /skills）不进 GUI 面板候选', () => {
+    registryDefs.defs = [
+      { id: 'skills', name: '技能列表', description: 'List skills', handler: vi.fn() },
+      { id: 'doctor', name: 'Doctor', description: 'Diagnose', handler: vi.fn() },
+    ];
+
+    const props = {
+      isOpen: true,
+      agents: [] as import('../../../src/shared/contract/agentRegistry').AgentListEntry[],
+      skillRecommendations: [],
+      capabilityItems: [],
+      capabilitySuggestions: [],
+      onClose: vi.fn(),
+      onSelect: vi.fn(),
+    };
+
+    // 对照组：doctor 正常出现，证明 registry 候选链路本身是通的
+    const { rerender } = render(<SlashCommandPopover {...props} filter="doctor" />);
+    expect(document.querySelector('[data-slash-command-id="doctor"]')).not.toBeNull();
+
+    rerender(<SlashCommandPopover {...props} filter="skills" />);
+    expect(document.querySelector('[data-slash-command-id="skills"]')).toBeNull();
+  });
+
+  it('IME 组合中的 Enter 不触发 onSelect，普通 Enter 正常选择', () => {
+    const onSelect = vi.fn();
+    render(
+      <SlashCommandPopover
+        isOpen
+        filter="alpha"
+        agents={[]}
+        skillRecommendations={[]}
+        capabilityItems={[]}
+        capabilitySuggestions={[]}
+        onClose={vi.fn()}
+        onSelect={onSelect}
+      />,
+    );
+    expect(document.querySelectorAll('[data-slash-command-id]').length).toBeGreaterThanOrEqual(1);
+
+    // keyCode 229：IME 确认候选词的 Enter，放行
+    fireEvent.keyDown(window, { key: 'Enter', keyCode: 229 });
+    expect(onSelect).not.toHaveBeenCalled();
+
+    // isComposing：组合未结束的 Enter，放行
+    fireEvent.keyDown(window, { key: 'Enter', isComposing: true });
+    expect(onSelect).not.toHaveBeenCalled();
+
+    // 对照：普通 Enter 选择当前高亮项
+    fireEvent.keyDown(window, { key: 'Enter', keyCode: 13 });
+    expect(onSelect).toHaveBeenCalledTimes(1);
   });
 });

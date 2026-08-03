@@ -113,12 +113,12 @@ async function waitForAppReady(page: Page): Promise<void> {
   }
 }
 
-// 右栏概览面板改成预览优先后，在真实渲染路径上确认：面板挂得上、旧的清单外壳确实没了。
+// 右栏概览面板改成任务工作台后，在真实渲染路径上确认：空态仍然轻，旧清单外壳不复活。
 // 组件单测覆盖不到「外层还在不在」（App 门控只有 e2e 会红），这条补的就是那一层。
 //
 // 覆盖边界（写明而不是假装覆盖了）：这条只验空态 + 旧外壳已移除；有产物那一屏由下面
 // 那条 spec 在真实链路上验（组件单测 workspacePreviewContentFirst 仍是判据的主力）。
-test('右栏概览是预览优先的形态，旧的清单外壳已移除', async ({ page }) => {
+test('右栏概览空态保持轻量，旧的清单外壳已移除', async ({ page }) => {
   await waitForAppReady(page);
   await openOverviewView(page);
 
@@ -138,10 +138,10 @@ test('右栏概览是预览优先的形态，旧的清单外壳已移除', async
   await overview.screenshot({ path: 'tests/e2e/screenshots/workbench-overview-preview-first.png' });
 });
 
-// 有产物那一屏：内容占满、切换器只在多产物时出现、动作不常驻。
+// 有产物那一屏：概览主视线固定展示 Todo / 产物（诊断在二级折叠区）；点产物后直接进入专注预览。
 // 产物由 sessionStore.messages 推导，e2e 跑生产构建（window.__neoAppStore 只在 DEV 挂），
 // 所以从外部按真实事件链注入带 artifacts 的 assistant 消息，而不是往 store 里塞。
-test('右栏概览有产物时：内容占满，切换器只在多产物时出现，动作不常驻', async ({ page, request }) => {
+test('右栏概览有产物时：工作台分区稳定，点击后直接预览且不带旧详情区', async ({ page, request }) => {
   await waitForAppReady(page);
   const token = await getAuthToken(page);
   const sessionId = await createSessionAndGetId(page);
@@ -157,22 +157,37 @@ test('右栏概览有产物时：内容占满，切换器只在多产物时出�
     version: 1,
   }));
 
-  // ① 内容占满：产物正文本身出现在面板里（不是「关于产物的清单」）
-  await expect(overview.getByText(firstMarker)).toBeVisible({ timeout: 20_000 });
-  await expect(overview.getByText('暂无可预览文件')).toHaveCount(0);
+  // ① 默认工作台：主视线分区固定存在，产物正文不抢占概览。
+  // T1 起上下文行/AgentTree 下沉进「诊断详情」二级折叠区，主视线只剩 Todo + 产物。
+  const workspace = overview.getByTestId('task-workspace-overview');
+  await expect(workspace).toBeVisible({ timeout: 20_000 });
+  await expect(workspace.getByRole('button', { name: 'Todo', exact: true })).toBeVisible();
+  await expect(workspace.getByRole('button', { name: /产物/ })).toBeVisible();
+  await expect(workspace.getByText(firstMarker)).toHaveCount(0);
 
-  // ② 单个产物不给切换器
-  await expect(page.getByTestId('workspace-artifact-switcher')).toHaveCount(0);
+  // ①b 诊断下沉：入口留在主视线，内容默认不占位；展开后上下文一条不少（内容只下沉不删除）。
+  const diagnostics = workspace.getByRole('button', { name: /诊断详情/ });
+  await expect(diagnostics).toBeVisible();
+  await expect(workspace.getByTestId('overview-diagnostics-body')).toHaveCount(0);
+  await diagnostics.click();
+  const diagnosticsBody = workspace.getByTestId('overview-diagnostics-body');
+  await expect(diagnosticsBody).toBeVisible();
+  await expect(diagnosticsBody.getByText('上下文', { exact: true })).toBeVisible();
 
-  // ③ 动作不常驻：复制/归档这些都收在「⋯」里，元数据与版本收在「详情与版本」里
+  // ② 点击产物就是打开，直接进入专注预览。
+  await workspace.getByRole('button', { name: '在工作区预览中打开: 第一版流程图', exact: true }).click();
+  await expect(page.getByTestId('workbench-overview-preview')).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText(firstMarker)).toBeVisible();
+
+  // ③ 概览入口的预览不带详情/版本和项目历史；动作仍收在 ⋯。
   await expect(page.getByRole('button', { name: '复制预览' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: '归档到资料库: 第一版流程图' })).toHaveCount(0);
-  // 入口在、抽屉默认不展开（workspace-preview-overflow 是展开后的那层，不是入口按钮）
   await expect(page.getByRole('button', { name: '更多操作' })).toBeVisible();
   await expect(page.getByTestId('workspace-preview-overflow')).toHaveCount(0);
-  await expect(page.getByTestId('workspace-preview-details-toggle')).toBeVisible();
+  await expect(page.getByTestId('workspace-preview-details-toggle')).toHaveCount(0);
+  await expect(page.getByText(/项目全部产物/)).toHaveCount(0);
 
-  // ④ 第二个产物到了才出现切换器（计数只由它讲一次）
+  // ④ 第二个产物到了才出现切换器，返回概览后三个分区仍在。
   await emitAgentEvents(request, token, artifactTurnEvents(sessionId, `e2e-overview-turn-2-${Date.now()}`, {
     id: 'e2e-artifact-beta',
     type: 'mermaid',
@@ -183,6 +198,9 @@ test('右栏概览有产物时：内容占满，切换器只在多产物时出�
   const switcher = page.getByTestId('workspace-artifact-switcher');
   await expect(switcher).toBeVisible({ timeout: 20_000 });
   await expect(switcher).toContainText('共 2 个');
+
+  await page.getByRole('button', { name: '返回概览', exact: true }).click();
+  await expect(page.getByTestId('task-workspace-overview')).toBeVisible();
 
   await overview.screenshot({ path: 'tests/e2e/screenshots/workbench-overview-with-artifacts.png' });
 });

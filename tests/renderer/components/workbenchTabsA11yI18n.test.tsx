@@ -60,6 +60,7 @@ describe('WorkbenchTabs empty-state launcher', () => {
     expect(screen.getByTestId('open-workbench-view-files')).toBeTruthy();
     expect(screen.getByTestId('open-workbench-view-browser')).toBeTruthy();
     expect(screen.getByTestId('open-workbench-view-design-canvas')).toBeTruthy();
+    expect(screen.getByTestId('open-workbench-view-terminal')).toBeTruthy();
 
     fireEvent.click(screen.getByTestId('open-workbench-view-overview'));
 
@@ -119,12 +120,12 @@ describe('WorkbenchTabs empty-state launcher', () => {
   // 这条替换了旧断言「does not render shortcut chips for views without an enabled binding」。
   // 旧断言把「只有概览有键、浏览器/文件/设计画布静默无键」钉成了正确行为，正是 UI 债第 22 条
   // 说的不一致；产品负责人推翻了「加功能不还债」的原判定，判据改成：默认配置下四个视图
-  // 要么都有键、要么都没有。视图清单从 DOM 现取，将来加第五个视图漏配默认键同样会红。
+  // 要么都有键、要么都没有。视图清单从 DOM 现取，将来加第六个视图漏配默认键同样会红。
   it('gives every launchable view a shortcut chip in the default config', () => {
     render(<WorkbenchTabs />);
 
     const rows = screen.getAllByTestId(/^open-workbench-view-/);
-    expect(rows).toHaveLength(4);
+    expect(rows).toHaveLength(5);
     for (const row of rows) {
       const viewId = (row.getAttribute('data-testid') ?? '').replace('open-workbench-view-', '');
       expect(screen.getByTestId(`workbench-shortcut-${viewId}`).textContent).toBeTruthy();
@@ -195,14 +196,17 @@ describe('WorkbenchTabs tab 条形态（D6）', () => {
 
   it('全部视图都打开后不再渲染「＋」', () => {
     useAppStore.setState({
-      workbenchTabs: ['overview', 'files', 'browser', 'design-canvas'],
+      workbenchTabs: ['overview', 'files', 'browser', 'design-canvas', 'terminal'],
       activeWorkbenchTab: 'overview',
     });
     render(<WorkbenchTabs />);
     expect(screen.queryByLabelText(en.workbenchTabs.addView)).toBeNull();
   });
 
-  it('the header close button collapses the whole column instead of closing one view', () => {
+  // 2026-07-27：收起整栏的入口已从面板头搬到顶栏（两态同槽，位置不再随开合上下跳），
+  // 「收整栏而不是关单视图」这条语义随之由 workbenchCollapseAlwaysReachable.test.tsx 守。
+  // 这里改守反向约束：面板头**不该**再长出收起钮，否则同一开关又分居两行、位移问题复发。
+  it('面板头不再自带收起钮（收起入口只在顶栏，避免开关两态分居两行）', () => {
     useAppStore.setState({
       workbenchTabs: ['files'],
       activeWorkbenchTab: 'files',
@@ -210,12 +214,9 @@ describe('WorkbenchTabs tab 条形态（D6）', () => {
     });
     render(<WorkbenchTabs />);
 
-    fireEvent.click(screen.getByLabelText(en.workbenchTabs.collapsePanel));
-
-    // 收起的是整栏；面板本身留着，展开后回到原来那个视图。
-    expect(useAppStore.getState().workbenchCollapsed).toBe(true);
-    expect(useAppStore.getState().workbenchTabs).toEqual(['files']);
-    expect(useAppStore.getState().activeWorkbenchTab).toBe('files');
+    expect(screen.queryByLabelText(en.workbenchTabs.collapsePanel)).toBeNull();
+    // tab 上的 × 仍在，两者别混为一谈（下一条用例守它关的是单个视图）。
+    expect(screen.getByLabelText(en.workbenchTabs.closeView.replace('{view}', en.workbenchTabs.filesLabel))).toBeTruthy();
   });
 
   it('tab 上的 × 关闭单个视图（含概览/文件等常驻视图），关完回空态启动器', () => {

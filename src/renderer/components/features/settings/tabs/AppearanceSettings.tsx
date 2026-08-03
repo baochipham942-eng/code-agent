@@ -4,7 +4,7 @@
 // ============================================================================
 
 import React, { useState, useEffect } from 'react';
-import { Moon, Sun, Monitor, Check } from 'lucide-react';
+import { Moon, Sun, Monitor, Contrast, Check } from 'lucide-react';
 import { useI18n, type Language } from '../../../../hooks/useI18n';
 import { useTheme, type Theme } from '../../../../hooks/useTheme';
 import { toast } from '../../../../hooks/useToast';
@@ -104,6 +104,28 @@ export const AppearanceSettings: React.FC = () => {
       preview: (
         <div className="w-full h-16 rounded bg-gradient-to-r from-white to-zinc-900 border border-zinc-600 flex items-center justify-center">
           <div className="w-8 h-3 bg-zinc-600 rounded" />
+        </div>
+      ),
+    },
+    {
+      id: 'high-contrast-dark',
+      label: appearanceText.themes.highContrastDark,
+      icon: <Contrast className="w-4 h-4" />,
+      description: appearanceText.themeDescriptions.highContrastDark,
+      preview: (
+        <div className="w-full h-16 rounded bg-black border-2 border-white flex items-center justify-center">
+          <div className="w-8 h-3 bg-white rounded" />
+        </div>
+      ),
+    },
+    {
+      id: 'high-contrast-light',
+      label: appearanceText.themes.highContrastLight,
+      icon: <Contrast className="w-4 h-4" />,
+      description: appearanceText.themeDescriptions.highContrastLight,
+      preview: (
+        <div className="w-full h-16 rounded bg-white border-2 border-black flex items-center justify-center">
+          <div className="w-8 h-3 bg-black rounded" />
         </div>
       ),
     },
@@ -316,7 +338,7 @@ export const AppearanceSettings: React.FC = () => {
                   </div>
                 </div>
                 {language === lang.code && (
-                  <span className="px-2 py-0.5 text-xs rounded-full bg-primary-500/20 text-primary-400">
+                  <span className="px-2 py-0.5 text-xs rounded-full bg-primary-500/20 text-badge-accent">
                     {t.common.active}
                   </span>
                 )}

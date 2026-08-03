@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Archive, Brain, Check, ChevronDown, ChevronRight, HelpCircle, Loader2, MessageSquare, Send, Sparkles, X } from 'lucide-react';
-import type { NeoWorkCardDetail } from '@shared/contract/tag';
+import type { NeoWorkCardDetail, NeoWorkCardPriority } from '@shared/contract/tag';
 import type { Message } from '@shared/contract/message';
 import {
   isInternalRuntimeText,
@@ -14,9 +14,12 @@ import {
   formatRequesterLabel,
   mergeTopicRounds,
   topicConversationIds,
+  topicPrimaryConversationId,
   type NeoTopicRound,
 } from './projectCollaborationData';
 import { useNeoWorkCardStore } from '../../../stores/neoWorkCardStore';
+import { useI18n } from '../../../hooks/useI18n';
+import { toast } from '../../../hooks/useToast';
 import { Badge } from '../../primitives';
 
 // ============================================================================
@@ -44,6 +47,15 @@ function uniqueNonEmpty(items: string[]): string[] {
   return [...new Set(items.map((item) => item.trim()).filter(Boolean))];
 }
 
+/** 原生 <input type="date"> 的 yyyy-mm-dd 值（本地时区）；dueAt 空 → 空串（清空=传 null）。 */
+function toDateInputValue(dueAt: number | null | undefined): string {
+  if (dueAt == null) return '';
+  const date = new Date(dueAt);
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${date.getFullYear()}-${month}-${day}`;
+}
+
 const REPLY_CLAMP_CHARS = 600;
 
 const RoundItem: React.FC<{
@@ -69,7 +81,7 @@ const RoundItem: React.FC<{
             <button
               type="button"
               onClick={() => onOpenConversation(round.conversationId!)}
-              className="inline-flex items-center gap-0.5 rounded border border-zinc-800 bg-zinc-900 px-1 py-0.5 text-[10px] text-zinc-500 hover:border-emerald-500/30 hover:text-emerald-200"
+              className="inline-flex items-center gap-0.5 rounded border border-zinc-800 bg-zinc-900 px-1 py-0.5 text-[10px] text-zinc-500 hover:border-badge-success/30 hover:text-badge-success"
               data-testid={`neo-topic-round-open-${index}`}
             >
               <MessageSquare className="h-2.5 w-2.5" />打开会话
@@ -78,8 +90,8 @@ const RoundItem: React.FC<{
         </span>
       </div>
       <div className="mt-2 flex items-start gap-1.5">
-        <span className="mt-0.5 flex h-[16px] w-[16px] shrink-0 items-center justify-center rounded-full border border-emerald-500/30 bg-emerald-500/15">
-          <Sparkles className="h-2 w-2 text-emerald-300" />
+        <span className="mt-0.5 flex h-[16px] w-[16px] shrink-0 items-center justify-center rounded-full border border-badge-success/30 bg-emerald-500/15">
+          <Sparkles className="h-2 w-2 text-badge-success" />
         </span>
         {round.reply ? (
           <div className="min-w-0 flex-1 text-[12px] leading-5 text-zinc-400">
@@ -88,7 +100,7 @@ const RoundItem: React.FC<{
               <button
                 type="button"
                 onClick={() => setExpanded(!expanded)}
-                className="ml-1 inline-flex items-center gap-0.5 text-[11px] text-emerald-300/80 hover:text-emerald-200"
+                className="ml-1 inline-flex items-center gap-0.5 text-[11px] text-badge-success/80 hover:text-badge-success"
               >
                 {expanded ? <>收起<ChevronDown className="h-3 w-3" /></> : <>展开<ChevronRight className="h-3 w-3" /></>}
               </button>
@@ -118,6 +130,7 @@ export const ProjectCollaborationDetailPane: React.FC<ProjectCollaborationDetail
   const [followUpText, setFollowUpText] = useState('');
   const [followUpError, setFollowUpError] = useState<string | null>(null);
   const [followUpSending, setFollowUpSending] = useState(false);
+  const { t } = useI18n();
 
   // topic 参与过的会话集合（ADR-035）：源会话 + 各轮 delta 归属；老卡自然退化为单会话
   const conversationIds = useMemo(
@@ -154,6 +167,12 @@ export const ProjectCollaborationDetailPane: React.FC<ProjectCollaborationDetail
   const { workCard, deltas } = detail;
   const phase = statusPhase(workCard.status);
   const latestDelta = deltas.at(-1);
+  // ② topic 主会话规则：主入口 = 最近一轮落点会话，源会话降级为次入口
+  const primaryConversationId = topicPrimaryConversationId(detail);
+  // blockedReason（host 侧真实阻塞原因）优先于从 delta.risks 猜的文案；为空保持旧回退。
+  // runtime 生命周期记账串（如 waiting 态的 "Runtime paused..."）不是给用户看的，过既有过滤器。
+  const rawBlockedReason = workCard.blockedReason?.trim() || null;
+  const blockedReason = rawBlockedReason && !isInternalRuntimeText(rawBlockedReason) ? rawBlockedReason : null;
   const messageSource = messagesByConversation ?? loadedByConversation;
   const rounds = mergeTopicRounds(conversationIds.map((conversationId) =>
     extractNeoTopicRounds(messageSource[conversationId] ?? [], workCard.id, conversationId)));
@@ -185,15 +204,42 @@ export const ProjectCollaborationDetailPane: React.FC<ProjectCollaborationDetail
   );
   const changedFiles = uniqueNonEmpty(deltas.flatMap((delta) => delta.changedFiles));
   const openQuestions = uniqueNonEmpty(latestDelta?.openQuestions ?? []).filter((item) => !isInternalRuntimeText(item));
-  const errors = uniqueNonEmpty(latestDelta?.risks ?? []);
+  const errors = blockedReason ? [blockedReason] : uniqueNonEmpty(latestDelta?.risks ?? []);
   const pendingMemory = detail.memoryCandidates.filter((candidate) => candidate.status === 'pending');
   const isActive = phase === 'running' || phase === 'needs_input';
+
+  // S1 最小元数据编辑：priority 四档 + 截止（清空=传 null），失败 toast
+  const actorUserId = currentUser?.id ?? 'local-user';
+  const handlePriorityChange = (value: string) => {
+    void useNeoWorkCardStore.getState().updateMeta({
+      workCardId: workCard.id,
+      actorUserId,
+      priority: value as NeoWorkCardPriority,
+    }).catch((error) => {
+      toast.error(error instanceof Error ? error.message : t.neoTopics.updateMetaFailed);
+    });
+  };
+  const handleDueAtChange = (value: string) => {
+    void useNeoWorkCardStore.getState().updateMeta({
+      workCardId: workCard.id,
+      actorUserId,
+      dueAt: value ? new Date(`${value}T00:00:00`).getTime() : null,
+    }).catch((error) => {
+      toast.error(error instanceof Error ? error.message : t.neoTopics.updateMetaFailed);
+    });
+  };
+
+  // ③「接着做」：复用续接 chip 链路（setContinuationTarget → ChatInput chip → 同卡续接），跳到主入口会话
+  const handleFollowUpInChat = () => {
+    useNeoWorkCardStore.getState().setContinuationTarget({ workCardId: workCard.id, title: workCard.title });
+    onOpenConversation?.(primaryConversationId);
+  };
 
   return (
     <div className="px-4 py-4" data-testid="neo-topic-detail">
       {/* 头 */}
       <div className="flex items-start gap-2">
-        <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-emerald-300" />
+        <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-badge-success" />
         <div className="min-w-0 flex-1">
           <h3 className="text-sm font-semibold leading-6 text-zinc-100">{workCard.title}</h3>
           <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-zinc-500">
@@ -203,41 +249,79 @@ export const ProjectCollaborationDetailPane: React.FC<ProjectCollaborationDetail
             </Badge>
             <span>发起人 {formatRequesterLabel(workCard.requesterUserId, currentUser)}</span>
             <span>更新于 {formatTime(workCard.updatedAt)}</span>
+            <select
+              value={workCard.priority ?? 'medium'}
+              onChange={(event) => handlePriorityChange(event.target.value)}
+              className="h-6 rounded-md border border-zinc-800 bg-zinc-900 px-1 text-[11px] text-zinc-400 outline-none focus:border-badge-success/60"
+              data-testid="neo-topic-detail-priority"
+            >
+              <option value="urgent">{t.neoTopics.priorityUrgent}</option>
+              <option value="high">{t.neoTopics.priorityHigh}</option>
+              <option value="medium">{t.neoTopics.priorityMedium}</option>
+              <option value="low">{t.neoTopics.priorityLow}</option>
+            </select>
+            <label className="inline-flex h-6 items-center gap-1 text-[11px] text-zinc-500">
+              {t.neoTopics.duePrefix}
+              <input
+                type="date"
+                value={toDateInputValue(workCard.dueAt)}
+                onChange={(event) => handleDueAtChange(event.target.value)}
+                className="h-6 rounded-md border border-zinc-800 bg-zinc-900 px-1 text-[11px] text-zinc-400 outline-none focus:border-badge-success/60"
+                data-testid="neo-topic-detail-due"
+              />
+            </label>
           </div>
         </div>
         {onOpenConversation && (
-          <button
-            type="button"
-            onClick={() => onOpenConversation(workCard.sourceConversationId)}
-            className="inline-flex h-7 shrink-0 items-center gap-1 rounded-md border border-emerald-500/25 bg-emerald-500/10 px-2 text-xs text-emerald-200 hover:bg-emerald-500/15"
-            data-testid="neo-topic-detail-open-conversation"
-          >
-            <MessageSquare className="h-3 w-3" />打开会话
-          </button>
+          <span className="flex shrink-0 items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => onOpenConversation(primaryConversationId)}
+              className="inline-flex h-7 items-center gap-1 rounded-md border border-badge-success/25 bg-emerald-500/10 px-2 text-xs text-badge-success hover:bg-emerald-500/15"
+              data-testid="neo-topic-detail-open-conversation"
+            >
+              <MessageSquare className="h-3 w-3" />打开会话
+            </button>
+            {primaryConversationId !== workCard.sourceConversationId && (
+              <button /* ds-allow:button: 次级「源会话」跳转是面板既有小按钮写法的延续（紧凑 border chip），Button primitive 变体不适配 */
+                type="button"
+                onClick={() => onOpenConversation(workCard.sourceConversationId)}
+                className="inline-flex h-7 items-center gap-1 rounded-md border border-zinc-700/70 bg-zinc-800/60 px-2 text-xs text-zinc-400 hover:border-zinc-600 hover:text-zinc-200"
+                data-testid="neo-topic-detail-open-source"
+              >
+                <MessageSquare className="h-3 w-3" />{t.neoTopics.openSourceConversation}
+              </button>
+            )}
+          </span>
         )}
       </div>
 
       {/* 进行中 */}
       {phase === 'running' && (
-        <div className="mt-3 flex items-start gap-1.5 text-[13px] leading-5 text-emerald-100/90">
-          <Loader2 className="mt-0.5 h-3.5 w-3.5 shrink-0 animate-spin text-emerald-300" />
+        <div className="mt-3 flex items-start gap-1.5 text-[13px] leading-5 text-badge-success/90">
+          <Loader2 className="mt-0.5 h-3.5 w-3.5 shrink-0 animate-spin text-badge-success" />
           <span>Neo 正在处理…</span>
         </div>
       )}
 
       {/* 待你确认 */}
       {phase === 'needs_input' && (
-        <div className="mt-3 rounded-md border border-amber-400/20 bg-amber-400/[0.06] px-3 py-2 text-[13px] leading-5 text-amber-100/90">
-          <div className="mb-1 flex items-center gap-1 text-amber-200/80"><HelpCircle className="h-3.5 w-3.5" />待你确认</div>
-          {openQuestions.length > 0
-            ? openQuestions.map((question, index) => <div key={index}>· {question}</div>)
-            : <div>Neo 在会话里等你补充信息，打开会话回它一句。</div>}
+        <div className="mt-3 rounded-md border border-badge-warning/20 bg-amber-400/[0.06] px-3 py-2 text-[13px] leading-5 text-badge-warning/90">
+          <div className="mb-1 flex items-center gap-1 text-badge-warning/80"><HelpCircle className="h-3.5 w-3.5" />待你确认</div>
+          {blockedReason
+            ? <div data-testid="neo-topic-detail-blocked-reason">{blockedReason}</div>
+            : openQuestions.length > 0
+              ? openQuestions.map((question, index) => <div key={index}>· {question}</div>)
+              : <div>Neo 在会话里等你补充信息，打开会话回它一句。</div>}
         </div>
       )}
 
       {/* 失败 */}
       {phase === 'failed' && errors.length > 0 && (
-        <div className="mt-3 rounded-md border border-rose-400/20 bg-rose-400/[0.06] px-3 py-2 text-[13px] leading-5 text-rose-100/90">
+        <div
+          className="mt-3 rounded-md border border-badge-danger/20 bg-rose-400/[0.06] px-3 py-2 text-[13px] leading-5 text-badge-danger/90"
+          data-testid="neo-topic-detail-failed"
+        >
           {errors.map((error, index) => <div key={index}>{error}</div>)}
         </div>
       )}
@@ -266,7 +350,7 @@ export const ProjectCollaborationDetailPane: React.FC<ProjectCollaborationDetail
         <ul className="mt-4 grid gap-1.5" data-testid="neo-topic-detail-checklist">
           {checklist.map((item, index) => (
             <li key={`${index}-${item}`} className="flex items-start gap-1.5 text-[13px] leading-5 text-zinc-300">
-              <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-400" />
+              <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-badge-success" />
               <span className="min-w-0">{item}</span>
             </li>
           ))}
@@ -288,17 +372,17 @@ export const ProjectCollaborationDetailPane: React.FC<ProjectCollaborationDetail
       {/* 记忆候选 */}
       {pendingMemory.length > 0 && (
         <div className="mt-4" data-testid="neo-topic-detail-memory">
-          <div className="mb-1.5 flex items-center gap-1 text-[11px] font-medium text-fuchsia-200/70">
+          <div className="mb-1.5 flex items-center gap-1 text-[11px] font-medium text-badge-accent/70">
             <Brain className="h-3.5 w-3.5" />可记住
           </div>
           <div className="grid gap-1.5">
             {pendingMemory.map((candidate) => (
-              <div key={candidate.id} className="flex min-w-0 items-center justify-between gap-2 rounded-md border border-fuchsia-400/15 bg-fuchsia-400/[0.05] px-2.5 py-1.5 text-[12px] text-fuchsia-100/90">
+              <div key={candidate.id} className="flex min-w-0 items-center justify-between gap-2 rounded-md border border-badge-accent/15 bg-fuchsia-400/[0.05] px-2.5 py-1.5 text-[12px] text-badge-accent/90">
                 <span className="min-w-0 truncate">{candidate.text}</span>
                 <button
                   type="button"
                   onClick={() => onApproveMemory?.(candidate.id)}
-                  className="inline-flex shrink-0 items-center gap-1 rounded border border-fuchsia-400/25 bg-fuchsia-400/10 px-1.5 py-0.5 text-[11px] text-fuchsia-100 hover:bg-fuchsia-400/15"
+                  className="inline-flex shrink-0 items-center gap-1 rounded border border-badge-accent/25 bg-fuchsia-400/10 px-1.5 py-0.5 text-[11px] text-badge-accent hover:bg-fuchsia-400/15"
                   data-testid={`neo-topic-detail-approve-memory-${candidate.id}`}
                 >
                   写入记忆
@@ -312,6 +396,16 @@ export const ProjectCollaborationDetailPane: React.FC<ProjectCollaborationDetail
       {/* 追问（ADR-035）：同 topic 追加一轮，落最近一轮的会话 */}
       {canFollowUp && (
         <div className="mt-4" data-testid="neo-topic-detail-followup">
+          {onOpenConversation && (
+            <button /* ds-allow:button: 「接着做」是面板既有小按钮写法的延续（紧凑 border chip），Button primitive 变体不适配 */
+              type="button"
+              onClick={handleFollowUpInChat}
+              className="mb-2 inline-flex h-7 items-center gap-1 rounded-md border border-badge-success/25 bg-emerald-500/10 px-2 text-xs text-badge-success hover:bg-emerald-500/15"
+              data-testid="neo-topic-detail-followup-chat"
+            >
+              <MessageSquare className="h-3 w-3" />{t.neoTopics.followUp}
+            </button>
+          )}
           <div className="flex items-center gap-2">
             <input
               type="text"
@@ -319,21 +413,21 @@ export const ProjectCollaborationDetailPane: React.FC<ProjectCollaborationDetail
               onChange={(event) => setFollowUpText(event.target.value)}
               onKeyDown={(event) => { if (event.key === 'Enter') void sendFollowUp(); }}
               placeholder="接着交代 Neo…"
-              className="h-8 min-w-0 flex-1 rounded-md border border-zinc-800 bg-zinc-950/60 px-2.5 text-[12px] text-zinc-200 placeholder:text-zinc-600 focus:border-emerald-500/40 focus:outline-none"
+              className="h-8 min-w-0 flex-1 rounded-md border border-zinc-800 bg-zinc-950/60 px-2.5 text-[12px] text-zinc-200 placeholder:text-zinc-600 focus:border-badge-success/40 focus:outline-none"
               data-testid="neo-topic-detail-followup-input"
             />
             <button
               type="button"
               onClick={() => void sendFollowUp()}
               disabled={followUpSending || !followUpText.trim()}
-              className="inline-flex h-8 shrink-0 items-center gap-1 rounded-md border border-emerald-500/25 bg-emerald-500/10 px-2.5 text-xs text-emerald-200 hover:bg-emerald-500/15 disabled:opacity-40"
+              className="inline-flex h-8 shrink-0 items-center gap-1 rounded-md border border-badge-success/25 bg-emerald-500/10 px-2.5 text-xs text-badge-success hover:bg-emerald-500/15 disabled:opacity-40"
               data-testid="neo-topic-detail-followup-send"
             >
               {followUpSending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3" />}续一轮
             </button>
           </div>
           {followUpError && (
-            <div className="mt-1.5 text-[11px] text-rose-300/90" data-testid="neo-topic-detail-followup-error">{followUpError}</div>
+            <div className="mt-1.5 text-[11px] text-badge-danger/90" data-testid="neo-topic-detail-followup-error">{followUpError}</div>
           )}
         </div>
       )}

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildGlobalTaskRecords,
+  buildDurableSubagentViews,
   buildLedgerTaskRecords,
   buildWorkflowSubagentViews,
   buildWorkflowTaskRecord,
@@ -82,6 +83,39 @@ describe('buildGlobalTaskRecords', () => {
   });
 });
 
+describe('buildDurableSubagentViews', () => {
+  it('uses only persisted ledger records for capsule status and output', () => {
+    expect(buildDurableSubagentViews({
+      runId: 'run-1',
+      selectedAgentId: null,
+      agents: [{
+        runId: 'run-1',
+        agentId: 'agent-1',
+        name: 'Reviewer',
+        role: 'reviewer',
+        status: 'completed',
+        startTime: 1,
+        endTime: 2,
+        durationMs: 1,
+        tokensIn: 1,
+        tokensOut: 1,
+        toolCalls: 0,
+        costUsd: 0,
+        error: null,
+        failureCategory: null,
+        filesChanged: [],
+        dispatchedTask: 'review durable state',
+        finalOutput: 'verified',
+      }],
+    })).toEqual([expect.objectContaining({
+      id: 'agent-1',
+      status: 'completed',
+      inputSummary: 'review durable state',
+      lastOutput: 'verified',
+    })]);
+  });
+});
+
 describe('buildLedgerTaskRecords', () => {
   it('projects only current-session agent engine ledger status and output refs for TaskPanel', () => {
     const tasks = buildLedgerTaskRecords([
@@ -159,26 +193,12 @@ describe('buildLedgerTaskRecords', () => {
 
     expect(tasks[1]).toMatchObject({
       status: 'completed',
-      resumeHint: '最终输出：run-2.last.md',
-      outputRefs: [
-        {
-          type: 'log',
-          label: 'Claude Code log',
-          pathOrUrl: '/tmp/code-agent/run-2.log',
-          size: 0,
-        },
-        {
-          type: 'text',
-          label: 'Claude Code final message',
-          pathOrUrl: '/tmp/code-agent/run-2.last.md',
-        },
-      ],
+      resumeHint: undefined,
+      outputRefs: [],
     });
     expect(tasks[1].steps.map((step) => step.title)).toEqual([
       '已完成',
       '12s',
-      'Claude Code log：run-2.log',
-      'Claude Code final message：run-2.last.md',
     ]);
 
     expect(tasks[2]).toMatchObject({

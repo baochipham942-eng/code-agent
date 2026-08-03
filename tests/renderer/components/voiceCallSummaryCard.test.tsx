@@ -83,7 +83,7 @@ describe('VoiceCallSummaryCard 展开文字记录（G1）', () => {
 
     render(<VoiceCallSummaryCard summary={summary} />);
     fireEvent.click(screen.getByRole('button'));
-    expect(screen.getByText(zh.voice.call.noTranscript)).toBeTruthy();
+    expect(screen.getByText(zh.voice.call.noTranscriptLegacy)).toBeTruthy();
   });
 
   it('再次点击收起', () => {
@@ -100,5 +100,44 @@ describe('VoiceCallSummaryCard 展开文字记录（G1）', () => {
     fireEvent.click(toggle);
     expect(toggle.getAttribute('aria-expanded')).toBe('false');
     expect(screen.queryByText('帮我看下构建')).toBeNull();
+  });
+});
+
+describe('VoiceCallSummaryCard P2 品牌升级（勘测报告）', () => {
+  it('标题区展示「勘测报告 · 近地轨道」+ mm:ss 时长', () => {
+    useSessionStore.setState({ messages: [] });
+
+    render(<VoiceCallSummaryCard summary={summary} />);
+    expect(screen.getByText(zh.voice.call.surveyTitle)).toBeTruthy();
+    // durationSec=60 → 01:00
+    expect(screen.getByText('01:00', { exact: false })).toBeTruthy();
+  });
+
+  it('展开后字幕条目前缀 ✦，底部总计「本次带回 N 件宝藏」N=真实条目数', () => {
+    useSessionStore.setState({
+      messages: [
+        msg({ id: 'm-in-user', role: 'user', content: '帮我看下构建', timestamp: START + 1_000, metadata: { source: 'voice' } }),
+        msg({ id: 'm-in-asst', role: 'assistant', content: '构建通过了', timestamp: END - 1_000, metadata: { source: 'voice' } }),
+      ],
+    });
+
+    render(<VoiceCallSummaryCard summary={summary} />);
+    fireEvent.click(screen.getByRole('button'));
+
+    // 2 条字幕 → 2 个 ✦ 前缀
+    expect(screen.getAllByText('✦')).toHaveLength(2);
+    // 底部总计 N = 真实列出的条目数（不造稀有度标签）
+    expect(screen.getByText(zh.voice.call.treasureCount.replace('{n}', '2'))).toBeTruthy();
+    // 稀有度标签不得出现
+    expect(screen.queryByText(/稀有|精良/)).toBeNull();
+  });
+
+  it('空字幕展开只显示归因提示，不显示宝藏计数', () => {
+    useSessionStore.setState({ messages: [] });
+
+    render(<VoiceCallSummaryCard summary={summary} />);
+    fireEvent.click(screen.getByRole('button'));
+    expect(screen.getByText(zh.voice.call.noTranscriptLegacy)).toBeTruthy();
+    expect(screen.queryByText(/件宝藏/)).toBeNull();
   });
 });

@@ -7,7 +7,7 @@
 // ============================================================================
 
 import { create } from 'zustand';
-import type { VoiceWorkItem } from '@shared/contract/voice';
+import type { VoiceMessageCode, VoiceWorkItem } from '@shared/contract/voice';
 import type { VoiceLiveSettings } from '@shared/contract/settings';
 
 export type VoiceInterruptMode = NonNullable<VoiceLiveSettings['interrupt']>;
@@ -18,6 +18,7 @@ export type VoiceCallPhase = 'idle' | 'connecting' | 'live' | 'error';
 export type VoiceVisualState =
   | 'idle'
   | 'connecting'
+  | 'reconnecting'
   | 'listening'
   | 'speaking'
   | 'working'
@@ -25,8 +26,11 @@ export type VoiceVisualState =
   | 'error';
 
 export interface VoiceCallError {
-  code: string;
+  code: VoiceMessageCode;
+  /** host 侧原文，仅作兜底与日志；给用户看的文案按 code 查 i18n（见 resolveVoiceMessage）。 */
   message: string;
+  /** 上游/执行侧原始详情，不进入主文案；只在详情交互或 title 中展示。 */
+  detail?: string;
 }
 
 interface VoiceCallStoreState {
@@ -43,6 +47,12 @@ interface VoiceCallStoreState {
   assistantSpeaking: boolean;
   /** PTT/手动模式：是否正按住（或点按开启）采集 */
   pttCaptureOn: boolean;
+  /** 断线重连中：phase 回到 connecting，但这是同一通电话，work items / 计时都不重置 */
+  reconnecting: boolean;
+  /** 当前是第几次重连（1 起）；非重连态为 0。上限由 VOICE_RECONNECT_BACKOFF_MS 推导，bridge 写入 */
+  reconnectAttempt: number;
+  /** 重连总次数上限（= 退避表长度）；非重连态为 0 */
+  reconnectMaxAttempts: number;
   /** 本次通话的打断方式（建连时从设置快照）：决定 VoiceChrome 是全双工还是 PTT/点按 */
   interruptMode: VoiceInterruptMode;
   workItems: VoiceWorkItem[];
@@ -52,6 +62,9 @@ interface VoiceCallStoreState {
   micLevel: number;
   playbackLevel: number;
   error: VoiceCallError | null;
+  /** 通话中的一次性提示（如「当前模型不支持派活」）；不致命，不进 error 态。
+   *  存 code 而不是成品文案——文案的家在 i18n，host 只说「出了哪件事」。 */
+  notice: VoiceCallError | null;
   ttfa: { modelMs?: number; perceivedMs?: number } | null;
 
   /** 以下动作只由 voiceCallBridge 调用 */
@@ -64,11 +77,16 @@ interface VoiceCallStoreState {
     partialAssistant?: string;
     workItem?: VoiceWorkItem;
     error?: VoiceCallError | null;
+    notice?: VoiceCallError | null;
     ttfa?: { modelMs?: number; perceivedMs?: number };
   }) => void;
   levelsChanged: (mic: number, playback: number) => void;
   muteChanged: (muted: boolean) => void;
   pttCaptureChanged: (on: boolean) => void;
+  reconnectingChanged: (
+    reconnecting: boolean,
+    progress?: { attempt: number; maxAttempts: number },
+  ) => void;
   reset: () => void;
 }
 
@@ -81,6 +99,9 @@ const INITIAL = {
   userSpeaking: false,
   assistantSpeaking: false,
   pttCaptureOn: false,
+  reconnecting: false,
+  reconnectAttempt: 0,
+  reconnectMaxAttempts: 0,
   interruptMode: 'server_vad' as const,
   workItems: [],
   partialUser: '',
@@ -88,6 +109,7 @@ const INITIAL = {
   micLevel: 0,
   playbackLevel: 0,
   error: null,
+  notice: null,
   ttfa: null,
 };
 
@@ -116,12 +138,20 @@ export const useVoiceCallStore = create<VoiceCallStoreState>((set) => ({
         ? [...state.workItems.filter((item) => item.id !== event.workItem!.id), event.workItem]
         : state.workItems,
       error: event.error === undefined ? state.error : event.error,
+      notice: event.notice === undefined ? state.notice : event.notice,
       ttfa: event.ttfa ?? state.ttfa,
     })),
 
   levelsChanged: (mic, playback) => set({ micLevel: mic, playbackLevel: playback }),
   muteChanged: (muted) => set({ muted }),
   pttCaptureChanged: (on) => set({ pttCaptureOn: on }),
+  // 重连开始必须带进度（attempt 从 1 起）；结束/归零时不带，进度清零。
+  reconnectingChanged: (reconnecting, progress) =>
+    set({
+      reconnecting,
+      reconnectAttempt: reconnecting ? progress?.attempt ?? 0 : 0,
+      reconnectMaxAttempts: reconnecting ? progress?.maxAttempts ?? 0 : 0,
+    }),
 
   reset: () => set({ ...INITIAL }),
 }));
@@ -135,12 +165,15 @@ export function selectVoiceVisualState(state: {
   muted: boolean;
   assistantSpeaking: boolean;
   workItems: VoiceWorkItem[];
+  reconnecting?: boolean;
 }): VoiceVisualState {
   if (state.phase === 'idle') return 'idle';
-  if (state.phase === 'connecting') return 'connecting';
+  // 重连中要和首次拨号区分开：用户已经在打这通电话了，看到「连接中」会以为要重新开始。
+  if (state.phase === 'connecting') return state.reconnecting ? 'reconnecting' : 'connecting';
   if (state.phase === 'error') return 'error';
   if (state.muted) return 'muted';
-  if (state.workItems.some((item) => item.status === 'queued')) return 'working';
+  // 在途 = 排队中或正在跑。只看 queued 的话，run 一开始跑 working 态就掉了（批 H 前的行为）。
+  if (state.workItems.some((item) => item.status === 'queued' || item.status === 'running')) return 'working';
   if (state.assistantSpeaking) return 'speaking';
   return 'listening';
 }

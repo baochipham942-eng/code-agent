@@ -46,6 +46,8 @@ export const activityPanelZh = {
       contextSummaryDetail: '当前没有可直接读取的 Tauri 本机事件列表，先展示 ActivityContext 汇总。',
       emptyHeadline: '还没有可展示的近期活动。',
       emptyDetail: '没有 provider 数据时这里保持可读空态，不把页面留成空白。',
+      emptyHeadlineWeb: 'Web 模式下不采集本机桌面活动。',
+      emptyDetailWeb: '这里展示的是桌面版才有的本机事件（窗口/截图/音频）；浏览器里的对话不会出现在这里，属正常降级。',
     },
     preview: {
       generated: '生成：',
@@ -171,6 +173,8 @@ export const activityPanelEn: typeof activityPanelZh = {
       contextSummaryDetail: 'No directly readable Tauri native event list; showing the ActivityContext summary first.',
       emptyHeadline: 'No recent activity to show yet.',
       emptyDetail: 'Keeps a readable empty state when no provider data is available, instead of leaving the page blank.',
+      emptyHeadlineWeb: 'Web mode does not collect local desktop activity.',
+      emptyDetailWeb: 'This card shows on-device events (windows/screenshots/audio) that only exist in the desktop app. Browser conversations not appearing here is expected.',
     },
     preview: {
       generated: 'Generated: ',

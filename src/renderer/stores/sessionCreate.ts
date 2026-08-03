@@ -1,4 +1,4 @@
-import type { Session, Message, TodoItem } from '@shared/contract';
+import type { AppSettings, Session, Message, TodoItem } from '@shared/contract';
 import type { AgentEngineSessionMetadata } from '@shared/contract/agentEngine';
 import { normalizeAgentEngineSession } from '@shared/contract/agentEngine';
 import { deriveSessionWorkbenchSnapshot } from '@shared/contract/sessionWorkspace';
@@ -15,6 +15,29 @@ async function invokeSession<T>(action: string, payload?: unknown): Promise<T> {
     throw new Error(response?.error?.message || `Session action failed: ${action}`);
   }
   return response.data as T;
+}
+
+export function resolveOnboardingDefaultEngine(
+  settings: AppSettings | undefined,
+  workingDirectory: string | null | undefined,
+): Partial<AgentEngineSessionMetadata> | null {
+  if (!workingDirectory?.trim()) return null;
+  const kind = settings?.onboarding?.defaultEngine;
+  if (!kind || kind === 'native') return null;
+  const preference = settings?.models?.agentEngines?.[kind];
+  return {
+    kind,
+    model: preference?.defaultModel || undefined,
+    cwd: workingDirectory,
+  };
+}
+
+async function readOnboardingDefaultEngine(
+  workingDirectory: string | null | undefined,
+): Promise<Partial<AgentEngineSessionMetadata> | null> {
+  const response = await window.domainAPI?.invoke<AppSettings>(IPC_DOMAINS.SETTINGS, 'get');
+  if (!response?.success) return null;
+  return resolveOnboardingDefaultEngine(response.data, workingDirectory);
 }
 
 /** Minimal session meta shape used by create (avoids circular import with sessionStore). */
@@ -92,6 +115,9 @@ export async function executeCreateSession(
       options?.workingDirectory !== undefined
         ? options.workingDirectory
         : useAppStore.getState().workingDirectory;
+    const onboardingDefaultEnginePromise = !options?.engine
+      ? readOnboardingDefaultEngine(inheritedWorkingDirectory).catch(() => null)
+      : Promise.resolve(null);
     const nextTitle = title?.trim() || '新对话';
     if (nextTitle === '新对话') {
       useAppshotsStore.getState().clear();
@@ -103,6 +129,7 @@ export async function executeCreateSession(
         workingDirectory: inheritedWorkingDirectory,
       });
       if (reusableSession) {
+        const onboardingDefaultEngine = await onboardingDefaultEnginePromise;
         // 与新建路径一致：复用空草稿时也继承当前会话的 native 模型选择，
         // 避免「点新会话模型被重置」。仅当当前会话有显式 override 时才应用，
         // 不覆盖草稿自身已设的模型；switchModel 须在 switchSession 之前完成，
@@ -128,6 +155,22 @@ export async function executeCreateSession(
         }
         if (get().currentSessionId !== reusableSession.id) {
           await get().switchSession(reusableSession.id);
+        } else {
+          // 复用的草稿就是当前会话：不切换、不新建，屏幕上一点变化都没有，
+          // 「新建会话」看起来像点了没反应（侧栏「新任务」与快速对话分区的 + 都走这条）。
+          // 用户已经身在他想要的那个空白会话里，唯一还缺的就是把光标交还给他。
+          useAppStore.getState().requestComposerFocus();
+        }
+        if (
+          !options?.engine &&
+          onboardingDefaultEngine &&
+          normalizeAgentEngineSession(reusableSession.engine).kind === 'native'
+        ) {
+          try {
+            await get().updateSessionEngine(reusableSession.id, onboardingDefaultEngine);
+          } catch {
+            logger.warn('Failed to apply onboarding engine to reused draft, falling back to native');
+          }
         }
         useAppStore.getState().setWorkingDirectory(reusableSession.workingDirectory ?? null);
         // 复用空白草稿时刷新时间戳，避免侧边栏显示旧草稿的"3 天前"。
@@ -197,7 +240,9 @@ export async function executeCreateSession(
       useAppStore.getState().syncActiveAgentForSession(session.id, { inheritCurrent: !previousSessionId });
       useAppStore.getState().syncWorkbenchForSession(session.id);
       set({
-        sessions: [newSessionWithMeta, ...get().sessions],
+        // host may broadcast SESSION_LIST_UPDATED before create() returns.
+        // Keep the optimistic insert at the top without rendering the same id twice.
+        sessions: [newSessionWithMeta, ...get().sessions.filter((item) => item.id !== session.id)],
         currentSessionId: session.id,
         messages: [],
         todos: [],
@@ -211,14 +256,18 @@ export async function executeCreateSession(
 
       // 继承上一个会话的外部 engine 选择（后端禁止创建时直接指定外部引擎，
       // 必须走创建后的 select 校验路径：需要工作目录 + 引擎可用，失败则保持 native）
-      if (!options?.engine && previousEngine && previousEngine.kind !== 'native') {
+      const inheritedExternalEngine =
+        !options?.engine && previousEngine && previousEngine.kind !== 'native'
+          ? {
+              kind: previousEngine.kind,
+              permissionProfile: previousEngine.permissionProfile,
+              model: previousEngine.model,
+              cwd: previousEngine.cwd ?? newSessionWithMeta.workingDirectory ?? undefined,
+            }
+          : await onboardingDefaultEnginePromise;
+      if (inheritedExternalEngine) {
         try {
-          await get().updateSessionEngine(session.id, {
-            kind: previousEngine.kind,
-            permissionProfile: previousEngine.permissionProfile,
-            model: previousEngine.model,
-            cwd: previousEngine.cwd ?? newSessionWithMeta.workingDirectory ?? undefined,
-          });
+          await get().updateSessionEngine(session.id, inheritedExternalEngine);
         } catch {
           logger.warn('Failed to inherit external engine for new session, falling back to native');
         }

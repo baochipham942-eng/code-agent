@@ -4,8 +4,16 @@
 
 import type { ModelCapability } from './model';
 import type { WorkspaceScope } from './project';
+import type { ExternalEngineModelSelection } from '../externalEngineManifest';
 
-export type AgentEngineKind = 'native' | 'codex_cli' | 'claude_code' | 'mimo_code' | 'kimi_code';
+export type AgentEngineKind =
+  | 'native'
+  | 'codex_cli'
+  | 'claude_code'
+  | 'mimo_code'
+  | 'kimi_code'
+  | 'codebuddy_code'
+  | 'grok_cli';
 
 export type ExternalAgentEngineKind = Exclude<AgentEngineKind, 'native'>;
 
@@ -92,6 +100,7 @@ export interface AgentEngineSessionMetadata {
 }
 
 export interface AgentEngineDescriptor {
+  manifestId: string;
   kind: AgentEngineKind;
   label: string;
   summary: string;
@@ -109,6 +118,38 @@ export interface AgentEngineDescriptor {
   lastError?: string;
   auditNotes?: string[];
   reliability?: AgentEngineReliability;
+  modelSelection: ExternalEngineModelSelection;
+  iconAsset?: string;
+}
+
+export interface AgentEngineSourceDescriptor {
+  manifestId: string;
+  kind?: AgentEngineKind;
+  label: string;
+  summary: string;
+  command?: string;
+  binaryPath?: string;
+  version?: string;
+  /**
+   * 本机是否定位到了这个客户端的可执行文件。**只表示「找到了」**，不表示能用——
+   * 版本探测失败时它仍为 true，失败原因见 probeError。
+   * 曾经把「找到了但探测失败」也算作 detected=false，UI 因此对着一个装好的客户端
+   * 说「本机未检测到客户端」。
+   */
+  detected: boolean;
+  /** 探测失败原因（找到了二进制但跑不通）。有值即表示这条结论是「暂时问不出来」，不是「没有」。 */
+  probeError?: string;
+  selectable: boolean;
+  authState: AgentEngineAuthState;
+  modelSelection: ExternalEngineModelSelection;
+  iconAsset?: string;
+  recommendation?: {
+    label: string;
+    reason: string;
+  };
+  evidence: 'production' | 'local_spike' | 'official_docs' | 'none';
+  credentialOwner: 'neo' | 'official_client';
+  auditNotes: string[];
 }
 
 export type AgentEngineEvent =
@@ -196,7 +237,15 @@ export interface AgentEngineModelCatalogResult {
   expiresAt?: string;
 }
 
-export const AGENT_ENGINE_KINDS: AgentEngineKind[] = ['native', 'codex_cli', 'claude_code', 'mimo_code', 'kimi_code'];
+export const AGENT_ENGINE_KINDS: AgentEngineKind[] = [
+  'native',
+  'codex_cli',
+  'claude_code',
+  'mimo_code',
+  'kimi_code',
+  'codebuddy_code',
+  'grok_cli',
+];
 
 /** 引擎展示名单一真源（registry descriptor 与 UI 文案共用，别把 kind 裸串透给用户） */
 export const AGENT_ENGINE_LABELS: Record<AgentEngineKind, string> = {
@@ -205,6 +254,8 @@ export const AGENT_ENGINE_LABELS: Record<AgentEngineKind, string> = {
   claude_code: 'Claude Code',
   mimo_code: 'MiMo-Code',
   kimi_code: 'Kimi Code',
+  codebuddy_code: 'WorkBuddy',
+  grok_cli: 'Grok Build',
 };
 
 export const DEFAULT_AGENT_ENGINE_SESSION: AgentEngineSessionMetadata = {

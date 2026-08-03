@@ -37,11 +37,11 @@ const categoryLabels: Record<ContextProvenanceCategory, string> = {
 };
 
 const sourceIcons: Record<ContextProvenanceListEntry['sourceType'], React.ReactNode> = {
-  message: <MessageSquare className="w-4 h-4 text-primary-400" />,
-  tool: <Link className="w-4 h-4 text-amber-400" />,
-  attachment: <Zap className="w-4 h-4 text-emerald-300" />,
-  memory: <Activity className="w-4 h-4 text-violet-300" />,
-  file: <Activity className="w-4 h-4 text-cyan-300" />,
+  message: <MessageSquare className="w-4 h-4 text-badge-accent" />,
+  tool: <Link className="w-4 h-4 text-badge-warning" />,
+  attachment: <Zap className="w-4 h-4 text-badge-success" />,
+  memory: <Activity className="w-4 h-4 text-badge-accent" />,
+  file: <Activity className="w-4 h-4 text-badge-info" />,
 };
 
 interface Props {
@@ -59,9 +59,9 @@ function inferCategory(entry: ContextProvenanceListEntry): ContextProvenanceCate
 }
 
 function actionTone(action: ContextProvenanceAction): string {
-  if (action === 'excluded') return 'text-amber-300 bg-amber-500/10 border-amber-500/25';
-  if (action === 'pinned' || action === 'retained') return 'text-emerald-300 bg-emerald-500/10 border-emerald-500/25';
-  if (action === 'compressed') return 'text-cyan-300 bg-cyan-500/10 border-cyan-500/25';
+  if (action === 'excluded') return 'text-badge-warning bg-amber-500/10 border-badge-warning/25';
+  if (action === 'pinned' || action === 'retained') return 'text-badge-success bg-emerald-500/10 border-badge-success/25';
+  if (action === 'compressed') return 'text-badge-info bg-cyan-500/10 border-badge-info/25';
   return 'text-zinc-300 bg-zinc-800/80 border-white/[0.06]';
 }
 
@@ -77,7 +77,7 @@ export const ContextProvenancePanel: React.FC<Props> = ({ entries }) => {
   return (
     <div className="rounded-lg border border-white/[0.04] bg-zinc-900/70 p-3">
       <div className="flex items-center gap-2">
-        <Activity className="w-4 h-4 text-primary-400" />
+        <Activity className="w-4 h-4 text-badge-accent" />
         <div className="text-sm font-medium text-zinc-100">{cp.title}</div>
         <span className="text-[10px] text-zinc-500">Provenance</span>
       </div>
@@ -105,7 +105,7 @@ export const ContextProvenancePanel: React.FC<Props> = ({ entries }) => {
                 {entry.sourceType}
               </span>
               {entry.agentId && (
-                <span className="rounded-full border border-white/[0.06] bg-zinc-800/80 px-2 py-0.5 text-[10px] text-cyan-300">
+                <span className="rounded-full border border-white/[0.06] bg-zinc-800/80 px-2 py-0.5 text-[10px] text-badge-info">
                   {entry.agentId}
                 </span>
               )}

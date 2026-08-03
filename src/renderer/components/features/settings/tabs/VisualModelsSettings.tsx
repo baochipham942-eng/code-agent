@@ -97,7 +97,7 @@ export const BuiltinModelList: React.FC<{
           <li key={m.id}>
             <label
               className={`flex items-center gap-3 rounded-lg border px-3 py-2 transition-colors ${readOnly ? '' : 'cursor-pointer'} ${
-                isSelected ? 'border-sky-500/40 bg-sky-500/5' : 'border-zinc-800 bg-zinc-900/40 hover:border-zinc-600'
+                isSelected ? 'border-badge-info/40 bg-sky-500/5' : 'border-zinc-800 bg-zinc-900/40 hover:border-zinc-600'
               }`}
             >
               {!readOnly && (
@@ -116,17 +116,17 @@ export const BuiltinModelList: React.FC<{
                 </span>
               )}
               {isSelected && (
-                <span className="inline-flex items-center rounded-full bg-sky-500/15 px-2 py-0.5 text-[11px] font-medium text-sky-300">
+                <span className="inline-flex items-center rounded-full bg-sky-500/15 px-2 py-0.5 text-[11px] font-medium text-badge-info">
                   {defaultBadge}
                 </span>
               )}
               {m.available ? (
-                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[11px] font-medium text-emerald-300">
+                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[11px] font-medium text-badge-success">
                   <Check className="h-3 w-3" />
                   {availableBadge}
                 </span>
               ) : (
-                <span className="inline-flex items-center rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-medium text-amber-300">
+                <span className="inline-flex items-center rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-medium text-badge-warning">
                   {unconfiguredBadge}
                 </span>
               )}
@@ -387,7 +387,7 @@ export const VisualModelsSettings: React.FC = () => {
           onSelect={(id) => saveDefaults(defaultImageModelId, id)}
           onConfigure={handleConfigure}
         />
-        <p className="rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-[11px] text-amber-300/90">
+        <p className="rounded-lg border border-badge-warning/20 bg-amber-500/5 px-3 py-2 text-[11px] text-badge-warning/90">
           {s.videoPendingNote}
         </p>
         <CustomEndpointManager

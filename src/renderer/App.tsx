@@ -5,6 +5,7 @@
 
 import React, { useRef, useState, useEffect, useLayoutEffect, useCallback } from 'react';
 import { useAppStore } from './stores/appStore';
+import { useWorkbenchFocusStore } from './stores/workbenchFocusStore';
 import { useAuthStore, initializeAuthStore } from './stores/authStore';
 import { initializeAgentRegistryStore } from './stores/agentRegistryStore';
 import { useSessionStore } from './stores/sessionStore';
@@ -22,6 +23,7 @@ import { UpdateNotification } from './components/UpdateNotification';
 import { isDesktopShellMode, isTauriMode } from './utils/platform';
 // PermissionDialog moved to PermissionCard inline in ChatView
 import { ProjectCollaborationPage } from './components/features/projectCollaboration';
+import { ProjectSpacePage } from './components/features/projectSpace';
 import { DevServerLauncher } from './components/LivePreview/DevServerLauncher';
 import { WorkbenchTabs } from './components/WorkbenchTabs';
 import { WorkbenchViewContent } from './components/WorkbenchViewContent';
@@ -41,13 +43,14 @@ import { ToastContainer } from './components/Toast';
 import { ProviderStatusNotice } from './components/ProviderStatusNotice';
 import { SessionExpiredNotice } from './components/SessionExpiredNotice';
 import { BudgetAlertNotice } from './components/BudgetAlertNotice';
-import { FolderTrustDialog, type FolderTrustEvaluationView } from './components/FolderTrustDialog';
+import { FolderTrustDialog, needsFolderTrustDecision, type FolderTrustEvaluationView } from './components/FolderTrustDialog';
 import { useTheme } from './hooks/useTheme';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { useTaskSync } from './hooks/useTaskSync';
 import { useInAppValidationBridge } from './hooks/useInAppValidationBridge';
 import { useBackgroundTaskSync } from './hooks/useBackgroundTaskSync';
 import { useOpenPreviewBridge } from './hooks/useOpenPreviewBridge';
+import { useTerminalRevealBridge } from './hooks/useTerminalRevealBridge';
 import { useArtifactSurfaceIntent } from './hooks/useArtifactSurfaceIntent';
 import { Group as PanelGroup, Panel, Separator as ResizeHandle } from 'react-resizable-panels';
 import { MemoFloater } from './components/features/memo/MemoFloater';
@@ -56,6 +59,8 @@ import { useSurfaceExecutionPip } from './hooks/useSurfaceExecutionPip';
 import { useSurfaceExecutionEffects } from './hooks/agent/effects/useSurfaceExecutionEffects';
 import { useAgentHalo } from './hooks/useAgentHalo';
 import { useRendererBundleAutoReload } from './hooks/useRendererBundleAutoReload';
+import { useI18n } from './hooks/useI18n';
+import { toast } from './hooks/useToast';
 import { IPC_CHANNELS, IPC_DOMAINS, type NotificationClickedEvent, type NotificationShowEvent, type ToolCreateRequestEvent, type ConfirmActionRequest, type ContextHealthUpdateEvent } from '@shared/ipc';
 import { postOsNotification, registerNotificationClick } from './utils/osNotification';
 import type { AppSettings, ModelConfig, ModelProvider, UserQuestionRequest, MCPElicitationRequest, MCPOAuthConsentRequest, UpdateInfo, Message } from '@shared/contract';
@@ -93,9 +98,6 @@ const LabPage = React.lazy(() => import('./components/features/lab/LabPage').the
 })));
 const CapturePanel = React.lazy(() => import('./components/features/capture').then((module) => ({
   default: module.CapturePanel,
-})));
-const KnowledgeMemoryPanel = React.lazy(() => import('./components/features/knowledge/KnowledgeMemoryPanel').then((module) => ({
-  default: module.KnowledgeMemoryPanel,
 })));
 const LibraryPanel = React.lazy(() => import('./components/features/knowledge/LibraryPanel').then((module) => ({
   default: module.LibraryPanel,
@@ -140,11 +142,14 @@ function useWindowWidth(): number {
 }
 
 export const App: React.FC = () => {
+  const { t } = useI18n();
   useAppshots(); // 挂载 Appshots 事件监听（热键截图 → composer）
   useSurfaceExecutionPip(); // 当前会话 Browser / Computer 共享的可信实时 PiP
   useAgentHalo(); // CUA 原生驱动时的系统级光晕跟随（单指针共驾聚光灯）
   const {
     showSettings,
+    showPromptManager,
+    showDesktopPanel,
     setTaskPanelTab,
     showCapabilityHub,
     expertDetailRoleId,
@@ -161,10 +166,10 @@ export const App: React.FC = () => {
     showProjectCollaborationPage,
     projectCollaborationPageProjectId,
     closeProjectCollaborationPage,
-    showKnowledgeMemoryPanel,
+    showProjectSpacePage,
+    closeProjectSpacePage,
     showLibraryPanel,
     showActivityPanel,
-    setShowActivityPanel,
     setShowSettings,
     setLanguage,
     setOptionalUpdateInfo,
@@ -195,6 +200,13 @@ export const App: React.FC = () => {
     windowWidth < WORKBENCH_MIN_VISIBLE_WIDTH &&
     workbenchTabs.length > 0 &&
     (isPreviewActive || activeWorkbenchTab === 'overview' || activeWorkbenchTab === 'browser');
+  // 专注模式（2026-08-01 工单①）只在右栏独立成列时生效：收起右栏/窄屏借住聊天列时退回侧栏态。
+  const workbenchFocused = useWorkbenchFocusStore((s) => s.workbenchFocused);
+  const setWorkbenchFocused = useWorkbenchFocusStore((s) => s.setWorkbenchFocused);
+  const workbenchFocusActive = workbenchFocused && showWorkbench;
+  useEffect(() => {
+    if (workbenchFocused && !showWorkbench) setWorkbenchFocused(false);
+  }, [workbenchFocused, showWorkbench, setWorkbenchFocused]);
   const appliedNarrowSidebarDefaultRef = useRef(false);
 
   const [mcpElicitation, setMcpElicitation] = useState<MCPElicitationRequest | null>(null);
@@ -260,6 +272,7 @@ export const App: React.FC = () => {
   useInAppValidationBridge();
   // 2b：监听 agent（ProposeSlidesOps 等）生成文档型产物后请求打开预览 tab（按当前会话过滤）。
   useOpenPreviewBridge();
+  useTerminalRevealBridge();
   useArtifactSurfaceIntent();
   useRendererBundleAutoReload();
 
@@ -480,11 +493,7 @@ export const App: React.FC = () => {
   const refreshFolderTrust = useCallback(async () => {
     try {
       const evaluation = await invokeDomain<FolderTrustEvaluationView>(IPC_DOMAINS.FOLDER_TRUST, 'get');
-      if (evaluation.state !== 'trusted' && evaluation.dangerousItems.length > 0) {
-        setFolderTrustEvaluation(evaluation);
-      } else {
-        setFolderTrustEvaluation(null);
-      }
+      setFolderTrustEvaluation(needsFolderTrustDecision(evaluation) ? evaluation : null);
     } catch (error) {
       logger.warn('Failed to evaluate folder trust', { error });
     }
@@ -502,17 +511,16 @@ export const App: React.FC = () => {
         'set',
         { state },
       );
-      if (evaluation.state === 'trusted') {
-        setFolderTrustEvaluation(null);
-      } else {
-        setFolderTrustEvaluation(evaluation);
-      }
+      // 决定已生效（trusted 或 blocked）就关窗；只有 host 回报仍是未决定态才继续问。
+      setFolderTrustEvaluation(needsFolderTrustDecision(evaluation) ? evaluation : null);
     } catch (error) {
+      // 只写日志的话按钮看起来「点了没反应」，用户无从知道决定没保存上。
       logger.warn('Failed to update folder trust', { error });
+      toast.error(t.folderTrust.saveFailed + (error instanceof Error ? `: ${error.message}` : ''));
     } finally {
       setFolderTrustBusy(false);
     }
-  }, []);
+  }, [t]);
 
   // 应用启动时检查更新（强制更新检查）
   useEffect(() => {
@@ -829,24 +837,32 @@ export const App: React.FC = () => {
 
   // 侧栏是否真的在画（收起 / 非 standard 档都不画）——顶栏该不该存在跟着它走。
   const isSidebarVisible = isStandard && !sidebarCollapsed;
-  // 侧栏常驻的 inline 二级页（能力中心/资料库/自动化/专家详情/知识记忆/本机操作）在位时，
-  // 顶栏收敛。评测中心是 overlay 独立页，整窗盖住顶栏，不参与这里的判定。
+  // 侧栏常驻的 inline 二级页（能力中心/资料库/自动化/专家详情/本机操作/评测中心，
+  // 以及 2026-07-29 起统一收进 inline 的账号菜单页：提示词库/Lab/时间能力/活动/
+  // Neo 协同/桌面状态）在位时，顶栏收敛。评测中心 2026-07-27 拍板从 overlay 改 inline，一并计入。
+  // 知识记忆整窗页 2026-08-02 退役（内容并入设置 → 记忆）。
+  // 设置页 2026-07-30 起是 overlay 整窗覆盖（X5.5-B1），本就不是 inline 页；仍留在名单里
+  // 只为压住底下的顶栏不随设置开关抖动（覆盖层在位时它反正不可见）。
   const inlineSecondaryPageActive = Boolean(
-    expertDetailRoleId || showKnowledgeMemoryPanel || showLibraryPanel
-    || showCapabilityHub || showCronCenter || showLocalOpsPanel
+    expertDetailRoleId || showLibraryPanel
+    || showCapabilityHub || showCronCenter || showLocalOpsPanel || showEvalCenter
+    || showProjectSpacePage
+    || showSettings || showPromptManager || showLab || showTimeCapabilityCenter
+    || showActivityPanel || showProjectCollaborationPage || showDesktopPanel
   );
 
-  const renderWorkbenchContent = () => (
+  const renderWorkbenchContent = (focusable = false) => (
     <div className="flex flex-col h-full bg-zinc-900">
-      <WorkbenchTabs />
-      {activeWorkbenchTab && (
-        <div className="flex-1 min-h-0 overflow-hidden">
-          <WorkbenchViewContent
-            activeView={activeWorkbenchTab}
-            onCloseFiles={() => setShowFileExplorer(false)}
-          />
-        </div>
-      )}
+      <WorkbenchTabs focusable={focusable}>
+        {activeWorkbenchTab && (
+          <div className="h-full min-h-0 overflow-hidden">
+            <WorkbenchViewContent
+              activeView={activeWorkbenchTab}
+              onCloseFiles={() => setShowFileExplorer(false)}
+            />
+          </div>
+        )}
+      </WorkbenchTabs>
     </div>
   );
 
@@ -858,33 +874,69 @@ export const App: React.FC = () => {
       <BudgetAlertNotice />
       <SessionExpiredNotice />
       <div className="h-screen flex flex-col bg-zinc-950 text-zinc-200">
-        {/* Main Content - Three-column layout with integrated title bars */}
+        {/* 左右结构（2026-07-27 拍板「右侧标题栏和下面样式上打通」，参照 Codex）：
+            左栏一块面（zinc-950）+ 一条竖分隔线 + 右栏一块面（zinc-900），
+            右栏顶栏与右栏内容共用同一底色、同一左右边界 ⇒ 顶栏读作右栏的一部分，
+            而不是横贯窗口的一条上边。底色写在右栏容器上（唯一真源），
+            TitleBar / FullScreenPage(inline) / ChatView / Workbench 都是它的透明子面。 */}
         <div className="flex-1 flex overflow-hidden">
-          {/* Left Column: Sidebar with its own title bar - darker background */}
           {isSidebarVisible && (
-            <div className="flex flex-col w-60 bg-zinc-950">
+            <div className="flex flex-col w-60 bg-zinc-950 border-r border-zinc-800">
               <Sidebar />
             </div>
           )}
 
           {/* Right Area: Chat + TaskPanel with shared title bar */}
-          <div className="flex-1 flex flex-col min-w-0">
-            {/* Right Title Bar —— 三个槽位全空时整条不渲染（2026-07-27 审美关）：
+          <div className="flex-1 flex flex-col min-w-0 bg-zinc-900">
+            {/* Right Title Bar（二级页分支，全宽）—— 三个槽位全空时整条不渲染（2026-07-27 审美关）：
                 侧栏收起开关已挪回侧栏自己头上，顶栏只在收起态留展开入口；
                 二级页在位时会话动作与右栏开关也都没有对象。于是「二级页 + 侧栏展开」
-                这一档顶栏什么都不剩，留着只是一条空的 h-12 边框——不画，让大标题贴顶。 */}
-            {(!inlineSecondaryPageActive || !isSidebarVisible) && (
-              <TitleBar secondaryPageActive={inlineSecondaryPageActive} />
+                这一档顶栏什么都不剩，留着只是一条空的 h-12 边框——不画，让大标题贴顶。
+                2026-07-30 第四波②：正常会话分支的顶栏并入聊天列（见下 PanelGroup），
+                右栏 workbench 列通顶、tab 条贴面板最顶（WorkBuddy 形态），不再在 tab 条上方
+                压一行只有拖拽区的空档；二级页分支顶栏仍全宽（本分支）。 */}
+            {inlineSecondaryPageActive && !isSidebarVisible && (
+              <TitleBar secondaryPageActive />
             )}
 
             {/* Content Area */}
             <div className="flex-1 min-h-0 flex overflow-hidden">
-              {expertDetailRoleId ? (
-                <RoleDetailPage roleId={expertDetailRoleId} />
-              ) : showKnowledgeMemoryPanel ? (
+              {/* 账号菜单打开的页面统一排进同一条互斥级联（2026-07-29 拍板），
+                  排在既有二级页之前 = 沿用 overlay 时代「后开者盖住先开者、关掉后露出」的语义；
+                  提示词库排在设置前，于是设置内（SoulSettings）打开提示词库时盖住设置、关闭回到设置。
+                  设置页自身 2026-07-30 起是 overlay 整窗覆盖（X5.5-B1），其余账号菜单页仍是 inline。 */}
+              {showDesktopPanel ? (
+                <FullScreenPage testId="desktop-status-panel" variant="inline">
+                  <NativeDesktopSection
+                    variant="fullscreen"
+                    onClose={() => useAppStore.getState().setShowDesktopPanel(false)}
+                  />
+                </FullScreenPage>
+              ) : showProjectCollaborationPage ? (
+                <ProjectCollaborationPage
+                  projectId={visibleProjectCollaborationProjectId}
+                  onClose={closeProjectCollaborationPage}
+                />
+              ) : showActivityPanel ? (
                 <React.Suspense fallback={null}>
-                  <KnowledgeMemoryPanel />
+                  <ActivityPanel />
                 </React.Suspense>
+              ) : showTimeCapabilityCenter ? (
+                <React.Suspense fallback={null}>
+                  <TimeCapabilityPanel />
+                </React.Suspense>
+              ) : showLab ? (
+                <React.Suspense fallback={null}>
+                  <LabPage />
+                </React.Suspense>
+              ) : showPromptManager ? (
+                <PromptManagerModal />
+              ) : showSettings ? (
+                <React.Suspense fallback={null}>
+                  <SettingsModal />
+                </React.Suspense>
+              ) : expertDetailRoleId ? (
+                <RoleDetailPage roleId={expertDetailRoleId} />
               ) : showLibraryPanel ? (
                 <React.Suspense fallback={null}>
                   <LibraryPanel />
@@ -893,6 +945,8 @@ export const App: React.FC = () => {
                 <React.Suspense fallback={null}>
                   <CapabilityHubPage />
                 </React.Suspense>
+              ) : showProjectSpacePage ? (
+                <ProjectSpacePage onClose={closeProjectSpacePage} />
               ) : showCronCenter ? (
                 <React.Suspense fallback={null}>
                   <CronCenterPanel onClose={() => setShowCronCenter(false)} />
@@ -907,18 +961,33 @@ export const App: React.FC = () => {
                 </React.Suspense>
               ) : (
                 <PanelGroup orientation="horizontal" className="flex-1 min-h-0" id="main-layout">
-                  <Panel minSize="30" id="chat">
-                    <div className="flex flex-col h-full min-h-0 min-w-0 bg-zinc-900">
-                      {showNarrowWorkbench ? renderWorkbenchContent() : <ChatView />}
-                    </div>
-                  </Panel>
+                  {/* 专注态（2026-08-01 工单①）：聊天列整列收起，右栏占满窗口宽度；
+                      maxSize=35 只对侧栏态生效，专注态不约束（工单明确不改 maxSize）。 */}
+                  {!workbenchFocusActive && (
+                    <Panel minSize="30" id="chat">
+                      <div className="flex flex-col h-full min-h-0 min-w-0 bg-zinc-900">
+                        {/* 正常会话的顶栏住在聊天列里（第四波②）：右栏展开时 workbench 列
+                            通顶、tab 条贴窗口最顶（WorkBuddy）；右栏开关仍在顶栏右端那组，
+                            两态同一行同一槽位（2026-07-27 房规：纵向不跳、顶栏单点可达）。 */}
+                        <TitleBar />
+                        {showNarrowWorkbench ? renderWorkbenchContent() : <ChatView />}
+                      </div>
+                    </Panel>
+                  )}
 
-                  {showWorkbench && (
+                  {showWorkbench && !workbenchFocusActive && (
                     <ResizeHandle className="w-1 hover:w-1.5 bg-zinc-800 hover:bg-primary-500/50 transition-all cursor-col-resize" />
                   )}
+                  {/* 2026-07-27 拍板（Kimi 三栏占比分析）：min 15%→22%（15% 在 1440 宽下仅
+                      180px，任何视图都不可用）、max 45%→35%（2560 下 1044px 远超需要） */}
                   {showWorkbench && (
-                    <Panel defaultSize="32" minSize="15" maxSize="45" id="right-panel">
-                      {renderWorkbenchContent()}
+                    <Panel
+                      defaultSize="32"
+                      minSize="22"
+                      maxSize={workbenchFocusActive ? undefined : '35'}
+                      id="right-panel"
+                    >
+                      {renderWorkbenchContent(true)}
                     </Panel>
                   )}
                 </PanelGroup>
@@ -927,25 +996,8 @@ export const App: React.FC = () => {
           </div>
       </div>
 
-      {/* Settings Modal */}
-      {showSettings && (
-        <React.Suspense fallback={null}>
-          <SettingsModal />
-        </React.Suspense>
-      )}
-
-      {/* Prompt Manager Modal */}
-      <PromptManagerModal />
-
       {/* V2-A: DevServerLauncher 自管 visibility，挂全局 */}
       <DevServerLauncher />
-
-      {/* Lab Page */}
-      {showLab && (
-        <React.Suspense fallback={null}>
-          <LabPage />
-        </React.Suspense>
-      )}
 
       {/* Workflow Page - 全屏工作流可视化 */}
       {dagPanelEnabled && showDAGPanel && (
@@ -1073,25 +1125,6 @@ export const App: React.FC = () => {
         </React.Suspense>
       )}
 
-      {showTimeCapabilityCenter && (
-        <React.Suspense fallback={null}>
-          <TimeCapabilityPanel onClose={() => useAppStore.getState().setShowTimeCapabilityCenter(false)} />
-        </React.Suspense>
-      )}
-
-      {showActivityPanel && (
-        <React.Suspense fallback={null}>
-          <ActivityPanel onClose={() => setShowActivityPanel(false)} />
-        </React.Suspense>
-      )}
-
-      {showProjectCollaborationPage && (
-        <ProjectCollaborationPage
-          projectId={visibleProjectCollaborationProjectId}
-          onClose={closeProjectCollaborationPage}
-        />
-      )}
-
       {showAgentTeamPanel && currentSessionId && swarmActiveRunId && swarmActiveSessionId === currentSessionId && (
         <div className="fixed inset-0 z-50 flex items-center justify-end">
           <div
@@ -1110,16 +1143,6 @@ export const App: React.FC = () => {
             </React.Suspense>
           </div>
         </div>
-      )}
-
-      {/* Desktop Collector Panel - 全局记忆时间线面板 */}
-      {useAppStore((s) => s.showDesktopPanel) && (
-        <FullScreenPage testId="desktop-status-panel">
-          <NativeDesktopSection
-            variant="fullscreen"
-            onClose={() => useAppStore.getState().setShowDesktopPanel(false)}
-          />
-        </FullScreenPage>
       )}
 
 

@@ -26,15 +26,18 @@ function database(): SessionRewindServiceDatabase {
           size: 12,
           mimeType: 'text/markdown',
         }],
-        visibility: 'rewound',
+        visibility: 'active',
       },
-      hiddenMessageIds: ['u2', 'a2'],
-      hiddenMessageCount: 2,
-      activeMessages: [{ id: 'u1', role: 'user', content: 'before', timestamp: 10 }],
+      hiddenMessageIds: ['a2'],
+      hiddenMessageCount: 1,
+      activeMessages: [
+        { id: 'u1', role: 'user', content: 'before', timestamp: 10 },
+        { id: 'u2', role: 'user', content: 'rewrite this', timestamp: 30 },
+      ],
     })),
     restorePromptRewind: vi.fn((): PromptRewindRestoreResult => ({
       rewindId: 'rewind-1',
-      restoredMessageCount: 2,
+      restoredMessageCount: 1,
       activeMessages: [
         { id: 'u1', role: 'user', content: 'before', timestamp: 10 },
         { id: 'u2', role: 'user', content: 'rewrite this', timestamp: 30 },
@@ -44,7 +47,7 @@ function database(): SessionRewindServiceDatabase {
 }
 
 describe('SessionRewindService', () => {
-  it('rewinds conversation history only and leaves workspace files untouched', async () => {
+  it('keeps the anchor visible, returns an empty draft, and leaves workspace files untouched', async () => {
     const db = database();
     const setSessionContext = vi.fn();
     const service = new SessionRewindService(db, {
@@ -69,9 +72,11 @@ describe('SessionRewindService', () => {
       workspaceChanged: false,
       filesRestored: 0,
       filesDeleted: 0,
-      hiddenMessageCount: 2,
-      draft: { content: 'rewrite this', attachments: [{ name: 'brief.md' }] },
+      hiddenMessageCount: 1,
+      draft: { content: '' },
     });
+    expect(result.activeMessages.map((message) => message.id)).toEqual(['u1', 'u2']);
+    expect(result.draft.attachments).toBeUndefined();
     expect(setSessionContext).toHaveBeenCalledWith('session-1', result.activeMessages);
   });
 
@@ -109,7 +114,7 @@ describe('SessionRewindService', () => {
     });
 
     expect(db.restorePromptRewind).toHaveBeenCalledWith('session-1', 'rewind-1', 200, null);
-    expect(result.restoredMessageCount).toBe(2);
+    expect(result.restoredMessageCount).toBe(1);
     expect(setSessionContext).toHaveBeenCalledWith('session-1', result.activeMessages);
   });
 

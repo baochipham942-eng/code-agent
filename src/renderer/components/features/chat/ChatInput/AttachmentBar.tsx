@@ -18,29 +18,29 @@ export interface AttachmentBarProps {
 /**
  * 根据附件类别返回对应图标
  */
-const AttachmentIcon: React.FC<{ category: AttachmentCategory }> = ({ category }) => {
-  const iconClass = 'w-5 h-5';
+export const AttachmentIcon: React.FC<{ category: AttachmentCategory; className?: string }> = ({ category, className }) => {
+  const iconClass = className ?? 'w-5 h-5';
   switch (category) {
     case 'pdf':
-      return <FileText className={`${iconClass} text-red-400`} />;
+      return <FileText className={`${iconClass} text-badge-danger`} />;
     case 'audio':
-      return <Music className={`${iconClass} text-fuchsia-400`} />;
+      return <Music className={`${iconClass} text-badge-accent`} />;
     case 'video':
-      return <Video className={`${iconClass} text-cyan-400`} />;
+      return <Video className={`${iconClass} text-badge-info`} />;
     case 'presentation':
-      return <Presentation className={`${iconClass} text-violet-400`} />;
+      return <Presentation className={`${iconClass} text-badge-accent`} />;
     case 'archive':
-      return <Archive className={`${iconClass} text-yellow-400`} />;
+      return <Archive className={`${iconClass} text-badge-warning`} />;
     case 'code':
-      return <Code className={`${iconClass} text-blue-400`} />;
+      return <Code className={`${iconClass} text-badge-info`} />;
     case 'data':
-      return <Database className={`${iconClass} text-amber-400`} />;
+      return <Database className={`${iconClass} text-badge-warning`} />;
     case 'html':
-      return <Globe className={`${iconClass} text-orange-400`} />;
+      return <Globe className={`${iconClass} text-badge-warning`} />;
     case 'text':
       return <FileText className={`${iconClass} text-zinc-400`} />;
     case 'folder':
-      return <Folder className={`${iconClass} text-yellow-400`} />;
+      return <Folder className={`${iconClass} text-badge-warning`} />;
     default:
       return <File className={`${iconClass} text-zinc-500`} />;
   }
@@ -88,7 +88,17 @@ const AttachmentItem: React.FC<{
   };
 
   return (
-    <div className="relative group flex items-center gap-2 px-3 py-2 bg-zinc-700/60 rounded-lg border border-zinc-700">
+    // chip 可聚焦：聚焦后 Delete/Backspace 删除，与 capability/pin chip 的键盘口径一致；
+    // 鼠标删除仍走右上角 hover 浮现的 ×（group-focus-within 让 × 对键盘焦点同样可见）
+    <div
+      className="relative group flex items-center gap-2 px-3 py-2 bg-zinc-700/60 rounded-lg border border-zinc-700"
+      tabIndex={0}
+      onKeyDown={(event) => {
+        if (event.key !== 'Delete' && event.key !== 'Backspace') return;
+        event.preventDefault();
+        onRemove();
+      }}
+    >
       {att.category === 'image' ? (
         <>
           <img

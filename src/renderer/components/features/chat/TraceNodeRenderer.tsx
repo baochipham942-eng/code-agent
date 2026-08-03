@@ -9,8 +9,9 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import type { TraceNode } from '@shared/contract/trace';
 import type { ToolCall } from '@shared/contract';
 import type { WorkbenchMessageMetadata } from '@shared/contract/conversationEnvelope';
-import type { TurnTimelineNode as TurnTimelinePayload } from '@shared/contract/turnTimeline';
+import type { TurnTimelineNode as TurnTimelinePayload, TurnTimelineTone } from '@shared/contract/turnTimeline';
 import { stripAppshotBlocks } from '@shared/contract/appshot';
+import { extractUserRequest, stripSystemReminderBlocks } from '@shared/utils/turnScaffold';
 import { MessageContent } from './MessageBubble/MessageContent';
 import { restoreNeoTagTokenForDisplay } from './MessageBubble/triggerTokenHighlight';
 import { ToolCallDisplay } from './MessageBubble/ToolCallDisplay/index';
@@ -25,6 +26,7 @@ import { GoalNoticeMessage } from './MessageBubble/GoalNoticeMessage';
 import { FallbackBanner } from './MessageBubble/FallbackBanner';
 import { RouteTraceChip, shouldRenderModelDecisionChip } from './RouteTraceChip';
 import { TurnQualityStrip } from './TurnQualityStrip';
+import { AgentErrorCard } from './AgentErrorCard';
 import { VoiceCallSummaryCard } from '../voice/VoiceCallSummaryCard';
 import { useSmoothStreamingText } from '../../../hooks/useSmoothStreamingText';
 import { Archive, AudioLines, ChevronDown, ChevronRight, AlertTriangle, Copy, Check, FileText, Link, GitBranch, RotateCcw, Wrench, CornerDownRight } from 'lucide-react';
@@ -39,6 +41,11 @@ interface TraceNodeRendererProps {
   attachments?: import('@shared/contract').MessageAttachment[];
   /** Whether this node is in a currently streaming turn */
   isStreaming?: boolean;
+  /**
+   * X5.5-D4/D6：节点处于语音派活任务卡内。徽标已上提到轮层（卡头 AudioLines
+   * 图标是这通派活唯一的语音标记），轮内节点级的「语音」小标全部抑制。
+   */
+  inVoiceDispatchCard?: boolean;
   onStreamingDisplayUpdate?: (nodeId: string, displayLength: number, isAnimating: boolean) => void;
   onRewindUserPrompt?: (messageId: string, content: string) => void;
   rewindDisabled?: boolean;
@@ -49,6 +56,7 @@ export const TraceNodeRenderer: React.FC<TraceNodeRendererProps> = ({
   sessionId,
   attachments,
   isStreaming,
+  inVoiceDispatchCard,
   onStreamingDisplayUpdate,
   onRewindUserPrompt,
   rewindDisabled,
@@ -65,6 +73,7 @@ export const TraceNodeRenderer: React.FC<TraceNodeRendererProps> = ({
           attachments={attachments}
           metadata={node.metadata?.workbench}
           sourceType={node.metadata?.source}
+          suppressVoiceBadge={Boolean(inVoiceDispatchCard)}
           isNeoTagMessage={Boolean(node.metadata?.neoTag)}
           onRewind={onRewindUserPrompt}
           rewindDisabled={rewindDisabled}
@@ -77,6 +86,7 @@ export const TraceNodeRenderer: React.FC<TraceNodeRendererProps> = ({
           node={node}
           sessionId={sessionId}
           isStreaming={isStreaming}
+          inVoiceDispatchCard={inVoiceDispatchCard}
           onStreamingDisplayUpdate={onStreamingDisplayUpdate}
         />
       );
@@ -116,103 +126,6 @@ export const TraceNodeRenderer: React.FC<TraceNodeRendererProps> = ({
 };
 
 // ---- User Node ----
-const ROUTING_LABELS: Record<string, string> = {
-  auto: 'Auto',
-  direct: 'Direct',
-  parallel: 'Parallel',
-};
-
-function getBrowserWorkbenchLabel(mode: 'managed' | 'desktop'): string {
-  return mode === 'managed' ? 'Browser Managed' : 'Browser Desktop';
-}
-
-const WorkbenchSummary: React.FC<{ metadata?: WorkbenchMessageMetadata }> = ({ metadata }) => {
-  if (!metadata) return null;
-
-  const items: string[] = [];
-  if (metadata.workingDirectory) {
-    const label = metadata.workingDirectory.split('/').filter(Boolean).pop() || metadata.workingDirectory;
-    items.push(`WS ${label}`);
-  }
-  if (metadata.routingMode) {
-    items.push(ROUTING_LABELS[metadata.routingMode] || metadata.routingMode);
-  }
-
-  const targets = metadata.targetAgentNames?.length
-    ? metadata.targetAgentNames
-    : metadata.targetAgentIds || [];
-  const selectedSkills = metadata.selectedSkillIds || [];
-  const selectedConnectors = metadata.selectedConnectorIds || [];
-  const selectedMcpServers = metadata.selectedMcpServerIds || [];
-  const browserSessionMode = metadata.executionIntent?.browserSessionMode;
-  const selectedPrompt = metadata.selectedPromptCommand;
-  const selectedAgentLabel =
-    metadata.selectedAgent?.name ||
-    metadata.preferredAgentName ||
-    metadata.selectedAgent?.id ||
-    metadata.preferredAgentId;
-
-  return (
-    <div className="mb-2 flex flex-wrap items-center gap-1.5">
-      {items.map((item) => (
-        <WorkbenchPill
-          key={item}
-          tone="neutral"
-        >
-          {item}
-        </WorkbenchPill>
-      ))}
-      {targets.map((target) => (
-        <WorkbenchPill
-          key={target}
-          tone="agent"
-        >
-          @{target}
-        </WorkbenchPill>
-      ))}
-      {selectedAgentLabel && (
-        <WorkbenchPill tone="agent">
-          Agent {selectedAgentLabel}
-        </WorkbenchPill>
-      )}
-      {selectedPrompt && (
-        <WorkbenchPill tone="info">
-          Prompt /{selectedPrompt.name}
-        </WorkbenchPill>
-      )}
-      {selectedSkills.map((skillId) => (
-        <WorkbenchPill
-          key={`skill-${skillId}`}
-          tone="skill"
-        >
-          Skill {skillId}
-        </WorkbenchPill>
-      ))}
-      {selectedConnectors.map((connectorId) => (
-        <WorkbenchPill
-          key={`connector-${connectorId}`}
-          tone="connector"
-        >
-          Connector {connectorId}
-        </WorkbenchPill>
-      ))}
-      {selectedMcpServers.map((serverId) => (
-        <WorkbenchPill
-          key={`mcp-${serverId}`}
-          tone="mcp"
-        >
-          MCP {serverId}
-        </WorkbenchPill>
-      ))}
-      {browserSessionMode && (
-        <WorkbenchPill tone="info">
-          {getBrowserWorkbenchLabel(browserSessionMode)}
-        </WorkbenchPill>
-      )}
-    </div>
-  );
-};
-
 const UserNode: React.FC<{
   messageId: string;
   sessionId?: string;
@@ -221,21 +134,26 @@ const UserNode: React.FC<{
   metadata?: WorkbenchMessageMetadata;
   /** 输入来源（§8.2）：voice/dictation 的气泡加来源小标 */
   sourceType?: 'voice' | 'dictation' | 'typed';
+  /** X5.5-D4：语音任务卡内抑制节点级「语音」小标（轮头已显示一次） */
+  suppressVoiceBadge?: boolean;
   isNeoTagMessage?: boolean;
   onRewind?: (messageId: string, content: string) => void;
   rewindDisabled?: boolean;
-}> = ({ messageId, sessionId, content, attachments, metadata, sourceType, isNeoTagMessage, onRewind, rewindDisabled }) => {
+}> = ({ messageId, sessionId, content, attachments, metadata, sourceType, suppressVoiceBadge, isNeoTagMessage, onRewind, rewindDisabled }) => {
   const { t } = useI18n();
   const isGuidedTurn = metadata?.runtimeInputDelivery === 'queued_next_turn';
+  // 展示面还原：带 turnSystemContext 脚手架（<user_request> 包裹）的历史/泄漏消息只显示
+  // 用户原话——包装是模型面，用户界面显示原话（UX round2 20f，定义在 shared/utils/turnScaffold）。
   // @neo 落库正文被剥了前缀（它兼任模型 prompt），渲染时补回展示，重启后也能看到带色的 @neo
   const displayContent = restoreNeoTagTokenForDisplay(
-    stripAppshotBlocks(content || ''),
+    stripSystemReminderBlocks(stripAppshotBlocks(extractUserRequest(content || ''))),
     Boolean(isNeoTagMessage),
   );
 
   return (
     <div>
-      <WorkbenchSummary metadata={metadata} />
+      {/* 轮次 chip 行已移除（2026-07-29 产品反馈）：专家/skill/连接器/pin/命令不在
+          消息上方独立展示，由模型在回答里自然说明用了什么；metadata 仍落库备遥测。 */}
       {attachments && attachments.length > 0 && (
         <div className="mb-2">
           <AttachmentDisplay
@@ -253,7 +171,7 @@ const UserNode: React.FC<{
                 <span>已引导对话</span>
               </div>
             )}
-            {sourceType === 'voice' && (
+            {sourceType === 'voice' && !suppressVoiceBadge && (
               <div data-testid="voice-source-badge" className="mb-1 flex items-center justify-end gap-1 text-2xs text-zinc-500">
                 <AudioLines className="h-3 w-3" />
                 <span>{t.voice.sourceBadge}</span>
@@ -339,8 +257,10 @@ const AssistantTextNode: React.FC<{
   node: TraceNode;
   sessionId?: string;
   isStreaming?: boolean;
+  /** X5.5-D4/D6：语音任务卡内抑制节点级语音小标与派活 label（轮头已讲） */
+  inVoiceDispatchCard?: boolean;
   onStreamingDisplayUpdate?: (nodeId: string, displayLength: number, isAnimating: boolean) => void;
-}> = ({ node, sessionId, isStreaming: turnStreaming, onStreamingDisplayUpdate }) => {
+}> = ({ node, sessionId, isStreaming: turnStreaming, inVoiceDispatchCard, onStreamingDisplayUpdate }) => {
   const { t } = useI18n();
   const rootRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -349,7 +269,7 @@ const AssistantTextNode: React.FC<{
   const [selectionCopy, setSelectionCopy] = useState<SelectionCopyState | null>(null);
   const messageId = node.messageId || (node.id.endsWith('-text') ? node.id.slice(0, -5) : node.id);
 
-  const { displayContent, isAnimating } = useSmoothStreamingText({
+  const { displayContent, isAnimating, tailStartIndex } = useSmoothStreamingText({
     content: node.content || '',
     isStreaming: Boolean(turnStreaming),
   });
@@ -398,9 +318,23 @@ const AssistantTextNode: React.FC<{
   const hasRenderableContent = Boolean(
     node.content
     || (node.modelDecision && shouldRenderModelDecisionChip(node.modelDecision))
-    || node.metadata?.turnQuality,
+    || node.metadata?.turnQuality
+    || node.metadata?.agentError,
   );
-  if (!hasRenderableContent) return null;
+  // 排查报告 §2 序列②：活动轮里「thinking 已结束但 content 尚空」的窗口——思考指示已经
+  // 灭了（TurnCard.tsx 的 isThinkingPhase 判定同一节点 thinking 也空），这条守卫又让节点
+  // 整节点不渲染，用户看到的是彻底的空白。只在这条活动轮窗口渲染一个轻占位，别的空壳
+  // （历史消息、仍在思考中的节点）保持原样不渲染，不动既有折叠/思考展示逻辑。
+  const isActiveEmptyGap =
+    turnStreaming && !hasRenderableContent && !(node.thinking || node.reasoning)?.trim();
+  if (!hasRenderableContent) {
+    if (!isActiveEmptyGap) return null;
+    return (
+      <div className="py-1" aria-label={t.chat.organizingReply}>
+        <span className="streaming-thinking-shimmer text-xs font-medium">{t.chat.organizingReply}</span>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -423,7 +357,7 @@ const AssistantTextNode: React.FC<{
             title="复制选中文本"
             aria-label="复制选中文本"
           >
-            {copied ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
+            {copied ? <Check className="w-3.5 h-3.5 text-badge-success" /> : <Copy className="w-3.5 h-3.5" />}
           </button>
         </div>
       )}
@@ -441,10 +375,20 @@ const AssistantTextNode: React.FC<{
         <TurnQualityStrip summary={node.metadata.turnQuality} />
       )}
 
-      {node.metadata?.source === 'voice' && (
+      {node.metadata?.source === 'voice' && !node.metadata?.voiceDispatch && !inVoiceDispatchCard && (
         <div data-testid="voice-source-badge" className="mb-1 flex items-center gap-1 text-2xs text-zinc-500">
           <AudioLines className="h-3 w-3" />
           <span>{t.voice.sourceBadge}</span>
+        </div>
+      )}
+
+      {/* 通话 brain 改写后发给执行引擎的指令——不是用户说的话，必须写明来源。
+          X5.5-D6：语音任务卡内整条不渲染——卡头已显示同一个 title，
+          label 里的「{title}」与卡头读同一字段，必然重复。 */}
+      {node.metadata?.voiceDispatch && !inVoiceDispatchCard && (
+        <div data-testid="voice-dispatch-label" className="mb-1 flex items-center gap-1 text-2xs text-zinc-500">
+          <AudioLines className="h-3 w-3" />
+          <span>{t.voice.dispatchLabel.replace('{title}', node.metadata.voiceDispatch.title)}</span>
         </div>
       )}
 
@@ -456,6 +400,7 @@ const AssistantTextNode: React.FC<{
             isUser={false}
             isStreaming={Boolean(turnStreaming || isAnimating)}
             messageId={messageId}
+            streamingTailStart={tailStartIndex}
             mediaContext={{
               sessionId,
               messageId,
@@ -465,6 +410,15 @@ const AssistantTextNode: React.FC<{
             <span className="sr-only">正在生成</span>
           )}
         </div>
+      )}
+
+      {/* 运行失败的结构化错误卡片（替代旧版 merge 进正文的 ⚠ 文本） */}
+      {node.metadata?.agentError && (
+        <AgentErrorCard
+          error={node.metadata.agentError}
+          messageId={messageId}
+          sessionId={sessionId}
+        />
       )}
 
     </div>
@@ -532,10 +486,13 @@ const TurnTimelineNodeRenderer: React.FC<{ node: TraceNode; sessionId?: string }
     case 'blocked_capabilities':
       return <BlockedCapabilitiesNode timeline={node.turnTimeline} />;
     case 'routing_evidence':
-      // 路由是调试证据，且每轮内容一样。异常时右侧任务面板已有「路由异常」卡（只在
-      // warning/error 显示），主对话流不再铺这张。节点本身保留——产物归属和工作台
-      // 投影都从它取数。
-      return null;
+      // 路由正常时每轮内容一样，铺进主对话流是噪声——只有异常（warning/error）才值得
+      // 占版面，此时渲染 RoutingEvidenceNode 把异常步骤摆到主对话流里（原「路由异常」卡
+      // 随 TaskMonitor 一并删除后，异常曾长期对用户隐形）。节点本身必须保留：产物归属
+      // 和工作台投影都从它取数。
+      return node.turnTimeline.tone === 'warning' || node.turnTimeline.tone === 'error'
+        ? <RoutingEvidenceNode timeline={node.turnTimeline} />
+        : null;
     case 'hook_activity':
       return <HookActivityNode timeline={node.turnTimeline} />;
     case 'skill_activity':
@@ -550,13 +507,13 @@ const TurnTimelineNodeRenderer: React.FC<{ node: TraceNode; sessionId?: string }
 function getTimelineContainerClass(tone: TurnTimelinePayload['tone']): string {
   switch (tone) {
     case 'success':
-      return 'border-emerald-500/20 bg-emerald-500/10';
+      return 'border-badge-success/20 bg-emerald-500/10';
     case 'warning':
-      return 'border-amber-500/20 bg-amber-500/10';
+      return 'border-badge-warning/20 bg-amber-500/10';
     case 'error':
       return 'border-red-500/20 bg-red-500/10';
     case 'info':
-      return 'border-sky-500/20 bg-sky-500/10';
+      return 'border-badge-info/20 bg-sky-500/10';
     default:
       return 'border-border-muted bg-surface-subtle';
   }
@@ -569,7 +526,7 @@ const BlockedCapabilitiesNode: React.FC<{ timeline: TurnTimelinePayload }> = ({ 
   return (
     <div className={`rounded-lg border px-3 py-2 ${getTimelineContainerClass(timeline.tone)}`}>
       <div className="mb-2 flex items-center gap-2 text-[11px] text-zinc-300">
-        <AlertTriangle className="h-3.5 w-3.5 text-amber-300" />
+        <AlertTriangle className="h-3.5 w-3.5 text-badge-warning" />
         <span>本轮选中的能力里有未生效项</span>
       </div>
       <div className="space-y-2">
@@ -579,7 +536,7 @@ const BlockedCapabilitiesNode: React.FC<{ timeline: TurnTimelinePayload }> = ({ 
               <WorkbenchPill tone={reason.kind === 'skill' ? 'skill' : reason.kind === 'connector' ? 'connector' : 'mcp'}>
                 {reason.label}
               </WorkbenchPill>
-              <span className={`text-[10px] ${reason.severity === 'error' ? 'text-red-300' : 'text-amber-300'}`}>
+              <span className={`text-[10px] ${reason.severity === 'error' ? 'text-badge-danger' : 'text-badge-warning'}`}>
                 {reason.code}
               </span>
             </div>
@@ -588,6 +545,74 @@ const BlockedCapabilitiesNode: React.FC<{ timeline: TurnTimelinePayload }> = ({ 
           </div>
         ))}
       </div>
+    </div>
+  );
+};
+
+const ROUTING_STEP_DOT_CLASSES: Record<TurnTimelineTone, string> = {
+  error: 'bg-mark-danger',
+  warning: 'bg-mark-warning',
+  success: 'bg-mark-success',
+  info: 'bg-mark-info',
+  neutral: 'bg-mark-neutral',
+};
+
+const RoutingEvidenceNode: React.FC<{ timeline: TurnTimelinePayload }> = ({ timeline }) => {
+  const { t } = useI18n();
+  const labels = t.turnRouting;
+  const evidence = timeline.routingEvidence;
+  if (!evidence) return null;
+
+  const modeLabel = evidence.mode === 'auto'
+    ? labels.modeAuto
+    : evidence.mode === 'direct'
+      ? labels.modeDirect
+      : labels.modeParallel;
+  const stepStatusLabels: Record<string, string> = {
+    requested: labels.statusRequested,
+    delivered: labels.statusDelivered,
+    missing: labels.statusMissing,
+    resolved: labels.statusResolved,
+    approved: labels.statusApproved,
+    rejected: labels.statusRejected,
+    started: labels.statusStarted,
+    fallback: labels.statusFallback,
+  };
+
+  return (
+    <div className={`rounded-lg border px-3 py-2 ${getTimelineContainerClass(timeline.tone)}`}>
+      <div className="mb-1 flex flex-wrap items-center gap-2 text-[11px] text-zinc-300">
+        <AlertTriangle className={`h-3.5 w-3.5 ${timeline.tone === 'error' ? 'text-badge-danger' : 'text-badge-warning'}`} />
+        <span>{labels.title}</span>
+        <WorkbenchPill tone="neutral">{modeLabel}</WorkbenchPill>
+        {(evidence.agentNames || []).map((name) => (
+          <WorkbenchPill key={name} tone="agent">{name}</WorkbenchPill>
+        ))}
+      </div>
+      <div className="text-xs text-zinc-100">{evidence.summary}</div>
+      {evidence.steps.length > 0 && (
+        <div className="mt-2 space-y-1.5">
+          {evidence.steps.map((step, index) => (
+            <div key={`${step.status}-${step.label}-${index}`} className="flex items-start gap-2 rounded-md bg-black/10 px-2.5 py-2 text-[11px]">
+              <span className={`mt-[5px] h-1.5 w-1.5 shrink-0 rounded-full ${ROUTING_STEP_DOT_CLASSES[step.tone] || ROUTING_STEP_DOT_CLASSES.neutral}`} />
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {/* 异常步骤（warning/error）用红/琥珀色文案，一眼看出是哪一步挂的 */}
+                  <span className={step.tone === 'error' ? 'text-badge-danger' : step.tone === 'warning' ? 'text-badge-warning' : 'text-zinc-200'}>
+                    {step.label}
+                  </span>
+                  <WorkbenchPill tone={step.tone === 'error' || step.tone === 'warning' ? 'info' : 'neutral'}>
+                    {stepStatusLabels[step.status] || step.status}
+                  </WorkbenchPill>
+                </div>
+                {step.detail && (
+                  <div className="mt-1 text-zinc-600">{step.detail}</div>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 };
@@ -626,7 +651,7 @@ const HookActivityNode: React.FC<{ timeline: TurnTimelinePayload }> = ({ timelin
         aria-expanded={expanded}
         title={expanded ? labels.collapse : labels.expand}
       >
-        <Wrench className="h-3.5 w-3.5 shrink-0 text-sky-300" />
+        <Wrench className="h-3.5 w-3.5 shrink-0 text-badge-info" />
         <span>{labels.title}</span>
         {expanded ? (
           <ChevronDown className="ml-auto h-3.5 w-3.5 shrink-0 text-zinc-600" />
@@ -640,7 +665,8 @@ const HookActivityNode: React.FC<{ timeline: TurnTimelinePayload }> = ({ timelin
           {activity.items.map((item, index) => (
             <div key={`${item.event}-${item.toolName || 'event'}-${item.timestamp}-${index}`} className="flex items-start gap-2 rounded-md bg-black/10 px-2.5 py-2 text-[11px]">
               <span className={`mt-[5px] h-1.5 w-1.5 shrink-0 rounded-full ${
-                item.action === 'block' ? 'bg-red-400' : (item.errorCount || 0) > 0 ? 'bg-amber-400' : 'bg-emerald-400'
+                // 与 TurnCard 同一套语义：拦下是 hook 的正常决策（amber），只有执行出错才红
+                item.action === 'block' ? 'bg-mark-warning' : (item.errorCount || 0) > 0 ? 'bg-mark-danger' : 'bg-mark-success'
               }`} />
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-1.5">
@@ -668,7 +694,7 @@ const HookActivityNode: React.FC<{ timeline: TurnTimelinePayload }> = ({ timelin
 function getSkillActionLabel(action: string): string {
   switch (action) {
     case 'selected':
-      return '写入偏好';
+      return '本轮挂载';
     case 'triggered':
       return '已触发';
     case 'written':
@@ -685,14 +711,14 @@ const SkillActivityNode: React.FC<{ timeline: TurnTimelinePayload }> = ({ timeli
   return (
     <div className={`rounded-lg border px-3 py-2 ${getTimelineContainerClass(timeline.tone)}`}>
       <div className="mb-1 flex items-center gap-2 text-[11px] text-zinc-300">
-        <Wrench className="h-3.5 w-3.5 text-fuchsia-300" />
+        <Wrench className="h-3.5 w-3.5 text-badge-accent" />
         <span>Skills</span>
         <span className="text-zinc-500">{activity.summary.replace(/^Skill\s*/, '')}</span>
       </div>
       <div className="mt-2 space-y-1.5">
         {activity.items.map((item, index) => (
           <div key={`${item.skillId}-${item.action}-${index}`} className="flex items-start gap-2 rounded-md bg-black/10 px-2.5 py-2 text-[11px]">
-            <span className="mt-[5px] h-1.5 w-1.5 shrink-0 rounded-full bg-fuchsia-400" />
+            <span className="mt-[5px] h-1.5 w-1.5 shrink-0 rounded-full bg-mark-accent" />
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-1.5">
                 <WorkbenchPill tone="skill">{item.label}</WorkbenchPill>
@@ -758,7 +784,7 @@ const ArtifactOwnershipNode: React.FC<{ timeline: TurnTimelinePayload; sessionId
   const outputsCard = outputItems.length > 0 ? (
     <div className={`rounded-lg border px-3 py-2 ${getTimelineContainerClass(timeline.tone)}`}>
       <div className="mb-1.5 flex items-center gap-2 text-[11px] text-zinc-400">
-        <FileText className="h-3.5 w-3.5 text-emerald-300" />
+        <FileText className="h-3.5 w-3.5 text-badge-success" />
         <span>Outputs</span>
       </div>
       {fileItems.length > 0 && <FileArtifactCard items={fileItems} mediaContext={mediaContext} />}
@@ -796,32 +822,36 @@ const ArtifactOwnershipNode: React.FC<{ timeline: TurnTimelinePayload; sessionId
 // 系统错误原文(往往是堆栈/工程报错)对非程序员用户是噪音：先给一句人话+建议，
 // 原文进「查看详情」折叠。分类复用 humanizeToolError（quota/rate_limit/auth/
 // overloaded/timeout/network 已有文案），分不出类别时给通用兜底。
-const SystemErrorNode: React.FC<{ content: string }> = ({ content }) => {
+const SystemErrorNode: React.FC<{ node: TraceNode }> = ({ node }) => {
   const { t } = useI18n();
   const [expanded, setExpanded] = useState(false);
-  const humanized = humanizeToolError(content, undefined, t);
-  const summary = humanized?.summary ?? t.systemError.fallbackSummary;
-  const detail = humanized?.detail ?? t.systemError.fallbackDetail;
+  const failureDetail = node.metadata?.voiceWorkFailure?.detail;
+  const humanized = failureDetail === undefined ? humanizeToolError(node.content, undefined, t) : null;
+  const summary = failureDetail === undefined
+    ? humanized?.summary ?? t.systemError.fallbackSummary
+    : node.content;
+  const detail = failureDetail === undefined ? humanized?.detail ?? t.systemError.fallbackDetail : undefined;
+  const expandableDetail = failureDetail ?? node.content;
 
   return (
     <div className="py-1">
       <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/20">
-        <AlertTriangle className="w-4 h-4 text-red-400 mt-0.5 shrink-0" />
+        <AlertTriangle className="w-4 h-4 text-badge-danger mt-0.5 shrink-0" />
         <div className="min-w-0 flex-1">
-          <div className="text-xs text-red-300">{summary}</div>
-          {detail && <div className="mt-0.5 text-[11px] text-red-300/70">{detail}</div>}
+          <div className="text-xs text-badge-danger">{summary}</div>
+          {detail && <div className="mt-0.5 text-[11px] text-badge-danger/70">{detail}</div>}
         </div>
         <button
           onClick={() => setExpanded(!expanded)}
           aria-expanded={expanded}
-          className="shrink-0 text-[11px] text-red-300/70 hover:text-red-300 transition-colors"
+          className="shrink-0 text-[11px] text-badge-danger/70 hover:text-badge-danger transition-colors"
         >
           {expanded ? t.systemError.hideDetails : t.systemError.viewDetails}
         </button>
       </div>
-      {expanded && (
+      {expanded && expandableDetail && (
         <div className="mt-2 px-3 py-2.5 rounded-md bg-red-500/5 border border-red-500/10">
-          <ExpandableContent content={content} maxLines={30} />
+          <ExpandableContent content={expandableDetail} maxLines={30} />
         </div>
       )}
     </div>
@@ -837,18 +867,18 @@ const SystemNode: React.FC<{ node: TraceNode }> = ({ node }) => {
       <div className="py-1">
         <button
           onClick={() => setExpanded(!expanded)}
-          className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg bg-amber-500/10 border border-amber-500/20 hover:bg-amber-500/15 transition-colors"
+          className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg bg-amber-500/10 border border-badge-warning/20 hover:bg-amber-500/15 transition-colors"
         >
-          <Archive className="w-4 h-4 text-amber-400" />
-          <span className="text-xs font-medium text-amber-300">上下文已压缩</span>
+          <Archive className="w-4 h-4 text-badge-warning" />
+          <span className="text-xs font-medium text-badge-warning">上下文已压缩</span>
           {expanded ? (
-            <ChevronDown className="w-3.5 h-3.5 text-amber-400 ml-auto" />
+            <ChevronDown className="w-3.5 h-3.5 text-badge-warning ml-auto" />
           ) : (
-            <ChevronRight className="w-3.5 h-3.5 text-amber-400 ml-auto" />
+            <ChevronRight className="w-3.5 h-3.5 text-badge-warning ml-auto" />
           )}
         </button>
         {expanded && (
-          <div className="mt-2 px-3 py-2.5 rounded-md bg-amber-500/5 border border-amber-500/10">
+          <div className="mt-2 px-3 py-2.5 rounded-md bg-amber-500/5 border border-badge-warning/10">
             <ExpandableContent content={node.content} maxLines={30} />
           </div>
         )}
@@ -857,7 +887,7 @@ const SystemNode: React.FC<{ node: TraceNode }> = ({ node }) => {
   }
 
   if (node.subtype === 'error') {
-    return <SystemErrorNode content={node.content} />;
+    return <SystemErrorNode node={node} />;
   }
 
   if (node.subtype === 'skill_status') {

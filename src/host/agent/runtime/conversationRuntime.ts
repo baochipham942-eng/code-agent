@@ -76,6 +76,7 @@ import {
 } from './conversationRuntimeContextBootstrap';
 import { resolveStickyStrictSkillInvocation } from './conversationRuntimeStickySkill';
 import { buildStrictToolsetNotice } from '../../tools/skillBoundaryScope';
+import { extractUserRequest } from '../turnScaffold';
 
 
 const logger = createLogger('AgentLoop');
@@ -182,6 +183,16 @@ export class ConversationRuntime {
             type: 'hook_trigger',
             data: {
               ...entry,
+              sessionId: this.ctx.sessionId,
+              ...(this.ctx.turn.currentTurnId ? { turnId: this.ctx.turn.currentTurnId } : {}),
+            },
+          });
+        },
+        onStart: (info) => {
+          this.ctx.onEvent({
+            type: 'hook_started',
+            data: {
+              ...info,
               sessionId: this.ctx.sessionId,
               ...(this.ctx.turn.currentTurnId ? { turnId: this.ctx.turn.currentTurnId } : {}),
             },
@@ -310,7 +321,7 @@ export class ConversationRuntime {
     return true;
   }
 
-  async run(userMessage: string): Promise<void> {
+  async run(userMessage: string, displayPrompt?: string): Promise<void> {
     // Create the run-level AbortController at acceptance time — before initializeRun.
     // Cancel during slow init (skill resolve / intent / hooks) must still abort a real
     // controller; creating it only after initializeRun made early cancels no-ops.
@@ -466,7 +477,9 @@ export class ConversationRuntime {
         }
 
         // Telemetry: record turn start (only first iteration has the real user prompt)
-        this.ctx.telemetryAdapter?.onTurnStart(this.ctx.turn.currentTurnId, iterations, iterations === 1 ? userMessage : '', iterations > 1 ? userTurnId : undefined);
+        // 存的必须是用户原话：这一列会被 sessionManager.backfillUserPromptsFromTelemetry
+        // 反向写回用户可见的消息流，存模型面拼装体等于把脚手架直接讲给用户听。
+        this.ctx.telemetryAdapter?.onTurnStart(this.ctx.turn.currentTurnId, iterations, iterations === 1 ? (displayPrompt ?? userMessage) : '', iterations > 1 ? userTurnId : undefined);
 
         // Debug snapshot: 记录 turn 起始时的 messages 快照，post-inference 直接从 response.usage 取 token
         const turnStartMessageSnapshot = this.ctx.messages.slice();
@@ -730,10 +743,15 @@ export class ConversationRuntime {
 
     this.ctx.turn.clearActiveSkill();
 
+    // 「用户想干什么」这三件事只能看用户原话，不能看拼在前面的系统上下文——
+    // 后者是我们自己塞的（角色资料 / 语音近窗字幕 / 通话钳档告知），把它算进诉求会
+    // 直接改掉执行路径：2026-07-28 真机连续 4 次被近窗字幕里的「语音」二字命中 skill
+    // 别名，派活 run 被劫持进 research-brief-and-split，复杂度也被 600 字的块顶成 complex。
+    const userRequest = extractUserRequest(userMessage);
     // Task Complexity Analysis
-    const complexityAnalysis = taskComplexityAnalyzer.analyze(userMessage);
+    const complexityAnalysis = taskComplexityAnalyzer.analyze(userRequest);
     let isSimpleTask = complexityAnalysis.complexity === 'simple';
-    const startupTaskFeatures = detectTaskFeatures(userMessage);
+    const startupTaskFeatures = detectTaskFeatures(userRequest);
     const isPureContentGenerationTask =
       startupTaskFeatures.isDocumentTask &&
       !startupTaskFeatures.isPPTTask &&
@@ -750,8 +768,8 @@ export class ConversationRuntime {
     preloadToolsForIntent(startupTaskFeatures);
     try {
       const skillInvocation =
-        await resolveSkillInvocation(userMessage, this.ctx.workingDirectory)
-        ?? await resolveStickyStrictSkillInvocation(this.ctx, userMessage);
+        await resolveSkillInvocation(userRequest, this.ctx.workingDirectory)
+        ?? await resolveStickyStrictSkillInvocation(this.ctx, userRequest);
       if (skillInvocation) {
         const skillContext = await buildSkillInvocationContext(skillInvocation, this.ctx.workingDirectory);
         this.ctx.turn.activateSkill({
@@ -927,7 +945,12 @@ export class ConversationRuntime {
     // LLM-based intent classification (for research routing)
     if (complexityAnalysis.complexity === 'simple' || complexityAnalysis.complexity === 'moderate') {
       try {
-        const intent = await classifyIntent(userMessage, this.ctx.modelRouter);
+        // 只有「自动」档才允许为这个路由判断去调快模型：非自动档说明用户已经点名了
+        // 模型，背着他把消息交给另一个供应商、还让他等 2-4 秒，是不该做的事
+        // （产品负责人 2026-08-01）。记忆门那次分类不在此列——关掉它会让模型失忆。
+        const intent = await classifyIntent(userMessage, this.ctx.modelRouter, {
+          allowQuickModel: this.ctx.modelConfig.adaptive === true,
+        });
         logger.info('Intent classified', { intent, message: userMessage.substring(0, 50) });
 
         if (intent.intent === 'research') {
@@ -1074,30 +1097,41 @@ export class ConversationRuntime {
   // Control methods (cancel, interrupt, steer)
   // ========================================================================
 
+  /**
+   * 把已经吐出来的半截内容留住，再让 abort 生效。
+   *
+   * 必须 await — abort 触发后 inference Promise 立刻 reject，post-inference persist
+   * 路径不会再走，partial 不在这里落库就永远没了。停止(cancel)和转向(steer)都要走
+   * 这一条：2026-08-01 真机实测，转向那条路只 abortInference 不留 partial，被打断
+   * 那一轮写了一半的长回答在库里一个字都没有。
+   */
+  private async preserveStreamedPartial(suffix: string): Promise<void> {
+    if (!this.ctx.turn.lastStreamedContent) return;
+    const partialMessage: Message = {
+      id: generateMessageId(),
+      role: 'assistant',
+      content: this.ctx.turn.lastStreamedContent + suffix,
+      timestamp: Date.now(),
+    };
+    this.ctx.messages.push(partialMessage);
+    try {
+      await this.ctx.persistMessage?.(partialMessage);
+    } catch (err) {
+      logger.warn('[ConversationRuntime] persist partial before abort failed:', err);
+    }
+    this.ctx.turn.resetStreamedContent();
+  }
+
   async cancel(reason?: 'user' | 'session-switch'): Promise<void> {
+    // 回复已经完成落库、但 run 还没从 registry 注销的尾窗里，cancel 必须是安全 no-op。
+    // 这时再标 cancelled / preserve partial 会把同一条完整回复追加标记后写成第二行。
+    if (this.ctx.control.isSettled) return;
+
     this.ctx.control.markCancelled();
 
-    // Preserve partial streaming content before aborting
-    if (this.ctx.turn.lastStreamedContent) {
-      const suffix = reason === 'session-switch'
-        ? '\n\n[未完成 — 切换会话中断]'
-        : '\n\n[cancelled]';
-      const partialMessage: Message = {
-        id: generateMessageId(),
-        role: 'assistant',
-        content: this.ctx.turn.lastStreamedContent + suffix,
-        timestamp: Date.now(),
-      };
-      this.ctx.messages.push(partialMessage);
-      // 必须 await — abort 触发后 inference Promise 立刻 reject，post-inference
-      // persist 路径不会再走，partial 必须在 abort 前落 DB
-      try {
-        await this.ctx.persistMessage?.(partialMessage);
-      } catch (err) {
-        logger.warn('[ConversationRuntime] persist partial on cancel failed:', err);
-      }
-      this.ctx.turn.resetStreamedContent();
-    }
+    await this.preserveStreamedPartial(
+      reason === 'session-switch' ? '\n\n[未完成 — 切换会话中断]' : '\n\n[cancelled]',
+    );
     this.ctx.control.abortInference();
     this.ctx.control.abortRun();
     this.releasePauseWaiters();
@@ -1128,12 +1162,15 @@ export class ConversationRuntime {
     clientMessageId?: string,
     attachments?: MessageAttachment[],
     metadata?: MessageMetadata,
+    displayContent?: string,
   ): Promise<void> {
     if (this.ctx.control.isSettled) {
       throw new SteerRejectedError();
     }
+    // 先留住被打断那一轮已经写出来的内容，再 abort——顺序反了就等于丢字。
+    await this.preserveStreamedPartial('\n\n[已被新消息打断]');
     this.ctx.control.abortInference();
-    const persisted = this.messageProcessor.injectSteerMessage(newMessage, clientMessageId, attachments, metadata);
+    const persisted = this.messageProcessor.injectSteerMessage(newMessage, clientMessageId, attachments, metadata, displayContent);
     this.ctx.turn.requestReinference();
     logger.info('[AgentLoop] Steer requested — message injected, will re-infer on next cycle');
     await persisted;

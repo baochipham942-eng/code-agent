@@ -3,6 +3,7 @@
 // ============================================================================
 
 import * as fs from 'fs';
+import { homedir } from 'os';
 import * as path from 'path';
 import { glob } from 'glob';
 import type { RepoMapEntry, SymbolEntry, RepoMapConfig } from './types';
@@ -219,6 +220,20 @@ export async function buildRepoMap(config: RepoMapConfig): Promise<Map<string, R
     ignore = DEFAULT_IGNORE,
     maxFiles = DEFAULT_MAX_FILES,
   } = config;
+
+  // 家目录护栏（同 workspaceSnapshot 的 TCC 教训）：根目录=home 或它的祖先时
+  // 绝不 glob 下钻——扫 ~/Desktop、~/Documents、~/Downloads 会触发 macOS
+  // TCC 授权弹窗。宁可不提供 RepoMap，也不扫描无意义的广域目录。
+  const resolvedRoot = path.resolve(rootDir);
+  const resolvedHome = path.resolve(homedir());
+  const relativeHome = path.relative(resolvedRoot, resolvedHome);
+  if (
+    relativeHome === ''
+    || (!relativeHome.startsWith('..') && !path.isAbsolute(relativeHome))
+  ) {
+    logger.info(`RepoMap: skipped broad root ${rootDir} to protect the home directory`);
+    return new Map();
+  }
 
   const entries = new Map<string, RepoMapEntry>();
 

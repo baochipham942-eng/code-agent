@@ -1,14 +1,14 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-07-21T12:58:41.317Z",
+  "generatedAt": "2026-07-31T10:42:25.213Z",
   "environment": {
-    "gitHead": "8b3662aa40341f6661b83601b05aea389f527d56",
+    "gitHead": "8e375c460ee4e850d775bd05985c47921eb94882",
     "node": "v24.15.0",
     "platform": "darwin/arm64",
     "cpu": "Apple M1",
     "cpuCount": 8,
     "totalMemoryBytes": 17179869184,
-    "browser": "150.0.7871.129",
+    "browser": "150.0.7871.187",
     "viewport": {
       "width": 1440,
       "height": 900
@@ -29,35 +29,35 @@
   },
   "scenarios": {
     "turns500": {
-      "interactiveMs": 74.4,
+      "interactiveMs": 48.3,
       "renderedTurns": 500
     },
     "turns1000": {
-      "updateMs": 99.5,
+      "updateMs": 91.6,
       "renderedTurns": 1000
     },
     "denseCodeStreaming": {
       "codeBlocks": 100,
       "updates": 20,
-      "durationMs": 2062.6
+      "durationMs": 2143.2
     },
     "historyPrepend": {
       "prependedTurns": 30,
       "anchorTurnId": "turn-115",
       "anchorMounted": true,
       "visibleAfterTurnId": "turn-115",
-      "scrollTopBefore": 9129,
-      "scrollTopAfter": 11504,
-      "anchorDriftPx": 0.25,
+      "scrollTopBefore": 9209,
+      "scrollTopAfter": 11578,
+      "anchorDriftPx": 0.344,
       "firstItemIndex": 999970
     },
     "userScroll": {
       "retainedPosition": true,
-      "distanceFromBottomPx": 93092
+      "distanceFromBottomPx": 93392
     },
     "streamingFollow": {
       "resumedAtBottom": true,
-      "distanceFromBottomPx": 8
+      "distanceFromBottomPx": 10
     },
     "search": {
       "targetTurnIndex": 120,
@@ -71,15 +71,15 @@
   },
   "mainThread": {
     "longTaskCount": 16,
-    "longTaskMaxMs": 181,
-    "longTaskTotalMs": 1748,
+    "longTaskMaxMs": 154,
+    "longTaskTotalMs": 1771,
     "over500ms": 0
   },
   "memory": {
     "supported": true,
-    "baselineBytes": 23288675,
-    "peakBytes": 72314336,
-    "deltaBytes": 49025661
+    "baselineBytes": 27384820,
+    "peakBytes": 87554976,
+    "deltaBytes": 60170156
   },
   "gates": {
     "turns500Interactive": true,

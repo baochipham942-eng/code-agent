@@ -20,19 +20,26 @@ import { collectToolArtifactsFromMetadata } from '../../../shared/contract/artif
 import type { GoalRunInput } from '../../../shared/contract/appService';
 import type { ToolCall } from '../../../shared/contract/tool';
 import {
+  FOLDER_TRUST_CONFIRM_REQUIRED_PREFIX,
   UNSORTED_PROJECT_ID,
   UNSORTED_PROJECT_NAME,
   type CreateProjectGoalInput,
+  type CreateSpaceInput,
+  type CreateProjectInput,
   type Project,
   type ProjectArtifact,
   type ProjectArtifactKind,
+  type ProjectCapabilityKind,
+  type ProjectCapabilitySelection,
   type ProjectDetail,
   type ProjectGoal,
   type ProjectGoalStatus,
   type ProjectRoleLink,
   type ProjectSource,
   type ProjectSourceInput,
+  type ProjectSourceTrustFailureKind,
   type ProjectStatus,
+  type ProjectWithActivity,
   type UpdateProjectInput,
   type WorkspaceScope,
 } from '../../../shared/contract/project';
@@ -44,10 +51,21 @@ import {
   workspacePathIdentity,
   resolveWorkspacePath,
 } from '../../runtime/workspaceScope';
-import { evaluateFolderTrust } from '../../security/folderTrustService';
+import { ProjectSourceTrustError } from './projectSourceTrustError';
+import { evaluateFolderTrust, setFolderTrust } from '../../security/folderTrustService';
 import { getProjectSourceGitStates } from '../git/gitStatusService';
 
 const logger = createLogger('ProjectService');
+
+function sourceTrustFailureKind(
+  source: Pick<ProjectSource, 'trustState' | 'identityDev' | 'identityIno'>,
+  identity: ReturnType<typeof workspacePathIdentity>,
+): ProjectSourceTrustFailureKind | undefined {
+  if (identity.dev === null || identity.ino === null) return 'source_missing';
+  if (!workspaceIdentityMatches(source, identity)) return 'identity_changed';
+  if (source.trustState !== 'trusted') return 'not_trusted';
+  return undefined;
+}
 
 const FILE_METADATA_KEYS = [
   'filePath',
@@ -370,8 +388,12 @@ function buildSource(
 }
 
 export class ProjectService {
+  constructor(
+    private readonly repoProvider: () => ProjectRepository = () => getDatabase().getProjectRepo(),
+  ) {}
+
   private repo(): ProjectRepository {
-    return getDatabase().getProjectRepo();
+    return this.repoProvider();
   }
 
   /**
@@ -405,6 +427,146 @@ export class ProjectService {
     return project;
   }
 
+  async createSpace(input: CreateSpaceInput, now: number): Promise<Project> {
+    const name = input.name.trim();
+    if (!name) throw new Error('Space name is required.');
+    const description = input.description?.trim() || undefined;
+    const requestedWorkspacePath = input.workspacePath?.trim();
+    const repo = this.repo();
+
+    if (requestedWorkspacePath) {
+      const workspacePath = canonicalizeWorkspacePath(requestedWorkspacePath);
+      // 创建即信任：信任门先行，撞已有项目的早退分支同样先过门再升级
+      await this.ensureFolderTrustForSpaceCreation(workspacePath, 'create-space', input.trustAcknowledged);
+      const workspaceKey = getProjectKey(workspacePath);
+      const existing = repo.getProjectByWorkspacePath(workspacePath);
+      if (existing) {
+        const promoted = repo.promoteToSpace(existing.id, now);
+        if (!promoted) throw new Error(`Project disappeared during space promotion: ${existing.id}`);
+        return promoted;
+      }
+
+      const project: Project = {
+        ...buildProjectRow(workspacePath, workspaceKey, now),
+        name,
+        description,
+        spacePromotedAt: now,
+      };
+      repo.upsertProject(project);
+      repo.upsertSource(buildSource(project.id, {
+        path: workspacePath,
+        role: 'primary',
+        access: 'read_write',
+        trustState: 'trusted',
+      }, now));
+      await linkProjectIdToMeta(workspacePath, project.id).catch((err) =>
+        logger.warn('[ProjectService] linkProjectIdToMeta failed:', err instanceof Error ? err.message : String(err)),
+      );
+      return repo.getProject(project.id) ?? project;
+    }
+
+    const project: Project = {
+      id: shortId('proj'),
+      name,
+      workspacePath: null,
+      workspaceKey: null,
+      status: 'active',
+      description,
+      createdAt: now,
+      updatedAt: now,
+      archivedAt: null,
+      spacePromotedAt: now,
+      sourceRevision: 0,
+    };
+    repo.upsertProject(project);
+    return repo.getProject(project.id) ?? project;
+  }
+
+  async promoteToSpace(
+    projectId: string,
+    now: number,
+    opts?: { trustAcknowledged?: boolean },
+  ): Promise<Project | undefined> {
+    if (projectId === UNSORTED_PROJECT_ID) {
+      throw new Error('The unsorted project cannot be promoted to a space.');
+    }
+    // 升级即信任：项目带工作目录时先过同一道信任门（无目录空间无授权面，直接升级）
+    const workspacePath = this.repo().getProject(projectId)?.workspacePath?.trim();
+    if (workspacePath) {
+      await this.ensureFolderTrustForSpaceCreation(workspacePath, 'promote-to-space', opts?.trustAcknowledged);
+    }
+    return this.repo().promoteToSpace(projectId, now);
+  }
+
+  /**
+   * 创建即信任（批P 第六波①a）：用户亲手选目录 = 信任授权，走既有 folder-trust 通道落库。
+   * 目录含危险项且未知情确认 → 抛 coded 错（不落库、不创建）；干净目录静默授权、已信任幂等；
+   * 授权落库失败 warn-and-continue，不阻断创建（对齐 linkProjectIdToMeta 的失败语义）。
+   */
+  private async ensureFolderTrustForSpaceCreation(
+    workspacePath: string,
+    decidedBy: string,
+    trustAcknowledged?: boolean,
+  ): Promise<void> {
+    const evaluation = await evaluateFolderTrust(workspacePath).catch((err) => {
+      logger.warn('[ProjectService] evaluateFolderTrust failed:', err instanceof Error ? err.message : String(err));
+      return undefined;
+    });
+    if (!evaluation) return;
+    if (evaluation.state !== 'trusted' && evaluation.dangerousItems.length > 0 && !trustAcknowledged) {
+      throw new Error(
+        `${FOLDER_TRUST_CONFIRM_REQUIRED_PREFIX} The folder contains project configuration that needs your review before it can be trusted: ${workspacePath}`,
+      );
+    }
+    await setFolderTrust(workspacePath, 'trusted', decidedBy).catch((err) =>
+      logger.warn('[ProjectService] setFolderTrust failed:', err instanceof Error ? err.message : String(err)),
+    );
+  }
+
+  getProjectForWorkspace(workspacePath: string): Project | undefined {
+    const normalizedPath = workspacePath.trim();
+    if (!normalizedPath || !path.isAbsolute(normalizedPath)) return undefined;
+    return this.repo().getProjectByWorkspacePath(normalizedPath);
+  }
+
+  /**
+   * 显式创建项目（侧栏「项目」区「+」入口，2026-07-29）。
+   * 复用 ensureProjectForWorkspace 的路径归一化 / workspaceKey 逻辑；显式 name
+   * 覆盖「目录名」这个默认值。目录已绑定项目时幂等返回既有项目并把显式 name 应用上去
+   * （创建语义 = 确保存在 + 应用名字），避免同一目录悄悄长出第二个项目。
+   */
+  async createProject(input: CreateProjectInput, now: number): Promise<Project> {
+    const name = input.name?.trim();
+    if (!name) throw new Error('Project name is required.');
+
+    const dir = input.workspacePath?.trim();
+    if (!dir) {
+      // 无目录的纯容器项目：暂不绑定 workspace，等第一条会话落进来再接管。
+      const project: Project = {
+        id: shortId('proj'),
+        name,
+        workspacePath: null,
+        workspaceKey: null,
+        status: 'active',
+        createdAt: now,
+        updatedAt: now,
+        archivedAt: null,
+        sourceRevision: 0,
+      };
+      this.repo().upsertProject(project);
+      return project;
+    }
+
+    let project = await this.ensureProjectForWorkspace(dir, now);
+    if (project.name !== name) {
+      project = this.renameProject(project.id, name, now) ?? project;
+    }
+    if (typeof input.description === 'string' && input.description.trim()) {
+      project = this.setProjectDescription(project.id, input.description, now) ?? project;
+    }
+    return project;
+  }
+
   private ensureUnsorted(now: number): Project {
     const repo = this.repo();
     const existing = repo.getProject(UNSORTED_PROJECT_ID);
@@ -427,13 +589,23 @@ export class ProjectService {
   /** D4 启动迁移归桶：把存量无 project_id 的 session 按 workspace 自动归桶。返回归桶数。 */
   backfillSessions(now: number): number {
     const repo = this.repo();
-    const count = repo.backfillSessions(now, (workspacePath, key) => buildProjectRow(workspacePath, key, now));
+    const count = repo.backfillSessions(
+      now,
+      (workspacePath, key) => buildProjectRow(workspacePath, key, now),
+      ({ sessionId, reason }) => {
+        logger.warn('[ProjectService] 跳过不可变边界冲突的存量会话归桶', { sessionId, reason });
+      },
+    );
     repo.backfillProjectSources(now);
     return count;
   }
 
   listProjects(includeArchived = false): Project[] {
     return this.repo().listProjects(includeArchived);
+  }
+
+  listProjectsWithActivity(includeArchived = false, spacesOnly = false): ProjectWithActivity[] {
+    return this.repo().listProjectsWithActivity(includeArchived, spacesOnly);
   }
 
   /** 中心视图数据源：project + goals + roles + sessionIds */
@@ -443,8 +615,8 @@ export class ProjectService {
     if (!project) return undefined;
     const sources = repo.listSources(projectId).map((source) => {
       const identity = workspacePathIdentity(source.canonicalPath);
-      const identityValid = workspaceIdentityMatches(source, identity);
-      return identityValid ? source : { ...source, trustState: 'blocked' as const };
+      const failureKind = sourceTrustFailureKind(source, identity);
+      return failureKind ? { ...source, trustState: 'blocked' as const } : source;
     });
     return {
       project,
@@ -466,12 +638,8 @@ export class ProjectService {
     if (sources.length === 0) return undefined;
     for (const source of sources) {
       const identity = workspacePathIdentity(source.canonicalPath);
-      if (
-        source.trustState !== 'trusted'
-        || !workspaceIdentityMatches(source, identity)
-      ) {
-        throw new Error(`Project Source trust identity changed: ${source.path}`);
-      }
+      const failureKind = sourceTrustFailureKind(source, identity);
+      if (failureKind) throw new ProjectSourceTrustError(failureKind, source.path);
     }
     return createWorkspaceScope(projectId, sources.map((source) => ({
       sourceId: source.id,
@@ -684,6 +852,76 @@ export class ProjectService {
     const ok = repo.removeRole(projectId, roleId);
     if (ok) repo.touchProject(projectId, now);
     return ok;
+  }
+
+  // --- capability selections ---
+  // Skills and automations already have their own project attribution models.
+  // This table-backed path is intentionally limited to connectors.
+
+  listCapabilitySelections(projectId: string): ProjectCapabilitySelection[] | undefined {
+    const normalizedProjectId = projectId.trim();
+    if (!normalizedProjectId) throw new Error('projectId is required');
+    const repo = this.repo();
+    if (!repo.getProject(normalizedProjectId)) return undefined;
+    return repo.listCapabilitySelections(normalizedProjectId);
+  }
+
+  selectCapability(
+    projectId: string,
+    kind: ProjectCapabilityKind,
+    capabilityId: string,
+    now: number,
+  ): ProjectCapabilitySelection | undefined {
+    const normalizedProjectId = projectId.trim();
+    const normalizedCapabilityId = capabilityId.trim();
+    this.assertSelectableCapability(normalizedProjectId, kind, normalizedCapabilityId);
+    const repo = this.repo();
+    if (!repo.getProject(normalizedProjectId)) return undefined;
+    const existing = repo.listCapabilitySelections(normalizedProjectId).find(
+      (selection) => selection.kind === kind && selection.capabilityId === normalizedCapabilityId,
+    );
+    if (existing) return existing;
+    const selection = repo.selectCapability({
+      projectId: normalizedProjectId,
+      kind,
+      capabilityId: normalizedCapabilityId,
+      selectedAt: now,
+    });
+    repo.touchProject(normalizedProjectId, now);
+    return selection;
+  }
+
+  unselectCapability(
+    projectId: string,
+    kind: ProjectCapabilityKind,
+    capabilityId: string,
+    now: number,
+  ): { removed: boolean } | undefined {
+    const normalizedProjectId = projectId.trim();
+    const normalizedCapabilityId = capabilityId.trim();
+    this.assertSelectableCapability(normalizedProjectId, kind, normalizedCapabilityId);
+    const repo = this.repo();
+    if (!repo.getProject(normalizedProjectId)) return undefined;
+    const removed = repo.unselectCapability(
+      normalizedProjectId,
+      kind,
+      normalizedCapabilityId,
+    );
+    if (removed) repo.touchProject(normalizedProjectId, now);
+    return { removed };
+  }
+
+  private assertSelectableCapability(
+    projectId: string,
+    kind: ProjectCapabilityKind,
+    capabilityId: string,
+  ): void {
+    if (!projectId || !capabilityId) {
+      throw new Error('projectId and capabilityId are required');
+    }
+    if (kind !== 'connector') {
+      throw new Error(`Unsupported project capability selection kind: ${String(kind)}`);
+    }
   }
 }
 

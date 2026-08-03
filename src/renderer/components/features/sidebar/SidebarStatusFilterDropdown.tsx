@@ -63,11 +63,16 @@ export const SidebarStatusFilterDropdown: React.FC<SidebarStatusFilterDropdownPr
       >
         <ListFilter className="h-4 w-4" />
         {hasActiveStatusDropdownFilter && (
-          <span className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-cyan-400" />
+          <span className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-badge-info" />
         )}
       </button>
       {statusFilterOpen && (
-        <div className="absolute right-0 top-full z-30 mt-1 min-w-[220px] rounded-lg border border-zinc-700 bg-zinc-800 py-1 shadow-xl">
+        // 定位几何（侧栏宽 240 = --sidebar-width，根 overflow-hidden 会裁掉越界部分）：
+        //   挂载点已挪到「项目」section 标题行右端（2026-07-29，原在顶行图标簇）。
+        //   right-0 锚按钮右缘、宽 184 ⇒ 面板右缘对齐行右轨，左缘落在栏内不越界。
+        //   ⚠️ 不能改 left-0：按钮贴近行右端，向右空间不足，内容（≥~180px）必被右裁。
+        //   内容自适应：chip 组 flex-wrap、failure 选项 truncate，184px 下均完整可见。
+        <div className="absolute right-0 top-full z-30 mt-1 w-[184px] rounded-lg elevation-l2 popover-enter py-1">
           <div className="px-3 pb-1 pt-1 text-[10px] uppercase tracking-wider text-zinc-500">{f.filterByStatus}</div>
           {visibleStatusFilterOptions.map((option) => {
             const active = sessionStatusFilter === option.id;
@@ -86,7 +91,7 @@ export const SidebarStatusFilterDropdown: React.FC<SidebarStatusFilterDropdownPr
                 }}
                 className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors hover:bg-zinc-700 ${active ? 'text-zinc-100' : 'text-zinc-400'}`}
               >
-                <Check className={`h-3.5 w-3.5 shrink-0 ${active ? 'text-cyan-400' : 'text-transparent'}`} />
+          <Check className={`h-3.5 w-3.5 shrink-0 ${active ? 'text-badge-info' : 'text-transparent'}`} />
                 <span>{option.label}</span>
               </button>
             );
@@ -107,7 +112,7 @@ export const SidebarStatusFilterDropdown: React.FC<SidebarStatusFilterDropdownPr
                       setSessionStatusFilter('review');
                       setTrajectoryReviewFilter(active ? 'all' : option.id);
                     }}
-                    className={`rounded-md border px-1.5 py-0.5 text-[10px] transition-colors ${active ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-200' : 'border-zinc-700 bg-zinc-900/40 text-zinc-400 hover:border-zinc-600 hover:text-zinc-200'}`}
+                    className={`rounded-md border px-1.5 py-0.5 text-[10px] transition-colors ${active ? 'border-badge-success/40 bg-emerald-500/10 text-badge-success' : 'border-zinc-700 bg-zinc-900/40 text-zinc-400 hover:border-zinc-600 hover:text-zinc-200'}`}
                   >
                     {option.label}
                   </button>
@@ -123,7 +128,7 @@ export const SidebarStatusFilterDropdown: React.FC<SidebarStatusFilterDropdownPr
                       setSessionStatusFilter('review');
                       setTrajectoryTierFilter(active ? 'all' : option.id);
                     }}
-                    className={`rounded-md border px-1.5 py-0.5 text-[10px] transition-colors ${active ? 'border-cyan-500/40 bg-cyan-500/10 text-cyan-200' : 'border-zinc-700 bg-zinc-900/40 text-zinc-400 hover:border-zinc-600 hover:text-zinc-200'}`}
+                    className={`rounded-md border px-1.5 py-0.5 text-[10px] transition-colors ${active ? 'border-badge-info/40 bg-cyan-500/10 text-badge-info' : 'border-zinc-700 bg-zinc-900/40 text-zinc-400 hover:border-zinc-600 hover:text-zinc-200'}`}
                   >
                     {option.label}
                   </button>
@@ -141,9 +146,9 @@ export const SidebarStatusFilterDropdown: React.FC<SidebarStatusFilterDropdownPr
                       setSessionStatusFilter('review');
                       setTrajectoryFailureFilter(active ? 'all' : option.id);
                     }}
-                    className={`flex items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-[11px] transition-colors ${active ? 'bg-amber-500/10 text-amber-200' : 'text-zinc-400 hover:bg-zinc-700/70 hover:text-zinc-200'}`}
+                    className={`flex items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-[11px] transition-colors ${active ? 'bg-amber-500/10 text-badge-warning' : 'text-zinc-400 hover:bg-zinc-700/70 hover:text-zinc-200'}`}
                   >
-                    <Check className={`h-3 w-3 shrink-0 ${active ? 'text-amber-300' : 'text-transparent'}`} />
+                    <Check className={`h-3 w-3 shrink-0 ${active ? 'text-badge-warning' : 'text-transparent'}`} />
                     <span className="truncate">{option.label}</span>
                   </button>
                 );

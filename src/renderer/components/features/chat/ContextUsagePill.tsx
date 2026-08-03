@@ -34,8 +34,8 @@ function toneFromPercent(pct: number): Tone {
 // warning/critical 保留 functional color，因为这是上下文吃紧的告警信号
 const TONE_STYLES: Record<Tone, { ring: string; text: string; hoverBg: string }> = {
   normal: { ring: 'stroke-zinc-500', text: 'text-zinc-400', hoverBg: 'hover:bg-zinc-700/30' },
-  warning: { ring: 'stroke-yellow-500', text: 'text-yellow-400', hoverBg: 'hover:bg-yellow-500/10' },
-  critical: { ring: 'stroke-red-500', text: 'text-red-400', hoverBg: 'hover:bg-red-500/10' },
+  warning: { ring: 'stroke-badge-warning', text: 'text-badge-warning', hoverBg: 'hover:bg-yellow-500/10' },
+  critical: { ring: 'stroke-red-500', text: 'text-badge-danger', hoverBg: 'hover:bg-red-500/10' },
 };
 
 export const ContextUsagePill: React.FC = () => {
@@ -164,10 +164,12 @@ export const ContextUsagePill: React.FC = () => {
         onFocus={() => setOpen(true)}
         className={`inline-flex h-8 items-center justify-center gap-1 rounded-lg px-1.5 text-xs tabular-nums transition-colors ${styles.text} ${styles.hoverBg}`}
         aria-label={ch.usageAriaLabel}
-        title={ch.usageTitle
-          .replace('{percent}', displayPct)
-          .replace('{used}', formatTokens(currentTokens))
-          .replace('{max}', formatTokens(maxTokens))}
+        title={hasData
+          ? ch.usageTitle
+              .replace('{percent}', displayPct)
+              .replace('{used}', formatTokens(currentTokens))
+              .replace('{max}', formatTokens(maxTokens))
+          : ch.waitingFirstTurn}
       >
         <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="transform -rotate-90">
           <circle
@@ -232,14 +234,14 @@ export const ContextUsagePill: React.FC = () => {
           )}
 
           {compactResult && (
-            <div className="mt-2 text-[11px] text-emerald-400">
+            <div className="mt-2 text-[11px] text-badge-success">
               {compactResult.totalSavedTokens > 0
                 ? ch.freedTokens.replace('{tokens}', formatTokens(compactResult.totalSavedTokens))
                 : ch.compactedCount.replace('{count}', String(compactResult.compressionCount))}
             </div>
           )}
           {compactError && (
-            <div className="mt-2 text-[11px] text-red-400">{compactError}</div>
+            <div className="mt-2 text-[11px] text-badge-danger">{compactError}</div>
           )}
         </div>
       )}

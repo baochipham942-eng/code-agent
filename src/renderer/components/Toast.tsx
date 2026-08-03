@@ -15,10 +15,10 @@ const ICON_MAP: Record<ToastType, React.ReactNode> = {
 };
 
 const COLOR_MAP: Record<ToastType, string> = {
-  success: 'border-green-500/40 text-green-400',
-  error: 'border-red-500/40 text-red-400',
-  info: 'border-blue-500/40 text-blue-400',
-  warning: 'border-yellow-500/40 text-yellow-400',
+  success: 'border-badge-success/40 text-badge-success',
+  error: 'border-red-500/40 text-badge-danger',
+  info: 'border-badge-info/40 text-badge-info',
+  warning: 'border-badge-warning/40 text-badge-warning',
 };
 
 export const ToastContainer: React.FC = () => {
@@ -31,11 +31,13 @@ export const ToastContainer: React.FC = () => {
       {toasts.map((t) => (
         <div
           key={t.id}
-          className={`flex items-start gap-2 px-3 py-2.5 bg-zinc-800 border rounded-lg shadow-lg animate-in slide-in-from-right-5 fade-in duration-200 ${COLOR_MAP[t.type]}`}
+          className={`flex items-start gap-2 px-3 py-2.5 elevation-l3 popover-enter rounded-2xl ${COLOR_MAP[t.type]}`}
           role="alert"
         >
           <span className="text-sm font-bold shrink-0 mt-0.5">{ICON_MAP[t.type]}</span>
-          <span className="text-sm text-zinc-200 break-words">{t.message}</span>
+          {/* 高度上限（现象 11）：超长错误原文（如几十条 lineage findings）超出滚动，
+              不许一条 toast 占满半个屏幕。 */}
+          <span className="text-sm text-zinc-200 break-words max-h-40 overflow-y-auto">{t.message}</span>
           {t.action && (
             <button /* ds-allow:button: toast 内的描边小动作钮（不再提示），Button primitive 的主按钮语义不符 */
               onClick={() => {

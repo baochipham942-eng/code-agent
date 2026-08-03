@@ -341,11 +341,13 @@ describe('SessionRepository — Episodic FTS5', () => {
 
     repo.applyPromptRewind('sess-A', 'm2', { createdAt: 100, ownerUserId: null });
 
-    expect(repo.searchSessionMessagesFts('secret')).toEqual([]);
-    const allAttempts = repo.searchSessionMessagesFts('secret', {
+    // 新语义：锚点 m2 保持 active、默认召回可见；仅严格位于锚点之后的 m3 被软隐藏
+    expect(repo.searchSessionMessagesFts('secret').map((row) => row.messageId)).toEqual(['m2']);
+    expect(repo.searchSessionMessagesFts('answer after')).toEqual([]);
+    const allAttempts = repo.searchSessionMessagesFts('answer after', {
       includeRewound: true
     });
-    expect(allAttempts.map((row) => row.messageId)).toEqual(['m2']);
+    expect(allAttempts.map((row) => row.messageId)).toEqual(['m3']);
   });
 });
 

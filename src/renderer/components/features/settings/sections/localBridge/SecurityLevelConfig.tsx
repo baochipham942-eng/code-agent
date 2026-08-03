@@ -44,15 +44,15 @@ export const SecurityLevelConfig: React.FC = () => {
 
       <div className="bg-zinc-800 rounded-lg p-3 text-xs text-zinc-400 space-y-1.5">
         <div className="flex items-start gap-2">
-          <span className="text-green-400 font-medium flex-shrink-0">{securityText.l1}</span>
+          <span className="text-badge-success font-medium flex-shrink-0">{securityText.l1}</span>
           <span>{securityText.l1Description}</span>
         </div>
         <div className="flex items-start gap-2">
-          <span className="text-yellow-400 font-medium flex-shrink-0">{securityText.l2}</span>
+          <span className="text-badge-warning font-medium flex-shrink-0">{securityText.l2}</span>
           <span>{securityText.l2Description}</span>
         </div>
         <div className="flex items-start gap-2">
-          <span className="text-red-400 font-medium flex-shrink-0">{securityText.l3}</span>
+          <span className="text-badge-danger font-medium flex-shrink-0">{securityText.l3}</span>
           <span>{securityText.l3Description}</span>
         </div>
       </div>

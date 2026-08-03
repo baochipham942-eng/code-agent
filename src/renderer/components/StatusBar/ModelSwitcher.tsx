@@ -8,7 +8,14 @@ import { createPortal } from 'react-dom';
 import { useSessionStore } from '../../stores/sessionStore';
 import { IPC_DOMAINS } from '@shared/ipc';
 import type { AppSettings, ModelProvider } from '@shared/contract';
-import type { AgentEngineKind } from '@shared/contract/agentEngine';
+import type {
+  AgentEngineKind,
+  AgentEngineModelCatalog,
+  AgentEngineModelCatalogResult,
+  AgentEngineSourceDescriptor,
+  ExternalAgentEngineKind,
+} from '@shared/contract/agentEngine';
+import type { EffortLevel } from '@shared/contract/agent';
 import { normalizeAgentEngineSession } from '@shared/contract/agentEngine';
 import { getProviderDisplayName, isAgenticVerifiedModel } from '@shared/constants';
 import {
@@ -25,7 +32,7 @@ import {
   resolveModelPrice,
 } from '@shared/pricing/resolveModelPrice';
 import { toast } from '../../hooks/useToast';
-import { BadgeCheck, Brain, Sparkles, Zap, Code2, Settings, Star } from 'lucide-react';
+import { BadgeCheck, Brain, Sparkles, Code2, Settings, Star } from 'lucide-react';
 import { useI18n } from '../../hooks/useI18n';
 import { useAppStore } from '../../stores/appStore';
 import { useModeStore } from '../../stores/modeStore';
@@ -47,7 +54,12 @@ import {
   ProviderLogo,
   QUICK_SWITCH_PROVIDERS,
   sortProviderGroupsByModelStrategy,
+  buildModelSwitcherEngineSelection,
 } from './modelSwitcherHelpers';
+import {
+  EngineScopedModelPanel,
+  type EngineMenuView,
+} from './EngineScopedModelPanel';
 
 export { buildModelSwitcherEngineSelection } from './modelSwitcherHelpers';
 
@@ -56,6 +68,9 @@ interface ModelSwitcherProps {
 }
 
 export const MODEL_OVERRIDE_CHANGE_EVENT = 'code-agent:model-override-change';
+
+/** 会话内（如 AgentErrorCard「切换模型」按钮）请求打开模型选择器的事件。 */
+export const OPEN_MODEL_SWITCHER_EVENT = 'code-agent:open-model-switcher';
 
 // 相对倍率价签（设计稿 §8.1）：基准恒定，逐 option 纯函数求值即可，无需状态。
 const PRICE_BASELINE = resolveModelPrice(PRICING_BASELINE_DEFAULT.provider, PRICING_BASELINE_DEFAULT.modelId);
@@ -125,6 +140,24 @@ export function shouldShowModelSettingsPrompt(
     && !nativeHasConfiguredModels;
 }
 
+export function shouldShowNativeReasoningSegment(args: {
+  engineKind: AgentEngineKind;
+  showModelSettingsPrompt: boolean;
+  effortOptionCount: number;
+}): boolean {
+  return args.engineKind === 'native'
+    && !args.showModelSettingsPrompt
+    && args.effortOptionCount > 1;
+}
+
+export function shouldDismissModelSwitcher(
+  target: Node,
+  trigger: Pick<Node, 'contains'> | null,
+  menu: Pick<Node, 'contains'> | null,
+): boolean {
+  return !trigger?.contains(target) && !menu?.contains(target);
+}
+
 function emitModelOverrideChange(detail: ModelOverrideChangeDetail): void {
   window.dispatchEvent(new CustomEvent<ModelOverrideChangeDetail>(MODEL_OVERRIDE_CHANGE_EVENT, { detail }));
 }
@@ -142,19 +175,31 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
   const [activeOptionIndex, setActiveOptionIndex] = useState(0);
   const [healthMap, setHealthMap] = useState<Record<string, ProviderHealthSnapshot>>({});
   const [modelSettings, setModelSettings] = useState<AppSettings | null>(null);
+  // modelSettings IPC 是否已返回（用于打开面板时的锚定时机）
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
   const { t } = useI18n();
   const modelText = t.settings.model.models;
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  // 内层模型列表滚动容器（max-h-64 overflow-y-auto），锚定滚动只动它，避免误滚外层页面
+  const listScrollRef = useRef<HTMLDivElement>(null);
+  // 打开面板后是否还需要执行一次"锚定到选中模型"（搜索过滤不重复锚定）
+  const anchorPendingRef = useRef(false);
   const [menuPos, setMenuPos] = useState<ModelSwitcherMenuPosition | null>(null);
+  const [engineMenuView, setEngineMenuView] = useState<EngineMenuView>('models');
+  const [engineSources, setEngineSources] = useState<AgentEngineSourceDescriptor[]>([]);
+  const [engineCatalog, setEngineCatalog] = useState<AgentEngineModelCatalog | null>(null);
+  const [busyEngineId, setBusyEngineId] = useState<string | null>(null);
   const sessionId = useSessionStore((s) => s.currentSessionId);
   const session = useSessionStore((s) =>
     s.currentSessionId
       ? s.sessions.find((item) => item.id === s.currentSessionId) ?? null
       : null
   );
+  const updateSessionEngine = useSessionStore((s) => s.updateSessionEngine);
   const openSettingsTab = useAppStore((s) => s.openSettingsTab);
+  const appWorkingDirectory = useAppStore((s) => s.workingDirectory);
   const defaultProvider = useAppStore((s) => s.modelConfig.provider);
   // effort 切换内嵌到模型菜单顶部，对照 Codex 的"模型 + Intelligence"两层选择
   const effortLevel = useModeStore((s) => s.effortLevel);
@@ -233,23 +278,69 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
     }
   }, [open]);
 
+  // 会话内入口（AgentErrorCard「切换模型」）请求打开菜单
   useEffect(() => {
-    if (engine.kind !== 'native' && open) {
-      setOpen(false);
-    }
-  }, [engine.kind, open]);
+    const handleOpenRequest = () => setOpen(true);
+    window.addEventListener(OPEN_MODEL_SWITCHER_EVENT, handleOpenRequest);
+    return () => window.removeEventListener(OPEN_MODEL_SWITCHER_EVENT, handleOpenRequest);
+  }, []);
 
   // 打开时读取模型设置，保证输入框模型列表和 Settings 的启用状态一致
   useEffect(() => {
-    if (!open) return;
-    window.domainAPI?.invoke<AppSettings>(IPC_DOMAINS.SETTINGS, 'get', {})
+    if (!open) {
+      setSettingsLoaded(false);
+      return;
+    }
+    const api = window.domainAPI;
+    if (!api) {
+      setSettingsLoaded(true);
+      return;
+    }
+    api.invoke<AppSettings>(IPC_DOMAINS.SETTINGS, 'get', {})
       .then((res) => {
         if (res?.success && res.data) {
           setModelSettings(res.data);
         }
       })
-      .catch(() => { /* 设置读取失败时保留内置模型列表兜底 */ });
+      .catch(() => { /* 设置读取失败时保留内置模型列表兜底 */ })
+      .finally(() => setSettingsLoaded(true));
   }, [open]);
+
+  // 引擎来源与模型能力均由 host 探测/目录返回；renderer 不硬编码营销状态或模型。
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    Promise.all([
+      window.domainAPI?.invoke<AgentEngineSourceDescriptor[]>(
+        IPC_DOMAINS.AGENT_ENGINE,
+        'listSources',
+        {},
+      ),
+      window.domainAPI?.invoke<AgentEngineModelCatalogResult>(
+        IPC_DOMAINS.AGENT_ENGINE,
+        'listModels',
+        {},
+      ),
+    ]).then(([sourceResult, catalogResult]) => {
+      if (cancelled) return;
+      if (sourceResult?.success && Array.isArray(sourceResult.data)) {
+        setEngineSources(sourceResult.data);
+      }
+      if (catalogResult?.success && catalogResult.data?.catalog) {
+        setEngineCatalog(catalogResult.data.catalog);
+      }
+    }).catch(() => {
+      // 探测失败时保留当前会话触发器；不伪造来源或模型。
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
+
+  useEffect(() => {
+    setEngineMenuView('models');
+    setSearchQuery('');
+  }, [engine.kind]);
 
   // 打开时拉取 provider 健康状态
   useEffect(() => {
@@ -268,9 +359,9 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       const target = e.target as Node;
-      if (triggerRef.current?.contains(target)) return;
-      if (menuRef.current?.contains(target)) return;
-      setOpen(false);
+      if (shouldDismissModelSwitcher(target, triggerRef.current, menuRef.current)) {
+        setOpen(false);
+      }
     };
     if (open) {
       document.addEventListener('mousedown', handler);
@@ -489,6 +580,39 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
   const displayModel = overrideModel || currentModel;
   const isOverridden = engine.kind === 'native' && !!overrideModel;
   const displayProvider = overrideProvider || defaultProvider;
+
+  // 打开面板时锚定到当前选中模型：等 modelSettings IPC 返回、列表二次渲染后执行一次。
+  // 用 anchorPendingRef 保证每次打开只锚一次，搜索过滤（groupedFilteredOptions 变化）不重复锚定。
+  useEffect(() => {
+    if (!open) return;
+    if (!settingsLoaded) {
+      anchorPendingRef.current = true;
+      return;
+    }
+    if (!anchorPendingRef.current) return;
+    anchorPendingRef.current = false;
+    if (showModelSettingsPrompt) return;
+    let selectedIndex = 0;
+    for (const group of groupedFilteredOptions) {
+      const hit = group.options.find(
+        ({ option }) => option.model === displayModel && option.provider === displayProvider,
+      );
+      if (hit) {
+        selectedIndex = hit.index;
+        break;
+      }
+    }
+    // 键盘导航从当前选中项开始；无选中项时保持 0（「自动」）
+    setActiveOptionIndex(selectedIndex);
+    if (selectedIndex <= 0) return;
+    // 直接设置内层滚动容器的 scrollTop 让选中行居中可见，避免 scrollIntoView 误滚外层页面
+    const container = listScrollRef.current;
+    const row = container?.querySelector<HTMLElement>(`[data-model-option-index="${selectedIndex}"]`);
+    if (container && row) {
+      container.scrollTop = row.offsetTop - (container.clientHeight - row.clientHeight) / 2;
+    }
+  }, [open, settingsLoaded, showModelSettingsPrompt, groupedFilteredOptions, displayModel, displayProvider]);
+
   const nativeDisplayLabel = overrideAdaptive ? '自动' : getRuntimeModelLabel(displayModel, displayProvider, modelSettings);
   const selectedNativeOption = useMemo(
     () => modelOptions.find((option) => option.provider === displayProvider && option.model === displayModel),
@@ -505,11 +629,47 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
     [displayModel, displayProvider, engine.kind, selectedNativeOption?.features],
   );
   const selectedEffort = getSelectedEffortOption(effortLevel, effortOptions);
+  // 思考段（2026-07-29 合并改版）：原 Thinking On/Off 与 Effort 两段行高不齐、
+  // 选项数不一（2 vs 3），合并为一行 4 等分 segmented：关 = thinking off；
+  // 低/中/高 = thinking on + effort low/med/high。setters 不变，只是 UI 合段。
+  const thinkingSegmentOptions = useMemo(() => ([
+    {
+      value: 'off' as const,
+      label: modelText.thinkingOptionOff,
+      selected: !thinkingEnabled,
+      color: 'text-zinc-300',
+      tint: 'bg-zinc-700',
+      onSelect: () => setThinkingEnabled(false),
+    },
+    ...(['low', 'medium', 'high'] as const).map((level) => {
+      const effortOption = effortOptions.find((option) => option.value === level);
+      return {
+        value: level as EffortLevel,
+        label: level === 'low'
+          ? modelText.thinkingOptionLow
+          : level === 'medium'
+            ? modelText.thinkingOptionMedium
+            : modelText.thinkingOptionHigh,
+        selected: thinkingEnabled && effortLevel === level,
+        color: effortOption?.color ?? 'text-zinc-300',
+        tint: effortOption?.tint ?? 'bg-zinc-700',
+        onSelect: () => {
+          setThinkingEnabled(true);
+          setEffortLevel(level);
+        },
+      };
+    }),
+  ]), [effortLevel, effortOptions, modelText, setEffortLevel, setThinkingEnabled, thinkingEnabled]);
   const supportsThinkingControls = !showModelSettingsPrompt && engine.kind === 'native'
     ? displayProvider === 'xiaomi'
       || Boolean(selectedNativeOption?.features.includes('reasoning'))
       || /reason|thinking|think|mimo|r1|o\d/i.test(displayModel)
     : false;
+  const showNativeReasoningSegment = shouldShowNativeReasoningSegment({
+    engineKind: engine.kind,
+    showModelSettingsPrompt,
+    effortOptionCount: effortOptions.length,
+  });
   const thinkingShortLabel = supportsThinkingControls
     ? thinkingEnabled ? '思考' : '不思考'
     : null;
@@ -541,13 +701,75 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
       });
 
   const handleTriggerClick = useCallback(() => {
-    if (engine.kind !== 'native') {
-      setOpen(false);
-      openSettingsTab('agentEngine');
+    setOpen((value) => !value);
+  }, []);
+
+  const handleEngineMenuViewChange = useCallback((view: EngineMenuView) => {
+    setEngineMenuView(view);
+    setSearchQuery('');
+  }, []);
+
+  const handleSelectEngine = useCallback(async (source: AgentEngineSourceDescriptor) => {
+    if (!sessionId || !source.kind || !source.selectable) return;
+    const descriptorResponse = await window.domainAPI?.invoke(
+      IPC_DOMAINS.AGENT_ENGINE,
+      'get',
+      { kind: source.kind },
+    );
+    if (!descriptorResponse?.success || !descriptorResponse.data) {
+      toast.error(descriptorResponse?.error?.message || '执行引擎探测结果不可用');
       return;
     }
-    setOpen((value) => !value);
-  }, [engine.kind, openSettingsTab]);
+    setBusyEngineId(source.manifestId);
+    try {
+      const descriptor = descriptorResponse.data as Parameters<typeof buildModelSwitcherEngineSelection>[0];
+      const workingDirectory = session?.workingDirectory ?? appWorkingDirectory ?? undefined;
+      await updateSessionEngine(
+        sessionId,
+        buildModelSwitcherEngineSelection(
+          descriptor,
+          workingDirectory,
+          source.kind === 'native'
+            ? undefined
+            : engineCatalog?.engines.find((item) => item.kind === source.kind)?.defaultModel,
+        ),
+      );
+      setEngineMenuView('models');
+      setSearchQuery('');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : '执行引擎切换失败');
+    } finally {
+      setBusyEngineId(null);
+    }
+  }, [
+    appWorkingDirectory,
+    engineCatalog?.engines,
+    session?.workingDirectory,
+    sessionId,
+    updateSessionEngine,
+  ]);
+
+  const handleSelectExternalModel = useCallback(async (
+    kind: ExternalAgentEngineKind,
+    model: string,
+  ) => {
+    if (!sessionId) return;
+    setBusyEngineId(kind);
+    try {
+      await updateSessionEngine(sessionId, {
+        kind,
+        model,
+        permissionProfile: 'read_only',
+        cwd: session?.workingDirectory ?? appWorkingDirectory ?? undefined,
+      });
+      setSearchQuery('');
+      setOpen(false);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : '外部引擎模型切换失败');
+    } finally {
+      setBusyEngineId(null);
+    }
+  }, [appWorkingDirectory, session?.workingDirectory, sessionId, updateSessionEngine]);
 
   useEffect(() => {
     if (effortOptions.some((option) => option.value === effortLevel)) return;
@@ -559,8 +781,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
       ref={menuRef}
       className="
         py-1 overflow-y-auto
-        bg-zinc-800 border border-zinc-700 rounded-lg
-        shadow-xl
+        elevation-l2 popover-enter rounded-lg
       "
       style={{
         position: 'fixed',
@@ -571,6 +792,38 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
         zIndex: Z_LAYERS.statusPopover,
       }}
     >
+      {engineMenuView === 'engines' ? (
+        <EngineScopedModelPanel
+          view="engines"
+          sources={engineSources}
+          catalog={engineCatalog}
+          currentEngine={engine.kind}
+          currentModel={engine.model}
+          query={searchQuery}
+          busyEngineId={busyEngineId}
+          onQueryChange={setSearchQuery}
+          onViewChange={handleEngineMenuViewChange}
+          onSelectEngine={(source) => void handleSelectEngine(source)}
+          onSelectExternalModel={(kind, model) => void handleSelectExternalModel(kind, model)}
+          onOpenSettings={openSettingsTab}
+        />
+      ) : (
+        <>
+          <EngineScopedModelPanel
+            view="models"
+            sources={engineSources}
+            catalog={engineCatalog}
+            currentEngine={engine.kind}
+            currentModel={engine.model}
+            query={searchQuery}
+            busyEngineId={busyEngineId}
+            onQueryChange={setSearchQuery}
+            onViewChange={handleEngineMenuViewChange}
+            onSelectEngine={(source) => void handleSelectEngine(source)}
+            onSelectExternalModel={(kind, model) => void handleSelectExternalModel(kind, model)}
+            onOpenSettings={openSettingsTab}
+          />
+          {engine.kind === 'native' && (
             <div className="border-b border-zinc-700/50">
               <div className="flex items-center gap-1 px-3 pt-1.5 pb-1 text-[10px] text-zinc-500">
               <Code2 className="w-3 h-3" />
@@ -588,12 +841,12 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
                 className="
                   w-full px-2 py-1 text-xs
                   bg-zinc-900 border border-zinc-700 rounded
-                  text-gray-200 placeholder-gray-500
+                  text-zinc-200 placeholder-gray-500
                   outline-none focus:border-zinc-600
                 "
               />
             </div>
-            <div className="max-h-64 overflow-y-auto pb-1">
+            <div ref={listScrollRef} className="max-h-64 overflow-y-auto pb-1">
               {showModelSettingsPrompt ? (
                   <div className="px-3 py-4 text-center">
                     <div className="mx-auto mb-2 flex h-8 w-8 items-center justify-center rounded bg-zinc-700/60 text-zinc-300">
@@ -622,11 +875,11 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
                       border-b border-zinc-700/50
                       hover:bg-zinc-700 transition-colors
                       ${activeOptionIndex === 0 ? 'bg-zinc-700/80' : ''}
-                      ${overrideAdaptive ? 'text-primary-300' : 'text-gray-200'}
+                      ${overrideAdaptive ? 'text-badge-accent' : 'text-zinc-200'}
                     `}
                   >
                     <div className="flex items-center gap-1.5">
-                      <Sparkles className="w-3 h-3 text-primary-400" />
+                      <Sparkles className="w-3 h-3 text-badge-accent" />
                       <span className="font-medium">自动</span>
                       <span className="text-gray-500 text-[10px] ml-auto">按任务、成本和能力切换</span>
                     </div>
@@ -652,7 +905,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
                           />
                           <span>{group.providerLabel || getProviderDisplayName(group.provider) || group.provider}</span>
                           {group.providerFavorite && (
-                            <Star className="h-3 w-3 fill-amber-300 text-amber-300" />
+                            <Star className="h-3 w-3 fill-badge-warning text-badge-warning" />
                           )}
                           <span
                             className={`ml-auto h-1.5 w-1.5 rounded-full ${group.healthSummary.dotClass}`}
@@ -674,21 +927,21 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
                                 w-full text-left px-3 py-1.5 text-xs
                                 hover:bg-zinc-700 transition-colors
                                 ${activeOptionIndex === index ? 'bg-zinc-700/80' : ''}
-                                ${selected ? 'text-purple-400' : 'text-gray-300'}
+                                ${selected ? 'text-badge-accent' : 'text-zinc-300'}
                               `}
                             >
                               <div className="flex items-center gap-1 flex-wrap">
                                 <span className="font-medium">{opt.label}</span>
                                 {isAgenticVerifiedModel(opt.model) ? (
                                   <span
-                                    className="inline-flex items-center gap-0.5 text-[10px] px-1 py-0.5 rounded bg-emerald-500/15 text-emerald-300"
+                                    className="inline-flex items-center gap-0.5 text-[10px] px-1 py-0.5 rounded bg-emerald-500/15 text-badge-success"
                                     title={modelText.verifiedBadgeTitle}
                                   >
                                     <BadgeCheck className="h-3 w-3" />
                                   </span>
                                 ) : (
                                   <span
-                                    className="inline-flex items-center gap-0.5 text-[10px] px-1 py-0.5 rounded bg-amber-500/10 text-amber-300/90"
+                                    className="inline-flex items-center gap-0.5 text-[10px] px-1 py-0.5 rounded bg-amber-500/10 text-badge-warning/90"
                                     title={modelText.unverifiedHint}
                                   >
                                     {modelText.unverifiedShort}
@@ -741,29 +994,27 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
               )}
             </div>
           </div>
+          )}
 
-          {!showModelSettingsPrompt && supportsThinkingControls && (
+          {showNativeReasoningSegment && (
             <div className="px-2 pt-1.5 pb-1.5 border-b border-zinc-700/50">
               <div className="flex items-center gap-1 text-[10px] text-zinc-500 mb-1 px-1">
                 <Brain className="w-3 h-3" />
-                <span>Thinking</span>
+                <span>{modelText.thinkingSectionLabel}</span>
               </div>
-              <div className="grid grid-cols-2 gap-1">
-                {[
-                  { value: false, label: 'Off' },
-                  { value: true, label: 'On' },
-                ].map((option) => (
+              <div className="grid grid-cols-4 gap-1" data-native-reasoning-segment>
+                {thinkingSegmentOptions.map((option) => (
                   <button
-                    key={option.label}
+                    key={option.value}
                     type="button"
-                    onClick={() => setThinkingEnabled(option.value)}
+                    onClick={option.onSelect}
                     className={`
                       inline-flex h-7 items-center justify-center rounded px-2 text-[10px] transition-colors
-                      ${thinkingEnabled === option.value
-                        ? 'text-amber-300 bg-amber-500/15 font-medium ring-1 ring-zinc-600/70'
+                      ${option.selected
+                        ? `${option.color} ${option.tint} font-medium ring-1 ring-zinc-600/70`
                         : 'text-zinc-500 hover:bg-zinc-700/50'}
                     `}
-                    title={`Thinking: ${option.label}`}
+                    title={`${modelText.thinkingSectionLabel}: ${option.label}`}
                   >
                     {option.label}
                   </button>
@@ -771,43 +1022,18 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
               </div>
             </div>
           )}
-
-          {!showModelSettingsPrompt && (
-          <div className="px-2 pt-1.5 pb-1.5 border-b border-zinc-700/50">
-            <div className="flex items-center gap-1 text-[10px] text-zinc-500 mb-1 px-1">
-              <Zap className="w-3 h-3" />
-              <span>{modelText.effortSectionLabel}</span>
-            </div>
-            <div className="flex flex-wrap gap-1">
-              {effortOptions.map((opt) => (
-                <button
-                  key={opt.value}
-                  type="button"
-                  onClick={() => setEffortLevel(opt.value)}
-                  className={`
-                    inline-flex h-7 min-w-[3.8rem] items-center justify-center rounded px-2 text-[10px] transition-colors
-                    ${selectedEffort.value === opt.value
-                      ? `${opt.color} ${opt.tint} font-medium ring-1 ring-zinc-600/70`
-                      : 'text-zinc-500 hover:bg-zinc-700/50'}
-                  `}
-                  title={`Effort: ${opt.label}`}
-                >
-                  {opt.label}
-                </button>
-              ))}
-            </div>
-          </div>
-          )}
       {engine.kind === 'native' && isOverridden && !showModelSettingsPrompt && (
         <>
           <div className="border-t border-zinc-700 my-1" />
           <button
             type="button"
             onClick={handleClear}
-            className="w-full text-left px-3 py-1.5 text-xs text-gray-500 hover:text-gray-300 hover:bg-zinc-700"
+            className="w-full text-left px-3 py-1.5 text-xs text-gray-500 hover:text-zinc-300 hover:bg-zinc-700"
           >
             恢复主任务模型
           </button>
+        </>
+      )}
         </>
       )}
     </div>
@@ -820,7 +1046,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
         type="button"
         onClick={handleTriggerClick}
         aria-label="切换模型"
-        aria-expanded={engine.kind === 'native' ? open : undefined}
+        aria-expanded={open}
         // 弱一档（zinc-400/xs）：这行的主位是专家。「Neo」也从这里去掉——产品名跟模型名
         // 并排会让用户以为 Neo 是个模型；外部引擎名（Codex/Claude Code）是真信息，留着。
         // 思考档 / effort 收进点开后的面板：reasoning effort 对非程序员是纯噪音，
@@ -828,7 +1054,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
         className={`
           cursor-pointer truncate max-w-[200px] text-xs
           hover:text-white transition-colors
-          ${isOverridden ? 'text-amber-400' : 'text-zinc-400'}
+          ${isOverridden ? 'text-badge-warning' : 'text-zinc-400'}
         `}
         title={triggerTitle}
       >

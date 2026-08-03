@@ -17,7 +17,16 @@ const sessionState = vi.hoisted(() => ({
 }));
 
 // 会话已有产物（跑完的任务/重开的会话）时不进叙事空态，产物区继续展示
-const previewItems = vi.hoisted(() => ({ length: 0 }));
+const previewItems = vi.hoisted(() => ({
+  items: [] as Array<{ id: string }>,
+}));
+const appState = vi.hoisted(() => ({
+  selectedWorkspacePreviewId: null as string | null,
+  setSelectedWorkspacePreviewId: vi.fn(),
+  language: 'zh' as const,
+  setLanguage: vi.fn(),
+  cloudUIStrings: null,
+}));
 
 vi.mock('../../../src/renderer/hooks/useTaskActivity', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../../src/renderer/hooks/useTaskActivity')>();
@@ -27,10 +36,15 @@ vi.mock('../../../src/renderer/hooks/useTaskActivity', async (importOriginal) =>
   };
 });
 vi.mock('../../../src/renderer/hooks/useWorkspacePreviewModel', () => ({
-  useWorkspacePreviewModel: () => previewItems,
+  useWorkspacePreviewModel: () => previewItems.items,
 }));
 vi.mock('../../../src/renderer/stores/sessionStore', () => ({
   useSessionStore: (selector: (state: typeof sessionState) => unknown) => selector(sessionState),
+}));
+vi.mock('../../../src/renderer/stores/appStore', () => ({
+  useAppStore: (selector?: (state: typeof appState) => unknown) => (
+    selector ? selector(appState) : appState
+  ),
 }));
 vi.mock('../../../src/renderer/components/TaskPanel', () => ({
   TaskPanel: () => <div data-testid="task-progress-marker">task progress</div>,
@@ -47,17 +61,18 @@ describe('WorkbenchOverview', () => {
     taskActivity.agentTreeSnapshot = null;
     sessionState.currentSessionId = null;
     sessionState.sessions = [];
-    previewItems.length = 0;
+    previewItems.items = [];
+    appState.selectedWorkspacePreviewId = null;
+    appState.setSelectedWorkspacePreviewId.mockReset();
   });
 
   it('shows the task-scene narrative instead of an empty artifact shell when there is no task activity', () => {
     render(<WorkbenchOverview />);
 
-    expect(screen.queryByTestId('workbench-overview-progress')).toBeNull();
+    expect(screen.queryByTestId('workbench-overview-workspace')).toBeNull();
     expect(screen.queryByTestId('task-progress-marker')).toBeNull();
     // 空态是叙事（运行中的任务会实时显示在这里），不再是产物区自己的空壳
     expect(screen.getByTestId('workbench-overview-empty')).toBeTruthy();
-    expect(screen.queryByTestId('workbench-overview-artifacts')).toBeNull();
     expect(screen.queryByTestId('artifact-marker')).toBeNull();
     // 没有会话快照时不挂「最近产物」预览
     expect(screen.queryByTestId('workbench-overview-recent')).toBeNull();
@@ -85,26 +100,46 @@ describe('WorkbenchOverview', () => {
     expect(screen.queryByTestId('workbench-overview-recent')).toBeNull();
   });
 
-  it('keeps the artifact region when the session has artifacts but no live task activity', () => {
-    previewItems.length = 1;
+  it('keeps the task workspace when the session has artifacts but no live task activity', () => {
+    previewItems.items = [{ id: 'artifact-1' }];
     render(<WorkbenchOverview />);
 
-    // 跑完的任务/重开的会话：没有任务进程区，但产物不能丢进叙事空态
+    // 跑完的任务/重开的会话：Todo/上下文/产物仍由同一工作台承载。
     expect(screen.queryByTestId('workbench-overview-empty')).toBeNull();
-    expect(screen.queryByTestId('workbench-overview-progress')).toBeNull();
-    expect(screen.getByTestId('workbench-overview-artifacts')).toBeTruthy();
-    expect(screen.getByTestId('artifact-marker')).toBeTruthy();
+    expect(screen.getByTestId('workbench-overview-workspace')).toBeTruthy();
+    expect(screen.getByTestId('task-progress-marker')).toBeTruthy();
+    expect(screen.queryByTestId('artifact-marker')).toBeNull();
   });
 
-  it('renders the complete task panel when any task activity exists', () => {
+  it('renders one complete task workspace when any task activity exists', () => {
     taskActivity.hasTaskActivity = true;
     render(<WorkbenchOverview />);
 
-    expect(screen.getByTestId('workbench-overview-progress')).toBeTruthy();
+    expect(screen.getByTestId('workbench-overview-workspace')).toBeTruthy();
     expect(screen.getByTestId('task-progress-marker')).toBeTruthy();
-    expect(screen.getByTestId('workbench-overview-artifacts')).toBeTruthy();
-    expect(screen.getByTestId('artifact-marker')).toBeTruthy();
+    expect(screen.queryByTestId('artifact-marker')).toBeNull();
     expect(screen.queryByTestId('workbench-overview-empty')).toBeNull();
+  });
+
+  it('opens a focused artifact preview only after an artifact is selected', () => {
+    previewItems.items = [{ id: 'artifact-1' }];
+    appState.selectedWorkspacePreviewId = 'artifact-1';
+    render(<WorkbenchOverview />);
+
+    expect(screen.getByTestId('workbench-overview-preview')).toBeTruthy();
+    expect(screen.getByTestId('artifact-marker')).toBeTruthy();
+    expect(screen.queryByTestId('task-progress-marker')).toBeNull();
+  });
+
+  it('does not open an artifact selected in a different session', () => {
+    taskActivity.hasTaskActivity = true;
+    previewItems.items = [{ id: 'artifact-current' }];
+    appState.selectedWorkspacePreviewId = 'artifact-stale';
+    render(<WorkbenchOverview />);
+
+    expect(screen.getByTestId('workbench-overview-workspace')).toBeTruthy();
+    expect(screen.queryByTestId('artifact-marker')).toBeNull();
+    expect(appState.setSelectedWorkspacePreviewId).toHaveBeenCalledWith(null);
   });
 
   it('recognizes agent trees, tasks, stored progress, and live runs as activity', () => {

@@ -288,7 +288,7 @@ export const ProviderAdvancedSection: React.FC<ProviderAdvancedSectionProps> = (
               <span>{advancedText.temperatureCreative}</span>
             </div>
             {temperatureLocked ? (
-              <p className="mt-2 text-xs text-amber-300">
+              <p className="mt-2 text-xs text-badge-warning">
                 {advancedText.temperatureDefaultOnlyHint}
               </p>
             ) : null}

@@ -147,6 +147,7 @@ export const IPC_CHANNELS = {
   SYNC_FORCE_FULL: 'sync:force-full',
   SYNC_RESOLVE_CONFLICT: 'sync:resolve-conflict',
   SYNC_EVENT: 'sync:event',
+  QUEUED_INPUT_SETTLED: 'queued-input:settled',
 
   // Device channels
   DEVICE_REGISTER: 'device:register',
@@ -209,6 +210,7 @@ export const IPC_CHANNELS = {
   MARKETPLACE_LIST_PLUGINS: 'marketplace:list-plugins',
   MARKETPLACE_SEARCH_PLUGINS: 'marketplace:search-plugins',
   MARKETPLACE_INSTALL_PLUGIN: 'marketplace:install-plugin',
+  MARKETPLACE_CANCEL_INSTALL: 'marketplace:cancel-install',
   MARKETPLACE_UNINSTALL_PLUGIN: 'marketplace:uninstall-plugin',
   MARKETPLACE_LIST_INSTALLED: 'marketplace:list-installed',
   MARKETPLACE_ENABLE_PLUGIN: 'marketplace:enable-plugin',
@@ -241,6 +243,9 @@ export const IPC_CHANNELS = {
   STATUS_CONTEXT_UPDATE: 'status:context-update',
   STATUS_GIT_UPDATE: 'status:git-update',
   MANAGED_BROWSER_SESSION_CHANGED: 'desktop:managed-browser-session-changed',
+  SURFACE_LIVE_FRAME: 'surface:live-frame',
+  TERMINAL_OUTPUT: 'terminal:output',
+  TERMINAL_REVEAL: 'terminal:reveal',
 
   // Session status channels (multi-session parallel support)
   SESSION_STATUS_UPDATE: 'session:status:update',
@@ -389,6 +394,7 @@ export const IPC_CHANNELS = {
   TELEMETRY_GET_SYSTEM_PROMPT: TELEMETRY_CHANNELS.GET_SYSTEM_PROMPT,
   TELEMETRY_DELETE_SESSION: TELEMETRY_CHANNELS.DELETE_SESSION,
 	  TELEMETRY_SUBMIT_FEEDBACK: TELEMETRY_CHANNELS.SUBMIT_FEEDBACK,
+	  TELEMETRY_GET_SESSION_FEEDBACK: TELEMETRY_CHANNELS.GET_SESSION_FEEDBACK,
 	  REPLAY_GET_STRUCTURED_DATA: TELEMETRY_CHANNELS.GET_STRUCTURED_REPLAY,
 	  REPLAY_GET_TRAJECTORY_QUALITY: TELEMETRY_CHANNELS.GET_TRAJECTORY_QUALITY,
 	  REPLAY_UPDATE_TRAJECTORY_COLLECTION: TELEMETRY_CHANNELS.UPDATE_TRAJECTORY_COLLECTION,

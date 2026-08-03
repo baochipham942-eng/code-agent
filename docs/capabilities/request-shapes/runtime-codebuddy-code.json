@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "runtime": "codebuddy_code",
+  "protocolFamily": "opaque_cli",
+  "adapterBoundary": "codebuddy -p --output-format stream-json",
+  "syntheticRequest": {
+    "args": [
+      "-p",
+      "--output-format",
+      "stream-json",
+      "--input-format",
+      "text",
+      "--permission-mode",
+      "plan",
+      "--tools",
+      "",
+      "--strict-mcp-config",
+      "--max-turns",
+      "1",
+      "--include-partial-messages",
+      "<redacted-user-content>"
+    ],
+    "credentials": "Official WorkBuddy client state; values-not-read-or-recorded"
+  }
+}

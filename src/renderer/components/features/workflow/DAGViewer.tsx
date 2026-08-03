@@ -313,19 +313,19 @@ const DAGStatusPanel = memo(({ dagState }: { dagState: DAGVisualizationState }) 
     <div className="bg-gray-800/90 backdrop-blur rounded-lg p-3 border border-gray-700 shadow-lg min-w-[200px]">
       <div className="flex items-center gap-2 mb-2">
         <div className={`w-2.5 h-2.5 rounded-full ${statusColors[status]}`} />
-        <h3 className="font-semibold text-gray-200">{name}</h3>
+        <h3 className="font-semibold text-gray-200" /* ds-allow:color: DAGStatusPanel 由自身 bg-gray-800/90 覆盖在 ReactFlow 的固定 bg-gray-900 画布上 */>{name}</h3>
       </div>
       {description && (
-        <p className="text-xs text-gray-400 mb-2 line-clamp-2">{description}</p>
+        <p className="text-xs text-gray-400 mb-2 line-clamp-2" /* ds-allow:color: DAGStatusPanel 的固定深色祖先是自身 bg-gray-800/90 与外层 bg-gray-900 画布 */>{description}</p>
       )}
       <div className="flex items-center justify-between text-xs">
         <span className="text-gray-500 uppercase">{status}</span>
         {elapsedTime !== null && (
-          <span className="text-gray-400">⏱ {formatDuration(elapsedTime)}</span>
+          <span className="text-gray-400" /* ds-allow:color: DAGStatusPanel 的固定深色祖先是自身 bg-gray-800/90 与外层 bg-gray-900 画布 */>⏱ {formatDuration(elapsedTime)}</span>
         )}
       </div>
       {error && (
-        <p className="mt-2 text-xs text-red-400 line-clamp-2">⚠ {error}</p>
+        <p className="mt-2 text-xs text-red-400 line-clamp-2" /* ds-allow:color: DAGStatusPanel 自身 bg-gray-800/90 与外层固定 bg-gray-900 画布共同承载错误文案 */>⚠ {error}</p>
       )}
     </div>
   );
@@ -345,8 +345,8 @@ const DAGStatisticsPanel = memo(({ dagState }: { dagState: DAGVisualizationState
       {/* 进度条 */}
       <div className="mb-3">
         <div className="flex justify-between text-xs mb-1">
-          <span className="text-gray-400">Progress</span>
-          <span className="text-gray-300">{progress}%</span>
+          <span className="text-gray-400" /* ds-allow:color: DAGStatisticsPanel 由自身 bg-gray-800/90 覆盖在固定 bg-gray-900 画布上 */>Progress</span>
+          <span className="text-gray-300" /* ds-allow:color: DAGStatisticsPanel 由自身 bg-gray-800/90 覆盖在固定 bg-gray-900 画布上 */>{progress}%</span>
         </div>
         <div className="h-2 bg-gray-700 rounded-full overflow-hidden">
           <div
@@ -359,18 +359,18 @@ const DAGStatisticsPanel = memo(({ dagState }: { dagState: DAGVisualizationState
       {/* 任务统计 */}
       <div className="grid grid-cols-2 gap-2 text-xs">
         <StatItem label="Total" value={statistics.totalTasks} />
-        <StatItem label="Running" value={statistics.runningTasks} color="text-blue-400" />
-        <StatItem label="Completed" value={statistics.completedTasks} color="text-green-400" />
-        <StatItem label="Failed" value={statistics.failedTasks} color="text-red-400" />
-        <StatItem label="Ready" value={statistics.readyTasks} color="text-yellow-400" />
-        <StatItem label="Pending" value={statistics.pendingTasks} color="text-gray-400" />
+        <StatItem label="Running" value={statistics.runningTasks} color="text-blue-400" /* ds-allow:color: StatItem 只在 DAGStatisticsPanel 的 bg-gray-800/90 与外层 bg-gray-900 固定画布内使用 */ />
+        <StatItem label="Completed" value={statistics.completedTasks} color="text-badge-success" />
+        <StatItem label="Failed" value={statistics.failedTasks} color="text-red-400" /* ds-allow:color: StatItem 只在 DAGStatisticsPanel 的 bg-gray-800/90 与外层 bg-gray-900 固定画布内使用 */ />
+        <StatItem label="Ready" value={statistics.readyTasks} color="text-badge-warning" />
+        <StatItem label="Pending" value={statistics.pendingTasks} color="text-gray-400" /* ds-allow:color: StatItem 只在 DAGStatisticsPanel 的 bg-gray-800/90 与外层 bg-gray-900 固定画布内使用 */ />
       </div>
 
       {/* 成本 */}
       {statistics.totalCost > 0 && (
         <div className="mt-2 pt-2 border-t border-gray-700 flex justify-between text-xs">
           <span className="text-gray-500">Total Cost</span>
-          <span className="text-gray-300">{formatCost(statistics.totalCost)}</span>
+        <span className="text-gray-300" /* ds-allow:color: DAGStatisticsPanel 由自身 bg-gray-800/90 覆盖在固定 bg-gray-900 画布上 */>{formatCost(statistics.totalCost)}</span>
         </div>
       )}
     </div>
@@ -385,7 +385,7 @@ DAGStatisticsPanel.displayName = 'DAGStatisticsPanel';
 const StatItem = memo(({
   label,
   value,
-  color = 'text-gray-300',
+  color = 'text-gray-300', // ds-allow:color: StatItem 只在 DAGStatisticsPanel 的 bg-gray-800/90 与外层 bg-gray-900 固定画布内使用
 }: {
   label: string;
   value: number;

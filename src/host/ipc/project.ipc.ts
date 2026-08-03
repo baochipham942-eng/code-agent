@@ -7,10 +7,18 @@
 //
 // actions:
 // - list            -> 项目列表（{ includeArchived? }）
+// - create          -> 显式创建项目（{ name, workspacePath?, description? }）
 // - detail          -> 项目详情（project + goals + roles + sessionIds）
 // - rename          -> 改名（{ projectId, name }）
 // - setDescription  -> 改描述（{ projectId, description? }）
 // - setStatus       -> 改状态（{ projectId, status }）
+// - promoteToCloudSpace -> 创建云项目壳并写回本地映射（{ projectId }）
+// - createInvite    -> owner 创建邀请码（{ projectId, expiresInHours, maxUses }）
+// - revokeInvite    -> owner 撤销邀请码（{ code }）
+// - redeemInvite    -> 兑换邀请码并补本地占位项目（{ code }）
+// - listMembers     -> 读取空间成员卡（{ projectId }）
+// - listCloudCards  -> 读取其他成员共享的只读卡元数据（{ projectId }）
+// - resyncCloudCards-> 重新推送本机卡元数据到云端（{ projectId }）
 // - addGoal         -> 新增目标（{ projectId, goal, verify?, review? }）
 // - updateGoalStatus-> 更新目标状态（{ goalId, status, lastRunSessionId? }）
 // - addRole         -> 角色入驻（{ projectId, roleId }）
@@ -21,12 +29,21 @@
 import type { IpcMain } from '../platform';
 import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
 import { getProjectService } from '../services/project/projectService';
+import {
+  getProjectCollaborationService,
+  ProjectCollaborationError,
+} from '../services/project/projectCollaborationService';
+import { getCollabCardSyncService } from '../services/project/collabCardSyncService';
 import { getArtifactIssueRepository } from '../services/core/repositories/ArtifactIssueRepository';
 import {
+  UNSORTED_PROJECT_ID,
+  type CreateSpaceInput,
+  type ProjectCapabilityKind,
   type ProjectGoalStatus,
   type ProjectSourceAccess,
   type ProjectSourceInput,
   type ProjectStatus,
+  type PromoteToSpaceInput,
   type UpdateProjectInput,
 } from '../../shared/contract/project';
 import type { ArtifactIssue, ArtifactIssueStatus } from '../../shared/contract/productClosure';
@@ -40,6 +57,13 @@ const GOAL_STATUSES: ReadonlySet<string> = new Set(['active', 'met', 'aborted', 
 
 interface ListPayload {
   includeArchived?: boolean;
+  spacesOnly?: boolean;
+}
+type CreateSpacePayload = Partial<CreateSpaceInput>;
+interface CreatePayload {
+  name?: string;
+  workspacePath?: string | null;
+  description?: string;
 }
 interface DetailPayload {
   projectId?: string;
@@ -71,6 +95,11 @@ interface RolePayload {
   projectId?: string;
   roleId?: string;
 }
+interface CapabilitySelectionPayload {
+  projectId?: string;
+  kind?: string;
+  capabilityId?: string;
+}
 interface ArtifactIssuesPayload {
   artifactIds?: string[];
   status?: ArtifactIssueStatus;
@@ -78,6 +107,14 @@ interface ArtifactIssuesPayload {
 }
 interface SourcesPayload {
   projectId?: string;
+}
+interface CreateInvitePayload {
+  projectId?: string;
+  expiresInHours?: number;
+  maxUses?: number;
+}
+interface InviteCodePayload {
+  code?: string;
 }
 type UpdateProjectPayload = Partial<UpdateProjectInput>;
 interface SourceMutationPayload {
@@ -94,17 +131,207 @@ function invalid(message: string): IPCResponse {
 function notFound(message: string): IPCResponse {
   return { success: false, error: { code: 'NOT_FOUND', message } };
 }
+function errorResponse(error: unknown): IPCResponse {
+  logger.error('Project IPC error', error);
+  if (error instanceof ProjectCollaborationError) {
+    return {
+      success: false,
+      error: { code: error.code, message: error.message },
+    };
+  }
+  return {
+    success: false,
+    error: { code: 'PROJECT_ERROR', message: error instanceof Error ? error.message : 'Unknown error' },
+  };
+}
+
+function readConnectorSelectionPayload(
+  payload: unknown,
+): { projectId: string; kind: ProjectCapabilityKind; capabilityId: string } | IPCResponse {
+  const { projectId, kind, capabilityId } = (payload ?? {}) as CapabilitySelectionPayload;
+  if (!projectId?.trim() || !capabilityId?.trim()) {
+    return invalid('projectId and capabilityId are required');
+  }
+  if (kind !== 'connector') {
+    return invalid('kind must be connector; skills and automations use their existing project models');
+  }
+  return {
+    projectId: projectId.trim(),
+    kind,
+    capabilityId: capabilityId.trim(),
+  };
+}
 
 export function registerProjectHandlers(ipcMain: IpcMain): void {
   ipcMain.handle(IPC_DOMAINS.PROJECT, async (_event, request: IPCRequest): Promise<IPCResponse> => {
     const { action, payload } = request;
     const svc = getProjectService();
+    const collaboration = getProjectCollaborationService();
     const now = Date.now();
     try {
       switch (action) {
         case 'list': {
           const { includeArchived } = (payload ?? {}) as ListPayload;
           return { success: true, data: svc.listProjects(Boolean(includeArchived)) };
+        }
+
+        case 'listWithActivity': {
+          const { includeArchived, spacesOnly } = (payload ?? {}) as ListPayload;
+          return {
+            success: true,
+            data: svc.listProjectsWithActivity(Boolean(includeArchived), Boolean(spacesOnly)),
+          };
+        }
+
+        case 'createSpace': {
+          const { name, description, workspacePath, trustAcknowledged } = (payload ?? {}) as CreateSpacePayload;
+          if (!name?.trim()) return invalid('name is required');
+          if (workspacePath !== undefined && workspacePath !== null && !workspacePath.trim()) {
+            return invalid('workspacePath must be a non-empty path when provided');
+          }
+          const created = await svc.createSpace({
+            name: name.trim(),
+            description,
+            workspacePath,
+            trustAcknowledged,
+          }, now);
+          return { success: true, data: created };
+        }
+
+        case 'promoteToSpace': {
+          const { projectId, trustAcknowledged } = (payload ?? {}) as Partial<PromoteToSpaceInput>;
+          if (!projectId?.trim()) return invalid('projectId is required');
+          if (projectId === UNSORTED_PROJECT_ID) {
+            return invalid('the unsorted project cannot be promoted to a space');
+          }
+          const promoted = await svc.promoteToSpace(projectId.trim(), now, { trustAcknowledged });
+          return promoted ? { success: true, data: promoted } : notFound('project not found');
+        }
+
+        case 'promoteToCloudSpace': {
+          const { projectId } = (payload ?? {}) as DetailPayload;
+          if (!projectId?.trim()) return invalid('projectId is required');
+          if (projectId === UNSORTED_PROJECT_ID) {
+            return invalid('the unsorted project cannot be promoted to a cloud space');
+          }
+          return {
+            success: true,
+            data: await collaboration.promoteToCloudSpace(projectId.trim()),
+          };
+        }
+
+        case 'createInvite': {
+          const { projectId, expiresInHours, maxUses } = (payload ?? {}) as CreateInvitePayload;
+          if (
+            !projectId?.trim()
+            || typeof expiresInHours !== 'number'
+            || typeof maxUses !== 'number'
+          ) {
+            return invalid('projectId, expiresInHours and maxUses are required');
+          }
+          return {
+            success: true,
+            data: await collaboration.createInvite(projectId.trim(), {
+              expiresInHours,
+              maxUses,
+            }),
+          };
+        }
+
+        case 'revokeInvite': {
+          const { code } = (payload ?? {}) as InviteCodePayload;
+          if (!code?.trim()) return invalid('code is required');
+          return {
+            success: true,
+            data: await collaboration.revokeInvite(code.trim()),
+          };
+        }
+
+        case 'redeemInvite': {
+          const { code } = (payload ?? {}) as InviteCodePayload;
+          if (!code?.trim()) return invalid('code is required');
+          return {
+            success: true,
+            data: await collaboration.redeemInvite(code.trim()),
+          };
+        }
+
+        case 'listMembers': {
+          const { projectId } = (payload ?? {}) as DetailPayload;
+          if (!projectId?.trim()) return invalid('projectId is required');
+          return {
+            success: true,
+            data: await collaboration.listMembers(projectId.trim()),
+          };
+        }
+
+        case 'listCloudCards': {
+          const { projectId } = (payload ?? {}) as DetailPayload;
+          if (!projectId?.trim()) return invalid('projectId is required');
+          return {
+            success: true,
+            data: await collaboration.listCloudCards(projectId.trim()),
+          };
+        }
+
+        case 'resyncCloudCards': {
+          const { projectId } = (payload ?? {}) as DetailPayload;
+          if (!projectId?.trim()) return invalid('projectId is required');
+          return {
+            success: true,
+            data: await getCollabCardSyncService().resyncProjectCards(projectId.trim()),
+          };
+        }
+
+        case 'listCapabilitySelections': {
+          const { projectId } = (payload ?? {}) as DetailPayload;
+          if (!projectId?.trim()) return invalid('projectId is required');
+          const selections = svc.listCapabilitySelections(projectId);
+          return selections
+            ? { success: true, data: selections }
+            : notFound('project not found');
+        }
+
+        case 'selectCapability': {
+          const parsed = readConnectorSelectionPayload(payload);
+          if ('success' in parsed) return parsed;
+          const selection = svc.selectCapability(
+            parsed.projectId,
+            parsed.kind,
+            parsed.capabilityId,
+            now,
+          );
+          return selection
+            ? { success: true, data: selection }
+            : notFound('project not found');
+        }
+
+        case 'unselectCapability': {
+          const parsed = readConnectorSelectionPayload(payload);
+          if ('success' in parsed) return parsed;
+          const result = svc.unselectCapability(
+            parsed.projectId,
+            parsed.kind,
+            parsed.capabilityId,
+            now,
+          );
+          return result
+            ? { success: true, data: result }
+            : notFound('project not found');
+        }
+
+        case 'create': {
+          const { name, workspacePath, description } = (payload ?? {}) as CreatePayload;
+          if (!name?.trim()) return invalid('name is required');
+          const created = await svc.createProject(
+            {
+              name: name.trim(),
+              workspacePath: typeof workspacePath === 'string' ? workspacePath : null,
+              description: typeof description === 'string' ? description : undefined,
+            },
+            now,
+          );
+          return { success: true, data: created };
         }
 
         case 'detail': {
@@ -285,11 +512,7 @@ export function registerProjectHandlers(ipcMain: IpcMain): void {
           return { success: false, error: { code: 'UNKNOWN_ACTION', message: `Unknown project action: ${action}` } };
       }
     } catch (error) {
-      logger.error('Project IPC error', error);
-      return {
-        success: false,
-        error: { code: 'PROJECT_ERROR', message: error instanceof Error ? error.message : 'Unknown error' },
-      };
+      return errorResponse(error);
     }
   });
 

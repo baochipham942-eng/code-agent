@@ -84,6 +84,7 @@ describe('RunOverview memory link', () => {
     expect(html).not.toContain('Tasks');
     expect(html).not.toContain('Outputs');
     expect(html).not.toContain('border-emerald-500');
+    expect(html).not.toContain('border-badge-success');
   });
 });
 

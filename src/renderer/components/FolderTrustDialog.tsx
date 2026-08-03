@@ -2,14 +2,9 @@ import React from 'react';
 import { ShieldAlert } from 'lucide-react';
 import { ConfirmDialog } from './composites/ConfirmDialog';
 import { useI18n } from '../hooks/useI18n';
+import { FolderTrustDangerList, type FolderTrustDangerousItem } from './FolderTrustDangerList';
 
-interface FolderTrustDangerousItem {
-  kind: string;
-  displayPath: string;
-  label: string;
-  risk: string;
-  gated: boolean;
-}
+export type { FolderTrustDangerousItem };
 
 export interface FolderTrustEvaluationView {
   state: 'trusted' | 'blocked' | 'untrusted';
@@ -23,24 +18,44 @@ export interface FolderTrustEvaluationView {
 interface FolderTrustDialogProps {
   evaluation: FolderTrustEvaluationView | null;
   isBusy?: boolean;
+  /**
+   * 默认 true：零危险项的未信任评估不渲染（App 启动预检语义——干净目录不值得打扰）。
+   * 技能信任门等场景撞的是「未信任/失效」本身，零危险项也要给完整确认弹窗 → 传 false；
+   * 此时不渲染危险项清单，只显示说明文案（identityChanged 警告条照常）。
+   */
+  requireDangerousItems?: boolean;
   onTrust: () => void;
   onBlock: () => void;
   onOpenSettings: () => void;
 }
 
-function riskText(risk: string, labels: Record<string, string>): string {
-  return labels[risk] ?? risk;
+/**
+ * 只有「用户还没做决定」才需要问。`trusted` 和 `blocked` 都是已落库的决定
+ * （见 folderTrustService 的 FolderTrustDecisionState），只有 `untrusted`
+ * 表示无记录或目录身份变了需要重新确认。
+ *
+ * 2026-07-27 修：此前三处调用点都写成 `state !== 'trusted'`，把「已阻止」也当成
+ * 未决定，导致 ① 点「阻止项目配置」后弹窗永不消失；② 阻止过的目录每次启动都再问一遍。
+ */
+export function needsFolderTrustDecision(
+  evaluation: FolderTrustEvaluationView | null,
+  requireDangerousItems = true,
+): evaluation is FolderTrustEvaluationView {
+  return !!evaluation
+    && evaluation.state === 'untrusted'
+    && (!requireDangerousItems || evaluation.dangerousItems.length > 0);
 }
 
 export const FolderTrustDialog: React.FC<FolderTrustDialogProps> = ({
   evaluation,
   isBusy = false,
+  requireDangerousItems = true,
   onTrust,
   onBlock,
   onOpenSettings,
 }) => {
   const { t } = useI18n();
-  if (!evaluation || evaluation.state === 'trusted' || evaluation.dangerousItems.length === 0) {
+  if (!needsFolderTrustDecision(evaluation, requireDangerousItems)) {
     return null;
   }
 
@@ -55,32 +70,16 @@ export const FolderTrustDialog: React.FC<FolderTrustDialogProps> = ({
       </div>
 
       {evaluation.identityChanged && (
-        <div className="rounded border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-amber-100">
+        <div className="rounded border border-badge-warning/30 bg-amber-500/10 px-3 py-2 text-badge-warning">
           {copy.identityChanged}
         </div>
       )}
 
-      <div className="space-y-2">
-        <p className="text-zinc-400">{copy.detected}</p>
-        <div className="max-h-56 space-y-2 overflow-auto pr-1">
-          {evaluation.dangerousItems.map((item) => (
-            <div
-              key={`${item.kind}:${item.displayPath}`}
-              className="rounded-md border border-zinc-800 bg-zinc-950/70 px-3 py-2"
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="text-zinc-100">{item.label}</p>
-                  <p className="mt-1 font-mono text-xs text-zinc-500 break-all">{item.displayPath}</p>
-                </div>
-                <span className="shrink-0 rounded border border-zinc-700 px-2 py-0.5 text-xs text-zinc-300">
-                  {riskText(item.risk, copy.risks)}
-                </span>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
+      {evaluation.dangerousItems.length > 0 ? (
+        <FolderTrustDangerList items={evaluation.dangerousItems} />
+      ) : (
+        <p className="text-zinc-400">{copy.emptyDangerNote}</p>
+      )}
 
       <div className="flex gap-2">
         <button
@@ -89,14 +88,6 @@ export const FolderTrustDialog: React.FC<FolderTrustDialogProps> = ({
           onClick={onOpenSettings}
         >
           {copy.openSettings}
-        </button>
-        <button
-          type="button"
-          className="rounded-md border border-red-500/40 px-3 py-1.5 text-xs text-red-200 hover:bg-red-500/10"
-          onClick={onBlock}
-          disabled={isBusy}
-        >
-          {isBusy ? copy.saving : copy.block}
         </button>
       </div>
     </div>

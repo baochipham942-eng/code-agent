@@ -64,6 +64,9 @@ export function sanitizeConversationMessageSnapshot(
     ...(attachment.sheetCount !== undefined ? { sheetCount: attachment.sheetCount } : {}),
     ...(attachment.rowCount !== undefined ? { rowCount: attachment.rowCount } : {}),
     ...(attachment.language !== undefined ? { language: attachment.language } : {}),
+    // appshot 元数据（非路径、非字节）：回放时气泡仍能渲染同款卡片；
+    // 截图本体按 id 派生路径（appshots/<requestId>.png）从本地惰性读取。
+    ...(attachment.appshot !== undefined ? { appshot: attachment.appshot } : {}),
     contentDigest: attachmentContentDigest(attachment as unknown as Record<string, unknown>),
   }));
   const artifacts = sanitized.artifacts?.map((artifact) => ({

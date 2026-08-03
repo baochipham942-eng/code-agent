@@ -1,5 +1,6 @@
 import type { Response } from 'express';
 import type { AgentEvent, SessionStatus } from '../../shared/contract';
+import { IPC_CHANNELS } from '../../shared/ipc';
 import { MessageDeltaAccumulator } from '../../host/protocol/messageDeltaAccumulator';
 import { createAgentRunSSEBatcher } from '../helpers/agentRunSSEBatcher';
 import { broadcastSSE, sendSSE } from '../helpers/sse';
@@ -14,6 +15,17 @@ interface AgentRunControllerDeps {
   runHandle?: RunHandle;
   logger: WebRouteLogger;
   tryGetSessionManager: () => Promise<AgentSessionManagerLike | null>;
+  /**
+   * 这一轮没有直连客户端（队列抽干跑的就是这种：res 是个丢弃水槽）时置 true。
+   * 事件除了写进 res，还要走全局 broadcast，否则正连着的前端一个字都收不到——
+   * 消息照样落库、模型照样计费，但转录区不长东西、排队卡片也不消失。
+   * 直连轮不能开：客户端已经从自己的响应流拿到了，再广播就是重复投递。
+   */
+  mirrorToBroadcast?: boolean;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
 }
 
 function isTerminalErrorEvent(event: AgentEvent): boolean {
@@ -66,7 +78,44 @@ export class AgentRunController {
     return !this.deps.res.writableEnded && !this.deps.res.destroyed;
   }
 
+  /**
+   * per-run 流已经写不动了（用户点取消 = 关 SSE，或响应已 end），但这条事件必须到得了 renderer。
+   *
+   * surface_execution 是唯一一类「宿主还在往下跑、renderer 必须知道」的事件：surface 投影的
+   * 唯一进货渠道是「收到事件 → 拉全量快照」，终态/cleanup 事件丢了，行内紧凑条、composer
+   * 「执行中」、chrome 条绿点就一起冻在 running（2026-08-02 排查报告 §2.2 腿 A）。
+   * 直连轮已经关流 ⇒ 广播不会重复投递（canWriteSSE() 为真时不走这条）。
+   */
+  private shouldBroadcastAfterStreamClosed(event: string): boolean {
+    return event === 'surface_execution' && !this.deps.mirrorToBroadcast && !this.canWriteSSE();
+  }
+
   emitSSE(event: string, data: unknown): void {
+    if (this.deps.mirrorToBroadcast || this.shouldBroadcastAfterStreamClosed(event)) {
+      // 必须包成 agent:event 信封再广播，不能把原始事件名当 channel 直接发。
+      //
+      // 直连轮走的是 /api/agent/run 的响应流：httpTransport 的 processStream 把流上每条
+      // `event: <type>` 一律转发进 `agent:event` 监听器（{type,data,sessionId,seq}）。
+      // 而全局 /api/events 是**按 channel 名严格分发**的（httpTransport dispatchSSEPayload
+      // → listeners.get(payload.channel)），renderer 只注册了 agent:event / agent:event:batch，
+      // 没有任何地方注册 turn_start / message_delta 这些原始名。
+      // 所以 broadcastSSE('turn_start', …) 这种发法，事件在分发入口就被静默丢弃。
+      //
+      // 后果（2026-08-01 C3 真机 + wire 实测）：刷新页面后宿主自己起的那一轮（队列抽干）
+      // 全程在写库，wire 上 116 条 stream_tool_call_delta 都发了，新页面一条也收不到——
+      // 屏幕永远空闲、排队卡一直邀请你「立即发送」，一点就跟正在跑的那轮撞车。
+      //
+      // 只包镜像这一路：直连轮继续用原格式写 res，两边在 renderer 侧得到同一个信封。
+      const payload = isRecord(data) ? data : undefined;
+      broadcastSSE(IPC_CHANNELS.AGENT_EVENT, {
+        type: event,
+        data,
+        // 这几个调用方（task_start / tool_warning / tool_call_local）不过 batcher，
+        // data 里没有 sessionId；缺了它 renderer 会把事件误算到当前会话头上。
+        sessionId: typeof payload?.sessionId === 'string' ? payload.sessionId : this.deps.sessionId,
+        seq: typeof payload?.seq === 'number' ? payload.seq : undefined,
+      });
+    }
     if (!this.canWriteSSE()) return;
     try {
       sendSSE(this.deps.res, event, data);

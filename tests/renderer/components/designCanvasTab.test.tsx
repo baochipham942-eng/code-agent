@@ -5,17 +5,39 @@
 //  1) WorkbenchTabId 接受 'design-canvas' 成员（经 appStore.openWorkbenchTab 验证）；
 //  2) DesignCanvasTab 挂载时执行画布恢复 effect——runDir 非空且
 //     nodes 为空 → 调 loadCanvasDoc(runDir)；runDir 为空 → 不调。
-//  3) 画布 tab 浮层挂载真实 DesignCostHistory，默认收起仍显示累计花费，展开后显示时间线。
+//  3) 边栏归一（2026-08-01 工单①）：图层/设计历史合并成一个面板（面板内双 tab），
+//     右缘细边栏只剩一个图标；点图标浮出，再点图标 / 点画布空白收回。
 // konva 在 jsdom 下不可渲染，故 mock 掉 ./DesignCanvas，测试只聚焦容器 + effect。
 // ---------------------------------------------------------------------------
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, cleanup, fireEvent, screen } from '@testing-library/react';
+import { render, cleanup, fireEvent, screen, act } from '@testing-library/react';
 import React from 'react';
 import type { CanvasImageNode } from '../../../src/renderer/components/design/designCanvasTypes';
 
 // ---- mock konva 画布本体（jsdom 下 Stage 渲染会炸），用占位替换 -------------
+// 占位捕获 props：sidePanelOpen / sidePanelTab（细边栏图标 ↔ 画布归一面板的接线）与
+// onCanvasBlankPointerDown（点画布空白收回面板），点击占位即视为「点画布空白」。
+const designCanvasProps = vi.hoisted(() => ({
+  current: null as {
+    sidePanelOpen?: boolean;
+    sidePanelTab?: 'layers' | 'history';
+    onSidePanelTabChange?: (tab: 'layers' | 'history') => void;
+    onCanvasBlankPointerDown?: () => void;
+  } | null,
+}));
 vi.mock('../../../src/renderer/components/design/DesignCanvas', () => ({
-  DesignCanvas: () => React.createElement('div', { 'data-testid': 'design-canvas-stub' }),
+  DesignCanvas: (props: {
+    sidePanelOpen?: boolean;
+    sidePanelTab?: 'layers' | 'history';
+    onSidePanelTabChange?: (tab: 'layers' | 'history') => void;
+    onCanvasBlankPointerDown?: () => void;
+  }) => {
+    designCanvasProps.current = props;
+    return React.createElement('div', {
+      'data-testid': 'design-canvas-stub',
+      onClick: () => props.onCanvasBlankPointerDown?.(),
+    });
+  },
 }));
 
 // ---- mock 持久化模块：拦 loadCanvasDoc 断言被调，并返回一个空 doc ----------
@@ -89,6 +111,7 @@ describe('DesignCanvasTab 画布恢复 effect', () => {
       width: 320,
       height: 180,
       createdAt: 1,
+      createdBy: 'user',
     }];
     render(<DesignCanvasTab />);
     expect(loadCanvasDoc).not.toHaveBeenCalled();
@@ -117,25 +140,11 @@ const imageNode = (
   parentId,
   label: id,
   costCny,
+  createdBy: 'user',
 });
 
-describe('DesignCanvasTab 成本与历史浮层', () => {
-  it('喂入真实画布节点后，展开态渲染版本时间线与准确累计花费', () => {
-    storeState.nodes = [
-      imageNode('初版', 0.14, 1),
-      imageNode('高亮标题', 0.28, 2, '初版'),
-    ];
-
-    render(<DesignCanvasTab />);
-    fireEvent.click(screen.getByRole('button', { name: '展开设计历史' }));
-
-    expect(screen.getByTestId('design-cost-history-content').dataset.collapsed).toBe('false');
-    expect(screen.getByText('初版')).toBeTruthy();
-    expect(screen.getByText('高亮标题')).toBeTruthy();
-    expect(screen.getByText('¥0.42')).toBeTruthy();
-  });
-
-  it('默认收起时不渲染版本时间线，但仍显示真实节点的累计花费', () => {
+describe('DesignCanvasTab 面板细边栏（工单①：图层/历史归一成单图标单面板双 tab）', () => {
+  it('默认收起：无浮出面板，右缘细边栏只剩一个图标（收起态）', () => {
     storeState.nodes = [
       imageNode('初版', 0.14, 1),
       imageNode('高亮标题', 0.28, 2, '初版'),
@@ -143,21 +152,57 @@ describe('DesignCanvasTab 成本与历史浮层', () => {
 
     render(<DesignCanvasTab />);
 
-    expect(screen.getByTestId('design-cost-history-content').dataset.collapsed).toBe('true');
-    expect(screen.getByRole('button', { name: '展开设计历史' }).getAttribute('aria-expanded')).toBe(
-      'false',
-    );
-    expect(screen.queryByText('初版')).toBeNull();
-    expect(screen.getByText('¥0.42')).toBeTruthy();
+    expect(screen.getByTestId('design-canvas-panel-rail')).toBeTruthy();
+    const toggle = screen.getByTestId('design-canvas-sidepanel-toggle');
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    // 旧的两个独立图标已归一，不复存在
+    expect(screen.queryByTestId('design-canvas-layers-toggle')).toBeNull();
+    expect(screen.queryByTestId('design-canvas-history-toggle')).toBeNull();
+    // 归一面板默认不浮出
+    expect(designCanvasProps.current?.sidePanelOpen).toBe(false);
   });
 
-  it('免费档节点在画布 tab 显示「免费」而非 ¥0.00', () => {
-    storeState.nodes = [imageNode('免费版本', 0, 1)];
+  it('无节点时归一图标仍在（历史 tab 空画布也可达）', () => {
+    storeState.nodes = [];
+    render(<DesignCanvasTab />);
+    expect(screen.getByTestId('design-canvas-sidepanel-toggle')).toBeTruthy();
+  });
+
+  it('点图标浮出面板（有节点默认图层 tab）；再点图标 / 点画布空白收回', () => {
+    storeState.nodes = [imageNode('初版', 0.14, 1)];
 
     render(<DesignCanvasTab />);
-    fireEvent.click(screen.getByRole('button', { name: '展开设计历史' }));
+    fireEvent.click(screen.getByRole('button', { name: '展开画布面板' }));
+    expect(designCanvasProps.current?.sidePanelOpen).toBe(true);
+    expect(designCanvasProps.current?.sidePanelTab).toBe('layers');
 
-    expect(screen.getAllByText('免费').length).toBeGreaterThan(0);
-    expect(screen.queryByText('¥0.00')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '收起画布面板' }));
+    expect(designCanvasProps.current?.sidePanelOpen).toBe(false);
+
+    // 再打开，点画布空白（stub 点击）→ 收回
+    fireEvent.click(screen.getByRole('button', { name: '展开画布面板' }));
+    expect(designCanvasProps.current?.sidePanelOpen).toBe(true);
+    fireEvent.click(screen.getByTestId('design-canvas-stub'));
+    expect(designCanvasProps.current?.sidePanelOpen).toBe(false);
+  });
+
+  it('空画布打开面板默认落「历史」tab（没有图层可言）', () => {
+    storeState.nodes = [];
+    render(<DesignCanvasTab />);
+    fireEvent.click(screen.getByRole('button', { name: '展开画布面板' }));
+    expect(designCanvasProps.current?.sidePanelOpen).toBe(true);
+    expect(designCanvasProps.current?.sidePanelTab).toBe('history');
+  });
+
+  it('面板内 tab 切换经 onSidePanelTabChange 回流（记住用户最后看的 tab）', () => {
+    storeState.nodes = [imageNode('初版', 0.14, 1)];
+    render(<DesignCanvasTab />);
+    fireEvent.click(screen.getByRole('button', { name: '展开画布面板' }));
+    act(() => designCanvasProps.current?.onSidePanelTabChange?.('history'));
+    expect(designCanvasProps.current?.sidePanelTab).toBe('history');
+    // 收回再开，保持历史 tab（不强制跳回图层）
+    fireEvent.click(screen.getByRole('button', { name: '收起画布面板' }));
+    fireEvent.click(screen.getByRole('button', { name: '展开画布面板' }));
+    expect(designCanvasProps.current?.sidePanelTab).toBe('history');
   });
 });

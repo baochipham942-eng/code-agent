@@ -158,21 +158,42 @@ describe('FileSwarmTraceRepository', () => {
     expect(detail!.agents[0].tokensOut).toBe(100);
   });
 
-  it('startRun 同 runId 二次写入时替换旧 JSONL，不残留旧事件', () => {
+  it('startRun 同 runId 二次写入与迟到 close 不覆盖首个终态', () => {
     repo.startRun(startRun({ id: 'run-replace', startedAt: 1_000_000, totalAgents: 1 }));
     repo.appendEvent(appendEvent({ runId: 'run-replace', seq: 0, timestamp: 1_500, summary: 'old-event' }));
     repo.closeRun(closeRun({ id: 'run-replace', endedAt: 2_000_000, completedCount: 1 }));
 
     repo.startRun(startRun({ id: 'run-replace', startedAt: 3_000_000, totalAgents: 2 }));
-    repo.appendEvent(appendEvent({ runId: 'run-replace', seq: 0, timestamp: 3_500, summary: 'new-event' }));
+    repo.appendEvent(appendEvent({ runId: 'run-replace', seq: 1, timestamp: 3_500, summary: 'late-event' }));
+    repo.closeRun(closeRun({ id: 'run-replace', status: 'failed', endedAt: 4_000_000 }));
 
     const files = fs.readdirSync(dir).filter((f) => f.endsWith('run-replace.jsonl'));
     expect(files).toHaveLength(1);
     const detail = repo.getRunDetail('run-replace');
-    expect(detail!.run.startedAt).toBe(3_000_000);
-    expect(detail!.run.totalAgents).toBe(2);
-    expect(detail!.run.status).toBe('running');
-    expect(detail!.events.map((e) => e.summary)).toEqual(['new-event']);
+    expect(detail!.run.startedAt).toBe(1_000_000);
+    expect(detail!.run.totalAgents).toBe(1);
+    expect(detail!.run.status).toBe('completed');
+    expect(detail!.events.map((e) => e.summary)).toEqual(['old-event', 'late-event']);
+  });
+
+  it('agent 首个终态不可被迟到状态覆盖', () => {
+    repo.startRun(startRun({ id: 'run-agent-latch', startedAt: 1_000_000 }));
+    repo.upsertAgent(upsertAgent({ runId: 'run-agent-latch', agentId: 'a1', status: 'completed', tokensIn: 10 }));
+    repo.upsertAgent(upsertAgent({ runId: 'run-agent-latch', agentId: 'a1', status: 'failed', tokensIn: 999, error: 'late' }));
+
+    expect(repo.getRunDetail('run-agent-latch')?.agents[0]).toMatchObject({
+      status: 'completed',
+      tokensIn: 10,
+      error: null,
+    });
+  });
+
+  it('run 已终态后拒绝新增 agent 状态', () => {
+    repo.startRun(startRun({ id: 'run-closed-latch', startedAt: 1_000_000 }));
+    repo.closeRun(closeRun({ id: 'run-closed-latch', status: 'cancelled', endedAt: 2_000_000 }));
+    repo.upsertAgent(upsertAgent({ runId: 'run-closed-latch', agentId: 'late', status: 'running' }));
+
+    expect(repo.getRunDetail('run-closed-latch')?.agents).toEqual([]);
   });
 
   it('opaque storage id keeps the same logical runId in two sessions as separate files', () => {

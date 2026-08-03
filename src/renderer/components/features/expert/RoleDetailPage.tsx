@@ -31,6 +31,7 @@ import { useI18n } from "../../../hooks/useI18n";
 import { useMcpServerStates } from "../../../hooks/useMcpServerStates";
 import { resolveSessionConnectorIds } from "@shared/contract/expertConnectors";
 import { RoleIcon } from "../shared/RoleIcon";
+import { getRoleAvatarAsset } from "./roleAvatarAssets";
 import { SettingsSection } from "../settings/SettingsLayout";
 import { RoleBindingsSection } from "../settings/tabs/RoleBindingsSection";
 import { useAppStore } from "../../../stores/appStore";
@@ -133,10 +134,10 @@ const BoundAutomationsSection: React.FC<{ jobs?: RoleBoundCronJob[] }> = ({ jobs
         return <div key={job.id} data-testid={`role-bound-automation-${job.id}`} className="rounded-lg border border-zinc-700/60 bg-zinc-900/40 p-3">
           <div className="flex flex-wrap items-start justify-between gap-2">
             <div className="min-w-0"><div className="truncate text-sm text-zinc-200">{job.name}</div><div className="mt-1 text-xs text-zinc-500">{formatAutomationSchedule(job.schedule, text)} · {nextRun}</div></div>
-            <div className="flex flex-wrap items-center gap-1.5 text-[11px]"><span className={`rounded px-1.5 py-0.5 ${job.enabled ? "bg-emerald-500/10 text-emerald-300" : "bg-zinc-700/60 text-zinc-400"}`}>{job.enabled ? text.automationStatusEnabled : text.automationStatusDisabled}</span><span className="rounded bg-violet-500/10 px-1.5 py-0.5 text-violet-200">{job.actionType === "agent" ? text.automationTypeAgent : text.automationTypeRoleWake}</span></div>
+            <div className="flex flex-wrap items-center gap-1.5 text-[11px]"><span className={`rounded px-1.5 py-0.5 ${job.enabled ? "bg-emerald-500/10 text-badge-success" : "bg-zinc-700/60 text-zinc-400"}`}>{job.enabled ? text.automationStatusEnabled : text.automationStatusDisabled}</span><span className="rounded bg-violet-500/10 px-1.5 py-0.5 text-badge-accent">{job.actionType === "agent" ? text.automationTypeAgent : text.automationTypeRoleWake}</span></div>
           </div>
-          {job.actionType === "role_wake" ? <p data-testid={`role-bound-automation-managed-${job.id}`} className="mt-2 text-xs text-amber-200/80">{text.automationRoleWakeManaged}</p> : null}
-          <button /* ds-allow:button: 详情行跳转自动化面板需保持紧凑文字动作 */ type="button" onClick={() => setShowCronCenter(true)} className="mt-2 text-xs text-violet-300 hover:text-violet-200">{text.automationOpenPanel}</button>
+          {job.actionType === "role_wake" ? <p data-testid={`role-bound-automation-managed-${job.id}`} className="mt-2 text-xs text-badge-warning/80">{text.automationRoleWakeManaged}</p> : null}
+          <button /* ds-allow:button: 详情行跳转自动化面板需保持紧凑文字动作 */ type="button" onClick={() => setShowCronCenter(true)} className="mt-2 text-xs text-badge-accent hover:text-badge-accent">{text.automationOpenPanel}</button>
         </div>;
       })}
     </div>}
@@ -170,13 +171,13 @@ const RecommendedConnectors: React.FC<{ connectors?: RoleRecommendedConnector[] 
             <li key={connector.id} className="rounded border border-zinc-800 bg-zinc-900/40 px-3 py-2">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-sm text-zinc-100">{connector.label}</span>
-                <span className={`rounded px-1.5 py-0.5 text-[10px] ${connector.level === 'core' ? 'bg-emerald-500/15 text-emerald-200' : 'bg-zinc-700/60 text-zinc-300'}`}>
+                <span className={`rounded px-1.5 py-0.5 text-[10px] ${connector.level === 'core' ? 'bg-emerald-500/15 text-badge-success' : 'bg-zinc-700/60 text-zinc-300'}`}>
                   {connector.level === 'core' ? skillsText.connectorCore : skillsText.connectorOptional}
                 </span>
                 <span className="text-[10px] text-zinc-500">
                   {defaultOnIds.has(connector.id) ? skillsText.connectorDefaultOn : skillsText.connectorDefaultOff}
                 </span>
-                <span className={`ml-auto text-[10px] ${connected ? 'text-emerald-300' : 'text-amber-300'}`}>
+                <span className={`ml-auto text-[10px] ${connected ? 'text-badge-success' : 'text-badge-warning'}`}>
                   {connected ? skillsText.connectorConnected : skillsText.connectorMissing}
                 </span>
                 {!connected && (
@@ -218,8 +219,8 @@ const SkillsEditor: React.FC<{ roleId: string; equipment: Equipment; onSaved: ()
       <label className="block space-y-1 text-xs text-zinc-400"><span>{text.maxIterations}</span><input data-testid="role-equipment-max-iterations" type="number" min={1} max={200} value={draft.maxIterations} onChange={(event) => setDraft({ ...draft, maxIterations: Math.max(1, Math.min(200, Number(event.target.value) || 1)) })} className="w-full rounded border border-zinc-700 bg-zinc-950/70 px-2 py-1.5 text-sm text-zinc-200" /></label>
       <fieldset><legend className="mb-1 text-xs text-zinc-400">{text.skills}</legend><div className="grid max-h-40 grid-cols-2 gap-1 overflow-auto rounded border border-zinc-800 p-2">{equipment.availableSkills.map((skill) => <label key={skill} className="flex items-center gap-1.5 text-xs text-zinc-300"><input type="checkbox" checked={draft.skills.includes(skill)} onChange={() => toggle("skills", skill)} />{skill}</label>)}</div></fieldset>
       <fieldset><legend className="mb-1 text-xs text-zinc-400">{text.tools}</legend><div className="grid max-h-48 grid-cols-2 gap-1 overflow-auto rounded border border-zinc-800 p-2">{equipment.availableTools.map((tool) => <label key={tool} className="flex items-center gap-1.5 text-xs text-zinc-300"><input type="checkbox" checked={draft.tools.includes(tool)} onChange={() => toggle("tools", tool)} />{tool}</label>)}</div></fieldset>
-      <button /* ds-allow:button: 技能表单的紧凑保存按钮，Button primitive 会改变布局 */ data-testid="role-equipment-save" type="button" disabled={busy} onClick={() => void save()} className="rounded bg-emerald-500/20 px-3 py-1.5 text-xs text-emerald-200 disabled:opacity-50">{busy ? skillsText.saving : skillsText.save}</button>
-      {error ? <div className="text-xs text-red-400">{error}</div> : null}
+      <button /* ds-allow:button: 技能表单的紧凑保存按钮，Button primitive 会改变布局 */ data-testid="role-equipment-save" type="button" disabled={busy} onClick={() => void save()} className="rounded bg-emerald-500/20 px-3 py-1.5 text-xs text-badge-success disabled:opacity-50">{busy ? skillsText.saving : skillsText.save}</button>
+      {error ? <div className="text-xs text-badge-danger">{error}</div> : null}
     </div>
   </SettingsSection>;
 };
@@ -265,10 +266,10 @@ const DefinitionEditor: React.FC<{ roleId: string; definition: string | null; re
   return <SettingsSection title="人设正文" description="直接编辑专家的人设；保存只会替换正文，不会改动 frontmatter。">
     <div data-testid="role-definition-editor" className="space-y-3">
       <textarea data-testid="role-definition-body" value={body} onChange={(event) => setBody(event.target.value)} rows={14} disabled={!definition} className="w-full rounded border border-zinc-700 bg-zinc-950/70 p-2 font-mono text-xs text-zinc-200 focus:outline-none" />
-      <div className="flex flex-wrap items-center gap-2"><button /* ds-allow:button: 人设正文保存的紧凑按钮，primitive 会改变布局 */ data-testid="role-definition-save" type="button" disabled={busy || !definition} onClick={() => void save()} className="rounded bg-emerald-500/20 px-3 py-1.5 text-xs text-emerald-200 disabled:opacity-50">{text.saveDefinition}</button>
-        {restore ? (confirmingRestore ? <><span className="text-xs text-amber-200">{text.restoreWarning}</span><button /* ds-allow:button: 还原确认需紧凑危险操作样式 */ data-testid="role-restore-confirm" type="button" disabled={busy || !restore.available} onClick={() => void restoreFactory()} className="rounded bg-red-900/50 px-2 py-1 text-xs text-red-200 disabled:opacity-50">{text.confirmRestore}</button><button /* ds-allow:button: 还原取消为紧凑文本按钮 */ type="button" onClick={() => setConfirmingRestore(false)} className="px-2 py-1 text-xs text-zinc-400">{text.cancel}</button></> : <button /* ds-allow:button: 还原出厂是紧凑破坏性操作，primitive 会改变布局 */ data-testid="role-restore-factory" type="button" disabled={!restore.available || busy} title={restore.disabledReason} onClick={() => setConfirmingRestore(true)} className="rounded border border-amber-700/60 px-3 py-1.5 text-xs text-amber-200 disabled:opacity-50">{text.restoreFactory}</button>) : null}
+      <div className="flex flex-wrap items-center gap-2"><button /* ds-allow:button: 人设正文保存的紧凑按钮，primitive 会改变布局 */ data-testid="role-definition-save" type="button" disabled={busy || !definition} onClick={() => void save()} className="rounded bg-emerald-500/20 px-3 py-1.5 text-xs text-badge-success disabled:opacity-50">{text.saveDefinition}</button>
+        {restore ? (confirmingRestore ? <><span className="text-xs text-badge-warning">{text.restoreWarning}</span><button /* ds-allow:button: 还原确认需紧凑危险操作样式 */ data-testid="role-restore-confirm" type="button" disabled={busy || !restore.available} onClick={() => void restoreFactory()} className="rounded bg-red-900/50 px-2 py-1 text-xs text-badge-danger disabled:opacity-50">{text.confirmRestore}</button><button /* ds-allow:button: 还原取消为紧凑文本按钮 */ type="button" onClick={() => setConfirmingRestore(false)} className="px-2 py-1 text-xs text-zinc-400">{text.cancel}</button></> : <button /* ds-allow:button: 还原出厂是紧凑破坏性操作，primitive 会改变布局 */ data-testid="role-restore-factory" type="button" disabled={!restore.available || busy} title={restore.disabledReason} onClick={() => setConfirmingRestore(true)} className="rounded border border-badge-warning/60 px-3 py-1.5 text-xs text-badge-warning disabled:opacity-50">{text.restoreFactory}</button>) : null}
       </div>
-      {error ? <div className="text-xs text-red-400">{error}</div> : null}
+      {error ? <div className="text-xs text-badge-danger">{error}</div> : null}
     </div>
   </SettingsSection>;
 };
@@ -314,7 +315,7 @@ const VisualEditor: React.FC<{
   return (
     <SettingsSection title={text.title} description={text.description}>
       {/* E6-3 接入 locallyModified 前，内置角色统一提示：这里拿不到角色包的本地修改状态。 */}
-      {detail.isBuiltin ? <p className="mb-3 rounded-md bg-amber-500/10 px-3 py-2 text-xs text-amber-200">{text.builtinNotice}</p> : null}
+      {detail.isBuiltin ? <p className="mb-3 rounded-md bg-amber-500/10 px-3 py-2 text-xs text-badge-warning">{text.builtinNotice}</p> : null}
       <div className="grid gap-3 md:grid-cols-2">
         <label className="space-y-1 text-xs text-zinc-400">
           <span>{text.displayName}</span>
@@ -348,8 +349,8 @@ const VisualEditor: React.FC<{
         </label>
       </div>
       <div className="mt-3 flex items-center gap-2">
-        <button /* ds-allow:button: 基本信息保存是紧凑的表单提交按钮，当前 Button primitive 会改变布局 */ type="button" disabled={busy} onClick={() => void save()} className="rounded bg-emerald-500/20 px-3 py-1.5 text-xs text-emerald-200 hover:bg-emerald-500/30 disabled:opacity-50">{busy ? text.saving : text.save}</button>
-        {error ? <span className="text-xs text-red-400">{error}</span> : null}
+        <button /* ds-allow:button: 基本信息保存是紧凑的表单提交按钮，当前 Button primitive 会改变布局 */ type="button" disabled={busy} onClick={() => void save()} className="rounded bg-emerald-500/20 px-3 py-1.5 text-xs text-badge-success hover:bg-emerald-500/30 disabled:opacity-50">{busy ? text.saving : text.save}</button>
+        {error ? <span className="text-xs text-badge-danger">{error}</span> : null}
       </div>
     </SettingsSection>
   );
@@ -428,7 +429,7 @@ const MemoryRow: React.FC<MemoryRowProps> = ({ roleId, memory, onChanged }) => {
                 type="button"
                 title={commonText.delete}
                 onClick={() => setConfirmingDelete(true)}
-                className="rounded p-1.5 text-zinc-400 transition-colors hover:bg-red-900/40 hover:text-red-400"
+                className="rounded p-1.5 text-zinc-400 transition-colors hover:bg-red-900/40 hover:text-badge-danger"
               >
                 <Trash2 className="h-3.5 w-3.5" />
               </button>
@@ -436,14 +437,14 @@ const MemoryRow: React.FC<MemoryRowProps> = ({ roleId, memory, onChanged }) => {
           ) : null}
           {confirmingDelete ? (
             <>
-              <span className="text-xs text-red-400">
+              <span className="text-xs text-badge-danger">
                 {roleText.confirmDeleteQuestion}
               </span>
               <button /* ds-allow:button: 删除确认按钮，自定义小尺寸弱化红（bg-red-900/50），与 danger 变体实心红不同 */
                 type="button"
                 disabled={busy}
                 onClick={handleDelete}
-                className="rounded bg-red-900/50 px-2 py-1 text-xs text-red-300 hover:bg-red-900/80 disabled:opacity-50"
+                className="rounded bg-red-900/50 px-2 py-1 text-xs text-badge-danger hover:bg-red-900/80 disabled:opacity-50"
               >
                 {commonText.delete}
               </button>
@@ -492,7 +493,7 @@ const MemoryRow: React.FC<MemoryRowProps> = ({ roleId, memory, onChanged }) => {
           {memory.content}
         </pre>
       )}
-      {error ? <div className="mt-2 text-xs text-red-400">{error}</div> : null}
+      {error ? <div className="mt-2 text-xs text-badge-danger">{error}</div> : null}
     </div>
   );
 };
@@ -539,10 +540,10 @@ const ProactivitySelector: React.FC<{
             type="button"
             disabled={busy}
             onClick={() => void handleSelect(level)}
-            className={`flex w-full items-start gap-3 rounded-lg border p-3 text-left transition-colors ${selected ? "border-emerald-600/70 bg-emerald-900/20" : "border-zinc-700/70 bg-zinc-900/40 hover:border-zinc-500"} ${busy ? "opacity-60" : ""}`}
+            className={`flex w-full items-start gap-3 rounded-lg border p-3 text-left transition-colors ${selected ? "border-badge-success/70 bg-emerald-900/20" : "border-zinc-700/70 bg-zinc-900/40 hover:border-zinc-500"} ${busy ? "opacity-60" : ""}`}
           >
             <div
-              className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border ${selected ? "border-emerald-500" : "border-zinc-600"}`}
+              className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border ${selected ? "border-badge-success" : "border-zinc-600"}`}
             >
               {selected ? (
                 <div className="h-2 w-2 rounded-full bg-emerald-500" />
@@ -550,7 +551,7 @@ const ProactivitySelector: React.FC<{
             </div>
             <div className="min-w-0">
               <div
-                className={`text-sm ${selected ? "text-emerald-300" : "text-zinc-300"}`}
+                className={`text-sm ${selected ? "text-badge-success" : "text-zinc-300"}`}
               >
                 {option.label}
               </div>
@@ -559,7 +560,7 @@ const ProactivitySelector: React.FC<{
           </button>
         );
       })}
-      {error ? <div className="text-xs text-red-400">{error}</div> : null}
+      {error ? <div className="text-xs text-badge-danger">{error}</div> : null}
     </div>
   );
 };
@@ -624,7 +625,7 @@ const QuietHoursEditor: React.FC<{
             type="time"
             value={start}
             onChange={(event) => setStart(event.target.value)}
-            className="rounded-md border border-zinc-700 bg-zinc-950 px-2.5 py-1.5 text-sm text-zinc-200 outline-none focus:border-emerald-600"
+            className="rounded-md border border-zinc-700 bg-zinc-950 px-2.5 py-1.5 text-sm text-zinc-200 outline-none focus:border-badge-success"
           />
         </label>
         <label className="space-y-1 text-xs text-zinc-500">
@@ -634,7 +635,7 @@ const QuietHoursEditor: React.FC<{
             type="time"
             value={end}
             onChange={(event) => setEnd(event.target.value)}
-            className="rounded-md border border-zinc-700 bg-zinc-950 px-2.5 py-1.5 text-sm text-zinc-200 outline-none focus:border-emerald-600"
+            className="rounded-md border border-zinc-700 bg-zinc-950 px-2.5 py-1.5 text-sm text-zinc-200 outline-none focus:border-badge-success"
           />
         </label>
         <button /* ds-allow:button: 免打扰时段使用紧凑行内保存动作 */
@@ -665,7 +666,7 @@ const QuietHoursEditor: React.FC<{
               .replace("{end}", current.quietHours.end)
           : text.quietHoursInactive}
       </div>
-      {error ? <div className="mt-2 text-xs text-red-400">{error}</div> : null}
+      {error ? <div className="mt-2 text-xs text-badge-danger">{error}</div> : null}
     </div>
   );
 };
@@ -746,10 +747,14 @@ export const RoleDetailPage: React.FC<RoleDetailPageProps> = ({ roleId }) => {
   useEffect(() => {
     void loadDetail();
   }, [loadDetail]);
+  // 头像资产按 roleId 查表，命中就替掉页头的 lucide 图标（未命中的自建角色仍走图标）
+  const detailAvatar = getRoleAvatarAsset(roleId);
   return (
     <FullScreenPage testId={`role-detail-page-${roleId}`} variant="inline">
       <FullScreenPageHeader
-        icon={<RoleIcon name={detail?.visual.icon} className="h-5 w-5 text-zinc-300" />}
+        icon={detailAvatar
+          ? <img src={detailAvatar} alt={detail?.visual.displayName || roleId} className="h-7 w-7 rounded-lg object-cover" />
+          : <RoleIcon name={detail?.visual.icon} className="h-5 w-5 text-zinc-300" />}
         title={detail?.visual.displayName || roleId}
         description={detail?.visual.profession || roleText.detail.subtitle}
         onClose={closeDetail}
@@ -760,10 +765,10 @@ export const RoleDetailPage: React.FC<RoleDetailPageProps> = ({ roleId }) => {
       {loading ? (
         <div className="text-sm text-zinc-500">{roleText.loading}</div>
       ) : null}
-      {error ? <div className="text-sm text-red-400">{error}</div> : null}
+      {error ? <div className="text-sm text-badge-danger">{error}</div> : null}
       {detail ? (
         <>
-          {tab === 'basic' ? <RoleBasicTab action={<button /* ds-allow:button: 对话式修改入口，紧凑辅助动作 */ type="button" onClick={() => void startEditRoleChat(roleId)} title={roleText.detail.editByChatTitle} className="flex shrink-0 items-center gap-1 rounded-md bg-emerald-500/15 px-2 py-1 text-xs text-emerald-300 transition-colors hover:bg-emerald-500/25"><MessageSquarePlus className="h-3.5 w-3.5" />{roleText.detail.editByChat}</button>} editor={<VisualEditor key={roleId} roleId={roleId} detail={detail} onSaved={loadDetail} />} notice={detail.locallyModified ? <p data-testid="role-locally-modified" className="rounded-md bg-amber-500/10 px-3 py-2 text-xs text-amber-200">{expertText.visual.builtinNotice}</p> : null} /> : null}
+          {tab === 'basic' ? <RoleBasicTab action={<button /* ds-allow:button: 对话式修改入口，紧凑辅助动作 */ type="button" onClick={() => void startEditRoleChat(roleId)} title={roleText.detail.editByChatTitle} className="flex shrink-0 items-center gap-1 rounded-md bg-emerald-500/15 px-2 py-1 text-xs text-badge-success transition-colors hover:bg-emerald-500/25"><MessageSquarePlus className="h-3.5 w-3.5" />{roleText.detail.editByChat}</button>} editor={<VisualEditor key={roleId} roleId={roleId} detail={detail} onSaved={loadDetail} />} notice={detail.locallyModified ? <p data-testid="role-locally-modified" className="rounded-md bg-amber-500/10 px-3 py-2 text-xs text-badge-warning">{expertText.visual.builtinNotice}</p> : null} /> : null}
           {tab === 'skills' && detail.equipment ? <RoleEquipmentTab><SkillsEditor key={roleId} roleId={roleId} equipment={detail.equipment} onSaved={loadDetail} /><RecommendedConnectors connectors={detail.recommendedConnectors} /></RoleEquipmentTab> : null}
           {tab === 'model' && detail.equipment ? <ModelEditor key={roleId} roleId={roleId} equipment={detail.equipment} onSaved={loadDetail} /> : null}
           {tab === 'security' && detail.equipment ? <SecurityEditor key={roleId} roleId={roleId} equipment={detail.equipment} onSaved={loadDetail} /> : null}

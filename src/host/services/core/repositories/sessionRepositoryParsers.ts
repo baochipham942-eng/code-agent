@@ -4,6 +4,7 @@
 // ============================================================================
 
 import type { Session, SessionStatus, TokenUsage, Message, ModelProvider, ToolCall } from '../../../../shared/contract';
+import type BetterSqlite3 from 'better-sqlite3';
 import { normalizeAgentEngineSession } from '../../../../shared/contract/agentEngine';
 import { collectAttachmentPersistenceMetrics, sanitizeAttachmentsForPersistence, stripInlineAttachmentBlocks } from '../../../../shared/utils/messageAttachments';
 import { extractArtifacts } from '../../../agent/artifactExtractor';
@@ -17,6 +18,30 @@ type SQLiteRow = Record<string, unknown>;
 
 export function activeMessageWhere(alias = 'm'): string {
   return `COALESCE(${alias}.visibility, 'active') = 'active'`;
+}
+
+/**
+ * Read the active turn author, with the owning session user as the legacy
+ * fallback for clients that do not persist messages.author_user_id yet.
+ */
+export function getLatestUserAuthorId(
+  db: BetterSqlite3.Database,
+  sessionId: string,
+): string | null {
+  const row = db.prepare(`
+    SELECT COALESCE(m.author_user_id, s.user_id) AS author_user_id
+    FROM sessions s
+    LEFT JOIN messages m
+      ON m.session_id = s.id
+      AND m.role = 'user'
+      AND ${activeMessageWhere('m')}
+    WHERE s.id = ?
+    ORDER BY m.timestamp DESC, m.rowid DESC
+    LIMIT 1
+  `).get(sessionId) as SQLiteRow | undefined;
+  return typeof row?.author_user_id === 'string' && row.author_user_id.trim()
+    ? row.author_user_id
+    : null;
 }
 
 export function loopInternalMessageWhere(alias = 'm'): string {

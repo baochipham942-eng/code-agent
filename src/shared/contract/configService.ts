@@ -28,6 +28,7 @@ import type { ModelProvider } from './model';
  * 让两边复用时不需要再做类型 narrow。
  */
 export type ServiceApiKey =
+  | 'dashscope'
   | 'brave'
   | 'langfuse_public'
   | 'langfuse_secret'
@@ -39,6 +40,30 @@ export type ServiceApiKey =
   | 'perplexity'
   | 'tavily'
   | 'skillsmp';
+
+/**
+ * settings.getAllServiceKeys 枚举并打码返回的服务 Key 列表。
+ *
+ * 这是「设置页需要知道配没配」的子集，不等于 ServiceApiKey 全集（如 skillsmp 不在列）。
+ * 不变量：SEARCH_SOURCE_CATALOG 里每个 requiresKey 源的 serviceKey 都必须出现在这里，
+ * 否则该源就算配了 key，设置页也永远显示「需配 Key」
+ * （tests/renderer/components/searchSettings.test.tsx 有静态断言守着这条）。
+ */
+export const MASKED_SERVICE_KEY_LIST = [
+  'brave',
+  'firecrawl',
+  'github',
+  'openrouter',
+  'openai',
+  'langfuse_public',
+  'langfuse_secret',
+  'exa',
+  'perplexity',
+  'tavily',
+] as const satisfies readonly ServiceApiKey[];
+
+/** getAllServiceKeys 的返回形状：打码后的 key（前 8 位 + `...`），未配置的服务不出现。 */
+export type MaskedServiceKeyMap = Partial<Record<(typeof MASKED_SERVICE_KEY_LIST)[number], string>>;
 
 /**
  * read-only ConfigService 视图

@@ -8,7 +8,7 @@ import type { ModelDecisionEventData } from './modelDecision';
 import type { TurnQualitySummary } from './turnQuality';
 import type { SessionAutomationMessageMetadata } from './sessionAutomation';
 import type { ArtifactLocatorV1 } from './artifactLocator';
-import type { VoiceCallSummary } from './voice';
+import type { VoiceCallFailureCode, VoiceCallFailurePhase, VoiceCallSummary } from './voice';
 
 export type MessageRole = 'user' | 'assistant' | 'system' | 'tool';
 export type MessageVisibility = 'active' | 'rewound';
@@ -114,6 +114,15 @@ export interface MessageAttachment {
   mediaState?: AttachmentMediaState;
   // 来源和处理元数据，例如渠道消息 ID、转写结果、下载状态
   metadata?: Record<string, unknown>;
+  // Appshot 窗口截图特有：来源 app 元数据，供气泡渲染 Codex 式大卡片（可选，向后兼容）
+  appshot?: {
+    appName?: string | null;
+    windowTitle?: string | null;
+    bundleId?: string | null;
+    /** AX/OCR 抽取的窗口文字（气泡预览 Modal 的「文字」页） */
+    axText?: string | null;
+    textSource?: 'ax' | 'ocr' | 'none';
+  };
 }
 
 // 消息来源类型
@@ -236,20 +245,94 @@ export interface AgentTeamMessageMetadata {
   targetAgentIds?: string[];
 }
 
+/** 会话区错误卡片的错误分类（AgentErrorCard 按它决定文案和动作按钮）。 */
+export type AgentErrorCategory =
+  /** 密钥无效 / 额度用尽 —— 供应商多用 401 表达，重试没有意义，得换模型或去补额度 */
+  | 'auth'
+  | 'model_not_found'
+  | 'forbidden'
+  | 'rate_limited'
+  | 'concurrency'
+  | 'network'
+  | 'context_length'
+  | 'generic';
+
+/**
+ * agent 运行失败的结构化错误信息，落在最后一条 assistant 消息的 metadata 上，
+ * 由 AgentErrorCard 渲染成可操作卡片（替代旧版 merge 进 content 的纯文本）。
+ * 刻意不存 title/suggestion 文案——文案随 i18n 走，存下来会把语言钉死在持久化数据里。
+ */
+export interface AgentErrorMetadata {
+  category: AgentErrorCategory;
+  /** host 侧错误码（RUN_FAILED / CONTEXT_LENGTH_EXCEEDED / …） */
+  code?: string;
+  httpStatus?: number;
+  traceId?: string;
+  /** 供应商/运行时的原始错误文本，进错误报告 */
+  rawMessage: string;
+  /** 这一轮 host 真正跑的模型（不是前端当前选中的那个，两者在刚切模型时会不一致） */
+  modelId?: string;
+  /** 同上，真正跑的 provider */
+  provider?: string;
+  timestamp: number;
+  /** context_length 专用：实际/上限 tokens，供卡片模板填空 */
+  requestedTokens?: number;
+  maxTokens?: number;
+}
+
 export interface MessageMetadata {
   /**
    * 方案 §8.2 的用户输入来源；缺省视为 typed。
    * 注意：Message 顶层 source 是系统生产者来源，这是另一条轴。
    */
   source?: 'voice' | 'dictation' | 'typed';
+  /** 实时语音协议身份。取消轮的 tombstone 与 DB 投影都只认这组稳定 ID。 */
+  voiceTranscript?: { responseId?: string; itemId?: string };
   voiceCallSummary?: VoiceCallSummary;
+  /** 建连或上游失败的持久留痕；只记结构化失败，不记音频与字幕。 */
+  voiceCallFailure?: {
+    code: VoiceCallFailureCode;
+    phase: VoiceCallFailurePhase;
+    timestamp: number;
+    neoSessionId: string;
+    voiceSessionId?: string;
+  };
   workbench?: WorkbenchMessageMetadata;
   skill?: SkillMessageMetadata;
   channel?: ChannelMessageMetadata;
   neoTag?: NeoTagMessageMetadata;
   agentTeam?: AgentTeamMessageMetadata;
+  /** agent 运行失败的结构化错误（会话区渲染 AgentErrorCard），见 AgentErrorMetadata */
+  agentError?: AgentErrorMetadata;
   automation?: SessionAutomationMessageMetadata;
   turnQuality?: TurnQualitySummary;
+  /**
+   * 这条 `role:'user'` 消息不是用户说的，是通话 brain 改写后发给执行引擎的指令
+   * （语音派活时 startTask 会建一条用户轮）。没有这个标记，机器编的话会顶着用户的
+   * 身份显示在右边——等于把话安在用户嘴里。投影层据此改成左侧、标明来源。
+   */
+  /**
+   * 语音派出的活失败了的留痕消息（`role:'system'`）。带 workItemId 是为了让渲染侧
+   * 把它对回那张任务卡——靠正文文本反解标题等于拿人话当协议，文案一改就静默失效。
+   */
+  voiceWorkFailure?: { workItemId: string; title: string; detail?: string };
+  /**
+   * 语音派出的活跑完了的结局印章（`role:'system'`，X5.5-A2-a）。host 查完产物证据才写，
+   * 是任务卡「已完成 / 已结束·待核验」的唯一依据——渲染侧不许再从「这轮完成了 + 有正文」
+   * 反推完成，那条反推等于把模型的一句「我已经建好了」当成事实。
+   * 这条消息不进对话（投影层只取 metadata，不成节点）。
+   */
+  voiceWorkSettled?: { workItemId: string; title: string; outcome: 'done' | 'unverified' };
+  voiceDispatch?: {
+    title: string;
+    /** 账本里这件活的 id。失败留痕靠它对回这张任务卡（见 voiceWorkFailure）。 */
+    workItemId?: string;
+    /**
+     * 这件活的署名（W6-5）。**只有用户点名了专家时才有**——没点名时不署名，
+     * 屏幕上就该只有一个 Neo，和语音层的第一人称同一套规矩。
+     */
+    speaker?: { agentId: string; displayName: string };
+  };
   /**
    * ADR-040：用户在预览里点选的产物位置。由 host 补 revision 后生成并校验，
    * 是写前 guard 的唯一坐标真源——prompt 里的可读位置只给人看，不作数。

@@ -21,18 +21,28 @@ describe('shell capabilities', () => {
   });
 
   it.each([
+    ['domain:agentEngine', 'listSources'],
     ['domain:project', 'artifactIssues'],
+    ['domain:project', 'listCloudCards'],
+    ['domain:project', 'resyncCloudCards'],
     ['domain:project', 'setDescription'],
     ['domain:settings', 'saveProviderIconAsset'],
     ['domain:settings', 'resolveProviderIconAsset'],
     ['domain:settings', 'getBudgetStatus'],
     ['domain:settings', 'setBudgetConfig'],
+    ['domain:provider', 'list_realtime_voice_providers'],
+    ['domain:provider', 'save_realtime_voice_provider'],
+    ['domain:provider', 'test_realtime_voice_provider'],
     ['domain:memory', 'memoryEntryUpdate'],
     ['domain:session', 'restoreWorkspaceFilesAtCheckpoint'],
     ['domain:surfaceExecution', 'control'],
+    ['domain:surfaceExecution', 'deletePersistedTerminalFrames'],
     ['domain:surfaceExecution', 'getFrame'],
     ['domain:surfaceExecution', 'getOutput'],
+    ['domain:surfaceExecution', 'getPersistedTerminalFrame'],
     ['domain:surfaceExecution', 'getSnapshot'],
+    ['domain:surfaceExecution', 'persistTerminalFrame'],
+    ['domain:voice', 'reportFailure'],
   ])('advertises newly registered handler %s/%s in the capability manifest', (domain, action) => {
     const supported = new Set(getShellCapabilityIds());
     expect(supported.has(makeShellCapabilityId(domain, action))).toBe(true);
@@ -66,6 +76,14 @@ describe('shell capabilities', () => {
       )
     ))).toMatchObject({
       risk: 'high',
+    });
+  });
+
+  it('marks cloud card resync as a medium-risk shell mutation', () => {
+    expect(getShellCapabilities().find((capability) => (
+      capability.id === makeShellCapabilityId('domain:project', 'resyncCloudCards')
+    ))).toMatchObject({
+      risk: 'medium',
     });
   });
 });

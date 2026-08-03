@@ -35,6 +35,7 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
       updated_at INTEGER NOT NULL,
       workbench_provenance TEXT,
       is_deleted INTEGER NOT NULL DEFAULT 0,
+      is_archived INTEGER NOT NULL DEFAULT 0,
       synced_at INTEGER
     )
   `);
@@ -43,6 +44,7 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
   safeAlter(db, `ALTER TABLE sessions ADD COLUMN suppressed_memory_entry_ids TEXT NOT NULL DEFAULT '[]'`, logger);
   safeAlter(db, `ALTER TABLE sessions ADD COLUMN metadata TEXT`, logger);
   safeAlter(db, `ALTER TABLE sessions ADD COLUMN project_id TEXT`, logger);
+  safeAlter(db, `ALTER TABLE sessions ADD COLUMN is_archived INTEGER NOT NULL DEFAULT 0`, logger);
 
   // Messages 表
   db.exec(`
@@ -77,6 +79,8 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
   safeAlter(db, `ALTER TABLE messages ADD COLUMN visibility TEXT NOT NULL DEFAULT 'active'`, logger);
   safeAlter(db, `ALTER TABLE messages ADD COLUMN hidden_by_rewind_id TEXT`, logger);
   safeAlter(db, `ALTER TABLE messages ADD COLUMN hidden_at INTEGER`, logger);
+  // 协同空间协议：null 表示该 turn 沿用 session.user_id（会话发起人）。
+  safeAlter(db, `ALTER TABLE messages ADD COLUMN author_user_id TEXT`, logger);
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS session_rewinds (
@@ -1231,12 +1235,19 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
     )
   `);
   safeAlter(db, `ALTER TABLE projects ADD COLUMN source_revision INTEGER NOT NULL DEFAULT 0`, logger);
+  safeAlter(db, `ALTER TABLE projects ADD COLUMN space_promoted_at INTEGER`, logger);
+  // null 表示本地项目尚未升级或加入云协同空间；云项目 id 是唯一空间映射。
+  safeAlter(db, `ALTER TABLE projects ADD COLUMN cloud_project_id TEXT`, logger);
   // Multi-Source Projects allow the same canonical path to belong to different Projects.
   // Drop the legacy global uniqueness; per-Project Source uniqueness lives on project_sources.
   db.exec(`DROP INDEX IF EXISTS idx_projects_workspace_key`);
   db.exec(
     `CREATE INDEX IF NOT EXISTS idx_projects_workspace_key ON projects(workspace_key) WHERE workspace_key IS NOT NULL`,
   );
+  db.exec(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_cloud_project_id
+    ON projects(cloud_project_id) WHERE cloud_project_id IS NOT NULL
+  `);
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS project_sources (
@@ -1289,6 +1300,19 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
     )
   `);
 
+  // Project Capability Selections — 仅承接没有既有项目归属模型的能力类别。
+  // skills 继续使用项目 skill preference；automations 继续经 source session 归属项目。
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS project_capability_selections (
+      project_id TEXT NOT NULL,
+      kind TEXT NOT NULL CHECK (kind IN ('skill', 'connector', 'automation')),
+      capability_id TEXT NOT NULL,
+      selected_at INTEGER NOT NULL,
+      PRIMARY KEY (project_id, kind, capability_id),
+      FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+    )
+  `);
+
   // Neo Tag Work Cards (P0) - project-scoped shared work contracts.
   db.exec(`
     CREATE TABLE IF NOT EXISTS neo_work_cards (
@@ -1307,6 +1331,9 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
       FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
     )
   `);
+  safeAlter(db, `ALTER TABLE neo_work_cards ADD COLUMN priority TEXT NOT NULL DEFAULT 'medium'`, logger);
+  safeAlter(db, `ALTER TABLE neo_work_cards ADD COLUMN due_at INTEGER`, logger);
+  safeAlter(db, `ALTER TABLE neo_work_cards ADD COLUMN blocked_reason TEXT`, logger);
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS neo_work_card_revisions (

@@ -4,7 +4,10 @@ import type {
   AgentTrajectoryGateFailure,
   AgentTrajectoryQualityTier,
 } from '@shared/contract/agentTrajectory';
+import { useAppStore } from './appStore';
 import { useSessionStore, type SessionFilter } from './sessionStore';
+import { useSurfaceExecutionStore } from './surfaceExecutionStore';
+import type { SidebarSessionTier } from '../utils/sidebarSessionTiers';
 import { createLogger } from '../utils/logger';
 
 const logger = createLogger('SessionUIStore');
@@ -14,6 +17,8 @@ async function deleteSession(id: string): Promise<void> {
   if (!response?.success) {
     throw new Error(response?.error?.message || 'Failed to delete session');
   }
+  // 终态留影的内存半跟会话一起删（盘上那一半由 host 会话删除收敛点负责）
+  useSurfaceExecutionStore.getState().clearConversation(id);
 }
 
 export type { SessionFilter };
@@ -65,6 +70,34 @@ function persistExpandedWorkspaces(next: Record<string, boolean>): void {
   }
 }
 
+// Persisted collapse state for the three session tier sections in the sidebar.
+// Unset or false = expanded; true = collapsed by the user.
+const COLLAPSED_TIERS_STORAGE_KEY = 'sidebar.collapsedTiers';
+
+function loadCollapsedTiers(): Partial<Record<SidebarSessionTier, boolean>> {
+  try {
+    const raw = typeof localStorage !== 'undefined'
+      ? localStorage.getItem(COLLAPSED_TIERS_STORAGE_KEY)
+      : null;
+    if (!raw) return {};
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return {};
+    return parsed as Partial<Record<SidebarSessionTier, boolean>>;
+  } catch {
+    return {};
+  }
+}
+
+function persistCollapsedTiers(next: Partial<Record<SidebarSessionTier, boolean>>): void {
+  try {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(COLLAPSED_TIERS_STORAGE_KEY, JSON.stringify(next));
+    }
+  } catch {
+    // localStorage may be disabled in private modes; fail silently.
+  }
+}
+
 interface SessionUIState {
   pendingDelete: PendingDelete | null;
   filter: SessionFilter;
@@ -78,6 +111,7 @@ interface SessionUIState {
   inputHistoryIndex: number;
   inputHistoryDraft: string;
   expandedWorkspaces: Record<string, boolean>;
+  collapsedTiers: Partial<Record<SidebarSessionTier, boolean>>;
 }
 
 interface SessionUIActions {
@@ -96,6 +130,9 @@ interface SessionUIActions {
   getNextInput: () => string | null;
   resetInputHistoryIndex: () => void;
   setWorkspaceExpanded: (key: string, expanded: boolean) => void;
+  setTierCollapsed: (tier: SidebarSessionTier, collapsed: boolean) => void;
+  /** 批量写展开态（「项目」section 标题行 chevron：一键全展开/全收起），只持久化一次。 */
+  setWorkspacesExpanded: (keys: string[], expanded: boolean) => void;
 }
 
 type SessionUIStore = SessionUIState & SessionUIActions;
@@ -113,6 +150,7 @@ export const useSessionUIStore = create<SessionUIStore>()((set, get) => ({
   inputHistoryIndex: -1,
   inputHistoryDraft: '',
   expandedWorkspaces: loadExpandedWorkspaces(),
+  collapsedTiers: loadCollapsedTiers(),
 
   setFilter: (filter: SessionFilter) => {
     set({ filter });
@@ -179,6 +217,11 @@ export const useSessionUIStore = create<SessionUIStore>()((set, get) => ({
       if (remainingSessions.length > 0) {
         sessionStore.switchSession(remainingSessions[0].id);
       } else {
+        // 与 deleteSession/archiveSession 的末会话路径一致：回到 draft 时清掉
+        // per-session agent / workbench 选择，避免上个会话的专家残留在 draft 里
+        // 被下一次 createSession 的 inheritCurrent 写进新会话（ux-round2 20e）。
+        useAppStore.getState().syncActiveAgentForSession(null);
+        useAppStore.getState().syncWorkbenchForSession(null);
         useSessionStore.setState({ currentSessionId: null, messages: [] });
       }
     }
@@ -275,6 +318,21 @@ export const useSessionUIStore = create<SessionUIStore>()((set, get) => ({
 
   setWorkspaceExpanded: (key: string, expanded: boolean) => {
     const next = { ...get().expandedWorkspaces, [key]: expanded };
+    set({ expandedWorkspaces: next });
+    persistExpandedWorkspaces(next);
+  },
+
+  setTierCollapsed: (tier: SidebarSessionTier, collapsed: boolean) => {
+    const next = { ...get().collapsedTiers, [tier]: collapsed };
+    set({ collapsedTiers: next });
+    persistCollapsedTiers(next);
+  },
+
+  setWorkspacesExpanded: (keys: string[], expanded: boolean) => {
+    const next = { ...get().expandedWorkspaces };
+    for (const key of keys) {
+      next[key] = expanded;
+    }
     set({ expandedWorkspaces: next });
     persistExpandedWorkspaces(next);
   },

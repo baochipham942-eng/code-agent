@@ -199,6 +199,7 @@ describe('Agent Engine launch policy', () => {
 
   it('selects external engines only for manual chat sessions and pins cwd as workspace root', () => {
     const selected = buildManualAgentEngineSelection(makeSession({ workingDirectory: workspaceRoot }), {
+      manifestId: 'codex_cli',
       kind: 'codex_cli',
       label: 'Codex CLI',
       summary: '',
@@ -210,6 +211,7 @@ describe('Agent Engine launch policy', () => {
       cwdPolicy: 'workspace_only',
       riskTier: 'medium',
       detectedAt: Date.now(),
+      modelSelection: 'runtime_catalog',
     });
 
     expect(selected).toMatchObject({
@@ -222,6 +224,7 @@ describe('Agent Engine launch policy', () => {
 
   it('preserves selected external model through launch policy', () => {
     const selected = buildManualAgentEngineSelection(makeSession({ workingDirectory: workspaceRoot }), {
+      manifestId: 'claude_code',
       kind: 'claude_code',
       label: 'Claude Code',
       summary: '',
@@ -233,6 +236,7 @@ describe('Agent Engine launch policy', () => {
       cwdPolicy: 'workspace_only',
       riskTier: 'medium',
       detectedAt: Date.now(),
+      modelSelection: 'runtime_catalog',
     }, undefined, 'sonnet');
 
     expect(selected.model).toBe('sonnet');
@@ -259,6 +263,7 @@ describe('Agent Engine launch policy', () => {
 
   it('rejects workspace-write external engine selection in the current release', () => {
     expect(() => buildManualAgentEngineSelection(makeSession({ workingDirectory: workspaceRoot }), {
+      manifestId: 'codex_cli',
       kind: 'codex_cli',
       label: 'Codex CLI',
       summary: '',
@@ -270,6 +275,7 @@ describe('Agent Engine launch policy', () => {
       cwdPolicy: 'workspace_only',
       riskTier: 'medium',
       detectedAt: Date.now(),
+      modelSelection: 'runtime_catalog',
     })).toThrow(/read-only/);
   });
 

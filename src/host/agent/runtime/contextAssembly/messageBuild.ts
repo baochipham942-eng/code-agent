@@ -1,6 +1,5 @@
 // ContextAssembly - Model message construction and transcript projection.
 import type { Message } from '../../../../shared/contract';
-import type { ContextInterventionSnapshot } from '../../../../shared/contract/contextView';
 import { getContextWindow, ACTIVE_TOOL_RESULT_PRUNE, CONTEXT_LEDGER } from '../../../../shared/constants';
 import type { ModelMessage } from '../../../agent/loopTypes';
 import { formatToolCallForHistory, buildMultimodalContent } from '../../../agent/messageHandling/converter';
@@ -17,6 +16,8 @@ import { getRepoMap } from '../../../context/repoMap';
 import { getCompressionPipelineOverride } from '../../../context/compressionPipeline';
 import { buildSessionMetadataBlock } from '../../../lightMemory/sessionMetadata';
 import { appendPinnedLibraryPromptBlock, getSessionPinFingerprint } from './libraryPins';
+import { injectRuntimeModelIdentity } from './runtimeModelIdentity';
+import { buildCompressionCacheKey, cloneCompressionState, cloneTranscriptEntries } from './compressionStateUtils';
 import { buildRecentConversationsBlock } from '../../../lightMemory/recentConversations';
 import {
   getPromptForTask,
@@ -80,6 +81,7 @@ import {
   appendPromptBlockWithinBudgetWithStatus, flushPromptLayerRecords,
   REQUIRED_REPAIR_TRIM_CANDIDATES,
 } from './promptBudget';
+import { buildSpaceContextPrompt } from '../../../prompts/spaceContextPrompt';
 
 export { formatArtifactRepairToolResultContent } from './artifactRepairProjection';
 export {
@@ -159,6 +161,7 @@ export function buildDynamicPromptCacheKey(
     String(ctx.runtime.isDefaultWorkingDirectory),
     String(ctx.runtime.turn.isSimpleTaskMode),
     String(ctx.runtime.enableToolDeferredLoading),
+    ctx.runtime.modelConfig.provider || '',
     ctx.runtime.modelConfig.model || '',
     getLastUserMessage(ctx)?.id || '',
     ctx.runtime.turn.activeSkillInvocation?.skillName || '',
@@ -208,7 +211,11 @@ async function buildCachedDynamicSystemPrompt(ctx: ContextAssemblyCtx): Promise<
   // repo map / deferred tools / append)。用于 D 风险闭环 —— custom 只替换 identity,
   // 后续层(尤其全局 memory)会渗透;fullReplace 真接管。
   if (projectSystemPrompt.fullReplace !== null) {
-    const fullPrompt = projectSystemPrompt.fullReplace;
+    const fullPrompt = injectRuntimeModelIdentity(
+      projectSystemPrompt.fullReplace,
+      ctx.runtime.modelConfig?.provider,
+      ctx.runtime.modelConfig?.model,
+    );
     const tokens = estimateTokens(fullPrompt);
     recordBasePromptLayer(ctx, fullPrompt, CONTEXT_LEDGER.BASE_SOURCE.FULL_REPLACE);
     if (tokens <= promptBudget(ctx)) {
@@ -254,6 +261,11 @@ async function buildCachedDynamicSystemPrompt(ctx: ContextAssemblyCtx): Promise<
     ctx.runtime.modelConfig?.provider,
     ctx.runtime.modelConfig?.model,
     { customBase: projectSystemPrompt.custom !== null },
+  );
+  systemPrompt = injectRuntimeModelIdentity(
+    systemPrompt,
+    ctx.runtime.modelConfig?.provider,
+    ctx.runtime.modelConfig?.model,
   );
 
   const appendedBlocks = new Map<string, string>();
@@ -733,67 +745,6 @@ ${deferredToolsSummary}
   return { systemPrompt, turnContext };
 }
 
-function buildCompressionCacheKey(
-  ctx: ContextAssemblyCtx,
-  entries: ContextTranscriptEntry[],
-  interventions: ContextInterventionSnapshot,
-  contextWindowSize: number,
-): string {
-  const hash = createHash('sha256');
-  hash.update(ctx.runtime.sessionId);
-  hash.update('\u0000');
-  hash.update(ctx.runtime.agentId || '');
-  hash.update('\u0000');
-  hash.update(String(contextWindowSize));
-  hash.update('\u0000');
-  hash.update(JSON.stringify(interventions));
-  for (const entry of entries) {
-    hash.update('\u0000');
-    hash.update(entry.id);
-    hash.update('\u0001');
-    hash.update(entry.originMessageId);
-    hash.update('\u0001');
-    hash.update(entry.role);
-    hash.update('\u0001');
-    hash.update(String(entry.timestamp));
-    hash.update('\u0001');
-    hash.update(entry.content || '');
-    hash.update('\u0001');
-    hash.update(entry.toolCallId || '');
-    hash.update('\u0001');
-    hash.update(String(entry.toolError || false));
-    if (entry.attachments?.length) {
-      hash.update(JSON.stringify(entry.attachments.map((attachment) => ({
-        type: attachment.type,
-        name: attachment.name,
-        path: attachment.path,
-        mimeType: attachment.mimeType,
-        dataLength: attachment.data?.length || 0,
-      }))));
-    }
-    if (entry.toolCalls?.length) {
-      hash.update(JSON.stringify(entry.toolCalls.map((toolCall) => ({
-        id: toolCall.id,
-        name: toolCall.name,
-        arguments: toolCall.arguments || {},
-      }))));
-    }
-  }
-  return hash.digest('hex');
-}
-
-function cloneTranscriptEntries(entries: ContextTranscriptEntry[]): ContextTranscriptEntry[] {
-  return entries.map((entry) => ({ ...entry }));
-}
-
-function cloneCompressionState(state: CompressionState): CompressionState {
-  try {
-    return CompressionState.deserialize(state.serialize());
-  } catch {
-    return new CompressionState();
-  }
-}
-
 export async function buildModelMessages(ctx: ContextAssemblyCtx): Promise<ModelMessage[]> {
   ctx.flushHookMessageBuffer();
 
@@ -812,6 +763,28 @@ export async function buildModelMessages(ctx: ContextAssemblyCtx): Promise<Model
   let tailWorking = turnContext
     ? `${stableSystemPrompt}\n\n${turnContext}`
     : stableSystemPrompt;
+
+  // 显式协作空间按轮注入：放在稳定 system 前缀之后，避免配置变化击穿
+  // provider cache；每次 inference 重新读取空间配置，所以下一轮立即生效。
+  const spaceContextBlock = buildSpaceContextPrompt(
+    ctx.runtime.sessionId,
+    ctx.runtime.workspaceScope,
+  );
+  if (spaceContextBlock) {
+    const beforeSpaceContext = tailWorking;
+    tailWorking = appendPromptBlockWithinBudget(
+      tailWorking,
+      spaceContextBlock,
+      'collaboration space context',
+      ctx,
+    );
+    logger.debug('[ContextAssembly] collaboration space context evaluated', {
+      chars: spaceContextBlock.length,
+      tokens: estimateTokens(spaceContextBlock),
+      injected: tailWorking !== beforeSpaceContext,
+      cacheImpact: 'dynamic-tail-only',
+    });
+  }
 
   // git 状态（易变，从 <env> block 移出；GAP-010 的仓库感知保留）
   const gitStatusBlock = buildGitStatusBlock(ctx.runtime.workingDirectory || '');

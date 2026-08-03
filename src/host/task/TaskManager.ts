@@ -30,6 +30,8 @@ import type { ConversationModelSpec } from '../../shared/contract/conversationEn
 import type { SessionStatus as PersistedSessionStatus } from '../../shared/contract/session';
 import { getModelSessionState } from '../session/modelSessionState';
 import type { RunRegistry } from '../runtime/runRegistry';
+import { getProjectSourceTrustFailureMarker } from '../services/project/projectSourceTrustError';
+import { getModelAuthFailureMarker } from '../model/errorClassifier';
 
 const logger = createLogger('TaskManager');
 const CONTEXT_ASSEMBLY_PERSISTED_MESSAGE = Symbol.for('code-agent.contextAssembly.persistedMessage');
@@ -153,6 +155,14 @@ export class TaskManager extends EventEmitter {
   private configService: ConfigService | null = null;
   private planningService: PlanningService | undefined;
   private onAgentEvent: ((sessionId: string, event: AgentEvent) => void) | null = null;
+  /**
+   * agent 事件流的旁路观察者（§2 语音中途进度）。
+   *
+   * `onAgentEvent` 是**单个**注入回调（createAgentRuntime 设一次），它是主消费者，
+   * 不能被抢。需要旁听这条流的模块（目前只有语音层）挂这里——只读、不影响主链、
+   * 抛异常也吞掉，观察者绝不许把 agent 循环带崩。
+   */
+  private agentEventObservers = new Set<(sessionId: string, event: AgentEvent) => void>();
   private runRegistry: RunRegistry | undefined;
 
   // 当前活跃会话 ID（用于 getAgentOrchestrator 兼容层）
@@ -546,6 +556,27 @@ export class TaskManager extends EventEmitter {
   }
 
   /**
+   * 旁听 agent 事件流。返回退订函数——**调用方必须在用完时退订**，
+   * 否则观察者会跟着模块级单例活到进程结束。
+   */
+  observeAgentEvents(observer: (sessionId: string, event: AgentEvent) => void): () => void {
+    this.agentEventObservers.add(observer);
+    return () => { this.agentEventObservers.delete(observer); };
+  }
+
+  /** 广播给旁路观察者。单个观察者抛异常只留痕，绝不影响主链与其它观察者。 */
+  private notifyAgentEventObservers(sessionId: string, event: AgentEvent): void {
+    if (!this.agentEventObservers.size) return;
+    for (const observer of [...this.agentEventObservers]) {
+      try {
+        observer(sessionId, event);
+      } catch (error) {
+        logger.warn('agent event observer threw', { error: String(error) });
+      }
+    }
+  }
+
+  /**
    * 设置当前活跃会话 ID
    */
   setCurrentSessionId(id: string | null): void {
@@ -672,11 +703,19 @@ export class TaskManager extends EventEmitter {
       }
 
       logger.error(`Task error for session ${sessionId}:`, error);
-      this.updateSessionState(sessionId, {
-        status: 'error',
-        error: error instanceof Error ? error.message : 'Unknown error',
+      // 事件里带的必须是字符串，不是 Error 对象：唯一的消费方
+      // （voiceAgentCoordinator）按 `typeof === 'string'` 取值，塞 Error 进去
+      // 等于让它每次都退化成兜底文案「执行失败」，真实原因（如「服务认证异常」）
+      // 全程丢失（2026-07-28 G1 真机：用户只可能看到四个字的废话）。
+      // 与下面 session state 的 error 同一份归一化，别各算各的。
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      // 结构化失败标记：message 已被归一成字符串，能救回来的原因只剩生产者带的字段。
+      const failure = getProjectSourceTrustFailureMarker(error) ?? getModelAuthFailureMarker(error);
+      this.updateSessionState(sessionId, { status: 'error', error: errorMessage });
+      this.emitEvent('task_error', sessionId, {
+        error: errorMessage,
+        ...(failure ? { failure } : {}),
       });
-      this.emitEvent('task_error', sessionId, { error });
     } finally {
       this.activeModelSpecs.delete(sessionId);
       // 释放信号量
@@ -866,6 +905,7 @@ export class TaskManager extends EventEmitter {
       this.onAgentEvent!(sessionId, { type: 'message_snapshot', data: finalSnapshot });
     }
     this.onAgentEvent!(sessionId, event);
+    this.notifyAgentEventObservers(sessionId, event);
 
     await this.persistEventToSession(sessionId, event, snapshot ?? finalSnapshot);
 

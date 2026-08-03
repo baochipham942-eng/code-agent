@@ -20,7 +20,6 @@ interface WorkbenchActionDependencies {
   set: StoreApi<AppState>['setState'];
   get: StoreApi<AppState>['getState'];
   nextPreviewTabTick: () => number;
-  stopDevServer: (sessionId?: string) => void;
 }
 
 const previewPathOf = (id: `preview:${string}`): string => id.slice('preview:'.length);
@@ -29,7 +28,6 @@ export function createWorkbenchActions({
   set,
   get,
   nextPreviewTabTick,
-  stopDevServer,
 }: WorkbenchActionDependencies): Pick<AppState, WorkbenchActionName> {
   return {
     syncWorkbenchForSession: (sessionId) => {
@@ -46,7 +44,7 @@ export function createWorkbenchActions({
       const restored = sessionId ? workbenchBySession[sessionId] : undefined;
       const workbenchTabs = (restored?.tabs ?? []).filter((view) => (
         !isPreviewWorkbenchView(view)
-        || state.previewTabs.some((tab) => tab.kind !== 'liveDev' && view === `preview:${tab.path}`)
+        || state.previewTabs.some((tab) => view === `preview:${tab.path}`)
       ));
       const restoredActive = restored?.active ?? null;
       const activeWorkbenchTab = restoredActive && !workbenchTabs.includes(restoredActive)
@@ -58,6 +56,12 @@ export function createWorkbenchActions({
         workbenchTabs,
         activeWorkbenchTab,
         workbenchSessionKey: sessionId,
+        // 全新会话（无快照）一律回产品默认收起（批P 第四波④）：本函数把 tabs 清成 []，
+        // 若放任 collapsed 跨会话泄漏（上一会话被任务/用户带成展开），新会话落地就是
+        // 空态 launcher——空间 composer 与主界面「新任务」都经此 chokepoint，同判据。
+        // 有快照的回访会话不动（用户离开时的开/合就是意图）；sessionId=null（欢迎页）不动。
+        // workbenchCollapsedByUser 不动：这不是用户按的，任务活动照样能把右栏带出来（#700 语义）。
+        ...(sessionId && !restored ? { workbenchCollapsed: true } : {}),
       });
     },
 
@@ -94,16 +98,11 @@ export function createWorkbenchActions({
             ? 'user'
             : options?.source ?? 'user'
           : state.taskWorkbenchOpenSource;
-        const targetPreview = view === 'browser'
-          ? state.previewTabs
-              .filter((tab) => tab.kind === 'liveDev')
-              .reduce<PreviewTab | null>(
-                (latest, tab) => (!latest || tab.lastActivatedAt > latest.lastActivatedAt ? tab : latest),
-                null,
-              )
-          : isPreviewWorkbenchView(view)
-            ? state.previewTabs.find((tab) => tab.kind !== 'liveDev' && tab.path === previewPathOf(view)) ?? null
-            : null;
+        // 'browser'（Agent 浏览器现场）不再借用 preview tab 状态（S2 归位）——
+        // liveDev 预览与文件预览统一走 `preview:${path}` 一对一 scheme。
+        const targetPreview = isPreviewWorkbenchView(view)
+          ? state.previewTabs.find((tab) => tab.path === previewPathOf(view)) ?? null
+          : null;
         const previewTabs = targetPreview
           ? state.previewTabs.map((tab) => (
               tab.id === targetPreview.id
@@ -142,36 +141,11 @@ export function createWorkbenchActions({
       if (target.kind !== 'workbench') return;
 
       const view = target.view;
-      if (view === 'browser') {
-        get().previewTabs
-          .filter((tab) => tab.kind === 'liveDev')
-          .forEach((tab) => stopDevServer(tab.devServerSessionId));
-        set((state) => {
-          const nextTabs = state.previewTabs.filter((tab) => tab.kind !== 'liveDev');
-          const nextWorkbench = state.workbenchTabs.filter((item) => item !== 'browser');
-          const nextPreview = nextTabs.reduce<PreviewTab | null>(
-            (latest, tab) => (!latest || tab.lastActivatedAt > latest.lastActivatedAt ? tab : latest),
-            null,
-          );
-          return {
-            ...state,
-            previewTabs: nextTabs,
-            activePreviewTabId: state.previewTabs.find((tab) => tab.id === state.activePreviewTabId)?.kind === 'liveDev'
-              ? nextPreview?.id ?? null
-              : state.activePreviewTabId,
-            workbenchTabs: nextWorkbench,
-            activeWorkbenchTab: state.activeWorkbenchTab === 'browser'
-              ? nextWorkbench[0] ?? null
-              : state.activeWorkbenchTab,
-          };
-        });
-        return;
-      }
-
+      // 'browser'（Agent 浏览器现场）不再关联 preview tab，落到下方通用分支即可
+      // （S2 归位）。liveDev 与文件预览统一走 `preview:${path}`，经 closePreviewTab
+      // 各自独立关闭，不再互相牵连。
       if (isPreviewWorkbenchView(view)) {
-        const match = get().previewTabs.find((tab) => (
-          tab.kind !== 'liveDev' && tab.path === previewPathOf(view)
-        ));
+        const match = get().previewTabs.find((tab) => tab.path === previewPathOf(view));
         if (match) {
           get().closePreviewTab(match.id);
           return;

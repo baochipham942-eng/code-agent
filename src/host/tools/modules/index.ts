@@ -35,6 +35,14 @@ import { gitWorktreeSchema } from './shell/gitWorktree.schema';
 import { processSchema } from './shell/process.schema';
 import { bashSchema } from './shell/bash.schema';
 import { grepSchema } from './shell/grep.schema';
+// terminal/
+import {
+  terminalListSchema,
+  terminalOpenSchema,
+  terminalReadSchema,
+  terminalWaitSchema,
+  terminalWriteSchema,
+} from './terminal/terminal.schema';
 
 // search/
 import { toolSearchSchema } from './search/toolSearch.schema';
@@ -162,6 +170,9 @@ import { exploreSchema } from './planning/explore.schema';
 import { recommendCapabilitySchema } from './planning/recommendCapability.schema';
 import { declareDeliverablesSchema } from './planning/declareDeliverables.schema';
 import { attemptCompletionSchema } from './planning/attemptCompletion.schema';
+import { spaceListSchema } from './planning/spaceList.schema';
+import { spaceQuerySchema } from './planning/spaceQuery.schema';
+import { spaceCreateSchema } from './planning/spaceCreate.schema';
 
 export function registerMigratedTools(
   registry: ToolRegistry,
@@ -487,6 +498,18 @@ export function registerMigratedTools(
     attemptCompletionSchema,
     async () => (await import('./planning/attemptCompletion')).attemptCompletionModule,
   );
+  registry.register(
+    spaceListSchema,
+    async () => (await import('./planning/spaceList')).spaceListModule,
+  );
+  registry.register(
+    spaceQuerySchema,
+    async () => (await import('./planning/spaceQuery')).spaceQueryModule,
+  );
+  registry.register(
+    spaceCreateSchema,
+    async () => (await import('./planning/spaceCreate')).spaceCreateModule,
+  );
 
   // ── batch 8: network/ — all native modules ────────────────────────────
   // HTTP / Web fetching (4)
@@ -647,6 +670,28 @@ export function registerMigratedTools(
   registry.register(
     grepSchema,
     async () => (await import('./shell/grep')).grepModule,
+  );
+
+  // terminal (4): 用户那个交互终端的读写桥（Term-P1）——与 bash 分流见各自 description
+  registry.register(
+    terminalOpenSchema,
+    async () => (await import('./terminal/terminal')).terminalOpenModule,
+  );
+  registry.register(
+    terminalListSchema,
+    async () => (await import('./terminal/terminal')).terminalListModule,
+  );
+  registry.register(
+    terminalReadSchema,
+    async () => (await import('./terminal/terminal')).terminalReadModule,
+  );
+  registry.register(
+    terminalWriteSchema,
+    async () => (await import('./terminal/terminal')).terminalWriteModule,
+  );
+  registry.register(
+    terminalWaitSchema,
+    async () => (await import('./terminal/terminal')).terminalWaitModule,
   );
 
   // lightMemory (3): MemoryRead / MemoryWrite / EpisodicRecall

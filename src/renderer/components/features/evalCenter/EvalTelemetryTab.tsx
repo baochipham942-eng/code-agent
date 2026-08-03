@@ -12,9 +12,10 @@
 // - 实时性：订阅 telemetry:event 推送，isLive 开关沿用 store 语义。
 // ============================================================================
 import React, { useEffect, useState } from 'react';
-import { BarChart3, List, Clock, Wrench, Radio, CircleOff, ChevronLeft } from 'lucide-react';
+import { BarChart3, List, Clock, Wrench, Radio, CircleOff } from 'lucide-react';
 import { useTelemetryStore } from '../../../stores/telemetryStore';
 import { useI18n } from '../../../hooks/useI18n';
+import { BackButton } from '../shared/FullScreenPage';
 import ipcService from '../../../services/ipcService';
 import { SessionHeader } from '../telemetry/SessionHeader';
 import { TurnList } from '../telemetry/TurnList';
@@ -82,7 +83,7 @@ export const EvalTelemetryTab: React.FC = () => {
           <button /* ds-allow:button: 遥测实时开关胶囊，10px 微尺寸行内样式，Button primitive 无对应变体 */
             type="button"
             onClick={() => setLive(!isLive)}
-            className={`flex items-center gap-1 rounded px-2 py-1 text-[10px] ${isLive ? 'bg-green-500/20 text-green-400' : 'bg-zinc-700 text-zinc-500'}`}
+            className={`flex items-center gap-1 rounded px-2 py-1 text-[10px] ${isLive ? 'bg-green-500/20 text-badge-success' : 'bg-zinc-700 text-zinc-500'}`}
           >
             {isLive ? <Radio className="h-3 w-3" /> : <CircleOff className="h-3 w-3" />}
             {isLive ? tm.live : tm.paused}
@@ -99,7 +100,7 @@ export const EvalTelemetryTab: React.FC = () => {
             >
               <div className="mb-1 flex items-center justify-between">
                 <span className="max-w-[240px] truncate text-xs text-zinc-400">{session.title}</span>
-                <span className={`rounded px-1.5 py-0.5 text-[10px] ${session.status === 'recording' ? 'bg-green-500/20 text-green-400' : 'bg-zinc-600/30 text-zinc-500'}`}>
+                <span className={`rounded px-1.5 py-0.5 text-[10px] ${session.status === 'recording' ? 'bg-green-500/20 text-badge-success' : 'bg-zinc-600/30 text-zinc-500'}`}>
                   {session.status === 'recording' ? tm.recording : tm.completed}
                 </span>
               </div>
@@ -122,14 +123,12 @@ export const EvalTelemetryTab: React.FC = () => {
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-testid="eval-telemetry-tab">
       <div className="shrink-0 border-b border-zinc-800 p-2">
-        <button /* ds-allow:button: 返回列表链接式按钮，10px 微尺寸，Button primitive 无对应变体 */
-          type="button"
+        {/* 返回列表与三级页 header 同款从属级返回（共享 BackButton，样式跟随 FullScreenPage） */}
+        <BackButton
           onClick={() => useTelemetryStore.setState({ currentSession: null })}
-          className="mb-1 flex items-center gap-1 text-[10px] text-zinc-500 hover:text-zinc-400"
-        >
-          <ChevronLeft className="h-3 w-3" />
-          {tm.backToList}
-        </button>
+          label={tm.backToList}
+          className="mb-1"
+        />
         <SessionHeader session={currentSession} />
       </div>
 
@@ -145,7 +144,7 @@ export const EvalTelemetryTab: React.FC = () => {
               aria-selected={isActive}
               data-testid={`eval-telemetry-subtab-${tab.id}`}
               onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center gap-1.5 border-b-2 px-3 py-2 text-xs transition-colors ${isActive ? 'border-blue-500 text-blue-400' : 'border-transparent text-zinc-500 hover:text-zinc-400'}`}
+              className={`flex items-center gap-1.5 border-b-2 px-3 py-2 text-xs transition-colors ${isActive ? 'border-badge-info text-badge-info' : 'border-transparent text-zinc-500 hover:text-zinc-400'}`}
             >
               <Icon className="h-3.5 w-3.5" />
               {tab.label}
@@ -157,7 +156,7 @@ export const EvalTelemetryTab: React.FC = () => {
             type="button"
             onClick={() => setLive(!isLive)}
             aria-label={isLive ? tm.live : tm.paused}
-            className={`flex items-center gap-1 rounded px-2 py-1 text-[10px] ${isLive ? 'bg-green-500/20 text-green-400' : 'bg-zinc-700 text-zinc-500'}`}
+            className={`flex items-center gap-1 rounded px-2 py-1 text-[10px] ${isLive ? 'bg-green-500/20 text-badge-success' : 'bg-zinc-700 text-zinc-500'}`}
           >
             {isLive ? <Radio className="h-3 w-3" /> : <CircleOff className="h-3 w-3" />}
           </button>

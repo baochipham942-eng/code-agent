@@ -19,6 +19,7 @@ import type {
   NeoWorkCardApprovalDecision,
   NeoWorkCardDelta,
   NeoWorkCardListOptions,
+  NeoWorkCardPriority,
   NeoWorkCardResultReview,
   NeoWorkCardResultReviewDecision,
   NeoWorkCardRevision,
@@ -54,6 +55,9 @@ function rowToWorkCard(row: SQLiteRow): NeoWorkCard {
     requesterUserId: String(row.requester_user_id),
     title: String(row.title),
     status: row.status as NeoWorkCardStatus,
+    priority: (row.priority as NeoWorkCardPriority | null | undefined) ?? 'medium',
+    dueAt: row.due_at == null ? null : Number(row.due_at),
+    blockedReason: row.blocked_reason == null ? null : String(row.blocked_reason),
     currentRevisionId: String(row.current_revision_id),
     approvedRevisionId: row.approved_revision_id == null ? null : String(row.approved_revision_id),
     createdAt: Number(row.created_at) || 0,
@@ -174,6 +178,7 @@ export interface SetNeoWorkCardStatusInput {
   status: NeoWorkCardStatus;
   updatedAt: number;
   archivedAt?: number | null;
+  blockedReason?: string | null;
 }
 
 export class NeoWorkCardRepository {
@@ -215,6 +220,17 @@ export class NeoWorkCardRepository {
         LIMIT ?
       `)
       .all(...args, boundedLimit) as SQLiteRow[];
+    return rows.map(rowToWorkCard);
+  }
+
+  listByProjectForCloudSync(projectId: string): NeoWorkCard[] {
+    const rows = this.db
+      .prepare(`
+        SELECT * FROM neo_work_cards
+        WHERE project_id = ?
+        ORDER BY updated_at ASC
+      `)
+      .all(projectId) as SQLiteRow[];
     return rows.map(rowToWorkCard);
   }
 
@@ -284,6 +300,30 @@ export class NeoWorkCardRepository {
     return result.changes > 0;
   }
 
+  updateWorkCardMeta(
+    workCardId: string,
+    meta: { priority?: NeoWorkCardPriority; dueAt?: number | null },
+    updatedAt: number,
+  ): boolean {
+    const assignments: string[] = [];
+    const args: unknown[] = [];
+    if (meta.priority !== undefined) {
+      assignments.push('priority = ?');
+      args.push(meta.priority);
+    }
+    if (meta.dueAt !== undefined) {
+      assignments.push('due_at = ?');
+      args.push(meta.dueAt);
+    }
+    if (assignments.length === 0) return false;
+    assignments.push('updated_at = ?');
+    args.push(updatedAt, workCardId);
+    const result = this.db
+      .prepare(`UPDATE neo_work_cards SET ${assignments.join(', ')} WHERE id = ?`)
+      .run(...args);
+    return result.changes > 0;
+  }
+
   appendRevision(revision: NeoWorkCardRevision): void {
     this.insertRevisionRow(revision);
   }
@@ -309,7 +349,8 @@ export class NeoWorkCardRepository {
                current_revision_id = ?,
                approved_revision_id = CASE WHEN ? THEN NULL ELSE approved_revision_id END,
                updated_at = ?,
-               archived_at = NULL
+               archived_at = NULL,
+               blocked_reason = NULL
          WHERE id = ?
       `).run(
         options.title ?? null,
@@ -351,7 +392,8 @@ export class NeoWorkCardRepository {
       UPDATE neo_work_cards
          SET approved_revision_id = ?,
              status = 'approved',
-             updated_at = ?
+             updated_at = ?,
+             blocked_reason = NULL
        WHERE id = ?
     `).run(revisionId, updatedAt, workCardId);
     return result.changes > 0;
@@ -362,16 +404,37 @@ export class NeoWorkCardRepository {
       UPDATE neo_work_cards
          SET approved_revision_id = NULL,
              status = ?,
-             updated_at = ?
+             updated_at = ?,
+             blocked_reason = CASE WHEN ? IN ('waiting_for_user', 'failed') THEN blocked_reason ELSE NULL END
        WHERE id = ?
-    `).run(status, updatedAt, workCardId);
+    `).run(status, updatedAt, status, workCardId);
     return result.changes > 0;
   }
 
-  setWorkCardStatus(workCardId: string, status: NeoWorkCardStatus, updatedAt: number): boolean {
-    const result = this.db
-      .prepare('UPDATE neo_work_cards SET status = ?, updated_at = ? WHERE id = ?')
-      .run(status, updatedAt, workCardId);
+  setWorkCardStatus(
+    workCardId: string,
+    status: NeoWorkCardStatus,
+    updatedAt: number,
+    blockedReason?: string | null,
+  ): boolean {
+    const result = this.db.prepare(`
+      UPDATE neo_work_cards
+         SET status = ?,
+             updated_at = ?,
+             blocked_reason = CASE
+               WHEN ? NOT IN ('waiting_for_user', 'failed') THEN NULL
+               WHEN ? THEN ?
+               ELSE blocked_reason
+             END
+       WHERE id = ?
+    `).run(
+      status,
+      updatedAt,
+      status,
+      blockedReason !== undefined ? 1 : 0,
+      blockedReason ?? null,
+      workCardId,
+    );
     return result.changes > 0;
   }
 
@@ -381,13 +444,21 @@ export class NeoWorkCardRepository {
          SET status = ?,
              approved_revision_id = CASE WHEN ? IN ('cancelled', 'archived') THEN NULL ELSE approved_revision_id END,
              updated_at = ?,
-             archived_at = ?
+             archived_at = ?,
+             blocked_reason = CASE
+               WHEN ? NOT IN ('waiting_for_user', 'failed') THEN NULL
+               WHEN ? THEN ?
+               ELSE blocked_reason
+             END
        WHERE id = ?
     `).run(
       input.status,
       input.status,
       input.updatedAt,
       input.status === 'archived' ? input.archivedAt ?? input.updatedAt : null,
+      input.status,
+      input.blockedReason !== undefined ? 1 : 0,
+      input.blockedReason ?? null,
       input.workCardId,
     );
     return result.changes > 0;
@@ -587,8 +658,9 @@ export class NeoWorkCardRepository {
     this.db.prepare(`
       INSERT INTO neo_work_cards (
         id, project_id, source_conversation_id, source_turn_id, requester_user_id,
-        title, status, current_revision_id, approved_revision_id, created_at, updated_at, archived_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        title, status, priority, due_at, blocked_reason, current_revision_id,
+        approved_revision_id, created_at, updated_at, archived_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       card.id,
       card.projectId,
@@ -597,6 +669,9 @@ export class NeoWorkCardRepository {
       card.requesterUserId,
       card.title,
       card.status,
+      card.priority ?? 'medium',
+      card.dueAt ?? null,
+      card.blockedReason ?? null,
       card.currentRevisionId,
       card.approvedRevisionId ?? null,
       card.createdAt,

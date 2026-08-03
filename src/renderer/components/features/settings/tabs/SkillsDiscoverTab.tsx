@@ -4,7 +4,7 @@
 // ============================================================================
 
 import React from 'react';
-import { AlertCircle, CheckCircle2, Search, ShieldCheck, X } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Loader2, Search, ShieldCheck, X } from 'lucide-react';
 import type {
   RecommendedSkillEntry,
   SkillCatalogPayload,
@@ -30,6 +30,7 @@ export interface SkillsDiscoverTabProps {
   /** 官方市场货架（签名 registry；离线/校验失败时为空） */
   registryItems: SkillRegistryListItem[];
   registryError: string | null;
+  registryLoading?: boolean;
   onInstallRegistryEntry: (item: SkillRegistryListItem) => void;
   /** 推荐目录（云端下发优先，内置兜底） */
   catalog: SkillCatalogPayload;
@@ -75,8 +76,8 @@ export function getBundleMissingRepoIds(
 
 const REGISTRY_RISK_CLASSES: Record<SkillRegistryRiskTier, string> = {
   low: 'border-zinc-700 bg-zinc-800 text-zinc-400',
-  medium: 'border-amber-500/20 bg-amber-500/10 text-amber-300',
-  high: 'border-red-500/20 bg-red-500/10 text-red-300',
+  medium: 'border-badge-warning/20 bg-amber-500/10 text-badge-warning',
+  high: 'border-red-500/20 bg-red-500/10 text-badge-danger',
 };
 
 const RegistryEntryCard: React.FC<{
@@ -95,7 +96,7 @@ const RegistryEntryCard: React.FC<{
             <h5 className="truncate text-sm font-medium text-zinc-200">
               {entry.displayName || entry.name}
             </h5>
-            <span className="shrink-0 rounded border border-emerald-500/20 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] text-emerald-300">
+            <span className="shrink-0 rounded border border-badge-success/20 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] text-badge-success">
               <ShieldCheck className="mr-0.5 inline h-3 w-3 align-[-2px]" />
               {entry.publisher}
             </span>
@@ -105,7 +106,7 @@ const RegistryEntryCard: React.FC<{
               </span>
             )}
             {hasUpdate && (
-              <span className="shrink-0 rounded border border-blue-500/20 bg-blue-500/10 px-1.5 py-0.5 text-[10px] text-blue-300">
+              <span className="shrink-0 rounded border border-badge-info/20 bg-blue-500/10 px-1.5 py-0.5 text-[10px] text-badge-info">
                 {labels.registryHasUpdate}
               </span>
             )}
@@ -133,7 +134,7 @@ const RegistryEntryCard: React.FC<{
             </Button>
           ) : (
             <span className="flex items-center gap-1 text-xs text-zinc-500">
-              <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
+              <CheckCircle2 className="h-3.5 w-3.5 text-badge-success" />
               {labels.registryInstalled}
             </span>
           )}
@@ -146,6 +147,7 @@ const RegistryEntryCard: React.FC<{
 export const SkillsDiscoverTab: React.FC<SkillsDiscoverTabProps> = ({
   registryItems,
   registryError,
+  registryLoading,
   onInstallRegistryEntry,
   catalog: rawCatalog,
   recommendedRepos,
@@ -186,7 +188,13 @@ export const SkillsDiscoverTab: React.FC<SkillsDiscoverTabProps> = ({
           <h4 className="text-sm font-medium text-zinc-200">{discoverText.registryTitle}</h4>
           <p className="text-xs text-zinc-500 mt-0.5">{discoverText.registryDescription}</p>
         </div>
-        {registryItems.length > 0 ? (
+        {registryLoading && registryItems.length === 0 ? (
+          // 货架独立加载态：不再阻塞整页（registry 走控制面网络，冷路径 2s 级）
+          <div className="flex items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-900/60 p-3 text-xs text-zinc-500" data-testid="skills-registry-loading">
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            {discoverText.registryTitle}
+          </div>
+        ) : registryItems.length > 0 ? (
           <div className="space-y-2">
             {registryItems.map((item) => (
               <RegistryEntryCard
@@ -304,7 +312,7 @@ export const SkillsDiscoverTab: React.FC<SkillsDiscoverTabProps> = ({
               href="https://skillsmp.com"
               target="_blank"
               rel="noopener noreferrer"
-              className="text-blue-400 hover:text-blue-300"
+              className="text-badge-info hover:text-badge-info"
             >
               SkillsMP
             </a>

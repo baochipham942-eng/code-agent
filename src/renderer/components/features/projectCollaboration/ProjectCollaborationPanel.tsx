@@ -1,6 +1,7 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useShallow } from 'zustand/shallow';
-import { Loader2, Search, Sparkles, X } from 'lucide-react';
+import { Loader2, Search, X } from 'lucide-react';
 import type { NeoWorkCardDetail } from '@shared/contract/tag';
 import { toast } from '../../../hooks/useToast';
 import { useAuthStore } from '../../../stores/authStore';
@@ -22,7 +23,15 @@ import {
 } from '../chat/neoWorkCardPhase';
 import type { Message } from '@shared/contract/message';
 import { useSessionStore } from '../../../stores/sessionStore';
-import { formatRequesterLabel } from './projectCollaborationData';
+import { useI18n } from '../../../hooks/useI18n';
+import {
+  formatNeoTopicDueDay,
+  formatRequesterLabel,
+  isNeoTopicDueOverdue,
+  NEO_TOPIC_SORT_COMPARATORS,
+  NEO_WORK_CARD_PRIORITY_CHIP_STYLE,
+  type NeoTopicSortMode,
+} from './projectCollaborationData';
 import { ProjectCollaborationDetailPane } from './ProjectCollaborationDetailPane';
 
 // ============================================================================
@@ -33,6 +42,8 @@ import { ProjectCollaborationDetailPane } from './ProjectCollaborationDetailPane
 
 export interface ProjectCollaborationPanelProps {
   projectId?: string | null;
+  /** 嵌入模式（项目空间任务 tab）：隐藏面板自带标题头（宿主页头已有项目名）。 */
+  embedded?: boolean;
   /** 注入的 topic 明细（测试/fixture 用）。传入时绕开 store 加载。 */
   details?: NeoWorkCardDetail[];
   /** 注入的源会话消息（测试/fixture 用），key=sourceConversationId。传入时详情绕开 IPC 拉取。 */
@@ -90,9 +101,17 @@ function TopicRow({
   currentUser?: { id?: string | null; name?: string | null; email?: string | null } | null;
   onSelect: (id: string) => void;
 }) {
+  const { t } = useI18n();
   const { workCard } = detail;
   const phase = statusPhase(workCard.status);
   const snippet = topicActivitySnippet(detail);
+  const priority = workCard.priority ?? 'medium';
+  const priorityLabel: Record<'urgent' | 'high' | 'low', string> = {
+    urgent: t.neoTopics.priorityUrgent,
+    high: t.neoTopics.priorityHigh,
+    low: t.neoTopics.priorityLow,
+  };
+  const dueOverdue = isNeoTopicDueOverdue(workCard);
   return (
     <div
       role="button"
@@ -105,7 +124,7 @@ function TopicRow({
         }
       }}
       className={`rounded-md border px-3 py-2 text-left outline-none transition-colors ${
-        isSelected ? 'border-emerald-500/45 bg-emerald-500/[0.07]' : 'border-zinc-800 bg-zinc-950/45 hover:border-zinc-700'
+        isSelected ? 'border-badge-success/45 bg-emerald-500/[0.07]' : 'border-zinc-800 bg-zinc-950/45 hover:border-zinc-700'
       }`}
       data-testid={`neo-topic-row-${workCard.id}`}
     >
@@ -113,15 +132,33 @@ function TopicRow({
         <div className="min-w-0 truncate text-[13px] font-medium text-zinc-100" title={workCard.title}>
           {workCard.title}
         </div>
-        <span className={`inline-flex shrink-0 items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] font-medium ${NEO_WORK_CARD_PHASE_CHIP_STYLE[phase]}`}>
-          {phase === 'running' && <Loader2 className="h-2.5 w-2.5 animate-spin" />}
-          {NEO_WORK_CARD_PHASE_LABEL[phase]}
+        <span className="flex shrink-0 items-center gap-1">
+          {priority !== 'medium' && (
+            <span
+              className={`inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-medium ${NEO_WORK_CARD_PRIORITY_CHIP_STYLE[priority]}`}
+              data-testid={`neo-topic-priority-${workCard.id}`}
+            >
+              {priorityLabel[priority]}
+            </span>
+          )}
+          <span className={`inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] font-medium ${NEO_WORK_CARD_PHASE_CHIP_STYLE[phase]}`}>
+            {phase === 'running' && <Loader2 className="h-2.5 w-2.5 animate-spin" />}
+            {NEO_WORK_CARD_PHASE_LABEL[phase]}
+          </span>
         </span>
       </div>
       {snippet && <div className="mt-1 line-clamp-1 text-[11px] leading-5 text-zinc-500">{snippet}</div>}
       <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-zinc-600">
         <span className="truncate">{formatRequesterLabel(workCard.requesterUserId, currentUser)}</span>
         <span>{new Date(workCard.updatedAt).toLocaleString()}</span>
+        {workCard.dueAt != null && (
+          <span
+            className={dueOverdue ? 'font-medium text-badge-danger' : undefined}
+            data-testid={`neo-topic-due-${workCard.id}`}
+          >
+            {t.neoTopics.duePrefix} {formatNeoTopicDueDay(workCard.dueAt)}
+          </span>
+        )}
       </div>
     </div>
   );
@@ -129,6 +166,7 @@ function TopicRow({
 
 export const ProjectCollaborationPanel: React.FC<ProjectCollaborationPanelProps> = ({
   projectId = null,
+  embedded = false,
   details,
   sourceMessagesByConversation,
   onOpenConversation,
@@ -138,6 +176,7 @@ export const ProjectCollaborationPanel: React.FC<ProjectCollaborationPanelProps>
 }) => {
   const currentUser = useAuthStore((state) => state.user ?? null);
   const actorUserId = currentUser?.id ?? 'local-user';
+  const { t } = useI18n();
   // 无绑定项目（projectId=null）= 全局目录：跨项目列全部 @neo topic（兜底建的卡挂在 proj_unsorted 等桶下）
   const scopeKey = projectId ?? NEO_WORK_CARD_ALL_SCOPE;
   const storeDetails = useNeoWorkCardStore(useShallow((state) => (
@@ -151,16 +190,17 @@ export const ProjectCollaborationPanel: React.FC<ProjectCollaborationPanelProps>
   const archive = useNeoWorkCardStore((state) => state.archive);
   const approveMemoryCandidate = useNeoWorkCardStore((state) => state.approveMemoryCandidate);
 
-  const topics = useMemo(() => {
-    const source = details ?? storeDetails;
-    return [...source].sort((a, b) => b.workCard.updatedAt - a.workCard.updatedAt);
-  }, [details, storeDetails]);
-
   // 抽屉模型：默认不选中（列表先"扫"），点行才开详情抽屉
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [phaseFilter, setPhaseFilter] = useState<PhaseFilter>('all');
   const [mineOnly, setMineOnly] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [sortMode, setSortMode] = useState<NeoTopicSortMode>('recent');
+
+  const topics = useMemo(() => {
+    const source = details ?? storeDetails;
+    return [...source].sort(NEO_TOPIC_SORT_COMPARATORS[sortMode]);
+  }, [details, storeDetails, sortMode]);
 
   const filteredTopics = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
@@ -216,6 +256,19 @@ export const ProjectCollaborationPanel: React.FC<ProjectCollaborationPanelProps>
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [selectedId]);
 
+  // 外部点击收起：pointerdown 先关，落在别的 topic 行上时其 click 随后重开新详情（保持"点别的行直接切换"）
+  const drawerRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!selectedId) return;
+    const onPointerDown = (event: PointerEvent) => {
+      if (drawerRef.current && event.target instanceof Node && !drawerRef.current.contains(event.target)) {
+        setSelectedId(null);
+      }
+    };
+    document.addEventListener('pointerdown', onPointerDown);
+    return () => document.removeEventListener('pointerdown', onPointerDown);
+  }, [selectedId]);
+
   const handleCancel = useCallback(async (workCardId: string) => {
     try {
       if (onCancel) await onCancel(workCardId);
@@ -252,35 +305,25 @@ export const ProjectCollaborationPanel: React.FC<ProjectCollaborationPanelProps>
 
   return (
     <div className="relative flex h-full min-h-0 flex-col overflow-hidden bg-zinc-900" data-testid="neo-topic-directory">
-      <div className="shrink-0 border-b border-zinc-800 px-4 py-3">
-        <div className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-md border border-emerald-500/20 bg-emerald-500/10">
-            <Sparkles className="h-4 w-4 text-emerald-200" />
-          </div>
-          <div className="min-w-0 flex-1">
-            <h2 className="text-sm font-semibold text-zinc-100">Neo 协同</h2>
-            <div className="mt-0.5 text-[11px] text-zinc-500">
-              {projectId ? `所有 @neo topic · ${projectId}` : '所有 @neo topic'}
+      {/* 标题由 Page 层 FullScreenPageHeader 统一承担（2026-07-29 去掉重复的「Neo 协同」旧 header），
+          这里只剩加载/错误指示；嵌入模式的间距继续由宿主 tab 统一承担。 */}
+      {(loading || loadError) && (
+        <div className={embedded ? 'shrink-0 px-4' : 'shrink-0 border-b border-zinc-800 px-4 py-3'}>
+          {loading && (
+            <div className="inline-flex items-center gap-1.5 rounded border border-zinc-800 bg-zinc-950/50 px-2 py-1 text-[11px] text-zinc-400">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />正在加载 topic
             </div>
-          </div>
-          <span className="shrink-0 text-[11px] text-zinc-500" data-testid="neo-topic-count">
-            {filteredTopics.length}/{topics.length}
-          </span>
+          )}
+          {loadError && (
+            <div className="rounded border border-badge-danger/25 bg-rose-500/10 px-2 py-1 text-[11px] leading-5 text-badge-danger" data-testid="project-collab-load-error">
+              {loadError}
+            </div>
+          )}
         </div>
-        {loading && (
-          <div className="mt-3 inline-flex items-center gap-1.5 rounded border border-zinc-800 bg-zinc-950/50 px-2 py-1 text-[11px] text-zinc-400">
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />正在加载 topic
-          </div>
-        )}
-        {loadError && (
-          <div className="mt-3 rounded border border-rose-500/25 bg-rose-500/10 px-2 py-1 text-[11px] leading-5 text-rose-100" data-testid="project-collab-load-error">
-            {loadError}
-          </div>
-        )}
-      </div>
+      )}
 
       <div className="min-h-0 flex-1">
-        <div className="h-full min-h-0 overflow-y-auto px-4 py-3">
+        <div className={embedded ? 'h-full min-h-0 overflow-y-auto px-4 pb-3' : 'h-full min-h-0 overflow-y-auto px-4 py-3'}>
           <div className="mb-3 space-y-2">
             <div className="relative">
               <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-600" />
@@ -288,7 +331,7 @@ export const ProjectCollaborationPanel: React.FC<ProjectCollaborationPanelProps>
                 value={searchQuery}
                 onChange={(event) => setSearchQuery(event.target.value)}
                 placeholder="搜索 topic / 步骤 / 文件"
-                className="h-8 w-full rounded-md border border-zinc-800 bg-zinc-900 pl-8 pr-2 text-[12px] text-zinc-200 outline-none placeholder:text-zinc-600 focus:border-emerald-500/60"
+                className="h-8 w-full rounded-md border border-zinc-800 bg-zinc-900 pl-8 pr-2 text-[12px] text-zinc-200 outline-none placeholder:text-zinc-600 focus:border-badge-success/60"
                 data-testid="neo-topic-search"
               />
             </div>
@@ -300,7 +343,7 @@ export const ProjectCollaborationPanel: React.FC<ProjectCollaborationPanelProps>
                   onClick={() => setPhaseFilter(filter.id)}
                   className={`h-7 rounded-md border px-2 text-[11px] transition-colors ${
                     phaseFilter === filter.id
-                      ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-100'
+                      ? 'border-badge-success/40 bg-emerald-500/10 text-badge-success'
                       : 'border-zinc-800 bg-zinc-900 text-zinc-500 hover:border-zinc-700 hover:text-zinc-300'
                   }`}
                   data-testid={`neo-topic-filter-${filter.id}`}
@@ -318,6 +361,16 @@ export const ProjectCollaborationPanel: React.FC<ProjectCollaborationPanelProps>
                 />
                 只看我的
               </label>
+              <select
+                value={sortMode}
+                onChange={(event) => setSortMode(event.target.value as NeoTopicSortMode)}
+                className="h-7 rounded-md border border-zinc-800 bg-zinc-900 px-1.5 text-[11px] text-zinc-400 outline-none focus:border-badge-success/60"
+                data-testid="neo-topic-sort"
+              >
+                <option value="recent">{t.neoTopics.sortRecent}</option>
+                <option value="priority">{t.neoTopics.sortPriority}</option>
+                <option value="dueAt">{t.neoTopics.sortDueAt}</option>
+              </select>
             </div>
           </div>
 
@@ -342,10 +395,12 @@ export const ProjectCollaborationPanel: React.FC<ProjectCollaborationPanelProps>
 
       </div>
 
-      {/* 详情 = 非模态右侧抽屉：列表保持可点（点别的行直接切换内容），X/Esc 关闭 */}
-      {selectedDetail && (
+      {/* 详情 = 非模态右侧抽屉：列表保持可点（点别的行直接切换内容），X/Esc/外部点击关闭。
+          portal 到 body + fixed：占满 app 全高（挂载点在全屏页 banner 之下，absolute 只能盖住面板区）。 */}
+      {selectedDetail && createPortal(
         <div
-          className="absolute inset-y-0 right-0 z-40 flex w-[min(560px,100%)] flex-col border-l border-zinc-800 bg-zinc-950 shadow-[-24px_0_48px_-24px_rgba(0,0,0,0.8)]"
+          ref={drawerRef}
+          className="fixed inset-y-0 right-0 z-50 flex w-[min(560px,100vw)] flex-col border-l border-zinc-800 bg-zinc-950 shadow-[-24px_0_48px_-24px_rgba(0,0,0,0.8)]"
           data-testid="neo-topic-drawer"
           role="complementary"
           aria-label="topic 详情"
@@ -372,7 +427,8 @@ export const ProjectCollaborationPanel: React.FC<ProjectCollaborationPanelProps>
               onApproveMemory={handleApproveMemory}
             />
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );

@@ -2,16 +2,17 @@
 // VoiceInputSettings - composer voice input settings
 // ============================================================================
 
-import React, { useEffect, useState } from 'react';
-import { Check, Cloud, Cpu, Mic, RotateCcw, SlidersHorizontal, Trash2, Wand2 } from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { AudioLines, Check, Cloud, Cpu, Mic, RotateCcw, SlidersHorizontal, Trash2, Wand2 } from 'lucide-react';
 import { IPC_DOMAINS } from '@shared/ipc';
 import type { AppSettings, SpeechInputSettings, SpeechRetainedAudioClearResult, SpeechTranscriptionMode } from '@shared/contract';
 import { DEFAULT_SPEECH_INPUT_SETTINGS, VOICE_INPUT_SETTINGS_UPDATED_EVENT } from '@shared/contract';
+import { VOICE_VOCABULARY_MAX_ENTRIES, VOICE_VOCABULARY_MAX_TERM_LENGTH } from '@shared/constants/voice';
 import ipcService from '../../../../services/ipcService';
 import { createLogger } from '../../../../utils/logger';
 import { useI18n } from '../../../../hooks/useI18n';
 import { Toggle } from '../../../primitives/Toggle';
-import { VoiceLiveSettingsSection } from './VoiceLiveSettingsSection';
+import { Button } from '../../../primitives';
 
 const logger = createLogger('VoiceInputSettings');
 
@@ -19,6 +20,17 @@ const MODE_OPTIONS: Array<{
   id: SpeechTranscriptionMode;
   icon: React.ReactNode;
 }> = [
+  // 排序 = 推荐顺序：云端自备 key 在前（识别率是这个功能的命根子），
+  // 本地两档排后面并在文案里写明「需自行安装」——小模型够强之前不主推
+  // （产品负责人 2026-07-27 拍板）。
+  {
+    id: 'stream',
+    icon: <AudioLines className="h-4 w-4" />,
+  },
+  {
+    id: 'cloud-only',
+    icon: <Cloud className="h-4 w-4" />,
+  },
   {
     id: 'local-first',
     icon: <Cpu className="h-4 w-4" />,
@@ -27,27 +39,29 @@ const MODE_OPTIONS: Array<{
     id: 'local-only',
     icon: <Mic className="h-4 w-4" />,
   },
-  {
-    id: 'cloud-only',
-    icon: <Cloud className="h-4 w-4" />,
-  },
 ];
 
 const LANGUAGE_OPTION_IDS = ['auto', 'zh', 'en', 'ja', 'ko', 'es', 'fr'] as const;
-
-const MODEL_OPTIONS = [
-  { id: 'ggml-large-v3-turbo.bin', label: 'large-v3-turbo' },
-  { id: 'ggml-large-v3.bin', label: 'large-v3' },
-  { id: 'ggml-medium.bin', label: 'medium' },
-  { id: 'ggml-small.bin', label: 'small' },
-  { id: 'ggml-base.bin', label: 'base' },
-];
 
 function mergeSpeechSettings(value?: Partial<SpeechInputSettings>): SpeechInputSettings {
   return {
     ...DEFAULT_SPEECH_INPUT_SETTINGS,
     ...(value ?? {}),
   };
+}
+
+/** 前端清洗规则与 Host `getVoiceVocabulary` 严格一致：trim、去空、稳定去重、超长丢弃、最多 100 条。 */
+export function cleanVocabularyInput(raw: string): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const line of raw.split('\n')) {
+    const term = line.trim();
+    if (!term || term.length > VOICE_VOCABULARY_MAX_TERM_LENGTH || seen.has(term)) continue;
+    seen.add(term);
+    result.push(term);
+    if (result.length >= VOICE_VOCABULARY_MAX_ENTRIES) break;
+  }
+  return result;
 }
 
 export const VoiceInputSettings: React.FC = () => {
@@ -57,6 +71,9 @@ export const VoiceInputSettings: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const [clearingAudio, setClearingAudio] = useState(false);
   const [clearAudioMessage, setClearAudioMessage] = useState<string | null>(null);
+  const [vocabularyText, setVocabularyText] = useState('');
+
+  const vocabularyCount = useMemo(() => cleanVocabularyInput(vocabularyText).length, [vocabularyText]);
 
   useEffect(() => {
     let cancelled = false;
@@ -65,6 +82,8 @@ export const VoiceInputSettings: React.FC = () => {
         const appSettings = await ipcService.invokeDomain<AppSettings>(IPC_DOMAINS.SETTINGS, 'get');
         if (!cancelled) {
           setSettings(mergeSpeechSettings(appSettings.speech));
+          const cleaned = cleanVocabularyInput((appSettings.voice?.vocabulary ?? []).join('\n'));
+          setVocabularyText(cleaned.join('\n'));
         }
       } catch (error) {
         logger.error(voiceText.loadSettingsFailedLog, error);
@@ -92,6 +111,23 @@ export const VoiceInputSettings: React.FC = () => {
     }
   };
 
+  const saveVocabulary = async (cleaned: string[]) => {
+    try {
+      await ipcService.invokeDomain(IPC_DOMAINS.SETTINGS, 'set', {
+        voice: { vocabulary: cleaned },
+      } as Partial<AppSettings>);
+    } catch (error) {
+      logger.error(voiceText.saveSettingsFailedLog, error);
+    }
+  };
+
+  const normalizeVocabularyText = () => {
+    const cleaned = cleanVocabularyInput(vocabularyText);
+    const normalized = cleaned.join('\n');
+    if (normalized !== vocabularyText) setVocabularyText(normalized);
+    void saveVocabulary(cleaned);
+  };
+
   const clearRetainedAudio = async () => {
     setClearingAudio(true);
     setClearAudioMessage(null);
@@ -106,18 +142,11 @@ export const VoiceInputSettings: React.FC = () => {
     }
   };
 
-  return (
-    <div className="space-y-8">
-      {/* 实时通话组（§7.6 IA：实时通话 + 口述输入同页归并） */}
-      <section>
-        <h2 className="mb-4 text-base font-semibold text-zinc-100">{t.voice.settings.live}</h2>
-        <VoiceLiveSettingsSection />
-      </section>
+  // 本地模型 / 线程数仅本地档（local-first / local-only）有意义，非本地档置灰
+  const isLocalMode = settings.mode === 'local-first' || settings.mode === 'local-only';
 
-      {/* 口述输入组（现有 ASR 设置，原样保留） */}
-      <section>
-        <h2 className="mb-4 border-t border-zinc-700 pt-6 text-base font-semibold text-zinc-100">{t.voice.settings.dictation}</h2>
-        <div className="space-y-6">
+  return (
+    <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div className="pr-4">
           <h3 className="mb-1 text-sm font-medium text-zinc-200">{voiceText.enableTitle}</h3>
@@ -133,7 +162,7 @@ export const VoiceInputSettings: React.FC = () => {
 
       <div className="border-t border-zinc-700 pt-4">
         <h3 className="mb-3 text-sm font-medium text-zinc-200">{voiceText.modeTitle}</h3>
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid auto-rows-fr grid-cols-2 gap-3 lg:grid-cols-4">
           {MODE_OPTIONS.map((option) => {
             const active = settings.mode === option.id;
             const optionText = voiceText.modes[option.id];
@@ -142,15 +171,15 @@ export const VoiceInputSettings: React.FC = () => {
                 key={option.id}
                 type="button"
                 onClick={() => persist({ mode: option.id })}
-                className={`relative rounded-lg border p-3 text-left transition-all ${
+                className={`relative flex h-full flex-col rounded-lg border p-3 text-left transition-all ${
                   active
                     ? 'border-zinc-500 bg-zinc-800/60 ring-1 ring-white/10'
                     : 'border-zinc-700 hover:border-zinc-600 hover:bg-zinc-800'
                 }`}
               >
-                <div className="mb-2 flex items-center gap-2 text-zinc-300">
+                <div className="mb-2 flex h-5 items-center gap-2 text-zinc-300">
                   {option.icon}
-                  <span className="text-sm font-medium">{optionText.label}</span>
+                  <span className="text-sm font-medium leading-5">{optionText.label}</span>
                 </div>
                 <p className="text-xs leading-5 text-zinc-500">{optionText.description}</p>
                 {active && (
@@ -164,118 +193,124 @@ export const VoiceInputSettings: React.FC = () => {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-4 border-t border-zinc-700 pt-4">
-        <label className="space-y-2">
+      {/* 识别组：语言（本地模型已搬「模型与能力」组的「语音模型」tab，T1） */}
+      <div className="border-t border-zinc-700 pt-4">
+        <h3 className="mb-3 text-sm font-medium text-zinc-200">{voiceText.groupRecognition}</h3>
+        <label className="block space-y-2">
           <span className="text-sm font-medium text-zinc-200">{voiceText.languageLabel}</span>
           <select
             value={settings.language}
             onChange={(event) => persist({ language: event.target.value })}
-            className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-primary-500"
+            className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-accent-accessible"
           >
             {LANGUAGE_OPTION_IDS.map((id) => (
               <option key={id} value={id}>{voiceText.languages[id]}</option>
             ))}
           </select>
         </label>
-
-        <label className="space-y-2">
-          <span className="text-sm font-medium text-zinc-200">{voiceText.localModelLabel}</span>
-          <select
-            value={settings.localModel}
-            onChange={(event) => persist({ localModel: event.target.value })}
-            className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-primary-500"
-          >
-            {MODEL_OPTIONS.map((option) => (
-              <option key={option.id} value={option.id}>{option.label}</option>
-            ))}
-          </select>
-        </label>
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
-        <label className="space-y-2">
-          <span className="text-sm font-medium text-zinc-200">{voiceText.threadsLabel}</span>
-          <div className="flex items-center gap-3">
-            <input
-              type="range"
-              min={1}
-              max={16}
-              value={settings.threads}
-              onChange={(event) => persist({ threads: Number(event.target.value) })}
-              className="min-w-0 flex-1"
-            />
-            <span className="w-8 rounded bg-zinc-800 px-2 py-1 text-center text-xs text-zinc-300">
-              {settings.threads}
-            </span>
-          </div>
-        </label>
-
-        <label className="space-y-2">
-          <span className="text-sm font-medium text-zinc-200">{voiceText.maxDurationLabel}</span>
-          <div className="flex items-center gap-3">
-            <input
-              type="range"
-              min={15}
-              max={300}
-              step={15}
-              value={settings.maxDurationSeconds}
-              onChange={(event) => persist({ maxDurationSeconds: Number(event.target.value) })}
-              className="min-w-0 flex-1"
-            />
-            <span className="w-14 rounded bg-zinc-800 px-2 py-1 text-center text-xs text-zinc-300">
-              {settings.maxDurationSeconds}s
-            </span>
-          </div>
-        </label>
-      </div>
-
-      <div className="grid grid-cols-2 gap-4 border-t border-zinc-700 pt-4">
-        <label className="space-y-2">
-          <span className="text-sm font-medium text-zinc-200">{voiceText.shortcutLabel}</span>
-          <input
-            value={settings.shortcut || ''}
-            onChange={(event) => persist({ shortcut: event.target.value.trim() })}
-            placeholder="Mod+Shift+V"
-            className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 outline-none placeholder:text-zinc-600 focus:border-primary-500"
-          />
-        </label>
-
-        <button
-          type="button"
-          onClick={() => persist({ preserveAudioOnFailure: !settings.preserveAudioOnFailure })}
-          className={`flex items-center gap-3 rounded-lg border p-3 text-left transition-all ${
-            settings.preserveAudioOnFailure
-              ? 'border-zinc-500 bg-zinc-800/60'
-              : 'border-zinc-700 hover:border-zinc-600 hover:bg-zinc-800'
-          }`}
-        >
-          <RotateCcw className="h-4 w-4 shrink-0 text-zinc-400" />
-          <div className="min-w-0 flex-1">
-            <div className="text-sm font-medium text-zinc-200">{voiceText.preserveAudioTitle}</div>
-            <div className="mt-1 text-xs text-zinc-500">{voiceText.preserveAudioDescription}</div>
-          </div>
-          {settings.preserveAudioOnFailure && <Check className="h-4 w-4 text-zinc-200" />}
-        </button>
-
-        <button
-          type="button"
-          onClick={() => void clearRetainedAudio()}
-          disabled={clearingAudio}
-          className="flex items-center gap-3 rounded-lg border border-zinc-700 p-3 text-left transition-all hover:border-zinc-600 hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          <Trash2 className="h-4 w-4 shrink-0 text-zinc-400" />
-          <div className="min-w-0 flex-1">
-            <div className="text-sm font-medium text-zinc-200">{voiceText.clearAudioTitle}</div>
-            <div className="mt-1 text-xs text-zinc-500">
-              {clearAudioMessage || voiceText.clearAudioDescription}
+      {/* 性能组：线程数（仅本地档）+ 最长录音 */}
+      <div className="border-t border-zinc-700 pt-4">
+        <h3 className="mb-3 text-sm font-medium text-zinc-200">{voiceText.groupPerformance}</h3>
+        <div className="grid grid-cols-2 gap-4">
+          <label className={`space-y-2${isLocalMode ? '' : ' opacity-50'}`}>
+            <span className="text-sm font-medium text-zinc-200">{voiceText.threadsLabel}</span>
+            <div className="flex items-center gap-3">
+              <input
+                type="range"
+                min={1}
+                max={16}
+                value={settings.threads}
+                onChange={(event) => persist({ threads: Number(event.target.value) })}
+                disabled={!isLocalMode}
+                className="min-w-0 flex-1 disabled:cursor-not-allowed"
+              />
+              <span className="w-8 rounded bg-zinc-800 px-2 py-1 text-center text-xs text-zinc-300">
+                {settings.threads}
+              </span>
             </div>
-          </div>
-        </button>
+          </label>
 
+          <label className="space-y-2">
+            <span className="text-sm font-medium text-zinc-200">{voiceText.maxDurationLabel}</span>
+            <div className="flex items-center gap-3">
+              <input
+                type="range"
+                min={15}
+                max={300}
+                step={15}
+                value={settings.maxDurationSeconds}
+                onChange={(event) => persist({ maxDurationSeconds: Number(event.target.value) })}
+                className="min-w-0 flex-1"
+              />
+              <span className="w-14 rounded bg-zinc-800 px-2 py-1 text-center text-xs text-zinc-300">
+                {settings.maxDurationSeconds}s
+              </span>
+            </div>
+          </label>
+        </div>
+      </div>
+
+      {/* 录音组：快捷键 + 失败后保留重试（开关）+ 清理失败录音（动作，点了真删文件） */}
+      <div className="border-t border-zinc-700 pt-4">
+        <h3 className="mb-3 text-sm font-medium text-zinc-200">{voiceText.groupRecording}</h3>
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-4">
+            <label className="space-y-2">
+              <span className="text-sm font-medium text-zinc-200">{voiceText.shortcutLabel}</span>
+              <input
+                value={settings.shortcut || ''}
+                onChange={(event) => persist({ shortcut: event.target.value.trim() })}
+                placeholder="Mod+Shift+V"
+                className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 outline-none placeholder:text-zinc-600 focus:border-accent-accessible"
+              />
+            </label>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => persist({ preserveAudioOnFailure: !settings.preserveAudioOnFailure })}
+            className={`flex w-full items-center gap-3 rounded-lg border p-3 text-left transition-all ${
+              settings.preserveAudioOnFailure
+                ? 'border-zinc-500 bg-zinc-800/60'
+                : 'border-zinc-700 hover:border-zinc-600 hover:bg-zinc-800'
+            }`}
+          >
+            <RotateCcw className="h-4 w-4 shrink-0 text-zinc-400" />
+            <div className="min-w-0 flex-1">
+              <div className="text-sm font-medium text-zinc-200">{voiceText.preserveAudioTitle}</div>
+              <div className="mt-1 text-xs text-zinc-500">{voiceText.preserveAudioDescription}</div>
+            </div>
+            {settings.preserveAudioOnFailure && <Check className="h-4 w-4 text-zinc-200" />}
+          </button>
+
+          <div className="flex items-center gap-3">
+            {/* 图标必须自带尺寸：Button 只给外层 span 加尺寸类，不约束里面的 svg，
+                lucide 不给 className 就按默认 24px 画，会溢出来压在文字上。 */}
+            <Button
+              variant="secondary"
+              size="sm"
+              leftIcon={<Trash2 className="h-3.5 w-3.5" />}
+              loading={clearingAudio}
+              onClick={() => void clearRetainedAudio()}
+            >
+              {voiceText.clearAudioTitle}
+            </Button>
+            <span className="text-xs text-zinc-500">
+              {clearAudioMessage || voiceText.clearAudioDescription}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* 转写后处理组 */}
+      <div className="border-t border-zinc-700 pt-4">
+        <h3 className="mb-3 text-sm font-medium text-zinc-200">{voiceText.groupPostProcessing}</h3>
         <button
           type="button"
           onClick={() => persist({ postProcessingEnabled: !settings.postProcessingEnabled })}
-          className={`col-span-2 flex items-center gap-3 rounded-lg border p-3 text-left transition-all ${
+          className={`flex w-full items-center gap-3 rounded-lg border p-3 text-left transition-all ${
             settings.postProcessingEnabled
               ? 'border-zinc-500 bg-zinc-800/60'
               : 'border-zinc-700 hover:border-zinc-600 hover:bg-zinc-800'
@@ -290,12 +325,28 @@ export const VoiceInputSettings: React.FC = () => {
         </button>
       </div>
 
+      {/* 口述词表：本地清洗后保存，按 Host 相同规则过滤 */}
+      <div className="border-t border-zinc-700 pt-4" data-testid="voice-vocabulary-section">
+        <h3 className="mb-1 text-sm font-medium text-zinc-200">{voiceText.vocabularyTitle}</h3>
+        <p className="mb-3 text-xs text-zinc-500">{voiceText.vocabularyDescription}</p>
+        <textarea
+          data-testid="voice-vocabulary"
+          value={vocabularyText}
+          onChange={(event) => setVocabularyText(event.target.value)}
+          onBlur={normalizeVocabularyText}
+          placeholder={voiceText.vocabularyPlaceholder}
+          rows={6}
+          className="w-full resize-y rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 outline-none placeholder:text-zinc-600 focus:border-accent-accessible"
+        />
+        <p className="mt-2 text-xs text-zinc-500" data-testid="voice-vocabulary-count">
+          {voiceText.vocabularyCount.replace('{count}', String(vocabularyCount))}
+        </p>
+      </div>
+
       <div className="flex items-center gap-2 border-t border-zinc-700 pt-4 text-xs text-zinc-500">
         <SlidersHorizontal className="h-3.5 w-3.5" />
         <span>{saving ? voiceText.saving : voiceText.effectiveNextRecording}</span>
       </div>
-        </div>
-      </section>
     </div>
   );
 };

@@ -24,7 +24,10 @@ export const enSettingsCore = {
       skills: 'Skills',
       conversation: 'Context compaction',
       keybindings: 'Shortcuts',
-      voiceInput: 'Voice',
+      voiceLive: 'Live Voice',
+      voiceInput: 'Speech to text',
+      // T1 (2026-07-28): call model / timbre / transcription model got their own tab under Models
+      voiceModel: 'Voice models',
       doctor: 'Diagnostics',
       workspace: 'Workspace',
       automation: 'Automation',
@@ -63,6 +66,10 @@ export const enSettingsCore = {
       permissionMode: 'Safety mode',
       modelRoutingStrategy: 'Model routing strategy',
       voiceInput: 'Voice input',
+      voiceLive: 'Live Voice',
+      voiceLiveVoice: 'Live Voice timbre',
+      voiceLiveInterrupt: 'Interrupt mode',
+      voiceConversationModel: 'Live Voice model',
       whisperModel: 'Whisper model',
       transcriptionLanguage: 'Transcription language',
       keybindingsConfig: 'Shortcut configuration',
@@ -96,6 +103,7 @@ export const enSettingsCore = {
       theme: 'Theme',
       fontSize: 'Font size',
       language: 'Language',
+      promptManager: 'Prompt management',
       dataManagement: 'Data management',
       databaseSize: 'Database size',
       clearCache: 'Clear cache',
@@ -141,11 +149,15 @@ export const enSettingsCore = {
         dark: 'Dark',
         light: 'Light',
         auto: 'Auto',
+        highContrastDark: 'High Contrast Dark',
+        highContrastLight: 'High Contrast Light',
       },
       themeDescriptions: {
         dark: 'Dark background for working at night',
         light: 'Light background for daytime use',
         system: 'Switch automatically with your system setting',
+        highContrastDark: 'Dark theme with maximum contrast for readability',
+        highContrastLight: 'Light theme with maximum contrast for readability',
       },
       currentSystemThemePrefix: 'Current system theme: ',
       fontSize: 'Font size',
@@ -360,6 +372,8 @@ export const enSettingsCore = {
       resetShortcut: 'Restore this default',
       saving: 'Saving...',
       autosaveHint: 'Changes are saved automatically. System-level hotkeys will be re-registered in the desktop runtime; failed items stay in config and are logged for diagnostics.',
+      registrationFailedPrefix: 'Registration failed: ',
+      registrationFailedUnknown: 'Unknown registration error',
       categories: {
         global: 'Global launch',
         sessionEditing: 'Session editing',
@@ -409,6 +423,10 @@ export const enSettingsCore = {
         'session.new': {
           label: 'New session',
           description: 'Create a new conversation session',
+        },
+        'voice.callToggle': {
+          label: 'Start / end Live call',
+          description: 'Bring the app forward and start a Live call from anywhere, or end the active call',
         },
         'voice.toggle': {
           label: 'Voice input',
@@ -526,6 +544,10 @@ export const enSettingsCore = {
           label: 'Open Design Canvas',
           description: 'Open the design canvas in the right panel',
         },
+        'terminal.open': {
+          label: 'Open Terminal',
+          description: 'Open the session terminal in the right panel',
+        },
         'computerUse.open': {
           label: 'Open Computer Use',
           description: 'Open the Computer Use workbench',
@@ -574,6 +596,10 @@ export const enSettingsCore = {
       enableTitle: 'Enable session voice input',
       enableDescription: 'Show the microphone entry in the session composer and put transcription results into the draft.',
       modeTitle: 'Transcription mode',
+      groupRecognition: 'Recognition',
+      groupPerformance: 'Performance',
+      groupRecording: 'Recording',
+      groupPostProcessing: 'Post-processing',
       languageLabel: 'Language',
       localModelLabel: 'Local model',
       threadsLabel: 'Threads',
@@ -585,20 +611,28 @@ export const enSettingsCore = {
       clearAudioDescription: 'Delete locally retained retry audio without affecting sent messages.',
       postProcessingTitle: 'Lightly clean transcription text',
       postProcessingDescription: 'Remove common spoken pauses and tidy spacing while keeping the raw transcription for metadata tracking.',
+      vocabularyTitle: 'Dictation vocabulary',
+      vocabularyDescription: 'One term per line. Call transcription and task understanding will interpret text using these spellings; it does not guarantee recognition improvement. Overlong, empty, or duplicate terms are filtered automatically.',
+      vocabularyPlaceholder: 'e.g. a.txt\nnpm install\nZhang San',
+      vocabularyCount: 'Valid terms: {count}/100',
       saving: 'Saving',
       effectiveNextRecording: 'Settings take effect on the next recording',
       modes: {
+        stream: {
+          label: 'Live transcription',
+          description: 'Words appear in the composer as you speak. Uses your own DashScope key (billed by duration, about ¥0.009/min)',
+        },
+        'cloud-only': {
+          label: 'Transcribe after speaking',
+          description: 'Transcribes once you stop recording. Uses your own Groq key — high accuracy, pay per use',
+        },
         'local-first': {
           label: 'Local first',
-          description: 'Use local transcription when whisper-cpp is available, then fall back to Groq on failure',
+          description: 'Try local whisper-cpp first, fall back to Groq. Requires setup: brew install whisper-cpp and a model in ~/.cache/whisper/',
         },
         'local-only': {
           label: 'Local only',
-          description: 'Audio stays on this device; missing models or transcription failures return an error directly',
-        },
-        'cloud-only': {
-          label: 'Cloud only',
-          description: 'Use Groq Whisper, useful as a temporary fallback when local models are unavailable',
+          description: 'Audio never leaves this device and costs nothing; accuracy is below cloud. Also requires whisper-cpp and a model',
         },
       },
       // 语言选项用 autonym（各语言自己的文字），与 zh 侧一致——用户找自己的语言认原生文字
@@ -611,5 +645,9 @@ export const enSettingsCore = {
         es: 'Español',
         fr: 'Français',
       },
+    },
+    voiceModel: {
+      transcriptionModelLabel: 'Transcription model',
+      transcriptionModelNote: 'Local whisper-cpp recognition model — only used by local transcription modes (Local first / Local only)',
     },
 };

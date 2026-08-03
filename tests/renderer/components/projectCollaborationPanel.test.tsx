@@ -3,15 +3,19 @@ import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, describe, expect, it } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
-import type { NeoWorkCardDelta, NeoWorkCardDetail, NeoWorkCardStatus } from '../../../src/shared/contract/tag';
+import type { NeoWorkCardDelta, NeoWorkCardDetail, NeoWorkCardPriority, NeoWorkCardStatus } from '../../../src/shared/contract/tag';
 import { ProjectCollaborationPanel } from '../../../src/renderer/components/features/projectCollaboration/ProjectCollaborationPanel';
 import { ProjectCollaborationPage } from '../../../src/renderer/components/features/projectCollaboration/ProjectCollaborationPage';
-import { formatRequesterLabel } from '../../../src/renderer/components/features/projectCollaboration/projectCollaborationData';
+import {
+  compareNeoTopicsByDueAt,
+  compareNeoTopicsByPriority,
+  formatRequesterLabel,
+} from '../../../src/renderer/components/features/projectCollaboration/projectCollaborationData';
 import { useNeoWorkCardStore } from '../../../src/renderer/stores/neoWorkCardStore';
 
 afterEach(() => {
   cleanup();
-  useNeoWorkCardStore.setState({ detailsById: {}, loadingProjectIds: {}, lastErrorByProjectId: {} });
+  useNeoWorkCardStore.setState({ detailsById: {}, loadingProjectIds: {}, lastErrorByProjectId: {}, continuationTarget: null });
 });
 
 function makeDelta(over: Partial<NeoWorkCardDelta> = {}): NeoWorkCardDelta {
@@ -37,6 +41,9 @@ function makeDetail(input: {
   status?: NeoWorkCardStatus;
   requesterUserId?: string;
   updatedAt?: number;
+  priority?: NeoWorkCardPriority;
+  dueAt?: number | null;
+  blockedReason?: string | null;
   deltas?: NeoWorkCardDelta[];
   memoryPending?: boolean;
 }): NeoWorkCardDetail {
@@ -49,6 +56,9 @@ function makeDetail(input: {
       requesterUserId: input.requesterUserId ?? 'user-1',
       title: input.title ?? `topic ${input.id}`,
       status: input.status ?? 'working',
+      priority: input.priority,
+      dueAt: input.dueAt ?? null,
+      blockedReason: input.blockedReason ?? null,
       currentRevisionId: `rev-${input.id}`,
       approvedRevisionId: null,
       createdAt: 100,
@@ -354,5 +364,185 @@ describe('topic 详情右侧抽屉（目录-详情分离，非模态）', () => 
     expect(screen.getByTestId('neo-topic-detail').textContent).toContain('第一个topic');
     fireEvent.click(screen.getByTestId('neo-topic-row-b'));
     expect(screen.getByTestId('neo-topic-detail').textContent).toContain('第二个topic');
+  });
+});
+
+// ============================================================================
+// @neo tag 升级 S1：排序比较器 + priority/dueAt/blockedReason 展示 + 「接着做」
+// ============================================================================
+
+describe('neo topic 排序比较器（S1）', () => {
+  it('priority: urgent>high>medium(含 undefined)>low，同级按 updatedAt 降序', () => {
+    const urgent = makeDetail({ id: 'u', priority: 'urgent', updatedAt: 100 });
+    const high = makeDetail({ id: 'h', priority: 'high', updatedAt: 100 });
+    const plain = makeDetail({ id: 'm', updatedAt: 200 });
+    const medium = makeDetail({ id: 'mm', priority: 'medium', updatedAt: 300 });
+    const low = makeDetail({ id: 'l', priority: 'low', updatedAt: 999 });
+    const sorted = [low, plain, urgent, medium, high].sort(compareNeoTopicsByPriority);
+    expect(sorted.map((detail) => detail.workCard.id)).toEqual(['u', 'h', 'mm', 'm', 'l']);
+  });
+
+  it('dueAt: 有截止的升序在前（最紧最上），无截止的按 updatedAt 降序垫底', () => {
+    const soon = makeDetail({ id: 'soon', dueAt: 1000 });
+    const later = makeDetail({ id: 'later', dueAt: 2000 });
+    const noDueNew = makeDetail({ id: 'nd2', updatedAt: 900 });
+    const noDueOld = makeDetail({ id: 'nd1', updatedAt: 100 });
+    const sorted = [noDueOld, later, noDueNew, soon].sort(compareNeoTopicsByDueAt);
+    expect(sorted.map((detail) => detail.workCard.id)).toEqual(['soon', 'later', 'nd2', 'nd1']);
+  });
+});
+
+describe('topic 元数据展示（S1）', () => {
+  it('shows priority chip only for non-medium priority, and marks overdue due in red', () => {
+    const yesterday = Date.now() - 86400000;
+    const tomorrow = Date.now() + 86400000;
+    const details = [
+      makeDetail({ id: 'u', title: '紧急topic', status: 'working', priority: 'urgent', dueAt: yesterday }),
+      makeDetail({ id: 'n', title: '普通topic', status: 'working', dueAt: tomorrow }),
+      makeDetail({ id: 'd', title: '完成topic', status: 'completed', dueAt: yesterday }),
+    ];
+    render(<ProjectCollaborationPanel projectId="project-1" details={details} />);
+
+    // urgent chip 出现；medium/undefined 不出 chip
+    expect(screen.getByTestId('neo-topic-priority-u').textContent).toBe('紧急');
+    expect(screen.queryByTestId('neo-topic-priority-n')).toBeNull();
+    expect(screen.queryByTestId('neo-topic-priority-d')).toBeNull();
+
+    // 过期且未到终态 → 标红；未过期 / 已到终态 → 不标红
+    expect(screen.getByTestId('neo-topic-due-u').className).toContain('text-badge-danger');
+    expect(screen.getByTestId('neo-topic-due-n').className ?? '').not.toContain('text-badge-danger');
+    expect(screen.getByTestId('neo-topic-due-d').className ?? '').not.toContain('text-badge-danger');
+  });
+
+  it('detail shows blockedReason instead of guessing from delta risks', () => {
+    const details = [makeDetail({
+      id: 'f',
+      title: '失败topic',
+      status: 'failed',
+      blockedReason: 'provider 凭证失效',
+      deltas: [makeDelta({ risks: ['delta 里的旧风险文案'] })],
+    })];
+    render(<ProjectCollaborationPanel projectId="project-1" details={details} />);
+    fireEvent.click(screen.getByTestId('neo-topic-row-f'));
+
+    const failedBlock = screen.getByTestId('neo-topic-detail-failed');
+    expect(failedBlock.textContent).toContain('provider 凭证失效');
+    expect(failedBlock.textContent).not.toContain('delta 里的旧风险文案');
+  });
+
+  it('waiting 态的内部记账串 blockedReason 不进用户视野，openQuestions 优先', () => {
+    // runtime 给 waiting_for_user 写的是英文生命周期串，isInternalRuntimeText 已收录；
+    // 详情必须展示真问题（openQuestions），不能被记账串挤掉
+    const details = [makeDetail({
+      id: 'w',
+      title: '等确认topic',
+      status: 'waiting_for_user',
+      blockedReason: 'Runtime paused for user input or approval.',
+      deltas: [makeDelta({ openQuestions: ['要不要保留旧配色？'] })],
+    })];
+    render(<ProjectCollaborationPanel projectId="project-1" details={details} />);
+    fireEvent.click(screen.getByTestId('neo-topic-row-w'));
+
+    const detailPane = screen.getByTestId('neo-topic-detail');
+    expect(detailPane.textContent).toContain('要不要保留旧配色？');
+    expect(detailPane.textContent).not.toContain('Runtime paused for user input');
+  });
+
+  it('falls back to delta risks when blockedReason is empty', () => {
+    const details = [makeDetail({
+      id: 'f',
+      title: '失败topic',
+      status: 'failed',
+      deltas: [makeDelta({ risks: ['delta 里的旧风险文案'] })],
+    })];
+    render(<ProjectCollaborationPanel projectId="project-1" details={details} />);
+    fireEvent.click(screen.getByTestId('neo-topic-row-f'));
+
+    expect(screen.getByTestId('neo-topic-detail-failed').textContent).toContain('delta 里的旧风险文案');
+  });
+
+  it('嵌入模式：隐藏面板自带标题头，裸 project id 不出现在 DOM', () => {
+    const details = [makeDetail({ id: 'a', title: '甲topic', status: 'completed' })];
+    const { container } = render(
+      <ProjectCollaborationPanel projectId="proj_raw_id_should_hide" details={details} sourceMessagesByConversation={{}} embedded />,
+    );
+    expect(container.textContent).not.toContain('Neo 协同');
+    expect(container.textContent).not.toContain('proj_raw_id_should_hide');
+    // 列表本体照常渲染
+    expect(screen.getByTestId('neo-topic-row-a')).toBeTruthy();
+  });
+
+  it('外部点击收起抽屉；点别的 topic 行仍直接切换详情', () => {
+    const details = [
+      makeDetail({ id: 'a', title: '甲topic', status: 'completed' }),
+      makeDetail({ id: 'b', title: '乙topic', status: 'completed' }),
+    ];
+    render(<ProjectCollaborationPanel projectId="project-1" details={details} sourceMessagesByConversation={{}} />);
+
+    fireEvent.click(screen.getByTestId('neo-topic-row-a'));
+    expect(screen.getByTestId('neo-topic-drawer')).toBeTruthy();
+
+    // 外部（面板空白处）pointerdown → 收起
+    fireEvent.pointerDown(document.body);
+    expect(screen.queryByTestId('neo-topic-drawer')).toBeNull();
+
+    // 重新打开 a，再点 b 行：pointerdown 先关、click 随后开 b 的详情（切换不中断）
+    fireEvent.click(screen.getByTestId('neo-topic-row-a'));
+    const rowB = screen.getByTestId('neo-topic-row-b');
+    fireEvent.pointerDown(rowB);
+    fireEvent.click(rowB);
+    expect(screen.getByTestId('neo-topic-drawer').textContent).toContain('乙topic');
+
+    // 抽屉内部点击不收起
+    fireEvent.pointerDown(screen.getByTestId('neo-topic-drawer'));
+    expect(screen.getByTestId('neo-topic-drawer')).toBeTruthy();
+  });
+
+  it('接着做 writes continuationTarget and opens the primary (latest-round) conversation', () => {
+    const details = [makeDetail({
+      id: 'a',
+      status: 'completed',
+      deltas: [
+        makeDelta({ id: 'd1', workCardId: 'a', runId: 'r1', conversationId: 'session-1' }),
+        makeDelta({ id: 'd2', workCardId: 'a', runId: 'r2', conversationId: 'session-2' }),
+      ],
+    })];
+    const calls: string[] = [];
+    render(
+      <ProjectCollaborationPanel
+        projectId="project-1"
+        details={details}
+        sourceMessagesByConversation={{}}
+        onOpenConversation={(sessionId) => { calls.push(sessionId); }}
+      />,
+    );
+    fireEvent.click(screen.getByTestId('neo-topic-row-a'));
+    fireEvent.click(screen.getByTestId('neo-topic-detail-followup-chat'));
+
+    expect(useNeoWorkCardStore.getState().continuationTarget).toEqual({ workCardId: 'a', title: 'topic a' });
+    // ② 主会话规则：主入口 = 最近一轮落点会话（session-2），不是源会话
+    expect(calls).toEqual(['session-2']);
+  });
+
+  it('打开会话 jumps to the primary conversation; 源会话 secondary button appears when it differs', () => {
+    const details = [makeDetail({
+      id: 'a',
+      status: 'completed',
+      deltas: [makeDelta({ id: 'd2', workCardId: 'a', runId: 'r2', conversationId: 'session-2' })],
+    })];
+    const calls: string[] = [];
+    render(
+      <ProjectCollaborationPanel
+        projectId="project-1"
+        details={details}
+        sourceMessagesByConversation={{}}
+        onOpenConversation={(sessionId) => { calls.push(sessionId); }}
+      />,
+    );
+    fireEvent.click(screen.getByTestId('neo-topic-row-a'));
+
+    fireEvent.click(screen.getByTestId('neo-topic-detail-open-conversation'));
+    fireEvent.click(screen.getByTestId('neo-topic-detail-open-source'));
+    expect(calls).toEqual(['session-2', 'session-1']);
   });
 });

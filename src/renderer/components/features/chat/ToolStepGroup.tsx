@@ -138,6 +138,7 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
     [toolCalls],
   );
   const isFailureStatus = status === 'error' || status === 'partial';
+  const needsUserActionShell = isFailureStatus && hasEscalatedError;
   // 三态档位（ADR-043）：需介入失败/用户已展开 → 全展开；未冻结且流式中且有正在跑的
   // 一步且组内还没出现失败 → 中间档；其余 → 收起。中间档不进 aria-expanded 语义。
   const tier: 'collapsed' | 'truncated' | 'expanded' = forceExpandOnFailure || expanded
@@ -177,27 +178,30 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
           setUserToggled(true);
           setExpanded((value) => !value);
         }}
-        className={`flex w-full min-w-0 items-center gap-1.5 rounded-md text-left text-[11px] transition-colors ${
-          status === 'ok'
-            ? 'px-1 py-0.5 text-zinc-600 hover:bg-surface-subtle hover:text-zinc-400'
-            : 'border border-white/[0.04] bg-white/[0.015] px-2 py-1 text-zinc-500 hover:border-white/[0.08] hover:bg-white/[0.03] hover:text-zinc-300'
+        // leading-4：行内文字行高压到 16px，chevron（12px）与文字视觉中线对齐——
+        // 此前继承祖先的宽松行高，文字 glyph 在更高的行盒里下沉，chevron 看起来上飘。
+        // UX round2 20i：ok 行文字从 zinc-600 提到 zinc-400（「搜索通话字幕原文」这类行太暗看不清）。
+        className={`flex w-full min-w-0 items-center gap-1.5 rounded-md text-left text-[11px] leading-4 transition-colors group ${
+          needsUserActionShell
+            ? 'border border-badge-danger/30 bg-red-400/[0.05] px-2 py-1 text-zinc-500 hover:border-badge-danger/45 hover:bg-red-400/[0.08] hover:text-zinc-300'
+            : 'px-1 py-0.5 text-zinc-400 hover:bg-surface-subtle hover:text-zinc-300'
         }`}
         aria-expanded={ariaExpanded}
       >
         {ariaExpanded ? (
-          <ChevronDown className="w-3 h-3 flex-shrink-0 text-zinc-600" />
+          <ChevronDown className="w-3 h-3 flex-shrink-0 self-center text-zinc-500" />
         ) : (
-          <ChevronRight className="w-3 h-3 flex-shrink-0 text-zinc-600" />
+          <ChevronRight className="w-3 h-3 flex-shrink-0 self-center text-zinc-500" />
         )}
         {status === 'error' && (
           <span
-            className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${hasEscalatedError ? 'bg-red-400' : 'bg-zinc-500'}`}
+            className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${hasEscalatedError ? 'bg-mark-danger' : 'bg-zinc-500'}`}
             aria-label={t.toolGroup.statusFailed}
           />
         )}
         {status === 'partial' && (
           <span
-            className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${hasEscalatedError ? 'bg-amber-400' : 'bg-zinc-500'}`}
+            className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${hasEscalatedError ? 'bg-mark-warning' : 'bg-zinc-500'}`}
             aria-label={t.toolGroup.statusPartial}
           />
         )}
@@ -207,7 +211,7 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
         <span className="min-w-0 flex-1 truncate font-mono">{label}</span>
         {recoveredCount > 0 && (
           <span
-            className="flex-shrink-0 rounded bg-white/[0.03] px-1.5 py-0.5 text-[10px] text-zinc-500"
+            className="flex-shrink-0 rounded bg-white/[0.03] px-1.5 py-0.5 text-[10px] text-zinc-500 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100"
             title={t.toolGroup.recoveredTitle}
           >
             {t.toolGroup.recovered}
@@ -221,7 +225,7 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
         )}
         {totalDuration && (
           <span
-            className="flex-shrink-0 text-[10px] text-zinc-600"
+            className="flex-shrink-0 text-[10px] text-zinc-600 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100"
             title={t.toolGroup.durationTitle}
           >
             {totalDuration}
@@ -379,9 +383,9 @@ function getToolGroupStatusLabel(status: 'streaming' | 'partial' | 'error' | 'ok
 // hasEscalatedError=false（探索性失败，非用户需介入）一律用中性色，不顶红/顶黄——
 // 跟成功行视觉权重接近，agent 试错不该喊给用户看。
 function getToolGroupStatusClass(status: 'streaming' | 'partial' | 'error' | 'ok', hasEscalatedError: boolean): string {
-  if (status === 'streaming') return 'text-sky-300';
+  if (status === 'streaming') return 'text-badge-info';
   if (!hasEscalatedError && (status === 'partial' || status === 'error')) return 'text-zinc-500';
-  if (status === 'partial') return 'text-amber-300';
-  if (status === 'error') return 'text-red-300';
-  return 'text-emerald-300';
+  if (status === 'partial') return 'text-badge-warning';
+  if (status === 'error') return 'text-badge-danger';
+  return 'text-badge-success';
 }

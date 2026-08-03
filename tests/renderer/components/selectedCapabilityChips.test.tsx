@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import React from 'react';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 
 const composerState = {
@@ -46,7 +46,12 @@ vi.mock('../../../src/renderer/hooks/useI18n', () => ({
 import { SelectedCapabilityChips } from '../../../src/renderer/components/features/chat/ChatInput/SelectedCapabilityChips';
 
 describe('SelectedCapabilityChips', () => {
-  it('renders a selected registry skill and removes it from composer state', () => {
+  beforeEach(() => {
+    composerState.selectedSkillIds = ['docx'];
+    vi.clearAllMocks();
+  });
+
+  it('点击 × 按钮移除已选 skill', () => {
     const { container } = render(<SelectedCapabilityChips />);
 
     expect(screen.getByRole('button', { name: '移除能力：Docx' })).toBeTruthy();
@@ -54,5 +59,26 @@ describe('SelectedCapabilityChips', () => {
 
     expect(composerState.selectedSkillIds).toEqual([]);
     expect(container.querySelector('[data-testid="selected-capability-chips"]')).toBeTruthy();
+  });
+
+  it('chip 本体可聚焦，但点击本体不再删除（防误点）', () => {
+    render(<SelectedCapabilityChips />);
+
+    const chip = screen.getByRole('group', { name: 'Docx' });
+    fireEvent.click(chip);
+
+    expect(composerState.selectedSkillIds).toEqual(['docx']);
+  });
+
+  it('chip 聚焦后按 Delete / Backspace 删除', () => {
+    render(<SelectedCapabilityChips />);
+
+    const chip = screen.getByRole('group', { name: 'Docx' });
+    fireEvent.keyDown(chip, { key: 'Delete' });
+    expect(composerState.selectedSkillIds).toEqual([]);
+
+    composerState.selectedSkillIds = ['docx'];
+    fireEvent.keyDown(chip, { key: 'Backspace' });
+    expect(composerState.selectedSkillIds).toEqual([]);
   });
 });

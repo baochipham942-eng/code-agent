@@ -1,5 +1,11 @@
-import type { ModelConfig, ModelEntrySettings, ModelProvider, ModelProviderSettings } from '@shared/contract';
-import { DEFAULT_MODEL, MODEL, PROVIDER_MODELS_MAP, findRecommendedMcpServer, getProviderInfo } from '@shared/constants';
+import type {
+  ModelConfig,
+  ModelEntrySettings,
+  ModelProvider,
+  ModelProviderProtocol,
+  ModelProviderSettings,
+} from '@shared/contract';
+import { DEFAULT_MODEL, MODEL, PROVIDER_MODELS_MAP, getProviderInfo } from '@shared/constants';
 import { getProviderRuntimeModels } from '@shared/modelRuntime';
 
 export interface OnboardingProviderCopy {
@@ -124,44 +130,33 @@ export const ONBOARDING_RELAY_CARD: OnboardingProviderCopy = {
   requiresBaseUrl: true,
 };
 
-/**
- * onboarding 三步漏斗。cowork 的定位是「工具在哪工作就在哪」——只配一把模型密钥
- * 就把人丢进空白对话，等于让非程序员自己想「那我现在能干什么」。
- */
-export const ONBOARDING_STEPS = ['model', 'connectors', 'done'] as const;
+/** Onboarding is deliberately two steps: source, then its default model. */
+export const ONBOARDING_STEPS = ['source', 'model'] as const;
 export type OnboardingStep = (typeof ONBOARDING_STEPS)[number];
 
-/**
- * 步②展示的日常工具。刻意短：新用户面前放四张卡就够做完「这是我平时用的东西」这个判断，
- * 全量目录在能力中心。id 对齐 mcpCatalog RECOMMENDED_MCP_SERVERS.id。
- */
-export const ONBOARDING_CONNECTOR_IDS: readonly string[] = ['lark', 'notion', 'excel', 'github'];
+export type OnboardingRoute = 'subscription' | 'api';
 
-export interface OnboardingConnectorCard {
-  id: string;
-  name: string;
+export interface OnboardingApiCompatibilityOption {
+  id: 'openai-compatible' | 'anthropic-compatible';
+  label: string;
   description: string;
-  connected: boolean;
+  protocol: ModelProviderProtocol;
 }
 
-/**
- * 连接器卡片 + 当前连接状态。纯函数：连接态由调用方从 useMcpServerStates 派生，
- * 与自动化模板卡（getTemplateConnectorStatuses）取的是同一口径，不另造一套状态源。
- */
-export function getOnboardingConnectorCards(
-  connectedConnectorIds: ReadonlySet<string>,
-  ids: readonly string[] = ONBOARDING_CONNECTOR_IDS,
-): OnboardingConnectorCard[] {
-  return ids.map((id) => {
-    const entry = findRecommendedMcpServer(id);
-    return {
-      id,
-      name: entry?.name || id,
-      description: entry?.description || '',
-      connected: connectedConnectorIds.has(id),
-    };
-  });
-}
+export const ONBOARDING_API_COMPATIBILITY_OPTIONS: readonly OnboardingApiCompatibilityOption[] = [
+  {
+    id: 'openai-compatible',
+    label: 'OpenAI 兼容接口',
+    description: '适用于 new-api、one-api 和其他 OpenAI-compatible 网关。',
+    protocol: 'openai',
+  },
+  {
+    id: 'anthropic-compatible',
+    label: 'Anthropic 兼容接口',
+    description: '适用于实现 Anthropic Messages / models 协议的自定义接口。',
+    protocol: 'claude',
+  },
+];
 
 export function getOnboardingProviderCards(): OnboardingProviderCopy[] {
   return ONBOARDING_OFFICIAL_PROVIDERS.map((id) => {
@@ -210,14 +205,21 @@ export function buildOnboardingModelSelection({
   provider,
   apiKey,
   baseUrl,
+  protocol,
+  preferredModelId,
   discoveredModels = [],
 }: {
   provider: ModelProvider;
   apiKey: string;
   baseUrl?: string;
+  protocol?: ModelProviderProtocol;
+  preferredModelId?: string;
   discoveredModels?: OnboardingDiscoveredModel[];
 }): OnboardingModelSelection {
-  const selectedModel = selectOnboardingDefaultModel(provider, discoveredModels);
+  const selectedModel = preferredModelId?.trim()
+    && discoveredModels.some((model) => model.id === preferredModelId.trim())
+    ? preferredModelId.trim()
+    : selectOnboardingDefaultModel(provider, discoveredModels);
   const modelEntries: Record<string, ModelEntrySettings> = {};
   const discoveredAt = Date.now();
 
@@ -242,6 +244,7 @@ export function buildOnboardingModelSelection({
     enabled: true,
     apiKey,
     baseUrl: baseUrl || getProviderInfo(provider)?.endpoint,
+    ...(protocol ? { protocol } : {}),
     model: selectedModel,
     temperature: MODEL.DEFAULT_TEMPERATURE,
     models: modelEntries,
@@ -254,6 +257,7 @@ export function buildOnboardingModelSelection({
       model: selectedModel,
       apiKey,
       baseUrl: providerSettings.baseUrl,
+      ...(protocol ? { protocol } : {}),
       temperature: MODEL.DEFAULT_TEMPERATURE,
       maxTokens: modelEntries[selectedModel]?.maxTokens,
       capabilities: modelEntries[selectedModel]?.capabilities,

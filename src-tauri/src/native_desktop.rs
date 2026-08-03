@@ -1,19 +1,22 @@
+use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::VecDeque,
     env,
     fs,
-    io::Write,
+    io::{BufRead, BufReader, Read, Write},
     path::{Path, PathBuf},
     process::{Command, Stdio},
     sync::{
         atomic::{AtomicBool, Ordering},
-        Arc, Mutex,
+        mpsc, Arc, Mutex,
     },
     thread::{self, JoinHandle},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
-use tauri::Manager;
+#[cfg(target_os = "macos")]
+use std::sync::OnceLock;
+use tauri::{AppHandle, Emitter, Manager};
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -485,6 +488,12 @@ extern "C" {
 #[cfg(target_os = "macos")]
 static SCREEN_CAPTURE_REQUESTED: AtomicBool = AtomicBool::new(false);
 
+/// Dev 包第一次查不到自己的麦克风授权时，会再查一次生产 Bundle。
+/// 生产 Bundle 的结果在本次进程内稳定，缓存它可以消掉每次进入页面的第二次 sqlite3 spawn；
+/// 当前 Dev Bundle 的查询仍每次执行，避免从系统设置返回后看不到新授权。
+#[cfg(target_os = "macos")]
+static PRODUCTION_MICROPHONE_AUTH_VALUE_CACHE: OnceLock<Mutex<Option<Option<String>>>> = OnceLock::new();
+
 fn current_bundle_id() -> Option<String> {
     env::var("CODE_AGENT_BUNDLE_ID")
         .ok()
@@ -554,6 +563,22 @@ fn query_tcc_auth_value(service: &str, bundle_id: &str) -> Option<String> {
     }
     let value = String::from_utf8_lossy(&output.stdout).trim().to_string();
     if value.is_empty() { None } else { Some(value) }
+}
+
+#[cfg(target_os = "macos")]
+fn cached_production_microphone_auth_value() -> Option<String> {
+    let cache = PRODUCTION_MICROPHONE_AUTH_VALUE_CACHE.get_or_init(|| Mutex::new(None));
+    if let Ok(guard) = cache.lock() {
+        if let Some(value) = guard.as_ref() {
+            return value.clone();
+        }
+    }
+
+    let value = query_tcc_auth_value("kTCCServiceMicrophone", "com.linchen.code-agent");
+    if let Ok(mut guard) = cache.lock() {
+        *guard = Some(value.clone());
+    }
+    value
 }
 
 fn tcc_auth_value_to_permission_state(value: Option<&str>) -> &'static str {
@@ -693,7 +718,7 @@ fn probe_microphone_permission() -> NativePermissionStatus {
     let current_value = query_tcc_auth_value("kTCCServiceMicrophone", &bundle_id);
     let current_state = tcc_auth_value_to_permission_state(current_value.as_deref());
     if current_state == "unknown" && bundle_id != "com.linchen.code-agent" {
-        let production_value = query_tcc_auth_value("kTCCServiceMicrophone", "com.linchen.code-agent");
+        let production_value = cached_production_microphone_auth_value();
         if tcc_auth_value_to_permission_state(production_value.as_deref()) == "granted" {
             return permission_status(
                 "microphone",
@@ -1401,17 +1426,26 @@ fn cleanup_native_desktop_storage(
 // 非 macOS：依赖的 frontmost_app_triplet/browser_context 等全是 macos cfg 函数，
 // 返回 Err 走调用方既有降级（IPC 报不支持 / 采集循环跳过），与本文件截图函数同风格
 #[cfg(not(target_os = "macos"))]
-fn capture_frontmost_context_snapshot() -> Result<FrontmostContextSnapshot, String> {
+fn capture_frontmost_context_snapshot(
+    _include_document_path: bool,
+) -> Result<FrontmostContextSnapshot, String> {
     Err("Desktop activity capture is only implemented on macOS.".to_string())
 }
 
 #[cfg(target_os = "macos")]
-fn capture_frontmost_context_snapshot() -> Result<FrontmostContextSnapshot, String> {
+fn capture_frontmost_context_snapshot(
+    include_document_path: bool,
+) -> Result<FrontmostContextSnapshot, String> {
     let (app_name, bundle_id, window_title) = frontmost_app_triplet()?;
     // Now that we have a stable signing certificate, per-app Automation permissions persist.
-    // Browser URL/title and document path are safe to query.
+    // The panel only needs browser/window context; AXDocument is reserved for the collector,
+    // where its filename feeds local activity derivation and evidence.
     let (browser_url, browser_title) = browser_context(&app_name).unwrap_or((None, None));
-    let document_path = frontmost_document_path().unwrap_or(None);
+    let document_path = if include_document_path {
+        frontmost_document_path().unwrap_or(None)
+    } else {
+        None
+    };
     let session = session_snapshot(&app_name).unwrap_or_default();
     let power = power_snapshot().unwrap_or_default();
 
@@ -1774,7 +1808,7 @@ fn read_recent_events_from_sqlite(
 }
 
 #[tauri::command]
-pub fn desktop_get_capabilities() -> Result<NativeDesktopCapabilities, String> {
+pub async fn desktop_get_capabilities() -> Result<NativeDesktopCapabilities, String> {
     let platform = env::consts::OS.to_string();
     let is_macos = cfg!(target_os = "macos");
 
@@ -1791,7 +1825,7 @@ pub fn desktop_get_capabilities() -> Result<NativeDesktopCapabilities, String> {
 }
 
 #[tauri::command]
-pub fn desktop_get_permission_status() -> Result<NativePermissionSnapshot, String> {
+pub async fn desktop_get_permission_status() -> Result<NativePermissionSnapshot, String> {
     let permissions = vec![
         probe_microphone_permission(),
         probe_screen_capture_permission(),
@@ -1809,8 +1843,8 @@ pub fn desktop_get_permission_status() -> Result<NativePermissionSnapshot, Strin
 }
 
 #[tauri::command]
-pub fn desktop_get_frontmost_context() -> Result<FrontmostContextSnapshot, String> {
-    capture_frontmost_context_snapshot()
+pub async fn desktop_get_frontmost_context() -> Result<FrontmostContextSnapshot, String> {
+    capture_frontmost_context_snapshot(false)
 }
 
 #[tauri::command]
@@ -1828,7 +1862,7 @@ pub fn desktop_capture_screenshot(
 }
 
 #[tauri::command]
-pub fn desktop_get_collector_status(
+pub async fn desktop_get_collector_status(
     app: tauri::AppHandle,
     state: tauri::State<'_, NativeDesktopState>,
 ) -> Result<NativeDesktopCollectorStatus, String> {
@@ -1942,7 +1976,7 @@ pub fn desktop_start_collector(
                 }
             }
 
-            let snapshot = match capture_frontmost_context_snapshot() {
+            let snapshot = match capture_frontmost_context_snapshot(true) {
                 Ok(snapshot) => snapshot,
                 Err(error) => {
                     if let Ok(mut shared) = shared.lock() {
@@ -2108,7 +2142,7 @@ pub fn desktop_stop_collector(
 }
 
 #[tauri::command]
-pub fn desktop_list_recent_events(
+pub async fn desktop_list_recent_events(
     app: tauri::AppHandle,
     state: tauri::State<'_, NativeDesktopState>,
     limit: Option<usize>,
@@ -2399,6 +2433,595 @@ pub fn desktop_stop_audio_rec() -> Result<bool, String> {
     Ok(true)
 }
 
+// ============================================================================
+// Realtime Voice AEC — Rust owns TCC-sensitive sidecar + channel-isolated FIFOs
+// ============================================================================
+
+const VOICE_AEC_BINARY_NAME: &str = "voice-aec-io";
+const VOICE_AEC_UPSTREAM_FIFO_NAME: &str = "voice-aec-upstream.fifo";
+const VOICE_AEC_DOWNSTREAM_FIFO_NAME: &str = "voice-aec-downstream.fifo";
+const VOICE_AEC_OUTPUT_EVENT: &str = "voice-aec:output";
+const VOICE_AEC_STARTUP_TIMEOUT: Duration = Duration::from_secs(30);
+const VOICE_AEC_MAX_FRAME_BYTES: usize = 1024 * 1024;
+
+struct VoiceAecRuntime {
+    pid: u32,
+    control: std::process::ChildStdin,
+    downstream: fs::File,
+    upstream_fifo_path: PathBuf,
+    downstream_fifo_path: PathBuf,
+}
+
+static VOICE_AEC_RUNTIME: Mutex<Option<VoiceAecRuntime>> = Mutex::new(None);
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VoiceAecStartResult {
+    pid: u32,
+    upstream_fifo_path: String,
+    downstream_fifo_path: String,
+    output_event: String,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct VoiceAecOutputEvent {
+    kind: String,
+    data: Option<String>,
+    mic: Option<f32>,
+    playback: Option<f32>,
+    message: Option<String>,
+}
+
+enum VoiceAecFrame {
+    Audio(Vec<u8>),
+    Levels { mic: f32, playback: f32 },
+    Ready,
+    Error(String),
+    Diagnostic(String),
+}
+
+fn decode_voice_aec_frame(kind: u8, payload: Vec<u8>) -> Result<VoiceAecFrame, String> {
+    match kind {
+        1 => Ok(VoiceAecFrame::Audio(payload)),
+        2 if payload.len() == 8 => {
+            let mic = f32::from_le_bytes(payload[0..4].try_into().unwrap());
+            let playback = f32::from_le_bytes(payload[4..8].try_into().unwrap());
+            Ok(VoiceAecFrame::Levels { mic, playback })
+        }
+        2 => Err(format!(
+            "voice AEC levels frame has invalid length {}",
+            payload.len()
+        )),
+        3 => Ok(VoiceAecFrame::Ready),
+        4 => Ok(VoiceAecFrame::Error(
+            String::from_utf8(payload).unwrap_or_else(|_| "voice AEC sidecar failed".to_string()),
+        )),
+        5 => Ok(VoiceAecFrame::Diagnostic(
+            String::from_utf8(payload).unwrap_or_else(|_| "invalid-diagnostic".to_string()),
+        )),
+        other => Err(format!("voice AEC emitted unknown frame kind {other}")),
+    }
+}
+
+fn voice_aec_binary_candidates(
+    resource_dir: Option<&Path>,
+    current_exe: Option<&Path>,
+    cwd: Option<&Path>,
+) -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
+    if let Some(resources) = resource_dir {
+        candidates.push(resources.join("scripts").join(VOICE_AEC_BINARY_NAME));
+        candidates.push(
+            resources
+                .join("_up_")
+                .join("scripts")
+                .join(VOICE_AEC_BINARY_NAME),
+        );
+        candidates.push(resources.join(VOICE_AEC_BINARY_NAME));
+    }
+    if let Some(executable) = current_exe {
+        let mut parent = executable.parent();
+        while let Some(directory) = parent {
+            candidates.push(directory.join("scripts").join(VOICE_AEC_BINARY_NAME));
+            parent = directory.parent();
+        }
+    }
+    if let Some(directory) = cwd {
+        candidates.push(directory.join("scripts").join(VOICE_AEC_BINARY_NAME));
+    }
+    candidates
+}
+
+fn resolve_voice_aec_binary(app: &AppHandle) -> Option<PathBuf> {
+    let resource_dir = app.path().resource_dir().ok();
+    let current_exe = env::current_exe().ok();
+    let cwd = env::current_dir().ok();
+    voice_aec_binary_candidates(
+        resource_dir.as_deref(),
+        current_exe.as_deref(),
+        cwd.as_deref(),
+    )
+    .into_iter()
+    .find(|candidate| candidate.is_file())
+}
+
+fn voice_aec_fifo_base() -> PathBuf {
+    if let Ok(directory) = env::var("CODE_AGENT_DATA_DIR") {
+        PathBuf::from(directory)
+    } else {
+        let home = env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+        PathBuf::from(home).join(".code-agent")
+    }
+}
+
+fn create_voice_aec_fifo(path: &Path) -> Result<(), String> {
+    let _ = fs::remove_file(path);
+    let output = Command::new("mkfifo")
+        .arg(path)
+        .output()
+        .map_err(|error| format!("voice AEC mkfifo failed for {}: {error}", path.display()))?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(format!(
+            "voice AEC mkfifo failed for {}: {}",
+            path.display(),
+            String::from_utf8_lossy(&output.stderr).trim()
+        ))
+    }
+}
+
+fn cleanup_voice_aec_fifos(upstream: &Path, downstream: &Path) {
+    let _ = fs::remove_file(upstream);
+    let _ = fs::remove_file(downstream);
+}
+
+fn voice_aec_sidecar_args(
+    upstream_fifo_path: &Path,
+    downstream_fifo_path: &Path,
+    input_device_label: Option<&str>,
+) -> Result<Vec<String>, String> {
+    let mut args = vec![
+        "--upstream-fifo".to_string(),
+        upstream_fifo_path
+            .to_str()
+            .ok_or_else(|| "voice AEC upstream FIFO path is not UTF-8".to_string())?
+            .to_string(),
+        "--downstream-fifo".to_string(),
+        downstream_fifo_path
+            .to_str()
+            .ok_or_else(|| "voice AEC downstream FIFO path is not UTF-8".to_string())?
+            .to_string(),
+    ];
+    if let Some(label) = input_device_label.and_then(trim_or_none) {
+        args.push("--input-device".to_string());
+        args.push(label);
+    }
+    Ok(args)
+}
+
+fn emit_voice_aec_event(app: &AppHandle, event: VoiceAecOutputEvent) {
+    if let Err(error) = app.emit(VOICE_AEC_OUTPUT_EVENT, event) {
+        eprintln!("[VoiceAEC] failed to emit renderer event: {error}");
+    }
+}
+
+fn spawn_voice_aec_upstream_reader(
+    app: AppHandle,
+    upstream_fifo_path: PathBuf,
+    startup_tx: mpsc::Sender<Result<(), String>>,
+) {
+    thread::spawn(move || {
+        let mut fifo = match fs::File::open(&upstream_fifo_path) {
+            Ok(file) => file,
+            Err(error) => {
+                let message = format!(
+                    "failed to open voice AEC upstream FIFO {}: {error}",
+                    upstream_fifo_path.display()
+                );
+                let _ = startup_tx.send(Err(message.clone()));
+                emit_voice_aec_event(
+                    &app,
+                    VoiceAecOutputEvent {
+                        kind: "error".to_string(),
+                        data: None,
+                        mic: None,
+                        playback: None,
+                        message: Some(message),
+                    },
+                );
+                return;
+            }
+        };
+
+        let mut buffer = Vec::<u8>::new();
+        let mut chunk = [0_u8; 8192];
+        let mut startup_reported = false;
+        loop {
+            let read = match fifo.read(&mut chunk) {
+                Ok(0) => {
+                    let message = "voice AEC upstream FIFO closed".to_string();
+                    if !startup_reported {
+                        let _ = startup_tx.send(Err(message.clone()));
+                    }
+                    emit_voice_aec_event(
+                        &app,
+                        VoiceAecOutputEvent {
+                            kind: "error".to_string(),
+                            data: None,
+                            mic: None,
+                            playback: None,
+                            message: Some(message),
+                        },
+                    );
+                    return;
+                }
+                Ok(count) => count,
+                Err(error) => {
+                    let message = format!("voice AEC upstream read failed: {error}");
+                    if !startup_reported {
+                        let _ = startup_tx.send(Err(message.clone()));
+                    }
+                    emit_voice_aec_event(
+                        &app,
+                        VoiceAecOutputEvent {
+                            kind: "error".to_string(),
+                            data: None,
+                            mic: None,
+                            playback: None,
+                            message: Some(message),
+                        },
+                    );
+                    return;
+                }
+            };
+            buffer.extend_from_slice(&chunk[..read]);
+
+            while buffer.len() >= 5 {
+                let kind = buffer[0];
+                let length = u32::from_le_bytes(buffer[1..5].try_into().unwrap()) as usize;
+                if length > VOICE_AEC_MAX_FRAME_BYTES {
+                    let message = format!("voice AEC frame too large: {length} bytes");
+                    if !startup_reported {
+                        let _ = startup_tx.send(Err(message.clone()));
+                    }
+                    emit_voice_aec_event(
+                        &app,
+                        VoiceAecOutputEvent {
+                            kind: "error".to_string(),
+                            data: None,
+                            mic: None,
+                            playback: None,
+                            message: Some(message),
+                        },
+                    );
+                    return;
+                }
+                if buffer.len() < 5 + length {
+                    break;
+                }
+                let payload = buffer[5..5 + length].to_vec();
+                buffer.drain(..5 + length);
+
+                match decode_voice_aec_frame(kind, payload) {
+                    Ok(VoiceAecFrame::Audio(data)) => emit_voice_aec_event(
+                        &app,
+                        VoiceAecOutputEvent {
+                            kind: "audio".to_string(),
+                            data: Some(BASE64_STANDARD.encode(data)),
+                            mic: None,
+                            playback: None,
+                            message: None,
+                        },
+                    ),
+                    Ok(VoiceAecFrame::Levels { mic, playback }) => emit_voice_aec_event(
+                        &app,
+                        VoiceAecOutputEvent {
+                            kind: "levels".to_string(),
+                            data: None,
+                            mic: Some(mic),
+                            playback: Some(playback),
+                            message: None,
+                        },
+                    ),
+                    Ok(VoiceAecFrame::Ready) => {
+                        if !startup_reported {
+                            startup_reported = true;
+                            let _ = startup_tx.send(Ok(()));
+                        }
+                    }
+                    Ok(VoiceAecFrame::Error(message)) => {
+                        if !startup_reported {
+                            startup_reported = true;
+                            let _ = startup_tx.send(Err(message.clone()));
+                        }
+                        emit_voice_aec_event(
+                            &app,
+                            VoiceAecOutputEvent {
+                                kind: "error".to_string(),
+                                data: None,
+                                mic: None,
+                                playback: None,
+                                message: Some(message),
+                            },
+                        );
+                    }
+                    Ok(VoiceAecFrame::Diagnostic(message)) => emit_voice_aec_event(
+                        &app,
+                        VoiceAecOutputEvent {
+                            kind: "diagnostic".to_string(),
+                            data: None,
+                            mic: None,
+                            playback: None,
+                            message: Some(message),
+                        },
+                    ),
+                    Err(message) => {
+                        if !startup_reported {
+                            startup_reported = true;
+                            let _ = startup_tx.send(Err(message.clone()));
+                        }
+                        emit_voice_aec_event(
+                            &app,
+                            VoiceAecOutputEvent {
+                                kind: "error".to_string(),
+                                data: None,
+                                mic: None,
+                                playback: None,
+                                message: Some(message),
+                            },
+                        );
+                    }
+                }
+            }
+        }
+    });
+}
+
+#[tauri::command]
+pub fn desktop_start_voice_aec(
+    app: AppHandle,
+    input_device_label: Option<String>,
+) -> Result<VoiceAecStartResult, String> {
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = app;
+        let _ = input_device_label;
+        return Err("Native echo cancellation is only available on macOS.".to_string());
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        {
+            let guard = VOICE_AEC_RUNTIME
+                .lock()
+                .map_err(|_| "voice AEC runtime mutex poisoned".to_string())?;
+            if let Some(runtime) = guard.as_ref() {
+                return Ok(VoiceAecStartResult {
+                    pid: runtime.pid,
+                    upstream_fifo_path: path_to_string(&runtime.upstream_fifo_path),
+                    downstream_fifo_path: path_to_string(&runtime.downstream_fifo_path),
+                    output_event: VOICE_AEC_OUTPUT_EVENT.to_string(),
+                });
+            }
+        }
+
+        let binary = resolve_voice_aec_binary(&app).ok_or_else(|| {
+            "voice-aec-io sidecar is missing; rebuild the macOS audio resources".to_string()
+        })?;
+        let fifo_base = voice_aec_fifo_base();
+        fs::create_dir_all(&fifo_base).map_err(|error| {
+            format!(
+                "failed to create voice AEC data directory {}: {error}",
+                fifo_base.display()
+            )
+        })?;
+        let upstream_fifo_path = fifo_base.join(VOICE_AEC_UPSTREAM_FIFO_NAME);
+        let downstream_fifo_path = fifo_base.join(VOICE_AEC_DOWNSTREAM_FIFO_NAME);
+        create_voice_aec_fifo(&upstream_fifo_path)?;
+        if let Err(error) = create_voice_aec_fifo(&downstream_fifo_path) {
+            cleanup_voice_aec_fifos(&upstream_fifo_path, &downstream_fifo_path);
+            return Err(error);
+        }
+
+        let sidecar_args = voice_aec_sidecar_args(
+            &upstream_fifo_path,
+            &downstream_fifo_path,
+            input_device_label.as_deref(),
+        )?;
+        let mut child = Command::new(&binary)
+            .args(sidecar_args)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|error| {
+                cleanup_voice_aec_fifos(&upstream_fifo_path, &downstream_fifo_path);
+                format!(
+                    "failed to spawn voice AEC sidecar {}: {error}",
+                    binary.display()
+                )
+            })?;
+        let pid = child.id();
+        let control = child
+            .stdin
+            .take()
+            .ok_or_else(|| "voice AEC sidecar stdin is unavailable".to_string())?;
+
+        let (startup_tx, startup_rx) = mpsc::channel();
+        spawn_voice_aec_upstream_reader(app.clone(), upstream_fifo_path.clone(), startup_tx);
+
+        // Swift 先打开下行读端，Rust 再打开写端；这里成功即证明双 FIFO 已握手。
+        let downstream = fs::OpenOptions::new()
+            .write(true)
+            .open(&downstream_fifo_path)
+            .map_err(|error| {
+                let _ = Command::new("kill").arg(pid.to_string()).output();
+                cleanup_voice_aec_fifos(&upstream_fifo_path, &downstream_fifo_path);
+                format!(
+                    "failed to open voice AEC downstream FIFO {}: {error}",
+                    downstream_fifo_path.display()
+                )
+            })?;
+
+        match startup_rx.recv_timeout(VOICE_AEC_STARTUP_TIMEOUT) {
+            Ok(Ok(())) => {}
+            Ok(Err(message)) => {
+                let _ = Command::new("kill").arg(pid.to_string()).output();
+                cleanup_voice_aec_fifos(&upstream_fifo_path, &downstream_fifo_path);
+                return Err(format!("voice AEC sidecar failed to start: {message}"));
+            }
+            Err(error) => {
+                let _ = Command::new("kill").arg(pid.to_string()).output();
+                cleanup_voice_aec_fifos(&upstream_fifo_path, &downstream_fifo_path);
+                return Err(format!(
+                    "voice AEC sidecar startup timed out after {}s: {error}",
+                    VOICE_AEC_STARTUP_TIMEOUT.as_secs()
+                ));
+            }
+        }
+
+        if let Some(stderr) = child.stderr.take() {
+            thread::spawn(move || {
+                for line in BufReader::new(stderr).lines().map_while(Result::ok) {
+                    eprintln!("[VoiceAEC] {line}");
+                }
+            });
+        }
+
+        {
+            let mut guard = VOICE_AEC_RUNTIME
+                .lock()
+                .map_err(|_| "voice AEC runtime mutex poisoned".to_string())?;
+            *guard = Some(VoiceAecRuntime {
+                pid,
+                control,
+                downstream,
+                upstream_fifo_path: upstream_fifo_path.clone(),
+                downstream_fifo_path: downstream_fifo_path.clone(),
+            });
+        }
+
+        let wait_app = app.clone();
+        thread::spawn(move || {
+            let status = child.wait();
+            eprintln!("[VoiceAEC] sidecar exited: {status:?}");
+            let runtime = VOICE_AEC_RUNTIME.lock().ok().and_then(|mut guard| {
+                if guard.as_ref().is_some_and(|runtime| runtime.pid == pid) {
+                    guard.take()
+                } else {
+                    None
+                }
+            });
+            if let Some(runtime) = runtime {
+                cleanup_voice_aec_fifos(
+                    &runtime.upstream_fifo_path,
+                    &runtime.downstream_fifo_path,
+                );
+                emit_voice_aec_event(
+                    &wait_app,
+                    VoiceAecOutputEvent {
+                        kind: "error".to_string(),
+                        data: None,
+                        mic: None,
+                        playback: None,
+                        message: Some(format!("voice AEC sidecar exited unexpectedly: {status:?}")),
+                    },
+                );
+            }
+        });
+
+        Ok(VoiceAecStartResult {
+            pid,
+            upstream_fifo_path: path_to_string(&upstream_fifo_path),
+            downstream_fifo_path: path_to_string(&downstream_fifo_path),
+            output_event: VOICE_AEC_OUTPUT_EVENT.to_string(),
+        })
+    }
+}
+
+#[tauri::command]
+pub fn desktop_write_voice_aec_playback(data: String) -> Result<bool, String> {
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = data;
+        return Err("Native echo cancellation is only available on macOS.".to_string());
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        let pcm = BASE64_STANDARD
+            .decode(data)
+            .map_err(|error| format!("invalid voice AEC playback payload: {error}"))?;
+        if pcm.is_empty() {
+            return Ok(true);
+        }
+        let mut guard = VOICE_AEC_RUNTIME
+            .lock()
+            .map_err(|_| "voice AEC runtime mutex poisoned".to_string())?;
+        let runtime = guard
+            .as_mut()
+            .ok_or_else(|| "voice AEC sidecar is not running".to_string())?;
+        runtime
+            .downstream
+            .write_all(&pcm)
+            .map_err(|error| format!("failed to write voice AEC playback FIFO: {error}"))?;
+        Ok(true)
+    }
+}
+
+#[tauri::command]
+pub fn desktop_control_voice_aec(command: String) -> Result<bool, String> {
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = command;
+        return Err("Native echo cancellation is only available on macOS.".to_string());
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        if !matches!(command.as_str(), "clear" | "mute" | "unmute") {
+            return Err(format!("unsupported voice AEC command: {command}"));
+        }
+        let mut guard = VOICE_AEC_RUNTIME
+            .lock()
+            .map_err(|_| "voice AEC runtime mutex poisoned".to_string())?;
+        let runtime = guard
+            .as_mut()
+            .ok_or_else(|| "voice AEC sidecar is not running".to_string())?;
+        writeln!(runtime.control, "{command}")
+            .and_then(|_| runtime.control.flush())
+            .map_err(|error| format!("failed to send voice AEC command: {error}"))?;
+        Ok(true)
+    }
+}
+
+#[tauri::command]
+pub fn desktop_stop_voice_aec() -> Result<bool, String> {
+    #[cfg(not(target_os = "macos"))]
+    {
+        return Ok(true);
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        let runtime = VOICE_AEC_RUNTIME
+            .lock()
+            .map_err(|_| "voice AEC runtime mutex poisoned".to_string())?
+            .take();
+        if let Some(runtime) = runtime {
+            let pid = runtime.pid;
+            let upstream_fifo_path = runtime.upstream_fifo_path.clone();
+            let downstream_fifo_path = runtime.downstream_fifo_path.clone();
+            drop(runtime); // stdin EOF lets the sidecar self-terminate before the kill fallback.
+            let _ = Command::new("kill").arg(pid.to_string()).output();
+            cleanup_voice_aec_fifos(&upstream_fifo_path, &downstream_fifo_path);
+        }
+        Ok(true)
+    }
+}
+
 #[cfg(test)]
 mod privacy_tests {
     use super::*;
@@ -2450,5 +3073,86 @@ mod privacy_tests {
         assert_eq!(summary.needs_restart, 1);
         assert_eq!(summary.wrong_bundle_id, 1);
         assert_eq!(summary.unknown, 1);
+    }
+
+    #[test]
+    fn voice_aec_binary_candidates_cover_packaged_and_development_shapes() {
+        let candidates = voice_aec_binary_candidates(
+            Some(Path::new("/Applications/Agent Neo.app/Contents/Resources")),
+            Some(Path::new("/repo/src-tauri/target/debug/code-agent-tauri")),
+            Some(Path::new("/repo")),
+        );
+
+        assert_eq!(
+            candidates[0],
+            Path::new("/Applications/Agent Neo.app/Contents/Resources/scripts/voice-aec-io")
+        );
+        assert!(candidates.contains(
+            &Path::new("/Applications/Agent Neo.app/Contents/Resources/_up_/scripts/voice-aec-io")
+                .to_path_buf()
+        ));
+        assert!(candidates.contains(&Path::new("/repo/scripts/voice-aec-io").to_path_buf()));
+    }
+
+    #[test]
+    fn voice_aec_sidecar_args_include_optional_input_device_label() {
+        let args = voice_aec_sidecar_args(
+            Path::new("/tmp/up.fifo"),
+            Path::new("/tmp/down.fifo"),
+            Some("  Studio Mic  "),
+        )
+        .expect("sidecar args");
+
+        assert_eq!(
+            args,
+            vec![
+                "--upstream-fifo",
+                "/tmp/up.fifo",
+                "--downstream-fifo",
+                "/tmp/down.fifo",
+                "--input-device",
+                "Studio Mic",
+            ]
+        );
+        assert_eq!(
+            voice_aec_sidecar_args(
+                Path::new("/tmp/up.fifo"),
+                Path::new("/tmp/down.fifo"),
+                None,
+            )
+            .expect("default sidecar args"),
+            vec![
+                "--upstream-fifo",
+                "/tmp/up.fifo",
+                "--downstream-fifo",
+                "/tmp/down.fifo",
+            ]
+        );
+    }
+
+    #[test]
+    fn voice_aec_levels_frame_is_strictly_two_little_endian_floats() {
+        let mut payload = Vec::new();
+        payload.extend_from_slice(&0.25_f32.to_le_bytes());
+        payload.extend_from_slice(&0.75_f32.to_le_bytes());
+
+        match decode_voice_aec_frame(2, payload).expect("decode levels") {
+            VoiceAecFrame::Levels { mic, playback } => {
+                assert_eq!(mic, 0.25);
+                assert_eq!(playback, 0.75);
+            }
+            _ => panic!("expected levels frame"),
+        }
+        assert!(decode_voice_aec_frame(2, vec![0; 4]).is_err());
+    }
+
+    #[test]
+    fn voice_aec_diagnostic_frame_keeps_the_controlled_code() {
+        match decode_voice_aec_frame(5, b"configuration-recovered".to_vec())
+            .expect("decode diagnostic")
+        {
+            VoiceAecFrame::Diagnostic(code) => assert_eq!(code, "configuration-recovered"),
+            _ => panic!("expected diagnostic frame"),
+        }
     }
 }

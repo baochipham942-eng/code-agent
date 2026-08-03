@@ -558,8 +558,8 @@ export const zhSettingsWork = {
         },
         emptyContent: '(空)',
         summaryTitle: '文件摘要',
-        diagnosticsTitle: '会话与模型统计',
-        diagnosticsDescription: '模型使用和最近会话属于诊断信息，默认折叠。',
+        diagnosticsTitle: '诊断信息',
+        diagnosticsDescription: '注入记录、Light Memory 健康与会话统计属于诊断信息，默认折叠。',
         modelUsage: '模型使用',
         recentConversations: '最近会话',
         noStats: '暂无会话统计。',
@@ -832,6 +832,11 @@ export const zhSettingsWork = {
         open: '打开',
         revealTitle: '在 Finder 中显示',
         locate: '定位',
+      },
+      toggle: {
+        enable: '启用',
+        disable: '停用',
+        disabledBadge: '已停用',
       },
       typeLabels: {
         command: '命令',

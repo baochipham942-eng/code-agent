@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import type {
   CanUseToolFn,
   ToolContext,
@@ -8,15 +10,17 @@ import type {
 } from '../../../protocol/tools';
 import type { Session } from '../../../../shared/contract/session';
 import type { Message } from '../../../../shared/contract/message';
+import { SessionForkError } from '../../../../shared/contract/sessionFork';
+import { SessionHistoryAppService } from '../../../app/sessionHistoryAppService';
 import { resolveSessionDefaultModelConfig } from '../../../services/core/sessionDefaults';
 import { getSessionManager } from '../../../services/infra/sessionManager';
 import { getTaskManager } from '../../../task/TaskManager';
 import { sessionManagerSchema as schema } from './sessionManager.schema';
 
-type SessionManagerAction = 'list' | 'get' | 'create' | 'archive' | 'unarchive' | 'rename';
+type SessionManagerAction = 'list' | 'get' | 'create' | 'fork' | 'archive' | 'unarchive' | 'rename';
 type ListScope = 'active' | 'archived' | 'all';
 
-const MUTATING_ACTIONS = new Set<SessionManagerAction>(['create', 'archive', 'unarchive', 'rename']);
+const MUTATING_ACTIONS = new Set<SessionManagerAction>(['create', 'fork', 'archive', 'unarchive', 'rename']);
 const RUNNING_STATUSES = new Set<string>(['running', 'queued', 'paused', 'cancelling']);
 
 function asTrimmedString(value: unknown): string | undefined {
@@ -25,7 +29,7 @@ function asTrimmedString(value: unknown): string | undefined {
 
 function normalizeAction(value: unknown): SessionManagerAction | null {
   if (typeof value !== 'string') return null;
-  if (['list', 'get', 'create', 'archive', 'unarchive', 'rename'].includes(value)) {
+  if (['list', 'get', 'create', 'fork', 'archive', 'unarchive', 'rename'].includes(value)) {
     return value as SessionManagerAction;
   }
   return null;
@@ -94,6 +98,8 @@ async function requireMutationPermission(
   const reason = asTrimmedString(args.reason)
     ?? (action === 'create'
       ? 'Create a session from the current session'
+      : action === 'fork'
+        ? `Create a fork from session ${targetLabel}`
       : `${action} session ${targetLabel}`);
 
   const permit = await canUseTool(
@@ -272,6 +278,146 @@ async function executeCreate(
   };
 }
 
+function isCompletedAssistantForkAnchor(message: Message): boolean {
+  return message.role === 'assistant'
+    && !message.isMeta
+    && message.subtype !== 'tool_use'
+    && (message.visibility ?? 'active') === 'active'
+    && message.content.trim().length > 0
+    && (!message.toolCalls || message.toolCalls.length === 0)
+    && !message.contentParts?.some((part) => part.type === 'tool_call');
+}
+
+function createForkIdempotencyKey(sessionId: string, anchorMessageId: string): string {
+  const digest = createHash('sha256')
+    .update(sessionId)
+    .update('\0')
+    .update(anchorMessageId)
+    .digest('hex');
+  return `agent-session-fork:${digest}`;
+}
+
+function forkFailure(
+  error: unknown,
+  sourceSessionId: string,
+  anchorMessageId?: string,
+): ToolResult<string> {
+  const code = error instanceof SessionForkError ? error.code : 'FORK_OPERATION_FAILED';
+  return {
+    ok: false,
+    error: error instanceof Error ? error.message : String(error),
+    code,
+    meta: {
+      action: 'fork',
+      sourceSessionId,
+      anchorMessageId: anchorMessageId ?? null,
+    },
+  };
+}
+
+async function executeFork(
+  args: Record<string, unknown>,
+  ctx: ToolContext,
+  canUseTool: CanUseToolFn,
+): Promise<ToolResult<string>> {
+  const explicitSessionId = asTrimmedString(args.sessionId);
+  const sourceSessionId = explicitSessionId
+    || (ctx.sessionId !== 'protocol-unknown' ? ctx.sessionId.trim() : '');
+  if (!sourceSessionId) {
+    return {
+      ok: false,
+      error: 'sessionId is required when there is no current session',
+      code: 'INVALID_ARGS',
+      meta: { action: 'fork' },
+    };
+  }
+
+  let anchorMessageId = asTrimmedString(args.anchorMessageId);
+  try {
+    const sessionManager = getSessionManager();
+    const sourceSession = await sessionManager.getSession(sourceSessionId, 1);
+    if (!sourceSession) {
+      return {
+        ok: false,
+        error: `Session not found: ${sourceSessionId}`,
+        code: 'SESSION_NOT_FOUND',
+        meta: { action: 'fork', sourceSessionId },
+      };
+    }
+
+    const runtimeState = getTaskManager().getSessionState(sourceSessionId);
+    const runningStatus = isRunningStatus(runtimeState.status)
+      ? runtimeState.status
+      : isRunningStatus(sourceSession.status)
+        ? sourceSession.status
+        : undefined;
+    if (runningStatus) {
+      return {
+        ok: false,
+        error: `Refusing to fork running session ${sourceSessionId} (status=${runningStatus})`,
+        code: 'SESSION_RUNNING',
+        meta: {
+          action: 'fork',
+          sourceSessionId,
+          runtimeStatus: runtimeState.status,
+          sessionStatus: sourceSession.status ?? null,
+        },
+      };
+    }
+
+    if (!anchorMessageId) {
+      const messages = await sessionManager.getMessages(sourceSessionId);
+      anchorMessageId = [...messages].reverse().find(isCompletedAssistantForkAnchor)?.id;
+      if (!anchorMessageId) {
+        return {
+          ok: false,
+          error: `No completed assistant message is available to fork in session ${sourceSessionId}`,
+          code: 'INVALID_ANCHOR',
+          meta: { action: 'fork', sourceSessionId, anchorMessageId: null },
+        };
+      }
+    }
+
+    const permissionArgs = {
+      ...args,
+      sessionId: sourceSessionId,
+      anchorMessageId,
+    };
+    const permission = await requireMutationPermission(
+      'fork',
+      permissionArgs,
+      ctx,
+      canUseTool,
+      sourceSession,
+    );
+    if (permission) return permission;
+
+    const idempotencyKey = createForkIdempotencyKey(sourceSessionId, anchorMessageId);
+    const result = await new SessionHistoryAppService(getTaskManager).forkSession({
+      sourceSessionId,
+      anchorAssistantMessageId: anchorMessageId,
+      workspaceMode: 'shared_current',
+      idempotencyKey,
+    });
+
+    return {
+      ok: true,
+      output: `Created fork session ${result.childSession.id} "${result.childSession.title}" from parent ${sourceSessionId} at assistant message ${anchorMessageId}.`,
+      meta: {
+        action: 'fork',
+        childSessionId: result.childSession.id,
+        title: result.childSession.title,
+        parentSessionId: sourceSessionId,
+        anchorMessageId,
+        workspaceMode: 'shared_current',
+        currentSessionPreserved: true,
+      },
+    };
+  } catch (error) {
+    return forkFailure(error, sourceSessionId, anchorMessageId);
+  }
+}
+
 async function loadTargetSession(args: Record<string, unknown>): Promise<ToolResult<never> | Session> {
   const sessionId = asTrimmedString(args.sessionId);
   if (!sessionId) {
@@ -400,7 +546,7 @@ export async function executeSessionManager(
   if (!action) {
     return {
       ok: false,
-      error: `Unknown action: ${String(args.action)}. Valid actions: list, get, create, archive, unarchive, rename`,
+      error: `Unknown action: ${String(args.action)}. Valid actions: list, get, create, fork, archive, unarchive, rename`,
       code: 'INVALID_ARGS',
     };
   }
@@ -420,6 +566,9 @@ export async function executeSessionManager(
       break;
     case 'create':
       result = await executeCreate(args, ctx, canUseTool);
+      break;
+    case 'fork':
+      result = await executeFork(args, ctx, canUseTool);
       break;
     case 'archive':
       result = await executeArchive(args, ctx, canUseTool);

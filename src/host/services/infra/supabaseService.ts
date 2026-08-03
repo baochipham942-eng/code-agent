@@ -123,6 +123,110 @@ export interface Database {
         };
         Relationships: [];
       };
+      collab_projects: {
+        Row: {
+          id: string;
+          owner_user_id: string;
+          name: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          owner_user_id: string;
+          name: string;
+          created_at?: string;
+        };
+        Update: {
+          name?: string;
+        };
+        Relationships: [];
+      };
+      project_members: {
+        Row: {
+          project_id: string;
+          user_id: string;
+          role: 'owner' | 'member';
+          display_name: string | null;
+          avatar_url: string | null;
+          joined_at: string;
+        };
+        Insert: {
+          project_id: string;
+          user_id: string;
+          role: 'owner' | 'member';
+          display_name?: string | null;
+          avatar_url?: string | null;
+          joined_at?: string;
+        };
+        Update: {
+          role?: 'owner' | 'member';
+          display_name?: string | null;
+          avatar_url?: string | null;
+        };
+        Relationships: [];
+      };
+      project_invites: {
+        Row: {
+          code: string;
+          project_id: string;
+          created_by: string;
+          expires_at: string;
+          max_uses: number;
+          used_count: number;
+          revoked_at: string | null;
+        };
+        Insert: {
+          code: string;
+          project_id: string;
+          created_by: string;
+          expires_at: string;
+          max_uses: number;
+          used_count?: number;
+          revoked_at?: string | null;
+        };
+        Update: {
+          expires_at?: string;
+          max_uses?: number;
+          used_count?: number;
+          revoked_at?: string | null;
+        };
+        Relationships: [];
+      };
+      collab_cards: {
+        Row: {
+          id: string;
+          project_id: string;
+          source_user_id: string;
+          local_card_id: string;
+          title: string;
+          status: string;
+          priority: string;
+          due_at: string | null;
+          requester_user_id: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          project_id: string;
+          source_user_id: string;
+          local_card_id: string;
+          title: string;
+          status: string;
+          priority: string;
+          due_at?: string | null;
+          requester_user_id: string;
+          updated_at: string;
+        };
+        Update: {
+          title?: string;
+          status?: string;
+          priority?: string;
+          due_at?: string | null;
+          requester_user_id?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
       sessions: {
         Row: {
           id: string;
@@ -516,6 +620,18 @@ export interface Database {
     };
     Views: Record<string, never>;
     Functions: {
+      redeem_project_invite: {
+        Args: { code: string };
+        Returns: {
+          collab_project_id: string;
+          project_name: string;
+          member_role: 'owner' | 'member';
+        }[];
+      };
+      revoke_project_invite: {
+        Args: { code: string };
+        Returns: void;
+      };
       enqueue_cloud_task: {
         Args: { p_task_id: string };
         Returns: void;

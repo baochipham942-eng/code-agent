@@ -18,7 +18,8 @@ vi.mock('react', async () => {
     ...actual,
     useState: (initial: unknown) => {
       reactState.useStateCalls += 1;
-      if (reactState.useStateCalls === 3) {
+      // 第 4 个 useState = showUserMenu（批C2 在组件头部新增 isNativeFullscreen 后顺延一位）
+      if (reactState.useStateCalls === 4) {
         return [true, vi.fn()] as const;
       }
       return actual.useState(initial);
@@ -92,8 +93,6 @@ const appState = {
   setShowDesktopPanel: vi.fn(),
   showActivityPanel: false,
   setShowActivityPanel: vi.fn(),
-  showKnowledgeMemoryPanel: false,
-  setShowKnowledgeMemoryPanel: vi.fn(),
   showDAGPanel: false,
   setShowDAGPanel: vi.fn(),
 };
@@ -166,18 +165,19 @@ describe('Sidebar account menu entry planning', () => {
     expect(html).toContain('常用');
     expect(html).toContain('活动');
     expect(html).toContain('本机操作');
-    // 2026-07 方案 9C：「Neo 协同」改名「协作请求（@neo）」
-    expect(html).toContain('协作请求（@neo）');
+    // 「协作请求（@neo）」入口 2026-07-29 爸拍板拿掉（家=协作空间任务 tab），反向钉死
+    expect(html).not.toContain('协作请求（@neo）');
     // 评测中心（2026-07 v1）：admin-only 菜单项
     expect(html).toContain('评测中心');
+    // 提示词管理（2026-07-27 拍板）：admin-only 工具，回到账号菜单与评测中心同档
+    expect(html).toContain('提示词管理');
     expect(html).toContain('高级工具');
     expect(html).toContain('设置');
     expect(html).toContain('退出登录');
     // 方案 9C 移出的入口：知识与记忆并入资料库，高级定时任务走能力区/自动化面板，
-    // 提示词进能力中心，用户管理/邀请码迁 admin-console——admin 也不该再看到
+    // 用户管理/邀请码迁 admin-console——admin 也不该再看到
     expect(html).not.toContain('知识与记忆');
     expect(html).not.toContain('高级定时任务');
-    expect(html).not.toContain('提示词');
     expect(html).not.toContain('用户管理');
     expect(html).not.toContain('邀请码管理');
     expect(html).not.toContain('模型训练');
@@ -185,6 +185,34 @@ describe('Sidebar account menu entry planning', () => {
     expect(html).not.toContain('桌面采集');
     expect(html).not.toContain('Computer Use');
     expect(html).not.toContain('In-App 验证');
+  });
+
+  // 2026-07-27 产品负责人实测「双击标题栏没反应」：Tauri 的 WKWebView 不认 Electron 的
+  // -webkit-app-region，拖拽/双击缩放必须靠 data-tauri-drag-region 属性；属性掉了不会有测试自己红。
+  it('侧栏顶行是 Tauri 拖拽区，且图标右对齐钉在侧栏右轨上（2026-07-27 二次拍板）', () => {
+    reactState.useStateCalls = 0;
+    const html = renderToStaticMarkup(React.createElement(Sidebar));
+    expect(html).toContain('data-tauri-drag-region');
+    // 顶行 = 左槽（红绿灯不在场时挂品牌标）+ 右侧功能图标簇，justify-between 把图标簇推到右轨。
+    // 图标数量随权限变化（筛选钮仅管理员可见），左对齐的绝对内边距守不住这条轨，所以钉布局方式。
+    expect(html).toContain('justify-between');
+    expect(html).not.toContain('justify-start');
+    // px-0.5 比别处小 8：本行图标是 32px IconButton（16 字形居中 ⇒ 框内自带 8 内缩），
+    // 而角标/状态点/箭头是裸 16px 字形；喂同一个 px 值右轨会断开（实测 206.8 vs 214.8）。
+    expect(html).toContain('px-0.5');
+  });
+
+  it('提示词管理只对 admin 出现在账号菜单（2026-07-27 拍板：它是管理员工具，不进设置页/能力中心）', () => {
+    reactState.useStateCalls = 0;
+    authState.user.isAdmin = true;
+    authState.sessionTrustState = 'verified';
+    const adminHtml = renderToStaticMarkup(React.createElement(Sidebar));
+    expect(adminHtml).toContain('提示词管理');
+
+    reactState.useStateCalls = 0;
+    authState.user.isAdmin = false;
+    const memberHtml = renderToStaticMarkup(React.createElement(Sidebar));
+    expect(memberHtml).not.toContain('提示词管理');
   });
 
   it('keeps internal validation tools out of the account menu for admins and members', () => {

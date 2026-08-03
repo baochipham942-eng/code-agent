@@ -15,6 +15,7 @@ import type {
   AgentEnginePermissionProfile,
   AgentEngineRunRequest,
   AgentEngineRunResult,
+  ExternalAgentEngineKind,
 } from '../../../shared/contract/agentEngine';
 import { normalizeAgentEngineSession } from '../../../shared/contract/agentEngine';
 import { generateMessageId } from '../../../shared/utils/id';
@@ -37,7 +38,44 @@ import {
   type ExternalForkContextHandoff,
 } from '../sessionFork/context';
 
-const EMPTY_RESPONSE_MESSAGE = 'Claude Code returned an empty response.';
+export interface ClaudeProtocolCliConfig {
+  kind: Extract<ExternalAgentEngineKind, 'claude_code' | 'codebuddy_code' | 'grok_cli'>;
+  label: string;
+  runPrefix: string;
+  logSlug: string;
+  errorCode: string;
+  promptTransport: 'stdin' | 'argv';
+  buildArgs(profile: AgentEnginePermissionProfile, model?: string | null, prompt?: string): string[];
+  buildEnv(): NodeJS.ProcessEnv;
+  commandSummary(model?: string): string;
+  parseJsonLine?(line: string, label: string): ClaudeParsedEvent | null;
+}
+
+const CLAUDE_CODE_CONFIG: ClaudeProtocolCliConfig = {
+  kind: 'claude_code',
+  label: 'Claude Code',
+  runPrefix: 'claude',
+  logSlug: 'claude-code',
+  errorCode: 'CLAUDE_CODE_FAILED',
+  promptTransport: 'stdin',
+  buildArgs: buildClaudeCodeArgs,
+  buildEnv: buildSafeEnv,
+  commandSummary: (model) => [
+    'claude -p',
+    '--verbose',
+    ...(model ? [`--model ${model}`] : []),
+    '--output-format stream-json',
+    '--input-format text',
+    '--permission-mode plan',
+    '--safe-mode',
+    '--disable-slash-commands',
+    '--tools Read,Glob,Grep,LS',
+    '--allowedTools Read,Glob,Grep,LS',
+    '--strict-mcp-config',
+    '--include-partial-messages',
+    '<prompt:redacted>',
+  ].join(' '),
+};
 
 export interface ClaudeCodeRunRequest extends AgentEngineRunRequest {
   workspaceRoot: string;
@@ -57,7 +95,7 @@ export interface ClaudeCodeRunRequest extends AgentEngineRunRequest {
   onForkContextDispatched?: ExternalForkContextDispatchCallback;
 }
 
-interface ClaudeParsedEvent {
+export interface ClaudeParsedEvent {
   textDelta?: string;
   textDeltaSource?: 'stream' | 'snapshot';
   finalText?: string;
@@ -69,11 +107,17 @@ interface ClaudeParsedEvent {
 }
 
 export class ClaudeCodeAdapter {
+  constructor(private readonly config: ClaudeProtocolCliConfig = CLAUDE_CODE_CONFIG) {}
+
   async run(request: ClaudeCodeRunRequest): Promise<AgentEngineRunResult> {
-    assertExternalRuntimeAttachments('claude_code', request.attachmentsCount, 'Claude Code P1');
+    const { config } = this;
+    assertExternalRuntimeAttachments(config.kind, request.attachmentsCount, config.label);
+    if (config.kind !== 'claude_code' && (request.resumeLaunch || request.forkContextHandoff)) {
+      throw new Error(`${config.label} continuation and fork context are not verified.`);
+    }
     const launchPrompt = request.forkContextHandoff
       ? composeExternalForkLaunchPrompt({
-          engine: 'claude_code',
+          engine: config.kind,
           handoff: request.forkContextHandoff,
           prompt: request.prompt,
           resumeLaunchPresent: Boolean(request.resumeLaunch),
@@ -90,42 +134,28 @@ export class ClaudeCodeAdapter {
 
     const cwd = assertWorkspaceCwd(request.cwd, request.workspaceRoot);
     const registry = getAgentEngineRegistry();
-    const descriptor = await registry.get('claude_code');
+    const descriptor = await registry.get(config.kind);
     if (descriptor.installState !== 'installed' || !descriptor.binaryPath) {
-      throw new Error(descriptor.lastError || 'Claude Code is not installed or not ready.');
+      throw new Error(descriptor.lastError || `${config.label} is not installed or not ready.`);
     }
 
     const permissionProfile = assertReadOnlyExternalProfile(request.permissionProfile);
     const permissionMode = toClaudePermissionMode(permissionProfile);
     const model = request.model?.trim();
     const startedAt = Date.now();
-    const runId = request.durableLifecycle?.runId ?? `claude_${startedAt}_${randomUUID().slice(0, 8)}`;
+    const runId = request.durableLifecycle?.runId ?? `${config.runPrefix}_${startedAt}_${randomUUID().slice(0, 8)}`;
     assertResumeLaunchBinding(request.resumeLaunch, request.durableLifecycle, runId, request.sessionId, cwd);
     const taskId = `agent-engine:${runId}`;
     const turnId = generateMessageId();
     const sessionManager = getSessionManager();
     const ledger = getBackgroundTaskLedger();
-    const logDir = path.join(getLogsPath(), 'agent-engines', 'claude-code');
+    const logDir = path.join(getLogsPath(), 'agent-engines', config.logSlug);
     await fs.mkdir(logDir, { recursive: true });
     const logPath = path.join(logDir, `${runId}.log`);
     const lastMessagePath = path.join(logDir, `${runId}.last.md`);
     const logStream = createWriteStream(logPath, { flags: 'a' });
 
-    const commandSummary = request.resumeLaunch?.commandSummary ?? [
-      'claude -p',
-      '--verbose',
-      ...(model ? [`--model ${model}`] : []),
-      '--output-format stream-json',
-      '--input-format text',
-      `--permission-mode ${permissionMode}`,
-      '--safe-mode',
-      '--disable-slash-commands',
-      '--tools Read,Glob,Grep,LS',
-      '--allowedTools Read,Glob,Grep,LS',
-      '--strict-mcp-config',
-      '--include-partial-messages',
-      '<prompt:redacted>',
-    ].join(' ');
+    const commandSummary = request.resumeLaunch?.commandSummary ?? config.commandSummary(model);
     const timing = normalizeCodexCliRunTiming({
       timeoutMs: request.timeoutMs,
       stallWarningMs: request.stallWarningMs,
@@ -145,7 +175,7 @@ export class ClaudeCodeAdapter {
     await sessionManager.updateSession(request.sessionId, {
       status: 'running',
       engine: normalizeAgentEngineSession({
-        kind: 'claude_code',
+        kind: config.kind,
         model,
         runId,
         externalSessionId: request.resumeLaunch?.externalSessionId,
@@ -158,21 +188,21 @@ export class ClaudeCodeAdapter {
       updatedAt: startedAt,
     }, { allowEngineUpdate: true });
 
-    const env = buildSafeEnv();
+    const env = config.buildEnv();
     ledger.upsertTask({
       id: taskId,
       kind: 'agent_engine',
       sessionId: request.sessionId,
       runId,
       source: 'agent_engine',
-      title: 'Claude Code',
-      summary: 'Claude Code engine run',
+      title: config.label,
+      summary: `${config.label} engine run`,
       command: commandSummary,
       cwd,
       status: 'running',
       startedAt,
       metadata: {
-        engine: 'claude_code',
+        engine: config.kind,
         ...(model ? { model } : {}),
         permissionProfile,
         permissionMode,
@@ -187,7 +217,7 @@ export class ClaudeCodeAdapter {
       taskId,
       type: 'agent_engine.started',
       status: 'running',
-      message: 'Claude Code run started',
+      message: `${config.label} run started`,
       data: { runId, cwd, permissionProfile, permissionMode, model },
     });
 
@@ -198,13 +228,19 @@ export class ClaudeCodeAdapter {
       data: { turnId, iteration: 1 },
     });
 
-    const args = request.resumeLaunch?.args ?? buildClaudeCodeArgs(permissionProfile, model);
+    const args = request.resumeLaunch?.args
+      ?? config.buildArgs(permissionProfile, model, config.promptTransport === 'argv' ? launchPrompt : undefined);
     const child = spawn(descriptor.binaryPath, args, {
       cwd,
       env,
       detached: process.platform !== 'win32',
-      stdio: ['pipe', 'pipe', 'pipe'],
+      stdio: [config.promptTransport === 'stdin' ? 'pipe' : 'ignore', 'pipe', 'pipe'],
     });
+    const stdout = child.stdout;
+    const stderr = child.stderr;
+    if (!stdout || !stderr) {
+      throw new Error(`${config.label} did not expose the required output streams.`);
+    }
     await request.durableLifecycle?.attachProcess(child, {
       binary: descriptor.binaryPath,
       version: descriptor.version,
@@ -216,13 +252,17 @@ export class ClaudeCodeAdapter {
     const onForkContextDispatchStart = request.onForkContextDispatchStart;
     const onForkContextDispatched = request.onForkContextDispatched;
     try {
-      if (forkContextAudit) {
+      if (config.promptTransport === 'argv') {
+        // Prompt is already present in the redacted argv shape built above.
+      } else if (forkContextAudit) {
         if (!onForkContextDispatchStart || !onForkContextDispatched) {
           throw new Error('Fork context dispatch lifecycle disappeared after validation');
         }
         await onForkContextDispatchStart(forkContextAudit);
+        if (!child.stdin) throw new Error(`${config.label} did not expose stdin.`);
         child.stdin.end(launchPrompt);
       } else {
+        if (!child.stdin) throw new Error(`${config.label} did not expose stdin.`);
         child.stdin.end(request.resumeLaunch?.stdin ?? (request.resumeLaunch ? undefined : launchPrompt));
       }
     } catch (error) {
@@ -256,7 +296,7 @@ export class ClaudeCodeAdapter {
         taskId,
         type: 'agent_engine.resumed',
         status: 'running',
-        message: 'Claude Code produced output after a slow start',
+        message: `${config.label} produced output after a slow start`,
       });
     };
 
@@ -266,20 +306,20 @@ export class ClaudeCodeAdapter {
         id: taskId,
         status: 'stalled',
         progress: {
-          label: 'Claude Code slow start',
+          label: `${config.label} slow start`,
         },
       });
       ledger.appendEvent({
         taskId,
         type: 'agent_engine.stalled',
         status: 'stalled',
-        message: `Claude Code has not completed after ${Math.round(timing.stallWarningMs / 1000)}s`,
+        message: `${config.label} has not completed after ${Math.round(timing.stallWarningMs / 1000)}s`,
         data: { runId, logPath },
       });
     }, timing.stallWarningMs);
 
     const timeoutTimer = setTimeout(() => {
-      timeoutMessage = `Claude Code timed out after ${Math.round(timing.timeoutMs / 1000)}s`;
+      timeoutMessage = `${config.label} timed out after ${Math.round(timing.timeoutMs / 1000)}s`;
       ledger.appendEvent({
         taskId,
         type: 'agent_engine.timeout',
@@ -298,7 +338,8 @@ export class ClaudeCodeAdapter {
     }, timing.timeoutMs);
 
     const handleJsonLine = (line: string) => {
-      const parsed = parseClaudeCodeJsonLine(line);
+      const parsed = config.parseJsonLine?.(line, config.label)
+        ?? parseClaudeProtocolJsonLine(line, config.label);
       if (!parsed) return;
       const usage = extractExternalModelUsage(line);
       if (usage) request.durableLifecycle?.observeModelUsage(usage.inputTokens, usage.outputTokens);
@@ -354,7 +395,7 @@ export class ClaudeCodeAdapter {
       }
     };
 
-    child.stdout.on('data', (chunk: Buffer) => {
+    stdout.on('data', (chunk: Buffer) => {
       markRunningAfterStall();
       request.durableLifecycle?.observeStdout(chunk.byteLength);
       const text = chunk.toString('utf8');
@@ -367,7 +408,7 @@ export class ClaudeCodeAdapter {
       }
     });
 
-    child.stderr.on('data', (chunk: Buffer) => {
+    stderr.on('data', (chunk: Buffer) => {
       markRunningAfterStall();
       request.durableLifecycle?.observeStderr(chunk.byteLength);
       const text = chunk.toString('utf8');
@@ -431,7 +472,7 @@ export class ClaudeCodeAdapter {
     ledger.addOutputRef({
       taskId,
       type: 'log',
-      label: 'Claude Code log',
+      label: `${config.label} log`,
       path: logPath,
       mimeType: 'text/plain',
     });
@@ -439,14 +480,14 @@ export class ClaudeCodeAdapter {
       ledger.addOutputRef({
         taskId,
         type: 'text',
-        label: 'Claude Code final message',
+        label: `${config.label} final message`,
         path: lastMessagePath,
         mimeType: 'text/markdown',
       });
     }
 
     const sessionEngine = normalizeAgentEngineSession({
-      kind: 'claude_code',
+      kind: config.kind,
       model,
       runId,
       externalSessionId: sessionExternalSessionId,
@@ -462,12 +503,12 @@ export class ClaudeCodeAdapter {
         || spawnErrorMessage
         || resumeIdentityError
         || cliErrorText
-        || (emptyResponse ? EMPTY_RESPONSE_MESSAGE : '')
+        || (emptyResponse ? `${config.label} returned an empty response.` : '')
         || stderrText.trim()
         || finalText
-        || `Claude Code exited with code ${exitCode}`;
+        || `${config.label} exited with code ${exitCode}`;
       const failureDiagnostics = classifyAgentEngineFailure({
-        engine: 'claude_code',
+        engine: config.kind,
         message,
         exitCode,
         statusCode: cliErrorStatusCode,
@@ -503,13 +544,13 @@ export class ClaudeCodeAdapter {
         taskId,
         sessionId: request.sessionId,
         type: 'task_failed',
-        title: 'Claude Code failed',
+        title: `${config.label} failed`,
         message,
         payload: { runId, logPath, failure: failureDiagnostics },
       });
       emit({
         type: 'error',
-        data: { message, code: 'CLAUDE_CODE_FAILED', suggestion: failureDiagnostics.suggestion, details: { runId, logPath, exitCode, failure: failureDiagnostics } },
+        data: { message, code: config.errorCode, suggestion: failureDiagnostics.suggestion, details: { runId, logPath, exitCode, failure: failureDiagnostics } },
       });
       const assistantMessage: Message = {
         id: turnId,
@@ -541,7 +582,7 @@ export class ClaudeCodeAdapter {
       const result: AgentEngineRunResult = {
         runId,
         sessionId: request.sessionId,
-        engine: 'claude_code',
+        engine: config.kind,
         status: 'failed',
         outputText: finalText,
         logPath,
@@ -556,7 +597,7 @@ export class ClaudeCodeAdapter {
     const assistantMessage: Message = {
       id: turnId,
       role: 'assistant',
-      content: finalText || 'Claude Code completed without text output.',
+      content: finalText || `${config.label} completed without text output.`,
       timestamp: completedAt,
       modelDecision: buildAgentEngineModelDecision(descriptor, model, completedAt),
       metadata: {
@@ -590,15 +631,15 @@ export class ClaudeCodeAdapter {
       taskId,
       type: 'agent_engine.completed',
       status: 'completed',
-      message: 'Claude Code run completed',
+      message: `${config.label} run completed`,
       data: { runId, logPath, externalSessionId: sessionExternalSessionId },
     });
     ledger.queueNotification({
       taskId,
       sessionId: request.sessionId,
       type: 'task_completed',
-      title: 'Claude Code completed',
-      message: 'Claude Code run completed',
+      title: `${config.label} completed`,
+      message: `${config.label} run completed`,
       payload: { runId, logPath },
     });
 
@@ -611,7 +652,7 @@ export class ClaudeCodeAdapter {
     const result: AgentEngineRunResult = {
       runId,
       sessionId: request.sessionId,
-      engine: 'claude_code',
+      engine: config.kind,
       status: 'completed',
       outputText: assistantMessage.content,
       logPath,
@@ -671,6 +712,13 @@ export function toClaudePermissionMode(_profile: AgentEnginePermissionProfile): 
 }
 
 export function parseClaudeCodeJsonLine(line: string): ClaudeParsedEvent | null {
+  return parseClaudeProtocolJsonLine(line, 'Claude Code');
+}
+
+export function parseClaudeProtocolJsonLine(
+  line: string,
+  label: string,
+): ClaudeParsedEvent | null {
   const trimmed = line.trim();
   if (!trimmed) return null;
   let event: unknown;
@@ -680,7 +728,7 @@ export function parseClaudeCodeJsonLine(line: string): ClaudeParsedEvent | null 
     return null;
   }
   if (!event || typeof event !== 'object') return null;
-  return extractClaudeEvent(event as Record<string, unknown>);
+  return extractClaudeEvent(event as Record<string, unknown>, label);
 }
 
 const ANTHROPIC_AUTH_ENV_KEYS = new Set([
@@ -785,7 +833,10 @@ function summarizeEnv(env: NodeJS.ProcessEnv): { keys: string[]; redacted: strin
   };
 }
 
-function extractClaudeEvent(event: Record<string, unknown>): ClaudeParsedEvent {
+function extractClaudeEvent(
+  event: Record<string, unknown>,
+  label: string,
+): ClaudeParsedEvent {
   const outerType = firstString(event.type);
   const inner = isRecord(event.event) ? event.event : undefined;
   const payload = inner ?? event;
@@ -814,7 +865,7 @@ function extractClaudeEvent(event: Record<string, unknown>): ClaudeParsedEvent {
     ? firstString(payload.result, event.result, payload.text, event.text, extractContentText(content))
     : undefined;
   const toolName = firstString(payload.name, contentBlock?.name, extractToolName(content));
-  const status = statusFromClaudeEvent(type, subtype, payload);
+  const status = statusFromClaudeEvent(type, subtype, payload, label);
   const statusCode = firstNumber(
     payload.api_error_status,
     event.api_error_status,
@@ -853,10 +904,11 @@ function statusFromClaudeEvent(
   type: string | undefined,
   subtype: string | undefined,
   event: Record<string, unknown>,
+  label: string,
 ): string | undefined {
   if (!type) return undefined;
-  if (type === 'system' && subtype === 'init') return 'Claude Code initialized';
-  if (type === 'result') return subtype ? `Claude Code result: ${subtype}` : 'Claude Code result';
+  if (type === 'system' && subtype === 'init') return `${label} initialized`;
+  if (type === 'result') return subtype ? `${label} result: ${subtype}` : `${label} result`;
   return firstString(event.status);
 }
 

@@ -1,8 +1,7 @@
 // ============================================================================
 // 停车审批重启收口（D0 host 根因修复，2026-07-27）
-// 判据：① 启动 hydrate 后 tool_approval / directory_access 残留 pending 必须转
-// orphaned（此前只有 plan/launch 有启动 orphan 路径）；② 宿主已死的权限响应
-// 走 orphanDeadParkedApproval 把行收掉，且只认停车类 kind、不碰 plan 行。
+// 判据：① 启动 hydrate 后 tool_approval / directory_access 残留 pending 必须
+// fail-closed 拒绝；② 宿主已死的权限响应同样收尾，且只认停车类 kind、不碰 plan 行。
 // ============================================================================
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
@@ -34,7 +33,7 @@ vi.mock('../../../src/host/services/core/databaseService', () => ({
 
 import {
   hydrateApprovalGatesAtBoot,
-  orphanDeadParkedApproval,
+  closeDeadParkedApproval,
 } from '../../../src/host/agent/parkedApprovalHydration';
 
 function createSchema(db: BetterSqlite3.Database): void {
@@ -77,7 +76,7 @@ describe('parkedApprovalHydration', () => {
     vi.clearAllMocks();
   });
 
-  it('启动 hydrate 把 tool_approval / directory_access 残留 pending 标 orphaned（D0 缺口）', () => {
+  it('启动 hydrate 把 tool_approval / directory_access 残留 pending 自动拒绝', () => {
     seed(repo, 'tool-1', 'tool_approval');
     seed(repo, 'dir-1', 'directory_access');
     seed(repo, 'plan-1', 'plan');
@@ -85,28 +84,42 @@ describe('parkedApprovalHydration', () => {
     const counts = hydrateApprovalGatesAtBoot(repo, 2_000);
 
     expect(counts.parked).toBe(2);
-    expect(repo.getById('tool-1')?.status).toBe('orphaned');
-    expect(repo.getById('dir-1')?.status).toBe('orphaned');
+    expect(repo.getById('tool-1')).toMatchObject({
+      status: 'rejected',
+      resolvedAt: 2_000,
+      feedback: expect.stringContaining('Auto-rejected'),
+    });
+    expect(repo.getById('dir-1')?.status).toBe('rejected');
     // plan 行归 plan gate 管（此处 gate 被 mock 成 no-op），本函数不得越权碰它
     expect(repo.getById('plan-1')?.status).toBe('pending');
     expect(planAttach).toHaveBeenCalledWith(repo, 2_000);
     expect(launchAttach).toHaveBeenCalledWith(repo, 2_000);
   });
 
-  it('宿主已死的响应：orphanDeadParkedApproval 收掉停车行并只成功一次', () => {
+  it('宿主已死的响应：closeDeadParkedApproval 收掉停车行并只成功一次', () => {
     seed(repo, 'tool-2', 'tool_approval');
 
-    expect(orphanDeadParkedApproval('tool-2', 3_000)).toBe(true);
-    expect(repo.getById('tool-2')?.status).toBe('orphaned');
+    expect(closeDeadParkedApproval('tool-2', 3_000)).toBe(true);
+    expect(repo.getById('tool-2')?.status).toBe('rejected');
     // 已收掉的行第二次响应（抢答/重复点击）不得再宣称成功
-    expect(orphanDeadParkedApproval('tool-2', 3_100)).toBe(false);
+    expect(closeDeadParkedApproval('tool-2', 3_100)).toBe(false);
   });
 
   it('kind 守卫：plan 行与未知 id 一律不碰', () => {
     seed(repo, 'plan-2', 'plan');
 
-    expect(orphanDeadParkedApproval('plan-2', 3_000)).toBe(false);
+    expect(closeDeadParkedApproval('plan-2', 3_000)).toBe(false);
     expect(repo.getById('plan-2')?.status).toBe('pending');
-    expect(orphanDeadParkedApproval('nonexistent', 3_000)).toBe(false);
+    expect(closeDeadParkedApproval('nonexistent', 3_000)).toBe(false);
+  });
+
+  it('启动时清理旧版本遗留的 orphaned 停车审批', () => {
+    seed(repo, 'tool-old-orphan', 'tool_approval');
+    repo.markPendingAsOrphaned('tool_approval', 1_500);
+
+    const counts = hydrateApprovalGatesAtBoot(repo, 2_000);
+
+    expect(counts.parked).toBe(1);
+    expect(repo.getById('tool-old-orphan')?.status).toBe('rejected');
   });
 });

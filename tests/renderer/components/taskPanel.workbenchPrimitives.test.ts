@@ -16,7 +16,7 @@ describe('TaskPanel WorkbenchPrimitives', () => {
     const html = renderToStaticMarkup(
       React.createElement('div', null,
         React.createElement(WorkbenchSectionLabel, {
-          icon: React.createElement(Plug, { className: 'w-3 h-3 text-sky-400' }),
+          icon: React.createElement(Plug, { className: 'w-3 h-3 text-badge-info' }),
           label: 'Connectors',
           count: 2,
         }),
@@ -91,8 +91,9 @@ describe('TaskPanel WorkbenchPrimitives', () => {
 
     expect(html).toContain('Connector mail');
     expect(html).toContain('review-skill');
-    expect(html).toContain('border-sky-500/20');
-    expect(html).toContain('border-fuchsia-500/40');
+    expect(html).toContain('border-badge-info/20');
+    expect(html).not.toContain('border-sky-500/20');
+    expect(html).toContain('border-badge-accent/40');
     expect(html).toContain('opacity-60');
   });
 });

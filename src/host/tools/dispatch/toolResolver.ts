@@ -22,6 +22,7 @@ import { getToolDefinitionWithCloudMeta, getAllToolDefinitions } from './toolDef
 import { buildProtocolContext, buildCanUseToolFromLegacy } from './shadowAdapter';
 import { isToolNameAllowedByWorkbenchScope } from '../workbenchToolScope';
 import { getMCPClient } from '../../mcp';
+import { ensureFailedToolResultError } from '../toolResultError';
 
 export interface ToolResolver {
   /** 当前 registry 里所有已注册 tool 的 name */
@@ -95,7 +96,7 @@ class ProtocolToolResolver implements ToolResolver {
             sessionId: (ctx as { sessionId?: string }).sessionId,
           },
         );
-        return {
+        return ensureFailedToolResultError(dispatchName, {
           success: result.success,
           output: result.output,
           error: result.error,
@@ -107,7 +108,7 @@ class ProtocolToolResolver implements ToolResolver {
             toolName: mcpToolName.toolName,
             duration: result.duration,
           },
-        };
+        });
       }
 
       if (!hasProtocolTool(dispatchName)) {

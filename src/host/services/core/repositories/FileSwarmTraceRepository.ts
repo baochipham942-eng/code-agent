@@ -184,6 +184,7 @@ export class FileSwarmTraceRepository implements SwarmTraceRepo {
   // --------------------------------------------------------------------------
 
   startRun(input: StartRunInput): void {
+    if (this.resolveCache(input.id)) return;
     const fileName = `${tsPrefix(input.startedAt)}__${input.id}.jsonl`;
     const filePath = path.join(this.storageDir, fileName);
     this.replaceExistingRunFile(input.id, filePath);
@@ -211,6 +212,7 @@ export class FileSwarmTraceRepository implements SwarmTraceRepo {
       logger.warn('closeRun called for unknown runId', { runId: input.id });
       return;
     }
+    if (this.replayFile(cache.filePath)?.closed) return;
     const entry: RunClosedEntry = {
       type: 'run_closed',
       status: input.status,
@@ -232,6 +234,12 @@ export class FileSwarmTraceRepository implements SwarmTraceRepo {
     const cache = this.resolveCache(input.runId);
     if (!cache) {
       logger.warn('upsertAgent called for unknown runId', { runId: input.runId });
+      return;
+    }
+    const replay = this.replayFile(cache.filePath);
+    if (replay?.closed) return;
+    const current = replay?.agentLatest.get(input.agentId);
+    if (current && (current.status === 'completed' || current.status === 'failed' || current.status === 'cancelled')) {
       return;
     }
     const entry: AgentUpsertedEntry = {
@@ -625,13 +633,17 @@ export class FileSwarmTraceRepository implements SwarmTraceRepo {
       }
       switch (parsed.type) {
         case 'run_started':
-          started = parsed;
+          if (!started) started = parsed;
           break;
         case 'run_closed':
-          closed = parsed;
+          if (!closed) closed = parsed;
           break;
         case 'agent_upserted':
-          // 同 SQL ON CONFLICT 语义：后写覆盖前写
+          if (
+            agentLatest.get(parsed.agentId)?.status === 'completed'
+            || agentLatest.get(parsed.agentId)?.status === 'failed'
+            || agentLatest.get(parsed.agentId)?.status === 'cancelled'
+          ) break;
           agentLatest.set(parsed.agentId, parsed);
           break;
         case 'event':

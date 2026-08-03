@@ -15,6 +15,7 @@ export interface McpTaskCapability {
   serverToolsCall: boolean;
   query: boolean;
   cancel: boolean;
+  update: boolean;
   toolTaskSupport?: McpToolTaskSupport;
 }
 
@@ -46,6 +47,13 @@ export interface McpTaskProtocol {
   cancelTask(input: {
     serverIdentity: string;
     taskId: string;
+    traceMeta?: Record<string, string>;
+    signal?: AbortSignal;
+  }): Promise<McpTaskSnapshot>;
+  updateTask?(input: {
+    serverIdentity: string;
+    taskId: string;
+    input: Record<string, unknown>;
     traceMeta?: Record<string, string>;
     signal?: AbortSignal;
   }): Promise<McpTaskSnapshot>;
@@ -356,6 +364,46 @@ export class McpDurableTaskController {
         });
         throw error;
       }
+    });
+  }
+
+  async provideMcpTaskInput(
+    input: BoundOperationInput & { now: number; taskInput: Record<string, unknown> },
+  ): Promise<PendingOperation> {
+    if (TERMINAL_OPERATION_STATUSES.has(input.operation.status)) return input.operation;
+    return withMcpTaskSpan('update', input.serverIdentity, input.operationId, async () => {
+      const handle = assertBoundHandle(input);
+      if (!input.capability.trusted || !input.capability.update) {
+        throw new Error('MCP task input update is not trusted or supported');
+      }
+      if (!this.protocol.updateTask) {
+        throw new Error('MCP task protocol does not implement input updates');
+      }
+      const task = await this.protocol.updateTask({
+        serverIdentity: input.serverIdentity,
+        taskId: handle.taskId,
+        input: input.taskInput,
+        signal: input.signal,
+      });
+      if (task.taskId !== handle.taskId) throw new Error('MCP task update response has a stale task binding');
+      if (task.status === 'completed') return this.resolveMcpTaskResult(input);
+
+      const nextStatus = task.status === 'failed' || task.status === 'cancelled' ? 'failed' : 'waiting';
+      const updated = convergeOperation(input.operation, {
+        status: nextStatus,
+        requiresHumanConfirmation: task.status === 'input_required',
+        now: input.now,
+      });
+      await this.checkpoint.commit({
+        operation: updated,
+        runStatus: nextStatus === 'waiting' ? 'waiting' : 'running',
+        event: {
+          type: nextStatus === 'failed' ? 'mcp_task_terminal' : 'mcp_task_updated',
+          payload: safeBoundEventPayload(input, updated, task.status),
+        },
+        now: input.now,
+      });
+      return updated;
     });
   }
 

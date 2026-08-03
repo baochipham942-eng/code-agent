@@ -18,14 +18,16 @@ import ipcService from '../../../services/ipcService';
 import { DiscussionStream } from './DiscussionStream';
 import { AgentWorkRecordDialog } from './AgentWorkRecordDialog';
 import type { SwarmRunAgentRecord } from '@shared/contract/swarmTrace';
+import { useDurableSwarmRunDetail } from '../../../hooks/useDurableSwarmRunDetail';
+import { swarmRunAgentRecordToState } from '../expert/SessionMemberBar';
 
 const AGENT_COLORS = [
-  'text-emerald-400',
-  'text-purple-400',
-  'text-cyan-400',
-  'text-amber-400',
-  'text-pink-400',
-  'text-blue-400',
+  'text-badge-success',
+  'text-badge-accent',
+  'text-badge-info',
+  'text-badge-warning',
+  'text-badge-accent',
+  'text-badge-info',
 ] as const;
 
 function colorFor(id: string): string {
@@ -45,10 +47,10 @@ const STATUS_TEXT: Record<AgentStatus, string> = {
 
 const STATUS_COLOR: Record<AgentStatus, string> = {
   pending: 'text-zinc-500',
-  ready: 'text-amber-400',
-  running: 'text-emerald-400',
+  ready: 'text-badge-warning',
+  running: 'text-badge-success',
   completed: 'text-zinc-500',
-  failed: 'text-red-400',
+  failed: 'text-badge-danger',
   cancelled: 'text-zinc-500',
 };
 
@@ -84,11 +86,14 @@ export async function cancelSwarmRunOrFallback(
 }
 
 export function SwarmInlineMonitor() {
-  const agents = useSwarmStore((s) => s.agents ?? []);
-  const totalTokens = useSwarmStore((s) => s.statistics.totalTokens ?? 0);
-  const isRunning = useSwarmStore((s) => s.isRunning ?? false);
   const activeSessionId = useSwarmStore((s) => s.activeSessionId);
   const activeRunId = useSwarmStore((s) => s.activeRunId);
+  const durableDetail = useDurableSwarmRunDetail(activeSessionId ?? null);
+  const agents = durableDetail?.agents.map(swarmRunAgentRecordToState) ?? [];
+  const totalTokens = durableDetail
+    ? durableDetail.run.totalTokensIn + durableDetail.run.totalTokensOut
+    : 0;
+  const isRunning = durableDetail?.run.status === 'running';
   const [collapsed, setCollapsed] = useState(false);
   const [stopping, setStopping] = useState(false);
   const [selectedAgent, setSelectedAgent] = useState<SwarmAgentState | null>(null);
@@ -113,19 +118,10 @@ export function SwarmInlineMonitor() {
     }
   };
 
-  const openWorkRecord = async (agent: SwarmAgentState) => {
+  const openWorkRecord = (agent: SwarmAgentState) => {
     setSelectedAgent(agent);
-    setSelectedRecord(null);
-    if (!activeSessionId || !activeRunId) return;
-    setRecordLoading(true);
-    try {
-      const detail = await ipcService.invoke(IPC_CHANNELS.SWARM_GET_TRACE_RUN_DETAIL, { sessionId: activeSessionId, runId: activeRunId });
-      setSelectedRecord(detail?.agents.find((item) => item.agentId === agent.id) ?? null);
-    } catch {
-      setSelectedRecord(null);
-    } finally {
-      setRecordLoading(false);
-    }
+    setSelectedRecord(durableDetail?.agents.find((item) => item.agentId === agent.id) ?? null);
+    setRecordLoading(false);
   };
 
   return (
@@ -140,7 +136,7 @@ export function SwarmInlineMonitor() {
           <div className="ml-auto flex items-center gap-2">
             {totalTokens > 0 && (
               <span
-                className="flex items-center gap-1 text-cyan-400/80"
+                className="flex items-center gap-1 text-badge-info/80"
                 title="本次组队已花 Token（实时累计）"
               >
                 <Zap size={12} />
@@ -154,7 +150,7 @@ export function SwarmInlineMonitor() {
               className={`transition-colors ${
                 stopping
                   ? 'text-zinc-600 cursor-wait'
-                  : 'text-zinc-400 hover:text-red-400'
+                  : 'text-zinc-400 hover:text-badge-danger'
               } disabled:cursor-not-allowed disabled:opacity-50`}
               title={stopping ? '正在停止…' : `停止全部 ${activeAgents.length} 个 agent`}
             >
@@ -174,7 +170,7 @@ export function SwarmInlineMonitor() {
           <>
             <div className="border-t border-zinc-700/40 max-h-48 overflow-y-auto">
               {agents.map((agent) => (
-                <SwarmAgentRow key={agent.id} agent={agent} onOpen={() => { void openWorkRecord(agent); }} />
+                <SwarmAgentRow key={agent.id} agent={agent} onOpen={() => openWorkRecord(agent)} />
               ))}
             </div>
             {/* 协作过程可见性（P1-3）：agent 间讨论 / 发现 / 决策 / 人话状态 */}

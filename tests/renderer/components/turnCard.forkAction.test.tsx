@@ -46,22 +46,12 @@ describe('TurnCard Fork reply action', () => {
 
   afterEach(cleanup);
 
-  it('offers Fork on a completed assistant reply and anchors it to the persisted assistant message', async () => {
+  it('forks a completed assistant reply with shared_current on a single click, anchored to the persisted assistant message', async () => {
     render(<TurnCard turn={completedTurn()} sessionId="source-session" />);
 
     fireEvent.click(screen.getByRole('button', { name: '从这条回复创建分支' }));
-    fireEvent.click(screen.getByRole('menuitem', { name: /历史对话 \+ 当前文件/ }));
 
     await waitFor(() => expect(mocks.createForkFromReply).toHaveBeenCalledWith('a2', 'shared_current'));
-  });
-
-  it('offers an isolated anchor workspace as an explicit independent choice', async () => {
-    render(<TurnCard turn={completedTurn()} sessionId="source-session" />);
-
-    fireEvent.click(screen.getByRole('button', { name: '从这条回复创建分支' }));
-    fireEvent.click(screen.getByRole('menuitem', { name: /历史对话 \+ 锚点文件/ }));
-
-    await waitFor(() => expect(mocks.createForkFromReply).toHaveBeenCalledWith('a2', 'isolated_at_anchor'));
   });
 
   it('keeps the Fork action visible but disabled while the source session is processing', () => {

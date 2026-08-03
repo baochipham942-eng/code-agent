@@ -12,7 +12,11 @@
 
 import { getConfigService } from '../core/configService';
 import { MODEL_API_ENDPOINTS } from '../../../shared/constants';
+import { IMAGE_PRICING_CNY } from '../../../shared/constants/pricing';
 import { isPrivateOrLocalHost } from '../../security/ssrfGuard';
+import { createLogger } from '../infra/logger';
+
+const logger = createLogger('ImageGenerationService');
 
 export type ImageEngine = 'cogview' | 'flux' | 'wanx' | 'gptimage';
 
@@ -148,6 +152,22 @@ export function getZhipuOfficialApiKey(): string | undefined {
   return undefined;
 }
 
+/**
+ * 智谱 CogView 生图模型 id：env（ZHIPU_IMAGE_MODEL）优先，再回落 config slot
+ * （'zhipu-image-model'，范式同 getGptImageConfig 的 'gptimage-base'——SecureStorage
+ * 槽位是 Settings UI / 未来配置入口，当前先靠 env 生效），都未配置则用内置默认版本。
+ * 目的：智谱侧某个带日期戳的具体版本下线/无资源包时，不必改代码发版——填新版本号即可恢复出图
+ * （2026-07-31 真实事故：cogview-4-250304 无可用资源包，被误判为账户欠费排查了半天）。
+ * 存量用户：两个来源都未设置时返回值与硬编码版本完全一致，零迁移成本、零行为变化。
+ */
+export function getZhipuImageModelId(): string {
+  const envOverride = process.env.ZHIPU_IMAGE_MODEL?.trim();
+  if (envOverride) return envOverride;
+  const configured = getConfigService().getApiKey('zhipu-image-model')?.trim();
+  if (configured) return configured;
+  return ZHIPU_IMAGE_MODELS.standard;
+}
+
 /** 百炼 DashScope key（通义万相用）。env 优先（验证场景），否则取 qwen/dashscope 槽位。 */
 export function getDashscopeApiKey(): string | undefined {
   const envKey = process.env.DASHSCOPE_API_KEY;
@@ -264,6 +284,7 @@ function extractImageFromResponse(result: { choices?: Array<{ message?: OpenRout
 
 async function callZhipuImageGeneration(
   apiKey: string,
+  model: string,
   prompt: string,
   aspectRatio: string,
   outerSignal: AbortSignal,
@@ -278,7 +299,7 @@ async function callZhipuImageGeneration(
   const size = sizeMap.get(aspectRatio) || '1024x1024';
 
   const requestBody = {
-    model: ZHIPU_IMAGE_MODELS.standard,
+    model,
     prompt,
     size,
   };
@@ -299,13 +320,16 @@ async function callZhipuImageGeneration(
 
   if (!response.ok) {
     const error = await response.text();
-    throw new Error(`智谱图像生成 API 错误: ${response.status} - ${error}`);
+    // 错误信息带上实际请求的模型 id：智谱侧「该版本无可用资源包」与「账户欠费」返回的错误码/文案
+    // 容易混淆（2026-07-31 真实事故），把模型 id 显式带出来，配置错的版本时用户一眼能看出是
+    // 配置问题而非余额问题，不必再去猜。
+    throw new Error(`智谱图像生成 API 错误（模型: ${model}）: ${response.status} - ${error}`);
   }
 
   const payload: unknown = await response.json();
   const url = parseZhipuImageUrl(payload);
   if (!url) {
-    throw new Error('智谱图像生成: 未返回图片 URL');
+    throw new Error(`智谱图像生成（模型: ${model}）: 未返回图片 URL`);
   }
   return { url };
 }
@@ -598,8 +622,17 @@ export async function generateImage(
     if (!zhipuApiKey) {
       throw new Error('图片生成需要智谱官方 API Key。');
     }
-    const result = await callZhipuImageGeneration(zhipuApiKey, safePrompt, aspectRatio, outerSignal);
-    return { imageData: result.url, actualModel: ZHIPU_IMAGE_MODELS.standard };
+    const model = getZhipuImageModelId();
+    // 价表（shared/constants/pricing.ts）按内置版本号钉的价；配置成非内置版本时查表会落空。
+    // estimateImageCostCny 已有 default 兜底（非 0），但那是静默的——这里显式记一条日志，
+    // 避免「成本按默认档估算」这件事完全无迹可查（陷阱：不许静默按 0/失真价计费）。
+    if (!Object.prototype.hasOwnProperty.call(IMAGE_PRICING_CNY, model)) {
+      logger.warn(
+        `智谱生图模型 "${model}" 不在价表中（非内置默认版本，疑似自定义配置），成本将按默认档 ¥${IMAGE_PRICING_CNY.default} 估算，非精确价，请核实实际账单或在价表补充该模型`,
+      );
+    }
+    const result = await callZhipuImageGeneration(zhipuApiKey, model, safePrompt, aspectRatio, outerSignal);
+    return { imageData: result.url, actualModel: model };
   }
 
   if (engine === 'gptimage') {
@@ -679,6 +712,26 @@ function dataUrlToBlob(dataUrl: string): Blob {
 }
 
 /**
+ * 标注图提示前缀（2026-08-01 B1）：告诉模型图上的红色标记是**用户的批注指令**，不是画面内容。
+ *
+ * 不加这段时，模型收到的只有「一张画着红线的图 + 用户原话指令」——没有任何线索能区分
+ * 「红线是指示」还是「红线是要画进去的东西」，红线会被当成图像内容复现进结果。
+ *
+ * 放在这一处 chokepoint：标注重绘只有这条出口（cap 守门只放行 gptimage engine），
+ * 所有调用方自动获得该前缀，不需要各自拼。
+ *
+ * 为什么不是「把标注栅格化成黑白 mask 走 editImageWithMask」：mask 只能表达 **哪块要改**，
+ * 表达不了 **改成什么**——箭头「把这个挪到那里」、文字「这儿写成 XX」的语义会整个丢掉，
+ * 而且那条路走的是万相 inpaint（另一个模型、另一套能力）。换通道 = 换功能，是倒退不是修复。
+ */
+const ANNOT_PROMPT_PREFIX =
+  '这张图上的红色标记（线条、箭头、方框、文字）是我给你的批注，用来指出「改哪里」和「改成什么」，' +
+  '它们不是画面本身的内容。请按下面的指令在被标记的位置修改，并确保输出的图里不保留任何红色批注痕迹。\n' +
+  'The red marks on this image are annotations indicating WHERE and WHAT to change; they are NOT part of ' +
+  'the picture. Apply the instruction below at the annotated locations, and make sure the output image ' +
+  'contains none of the red annotation marks.\n\n指令 / Instruction: '
+
+/**
  * 标注重绘：把 renderer 拍扁的 [原图+标注] 整图喂模型编辑端点。
  * gptimage → OpenAI 兼容 /v1/images/edits（multipart：image+prompt+model）；取 b64。
  * 非 gptimage engine 暂不支持（cap 守门兜底，本期只实装 gpt-image-2）。
@@ -696,7 +749,7 @@ export async function editImageByAnnotation(input: {
   if (!cfg) throw new Error('gpt-image-2 需要在设置配置自定义端点 base 与 API Key。');
   const form = new FormData();
   form.append('model', GPTIMAGE_MODEL);
-  form.append('prompt', input.instruction);
+  form.append('prompt', ANNOT_PROMPT_PREFIX + input.instruction);
   form.append('n', '1');
   form.append('size', GPTIMAGE_DEFAULT_SIZE);
   form.append('image', dataUrlToBlob(input.annotatedImageDataUrl), 'annotated.png');

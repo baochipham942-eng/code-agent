@@ -46,7 +46,7 @@ function ElicitationField({
         />
         <div className="flex-1">
           <span className="text-sm font-medium text-zinc-200">{label}</span>
-          {isRequired && <span className="text-red-400 ml-1">*</span>}
+          {isRequired && <span className="text-badge-danger ml-1">*</span>}
           {schema.description && (
             <p className="text-xs text-zinc-400 mt-0.5">{schema.description}</p>
           )}
@@ -60,7 +60,7 @@ function ElicitationField({
       <div className="space-y-1">
         <label className="text-sm font-medium text-zinc-200">
           {label}
-          {isRequired && <span className="text-red-400 ml-1">*</span>}
+          {isRequired && <span className="text-badge-danger ml-1">*</span>}
         </label>
         {schema.description && (
           <p className="text-xs text-zinc-400">{schema.description}</p>
@@ -74,7 +74,7 @@ function ElicitationField({
                 onClick={() => onChange(name, option)}
                 className={`w-full p-2 rounded-lg border text-left text-sm transition-all ${
                   value === option
-                    ? 'border-blue-500 bg-blue-500/10 ring-1 ring-blue-500/50'
+                    ? 'border-badge-info bg-blue-500/10 ring-1 ring-blue-500/50'
                     : 'border-zinc-700 hover:border-zinc-600 hover:bg-zinc-800'
                 }`}
               >
@@ -82,7 +82,7 @@ function ElicitationField({
                   <div
                     className={`w-3.5 h-3.5 rounded-full border-2 flex items-center justify-center ${
                       value === option
-                        ? 'border-blue-500 bg-blue-500'
+                        ? 'border-badge-info bg-blue-500'
                         : 'border-zinc-600'
                     }`}
                   >
@@ -103,7 +103,7 @@ function ElicitationField({
       <div className="space-y-1">
         <label className="text-sm font-medium text-zinc-200">
           {label}
-          {isRequired && <span className="text-red-400 ml-1">*</span>}
+          {isRequired && <span className="text-badge-danger ml-1">*</span>}
         </label>
         {schema.description && (
           <p className="text-xs text-zinc-400">{schema.description}</p>
@@ -123,7 +123,7 @@ function ElicitationField({
               onChange(name, num);
             }
           }}
-          className="w-full px-3 py-2 rounded-lg border border-zinc-700 bg-zinc-800 text-zinc-200 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-hidden"
+          className="w-full px-3 py-2 rounded-lg border border-zinc-700 bg-zinc-800 text-zinc-200 text-sm focus:border-badge-info focus:ring-1 focus:ring-blue-500 outline-hidden"
         />
       </div>
     );
@@ -134,7 +134,7 @@ function ElicitationField({
     <div className="space-y-1">
       <label className="text-sm font-medium text-zinc-200">
         {label}
-        {isRequired && <span className="text-red-400 ml-1">*</span>}
+        {isRequired && <span className="text-badge-danger ml-1">*</span>}
       </label>
       {schema.description && (
         <p className="text-xs text-zinc-400">{schema.description}</p>
@@ -145,7 +145,7 @@ function ElicitationField({
         placeholder={schema.default !== undefined ? String(schema.default) : ''}
         maxLength={schema.maxLength}
         onChange={(e) => onChange(name, e.target.value)}
-        className="w-full px-3 py-2 rounded-lg border border-zinc-700 bg-zinc-800 text-zinc-200 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-hidden"
+        className="w-full px-3 py-2 rounded-lg border border-zinc-700 bg-zinc-800 text-zinc-200 text-sm focus:border-badge-info focus:ring-1 focus:ring-blue-500 outline-hidden"
       />
     </div>
   );
@@ -213,7 +213,7 @@ export const MCPElicitationModal: React.FC<Props> = ({ request, onClose }) => {
       size="lg"
       title="MCP 服务器请求输入"
       headerBgClass="bg-purple-500/10"
-      headerIcon={<Server className="w-5 h-5 text-purple-400" />}
+      headerIcon={<Server className="w-5 h-5 text-badge-accent" />}
       footer={
         <ModalFooter
           cancelText="拒绝"
@@ -228,7 +228,7 @@ export const MCPElicitationModal: React.FC<Props> = ({ request, onClose }) => {
       <div className="space-y-4 max-h-[60vh] overflow-y-auto -mx-6 px-6">
         {/* Server name badge */}
         <div className="flex items-center gap-2">
-          <span className="inline-block px-2 py-0.5 text-xs font-medium rounded bg-purple-500/20 text-purple-300">
+          <span className="inline-block px-2 py-0.5 text-xs font-medium rounded bg-purple-500/20 text-badge-accent">
             {request.serverName}
           </span>
         </div>

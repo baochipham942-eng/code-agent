@@ -40,7 +40,7 @@ const SelectionIndicator: React.FC<{ selected: boolean; multiSelect: boolean }> 
     className={`mt-0.5 w-4 h-4 rounded ${
       multiSelect ? 'rounded' : 'rounded-full'
     } border-2 flex items-center justify-center ${
-      selected ? 'border-blue-500 bg-blue-500' : 'border-zinc-600'
+      selected ? 'border-badge-info bg-blue-500' : 'border-zinc-600'
     }`}
   >
     {selected && <Check className="w-3 h-3 text-white" />}
@@ -192,12 +192,12 @@ export const UserQuestionCard: React.FC<Props> = ({ request }) => {
       <div
         ref={cardRef}
         tabIndex={-1}
-        className="w-full max-w-3xl mx-auto bg-zinc-900 rounded-lg shadow-2xl border-2 border-blue-500/60 outline-hidden"
+        className="w-full max-w-3xl mx-auto bg-zinc-900 rounded-lg shadow-2xl border-2 border-badge-info/60 outline-hidden"
       >
         {/* 头部：中性询问语义（蓝），与权限卡的琥珀/红安全语义拉开 */}
         <div className="flex items-center gap-2 px-4 py-2.5 border-b border-zinc-800 bg-blue-500/10 rounded-t-lg">
-          <HelpCircle className="w-4 h-4 text-blue-400 shrink-0" />
-          <span className="text-sm font-medium text-blue-300">{t.userQuestion.title}</span>
+          <HelpCircle className="w-4 h-4 text-badge-info shrink-0" />
+          <span className="text-sm font-medium text-badge-info">{t.userQuestion.title}</span>
         </div>
 
         {/* Questions */}
@@ -221,7 +221,7 @@ export const UserQuestionCard: React.FC<Props> = ({ request }) => {
                     onClick={() => handleSelect(q.header, option.label, q.multiSelect)}
                     className={`w-full p-2.5 rounded-lg border text-left transition-all ${
                       isSelected(q.header, option.label)
-                        ? 'border-blue-500 bg-blue-500/10 ring-1 ring-blue-500/50'
+                        ? 'border-badge-info bg-blue-500/10 ring-1 ring-blue-500/50'
                         : 'border-zinc-700 hover:border-zinc-600 hover:bg-zinc-800'
                     }`}
                   >
@@ -257,7 +257,7 @@ export const UserQuestionCard: React.FC<Props> = ({ request }) => {
                   }}
                   className={`w-full p-2.5 rounded-lg border text-left transition-all cursor-pointer ${
                     otherActive[q.header]
-                      ? 'border-blue-500 bg-blue-500/10 ring-1 ring-blue-500/50'
+                      ? 'border-badge-info bg-blue-500/10 ring-1 ring-blue-500/50'
                       : 'border-zinc-700 hover:border-zinc-600 hover:bg-zinc-800'
                   }`}
                 >
@@ -276,7 +276,7 @@ export const UserQuestionCard: React.FC<Props> = ({ request }) => {
                           onChange={(e) => handleOtherTextChange(q.header, e.target.value, q.multiSelect)}
                           onClick={(e) => e.stopPropagation()}
                           placeholder={t.userQuestion.otherPlaceholder}
-                          className="mt-2 w-full px-2 py-1.5 text-sm bg-zinc-800 border border-zinc-600 rounded text-zinc-200 placeholder-zinc-500 focus:outline-hidden focus:border-blue-500"
+                          className="mt-2 w-full px-2 py-1.5 text-sm bg-zinc-800 border border-zinc-600 rounded text-zinc-200 placeholder-zinc-500 focus:outline-hidden focus:border-badge-info"
                         />
                       )}
                     </div>
@@ -295,7 +295,7 @@ export const UserQuestionCard: React.FC<Props> = ({ request }) => {
             onChange={(e) => setDeclineReason(e.target.value)}
             placeholder={t.userQuestion.declineReasonPlaceholder}
             aria-label={t.userQuestion.declineReasonLabel}
-            className="w-full px-2 py-1.5 text-sm bg-zinc-800 border border-zinc-700 rounded text-zinc-200 placeholder-zinc-500 focus:outline-hidden focus:border-blue-500"
+            className="w-full px-2 py-1.5 text-sm bg-zinc-800 border border-zinc-700 rounded text-zinc-200 placeholder-zinc-500 focus:outline-hidden focus:border-badge-info"
           />
           <div className="mt-2.5 flex items-center justify-end gap-2">
             <Button

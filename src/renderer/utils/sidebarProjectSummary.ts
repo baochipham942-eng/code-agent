@@ -35,6 +35,10 @@ export interface SidebarProjectMeta {
   name?: string;
   status?: ProjectStatus;
   description?: string;
+  /** 项目升级为协作空间的时间（ADR-053 三分区判据）；null/缺省 = 独立空间。 */
+  spacePromotedAt?: number | null;
+  /** 云项目映射（非空 = 已绑云身份的协同空间，侧栏云标判据）。 */
+  cloudProjectId?: string | null;
   goalCount?: number;
   activeGoalTitles?: string[];
   goals?: SidebarProjectGoalMeta[];

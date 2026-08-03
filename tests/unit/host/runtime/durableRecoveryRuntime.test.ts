@@ -17,6 +17,59 @@ function nativePlan(): RunRehydrationPlan {
   };
 }
 
+function agentTeamPlan(): RunRehydrationPlan {
+  const runId = 'team-recovery';
+  return {
+    envelope: {
+      schemaVersion: 1,
+      runId,
+      sessionId: 'session-team-recovery',
+      engine: { kind: 'agent_team', treeId: 'tree-recovery' },
+      status: 'recovering',
+      attempt: 113,
+      cursor: { nextEventSeq: 2, checkpointSeq: 1 },
+      owner: { ownerId: 'owner', processInstanceId: 'new', epoch: 113, leaseExpiresAt: 10_000 },
+      pendingOperations: [{
+        runId,
+        operationId: 'node:swarm-agent.v1',
+        attempt: 112,
+        kind: 'child_run',
+        status: 'dispatched',
+        idempotencyKey: 'stable:team-recovery:child',
+        sideEffect: false,
+        preparedAt: 1,
+        updatedAt: 2,
+      }],
+      childRuns: [],
+      createdAt: 1,
+      updatedAt: 2,
+    },
+    previousAttempt: {
+      runId,
+      attempt: 112,
+      processInstanceId: 'old',
+      ownerId: 'owner',
+      ownerEpoch: 112,
+      status: 'ended',
+      startedAt: 1,
+    },
+    checkpoint: null,
+    pendingOperations: [{
+      runId,
+      operationId: 'node:swarm-agent.v1',
+      attempt: 112,
+      kind: 'child_run',
+      status: 'dispatched',
+      idempotencyKey: 'stable:team-recovery:child',
+      sideEffect: false,
+      preparedAt: 1,
+      updatedAt: 2,
+    }],
+    childRuns: [],
+    requiresHumanConfirmation: [],
+  };
+}
+
 afterEach(() => {
   vi.useRealTimers();
   vi.restoreAllMocks();
@@ -37,6 +90,30 @@ describe('DurableRecoveryRuntime startup ordering', () => {
     const results = await runtime.recoverAndDispatch(100);
     expect(recoverDurable).toHaveBeenCalledWith(100);
     expect(results[0]).toMatchObject({ handler: 'native_production', status: 'failed' });
+    await runtime.shutdown();
+  });
+
+  it('routes stored child runs through agent_team_production without a duplicate unsupported result', async () => {
+    const recoverDurable = vi.fn(async () => [agentTeamPlan()]);
+    const runtime = createDurableRecoveryRuntime({
+      registry: { recoverDurable } as unknown as RunRegistry,
+      kernel: {} as RunKernelAdapter,
+      dataDir: '/tmp/durable-runtime-test',
+      getMcpClient: () => { throw new Error('MCP is not needed for this plan'); },
+      externalRunners: { codex: vi.fn(), claude: vi.fn() } as never,
+    });
+
+    const results = await runtime.recoverAndDispatch(100);
+
+    expect(results).toEqual([
+      expect.objectContaining({
+        runId: 'team-recovery',
+        attempt: 113,
+        phase: 'engine',
+        handler: 'agent_team_production',
+        status: 'requires_review',
+      }),
+    ]);
     await runtime.shutdown();
   });
 

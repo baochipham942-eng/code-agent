@@ -148,7 +148,7 @@ export interface RecordConversationRewindInput {
   sessionId: string;
   boundary: ConversationBoundary;
   anchorMessageId: string;
-  /** Exact stable replay suffix, including the user anchor itself. */
+  /** Exact stable replay suffix strictly after the active user anchor. */
   hiddenMessageIds: string[];
   rewindId: string;
   idempotencyKey: string;
@@ -578,7 +578,7 @@ export class ConversationBranchRepository {
         'rewind anchor must be a currently visible user message',
       );
     }
-    const hidden = current.messages.slice(anchorIndex);
+    const hidden = current.messages.slice(anchorIndex + 1);
     const exactHiddenMessageIds = hidden.map((message) => message.projectedMessageId);
     if (
       input.hiddenMessageIds.length !== exactHiddenMessageIds.length
@@ -586,7 +586,7 @@ export class ConversationBranchRepository {
     ) {
       throw new ConversationBranchError(
         'INVALID_REWIND',
-        'hiddenMessageIds must exactly equal the stable replay suffix including the user anchor',
+        'hiddenMessageIds must exactly equal the stable replay suffix after the user anchor',
         { expectedHiddenMessageIds: exactHiddenMessageIds },
       );
     }

@@ -53,7 +53,6 @@ import {
   getGeminiApiKey,
   getArkApiKey,
 } from '../services/media/imageGenerationService';
-import type { ExpandDirection } from '../services/media/imageGenerationService';
 import {
   getCustomModelApiKey,
   listCustomImageModels,
@@ -72,6 +71,10 @@ import { assertSafeDownloadUrl } from '../security/ssrfGuard';
 import { promises as fsp } from 'fs';
 import { readDesignSettings, updateDesignSettings } from '../services/design/designSettings';
 import type { DesignSettings } from '../services/design/designSettings';
+import {
+  getUserBrowserLinkService,
+  type UserBrowserLinkService,
+} from '../services/surfaceExecution/UserBrowserLinkService';
 
 
 // 设计媒介生成 handlers（出图/参考图/标注重绘/导入/局部重绘/扩图/去水印/视频）
@@ -81,12 +84,14 @@ import {
   handleGenerateDesignImage,
   handleEditImageByAnnotation,
   handleImportDesignImage,
+  handleImportDesignImageFromPath,
   handleEditDesignImage,
   handleExpandDesignImage,
   handleRemoveWatermarkDesignImage,
   handleGenerateDesignVideo,
   handleGenerateDesignMusic,
 } from './workspaceDesignMedia.ipc';
+import type { ExpandDesignImagePayload } from './workspaceDesignMedia.ipc';
 // 这些 handler 历史上是 workspace.ipc 的公开导出（测试与 index.ts 依赖），保持向后兼容。
 export {
   handleGenerateDesignImage,
@@ -282,6 +287,43 @@ async function handleListFiles(payload: { dirPath: string }): Promise<FileInfo[]
   } catch {
     return [];
   }
+}
+
+// 消息里的文件链接常是裸文件名（模型很少写全路径），点击预览需要按名字找回真实路径。
+// 有界递归：跳过依赖/构建目录，先按「文件名完全相等」收集，命中即返回（最多 5 个候选）。
+const FIND_FILE_PRUNE_DIRS = new Set(['node_modules', '.git', 'dist', '.build', '.next', 'build', 'coverage', '.cache', '.worktrees']);
+const FIND_FILE_MAX_DEPTH = 6;
+const FIND_FILE_MAX_RESULTS = 5;
+
+async function handleFindFile(payload: { dirPath: string; name: string }): Promise<Array<{ name: string; path: string }>> {
+  const fs = await import('fs/promises');
+  const pathModule = await import('path');
+  const results: Array<{ name: string; path: string }> = [];
+
+  async function walk(dir: string, depth: number): Promise<void> {
+    if (results.length >= FIND_FILE_MAX_RESULTS || depth > FIND_FILE_MAX_DEPTH) return;
+    let entries;
+    try {
+      entries = await fs.readdir(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      if (results.length >= FIND_FILE_MAX_RESULTS) return;
+      if (entry.name.startsWith('.')) continue;
+      const fullPath = pathModule.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (!FIND_FILE_PRUNE_DIRS.has(entry.name)) {
+          await walk(fullPath, depth + 1);
+        }
+      } else if (entry.name === payload.name) {
+        results.push({ name: entry.name, path: fullPath });
+      }
+    }
+  }
+
+  await walk(payload.dirPath, 0);
+  return results;
 }
 
 async function handleReadFile(payload: { filePath: string }): Promise<string> {
@@ -730,6 +772,7 @@ export function registerWorkspaceHandlers(
   getMainWindow: () => AppWindow | null,
   getAppService: () => AgentApplicationService | null,
   getConfigService: () => ConfigService | null,
+  getUserBrowserLinks: () => Pick<UserBrowserLinkService, 'open' | 'end'> = getUserBrowserLinkService,
 ): void {
   // ========== New Domain Handler (TASK-04) ==========
   ipcMain.handle(IPC_DOMAINS.WORKSPACE, async (_, request: IPCRequest): Promise<IPCResponse> => {
@@ -791,6 +834,9 @@ export function registerWorkspaceHandlers(
         case 'listFiles':
           data = await handleListFiles(payload as { dirPath: string });
           break;
+        case 'findFile':
+          data = await handleFindFile(payload as { dirPath: string; name: string });
+          break;
         case 'readFile':
           data = await handleReadFile(payload as { filePath: string });
           break;
@@ -840,6 +886,19 @@ export function registerWorkspaceHandlers(
         case 'openExternal':
           data = await handleOpenExternal(payload as { url: string });
           break;
+        case 'openLinkInRail':
+          data = await getUserBrowserLinks().open(
+            payload as { conversationId: string; url: string; workspace: string },
+          );
+          break;
+        case 'closeLinkInRail': {
+          const closePayload = payload as { conversationId: string; reason?: 'user' | 'session-switch' };
+          data = await getUserBrowserLinks().end(
+            closePayload.conversationId,
+            closePayload.reason || 'user',
+          );
+          break;
+        }
         case 'showItemInFolder':
           data = await handleShowItemInFolder(payload as { filePath: string }, getAppService);
           break;
@@ -886,9 +945,15 @@ export function registerWorkspaceHandlers(
         case 'importDesignImage':
           data = await handleImportDesignImage(payload as { dataUrl: string; outputPath: string });
           break;
+        case 'importDesignImageFromPath':
+          data = await handleImportDesignImageFromPath(
+            payload as { sourcePath: string; outputPath: string },
+            getAppService()?.getWorkingDirectory(),
+          );
+          break;
         case 'expandDesignImage':
           data = await handleExpandDesignImage(
-            payload as { baseImagePath: string; outputPath: string; direction: ExpandDirection; ratio: number; prompt?: string },
+            payload as ExpandDesignImagePayload,
           );
           break;
         case 'removeWatermarkDesignImage':

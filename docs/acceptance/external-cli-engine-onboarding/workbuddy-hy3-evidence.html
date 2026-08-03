@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Neo × WorkBuddy：两步 Onboarding、会话模型弹窗与实机对话</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #090a0c;
+      --panel: #111318;
+      --panel-2: #171a20;
+      --line: #292d35;
+      --text: #f4f5f7;
+      --muted: #9da3ae;
+      --green: #55d6a0;
+      --amber: #f2c66d;
+      --blue: #7ca6ff;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background:
+        radial-gradient(circle at 75% -10%, rgba(71, 111, 190, .18), transparent 34rem),
+        var(--bg);
+      color: var(--text);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    main { width: min(1480px, calc(100% - 48px)); margin: 0 auto; padding: 52px 0 88px; }
+    header { max-width: 980px; margin-bottom: 34px; }
+    .eyebrow { color: var(--green); font-size: 13px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+    h1 { margin: 12px 0 14px; font-size: clamp(34px, 5vw, 64px); line-height: 1.06; letter-spacing: -.04em; }
+    header p { margin: 0; color: var(--muted); font-size: 17px; line-height: 1.75; }
+    .boundary {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 14px;
+      align-items: start;
+      margin: 28px 0 40px;
+      padding: 18px 20px;
+      border: 1px solid rgba(242, 198, 109, .4);
+      border-radius: 16px;
+      background: rgba(242, 198, 109, .07);
+    }
+    .boundary .tag { padding: 5px 9px; border-radius: 999px; background: rgba(242, 198, 109, .14); color: var(--amber); font-size: 12px; font-weight: 700; }
+    .boundary p { margin: 0; color: #e2d6bb; line-height: 1.65; }
+    .grid { display: grid; gap: 28px; }
+    article {
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      background: linear-gradient(180deg, var(--panel-2), var(--panel));
+      box-shadow: 0 20px 70px rgba(0, 0, 0, .28);
+    }
+    .meta { display: flex; gap: 18px; justify-content: space-between; align-items: flex-start; padding: 22px 24px; border-bottom: 1px solid var(--line); }
+    .number { flex: 0 0 34px; display: grid; place-items: center; width: 34px; height: 34px; border-radius: 10px; color: var(--blue); background: rgba(124, 166, 255, .12); font-weight: 800; }
+    .copy { flex: 1; }
+    h2 { margin: 0 0 7px; font-size: 22px; letter-spacing: -.02em; }
+    .copy p { margin: 0; color: var(--muted); line-height: 1.6; }
+    .state { flex: 0 0 auto; padding: 6px 10px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font-size: 12px; }
+    .state.design { color: var(--amber); border-color: rgba(242, 198, 109, .35); }
+    .state.live { color: var(--green); border-color: rgba(85, 214, 160, .35); }
+    figure { margin: 0; padding: 18px; background: #07080a; }
+    img { display: block; width: 100%; height: auto; border-radius: 12px; border: 1px solid #20232a; }
+    figcaption { padding: 13px 6px 2px; color: var(--muted); font-size: 13px; line-height: 1.55; }
+    .facts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; padding: 20px 24px 24px; }
+    .fact { padding: 14px; border: 1px solid var(--line); border-radius: 12px; background: rgba(255,255,255,.025); }
+    .fact span { display: block; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; }
+    .fact strong { display: block; margin-top: 7px; font-size: 14px; overflow-wrap: anywhere; }
+    footer { margin-top: 32px; color: #747b87; font-size: 12px; line-height: 1.7; }
+    @media (max-width: 800px) {
+      main { width: min(100% - 24px, 1480px); padding-top: 28px; }
+      .meta { flex-wrap: wrap; }
+      .facts { grid-template-columns: 1fr 1fr; }
+      .boundary { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div class="eyebrow">Neo × WorkBuddy / Evidence Gallery</div>
+      <h1>从两步 Onboarding 到真实对话</h1>
+      <p>只保留“连接来源 → 默认模型”两步，并补上会话页真实的 WorkBuddy 模型弹窗和完成对话截图。</p>
+    </header>
+
+    <section class="boundary" aria-label="能力边界">
+      <span class="tag">能力边界</span>
+      <p><strong>当前实机不能选择 Hy3。</strong> 本机 WorkBuddy 5.3.5 / CodeBuddy CLI 2.115.0 返回的可信能力中不含 <code>hy3</code>，所以会话模型弹窗按 fail-closed 显示 <code>client_default</code>；真实对话由客户端解析为 <code>glm-5.2</code>。旧四步稿与 Hy3 演示快照已从主展示移除。</p>
+    </section>
+
+    <section class="grid">
+      <article>
+        <div class="meta">
+          <div class="number">01</div>
+          <div class="copy">
+            <h2>Onboarding：连接来源 → 默认模型</h2>
+            <p>实际页面只有两步，不包含“日常工具”和“开始使用”。</p>
+          </div>
+          <span class="state live">真实组件 · 两步流程</span>
+        </div>
+        <figure>
+          <img src="01-onboarding-real-client-detection.png" alt="Neo 真实两步 Onboarding 页面">
+          <figcaption>真实 Onboarding 截图：顶部只显示“连接来源”和“默认模型”。CodeBuddy Code 在当时的适配器门禁状态下显示为推荐项；当前实机适配器已在后两张图中验证。</figcaption>
+        </figure>
+      </article>
+
+      <article>
+        <div class="meta">
+          <div class="number">02</div>
+          <div class="copy">
+            <h2>会话页：WorkBuddy 模型选择弹窗</h2>
+            <p>来自真实 ModelSwitcher；来源锁定为 WorkBuddy 后，只展示客户端可信模型能力。</p>
+          </div>
+          <span class="state live">真实组件 · 当前能力</span>
+        </div>
+        <figure>
+          <img src="09-session-workbuddy-model-popup.png" alt="Neo 会话页里的 WorkBuddy 模型选择弹窗">
+          <figcaption>当前客户端没有返回可信模型目录，弹窗明确显示“由官方客户端选择默认模型”，输入区同步显示 <code>WorkBuddy · client_default</code>。</figcaption>
+        </figure>
+      </article>
+
+      <article>
+        <div class="meta">
+          <div class="number">03</div>
+          <div class="copy">
+            <h2>Neo 真实会话：WorkBuddy 返回精确 nonce</h2>
+            <p>生产 Web Server、真实会话组件、官方客户端登录态和 stream-json 传输共同完成。</p>
+          </div>
+          <span class="state live">实机验证 · PASS</span>
+        </div>
+        <figure>
+          <img src="08-session-workbuddy-live-conversation.png" alt="Neo 中使用 WorkBuddy 完成真实对话">
+          <figcaption>用户消息和 WorkBuddy 回复均为 <code>NEO_WORKBUDDY_HTML_20260730_2115</code>，右上角显示运行完成通知，输入区显示 <code>WorkBuddy · client_default</code>。</figcaption>
+        </figure>
+        <div class="facts">
+          <div class="fact"><span>Engine</span><strong>codebuddy_code</strong></div>
+          <div class="fact"><span>CLI</span><strong>2.115.0</strong></div>
+          <div class="fact"><span>Selected model</span><strong>client_default</strong></div>
+          <div class="fact"><span>Runtime model</span><strong>glm-5.2</strong></div>
+        </div>
+      </article>
+    </section>
+
+    <footer>
+      生成日期：2026-07-30。实机调用强制使用 read_only、plan mode、空工具集；Neo 只传递 WorkBuddy 配置目录，不复制、展示或持久化官方登录凭证。
+    </footer>
+  </main>
+</body>
+</html>

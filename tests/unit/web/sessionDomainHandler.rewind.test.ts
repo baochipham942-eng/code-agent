@@ -76,7 +76,8 @@ describe('Web session Rewind projection parity', () => {
     sessionMessagesProjection.clear();
     mocks.rewindConversation.mockResolvedValue({
       rewindId: 'rewind-1',
-      activeMessages: cachedHistory().slice(0, 2),
+      draft: { content: '' },
+      activeMessages: cachedHistory().slice(0, 3),
     });
     mocks.restoreConversation.mockResolvedValue({
       rewindId: 'rewind-1',
@@ -84,7 +85,7 @@ describe('Web session Rewind projection parity', () => {
     });
   });
 
-  it('invalidates both caches so the next run hydrates only the visible Rewind prefix', async () => {
+  it('invalidates both caches so the next run hydrates through the visible Rewind anchor', async () => {
     sessionMessagesProjection.set('session-1', cachedHistory());
     const handler = installHandler();
 
@@ -98,22 +99,26 @@ describe('Web session Rewind projection parity', () => {
     }) as DomainResponse;
 
     expect(response.success).toBe(true);
+    expect(response.data).toMatchObject({
+      draft: { content: '' },
+      activeMessages: [{ id: 'u1' }, { id: 'a1' }, { id: 'u2' }],
+    });
     expect(mocks.invalidateSessionCache).toHaveBeenCalledWith('session-1');
     expect(sessionMessagesProjection.has('session-1')).toBe(false);
 
-    const getMessages = vi.fn(async () => cachedHistory().slice(0, 2));
+    const getMessages = vi.fn(async () => cachedHistory().slice(0, 3));
     const store = createWebSessionStore({
       tryGetSessionManager: async () => ({ getMessages }),
       getDatabase: vi.fn(),
       logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
     });
     await expect(store.loadSessionHistoryForRun('session-1'))
-      .resolves.toMatchObject([{ id: 'u1' }, { id: 'a1' }]);
+      .resolves.toMatchObject([{ id: 'u1' }, { id: 'a1' }, { id: 'u2' }]);
     expect(getMessages).toHaveBeenCalledWith('session-1');
   });
 
   it('invalidates both caches after recovery so the next run reloads the restored suffix', async () => {
-    sessionMessagesProjection.set('session-1', cachedHistory().slice(0, 2));
+    sessionMessagesProjection.set('session-1', cachedHistory().slice(0, 3));
     const handler = installHandler();
 
     const response = await handler({}, {

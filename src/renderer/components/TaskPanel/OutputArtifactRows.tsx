@@ -43,10 +43,12 @@ export const OutputFileRows = ({
   files,
   previewItems,
   onOpenPreview,
+  onOpenFile,
 }: {
   files: ArtifactItem[];
   previewItems: WorkspacePreviewItem[];
-  onOpenPreview: (itemId?: string | null) => void;
+  onOpenPreview?: (itemId?: string | null) => void;
+  onOpenFile?: (path: string) => void;
 }) => {
   return (
     <div className="space-y-0.5">
@@ -56,6 +58,7 @@ export const OutputFileRows = ({
           file={file}
           previewItem={findPreviewItemForPath(previewItems, file.path)}
           onOpenPreview={onOpenPreview}
+          onOpenFile={onOpenFile}
         />
       ))}
     </div>
@@ -66,10 +69,12 @@ const OutputFileRow = ({
   file,
   previewItem,
   onOpenPreview,
+  onOpenFile,
 }: {
   file: ArtifactItem;
   previewItem: WorkspacePreviewItem | null;
-  onOpenPreview: (itemId?: string | null) => void;
+  onOpenPreview?: (itemId?: string | null) => void;
+  onOpenFile?: (path: string) => void;
 }) => {
   const row = (
     <>
@@ -78,7 +83,21 @@ const OutputFileRow = ({
     </>
   );
 
-  if (!previewItem) {
+  if (onOpenFile) {
+    return (
+      <button
+        type="button"
+        onClick={() => onOpenFile(file.path)}
+        className="flex w-full items-center gap-2 rounded-md py-0.5 text-left hover:bg-white/[0.035]"
+        title={file.path}
+        data-testid="overview-artifact-file"
+      >
+        {row}
+      </button>
+    );
+  }
+
+  if (!previewItem || !onOpenPreview) {
     return (
       <div className="flex items-center gap-2 py-0.5" title={file.path}>
         {row}
@@ -102,20 +121,54 @@ export const CurrentTurnArtifactOwnershipCard = ({
   artifactOwnership,
   previewItems,
   workingDirectory,
+  onOpenFile,
 }: {
   artifactOwnership: TurnArtifactOwnershipItem[];
   previewItems: WorkspacePreviewItem[];
   workingDirectory?: string | null;
-  onOpenPreview: (itemId?: string | null) => void;
+  onOpenPreview?: (itemId?: string | null) => void;
+  onOpenFile?: (path: string) => void;
 }) => {
   const fallbackCards = buildTurnArtifactDeliverableCards(artifactOwnership);
-  const cards: DeliverableCardView[] = artifactOwnership.flatMap((item, index) => {
+  const rows = artifactOwnership.map((item, index) => {
     const previewItem = findPreviewItemForArtifact(previewItems, item, workingDirectory);
-    if (previewItem) return [buildDeliverableCardFromWorkspaceItem(previewItem)];
-
-    const fallbackCard = fallbackCards[index];
-    return fallbackCard ? [fallbackCard] : [];
+    const filePath = previewItem?.file?.path
+      || (item.path ? resolveArtifactPath(item.path, workingDirectory) : null);
+    const card = previewItem
+      ? buildDeliverableCardFromWorkspaceItem(previewItem)
+      : fallbackCards[index] || null;
+    return { item, index, filePath, card };
   });
+
+  if (onOpenFile) {
+    return (
+      <div className="space-y-0.5">
+        {rows.map(({ item, index, filePath, card }) => {
+          const rowKey = `${item.kind}:${item.path || item.url || item.label}:${index}`;
+          if (filePath) {
+            return (
+              <button
+                key={rowKey}
+                type="button"
+                onClick={() => onOpenFile(filePath)}
+                className="flex w-full items-center gap-2 rounded-md py-0.5 text-left hover:bg-white/[0.035]"
+                title={filePath}
+                data-testid="overview-artifact-file"
+              >
+                <FileText className="h-3.5 w-3.5 flex-shrink-0 text-zinc-500" />
+                <span className="truncate font-mono text-xs text-zinc-400">{item.label}</span>
+              </button>
+            );
+          }
+          return card ? (
+            <DeliverableCardList key={rowKey} cards={[card]} className="" />
+          ) : null;
+        })}
+      </div>
+    );
+  }
+
+  const cards: DeliverableCardView[] = rows.flatMap(({ card }) => (card ? [card] : []));
 
   return (
     <DeliverableCardList cards={cards} className="" />

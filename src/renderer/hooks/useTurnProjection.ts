@@ -287,6 +287,87 @@ export function projectTurns(
       continue;
     }
 
+    // 通话本身失败留痕（T3）：建连失败 / 通话中断时 host 落一条带 `metadata.voiceCallFailure`
+    // 的 role:'system' 消息。**这行 T9 起就一直在写，但投影层没放行**——白名单漏了它，于是
+    // 落到下面「system 一律 skip」那道总闸里：模型读得到（上下文装配走 DB），用户屏幕上
+    // 一片空白，事后翻历史也找不回。当下只有一个几秒就消失的 toast，通话条又随挂断一起收走。
+    // 归位方式与 voiceCallSummary 同级：通话级事件，挂当前轮，没有轮就独立成轮。
+    if (msg.role === 'system' && msg.metadata?.voiceCallFailure) {
+      const node: TraceNode = {
+        id: msg.id,
+        type: 'system',
+        subtype: 'error',
+        content: msg.content,
+        timestamp: msg.timestamp,
+        metadata: msg.metadata,
+      };
+      if (currentTurn) {
+        currentTurn.nodes.push(node);
+        currentTurn.endTime = msg.timestamp;
+      } else {
+        turnCounter++;
+        turns.push({
+          turnNumber: turnCounter,
+          turnId: `turn-${turnCounter}`,
+          nodes: [node],
+          status: 'completed',
+          startTime: msg.timestamp,
+          endTime: msg.timestamp,
+        });
+      }
+      continue;
+    }
+
+    // 语音派活失败留痕（W6-5）：派出的 run 失败时 host 落一条带
+    // `metadata.voiceWorkFailure` 的 role:'system' 消息。它不是对话内容，
+    // 但**是那张任务卡的结局证据**——按 workItemId 对回对应的 voiceDispatch 轮，
+    // 投成该轮内的 error 节点，任务卡据此如实显示失败。
+    // 对不上就挂当前轮，一个轮都没有就独立成轮——失败记录绝不丢，也不留在半空。
+    if (msg.role === 'system' && msg.metadata?.voiceWorkFailure) {
+      const failedWorkItemId = msg.metadata.voiceWorkFailure.workItemId;
+      {
+        const node: TraceNode = {
+          id: msg.id,
+          type: 'system',
+          subtype: 'error',
+          content: msg.content,
+          timestamp: msg.timestamp,
+          metadata: msg.metadata,
+        };
+        const matchedTurn = [...turns]
+          .reverse()
+          .find((turn) => turn.nodes.some((n) => n.metadata?.voiceDispatch?.workItemId === failedWorkItemId));
+        const hostTurn = matchedTurn ?? currentTurn;
+        if (hostTurn) {
+          hostTurn.nodes.push(node);
+          hostTurn.endTime = msg.timestamp;
+        } else {
+          turnCounter++;
+          turns.push({
+            turnNumber: turnCounter,
+            turnId: `turn-${turnCounter}`,
+            nodes: [node],
+            status: 'completed',
+            startTime: msg.timestamp,
+            endTime: msg.timestamp,
+          });
+        }
+        continue;
+      }
+    }
+
+    // 语音派活的结局印章（X5.5-A2-a）：host 查过产物证据后落的一条 role:'system' 消息。
+    // 它不是对话内容，不成节点——只把结局盖到它属于的那一轮上，任务卡据此报结局。
+    // 对不上任何一轮就丢弃：宁可卡上不显示结局，也不能把印章盖到别人的活头上。
+    if (msg.role === 'system' && msg.metadata?.voiceWorkSettled) {
+      const settled = msg.metadata.voiceWorkSettled;
+      const matchedTurn = [...turns]
+        .reverse()
+        .find((turn) => turn.nodes.some((n) => n.metadata?.voiceDispatch?.workItemId === settled.workItemId));
+      if (matchedTurn) matchedTurn.voiceWorkOutcome = settled.outcome;
+      continue;
+    }
+
     // System messages → skip (nudges, recovery hints)
     if (msg.role === 'system') continue;
 
@@ -311,8 +392,13 @@ export function projectTurns(
 
     // User message → start a new turn
     if (msg.role === 'user') {
+      // 语音字幕（X5.5-D2）：字幕是会话流，不是 turn 边界——通话中用户再开口落的
+      // 一条 user 字幕，不许把装着在跑 run 的派活轮当场切成 completed（任务卡还在转，
+      // 轮已判完结，尾部动作条挂出）。字幕本身照常开轮、照常渲染进消息流；
+      // 普通（typed/dictation）用户消息仍是 turn 边界，关闭上一轮不变。
+      const isVoiceSubtitle = msg.metadata?.source === 'voice';
       // Close previous turn
-      if (currentTurn) {
+      if (currentTurn && !isVoiceSubtitle) {
         currentTurn.status = 'completed';
         if (currentTurn.nodes.length > 0) {
           currentTurn.endTime = currentTurn.nodes[currentTurn.nodes.length - 1].timestamp;
@@ -332,7 +418,10 @@ export function projectTurns(
 
       currentTurn.nodes.push({
         id: msg.id,
-        type: 'user',
+        // 语音派出的那条指令是通话 brain 改写的，不是用户原话（原话是字幕那条）。
+        // 存的是 role:'user'（runtime 需要一条用户轮），但**不能顶着用户身份显示在右边**——
+        // 那等于把机器编的话安在用户嘴里。投成左侧节点，由渲染层标明来源。
+        type: msg.metadata?.voiceDispatch ? 'assistant_text' : 'user',
         content: msg.content,
         timestamp: msg.timestamp,
         attachments: msg.attachments,
@@ -361,9 +450,12 @@ export function projectTurns(
         msg.reasoning?.trim().length || msg.thinking?.trim().length,
       );
       const hasToolCalls = msg.toolCalls && msg.toolCalls.length > 0;
+      // 运行失败的结构化错误挂在 metadata 上（AgentErrorCard），content 可能为空——
+      // 不能按"空消息"跳过，否则错误卡片投不出来。
+      const hasAgentError = Boolean(msg.metadata?.agentError);
 
       // Skip empty assistant messages
-      if (!hasContent && !hasReasoning && !hasToolCalls) continue;
+      if (!hasContent && !hasReasoning && !hasToolCalls && !hasAgentError) continue;
 
       const turn = currentTurn;
 
@@ -470,6 +562,12 @@ export function projectTurns(
           if (!referencedToolCallIds.has(tc.id)) pushToolCallNode(tc);
         }
 
+        // 错误卡片尾随在工具行之后：带 agentError 的消息即使 content_parts 全是工具
+        // 调用，也要补一个空正文节点承载 AgentErrorCard，否则失败无任何可见落点。
+        if (hasAgentError) {
+          pushAssistantTextNode('');
+        }
+
         // content_parts 是权威交错顺序。走到这里若仍 textIndex===0，说明 parts 里没有
         // 任何 text part：不能把内存里残留的 msg.content 当尾随正文追加到工具行之后——
         // 流式期模型先吐的 preamble（如"使用Write工具来创建文件"）被服务端精简成纯工具
@@ -478,7 +576,7 @@ export function projectTurns(
         continue;
       }
 
-      if (hasContent || hasReasoning) {
+      if (hasContent || hasReasoning || hasAgentError) {
         pushAssistantTextNode(msg.content);
       }
 
@@ -521,20 +619,32 @@ export function projectTurns(
   // 会话里不再投影独立的 neo_work_card 卡片。@neo 的运行本就是同会话的正常 agent turn，
   // 其回复已在对话流里；work card 记录仅供账号菜单「Neo 协同」topic 目录做历史视图。
 
+  // X5.5-D5：语音派出的 run 刻意活得比通话久，挂断后 run 的收尾文本 timestamp
+  // 晚于摘要卡的 endedAt——摘要卡因此不在消息流最后。展示层把摘要卡钉到所在轮
+  // 末尾（不改落库时序），恒排在这通电话 episode 的内容之后。
+  pinVoiceCallSummaryToEpisodeEnd(turns);
+
   // Direct-routed sidecar messages should not steal the active marker from
   // the in-flight task. Normal user turns can still be active while waiting
   // for the first assistant response.
   let activeTurnIndex = -1;
   if (isProcessing && turns.length > 0) {
     const latestTurn = turns[turns.length - 1];
-    const latestNode = latestTurn.nodes[latestTurn.nodes.length - 1];
+    // 钉在轮尾的通话摘要卡不是活动内容（D5）——判断轮尾时跳过它，否则钉尾会把
+    // 在跑的派活轮从 active 上顶下来（lastNode 变成 system，流式标记丢失）。
+    const latestNode = lastNonVoiceSummaryNode(latestTurn);
     const directRoutingDelivery = latestNode?.metadata?.workbench?.directRoutingDelivery;
     const isDirectRoutedUserTurn =
       latestNode?.type === 'user' &&
       latestNode.metadata?.workbench?.routingMode === 'direct' &&
       (directRoutingDelivery?.deliveredTargetIds?.length || 0) > 0;
 
-    if (latestNode?.type === 'user' && !isDirectRoutedUserTurn) {
+    const isVoiceSubtitleTail =
+      latestNode?.type === 'user' && latestNode.metadata?.source === 'voice';
+    // 语音字幕轮不抢 active（X5.5-D2）：字幕刚来、run 还在跑时，若让字幕轮拿走
+    // active 标记，派活轮就会跌回 completed——和关轮豁免是同一件事的两个出口。
+    // 跳过它，让下面的回扫继续找到真正在跑的那一轮。
+    if (latestNode?.type === 'user' && !isDirectRoutedUserTurn && !isVoiceSubtitleTail) {
       latestTurn.status = 'streaming';
       activeTurnIndex = turns.length - 1;
     }
@@ -542,7 +652,7 @@ export function projectTurns(
     for (let index = turns.length - 1; index >= 0; index -= 1) {
       if (activeTurnIndex >= 0) break;
       const candidateTurn = turns[index];
-      const lastNode = candidateTurn.nodes[candidateTurn.nodes.length - 1];
+      const lastNode = lastNonVoiceSummaryNode(candidateTurn);
       if (!lastNode) continue;
 
       if (lastNode.type === 'assistant_text' || lastNode.type === 'tool_call') {
@@ -577,6 +687,41 @@ export function projectTurns(
   });
 }
 
+/**
+ * X5.5-D5：把「语音通话摘要」节点钉到所在轮的末尾。
+ * 语音派出的 run 被刻意设计为活得比通话久，挂断后 run 的收尾文本 timestamp 晚于
+ * 摘要卡的 endedAt，摘要卡因此不在这通 episode 的最后。这里只动展示层节点顺序，
+ * 不改落库时序；摘要卡恒排在本轮这通电话的内容之后。钉钉是幂等的。
+ */
+function pinVoiceCallSummaryToEpisodeEnd(turns: TraceTurn[]): void {
+  for (const turn of turns) {
+    const summaryNodes = turn.nodes.filter((node) => node.subtype === 'voice_call_summary');
+    if (summaryNodes.length === 0) continue;
+    if (turn.nodes[turn.nodes.length - 1]?.subtype === 'voice_call_summary') continue;
+    turn.nodes = turn.nodes
+      .filter((node) => node.subtype !== 'voice_call_summary')
+      .concat(summaryNodes);
+  }
+}
+
+/** 轮尾的「真实内容节点」：跳过钉尾的通话摘要卡（D5），active/流式判断不看它。 */
+function lastNonVoiceSummaryNode(turn: TraceTurn): TraceNode | undefined {
+  for (let index = turn.nodes.length - 1; index >= 0; index -= 1) {
+    const node = turn.nodes[index];
+    if (node.subtype !== 'voice_call_summary') return node;
+  }
+  return undefined;
+}
+
+/** 本轮最后一条助手消息的 id —— 流式期间正在生长的那条。 */
+function lastAssistantMessageIdInTurn(turn: TraceTurn): string | undefined {
+  for (let index = turn.nodes.length - 1; index >= 0; index -= 1) {
+    const node = turn.nodes[index];
+    if (node.type === 'assistant_text' && node.messageId) return node.messageId;
+  }
+  return undefined;
+}
+
 function relocateActiveTurnReasoningToTail(turn: TraceTurn): void {
   const carrierIndex = turn.nodes.findIndex(
     (node) => node.type === 'assistant_text' && Boolean(node.reasoning || node.thinking),
@@ -584,6 +729,11 @@ function relocateActiveTurnReasoningToTail(turn: TraceTurn): void {
   if (carrierIndex < 0) return;
   const carrier = turn.nodes[carrierIndex];
   if (!carrier.messageId) return;
+  // 只搬**正在生长**的那条消息的思考（2026-08-01 症状 2）。尾置的目的是让流式思考贴住
+  // 视口底边、并与已落账的那半连成一块（PR #541）；已经写完的早期响应的思考不在生长，
+  // 搬它不服务任何目的，却会让那一块随着本轮新内容不断往下滑——用户看到的「块顺序反复
+  // 跳」有一大半是它。
+  if (carrier.messageId !== lastAssistantMessageIdInTurn(turn)) return;
   const hasTrailingDisplayNodes = turn.nodes
     .slice(carrierIndex + 1)
     .some((node) => node.type === 'assistant_text' || node.type === 'tool_call');

@@ -124,8 +124,8 @@ export const ThoughtDisplay: React.FC<ThoughtDisplayProps> = ({
         {/* Header */}
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
-            <Brain className={`w-4 h-4 text-primary-400 ${isThinking ? 'animate-pulse' : ''}`} />
-            <span className="text-sm font-medium text-primary-400">
+            <Brain className={`w-4 h-4 text-badge-accent ${isThinking ? 'animate-pulse' : ''}`} />
+            <span className="text-sm font-medium text-badge-accent">
               {isThinking ? 'Thinking...' : 'Thought'}
             </span>
 
@@ -222,7 +222,7 @@ export const CompactThoughtDisplay: React.FC<CompactThoughtDisplayProps> = ({
         ${className}
       `}
     >
-      <Brain className={`w-3.5 h-3.5 text-primary-400 ${isThinking ? 'animate-pulse' : ''}`} />
+      <Brain className={`w-3.5 h-3.5 text-badge-accent ${isThinking ? 'animate-pulse' : ''}`} />
       <span className="text-xs text-zinc-400 max-w-[200px] truncate">
         {thought || 'Thinking...'}
       </span>

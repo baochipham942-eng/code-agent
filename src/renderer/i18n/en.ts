@@ -1,7 +1,6 @@
 // ============================================================================
 // English Translations
 // ============================================================================
-
 import type { Translations } from './zh';
 import { enSettings } from './enSettings';
 import { sessionReplayEn } from './sessionReplay';
@@ -14,8 +13,10 @@ import { cronCenterEn } from './cronCenter';
 import { previewWorkspaceEn } from './previewWorkspace';
 import { modalPrimitivesEn } from './modalPrimitives';
 import { userQuestionEn } from './userQuestion';
+import { decisionCardEn } from './decisionCard';
 import { taskStatusPanelsEn } from './taskStatusPanels';
 import { noticesEn } from './notices';
+import { agentErrorEn } from './agentError';
 import { labEn } from './lab';
 import { labGpt1En } from './labGpt1';
 import { labNanogptEn } from './labNanogpt';
@@ -28,15 +29,19 @@ import { rolePackEn } from './rolePack';
 import { expertEn } from './expert';
 import { generativeUIEn } from './generativeUI';
 import { capabilityHubEn } from './capabilityHub';
+import { neoTopicsEn } from './neoTopics';
+import { designToolbarEn } from './designToolbar';
+import { projectSpaceEn } from './projectSpace';
 import { evalCenterEn } from './evalCenter';
 import { localOpsEn } from './localOps';
 import { onboardingEn } from './onboarding';
 import { workbenchTabsEn } from './workbenchTabs';
-import { activityPanelEn } from './activity';
-
+import { activityPanelEn, canvasActorEn } from './domains';
 export const en: Translations = {
-  ...activityPanelEn,
+  ...canvasActorEn, ...activityPanelEn,
   ...capabilityHubEn,
+  ...neoTopicsEn,
+  ...projectSpaceEn,
   ...evalCenterEn,
   ...localOpsEn,
   ...onboardingEn,
@@ -73,6 +78,13 @@ export const en: Translations = {
     download: 'Download',
     archiveToLibrary: 'Archive to library',
     exportBundle: 'Export bundle',
+    statusVerified: 'Verified',
+    statusUnverified: 'Unverified',
+    statusFailed: 'Failed',
+    qualityValidated: 'Validated',
+    qualityNeedsReview: 'Needs review',
+    qualityFailed: 'Quality failed',
+    moreActions: 'More',
   },
 
   // Status bar
@@ -92,19 +104,21 @@ export const en: Translations = {
     realpath: 'Real path',
     detected: 'Detected project configuration',
     identityChanged: 'This path was trusted before, but its folder identity changed. Confirm again before loading project configuration.',
+    emptyDangerNote: 'No dangerous configuration needs item-by-item review, but this folder is not trusted yet (or its trust has expired). Project configuration loads only after you confirm.',
     trust: 'Trust and load',
     block: 'Block project config',
     openSettings: 'Open settings',
     saving: 'Saving...',
+    saveFailed: 'Could not save your decision',
     risks: {
-      execution: 'Execution',
-      mcp: 'MCP',
-      agent: 'Agent',
-      skill: 'Skill',
-      prompt: 'Prompt',
-      policy: 'Policy',
-      preference: 'Preference',
-      diagnostic: 'Config',
+      execution: 'Command execution',
+      mcp: 'MCP servers',
+      agent: 'Agent definitions',
+      skill: 'Skill definitions',
+      prompt: 'Prompts',
+      policy: 'Security policy',
+      preference: 'Preferences',
+      diagnostic: 'Other config',
     },
   },
 
@@ -189,38 +203,12 @@ export const en: Translations = {
     previewEmpty: 'Fill in a requirement and click Generate — your web page renders here live',
     previewGenerating: 'Generating web page…',
     canvasEmpty: 'Describe what you want in the chat — AI generates designs onto this canvas. Pan & zoom to explore.',
+    canvasEmptyChatEntry: 'Describe the design you want in the chat on the left',
+    canvasEmptyDropEntry: 'Drag in or paste an image',
     canvasGenSoon: 'Canvas is ready. Image generation and lasso-annotation iteration land in the next step',
-    canvasSelectHint: 'Select an image, then lasso a region for local repaint',
-    annotateStart: 'Annotate',
-    annotateStop: 'Exit annotate',
-    annotateHint: 'Now drag on the image to mark regions to edit (multiple allowed)',
-    annotateGuide: 'Click Annotate, drag a box on the image to mark the region, then add an instruction',
-    editInstructionPlaceholder: 'Describe what the marked region should become, e.g. replace this with an orange round button',
-    editRegionBtn: 'Repaint region',
-    editingRegion: 'Repainting…',
-    expandTitle: 'Expand / Remove watermark',
-    expandBtn: 'Expand canvas',
-    expandDirUp: 'Up',
-    expandDirDown: 'Down',
-    expandDirLeft: 'Left',
-    expandDirRight: 'Right',
-    expandDirAll: 'All',
-    removeWatermarkBtn: 'Remove watermark',
-    clearAnnotations: 'Clear marks',
-    errNoAnnotation: 'Mark a region on the image first',
-    // B4 标注重绘
-    annotMode: 'Annotate & redraw',
-    annotInstruction: 'Redraw instruction',
-    annotInstructionPlaceholder: 'Describe how to redraw the marked spots, e.g. make the marked button bigger and orange',
-    annotRedraw: 'Redraw',
-    annotToolPen: 'Pen',
-    annotToolArrow: 'Arrow',
-    annotToolRect: 'Box',
-    annotToolText: 'Text',
-    annotTextPlaceholder: 'Type annotation text, Enter to confirm',
-    annotCostConfirm: 'Redraw with the annotated image? Billed to your BYOK key',
+    // Image-edit vocabulary (annotate/lasso/expand/watermark/export/cost) moved to ./designToolbar
+    // (1000-line gate); re-expanded at the end of this namespace via ...designToolbarEn.design.
     compareBtn: 'Compare these two',
-    compareHint: 'Shift-click two images for A/B compare',
     compareTitle: 'A/B version compare',
     setMainVersion: 'Set as main',
     discardVersion: 'Discard',
@@ -281,8 +269,6 @@ export const en: Translations = {
     aspectRatioLabel: 'Aspect ratio',
     imageModel: 'Image model',
     imageModelUnconfigured: 'No API key',
-    exportImage: 'Export image',
-    exportImagePdf: 'Export PDF',
     exportCanvasPptx: 'Export PPTX',
     diagramToolbarLabel: 'Diagram',
     diagramSelect: 'Select',
@@ -303,6 +289,9 @@ export const en: Translations = {
     referenceHint: 'Reference images are sent to the model as visual guidance on generate (Wanx supports 1; the first is used)',
     referenceBadge: 'Ref',
     layerPanelTitle: 'Layers',
+    sidePanelExpand: 'Expand canvas panel',
+    sidePanelCollapse: 'Collapse canvas panel',
+    layerPanelEmpty: 'No layers yet — generate or import an image and it shows up here',
     layerUnnamed: 'Untitled node',
     layerKindImage: 'Image',
     layerKindVideo: 'Video',
@@ -317,6 +306,7 @@ export const en: Translations = {
     layerSetMain: 'Set main',
     layerDiscard: 'Discard',
     layerEmptyInspector: 'Select a layer or canvas node to inspect properties',
+    layerDetails: 'Details',
     deviceDesktop: 'Desktop',
     deviceTablet: 'Tablet',
     deviceMobile: 'Mobile',
@@ -348,7 +338,6 @@ export const en: Translations = {
     errNoRequirement: 'Please enter a requirement first',
     errNoBaseImageForI2v: 'Image-to-video needs an image selected on the canvas',
     videoCostConfirm: 'This video will cost approximately',
-    generateVideoFromImage: 'Generate video',
     errResolveDir: 'Could not prepare the design draft directory, please retry',
     errDispatch: 'Failed to dispatch generation',
     errTimeout: 'Generation timed out — no prototype file detected',
@@ -356,15 +345,12 @@ export const en: Translations = {
     errNoPrototype: 'Generate or pick a prototype first',
     errNoInstruction: 'Enter a change request first',
     // T2 cost transparency + undo/redo trust UI
-    costEstimateLabel: 'Est. this run',
     costActualLabel: 'Spent',
     costFree: 'Free',
     costHint: 'Billed to your BYOK key, shown before each run',
     historyPanelTitle: 'Design history',
     historyPanelEmpty: 'After you generate or inpaint, each step shows up here as a nameable, rollback-able version',
     historyTotalSpend: 'Total spent',
-    historyExpand: 'Expand design history',
-    historyCollapse: 'Collapse design history',
     historyReferenceGroup: 'References',
     historyStepGenerate: 'Generate',
     historyStepEdit: 'Inpaint',
@@ -455,6 +441,8 @@ export const en: Translations = {
       apiKeyRequired: 'Please enter the API Key',
       saveFailed: 'Save failed; check the URL and key, then retry',
     },
+    // Image action bar / annotate / expand / export vocabulary (domain-file split, see header note)
+    ...designToolbarEn.design,
   },
 
   // Settings Modal
@@ -521,6 +509,8 @@ export const en: Translations = {
         claude_code: 'Install Claude Code CLI, add claude to PATH, then click "Detect engines".',
         mimo_code: 'Install MiMo-Code CLI, add mimo to PATH, then click "Detect engines".',
         kimi_code: 'Install Kimi Code CLI, add kimi to PATH, then click "Detect engines".',
+        codebuddy_code: 'Install WorkBuddy; Neo detects the CLI bundled with the app automatically.',
+        grok_cli: 'Install Grok Build CLI, add grok to PATH, then click "Detect engines".',
       },
       loginHintTitle: 'Login hint',
       loginHint: {
@@ -528,7 +518,12 @@ export const en: Translations = {
         claude_code: 'Authorize your account via the Claude Code login command before first use.',
         mimo_code: 'Run mimo providers login to authorize your account before first use.',
         kimi_code: 'Run kimi login to authorize your account before first use.',
+        codebuddy_code: 'Sign in with the official WorkBuddy app before first use.',
+        grok_cli: 'Run grok login to authorize your official account before first use.',
       },
+      sourceStatus: { available: 'Available', detected: 'Detected', needsLogin: 'Needs login', adapterPending: 'Adapter not open', notInstalled: 'Not installed', recommended: 'Recommended install', authUnverified: 'Login unverified', unavailable: 'Unavailable' },
+      sourceStatusDetail: { available: 'Ready to run · official login confirmed', detectedNeedsLogin: 'Detected · sign in with the official client first', detectedAdapterPending: 'Detected · execution is not enabled in this version', detectedAuthUnverified: 'Detected · login state cannot be confirmed safely', notInstalled: 'Integration supported · client not detected on this machine', adapterPending: 'Execution is not enabled in this version', recommended: 'Recommended for install and verification; never shown as installed', unavailable: 'Not selectable right now' },
+      notSwitchableHint: 'This source cannot be switched into the current session', recommendationOnlyHint: 'Recommendation only — not detected as installed on this machine', credentialOwnerOfficial: 'Credentials stay with the official client; Neo never shows or stores secrets',
     },
     // Settings page "Agent Engine model catalog" section (signed catalog + local default)
     catalogSection: {
@@ -805,7 +800,6 @@ export const en: Translations = {
 
   // /agent 命令与面板
   agentCommand: {
-    defaultDescription: 'Resume auto routing',
     roleGroupLabel: 'Roles',
     createRoleEntry: 'New role…',
     switchedToPrefix: 'Switched to ',
@@ -814,6 +808,7 @@ export const en: Translations = {
     chipTitlePrefix: 'Current agent: ',
     chipTitleSuffix: '. Type /agent to switch.',
     chipAriaLabel: 'Current agent',
+    chipRemoveAria: 'Remove expert {name}; restore auto routing',
     badgeNotAppliedSuffix: ' not applied',
     badgeNotAppliedTitlePrefix: 'Requested agent was not applied this turn; actually ran: ',
     degradedToastPrefix: 'Requested agent ',
@@ -912,8 +907,10 @@ export const en: Translations = {
   ...previewWorkspaceEn,
   ...modalPrimitivesEn,
   ...userQuestionEn,
+  ...decisionCardEn,
   ...taskStatusPanelsEn,
   ...noticesEn,
+  ...agentErrorEn,
   ...labEn,
   ...labGpt1En,
   ...labNanogptEn,
@@ -960,20 +957,6 @@ export const en: Translations = {
     removeAria: 'Remove capability: {name}',
   },
 
-  inlineWorkbenchBar: {
-    skillsSummary: 'Skills {selected}/{total}',
-    connectorsSummary: 'Connectors {selected}/{total}',
-    mcpSummary: 'MCP servers {selected}/{total}',
-    capabilities: 'Capabilities',
-    expandCapabilitiesAria: 'Expand capability list',
-    collapseCapabilitiesAria: 'Collapse capability list',
-    auto: 'Auto',
-    manual: 'Manual',
-    autoTitle: 'Automatically select available capabilities',
-    manualTitle: 'Manually limit capabilities for this turn',
-    noMountedSkills: 'No skills are mounted for this session yet.',
-  },
-
   commandPalette: {
     ariaLabel: 'Command palette',
     searchPlaceholder: 'Search commands…',
@@ -1004,8 +987,6 @@ export const en: Translations = {
       prefillPromptWithArgs: 'Prefill, then add args',
       prefillPrompt: 'Prefill prompt',
       setAgentForTurn: 'Set agent for this turn',
-      restoreAutoAgent: 'Restore auto agent',
-      defaultAgentDescription: 'Restore automatic routing',
       mountedSkillPrefix: 'Mounted skill',
       selectForTurn: 'Select for this turn',
       mountAndSelect: 'Mount & select for this turn',

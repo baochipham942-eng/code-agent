@@ -34,6 +34,8 @@ vi.mock('../../../src/host/services/core/databaseService', () => ({
 }));
 
 import { ProjectService } from '../../../src/host/services/project/projectService';
+import { ProjectSourceTrustError } from '../../../src/host/services/project/projectSourceTrustError';
+import type { ProjectSourceTrustFailureKind } from '../../../src/shared/contract/project';
 
 const tempRoots: string[] = [];
 const NOW = 1_700_000_000_000;
@@ -90,9 +92,18 @@ function createFixture() {
   };
 }
 
-function expectBlocked(service: ProjectService, projectId: string): void {
-  expect(() => service.getWorkspaceScope(projectId))
-    .toThrow('Project Source trust identity changed');
+function expectBlocked(
+  service: ProjectService,
+  projectId: string,
+  expectedKind: ProjectSourceTrustFailureKind,
+): void {
+  try {
+    service.getWorkspaceScope(projectId);
+    throw new Error('expected getWorkspaceScope to throw');
+  } catch (error) {
+    expect(error).toBeInstanceOf(ProjectSourceTrustError);
+    expect(error).toMatchObject({ code: 'PROJECT_SOURCE_TRUST', kind: expectedKind });
+  }
   expect(service.getProjectDetail(projectId)?.sources[0].trustState).toBe('blocked');
 }
 
@@ -122,7 +133,7 @@ describe('ProjectService workspace source identity gate', () => {
     mkdirSync(fixture.sourcePath);
     expect(workspacePathIdentity(fixture.sourcePath).ino).not.toBe(fixture.identity.ino);
 
-    expectBlocked(fixture.service, 'proj_identity');
+    expectBlocked(fixture.service, 'proj_identity', 'identity_changed');
   });
 
   it('blocks the source when its path is replaced by a symlink to another directory', () => {
@@ -133,7 +144,7 @@ describe('ProjectService workspace source identity gate', () => {
     symlinkSync(replacementPath, fixture.sourcePath, 'dir');
     expect(workspacePathIdentity(fixture.sourcePath).ino).not.toBe(fixture.identity.ino);
 
-    expectBlocked(fixture.service, 'proj_identity');
+    expectBlocked(fixture.service, 'proj_identity', 'identity_changed');
   });
 
   it('blocks the source when its path no longer exists', () => {
@@ -141,6 +152,13 @@ describe('ProjectService workspace source identity gate', () => {
     rmSync(fixture.sourcePath, { recursive: true });
     expect(workspacePathIdentity(fixture.sourcePath)).toEqual({ dev: null, ino: null });
 
-    expectBlocked(fixture.service, 'proj_identity');
+    expectBlocked(fixture.service, 'proj_identity', 'source_missing');
+  });
+
+  it('blocks a source that has never been trusted with a distinct kind', () => {
+    const fixture = createFixture();
+    fixture.source.trustState = 'blocked';
+
+    expectBlocked(fixture.service, 'proj_identity', 'not_trusted');
   });
 });

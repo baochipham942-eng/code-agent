@@ -65,23 +65,24 @@ describe('workbench view routing', () => {
     window.removeEventListener(OPEN_SESSION_REPLAY_EVENT, onSessionReplay);
   });
 
-  it('separates URL Browser state from file Preview state', () => {
+  it('routes live dev preview to its own preview:<url> tab, separate from file preview and the browser agent window', () => {
     useAppStore.getState().openLivePreview('http://localhost:3000', 'server-1');
     expect(useAppStore.getState()).toMatchObject({
-      workbenchTabs: ['browser'],
-      activeWorkbenchTab: 'browser',
+      workbenchTabs: ['preview:http://localhost:3000'],
+      activeWorkbenchTab: 'preview:http://localhost:3000',
     });
+    expect(useAppStore.getState().workbenchTabs).not.toContain('browser');
 
     useAppStore.getState().openPreview('/tmp/output.html');
     expect(useAppStore.getState()).toMatchObject({
-      workbenchTabs: ['browser', 'preview:/tmp/output.html'],
+      workbenchTabs: ['preview:http://localhost:3000', 'preview:/tmp/output.html'],
       activeWorkbenchTab: 'preview:/tmp/output.html',
     });
 
     const [liveTab, fileTab] = useAppStore.getState().previewTabs;
-    useAppStore.getState().openWorkbenchTab('browser');
+    useAppStore.getState().openWorkbenchTab('preview:http://localhost:3000');
     expect(useAppStore.getState()).toMatchObject({
-      activeWorkbenchTab: 'browser',
+      activeWorkbenchTab: 'preview:http://localhost:3000',
       activePreviewTabId: liveTab.id,
     });
 
@@ -90,5 +91,35 @@ describe('workbench view routing', () => {
       activeWorkbenchTab: 'preview:/tmp/output.html',
       activePreviewTabId: fileTab.id,
     });
+
+    // 'browser'（Agent 浏览器现场）与 preview tab 状态零关联——打开它不应挪动
+    // activePreviewTabId，这正是 S1 把 'browser' 挪给 Agent Window 后必须解耦的地方。
+    useAppStore.getState().openWorkbenchTab('browser');
+    expect(useAppStore.getState()).toMatchObject({
+      activeWorkbenchTab: 'browser',
+      activePreviewTabId: fileTab.id,
+    });
+  });
+
+  it('reuses the same file preview tab instead of nesting or duplicating it', () => {
+    useAppStore.setState({
+      workingDirectory: '/workspace/project',
+      workbenchTabs: ['overview'],
+      activeWorkbenchTab: 'overview',
+      selectedWorkspacePreviewId: null,
+    });
+
+    useAppStore.getState().openPreview('dist/report.html');
+    const firstPreviewTabId = useAppStore.getState().activePreviewTabId;
+    useAppStore.getState().openWorkbenchTab('overview');
+    useAppStore.getState().openPreview('dist/report.html');
+
+    expect(useAppStore.getState()).toMatchObject({
+      workbenchTabs: ['overview', 'preview:/workspace/project/dist/report.html'],
+      activeWorkbenchTab: 'preview:/workspace/project/dist/report.html',
+      activePreviewTabId: firstPreviewTabId,
+      selectedWorkspacePreviewId: null,
+    });
+    expect(useAppStore.getState().previewTabs).toHaveLength(1);
   });
 });

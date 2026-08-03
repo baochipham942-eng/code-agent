@@ -36,7 +36,8 @@ export interface SidebarProjectDrawerSession {
   showStatusBadge: boolean;
   typeLabel?: string | null;
   summary?: string;
-  lastActiveLabel: string;
+  /** 绝对时间字符串，挂行级 title（相对时间 2026-07-27 拍板撤下） */
+  lastActiveTitle: string;
   workingDirectory?: string;
   gitBranch?: string;
   prLabel?: string;
@@ -109,10 +110,10 @@ function formatRelativeUpdatedAt(timestamp: number | undefined, language: Langua
 }
 
 function getGoalStatusIcon(status: SidebarProjectGoalMeta['status']): React.ReactNode {
-  if (status === 'met') return <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />;
-  if (status === 'aborted') return <AlertTriangle className="h-3.5 w-3.5 text-amber-400" />;
+  if (status === 'met') return <CheckCircle2 className="h-3.5 w-3.5 text-badge-success" />;
+  if (status === 'aborted') return <AlertTriangle className="h-3.5 w-3.5 text-badge-warning" />;
   if (status === 'archived') return <Clock3 className="h-3.5 w-3.5 text-zinc-500" />;
-  return <Target className="h-3.5 w-3.5 text-violet-300" />;
+  return <Target className="h-3.5 w-3.5 text-badge-accent" />;
 }
 
 function formatArtifactMeta(artifact: SidebarProjectArtifactMeta, t: Translations): string {
@@ -228,13 +229,13 @@ export const SidebarProjectDrawer: React.FC<SidebarProjectDrawerProps> = ({
                       value={draftName}
                       onChange={(event) => setDraftName(event.target.value)}
                       aria-label={p.nameLabel}
-                      className="min-w-0 flex-1 rounded-md border border-zinc-700 bg-zinc-900 px-2 py-1 text-sm font-medium text-zinc-100 outline-hidden focus:border-violet-500/60"
+                      className="min-w-0 flex-1 rounded-md border border-zinc-700 bg-zinc-900 px-2 py-1 text-sm font-medium text-zinc-100 outline-hidden focus:border-badge-accent/60"
                     />
                     <select
                       value={draftStatus}
                       onChange={(event) => setDraftStatus(event.target.value as ProjectStatus)}
                       aria-label={p.statusFieldLabel}
-                      className="shrink-0 rounded-md border border-zinc-700 bg-zinc-900 px-1.5 py-1 text-[11px] text-zinc-300 outline-hidden focus:border-violet-500/60"
+                      className="shrink-0 rounded-md border border-zinc-700 bg-zinc-900 px-1.5 py-1 text-[11px] text-zinc-300 outline-hidden focus:border-badge-accent/60"
                     >
                       <option value="active">{p.statusActive}</option>
                       <option value="idle">{p.statusIdle}</option>
@@ -246,7 +247,7 @@ export const SidebarProjectDrawer: React.FC<SidebarProjectDrawerProps> = ({
                     onChange={(event) => setDraftDescription(event.target.value)}
                     aria-label={p.descriptionPlaceholder}
                     rows={2}
-                    className="min-h-[52px] resize-none rounded-md border border-zinc-700 bg-zinc-900 px-2 py-1 text-[11px] leading-5 text-zinc-300 outline-hidden focus:border-violet-500/60"
+                    className="min-h-[52px] resize-none rounded-md border border-zinc-700 bg-zinc-900 px-2 py-1 text-[11px] leading-5 text-zinc-300 outline-hidden focus:border-badge-accent/60"
                     placeholder={p.descriptionPlaceholder}
                   />
                   <div className="flex items-center gap-1.5">
@@ -254,7 +255,7 @@ export const SidebarProjectDrawer: React.FC<SidebarProjectDrawerProps> = ({
                       type="button"
                       disabled={savingProject}
                       onClick={() => { void handleSaveProject(); }}
-                      className="rounded-md border border-violet-500/30 bg-violet-500/10 px-2 py-0.5 text-[11px] font-medium text-violet-200 transition-colors hover:bg-violet-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+                      className="rounded-md border border-badge-accent/30 bg-violet-500/10 px-2 py-0.5 text-[11px] font-medium text-badge-accent transition-colors hover:bg-violet-500/20 disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       {savingProject ? p.saving : p.save}
                     </button>
@@ -266,7 +267,7 @@ export const SidebarProjectDrawer: React.FC<SidebarProjectDrawerProps> = ({
                     >
                       {p.cancel}
                     </button>
-                    {editError && <span className="min-w-0 truncate text-[10px] text-rose-300">{editError}</span>}
+                    {editError && <span className="min-w-0 truncate text-[10px] text-badge-danger">{editError}</span>}
                   </div>
                 </div>
               ) : (
@@ -311,19 +312,19 @@ export const SidebarProjectDrawer: React.FC<SidebarProjectDrawerProps> = ({
             </div>
             <div className="rounded-md border border-zinc-800 bg-zinc-900/55 px-1.5 py-1.5">
               <div className="text-zinc-500">{p.statUnfinished}</div>
-              <div className="mt-0.5 text-xs font-medium text-amber-300">{summary.unfinishedCount}</div>
+              <div className="mt-0.5 text-xs font-medium text-badge-warning">{summary.unfinishedCount}</div>
             </div>
             <div className="rounded-md border border-zinc-800 bg-zinc-900/55 px-1.5 py-1.5">
               <div className="text-zinc-500">{p.statGoals}</div>
-              <div className="mt-0.5 text-xs font-medium text-violet-200">{summary.goalCount ?? visibleGoals.length}</div>
+              <div className="mt-0.5 text-xs font-medium text-badge-accent">{summary.goalCount ?? visibleGoals.length}</div>
             </div>
             <div className="rounded-md border border-zinc-800 bg-zinc-900/55 px-1.5 py-1.5">
               <div className="text-zinc-500">{p.statArtifacts}</div>
-              <div className="mt-0.5 text-xs font-medium text-cyan-200">{summary.artifactCount ?? visibleArtifacts.length}</div>
+              <div className="mt-0.5 text-xs font-medium text-badge-info">{summary.artifactCount ?? visibleArtifacts.length}</div>
             </div>
             <div className="rounded-md border border-zinc-800 bg-zinc-900/55 px-1.5 py-1.5">
               <div className="text-zinc-500">{p.statReview}</div>
-              <div className="mt-0.5 text-xs font-medium text-amber-200">{summary.reviewIssueCount}</div>
+              <div className="mt-0.5 text-xs font-medium text-badge-warning">{summary.reviewIssueCount}</div>
             </div>
           </div>
 
@@ -425,7 +426,7 @@ export const SidebarProjectDrawer: React.FC<SidebarProjectDrawerProps> = ({
                       className="rounded-md border border-zinc-800 bg-zinc-900/45 px-2.5 py-2 text-left transition-colors enabled:hover:bg-zinc-800/70 disabled:cursor-default"
                     >
                       <div className="flex min-w-0 items-center gap-2">
-                        <Layers3 className="h-3.5 w-3.5 shrink-0 text-cyan-300/70" />
+                        <Layers3 className="h-3.5 w-3.5 shrink-0 text-badge-info/70" />
                         <span className="min-w-0 flex-1 truncate text-xs font-medium text-zinc-200">{artifact.title}</span>
                         {canOpen && <ArrowRight className="h-3.5 w-3.5 shrink-0 text-zinc-600" />}
                       </div>
@@ -456,10 +457,11 @@ export const SidebarProjectDrawer: React.FC<SidebarProjectDrawerProps> = ({
                     key={session.id}
                     type="button"
                     aria-label={p.openProjectSession.replace('{title}', session.title)}
+                    title={session.lastActiveTitle}
                     onClick={() => { void onOpenSession(session.id); }}
                     className={`rounded-md border px-2.5 py-2 text-left transition-colors hover:bg-zinc-800/70 ${
                       session.isCurrent
-                        ? 'border-violet-500/30 bg-violet-500/10'
+                        ? 'border-badge-accent/30 bg-violet-500/10'
                         : 'border-zinc-800 bg-zinc-900/45'
                     }`}
                   >
@@ -480,7 +482,6 @@ export const SidebarProjectDrawer: React.FC<SidebarProjectDrawerProps> = ({
                       <span className="min-w-0 flex-1 truncate">
                         {session.summary || session.workingDirectory || p.messageCount.replace('{count}', String(session.messageCount ?? 0))}
                       </span>
-                      <span className="shrink-0">{session.lastActiveLabel}</span>
                     </div>
                     <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1">
                       {session.gitBranch && (
@@ -495,17 +496,17 @@ export const SidebarProjectDrawer: React.FC<SidebarProjectDrawerProps> = ({
                         </span>
                       )}
                       {session.hasDeliverySignals && (
-                        <span className="rounded border border-cyan-500/20 bg-cyan-500/10 px-1.5 py-0.5 text-[10px] text-cyan-300">
+                        <span className="rounded border border-badge-info/20 bg-cyan-500/10 px-1.5 py-0.5 text-[10px] text-badge-info">
                           {p.deliverySignals}
                         </span>
                       )}
                       {session.replayEvidenceCount ? (
-                        <span className="rounded border border-violet-500/20 bg-violet-500/10 px-1.5 py-0.5 text-[10px] text-violet-300">
+                        <span className="rounded border border-badge-accent/20 bg-violet-500/10 px-1.5 py-0.5 text-[10px] text-badge-accent">
                           Replay {session.replayEvidenceCount}
                         </span>
                       ) : null}
                       {session.pendingReviewCount ? (
-                        <span className="inline-flex items-center gap-1 rounded border border-amber-500/20 bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-amber-300">
+                        <span className="inline-flex items-center gap-1 rounded border border-badge-warning/20 bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-badge-warning">
                           <ShieldAlert className="h-3 w-3" />
                           {p.reviewCount.replace('{count}', String(session.pendingReviewCount))}
                         </span>

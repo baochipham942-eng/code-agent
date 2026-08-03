@@ -1,27 +1,20 @@
 // ============================================================================
-// 资料库词条（LibraryPanel / LibraryPinModal）—— zh/en 同文件相邻维护。
+// 资料库词条（LibraryPanel / composer pin chips / @ 面板资料库组）—— zh/en 同文件相邻维护。
 // 独立文件避免 zh.ts/en.ts 撞 max-lines 棘轮。
 // ============================================================================
 
 export const libraryZh = {
   library: {
-    pinModalTitle: '资料库 · 带进本次对话',
-    pinModalHint: '带进对话后，模型可看到条目的标题、路径和摘要；需要时再读取正文，回答会标注来源。',
     projectGroup: '本项目',
     globalGroup: '全局 / 未归类',
     empty: '资料库还没有条目。任务产出的文件可在对话里点「归档到资料库」收进来，也可以直接上传文件。',
     loadFailed: '资料库加载失败',
     pinFailed: '更新带进对话的资料失败，请重试',
-    pinnedCount: '已带进对话 {count} 条',
+    pinnedChipRemoveAria: '把 {title} 从本次对话移除',
     panelTitle: '资料库',
     panelDescription: '任务产出、上传文件与可复用品牌套件',
-    sectionsLabel: '资料库分区',
     itemsTab: '资料条目',
     brandKitsTab: '品牌套件',
-    sourceAi: 'AI 生成',
-    sourceUploads: '我的上传',
-    sourceFavorites: '我的收藏',
-    favoritesEmpty: '还没有收藏的资料。',
     memoryTab: '记忆',
     backToItems: '返回资料',
     kindChipsLabel: '类型筛选',
@@ -59,28 +52,30 @@ export const libraryZh = {
     kindExternalRef: '外部引用',
     archivedToast: '已归档到资料库：{title}',
     archiveFailed: '归档失败',
+    preview: '预览',
+    previewUnavailable: '该条目不是可预览的本地文件',
+    selectItemAria: '选择 {title}',
+    selectedCount: '已选择 {count} 项',
+    bringIntoNewSession: '带进新会话',
+    clearSelection: '清除选择',
+    bringSessionTitle: '资料库资料（{count} 项）',
+    bringSuccess: '已带进新会话，输入框上方可看到',
+    bringFailed: '带进新会话失败，请重试',
   },
 };
 
 export const libraryEn = {
   library: {
-    pinModalTitle: 'Library · Pin to this session',
-    pinModalHint: 'Pinned items expose their index (title/path/summary); content is read on demand and answers cite sources.',
     projectGroup: 'This project',
     globalGroup: 'Global / Uncategorized',
     empty: 'The library is empty — archived task outputs and uploaded files will show up here.',
     loadFailed: 'Failed to load library',
     pinFailed: 'Failed to update pin, please retry',
-    pinnedCount: '{count} pinned',
+    pinnedChipRemoveAria: 'Remove {title} from this session',
     panelTitle: 'Library',
     panelDescription: 'Task outputs, uploaded files, and reusable brand kits',
-    sectionsLabel: 'Library sections',
     itemsTab: 'Items',
     brandKitsTab: 'Brand kits',
-    sourceAi: 'AI generated',
-    sourceUploads: 'My uploads',
-    sourceFavorites: 'Favorites',
-    favoritesEmpty: 'No favorite items yet.',
     memoryTab: 'Memory',
     backToItems: 'Back to items',
     kindChipsLabel: 'Type filter',
@@ -118,5 +113,14 @@ export const libraryEn = {
     kindExternalRef: 'External reference',
     archivedToast: 'Archived to library: {title}',
     archiveFailed: 'Archive failed',
+    preview: 'Preview',
+    previewUnavailable: 'This item is not a previewable local file',
+    selectItemAria: 'Select {title}',
+    selectedCount: '{count} selected',
+    bringIntoNewSession: 'Bring into new session',
+    clearSelection: 'Clear selection',
+    bringSessionTitle: 'Library items ({count})',
+    bringSuccess: 'Brought into a new session — visible above the composer',
+    bringFailed: 'Failed to bring into a new session, please retry',
   },
 };

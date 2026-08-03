@@ -126,7 +126,7 @@ const HourSlot: React.FC<{
       disabled={!hasActivity}
       className={`w-full text-left px-3 py-1.5 flex items-center gap-2 transition-colors ${
         selected
-          ? 'bg-cyan-500/10 border-r-2 border-cyan-400'
+          ? 'bg-cyan-500/10 border-r-2 border-badge-info'
           : hasActivity
             ? 'hover:bg-zinc-800/60'
             : ''
@@ -244,7 +244,7 @@ const MeetingDetailPanel: React.FC<{
                 onClick={() => scrollToTopic(idx)}
                 className={`w-full text-left px-2.5 py-2 rounded-lg transition-colors ${
                   activeTopic === idx
-                    ? 'bg-cyan-500/10 border border-cyan-500/20'
+                    ? 'bg-cyan-500/10 border border-badge-info/20'
                     : 'hover:bg-zinc-800/60 border border-transparent'
                 }`}
               >
@@ -369,7 +369,7 @@ const AppGroupCard: React.FC<{
           <div className="text-sm font-medium text-zinc-200">
             {cluster.appName}
             {isMeeting && audioSegs.length > 0 && (
-              <span className="ml-2 text-[10px] text-amber-400 font-normal">{text.meetingRecordPrefix}{audioSegs.length}{text.units.segmentSuffix}</span>
+              <span className="ml-2 text-[10px] text-badge-warning font-normal">{text.meetingRecordPrefix}{audioSegs.length}{text.units.segmentSuffix}</span>
             )}
           </div>
           <div className="text-[11px] text-zinc-500">
@@ -431,7 +431,7 @@ const AppGroupCard: React.FC<{
               <div className="mt-3 pt-3 border-t border-zinc-700/30">
                 {/* Quick summary: speaker count + segment count + duration */}
                 <div className="flex items-center gap-2 text-[12px] text-zinc-400 mb-2">
-                  <FileText className="w-3.5 h-3.5 text-amber-400" />
+                  <FileText className="w-3.5 h-3.5 text-badge-warning" />
                   <span>
                     {audioSegs.length}{text.units.speechSegmentSuffix}
                     {(() => {
@@ -462,7 +462,7 @@ const AppGroupCard: React.FC<{
                 {/* Detail entry button */}
                 <button /* ds-allow:button: 查看会议详情入口，amber 语义色描边胶囊，primitive 无对应变体 */
                   onClick={onOpenMeeting}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-300 text-[12px] hover:bg-amber-500/20 transition-colors"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500/10 border border-badge-warning/20 text-badge-warning text-[12px] hover:bg-amber-500/20 transition-colors"
                 >
                   <FileText className="w-3.5 h-3.5" />
                   {text.viewMeetingDetails}
@@ -575,9 +575,9 @@ const HourDetailPanel: React.FC<{
       {/* Audio segments (standalone — always show if present) */}
       {audioSegs.length > 0 && (
         <div className="px-5 pt-4 pb-2">
-          <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 overflow-hidden">
-            <div className="flex items-center gap-2.5 px-4 py-3 border-b border-amber-500/10">
-              <Mic className="w-4 h-4 text-amber-400" />
+          <div className="rounded-xl border border-badge-warning/20 bg-amber-500/5 overflow-hidden">
+            <div className="flex items-center gap-2.5 px-4 py-3 border-b border-badge-warning/10">
+              <Mic className="w-4 h-4 text-badge-warning" />
               <div className="flex-1">
                 <div className="text-sm font-medium text-zinc-200">{text.audioRecords}</div>
                 <div className="text-[11px] text-zinc-500">
@@ -612,9 +612,9 @@ const HourDetailPanel: React.FC<{
         if (allAnalyses.length === 0) return null;
         return (
           <div className="px-5 pt-4 pb-2">
-            <div className="rounded-xl border border-cyan-500/20 bg-cyan-500/5 overflow-hidden">
-              <div className="flex items-center gap-2.5 px-4 py-3 border-b border-cyan-500/10">
-                <Eye className="w-4 h-4 text-cyan-400" />
+            <div className="rounded-xl border border-badge-info/20 bg-cyan-500/5 overflow-hidden">
+              <div className="flex items-center gap-2.5 px-4 py-3 border-b border-badge-info/10">
+                <Eye className="w-4 h-4 text-badge-info" />
                 <div className="flex-1">
                   <div className="text-sm font-medium text-zinc-200">{text.visualAnalysis}</div>
                   <div className="text-[11px] text-zinc-500">
@@ -818,13 +818,13 @@ export const NativeDesktopSection: React.FC<NativeDesktopSectionProps> = ({
           : 'border-zinc-700/50 px-4 py-2.5'
       }`}>
         <div className="flex items-center gap-2.5">
-          <Monitor className="w-4 h-4 text-cyan-400" />
+          <Monitor className="w-4 h-4 text-badge-info" />
           <span className={fullscreen ? 'text-base font-semibold text-zinc-100' : 'text-sm font-medium text-zinc-200'}>
             {nativeDesktopText.title}
           </span>
           <div className={`px-1.5 py-0.5 rounded-full text-[10px] ${
             collectorStatus?.running
-              ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+              ? 'bg-emerald-500/10 text-badge-success border border-badge-success/20'
               : 'bg-zinc-700/40 text-zinc-500 border border-zinc-600/30'
           }`}>
             {collectorStatus?.running ? nativeDesktopText.status.collecting : nativeDesktopText.status.stopped}
@@ -908,7 +908,7 @@ export const NativeDesktopSection: React.FC<NativeDesktopSectionProps> = ({
       </div>
 
       {error && (
-        <div className="mx-4 mt-2 p-2 rounded-lg border border-rose-500/20 bg-rose-500/10 text-xs text-rose-300 shrink-0">
+        <div className="mx-4 mt-2 p-2 rounded-lg border border-badge-danger/20 bg-rose-500/10 text-xs text-badge-danger shrink-0">
           {error}
         </div>
       )}
@@ -921,7 +921,7 @@ export const NativeDesktopSection: React.FC<NativeDesktopSectionProps> = ({
           {screenshotCount > 0 && <span>{screenshotCount}{nativeDesktopText.units.screenshotSuffix}</span>}
           {analyzedCount > 0 && <span>{analyzedCount}{nativeDesktopText.units.aiAnalysisSuffix}</span>}
           {audioStatus?.capturing && (
-            <span className="text-rose-400">
+            <span className="text-badge-danger">
               {nativeDesktopText.recording.recording}{nativeDesktopText.separator}{audioStatus.totalSegments}{nativeDesktopText.units.segmentSuffix}{nativeDesktopText.separator}{audioStatus.asrEngine}
               {audioStatus.captureMode === 'system-audio' ? `${nativeDesktopText.separator}${nativeDesktopText.audioMode.systemAudio}` : ''}
             </span>

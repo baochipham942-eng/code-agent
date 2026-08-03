@@ -5,6 +5,7 @@ import type { ContextAssembly } from '../../../src/host/agent/runtime/contextAss
 import type { RunFinalizer } from '../../../src/host/agent/runtime/runFinalizer';
 import type { ToolExecutionEngine } from '../../../src/host/agent/runtime/toolExecutionEngine';
 import { ArtifactState } from '../../../src/host/agent/runtime/artifactState';
+import { ConversationRuntime } from '../../../src/host/agent/runtime/conversationRuntime';
 
 const sessionManagerState = vi.hoisted(() => ({
   addMessage: vi.fn(),
@@ -93,6 +94,7 @@ function createProcessor(
 describe('MessageProcessor persistence', () => {
   beforeEach(() => {
     delete process.env.CODE_AGENT_CLI_MODE;
+    delete process.env.CODE_AGENT_WEB_MODE;
     sessionManagerState.addMessage.mockReset();
     sessionManagerState.addMessageToSession.mockReset();
     sessionManagerState.addMessageToSession.mockResolvedValue(undefined);
@@ -125,6 +127,72 @@ describe('MessageProcessor persistence', () => {
     }]);
     expect(sessionManagerState.addMessageToSession).toHaveBeenCalledWith('runtime-session-1', ctx.messages[0]);
     expect(sessionManagerState.addMessage).not.toHaveBeenCalled();
+  });
+
+  // 2026-08-01 真机：webServer（桌面 app 也跑它）为 keytar 安全设 CODE_AGENT_CLI_MODE=true，
+  // 而这里只看那一个标志就 return——产品主路径上每一条转向消息都被静默丢弃：
+  // 模型答了、队列 consumed、用户消息全库零行、日志里连一条错误都没有。
+  it('persists steer messages in web mode even though web sets the CLI-mode flag', async () => {
+    process.env.CODE_AGENT_CLI_MODE = 'true';
+    process.env.CODE_AGENT_WEB_MODE = 'true';
+    const ctx = {
+      stats: RunStatsState.forTest(),
+      contextHealth: ContextHealthState.forTest(),
+      sessionId: 'runtime-session-1',
+      messages: [],
+    };
+    const processor = createProcessor(ctx as DeepPartial<RuntimeContext>);
+
+    await processor.injectSteerMessage('C1Q1 立即发送', 'queued-input-1');
+
+    expect(sessionManagerState.addMessageToSession).toHaveBeenCalledWith(
+      'runtime-session-1',
+      expect.objectContaining({ id: 'queued-input-1', role: 'user', content: 'C1Q1 立即发送' }),
+    );
+  });
+
+  it('skips persistence only for a pure CLI run', async () => {
+    process.env.CODE_AGENT_CLI_MODE = 'true';
+    const ctx = {
+      stats: RunStatsState.forTest(),
+      contextHealth: ContextHealthState.forTest(),
+      sessionId: 'runtime-session-1',
+      messages: [],
+    };
+    const processor = createProcessor(ctx as DeepPartial<RuntimeContext>);
+
+    await processor.injectSteerMessage('cli steer');
+
+    expect(sessionManagerState.addMessageToSession).not.toHaveBeenCalled();
+  });
+
+  // 2026-07-28：steer 路径此前把「拼了 turnSystemContext 的模型面内容」当用户消息落库，
+  // 语音通话因此把 <live_voice_permission_notice> 整块讲给了用户。
+  it('persists the user-facing content while the model still sees the scaffolded one', () => {
+    const ctx = {
+      stats: RunStatsState.forTest(),
+      contextHealth: ContextHealthState.forTest(),
+      sessionId: 'runtime-session-1',
+      messages: [] as unknown[],
+    };
+    const processor = createProcessor(ctx as DeepPartial<RuntimeContext>);
+    const scaffolded = '<live_voice_permission_notice>\n钳档说明\n</live_voice_permission_notice>\n\n<user_request>\n改成蓝色\n</user_request>';
+
+    processor.injectSteerMessage(scaffolded, undefined, undefined, undefined, '改成蓝色');
+
+    // 模型面：拼装体原样进上下文，notice 不能被削掉
+    expect((ctx.messages[0] as { content: string }).content).toBe(scaffolded);
+
+    const persisted = sessionManagerState.addMessageToSession.mock.calls.at(-1)![1] as {
+      id: string;
+      content: string;
+    };
+    // 展示面：落库的是原话，且一个标签都不带
+    expect(persisted.content).toBe('改成蓝色');
+    expect(persisted.content).not.toContain('live_voice_permission_notice');
+    expect(persisted.content).not.toContain('<user_request>');
+    // 同一条消息的两个面，id 必须一致，否则渲染端会当成两条
+    expect(persisted.id).toBe((ctx.messages[0] as { id: string }).id);
   });
 
   it('reuses the renderer optimistic message id when provided', () => {
@@ -748,6 +816,89 @@ describe('MessageProcessor persistence', () => {
     );
     expect(endSpan).toHaveBeenCalledWith('iteration-1', { type: 'text_response' });
     expect(ctx.telemetryAdapter.onTurnEnd).toHaveBeenCalledTimes(1);
+  });
+
+  it('clears persisted final streamed content before a steer can rewrite the completed reply', async () => {
+    const finalContent = '回复已正常完成并落库';
+    const ctx = {
+      artifact: ArtifactState.forTest(),
+      sessionId: 'runtime-session-tail-window',
+      messages: [{ id: 'user-1', role: 'user', content: '继续', timestamp: Date.now() }],
+      control: ControlState.forTest(),
+      modelConfig: { provider: 'xiaomi', model: 'mimo-v2.5-pro', maxTokens: 4096 },
+      contextHealth: ContextHealthState.forTest({ currentSystemPromptHash: 'hash-1' } as never),
+      MAX_CONSECUTIVE_TRUNCATIONS: 3,
+      hookManager: undefined,
+      planningService: undefined,
+      turn: TurnState.forTest({
+        effortLevel: 'medium',
+        currentTurnId: 'turn-tail-window',
+        currentIterationSpanId: 'iteration-tail-window',
+        researchModeActive: false,
+        toolsUsedInTurn: [],
+        isSimpleTaskMode: false,
+        lastStreamedContent: finalContent,
+      } as never),
+      stats: RunStatsState.forTest({ totalToolCallCount: 0 } as never),
+      nudgeManager: {
+        runNudgeChecks: vi.fn(() => false),
+        runOutputValidation: vi.fn(() => false),
+        getModifiedFiles: vi.fn(() => new Set()),
+      },
+      onEvent: vi.fn(),
+      telemetryAdapter: { onTurnEnd: vi.fn() },
+      enableDeliveryCritic: false,
+      turnQualityState: {},
+    };
+    const persistedMessages: unknown[] = [];
+    const contextAssembly = {
+      stripInternalFormatMimicry: vi.fn((content: string) => content),
+      generateId: vi.fn().mockReturnValue('assistant-tail-window'),
+      addAndPersistMessage: vi.fn(async (message: object) => {
+        ctx.messages.push(message as never);
+        persistedMessages.push(message);
+        Object.defineProperty(message, Symbol.for('code-agent.contextAssembly.persistedMessage'), {
+          value: true,
+          configurable: true,
+        });
+      }),
+      injectSystemMessage: vi.fn(),
+      updateContextHealth: vi.fn(),
+    };
+    const runFinalizer = {
+      emitTaskProgress: vi.fn(),
+      emitTaskComplete: vi.fn(),
+      tryParseTodosFromResponse: vi.fn(),
+    };
+    const toolEngine = {};
+    const runtime = new ConversationRuntime(ctx as unknown as RuntimeContext);
+    runtime.setModules(
+      toolEngine as ToolExecutionEngine,
+      contextAssembly as unknown as ContextAssembly,
+      runFinalizer as unknown as RunFinalizer,
+      { learn: vi.fn() } as never,
+    );
+    const processor = (runtime as unknown as { messageProcessor: MessageProcessor }).messageProcessor;
+
+    const action = await processor.handleTextResponse(
+      { type: 'text', content: finalContent, finishReason: 'stop' } as ModelResponse,
+      false,
+      1,
+      false,
+      { endSpan: vi.fn() },
+    );
+    await runtime.steer('尾窗抵达的新指令', 'steer-tail-window');
+
+    expect(action).toBe('break');
+    expect(ctx.turn.lastStreamedContent).toBe('');
+    expect(persistedMessages).toHaveLength(1);
+    expect(persistedMessages[0]).toMatchObject({
+      id: 'assistant-tail-window',
+      role: 'assistant',
+      content: finalContent,
+    });
+    expect(ctx.messages.filter((message) => message.role === 'assistant')).toHaveLength(1);
+    expect(ctx.messages.some((message) => message.content.includes('[已被新消息打断]'))).toBe(false);
   });
 
   it('persists artifact repair target reads as an immediate anchored preview', async () => {

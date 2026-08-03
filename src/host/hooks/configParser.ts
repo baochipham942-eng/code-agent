@@ -22,6 +22,16 @@ export type HookType = 'command' | 'prompt' | 'agent' | 'http';
 /**
  * Individual hook definition
  */
+/**
+ * 一个 hook 的稳定身份：设置页开关要按它回文件里找那一条。
+ * 用「事件 + 类型 + 载荷」而不是数组下标——下标会被用户手工编辑挪位，
+ * 一挪就把开关按到别的 hook 上。同内容重复的条目会被一起切换，这是可接受的。
+ */
+export function makeHookKey(event: string, hook: HookDefinition): string {
+  const payload = hook.command || hook.prompt || hook.agent || hook.url || '';
+  return `${event}::${hook.type}::${payload}`;
+}
+
 export interface HookDefinition {
   /** Hook type */
   type: HookType;
@@ -40,6 +50,11 @@ export interface HookDefinition {
   async?: boolean;
   /** Execute only once per session */
   once?: boolean;
+  /**
+   * 停用：配置留着但不执行（设置页的开关写它）。
+   * 想临时关掉一个 hook 又不想删配置时用——删了要重打一遍。
+   */
+  disabled?: boolean;
   /** For agent hooks: agent role (e.g., 'reviewer') */
   agent?: string;
   /** For agent hooks: custom prompt for the agent */
@@ -99,6 +114,9 @@ export interface HooksConfig {
   PostCompact?: HookMatcher[];        // Phase 3: observer-only
   StopFailure?: HookMatcher[];        // Phase 3: observer-only
   RoleWake?: HookMatcher[];           // 角色主动性醒来: observer-only
+  VoiceCallStarted?: HookMatcher[];   // 实时通话生命周期: observer-only
+  VoiceCallPaused?: HookMatcher[];
+  VoiceCallEnded?: HookMatcher[];
 }
 
 /**
@@ -184,6 +202,10 @@ const OBSERVER_ONLY_EVENTS: ReadonlySet<HookEvent> = new Set([
   'PostCompact',
   'StopFailure',
   'RoleWake',
+  // 通话已经发生了，hook 拦不住也改不了它——只观察。
+  'VoiceCallStarted',
+  'VoiceCallPaused',
+  'VoiceCallEnded',
 ]);
 
 function compileHookMatcher(
@@ -235,6 +257,9 @@ function parseHooksObject(
     'PostCompact',        // Phase 3
     'StopFailure',        // Phase 3
     'RoleWake',           // 角色主动性（内部文档 §2.3）
+    'VoiceCallStarted',   // 通话生命周期（agent 可订阅的编排事件）
+    'VoiceCallPaused',
+    'VoiceCallEnded',
   ];
 
   // GAP-007: 未知事件名告警。

@@ -73,7 +73,9 @@ describe('ContextUsagePill', () => {
     const html = renderToStaticMarkup(React.createElement(ContextUsagePill));
 
     expect(html).toContain('aria-label="上下文使用"');
-    expect(html).toContain('82% 已用 · 82k/100k 标记');
+    // 「标记」是 token 的机翻，中文里没这个说法也不帮任何人做决策（2026-08-01 改）
+    expect(html).toContain('82% 已用 · 82k/100k Token');
+    expect(html).not.toContain('标记');
     expect(html).toContain('<svg');
     expect(html).not.toContain('data-testid="context-usage-percent"');
     // 文本内容（剥掉标签和属性）里不得再出现常驻百分比

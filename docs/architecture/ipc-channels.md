@@ -109,6 +109,7 @@ interface IPCResponse<T = unknown> {
 | `domain:agents` | agentRegistry.ipc.ts | 自定义 Agent 注册中心（builtin + user + project）|
 | `domain:agentEngine` | agentEngine.ipc.ts | Native / Codex CLI / Claude Code execution engines |
 | `domain:capability` | capability.ipc.ts | Skill / MCP / Tool / Channel 能力中心 |
+| `domain:terminal` | terminal.ipc.ts | 会话级交互 shell（右栏终端 + Agent 经 terminal_* 读写同一个 PTY）；输出走推送通道 `terminal:output` |
 | ~~`evaluation:delivery-review:run`~~ | 已下线 | 5/19 随 evaluation 子系统删除；Workspace Preview 不再触发旧 Delivery Review |
 | `workflow:*` | workflow.ipc.ts | Dynamic Workflow 运行进度 + 跑前审批（专用 bridge，run/launch 双通道）|
 | `evaluation:run-harness-comparison` / `evaluation:list-experiments` | evaluation.ipc.ts | Harness 对照实验启动与实验列表（GAP-017，阶段四）|
@@ -135,7 +136,7 @@ interface IPCResponse<T = unknown> {
 | `load` | `{ sessionId: string }` | `Session` | 加载会话 |
 | `delete` | `{ sessionId: string }` | `null` | 删除会话 |
 | `getMessages` | `{ sessionId: string }` | `Message[]` | 获取消息 |
-| `rewindConversation` | `{ sessionId: string; anchorUserMessageId: string; idempotencyKey: string }` | `RewindConversationResult` | 软隐藏锚点及后续 active 消息并回填输入草稿；不修改工作区文件 |
+| `rewindConversation` | `{ sessionId: string; anchorUserMessageId: string; idempotencyKey: string }` | `RewindConversationResult` | 锚点保持 active，仅软隐藏其后的消息；兼容 draft 字段返回空内容；不修改工作区文件 |
 | `restoreConversationRewind` | `{ sessionId: string; rewindId: string }` | `RestoreConversationRewindResult` | 按 LIFO 显式恢复同一次 Rewind 的消息/UI 可见性；不修改工作区文件 |
 | `restoreWorkspaceFilesAtCheckpoint` | `{ sessionId: string; checkpointMessageId: string }` | `RestoreWorkspaceFilesAtCheckpointResult` | 独立恢复文件 checkpoint；失败时不改变消息可见性 |
 | `rewindToPrompt` | `{ sessionId: string; userMessageId: string }` | `PromptRewindResult` | 旧客户端兼容别名，内部投影到 `rewindConversation`，仍不恢复文件 |

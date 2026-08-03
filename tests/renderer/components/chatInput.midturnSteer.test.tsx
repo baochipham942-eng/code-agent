@@ -13,7 +13,6 @@ vi.mock('../../../src/renderer/hooks/useI18n', async () => {
 
 import { InputArea, type InputAreaRef } from '../../../src/renderer/components/features/chat/ChatInput/InputArea';
 import {
-  RuntimeInputShortcutHint,
 } from '../../../src/renderer/components/features/chat/ChatInput';
 import {
   useChatInputSubmit,
@@ -44,7 +43,7 @@ function makeParams(overrides: Partial<UseChatInputSubmitParams> = {}): UseChatI
     addToInputHistory: vi.fn(),
     clearAppshot: vi.fn(),
     inputAreaRef: {
-      current: { focus: vi.fn(), getTextarea: () => null },
+      current: { focus: vi.fn(), getEditor: () => null, getCaretOffset: () => 0, replaceRangeWithChip: vi.fn(), replaceRangeWithText: vi.fn() },
     },
     setValue: vi.fn(),
     setAttachments: vi.fn(),
@@ -143,7 +142,7 @@ describe('mid-turn composer submission', () => {
     const params = makeParams({
       setValue,
       inputAreaRef: {
-        current: { focus, getTextarea: () => null },
+        current: { focus, getEditor: () => null, getCaretOffset: () => 0, replaceRangeWithChip: vi.fn(), replaceRangeWithText: vi.fn() },
       },
       onSteer: vi.fn().mockResolvedValue(undefined),
     });
@@ -155,22 +154,5 @@ describe('mid-turn composer submission', () => {
 
     expect(setValue).toHaveBeenLastCalledWith('请改成更简洁的方案');
     expect(focus).toHaveBeenCalledTimes(1);
-  });
-});
-
-describe('running-turn shortcut hint', () => {
-  it('renders a stable hint anchor while processing with a draft', () => {
-    render(<RuntimeInputShortcutHint isProcessing hasDraft />);
-    expect(screen.getByTestId('runtime-input-shortcut-hint')).toBeTruthy();
-  });
-
-  it('does not render the hint anchor while idle', () => {
-    render(<RuntimeInputShortcutHint isProcessing={false} hasDraft />);
-    expect(screen.queryByTestId('runtime-input-shortcut-hint')).toBeNull();
-  });
-
-  it('does not render the hint anchor while processing without a draft', () => {
-    render(<RuntimeInputShortcutHint isProcessing hasDraft={false} />);
-    expect(screen.queryByTestId('runtime-input-shortcut-hint')).toBeNull();
   });
 });

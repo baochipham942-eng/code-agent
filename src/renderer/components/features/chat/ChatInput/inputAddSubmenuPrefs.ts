@@ -1,4 +1,4 @@
-export type InputAddSubmenuScope = 'skills' | 'experts' | 'teams' | 'connectors';
+export type InputAddSubmenuScope = 'skills' | 'experts' | 'teams' | 'connectors' | 'mode';
 
 export interface InputAddSubmenuPrefs {
   pinnedIds: string[];
@@ -11,6 +11,7 @@ const STORAGE_KEYS: Record<InputAddSubmenuScope, string> = {
   experts: 'code-agent:input-add-submenu:experts',
   teams: 'code-agent:input-add-submenu:teams',
   connectors: 'code-agent:input-add-submenu:connectors',
+  mode: 'code-agent:input-add-submenu:mode',
 };
 
 const EMPTY_PREFS: InputAddSubmenuPrefs = { pinnedIds: [], recentIds: [] };

@@ -1,0 +1,4073 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Agent Neo Onboarding · Before / After</title>
+  <meta
+    name="description"
+    content="Agent Neo onboarding redesign: use an existing official subscription or configure an API key."
+  />
+  <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js"></script>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg-void: #101012;
+      --bg-deep: #141417;
+      --bg-surface: #18181b;
+      --bg-elevated: #1f1f23;
+      --bg-hover: #27272b;
+      --bg-active: #2f2f34;
+      --text-primary: #f4f4f5;
+      --text-secondary: #a1a1aa;
+      --text-tertiary: #71717a;
+      --text-disabled: #52525b;
+      --brand: #0f766e;
+      --brand-hover: #115e59;
+      --brand-muted: rgba(15, 118, 110, 0.16);
+      --blue: #60a5fa;
+      --blue-muted: rgba(96, 165, 250, 0.12);
+      --success: #4ade80;
+      --success-muted: rgba(74, 222, 128, 0.12);
+      --warning: #fbbf24;
+      --warning-muted: rgba(251, 191, 36, 0.12);
+      --danger: #f87171;
+      --danger-muted: rgba(248, 113, 113, 0.12);
+      --border-subtle: rgba(255, 255, 255, 0.04);
+      --border-default: rgba(255, 255, 255, 0.08);
+      --border-strong: rgba(255, 255, 255, 0.13);
+      --focus: rgba(255, 255, 255, 0.22);
+      --shadow-modal: 0 24px 80px rgba(0, 0, 0, 0.58);
+      --font-ui: Inter, "Source Han Sans SC", "PingFang SC", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      min-height: 100%;
+      margin: 0;
+      background: var(--bg-void);
+      color: var(--text-primary);
+      font-family: var(--font-ui);
+      font-size: 14px;
+      line-height: 1.5;
+      letter-spacing: -0.01em;
+    }
+
+    body {
+      background:
+        radial-gradient(circle at 50% -20%, rgba(15, 118, 110, 0.12), transparent 38%),
+        var(--bg-void);
+    }
+
+    button,
+    input,
+    textarea {
+      font: inherit;
+    }
+
+    button {
+      color: inherit;
+    }
+
+    button:focus-visible,
+    input:focus-visible,
+    textarea:focus-visible {
+      outline: 2px solid var(--focus);
+      outline-offset: 2px;
+    }
+
+    .prototype-shell {
+      min-height: 100vh;
+      padding: 20px 24px 28px;
+    }
+
+    .prototype-toolbar {
+      width: min(1280px, 100%);
+      min-height: 52px;
+      margin: 0 auto 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+    }
+
+    .prototype-title {
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      min-width: 0;
+    }
+
+    .prototype-title img {
+      width: 30px;
+      height: 30px;
+      display: block;
+    }
+
+    .prototype-title strong {
+      display: block;
+      font-size: 14px;
+      font-weight: 600;
+    }
+
+    .prototype-title span {
+      display: block;
+      margin-top: 1px;
+      color: var(--text-tertiary);
+      font-size: 12px;
+    }
+
+    .view-switcher,
+    .scenario-switcher,
+    .source-tabs {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px;
+      border: 1px solid var(--border-default);
+      border-radius: 8px;
+      background: rgba(24, 24, 27, 0.84);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+    }
+
+    .view-switcher button,
+    .scenario-switcher button,
+    .source-tabs button {
+      min-height: 30px;
+      border: 0;
+      border-radius: 5px;
+      padding: 0 12px;
+      background: transparent;
+      color: var(--text-secondary);
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
+    .view-switcher button:hover,
+    .scenario-switcher button:hover,
+    .source-tabs button:hover {
+      color: var(--text-primary);
+      background: rgba(255, 255, 255, 0.04);
+    }
+
+    .view-switcher button[aria-selected="true"],
+    .scenario-switcher button[aria-pressed="true"],
+    .source-tabs button[aria-selected="true"] {
+      color: var(--text-primary);
+      background: var(--bg-active);
+      box-shadow: inset 0 0 0 1px var(--border-strong);
+    }
+
+    .stage {
+      width: min(1280px, 100%);
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 244px;
+      align-items: start;
+      gap: 16px;
+    }
+
+    .app-canvas {
+      min-width: 0;
+      min-height: 810px;
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+      padding: 26px;
+      overflow: hidden;
+      border: 1px solid var(--border-subtle);
+      border-radius: 12px;
+      background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.018), transparent 120px),
+        #0d0d0f;
+    }
+
+    .annotation-rail {
+      display: grid;
+      gap: 12px;
+      position: sticky;
+      top: 16px;
+    }
+
+    .note-card {
+      padding: 14px;
+      border: 1px solid var(--border-default);
+      border-radius: 8px;
+      background: rgba(24, 24, 27, 0.86);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+    }
+
+    .note-card h2,
+    .note-card h3,
+    .note-card p {
+      margin: 0;
+    }
+
+    .note-card h2 {
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .note-card h3 {
+      margin-top: 12px;
+      color: var(--text-primary);
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .note-card p,
+    .note-card li {
+      color: var(--text-tertiary);
+      font-size: 12px;
+      line-height: 1.6;
+    }
+
+    .note-card ul,
+    .note-card ol {
+      margin: 9px 0 0;
+      padding-left: 18px;
+    }
+
+    .note-card li + li {
+      margin-top: 6px;
+    }
+
+    .note-card.emphasis {
+      border-color: rgba(15, 118, 110, 0.36);
+      background: rgba(15, 118, 110, 0.08);
+    }
+
+    .eyebrow {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      margin-bottom: 8px;
+      color: var(--text-secondary);
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+    }
+
+    .eyebrow i,
+    .eyebrow svg {
+      width: 13px;
+      height: 13px;
+    }
+
+    .modal {
+      width: min(100%, 896px);
+      overflow: hidden;
+      border: 1px solid rgba(255, 255, 255, 0.11);
+      border-radius: 12px;
+      background: var(--bg-surface);
+      box-shadow: var(--shadow-modal);
+    }
+
+    .after-modal {
+      width: min(100%, 980px);
+    }
+
+    .modal-header {
+      height: 68px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 0 24px;
+      border-bottom: 1px solid var(--border-default);
+    }
+
+    .modal-header-icon {
+      width: 38px;
+      height: 38px;
+      display: grid;
+      place-items: center;
+      flex: none;
+      border-radius: 8px;
+      background: rgba(96, 165, 250, 0.1);
+      color: #93c5fd;
+    }
+
+    .modal-header-icon img {
+      width: 24px;
+      height: 24px;
+      display: block;
+    }
+
+    .modal-header-copy {
+      min-width: 0;
+    }
+
+    .modal-header h1 {
+      margin: 0;
+      font-size: 18px;
+      line-height: 1.3;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+    }
+
+    .modal-header p {
+      margin: 3px 0 0;
+      color: var(--text-tertiary);
+      font-size: 12px;
+    }
+
+    .concept-badge {
+      margin-left: auto;
+      padding: 4px 8px;
+      border: 1px solid rgba(251, 191, 36, 0.24);
+      border-radius: 999px;
+      background: var(--warning-muted);
+      color: #fcd34d;
+      font-size: 11px;
+      white-space: nowrap;
+    }
+
+    .modal-body {
+      min-height: 594px;
+      max-height: 680px;
+      overflow: auto;
+      padding: 20px 24px 24px;
+      scrollbar-color: rgba(113, 113, 122, 0.5) transparent;
+      scrollbar-width: thin;
+    }
+
+    .modal-footer {
+      min-height: 64px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 12px 24px;
+      border-top: 1px solid var(--border-default);
+      background: rgba(20, 20, 23, 0.84);
+    }
+
+    .footer-note {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      color: var(--text-tertiary);
+      font-size: 12px;
+    }
+
+    .footer-note svg {
+      width: 14px;
+      height: 14px;
+      flex: none;
+    }
+
+    .footer-actions {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+
+    .btn {
+      min-height: 36px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      border: 1px solid transparent;
+      border-radius: 6px;
+      padding: 0 13px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 500;
+      transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+    }
+
+    .btn svg {
+      width: 15px;
+      height: 15px;
+    }
+
+    .btn-primary {
+      background: var(--brand);
+      color: #fff;
+    }
+
+    .btn-primary:hover {
+      background: var(--brand-hover);
+    }
+
+    .btn-secondary {
+      border-color: var(--border-default);
+      background: var(--bg-elevated);
+      color: var(--text-primary);
+    }
+
+    .btn-secondary:hover {
+      border-color: var(--border-strong);
+      background: var(--bg-hover);
+    }
+
+    .btn-ghost {
+      background: transparent;
+      color: var(--text-secondary);
+    }
+
+    .btn-ghost:hover {
+      color: var(--text-primary);
+      background: rgba(255, 255, 255, 0.04);
+    }
+
+    .btn[disabled] {
+      cursor: not-allowed;
+      opacity: 0.42;
+    }
+
+    .stepper {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+      margin-bottom: 18px;
+    }
+
+    .step {
+      width: 100%;
+      min-height: 40px;
+      display: flex;
+      align-items: center;
+      justify-content: flex-start;
+      gap: 8px;
+      border: 1px solid var(--border-default);
+      border-radius: 8px;
+      padding: 7px 10px;
+      background: rgba(9, 9, 11, 0.28);
+      color: var(--text-secondary);
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 500;
+      text-align: left;
+      transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+    }
+
+    .step:hover {
+      border-color: var(--border-strong);
+      background: rgba(39, 39, 43, 0.62);
+      color: var(--text-primary);
+    }
+
+    .step.active {
+      border-color: rgba(96, 165, 250, 0.54);
+      background: rgba(96, 165, 250, 0.09);
+      color: var(--text-primary);
+    }
+
+    .step.done {
+      color: var(--text-secondary);
+    }
+
+    .step-index {
+      width: 20px;
+      height: 20px;
+      display: grid;
+      place-items: center;
+      flex: none;
+      border-radius: 999px;
+      background: var(--bg-hover);
+      color: var(--text-primary);
+      font-size: 11px;
+    }
+
+    .step.done .step-index {
+      background: var(--success-muted);
+      color: var(--success);
+    }
+
+    .intro {
+      display: flex;
+      align-items: flex-start;
+      gap: 11px;
+      margin-bottom: 20px;
+      padding: 14px;
+      border: 1px solid var(--border-default);
+      border-radius: 8px;
+      background: rgba(9, 9, 11, 0.28);
+    }
+
+    .intro > svg {
+      width: 17px;
+      height: 17px;
+      margin-top: 1px;
+      flex: none;
+      color: #93c5fd;
+    }
+
+    .intro strong {
+      display: block;
+      color: var(--text-primary);
+      font-size: 13px;
+      font-weight: 500;
+    }
+
+    .intro p {
+      margin: 4px 0 0;
+      color: var(--text-tertiary);
+      font-size: 12px;
+      line-height: 1.55;
+    }
+
+    .intro.source-intro {
+      align-items: center;
+      min-height: 44px;
+      margin-bottom: 16px;
+      padding: 10px 13px;
+    }
+
+    .intro.source-intro > svg {
+      margin-top: 0;
+    }
+
+    .section + .section {
+      margin-top: 19px;
+    }
+
+    .section-header {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 10px;
+    }
+
+    .section-header h2,
+    .section-header h3 {
+      margin: 0;
+      color: var(--text-primary);
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .section-header p {
+      margin: 3px 0 0;
+      color: var(--text-tertiary);
+      font-size: 12px;
+    }
+
+    .provider-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .provider-grid.more {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .provider-card,
+    .engine-card,
+    .model-card,
+    .recommend-card {
+      width: 100%;
+      border: 1px solid var(--border-default);
+      border-radius: 8px;
+      background: rgba(9, 9, 11, 0.24);
+      color: inherit;
+      text-align: left;
+    }
+
+    button.provider-card,
+    button.engine-card,
+    button.model-card {
+      cursor: pointer;
+    }
+
+    .provider-card {
+      min-height: 68px;
+      padding: 11px 12px;
+    }
+
+    .provider-card:hover,
+    .engine-card:hover,
+    .model-card:hover {
+      border-color: var(--border-strong);
+      background: rgba(39, 39, 43, 0.62);
+    }
+
+    .provider-card.selected,
+    .engine-card.selected,
+    .model-card.selected {
+      border-color: rgba(96, 165, 250, 0.54);
+      background: rgba(96, 165, 250, 0.08);
+    }
+
+    .provider-title,
+    .card-title-row,
+    .model-title-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .provider-title strong {
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .provider-card p {
+      margin: 4px 0 0;
+      overflow: hidden;
+      color: var(--text-tertiary);
+      font-size: 11px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      min-height: 21px;
+      padding: 2px 7px;
+      border: 1px solid var(--border-default);
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.025);
+      color: var(--text-secondary);
+      font-size: 10px;
+      font-weight: 500;
+      white-space: nowrap;
+    }
+
+    .badge.blue {
+      border-color: rgba(96, 165, 250, 0.28);
+      background: var(--blue-muted);
+      color: #bfdbfe;
+    }
+
+    .badge.success {
+      border-color: rgba(74, 222, 128, 0.26);
+      background: var(--success-muted);
+      color: #86efac;
+    }
+
+    .badge.warning {
+      border-color: rgba(251, 191, 36, 0.26);
+      background: var(--warning-muted);
+      color: #fde68a;
+    }
+
+    .badge.neutral {
+      color: var(--text-tertiary);
+    }
+
+    .connection-form {
+      display: grid;
+      grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+      gap: 16px;
+      margin-top: 19px;
+      padding: 15px;
+      border: 1px solid var(--border-default);
+      border-radius: 8px;
+      background: rgba(9, 9, 11, 0.28);
+    }
+
+    .connection-form h3,
+    .connection-form p {
+      margin: 0;
+    }
+
+    .connection-form h3 {
+      font-size: 13px;
+    }
+
+    .connection-form p {
+      margin-top: 4px;
+      color: var(--text-tertiary);
+      font-size: 12px;
+    }
+
+    .endpoint {
+      margin-top: 11px;
+      padding: 8px 10px;
+      overflow: hidden;
+      border: 1px solid var(--border-default);
+      border-radius: 5px;
+      background: rgba(31, 31, 35, 0.62);
+      color: var(--text-tertiary);
+      font-family: var(--font-mono);
+      font-size: 11px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .field-label {
+      display: block;
+      margin-bottom: 7px;
+      color: var(--text-primary);
+      font-size: 12px;
+      font-weight: 500;
+    }
+
+    .field {
+      width: 100%;
+      height: 38px;
+      border: 1px solid var(--border-default);
+      border-radius: 5px;
+      padding: 0 11px;
+      background: #1a1a1d;
+      color: var(--text-primary);
+    }
+
+    .field::placeholder {
+      color: var(--text-disabled);
+    }
+
+    .field:focus {
+      border-color: var(--text-tertiary);
+    }
+
+    .field-help {
+      min-height: 18px;
+      margin-top: 7px;
+      color: var(--text-tertiary);
+      font-size: 11px;
+    }
+
+    .source-choice {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+
+    .source-option {
+      min-height: 74px;
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      border: 1px solid var(--border-default);
+      border-radius: 8px;
+      padding: 12px;
+      background: rgba(9, 9, 11, 0.24);
+      cursor: pointer;
+      text-align: left;
+    }
+
+    .source-option-copy {
+      min-width: 0;
+    }
+
+    .source-option.selected {
+      border-color: rgba(15, 118, 110, 0.72);
+      background: var(--brand-muted);
+    }
+
+    .source-option-icon {
+      width: 32px;
+      height: 32px;
+      display: grid;
+      place-items: center;
+      flex: none;
+      border-radius: 7px;
+      background: var(--bg-elevated);
+      color: var(--text-secondary);
+    }
+
+    .source-option.selected .source-option-icon {
+      background: rgba(15, 118, 110, 0.24);
+      color: #99f6e4;
+    }
+
+    .source-option-icon svg {
+      width: 17px;
+      height: 17px;
+    }
+
+    .source-option strong {
+      display: block;
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .source-option p {
+      margin: 4px 0 0;
+      color: var(--text-tertiary);
+      font-size: 11px;
+      line-height: 1.5;
+    }
+
+    .source-option .badge {
+      margin-left: 6px;
+      vertical-align: 1px;
+    }
+
+    .detection-bar {
+      min-height: 44px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      margin-bottom: 12px;
+      padding: 9px 11px;
+      border: 1px solid var(--border-default);
+      border-radius: 8px;
+      background: rgba(31, 31, 35, 0.48);
+    }
+
+    .detection-summary {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      min-width: 0;
+    }
+
+    .detection-summary svg {
+      width: 16px;
+      height: 16px;
+      flex: none;
+      color: var(--success);
+    }
+
+    .detection-summary strong {
+      display: block;
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .detection-summary span {
+      display: block;
+      color: var(--text-tertiary);
+      font-size: 10px;
+    }
+
+    .link-button {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      border: 0;
+      padding: 4px 5px;
+      background: transparent;
+      color: var(--text-secondary);
+      cursor: pointer;
+      font-size: 11px;
+      text-decoration: none;
+    }
+
+    .link-button:hover {
+      color: var(--text-primary);
+    }
+
+    .link-button svg {
+      width: 13px;
+      height: 13px;
+    }
+
+    .engine-list {
+      display: grid;
+      gap: 8px;
+      container-type: inline-size;
+    }
+
+    .engine-card {
+      display: grid;
+      grid-template-columns: 42px minmax(0, 1fr) auto;
+      gap: 14px;
+      align-items: center;
+      min-height: 88px;
+      padding: 12px;
+    }
+
+    .engine-mark {
+      width: 42px;
+      height: 42px;
+      display: grid;
+      place-items: center;
+      border-radius: 9px;
+      background: var(--bg-elevated);
+      color: var(--text-secondary);
+    }
+
+    .engine-card.selected .engine-mark {
+      background: rgba(96, 165, 250, 0.12);
+      color: #93c5fd;
+    }
+
+    .engine-mark svg {
+      width: 20px;
+      height: 20px;
+    }
+
+    .engine-copy {
+      min-width: 0;
+    }
+
+    .engine-copy h3 {
+      margin: 0;
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .engine-copy p {
+      margin: 4px 0 0;
+      color: var(--text-tertiary);
+      font-size: 11px;
+    }
+
+    .status-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+      margin-top: 7px;
+    }
+
+    .engine-trailing {
+      display: inline-flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 8px;
+      color: var(--text-tertiary);
+    }
+
+    .engine-trailing > svg {
+      width: 18px;
+      height: 18px;
+    }
+
+    .engine-card[data-ready="true"]:hover .engine-trailing {
+      color: var(--text-primary);
+    }
+
+    .subsection-title {
+      margin: 16px 0 8px;
+      color: var(--text-secondary);
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+    }
+
+    .empty-state {
+      display: grid;
+      place-items: center;
+      min-height: 218px;
+      padding: 28px;
+      border: 1px dashed var(--border-strong);
+      border-radius: 8px;
+      background: rgba(9, 9, 11, 0.24);
+      text-align: center;
+    }
+
+    .empty-icon {
+      width: 42px;
+      height: 42px;
+      display: grid;
+      place-items: center;
+      margin-bottom: 12px;
+      border-radius: 9px;
+      background: var(--bg-elevated);
+      color: var(--text-secondary);
+    }
+
+    .empty-icon svg {
+      width: 20px;
+      height: 20px;
+    }
+
+    .empty-state h3,
+    .empty-state p {
+      margin: 0;
+    }
+
+    .empty-state h3 {
+      font-size: 14px;
+      font-weight: 600;
+    }
+
+    .empty-state p {
+      max-width: 440px;
+      margin-top: 5px;
+      color: var(--text-tertiary);
+      font-size: 12px;
+    }
+
+    .empty-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 14px;
+    }
+
+    .empty-state.recommendation-empty {
+      min-height: 0;
+      display: flex;
+      align-items: flex-start;
+      justify-content: flex-start;
+      gap: 12px;
+      padding: 16px;
+      text-align: left;
+    }
+
+    .recommendation-empty .empty-icon {
+      margin: 0;
+    }
+
+    .recommendation-empty h3 {
+      margin-top: 0;
+    }
+
+    .recommend-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .recommend-card {
+      min-height: 126px;
+      display: flex;
+      flex-direction: column;
+      padding: 11px;
+    }
+
+    .recommend-card-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .recommend-card-header strong {
+      font-size: 12px;
+    }
+
+    .recommend-card p {
+      min-height: 34px;
+      margin: 4px 0 8px;
+      color: var(--text-tertiary);
+      font-size: 11px;
+    }
+
+    .recommend-card .link-button {
+      align-self: flex-start;
+      margin-top: auto;
+    }
+
+    .recommend-recovery {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-top: 12px;
+      padding-top: 10px;
+      border-top: 1px solid var(--border-default);
+      color: var(--text-tertiary);
+      font-size: 11px;
+    }
+
+    .api-layout {
+      display: grid;
+      grid-template-columns: 264px minmax(0, 1fr);
+      gap: 14px;
+    }
+
+    .api-providers {
+      display: grid;
+      gap: 7px;
+    }
+
+    .api-provider {
+      min-height: 46px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      border: 1px solid var(--border-default);
+      border-radius: 7px;
+      padding: 9px 10px;
+      background: rgba(9, 9, 11, 0.24);
+      cursor: pointer;
+      text-align: left;
+    }
+
+    .api-provider.selected {
+      border-color: rgba(96, 165, 250, 0.54);
+      background: rgba(96, 165, 250, 0.08);
+    }
+
+    .api-provider strong {
+      display: block;
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .api-provider span {
+      display: block;
+      margin-top: 2px;
+      color: var(--text-tertiary);
+      font-size: 10px;
+    }
+
+    .api-form-panel {
+      padding: 15px;
+      border: 1px solid var(--border-default);
+      border-radius: 8px;
+      background: rgba(9, 9, 11, 0.24);
+    }
+
+    .api-form-panel h3,
+    .api-form-panel p {
+      margin: 0;
+    }
+
+    .api-form-panel h3 {
+      font-size: 13px;
+    }
+
+    .api-form-panel > p {
+      margin-top: 4px;
+      color: var(--text-tertiary);
+      font-size: 11px;
+    }
+
+    .form-group {
+      margin-top: 14px;
+    }
+
+    .api-endpoint {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      height: 38px;
+      border: 1px solid var(--border-default);
+      border-radius: 5px;
+      padding: 0 10px;
+      overflow: hidden;
+      background: #1a1a1d;
+      color: var(--text-tertiary);
+      font-family: var(--font-mono);
+      font-size: 11px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .api-message {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      min-height: 20px;
+      margin-top: 9px;
+      color: var(--text-tertiary);
+      font-size: 11px;
+    }
+
+    .api-message.error {
+      color: #fca5a5;
+    }
+
+    .api-message.success {
+      color: #86efac;
+    }
+
+    .model-source {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      margin-bottom: 14px;
+      padding: 12px;
+      border: 1px solid rgba(15, 118, 110, 0.42);
+      border-radius: 8px;
+      background: var(--brand-muted);
+    }
+
+    .model-source-main {
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      min-width: 0;
+    }
+
+    .model-source-main .engine-mark {
+      background: rgba(15, 118, 110, 0.2);
+      color: #99f6e4;
+    }
+
+    .model-source h3,
+    .model-source p {
+      margin: 0;
+    }
+
+    .model-source h3 {
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .model-source p {
+      margin-top: 3px;
+      color: var(--text-secondary);
+      font-size: 11px;
+    }
+
+    .model-grid {
+      display: grid;
+      gap: 8px;
+    }
+
+    .model-card {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 16px;
+      align-items: center;
+      min-height: 92px;
+      padding: 13px;
+    }
+
+    .model-card h3,
+    .model-card p {
+      margin: 0;
+    }
+
+    .model-card h3 {
+      font-size: 14px;
+      font-weight: 600;
+    }
+
+    .model-card p {
+      margin-top: 4px;
+      color: var(--text-tertiary);
+      font-size: 11px;
+    }
+
+    .model-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+      margin-top: 8px;
+    }
+
+    .radio-mark {
+      width: 20px;
+      height: 20px;
+      display: grid;
+      place-items: center;
+      border: 1px solid var(--border-strong);
+      border-radius: 999px;
+    }
+
+    .model-card.selected .radio-mark {
+      border-color: #5eead4;
+    }
+
+    .model-card.selected .radio-mark::after {
+      width: 8px;
+      height: 8px;
+      border-radius: 999px;
+      background: #5eead4;
+      content: "";
+    }
+
+    .pricing-note {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      margin-top: 12px;
+      padding: 10px 11px;
+      border: 1px solid var(--border-default);
+      border-radius: 7px;
+      background: rgba(9, 9, 11, 0.24);
+      color: var(--text-tertiary);
+      font-size: 11px;
+    }
+
+    .pricing-note svg {
+      width: 14px;
+      height: 14px;
+      margin-top: 1px;
+      flex: none;
+    }
+
+    .neo-chat-shell {
+      min-height: 700px;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      overflow: hidden;
+      background: #101012;
+    }
+
+    .conversation-mode {
+      width: min(100%, 980px);
+    }
+
+    .conversation-mode > .modal-header,
+    .conversation-mode > .modal-footer {
+      display: none;
+    }
+
+    .conversation-mode > .modal-body {
+      min-height: 700px;
+      max-height: none;
+      overflow: visible;
+      padding: 0;
+    }
+
+    .conversation-mode .stepper {
+      display: none;
+    }
+
+    .neo-chat-header {
+      min-height: 58px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 0 18px;
+      border-bottom: 1px solid var(--border-default);
+      background: rgba(20, 20, 23, 0.92);
+    }
+
+    .neo-chat-title {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+    }
+
+    .neo-chat-title img {
+      width: 28px;
+      height: 28px;
+    }
+
+    .neo-chat-title strong,
+    .neo-chat-title span {
+      display: block;
+    }
+
+    .neo-chat-title strong {
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .neo-chat-title span {
+      color: var(--text-tertiary);
+      font-size: 10px;
+    }
+
+    .neo-chat-header .link-button {
+      flex: none;
+    }
+
+    .neo-chat-thread {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      padding: 34px max(22px, 8%);
+    }
+
+    .chat-message {
+      max-width: 720px;
+      display: flex;
+      gap: 10px;
+    }
+
+    .chat-message.user {
+      align-self: flex-end;
+      max-width: 620px;
+      padding: 11px 13px;
+      border: 1px solid rgba(15, 118, 110, 0.42);
+      border-radius: 10px 10px 3px 10px;
+      background: var(--brand-muted);
+      color: var(--text-primary);
+      font-size: 12px;
+    }
+
+    .assistant-avatar {
+      width: 28px;
+      height: 28px;
+      display: grid;
+      place-items: center;
+      flex: none;
+      border-radius: 7px;
+      background: rgba(96, 165, 250, 0.1);
+    }
+
+    .assistant-avatar img {
+      width: 18px;
+      height: 18px;
+    }
+
+    .assistant-message {
+      min-width: 0;
+      padding-top: 2px;
+    }
+
+    .execution-line {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 8px;
+    }
+
+    .assistant-message p {
+      margin: 0;
+      color: var(--text-secondary);
+      font-size: 12px;
+      line-height: 1.65;
+    }
+
+    .neo-composer-wrap {
+      position: relative;
+      padding: 0 max(22px, 8%) 24px;
+    }
+
+    .neo-composer {
+      border: 1px solid var(--border-strong);
+      border-radius: 10px;
+      padding: 11px;
+      background: var(--bg-surface);
+      box-shadow: 0 14px 44px rgba(0, 0, 0, 0.34);
+    }
+
+    .neo-composer textarea {
+      width: 100%;
+      min-height: 58px;
+      resize: none;
+      border: 0;
+      padding: 0 2px 8px;
+      background: transparent;
+      color: var(--text-primary);
+      outline: 0;
+      line-height: 1.55;
+    }
+
+    .neo-composer textarea::placeholder {
+      color: var(--text-disabled);
+    }
+
+    .composer-controls {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding-top: 8px;
+      border-top: 1px solid var(--border-subtle);
+    }
+
+    .model-trigger {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      min-height: 30px;
+      border: 1px solid var(--border-default);
+      border-radius: 7px;
+      padding: 0 9px;
+      background: var(--bg-elevated);
+      color: var(--text-secondary);
+      cursor: pointer;
+      font-size: 11px;
+    }
+
+    .model-trigger:hover,
+    .model-trigger[aria-expanded="true"] {
+      border-color: rgba(15, 118, 110, 0.56);
+      background: var(--brand-muted);
+      color: var(--text-primary);
+    }
+
+    .model-trigger svg {
+      width: 13px;
+      height: 13px;
+    }
+
+    .send-button {
+      width: 32px;
+      height: 32px;
+      display: grid;
+      place-items: center;
+      border: 0;
+      border-radius: 8px;
+      background: var(--brand);
+      color: #fff;
+      cursor: pointer;
+    }
+
+    .send-button svg {
+      width: 15px;
+      height: 15px;
+    }
+
+    .model-popover {
+      position: absolute;
+      right: max(22px, 8%);
+      bottom: 112px;
+      left: max(22px, 8%);
+      z-index: 4;
+      overflow: hidden;
+      border: 1px solid var(--border-strong);
+      border-radius: 10px;
+      background: #18181b;
+      box-shadow: 0 22px 70px rgba(0, 0, 0, 0.64);
+    }
+
+    .model-popover-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 13px 15px;
+      border-bottom: 1px solid var(--border-default);
+    }
+
+    .model-popover-header strong,
+    .model-popover-header span {
+      display: block;
+    }
+
+    .model-popover-header strong {
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .model-popover-header span {
+      margin-top: 2px;
+      color: var(--text-tertiary);
+      font-size: 10px;
+    }
+
+    .model-popover-body {
+      min-height: 288px;
+      display: grid;
+      grid-template-columns: 210px minmax(0, 1fr);
+    }
+
+    .conversation-source-list {
+      display: grid;
+      align-content: start;
+      gap: 6px;
+      padding: 10px;
+      border-right: 1px solid var(--border-default);
+      background: rgba(9, 9, 11, 0.28);
+    }
+
+    .conversation-source {
+      min-height: 48px;
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      border: 1px solid transparent;
+      border-radius: 7px;
+      padding: 7px 9px;
+      background: transparent;
+      color: var(--text-secondary);
+      cursor: pointer;
+      text-align: left;
+    }
+
+    .conversation-source.selected {
+      border-color: rgba(15, 118, 110, 0.48);
+      background: var(--brand-muted);
+      color: var(--text-primary);
+    }
+
+    .conversation-source svg {
+      width: 16px;
+      height: 16px;
+      flex: none;
+    }
+
+    .conversation-source strong,
+    .conversation-source span {
+      display: block;
+    }
+
+    .conversation-source strong {
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    .conversation-source span {
+      color: var(--text-tertiary);
+      font-size: 9px;
+    }
+
+    .conversation-models {
+      display: grid;
+      align-content: start;
+      gap: 7px;
+      padding: 12px;
+    }
+
+    .conversation-models-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 2px;
+    }
+
+    .conversation-models-title strong {
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .conversation-model-option {
+      min-height: 58px;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 10px;
+      border: 1px solid var(--border-default);
+      border-radius: 7px;
+      padding: 9px 10px;
+      background: rgba(9, 9, 11, 0.24);
+      cursor: pointer;
+      text-align: left;
+    }
+
+    .conversation-model-option:hover,
+    .conversation-model-option.selected {
+      border-color: rgba(96, 165, 250, 0.46);
+      background: rgba(96, 165, 250, 0.07);
+    }
+
+    .conversation-model-option strong,
+    .conversation-model-option small {
+      display: block;
+    }
+
+    .conversation-model-option strong {
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    .conversation-model-option small {
+      margin-top: 2px;
+      color: var(--text-tertiary);
+      font-size: 9px;
+    }
+
+    .conversation-model-option .model-meta {
+      margin-top: 5px;
+    }
+
+    .conversation-model-option > svg {
+      width: 16px;
+      height: 16px;
+      color: #93c5fd;
+    }
+
+    .conversation-auto-model {
+      min-height: 92px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      border: 1px solid rgba(15, 118, 110, 0.42);
+      border-radius: 8px;
+      padding: 12px;
+      background: var(--brand-muted);
+    }
+
+    .conversation-auto-model strong,
+    .conversation-auto-model span {
+      display: block;
+    }
+
+    .conversation-auto-model strong {
+      font-size: 12px;
+    }
+
+    .conversation-auto-model span {
+      margin-top: 3px;
+      color: var(--text-tertiary);
+      font-size: 10px;
+    }
+
+    .conversation-auto-model > svg {
+      width: 18px;
+      height: 18px;
+      color: #5eead4;
+    }
+
+    .popover-note {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      padding: 9px 12px;
+      border-top: 1px solid var(--border-default);
+      color: var(--text-tertiary);
+      font-size: 9px;
+    }
+
+    .popover-note svg {
+      width: 12px;
+      height: 12px;
+      flex: none;
+    }
+
+    /* 会话稿绑定当前 ChatView / NewSessionWelcome / ChatInput / ModelSwitcher 的真实结构。 */
+    .actual-chat-canvas {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 34px 24px 20px;
+    }
+
+    .actual-welcome {
+      width: min(100%, 768px);
+    }
+
+    .actual-welcome > img {
+      width: 28px;
+      height: 28px;
+      margin-bottom: 16px;
+    }
+
+    .actual-welcome h1,
+    .actual-welcome p {
+      margin: 0;
+    }
+
+    .actual-welcome h1 {
+      font-size: 20px;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+    }
+
+    .actual-welcome > p {
+      margin-top: 4px;
+      color: var(--text-tertiary);
+      font-size: 12px;
+    }
+
+    .actual-suggestions {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 20px;
+    }
+
+    .actual-suggestion {
+      min-height: 106px;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 8px;
+      padding: 13px;
+      background: rgba(255, 255, 255, 0.025);
+      color: var(--text-primary);
+      text-align: left;
+    }
+
+    .actual-suggestion:first-child {
+      border-color: rgba(15, 118, 110, 0.3);
+      background: var(--brand-muted);
+    }
+
+    .actual-suggestion svg {
+      width: 16px;
+      height: 16px;
+      color: var(--text-tertiary);
+    }
+
+    .actual-suggestion strong,
+    .actual-suggestion span {
+      display: block;
+    }
+
+    .actual-suggestion strong {
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .actual-suggestion span {
+      margin-top: 3px;
+      color: var(--text-tertiary);
+      font-size: 10px;
+      line-height: 1.45;
+    }
+
+    .actual-composer-wrap {
+      position: relative;
+      width: 100%;
+      max-width: 768px;
+      margin: 0 auto;
+      padding: 0 0 18px;
+    }
+
+    .actual-composer {
+      position: relative;
+      border: 1px solid var(--border-strong);
+      border-radius: 16px;
+      background: var(--bg-surface);
+      box-shadow: 0 14px 44px rgba(0, 0, 0, 0.34);
+    }
+
+    .actual-composer textarea {
+      width: 100%;
+      min-height: 86px;
+      resize: none;
+      border: 0;
+      padding: 16px 16px 8px;
+      background: transparent;
+      color: var(--text-primary);
+      outline: 0;
+      line-height: 1.55;
+    }
+
+    .actual-composer textarea::placeholder {
+      color: var(--text-disabled);
+    }
+
+    .actual-composer-toolbar {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      padding: 0 12px 11px;
+    }
+
+    .composer-tool,
+    .model-trigger {
+      min-height: 28px;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      border: 0;
+      border-radius: 6px;
+      padding: 0 7px;
+      background: transparent;
+      color: var(--text-tertiary);
+      font-size: 10px;
+    }
+
+    .composer-tool.icon-only {
+      width: 28px;
+      justify-content: center;
+      padding: 0;
+    }
+
+    .composer-tool svg,
+    .model-trigger svg {
+      width: 13px;
+      height: 13px;
+    }
+
+    .composer-spacer {
+      flex: 1;
+    }
+
+    .model-trigger {
+      cursor: pointer;
+      color: var(--text-secondary);
+      max-width: 210px;
+    }
+
+    .model-trigger:hover,
+    .model-trigger[aria-expanded="true"] {
+      background: rgba(255, 255, 255, 0.05);
+      color: var(--text-primary);
+    }
+
+    .runtime-model-menu {
+      position: absolute;
+      right: 48px;
+      bottom: 58px;
+      z-index: 5;
+      width: min(352px, calc(100vw - 56px));
+      max-height: 520px;
+      overflow: auto;
+      border: 1px solid var(--border-strong);
+      border-radius: 8px;
+      background: #18181b;
+      box-shadow: 0 22px 70px rgba(0, 0, 0, 0.64);
+    }
+
+    .runtime-model-title {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 10px 12px 7px;
+      color: var(--text-tertiary);
+      font-size: 10px;
+    }
+
+    .runtime-model-title svg {
+      width: 12px;
+      height: 12px;
+    }
+
+    .runtime-settings-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      margin-left: auto;
+      border: 0;
+      border-radius: 5px;
+      padding: 3px 6px;
+      background: transparent;
+      color: var(--text-tertiary);
+      cursor: pointer;
+      font-size: 9px;
+    }
+
+    .runtime-settings-link:hover {
+      background: rgba(63, 63, 70, 0.5);
+      color: var(--text-primary);
+    }
+
+    .runtime-engine-brand {
+      width: 32px;
+      height: 32px;
+      display: grid;
+      place-items: center;
+      align-self: center;
+    }
+
+    .runtime-engine-brand img {
+      width: 32px;
+      height: 32px;
+      object-fit: contain;
+    }
+
+    .runtime-engine-brand svg {
+      width: 32px;
+      height: 32px;
+    }
+
+    .runtime-engine-current {
+      width: calc(100% - 16px);
+      min-height: 46px;
+      display: grid;
+      grid-template-columns: 32px minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 8px;
+      margin: 0 8px 8px;
+      border: 1px solid var(--border-default);
+      border-radius: 7px;
+      padding: 6px 8px;
+      background: rgba(9, 9, 11, 0.2);
+      color: var(--text-secondary);
+      cursor: pointer;
+      text-align: left;
+    }
+
+    .runtime-engine-current:hover {
+      border-color: var(--border-strong);
+      background: rgba(63, 63, 70, 0.34);
+    }
+
+    .runtime-engine-current > svg:last-child {
+      width: 13px;
+      height: 13px;
+      color: var(--text-tertiary);
+    }
+
+    .runtime-engine-current strong,
+    .runtime-engine-current span {
+      display: block;
+    }
+
+    .runtime-engine-current strong {
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    .runtime-engine-current span {
+      margin-top: 2px;
+      color: var(--text-tertiary);
+      font-size: 9px;
+    }
+
+    .runtime-model-search {
+      width: calc(100% - 16px);
+      min-height: 30px;
+      margin: 0 8px 6px;
+      border: 1px solid var(--border-default);
+      border-radius: 6px;
+      padding: 0 9px;
+      background: rgba(9, 9, 11, 0.42);
+      color: var(--text-primary);
+      outline: 0;
+      font-size: 10px;
+    }
+
+    .runtime-model-search:focus {
+      border-color: var(--border-strong);
+    }
+
+    .runtime-model-scroll {
+      max-height: 210px;
+      overflow: auto;
+      border-top: 1px solid var(--border-default);
+      border-bottom: 1px solid var(--border-default);
+      padding: 3px 0;
+    }
+
+    .runtime-model-auto {
+      width: 100%;
+      min-height: 38px;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      border: 0;
+      border-bottom: 1px solid var(--border-default);
+      padding: 6px 12px;
+      background: transparent;
+      color: var(--text-secondary);
+      cursor: pointer;
+      text-align: left;
+    }
+
+    .runtime-model-auto:hover,
+    .runtime-model-auto.selected {
+      background: rgba(63, 63, 70, 0.5);
+      color: #c4b5fd;
+    }
+
+    .runtime-model-auto svg {
+      width: 13px;
+      height: 13px;
+      color: #a78bfa;
+    }
+
+    .runtime-model-auto strong {
+      font-size: 11px;
+    }
+
+    .runtime-model-auto span:last-child {
+      margin-left: auto;
+      color: var(--text-tertiary);
+      font-size: 9px;
+    }
+
+    .runtime-effort {
+      padding: 8px;
+      border-bottom: 1px solid var(--border-default);
+    }
+
+    .runtime-effort-label {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      margin-bottom: 6px;
+      color: var(--text-tertiary);
+      font-size: 9px;
+    }
+
+    .runtime-effort-label svg {
+      width: 11px;
+      height: 11px;
+    }
+
+    .runtime-effort-options {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 4px;
+    }
+
+    .runtime-effort-options button {
+      min-height: 26px;
+      border: 1px solid transparent;
+      border-radius: 5px;
+      background: transparent;
+      color: var(--text-tertiary);
+      cursor: pointer;
+      font-size: 9px;
+    }
+
+    .runtime-effort-options button:hover {
+      background: rgba(63, 63, 70, 0.5);
+    }
+
+    .runtime-effort-options button.selected {
+      border-color: var(--border-strong);
+      background: rgba(63, 63, 70, 0.62);
+      color: var(--text-primary);
+    }
+
+    .runtime-engine-picker-head {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      padding: 9px 10px 7px;
+      border-top: 1px solid var(--border-default);
+      border-bottom: 1px solid var(--border-default);
+      color: var(--text-secondary);
+    }
+
+    .runtime-engine-picker-head button {
+      width: 24px;
+      height: 24px;
+      display: grid;
+      place-items: center;
+      border: 0;
+      border-radius: 5px;
+      background: transparent;
+      color: var(--text-tertiary);
+      cursor: pointer;
+    }
+
+    .runtime-engine-picker-head button:hover {
+      background: rgba(63, 63, 70, 0.5);
+      color: var(--text-primary);
+    }
+
+    .runtime-engine-picker-head svg {
+      width: 13px;
+      height: 13px;
+    }
+
+    .runtime-engine-search {
+      width: calc(100% - 16px);
+      min-height: 30px;
+      margin: 8px 8px 4px;
+      border: 1px solid var(--border-default);
+      border-radius: 6px;
+      padding: 0 9px;
+      background: rgba(9, 9, 11, 0.42);
+      color: var(--text-primary);
+      outline: 0;
+      font-size: 10px;
+    }
+
+    .runtime-engine-search:focus {
+      border-color: var(--border-strong);
+    }
+
+    .runtime-engine-picker-list {
+      max-height: 350px;
+      overflow: auto;
+      padding: 4px 6px 7px;
+    }
+
+    .runtime-engine-row {
+      width: 100%;
+      min-height: 50px;
+      display: grid;
+      grid-template-columns: 32px minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 10px;
+      border: 1px solid transparent;
+      border-radius: 6px;
+      padding: 6px 8px;
+      background: transparent;
+      color: var(--text-secondary);
+      cursor: pointer;
+      text-align: left;
+    }
+
+    .runtime-engine-row:hover {
+      background: rgba(63, 63, 70, 0.5);
+    }
+
+    .runtime-engine-row.selected {
+      border-color: rgba(15, 118, 110, 0.48);
+      background: var(--brand-muted);
+      color: var(--text-primary);
+    }
+
+    .runtime-engine-row > svg:last-child {
+      width: 15px;
+      height: 15px;
+      color: #5eead4;
+    }
+
+    .runtime-engine-row strong,
+    .runtime-engine-row span {
+      display: block;
+    }
+
+    .runtime-engine-row strong {
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    .runtime-engine-row span {
+      margin-top: 2px;
+      color: var(--text-tertiary);
+      font-size: 9px;
+    }
+
+    .runtime-source-meta {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      padding: 8px 12px 6px;
+      border-top: 1px solid var(--border-default);
+      color: var(--text-tertiary);
+      font-size: 10px;
+    }
+
+    .runtime-source-meta strong {
+      color: var(--text-secondary);
+      font-weight: 600;
+    }
+
+    .runtime-source-meta .status-dot {
+      width: 6px;
+      height: 6px;
+      margin-left: auto;
+      border-radius: 999px;
+      background: var(--success);
+    }
+
+    .runtime-model-option {
+      width: 100%;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 8px;
+      border: 0;
+      padding: 8px 12px;
+      background: transparent;
+      color: var(--text-secondary);
+      cursor: pointer;
+      text-align: left;
+    }
+
+    .runtime-model-option:hover {
+      background: rgba(63, 63, 70, 0.72);
+    }
+
+    .runtime-model-option.selected {
+      color: #c4b5fd;
+    }
+
+    .runtime-model-option strong,
+    .runtime-model-option small {
+      display: block;
+    }
+
+    .runtime-model-option strong {
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    .runtime-model-option small {
+      margin-top: 2px;
+      color: var(--text-tertiary);
+      font-size: 9px;
+    }
+
+    .runtime-model-option > span:last-child {
+      color: var(--text-tertiary);
+      font-size: 10px;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .runtime-client-default {
+      margin: 4px 8px 8px;
+      border: 1px solid rgba(15, 118, 110, 0.35);
+      border-radius: 7px;
+      padding: 10px;
+      background: var(--brand-muted);
+    }
+
+    .runtime-client-default strong,
+    .runtime-client-default span {
+      display: block;
+    }
+
+    .runtime-client-default strong {
+      font-size: 11px;
+    }
+
+    .runtime-client-default span {
+      margin-top: 3px;
+      color: var(--text-tertiary);
+      font-size: 9px;
+      line-height: 1.45;
+    }
+
+    .hidden {
+      display: none !important;
+    }
+
+    .toast {
+      position: fixed;
+      right: 24px;
+      bottom: 24px;
+      max-width: 340px;
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      padding: 11px 13px;
+      border: 1px solid rgba(74, 222, 128, 0.26);
+      border-radius: 8px;
+      background: #1f1f23;
+      color: #bbf7d0;
+      box-shadow: 0 16px 48px rgba(0, 0, 0, 0.55);
+      font-size: 12px;
+      opacity: 0;
+      pointer-events: none;
+      transform: translateY(8px);
+      transition: opacity 160ms ease, transform 160ms ease;
+    }
+
+    .toast.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    .toast svg {
+      width: 16px;
+      height: 16px;
+      flex: none;
+    }
+
+    @container (max-width: 720px) {
+      .engine-card {
+        grid-template-columns: 38px minmax(0, 1fr) auto;
+        gap: 10px;
+        align-items: center;
+        min-height: 118px;
+      }
+
+      .engine-trailing {
+        justify-content: flex-end;
+      }
+
+      .engine-card .engine-mark {
+        width: 38px;
+        height: 38px;
+      }
+    }
+
+    @media (max-width: 1060px) {
+      .stage {
+        grid-template-columns: 1fr;
+      }
+
+      .annotation-rail {
+        position: static;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 760px) {
+      .prototype-shell {
+        padding: 12px;
+      }
+
+      .prototype-toolbar {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+
+      .app-canvas {
+        min-height: 0;
+        padding: 10px;
+      }
+
+      .after-modal .modal-header {
+        height: auto;
+        min-height: 102px;
+        display: grid;
+        grid-template-columns: 38px minmax(0, 1fr);
+        align-content: center;
+        gap: 9px 10px;
+        padding: 12px 14px;
+      }
+
+      .after-modal .modal-header-icon {
+        grid-column: 1;
+        grid-row: 1;
+      }
+
+      .after-modal .modal-header-copy {
+        grid-column: 2;
+        grid-row: 1;
+      }
+
+      .after-modal .concept-badge {
+        grid-column: 1 / -1;
+        grid-row: 2;
+        justify-self: start;
+        margin-left: 0;
+      }
+
+      .after-modal .modal-body {
+        max-height: none;
+        overflow: visible;
+        padding: 16px 14px 18px;
+      }
+
+      .after-modal .stepper {
+        gap: 6px;
+      }
+
+      .after-modal .step {
+        justify-content: center;
+        gap: 5px;
+        padding-inline: 6px;
+        font-size: 11px;
+      }
+
+      .after-modal .step > span:last-child {
+        white-space: nowrap;
+      }
+
+      .provider-grid.more,
+      .recommend-grid,
+      .api-layout,
+      .connection-form {
+        grid-template-columns: 1fr;
+      }
+
+      .source-choice,
+      .provider-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .annotation-rail {
+        grid-template-columns: 1fr;
+      }
+
+      .modal-footer {
+        align-items: stretch;
+        flex-direction: column;
+      }
+
+      .footer-actions {
+        width: 100%;
+      }
+
+      .footer-actions .btn {
+        flex: 1;
+      }
+
+      .success-summary {
+        min-width: 0;
+        width: 100%;
+      }
+
+      .success-actions {
+        width: 100%;
+        flex-direction: column;
+      }
+
+      .success-actions .btn {
+        width: 100%;
+      }
+
+      .conversation-mode > .modal-body,
+      .neo-chat-shell {
+        min-height: 660px;
+      }
+
+      .actual-chat-canvas {
+        padding: 24px 14px 16px;
+      }
+
+      .actual-suggestions {
+        grid-template-columns: 1fr;
+      }
+
+      .actual-suggestion:nth-child(n + 3) {
+        display: none;
+      }
+
+      .actual-composer-wrap {
+        padding: 0 12px 14px;
+      }
+
+      .composer-tool:not(.icon-only) {
+        max-width: 78px;
+        overflow: hidden;
+      }
+
+      .runtime-model-menu {
+        right: 12px;
+        bottom: 62px;
+        width: calc(100% - 24px);
+      }
+
+      .neo-chat-header {
+        padding-inline: 12px;
+      }
+
+      .neo-chat-thread {
+        padding: 26px 14px;
+      }
+
+      .neo-composer-wrap {
+        padding: 0 12px 14px;
+      }
+
+      .model-popover {
+        right: 12px;
+        bottom: 102px;
+        left: 12px;
+        max-height: 470px;
+        overflow: auto;
+      }
+
+      .model-popover-body {
+        grid-template-columns: 1fr;
+      }
+
+      .conversation-source-list {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        border-right: 0;
+        border-bottom: 1px solid var(--border-default);
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="prototype-shell">
+    <header class="prototype-toolbar">
+      <div class="prototype-title">
+        <img src="../../public/code-agent/agent-neo-mark.svg" alt="" />
+        <div>
+          <strong>Neo Onboarding · 官方订阅接入</strong>
+          <span>单文件交互稿 · 当前实现对照 2026-07-30</span>
+        </div>
+      </div>
+      <nav class="view-switcher" aria-label="切换 Before 和 After">
+        <button type="button" data-view-button="before" aria-selected="false">Before</button>
+        <button type="button" data-view-button="after" aria-selected="true">After</button>
+      </nav>
+    </header>
+
+    <section class="stage">
+      <div class="app-canvas">
+        <article class="modal before-view hidden" data-state="before" aria-label="当前 onboarding">
+          <header class="modal-header">
+            <div class="modal-header-icon"><i data-lucide="brain-circuit"></i></div>
+            <div class="modal-header-copy">
+              <h1>连接模型</h1>
+            </div>
+          </header>
+
+          <div class="modal-body">
+            <div class="stepper" aria-label="当前 onboarding 步骤">
+              <div class="step active"><span class="step-index">1</span><span>选模型</span></div>
+              <div class="step"><span class="step-index">2</span><span>连上你的日常工具</span></div>
+              <div class="step"><span class="step-index">3</span><span>开始干活</span></div>
+            </div>
+
+            <div class="intro">
+              <i data-lucide="key-round"></i>
+              <div>
+                <strong>账号已就绪，还需要连接一个模型才能开始对话。</strong>
+                <p>支持官方直连 Provider 和 OpenAI 兼容中转站。本地模型（Ollama）仍在设置里管理。</p>
+              </div>
+            </div>
+
+            <section class="section">
+              <div class="section-header">
+                <div>
+                  <h2>推荐配置</h2>
+                  <p>大多数新用户从这里选一个就够了。</p>
+                </div>
+              </div>
+              <div class="provider-grid">
+                <button class="provider-card selected" type="button">
+                  <div class="provider-title">
+                    <strong>DeepSeek</strong>
+                    <span class="badge blue">推荐</span>
+                  </div>
+                  <p>性价比高，适合日常问答与代码任务</p>
+                </button>
+                <button class="provider-card" type="button">
+                  <div class="provider-title">
+                    <strong>Kimi / Moonshot</strong>
+                    <span class="badge neutral">长上下文</span>
+                  </div>
+                  <p>适合长文档阅读、研究与总结</p>
+                </button>
+                <button class="provider-card" type="button">
+                  <div class="provider-title">
+                    <strong>智谱 GLM</strong>
+                    <span class="badge neutral">国内直连</span>
+                  </div>
+                  <p>中文任务与通用工具调用</p>
+                </button>
+                <button class="provider-card" type="button">
+                  <div class="provider-title">
+                    <strong>通义千问</strong>
+                    <span class="badge neutral">国内直连</span>
+                  </div>
+                  <p>阿里云百炼平台模型</p>
+                </button>
+              </div>
+            </section>
+
+            <section class="section">
+              <div class="section-header">
+                <h2>更多官方 Provider</h2>
+              </div>
+              <div class="provider-grid more">
+                <button class="provider-card" type="button">
+                  <div class="provider-title"><strong>OpenAI</strong></div>
+                  <p>GPT 系列</p>
+                </button>
+                <button class="provider-card" type="button">
+                  <div class="provider-title"><strong>Anthropic</strong></div>
+                  <p>Claude 系列</p>
+                </button>
+                <button class="provider-card" type="button">
+                  <div class="provider-title"><strong>Google</strong></div>
+                  <p>Gemini 系列</p>
+                </button>
+              </div>
+            </section>
+
+            <section class="section">
+              <div class="section-header">
+                <h2>中转站 / 自定义</h2>
+              </div>
+              <button class="provider-card" type="button">
+                <div class="provider-title">
+                  <strong>OpenAI 兼容接口</strong>
+                  <span class="badge blue">自定义</span>
+                </div>
+                <p>填写 Base URL 和 API Key，从 /models 读取可用模型</p>
+              </button>
+            </section>
+
+            <section class="connection-form">
+              <div>
+                <h3>DeepSeek</h3>
+                <p>官方接口地址由 Neo 锁定。</p>
+                <div class="endpoint">https://api.deepseek.com/v1</div>
+              </div>
+              <div>
+                <label class="field-label" for="before-key">API Key</label>
+                <input id="before-key" class="field" type="password" placeholder="粘贴该 Provider 的 API Key" />
+                <div class="field-help">选择 Provider 后填写 API Key。</div>
+              </div>
+            </section>
+          </div>
+
+          <footer class="modal-footer">
+            <div class="footer-note"><i data-lucide="shield-check"></i><span>密钥只存在这台电脑上，不会上传。</span></div>
+            <div class="footer-actions">
+              <button class="btn btn-ghost" type="button">跳过，稍后在设置里配置</button>
+              <button class="btn btn-primary" type="button" disabled><i data-lucide="shield-check"></i>测试并保存</button>
+            </div>
+          </footer>
+        </article>
+
+        <article class="modal after-modal after-view" data-state="after" aria-label="新版 onboarding">
+          <header class="modal-header">
+            <div class="modal-header-icon">
+              <img src="../../public/code-agent/agent-neo-mark.svg" alt="" />
+            </div>
+            <div class="modal-header-copy">
+              <h1 id="after-modal-title">连接 Neo 的模型</h1>
+              <p id="after-modal-subtitle">优先检测本机已登录的官方 AI 产品，确认可用后无需另配 API Token。</p>
+            </div>
+            <span class="concept-badge">交互概念稿 · 检测结果为演示数据</span>
+          </header>
+
+          <div class="modal-body">
+            <div class="stepper" id="after-stepper" aria-label="新版 onboarding 步骤"></div>
+            <div id="after-content" aria-live="polite"></div>
+          </div>
+
+          <footer class="modal-footer" id="after-footer"></footer>
+        </article>
+      </div>
+
+      <aside class="annotation-rail" aria-label="方案说明">
+        <section class="note-card" id="before-notes">
+          <div class="eyebrow"><i data-lucide="circle-alert"></i>Before · 当前实现</div>
+          <h2>首次使用先遇到技术配置</h2>
+          <ol>
+            <li>必须先注册开放平台并准备 API Key。</li>
+            <li>一屏选择大量 Provider，新用户难以判断。</li>
+            <li>连接后自动保存一个模型，用户没有明确选择。</li>
+          </ol>
+        </section>
+
+        <section class="note-card emphasis hidden" id="after-notes">
+          <div class="eyebrow"><i data-lucide="sparkles"></i>After · 产品判断</div>
+          <h2>复用已有订阅，完成两次确认就能对话</h2>
+          <ol>
+            <li>点击一个已登录且验证可用的官方产品，直接进入模型页。</li>
+            <li>确认该来源下的模型后，直接进入 Neo 当前会话页。</li>
+          </ol>
+          <h3>模型展示规则</h3>
+          <p>Neo 本体与外部 CLI 位于同一执行引擎层级。选择 Neo 后展示 Provider 模型并提供“去设置”；选择外部引擎后按其模型能力展示。</p>
+          <h3>图标来源</h3>
+          <p>正式图标由受信任的引擎 Manifest 引用随适配器发布的本地资产；缺失或校验失败时使用统一终端图标。当前稿中的线性图标仅用于占位。</p>
+        </section>
+
+        <section class="note-card hidden" id="after-controls">
+          <div class="eyebrow"><i data-lucide="scan-search"></i>演示状态</div>
+          <div class="scenario-switcher" aria-label="切换本机检测结果">
+            <button type="button" data-scenario-button="detected" aria-pressed="true">检测到 3 个</button>
+            <button type="button" data-scenario-button="empty" aria-pressed="false">未检测到</button>
+          </div>
+          <p style="margin-top:10px">用空状态验证“推荐安装 / 指定路径 / 改用 API Key”三条恢复路径。</p>
+        </section>
+
+        <section class="note-card">
+          <div class="eyebrow"><i data-lucide="shield-check"></i>边界</div>
+          <p>发现本机应用不等于可用。正式实现必须分别验证安装、登录、协议兼容与模型目录；Neo 不读取或复制官方客户端凭证。</p>
+        </section>
+      </aside>
+    </section>
+  </main>
+
+  <div class="toast" id="toast" role="status">
+    <i data-lucide="check-circle-2"></i>
+    <span id="toast-message">状态已更新</span>
+  </div>
+
+  <script>
+    // 运行时探测返回的演示快照；界面不按产品名或模型名写分支。
+    const engineCatalog = {
+      workbuddy: {
+        id: "workbuddy",
+        name: "WorkBuddy",
+        actionName: "WorkBuddy",
+        command: "WorkBuddy.app",
+        executionLabel: "WorkBuddy CLI",
+        icon: "sparkles",
+        state: "ready",
+        modelSelection: "runtime_catalog",
+        description: "官方账号已登录；模型目录和当前权益已由本机客户端返回。",
+        statuses: [
+          { text: "已安装", tone: "neutral" },
+          { text: "已登录", tone: "success" },
+          { text: "实验接入", tone: "warning" }
+        ],
+        models: [
+          {
+            id: "hy3",
+            name: "Hy3",
+            description: "适合日常办公、文档处理与工具调用。",
+            recommended: true,
+            verification: "verified",
+            entitlement: {
+              status: "confirmed",
+              freshness: "fresh",
+              label: "当前倍率",
+              value: "0.00x",
+              tone: "success",
+              refreshedAt: "刚刚"
+            }
+          },
+          {
+            id: "auto",
+            name: "Auto",
+            description: "由客户端根据任务自动选择模型。",
+            verification: "verified",
+            entitlement: {
+              status: "unknown",
+              freshness: "missing"
+            }
+          },
+          {
+            id: "glm-5-2",
+            name: "GLM-5.2",
+            description: "通用模型；实际权益以客户端最新返回为准。",
+            verification: "verified",
+            entitlement: {
+              status: "confirmed",
+              freshness: "fresh",
+              label: "当前倍率",
+              value: "0.79x",
+              tone: "warning",
+              refreshedAt: "刚刚"
+            }
+          }
+        ]
+      },
+      codebuddy: {
+        id: "codebuddy",
+        name: "CodeBuddy Code",
+        actionName: "CodeBuddy",
+        command: "codebuddy",
+        executionLabel: "CodeBuddy ACP",
+        icon: "square-terminal",
+        state: "ready",
+        modelSelection: "client_default",
+        description: "CLI 已登录，ACP 通道可用；模型选择继续由官方客户端管理。",
+        statuses: [
+          { text: "已安装", tone: "neutral" },
+          { text: "已登录", tone: "success" },
+          { text: "ACP 可用", tone: "neutral" }
+        ],
+        entitlement: {
+          status: "confirmed",
+          freshness: "fresh",
+          label: "当前权益",
+          value: "订阅内",
+          tone: "success",
+          refreshedAt: "刚刚"
+        },
+        models: []
+      },
+      comate: {
+        id: "comate",
+        name: "Comate CLI",
+        actionName: "官方登录",
+        command: "zulu",
+        executionLabel: "Comate CLI",
+        icon: "terminal",
+        state: "login",
+        modelSelection: "client_default",
+        description: "发现本机 CLI，但还没有通过无消费登录态检测。",
+        statuses: [
+          { text: "已安装", tone: "neutral" },
+          { text: "需要登录", tone: "warning" },
+          { text: "协议待验证", tone: "neutral" }
+        ],
+        models: []
+      }
+    };
+
+    // 会话里可能同时配置很多执行引擎；这些演示项不改变 onboarding 的本机检测清单。
+    const runtimeOnlyEngineCatalog = {
+      codex: {
+        id: "codex",
+        name: "Codex CLI",
+        icon: "code-2",
+        state: "ready",
+        modelSelection: "client_default",
+        executionLabel: "Codex CLI",
+        switcherMeta: "已登录 · CLI",
+        entitlement: { status: "confirmed", freshness: "fresh", label: "当前权益", value: "订阅内", tone: "success" },
+        models: []
+      },
+      claude: {
+        id: "claude",
+        name: "Claude Code",
+        icon: "braces",
+        state: "ready",
+        modelSelection: "client_default",
+        executionLabel: "Claude Code",
+        switcherMeta: "已登录 · CLI",
+        entitlement: { status: "confirmed", freshness: "fresh", label: "当前权益", value: "订阅内", tone: "success" },
+        models: []
+      },
+      cursor: {
+        id: "cursor",
+        name: "Cursor CLI",
+        icon: "mouse-pointer-2",
+        state: "ready",
+        modelSelection: "client_default",
+        executionLabel: "Cursor CLI",
+        switcherMeta: "已登录 · CLI",
+        entitlement: { status: "confirmed", freshness: "fresh", label: "当前权益", value: "订阅内", tone: "success" },
+        models: []
+      },
+      gemini: {
+        id: "gemini",
+        name: "Gemini CLI",
+        icon: "gem",
+        state: "ready",
+        modelSelection: "client_default",
+        executionLabel: "Gemini CLI",
+        switcherMeta: "已登录 · CLI",
+        entitlement: { status: "confirmed", freshness: "fresh", label: "当前权益", value: "订阅内", tone: "success" },
+        models: []
+      },
+      kimi: {
+        id: "kimi",
+        name: "Kimi CLI",
+        icon: "moon",
+        state: "ready",
+        modelSelection: "client_default",
+        executionLabel: "Kimi CLI",
+        switcherMeta: "已登录 · CLI",
+        entitlement: { status: "confirmed", freshness: "fresh", label: "当前权益", value: "订阅内", tone: "success" },
+        models: []
+      }
+    };
+
+    const allEngineCatalog = {
+      neo: {
+        id: "neo",
+        name: "Neo",
+        iconAsset: "../../public/code-agent/agent-neo-mark.svg",
+        state: "ready",
+        modelSelection: "runtime_catalog",
+        executionLabel: "Neo 内置引擎",
+        switcherMeta: "内置 · Provider 模型",
+        models: [
+          {
+            id: "deepseek-chat",
+            name: "DeepSeek Chat",
+            description: "由 Neo Provider 配置管理的通用模型。",
+            recommended: true,
+            verification: "verified",
+            entitlement: { status: "metered", freshness: "fresh", label: "API 按量计费", value: "1.00x", tone: "warning" }
+          },
+          {
+            id: "kimi-k2",
+            name: "Kimi K2",
+            description: "适合长上下文、研究与文档任务。",
+            verification: "verified",
+            entitlement: { status: "metered", freshness: "fresh", label: "API 按量计费", value: "1.28x", tone: "warning" }
+          },
+          {
+            id: "glm-4-5",
+            name: "GLM-4.5",
+            description: "中文任务和工具调用。",
+            verification: "verified",
+            entitlement: { status: "metered", freshness: "fresh", label: "API 按量计费", value: "0.86x", tone: "warning" }
+          }
+        ]
+      },
+      workbuddy: { ...engineCatalog.workbuddy, switcherMeta: "已登录 · 本地协议" },
+      codebuddy: { ...engineCatalog.codebuddy, switcherMeta: "已登录 · ACP" },
+      ...runtimeOnlyEngineCatalog
+    };
+
+    const apiCatalog = {
+      deepseek: {
+        name: "DeepSeek",
+        endpoint: "https://api.deepseek.com/v1",
+        hint: "适合日常问答与代码任务",
+        models: [
+          {
+            id: "deepseek-chat",
+            name: "DeepSeek Chat",
+            description: "通用对话与代码生成。",
+            verification: "verified",
+            entitlement: {
+              status: "metered",
+              freshness: "fresh",
+              label: "API 按量计费",
+              tone: "warning"
+            }
+          },
+          {
+            id: "deepseek-reasoner",
+            name: "DeepSeek Reasoner",
+            description: "复杂推理任务，费用按官方 API 规则计算。",
+            verification: "verified",
+            entitlement: {
+              status: "metered",
+              freshness: "fresh",
+              label: "API 按量计费",
+              tone: "warning"
+            }
+          }
+        ]
+      },
+      moonshot: {
+        name: "Kimi / Moonshot",
+        endpoint: "https://api.moonshot.cn/v1",
+        hint: "长文档与研究任务",
+        models: [
+          {
+            id: "kimi-k2",
+            name: "Kimi K2",
+            description: "长上下文与通用任务。",
+            verification: "verified",
+            entitlement: {
+              status: "metered",
+              freshness: "fresh",
+              label: "API 按量计费",
+              tone: "warning"
+            }
+          }
+        ]
+      },
+      glm: {
+        name: "智谱 GLM",
+        endpoint: "https://open.bigmodel.cn/api/paas/v4",
+        hint: "中文任务与工具调用",
+        models: [
+          {
+            id: "glm-4-plus",
+            name: "GLM-4 Plus",
+            description: "通用对话与工具调用。",
+            verification: "verified",
+            entitlement: {
+              status: "metered",
+              freshness: "fresh",
+              label: "API 按量计费",
+              tone: "warning"
+            }
+          }
+        ]
+      },
+      custom: {
+        name: "OpenAI 兼容接口",
+        endpoint: "https://example.com/v1",
+        hint: "自定义中转站或企业网关",
+        endpointEditable: true,
+        modelDiscovery: "catalog",
+        connectionDescription: "填写 Base URL 后读取兼容的模型目录。",
+        models: [
+          {
+            id: "custom-discovered",
+            name: "model-from-endpoint",
+            description: "名称由 /models 接口实时返回。",
+            verification: "discovered",
+            entitlement: {
+              status: "unknown"
+            }
+          }
+        ]
+      },
+      anthropicCompatible: {
+        name: "Anthropic 兼容接口",
+        endpoint: "https://gateway.example.com/anthropic",
+        hint: "Claude 兼容中转站或企业网关",
+        endpointEditable: true,
+        modelDiscovery: "manual",
+        connectionDescription: "填写 Base URL 与模型 ID，验证 Anthropic Messages 兼容性。",
+        models: [
+          {
+            id: "claude-model-id",
+            name: "自定义 Claude 模型",
+            description: "模型 ID 由兼容服务提供。",
+            verification: "manual",
+            entitlement: {
+              status: "unknown"
+            }
+          }
+        ]
+      }
+    };
+
+    // 稳定 Manifest 只负责展示、排序与安装入口；是否安装、可用和收费由运行时探测决定。
+    const recommendedEngineManifests = [
+      {
+        id: "workbuddy",
+        name: "WorkBuddy",
+        icon: "sparkles",
+        badge: "日常办公",
+        description: "适合希望复用官方账号处理文档与日常任务的用户。"
+      },
+      {
+        id: "cursor",
+        name: "Cursor CLI",
+        icon: "mouse-pointer-2",
+        badge: "代码开发",
+        description: "安装后由 Neo 检测版本、登录态与可支持的接入协议。"
+      },
+      {
+        id: "codebuddy",
+        name: "CodeBuddy Code",
+        icon: "square-terminal",
+        badge: "代码开发",
+        description: "适合已有腾讯账号、希望通过 CLI 或 ACP 工作的用户。"
+      }
+    ];
+
+    const params = new URLSearchParams(window.location.search);
+    const stageOrder = ["source", "model"];
+    const legacyConversationStages = ["tools", "start"];
+    const requestedStageValue = legacyConversationStages.includes(params.get("stage"))
+      ? "conversation"
+      : params.get("stage");
+    const requestedStage = requestedStageValue === "conversation"
+      ? "conversation"
+      : stageOrder.includes(requestedStageValue) ? requestedStageValue : "source";
+    const initialScenario = params.get("scenario") === "empty" ? "empty" : "detected";
+    const defaultEngineId = Object.values(engineCatalog).find((engine) => engine.state === "ready")?.id || null;
+    const requestedEngineId = params.get("engine");
+    const urlEngineId = allEngineCatalog[requestedEngineId]?.state === "ready" ? requestedEngineId : null;
+    const initialEngineId = initialScenario === "empty" || requestedStage === "source"
+      ? null
+      : urlEngineId || defaultEngineId;
+    const requestedProviderId = params.get("provider");
+    const initialProviderId = apiCatalog[requestedProviderId] ? requestedProviderId : "deepseek";
+    const requestedModelId = params.get("model");
+    const initialModels = allEngineCatalog[initialEngineId]?.models || [];
+    const defaultModelId = initialModels.find((model) => model.recommended)?.id || initialModels[0]?.id || null;
+    const initialModelId = initialModels.some((model) => model.id === requestedModelId)
+      ? requestedModelId
+      : defaultModelId;
+    const state = {
+      view: params.get("view") === "before" ? "before" : "after",
+      scenario: initialScenario,
+      stage: requestedStage,
+      route: params.get("route") === "api" ? "api" : "subscription",
+      engine: initialEngineId,
+      provider: initialProviderId,
+      model: initialModelId,
+      apiStatus: "idle",
+      completedThrough: -1,
+      modelMenuOpen: params.get("modelMenu") === "open",
+      enginePickerOpen: params.get("enginePicker") === "open",
+      effort: ["off", "low", "medium", "high"].includes(params.get("effort")) ? params.get("effort") : "medium"
+    };
+
+    const $ = (selector) => document.querySelector(selector);
+    const $$ = (selector) => Array.from(document.querySelectorAll(selector));
+    let renderedStage = null;
+
+    function icon(name, className = "") {
+      return `<i data-lucide="${name}"${className ? ` class="${className}"` : ""}></i>`;
+    }
+
+    function escapeHtml(value) {
+      return String(value)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    function badges(items) {
+      return items.map((item) => `<span class="badge ${item.tone || "neutral"}">${item.text}</span>`).join("");
+    }
+
+    function entitlementIsCurrent(entitlement) {
+      if (!entitlement || ["unknown", "expired", "error"].includes(entitlement.status)) return false;
+      if (entitlement.freshness !== "fresh") return false;
+      if (entitlement.expiresAt && Date.parse(entitlement.expiresAt) <= Date.now()) return false;
+      return true;
+    }
+
+    function entitlementBadges(model) {
+      const items = [];
+      if (model.recommended) items.push({ text: "Neo 推荐", tone: "blue" });
+      const entitlement = model.entitlement;
+      if (!entitlementIsCurrent(entitlement)) {
+        items.push({ text: "费用待确认", tone: "warning" });
+      } else {
+        items.push({
+          text: [entitlement.label, entitlement.value].filter(Boolean).join(" · "),
+          tone: entitlement.tone || "neutral"
+        });
+      }
+      if (model.verification === "verified") {
+        items.push({ text: "模型已验证", tone: "neutral" });
+      } else if (model.verification === "discovered") {
+        items.push({ text: "模型由接口返回", tone: "neutral" });
+      } else if (model.verification === "manual") {
+        items.push({ text: "模型 ID 由用户填写", tone: "neutral" });
+      }
+      return items;
+    }
+
+    function formatEntitlement(model) {
+      const entitlement = model?.entitlement;
+      if (!entitlementIsCurrent(entitlement)) {
+        return "费用待确认";
+      }
+      return [entitlement.label, entitlement.value].filter(Boolean).join(" · ");
+    }
+
+    function sourceModelSummary(engine) {
+      if (engine.state !== "ready") return "登录后读取模型";
+      if (engine.modelSelection === "client_default") return "由客户端自动选模";
+      if (engine.modelSelection === "none") return "无需选择模型";
+      const entitlementFresh = engine.models.some((model) => entitlementIsCurrent(model.entitlement));
+      return `${engine.models.length} 个模型 · ${entitlementFresh ? "权益刚刚刷新" : "费用待确认"}`;
+    }
+
+    function currentSource() {
+      return state.route === "subscription" ? allEngineCatalog[state.engine] : apiCatalog[state.provider];
+    }
+
+    function defaultModelForSource(source) {
+      return source?.models.find((model) => model.recommended)?.id || source?.models[0]?.id || null;
+    }
+
+    function hasUsableSource() {
+      if (state.route === "api") return state.apiStatus === "success";
+      return state.scenario === "detected"
+        && Boolean(state.engine)
+        && allEngineCatalog[state.engine]?.state === "ready";
+    }
+
+    if (state.stage !== "source" && !hasUsableSource()) {
+      state.stage = "source";
+    }
+    state.completedThrough = state.stage === "conversation"
+      ? 1
+      : Math.max(-1, stageOrder.indexOf(state.stage) - 1);
+
+    function updateUrl() {
+      const next = new URL(window.location.href);
+      next.searchParams.set("view", state.view);
+      if (state.view === "after") {
+        next.searchParams.set("scenario", state.scenario);
+        next.searchParams.set("route", state.route);
+        next.searchParams.set("stage", state.stage);
+        if (state.route === "subscription" && state.engine) next.searchParams.set("engine", state.engine);
+        else next.searchParams.delete("engine");
+        if (state.route === "api") next.searchParams.set("provider", state.provider);
+        else next.searchParams.delete("provider");
+        if (state.model) next.searchParams.set("model", state.model);
+        else next.searchParams.delete("model");
+        if (state.stage === "conversation" && state.modelMenuOpen) next.searchParams.set("modelMenu", "open");
+        else next.searchParams.delete("modelMenu");
+        if (state.stage === "conversation" && state.modelMenuOpen && state.enginePickerOpen) next.searchParams.set("enginePicker", "open");
+        else next.searchParams.delete("enginePicker");
+        if (state.stage === "conversation" && state.effort !== "medium") next.searchParams.set("effort", state.effort);
+        else next.searchParams.delete("effort");
+      }
+      window.history.replaceState({}, "", next);
+    }
+
+    function renderView() {
+      const before = $(".before-view");
+      const after = $(".after-view");
+      const beforeNotes = $("#before-notes");
+      const afterNotes = $("#after-notes");
+      const afterControls = $("#after-controls");
+      const isBefore = state.view === "before";
+
+      before.classList.toggle("hidden", !isBefore);
+      after.classList.toggle("hidden", isBefore);
+      beforeNotes.classList.toggle("hidden", !isBefore);
+      afterNotes.classList.toggle("hidden", isBefore);
+      afterControls.classList.toggle("hidden", isBefore);
+
+      $$("[data-view-button]").forEach((button) => {
+        button.setAttribute("aria-selected", String(button.dataset.viewButton === state.view));
+      });
+      $$("[data-scenario-button]").forEach((button) => {
+        button.setAttribute("aria-pressed", String(button.dataset.scenarioButton === state.scenario));
+      });
+
+      if (!isBefore) renderAfter();
+      updateUrl();
+      refreshIcons();
+    }
+
+    function stepperMarkup() {
+      const steps = [
+        { id: "source", label: "连接方式" },
+        { id: "model", label: "默认模型" }
+      ];
+      return steps.map((step, index) => {
+        const active = state.stage === step.id;
+        const done = index <= state.completedThrough;
+        const className = active ? "step active" : done ? "step done" : "step";
+        const indexMarkup = done ? icon("check") : String(index + 1);
+        return `
+          <button
+            type="button"
+            class="${className}"
+            data-step="${step.id}"
+            aria-current="${active ? "step" : "false"}"
+          >
+            <span class="step-index">${indexMarkup}</span>
+            <span>${step.label}</span>
+          </button>
+        `;
+      }).join("");
+    }
+
+    function sourceChoiceMarkup() {
+      return `
+        <div class="source-choice" role="tablist" aria-label="选择模型连接方式">
+          <button
+            type="button"
+            class="source-option ${state.route === "subscription" ? "selected" : ""}"
+            data-route="subscription"
+            role="tab"
+            aria-selected="${state.route === "subscription"}"
+          >
+            <span class="source-option-icon">${icon("badge-check")}</span>
+            <span class="source-option-copy">
+              <strong>官方账号 / 订阅 <span class="badge success">推荐</span></strong>
+              <p>检测本机已登录的官方 AI 产品，验证可用后不需要复制 API Key。</p>
+            </span>
+          </button>
+          <button
+            type="button"
+            class="source-option ${state.route === "api" ? "selected" : ""}"
+            data-route="api"
+            role="tab"
+            aria-selected="${state.route === "api"}"
+          >
+            <span class="source-option-icon">${icon("key-round")}</span>
+            <span class="source-option-copy">
+              <strong>API Key</strong>
+              <p>按 Provider 或企业中转站配置，费用由 API 账号承担。</p>
+            </span>
+          </button>
+        </div>
+      `;
+    }
+
+    function engineCardMarkup(engine) {
+      const ready = engine.state === "ready";
+      const selected = state.engine === engine.id;
+      return `
+        <button
+          type="button"
+          class="engine-card ${selected ? "selected" : ""}"
+          data-engine="${engine.id}"
+          data-ready="${ready}"
+          aria-pressed="${selected}"
+          aria-label="${ready ? `选择 ${engine.name} 并进入模型选择` : `${engine.name} 需要先完成官方登录`}"
+        >
+          <span class="engine-mark">${icon(engine.icon || "terminal-square")}</span>
+          <span class="engine-copy">
+            <span class="card-title-row">
+              <h3>${engine.name}</h3>
+            </span>
+            <p>${engine.description}</p>
+            <span class="status-row">
+              ${badges(engine.statuses)}
+              <span class="badge neutral">${sourceModelSummary(engine)}</span>
+            </span>
+          </span>
+          <span class="engine-trailing">
+            ${ready ? icon("arrow-right") : `<span class="badge warning">需要登录</span>`}
+          </span>
+        </button>
+      `;
+    }
+
+    function recommendationCardMarkup(manifest) {
+      return `
+        <article class="recommend-card">
+          <div class="recommend-card-header">
+            <strong>${manifest.name}</strong>
+            <span class="badge neutral">${manifest.badge}</span>
+          </div>
+          <p>${manifest.description}</p>
+          <button class="link-button" type="button" data-recommend="${manifest.id}">
+            ${icon("external-link")}前往官网安装
+          </button>
+        </article>
+      `;
+    }
+
+    function subscriptionMarkup() {
+      const engines = Object.values(engineCatalog);
+      const readyCount = engines.filter((engine) => engine.state === "ready").length;
+      if (state.scenario === "empty") {
+        return `
+          <div class="empty-state recommendation-empty">
+            <span class="empty-icon">${icon("package-search")}</span>
+            <div>
+              <h3>本机还没有发现可用的官方客户端</h3>
+              <p>先安装并登录一个官方产品。Neo 会在你回来后检测它的版本、登录态、模型与当前权益。</p>
+            </div>
+          </div>
+          <div class="subsection-title">推荐安装</div>
+          <div class="recommend-grid">
+            ${recommendedEngineManifests.map(recommendationCardMarkup).join("")}
+          </div>
+          <div class="recommend-recovery">
+            <span>已经安装，但 Neo 没识别出来？</span>
+            <button class="link-button" type="button" data-action="choose-path">${icon("folder-search")}指定 CLI 安装位置</button>
+          </div>
+        `;
+      }
+
+      return `
+        <div class="detection-bar">
+          <div class="detection-summary">
+            ${icon("circle-check-big")}
+            <div>
+              <strong>检测完成 · 找到 ${engines.length} 个本机客户端</strong>
+              <span>${readyCount} 个已登录可用，${engines.length - readyCount} 个需要处理 · 刚刚检测</span>
+            </div>
+          </div>
+          <button class="link-button" type="button" data-action="scan">${icon("refresh-cw")}重新检测</button>
+        </div>
+        <div class="engine-list">
+          ${engines.map(engineCardMarkup).join("")}
+        </div>
+        <div class="subsection-title">没有显示你的客户端？</div>
+        <button class="link-button" type="button" data-action="choose-path">${icon("folder-search")}指定 CLI 安装位置</button>
+      `;
+    }
+
+    function apiProviderMarkup(id, provider) {
+      const selected = state.provider === id;
+      return `
+        <button type="button" class="api-provider ${selected ? "selected" : ""}" data-provider="${id}" aria-pressed="${selected}">
+          <span><strong>${provider.name}</strong><span>${provider.hint}</span></span>
+          ${selected ? icon("check") : ""}
+        </button>
+      `;
+    }
+
+    function apiMarkup() {
+      const provider = apiCatalog[state.provider];
+      const endpointEditable = Boolean(provider.endpointEditable);
+      const manualModel = provider.modelDiscovery === "manual";
+      const message = state.apiStatus === "error"
+        ? `<span>请填写 API Key${manualModel ? " 和模型 ID" : ""}。</span>`
+        : state.apiStatus === "success"
+          ? `${icon("circle-check-big")}<span>连接成功，${manualModel ? "模型 ID 已验证" : `已发现 ${provider.models.length} 个模型`}。</span>`
+          : `<span>${manualModel ? "测试兼容性与模型 ID 后再继续。" : "测试成功后再进入模型选择，不自动保存第一个模型。"}</span>`;
+      return `
+        <div class="api-layout">
+          <div class="api-providers">
+            ${Object.entries(apiCatalog).map(([id, item]) => apiProviderMarkup(id, item)).join("")}
+          </div>
+          <section class="api-form-panel">
+            <h3>${provider.name}</h3>
+            <p>${provider.connectionDescription || "官方 Provider 地址由 Neo 管理，避免误填接口。"}</p>
+            <div class="form-group">
+              <label class="field-label" for="api-endpoint">接口地址（Base URL）</label>
+              ${endpointEditable
+                ? `<input class="field" id="api-endpoint" value="${provider.endpoint}" />`
+                : `<div class="api-endpoint">${icon("lock-keyhole")}${provider.endpoint}</div>`}
+            </div>
+            ${manualModel ? `
+              <div class="form-group">
+                <label class="field-label" for="api-model-id">模型 ID</label>
+                <input class="field" id="api-model-id" value="${provider.models[0].id}" placeholder="例如 claude-sonnet-model-id" />
+              </div>
+            ` : ""}
+            <div class="form-group">
+              <label class="field-label" for="after-api-key">API Key</label>
+              <input class="field" id="after-api-key" type="password" placeholder="粘贴 ${provider.name} API Key" autocomplete="off" />
+            </div>
+            <div class="api-message ${state.apiStatus}">${message}</div>
+          </section>
+        </div>
+      `;
+    }
+
+    function sourceStageMarkup() {
+      return `
+        <div class="intro source-intro">
+          ${icon(state.route === "subscription" ? "badge-check" : "key-round")}
+          <strong>${state.route === "subscription" ? "连接本地已安装的 AI 产品" : "连接你自己的 API Key"}</strong>
+        </div>
+        ${sourceChoiceMarkup()}
+        ${state.route === "subscription" ? subscriptionMarkup() : apiMarkup()}
+      `;
+    }
+
+    function modelCardMarkup(model) {
+      const selected = state.model === model.id;
+      return `
+        <button type="button" class="model-card ${selected ? "selected" : ""}" data-model="${model.id}" aria-pressed="${selected}">
+          <span>
+            <span class="model-title-row"><h3>${model.name}</h3></span>
+            <p>${model.description}</p>
+            <span class="model-meta">${badges(entitlementBadges(model))}</span>
+          </span>
+          <span class="radio-mark" aria-hidden="true"></span>
+        </button>
+      `;
+    }
+
+    function modelStageMarkup() {
+      const subscription = state.route === "subscription";
+      const source = subscription ? engineCatalog[state.engine] : apiCatalog[state.provider];
+      const sourceName = source.name;
+      const clientDefault = source.modelSelection === "client_default";
+      const sourceDetail = subscription
+        ? "官方账号 · 已登录 · 运行时探测刚刚刷新"
+        : "API Key · 连接已验证 · 按官方 API 规则计费";
+      const models = source.models;
+      if (!clientDefault && !models.some((model) => model.id === state.model)) {
+        state.model = defaultModelForSource(source);
+      }
+      const selectionMarkup = clientDefault
+        ? `
+          <div class="intro">
+            ${icon("wand-sparkles")}
+            <div>
+              <strong>由 ${sourceName} 自动选择模型</strong>
+              <p>这个来源没有向 Neo 暴露可选择的模型目录。Neo 不会伪造模型列表，实际选择继续由官方客户端完成。</p>
+              <span class="model-meta">${badges(entitlementBadges({ entitlement: source.entitlement }))}</span>
+            </div>
+          </div>
+        `
+        : `<div class="model-grid">${models.map(modelCardMarkup).join("")}</div>`;
+
+      return `
+        <div class="model-source">
+          <div class="model-source-main">
+            <span class="engine-mark">${icon(subscription ? source.icon || "terminal-square" : "key-round")}</span>
+            <div>
+              <h3>${sourceName}</h3>
+              <p>${sourceDetail}</p>
+            </div>
+          </div>
+          <button class="link-button" type="button" data-action="change-source">${icon("arrow-left-right")}更换连接方式</button>
+        </div>
+        <div class="section-header">
+          <div>
+            <h2>${clientDefault ? "确认默认模型策略" : "选择 Neo 默认使用的模型"}</h2>
+            <p>${clientDefault
+              ? "官方客户端负责选模时，Neo 只确认这条执行来源。"
+              : `这里只显示 ${sourceName} 当前返回的模型，不与其他来源混排。`}</p>
+          </div>
+        </div>
+        ${selectionMarkup}
+        <div class="pricing-note">
+          ${icon("info")}
+          <span>模型、可用性和权益均来自 ${sourceName} 刚刚返回的探测结果；字段缺失、过期或刷新失败时显示“费用待确认”，不会静默转为付费调用。</span>
+        </div>
+      `;
+    }
+
+    function selectionMode(source) {
+      return source?.modelSelection || "runtime_catalog";
+    }
+
+    function selectedModel(source) {
+      return source?.models.find((item) => item.id === state.model) || source?.models[0] || null;
+    }
+
+    function runtimeModelOptionMarkup(model) {
+      const selected = model.id === state.model;
+      const price = entitlementIsCurrent(model.entitlement)
+        ? model.entitlement.value || model.entitlement.label
+        : "—";
+      return `
+        <button
+          class="runtime-model-option ${selected ? "selected" : ""}"
+          type="button"
+          data-conversation-model="${model.id}"
+          data-model-picker-option
+          data-model-search="${escapeHtml(`${model.name} ${model.id} ${model.description}`.toLowerCase())}"
+          aria-pressed="${selected}"
+        >
+          <span>
+            <strong>${model.name}</strong>
+            <small>${model.id}</small>
+          </span>
+          <span>${price}</span>
+        </button>
+      `;
+    }
+
+    function runtimeModelsMarkup(source) {
+      if (selectionMode(source) === "client_default") {
+        return `
+          <div class="runtime-client-default">
+            <strong>由 ${source.name} 自动选择</strong>
+            <span>官方客户端没有向 Neo 暴露模型目录，本会话继续沿用客户端策略。</span>
+          </div>
+        `;
+      }
+      const catalogModels = source.models.filter((model) => model.id !== "auto");
+      return `
+        <input
+          class="runtime-model-search"
+          type="search"
+          data-model-search-input
+          placeholder="搜索主任务模型…"
+          aria-label="搜索主任务模型"
+        />
+        <div class="runtime-model-scroll">
+          <button
+            class="runtime-model-auto ${state.model === "auto" ? "selected" : ""}"
+            type="button"
+            data-conversation-model="auto"
+          >
+            ${icon("sparkles")}
+            <strong>自动</strong>
+            <span>按任务、成本和能力切换</span>
+          </button>
+          ${catalogModels.map(runtimeModelOptionMarkup).join("")}
+        </div>
+        <div class="runtime-effort">
+          <div class="runtime-effort-label">${icon("brain")}<span>推理强度</span></div>
+          <div class="runtime-effort-options">
+            ${[
+              ["off", "关"],
+              ["low", "低"],
+              ["medium", "中"],
+              ["high", "高"]
+            ].map(([id, label]) => `
+              <button type="button" data-effort="${id}" class="${state.effort === id ? "selected" : ""}" aria-pressed="${state.effort === id}">
+                ${label}
+              </button>
+            `).join("")}
+          </div>
+        </div>
+      `;
+    }
+
+    function conversationEngineOptions() {
+      const options = Object.values(allEngineCatalog)
+        .filter((engine) => engine.state === "ready")
+        .map((source) => ({ type: "engine", id: source.id, source }));
+      if (state.route === "api" && state.apiStatus === "success") {
+        options.push({ type: "api", id: state.provider, source: apiCatalog[state.provider] });
+      }
+      return options;
+    }
+
+    function runtimeEngineIconMarkup(source, fallback = "terminal-square") {
+      if (source.iconAsset) {
+        return `<span class="runtime-engine-brand"><img src="${source.iconAsset}" alt="" /></span>`;
+      }
+      return `<span class="runtime-engine-brand">${icon(source.icon || fallback)}</span>`;
+    }
+
+    function runtimeEngineRowMarkup(option) {
+      const ref = `${option.type}:${option.id}`;
+      const currentRef = `${state.route === "api" ? "api" : "engine"}:${state.route === "api" ? state.provider : state.engine}`;
+      const selected = ref === currentRef;
+      const meta = option.source.switcherMeta
+        || (selectionMode(option.source) === "client_default" ? "已连接 · 客户端自动选模" : "已连接 · 可读取模型");
+      return `
+        <button
+          class="runtime-engine-row ${selected ? "selected" : ""}"
+          type="button"
+          data-conversation-source="${ref}"
+          data-engine-picker-option
+          data-engine-search="${escapeHtml(`${option.source.name} ${meta}`.toLowerCase())}"
+          aria-pressed="${selected}"
+        >
+          ${runtimeEngineIconMarkup(option.source, option.type === "api" ? "key-round" : "terminal-square")}
+          <span><strong>${option.source.name}</strong><span>${meta}</span></span>
+          ${selected ? icon("check") : ""}
+        </button>
+      `;
+    }
+
+    function enginePickerMarkup() {
+      return `
+        <div class="runtime-engine-picker-head">
+          <button type="button" data-action="engine-picker" aria-label="返回模型列表">${icon("arrow-left")}</button>
+          <strong>切换执行引擎</strong>
+        </div>
+        <input
+          class="runtime-engine-search"
+          type="search"
+          data-engine-search-input
+          placeholder="搜索执行引擎…"
+          aria-label="搜索执行引擎"
+        />
+        <div class="runtime-engine-picker-list">
+          ${conversationEngineOptions().map(runtimeEngineRowMarkup).join("")}
+        </div>
+        <div class="popover-note">${icon("info")}<span>只显示已经通过安装、登录和协议验证的执行引擎。</span></div>
+      `;
+    }
+
+    function modelPopoverMarkup() {
+      const source = currentSource();
+      if (state.enginePickerOpen) {
+        return `
+          <section class="runtime-model-menu" aria-label="执行引擎选择器">
+            ${enginePickerMarkup()}
+          </section>
+        `;
+      }
+      return `
+        <section class="runtime-model-menu" aria-label="会话模型选择器">
+          <div class="runtime-model-title">
+            ${icon("code-2")}
+            <span>主任务模型</span>
+            ${source.id === "neo"
+              ? `<button class="runtime-settings-link" type="button" data-action="model-settings">${icon("settings")}去设置</button>`
+              : ""}
+          </div>
+          <button class="runtime-engine-current" type="button" data-action="engine-picker">
+            ${runtimeEngineIconMarkup(source, state.route === "api" ? "key-round" : "terminal-square")}
+            <span>
+              <strong>${source.name}</strong>
+              <span>执行引擎 · ${selectionMode(source) === "client_default" ? "客户端自动选模" : "可读取模型目录"}</span>
+            </span>
+            ${icon("chevron-right")}
+          </button>
+          ${runtimeModelsMarkup(source)}
+          <div class="popover-note">${icon("info")}<span>模型与费用来自 ${source.name} 最新探测结果。</span></div>
+        </section>
+      `;
+    }
+
+    function conversationStageMarkup() {
+      const source = currentSource();
+      const clientDefault = selectionMode(source) === "client_default";
+      const model = selectedModel(source);
+      const modelName = clientDefault ? "自动选模" : model?.name || "模型待确认";
+      return `
+        <section class="neo-chat-shell">
+          <div class="actual-chat-canvas">
+            <div class="actual-welcome">
+              <img src="../../public/code-agent/agent-neo-mark.svg" alt="" />
+              <h1>想完成什么？</h1>
+              <p>选一个示例，或者直接输入你想完成的事。</p>
+              <div class="actual-suggestions">
+                <button class="actual-suggestion" type="button">
+                  ${icon("gamepad-2")}
+                  <span><strong>做一个可玩的小游戏</strong><span>生成可以直接运行和继续修改的成品。</span></span>
+                </button>
+                <button class="actual-suggestion" type="button">
+                  ${icon("bar-chart-3")}
+                  <span><strong>分析一份数据</strong><span>上传文件，生成清晰的结论和可视化。</span></span>
+                </button>
+                <button class="actual-suggestion" type="button">
+                  ${icon("search")}
+                  <span><strong>整理一份调研</strong><span>检索资料，形成带来源的判断。</span></span>
+                </button>
+                <button class="actual-suggestion" type="button">
+                  ${icon("hard-drive")}
+                  <span><strong>检查本机空间</strong><span>盘点占用并给出安全清理建议。</span></span>
+                </button>
+              </div>
+            </div>
+          </div>
+          <div class="actual-composer-wrap">
+            ${state.modelMenuOpen ? modelPopoverMarkup() : ""}
+            <div class="actual-composer">
+              <textarea aria-label="输入消息" placeholder="今天帮你做些什么？ @ 引用对话文件，/ 调用技能与指令"></textarea>
+              <div class="actual-composer-toolbar">
+                <button class="composer-tool icon-only" type="button" aria-label="更多输入选项">${icon("plus")}</button>
+                <button class="composer-tool" type="button">${icon("user-round")}Neo</button>
+                <button class="composer-tool" type="button">${icon("shield-check")}默认权限</button>
+                <span class="composer-spacer"></span>
+                <button class="composer-tool icon-only" type="button" aria-label="上下文用量">${icon("circle-gauge")}</button>
+                <button
+                  class="model-trigger"
+                  type="button"
+                  data-action="model-menu"
+                  aria-expanded="${state.modelMenuOpen}"
+                >
+                  ${source.name} · ${modelName}
+                </button>
+                <button class="composer-tool icon-only" type="button" aria-label="语音输入">${icon("mic")}</button>
+                <button class="send-button" type="button" data-action="send-conversation" aria-label="发送消息">${icon("arrow-up")}</button>
+              </div>
+            </div>
+          </div>
+        </section>
+      `;
+    }
+
+    function footerMarkup() {
+      if (state.stage === "model") {
+        return `
+          <div class="footer-note">${icon("shield-check")}<span>${state.route === "subscription" ? "官方登录凭证不会复制到 Neo。" : "API Key 只保存在这台电脑。"}</span></div>
+          <div class="footer-actions">
+            <button class="btn btn-ghost" type="button" data-action="back">${icon("arrow-left")}上一步</button>
+            <button class="btn btn-primary" type="button" data-action="finish">继续开始 ${icon("arrow-right")}</button>
+          </div>
+        `;
+      }
+
+      if (state.route === "api") {
+        const provider = apiCatalog[state.provider];
+        return `
+          <div class="footer-note">${icon("shield-check")}<span>API Key 只保存在这台电脑。</span></div>
+          <div class="footer-actions">
+            <button class="btn btn-ghost" type="button" data-action="skip">跳过，稍后配置</button>
+            <button class="btn btn-primary" type="button" data-action="test-api">${icon("plug-zap")}${provider.modelDiscovery === "manual" ? "测试连接与模型 ID" : "测试连接并读取模型"}</button>
+          </div>
+        `;
+      }
+
+      if (state.scenario === "empty") {
+        return `
+          <div class="footer-note">${icon("shield-check")}<span>安装和登录都在官方产品内完成，Neo 不复制账号凭证。</span></div>
+          <div class="footer-actions">
+            <button class="btn btn-ghost" type="button" data-action="switch-api">改用 API Key</button>
+            <button class="btn btn-primary" type="button" data-action="scan">${icon("refresh-cw")}安装完成，重新检测</button>
+          </div>
+        `;
+      }
+
+      return `
+        <div class="footer-note">${icon("shield-check")}<span>每位用户使用自己的官方账号；订阅不会变成团队共享网关。</span></div>
+        <div class="footer-actions">
+          <button class="btn btn-ghost" type="button" data-action="skip">跳过，稍后配置</button>
+        </div>
+      `;
+    }
+
+    function renderAfter() {
+      const stageChanged = renderedStage !== state.stage;
+      const conversationMode = state.stage === "conversation";
+      $(".after-modal").classList.toggle("conversation-mode", conversationMode);
+      if (conversationMode) {
+        $("#after-stepper").innerHTML = "";
+        $("#after-content").innerHTML = conversationStageMarkup();
+        $("#after-footer").innerHTML = "";
+        if (stageChanged) {
+          $(".after-modal .modal-body").scrollTop = 0;
+          renderedStage = state.stage;
+        }
+        bindAfterEvents();
+        refreshIcons();
+        return;
+      }
+
+      $("#after-stepper").innerHTML = stepperMarkup();
+      const stageMarkup = {
+        source: sourceStageMarkup,
+        model: modelStageMarkup
+      };
+      $("#after-content").innerHTML = stageMarkup[state.stage]();
+      $("#after-footer").innerHTML = footerMarkup();
+
+      const stageCopy = {
+        source: {
+          title: "连接 Neo 的模型",
+          subtitle: "优先检测本机已登录的官方 AI 产品，确认可用后无需另配 API Token。"
+        },
+        model: {
+          title: "选择默认模型",
+          subtitle: "费用、权益与模型来源放在同一个判断单元里。"
+        }
+      };
+      $("#after-modal-title").textContent = stageCopy[state.stage].title;
+      $("#after-modal-subtitle").textContent = stageCopy[state.stage].subtitle;
+      if (stageChanged) {
+        $(".after-modal .modal-body").scrollTop = 0;
+        renderedStage = state.stage;
+      }
+
+      bindAfterEvents();
+      refreshIcons();
+    }
+
+    function showToast(message) {
+      $("#toast-message").textContent = message;
+      $("#toast").classList.add("visible");
+      window.clearTimeout(showToast.timer);
+      showToast.timer = window.setTimeout(() => $("#toast").classList.remove("visible"), 2200);
+    }
+
+    function bindAfterEvents() {
+      $$("[data-step]").forEach((button) => {
+        button.addEventListener("click", () => {
+          const targetStage = button.dataset.step;
+          if (targetStage !== "source" && !hasUsableSource()) {
+            showToast(state.route === "api"
+              ? "请先测试 API 连接并读取模型。"
+              : "请先安装并检测到一个可用的官方客户端。");
+            return;
+          }
+          state.stage = targetStage;
+          if (targetStage === "model" && !state.model) {
+            state.model = defaultModelForSource(currentSource());
+          }
+          renderAfter();
+          updateUrl();
+        });
+      });
+
+      $$("[data-route]").forEach((button) => {
+        button.addEventListener("click", () => {
+          state.route = button.dataset.route;
+          state.stage = "source";
+          state.engine = null;
+          state.model = null;
+          state.completedThrough = -1;
+          state.apiStatus = "idle";
+          renderAfter();
+          updateUrl();
+        });
+      });
+
+      $$("[data-engine]").forEach((button) => {
+        button.addEventListener("click", () => {
+          const engine = engineCatalog[button.dataset.engine];
+          if (engine.state !== "ready") {
+            showToast(`${engine.name} 需要先完成官方登录与兼容性验证。`);
+            return;
+          }
+          state.engine = engine.id;
+          state.model = defaultModelForSource(engine);
+          state.completedThrough = Math.max(state.completedThrough, 0);
+          state.stage = "model";
+          renderAfter();
+          updateUrl();
+        });
+      });
+
+      $$("[data-provider]").forEach((button) => {
+        button.addEventListener("click", () => {
+          state.provider = button.dataset.provider;
+          state.model = null;
+          state.apiStatus = "idle";
+          renderAfter();
+          updateUrl();
+        });
+      });
+
+      $$("[data-model]").forEach((button) => {
+        button.addEventListener("click", () => {
+          state.model = button.dataset.model;
+          renderAfter();
+          updateUrl();
+        });
+      });
+
+      $$("[data-conversation-source]").forEach((button) => {
+        button.addEventListener("click", () => {
+          const [type, id] = button.dataset.conversationSource.split(":");
+          if (type === "engine") {
+            state.route = "subscription";
+            state.engine = id;
+            state.model = defaultModelForSource(allEngineCatalog[id]);
+          } else {
+            state.route = "api";
+            state.provider = id;
+            state.model = defaultModelForSource(apiCatalog[id]);
+          }
+          state.modelMenuOpen = true;
+          state.enginePickerOpen = false;
+          renderAfter();
+          updateUrl();
+        });
+      });
+
+      const engineSearchInput = $("[data-engine-search-input]");
+      if (engineSearchInput) {
+        engineSearchInput.addEventListener("input", () => {
+          const query = engineSearchInput.value.trim().toLowerCase();
+          $$("[data-engine-picker-option]").forEach((row) => {
+            row.classList.toggle("hidden", !row.dataset.engineSearch.includes(query));
+          });
+        });
+      }
+
+      const modelSearchInput = $("[data-model-search-input]");
+      if (modelSearchInput) {
+        modelSearchInput.addEventListener("input", () => {
+          const query = modelSearchInput.value.trim().toLowerCase();
+          $$("[data-model-picker-option]").forEach((row) => {
+            row.classList.toggle("hidden", !row.dataset.modelSearch.includes(query));
+          });
+        });
+      }
+
+      $$("[data-effort]").forEach((button) => {
+        button.addEventListener("click", () => {
+          state.effort = button.dataset.effort;
+          renderAfter();
+          updateUrl();
+        });
+      });
+
+      $$("[data-conversation-model]").forEach((button) => {
+        button.addEventListener("click", () => {
+          state.model = button.dataset.conversationModel;
+          state.modelMenuOpen = false;
+          state.enginePickerOpen = false;
+          renderAfter();
+          updateUrl();
+        });
+      });
+
+      $$("[data-recommend]").forEach((button) => {
+        button.addEventListener("click", () => {
+          const manifest = recommendedEngineManifests.find((item) => item.id === button.dataset.recommend);
+          showToast(`正式产品会从 ${manifest.name} 的 Manifest 打开经过审核的官方安装地址。`);
+        });
+      });
+
+      $$("[data-action]").forEach((button) => {
+        button.addEventListener("click", () => handleAction(button.dataset.action));
+      });
+    }
+
+    function handleAction(action) {
+      if (action === "scan") {
+        const readyCount = Object.values(engineCatalog).filter((engine) => engine.state === "ready").length;
+        showToast(state.scenario === "empty" ? "仍未检测到支持的客户端。" : `检测已刷新：${readyCount} 个连接可以使用。`);
+        return;
+      }
+      if (action === "choose-path") {
+        showToast("正式产品中这里会打开本机命令路径选择器。");
+        return;
+      }
+      if (action === "test-api") {
+        const input = $("#after-api-key");
+        const provider = apiCatalog[state.provider];
+        const modelInput = $("#api-model-id");
+        if (!input || !input.value.trim() || (provider.modelDiscovery === "manual" && !modelInput?.value.trim())) {
+          state.apiStatus = "error";
+          renderAfter();
+          return;
+        }
+        if (provider.modelDiscovery === "manual") {
+          provider.models[0].id = modelInput.value.trim();
+          provider.models[0].name = modelInput.value.trim();
+        }
+        state.apiStatus = "success";
+        state.completedThrough = Math.max(state.completedThrough, 0);
+        state.stage = "model";
+        state.model = defaultModelForSource(provider);
+      } else if (action === "change-source") {
+        state.stage = "source";
+        state.engine = null;
+        state.model = null;
+        state.completedThrough = -1;
+      } else if (action === "back") {
+        const currentIndex = stageOrder.indexOf(state.stage);
+        state.stage = stageOrder[Math.max(0, currentIndex - 1)];
+      } else if (action === "finish") {
+        state.completedThrough = Math.max(state.completedThrough, 1);
+        state.stage = "conversation";
+        state.modelMenuOpen = false;
+        state.enginePickerOpen = false;
+      } else if (action === "switch-api") {
+        state.route = "api";
+        state.stage = "source";
+        state.engine = null;
+        state.model = null;
+        state.apiStatus = "idle";
+        state.completedThrough = -1;
+      } else if (action === "skip") {
+        showToast("会保留当前状态，下次启动继续提示。");
+        return;
+      } else if (action === "model-menu") {
+        state.modelMenuOpen = !state.modelMenuOpen;
+        if (!state.modelMenuOpen) state.enginePickerOpen = false;
+      } else if (action === "engine-picker") {
+        state.enginePickerOpen = !state.enginePickerOpen;
+      } else if (action === "model-settings") {
+        showToast("正式产品会打开 Neo 的 Provider 与模型设置。");
+        return;
+      } else if (action === "send-conversation") {
+        showToast("消息将继续通过当前会话的执行来源发送。");
+        return;
+      } else if (action === "back-to-onboarding") {
+        state.stage = "model";
+        state.modelMenuOpen = false;
+        state.enginePickerOpen = false;
+      }
+      renderAfter();
+      updateUrl();
+    }
+
+    function refreshIcons() {
+      if (window.lucide) window.lucide.createIcons({ attrs: { "stroke-width": 1.8 } });
+    }
+
+    $$("[data-view-button]").forEach((button) => {
+      button.addEventListener("click", () => {
+        state.view = button.dataset.viewButton;
+        renderView();
+      });
+    });
+
+    $$("[data-scenario-button]").forEach((button) => {
+      button.addEventListener("click", () => {
+        state.scenario = button.dataset.scenarioButton;
+        state.stage = "source";
+        state.route = "subscription";
+        state.engine = null;
+        state.model = null;
+        state.modelMenuOpen = false;
+        state.enginePickerOpen = false;
+        state.completedThrough = -1;
+        renderView();
+      });
+    });
+
+    document.addEventListener("click", (event) => {
+      if (!state.modelMenuOpen) return;
+      const target = event.target instanceof Element ? event.target : null;
+      if (target?.closest(".runtime-model-menu") || target?.closest(".model-trigger")) return;
+      state.modelMenuOpen = false;
+      state.enginePickerOpen = false;
+      renderAfter();
+      updateUrl();
+    });
+
+    renderView();
+  </script>
+</body>
+</html>

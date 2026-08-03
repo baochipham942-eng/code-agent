@@ -37,6 +37,7 @@ async function invokePrompt<T>(action: string, payload?: unknown): Promise<T> {
 
 export const PromptManagerModal: React.FC = () => {
   const showPromptManager = useAppStore((s) => s.showPromptManager);
+  const showSettings = useAppStore((s) => s.showSettings);
   const setShowPromptManager = useAppStore((s) => s.setShowPromptManager);
 
   const [list, setList] = useState<PromptListItem[]>([]);
@@ -133,15 +134,15 @@ export const PromptManagerModal: React.FC = () => {
   return (
     <FullScreenPage
       role="dialog"
-      aria-modal="true"
       aria-label="提示词"
       testId="prompt-manager-panel"
+      variant="inline"
     >
       <FullScreenPageHeader
-        icon={<ScrollText className="h-4 w-4 text-violet-300" />}
+        icon={<ScrollText className="h-4 w-4 text-badge-accent" />}
         title="提示词"
         description="默认提示词、自定义覆盖和远端片段"
-        onClose={() => setShowPromptManager(false)}
+        onClose={showSettings ? () => setShowPromptManager(false) : undefined}
       />
 
         <div className="flex flex-1 min-h-0">
@@ -170,7 +171,7 @@ export const PromptManagerModal: React.FC = () => {
                       <span className="text-sm flex-1 truncate" title={item.name}>{item.name}</span>
                       {item.overridden && (
                         <span
-                          className="w-1.5 h-1.5 rounded-full bg-amber-400 flex-shrink-0"
+                          className="w-1.5 h-1.5 rounded-full bg-mark-warning flex-shrink-0"
                           title="已自定义"
                         />
                       )}
@@ -201,7 +202,7 @@ export const PromptManagerModal: React.FC = () => {
                   </div>
                   <div className="flex items-center gap-2 flex-shrink-0">
                     {detail.overridden && (
-                      <span className="text-xs px-2 py-1 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30">
+                      <span className="text-xs px-2 py-1 rounded-full bg-amber-500/15 text-badge-warning border border-badge-warning/30">
                         已自定义
                       </span>
                     )}
@@ -233,7 +234,7 @@ export const PromptManagerModal: React.FC = () => {
                   <div className="flex flex-col min-h-0">
                     <div className="flex items-center justify-between mb-2">
                       <span className="text-xs font-medium text-zinc-400">
-                        当前生效 {dirty && <span className="text-amber-400 ml-1">·  未保存</span>}
+                        当前生效 {dirty && <span className="text-badge-warning ml-1">·  未保存</span>}
                       </span>
                       <button
                         type="button"

@@ -15,6 +15,7 @@ import type {
   NativePermissionSnapshot,
   NativePermissionStatus,
 } from '@shared/contract';
+import { invalidateComputerUseSnapshotForSystemSettings } from '../stores/computerUseStore';
 
 export interface NativeDesktopCapabilities {
   platform: string;
@@ -185,6 +186,13 @@ export interface NativeDesktopCollectorRequest {
   maxRecentEvents?: number;
 }
 
+export interface NativeVoiceAecStartResult {
+  pid: number;
+  upstreamFifoPath: string;
+  downstreamFifoPath: string;
+  outputEvent: string;
+}
+
 type SettingsPaneKind = Extract<NativePermissionKind, 'screenCapture' | 'accessibility' | 'microphone'>;
 
 async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
@@ -232,6 +240,22 @@ export interface NativeDesktopActionMap {
     payload: undefined;
     result: boolean;
   };
+  startVoiceAec: {
+    payload: { inputDeviceLabel?: string } | undefined;
+    result: NativeVoiceAecStartResult;
+  };
+  writeVoiceAecPlayback: {
+    payload: { data: string };
+    result: boolean;
+  };
+  controlVoiceAec: {
+    payload: { command: 'clear' | 'mute' | 'unmute' };
+    result: boolean;
+  };
+  stopVoiceAec: {
+    payload: undefined;
+    result: boolean;
+  };
   openSystemSettings: {
     payload: { kind: SettingsPaneKind };
     result: boolean;
@@ -271,6 +295,19 @@ const NATIVE_DESKTOP_COMMANDS: {
     args: (payload) => ({ limit: payload?.limit ?? 8 }),
   },
   stopAudioRecorder: { command: 'desktop_stop_audio_rec' },
+  startVoiceAec: {
+    command: 'desktop_start_voice_aec',
+    args: (payload) => ({ inputDeviceLabel: payload?.inputDeviceLabel }),
+  },
+  writeVoiceAecPlayback: {
+    command: 'desktop_write_voice_aec_playback',
+    args: (payload) => ({ data: payload.data }),
+  },
+  controlVoiceAec: {
+    command: 'desktop_control_voice_aec',
+    args: (payload) => ({ command: payload.command }),
+  },
+  stopVoiceAec: { command: 'desktop_stop_voice_aec' },
   openSystemSettings: {
     command: 'desktop_open_system_settings',
     args: (payload) => ({ request: { kind: payload.kind } }),
@@ -337,6 +374,22 @@ export async function stopNativeDesktopCollector(): Promise<NativeDesktopCollect
 
 export async function listRecentNativeDesktopEvents(limit = 8): Promise<DesktopActivityEvent[]> {
   return invokeNativeDesktopAction('listRecentEvents', { limit });
+}
+
+export async function startNativeVoiceAec(inputDeviceLabel?: string): Promise<NativeVoiceAecStartResult> {
+  return invokeNativeDesktopAction('startVoiceAec', { inputDeviceLabel });
+}
+
+export async function writeNativeVoiceAecPlayback(data: string): Promise<boolean> {
+  return invokeNativeDesktopAction('writeVoiceAecPlayback', { data });
+}
+
+export async function controlNativeVoiceAec(command: 'clear' | 'mute' | 'unmute'): Promise<boolean> {
+  return invokeNativeDesktopAction('controlVoiceAec', { command });
+}
+
+export async function stopNativeVoiceAec(): Promise<boolean> {
+  return invokeNativeDesktopAction('stopVoiceAec');
 }
 
 export interface AudioCaptureStatus {
@@ -485,5 +538,6 @@ export async function readComputerSurfaceState(
 }
 
 export async function openNativeDesktopSystemSettings(kind: SettingsPaneKind): Promise<boolean> {
+  invalidateComputerUseSnapshotForSystemSettings();
   return invokeNativeDesktopAction('openSystemSettings', { kind });
 }

@@ -12,6 +12,7 @@ import { describe, expect, it } from 'vitest';
 import { projectTurns } from '../../src/renderer/hooks/useTurnProjection';
 import type { Message } from '../../src/shared/contract/message';
 import { QWEN_OMNI_REALTIME_MODEL } from '../../src/shared/constants/voice';
+import { applyVoicePartialsToProjection, resolvePartialRelease, VOICE_PARTIAL_TURN_ID } from '../../src/renderer/utils/voicePartialOverlay';
 
 function voiceTranscript(id: string, role: 'user' | 'assistant', content: string, timestamp: number): Message {
   // 与 voiceSessionService.persistTranscript 落库形状逐字段对齐
@@ -105,5 +106,131 @@ describe('语音消息投影（真实 projectTurns，无 mock）', () => {
     const second = projectTurns(messages, 'session-1', false);
     expect(second.turns.flatMap((t) => t.nodes).filter((n) => n.subtype === 'voice_call_summary')).toHaveLength(1);
     expect(JSON.stringify(second.turns)).toBe(JSON.stringify(first.turns));
+  });
+});
+
+// ============================================================================
+// 批 H：partial 字幕改成流尾的临时气泡（原地流式改写），不再是输入框上方独立一行。
+// 钉三件事：只在通话中的那条会话叠加、节点 id 恒定（换 id 会重挂载打塌高度，
+// 批 F 的 F3 根因）、不抢正在跑的 run 的吸底驱动。
+// ============================================================================
+describe('通话 partial 的投影叠加（批 H）', () => {
+  const base = () => projectTurns([voiceTranscript('voice-user-1', 'user', '你好', 1000)], 'session-1', false);
+
+  it('没在通话时不叠加任何东西', () => {
+    const projection = base();
+    const next = applyVoicePartialsToProjection(projection, {
+      live: false, user: '正在说的话', assistant: '', startedAt: 1000,
+    });
+    expect(next).toBe(projection);
+  });
+
+  it('通话中把 partial 投成流尾的临时气泡，且带与真消息同款的 voice 来源标记', () => {
+    const next = applyVoicePartialsToProjection(base(), {
+      live: true, user: '把大纲改成三段', assistant: '好的，我来', startedAt: 1000,
+    });
+    const tail = next.turns.at(-1)!;
+    expect(tail.turnId).toBe(VOICE_PARTIAL_TURN_ID);
+    expect(tail.nodes.map((n) => [n.type, n.content])).toEqual([
+      ['user', '把大纲改成三段'],
+      ['assistant_text', '好的，我来'],
+    ]);
+    // 交接给真消息时徽标不该闪现/消失
+    expect(tail.nodes.every((n) => n.metadata?.source === 'voice')).toBe(true);
+  });
+
+  it('文本增长时节点 id 恒定（换 id = 重挂载 = 列表高度塌陷）', () => {
+    const first = applyVoicePartialsToProjection(base(), { live: true, user: '把大', assistant: '', startedAt: 1000 });
+    const second = applyVoicePartialsToProjection(base(), { live: true, user: '把大纲改成三段', assistant: '', startedAt: 1000 });
+    expect(second.turns.at(-1)!.nodes[0].id).toBe(first.turns.at(-1)!.nodes[0].id);
+    expect(second.turns.at(-1)!.turnId).toBe(first.turns.at(-1)!.turnId);
+    expect(second.turns.at(-1)!.startTime).toBe(first.turns.at(-1)!.startTime);
+  });
+
+  it('空 partial 不产生空气泡', () => {
+    const projection = base();
+    expect(applyVoicePartialsToProjection(projection, { live: true, user: '   ', assistant: '', startedAt: 1000 }))
+      .toBe(projection);
+  });
+
+  it('已有轮在流式时不抢吸底驱动，没有才接管', () => {
+    const streaming = { ...base(), activeTurnIndex: 0 };
+    expect(applyVoicePartialsToProjection(streaming, { live: true, user: '喂', assistant: '', startedAt: 1000 }).activeTurnIndex)
+      .toBe(0);
+
+    const idle = { ...base(), activeTurnIndex: -1 };
+    const next = applyVoicePartialsToProjection(idle, { live: true, user: '喂', assistant: '', startedAt: 1000 });
+    expect(next.activeTurnIndex).toBe(next.turns.length - 1);
+  });
+});
+
+// 交接缝：final 到了不能立刻清 partial（落库异步 + 还要等 500ms 拉消息），
+// 否则临时气泡先消失、真气泡后出现＝一次肉眼可见的闪断。
+describe('partial 与真消息的交接（批 H）', () => {
+  it('顶着的那句在真消息上屏后才撤', () => {
+    expect(resolvePartialRelease({ user: '把大纲改成三段' }, { user: '把大纲改成三段', assistant: '' }, { user: true, assistant: false }))
+      .toEqual({ partialUser: '' });
+  });
+
+  it('空档里又开口了就不撤（别把正在说的下一句抹掉）', () => {
+    expect(resolvePartialRelease({ user: '把大纲改成三段' }, { user: '再帮我', assistant: '' }, { user: true, assistant: false }))
+      .toEqual({});
+  });
+
+  it('只撤已 final 的那一侧，另一侧照常在说', () => {
+    expect(resolvePartialRelease({ assistant: '好的' }, { user: '你还在吗', assistant: '好的' }, { user: false, assistant: true }))
+      .toEqual({ partialAssistant: '' });
+
+  });
+
+  it('真消息还没上屏就不撤——撤了就是一段谁都没有这句话的空帧（R1 闪断）', () => {
+    expect(resolvePartialRelease({ assistant: '好的' }, { user: '', assistant: '好的' }, { user: false, assistant: false }))
+      .toEqual({});
+  });
+
+  it('合并行落地时只剥掉已定稿前缀，保留尚未落库的当前段', () => {
+    expect(resolvePartialRelease(
+      { user: 'aaaa' },
+      { user: 'aaaa bbbb', assistant: '' },
+      { user: true, assistant: false },
+    )).toEqual({ partialUser: 'bbbb' });
+  });
+
+  it('已定稿前缀不是当前气泡的完整开头时不误剥', () => {
+    expect(resolvePartialRelease(
+      { user: 'aaaa' },
+      { user: 'xaaaa bbbb', assistant: '' },
+      { user: true, assistant: false },
+    )).toEqual({});
+  });
+});
+
+// 语音派出的那条指令不是用户说的话——它是通话 brain 改写后发给执行引擎的。
+// 存的是 role:'user'（runtime 需要用户轮），但顶着用户身份显示在右边 = 把话安在用户嘴里。
+// 判据是投影出来的节点类型，不是「metadata 存下来了」。
+describe('语音派出的指令不冒充用户消息（批 H）', () => {
+  const dispatch = (id: string, timestamp: number): Message => ({
+    id,
+    role: 'user',
+    content: '用户要求在工作目录下创建一个名为 test3.txt 的文件。请执行此操作。',
+    timestamp,
+    metadata: { voiceDispatch: { title: '建 test3.txt' } },
+  });
+
+  it('投成左侧节点而不是用户气泡', () => {
+    const projection = projectTurns([dispatch('voice-dispatch-1', 1000)], 'session-1', false);
+    const node = projection.turns.flatMap((t) => t.nodes).find((n) => n.id === 'voice-dispatch-1');
+    expect(node?.type).toBe('assistant_text');
+    expect(node?.metadata?.voiceDispatch?.title).toBe('建 test3.txt');
+  });
+
+  it('用户真说的那句仍然是用户气泡（别把语音消息一锅端）', () => {
+    const projection = projectTurns([
+      voiceTranscript('voice-user-1', 'user', '在工作目录建个文件，叫 test 三点 txt', 900),
+      dispatch('voice-dispatch-1', 1000),
+    ], 'session-1', false);
+    const nodes = projection.turns.flatMap((t) => t.nodes);
+    expect(nodes.find((n) => n.id === 'voice-user-1')?.type).toBe('user');
+    expect(nodes.find((n) => n.id === 'voice-dispatch-1')?.type).toBe('assistant_text');
   });
 });

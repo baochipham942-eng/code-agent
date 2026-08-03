@@ -58,14 +58,14 @@ function stripAnsiCodes(str: string): string {
 }
 
 // JSON 语法高亮 - 仅用于结构化 JSON（参数 default 分支 / 对象型 result.output）。
-// 复用 MessageContent 同款 Prism + oneDark。纯文本/日志/带行号输出不走这里，
+// 复用 MessageContent 同款 Prism（palette 随 data-theme，见 prismTheme）。纯文本/日志/带行号输出不走这里，
 // 避免把 Read 的 "  1→code" 行号前缀或 Bash 日志当代码高亮弄乱。
 const JSON_HIGHLIGHT_STYLE: React.CSSProperties = {
   margin: 0,
   padding: '0.75rem',
   fontSize: '0.75rem',
   lineHeight: 1.5,
-  background: 'rgba(17, 24, 39, 0.5)',
+  background: 'var(--code-bg)',
   borderRadius: '0.5rem',
 };
 
@@ -200,7 +200,7 @@ export function ToolDetails({ toolCall, compact, mediaContext }: Props) {
             <div className="flex-1 h-px bg-gray-700/50" />
             <button
               onClick={() => setShowDiff(false)}
-              className="text-gray-500 hover:text-gray-300 px-2 transition-colors"
+              className="text-gray-500 hover:text-zinc-300 px-2 transition-colors"
             >
               Hide
             </button>
@@ -229,7 +229,7 @@ export function ToolDetails({ toolCall, compact, mediaContext }: Props) {
                 {isEditFile && !showDiff && (
                   <button
                     onClick={() => setShowDiff(true)}
-                    className="text-blue-400 hover:text-blue-300 px-2 transition-colors"
+                    className="text-badge-info hover:text-badge-info px-2 transition-colors"
                   >
                     View Diff
                   </button>
@@ -238,7 +238,7 @@ export function ToolDetails({ toolCall, compact, mediaContext }: Props) {
               {(() => {
                 if (isEditFile && editFileArgs) {
                   return (
-                    <pre className="text-xs text-gray-400 bg-gray-900/50 rounded-lg p-3 overflow-x-auto scrollbar-hidden border border-gray-800/50 whitespace-pre-wrap">
+                    <pre className="text-xs text-zinc-400 bg-gray-900/50 rounded-lg p-3 overflow-x-auto scrollbar-hidden border border-gray-800/50 whitespace-pre-wrap">
                       {`File: ${editFileArgs.filePath}\nChanges: ${editFileArgs.oldString.length} -> ${editFileArgs.newString.length} chars`}
                     </pre>
                   );
@@ -247,7 +247,7 @@ export function ToolDetails({ toolCall, compact, mediaContext }: Props) {
                 return formatted.language === 'json' ? (
                   <JsonHighlight code={formatted.text} />
                 ) : (
-                  <pre className="text-xs text-gray-400 bg-gray-900/50 rounded-lg p-3 overflow-x-auto scrollbar-hidden border border-gray-800/50 whitespace-pre-wrap">
+                  <pre className="text-xs text-zinc-400 bg-gray-900/50 rounded-lg p-3 overflow-x-auto scrollbar-hidden border border-gray-800/50 whitespace-pre-wrap">
                     {formatted.text}
                   </pre>
                 );
@@ -332,16 +332,16 @@ export function ToolDetails({ toolCall, compact, mediaContext }: Props) {
                 />
               )}
               {humanError && !safeBrowserComputerResult ? (
-                <div className="rounded-lg border border-amber-500/20 bg-amber-500/[0.04] p-3 text-xs">
-                  <div className="font-medium text-amber-200/90">{humanError.summary}</div>
+                <div className="rounded-lg border border-badge-warning/20 bg-amber-500/[0.04] p-3 text-xs">
+                  <div className="font-medium text-badge-warning/90">{humanError.summary}</div>
                   {humanError.detail && (
-                    <div className="mt-1 text-amber-100/60">{humanError.detail}</div>
+                    <div className="mt-1 text-badge-warning/60">{humanError.detail}</div>
                   )}
                   {humanError.settingsHint && (
                     <button
                       type="button"
                       onClick={() => openSettingsTab('model')}
-                      className="mt-2 inline-flex items-center gap-1 rounded-md border border-amber-400/25 bg-amber-400/10 px-2 py-1 text-[11px] text-amber-100 transition-colors hover:bg-amber-400/20"
+                      className="mt-2 inline-flex items-center gap-1 rounded-md border border-badge-warning/25 bg-amber-400/10 px-2 py-1 text-[11px] text-badge-warning transition-colors hover:bg-amber-400/20"
                     >
                       去「设置 &gt; Service API Keys」换 key ›
                     </button>
@@ -359,6 +359,9 @@ export function ToolDetails({ toolCall, compact, mediaContext }: Props) {
                     </pre>
                   )}
                 </div>
+              ) : (!result.success && !result.error?.trim() && (result.output == null || result.output === '')) ? (
+                // 上游失败但没回任何错误详情（QA 2026-07-28 A2）：别让 JSON "null" / 空白糊在用户脸上
+                <div className="text-xs text-zinc-500 italic py-1">执行失败，未返回错误详情</div>
               ) : (!safeBrowserComputerResult && !result.error && result.output !== null && typeof result.output === 'object') ? (
                 // 对象/数组型 output（非字符串日志）走 JSON 语法高亮
                 <JsonHighlight code={JSON.stringify(result.output, null, 2)} error={!result.success} />
@@ -376,8 +379,8 @@ export function ToolDetails({ toolCall, compact, mediaContext }: Props) {
                   lineCap={isShellTool(name) ? SHELL_RESULT_BODY_LINE_CAP : RESULT_BODY_LINE_CAP}
                   className={`text-xs bg-gray-900/50 rounded-lg p-3 overflow-x-auto scrollbar-hidden border transition-colors duration-200 whitespace-pre-wrap break-words ${
                     result.success
-                      ? 'text-gray-400 border-gray-800/50'
-                      : 'text-red-300 border-red-500/20'
+                      ? 'text-zinc-400 border-gray-800/50'
+                      : 'text-badge-danger border-red-500/20'
                   }`}
                 />
               )}
@@ -642,7 +645,7 @@ function BrowserComputerNextStepActions({ actions }: { actions: BrowserComputerN
           }}
           className={`flex w-full items-start gap-2 rounded-lg border px-3 py-2 text-left text-xs transition-colors ${
             action.executable
-              ? 'border-sky-500/20 bg-sky-500/10 text-sky-100 hover:bg-sky-500/15'
+              ? 'border-badge-info/20 bg-sky-500/10 text-badge-info hover:bg-sky-500/15'
               : 'border-zinc-700/50 bg-zinc-900/50 text-zinc-300'
           }`}
         >
@@ -658,10 +661,10 @@ function BrowserComputerNextStepActions({ actions }: { actions: BrowserComputerN
           data-testid="browser-computer-recovery-outcome"
           className={`whitespace-pre-wrap rounded-lg border p-2 text-[11px] ${
             outcome.status === 'failed'
-              ? 'border-red-500/20 bg-red-500/10 text-red-100'
+              ? 'border-red-500/20 bg-red-500/10 text-badge-danger'
               : outcome.status === 'preparing'
-                ? 'border-sky-500/20 bg-sky-500/10 text-sky-100'
-                : 'border-emerald-500/20 bg-emerald-500/10 text-emerald-100'
+                ? 'border-badge-info/20 bg-sky-500/10 text-badge-info'
+                : 'border-badge-success/20 bg-emerald-500/10 text-badge-success'
           }`}
         >
           {sanitizeBrowserComputerRecoveryText(outcome.text, actions)}
@@ -701,7 +704,7 @@ function GenericToolErrorActions({
         }}
         className="inline-flex items-center gap-1 rounded-md border border-zinc-700/60 bg-zinc-800/60 px-2 py-1 text-[11px] text-zinc-300 transition-colors hover:bg-zinc-700/60"
       >
-        {copied ? <Check className="h-3 w-3 text-green-400" /> : <Copy className="h-3 w-3" />}
+        {copied ? <Check className="h-3 w-3 text-badge-success" /> : <Copy className="h-3 w-3" />}
         {copied ? '已复制' : '复制错误'}
       </button>
       {canRetry && messageId && (
@@ -712,7 +715,7 @@ function GenericToolErrorActions({
             event.stopPropagation();
             createForkFromReply(messageId);
           }}
-          className="inline-flex items-center gap-1 rounded-md border border-sky-500/25 bg-sky-500/10 px-2 py-1 text-[11px] text-sky-100 transition-colors hover:bg-sky-500/20"
+          className="inline-flex items-center gap-1 rounded-md border border-badge-info/25 bg-sky-500/10 px-2 py-1 text-[11px] text-badge-info transition-colors hover:bg-sky-500/20"
         >
           <RotateCcw className="h-3 w-3" />
           从此重试

@@ -107,6 +107,8 @@ const ENGINE_KIND_LABELS: Record<ModelExternalEngineSnapshot['kind'], string> = 
   claude_code: 'Claude Code',
   mimo_code: 'MiMo Code',
   kimi_code: 'Kimi Code',
+  codebuddy_code: 'WorkBuddy',
+  grok_cli: 'Grok Build',
 };
 
 const ENGINE_INSTALL_LABELS: Record<ModelExternalEngineSnapshot['installState'], string> = {
@@ -172,7 +174,7 @@ function getToneClass(reason: ModelDecisionReason): string {
   // 收敛为两档：正常路由一律中性灰，仅降级/兜底用单一警示色，
   // 避免一个 chip 覆盖 6 种饱和色和正文/diff 抢注意力。
   if (reason === 'fallback-availability') {
-    return 'border-amber-500/25 bg-amber-500/[0.08] text-amber-200';
+    return 'border-badge-warning/25 bg-amber-500/[0.08] text-badge-warning';
   }
   return 'border-border-muted bg-surface-subtle text-zinc-400';
 }

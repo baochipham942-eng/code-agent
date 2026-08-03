@@ -137,6 +137,30 @@ export class PendingApprovalRepository {
     return this.markPendingRowsAsOrphaned(`kind = ? AND status = 'pending'`, [kind], now);
   }
 
+  /** 停车审批的宿主 Promise 无法跨进程恢复，启动时直接 fail-closed 收尾。 */
+  rejectPendingAfterRestart(kind: PendingApprovalKind, now: number): PendingApprovalRecord[] {
+    const before = this.db
+      .prepare(`SELECT * FROM pending_approvals WHERE kind = ? AND status IN ('pending', 'orphaned')`)
+      .all(kind) as SQLiteRow[];
+    if (before.length === 0) return [];
+
+    const feedback = 'Auto-rejected after process restart: owning run is no longer alive';
+    this.db
+      .prepare(
+        `UPDATE pending_approvals
+         SET status = 'rejected', resolved_at = ?, feedback = ?
+         WHERE kind = ? AND status IN ('pending', 'orphaned')`,
+      )
+      .run(now, feedback, kind);
+
+    return before.map((row) => rowToRecord({
+      ...row,
+      status: 'rejected',
+      resolved_at: now,
+      feedback,
+    }));
+  }
+
   /**
    * 仅保留给维护工具 / 旧测试路径。业务 hydrate 必须使用 markPendingAsOrphaned。
    */

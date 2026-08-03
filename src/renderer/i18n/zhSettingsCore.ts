@@ -24,7 +24,10 @@ export const zhSettingsCore = {
       skills: 'Skills',
       conversation: '上下文压缩',
       keybindings: '快捷键',
-      voiceInput: '语音',
+      voiceLive: '实时语音',
+      voiceInput: '语音转文字',
+      // T1（2026-07-28）：通话模型/音色/转写模型独立成「模型与能力」组 tab
+      voiceModel: '语音模型',
       doctor: '诊断',
       workspace: '工作区',
       automation: '自动化',
@@ -63,6 +66,10 @@ export const zhSettingsCore = {
       permissionMode: '安全模式',
       modelRoutingStrategy: '模型路由策略',
       voiceInput: '语音输入',
+      voiceLive: '实时语音',
+      voiceLiveVoice: '实时语音音色',
+      voiceLiveInterrupt: '打断方式',
+      voiceConversationModel: '实时语音模型',
       whisperModel: 'Whisper 模型',
       transcriptionLanguage: '转写语言',
       keybindingsConfig: '快捷键配置',
@@ -96,6 +103,7 @@ export const zhSettingsCore = {
       theme: '主题',
       fontSize: '字体大小',
       language: '语言',
+      promptManager: '提示词管理',
       dataManagement: '数据管理',
       databaseSize: '数据库大小',
       clearCache: '清空缓存',
@@ -141,11 +149,15 @@ export const zhSettingsCore = {
         dark: '深色',
         light: '浅色',
         auto: '自动',
+        highContrastDark: '高对比深色',
+        highContrastLight: '高对比浅色',
       },
       themeDescriptions: {
         dark: '深色背景，适合夜间使用',
         light: '浅色背景，适合日间使用',
         system: '跟随系统设置自动切换',
+        highContrastDark: '最大对比度的深色主题，提升可读性',
+        highContrastLight: '最大对比度的浅色主题，提升可读性',
       },
       currentSystemThemePrefix: '当前系统主题：',
       fontSize: '字体大小',
@@ -360,6 +372,8 @@ export const zhSettingsCore = {
       resetShortcut: '恢复该项默认',
       saving: '正在保存…',
       autosaveHint: '修改会自动保存。系统级热键会在桌面运行时重新注册，失败项会保留在配置中并记录诊断日志。',
+      registrationFailedPrefix: '注册失败：',
+      registrationFailedUnknown: '未知注册错误',
       categories: {
         global: '全局唤起',
         sessionEditing: '会话编辑',
@@ -409,6 +423,10 @@ export const zhSettingsCore = {
         'session.new': {
           label: '新建会话',
           description: '创建一个新的对话会话',
+        },
+        'voice.callToggle': {
+          label: '拨打/挂断实时通话',
+          description: '从系统任意位置唤起应用并拨打实时通话，通话中再次触发则挂断',
         },
         'voice.toggle': {
           label: '语音输入',
@@ -526,6 +544,10 @@ export const zhSettingsCore = {
           label: '打开设计画布',
           description: '打开右栏设计画布视图',
         },
+        'terminal.open': {
+          label: '打开终端',
+          description: '打开右栏会话终端视图',
+        },
         'computerUse.open': {
           label: '打开 Computer Use',
           description: '打开 Computer Use 工作台',
@@ -574,6 +596,10 @@ export const zhSettingsCore = {
       enableTitle: '启用会话语音输入',
       enableDescription: '会话输入框显示麦克风入口，转写结果进入草稿。',
       modeTitle: '转写模式',
+      groupRecognition: '识别',
+      groupPerformance: '性能',
+      groupRecording: '录音',
+      groupPostProcessing: '转写后处理',
       languageLabel: '语言',
       localModelLabel: '本地模型',
       threadsLabel: '线程数',
@@ -585,20 +611,28 @@ export const zhSettingsCore = {
       clearAudioDescription: '删除本机保留的重试音频，不影响已发送消息。',
       postProcessingTitle: '轻量整理转写文本',
       postProcessingDescription: '去掉常见口头停顿并整理空格，保留原始转写用于元数据追踪。',
+      vocabularyTitle: '口述词表',
+      vocabularyDescription: '每行一条。通话转写文本与派活理解会按这些拼写解释，不保证上游识别率提升。超长、空行或重复项会被自动过滤。',
+      vocabularyPlaceholder: '例如：a.txt\nnpm install\n张三',
+      vocabularyCount: '有效词条 {count}/100',
       saving: '正在保存',
       effectiveNextRecording: '设置会在下一次录音时生效',
       modes: {
+        stream: {
+          label: '边说边出字',
+          description: '说话过程中就把字写进输入框。用你自己的 DashScope Key（按时长计费，约 ¥0.009/分钟）',
+        },
+        'cloud-only': {
+          label: '说完再转写',
+          description: '停止录音后一次性转写。用你自己的 Groq Key，识别率高、按量计费',
+        },
         'local-first': {
           label: '本地优先',
-          description: 'whisper-cpp 可用时本地转写，失败后用 Groq 兜底',
+          description: '先用本机 whisper-cpp，失败再走 Groq。需自行安装：brew install whisper-cpp 并下载模型到 ~/.cache/whisper/',
         },
         'local-only': {
           label: '仅本地',
-          description: '音频不离开本机，缺模型或转写失败时直接返回错误',
-        },
-        'cloud-only': {
-          label: '仅云端',
-          description: '使用 Groq Whisper，适合本地模型不可用时临时使用',
+          description: '音频不离开本机，也不花钱；识别率低于云端。同样需要自行安装 whisper-cpp 和模型',
         },
       },
       languages: {
@@ -610,5 +644,9 @@ export const zhSettingsCore = {
         es: 'Español',
         fr: 'Français',
       },
+    },
+    voiceModel: {
+      transcriptionModelLabel: '转写模型',
+      transcriptionModelNote: '本地 whisper-cpp 识别模型，仅本地转写模式（本地优先 / 仅本地）使用',
     },
 };

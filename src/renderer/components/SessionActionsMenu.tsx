@@ -269,7 +269,7 @@ export const SessionActionsMenu: React.FC = () => {
   }
   items.push({
     key: 'live-preview',
-    label: 'Live Preview…',
+    label: sam.livePreviewLabel,
     icon: <Play className="h-3.5 w-3.5" />,
     onClick: () => { close(); openDevServerLauncher(); },
   });
@@ -323,7 +323,7 @@ export const SessionActionsMenu: React.FC = () => {
               disabled={item.disabled}
               className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors ${
                 item.tone === 'active'
-                  ? 'bg-emerald-500/10 text-emerald-300'
+                  ? 'bg-emerald-500/10 text-badge-success'
                   : item.disabled
                     ? 'text-zinc-500'
                     : 'text-zinc-200 hover:bg-white/[0.06]'

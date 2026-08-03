@@ -7,8 +7,17 @@
 export const chatTranscriptZh = {
 chat: {
   thinking: '正在思考…',
-  waitingModel: '正在等待模型响应…',
-  waitingSubagent: '正在等待子任务…',
+  // 回响信号（等模型）
+  waitingModel: '信号传输中，正在等待模型回响…',
+  // 编队信号（等子任务）：无数字版——单个子任务或计数不可用时用
+  waitingSubagent: '编队作业中，子舰并行中',
+  // 编队信号带真实并发数版，{count} 来自当前回合仍在运行的子任务工具调用数
+  waitingSubagentFleet: '编队作业中，{count} 艘子舰并行',
+  // 巡航信号（长任务 ≥45s）：{elapsed} 为 mm:ss 秒表，中性陈述「一切正常」
+  longToolCruise: '深空巡航中 · 已航行 {elapsed} · 链路正常',
+  // 巡航信号旁的强制停止按钮
+  longToolStop: '停止',
+  organizingReply: '正在组织回答…',
   thinkingDigest: '思考',
   thinkingSegments: ' · {count} 段',
   expandThinking: '展开思考',
@@ -22,6 +31,7 @@ chat: {
   configureModelFirst: '先配置一个模型后再发送。',
   rewindWhileRunning: '会话还在运行，先停止后再回退。',
   rewindSuccess: '已回退到这条提示词；当前工作区文件保持不变。',
+  rewindSuccessWithPrompt: '已回退到「{prompt}」；当前工作区文件保持不变。',
   rewindRestoreAction: '恢复对话',
   rewindRestored: '已恢复 {count} 条历史消息。',
   rewindConfirmTitle: '回到这条提示词？',
@@ -34,13 +44,18 @@ chat: {
   streamInterruptedText: '部分文本已保留为恢复快照。',
   retryTurn: '重试该轮',
   retryTurnInProgress: '重试中…',
-  welcomeTitle: '想完成什么？',
+  welcomeTitle: '这次想去哪颗星球？',
   welcomeSubtitle: '选一个示例，或者直接输入你想完成的事。',
+  resumedEmptyTitle: '继续上次的会话：{title}',
+  resumedEmptySubtitle: '{time} · 这条会话还没有内容。在这里发消息会接着它继续；想从头开始请点「新任务」。',
   blankSession: '空白会话',
   projectSession: '项目会话 · {name}',
   inheritedWorkspace: '继承工作区：{path}',
   inheritedPrefix: '继承：{parts}',
   recentTools: '最近工具 {names}',
+  skillCount: '{count} 技能',
+  connectorCount: '{count} 连接器',
+  mcpCount: '{count} MCP',
   suggestions: {
     game: {
       title: '做个能玩的小游戏',
@@ -162,6 +177,8 @@ traceView: {
   scrollToLoadMore: '↑ 滚动加载更多',
   conversationLog: '对话消息',
   jumpToBottom: '回到底部',
+  renderFailedTitle: '这个会话的消息暂时显示不出来',
+  renderFailedHint: '其他会话不受影响，可以先切到别的会话继续；切回来会自动重试。',
 },
 
 // 工具步骤组（ToolStepGroup）
@@ -287,6 +304,8 @@ turnCard: {
   fork: '创建分支',
   forking: '创建中…',
   createForkFromReply: '从这条回复创建分支',
+  copyAnswer: '复制回答',
+  answerCopied: '已复制',
   chooseWorkspace: '选择分支工作区',
   sharedCurrent: '历史对话 + 当前文件',
   sharedCurrentDetail: '新任务读取当前工作区，不修改源任务。',
@@ -320,10 +339,33 @@ turnHooks: {
   collapse: '收起 Hooks',
   allowed: '放行',
   blocked: '拦下',
+  blockedCount: '拦下 {count} 次',
+  modified: '改写输入',
+  modifiedCount: '改写输入 {count} 次',
+  reason: '原因：{reason}',
+  stopBlocked: '要求继续',
+  running: '正在运行 {event}…',
   errored: '{count} 个出错',
   unnamed: '未命名的 hook',
   sourceGlobal: '你的全局设置',
   sourceProject: '这个项目',
+},
+
+// 路由异常卡（TraceNodeRenderer 的 RoutingEvidenceNode）——只在路由 warning/error 时
+// 铺进主对话流；正常路由每轮内容一样，不渲染。
+turnRouting: {
+  title: '路由异常',
+  modeAuto: 'Auto 自动路由',
+  modeDirect: 'Direct 指定路由',
+  modeParallel: 'Parallel 并行编排',
+  statusRequested: '已请求',
+  statusDelivered: '已送达',
+  statusMissing: '未命中',
+  statusResolved: '已解析',
+  statusApproved: '已批准',
+  statusRejected: '已拒绝',
+  statusStarted: '已启动',
+  statusFallback: '已回落',
 },
 
 // 回合运行状态（TurnCard 顶部状态条 + 流式状态横幅）——两处消费同一套键，别建两套
@@ -340,10 +382,14 @@ turnRun: {
     completed: '已完成',
   },
   detail: {
-    cancelling: '正在清理本轮流式输出和未完成工具',
+    cancelling: '正在停止这次回答',
     blocked: '本轮运行遇到错误，等待恢复或重新执行',
     resumable: '上次流式输出未完成，可从会话操作里继续',
-    cancelled: '本轮流式输出已停止，未保留半截内容',
+    // 原文写的是「未保留半截内容」，与实现相反：cancel() 会把已写出的内容连同
+    // [cancelled] 标记一起落库（真机实测点停止时屏幕约 360 字，库里存了 1492 字符）。
+    // 保留是对的——停止停的是这次输出，不是这个任务的记忆；用户已经看了一半，
+    // 抹掉等于白等。所以改文案对齐实现，而不是反过来砍掉保留。
+    cancelled: '已停止这次回答，已经写出来的内容都留着',
     waitingTool: '工具调用仍在返回结果',
     usingTools: '工具调用已开始，结果会并入当前回复',
     running: '内容正在流式写入当前回复',
@@ -429,8 +475,17 @@ forkSourceHint: {
 export const chatTranscriptEn: typeof chatTranscriptZh = {
 chat: {
   thinking: 'Thinking…',
-  waitingModel: 'Waiting for the model…',
-  waitingSubagent: 'Waiting on a subtask…',
+  // Echo signal (waiting on the model)
+  waitingModel: 'Signal sent, awaiting model echo…',
+  // Fleet signal (waiting on subtasks): no-count version — single subtask or count unavailable
+  waitingSubagent: 'Fleet engaged, subships in parallel',
+  // Fleet signal with the real concurrency count; {count} comes from the turn's still-running subtask tool calls
+  waitingSubagentFleet: 'Fleet engaged, {count} subships in parallel',
+  // Cruise signal (long-running tool ≥45s): {elapsed} is the mm:ss stopwatch, a neutral "all is well" statement
+  longToolCruise: 'Deep-space cruise · {elapsed} elapsed · link nominal',
+  // Force-stop button next to the cruise signal
+  longToolStop: 'Stop',
+  organizingReply: 'Organizing the reply…',
   thinkingDigest: 'Thinking',
   thinkingSegments: ' · {count} segments',
   expandThinking: 'Expand thinking',
@@ -444,6 +499,7 @@ chat: {
   configureModelFirst: 'Configure a model before sending.',
   rewindWhileRunning: 'The session is still running. Stop it before rewinding.',
   rewindSuccess: 'Rewound to this prompt; current workspace files are unchanged.',
+  rewindSuccessWithPrompt: 'Rewound to "{prompt}"; current workspace files are unchanged.',
   rewindRestoreAction: 'Restore conversation',
   rewindRestored: 'Restored {count} history messages.',
   rewindConfirmTitle: 'Rewind to this prompt?',
@@ -456,13 +512,18 @@ chat: {
   streamInterruptedText: 'Partial text was kept as a recovery snapshot.',
   retryTurn: 'Retry this turn',
   retryTurnInProgress: 'Retrying…',
-  welcomeTitle: 'What do you want to get done?',
+  welcomeTitle: 'Which planet are we heading to?',
   welcomeSubtitle: 'Pick an example, or just type what you want to do.',
+  resumedEmptyTitle: 'Picking up your last session: {title}',
+  resumedEmptySubtitle: '{time} · This session has no content yet. Sending here continues it — click “New task” to start fresh.',
   blankSession: 'Blank session',
   projectSession: 'Project session · {name}',
   inheritedWorkspace: 'Inherited workspace: {path}',
   inheritedPrefix: 'Inherited: {parts}',
   recentTools: 'Recent tools {names}',
+  skillCount: '{count} Skill',
+  connectorCount: '{count} Connector',
+  mcpCount: '{count} MCP',
   suggestions: {
     game: {
       title: 'Build a playable mini game',
@@ -584,6 +645,8 @@ traceView: {
   scrollToLoadMore: '↑ Scroll to load more',
   conversationLog: 'Conversation messages',
   jumpToBottom: 'Jump to bottom',
+  renderFailedTitle: 'This conversation could not be displayed',
+  renderFailedHint: 'Other conversations are unaffected — switch away and back to retry.',
 },
 
 // Tool step group (ToolStepGroup)
@@ -708,6 +771,8 @@ turnCard: {
   fork: 'Fork',
   forking: 'Forking…',
   createForkFromReply: 'Fork from this reply',
+  copyAnswer: 'Copy answer',
+  answerCopied: 'Copied',
   chooseWorkspace: 'Choose branch workspace',
   sharedCurrent: 'History + current files',
   sharedCurrentDetail: 'The child reads the current workspace without changing the source task.',
@@ -740,10 +805,34 @@ turnHooks: {
   collapse: 'Hide hooks',
   allowed: 'Allowed',
   blocked: 'Blocked',
+  blockedCount: 'Blocked {count}×',
+  modified: 'Input modified',
+  modifiedCount: 'Input modified {count}×',
+  reason: 'Reason: {reason}',
+  stopBlocked: 'Asked to continue',
+  running: 'Running {event}…',
   errored: '{count} failed',
   unnamed: 'Unnamed hook',
   sourceGlobal: 'your global settings',
   sourceProject: 'this project',
+},
+
+// Routing issue card (TraceNodeRenderer's RoutingEvidenceNode) — only rendered into
+// the main conversation flow when routing hits warning/error; normal routing is
+// identical every turn and stays hidden.
+turnRouting: {
+  title: 'Routing issue',
+  modeAuto: 'Auto routing',
+  modeDirect: 'Direct routing',
+  modeParallel: 'Parallel orchestration',
+  statusRequested: 'Requested',
+  statusDelivered: 'Delivered',
+  statusMissing: 'Missing',
+  statusResolved: 'Resolved',
+  statusApproved: 'Approved',
+  statusRejected: 'Rejected',
+  statusStarted: 'Started',
+  statusFallback: 'Fallback',
 },
 
 turnRun: {
@@ -759,10 +848,10 @@ turnRun: {
     completed: 'Completed',
   },
   detail: {
-    cancelling: 'Cleaning up this turn’s streaming output and unfinished tools',
+    cancelling: 'Stopping this reply',
     blocked: 'This turn ran into an error. Waiting to resume or retry.',
     resumable: 'The last stream was left unfinished. You can continue it from the session actions.',
-    cancelled: 'This turn’s stream was stopped; no partial content was kept.',
+    cancelled: 'Stopped this reply. What was already written is kept.',
     waitingTool: 'The tool call is still returning a result.',
     usingTools: 'A tool call has started; its result will be folded into the current reply.',
     running: 'Content is streaming into the current reply.',

@@ -20,11 +20,26 @@ interface WebQueuedInputDrainDependencies {
   hasActiveRun: (sessionId: string) => boolean;
   runEnvelope: (envelope: ConversationEnvelope, response: Response) => Promise<void>;
   emitAgentEvent: (sessionId: string, event: AgentEvent) => void;
+  /**
+   * 一条排队消息在宿主侧走完（消费/失败）后通知前端。
+   * 前端的排队卡片是本地 React state，只有「立即发送」那条路会自己清；
+   * 宿主自动抽干时前端完全不知情，卡片就永远留着，点撤回还会被如实告知
+   * 「已经开始发送」——用户看到的就是「没发出去又删不掉」。
+   */
+  notifyQueuedInputSettled: (
+    settled: { sessionId: string; id: string; status: 'consumed' | 'failed' },
+  ) => void;
   logger: WebRouteLogger;
 }
 
 export interface WebQueuedInputDrain {
   handleReleasedSession(sessionId: string): void;
+  /**
+   * 一条消息刚入队。若此刻这个 session 已经没有活跃 run，就得立刻抽——否则它会
+   * 一直躺在队列里没人管：release 时的那次 drain 早跑完了，而入队发生在那之后。
+   * 真机 2026-08-01：上一轮刚回复完就发下一条，消息进了排队卡但模型再也不回。
+   */
+  handleEnqueued(sessionId: string): void;
   runStartupSweep(): void;
 }
 
@@ -68,6 +83,7 @@ export function createWebQueuedInputDrain({
   hasActiveRun,
   runEnvelope,
   emitAgentEvent,
+  notifyQueuedInputSettled,
   logger,
 }: WebQueuedInputDrainDependencies): WebQueuedInputDrain {
   const activeSessions = new Set<string>();
@@ -106,6 +122,7 @@ export function createWebQueuedInputDrain({
         message: errorMessage(error),
       },
     });
+    notifyQueuedInputSettled({ sessionId, id, status: 'failed' });
   };
 
   const scheduleDrain = (sessionId: string): void => {
@@ -150,6 +167,7 @@ export function createWebQueuedInputDrain({
           id: record.id,
         });
       }
+      notifyQueuedInputSettled({ sessionId, id: record.id, status: 'consumed' });
     } finally {
       activeSessions.delete(sessionId);
       if (pendingReleasedSessions.delete(sessionId)) {
@@ -159,6 +177,16 @@ export function createWebQueuedInputDrain({
   };
 
   return {
+    handleEnqueued(sessionId: string): void {
+      // 有 run 在跑就什么都不做：那才是「排到下一轮」的正常语义，
+      // 由 release 时的 drain 负责。
+      if (hasActiveRun(sessionId)) return;
+      if (activeSessions.has(sessionId)) {
+        pendingReleasedSessions.add(sessionId);
+        return;
+      }
+      scheduleDrain(sessionId);
+    },
     handleReleasedSession(sessionId: string): void {
       if (activeSessions.has(sessionId)) {
         pendingReleasedSessions.add(sessionId);

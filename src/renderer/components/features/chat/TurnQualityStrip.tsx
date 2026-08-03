@@ -8,6 +8,7 @@ import { useSessionStore } from '../../../stores/sessionStore';
 import { toast } from '../../../hooks/useToast';
 import { useI18n } from '../../../hooks/useI18n';
 import { unescapeHtmlEntities } from '../../../utils/htmlEntities';
+import { useSessionModels } from './sessionModelsContext';
 
 interface TurnQualityStripProps {
   summary: TurnQualitySummary;
@@ -42,7 +43,7 @@ function memoryLabel(summary: TurnQualitySummary): string {
 function memoryTone(summary: TurnQualitySummary): string {
   return summary.memory.mode === 'off'
     ? 'border-zinc-700/70 bg-zinc-900/60 text-zinc-500'
-    : 'border-emerald-400/20 bg-emerald-400/10 text-emerald-200';
+    : 'border-badge-success/20 bg-emerald-400/10 text-badge-success';
 }
 
 function scoreTone(summary: TurnQualitySummary): string {
@@ -50,11 +51,11 @@ function scoreTone(summary: TurnQualitySummary): string {
   switch (grade) {
     case 'excellent':
     case 'good':
-      return 'border-emerald-400/20 bg-emerald-400/10 text-emerald-200';
+      return 'border-badge-success/20 bg-emerald-400/10 text-badge-success';
     case 'watch':
-      return 'border-amber-400/20 bg-amber-400/10 text-amber-200';
+      return 'border-badge-warning/20 bg-amber-400/10 text-badge-warning';
     case 'risk':
-      return 'border-red-400/20 bg-red-400/10 text-red-200';
+      return 'border-badge-danger/20 bg-red-400/10 text-badge-danger';
     default:
       return 'border-zinc-700 bg-zinc-900/60 text-zinc-300';
   }
@@ -89,6 +90,7 @@ function blockLabel(blockType: string): string {
 
 export const TurnQualityStrip: React.FC<TurnQualityStripProps> = ({ summary }) => {
   const developerMode = useAppStore((state) => state.developerMode);
+  const sessionModels = useSessionModels();
   const { t } = useI18n();
   const [expanded, setExpanded] = useState(false);
   const [busyEntryId, setBusyEntryId] = useState<string | null>(null);
@@ -144,6 +146,17 @@ export const TurnQualityStrip: React.FC<TurnQualityStripProps> = ({ summary }) =
   // 不需要也看不懂，只留一颗安静的模型名徽标标注"这轮是谁在干活"。
   if (!developerMode) {
     const modelName = summary.strategy.model || summary.strategy.requestedModel;
+    // 本轮发生了重路由/fallback（实际模型 ≠ 请求模型）时徽标始终值得显示。
+    const rerouted = Boolean(
+      summary.strategy.model
+      && summary.strategy.requestedModel
+      && summary.strategy.model !== summary.strategy.requestedModel,
+    );
+    // 会话内所有轮共用同一模型时，每轮重复印同一个模型名是纯噪音（2026-07-28 产品
+    // 反馈：独占一行浪费空间）；只在模型有分歧（多模型会话）或本轮重路由时显示。
+    // sessionModels 为 null（无会话级上下文，如单测/嵌套复用）时保持原行为。
+    const showModel = Boolean(modelName)
+      && (rerouted || sessionModels === null || sessionModels.size > 1);
     // 手动 /agent 指定（非 default）时透出"本轮由 X 执行"的安静徽标，
     // 恢复自动路由后 agentName 回到 default 徽标自然消失。
     const agentName = summary.capabilities?.agentName;
@@ -154,10 +167,10 @@ export const TurnQualityStrip: React.FC<TurnQualityStripProps> = ({ summary }) =
     const degradedAgentId = requestedAgentId && requestedAgentId !== summary.capabilities?.agentId
       ? requestedAgentId
       : null;
-    if (!modelName && !showAgent && !degradedAgentId) return null;
+    if (!showModel && !showAgent && !degradedAgentId) return null;
     return (
       <div className="mb-2 flex items-center gap-1">
-        {modelName && (
+        {showModel && (
           <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] text-zinc-600">
             {modelName}
           </span>
@@ -170,7 +183,7 @@ export const TurnQualityStrip: React.FC<TurnQualityStripProps> = ({ summary }) =
         )}
         {degradedAgentId && (
           <span
-            className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-amber-500/80"
+            className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-badge-warning/80"
             title={`${t.agentCommand.badgeNotAppliedTitlePrefix}${summary.capabilities?.agentName || 'default'}`}
           >
             <Bot className="h-3 w-3" />
@@ -205,12 +218,12 @@ export const TurnQualityStrip: React.FC<TurnQualityStripProps> = ({ summary }) =
               <Brain className="h-3 w-3" />
               {memoryLabel(summary)}
             </span>
-            <span className="inline-flex min-w-0 items-center gap-1 rounded border border-sky-400/15 bg-sky-400/10 px-1.5 py-0.5 text-sky-200">
+            <span className="inline-flex min-w-0 items-center gap-1 rounded border border-badge-info/15 bg-sky-400/10 px-1.5 py-0.5 text-badge-info">
               <Cpu className="h-3 w-3 shrink-0" />
               <span className="truncate">{strategyLabel(summary)} · {formatModel(summary)}</span>
             </span>
             {summary.capabilities?.agentName && (
-              <span className="inline-flex items-center gap-1 rounded border border-fuchsia-400/15 bg-fuchsia-400/10 px-1.5 py-0.5 text-fuchsia-200">
+              <span className="inline-flex items-center gap-1 rounded border border-badge-accent/15 bg-fuchsia-400/10 px-1.5 py-0.5 text-badge-accent">
                 <Bot className="h-3 w-3" />
                 {summary.capabilities.agentName}
               </span>
@@ -241,17 +254,17 @@ export const TurnQualityStrip: React.FC<TurnQualityStripProps> = ({ summary }) =
             ))}
           </div>
           {(summary.strategy.reason || summary.strategy.complexity) && (
-            <div className="mb-2 rounded-md border border-sky-400/10 bg-sky-400/[0.04] px-2 py-1.5 text-sky-100/80">
+            <div className="mb-2 rounded-md border border-badge-info/10 bg-sky-400/[0.04] px-2 py-1.5 text-badge-info/80">
               {summary.strategy.reason || strategyLabel(summary)}
               {summary.strategy.complexity ? (
-                <span className="ml-2 text-sky-200/50">
+                <span className="ml-2 text-badge-info/50">
                   {summary.strategy.complexity.level} · {summary.strategy.complexity.score}
                 </span>
               ) : null}
             </div>
           )}
           {summary.agentScorecard && (
-            <div className="mb-2 rounded-md border border-fuchsia-400/10 bg-fuchsia-400/[0.04] px-2 py-1.5">
+            <div className="mb-2 rounded-md border border-badge-accent/10 bg-fuchsia-400/[0.04] px-2 py-1.5">
               <div className="flex flex-wrap items-center justify-between gap-2 text-zinc-300">
                 <span>{summary.agentScorecard.agentName || summary.agentScorecard.agentId || 'Main agent'}</span>
                 <span className="font-mono text-zinc-500">
@@ -276,7 +289,7 @@ export const TurnQualityStrip: React.FC<TurnQualityStripProps> = ({ summary }) =
                   key={`${block.blockType}-${block.trigger}-${index}`}
                   className={`rounded border px-1.5 py-0.5 ${
                     block.injected
-                      ? 'border-emerald-400/20 bg-emerald-400/10 text-emerald-200'
+                      ? 'border-badge-success/20 bg-emerald-400/10 text-badge-success'
                       : 'border-zinc-700 bg-zinc-900/60 text-zinc-500'
                   }`}
                   title={`${block.source} / ${block.trigger}`}
@@ -331,7 +344,7 @@ export const TurnQualityStrip: React.FC<TurnQualityStripProps> = ({ summary }) =
             </div>
           )}
           {summary.warnings?.length ? (
-            <div className="mt-2 space-y-1 text-amber-300/80">
+            <div className="mt-2 space-y-1 text-badge-warning/80">
               {summary.warnings.map((warning) => (
                 <div key={warning}>{unescapeHtmlEntities(warning)}</div>
               ))}

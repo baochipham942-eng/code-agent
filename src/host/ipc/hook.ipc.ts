@@ -9,7 +9,7 @@ import type { IpcMain } from '../platform';
 import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
 import type { AgentApplicationService } from '../../shared/contract/appService';
 import { CONFIG_DIR_NEW } from '../config/configPaths';
-import { loadAllHooksConfig, getHooksConfigPaths, type HookDefinition } from '../hooks/configParser';
+import { loadAllHooksConfig, getHooksConfigPaths, makeHookKey, type HookDefinition } from '../hooks/configParser';
 import { mergeHooks, type MergedHookConfig } from '../hooks/merger';
 import {
   HOOK_EVENT_DESCRIPTIONS,
@@ -29,6 +29,10 @@ interface HookListItem {
   sources: Array<'global' | 'project'>;
   hookType: 'decision' | 'observer';
   parallel: boolean;
+  /** 停用中：配置还在，但不会执行 */
+  disabled: boolean;
+  /** 回文件里定位这一条的身份（setEnabled 用） */
+  key: string;
 }
 
 interface HookSummary {
@@ -68,6 +72,8 @@ function flattenMerged(merged: MergedHookConfig[]): HookListItem[] {
         sources: m.sources,
         hookType: m.hookType,
         parallel: m.parallel,
+        disabled: Boolean(h.disabled),
+        key: makeHookKey(m.event, h),
       });
     }
   }
@@ -95,6 +101,45 @@ async function buildSummary(workingDirectory: string | null): Promise<HookSummar
     unused,
     configPaths: { global: globalPath, project: projectPath },
   };
+}
+
+/**
+ * 把某条 hook 标记成停用/启用，直接改 hooks.json。
+ * 只认新格式（hooks.json 顶层就是事件表）；legacy settings.json 不写，
+ * 让调用方拿到明确失败而不是「点了没反应」。
+ */
+export async function setHookEnabled(
+  filePath: string,
+  key: string,
+  enabled: boolean,
+): Promise<{ matched: number }> {
+  const fs = await import('fs');
+  if (!fs.existsSync(filePath)) throw new Error(`配置文件不存在：${filePath}`);
+  if (!filePath.endsWith('hooks.json')) {
+    throw new Error('只支持在 hooks.json 里开关 hook，旧版 settings.json 请手工编辑');
+  }
+
+  const raw = fs.readFileSync(filePath, 'utf-8');
+  const config = JSON.parse(raw) as Record<string, unknown>;
+  let matched = 0;
+
+  for (const [event, groups] of Object.entries(config)) {
+    if (!Array.isArray(groups)) continue;
+    for (const group of groups) {
+      const hooks = (group as { hooks?: HookDefinition[] })?.hooks;
+      if (!Array.isArray(hooks)) continue;
+      for (const hook of hooks) {
+        if (makeHookKey(event, hook) !== key) continue;
+        matched += 1;
+        if (enabled) delete hook.disabled;
+        else hook.disabled = true;
+      }
+    }
+  }
+
+  if (matched === 0) throw new Error('没找到这条 hook，配置文件可能已被改动，请刷新后重试');
+  fs.writeFileSync(filePath, `${JSON.stringify(config, null, 2)}\n`, 'utf-8');
+  return { matched };
 }
 
 export function registerHookHandlers(
@@ -128,6 +173,16 @@ export function registerHookHandlers(
           }
           await shell.openPath(filePath);
           data = { opened: filePath };
+          break;
+        }
+        case 'setEnabled': {
+          const { filePath, key, enabled } = payload as {
+            filePath: string;
+            key: string;
+            enabled: boolean;
+          };
+          if (!filePath || !key) throw new Error('Missing filePath or key');
+          data = await setHookEnabled(filePath, key, enabled);
           break;
         }
         case 'revealConfigFolder': {

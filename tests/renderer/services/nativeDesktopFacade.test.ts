@@ -7,6 +7,7 @@ import {
   listRecentNativeDesktopEvents,
   openNativeDesktopSystemSettings,
   startNativeDesktopCollector,
+  startNativeVoiceAec,
 } from '../../../src/renderer/services/nativeDesktop';
 
 const tauriInvoke = vi.fn();
@@ -47,6 +48,11 @@ describe('nativeDesktop facade', () => {
 
     await listRecentNativeDesktopEvents();
     expect(tauriInvoke).toHaveBeenLastCalledWith('desktop_list_recent_events', { limit: 8 });
+
+    await startNativeVoiceAec('Studio Mic');
+    expect(tauriInvoke).toHaveBeenLastCalledWith('desktop_start_voice_aec', {
+      inputDeviceLabel: 'Studio Mic',
+    });
 
     await openNativeDesktopSystemSettings('microphone');
     expect(tauriInvoke).toHaveBeenLastCalledWith('desktop_open_system_settings', {

@@ -298,6 +298,9 @@ export class ConfigService implements IReadConfigService {
           });
         }, CONFIG_WATCH_DEBOUNCE_MS);
       });
+      this.configWatcher.on('error', (error) => {
+        logger.warn('Config watcher error (non-fatal)', { error: String(error) });
+      });
       logger.info('Watching config.json for external edits', { path: this.configPath });
     } catch (error) {
       logger.warn('Failed to watch config file', { error: String(error) });
@@ -508,9 +511,9 @@ export class ConfigService implements IReadConfigService {
 
         // Restore theme
         if (keychainSettings.theme && typeof keychainSettings.theme === 'string') {
-          const validThemes = ['light', 'dark', 'system'];
+          const validThemes = ['light', 'dark', 'system', 'high-contrast-light', 'high-contrast-dark'];
           if (validThemes.includes(keychainSettings.theme)) {
-            this.settings.ui.theme = keychainSettings.theme as 'light' | 'dark' | 'system';
+            this.settings.ui.theme = keychainSettings.theme as AppSettings['ui']['theme'];
           }
         }
 

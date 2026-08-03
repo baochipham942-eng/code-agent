@@ -42,17 +42,17 @@ vi.mock('react', async () => {
     ...actual,
     useState: (initial: unknown) => {
       reactState.useStateCalls += 1;
-      // 索引与 Sidebar 顶部 useState 声明顺序耦合：contextMenu = #8。
+      // 索引与 Sidebar 顶部 useState 声明顺序耦合：contextMenu = #9（批C2 组件头部新增 isNativeFullscreen 后顺延一位）。
       // reviewItemsBySessionId 由 #12 → #15：派生会话状态（searchScope / messageSearch×2 /
       // reviewItems / projectMeta）抽入 useSidebarDerivedSessions hook 后，hook 内 useState 仍按
       // 渲染顺序计数，reviewItems 排在 replayDialog/renamingId/renameValue + hook 前 3 个 useState 之后。
-      if (reactState.forcedContextMenuSession && reactState.useStateCalls === 8) {
+      if (reactState.forcedContextMenuSession && reactState.useStateCalls === 9) {
         return [
           { x: 24, y: 24, session: reactState.forcedContextMenuSession },
           vi.fn(),
         ] as const;
       }
-      if (reactState.forcedReviewItemsBySessionId && reactState.useStateCalls === 15) {
+      if (reactState.forcedReviewItemsBySessionId && reactState.useStateCalls === 16) {
         return [
           reactState.forcedReviewItemsBySessionId,
           vi.fn(),
@@ -144,6 +144,10 @@ const sessionUiState = {
   pendingDelete: null,
   expandedWorkspaces: {},
   setWorkspaceExpanded: vi.fn(),
+  collapsedTiers: {} as Record<string, boolean>,
+  setTierCollapsed: vi.fn(),
+  soloTier: null as string | null,
+  setSoloTier: vi.fn(),
 };
 
 const appState = {
@@ -152,6 +156,7 @@ const appState = {
   openSettingsTab: vi.fn(),
   setShowEvalCenter: setShowEvalCenterMock,
   setWorkingDirectory: setWorkingDirectoryMock,
+  openProjectSpacePage: vi.fn(),
 };
 
 const authState = {
@@ -334,7 +339,8 @@ describe('Sidebar review actions', () => {
     const replayAction = menuState.items.find((item) => item.label === '打开 Replay');
     expect(replayAction).toBeTruthy();
     expect(replayAction?.disabled).not.toBe(true);
-    expect(html).toContain('aria-label="打开 Reviewable Session Replay"');
+    // 2026-07-29：行内 hover Replay 图标已撤（hover 只留归档），Replay 入口保留在右键菜单。
+    expect(html).not.toContain('aria-label="打开 Reviewable Session Replay"');
 
     await replayAction?.onClick();
 

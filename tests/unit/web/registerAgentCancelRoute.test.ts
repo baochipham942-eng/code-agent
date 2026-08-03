@@ -1,6 +1,7 @@
 import express from 'express';
 import http from 'http';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { DurableRunReadService } from '../../../src/host/app/durableRunReadService';
 import { RunRegistry } from '../../../src/host/runtime/runRegistry';
 
 vi.mock('../../../src/shared/constants', async (importOriginal) => {
@@ -29,11 +30,11 @@ describe('registerAgentCancelRoute honest cancel settlement (A3)', () => {
     }
   });
 
-  async function start(registry: RunRegistry) {
+  async function start(registry: RunRegistry, readService?: DurableRunReadService) {
     const app = express();
     app.use(express.json());
     const router = express.Router();
-    registerAgentCancelRoute(router, registry);
+    registerAgentCancelRoute(router, registry, () => readService);
     app.use('/api', router);
     server = http.createServer(app);
     await new Promise<void>((resolve) => server!.listen(0, '127.0.0.1', resolve));
@@ -110,6 +111,49 @@ describe('registerAgentCancelRoute honest cancel settlement (A3)', () => {
       sessionId: 'session-timeout',
     });
     expect(registry.get('run-timeout')).toBe(handle);
+  });
+
+  it('does not let a stale durable terminal hide a newer active registry run', async () => {
+    const registry = new RunRegistry();
+    const handle = registry.start({
+      runId: 'run-current',
+      sessionId: 'session-reused',
+      workspace: '/tmp/native-run-workspace',
+    });
+    let cancelCount = 0;
+    await handle.attach({
+      cancel: async () => {
+        cancelCount += 1;
+        registry.unregister(handle.context.runId, handle);
+      },
+    });
+    const readService = {
+      readNativeControl: vi.fn(async () => ({
+        source: 'durable',
+        consumer: 'native_control',
+        runId: 'run-previous',
+        sessionId: 'session-reused',
+        status: 'completed',
+        engine: { kind: 'native' },
+        terminal: true,
+      })),
+    } as unknown as DurableRunReadService;
+    await start(registry, readService);
+
+    const response = await fetch(`${baseUrl}/api/cancel`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ sessionId: 'session-reused' }),
+    });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      message: 'Cancelled',
+      runId: 'run-current',
+      sessionId: 'session-reused',
+    });
+    expect(cancelCount).toBe(1);
+    expect(registry.get('run-current')).toBeUndefined();
   });
 
   it('still accepts pre-attach cancel without claiming a settled Cancelled too early', async () => {

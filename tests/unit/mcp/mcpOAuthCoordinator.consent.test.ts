@@ -45,6 +45,7 @@ describe('McpOAuthCoordinator consent opener', () => {
     const flow = await coordinator.beginFlow({
       serverName: 'Notion MCP',
       serverIdentity: 'notion:identity',
+      authorizationServerIssuer: 'https://auth.example.com',
       serverUrl: 'https://mcp.example.com/mcp',
       configSource: 'project',
     });
@@ -73,6 +74,7 @@ describe('McpOAuthCoordinator consent opener', () => {
     const flow = await coordinator.beginFlow({
       serverName: 'Notion MCP',
       serverIdentity: 'notion:identity',
+      authorizationServerIssuer: 'https://auth.example.com',
       serverUrl: 'https://mcp.example.com/mcp',
       configSource: 'user',
     });

@@ -4,7 +4,7 @@
 
 import React, { useState, useCallback } from 'react';
 import { Server, Terminal, Globe, Code, Plus, Trash2, Eye, EyeOff } from 'lucide-react';
-import { Modal, ModalFooter, Input } from '../../primitives';
+import { Modal, ModalFooter, Input, Badge, Button } from '../../primitives';
 import { useI18n } from '../../../hooks/useI18n';
 import { MCP_SECRET_REF_PREFIX } from '@shared/constants';
 import { isSensitiveMcpCredentialKey } from '@shared/security/mcpSecretKeys';
@@ -25,15 +25,24 @@ export interface McpServerConfig {
   headers?: Record<string, string>;
 }
 
+/** JSON 视图能读写的字段集合——与 configToJson / handleSave 的取值口径保持一致。 */
+const JSON_EDITABLE_KEYS = ['name', 'type', 'command', 'args', 'env', 'url', 'headers'] as const;
+
 export interface McpServerSaveSecrets {
   secretEnvKeys: string[];
   secretHeaderKeys: string[];
 }
 
+export type McpServerSaveOutcome = 'success' | 'cancelled' | 'error';
+
 interface McpServerEditorProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave: (config: McpServerConfig, secrets?: McpServerSaveSecrets) => void;
+  onSave: (
+    config: McpServerConfig,
+    secrets?: McpServerSaveSecrets,
+  ) => McpServerSaveOutcome | void | Promise<McpServerSaveOutcome | void>;
+  onCancelInstall?: (serverName: string) => void | Promise<void>;
   /** 打开时预填的配置（推荐 MCP 一键连接入口使用） */
   initialConfig?: Partial<McpServerConfig>;
 }
@@ -195,7 +204,7 @@ const KeyValueEditor: React.FC<{
         <button
           type="button"
           onClick={handleAdd}
-          className="flex items-center gap-1 text-xs text-indigo-400 hover:text-indigo-300 transition-colors"
+          className="flex items-center gap-1 text-xs text-badge-accent hover:text-badge-accent transition-colors"
         >
           <Plus className="w-3 h-3" />
           {text.add}
@@ -230,7 +239,7 @@ const KeyValueEditor: React.FC<{
                 className="min-w-0 flex-1 bg-zinc-700 border border-zinc-600 rounded-lg px-3 py-1.5 text-xs text-zinc-200 placeholder:text-zinc-500 focus:outline-hidden focus:border-zinc-500"
               />
               {savedReference && (
-                <span className="shrink-0 text-[11px] text-emerald-400">
+                <span className="shrink-0 text-[11px] text-badge-success">
                   {text.savedCredentialHint}
                 </span>
               )}
@@ -248,7 +257,7 @@ const KeyValueEditor: React.FC<{
             <button
               type="button"
               onClick={() => handleRemove(key)}
-              className="p-1 text-zinc-500 hover:text-red-400 transition-colors"
+              className="p-1 text-zinc-500 hover:text-badge-danger transition-colors"
             >
               <Trash2 className="w-3.5 h-3.5" />
             </button>
@@ -267,6 +276,7 @@ export const McpServerEditor: React.FC<McpServerEditorProps> = ({
   isOpen,
   onClose,
   onSave,
+  onCancelInstall,
   initialConfig,
 }) => {
   const { t } = useI18n();
@@ -277,22 +287,40 @@ export const McpServerEditor: React.FC<McpServerEditorProps> = ({
   const [viewMode, setViewMode] = useState<ViewMode>('form');
   const [jsonText, setJsonText] = useState('');
   const [jsonError, setJsonError] = useState<string | null>(null);
+  const [installState, setInstallState] = useState<'idle' | 'installing' | 'cancelling'>('idle');
+
+  // JSON 视图只认连接配置字段，其余（enabled/lazyLoad、从别家客户端配置文件粘来的扩展键…）
+  // 保存时会被丢掉。粘贴外部配置是常见用法，静默丢弃会让用户以为写进去的设置生效了，
+  // 所以这里当场把被忽略的键列出来——只提示，不改保存语义（粘贴不应等于自动启用）。
+  const ignoredJsonKeys = React.useMemo(() => {
+    if (viewMode !== 'json' || !jsonText.trim()) return [];
+    try {
+      const parsed: unknown = JSON.parse(jsonText);
+      if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return [];
+      return Object.keys(parsed as Record<string, unknown>)
+        .filter((key) => !(JSON_EDITABLE_KEYS as readonly string[]).includes(key));
+    } catch {
+      return [];
+    }
+  }, [viewMode, jsonText]);
 
   // 打开时应用预填配置（用于推荐 MCP 的"连接"入口）
   React.useEffect(() => {
     if (isOpen) {
       setConfig(initialConfig ? { ...EMPTY_CONFIG, ...initialConfig } : { ...EMPTY_CONFIG });
+      setInstallState('idle');
     }
   }, [isOpen, initialConfig]);
 
   // Reset state when opening
   const handleClose = useCallback(() => {
+    if (installState !== 'idle') return;
     setConfig({ ...EMPTY_CONFIG });
     setViewMode('form');
     setJsonText('');
     setJsonError(null);
     onClose();
-  }, [onClose]);
+  }, [installState, onClose]);
 
   // Build JSON from config for the JSON view
   const configToJson = useCallback((c: McpServerConfig): string => {
@@ -347,16 +375,25 @@ export const McpServerEditor: React.FC<McpServerEditorProps> = ({
     return true;
   }, [config]);
 
-  const saveConfig = useCallback((nextConfig: McpServerConfig) => {
+  const saveConfig = useCallback(async (nextConfig: McpServerConfig) => {
     const secrets = getMcpServerSaveSecrets(nextConfig);
-    if (secrets) {
-      onSave(nextConfig, secrets);
-    } else {
-      onSave(nextConfig);
+    setInstallState('installing');
+    try {
+      const outcome = secrets
+        ? await onSave(nextConfig, secrets)
+        : await onSave(nextConfig);
+      if (outcome === 'cancelled' || outcome === 'error') {
+        setInstallState('idle');
+        return;
+      }
+      setInstallState('idle');
+      handleClose();
+    } catch {
+      setInstallState('idle');
     }
-  }, [onSave]);
+  }, [handleClose, onSave]);
 
-  const handleSave = useCallback(() => {
+  const handleSave = useCallback(async () => {
     // If in JSON mode, parse first
     if (viewMode === 'json') {
       try {
@@ -370,16 +407,21 @@ export const McpServerEditor: React.FC<McpServerEditorProps> = ({
           url: parsed.url,
           headers: retainSavedSecretReferences(parsed.headers, config.headers),
         };
-        saveConfig(nextConfig);
+        await saveConfig(nextConfig);
       } catch {
         setJsonError(editorText.jsonSaveError);
         return;
       }
     } else {
-      saveConfig(config);
+      await saveConfig(config);
     }
-    handleClose();
-  }, [viewMode, jsonText, config, saveConfig, handleClose, editorText.jsonSaveError]);
+  }, [viewMode, jsonText, config, saveConfig, editorText.jsonSaveError]);
+
+  const handleCancelInstall = useCallback(() => {
+    if (installState !== 'installing') return;
+    setInstallState('cancelling');
+    void onCancelInstall?.(config.name.trim());
+  }, [config.name, installState, onCancelInstall]);
 
   const updateConfig = useCallback(<K extends keyof McpServerConfig>(key: K, value: McpServerConfig[K]) => {
     setConfig((prev) => ({ ...prev, [key]: value }));
@@ -388,19 +430,36 @@ export const McpServerEditor: React.FC<McpServerEditorProps> = ({
   return (
     <Modal
       isOpen={isOpen}
-      onClose={handleClose}
+      onClose={installState === 'idle' ? handleClose : handleCancelInstall}
       title={editorText.title}
       size="lg"
-      headerIcon={<Server className="w-5 h-5 text-indigo-400" />}
+      headerIcon={<Server className="w-5 h-5 text-badge-accent" />}
       footer={
-        <ModalFooter
-          cancelText={editorText.cancel}
-          confirmText={editorText.save}
-          onCancel={handleClose}
-          onConfirm={handleSave}
-          confirmDisabled={viewMode === 'form' && !isValid()}
-          confirmColorClass="bg-indigo-600 hover:bg-indigo-500"
-        />
+        installState === 'idle' ? (
+          <ModalFooter
+            cancelText={editorText.cancel}
+            confirmText={editorText.save}
+            onCancel={handleClose}
+            onConfirm={() => { void handleSave(); }}
+            confirmDisabled={viewMode === 'form' && !isValid()}
+            confirmColorClass="bg-indigo-600 hover:bg-indigo-500"
+          />
+        ) : (
+          <div
+            data-testid="mcp-install-state"
+            data-state={installState}
+            className="flex w-full flex-col-reverse gap-2 sm:w-auto sm:flex-row"
+          >
+            {installState === 'installing' && (
+              <Button variant="ghost" onClick={handleCancelInstall}>
+                {editorText.cancelInstall}
+              </Button>
+            )}
+            <Button variant="secondary" disabled loading>
+              {installState === 'installing' ? editorText.installing : editorText.cancelling}
+            </Button>
+          </div>
+        )
       }
     >
       <div className="space-y-5">
@@ -430,17 +489,25 @@ export const McpServerEditor: React.FC<McpServerEditorProps> = ({
                     flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium
                     transition-all duration-150
                     ${isActive
-                      ? 'bg-indigo-500/20 text-indigo-400'
+                      ? 'bg-indigo-500/20 text-badge-accent'
                       : 'text-zinc-500 hover:text-zinc-400 hover:bg-zinc-700/50'
                     }
                   `}
                 >
                   {st.icon}
                   <span>{st.label}</span>
+                  {st.value === 'sse' && (
+                    <Badge className="border-zinc-700 bg-zinc-800 text-[10px] font-normal text-zinc-400">
+                      {editorText.sseLegacyBadge}
+                    </Badge>
+                  )}
                 </button>
               );
             })}
           </div>
+          {config.type === 'sse' && (
+            <p className="mt-1.5 text-xs text-zinc-500">{editorText.sseLegacyNote}</p>
+          )}
         </div>
 
         {/* View Mode Toggle */}
@@ -521,7 +588,7 @@ export const McpServerEditor: React.FC<McpServerEditorProps> = ({
                   <Input
                     value={config.url || ''}
                     onChange={(e) => updateConfig('url', e.target.value)}
-                    placeholder={config.type === 'sse' ? 'http://localhost:3001/sse' : 'http://localhost:3001/mcp'}
+                    placeholder={config.type === 'sse' ? editorText.urlPlaceholderSse : editorText.urlPlaceholderHttp}
                     inputSize="sm"
                   />
                 </div>
@@ -551,7 +618,12 @@ export const McpServerEditor: React.FC<McpServerEditorProps> = ({
               spellCheck={false}
             />
             {jsonError && (
-              <p className="text-xs text-red-400">{jsonError}</p>
+              <p className="text-xs text-badge-danger">{jsonError}</p>
+            )}
+            {ignoredJsonKeys.length > 0 && (
+              <p className="text-xs text-badge-warning">
+                {editorText.jsonIgnoredKeys.replace('{keys}', ignoredJsonKeys.join(', '))}
+              </p>
             )}
             <p className="text-xs text-zinc-500">
               {editorText.jsonHint}

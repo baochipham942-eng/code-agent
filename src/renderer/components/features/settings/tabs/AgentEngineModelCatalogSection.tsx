@@ -19,6 +19,8 @@ const AGENT_ENGINE_LABELS: Record<ExternalAgentEngineKind, string> = {
   claude_code: 'Claude',
   mimo_code: 'MiMo',
   kimi_code: 'Kimi',
+  codebuddy_code: 'WorkBuddy',
+  grok_cli: 'Grok',
 };
 
 function formatCatalogDate(value?: string, locale: string = localeForLanguage('zh')): string {
@@ -191,7 +193,7 @@ export const AgentEngineModelCatalogSection: React.FC = () => {
                           model.disabledReason
                             ? 'border-zinc-700 bg-zinc-800 text-zinc-500'
                             : model.recommended
-                              ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300'
+                              ? 'border-badge-success/40 bg-emerald-500/10 text-badge-success'
                               : 'border-zinc-700 bg-zinc-800 text-zinc-300'
                         }`}
                         title={model.disabledReason || model.id}
@@ -212,7 +214,7 @@ export const AgentEngineModelCatalogSection: React.FC = () => {
         </div>
 
         {catalogResult?.diagnostics.length ? (
-          <div className="border-t border-zinc-800 px-3 py-2 text-[11px] text-amber-300">
+          <div className="border-t border-zinc-800 px-3 py-2 text-[11px] text-badge-warning">
             {catalogResult.diagnostics[0]?.message}
           </div>
         ) : null}

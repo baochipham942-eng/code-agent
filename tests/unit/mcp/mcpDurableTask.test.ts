@@ -19,6 +19,7 @@ const CAPABILITY: McpTaskCapability = {
   serverToolsCall: true,
   query: true,
   cancel: true,
+  update: true,
   toolTaskSupport: 'optional',
 };
 
@@ -58,6 +59,10 @@ function fixture() {
     })),
     cancelTask: vi.fn(async () => ({
       taskId: 'task-provider-1', status: 'cancelled' as const, ttl: 60_000,
+      createdAt: '2026-07-11T00:00:00Z', lastUpdatedAt: '2026-07-11T00:00:02Z',
+    })),
+    updateTask: vi.fn(async () => ({
+      taskId: 'task-provider-1', status: 'working' as const, ttl: 60_000,
       createdAt: '2026-07-11T00:00:00Z', lastUpdatedAt: '2026-07-11T00:00:02Z',
     })),
     resolveTaskResult: vi.fn(async () => ({ content: [{ type: 'text', text: 'done' }] })),
@@ -188,6 +193,40 @@ describe('MCP Durable Task', () => {
 
     expect(protocol.cancelTask).toHaveBeenCalledTimes(1);
     expect(protocol.cancelTask).toHaveBeenCalledWith(expect.objectContaining({ taskId: 'task-provider-1' }));
+  });
+
+  it('submits supplemental input only through a trusted bound tasks/update capability', async () => {
+    const { controller, protocol } = fixture();
+    const created = await controller.createMcpTask({
+      runId: 'run-a', operationId: 'call-a', attempt: 1, serverIdentity: CAPABILITY.serverIdentity,
+      serverName: 'github', toolName: 'search_code', args: {}, sideEffect: false,
+      capability: CAPABILITY, now: 100,
+    });
+    if (created.mode !== 'task') throw new Error('expected task');
+
+    await controller.provideMcpTaskInput({
+      operation: created.operation,
+      runId: 'run-a',
+      operationId: 'call-a',
+      serverIdentity: CAPABILITY.serverIdentity,
+      capability: CAPABILITY,
+      taskInput: { approval: true },
+      now: 200,
+    });
+
+    expect(protocol.updateTask).toHaveBeenCalledWith(expect.objectContaining({
+      taskId: 'task-provider-1',
+      input: { approval: true },
+    }));
+    await expect(controller.provideMcpTaskInput({
+      operation: created.operation,
+      runId: 'run-a',
+      operationId: 'call-a',
+      serverIdentity: CAPABILITY.serverIdentity,
+      capability: { ...CAPABILITY, update: false },
+      taskInput: { approval: true },
+      now: 300,
+    })).rejects.toThrow(/not trusted or supported/i);
   });
 
   it('reuses terminal results after recovery without polling or executing again', async () => {

@@ -62,7 +62,10 @@ vi.mock('../../../src/renderer/stores/composerStore', () => ({
     },
 }));
 
-vi.mock('../../../src/renderer/stores/sessionStore', () => ({
+vi.mock('../../../src/renderer/stores/sessionStore', async (importOriginal) => ({
+  // 纯谓词（isBlankNewSession 等）走真实实现：NewSessionWelcome 用它判「这是不是真新会话」，
+  // 打桩会让空态首屏的消歧在这里测成空气。
+  ...(await importOriginal<typeof import('../../../src/renderer/stores/sessionStore')>()),
   useSessionStore: (selector?: (state: typeof sessionState) => unknown) => selector ? selector(sessionState) : sessionState,
 }));
 
@@ -196,14 +199,21 @@ describe('ChatView session shell', () => {
     expect(html).toContain('flex-1 min-h-0 flex overflow-hidden relative');
     expect(html).toContain('flex-1 min-h-0 flex flex-col min-w-0');
     expect(html).toContain('flex-1 min-h-0 overflow-hidden');
-    expect(html).toContain('想完成什么？');
     expect(html).toContain('做个能玩的小游戏');
     expect(html).toContain('出一张可交互数据图表');
     expect(html).toContain('搜一份最新行业简报');
     expect(html).toContain('梳理磁盘空间占用');
-    expect(html).not.toContain('继续推进 Phase 5');
+    // 2026-08-01 起：这个夹具是**历史**会话（有标题、有消息计数），空态首屏不再给它
+    // 通用欢迎页——冷启动自动恢复的历史会话此前与真新会话不可区分，用户以为自己新开
+    // 了一条，首条消息接进了旧会话。会话标题因此获准出现在这一句消歧文案里；
+    // 「会话操作不进聊天正文」的原意由本用例其余断言继续守着。
+    expect(html).not.toContain('想完成什么？');
+    expect(html).toContain('继续上次的会话：继续推进 Phase 5');
+    // 批C2：tooltip 不再回显完整路径（内部路径泄漏面），上下文标签只读显示项目名
+    // （2026-07-29：目录 chip 入口删除，目录选择收进侧栏「项目」区新建项目流程）。
     expect(html).toContain('项目会话 · code-agent');
-    expect(html).toContain('继承工作区：/repo/code-agent');
+    expect(html).not.toContain('welcome-directory-chip');
+    expect(html).not.toContain('继承工作区：/repo/code-agent');
     expect(html).toContain('继承：工作区 · Browser · 最近工具 browser_action');
     expect(html).not.toContain('/repo/other');
   });

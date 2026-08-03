@@ -4,26 +4,26 @@
 // 两种数据源，同一条：
 //   1) 预选：用户在「＋ → 团队」选了配方但还没发第一句话 —— 灰态名单，让他先知道
 //      这个团队由谁组成（WorkBuddy 不做这一步，只在真 spawn 后才铺；我们多给一层可预期性）
-//   2) 运行时：会话真的跑起来了（实时 swarm 成员，或从账本回灌的历史 run）—— 带状态
+//   2) 运行时：会话真的跑起来了（持久化账本/API 回灌）—— 带状态
 // 第一颗 pill 永远是「主会话」（团长位），点它回主对话；点成员打开他的工作记录。
 // ============================================================================
 
 import React, { useEffect, useMemo, useState } from 'react';
+import { X } from 'lucide-react';
 import { useSwarmStore } from '../../../stores/swarmStore';
 import { useComposerStore } from '../../../stores/composerStore';
 import { useTeamRecipeStore } from '../../../stores/teamRecipeStore';
 import { useAgentRegistryStore } from '../../../stores/agentRegistryStore';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { useI18n } from '../../../hooks/useI18n';
-import ipcService from '../../../services/ipcService';
-import { IPC_CHANNELS } from '@shared/ipc';
 import type { SwarmAgentState } from '@shared/contract/swarm';
 import type { SwarmRunAgentRecord } from '@shared/contract/swarmTrace';
-import { readPersistedTeamLead } from '@shared/contract/teamRecipe';
+import { readPersistedTeamLead, teamRecipeMemberKey } from '@shared/contract/teamRecipe';
 import { useMemberViewStore } from '../../../stores/memberViewStore';
 import { useComposerNoticeStore, selectHasBlockingNotice } from '../../../stores/composerNoticeStore';
 import { useVoiceCallStore } from '../../../stores/voiceCallStore';
 import { RoleInitialAvatar } from './RoleInitialAvatar';
+import { useDurableSwarmRunDetail } from '../../../hooks/useDurableSwarmRunDetail';
 
 export function swarmRunAgentRecordToState(record: SwarmRunAgentRecord): SwarmAgentState {
   return {
@@ -52,6 +52,8 @@ export interface MemberPill {
   profession?: string;
   status: 'standby' | 'running' | 'completed' | 'failed';
   isLead: boolean;
+  /** standby 成员的排除键（member 的 id ?? roleId；lead 用 roleId），× 掉时写进 composerStore */
+  standbyKey?: string;
   agent?: SwarmAgentState;
   record?: SwarmRunAgentRecord;
 }
@@ -68,44 +70,28 @@ const StatusBadge: React.FC<{ status: MemberPill['status'] }> = ({ status }) => 
     return <span data-testid="member-status-running" className="h-2.5 w-2.5 shrink-0 animate-spin rounded-full border border-zinc-500 border-t-transparent" />;
   }
   if (status === 'completed') {
-    return <span data-testid="member-status-completed" className="shrink-0 text-[11px] leading-none text-emerald-400">✓</span>;
+    return <span data-testid="member-status-completed" className="shrink-0 text-[11px] leading-none text-badge-success">✓</span>;
   }
-  return <span data-testid="member-status-failed" className="shrink-0 text-[11px] leading-none text-red-400">✕</span>;
+  return <span data-testid="member-status-failed" className="shrink-0 text-[11px] leading-none text-badge-danger">✕</span>;
 };
 
 /**
- * 本会话的团队成员（实时 swarm > 账本回灌 > 预选配方名单）。
+ * 本会话的团队成员（持久化账本/API > 预选配方名单）。
  * 成员条和成员对话页共用同一份解析，避免两处各抄一遍口径。
  */
 export function useSessionMembers(sessionId: string | null): MemberPill[] {
-  const agents = useSwarmStore((state) => state.agents);
-  const swarmSessionId = useSwarmStore((state) => state.activeSessionId);
   const selectedTeamRecipeId = useComposerStore((state) => state.selectedTeamRecipeId);
+  const standbyExcludedMemberKeys = useComposerStore((state) => state.standbyExcludedMemberKeys);
   const recipes = useTeamRecipeStore((state) => state.recipes);
   const agentEntries = useAgentRegistryStore((state) => state.entries);
   const teamLeadRoleId = useSessionStore((state) => {
     const session = state.sessions.find((item) => item.id === sessionId);
     return readPersistedTeamLead(session?.metadata)?.roleId ?? null;
   });
-  const [persistedAgents, setPersistedAgents] = useState<SwarmRunAgentRecord[]>([]);
-
-  const teamAgents = swarmSessionId === sessionId && agents.length > 1 ? agents : [];
-  const hasRealtimeTeam = teamAgents.length > 0;
-
-  useEffect(() => {
-    let current = true;
-    setPersistedAgents([]);
-    if (!sessionId || hasRealtimeTeam) return () => { current = false; };
-    void ipcService.invoke(IPC_CHANNELS.SWARM_LIST_TRACE_RUNS, { sessionId, limit: 1 })
-      .then(async (runs) => {
-        const run = runs[0];
-        if (!current || !run || run.totalAgents < 2) return;
-        const detail = await ipcService.invoke(IPC_CHANNELS.SWARM_GET_TRACE_RUN_DETAIL, { sessionId, runId: run.id });
-        if (current && detail?.agents.length && detail.agents.length >= 2) setPersistedAgents(detail.agents);
-      })
-      .catch(() => { if (current) setPersistedAgents([]); });
-    return () => { current = false; };
-  }, [hasRealtimeTeam, sessionId]);
+  const durableDetail = useDurableSwarmRunDetail(sessionId);
+  const persistedAgents = durableDetail?.agents.length && durableDetail.agents.length >= 2
+    ? durableDetail.agents
+    : [];
 
   const professionOf = useMemo(() => {
     const map = new Map(agentEntries.map((entry) => [entry.id, entry.profession]));
@@ -127,22 +113,28 @@ export function useSessionMembers(sessionId: string | null): MemberPill[] {
       } satisfies MemberPill;
     });
 
-    if (hasRealtimeTeam) return fromAgents(teamAgents);
     if (persistedAgents.length > 0) return fromAgents(persistedAgents.map(swarmRunAgentRecordToState), persistedAgents);
 
-    // 预选：还没跑，只铺名单
+    // 预选：还没跑，只铺名单（× 掉的成员按 standbyExcludedMemberKeys 过滤，
+    // 发送启动时同一份排除会传给 host，显示口径 = 实际起团口径）
     const recipe = selectedTeamRecipeId ? recipes.find((item) => item.id === selectedTeamRecipeId) : undefined;
     if (!recipe) return [];
-    const roleIds = [...(recipe.lead ? [recipe.lead.roleId] : []), ...recipe.members.map((member) => member.roleId)];
-    return roleIds.map((roleId, index) => ({
-      key: `${roleId}-${index}`,
-      roleId,
-      name: roleId,
-      profession: professionOf(roleId),
-      status: 'standby' as const,
-      isLead: roleId === teamLeadRoleId,
-    }));
-  }, [hasRealtimeTeam, teamAgents, persistedAgents, selectedTeamRecipeId, recipes, professionOf, teamLeadRoleId]);
+    const standbyEntries = [
+      ...(recipe.lead ? [{ roleId: recipe.lead.roleId, standbyKey: recipe.lead.roleId }] : []),
+      ...recipe.members.map((member) => ({ roleId: member.roleId, standbyKey: teamRecipeMemberKey(member) })),
+    ];
+    return standbyEntries
+      .filter((entry) => !standbyExcludedMemberKeys.includes(entry.standbyKey))
+      .map((entry, index) => ({
+        key: `${entry.roleId}-${index}`,
+        roleId: entry.roleId,
+        name: entry.roleId,
+        profession: professionOf(entry.roleId),
+        status: 'standby' as const,
+        isLead: entry.roleId === teamLeadRoleId,
+        standbyKey: entry.standbyKey,
+      }));
+  }, [persistedAgents, selectedTeamRecipeId, standbyExcludedMemberKeys, recipes, professionOf, teamLeadRoleId]);
 
   return pills;
 }
@@ -163,6 +155,19 @@ export const SessionMemberBar: React.FC<{ sessionId: string | null }> = ({ sessi
   useEffect(() => { setViewingMemberId(null); }, [sessionId, setViewingMemberId]);
   // 确认卡收掉后回到常态，别把「展开」黏在下一次
   useEffect(() => { if (!blockedByNotice) setExpandedOverNotice(false); }, [blockedByNotice]);
+
+  // standby ×：把该成员从本次预选排除（启动时少起这个人）；
+  // × 到最后一个不剩 = 整团取消，清掉配方预选本身（排除标记随 setSelectedTeamRecipeId 一并复位）
+  const removeStandbyMember = (pill: MemberPill) => {
+    if (!pill.standbyKey) return;
+    const store = useComposerStore.getState();
+    const remaining = pills.filter((candidate) => candidate.standbyKey !== pill.standbyKey);
+    if (remaining.length === 0) {
+      store.setSelectedTeamRecipeId(null);
+      return;
+    }
+    store.setStandbyExcludedMemberKeys([...store.standbyExcludedMemberKeys, pill.standbyKey]);
+  };
 
   if (pills.length === 0) return null;
 
@@ -215,6 +220,51 @@ export const SessionMemberBar: React.FC<{ sessionId: string | null }> = ({ sessi
         )}
         {pills.map((pill) => {
           const voiceActive = voiceCallLive && (pill.key === voiceActiveAgentId || pill.roleId === voiceActiveAgentId);
+          // standby pill 本体点击是无操作（还没有对话可看），语义保持；
+          // 取消预选走 hover 浮现的 × 按钮或聚焦后 Delete/Backspace，与 composer chip 口径一致
+          if (pill.status === 'standby') {
+            return (
+              <div
+                key={pill.key}
+                role="group"
+                tabIndex={0}
+                data-testid={`member-pill-${pill.roleId}`}
+                data-voice-active={voiceActive || undefined}
+                title={pill.profession ? `${pill.name} · ${pill.profession}` : pill.name}
+                aria-label={pill.name}
+                onKeyDown={(event) => {
+                  if (event.key !== 'Delete' && event.key !== 'Backspace') return;
+                  event.preventDefault();
+                  removeStandbyMember(pill);
+                }}
+                className="group flex shrink-0 cursor-default items-center gap-1.5 rounded-full border border-zinc-800 bg-zinc-900/60 py-1 pl-1 pr-2.5 text-left text-zinc-500 transition-colors"
+              >
+                <RoleInitialAvatar roleId={pill.roleId} name={pill.name} className="h-5 w-5 text-[10px]" />
+                <span className="flex min-w-0 flex-col items-start leading-tight">
+                  {pill.profession && <span className="text-xs font-semibold text-zinc-100">{pill.profession}</span>}
+                  <span className={pill.profession ? 'text-[10px] text-zinc-400' : 'text-xs font-medium text-zinc-100'}>{pill.name}</span>
+                </span>
+                {pill.isLead && (
+                  <span
+                    data-testid={`member-lead-badge-${pill.roleId}`}
+                    className="shrink-0 rounded bg-amber-400/15 px-1 py-0.5 text-[9px] font-medium leading-none text-badge-warning"
+                  >
+                    {text.leadLabel}
+                  </span>
+                )}
+                <button /* ds-allow:button: standby 成员 pill 的删除是图标级小按钮，Button primitive 无此紧凑图标变体 */
+                  type="button"
+                  tabIndex={-1}
+                  data-testid={`member-standby-remove-${pill.roleId}`}
+                  onClick={() => removeStandbyMember(pill)}
+                  aria-label={text.standbyRemoveAria.replace('{name}', pill.name)}
+                  className="-mr-1 shrink-0 rounded-full p-0.5 text-zinc-500 opacity-0 transition-opacity hover:bg-zinc-700 hover:text-zinc-200 focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100"
+                >
+                  <X className="h-3 w-3" aria-hidden />
+                </button>
+              </div>
+            );
+          }
           return (
           <button /* ds-allow:button: 成员 pill 需承载头像、两行文字和状态徽标，Button primitive 的居中按钮形态不适配 */
             key={pill.key}
@@ -223,19 +273,16 @@ export const SessionMemberBar: React.FC<{ sessionId: string | null }> = ({ sessi
             data-selected={viewingMemberId === pill.key}
             data-voice-active={voiceActive || undefined}
             onClick={() => {
-              // 待命态还没有对话可看；再点同一个人回主会话
-              if (pill.status === 'standby') return;
+              // 再点同一个人回主会话（standby 走上方 div 分支，不会到这里）
               setViewingMemberId(viewingMemberId === pill.key ? null : pill.key);
             }}
             title={pill.profession ? `${pill.name} · ${pill.profession}` : pill.name}
             className={`flex shrink-0 items-center gap-1.5 rounded-full border py-1 pl-1 pr-2.5 text-left transition-colors ${
-              pill.status === 'standby'
-                ? 'border-zinc-800 bg-zinc-900/60 text-zinc-500'
-                : voiceActive
-                  ? 'border-emerald-400/70 bg-emerald-500/10 ring-1 ring-emerald-400/40'
-                  : viewingMemberId === pill.key
-                    ? 'border-zinc-300 bg-zinc-800'
-                    : 'border-zinc-700 bg-zinc-800/70 hover:border-zinc-500'
+              voiceActive
+                ? 'border-badge-success/70 bg-emerald-500/10 ring-1 ring-emerald-400/40'
+                : viewingMemberId === pill.key
+                  ? 'border-zinc-300 bg-zinc-800'
+                  : 'border-zinc-700 bg-zinc-800/70 hover:border-zinc-500'
             }`}
           >
             <RoleInitialAvatar roleId={pill.roleId} name={pill.name} className="h-5 w-5 text-[10px]" />
@@ -247,7 +294,7 @@ export const SessionMemberBar: React.FC<{ sessionId: string | null }> = ({ sessi
             {pill.isLead && (
               <span
                 data-testid={`member-lead-badge-${pill.roleId}`}
-                className="shrink-0 rounded bg-amber-400/15 px-1 py-0.5 text-[9px] font-medium leading-none text-amber-300"
+                className="shrink-0 rounded bg-amber-400/15 px-1 py-0.5 text-[9px] font-medium leading-none text-badge-warning"
               >
                 {text.leadLabel}
               </span>

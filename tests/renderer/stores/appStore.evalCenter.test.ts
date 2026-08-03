@@ -9,7 +9,6 @@ describe('appStore eval center', () => {
       evalCenterReplaySessionId: null,
       showCapabilityHub: false,
       showLocalOpsPanel: false,
-      showKnowledgeMemoryPanel: false,
       showSettings: false,
     });
   });

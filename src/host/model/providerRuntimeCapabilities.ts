@@ -20,6 +20,8 @@ export const PROVIDER_RUNTIME_IDS = [
   'claude_code',
   'mimo_code',
   'kimi_code',
+  'codebuddy_code',
+  'grok_cli',
 ] as const;
 
 export type ProviderRuntimeId = typeof PROVIDER_RUNTIME_IDS[number];
@@ -243,6 +245,26 @@ export const PROVIDER_RUNTIME_CAPABILITY_MATRIX: readonly ProviderRuntimeCapabil
     providerScope: ['cli-owned'],
     adapterBoundary: 'kimi -p --output-format stream-json',
     capabilities: opaqueCliCapabilities('runtime-kimi-code.json', 'kimi-code-pending'),
+  },
+  {
+    runtime: 'codebuddy_code',
+    protocolFamily: 'opaque_cli',
+    providerScope: ['cli-owned'],
+    adapterBoundary: 'codebuddy -p --output-format stream-json',
+    capabilities: opaqueCliCapabilities(
+      'runtime-codebuddy-code.json',
+      'codebuddy-code-local-spike',
+    ),
+  },
+  {
+    runtime: 'grok_cli',
+    protocolFamily: 'opaque_cli',
+    providerScope: ['cli-owned'],
+    adapterBoundary: 'grok -p --output-format streaming-json',
+    capabilities: opaqueCliCapabilities(
+      'runtime-grok-cli.json',
+      'grok-cli-local-spike',
+    ),
   },
 ] as const;
 

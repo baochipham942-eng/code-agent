@@ -110,6 +110,7 @@ export const enSettingsSystem = {
         callFailedPrefix: 'telemetry:health failed (',
         callFailedSuffix: ').',
         notConnected: 'not connected',
+        uploadFailedSummary: 'Upload failed {count} times · latest {time}',
         time: {
           noEvents: 'No events yet',
           justNow: 'Just now',

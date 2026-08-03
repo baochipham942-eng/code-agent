@@ -35,7 +35,7 @@ import { getSessionManager } from '../services';
 import type { PlanningService } from '../planning';
 import { DeepResearchMode, SemanticResearchOrchestrator } from '../research';
 import { analyzeTask } from './hybrid/taskRouter';
-import { classifyIntent } from '../routing/intentClassifier';
+import { classifyIntent, needsLlmIntentClassification } from '../routing/intentClassifier';
 import { getSessionStateManager } from '../session/sessionStateManager';
 import { getContextHealthService } from '../context/contextHealthService';
 import { ModelRouter } from '../model/modelRouter';
@@ -59,6 +59,7 @@ import { buildRoutingResolvedEventData } from './routingResolvedEvent';
 import { buildRoutingToolDenylist } from './routingToolPolicy';
 import { queuePendingSteerMessagesOrWarn, steerOrQueue, type SteerOrQueueOutcome } from '../runtime/steerQueueFence';
 import { startRunPreferringDurable } from './orchestrator/durableRunStart';
+import { getUserPresenceToolNames } from '../tools/dispatch/toolDefinitions';
 
 // Sub-modules
 import { type AgentOrchestratorConfig, MAX_MESSAGES_IN_MEMORY } from './orchestrator/types';
@@ -83,6 +84,7 @@ import { resolveWorkspacePath } from '../runtime/workspaceScope';
 import { resolveSessionWorkspaceScope } from '../services/sessionFork/workspace';
 import { getAuthService } from '../services/auth/authService';
 import { getDatabase } from '../services/core/databaseService';
+import { wrapWithTurnSystemContext } from './turnScaffold';
 
 export type { AgentOrchestratorConfig } from './orchestrator/types';
 
@@ -95,6 +97,8 @@ function isApproveResponse(response: PermissionResponse): boolean {
 
 interface PendingSteerMessage {
   content: string;
+  /** 用户原话；`content` 可能带 turnSystemContext 脚手架，那份只给模型。 */
+  displayContent?: string;
   clientMessageId?: string;
   attachments?: MessageAttachment[];
   messageMetadata?: MessageMetadata;
@@ -103,6 +107,7 @@ interface PendingSteerMessage {
 // ----------------------------------------------------------------------------
 // Agent Orchestrator
 // ----------------------------------------------------------------------------
+
 
 export class AgentOrchestrator {
   private configService: ConfigService;
@@ -289,7 +294,10 @@ export class AgentOrchestrator {
       if (analysis.taskType === 'research') {
         logger.info('Auto-detected research task (keyword match), routing to deep research pipeline');
         await this.runDeepResearchMode(content, options, sessionAwareOnEvent, modelConfig);
-      } else if (!['code', 'data', 'ppt', 'image', 'video'].includes(analysis.taskType)) {
+      } else if (
+        !['code', 'data', 'ppt', 'image', 'video'].includes(analysis.taskType)
+        && needsLlmIntentClassification(content)
+      ) {
         try {
           const modelRouter = new ModelRouter();
           const intent = await classifyIntent(content, modelRouter);
@@ -380,6 +388,7 @@ export class AgentOrchestrator {
       logger.info('[AgentOrchestrator] Already interrupting, queuing message');
       this.pendingSteerMessages.push({
         content: effectiveMessage,
+        displayContent: newMessage,
         clientMessageId,
         attachments: attachments as MessageAttachment[] | undefined,
         messageMetadata,
@@ -398,13 +407,13 @@ export class AgentOrchestrator {
     if (this.agentLoop) {
       try {
         const outcome = await steerOrQueue(this.agentLoop, {
-          sessionId, content: effectiveMessage, clientMessageId, attachments: attachments as MessageAttachment[] | undefined, metadata: messageMetadata,
+          sessionId, content: effectiveMessage, displayContent: newMessage, clientMessageId, attachments: attachments as MessageAttachment[] | undefined, metadata: messageMetadata,
         });
 
         while (this.pendingSteerMessages.length > 0) {
           const queued = this.pendingSteerMessages.shift()!;
           await steerOrQueue(this.agentLoop, {
-            sessionId, content: queued.content, clientMessageId: queued.clientMessageId, attachments: queued.attachments, metadata: queued.messageMetadata,
+            sessionId, content: queued.content, displayContent: queued.displayContent, clientMessageId: queued.clientMessageId, attachments: queued.attachments, metadata: queued.messageMetadata,
           });
           logger.info('[AgentOrchestrator] Processed queued steer message');
         }
@@ -1019,6 +1028,13 @@ export class AgentOrchestrator {
         type: 'error',
         data: {
           message: error instanceof Error ? error.message : 'Unknown error',
+          // 同一次失败会经由多个出口各发一条 error（这里 + runFinalizer 的 RUN_FAILED）。
+          // 渲染侧按后到的覆盖，所以每一条都得带这一轮真跑的模型，缺一条就把前面
+          // 带对的那条盖掉——真机 2026-08-01：卡片指认了一个根本没跑过的模型。
+          details: {
+            provider: modelConfig.provider,
+            model: modelConfig.model,
+          },
         },
       });
       terminalError = error;
@@ -1205,7 +1221,14 @@ export class AgentOrchestrator {
           'EpisodicRecall',
         ]
       : (options?.deniedToolNames || []);
-    const mergedDeniedToolNames = Array.from(new Set([...baseDeniedToolNames, ...routingDeniedToolNames]));
+    const liveVoiceDeniedToolNames = getPermissionModeManager().isLiveVoiceSession(sessionId)
+      ? getUserPresenceToolNames()
+      : [];
+    const mergedDeniedToolNames = Array.from(new Set([
+      ...baseDeniedToolNames,
+      ...routingDeniedToolNames,
+      ...liveVoiceDeniedToolNames,
+    ]));
     const deniedToolNames = mergedDeniedToolNames.length > 0 ? mergedDeniedToolNames : undefined;
 
     const baseSystemPrompt = routingResolution?.agent?.systemPrompt
@@ -1328,7 +1351,9 @@ export class AgentOrchestrator {
     logger.info(`[EffortLevel] complexity=${complexityAnalysis.complexity} → effort=${effort}`);
 
       logger.info('========== Starting agent loop ==========');
-      const runPromise = this.agentLoop.run(effectiveContent);
+      // 第二个参数是用户原话：telemetry 的 user_prompt 只能存它，别存拼了
+      // turnSystemContext 的 effectiveContent（backfill 会把那一列写回消息流）。
+      const runPromise = this.agentLoop.run(effectiveContent, content);
       this.activeRunPromise = runPromise;
       await runPromise;
       logger.info('========== Agent loop completed normally ==========');
@@ -1368,11 +1393,9 @@ export class AgentOrchestrator {
     if (liveVoiceNotice) {
       turnSystemContext.push(liveVoiceNotice);
     }
-    if (turnSystemContext.length === 0) {
-      return content;
-    }
-
-    return `${turnSystemContext.join('\n\n')}\n\n<user_request>\n${content}\n</user_request>`;
+    // 标签字面量收在 turnScaffold 里：轮首的分类器要按同一份定义把用户原话拆回来
+    // （见该文件顶注的 skill 别名劫持实录）。
+    return wrapWithTurnSystemContext(turnSystemContext, content);
   }
 
   /**
@@ -1388,9 +1411,13 @@ export class AgentOrchestrator {
     const manager = getPermissionModeManager();
     if (!manager.isLiveVoiceSession(sessionId)) return null;
     const mode = manager.getModeForSession(sessionId);
+    // ADR-053 之后通话不再抬严（唯一钳制是 bypassPermissions→acceptEdits），
+    // 旧文案「已临时抬严到 X」变成了假话，会误导执行模型以为有额外限制。
+    // 现在只陈述事实：档位是多少、需要确认的操作会等审批卡、用户在通话中可能不马上点。
     return [
       '<live_voice_permission_notice>',
-      `当前处于实时语音通话中，权限档已临时抬严到 ${mode}：写入和执行类操作会挂起等待用户在审批卡上确认，不会被静默拒绝。`,
+      `当前处于实时语音通话中，本轮权限档为 ${mode}（通话跟随会话自己的权限设置，不额外收紧）。`,
+      '需要用户确认的操作会挂起等待审批卡；用户正在通话、不在键盘前，可能不会立刻确认。',
       '不要因为一次尝试没有立即成功就反复更换写法重试，等待审批结果即可。',
       '</live_voice_permission_notice>',
     ].join('\n');

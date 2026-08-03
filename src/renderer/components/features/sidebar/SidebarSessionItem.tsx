@@ -1,12 +1,11 @@
 import React from 'react';
-import { Archive, ArchiveRestore, CheckSquare, Eye, GitFork, Loader2, Pin, ScrollText, Square } from 'lucide-react';
+import { Archive, ArchiveRestore, AudioLines, CheckSquare, GitFork, Loader2, Pin, Square } from 'lucide-react';
 import type { SessionRuntimeSummary } from '@shared/ipc';
 import type { SessionAutomationSessionSummary } from '@shared/contract';
 import { IconButton } from '../../primitives';
 import type { SessionWithMeta } from '../../../stores/sessionStore';
 import type { SessionState } from '../../../stores/taskStore';
 import { getDisplaySessionTitle, getSessionStatusPresentation } from '../../../utils/sessionPresentation';
-import { canReuseSessionWorkbench } from './sidebarPresentation';
 import { localeForLanguage } from '../../../utils/i18nTime';
 import { useI18n } from '../../../hooks/useI18n';
 import { SidebarMessageHitList } from './SidebarMessageHitList';
@@ -26,13 +25,13 @@ import {
 function getAttentionDotClassName(kind: string): string | null {
   switch (kind) {
     case 'error':
-      return 'bg-red-400';
+      return 'bg-mark-danger';
     case 'approval':
-      return 'bg-violet-400';
+      return 'bg-mark-accent';
     case 'paused':
-      return 'bg-amber-400';
+      return 'bg-mark-warning';
     case 'incomplete':
-      return 'bg-amber-400/60';
+      return 'bg-mark-warning/60';
     default:
       return null;
   }
@@ -64,7 +63,6 @@ export interface SidebarSessionItemProps {
   searchQuery: string;
   messageSearchHitsBySessionId: SidebarDerivedSessions['messageSearchHitsBySessionId'];
   replayEvidenceBySessionId: SidebarDerivedSessions['replayEvidenceBySessionId'];
-  canOpenSessionReplay: boolean;
   reviewItemsBySessionId: SidebarDerivedSessions['reviewItemsBySessionId'];
   trajectoryQualityBySessionId: SidebarDerivedSessions['trajectoryQualityBySessionId'];
   multiSelectMode: boolean;
@@ -78,8 +76,6 @@ export interface SidebarSessionItemProps {
   handleRenameSubmit: SidebarRowActions['handleRenameSubmit'];
   handleRenameKeyDown: SidebarRowActions['handleRenameKeyDown'];
   handleDoubleClick: SidebarRowActions['handleDoubleClick'];
-  handleOpenSessionReplayInEvalCenter: SidebarRowActions['handleOpenSessionReplayInEvalCenter'];
-  handleOpenSessionAssets: SidebarSessionActions['handleOpenSessionAssets'];
   handleOpenReplayEvidence: SidebarRowActions['handleOpenReplayEvidence'];
   handleSelectMessageSearchHit: SidebarSessionActions['handleSelectMessageSearchHit'];
   handleArchiveSession: SidebarSessionActions['handleArchiveSession'];
@@ -90,7 +86,8 @@ export type SidebarSessionItemSharedProps = Omit<SidebarSessionItemProps, 'sessi
 
 /**
  * 单条会话行（Codex 风极简版）：默认只显「标题 + 右侧时间」，运行中显 spinner，
- * 需关注状态显一个安静小圆点；Replay/产物/归档等动作 hover 才浮现。
+ * 需关注状态显一个安静小圆点；hover 只浮现归档（2026-07-29：Replay/产物图标已撤，
+ * 入口保留在右键菜单与项目 ⋯ 菜单）。
  * eval 诊断（轨迹质量 / 证据等级）、类型/自动化徽标、摘要行、Replay 证据按钮
  * 全部移出默认行——它们仍可经项目控制台 / Replay 面板查看，不再喧宾夺主。
  */
@@ -107,7 +104,6 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
   hasNeedsInputForSession,
   searchQuery,
   messageSearchHitsBySessionId,
-  canOpenSessionReplay,
   multiSelectMode,
   renameValue,
   renameInputRef,
@@ -117,8 +113,6 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
   handleRenameSubmit,
   handleRenameKeyDown,
   handleDoubleClick,
-  handleOpenSessionReplayInEvalCenter,
-  handleOpenSessionAssets,
   handleSelectMessageSearchHit,
   handleArchiveSession,
 }) => {
@@ -132,8 +126,6 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
   const sessionRuntime = sessionRuntimes.get(session.id);
   const backgroundSession = backgroundSessionMap.get(session.id);
   const surfaceExecutionSession = useSurfaceExecutionRunSession(session.id);
-  // 空会话（0 轮 / 0 消息）没有可回放内容，hover 也不挂 Replay 入口。
-  const sessionHasActivity = (session.turnCount ?? 0) > 0 || (session.messageCount ?? 0) > 0;
   const status = getSessionStatusPresentation({
     backgroundSession,
     runtime: sessionRuntime,
@@ -154,7 +146,9 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
   );
   const messageSearchHitGroup = searchQuery.trim() ? messageSearchHitsBySessionId[session.id] : undefined;
   const displayTitle = getDisplaySessionTitle(session.title);
-  const canOpenSessionAssets = canReuseSessionWorkbench(session);
+  // 这条会话用过实时语音（host 在建连时写进会话 metadata）。是身份不是状态，
+  // 所以走行尾的身份轴（右槽），不进讲「此刻怎么了」的状态槽——详见下方渲染处。
+  const hadLiveVoice = session.metadata?.hadLiveVoice === true;
   const titleToneClass = isSelected ? 'text-zinc-100' : isUnread ? 'text-zinc-200' : 'text-zinc-400';
   const forkParentSessionId = getForkParentSessionId(session);
 
@@ -175,12 +169,12 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
       aria-label={s.openSession.replace('{title}', displayTitle)}
       data-session-id={session.id}
       title={new Date(latestActivityAt).toLocaleString(localeForLanguage(language))}
-      className={`group relative pl-0 pr-3 py-1.5 rounded-lg cursor-pointer transition-colors duration-150 ${isSelected && !multiSelectMode ? 'bg-zinc-700/60' : isChecked ? 'bg-blue-500/10 border border-blue-500/20' : 'hover:bg-zinc-800'}`}
+      className={`group relative pl-0 pr-1.5 py-1.5 rounded-lg cursor-pointer transition-colors duration-150 ${isSelected && !multiSelectMode ? 'bg-zinc-700/60' : isChecked ? 'bg-blue-500/10 border border-badge-info/20' : 'hover:bg-zinc-800'}`}
     >
       <div className="flex items-center gap-2">
         {/* 多选 Checkbox */}
         {multiSelectMode && (
-          isChecked ? <CheckSquare className="w-4 h-4 text-blue-400 shrink-0" /> : <Square className="w-4 h-4 text-zinc-500 shrink-0" />
+          isChecked ? <CheckSquare className="w-4 h-4 text-badge-info shrink-0" /> : <Square className="w-4 h-4 text-zinc-500 shrink-0" />
         )}
 
         {/* 前导槽：宽度恒定 16px，有没有置顶标记标题左缘都不动
@@ -188,7 +182,7 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
             未读点已挪到行尾状态列。 */}
         {!multiSelectMode && (
           <span className="w-4 shrink-0 flex items-center justify-center">
-            {isPinned && <Pin className="w-3 h-3 text-amber-500 -rotate-45" />}
+            {isPinned && <Pin className="w-3 h-3 text-badge-warning -rotate-45" />}
           </span>
         )}
 
@@ -201,7 +195,7 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
             onBlur={handleRenameSubmit}
             onKeyDown={handleRenameKeyDown}
             onClick={(e) => e.stopPropagation()}
-            className="flex-1 text-sm bg-zinc-600/80 text-zinc-200 px-1.5 py-0.5 rounded border border-zinc-600 focus:border-blue-500 focus:outline-hidden"
+            className="flex-1 text-sm bg-zinc-600/80 text-zinc-200 px-1.5 py-0.5 rounded border border-zinc-600 focus:border-badge-info focus:outline-hidden"
           />
         ) : (
           <span
@@ -212,83 +206,69 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
           </span>
         )}
 
-        {/* 分叉标记：紧跟标题右侧，仅分叉来的子会话显示，点击跳回父会话 */}
-        {forkParentSessionId && !multiSelectMode && (
-          <button /* ds-allow:button: 侧栏列表行标题旁的分叉来源小图标，Button primitive 动作按钮形状不适配列表行 */
-            type="button"
-            data-testid="fork-lineage-marker"
-            aria-label={s.forkedFrom.replace('{sessionId}', forkParentSessionId)}
-            title={s.openForkParent.replace('{sessionId}', forkParentSessionId)}
-            onClick={(event) => {
-              event.stopPropagation();
-              void handleSelectSession(forkParentSessionId);
-            }}
-            className="shrink-0 rounded p-0.5 text-violet-400 transition-colors hover:bg-violet-500/15 hover:text-violet-300 focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-violet-400"
-          >
-            <GitFork className="h-3.5 w-3.5" />
-          </button>
-        )}
-
-        {/* 行尾固定 16px 状态列（2026-07-27 对齐规范）：宽度恒定，内容互斥——
-            运行中 spinner / 需关注圆点 / 未读点 / 空。相对时间已撤（产品拍板：
-            新旧由排序表达，精确时间在行 title 里），右槽不再讲第二件事。 */}
+        {/* 行尾状态轴：**一个**固定 16px 槽，内容按优先级互斥 ——
+            临时状态 > 分叉标记 > 用过实时语音。
+            · 状态压身份（2026-07-28 产品负责人拍板，推翻「两槽并存、身份占最右轴」）：
+              分叉/语音这类身份标记绝大多数会话都没有，让身份单独占最右轴 ⇒ 那一格常年空着，
+              肉眼看到的最右元素变成状态点，落在 190.8 而不是全栏右轨 214.8，
+              与分组角标 / 账号箭头错开 24（= 16 槽 + 8 gap，实测截图）。
+            · 身份内部分叉压语音（#756 定的次序，保留）：两者都在说这会话**是什么**，
+              但分叉标记可点击、能跳回父会话，信息量更大。
+            代价说清楚：分叉/语音会话正在运行或需关注时，这一刻只显示状态，身份标记等状态清了再回来。
+            分叉标记点击跳回父会话；hover 动作簇上来时本槽让位。 */}
         {!isRenaming && (
           <span className="w-4 shrink-0 flex items-center justify-center transition-opacity duration-150 group-hover:opacity-0 group-focus-visible:opacity-0">
             {surfaceExecutionSession ? (
-              <SurfaceExecutionRunStatus session={surfaceExecutionSession} placement="sidebar" />
+              <SurfaceExecutionRunStatus session={surfaceExecutionSession} />
             ) : isRunning ? (
-              <Loader2 className="w-3 h-3 text-emerald-400/80 animate-spin" aria-label={localizedStatusLabel} />
+              <Loader2 className="w-3 h-3 text-badge-success/80 animate-spin" aria-label={localizedStatusLabel} />
             ) : attentionDotClass ? (
               <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${attentionDotClass}`} aria-label={localizedStatusLabel} />
             ) : isUnread && !multiSelectMode ? (
-              <span className="w-1.5 h-1.5 rounded-full bg-purple-400 shrink-0" aria-label={s.unread} />
+              <span className="w-1.5 h-1.5 rounded-full bg-mark-accent shrink-0" aria-label={s.unread} />
+            ) : forkParentSessionId && !multiSelectMode ? (
+              <button /* ds-allow:button: 侧栏最右状态轴上的分叉身份小图标，Button primitive 动作按钮形状不适配列表行 */
+                type="button"
+                data-testid="fork-lineage-marker"
+                aria-label={s.forkedFrom.replace('{sessionId}', forkParentSessionId)}
+                title={s.openForkParent.replace('{sessionId}', forkParentSessionId)}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  void handleSelectSession(forkParentSessionId);
+                }}
+                className="shrink-0 rounded p-0.5 text-badge-accent transition-colors hover:bg-violet-500/15 hover:text-badge-accent focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-violet-400"
+              >
+                <GitFork className="h-3.5 w-3.5" />
+              </button>
+            ) : hadLiveVoice ? (
+              <AudioLines
+                className="h-3.5 w-3.5 shrink-0 text-zinc-500"
+                aria-label={s.liveVoiceSession}
+                data-testid="session-live-voice-badge"
+              />
             ) : null}
           </span>
         )}
       </div>
 
-      {/* Hover 动作簇：Replay（管理员，进评测中心回放 tab）/ 产物 / 归档 — 默认隐藏，覆盖右槽位置。
+      {/* Hover 动作簇：只留归档（2026-07-29 侧栏项目区 redesign，对齐 Codex 极简行）。
+          Replay / 产物入口仍在右键菜单与项目 ⋯ 菜单，不删功能只删行内图标。
           显隐用 group-focus-visible 而非 group-focus-within（2026-07-26 打磨批 D D3）：
           鼠标点击按钮后 Chrome 会留下 :focus（但不标 :focus-visible），focus-within
           因此粘滞——鼠标移开后动作簇仍常驻；键盘 Tab 聚焦照样命中 focus-visible，
-          可及性不受损。 */}
+          可及性不受损。
+          对齐返工二（2026-08-02 真侧栏 Chromium 几何）：状态点/徽章圆心距行右缘 14px；
+          归档 svg 圆心距动作簇右缘 11px（IconButton p-1 + 14px 图标半径）。
+          所以簇右侧留 3px，3 + 11 = 14，让图标圆心与状态轴心对心；
+          top-1/2 + -translate-y-1/2 独立保证图标继续沿行内竖向居中。 */}
       {!multiSelectMode && !isRenaming && (
-        <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-0.5 rounded-md bg-zinc-800 pl-2 shadow-[-8px_0_8px_-4px_rgba(24,24,27,0.95)] opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100">
-          {canOpenSessionReplay && sessionHasActivity && (
-            <button
-              type="button"
-              aria-label={s.openReplay.replace('{title}', displayTitle)}
-              title={s.openReplay.replace('{title}', displayTitle)}
-              onClick={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                handleOpenSessionReplayInEvalCenter(session);
-              }}
-              className="shrink-0 rounded-md p-1 text-zinc-500 transition-colors hover:bg-zinc-700/70 hover:text-zinc-200 focus:outline-hidden focus-visible:ring-1 focus-visible:ring-[var(--focus-ring)]"
-            >
-              <Eye className="h-3.5 w-3.5" />
-            </button>
-          )}
-          {canOpenSessionAssets && (
-            <button
-              type="button"
-              aria-label={s.openAssets.replace('{title}', displayTitle)}
-              title={s.openAssets.replace('{title}', displayTitle)}
-              onClick={(event) => {
-                void handleOpenSessionAssets(event, session);
-              }}
-              className="shrink-0 rounded-md p-1 text-zinc-500 transition-colors hover:bg-zinc-700/70 hover:text-zinc-200 focus:outline-hidden focus-visible:ring-1 focus-visible:ring-[var(--focus-ring)]"
-            >
-              <ScrollText className="h-3.5 w-3.5" />
-            </button>
-          )}
+        <div className="absolute right-[3px] top-1/2 -translate-y-1/2 z-10 flex items-center gap-0.5 rounded-md bg-zinc-800 pl-2 shadow-[-8px_0_8px_-4px_rgba(24,24,27,0.95)] opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100">
           <IconButton
             icon={session.isArchived ? <ArchiveRestore className="w-3.5 h-3.5" /> : <Archive className="w-3.5 h-3.5" />}
             aria-label={`${session.isArchived ? s.unarchiveSession : s.archiveSession} ${displayTitle}`}
             onClick={(e) => handleArchiveSession(session.id, !!session.isArchived, e)}
             variant="ghost"
             size="sm"
-            className="!p-1"
             title={session.isArchived ? s.unarchive : s.archive}
           />
         </div>

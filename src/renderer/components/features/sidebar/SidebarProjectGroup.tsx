@@ -1,15 +1,20 @@
-import React, { useState, type Dispatch, type SetStateAction } from 'react';
+import React, { useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react';
 import {
   ChevronRight,
   Folder,
+  FolderOpen,
   ListChecks,
   Loader2,
   MessageSquareText,
+  MoreHorizontal,
   PanelRightOpen,
-  Plus,
   ScrollText,
   Settings2,
+  SquarePen,
 } from 'lucide-react';
+import { IPC_DOMAINS } from '@shared/ipc';
+import { isWebMode } from '../../../utils/platform';
+import ipcService from '../../../services/ipcService';
 import type { SessionWithMeta } from '../../../stores/sessionStore';
 import {
   buildSidebarProjectSummary,
@@ -101,6 +106,26 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
 
   const [showAllRows, setShowAllRows] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // 项目行「⋯」菜单开合态（2026-07-28 侧栏工作区入口重构：hover 图标簇收敛为 ⋯+新建）。
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!menuOpen) return;
+    const handlePointerDown = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setMenuOpen(false);
+      }
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setMenuOpen(false);
+    };
+    document.addEventListener('mousedown', handlePointerDown);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [menuOpen]);
   const IconComponent = group.isUncategorized ? MessageSquareText : Folder;
   const projectMeta = group.projectId ? projectMetaById[group.projectId] : undefined;
   const summary = buildSidebarProjectSummary({
@@ -126,6 +151,15 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
     isCollapsing: Boolean(collapsingWorkspaces[group.key]),
     displayName: summary.displayName,
     disableForceExpand: group.isUncategorized,
+    labels: {
+      forceExpandReason: p.forceExpandedReason,
+      collapseTitle: p.collapseGroupTitle,
+      expandTitle: p.expandGroupTitle,
+      collapseAriaLabel: p.collapseGroupAria,
+      expandAriaLabel: p.expandGroupAria,
+      forceExpandAriaLabel: p.forceExpandedAria,
+      protectionLabel: p.keepExpanded,
+    },
   });
   const expanded = expansionView.isVisibleExpanded;
   const summaryLine = formatSidebarProjectSummaryLine({
@@ -140,25 +174,46 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
   const detailsExpanded = Boolean(expandedProjectDetails[group.key]);
   const drawerOpen = projectDrawerKey === group.key;
   const drawerSessions = drawerOpen ? buildProjectDrawerSessions(group.sessions as SessionWithMeta[]) : [];
+  // 「选择工作目录」（2026-07-28 侧栏工作区入口重构）：复用 WORKSPACE.selectDirectory
+  // （main 侧会写 app 工作目录 + 记 recentDirectories，用法同 WorkspaceSettings）。
+  // 选中后在该目录下新建任务——新会话按 workingDirectory 归组，所选目录随即
+  // 以工作区分组出现在侧栏，取代已退役的侧栏左上角「选择目录」行（批C2）。
+  const handlePickWorkspaceDirectory = async () => {
+    setMenuOpen(false);
+    try {
+      const next = await ipcService.invokeDomain<string | null>(IPC_DOMAINS.WORKSPACE, 'selectDirectory');
+      if (next) {
+        await createWorkspaceChat(next, next);
+      }
+    } catch (error) {
+      console.error('Failed to pick working directory:', error);
+    }
+  };
   return (
     <div
-      className="mb-2.5"
       data-sidebar-group-phase={expansionView.phase}
     >
       <div
-        className="group sticky top-0 z-20 flex items-center gap-1.5 w-full pl-2 pr-3 py-1.5 bg-zinc-900 backdrop-blur-sm text-left hover:bg-zinc-800/40 transition-colors"
+        className={`group sticky top-0 ${menuOpen ? 'z-30' : 'z-20'} flex items-center gap-1.5 w-full px-1.5 py-1.5 bg-zinc-950 text-left hover:bg-zinc-800/40 transition-colors`}
         title={title}
       >
+        {/* 组头底色制度（批P 第五波③）：非选中组头不给常驻底色——bg-zinc-950 是栏面本色
+            （App 侧栏列同一块面），只为 sticky 覆盖滚过的会话行，肉眼读作无底色；
+            抬色（zinc-800/900）只属 hover 与选中行。修前 bg-zinc-900 是 6 月侧栏还是
+            zinc-900 底时的遗留，07-27 侧栏换 zinc-950 后它就成了可见的常驻色块。 */}
         {/* 分组头对齐约定(2026-07-02 拍板,2026-07-26 强化)：图标+名称左对齐、整行垂直居中；
             展开收起 chevron 不常驻，hover/聚焦时才出现在名称右侧(参考 Codex)；
             未完成数右对齐，用"色球+数字"与会话行的状态圆点同一视觉语言，不用文字胶囊。
             07-26 Codex 式分组：分组头升格作一等工作区，会话行整体缩进，组间距 10px。
-            07-27 对齐规范（数值是在真实 DOM 里量出来的，不是推算）：
-            左轨 42px —— 入口区行 8(容器)+16(图标)+... = 文字 42；分组头 px-2 同轨；
-            会话行区 ml-[10px] 使行容器落在 18，行内 pl-0 + 16px 前导槽 + gap-2 = 18+24 = 42；
+            07-28 对齐规范（数值实测，不是推算；单一真源见 Sidebar 根的横向节奏注释）：
+            外框 = 根左右各让一条 --scrollbar-size(6)，右边那条给滚动条；各区块 px-1(4)；各行内 px-1.5(6)。
+            ⇒ 左轨：图标左缘 16、文字左缘 42（16 + 图标 16 + gap 10）。分组头 px-1.5 同轨；
+            会话行区 ml-2(8) 使行容器落在 18，行内 pl-0 + 16px 前导槽 + gap-2 = 18+24 = 42；
             展开行没有前导槽，用 pl-6(24) 补齐到同一条 42。
-            右轨基准 = 账号区箭头（cx=212，right=220）：分组头 pr-3、会话行 pr-3，
-            使角标 / 状态点 / 账号箭头三者右缘同为 220、中心同为 212（实测口径）。 */}
+            ⇒ 右轨：内容右缘 224（240-6-4-6），角标 / 状态点 / 账号箭头 / 顶行最右图标同轴。
+            四边 padding 全等 16 —— 改任一处要把**所有区块**一起对：工作目录行 / 新任务行 /
+            能力区 / 会话列表 / 更新横幅 / 会话类型筛选条 / doctor 提示 / 账号区，一个都不能漏
+            （2026-07-28 就漏了工作目录行与新任务行，产品负责人一眼看出「新任务样式不对」）。 */}
         <button
           type="button"
           title={expansionView.toggleTitle}
@@ -186,66 +241,100 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
           </span>
         )}
         {/* Neo 协作徽标已按拍板移除(2026-07-02)：入口走账号菜单"Neo 协同" */}
-        {/* 项目操作簇：控制台 / 详情 / 产物 / 新建 — 默认隐藏，hover 或聚焦时浮现。
-            绝对定位覆盖在右侧(sticky header 提供定位上下文),而非占流内宽度:
-            occupy 流内宽度(opacity-0 或 group-hover:flex)会在窄侧边栏把"未完成"和
-            "Neo"徽标挤到重叠(叠字)。绝对定位 + 不透明底,hover 时浮在右侧盖住 Neo
-            徽标区,流内徽标永不被挤。 */}
-        <div className="absolute right-1 top-1/2 z-10 hidden -translate-y-1/2 items-center rounded-md bg-zinc-900 pl-1 group-hover:flex group-focus-within:flex">
+        {/* 项目操作收敛为两个按钮（2026-07-28 产品负责人拍板）：「⋯」菜单 + 「新建」。
+            原 hover 图标簇（设置/控制台/详情/产物）全部收进 ⋯ 菜单，另加「选择工作目录」；
+            新建沿用侧栏左上角新任务的 SquarePen 图标。仍是默认隐藏、hover/聚焦浮现 +
+            绝对定位覆盖右侧（不占流内宽度，避免窄侧栏挤叠流内徽标），未分类组不渲染。
+            底色跟分组头同步（2026-07-29：默认 zinc-950 与侧栏底色齐平，hover 才提亮到
+            zinc-900）——盖住行内内容靠的是不透明底色，底色错一拍就会露出一条异色补丁。
+            右侧 2px inset 让最右新建图标中心与会话行 trailing 状态轴（rowRight - 14px）重合。 */}
+        <div className="absolute right-0.5 top-1/2 z-10 hidden -translate-y-1/2 items-center rounded-md bg-zinc-950 pl-1 transition-colors group-hover:bg-zinc-900 group-hover:flex group-focus-within:flex">
         {!group.isUncategorized && (
-          <button
-            type="button"
-            aria-label={`${p.settings.title} ${summary.displayName}`}
-            title={p.settings.title}
-            onClick={() => setSettingsOpen(true)}
-            className="ml-1 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-700/70 hover:text-zinc-200 focus:outline-hidden"
-          >
-            <Settings2 className="h-3.5 w-3.5" />
-          </button>
-        )}
-        {!group.isUncategorized && (
-          <button
-            type="button"
-            aria-label={p.openConsole.replace('{name}', summary.displayName)}
-            title={p.openConsole.replace('{name}', summary.displayName)}
-            aria-pressed={drawerOpen ? 'true' : 'false'}
-            onClick={() => {
-              setProjectDrawerKey(group.key);
-            }}
-            className="ml-1 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-700/70 hover:text-zinc-200 focus:outline-hidden"
-          >
-            <PanelRightOpen className="h-3.5 w-3.5" />
-          </button>
-        )}
-        {!group.isUncategorized && (
-          <button
-            type="button"
-            aria-label={(detailsExpanded ? p.collapseDetails : p.expandDetails).replace('{name}', summary.displayName)}
-            title={(detailsExpanded ? p.collapseDetails : p.expandDetails).replace('{name}', summary.displayName)}
-            onClick={() => {
-              setExpandedProjectDetails((previous) => ({
-                ...previous,
-                [group.key]: !previous[group.key],
-              }));
-            }}
-            className="ml-1 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-700/70 hover:text-zinc-200 focus:outline-hidden"
-          >
-            <ListChecks className="h-3.5 w-3.5" />
-          </button>
-        )}
-        {!group.isUncategorized && (
-          <button
-            type="button"
-            aria-label={p.openAssets.replace('{name}', summary.displayName)}
-            title={p.openAssets.replace('{name}', summary.displayName)}
-            onClick={handleOpenWorkspaceAssets}
-            className="ml-1 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-700/70 hover:text-zinc-200 focus:outline-hidden"
-          >
-            <ScrollText className="h-3.5 w-3.5" />
-          </button>
-        )}
-        {!group.isUncategorized && (
-          <button
+          <>
+          <div className="relative" ref={menuRef}>
+            <button /* ds-allow:button: 侧栏分组头 24px 图标触发钮，Button primitive 无对应微尺寸方形变体（同原 hover 图标钮形态） */
+              type="button"
+              aria-label={p.moreActions.replace('{name}', summary.displayName)}
+              title={p.moreActions.replace('{name}', summary.displayName)}
+              aria-haspopup="menu"
+              aria-expanded={menuOpen}
+              onClick={() => setMenuOpen((value) => !value)}
+              className="ml-1 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-700/70 hover:text-zinc-200 focus:outline-hidden"
+            >
+              <MoreHorizontal className="h-3.5 w-3.5" />
+            </button>
+            {menuOpen && (
+              <div
+                role="menu"
+                aria-label={p.moreActions.replace('{name}', summary.displayName)}
+                className="absolute right-0 top-full z-30 mt-1 min-w-[180px] rounded-lg border border-zinc-700 bg-zinc-800 py-1 shadow-xl"
+              >
+                <button /* ds-allow:button: 下拉菜单行（图标+文字左对齐列表项），Button primitive 居中动作钮形状不适配菜单项 */
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    setSettingsOpen(true);
+                  }}
+                  className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-zinc-400 transition-colors hover:bg-zinc-700 hover:text-zinc-200"
+                >
+                  <Settings2 className="h-3.5 w-3.5 shrink-0" />
+                  <span>{p.settings.title}</span>
+                </button>
+                <button /* ds-allow:button: 下拉菜单行（图标+文字左对齐列表项），Button primitive 居中动作钮形状不适配菜单项 */
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    setProjectDrawerKey(group.key);
+                  }}
+                  className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-zinc-400 transition-colors hover:bg-zinc-700 hover:text-zinc-200"
+                >
+                  <PanelRightOpen className="h-3.5 w-3.5 shrink-0" />
+                  <span>{p.openConsole}</span>
+                </button>
+                <button /* ds-allow:button: 下拉菜单行（图标+文字左对齐列表项），Button primitive 居中动作钮形状不适配菜单项 */
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    setExpandedProjectDetails((previous) => ({
+                      ...previous,
+                      [group.key]: !previous[group.key],
+                    }));
+                  }}
+                  className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-zinc-400 transition-colors hover:bg-zinc-700 hover:text-zinc-200"
+                >
+                  <ListChecks className="h-3.5 w-3.5 shrink-0" />
+                  <span>{detailsExpanded ? p.collapseDetails : p.expandDetails}</span>
+                </button>
+                <button /* ds-allow:button: 下拉菜单行（图标+文字左对齐列表项），Button primitive 居中动作钮形状不适配菜单项 */
+                  type="button"
+                  role="menuitem"
+                  onClick={(e) => {
+                    setMenuOpen(false);
+                    handleOpenWorkspaceAssets(e);
+                  }}
+                  className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-zinc-400 transition-colors hover:bg-zinc-700 hover:text-zinc-200"
+                >
+                  <ScrollText className="h-3.5 w-3.5 shrink-0" />
+                  <span>{p.openAssets}</span>
+                </button>
+                {!isWebMode() && (
+                  <button /* ds-allow:button: 下拉菜单行（图标+文字左对齐列表项），Button primitive 居中动作钮形状不适配菜单项 */
+                    type="button"
+                    role="menuitem"
+                    onClick={() => { void handlePickWorkspaceDirectory(); }}
+                    className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-zinc-400 transition-colors hover:bg-zinc-700 hover:text-zinc-200"
+                  >
+                    <FolderOpen className="h-3.5 w-3.5 shrink-0" />
+                    <span>{t.sidebar.selectDirectoryTitle}</span>
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+          <button /* ds-allow:button: 侧栏分组头 24px 图标钮，Button primitive 无对应微尺寸方形变体（同原 + 钮形态） */
             type="button"
             aria-label={p.newSessionIn.replace('{name}', summary.displayName)}
             title={p.newSessionIn.replace('{name}', summary.displayName)}
@@ -256,18 +345,21 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
             {creatingWorkspaceKey === group.key ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
             ) : (
-              <Plus className="h-3.5 w-3.5" />
+              <SquarePen className="h-3.5 w-3.5" />
             )}
           </button>
-      )}
-      {group.projectId && (
-        <ProjectSettingsDialog
-          projectId={group.projectId}
-          open={settingsOpen}
-          onClose={() => setSettingsOpen(false)}
-        />
-      )}
+          </>
+        )}
     </div>
+        {/* 设置对话框挪出 hover 浮现容器：容器离开 hover 会 display:none，
+            把开着的对话框一起隐藏（原实现的缺陷）。 */}
+        {group.projectId && (
+          <ProjectSettingsDialog
+            projectId={group.projectId}
+            open={settingsOpen}
+            onClose={() => setSettingsOpen(false)}
+          />
+        )}
       </div>
       {detailsExpanded && !group.isUncategorized && (
         <SidebarProjectDetail
@@ -345,7 +437,7 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
         const canToggle = !hasSearchFilters && (hiddenCount > 0 || showAllRows);
         return (
           <div
-            className={`${expansionView.rowsClassName} ml-[10px]`}
+            className={`${expansionView.rowsClassName} ml-2`}
             data-sidebar-group-rows={group.key}
           >
             {group.sessions.length === 0 ? (

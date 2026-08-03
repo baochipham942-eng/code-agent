@@ -14,6 +14,10 @@ import { toast } from '../../../../hooks/useToast';
 import { DiffView } from '../../../DiffView';
 import { ConfirmDialog } from '../../../composites/ConfirmDialog';
 import { buildTurnFileChanges } from '../../../../utils/turnDiffSummary';
+import {
+  readTurnDiffExpansion,
+  writeTurnDiffExpansion,
+} from '../../../../utils/turnDiffExpansionState';
 import { useI18n } from '../../../../hooks/useI18n';
 
 interface CheckpointListItem {
@@ -37,7 +41,13 @@ export const TurnDiffSummary: React.FC<TurnDiffSummaryProps> = ({ turn }) => {
   );
   const { t } = useI18n();
 
-  const [expandedFiles, setExpandedFiles] = useState<Set<string>>(new Set());
+  // 展开态提到组件外（模块级 Map，按 sessionId:turnId 键控）：消息流是虚拟列表，
+  // 执行中自动滚动会卸载/重挂载本卡，组件内 useState 会被重置（X5.5-B2 根因）。
+  // 只被用户手势改写——程序不主动展开/收起，执行中默认收起、终态后一次性定型。
+  const expansionKey = `${currentSessionId ?? 'no-session'}:${turn.turnId}`;
+  const [expandedFiles, setExpandedFiles] = useState<Set<string>>(
+    () => readTurnDiffExpansion(expansionKey),
+  );
   const [isUndoing, setIsUndoing] = useState(false);
   const [undoState, setUndoState] = useState<UndoState>('idle');
   const [undoError, setUndoError] = useState<string | null>(null);
@@ -124,9 +134,11 @@ export const TurnDiffSummary: React.FC<TurnDiffSummaryProps> = ({ turn }) => {
       const next = new Set(prev);
       if (next.has(filePath)) next.delete(filePath);
       else next.add(filePath);
+      // 同步写回组件外存放，重挂载后原样恢复
+      writeTurnDiffExpansion(expansionKey, next);
       return next;
     });
-  }, []);
+  }, [expansionKey]);
 
   if (fileChanges.length === 0) return null;
 
@@ -148,8 +160,8 @@ export const TurnDiffSummary: React.FC<TurnDiffSummaryProps> = ({ turn }) => {
           </div>
           {(totalAdded > 0 || totalRemoved > 0) && (
             <div className="mt-0.5 flex items-center gap-1.5 text-xs">
-              {totalAdded > 0 && <span className="text-emerald-400">+{totalAdded}</span>}
-              {totalRemoved > 0 && <span className="text-rose-400">-{totalRemoved}</span>}
+              {totalAdded > 0 && <span className="text-badge-success">+{totalAdded}</span>}
+              {totalRemoved > 0 && <span className="text-badge-danger">-{totalRemoved}</span>}
             </div>
           )}
         </div>
@@ -175,7 +187,7 @@ export const TurnDiffSummary: React.FC<TurnDiffSummaryProps> = ({ turn }) => {
           </button>
         )}
         {undoState === 'done' && (
-          <span className="flex items-center gap-1 px-2 py-0.5 text-xs text-emerald-400">
+          <span className="flex items-center gap-1 px-2 py-0.5 text-xs text-badge-success">
             <Check className="w-3 h-3" />
             {t.turnDiff.undone}
           </span>
@@ -183,7 +195,7 @@ export const TurnDiffSummary: React.FC<TurnDiffSummaryProps> = ({ turn }) => {
         {undoState === 'error' && (
           <div className="flex items-center gap-1.5">
             <span
-              className="text-xs text-rose-400 truncate max-w-[160px]"
+              className="text-xs text-badge-danger truncate max-w-[160px]"
               title={undoError || t.turnDiff.undoFailed}
             >
               {t.turnDiff.undoFailed}
@@ -222,6 +234,7 @@ export const TurnDiffSummary: React.FC<TurnDiffSummaryProps> = ({ turn }) => {
             >
               <button
                 onClick={() => toggleFile(fc.filePath)}
+                aria-expanded={expanded}
                 className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-zinc-800/50 transition-colors text-left"
               >
                 {expanded ? (
@@ -236,7 +249,7 @@ export const TurnDiffSummary: React.FC<TurnDiffSummaryProps> = ({ turn }) => {
                   {dirPath && <span className="text-zinc-600">{dirPath}/</span>}
                   <span className="text-zinc-300">{fileName}</span>
                   {fc.isNewFile && (
-                    <span className="ml-2 text-[10px] text-emerald-400/80">
+                    <span className="ml-2 text-[10px] text-badge-success/80">
                       {t.turnDiff.newFileBadge}
                     </span>
                   )}
@@ -247,12 +260,12 @@ export const TurnDiffSummary: React.FC<TurnDiffSummaryProps> = ({ turn }) => {
                   )}
                 </span>
                 {fc.added > 0 && (
-                  <span className="text-xs text-emerald-400 flex-shrink-0">
+                  <span className="text-xs text-badge-success flex-shrink-0">
                     +{fc.added}
                   </span>
                 )}
                 {fc.removed > 0 && (
-                  <span className="text-xs text-rose-400 flex-shrink-0">
+                  <span className="text-xs text-badge-danger flex-shrink-0">
                     -{fc.removed}
                   </span>
                 )}

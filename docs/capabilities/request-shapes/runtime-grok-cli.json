@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "runtime": "grok_cli",
+  "protocolFamily": "opaque_cli",
+  "adapterBoundary": "grok -p --output-format streaming-json",
+  "syntheticRequest": {
+    "args": [
+      "--no-auto-update",
+      "-p",
+      "<redacted-user-content>",
+      "--output-format",
+      "streaming-json",
+      "--permission-mode",
+      "plan",
+      "--tools",
+      "",
+      "--disable-web-search",
+      "--no-subagents",
+      "--no-memory",
+      "--max-turns",
+      "1",
+      "--model",
+      "fixture-model"
+    ],
+    "credentials": "Official Grok Build cached login; values-not-read-or-recorded"
+  }
+}

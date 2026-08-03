@@ -72,8 +72,11 @@ describe('ToolStepGroup — 探索性失败默认折叠，需介入的失败默�
       <ToolStepGroup nodes={[toolNode('Bash', false, 'command failed with exit code 1')]} />,
     );
     expect(html).not.toContain(EXPANDED_MARKER);
-    expect(html).not.toContain('bg-red-400');
-    expect(html).not.toContain('text-red-300');
+    expect(html).not.toContain('border border-white/[0.04]');
+    expect(html).not.toContain('bg-white/[0.015]');
+    expect(html).toContain('px-1 py-0.5 text-zinc-400');
+    expect(html).not.toContain('bg-mark-danger');
+    expect(html).not.toContain('text-badge-danger');
   });
 
   it('折叠不等于信息丢失：探索性失败对应的工具详情（点开工具行后看到的内容）完整保留原始报错', () => {
@@ -97,8 +100,10 @@ describe('ToolStepGroup — 探索性失败默认折叠，需介入的失败默�
       <ToolStepGroup nodes={[toolNode('Bash', false, '401 Unauthorized: invalid api key')]} />,
     );
     expect(html).toContain(EXPANDED_MARKER);
-    expect(html).toContain('bg-red-400');
-    expect(html).toContain('text-red-300');
+    expect(html).toContain('bg-mark-danger');
+    expect(html).toContain('text-badge-danger');
+    expect(html).toContain('border-badge-danger/30');
+    expect(html).toContain('bg-red-400/[0.05]');
   });
 
   it('需要用户介入的额度耗尽失败也默认展开并顶红', () => {
@@ -106,7 +111,9 @@ describe('ToolStepGroup — 探索性失败默认折叠，需介入的失败默�
       <ToolStepGroup nodes={[toolNode('image_generate', false, '402 Payment Required: insufficient balance 余额不足')]} />,
     );
     expect(html).toContain(EXPANDED_MARKER);
-    expect(html).toContain('bg-red-400');
-    expect(html).toContain('text-red-300');
+    expect(html).toContain('bg-mark-danger');
+    expect(html).toContain('text-badge-danger');
+    expect(html).toContain('border-badge-danger/30');
+    expect(html).toContain('bg-red-400/[0.05]');
   });
 });

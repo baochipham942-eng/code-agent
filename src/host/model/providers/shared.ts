@@ -528,6 +528,22 @@ function demoteOrphanedToolMessage(message: OpenAIMessage): OpenAIMessage {
   };
 }
 
+/**
+ * 补给孤儿 tool_call 的占位结果——发给模型前必须让 call/result 配对合法，否则供应商直接报错。
+ *
+ * 文案原本写的是 `[context compacted]`，这句对模型是假的：压缩根本不会制造孤儿。
+ * compactionService 选压缩边界时会主动把边界挪到 tool_call 之前，避免拆散 call/result；
+ * activeToolResultPrune 是**替换 content**、不删条目。两条压缩路径都保持配对。
+ * 真正会留下孤儿的是「这一轮在工具返回前就结束了」——用户点停止、SSE 断连、崩溃。
+ *
+ * 这个区别对模型是反的：「被压缩了」暗示工具**执行过了**、只是结果没留住，模型会当作
+ * 已完成继续往下走；而真相是工具**可能根本没跑完**，应该重新确认或重做。
+ * dev 库实测 59 条孤儿 tool_call（其中 5 条在 interrupted 会话），一律吃这句假话。
+ * 换成一句对所有真实来源都成立、且明确不许模型假设成功的话。
+ */
+export const ORPHANED_TOOL_CALL_PLACEHOLDER =
+  '[no result: the run ended before this tool call returned — do not assume it succeeded]';
+
 function repairOpenAIToolMessagePairing(messages: OpenAIMessage[]): {
   messages: OpenAIMessage[];
   synthesizedPlaceholders: number;
@@ -547,7 +563,7 @@ function repairOpenAIToolMessagePairing(messages: OpenAIMessage[]): {
       repaired.push({
         role: 'tool',
         tool_call_id: toolCallId,
-        content: '[context compacted]',
+        content: ORPHANED_TOOL_CALL_PLACEHOLDER,
       });
       synthesizedPlaceholders += 1;
     }
@@ -704,7 +720,7 @@ function sanitizeClaudeToolPairing(messages: ClaudeMessage[]): ClaudeMessage[] {
         const placeholders: ClaudeToolResultBlock[] = orphanedIds.map(id => ({
           type: 'tool_result' as const,
           tool_use_id: id,
-          content: '[context compacted]',
+          content: ORPHANED_TOOL_CALL_PLACEHOLDER,
         }));
 
         if (nextMsg?.role === 'user' && Array.isArray(nextMsg.content)) {

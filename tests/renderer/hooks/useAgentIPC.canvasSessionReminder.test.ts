@@ -12,7 +12,7 @@ import type { CanvasNode } from '../../../src/renderer/components/design/designC
 // 工具名必须精确大写驼峰（与 protocol schema name 一致），否则 agent 照着 select 会 not found。
 
 function makeNode(id: string): CanvasNode {
-  return { id, src: `${id}.png`, x: 0, y: 0, width: 100, height: 100, createdAt: Date.now() };
+  return { id, src: `${id}.png`, x: 0, y: 0, width: 100, height: 100, createdAt: Date.now(), createdBy: 'user' };
 }
 
 function setDesignActive(sessionId: string, active: boolean): void {

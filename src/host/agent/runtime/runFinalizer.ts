@@ -41,6 +41,7 @@ import {
   setSessionTodos,
   syncTodosToSessionTasks,
 } from '../../agent/todoParser';
+import { makeEvidenceRef } from '../../../shared/contract/evidence';
 import { getDatabase } from '../../services/core/databaseService';
 import type { RuntimeContext } from './runtimeContext';
 import type { LearningPipeline } from './learningPipeline';
@@ -265,7 +266,18 @@ export class RunFinalizer {
       logCollector.agent('ERROR', `Agent run failed: ${errorMessage}`);
       this.ctx.onEvent({
         type: 'error',
-        data: { message: errorMessage, code: 'RUN_FAILED' },
+        data: {
+          message: errorMessage,
+          code: 'RUN_FAILED',
+          // 这一轮真正用的模型。失败时没有 turnQuality 可挂（那是成功轮才写的），
+          // 渲染侧只能拿前端 store 的"当前选中模型"顶上——用户刚切过模型时，
+          // 失败卡就会指认一个根本没跑过的模型（真机 2026-07-31：实跑 100xlabs
+          // 连接失败，卡片显示刚选的 deepseek）。
+          details: {
+            provider: this.ctx.modelConfig.provider,
+            model: this.ctx.modelConfig.model,
+          },
+        },
       });
 
       this.ctx.hookManager?.triggerStopFailure(
@@ -520,7 +532,7 @@ export class RunFinalizer {
     if (!hasInProgress) return;
 
     // 只在有修改类操作时才推进任务（纯读取不算完成任务）
-    const hasModification = toolCalls.some(tc => {
+    const modificationCalls = toolCalls.filter(tc => {
       const result = successfulResultsById.get(tc.id);
       if (!result) return false;
       const name = tc.name.toLowerCase();
@@ -529,12 +541,27 @@ export class RunFinalizer {
       }
       return name === 'edit' || name === 'write' || name === 'notebookedit';
     });
-    if (!hasModification) return;
+    if (modificationCalls.length === 0) return;
+
+    // ADR-050：自动推进是「有成功写入=任务完成」的乐观推断，落账必须带上推断依据
+    // （哪个工具调用改了什么），账本上机器章与模型自证可区分
+    const completionEvidence = modificationCalls.map((tc) => {
+      const target = typeof tc.arguments?.file_path === 'string'
+        ? tc.arguments.file_path
+        : typeof tc.arguments?.command === 'string'
+          ? tc.arguments.command.slice(0, 120)
+          : '';
+      return makeEvidenceRef({
+        kind: 'tool',
+        ref: `auto-advance: ${tc.name}${target ? ` ${target}` : ''} (toolCall ${tc.id})`,
+        source: 'todo_parser:auto-advance',
+      });
+    });
 
     const { updated, todos: advanced } = completeCurrentAndAdvance(todos);
     if (updated) {
       setSessionTodos(this.ctx.sessionId, advanced);
-      const taskSync = syncTodosToSessionTasks(this.ctx.sessionId, advanced);
+      const taskSync = syncTodosToSessionTasks(this.ctx.sessionId, advanced, { completionEvidence });
       this.ctx.onEvent({ type: 'todo_update', data: advanced });
       this.ctx.onEvent({
         type: 'task_update',
@@ -760,15 +787,14 @@ export class RunFinalizer {
       && judgment.source === 'llm'
       && judgment.durableFacts.length > 0
     ) {
-      writeDurableFacts(judgment.durableFacts)
-        .then(({ written, skipped }) => {
-          logger.info('[RunFinalizer] Durable facts persisted', { written, skipped });
-        })
-        .catch((error) => {
-          logger.warn('[RunFinalizer] Durable fact persistence failed', {
-            error: error instanceof Error ? error.message : String(error),
-          });
+      try {
+        const { written, skipped } = await writeDurableFacts(judgment.durableFacts);
+        logger.info('[RunFinalizer] Durable facts persisted', { written, skipped });
+      } catch (error) {
+        logger.warn('[RunFinalizer] Durable fact persistence failed', {
+          error: error instanceof Error ? error.message : String(error),
         });
+      }
     }
 
     // "只存值得留的" — skip trivial chats (greetings, "继续"/"ok", no-signal turns).

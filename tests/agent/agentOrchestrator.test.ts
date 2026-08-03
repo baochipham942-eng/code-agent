@@ -149,9 +149,15 @@ vi.mock('../../src/host/services', () => ({
 
 // 专家审批档的门要看「AgentLoop 真跑那一刻的有效档位」，所以 loop 本身换成探针。
 // 本文件其余用例都不碰真 AgentLoop（orchestrator.agentLoop 一律是 null 或 stub）。
-const agentLoopProbe = vi.hoisted(() => ({ onRun: undefined as undefined | (() => void) }));
+const agentLoopProbe = vi.hoisted(() => ({
+  onRun: undefined as undefined | (() => void),
+  lastConfig: undefined as undefined | { deniedToolNames?: string[] },
+}));
 vi.mock('../../src/host/agent/agentLoop', () => ({
   AgentLoop: class {
+    constructor(config: { deniedToolNames?: string[] }) {
+      agentLoopProbe.lastConfig = config;
+    }
     async run(): Promise<void> { agentLoopProbe.onRun?.(); }
     setEffortLevel(): void { /* noop */ }
     getSerializedCompressionState(): undefined { return undefined; }
@@ -209,6 +215,7 @@ import { SteerRejectedError } from '../../src/host/agent/runtime/conversationRun
 import type { ConfigService } from '../../src/host/services/core/configService';
 import type { AgentEvent, Message, MessageAttachment } from '../../src/shared/contract';
 import type { AgentRunOptions } from '../../src/host/research/types';
+import { getAllToolDefinitions } from '../../src/host/tools/dispatch/toolDefinitions';
 
 // 部分目标是 private 方法 / 内部状态，特征测试经类型逃逸访问（测试专用）
 interface OrchestratorInternals {
@@ -230,6 +237,9 @@ interface OrchestratorInternals {
 }
 function internals(o: AgentOrchestrator): OrchestratorInternals {
   return o as unknown as OrchestratorInternals;
+}
+function lastAgentLoopConfig(): { deniedToolNames?: string[] } | undefined {
+  return agentLoopProbe.lastConfig;
 }
 function makeMessage(id: string, role: Message['role'], content: string): Message {
   return { id, role, content, timestamp: 0 };
@@ -1111,6 +1121,58 @@ describe('AgentOrchestrator', () => {
       const result = internals(orchestrator).applyTurnSystemContext('干活', undefined, SESSION);
 
       expect(result).not.toContain('live_voice_permission_notice');
+    });
+
+    it('通话态 run 静态覆盖注册表里全部需用户在场的工具，普通工具不受影响', async () => {
+      getPermissionModeManager().markLiveVoiceSession(SESSION, 'call:test');
+      agentLoopProbe.lastConfig = undefined;
+
+      await (orchestrator as unknown as {
+        runStandardAgentLoop(
+          content: string,
+          onEvent: (e: AgentEvent) => void,
+          modelConfig: unknown,
+          sessionId?: string,
+          executionContent?: string,
+          toolScope?: unknown,
+          executionIntent?: unknown,
+          options?: AgentRunOptions,
+        ): Promise<void>;
+      }).runStandardAgentLoop(
+        '干活',
+        mockOnEvent,
+        { provider: 'deepseek', model: 'deepseek-chat' },
+        SESSION,
+      );
+
+      const requiresUserPresence = getAllToolDefinitions()
+        .filter((definition) => definition.requiresUserPresence === true)
+        .flatMap((definition) => [definition.name, ...(definition.aliases ?? [])]);
+      expect(requiresUserPresence).toEqual(expect.arrayContaining(['AskUserQuestion', 'ask_user_question']));
+      expect(lastAgentLoopConfig()?.deniedToolNames).toEqual(expect.arrayContaining(requiresUserPresence));
+      expect(lastAgentLoopConfig()?.deniedToolNames).not.toContain('confirm_action');
+      expect(lastAgentLoopConfig()?.deniedToolNames).not.toContain('Bash');
+      expect(lastAgentLoopConfig()?.deniedToolNames).not.toContain('Write');
+    });
+
+    it('非通话态 run 不屏蔽 AskUserQuestion', async () => {
+      agentLoopProbe.lastConfig = undefined;
+
+      await (orchestrator as unknown as {
+        runStandardAgentLoop(
+          content: string,
+          onEvent: (e: AgentEvent) => void,
+          modelConfig: unknown,
+          sessionId?: string,
+        ): Promise<void>;
+      }).runStandardAgentLoop(
+        '干活',
+        mockOnEvent,
+        { provider: 'deepseek', model: 'deepseek-chat' },
+        SESSION,
+      );
+
+      expect(lastAgentLoopConfig()?.deniedToolNames || []).not.toContain('AskUserQuestion');
     });
   });
 });

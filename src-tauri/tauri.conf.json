@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Agent Neo",
-  "version": "0.28.1",
+  "version": "0.30.0",
   "identifier": "com.linchen.code-agent",
   "build": {
     "beforeDevCommand": "npm run tauri:dev:before",
@@ -24,7 +24,8 @@
         "url": "about:blank",
         "backgroundColor": "#18181b",
         "titleBarStyle": "Overlay",
-        "hiddenTitle": true
+        "hiddenTitle": true,
+        "trafficLightPosition": { "x": 16, "y": 26.2 }
       }
     ],
     "security": {
@@ -87,6 +88,7 @@
       "../node_modules/detect-libc/package.json": "node_modules/detect-libc/package.json",
       "../node_modules/detect-libc/lib": "node_modules/detect-libc/lib",
       "../scripts/system-audio-capture": "scripts/system-audio-capture",
+      "../scripts/voice-aec-io": "scripts/voice-aec-io",
       "../scripts/vision-ocr": "scripts/vision-ocr",
       "../scripts/vision-tagger": "scripts/vision-tagger",
       "../scripts/rtk": "scripts/rtk",

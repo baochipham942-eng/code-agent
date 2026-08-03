@@ -34,6 +34,7 @@ const env = vi.hoisted(() => ({
   saveIcon: vi.fn(async (..._a: unknown[]) => ({ icon: 'saved' })),
   resolveIcon: vi.fn(async (..._a: unknown[]) => 'resolved'),
   runtimeConfigured: vi.fn((..._a: unknown[]) => false),
+  refreshVoiceInstructions: vi.fn(),
 }));
 
 vi.mock('../../../src/host/ipc/adminGuard', () => ({
@@ -50,6 +51,9 @@ vi.mock('../../../src/host/services/providerIconAssets', () => ({
 }));
 vi.mock('../../../src/shared/modelRuntime', () => ({
   isRuntimeProviderConfigured: (...a: unknown[]) => env.runtimeConfigured(...a),
+}));
+vi.mock('../../../src/host/services/voice/voiceSessionService', () => ({
+  refreshVoiceInstructions: () => env.refreshVoiceInstructions(),
 }));
 vi.mock('../../../src/host/services/core/secureStorage', () => ({
   getSecureStorage: () => env.secureStorage,
@@ -84,6 +88,7 @@ beforeEach(() => {
   env.secureStorage.get.mockReturnValue(undefined);
   env.secureStorage.getStoredApiKeyProviders.mockReturnValue([]);
   env.runtimeConfigured.mockReturnValue(false);
+  env.refreshVoiceInstructions.mockClear();
   handlers = new Map<string, HandlerFn>();
   registerSettingsHandlers(
     { handle: (ch: string, fn: HandlerFn) => handlers.set(ch, fn) } as never,
@@ -111,6 +116,27 @@ describe('admin 门控', () => {
     const res = await callSettings('set', { settings: { theme: 'dark' } as never });
     expect(res.success).toBe(true);
     expect(env.config.updateSettings).toHaveBeenCalledWith({ theme: 'dark' });
+  });
+});
+
+describe('语速热刷新', () => {
+  it('patch 显式带 speechRate 时在持久化后刷新通话 instructions', async () => {
+    await callSettings('set', { settings: { voice: { live: { speechRate: 'fast' } } } as never });
+
+    expect(env.config.updateSettings).toHaveBeenCalledWith({ voice: { live: { speechRate: 'fast' } } });
+    expect(env.refreshVoiceInstructions).toHaveBeenCalledTimes(1);
+  });
+
+  it('patch 未带 speechRate 时不刷新通话 instructions', async () => {
+    await callSettings('set', { settings: { voice: { live: { language: 'zh' } } } as never });
+
+    expect(env.refreshVoiceInstructions).not.toHaveBeenCalled();
+  });
+
+  it('patch 显式带 undefined 也按字段存在触发刷新', async () => {
+    await callSettings('set', { settings: { voice: { live: { speechRate: undefined } } } as never });
+
+    expect(env.refreshVoiceInstructions).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -325,6 +351,23 @@ describe('devMode', () => {
 });
 
 describe('checkApiKeyConfigured', () => {
+  it('can force the real onboarding component only inside an explicit E2E process', async () => {
+    const savedE2E = process.env.CODE_AGENT_E2E;
+    const savedForce = process.env.CODE_AGENT_E2E_FORCE_MODEL_ONBOARDING_AFTER;
+    process.env.CODE_AGENT_E2E = '1';
+    process.env.CODE_AGENT_E2E_FORCE_MODEL_ONBOARDING_AFTER = '200';
+    env.config.getSettings.mockReturnValue({ onboarding: { completedAt: 100 } });
+    env.runtimeConfigured.mockReturnValue(true);
+    try {
+      expect((await callSettings('checkApiKeyConfigured')).data).toBe(false);
+    } finally {
+      if (savedE2E === undefined) delete process.env.CODE_AGENT_E2E;
+      else process.env.CODE_AGENT_E2E = savedE2E;
+      if (savedForce === undefined) delete process.env.CODE_AGENT_E2E_FORCE_MODEL_ONBOARDING_AFTER;
+      else process.env.CODE_AGENT_E2E_FORCE_MODEL_ONBOARDING_AFTER = savedForce;
+    }
+  });
+
   it('provider 运行时已配置 → true', async () => {
     env.config.getSettings.mockReturnValue({ models: { providers: { openai: { enabled: true } } } });
     env.runtimeConfigured.mockReturnValue(true);

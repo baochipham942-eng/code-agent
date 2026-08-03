@@ -29,12 +29,13 @@ const proposal: CanvasOpProposal = {
   ],
 };
 
-function render(): string {
+function render(approvalReason: 'user-touched' | 'standard' = 'standard'): string {
   return renderToStaticMarkup(
     <CanvasProposalReviewBar
       proposal={proposal}
       onApply={() => undefined}
       onReject={() => undefined}
+      approvalReason={approvalReason}
     />,
   );
 }
@@ -44,6 +45,9 @@ afterEach(() => {
 });
 
 describe('CanvasProposalReviewBar', () => {
+  it('用户编辑过的内容使用分级审批文案', () => {
+    expect(render('user-touched')).toContain('需要你确认：将修改你编辑过的内容');
+  });
   it('renders per-op what, why, impact and source explanations', () => {
     const html = render();
 

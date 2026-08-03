@@ -13,6 +13,7 @@ import {
   serializeRunTraceContext,
   type RunTraceContext,
 } from '../../host/telemetry/runTraceContext';
+import { ensureFailedToolResultError } from '../../host/tools/toolResultError';
 
 export interface PendingLocalToolCall {
   resolve: (result: ToolExecutionResult) => void;
@@ -151,7 +152,8 @@ export function createBridgeToolDispatch(deps: BridgeToolDispatchDeps): ToolExec
       if (options.abortSignal?.aborted) onAbort();
     });
 
-    if (isBridgeUnavailable(result)) {
+    const normalizedResult = ensureFailedToolResultError(toolName, result);
+    if (isBridgeUnavailable(normalizedResult)) {
       try {
         if (bridgeSpanId) {
           getTelemetryService().endSpan(bridgeSpanId, 'error', { 'bridge.result_status': 'unavailable' });
@@ -164,19 +166,19 @@ export function createBridgeToolDispatch(deps: BridgeToolDispatchDeps): ToolExec
     }
     try {
       if (bridgeSpanId) {
-        const cancelled = /cancel|abort/i.test(result.error ?? '');
-        const timedOut = /timeout|timed out/i.test(result.error ?? '');
+        const cancelled = /cancel|abort/i.test(normalizedResult.error ?? '');
+        const timedOut = /timeout|timed out/i.test(normalizedResult.error ?? '');
         getTelemetryService().endSpan(
           bridgeSpanId,
-          result.success ? 'ok' : cancelled ? 'cancelled' : 'error',
+          normalizedResult.success ? 'ok' : cancelled ? 'cancelled' : 'error',
           {
-            'bridge.result_status': result.success ? 'success' : timedOut ? 'timeout' : cancelled ? 'cancelled' : 'failed',
+            'bridge.result_status': normalizedResult.success ? 'success' : timedOut ? 'timeout' : cancelled ? 'cancelled' : 'failed',
           },
         );
       }
     } catch {
       // Bridge results are independent from tracing availability.
     }
-    return result;
+    return normalizedResult;
   };
 }

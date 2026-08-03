@@ -5,18 +5,37 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { IPC_DOMAINS } from '@shared/ipc';
-import type { AppSettings, SpeechInputSettings, SpeechTranscribeResult } from '@shared/contract';
+import type {
+  AppSettings,
+  SpeechInputSettings,
+  SpeechTranscribeResult,
+  VoiceInputDeviceSettings,
+} from '@shared/contract';
 import { DEFAULT_SPEECH_INPUT_SETTINGS, VOICE_INPUT_SETTINGS_UPDATED_EVENT } from '@shared/contract';
+import { DICTATION_STREAM_WS_PATH } from '@shared/constants/voice';
+import { normalizeVoiceInputDevice } from '@shared/voiceInputDevice';
 import { createLogger } from '../utils/logger';
 import ipcService from '../services/ipcService';
+import {
+  resolveVoiceAudioCaptureConstraints,
+  VoiceAudioPipeline,
+} from '../services/voiceAudioPipeline';
+import { VOICE_INPUT_NETWORK_ERROR_CODE } from '../utils/voiceInputError';
 
 const logger = createLogger('VoiceInput');
+
+/** 实例自增 id：dictation 路径 getUserMedia / track.stop 的日志带它，事后配对检查。 */
+let nextDictationId = 1;
 
 export type VoiceInputStatus = 'idle' | 'recording' | 'transcribing' | 'error';
 
 interface UseVoiceInputOptions {
   /** 转写完成回调 */
   onTranscript?: (text: string, result?: SpeechTranscribeResult) => void;
+  /** 流式中间结果回调；同一句的后续结果会覆盖前一次。 */
+  onPartialTranscript?: (text: string, sentenceId: number) => void;
+  /** Dictation WS 已打开、即将开始采集。 */
+  onStreamStart?: () => void;
   /** 最大录音时长（秒），默认 60 */
   maxDuration?: number;
 }
@@ -58,6 +77,8 @@ export interface UseVoiceInputReturn {
   lastResult: SpeechTranscribeResult | null;
   /** 当前输入音量，0-1 */
   inputLevel: number;
+  /** 当前流式识别文本（partial 会覆盖，final 会更新成定稿）。 */
+  partialText: string;
   /** 是否长时间没有检测到明显语音 */
   silenceWarning: boolean;
 }
@@ -83,6 +104,28 @@ function arrayBufferToBase64(buffer: ArrayBuffer): string {
   return btoa(binary);
 }
 
+async function isDictationStreamConfigured(): Promise<boolean> {
+  try {
+    const token = (window as unknown as Record<string, unknown>).__CODE_AGENT_TOKEN__;
+    const query = typeof token === 'string' ? `?token=${encodeURIComponent(token)}` : '';
+    const response = await fetch(`/api/voice/status${query}`);
+    if (!response.ok) return false;
+    const status = await response.json() as { configured?: boolean };
+    return status.configured === true;
+  } catch {
+    return false;
+  }
+}
+
+function buildDictationStreamUrl(): string {
+  const token = (window as unknown as Record<string, unknown>).__CODE_AGENT_TOKEN__;
+  const scheme = window.location.protocol === 'https:' ? 'wss' : 'ws';
+  const query = new URLSearchParams();
+  if (typeof token === 'string') query.set('token', token);
+  const suffix = query.size > 0 ? `?${query.toString()}` : '';
+  return `${scheme}://${window.location.host}${DICTATION_STREAM_WS_PATH}${suffix}`;
+}
+
 /**
  * 语音输入 Hook
  *
@@ -96,7 +139,7 @@ function arrayBufferToBase64(buffer: ArrayBuffer): string {
  * ```
  */
 export function useVoiceInput(options: UseVoiceInputOptions = {}): UseVoiceInputReturn {
-  const { onTranscript, maxDuration } = options;
+  const { onTranscript, onPartialTranscript, onStreamStart, maxDuration } = options;
 
   const [status, setStatus] = useState<VoiceInputStatus>('idle');
   const [duration, setDuration] = useState(0);
@@ -106,6 +149,7 @@ export function useVoiceInput(options: UseVoiceInputOptions = {}): UseVoiceInput
   const [settings, setSettings] = useState<SpeechInputSettings>(DEFAULT_SPEECH_INPUT_SETTINGS);
   const [lastResult, setLastResult] = useState<SpeechTranscribeResult | null>(null);
   const [inputLevel, setInputLevel] = useState(0);
+  const [partialText, setPartialText] = useState('');
   const [silenceWarning, setSilenceWarning] = useState(false);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -118,6 +162,16 @@ export function useVoiceInput(options: UseVoiceInputOptions = {}): UseVoiceInput
   const lastVoiceAtRef = useRef<number>(0);
   const isStartingRef = useRef(false);
   const pendingAudioRef = useRef<PendingAudio | null>(null);
+  const streamWsRef = useRef<WebSocket | null>(null);
+  const streamPipelineRef = useRef<VoiceAudioPipeline | null>(null);
+  const streamStoppingRef = useRef(false);
+  const streamFailureRef = useRef(false);
+  /** voice.inputDevice 的运行时防御读取结果；每次开麦前刷新，设置页改完立即生效。 */
+  const inputDeviceRef = useRef<VoiceInputDeviceSettings | undefined>(undefined);
+  /** 整段转写路径的麦克风流：不依赖 mediaRecorder.onstop 也一定能释放。 */
+  const dictationStreamRef = useRef<MediaStream | null>(null);
+  /** start() 的 getUserMedia 还在 pending 时用户已取消（stop/卸载）：拿到 stream 就立刻停掉。 */
+  const dictationAbortedRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -126,6 +180,7 @@ export function useVoiceInput(options: UseVoiceInputOptions = {}): UseVoiceInput
         const appSettings = await ipcService.invokeDomain<AppSettings>(IPC_DOMAINS.SETTINGS, 'get');
         if (!cancelled) {
           setSettings(mergeSpeechSettings(appSettings.speech));
+          inputDeviceRef.current = normalizeVoiceInputDevice(appSettings.voice?.inputDevice);
         }
       } catch (err) {
         logger.warn('Failed to load voice input settings', {
@@ -159,6 +214,7 @@ export function useVoiceInput(options: UseVoiceInputOptions = {}): UseVoiceInput
 
   const clearError = useCallback(() => {
     pendingAudioRef.current = null;
+    setPartialText('');
     setError(null);
     setErrorCode(null);
     setLastResult(null);
@@ -237,6 +293,53 @@ export function useVoiceInput(options: UseVoiceInputOptions = {}): UseVoiceInput
     }
   }, [stopLevelMeter]);
 
+  const stopDurationTimer = useCallback(() => {
+    if (durationIntervalRef.current) {
+      clearInterval(durationIntervalRef.current);
+      durationIntervalRef.current = null;
+    }
+  }, []);
+
+  const dictationIdRef = useRef(0);
+  if (dictationIdRef.current === 0) dictationIdRef.current = nextDictationId++;
+
+  /** 释放整段转写路径的麦克风流；幂等，onstop 不触发时（卸载/取消）也能兜底。 */
+  const releaseDictationStream = useCallback((reason: string) => {
+    const stream = dictationStreamRef.current;
+    dictationStreamRef.current = null;
+    stream?.getTracks().forEach((track) => {
+      track.stop();
+      logger.info('dictation track stopped', { dictationId: dictationIdRef.current, reason });
+    });
+  }, []);
+
+  const stopStreamCapture = useCallback(() => {
+    streamPipelineRef.current?.stop();
+    streamPipelineRef.current = null;
+    stopDurationTimer();
+    setInputLevel(0);
+    setSilenceWarning(false);
+  }, [stopDurationTimer]);
+
+  const closeStream = useCallback(() => {
+    stopStreamCapture();
+    const ws = streamWsRef.current;
+    streamWsRef.current = null;
+    if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+      ws.close();
+    }
+  }, [stopStreamCapture]);
+
+  const failStream = useCallback((message: string, code = 'SPEECH_NO_CHANNEL') => {
+    streamFailureRef.current = true;
+    closeStream();
+    setPartialText('');
+    setDuration(0);
+    setError(message);
+    setErrorCode(code);
+    setStatus('error');
+  }, [closeStream]);
+
   const transcribePendingAudio = useCallback(async (pendingAudio: PendingAudio) => {
     setStatus('transcribing');
     setError(null);
@@ -280,6 +383,146 @@ export function useVoiceInput(options: UseVoiceInputOptions = {}): UseVoiceInput
 
   const effectiveMaxDuration = maxDuration ?? settings.maxDurationSeconds;
 
+  const stopStream = useCallback(() => {
+    const ws = streamWsRef.current;
+    if (!ws || streamStoppingRef.current) return;
+    streamStoppingRef.current = true;
+    stopStreamCapture();
+    setStatus('transcribing');
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'stop' }));
+    } else {
+      failStream('实时语音连接尚未就绪', VOICE_INPUT_NETWORK_ERROR_CODE);
+    }
+  }, [failStream, stopStreamCapture]);
+
+  const startStream = useCallback(() => {
+    streamStoppingRef.current = false;
+    streamFailureRef.current = false;
+    setPartialText('');
+
+    let ws: WebSocket;
+    try {
+      ws = new WebSocket(buildDictationStreamUrl());
+    } catch (err) {
+      failStream(err instanceof Error ? err.message : '无法建立实时语音连接', VOICE_INPUT_NETWORK_ERROR_CODE);
+      return;
+    }
+    streamWsRef.current = ws;
+
+    ws.onopen = () => {
+      if (streamWsRef.current !== ws) return;
+      onStreamStart?.();
+      startTimeRef.current = Date.now();
+      lastVoiceAtRef.current = startTimeRef.current;
+      setDuration(0);
+      setInputLevel(0);
+      setSilenceWarning(false);
+      setStatus('recording');
+
+      const pipeline = new VoiceAudioPipeline(
+        {
+          onFrame: (pcm16k) => {
+            if (ws.readyState !== WebSocket.OPEN || streamStoppingRef.current) return;
+            const frame = new ArrayBuffer(pcm16k.byteLength);
+            new Uint8Array(frame).set(new Uint8Array(
+              pcm16k.buffer,
+              pcm16k.byteOffset,
+              pcm16k.byteLength,
+            ));
+            ws.send(frame);
+          },
+          onLevels: (mic) => {
+            const now = Date.now();
+            setInputLevel(mic);
+            if (mic > 0.08) lastVoiceAtRef.current = now;
+            setSilenceWarning(
+              now - startTimeRef.current > 2500
+              && now - lastVoiceAtRef.current > 2000,
+            );
+          },
+          onError: (code) => {
+            if (code === 'MICROPHONE_PERMISSION_DENIED') {
+              failStream('请允许麦克风权限', code);
+            } else {
+              failStream('无法访问麦克风', 'MICROPHONE_UNAVAILABLE');
+            }
+          },
+        },
+        inputDeviceRef.current,
+      );
+      streamPipelineRef.current = pipeline;
+      void pipeline.start().catch((err: unknown) => {
+        failStream(err instanceof Error ? err.message : '无法访问麦克风', 'MICROPHONE_UNAVAILABLE');
+      });
+
+      stopDurationTimer();
+      durationIntervalRef.current = setInterval(() => {
+        const elapsed = Math.floor((Date.now() - startTimeRef.current) / 1000);
+        setDuration(elapsed);
+        if (elapsed >= effectiveMaxDuration) stopStream();
+      }, 1000);
+    };
+
+    ws.onmessage = (event) => {
+      if (typeof event.data !== 'string') return;
+      let message: {
+        type?: string;
+        text?: string;
+        sentenceId?: number;
+        code?: string;
+        message?: string;
+      };
+      try {
+        message = JSON.parse(event.data) as typeof message;
+      } catch {
+        return;
+      }
+
+      if (
+        (message.type === 'partial' || message.type === 'final')
+        && typeof message.text === 'string'
+        && typeof message.sentenceId === 'number'
+      ) {
+        setPartialText(message.text);
+        if (message.type === 'partial') {
+          onPartialTranscript?.(message.text, message.sentenceId);
+        } else {
+          onTranscript?.(message.text, {
+            success: true,
+            text: message.text,
+            rawText: message.text,
+          });
+        }
+      } else if (message.type === 'error') {
+        failStream(message.message || '实时语音识别失败', message.code || 'SPEECH_NO_CHANNEL');
+      }
+    };
+
+    ws.onerror = () => {
+      if (!streamStoppingRef.current) failStream('实时语音连接失败', VOICE_INPUT_NETWORK_ERROR_CODE);
+    };
+    ws.onclose = () => {
+      if (streamWsRef.current === ws) streamWsRef.current = null;
+      stopStreamCapture();
+      setDuration(0);
+      if (streamStoppingRef.current && !streamFailureRef.current) {
+        setStatus('idle');
+      } else if (!streamFailureRef.current) {
+        failStream('实时语音连接意外断开', VOICE_INPUT_NETWORK_ERROR_CODE);
+      }
+    };
+  }, [
+    effectiveMaxDuration,
+    failStream,
+    onPartialTranscript,
+    onStreamStart,
+    onTranscript,
+    stopDurationTimer,
+    stopStream,
+    stopStreamCapture,
+  ]);
+
   /**
    * 开始录音
    */
@@ -310,9 +553,44 @@ export function useVoiceInput(options: UseVoiceInputOptions = {}): UseVoiceInput
       setError(null);
       setErrorCode(null);
       setLastResult(null);
+      setPartialText('');
+
+      // 设置页可能在 hook 挂载后换过设备；每次开麦前重读一次，读取失败沿用上次
+      // 合法值（首次失败即系统默认），不能让配置 IPC 故障阻断录音。
+      try {
+        const appSettings = await ipcService.invokeDomain<AppSettings>(IPC_DOMAINS.SETTINGS, 'get');
+        inputDeviceRef.current = normalizeVoiceInputDevice(appSettings.voice?.inputDevice);
+      } catch (error) {
+        logger.warn('Failed to refresh voice input device settings', {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+
+      // stream 只在起步时判一次：没配 DashScope key 就落回原来的整段转写；
+      // 已进入流式后不再切通道，避免半句话在输入框里重来。
+      if (settings.mode === 'stream' && await isDictationStreamConfigured()) {
+        startStream();
+        return;
+      }
 
       // 请求麦克风权限
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      dictationAbortedRef.current = false;
+      // 无偏好时保持历史 audio:true；有偏好时只叠加 deviceId，不顺手改变
+      // 整段口述的 echo/noise/AGC 浏览器默认行为。
+      const audio = inputDeviceRef.current
+        ? await resolveVoiceAudioCaptureConstraints(inputDeviceRef.current, {})
+        : true;
+      const stream = await navigator.mediaDevices.getUserMedia({ audio });
+      logger.info('dictation getUserMedia acquired', {
+        dictationId: dictationIdRef.current,
+        tracks: stream.getTracks().length,
+      });
+      dictationStreamRef.current = stream;
+      // await 期间被取消（stop/卸载）：刚拿到的 stream 无人持有，就地停掉。
+      if (dictationAbortedRef.current) {
+        releaseDictationStream('aborted-during-start');
+        return;
+      }
 
       setStatus('recording');
       setInputLevel(0);
@@ -337,8 +615,8 @@ export function useVoiceInput(options: UseVoiceInputOptions = {}): UseVoiceInput
 
       mediaRecorder.onstop = async () => {
         stopLevelMeter();
-        // 停止所有音轨
-        stream.getTracks().forEach(track => track.stop());
+        // 停止所有音轨（幂等：卸载兜底路径可能已经停过）
+        releaseDictationStream('recorder-stop');
 
         // 清除计时器
         if (durationIntervalRef.current) {
@@ -388,7 +666,7 @@ export function useVoiceInput(options: UseVoiceInputOptions = {}): UseVoiceInput
       mediaRecorder.onerror = (event) => {
         console.error('[VoiceInput] MediaRecorder error:', event);
         stopLevelMeter();
-        stream.getTracks().forEach(track => track.stop());
+        releaseDictationStream('recorder-error');
         setError('录音出错');
         setErrorCode('RECORDING_ERROR');
         setStatus('error');
@@ -424,26 +702,44 @@ export function useVoiceInput(options: UseVoiceInputOptions = {}): UseVoiceInput
     } finally {
       isStartingRef.current = false;
     }
-  }, [checkSupport, effectiveMaxDuration, settings.enabled, startLevelMeter, status, stopLevelMeter, transcribePendingAudio]);
+  }, [checkSupport, effectiveMaxDuration, releaseDictationStream, settings.enabled, settings.mode, startLevelMeter, startStream, status, stopLevelMeter, transcribePendingAudio]);
 
   /**
    * 停止录音
    */
   const stop = useCallback(() => {
+    if (streamWsRef.current) {
+      stopStream();
+      return;
+    }
+    // start() 还卡在 getUserMedia 上：标记取消，让它拿到 stream 后立刻停掉。
+    if (isStartingRef.current && !mediaRecorderRef.current) {
+      dictationAbortedRef.current = true;
+    }
     if (mediaRecorderRef.current?.state === 'recording') {
       mediaRecorderRef.current.stop();
     }
-  }, []);
+  }, [stopStream]);
 
   useEffect(() => {
     return () => {
+      dictationAbortedRef.current = true;
+      if (mediaRecorderRef.current?.state === 'recording') {
+        try {
+          mediaRecorderRef.current.stop();
+        } catch {
+          // 卸载兜底：recorder 状态异常时忽略，音轨由下面的 release 停
+        }
+      }
+      releaseDictationStream('unmount');
       if (durationIntervalRef.current) {
         clearInterval(durationIntervalRef.current);
         durationIntervalRef.current = null;
       }
       stopLevelMeter();
+      closeStream();
     };
-  }, [stopLevelMeter]);
+  }, [closeStream, releaseDictationStream, stopLevelMeter]);
 
   const retry = useCallback(() => {
     if (status === 'recording' || status === 'transcribing') return;
@@ -482,6 +778,7 @@ export function useVoiceInput(options: UseVoiceInputOptions = {}): UseVoiceInput
     errorCode,
     lastResult,
     inputLevel,
+    partialText,
     silenceWarning,
   };
 }

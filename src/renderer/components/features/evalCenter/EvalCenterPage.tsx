@@ -54,18 +54,17 @@ export const EvalCenterPage: React.FC = () => {
   const canAccess = canAccessFeature('eval.center', accessSubject);
   const evalCenterTab = useAppStore((s) => s.evalCenterTab);
   const setEvalCenterTab = useAppStore((s) => s.setEvalCenterTab);
-  const setShowEvalCenter = useAppStore((s) => s.setShowEvalCenter);
   const hasPendingValidationRequest = useAppStore((s) => Boolean(s.pendingInAppValidationRequest));
   // bridge 不抢占语义的可视化：验证请求 pending 而用户停在别的 tab 时，给角标。
   const showValidationBadge = hasPendingValidationRequest && evalCenterTab !== 'validation';
 
   return (
-    <FullScreenPage testId="eval-center-page">
+    // 2026-07-27 拍板改 inline（侧栏常驻）：与其他二级页一致，返回语义交给侧栏
+    <FullScreenPage testId="eval-center-page" variant="inline">
       <FullScreenPageHeader
-        icon={<Gauge className="h-4 w-4 text-amber-300" />}
+        icon={<Gauge className="h-4 w-4 text-badge-warning" />}
         title={t.evalCenter.title}
         description={t.evalCenter.description}
-        onClose={() => setShowEvalCenter(false)}
         actions={canAccess ? (
           <div className="flex rounded-md border border-zinc-700 p-0.5" role="tablist">
             {EVAL_TABS.map(({ key, label }) => (
@@ -82,7 +81,7 @@ export const EvalCenterPage: React.FC = () => {
                 {key === 'validation' && showValidationBadge && (
                   <span
                     data-testid="eval-center-validation-badge"
-                    className="absolute -right-1 -top-1 rounded-full border border-sky-500/40 bg-sky-500/20 px-1 text-[9px] leading-3 text-sky-200"
+                    className="absolute -right-1 -top-1 rounded-full border border-badge-info/40 bg-sky-500/20 px-1 text-[9px] leading-3 text-badge-info"
                   >
                     {t.evalCenter.newRequestBadge}
                   </span>

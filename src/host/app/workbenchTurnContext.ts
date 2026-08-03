@@ -51,6 +51,44 @@ const DESKTOP_ACTION_CONTRACT_LINES = [
   '如果权限、前台窗口、快照或坐标来源不足，返回明确 blocked reason 和下一步读取动作；动作执行后先 re-observe，再声称最终桌面状态。',
 ];
 
+/**
+ * 能力挂载提示行（已选 skills/connectors/MCP + manual scope + browser 路由契约）。
+ * 桌面路径经 buildWorkbenchTurnSystemContext 全量注入；web HTTP 路径（routes/agent.ts）
+ * 只需要这组能力行（设计画布等其它块 web 有自己的注入通道，不能重复拼）。
+ */
+export function buildWorkbenchCapabilityContextLines(
+  context?: ConversationEnvelopeContext,
+): string[] {
+  if (!context) {
+    return [];
+  }
+
+  const lines: string[] = [];
+
+  if (context.selectedSkillIds?.length) {
+    lines.push(`优先考虑这些已挂载 skills（仅在相关时使用）：${context.selectedSkillIds.join('、')}`);
+  }
+
+  if (context.turnCapabilityScopeMode === 'manual') {
+    lines.push('本轮能力范围由用户手动选择；只在相关时使用已选能力，不要因为处于 Manual 就强行调用。');
+  }
+
+  const readyConnectorIds = getReadySelectedConnectorIds(context.selectedConnectorIds);
+  if (readyConnectorIds.length) {
+    lines.push(`优先使用这些本地 connectors（仅在相关时使用）：${readyConnectorIds.join('、')}`);
+  }
+
+  if (context.selectedMcpServerIds?.length) {
+    lines.push(`优先从这些 MCP servers 取工具或资源（仅在相关时使用）：${context.selectedMcpServerIds.join('、')}`);
+  }
+
+  if (!context.executionIntent?.browserSessionMode && (context.selectedSkillIds?.length || context.selectedMcpServerIds?.length)) {
+    lines.push(...BROWSER_ROUTING_CONTRACT_LINES);
+  }
+
+  return lines;
+}
+
 export function buildWorkbenchTurnSystemContext(
   context?: ConversationEnvelopeContext,
 ): string[] {
@@ -96,29 +134,10 @@ export function buildWorkbenchTurnSystemContext(
 
   // R1 冷启动引导：设计画布会话激活即注入（即使画布空）——服务端按轮注入，不进用户消息。
   if (context.executionIntent?.designCanvasActive) {
-    lines.push(formatDesignCanvasSessionReminder());
+    lines.push(formatDesignCanvasSessionReminder(!context.canvasSnapshot));
   }
 
-  if (context.selectedSkillIds?.length) {
-    lines.push(`优先考虑这些已挂载 skills（仅在相关时使用）：${context.selectedSkillIds.join('、')}`);
-  }
-
-  if (context.turnCapabilityScopeMode === 'manual') {
-    lines.push('本轮能力范围由用户手动选择；只在相关时使用已选能力，不要因为处于 Manual 就强行调用。');
-  }
-
-  const readyConnectorIds = getReadySelectedConnectorIds(context.selectedConnectorIds);
-  if (readyConnectorIds.length) {
-    lines.push(`优先使用这些本地 connectors（仅在相关时使用）：${readyConnectorIds.join('、')}`);
-  }
-
-  if (context.selectedMcpServerIds?.length) {
-    lines.push(`优先从这些 MCP servers 取工具或资源（仅在相关时使用）：${context.selectedMcpServerIds.join('、')}`);
-  }
-
-  if (!context.executionIntent?.browserSessionMode && (context.selectedSkillIds?.length || context.selectedMcpServerIds?.length)) {
-    lines.push(...BROWSER_ROUTING_CONTRACT_LINES);
-  }
+  lines.push(...buildWorkbenchCapabilityContextLines(context));
 
   if (context.runtimeInput?.mode === 'supplement') {
     lines.push('这条消息是用户在 agent 运行过程中的补充指令：把它纳入当前任务和已有计划，除非内容明确要求改方向，不要把它当成全新任务。');

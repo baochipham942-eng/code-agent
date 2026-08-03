@@ -3,6 +3,8 @@ import type {
   NeoMemoryCandidate,
   NeoWorkCard,
   NeoWorkCardDelta,
+  NeoWorkCardDetail,
+  NeoWorkCardPriority,
   NeoWorkCardRevision,
   NeoWorkCardStatus,
 } from '@shared/contract/tag';
@@ -16,7 +18,7 @@ import { statusPhase } from '../chat/neoWorkCardPhase';
 // ============================================================================
 
 export type { NeoTopicRound } from '@shared/neoTag/topicRounds';
-export { extractNeoTopicRounds, mergeTopicRounds, topicConversationIds } from '@shared/neoTag/topicRounds';
+export { extractNeoTopicRounds, mergeTopicRounds, topicConversationIds, topicPrimaryConversationId } from '@shared/neoTag/topicRounds';
 
 /** 只读拉取某个会话的消息（供 topic 详情回溯多轮结果；失败静默返回空）。 */
 export async function fetchConversationMessages(sessionId: string): Promise<Message[]> {
@@ -63,6 +65,74 @@ export interface ProjectCollaborationBadge {
   needsInputCount: number;
 }
 
+// ============================================================================
+// @neo tag 升级 S1：排序比较器（导出纯函数，方便单测）+ priority/dueAt 展示助手
+// ============================================================================
+
+export type NeoTopicSortMode = 'recent' | 'priority' | 'dueAt';
+
+export type NeoTopicSortComparator = (a: NeoWorkCardDetail, b: NeoWorkCardDetail) => number;
+
+const PRIORITY_SORT_RANK: Record<NeoWorkCardPriority, number> = {
+  urgent: 0,
+  high: 1,
+  medium: 2,
+  low: 3,
+};
+
+function prioritySortRank(priority: NeoWorkCardPriority | undefined): number {
+  return PRIORITY_SORT_RANK[priority ?? 'medium'];
+}
+
+/** 最近活动（默认）：updatedAt 降序。消费方走 NEO_TOPIC_SORT_COMPARATORS，不单独导出。 */
+const compareNeoTopicsByRecent: NeoTopicSortComparator = (a, b) =>
+  b.workCard.updatedAt - a.workCard.updatedAt;
+
+/** 优先级：urgent>high>medium(含 undefined)>low，同级按 updatedAt 降序。 */
+export const compareNeoTopicsByPriority: NeoTopicSortComparator = (a, b) => {
+  const diff = prioritySortRank(a.workCard.priority) - prioritySortRank(b.workCard.priority);
+  return diff !== 0 ? diff : compareNeoTopicsByRecent(a, b);
+};
+
+/** 截止：有 dueAt 的升序在前（最紧的最上），无 dueAt 的按 updatedAt 降序垫底。 */
+export const compareNeoTopicsByDueAt: NeoTopicSortComparator = (a, b) => {
+  const aDue = a.workCard.dueAt ?? null;
+  const bDue = b.workCard.dueAt ?? null;
+  if (aDue !== null && bDue !== null) return aDue - bDue;
+  if (aDue !== null) return -1;
+  if (bDue !== null) return 1;
+  return compareNeoTopicsByRecent(a, b);
+};
+
+export const NEO_TOPIC_SORT_COMPARATORS: Record<NeoTopicSortMode, NeoTopicSortComparator> = {
+  recent: compareNeoTopicsByRecent,
+  priority: compareNeoTopicsByPriority,
+  dueAt: compareNeoTopicsByDueAt,
+};
+
+/** priority ≠ medium/undefined 时才出 chip；样式对齐既有 phase chip 的 border/bg 写法。 */
+export const NEO_WORK_CARD_PRIORITY_CHIP_STYLE: Record<'urgent' | 'high' | 'low', string> = {
+  urgent: 'border-badge-danger/30 bg-rose-400/10 text-badge-danger',
+  high: 'border-badge-warning/30 bg-amber-400/10 text-badge-warning',
+  low: 'border-zinc-700 bg-zinc-900 text-zinc-400',
+};
+
+/** 截止已过期且卡未到终态（phase 非 done/closed）→ 标红。 */
+export function isNeoTopicDueOverdue(
+  workCard: Pick<NeoWorkCard, 'dueAt' | 'status'>,
+  now = Date.now(),
+): boolean {
+  if (workCard.dueAt == null) return false;
+  const phase = statusPhase(workCard.status);
+  return workCard.dueAt < now && phase !== 'done' && phase !== 'closed';
+}
+
+/** 「截止 M/D」的 M/D 部分（前缀文案走 i18n）。 */
+export function formatNeoTopicDueDay(dueAt: number): string {
+  const date = new Date(dueAt);
+  return `${date.getMonth() + 1}/${date.getDate()}`;
+}
+
 const PROJECT_ID = 'project-neo-tag-p0';
 const CONVERSATION_ID = 'conversation-neo-tag-p0';
 const USER_ID = 'user-local';
@@ -100,6 +170,9 @@ function card(input: {
   status: NeoWorkCardStatus;
   revisionId: string;
   offset: number;
+  priority?: NeoWorkCardPriority;
+  dueAt?: number | null;
+  blockedReason?: string | null;
 }): NeoWorkCard {
   return {
     id: input.id,
@@ -109,6 +182,9 @@ function card(input: {
     requesterUserId: USER_ID,
     title: input.title,
     status: input.status,
+    priority: input.priority,
+    dueAt: input.dueAt ?? null,
+    blockedReason: input.blockedReason ?? null,
     currentRevisionId: input.revisionId,
     approvedRevisionId: ['approved', 'queued', 'working', 'waiting_for_user', 'in_result_review', 'completed'].includes(input.status)
       ? input.revisionId
@@ -375,6 +451,46 @@ const NEO_PROJECT_COLLABORATION_FIXTURE: ProjectCollaborationWorkCardRecord[] = 
         createdAt: BASE_TIME + 540000,
       }),
     ],
+  },
+  // S1 状态可见样本：urgent + 已过期的截止
+  {
+    card: card({
+      id: 'wc-urgent',
+      title: '@neo 紧急修登录页白屏',
+      status: 'working',
+      revisionId: 'rev-urgent-1',
+      offset: 6000,
+      priority: 'urgent',
+      dueAt: BASE_TIME - 86400000,
+    }),
+    revision: revision({
+      id: 'rev-urgent-1',
+      workCardId: 'wc-urgent',
+      revisionNumber: 1,
+      intent: 'implement',
+      taskSummary: '定位并修复登录页白屏回归，当天必须上线。',
+      outputs: [{ kind: 'patch', title: '登录页白屏修复' }],
+    }),
+  },
+  // S1 状态可见样本：failed 带 host 侧 blockedReason
+  {
+    card: card({
+      id: 'wc-blocked',
+      title: '@neo 迁移设置页数据源',
+      status: 'failed',
+      revisionId: 'rev-blocked-1',
+      offset: 7000,
+      blockedReason: 'provider 凭证失效，运行在第 3 步中断',
+    }),
+    revision: revision({
+      id: 'rev-blocked-1',
+      workCardId: 'wc-blocked',
+      revisionNumber: 1,
+      intent: 'implement',
+      taskSummary: '把设置页从 fixture 数据源迁到真实 IPC。',
+      outputs: [{ kind: 'patch', title: '设置页数据源迁移' }],
+      risks: ['旧 fixture 字段与新契约不一致'],
+    }),
   },
 ];
 

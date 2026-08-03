@@ -101,11 +101,194 @@ describe('NeoWorkCardService', () => {
     const detail = service.get(created.workCard.id)!;
 
     expect(created.workCard.status).toBe('draft');
+    expect(created.workCard).toMatchObject({
+      priority: 'medium',
+      dueAt: null,
+      blockedReason: null,
+    });
     expect(created.revision.revisionNumber).toBe(1);
     expect(detail.workCard.currentRevisionId).toBe(created.revision.id);
     expect(detail.currentRevision?.taskSummary).toBe('Implement the backend contract');
     expect(detail.currentRevision?.readScope.fileGlobs).toEqual(['src/shared/contract/tag.ts']);
     expect(detail.approvedRevision).toBeNull();
+  });
+
+  it('hooks create, metadata, status, and archive writes after local persistence', () => {
+    const cloudSync = {
+      scheduleUpsert: vi.fn(),
+      scheduleDelete: vi.fn(),
+    };
+    const syncedService = new NeoWorkCardService(() => repo, cloudSync);
+
+    const created = syncedService.createDraft(draft(), NOW);
+    const reprioritized = syncedService.updateMeta({
+      workCardId: created.workCard.id,
+      actorUserId: 'user_editor',
+      priority: 'urgent',
+    }, NOW + 1);
+    const working = syncedService.setStatus(created.workCard.id, 'working', NOW + 2);
+    const archived = syncedService.archive(created.workCard.id, NOW + 3)!;
+
+    expect(cloudSync.scheduleUpsert).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ id: created.workCard.id, status: 'draft' }),
+    );
+    expect(cloudSync.scheduleUpsert).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ id: reprioritized.id, priority: 'urgent' }),
+    );
+    expect(cloudSync.scheduleUpsert).toHaveBeenNthCalledWith(
+      3,
+      expect.objectContaining({ id: working.id, status: 'working' }),
+    );
+    expect(cloudSync.scheduleDelete).toHaveBeenCalledWith(
+      expect.objectContaining({ id: archived.id, status: 'archived' }),
+    );
+    expect(repo.getWorkCard(created.workCard.id)?.status).toBe('archived');
+  });
+
+  it('updates priority and due date metadata, including explicitly clearing dueAt', () => {
+    const created = service.createDraft(draft(), NOW);
+
+    const updated = service.updateMeta({
+      workCardId: created.workCard.id,
+      actorUserId: 'user_editor',
+      priority: 'urgent',
+      dueAt: NOW + 86_400_000,
+    }, NOW + 1);
+
+    expect(updated).toMatchObject({
+      priority: 'urgent',
+      dueAt: NOW + 86_400_000,
+      updatedAt: NOW + 1,
+    });
+
+    const cleared = service.updateMeta({
+      workCardId: created.workCard.id,
+      actorUserId: 'user_editor',
+      dueAt: null,
+    }, NOW + 2);
+
+    expect(cleared).toMatchObject({
+      priority: 'urgent',
+      dueAt: null,
+      updatedAt: NOW + 2,
+    });
+  });
+
+  it('rejects invalid priority and empty metadata updates', () => {
+    const created = service.createDraft(draft(), NOW);
+
+    expect(() => service.updateMeta({
+      workCardId: created.workCard.id,
+      actorUserId: 'user_editor',
+      priority: 'critical' as never,
+    })).toThrowError(/priority/);
+    expect(() => service.updateMeta({
+      workCardId: created.workCard.id,
+      actorUserId: 'user_editor',
+    })).toThrowError(/priority or dueAt/);
+  });
+
+  it('stores blocked reasons for blocked statuses and clears them after progress resumes', () => {
+    const created = service.createDraft(draft(), NOW);
+
+    const failed = service.setStatus(created.workCard.id, 'failed', NOW + 1, 'Provider unavailable');
+    expect(failed.blockedReason).toBe('Provider unavailable');
+
+    const working = service.setStatus(created.workCard.id, 'working', NOW + 2);
+    expect(working.blockedReason).toBeNull();
+
+    const waiting = service.setStatus(
+      created.workCard.id,
+      'waiting_for_user',
+      NOW + 3,
+      'Approval required',
+    );
+    expect(waiting.blockedReason).toBe('Approval required');
+
+    const queued = service.setStatus(created.workCard.id, 'queued', NOW + 4);
+    expect(queued.blockedReason).toBeNull();
+    expect(() => service.setStatus(
+      created.workCard.id,
+      'working',
+      NOW + 5,
+      'must not be silently discarded',
+    )).toThrowError(/blockedReason/);
+  });
+
+  it('clears stale blocked reason when a failed card is revised or rejected (continuation path)', () => {
+    // 续接失败卡：新 revision 落 draft，上一轮的失败原因不再适用，必须随状态离开而清空
+    const created = service.createDraft(draft(), NOW);
+    service.setStatus(created.workCard.id, 'failed', NOW + 1, 'Provider unavailable');
+
+    const revised = service.updateDraftRevision({
+      workCardId: created.workCard.id,
+      updatedByUserId: 'user_editor',
+      revision: revision({ taskSummary: 'Follow-up round after failure' }),
+    }, NOW + 2);
+    expect(revised.workCard.status).toBe('draft');
+    expect(revised.workCard.blockedReason).toBeNull();
+
+    // approve 路径（setApprovedRevision）同样不得携带旧原因
+    service.setStatus(created.workCard.id, 'failed', NOW + 3, 'Second failure');
+    service.approveRevision({
+      workCardId: created.workCard.id,
+      reviewerUserId: 'user_editor',
+    }, NOW + 4);
+    expect(repo.getWorkCard(created.workCard.id)?.blockedReason).toBeNull();
+
+    // reject 路径（clearApprovedRevision → needs_review）也清空
+    service.setStatus(created.workCard.id, 'failed', NOW + 5, 'Third failure');
+    service.rejectRevision({
+      workCardId: created.workCard.id,
+      reviewerUserId: 'user_editor',
+    }, NOW + 6);
+    const rejected = repo.getWorkCard(created.workCard.id);
+    expect(rejected?.status).toBe('needs_review');
+    expect(rejected?.blockedReason).toBeNull();
+  });
+
+  it('applies blocked reason coupling through the repository status input path', () => {
+    const created = service.createDraft(draft(), NOW);
+
+    repo.setStatus({
+      workCardId: created.workCard.id,
+      status: 'failed',
+      updatedAt: NOW + 1,
+      blockedReason: 'Repository failure',
+    });
+    expect(repo.getWorkCard(created.workCard.id)?.blockedReason).toBe('Repository failure');
+
+    repo.setStatus({
+      workCardId: created.workCard.id,
+      status: 'completed',
+      updatedAt: NOW + 2,
+    });
+    expect(repo.getWorkCard(created.workCard.id)?.blockedReason).toBeNull();
+  });
+
+  it('reads legacy work card shapes with medium priority defaults', () => {
+    repo.insertWorkCard({
+      id: 'nwc_legacy',
+      projectId: 'proj_alpha',
+      sourceConversationId: 'conv_legacy',
+      sourceTurnId: 'turn_legacy',
+      requesterUserId: 'user_legacy',
+      title: 'Legacy card',
+      status: 'draft',
+      currentRevisionId: 'nwcr_legacy',
+      approvedRevisionId: null,
+      createdAt: NOW,
+      updatedAt: NOW,
+      archivedAt: null,
+    });
+
+    expect(service.get('nwc_legacy')?.workCard).toMatchObject({
+      priority: 'medium',
+      dueAt: null,
+      blockedReason: null,
+    });
   });
 
   it('lists work cards by project and status scope', () => {

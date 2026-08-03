@@ -28,7 +28,8 @@ import { useAuthStore } from '../../../../stores/authStore';
 import { useI18n } from '../../../../hooks/useI18n';
 import ipcService from '../../../../services/ipcService';
 import { Button, EmptyState } from '../../../primitives';
-import { SettingsDetails, SettingsPage, SettingsSection } from '../SettingsLayout';
+import { SettingsDetails, SettingsSection } from '../SettingsLayout';
+import { HubTabHeader } from '../../capabilityHub/HubTabHeader';
 
 type Notice = { type: 'success' | 'error'; text: string };
 export * from './PluginsSettings.helpers';
@@ -46,6 +47,7 @@ import {
   formatDate,
   getResultError,
   normalizeMarketplaceResult,
+  toDisplayPath,
 } from './PluginsSettings.helpers';
 
 const SummaryTile: React.FC<{
@@ -54,9 +56,9 @@ const SummaryTile: React.FC<{
   tone?: 'default' | 'success' | 'warning';
 }> = ({ label, value, tone = 'default' }) => {
   const valueClass = tone === 'success'
-    ? 'text-emerald-300'
+    ? 'text-badge-success'
     : tone === 'warning'
-      ? 'text-amber-300'
+      ? 'text-badge-warning'
       : 'text-zinc-100';
 
   return (
@@ -72,11 +74,11 @@ const Pill: React.FC<{
   tone?: 'default' | 'success' | 'warning' | 'danger';
 }> = ({ children, tone = 'default' }) => {
   const toneClass = tone === 'success'
-    ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+    ? 'border-badge-success/30 bg-emerald-500/10 text-badge-success'
     : tone === 'warning'
-      ? 'border-amber-500/30 bg-amber-500/10 text-amber-300'
+      ? 'border-badge-warning/30 bg-amber-500/10 text-badge-warning'
       : tone === 'danger'
-        ? 'border-red-500/30 bg-red-500/10 text-red-300'
+        ? 'border-red-500/30 bg-red-500/10 text-badge-danger'
         : 'border-zinc-700 bg-zinc-800 text-zinc-300';
 
   return (
@@ -100,6 +102,7 @@ export const PluginsSettings: React.FC = () => {
   const [projectPath, setProjectPath] = useState('');
   const [loading, setLoading] = useState(false);
   const [busyKey, setBusyKey] = useState<string | null>(null);
+  const [installStates, setInstallStates] = useState<Record<string, 'installing' | 'cancelling'>>({});
   const [notice, setNotice] = useState<Notice | null>(null);
 
   const reload = useCallback(async () => {
@@ -221,15 +224,42 @@ export const PluginsSettings: React.FC = () => {
 
   const handleInstall = useCallback((plugin: MarketplacePluginEntry) => {
     const spec = getPluginSpec(plugin);
-    void runAction(`plugin:install:${spec}`, async () => {
+    setInstallStates((current) => ({ ...current, [spec]: 'installing' }));
+    setNotice(null);
+    void (async () => {
       const options = installScope === 'project'
         ? { scope: installScope, projectPath: projectPath.trim() || undefined }
         : { scope: installScope };
-      const result = await ipcService.invoke(IPC_CHANNELS.MARKETPLACE_INSTALL_PLUGIN, spec, options);
-      if (!result?.success) throw new Error(getResultError(result, pluginsText.errors));
-      return `${pluginsText.toast.installSuccessPrefix}${spec}${pluginsText.toast.installSuccessSuffix}`;
-    });
-  }, [installScope, pluginsText, projectPath, runAction]);
+      try {
+        const result = await ipcService.invoke(IPC_CHANNELS.MARKETPLACE_INSTALL_PLUGIN, spec, options);
+        if (result?.cancelled) return;
+        if (!result?.success) throw new Error(getResultError(result, pluginsText.errors));
+        setNotice({
+          type: 'success',
+          text: `${pluginsText.toast.installSuccessPrefix}${spec}${pluginsText.toast.installSuccessSuffix}`,
+        });
+        await reload();
+      } catch (error) {
+        setNotice({
+          type: 'error',
+          text: error instanceof Error ? error.message : String(error),
+        });
+      } finally {
+        setInstallStates((current) => {
+          const next = { ...current };
+          delete next[spec];
+          return next;
+        });
+      }
+    })();
+  }, [installScope, pluginsText, projectPath, reload]);
+
+  const handleCancelInstall = useCallback((spec: string) => {
+    setInstallStates((current) => (
+      current[spec] ? { ...current, [spec]: 'cancelling' } : current
+    ));
+    void ipcService.invoke(IPC_CHANNELS.MARKETPLACE_CANCEL_INSTALL, spec);
+  }, []);
 
   const handleToggle = useCallback((plugin: InstalledPlugin) => {
     const spec = getPluginSpec(plugin);
@@ -269,38 +299,22 @@ export const PluginsSettings: React.FC = () => {
 
   if (!isAdmin) {
     return (
-      <SettingsPage
-        title={pluginsText.title}
-        description={pluginsText.adminRequiredDescription}
-      >
-        <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-200">
+      <div className="space-y-6">
+        <HubTabHeader testId="plugins-hub-header" title={t.capabilityHub.tabPlugins} />
+        <div className="rounded-lg border border-badge-warning/30 bg-amber-500/10 p-4 text-sm text-badge-warning">
           {pluginsText.adminRequiredNotice}
         </div>
-      </SettingsPage>
+      </div>
     );
   }
 
+  // 页头走四 tab 共用的 HubTabHeader：大标题「插件」+ 刷新同一行
+  // （刷新原是「已安装」section 的 actions，提进页头操作簇与其余 tab 口径一致）。
   return (
-    <SettingsPage
-      title={pluginsText.title}
-      description={pluginsText.description}
-    >
-      {/* 操作结果通知（页面级，所有 section 的操作都在这里反馈） */}
-      {notice && (
-        <div className={`flex items-start gap-2 rounded-lg border px-3 py-2 text-sm ${
-          notice.type === 'success'
-            ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'
-            : 'border-red-500/30 bg-red-500/10 text-red-200'
-        }`}
-        >
-          {notice.type === 'success' ? <CheckCircle className="mt-0.5 h-4 w-4 shrink-0" /> : <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />}
-          <span>{notice.text}</span>
-        </div>
-      )}
-
-      <SettingsSection
-        title={pluginsText.installed.title}
-        description={pluginsText.installed.description}
+    <div className="space-y-6">
+      <HubTabHeader
+        testId="plugins-hub-header"
+        title={t.capabilityHub.tabPlugins}
         actions={(
           <Button
             variant="ghost"
@@ -312,6 +326,23 @@ export const PluginsSettings: React.FC = () => {
             {pluginsText.installed.refresh}
           </Button>
         )}
+      />
+      {/* 操作结果通知（页面级，所有 section 的操作都在这里反馈） */}
+      {notice && (
+        <div className={`flex items-start gap-2 rounded-lg border px-3 py-2 text-sm ${
+          notice.type === 'success'
+            ? 'border-badge-success/30 bg-emerald-500/10 text-badge-success'
+            : 'border-red-500/30 bg-red-500/10 text-badge-danger'
+        }`}
+        >
+          {notice.type === 'success' ? <CheckCircle className="mt-0.5 h-4 w-4 shrink-0" /> : <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />}
+          <span>{notice.text}</span>
+        </div>
+      )}
+
+      <SettingsSection
+        title={pluginsText.installed.title}
+        description={pluginsText.installed.description}
       >
         {loading ? (
           <div className="flex items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900/40 py-8 text-sm text-zinc-500">
@@ -346,11 +377,9 @@ export const PluginsSettings: React.FC = () => {
                       </div>
                       <div className="mt-2 text-xs leading-5 text-zinc-500">
                         {pluginsText.installed.installedAtPrefix}{formatDate(plugin.installedAt, pluginsText.date)}
-                        {plugin.projectPath ? `${pluginsText.installed.projectPrefix}${plugin.projectPath}` : ''}
+                        {plugin.projectPath ? `${pluginsText.installed.projectPrefix}${toDisplayPath(plugin.projectPath)}` : ''}
                       </div>
-                      {plugin.pluginRoot && (
-                        <div className="mt-1 break-all text-xs text-zinc-600">{plugin.pluginRoot}</div>
-                      )}
+                      {/* 安装目录只在下面「Plugin asset」格里出现一次：卡片名下再渲染一遍是重复外泄 */}
                     </div>
                     <div className="flex shrink-0 flex-wrap gap-2">
                       <Button
@@ -390,7 +419,7 @@ export const PluginsSettings: React.FC = () => {
                     </div>
                     <div className="rounded-md bg-zinc-950/60 p-2 text-xs text-zinc-500 md:col-span-2">
                       <span className="text-zinc-300">{pluginsText.installed.pluginAsset}</span>
-                      <span className="ml-2 break-all">{plugin.pluginRoot || pluginsText.installed.none}</span>
+                      <span className="ml-2 break-all">{plugin.pluginRoot ? toDisplayPath(plugin.pluginRoot) : pluginsText.installed.none}</span>
                     </div>
                     <div className="rounded-md bg-zinc-950/60 p-2 text-xs leading-5 text-zinc-500">
                       <span className="text-zinc-300">{pluginsText.installed.trust}</span>
@@ -488,20 +517,45 @@ export const PluginsSettings: React.FC = () => {
                       )}
                       <div className="mt-2 break-all text-xs text-zinc-600">{plugin.source}</div>
                     </div>
-                    {installedPlugin ? (
-                      <PackageCheck className="h-5 w-5 shrink-0 text-emerald-300" />
-                    ) : (
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        loading={busyKey === `plugin:install:${spec}`}
-                        disabled={busyKey !== null}
-                        onClick={() => handleInstall(plugin)}
-                        leftIcon={<Download className="h-3.5 w-3.5" />}
-                      >
-                        {pluginsText.marketplace.install}
-                      </Button>
-                    )}
+                    <div
+                      data-testid={`plugin-install-state-${spec}`}
+                      data-state={installedPlugin ? 'installed' : installStates[spec] ?? 'idle'}
+                      className="shrink-0"
+                    >
+                      {installedPlugin ? (
+                        <PackageCheck className="h-5 w-5 text-badge-success" />
+                      ) : installStates[spec] === 'installing' ? (
+                        <div className="flex flex-col gap-2 sm:flex-row">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleCancelInstall(spec)}
+                          >
+                            {pluginsText.marketplace.cancelInstall}
+                          </Button>
+                          <Button variant="secondary" size="sm" disabled>
+                            <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                            {pluginsText.marketplace.installing}
+                          </Button>
+                        </div>
+                      ) : installStates[spec] === 'cancelling' ? (
+                        <Button variant="secondary" size="sm" disabled>
+                          <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                          {pluginsText.marketplace.cancelling}
+                        </Button>
+                      ) : (
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          loading={busyKey === `plugin:install:${spec}`}
+                          disabled={busyKey !== null}
+                          onClick={() => handleInstall(plugin)}
+                          leftIcon={<Download className="h-3.5 w-3.5" />}
+                        >
+                          {pluginsText.marketplace.install}
+                        </Button>
+                      )}
+                    </div>
                   </div>
                   <div className="mt-3 flex flex-wrap gap-1.5">
                     {(plugin.tags ?? []).slice(0, 6).map((tag) => (
@@ -537,7 +591,7 @@ export const PluginsSettings: React.FC = () => {
 
         <div className="mt-3 rounded-lg border border-zinc-800 bg-zinc-900/60 p-3">
           <div className="mb-2 flex items-center gap-2 text-sm font-medium text-zinc-200">
-            <Shield className="h-4 w-4 text-amber-300" />
+            <Shield className="h-4 w-4 text-badge-warning" />
             {pluginsText.overview.roleVisibility}
           </div>
           <div className="grid gap-2 md:grid-cols-3">
@@ -686,13 +740,13 @@ export const PluginsSettings: React.FC = () => {
       >
         <div className="grid gap-4 lg:grid-cols-2">
           <div>
-            <h4 className="mb-2 text-xs font-medium text-emerald-300">{pluginsText.visibleList.userVisibleTitle}</h4>
+            <h4 className="mb-2 text-xs font-medium text-badge-success">{pluginsText.visibleList.userVisibleTitle}</h4>
             {visibility.userVisible.length === 0 ? (
               <EmptyState text={pluginsText.visibleList.userVisibleEmpty} />
             ) : (
               <div className="space-y-2">
                 {visibility.userVisible.map((item) => (
-                  <div key={item.spec} className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-3">
+                  <div key={item.spec} className="rounded-lg border border-badge-success/20 bg-emerald-500/5 p-3">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="text-sm font-medium text-zinc-100">{item.spec}</span>
                       {item.scope && <Pill tone="success">{item.scope}</Pill>}
@@ -704,13 +758,13 @@ export const PluginsSettings: React.FC = () => {
             )}
           </div>
           <div>
-            <h4 className="mb-2 text-xs font-medium text-amber-300">{pluginsText.visibleList.adminOnlyTitle}</h4>
+            <h4 className="mb-2 text-xs font-medium text-badge-warning">{pluginsText.visibleList.adminOnlyTitle}</h4>
             {visibility.adminOnly.length === 0 ? (
               <EmptyState text={pluginsText.visibleList.adminOnlyEmpty} />
             ) : (
               <div className="max-h-[360px] space-y-2 overflow-y-auto pr-1">
                 {visibility.adminOnly.map((item) => (
-                  <div key={`${item.kind}:${item.spec}`} className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3">
+                  <div key={`${item.kind}:${item.spec}`} className="rounded-lg border border-badge-warning/20 bg-amber-500/5 p-3">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="text-sm font-medium text-zinc-100">{item.spec}</span>
                       <Pill tone="warning">{item.kind === 'installed' ? pluginsText.visibleList.installedDisabled : pluginsText.visibleList.notInstalled}</Pill>
@@ -723,6 +777,6 @@ export const PluginsSettings: React.FC = () => {
           </div>
         </div>
       </SettingsDetails>
-    </SettingsPage>
+    </div>
   );
 };

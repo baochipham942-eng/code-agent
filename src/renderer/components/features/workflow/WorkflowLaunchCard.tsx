@@ -4,6 +4,10 @@
 // workflow 跑前展示静态预览（phases / 扇出量 / 动写）+ 4 维度成本（费用/网络/上下文泄露/
 // 后台占用），等用户 approve/reject。挂在消息流底部，仅有 pending 审批请求时显示。
 // 决策经 IPC 回传 main 的 WorkflowLaunchApprovalGate（approve/reject → resolve workflow 工具）。
+//
+// 2026-07-29 拍板：视觉骨架统一迁移到 DecisionCard（与 AskUserQuestion 提问卡
+// 同形）——「批准启动 / 拒绝」变成选项行，底部 ghost 取消 + primary 确认
+// （选中后才可点）。数据流/IPC 不变。
 // ============================================================================
 
 import React, { useState } from 'react';
@@ -12,30 +16,35 @@ import { useWorkflowStore } from '../../../stores/workflowStore';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { IPC_CHANNELS } from '@shared/ipc';
 import ipcService from '../../../services/ipcService';
+import { useI18n } from '../../../hooks/useI18n';
+import { DecisionCard, type DecisionOption } from '../../DecisionCard';
 
 function DimensionRow({ icon, label, text, warn }: { icon: React.ReactNode; label: string; text: string; warn?: boolean }) {
   return (
-    <div className="flex items-start gap-2 px-3 py-1.5">
-      <div className={`pt-0.5 ${warn ? 'text-amber-400' : 'text-zinc-500'}`}>{icon}</div>
+    <div className="flex items-start gap-2 py-1">
+      <div className={`pt-0.5 ${warn ? 'text-badge-warning' : 'text-zinc-500'}`}>{icon}</div>
       <div className="min-w-0 flex-1">
         <span className="text-zinc-400">{label}</span>
-        <span className={`ml-2 ${warn ? 'text-amber-300' : 'text-zinc-300'}`}>{text}</span>
+        <span className={`ml-2 ${warn ? 'text-badge-warning' : 'text-zinc-300'}`}>{text}</span>
       </div>
     </div>
   );
 }
 
 export function WorkflowLaunchCard() {
+  const { t } = useI18n();
   // 会话隔离（Codex R1 HIGH#1）：只显示当前会话的审批请求，避免在别的会话视图里误批/误拒。
   const currentSessionId = useSessionStore((s) => s.currentSessionId ?? undefined);
   const request = useWorkflowStore((s) => s.pendingLaunchRequest(currentSessionId));
   const [feedback, setFeedback] = useState('');
   const [busy, setBusy] = useState(false);
+  // DecisionCard 选项行选中态：'approve' | 'reject'
+  const [selected, setSelected] = useState<string | null>(null);
 
-  if (!request) return null;
+  const w = t.decisionCard.workflow;
 
   const handleApprove = async () => {
-    if (busy) return;
+    if (busy || !request) return;
     setBusy(true);
     try {
       await ipcService.invoke(IPC_CHANNELS.WORKFLOW_APPROVE_LAUNCH, {
@@ -49,8 +58,8 @@ export function WorkflowLaunchCard() {
   };
 
   const handleReject = async () => {
-    if (busy) return;
-    const reason = feedback.trim() || '用户取消';
+    if (busy || !request) return;
+    const reason = feedback.trim() || w.defaultRejectReason;
     setBusy(true);
     try {
       await ipcService.invoke(IPC_CHANNELS.WORKFLOW_REJECT_LAUNCH, {
@@ -63,75 +72,79 @@ export function WorkflowLaunchCard() {
     }
   };
 
-  return (
-    <div className="w-full shrink-0 px-4">
-      <div className="mx-auto max-w-3xl rounded-lg border border-cyan-700/50 bg-zinc-900/95 backdrop-blur-sm shadow-xl text-xs">
-        <div className="flex items-center gap-2 px-3 py-2 border-b border-zinc-700/40">
-          <GitBranch size={14} className="text-cyan-400" />
-          <span className="text-zinc-200 font-medium">确认启动 workflow</span>
-          {request.goal && <span className="text-zinc-500 truncate max-w-[45%]" title={request.goal}>· {request.goal}</span>}
-        </div>
+  if (!request) return null;
 
-        {/* 静态预览：phases + 扇出量 */}
-        <div className="px-3 py-2 border-b border-zinc-700/40 space-y-1.5">
-          {request.phases.length > 0 && (
-            <div className="flex flex-wrap items-center gap-1.5">
-              <span className="text-zinc-500">阶段</span>
-              {request.phases.map((p) => (
-                <span key={p} className="rounded bg-zinc-800 px-1.5 py-0.5 text-zinc-300">{p}</span>
-              ))}
+  const options: DecisionOption[] = [
+    { id: 'approve', label: w.optionApprove, description: w.optionApproveDesc },
+    { id: 'reject', label: w.optionReject, description: w.optionRejectDesc },
+  ];
+
+  return (
+    <DecisionCard
+      testId="workflow-launch-card"
+      className="w-full shrink-0 px-4 animate-slideUp"
+      tone="neutral"
+      icon={<GitBranch className="w-4 h-4" />}
+      title={w.title}
+      question={
+        request.goal
+          ? w.questionWithGoal.replace('{goal}', request.goal)
+          : w.question
+      }
+      details={
+        <div className="text-xs">
+          {/* 静态预览：phases + 扇出量 */}
+          <div className="space-y-1.5">
+            {request.phases.length > 0 && (
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="text-zinc-500">{w.phases}</span>
+                {request.phases.map((p) => (
+                  <span key={p} className="rounded bg-zinc-800 px-1.5 py-0.5 text-zinc-300">{p}</span>
+                ))}
+              </div>
+            )}
+            <div className="text-zinc-500">
+              {w.estimatedCalls.replace('{count}', String(request.estimatedAgentCalls))}
+              {request.fanoutSites > 0 && <> · {w.fanoutSites.replace('{count}', String(request.fanoutSites))}</>}
+            </div>
+          </div>
+
+          {/* 4 维度 */}
+          <div className="mt-2 border-t border-zinc-800 pt-1">
+            <DimensionRow icon={<Cpu size={12} />} label={w.dimensionCost} text={request.dimensions.cost} warn={!request.budgetTokens} />
+            <DimensionRow icon={<Globe size={12} />} label={w.dimensionNetwork} text={request.dimensions.network} />
+            <DimensionRow icon={<Shield size={12} />} label={w.dimensionContext} text={request.dimensions.contextLeak} />
+            <DimensionRow icon={<Clock size={12} />} label={w.dimensionBackground} text={request.dimensions.background} warn={request.writeHint} />
+          </div>
+
+          {request.writeHint && (
+            <div className="mt-1 flex items-center gap-2 border-t border-zinc-800 pt-2 text-badge-warning">
+              <AlertTriangle size={12} className="shrink-0" />
+              <span>{w.writeHintWarning}</span>
             </div>
           )}
-          <div className="text-zinc-500">
-            约 <span className="text-zinc-300">{request.estimatedAgentCalls}</span> 个子 agent 调用
-            {request.fanoutSites > 0 && <> · <span className="text-zinc-300">{request.fanoutSites}</span> 处并行/流水扇出</>}
-          </div>
         </div>
-
-        {/* 4 维度 */}
-        <div className="border-b border-zinc-700/40 py-1">
-          <DimensionRow icon={<Cpu size={12} />} label="费用" text={request.dimensions.cost} warn={!request.budgetTokens} />
-          <DimensionRow icon={<Globe size={12} />} label="网络" text={request.dimensions.network} />
-          <DimensionRow icon={<Shield size={12} />} label="上下文" text={request.dimensions.contextLeak} />
-          <DimensionRow icon={<Clock size={12} />} label="后台" text={request.dimensions.background} warn={request.writeHint} />
-        </div>
-
-        {request.writeHint && (
-          <div className="flex items-center gap-2 px-3 py-1.5 text-amber-300 border-b border-zinc-700/40">
-            <AlertTriangle size={12} className="shrink-0" />
-            <span>脚本含可写文件 / 跑命令的子 agent，并行写共享工作树有覆盖风险</span>
-          </div>
-        )}
-
-        {/* 决策区 */}
-        <div className="px-3 py-2 space-y-2">
-          <textarea
-            value={feedback}
-            onChange={(e) => setFeedback(e.target.value)}
-            placeholder="可选说明（拒绝时作为原因）"
-            rows={2}
-            className="w-full resize-none rounded border border-zinc-700 bg-zinc-800/60 px-2 py-1 text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:border-zinc-500"
-          />
-          <div className="flex items-center justify-end gap-2">
-            <button
-              type="button"
-              onClick={handleReject}
-              disabled={busy}
-              className="rounded border border-red-700/50 px-3 py-1 text-red-300 hover:bg-red-900/30 disabled:opacity-50 transition-colors"
-            >
-              取消
-            </button>
-            <button
-              type="button"
-              onClick={handleApprove}
-              disabled={busy}
-              className="rounded bg-emerald-600/90 px-3 py-1 text-white hover:bg-emerald-600 disabled:opacity-50 transition-colors"
-            >
-              开始执行
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
+      }
+      options={options}
+      selectedId={selected}
+      onSelect={setSelected}
+      onConfirm={() => {
+        if (selected === 'approve') void handleApprove();
+        else if (selected === 'reject') void handleReject();
+      }}
+      onCancel={() => void handleReject()}
+      confirmLabel={t.decisionCard.confirm}
+      cancelLabel={w.optionReject}
+      submitting={busy}
+      footerExtra={
+        <textarea
+          value={feedback}
+          onChange={(e) => setFeedback(e.target.value)}
+          placeholder={w.feedbackPlaceholder}
+          rows={2}
+          className="w-full resize-none rounded border border-zinc-700 bg-zinc-800 px-2 py-1 text-xs text-zinc-200 placeholder:text-zinc-600 focus:outline-hidden focus:border-zinc-500"
+        />
+      }
+    />
   );
 }

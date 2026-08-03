@@ -11,6 +11,7 @@ const LISTEN_MAX_ATTEMPTS = 2;
 export interface BeginMcpOAuthFlowInput {
   serverName: string;
   serverIdentity: string;
+  authorizationServerIssuer: string;
   serverUrl?: string;
   configSource?: string;
 }
@@ -19,6 +20,7 @@ export interface McpOAuthFlow {
   flowId: string;
   serverName: string;
   serverIdentity: string;
+  authorizationServerIssuer: string;
   serverUrl?: string;
   configSource?: string;
   state: string;
@@ -176,6 +178,7 @@ export class McpOAuthCoordinator {
       flowId,
       serverName: input.serverName,
       serverIdentity: input.serverIdentity,
+      authorizationServerIssuer: input.authorizationServerIssuer,
       ...(input.serverUrl !== undefined ? { serverUrl: input.serverUrl } : {}),
       ...(input.configSource !== undefined ? { configSource: input.configSource } : {}),
       state,
@@ -246,6 +249,18 @@ export class McpOAuthCoordinator {
       return;
     }
 
+    const responseIssuer = requestUrl.searchParams.get('iss');
+    if (responseIssuer !== null && responseIssuer !== flow.authorizationServerIssuer) {
+      const error = new Error(
+        `MCP OAuth issuer mismatch: expected "${flow.authorizationServerIssuer}", received "${responseIssuer}"`,
+      );
+      flow.settled = true;
+      flow.reject(error);
+      res.once('finish', () => this.cleanupFlow(flow));
+      this.sendText(res, 400, error.message);
+      return;
+    }
+
     const code = requestUrl.searchParams.get('code');
     if (!code) {
       this.sendText(res, 400, 'Missing OAuth code');
@@ -298,6 +313,7 @@ export class McpOAuthCoordinator {
       flowId: flow.flowId,
       serverName: flow.serverName,
       serverIdentity: flow.serverIdentity,
+      authorizationServerIssuer: flow.authorizationServerIssuer,
       ...(flow.serverUrl !== undefined ? { serverUrl: flow.serverUrl } : {}),
       ...(flow.configSource !== undefined ? { configSource: flow.configSource } : {}),
       state: flow.state,

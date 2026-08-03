@@ -20,6 +20,7 @@ import { getRemoteSkillRegistryService } from '../skills/marketplace/remoteSkill
 import { installFromRegistryEntry } from '../skills/marketplace/installService';
 import { matchSkillRegistryDraftRecommendations } from '../skills/marketplace/skillRegistryMatcher';
 import { isProjectConfigTrusted } from '../security/folderTrustService';
+import { getProjectService } from '../services/project/projectService';
 
 const logger = createLogger('SkillIPC');
 const registryDraftRecommendationsBySession = new Map<string, Set<string>>();
@@ -33,6 +34,28 @@ function getSkillIpcWorkingDirectory(): string {
   return discovery.getWorkingDirectory()
     || process.env.CODE_AGENT_WORKING_DIR
     || process.cwd();
+}
+
+function resolveSkillIpcWorkingDirectory(workspacePath?: unknown): string {
+  // Neo 是 Tauri 壳：真机 renderer 全部经 webServer HTTP 桥进来（domain.ts 通配路由），
+  // 无 body 的调用会被包成 handler(null, {})，null 同理——{} 是生产环境「未传参」的唯一编码，
+  // undefined 只出现在单测/进程内直调。这两种一律走既有当前工作目录路径；
+  // 只有非空字符串才算显式目录；空串/其他类型是调用方 bug，fail-loud。
+  if (
+    workspacePath === undefined
+    || workspacePath === null
+    || (typeof workspacePath === 'object' && Object.keys(workspacePath as object).length === 0)
+  ) {
+    return getSkillIpcWorkingDirectory();
+  }
+  if (typeof workspacePath !== 'string' || !workspacePath.trim()) {
+    throw new Error('workspacePath must be a non-empty absolute project directory.');
+  }
+  const project = getProjectService().getProjectForWorkspace(workspacePath);
+  if (!project?.workspacePath) {
+    throw new Error(`No project found for workspacePath: ${workspacePath}`);
+  }
+  return project.workspacePath;
 }
 
 async function ensureSkillDiscoveryForIpc(): Promise<void> {
@@ -170,12 +193,12 @@ async function handleRegistryInstall(name: string): Promise<{ success: boolean; 
  * - projectOverride：当前项目覆盖（true/false=强制启停，null=跟随全局）
  * - enabled：生效态（项目覆盖优先，否则全局），供既有消费方沿用
  */
-async function handleSkillList() {
+async function handleSkillList(workspacePath?: string) {
   await ensureSkillDiscoveryForIpc();
   const repoService = getSkillRepositoryService();
   await repoService.initialize();
   const discoveryService = getSkillDiscoveryService();
-  const workingDirectory = getSkillIpcWorkingDirectory();
+  const workingDirectory = resolveSkillIpcWorkingDirectory(workspacePath);
   const projectPreferencesTrusted = await isProjectConfigTrusted(workingDirectory, 'project-skill-preferences');
   const prefStore = projectPreferencesTrusted
     ? getProjectSkillPreferenceStore(workingDirectory)
@@ -194,18 +217,33 @@ async function handleSkillList() {
 }
 
 /**
+ * 写路径与读路径同一道信任门：list 读偏好前有 isProjectConfigTrusted 拦截，
+ * 写侧若不拦会把配置写进未信任目录、读回永远为空——「选了没反应」的静默失败
+ * （2026-07-29 真机实测：identityChanged 使目录信任失效，写成功读被拦）。
+ */
+async function ensureSkillPreferenceDirTrusted(workingDirectory: string): Promise<void> {
+  if (!(await isProjectConfigTrusted(workingDirectory, 'project-skill-preferences'))) {
+    throw new Error(`该目录未被信任，无法为其配置技能：${workingDirectory}。先在该目录打开会话并信任此项目。`);
+  }
+}
+
+/**
  * 设置当前项目内的 skill 启停覆盖（项目级 > 全局）
  */
-async function handleSkillProjectSet(skillName: string, enabled: boolean) {
-  getProjectSkillPreferenceStore(getSkillIpcWorkingDirectory()).setOverride(skillName, enabled);
+async function handleSkillProjectSet(skillName: string, enabled: boolean, workspacePath?: string) {
+  const workingDirectory = resolveSkillIpcWorkingDirectory(workspacePath);
+  await ensureSkillPreferenceDirTrusted(workingDirectory);
+  getProjectSkillPreferenceStore(workingDirectory).setOverride(skillName, enabled);
   await refreshToolSearchRegistration();
 }
 
 /**
  * 清除当前项目内的 skill 覆盖，回落全局语义
  */
-async function handleSkillProjectClear(skillName: string) {
-  getProjectSkillPreferenceStore(getSkillIpcWorkingDirectory()).clearOverride(skillName);
+async function handleSkillProjectClear(skillName: string, workspacePath?: string) {
+  const workingDirectory = resolveSkillIpcWorkingDirectory(workspacePath);
+  await ensureSkillPreferenceDirTrusted(workingDirectory);
+  getProjectSkillPreferenceStore(workingDirectory).clearOverride(skillName);
   await refreshToolSearchRegistration();
 }
 
@@ -598,9 +636,9 @@ export function registerSkillHandlers(ipcMain: IpcMain): void {
   // Skill Management
   // ------------------------------------------------------------------------
 
-  ipcMain.handle(SKILL_CHANNELS.SKILL_LIST, async () => {
+  ipcMain.handle(SKILL_CHANNELS.SKILL_LIST, async (_, workspacePath?: string) => {
     try {
-      return await handleSkillList();
+      return await handleSkillList(workspacePath);
     } catch (error) {
       logger.error('Failed to list skills', { error });
       throw error;
@@ -625,20 +663,20 @@ export function registerSkillHandlers(ipcMain: IpcMain): void {
     }
   });
 
-  ipcMain.handle(SKILL_CHANNELS.SKILL_PROJECT_SET, async (_, skillName: string, enabled: boolean) => {
+  ipcMain.handle(SKILL_CHANNELS.SKILL_PROJECT_SET, async (_, skillName: string, enabled: boolean, workspacePath?: string) => {
     try {
-      await handleSkillProjectSet(skillName, enabled);
+      await handleSkillProjectSet(skillName, enabled, workspacePath);
     } catch (error) {
-      logger.error('Failed to set project skill override', { skillName, enabled, error });
+      logger.error('Failed to set project skill override', { skillName, enabled, workspacePath, error });
       throw error;
     }
   });
 
-  ipcMain.handle(SKILL_CHANNELS.SKILL_PROJECT_CLEAR, async (_, skillName: string) => {
+  ipcMain.handle(SKILL_CHANNELS.SKILL_PROJECT_CLEAR, async (_, skillName: string, workspacePath?: string) => {
     try {
-      await handleSkillProjectClear(skillName);
+      await handleSkillProjectClear(skillName, workspacePath);
     } catch (error) {
-      logger.error('Failed to clear project skill override', { skillName, error });
+      logger.error('Failed to clear project skill override', { skillName, workspacePath, error });
       throw error;
     }
   });

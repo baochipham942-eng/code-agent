@@ -599,7 +599,13 @@ export function createRealtimeTransport(profile: RealtimeVoiceProviderProfile): 
             : typeof event.stash === 'string' ? event.stash : '';
           if (!stash) break;
           if (itemId) userTranscriptStash.set(itemId, stash);
-          onEvent({ type: 'user.transcript', text: stash, done: false, ...(itemId ? { itemId } : {}) });
+          onEvent({
+            type: 'user.transcript',
+            text: stash,
+            done: false,
+            ...(itemId ? { itemId } : {}),
+            ...(currentCandidateId ? { candidateId: currentCandidateId } : {}),
+          });
           break;
         }
         case 'conversation.item.input_audio_transcription.completed': {
@@ -618,7 +624,13 @@ export function createRealtimeTransport(profile: RealtimeVoiceProviderProfile): 
             });
           }
           if (itemId) userTranscriptStash.delete(itemId);
-          onEvent({ type: 'user.transcript', text, done: true, ...(itemId ? { itemId } : {}) });
+          onEvent({
+            type: 'user.transcript',
+            text,
+            done: true,
+            ...(itemId ? { itemId } : {}),
+            ...(currentCandidateId ? { candidateId: currentCandidateId } : {}),
+          });
           break;
         }
         case 'input_audio_buffer.speech_started':

@@ -93,6 +93,20 @@ function withLanguageDirective(instructions: string, language: VoiceLiveSettings
   return instructions;
 }
 
+interface VoiceInterruptCandidate {
+  itemId?: string;
+  startedAt: number;
+  durationMs?: number;
+  assistantPlaying?: boolean;
+  classification?: VoiceInterruptClassification;
+  classificationSource?: 'empty-text-fallback' | 'transcript';
+  emptyTextFallbackObserved?: boolean;
+  decided: boolean;
+  cancelledResponseId?: string;
+  responseRequested: boolean;
+  finalGraceTimer?: NodeJS.Timeout;
+}
+
 interface ActiveSession {
   id: string;
   neoSessionId: string;
@@ -129,16 +143,7 @@ interface ActiveSession {
   focus: VoiceFocusContext | null;
   interruption: {
     currentCandidateId: string | null;
-    candidates: Map<string, {
-      startedAt: number;
-      durationMs?: number;
-      assistantPlaying?: boolean;
-      classification?: VoiceInterruptClassification;
-      decided: boolean;
-      cancelledResponseId?: string;
-      responseRequested: boolean;
-      finalGraceTimer?: NodeJS.Timeout;
-    }>;
+    candidates: Map<string, VoiceInterruptCandidate>;
   };
   /** 上游 cancel 后仍可能把旧 delta/final/done 发完；Host 与 Renderer 各自 fail-closed。 */
   cancelledResponseIds: Set<string>;
@@ -202,14 +207,42 @@ function requestResponse(session: ActiveSession, userFinal: string): void {
     : undefined);
 }
 
-function evaluateInterrupt(session: ActiveSession, text: string, stage: 'partial' | 'final'): void {
-  const candidateId = session.interruption.currentCandidateId;
+function findInterruptCandidateByItemId(
+  session: ActiveSession,
+  itemId?: string,
+): { candidateId: string; candidate: VoiceInterruptCandidate } | undefined {
+  if (!itemId) return undefined;
+  for (const [candidateId, candidate] of session.interruption.candidates) {
+    if (candidate.itemId === itemId) return { candidateId, candidate };
+  }
+  return undefined;
+}
+
+function resolveInterruptCandidate(
+  session: ActiveSession,
+  identity: { candidateId?: string; itemId?: string } = {},
+): { candidateId: string; candidate: VoiceInterruptCandidate } | undefined {
+  const byItemId = findInterruptCandidateByItemId(session, identity.itemId);
+  if (byItemId) return byItemId;
+  const candidateId = identity.candidateId ?? session.interruption.currentCandidateId;
+  if (!candidateId) return undefined;
+  const candidate = session.interruption.candidates.get(candidateId);
+  return candidate ? { candidateId, candidate } : undefined;
+}
+
+function evaluateInterrupt(
+  session: ActiveSession,
+  text: string,
+  stage: 'partial' | 'final',
+  identity: { candidateId?: string; itemId?: string; classificationSource?: 'empty-text-fallback' | 'transcript' } = {},
+): void {
+  const resolved = resolveInterruptCandidate(session, identity);
+  const candidateId = resolved?.candidateId;
   if (!candidateId) {
     if (stage === 'final' && text.trim()) requestResponse(session, text);
     return;
   }
-  const candidate = session.interruption.candidates.get(candidateId);
-  if (!candidate) return;
+  const candidate = resolved.candidate;
   if (stage === 'final' && candidate.finalGraceTimer) {
     clearTimeout(candidate.finalGraceTimer);
     candidate.finalGraceTimer = undefined;
@@ -225,6 +258,7 @@ function evaluateInterrupt(session: ActiveSession, text: string, stage: 'partial
   if (decision.terminal && !candidate.decided) {
     candidate.decided = true;
     candidate.classification = decision.classification;
+    candidate.classificationSource = identity.classificationSource ?? 'transcript';
     let cancelledResponseId: string | null = null;
     if (decision.cancel) {
       cancelledResponseId = session.upstream.interrupt();
@@ -825,8 +859,13 @@ async function connectAndBind(
             candidate.durationMs = event.durationMs;
             if (candidate.finalGraceTimer) clearTimeout(candidate.finalGraceTimer);
             candidate.finalGraceTimer = setTimeout(() => {
+              candidate.finalGraceTimer = undefined;
               if (active?.id !== id || candidate.decided) return;
-              evaluateInterrupt(active, '', 'partial');
+              candidate.emptyTextFallbackObserved = true;
+              evaluateInterrupt(active, '', 'partial', {
+                ...(candidateId ? { candidateId } : {}),
+                classificationSource: 'empty-text-fallback',
+              });
             }, 1_200);
           }
         }
@@ -847,15 +886,25 @@ async function connectAndBind(
         // injection.rejected 是 Host 内部的重试信号；Renderer 没有用户动作要做。
         let suppressUserFragment = false;
         if (event.type === 'user.transcript') {
-          if (active?.id === id) evaluateInterrupt(active, event.text, event.done ? 'final' : 'partial');
-          if (event.done && active?.id === id) {
-            const candidateId = active.interruption.currentCandidateId;
-            const classification = candidateId
-              ? active.interruption.candidates.get(candidateId)?.classification
-              : undefined;
-            suppressUserFragment = classification === 'background'
-              || classification === 'acknowledgement'
-              || classification === 'short_fragment';
+          if (active?.id === id) {
+            const transcriptCandidate = resolveInterruptCandidate(active, {
+              candidateId: event.candidateId,
+              itemId: event.itemId,
+            });
+            if (event.itemId && transcriptCandidate) transcriptCandidate.candidate.itemId ??= event.itemId;
+            evaluateInterrupt(active, event.text, event.done ? 'final' : 'partial', {
+              candidateId: event.candidateId,
+              itemId: event.itemId,
+            });
+            if (event.done && event.itemId) {
+              const candidate = findInterruptCandidateByItemId(active, event.itemId)?.candidate;
+              const classification = candidate?.classification;
+              suppressUserFragment = !candidate?.emptyTextFallbackObserved
+                && candidate?.classificationSource !== 'empty-text-fallback'
+                && (classification === 'background'
+                  || classification === 'acknowledgement'
+                  || classification === 'short_fragment');
+            }
           }
         }
         if (

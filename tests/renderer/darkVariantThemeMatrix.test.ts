@@ -37,15 +37,24 @@ beforeAll(async () => {
     `@import './entry.css';`,
     { from: join(tempDir, 'input.css') },
   );
-  // 编译产物形如：.dark\:underline { &:is(<选择器> *) { ... } }
   // 先锚到探针类规则、再在其后抠变体选择器（产物里还有 open:/group: 等别的
   // 变体规则，全局抠会锚错），避免把期望选择器在测试里硬编码第二份。
   // 匹配用 `<选择器> *` 而不是 `:is(<选择器> *)`：单一复杂选择器时两者语义等价，
   // 而 jsdom 的 nwsapi 不支持嵌套 :is()。
+  //
+  // ⚠️ 变体选择器有两种等价产出形态，`&` 必须可选（2026-08-03 实测：本地 macOS 出
+  // 嵌套形态、CI 的 Linux 出压平形态，只认 `&:is(` 会让 beforeAll 抛错、四条断言
+  // 全部 skip —— 表现为「1 file failed / 0 test failed」）：
+  //   嵌套：.dark\:underline { &:is(<选择器> *) { ... } }
+  //   压平：.dark\:underline:is(<选择器> *) { ... }
   const probeRuleAt = result.css.indexOf('.dark\\:underline');
   expect(probeRuleAt, '编译产物里必须有探针类 dark:underline 的规则').toBeGreaterThanOrEqual(0);
-  const match = result.css.slice(probeRuleAt).match(/&:is\((.+?) \*\)\s*\{/);
-  expect(match, '探针类规则里必须找得到 dark: 变体的嵌套选择器').not.toBeNull();
+  const match = result.css.slice(probeRuleAt).match(/&?:is\((.+?) \*\)\s*\{/);
+  expect(match, '探针类规则里必须找得到 dark: 变体选择器（嵌套或压平形态）').not.toBeNull();
+  // 抠错了会得到一个匹配不到任何元素的选择器，那样四条断言里「不命中」的两条会
+  // 假绿、「命中」的两条才红——加这条把「解析错」和「配置错」区分开。
+  expect(match![1], '抠出的选择器必须含 data-theme，否则是解析锚错了不是配置错了')
+    .toContain('data-theme');
   darkVariantSelector = `${match![1]} *`;
   rmSync(tempDir, { recursive: true, force: true });
 });

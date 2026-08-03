@@ -4,11 +4,7 @@ import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 // @ts-expect-error —— 纯 JS 静态门脚本，无类型声明
-import {
-  findThemeBlindBrightForegroundMatches,
-  findThemeBlindBrightForegroundViolations,
-  scan,
-} from '../../scripts/check-design-system.mjs';
+import { findThemeBlindBrightForegroundMatches, findThemeBlindBrightForegroundViolations, scan } from '../../scripts/check-design-system.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const baseline = JSON.parse(

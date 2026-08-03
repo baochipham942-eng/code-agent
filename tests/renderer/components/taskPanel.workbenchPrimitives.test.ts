@@ -93,7 +93,7 @@ describe('TaskPanel WorkbenchPrimitives', () => {
     expect(html).toContain('review-skill');
     expect(html).toContain('border-badge-info/20');
     expect(html).not.toContain('border-sky-500/20');
-    expect(html).toContain('border-fuchsia-500/40');
+    expect(html).toContain('border-badge-accent/40');
     expect(html).toContain('opacity-60');
   });
 });

@@ -909,12 +909,12 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
       {/* Update Status */}
       {visibleUpdateInfo && (
         <div className={`rounded-lg p-4 ${
-          visibleUpdateInfo.hasUpdate ? 'bg-indigo-500/10 border border-indigo-500/30' : 'bg-green-500/10 border border-badge-success/30'
+          visibleUpdateInfo.hasUpdate ? 'bg-indigo-500/10 border border-badge-accent/30' : 'bg-green-500/10 border border-badge-success/30'
         }`}>
           {visibleUpdateInfo.hasUpdate ? (
             <div className="space-y-4">
               <div className="flex items-start gap-3">
-                <Download className="w-5 h-5 text-indigo-400 mt-0.5" />
+                <Download className="w-5 h-5 text-badge-accent mt-0.5" />
                 <div className="flex-1">
                   <div className="text-sm font-medium text-zinc-200">
                     {updateText.newVersion}: v{visibleUpdateInfo.latestVersion}

@@ -908,7 +908,7 @@ export const NativeDesktopSection: React.FC<NativeDesktopSectionProps> = ({
       </div>
 
       {error && (
-        <div className="mx-4 mt-2 p-2 rounded-lg border border-rose-500/20 bg-rose-500/10 text-xs text-rose-300 shrink-0">
+        <div className="mx-4 mt-2 p-2 rounded-lg border border-badge-danger/20 bg-rose-500/10 text-xs text-badge-danger shrink-0">
           {error}
         </div>
       )}
@@ -921,7 +921,7 @@ export const NativeDesktopSection: React.FC<NativeDesktopSectionProps> = ({
           {screenshotCount > 0 && <span>{screenshotCount}{nativeDesktopText.units.screenshotSuffix}</span>}
           {analyzedCount > 0 && <span>{analyzedCount}{nativeDesktopText.units.aiAnalysisSuffix}</span>}
           {audioStatus?.capturing && (
-            <span className="text-rose-400">
+            <span className="text-badge-danger">
               {nativeDesktopText.recording.recording}{nativeDesktopText.separator}{audioStatus.totalSegments}{nativeDesktopText.units.segmentSuffix}{nativeDesktopText.separator}{audioStatus.asrEngine}
               {audioStatus.captureMode === 'system-audio' ? `${nativeDesktopText.separator}${nativeDesktopText.audioMode.systemAudio}` : ''}
             </span>

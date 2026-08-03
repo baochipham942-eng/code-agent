@@ -82,7 +82,7 @@ function stateTone(state?: ActivityProviderState): StatusItem['tone'] {
 function stateDotClass(state?: ActivityProviderState): string {
   if (state === 'running' || state === 'available') return 'text-badge-success';
   if (state === 'starting' || state === 'stopping') return 'text-badge-warning';
-  if (state === 'error' || state === 'unavailable') return 'text-rose-400';
+  if (state === 'error' || state === 'unavailable') return 'text-badge-danger';
   return 'text-zinc-500';
 }
 

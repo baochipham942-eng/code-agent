@@ -35,9 +35,9 @@ const STATUS_STYLE: Record<AgentTreeNodeStatus, { icon: React.ReactNode; classNa
   'running-recovered': { icon: <Loader2 className="h-3.5 w-3.5 animate-spin" />, className: 'text-badge-info' },
   'dead-log-only': { icon: <FileText className="h-3.5 w-3.5" />, className: 'text-zinc-500' },
   completed: { icon: <CheckCircle2 className="h-3.5 w-3.5" />, className: 'text-badge-success' },
-  failed: { icon: <AlertCircle className="h-3.5 w-3.5" />, className: 'text-rose-300' },
+  failed: { icon: <AlertCircle className="h-3.5 w-3.5" />, className: 'text-badge-danger' },
   cancelled: { icon: <Circle className="h-3.5 w-3.5" />, className: 'text-zinc-500' },
-  killed: { icon: <AlertCircle className="h-3.5 w-3.5" />, className: 'text-rose-300' },
+  killed: { icon: <AlertCircle className="h-3.5 w-3.5" />, className: 'text-badge-danger' },
   blocked: { icon: <AlertCircle className="h-3.5 w-3.5" />, className: 'text-badge-warning' },
   unknown: { icon: <Circle className="h-3.5 w-3.5" />, className: 'text-zinc-500' },
 };
@@ -144,7 +144,7 @@ function NodeLine({
               )}
             </div>
             {failureReason && (
-              <div className="mt-2 rounded border border-rose-500/15 bg-rose-500/[0.05] px-2 py-1.5 text-[12px] text-rose-100">
+              <div className="mt-2 rounded border border-badge-danger/15 bg-rose-500/[0.05] px-2 py-1.5 text-[12px] text-badge-danger">
                 失败原因：{failureReason}
               </div>
             )}

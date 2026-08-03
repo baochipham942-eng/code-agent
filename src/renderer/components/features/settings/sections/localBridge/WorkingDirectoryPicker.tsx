@@ -125,7 +125,7 @@ export const WorkingDirectoryPicker: React.FC = () => {
         }}
         className={`w-full flex items-center gap-1.5 px-2 py-1 text-left text-sm rounded transition-colors ${
           selectedPath === node.path
-            ? 'bg-indigo-500/20 text-indigo-300'
+            ? 'bg-indigo-500/20 text-badge-accent'
             : 'text-zinc-300 hover:bg-zinc-700'
         }`}
         style={{ paddingLeft: `${depth * 16 + 8}px` }}

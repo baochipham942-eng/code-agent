@@ -255,7 +255,7 @@ export function InAppValidationWorkspace(): React.ReactElement {
             className={`rounded border px-2 py-0.5 text-xs ${
               allPassed
                 ? 'border-badge-success/30 bg-emerald-500/10 text-badge-success'
-                : 'border-rose-500/30 bg-rose-500/10 text-rose-200'
+                : 'border-badge-danger/30 bg-rose-500/10 text-badge-danger'
             }`}
           >
             {v.passedBadge.replace('{passed}', String(passedCount)).replace('{total}', String(totalCount))}
@@ -364,14 +364,14 @@ export function InAppValidationWorkspace(): React.ReactElement {
                 <span className={allPassed ? 'text-badge-success' : 'text-zinc-300'}>
                   {v.passedBadge.replace('{passed}', String(passedCount)).replace('{total}', String(totalCount))}
                 </span>
-                <span className={failedCount > 0 ? 'text-rose-300' : 'text-badge-success'}>
+                <span className={failedCount > 0 ? 'text-badge-danger' : 'text-badge-success'}>
                   {failedCount > 0 ? v.failedSummary.replace('{n}', String(failedCount)) : v.allPassedSummary}
                 </span>
               </div>
             )}
             <div className="overflow-auto px-3 py-2">
               {error && (
-                <div className="mb-2 flex items-start gap-1 rounded bg-rose-900/40 p-2 text-rose-200">
+                <div className="mb-2 flex items-start gap-1 rounded bg-rose-900/40 p-2 text-badge-danger">
                   <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
                   <span>{error}</span>
                 </div>
@@ -389,14 +389,14 @@ export function InAppValidationWorkspace(): React.ReactElement {
                   className={`mb-2 rounded border p-2 ${
                     result.passed
                       ? 'border-badge-success bg-emerald-950/40'
-                      : 'border-rose-800 bg-rose-950/40'
+                      : 'border-badge-danger bg-rose-950/40'
                   }`}
                 >
                   <div className="flex items-center gap-1">
                     {result.passed ? (
                       <CheckCircle2 className="h-3 w-3 text-badge-success" />
                     ) : (
-                      <AlertTriangle className="h-3 w-3 text-rose-400" />
+                      <AlertTriangle className="h-3 w-3 text-badge-danger" />
                     )}
                     <span className="font-medium">
                       {result.label || result.action.type}
@@ -413,7 +413,7 @@ export function InAppValidationWorkspace(): React.ReactElement {
                     </ul>
                   )}
                   {result.failures.length > 0 && (
-                    <ul className="mt-1 list-disc pl-4 text-rose-300">
+                    <ul className="mt-1 list-disc pl-4 text-badge-danger">
                       {result.failures.map((failure, i) => (
                         <li key={i}>{failure}</li>
                       ))}

@@ -444,7 +444,7 @@ function getPermissionToneClass(permission: ToolPermissionView): string {  switc
     case 'mcp':
       return 'text-badge-info';
     case 'memory':
-      return 'text-fuchsia-300';
+      return 'text-badge-accent';
     default:
       return 'text-zinc-500';
   }

@@ -118,7 +118,7 @@ function getTrajectoryTierToneClassName(tier: AgentTrajectoryQualityTier): strin
     case 'G1':
       return 'border-badge-warning/25 bg-amber-500/10 text-badge-warning';
     default:
-      return 'border-rose-500/25 bg-rose-500/10 text-rose-200';
+      return 'border-badge-danger/25 bg-rose-500/10 text-badge-danger';
   }
 }
 
@@ -129,7 +129,7 @@ function getEvidenceControlToneClassName(trustLevel: EvidenceControlSummaryProje
     case 'partial':
       return 'border-badge-warning/25 bg-amber-500/10 text-badge-warning';
     default:
-      return 'border-rose-500/25 bg-rose-500/10 text-rose-300';
+      return 'border-badge-danger/25 bg-rose-500/10 text-badge-danger';
   }
 }
 
@@ -366,7 +366,7 @@ function formatBlockDetail(block: ReplayBlock, labels: SessionReplayLabels): str
 
 function getBlockToneClassName(block: ReplayBlock): string {
   if (block.type === 'error' || (block.type === 'tool_call' && block.toolCall?.success === false)) {
-    return 'border-rose-500/20 bg-rose-500/10 text-rose-200';
+    return 'border-badge-danger/20 bg-rose-500/10 text-badge-danger';
   }
   if (block.type === 'tool_call') {
     return 'border-badge-info/20 bg-cyan-500/10 text-badge-info';

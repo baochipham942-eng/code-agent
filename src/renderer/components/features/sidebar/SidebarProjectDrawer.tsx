@@ -267,7 +267,7 @@ export const SidebarProjectDrawer: React.FC<SidebarProjectDrawerProps> = ({
                     >
                       {p.cancel}
                     </button>
-                    {editError && <span className="min-w-0 truncate text-[10px] text-rose-300">{editError}</span>}
+                    {editError && <span className="min-w-0 truncate text-[10px] text-badge-danger">{editError}</span>}
                   </div>
                 </div>
               ) : (

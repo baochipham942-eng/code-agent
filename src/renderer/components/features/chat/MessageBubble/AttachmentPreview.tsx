@@ -61,7 +61,7 @@ function getAttachmentIconConfig(category: AttachmentCategory | undefined): Atta
     case 'pdf':
       return { icon: <FileText className={iconClass} />, color: 'text-badge-danger', label: 'PDF' };
     case 'audio':
-      return { icon: <Music className={iconClass} />, color: 'text-fuchsia-400', label: '音频' };
+      return { icon: <Music className={iconClass} />, color: 'text-badge-accent', label: '音频' };
     case 'video':
       return { icon: <Video className={iconClass} />, color: 'text-badge-info', label: '视频' };
     case 'excel':
@@ -382,7 +382,7 @@ const AttachmentItem: React.FC<{
     return (
       <div className="max-w-[260px] rounded-xl border border-zinc-700 bg-zinc-700/60 px-3 py-2">
         <div className="mb-2 flex items-center gap-2 text-xs text-zinc-300">
-          <Music className="h-4 w-4 text-fuchsia-400" />
+          <Music className="h-4 w-4 text-badge-accent" />
           <span className="truncate" title={displayAttachment.name}>{displayAttachment.name}</span>
           {stateBadge}
         </div>

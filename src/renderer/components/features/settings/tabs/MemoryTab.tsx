@@ -928,7 +928,7 @@ export const MemoryTab: React.FC = () => {
             </pre>
             <div className="rounded-lg border border-zinc-800 bg-zinc-950/40 p-3">
               <div className="flex items-center gap-2 text-sm font-medium text-zinc-200">
-                <Brain className="h-4 w-4 text-indigo-300" />
+                <Brain className="h-4 w-4 text-badge-accent" />
                 {memoryText.files.summaryTitle}
               </div>
               <dl className="mt-3 space-y-2 text-xs">

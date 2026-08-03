@@ -26,7 +26,7 @@ const AGENT_COLORS = [
   'text-badge-accent',
   'text-badge-info',
   'text-badge-warning',
-  'text-pink-400',
+  'text-badge-accent',
   'text-badge-info',
 ] as const;
 

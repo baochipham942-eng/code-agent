@@ -18,7 +18,7 @@ const AGENT_COLORS: Record<string, string> = {
   tester: 'text-badge-warning',
   debugger: 'text-badge-danger',
   documenter: 'text-badge-success',
-  architect: 'text-indigo-400',
+  architect: 'text-badge-accent',
   default: 'text-zinc-400',
 };
 

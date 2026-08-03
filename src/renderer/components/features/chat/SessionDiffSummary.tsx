@@ -122,7 +122,7 @@ export const SessionDiffSummary: React.FC<SessionDiffSummaryProps> = ({ messages
               <span className="text-xs text-badge-success">+{totalAdded}</span>
             )}
             {totalRemoved > 0 && (
-              <span className="text-xs text-rose-400">-{totalRemoved}</span>
+              <span className="text-xs text-badge-danger">-{totalRemoved}</span>
             )}
             <div className="flex-1" />
             <span className="text-xs text-zinc-500 flex items-center gap-1">
@@ -164,7 +164,7 @@ export const SessionDiffSummary: React.FC<SessionDiffSummaryProps> = ({ messages
                       <span className="text-badge-success flex-shrink-0">+{fc.added}</span>
                     )}
                     {fc.removed > 0 && (
-                      <span className="text-rose-400 flex-shrink-0">-{fc.removed}</span>
+                      <span className="text-badge-danger flex-shrink-0">-{fc.removed}</span>
                     )}
                   </li>
                 );

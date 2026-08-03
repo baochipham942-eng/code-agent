@@ -218,13 +218,13 @@ export const ForceUpdateModal: React.FC<ForceUpdateModalProps> = ({ updateInfo }
       closeOnEsc={false}
       showCloseButton={false}
       zIndex={Z_LAYERS.forceUpdateModal}
-      className="border-rose-500/30"
+      className="border-badge-danger/30"
       headerBgClass="bg-rose-500/5"
       header={
         <ModalHeader
           icon={<ShieldAlert className="w-5 h-5" />}
           iconBgClass="bg-rose-500/20"
-          iconColorClass="text-rose-400"
+          iconColorClass="text-badge-danger"
           title={n.forceTitle}
           subtitle={n.forceSubtitle}
           showCloseButton={false}
@@ -238,7 +238,7 @@ export const ForceUpdateModal: React.FC<ForceUpdateModalProps> = ({ updateInfo }
           <div className="space-y-4">
             <div className="flex items-start gap-4">
               <div className="w-12 h-12 rounded-full bg-indigo-500/20 flex items-center justify-center flex-shrink-0">
-                <Download className="w-6 h-6 text-indigo-400" />
+                <Download className="w-6 h-6 text-badge-accent" />
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-lg font-medium text-white">
@@ -328,7 +328,7 @@ export const ForceUpdateModal: React.FC<ForceUpdateModalProps> = ({ updateInfo }
           <div className="space-y-4">
             <div className="flex items-center gap-4">
               <div className="w-12 h-12 rounded-full bg-rose-500/20 flex items-center justify-center flex-shrink-0">
-                <AlertCircle className="w-6 h-6 text-rose-400" />
+                <AlertCircle className="w-6 h-6 text-badge-danger" />
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-lg font-medium text-white">{n.downloadFailed}</p>

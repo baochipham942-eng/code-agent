@@ -223,7 +223,7 @@ export const TurnQualityStrip: React.FC<TurnQualityStripProps> = ({ summary }) =
               <span className="truncate">{strategyLabel(summary)} · {formatModel(summary)}</span>
             </span>
             {summary.capabilities?.agentName && (
-              <span className="inline-flex items-center gap-1 rounded border border-fuchsia-400/15 bg-fuchsia-400/10 px-1.5 py-0.5 text-fuchsia-200">
+              <span className="inline-flex items-center gap-1 rounded border border-badge-accent/15 bg-fuchsia-400/10 px-1.5 py-0.5 text-badge-accent">
                 <Bot className="h-3 w-3" />
                 {summary.capabilities.agentName}
               </span>
@@ -264,7 +264,7 @@ export const TurnQualityStrip: React.FC<TurnQualityStripProps> = ({ summary }) =
             </div>
           )}
           {summary.agentScorecard && (
-            <div className="mb-2 rounded-md border border-fuchsia-400/10 bg-fuchsia-400/[0.04] px-2 py-1.5">
+            <div className="mb-2 rounded-md border border-badge-accent/10 bg-fuchsia-400/[0.04] px-2 py-1.5">
               <div className="flex flex-wrap items-center justify-between gap-2 text-zinc-300">
                 <span>{summary.agentScorecard.agentName || summary.agentScorecard.agentId || 'Main agent'}</span>
                 <span className="font-mono text-zinc-500">

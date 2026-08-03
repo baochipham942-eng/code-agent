@@ -76,7 +76,7 @@ const LAUNCHABLE_VIEWS: readonly LaunchableViewDefinition[] = [
   {
     id: 'design-canvas',
     icon: Palette,
-    iconClassName: 'text-fuchsia-400/80',
+    iconClassName: 'text-badge-accent/80',
     keybindingActionId: 'designCanvas.open',
   },
   {
@@ -265,7 +265,7 @@ export const WorkbenchTabs: React.FC<{ children?: React.ReactNode; focusable?: b
         label: t.design.canvasTabLabel,
         title: t.design.canvasTabLabel,
         icon: Palette,
-        iconClassName: 'text-fuchsia-400/80',
+        iconClassName: 'text-badge-accent/80',
         isDirty: false,
       };
     }

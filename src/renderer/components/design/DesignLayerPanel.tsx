@@ -69,7 +69,7 @@ export const DesignLayerPanel: React.FC<{
                 onClick={(e) => onSelect(node.id, e.shiftKey || e.metaKey)}
                 className={`min-w-0 flex-1 rounded-md border px-2 py-2 text-left transition-colors ${
                   active
-                    ? 'border-fuchsia-400/70 bg-fuchsia-500/15 text-zinc-50'
+                    ? 'border-badge-accent/70 bg-fuchsia-500/15 text-zinc-50'
                     : 'border-transparent bg-white/[0.03] text-zinc-300 hover:bg-white/[0.06]'
                 } ${node.discarded ? 'opacity-45' : ''}`}
               >

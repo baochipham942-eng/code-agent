@@ -92,7 +92,7 @@ export const PlanPanel: React.FC<PlanPanelProps> = ({ plan, onClose }) => {
       header={
         <>
           <div className="p-2 bg-indigo-500/20 rounded-lg shrink-0">
-            <FileText className="w-5 h-5 text-indigo-400" />
+            <FileText className="w-5 h-5 text-badge-accent" />
           </div>
           <div className="flex-1 min-w-0">
             <h3 className="text-lg font-semibold text-zinc-200 truncate">{plan.title}</h3>

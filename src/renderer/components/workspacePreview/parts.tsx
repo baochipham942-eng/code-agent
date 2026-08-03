@@ -68,7 +68,7 @@ export function KindIcon({ kind }: { kind: WorkspacePreviewKind }) {
     case 'audio':
       return <Music className={`${cls} text-badge-success`} />;
     case 'video':
-      return <Video className={`${cls} text-fuchsia-300`} />;
+      return <Video className={`${cls} text-badge-accent`} />;
     case 'archive':
       return <Archive className={`${cls} text-badge-warning`} />;
     case 'diff':
@@ -82,7 +82,7 @@ export function KindIcon({ kind }: { kind: WorkspacePreviewKind }) {
       return <MessageSquare className={`${cls} text-badge-info`} />;
     case 'design_ppt':
     case 'presentation':
-      return <Presentation className={`${cls} text-fuchsia-300`} />;
+      return <Presentation className={`${cls} text-badge-accent`} />;
     default:
       return <File className={`${cls} text-zinc-400`} />;
   }
@@ -484,7 +484,7 @@ export function RevisionPanel({
       )}
 
       {actionError && (
-        <div className="rounded border border-rose-500/20 bg-rose-500/10 px-2 py-1.5 text-[11px] text-rose-200">
+        <div className="rounded border border-badge-danger/20 bg-rose-500/10 px-2 py-1.5 text-[11px] text-badge-danger">
           {actionError}
         </div>
       )}

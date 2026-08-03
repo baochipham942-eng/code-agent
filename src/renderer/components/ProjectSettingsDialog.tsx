@@ -226,12 +226,12 @@ export const ProjectSettingsDialog: React.FC<ProjectSettingsDialogProps> = ({
                       <span className="truncate text-zinc-200">{source.path}</span>
                       {source.role === 'primary' && <span className="rounded bg-violet-500/15 px-1.5 py-0.5 text-[10px] text-badge-accent">Primary</span>}
                     </div>
-                    <span className={source.trustState === 'trusted' ? 'text-[10px] text-zinc-500' : 'text-[10px] text-rose-300'}>
+                    <span className={source.trustState === 'trusted' ? 'text-[10px] text-zinc-500' : 'text-[10px] text-badge-danger'}>
                       {source.trustState === 'trusted' ? copy.trusted : copy.blocked}
                     </span>
                   </div>
                   {source.role !== 'primary' && (
-                    <button type="button" onClick={() => remove(index)} className="text-zinc-500 hover:text-rose-300">{copy.remove}</button>
+                    <button type="button" onClick={() => remove(index)} className="text-zinc-500 hover:text-badge-danger">{copy.remove}</button>
                   )}
                 </div>
                 <div className="flex items-center gap-2">
@@ -251,16 +251,16 @@ export const ProjectSettingsDialog: React.FC<ProjectSettingsDialogProps> = ({
                 </div>
               </div>
             ))}
-            {!primary && <p className="text-rose-300">{copy.primaryRequired}</p>}
+            {!primary && <p className="text-badge-danger">{copy.primaryRequired}</p>}
           </section>
           <div className="flex items-start gap-2 rounded-md border border-badge-warning/20 bg-amber-500/5 p-2 text-badge-warning">
             <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
             {copy.immutableRun}
           </div>
-          {error && <p role="alert" className="rounded-md bg-rose-500/10 p-2 text-rose-300">{error}</p>}
+          {error && <p role="alert" className="rounded-md bg-rose-500/10 p-2 text-badge-danger">{error}</p>}
         </div>
         <footer className="flex items-center gap-2 border-t border-zinc-800 px-4 py-3">
-          <button type="button" onClick={() => { void handleDelete(); }} className="inline-flex items-center gap-1 text-rose-300 hover:text-rose-200">
+          <button type="button" onClick={() => { void handleDelete(); }} className="inline-flex items-center gap-1 text-badge-danger hover:text-badge-danger">
             <Trash2 className="h-3.5 w-3.5" /> {copy.deleteProject}
           </button>
           <span className="flex-1" />

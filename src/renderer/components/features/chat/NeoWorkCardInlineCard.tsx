@@ -151,7 +151,7 @@ export const NeoWorkCardInlineCard: React.FC<{ detail: NeoWorkCardDetail }> = ({
       {/* 失败 */}
       {phase === 'failed' && errors.length > 0 && (
         <div
-          className="mt-2 rounded-md border border-rose-400/20 bg-rose-400/[0.06] px-2.5 py-2 text-[13px] leading-5 text-rose-100/90"
+          className="mt-2 rounded-md border border-badge-danger/20 bg-rose-400/[0.06] px-2.5 py-2 text-[13px] leading-5 text-badge-danger/90"
           data-testid="neo-work-card-error"
         >
           {errors.slice(0, 3).map((error, index) => (
@@ -163,17 +163,17 @@ export const NeoWorkCardInlineCard: React.FC<{ detail: NeoWorkCardDetail }> = ({
       {/* 记忆候选：轻提示（非表单），一键写入 */}
       {pendingMemory.length > 0 && (
         <div
-          className="mt-2 flex flex-wrap items-center gap-2 text-xs text-fuchsia-100/80"
+          className="mt-2 flex flex-wrap items-center gap-2 text-xs text-badge-accent/80"
           data-testid="neo-work-card-memory-hint"
         >
-          <Brain className="h-3.5 w-3.5 shrink-0 text-fuchsia-300" />
-          <span className="text-fuchsia-200/70">可记住：</span>
+          <Brain className="h-3.5 w-3.5 shrink-0 text-badge-accent" />
+          <span className="text-badge-accent/70">可记住：</span>
           {pendingMemory.slice(0, 3).map((candidate) => (
             <button
               key={candidate.id}
               type="button"
               onClick={() => handleApproveMemory(candidate.id)}
-              className="inline-flex max-w-[16rem] items-center gap-1 truncate rounded-md border border-fuchsia-400/25 bg-fuchsia-400/10 px-1.5 py-0.5 text-[11px] text-fuchsia-100 hover:bg-fuchsia-400/15"
+              className="inline-flex max-w-[16rem] items-center gap-1 truncate rounded-md border border-badge-accent/25 bg-fuchsia-400/10 px-1.5 py-0.5 text-[11px] text-badge-accent hover:bg-fuchsia-400/15"
               data-testid={`neo-work-card-approve-memory-${candidate.id}`}
               title="写入项目记忆"
             >

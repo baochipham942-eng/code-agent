@@ -75,9 +75,9 @@ export const AlignmentComparison: React.FC<AlignmentComparisonProps> = ({ onBack
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-6">
       {/* Introduction */}
-      <div className="bg-gradient-to-r from-pink-500/10 to-rose-500/10 rounded-lg border border-pink-500/20 p-4">
+      <div className="bg-gradient-to-r from-pink-500/10 to-rose-500/10 rounded-lg border border-badge-accent/20 p-4">
         <div className="flex items-start gap-3">
-          <Layers className="w-5 h-5 text-pink-400 mt-0.5" />
+          <Layers className="w-5 h-5 text-badge-accent mt-0.5" />
           <div>
             <h3 className="text-sm font-medium text-zinc-200 mb-2">{s.introTitle}</h3>
             <p className="text-sm text-zinc-400">
@@ -95,7 +95,7 @@ export const AlignmentComparison: React.FC<AlignmentComparisonProps> = ({ onBack
             onClick={() => setSelectedExample(idx)}
             className={`px-4 py-2 rounded-lg text-sm transition-all ${
               selectedExample === idx
-                ? 'bg-pink-500/20 text-pink-400 border border-pink-500/30'
+                ? 'bg-pink-500/20 text-badge-accent border border-badge-accent/30'
                 : 'bg-zinc-800 text-zinc-500 border border-zinc-800 hover:border-zinc-600'
             }`}
           >
@@ -209,8 +209,8 @@ export const AlignmentComparison: React.FC<AlignmentComparisonProps> = ({ onBack
       </div>
 
       {/* Summary */}
-      <div className="bg-pink-500/5 rounded-lg border border-pink-500/20 p-4">
-        <h4 className="text-sm font-medium text-pink-400 mb-3">{s.summarySectionTitle}</h4>
+      <div className="bg-pink-500/5 rounded-lg border border-badge-accent/20 p-4">
+        <h4 className="text-sm font-medium text-badge-accent mb-3">{s.summarySectionTitle}</h4>
         <div className="grid grid-cols-3 gap-3 mb-4">
           <div className="p-3 bg-zinc-800 rounded-lg text-center">
             <div className="text-2xl mb-1">🎓</div>
@@ -225,11 +225,11 @@ export const AlignmentComparison: React.FC<AlignmentComparisonProps> = ({ onBack
             <div className="text-xs text-zinc-400">{s.summaryCards.ppo}</div>
           </div>
         </div>
-        <div className="p-3 rounded-lg bg-pink-500/10 border border-pink-500/20">
+        <div className="p-3 rounded-lg bg-pink-500/10 border border-badge-accent/20">
           <div className="flex items-center gap-2">
-            <Sparkles className="w-4 h-4 text-pink-400" />
+            <Sparkles className="w-4 h-4 text-badge-accent" />
             <p className="text-sm text-zinc-400">
-              <strong className="text-pink-400">{s.alignmentWord}</strong>{s.finalText1}
+              <strong className="text-badge-accent">{s.alignmentWord}</strong>{s.finalText1}
               <strong className="text-badge-success">{s.finalHighlight}</strong>{s.finalText2}
             </p>
           </div>
@@ -265,7 +265,7 @@ export const AlignmentComparison: React.FC<AlignmentComparisonProps> = ({ onBack
           <ChevronLeft className="w-4 h-4" />
           {common.backButton}
         </button>
-        <div className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-pink-500/20 to-emerald-500/20 text-pink-400 rounded-lg border border-pink-500/30">
+        <div className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-pink-500/20 to-emerald-500/20 text-badge-accent rounded-lg border border-badge-accent/30">
           <CheckCircle2 className="w-4 h-4" />
           <span className="font-medium">{s.completionMessage}</span>
         </div>

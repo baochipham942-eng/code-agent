@@ -204,7 +204,7 @@ const KeyValueEditor: React.FC<{
         <button
           type="button"
           onClick={handleAdd}
-          className="flex items-center gap-1 text-xs text-indigo-400 hover:text-indigo-300 transition-colors"
+          className="flex items-center gap-1 text-xs text-badge-accent hover:text-badge-accent transition-colors"
         >
           <Plus className="w-3 h-3" />
           {text.add}
@@ -433,7 +433,7 @@ export const McpServerEditor: React.FC<McpServerEditorProps> = ({
       onClose={installState === 'idle' ? handleClose : handleCancelInstall}
       title={editorText.title}
       size="lg"
-      headerIcon={<Server className="w-5 h-5 text-indigo-400" />}
+      headerIcon={<Server className="w-5 h-5 text-badge-accent" />}
       footer={
         installState === 'idle' ? (
           <ModalFooter
@@ -489,7 +489,7 @@ export const McpServerEditor: React.FC<McpServerEditorProps> = ({
                     flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium
                     transition-all duration-150
                     ${isActive
-                      ? 'bg-indigo-500/20 text-indigo-400'
+                      ? 'bg-indigo-500/20 text-badge-accent'
                       : 'text-zinc-500 hover:text-zinc-400 hover:bg-zinc-700/50'
                     }
                   `}

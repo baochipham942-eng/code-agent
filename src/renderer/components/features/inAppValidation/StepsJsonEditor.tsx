@@ -72,7 +72,7 @@ export const StepsJsonEditor: React.FC<StepsJsonEditorProps> = ({ value, onChang
       </div>
       {parseError && (
         <div
-          className="flex shrink-0 items-start gap-1 border-t border-rose-900/60 bg-rose-950/40 px-3 py-1.5 text-[11px] text-rose-200"
+          className="flex shrink-0 items-start gap-1 border-t border-badge-danger/60 bg-rose-950/40 px-3 py-1.5 text-[11px] text-badge-danger"
           data-testid="steps-editor-parse-error"
         >
           <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />

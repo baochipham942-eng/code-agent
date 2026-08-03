@@ -195,7 +195,7 @@ const EFFORT_OPTION_CONFIG: Record<EffortLevel, EffortOption> = {
     value: 'max',
     label: 'Max',
     shortLabel: 'Max',
-    color: 'text-rose-300',
+    color: 'text-badge-danger',
     tint: 'bg-rose-500/15',
   },
   ultra_code: {

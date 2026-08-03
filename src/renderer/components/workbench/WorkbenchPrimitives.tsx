@@ -16,7 +16,7 @@ export type WorkbenchPillTone = 'neutral' | 'agent' | 'skill' | 'connector' | 'm
 const DISPLAY_PILL_TONE_CLASSES: Record<WorkbenchPillTone, string> = {
   neutral: 'border-white/[0.08] bg-zinc-900/60 text-zinc-400',
   agent: 'border-badge-info/20 bg-cyan-500/10 text-badge-info',
-  skill: 'border-fuchsia-500/20 bg-fuchsia-500/10 text-fuchsia-200',
+  skill: 'border-badge-accent/20 bg-fuchsia-500/10 text-badge-accent',
   connector: 'border-badge-info/20 bg-sky-500/10 text-badge-info',
   mcp: 'border-badge-success/20 bg-emerald-500/10 text-badge-success',
   info: 'border-badge-warning/20 bg-amber-500/10 text-badge-warning',
@@ -25,7 +25,7 @@ const DISPLAY_PILL_TONE_CLASSES: Record<WorkbenchPillTone, string> = {
 const SELECTED_PILL_TONE_CLASSES: Record<WorkbenchPillTone, string> = {
   neutral: 'border-zinc-500/40 bg-zinc-500/15 text-zinc-200',
   agent: 'border-badge-info/40 bg-cyan-500/15 text-badge-info',
-  skill: 'border-fuchsia-500/40 bg-fuchsia-500/15 text-fuchsia-200',
+  skill: 'border-badge-accent/40 bg-fuchsia-500/15 text-badge-accent',
   connector: 'border-badge-info/40 bg-sky-500/15 text-badge-info',
   mcp: 'border-badge-success/40 bg-emerald-500/15 text-badge-success',
   info: 'border-badge-warning/40 bg-amber-500/15 text-badge-warning',

@@ -43,7 +43,7 @@ export const ToolCreateConfirmModal: React.FC<ToolCreateConfirmModalProps> = ({
         <ModalHeader
           icon={isDangerous ? <AlertTriangle className="w-6 h-6" /> : <Shield className="w-6 h-6" />}
           iconBgClass={isDangerous ? 'bg-red-500/20' : 'bg-indigo-500/20'}
-          iconColorClass={isDangerous ? 'text-badge-danger' : 'text-indigo-400'}
+          iconColorClass={isDangerous ? 'text-badge-danger' : 'text-badge-accent'}
           title="创建动态工具"
           subtitle="AI 请求创建以下工具"
           onClose={onDeny}

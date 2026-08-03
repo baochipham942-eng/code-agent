@@ -70,9 +70,9 @@ export function getPermissionConfig(type: PermissionType): PermissionConfig {
     mcp: {
       icon: React.createElement(MessageSquare, { size: 20 }),
       title: 'MCP 工具',
-      color: 'text-indigo-400',
+      color: 'text-badge-accent',
       bgColor: 'bg-indigo-500/10',
-      borderColor: 'border-indigo-500/30',
+      borderColor: 'border-badge-accent/30',
     },
   };
 

@@ -187,7 +187,7 @@ export const DiffView: React.FC<DiffViewProps> = ({
             <span className="text-badge-success">+{stats.added}</span>
           )}
           {stats.removed > 0 && (
-            <span className="text-rose-400">-{stats.removed}</span>
+            <span className="text-badge-danger">-{stats.removed}</span>
           )}
         </div>
       </div>
@@ -228,7 +228,7 @@ const DiffLineRow: React.FC<{ line: DiffLine }> = React.memo(function DiffLineRo
       case 'added':
         return 'text-badge-success bg-emerald-500/20';
       case 'removed':
-        return 'text-rose-500 bg-rose-500/20';
+        return 'text-badge-danger bg-rose-500/20';
       case 'header':
         return 'text-gray-500 bg-[var(--bg-elevated)]';
       default:
@@ -254,7 +254,7 @@ const DiffLineRow: React.FC<{ line: DiffLine }> = React.memo(function DiffLineRo
       case 'added':
         return 'text-badge-success';
       case 'removed':
-        return 'text-rose-300';
+        return 'text-badge-danger';
       case 'header':
         return 'text-gray-500 font-bold';
       default:
@@ -332,7 +332,7 @@ export const DiffPreview: React.FC<{
         <span className="text-badge-success">+{stats.added}</span>
       )}
       {stats.removed > 0 && (
-        <span className="text-rose-400">-{stats.removed}</span>
+        <span className="text-badge-danger">-{stats.removed}</span>
       )}
       <span className="text-gray-500">行</span>
     </button>

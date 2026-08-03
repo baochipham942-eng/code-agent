@@ -48,11 +48,11 @@ function iconForKind(kind: string): React.ReactNode {
     case 'audio':
       return <Music className={`${cls} text-badge-success`} />;
     case 'video':
-      return <Video className={`${cls} text-fuchsia-300`} />;
+      return <Video className={`${cls} text-badge-accent`} />;
     case 'archive':
       return <Archive className={`${cls} text-badge-warning`} />;
     case 'presentation':
-      return <Presentation className={`${cls} text-fuchsia-300`} />;
+      return <Presentation className={`${cls} text-badge-accent`} />;
     case 'generative_ui':
     case 'neo_ui':
     case 'generic_html':
@@ -78,7 +78,7 @@ function statusMeta(card: DeliverableCardView, labels: ReturnType<typeof useI18n
   if (card.status === 'failed') {
     return {
       label: labels.statusFailed,
-      className: 'bg-rose-500/12 text-rose-300',
+      className: 'bg-rose-500/12 text-badge-danger',
       icon: <AlertTriangle className="h-3 w-3" />,
     };
   }
@@ -101,7 +101,7 @@ function qualityMeta(card: DeliverableCardView, labels: ReturnType<typeof useI18
   if (card.quality.status === 'failed') {
     return {
       label: labels.qualityFailed,
-      className: 'bg-rose-500/12 text-rose-300',
+      className: 'bg-rose-500/12 text-badge-danger',
       icon: <AlertTriangle className="h-3 w-3" />,
     };
   }

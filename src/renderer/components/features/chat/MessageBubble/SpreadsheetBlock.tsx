@@ -39,7 +39,7 @@ const COLUMN_COLORS = [
   'bg-emerald-500/20 border-badge-success/40',
   'bg-amber-500/20 border-badge-warning/40',
   'bg-purple-500/20 border-badge-accent/40',
-  'bg-rose-500/20 border-rose-500/40',
+  'bg-rose-500/20 border-badge-danger/40',
   'bg-cyan-500/20 border-badge-info/40',
 ];
 

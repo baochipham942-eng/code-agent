@@ -711,7 +711,7 @@ const SkillActivityNode: React.FC<{ timeline: TurnTimelinePayload }> = ({ timeli
   return (
     <div className={`rounded-lg border px-3 py-2 ${getTimelineContainerClass(timeline.tone)}`}>
       <div className="mb-1 flex items-center gap-2 text-[11px] text-zinc-300">
-        <Wrench className="h-3.5 w-3.5 text-fuchsia-300" />
+        <Wrench className="h-3.5 w-3.5 text-badge-accent" />
         <span>Skills</span>
         <span className="text-zinc-500">{activity.summary.replace(/^Skill\s*/, '')}</span>
       </div>

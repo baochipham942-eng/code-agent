@@ -394,7 +394,7 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({
               <div className="space-y-4">
                 <div className="flex items-center gap-4">
                   <div className="w-12 h-12 rounded-full bg-rose-500/20 flex items-center justify-center flex-shrink-0">
-                    <AlertCircle className="w-6 h-6 text-rose-400" />
+                    <AlertCircle className="w-6 h-6 text-badge-danger" />
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-lg font-medium text-white">{n.downloadFailed}</p>

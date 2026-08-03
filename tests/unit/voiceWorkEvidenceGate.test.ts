@@ -122,6 +122,7 @@ let narrations: Array<{ status: string; title: string }>;
 function bind(): void {
   beginVoiceDispatch({
     neoSessionId: 'session-1',
+    voiceSessionId: 'voice-1',
     onWorkItem: (item) => { upserts.push({ ...item }); },
     onEndCall: () => {},
     onWorkNarration: (narration) => { narrations.push({ status: narration.status, title: narration.title }); },

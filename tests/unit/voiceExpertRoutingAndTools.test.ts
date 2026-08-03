@@ -105,6 +105,7 @@ const workItems = vi.hoisted(() => ({ value: [] as Array<{ id: string; status: s
 function bind(activeAgentId?: string): void {
   beginVoiceDispatch({
     neoSessionId: 'session-1',
+    voiceSessionId: 'voice-1',
     activeAgentId,
     onWorkItem: (item) => workItems.value.push({ ...item }),
     // 失败出口的行为由 voiceWorkFailureVisible.test.ts 专门钉；这里只是补齐契约。
@@ -259,12 +260,14 @@ describe('A4 窄工具 / H1 指挥台', () => {
     endVoiceDispatch();
   });
 
-  it('注册面：只读查询 + 派活/改方向/叫停 + 收线，没有一个能直接改东西', () => {
+  it('注册面：只读查询 + 看屏 + 派活/改方向/叫停 + 收线，没有一个能直接改东西', () => {
     // 2026-07-28 真机加了两只：`get_current_time`（此前它只会说「我看不到时间」）、
     // `end_call`（此前它说「已挂断」但通话还开着，是第二例「说了没做」）。
+    // Phase 3 加了 `capture_screen_context`：它采屏但不落用户文件，零写权限的底线没破。
     expect(VOICE_TOOL_DEFINITIONS.map((tool) => tool.name)).toEqual([
       'get_active_tasks',
       'get_current_file_summary',
+      'capture_screen_context',
       'spawn_task',
       'steer_task',
       'cancel_task',

@@ -173,9 +173,16 @@ describe('instructions 组合零回归与屏幕占位', () => {
     expect(out.slice(recentAt)).toContain('用户：继续做发布说明。');
   });
 
-  it('screenContextEnabled 默认关闭，开启也只提供请求看屏的文案', () => {
+  it('screenContextEnabled 默认关闭；开启后给出「只在指屏时拍 + 你看不到画面」的策略', () => {
     expect(buildScreenContextBlock(false)).toBe('');
-    expect(buildScreenContextBlock(true)).toContain('可以请用户允许我看屏幕');
     expect(composeVoiceInstructions('你是牧之', null)).not.toContain('[Context — Screen]');
+
+    const block = buildScreenContextBlock(true);
+    // 策略双写的语音侧那一半：工具名要对得上注册面，不然写了也没人调。
+    expect(block).toContain('capture_screen_context');
+    // 两条硬点缺一不可——只写「能看屏」会让模型见缝插针地拍，
+    // 不写「你看不到」会让它顺嘴编一段画面描述（本仓最容易出的那种谎）。
+    expect(block).toContain('只在他明确指屏时调');
+    expect(block).toContain('不会给你看');
   });
 });

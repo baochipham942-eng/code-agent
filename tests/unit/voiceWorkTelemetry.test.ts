@@ -107,6 +107,7 @@ function begin(): void {
   narrations.length = 0;
   beginVoiceDispatch({
     neoSessionId: 'session-1',
+    voiceSessionId: 'voice-1',
     onWorkItem: () => {},
     onEndCall: () => {},
     onWorkNarration: (narration) => { narrations.push(narration) },

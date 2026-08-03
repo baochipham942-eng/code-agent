@@ -122,6 +122,7 @@ function bind(activeAgentId?: string): void {
   narrations = [];
   beginVoiceDispatch({
     neoSessionId: 'session-1',
+    voiceSessionId: 'voice-1',
     ...(activeAgentId ? { activeAgentId } : {}),
     onWorkItem: () => {},
     onWorkFailed: () => {},

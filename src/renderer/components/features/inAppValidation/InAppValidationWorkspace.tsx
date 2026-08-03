@@ -290,13 +290,13 @@ export function InAppValidationWorkspace(): React.ReactElement {
       {/* 脏保护横幅：held 请求等用户选择，期间不覆盖编辑、不自动执行 */}
       {heldRequest && (
         <div
-          className="flex shrink-0 items-center gap-3 border-b border-amber-500/30 bg-amber-500/10 px-3 py-2"
+          className="flex shrink-0 items-center gap-3 border-b border-badge-warning/30 bg-amber-500/10 px-3 py-2"
           data-testid="in-app-validation-held-request"
         >
-          <AlertTriangle className="h-4 w-4 shrink-0 text-amber-300" />
+          <AlertTriangle className="h-4 w-4 shrink-0 text-badge-warning" />
           <div className="min-w-0 flex-1">
-            <div className="text-xs font-medium text-amber-200">{v.heldTitle}</div>
-            <div className="text-[11px] text-amber-200/70">{v.heldBody}</div>
+            <div className="text-xs font-medium text-badge-warning">{v.heldTitle}</div>
+            <div className="text-[11px] text-badge-warning/70">{v.heldBody}</div>
           </div>
           <button /* ds-allow:button: 脏保护横幅主操作，品牌色实心按钮，Button primitive 无 12px 微尺寸变体 */
             type="button"

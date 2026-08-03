@@ -220,7 +220,7 @@ export const GPT1Lab: React.FC = () => {
           {/* Learning Point Footer */}
           <div className="px-6 py-3 border-t border-zinc-700 bg-zinc-900/30">
             <div className="max-w-4xl mx-auto flex items-center gap-2">
-              <span className="text-amber-400">💡</span>
+              <span className="text-badge-warning">💡</span>
               <span className="text-sm text-zinc-400">
                 <span className="text-zinc-400 font-medium">{t.labGpt1.gpt1Lab.learningPointLabel}</span>
                 {currentStageConfig.learningPoint}

@@ -29,9 +29,9 @@ export const ModelArchitecture: React.FC<ModelArchitectureProps> = ({ onComplete
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-6">
       {/* 概念说明 */}
-      <div className="bg-gradient-to-r from-purple-500/10 to-blue-500/10 rounded-lg border border-purple-500/20 p-4">
+      <div className="bg-gradient-to-r from-purple-500/10 to-blue-500/10 rounded-lg border border-badge-accent/20 p-4">
         <div className="flex items-start gap-3">
-          <Brain className="w-5 h-5 text-purple-400 mt-0.5" />
+          <Brain className="w-5 h-5 text-badge-accent mt-0.5" />
           <div>
             <h3 className="text-sm font-medium text-zinc-200 mb-2">{ma.introTitle}</h3>
             <p className="text-sm text-zinc-400">
@@ -56,15 +56,15 @@ export const ModelArchitecture: React.FC<ModelArchitectureProps> = ({ onComplete
               <div className="text-sm font-medium text-blue-400">{ma.step2Title}</div>
               <div className="text-xs text-zinc-500 mt-1">{ma.step2Desc}</div>
             </div>
-            <div className="text-center p-4 bg-purple-500/10 rounded-lg border border-purple-500/20">
+            <div className="text-center p-4 bg-purple-500/10 rounded-lg border border-badge-accent/20">
               <div className="text-3xl mb-2">💬</div>
-              <div className="text-sm font-medium text-purple-400">{ma.step3Title}</div>
+              <div className="text-sm font-medium text-badge-accent">{ma.step3Title}</div>
               <div className="text-xs text-zinc-500 mt-1">{ma.step3Desc}</div>
             </div>
           </div>
 
-          <div className="mt-4 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
-            <div className="flex items-center gap-2 text-xs text-amber-400">
+          <div className="mt-4 p-3 rounded-lg bg-amber-500/10 border border-badge-warning/20">
+            <div className="flex items-center gap-2 text-xs text-badge-warning">
               <span className="text-lg">💡</span>
               <span>{ma.howFooter}</span>
             </div>
@@ -134,9 +134,9 @@ export const ModelArchitecture: React.FC<ModelArchitectureProps> = ({ onComplete
 
             {/* Output */}
             <div className="flex flex-col items-center gap-2">
-              <div className="w-24 h-20 bg-gradient-to-b from-purple-500/20 to-purple-500/5 border border-purple-500/30 rounded-lg flex flex-col items-center justify-center">
+              <div className="w-24 h-20 bg-gradient-to-b from-purple-500/20 to-purple-500/5 border border-badge-accent/30 rounded-lg flex flex-col items-center justify-center">
                 <span className="text-2xl">💬</span>
-                <span className="text-xs text-purple-400 mt-1">{ma.outputLabel}</span>
+                <span className="text-xs text-badge-accent mt-1">{ma.outputLabel}</span>
               </div>
             </div>
           </div>
@@ -164,13 +164,13 @@ export const ModelArchitecture: React.FC<ModelArchitectureProps> = ({ onComplete
               <div className="text-sm text-badge-success font-medium mb-1">{ma.attention2Label}</div>
               <div className="text-xs text-zinc-500">{ma.attention2Desc}</div>
             </div>
-            <div className="p-3 bg-purple-500/10 rounded-lg border border-purple-500/20">
-              <div className="text-sm text-purple-400 font-medium mb-1">{ma.attention3Label}</div>
+            <div className="p-3 bg-purple-500/10 rounded-lg border border-badge-accent/20">
+              <div className="text-sm text-badge-accent font-medium mb-1">{ma.attention3Label}</div>
               <div className="text-xs text-zinc-500">{ma.attention3Desc}</div>
             </div>
           </div>
-          <div className="mt-4 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
-            <div className="text-xs text-amber-400">
+          <div className="mt-4 p-3 rounded-lg bg-amber-500/10 border border-badge-warning/20">
+            <div className="text-xs text-badge-warning">
               {ma.attentionFooter}
             </div>
           </div>
@@ -191,11 +191,11 @@ export const ModelArchitecture: React.FC<ModelArchitectureProps> = ({ onComplete
               <div className="text-xs text-zinc-500 mt-1">{ma.summaryLayersLabel}</div>
             </div>
             <div>
-              <div className="text-2xl font-bold text-purple-400">{model.heads}</div>
+              <div className="text-2xl font-bold text-badge-accent">{model.heads}</div>
               <div className="text-xs text-zinc-500 mt-1">{ma.summaryHeadsLabel}</div>
             </div>
             <div>
-              <div className="text-lg font-medium text-amber-400">{model.analogy}</div>
+              <div className="text-lg font-medium text-badge-warning">{model.analogy}</div>
               <div className="text-xs text-zinc-500 mt-1">{ma.summaryAnalogyLabel}</div>
             </div>
           </div>

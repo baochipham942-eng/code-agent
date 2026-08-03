@@ -167,9 +167,9 @@ export const RewindPanel: React.FC<RewindPanelProps> = ({ isOpen, onClose }) => 
             {preview.map((f, i) => (
               <div key={i} className="flex items-center gap-2 text-xs">
                 <span className={
-                  f.status === 'added' ? 'text-green-400' :
+                  f.status === 'added' ? 'text-badge-success' :
                   f.status === 'deleted' ? 'text-badge-danger' :
-                  'text-yellow-400'
+                  'text-badge-warning'
                 }>
                   {f.status === 'added' ? '+' : f.status === 'deleted' ? '-' : '~'}
                 </span>

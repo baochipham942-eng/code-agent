@@ -78,7 +78,7 @@ const TodoStepItem: React.FC<{ step: TaskStep; index: number }> = ({ step, index
     <li className="flex items-start gap-2 py-0.5">
       <span className="mt-[2px] flex-shrink-0">
         {isInProgress ? (
-          <Loader2 className="w-3.5 h-3.5 text-amber-400 animate-spin" />
+          <Loader2 className="w-3.5 h-3.5 text-badge-warning animate-spin" />
         ) : isCompleted ? (
           <CheckSquare className="w-3.5 h-3.5 text-badge-success" />
         ) : (
@@ -92,7 +92,7 @@ const TodoStepItem: React.FC<{ step: TaskStep; index: number }> = ({ step, index
             : isSkipped
               ? 'text-zinc-600'
               : isInProgress
-                ? 'text-amber-200'
+                ? 'text-badge-warning'
                 : 'text-zinc-300'
         }`}
       >

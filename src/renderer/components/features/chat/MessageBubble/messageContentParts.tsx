@@ -35,23 +35,23 @@ const languageConfig: Record<string, { color: string; name: string }> = {
   typescript: { color: 'text-blue-400', name: 'TypeScript' },
   ts: { color: 'text-blue-400', name: 'TypeScript' },
   tsx: { color: 'text-blue-400', name: 'TSX' },
-  javascript: { color: 'text-yellow-400', name: 'JavaScript' },
-  js: { color: 'text-yellow-400', name: 'JavaScript' },
-  jsx: { color: 'text-yellow-400', name: 'JSX' },
-  python: { color: 'text-green-400', name: 'Python' },
-  py: { color: 'text-green-400', name: 'Python' },
-  rust: { color: 'text-orange-400', name: 'Rust' },
-  rs: { color: 'text-orange-400', name: 'Rust' },
+  javascript: { color: 'text-badge-warning', name: 'JavaScript' },
+  js: { color: 'text-badge-warning', name: 'JavaScript' },
+  jsx: { color: 'text-badge-warning', name: 'JSX' },
+  python: { color: 'text-badge-success', name: 'Python' },
+  py: { color: 'text-badge-success', name: 'Python' },
+  rust: { color: 'text-badge-warning', name: 'Rust' },
+  rs: { color: 'text-badge-warning', name: 'Rust' },
   go: { color: 'text-cyan-400', name: 'Go' },
   bash: { color: 'text-badge-success', name: 'Bash' },
   shell: { color: 'text-badge-success', name: 'Shell' },
   sh: { color: 'text-badge-success', name: 'Shell' },
   zsh: { color: 'text-badge-success', name: 'Zsh' },
-  json: { color: 'text-amber-400', name: 'JSON' },
-  html: { color: 'text-orange-400', name: 'HTML' },
+  json: { color: 'text-badge-warning', name: 'JSON' },
+  html: { color: 'text-badge-warning', name: 'HTML' },
   css: { color: 'text-blue-400', name: 'CSS' },
   scss: { color: 'text-pink-400', name: 'SCSS' },
-  sql: { color: 'text-purple-400', name: 'SQL' },
+  sql: { color: 'text-badge-accent', name: 'SQL' },
   yaml: { color: 'text-badge-danger', name: 'YAML' },
   yml: { color: 'text-badge-danger', name: 'YAML' },
   markdown: { color: 'text-zinc-400', name: 'Markdown' },
@@ -59,17 +59,17 @@ const languageConfig: Record<string, { color: string; name: string }> = {
   java: { color: 'text-badge-danger', name: 'Java' },
   c: { color: 'text-blue-300', name: 'C' },
   cpp: { color: 'text-blue-300', name: 'C++' },
-  csharp: { color: 'text-purple-400', name: 'C#' },
-  cs: { color: 'text-purple-400', name: 'C#' },
+  csharp: { color: 'text-badge-accent', name: 'C#' },
+  cs: { color: 'text-badge-accent', name: 'C#' },
   php: { color: 'text-indigo-400', name: 'PHP' },
   ruby: { color: 'text-badge-danger', name: 'Ruby' },
   rb: { color: 'text-badge-danger', name: 'Ruby' },
-  swift: { color: 'text-orange-400', name: 'Swift' },
-  kotlin: { color: 'text-purple-400', name: 'Kotlin' },
-  kt: { color: 'text-purple-400', name: 'Kotlin' },
+  swift: { color: 'text-badge-warning', name: 'Swift' },
+  kotlin: { color: 'text-badge-accent', name: 'Kotlin' },
+  kt: { color: 'text-badge-accent', name: 'Kotlin' },
   dart: { color: 'text-cyan-400', name: 'Dart' },
   diff: { color: 'text-zinc-400', name: 'Diff' },
-  xml: { color: 'text-orange-400', name: 'XML' },
+  xml: { color: 'text-badge-warning', name: 'XML' },
   toml: { color: 'text-zinc-400', name: 'TOML' },
   ini: { color: 'text-zinc-400', name: 'INI' },
   dockerfile: { color: 'text-cyan-400', name: 'Dockerfile' },
@@ -80,8 +80,8 @@ const languageConfig: Record<string, { color: string; name: string }> = {
   chart: { color: 'text-badge-success', name: 'Chart' },
   spreadsheet: { color: 'text-badge-success', name: 'Spreadsheet' },
   document: { color: 'text-blue-400', name: 'Document' },
-  generative_ui: { color: 'text-violet-400', name: 'Generative UI' },
-  neo_ui: { color: 'text-violet-300', name: 'Neo Interactive UI' },
+  generative_ui: { color: 'text-badge-accent', name: 'Generative UI' },
+  neo_ui: { color: 'text-badge-accent', name: 'Neo Interactive UI' },
 };
 
 // MermaidDiagram 及其缩放/标注/高度缓存已拆到独立文件（大文件门），原有消费者从这里 re-export
@@ -369,8 +369,8 @@ export const CodeBlock = memo(function CodeBlock({
           >
             {copied ? (
               <>
-                <Check className="w-3.5 h-3.5 text-green-400" />
-                <span className="text-green-400">Copied!</span>
+                <Check className="w-3.5 h-3.5 text-badge-success" />
+                <span className="text-badge-success">Copied!</span>
               </>
             ) : (
               <>
@@ -542,7 +542,7 @@ export const InlineCode = memo(function InlineCode({
 
   return (
     <code
-      className="inline-flex items-baseline gap-0.5 mx-0.5 font-mono text-xs text-primary-300 hover:text-primary-200 cursor-pointer hover:underline underline-offset-2 transition-colors group"
+      className="inline-flex items-baseline gap-0.5 mx-0.5 font-mono text-xs text-accent-accessible hover:text-accent-accessible cursor-pointer hover:underline underline-offset-2 transition-colors group"
       onClick={() => {
         if (isHtml && onPreviewHtml) {
           onPreviewHtml(filePath);

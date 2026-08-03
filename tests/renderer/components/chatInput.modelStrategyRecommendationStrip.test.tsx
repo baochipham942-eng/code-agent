@@ -48,7 +48,7 @@ describe('ModelStrategyRecommendationStrip', () => {
     );
 
     expect(html).toContain('data-testid="model-strategy-recommendation"');
-    expect(html).toContain('border-amber-500/20');
+    expect(html).toContain('border-badge-warning/20');
     expect(html).toContain('Claude Code 最近运行失败');
     expect(html).toContain('2 分钟前失败：认证失败。请完成 Claude CLI 登录后重试。');
     expect(html).toContain('引擎: Claude Code');

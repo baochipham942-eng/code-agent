@@ -162,7 +162,7 @@ export const TaskStrategySettingsPanel: React.FC<TaskStrategySettingsPanelProps>
                   <Brain className="h-3.5 w-3.5 shrink-0 text-zinc-500" />
                   <span className="truncate">{strategyText.profiles[profile].label}</span>
                   {unavailable ? (
-                    <span className="shrink-0 rounded border border-amber-500/30 bg-amber-500/10 px-1 text-[10px] text-amber-200">
+                    <span className="shrink-0 rounded border border-badge-warning/30 bg-amber-500/10 px-1 text-[10px] text-badge-warning">
                       {strategyText.unavailableBadge}
                     </span>
                   ) : null}

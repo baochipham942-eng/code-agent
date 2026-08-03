@@ -167,7 +167,7 @@ export const MemoFloater: React.FC = () => {
           <button
             onClick={handleSubmit}
             disabled={!value.trim()}
-            className="flex items-center gap-1 px-3 py-1 text-xs bg-primary-500/20 text-primary-300 rounded-md hover:bg-primary-500/30 transition-colors disabled:opacity-30"
+            className="flex items-center gap-1 px-3 py-1 text-xs bg-primary-500/20 text-badge-accent rounded-md hover:bg-primary-500/30 transition-colors disabled:opacity-30"
           >
             <Send className="w-3 h-3" />
             发送

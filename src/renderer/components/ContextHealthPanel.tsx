@@ -60,10 +60,10 @@ function getWarningColors(level: ContextHealthWarningLevel) {
     case 'warning':
       return {
         icon: AlertTriangle,
-        iconColor: 'text-yellow-400',
+        iconColor: 'text-badge-warning',
         barColor: 'bg-yellow-500',
         bgColor: 'bg-yellow-500/10',
-        textColor: 'text-yellow-400',
+        textColor: 'text-badge-warning',
       };
     default:
       return {
@@ -284,15 +284,15 @@ export const ContextHealthPanel: React.FC<ContextHealthPanelProps> = ({
           {/* GAP-023: 被预算丢弃的 prompt 块（能力可见化——agent 能力缩水时用户能看到原因） */}
           {(health.droppedPromptBlocks?.length ?? 0) > 0 && (
             <div className="flex items-start gap-2 p-2 bg-orange-500/20 rounded-md">
-              <AlertTriangle className="w-4 h-4 text-orange-400 flex-shrink-0 mt-0.5" />
-              <div className="min-w-0 flex-1 text-xs text-orange-300 space-y-1">
+              <AlertTriangle className="w-4 h-4 text-badge-warning flex-shrink-0 mt-0.5" />
+              <div className="min-w-0 flex-1 text-xs text-badge-warning space-y-1">
                 <div className="flex items-center justify-between gap-2">
                   <span>{ch.droppedBlocks} {health.droppedPromptBlocks?.length}</span>
                   <button
                     type="button"
                     onClick={() => setShowDroppedBlocks((value) => !value)}
                     aria-expanded={showDroppedBlocks}
-                    className="shrink-0 text-orange-300/70 hover:text-orange-200 transition-colors"
+                    className="shrink-0 text-badge-warning/70 hover:text-badge-warning transition-colors"
                   >
                     {showDroppedBlocks ? t.systemError.hideDetails : t.systemError.viewDetails}
                   </button>
@@ -302,7 +302,7 @@ export const ContextHealthPanel: React.FC<ContextHealthPanelProps> = ({
                     {health.droppedPromptBlocks?.map((block) => (
                       <span
                         key={block}
-                        className="px-1.5 py-0.5 bg-orange-500/20 rounded font-mono text-orange-200"
+                        className="px-1.5 py-0.5 bg-orange-500/20 rounded font-mono text-badge-warning"
                       >
                         {block}
                       </span>
@@ -341,8 +341,8 @@ export const ContextHealthPanel: React.FC<ContextHealthPanelProps> = ({
 
           {health.warningLevel === 'warning' && (
             <div className="flex items-center gap-2 p-2 bg-yellow-500/20 rounded-md">
-              <AlertTriangle className="w-4 h-4 text-yellow-400 flex-shrink-0" />
-              <span className="text-xs text-yellow-300">
+              <AlertTriangle className="w-4 h-4 text-badge-warning flex-shrink-0" />
+              <span className="text-xs text-badge-warning">
                 {ch.highUsage}
               </span>
             </div>

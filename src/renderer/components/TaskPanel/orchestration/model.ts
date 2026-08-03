@@ -13,8 +13,8 @@ import type { Translations } from '../../../i18n';
 const phaseClassName: Record<SwarmExecutionPhase, string> = {
   idle: 'bg-zinc-700/60 text-zinc-300',
   planning: 'bg-blue-500/15 text-blue-300',
-  waiting_approval: 'bg-amber-500/15 text-amber-300',
-  executing: 'bg-primary-500/15 text-primary-300',
+  waiting_approval: 'bg-amber-500/15 text-badge-warning',
+  executing: 'bg-primary-500/15 text-badge-accent',
   completed: 'bg-emerald-500/15 text-badge-success',
   failed: 'bg-red-500/15 text-badge-danger',
   cancelled: 'bg-zinc-700/60 text-zinc-300',
@@ -40,7 +40,7 @@ export function getPhaseMeta(
 export const toneClassMap: Record<SwarmTimelineEvent['tone'], string> = {
   neutral: 'border-zinc-700 bg-zinc-800/70 text-zinc-300',
   success: 'border-badge-success/25 bg-emerald-500/10 text-badge-success',
-  warning: 'border-amber-500/25 bg-amber-500/10 text-amber-200',
+  warning: 'border-badge-warning/25 bg-amber-500/10 text-badge-warning',
   error: 'border-red-500/25 bg-red-500/10 text-badge-danger',
 };
 
@@ -92,7 +92,7 @@ export function getUsageToneClass(percent: number): string {
 
 export function getUsageTextClass(percent: number): string {
   if (percent >= 85) return 'text-badge-danger';
-  if (percent >= 70) return 'text-amber-300';
+  if (percent >= 70) return 'text-badge-warning';
   return 'text-badge-success';
 }
 
@@ -220,18 +220,18 @@ export function buildContextDistribution(
 ): ContextDistributionEntry[] {
   if (contextView) {
     return [
-      { label: 'System', value: contextView.tokenDistribution.system, tone: 'text-violet-300' },
+      { label: 'System', value: contextView.tokenDistribution.system, tone: 'text-badge-accent' },
       { label: 'User', value: contextView.tokenDistribution.user, tone: 'text-badge-info' },
       { label: 'Asst', value: contextView.tokenDistribution.assistant, tone: 'text-badge-success' },
-      { label: 'Tool', value: contextView.tokenDistribution.tool, tone: 'text-amber-300' },
+      { label: 'Tool', value: contextView.tokenDistribution.tool, tone: 'text-badge-warning' },
     ];
   }
 
   if (contextHealth) {
     return [
-      { label: 'System', value: contextHealth.breakdown.systemPrompt, tone: 'text-violet-300' },
+      { label: 'System', value: contextHealth.breakdown.systemPrompt, tone: 'text-badge-accent' },
       { label: 'Msgs', value: contextHealth.breakdown.messages, tone: 'text-badge-info' },
-      { label: 'Tools', value: contextHealth.breakdown.toolResults, tone: 'text-amber-300' },
+      { label: 'Tools', value: contextHealth.breakdown.toolResults, tone: 'text-badge-warning' },
     ];
   }
 

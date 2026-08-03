@@ -34,7 +34,7 @@ export const LinkPreviewCard: React.FC<LinkPreviewCardProps> = ({ href, onOpen }
         target="_blank"
         rel="noopener noreferrer"
         onClick={(e) => { if (onOpen?.(href) || openExternalLink(href)) e.preventDefault(); }}
-        className="text-primary-400 hover:text-primary-300 underline underline-offset-2 cursor-pointer"
+        className="text-accent-accessible hover:text-accent-accessible underline underline-offset-2 cursor-pointer"
       >
         {href}
       </a>

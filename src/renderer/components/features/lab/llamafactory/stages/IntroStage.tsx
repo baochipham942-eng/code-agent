@@ -57,10 +57,10 @@ export const IntroStage: React.FC<IntroStageProps> = ({ onComplete }) => {
     const colors: Record<string, { bg: string; border: string; text: string }> = {
       zinc: { bg: 'bg-zinc-600/20', border: 'border-zinc-600/30', text: 'text-zinc-400' },
       blue: { bg: 'bg-blue-500/20', border: 'border-blue-500/30', text: 'text-blue-400' },
-      purple: { bg: 'bg-purple-500/20', border: 'border-purple-500/30', text: 'text-purple-400' },
+      purple: { bg: 'bg-purple-500/20', border: 'border-badge-accent/30', text: 'text-badge-accent' },
       emerald: { bg: 'bg-emerald-500/20', border: 'border-badge-success/30', text: 'text-badge-success' },
-      amber: { bg: 'bg-amber-500/20', border: 'border-amber-500/30', text: 'text-amber-400' },
-      orange: { bg: 'bg-orange-500/20', border: 'border-orange-500/30', text: 'text-orange-400' },
+      amber: { bg: 'bg-amber-500/20', border: 'border-badge-warning/30', text: 'text-badge-warning' },
+      orange: { bg: 'bg-orange-500/20', border: 'border-badge-warning/30', text: 'text-badge-warning' },
     };
     return colors[color] || colors.zinc;
   };
@@ -68,9 +68,9 @@ export const IntroStage: React.FC<IntroStageProps> = ({ onComplete }) => {
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-6">
       {/* Introduction */}
-      <div className="bg-gradient-to-r from-orange-500/10 to-amber-500/10 rounded-lg border border-orange-500/20 p-4">
+      <div className="bg-gradient-to-r from-orange-500/10 to-amber-500/10 rounded-lg border border-badge-warning/20 p-4">
         <div className="flex items-start gap-3">
-          <Map className="w-5 h-5 text-orange-400 mt-0.5" />
+          <Map className="w-5 h-5 text-badge-warning mt-0.5" />
           <div>
             <h3 className="text-sm font-medium text-zinc-200 mb-2">{i.introTitle}</h3>
             <p className="text-sm text-zinc-400">
@@ -83,7 +83,7 @@ export const IntroStage: React.FC<IntroStageProps> = ({ onComplete }) => {
       {/* Pipeline Overview */}
       <div className="space-y-3">
         <h3 className="text-sm font-medium text-zinc-400 flex items-center gap-2">
-          <Layers className="w-4 h-4 text-orange-400" />
+          <Layers className="w-4 h-4 text-badge-warning" />
           {i.pipelineSectionTitle}
         </h3>
         <div className="bg-zinc-900 rounded-lg border border-zinc-700 p-4">
@@ -132,7 +132,7 @@ export const IntroStage: React.FC<IntroStageProps> = ({ onComplete }) => {
       {/* Fine-tuning Goals */}
       <div className="space-y-3">
         <h3 className="text-sm font-medium text-zinc-400 flex items-center gap-2">
-          <Lightbulb className="w-4 h-4 text-orange-400" />
+          <Lightbulb className="w-4 h-4 text-badge-warning" />
           {i.goalsSectionTitle}
         </h3>
         <div className="grid grid-cols-3 gap-4">
@@ -164,7 +164,7 @@ export const IntroStage: React.FC<IntroStageProps> = ({ onComplete }) => {
       {/* Can / Cannot Do */}
       <div className="space-y-3">
         <h3 className="text-sm font-medium text-zinc-400 flex items-center gap-2">
-          <Check className="w-4 h-4 text-orange-400" />
+          <Check className="w-4 h-4 text-badge-warning" />
           {i.canCannotSectionTitle}
         </h3>
         <div className="grid grid-cols-2 gap-4">
@@ -268,12 +268,12 @@ export const IntroStage: React.FC<IntroStageProps> = ({ onComplete }) => {
       </div>
 
       {/* Key Takeaways */}
-      <div className="bg-orange-500/5 rounded-lg border border-orange-500/20 p-4">
-        <h4 className="text-sm font-medium text-orange-400 mb-2">{i.takeawaysTitle}</h4>
+      <div className="bg-orange-500/5 rounded-lg border border-badge-warning/20 p-4">
+        <h4 className="text-sm font-medium text-badge-warning mb-2">{i.takeawaysTitle}</h4>
         <ul className="space-y-2 text-sm text-zinc-400">
           {i.takeaways.map((item) => (
             <li key={item.label} className="flex items-start gap-2">
-              <span className="text-orange-400">•</span>
+              <span className="text-badge-warning">•</span>
               <span><strong className="text-zinc-400">{item.label}</strong>：{item.text}</span>
             </li>
           ))}
@@ -304,7 +304,7 @@ export const IntroStage: React.FC<IntroStageProps> = ({ onComplete }) => {
       <div className="flex justify-end pt-4">
         <button
           onClick={onComplete}
-          className="flex items-center gap-2 px-5 py-2.5 bg-orange-500/20 text-orange-400 rounded-lg hover:bg-orange-500/30 border border-orange-500/30 transition-all font-medium"
+          className="flex items-center gap-2 px-5 py-2.5 bg-orange-500/20 text-badge-warning rounded-lg hover:bg-orange-500/30 border border-badge-warning/30 transition-all font-medium"
         >
           {i.nextButton}
           <ChevronRight className="w-4 h-4" />

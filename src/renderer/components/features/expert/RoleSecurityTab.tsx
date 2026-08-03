@@ -81,7 +81,7 @@ export const RoleSecurityTab: React.FC<RoleSecurityTabProps> = ({ equipment, onS
         </div>
 
         <div data-testid="role-security-floor" className="rounded-lg border border-zinc-700/60 bg-zinc-900/40 p-3">
-          <div className="flex items-center gap-1.5 text-xs text-amber-200">
+          <div className="flex items-center gap-1.5 text-xs text-badge-warning">
             <ShieldAlert className="h-3.5 w-3.5" />
             {text.floorTitle}
           </div>

@@ -222,7 +222,7 @@ function getRowIcon(rowId: DataManagementRow['id']): React.ReactNode {
 }
 
 function getStatusClass(tone: DataManagementRow['statusTone']): string {
-  if (tone === 'warning') return 'border-amber-500/30 bg-amber-500/10 text-amber-300';
+  if (tone === 'warning') return 'border-badge-warning/30 bg-amber-500/10 text-badge-warning';
   if (tone === 'info') return 'border-blue-500/30 bg-blue-500/10 text-blue-300';
   return 'border-badge-success/30 bg-emerald-500/10 text-badge-success';
 }
@@ -485,11 +485,11 @@ export const DataSettings: React.FC = () => {
       <WebModeBanner />
 
       {shouldShowPersistenceWarning(persistenceHealth) && (
-        <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
+        <div className="flex items-start gap-2 rounded-lg border border-badge-warning/30 bg-amber-500/10 px-3 py-2 text-sm text-badge-warning">
           <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" />
           <div className="min-w-0">
             <div className="font-medium">{dataText.persistence.title}</div>
-            <div className="mt-0.5 text-xs text-amber-200/80">
+            <div className="mt-0.5 text-xs text-badge-warning/80">
               {persistenceWarningText}
               {persistenceHealth.reason ? `${dataText.persistence.reasonPrefix}${persistenceHealth.reason}` : ''}
             </div>
@@ -499,7 +499,7 @@ export const DataSettings: React.FC = () => {
 
       {message && (
         <div className={`flex items-center gap-2 rounded-lg p-3 ${
-          message.type === 'success' ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-badge-danger'
+          message.type === 'success' ? 'bg-green-500/10 text-badge-success' : 'bg-red-500/10 text-badge-danger'
         }`}
         >
           {message.type === 'success' ? <CheckCircle className="h-4 w-4" /> : <AlertCircle className="h-4 w-4" />}
@@ -625,7 +625,7 @@ export const DataSettings: React.FC = () => {
                   {dataText.telemetry.running}
                 </span>
               ) : (
-                <span className="inline-flex items-center gap-1.5 rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-amber-300">
+                <span className="inline-flex items-center gap-1.5 rounded-md border border-badge-warning/30 bg-amber-500/10 px-2 py-1 text-badge-warning">
                   <Activity className="h-3.5 w-3.5" />
                   {dataText.telemetry.paused}
                 </span>

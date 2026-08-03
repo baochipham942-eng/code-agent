@@ -182,7 +182,7 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
             未读点已挪到行尾状态列。 */}
         {!multiSelectMode && (
           <span className="w-4 shrink-0 flex items-center justify-center">
-            {isPinned && <Pin className="w-3 h-3 text-amber-500 -rotate-45" />}
+            {isPinned && <Pin className="w-3 h-3 text-badge-warning -rotate-45" />}
           </span>
         )}
 
@@ -236,7 +236,7 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
                   event.stopPropagation();
                   void handleSelectSession(forkParentSessionId);
                 }}
-                className="shrink-0 rounded p-0.5 text-violet-400 transition-colors hover:bg-violet-500/15 hover:text-violet-300 focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-violet-400"
+                className="shrink-0 rounded p-0.5 text-badge-accent transition-colors hover:bg-violet-500/15 hover:text-badge-accent focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-violet-400"
               >
                 <GitFork className="h-3.5 w-3.5" />
               </button>

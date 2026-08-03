@@ -433,7 +433,7 @@ export const ExpertPanel: React.FC = () => {
                       <div className="flex items-start justify-between gap-2">
                         <div className="flex items-center gap-2.5">
                           <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg bg-violet-500/10">
-                            <Users className="h-5 w-5 text-violet-300" />
+                            <Users className="h-5 w-5 text-badge-accent" />
                           </span>
                           <span className="min-w-0">
                             <button /* ds-allow:button: 出厂专家团名是进入只读详情的文字链接，卡片底部动作仍仅保留使用与复制 */ type="button" aria-label={`${t.team.details} ${recipe.name}`} onClick={() => setSelectedRecipe({ recipe, editable: false })} className="block truncate text-left text-sm font-medium text-zinc-100 hover:text-zinc-50">{recipe.name}</button>
@@ -467,7 +467,7 @@ export const ExpertPanel: React.FC = () => {
                       <div className="flex items-start justify-between gap-2">
                         <div className="flex items-center gap-2.5">
                           <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg bg-violet-500/10">
-                            <Users className="h-5 w-5 text-violet-300" />
+                            <Users className="h-5 w-5 text-badge-accent" />
                           </span>
                           <span className="min-w-0">
                             <span className="block truncate text-sm font-medium text-zinc-100">{recipe.name}</span>
@@ -506,16 +506,16 @@ export const ExpertPanel: React.FC = () => {
             {pendingConsent ? (
               <div
                 data-testid="role-pack-consent-confirm"
-                className={`mt-3 rounded-lg border p-4 ${pendingConsent.elevation ? 'border-amber-700/60 bg-amber-500/5' : 'border-zinc-700 bg-white/[0.02]'}`}
+                className={`mt-3 rounded-lg border p-4 ${pendingConsent.elevation ? 'border-badge-warning/60 bg-amber-500/5' : 'border-zinc-700 bg-white/[0.02]'}`}
               >
-                <div className={`text-sm ${pendingConsent.elevation ? 'text-amber-100' : 'text-zinc-100'}`}>
+                <div className={`text-sm ${pendingConsent.elevation ? 'text-badge-warning' : 'text-zinc-100'}`}>
                   {pendingConsent.elevation ? t.expert.rolePackElevation.title : t.expert.rolePackConsent.title}
                 </div>
                 <p className="mt-1 text-xs text-zinc-400">{t.expert.rolePackConsent.description}</p>
                 <ul className="mt-2 space-y-1 text-xs text-zinc-300" data-testid="role-pack-consent-summary">
                   {/* 提权项加重在最前：它们是「比基线更放手」的部分 */}
-                  {pendingConsent.elevation?.looseMode ? <li className="text-amber-200">· {t.expert.rolePackElevation.looseMode}</li> : null}
-                  {pendingConsent.elevation?.bashTool ? <li className="text-amber-200">· {t.expert.rolePackElevation.bashTool}</li> : null}
+                  {pendingConsent.elevation?.looseMode ? <li className="text-badge-warning">· {t.expert.rolePackElevation.looseMode}</li> : null}
+                  {pendingConsent.elevation?.bashTool ? <li className="text-badge-warning">· {t.expert.rolePackElevation.bashTool}</li> : null}
                   <li>· {pendingConsent.tools.length === 0
                     ? t.expert.rolePackConsent.toolsNone
                     : (pendingConsent.toolsDeclared ? t.expert.rolePackConsent.toolsDeclared : t.expert.rolePackConsent.toolsBaseline)}</li>

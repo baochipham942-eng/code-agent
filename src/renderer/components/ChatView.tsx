@@ -706,12 +706,12 @@ export const ChatView: React.FC = () => {
       {/* Global drag overlay — captures events directly to avoid iframe drag counter desync */}
       {isGlobalDragOver && (
         <div
-          className="absolute inset-0 flex items-center justify-center bg-zinc-900/80 backdrop-blur-sm z-50 border-2 border-dashed border-primary-500 rounded-xl"
+          className="absolute inset-0 flex items-center justify-center bg-zinc-900/80 backdrop-blur-sm z-50 border-2 border-dashed border-accent-accessible rounded-xl"
           onDragOver={handleGlobalDragOver}
           onDragLeave={handleGlobalDragLeave}
           onDrop={handleGlobalDrop}
         >
-          <div className="flex flex-col items-center gap-3 text-primary-400 pointer-events-none">
+          <div className="flex flex-col items-center gap-3 text-accent-accessible pointer-events-none">
             <Image className="w-12 h-12" />
             <span className="text-lg font-medium">{t.chat.dropFilesHere}</span>
           </div>
@@ -995,8 +995,8 @@ export const StreamRecoveryBanner: React.FC<{
     <div className="px-4 pt-3">
       {/* bar 内边距对齐 composer/摘要卡的 px-3：✕ 右缘 = −1(border)−12 = −13px，
           与摘要卡 ∨、发送 ↑ 同一条右轨（现象 9）。 */}
-      <div className="max-w-3xl mx-auto flex items-start gap-3 rounded-lg border border-amber-500/25 bg-amber-500/10 px-3 py-3 text-sm text-status-warning-soft">
-        <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0 text-status-warning-soft dark:text-amber-300 [.high-contrast-dark_&]:text-amber-300" />
+      <div className="max-w-3xl mx-auto flex items-start gap-3 rounded-lg border border-badge-warning/25 bg-amber-500/10 px-3 py-3 text-sm text-status-warning-soft">
+        <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0 text-status-warning-soft dark:text-badge-warning [.high-contrast-dark_&]:text-badge-warning" />
         <div className="min-w-0 flex-1">
           <div className="font-medium">{t.chat.streamInterruptedTitle}</div>
           <div className="mt-1 text-status-warning-soft dark:text-status-warning-soft/80 [.high-contrast-dark_&]:text-status-warning-soft/80">
@@ -1014,7 +1014,7 @@ export const StreamRecoveryBanner: React.FC<{
               type="button"
               onClick={handleRetryClick}
               disabled={isRetrying}
-              className="mt-2 inline-flex items-center rounded-md border border-amber-400/30 bg-amber-500/10 px-2 py-1 text-xs font-medium text-status-warning-soft transition-colors hover:bg-amber-500/20 disabled:cursor-wait disabled:opacity-70"
+              className="mt-2 inline-flex items-center rounded-md border border-badge-warning/30 bg-amber-500/10 px-2 py-1 text-xs font-medium text-status-warning-soft transition-colors hover:bg-amber-500/20 disabled:cursor-wait disabled:opacity-70"
             >
               {isRetrying ? t.chat.retryTurnInProgress : t.chat.retryTurn}
             </button>

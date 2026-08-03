@@ -127,7 +127,7 @@ export function getNativeConnectorReadiness(
     case 'unavailable':
       return {
         label: labels.unavailable,
-        className: 'bg-amber-500/15 text-amber-300 border border-amber-500/25',
+        className: 'bg-amber-500/15 text-badge-warning border border-badge-warning/25',
       };
     case 'unchecked':
       return {
@@ -163,7 +163,7 @@ export function getRuntimeConnectorReadiness(
     case 'unavailable':
       return {
         label: labels.unavailable,
-        className: 'bg-amber-500/15 text-amber-300 border border-amber-500/25',
+        className: 'bg-amber-500/15 text-badge-warning border border-badge-warning/25',
       };
     case 'unchecked':
       return {

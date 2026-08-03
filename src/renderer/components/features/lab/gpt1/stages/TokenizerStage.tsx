@@ -202,7 +202,7 @@ export const TokenizerStage: React.FC<Props> = ({ onComplete, onBack }) => {
           {/* AI 的字典 */}
           <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-700">
             <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
-              <Type className="w-4 h-4 text-purple-400" />
+              <Type className="w-4 h-4 text-badge-accent" />
               {tk.dictTitle}
             </h3>
             <div className="grid grid-cols-4 gap-2 max-h-48 overflow-y-auto">

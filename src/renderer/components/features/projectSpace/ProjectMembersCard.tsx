@@ -64,14 +64,14 @@ export const ProjectMembersCard: React.FC<ProjectMembersCardProps> = ({ projectI
               {member.avatarUrl ? (
                 <img src={member.avatarUrl} alt="" className="h-6 w-6 shrink-0 rounded-full" />
               ) : (
-                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-violet-500/20 text-[11px] font-medium text-violet-300" aria-hidden="true">
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-violet-500/20 text-[11px] font-medium text-badge-accent" aria-hidden="true">
                   {memberLabel(member).slice(0, 1).toUpperCase()}
                 </span>
               )}
               <span className="min-w-0 flex-1 truncate text-xs text-zinc-300">{memberLabel(member)}</span>
               <Badge
                 className={`text-[11px] ${member.role === 'owner'
-                  ? 'border-violet-500/30 bg-violet-500/10 text-violet-300'
+                  ? 'border-badge-accent/30 bg-violet-500/10 text-badge-accent'
                   : 'border-zinc-700 bg-zinc-800/70 text-zinc-400'}`}
                 data-testid={`project-space-members-role-${member.userId}`}
               >

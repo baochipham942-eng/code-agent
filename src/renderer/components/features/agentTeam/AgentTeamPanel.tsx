@@ -72,7 +72,7 @@ function toDisplayMessageType(
 
 const StatusDot: React.FC<{ status: SwarmAgentState['status'] }> = ({ status }) => {
   const colors: Record<string, string> = {
-    running: 'text-amber-400 animate-pulse',
+    running: 'text-badge-warning animate-pulse',
     completed: 'text-badge-success',
     failed: 'text-badge-danger',
     pending: 'text-zinc-500',
@@ -120,8 +120,8 @@ const MessageItem: React.FC<{ message: TeammateMessageDisplay; currentAgentId?: 
 
   const typeIcons: Record<string, React.ReactNode> = {
     coordination: <ArrowRightLeft className="w-3 h-3 text-blue-400" />,
-    handoff: <ArrowRightLeft className="w-3 h-3 text-amber-400" />,
-    query: <MessageSquare className="w-3 h-3 text-violet-400" />,
+    handoff: <ArrowRightLeft className="w-3 h-3 text-badge-warning" />,
+    query: <MessageSquare className="w-3 h-3 text-badge-accent" />,
     response: <MessageSquare className="w-3 h-3 text-badge-success" />,
     broadcast: <Users className="w-3 h-3 text-cyan-400" />,
     user: <Users className="w-3 h-3 text-white" />,
@@ -143,7 +143,7 @@ const MessageItem: React.FC<{ message: TeammateMessageDisplay; currentAgentId?: 
             : isPlanRejected
             ? 'bg-red-500/10 border border-red-500/20 text-badge-danger'
             : isPlanReview
-            ? 'bg-amber-500/10 border border-amber-500/20 text-amber-200'
+            ? 'bg-amber-500/10 border border-badge-warning/20 text-badge-warning'
             : isSent
             ? 'bg-zinc-700 border border-zinc-600/30 text-zinc-200'
             : 'bg-zinc-800 border border-zinc-800 text-zinc-400'
@@ -155,7 +155,7 @@ const MessageItem: React.FC<{ message: TeammateMessageDisplay; currentAgentId?: 
           <span className="font-medium text-zinc-400">
             {message.from === 'user' ? 'You' : message.from}
           </span>
-          {isPlanReview && <ShieldCheck className="w-3 h-3 text-amber-400" />}
+          {isPlanReview && <ShieldCheck className="w-3 h-3 text-badge-warning" />}
           {isPlanApproved && <ShieldCheck className="w-3 h-3 text-badge-success" />}
           {isPlanRejected && <ShieldX className="w-3 h-3 text-badge-danger" />}
           <span className="text-zinc-600 ml-auto">

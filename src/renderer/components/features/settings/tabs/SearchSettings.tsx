@@ -173,7 +173,7 @@ export function SearchSettings() {
     const hasKey = entry.serviceKey ? Boolean(serviceKeys[entry.serviceKey]) : false;
     return hasKey
       ? { label: searchText.keyStatus.configured, tone: 'text-badge-success' }
-      : { label: searchText.keyStatus.required, tone: 'text-amber-300' };
+      : { label: searchText.keyStatus.required, tone: 'text-badge-warning' };
   };
   const sourceTexts = searchText.sources as Record<string, { label: string; description: string } | undefined>;
 

@@ -67,7 +67,7 @@ function getMode(): ActivityPanelMode {
 
 function toneClass(tone: ActivityTone): string {
   if (tone === 'ready') return 'border-badge-success/20 bg-emerald-500/10 text-badge-success';
-  if (tone === 'blocked') return 'border-amber-500/20 bg-amber-500/10 text-amber-300';
+  if (tone === 'blocked') return 'border-badge-warning/20 bg-amber-500/10 text-badge-warning';
   return 'border-zinc-700 bg-zinc-800/70 text-zinc-300';
 }
 
@@ -236,12 +236,12 @@ export const ActivityPanel: React.FC = () => {
             <div className={`rounded-lg border px-4 py-3 text-sm ${toneClass(model.modeTone)}`}>
               {model.modeDetail}
               {native.collectorStatus?.lastError ? (
-                <span className="ml-2 text-amber-200">{ap.collectorErrorPrefix}{native.collectorStatus.lastError}</span>
+                <span className="ml-2 text-badge-warning">{ap.collectorErrorPrefix}{native.collectorStatus.lastError}</span>
               ) : null}
             </div>
 
             {errors.length > 0 && (
-              <div className="rounded-lg border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-xs text-amber-200">
+              <div className="rounded-lg border border-badge-warning/20 bg-amber-500/10 px-4 py-3 text-xs text-badge-warning">
                 {errors.map((error) => (
                   <div key={error} className="flex items-start gap-2">
                     <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
@@ -337,7 +337,7 @@ export const ActivityPanel: React.FC = () => {
                       </div>
                       <div className="mt-1 text-xs leading-relaxed text-zinc-500">{provider.summary}</div>
                       {provider.lastError ? (
-                        <div className="mt-1 text-xs text-amber-300">{provider.lastError}</div>
+                        <div className="mt-1 text-xs text-badge-warning">{provider.lastError}</div>
                       ) : null}
                     </div>
                   )) : (

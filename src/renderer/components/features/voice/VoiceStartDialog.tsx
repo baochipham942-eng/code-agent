@@ -133,7 +133,7 @@ export const VoiceStartDialog: React.FC<VoiceStartDialogProps> = ({ isOpen, onCo
       }
     >
       <div data-testid="voice-start-dialog" className="flex flex-col gap-3">
-        <span className="flex h-11 w-11 items-center justify-center rounded-full bg-primary-500/10 text-primary-400">
+        <span className="flex h-11 w-11 items-center justify-center rounded-full bg-primary-500/10 text-badge-accent">
           <AudioLines className="h-5 w-5" />
         </span>
         <div>
@@ -147,7 +147,7 @@ export const VoiceStartDialog: React.FC<VoiceStartDialogProps> = ({ isOpen, onCo
               data-testid="voice-start-voice-id"
               value={currentVoiceId}
               onChange={(event) => void persistVoiceId(event.target.value)}
-              className="rounded-md border border-zinc-700 bg-zinc-900 px-2 py-1 text-xs text-zinc-200 outline-none focus:border-primary-500"
+              className="rounded-md border border-zinc-700 bg-zinc-900 px-2 py-1 text-xs text-zinc-200 outline-none focus:border-accent-accessible"
             >
               {conversationModelOption.voices.map((id) => (
                 <option key={id} value={id}>{id}</option>

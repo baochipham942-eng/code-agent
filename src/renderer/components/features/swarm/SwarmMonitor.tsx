@@ -33,7 +33,7 @@ import { IPC_CHANNELS } from '../../../../shared/ipc/legacy-channels';
 const statusColors: Record<string, { bg: string; text: string; border: string }> = {
   pending: { bg: 'bg-zinc-600/10', text: 'text-zinc-400', border: 'border-zinc-600/30' },
   ready: { bg: 'bg-blue-500/10', text: 'text-blue-400', border: 'border-blue-500/30' },
-  running: { bg: 'bg-amber-500/10', text: 'text-amber-400', border: 'border-amber-500/30' },
+  running: { bg: 'bg-amber-500/10', text: 'text-badge-warning', border: 'border-badge-warning/30' },
   completed: { bg: 'bg-emerald-500/10', text: 'text-badge-success', border: 'border-badge-success/30' },
   failed: { bg: 'bg-red-500/10', text: 'text-badge-danger', border: 'border-red-500/30' },
   cancelled: { bg: 'bg-zinc-600/10', text: 'text-zinc-500', border: 'border-zinc-600/30' },
@@ -340,7 +340,7 @@ export const SwarmMonitor: React.FC<SwarmMonitorProps> = ({ onClose }) => {
           <h3 className="text-sm font-medium text-zinc-200 flex items-center gap-2">
             Swarm Monitor
             {isRunning && (
-              <span className="flex items-center gap-1 text-xs text-amber-400">
+              <span className="flex items-center gap-1 text-xs text-badge-warning">
                 <Loader2 className="w-3 h-3 animate-spin" />
                 运行中
               </span>
@@ -374,7 +374,7 @@ export const SwarmMonitor: React.FC<SwarmMonitorProps> = ({ onClose }) => {
             label="并行峰值"
             value={statistics.parallelPeak}
             subValue={aggregation ? `${aggregation.speedup.toFixed(1)}x` : undefined}
-            color="text-amber-400"
+            color="text-badge-warning"
           />
           <StatCard
             icon={<CheckCircle className="w-4 h-4" />}
@@ -396,7 +396,7 @@ export const SwarmMonitor: React.FC<SwarmMonitorProps> = ({ onClose }) => {
             icon={<DollarSign className="w-4 h-4" />}
             label="总费用"
             value={aggregation ? `$${aggregation.totalCost.toFixed(4)}` : '-'}
-            color="text-violet-400"
+            color="text-badge-accent"
           />
         </div>
       </div>
@@ -407,13 +407,13 @@ export const SwarmMonitor: React.FC<SwarmMonitorProps> = ({ onClose }) => {
           {/* Summary */}
           <div className="px-3 py-2 border-b border-zinc-700">
             <div className="flex items-center gap-2 mb-1.5">
-              <TrendingUp className="w-3.5 h-3.5 text-violet-400" />
+              <TrendingUp className="w-3.5 h-3.5 text-badge-accent" />
               <span className="text-xs text-zinc-500 uppercase tracking-wider">聚合摘要</span>
             </div>
             <div className="space-y-1 text-xs">
               <div className="flex justify-between">
                 <span className="text-zinc-500">总耗时</span>
-                <span className="text-amber-400 font-medium">{(aggregation.totalDuration / 1000).toFixed(1)}s</span>
+                <span className="text-badge-warning font-medium">{(aggregation.totalDuration / 1000).toFixed(1)}s</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-zinc-500">并行加速比</span>
@@ -430,7 +430,7 @@ export const SwarmMonitor: React.FC<SwarmMonitorProps> = ({ onClose }) => {
           {aggregation.filesChanged.length > 0 && (
             <div className="px-3 py-2 border-b border-zinc-700">
               <div className="flex items-center gap-2 mb-1.5">
-                <FileText className="w-3.5 h-3.5 text-violet-400" />
+                <FileText className="w-3.5 h-3.5 text-badge-accent" />
                 <span className="text-xs text-zinc-500 uppercase tracking-wider">
                   变更文件 ({aggregation.filesChanged.length})
                 </span>
@@ -438,7 +438,7 @@ export const SwarmMonitor: React.FC<SwarmMonitorProps> = ({ onClose }) => {
               <div className="space-y-0.5 max-h-24 overflow-y-auto">
                 {aggregation.filesChanged.map((f) => (
                   <div key={f} className="flex items-center gap-1.5 text-[11px]">
-                    <span className="text-[9px] px-1 py-0.5 rounded font-semibold bg-amber-500/10 text-amber-400">M</span>
+                    <span className="text-[9px] px-1 py-0.5 rounded font-semibold bg-amber-500/10 text-badge-warning">M</span>
                     <span className="text-zinc-400 font-mono truncate">{f}</span>
                   </div>
                 ))}
@@ -457,7 +457,7 @@ export const SwarmMonitor: React.FC<SwarmMonitorProps> = ({ onClose }) => {
         {groupedAgents.running.length > 0 && (
           <AgentSection
             title="运行中"
-            icon={<Loader2 className="w-3.5 h-3.5 animate-spin text-amber-400" />}
+            icon={<Loader2 className="w-3.5 h-3.5 animate-spin text-badge-warning" />}
             agents={groupedAgents.running}
             selectedAgentId={selectedSwarmAgentId}
             onAgentSelect={setSelectedSwarmAgentId}

@@ -333,7 +333,7 @@ export const RealModePanel: React.FC = () => {
         <div className={`p-4 rounded-xl border ${
           checkingEnv ? 'bg-zinc-900 border-zinc-700' :
           envReady ? 'bg-emerald-500/10 border-badge-success/20' :
-          'bg-amber-500/10 border-amber-500/20'
+          'bg-amber-500/10 border-badge-warning/20'
         }`}>
           <div className="flex items-start gap-3">
             {checkingEnv ? (
@@ -341,12 +341,12 @@ export const RealModePanel: React.FC = () => {
             ) : envReady ? (
               <CheckCircle2 className="w-5 h-5 text-badge-success flex-shrink-0 mt-0.5" />
             ) : (
-              <AlertCircle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
+              <AlertCircle className="w-5 h-5 text-badge-warning flex-shrink-0 mt-0.5" />
             )}
             <div className="flex-1">
               <h3 className={`text-sm font-medium mb-2 ${
                 checkingEnv ? 'text-zinc-200' :
-                envReady ? 'text-badge-success' : 'text-amber-200'
+                envReady ? 'text-badge-success' : 'text-badge-warning'
               }`}>
                 {checkingEnv ? rm.envChecking :
                  envReady ? rm.envReady : rm.envIncomplete}
@@ -386,7 +386,7 @@ export const RealModePanel: React.FC = () => {
               )}
 
               {!checkingEnv && pythonEnv?.missingDependencies && pythonEnv.missingDependencies.length > 0 && (
-                <p className="text-xs text-amber-200/70 mt-2">
+                <p className="text-xs text-badge-warning/70 mt-2">
                   {rm.missingDepsLabel.replace('{list}', pythonEnv.missingDependencies.join(', '))}
                 </p>
               )}

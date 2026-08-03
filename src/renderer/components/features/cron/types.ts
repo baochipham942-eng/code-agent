@@ -374,9 +374,9 @@ export function getExecutionStatusMeta(status: CronJobStatus): { label: string; 
     case 'cancelled':
       return { label: '已取消', className: 'text-zinc-300 bg-zinc-500/10' };
     case 'paused':
-      return { label: '已暂停', className: 'text-yellow-300 bg-yellow-500/10' };
+      return { label: '已暂停', className: 'text-badge-warning bg-yellow-500/10' };
     case 'interrupted':
-      return { label: '已中断', className: 'text-orange-300 bg-orange-500/10' };
+      return { label: '已中断', className: 'text-badge-warning bg-orange-500/10' };
     default:
       return { label: '待执行', className: 'text-zinc-300 bg-zinc-500/10' };
   }

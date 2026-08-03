@@ -72,7 +72,7 @@ export const PasswordResetModal: React.FC = () => {
       {success ? (
         /* Success message */
         <div className="py-6 text-center space-y-4">
-          <CheckCircle className="w-12 h-12 text-green-500 mx-auto" />
+          <CheckCircle className="w-12 h-12 text-badge-success mx-auto" />
           <div className="space-y-2">
             <p className="text-zinc-200 font-medium">密码已更新</p>
             <p className="text-zinc-400 text-sm">

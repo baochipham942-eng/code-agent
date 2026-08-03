@@ -121,10 +121,10 @@ const LoRAVisualization: React.FC<{ rank: number; originalWeightLabel: string; f
       {/* A matrix */}
       <div className="flex flex-col items-center">
         <div
-          className="bg-orange-500/30 rounded border border-orange-500/50"
+          className="bg-orange-500/30 rounded border border-badge-warning/50"
           style={{ width: originalDim, height: scaledRank * 2 }}
         >
-          <div className="w-full h-full flex items-center justify-center text-xs text-orange-400">
+          <div className="w-full h-full flex items-center justify-center text-xs text-badge-warning">
             A
           </div>
         </div>
@@ -161,7 +161,7 @@ export const MethodStage: React.FC<MethodStageProps> = ({ onComplete, onBack }) 
 
   const getColorClasses = (color: string) => {
     const colors: Record<string, { bg: string; border: string; text: string }> = {
-      purple: { bg: 'bg-purple-500/20', border: 'border-purple-500/30', text: 'text-purple-400' },
+      purple: { bg: 'bg-purple-500/20', border: 'border-badge-accent/30', text: 'text-badge-accent' },
       blue: { bg: 'bg-blue-500/20', border: 'border-blue-500/30', text: 'text-blue-400' },
       emerald: { bg: 'bg-emerald-500/20', border: 'border-badge-success/30', text: 'text-badge-success' },
     };
@@ -171,13 +171,13 @@ export const MethodStage: React.FC<MethodStageProps> = ({ onComplete, onBack }) 
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-6">
       {/* Introduction */}
-      <div className="bg-gradient-to-r from-orange-500/10 to-amber-500/10 rounded-lg border border-orange-500/20 p-4">
+      <div className="bg-gradient-to-r from-orange-500/10 to-amber-500/10 rounded-lg border border-badge-warning/20 p-4">
         <div className="flex items-start gap-3">
-          <Layers className="w-5 h-5 text-orange-400 mt-0.5" />
+          <Layers className="w-5 h-5 text-badge-warning mt-0.5" />
           <div>
             <h3 className="text-sm font-medium text-zinc-200 mb-2">{m.introTitle}</h3>
             <p className="text-sm text-zinc-400">
-              {m.introDescPrefix}<span className="text-orange-400">{m.introDescHighlight}</span>{m.introDescSuffix}
+              {m.introDescPrefix}<span className="text-badge-warning">{m.introDescHighlight}</span>{m.introDescSuffix}
             </p>
           </div>
         </div>
@@ -186,7 +186,7 @@ export const MethodStage: React.FC<MethodStageProps> = ({ onComplete, onBack }) 
       {/* Method Comparison Cards */}
       <div className="space-y-3">
         <h3 className="text-sm font-medium text-zinc-400 flex items-center gap-2">
-          <Cpu className="w-4 h-4 text-orange-400" />
+          <Cpu className="w-4 h-4 text-badge-warning" />
           {m.comparisonSectionTitle}
         </h3>
         <div className="grid grid-cols-3 gap-4">
@@ -255,7 +255,7 @@ export const MethodStage: React.FC<MethodStageProps> = ({ onComplete, onBack }) 
       {/* LoRA Visualization */}
       <div className="space-y-3">
         <h3 className="text-sm font-medium text-zinc-400 flex items-center gap-2">
-          <Zap className="w-4 h-4 text-orange-400" />
+          <Zap className="w-4 h-4 text-badge-warning" />
           {m.loraVisualizationTitle}
         </h3>
         <div className="bg-zinc-900 rounded-lg border border-zinc-700 p-4">
@@ -274,7 +274,7 @@ export const MethodStage: React.FC<MethodStageProps> = ({ onComplete, onBack }) 
           <div className="mt-4 p-3 rounded-lg bg-zinc-800">
             <div className="flex items-center justify-between mb-2">
               <span className="text-sm text-zinc-400">{m.loraRankLabel}</span>
-              <span className="text-sm font-medium text-orange-400">{currentRank}</span>
+              <span className="text-sm font-medium text-badge-warning">{currentRank}</span>
             </div>
             <input
               type="range"
@@ -299,7 +299,7 @@ export const MethodStage: React.FC<MethodStageProps> = ({ onComplete, onBack }) 
       {/* VRAM Calculator */}
       <div className="space-y-3">
         <h3 className="text-sm font-medium text-zinc-400 flex items-center gap-2">
-          <Calculator className="w-4 h-4 text-orange-400" />
+          <Calculator className="w-4 h-4 text-badge-warning" />
           {m.vramCalculatorTitle}
         </h3>
         <div className="bg-zinc-900 rounded-lg border border-zinc-700 p-4">
@@ -314,7 +314,7 @@ export const MethodStage: React.FC<MethodStageProps> = ({ onComplete, onBack }) 
                   className={`
                     px-4 py-2 rounded-lg text-sm transition-all
                     ${selectedModel === idx
-                      ? 'bg-orange-500/20 text-orange-400 border border-orange-500/30'
+                      ? 'bg-orange-500/20 text-badge-warning border border-badge-warning/30'
                       : 'bg-zinc-800 text-zinc-500 border border-zinc-800 hover:border-zinc-600'
                     }
                   `}
@@ -362,8 +362,8 @@ export const MethodStage: React.FC<MethodStageProps> = ({ onComplete, onBack }) 
           </div>
 
           {/* Practical Advice */}
-          <div className="mt-4 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
-            <div className="text-xs text-amber-400">
+          <div className="mt-4 p-3 rounded-lg bg-amber-500/10 border border-badge-warning/20">
+            <div className="text-xs text-badge-warning">
               💡 {m.practicalAdvicePrefix}{currentModel.name}{m.practicalAdviceModelSuffix}
               {calculateVram('qlora') <= 24
                 ? m.practicalAdviceQloraFits.replace('{vram}', String(calculateVram('qlora')))
@@ -375,12 +375,12 @@ export const MethodStage: React.FC<MethodStageProps> = ({ onComplete, onBack }) 
       </div>
 
       {/* Key Takeaways */}
-      <div className="bg-orange-500/5 rounded-lg border border-orange-500/20 p-4">
-        <h4 className="text-sm font-medium text-orange-400 mb-2">{m.takeawaysTitle}</h4>
+      <div className="bg-orange-500/5 rounded-lg border border-badge-warning/20 p-4">
+        <h4 className="text-sm font-medium text-badge-warning mb-2">{m.takeawaysTitle}</h4>
         <ul className="space-y-2 text-sm text-zinc-400">
           {m.takeaways.map((item) => (
             <li key={item.label} className="flex items-start gap-2">
-              <span className="text-orange-400">•</span>
+              <span className="text-badge-warning">•</span>
               <span><strong className="text-zinc-400">{item.label}</strong>：{item.text}</span>
             </li>
           ))}
@@ -418,7 +418,7 @@ export const MethodStage: React.FC<MethodStageProps> = ({ onComplete, onBack }) 
         </button>
         <button
           onClick={onComplete}
-          className="flex items-center gap-2 px-5 py-2.5 bg-orange-500/20 text-orange-400 rounded-lg hover:bg-orange-500/30 border border-orange-500/30 transition-all font-medium"
+          className="flex items-center gap-2 px-5 py-2.5 bg-orange-500/20 text-badge-warning rounded-lg hover:bg-orange-500/30 border border-badge-warning/30 transition-all font-medium"
         >
           {m.nextButton}
           <ChevronRight className="w-4 h-4" />

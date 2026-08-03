@@ -621,7 +621,7 @@ export const McpServerEditor: React.FC<McpServerEditorProps> = ({
               <p className="text-xs text-badge-danger">{jsonError}</p>
             )}
             {ignoredJsonKeys.length > 0 && (
-              <p className="text-xs text-amber-400">
+              <p className="text-xs text-badge-warning">
                 {editorText.jsonIgnoredKeys.replace('{keys}', ignoredJsonKeys.join(', '))}
               </p>
             )}

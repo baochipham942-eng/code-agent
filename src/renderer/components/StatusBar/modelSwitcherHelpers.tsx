@@ -181,14 +181,14 @@ const EFFORT_OPTION_CONFIG: Record<EffortLevel, EffortOption> = {
     value: 'high',
     label: 'High',
     shortLabel: '高',
-    color: 'text-amber-400',
+    color: 'text-badge-warning',
     tint: 'bg-amber-500/15',
   },
   xhigh: {
     value: 'xhigh',
     label: 'XHigh',
     shortLabel: '极高',
-    color: 'text-orange-300',
+    color: 'text-badge-warning',
     tint: 'bg-orange-500/15',
   },
   max: {
@@ -242,7 +242,7 @@ export const CAPABILITY_CONFIG: Record<string, { icon: React.ReactNode; color: s
   },
   vision: {
     icon: <Eye className="w-2.5 h-2.5" />,
-    color: 'bg-purple-500/20 text-purple-300',
+    color: 'bg-purple-500/20 text-badge-accent',
   },
   tool: {
     icon: <Wrench className="w-2.5 h-2.5" />,
@@ -250,7 +250,7 @@ export const CAPABILITY_CONFIG: Record<string, { icon: React.ReactNode; color: s
   },
   reasoning: {
     icon: <Brain className="w-2.5 h-2.5" />,
-    color: 'bg-amber-500/20 text-amber-300',
+    color: 'bg-amber-500/20 text-badge-warning',
   },
   fast: {
     icon: <Gauge className="w-2.5 h-2.5" />,
@@ -313,7 +313,7 @@ const PROVIDER_HEALTH_BADGE_CLASS: Record<ProviderAvailabilityState, string> = {
   healthy: 'border-badge-success/20 bg-emerald-500/10 text-badge-success',
   recovering: 'border-badge-info/20 bg-sky-500/10 text-badge-info',
   unknown: 'border-zinc-700 bg-zinc-900 text-zinc-500',
-  degraded: 'border-amber-500/20 bg-amber-500/10 text-amber-300',
+  degraded: 'border-badge-warning/20 bg-amber-500/10 text-badge-warning',
   unavailable: 'border-red-500/20 bg-red-500/10 text-badge-danger',
 };
 
@@ -334,7 +334,7 @@ const PROVIDER_BILLING_DETAIL: Record<BillingMode, string> = {
 const PROVIDER_BILLING_BADGE_CLASS: Record<BillingMode, string> = {
   free: 'border-badge-success/20 bg-emerald-500/10 text-badge-success',
   plan: 'border-badge-info/20 bg-sky-500/10 text-badge-info',
-  payg: 'border-amber-500/20 bg-amber-500/10 text-amber-300',
+  payg: 'border-badge-warning/20 bg-amber-500/10 text-badge-warning',
   unknown: 'border-zinc-700 bg-zinc-900 text-zinc-500',
 };
 
@@ -422,7 +422,7 @@ export function ProviderBillingBadge({ summary }: { summary: ProviderBillingSumm
 
 const ENGINE_BILLING_BADGE_CLASS: Record<EngineBillingMode, string> = {
   subscription: 'border-badge-info/20 bg-sky-500/10 text-badge-info',
-  api_key_payg: 'border-amber-500/20 bg-amber-500/10 text-amber-300',
+  api_key_payg: 'border-badge-warning/20 bg-amber-500/10 text-badge-warning',
   free_tier: 'border-badge-success/20 bg-emerald-500/10 text-badge-success',
   unknown: 'border-zinc-700 bg-zinc-900 text-zinc-500',
 };
@@ -487,7 +487,7 @@ export function getEngineModelCompatReasonText(
 
 const ENGINE_RELIABILITY_TONE_CLASS: Record<string, string> = {
   ready: 'border-badge-success/20 bg-emerald-500/[0.08] text-badge-success',
-  warning: 'border-amber-500/20 bg-amber-500/[0.08] text-amber-200',
+  warning: 'border-badge-warning/20 bg-amber-500/[0.08] text-badge-warning',
   error: 'border-red-500/20 bg-red-500/[0.08] text-badge-danger',
   info: 'border-badge-info/20 bg-sky-500/[0.08] text-badge-info',
 };

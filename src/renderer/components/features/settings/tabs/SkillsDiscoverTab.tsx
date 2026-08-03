@@ -76,7 +76,7 @@ export function getBundleMissingRepoIds(
 
 const REGISTRY_RISK_CLASSES: Record<SkillRegistryRiskTier, string> = {
   low: 'border-zinc-700 bg-zinc-800 text-zinc-400',
-  medium: 'border-amber-500/20 bg-amber-500/10 text-amber-300',
+  medium: 'border-badge-warning/20 bg-amber-500/10 text-badge-warning',
   high: 'border-red-500/20 bg-red-500/10 text-badge-danger',
 };
 

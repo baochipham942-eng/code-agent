@@ -100,7 +100,7 @@ const AvailableSkillItem: React.FC<AvailableSkillItemProps> = ({
       onClick={onMount}
       disabled={loading}
       aria-label={sk.mountSkillAria.replace('{name}', skill.name)}
-      className="p-1 text-zinc-500 hover:text-green-400 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 group-focus-within:opacity-100 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+      className="p-1 text-zinc-500 hover:text-badge-success opacity-0 group-hover:opacity-100 focus-visible:opacity-100 group-focus-within:opacity-100 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
       title={sk.mount}
     >
       <Plus className="w-3.5 h-3.5" />

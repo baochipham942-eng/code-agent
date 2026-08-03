@@ -78,7 +78,7 @@ function renderToolPolicy(policy: ModelFallbackToolPolicy | undefined) {
   return (
     <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1.5 text-[11px]" title={title || undefined}>
       <span className="text-zinc-500">工具已关闭</span>
-      <span className="rounded border border-orange-500/25 bg-orange-500/10 px-1.5 py-0.5 text-orange-200">
+      <span className="rounded border border-badge-warning/25 bg-orange-500/10 px-1.5 py-0.5 text-badge-warning">
         {policy.originalToolCount} → {policy.effectiveToolCount}
       </span>
       {preview && (
@@ -122,35 +122,35 @@ export const FallbackBanner: React.FC<{ content: string; defaultExpanded?: boole
   const skipped = notice.skipped ?? [];
 
   return (
-    <div className="my-1 min-w-0 rounded-md border border-amber-500/25 bg-amber-500/[0.06] text-sm">
+    <div className="my-1 min-w-0 rounded-md border border-badge-warning/25 bg-amber-500/[0.06] text-sm">
       <button
         type="button"
         onClick={() => setExpanded((value) => !value)}
         aria-expanded={expanded}
         className="flex w-full min-w-0 items-start gap-2 px-3 py-2 text-left"
       >
-        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-300" />
+        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-badge-warning" />
         <div className="min-w-0 flex-1">
-          <div className="text-xs font-medium text-amber-200">模型已降级</div>
+          <div className="text-xs font-medium text-badge-warning">模型已降级</div>
           <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-1.5 text-[11px] text-zinc-400">
             <span className="max-w-full truncate font-mono text-zinc-300">{notice.from}</span>
             <span className="text-zinc-600">-&gt;</span>
             <span className="max-w-full truncate font-mono text-zinc-300">{notice.to}</span>
             <span className="text-zinc-600">·</span>
-            <span className="min-w-0 truncate text-amber-200/80">{notice.reason}</span>
+            <span className="min-w-0 truncate text-badge-warning/80">{notice.reason}</span>
           </div>
         </div>
         {expanded ? (
-          <ChevronDown className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-400" />
+          <ChevronDown className="mt-0.5 h-3.5 w-3.5 shrink-0 text-badge-warning" />
         ) : (
-          <ChevronRight className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-400" />
+          <ChevronRight className="mt-0.5 h-3.5 w-3.5 shrink-0 text-badge-warning" />
         )}
       </button>
       {expanded && (
         <div className="min-w-0 px-3 pb-2">
           {notice.strategy && (
             <div className="mt-1">
-              <span className="rounded border border-amber-400/20 bg-amber-400/10 px-1.5 py-0.5 text-[10px] leading-none text-amber-100">
+              <span className="rounded border border-badge-warning/20 bg-amber-400/10 px-1.5 py-0.5 text-[10px] leading-none text-badge-warning">
                 {STRATEGY_LABELS[notice.strategy]}
               </span>
             </div>

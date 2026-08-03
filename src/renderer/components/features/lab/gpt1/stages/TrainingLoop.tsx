@@ -226,7 +226,7 @@ export const TrainingLoop: React.FC<Props> = ({ onComplete, onBack }) => {
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-2xl">🔍</span>
-                  <span><span className="text-amber-300 font-medium">{tl.practiceStep3Label}</span>{tl.practiceStep3Desc}</span>
+                  <span><span className="text-badge-warning font-medium">{tl.practiceStep3Label}</span>{tl.practiceStep3Desc}</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-2xl">✏️</span>
@@ -282,7 +282,7 @@ export const TrainingLoop: React.FC<Props> = ({ onComplete, onBack }) => {
               <div>
                 <div className="flex justify-between mb-1">
                   <label className="text-xs text-zinc-400">{tl.epochsLabel}</label>
-                  <span className="text-xs font-bold text-purple-400">{tl.epochsValue.replace('{count}', String(config.epochs))}</span>
+                  <span className="text-xs font-bold text-badge-accent">{tl.epochsValue.replace('{count}', String(config.epochs))}</span>
                 </div>
                 <input
                   type="range"
@@ -302,12 +302,12 @@ export const TrainingLoop: React.FC<Props> = ({ onComplete, onBack }) => {
           {/* Loss 是什么 */}
           <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-700">
             <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
-              <TrendingDown className="w-4 h-4 text-amber-400" />
+              <TrendingDown className="w-4 h-4 text-badge-warning" />
               {tl.lossTitle}
             </h3>
             <div className="space-y-3 text-sm text-zinc-400">
               <p>
-                <span className="text-amber-400 font-medium">Loss</span> {tl.lossIntro}
+                <span className="text-badge-warning font-medium">Loss</span> {tl.lossIntro}
               </p>
               <div className="grid grid-cols-2 gap-3">
                 <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-center">
@@ -345,7 +345,7 @@ export const TrainingLoop: React.FC<Props> = ({ onComplete, onBack }) => {
               ) : (
                 <button
                   onClick={pauseTraining}
-                  className="flex items-center gap-2 px-4 py-2 rounded-lg bg-amber-500/20 border border-amber-500/30 text-amber-400 text-sm font-medium hover:bg-amber-500/30 transition-colors"
+                  className="flex items-center gap-2 px-4 py-2 rounded-lg bg-amber-500/20 border border-badge-warning/30 text-badge-warning text-sm font-medium hover:bg-amber-500/30 transition-colors"
                 >
                   <Pause className="w-4 h-4" />
                   {tl.pauseButton}
@@ -426,7 +426,7 @@ export const TrainingLoop: React.FC<Props> = ({ onComplete, onBack }) => {
                 logs.map((log, i) => (
                   <div key={i} className="text-zinc-400 p-1.5 rounded bg-zinc-800">
                     {tl.logEpochPrefix}<span className="text-blue-400 font-bold">{log.epoch}</span>{tl.logEpochSuffix}
-                    {tl.logStepPrefix}<span className="text-purple-400">{log.step}</span>{tl.logStepSuffix}
+                    {tl.logStepPrefix}<span className="text-badge-accent">{log.step}</span>{tl.logStepSuffix}
                     {tl.logLossPrefix}<span className="text-badge-success font-bold">{log.loss.toFixed(4)}</span>
                   </div>
                 ))

@@ -27,7 +27,7 @@ const variantConfig: Record<
   warning: {
     icon: <AlertTriangle className="w-6 h-6" />,
     iconBgClass: 'bg-amber-500/10',
-    iconColorClass: 'text-amber-400',
+    iconColorClass: 'text-badge-warning',
     confirmColorClass: 'bg-amber-600 hover:bg-amber-500',
   },
   danger: {

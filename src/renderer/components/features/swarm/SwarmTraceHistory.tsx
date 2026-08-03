@@ -47,7 +47,7 @@ const STATUS_META: Record<
 > = {
   running: {
     label: '运行中',
-    tone: 'text-amber-300 bg-amber-500/10 border-amber-500/30',
+    tone: 'text-badge-warning bg-amber-500/10 border-badge-warning/30',
     icon: <Loader2 className="w-3 h-3 animate-spin" />,
   },
   completed: {
@@ -206,7 +206,7 @@ export const SwarmTraceHistory: React.FC<Props> = ({ sessionId, limit = 20, comp
     <div className="bg-white/[0.02] backdrop-blur-sm rounded-xl border border-white/[0.04]">
       <div className={`${sectionPadding} flex items-center justify-between border-b border-white/[0.04]`}>
         <div className="flex items-center gap-2">
-          <History className="w-4 h-4 text-primary-400" />
+          <History className="w-4 h-4 text-badge-accent" />
           <span className="text-sm font-medium text-zinc-200">历史 Swarm 运行</span>
           <span className="text-xs text-zinc-500">({runs.length})</span>
         </div>
@@ -436,7 +436,7 @@ const SwarmRunDetailView: React.FC<{
                   </span>
                   <span className={`font-medium flex-shrink-0 w-32 truncate ${
                     e.level === 'error' ? 'text-badge-danger' :
-                    e.level === 'warn' ? 'text-amber-300' :
+                    e.level === 'warn' ? 'text-badge-warning' :
                     'text-zinc-300'
                   }`}>
                     {e.title}

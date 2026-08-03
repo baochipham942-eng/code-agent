@@ -44,8 +44,8 @@ export const ChartBlock = memo(function ChartBlock({ spec: rawSpec }: { spec: st
         >
           {copied ? (
             <>
-              <Check className="w-3.5 h-3.5 text-green-400" />
-              <span className="text-green-400">{t.generativeUI.copied}</span>
+              <Check className="w-3.5 h-3.5 text-badge-success" />
+              <span className="text-badge-success">{t.generativeUI.copied}</span>
             </>
           ) : (
             <>

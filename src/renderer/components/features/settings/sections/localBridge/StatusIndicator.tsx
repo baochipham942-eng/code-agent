@@ -23,9 +23,9 @@ export const StatusIndicator: React.FC<StatusIndicatorProps> = ({ status }) => {
   const statusText = t.settings.localBridge.status;
   const config = {
     connected: {
-      icon: <CheckCircle className="w-4 h-4 text-green-400" />,
+      icon: <CheckCircle className="w-4 h-4 text-badge-success" />,
       label: statusText.connected,
-      color: 'text-green-400',
+      color: 'text-badge-success',
       dot: 'bg-green-400',
     },
     disconnected: {
@@ -35,9 +35,9 @@ export const StatusIndicator: React.FC<StatusIndicatorProps> = ({ status }) => {
       dot: 'bg-red-400',
     },
     connecting: {
-      icon: <Loader2 className="w-4 h-4 text-yellow-400 animate-spin" />,
+      icon: <Loader2 className="w-4 h-4 text-badge-warning animate-spin" />,
       label: statusText.connecting,
-      color: 'text-yellow-400',
+      color: 'text-badge-warning',
       dot: 'bg-yellow-400',
     },
     error: {

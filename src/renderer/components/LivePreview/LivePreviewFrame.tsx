@@ -78,16 +78,16 @@ export const LivePreviewDiagnosticStrip: React.FC<{
   const { t } = useI18n();
   const [expanded, setExpanded] = useState(false);
   return (
-    <div className="px-3 py-2 text-xs bg-amber-500/10 border-b border-amber-500/30 text-amber-200 space-y-1">
+    <div className="px-3 py-2 text-xs bg-amber-500/10 border-b border-badge-warning/30 text-badge-warning space-y-1">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="font-medium">{t.livePreview.loadFailedSummary}</div>
-          <div className="text-amber-300/80">{t.livePreview.loadFailedSuggestion}</div>
+          <div className="text-badge-warning/80">{t.livePreview.loadFailedSuggestion}</div>
         </div>
         <button
           onClick={() => setExpanded(!expanded)}
           aria-expanded={expanded}
-          className="shrink-0 text-amber-300/80 hover:text-amber-200 transition-colors"
+          className="shrink-0 text-badge-warning/80 hover:text-badge-warning transition-colors"
         >
           {expanded ? t.systemError.hideDetails : t.systemError.viewDetails}
         </button>
@@ -103,7 +103,7 @@ export const LivePreviewDiagnosticStrip: React.FC<{
         </button>
       )}
       {expanded && (
-        <div className="space-y-0.5 font-mono text-amber-300/80">
+        <div className="space-y-0.5 font-mono text-badge-warning/80">
           <div>⚠ {frameError}</div>
           <div>{t.livePreview.cspLabel}: {cspSnippet}</div>
         </div>
@@ -389,14 +389,14 @@ export const LivePreviewFrame: React.FC<Props> = ({ tabId, devServerUrl }) => {
       {!isBrowserMode && displayFile && selectedElement && (
         <div
           data-testid="live-preview-selection-bar"
-          className="border-b border-primary-500/30 bg-primary-500/10"
+          className="border-b border-accent-accessible/30 bg-primary-500/10"
         >
-          <div className="flex items-center gap-2 px-3 py-1.5 text-xs text-primary-200 font-mono">
-            <span className="text-primary-400">selected</span>
+          <div className="flex items-center gap-2 px-3 py-1.5 text-xs text-accent-accessible font-mono">
+            <span className="text-accent-accessible">selected</span>
             <span className="text-zinc-400">&lt;{selectedElement.tag}&gt;</span>
-            <span className="text-primary-200">{displayFile}</span>
+            <span className="text-accent-accessible">{displayFile}</span>
             <button
-              className="ml-2 flex items-center gap-1 px-2 py-0.5 rounded bg-primary-500/20 hover:bg-primary-500/30 text-primary-100"
+              className="ml-2 flex items-center gap-1 px-2 py-0.5 rounded bg-primary-500/20 hover:bg-primary-500/30 text-accent-accessible"
               onClick={() => jumpToFileLine(selectedElement.file, selectedElement.line)}
               title="在编辑器打开并跳转到该行（需 workingDirectory 设为项目根）"
             >
@@ -424,12 +424,12 @@ export const LivePreviewFrame: React.FC<Props> = ({ tabId, devServerUrl }) => {
               }}
               placeholder="这里改成…（针对选中元素的反馈，回车发送）"
               disabled={feedbackSending}
-              className="flex-1 px-2 py-1 text-xs bg-zinc-900 text-zinc-200 border border-primary-500/30 rounded placeholder-zinc-500 focus:outline-none focus:border-primary-400 disabled:opacity-60"
+              className="flex-1 px-2 py-1 text-xs bg-zinc-900 text-zinc-200 border border-accent-accessible/30 rounded placeholder-zinc-500 focus:outline-none focus:border-accent-accessible disabled:opacity-60"
             />
             <button
               onClick={() => void handleSubmitFeedback()}
               disabled={feedbackSending || !feedbackText.trim()}
-              className="flex items-center gap-1 px-2.5 py-1 text-xs rounded bg-primary-500/30 hover:bg-primary-500/40 text-primary-100 disabled:opacity-40 disabled:cursor-not-allowed"
+              className="flex items-center gap-1 px-2.5 py-1 text-xs rounded bg-primary-500/30 hover:bg-primary-500/40 text-accent-accessible disabled:opacity-40 disabled:cursor-not-allowed"
               title="把反馈发给 agent，针对选中元素定向修改"
             >
               <Send className="w-3 h-3" />

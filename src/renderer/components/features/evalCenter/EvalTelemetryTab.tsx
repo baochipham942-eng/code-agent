@@ -83,7 +83,7 @@ export const EvalTelemetryTab: React.FC = () => {
           <button /* ds-allow:button: 遥测实时开关胶囊，10px 微尺寸行内样式，Button primitive 无对应变体 */
             type="button"
             onClick={() => setLive(!isLive)}
-            className={`flex items-center gap-1 rounded px-2 py-1 text-[10px] ${isLive ? 'bg-green-500/20 text-green-400' : 'bg-zinc-700 text-zinc-500'}`}
+            className={`flex items-center gap-1 rounded px-2 py-1 text-[10px] ${isLive ? 'bg-green-500/20 text-badge-success' : 'bg-zinc-700 text-zinc-500'}`}
           >
             {isLive ? <Radio className="h-3 w-3" /> : <CircleOff className="h-3 w-3" />}
             {isLive ? tm.live : tm.paused}
@@ -100,7 +100,7 @@ export const EvalTelemetryTab: React.FC = () => {
             >
               <div className="mb-1 flex items-center justify-between">
                 <span className="max-w-[240px] truncate text-xs text-zinc-400">{session.title}</span>
-                <span className={`rounded px-1.5 py-0.5 text-[10px] ${session.status === 'recording' ? 'bg-green-500/20 text-green-400' : 'bg-zinc-600/30 text-zinc-500'}`}>
+                <span className={`rounded px-1.5 py-0.5 text-[10px] ${session.status === 'recording' ? 'bg-green-500/20 text-badge-success' : 'bg-zinc-600/30 text-zinc-500'}`}>
                   {session.status === 'recording' ? tm.recording : tm.completed}
                 </span>
               </div>
@@ -156,7 +156,7 @@ export const EvalTelemetryTab: React.FC = () => {
             type="button"
             onClick={() => setLive(!isLive)}
             aria-label={isLive ? tm.live : tm.paused}
-            className={`flex items-center gap-1 rounded px-2 py-1 text-[10px] ${isLive ? 'bg-green-500/20 text-green-400' : 'bg-zinc-700 text-zinc-500'}`}
+            className={`flex items-center gap-1 rounded px-2 py-1 text-[10px] ${isLive ? 'bg-green-500/20 text-badge-success' : 'bg-zinc-700 text-zinc-500'}`}
           >
             {isLive ? <Radio className="h-3 w-3" /> : <CircleOff className="h-3 w-3" />}
           </button>

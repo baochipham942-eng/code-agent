@@ -39,7 +39,7 @@ type SpaceTab = 'activity' | 'tasks' | 'assets';
 const STATUS_CHIP_CLASS: Record<ProjectActivityStatus, string> = {
   active: 'border-badge-success/30 bg-emerald-500/10 text-badge-success',
   idle: 'border-zinc-700 bg-zinc-800/60 text-zinc-400',
-  archived: 'border-amber-500/30 bg-amber-500/10 text-amber-300',
+  archived: 'border-badge-warning/30 bg-amber-500/10 text-badge-warning',
 };
 
 export const ProjectSpaceView: React.FC<ProjectSpaceViewProps> = ({ projectId, onBackToList }) => {
@@ -119,7 +119,7 @@ export const ProjectSpaceView: React.FC<ProjectSpaceViewProps> = ({ projectId, o
   const statusChip = project && activityStatus ? (
     <span className="flex items-center gap-1.5">
       {project.cloudProjectId ? (
-        <Badge className="border-violet-500/30 bg-violet-500/10 text-[11px] text-violet-300" data-testid="project-space-header-cloud-badge">
+        <Badge className="border-badge-accent/30 bg-violet-500/10 text-[11px] text-badge-accent" data-testid="project-space-header-cloud-badge">
           {ps.cloudBadge}
         </Badge>
       ) : null}
@@ -139,7 +139,7 @@ export const ProjectSpaceView: React.FC<ProjectSpaceViewProps> = ({ projectId, o
     <>
       <FullScreenPageHeader
         variant="bar"
-        icon={<FolderKanban className="h-4 w-4 text-violet-300" />}
+        icon={<FolderKanban className="h-4 w-4 text-badge-accent" />}
         title={project?.name ?? projectId}
         description={project?.description || undefined}
         badge={statusChip}

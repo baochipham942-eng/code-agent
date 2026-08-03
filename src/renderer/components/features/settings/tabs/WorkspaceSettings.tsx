@@ -105,7 +105,7 @@ interface ConfigScopeTile {
 
 function browserStatusToneClass(tone?: BrowserWorkbenchStatusTone): string {
   if (tone === 'ready') return 'text-badge-success';
-  if (tone === 'blocked') return 'text-amber-300';
+  if (tone === 'blocked') return 'text-badge-warning';
   return 'text-zinc-300';
 }
 
@@ -142,7 +142,7 @@ export function buildConfigScopeTiles(summary: ConfigScopeSummary | null): Confi
 
 function scopeStatusClass(status: ConfigScopeItemStatus): string {
   if (status === 'active') return 'border-badge-success/30 bg-emerald-500/10 text-badge-success';
-  if (status === 'warning') return 'border-amber-500/30 bg-amber-500/10 text-amber-300';
+  if (status === 'warning') return 'border-badge-warning/30 bg-amber-500/10 text-badge-warning';
   if (status === 'present') return 'border-blue-500/30 bg-blue-500/10 text-blue-300';
   return 'border-zinc-700 bg-zinc-900 text-zinc-500';
 }
@@ -177,7 +177,7 @@ function scopeLayerLabel(
 function scopeLayerClass(layerId: ConfigScopeLayerId): string {
   if (layerId === 'user') return 'border-blue-500/30 bg-blue-500/10 text-blue-300';
   if (layerId === 'project') return 'border-badge-success/30 bg-emerald-500/10 text-badge-success';
-  if (layerId === 'local') return 'border-amber-500/30 bg-amber-500/10 text-amber-300';
+  if (layerId === 'local') return 'border-badge-warning/30 bg-amber-500/10 text-badge-warning';
   return 'border-zinc-600 bg-zinc-800 text-zinc-300';
 }
 
@@ -193,7 +193,7 @@ function shareabilityLabel(
 
 function safetySeverityClass(severity: ConfigSafetySeverity): string {
   if (severity === 'critical') return 'border-red-500/30 bg-red-500/10 text-badge-danger';
-  if (severity === 'warning') return 'border-amber-500/30 bg-amber-500/10 text-amber-300';
+  if (severity === 'warning') return 'border-badge-warning/30 bg-amber-500/10 text-badge-warning';
   return 'border-blue-500/30 bg-blue-500/10 text-blue-300';
 }
 
@@ -502,7 +502,7 @@ export const WorkspaceSettings: React.FC = () => {
                 <div className="mt-1 flex items-center gap-2">
                   <span className="text-sm font-semibold text-zinc-100">{tile.value}</span>
                   {tile.warningCount > 0 && (
-                    <span className="inline-flex items-center gap-1 rounded border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-amber-300">
+                    <span className="inline-flex items-center gap-1 rounded border border-badge-warning/30 bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-badge-warning">
                       <AlertTriangle className="h-3 w-3" />
                       {tile.warningCount}
                     </span>
@@ -582,7 +582,7 @@ export const WorkspaceSettings: React.FC = () => {
                   </div>
                 </div>
               </div>
-              <span className={`text-xs ${browserSession.blocked ? 'text-amber-300' : 'text-badge-success'}`}>
+              <span className={`text-xs ${browserSession.blocked ? 'text-badge-warning' : 'text-badge-success'}`}>
                 {browserSession.blocked ? 'Blocked' : 'Ready'}
               </span>
             </div>
@@ -609,7 +609,7 @@ export const WorkspaceSettings: React.FC = () => {
             )}
 
             {browserOperationalHint && (
-              <div className={`mt-2 text-[11px] leading-relaxed ${browserSession.blocked ? 'text-amber-300' : 'text-zinc-500'}`}>
+              <div className={`mt-2 text-[11px] leading-relaxed ${browserSession.blocked ? 'text-badge-warning' : 'text-zinc-500'}`}>
                 {browserOperationalHint}
               </div>
             )}
@@ -1007,7 +1007,7 @@ const ConfigScopeLayerBlock: React.FC<{
                       <div className="mt-1 text-[11px] text-zinc-500">{item.detail}</div>
                     )}
                     {item.warning && (
-                      <div className="mt-1 flex items-start gap-1.5 text-[11px] leading-relaxed text-amber-300">
+                      <div className="mt-1 flex items-start gap-1.5 text-[11px] leading-relaxed text-badge-warning">
                         <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
                         <span>{item.warning}</span>
                       </div>

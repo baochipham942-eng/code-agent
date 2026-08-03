@@ -38,7 +38,7 @@ const STATUS_STYLE: Record<AgentTreeNodeStatus, { icon: React.ReactNode; classNa
   failed: { icon: <AlertCircle className="h-3.5 w-3.5" />, className: 'text-rose-300' },
   cancelled: { icon: <Circle className="h-3.5 w-3.5" />, className: 'text-zinc-500' },
   killed: { icon: <AlertCircle className="h-3.5 w-3.5" />, className: 'text-rose-300' },
-  blocked: { icon: <AlertCircle className="h-3.5 w-3.5" />, className: 'text-amber-300' },
+  blocked: { icon: <AlertCircle className="h-3.5 w-3.5" />, className: 'text-badge-warning' },
   unknown: { icon: <Circle className="h-3.5 w-3.5" />, className: 'text-zinc-500' },
 };
 
@@ -240,7 +240,7 @@ export const AgentTreeSnapshotView: React.FC<AgentTreeSnapshotViewProps> = ({
           {snapshot.summary.running > 0 && <span>进行中 {snapshot.summary.running}</span>}
           {snapshot.summary.completed > 0 && <span>完成 {snapshot.summary.completed}</span>}
           {(snapshot.summary.failed > 0 || snapshot.summary.blocked > 0) && (
-            <span className="text-amber-300">需要处理 {snapshot.summary.failed + snapshot.summary.blocked}</span>
+            <span className="text-badge-warning">需要处理 {snapshot.summary.failed + snapshot.summary.blocked}</span>
           )}
         </div>
       </div>

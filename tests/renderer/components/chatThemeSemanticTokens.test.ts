@@ -143,6 +143,7 @@ describe('chat semantic theme tokens', () => {
     expect(getToneClass).not.toContain('text-emerald-300');
     expect(getToneClass).not.toContain('text-badge-success');
     expect(getToneClass).not.toContain('text-amber-300');
+    expect(getToneClass).not.toContain('text-badge-warning');
     expect(getToneClass).not.toContain('text-red-300');
     expect(toolStepGroup).not.toContain('hover:bg-white/[0.018]');
     expect(traceNodeRenderer).not.toContain(

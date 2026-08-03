@@ -357,7 +357,7 @@ const WorkflowStagePreview: React.FC<{ preview: WorkflowStagePreviewData }> = ({
     <div className="ml-6 mt-1 mb-0.5 space-y-1 text-xs text-zinc-500">
       {showSummary && (
         <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
-          <span className={failed > 0 ? 'text-amber-300' : 'text-zinc-400'}>
+          <span className={failed > 0 ? 'text-badge-warning' : 'text-zinc-400'}>
             {total} 个子智能体
           </span>
           <span>{completed}/{total} 完成</span>
@@ -439,7 +439,7 @@ function getPermissionToneClass(permission: ToolPermissionView): string {  switc
     case 'write':
     case 'shell':
     case 'desktop':
-      return 'text-amber-300';
+      return 'text-badge-warning';
     case 'network':
     case 'mcp':
       return 'text-badge-info';
@@ -502,7 +502,7 @@ function getActionPreviewRiskClass(risk: BrowserComputerActionPreview['risk']): 
     case 'browser_action':
       return 'text-badge-info';
     case 'desktop_input':
-      return 'text-amber-300';
+      return 'text-badge-warning';
     default:
       return 'text-zinc-400';
   }

@@ -299,13 +299,13 @@ export function getStatusColor(status: SessionStatus): string {
     case 'idle':
       return 'text-gray-500';
     case 'running':
-      return 'text-green-500';
+      return 'text-badge-success';
     case 'paused':
-      return 'text-yellow-500';
+      return 'text-badge-warning';
     case 'queued':
-      return 'text-yellow-500';
+      return 'text-badge-warning';
     case 'cancelling':
-      return 'text-orange-500';
+      return 'text-badge-warning';
     case 'cancelled':
       return 'text-zinc-500';
     case 'error':

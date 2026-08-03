@@ -139,7 +139,7 @@ export const NeoWorkCardInlineCard: React.FC<{ detail: NeoWorkCardDetail }> = ({
       {/* 待你确认 */}
       {phase === 'needs_input' && openQuestions.length > 0 && (
         <div
-          className="mt-2 rounded-md border border-amber-400/20 bg-amber-400/[0.06] px-2.5 py-2 text-[13px] leading-5 text-amber-100/90"
+          className="mt-2 rounded-md border border-badge-warning/20 bg-amber-400/[0.06] px-2.5 py-2 text-[13px] leading-5 text-badge-warning/90"
           data-testid="neo-work-card-needs-input"
         >
           {openQuestions.map((question, index) => (

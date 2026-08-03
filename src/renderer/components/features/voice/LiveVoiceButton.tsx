@@ -90,7 +90,7 @@ export const LiveVoiceButton: React.FC<LiveVoiceButtonProps> = ({ sessionId, has
             }
           >
             <div data-testid="voice-nokey-guide" className="flex flex-col gap-3">
-              <span className="flex h-11 w-11 items-center justify-center rounded-full bg-primary-500/10 text-primary-400">
+              <span className="flex h-11 w-11 items-center justify-center rounded-full bg-primary-500/10 text-badge-accent">
                 <AudioLines className="h-5 w-5" />
               </span>
               <div>

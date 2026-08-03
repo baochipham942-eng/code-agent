@@ -89,9 +89,9 @@ type MemoryImportStatusConfig = {
 // Memory type config
 const TYPE_CONFIG: Record<string, Omit<MemoryTypeConfig, 'label'>> = {
   user: { icon: '👤', color: 'text-blue-400' },
-  feedback: { icon: '💬', color: 'text-amber-400' },
-  project: { icon: '📁', color: 'text-green-400' },
-  reference: { icon: '🔗', color: 'text-purple-400' },
+  feedback: { icon: '💬', color: 'text-badge-warning' },
+  project: { icon: '📁', color: 'text-badge-success' },
+  reference: { icon: '🔗', color: 'text-badge-accent' },
   unknown: { icon: '📄', color: 'text-zinc-400' },
 };
 
@@ -105,8 +105,8 @@ const IMPORT_STATUS_CONFIG: Record<MemoryImportV2DiffStatus, Omit<MemoryImportSt
     badgeClass: 'border-badge-info/30 bg-sky-500/10 text-badge-info',
   },
   conflict: {
-    tone: 'text-amber-300',
-    badgeClass: 'border-amber-500/30 bg-amber-500/10 text-amber-300',
+    tone: 'text-badge-warning',
+    badgeClass: 'border-badge-warning/30 bg-amber-500/10 text-badge-warning',
   },
   skip: {
     tone: 'text-zinc-400',
@@ -584,7 +584,7 @@ export const MemoryTab: React.FC = () => {
         <div
           className={`flex items-center gap-2 rounded-lg p-3 text-xs ${
             message.type === 'success'
-              ? 'bg-green-500/10 text-green-400'
+              ? 'bg-green-500/10 text-badge-success'
               : 'bg-red-500/10 text-badge-danger'
           }`}
         >
@@ -684,13 +684,13 @@ export const MemoryTab: React.FC = () => {
               </div>
 
               <div className="flex flex-col gap-2 rounded border border-zinc-800 bg-zinc-950/40 px-3 py-2 text-xs text-zinc-400 lg:flex-row lg:items-center lg:justify-between">
-                <label className={`inline-flex items-center gap-2 ${importPreview.conflicted > 0 ? 'text-amber-300' : 'text-zinc-500'}`}>
+                <label className={`inline-flex items-center gap-2 ${importPreview.conflicted > 0 ? 'text-badge-warning' : 'text-zinc-500'}`}>
                   <input
                     type="checkbox"
                     checked={allowImportConflicts}
                     disabled={importPreview.conflicted === 0 || importBusy !== null}
                     onChange={(event) => setAllowImportConflicts(event.target.checked)}
-                    className="h-3.5 w-3.5 rounded border-zinc-700 bg-zinc-900 text-amber-400"
+                    className="h-3.5 w-3.5 rounded border-zinc-700 bg-zinc-900 text-badge-warning"
                   />
                   {memoryText.import.includeConflicts}
                 </label>

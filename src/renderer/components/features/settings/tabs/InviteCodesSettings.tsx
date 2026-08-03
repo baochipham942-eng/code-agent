@@ -78,7 +78,7 @@ function getInviteStatus(
     return { label: labels.expired, className: 'border-red-500/30 bg-red-500/10 text-badge-danger' };
   }
   if (invite.remainingUses <= 0) {
-    return { label: labels.exhausted, className: 'border-amber-500/30 bg-amber-500/10 text-amber-300' };
+    return { label: labels.exhausted, className: 'border-badge-warning/30 bg-amber-500/10 text-badge-warning' };
   }
   return { label: labels.usable, className: 'border-badge-success/30 bg-emerald-500/10 text-badge-success' };
 }
@@ -267,7 +267,7 @@ export const InviteCodesSettings: React.FC = () => {
         </div>
 
         {unavailableReason && (
-          <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+          <div className="flex items-start gap-2 rounded-lg border border-badge-warning/30 bg-amber-500/10 px-3 py-2 text-xs text-badge-warning">
             <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
             <span>{unavailableReason}</span>
           </div>

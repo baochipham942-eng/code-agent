@@ -81,7 +81,7 @@ function getArtifactKindLabel(kind: SidebarProjectArtifactMeta['kind'], t: Trans
 function getGoalStatusIcon(status: SidebarProjectGoalMeta['status']): React.ReactNode {
   if (status === 'met') return <CheckCircle2 className="h-3 w-3 text-badge-success" />;
   if (status === 'aborted') return <XCircle className="h-3 w-3 text-rose-500" />;
-  return <Clock3 className="h-3 w-3 text-amber-500" />;
+  return <Clock3 className="h-3 w-3 text-badge-warning" />;
 }
 
 function getGoalCounts(goals: SidebarProjectGoalMeta[] | undefined): Record<SidebarProjectGoalMeta['status'], number> {

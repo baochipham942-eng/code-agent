@@ -224,7 +224,7 @@ export const SkillSearchResultCard: React.FC<SkillSearchResultCardProps> = ({
             >
               {skill.name}
             </a>
-            <div className="flex items-center gap-1 text-xs text-amber-400 shrink-0">
+            <div className="flex items-center gap-1 text-xs text-badge-warning shrink-0">
               <Star className="w-3 h-3 fill-current" />
               <span>{formatStars(skill.stars)}</span>
             </div>

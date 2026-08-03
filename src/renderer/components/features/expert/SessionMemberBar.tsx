@@ -247,7 +247,7 @@ export const SessionMemberBar: React.FC<{ sessionId: string | null }> = ({ sessi
                 {pill.isLead && (
                   <span
                     data-testid={`member-lead-badge-${pill.roleId}`}
-                    className="shrink-0 rounded bg-amber-400/15 px-1 py-0.5 text-[9px] font-medium leading-none text-amber-300"
+                    className="shrink-0 rounded bg-amber-400/15 px-1 py-0.5 text-[9px] font-medium leading-none text-badge-warning"
                   >
                     {text.leadLabel}
                   </span>
@@ -294,7 +294,7 @@ export const SessionMemberBar: React.FC<{ sessionId: string | null }> = ({ sessi
             {pill.isLead && (
               <span
                 data-testid={`member-lead-badge-${pill.roleId}`}
-                className="shrink-0 rounded bg-amber-400/15 px-1 py-0.5 text-[9px] font-medium leading-none text-amber-300"
+                className="shrink-0 rounded bg-amber-400/15 px-1 py-0.5 text-[9px] font-medium leading-none text-badge-warning"
               >
                 {text.leadLabel}
               </span>

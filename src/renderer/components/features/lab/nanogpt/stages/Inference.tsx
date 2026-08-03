@@ -129,7 +129,7 @@ export const Inference: React.FC<InferenceProps> = ({ onBack }) => {
             <h3 className="text-sm font-medium text-zinc-200 mb-2">{inf.introTitle}</h3>
             <p className="text-sm text-zinc-400">
               {inf.introBodyPre}
-              <span className="text-amber-400">{inf.introBodyHighlight1}</span>
+              <span className="text-badge-warning">{inf.introBodyHighlight1}</span>
               {inf.introBodyMid}
               <span className="text-blue-400">{inf.introBodyHighlight2}</span>
               {inf.introBodyPost}
@@ -152,7 +152,7 @@ export const Inference: React.FC<InferenceProps> = ({ onBack }) => {
                 <div className="text-xs text-zinc-500">{inf.tempDesc}</div>
               </div>
             </div>
-            <div className="text-2xl font-bold text-amber-400">{config.temperature.toFixed(1)}</div>
+            <div className="text-2xl font-bold text-badge-warning">{config.temperature.toFixed(1)}</div>
           </div>
           <input
             type="range"
@@ -176,7 +176,7 @@ export const Inference: React.FC<InferenceProps> = ({ onBack }) => {
             </div>
             <div className="text-center">
               <div className="text-2xl">🎨</div>
-              <div className="text-xs text-amber-400">{inf.tempCreative}</div>
+              <div className="text-xs text-badge-warning">{inf.tempCreative}</div>
               <div className="text-xs text-zinc-600">{inf.tempCreativeDesc}</div>
             </div>
           </div>
@@ -237,7 +237,7 @@ export const Inference: React.FC<InferenceProps> = ({ onBack }) => {
         <h3 className="text-sm font-medium text-zinc-400">{inf.distributionLabel}</h3>
         <div className="bg-zinc-900 rounded-lg border border-zinc-700 p-4">
           <p className="text-xs text-zinc-500 mb-4">
-            {inf.distributionHintPrefix}<span className="text-amber-400 font-bold">{config.temperature.toFixed(1)}</span>
+            {inf.distributionHintPrefix}<span className="text-badge-warning font-bold">{config.temperature.toFixed(1)}</span>
           </p>
 
           <div className="space-y-2">
@@ -259,8 +259,8 @@ export const Inference: React.FC<InferenceProps> = ({ onBack }) => {
             ))}
           </div>
 
-          <div className="mt-4 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
-            <div className="text-xs text-amber-400">
+          <div className="mt-4 p-3 rounded-lg bg-amber-500/10 border border-badge-warning/20">
+            <div className="text-xs text-badge-warning">
               {inf.distributionFooter}
             </div>
           </div>
@@ -329,7 +329,7 @@ export const Inference: React.FC<InferenceProps> = ({ onBack }) => {
           <div className="flex items-start gap-2">
             <span className="text-xl">🎨</span>
             <div>
-              <div className="text-amber-400 font-medium">{inf.summaryHighLabel}</div>
+              <div className="text-badge-warning font-medium">{inf.summaryHighLabel}</div>
               <div className="text-xs text-zinc-500">{inf.summaryHighDesc}</div>
             </div>
           </div>

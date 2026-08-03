@@ -17,7 +17,7 @@ describe('parseLeadingTriggerToken（核心功能触发词着色）', () => {
   it('recognizes /goal and /workflow with their own styles', () => {
     const goal = parseLeadingTriggerToken('/goal 跑通全部测试 --verify "npm test"');
     expect(goal).toMatchObject({ token: '/goal', kind: 'goal' });
-    expect(goal?.className).toContain('amber');
+    expect(goal?.className).toContain('text-badge-warning');
 
     const workflow = parseLeadingTriggerToken('/workflow 扇出 5 个 agent 审代码');
     expect(workflow).toMatchObject({ token: '/workflow', kind: 'workflow' });

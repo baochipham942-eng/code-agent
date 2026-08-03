@@ -782,7 +782,7 @@ export const Sidebar: React.FC = () => {
                 {user.nickname || user.email?.split('@')[0]}
               </span>
               {isVerifiedAdmin ? (
-                <span className="shrink-0 rounded border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-300">
+                <span className="shrink-0 rounded border border-badge-warning/30 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-badge-warning">
                   {sb.adminBadge}
                 </span>
               ) : isAdminPendingVerification ? (

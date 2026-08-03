@@ -73,7 +73,7 @@ function getBridgeLabel(bridge: ManagedBrowserExternalBridgeState | null | undef
 }
 
 function getStatusClass(ready: boolean): string {
-  return ready ? 'text-badge-success' : 'text-amber-300';
+  return ready ? 'text-badge-success' : 'text-badge-warning';
 }
 
 // 浏览器操作内容组件：嵌进「本机操作」合并页（features/localOps/LocalOpsPage）的浏览器 tab，
@@ -327,7 +327,7 @@ export const BrowserSurfaceContent: React.FC = () => {
                 {managedRows.length > 0 ? managedRows.map((row) => (
                   <div key={row.label} className="grid min-w-0 grid-cols-[72px,minmax(0,1fr)] gap-2 text-[11px]">
                     <span className="text-zinc-500">{row.label}</span>
-                    <span className={`truncate ${row.tone === 'ready' ? 'text-badge-success' : row.tone === 'blocked' ? 'text-amber-300' : 'text-zinc-300'}`} title={row.title || row.value}>
+                    <span className={`truncate ${row.tone === 'ready' ? 'text-badge-success' : row.tone === 'blocked' ? 'text-badge-warning' : 'text-zinc-300'}`} title={row.title || row.value}>
                       {row.value}
                     </span>
                   </div>
@@ -341,7 +341,7 @@ export const BrowserSurfaceContent: React.FC = () => {
               <div className="mb-3 flex items-center justify-between gap-2">
                 <div>
                   <div className="flex items-center gap-2 text-sm font-medium text-zinc-200">
-                    <PlugZap className="h-3.5 w-3.5 text-violet-300" />
+                    <PlugZap className="h-3.5 w-3.5 text-badge-accent" />
                     Chrome Relay
                   </div>
                   <div className="text-[11px] text-zinc-500">接真实 Chrome 标签页和现有登录态</div>
@@ -383,7 +383,7 @@ export const BrowserSurfaceContent: React.FC = () => {
               <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                 <div>
                   <div className="flex items-center gap-2 text-sm font-medium text-zinc-200">
-                    <KeyRound className="h-3.5 w-3.5 text-amber-300" />
+                    <KeyRound className="h-3.5 w-3.5 text-badge-warning" />
                     复用浏览器登录
                   </div>
                   <div className="text-[11px] text-zinc-500">
@@ -427,7 +427,7 @@ export const BrowserSurfaceContent: React.FC = () => {
                         key={key}
                         className={`flex cursor-pointer items-start gap-2 rounded-md border px-2 py-1.5 text-[11px] transition-colors ${
                           selected
-                            ? 'border-amber-400/40 bg-amber-500/10 text-zinc-100'
+                            ? 'border-badge-warning/40 bg-amber-500/10 text-zinc-100'
                             : 'border-white/[0.06] bg-black/10 text-zinc-300 hover:border-white/[0.12]'
                         }`}
                       >

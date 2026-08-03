@@ -369,7 +369,7 @@ const AppGroupCard: React.FC<{
           <div className="text-sm font-medium text-zinc-200">
             {cluster.appName}
             {isMeeting && audioSegs.length > 0 && (
-              <span className="ml-2 text-[10px] text-amber-400 font-normal">{text.meetingRecordPrefix}{audioSegs.length}{text.units.segmentSuffix}</span>
+              <span className="ml-2 text-[10px] text-badge-warning font-normal">{text.meetingRecordPrefix}{audioSegs.length}{text.units.segmentSuffix}</span>
             )}
           </div>
           <div className="text-[11px] text-zinc-500">
@@ -431,7 +431,7 @@ const AppGroupCard: React.FC<{
               <div className="mt-3 pt-3 border-t border-zinc-700/30">
                 {/* Quick summary: speaker count + segment count + duration */}
                 <div className="flex items-center gap-2 text-[12px] text-zinc-400 mb-2">
-                  <FileText className="w-3.5 h-3.5 text-amber-400" />
+                  <FileText className="w-3.5 h-3.5 text-badge-warning" />
                   <span>
                     {audioSegs.length}{text.units.speechSegmentSuffix}
                     {(() => {
@@ -462,7 +462,7 @@ const AppGroupCard: React.FC<{
                 {/* Detail entry button */}
                 <button /* ds-allow:button: 查看会议详情入口，amber 语义色描边胶囊，primitive 无对应变体 */
                   onClick={onOpenMeeting}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-300 text-[12px] hover:bg-amber-500/20 transition-colors"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500/10 border border-badge-warning/20 text-badge-warning text-[12px] hover:bg-amber-500/20 transition-colors"
                 >
                   <FileText className="w-3.5 h-3.5" />
                   {text.viewMeetingDetails}
@@ -575,9 +575,9 @@ const HourDetailPanel: React.FC<{
       {/* Audio segments (standalone — always show if present) */}
       {audioSegs.length > 0 && (
         <div className="px-5 pt-4 pb-2">
-          <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 overflow-hidden">
-            <div className="flex items-center gap-2.5 px-4 py-3 border-b border-amber-500/10">
-              <Mic className="w-4 h-4 text-amber-400" />
+          <div className="rounded-xl border border-badge-warning/20 bg-amber-500/5 overflow-hidden">
+            <div className="flex items-center gap-2.5 px-4 py-3 border-b border-badge-warning/10">
+              <Mic className="w-4 h-4 text-badge-warning" />
               <div className="flex-1">
                 <div className="text-sm font-medium text-zinc-200">{text.audioRecords}</div>
                 <div className="text-[11px] text-zinc-500">

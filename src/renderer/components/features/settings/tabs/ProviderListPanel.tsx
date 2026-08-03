@@ -57,7 +57,7 @@ const ProviderMark: React.FC<{ row: ProviderManagementRow; size: 'sm' | 'md' }> 
 
 const KEYLESS_READINESS_TONE: Record<ReturnType<typeof describeKeylessReadiness>['state'], string> = {
   running: 'text-badge-success',
-  unavailable: 'text-amber-300',
+  unavailable: 'text-badge-warning',
   checking: 'text-zinc-500',
 };
 
@@ -108,7 +108,7 @@ const ConfiguredRow: React.FC<{
         <span className="flex items-center gap-1.5">
           <span className="truncate text-[13px] text-zinc-100">{row.name}</span>
           {isDefault && (
-            <span className="shrink-0 rounded border border-amber-400/40 bg-amber-400/10 px-1 text-[10px] text-amber-200">{listText.defaultBadge}</span>
+            <span className="shrink-0 rounded border border-badge-warning/40 bg-amber-400/10 px-1 text-[10px] text-badge-warning">{listText.defaultBadge}</span>
           )}
         </span>
         <span className="block truncate text-[11px] text-zinc-500">

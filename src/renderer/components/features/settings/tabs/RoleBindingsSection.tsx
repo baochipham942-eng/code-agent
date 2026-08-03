@@ -16,7 +16,7 @@ import { Button } from '../../../primitives/Button';
 
 const KIND_ICONS: Record<ExpertBindingKind, React.ReactNode> = {
   file: <FileText className="h-3.5 w-3.5 text-badge-info" />,
-  folder: <Folder className="h-3.5 w-3.5 text-amber-300" />,
+  folder: <Folder className="h-3.5 w-3.5 text-badge-warning" />,
   library_item: <Library className="h-3.5 w-3.5 text-badge-success" />,
 };
 
@@ -82,7 +82,7 @@ export const RoleBindingsSection: React.FC<{ roleId: string }> = ({ roleId }) =>
   return (
     <div className="mt-4" data-testid="role-bindings-section">
       <div className="mb-1 flex items-center gap-1.5 text-sm font-medium text-zinc-200">
-        <BookMarked className="h-4 w-4 text-violet-300" />
+        <BookMarked className="h-4 w-4 text-badge-accent" />
         {text.title}
       </div>
       <p className="mb-2 text-xs text-zinc-500">{text.hint}</p>

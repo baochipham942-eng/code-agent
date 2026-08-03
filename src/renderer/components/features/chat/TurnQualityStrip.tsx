@@ -53,7 +53,7 @@ function scoreTone(summary: TurnQualitySummary): string {
     case 'good':
       return 'border-badge-success/20 bg-emerald-400/10 text-badge-success';
     case 'watch':
-      return 'border-amber-400/20 bg-amber-400/10 text-amber-200';
+      return 'border-badge-warning/20 bg-amber-400/10 text-badge-warning';
     case 'risk':
       return 'border-badge-danger/20 bg-red-400/10 text-badge-danger';
     default:
@@ -183,7 +183,7 @@ export const TurnQualityStrip: React.FC<TurnQualityStripProps> = ({ summary }) =
         )}
         {degradedAgentId && (
           <span
-            className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-amber-500/80"
+            className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-badge-warning/80"
             title={`${t.agentCommand.badgeNotAppliedTitlePrefix}${summary.capabilities?.agentName || 'default'}`}
           >
             <Bot className="h-3 w-3" />
@@ -344,7 +344,7 @@ export const TurnQualityStrip: React.FC<TurnQualityStripProps> = ({ summary }) =
             </div>
           )}
           {summary.warnings?.length ? (
-            <div className="mt-2 space-y-1 text-amber-300/80">
+            <div className="mt-2 space-y-1 text-badge-warning/80">
               {summary.warnings.map((warning) => (
                 <div key={warning}>{unescapeHtmlEntities(warning)}</div>
               ))}

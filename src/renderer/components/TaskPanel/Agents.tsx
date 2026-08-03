@@ -12,12 +12,12 @@ import { useI18n } from '../../hooks/useI18n';
 const AGENT_COLORS: Record<string, string> = {
   main: 'text-blue-400',
   coder: 'text-badge-success',
-  reviewer: 'text-amber-400',
+  reviewer: 'text-badge-warning',
   explore: 'text-cyan-400',
-  plan: 'text-purple-400',
-  tester: 'text-orange-400',
+  plan: 'text-badge-accent',
+  tester: 'text-badge-warning',
   debugger: 'text-badge-danger',
-  documenter: 'text-green-400',
+  documenter: 'text-badge-success',
   architect: 'text-indigo-400',
   default: 'text-zinc-400',
 };
@@ -41,7 +41,7 @@ export const Agents: React.FC = () => {
     single: { icon: <Bot className="w-3 h-3" />, label: t.taskPanel.patternSingle, color: 'text-zinc-400' },
     sequential: { icon: <Workflow className="w-3 h-3" />, label: t.taskPanel.patternSequential, color: 'text-blue-400' },
     parallel: { icon: <Users className="w-3 h-3" />, label: t.taskPanel.patternParallel, color: 'text-badge-success' },
-    hierarchical: { icon: <GitBranch className="w-3 h-3" />, label: t.taskPanel.patternHierarchical, color: 'text-purple-400' },
+    hierarchical: { icon: <GitBranch className="w-3 h-3" />, label: t.taskPanel.patternHierarchical, color: 'text-badge-accent' },
   };
 
   // 获取协作模式信息

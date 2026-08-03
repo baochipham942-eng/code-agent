@@ -87,10 +87,10 @@ export const ApprovalSyncCard: React.FC = () => {
   return (
     <div className="space-y-2">
       <div className={`rounded-md border px-2.5 py-2 ${
-        dangerous ? 'border-red-500/20 bg-red-500/[0.05]' : 'border-amber-500/20 bg-amber-500/[0.04]'
+        dangerous ? 'border-red-500/20 bg-red-500/[0.05]' : 'border-badge-warning/20 bg-amber-500/[0.04]'
       }`}>
         <div className="flex items-center gap-2">
-          <AlertTriangle className={`h-3.5 w-3.5 ${dangerous ? 'text-badge-danger' : 'text-amber-300'}`} />
+          <AlertTriangle className={`h-3.5 w-3.5 ${dangerous ? 'text-badge-danger' : 'text-badge-warning'}`} />
           <span className="text-xs font-medium text-zinc-200">{pendingPermissionRequest.tool}</span>
           <span className="ml-auto text-[10px] text-zinc-600">{pendingPermissionRequest.type}</span>
         </div>

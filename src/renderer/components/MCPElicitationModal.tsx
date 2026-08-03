@@ -213,7 +213,7 @@ export const MCPElicitationModal: React.FC<Props> = ({ request, onClose }) => {
       size="lg"
       title="MCP 服务器请求输入"
       headerBgClass="bg-purple-500/10"
-      headerIcon={<Server className="w-5 h-5 text-purple-400" />}
+      headerIcon={<Server className="w-5 h-5 text-badge-accent" />}
       footer={
         <ModalFooter
           cancelText="拒绝"
@@ -228,7 +228,7 @@ export const MCPElicitationModal: React.FC<Props> = ({ request, onClose }) => {
       <div className="space-y-4 max-h-[60vh] overflow-y-auto -mx-6 px-6">
         {/* Server name badge */}
         <div className="flex items-center gap-2">
-          <span className="inline-block px-2 py-0.5 text-xs font-medium rounded bg-purple-500/20 text-purple-300">
+          <span className="inline-block px-2 py-0.5 text-xs font-medium rounded bg-purple-500/20 text-badge-accent">
             {request.serverName}
           </span>
         </div>

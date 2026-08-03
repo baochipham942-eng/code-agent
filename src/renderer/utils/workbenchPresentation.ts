@@ -45,7 +45,7 @@ const STATUS_LABELS: Record<WorkbenchRuntimeStatus, { en: string; zh: string; co
   connected: {
     en: 'connected',
     zh: '已连接',
-    colorClass: 'text-green-400',
+    colorClass: 'text-badge-success',
   },
   disconnected: {
     en: 'disconnected',
@@ -55,7 +55,7 @@ const STATUS_LABELS: Record<WorkbenchRuntimeStatus, { en: string; zh: string; co
   connecting: {
     en: 'connecting',
     zh: '连接中',
-    colorClass: 'text-yellow-400',
+    colorClass: 'text-badge-warning',
   },
   error: {
     en: 'error',
@@ -153,14 +153,14 @@ export function getWorkbenchCapabilityStatusPresentation(
     if (capability.lifecycle.mountState === 'mounted') {
       return {
         label: locale === 'zh' ? '已挂载' : 'mounted',
-        colorClass: 'text-green-400',
+        colorClass: 'text-badge-success',
       };
     }
 
     if (capability.lifecycle.installState === 'installed') {
       return {
         label: locale === 'zh' ? '已安装未挂载' : 'installed, not mounted',
-        colorClass: 'text-amber-400',
+        colorClass: 'text-badge-warning',
       };
     }
 

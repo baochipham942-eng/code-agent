@@ -327,8 +327,8 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
                   onClick={() => dispatchIactSend(text)}
                   className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg border text-[12.5px] transition-colors cursor-pointer ${
                     i === 0
-                      ? 'border-primary-500/35 bg-zinc-800/50 text-primary-400 hover:bg-primary-500/10'
-                      : 'border-zinc-700 bg-zinc-800/50 text-zinc-300 hover:border-primary-500/50 hover:text-primary-400 hover:bg-primary-500/10'
+                      ? 'border-accent-accessible/35 bg-zinc-800/50 text-accent-accessible hover:bg-primary-500/10'
+                      : 'border-zinc-700 bg-zinc-800/50 text-zinc-300 hover:border-accent-accessible/50 hover:text-accent-accessible hover:bg-primary-500/10'
                   }`}
                 >
                   {text}
@@ -354,7 +354,7 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
       // Blockquote
       blockquote({ children }) {
         return (
-          <blockquote className="my-2 pl-4 border-l-2 border-primary-500/50 text-zinc-400 italic">
+          <blockquote className="my-2 pl-4 border-l-2 border-badge-accent/50 text-zinc-400 italic">
             {children}
           </blockquote>
         );
@@ -381,7 +381,7 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
               type="button"
               data-iact-send={text}
               onClick={() => dispatchIactSend(text)}
-              className="group inline-flex items-center gap-0.5 px-0.5 rounded text-primary-400 font-medium underline decoration-dotted decoration-[rgba(45,212,191,0.45)] underline-offset-4 hover:bg-primary-500/10 hover:decoration-solid transition-colors cursor-pointer"
+              className="group inline-flex items-center gap-0.5 px-0.5 rounded text-accent-accessible font-medium underline decoration-dotted decoration-[rgba(45,212,191,0.45)] underline-offset-4 hover:bg-primary-500/10 hover:decoration-solid transition-colors cursor-pointer"
               title="点击发送"
             >
               {children}
@@ -401,7 +401,7 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
               onClick={() => {
                 window.dispatchEvent(new CustomEvent('iact:add', { detail: text }));
               }}
-              className="inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5 rounded-md bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 hover:text-amber-300 border border-amber-500/20 hover:border-amber-500/40 transition-all cursor-pointer text-sm font-medium"
+              className="inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5 rounded-md bg-amber-500/10 text-badge-warning hover:bg-amber-500/20 hover:text-badge-warning border border-badge-warning/20 hover:border-badge-warning/40 transition-all cursor-pointer text-sm font-medium"
               title="点击填入输入框"
             >
               {children}
@@ -461,7 +461,7 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
               onClick={() => {
                 useAppStore.getState().openPreview(text);
               }}
-              className="inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5 rounded-md bg-violet-500/10 text-violet-400 hover:bg-violet-500/20 hover:text-violet-300 border border-violet-500/20 hover:border-violet-500/40 transition-all cursor-pointer text-sm font-medium"
+              className="inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5 rounded-md bg-violet-500/10 text-badge-accent hover:bg-violet-500/20 hover:text-badge-accent border border-badge-accent/20 hover:border-badge-accent/40 transition-all cursor-pointer text-sm font-medium"
               title="预览文件"
             >
               <Eye className="w-3 h-3 opacity-60" />
@@ -508,7 +508,7 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
             <a
               href={href}
               onClick={(e) => { e.preventDefault(); handlePreviewHtml(htmlPreviewPath); }}
-              className="inline-flex items-center gap-1 text-primary-300 hover:text-primary-200 underline underline-offset-2 cursor-pointer"
+              className="inline-flex items-center gap-1 text-accent-accessible hover:text-accent-accessible underline underline-offset-2 cursor-pointer"
               title="点击预览"
             >
               {children}
@@ -533,7 +533,7 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
             onClick={(e) => {
               if ((href && handleOpenHttpLink(href)) || openExternalLink(href)) e.preventDefault();
             }}
-            className="text-primary-400 hover:text-primary-300 underline underline-offset-2 cursor-pointer"
+            className="text-accent-accessible hover:text-accent-accessible underline underline-offset-2 cursor-pointer"
           >
             {children}
           </a>

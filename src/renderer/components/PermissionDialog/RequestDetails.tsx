@@ -77,8 +77,8 @@ export function RequestDetails({ request }: RequestDetailsProps) {
           <pre
             className="
               text-xs p-2 rounded
-              bg-amber-500/10 border border-amber-500/20
-              text-amber-300
+              bg-amber-500/10 border border-badge-warning/20
+              text-badge-warning
               overflow-x-auto max-h-32
               whitespace-pre-wrap break-all
             "
@@ -111,7 +111,7 @@ function BoundarySummary({ boundary, reason }: { boundary?: PermissionBoundary; 
           </div>
         </div>
         {boundary.cloud.includes('外部') || boundary.cloud.includes('云端') ? (
-          <span className="shrink-0 rounded border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-amber-200">
+          <span className="shrink-0 rounded border border-badge-warning/30 bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-badge-warning">
             可能出云端
           </span>
         ) : (

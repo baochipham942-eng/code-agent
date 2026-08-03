@@ -119,13 +119,13 @@ export const PPOStage: React.FC<PPOStageProps> = ({ onComplete, onBack }) => {
               <div className="text-2xl mb-1">🎾</div>
               <div className="text-xs text-blue-400">{s.analogyCards.practiceServe}</div>
             </div>
-            <div className="p-3 bg-amber-500/10 rounded-lg border border-amber-500/20">
+            <div className="p-3 bg-amber-500/10 rounded-lg border border-badge-warning/20">
               <div className="text-2xl mb-1">📊</div>
-              <div className="text-xs text-amber-400">{s.analogyCards.coachScores}</div>
+              <div className="text-xs text-badge-warning">{s.analogyCards.coachScores}</div>
             </div>
-            <div className="p-3 bg-purple-500/10 rounded-lg border border-purple-500/20">
+            <div className="p-3 bg-purple-500/10 rounded-lg border border-badge-accent/20">
               <div className="text-2xl mb-1">🔧</div>
-              <div className="text-xs text-purple-400">{s.analogyCards.adjustMove}</div>
+              <div className="text-xs text-badge-accent">{s.analogyCards.adjustMove}</div>
             </div>
             <div className="p-3 bg-emerald-500/10 rounded-lg border border-badge-success/20">
               <div className="text-2xl mb-1">🏆</div>
@@ -135,8 +135,8 @@ export const PPOStage: React.FC<PPOStageProps> = ({ onComplete, onBack }) => {
           <div className="mt-3 p-3 bg-zinc-800 rounded-lg text-center">
             <p className="text-xs text-zinc-400">
               {s.cycleIntro}<span className="text-blue-400">{s.cycleWrite}</span> →
-              <span className="text-amber-400">{s.cycleScore}</span> →
-              <span className="text-purple-400">{s.cycleAdjust}</span> →
+              <span className="text-badge-warning">{s.cycleScore}</span> →
+              <span className="text-badge-accent">{s.cycleAdjust}</span> →
               <span className="text-badge-success">{s.cycleImprove}</span>{s.cycleOutro}
             </p>
           </div>
@@ -158,7 +158,7 @@ export const PPOStage: React.FC<PPOStageProps> = ({ onComplete, onBack }) => {
               onClick={toggleAnimation}
               className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm transition-all ${
                 isAnimating
-                  ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                  ? 'bg-amber-500/20 text-badge-warning border border-badge-warning/30'
                   : 'bg-emerald-500/20 text-badge-success border border-badge-success/30'
               }`}
             >
@@ -245,7 +245,7 @@ export const PPOStage: React.FC<PPOStageProps> = ({ onComplete, onBack }) => {
               <div className={`text-lg font-medium ${
                 currentTraining.score >= 90 ? 'text-badge-success' :
                 currentTraining.score >= 70 ? 'text-blue-400' :
-                currentTraining.score >= 50 ? 'text-amber-400' : 'text-zinc-400'
+                currentTraining.score >= 50 ? 'text-badge-warning' : 'text-zinc-400'
               }`}>
                 {currentTraining.improvement}
               </div>

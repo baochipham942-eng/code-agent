@@ -82,7 +82,7 @@ export const Skills: React.FC = () => {
           className="flex items-center w-full"
         >
           <div className="flex items-center gap-2 flex-1 min-w-0">
-            <Sparkles className="w-4 h-4 text-purple-400 flex-shrink-0" />
+            <Sparkles className="w-4 h-4 text-badge-accent flex-shrink-0" />
             <span className="text-xs font-medium text-zinc-400 uppercase tracking-wide">
               {t.taskPanel.skills}
             </span>
@@ -114,7 +114,7 @@ export const Skills: React.FC = () => {
                       title={skill.description || skill.label}
                     >
                       <div className="flex items-center gap-2 min-w-0 flex-1">
-                        <Sparkles className="w-3 h-3 text-purple-400/70 flex-shrink-0" />
+                        <Sparkles className="w-3 h-3 text-badge-accent/70 flex-shrink-0" />
                         <WorkbenchLabelStack
                           label={skill.label}
                           secondary={secondary}

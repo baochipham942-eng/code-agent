@@ -306,8 +306,8 @@ export const ProjectCollaborationDetailPane: React.FC<ProjectCollaborationDetail
 
       {/* 待你确认 */}
       {phase === 'needs_input' && (
-        <div className="mt-3 rounded-md border border-amber-400/20 bg-amber-400/[0.06] px-3 py-2 text-[13px] leading-5 text-amber-100/90">
-          <div className="mb-1 flex items-center gap-1 text-amber-200/80"><HelpCircle className="h-3.5 w-3.5" />待你确认</div>
+        <div className="mt-3 rounded-md border border-badge-warning/20 bg-amber-400/[0.06] px-3 py-2 text-[13px] leading-5 text-badge-warning/90">
+          <div className="mb-1 flex items-center gap-1 text-badge-warning/80"><HelpCircle className="h-3.5 w-3.5" />待你确认</div>
           {blockedReason
             ? <div data-testid="neo-topic-detail-blocked-reason">{blockedReason}</div>
             : openQuestions.length > 0

@@ -26,7 +26,7 @@ export interface SkillDraftSummary {
 /** 来源徽标文案 + 配色（区分 telemetry 经验蒸馏 vs LLM 自沉淀） */
 function originBadge(t: Translations, origin?: SkillDraftOrigin): { label: string; className: string } {
   return origin === 'llm-review'
-    ? { label: t.skillDraft.originLlm, className: 'bg-violet-500/20 text-violet-300' }
+    ? { label: t.skillDraft.originLlm, className: 'bg-violet-500/20 text-badge-accent' }
     : { label: t.skillDraft.originTelemetry, className: 'bg-sky-500/20 text-badge-info' };
 }
 

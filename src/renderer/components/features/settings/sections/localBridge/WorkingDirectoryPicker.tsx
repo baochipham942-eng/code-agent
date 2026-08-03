@@ -136,7 +136,7 @@ export const WorkingDirectoryPicker: React.FC = () => {
           <ChevronRight className="w-3 h-3 text-zinc-500 flex-shrink-0" />
         )}
         {node.isExpanded ? (
-          <FolderOpen className="w-4 h-4 text-yellow-400 flex-shrink-0" />
+          <FolderOpen className="w-4 h-4 text-badge-warning flex-shrink-0" />
         ) : (
           <Folder className="w-4 h-4 text-zinc-400 flex-shrink-0" />
         )}

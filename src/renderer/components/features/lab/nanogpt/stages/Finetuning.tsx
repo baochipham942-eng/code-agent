@@ -176,9 +176,9 @@ export const Finetuning: React.FC<FinetuningProps> = ({ onComplete, onBack }) =>
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-6">
       {/* Introduction */}
-      <div className="bg-gradient-to-r from-amber-500/10 to-orange-500/10 rounded-lg border border-amber-500/20 p-4">
+      <div className="bg-gradient-to-r from-amber-500/10 to-orange-500/10 rounded-lg border border-badge-warning/20 p-4">
         <div className="flex items-start gap-3">
-          <BookOpen className="w-5 h-5 text-amber-400 mt-0.5" />
+          <BookOpen className="w-5 h-5 text-badge-warning mt-0.5" />
           <div>
             <h3 className="text-sm font-medium text-zinc-200 mb-2">{ft.introTitle}</h3>
             <p className="text-sm text-zinc-400">
@@ -206,7 +206,7 @@ export const Finetuning: React.FC<FinetuningProps> = ({ onComplete, onBack }) =>
               </div>
               <div className="flex justify-between">
                 <span className="text-zinc-500">{ft.finalLossLabel}</span>
-                <span className="text-amber-400">{comparisonData.scratch.finalLoss}</span>
+                <span className="text-badge-warning">{comparisonData.scratch.finalLoss}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-zinc-500">{ft.stepsLabel}</span>
@@ -247,7 +247,7 @@ export const Finetuning: React.FC<FinetuningProps> = ({ onComplete, onBack }) =>
             </div>
           </div>
         </div>
-        <p className="text-xs text-center text-amber-400">
+        <p className="text-xs text-center text-badge-warning">
           {ft.bottomHint}
         </p>
       </div>
@@ -298,7 +298,7 @@ export const Finetuning: React.FC<FinetuningProps> = ({ onComplete, onBack }) =>
                   currentStep > 0
                     ? currentStep >= config.maxIters
                       ? 'bg-emerald-500/20 border-badge-success/50'
-                      : 'bg-amber-500/20 border-amber-500/50 animate-pulse'
+                      : 'bg-amber-500/20 border-badge-warning/50 animate-pulse'
                     : 'bg-zinc-800 border-zinc-700'
                 }`}
               >
@@ -361,7 +361,7 @@ export const Finetuning: React.FC<FinetuningProps> = ({ onComplete, onBack }) =>
             <div className="px-3 py-2.5 bg-zinc-800 rounded-lg border border-zinc-800 text-sm">
               {config.initFrom === 'gpt2'
                 ? <span className="text-badge-success">{ft.gentleAdjust} <span className="text-xs text-zinc-500">{ft.gentleAdjustHint}</span></span>
-                : <span className="text-amber-400">{ft.bigAdjust} <span className="text-xs text-zinc-500">{ft.bigAdjustHint}</span></span>}
+                : <span className="text-badge-warning">{ft.bigAdjust} <span className="text-xs text-zinc-500">{ft.bigAdjustHint}</span></span>}
             </div>
           </div>
         </div>
@@ -386,7 +386,7 @@ export const Finetuning: React.FC<FinetuningProps> = ({ onComplete, onBack }) =>
                 !downloadedWeights && config.initFrom === 'gpt2'
                   ? 'bg-zinc-700 text-zinc-500 cursor-not-allowed'
                   : isTraining
-                    ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                    ? 'bg-amber-500/20 text-badge-warning border border-badge-warning/30'
                     : 'bg-emerald-500/20 text-badge-success border border-badge-success/30'
               }`}
             >
@@ -421,7 +421,7 @@ export const Finetuning: React.FC<FinetuningProps> = ({ onComplete, onBack }) =>
             </div>
             <div className="text-center p-2 bg-purple-500/10 rounded-lg">
               <div className="text-xs text-zinc-500 mb-1">{ft.progressMetricLabel}</div>
-              <div className="text-xl font-bold text-purple-400">
+              <div className="text-xl font-bold text-badge-accent">
                 {((currentStep / config.maxIters) * 100).toFixed(1)}%
               </div>
             </div>
@@ -453,8 +453,8 @@ export const Finetuning: React.FC<FinetuningProps> = ({ onComplete, onBack }) =>
       )}
 
       {/* Key Takeaways */}
-      <div className="bg-amber-500/5 rounded-lg border border-amber-500/20 p-4">
-        <h4 className="text-sm font-medium text-amber-400 mb-3">{ft.keyTakeawaysLabel}</h4>
+      <div className="bg-amber-500/5 rounded-lg border border-badge-warning/20 p-4">
+        <h4 className="text-sm font-medium text-badge-warning mb-3">{ft.keyTakeawaysLabel}</h4>
         <div className="grid grid-cols-2 gap-3 text-sm text-zinc-400">
           <div className="flex items-start gap-2">
             <span>🐢</span>

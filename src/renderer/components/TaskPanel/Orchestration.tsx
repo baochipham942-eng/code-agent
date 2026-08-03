@@ -228,7 +228,7 @@ export const Orchestration: React.FC = () => {
       <div className="space-y-3">
         <div className="bg-white/[0.02] backdrop-blur-sm rounded-xl border border-white/[0.04] p-4">
           <div className="flex items-center gap-2 text-zinc-300">
-            <GitBranch className="w-4 h-4 text-primary-400" />
+            <GitBranch className="w-4 h-4 text-badge-accent" />
             <span className="text-sm font-medium">{o.title}</span>
           </div>
           <div className="mt-3 text-xs leading-6 text-zinc-500">
@@ -306,14 +306,14 @@ export const Orchestration: React.FC = () => {
     <div className="space-y-3">
       <div className="bg-white/[0.02] backdrop-blur-sm rounded-xl border border-white/[0.04] p-3">
         <div className="flex items-center gap-2">
-          <GitBranch className="w-4 h-4 text-primary-400" />
+          <GitBranch className="w-4 h-4 text-badge-accent" />
           <span className="text-xs font-medium uppercase tracking-wide text-zinc-400">{o.posture}</span>
           <button
             onClick={() => {
               setSelectedSwarmAgentId(null);
               setShowAgentTeamPanel(true);
             }}
-            className="ml-auto flex items-center gap-1 rounded-md border border-white/[0.06] bg-zinc-800/80 px-2 py-1 text-[11px] text-zinc-300 transition-colors hover:border-primary-500/20 hover:text-zinc-100"
+            className="ml-auto flex items-center gap-1 rounded-md border border-white/[0.06] bg-zinc-800/80 px-2 py-1 text-[11px] text-zinc-300 transition-colors hover:border-badge-accent/20 hover:text-zinc-100"
           >
             <MessageSquare className="w-3 h-3" />
             {o.collaborate}
@@ -321,7 +321,7 @@ export const Orchestration: React.FC = () => {
           <button
             onClick={toggleDelegateMode}
             disabled={delegateModeLoading || delegateModePending}
-            className="flex items-center gap-1 rounded-md border border-white/[0.06] bg-zinc-800/80 px-2 py-1 text-[11px] text-zinc-300 transition-colors hover:border-primary-500/20 hover:text-zinc-100 disabled:cursor-not-allowed disabled:opacity-60"
+            className="flex items-center gap-1 rounded-md border border-white/[0.06] bg-zinc-800/80 px-2 py-1 text-[11px] text-zinc-300 transition-colors hover:border-badge-accent/20 hover:text-zinc-100 disabled:cursor-not-allowed disabled:opacity-60"
             title={o.takeoverTooltip}
           >
             {delegateMode ? (
@@ -360,16 +360,16 @@ export const Orchestration: React.FC = () => {
 
         <div className="mt-3 grid grid-cols-2 gap-2">
           <MetricCard
-            icon={<Users className="w-3.5 h-3.5 text-primary-400" />}
+            icon={<Users className="w-3.5 h-3.5 text-badge-accent" />}
             label={o.parallelPeak}
             value={statistics.parallelPeak || statistics.running}
-            emphasis="text-primary-300"
+            emphasis="text-badge-accent"
           />
           <MetricCard
-            icon={<ShieldAlert className="w-3.5 h-3.5 text-amber-400" />}
+            icon={<ShieldAlert className="w-3.5 h-3.5 text-badge-warning" />}
             label={o.pendingConfirm}
             value={pendingLaunches.length + pendingReviews.length}
-            emphasis={pendingLaunches.length + pendingReviews.length > 0 ? 'text-amber-300' : 'text-zinc-200'}
+            emphasis={pendingLaunches.length + pendingReviews.length > 0 ? 'text-badge-warning' : 'text-zinc-200'}
           />
           <MetricCard
             icon={<Ban className="w-3.5 h-3.5 text-badge-danger" />}
@@ -397,7 +397,7 @@ export const Orchestration: React.FC = () => {
           title={o.launchConfirm}
           extra={
             pendingLaunches.length > 0 ? (
-              <span className="rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] text-amber-300">
+              <span className="rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] text-badge-warning">
                 {o.pendingLaunchCount.replace('{count}', String(pendingLaunches.length))}
               </span>
             ) : undefined
@@ -460,7 +460,7 @@ export const Orchestration: React.FC = () => {
                 {selectedContextAgentId && (
                   <button
                     onClick={() => setSelectedContextAgentId(null)}
-                    className="rounded-md border border-white/[0.06] bg-zinc-900/70 px-2 py-1 text-[11px] text-zinc-300 transition-colors hover:border-primary-500/20 hover:text-zinc-100"
+                    className="rounded-md border border-white/[0.06] bg-zinc-900/70 px-2 py-1 text-[11px] text-zinc-300 transition-colors hover:border-badge-accent/20 hover:text-zinc-100"
                   >
                     {o.viewGlobal}
                   </button>
@@ -491,13 +491,13 @@ export const Orchestration: React.FC = () => {
                   emphasis="text-badge-success"
                 />
                 <MetricCard
-                  icon={<Activity className="w-3.5 h-3.5 text-violet-400" />}
+                  icon={<Activity className="w-3.5 h-3.5 text-badge-accent" />}
                   label={o.messageView}
                   value={contextView?.messageCount ?? messages.length}
-                  emphasis="text-violet-300"
+                  emphasis="text-badge-accent"
                 />
                 <MetricCard
-                  icon={<ShieldAlert className="w-3.5 h-3.5 text-amber-400" />}
+                  icon={<ShieldAlert className="w-3.5 h-3.5 text-badge-warning" />}
                   label={o.healthLevel}
                   value={contextHealth?.warningLevel ?? 'normal'}
                   emphasis={getUsageTextClass(contextUsagePercent)}
@@ -604,7 +604,7 @@ export const Orchestration: React.FC = () => {
             {contextTimeline.length > 0 && (
               <div className="rounded-lg border border-white/[0.04] bg-zinc-800/70 p-3">
                 <div className="flex items-center gap-2">
-                  <Activity className="h-4 w-4 text-primary-400" />
+                  <Activity className="h-4 w-4 text-badge-accent" />
                   <div className="text-sm font-medium text-zinc-100">{o.contextTimeline}</div>
                 </div>
                 <div className="mt-3 space-y-2">
@@ -629,7 +629,7 @@ export const Orchestration: React.FC = () => {
             {agentContextSnapshots.length > 0 && (
               <div className="rounded-lg border border-white/[0.04] bg-zinc-800/70 p-3">
                 <div className="flex items-center gap-2">
-                  <Users className="h-4 w-4 text-primary-400" />
+                  <Users className="h-4 w-4 text-badge-accent" />
                   <div className="text-sm font-medium text-zinc-100">{o.agentSnapshots}</div>
                 </div>
                 <div className="mt-3 grid grid-cols-1 gap-3 xl:grid-cols-2">
@@ -693,7 +693,7 @@ export const Orchestration: React.FC = () => {
           title={o.approvalQueue}
           extra={
             pendingReviews.length > 0 ? (
-              <span className="rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] text-amber-300">
+              <span className="rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] text-badge-warning">
                 {o.pendingReviewCount.replace('{count}', String(pendingReviews.length))}
               </span>
             ) : undefined
@@ -741,7 +741,7 @@ export const Orchestration: React.FC = () => {
       )}
 
       {(aggregation || verification) && (
-        <Section title={o.resultClosure} extra={<Sparkles className="w-3.5 h-3.5 text-violet-400" />}>
+        <Section title={o.resultClosure} extra={<Sparkles className="w-3.5 h-3.5 text-badge-accent" />}>
           <div className="space-y-3">
             {aggregation && (
               <div className="rounded-lg border border-white/[0.04] bg-zinc-800/70 p-3">

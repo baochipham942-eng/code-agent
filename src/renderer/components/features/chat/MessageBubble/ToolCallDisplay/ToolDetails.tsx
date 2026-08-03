@@ -332,16 +332,16 @@ export function ToolDetails({ toolCall, compact, mediaContext }: Props) {
                 />
               )}
               {humanError && !safeBrowserComputerResult ? (
-                <div className="rounded-lg border border-amber-500/20 bg-amber-500/[0.04] p-3 text-xs">
-                  <div className="font-medium text-amber-200/90">{humanError.summary}</div>
+                <div className="rounded-lg border border-badge-warning/20 bg-amber-500/[0.04] p-3 text-xs">
+                  <div className="font-medium text-badge-warning/90">{humanError.summary}</div>
                   {humanError.detail && (
-                    <div className="mt-1 text-amber-100/60">{humanError.detail}</div>
+                    <div className="mt-1 text-badge-warning/60">{humanError.detail}</div>
                   )}
                   {humanError.settingsHint && (
                     <button
                       type="button"
                       onClick={() => openSettingsTab('model')}
-                      className="mt-2 inline-flex items-center gap-1 rounded-md border border-amber-400/25 bg-amber-400/10 px-2 py-1 text-[11px] text-amber-100 transition-colors hover:bg-amber-400/20"
+                      className="mt-2 inline-flex items-center gap-1 rounded-md border border-badge-warning/25 bg-amber-400/10 px-2 py-1 text-[11px] text-badge-warning transition-colors hover:bg-amber-400/20"
                     >
                       去「设置 &gt; Service API Keys」换 key ›
                     </button>
@@ -704,7 +704,7 @@ function GenericToolErrorActions({
         }}
         className="inline-flex items-center gap-1 rounded-md border border-zinc-700/60 bg-zinc-800/60 px-2 py-1 text-[11px] text-zinc-300 transition-colors hover:bg-zinc-700/60"
       >
-        {copied ? <Check className="h-3 w-3 text-green-400" /> : <Copy className="h-3 w-3" />}
+        {copied ? <Check className="h-3 w-3 text-badge-success" /> : <Copy className="h-3 w-3" />}
         {copied ? '已复制' : '复制错误'}
       </button>
       {canRetry && messageId && (

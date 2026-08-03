@@ -200,7 +200,7 @@ function getPermissionIcon(mode: PermissionMode): React.ReactNode {
 
 function getRiskClass(riskLevel: PermissionRiskLevel): string {
   if (riskLevel === 'high') return 'border-red-500/30 bg-red-500/10 text-badge-danger';
-  if (riskLevel === 'medium') return 'border-amber-500/30 bg-amber-500/10 text-amber-300';
+  if (riskLevel === 'medium') return 'border-badge-warning/30 bg-amber-500/10 text-badge-warning';
   return 'border-badge-success/30 bg-emerald-500/10 text-badge-success';
 }
 
@@ -220,7 +220,7 @@ function getRuleRows(ruleSummary: PermissionRuleSummary, text: GeneralSettingsTe
       label: 'Ask',
       caption: text.userRules.askCaption,
       value: ruleSummary.askCount,
-      color: 'text-amber-300',
+      color: 'text-badge-warning',
     },
     {
       label: 'Allow',
@@ -548,7 +548,7 @@ export const GeneralSettings: React.FC = () => {
                             </div>
                             <div className="mt-1 max-w-[420px] text-zinc-500">{row.description}</div>
                             {row.warning ? (
-                              <div className="mt-1 flex items-center gap-1 text-amber-300/90">
+                              <div className="mt-1 flex items-center gap-1 text-badge-warning/90">
                                 <AlertTriangle className="h-3 w-3" />
                                 <span>{row.warning}</span>
                               </div>
@@ -634,7 +634,7 @@ export const GeneralSettings: React.FC = () => {
                 />
               </div>
               <div>
-                <label className="mb-1 block text-xs text-amber-300">{generalText.userRules.askLabel}</label>
+                <label className="mb-1 block text-xs text-badge-warning">{generalText.userRules.askLabel}</label>
                 <textarea
                   value={askRules}
                   onChange={(event) => setAskRules(event.target.value)}
@@ -642,7 +642,7 @@ export const GeneralSettings: React.FC = () => {
                   disabled={isWebMode()}
                   placeholder={'Bash(git push *)\nWrite(*.env)'}
                   rows={3}
-                  className="w-full rounded border border-zinc-700 bg-zinc-900 px-2 py-1.5 font-mono text-xs text-zinc-200 outline-hidden focus:border-amber-500/50 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="w-full rounded border border-zinc-700 bg-zinc-900 px-2 py-1.5 font-mono text-xs text-zinc-200 outline-hidden focus:border-badge-warning/50 disabled:cursor-not-allowed disabled:opacity-50"
                 />
               </div>
               <div>

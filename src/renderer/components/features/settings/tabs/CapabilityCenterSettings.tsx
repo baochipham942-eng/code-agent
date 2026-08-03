@@ -79,17 +79,17 @@ function kindIcon(kind: CapabilityKind): React.ReactNode {
     case 'agent_engine':
       return <Terminal className="h-4 w-4 text-badge-success" />;
     case 'skill':
-      return <Sparkles className="h-4 w-4 text-amber-300" />;
+      return <Sparkles className="h-4 w-4 text-badge-warning" />;
     case 'mcp_template':
       return <Plug className="h-4 w-4 text-badge-info" />;
     case 'tool_bundle':
-      return <Wrench className="h-4 w-4 text-violet-300" />;
+      return <Wrench className="h-4 w-4 text-badge-accent" />;
     case 'channel_adapter':
       return <FileCog className="h-4 w-4 text-badge-success" />;
     case 'workflow_recipe':
       return <Workflow className="h-4 w-4 text-cyan-300" />;
     case 'connector':
-      return <PackageCheck className="h-4 w-4 text-orange-300" />;
+      return <PackageCheck className="h-4 w-4 text-badge-warning" />;
     default:
       return <PackageCheck className="h-4 w-4 text-zinc-300" />;
   }
@@ -100,7 +100,7 @@ function getRiskClass(risk: CapabilityRiskTier): string {
     case 'high':
       return 'border-red-500/30 bg-red-500/10 text-badge-danger';
     case 'medium':
-      return 'border-amber-500/30 bg-amber-500/10 text-amber-300';
+      return 'border-badge-warning/30 bg-amber-500/10 text-badge-warning';
     default:
       return 'border-badge-success/30 bg-emerald-500/10 text-badge-success';
   }
@@ -387,7 +387,7 @@ const CapabilityCard: React.FC<CapabilityCardProps> = ({ item, text, actionLoadi
               {item.metrics?.accounts !== undefined ? <span className="text-zinc-500">{item.metrics.accounts} account</span> : null}
             </div>
             {item.state.runtime === 'blocked' && item.actions.reason ? (
-              <div className="mt-2 flex items-start gap-2 rounded-lg border border-amber-500/20 bg-amber-500/10 px-2.5 py-1.5 text-[11px] leading-relaxed text-amber-200">
+              <div className="mt-2 flex items-start gap-2 rounded-lg border border-badge-warning/20 bg-amber-500/10 px-2.5 py-1.5 text-[11px] leading-relaxed text-badge-warning">
                 <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                 <span className="break-words">{item.actions.reason}</span>
               </div>
@@ -575,7 +575,7 @@ function getAssessmentPriorityClass(priority: CapabilityAssessmentPriorityValue)
     case 'P1':
       return 'border-badge-info/30 bg-sky-500/10 text-badge-info';
     case 'P2':
-      return 'border-amber-500/30 bg-amber-500/10 text-amber-200';
+      return 'border-badge-warning/30 bg-amber-500/10 text-badge-warning';
     default:
       return 'border-zinc-600 bg-zinc-900 text-zinc-300';
   }
@@ -739,11 +739,11 @@ export const CapabilityCenterSettings: React.FC<CapabilityCenterSettingsProps> =
           title={capabilityText.registryWarnings.title}
           description={`${registryDiagnostics.length}${capabilityText.registryWarnings.descriptionSuffix}`}
         >
-          <div className="space-y-2 text-xs leading-relaxed text-amber-200">
+          <div className="space-y-2 text-xs leading-relaxed text-badge-warning">
             {registryDiagnostics.slice(0, 6).map((diagnostic) => (
               <div
                 key={`${diagnostic.code}:${diagnostic.path || ''}:${diagnostic.itemId || ''}:${diagnostic.message}`}
-                className="flex gap-2 rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2"
+                className="flex gap-2 rounded-lg border border-badge-warning/20 bg-amber-500/10 px-3 py-2"
               >
                 <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                 <span className="break-words">{formatDiagnostic(diagnostic)}</span>

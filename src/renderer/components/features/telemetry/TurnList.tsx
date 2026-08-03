@@ -20,15 +20,15 @@ const INTENT_COLORS: Record<string, string> = {
   bug_fix: 'bg-red-500/20 text-badge-danger',
   search: 'bg-cyan-500/20 text-cyan-400',
   conversation: 'bg-zinc-600/20 text-zinc-400',
-  explanation: 'bg-purple-500/20 text-purple-400',
-  refactoring: 'bg-amber-500/20 text-amber-400',
-  multi_step_task: 'bg-green-500/20 text-green-400',
+  explanation: 'bg-purple-500/20 text-badge-accent',
+  refactoring: 'bg-amber-500/20 text-badge-warning',
+  multi_step_task: 'bg-green-500/20 text-badge-success',
 };
 
 const OutcomeIcon: React.FC<{ status: string }> = ({ status }) => {
   switch (status) {
-    case 'success': return <CheckCircle className="w-3.5 h-3.5 text-green-400" />;
-    case 'partial': return <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />;
+    case 'success': return <CheckCircle className="w-3.5 h-3.5 text-badge-success" />;
+    case 'partial': return <AlertTriangle className="w-3.5 h-3.5 text-badge-warning" />;
     case 'failure': return <XCircle className="w-3.5 h-3.5 text-badge-danger" />;
     default: return <HelpCircle className="w-3.5 h-3.5 text-zinc-500" />;
   }

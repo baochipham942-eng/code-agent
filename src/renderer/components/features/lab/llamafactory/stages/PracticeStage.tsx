@@ -98,9 +98,9 @@ export const PracticeStage: React.FC<PracticeStageProps> = ({ onBack }) => {
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-6">
       {/* Introduction */}
-      <div className="bg-gradient-to-r from-orange-500/10 to-amber-500/10 rounded-lg border border-orange-500/20 p-4">
+      <div className="bg-gradient-to-r from-orange-500/10 to-amber-500/10 rounded-lg border border-badge-warning/20 p-4">
         <div className="flex items-start gap-3">
-          <Trophy className="w-5 h-5 text-orange-400 mt-0.5" />
+          <Trophy className="w-5 h-5 text-badge-warning mt-0.5" />
           <div>
             <h3 className="text-sm font-medium text-zinc-200 mb-2">{p.introTitle}</h3>
             <p className="text-sm text-zinc-400">
@@ -114,7 +114,7 @@ export const PracticeStage: React.FC<PracticeStageProps> = ({ onBack }) => {
       <div className="space-y-3">
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-medium text-zinc-400 flex items-center gap-2">
-            <HelpCircle className="w-4 h-4 text-orange-400" />
+            <HelpCircle className="w-4 h-4 text-badge-warning" />
             {p.quizSectionTitle}
           </h3>
           {!quizCompleted && (
@@ -146,7 +146,7 @@ export const PracticeStage: React.FC<PracticeStageProps> = ({ onBack }) => {
                       bgClass = 'bg-red-500/20 border-red-500/30';
                     }
                   } else if (isSelected) {
-                    bgClass = 'bg-orange-500/20 border-orange-500/30';
+                    bgClass = 'bg-orange-500/20 border-badge-warning/30';
                   }
 
                   return (
@@ -174,7 +174,7 @@ export const PracticeStage: React.FC<PracticeStageProps> = ({ onBack }) => {
               {showResult && (
                 <button
                   onClick={nextQuestion}
-                  className="w-full py-2 rounded-lg bg-orange-500/20 text-orange-400 border border-orange-500/30 hover:bg-orange-500/30 transition-all text-sm"
+                  className="w-full py-2 rounded-lg bg-orange-500/20 text-badge-warning border border-badge-warning/30 hover:bg-orange-500/30 transition-all text-sm"
                 >
                   {currentQuestion < scenarios.length - 1 ? p.nextQuestionButton : p.viewResultButton}
                 </button>
@@ -211,7 +211,7 @@ export const PracticeStage: React.FC<PracticeStageProps> = ({ onBack }) => {
       {/* Model Merge */}
       <div className="space-y-3">
         <h3 className="text-sm font-medium text-zinc-400 flex items-center gap-2">
-          <GitMerge className="w-4 h-4 text-orange-400" />
+          <GitMerge className="w-4 h-4 text-badge-warning" />
           {p.mergeSectionTitle}
         </h3>
         <div className="bg-zinc-900 rounded-lg border border-zinc-700 p-4">
@@ -226,7 +226,7 @@ export const PracticeStage: React.FC<PracticeStageProps> = ({ onBack }) => {
                 px-4 py-2 rounded-lg text-sm transition-all
                 ${showMergeAnimation
                   ? 'bg-emerald-500/20 text-badge-success border border-badge-success/30'
-                  : 'bg-orange-500/20 text-orange-400 border border-orange-500/30 hover:bg-orange-500/30'
+                  : 'bg-orange-500/20 text-badge-warning border border-badge-warning/30 hover:bg-orange-500/30'
                 }
               `}
             >
@@ -280,7 +280,7 @@ export const PracticeStage: React.FC<PracticeStageProps> = ({ onBack }) => {
       {/* Export Formats */}
       <div className="space-y-3">
         <h3 className="text-sm font-medium text-zinc-400 flex items-center gap-2">
-          <Rocket className="w-4 h-4 text-orange-400" />
+          <Rocket className="w-4 h-4 text-badge-warning" />
           {p.exportSectionTitle}
         </h3>
         <div className="grid grid-cols-4 gap-3">
@@ -340,12 +340,12 @@ export const PracticeStage: React.FC<PracticeStageProps> = ({ onBack }) => {
       </div>
 
       {/* Key Takeaways */}
-      <div className="bg-orange-500/5 rounded-lg border border-orange-500/20 p-4">
-        <h4 className="text-sm font-medium text-orange-400 mb-2">{p.takeawaysTitle}</h4>
+      <div className="bg-orange-500/5 rounded-lg border border-badge-warning/20 p-4">
+        <h4 className="text-sm font-medium text-badge-warning mb-2">{p.takeawaysTitle}</h4>
         <ul className="space-y-2 text-sm text-zinc-400">
           {p.takeaways.map((item) => (
             <li key={item.label} className="flex items-start gap-2">
-              <span className="text-orange-400">•</span>
+              <span className="text-badge-warning">•</span>
               <span><strong className="text-zinc-400">{item.label}</strong>：{item.text}</span>
             </li>
           ))}

@@ -186,7 +186,7 @@ export const SidebarSessionList: React.FC<SidebarSessionListProps> = ({
     <div className="flex-1 overflow-y-scroll px-1 min-h-0 mr-[calc(var(--scrollbar-size)*-1)]" data-testid="sidebar-session-scroll">
       {isLoading && !hasAnySessions ? (
         <div className="flex flex-col items-center justify-center py-12 gap-3">
-          <Loader2 className="w-6 h-6 animate-spin text-primary-400" />
+          <Loader2 className="w-6 h-6 animate-spin text-badge-accent" />
           <span className="text-xs text-zinc-500">{sb.loading}</span>
         </div>
       ) : !hasAnySessions ? (

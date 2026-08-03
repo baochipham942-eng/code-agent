@@ -58,10 +58,10 @@ export function KindIcon({ kind }: { kind: WorkspacePreviewKind }) {
     case 'spreadsheet':
       return <Table2 className={`${cls} text-badge-success`} />;
     case 'message_draft':
-      return <Mail className={`${cls} text-amber-300`} />;
+      return <Mail className={`${cls} text-badge-warning`} />;
     case 'calendar_event':
     case 'reminder':
-      return <Calendar className={`${cls} text-violet-300`} />;
+      return <Calendar className={`${cls} text-badge-accent`} />;
     case 'web_snapshot':
     case 'image':
       return <Image className={`${cls} text-cyan-300`} />;
@@ -70,12 +70,12 @@ export function KindIcon({ kind }: { kind: WorkspacePreviewKind }) {
     case 'video':
       return <Video className={`${cls} text-fuchsia-300`} />;
     case 'archive':
-      return <Archive className={`${cls} text-amber-300`} />;
+      return <Archive className={`${cls} text-badge-warning`} />;
     case 'diff':
     case 'generic_html':
     case 'chart':
     case 'diagram':
-      return <Code2 className={`${cls} text-orange-300`} />;
+      return <Code2 className={`${cls} text-badge-warning`} />;
     case 'terminal':
       return <Terminal className={`${cls} text-zinc-300`} />;
     case 'question_form':
@@ -343,7 +343,7 @@ function DesignPptPreview({ item }: { item: WorkspacePreviewItem }) {
           />
         </div>
       ) : (
-        <div className="rounded-lg border border-amber-500/20 bg-amber-500/[0.05] p-3 text-xs text-amber-200">
+        <div className="rounded-lg border border-badge-warning/20 bg-amber-500/[0.05] p-3 text-xs text-badge-warning">
           {spec?.screenshotError || p.noSlideScreenshots}
         </div>
       )}

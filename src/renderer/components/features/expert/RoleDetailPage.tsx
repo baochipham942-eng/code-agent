@@ -134,10 +134,10 @@ const BoundAutomationsSection: React.FC<{ jobs?: RoleBoundCronJob[] }> = ({ jobs
         return <div key={job.id} data-testid={`role-bound-automation-${job.id}`} className="rounded-lg border border-zinc-700/60 bg-zinc-900/40 p-3">
           <div className="flex flex-wrap items-start justify-between gap-2">
             <div className="min-w-0"><div className="truncate text-sm text-zinc-200">{job.name}</div><div className="mt-1 text-xs text-zinc-500">{formatAutomationSchedule(job.schedule, text)} · {nextRun}</div></div>
-            <div className="flex flex-wrap items-center gap-1.5 text-[11px]"><span className={`rounded px-1.5 py-0.5 ${job.enabled ? "bg-emerald-500/10 text-badge-success" : "bg-zinc-700/60 text-zinc-400"}`}>{job.enabled ? text.automationStatusEnabled : text.automationStatusDisabled}</span><span className="rounded bg-violet-500/10 px-1.5 py-0.5 text-violet-200">{job.actionType === "agent" ? text.automationTypeAgent : text.automationTypeRoleWake}</span></div>
+            <div className="flex flex-wrap items-center gap-1.5 text-[11px]"><span className={`rounded px-1.5 py-0.5 ${job.enabled ? "bg-emerald-500/10 text-badge-success" : "bg-zinc-700/60 text-zinc-400"}`}>{job.enabled ? text.automationStatusEnabled : text.automationStatusDisabled}</span><span className="rounded bg-violet-500/10 px-1.5 py-0.5 text-badge-accent">{job.actionType === "agent" ? text.automationTypeAgent : text.automationTypeRoleWake}</span></div>
           </div>
-          {job.actionType === "role_wake" ? <p data-testid={`role-bound-automation-managed-${job.id}`} className="mt-2 text-xs text-amber-200/80">{text.automationRoleWakeManaged}</p> : null}
-          <button /* ds-allow:button: 详情行跳转自动化面板需保持紧凑文字动作 */ type="button" onClick={() => setShowCronCenter(true)} className="mt-2 text-xs text-violet-300 hover:text-violet-200">{text.automationOpenPanel}</button>
+          {job.actionType === "role_wake" ? <p data-testid={`role-bound-automation-managed-${job.id}`} className="mt-2 text-xs text-badge-warning/80">{text.automationRoleWakeManaged}</p> : null}
+          <button /* ds-allow:button: 详情行跳转自动化面板需保持紧凑文字动作 */ type="button" onClick={() => setShowCronCenter(true)} className="mt-2 text-xs text-badge-accent hover:text-badge-accent">{text.automationOpenPanel}</button>
         </div>;
       })}
     </div>}
@@ -177,7 +177,7 @@ const RecommendedConnectors: React.FC<{ connectors?: RoleRecommendedConnector[] 
                 <span className="text-[10px] text-zinc-500">
                   {defaultOnIds.has(connector.id) ? skillsText.connectorDefaultOn : skillsText.connectorDefaultOff}
                 </span>
-                <span className={`ml-auto text-[10px] ${connected ? 'text-badge-success' : 'text-amber-300'}`}>
+                <span className={`ml-auto text-[10px] ${connected ? 'text-badge-success' : 'text-badge-warning'}`}>
                   {connected ? skillsText.connectorConnected : skillsText.connectorMissing}
                 </span>
                 {!connected && (
@@ -267,7 +267,7 @@ const DefinitionEditor: React.FC<{ roleId: string; definition: string | null; re
     <div data-testid="role-definition-editor" className="space-y-3">
       <textarea data-testid="role-definition-body" value={body} onChange={(event) => setBody(event.target.value)} rows={14} disabled={!definition} className="w-full rounded border border-zinc-700 bg-zinc-950/70 p-2 font-mono text-xs text-zinc-200 focus:outline-none" />
       <div className="flex flex-wrap items-center gap-2"><button /* ds-allow:button: 人设正文保存的紧凑按钮，primitive 会改变布局 */ data-testid="role-definition-save" type="button" disabled={busy || !definition} onClick={() => void save()} className="rounded bg-emerald-500/20 px-3 py-1.5 text-xs text-badge-success disabled:opacity-50">{text.saveDefinition}</button>
-        {restore ? (confirmingRestore ? <><span className="text-xs text-amber-200">{text.restoreWarning}</span><button /* ds-allow:button: 还原确认需紧凑危险操作样式 */ data-testid="role-restore-confirm" type="button" disabled={busy || !restore.available} onClick={() => void restoreFactory()} className="rounded bg-red-900/50 px-2 py-1 text-xs text-badge-danger disabled:opacity-50">{text.confirmRestore}</button><button /* ds-allow:button: 还原取消为紧凑文本按钮 */ type="button" onClick={() => setConfirmingRestore(false)} className="px-2 py-1 text-xs text-zinc-400">{text.cancel}</button></> : <button /* ds-allow:button: 还原出厂是紧凑破坏性操作，primitive 会改变布局 */ data-testid="role-restore-factory" type="button" disabled={!restore.available || busy} title={restore.disabledReason} onClick={() => setConfirmingRestore(true)} className="rounded border border-amber-700/60 px-3 py-1.5 text-xs text-amber-200 disabled:opacity-50">{text.restoreFactory}</button>) : null}
+        {restore ? (confirmingRestore ? <><span className="text-xs text-badge-warning">{text.restoreWarning}</span><button /* ds-allow:button: 还原确认需紧凑危险操作样式 */ data-testid="role-restore-confirm" type="button" disabled={busy || !restore.available} onClick={() => void restoreFactory()} className="rounded bg-red-900/50 px-2 py-1 text-xs text-badge-danger disabled:opacity-50">{text.confirmRestore}</button><button /* ds-allow:button: 还原取消为紧凑文本按钮 */ type="button" onClick={() => setConfirmingRestore(false)} className="px-2 py-1 text-xs text-zinc-400">{text.cancel}</button></> : <button /* ds-allow:button: 还原出厂是紧凑破坏性操作，primitive 会改变布局 */ data-testid="role-restore-factory" type="button" disabled={!restore.available || busy} title={restore.disabledReason} onClick={() => setConfirmingRestore(true)} className="rounded border border-badge-warning/60 px-3 py-1.5 text-xs text-badge-warning disabled:opacity-50">{text.restoreFactory}</button>) : null}
       </div>
       {error ? <div className="text-xs text-badge-danger">{error}</div> : null}
     </div>
@@ -315,7 +315,7 @@ const VisualEditor: React.FC<{
   return (
     <SettingsSection title={text.title} description={text.description}>
       {/* E6-3 接入 locallyModified 前，内置角色统一提示：这里拿不到角色包的本地修改状态。 */}
-      {detail.isBuiltin ? <p className="mb-3 rounded-md bg-amber-500/10 px-3 py-2 text-xs text-amber-200">{text.builtinNotice}</p> : null}
+      {detail.isBuiltin ? <p className="mb-3 rounded-md bg-amber-500/10 px-3 py-2 text-xs text-badge-warning">{text.builtinNotice}</p> : null}
       <div className="grid gap-3 md:grid-cols-2">
         <label className="space-y-1 text-xs text-zinc-400">
           <span>{text.displayName}</span>
@@ -768,7 +768,7 @@ export const RoleDetailPage: React.FC<RoleDetailPageProps> = ({ roleId }) => {
       {error ? <div className="text-sm text-badge-danger">{error}</div> : null}
       {detail ? (
         <>
-          {tab === 'basic' ? <RoleBasicTab action={<button /* ds-allow:button: 对话式修改入口，紧凑辅助动作 */ type="button" onClick={() => void startEditRoleChat(roleId)} title={roleText.detail.editByChatTitle} className="flex shrink-0 items-center gap-1 rounded-md bg-emerald-500/15 px-2 py-1 text-xs text-badge-success transition-colors hover:bg-emerald-500/25"><MessageSquarePlus className="h-3.5 w-3.5" />{roleText.detail.editByChat}</button>} editor={<VisualEditor key={roleId} roleId={roleId} detail={detail} onSaved={loadDetail} />} notice={detail.locallyModified ? <p data-testid="role-locally-modified" className="rounded-md bg-amber-500/10 px-3 py-2 text-xs text-amber-200">{expertText.visual.builtinNotice}</p> : null} /> : null}
+          {tab === 'basic' ? <RoleBasicTab action={<button /* ds-allow:button: 对话式修改入口，紧凑辅助动作 */ type="button" onClick={() => void startEditRoleChat(roleId)} title={roleText.detail.editByChatTitle} className="flex shrink-0 items-center gap-1 rounded-md bg-emerald-500/15 px-2 py-1 text-xs text-badge-success transition-colors hover:bg-emerald-500/25"><MessageSquarePlus className="h-3.5 w-3.5" />{roleText.detail.editByChat}</button>} editor={<VisualEditor key={roleId} roleId={roleId} detail={detail} onSaved={loadDetail} />} notice={detail.locallyModified ? <p data-testid="role-locally-modified" className="rounded-md bg-amber-500/10 px-3 py-2 text-xs text-badge-warning">{expertText.visual.builtinNotice}</p> : null} /> : null}
           {tab === 'skills' && detail.equipment ? <RoleEquipmentTab><SkillsEditor key={roleId} roleId={roleId} equipment={detail.equipment} onSaved={loadDetail} /><RecommendedConnectors connectors={detail.recommendedConnectors} /></RoleEquipmentTab> : null}
           {tab === 'model' && detail.equipment ? <ModelEditor key={roleId} roleId={roleId} equipment={detail.equipment} onSaved={loadDetail} /> : null}
           {tab === 'security' && detail.equipment ? <SecurityEditor key={roleId} roleId={roleId} equipment={detail.equipment} onSaved={loadDetail} /> : null}

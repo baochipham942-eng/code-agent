@@ -23,9 +23,9 @@ import { swarmRunAgentRecordToState } from '../expert/SessionMemberBar';
 
 const AGENT_COLORS = [
   'text-badge-success',
-  'text-purple-400',
+  'text-badge-accent',
   'text-cyan-400',
-  'text-amber-400',
+  'text-badge-warning',
   'text-pink-400',
   'text-blue-400',
 ] as const;
@@ -47,7 +47,7 @@ const STATUS_TEXT: Record<AgentStatus, string> = {
 
 const STATUS_COLOR: Record<AgentStatus, string> = {
   pending: 'text-zinc-500',
-  ready: 'text-amber-400',
+  ready: 'text-badge-warning',
   running: 'text-badge-success',
   completed: 'text-zinc-500',
   failed: 'text-badge-danger',

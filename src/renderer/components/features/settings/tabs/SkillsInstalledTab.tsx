@@ -311,7 +311,7 @@ const SkillRow: React.FC<SkillRowProps> = ({
           )}
           {hasMissingDeps && (
             <span
-              className="inline-flex shrink-0 items-center gap-1 text-[11px] text-amber-400"
+              className="inline-flex shrink-0 items-center gap-1 text-[11px] text-badge-warning"
               title={`${labels.missingDependenciesTitlePrefix}${missingDepsTitle}`}
             >
               <AlertTriangle className="h-3 w-3" />
@@ -390,7 +390,7 @@ export const SkillsInstalledTab: React.FC<SkillsInstalledTabProps> = ({
             </span>
           )}
           {summary.missingDependencySkills > 0 && (
-            <span className="text-amber-400">
+            <span className="text-badge-warning">
               {installedText.summaryMissingDependenciesPrefix}{summary.missingDependencySkills}{installedText.summaryMissingDependenciesSuffix}
             </span>
           )}
@@ -434,7 +434,7 @@ export const SkillsInstalledTab: React.FC<SkillsInstalledTabProps> = ({
                 {/* 组头 */}
                 <div className="flex items-center justify-between gap-3 border-b border-zinc-700/60 bg-zinc-800/60 px-3 py-2">
                   <div className="flex min-w-0 items-center gap-2">
-                    {group.kind === 'library' && <BookOpen className="h-3.5 w-3.5 shrink-0 text-amber-300" />}
+                    {group.kind === 'library' && <BookOpen className="h-3.5 w-3.5 shrink-0 text-badge-warning" />}
                     <span className="truncate text-xs font-medium text-zinc-300">
                       {group.label}
                     </span>

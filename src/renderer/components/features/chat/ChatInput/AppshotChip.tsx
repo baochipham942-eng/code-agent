@@ -29,7 +29,7 @@ function textSourceLabel(t: Translations, source: AppshotTextSource): { label: s
     case 'ax':
       return { label: t.appshotChip.textSourceAx, className: 'text-badge-success' };
     case 'ocr':
-      return { label: t.appshotChip.textSourceOcr, className: 'text-amber-400' };
+      return { label: t.appshotChip.textSourceOcr, className: 'text-badge-warning' };
     default:
       return { label: t.appshotChip.textSourceNone, className: 'text-zinc-500' };
   }
@@ -201,7 +201,7 @@ export const AppshotChip: React.FC<AppshotChipProps> = ({ capture, onRemove, res
                 {textTruncated && (
                   <>
                     <span>·</span>
-                    <span className="text-amber-400">{t.appshotChip.textTruncated}</span>
+                    <span className="text-badge-warning">{t.appshotChip.textTruncated}</span>
                   </>
                 )}
               </div>

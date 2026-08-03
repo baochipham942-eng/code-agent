@@ -39,7 +39,7 @@ const EFFORT_OPTIONS: EffortOption[] = [
     value: 'high',
     label: 'High',
     icon: <Flame className="w-3 h-3" />,
-    color: 'text-amber-400',
+    color: 'text-badge-warning',
     bgColor: 'bg-amber-500/20',
   },
 ];

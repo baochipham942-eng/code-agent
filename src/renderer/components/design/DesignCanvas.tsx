@@ -874,7 +874,7 @@ export const DesignCanvas: React.FC<{
 
       {/* ADR-027：自主进行中指示 + 停止（活跃信封时；审批条出现时不重叠）。 */}
       {autonomyEnvelope && !autonomy.pendingRequest && (
-        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-40 flex items-center gap-3 rounded-full border border-amber-300/60 bg-white/95 px-4 py-1.5 text-xs text-neutral-600 shadow-md backdrop-blur dark:border-amber-500/40 dark:bg-neutral-900/95 dark:text-neutral-300">
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-40 flex items-center gap-3 rounded-full border border-badge-warning/60 bg-white/95 px-4 py-1.5 text-xs text-neutral-600 shadow-md backdrop-blur dark:border-badge-warning/40 dark:bg-neutral-900/95 dark:text-neutral-300">
           <span>
             {t.design.autonomyRunning
               .replace('{used}', String(autonomyEnvelope.usedVariants))
@@ -882,7 +882,7 @@ export const DesignCanvas: React.FC<{
               .replace('{spent}', formatCny(autonomyEnvelope.spentCny))
               .replace('{cap}', formatCny(autonomyEnvelope.maxCny))}
           </span>
-          <button type="button" onClick={() => autonomyClear()} className="rounded-full px-2 py-0.5 text-amber-600 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-500/10">
+          <button type="button" onClick={() => autonomyClear()} className="rounded-full px-2 py-0.5 text-badge-warning hover:bg-amber-50 dark:hover:bg-amber-500/10">
             {t.design.autonomyStop}
           </button>
         </div>

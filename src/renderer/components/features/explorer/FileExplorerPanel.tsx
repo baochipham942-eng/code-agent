@@ -70,15 +70,15 @@ function getFileIcon(name: string, isDir: boolean) {
   if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'ico'].includes(ext))
     return <Image className={`${iconClass} text-badge-success`} />;
   if (['xlsx', 'xls', 'numbers'].includes(ext))
-    return <FileSpreadsheet className={`${iconClass} text-green-400`} />;
+    return <FileSpreadsheet className={`${iconClass} text-badge-success`} />;
   if (['pptx', 'ppt', 'key'].includes(ext))
-    return <Presentation className={`${iconClass} text-orange-400`} />;
+    return <Presentation className={`${iconClass} text-badge-warning`} />;
   if (['mp4', 'mov', 'webm', 'avi'].includes(ext))
-    return <Film className={`${iconClass} text-purple-400`} />;
+    return <Film className={`${iconClass} text-badge-accent`} />;
   if (['mp3', 'wav', 'flac', 'aac'].includes(ext))
     return <Music className={`${iconClass} text-pink-400`} />;
   if (['zip', 'tar', 'gz', 'rar', '7z'].includes(ext))
-    return <Archive className={`${iconClass} text-amber-400`} />;
+    return <Archive className={`${iconClass} text-badge-warning`} />;
   return <File className={`${iconClass} text-zinc-500`} />;
 }
 
@@ -142,7 +142,7 @@ const CreateInputRow: React.FC<{
 
   const icon = kind === 'file'
     ? <File className="w-3.5 h-3.5 text-zinc-500 flex-shrink-0" />
-    : <FolderClosed className="w-3.5 h-3.5 text-amber-400/70 flex-shrink-0" />;
+    : <FolderClosed className="w-3.5 h-3.5 text-badge-warning/70 flex-shrink-0" />;
 
   return (
     <div
@@ -293,8 +293,8 @@ const FileTreeNode: React.FC<{
         {/* Icon */}
         {file.isDirectory ? (
           isExpanded
-            ? <FolderOpen className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />
-            : <FolderClosed className="w-3.5 h-3.5 text-amber-400/70 flex-shrink-0" />
+            ? <FolderOpen className="w-3.5 h-3.5 text-badge-warning flex-shrink-0" />
+            : <FolderClosed className="w-3.5 h-3.5 text-badge-warning/70 flex-shrink-0" />
         ) : (
           getFileIcon(file.name, false)
         )}
@@ -403,7 +403,7 @@ const TabBar: React.FC<{ actions: React.ReactNode }> = ({ actions }) => {
             }`}
             onClick={() => setActiveTab(tab.id)}
           >
-            <FolderOpen className="w-3 h-3 flex-shrink-0 text-amber-400/70" />
+            <FolderOpen className="w-3 h-3 flex-shrink-0 text-badge-warning/70" />
             <span className="truncate">{tab.label}</span>
             <button
               type="button"
@@ -533,7 +533,7 @@ export const FileExplorerPanel: React.FC<FileExplorerPanelProps> = ({ onClose })
                   openOrFocusTab(workingDirectory, label);
                 }
               }}
-              className="text-xs text-primary-400 hover:text-primary-300"
+              className="text-xs text-accent-accessible hover:text-accent-accessible"
             >
               打开项目目录
             </button>

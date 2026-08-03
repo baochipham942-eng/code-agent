@@ -963,8 +963,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
 
         {/* 拖放提示 */}
         {isDragOver && (
-          <div className="absolute inset-0 flex items-center justify-center bg-zinc-800-950/90 backdrop-blur-sm z-10 rounded-xl border-2 border-dashed border-primary-500">
-            <div className="flex flex-col items-center gap-2 text-primary-400">
+          <div className="absolute inset-0 flex items-center justify-center bg-zinc-800-950/90 backdrop-blur-sm z-10 rounded-xl border-2 border-dashed border-accent-accessible">
+            <div className="flex flex-col items-center gap-2 text-accent-accessible">
               <Image className="w-8 h-8" />
               <span className="text-sm">{t.chat.dropFilesHere}</span>
             </div>

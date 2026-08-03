@@ -360,9 +360,9 @@ const DAGStatisticsPanel = memo(({ dagState }: { dagState: DAGVisualizationState
       <div className="grid grid-cols-2 gap-2 text-xs">
         <StatItem label="Total" value={statistics.totalTasks} />
         <StatItem label="Running" value={statistics.runningTasks} color="text-blue-400" />
-        <StatItem label="Completed" value={statistics.completedTasks} color="text-green-400" />
+        <StatItem label="Completed" value={statistics.completedTasks} color="text-badge-success" />
         <StatItem label="Failed" value={statistics.failedTasks} color="text-red-400" />
-        <StatItem label="Ready" value={statistics.readyTasks} color="text-yellow-400" />
+        <StatItem label="Ready" value={statistics.readyTasks} color="text-badge-warning" />
         <StatItem label="Pending" value={statistics.pendingTasks} color="text-gray-400" />
       </div>
 

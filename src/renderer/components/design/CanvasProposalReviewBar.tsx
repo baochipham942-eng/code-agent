@@ -198,9 +198,9 @@ export const CanvasProposalReviewBar: React.FC<{
                     className="h-3.5 w-3.5 accent-blue-500"
                   />
                   {row.danger ? <Trash2 className="h-3 w-3 shrink-0 text-badge-danger" /> : null}
-                  {row.paid ? <Coins className="h-3 w-3 shrink-0 text-amber-400" /> : null}
-                  {stale ? <AlertTriangle className="h-3 w-3 shrink-0 text-amber-400" /> : null}
-                  <span className={`truncate ${row.danger ? 'text-badge-danger' : row.paid ? 'text-amber-200' : 'text-zinc-300'}`}>{row.text}</span>
+                  {row.paid ? <Coins className="h-3 w-3 shrink-0 text-badge-warning" /> : null}
+                  {stale ? <AlertTriangle className="h-3 w-3 shrink-0 text-badge-warning" /> : null}
+                  <span className={`truncate ${row.danger ? 'text-badge-danger' : row.paid ? 'text-badge-warning' : 'text-zinc-300'}`}>{row.text}</span>
                 </label>
                 <div data-testid={`proposal-op-explain-${i}`} className="ml-6 px-1.5 pb-1 text-[11px] leading-snug text-zinc-500">
                   <div>{row.intent}</div>
@@ -210,7 +210,7 @@ export const CanvasProposalReviewBar: React.FC<{
                 {stale ? (
                   <div
                     data-testid={`proposal-op-stale-${i}`}
-                    className="ml-6 mr-1.5 mb-1 flex items-start gap-1.5 rounded-md border border-amber-500/30 bg-amber-500/[0.08] px-2 py-1 text-[11px] leading-snug text-amber-200"
+                    className="ml-6 mr-1.5 mb-1 flex items-start gap-1.5 rounded-md border border-badge-warning/30 bg-amber-500/[0.08] px-2 py-1 text-[11px] leading-snug text-badge-warning"
                   >
                     <AlertTriangle className="mt-px h-3 w-3 shrink-0" />
                     <span>{t.canvasActor.staleMoveNotice}</span>
@@ -233,7 +233,7 @@ export const CanvasProposalReviewBar: React.FC<{
       {genCost.count > 0 ? (
         <div
           data-testid="proposal-cost-gate"
-          className="mt-2 flex items-center gap-1.5 rounded-md border border-amber-500/25 bg-amber-500/[0.08] px-2 py-1.5 text-xs text-amber-200"
+          className="mt-2 flex items-center gap-1.5 rounded-md border border-badge-warning/25 bg-amber-500/[0.08] px-2 py-1.5 text-xs text-badge-warning"
         >
           <Coins className="h-3.5 w-3.5 shrink-0" />
           <span>{s.proposalEstCost.replace('{amount}', formatCny(genCost.amount)).replace('{n}', String(genCost.count))}</span>

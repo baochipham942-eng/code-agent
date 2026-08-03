@@ -218,7 +218,7 @@ export const RealModePanel: React.FC = () => {
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-zinc-500">{nano.tiktokenLabel}</span>
-                  <span className={pythonEnv.sentencepieceInstalled ? 'text-badge-success' : 'text-amber-400'}>
+                  <span className={pythonEnv.sentencepieceInstalled ? 'text-badge-success' : 'text-badge-warning'}>
                     {pythonEnv.sentencepieceInstalled ? nano.installed : nano.needInstall}
                   </span>
                 </div>
@@ -317,7 +317,7 @@ export const RealModePanel: React.FC = () => {
                     onClick={() => setConfig((c) => ({ ...c, mode: 'finetune', initFrom: 'gpt2' }))}
                     className={`flex-1 px-3 py-2 rounded-lg text-xs transition-all ${
                       config.mode === 'finetune'
-                        ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                        ? 'bg-amber-500/20 text-badge-warning border border-badge-warning/30'
                         : 'bg-zinc-800 text-zinc-500 border border-zinc-800'
                     }`}
                   >

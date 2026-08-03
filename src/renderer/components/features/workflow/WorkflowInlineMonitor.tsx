@@ -32,7 +32,7 @@ function StatusIcon({ status }: { status: ScriptRunAgentStatus }) {
       return <MinusCircle size={12} className="text-zinc-600 shrink-0" />;
     case 'queued':
     default:
-      return <Circle size={12} className="text-amber-400 shrink-0" />;
+      return <Circle size={12} className="text-badge-warning shrink-0" />;
   }
 }
 

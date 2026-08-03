@@ -48,7 +48,7 @@ export function LightMemoryHealthPanel({
     ? 'border-zinc-700 bg-zinc-900 text-zinc-400'
     : issueCount === 0
       ? 'border-badge-success/30 bg-emerald-500/10 text-badge-success'
-      : 'border-amber-500/30 bg-amber-500/10 text-amber-200';
+      : 'border-badge-warning/30 bg-amber-500/10 text-badge-warning';
 
   return (
     <div data-testid="light-memory-health-panel">
@@ -75,7 +75,7 @@ export function LightMemoryHealthPanel({
           <HealthMetric label={t.knowledgeMemory.healthMetricIssues} value={issueCount} />
         </div>
         {issuePreview.length > 0 ? (
-          <div className="space-y-1 rounded-md border border-amber-500/20 bg-amber-500/10 px-2.5 py-2 text-[11px] leading-4 text-amber-100">
+          <div className="space-y-1 rounded-md border border-badge-warning/20 bg-amber-500/10 px-2.5 py-2 text-[11px] leading-4 text-badge-warning">
             {issuePreview.map((item) => (
               <div key={item} className="flex gap-1.5">
                 <AlertCircle className="mt-0.5 h-3 w-3 shrink-0" />

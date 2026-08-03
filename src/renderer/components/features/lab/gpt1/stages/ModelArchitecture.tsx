@@ -120,7 +120,7 @@ export const ModelArchitecture: React.FC<Props> = ({ onComplete, onBack }) => {
                   onClick={() => setSelectedLayer('ffn')}
                   className={`w-full p-2 rounded-lg border transition-all ${
                     selectedLayer === 'ffn'
-                      ? 'bg-purple-500/20 border-purple-500/50 text-purple-400'
+                      ? 'bg-purple-500/20 border-badge-accent/50 text-badge-accent'
                       : 'bg-zinc-800 border-zinc-700 text-zinc-400 hover:border-zinc-600'
                   }`}
                 >
@@ -139,7 +139,7 @@ export const ModelArchitecture: React.FC<Props> = ({ onComplete, onBack }) => {
                 onClick={() => setSelectedLayer('output')}
                 className={`w-full p-3 rounded-lg border transition-all ${
                   selectedLayer === 'output'
-                    ? 'bg-amber-500/20 border-amber-500/50 text-amber-400'
+                    ? 'bg-amber-500/20 border-badge-warning/50 text-badge-warning'
                     : 'bg-zinc-800 border-zinc-700 text-zinc-400 hover:border-zinc-600'
                 }`}
               >
@@ -190,8 +190,8 @@ export const ModelArchitecture: React.FC<Props> = ({ onComplete, onBack }) => {
               <p className="text-sm text-zinc-400 mb-4 leading-relaxed">
                 {layerDetails[selectedLayer].description}
               </p>
-              <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 mb-3">
-                <div className="text-sm text-amber-300">
+              <div className="p-3 rounded-lg bg-amber-500/10 border border-badge-warning/20 mb-3">
+                <div className="text-sm text-badge-warning">
                   {layerDetails[selectedLayer].analogy}
                 </div>
               </div>
@@ -207,15 +207,15 @@ export const ModelArchitecture: React.FC<Props> = ({ onComplete, onBack }) => {
           {/* 模型配置 */}
           <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-700">
             <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
-              <Zap className="w-4 h-4 text-amber-400" />
+              <Zap className="w-4 h-4 text-badge-warning" />
               {ma.configTitle}
             </h3>
             <div className="grid grid-cols-2 gap-3">
               {[
                 { label: ma.configLabels.vocabSize, value: modelConfig.vocabSize, color: 'text-badge-success' },
                 { label: ma.configLabels.blockSize, value: modelConfig.blockSize, color: 'text-blue-400' },
-                { label: ma.configLabels.nLayer, value: modelConfig.nLayer, color: 'text-purple-400' },
-                { label: ma.configLabels.nHead, value: modelConfig.nHead, color: 'text-amber-400' },
+                { label: ma.configLabels.nLayer, value: modelConfig.nLayer, color: 'text-badge-accent' },
+                { label: ma.configLabels.nHead, value: modelConfig.nHead, color: 'text-badge-warning' },
               ].map((item) => (
                 <div key={item.label} className="p-3 rounded-lg bg-zinc-800">
                   <div className={`text-xl font-bold ${item.color}`}>{item.value}</div>
@@ -249,17 +249,17 @@ export const ModelArchitecture: React.FC<Props> = ({ onComplete, onBack }) => {
                   <div className="text-xs text-zinc-400">{ma.workflowStep2Desc}</div>
                 </div>
               </div>
-              <div className="flex items-center gap-3 p-3 rounded-lg bg-purple-500/10 border border-purple-500/20">
+              <div className="flex items-center gap-3 p-3 rounded-lg bg-purple-500/10 border border-badge-accent/20">
                 <span className="text-2xl">🧠</span>
                 <div>
-                  <div className="text-sm text-purple-300 font-medium">{ma.workflowStep3Label}</div>
+                  <div className="text-sm text-badge-accent font-medium">{ma.workflowStep3Label}</div>
                   <div className="text-xs text-zinc-400">{ma.workflowStep3Desc}</div>
                 </div>
               </div>
-              <div className="flex items-center gap-3 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
+              <div className="flex items-center gap-3 p-3 rounded-lg bg-amber-500/10 border border-badge-warning/20">
                 <span className="text-2xl">🎯</span>
                 <div>
-                  <div className="text-sm text-amber-300 font-medium">{ma.workflowStep4Label}</div>
+                  <div className="text-sm text-badge-warning font-medium">{ma.workflowStep4Label}</div>
                   <div className="text-xs text-zinc-400">{ma.workflowStep4Desc}</div>
                 </div>
               </div>

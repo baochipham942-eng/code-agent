@@ -37,8 +37,8 @@ const MAX_VISIBLE_ROWS = 40;
 const COLUMN_COLORS = [
   'bg-blue-500/20 border-blue-500/40',
   'bg-emerald-500/20 border-badge-success/40',
-  'bg-amber-500/20 border-amber-500/40',
-  'bg-purple-500/20 border-purple-500/40',
+  'bg-amber-500/20 border-badge-warning/40',
+  'bg-purple-500/20 border-badge-accent/40',
   'bg-rose-500/20 border-rose-500/40',
   'bg-cyan-500/20 border-cyan-500/40',
 ];
@@ -146,8 +146,8 @@ const ActionBar = memo(function ActionBar({
   const actions = [
     { key: 'visualize', label: t.generativeUI.visualize, icon: BarChart3, color: 'text-badge-success bg-emerald-500/10 hover:bg-emerald-500/20 border-badge-success/20' },
     { key: 'pivot', label: t.generativeUI.pivot, icon: Table2, color: 'text-blue-400 bg-blue-500/10 hover:bg-blue-500/20 border-blue-500/20' },
-    { key: 'filter', label: t.generativeUI.filterAnalysis, icon: Filter, color: 'text-amber-400 bg-amber-500/10 hover:bg-amber-500/20 border-amber-500/20' },
-    { key: 'sort', label: t.generativeUI.sort, icon: ArrowUpDown, color: 'text-purple-400 bg-purple-500/10 hover:bg-purple-500/20 border-purple-500/20' },
+    { key: 'filter', label: t.generativeUI.filterAnalysis, icon: Filter, color: 'text-badge-warning bg-amber-500/10 hover:bg-amber-500/20 border-badge-warning/20' },
+    { key: 'sort', label: t.generativeUI.sort, icon: ArrowUpDown, color: 'text-badge-accent bg-purple-500/10 hover:bg-purple-500/20 border-badge-accent/20' },
   ];
 
   return (
@@ -341,7 +341,7 @@ export const SpreadsheetBlock = memo(function SpreadsheetBlock({ spec: rawSpec, 
             className="flex items-center gap-1.5 px-2 py-1 rounded-lg hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200 transition-all text-xs"
           >
             {copied ? (
-              <><Check className="w-3.5 h-3.5 text-green-400" /><span className="text-green-400">{t.generativeUI.copied}</span></>
+              <><Check className="w-3.5 h-3.5 text-badge-success" /><span className="text-badge-success">{t.generativeUI.copied}</span></>
             ) : (
               <><Copy className="w-3.5 h-3.5" /><span>{t.generativeUI.copy}</span></>
             )}

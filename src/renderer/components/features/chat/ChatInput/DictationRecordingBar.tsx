@@ -147,7 +147,7 @@ export const DictationRecordingBar: React.FC<DictationRecordingBarProps> = ({
         <>
           <DictationWaveform level={inputLevel} silenceWarning={silenceWarning} />
           <span
-            className={`shrink-0 font-mono text-sm tabular-nums ${silenceWarning ? 'text-amber-300' : 'text-zinc-400'}`}
+            className={`shrink-0 font-mono text-sm tabular-nums ${silenceWarning ? 'text-badge-warning' : 'text-zinc-400'}`}
             data-testid="dictation-recording-clock"
           >
             {formatRecordingClock(duration)}

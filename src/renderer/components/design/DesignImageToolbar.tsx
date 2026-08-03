@@ -257,7 +257,7 @@ export function DesignImageToolbar(props: DesignImageToolbarProps): React.ReactE
     <div data-testid="design-annotate-popover" className={MENU_CLASS} style={menuStyle}>
       {annotModelUnavailable ? (
         <>
-          <p className="px-1 py-1 text-[11px] leading-snug text-amber-300/90">
+          <p className="px-1 py-1 text-[11px] leading-snug text-badge-warning/90">
             {t.design.annotNoAvailableModel}
           </p>
         </>
@@ -343,7 +343,7 @@ export function DesignImageToolbar(props: DesignImageToolbarProps): React.ReactE
         {/* ds-allow:end */}
       </div>
       {annotating ? (
-        <p className="mt-2 text-[11px] leading-snug text-amber-300/80">{t.design.annotateHint}</p>
+        <p className="mt-2 text-[11px] leading-snug text-badge-warning/80">{t.design.annotateHint}</p>
       ) : (
         annotationCount === 0 && (
           <p className="mt-2 text-[11px] leading-snug text-zinc-500">{t.design.annotateGuide}</p>

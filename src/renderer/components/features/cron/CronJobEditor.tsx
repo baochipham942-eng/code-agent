@@ -308,7 +308,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, onClo
             if (missingConnectors.length === 0) return null;
             return (
               <div
-                className="flex flex-wrap items-center gap-1.5 rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-300"
+                className="flex flex-wrap items-center gap-1.5 rounded-lg border border-badge-warning/20 bg-amber-500/10 px-3 py-2 text-xs text-badge-warning"
                 data-testid="cron-template-connector-gate-hint"
               >
                 <span>
@@ -320,7 +320,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, onClo
                 <button
                   type="button"
                   onClick={() => openSettingsTab('mcp')}
-                  className="underline decoration-dotted hover:text-amber-200"
+                  className="underline decoration-dotted hover:text-badge-warning"
                 >
                   {cc.connectorConnectAction}
                 </button>

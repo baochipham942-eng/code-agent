@@ -39,9 +39,9 @@ async function invokeHook<T>(action: string, payload?: unknown): Promise<T> {
 
 const HOOK_TYPE_BADGE: Record<HookListItem['type'], { color: string }> = {
   command: { color: 'bg-emerald-500/15 text-badge-success border-badge-success/30' },
-  prompt: { color: 'bg-violet-500/15 text-violet-300 border-violet-500/30' },
+  prompt: { color: 'bg-violet-500/15 text-badge-accent border-badge-accent/30' },
   agent: { color: 'bg-blue-500/15 text-blue-300 border-blue-500/30' },
-  http: { color: 'bg-amber-500/15 text-amber-300 border-amber-500/30' },
+  http: { color: 'bg-amber-500/15 text-badge-warning border-badge-warning/30' },
 };
 
 export const HooksSettings: React.FC = () => {
@@ -118,7 +118,7 @@ export const HooksSettings: React.FC = () => {
       <div className="flex items-start justify-between gap-4">
         <div>
           <h3 className="text-base font-semibold text-zinc-200 flex items-center gap-2">
-            <Plug className="w-4 h-4 text-amber-400" />
+            <Plug className="w-4 h-4 text-badge-warning" />
             {hooksText.title}
           </h3>
           <p className="text-xs text-zinc-500 mt-1">

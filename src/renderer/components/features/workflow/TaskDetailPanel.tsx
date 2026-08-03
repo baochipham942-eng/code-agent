@@ -183,7 +183,7 @@ export const TaskDetailPanel = memo(({ task, onClose }: TaskDetailPanelProps) =>
                 </details>
               )}
               {task.failure.retryable && (
-                <p className="text-xs text-yellow-400">⚠ This error is retryable</p>
+                <p className="text-xs text-badge-warning">⚠ This error is retryable</p>
               )}
             </div>
           </Section>

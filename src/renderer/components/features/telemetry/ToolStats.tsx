@@ -46,8 +46,8 @@ export const ToolStats: React.FC<ToolStatsProps> = ({ stats }) => {
               />
               <div className="absolute inset-0 flex items-center justify-between px-2">
                 <div className="flex items-center gap-1 text-[10px]">
-                  <CheckCircle className="w-2.5 h-2.5 text-green-400" />
-                  <span className="text-green-400">{stat.successCount}</span>
+                  <CheckCircle className="w-2.5 h-2.5 text-badge-success" />
+                  <span className="text-badge-success">{stat.successCount}</span>
                 </div>
                 {stat.failCount > 0 && (
                   <div className="flex items-center gap-1 text-[10px]">

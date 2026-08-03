@@ -233,9 +233,9 @@ describe('getToolStatusText', () => {
 // ============================================================================
 
 describe('getToolStatusClass', () => {
-  it('should return yellow for pending', () => {
+  it('should return the warning semantic token for pending', () => {
     const tc = makeToolCall({ name: 'Bash' });
-    expect(getToolStatusClass(tc)).toContain('yellow');
+    expect(getToolStatusClass(tc)).toContain('text-badge-warning');
   });
 
   it('should return the success semantic token for success', () => {

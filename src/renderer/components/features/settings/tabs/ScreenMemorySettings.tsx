@@ -38,7 +38,7 @@ interface StatusItem {
 const toneClass: Record<StatusItem['tone'], string> = {
   ready: 'border-badge-success/20 bg-emerald-500/10 text-badge-success',
   idle: 'border-zinc-700/50 bg-zinc-800/50 text-zinc-300',
-  blocked: 'border-amber-500/20 bg-amber-500/10 text-amber-300',
+  blocked: 'border-badge-warning/20 bg-amber-500/10 text-badge-warning',
 };
 
 type ProviderKind = ActivityProviderDescriptor['kind'];
@@ -81,7 +81,7 @@ function stateTone(state?: ActivityProviderState): StatusItem['tone'] {
 
 function stateDotClass(state?: ActivityProviderState): string {
   if (state === 'running' || state === 'available') return 'text-badge-success';
-  if (state === 'starting' || state === 'stopping') return 'text-amber-400';
+  if (state === 'starting' || state === 'stopping') return 'text-badge-warning';
   if (state === 'error' || state === 'unavailable') return 'text-rose-400';
   return 'text-zinc-500';
 }
@@ -157,7 +157,7 @@ const NativeDesktopUnavailable: React.FC = () => {
   return (
     <div className="rounded-lg border border-zinc-700/60 bg-zinc-900/60 p-4">
       <div className="flex items-start gap-2 text-sm text-zinc-300">
-        <AlertTriangle className="w-4 h-4 mt-0.5 text-amber-400 shrink-0" />
+        <AlertTriangle className="w-4 h-4 mt-0.5 text-badge-warning shrink-0" />
         <div>
           <div className="font-medium">{nativeUnavailableText.title}</div>
           <p className="text-xs text-zinc-500 mt-1">
@@ -186,8 +186,8 @@ function SourceBadge({ source }: { source: ActivityContextSourcePreview }) {
   const className = {
     automatic_background: 'border-cyan-500/20 bg-cyan-500/10 text-cyan-300',
     manual_capture: 'border-badge-success/20 bg-emerald-500/10 text-badge-success',
-    meeting_audio: 'border-amber-500/20 bg-amber-500/10 text-amber-300',
-    screenshot_analysis: 'border-purple-500/20 bg-purple-500/10 text-purple-300',
+    meeting_audio: 'border-badge-warning/20 bg-amber-500/10 text-badge-warning',
+    screenshot_analysis: 'border-badge-accent/20 bg-purple-500/10 text-badge-accent',
     unknown: 'border-zinc-600 bg-zinc-800 text-zinc-400',
   }[source.kind];
 
@@ -228,14 +228,14 @@ export const ActivityContextPreviewPanel: React.FC<{
           </div>
         </div>
         {degraded ? (
-          <span className="rounded-md border border-amber-500/20 bg-amber-500/10 px-2 py-1 text-[11px] text-amber-300">
+          <span className="rounded-md border border-badge-warning/20 bg-amber-500/10 px-2 py-1 text-[11px] text-badge-warning">
             {activityText.degraded}
           </span>
         ) : null}
       </div>
 
       {degraded ? (
-        <div className="mb-3 rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+        <div className="mb-3 rounded-lg border border-badge-warning/20 bg-amber-500/10 px-3 py-2 text-xs text-badge-warning">
           {degraded}
         </div>
       ) : null}

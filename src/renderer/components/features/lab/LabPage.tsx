@@ -181,8 +181,8 @@ const LabCardComponent: React.FC<{
     >
       {/* Status Badge */}
       {isComingSoon && (
-        <div className="absolute top-4 right-4 px-2 py-1 rounded-full bg-amber-500/20 border border-amber-500/30">
-          <span className="text-xs text-amber-400">{comingSoonLabel}</span>
+        <div className="absolute top-4 right-4 px-2 py-1 rounded-full bg-amber-500/20 border border-badge-warning/30">
+          <span className="text-xs text-badge-warning">{comingSoonLabel}</span>
         </div>
       )}
       {isLocked && (
@@ -209,7 +209,7 @@ const LabCardComponent: React.FC<{
           {Array.from({ length: 3 }).map((_, i) => (
             <span
               key={i}
-              className={`text-xs ${i < card.levelStars ? 'text-amber-400' : 'text-zinc-600'}`}
+              className={`text-xs ${i < card.levelStars ? 'text-badge-warning' : 'text-zinc-600'}`}
             >
               ★
             </span>

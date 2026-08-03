@@ -23,9 +23,9 @@ import { DecisionCard, type DecisionOption } from '../../DecisionCard';
 // "Heisenberg (绿) / Rawls (紫)" 那样一眼区分不同 worker。
 const AGENT_COLORS = [
   'text-badge-success',
-  'text-purple-400',
+  'text-badge-accent',
   'text-cyan-400',
-  'text-amber-400',
+  'text-badge-warning',
   'text-pink-400',
   'text-blue-400',
 ] as const;
@@ -70,7 +70,7 @@ const LaunchPlanStats: React.FC<{ request: SwarmLaunchRequest }> = ({ request })
       依赖 <span className="ml-1 text-cyan-300">{request.dependencyCount}</span>
     </div>
     <div className="rounded bg-zinc-800 px-2 py-1.5 text-zinc-400">
-      写权限 <span className="ml-1 text-amber-300">{request.writeAgentCount}</span>
+      写权限 <span className="ml-1 text-badge-warning">{request.writeAgentCount}</span>
     </div>
   </div>
 );
@@ -89,7 +89,7 @@ const LaunchTaskList: React.FC<{ tasks: SwarmLaunchTaskPreview[] }> = ({ tasks }
             <span
               className={`rounded-full px-1.5 py-0.5 text-[10px] ${
                 task.writeAccess
-                  ? 'bg-amber-500/15 text-amber-300'
+                  ? 'bg-amber-500/15 text-badge-warning'
                   : 'bg-emerald-500/15 text-badge-success'
               }`}
             >
@@ -202,7 +202,7 @@ export const LaunchRequestCard: React.FC<{ request: SwarmLaunchRequest }> = ({ r
     return (
       <div className="rounded-lg border border-white/[0.04] bg-zinc-800/70 p-3">
         <div className="flex items-center gap-2">
-          <GitBranch className="w-4 h-4 text-primary-400" />
+          <GitBranch className="w-4 h-4 text-badge-accent" />
           <div className="text-sm text-zinc-100 font-medium">
             {request.status === 'approved'
               ? `Spawning ${request.agentCount} agent${request.agentCount > 1 ? 's' : ''}`

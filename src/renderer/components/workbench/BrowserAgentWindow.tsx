@@ -237,7 +237,7 @@ export const BrowserAgentWindow: React.FC = () => {
           <span
             data-testid="browser-agent-window-foreign"
             title={`${copy.foreignSessionTitle} · ${copy.foreignSessionHint}`}
-            className="ml-auto flex shrink-0 items-center gap-1 rounded-full border border-amber-500/20 bg-amber-500/[0.06] px-2 py-0.5 text-[10px] text-amber-200"
+            className="ml-auto flex shrink-0 items-center gap-1 rounded-full border border-badge-warning/20 bg-amber-500/[0.06] px-2 py-0.5 text-[10px] text-badge-warning"
           >
             <Lock className="h-3 w-3" />
             {copy.foreignSessionTitle}

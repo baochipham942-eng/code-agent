@@ -216,7 +216,7 @@ export const NanoGPTLab: React.FC = () => {
                     >
                       {/* New Badge */}
                       {stage.isNew && (
-                        <span className="absolute -top-2 -right-2 px-1.5 py-0.5 text-[10px] font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30 rounded">
+                        <span className="absolute -top-2 -right-2 px-1.5 py-0.5 text-[10px] font-bold bg-amber-500/20 text-badge-warning border border-badge-warning/30 rounded">
                           NEW
                         </span>
                       )}
@@ -266,7 +266,7 @@ export const NanoGPTLab: React.FC = () => {
                 <div
                   className={`w-8 h-8 rounded-lg flex items-center justify-center ${
                     currentStageConfig.isNew
-                      ? 'bg-amber-500/20 border border-amber-500/30 text-amber-400'
+                      ? 'bg-amber-500/20 border border-badge-warning/30 text-badge-warning'
                       : 'bg-blue-500/20 border border-blue-500/30 text-blue-400'
                   }`}
                 >
@@ -280,7 +280,7 @@ export const NanoGPTLab: React.FC = () => {
                         .replace('{title}', currentStageConfig.title)}
                     </h2>
                     {currentStageConfig.isNew && (
-                      <span className="px-2 py-0.5 text-xs font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30 rounded">
+                      <span className="px-2 py-0.5 text-xs font-bold bg-amber-500/20 text-badge-warning border border-badge-warning/30 rounded">
                         {t.labNanogpt.lab.coreNewBadge}
                       </span>
                     )}
@@ -297,7 +297,7 @@ export const NanoGPTLab: React.FC = () => {
           {/* Learning Point Footer */}
           <div className="px-6 py-3 border-t border-zinc-700 bg-zinc-900/30">
             <div className="max-w-5xl mx-auto flex items-center gap-2">
-              <span className="text-amber-400">💡</span>
+              <span className="text-badge-warning">💡</span>
               <span className="text-sm text-zinc-400">
                 <span className="text-zinc-400 font-medium">{t.labNanogpt.lab.learningPointLabel}</span>
                 {currentStageConfig.learningPoint}

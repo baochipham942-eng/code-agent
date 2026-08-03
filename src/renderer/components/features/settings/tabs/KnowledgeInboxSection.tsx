@@ -70,7 +70,7 @@ export function KnowledgeInboxList({
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-[11px] font-medium text-amber-300">{item.kind}</span>
+                  <span className="text-[11px] font-medium text-badge-warning">{item.kind}</span>
                   {status ? <InboxStatusBadge status={status} /> : null}
                 </div>
                 <h4 className="mt-1 line-clamp-2 text-sm font-medium text-zinc-100">{item.title}</h4>
@@ -174,7 +174,7 @@ function InboxStatusBadge({ status }: { status: InboxStatus }) {
     ? 'border-badge-success/30 bg-emerald-500/10 text-badge-success'
     : status === 'rejected'
       ? 'border-zinc-700 bg-zinc-900 text-zinc-400'
-      : 'border-amber-500/30 bg-amber-500/10 text-amber-200';
+      : 'border-badge-warning/30 bg-amber-500/10 text-badge-warning';
   return (
     <span className={`rounded border px-1.5 py-0.5 text-[11px] ${tone}`}>
       {label[status]}

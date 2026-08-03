@@ -151,7 +151,7 @@ describe('MemoryTab management helpers', () => {
     expect(buildMemoryImportSummary(importDryRun)).toEqual([
       { status: 'add', label: '新增', value: 2, className: 'text-badge-success' },
       { status: 'update', label: '更新', value: 1, className: 'text-badge-info' },
-      { status: 'conflict', label: '冲突', value: 1, className: 'text-amber-300' },
+      { status: 'conflict', label: '冲突', value: 1, className: 'text-badge-warning' },
       { status: 'skip', label: '跳过', value: 1, className: 'text-zinc-400' },
     ]);
     expect(getMemoryImportApplyCount(importDryRun, false)).toBe(3);

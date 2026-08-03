@@ -149,10 +149,10 @@ export const CloudCollabCardsSection: React.FC<CloudCollabCardsSectionProps> = (
     >
       <div className="flex items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2 text-[12px] text-zinc-400">
-          <Cloud className="h-3.5 w-3.5 shrink-0 text-violet-300" aria-hidden />
+          <Cloud className="h-3.5 w-3.5 shrink-0 text-badge-accent" aria-hidden />
           <span className="font-medium text-zinc-300">{ps.cloudCardsTitle}</span>
           <span
-            className="inline-flex items-center rounded border border-violet-500/30 bg-violet-500/10 px-1.5 py-0.5 text-[10px] font-medium text-violet-300"
+            className="inline-flex items-center rounded border border-badge-accent/30 bg-violet-500/10 px-1.5 py-0.5 text-[10px] font-medium text-badge-accent"
             data-testid="cloud-collab-readonly-badge"
           >
             {ps.cloudCardsReadonlyBadge}

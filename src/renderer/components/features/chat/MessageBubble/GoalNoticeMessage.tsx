@@ -71,7 +71,7 @@ function DegradedBadge({ notice }: { notice: GoalNoticePayload }) {
   if (!notice.degraded) return null;
   return (
     <div className="pl-6 flex flex-col gap-0.5">
-      <span className="inline-flex w-fit items-center rounded-sm bg-amber-500/10 px-1.5 py-0.5 text-[11px] text-amber-300/80">
+      <span className="inline-flex w-fit items-center rounded-sm bg-amber-500/10 px-1.5 py-0.5 text-[11px] text-badge-warning/80">
         {t.goalNotice.degradedBadge}
       </span>
       {notice.degradedReason && (
@@ -119,14 +119,14 @@ export const GoalNoticeMessage: React.FC<GoalNoticeMessageProps> = ({ content })
 
   // aborted
   return (
-    <div className="goal-notice my-1 flex flex-col gap-0.5 rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-sm">
+    <div className="goal-notice my-1 flex flex-col gap-0.5 rounded-md border border-badge-warning/30 bg-amber-500/5 px-3 py-2 text-sm">
       <div className="flex items-center gap-2">
-        <AlertTriangle className="h-4 w-4 flex-shrink-0 text-amber-400" />
+        <AlertTriangle className="h-4 w-4 flex-shrink-0 text-badge-warning" />
         <span className="text-zinc-300">
           {t.goalNotice.abortedPrefix}<span className="font-medium text-zinc-100">{notice.goal}</span>
         </span>
       </div>
-      {notice.reason && <div className="pl-6 text-[11px] text-amber-300/80">{notice.reason}</div>}
+      {notice.reason && <div className="pl-6 text-[11px] text-badge-warning/80">{notice.reason}</div>}
       <div className="pl-6">
         <MetaLine notice={notice} />
       </div>

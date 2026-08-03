@@ -244,7 +244,7 @@ export const KeybindingsSettings: React.FC = () => {
             onClick={() => updateGlobalHotkeysEnabled(mergedKeybindings.globalHotkeysEnabled === false)}
             className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm transition-colors ${
               mergedKeybindings.globalHotkeysEnabled !== false
-                ? 'border-primary-600/70 bg-primary-500/10 text-primary-100'
+                ? 'border-badge-accent/70 bg-primary-500/10 text-badge-accent'
                 : 'border-zinc-700 text-zinc-400 hover:border-zinc-600 hover:bg-zinc-800'
             }`}
           >
@@ -263,15 +263,15 @@ export const KeybindingsSettings: React.FC = () => {
       </div>
 
       {loadError && (
-        <div className="flex items-center gap-2 rounded-lg border border-amber-700/50 bg-amber-950/30 px-3 py-2 text-sm text-amber-200">
+        <div className="flex items-center gap-2 rounded-lg border border-badge-warning/50 bg-amber-950/30 px-3 py-2 text-sm text-badge-warning">
           <AlertTriangle className="h-4 w-4" />
           {loadError}
         </div>
       )}
 
       {conflicts.length > 0 && (
-        <div className="space-y-2 rounded-lg border border-amber-700/50 bg-amber-950/30 p-4">
-          <div className="flex items-center gap-2 text-sm font-medium text-amber-200">
+        <div className="space-y-2 rounded-lg border border-badge-warning/50 bg-amber-950/30 p-4">
+          <div className="flex items-center gap-2 text-sm font-medium text-badge-warning">
             <AlertTriangle className="h-4 w-4" />
             {keybindingsText.conflictTitle}
           </div>
@@ -280,7 +280,7 @@ export const KeybindingsSettings: React.FC = () => {
               .map((actionId, index) => keybindingsText.actions[actionId]?.label ?? conflict.labels[index] ?? actionId)
               .join(' / ');
             return (
-              <div key={`${conflict.scope}:${conflict.normalizedShortcut}`} className="text-xs text-amber-100/80">
+              <div key={`${conflict.scope}:${conflict.normalizedShortcut}`} className="text-xs text-badge-warning/80">
                 {keybindingsText.scopes[conflict.scope]} · {formatShortcutForDisplay(conflict.shortcut, platform)}：{conflictLabels}
               </div>
             );
@@ -359,7 +359,7 @@ export const KeybindingsSettings: React.FC = () => {
                           </span>
                         )}
                         {hasConflict && (
-                          <span className="rounded border border-amber-700/60 px-1.5 py-0.5 text-[11px] text-amber-200">
+                          <span className="rounded border border-badge-warning/60 px-1.5 py-0.5 text-[11px] text-badge-warning">
                             {keybindingsText.conflictBadge}
                           </span>
                         )}
@@ -394,7 +394,7 @@ export const KeybindingsSettings: React.FC = () => {
                       onClick={() => setRecordingActionId(definition.id)}
                       className={`h-10 rounded-lg border px-3 text-sm transition-colors ${
                         recordingActionId === definition.id
-                          ? 'border-primary-500 bg-primary-500/10 text-primary-200'
+                          ? 'border-badge-accent bg-primary-500/10 text-badge-accent'
                           : 'border-zinc-700 bg-zinc-900 text-zinc-200 hover:border-zinc-600 hover:bg-zinc-800'
                       } disabled:cursor-not-allowed disabled:opacity-40`}
                     >

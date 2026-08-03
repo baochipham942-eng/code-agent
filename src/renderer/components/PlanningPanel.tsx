@@ -33,7 +33,7 @@ interface PlanningPanelProps {
 const StepStatusIcon: React.FC<{ status: TaskStepStatus }> = ({ status }) => {
   switch (status) {
     case 'completed':
-      return <CheckCircle2 className="w-4 h-4 text-green-400" />;
+      return <CheckCircle2 className="w-4 h-4 text-badge-success" />;
     case 'in_progress':
       return <Loader2 className="w-4 h-4 text-blue-400 animate-spin" />;
     case 'skipped':
@@ -47,7 +47,7 @@ const StepStatusIcon: React.FC<{ status: TaskStepStatus }> = ({ status }) => {
 const PhaseStatusIcon: React.FC<{ status: TaskPhaseStatus }> = ({ status }) => {
   switch (status) {
     case 'completed':
-      return <CheckCircle2 className="w-4 h-4 text-green-400" />;
+      return <CheckCircle2 className="w-4 h-4 text-badge-success" />;
     case 'in_progress':
       return <Loader2 className="w-4 h-4 text-blue-400 animate-spin" />;
     case 'blocked':
@@ -103,7 +103,7 @@ const PhaseItem: React.FC<{ phase: TaskPhase; defaultExpanded?: boolean }> = ({
   const getPhaseStyles = () => {
     switch (phase.status) {
       case 'completed':
-        return 'border-green-500/30 bg-green-500/5';
+        return 'border-badge-success/30 bg-green-500/5';
       case 'in_progress':
         return 'border-blue-500/30 bg-blue-500/5';
       case 'blocked':
@@ -160,7 +160,7 @@ export const PlanningPanel: React.FC<PlanningPanelProps> = ({ plan, onRefresh: _
       <div className="w-80 border-l border-zinc-700 bg-zinc-900 flex flex-col">
         <div className="p-3 border-b border-zinc-700">
           <div className="flex items-center gap-2">
-            <Target className="w-4 h-4 text-purple-400" />
+            <Target className="w-4 h-4 text-badge-accent" />
             <span className="text-sm font-medium text-zinc-200">{p.taskPlan}</span>
           </div>
         </div>
@@ -185,7 +185,7 @@ export const PlanningPanel: React.FC<PlanningPanelProps> = ({ plan, onRefresh: _
       {/* Header */}
       <div className="p-3 border-b border-zinc-700">
         <div className="flex items-center gap-2 mb-1">
-          <Target className="w-4 h-4 text-purple-400" />
+          <Target className="w-4 h-4 text-badge-accent" />
           <span className="text-sm font-medium text-zinc-200 flex-1 truncate">
             {plan.title}
           </span>

@@ -59,12 +59,12 @@ function formatTokens(count: number): string {
 const CompactionIndicator: React.FC<{ status: CompactionStatus }> = ({ status }) => {
   if (status.isCompacting) {
     return (
-      <div className="flex items-center gap-2 px-3 py-1.5 bg-amber-500/10 border border-amber-500/20 rounded-lg animate-pulse">
-        <span className="text-amber-400 text-sm font-bold">&#10035;</span>
-        <span className="text-amber-300 text-xs font-medium">
+      <div className="flex items-center gap-2 px-3 py-1.5 bg-amber-500/10 border border-badge-warning/20 rounded-lg animate-pulse">
+        <span className="text-badge-warning text-sm font-bold">&#10035;</span>
+        <span className="text-badge-warning text-xs font-medium">
           Compacting conversation...
           {status.tokensBefore != null && (
-            <span className="text-amber-400/70 ml-1">
+            <span className="text-badge-warning/70 ml-1">
               ({'\u2191'} {formatTokens(status.tokensBefore)} tokens)
             </span>
           )}
@@ -120,7 +120,7 @@ export const AgentStatsBar: React.FC<AgentStatsBarProps> = ({
   // Context usage color
   const getUsageColor = (pct: number) => {
     if (pct >= 90) return 'text-badge-danger';
-    if (pct >= 70) return 'text-amber-400';
+    if (pct >= 70) return 'text-badge-warning';
     return 'text-zinc-400';
   };
 

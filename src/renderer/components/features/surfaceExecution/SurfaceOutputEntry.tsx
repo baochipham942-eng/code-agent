@@ -104,7 +104,7 @@ export function SurfaceOutputEntry({ output, scope, copy }: SurfaceOutputEntryPr
             </pre>
           )}
           {state.payload.truncated && (
-            <p className="mt-1 text-[9px] text-amber-300">{copy.resources.truncatedOutput}</p>
+            <p className="mt-1 text-[9px] text-badge-warning">{copy.resources.truncatedOutput}</p>
           )}
         </div>
       )}

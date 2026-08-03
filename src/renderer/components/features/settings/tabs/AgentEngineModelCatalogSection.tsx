@@ -214,7 +214,7 @@ export const AgentEngineModelCatalogSection: React.FC = () => {
         </div>
 
         {catalogResult?.diagnostics.length ? (
-          <div className="border-t border-zinc-800 px-3 py-2 text-[11px] text-amber-300">
+          <div className="border-t border-zinc-800 px-3 py-2 text-[11px] text-badge-warning">
             {catalogResult.diagnostics[0]?.message}
           </div>
         ) : null}

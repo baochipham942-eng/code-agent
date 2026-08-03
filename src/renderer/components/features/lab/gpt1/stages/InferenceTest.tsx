@@ -136,7 +136,7 @@ export const InferenceTest: React.FC<Props> = ({ onBack }) => {
           {/* 说话风格 */}
           <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-700">
             <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
-              <Settings2 className="w-4 h-4 text-amber-400" />
+              <Settings2 className="w-4 h-4 text-badge-warning" />
               {it.styleTitle}
             </h3>
             <div className="space-y-4">
@@ -185,7 +185,7 @@ export const InferenceTest: React.FC<Props> = ({ onBack }) => {
           {/* AI 在想什么 */}
           <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-700">
             <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
-              <BarChart3 className="w-4 h-4 text-purple-400" />
+              <BarChart3 className="w-4 h-4 text-badge-accent" />
               {it.probsTitle}
             </h3>
             {tokenProbs.length > 0 ? (
@@ -322,8 +322,8 @@ export const InferenceTest: React.FC<Props> = ({ onBack }) => {
           </div>
 
           {/* 提示 */}
-          <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/20">
-            <p className="text-sm text-amber-200">
+          <div className="p-4 rounded-xl bg-amber-500/10 border border-badge-warning/20">
+            <p className="text-sm text-badge-warning">
               <span className="font-medium">{it.tipPrefix}</span>{it.tipBody}
             </p>
           </div>

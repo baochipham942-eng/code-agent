@@ -166,7 +166,7 @@ export const RoleDraftCard: React.FC<RoleDraftCardProps> = ({ drafts, onResolved
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-1.5">
                   {isEdit && (
-                    <span className="px-1.5 py-px text-[10px] rounded bg-amber-500/20 text-amber-300 flex-shrink-0">
+                    <span className="px-1.5 py-px text-[10px] rounded bg-amber-500/20 text-badge-warning flex-shrink-0">
                       {r.editBadge}
                     </span>
                   )}

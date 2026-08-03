@@ -62,10 +62,10 @@ export const VoiceCallSummaryCard: React.FC<{ summary: VoiceCallSummary }> = ({ 
           aria-expanded={expanded}
           title={expanded ? text.collapse : text.expand}
           onClick={() => setExpanded((v) => !v)}
-          className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left transition-colors hover:bg-primary-500/10 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary-400/60"
+          className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left transition-colors hover:bg-primary-500/10 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--focus-ring)]"
         >
-          <AudioLines className="h-4 w-4 shrink-0 text-primary-400" />
-          <span className="shrink-0 text-xs font-medium tracking-[0.14em] text-primary-400">{text.surveyTitle}</span>
+          <AudioLines className="h-4 w-4 shrink-0 text-badge-accent" />
+          <span className="shrink-0 text-xs font-medium tracking-[0.14em] text-badge-accent">{text.surveyTitle}</span>
           <span className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-zinc-400">
             <span className="tabular-nums">{text.duration} {duration}</span>
             {summary.workItemCount > 0 && (
@@ -77,7 +77,7 @@ export const VoiceCallSummaryCard: React.FC<{ summary: VoiceCallSummary }> = ({ 
           />
         </button>
         {expanded && (
-          <div className="border-t border-primary-500/15 px-3 py-2">
+          <div className="border-t border-badge-accent/15 px-3 py-2">
             {transcript.length === 0 ? (
               <p className="text-[11px] italic text-zinc-500">
                 {summary.transcriptCount === undefined
@@ -94,13 +94,13 @@ export const VoiceCallSummaryCard: React.FC<{ summary: VoiceCallSummary }> = ({ 
                       {/* ✦ 品牌 teal + 轻微辉光；纯装饰前缀，aria-hidden 不进读屏 */}
                       <span
                         aria-hidden="true"
-                        className="shrink-0 text-primary-400 [text-shadow:0_0_6px_rgba(45,212,191,0.5)]"
+                        className="shrink-0 text-badge-accent [text-shadow:0_0_6px_rgba(45,212,191,0.5)]"
                       >
                         ✦
                       </span>
                       <span
                         className={`shrink-0 font-medium ${
-                          m.role === 'user' ? 'text-primary-300' : 'text-zinc-300'
+                          m.role === 'user' ? 'text-badge-accent' : 'text-zinc-300'
                         }`}
                       >
                         {m.role === 'user' ? t.voice.transcript.you : t.voice.transcript.assistant}

@@ -41,9 +41,9 @@ const DiscussionIcon: React.FC<{ entry: SwarmTimelineEvent }> = ({ entry }) => {
   const cls = 'w-3 h-3 shrink-0';
   switch (entry.contextKind) {
     case 'finding':
-      return <Lightbulb className={`${cls} text-amber-400`} />;
+      return <Lightbulb className={`${cls} text-badge-warning`} />;
     case 'decision':
-      return <GitBranch className={`${cls} text-violet-400`} />;
+      return <GitBranch className={`${cls} text-badge-accent`} />;
     case 'result':
       return <CheckCircle className={`${cls} text-badge-success`} />;
     case 'status':
@@ -59,7 +59,7 @@ const DiscussionIcon: React.FC<{ entry: SwarmTimelineEvent }> = ({ entry }) => {
 const discussionToneText: Record<SwarmTimelineEvent['tone'], string> = {
   neutral: 'text-zinc-300',
   success: 'text-badge-success',
-  warning: 'text-amber-300',
+  warning: 'text-badge-warning',
   error: 'text-badge-danger',
 };
 
@@ -70,7 +70,7 @@ const DiscussionEntry: React.FC<{ entry: SwarmTimelineEvent }> = ({ entry }) => 
     data-highlight={entry.highlight ? 'true' : 'false'}
     className={`mx-2 my-1 rounded-md border px-2 py-1 ${
       entry.highlight
-        ? 'border-violet-500/40 bg-violet-500/10 ring-1 ring-violet-500/20'
+        ? 'border-badge-accent/40 bg-violet-500/10 ring-1 ring-violet-500/20'
         : 'border-zinc-700/50 bg-zinc-800/40'
     }`}
   >
@@ -80,7 +80,7 @@ const DiscussionEntry: React.FC<{ entry: SwarmTimelineEvent }> = ({ entry }) => 
         {entry.title}
       </span>
       {entry.highlight && (
-        <span className="text-[9px] px-1 py-0.5 rounded bg-violet-500/20 text-violet-300 font-semibold whitespace-nowrap">
+        <span className="text-[9px] px-1 py-0.5 rounded bg-violet-500/20 text-badge-accent font-semibold whitespace-nowrap">
           决策点
         </span>
       )}

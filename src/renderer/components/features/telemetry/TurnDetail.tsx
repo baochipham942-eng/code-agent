@@ -135,7 +135,7 @@ export const TurnDetail: React.FC<TurnDetailProps> = ({ turn, modelCalls, toolCa
               <div key={tc.id} className="flex items-center justify-between text-xs p-1.5 bg-zinc-900 rounded">
                 <div className="flex items-center gap-2">
                   {tc.success ? (
-                    <CheckCircle className="w-3 h-3 text-green-400 shrink-0" />
+                    <CheckCircle className="w-3 h-3 text-badge-success shrink-0" />
                   ) : (
                     <XCircle className="w-3 h-3 text-badge-danger shrink-0" />
                   )}

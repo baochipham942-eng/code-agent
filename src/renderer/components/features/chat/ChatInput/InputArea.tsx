@@ -420,7 +420,7 @@ export const InputArea = forwardRef<InputAreaRef, InputAreaProps>(
     // 根据交互模式决定 placeholder 文案和颜色；续轮统一精炼
     const placeholderConfig = {
       code: { text: t.chatInput.placeholderCode, colorClass: 'placeholder-zinc-500', textClass: 'text-zinc-500' },
-      plan: { text: t.chatInput.placeholderPlan, colorClass: 'placeholder-amber-500/50', textClass: 'text-amber-500/50' },
+      plan: { text: t.chatInput.placeholderPlan, colorClass: 'placeholder-amber-500/50', textClass: 'text-badge-warning/50' },
       ask: { text: t.chatInput.placeholderAsk, colorClass: 'placeholder-emerald-500/50', textClass: 'text-badge-success/50' },
     };
     const baseConfig = placeholderConfig[interactionMode] ?? placeholderConfig.code;

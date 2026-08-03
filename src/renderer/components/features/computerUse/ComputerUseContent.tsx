@@ -68,7 +68,7 @@ function statusToneClass(tone: StatusTone): string {
     case 'blocked':
       return 'border-rose-500/30 bg-rose-500/10 text-rose-300';
     case 'warning':
-      return 'border-amber-500/30 bg-amber-500/10 text-amber-300';
+      return 'border-badge-warning/30 bg-amber-500/10 text-badge-warning';
     default:
       return 'border-zinc-700/60 bg-zinc-800/70 text-zinc-400';
   }
@@ -161,7 +161,7 @@ function targetSourceLabel(source: ComputerUseTarget['source']): string {
 
 function failureToneClass(tone: ComputerUseFailureExplanation['tone']): string {
   if (tone === 'blocked') return 'border-rose-500/20 bg-rose-500/10 text-rose-100';
-  if (tone === 'warning') return 'border-amber-500/20 bg-amber-500/10 text-amber-100';
+  if (tone === 'warning') return 'border-badge-warning/20 bg-amber-500/10 text-badge-warning';
   return 'border-zinc-700/60 bg-zinc-900/60 text-zinc-300';
 }
 
@@ -686,7 +686,7 @@ export const ComputerUseContent: React.FC = () => {
                       />
                     </div>
                     {Array.isArray(axQuality?.reasons) && axQuality.reasons.length > 0 && (
-                      <p className="mt-2 text-xs text-amber-300">{axQuality.reasons.slice(0, 2).join('；')}</p>
+                      <p className="mt-2 text-xs text-badge-warning">{axQuality.reasons.slice(0, 2).join('；')}</p>
                     )}
                     {elementsError && (
                       <p className="mt-2 text-xs text-rose-300">{elementsError}</p>
@@ -718,7 +718,7 @@ export const ComputerUseContent: React.FC = () => {
 
                 <section className="rounded-lg border border-zinc-800 bg-zinc-950/30">
                   <div className="flex items-center gap-2 border-b border-zinc-800 px-4 py-3">
-                    <AlertTriangle className="h-4 w-4 text-amber-300" />
+                    <AlertTriangle className="h-4 w-4 text-badge-warning" />
                     <h3 className="text-sm font-medium text-zinc-200">失败原因解释</h3>
                   </div>
                   <div className="grid gap-2 p-4 md:grid-cols-2">
@@ -775,7 +775,7 @@ export const ComputerUseContent: React.FC = () => {
                         </p>
                       )}
                       {actionSummary.trace.recommendedAction && (
-                        <p className="rounded-lg border border-amber-500/20 bg-amber-500/10 p-2 text-xs text-amber-200">
+                        <p className="rounded-lg border border-badge-warning/20 bg-amber-500/10 p-2 text-xs text-badge-warning">
                           {actionSummary.trace.recommendedAction}
                         </p>
                       )}
@@ -812,7 +812,7 @@ export const ComputerUseContent: React.FC = () => {
                     </div>
                     <div className="flex items-center justify-between gap-3">
                       <span>Surface ready</span>
-                      <span className={surface?.ready ? 'text-badge-success' : 'text-amber-300'}>
+                      <span className={surface?.ready ? 'text-badge-success' : 'text-badge-warning'}>
                         {surface?.ready ? 'yes' : 'no / unknown'}
                       </span>
                     </div>

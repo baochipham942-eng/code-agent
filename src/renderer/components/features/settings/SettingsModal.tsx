@@ -444,7 +444,7 @@ export const SettingsModal: React.FC = () => {
                         {tab.label}
                       </span>
                       {tab.id === 'model' && modelFormDirty && (
-                        <span className="shrink-0 rounded border border-amber-500/30 bg-amber-500/10 px-1 text-[10px] text-amber-200">
+                        <span className="shrink-0 rounded border border-badge-warning/30 bg-amber-500/10 px-1 text-[10px] text-badge-warning">
                           {t.settings.unsavedChanges.badge}
                         </span>
                       )}

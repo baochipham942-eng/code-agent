@@ -145,12 +145,12 @@ export const SoulSettings: React.FC = () => {
       <div>
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-2">
-            <Fingerprint className="h-4 w-4 text-primary-400" />
+            <Fingerprint className="h-4 w-4 text-badge-accent" />
             <h3 className="text-sm font-medium text-zinc-200">{soulText.title}</h3>
             <span
               className={`ml-1 rounded-full px-2 py-0.5 text-xs ${
                 isCustom
-                  ? 'bg-primary-500/20 text-primary-400'
+                  ? 'bg-primary-500/20 text-badge-accent'
                   : 'bg-zinc-700 text-zinc-400'
               }`}
             >

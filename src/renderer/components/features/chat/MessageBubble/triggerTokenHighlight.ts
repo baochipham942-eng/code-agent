@@ -27,7 +27,7 @@ const TRIGGER_TOKEN_RULES: Array<{ kind: TriggerTokenKind; pattern: RegExp; clas
   {
     kind: 'goal',
     pattern: /^\/goal(?=\s|$)/,
-    className: 'font-medium text-amber-300',
+    className: 'font-medium text-badge-warning',
   },
   {
     kind: 'workflow',

@@ -22,7 +22,7 @@ const BackgroundSessionItem: React.FC<{
 }> = ({ session, onForeground }) => {
   const statusIcon = {
     running: <Loader2 className="w-4 h-4 animate-spin text-blue-400" />,
-    completed: <CheckCircle className="w-4 h-4 text-green-400" />,
+    completed: <CheckCircle className="w-4 h-4 text-badge-success" />,
     failed: <XCircle className="w-4 h-4 text-badge-danger" />,
   }[session.status];
 

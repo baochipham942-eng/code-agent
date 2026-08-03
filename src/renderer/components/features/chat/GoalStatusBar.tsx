@@ -67,7 +67,7 @@ export const GoalStatusBarView: React.FC<{ run: GoalRunState; onTogglePause: () 
         {remainingMs !== undefined && (
           <span
             title={t.goalStatusBar.remainingTitle}
-            className={remainingMs <= 60_000 ? 'text-amber-300' : undefined}
+            className={remainingMs <= 60_000 ? 'text-badge-warning' : undefined}
           >
             {t.goalStatusBar.remainingPrefix}{formatElapsed(Math.max(0, remainingMs))}
           </span>

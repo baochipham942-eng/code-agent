@@ -19,7 +19,7 @@ export const ModelStrategyRecommendationStrip: React.FC<ModelStrategyRecommendat
   <div
     className={`mb-2 flex items-center gap-2 rounded-lg border px-3 py-2 text-xs ${
       recommendation.tone === 'warning'
-        ? 'border-amber-500/20 bg-amber-500/10 text-amber-200'
+        ? 'border-badge-warning/20 bg-amber-500/10 text-badge-warning'
         : 'border-badge-info/20 bg-sky-500/10 text-badge-info'
     }`}
     data-testid="model-strategy-recommendation"

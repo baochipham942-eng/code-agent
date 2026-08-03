@@ -317,8 +317,8 @@ export const MermaidDiagram = memo(function MermaidDiagram({ code }: { code: str
           >
             {copied ? (
               <>
-                <Check className="w-3.5 h-3.5 text-green-400" />
-                <span className="text-green-400">{tm.copied}</span>
+                <Check className="w-3.5 h-3.5 text-badge-success" />
+                <span className="text-badge-success">{tm.copied}</span>
               </>
             ) : (
               <>

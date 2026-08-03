@@ -7,7 +7,7 @@ describe('budgetCostColorClass', () => {
   });
 
   it('uses amber at warning (85-90%)', () => {
-    expect(budgetCostColorClass('warning')).toBe('text-amber-400');
+    expect(budgetCostColorClass('warning')).toBe('text-badge-warning');
   });
 
   it('stays emerald for silent / none / undefined (budget healthy or disabled)', () => {

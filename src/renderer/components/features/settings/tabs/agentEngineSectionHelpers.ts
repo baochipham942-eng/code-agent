@@ -33,11 +33,11 @@ const INSTALL_STATE_BADGE_CLASS: Record<AgentEngineInstallState, string> = {
 const SOURCE_STATUS_BADGE_CLASS = {
   available: 'border-badge-success/20 bg-emerald-500/10 text-badge-success',
   detected: 'border-badge-info/20 bg-sky-500/10 text-badge-info',
-  needsLogin: 'border-amber-500/20 bg-amber-500/10 text-amber-300',
+  needsLogin: 'border-badge-warning/20 bg-amber-500/10 text-badge-warning',
   adapterPending: 'border-zinc-600 bg-zinc-800 text-zinc-400',
   notInstalled: 'border-zinc-700 bg-zinc-800 text-zinc-500',
-  recommended: 'border-violet-500/20 bg-violet-500/10 text-violet-300',
-  authUnverified: 'border-amber-500/20 bg-amber-500/10 text-amber-200',
+  recommended: 'border-badge-accent/20 bg-violet-500/10 text-badge-accent',
+  authUnverified: 'border-badge-warning/20 bg-amber-500/10 text-badge-warning',
   unavailable: 'border-zinc-700 bg-zinc-900 text-zinc-500',
 } as const;
 

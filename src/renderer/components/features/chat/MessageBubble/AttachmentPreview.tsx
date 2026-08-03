@@ -67,15 +67,15 @@ function getAttachmentIconConfig(category: AttachmentCategory | undefined): Atta
     case 'excel':
       return { icon: <Sheet className={iconClass} />, color: 'text-badge-success', label: 'Excel' };
     case 'presentation':
-      return { icon: <Presentation className={iconClass} />, color: 'text-violet-400', label: 'PPT' };
+      return { icon: <Presentation className={iconClass} />, color: 'text-badge-accent', label: 'PPT' };
     case 'archive':
-      return { icon: <Archive className={iconClass} />, color: 'text-yellow-400', label: '压缩包' };
+      return { icon: <Archive className={iconClass} />, color: 'text-badge-warning', label: '压缩包' };
     case 'code':
       return { icon: <FileCode className={iconClass} />, color: 'text-blue-400', label: '代码' };
     case 'data':
-      return { icon: <Database className={iconClass} />, color: 'text-amber-400', label: '数据' };
+      return { icon: <Database className={iconClass} />, color: 'text-badge-warning', label: '数据' };
     case 'html':
-      return { icon: <Globe className={iconClass} />, color: 'text-orange-400', label: 'HTML' };
+      return { icon: <Globe className={iconClass} />, color: 'text-badge-warning', label: 'HTML' };
     case 'text':
       return { icon: <FileText className={iconClass} />, color: 'text-zinc-400', label: '文本' };
     default:
@@ -347,7 +347,7 @@ const AttachmentItem: React.FC<{
             <img
               src={imageSrc}
               alt={displayAttachment.name}
-              className="max-h-[150px] w-full object-cover transition-colors group-hover:border-primary-500/50"
+              className="max-h-[150px] w-full object-cover transition-colors group-hover:border-badge-accent/50"
             />
             <div className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 transition-opacity group-hover:opacity-100">
               <ImageIcon className="w-6 h-6 text-white" />
@@ -463,7 +463,7 @@ const AttachmentItem: React.FC<{
     const dangerCount = archiveManifest?.dangerousEntries?.length || 0;
     return (
       <div className="flex max-w-[240px] items-start gap-2 rounded-xl border border-zinc-700 bg-zinc-700/60 px-3 py-2">
-        <Archive className="mt-0.5 h-5 w-5 shrink-0 text-yellow-400" />
+        <Archive className="mt-0.5 h-5 w-5 shrink-0 text-badge-warning" />
         <div className="min-w-0 flex-1">
           <div className="truncate text-sm text-zinc-200" title={displayAttachment.name}>
             {displayAttachment.name}
@@ -475,7 +475,7 @@ const AttachmentItem: React.FC<{
           </div>
           {stateBadge}
           {archiveManifest && (
-            <div className={`mt-1 truncate text-xs ${dangerCount > 0 ? 'text-amber-300' : 'text-zinc-400'}`}>
+            <div className={`mt-1 truncate text-xs ${dangerCount > 0 ? 'text-badge-warning' : 'text-zinc-400'}`}>
               {archiveManifest.supported
                 ? `${archiveManifest.entries.length}${archiveManifest.truncated ? '+' : ''} 项清单`
                 : archiveManifest.note}
@@ -552,7 +552,7 @@ export const AttachmentDisplay: React.FC<AttachmentDisplayProps> = ({ attachment
           onClick={() => setIsExpanded(true)}
         >
           <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-primary-500/20 to-accent-purple/20">
-            <FolderSearch className="h-5 w-5 text-primary-400" />
+            <FolderSearch className="h-5 w-5 text-badge-accent" />
           </div>
           <div className="min-w-0 flex-1">
             <div className="text-sm font-medium text-zinc-200">

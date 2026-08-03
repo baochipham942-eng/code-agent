@@ -105,14 +105,14 @@ export const SFTStage: React.FC<SFTStageProps> = ({ onComplete }) => {
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-6">
       {/* Introduction */}
-      <div className="bg-gradient-to-r from-purple-500/10 to-pink-500/10 rounded-lg border border-purple-500/20 p-4">
+      <div className="bg-gradient-to-r from-purple-500/10 to-pink-500/10 rounded-lg border border-badge-accent/20 p-4">
         <div className="flex items-start gap-3">
-          <FileText className="w-5 h-5 text-purple-400 mt-0.5" />
+          <FileText className="w-5 h-5 text-badge-accent mt-0.5" />
           <div>
             <h3 className="text-sm font-medium text-zinc-200 mb-2">{s.introTitle}</h3>
             <p className="text-sm text-zinc-400">
               {s.introPara1}
-              <span className="text-purple-400">{s.introHighlight}</span>{s.introPara2}
+              <span className="text-badge-accent">{s.introHighlight}</span>{s.introPara2}
             </p>
           </div>
         </div>
@@ -128,9 +128,9 @@ export const SFTStage: React.FC<SFTStageProps> = ({ onComplete }) => {
               <div className="text-sm font-medium text-zinc-400">{s.analogyCards.pretrainedAi.label}</div>
               <div className="text-xs text-zinc-500 mt-1">{s.analogyCards.pretrainedAi.desc}</div>
             </div>
-            <div className="text-center p-4 bg-purple-500/10 rounded-lg border border-purple-500/20">
+            <div className="text-center p-4 bg-purple-500/10 rounded-lg border border-badge-accent/20">
               <div className="text-3xl mb-2">📝</div>
-              <div className="text-sm font-medium text-purple-400">{s.analogyCards.learnFromAnswers.label}</div>
+              <div className="text-sm font-medium text-badge-accent">{s.analogyCards.learnFromAnswers.label}</div>
               <div className="text-xs text-zinc-500 mt-1">{s.analogyCards.learnFromAnswers.desc}</div>
             </div>
             <div className="text-center p-4 bg-emerald-500/10 rounded-lg border border-badge-success/20">
@@ -152,7 +152,7 @@ export const SFTStage: React.FC<SFTStageProps> = ({ onComplete }) => {
               onClick={() => setSelectedExample(idx)}
               className={`px-3 py-1.5 rounded-lg text-xs transition-all ${
                 selectedExample === idx
-                  ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30'
+                  ? 'bg-purple-500/20 text-badge-accent border border-badge-accent/30'
                   : 'bg-zinc-800 text-zinc-500 border border-zinc-800 hover:border-zinc-600'
               }`}
             >
@@ -189,8 +189,8 @@ export const SFTStage: React.FC<SFTStageProps> = ({ onComplete }) => {
           </div>
         </div>
 
-        <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
-          <div className="text-xs text-amber-400">
+        <div className="p-3 rounded-lg bg-amber-500/10 border border-badge-warning/20">
+          <div className="text-xs text-badge-warning">
             {s.tipText}
           </div>
         </div>
@@ -211,8 +211,8 @@ export const SFTStage: React.FC<SFTStageProps> = ({ onComplete }) => {
               onClick={toggleTraining}
               className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm transition-all ${
                 isTraining
-                  ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-                  : 'bg-purple-500/20 text-purple-400 border border-purple-500/30'
+                  ? 'bg-amber-500/20 text-badge-warning border border-badge-warning/30'
+                  : 'bg-purple-500/20 text-badge-accent border border-badge-accent/30'
               }`}
             >
               {isTraining ? (
@@ -234,7 +234,7 @@ export const SFTStage: React.FC<SFTStageProps> = ({ onComplete }) => {
           <div className="grid grid-cols-3 gap-4 text-center">
             <div>
               <div className="text-xs text-zinc-500 mb-1">{s.progressLabel}</div>
-              <div className="text-2xl font-bold text-purple-400">{trainingStep}%</div>
+              <div className="text-2xl font-bold text-badge-accent">{trainingStep}%</div>
             </div>
             <div>
               <div className="text-xs text-zinc-500 mb-1">{s.learnedCountLabel}</div>
@@ -242,7 +242,7 @@ export const SFTStage: React.FC<SFTStageProps> = ({ onComplete }) => {
             </div>
             <div>
               <div className="text-xs text-zinc-500 mb-1">{common.statusLabel}</div>
-              <div className={`text-lg font-medium ${isTraining ? 'text-amber-400' : trainingStep >= 100 ? 'text-badge-success' : 'text-zinc-400'}`}>
+              <div className={`text-lg font-medium ${isTraining ? 'text-badge-warning' : trainingStep >= 100 ? 'text-badge-success' : 'text-zinc-400'}`}>
                 {isTraining ? s.statusTraining : trainingStep >= 100 ? s.statusDone : s.statusReady}
               </div>
             </div>
@@ -278,10 +278,10 @@ export const SFTStage: React.FC<SFTStageProps> = ({ onComplete }) => {
           </div>
 
           {/* After SFT */}
-          <div className="bg-purple-500/5 rounded-lg border border-purple-500/30 p-4">
+          <div className="bg-purple-500/5 rounded-lg border border-badge-accent/30 p-4">
             <div className="flex items-center gap-2 mb-3">
-              <Bot className="w-4 h-4 text-purple-400" />
-              <span className="text-sm font-medium text-purple-400">{s.afterLabel}</span>
+              <Bot className="w-4 h-4 text-badge-accent" />
+              <span className="text-sm font-medium text-badge-accent">{s.afterLabel}</span>
             </div>
             <div className="mb-2 text-xs text-blue-400">{s.questionPrefix.replace('{question}', beforeAfterExamples[0].question)}</div>
             <div className="bg-zinc-950/50 p-3 rounded text-sm text-badge-success whitespace-pre-wrap">
@@ -293,12 +293,12 @@ export const SFTStage: React.FC<SFTStageProps> = ({ onComplete }) => {
       </div>
 
       {/* Key Takeaways */}
-      <div className="bg-purple-500/5 rounded-lg border border-purple-500/20 p-4">
-        <h4 className="text-sm font-medium text-purple-400 mb-2">{common.summaryTitle}</h4>
+      <div className="bg-purple-500/5 rounded-lg border border-badge-accent/20 p-4">
+        <h4 className="text-sm font-medium text-badge-accent mb-2">{common.summaryTitle}</h4>
         <ul className="space-y-2 text-sm text-zinc-400">
           {s.summaryPoints.map((point) => (
             <li key={point.title} className="flex items-start gap-2">
-              <span className="text-purple-400">•</span>
+              <span className="text-badge-accent">•</span>
               <span><strong className="text-zinc-400">{point.title}</strong>：{point.text}</span>
             </li>
           ))}
@@ -329,7 +329,7 @@ export const SFTStage: React.FC<SFTStageProps> = ({ onComplete }) => {
       <div className="flex justify-end pt-4">
         <button
           onClick={onComplete}
-          className="flex items-center gap-2 px-5 py-2.5 bg-purple-500/20 text-purple-400 rounded-lg hover:bg-purple-500/30 border border-purple-500/30 transition-all font-medium"
+          className="flex items-center gap-2 px-5 py-2.5 bg-purple-500/20 text-badge-accent rounded-lg hover:bg-purple-500/30 border border-badge-accent/30 transition-all font-medium"
         >
           {s.nextButton}
           <ChevronRight className="w-4 h-4" />

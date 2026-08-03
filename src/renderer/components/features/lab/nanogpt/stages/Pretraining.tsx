@@ -182,16 +182,16 @@ export const Pretraining: React.FC<PretrainingProps> = ({ onComplete, onBack }) 
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-6">
       {/* Introduction */}
-      <div className="bg-gradient-to-r from-purple-500/10 to-blue-500/10 rounded-lg border border-purple-500/20 p-4">
+      <div className="bg-gradient-to-r from-purple-500/10 to-blue-500/10 rounded-lg border border-badge-accent/20 p-4">
         <div className="flex items-start gap-3">
-          <BookOpen className="w-5 h-5 text-purple-400 mt-0.5" />
+          <BookOpen className="w-5 h-5 text-badge-accent mt-0.5" />
           <div>
             <h3 className="text-sm font-medium text-zinc-200 mb-2">{pt.introTitle}</h3>
             <p className="text-sm text-zinc-400">
               {pt.introBodyPre}
-              <span className="text-purple-400">{pt.introBodyHighlight1}</span>
+              <span className="text-badge-accent">{pt.introBodyHighlight1}</span>
               {pt.introBodyMid}
-              <span className="text-purple-400">{pt.introBodyHighlight2}</span>
+              <span className="text-badge-accent">{pt.introBodyHighlight2}</span>
               {pt.introBodyPost}
             </p>
           </div>
@@ -241,7 +241,7 @@ export const Pretraining: React.FC<PretrainingProps> = ({ onComplete, onBack }) 
               onClick={toggleTraining}
               className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm transition-all ${
                 isTraining
-                  ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                  ? 'bg-amber-500/20 text-badge-warning border border-badge-warning/30'
                   : 'bg-emerald-500/20 text-badge-success border border-badge-success/30'
               }`}
             >
@@ -294,7 +294,7 @@ export const Pretraining: React.FC<PretrainingProps> = ({ onComplete, onBack }) 
             </div>
             <div className="text-center p-2 bg-amber-500/10 rounded-lg">
               <div className="text-xs text-zinc-500 mb-1">{pt.metricValLabel}</div>
-              <div className="text-xl font-bold text-amber-400">{latestValLoss}</div>
+              <div className="text-xl font-bold text-badge-warning">{latestValLoss}</div>
               <div className="text-xs text-zinc-600">{pt.metricLowerBetter}</div>
             </div>
             <div className="text-center p-2 bg-blue-500/10 rounded-lg">
@@ -306,7 +306,7 @@ export const Pretraining: React.FC<PretrainingProps> = ({ onComplete, onBack }) 
             </div>
             <div className="text-center p-2 bg-purple-500/10 rounded-lg">
               <div className="text-xs text-zinc-500 mb-1">{pt.metricProgressLabel}</div>
-              <div className="text-xl font-bold text-purple-400">{((currentStep / 100000) * 100).toFixed(1)}%</div>
+              <div className="text-xl font-bold text-badge-accent">{((currentStep / 100000) * 100).toFixed(1)}%</div>
               <div className="text-xs text-zinc-600">{pt.metricProgressHint}</div>
             </div>
           </div>
@@ -404,7 +404,7 @@ export const Pretraining: React.FC<PretrainingProps> = ({ onComplete, onBack }) 
         </button>
         <button
           onClick={onComplete}
-          className="flex items-center gap-2 px-5 py-2.5 bg-amber-500/20 text-amber-400 rounded-lg hover:bg-amber-500/30 border border-amber-500/30 transition-all font-medium"
+          className="flex items-center gap-2 px-5 py-2.5 bg-amber-500/20 text-badge-warning rounded-lg hover:bg-amber-500/30 border border-badge-warning/30 transition-all font-medium"
         >
           {pt.nextButton}
           <ChevronRight className="w-4 h-4" />

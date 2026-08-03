@@ -143,11 +143,11 @@ export const DataPreparation: React.FC<Props> = ({ onComplete }) => {
                 <div className="text-xs text-zinc-500">{dp.statsTokens}</div>
               </div>
               <div className="p-3 rounded-lg bg-zinc-900">
-                <div className="text-2xl font-bold text-amber-400">{dataStats.repetitions}x</div>
+                <div className="text-2xl font-bold text-badge-warning">{dataStats.repetitions}x</div>
                 <div className="text-xs text-zinc-500">{dp.statsRepetitions}</div>
               </div>
               <div className="p-3 rounded-lg bg-zinc-900">
-                <div className="text-2xl font-bold text-purple-400">{dataStats.vocabSize}</div>
+                <div className="text-2xl font-bold text-badge-accent">{dataStats.vocabSize}</div>
                 <div className="text-xs text-zinc-500">{dp.statsVocab}</div>
               </div>
             </div>

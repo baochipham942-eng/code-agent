@@ -181,7 +181,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           {resetEmailSent ? (
             /* Success message */
             <div className="py-6 text-center space-y-4">
-              <CheckCircle className="w-12 h-12 text-green-500 mx-auto" />
+              <CheckCircle className="w-12 h-12 text-badge-success mx-auto" />
               <div className="space-y-2">
                 <p className="text-zinc-200 font-medium">重置链接已发送</p>
                 <p className="text-zinc-400 text-sm">

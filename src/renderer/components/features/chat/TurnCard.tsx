@@ -523,7 +523,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
                 title={t.turnCard.createForkFromReply}
                 disabled={Boolean(isSessionProcessing) || sessionIsRunning || isForking}
                 onClick={() => void handleFork()}
-                className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-transparent text-zinc-500 transition-colors hover:border-violet-500/40 hover:bg-violet-500/10 hover:text-violet-300 focus:outline-hidden focus-visible:ring-1 focus-visible:ring-[var(--focus-ring)] disabled:opacity-50"
+                className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-transparent text-zinc-500 transition-colors hover:border-badge-accent/40 hover:bg-violet-500/10 hover:text-badge-accent focus:outline-hidden focus-visible:ring-1 focus-visible:ring-[var(--focus-ring)] disabled:opacity-50"
               >
                 {isForking
                   ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
@@ -758,7 +758,7 @@ const HookExecutionBanner: React.FC<{ activity: TurnHookActivity }> = ({ activit
                 {/* 决策原因（block/modify 的首行摘要，host 侧已截断+脱敏）是唯一上屏的
                     hook 文本；Stop hook 拦下收尾时这行就是「为什么还要求继续」。 */}
                 {item.reason && (item.action === 'block' || item.modified) && (
-                  <div className="mt-0.5 truncate text-amber-200/70" title={item.reason}>
+                  <div className="mt-0.5 truncate text-badge-warning/70" title={item.reason}>
                     {t.turnHooks.reason.replace('{reason}', item.reason)}
                   </div>
                 )}
@@ -1003,7 +1003,7 @@ function getToneClass(tone: 'neutral' | 'info' | 'success' | 'warning' | 'error'
     case 'success':
       return 'border-badge-success/20 bg-emerald-500/10 text-status-success';
     case 'warning':
-      return 'border-amber-500/20 bg-amber-500/10 text-status-warning';
+      return 'border-badge-warning/20 bg-amber-500/10 text-status-warning';
     case 'error':
       return 'border-red-500/20 bg-red-500/10 text-status-error';
     case 'info':
@@ -1018,7 +1018,7 @@ function getHookIssueClass(tone: 'success' | 'warning' | 'error'): string {
     case 'error':
       return 'bg-red-500/10 text-badge-danger';
     case 'warning':
-      return 'bg-amber-500/10 text-amber-300';
+      return 'bg-amber-500/10 text-badge-warning';
     default:
       return 'bg-zinc-800 text-zinc-400';
   }

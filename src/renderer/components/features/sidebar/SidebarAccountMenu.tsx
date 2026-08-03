@@ -84,14 +84,14 @@ export const SidebarAccountMenu: React.FC<SidebarAccountMenuProps> = ({
       {canOpenEvalCenter && (
         <AccountMenuItem
           onClick={() => { openEvalCenter(); onClose(); }}
-          icon={<Gauge className={`w-4 h-4 ${showEvalCenter ? 'text-amber-400' : 'text-amber-400/80'}`} />}
+          icon={<Gauge className={`w-4 h-4 ${showEvalCenter ? 'text-badge-warning' : 'text-badge-warning/80'}`} />}
           label={sb.menuEvalCenter}
         />
       )}
       {canOpenPromptManager && (
         <AccountMenuItem
           onClick={() => { setShowPromptManager(true); onClose(); }}
-          icon={<ScrollText className="w-4 h-4 text-violet-400/80" />}
+          icon={<ScrollText className="w-4 h-4 text-badge-accent/80" />}
           label={sb.menuPromptManager}
           testId="user-menu-open-prompt-manager"
         />

@@ -26,7 +26,7 @@ export const ContextIndicator: React.FC = () => {
 
   const textColor =
     warningLevel === 'critical' ? 'text-badge-danger' :
-    warningLevel === 'warning' ? 'text-yellow-400' :
+    warningLevel === 'warning' ? 'text-badge-warning' :
     'text-zinc-500';
 
   return (

@@ -252,7 +252,7 @@ export const DevServerLauncher: React.FC = () => {
               className={`rounded-md border px-3 py-2 text-xs ${
                 supported
                   ? 'border-badge-success/40 bg-emerald-950/20 text-badge-success'
-                  : 'border-amber-900/40 bg-amber-950/20 text-amber-200'
+                  : 'border-badge-warning/40 bg-amber-950/20 text-badge-warning'
               }`}
               data-testid="dev-server-launcher-detection"
             >

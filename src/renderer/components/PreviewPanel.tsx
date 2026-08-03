@@ -294,7 +294,7 @@ function ArchivePreview({ content }: { content: string }) {
                 <td className="min-w-0 px-3 py-2">
                   <div className="flex min-w-0 items-center gap-2" style={{ paddingLeft: `${Math.min(entry.depth, 8) * 12}px` }}>
                     {entry.isDirectory
-                      ? <Folder className="h-3.5 w-3.5 shrink-0 text-amber-300" />
+                      ? <Folder className="h-3.5 w-3.5 shrink-0 text-badge-warning" />
                       : <File className="h-3.5 w-3.5 shrink-0 text-zinc-500" />}
                     <span className="truncate font-mono">{entry.name}</span>
                   </div>
@@ -865,7 +865,7 @@ export const PreviewPanel: React.FC = () => {
               onClick={() => updatePreviewTabMode(activeTab.id, mode === 'edit' ? 'preview' : 'edit')}
               className={`p-1.5 rounded transition-colors ${
                 mode === 'edit'
-                  ? 'bg-primary-500/20 text-primary-300 hover:bg-primary-500/30'
+                  ? 'bg-primary-500/20 text-badge-accent hover:bg-primary-500/30'
                   : 'hover:bg-zinc-600 text-zinc-400 hover:text-zinc-200'
               }`}
               title={mode === 'edit' ? pv.switchToPreview : pv.switchToEdit}

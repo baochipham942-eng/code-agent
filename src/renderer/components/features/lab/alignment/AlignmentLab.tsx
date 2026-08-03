@@ -114,7 +114,7 @@ export const AlignmentLab: React.FC = () => {
         {Array.from({ length: 4 }).map((_, i) => (
           <span
             key={i}
-            className={`text-[10px] ${i < level ? 'text-amber-400' : 'text-zinc-600'}`}
+            className={`text-[10px] ${i < level ? 'text-badge-warning' : 'text-zinc-600'}`}
           >
             ★
           </span>
@@ -129,9 +129,9 @@ export const AlignmentLab: React.FC = () => {
       <div className="px-6 py-3 border-b border-zinc-700 bg-zinc-900/30">
         <div className="max-w-5xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <Sparkles className="w-4 h-4 text-purple-400" />
+            <Sparkles className="w-4 h-4 text-badge-accent" />
             <span className="text-sm text-zinc-400">{t.labAlignment.alignmentLab.conceptDemoMode}</span>
-            <span className="text-xs px-2 py-0.5 rounded bg-purple-500/20 text-purple-400 border border-purple-500/30">
+            <span className="text-xs px-2 py-0.5 rounded bg-purple-500/20 text-badge-accent border border-badge-accent/30">
               {t.labAlignment.alignmentLab.noRealTrainingBadge}
             </span>
           </div>
@@ -170,7 +170,7 @@ export const AlignmentLab: React.FC = () => {
                       w-12 h-12 rounded-full flex items-center justify-center
                       transition-all duration-300
                       ${isCompleted ? 'bg-emerald-500/20 border-badge-success/50 text-badge-success' : ''}
-                      ${isCurrent ? 'bg-purple-500/20 border-purple-500/50 text-purple-400 ring-2 ring-purple-500/30' : ''}
+                      ${isCurrent ? 'bg-purple-500/20 border-badge-accent/50 text-badge-accent ring-2 ring-purple-500/30' : ''}
                       ${!isCompleted && !isCurrent ? 'bg-zinc-800 border-zinc-700 text-zinc-500' : ''}
                       border
                     `}
@@ -180,7 +180,7 @@ export const AlignmentLab: React.FC = () => {
                   <span
                     className={`
                       text-xs font-medium
-                      ${isCurrent ? 'text-purple-400' : isCompleted ? 'text-badge-success' : 'text-zinc-500'}
+                      ${isCurrent ? 'text-badge-accent' : isCompleted ? 'text-badge-success' : 'text-zinc-500'}
                     `}
                   >
                     {stage.shortTitle}
@@ -208,7 +208,7 @@ export const AlignmentLab: React.FC = () => {
       <div className="px-6 py-4 bg-zinc-900">
         <div className="max-w-5xl mx-auto">
           <div className="flex items-center gap-3 mb-2">
-            <div className="w-8 h-8 rounded-lg bg-purple-500/20 border border-purple-500/30 flex items-center justify-center text-purple-400">
+            <div className="w-8 h-8 rounded-lg bg-purple-500/20 border border-badge-accent/30 flex items-center justify-center text-badge-accent">
               {currentStageConfig.icon}
             </div>
             <div>
@@ -232,7 +232,7 @@ export const AlignmentLab: React.FC = () => {
       {/* Learning Point Footer */}
       <div className="px-6 py-3 border-t border-zinc-700 bg-zinc-900/30">
         <div className="max-w-5xl mx-auto flex items-center gap-2">
-          <span className="text-purple-400">💡</span>
+          <span className="text-badge-accent">💡</span>
           <span className="text-sm text-zinc-400">
             <span className="text-zinc-400 font-medium">{t.labAlignment.alignmentLab.learningPointLabel}</span>
             {currentStageConfig.learningPoint}

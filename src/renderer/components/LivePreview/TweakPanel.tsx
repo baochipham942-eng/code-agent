@@ -252,7 +252,7 @@ export const TweakPanel: React.FC<Props> = ({ selected, collapsed, onToggleColla
     <div className="w-72 shrink-0 border-l border-zinc-800 bg-zinc-900 overflow-y-auto" data-testid="tweak-panel">
       <header className="sticky top-0 z-10 flex items-center justify-between border-b border-zinc-800 bg-zinc-900 px-3 py-2">
         <div className="flex items-center gap-1.5 text-xs font-medium text-zinc-200">
-          <Sparkles className="h-3.5 w-3.5 text-primary-400" />
+          <Sparkles className="h-3.5 w-3.5 text-badge-accent" />
           Tweak
         </div>
         <button
@@ -389,7 +389,7 @@ export const TweakPanel: React.FC<Props> = ({ selected, collapsed, onToggleColla
 
           {pending && <div className="text-[10px] text-zinc-500">applying…</div>}
           {error && (
-            <div className="flex items-start gap-1.5 rounded-md border border-amber-900/40 bg-amber-950/20 px-2 py-1.5 text-[10px] text-amber-200">
+            <div className="flex items-start gap-1.5 rounded-md border border-badge-warning/40 bg-amber-950/20 px-2 py-1.5 text-[10px] text-badge-warning">
               <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
               <span className="leading-snug">{error}</span>
             </div>

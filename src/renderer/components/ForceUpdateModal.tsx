@@ -265,8 +265,8 @@ export const ForceUpdateModal: React.FC<ForceUpdateModalProps> = ({ updateInfo }
               </div>
             )}
 
-            <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg p-3">
-              <p className="text-xs text-amber-200">
+            <div className="bg-amber-500/10 border border-badge-warning/20 rounded-lg p-3">
+              <p className="text-xs text-badge-warning">
                 {n.forceNote}
               </p>
             </div>

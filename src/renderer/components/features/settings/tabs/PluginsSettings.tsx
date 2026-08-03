@@ -58,7 +58,7 @@ const SummaryTile: React.FC<{
   const valueClass = tone === 'success'
     ? 'text-badge-success'
     : tone === 'warning'
-      ? 'text-amber-300'
+      ? 'text-badge-warning'
       : 'text-zinc-100';
 
   return (
@@ -76,7 +76,7 @@ const Pill: React.FC<{
   const toneClass = tone === 'success'
     ? 'border-badge-success/30 bg-emerald-500/10 text-badge-success'
     : tone === 'warning'
-      ? 'border-amber-500/30 bg-amber-500/10 text-amber-300'
+      ? 'border-badge-warning/30 bg-amber-500/10 text-badge-warning'
       : tone === 'danger'
         ? 'border-red-500/30 bg-red-500/10 text-badge-danger'
         : 'border-zinc-700 bg-zinc-800 text-zinc-300';
@@ -301,7 +301,7 @@ export const PluginsSettings: React.FC = () => {
     return (
       <div className="space-y-6">
         <HubTabHeader testId="plugins-hub-header" title={t.capabilityHub.tabPlugins} />
-        <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-200">
+        <div className="rounded-lg border border-badge-warning/30 bg-amber-500/10 p-4 text-sm text-badge-warning">
           {pluginsText.adminRequiredNotice}
         </div>
       </div>
@@ -591,7 +591,7 @@ export const PluginsSettings: React.FC = () => {
 
         <div className="mt-3 rounded-lg border border-zinc-800 bg-zinc-900/60 p-3">
           <div className="mb-2 flex items-center gap-2 text-sm font-medium text-zinc-200">
-            <Shield className="h-4 w-4 text-amber-300" />
+            <Shield className="h-4 w-4 text-badge-warning" />
             {pluginsText.overview.roleVisibility}
           </div>
           <div className="grid gap-2 md:grid-cols-3">
@@ -758,13 +758,13 @@ export const PluginsSettings: React.FC = () => {
             )}
           </div>
           <div>
-            <h4 className="mb-2 text-xs font-medium text-amber-300">{pluginsText.visibleList.adminOnlyTitle}</h4>
+            <h4 className="mb-2 text-xs font-medium text-badge-warning">{pluginsText.visibleList.adminOnlyTitle}</h4>
             {visibility.adminOnly.length === 0 ? (
               <EmptyState text={pluginsText.visibleList.adminOnlyEmpty} />
             ) : (
               <div className="max-h-[360px] space-y-2 overflow-y-auto pr-1">
                 {visibility.adminOnly.map((item) => (
-                  <div key={`${item.kind}:${item.spec}`} className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3">
+                  <div key={`${item.kind}:${item.spec}`} className="rounded-lg border border-badge-warning/20 bg-amber-500/5 p-3">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="text-sm font-medium text-zinc-100">{item.spec}</span>
                       <Pill tone="warning">{item.kind === 'installed' ? pluginsText.visibleList.installedDisabled : pluginsText.visibleList.notInstalled}</Pill>

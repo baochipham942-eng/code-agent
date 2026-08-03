@@ -100,7 +100,7 @@ export const AgentLaneCard: React.FC<{
       : agent.status === 'failed'
       ? 'border-red-500/20'
       : agent.status === 'running'
-      ? 'border-primary-500/20'
+      ? 'border-badge-accent/20'
       : 'border-white/[0.04]';
 
   const duration = agent.startTime
@@ -112,7 +112,7 @@ export const AgentLaneCard: React.FC<{
       <div className="flex items-start gap-2">
         <div className="mt-0.5">
           {agent.status === 'running' ? (
-            <Loader2 className="w-4 h-4 text-primary-400 animate-spin" />
+            <Loader2 className="w-4 h-4 text-badge-accent animate-spin" />
           ) : agent.status === 'completed' ? (
             <CheckCircle2 className="w-4 h-4 text-badge-success" />
           ) : agent.status === 'failed' ? (
@@ -155,7 +155,7 @@ export const AgentLaneCard: React.FC<{
             </span>
             <span className="text-zinc-500">{agent.contextSnapshot.messageCount} msgs</span>
             {agent.contextSnapshot.truncatedMessages > 0 && (
-              <span className="text-amber-300">
+              <span className="text-badge-warning">
                 {agent.contextSnapshot.truncatedMessages} truncated
               </span>
             )}
@@ -172,7 +172,7 @@ export const AgentLaneCard: React.FC<{
       <div className="mt-3 flex items-center gap-2">
         <button
           onClick={() => onOpenTeam(agent.id)}
-          className="rounded-md border border-white/[0.06] bg-zinc-900/70 px-2 py-1 text-[11px] text-zinc-300 transition-colors hover:border-primary-500/20 hover:text-zinc-100"
+          className="rounded-md border border-white/[0.06] bg-zinc-900/70 px-2 py-1 text-[11px] text-zinc-300 transition-colors hover:border-badge-accent/20 hover:text-zinc-100"
         >
           {al.openChat}
         </button>
@@ -189,7 +189,7 @@ export const AgentLaneCard: React.FC<{
           <button
             onClick={() => onRetryAgent(agent.id)}
             disabled={retrying}
-            className="rounded-md border border-amber-500/20 bg-amber-500/10 px-2 py-1 text-[11px] text-amber-300 transition-colors hover:bg-amber-500/15 disabled:cursor-not-allowed disabled:opacity-60"
+            className="rounded-md border border-badge-warning/20 bg-amber-500/10 px-2 py-1 text-[11px] text-badge-warning transition-colors hover:bg-amber-500/15 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {retrying ? al.retrying : al.retry}
           </button>
@@ -330,7 +330,7 @@ export const ApprovalCard: React.FC<{
 
   const badgeClass =
     review.status === 'pending'
-      ? 'bg-amber-500/15 text-amber-300'
+      ? 'bg-amber-500/15 text-badge-warning'
       : review.status === 'approved'
       ? 'bg-emerald-500/15 text-badge-success'
       : 'bg-red-500/15 text-badge-danger';
@@ -384,7 +384,7 @@ export const ApprovalCard: React.FC<{
   return (
     <div className="rounded-lg border border-white/[0.04] bg-zinc-800/70 p-3">
       <div className="flex items-center gap-2">
-        <ShieldAlert className="w-4 h-4 text-amber-400" />
+        <ShieldAlert className="w-4 h-4 text-badge-warning" />
         <div className="text-sm text-zinc-200">Agent {review.agentId}</div>
         <span className={`ml-auto rounded-full px-1.5 py-0.5 text-[10px] ${badgeClass}`}>
           {review.status === 'pending' ? ac.statusPending : review.status === 'approved' ? ac.statusApproved : ac.statusRejected}

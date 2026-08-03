@@ -29,7 +29,7 @@ const typeConfig = {
   warning: {
     icon: <AlertCircle className="w-6 h-6" />,
     iconBg: 'bg-amber-500/10',
-    iconColor: 'text-amber-400',
+    iconColor: 'text-badge-warning',
     confirmBg: 'bg-amber-600 hover:bg-amber-500',
     headerBg: 'bg-amber-500/10',
   },

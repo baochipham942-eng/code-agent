@@ -14,7 +14,7 @@ const GRANT_TONE = {
   active: 'text-badge-success',
   consumed: 'text-zinc-400',
   revoked: 'text-badge-danger',
-  expired: 'text-amber-300',
+  expired: 'text-badge-warning',
   none: 'text-zinc-500',
 } as const;
 

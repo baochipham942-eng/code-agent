@@ -28,16 +28,16 @@ export function getPermissionConfig(type: PermissionType): PermissionConfig {
     file_write: {
       icon: React.createElement(FilePlus, { size: 20 }),
       title: '创建文件',
-      color: 'text-green-400',
+      color: 'text-badge-success',
       bgColor: 'bg-green-500/10',
-      borderColor: 'border-green-500/30',
+      borderColor: 'border-badge-success/30',
     },
     file_edit: {
       icon: React.createElement(FileEdit, { size: 20 }),
       title: '编辑文件',
-      color: 'text-yellow-400',
+      color: 'text-badge-warning',
       bgColor: 'bg-yellow-500/10',
-      borderColor: 'border-yellow-500/30',
+      borderColor: 'border-badge-warning/30',
     },
     file_delete: {
       icon: React.createElement(Trash2, { size: 20 }),
@@ -49,9 +49,9 @@ export function getPermissionConfig(type: PermissionType): PermissionConfig {
     command: {
       icon: React.createElement(Terminal, { size: 20 }),
       title: '执行命令',
-      color: 'text-purple-400',
+      color: 'text-badge-accent',
       bgColor: 'bg-purple-500/10',
-      borderColor: 'border-purple-500/30',
+      borderColor: 'border-badge-accent/30',
     },
     dangerous_command: {
       icon: React.createElement(AlertTriangle, { size: 20 }),

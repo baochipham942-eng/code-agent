@@ -385,7 +385,7 @@ function getToolGroupStatusLabel(status: 'streaming' | 'partial' | 'error' | 'ok
 function getToolGroupStatusClass(status: 'streaming' | 'partial' | 'error' | 'ok', hasEscalatedError: boolean): string {
   if (status === 'streaming') return 'text-badge-info';
   if (!hasEscalatedError && (status === 'partial' || status === 'error')) return 'text-zinc-500';
-  if (status === 'partial') return 'text-amber-300';
+  if (status === 'partial') return 'text-badge-warning';
   if (status === 'error') return 'text-badge-danger';
   return 'text-badge-success';
 }

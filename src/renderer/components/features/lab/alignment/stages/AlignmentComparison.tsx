@@ -134,20 +134,20 @@ export const AlignmentComparison: React.FC<AlignmentComparisonProps> = ({ onBack
         </div>
 
         {/* SFT Model */}
-        <div className="bg-purple-500/5 rounded-lg border border-purple-500/20 p-4">
+        <div className="bg-purple-500/5 rounded-lg border border-badge-accent/20 p-4">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
               <div className="text-lg">📝</div>
-              <span className="text-sm font-medium text-purple-400">{s.stageCards.sft.label}</span>
+              <span className="text-sm font-medium text-badge-accent">{s.stageCards.sft.label}</span>
             </div>
-            <span className="text-xs px-2 py-0.5 rounded bg-purple-500/20 text-purple-400">{s.stageCards.sft.badge}</span>
+            <span className="text-xs px-2 py-0.5 rounded bg-purple-500/20 text-badge-accent">{s.stageCards.sft.badge}</span>
           </div>
           <div className="bg-zinc-950/50 p-3 rounded-lg mb-3 min-h-[120px]">
-            <p className="text-sm text-purple-300/80 whitespace-pre-wrap">{example.responses.sft}</p>
+            <p className="text-sm text-badge-accent/80 whitespace-pre-wrap">{example.responses.sft}</p>
           </div>
-          <div className="flex items-center gap-2 p-2 rounded bg-amber-500/10 border border-amber-500/20">
-            <span className="w-4 text-center text-amber-400">△</span>
-            <span className="text-xs text-amber-400">{example.comments.sft}</span>
+          <div className="flex items-center gap-2 p-2 rounded bg-amber-500/10 border border-badge-warning/20">
+            <span className="w-4 text-center text-badge-warning">△</span>
+            <span className="text-xs text-badge-warning">{example.comments.sft}</span>
           </div>
         </div>
 
@@ -183,18 +183,18 @@ export const AlignmentComparison: React.FC<AlignmentComparisonProps> = ({ onBack
           </div>
           <ArrowRight className="w-6 h-6 text-zinc-600 flex-shrink-0" />
           <div className="text-center flex-1 max-w-[140px]">
-            <div className="w-16 h-16 mx-auto rounded-full bg-purple-500/10 border border-purple-500/30 flex items-center justify-center mb-2">
+            <div className="w-16 h-16 mx-auto rounded-full bg-purple-500/10 border border-badge-accent/30 flex items-center justify-center mb-2">
               <span className="text-2xl">📝</span>
             </div>
-            <div className="text-sm text-purple-400 font-medium">{s.evolutionSteps.learnAnswer.label}</div>
+            <div className="text-sm text-badge-accent font-medium">{s.evolutionSteps.learnAnswer.label}</div>
             <div className="text-xs text-zinc-600">{s.evolutionSteps.learnAnswer.desc}</div>
           </div>
           <ArrowRight className="w-6 h-6 text-zinc-600 flex-shrink-0" />
           <div className="text-center flex-1 max-w-[140px]">
-            <div className="w-16 h-16 mx-auto rounded-full bg-amber-500/10 border border-amber-500/30 flex items-center justify-center mb-2">
+            <div className="w-16 h-16 mx-auto rounded-full bg-amber-500/10 border border-badge-warning/30 flex items-center justify-center mb-2">
               <span className="text-2xl">⭐</span>
             </div>
-            <div className="text-sm text-amber-400 font-medium">{s.evolutionSteps.learnScore.label}</div>
+            <div className="text-sm text-badge-warning font-medium">{s.evolutionSteps.learnScore.label}</div>
             <div className="text-xs text-zinc-600">{s.evolutionSteps.learnScore.desc}</div>
           </div>
           <ArrowRight className="w-6 h-6 text-zinc-600 flex-shrink-0" />

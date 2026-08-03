@@ -299,9 +299,9 @@ export const MCPSettings: React.FC = () => {
   const getStatusIcon = (status: 'connected' | 'connecting' | 'disconnected' | 'error' | 'lazy' | 'not_applicable') => {
     switch (status) {
       case 'connected':
-        return <PlugZap className="w-4 h-4 text-green-400" />;
+        return <PlugZap className="w-4 h-4 text-badge-success" />;
       case 'connecting':
-        return <Loader2 className="w-4 h-4 text-yellow-400 animate-spin" />;
+        return <Loader2 className="w-4 h-4 text-badge-warning animate-spin" />;
       case 'error':
         return <AlertCircle className="w-4 h-4 text-badge-danger" />;
       case 'lazy':
@@ -316,7 +316,7 @@ export const MCPSettings: React.FC = () => {
       case 'connected':
         return 'border-badge-success/30 bg-emerald-500/10 text-badge-success';
       case 'connecting':
-        return 'border-yellow-500/30 bg-yellow-500/10 text-yellow-300';
+        return 'border-badge-warning/30 bg-yellow-500/10 text-badge-warning';
       case 'error':
         return 'border-red-500/30 bg-red-500/10 text-badge-danger';
       case 'lazy':
@@ -477,7 +477,7 @@ export const MCPSettings: React.FC = () => {
             <div
               className={`mx-3 mt-3 flex items-center gap-2 rounded-md px-3 py-2 ${
                 message.type === 'success'
-                  ? 'bg-green-500/10 text-green-400'
+                  ? 'bg-green-500/10 text-badge-success'
                   : message.type === 'info'
                     ? 'bg-sky-500/10 text-badge-info'
                     : 'bg-red-500/10 text-badge-danger'
@@ -594,7 +594,7 @@ export const MCPSettings: React.FC = () => {
                           {isOAuthServer && (
                             <div className="mt-1 text-[11px] leading-snug text-zinc-400">
                               {mcpText.management.oauthStatusLabel}
-                              <span className={server.hasOAuthTokens ? 'text-badge-success' : 'text-amber-300'}>
+                              <span className={server.hasOAuthTokens ? 'text-badge-success' : 'text-badge-warning'}>
                                 {server.hasOAuthTokens
                                   ? mcpText.management.oauthAuthorized
                                   : mcpText.management.oauthNotAuthorized}
@@ -609,18 +609,18 @@ export const MCPSettings: React.FC = () => {
                                 {server.error}
                               </span>
                               {requiresReauthorization && (
-                                <span className="mt-1 block text-[11px] text-amber-300">
+                                <span className="mt-1 block text-[11px] text-badge-warning">
                                   {getMcpAuthenticationRecoveryShortHint(server)}
                                 </span>
                               )}
                             </div>
                           ) : server.blockedReason ? (
                             <div>
-                              <span className="block truncate text-yellow-300" title={server.blockedReason.detail}>
+                              <span className="block truncate text-badge-warning" title={server.blockedReason.detail}>
                                 {server.blockedReason.detail}
                               </span>
                               {requiresReauthorization && (
-                                <span className="mt-1 block text-[11px] text-amber-300">
+                                <span className="mt-1 block text-[11px] text-badge-warning">
                                   {getMcpAuthenticationRecoveryShortHint(server)}
                                 </span>
                               )}

@@ -9,8 +9,8 @@ import type { CaptureItem, CaptureSource } from '@shared/contract/capture';
 const SOURCE_CONFIG: Record<CaptureSource, { icon: React.ReactNode; label: string; color: string }> = {
   browser_extension: { icon: <Globe className="w-3 h-3" />, label: '网页', color: 'text-blue-400 bg-blue-500/20' },
   manual: { icon: <FileText className="w-3 h-3" />, label: '手动', color: 'text-zinc-400 bg-zinc-600/20' },
-  wechat: { icon: <MessageCircle className="w-3 h-3" />, label: '微信', color: 'text-green-400 bg-green-500/20' },
-  local_file: { icon: <FolderOpen className="w-3 h-3" />, label: '本地文件', color: 'text-amber-400 bg-amber-500/20' },
+  wechat: { icon: <MessageCircle className="w-3 h-3" />, label: '微信', color: 'text-badge-success bg-green-500/20' },
+  local_file: { icon: <FolderOpen className="w-3 h-3" />, label: '本地文件', color: 'text-badge-warning bg-amber-500/20' },
 };
 
 function getRelativeTime(timestamp: number): string {

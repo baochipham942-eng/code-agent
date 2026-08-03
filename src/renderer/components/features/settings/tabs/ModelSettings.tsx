@@ -917,7 +917,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange, 
                   </div>
                 </div>
                 <div className="flex items-center gap-4">
-                  <span className={`text-xs ${hasApiKey ? 'text-badge-success' : 'text-amber-300'}`}>
+                  <span className={`text-xs ${hasApiKey ? 'text-badge-success' : 'text-badge-warning'}`}>
                     {!needsApiKey ? modelText.header.noApiKey : hasApiKey ? modelText.header.apiKeySaved : modelText.header.waitingApiKey}
                   </span>
                   <label className="flex items-center gap-2 text-xs text-zinc-400" title={modelText.header.selectableTitle}>
@@ -1011,7 +1011,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange, 
               {/* ── 保存 ── */}
               <div className="flex flex-col gap-2 border-t border-zinc-800 pt-4">
                 {providerFormDirty && (
-                  <span className="inline-flex w-fit items-center rounded border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-[11px] text-amber-200">
+                  <span className="inline-flex w-fit items-center rounded border border-badge-warning/30 bg-amber-500/10 px-1.5 py-0.5 text-[11px] text-badge-warning">
                     {modelText.header.unsavedBadge}
                   </span>
                 )}

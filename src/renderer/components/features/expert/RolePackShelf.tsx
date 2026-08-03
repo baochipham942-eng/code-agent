@@ -33,12 +33,12 @@ export const RolePackHealthNotice: React.FC<RolePackHealthNoticeProps> = ({ item
   return (
     <div className="space-y-1.5">
       {item.installState === 'degraded' ? (
-        <div data-testid={`role-pack-degraded-${item.entry.roleId}`} className="rounded-md border border-amber-500/30 bg-amber-500/10 p-2">
-          <div className="flex items-center gap-1.5 text-xs text-amber-200">
+        <div data-testid={`role-pack-degraded-${item.entry.roleId}`} className="rounded-md border border-badge-warning/30 bg-amber-500/10 p-2">
+          <div className="flex items-center gap-1.5 text-xs text-badge-warning">
             <AlertTriangle className="h-3.5 w-3.5" />
             <span>{text.degraded.replace('{count}', String(missingSkills.length))}</span>
           </div>
-          <p data-testid={`role-pack-missing-skills-${item.entry.roleId}`} className="mt-1 text-[11px] leading-relaxed text-amber-100/80">
+          <p data-testid={`role-pack-missing-skills-${item.entry.roleId}`} className="mt-1 text-[11px] leading-relaxed text-badge-warning/80">
             {text.missingSkills.replace('{skills}', missingSkills.join('、'))}
           </p>
           <Button
@@ -56,7 +56,7 @@ export const RolePackHealthNotice: React.FC<RolePackHealthNoticeProps> = ({ item
         </div>
       ) : null}
       {item.locallyModified ? (
-        <p data-testid={`role-pack-locally-modified-${item.entry.roleId}`} className="text-[11px] leading-relaxed text-amber-200/80">
+        <p data-testid={`role-pack-locally-modified-${item.entry.roleId}`} className="text-[11px] leading-relaxed text-badge-warning/80">
           {text.locallyModified}
         </p>
       ) : null}

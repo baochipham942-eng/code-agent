@@ -47,7 +47,7 @@ function gradeTone(grade?: TurnQualityScoreSummary['grade']): string {
     case 'good':
       return 'border-badge-success/20 bg-emerald-400/10 text-badge-success';
     case 'watch':
-      return 'border-amber-400/20 bg-amber-400/10 text-amber-200';
+      return 'border-badge-warning/20 bg-amber-400/10 text-badge-warning';
     case 'risk':
       return 'border-badge-danger/20 bg-red-400/10 text-badge-danger';
     default:
@@ -60,7 +60,7 @@ function dimensionTone(status?: TurnQualityScoreBreakdown['status']): string {
     case 'good':
       return 'border-badge-success/15 bg-emerald-400/[0.05]';
     case 'watch':
-      return 'border-amber-400/15 bg-amber-400/[0.05]';
+      return 'border-badge-warning/15 bg-amber-400/[0.05]';
     case 'risk':
       return 'border-badge-danger/15 bg-red-400/[0.05]';
     default:
@@ -301,7 +301,7 @@ const ModelDecisionSummary: React.FC<{ decision: ReplayModelDecision; audit?: Re
       </div>
     </div>
     {decision.fallbackFrom ? (
-      <div className="mt-1 text-[11px] text-amber-200/70">fallback from {decision.fallbackFrom}</div>
+      <div className="mt-1 text-[11px] text-badge-warning/70">fallback from {decision.fallbackFrom}</div>
     ) : null}
   </div>
 );

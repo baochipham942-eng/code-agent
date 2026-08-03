@@ -82,14 +82,14 @@ export const DataPreparation: React.FC<DataPreparationProps> = ({ onComplete }) 
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-6">
       {/* 概念说明 */}
-      <div className="p-4 rounded-xl bg-gradient-to-r from-purple-500/10 to-blue-500/10 border border-purple-500/20">
+      <div className="p-4 rounded-xl bg-gradient-to-r from-purple-500/10 to-blue-500/10 border border-badge-accent/20">
         <div className="flex items-start gap-3">
-          <BookOpen className="w-5 h-5 text-purple-400 mt-0.5" />
+          <BookOpen className="w-5 h-5 text-badge-accent mt-0.5" />
           <div>
             <h3 className="text-sm font-medium text-zinc-200 mb-2">{dp.introTitle}</h3>
             <p className="text-sm text-zinc-400">
               {dp.introBodyPre}
-              <span className="text-purple-400">{dp.introBodyHighlight}</span>
+              <span className="text-badge-accent">{dp.introBodyHighlight}</span>
               {dp.introBodyPost}
             </p>
           </div>
@@ -138,12 +138,12 @@ export const DataPreparation: React.FC<DataPreparationProps> = ({ onComplete }) 
               <span className={`font-medium ${selectedDataset === 'openwebtext' ? 'text-badge-success' : 'text-zinc-200'}`}>
                 {dp.openwebtextName}
               </span>
-              <span className="text-xs px-2 py-0.5 rounded bg-amber-500/20 text-amber-400">{dp.openwebtextBadge}</span>
+              <span className="text-xs px-2 py-0.5 rounded bg-amber-500/20 text-badge-warning">{dp.openwebtextBadge}</span>
             </div>
             <p className="text-xs text-zinc-500">
               {dp.openwebtextDesc}
             </p>
-            <p className="text-xs text-amber-400/70 mt-1">
+            <p className="text-xs text-badge-warning/70 mt-1">
               {dp.openwebtextHighlight}
             </p>
           </button>
@@ -294,7 +294,7 @@ export const DataPreparation: React.FC<DataPreparationProps> = ({ onComplete }) 
               </div>
               <p className="text-xs text-zinc-500">{dp.outputCard2Desc}</p>
             </div>
-            <div className="bg-purple-500/10 rounded-lg p-3 border border-purple-500/20">
+            <div className="bg-purple-500/10 rounded-lg p-3 border border-badge-accent/20">
               <div className="flex items-center gap-2 mb-1">
                 <span className="text-lg">📒</span>
                 <span className="text-sm text-zinc-200">{dp.outputCard3Title}</span>

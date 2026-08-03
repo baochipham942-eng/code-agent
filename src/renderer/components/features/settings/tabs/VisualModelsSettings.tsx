@@ -126,7 +126,7 @@ export const BuiltinModelList: React.FC<{
                   {availableBadge}
                 </span>
               ) : (
-                <span className="inline-flex items-center rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-medium text-amber-300">
+                <span className="inline-flex items-center rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-medium text-badge-warning">
                   {unconfiguredBadge}
                 </span>
               )}
@@ -387,7 +387,7 @@ export const VisualModelsSettings: React.FC = () => {
           onSelect={(id) => saveDefaults(defaultImageModelId, id)}
           onConfigure={handleConfigure}
         />
-        <p className="rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-[11px] text-amber-300/90">
+        <p className="rounded-lg border border-badge-warning/20 bg-amber-500/5 px-3 py-2 text-[11px] text-badge-warning/90">
           {s.videoPendingNote}
         </p>
         <CustomEndpointManager

@@ -372,7 +372,7 @@ export function getToolStatusText(toolCall: ToolCall): string {
  */
 export function getToolStatusClass(toolCall: ToolCall): string {
   if (!toolCall.result) {
-    return 'text-yellow-400'; // 执行中
+    return 'text-badge-warning'; // 执行中
   }
 
   if (toolCall.result.success) {

@@ -89,7 +89,7 @@ function getToneClasses(tone: 'ready' | 'warning' | 'error' | 'neutral'): string
     case 'ready':
       return 'border-badge-success/30 bg-emerald-500/10 text-badge-success';
     case 'warning':
-      return 'border-amber-500/30 bg-amber-500/10 text-amber-300';
+      return 'border-badge-warning/30 bg-amber-500/10 text-badge-warning';
     case 'error':
       return 'border-red-500/30 bg-red-500/10 text-badge-danger';
     default:
@@ -407,7 +407,7 @@ const TimeCapabilityPanel: React.FC = () => {
           <section className="min-w-0 border border-zinc-800 bg-zinc-900/40">
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-800 px-4 py-3">
               <div className="flex items-center gap-2">
-                <Clock3 className="h-4 w-4 text-amber-300" />
+                <Clock3 className="h-4 w-4 text-badge-warning" />
                 <h3 className="text-sm font-semibold text-zinc-100">Time Workbench</h3>
               </div>
               <div className="flex items-center gap-2">
@@ -537,7 +537,7 @@ const TimeCapabilityPanel: React.FC = () => {
           <section className="min-w-0 border border-zinc-800 bg-zinc-900/40">
             <div className="flex items-center justify-between gap-3 border-b border-zinc-800 px-4 py-3">
               <div className="flex items-center gap-2">
-                <Wrench className="h-4 w-4 text-amber-300" />
+                <Wrench className="h-4 w-4 text-badge-warning" />
                 <h3 className="text-sm font-semibold text-zinc-100">Capability Fix</h3>
               </div>
               <span className={`rounded-md border px-2 py-1 text-[11px] ${getToneClasses(fixItems.length > 0 ? 'warning' : 'ready')}`}>
@@ -628,7 +628,7 @@ const Metric: React.FC<{ label: string; value: string; tone?: 'error' | 'neutral
 const CapabilityStatusCell: React.FC<{ label: string; ready: boolean; detail: string }> = ({ label, ready, detail }) => (
   <div className="border border-zinc-800 bg-zinc-950/40 px-3 py-2">
     <div className="flex items-center gap-1.5 text-xs text-zinc-300">
-      {ready ? <CheckCircle2 className="h-3.5 w-3.5 text-badge-success" /> : <ShieldAlert className="h-3.5 w-3.5 text-amber-300" />}
+      {ready ? <CheckCircle2 className="h-3.5 w-3.5 text-badge-success" /> : <ShieldAlert className="h-3.5 w-3.5 text-badge-warning" />}
       {label}
     </div>
     <div className="mt-1 truncate text-[11px] text-zinc-500" title={detail}>{detail}</div>
@@ -675,7 +675,7 @@ const CapabilityFixRow: React.FC<{
       {tone === 'error' ? (
         <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-badge-danger" />
       ) : (
-        <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-300" />
+        <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-badge-warning" />
       )}
     </div>
 

@@ -165,7 +165,7 @@ const ChannelSummaryTile: React.FC<{
     tone === 'success'
       ? 'text-badge-success'
       : tone === 'warning'
-        ? 'text-amber-300'
+        ? 'text-badge-warning'
         : tone === 'danger'
           ? 'text-badge-danger'
           : 'text-zinc-200';
@@ -686,9 +686,9 @@ export const ChannelsSettings: React.FC = () => {
   const getStatusColor = (status: ChannelAccount['status']): string => {
     switch (status) {
       case 'connected':
-        return 'text-green-400';
+        return 'text-badge-success';
       case 'connecting':
-        return 'text-yellow-400';
+        return 'text-badge-warning';
       case 'error':
         return 'text-badge-danger';
       default:
@@ -946,7 +946,7 @@ export const ChannelsSettings: React.FC = () => {
       {message && (
         <div
           className={`flex items-center gap-2 p-3 rounded-lg ${
-            message.type === 'success' ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-badge-danger'
+            message.type === 'success' ? 'bg-green-500/10 text-badge-success' : 'bg-red-500/10 text-badge-danger'
           }`}
         >
           {message.type === 'success' ? (

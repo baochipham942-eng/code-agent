@@ -75,7 +75,7 @@ const ActionBar = memo(function ActionBar({
   const actions = [
     { key: 'rewrite', label: t.generativeUI.rewrite, icon: Pencil, color: 'text-blue-400 bg-blue-500/10 hover:bg-blue-500/20 border-blue-500/20' },
     { key: 'simplify', label: t.generativeUI.simplify, icon: Scissors, color: 'text-badge-success bg-emerald-500/10 hover:bg-emerald-500/20 border-badge-success/20' },
-    { key: 'insert_after', label: t.generativeUI.insertAfter, icon: ListPlus, color: 'text-purple-400 bg-purple-500/10 hover:bg-purple-500/20 border-purple-500/20' },
+    { key: 'insert_after', label: t.generativeUI.insertAfter, icon: ListPlus, color: 'text-badge-accent bg-purple-500/10 hover:bg-purple-500/20 border-badge-accent/20' },
     { key: 'delete', label: t.common.delete, icon: Trash2, color: 'text-badge-danger bg-red-500/10 hover:bg-red-500/20 border-red-500/20' },
   ];
 
@@ -243,7 +243,7 @@ export const DocumentBlock = memo(function DocumentBlock({
             className="flex items-center gap-1.5 px-2 py-1 rounded-lg hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200 transition-all text-xs"
           >
             {copied ? (
-              <><Check className="w-3.5 h-3.5 text-green-400" /><span className="text-green-400">{t.generativeUI.copied}</span></>
+              <><Check className="w-3.5 h-3.5 text-badge-success" /><span className="text-badge-success">{t.generativeUI.copied}</span></>
             ) : (
               <><Copy className="w-3.5 h-3.5" /><span>{t.generativeUI.copy}</span></>
             )}

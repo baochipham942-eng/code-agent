@@ -34,7 +34,7 @@ function toneFromPercent(pct: number): Tone {
 // warning/critical 保留 functional color，因为这是上下文吃紧的告警信号
 const TONE_STYLES: Record<Tone, { ring: string; text: string; hoverBg: string }> = {
   normal: { ring: 'stroke-zinc-500', text: 'text-zinc-400', hoverBg: 'hover:bg-zinc-700/30' },
-  warning: { ring: 'stroke-yellow-500', text: 'text-yellow-400', hoverBg: 'hover:bg-yellow-500/10' },
+  warning: { ring: 'stroke-badge-warning', text: 'text-badge-warning', hoverBg: 'hover:bg-yellow-500/10' },
   critical: { ring: 'stroke-red-500', text: 'text-badge-danger', hoverBg: 'hover:bg-red-500/10' },
 };
 

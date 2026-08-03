@@ -63,7 +63,7 @@ const LAUNCHABLE_VIEWS: readonly LaunchableViewDefinition[] = [
   {
     id: 'files',
     icon: FolderTree,
-    iconClassName: 'text-amber-400/80',
+    iconClassName: 'text-badge-warning/80',
     // 不是 files.attach——那是输入框的附件选择器（scope: 'composer'），不是「打开文件视图」。
     keybindingActionId: 'files.open',
   },
@@ -245,7 +245,7 @@ export const WorkbenchTabs: React.FC<{ children?: React.ReactNode; focusable?: b
         label: t.workbenchTabs.filesLabel,
         title: t.workbenchTabs.filesTitle,
         icon: FolderTree,
-        iconClassName: 'text-amber-400/80',
+        iconClassName: 'text-badge-warning/80',
         isDirty: false,
       };
     }
@@ -349,7 +349,7 @@ export const WorkbenchTabs: React.FC<{ children?: React.ReactNode; focusable?: b
           suffix: (
             <>
               {meta.isDirty && (
-                <span className="text-[10px] leading-none text-amber-400" title={t.workbenchTabs.unsavedChanges}>●</span>
+                <span className="text-[10px] leading-none text-badge-warning" title={t.workbenchTabs.unsavedChanges}>●</span>
               )}
               <button /* ds-allow:button: tab 内 10px 超小关闭钮（对齐 FileExplorerPanel TabBar 的 ×），primitive 变体不适配 */
                 type="button"

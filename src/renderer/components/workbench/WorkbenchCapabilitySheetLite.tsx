@@ -295,7 +295,7 @@ export const WorkbenchCapabilitySheetLite: React.FC<WorkbenchCapabilitySheetLite
             <div className="flex items-start gap-2 text-[11px] text-zinc-300">
               <AlertTriangle
                 className={`mt-0.5 h-3.5 w-3.5 flex-shrink-0 ${
-                  effectiveBlockedReason.severity === 'error' ? 'text-badge-danger' : 'text-amber-300'
+                  effectiveBlockedReason.severity === 'error' ? 'text-badge-danger' : 'text-badge-warning'
                 }`}
               />
               <div className="space-y-1">
@@ -324,7 +324,7 @@ export const WorkbenchCapabilitySheetLite: React.FC<WorkbenchCapabilitySheetLite
                         disabled={loading}
                         className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-[11px] transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
                           action.emphasis === 'primary'
-                            ? 'border-amber-500/30 bg-amber-500/10 text-amber-200 hover:border-amber-500/50 hover:bg-amber-500/15'
+                            ? 'border-badge-warning/30 bg-amber-500/10 text-badge-warning hover:border-badge-warning/50 hover:bg-amber-500/15'
                             : 'border-white/[0.08] bg-zinc-900/60 text-zinc-300 hover:border-white/[0.14] hover:text-zinc-100'
                         }`}
                       >

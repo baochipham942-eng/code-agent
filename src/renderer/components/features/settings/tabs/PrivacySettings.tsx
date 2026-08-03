@@ -75,7 +75,7 @@ function getSetupLogLineClass(entry: { stream: 'stdout' | 'stderr'; line: string
   const line = entry.line.trim();
   if (line.startsWith('❌')) return 'text-badge-danger';
   if (line.startsWith('▷ STEP:')) return 'text-cyan-300';
-  if (line.startsWith('✓')) return 'text-green-400';
+  if (line.startsWith('✓')) return 'text-badge-success';
   if (entry.stream === 'stderr' && /\b(error|failed|failure|fatal|exception|traceback)\b/i.test(line)) {
     return 'text-badge-danger';
   }
@@ -369,7 +369,7 @@ const PrivacySettings: React.FC<PrivacySettingsProps> = ({ onNavigateSettings })
           <div className="flex items-center gap-3 rounded-lg border border-zinc-800 bg-zinc-900/40 p-3">
             {isReadyGreen ? (
               <>
-                <ShieldCheck className="h-5 w-5 text-green-400" />
+                <ShieldCheck className="h-5 w-5 text-badge-success" />
                 <div className="text-sm">
                   <div className="text-zinc-200 font-medium">{privacyText.status.readyTitle}</div>
                   <div className="text-xs text-zinc-400 mt-0.5">

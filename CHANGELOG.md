@@ -60,6 +60,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   可能只写了一半就被读取（表现为间歇性 `ENOENT .../memory/INDEX.md`，负载重时更易撞上）。
   改为 `await` + `try/catch`，失败仍只 `logger.warn` 不抛，fail-soft 语义不变。
 
+- **`dark:` 变体在高对比深色主题下完全失效**（#946）：`tailwind.config.js` 的
+  `darkMode: ['class', '[data-theme="dark"]']` 里自定义选择器**替换**了默认的 `.dark`，
+  而 hc-dark 的 `data-theme` 是 `high-contrast-dark`，`useTheme.ts` 给它补挂的 `dark` class
+  对 Tailwind 无效（原注释「亮暗基类给 dark: 变体用」是错的）。后果是所有
+  `text-blue-700 dark:text-blue-300` 类成对写法在 hc-dark 下取浅色分支，深色文字压近黑底。
+  改用 `:is([data-theme="dark"], [data-theme="high-contrast-dark"])`，并新增
+  `darkVariantThemeMatrix.test.ts` 把「四套主题 × `dark:` 命中与否」钉成状态矩阵
+  （用真实 config 过 postcss 编译后抠实际选择器，不硬编码期望值）。
+- **选区颜色硬编码，`--selection-*` token 全是死代码**（#946）：`global.css` 四段
+  `::selection` 写死 `rgba(20,184,166,.5) !important`，而四套主题各自定义的
+  `--selection-bg`/`--selection-text`（hc 两套指向 `--accent-accessible`）**全仓零消费**。
+  改为消费 token 并去掉 `!important`。此为 #918/#928 之后**同形状的第三次**——变量定义了没人读。
+- **主题批中低档十项**（#946）：欢迎页 `bg-white/[0.03]`/`border-white/[0.08]` 在浅色下白压白；
+  通话摘要卡用 rgba 绕过 hex 门；主题双写漂移（`useTheme` 只读 localStorage 而设置页写后端、
+  启动不读回）；`index.html` 静态深色导致浅色/hc 用户启动 FOUC；`light.css` 的
+  `--text-tertiary` 与 secondary 同值少一档层级；`high-contrast-dark.css` 的
+  `--badge-danger-bg` alpha 0.08（同组其余四个都是 0.2）；品牌件与 a11y 细节若干。
+- **invokeDomain 错误码穿透 + rewind 横幅噪声收敛**（#947）。
+- **dev 包 `installedFrom` 容忍旧 host**（#949）：renderer 热更新会跑在旧 host 上。
+
+### Changed
+
+- **智谱 CogView 出图模型 id 改为可配置**（#945），不再钉死版本号；对价表查价的影响已在注释写明。
+
 ### Security
 
 - **关闭设计产物读写两侧的 TOCTOU 窗口 + dataURL 通道内容校验**（#902）。
@@ -76,6 +100,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **设置页 23 个 tab 改懒加载**（#942）：首开求值 11663 行 → 1044 行（-91%）。
 - **上下文健康缓存**（#900）。
 - **寒暄类消息不再为意图分类等一次小模型；非「自动」档不为路由判断去调另一个供应商的快模型**（随 #868 落地）。
+
+### Tests
+
+- **capabilityCenter 单测走 `remoteCapabilityRegistryService` opt-out**（#944）：原先落到真实单例，
+  每条约 4s，在 30s 默认超时下机器一忙就冲破变随机红。真实耗时来源尚未定死（已排除真实网络——
+  在 fetch 上插过探针一次未被调用），查清前不要移除该 opt-out。
+
+<!-- 语音批（另一会话进行中）的条目在此追加，勿删本注释 -->
+<!-- 已落地：#948 团会话默认收件人=Lead -->
+<!-- 发版前请确认本节已补齐，并同步 docs/releases/v0.30.0.md 的用户向文案 -->
 
 ## [0.29.2] - 2026-07-31
 

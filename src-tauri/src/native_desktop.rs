@@ -1426,17 +1426,26 @@ fn cleanup_native_desktop_storage(
 // 非 macOS：依赖的 frontmost_app_triplet/browser_context 等全是 macos cfg 函数，
 // 返回 Err 走调用方既有降级（IPC 报不支持 / 采集循环跳过），与本文件截图函数同风格
 #[cfg(not(target_os = "macos"))]
-fn capture_frontmost_context_snapshot() -> Result<FrontmostContextSnapshot, String> {
+fn capture_frontmost_context_snapshot(
+    _include_document_path: bool,
+) -> Result<FrontmostContextSnapshot, String> {
     Err("Desktop activity capture is only implemented on macOS.".to_string())
 }
 
 #[cfg(target_os = "macos")]
-fn capture_frontmost_context_snapshot() -> Result<FrontmostContextSnapshot, String> {
+fn capture_frontmost_context_snapshot(
+    include_document_path: bool,
+) -> Result<FrontmostContextSnapshot, String> {
     let (app_name, bundle_id, window_title) = frontmost_app_triplet()?;
     // Now that we have a stable signing certificate, per-app Automation permissions persist.
-    // Browser URL/title and document path are safe to query.
+    // The panel only needs browser/window context; AXDocument is reserved for the collector,
+    // where its filename feeds local activity derivation and evidence.
     let (browser_url, browser_title) = browser_context(&app_name).unwrap_or((None, None));
-    let document_path = frontmost_document_path().unwrap_or(None);
+    let document_path = if include_document_path {
+        frontmost_document_path().unwrap_or(None)
+    } else {
+        None
+    };
     let session = session_snapshot(&app_name).unwrap_or_default();
     let power = power_snapshot().unwrap_or_default();
 
@@ -1835,7 +1844,7 @@ pub async fn desktop_get_permission_status() -> Result<NativePermissionSnapshot,
 
 #[tauri::command]
 pub async fn desktop_get_frontmost_context() -> Result<FrontmostContextSnapshot, String> {
-    capture_frontmost_context_snapshot()
+    capture_frontmost_context_snapshot(false)
 }
 
 #[tauri::command]
@@ -1967,7 +1976,7 @@ pub fn desktop_start_collector(
                 }
             }
 
-            let snapshot = match capture_frontmost_context_snapshot() {
+            let snapshot = match capture_frontmost_context_snapshot(true) {
                 Ok(snapshot) => snapshot,
                 Err(error) => {
                     if let Ok(mut shared) = shared.lock() {

@@ -14,8 +14,41 @@ import {
 } from '../../../shared/constants/voice';
 import type { VoiceTransportHandle, VoiceWorkNarration } from '../../../shared/contract/voice';
 import { createLogger } from '../infra/logger';
+import { recordVoiceWorkEvent, type VoiceNarrationDropReason } from './voiceTelemetry';
 
 const logger = createLogger('VoiceSession');
+
+/**
+ * 丢一条播报：日志与遥测在同一处成对发出（R5）。
+ *
+ * 收成一个出口是因为丢弃分支有九个，而它们各写一半的话，加第十个分支时几乎一定
+ * 只补日志忘了遥测——「哪一格闸吞掉了多少条」正是这条链唯一能被事后量化的东西。
+ * 顺带把 workItemId 补进了原本没带它的两条（首延迟窗 / 最小间隔）。
+ *
+ * 维度取**真实 workItemId**（合成键剥掉后缀），不取 `<id>:milestone-3` 这种合成键：
+ * 后者每条都不一样，按它分组等于没分组。
+ */
+function dropNarration(
+  session: NarrationSession,
+  narration: VoiceWorkNarration,
+  reason: VoiceNarrationDropReason,
+): void {
+  const workItemId = milestoneOwner(narration.workItemId);
+  logger.info('narration dropped', {
+    reason,
+    voiceSessionId: session.id,
+    workItemId,
+    narrationKey: narration.workItemId,
+    status: narration.status,
+  });
+  recordVoiceWorkEvent({
+    phase: 'narration_dropped',
+    workItemId,
+    status: narration.status,
+    worthHearing: narration.worthHearing === true,
+    reason,
+  });
+}
 
 interface PendingNarration {
   narration: VoiceWorkNarration;
@@ -93,6 +126,7 @@ function injectNarration(session: NarrationSession, narration: VoiceWorkNarratio
     // WebRTC 形态媒体不经 Host，注入通道要走 Renderer 的 data channel，尚未实现。
     // 静默 no-op = 用户永远等不到那句话且查不出为什么，必须留痕。
     logger.warn('narration dropped: transport has no inject channel', { provider: upstream.provider });
+    dropNarration(session, narration, 'no_inject_channel');
     return;
   }
   upstream.injectItem(formatNarration(narration));
@@ -105,6 +139,12 @@ function injectNarration(session: NarrationSession, narration: VoiceWorkNarratio
   });
   session.narration.inFlight = { narration, rejectionCount };
   session.narration.spokenWorkItemIds.add(narration.workItemId);
+  recordVoiceWorkEvent({
+    phase: 'narration_spoken',
+    workItemId: milestoneOwner(narration.workItemId),
+    status: narration.status,
+    worthHearing: narration.worthHearing === true,
+  });
   if (narration.status === 'milestone') {
     const owner = milestoneOwner(narration.workItemId);
     const state = session.narration;
@@ -149,7 +189,7 @@ function milestoneAllowed(session: NarrationSession, narration: VoiceWorkNarrati
   const spoken = state.milestoneCounts.get(owner) ?? 0;
   const cap = VOICE_MILESTONE_MAX_PER_WORK_ITEM + (worthHearing ? 1 : 0);
   if (spoken >= cap) {
-    logger.info('milestone dropped: per work item cap', { voiceSessionId: session.id, workItemId: owner, worthHearing });
+    dropNarration(session, narration, 'per_work_item_cap');
     return false;
   }
   if (worthHearing) {
@@ -166,11 +206,11 @@ function milestoneAllowed(session: NarrationSession, narration: VoiceWorkNarrati
   }
   // 首条延迟：不让「我开始做 X 了」和第一条进度挤在同一口气里。
   if (state.firstDispatchAt && now - state.firstDispatchAt < VOICE_MILESTONE_FIRST_DELAY_MS) {
-    logger.info('milestone dropped: first delay window', { voiceSessionId: session.id });
+    dropNarration(session, narration, 'first_delay_window');
     return false;
   }
   if (state.lastMilestoneAt && now - state.lastMilestoneAt < VOICE_MILESTONE_MIN_INTERVAL_MS) {
-    logger.info('milestone dropped: min interval', { voiceSessionId: session.id });
+    dropNarration(session, narration, 'min_interval');
     return false;
   }
   return true;
@@ -208,16 +248,13 @@ export function markNarrationUserTurn(session: NarrationSession): void {
     // 等他说完再补一句几十秒前的进展，是在打断他而不是在帮他。终态不丢，只排队。
     if (pending.narration.status === 'milestone') {
       state.queue.delete(workItemId);
-      logger.info('milestone dropped: user started speaking', { voiceSessionId: session.id, workItemId });
+      dropNarration(session, pending.narration, 'user_speaking');
       continue;
     }
     pending.suppressedTurns += 1;
     if (pending.suppressedTurns < 2) continue;
     state.queue.delete(workItemId);
-    logger.info('narration dropped after two suppressed user turns', {
-      voiceSessionId: session.id,
-      workItemId,
-    });
+    dropNarration(session, pending.narration, 'suppressed_two_turns');
   }
 }
 
@@ -234,7 +271,7 @@ export function flushNarrationQueue(session: NarrationSession): void {
     if (pending.narration.status !== 'milestone') continue;
     if (now - pending.enqueuedAt < VOICE_MILESTONE_STALE_MS) continue;
     state.queue.delete(workItemId);
-    logger.info('milestone dropped: stale', { voiceSessionId: session.id, workItemId });
+    dropNarration(session, pending.narration, 'stale');
   }
   const next = state.queue.entries().next().value as [string, PendingNarration] | undefined;
   if (!next) return;
@@ -252,21 +289,15 @@ export function handleNarrationInjectionRejected(session: NarrationSession, mess
   }
   const { narration, rejectionCount } = failed;
   if (rejectionCount >= 1) {
-    logger.warn('narration injection dropped after retry', {
-      voiceSessionId: session.id,
-      workItemId: narration.workItemId,
-      message,
-    });
+    logger.warn('narration injection dropped after retry', { voiceSessionId: session.id, message });
+    dropNarration(session, narration, 'injection_retry_exhausted');
     return;
   }
   // 进度被拒就丢，不重试:重试意味着过一会儿播一条更陈旧的进展,而它本来就是过程量。
   // 被拒这次仍然算消耗掉一格额度——这个偏差是**故意偏向安静**的:进度这个功能的风险
   // 是碎碎念,不是少说一句。
   if (narration.status === 'milestone') {
-    logger.info('milestone dropped: injection rejected, not retried', {
-      voiceSessionId: session.id,
-      workItemId: narration.workItemId,
-    });
+    dropNarration(session, narration, 'injection_rejected');
     return;
   }
   state.spokenWorkItemIds.delete(narration.workItemId);

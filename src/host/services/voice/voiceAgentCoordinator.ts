@@ -35,6 +35,7 @@ import { buildBlockedNarration, buildMilestoneNarration, buildStopNarration, bui
 import { describeWorkFailure } from './workFailureDescription';
 import { buildVocabularyBlock } from './voiceVocabulary';
 import { resolveVoiceWorkOutcome } from './voiceWorkEvidence';
+import { recordVoiceWorkEvent } from './voiceTelemetry';
 
 const logger = createLogger('VoiceCoordinator');
 
@@ -846,6 +847,9 @@ async function startRun(state: LedgerState, title: string, prompt: string): Prom
   state.taskSnapshot.clear();
   const speaker = resolveNarrationSpeaker(state.activeAgentId);
   upsert(state, { id: workItemId, title, status: 'queued' });
+  // §4.3 的三元组此前只进日志（#903）。派活是这条链的起点，遥测在这里落一条，
+  // 后面口播/丢弃两类事件才有同一个 workItemId 可以对上。
+  recordVoiceWorkEvent({ phase: 'dispatch', workItemId });
   state.pendingId = workItemId;
   state.pendingStartedAt = Date.now();
   // D4：这张票的寿命跟着 run 走，不跟着通话走。终态事件或启动失败才还。

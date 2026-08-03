@@ -46,9 +46,12 @@ describe('dev build-info install gate', () => {
     expect(functionBody(script, 'write_build_info')).toContain(
       'status --porcelain --untracked-files=normal',
     );
+    expect(functionBody(script, 'write_build_info')).toContain(
+      'installedFrom: nullable(process.env.BUILD_INSTALLED_FROM)',
+    );
   });
 
-  it('warns before deleting a build from another worktree without blocking install', () => {
+  it('compares the existing and incoming builds before a cross-session overwrite', () => {
     const script = readInstallScript();
     const warningCallIndex = script.indexOf('\nwarn_about_existing_install\n');
     const deleteIndex = script.indexOf('rm -rf "/Applications/$APP_NAME.app"');
@@ -56,7 +59,12 @@ describe('dev build-info install gate', () => {
 
     expect(warningCallIndex).toBeGreaterThanOrEqual(0);
     expect(deleteIndex).toBeGreaterThan(warningCallIndex);
-    expect(warningBody).toContain('info.worktree !== process.env.CURRENT_PROJECT_ROOT');
+    expect(warningBody).toContain('info.installedFrom ?? info.worktree');
+    expect(warningBody).toContain('INCOMING_BRANCH');
+    expect(warningBody).toContain('INCOMING_COMMIT_SHORT');
+    expect(warningBody).toContain('跨会话覆盖');
+    expect(warningBody).toContain('槽位原有');
+    expect(warningBody).toContain('本次安装');
     expect(warningBody).toContain('info.branch');
     expect(warningBody).toContain('info.commitShort');
     expect(warningBody).toContain('info.builtAt');
@@ -76,6 +84,7 @@ describe('dev build-info install gate', () => {
       commitShort: '1234567',
       dirty: true,
       worktree: '/tmp/worktree with spaces',
+      installedFrom: '/tmp/worktree with spaces',
       builtAt: '2026-07-27T12:34:56.000Z',
     };
     writeFileSync(tempBuildInfo, JSON.stringify(expected));
@@ -95,6 +104,12 @@ describe('dev build-info install gate', () => {
     const validModule = await import('../../src/host/platform/appPaths');
     expect(validModule.getBuildInfo()).toEqual(expected);
     expect(validModule.getBuildInfo()).toBe(validModule.getBuildInfo());
+
+    const { installedFrom: _installedFrom, ...legacyBuildInfo } = expected;
+    writeFileSync(tempBuildInfo, JSON.stringify(legacyBuildInfo));
+    vi.resetModules();
+    const legacyModule = await import('../../src/host/platform/appPaths');
+    expect(legacyModule.getBuildInfo()).toEqual(expected);
 
     writeFileSync(tempBuildInfo, '{bad json');
     vi.resetModules();

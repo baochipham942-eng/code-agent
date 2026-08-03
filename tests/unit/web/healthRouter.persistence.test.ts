@@ -110,6 +110,7 @@ describe('createHealthRouter persistence health', () => {
       commitShort: '1234567',
       dirty: false,
       worktree: '/tmp/dev-build-info',
+      installedFrom: '/tmp/dev-build-info',
       builtAt: '2026-07-27T12:34:56.000Z',
     } satisfies BuildInfo;
 

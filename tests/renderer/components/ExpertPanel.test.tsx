@@ -175,7 +175,7 @@ describe('ExpertPanel', () => {
     expect(screen.getByTestId('expert-tab-mine').getAttribute('aria-selected')).toBe('false');
     const create = screen.getByTestId('expert-create-role');
     expect(create.textContent).toContain('新建专家');
-    expect(create.className).toContain('bg-zinc-600');
+    expect(create.className).toContain('bg-btn-secondary');
   });
 
   it('专家团词条不回潮为配方或 recipe', () => {

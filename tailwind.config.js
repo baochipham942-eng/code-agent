@@ -107,6 +107,8 @@ export default {
         'badge-warning': 'var(--badge-warning-fg)',
         'badge-danger': 'var(--badge-danger-fg)',
         'badge-accent': 'var(--badge-accent-fg)',
+        'btn-secondary': 'var(--btn-secondary-fg)',
+        'btn-secondary-disabled': 'var(--btn-secondary-fg-disabled)',
       },
       backgroundColor: {
         'badge-info': 'var(--badge-info-bg)',
@@ -114,6 +116,10 @@ export default {
         'badge-warning': 'var(--badge-warning-bg)',
         'badge-danger': 'var(--badge-danger-bg)',
         'badge-accent': 'var(--badge-accent-bg)',
+        'btn-secondary': 'var(--btn-secondary-bg)',
+        'btn-secondary-hover': 'var(--btn-secondary-bg-hover)',
+        'btn-secondary-disabled': 'var(--btn-secondary-bg-disabled)',
+        'btn-ghost-hover': 'var(--btn-ghost-bg-hover)',
       },
       borderColor: {
         'badge-info': 'var(--badge-info-border)',

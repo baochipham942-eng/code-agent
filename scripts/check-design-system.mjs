@@ -63,9 +63,14 @@ const BARE_Z_TSX_RE = /z-\[(\d+)\]|zIndex:\s*(\d+)/;
 const BARE_Z_CSS_RE = /z-index:\s*(\d+)/;
 const IMPORTANT_RE = /!important/;
 // 亮档彩色前景类：300 档在浅色背景上尤其容易变成不可读的近白色。
-// 先匹配核心 text-* 类，再向左还原完整 Tailwind token，覆盖 dark:/hover:/任意变体组合。
+// 默认匹配任意色板名，新增色板自动进入门；再向左还原完整 Tailwind token，覆盖 dark:/hover:/任意变体组合。
 export const THEME_BLIND_BRIGHT_FOREGROUND_RE =
-  /(?<![\w-])text-(?:sky|blue|emerald|green|amber|yellow|red|orange|violet|purple|primary)-(?:100|200|300|400)(?![\w-])/g;
+  /(?<![\w-])text-[a-z][a-z0-9]*(?:-[a-z0-9]+)*-(?:100|200|300|400)(?![\w-])/g;
+
+const THEME_BLIND_BRIGHT_FOREGROUND_PALETTE_EXEMPTIONS = new Set([
+  // zinc 映射到 rgb(var(--zinc-*))，四套主题都提供反转后的值，亮档前景随主题安全变化。
+  'zinc',
+]);
 // 本地展示 primitive 定义（const/function EmptyState|Badge）——共享件在 components/primitives/，
 // 别再各自手搓。导出供契约测试对故意违例样本做红绿验证。
 export const LOCAL_DISPLAY_PRIMITIVE_RE = /\b(?:const|function)\s+(?:EmptyState|Badge)\b/;
@@ -100,10 +105,18 @@ function hasDarkVariant(className) {
   return className.split(':').some((variant) => variant === 'dark');
 }
 
+function brightForegroundPalette(coreClass) {
+  return coreClass.match(/^text-([a-z][a-z0-9]*(?:-[a-z0-9]+)*)-(?:100|200|300|400)$/)?.[1] ?? null;
+}
+
+function isBrightForegroundPaletteExempt(coreClass) {
+  return THEME_BLIND_BRIGHT_FOREGROUND_PALETTE_EXEMPTIONS.has(brightForegroundPalette(coreClass));
+}
+
 export function findThemeBlindBrightForegroundViolations(line, loc = '') {
   if (isAllowed(line, ['color'])) return [];
   return findThemeBlindBrightForegroundMatches(line)
-    .filter(({ className }) => !hasDarkVariant(className))
+    .filter(({ className, coreClass }) => !hasDarkVariant(className) && !isBrightForegroundPaletteExempt(coreClass))
     .map(({ className }) => (loc ? `${loc} ${className}` : className));
 }
 
@@ -198,7 +211,7 @@ export function scan(scanRoot = SCAN_ROOT) {
       }
       if (!isAllowed(line, ['color'])) {
         brightForegroundMatches
-          .filter(({ className }) => !hasDarkVariant(className))
+          .filter(({ className, coreClass }) => !hasDarkVariant(className) && !isBrightForegroundPaletteExempt(coreClass))
           .forEach(({ className }) => {
             violations['theme-blind-bright-foreground'].push(`${loc} ${className}`);
           });

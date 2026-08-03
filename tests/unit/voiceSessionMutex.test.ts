@@ -96,6 +96,7 @@ const voiceDispatchProbe = vi.hoisted(() => ({
     status: 'done' | 'milestone';
     title: string;
     summary: string;
+    worthHearing?: true;
   }) => void),
   fail: null as null | ((item: VoiceWorkItem) => void),
   work: null as null | ((item: VoiceWorkItem) => void),
@@ -935,9 +936,11 @@ describe('终态结论节制播报', () => {
     lastOnEvent?.({ type: 'response.done' });
 
     expect(injectItem).not.toHaveBeenCalled();
+    // R5 起九个丢弃分支共用一个出口，原因从消息串挪进 reason 字段（受控词表）。
+    // 断言跟着挪到新形状，并**多钉一个 reason**：守的东西没少，还多了一档。
     expect(voiceLogger.info).toHaveBeenCalledWith(
-      'narration dropped after two suppressed user turns',
-      expect.objectContaining({ workItemId: narration.workItemId }),
+      'narration dropped',
+      expect.objectContaining({ workItemId: narration.workItemId, reason: 'suppressed_two_turns' }),
     );
   });
 
@@ -1884,6 +1887,22 @@ describe('中途进度节流闸（回放时间线）', () => {
     expect(injectItem.mock.calls[0]?.[0]).toContain('写完了');
   });
 
+  it('进度的注入文本就是算好的那整段台词，不套终态模板', async () => {
+    await dialThenFreezeClock('session-milestone-format');
+    dispatch();
+    await vi.advanceTimersByTimeAsync(VOICE_MILESTONE_FIRST_DELAY_MS + 1);
+    injectItem.mockClear();
+
+    voiceDispatchProbe.narrate?.(milestone(1));
+
+    // 正向等值断言：措辞只有一个家（voiceNarration），队列一个字都不该再加。
+    // 上一版 formatNarration 没有 milestone 分支，落到终态兜底模板，开头变成
+    // 「『写周报』做完了。」——而真实 summary 里紧接着写「整件事还没做完」。
+    // 这里不能用 not.toContain('做完了') 之类的宽否定：进度台词本身就含「这步做完了」
+    // （指单步），宽否定会误红，也会在措辞一改动就退化成永远成立的空断言。
+    expect(injectItem).toHaveBeenCalledWith(`[BACKEND] ${milestone(1).summary}`);
+  });
+
   it('终态不受任何进度闸限制（正对照）', async () => {
     await dialThenFreezeClock('session-milestone-terminal-free');
     dispatch();
@@ -1892,5 +1911,134 @@ describe('中途进度节流闸（回放时间线）', () => {
     // 首条延迟窗内、零间隔——进度会被丢，终态必须照播。
     voiceDispatchProbe.narrate?.(terminal);
     expect(injectItem).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ============================================================================
+// R3 worth-hearing：只加权，不抢麦
+//
+// 这一组要同时钉住**放行**和**压住**两半，缺一半都会变成假绿：
+//   - 只测放行：一个「worth-hearing 无视一切闸直接播」的实现全绿，而它会插用户的话。
+//   - 只测压住：一个「worth-hearing 什么都不做」的实现全绿，而标记就成了摆设。
+// 所以每条豁免都配一条同时刻的普通进度做反证（证明此刻闸确实是关着的），
+// 每条抢占都配一条「换成普通进度也是这个下场」的对照（证明压制不是碰巧）。
+// ============================================================================
+describe('worth-hearing 标记（只加权，绝不豁免 userSpeaking）', () => {
+  const worthHearing = (n: number) => ({
+    workItemId: `work-1:blocked-${n}`,
+    status: 'milestone' as const,
+    worthHearing: true as const,
+    title: '写周报',
+    summary: `卡住了，第 ${n} 次`,
+  });
+  const milestone = (n: number) => ({
+    workItemId: `work-1:milestone-${n}`,
+    status: 'milestone' as const,
+    title: '写周报',
+    summary: `第 ${n} 步做完了`,
+  });
+
+  const dispatch = () => voiceDispatchProbe.work?.({ id: 'work-1', title: '写周报', status: 'queued' });
+
+  beforeEach(() => {
+    injectItem.mockClear();
+    voiceDispatchProbe.narrate = null;
+    voiceDispatchProbe.work = null;
+    lastOnEvent = null;
+  });
+
+  afterEach(async () => {
+    vi.useRealTimers();
+    await endActiveVoiceSession();
+  });
+
+  async function dialThenFreezeClock(sessionId: string): Promise<void> {
+    await attachVoiceClient(new FakeClient() as never, sessionId);
+    vi.useFakeTimers();
+  }
+
+  it('首条延迟窗内：普通进度被丢，worth-hearing 照播', async () => {
+    await dialThenFreezeClock('session-wh-firstdelay');
+    dispatch();
+    injectItem.mockClear();
+
+    // 反证：同一时刻同一条闸，普通进度确实被关在外面。
+    voiceDispatchProbe.narrate?.(milestone(1));
+    expect(injectItem).not.toHaveBeenCalled();
+
+    voiceDispatchProbe.narrate?.(worthHearing(1));
+    expect(injectItem).toHaveBeenCalledTimes(1);
+    expect(injectItem.mock.calls[0]?.[0]).toContain('卡住了');
+  });
+
+  it('最小间隔窗内：普通进度被丢，worth-hearing 照播', async () => {
+    await dialThenFreezeClock('session-wh-interval');
+    dispatch();
+    await vi.advanceTimersByTimeAsync(VOICE_MILESTONE_FIRST_DELAY_MS + 1);
+    injectItem.mockClear();
+
+    voiceDispatchProbe.narrate?.(milestone(1));
+    expect(injectItem).toHaveBeenCalledTimes(1);
+
+    // 刚播完，间隔窗正关着。
+    voiceDispatchProbe.narrate?.(milestone(2));
+    expect(injectItem).toHaveBeenCalledTimes(1);
+
+    voiceDispatchProbe.narrate?.(worthHearing(1));
+    expect(injectItem).toHaveBeenCalledTimes(2);
+  });
+
+  it('per-item 上限只让一格：上限外播得出第 N+1 条，播不出第 N+2 条', async () => {
+    await dialThenFreezeClock('session-wh-cap');
+    dispatch();
+    await vi.advanceTimersByTimeAsync(VOICE_MILESTONE_FIRST_DELAY_MS + 1);
+    injectItem.mockClear();
+
+    for (let n = 1; n <= VOICE_MILESTONE_MAX_PER_WORK_ITEM; n += 1) {
+      voiceDispatchProbe.narrate?.(milestone(n));
+      await vi.advanceTimersByTimeAsync(VOICE_MILESTONE_MIN_INTERVAL_MS + 1);
+    }
+    expect(injectItem).toHaveBeenCalledTimes(VOICE_MILESTONE_MAX_PER_WORK_ITEM);
+
+    // 超额那一格：重要转折不该被上限静默吞掉。
+    voiceDispatchProbe.narrate?.(worthHearing(1));
+    expect(injectItem).toHaveBeenCalledTimes(VOICE_MILESTONE_MAX_PER_WORK_ITEM + 1);
+
+    // 但只让一格——豁免不是无限额度，否则一件活能把整通电话说满。
+    await vi.advanceTimersByTimeAsync(VOICE_MILESTONE_MIN_INTERVAL_MS + 1);
+    voiceDispatchProbe.narrate?.(worthHearing(2));
+    expect(injectItem).toHaveBeenCalledTimes(VOICE_MILESTONE_MAX_PER_WORK_ITEM + 1);
+  });
+
+  it('用户正在说话：worth-hearing 一样播不出去（硬边界）', async () => {
+    await dialThenFreezeClock('session-wh-usertalk');
+    dispatch();
+    await vi.advanceTimersByTimeAsync(VOICE_MILESTONE_FIRST_DELAY_MS + 1);
+    injectItem.mockClear();
+
+    lastOnEvent?.({ type: 'speech.started' });
+    voiceDispatchProbe.narrate?.(worthHearing(1));
+
+    // 「重要」是相对其它播报说的，不是相对用户说的。插话没有任何一档重要性配得上。
+    expect(injectItem).not.toHaveBeenCalled();
+  });
+
+  it('用户开口时，排队中的 worth-hearing 与普通进度同样被丢', async () => {
+    await dialThenFreezeClock('session-wh-drop');
+    dispatch();
+    await vi.advanceTimersByTimeAsync(VOICE_MILESTONE_FIRST_DELAY_MS + 1);
+    injectItem.mockClear();
+
+    // 借「模型正在说」把它压进队列（不预先消耗用户轮额度）。
+    upstreamResponding = true;
+    voiceDispatchProbe.narrate?.(worthHearing(1));
+    expect(injectItem).not.toHaveBeenCalled();
+
+    lastOnEvent?.({ type: 'speech.started' });
+    upstreamResponding = false;
+    lastOnEvent?.({ type: 'response.done' });
+
+    // 用户说完之后再补一句几十秒前的卡点，是打断他而不是帮他——过期语义对它同样成立。
+    expect(injectItem).not.toHaveBeenCalled();
   });
 });

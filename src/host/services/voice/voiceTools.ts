@@ -18,11 +18,27 @@ import { dispatchVoiceIntent, type VoiceIntent } from './voiceAgentCoordinator';
 
 const logger = createLogger('VoiceTools');
 
+/**
+ * 定向参数的说明（R2）。两个工具共用一份措辞：同一个参数在两处各写一半，迟早会长成
+ * 两套语义，而这个参数指错了就是「想停 2 号却停了 1 号」。
+ *
+ * schema 刻意保持朴素 plain string（不用 enum / oneOf / integer）：DashScope 对 tools
+ * 的支持按模型分化（见文件头），复杂 schema 是静默降级的高发区。取值的合法性在
+ * voiceAgentCoordinator 里判，判不出就 fail-closed 说人话。
+ */
+const TARGET_PARAM_DESCRIPTION =
+  '指定作用在哪一件活上：传 get_active_tasks 列出的那个编号（例如 "2"）。'
+  + '**不传就是手上正在跑的那件**——用户没有明确指哪件时不要瞎填。'
+  + '编号对不上的会被拒绝，不会退而作用到别的活上。';
+
 export const VOICE_TOOL_DEFINITIONS: VoiceToolDefinition[] = [
   {
     type: 'function',
     name: 'get_active_tasks',
-    description: '列出当前会话里还没结束的任务。用户问「现在在跑什么」「进度怎么样」时调用。',
+    description:
+      '列出当前会话里还没结束的任务。用户问「现在在跑什么」「进度怎么样」时调用。'
+      + '我派出去的活会带编号；要对其中某一件改方向或叫停，把那个编号原样传给 '
+      + 'steer_task / cancel_task 的 target。',
     parameters: { type: 'object', properties: {}, required: [] },
   },
   {
@@ -62,6 +78,7 @@ export const VOICE_TOOL_DEFINITIONS: VoiceToolDefinition[] = [
       type: 'object',
       properties: {
         instruction: { type: 'string', description: '新的要求，要包含用户的原话要点' },
+        target: { type: 'string', description: TARGET_PARAM_DESCRIPTION },
       },
       required: ['instruction'],
     },
@@ -70,7 +87,13 @@ export const VOICE_TOOL_DEFINITIONS: VoiceToolDefinition[] = [
     type: 'function',
     name: 'cancel_task',
     description: '停掉正在跑的任务。用户说「算了」「别做了」「停下」时调用。',
-    parameters: { type: 'object', properties: {}, required: [] },
+    parameters: {
+      type: 'object',
+      properties: {
+        target: { type: 'string', description: TARGET_PARAM_DESCRIPTION },
+      },
+      required: [],
+    },
   },
   {
     type: 'function',
@@ -110,8 +133,14 @@ function toIntent(name: string, rawArguments: string): VoiceIntent | string {
       return { kind: 'status' };
     case 'get_current_file_summary':
       return { kind: 'recent_files' };
-    case 'cancel_task':
-      return { kind: 'cancel_task' };
+    case 'cancel_task': {
+      // 参数解析失败不能退化成「停手上那件」：那正是本条要防的误伤。没给参数（'{}'）
+      // 与给了但解析不出来是两回事，后者一律拒绝重来。
+      const args = parseArgs(rawArguments);
+      if (!args) return '没听清要停哪一件，什么都没停。请重说一遍。';
+      const target = str(args.target);
+      return { kind: 'cancel_task', ...(target ? { target } : {}) };
+    }
     case 'end_call':
       return { kind: 'end_call' };
     case 'get_current_time':
@@ -136,7 +165,8 @@ function toIntent(name: string, rawArguments: string): VoiceIntent | string {
       if (!args) return '改方向的内容没听清，什么都没改。请重说一遍。';
       const instruction = str(args.instruction);
       if (!instruction) return '没听清要改成什么，什么都没改。';
-      return { kind: 'steer_task', instruction };
+      const target = str(args.target);
+      return { kind: 'steer_task', instruction, ...(target ? { target } : {}) };
     }
     default:
       // 上游只可能调我们注册过的名字；调了别的说明注册面和执行面不同步，必须留痕。

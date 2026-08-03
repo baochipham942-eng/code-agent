@@ -14,8 +14,41 @@ import {
 } from '../../../shared/constants/voice';
 import type { VoiceTransportHandle, VoiceWorkNarration } from '../../../shared/contract/voice';
 import { createLogger } from '../infra/logger';
+import { recordVoiceWorkEvent, type VoiceNarrationDropReason } from './voiceTelemetry';
 
 const logger = createLogger('VoiceSession');
+
+/**
+ * 丢一条播报：日志与遥测在同一处成对发出（R5）。
+ *
+ * 收成一个出口是因为丢弃分支有九个，而它们各写一半的话，加第十个分支时几乎一定
+ * 只补日志忘了遥测——「哪一格闸吞掉了多少条」正是这条链唯一能被事后量化的东西。
+ * 顺带把 workItemId 补进了原本没带它的两条（首延迟窗 / 最小间隔）。
+ *
+ * 维度取**真实 workItemId**（合成键剥掉后缀），不取 `<id>:milestone-3` 这种合成键：
+ * 后者每条都不一样，按它分组等于没分组。
+ */
+function dropNarration(
+  session: NarrationSession,
+  narration: VoiceWorkNarration,
+  reason: VoiceNarrationDropReason,
+): void {
+  const workItemId = milestoneOwner(narration.workItemId);
+  logger.info('narration dropped', {
+    reason,
+    voiceSessionId: session.id,
+    workItemId,
+    narrationKey: narration.workItemId,
+    status: narration.status,
+  });
+  recordVoiceWorkEvent({
+    phase: 'narration_dropped',
+    workItemId,
+    status: narration.status,
+    worthHearing: narration.worthHearing === true,
+    reason,
+  });
+}
 
 interface PendingNarration {
   narration: VoiceWorkNarration;
@@ -66,9 +99,16 @@ export function createNarrationState(): NarrationState {
  */
 function formatNarration(narration: VoiceWorkNarration): string {
   const who = narration.speaker ? `${narration.speaker.displayName}：` : '';
-  // 「停旧的」回报（§1）：整句台词已由 buildStopNarration 算好，这里不再拼词。
-  // 措辞只有一个家，避免「停稳了没有」这件事在两个模块里各写一半而说法打架。
-  if (narration.status === 'announcement') {
+  // 整句台词已由 voiceNarration 算好的两档，这里一个字都不再拼：
+  //   - announcement（§1「停旧的」回报，buildStopNarration）
+  //   - milestone（§2 中途进度 / R3 卡点，buildMilestoneNarration / buildBlockedNarration）
+  // 措辞只有一个家，避免同一句话在两个模块里各写一半而说法打架。
+  //
+  // milestone 之前漏在这里，落到下面那句终态兜底模板，注入文本开头成了
+  // 「『X』做完了。」——而 summary 里紧接着写「整件事还没做完，不要说它完成了」，
+  // 同一段文本先断言做完再否认做完。本仓栽过三次「可润色状态名词被润成已完成」，
+  // 这个开头就是最好的润色素材。
+  if (narration.status === 'announcement' || narration.status === 'milestone') {
     return `[BACKEND] ${who}${narration.summary}`;
   }
   if (narration.status === 'failed') {
@@ -93,6 +133,7 @@ function injectNarration(session: NarrationSession, narration: VoiceWorkNarratio
     // WebRTC 形态媒体不经 Host，注入通道要走 Renderer 的 data channel，尚未实现。
     // 静默 no-op = 用户永远等不到那句话且查不出为什么，必须留痕。
     logger.warn('narration dropped: transport has no inject channel', { provider: upstream.provider });
+    dropNarration(session, narration, 'no_inject_channel');
     return;
   }
   upstream.injectItem(formatNarration(narration));
@@ -105,6 +146,12 @@ function injectNarration(session: NarrationSession, narration: VoiceWorkNarratio
   });
   session.narration.inFlight = { narration, rejectionCount };
   session.narration.spokenWorkItemIds.add(narration.workItemId);
+  recordVoiceWorkEvent({
+    phase: 'narration_spoken',
+    workItemId: milestoneOwner(narration.workItemId),
+    status: narration.status,
+    worthHearing: narration.worthHearing === true,
+  });
   if (narration.status === 'milestone') {
     const owner = milestoneOwner(narration.workItemId);
     const state = session.narration;
@@ -114,9 +161,18 @@ function injectNarration(session: NarrationSession, narration: VoiceWorkNarratio
   }
 }
 
-/** milestone 合成键形如 `<workItemId>:milestone-<n>`；取回它属于哪件活。 */
+/**
+ * 合成键形如 `<workItemId>:<某种后缀>-<n>`（`:milestone-`、`:blocked-`、`:stop-`…）；
+ * 取回它属于哪件活。
+ *
+ * **按第一个冒号切，不按后缀名枚举**：上一版写死认 `:milestone-`，于是 R3 加
+ * `:blocked-` 前缀的那一刻，每条卡点播报都被算成「另一件活」，per-item 上限对它
+ * 整个失效——一件活能把整通电话说满，而日志里看不出任何异常。真实 workItemId 由
+ * `voice-work-<ts>-<rand>` 生成，本身不含冒号，所以按冒号切是稳的，且以后再加什么
+ * 后缀都默认被算进同一件活，不用回来改这里。
+ */
 function milestoneOwner(workItemId: string): string {
-  const at = workItemId.indexOf(':milestone-');
+  const at = workItemId.indexOf(':');
   return at === -1 ? workItemId : workItemId.slice(0, at);
 }
 
@@ -124,21 +180,44 @@ function milestoneOwner(workItemId: string): string {
  * 进度该不该播（§2 三条闸，缺一条就变成碎碎念）。
  *
  * 这三条只管进度，**终态一条都不受限**——结论永远值得说。
+ *
+ * worth-hearing（R3）在这三条上各让一步，**且只在这三条上**：
+ *   - 首条延迟窗、最小间隔：直接豁免。这两条防的是碎碎念，而转折点不是碎碎念。
+ *   - per-item 上限：允许**超一格**，不是无限。上限防的是一件活把整通电话说满，
+ *     这个风险对转折点同样成立；但「三条进度已经播满，第四条是『这事要花钱』」
+ *     被静默吞掉，是把最该听见的那条正好挡在门外。让一格 + 留痕是两害相权。
+ *
+ * userSpeaking 抢占不在这里，也不该在这里被豁免——见 enqueueOrInjectNarration。
  */
 function milestoneAllowed(session: NarrationSession, narration: VoiceWorkNarration, now: number): boolean {
   const state = session.narration;
   const owner = milestoneOwner(narration.workItemId);
-  if ((state.milestoneCounts.get(owner) ?? 0) >= VOICE_MILESTONE_MAX_PER_WORK_ITEM) {
-    logger.info('milestone dropped: per work item cap', { voiceSessionId: session.id, workItemId: owner });
+  const worthHearing = narration.worthHearing === true;
+  const spoken = state.milestoneCounts.get(owner) ?? 0;
+  const cap = VOICE_MILESTONE_MAX_PER_WORK_ITEM + (worthHearing ? 1 : 0);
+  if (spoken >= cap) {
+    dropNarration(session, narration, 'per_work_item_cap');
     return false;
+  }
+  if (worthHearing) {
+    // 超额那一格必须留痕：不然「上限之外还播了一条」这件事在日志里查不到，
+    // 而它正是将来判断「这个豁免有没有被滥用」的唯一依据。
+    if (spoken >= VOICE_MILESTONE_MAX_PER_WORK_ITEM) {
+      logger.info('milestone over cap: worth-hearing overflow slot used', {
+        voiceSessionId: session.id,
+        workItemId: owner,
+        spoken,
+      });
+    }
+    return true;
   }
   // 首条延迟：不让「我开始做 X 了」和第一条进度挤在同一口气里。
   if (state.firstDispatchAt && now - state.firstDispatchAt < VOICE_MILESTONE_FIRST_DELAY_MS) {
-    logger.info('milestone dropped: first delay window', { voiceSessionId: session.id });
+    dropNarration(session, narration, 'first_delay_window');
     return false;
   }
   if (state.lastMilestoneAt && now - state.lastMilestoneAt < VOICE_MILESTONE_MIN_INTERVAL_MS) {
-    logger.info('milestone dropped: min interval', { voiceSessionId: session.id });
+    dropNarration(session, narration, 'min_interval');
     return false;
   }
   return true;
@@ -153,6 +232,8 @@ export function enqueueOrInjectNarration(session: NarrationSession, narration: V
   // 排了就会在用户说完话之后冒出来一句早已过期的进展。
   if (isMilestone && !milestoneAllowed(session, narration, now)) return;
   const upstreamResponding = session.upstream.kind === 'relay' && session.upstream.isResponding();
+  // 这里**没有** worthHearing 分支，而且不许长出来（R3 硬边界）：用户正在说话时，
+  // 再重要的转折也只能排队等他说完。「重要」是相对其它播报说的，不是相对用户说的。
   if (!state.userSpeaking && !upstreamResponding) {
     injectNarration(session, narration);
     return;
@@ -174,16 +255,13 @@ export function markNarrationUserTurn(session: NarrationSession): void {
     // 等他说完再补一句几十秒前的进展，是在打断他而不是在帮他。终态不丢，只排队。
     if (pending.narration.status === 'milestone') {
       state.queue.delete(workItemId);
-      logger.info('milestone dropped: user started speaking', { voiceSessionId: session.id, workItemId });
+      dropNarration(session, pending.narration, 'user_speaking');
       continue;
     }
     pending.suppressedTurns += 1;
     if (pending.suppressedTurns < 2) continue;
     state.queue.delete(workItemId);
-    logger.info('narration dropped after two suppressed user turns', {
-      voiceSessionId: session.id,
-      workItemId,
-    });
+    dropNarration(session, pending.narration, 'suppressed_two_turns');
   }
 }
 
@@ -200,7 +278,7 @@ export function flushNarrationQueue(session: NarrationSession): void {
     if (pending.narration.status !== 'milestone') continue;
     if (now - pending.enqueuedAt < VOICE_MILESTONE_STALE_MS) continue;
     state.queue.delete(workItemId);
-    logger.info('milestone dropped: stale', { voiceSessionId: session.id, workItemId });
+    dropNarration(session, pending.narration, 'stale');
   }
   const next = state.queue.entries().next().value as [string, PendingNarration] | undefined;
   if (!next) return;
@@ -218,21 +296,21 @@ export function handleNarrationInjectionRejected(session: NarrationSession, mess
   }
   const { narration, rejectionCount } = failed;
   if (rejectionCount >= 1) {
+    // workItemId 留在这条 warn 里：上游拒绝原因（message）只有这一条带，
+    // 排查时要靠它和 workItemId 一起才能定位是哪件活的哪次注入被拒。
     logger.warn('narration injection dropped after retry', {
       voiceSessionId: session.id,
       workItemId: narration.workItemId,
       message,
     });
+    dropNarration(session, narration, 'injection_retry_exhausted');
     return;
   }
   // 进度被拒就丢，不重试:重试意味着过一会儿播一条更陈旧的进展,而它本来就是过程量。
   // 被拒这次仍然算消耗掉一格额度——这个偏差是**故意偏向安静**的:进度这个功能的风险
   // 是碎碎念,不是少说一句。
   if (narration.status === 'milestone') {
-    logger.info('milestone dropped: injection rejected, not retried', {
-      voiceSessionId: session.id,
-      workItemId: narration.workItemId,
-    });
+    dropNarration(session, narration, 'injection_rejected');
     return;
   }
   state.spokenWorkItemIds.delete(narration.workItemId);

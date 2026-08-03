@@ -138,17 +138,64 @@ export function buildMilestoneNarration(input: {
   title: string;
   step: string;
   agentId?: string;
+  /**
+   * 同时有不止一件活没落终态：这一句必须点名是哪件的进度。
+   *
+   * 只在多活时点名，不是无脑都带上：只有一件活在跑时说「『写周报』这边，草稿列完了」，
+   * 是在回答没有人问的问题。归属信息的价值全部来自「有歧义」这个前提。
+   */
+  attributed?: boolean;
 }): VoiceWorkNarration {
   const speaker = resolveNarrationSpeaker(input.agentId);
   const step = toSpokenSummary(input.step);
+  const progress = input.attributed
+    ? `「${input.title}」这边，${step}，这步做完了，我接着往下做。`
+    : `${step}，这步做完了，我接着往下做。`;
   return {
     workItemId: input.workItemId,
     status: 'milestone',
     title: input.title,
     summary: [
-      `现在对用户说一句进度：「${step}，这步做完了，我接着往下做。」`,
+      `现在对用户说一句进度：「${progress}」`,
       '**整件事还没做完**，不要说它完成了、写好了、可以用了。',
       '就说这一句，不要顺带汇报别的步骤，也不要念待办清单。',
+    ].join('\n'),
+    ...(speaker ? { speaker } : {}),
+  };
+}
+
+/**
+ * 执行侧卡住了（R3 worth-hearing）。
+ *
+ * 与 buildMilestoneNarration 同属 `milestone` 档——它同样是过程量，同样归节制闸管，
+ * 只是带上 `worthHearing` 让闸松两格。**不另起一档状态**：新开一档就等于新开一条
+ * 播报出口，而这条链上「执行侧能不能直接对用户说话」的答案必须一直是不能。
+ *
+ * 措辞要同时挡住两种润色：不能被润成「做完了」（它没做完），也不能被润成「失败了」
+ * （它没失败，是推不动了，用户一句话就可能解开）。所以两句话都写死在这里。
+ */
+export function buildBlockedNarration(input: {
+  workItemId: string;
+  title: string;
+  /** 已过 describeTaskBlockedReason 清洗的人话；模型贴的是日志时为空串。 */
+  reason: string;
+  subject: string;
+  agentId?: string;
+}): VoiceWorkNarration {
+  const speaker = resolveNarrationSpeaker(input.agentId);
+  const reason = toSpokenSummary(input.reason);
+  // 原因为空 = 执行侧写的是机器噪音，被清洗层剥掉了。这时只说卡在哪一步，
+  // 绝不用「未知原因」之类的话填坑——编一个原因比不说原因糟。
+  const because = reason ? `：${reason}` : '';
+  return {
+    workItemId: input.workItemId,
+    status: 'milestone',
+    worthHearing: true,
+    title: input.title,
+    summary: [
+      `现在对用户说：「『${input.title}』这边卡住了，卡在「${input.subject}」这一步${because}。」`,
+      '**这件事既没有做完，也不算失败**，是推不动了停在这儿。不要说它完成了，也不要说它失败了。',
+      '如果这事需要用户拿主意或者给点什么，就顺带问他一句；否则就说到这里，不要替他决定。',
     ].join('\n'),
     ...(speaker ? { speaker } : {}),
   };

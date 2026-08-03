@@ -37,6 +37,8 @@ async function invokePrompt<T>(action: string, payload?: unknown): Promise<T> {
 
 export const PromptManagerModal: React.FC = () => {
   const showPromptManager = useAppStore((s) => s.showPromptManager);
+  const showSettings = useAppStore((s) => s.showSettings);
+  const setShowPromptManager = useAppStore((s) => s.setShowPromptManager);
 
   const [list, setList] = useState<PromptListItem[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -140,6 +142,7 @@ export const PromptManagerModal: React.FC = () => {
         icon={<ScrollText className="h-4 w-4 text-badge-accent" />}
         title="提示词"
         description="默认提示词、自定义覆盖和远端片段"
+        onClose={showSettings ? () => setShowPromptManager(false) : undefined}
       />
 
         <div className="flex flex-1 min-h-0">

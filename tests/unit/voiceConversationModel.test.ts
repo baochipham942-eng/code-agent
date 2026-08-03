@@ -39,7 +39,8 @@ vi.mock('../../src/host/services/core/configService', () => ({
 }));
 vi.mock('../../src/host/services/media/imageGenerationService', () => ({ getDashscopeApiKey: () => 'test-key' }));
 vi.mock('../../src/host/services/infra/sessionManager', () => ({
-  getSessionManager: () => ({ addMessageToSession, patchSessionMetadata, getSession }),
+  // getSessionMetadata：建连时读 teamLead 用（语音批 B）。这些用例不是团会话，给 undefined。
+  getSessionManager: () => ({ addMessageToSession, patchSessionMetadata, getSession, getSessionMetadata: () => undefined }),
 }));
 vi.mock('../../src/host/services/infra/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),

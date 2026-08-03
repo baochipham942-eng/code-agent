@@ -14,6 +14,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { AgentRunOptions } from '../../src/host/research/types';
+import { TEAM_LEAD_METADATA_KEY } from '../../src/shared/contract/teamRecipe';
 
 type FakeEvent = { type: string; sessionId: string; data?: unknown };
 
@@ -36,8 +37,13 @@ const runtime = vi.hoisted(() => ({
 const buildRoleContextBlock = vi.hoisted(() => vi.fn(async () => '<role>全量 L0/L1 资料架</role>'));
 const voiceSettings = vi.hoisted(() => ({ value: {} as Record<string, unknown> }));
 const incompleteTasks = vi.hoisted(() => ({ value: [] as Array<{ subject: string; status: string }> }));
+type FakeAgent = { id: string; name: string; description?: string; source?: string; connectors?: Array<{ id: string; level: string }> };
+// value = 「不管问哪个 id 都回它」的老口径；byId 是语音批 B 加的按 id 分辨口径——
+// 「显式点名压过 lead 默认」要求同一次调用里两个 id 解析成不同的人，一个共享值做不到。
+// byId 不设时行为与老口径完全一致（下面每个 describe 的 beforeEach 都清掉它）。
 const resolvedAgent = vi.hoisted(() => ({
-  value: undefined as undefined | { id: string; name: string; description?: string; source?: string; connectors?: Array<{ id: string; level: string }> },
+  value: undefined as undefined | FakeAgent,
+  byId: undefined as undefined | Record<string, FakeAgent>,
 }));
 
 vi.mock('../../src/host/task', () => ({
@@ -83,7 +89,7 @@ vi.mock('../../src/host/session/completionSummaryService', () => ({
 }));
 // 连接器就绪判定与 registry：让「专家声明了 crm，且它已连上」成为可控事实。
 vi.mock('../../src/host/agent/agentRegistry', () => ({
-  resolveAgent: () => resolvedAgent.value,
+  resolveAgent: (agentId: string) => resolvedAgent.byId?.[agentId] ?? resolvedAgent.value,
 }));
 vi.mock('../../src/host/connectors', () => ({
   // 没有 cachedStatus 的连接器按「已就绪」算（见 isConnectorReadyForTurnScope）
@@ -126,6 +132,7 @@ async function settleFlush(): Promise<void> {
 describe('A3 通话身份解析', () => {
   beforeEach(() => {
     resolvedAgent.value = undefined;
+    resolvedAgent.byId = undefined;
   });
 
   it('没选专家时不编人设，只给通话基线', () => {
@@ -165,6 +172,72 @@ describe('A3 通话身份解析', () => {
   });
 });
 
+// 语音批 B：团会话里用户不点名直接打过来，接电话的应该是主理人，而不是无名的通话基线。
+// 真源与成员条 isLead 同一个（readPersistedTeamLead 读 sessions.metadata.teamLead），
+// 所以这里钉的是「读到了、按优先级用了、读不出时不乱认人」这三条。
+describe('语音批 B 团会话默认收件人 = Lead', () => {
+  beforeEach(() => {
+    resolvedAgent.value = undefined;
+    resolvedAgent.byId = undefined;
+  });
+
+  const teamSessionMetadata = (roleId: string): Record<string, unknown> => ({
+    [TEAM_LEAD_METADATA_KEY]: { roleId, recipeId: 'recipe-1', setAt: 1 },
+  });
+
+  it('没点名时默认收件人 = 会话 lead，署名与短人设都按 lead 走', () => {
+    resolvedAgent.byId = { yanzhi: { id: 'yanzhi', name: '衍之', description: '策略主理人' } };
+
+    const routing = resolveVoiceRouting(undefined, teamSessionMetadata('yanzhi'));
+
+    // activeAgentId 就是下游署名/字幕/派活锁身份读的那个值（beginVoiceDispatch → resolveNarrationSpeaker）
+    expect(routing.activeAgentId).toBe('yanzhi');
+    expect(routing.personaInstructions).toContain('衍之');
+    expect(routing.personaInstructions).toContain('不要自称团队里的其他成员');
+  });
+
+  it('显式点名压过 lead 默认（优先级：显式 > teamLead > 基线）', () => {
+    resolvedAgent.byId = {
+      yanzhi: { id: 'yanzhi', name: '衍之', description: '策略主理人' },
+      muzhi: { id: 'muzhi', name: '牧之', description: '内容主理人' },
+    };
+
+    const routing = resolveVoiceRouting('muzhi', teamSessionMetadata('yanzhi'));
+
+    expect(routing.activeAgentId).toBe('muzhi');
+    expect(routing.personaInstructions).not.toContain('衍之');
+  });
+
+  it('fail-closed：lead 解析不出真身时回落无专家基线，不替用户认人', () => {
+    // byId 不含它、value 也是 undefined ⇒ resolveAgent 查无此人，且它不是内置货架角色。
+    // 显式点名的 id 查不到会照传（用户自己选的），默认收件人不行——没人点过名，认错就是
+    // 让一位用户没选的专家接了电话。
+    const routing = resolveVoiceRouting(undefined, teamSessionMetadata('ghost-lead-not-registered'));
+
+    expect(routing.activeAgentId).toBeUndefined();
+    expect(routing.personaInstructions).toBe(resolveVoiceRouting(undefined).personaInstructions);
+  });
+
+  it('fail-closed：lead 是面板选不到的系统型内置时回落无专家基线', () => {
+    resolvedAgent.byId = { dream: { id: 'dream', name: 'Dream', source: 'builtin' } };
+
+    const routing = resolveVoiceRouting(undefined, teamSessionMetadata('dream'));
+
+    expect(routing.activeAgentId).toBeUndefined();
+    expect(routing.personaInstructions).toBe(resolveVoiceRouting(undefined).personaInstructions);
+  });
+
+  it('fail-closed：非团会话 / teamLead 标记残缺时都不认', () => {
+    resolvedAgent.byId = { yanzhi: { id: 'yanzhi', name: '衍之' } };
+
+    // 单人会话：没有 teamLead 这个 key，以及 host 完全取不到 metadata（无 DB）的情形
+    expect(resolveVoiceRouting(undefined, {}).activeAgentId).toBeUndefined();
+    expect(resolveVoiceRouting(undefined, undefined).activeAgentId).toBeUndefined();
+    // 标记残缺（缺 recipeId/setAt）：readPersistedTeamLead 判不合法，不能当半个 lead 用
+    expect(resolveVoiceRouting(undefined, { [TEAM_LEAD_METADATA_KEY]: { roleId: 'yanzhi' } }).activeAgentId).toBeUndefined();
+  });
+});
+
 describe('A4 窄工具 / H1 指挥台', () => {
   beforeEach(() => {
     runtime.startTask.mockClear();
@@ -174,6 +247,7 @@ describe('A4 窄工具 / H1 指挥台', () => {
     runtime.status = 'idle';
     buildRoleContextBlock.mockClear();
     resolvedAgent.value = undefined;
+    resolvedAgent.byId = undefined;
     incompleteTasks.value = [];
     workItems.value = [];
     voiceSettings.value = {};

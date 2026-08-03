@@ -52,7 +52,8 @@ const dashscopeKey = vi.hoisted(() => ({ value: 'test-key' }));
 vi.mock('../../src/host/services/media/imageGenerationService', () => ({ getDashscopeApiKey: () => dashscopeKey.value }));
 const updateMessage = vi.fn(async (_messageId: string, _updates: Partial<Message>) => undefined);
 vi.mock('../../src/host/services/infra/sessionManager', () => ({
-  getSessionManager: () => ({ addMessageToSession, patchSessionMetadata, getSession, updateMessage }),
+  // getSessionMetadata：建连时读 teamLead 用（语音批 B）。这些用例不是团会话，给 undefined。
+  getSessionManager: () => ({ addMessageToSession, patchSessionMetadata, getSession, updateMessage, getSessionMetadata: () => undefined }),
 }));
 const voiceLogger = vi.hoisted(() => ({
   info: vi.fn(),

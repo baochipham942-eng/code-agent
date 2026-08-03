@@ -28,6 +28,8 @@ interface DependencyEdgeProps {
   markerEnd?: string;
 }
 
+const EDGE_LABEL_CLASS_NAME = 'absolute px-2 py-0.5 text-[10px] font-medium rounded bg-gray-800 text-gray-300 border border-gray-600 pointer-events-all nodrag nopan'; // ds-allow:color: EdgeLabelRenderer 标签自身有固定 bg-gray-800
+
 /**
  * 依赖边组件
  */
@@ -144,12 +146,7 @@ export const DependencyEdge = memo(({
       {label && (
         <EdgeLabelRenderer>
           <div
-            className={`
-              absolute px-2 py-0.5 text-[10px] font-medium rounded
-              bg-gray-800 text-gray-300 border border-gray-600
-              pointer-events-all nodrag nopan
-              ${selected ? 'ring-1 ring-blue-400' : ''}
-            `}
+            className={`${EDGE_LABEL_CLASS_NAME} ${selected ? 'ring-1 ring-blue-400' : ''}`}
             style={{
               transform: `translate(-50%, -50%) translate(${labelX}px,${labelY}px)`,
             }}

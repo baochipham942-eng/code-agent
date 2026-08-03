@@ -178,7 +178,7 @@ export const DiffView: React.FC<DiffViewProps> = ({
       {/* 统计栏 */}
       <div className="diff-stats flex items-center gap-3 px-3 py-2 bg-[var(--bg-elevated)] border-b border-[var(--border-default)]">
         {fileName && (
-          <span className="text-gray-400 text-xs font-mono truncate flex-1">
+          <span className="text-zinc-400 text-xs font-mono truncate flex-1">
             {fileName}
           </span>
         )}
@@ -258,7 +258,7 @@ const DiffLineRow: React.FC<{ line: DiffLine }> = React.memo(function DiffLineRo
       case 'header':
         return 'text-gray-500 font-bold';
       default:
-        return 'text-gray-400';
+        return 'text-zinc-400';
     }
   };
 

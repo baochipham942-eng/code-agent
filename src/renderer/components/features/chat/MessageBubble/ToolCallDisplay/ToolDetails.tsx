@@ -200,7 +200,7 @@ export function ToolDetails({ toolCall, compact, mediaContext }: Props) {
             <div className="flex-1 h-px bg-gray-700/50" />
             <button
               onClick={() => setShowDiff(false)}
-              className="text-gray-500 hover:text-gray-300 px-2 transition-colors"
+              className="text-gray-500 hover:text-zinc-300 px-2 transition-colors"
             >
               Hide
             </button>
@@ -238,7 +238,7 @@ export function ToolDetails({ toolCall, compact, mediaContext }: Props) {
               {(() => {
                 if (isEditFile && editFileArgs) {
                   return (
-                    <pre className="text-xs text-gray-400 bg-gray-900/50 rounded-lg p-3 overflow-x-auto scrollbar-hidden border border-gray-800/50 whitespace-pre-wrap">
+                    <pre className="text-xs text-zinc-400 bg-gray-900/50 rounded-lg p-3 overflow-x-auto scrollbar-hidden border border-gray-800/50 whitespace-pre-wrap">
                       {`File: ${editFileArgs.filePath}\nChanges: ${editFileArgs.oldString.length} -> ${editFileArgs.newString.length} chars`}
                     </pre>
                   );
@@ -247,7 +247,7 @@ export function ToolDetails({ toolCall, compact, mediaContext }: Props) {
                 return formatted.language === 'json' ? (
                   <JsonHighlight code={formatted.text} />
                 ) : (
-                  <pre className="text-xs text-gray-400 bg-gray-900/50 rounded-lg p-3 overflow-x-auto scrollbar-hidden border border-gray-800/50 whitespace-pre-wrap">
+                  <pre className="text-xs text-zinc-400 bg-gray-900/50 rounded-lg p-3 overflow-x-auto scrollbar-hidden border border-gray-800/50 whitespace-pre-wrap">
                     {formatted.text}
                   </pre>
                 );
@@ -379,7 +379,7 @@ export function ToolDetails({ toolCall, compact, mediaContext }: Props) {
                   lineCap={isShellTool(name) ? SHELL_RESULT_BODY_LINE_CAP : RESULT_BODY_LINE_CAP}
                   className={`text-xs bg-gray-900/50 rounded-lg p-3 overflow-x-auto scrollbar-hidden border transition-colors duration-200 whitespace-pre-wrap break-words ${
                     result.success
-                      ? 'text-gray-400 border-gray-800/50'
+                      ? 'text-zinc-400 border-gray-800/50'
                       : 'text-badge-danger border-red-500/20'
                   }`}
                 />

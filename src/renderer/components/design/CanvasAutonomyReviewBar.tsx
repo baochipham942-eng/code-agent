@@ -75,7 +75,7 @@ export const CanvasAutonomyReviewBar: React.FC<{
       </div>
       <div className="px-4 pt-1 text-sm text-neutral-600 dark:text-neutral-300">{request.goal}</div>
       {request.rationale && (
-        <div className="px-4 pt-1 text-xs text-neutral-400 dark:text-neutral-500">{request.rationale}</div>
+        <div className="px-4 pt-1 text-xs text-zinc-400 dark:text-neutral-500">{request.rationale}</div>
       )}
 
       <div className="flex items-center gap-4 px-4 pt-3">
@@ -106,7 +106,7 @@ export const CanvasAutonomyReviewBar: React.FC<{
         </span>
       </div>
 
-      <div className="px-4 pt-2 text-[11px] leading-snug text-neutral-400 dark:text-neutral-500">{s.autonomyHint}</div>
+      <div className="px-4 pt-2 text-[11px] leading-snug text-zinc-400 dark:text-neutral-500">{s.autonomyHint}</div>
 
       {showDecline && (
         <div className="px-4 pt-2">

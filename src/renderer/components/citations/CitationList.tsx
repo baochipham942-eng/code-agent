@@ -129,7 +129,7 @@ export function CitationSummary({
       {remaining > 0 && (
         <button
           onClick={onViewAll}
-          className="text-[10px] text-gray-500 hover:text-gray-300 px-1"
+          className="text-[10px] text-gray-500 hover:text-zinc-300 px-1"
         >
           +{remaining}
         </button>

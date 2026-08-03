@@ -55,7 +55,7 @@ export const TaskDetailPanel = memo(({ task, onClose }: TaskDetailPanelProps) =>
           onClick={onClose}
           className="p-1 rounded hover:bg-gray-700/50 transition-colors"
         >
-          <svg className="w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <svg className="w-5 h-5 text-gray-400" /* ds-allow:color: TaskDetailPanel 根容器固定为 bg-gray-900 */ fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
           </svg>
         </button>
@@ -75,7 +75,7 @@ export const TaskDetailPanel = memo(({ task, onClose }: TaskDetailPanelProps) =>
         {/* 描述 */}
         {task.description && (
           <Section title="Description">
-            <p className="text-sm text-gray-300 whitespace-pre-wrap">{task.description}</p>
+            <p className="text-sm text-gray-300 whitespace-pre-wrap" /* ds-allow:color: Description 位于 TaskDetailPanel 根容器固定 bg-gray-900 内 */>{task.description}</p>
           </Section>
         )}
 
@@ -115,7 +115,7 @@ export const TaskDetailPanel = memo(({ task, onClose }: TaskDetailPanelProps) =>
               {task.toolsUsed.map((tool) => (
                 <span
                   key={tool}
-                  className="px-2 py-1 text-xs bg-gray-700 text-gray-300 rounded"
+                  className="px-2 py-1 text-xs bg-gray-700 text-gray-300 rounded" /* ds-allow:color: Tools Used 标签自身有固定 bg-gray-700 */
                 >
                   {tool}
                 </span>
@@ -129,11 +129,11 @@ export const TaskDetailPanel = memo(({ task, onClose }: TaskDetailPanelProps) =>
           <Section title="Output">
             {task.output.text && (
               <div className="mb-2">
-                <p className="text-sm text-gray-300 whitespace-pre-wrap line-clamp-10">
+                <p className="text-sm text-gray-300 whitespace-pre-wrap line-clamp-10" /* ds-allow:color: Output 位于 Section 的固定 bg-gray-800 与外层 bg-gray-900 内 */>
                   {task.output.text}
                 </p>
                 {task.output.text.length > 500 && (
-                  <button className="text-xs text-blue-400 hover:underline mt-1">
+                  <button className="text-xs text-blue-400 hover:underline mt-1" /* ds-allow:color: Show more 操作位于 TaskDetailPanel 根容器固定 bg-gray-900 内 */>
                     Show more...
                   </button>
                 )}
@@ -148,7 +148,7 @@ export const TaskDetailPanel = memo(({ task, onClose }: TaskDetailPanelProps) =>
                     className="flex items-center gap-2 px-2 py-1 bg-gray-800 rounded text-xs"
                   >
                     <span>{file.type === 'image' ? '🖼' : file.type === 'data' ? '📊' : '📄'}</span>
-                    <span className="text-gray-300 truncate">{file.path}</span>
+                    <span className="text-gray-300 truncate" /* ds-allow:color: Generated files 行位于 Section 的固定 bg-gray-800 与外层 bg-gray-900 内 */>{file.path}</span>
                   </div>
                 ))}
               </div>
@@ -174,10 +174,10 @@ export const TaskDetailPanel = memo(({ task, onClose }: TaskDetailPanelProps) =>
               )}
               {task.failure.stack && (
                 <details className="mt-2">
-                  <summary className="text-xs text-gray-500 cursor-pointer hover:text-gray-400">
+                  <summary className="text-xs text-gray-500 cursor-pointer hover:text-gray-400" /* ds-allow:color: Stack trace 位于 TaskDetailPanel 根容器固定 bg-gray-900 内 */>
                     Stack trace
                   </summary>
-                  <pre className="text-xs bg-gray-800 p-2 rounded mt-1 overflow-x-auto text-red-300">
+                  <pre className="text-xs bg-gray-800 p-2 rounded mt-1 overflow-x-auto text-red-300" /* ds-allow:color: stack 代码块自身固定为 bg-gray-800 */>
                     {task.failure.stack}
                   </pre>
                 </details>
@@ -239,7 +239,7 @@ const InfoRow = memo(({
 }) => (
   <div className="flex justify-between items-center py-1">
     <span className="text-xs text-gray-500">{label}</span>
-    <span className={`text-sm text-gray-300 ${mono ? 'font-mono text-xs' : ''}`}>
+    <span className={`text-sm text-gray-300 ${mono ? 'font-mono text-xs' : ''}`} /* ds-allow:color: InfoRow 只在 TaskDetailPanel 根容器固定 bg-gray-900 内渲染 */>
       {value}
     </span>
   </div>

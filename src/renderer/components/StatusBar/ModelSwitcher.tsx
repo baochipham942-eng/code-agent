@@ -841,7 +841,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
                 className="
                   w-full px-2 py-1 text-xs
                   bg-zinc-900 border border-zinc-700 rounded
-                  text-gray-200 placeholder-gray-500
+                  text-zinc-200 placeholder-gray-500
                   outline-none focus:border-zinc-600
                 "
               />
@@ -875,7 +875,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
                       border-b border-zinc-700/50
                       hover:bg-zinc-700 transition-colors
                       ${activeOptionIndex === 0 ? 'bg-zinc-700/80' : ''}
-                      ${overrideAdaptive ? 'text-badge-accent' : 'text-gray-200'}
+                      ${overrideAdaptive ? 'text-badge-accent' : 'text-zinc-200'}
                     `}
                   >
                     <div className="flex items-center gap-1.5">
@@ -927,7 +927,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
                                 w-full text-left px-3 py-1.5 text-xs
                                 hover:bg-zinc-700 transition-colors
                                 ${activeOptionIndex === index ? 'bg-zinc-700/80' : ''}
-                                ${selected ? 'text-badge-accent' : 'text-gray-300'}
+                                ${selected ? 'text-badge-accent' : 'text-zinc-300'}
                               `}
                             >
                               <div className="flex items-center gap-1 flex-wrap">
@@ -1028,7 +1028,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
           <button
             type="button"
             onClick={handleClear}
-            className="w-full text-left px-3 py-1.5 text-xs text-gray-500 hover:text-gray-300 hover:bg-zinc-700"
+            className="w-full text-left px-3 py-1.5 text-xs text-gray-500 hover:text-zinc-300 hover:bg-zinc-700"
           >
             恢复主任务模型
           </button>

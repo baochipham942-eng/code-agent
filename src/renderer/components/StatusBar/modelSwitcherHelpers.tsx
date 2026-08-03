@@ -258,7 +258,7 @@ export const CAPABILITY_CONFIG: Record<string, { icon: React.ReactNode; color: s
   },
   longContext: {
     icon: <span className="text-[9px] font-semibold">LC</span>,
-    color: 'bg-teal-500/20 text-teal-300',
+    color: 'bg-fuchsia-500/20 text-badge-accent',
   },
 };
 

@@ -94,7 +94,7 @@ export function ImageResultDisplay({ imagePath, imageBase64, asset, pointerEvent
               ) : (
                 <button
                   onClick={handleOpenFile}
-                  className="flex items-center gap-1 px-2 py-1 rounded-lg bg-gray-700/50 text-gray-300 hover:bg-gray-600/50 text-xs"
+                  className="flex items-center gap-1 px-2 py-1 rounded-lg bg-gray-700/50 text-zinc-300 hover:bg-gray-600/50 text-xs"
                 >
                   <ExternalLink className="w-3 h-3" />
                   Open
@@ -129,7 +129,7 @@ export function ImageResultDisplay({ imagePath, imageBase64, asset, pointerEvent
         {pointerEvent && <AgentPointerOverlay event={pointerEvent} compact={!isExpanded} />}
         {!isExpanded && (
           <div className="absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-gray-900/80 to-transparent flex items-end justify-center pb-1">
-            <span className="text-xs text-gray-400">Click to expand</span>
+            <span className="text-xs text-zinc-400">Click to expand</span>
           </div>
         )}
       </div>
@@ -147,14 +147,14 @@ export function ImageResultDisplay({ imagePath, imageBase64, asset, pointerEvent
           <>
             <button
               onClick={handleOpenFile}
-              className="flex items-center gap-1 px-2 py-1 rounded-lg bg-gray-700/50 text-gray-300 hover:bg-gray-600/50 text-xs"
+              className="flex items-center gap-1 px-2 py-1 rounded-lg bg-gray-700/50 text-zinc-300 hover:bg-gray-600/50 text-xs"
             >
               <ExternalLink className="w-3 h-3" />
               Open
             </button>
             <button
               onClick={handleShowInFolder}
-              className="flex items-center gap-1 px-2 py-1 rounded-lg bg-gray-700/50 text-gray-300 hover:bg-gray-600/50 text-xs"
+              className="flex items-center gap-1 px-2 py-1 rounded-lg bg-gray-700/50 text-zinc-300 hover:bg-gray-600/50 text-xs"
             >
               <Folder className="w-3 h-3" />
               Finder
@@ -278,7 +278,7 @@ export function FileResultDisplay({
       case 'htm':
         return 'text-badge-info bg-blue-500/10 border-badge-info/30';
       default:
-        return 'text-gray-400 bg-gray-500/10 border-gray-500/30';
+        return 'text-zinc-400 bg-gray-500/10 border-gray-500/30';
     }
   };
 
@@ -325,14 +325,14 @@ export function FileResultDisplay({
         )}
         <button
           onClick={handleOpenFile}
-          className="flex items-center gap-1 px-2 py-1 rounded-lg bg-gray-700/50 text-gray-300 hover:bg-gray-600/50 text-xs"
+          className="flex items-center gap-1 px-2 py-1 rounded-lg bg-gray-700/50 text-zinc-300 hover:bg-gray-600/50 text-xs"
         >
           <ExternalLink className="w-3 h-3" />
           Open
         </button>
         <button
           onClick={handleShowInFolder}
-          className="flex items-center gap-1 px-2 py-1 rounded-lg bg-gray-700/50 text-gray-300 hover:bg-gray-600/50 text-xs"
+          className="flex items-center gap-1 px-2 py-1 rounded-lg bg-gray-700/50 text-zinc-300 hover:bg-gray-600/50 text-xs"
         >
           <Folder className="w-3 h-3" />
           Finder
@@ -463,7 +463,7 @@ export function VideoResultDisplay({
             <>
               <button
                 onClick={handleOpenFile}
-                className="flex items-center gap-1 px-2 py-1 rounded-lg bg-gray-700/50 text-gray-300 hover:bg-gray-600/50 text-xs"
+                className="flex items-center gap-1 px-2 py-1 rounded-lg bg-gray-700/50 text-zinc-300 hover:bg-gray-600/50 text-xs"
                 title="用默认播放器打开"
               >
                 <ExternalLink className="w-3 h-3" />
@@ -471,7 +471,7 @@ export function VideoResultDisplay({
               </button>
               <button
                 onClick={handleShowInFolder}
-                className="flex items-center gap-1 px-2 py-1 rounded-lg bg-gray-700/50 text-gray-300 hover:bg-gray-600/50 text-xs"
+                className="flex items-center gap-1 px-2 py-1 rounded-lg bg-gray-700/50 text-zinc-300 hover:bg-gray-600/50 text-xs"
                 title="在 Finder 中显示"
               >
                 <Folder className="w-3 h-3" />

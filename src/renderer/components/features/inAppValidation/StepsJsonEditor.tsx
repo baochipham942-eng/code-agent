@@ -60,7 +60,7 @@ export const StepsJsonEditor: React.FC<StepsJsonEditorProps> = ({ value, onChang
           ))}
         </div>
         <textarea
-          className="min-w-0 flex-1 resize-none overflow-auto whitespace-pre bg-slate-900 px-3 py-2 font-mono text-xs leading-5 text-slate-100 outline-hidden"
+          className="min-w-0 flex-1 resize-none overflow-auto whitespace-pre bg-slate-900 px-3 py-2 font-mono text-xs leading-5 text-slate-100 outline-hidden" /* ds-allow:color: JSON 编辑器 textarea 的固定祖先是自身 bg-slate-900 */
           wrap="off"
           spellCheck={false}
           value={value}

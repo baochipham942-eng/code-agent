@@ -574,6 +574,191 @@ describe('voiceSessionService 互斥与挂断', () => {
     );
   });
 
+  it('1.2 秒宽限到点不把空文本定成 background，迟到 final 仍下发并落库', async () => {
+    vi.useFakeTimers();
+    try {
+      const client = new FakeClient();
+      await attachVoiceClient(client as never, 'session-late-user-final');
+      upstreamResponding = true;
+      interruptResponseId = 'resp-late-user-final';
+      lastOnEvent?.({ type: 'response.created', responseId: 'resp-late-user-final' });
+      lastOnEvent?.({ type: 'speech.started', candidateId: 'turn-late-user-final' });
+      client.emit('message', Buffer.from(JSON.stringify({
+        type: 'interrupt.playback',
+        candidateId: 'turn-late-user-final',
+        playing: true,
+        playedMs: 600,
+        queuedMs: 900,
+      })), false);
+      lastOnEvent?.({
+        type: 'speech.stopped',
+        candidateId: 'turn-late-user-final',
+        durationMs: 900,
+      });
+
+      const interruptDecisions = () => client.sent
+        .filter((raw) => raw !== '<binary>')
+        .map((raw) => JSON.parse(raw) as VoiceEvent)
+        .filter((event) => event.type === 'interrupt.decision');
+
+      await vi.advanceTimersByTimeAsync(1_199);
+      expect(interruptDecisions()).toHaveLength(0);
+      expect(addMessageToSession).not.toHaveBeenCalled();
+
+      await vi.advanceTimersByTimeAsync(1);
+      expect(interruptDecisions()).toHaveLength(0);
+      expect(addMessageToSession).not.toHaveBeenCalled();
+
+      lastOnEvent?.({
+        type: 'user.transcript',
+        itemId: 'user-late-user-final',
+        candidateId: 'turn-late-user-final',
+        text: '请改成从一数到三',
+        done: true,
+      });
+      await vi.advanceTimersByTimeAsync(0);
+
+      const events = client.sent
+        .filter((raw) => raw !== '<binary>')
+        .map((raw) => JSON.parse(raw) as VoiceEvent);
+      expect(events).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          type: 'user.transcript',
+          itemId: 'user-late-user-final',
+          text: '请改成从一数到三',
+          done: true,
+        }),
+      ]));
+      expect(addMessageToSession.mock.calls.some(([, message]) => (
+        message.role === 'user' && message.content === '请改成从一数到三'
+      ))).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('上一段 final 晚到且下一段已完成附和时，按 itemId 保留上一段字幕', async () => {
+    vi.useFakeTimers();
+    try {
+      const client = new FakeClient();
+      await attachVoiceClient(client as never, 'session-late-previous-candidate');
+      upstreamResponding = true;
+      interruptResponseId = 'resp-late-previous-candidate';
+      lastOnEvent?.({ type: 'response.created', responseId: 'resp-late-previous-candidate' });
+
+      lastOnEvent?.({ type: 'speech.started', candidateId: 'candidate-a' });
+      lastOnEvent?.({
+        type: 'user.transcript',
+        candidateId: 'candidate-a',
+        itemId: 'item-a',
+        text: '上一段还在转写',
+        done: false,
+      });
+      lastOnEvent?.({ type: 'speech.stopped', candidateId: 'candidate-a', durationMs: 900 });
+
+      const interruptDecisions = () => client.sent
+        .filter((raw) => raw !== '<binary>')
+        .map((raw) => JSON.parse(raw) as VoiceEvent)
+        .filter((event) => event.type === 'interrupt.decision');
+
+      await vi.advanceTimersByTimeAsync(1_199);
+      expect(interruptDecisions()).toHaveLength(0);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(interruptDecisions()).toHaveLength(0);
+
+      lastOnEvent?.({ type: 'speech.started', candidateId: 'candidate-b' });
+      client.emit('message', Buffer.from(JSON.stringify({
+        type: 'interrupt.playback',
+        candidateId: 'candidate-b',
+        playing: true,
+        playedMs: 400,
+        queuedMs: 800,
+      })), false);
+      lastOnEvent?.({
+        type: 'user.transcript',
+        candidateId: 'candidate-b',
+        itemId: 'item-b',
+        text: '好的，知道了',
+        done: true,
+      });
+
+      lastOnEvent?.({
+        type: 'user.transcript',
+        itemId: 'item-a',
+        text: '上一段改成从一数到三',
+        done: true,
+      });
+      await vi.advanceTimersByTimeAsync(0);
+
+      const events = client.sent
+        .filter((raw) => raw !== '<binary>')
+        .map((raw) => JSON.parse(raw) as VoiceEvent);
+      expect(events).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          type: 'interrupt.decision',
+          candidateId: 'candidate-a',
+          classification: 'true_interrupt',
+        }),
+        expect.objectContaining({
+          type: 'user.transcript',
+          itemId: 'item-a',
+          text: '上一段改成从一数到三',
+          done: true,
+        }),
+      ]));
+      expect(addMessageToSession.mock.calls.some(([, message]) => (
+        message.role === 'user' && message.content === '上一段改成从一数到三'
+      ))).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('空文本宽限兜底即使误产出终局分类，也不能抑制迟到 final 落库', async () => {
+    vi.useFakeTimers();
+    try {
+      const client = new FakeClient();
+      await attachVoiceClient(client as never, 'session-empty-fallback-guard');
+      upstreamResponding = true;
+      interruptResponseId = 'resp-empty-fallback-guard';
+      lastOnEvent?.({ type: 'response.created', responseId: 'resp-empty-fallback-guard' });
+      lastOnEvent?.({ type: 'speech.started', candidateId: 'candidate-empty-fallback' });
+      client.emit('message', Buffer.from(JSON.stringify({
+        type: 'interrupt.playback',
+        candidateId: 'candidate-empty-fallback',
+        playing: true,
+        playedMs: 600,
+        queuedMs: 900,
+      })), false);
+      lastOnEvent?.({
+        type: 'speech.stopped',
+        candidateId: 'candidate-empty-fallback',
+        durationMs: 900,
+      });
+
+      await vi.advanceTimersByTimeAsync(1_199);
+      expect(client.sent.filter((raw) => raw.includes('interrupt.decision'))).toHaveLength(0);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(client.sent.filter((raw) => raw.includes('interrupt.decision'))).toHaveLength(0);
+
+      lastOnEvent?.({
+        type: 'user.transcript',
+        candidateId: 'candidate-empty-fallback',
+        itemId: 'item-empty-fallback',
+        text: '好的，知道了',
+        done: true,
+      });
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(client.sent).toContainEqual(expect.stringContaining('好的，知道了'));
+      expect(addMessageToSession.mock.calls.some(([, message]) => (
+        message.role === 'user' && message.content === '好的，知道了'
+      ))).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
 });
 
 describe('终态结论节制播报', () => {

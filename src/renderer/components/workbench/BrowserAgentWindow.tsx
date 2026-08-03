@@ -81,7 +81,7 @@ const OverflowMenu: React.FC<{ copy: Copy; modeLabel: string; onOpenLocalOps: ()
           <GhostButton
             size="sm"
             className="w-full justify-start"
-            leftIcon={<ExternalLink />}
+            leftIcon={<ExternalLink className="h-3.5 w-3.5" />}
             onClick={() => {
               setOpen(false);
               onOpenLocalOps();

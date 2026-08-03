@@ -41,10 +41,6 @@ import {
 import { CronJobEditor } from '../cron/CronJobEditor';
 import { FullScreenPage, FullScreenPageHeader } from '../shared/FullScreenPage';
 
-interface TimeCapabilityPanelProps {
-  onClose: () => void;
-}
-
 type CalendarActionKey = 'retry' | 'probe' | 'repairPermission' | 'openApp';
 
 interface CalendarCapabilityRow {
@@ -236,7 +232,7 @@ function buildCapabilityFixItems(args: {
   ]).slice(0, 8);
 }
 
-const TimeCapabilityPanel: React.FC<TimeCapabilityPanelProps> = ({ onClose }) => {
+const TimeCapabilityPanel: React.FC = () => {
   const {
     jobs,
     stats,
@@ -404,7 +400,6 @@ const TimeCapabilityPanel: React.FC<TimeCapabilityPanelProps> = ({ onClose }) =>
         icon={<CalendarDays className="h-4 w-4 text-sky-300" />}
         title="Time & Capability"
         description="任务时间、Cron 运行、Calendar 状态和现场修复"
-        onClose={onClose}
       />
 
       <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">

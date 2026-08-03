@@ -142,7 +142,7 @@ function assertSecondaryPageRegistry(state: Record<string, unknown>): void {
 
 describe('appStore 二级页互斥注册面', () => {
   beforeEach(() => {
-    useAppStore.setState(SECONDARY_PAGES_CLOSED);
+    useAppStore.setState({ ...SECONDARY_PAGES_CLOSED, showSettings: false });
   });
 
   it.each(OPENERS)('$label 打开时关闭其他全部二级页', ({ key, open, expected }) => {
@@ -170,5 +170,35 @@ describe('appStore 二级页互斥注册面', () => {
     expect(() => assertSecondaryPageRegistry(mutatedState)).toThrowError(
       /SECONDARY_PAGES_CLOSED 漏了键：showUnregisteredSecondaryPage/,
     );
+  });
+
+  it.each([
+    {
+      name: '二级页 → 设置 → 关设置',
+      open: () => useAppStore.getState().openLocalOpsPanel('desktop'),
+      expectedAfterReturn: { showSettings: false, showLocalOpsPanel: false },
+    },
+    {
+      name: '会话页 → 设置 → 关设置',
+      open: () => undefined,
+      expectedAfterReturn: { showSettings: false, showLocalOpsPanel: false },
+    },
+  ])('$name 回到会话页', ({ open, expectedAfterReturn }) => {
+    open();
+    useAppStore.getState().setShowSettings(true);
+    useAppStore.getState().setShowSettings(false);
+
+    expect(useAppStore.getState()).toMatchObject(expectedAfterReturn);
+  });
+
+  it('设置 → 提示词管理 → 返回仍落回设置', () => {
+    useAppStore.getState().setShowSettings(true);
+    useAppStore.getState().setShowPromptManager(true);
+    useAppStore.getState().setShowPromptManager(false);
+
+    expect(useAppStore.getState()).toMatchObject({
+      showSettings: true,
+      showPromptManager: false,
+    });
   });
 });

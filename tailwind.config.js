@@ -99,6 +99,30 @@ export default {
         },
       },
 
+      // Badge semantic utilities keep foreground, background, and border roles
+      // separate while sharing the same badge-* class name.
+      textColor: {
+        'badge-info': 'var(--badge-info-fg)',
+        'badge-success': 'var(--badge-success-fg)',
+        'badge-warning': 'var(--badge-warning-fg)',
+        'badge-danger': 'var(--badge-danger-fg)',
+        'badge-accent': 'var(--badge-accent-fg)',
+      },
+      backgroundColor: {
+        'badge-info': 'var(--badge-info-bg)',
+        'badge-success': 'var(--badge-success-bg)',
+        'badge-warning': 'var(--badge-warning-bg)',
+        'badge-danger': 'var(--badge-danger-bg)',
+        'badge-accent': 'var(--badge-accent-bg)',
+      },
+      borderColor: {
+        'badge-info': 'var(--badge-info-border)',
+        'badge-success': 'var(--badge-success-border)',
+        'badge-warning': 'var(--badge-warning-border)',
+        'badge-danger': 'var(--badge-danger-border)',
+        'badge-accent': 'var(--badge-accent-border)',
+      },
+
       fontFamily: {
         sans: ['Inter', 'Source Han Sans', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
         mono: ['JetBrains Mono', 'SF Mono', 'Fira Code', 'Menlo', 'Monaco', 'monospace'],

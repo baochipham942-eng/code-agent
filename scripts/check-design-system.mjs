@@ -15,6 +15,8 @@
 //   6. important-unjustified: 禁无注册的 !important；`ds-allow:important <理由>` 登记后豁免
 //   7. local-display-primitive: 禁在 primitives/ 之外新增本地 EmptyState/Badge 定义
 //                             （A1 展示类 primitive 收敛，基线 0）；`ds-allow:primitive` 豁免
+//   8. theme-blind-bright-foreground: 禁新增未带 dark: 主题分支的亮档彩色前景类；
+//                             现存债务以棘轮锁住；`ds-allow:color` 豁免
 //
 // 对比度断言（默认门已 enforce，--contrast 看明细）：四套主题按各自真实用法场景
 // 核对 WCAG ≥4.5:1。2026-07-02 产品负责人拍板方案 A：dark/light brand 加深至
@@ -60,6 +62,10 @@ const BARE_RADIUS_CSS_RE = /border-radius:\s*\d+px/;
 const BARE_Z_TSX_RE = /z-\[(\d+)\]|zIndex:\s*(\d+)/;
 const BARE_Z_CSS_RE = /z-index:\s*(\d+)/;
 const IMPORTANT_RE = /!important/;
+// 亮档彩色前景类：300 档在浅色背景上尤其容易变成不可读的近白色。
+// 先匹配核心 text-* 类，再向左还原完整 Tailwind token，覆盖 dark:/hover:/任意变体组合。
+export const THEME_BLIND_BRIGHT_FOREGROUND_RE =
+  /(?<![\w-])text-(?:sky|blue|emerald|green|amber|yellow|red|orange|violet|purple|primary)-(?:100|200|300|400)(?![\w-])/g;
 // 本地展示 primitive 定义（const/function EmptyState|Badge）——共享件在 components/primitives/，
 // 别再各自手搓。导出供契约测试对故意违例样本做红绿验证。
 export const LOCAL_DISPLAY_PRIMITIVE_RE = /\b(?:const|function)\s+(?:EmptyState|Badge)\b/;
@@ -70,6 +76,35 @@ function isAllowed(line, kinds) {
   for (const k of kinds) if (line.includes('ds-allow:' + k)) return true;
   // 裸 ds-allow（无 kind）放行任意规则，给特殊场景留口子但须显式
   return /ds-allow(?![:\w])/.test(line);
+}
+
+function classTokenStart(line, matchIndex) {
+  let start = matchIndex;
+  // 保留 `dark:`、任意变体 `[&:hover]:` 等前缀；在源码字符串/JSX 表达式边界停下。
+  while (start > 0 && !/[\s"'`<>{}(),;]/.test(line[start - 1])) start--;
+  return start;
+}
+
+export function findThemeBlindBrightForegroundMatches(line) {
+  return [...line.matchAll(THEME_BLIND_BRIGHT_FOREGROUND_RE)].map((match) => {
+    const coreClass = match[0];
+    const start = classTokenStart(line, match.index ?? 0);
+    return {
+      className: line.slice(start, (match.index ?? 0) + coreClass.length),
+      coreClass,
+    };
+  });
+}
+
+function hasDarkVariant(className) {
+  return className.split(':').some((variant) => variant === 'dark');
+}
+
+export function findThemeBlindBrightForegroundViolations(line, loc = '') {
+  if (isAllowed(line, ['color'])) return [];
+  return findThemeBlindBrightForegroundMatches(line)
+    .filter(({ className }) => !hasDarkVariant(className))
+    .map(({ className }) => (loc ? `${loc} ${className}` : className));
 }
 
 function* walk(dir, extRe = /\.tsx?$/) {
@@ -90,9 +125,9 @@ function loadZAllowlist() {
   return JSON.parse(readFileSync(ZINDEX_ALLOWLIST_PATH, 'utf8'));
 }
 
-export function scan() {
-  if (!existsSync(SCAN_ROOT)) {
-    throw new Error(`[check-design-system] 自检失败：扫描根不存在 ${SCAN_ROOT}。若目录结构调整过，请同步更新本脚本。`);
+export function scan(scanRoot = SCAN_ROOT) {
+  if (!existsSync(scanRoot)) {
+    throw new Error(`[check-design-system] 自检失败：扫描根不存在 ${scanRoot}。若目录结构调整过，请同步更新本脚本。`);
   }
   let tsxFileCount = 0;
   let cssFileCount = 0;
@@ -104,13 +139,15 @@ export function scan() {
     'bare-z-index': [],
     'important-unjustified': [],
     'local-display-primitive': [],
+    'theme-blind-bright-foreground': [],
     'stale-zindex-allowlist': [],
   };
+  let brightForegroundTargetCount = 0;
   // 裸 z-index 用法先收集（file+value），扫完后与 allowlist 双向核对
   const zUsages = [];
-  for (const file of walk(SCAN_ROOT)) {
+  for (const file of walk(scanRoot)) {
     tsxFileCount++;
-    const rel = relative(SCAN_ROOT, file);
+    const rel = relative(scanRoot, file);
     const inPrimitives = rel.startsWith('components/primitives/');
     const isModalPrimitive = rel === 'components/primitives/Modal.tsx';
     const isVizExempt = VIZ_EXEMPT.some((p) => rel.includes(p));
@@ -123,6 +160,8 @@ export function scan() {
     let inExemptRegion = false;
     lines.forEach((line, i) => {
       const loc = `${rel}:${i + 1}`;
+      const brightForegroundMatches = findThemeBlindBrightForegroundMatches(line);
+      brightForegroundTargetCount += brightForegroundMatches.length;
       if (line.includes('ds-allow:start')) inExemptRegion = true;
       if (inExemptRegion) {
         if (line.includes('ds-allow:end')) inExemptRegion = false;
@@ -157,13 +196,20 @@ export function scan() {
       if (LOCAL_DISPLAY_PRIMITIVE_RE.test(line) && !inPrimitives && !isAllowed(line, ['primitive'])) {
         violations['local-display-primitive'].push(loc);
       }
+      if (!isAllowed(line, ['color'])) {
+        brightForegroundMatches
+          .filter(({ className }) => !hasDarkVariant(className))
+          .forEach(({ className }) => {
+            violations['theme-blind-bright-foreground'].push(`${loc} ${className}`);
+          });
+      }
     });
   }
 
   // CSS 文件只跑三条新规则（hex/button/modal 语义不适用；主题定义文件的 hex 是合法 token 定义）
-  for (const file of walk(SCAN_ROOT, /\.css$/)) {
+  for (const file of walk(scanRoot, /\.css$/)) {
     cssFileCount++;
-    const rel = relative(SCAN_ROOT, file);
+    const rel = relative(scanRoot, file);
     const lines = readFileSync(file, 'utf8').split('\n');
     lines.forEach((line, i) => {
       const loc = `${rel}:${i + 1}`;
@@ -183,6 +229,11 @@ export function scan() {
   // 自检：扫到 0 个文件 = 门在空转（目录拆分/改名后静默恒绿），必须 fail loud
   if (tsxFileCount === 0 || cssFileCount === 0) {
     throw new Error(`[check-design-system] 自检失败：tsx/ts 文件 ${tsxFileCount} 个、css 文件 ${cssFileCount} 个，存在匹配数为 0 的扫描目标。若目录结构调整过，请同步更新本脚本。`);
+  }
+  if (brightForegroundTargetCount === 0) {
+    throw new Error(
+      `[check-design-system] 自检失败：亮档彩色前景扫描没有命中任何目标（扫描根 ${scanRoot}，文件后缀 .tsx/.ts，正则 ${THEME_BLIND_BRIGHT_FOREGROUND_RE}）。若正则或目录结构调整过，请同步更新本脚本。`,
+    );
   }
 
   // 双向 allowlist 核对：用法不在表内 → bare-z-index；表项在代码中找不到 → stale-zindex-allowlist
@@ -311,7 +362,8 @@ if (process.argv[1] && process.argv[1].endsWith('check-design-system.mjs')) {
     if (count > base) {
       failed = true;
       console.error(`✗ [${rule}] 新增违规：${count} > 基线 ${base}（+${count - base}）`);
-      v[rule].slice(0, 20).forEach((loc) => console.error(`    ${loc}`));
+      const locations = rule === 'theme-blind-bright-foreground' ? v[rule] : v[rule].slice(0, 20);
+      locations.forEach((loc) => console.error(`    ${loc}`));
     } else if (count < base) {
       console.log(`↓ [${rule}] 收口了：${count} < 基线 ${base}，跑 --update 降棘轮`);
     } else {

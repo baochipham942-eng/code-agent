@@ -44,10 +44,23 @@ export function resolvePartialRelease(
   landed: { user: boolean; assistant: boolean },
 ): { partialUser?: string; partialAssistant?: string } {
   const patch: { partialUser?: string; partialAssistant?: string } = {};
-  if (settled.user !== undefined && current.user === settled.user && landed.user) patch.partialUser = '';
-  if (settled.assistant !== undefined && current.assistant === settled.assistant && landed.assistant) {
-    patch.partialAssistant = '';
-  }
+  const release = (settledText: string | undefined, currentText: string, hasLanded: boolean): string | undefined => {
+    if (!hasLanded || settledText === undefined) return undefined;
+    const settledTrimmed = settledText.trim();
+    const currentTrimmed = currentText.trim();
+    if (!settledTrimmed || !currentTrimmed) return undefined;
+    if (currentTrimmed === settledTrimmed) return '';
+    // host 的连续 user final 会合并成「前缀 + 空格 + 当前段」；落地后只剥掉
+    // 已经进真消息的前缀，保留仍在临时气泡里的下一段。
+    if (!currentTrimmed.startsWith(settledTrimmed)) return undefined;
+    const boundary = currentTrimmed[settledTrimmed.length];
+    if (!boundary || !/\s/.test(boundary)) return undefined;
+    return currentTrimmed.slice(settledTrimmed.length).trimStart();
+  };
+  const userRemainder = release(settled.user, current.user, landed.user);
+  if (userRemainder !== undefined) patch.partialUser = userRemainder;
+  const assistantRemainder = release(settled.assistant, current.assistant, landed.assistant);
+  if (assistantRemainder !== undefined) patch.partialAssistant = assistantRemainder;
   return patch;
 }
 

@@ -1074,6 +1074,14 @@ export class SessionManager implements Disposable {
   }
 
   /**
+   * 只读会话级 metadata（teamLead / modelOverride 这类产品标记）。
+   * 走 getSession 会连消息一起懒加载、本地空还会去云端拉一轮，读个标记不该付这个代价。
+   */
+  getSessionMetadata(sessionId: string): Record<string, unknown> | undefined {
+    return this.getAccessibleStoredSession(sessionId)?.metadata;
+  }
+
+  /**
    * 获取最近消息
    */
   async getRecentMessages(sessionId: string, count: number, options?: { includeRewound?: boolean }): Promise<Message[]> {

@@ -62,9 +62,11 @@ function applyTheme(resolvedTheme: ResolvedTheme): void {
   // Update data-theme attribute
   root.setAttribute('data-theme', resolvedTheme);
 
-  // Update classes：亮暗基类给 Tailwind dark: 变体用；高对比主题额外挂上
-  // 同名 class，命中 .high-contrast-* 选择器（focus-visible 环、ChatView 的
-  // [.high-contrast-dark_&] 覆盖等只认 class 不认 data-theme 的规则）。
+  // Update classes：Tailwind 的 dark: 变体由 tailwind.config.js 的 darkMode 选择器
+  // 按 data-theme 判定，与这里的 class 无关。这里挂 dark/light 基类是为了命中
+  // themes/dark.css / light.css 里的 .dark / .light token 块（hc 主题在其上覆盖），
+  // 高对比主题额外挂同名 class，命中 .high-contrast-* 选择器（focus-visible 环、
+  // ChatView 的 [.high-contrast-dark_&] 覆盖等只认 class 不认 data-theme 的规则）。
   root.classList.remove('light', 'dark', 'high-contrast-light', 'high-contrast-dark');
   root.classList.add(resolvedTheme);
   if (resolvedTheme === 'high-contrast-dark') {

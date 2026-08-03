@@ -168,7 +168,7 @@ export const PromptManagerModal: React.FC = () => {
                       <span className="text-sm flex-1 truncate" title={item.name}>{item.name}</span>
                       {item.overridden && (
                         <span
-                          className="w-1.5 h-1.5 rounded-full bg-amber-400 flex-shrink-0"
+                          className="w-1.5 h-1.5 rounded-full bg-mark-warning flex-shrink-0"
                           title="已自定义"
                         />
                       )}

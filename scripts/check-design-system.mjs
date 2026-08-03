@@ -287,7 +287,17 @@ function contrastRatio(hexA, hexB) {
 }
 
 const CONTRAST_MIN = 4.5;
+const MARK_CONTRAST_MIN = 3;
 const SECONDARY_BUTTON_HOVER_MIN = 1.2;
+
+const MARK_CONTRAST_TOKENS = [
+  { name: 'info', token: '--mark-info' },
+  { name: 'success', token: '--mark-success' },
+  { name: 'warning', token: '--mark-warning' },
+  { name: 'danger', token: '--mark-danger' },
+  { name: 'accent', token: '--mark-accent' },
+  { name: 'neutral', token: '--mark-neutral' },
+];
 
 const SECONDARY_BUTTON_STATES = [
   { state: 'enabled', foreground: '--btn-secondary-fg', background: '--btn-secondary-bg' },
@@ -447,6 +457,38 @@ export function measureSecondaryButtonContrast(rendererRoot = SCAN_ROOT) {
   return { states, hover };
 }
 
+// Solid dots/marks are graphical interface elements, so their contrast floor is
+// 3:1 rather than the 4.5:1 text floor. Every migrated mark sits on a theme
+// surface; resolving the surface token here keeps the check tied to the actual
+// theme definition instead of a hard-coded white/black assumption.
+export function measureMarkContrast(rendererRoot = SCAN_ROOT) {
+  const themesDir = join(rendererRoot, 'styles/themes');
+  if (!existsSync(themesDir)) throw new Error(`[check-design-system] 主题目录不存在：${themesDir}`);
+  const themeFiles = readdirSync(themesDir).filter((name) => name.endsWith('.css')).sort();
+  const results = [];
+
+  for (const file of themeFiles) {
+    const theme = file.replace('.css', '');
+    const css = readFileSync(join(themesDir, file), 'utf8');
+    const background = resolveThemeColor(css, theme, '--bg-surface');
+    for (const definition of MARK_CONTRAST_TOKENS) {
+      const foreground = resolveThemeColor(css, theme, definition.token, '--bg-surface');
+      results.push({
+        theme,
+        name: definition.name,
+        token: definition.token,
+        foreground,
+        background,
+        against: '--bg-surface',
+        ratio: contrastRatioRgb(foreground, background),
+      });
+    }
+  }
+
+  if (themeFiles.length === 0) throw new Error('[check-design-system] 未找到任何主题文件，mark 对比度测量失败');
+  return results;
+}
+
 function loadBaseline() {
   if (!existsSync(BASELINE_PATH)) return null;
   return JSON.parse(readFileSync(BASELINE_PATH, 'utf8'));
@@ -474,6 +516,11 @@ if (process.argv[1] && process.argv[1].endsWith('check-design-system.mjs')) {
     }
     for (const r of secondary.hover) {
       console.log(`  ${r.ratio >= SECONDARY_BUTTON_HOVER_MIN ? '✓' : '✗'} ${r.theme.padEnd(20)} hover/启用背景 = ${r.ratio.toFixed(2)}:1`);
+    }
+    const marks = measureMarkContrast();
+    console.log(`实心状态点 mark token 四套主题对比度（阈值 ${MARK_CONTRAST_MIN}:1，压各主题 --bg-surface）：`);
+    for (const r of marks) {
+      console.log(`  ${r.ratio >= MARK_CONTRAST_MIN ? '✓' : '✗'} ${r.theme.padEnd(20)} ${r.token.padEnd(18)} vs ${r.against} = ${r.ratio.toFixed(2)}:1`);
     }
     process.exit(0);
   }
@@ -536,6 +583,16 @@ if (process.argv[1] && process.argv[1].endsWith('check-design-system.mjs')) {
       console.error(`✗ [secondary-button-hover-difference] ${r.theme} hover/启用背景 = ${r.ratio.toFixed(2)}:1 < ${SECONDARY_BUTTON_HOVER_MIN}:1`);
     } else {
       console.log(`= [secondary-button-hover-difference] ${r.theme} hover/启用背景 = ${r.ratio.toFixed(2)}:1 可辨`);
+    }
+  }
+
+  const marks = measureMarkContrast();
+  for (const r of marks) {
+    if (r.ratio < MARK_CONTRAST_MIN) {
+      failed = true;
+      console.error(`✗ [mark-contrast] ${r.theme} ${r.token} vs ${r.against} = ${r.ratio.toFixed(2)}:1 < ${MARK_CONTRAST_MIN}:1`);
+    } else {
+      console.log(`= [mark-contrast] ${r.theme} ${r.token} ${r.ratio.toFixed(2)}:1 达标`);
     }
   }
 

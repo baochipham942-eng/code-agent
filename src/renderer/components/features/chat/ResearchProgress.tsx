@@ -171,8 +171,8 @@ export const ResearchProgress: React.FC<ResearchProgressProps> = ({
           return (
             <div key={p} className="flex items-center gap-1.5">
               <div className={`w-2 h-2 rounded-full transition-colors ${
-                isCompleted ? 'bg-green-400' :
-                isCurrent ? 'bg-primary-400 animate-pulse' :
+                isCompleted ? 'bg-mark-success' :
+                isCurrent ? 'bg-mark-accent animate-pulse' :
                 'bg-zinc-600'
               }`} />
               <span className={`text-xs transition-colors ${

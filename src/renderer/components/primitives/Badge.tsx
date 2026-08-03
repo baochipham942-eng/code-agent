@@ -1,7 +1,7 @@
 import React from 'react';
 
 export interface BadgeProps extends React.HTMLAttributes<HTMLSpanElement> {
-  /** 左侧状态圆点的颜色类（如 bg-emerald-300）；省略则不渲染圆点 */
+  /** 左侧状态圆点的颜色类（如 bg-mark-success）；省略则不渲染圆点 */
   dot?: string;
   /** data-* 透传（调用点用它挂 E2E/诊断锚点） */
   [dataAttr: `data-${string}`]: unknown;

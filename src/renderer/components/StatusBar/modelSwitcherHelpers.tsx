@@ -263,10 +263,10 @@ export const CAPABILITY_CONFIG: Record<string, { icon: React.ReactNode; color: s
 };
 
 export const HEALTH_DOT_COLOR: Record<string, string> = {
-  healthy: 'bg-green-400',
-  degraded: 'bg-yellow-400',
-  unavailable: 'bg-red-400',
-  recovering: 'bg-blue-400',
+  healthy: 'bg-mark-success',
+  degraded: 'bg-mark-warning',
+  unavailable: 'bg-mark-danger',
+  recovering: 'bg-mark-info',
 };
 
 export interface ProviderHealthSnapshot {
@@ -367,7 +367,7 @@ export function buildProviderHealthSummary(health?: ProviderHealthSnapshot | nul
     label,
     detail,
     rank: PROVIDER_HEALTH_RANK[state],
-    dotClass: HEALTH_DOT_COLOR[state] ?? 'bg-gray-400',
+    dotClass: HEALTH_DOT_COLOR[state] ?? 'bg-mark-neutral',
     badgeClass: PROVIDER_HEALTH_BADGE_CLASS[state],
   };
 }
@@ -493,10 +493,10 @@ const ENGINE_RELIABILITY_TONE_CLASS: Record<string, string> = {
 };
 
 const ENGINE_RELIABILITY_DOT_CLASS: Record<string, string> = {
-  ready: 'bg-emerald-300',
-  warning: 'bg-amber-300',
-  error: 'bg-red-300',
-  info: 'bg-sky-300',
+  ready: 'bg-mark-success',
+  warning: 'bg-mark-warning',
+  error: 'bg-mark-danger',
+  info: 'bg-mark-info',
 };
 
 /** 外部引擎可靠性摘要面板（tone 着色 + 摘要 + 能力/详情行）。 */

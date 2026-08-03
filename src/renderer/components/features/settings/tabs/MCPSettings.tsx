@@ -558,7 +558,7 @@ export const MCPSettings: React.FC = () => {
                             <span
                               data-testid={`mcp-server-status-dot-${server.id}`}
                               aria-hidden="true"
-                              className={`h-2 w-2 flex-shrink-0 rounded-full ${server.lifecycle.connectionState === 'connected' ? 'bg-emerald-400' : 'bg-zinc-600'}`}
+                              className={`h-2 w-2 flex-shrink-0 rounded-full ${server.lifecycle.connectionState === 'connected' ? 'bg-mark-success' : 'bg-zinc-600'}`}
                             />
                             {getStatusIcon(server.lifecycle.connectionState)}
                             <div className="min-w-0">

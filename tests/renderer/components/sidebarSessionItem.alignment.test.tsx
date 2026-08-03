@@ -96,7 +96,7 @@ describe('侧栏会话行对齐规范', () => {
   it('未读点在行尾状态列，不再占行首', () => {
     const unread = renderRow({ unread: true });
     const leadIndex = unread.indexOf('w-4 shrink-0 flex items-center justify-center');
-    const dotIndex = unread.indexOf('bg-purple-400');
+    const dotIndex = unread.indexOf('bg-mark-accent');
     expect(dotIndex).toBeGreaterThan(leadIndex);
     // 行尾状态列本身也是固定宽
     expect(unread).toContain('w-4 shrink-0 flex items-center justify-center');
@@ -139,7 +139,7 @@ describe('实时语音会话标记', () => {
   // （状态 > 分叉 > 语音）后状态点恒在右轨上。代价：身份标记在状态在场时暂时让位。
   it('未读/在跑时状态压身份——单槽优先级：状态 > 语音', () => {
     const html = renderRow({ hadLiveVoice: true, unread: true });
-    expect(html).toContain('bg-purple-400');
+    expect(html).toContain('bg-mark-accent');
     expect(html).not.toContain('session-live-voice-badge');
   });
 

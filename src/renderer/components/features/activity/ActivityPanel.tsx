@@ -72,8 +72,8 @@ function toneClass(tone: ActivityTone): string {
 }
 
 function dotClass(tone: ActivityTone): string {
-  if (tone === 'ready') return 'bg-emerald-400';
-  if (tone === 'blocked') return 'bg-amber-400';
+  if (tone === 'ready') return 'bg-mark-success';
+  if (tone === 'blocked') return 'bg-mark-warning';
   return 'bg-zinc-500';
 }
 

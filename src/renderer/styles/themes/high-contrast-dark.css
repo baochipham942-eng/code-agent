@@ -80,6 +80,16 @@
   --badge-accent-bg: rgba(0, 255, 255, 0.2);
   --badge-accent-border: rgba(0, 255, 255, 0.7);
 
+  /* Solid status marks - bright colors for dots and compact indicators.
+     These are intentionally separate from badge-* backgrounds: a mark is the
+     visible shape itself, not a quiet wash behind text. */
+  --mark-info: #00BFFF;
+  --mark-success: #00FF00;
+  --mark-warning: #FFFF00;
+  --mark-danger: #FF0000;
+  --mark-accent: #00FFFF;
+  --mark-neutral: #B0B0B0;
+
   /* Secondary button: high-contrast dark surface pair with a lighter hover
      step and a readable disabled pair. */
   --btn-secondary-bg: #404040;

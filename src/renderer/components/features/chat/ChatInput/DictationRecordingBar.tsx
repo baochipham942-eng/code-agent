@@ -72,7 +72,7 @@ const DictationWaveform: React.FC<{ level: number; silenceWarning: boolean }> = 
 
   // 中性色而不是「录音红」：这一条现在长在 composer 底栏里，是输入的一部分，
   // 不是一个报警状态（形态对齐 Codex composer）。只有静音警告才需要变色。
-  const barColor = silenceWarning ? 'bg-amber-400' : 'bg-zinc-300';
+  const barColor = silenceWarning ? 'bg-mark-warning' : 'bg-zinc-300';
 
   if (reducedMotion) {
     // 静态电平条：不滚动不跳动，宽度随当前电平伸缩（无 transition，避免闪烁动画）

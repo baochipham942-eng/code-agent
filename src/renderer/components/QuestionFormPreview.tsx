@@ -425,7 +425,7 @@ function DirectionCard({
         </div>
         <span
           className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border ${
-            selected ? 'border-badge-info bg-cyan-400 text-zinc-950' : 'border-zinc-700 text-transparent'
+            selected ? 'border-badge-info bg-mark-info text-zinc-950' : 'border-zinc-700 text-transparent'
           }`}
         >
           <Check className="h-3.5 w-3.5" />

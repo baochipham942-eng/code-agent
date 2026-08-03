@@ -32,7 +32,7 @@ export const SidebarDoctorAlert: React.FC = () => {
       <span className="relative flex h-4 w-4 flex-shrink-0 items-center justify-center text-zinc-500">
         <Stethoscope className="h-4 w-4" />
         <span
-          className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-red-400"
+          className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-mark-danger"
           data-testid="sidebar-doctor-alert-dot"
         />
       </span>
@@ -43,4 +43,3 @@ export const SidebarDoctorAlert: React.FC = () => {
     </button>
   );
 };
-

@@ -222,7 +222,7 @@ export const BrowserAgentWindow: React.FC = () => {
           data-testid="browser-agent-window-status-dot"
           title={running ? copy.running : copy.stopped}
           className={`h-2 w-2 shrink-0 rounded-full ${
-            running ? 'bg-emerald-400' : 'bg-zinc-600'
+            running ? 'bg-mark-success' : 'bg-zinc-600'
           }`}
         />
         <span className="min-w-0 truncate text-xs text-zinc-300" title={activeTitle || undefined}>

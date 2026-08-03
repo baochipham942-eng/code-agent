@@ -195,13 +195,13 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
         )}
         {status === 'error' && (
           <span
-            className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${hasEscalatedError ? 'bg-red-400' : 'bg-zinc-500'}`}
+            className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${hasEscalatedError ? 'bg-mark-danger' : 'bg-zinc-500'}`}
             aria-label={t.toolGroup.statusFailed}
           />
         )}
         {status === 'partial' && (
           <span
-            className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${hasEscalatedError ? 'bg-amber-400' : 'bg-zinc-500'}`}
+            className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${hasEscalatedError ? 'bg-mark-warning' : 'bg-zinc-500'}`}
             aria-label={t.toolGroup.statusPartial}
           />
         )}

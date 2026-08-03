@@ -79,7 +79,7 @@ const RecoveryPanel: React.FC<SuggestionBarProps> = ({ suggestions, onSelect }) 
                         onClick={() => onSelect(s.text)}
                         className="flex items-center gap-2 w-full text-left px-2 py-1.5 text-xs rounded-md bg-zinc-700/30 text-zinc-300 hover:bg-zinc-700/60 hover:text-zinc-200 transition-colors group"
                       >
-                        <span className={`shrink-0 w-1.5 h-1.5 rounded-full ${s.priority === 'high' ? 'bg-blue-400' : 'bg-zinc-500'}`} />
+                        <span className={`shrink-0 w-1.5 h-1.5 rounded-full ${s.priority === 'high' ? 'bg-mark-info' : 'bg-zinc-500'}`} />
                         <span className="truncate flex-1">{s.text}</span>
                         {time && (
                           <span className="shrink-0 text-[10px] text-zinc-500 group-hover:text-zinc-400">

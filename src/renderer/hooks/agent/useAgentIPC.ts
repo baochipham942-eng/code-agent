@@ -23,7 +23,7 @@ import {
 } from '@shared/contract/designHandoff';
 import { directionTokens } from '@/design/direction-tokens';
 import { IPC_CHANNELS } from '@shared/ipc';
-import { QueuedInputSchemas } from '@shared/ipc/schemas';
+import { QueuedInputSchemas, VoiceSchemas } from '@shared/ipc/schemas';
 import type { SwarmAgentState } from '@shared/contract/swarm';
 import { createLogger } from '../../utils/logger';
 import { useAppStore } from '../../stores/appStore';
@@ -34,6 +34,7 @@ import { isReferenceNode, isVideoNode, type CanvasNode } from '../../components/
 import { useSessionStore } from '../../stores/sessionStore';
 import { useSwarmStore } from '../../stores/swarmStore';
 import { useTaskStore, type SessionStatus as TaskSessionStatus } from '../../stores/taskStore';
+import { useVoiceCallStore } from '../../stores/voiceCallStore';
 import { useTurnExecutionStore } from '../../stores/turnExecutionStore';
 import ipcService from '../../services/ipcService';
 import { typedInvokeDomain } from '../../services/typedInvoke';
@@ -913,10 +914,45 @@ export function useAgentIPC({
       };
 
       if (isCurrentSessionProcessing) {
-        logger.info('sendMessage - session processing, queueing runtime input for next turn', {
-          isCurrentSessionProcessing,
-        });
-        await queueForNextTurn();
+        const voiceCall = useVoiceCallStore.getState();
+        const canInjectIntoVoiceCall = !attachments?.length
+          && voiceCall.phase === 'live'
+          && voiceCall.sessionId === effectiveSessionId;
+        const voiceFallbackMessageId = canInjectIntoVoiceCall
+          ? (envelope.clientMessageId ?? generateMessageId())
+          : undefined;
+
+        if (canInjectIntoVoiceCall) {
+          try {
+            const injection = await typedInvokeDomain(VoiceSchemas.INJECT_USER_TEXT, {
+              action: 'injectUserText',
+              payload: {
+                neoSessionId: effectiveSessionId!,
+                text: content,
+              },
+            });
+            if (injection.success && injection.data.outcome === 'injected') {
+              logger.info('sendMessage - routed busy text into live voice call');
+              return;
+            }
+            logger.info('sendMessage - voice text injection fell back to durable queue', {
+              reason: injection.success
+                ? injection.data.outcome === 'fallback' ? injection.data.reason : injection.data.outcome
+                : injection.error.code,
+            });
+          } catch (error) {
+            // The typed path must have a durable escape hatch even if the voice
+            // bridge itself is unavailable during teardown.
+            logger.warn('sendMessage - voice text injection failed; queueing input', {
+              message: error instanceof Error ? error.message : String(error),
+            });
+          }
+        } else {
+          logger.info('sendMessage - session processing, queueing runtime input for next turn', {
+            isCurrentSessionProcessing,
+          });
+        }
+        await queueForNextTurn(voiceFallbackMessageId);
         return;
       }
 

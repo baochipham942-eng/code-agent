@@ -771,6 +771,35 @@ describe('VoiceTransport 契约（relay / direct 双跑）', () => {
     await handle.close();
   });
 
+  it('injectItemWithAck 在 response.created 时确认，injection.rejected 时拒绝', async () => {
+    const events: VoiceEvent[] = [];
+    const handle = await qwenOmniTransport.connect({
+      apiKey: 'test-key',
+      config: { neoSessionId: 's1' },
+      onEvent: (event) => events.push(event),
+      onAudio: vi.fn(),
+    });
+    if (handle.kind !== 'relay' || !handle.injectItemWithAck) throw new Error('missing relay injection ack');
+    const upstream = upstreams[upstreams.length - 1];
+
+    const accepted = handle.injectItemWithAck('[USER] 改做 Y');
+    upstream.emit('message', JSON.stringify({ type: 'response.created', response_id: 'response-1' }));
+    await expect(accepted).resolves.toBeUndefined();
+
+    const rejected = handle.injectItemWithAck('[USER] 再改一次');
+    upstream.emit('message', JSON.stringify({
+      type: 'error',
+      error: { message: 'Conversation already has an active response' },
+    }));
+    await expect(rejected).rejects.toThrow('Conversation already has an active response');
+    expect(events.at(-1)).toEqual({
+      type: 'injection.rejected',
+      message: 'Conversation already has an active response',
+    });
+
+    await handle.close();
+  });
+
   it('socket error 与 close 不受注入确认窗影响，仍是连接级事件', async () => {
     const events: VoiceEvent[] = [];
     const handle = await qwenOmniTransport.connect({

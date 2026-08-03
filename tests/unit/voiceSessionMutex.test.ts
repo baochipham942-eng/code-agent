@@ -16,6 +16,7 @@ const commitMock = vi.fn();
 const respondMock = vi.fn();
 const updateInstructions = vi.fn();
 const injectItem = vi.fn();
+const injectItemWithAck = vi.fn(async (_text: string) => undefined);
 let upstreamResponding = false;
 const isResponding = vi.fn(() => upstreamResponding);
 let interruptResponseId: string | null = null;
@@ -40,6 +41,7 @@ const connect = vi.fn(async (input: Parameters<VoiceTransport['connect']>[0]) =>
     interrupt: interruptMock,
     updateInstructions,
     injectItem,
+    injectItemWithAck,
     isResponding,
     close,
   };
@@ -110,7 +112,7 @@ vi.mock('../../src/host/services/voice/voiceAgentCoordinator', async (importOrig
   };
 });
 
-const { attachVoiceClient, getActiveVoiceSessionId, endActiveVoiceSession } = await import('../../src/host/services/voice/voiceSessionService');
+const { attachVoiceClient, getActiveVoiceSessionId, endActiveVoiceSession, injectVoiceUserText } = await import('../../src/host/services/voice/voiceSessionService');
 
 /** 最小 ws 替身：只要 readyState / OPEN / send / close / 事件。 */
 class FakeClient extends EventEmitter {
@@ -144,6 +146,8 @@ describe('voiceSessionService 互斥与挂断', () => {
     respondMock.mockClear();
     updateInstructions.mockClear();
     injectItem.mockClear();
+    injectItemWithAck.mockClear();
+    injectItemWithAck.mockImplementation(async (_text: string) => undefined);
     isResponding.mockClear();
     interruptMock.mockClear();
     interruptResponseId = null;
@@ -191,6 +195,7 @@ describe('voiceSessionService 互斥与挂断', () => {
         respond: respondMock,
         interrupt: vi.fn(),
         injectItem,
+        injectItemWithAck,
         isResponding,
         updateInstructions,
         close,
@@ -759,6 +764,68 @@ describe('voiceSessionService 互斥与挂断', () => {
     }
   });
 
+});
+
+describe('通话中打字注入（E）', () => {
+  beforeEach(() => {
+    injectItem.mockClear();
+    injectItemWithAck.mockClear();
+    injectItemWithAck.mockImplementation(async (_text: string) => undefined);
+    lastOnEvent = null;
+  });
+
+  afterEach(async () => {
+    await endActiveVoiceSession();
+  });
+
+  it('把原话以 [USER] 前缀送进通话 brain，并等待注入确认', async () => {
+    const client = new FakeClient();
+    await attachVoiceClient(client as never, 'session-typed-input');
+
+    const result = await injectVoiceUserText('session-typed-input', '别等了，改做 Y');
+
+    expect(result).toEqual({ outcome: 'injected' });
+    expect(injectItemWithAck).toHaveBeenCalledWith('[USER] 别等了，改做 Y');
+    expect(injectItem).not.toHaveBeenCalled();
+  });
+
+  it('VOICE_TOOLS_DROPPED 时 fail-closed 回退，不把用户话静默吞掉', async () => {
+    const client = new FakeClient();
+    await attachVoiceClient(client as never, 'session-typed-tools-dropped');
+    lastOnEvent?.({
+      type: 'notice',
+      code: 'VOICE_TOOLS_DROPPED',
+      message: 'tools dropped',
+    });
+
+    const result = await injectVoiceUserText('session-typed-tools-dropped', '改做 Y');
+
+    expect(result).toEqual({ outcome: 'fallback', reason: 'tools_unavailable' });
+    expect(injectItemWithAck).not.toHaveBeenCalled();
+  });
+
+  it('上游拒绝注入时返回 fallback，让 renderer 把同一条话放回 durable queue', async () => {
+    const client = new FakeClient();
+    await attachVoiceClient(client as never, 'session-typed-rejected');
+    injectItemWithAck.mockRejectedValueOnce(new Error('active response'));
+
+    const result = await injectVoiceUserText('session-typed-rejected', '改做 Y');
+
+    expect(result).toEqual({ outcome: 'fallback', reason: 'injection_rejected' });
+    expect(injectItemWithAck).toHaveBeenCalledTimes(1);
+  });
+
+  it('挂断开始后拒绝新的注入，不启动第二个文本轮', async () => {
+    const client = new FakeClient();
+    await attachVoiceClient(client as never, 'session-typed-hangup');
+    const ending = endActiveVoiceSession();
+
+    const result = await injectVoiceUserText('session-typed-hangup', '改做 Y');
+
+    expect(result).toEqual({ outcome: 'fallback', reason: 'no_active_call' });
+    expect(injectItemWithAck).not.toHaveBeenCalled();
+    await ending;
+  });
 });
 
 describe('终态结论节制播报', () => {

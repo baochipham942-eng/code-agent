@@ -29,5 +29,5 @@ export function getProviderErrorMessage(error: unknown): string {
 export function hasInsufficientBalanceSignal(error: unknown): boolean {
   if (getProviderErrorStatus(error) === 402) return true;
   const message = getProviderErrorMessage(error);
-  return /payment required|insufficient[_\s-]*(?:balance|quota|credit)|(?:account\s+)?balance\s+(?:is\s+)?(?:insufficient|low|exhausted)|billing(?:\s+quota)?|余额不足|余额已?用尽|欠费|请充值/i.test(message);
+  return /payment required|insufficient[_\s-]*(?:balance|quota|credit)|(?:account\s+)?balance\s+(?:is\s+)?(?:too\s+)?(?:insufficient|low|exhausted)|run\s+out\s+of\s+credits?|exceed(?:ed|s|ing)?\s+(?:your\s+)?credit\s+limit|billing(?:\s+quota)?|余额不足|余额已?用尽|欠费|请充值/i.test(message);
 }

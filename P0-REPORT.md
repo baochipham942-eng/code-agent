@@ -39,6 +39,21 @@ Hermetic：分类器、结构化 metadata、i18n 文案和按钮动作均由单�
 
 - 需监工用真实 402 供应商响应做 real-runtime 验收，确认 host 事件载荷保留 HTTP 状态并展示新卡片。
 
+### 监工复核补充：credit 覆盖收敛回归
+
+监工复核发现，首轮共享判据替换了 host 原有正则中的裸 `credit` 分支，却只覆盖 `insufficient credit` 形态，导致三类明确余额语义从 host `quota_exhaustion` 和 renderer `insufficient_balance` 同时漏出：
+
+- `Your credit balance is too low to access the Anthropic API`
+- `You have run out of credits`
+- `This request would exceed your credit limit`
+
+修复在共享判据中补入受限的 credit 余额模式：credit balance 过低、credits 用尽、credit limit 超限。没有恢复裸 `credit`，并用 `Please update your credit card details` 负例锁定无关信用卡文案不得命中。
+
+- 红测：上述三条文案分别在 host 与 renderer 转红，共 6 failed；两条 `credit card` 负例保持通过。
+- 变异：临时撤销新增 credit 分支与 `too low` 支持，同 6 条正向断言再次转红；恢复后全绿。
+- 受影响套件全量：3 files，93 passed / 0 failed / 0 skipped。
+- `npm run typecheck`：通过。
+
 ## F2：实时语音总开关默认开启
 
 ### 根因

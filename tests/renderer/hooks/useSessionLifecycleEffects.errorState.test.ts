@@ -79,6 +79,22 @@ describe('classifyAgentError', () => {
     })?.category).toBe('insufficient_balance');
   });
 
+  it.each([
+    'Your credit balance is too low to access the Anthropic API',
+    'You have run out of credits',
+    'This request would exceed your credit limit',
+  ])('classifies explicit credit exhaustion as insufficient_balance: %s', (message) => {
+    expect(classifyAgentError({ code: 'RUN_FAILED', message })?.category)
+      .toBe('insufficient_balance');
+  });
+
+  it('does not treat unrelated credit card text as insufficient balance', () => {
+    expect(classifyAgentError({
+      code: 'RUN_FAILED',
+      message: 'Please update your credit card details',
+    })?.category).toBe('generic');
+  });
+
   it('keeps mimo-style HTTP 401 invalid-key quota failures in the auth fallback', () => {
     expect(classifyAgentError({
       code: 'RUN_FAILED',

@@ -2,10 +2,7 @@ import { describe, expect, it } from 'vitest';
 // @ts-expect-error —— 纯 JS 释放门脚本，无类型声明
 import { classifyDesktopShellDiagnostics } from '../../scripts/desktop-shell-diagnostics.mjs';
 // @ts-expect-error —— 纯 JS 释放门脚本，无类型声明
-import {
-  verifyPackagedDesktopShellEvidence,
-  verifyPackagedDesktopShellHealthEvidence,
-} from '../../scripts/desktop-shell-packaged-smoke.mjs';
+import { verifyPackagedDesktopShellEvidence, verifyPackagedDesktopShellHealthEvidence } from '../../scripts/desktop-shell-packaged-smoke.mjs';
 
 function rendererServe(overrides: Record<string, unknown> = {}) {
   return {

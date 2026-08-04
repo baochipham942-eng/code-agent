@@ -37,14 +37,18 @@ const NEW_SESSION_CATEGORIES: ReadonlySet<AgentErrorCategory> = new Set([
  * 密钥无效 / 额度用尽这一档不给「重试」：重试一万次也是同一个 401，
  * 摆一个按不出结果的按钮只会把人往错误方向引（真机 2026-08-01 反馈）。
  */
-const NO_RETRY_CATEGORIES: ReadonlySet<AgentErrorCategory> = new Set(['auth']);
+const NO_RETRY_CATEGORIES: ReadonlySet<AgentErrorCategory> = new Set(['auth', 'insufficient_balance']);
 
 /**
  * 建议正文写着「去检查这个模型的账号配置」，卡片却没有过去的入口——用户只能自己翻设置。
  * 授权类失败给一个直达按钮（Codex 验证 2026-08-01）。落点是设置 → 模型（API Key 的家），
  * 不是能力中心：能力中心管专家/技能/连接器/插件，模型账号不在那儿。
  */
-const CHECK_ACCOUNT_CATEGORIES: ReadonlySet<AgentErrorCategory> = new Set(['auth', 'forbidden']);
+const CHECK_ACCOUNT_CATEGORIES: ReadonlySet<AgentErrorCategory> = new Set([
+  'auth',
+  'insufficient_balance',
+  'forbidden',
+]);
 
 function shouldShowRetry(category: AgentErrorCategory): boolean {
   return !NO_RETRY_CATEGORIES.has(category);

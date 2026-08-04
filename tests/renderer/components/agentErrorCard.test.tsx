@@ -69,6 +69,16 @@ describe('AgentErrorCard', () => {
     expect(screen.getByText('HTTP 404')).toBeTruthy();
   });
 
+  it('余额不足精确提示充值，只给检查账号设置，不引导重试或切换模型', () => {
+    renderCard(makeError({ category: 'insufficient_balance', httpStatus: 402 }));
+
+    expect(screen.getByText('这个账号余额不足')).toBeTruthy();
+    expect(screen.getByText('去供应商后台充值后即可继续')).toBeTruthy();
+    expect(screen.getByRole('button', { name: '检查账号设置' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /重试/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /切换模型/ })).toBeNull();
+  });
+
   it.each(['model_not_found', 'forbidden', 'rate_limited', 'concurrency', 'network'] as const)(
     'shows 切换模型 but not 新开会话 for model-ish category %s',
     (category) => {

@@ -23,6 +23,10 @@ function msgError(message: string): unknown {
 // --------------------------------------------------------------------------
 
 describe('classifyError – status codes', () => {
+  it('status 402 → quota_exhaustion', () => {
+    expect(classifyError(httpError(402, 'Insufficient Balance'))).toBe<ErrorClass>('quota_exhaustion');
+  });
+
   it('status 413 → overflow', () => {
     expect(classifyError(httpError(413))).toBe<ErrorClass>('overflow');
   });
@@ -61,6 +65,10 @@ describe('classifyError – status codes', () => {
 // --------------------------------------------------------------------------
 
 describe('classifyError – message patterns', () => {
+  it('明确余额不足文案 → quota_exhaustion', () => {
+    expect(classifyError(msgError('账户余额不足，请充值'))).toBe<ErrorClass>('quota_exhaustion');
+  });
+
   // overflow
   it('"context_length_exceeded" → overflow', () => {
     expect(classifyError(msgError('context_length_exceeded'))).toBe<ErrorClass>('overflow');

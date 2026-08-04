@@ -64,6 +64,32 @@ describe('classifyAgentError 模型归属', () => {
 });
 
 describe('classifyAgentError', () => {
+  it('classifies HTTP 402 and explicit balance failures as insufficient_balance', () => {
+    expect(classifyAgentError({
+      code: 'RUN_FAILED',
+      message: 'HTTP 402 POST /chat/completions: Insufficient Balance',
+      httpStatus: 402,
+    })).toMatchObject({
+      category: 'insufficient_balance',
+      httpStatus: 402,
+    });
+    expect(classifyAgentError({
+      code: 'RUN_FAILED',
+      message: 'Payment required: 账户余额不足，请充值',
+    })?.category).toBe('insufficient_balance');
+  });
+
+  it('keeps mimo-style HTTP 401 invalid-key quota failures in the auth fallback', () => {
+    expect(classifyAgentError({
+      code: 'RUN_FAILED',
+      message: 'HTTP 401 Invalid API Key',
+      httpStatus: 401,
+    })).toMatchObject({
+      category: 'auth',
+      httpStatus: 401,
+    });
+  });
+
   it('classifies context length errors with token details', () => {
     const error = classifyAgentError({
       code: 'CONTEXT_LENGTH_EXCEEDED',

@@ -226,7 +226,7 @@ export const Orchestration: React.FC = () => {
   if (!isRunning && agents.length === 0 && launchRequests.length === 0 && planReviews.length === 0 && !aggregation) {
     return (
       <div className="space-y-3">
-        <div className="bg-white/[0.02] backdrop-blur-sm rounded-xl border border-white/[0.04] p-4">
+        <div className="bg-surface-subtle rounded-xl p-4">
           <div className="flex items-center gap-2 text-zinc-300">
             <GitBranch className="w-4 h-4 text-badge-accent" />
             <span className="text-sm font-medium">{o.title}</span>
@@ -304,7 +304,7 @@ export const Orchestration: React.FC = () => {
 
   return (
     <div className="space-y-3">
-      <div className="bg-white/[0.02] backdrop-blur-sm rounded-xl border border-white/[0.04] p-3">
+      <div className="bg-surface-subtle rounded-xl p-3">
         <div className="flex items-center gap-2">
           <GitBranch className="w-4 h-4 text-badge-accent" />
           <span className="text-xs font-medium uppercase tracking-wide text-zinc-400">{o.posture}</span>
@@ -447,7 +447,7 @@ export const Orchestration: React.FC = () => {
           }
         >
           <div className="space-y-3">
-            <div className="rounded-lg border border-white/[0.04] bg-zinc-800/70 p-3">
+            <div className="rounded-lg bg-zinc-800/70 p-3">
               <div className="flex items-center justify-between gap-2">
                 <div>
                   <div className="text-sm font-medium text-zinc-100">{o.contextBudget}</div>
@@ -506,7 +506,7 @@ export const Orchestration: React.FC = () => {
             </div>
 
             {contextDistribution.length > 0 && (
-              <div className="rounded-lg border border-white/[0.04] bg-zinc-800/70 p-3">
+              <div className="rounded-lg bg-zinc-800/70 p-3">
                 <div className="text-sm font-medium text-zinc-100">{o.contextBreakdown}</div>
                 <div className="mt-3 grid grid-cols-2 gap-2">
                   {contextDistribution.map((entry) => {
@@ -527,7 +527,7 @@ export const Orchestration: React.FC = () => {
             )}
 
             <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
-              <div className="rounded-lg border border-white/[0.04] bg-zinc-800/70 p-3">
+              <div className="rounded-lg bg-zinc-800/70 p-3">
                 <div className="text-sm font-medium text-zinc-100">{o.compression}</div>
                 <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
                   <div className="rounded bg-zinc-900/70 px-2 py-1.5 text-zinc-400">
@@ -550,7 +550,7 @@ export const Orchestration: React.FC = () => {
                 </div>
               </div>
 
-            <div className="rounded-lg border border-white/[0.04] bg-zinc-800/70 p-3">
+            <div className="rounded-lg bg-zinc-800/70 p-3">
               <div className="text-sm font-medium text-zinc-100">{o.contextSources}</div>
               <div className="mt-2 text-xs text-zinc-500">{o.recentAttachments}</div>
               <div className="mt-3 space-y-2">
@@ -602,7 +602,7 @@ export const Orchestration: React.FC = () => {
             )}
 
             {contextTimeline.length > 0 && (
-              <div className="rounded-lg border border-white/[0.04] bg-zinc-800/70 p-3">
+              <div className="rounded-lg bg-zinc-800/70 p-3">
                 <div className="flex items-center gap-2">
                   <Activity className="h-4 w-4 text-badge-accent" />
                   <div className="text-sm font-medium text-zinc-100">{o.contextTimeline}</div>
@@ -627,7 +627,7 @@ export const Orchestration: React.FC = () => {
             )}
 
             {agentContextSnapshots.length > 0 && (
-              <div className="rounded-lg border border-white/[0.04] bg-zinc-800/70 p-3">
+              <div className="rounded-lg bg-zinc-800/70 p-3">
                 <div className="flex items-center gap-2">
                   <Users className="h-4 w-4 text-badge-accent" />
                   <div className="text-sm font-medium text-zinc-100">{o.agentSnapshots}</div>
@@ -641,13 +641,13 @@ export const Orchestration: React.FC = () => {
             )}
 
             {messagePreview.length > 0 && (
-              <div className="rounded-lg border border-white/[0.04] bg-zinc-800/70 p-3">
+              <div className="rounded-lg bg-zinc-800/70 p-3">
                 <div className="text-sm font-medium text-zinc-100">{o.apiViewPreview}</div>
                 <div className="mt-3 space-y-2">
                   {messagePreview.map((item) => (
                     <div
                       key={item.id}
-                      className="rounded border border-white/[0.04] bg-zinc-900/70 px-3 py-2"
+                      className="rounded bg-zinc-900/70 px-3 py-2"
                     >
                       <div className="flex items-center gap-2">
                         <span className="rounded-full bg-zinc-700/80 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-zinc-300">
@@ -744,7 +744,7 @@ export const Orchestration: React.FC = () => {
         <Section title={o.resultClosure} extra={<Sparkles className="w-3.5 h-3.5 text-badge-accent" />}>
           <div className="space-y-3">
             {aggregation && (
-              <div className="rounded-lg border border-white/[0.04] bg-zinc-800/70 p-3">
+              <div className="rounded-lg bg-zinc-800/70 p-3">
                 <div className="text-sm font-medium text-zinc-100">{o.aggregateSummary}</div>
                 <div className="mt-2 text-xs leading-6 text-zinc-400">{aggregation.summary}</div>
                 <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
@@ -759,7 +759,7 @@ export const Orchestration: React.FC = () => {
             )}
 
             {verification && (
-              <div className="rounded-lg border border-white/[0.04] bg-zinc-800/70 p-3">
+              <div className="rounded-lg bg-zinc-800/70 p-3">
                 <div className="flex items-center gap-2 text-sm font-medium text-zinc-100">
                   {verification.passed ? (
                     <CheckCircle2 className="w-4 h-4 text-badge-success" />

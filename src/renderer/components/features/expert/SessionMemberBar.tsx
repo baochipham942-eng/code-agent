@@ -20,7 +20,7 @@ import type { SwarmAgentState } from '@shared/contract/swarm';
 import type { SwarmRunAgentRecord } from '@shared/contract/swarmTrace';
 import { readPersistedTeamLead, teamRecipeMemberKey } from '@shared/contract/teamRecipe';
 import { useMemberViewStore } from '../../../stores/memberViewStore';
-import { useComposerNoticeStore, selectHasBlockingNotice } from '../../../stores/composerNoticeStore';
+import { useComposerNoticeStore, selectSlotCollapsed } from '../../../stores/composerNoticeStore';
 import { useVoiceCallStore } from '../../../stores/voiceCallStore';
 import { RoleInitialAvatar } from './RoleInitialAvatar';
 import { useDurableSwarmRunDetail } from '../../../hooks/useDurableSwarmRunDetail';
@@ -145,7 +145,9 @@ export const SessionMemberBar: React.FC<{ sessionId: string | null }> = ({ sessi
   const pills = useSessionMembers(sessionId);
   const viewingMemberId = useMemberViewStore((state) => state.viewingMemberId);
   const setViewingMemberId = useMemberViewStore((state) => state.setViewingMemberId);
-  const blockedByNotice = useComposerNoticeStore(selectHasBlockingNotice);
+  // L3 上下文层：被 L1 阻塞决策卡（三张草稿卡 + 定时/目标/种子三张创建卡）挤时
+  // 收成一行摘要而不是整条消失。判定收在 composerNoticeStore 一处，这里不自己数卡。
+  const blockedByNotice = useComposerNoticeStore((state) => selectSlotCollapsed(state, 'member-bar'));
   const [expandedOverNotice, setExpandedOverNotice] = useState(false);
   // 通话中高亮通话身份（§6.7.7；只展示，点击切换 set_active_agent 是 Phase 2）
   const voiceCallLive = useVoiceCallStore((state) => state.phase === 'live' || state.phase === 'connecting');

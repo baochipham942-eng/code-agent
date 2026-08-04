@@ -3,6 +3,7 @@
 // ============================================================================
 
 import type { ModelAuthFailureMarker } from '../../shared/contract/model';
+import { hasInsufficientBalanceSignal } from '../../shared/utils/providerError';
 
 /** 引擎侧「本地就没有 key」的自有错误码，与上游 401/403 归同一类。 */
 export const MODEL_API_KEY_MISSING_CODE = 'MODEL_API_KEY_MISSING';
@@ -71,7 +72,7 @@ const MESSAGE_PATTERNS: Array<[RegExp, ErrorClass]> = [
     /context_length_exceeded|maximum context length|prompt is too long|request too large|token limit/i,
     'overflow',
   ],
-  [/billing|payment required|insufficient_quota|credit|x-ratelimit-remaining.*\b0\b/i, 'quota_exhaustion'],
+  [/x-ratelimit-remaining.*\b0\b/i, 'quota_exhaustion'],
   [/content.?filter|content.?policy|safety|harmful|violat(?:es?|ion)|moderation/i, 'content_policy'],
   [/unexpected.?token|JSON\.parse|invalid json|SyntaxError|tool_use.*corrupt|malformed.*json/i, 'malformed_response'],
   [/model.*(?:not.?found|deprecated|decommission|retired|does not exist)|(?:deprecated|retired).*model/i, 'model_deprecated'],
@@ -146,6 +147,7 @@ export function classifyError(error: unknown): ErrorClass {
   }
 
   const message = getMessage(error);
+  if (hasInsufficientBalanceSignal(error)) return 'quota_exhaustion';
   for (const [pattern, cls] of MESSAGE_PATTERNS) {
     if (pattern.test(message)) return cls;
   }

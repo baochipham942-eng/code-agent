@@ -10,6 +10,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { IPC_DOMAINS } from '@shared/ipc';
 import type { AppSettings } from '@shared/contract';
 import { VOICE_LIVE_SETTINGS_UPDATED_EVENT, type VoiceStatusResponse } from '@shared/contract/voice';
+import { resolveVoiceLiveEnabled } from '@shared/contract/settings';
 import ipcService from '../../../services/ipcService';
 
 async function fetchVoiceStatus(): Promise<VoiceStatusResponse | null> {
@@ -34,7 +35,7 @@ const NO_USAGE: VoiceStatusResponse['usage'] = { monthSeconds: 0, monthCalls: 0,
  * 用户就会看到按钮先是发送键、几十毫秒后跳成通话键——布局抖一下。
  * 语音可用性在一次会话里基本不变，记住上次的值，重新挂载时就没有这一跳。
  */
-let lastKnown = { enabled: false, configured: false, usage: NO_USAGE };
+let lastKnown = { enabled: resolveVoiceLiveEnabled(undefined), configured: false, usage: NO_USAGE };
 
 export function useVoiceLiveAvailability(): {
   enabled: boolean;
@@ -49,7 +50,7 @@ export function useVoiceLiveAvailability(): {
     let cancelled = false;
     void ipcService.invokeDomain<AppSettings>(IPC_DOMAINS.SETTINGS, 'get')
       .then((settings) => {
-        const next = settings.voice?.live?.enabled === true;
+        const next = resolveVoiceLiveEnabled(settings.voice?.live);
         lastKnown = { ...lastKnown, enabled: next };
         if (!cancelled) setEnabled(next);
       })

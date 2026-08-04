@@ -12,7 +12,11 @@ import { Check, ShieldCheck } from 'lucide-react';
 import { IPC_DOMAINS } from '@shared/ipc';
 import type { AppSettings } from '@shared/contract';
 import { VOICE_LIVE_SETTINGS_UPDATED_EVENT } from '@shared/contract/voice';
-import type { VoiceInputDeviceSettings, VoiceLiveSettings } from '@shared/contract/settings';
+import {
+  resolveVoiceLiveEnabled,
+  type VoiceInputDeviceSettings,
+  type VoiceLiveSettings,
+} from '@shared/contract/settings';
 import { normalizeVoiceInputDevice } from '@shared/voiceInputDevice';
 import { PROVIDER_MODELS, PROVIDER_MODELS_MAP } from '@shared/constants/models';
 import ipcService from '../../../../services/ipcService';
@@ -42,7 +46,7 @@ export const VoiceLiveSettingsSection: React.FC = () => {
   // baseLive 透传本 tab 不拥有的 live 键（通话模型/音色已搬「语音模型」tab），
   // persist 时原样带回，避免整对象写入把它们抹掉。
   const [baseLive, setBaseLive] = useState<VoiceLiveSettings>({});
-  const [enabled, setEnabled] = useState(false);
+  const [enabled, setEnabled] = useState(() => resolveVoiceLiveEnabled(undefined));
   const [language, setLanguage] = useState<NonNullable<VoiceLiveSettings['language']>>('auto');
   const [interrupt, setInterrupt] = useState<InterruptMode>('server_vad');
   const [sensitivity, setSensitivity] = useState<VadSensitivity>('medium');
@@ -64,7 +68,7 @@ export const VoiceLiveSettingsSection: React.FC = () => {
         if (cancelled) return;
         const voice = settings.voice;
         setBaseLive(voice?.live ?? {});
-        setEnabled(voice?.live?.enabled === true);
+        setEnabled(resolveVoiceLiveEnabled(voice?.live));
         setLanguage(voice?.live?.language ?? 'auto');
         setInterrupt(deriveInterruptMode(voice));
         setSensitivity(deriveVadSensitivity(voice));

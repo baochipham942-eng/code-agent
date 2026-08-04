@@ -4,6 +4,7 @@ import {
   DEFAULT_MODELS,
 } from '../../../shared/constants';
 import { DEFAULT_SPEECH_INPUT_SETTINGS } from '../../../shared/contract/speech';
+import { VOICE_LIVE_ENABLED_DEFAULT } from '../../../shared/contract/settings';
 import {
   createDefaultKeybindingsSettings,
   getKeybindingPlatformFromNodePlatform,
@@ -159,5 +160,10 @@ export const DEFAULT_SETTINGS: AppSettings = {
     targetSession: 'current',
   },
   speech: DEFAULT_SPEECH_INPUT_SETTINGS,
+  voice: {
+    live: {
+      enabled: VOICE_LIVE_ENABLED_DEFAULT,
+    },
+  },
   keybindings: createDefaultKeybindingsSettings(getKeybindingPlatformFromNodePlatform(process.platform)),
 };

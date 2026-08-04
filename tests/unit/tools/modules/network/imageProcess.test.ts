@@ -199,6 +199,9 @@ describe('image_process — execute', () => {
   });
 
   it('resize action with dimensions', async () => {
+    metadataMock
+      .mockResolvedValueOnce({ width: 800, height: 600 })
+      .mockResolvedValueOnce({ width: 400, height: 300 });
     const result = await executeImageProcess(
       { input_path: '/abs/photo.png', action: 'resize', width: 400, height: 300 },
       makeCtx(),
@@ -206,6 +209,27 @@ describe('image_process — execute', () => {
     );
     expect(result.ok).toBe(true);
     expect(sharpInstanceMock.resize).toHaveBeenCalledWith(400, 300, expect.objectContaining({ fit: 'inside' }));
+  });
+
+  it('请求尺寸与 fit-inside 实际尺寸不一致时 fail-loud，禁止输出成功文案', async () => {
+    metadataMock
+      .mockResolvedValueOnce({ width: 2912, height: 1920 })
+      .mockResolvedValueOnce({ width: 1080, height: 712 });
+
+    const result = await executeImageProcess(
+      { input_path: '/abs/photo.png', action: 'resize', width: 1080, height: 1920 },
+      makeCtx(),
+      allowAll,
+    );
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.code).toBe('OUTPUT_DIMENSION_MISMATCH');
+      expect(result.error).toContain('请求 1080x1920');
+      expect(result.error).toContain('实际 1080x712');
+      expect(result.error).toContain('fit: inside');
+      expect(result.error).not.toContain('✅');
+    }
   });
 
   it('upscale action uses lanczos kernel', async () => {

@@ -69,7 +69,7 @@ describe('VoiceLiveSettingsSection', () => {
   afterEach(() => cleanup());
 
   it('总开关持久化 live.enabled，并同写 turnDetection（默认 server_vad medium）', async () => {
-    settingsGet(undefined);
+    settingsGet({ live: { enabled: false } });
     render(<VoiceLiveSettingsSection />);
     await waitFor(() => expect(invokeDomainMock).toHaveBeenCalled());
 
@@ -80,6 +80,16 @@ describe('VoiceLiveSettingsSection', () => {
       const payload = setCall![2] as { voice: { enabled?: boolean; turnDetection: unknown; live: { enabled?: boolean } } };
       expect(payload.voice.live.enabled).toBe(true);
       expect(payload.voice.turnDetection).toMatchObject({ type: 'server_vad', threshold: 0.5 });
+    });
+  });
+
+  it('存量设置未写 enabled 时，总开关按默认开启展示', async () => {
+    settingsGet({ live: {} });
+    render(<VoiceLiveSettingsSection />);
+
+    await waitFor(() => {
+      expect(screen.getByRole('switch', { name: zh.voice.settings.enableTitle }).getAttribute('aria-checked'))
+        .toBe('true');
     });
   });
 

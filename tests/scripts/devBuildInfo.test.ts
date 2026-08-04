@@ -1,9 +1,11 @@
 import {
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
   writeFileSync,
 } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { join, resolve } from 'node:path';
@@ -33,6 +35,60 @@ function functionBody(script: string, name: string): string {
 }
 
 describe('dev build-info install gate', () => {
+  it('finalizes the dev bundle from the shared Tauri resource declarations', () => {
+    const packageJson = JSON.parse(readFileSync(resolve(repoRoot, 'package.json'), 'utf8')) as {
+      scripts?: Record<string, string>;
+    };
+    const finalizer = readFileSync(
+      resolve(repoRoot, 'scripts/tauri-finalize-dev-bundle.mjs'),
+      'utf8',
+    );
+
+    expect(packageJson.scripts?.['tauri:package:dev']).toContain(
+      'node scripts/tauri-finalize-dev-bundle.mjs',
+    );
+    expect(finalizer).toContain("'src-tauri/tauri.conf.json'");
+    expect(finalizer).toContain("'src-tauri/tauri.dev.conf.json'");
+    expect(finalizer).toContain('codesign');
+  });
+
+  it('runs the shared resource inventory and packaged health smoke after install', () => {
+    const script = readInstallScript();
+    const verifier = readFileSync(resolve(repoRoot, 'scripts/verify-tauri-dev-app.sh'), 'utf8');
+    const copyIndex = script.indexOf('cp -R "$SOURCE_APP" "/Applications/$APP_NAME.app"');
+    const resignIndex = script.indexOf('resign_app_if_possible "/Applications/$APP_NAME.app"', copyIndex);
+    const verifyIndex = script.indexOf('bash "$PROJECT_ROOT/scripts/verify-tauri-dev-app.sh"', copyIndex);
+    const cleanupIndex = script.indexOf('rm -rf "$SOURCE_APP" "$SOURCE_APP.tar.gz"', copyIndex);
+
+    expect(verifyIndex).toBeGreaterThan(resignIndex);
+    expect(cleanupIndex).toBeGreaterThan(verifyIndex);
+    expect(verifier).toContain('tauri-resource-inventory.mjs');
+    expect(verifier).toContain('desktop-shell-packaged-smoke.mjs');
+    expect(verifier).toContain('--port 8181');
+    expect(verifier).toContain('--app-port "${DEV_APP_WEB_PORT:-8181}"');
+    expect(verifier).toContain('--health-only');
+  });
+
+  it('fails the shared inventory when a required startup resource is missing', () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'agent-neo-dev-resources-'));
+    tempDirs.push(tempDir);
+    const renderer = join(tempDir, 'dist/renderer/index.html');
+    const native = join(tempDir, 'dist/native/better-sqlite3/build/Release/better_sqlite3.node');
+    mkdirSync(resolve(renderer, '..'), { recursive: true });
+    mkdirSync(resolve(native, '..'), { recursive: true });
+    writeFileSync(renderer, '<!doctype html>');
+    writeFileSync(native, 'fixture');
+
+    const command = ['scripts/tauri-resource-inventory.mjs', '--root', tempDir];
+    const green = spawnSync('node', command, { cwd: repoRoot, encoding: 'utf8' });
+    expect(green.status).toBe(0);
+
+    rmSync(renderer);
+    const red = spawnSync('node', command, { cwd: repoRoot, encoding: 'utf8' });
+    expect(red.status).not.toBe(0);
+    expect(red.stderr).toContain('dist/renderer/index.html');
+  });
+
   it('writes build-info after copying the app and before resigning it', () => {
     const script = readInstallScript();
     const copyIndex = script.indexOf('cp -R "$SOURCE_APP" "/Applications/$APP_NAME.app"');

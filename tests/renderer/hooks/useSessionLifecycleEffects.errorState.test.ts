@@ -64,6 +64,48 @@ describe('classifyAgentError 模型归属', () => {
 });
 
 describe('classifyAgentError', () => {
+  it('classifies HTTP 402 and explicit balance failures as insufficient_balance', () => {
+    expect(classifyAgentError({
+      code: 'RUN_FAILED',
+      message: 'HTTP 402 POST /chat/completions: Insufficient Balance',
+      httpStatus: 402,
+    })).toMatchObject({
+      category: 'insufficient_balance',
+      httpStatus: 402,
+    });
+    expect(classifyAgentError({
+      code: 'RUN_FAILED',
+      message: 'Payment required: 账户余额不足，请充值',
+    })?.category).toBe('insufficient_balance');
+  });
+
+  it.each([
+    'Your credit balance is too low to access the Anthropic API',
+    'You have run out of credits',
+    'This request would exceed your credit limit',
+  ])('classifies explicit credit exhaustion as insufficient_balance: %s', (message) => {
+    expect(classifyAgentError({ code: 'RUN_FAILED', message })?.category)
+      .toBe('insufficient_balance');
+  });
+
+  it('does not treat unrelated credit card text as insufficient balance', () => {
+    expect(classifyAgentError({
+      code: 'RUN_FAILED',
+      message: 'Please update your credit card details',
+    })?.category).toBe('generic');
+  });
+
+  it('keeps mimo-style HTTP 401 invalid-key quota failures in the auth fallback', () => {
+    expect(classifyAgentError({
+      code: 'RUN_FAILED',
+      message: 'HTTP 401 Invalid API Key',
+      httpStatus: 401,
+    })).toMatchObject({
+      category: 'auth',
+      httpStatus: 401,
+    });
+  });
+
   it('classifies context length errors with token details', () => {
     const error = classifyAgentError({
       code: 'CONTEXT_LENGTH_EXCEEDED',

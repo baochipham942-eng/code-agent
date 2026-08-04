@@ -43,7 +43,11 @@ export const SendButton: React.FC<SendButtonProps> = ({
   label,
 }) => {
   const { t } = useI18n();
-  const baseIconButtonClass = 'flex-shrink-0 h-9 w-9 rounded-xl grid place-items-center transition-all duration-200 focus-visible:outline-hidden';
+  // 直径 28（原 36）+ 正圆（原圆角方），对齐 Codex composer 参考图。醒目靠填充不靠尺寸。
+  // interrupting / 排队 / 停止 / 普通 四个图标分支共用这一个形态，只改其中一个等于没改。
+  // 配色仍走主题 token（bg-brand 等），不改成字面白色——浅色主题下 --zinc-900 是
+  // rgb(250,250,250)，白底按钮压在上面约 1.02:1，等于隐形。
+  const baseIconButtonClass = 'flex-shrink-0 h-7 w-7 rounded-full grid place-items-center transition-all duration-200 focus-visible:outline-hidden';
 
   // 运行中输入接入中：显示旋转加载图标
   if (isInterrupting) {
@@ -54,7 +58,7 @@ export const SendButton: React.FC<SendButtonProps> = ({
         className={`${baseIconButtonClass} bg-white/[0.08] text-zinc-200 cursor-wait`}
         aria-label={t.chatInput.processingRuntimeInputAria}
       >
-        <Loader2 className="h-4 w-4 animate-spin" />
+        <Loader2 className="h-3.5 w-3.5 animate-spin" />
       </button>
     );
   }
@@ -69,7 +73,7 @@ export const SendButton: React.FC<SendButtonProps> = ({
         aria-label={t.chatInput.queueNextTurnAria}
         title={t.chatInput.queueNextTurnAria}
       >
-        <ArrowUp className="h-4 w-4 stroke-[2.4]" />
+        <ArrowUp className="h-3.5 w-3.5 stroke-[2.4]" />
       </button>
     );
   }
@@ -83,7 +87,7 @@ export const SendButton: React.FC<SendButtonProps> = ({
         className={`${baseIconButtonClass} bg-zinc-700/90 text-zinc-200 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] hover:bg-zinc-600 active:scale-95`}
         aria-label={t.chatInput.stopAria}
       >
-        <Square className="h-3.5 w-3.5 fill-current stroke-[2.2]" />
+        <Square className="h-3 w-3 fill-current stroke-[2.2]" />
       </button>
     );
   }
@@ -122,7 +126,7 @@ export const SendButton: React.FC<SendButtonProps> = ({
       }`}
       aria-label={t.chatInput.sendAria}
     >
-      <ArrowUp className="h-4 w-4 stroke-[2.4]" />
+      <ArrowUp className="h-3.5 w-3.5 stroke-[2.4]" />
     </button>
   );
 };

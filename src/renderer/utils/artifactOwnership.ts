@@ -142,6 +142,12 @@ export function buildArtifactOwnershipItems(
       continue;
     }
 
+    // 产物条目生成门槛（2026-08-04 C.12）：参数校验失败 / 执行失败的调用不建条目——
+    // trace 实证幻觉工具 "Blob" 的失败调用生成了带 "Blob" 标签的裂图卡。
+    if (node.toolCall.success === false) {
+      continue;
+    }
+
     const toolOwnerLabel = primaryAgent
       ? `${primaryAgent} · ${node.toolCall.name}`
       : node.toolCall.name;

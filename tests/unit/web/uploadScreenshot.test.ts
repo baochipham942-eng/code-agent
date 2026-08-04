@@ -103,6 +103,34 @@ describe('handleScreenshot whitelist', () => {
     expect(res.statusCode).toBe(403);
   });
 
+  it('serves agent work-dir images from the runtime userData/work dir（产物裂图 C.12）', () => {
+    // ~/.code-agent(-dev)/work/ 下的真实图片此前被 403（不在白名单）→ 灰底问号裂图
+    vi.spyOn(fs, 'existsSync').mockReturnValue(true);
+    const pipe = vi.fn();
+    vi.spyOn(fs, 'createReadStream').mockReturnValue({ pipe } as unknown as fs.ReadStream);
+
+    const res = mockRes();
+    handleScreenshot(mockReq('/fake/userdata/work/session-1/pricing-chart.png'), res);
+
+    expect(res.statusCode).toBe(0);
+    expect(res.headers['Content-Type']).toBe('image/png');
+    expect(pipe).toHaveBeenCalledOnce();
+  });
+
+  it('denies traversal that escapes the work dir', () => {
+    const res = mockRes();
+    handleScreenshot(mockReq('/fake/userdata/work/../../etc/secret.png'), res);
+
+    expect(res.statusCode).toBe(403);
+  });
+
+  it('denies non-image files inside the work dir', () => {
+    const res = mockRes();
+    handleScreenshot(mockReq('/fake/userdata/work/session-1/notes.md'), res);
+
+    expect(res.statusCode).toBe(403);
+  });
+
   it('denies paths outside any allowed screenshot dir', () => {
     const res = mockRes();
     handleScreenshot(mockReq('/etc/passwd.png'), res);

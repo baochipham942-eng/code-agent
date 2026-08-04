@@ -184,9 +184,12 @@ export function handleScreenshot(req: Request, res: Response): void {
     .map((root) => `${path.join(root, 'native-desktop').replace(/\\/g, '/').replace(/\/+$/, '')}/`);
   // pptx 逐页预览截图缓存在 <userData>/cache/presentation-page-previews/（host 侧
   // buildPresentationPagePreview 的同源目录），不放行会让资料库 pptx 预览整页裂图。
+  // <userData>/work/ 是 agent 工作目录（生成图片等产物落这里），不放行则产物缩略图
+  // 渲染为灰底问号裂图（2026-08-04 C.12：真实存在的 png 被 403）。
   const isScreenshotDir = isPathWithinBase(resolved, path.join(userData, MANAGED_BROWSER_ARTIFACT_DIR))
     || isPathWithinBase(resolved, path.join(userData, 'appshots'))
     || isPathWithinBase(resolved, path.join(userData, 'cache', PRESENTATION_PREVIEW_CACHE_DIRNAME))
+    || isPathWithinBase(resolved, path.join(userData, 'work'))
     || nativeDesktopPrefixes.some((prefix) => normalized.startsWith(prefix));
   const isImageExt = /\.(jpg|jpeg|png|webp|gif)$/i.test(resolved);
 

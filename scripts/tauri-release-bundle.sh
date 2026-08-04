@@ -277,6 +277,21 @@ if [[ "$(uname -s)" == "Darwin" && -n "${SIGNING_IDENTITY}" ]]; then
     resource_scan_root="$(release_resource_root "${app_path}")"
     node "${ROOT_DIR}/scripts/release-security-scan.mjs" "${resource_scan_root}"
 
+    # Pass 0: 剥掉编译中间产物。node-gyp 从源码编译原生模块时会留下 obj.target/*.o，
+    # 它们是 Mach-O 但**不是运行时产物**（运行时只 require build/Release/*.node），
+    # 既进不了下面两趟签名的白名单，又会被 verify-bundle-signatures 判红。
+    #
+    # 为什么是删不是签：签一个中间产物只是让门闭嘴，而它本来就不该进 bundle。
+    # 为什么按 `*.o` 后缀而不是按 `obj.target` 路径：路径是 node-gyp 当前的布局，
+    # 换个原生模块或换个构建器就换个名字——判据要钉在「.o 是中间产物」这个事实上。
+    #
+    # 只在 x64 腿必现：arm64 runner 上 keytar 有预编译包直接下载，x64 没有就地编译
+    # （v0.29.0 与 v0.30.0 的 x64 腿都栽在这里，v0.28.1/v0.29.2 侥幸避开 = 看运气）。
+    while IFS= read -r -d '' stale_object; do
+      echo "  stripping build artifact ${stale_object#"${app_path}/"}"
+      rm -f "${stale_object}"
+    done < <(find "${app_path}" -type f -name "*.o" -print0)
+
     echo "[tauri-release-bundle] signing nested Mach-O binaries inside ${app_path}"
 
     # Pass 1: libraries and native node addons (no entitlements needed).

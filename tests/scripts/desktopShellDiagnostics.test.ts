@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 // @ts-expect-error —— 纯 JS 释放门脚本，无类型声明
 import { classifyDesktopShellDiagnostics } from '../../scripts/desktop-shell-diagnostics.mjs';
 // @ts-expect-error —— 纯 JS 释放门脚本，无类型声明
-import { verifyPackagedDesktopShellEvidence } from '../../scripts/desktop-shell-packaged-smoke.mjs';
+import { verifyPackagedDesktopShellEvidence, verifyPackagedDesktopShellHealthEvidence } from '../../scripts/desktop-shell-packaged-smoke.mjs';
 
 function rendererServe(overrides: Record<string, unknown> = {}) {
   return {
@@ -112,6 +112,37 @@ function health(overrides: Record<string, unknown> = {}) {
 }
 
 describe('desktop shell diagnostics classification', () => {
+  it('passes health-only evidence only for the fresh matching webServer', () => {
+    const result = verifyPackagedDesktopShellHealthEvidence({
+      boot: boot(),
+      health: health(),
+      bootFile: '/tmp/agent-neo-smoke/logs/desktop-shell-boot-latest.json',
+      healthUrl: 'http://localhost:19777/api/health',
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.summary).toMatchObject({
+      evidenceReady: true,
+      bootStage: 'window-navigated',
+      webHealth: 'ok',
+    });
+    expect(JSON.stringify(result)).not.toContain('11111111-1111-4111-8111-111111111111');
+  });
+
+  it('rejects health-only evidence served by a different process', () => {
+    const result = verifyPackagedDesktopShellHealthEvidence({
+      boot: boot({ webServerPid: 200 }),
+      health: health({ pid: 222 }),
+      bootFile: '/tmp/agent-neo-smoke/logs/desktop-shell-boot-latest.json',
+      healthUrl: 'http://localhost:19777/api/health',
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.failures).toContainEqual(expect.objectContaining({
+      code: 'desktop_shell_pid_mismatch',
+    }));
+  });
+
   it('passes healthy packaged shell evidence without leaking the boot token', () => {
     const diagnostics = desktopShellDiagnostics();
     const result = verifyPackagedDesktopShellEvidence({

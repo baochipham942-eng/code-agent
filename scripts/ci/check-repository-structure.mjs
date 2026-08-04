@@ -18,7 +18,9 @@ const limits = {
   // and the eslint/knip/tsc-tests ratchets are stable package/workflow entrypoints. Their
   // shared validation, including the Mach-O signature predicates, remains under scripts/lib/.
   // 2026-07-18 +1: scripts/tsc-tests-ratchet.mjs（tests/scripts tsc 棘轮门）。
-  directScriptFiles: 142,
+  // 2026-08-04 +2: scripts/tauri-finalize-dev-bundle.mjs（Dev bundle 资源物化）+
+  // scripts/verify-tauri-dev-app.sh（Dev 产物门：共享 inventory + health smoke）。
+  directScriptFiles: 144,
   // 15: the Poppler promotion boundary is split across two workflows on purpose —
   // build-poppler-sidecar.yml only reviews candidates and can never publish, while
   // promote-poppler-sidecar.yml holds the OSS credentials and publishes them.

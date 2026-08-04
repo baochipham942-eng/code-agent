@@ -20,6 +20,11 @@ const defaultRoot = path.join(
   '_up_',
 );
 
+const REQUIRED_STARTUP_RESOURCES = [
+  'dist/renderer/index.html',
+  'dist/native/better-sqlite3/build/Release/better_sqlite3.node',
+];
+
 function readArg(name) {
   const index = process.argv.indexOf(name);
   return index >= 0 ? process.argv[index + 1] : undefined;
@@ -303,6 +308,15 @@ function buildInventory(rootDir) {
   };
 }
 
+function verifyStartupResources(rootDir) {
+  const missing = REQUIRED_STARTUP_RESOURCES.filter(
+    (relativePath) => !fs.existsSync(path.join(rootDir, relativePath)),
+  );
+  if (missing.length > 0) {
+    throw new Error(`Missing startup resources under ${rootDir}: ${missing.join(', ')}`);
+  }
+}
+
 function markdownTable(rows, columns) {
   const header = `| ${columns.map((column) => column.title).join(' | ')} |`;
   const separator = `| ${columns.map(() => '---').join(' | ')} |`;
@@ -408,6 +422,7 @@ const rootDir = path.resolve(readArg('--root') || process.env.TAURI_RESOURCE_ROO
 const jsonOutput = readArg('--json-output');
 const markdownOutput = readArg('--markdown-output');
 
+verifyStartupResources(rootDir);
 const inventory = buildInventory(rootDir);
 
 if (jsonOutput) {

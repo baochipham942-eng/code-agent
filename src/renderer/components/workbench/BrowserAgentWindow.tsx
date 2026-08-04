@@ -9,17 +9,23 @@ import { getPersistedSurfaceTerminalFrame } from '../../services/surfaceExecutio
 import { useSessionStore } from '../../stores/sessionStore';
 import {
   selectSurfaceExecutionRunSessionV1,
+  selectActiveBrowserSurfaceSessionV1,
   useSurfaceExecutionStore,
 } from '../../stores/surfaceExecutionStore';
-import { surfaceExecutionScopeKeyV1 } from '../../utils/surfaceExecutionProjection';
+import {
+  isUserOpenedSurfaceV1,
+  surfaceExecutionScopeKeyV1,
+} from '../../utils/surfaceExecutionProjection';
 import {
   formatSurfaceExecutionCopy,
   getSurfaceExecutionTranslations,
 } from '../../i18n/surfaceExecution';
 import type { SurfaceExecutionTranslationsV1 } from '../../i18n/surfaceExecution';
-import { Button, GhostButton, IconButton } from '../primitives';
+import { Button, GhostButton, IconButton, Input } from '../primitives';
+import { ConfirmDialog } from '../composites/ConfirmDialog';
 import { AgentPointerOverlay } from './AgentPointerOverlay';
-import { closeUserBrowserLinkRun } from '../../services/userBrowserLink';
+import { closeUserBrowserLinkRun, openHttpLinkInRail } from '../../services/userBrowserLink';
+import { normalizeBrowserAddressInput } from '../../utils/browserAddressBar';
 
 // B1-R·R1：workbench「浏览器」tab = **一扇浏览器**，不是状态卡片堆。
 // 一条细 chrome（状态点 + 标题 + URL + ⋯）压顶，剩下全给实时画面；指针叠加直接画
@@ -103,6 +109,7 @@ export const BrowserAgentWindow: React.FC = () => {
   const browserSession = useWorkbenchBrowserSession();
   const livePointer = useLiveAgentPointer('browser');
   const openLocalOpsPanel = useAppStore((state) => state.openLocalOpsPanel);
+  const workingDirectory = useAppStore((state) => state.workingDirectory);
   const currentSessionId = useSessionStore((state) => state.currentSessionId);
   // 节流护栏的「可见」判据取自 store，不靠「组件挂载了就等于看得见」——右栏收起时
   // 视图仍可能挂着，那种情况下开流就是后台无人看还在烧 CPU。
@@ -165,6 +172,45 @@ export const BrowserAgentWindow: React.FC = () => {
     ? copy.modeManaged
     : browserSession.mode === 'desktop' ? copy.modeDesktop : copy.modeNone;
 
+  // 地址栏（2026-08-04 工单）：显示当前页 URL、可编辑回车导航。导航走 #926 同一条
+  // openHttpLinkInRail 链路（UserBrowserLinkService 起 user run，与 agent run 共用同一扇
+  // 物理窗），不另起 session/profile；agent 忙时先弹确认，不另造抢占协议。
+  const activeBrowserSurface = useSurfaceExecutionStore((state) => (
+    selectActiveBrowserSurfaceSessionV1(state.sessionsByScope, currentSessionId)
+  ));
+  // 「agent 忙」= 本会话有活着的 browser surface 会话且不属于用户链接 run
+  // （agentId === user-browser-link 的是用户自己开的页面，接力导航无需确认）。
+  const agentSurfaceBusy = Boolean(
+    activeBrowserSurface && !isUserOpenedSurfaceV1(activeBrowserSurface),
+  );
+  const addressInputDisabled = !ownedByCurrentSession || !currentSessionId;
+  const [addressDraft, setAddressDraft] = useState('');
+  const [addressEditing, setAddressEditing] = useState(false);
+  const [addressInvalid, setAddressInvalid] = useState(false);
+  const [pendingInterruptUrl, setPendingInterruptUrl] = useState<string | null>(null);
+  // URL 回写：未在编辑时跟随页面跳转（数据源与既有只读显示同源）；编辑中不抢用户输入。
+  useEffect(() => {
+    if (!addressEditing) setAddressDraft(activeUrl ?? '');
+  }, [activeUrl, addressEditing]);
+
+  const navigateTo = useCallback((url: string) => {
+    openHttpLinkInRail({ href: url, conversationId: currentSessionId, workspace: workingDirectory });
+  }, [currentSessionId, workingDirectory]);
+
+  const submitAddress = useCallback(() => {
+    const normalized = normalizeBrowserAddressInput(addressDraft);
+    if (!normalized.ok) {
+      setAddressInvalid(true);
+      return;
+    }
+    setAddressInvalid(false);
+    if (agentSurfaceBusy) {
+      setPendingInterruptUrl(normalized.url);
+      return;
+    }
+    navigateTo(normalized.url);
+  }, [addressDraft, agentSurfaceBusy, navigateTo]);
+
   const liveStream = useSurfaceLiveFrames({
     conversationId: currentSessionId,
     surfaceSessionId: browserSurfaceSessionId,
@@ -225,14 +271,9 @@ export const BrowserAgentWindow: React.FC = () => {
             running ? 'bg-mark-success' : 'bg-zinc-600'
           }`}
         />
-        <span className="min-w-0 truncate text-xs text-zinc-300" title={activeTitle || undefined}>
+        <span className="min-w-0 flex-1 truncate text-xs text-zinc-300" title={activeTitle || undefined}>
           {activeTitle || copy.activeTabEmpty}
         </span>
-        {activeUrl && (
-          <span className="min-w-0 flex-1 truncate text-[10px] text-zinc-600" title={activeUrl}>
-            {activeUrl}
-          </span>
-        )}
         {!ownedByCurrentSession && (
           <span
             data-testid="browser-agent-window-foreign"
@@ -246,6 +287,43 @@ export const BrowserAgentWindow: React.FC = () => {
         <div className={ownedByCurrentSession ? 'ml-auto' : ''}>
           <OverflowMenu copy={copy} modeLabel={modeLabel} onOpenLocalOps={openAdvancedPanel} />
         </div>
+      </div>
+
+      <div
+        data-testid="browser-agent-window-addressbar"
+        className="flex shrink-0 items-center border-b border-white/[0.08] px-2.5 py-1.5"
+      >
+        <Input
+          inputSize="sm"
+          aria-label={copy.addressBarLabel}
+          placeholder={copy.addressBarPlaceholder}
+          value={addressDraft}
+          disabled={addressInputDisabled}
+          title={!ownedByCurrentSession ? copy.foreignSessionHint : undefined}
+          error={addressInvalid}
+          errorMessage={addressInvalid ? copy.addressBarInvalid : undefined}
+          spellCheck={false}
+          autoComplete="off"
+          onChange={(event) => {
+            setAddressDraft(event.target.value);
+            if (addressInvalid) setAddressInvalid(false);
+          }}
+          onFocus={() => setAddressEditing(true)}
+          onBlur={() => {
+            setAddressEditing(false);
+            setAddressInvalid(false);
+            setAddressDraft(activeUrl ?? '');
+          }}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') {
+              event.preventDefault();
+              submitAddress();
+            } else if (event.key === 'Escape') {
+              event.currentTarget.blur();
+            }
+          }}
+          data-testid="browser-agent-window-address-input"
+        />
       </div>
 
       <div
@@ -359,6 +437,21 @@ export const BrowserAgentWindow: React.FC = () => {
           <AgentPointerOverlay event={pointerEvent} live={livePointer.isLive} />
         )}
       </div>
+
+      <ConfirmDialog
+        isOpen={pendingInterruptUrl !== null}
+        title={copy.interruptConfirmTitle}
+        message={copy.interruptConfirmMessage}
+        variant="warning"
+        confirmText={copy.interruptConfirmAction}
+        cancelText={copy.interruptConfirmCancel}
+        onConfirm={() => {
+          const url = pendingInterruptUrl;
+          setPendingInterruptUrl(null);
+          if (url) navigateTo(url);
+        }}
+        onCancel={() => setPendingInterruptUrl(null)}
+      />
     </div>
   );
 };

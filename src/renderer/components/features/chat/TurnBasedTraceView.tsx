@@ -908,7 +908,7 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
       const previousTurn = index > 0 ? projection.turns[index - 1] : null;
 
       return (
-        <div className="w-full px-4" data-trace-turn-id={turn.turnId}>
+        <div className="w-full chat-col-pad" data-trace-turn-id={turn.turnId}>
           <div className="max-w-3xl mx-auto">
             <TurnCard
               key={turn.turnId}

@@ -892,7 +892,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
 
   return (
     <div
-      className={`px-4 pb-3 pt-0 transition-colors ${isDragOver ? 'bg-primary-500/5' : ''}`}
+      className={`chat-col-pad pb-3 pt-0 transition-colors ${isDragOver ? 'bg-primary-500/5' : ''}`}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}

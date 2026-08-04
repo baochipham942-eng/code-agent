@@ -866,10 +866,13 @@ pre code {
     animation: popoverEnter 140ms var(--ease-out) both;
   }
 
-  /* composer 浮起：输入框抬到 L1（聚焦 L2）+ 投影，聚焦时描边微亮 */
+  /* composer 浮起（2026-08-04 §3.1 拍板）：默认态 L2 底色 + 投影，无边框
+     （1px transparent 占位防 focus 抖动）；描边仅聚焦时显现，单一手段承担
+     「我在输入」。深色下 L1 与右栏底色同色会融进背景，故默认态抬到 L2。
+     高对比两主题的默认态描边豁免在各主题文件里（可读性优先，条款 B3）。 */
   .composer-elevated {
-    background-color: var(--elevation-l1);
-    border: 1px solid var(--border-default);
+    background-color: var(--elevation-l2);
+    border: 1px solid transparent;
     box-shadow: var(--shadow-composer);
     transition:
       background-color var(--duration-fast) var(--ease-out),

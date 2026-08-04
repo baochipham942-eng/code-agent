@@ -564,6 +564,9 @@ function collectToolOutputs(
       const result = toolCall.result;
       if (!result) continue;
       if (isReadOnlyArtifactTool(toolCall.name)) continue;
+      // 产物条目生成门槛（C.12）：参数校验失败 / 执行失败的调用不建预览条目，
+      // 否则幻觉工具的失败调用会落成带内部标签的裂图卡。
+      if (result.success === false) continue;
       const source = {
         kind: 'tool' as const,
         label: toolCall.name,
@@ -805,7 +808,9 @@ function dropContentlessDuplicates(items: WorkspacePreviewItem[]): WorkspacePrev
 export function buildWorkspacePreviewItems(input: BuildWorkspacePreviewItemsInput): WorkspacePreviewItem[] {
   const items: WorkspacePreviewItem[] = [];
   const seen = new Set<string>();
-  const messages = input.messages.slice(-60);
+  // Overview uses a session-wide contract: artifacts from early runs stay visible after later runs.
+  // The output list is still capped below, so scanning the current session does not expand the UI.
+  const messages = input.messages;
 
   collectPermissionPreview(items, seen, input.pendingPermissionRequest);
   collectCurrentTurnArtifacts(items, seen, input.currentTurnArtifacts, input.workingDirectory);

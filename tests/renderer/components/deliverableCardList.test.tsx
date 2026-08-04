@@ -11,6 +11,7 @@ import type { DeliverableCardView } from '../../../src/shared/contract';
 const mocks = vi.hoisted(() => ({
   language: 'zh' as 'zh' | 'en',
   openPreview: vi.fn(),
+  openContentPreview: vi.fn(),
   openWorkspacePreview: vi.fn(),
   addLibraryItem: vi.fn(),
   invokeDomain: vi.fn(),
@@ -31,8 +32,21 @@ vi.mock('../../../src/renderer/hooks/useI18n', async () => {
 vi.mock('../../../src/renderer/stores/appStore', () => ({
   useAppStore: (selector: (state: Record<string, unknown>) => unknown) => selector({
     openPreview: mocks.openPreview,
+    openContentPreview: mocks.openContentPreview,
     openWorkspacePreview: mocks.openWorkspacePreview,
   }),
+}));
+
+vi.mock('../../../src/renderer/hooks/useWorkspacePreviewModel', () => ({
+  useWorkspacePreviewModel: () => [{
+    id: 'artifact:ui',
+    kind: 'generic_html',
+    title: 'UI 原型',
+    status: 'ready',
+    createdAt: 1,
+    source: { kind: 'message', label: 'Assistant' },
+    content: { html: '<main>UI</main>' },
+  }],
 }));
 
 vi.mock('../../../src/renderer/stores/sessionStore', () => {
@@ -180,7 +194,7 @@ describe('DeliverableCardList 主体点击与动作收敛', () => {
     expect(mocks.openPreview).toHaveBeenCalledWith('/workspace/report.md');
   });
 
-  it('点击卡片主体打开 workspace preview', () => {
+  it('点击内容产物卡片一步打开内容 preview tab', () => {
     const cards = [
       baseCard({
         title: 'UI 原型',
@@ -190,7 +204,13 @@ describe('DeliverableCardList 主体点击与动作收敛', () => {
     render(<DeliverableCardList cards={cards} />);
 
     fireEvent.click(screen.getByRole('button', { name: '在工作区预览中打开: UI 原型' }));
-    expect(mocks.openWorkspacePreview).toHaveBeenCalledWith('artifact:ui');
+    expect(mocks.openContentPreview).toHaveBeenCalledWith({
+      id: 'artifact:ui',
+      title: 'UI 原型',
+      content: '<main>UI</main>',
+      format: 'html',
+    });
+    expect(mocks.openWorkspacePreview).not.toHaveBeenCalled();
   });
 
   it('归档按钮常驻，其他动作收进更多菜单', () => {

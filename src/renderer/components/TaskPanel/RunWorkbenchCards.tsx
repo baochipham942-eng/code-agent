@@ -10,7 +10,6 @@ import {
   ChevronDown,
   ChevronUp,
   Circle,
-  ListChecks,
   Loader2,
   Radio,
   RefreshCw,
@@ -117,7 +116,7 @@ export const RunOverview = ({ model, onOpenMemory }: RunOverviewProps) => {
 
   return (
     <div className="space-y-1.5">
-      <div className="flex items-start gap-2 rounded-md border border-white/[0.06] bg-black/10 px-2.5 py-2">
+      <div className="flex items-start gap-2 rounded-md bg-surface-subtle px-2.5 py-2">
         {isCompleted ? (
           <span className="mt-1.5 h-1.5 w-1.5 flex-shrink-0 rounded-full bg-mark-success/50" />
         ) : (
@@ -248,7 +247,7 @@ export const TaskDashboardSummary = ({
       return (
         <div
           data-testid="active-run-placeholder"
-          className="flex items-center gap-2 rounded-md border border-white/[0.06] bg-black/10 px-2.5 py-2"
+          className="flex items-center gap-2 px-1 py-1"
         >
           <Loader2 className="h-3.5 w-3.5 flex-shrink-0 animate-spin text-badge-info" />
           <span className={`rounded-md border px-1.5 py-0.5 text-[10px] font-medium ${runStatusClass(run.status)}`}>
@@ -272,13 +271,13 @@ export const TaskDashboardSummary = ({
       {sessionTask ? (
         <TaskRecordRow task={sessionTask} run={run} primary showOutputRefs={showOutputRefs} />
       ) : (
-        <div className="rounded-md border border-white/[0.05] bg-white/[0.015] px-2.5 py-2 text-[11px] text-zinc-600">
+        <div className="px-1 py-1 text-[11px] text-zinc-600">
           {rw.noTasksInConversation}
         </div>
       )}
 
       {backgroundTasks.length > 0 && (
-        <div className="rounded-md border border-white/[0.05] bg-white/[0.015] px-2.5 py-2">
+        <div className="px-1 py-1">
           <div className="mb-1.5 flex items-center justify-between gap-2">
             <span
               className="text-[10px] tracking-wide text-zinc-500"
@@ -342,7 +341,6 @@ export const SubagentRunRows = ({ subagents }: { subagents: SubagentRunView[] })
 const TaskRecordRow = ({
   task,
   run,
-  primary = false,
   showOutputRefs = true,
 }: {
   task: TaskRecord;
@@ -362,7 +360,7 @@ const TaskRecordRow = ({
 
   return (
     <div
-      className={`min-w-0 rounded-md bg-black/10 px-2 py-1.5 ${primary ? 'border border-white/[0.07]' : ''}`}
+      className="min-w-0 px-1 py-1"
       data-testid="task-record-row"
       data-task-status={rail.status}
     >
@@ -393,14 +391,16 @@ const TaskRecordRow = ({
       )}
 
       {rail.mode === 'checklist' && (
-        <div className="mt-2 space-y-1.5">
+        <div className="mt-1 space-y-1.5">
           {rail.visibleSteps.map((step) => (
             <TaskRailStepRow key={`${step.originalIndex}:${step.title}`} step={step} />
           ))}
         </div>
       )}
 
-      {rail.currentAction && (
+      {/* 结果/原因/当前动作行只挂在非 checklist 行（后台任务等）——checklist 会话任务的
+          当前动作与「任务」模块进度线的 phase 是同一份内容，不重复（四模块禁止内容重复） */}
+      {rail.mode !== 'checklist' && rail.currentAction && (
         <div className="mt-1 truncate text-[11px] text-zinc-500">{detailLabel}：{rail.currentAction}</div>
       )}
 
@@ -411,19 +411,11 @@ const TaskRecordRow = ({
   );
 };
 
+// 进度计数只在「任务」模块的进度线出现一次（四模块禁止内容重复）——
+// checklist 头部不再摆「已完成 x/y」大计数，步骤行自己讲进度。
 const TaskChecklistHeader = ({ rail }: { rail: ReturnType<typeof deriveTaskRailView> }) => {
   const { t } = useI18n();
   return (
-  <div className="flex min-w-0 items-center gap-2">
-    <ListChecks className="h-4 w-4 flex-shrink-0 text-zinc-300" />
-    <span
-      className="min-w-0 flex-1 truncate text-[13px] font-semibold leading-snug text-zinc-100"
-      title={rail.title}
-    >
-      {t.taskStatusPanels.runWorkbench.completedTasks
-        .replace('{completed}', String(rail.completed))
-        .replace('{total}', String(rail.taskCount))}
-    </span>
     <span
       className="sr-only"
       data-testid="task-record-status"
@@ -431,7 +423,6 @@ const TaskChecklistHeader = ({ rail }: { rail: ReturnType<typeof deriveTaskRailV
     >
       {getTaskStatusLabel(rail.status, t)}
     </span>
-  </div>
   );
 };
 
@@ -505,7 +496,7 @@ const TaskOutputRefRow = ({ outputRef: ref }: { outputRef: TaskRecordOutputRef }
 
   return (
     <div
-      className="min-w-0 rounded border border-white/[0.04] bg-white/[0.015] px-2 py-1"
+      className="min-w-0 rounded bg-surface-subtle px-2 py-1"
       title={ref.pathOrUrl || ref.label}
     >
       <div className="flex min-w-0 items-center gap-2">
@@ -537,7 +528,7 @@ const TaskOutputRefRow = ({ outputRef: ref }: { outputRef: TaskRecordOutputRef }
       </div>
 
       {canReadLog && expanded && (
-        <div className="mt-1.5 border-t border-white/[0.05] pt-1.5" data-testid="task-log-viewer">
+        <div className="mt-1.5 pt-1.5" data-testid="task-log-viewer">
           <div className="mb-1 flex items-center justify-between gap-2">
             <span className="text-[9px] text-zinc-600">
               {logState.status === 'loaded' && logState.truncated ? rw.logTruncated : ''}

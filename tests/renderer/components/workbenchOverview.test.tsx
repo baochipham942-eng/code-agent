@@ -21,8 +21,6 @@ const previewItems = vi.hoisted(() => ({
   items: [] as Array<{ id: string }>,
 }));
 const appState = vi.hoisted(() => ({
-  selectedWorkspacePreviewId: null as string | null,
-  setSelectedWorkspacePreviewId: vi.fn(),
   language: 'zh' as const,
   setLanguage: vi.fn(),
   cloudUIStrings: null,
@@ -62,8 +60,6 @@ describe('WorkbenchOverview', () => {
     sessionState.currentSessionId = null;
     sessionState.sessions = [];
     previewItems.items = [];
-    appState.selectedWorkspacePreviewId = null;
-    appState.setSelectedWorkspacePreviewId.mockReset();
   });
 
   it('shows the task-scene narrative instead of an empty artifact shell when there is no task activity', () => {
@@ -121,25 +117,13 @@ describe('WorkbenchOverview', () => {
     expect(screen.queryByTestId('workbench-overview-empty')).toBeNull();
   });
 
-  it('opens a focused artifact preview only after an artifact is selected', () => {
+  it('never replaces overview with the retired focused artifact intermediate page', () => {
     previewItems.items = [{ id: 'artifact-1' }];
-    appState.selectedWorkspacePreviewId = 'artifact-1';
-    render(<WorkbenchOverview />);
-
-    expect(screen.getByTestId('workbench-overview-preview')).toBeTruthy();
-    expect(screen.getByTestId('artifact-marker')).toBeTruthy();
-    expect(screen.queryByTestId('task-progress-marker')).toBeNull();
-  });
-
-  it('does not open an artifact selected in a different session', () => {
-    taskActivity.hasTaskActivity = true;
-    previewItems.items = [{ id: 'artifact-current' }];
-    appState.selectedWorkspacePreviewId = 'artifact-stale';
     render(<WorkbenchOverview />);
 
     expect(screen.getByTestId('workbench-overview-workspace')).toBeTruthy();
+    expect(screen.queryByTestId('workbench-overview-preview')).toBeNull();
     expect(screen.queryByTestId('artifact-marker')).toBeNull();
-    expect(appState.setSelectedWorkspacePreviewId).toHaveBeenCalledWith(null);
   });
 
   it('recognizes agent trees, tasks, stored progress, and live runs as activity', () => {

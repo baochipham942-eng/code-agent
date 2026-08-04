@@ -896,15 +896,16 @@ export const App: React.FC = () => {
           {/* 常驻挂载 + 宽度过渡：收起不再 unmount 闪没、展开不再瞬现。
               外层做 240→0 裁切，内层保持 w-60 定宽——列表内容是被「遮住」而不是被挤扁，
               聊天区宽度随 flex 连续跟随，居中内容列不横向猛跳。
-              分隔线画在内层：留在外层会在 w-0 时残留一条 1px 竖线。 */}
+              左右栏分界靠底色差（2026-08-04 D6）：左栏消费 --sidebar-bg token
+              （四主题各自定值），不再画 border-r 分隔线。 */}
           {isStandard && (
             <div
-              className={`flex flex-col shrink-0 bg-zinc-950 overflow-hidden transition-[width] duration-200 ease-out motion-reduce:transition-none ${
+              className={`flex flex-col shrink-0 bg-[var(--sidebar-bg)] overflow-hidden transition-[width] duration-200 ease-out motion-reduce:transition-none ${
                 sidebarCollapsed ? 'w-0' : 'w-60'
               }`}
               aria-hidden={sidebarCollapsed}
             >
-              <div className="w-60 h-full flex flex-col border-r border-zinc-800">
+              <div className="w-60 h-full flex flex-col">
                 <Sidebar />
               </div>
             </div>
@@ -1000,7 +1001,9 @@ export const App: React.FC = () => {
                   )}
 
                   {showWorkbench && !workbenchFocusActive && (
-                    <ResizeHandle className="w-1 hover:w-1.5 bg-zinc-800 hover:bg-primary-500/50 transition-all cursor-col-resize" />
+                    // 默认透明（2026-08-04 §3.3）：不再是一道实心竖条；hover/拖拽激活时
+                    // 显现把手，命中区 w-1 不变——可用性不降。
+                    <ResizeHandle className="w-1 hover:w-1.5 bg-transparent hover:bg-primary-500/50 data-[resize-handle-active]:bg-primary-500/50 transition-all cursor-col-resize" />
                   )}
                   {/* 2026-07-27 拍板（Kimi 三栏占比分析）：min 15%→22%（15% 在 1440 宽下仅
                       180px，任何视图都不可用）、max 45%→35%（2560 下 1044px 远超需要） */}

@@ -37,7 +37,7 @@ describe('agent work record', () => {
     expect(screen.getByTestId('agent-work-output').textContent).toContain('收尾证据');
     expect(screen.getByTestId('agent-work-output').textContent?.length).toBeGreaterThan(200);
     fireEvent.click(screen.getByText('打开归档'));
-    expect(openWorkspacePreview).toHaveBeenCalledWith('archive-1');
+    expect(openWorkspacePreview).toHaveBeenCalledWith();
     fireEvent.click(screen.getByText('返回主会话'));
     expect(onBack).toHaveBeenCalledOnce();
   });

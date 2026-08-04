@@ -3,6 +3,8 @@ import type { TraceProjection } from '../../../src/shared/contract/trace';
 import {
   buildLoopDecisionViews,
   buildMemoryActivityEvents,
+  buildSessionMemoryActivityEvents,
+  buildSessionToolCapabilityViews,
   buildOutputArtifactViews,
   buildRunUiState,
   buildSessionTaskRecord,
@@ -112,6 +114,7 @@ describe('runWorkbenchProjection', () => {
     });
 
     expect(run.status).toBe('running');
+    expect(run.title).toBe('帮我继续这个任务');
     expect(run.blockedReason).toBe('Skill not mounted for this turn');
     expect(run.completionSignal).toBe('1 个产物');
   });
@@ -170,6 +173,43 @@ describe('runWorkbenchProjection', () => {
     ]);
     expect(buildOutputArtifactViews(projection)).toMatchObject([
       { title: 'plan.md', pathOrUrl: '/repo/docs/plan.md', previewState: 'available' },
+    ]);
+  });
+
+  it('aggregates context capability and memory evidence across all session runs', () => {
+    const multiRun: TraceProjection = {
+      ...projection,
+      activeTurnIndex: 1,
+      turns: [
+        projection.turns[0],
+        {
+          turnNumber: 2,
+          turnId: 'turn-2',
+          status: 'completed',
+          startTime: 200,
+          endTime: 250,
+          nodes: [{
+            id: 'tool-read',
+            type: 'tool_call',
+            content: '',
+            timestamp: 210,
+            toolCall: {
+              id: 'tool-read',
+              name: 'Read',
+              args: { path: '/repo/package.json' },
+              result: 'ok',
+              success: true,
+            },
+          }],
+        },
+      ],
+    };
+
+    expect(buildSessionToolCapabilityViews(multiRun).map((item) => item.label)).toEqual(
+      expect.arrayContaining(['memory_search', 'Write', 'Read']),
+    );
+    expect(buildSessionMemoryActivityEvents(multiRun)).toMatchObject([
+      { action: 'used', title: 'Alma UI plan' },
     ]);
   });
 

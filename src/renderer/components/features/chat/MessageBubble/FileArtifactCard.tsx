@@ -16,6 +16,7 @@ import {
   type SessionMediaAsset,
   type SessionMediaContext,
 } from '@shared/utils/sessionMediaAssets';
+import { useAppStore } from '../../../../stores/appStore';
 import { buildTurnArtifactDeliverableCards } from '../../../../utils/deliverables';
 import { DeliverableCardList } from './DeliverableCardList';
 import {
@@ -51,6 +52,7 @@ function pickIcon(ext: string): React.ReactNode {
 
 export const FileArtifactCard: React.FC<Props> = ({ items, mediaContext }) => {
   const [expandedMedia, setExpandedMedia] = useState<SessionMediaAsset | null>(null);
+  const openFilePreview = useAppStore((state) => state.openPreview);
 
   const { mediaEntries, deliverableCards } = useMemo(() => {
     const nextMediaEntries: Array<{
@@ -111,16 +113,25 @@ export const FileArtifactCard: React.FC<Props> = ({ items, mediaContext }) => {
             </div>
 
             {mediaAsset.kind === 'image' && mediaSrc && (
+              /* 缩略图按内容宽度左对齐、限高一档，去掉通栏黑底 letterbox（2026-08-04 产品负责人：卡片不需要那么大）。
+                 点击去右栏原生预览（与概览产物直达同一范式），file-backed 才可点；无路径的兜底回 lightbox。 */
               <button
                 type="button"
-                className="block w-full cursor-zoom-in bg-black/20"
-                onClick={() => setExpandedMedia(mediaAsset)}
-                title="放大查看"
+                className="block w-fit cursor-zoom-in px-2.5 py-2"
+                onClick={() => {
+                  const filePath = item.path || mediaAsset.path;
+                  if (filePath) {
+                    openFilePreview(filePath);
+                  } else {
+                    setExpandedMedia(mediaAsset);
+                  }
+                }}
+                title={item.path || mediaAsset.path ? '在右侧预览中查看' : '放大查看'}
               >
                 <img
                   src={mediaSrc}
                   alt={item.label}
-                  className="max-h-44 w-full object-contain"
+                  className="max-h-28 w-auto rounded-md"
                   loading="lazy"
                 />
               </button>

@@ -28,6 +28,9 @@
   --bg-hover: #EBEBED;
   --bg-active: #E4E4E7;
 
+  /* 左栏底色（2026-08-04 D6）：浅色从 #FAFAFA 加深到 zinc-100 档，拉开与右栏面差。 */
+  --sidebar-bg: #F4F4F5;
+
   /* Translucent surface tiers */
   --surface-faint: rgba(0, 0, 0, 0.012);
   --surface-subtle: rgba(0, 0, 0, 0.018);

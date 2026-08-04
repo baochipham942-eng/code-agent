@@ -24,6 +24,7 @@ import {
 import type { DeliverableCardView, DeliverableSecondaryAction } from '@shared/contract';
 import { useAppStore } from '../../../../stores/appStore';
 import { useSessionStore } from '../../../../stores/sessionStore';
+import { useWorkspacePreviewModel } from '../../../../hooks/useWorkspacePreviewModel';
 import { copyPathToClipboard, isWebMode } from '../../../../utils/platform';
 import { addLibraryItem } from '../../../../services/libraryClient';
 import ipcService from '../../../../services/ipcService';
@@ -343,7 +344,9 @@ export const DeliverableCardList: React.FC<Props> = ({ cards, className = 'mt-2'
   const { t } = useI18n();
   const deliverableLabels = t.deliverable;
   const openPreview = useAppStore((state) => state.openPreview);
+  const openContentPreview = useAppStore((state) => state.openContentPreview);
   const openWorkspacePreview = useAppStore((state) => state.openWorkspacePreview);
+  const workspacePreviewItems = useWorkspacePreviewModel();
   const currentSessionId = useSessionStore((state) => state.currentSessionId);
   const currentSessionProjectId = useSessionStore(
     (state) => state.sessions.find((s) => s.id === state.currentSessionId)?.projectId ?? null,
@@ -355,15 +358,43 @@ export const DeliverableCardList: React.FC<Props> = ({ cards, className = 'mt-2'
   if (cards.length === 0) return null;
 
   const openCard = (card: DeliverableCardView) => {
-    switch (card.openTarget.kind) {
+    const target = card.openTarget;
+    switch (target.kind) {
       case 'workspace-preview':
-        openWorkspacePreview(card.openTarget.itemId);
+        {
+          const item = workspacePreviewItems.find((candidate) => candidate.id === target.itemId);
+          if (item?.file?.path) {
+            openPreview(item.file.path);
+            break;
+          }
+          const content = item?.content?.html
+            ?? item?.content?.json
+            ?? item?.content?.text
+            ?? item?.content?.diff
+            ?? item?.content?.summary;
+          if (item && content) {
+            openContentPreview({
+              id: item.id,
+              title: item.title,
+              content,
+              format: item.content?.html
+                ? 'html'
+                : item.content?.json
+                  ? 'json'
+                  : item.content?.text || item.content?.summary
+                    ? 'markdown'
+                    : 'text',
+            });
+            break;
+          }
+          openWorkspacePreview();
+        }
         break;
       case 'file-preview':
-        openPreview(card.openTarget.path);
+        openPreview(target.path);
         break;
       case 'external':
-        window.open(card.openTarget.url, '_blank', 'noopener,noreferrer');
+        window.open(target.url, '_blank', 'noopener,noreferrer');
         break;
       default:
         break;

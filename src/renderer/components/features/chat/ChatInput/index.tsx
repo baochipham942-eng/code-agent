@@ -1057,9 +1057,11 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
           </SlotEntry>
         </ComposerSlot>
 
-        {/* 拖放提示：盖在输入区上的绝对定位遮罩，不是堆叠占用者，不进 ComposerSlot */}
+        {/* 拖放提示：盖在输入区上的绝对定位遮罩，不是堆叠占用者，不进 ComposerSlot。
+            瞬时操作提示保留虚线但降为 1px + 遮罩底色加深（2026-08-04 §3.1）——
+            composer 此时无边框，两者不同屏叠加。 */}
         {isDragOver && (
-          <div className="absolute inset-0 flex items-center justify-center bg-zinc-800-950/90 backdrop-blur-sm z-10 rounded-xl border-2 border-dashed border-accent-accessible">
+          <div className="absolute inset-0 z-10 flex items-center justify-center rounded-xl border border-dashed border-accent-accessible bg-zinc-950/95 backdrop-blur-sm">
             <div className="flex flex-col items-center gap-2 text-accent-accessible">
               <Image className="w-8 h-8" />
               <span className="text-sm">{t.chat.dropFilesHere}</span>
@@ -1067,7 +1069,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
           </div>
         )}
 
-        {/* composer 浮起（2026-07-28 品质感打磨）：L1 底 + 投影 + 聚焦描边微亮，
+        {/* composer 浮起（2026-08-04 §3.1）：L2 底 + 投影，默认无边框、聚焦描边显现，
             与聊天内容拉开亮度层级，样式真源在 global.css .composer-elevated */}
         <div className="relative composer-elevated rounded-2xl">
           {/* 看某位成员时输入框整块封住：人只跟团长说话，不跟成员说话 */}

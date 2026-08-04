@@ -45,7 +45,7 @@ export interface UseSidebarSessionActionsParams {
   switchSession: (sessionId: string) => Promise<void>;
   unarchiveSession: (sessionId: string) => Promise<void>;
   archiveSession: (sessionId: string) => Promise<void>;
-  openWorkspacePreview: (previewItemId?: string | null) => void;
+  openWorkspacePreview: () => void;
   setProjectMetaById: Dispatch<SetStateAction<Record<string, SidebarProjectMeta>>>;
   t: Translations;
 }
@@ -289,7 +289,12 @@ export function useSidebarSessionActions(
     if (navigation.shouldSwitchSession) {
       await switchSession(navigation.targetSessionId);
     }
-    openWorkspacePreview(navigation.workspacePreviewItemId);
+    const path = artifact.path?.trim();
+    if (path) {
+      useAppStore.getState().openPreview(path);
+    } else {
+      openWorkspacePreview();
+    }
   }, [currentSessionId, openWorkspacePreview, switchSession]);
 
   const handleStartProjectGoal = useCallback(async (

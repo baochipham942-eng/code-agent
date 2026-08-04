@@ -23,6 +23,9 @@
   --bg-void: #000000;
   --bg-deep: #0A0A0A;
   --bg-surface: #111111;
+
+  /* 左栏底色（2026-08-04 D6）：hc-dark 维持纯黑，与右栏 #101010 拉开最大面差。 */
+  --sidebar-bg: #000000;
   --bg-elevated: #1A1A1A;
   --bg-hover: #252525;
   --bg-active: #303030;

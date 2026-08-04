@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
-// TerminalPanel 的会话绑定契约：
-//   - 会话已有活着的 PTY → 直接挂回去（面板重新挂载 ≠ 终端不存在）；
-//   - 没有 → 空态 + 「打开终端」；
+// TerminalPanel 的会话绑定契约（2026-08-04 产品负责人拍板：打开 tab 即自动起终端，不需要多点一下）：
+//   - 有会话 → 挂载即 open（有活着的 PTY 就接管、没有就新建），不再出现手点空态；
+//   - 无会话 → 空态（唯一还会出现空态的场景）；
 //   - 切会话 → 换实例，且 open 带的是新会话 id（两个会话的输出不能串）。
 // xterm 在 jsdom 里跑不起来（要 canvas/measure），整体替身掉。
 
@@ -56,13 +56,26 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('TerminalPanel session binding', () => {
-  it('shows the empty state when this conversation has no terminal', async () => {
+  it('auto-opens a terminal when this conversation has none yet (no extra click)', async () => {
+    invokeDomain.mockImplementation((_domain, action) => (
+      action === 'open' ? Promise.resolve(aliveSnapshot('chat-1')) : Promise.resolve(null)
+    ));
+
+    render(<TerminalPanel />);
+
+    expect(await screen.findByTestId('workbench-terminal-live')).toBeTruthy();
+    expect(screen.queryByTestId('workbench-terminal-empty')).toBeNull();
+    const openCall = invokeDomain.mock.calls.find(([, action]) => action === 'open');
+    expect((openCall?.[2] as { sessionId: string }).sessionId).toBe('chat-1');
+  });
+
+  it('shows the empty state only when there is no conversation at all', async () => {
     invokeDomain.mockResolvedValue(null);
+    act(() => { useSessionStore.setState({ currentSessionId: null }); });
 
     render(<TerminalPanel />);
 
     expect(await screen.findByTestId('workbench-terminal-empty')).toBeTruthy();
-    expect(screen.getByTestId('workbench-terminal-open')).toBeTruthy();
   });
 
   it('re-attaches without asking the user again when the pty is still alive', async () => {
@@ -80,12 +93,15 @@ describe('TerminalPanel session binding', () => {
     await waitFor(() => expect(termWrite).toHaveBeenCalledWith('previous output\r\n'));
   });
 
-  it('does not re-attach to a pty whose shell has exited', async () => {
-    invokeDomain.mockResolvedValue({ ...aliveSnapshot('chat-1'), alive: false });
+  it('starts a fresh terminal instead of a dead-end when the previous shell has exited', async () => {
+    // 旧契约是「死 PTY → 空态等手点」；拍板后 open 语义=有则接管无则新建，死 PTY 直接换新。
+    invokeDomain.mockImplementation((_domain, action) => (
+      action === 'open' ? Promise.resolve(aliveSnapshot('chat-1')) : Promise.resolve(null)
+    ));
 
     render(<TerminalPanel />);
 
-    expect(await screen.findByTestId('workbench-terminal-empty')).toBeTruthy();
+    expect(await screen.findByTestId('workbench-terminal-live')).toBeTruthy();
   });
 
   it('replays live chunks after the snapshot instead of duplicating them', async () => {
@@ -121,12 +137,13 @@ describe('TerminalPanel session binding', () => {
     ));
 
     render(<TerminalPanel />);
-    expect(await screen.findByTestId('workbench-terminal-empty')).toBeTruthy();
+    await screen.findByTestId('workbench-terminal-live');
 
     act(() => { useSessionStore.setState({ currentSessionId: 'chat-2' }); });
 
-    expect(await screen.findByTestId('workbench-terminal-live')).toBeTruthy();
-    const openCall = invokeDomain.mock.calls.find(([, action]) => action === 'open');
-    expect((openCall?.[2] as { sessionId: string }).sessionId).toBe('chat-2');
+    await waitFor(() => {
+      const openCalls = invokeDomain.mock.calls.filter(([, action]) => action === 'open');
+      expect((openCalls.at(-1)?.[2] as { sessionId: string }).sessionId).toBe('chat-2');
+    });
   });
 });

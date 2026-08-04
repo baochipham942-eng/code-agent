@@ -27,6 +27,9 @@
   --bg-hover: #EBEBEB;
   --bg-active: #E0E0E0;
 
+  /* 左栏底色（2026-08-04 D6）：hc-light 左栏加深到 bg-hover 档，与右栏 #F8F8F8 拉开面差。 */
+  --sidebar-bg: #EBEBEB;
+
   /* Translucent surface tiers - strengthened for high contrast */
   --surface-faint: rgba(0, 0, 0, 0.08);
   --surface-subtle: rgba(0, 0, 0, 0.12);

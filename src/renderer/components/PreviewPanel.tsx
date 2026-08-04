@@ -3,7 +3,7 @@
 // ============================================================================
 
 import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Archive, File, Folder, X, RefreshCw, ExternalLink, Maximize2, Minimize2, Camera, Eye, Pencil, Save, FolderOpen, Presentation, MousePointerClick } from 'lucide-react';
+import { Archive, File, Folder, X, RefreshCw, ExternalLink, Maximize2, Minimize2, Camera, Eye, Pencil, Save, FolderOpen, Presentation, MousePointerClick, MoreHorizontal } from 'lucide-react';
 import { IPC_DOMAINS } from '@shared/ipc';
 import { useAppStore } from '../stores/appStore';
 import { useI18n } from '../hooks/useI18n';
@@ -627,6 +627,8 @@ export const PreviewPanel: React.FC = () => {
   const lastLoadedRef = useRef<LoadedSnapshot | null>(null);
   const [isMaximized, setIsMaximized] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [moreActionsOpen, setMoreActionsOpen] = useState(false);
+  const moreActionsRef = useRef<HTMLDivElement | null>(null);
   // 预览用 HTML：把同目录相对 css/js 内联进来（srcDoc iframe 无法解析相对引用）。
   // 与可编辑/保存的 content 分开，保存仍写原始 content。
   const [previewHtml, setPreviewHtml] = useState<string | null>(null);
@@ -654,6 +656,23 @@ export const PreviewPanel: React.FC = () => {
   const isOffice = isDocx || isExcel || isPresentation;
   const isBinary = isImage || isPdf || isAudio || isVideo;
   const isDirty = !isBinary && !isArchive && !isOffice && content !== savedContent;
+  const isVirtual = activeTab?.kind === 'virtual';
+
+  useEffect(() => {
+    if (!moreActionsOpen) return;
+    const closeOnOutsideClick = (event: MouseEvent) => {
+      if (!moreActionsRef.current?.contains(event.target as Node)) setMoreActionsOpen(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setMoreActionsOpen(false);
+    };
+    document.addEventListener('mousedown', closeOnOutsideClick);
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.removeEventListener('mousedown', closeOnOutsideClick);
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [moreActionsOpen]);
 
   // Load content when the active tab changes and hasn't been loaded yet.
   useEffect(() => {
@@ -848,6 +867,11 @@ export const PreviewPanel: React.FC = () => {
     }
   };
 
+  const handleCopyPath = async () => {
+    if (!previewFilePath) return;
+    await copyPathToClipboard(previewFilePath);
+  };
+
   if (!activeTab) return null;
   if (activeTab.kind === 'liveDev') return null;
 
@@ -857,74 +881,70 @@ export const PreviewPanel: React.FC = () => {
         isMaximized ? 'fixed inset-0 z-50' : 'w-full h-full'
       }`}
     >
-      {/* Actions row (filename + dirty indicator + close moved into workbench tab bar) */}
-      <div className="flex items-center justify-end px-4 py-3 border-b border-zinc-700 bg-zinc-800">
-        <div className="flex items-center gap-1">
-          {isMarkdown && (
-            <button
-              onClick={() => updatePreviewTabMode(activeTab.id, mode === 'edit' ? 'preview' : 'edit')}
-              className={`p-1.5 rounded transition-colors ${
-                mode === 'edit'
-                  ? 'bg-primary-500/20 text-badge-accent hover:bg-primary-500/30'
-                  : 'hover:bg-zinc-600 text-zinc-400 hover:text-zinc-200'
-              }`}
-              title={mode === 'edit' ? pv.switchToPreview : pv.switchToEdit}
-            >
-              {mode === 'edit'
-                ? <Eye className="w-4 h-4" />
-                : <Pencil className="w-4 h-4" />}
-            </button>
-          )}
-          {(isMarkdown || isCode) && (
-            <button
-              onClick={handleSave}
-              disabled={!isDirty || isSaving}
-              className="p-1.5 rounded hover:bg-zinc-600 text-zinc-400 hover:text-zinc-200 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-              title={isDirty ? pv.saveShortcut : pv.saved}
-            >
-              <Save className={`w-4 h-4 ${isSaving ? 'animate-pulse' : ''}`} />
-            </button>
-          )}
-          <button
-            onClick={handleRefresh}
-            className="p-1.5 rounded hover:bg-zinc-600 text-zinc-400 hover:text-zinc-200 transition-colors"
-            title={pv.refresh}
-          >
-            <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
-          </button>
-          <button
-            onClick={handleExportLongScreenshot}
-            disabled={isExporting || isLoading || !!error || isMarkdown || isCsv || isCode || isBinary || isArchive || isOffice}
-            className="p-1.5 rounded hover:bg-zinc-600 text-zinc-400 hover:text-zinc-200 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-            title={isMarkdown || isCsv || isCode || isBinary || isArchive || isOffice ? pv.longScreenshotHtmlOnly : pv.exportLongScreenshot}
-          >
-            <Camera className={`w-4 h-4 ${isExporting ? 'animate-pulse' : ''}`} />
-          </button>
-          <button
-            onClick={handleRevealInFolder}
-            className="p-1.5 rounded hover:bg-zinc-600 text-zinc-400 hover:text-zinc-200 transition-colors"
-            title={pv.revealInFinder}
-          >
-            <FolderOpen className="w-4 h-4" />
-          </button>
-          <button
+      {/* Single header: semantic path first, one direct action, remaining actions in overflow. */}
+      <div className="flex items-center gap-2 bg-zinc-800 px-3 py-2">
+        <button /* ds-allow:button: path is a copy target, not a generic action button */
+          type="button"
+          onClick={() => void handleCopyPath()}
+          className="min-w-0 flex-1 truncate rounded px-1 py-1 text-left text-xs text-zinc-400 hover:bg-zinc-700/60 hover:text-zinc-200"
+          title={previewFilePath ?? activeTab.title}
+          aria-label={pv.copyPath}
+        >
+          {isVirtual ? activeTab.title : previewFilePath}
+        </button>
+        {!isVirtual && (
+          <button /* ds-allow:button: compact file-header icon action */
+            type="button"
             onClick={handleOpenInBrowser}
-            className="p-1.5 rounded hover:bg-zinc-600 text-zinc-400 hover:text-zinc-200 transition-colors"
+            className="rounded p-1.5 text-zinc-400 transition-colors hover:bg-zinc-600 hover:text-zinc-200"
             title={pv.openWithDefault}
+            aria-label={pv.openWithDefault}
           >
-            <ExternalLink className="w-4 h-4" />
+            <ExternalLink className="h-4 w-4" />
           </button>
-          <button
-            onClick={() => setIsMaximized(!isMaximized)}
-            className="p-1.5 rounded hover:bg-zinc-600 text-zinc-400 hover:text-zinc-200 transition-colors"
-            title={isMaximized ? pv.restore : pv.maximize}
+        )}
+        <div className="relative" ref={moreActionsRef}>
+          <button /* ds-allow:button: compact file-header overflow trigger */
+            type="button"
+            onClick={() => setMoreActionsOpen((open) => !open)}
+            className="rounded p-1.5 text-zinc-400 transition-colors hover:bg-zinc-600 hover:text-zinc-200"
+            title={pv.moreActions}
+            aria-label={pv.moreActions}
+            aria-expanded={moreActionsOpen}
           >
-            {isMaximized ? (
-              <Minimize2 className="w-4 h-4" />
-            ) : (
-              <Maximize2 className="w-4 h-4" />
-            )}
+            <MoreHorizontal className="h-4 w-4" />
           </button>
+          {moreActionsOpen && (
+            <div className="absolute right-0 top-full z-10 mt-1 w-48 rounded-lg bg-zinc-800 p-1 shadow-xl">
+              {isMarkdown && !isVirtual && (
+                <button type="button" onClick={() => { updatePreviewTabMode(activeTab.id, mode === 'edit' ? 'preview' : 'edit'); setMoreActionsOpen(false); }} className="flex w-full items-center gap-2 rounded px-2.5 py-2 text-left text-xs text-zinc-300 hover:bg-zinc-700">
+                  {mode === 'edit' ? <Eye className="h-4 w-4" /> : <Pencil className="h-4 w-4" />}
+                  {mode === 'edit' ? pv.switchToPreview : pv.switchToEdit}
+                </button>
+              )}
+              {(isMarkdown || isCode) && !isVirtual && (
+                <button type="button" onClick={() => { void handleSave(); setMoreActionsOpen(false); }} disabled={!isDirty || isSaving} className="flex w-full items-center gap-2 rounded px-2.5 py-2 text-left text-xs text-zinc-300 hover:bg-zinc-700 disabled:opacity-40">
+                  <Save className={`h-4 w-4 ${isSaving ? 'animate-pulse' : ''}`} />{isDirty ? pv.saveShortcut : pv.saved}
+                </button>
+              )}
+              {!isVirtual && (
+                <button type="button" onClick={() => { void handleRefresh(); setMoreActionsOpen(false); }} className="flex w-full items-center gap-2 rounded px-2.5 py-2 text-left text-xs text-zinc-300 hover:bg-zinc-700">
+                  <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />{pv.refresh}
+                </button>
+              )}
+              <button type="button" onClick={() => { void handleExportLongScreenshot(); setMoreActionsOpen(false); }} disabled={isExporting || isLoading || !!error || isMarkdown || isCsv || isCode || isBinary || isArchive || isOffice} className="flex w-full items-center gap-2 rounded px-2.5 py-2 text-left text-xs text-zinc-300 hover:bg-zinc-700 disabled:opacity-40">
+                <Camera className={`h-4 w-4 ${isExporting ? 'animate-pulse' : ''}`} />{pv.exportLongScreenshot}
+              </button>
+              {!isVirtual && (
+                <button type="button" onClick={() => { void handleRevealInFolder(); setMoreActionsOpen(false); }} className="flex w-full items-center gap-2 rounded px-2.5 py-2 text-left text-xs text-zinc-300 hover:bg-zinc-700">
+                  <FolderOpen className="h-4 w-4" />{pv.revealInFinder}
+                </button>
+              )}
+              <button type="button" onClick={() => { setIsMaximized(!isMaximized); setMoreActionsOpen(false); }} className="flex w-full items-center gap-2 rounded px-2.5 py-2 text-left text-xs text-zinc-300 hover:bg-zinc-700">
+                {isMaximized ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}{isMaximized ? pv.restore : pv.maximize}
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -1067,12 +1087,6 @@ export const PreviewPanel: React.FC = () => {
         )}
       </div>
 
-      {/* Footer - File path */}
-      <div className="px-4 py-2 border-t border-zinc-700 bg-zinc-800">
-        <span className="text-xs text-zinc-500 truncate block">
-          {previewFilePath}
-        </span>
-      </div>
     </div>
   );
 };

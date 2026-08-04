@@ -2,32 +2,30 @@
 import React from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import {
-  CurrentTurnArtifactOwnershipCard,
-  OutputFileRows,
-} from '../../../src/renderer/components/TaskPanel/OutputArtifactRows';
+import { ArtifactThumbStrip } from '../../../src/renderer/components/TaskPanel/OutputArtifactRows';
 
-vi.mock('../../../src/renderer/components/features/chat/MessageBubble/DeliverableCardList', () => ({
-  DeliverableCardList: ({ cards }: { cards: Array<{ title: string }> }) => (
-    <div data-testid="deliverable-card">{cards[0]?.title}</div>
-  ),
-}));
-
-describe('overview artifact file routing', () => {
+describe('overview artifact thumb strip routing', () => {
   it('opens an output file through the native file preview callback', () => {
     const onOpenFile = vi.fn();
     const onOpenPreview = vi.fn();
 
     render(
-      <OutputFileRows
-        files={[{ path: '/tmp/allow-me.txt', name: 'allow-me.txt', isCore: false }]}
+      <ArtifactThumbStrip
+        items={[{
+          kind: 'file',
+          label: 'allow-me.txt',
+          ownerKind: 'tool',
+          ownerLabel: 'Write',
+          path: '/tmp/allow-me.txt',
+        }]}
         previewItems={[]}
+        unnamedLabel="未命名输出"
         onOpenPreview={onOpenPreview}
         onOpenFile={onOpenFile}
       />,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'allow-me.txt' }));
+    fireEvent.click(screen.getByTestId('overview-artifact-thumb'));
 
     expect(onOpenFile).toHaveBeenCalledWith('/tmp/allow-me.txt');
     expect(onOpenPreview).not.toHaveBeenCalled();
@@ -37,8 +35,8 @@ describe('overview artifact file routing', () => {
     const onOpenFile = vi.fn();
 
     render(
-      <CurrentTurnArtifactOwnershipCard
-        artifactOwnership={[{
+      <ArtifactThumbStrip
+        items={[{
           kind: 'file',
           label: 'report.html',
           ownerKind: 'tool',
@@ -47,30 +45,47 @@ describe('overview artifact file routing', () => {
         }]}
         previewItems={[]}
         workingDirectory="/workspace/project"
+        unnamedLabel="未命名输出"
         onOpenFile={onOpenFile}
       />,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'report.html' }));
+    fireEvent.click(screen.getByTestId('overview-artifact-thumb'));
 
     expect(onOpenFile).toHaveBeenCalledWith('/workspace/project/dist/report.html');
   });
 
-  it('keeps inline artifacts on their existing workspace-preview path', () => {
+  it('routes items with a matching workspace preview item through the preview callback', () => {
+    const onOpenPreview = vi.fn();
+
     render(
-      <CurrentTurnArtifactOwnershipCard
-        artifactOwnership={[{
-          kind: 'artifact',
-          label: '流程图',
-          ownerKind: 'assistant',
-          ownerLabel: 'Neo',
+      <ArtifactThumbStrip
+        items={[{
+          kind: 'file',
+          label: 'chart.png',
+          ownerKind: 'tool',
+          ownerLabel: 'image_generate',
+          path: '/tmp/chart.png',
         }]}
-        previewItems={[]}
-        onOpenFile={vi.fn()}
+        previewItems={[{
+          id: 'file:/tmp/chart.png',
+          kind: 'image',
+          title: 'chart.png',
+          status: 'ready',
+          createdAt: 1,
+          source: { kind: 'tool', label: 'image_generate' },
+          file: { path: '/tmp/chart.png', name: 'chart.png' },
+        } as never]}
+        unnamedLabel="未命名输出"
+        onOpenPreview={onOpenPreview}
       />,
     );
 
-    expect(screen.getByTestId('deliverable-card').textContent).toContain('流程图');
-    expect(screen.queryByTestId('overview-artifact-file')).toBeNull();
+    fireEvent.click(screen.getByTestId('overview-artifact-thumb'));
+
+    expect(onOpenPreview).toHaveBeenCalledWith(expect.objectContaining({
+      id: 'file:/tmp/chart.png',
+      file: { path: '/tmp/chart.png', name: 'chart.png' },
+    }));
   });
 });

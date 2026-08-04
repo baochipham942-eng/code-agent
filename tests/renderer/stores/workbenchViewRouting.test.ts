@@ -13,7 +13,6 @@ describe('workbench view routing', () => {
       activeWorkbenchTab: null,
       previewTabs: [],
       activePreviewTabId: null,
-      selectedWorkspacePreviewId: null,
       showCapabilityHub: false,
       capabilityHubTab: 'experts',
       showProjectCollaborationPage: false,
@@ -28,11 +27,10 @@ describe('workbench view routing', () => {
       activeWorkbenchTab: 'overview',
     });
 
-    useAppStore.getState().openWorkspacePreview('artifact-1');
+    useAppStore.getState().openWorkspacePreview();
     expect(useAppStore.getState()).toMatchObject({
       workbenchTabs: ['overview'],
       activeWorkbenchTab: 'overview',
-      selectedWorkspacePreviewId: 'artifact-1',
     });
   });
 
@@ -106,7 +104,6 @@ describe('workbench view routing', () => {
       workingDirectory: '/workspace/project',
       workbenchTabs: ['overview'],
       activeWorkbenchTab: 'overview',
-      selectedWorkspacePreviewId: null,
     });
 
     useAppStore.getState().openPreview('dist/report.html');
@@ -118,7 +115,6 @@ describe('workbench view routing', () => {
       workbenchTabs: ['overview', 'preview:/workspace/project/dist/report.html'],
       activeWorkbenchTab: 'preview:/workspace/project/dist/report.html',
       activePreviewTabId: firstPreviewTabId,
-      selectedWorkspacePreviewId: null,
     });
     expect(useAppStore.getState().previewTabs).toHaveLength(1);
   });

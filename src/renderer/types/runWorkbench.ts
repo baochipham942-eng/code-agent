@@ -24,6 +24,8 @@ export interface RunIdentity {
 
 export interface RunUiState {
   identity: RunIdentity;
+  /** 当前/最近回合的用户指令，用作 Overview 的实时 run 指针标题。 */
+  title?: string;
   status: RunUiStatus;
   phase: string;
   activeToolName?: string;

@@ -41,6 +41,7 @@ import {
 } from '../utils/workbenchViews';
 import { createWorkbenchActions } from './workbenchActions';
 import { SECONDARY_PAGES_CLOSED } from './secondaryPages';
+import { buildContentPreviewState } from './contentPreviewState';
 
 // V2-A: 关 tab 时 fire-and-forget 调 stopDevServer。lazy import 避免
 // 在 store 模块顶层引入 ipcService（store 是大量被 import 的模块，链路尽量短）
@@ -73,8 +74,9 @@ export type LocalOpsTab = 'desktop' | 'browser';
 // 评测中心（admin-only 整窗页）的顶层 tab：回放 / 验证 / 遥测 / 基准（v2 扩两 tab）。
 export type EvalCenterTab = 'replay' | 'validation' | 'telemetry' | 'benchmarks';
 export type { WorkbenchTabId, WorkbenchViewId } from '../utils/workbenchViews';
+export type ContentPreviewInput = { id: string; title: string; content: string; format: 'html' | 'markdown' | 'json' | 'text' };
 
-// Preview tab — one per opened file (kind === 'file') or live dev server (kind === 'liveDev')
+// Preview tab — one per opened file, generated in-memory artifact, or live dev server.
 export interface PreviewTab {
   id: string;
   path: string;
@@ -84,7 +86,9 @@ export interface PreviewTab {
   lastActivatedAt: number;
   isLoaded: boolean;    // whether readFile has populated savedContent yet
   // Live Preview (D3+) — 存在时覆盖文件语义
-  kind?: 'file' | 'liveDev';
+  kind?: 'file' | 'virtual' | 'liveDev';
+  /** Human title for generated content that has no on-disk path. */
+  title?: string;
   devServerUrl?: string;
   /** V2-A: Code Agent 自起的 dev server session id；用户外部起的 dev server 留空 */
   devServerSessionId?: string;
@@ -283,7 +287,6 @@ export interface AppState {
   // File preview tab registry — one entry per opened file (content, dirty state, LRU).
   previewTabs: PreviewTab[];
   activePreviewTabId: string | null;
-  selectedWorkspacePreviewId: string | null;
 
   // Unified right workbench — only the five canonical view categories are stored.
   // Retired WorkbenchTabId values are accepted by actions as deep-link aliases.
@@ -415,8 +418,8 @@ export interface AppState {
   setShowLibraryPanel: (show: boolean) => void;
   openExpertRoleDetail: (roleId: string) => void;
   openPreview: (filePath: string, options?: OpenWorkbenchTabOptions) => void;
-  openWorkspacePreview: (itemId?: string | null, options?: OpenWorkbenchTabOptions) => void;
-  setSelectedWorkspacePreviewId: (itemId: string | null) => void;
+  openContentPreview: (input: ContentPreviewInput, options?: OpenWorkbenchTabOptions) => void;
+  openWorkspacePreview: (options?: OpenWorkbenchTabOptions) => void;
   openLivePreview: (
     devServerUrl: string,
     devServerSessionId?: string,
@@ -553,7 +556,6 @@ export const useAppStore = create<AppState>()((set, get) => ({
   // Initial file preview registry
   previewTabs: [],
   activePreviewTabId: null,
-  selectedWorkspacePreviewId: null,
 
   // Initial workbench — empty until the user opens a tab or live task activity appears.
   workbenchTabs: [],
@@ -822,11 +824,17 @@ export const useAppStore = create<AppState>()((set, get) => ({
       };
     });
   },
-  openWorkspacePreview: (itemId = null, options) => {
+  openContentPreview: (input, options) => {
+    noteSurfaceIntentNavigation('preview', options?.source ?? 'user');
+    set((state) => ({
+      ...state,
+      ...buildContentPreviewState(state, input, nextPreviewTabTick, MAX_PREVIEW_TABS),
+    }));
+  },
+  openWorkspacePreview: (options) => {
     noteSurfaceIntentNavigation('overview', options?.source ?? 'user');
     set((state) => ({
       ...state,
-      selectedWorkspacePreviewId: itemId ?? state.selectedWorkspacePreviewId,
       workbenchTabs: state.workbenchTabs.includes('overview')
         ? state.workbenchTabs
         : [...state.workbenchTabs, 'overview'],
@@ -836,7 +844,6 @@ export const useAppStore = create<AppState>()((set, get) => ({
       taskWorkbenchOpenSource: null,
     }));
   },
-  setSelectedWorkspacePreviewId: (itemId) => set({ selectedWorkspacePreviewId: itemId }),
   openLivePreview: (devServerUrl, devServerSessionId, options) => {
     // S2 归位（2026-07-31）：liveDev 预览曾借用 'browser' 这个 workbench view id
     // 共享单一 tab-bar 槽位；'browser' 现在是 Agent 浏览器现场（BrowserAgentWindow）

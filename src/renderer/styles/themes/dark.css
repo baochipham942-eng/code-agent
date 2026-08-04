@@ -28,6 +28,10 @@
   --bg-hover: #27272B;
   --bg-active: #2F2F34;
 
+  /* 左栏底色（2026-08-04 D6 拍板新增语义 token）：左右栏分界靠底色差、不画线；
+     四主题各自定值，左栏容器消费此 token。dark 维持现状 zinc-950 档。 */
+  --sidebar-bg: #09090B;
+
   /* Translucent surface tiers */
   --surface-faint: rgba(255, 255, 255, 0.012);
   --surface-subtle: rgba(255, 255, 255, 0.018);

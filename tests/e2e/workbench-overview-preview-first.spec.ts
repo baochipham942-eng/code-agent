@@ -95,8 +95,15 @@ async function openOverviewView(page: Page): Promise<void> {
 // 首启三层遮罩（信任文件夹 → 连接模型 onboarding → 跳过后落在设置页），出现才点。
 // 与 design-canvas-conversational.e2e.spec.ts 同款，不复制会静默扑空。
 async function waitForAppReady(page: Page): Promise<void> {
+  // 在 goto 之前挂 waitForResponse（同 swarm-chain 的实证模式）——SSE 初始请求
+  // 可能紧跟页面加载发出，错过它后面注入的事件会被静默丢弃。
+  const ssePromise = page.waitForResponse(
+    (resp) => resp.url().includes('/api/events'),
+    { timeout: 20_000 },
+  );
   await page.goto('/');
   await expect(page.locator('.h-screen')).toBeVisible({ timeout: 15_000 });
+  await ssePromise;
   for (const name of ['信任并加载', '跳过，稍后在设置里配置']) {
     const btn = page.getByRole('button', { name });
     await btn.waitFor({ state: 'visible', timeout: 5_000 }).catch(() => {});
@@ -138,10 +145,10 @@ test('右栏概览空态保持轻量，旧的清单外壳已移除', async ({ pa
   await overview.screenshot({ path: 'tests/e2e/screenshots/workbench-overview-preview-first.png' });
 });
 
-// 有产物那一屏：概览主视线固定展示 Todo / 产物（诊断在二级折叠区）；点产物后直接进入专注预览。
+// 有产物那一屏：概览四模块（任务 / Todo / 上下文 / 产物）；点产物一步打开原生 preview tab。
 // 产物由 sessionStore.messages 推导，e2e 跑生产构建（window.__neoAppStore 只在 DEV 挂），
 // 所以从外部按真实事件链注入带 artifacts 的 assistant 消息，而不是往 store 里塞。
-test('右栏概览有产物时：工作台分区稳定，点击后直接预览且不带旧详情区', async ({ page, request }) => {
+test('右栏概览有产物时：四模块分区稳定，点击后一步进入原生 preview tab', async ({ page, request }) => {
   await waitForAppReady(page);
   const token = await getAuthToken(page);
   const sessionId = await createSessionAndGetId(page);
@@ -149,58 +156,58 @@ test('右栏概览有产物时：工作台分区稳定，点击后直接预览�
 
   const overview = page.getByTestId('workbench-overview-view');
   const firstMarker = `E2E_OVERVIEW_ARTIFACT_${Date.now()}`;
-  await emitAgentEvents(request, token, artifactTurnEvents(sessionId, `e2e-overview-turn-1-${Date.now()}`, {
-    id: 'e2e-artifact-alpha',
-    type: 'mermaid',
-    title: '第一版流程图',
-    content: `graph TD;\n  A[${firstMarker}] --> B[产物内容占满右栏];`,
-    version: 1,
-  }));
+  // 注入与 renderer 订阅/会话切换之间存在竞态：事件落在就绪前会被静默丢弃
+  // （2026-08-04 实测：20s 轮询也等不到，因为事件根本没进 store）。
+  // 以「助手消息真的出现在聊天里」为准，没出现就用新 turnId 补发。
+  await expect(async () => {
+    await emitAgentEvents(request, token, artifactTurnEvents(sessionId, `e2e-overview-turn-1-${Date.now()}`, {
+      id: 'e2e-artifact-alpha',
+      type: 'mermaid',
+      title: '第一版流程图',
+      content: `graph TD;\n  A[${firstMarker}] --> B[产物内容占满右栏];`,
+      version: 1,
+    }));
+    await expect(page.getByText('已产出 第一版流程图。').first()).toBeVisible({ timeout: 3_000 });
+  }).toPass({ timeout: 30_000 });
 
-  // ① 默认工作台：主视线分区固定存在，产物正文不抢占概览。
-  // T1 起上下文行/AgentTree 下沉进「诊断详情」二级折叠区，主视线只剩 Todo + 产物。
+  // ① 四模块工作台：产物在完成态收拢成缩略行，正文不抢占概览。
+  // 本场景无 TODO（无计划步骤）→ Todo 模块按空态不渲染；诊断 UI 已整体删除（拍板三）。
   const workspace = overview.getByTestId('task-workspace-overview');
   await expect(workspace).toBeVisible({ timeout: 20_000 });
-  await expect(workspace.getByRole('button', { name: 'Todo', exact: true })).toBeVisible();
-  await expect(workspace.getByRole('button', { name: /产物/ })).toBeVisible();
+  await expect(workspace.getByTestId('overview-artifacts-module')).toBeVisible();
+  await expect(workspace.getByTestId('overview-artifact-thumb').filter({ hasText: '第一版流程图' })).toBeVisible();
+  await expect(workspace.getByTestId('overview-todo-module')).toHaveCount(0);
   await expect(workspace.getByText(firstMarker)).toHaveCount(0);
 
-  // ①b 诊断下沉：入口留在主视线，内容默认不占位；展开后上下文一条不少（内容只下沉不删除）。
-  const diagnostics = workspace.getByRole('button', { name: /诊断详情/ });
-  await expect(diagnostics).toBeVisible();
+  // ①b 诊断 UI 无入口：AgentTree / 路由证据 / 诊断详情都不复存在（数据照常写 DB，仅撤 UI）。
+  await expect(workspace.getByText('诊断详情')).toHaveCount(0);
   await expect(workspace.getByTestId('overview-diagnostics-body')).toHaveCount(0);
-  await diagnostics.click();
-  const diagnosticsBody = workspace.getByTestId('overview-diagnostics-body');
-  await expect(diagnosticsBody).toBeVisible();
-  await expect(diagnosticsBody.getByText('上下文', { exact: true })).toBeVisible();
 
-  // ② 点击产物就是打开，直接进入专注预览。
-  await workspace.getByRole('button', { name: '在工作区预览中打开: 第一版流程图', exact: true }).click();
-  await expect(page.getByTestId('workbench-overview-preview')).toBeVisible({ timeout: 20_000 });
+  // ② 点击产物缩略行就是打开，概览中间页不再出现。
+  await workspace.getByTestId('overview-artifact-thumb').filter({ hasText: '第一版流程图' }).click();
+  await expect(page.getByTestId('workbench-overview-preview')).toHaveCount(0);
   await expect(page.getByText(firstMarker)).toBeVisible();
 
-  // ③ 概览入口的预览不带详情/版本和项目历史；动作仍收在 ⋯。
-  await expect(page.getByRole('button', { name: '复制预览' })).toHaveCount(0);
-  await expect(page.getByRole('button', { name: '归档到资料库: 第一版流程图' })).toHaveCount(0);
+  // ③ 原生 preview 头只保留路径/标题、外部打开（文件时）和更多。
   await expect(page.getByRole('button', { name: '更多操作' })).toBeVisible();
-  await expect(page.getByTestId('workspace-preview-overflow')).toHaveCount(0);
-  await expect(page.getByTestId('workspace-preview-details-toggle')).toHaveCount(0);
-  await expect(page.getByText(/项目全部产物/)).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '复制文件路径' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '返回概览', exact: true })).toHaveCount(0);
 
-  // ④ 第二个产物到了才出现切换器，返回概览后三个分区仍在。
-  await emitAgentEvents(request, token, artifactTurnEvents(sessionId, `e2e-overview-turn-2-${Date.now()}`, {
-    id: 'e2e-artifact-beta',
-    type: 'mermaid',
-    title: '第二版流程图',
-    content: 'graph TD;\n  C[第二个产物] --> D[切换器出现];',
-    version: 1,
-  }));
-  const switcher = page.getByTestId('workspace-artifact-switcher');
-  await expect(switcher).toBeVisible({ timeout: 20_000 });
-  await expect(switcher).toContainText('共 2 个');
-
-  await page.getByRole('button', { name: '返回概览', exact: true }).click();
+  // ④ 第二轮产物到达后切回概览，首轮 + 末轮产物同屏累计。
+  await expect(async () => {
+    await emitAgentEvents(request, token, artifactTurnEvents(sessionId, `e2e-overview-turn-2-${Date.now()}`, {
+      id: 'e2e-artifact-beta',
+      type: 'mermaid',
+      title: '第二版流程图',
+      content: 'graph TD;\n  C[第二个产物] --> D[切换器出现];',
+      version: 1,
+    }));
+    await expect(page.getByText('已产出 第二版流程图。').first()).toBeVisible({ timeout: 3_000 });
+  }).toPass({ timeout: 30_000 });
+  await page.getByTestId('workbench-tab-overview').click();
   await expect(page.getByTestId('task-workspace-overview')).toBeVisible();
+  await expect(page.getByTestId('overview-artifact-thumb').filter({ hasText: '第一版流程图' })).toBeVisible();
+  await expect(page.getByTestId('overview-artifact-thumb').filter({ hasText: '第二版流程图' })).toBeVisible();
 
   await overview.screenshot({ path: 'tests/e2e/screenshots/workbench-overview-with-artifacts.png' });
 });

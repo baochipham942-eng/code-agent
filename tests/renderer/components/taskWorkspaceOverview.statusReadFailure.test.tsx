@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 // ============================================================================
-// 后台任务状态台账读取失败 UI —— 摘自已删除的 TaskMonitor.tsx（TaskMonitor
-// 在 app 里已无挂载点，见 2026-08-01 chip 改写与 TaskMonitor 删除工单 ③）。
-// readFailure/requestStatusReadRetry 全仓只有 TaskWorkspaceOverview 一个消费点，
-// 删组件前先把这份唯一数据消费契约搬到 Overview「进度」卡片承接，不静默丢失。
+// 后台任务状态台账读取失败 UI —— 摘自已删除的 TaskMonitor.tsx。
+// 2026-08-04 四模块归位后：真读取失败（确有任务在跑）在 Todo 模块位置内联，
+// 与「任务」模块完成态互斥；0 rows 按空态，不渲染横幅（C.11）。
+// readFailure/requestStatusReadRetry 在全仓只有 TaskWorkspaceOverview 一个消费点。
 // ============================================================================
 
 import React from 'react';
@@ -13,8 +13,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const appState = {
   workingDirectory: '/repo/app',
   openPreview: vi.fn(),
+  openContentPreview: vi.fn(),
   openWorkspacePreview: vi.fn(),
-  setSelectedWorkspacePreviewId: vi.fn(),
 };
 
 const sessionState = {
@@ -118,10 +118,6 @@ vi.mock('../../../src/renderer/hooks/useCurrentTurnArtifactOwnership', () => ({
 
 vi.mock('../../../src/renderer/hooks/useWorkspacePreviewModel', () => ({
   useWorkspacePreviewModel: () => [],
-}));
-
-vi.mock('../../../src/renderer/components/features/agentTree/AgentTreeView', () => ({
-  AgentTreeView: () => null,
 }));
 
 vi.mock('../../../src/renderer/services/ipcService', () => ({

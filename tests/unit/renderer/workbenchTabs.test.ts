@@ -100,13 +100,32 @@ describe('appStore workbench tabs', () => {
     expect(state.activeWorkbenchTab).toBe('files');
   });
 
-  it('openWorkspacePreview opens the workspace preview tab and tracks selected item', () => {
-    useAppStore.getState().openWorkspacePreview('preview-item-1');
+  it('openWorkspacePreview opens overview without retaining an intermediate artifact selection', () => {
+    useAppStore.getState().openWorkspacePreview();
 
     const state = useAppStore.getState();
     expect(state.workbenchTabs).toEqual(['overview']);
     expect(state.activeWorkbenchTab).toBe('overview');
-    expect(state.selectedWorkspacePreviewId).toBe('preview-item-1');
+    expect('selectedWorkspacePreviewId' in state).toBe(false);
+  });
+
+  it('openContentPreview creates a loaded native preview tab for content-only artifacts', () => {
+    useAppStore.getState().openContentPreview({
+      id: 'process-output-1',
+      title: '执行结果',
+      content: '三步已完成',
+      format: 'markdown',
+    });
+
+    const state = useAppStore.getState();
+    const tab = state.previewTabs.find((item) => item.kind === 'virtual');
+    expect(tab).toMatchObject({
+      title: '执行结果',
+      content: '三步已完成',
+      savedContent: '三步已完成',
+      isLoaded: true,
+    });
+    expect(state.activeWorkbenchTab).toBe(`preview:${tab?.path}`);
   });
 
   it('closeWorkbenchTab removes tab and clears active when nothing remains', () => {

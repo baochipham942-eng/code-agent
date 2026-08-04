@@ -18,7 +18,6 @@ const mocks = vi.hoisted(() => ({
   invokeDomain: vi.fn(),
   getProjectArtifacts: vi.fn(),
   addLibraryItem: vi.fn(),
-  setSelectedId: vi.fn(),
   items: [] as unknown[],
 }));
 
@@ -45,8 +44,6 @@ vi.mock('../../../src/renderer/hooks/useWorkspacePreviewModel', () => ({
 
 vi.mock('../../../src/renderer/stores/appStore', () => ({
   useAppStore: (selector: (state: Record<string, unknown>) => unknown) => selector({
-    selectedWorkspacePreviewId: null,
-    setSelectedWorkspacePreviewId: mocks.setSelectedId,
     setWorkingDirectory: vi.fn(),
   }),
 }));
@@ -156,7 +153,8 @@ describe('右栏默认那一屏是产物内容', () => {
     expect(screen.getByRole('button', { name: '切到 附录表格' })).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: '切到 附录表格' }));
-    expect(mocks.setSelectedId).toHaveBeenCalledWith('beta');
+    expect(screen.getByText('附录表格 的正文内容')).toBeTruthy();
+    expect(screen.queryByText('季度报告 的正文内容')).toBeNull();
     expect(screen.queryByRole('button', { name: '切到 附录表格' })).toBeNull();
   });
 

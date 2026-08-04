@@ -65,18 +65,11 @@ describe('summarizeTodoProgress', () => {
 });
 
 describe('buildOverviewContextRows', () => {
-  it('keeps Skill, MCP, Memory and deduplicated files in one context projection', () => {
+  it('keeps invoked Skill, MCP, Memory and deduplicated files in one context projection', () => {
     const tools: ToolCapabilityView[] = [
       {
-        id: 'skill:web',
-        label: 'web-development',
-        source: 'skill',
-        callable: true,
-        activatedForTurn: true,
-      },
-      {
-        id: 'mcp:filesystem',
-        label: 'filesystem',
+        id: 'tool:mcp__filesystem__read_file',
+        label: 'mcp__filesystem__read_file',
         source: 'mcp',
         callable: true,
         activatedForTurn: true,
@@ -102,16 +95,20 @@ describe('buildOverviewContextRows', () => {
       tools,
       memoryActivities,
       contextItems: [
+        { id: 'tool:Skill:web', label: 'web-development', detail: 'Skill', bucket: 'rules', source: 'tool' },
         { id: 'file-1', bucket: 'files', source: 'tool', label: 'hello.html', path: '/tmp/hello.html', detail: 'Read' },
         { id: 'file-2', bucket: 'files', source: 'tool', label: 'hello.html', path: '/tmp/hello.html', detail: 'Write' },
       ],
+      fallbacks: { unnamedOutput: '未命名输出', unknownCapability: '未知能力' },
     });
 
-    expect(rows.map((row) => row.kind)).toEqual(['skill', 'mcp', 'memory', 'file']);
-    expect(rows.at(-1)).toMatchObject({
+    expect(rows.map((row) => row.kind)).toEqual(['file', 'skill', 'mcp', 'memory']);
+    expect(rows[0]).toMatchObject({
       label: 'hello.html',
       detail: 'Read / Write',
     });
+    // MCP 按 server 去重显示 server 名
+    expect(rows.find((row) => row.kind === 'mcp')).toMatchObject({ label: 'filesystem' });
   });
 
   it('surfaces blocked context without turning it into an approval card', () => {
@@ -126,6 +123,7 @@ describe('buildOverviewContextRows', () => {
       }],
       memoryActivities: [],
       contextItems: [],
+      fallbacks: { unnamedOutput: '未命名输出', unknownCapability: '未知能力' },
     });
 
     expect(rows).toEqual([expect.objectContaining({

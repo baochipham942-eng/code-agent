@@ -8,6 +8,7 @@ const backgroundTaskStore = vi.hoisted(() => ({
   refreshTasks: vi.fn(async () => {}),
   drainNotifications: vi.fn(async () => []),
   readRetryNonce: 0,
+  readFailure: null as { message: string; failedAt: number } | null,
 }));
 const sessionStore = vi.hoisted(() => ({ currentSessionId: 'session-current' as string | null }));
 const ipc = vi.hoisted(() => ({
@@ -31,8 +32,9 @@ const poller = vi.hoisted(() => {
 });
 
 vi.mock('../../../src/renderer/stores/backgroundTaskStore', () => ({
-  useBackgroundTaskStore: (selector: (state: typeof backgroundTaskStore) => unknown) => (
-    selector(backgroundTaskStore)
+  useBackgroundTaskStore: Object.assign(
+    (selector: (state: typeof backgroundTaskStore) => unknown) => selector(backgroundTaskStore),
+    { getState: () => backgroundTaskStore },
   ),
 }));
 vi.mock('../../../src/renderer/stores/sessionStore', () => ({
@@ -69,6 +71,7 @@ describe('useBackgroundTaskSync', () => {
     transport.native = true;
     sessionStore.currentSessionId = 'session-current';
     backgroundTaskStore.readRetryNonce = 0;
+    backgroundTaskStore.readFailure = null;
     backgroundTaskStore.refreshTasks.mockResolvedValue(undefined);
     backgroundTaskStore.drainNotifications.mockResolvedValue([]);
     poller.tasks.length = 0;
@@ -139,8 +142,10 @@ describe('useBackgroundTaskSync', () => {
     httpView.unmount();
   });
 
-  it('stops automatic polling after the first task-ledger read failure', async () => {
+  it('stops automatic polling after the first task-ledger read failure with tasks at stake', async () => {
     backgroundTaskStore.refreshTasks.mockRejectedValueOnce(new Error('ledger unavailable'));
+    // store 已置位 readFailure（确有任务、状态无法确认）→ 停轮询等用户显式重试
+    backgroundTaskStore.readFailure = { message: 'ledger unavailable', failedAt: Date.now() };
     renderHook(() => useBackgroundTaskSync());
 
     const sync = poller.tasks.at(-1);
@@ -152,5 +157,18 @@ describe('useBackgroundTaskSync', () => {
 
     await expect(sync()).resolves.toBeUndefined();
     expect(backgroundTaskStore.refreshTasks).not.toHaveBeenCalled();
+  });
+
+  it('keeps polling when an empty-ledger read fails (0 rows ≠ failure)', async () => {
+    backgroundTaskStore.refreshTasks.mockRejectedValueOnce(new Error('ledger unavailable'));
+    // store 未置位 readFailure（手头无任务）→ 不停轮询，靠 backoff 自动追平
+    backgroundTaskStore.readFailure = null;
+    renderHook(() => useBackgroundTaskSync());
+
+    const sync = poller.tasks.at(-1);
+    if (!sync) throw new Error('Expected background task sync callback');
+    await expect(sync()).rejects.toThrow('ledger unavailable');
+
+    expect(poller.stop).not.toHaveBeenCalled();
   });
 });

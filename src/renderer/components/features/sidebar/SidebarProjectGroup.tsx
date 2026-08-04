@@ -56,7 +56,7 @@ export interface SidebarProjectGroupProps {
   handleSetSidebarProjectStatus: SidebarSessionActions['handleSetSidebarProjectStatus'];
   handleSetSidebarProjectDescription: SidebarSessionActions['handleSetSidebarProjectDescription'];
   createWorkspaceChat: SidebarSessionActions['createWorkspaceChat'];
-  openWorkspacePreview: (previewItemId?: string | null) => void;
+  openWorkspacePreview: () => void;
   buildProjectDrawerSessions: (groupSessions: SessionWithMeta[]) => SidebarProjectDrawerSession[];
   sessionItemProps: SidebarSessionItemSharedProps;
 }

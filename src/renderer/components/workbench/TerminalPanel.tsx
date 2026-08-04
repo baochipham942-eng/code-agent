@@ -51,27 +51,11 @@ export const TerminalPanel: React.FC = () => {
     setOpenedSessionId(currentSessionId);
   }, [currentSessionId]);
 
-  // 切会话 = 切实例：先卸掉上一个会话的 xterm（别把两个会话的输出串在一块），再问宿主
-  // 这个会话是不是已经有活着的 PTY——有就直接挂回去。PTY 活着却让用户重按一次「打开终端」，
-  // 是把「面板重新挂载」当成了「终端不存在」。
+  // 切会话 = 切实例：先卸掉上一个会话的 xterm（别把两个会话的输出串在一块）。
+  // 打开终端 tab 即自动起终端（2026-08-04 产品负责人：不需要多点一下）——
+  // 下游 'open' IPC 本身是「有活着的 PTY 就接管、没有就新建」，无需先探快照再让用户手点。
   useEffect(() => {
-    setOpenedSessionId(null);
-    if (!currentSessionId) return undefined;
-
-    let cancelled = false;
-    void (async () => {
-      try {
-        const existing = await invokeDomain<TerminalSnapshot | null>(
-          IPC_DOMAINS.TERMINAL,
-          'snapshot',
-          { sessionId: currentSessionId },
-        );
-        if (!cancelled && existing?.alive) setOpenedSessionId(currentSessionId);
-      } catch {
-        /* 问不到就当没有，用户可以自己按「打开终端」 */
-      }
-    })();
-    return () => { cancelled = true; };
+    setOpenedSessionId(currentSessionId);
   }, [currentSessionId]);
 
   useEffect(() => {

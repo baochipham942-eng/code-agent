@@ -145,8 +145,10 @@ function buildUnsettledWorkLines(messages: Message[], taskState: SessionState): 
   for (const message of messages) {
     const failureId = message.metadata?.voiceWorkFailure?.workItemId;
     const settledId = message.metadata?.voiceWorkSettled?.workItemId;
+    const resultId = message.metadata?.backgroundTaskResult?.taskId;
     if (failureId) settledIds.add(failureId);
     if (settledId) settledIds.add(settledId);
+    if (resultId) settledIds.add(resultId);
   }
 
   const pending = new Map<string, string>();

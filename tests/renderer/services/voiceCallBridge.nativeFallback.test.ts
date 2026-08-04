@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
-  nativeCallbacks: null as null | { onError?: () => void },
+  nativeCallbacks: null as null | { onError?: () => void; onPlaybackStarted?: () => void },
   nativeStop: vi.fn(),
   webStart: vi.fn(async () => undefined),
   fallbackWarning: vi.fn(),
@@ -32,12 +32,14 @@ vi.mock('../../../src/renderer/services/voiceAudioPipeline', () => ({
 }));
 vi.mock('../../../src/renderer/services/nativeVoiceAudioPipeline', () => ({
   NativeVoiceAudioPipeline: class {
-    constructor(callbacks: { onError?: () => void }) { mocks.nativeCallbacks = callbacks; }
+    constructor(callbacks: { onError?: () => void; onPlaybackStarted?: () => void }) {
+      mocks.nativeCallbacks = callbacks;
+    }
     setCaptureOpen() {}
     async start() {}
     stop() { mocks.nativeStop(); }
     setMuted() {}
-    enqueuePlayback() {}
+    enqueuePlayback() { mocks.nativeCallbacks?.onPlaybackStarted?.(); }
     clearPlayback() {}
   },
 }));
@@ -94,6 +96,22 @@ describe('voiceCallBridge 原生 AEC 运行时降级', () => {
       type: 'audio_mode',
       mode: 'headphones',
       reason: 'native-runtime-error',
+    });
+  });
+
+  it('Host 标记播报响应后，真实播放首帧才回 narration ack', () => {
+    socket.onmessage?.({
+      data: JSON.stringify({ type: 'response.created', responseId: 'response-1', narrationId: 'narration-1' }),
+    });
+    expect(socket.sent.map((raw) => JSON.parse(raw))).not.toContainEqual({
+      type: 'narration.playback_started',
+      narrationId: 'narration-1',
+    });
+
+    socket.onmessage?.({ data: new ArrayBuffer(4) });
+    expect(socket.sent.map((raw) => JSON.parse(raw))).toContainEqual({
+      type: 'narration.playback_started',
+      narrationId: 'narration-1',
     });
   });
 });

@@ -193,6 +193,7 @@ describe('口播与丢弃各落一条，workItemId 与派活对得上', () => {
       title: '写季度复盘',
       summary: '大纲列完了',
     });
+    queue.handleNarrationPlaybackStarted(session, 'voice-work-42:milestone-3');
 
     expect(phases()).toEqual(['narration_spoken']);
     // 合成键每条都不一样，按它分组等于没分组。
@@ -226,6 +227,7 @@ describe('口播与丢弃各落一条，workItemId 与派活对得上', () => {
       title: '写季度复盘',
       summary: '卡在登录上了',
     });
+    queue.handleNarrationPlaybackStarted(session, 'voice-work-42:blocked-1');
     queue.enqueueOrInjectNarration(session, {
       workItemId: 'voice-work-42:milestone-1',
       status: 'milestone',

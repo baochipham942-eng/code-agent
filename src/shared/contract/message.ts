@@ -325,6 +325,14 @@ export interface MessageMetadata {
    * 这条消息不进对话（投影层只取 metadata，不成节点）。
    */
   voiceWorkSettled?: { workItemId: string; title: string; outcome: 'done' | 'unverified' };
+  /** 后台任务统一终态投影，供后续 turn 做短名指代与状态追问。 */
+  backgroundTaskResult?: {
+    source: 'agent-result';
+    taskId: string;
+    shortName: string;
+    status: 'completed' | 'failed' | 'cancelled' | 'unverified';
+    summary: string;
+  };
   voiceDispatch?: {
     title: string;
     /** 账本里这件活的 id。失败留痕靠它对回这张任务卡（见 voiceWorkFailure）。 */

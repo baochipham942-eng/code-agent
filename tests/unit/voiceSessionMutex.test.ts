@@ -139,6 +139,13 @@ function types(client: FakeClient): string[] {
   return client.sent.filter((s) => s !== '<binary>').map((s) => (JSON.parse(s) as { type: string; code?: string }).code ?? (JSON.parse(s) as { type: string }).type);
 }
 
+function ackNarration(client: FakeClient, narrationId: string): void {
+  client.emit('message', Buffer.from(JSON.stringify({
+    type: 'narration.playback_started',
+    narrationId,
+  })), false);
+}
+
 describe('voiceSessionService 互斥与挂断', () => {
   beforeEach(() => {
     connect.mockClear();
@@ -859,7 +866,10 @@ describe('终态结论节制播报', () => {
 
     lastOnEvent?.({ type: 'response.done' });
     expect(injectItem).toHaveBeenCalledTimes(1);
-    expect(injectItem).toHaveBeenCalledWith('[BACKEND] 「建个文件」做完了。已经建好 a.txt。');
+    expect(injectItem).toHaveBeenCalledWith(
+      '[BACKEND] 「建个文件」做完了。已经建好 a.txt。',
+      narration.workItemId,
+    );
   });
 
   it('模型响应窗内零注入，response.done 后才注入', async () => {
@@ -886,14 +896,25 @@ describe('终态结论节制播报', () => {
 
     lastOnEvent?.({ type: 'response.done' });
     expect(injectItem).toHaveBeenCalledTimes(1);
-    expect(injectItem).toHaveBeenLastCalledWith('[BACKEND] 「建个文件」做完了。已经建好 a.txt。');
+    expect(injectItem).toHaveBeenLastCalledWith(
+      '[BACKEND] 「建个文件」做完了。已经建好 a.txt。',
+      narration.workItemId,
+    );
+
+    client.emit('message', Buffer.from(JSON.stringify({
+      type: 'narration.playback_started',
+      narrationId: narration.workItemId,
+    })), false);
 
     lastOnEvent?.({ type: 'response.done' });
     expect(injectItem).toHaveBeenCalledTimes(2);
-    expect(injectItem).toHaveBeenLastCalledWith('[BACKEND] 「查个问题」做完了。已经建好 a.txt。');
+    expect(injectItem).toHaveBeenLastCalledWith(
+      '[BACKEND] 「查个问题」做完了。已经建好 a.txt。',
+      'work-2',
+    );
   });
 
-  it('注入拒绝后退回队列只重试一次，第二次拒绝只留屏幕且通话不死', async () => {
+  it('注入拒绝后按指数退避继续重试且通话不死', async () => {
     const client = new FakeClient();
     await attachVoiceClient(client as never, 'session-injection-retry');
 
@@ -904,17 +925,11 @@ describe('终态结论节制播报', () => {
     expect(getActiveVoiceSessionId()).not.toBeNull();
     expect(injectItem).toHaveBeenCalledTimes(1);
 
-    lastOnEvent?.({ type: 'response.done' });
-    expect(injectItem).toHaveBeenCalledTimes(2);
+    await vi.waitFor(() => expect(injectItem).toHaveBeenCalledTimes(2), { timeout: 1_000 });
 
     lastOnEvent?.({ type: 'injection.rejected', message: 'still busy' });
-    lastOnEvent?.({ type: 'response.done' });
-    expect(injectItem).toHaveBeenCalledTimes(2);
+    await vi.waitFor(() => expect(injectItem).toHaveBeenCalledTimes(3), { timeout: 1_500 });
     expect(getActiveVoiceSessionId()).not.toBeNull();
-    expect(voiceLogger.warn).toHaveBeenCalledWith(
-      'narration injection dropped after retry',
-      expect.objectContaining({ workItemId: narration.workItemId }),
-    );
   });
 
   it('注入确认窗内连接真的 close 仍按致命错误释放通话', async () => {
@@ -926,7 +941,7 @@ describe('终态结论节制播报', () => {
     await vi.waitFor(() => expect(getActiveVoiceSessionId()).toBeNull());
   });
 
-  it('连续压过两个用户轮次就丢弃，并留下可诊断日志', async () => {
+  it('终态连续压过两个用户轮仍保留，轮末继续尝试送达', async () => {
     const client = new FakeClient();
     await attachVoiceClient(client as never, 'session-stale-narration');
 
@@ -935,10 +950,8 @@ describe('终态结论节制播报', () => {
     lastOnEvent?.({ type: 'speech.started' });
     lastOnEvent?.({ type: 'response.done' });
 
-    expect(injectItem).not.toHaveBeenCalled();
-    // R5 起九个丢弃分支共用一个出口，原因从消息串挪进 reason 字段（受控词表）。
-    // 断言跟着挪到新形状，并**多钉一个 reason**：守的东西没少，还多了一档。
-    expect(voiceLogger.info).toHaveBeenCalledWith(
+    expect(injectItem).toHaveBeenCalledTimes(1);
+    expect(voiceLogger.info).not.toHaveBeenCalledWith(
       'narration dropped',
       expect.objectContaining({ workItemId: narration.workItemId, reason: 'suppressed_two_turns' }),
     );
@@ -952,7 +965,10 @@ describe('终态结论节制播报', () => {
     voiceDispatchProbe.narrate?.({ ...narration, summary: '重复终态不该覆盖。' });
 
     expect(injectItem).toHaveBeenCalledTimes(1);
-    expect(injectItem).toHaveBeenCalledWith('[BACKEND] 「建个文件」做完了。已经建好 a.txt。');
+    expect(injectItem).toHaveBeenCalledWith(
+      '[BACKEND] 「建个文件」做完了。已经建好 a.txt。',
+      narration.workItemId,
+    );
   });
 
   it('挂断清掉仍在队列里的 narration，后到 response.done 也不注入', async () => {
@@ -1793,13 +1809,15 @@ describe('中途进度节流闸（回放时间线）', () => {
   });
 
   /** 建连必须在真实计时器下完成（连接链路自带定时器），连上之后再接管时间轴。 */
-  async function dialThenFreezeClock(sessionId: string): Promise<void> {
-    await attachVoiceClient(new FakeClient() as never, sessionId);
+  async function dialThenFreezeClock(sessionId: string): Promise<FakeClient> {
+    const client = new FakeClient();
+    await attachVoiceClient(client as never, sessionId);
     vi.useFakeTimers();
+    return client;
   }
 
   it('首条进度必须等过延迟窗——推进前不播，推进后才播', async () => {
-    await dialThenFreezeClock('session-milestone-delay');
+    const client = await dialThenFreezeClock('session-milestone-delay');
     dispatch();
     injectItem.mockClear();
 
@@ -1810,16 +1828,18 @@ describe('中途进度节流闸（回放时间线）', () => {
     await vi.advanceTimersByTimeAsync(VOICE_MILESTONE_FIRST_DELAY_MS + 1);
     voiceDispatchProbe.narrate?.(milestone(2));
     expect(injectItem).toHaveBeenCalledTimes(1);
+    ackNarration(client, milestone(2).workItemId);
   });
 
   it('间隔窗内的第二条被丢；推过间隔窗才放行', async () => {
-    await dialThenFreezeClock('session-milestone-interval');
+    const client = await dialThenFreezeClock('session-milestone-interval');
     dispatch();
     await vi.advanceTimersByTimeAsync(VOICE_MILESTONE_FIRST_DELAY_MS + 1);
     injectItem.mockClear();
 
     voiceDispatchProbe.narrate?.(milestone(1));
     expect(injectItem).toHaveBeenCalledTimes(1);
+    ackNarration(client, milestone(1).workItemId);
 
     // 间隔窗内：丢。
     await vi.advanceTimersByTimeAsync(VOICE_MILESTONE_MIN_INTERVAL_MS - 1000);
@@ -1830,16 +1850,20 @@ describe('中途进度节流闸（回放时间线）', () => {
     await vi.advanceTimersByTimeAsync(2000);
     voiceDispatchProbe.narrate?.(milestone(3));
     expect(injectItem).toHaveBeenCalledTimes(2);
+    ackNarration(client, milestone(3).workItemId);
   });
 
   it('每件活最多播上限条，之后一律沉默', async () => {
-    await dialThenFreezeClock('session-milestone-cap');
+    const client = await dialThenFreezeClock('session-milestone-cap');
     dispatch();
     await vi.advanceTimersByTimeAsync(VOICE_MILESTONE_FIRST_DELAY_MS + 1);
     injectItem.mockClear();
 
     for (let n = 1; n <= VOICE_MILESTONE_MAX_PER_WORK_ITEM + 2; n += 1) {
       voiceDispatchProbe.narrate?.(milestone(n));
+      if (n <= VOICE_MILESTONE_MAX_PER_WORK_ITEM) {
+        ackNarration(client, milestone(n).workItemId);
+      }
       await vi.advanceTimersByTimeAsync(VOICE_MILESTONE_MIN_INTERVAL_MS + 1);
     }
 
@@ -1900,7 +1924,10 @@ describe('中途进度节流闸（回放时间线）', () => {
     // 「『写周报』做完了。」——而真实 summary 里紧接着写「整件事还没做完」。
     // 这里不能用 not.toContain('做完了') 之类的宽否定：进度台词本身就含「这步做完了」
     // （指单步），宽否定会误红，也会在措辞一改动就退化成永远成立的空断言。
-    expect(injectItem).toHaveBeenCalledWith(`[BACKEND] ${milestone(1).summary}`);
+    expect(injectItem).toHaveBeenCalledWith(
+      `[BACKEND] ${milestone(1).summary}`,
+      milestone(1).workItemId,
+    );
   });
 
   it('终态不受任何进度闸限制（正对照）', async () => {
@@ -1952,13 +1979,15 @@ describe('worth-hearing 标记（只加权，绝不豁免 userSpeaking）', () =
     await endActiveVoiceSession();
   });
 
-  async function dialThenFreezeClock(sessionId: string): Promise<void> {
-    await attachVoiceClient(new FakeClient() as never, sessionId);
+  async function dialThenFreezeClock(sessionId: string): Promise<FakeClient> {
+    const client = new FakeClient();
+    await attachVoiceClient(client as never, sessionId);
     vi.useFakeTimers();
+    return client;
   }
 
   it('首条延迟窗内：普通进度被丢，worth-hearing 照播', async () => {
-    await dialThenFreezeClock('session-wh-firstdelay');
+    const client = await dialThenFreezeClock('session-wh-firstdelay');
     dispatch();
     injectItem.mockClear();
 
@@ -1969,16 +1998,18 @@ describe('worth-hearing 标记（只加权，绝不豁免 userSpeaking）', () =
     voiceDispatchProbe.narrate?.(worthHearing(1));
     expect(injectItem).toHaveBeenCalledTimes(1);
     expect(injectItem.mock.calls[0]?.[0]).toContain('卡住了');
+    ackNarration(client, worthHearing(1).workItemId);
   });
 
   it('最小间隔窗内：普通进度被丢，worth-hearing 照播', async () => {
-    await dialThenFreezeClock('session-wh-interval');
+    const client = await dialThenFreezeClock('session-wh-interval');
     dispatch();
     await vi.advanceTimersByTimeAsync(VOICE_MILESTONE_FIRST_DELAY_MS + 1);
     injectItem.mockClear();
 
     voiceDispatchProbe.narrate?.(milestone(1));
     expect(injectItem).toHaveBeenCalledTimes(1);
+    ackNarration(client, milestone(1).workItemId);
 
     // 刚播完，间隔窗正关着。
     voiceDispatchProbe.narrate?.(milestone(2));
@@ -1986,16 +2017,18 @@ describe('worth-hearing 标记（只加权，绝不豁免 userSpeaking）', () =
 
     voiceDispatchProbe.narrate?.(worthHearing(1));
     expect(injectItem).toHaveBeenCalledTimes(2);
+    ackNarration(client, worthHearing(1).workItemId);
   });
 
   it('per-item 上限只让一格：上限外播得出第 N+1 条，播不出第 N+2 条', async () => {
-    await dialThenFreezeClock('session-wh-cap');
+    const client = await dialThenFreezeClock('session-wh-cap');
     dispatch();
     await vi.advanceTimersByTimeAsync(VOICE_MILESTONE_FIRST_DELAY_MS + 1);
     injectItem.mockClear();
 
     for (let n = 1; n <= VOICE_MILESTONE_MAX_PER_WORK_ITEM; n += 1) {
       voiceDispatchProbe.narrate?.(milestone(n));
+      ackNarration(client, milestone(n).workItemId);
       await vi.advanceTimersByTimeAsync(VOICE_MILESTONE_MIN_INTERVAL_MS + 1);
     }
     expect(injectItem).toHaveBeenCalledTimes(VOICE_MILESTONE_MAX_PER_WORK_ITEM);
@@ -2003,6 +2036,7 @@ describe('worth-hearing 标记（只加权，绝不豁免 userSpeaking）', () =
     // 超额那一格：重要转折不该被上限静默吞掉。
     voiceDispatchProbe.narrate?.(worthHearing(1));
     expect(injectItem).toHaveBeenCalledTimes(VOICE_MILESTONE_MAX_PER_WORK_ITEM + 1);
+    ackNarration(client, worthHearing(1).workItemId);
 
     // 但只让一格——豁免不是无限额度，否则一件活能把整通电话说满。
     await vi.advanceTimersByTimeAsync(VOICE_MILESTONE_MIN_INTERVAL_MS + 1);

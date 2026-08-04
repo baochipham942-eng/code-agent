@@ -121,6 +121,8 @@ class VoiceCallBridge {
   private inputDeviceSwitchQueue: Promise<void> = Promise.resolve();
   private pausedCandidateId: string | null = null;
   private playbackPausedAt = 0;
+  /** Host 标记为播报响应后，等真实播放管线接收首帧再回执。 */
+  private pendingNarrationPlaybackId: string | null = null;
   /** 有界取消墓碑：上游 cancel 后仍可能把旧 final/done 发完。 */
   private cancelledResponseIds = new Set<string>();
   /** 同一次拨号每种失效只上报一次，避免 WebSocket error + close 双事件重复入账。 */
@@ -132,6 +134,13 @@ class VoiceCallBridge {
 
   private send(command: VoiceClientCommand): void {
     if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify(command));
+  }
+
+  private acknowledgeNarrationPlayback(): void {
+    const narrationId = this.pendingNarrationPlaybackId;
+    if (!narrationId) return;
+    this.pendingNarrationPlaybackId = null;
+    this.send({ type: 'narration.playback_started', narrationId });
   }
 
   private reportConnectionFailure(
@@ -489,6 +498,7 @@ class VoiceCallBridge {
     this.reportedFailureCodes.clear();
     this.pausedCandidateId = null;
     this.playbackPausedAt = 0;
+    this.pendingNarrationPlaybackId = null;
 
     const activeAgentId = readActiveAgentSessionMap()[sessionId];
     const { interruptMode, echoCancellation, inputDevice } = await readVoiceRuntimeSettings();
@@ -555,6 +565,7 @@ class VoiceCallBridge {
     };
 
     ws.onclose = (closeEvent) => {
+      this.pendingNarrationPlaybackId = null;
       this.audio?.stop();
       this.audio = null;
       this.audioReady = null;
@@ -628,6 +639,7 @@ class VoiceCallBridge {
         if (ws.readyState === WebSocket.OPEN) ws.send(pcm16k.buffer as ArrayBuffer);
       },
       onLevels: (mic: number, playback: number) => this.store().levelsChanged(mic, playback),
+      onPlaybackStarted: () => this.acknowledgeNarrationPlayback(),
       onError: (code: VoiceMessageCode, detail?: string) => {
         // message 只作兜底/排查；给用户看的文案由 resolveVoiceMessage 按 code 查 i18n。
         this.presentFailure({ code, message: detail ?? code });
@@ -701,6 +713,7 @@ class VoiceCallBridge {
           if (ws.readyState === WebSocket.OPEN) ws.send(pcm16k.buffer as ArrayBuffer);
         },
         onLevels: (mic, playback) => this.store().levelsChanged(mic, playback),
+        onPlaybackStarted: () => this.acknowledgeNarrationPlayback(),
         onError: () => {
           void this.fallbackFromNative(ws, interruptMode, pipeline);
         },
@@ -864,9 +877,12 @@ class VoiceCallBridge {
         });
         break;
       case 'speech.stopped':
+        break;
       case 'response.created':
+        this.pendingNarrationPlaybackId = event.narrationId ?? null;
         break;
       case 'response.cancelled':
+        this.pendingNarrationPlaybackId = null;
         this.cancelledResponseIds.add(event.responseId);
         while (this.cancelledResponseIds.size > 32) {
           const oldest = this.cancelledResponseIds.values().next().value as string | undefined;
@@ -978,6 +994,7 @@ class VoiceCallBridge {
         break;
       case 'session.ended':
         this.intentionalClose = true;
+        this.pendingNarrationPlaybackId = null;
         this.flushReveal();
         this.stopFocusReporting();
         this.audio?.stop();
@@ -1003,6 +1020,7 @@ class VoiceCallBridge {
 
   hangUp(): void {
     this.intentionalClose = true;
+    this.pendingNarrationPlaybackId = null;
     // 挂断即定稿：把没揭示完的尾巴一次放完并停表，通话结束不留半句，
     // 也不留一个还在往已 reset 的 store 里写字的定时器。
     this.flushReveal();

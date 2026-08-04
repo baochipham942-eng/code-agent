@@ -34,17 +34,26 @@ import { addTokenUsage, recordVoiceCall } from './voiceUsageLedger';
 import { consumeVoiceCallFailure, observeVoiceEventFailure, persistVoiceCallFailure } from './voiceFailurePersistence';
 import { VOICE_TOOL_DEFINITIONS, executeVoiceTool } from './voiceTools';
 import type { VoiceLiveSettings } from '../../../shared/contract/settings';
-import { describeWorkFailure } from './workFailureDescription';
+import { reportVoiceWorkFailure } from './voiceWorkFailureReporter';
 import { detectHangupIntent } from './hangupIntent';
 import { decideVoiceInterrupt, shouldDisarmHangup } from './voiceTurnTaking';
 import {
   createNarrationState,
+  dismissNarrationsByPrefix,
   enqueueOrInjectNarration,
   flushNarrationQueue,
   handleNarrationInjectionRejected,
+  handleNarrationPlaybackInterrupted,
+  handleNarrationPlaybackStarted,
   markNarrationUserTurn,
+  settleNarrationsForTeardown,
   type NarrationState,
 } from './voiceNarrationQueue';
+import {
+  beginVoiceQuestionSession,
+  endVoiceQuestionSession,
+  handleVoiceQuestionTranscript,
+} from './voiceQuestionBridge';
 
 const logger = createLogger('VoiceSession');
 
@@ -363,81 +372,6 @@ function closeClientTerminal(client: WsSocket): void {
 }
 
 /**
- * final 字幕落到绑定会话的消息流。走 sessionManager 既有写入路径，不新造存储。
- * 只落文本，不落音频（方案 §8.1）。
- * 传入 counter 时，每次成功落库就 +1——挂断摘要的 transcriptCount 全靠它，
- * 漏一个调用点就会把有对话的电话报成没对话。
- */
-/**
- * 派出去的活失败了，这里做两件事（G1，2026-07-28）：
- *
- * 1. **通话里的人当场知道** —— 走既有 notice 通道（同 VOICE_TOOLS_DROPPED 先例），
- *    不新建机制。
- * 2. **失败留痕，事后还找得到** —— notice 是通话态的一次性提示，挂断/切走就没了。
- *    失败必须像通话摘要那样落进消息流，否则「我明明看到它失败了」第二天无从复查。
- *
- * 曾经的第三件「告诉通话模型它派的活死了」（「报喜」的根因：brain 只在被问时才看账本）
- * 已归并到发言人协议的回流通道，见本函数末尾注释。
- *
- * 两件事互不依赖：任一失败都不许影响另一件，也不许把异常抛回 onWorkItem。
- * 通话可能已经挂断（活比通话活得久，见 endVoiceDispatch 顶注）——那时 1 无处可送，
- * 但 2 照样要做，而且那正是最需要它的场景。
- */
-async function reportWorkFailure(
-  neoSessionId: string,
-  voiceSessionId: string,
-  clientRef: { current: WsSocket },
-  item: VoiceWorkItem,
-): Promise<void> {
-  const failure = describeWorkFailure(item.detail, item.failure);
-  const stillOnThisCall = active?.id === voiceSessionId;
-  logger.warn('voice work item failed', {
-    voiceSessionId,
-    title: item.title,
-    detail: failure.detail,
-    stillOnThisCall,
-  });
-
-  // 1. 通话里当场可见（i18n 表用 {reason} 占位，message 只送原因本身）
-  if (stillOnThisCall) {
-    send(clientRef.current, {
-      type: 'notice',
-      code: 'VOICE_WORK_FAILED',
-      message: failure.screen,
-      ...(failure.detail ? { detail: failure.detail } : {}),
-    });
-  }
-
-  // 2. 落进消息流，挂断后仍可复查
-  try {
-    await getSessionManager().addMessageToSession(neoSessionId, {
-      id: `voice-work-failed-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      role: 'system',
-      content: `语音派出的任务「${item.title}」${failure.screen}`,
-      timestamp: Date.now(),
-      // workItemId 必须落进 metadata：渲染侧要把这条失败留痕对回它属于的那张任务卡，
-      // 唯一能对得准的只有 id。靠正文文本反解标题看着也能跑，但那是拿人话当协议——
-      // 文案一改、进一次 i18n，失败就静默不再显示（而这条链的全部意义就是别让失败静默）。
-      metadata: {
-        source: 'voice',
-        voiceWorkFailure: {
-          workItemId: item.id,
-          title: item.title,
-          ...(failure.detail ? { detail: failure.detail } : {}),
-        },
-      },
-    });
-  } catch (err) {
-    logger.warn('failed to persist work failure', { message: err instanceof Error ? err.message : 'unknown' });
-  }
-
-  // 「告诉通话模型它派的活死了」这第三件事，现在归发言人协议的回流通道
-  // （onWorkNarration → injectItem）。此前是往 instructions 里塞一段
-  // <work_failed_notice>——instructions 是「你是谁」，一次性事件塞进去会变成
-  // 永久人设，下一轮、下下轮它还在那儿。同一件事只留一条路。
-}
-
-/**
  * 整条字幕只有工具标签（R6，2026-07-30 真机：模型把 `<end_call>` 当话「说」了出来）。
  *
  * 标签是模型和我们之间的暗号，不是说给用户听的话——不该上屏，也不该落进消息流。
@@ -610,7 +544,8 @@ async function teardown(reason: string): Promise<void> {
   const session = active;
   if (!session) return;
   session.ending = true;
-  session.narration.queue.clear();
+  endVoiceQuestionSession(session.neoSessionId);
+  settleNarrationsForTeardown(session);
   active = null;
   clearTimeout(session.maxDurationTimer);
   if (session.graceTimer) clearTimeout(session.graceTimer);
@@ -867,7 +802,13 @@ async function connectAndBind(
     // 但没有任何人把这件事说出来——通话条只渲染 queued/running（VoiceChrome 的
     // activeWorkItems 过滤），failed 就这么无声消失；通话模型也没人告诉它，
     // 于是继续说「已经写好了」。第五例「建好不接电」。
-    onWorkFailed: (item) => void reportWorkFailure(neoSessionId, id, clientRef, item),
+    onWorkFailed: (item) => void reportVoiceWorkFailure({
+      neoSessionId,
+      voiceSessionId: id,
+      item,
+      stillOnThisCall: active?.id === id,
+      emitNotice: (event) => send(clientRef.current, event),
+    }),
     // 发言人协议（W6）：一件活落终态 → 把结论塞进实时会话，模型用第一人称念给用户听。
     // 注意 upstream 此刻还不存在（绑定必须早于建连），所以读 active 而不是闭包捕获。
     onWorkNarration: (narration) => {
@@ -942,17 +883,22 @@ async function connectAndBind(
           && isPureToolTagText(event.done ? event.text : assistantBuffer + event.text);
         // injection.rejected 是 Host 内部的重试信号；Renderer 没有用户动作要做。
         let suppressUserFragment = false;
+        let voiceQuestionConsumed = false;
         if (event.type === 'user.transcript') {
           if (active?.id === id) {
+            voiceQuestionConsumed = event.done
+              && handleVoiceQuestionTranscript(neoSessionId, event.text);
             const transcriptCandidate = resolveInterruptCandidate(active, {
               candidateId: event.candidateId,
               itemId: event.itemId,
             });
             if (event.itemId && transcriptCandidate) transcriptCandidate.candidate.itemId ??= event.itemId;
-            evaluateInterrupt(active, event.text, event.done ? 'final' : 'partial', {
-              candidateId: event.candidateId,
-              itemId: event.itemId,
-            });
+            if (!voiceQuestionConsumed) {
+              evaluateInterrupt(active, event.text, event.done ? 'final' : 'partial', {
+                candidateId: event.candidateId,
+                itemId: event.itemId,
+              });
+            }
             if (event.done && event.itemId) {
               const candidate = findInterruptCandidateByItemId(active, event.itemId)?.candidate;
               const classification = candidate?.classification;
@@ -993,7 +939,7 @@ async function connectAndBind(
           // 挂断确定性闸（A1）：只看用户说的话，绝不看 assistant 字幕——
           // 模型复述「好的，挂断」会把它自己的话当成用户的指令。
           // 反过来（R2）：告别窗里的新一句话若不是挂断，就是反悔，解除武装继续通话。
-          if (active?.id === id) {
+          if (active?.id === id && !voiceQuestionConsumed) {
             if (detectHangupIntent(event.text)) requestEndCall('user-hangup-intent');
             else if (shouldDisarmHangup(event.text)) disarmEndCall();
             else endCallRequested.awaitingUserTurn = false;
@@ -1142,6 +1088,21 @@ async function connectAndBind(
     }, VOICE_SESSION_MAX_DURATION_MS),
   };
   active = session;
+  beginVoiceQuestionSession({
+    neoSessionId,
+    dismiss: (narrationPrefix) => {
+      if (active?.id === id) dismissNarrationsByPrefix(active, narrationPrefix);
+    },
+    speak: ({ narrationId, title, text }) => {
+      if (active?.id !== id) return;
+      enqueueOrInjectNarration(active, {
+        workItemId: narrationId,
+        status: 'announcement',
+        title,
+        summary: text,
+      });
+    },
+  });
   if (upstream.kind === 'relay') {
     session.inboundAudioWatchdogTimer = setTimeout(() => {
       if (active?.id !== id || session.inboundAudioFrames > 0) return;
@@ -1248,6 +1209,7 @@ function bindClientHandlers(session: ActiveSession, client: WsSocket): void {
     else if (command.type === 'interrupt.playback') {
       const candidate = session.interruption.candidates.get(command.candidateId);
       if (candidate) candidate.assistantPlaying = command.playing;
+      if (command.playing) handleNarrationPlaybackInterrupted(session);
       logger.info('voice interrupt playback observed', {
         voiceSessionId: id,
         candidateId: command.candidateId,
@@ -1255,6 +1217,9 @@ function bindClientHandlers(session: ActiveSession, client: WsSocket): void {
         playedMs: command.playedMs,
         queuedMs: command.queuedMs,
       });
+    }
+    else if (command.type === 'narration.playback_started') {
+      handleNarrationPlaybackStarted(session, command.narrationId);
     }
     else if (command.type === 'focus') applyFocus(session, command.context);
     // PTT/点按手动模式：Renderer 松开（或再点按）后提交这一轮。

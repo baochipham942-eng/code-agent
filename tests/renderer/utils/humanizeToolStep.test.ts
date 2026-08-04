@@ -1,12 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { humanizeToolStep, humanizeToolGroupLabel } from '../../../src/renderer/utils/humanizeToolStep';
+import {
+  humanizeToolStep,
+  humanizeToolGroupLabel,
+  isInternalStreamTool,
+  getToolFilePath,
+} from '../../../src/renderer/utils/humanizeToolStep';
 import { zh } from '../../../src/renderer/i18n/zh';
 import { en } from '../../../src/renderer/i18n/en';
 
 describe('humanizeToolStep — per-category snapshots (zh)', () => {
   it('read: file path shortened', () => {
     expect(humanizeToolStep('Read', { file_path: '/Users/me/project/docs/报告.md' }, zh))
-      .toBe('读取了 .../docs/报告.md');
+      .toBe('读取了 …/docs/报告.md');
   });
 
   it('read: fallback with no path', () => {
@@ -46,7 +51,7 @@ describe('humanizeToolStep — per-category snapshots (zh)', () => {
 
   it('listDir', () => {
     expect(humanizeToolStep('list_directory', { path: '/Users/me/project/src/renderer' }, zh))
-      .toBe('查看了 .../src/renderer 目录');
+      .toBe('查看了 …/src/renderer 目录');
   });
 
   it('webSearch', () => {
@@ -102,8 +107,26 @@ describe('humanizeToolStep — per-category snapshots (zh)', () => {
     expect(humanizeToolStep('plan_read', {}, zh)).toBe('查看了计划');
   });
 
-  it('skill', () => {
-    expect(humanizeToolStep('skill', { skill: 'lark-doc' }, zh)).toBe('执行了技能 lark-doc');
+  it('skill (lowercase): uses skill name', () => {
+    expect(humanizeToolStep('skill', { skill: 'lark-doc' }, zh)).toBe('使用了技能 lark-doc');
+  });
+
+  it('Skill (PascalCase schema name): reads command arg', () => {
+    expect(humanizeToolStep('Skill', { command: 'frontend-slides' }, zh))
+      .toBe('使用了技能 frontend-slides');
+  });
+
+  it('TaskManager: human verb, never the internal tool name on the main line', () => {
+    const line = humanizeToolStep('TaskManager', { action: 'update', taskId: '1' }, zh);
+    expect(line).toBe('更新了任务');
+    expect(line).not.toMatch(/TaskManager/i);
+  });
+
+  it('ToolSearch: detail wording only; never leaks ToolSearch as "使用了 …"', () => {
+    const line = humanizeToolStep('ToolSearch', { query: 'browser' }, zh);
+    expect(line).toBe('查找了可用工具');
+    expect(line).not.toMatch(/ToolSearch/i);
+    expect(line).not.toMatch(/使用了/);
   });
 
   it('screenshot', () => {
@@ -122,8 +145,10 @@ describe('humanizeToolStep — per-category snapshots (zh)', () => {
     expect(humanizeToolStep('memory_search', {}, zh)).toBe('搜索了记忆');
   });
 
-  it('unknown tool: fallback names the tool, not raw jargon', () => {
-    expect(humanizeToolStep('some_future_tool', {}, zh)).toBe('使用了 some_future_tool');
+  it('unknown tool: main line never exposes the internal tool name', () => {
+    const line = humanizeToolStep('some_future_tool', {}, zh);
+    expect(line).toBe('执行了一个步骤');
+    expect(line).not.toContain('some_future_tool');
   });
 
   it('shortDescription wins over the template when it matches the UI language', () => {
@@ -139,9 +164,9 @@ describe('humanizeToolStep — shortDescription 语种不符时退回模板', ()
       .toBe('写入了 gear.txt');
   });
 
-  it('中文界面下未识别的工具也退回中文兜底', () => {
+  it('中文界面下未识别的工具也退回中文兜底（不露工具名）', () => {
     expect(humanizeToolStep('some_future_tool', {}, zh, 'Did something'))
-      .toBe('使用了 some_future_tool');
+      .toBe('执行了一个步骤');
   });
 
   it('英文界面拒绝中文 shortDescription，走模板', () => {
@@ -159,7 +184,8 @@ describe('humanizeToolStep — en locale parity', () => {
   it('renders the same categories in English', () => {
     expect(humanizeToolStep('Read', { file_path: 'report.md' }, en)).toBe('Read report.md');
     expect(humanizeToolStep('Bash', { command: 'ls src/' }, en)).toBe('Ran command ls src/');
-    expect(humanizeToolStep('unknown_tool', {}, en)).toBe('Used unknown_tool');
+    expect(humanizeToolStep('unknown_tool', {}, en)).toBe('Ran a step');
+    expect(humanizeToolStep('TaskManager', {}, en)).toBe('Updated tasks');
     expect(humanizeToolStep('mcp__lark__im_v1_message_create', {}, en)).toBe('Sent a message in Lark');
   });
 
@@ -215,8 +241,53 @@ describe('humanizeToolGroupLabel', () => {
       .toBe('调用了 1 次工具、派发了 1 次子任务');
   });
 
-  it('falls back unrecognized tools into the "used" bucket', () => {
+  it('TaskManager/todo land in planned bucket — never "使用了 N 次工具"', () => {
+    const label = humanizeToolGroupLabel(['TaskManager', 'TaskManager', 'todo_write'], zh);
+    expect(label).toBe('更新了 3 次任务');
+    expect(label).not.toMatch(/使用了/);
+    expect(label).not.toMatch(/TaskManager/i);
+  });
+
+  // 反例：TaskManager 不得出现在用户可见主行
+  it('anti: TaskManager never appears in user-visible main-line group label', () => {
+    const label = humanizeToolGroupLabel(['TaskManager', 'Bash'], zh);
+    expect(label).toContain('更新了 1 次任务');
+    expect(label).toContain('运行了 1 条命令');
+    expect(label).not.toMatch(/TaskManager/i);
+    expect(label).not.toMatch(/使用了/);
+  });
+
+  // 反例：ToolSearch 不进主流
+  it('anti: ToolSearch is excluded from main-stream aggregate label', () => {
+    expect(humanizeToolGroupLabel(['ToolSearch'], zh)).toBe('');
+    expect(humanizeToolGroupLabel(['ToolSearch', 'ToolSearch'], zh)).toBe('');
+    const mixed = humanizeToolGroupLabel(['Read', 'ToolSearch', 'Bash'], zh);
+    expect(mixed).toBe('查看了 1 次内容、运行了 1 条命令');
+    expect(mixed).not.toMatch(/ToolSearch/i);
+    expect(mixed).not.toMatch(/查找了/);
+  });
+
+  it('unrecognized tools fall into the neutral "ran N steps" used bucket', () => {
+    expect(humanizeToolGroupLabel(['some_future_tool', 'another_mystery'], zh))
+      .toBe('执行了 2 个步骤');
+  });
+
+  it('todo + askUser split into planned + used buckets', () => {
     expect(humanizeToolGroupLabel(['todo_write', 'AskUserQuestion'], zh))
-      .toBe('使用了 2 次工具');
+      .toBe('更新了 1 次任务、执行了 1 个步骤');
+  });
+});
+
+describe('isInternalStreamTool / getToolFilePath', () => {
+  it('marks ToolSearch as internal stream activity', () => {
+    expect(isInternalStreamTool('ToolSearch')).toBe(true);
+    expect(isInternalStreamTool('Read')).toBe(false);
+    expect(isInternalStreamTool('TaskManager')).toBe(false);
+  });
+
+  it('extracts full file path for preview routing', () => {
+    expect(getToolFilePath('Read', { file_path: '/Users/me/project/docs/report.md' }))
+      .toBe('/Users/me/project/docs/report.md');
+    expect(getToolFilePath('Bash', { command: 'ls' })).toBeNull();
   });
 });

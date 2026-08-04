@@ -351,6 +351,12 @@ const TaskRecordRow = ({
   const { t } = useI18n();
   const rail = deriveTaskRailView(task, run);
   const dependencySummary = dependencySummaryLabel(rail.dependencySummary, t);
+  const rw = t.taskStatusPanels.runWorkbench;
+  const detailLabel = task.status === 'blocked'
+    ? rw.reason
+    : task.status === 'completed'
+      ? rw.result
+      : rw.currentAction;
 
   return (
     <div
@@ -390,6 +396,12 @@ const TaskRecordRow = ({
             <TaskRailStepRow key={`${step.originalIndex}:${step.title}`} step={step} />
           ))}
         </div>
+      )}
+
+      {/* 结果/原因/当前动作行只挂在非 checklist 行（后台任务等）——checklist 会话任务的
+          当前动作与「任务」模块进度线的 phase 是同一份内容，不重复（四模块禁止内容重复） */}
+      {rail.mode !== 'checklist' && rail.currentAction && (
+        <div className="mt-1 truncate text-[11px] text-zinc-500">{detailLabel}：{rail.currentAction}</div>
       )}
 
       {showOutputRefs && task.outputRefs && task.outputRefs.length > 0 && (

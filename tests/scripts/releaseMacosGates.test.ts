@@ -155,6 +155,22 @@ describe('macOS release fail-closed gates', () => {
     expect(result.stderr).toContain('Apple notarization credentials are incomplete');
   });
 
+  it('strips node-gyp object files before the signing passes', () => {
+    // v0.29.0 与 v0.30.0 的 x64 腿都死在这里：keytar 在 x64 runner 上没有预编译包、
+    // 就地编译留下 obj.target/*.o，它们是 Mach-O 却进不了两趟签名的白名单，
+    // 于是 verify-bundle-signatures 判红、publish 跳过、整次发版零分发。
+    // 钉三件事：① 剥除发生在签名之前 ② 判据是 `*.o` 后缀而不是 obj.target 路径
+    // （换个原生模块/构建器就换个目录名）③ 剥的是文件不是整个目录。
+    const bundleScript = readRepoFile('scripts/tauri-release-bundle.sh');
+
+    const stripIndex = bundleScript.indexOf('-name "*.o" -print0');
+    const signIndex = bundleScript.indexOf('signing nested Mach-O binaries inside');
+    expect(stripIndex).toBeGreaterThan(-1);
+    expect(signIndex).toBeGreaterThan(-1);
+    expect(stripIndex).toBeLessThan(signIndex);
+    expect(bundleScript).toContain('stripping build artifact');
+  });
+
   it('keeps notarization, Gatekeeper, TeamIdentifier, and control-plane checks in verify script', () => {
     const verifyScript = readRepoFile('scripts/verify-macos-release.sh');
 

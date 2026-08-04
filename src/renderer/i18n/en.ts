@@ -37,8 +37,11 @@ import { localOpsEn } from './localOps';
 import { onboardingEn } from './onboarding';
 import { workbenchTabsEn } from './workbenchTabs';
 import { activityPanelEn, canvasActorEn } from './domains';
+import { imageNarrationEn } from './imageNarration';
+import { mermaidEn } from './mermaid';
 export const en: Translations = {
   ...canvasActorEn, ...activityPanelEn,
+  ...imageNarrationEn, ...mermaidEn,
   ...capabilityHubEn,
   ...neoTopicsEn,
   ...projectSpaceEn,
@@ -916,20 +919,6 @@ export const en: Translations = {
   ...labNanogptEn,
   ...labLlamafactoryEn,
   ...labAlignmentEn,
-
-  mermaid: {
-    zoomIn: 'Zoom in',
-    zoomOut: 'Zoom out',
-    zoomReset: 'Fit to view',
-    zoomHint: '⌘/Ctrl + scroll to zoom, drag to pan',
-    copyCode: 'Code',
-    copied: 'Copied!',
-    selectedLabel: 'Selected: ',
-    editPlaceholder: 'Describe the change, e.g. "split into two steps"',
-    send: 'Send',
-    cancel: 'Cancel',
-    editPrompt: 'Please update "{label}" in this Mermaid diagram: {instruction}\n\nCurrent diagram source:\n{codeBlock}\nReply with the complete updated mermaid code block, keeping everything else unchanged.',
-  },
 
   // In-session permission tier switcher (ChatInput)
   permissionTier: {

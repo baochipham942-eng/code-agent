@@ -29,6 +29,7 @@ import { staleMoveNodeIds } from './canvasProposalApproval';
 import { useAutonomyEnvelopeReview } from './useAutonomyEnvelopeReview';
 import { useCanvasVideoRequest } from './useCanvasVideoRequest';
 import { CanvasAutonomyReviewBar } from './CanvasAutonomyReviewBar';
+import { DesignNarrationBar } from './DesignNarrationBar';
 import { useDesignAutonomyStore } from './designAutonomyStore';
 import { DiagramToolbar } from './DiagramToolbar';
 import { reduceDiagram, type ShapeTool } from './diagramReducer';
@@ -887,6 +888,9 @@ export const DesignCanvas: React.FC<{
           </button>
         </div>
       )}
+
+      {/* 复述条与错误条互斥，且共用同一道 showErrorBar 闸（详见 DesignNarrationBar）。 */}
+      {showErrorBar && <DesignNarrationBar shiftedDown={Boolean(autonomyEnvelope && !autonomy.pendingRequest)} />}
 
       {showErrorBar && error && (
         <div

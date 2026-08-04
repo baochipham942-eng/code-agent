@@ -45,6 +45,13 @@ import {
   buildDesignSelectionContext,
   firstSelectedImageNode,
 } from './designSelectionContext';
+import {
+  buildCanvasBriefing,
+  buildCanvasFailure,
+  buildCanvasVerdict,
+  type CanvasOpSpec,
+  type PixelSize,
+} from './designNarration';
 
 async function ensureDir(dirPath: string): Promise<void> {
   try {
@@ -184,6 +191,21 @@ export function buildVariantNode(
   };
 }
 
+/**
+ * 底图的**自然像素**尺寸。复述/验收句拿它和新图对数，必须与新图同单位——
+ * 节点上的 width/height 是画布显示尺寸，与原图像素不保证一致（见 editByAnnotation 注释），
+ * 拿它当基准会误报「尺寸变了」。读不出来时返回 undefined，调用方据此省掉那条断言。
+ */
+async function readBaseSize(runDir: string, node: CanvasImageNode): Promise<PixelSize | undefined> {
+  const dataUrl = await readWorkspaceImageAsDataUrl(`${runDir}/${node.src}`);
+  return dataUrl ? await loadImageDims(dataUrl) : undefined;
+}
+
+/** 成本已知才进验收句；未知就不写这行（不拿 ¥0.00 冒充实测）。 */
+function formatCostText(costCny: number | undefined): string | undefined {
+  return typeof costCny === 'number' && costCny >= 0 ? formatCny(costCny) : undefined;
+}
+
 export function useDesignCanvasGeneration(): {
   generate: () => Promise<void>;
   generateVideo: (args?: { baseNode?: CanvasNode }) => Promise<void>;
@@ -250,7 +272,10 @@ export function useDesignCanvasGeneration(): {
       }
     }
 
+    // 复述句在付费 IPC 之前发出：参数直接拼，零模型调用；理解错了用户能立刻停手。
+    const spec: CanvasOpSpec = { op: 'generate', requirement: form.requirement, ratio: form.aspectRatio };
     useDesignCanvasStore.getState().setError(null);
+    useDesignCanvasStore.getState().setNarration(buildCanvasBriefing(t.imageNarration, spec));
     useDesignCanvasStore.getState().setGenerating(true);
     try {
       const res = await window.domainAPI?.invoke<{ path: string; actualModel: string; costCny: number }>(
@@ -301,10 +326,16 @@ export function useDesignCanvasGeneration(): {
       // 生成成功提交后清 Layer1 编辑栈（codex HIGH-3 时机）：整数组快照不能跨生成边界，
       // 否则跨界 undo 会还原到不含新节点的旧数组=静默删掉刚生成的图。失败/取消路径不清。
       useDesignCanvasStore.getState().clearEditHistory();
+      useDesignCanvasStore.getState().setNarration(
+        buildCanvasVerdict(t.imageNarration, spec, { width, height }, formatCostText(costCny)),
+      );
       useDesignCanvasStore.getState().setGenerating(false);
     } catch (e) {
       useDesignCanvasStore.getState().setGenerating(false);
-      useDesignCanvasStore.getState().setError(e instanceof Error ? e.message : t.design.errDispatch);
+      useDesignCanvasStore.getState().setNarration(null);
+      useDesignCanvasStore.getState().setError(
+        buildCanvasFailure(t.imageNarration, spec, e instanceof Error ? e.message : t.design.errDispatch),
+      );
     }
   }, [t]);
 
@@ -328,7 +359,14 @@ export function useDesignCanvasGeneration(): {
     const selectedIds = selectionCanvas.selectedIds.includes(baseNode.id) ? selectionCanvas.selectedIds : [baseNode.id];
     const selectionContext = buildDesignSelectionContext(selectionCanvas.nodes, selectedIds);
 
+    const spec: CanvasOpSpec = {
+      op: 'editRegion',
+      instruction,
+      regionCount: regions.length,
+      base: (await readBaseSize(runDir, baseNode)) ?? { width: baseNode.width, height: baseNode.height },
+    };
     useDesignCanvasStore.getState().setError(null);
+    useDesignCanvasStore.getState().setNarration(buildCanvasBriefing(t.imageNarration, spec));
     useDesignCanvasStore.getState().setGenerating(true);
     try {
       const res = await window.domainAPI?.invoke<{
@@ -353,6 +391,7 @@ export function useDesignCanvasGeneration(): {
       const costCny = res.data?.costCny;
       if (useDesignCanvasStore.getState().runDir !== runDir) {
         useDesignCanvasStore.getState().setGenerating(false);
+        useDesignCanvasStore.getState().setNarration(null);
         return;
       }
       const dataUrl = await readWorkspaceImageAsDataUrl(assetAbs);
@@ -383,10 +422,16 @@ export function useDesignCanvasGeneration(): {
       useDesignCanvasStore.getState().addNode(node);
       await saveCanvasDoc(runDir, useDesignCanvasStore.getState().toDoc());
       useDesignCanvasStore.getState().clearEditHistory(); // 成功提交后清 Layer1 编辑栈（同 generate）
+      useDesignCanvasStore.getState().setNarration(
+        buildCanvasVerdict(t.imageNarration, spec, { width, height }, formatCostText(costCny)),
+      );
       useDesignCanvasStore.getState().setGenerating(false);
     } catch (e) {
       useDesignCanvasStore.getState().setGenerating(false);
-      useDesignCanvasStore.getState().setError(e instanceof Error ? e.message : t.design.errDispatch);
+      useDesignCanvasStore.getState().setNarration(null);
+      useDesignCanvasStore.getState().setError(
+        buildCanvasFailure(t.imageNarration, spec, e instanceof Error ? e.message : t.design.errDispatch),
+      );
     }
   }, [t]);
 
@@ -401,8 +446,9 @@ export function useDesignCanvasGeneration(): {
       label: string,
       operation: CanvasPlacementOperation = 'variant',
       costCny?: number,
-    ): Promise<void> => {
-      if (useDesignCanvasStore.getState().runDir !== runDir) return;
+    ): Promise<PixelSize | undefined> => {
+      // 返回新图实测尺寸供验收句对数；run 已切走时返回 undefined = 这次结果没落到当前画布。
+      if (useDesignCanvasStore.getState().runDir !== runDir) return undefined;
       const dataUrl = await readWorkspaceImageAsDataUrl(assetAbs);
       if (!dataUrl) throw new Error(t.design.errTimeout);
       const { width, height } = await loadImageDims(dataUrl);
@@ -415,6 +461,7 @@ export function useDesignCanvasGeneration(): {
       useDesignCanvasStore.getState().addNode(node);
       await saveCanvasDoc(runDir, useDesignCanvasStore.getState().toDoc());
       useDesignCanvasStore.getState().clearEditHistory(); // 扩图/去水印成功提交后清 Layer1 编辑栈
+      return { width, height };
     },
     [t],
   );
@@ -432,7 +479,17 @@ export function useDesignCanvasGeneration(): {
         selectionCanvas.selectedIds.includes(baseNode.id) ? selectionCanvas.selectedIds : [baseNode.id],
       );
 
+      // 复述/验收按**实际走的那条入参形态**说话，判据与下面 payload 的二选一同一条（scales 优先）：
+      // 说扩图方向却走了四向 scale，就是复述与实际分叉。两条都没给时说不出「要扩成什么样」，
+      // 那就不出复述句，也不编一个方向出来。
+      const base = (await readBaseSize(runDir, baseNode)) ?? { width: baseNode.width, height: baseNode.height };
+      const spec: CanvasOpSpec | undefined = scales
+        ? { op: 'expand', scales, base }
+        : direction && ratio !== undefined
+          ? { op: 'expand', direction, ratio, base }
+          : undefined;
       useDesignCanvasStore.getState().setError(null);
+      useDesignCanvasStore.getState().setNarration(spec ? buildCanvasBriefing(t.imageNarration, spec) : null);
       useDesignCanvasStore.getState().setGenerating(true);
       try {
         const res = await window.domainAPI?.invoke<{ path: string; actualModel: string; costCny: number }>(
@@ -447,11 +504,20 @@ export function useDesignCanvasGeneration(): {
         if (!res?.success) {
           throw new Error(res?.error?.message || t.design.errDispatch);
         }
-        await landResultAsVariant(runDir, assetRel, assetAbs, baseNode, t.design.expandBtn, 'expand', res.data?.costCny);
+        const actual = await landResultAsVariant(runDir, assetRel, assetAbs, baseNode, t.design.expandBtn, 'expand', res.data?.costCny);
+        useDesignCanvasStore.getState().setNarration(
+          spec && actual
+            ? buildCanvasVerdict(t.imageNarration, spec, actual, formatCostText(res.data?.costCny))
+            : null,
+        );
         useDesignCanvasStore.getState().setGenerating(false);
       } catch (e) {
         useDesignCanvasStore.getState().setGenerating(false);
-        useDesignCanvasStore.getState().setError(e instanceof Error ? e.message : t.design.errDispatch);
+        useDesignCanvasStore.getState().setNarration(null);
+        const reason = e instanceof Error ? e.message : t.design.errDispatch;
+        useDesignCanvasStore.getState().setError(
+          spec ? buildCanvasFailure(t.imageNarration, spec, reason) : reason,
+        );
       }
     },
     [t, landResultAsVariant],
@@ -470,7 +536,12 @@ export function useDesignCanvasGeneration(): {
         selectionCanvas.selectedIds.includes(baseNode.id) ? selectionCanvas.selectedIds : [baseNode.id],
       );
 
+      const spec: CanvasOpSpec = {
+        op: 'removeWatermark',
+        base: (await readBaseSize(runDir, baseNode)) ?? { width: baseNode.width, height: baseNode.height },
+      };
       useDesignCanvasStore.getState().setError(null);
+      useDesignCanvasStore.getState().setNarration(buildCanvasBriefing(t.imageNarration, spec));
       useDesignCanvasStore.getState().setGenerating(true);
       try {
         const res = await window.domainAPI?.invoke<{ path: string; actualModel: string; costCny: number }>(
@@ -481,11 +552,19 @@ export function useDesignCanvasGeneration(): {
         if (!res?.success) {
           throw new Error(res?.error?.message || t.design.errDispatch);
         }
-        await landResultAsVariant(runDir, assetRel, assetAbs, baseNode, t.design.removeWatermarkBtn, 'removeWatermark', res.data?.costCny);
+        const actual = await landResultAsVariant(runDir, assetRel, assetAbs, baseNode, t.design.removeWatermarkBtn, 'removeWatermark', res.data?.costCny);
+        useDesignCanvasStore.getState().setNarration(
+          actual
+            ? buildCanvasVerdict(t.imageNarration, spec, actual, formatCostText(res.data?.costCny))
+            : null,
+        );
         useDesignCanvasStore.getState().setGenerating(false);
       } catch (e) {
         useDesignCanvasStore.getState().setGenerating(false);
-        useDesignCanvasStore.getState().setError(e instanceof Error ? e.message : t.design.errDispatch);
+        useDesignCanvasStore.getState().setNarration(null);
+        useDesignCanvasStore.getState().setError(
+          buildCanvasFailure(t.imageNarration, spec, e instanceof Error ? e.message : t.design.errDispatch),
+        );
       }
     },
     [t, landResultAsVariant],
@@ -547,7 +626,15 @@ export function useDesignCanvasGeneration(): {
         selectionCanvas.selectedIds.includes(baseNode.id) ? selectionCanvas.selectedIds : [baseNode.id],
       );
 
+      // 底图尺寸直接用上面量到的自然像素，无需再读一次文件。
+      const spec: CanvasOpSpec = {
+        op: 'annotation',
+        instruction,
+        shapeCount: shapes.length,
+        base: { width: naturalW, height: naturalH },
+      };
       useDesignCanvasStore.getState().setError(null);
+      useDesignCanvasStore.getState().setNarration(buildCanvasBriefing(t.imageNarration, spec));
       useDesignCanvasStore.getState().setGenerating(true);
       try {
         const res = await window.domainAPI?.invoke<{ path: string; actualModel: string; costCny: number }>(
@@ -567,6 +654,7 @@ export function useDesignCanvasGeneration(): {
         const costCny = res.data?.costCny;
         if (useDesignCanvasStore.getState().runDir !== runDir) {
           useDesignCanvasStore.getState().setGenerating(false);
+          useDesignCanvasStore.getState().setNarration(null);
           return;
         }
         const dataUrl = await readWorkspaceImageAsDataUrl(assetAbs);
@@ -580,10 +668,16 @@ export function useDesignCanvasGeneration(): {
         useDesignCanvasStore.getState().addNode(node);
         await saveCanvasDoc(runDir, useDesignCanvasStore.getState().toDoc());
         useDesignCanvasStore.getState().clearEditHistory(); // 标注重绘成功提交后清 Layer1 编辑栈
+        useDesignCanvasStore.getState().setNarration(
+          buildCanvasVerdict(t.imageNarration, spec, { width, height }, formatCostText(costCny)),
+        );
         useDesignCanvasStore.getState().setGenerating(false);
       } catch (e) {
         useDesignCanvasStore.getState().setGenerating(false);
-        useDesignCanvasStore.getState().setError(e instanceof Error ? e.message : t.design.errDispatch);
+        useDesignCanvasStore.getState().setNarration(null);
+        useDesignCanvasStore.getState().setError(
+          buildCanvasFailure(t.imageNarration, spec, e instanceof Error ? e.message : t.design.errDispatch),
+        );
       }
     },
     [t],
@@ -639,6 +733,9 @@ export function useDesignCanvasGeneration(): {
     const assetAbs = `${runDir}/${assetRel}`;
 
     useDesignCanvasStore.getState().setError(null);
+    // 视频不在本次复述/验收范围内，但要把上一次出图留下的验收句清掉——
+    // 否则它会悬在一次无关的视频生成旁边，读起来像在描述这次动作。
+    useDesignCanvasStore.getState().setNarration(null);
     useDesignCanvasStore.getState().setGenerating(true);
     try {
       const res = await window.domainAPI?.invoke<{

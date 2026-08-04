@@ -14,6 +14,10 @@ export const agentErrorZh = {
         title: '这个模型暂时用不了：账号没通过授权',
         suggestion: '可能是密钥填错、过期，或这个账号已经没有额度了。换一个模型继续，或去设置里检查这个模型的账号配置。重试无效。',
       },
+      insufficient_balance: {
+        title: '这个账号余额不足',
+        suggestion: '去供应商后台充值后即可继续',
+      },
       model_not_found: {
         title: '模型接口或模型名称不匹配',
         suggestion: '当前模型供应商返回 404/Not Found。请检查自定义模型的 Base URL、路径是否包含 /v1、模型 ID 是否正确；也可以先切换到其他模型后重试。',
@@ -84,6 +88,10 @@ export const agentErrorEn: typeof agentErrorZh = {
       auth: {
         title: 'This model is unavailable: the account was not authorized',
         suggestion: 'The key may be wrong or expired, or the account may be out of quota. Switch to another model, or check this model account in Settings. Retrying will not help.',
+      },
+      insufficient_balance: {
+        title: 'This account has insufficient balance',
+        suggestion: 'Top up the account in the provider console to continue.',
       },
       model_not_found: {
         title: 'Model endpoint or model name mismatch',

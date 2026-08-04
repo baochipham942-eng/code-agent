@@ -1,6 +1,7 @@
 // useAgentSessionLifecycleEffects - agent_complete, error, stream_end, message completion, research_detected, research_mode_started, interrupt_start, interrupt_acknowledged, interrupt_complete, stale processing cleanup
 import { useEffect } from 'react';
 import type { AgentErrorMetadata, AgentEventEnvelope, ResearchDetectedData } from '@shared/contract';
+import { hasInsufficientBalanceSignal } from '@shared/utils/providerError';
 import { createLogger } from '../../../utils/logger';
 import { useAppStore } from '../../../stores/appStore';
 import { useSessionStore } from '../../../stores/sessionStore';
@@ -101,21 +102,25 @@ export function classifyAgentError(
   if (isGenericRunFailure(payload)) {
     const normalized = message.trim().toLowerCase();
     const hasStatus = (status: number) => new RegExp(`\\b${status}\\b`).test(message);
-
-    // 401 / invalid key / 余额欠费：重试一万次也没用，单独一档，别混进「请重试一次」。
-    // 小米 mimo 额度用尽返回的就是 401 "Invalid API Key"（真机 2026-08-01）。
-    if (
-      hasStatus(401)
-      || normalized.includes('invalid api key')
+    const hasAuthSignal = normalized.includes('invalid api key')
       || normalized.includes('incorrect api key')
-      || normalized.includes('unauthorized')
-      || normalized.includes('insufficient')
-      || normalized.includes('quota')
-      || normalized.includes('exceeded your current quota')
-      || normalized.includes('欠费')
-      || normalized.includes('额度')
-      || normalized.includes('余额')
-    ) {
+      || normalized.includes('unauthorized');
+    const hasBalanceSignal = hasInsufficientBalanceSignal({ ...payload, message });
+
+    // mimo 额度用尽返回的就是 401 "Invalid API Key"（真机 2026-08-01），
+    // 所以 401 与鉴权/余额信号同时出现时必须留在 auth；只有可区分的
+    // 402/明确余额信号才能精确引导充值。
+    if ((explicitStatus === 401 || hasStatus(401)) && (hasAuthSignal || hasBalanceSignal)) {
+      return { ...base, category: 'auth', httpStatus: explicitStatus ?? 401 };
+    }
+
+    if (hasBalanceSignal) {
+      return { ...base, category: 'insufficient_balance', httpStatus: explicitStatus ?? 402 };
+    }
+
+    // 纯鉴权失败：重试一万次也没用，单独一档，别混进「请重试一次」。
+    // 小米 mimo 额度用尽返回的就是 401 "Invalid API Key"（真机 2026-08-01）。
+    if (hasAuthSignal) {
       return { ...base, category: 'auth', httpStatus: explicitStatus ?? 401 };
     }
 

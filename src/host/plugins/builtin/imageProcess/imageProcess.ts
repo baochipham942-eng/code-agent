@@ -250,6 +250,33 @@ export async function executeImageProcess(
 
     const outputStats = fs.statSync(finalPath);
     const outputMetadata = await withAbort(sharp(finalPath).metadata(), ctx.abortSignal);
+    if (action === 'resize') {
+      const widthMismatch = params.width !== undefined && outputMetadata.width !== params.width;
+      const heightMismatch = params.height !== undefined && outputMetadata.height !== params.height;
+      if (widthMismatch || heightMismatch) {
+        const requestedSize = `${params.width ?? 'auto'}x${params.height ?? 'auto'}`;
+        const actualSize = `${outputMetadata.width ?? 'unknown'}x${outputMetadata.height ?? 'unknown'}`;
+        ctx.logger.warn('image_process resize dimension mismatch', {
+          requestedSize,
+          actualSize,
+          output: finalPath,
+        });
+        return {
+          ok: false,
+          code: 'OUTPUT_DIMENSION_MISMATCH',
+          error: `图片缩放未达到请求尺寸：请求 ${requestedSize}，实际 ${actualSize}。当前 resize 使用 fit: inside 保持原始宽高比且不放大，无法保证同时命中宽高；已生成文件: ${finalPath}`,
+          meta: {
+            filePath: finalPath,
+            fileName: path.basename(finalPath),
+            width: outputMetadata.width,
+            height: outputMetadata.height,
+            requestedWidth: params.width,
+            requestedHeight: params.height,
+            action,
+          },
+        };
+      }
+    }
     const compressionRatio = ((1 - outputStats.size / originalSize) * 100).toFixed(1);
 
     onProgress?.({ stage: 'completing', percent: 100 });

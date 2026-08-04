@@ -35,9 +35,18 @@ export interface CustomRealtimeVoiceProviderSettings {
   updatedAt: number;
 }
 
-/** 实时通话（Live Voice）UI 设置。全部可选，未配置 = 安全默认（入口隐藏、Provider 默认档）。 */
+/** 未配置实时语音总开关时的产品默认；显式 false 仍表示用户主动关闭。 */
+export const VOICE_LIVE_ENABLED_DEFAULT = true;
+
+export function resolveVoiceLiveEnabled(
+  live: Pick<VoiceLiveSettings, 'enabled'> | undefined,
+): boolean {
+  return live?.enabled ?? VOICE_LIVE_ENABLED_DEFAULT;
+}
+
+/** 实时通话（Live Voice）UI 设置。全部可选，未配置 = 入口开启、Provider 默认档。 */
 export interface VoiceLiveSettings {
-  /** 总开关：关 = Composer 不显示实时通话入口 */
+  /** 总开关：undefined = 默认开启；false = Composer 不显示实时通话入口 */
   enabled?: boolean;
   /**
    * 实时语音 Provider。存量配置没有该字段时读取为 DashScope；

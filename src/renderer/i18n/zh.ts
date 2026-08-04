@@ -37,9 +37,12 @@ import { localOpsZh } from './localOps';
 import { onboardingZh } from './onboarding';
 import { workbenchTabsZh } from './workbenchTabs';
 import { activityPanelZh, canvasActorZh } from './domains';
+import { imageNarrationZh } from './imageNarration';
+import { mermaidZh } from './mermaid';
 
 export const zh = {
   ...canvasActorZh, ...activityPanelZh,
+  ...imageNarrationZh, ...mermaidZh,
   ...capabilityHubZh,
   ...neoTopicsZh,
   ...projectSpaceZh,
@@ -919,21 +922,6 @@ export const zh = {
   ...labNanogptZh,
   ...labLlamafactoryZh,
   ...labAlignmentZh,
-
-  // 聊天流 Mermaid 图卡片（缩放/平移 + 标注即编辑）
-  mermaid: {
-    zoomIn: '放大',
-    zoomOut: '缩小',
-    zoomReset: '适配窗口',
-    zoomHint: '⌘/Ctrl + 滚轮缩放，拖拽平移',
-    copyCode: '源码',
-    copied: '已复制',
-    selectedLabel: '已选：',
-    editPlaceholder: '一句话描述怎么改，例如"改成两步验证"',
-    send: '发送',
-    cancel: '取消',
-    editPrompt: '请修改这张 Mermaid 图中的「{label}」：{instruction}\n\n当前图表完整源码：\n{codeBlock}\n请输出修改后的完整 mermaid 代码块，未提及的部分保持不变。',
-  },
 
   // 会话内权限档切换器（ChatInput）
   permissionTier: {

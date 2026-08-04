@@ -68,6 +68,11 @@ interface DesignCanvasState {
   /** 出图进行中（驱动生成按钮 spinner）。 */
   generating: boolean;
   error: string | null;
+  /**
+   * 出图复述/验收句：动手前回显「我理解你要什么」，出完换成「实际做了什么」的可核对陈述。
+   * 与 error 分开——它不是错误，失败时改由 error 承载失败收口。
+   */
+  narration: string | null;
   /** Layer1 编辑历史栈：节点移动/缩放/删除/重命名 + 图解层增删改的快照。生成产物走 Layer2 variant spine，不进本栈。 */
   editHistory: EditHistoryStack;
 
@@ -127,6 +132,8 @@ interface DesignCanvasState {
   setSelected: (ids: string[]) => void;
   setGenerating: (generating: boolean) => void;
   setError: (error: string | null) => void;
+  /** 出图复述/验收句（动手前说要做什么、出完说实际做了什么）。null=无。 */
+  setNarration: (narration: string | null) => void;
   /** 撤销上一步直接编辑（仅 Layer1，不动 variant spine）。 */
   undoEdit: () => void;
   /** 重做上一步被撤销的编辑（仅 Layer1）。 */
@@ -204,6 +211,7 @@ export const useDesignCanvasStore = create<DesignCanvasState>()(
   selectedDiagram: null,
   generating: false,
   error: null,
+  narration: null,
   editHistory: emptyEditHistory(),
 
   loadDoc: (runDir, doc) =>
@@ -240,6 +248,7 @@ export const useDesignCanvasStore = create<DesignCanvasState>()(
       // L2-R2：清运行态，避免新画布继承上个会话的出图遮罩/错误。
       generating: false,
       error: null,
+      narration: null,
       editHistory: clearHistory(),
     });
   },
@@ -497,6 +506,7 @@ export const useDesignCanvasStore = create<DesignCanvasState>()(
   setSelected: (selectedIds) => set({ selectedIds, selectedDiagram: null }),
   setGenerating: (generating) => set({ generating }),
   setError: (error) => set({ error }),
+  setNarration: (narration) => set({ narration }),
   undoEdit: () => {
     const s = get();
     const res = applyUndo(s.editHistory, snapshotOf(s));

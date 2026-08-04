@@ -1,0 +1,81 @@
+// 画布出图的「动手前复述 / 出完验收」文案（工单 2026-07-31 路径 B）。
+//
+// 路径 B 无模型参与，复述句由按钮参数直接拼、零成本；验收句只说能对着新图核对的数字。
+// 刻意没有「已完成 / 生成成功」这类可被润色的状态词——量不出具体内容时整行省掉。
+export const imageNarrationZh = {
+  imageNarration: {
+    // —— 动手前复述 ——
+    briefingHeader: '我理解你要的是：',
+    briefingPaidHint: '这是真实付费调用，理解错了现在打断还来得及。',
+    briefingGenerate: '· 按 {ratio}{orientation} 出一张新图',
+    briefingExpand: '· 向{direction}扩到 {ratio} 倍：原图 {w}×{h} 的像素原样保留，只在新增区域补绘，主体不拉伸',
+    briefingExpandScales: '· 从 {w}×{h} 补边到 {ew}×{eh}：原图像素原样保留，只在新增区域补绘，主体不拉伸也不裁切',
+    briefingEditRegion: '· 只重绘你框选的 {count} 处区域，框外像素不动',
+    briefingRemoveWatermark: '· 去掉这张 {w}×{h} 图上的水印，画面其余内容不动',
+    briefingAnnotation: '· 按你在图上标的 {count} 处标注重绘，未标注处不动',
+    // —— 出完验收 ——
+    verdictHeader: '出图结果（请对照画布上的新图核对）：',
+    verdictSize: '· 新图 {w}×{h}',
+    verdictRatioMatch: '· 新图 {w}×{h}，与你要的 {ratio} 相符',
+    verdictRatioMismatch: '· 新图 {w}×{h}，与你要的 {ratio} 不符——出图模型没按比例出',
+    verdictExpandMatch: '· 新图 {w}×{h}，与预期的 {ew}×{eh} 一致（原图 {bw}×{bh}）',
+    verdictExpandMismatch: '· 新图 {w}×{h}，与预期的 {ew}×{eh} 不一致（原图 {bw}×{bh}）',
+    verdictSizeKept: '· 新图 {w}×{h}，与原图尺寸一致',
+    verdictSizeChanged: '· 新图 {w}×{h}，原图是 {bw}×{bh}——尺寸变了',
+    verdictCost: '· 本次花费 {cost}',
+    // —— 失败收口（复述已经说出去了，必须回指它）——
+    failure: '上面说的「{what}」没有出成：{reason}。画布上没有新图。',
+    // —— 词表 ——
+    orientationPortrait: '竖版',
+    orientationLandscape: '横版',
+    orientationSquare: '方图',
+    directionUp: '上',
+    directionDown: '下',
+    directionLeft: '左',
+    directionRight: '右',
+    directionAll: '四周',
+    opGenerate: '出一张新图',
+    opExpand: '扩图',
+    opEditRegion: '局部重绘',
+    opRemoveWatermark: '去水印',
+    opAnnotation: '标注重绘',
+    dismiss: '关闭说明',
+  },
+};
+
+export const imageNarrationEn = {
+  imageNarration: {
+    briefingHeader: 'Here is what I understand you want:',
+    briefingPaidHint: 'This is a real paid call — you can still stop it if I got it wrong.',
+    briefingGenerate: '· Generate a new image at {ratio} ({orientation})',
+    briefingExpand: '· Extend {direction} to {ratio}×: the original {w}×{h} pixels are kept as-is, only the new area is painted in, the subject is not stretched',
+    briefingExpandScales: '· Pad from {w}×{h} out to {ew}×{eh}: the original pixels are kept as-is, only the new area is painted in — nothing is stretched or cropped',
+    briefingEditRegion: '· Repaint only the {count} region(s) you selected; pixels outside stay untouched',
+    briefingRemoveWatermark: '· Remove the watermark from this {w}×{h} image, leaving the rest of the picture untouched',
+    briefingAnnotation: '· Repaint according to the {count} annotation(s) you drew; unmarked areas stay untouched',
+    verdictHeader: 'Result (check it against the new image on the canvas):',
+    verdictSize: '· New image {w}×{h}',
+    verdictRatioMatch: '· New image {w}×{h}, matching the {ratio} you asked for',
+    verdictRatioMismatch: '· New image {w}×{h}, which does NOT match the {ratio} you asked for — the model ignored the ratio',
+    verdictExpandMatch: '· New image {w}×{h}, matching the expected {ew}×{eh} (original {bw}×{bh})',
+    verdictExpandMismatch: '· New image {w}×{h}, which does NOT match the expected {ew}×{eh} (original {bw}×{bh})',
+    verdictSizeKept: '· New image {w}×{h}, same size as the original',
+    verdictSizeChanged: '· New image {w}×{h}, original was {bw}×{bh} — the size changed',
+    verdictCost: '· Cost of this call: {cost}',
+    failure: 'The "{what}" described above did not happen: {reason}. No new image was added to the canvas.',
+    orientationPortrait: 'portrait',
+    orientationLandscape: 'landscape',
+    orientationSquare: 'square',
+    directionUp: 'up',
+    directionDown: 'down',
+    directionLeft: 'left',
+    directionRight: 'right',
+    directionAll: 'all sides',
+    opGenerate: 'generate a new image',
+    opExpand: 'extend the image',
+    opEditRegion: 'repaint a region',
+    opRemoveWatermark: 'remove the watermark',
+    opAnnotation: 'repaint from annotations',
+    dismiss: 'Dismiss',
+  },
+};

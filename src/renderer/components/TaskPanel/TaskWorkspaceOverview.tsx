@@ -15,7 +15,6 @@ import { useAppStore } from '../../stores/appStore';
 import { useSessionStore } from '../../stores/sessionStore';
 import { useBackgroundTaskStore } from '../../stores/backgroundTaskStore';
 import { useTaskStore } from '../../stores/taskStore';
-import { useCurrentTurnArtifactOwnership } from '../../hooks/useCurrentTurnArtifactOwnership';
 import { useRunWorkbenchModel } from '../../hooks/useRunWorkbenchModel';
 import {
   useStatusRailModel,
@@ -384,8 +383,7 @@ export const TaskWorkspaceOverview: React.FC = () => {
   const { t } = useI18n();
   const workingDirectory = useAppStore((state) => state.workingDirectory);
   const openFilePreview = useAppStore((state) => state.openPreview);
-  const openWorkspacePreview = useAppStore((state) => state.openWorkspacePreview);
-  const setSelectedWorkspacePreviewId = useAppStore((state) => state.setSelectedWorkspacePreviewId);
+  const openContentPreview = useAppStore((state) => state.openContentPreview);
   const currentSessionId = useSessionStore((state) => state.currentSessionId);
   const readFailure = useBackgroundTaskStore((state) => state.readFailure);
   const backgroundTasksLoading = useBackgroundTaskStore((state) => state.isLoading);
@@ -393,7 +391,6 @@ export const TaskWorkspaceOverview: React.FC = () => {
   const cancelTask = useTaskStore((state) => state.cancelTask);
   const statusRail = useStatusRailModel();
   const runWorkbench = useRunWorkbenchModel();
-  const currentTurnArtifactOwnership = useCurrentTurnArtifactOwnership();
   const workspacePreviewItems = useWorkspacePreviewModel();
 
   const contextRows = useMemo(
@@ -421,27 +418,41 @@ export const TaskWorkspaceOverview: React.FC = () => {
   const showReadFailure = Boolean(readFailure) && runLive && hasActiveTasks;
   const showTodoModule = showReadFailure || runWorkbench.tasks.length > 0;
 
-  // 产物条目源：当轮归属优先，退回 statusRail 输出文件（与旧产物卡同源）
+  // Session 口径：产物跨全部 run 聚合；workspacePreviewItems 与当前会话 messages 同源，
+  // 不再让最后一轮 ownership 覆盖前几轮产物。
   const artifactItems: TurnArtifactOwnershipItem[] = useMemo(() => {
-    if (currentTurnArtifactOwnership) return currentTurnArtifactOwnership.artifactOwnership;
-    return statusRail.outputs.files.map((file) => ({
-      kind: 'file' as const,
-      label: file.name,
-      path: file.path,
-      ownerKind: 'tool' as const,
-      ownerLabel: '',
+    return workspacePreviewItems.map((item) => ({
+      kind: item.file ? 'file' as const : 'artifact' as const,
+      label: item.title,
+      path: item.file?.path,
+      ownerKind: item.source.kind === 'tool' ? 'tool' as const : 'assistant' as const,
+      ownerLabel: item.source.label || '',
     }));
-  }, [currentTurnArtifactOwnership, statusRail.outputs.files]);
+  }, [workspacePreviewItems]);
   // 跑中不铺产物列表；完成/终态收拢为一排缩略行（spec §模块四）
   const showArtifacts = !runLive && artifactItems.length > 0;
 
-  const openPreview = (itemId?: string | null) => {
-    openWorkspacePreview(itemId ?? workspacePreviewItems[0]?.id ?? null);
+  const openPreview = (item: (typeof workspacePreviewItems)[number]) => {
+    if (item.file?.path) {
+      openFilePreview(item.file.path);
+      return;
+    }
+    const content = item.content?.html
+      ?? item.content?.json
+      ?? item.content?.text
+      ?? item.content?.diff
+      ?? item.content?.summary;
+    if (!content) return;
+    const format = item.content?.html
+      ? 'html' as const
+      : item.content?.json
+        ? 'json' as const
+        : item.content?.text || item.content?.summary
+          ? 'markdown' as const
+          : 'text' as const;
+    openContentPreview({ id: item.id, title: item.title, content, format });
   };
   const openFile = (path: string) => {
-    // 概览只负责选产物；文件内容由右栏原生 preview tab 承载。
-    // 先清掉旧 workspace-preview 选择，用户切回概览时仍然看到四模块面板。
-    setSelectedWorkspacePreviewId(null);
     openFilePreview(path);
   };
 
@@ -493,7 +504,7 @@ export const TaskWorkspaceOverview: React.FC = () => {
         </section>
       )}
 
-      {/* 模块四 · 产物：完成态收拢缩略行，点击进专注预览 */}
+      {/* 模块四 · 产物：完成态收拢缩略行，点击一步直达原生 preview tab */}
       {showArtifacts && (
         <section
           data-module="artifacts"

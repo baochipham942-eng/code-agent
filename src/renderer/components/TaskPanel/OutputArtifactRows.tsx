@@ -80,7 +80,7 @@ const ArtifactThumb = ({
   previewItem: WorkspacePreviewItem | null;
   filePath: string | null;
   unnamedLabel: string;
-  onOpenPreview?: (itemId?: string | null) => void;
+  onOpenPreview?: (item: WorkspacePreviewItem) => void;
   onOpenFile?: (path: string) => void;
 }) => {
   const [imageFailed, setImageFailed] = useState(false);
@@ -90,24 +90,29 @@ const ArtifactThumb = ({
 
   const handleClick = () => {
     if (previewItem && onOpenPreview) {
-      onOpenPreview(previewItem.id);
+      onOpenPreview(previewItem);
       return;
     }
     if (filePath && onOpenFile) {
       onOpenFile(filePath);
       return;
     }
-    onOpenPreview?.(null);
   };
 
-  return (
-    <button
-      type="button"
-      data-testid="overview-artifact-thumb"
-      onClick={handleClick}
-      title={filePath || name}
-      className="flex min-w-0 items-center gap-2 rounded-lg bg-surface-subtle py-1.5 pl-1.5 pr-2.5 text-left transition-colors hover:bg-surface-hover"
-    >
+  const clickable = Boolean(
+    (previewItem && (
+      previewItem.file
+      || previewItem.content?.text
+      || previewItem.content?.html
+      || previewItem.content?.json
+      || previewItem.content?.summary
+      || previewItem.content?.diff
+    ))
+    || (filePath && onOpenFile),
+  );
+
+  const content = (
+    <>
       {showImage && filePath ? (
         <img
           src={resolveFileUrl(filePath)}
@@ -125,6 +130,30 @@ const ArtifactThumb = ({
           <span className="block text-[10px] text-zinc-600">{formatArtifactSize(size)}</span>
         )}
       </span>
+    </>
+  );
+
+  if (!clickable) {
+    return (
+      <div
+        data-testid="overview-artifact-thumb-static"
+        title={name}
+        className="flex min-w-0 items-center gap-2 rounded-lg bg-surface-subtle py-1.5 pl-1.5 pr-2.5 text-left opacity-70"
+      >
+        {content}
+      </div>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      data-testid="overview-artifact-thumb"
+      onClick={handleClick}
+      title={filePath || name}
+      className="flex min-w-0 items-center gap-2 rounded-lg bg-surface-subtle py-1.5 pl-1.5 pr-2.5 text-left transition-colors hover:bg-surface-hover"
+    >
+      {content}
     </button>
   );
 };
@@ -141,12 +170,15 @@ export const ArtifactThumbStrip = ({
   previewItems: WorkspacePreviewItem[];
   workingDirectory?: string | null;
   unnamedLabel: string;
-  onOpenPreview?: (itemId?: string | null) => void;
+  onOpenPreview?: (item: WorkspacePreviewItem) => void;
   onOpenFile?: (path: string) => void;
 }) => {
+  const [expanded, setExpanded] = useState(false);
+  const visibleItems = expanded ? items : items.slice(0, 5);
+  const overflow = items.length - visibleItems.length;
   return (
     <div className="flex flex-wrap gap-2">
-      {items.map((item, index) => {
+      {visibleItems.map((item, index) => {
         const previewItem = findPreviewItemForArtifact(previewItems, item, workingDirectory);
         const filePath = previewItem?.file?.path
           || (item.path ? resolveArtifactPath(item.path, workingDirectory) : null);
@@ -162,6 +194,16 @@ export const ArtifactThumbStrip = ({
           />
         );
       })}
+      {overflow > 0 && (
+        <button /* ds-allow:button: compact +N disclosure belongs in the artifact row */
+          type="button"
+          data-testid="overview-artifacts-more"
+          onClick={() => setExpanded(true)}
+          className="rounded-lg bg-surface-subtle px-2.5 py-1.5 text-[10px] text-zinc-500 hover:bg-surface-hover hover:text-zinc-300"
+        >
+          +{overflow}
+        </button>
+      )}
     </div>
   );
 };

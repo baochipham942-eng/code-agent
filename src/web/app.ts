@@ -163,7 +163,21 @@ export function createApp(deps: CreateAppDeps): express.Express {
   });
 
   // ── Screenshot proxy ────────────────────────────────────────────────
-  app.get('/api/screenshot', handleScreenshot);
+  app.get('/api/screenshot', async (req: Request, res: Response) => {
+    const sessionManager = await tryGetSessionManager();
+    let sessionWorkingDirectories: string[] = [];
+    if (sessionManager) {
+      try {
+        const sessions = await sessionManager.listSessions({ limit: 500, includeArchived: true });
+        sessionWorkingDirectories = sessions
+          .map((session) => session.workingDirectory?.trim())
+          .filter((workingDirectory): workingDirectory is string => Boolean(workingDirectory));
+      } catch (error) {
+        logger.warn('Failed to resolve session-bound screenshot roots', error);
+      }
+    }
+    handleScreenshot(req, res, { sessionWorkingDirectories });
+  });
 
   // ── Dev routes (workspace/file, dev/exec-tool, dev/smoke/office) ────
   app.use('/api', createDevRouter({ pendingDevPermissions, runRegistry, logger }));

@@ -29,7 +29,6 @@ describe('surface intent unified decision', () => {
       activeWorkbenchTab: null,
       previewTabs: [],
       activePreviewTabId: null,
-      selectedWorkspacePreviewId: null,
       taskPanelTab: 'orchestration',
       workingDirectory: null,
     });

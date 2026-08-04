@@ -178,9 +178,3 @@
   /* glow 的 rgba 字面量与 --accent-accessible 同色系，改 accent 色时需同步 */
   box-shadow: 0 0 0 6px rgba(0, 255, 255, 0.3) !important;
 }
-
-/* composer 高对比豁免（2026-08-04 §3.1）：默认态保留 --border-default 描边（可读性优先，
-   条款 B3 允许可交互容器有边框）；聚焦态仍由 global.css 的 :focus-within 规则接管。 */
-.high-contrast-dark .composer-elevated:not(:focus-within) {
-  border-color: var(--border-default);
-}

@@ -83,6 +83,16 @@ describe('deriveRunOverviewTone', () => {
 });
 
 describe('buildOverviewRunHeaderModel 步骤计数与结局', () => {
+  it('uses the current run instruction instead of the session first-message title', () => {
+    const model = buildOverviewRunHeaderModel({
+      run: run({ status: 'completed', title: '第二轮任务' }),
+      sessionTitle: '第一轮会话标题',
+      now: START,
+    });
+
+    expect(model?.title).toBe('第二轮任务');
+  });
+
   it('进行中且有 TODO：steps = 当前步/总步（当前步 = 已完成 + 1）', () => {
     const model = buildOverviewRunHeaderModel({
       run: run({ status: 'using_tools', startedAt: START }),

@@ -145,10 +145,10 @@ test('右栏概览空态保持轻量，旧的清单外壳已移除', async ({ pa
   await overview.screenshot({ path: 'tests/e2e/screenshots/workbench-overview-preview-first.png' });
 });
 
-// 有产物那一屏：概览四模块（任务 / Todo / 上下文 / 产物，2026-08-04 拍板二/三）；点产物后直接进入专注预览。
+// 有产物那一屏：概览四模块（任务 / Todo / 上下文 / 产物）；点产物一步打开原生 preview tab。
 // 产物由 sessionStore.messages 推导，e2e 跑生产构建（window.__neoAppStore 只在 DEV 挂），
 // 所以从外部按真实事件链注入带 artifacts 的 assistant 消息，而不是往 store 里塞。
-test('右栏概览有产物时：四模块分区稳定，点击后直接预览且不带旧详情区', async ({ page, request }) => {
+test('右栏概览有产物时：四模块分区稳定，点击后一步进入原生 preview tab', async ({ page, request }) => {
   await waitForAppReady(page);
   const token = await getAuthToken(page);
   const sessionId = await createSessionAndGetId(page);
@@ -183,20 +183,17 @@ test('右栏概览有产物时：四模块分区稳定，点击后直接预览�
   await expect(workspace.getByText('诊断详情')).toHaveCount(0);
   await expect(workspace.getByTestId('overview-diagnostics-body')).toHaveCount(0);
 
-  // ② 点击产物缩略行就是打开，直接进入专注预览。
+  // ② 点击产物缩略行就是打开，概览中间页不再出现。
   await workspace.getByTestId('overview-artifact-thumb').filter({ hasText: '第一版流程图' }).click();
-  await expect(page.getByTestId('workbench-overview-preview')).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByTestId('workbench-overview-preview')).toHaveCount(0);
   await expect(page.getByText(firstMarker)).toBeVisible();
 
-  // ③ 概览入口的预览不带详情/版本和项目历史；动作仍收在 ⋯。
-  await expect(page.getByRole('button', { name: '复制预览' })).toHaveCount(0);
-  await expect(page.getByRole('button', { name: '归档到资料库: 第一版流程图' })).toHaveCount(0);
+  // ③ 原生 preview 头只保留路径/标题、外部打开（文件时）和更多。
   await expect(page.getByRole('button', { name: '更多操作' })).toBeVisible();
-  await expect(page.getByTestId('workspace-preview-overflow')).toHaveCount(0);
-  await expect(page.getByTestId('workspace-preview-details-toggle')).toHaveCount(0);
-  await expect(page.getByText(/项目全部产物/)).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '复制文件路径' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '返回概览', exact: true })).toHaveCount(0);
 
-  // ④ 第二个产物到了才出现切换器，返回概览后三个分区仍在。
+  // ④ 第二轮产物到达后切回概览，首轮 + 末轮产物同屏累计。
   await expect(async () => {
     await emitAgentEvents(request, token, artifactTurnEvents(sessionId, `e2e-overview-turn-2-${Date.now()}`, {
       id: 'e2e-artifact-beta',
@@ -207,12 +204,10 @@ test('右栏概览有产物时：四模块分区稳定，点击后直接预览�
     }));
     await expect(page.getByText('已产出 第二版流程图。').first()).toBeVisible({ timeout: 3_000 });
   }).toPass({ timeout: 30_000 });
-  const switcher = page.getByTestId('workspace-artifact-switcher');
-  await expect(switcher).toBeVisible({ timeout: 20_000 });
-  await expect(switcher).toContainText('共 2 个');
-
-  await page.getByRole('button', { name: '返回概览', exact: true }).click();
+  await page.getByTestId('workbench-tab-overview').click();
   await expect(page.getByTestId('task-workspace-overview')).toBeVisible();
+  await expect(page.getByTestId('overview-artifact-thumb').filter({ hasText: '第一版流程图' })).toBeVisible();
+  await expect(page.getByTestId('overview-artifact-thumb').filter({ hasText: '第二版流程图' })).toBeVisible();
 
   await overview.screenshot({ path: 'tests/e2e/screenshots/workbench-overview-with-artifacts.png' });
 });

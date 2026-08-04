@@ -133,8 +133,8 @@ export const WorkspacePreviewPanel: React.FC<WorkspacePreviewPanelProps> = ({
   const { t } = useI18n();
   const wp = t.previewWorkspace.workspacePreview;
   const items = useWorkspacePreviewModel();
-  const selectedId = useAppStore((state) => state.selectedWorkspacePreviewId);
-  const setSelectedId = useAppStore((state) => state.setSelectedWorkspacePreviewId);
+  // Legacy standalone panel keeps selection local. Overview no longer routes through this panel.
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const setWorkingDirectory = useAppStore((state) => state.setWorkingDirectory);
   const currentSessionId = useSessionStore((state) => state.currentSessionId);
   const sessions = useSessionStore((state) => state.sessions);
@@ -406,7 +406,7 @@ export const WorkspacePreviewPanel: React.FC<WorkspacePreviewPanelProps> = ({
       return;
     }
     if (artifact.sessionId === currentSessionId && artifact.previewItemId) {
-      useAppStore.getState().openWorkspacePreview(artifact.previewItemId);
+      useAppStore.getState().openWorkspacePreview();
     }
   }, [currentSessionId]);
 

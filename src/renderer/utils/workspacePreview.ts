@@ -808,7 +808,9 @@ function dropContentlessDuplicates(items: WorkspacePreviewItem[]): WorkspacePrev
 export function buildWorkspacePreviewItems(input: BuildWorkspacePreviewItemsInput): WorkspacePreviewItem[] {
   const items: WorkspacePreviewItem[] = [];
   const seen = new Set<string>();
-  const messages = input.messages.slice(-60);
+  // Overview uses a session-wide contract: artifacts from early runs stay visible after later runs.
+  // The output list is still capped below, so scanning the current session does not expand the UI.
+  const messages = input.messages;
 
   collectPermissionPreview(items, seen, input.pendingPermissionRequest);
   collectCurrentTurnArtifacts(items, seen, input.currentTurnArtifacts, input.workingDirectory);

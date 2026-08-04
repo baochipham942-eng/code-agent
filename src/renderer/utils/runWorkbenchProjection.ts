@@ -33,6 +33,11 @@ function latestTurn(projection: TraceProjection): TraceTurn | null {
   return projection.turns[projection.turns.length - 1] || null;
 }
 
+function userInstructionTitle(turn: TraceTurn | null): string | undefined {
+  const content = turn?.nodes.find((node) => node.type === 'user')?.content.trim();
+  return content || undefined;
+}
+
 function getTimelineNodes(turn: TraceTurn | null): TurnTimelineNode[] {
   if (!turn) return [];
   return turn.nodes
@@ -144,6 +149,7 @@ export function buildRunUiState(args: BuildRunWorkbenchModelInput): RunUiState {
       streamRunId: turn?.status === 'streaming' ? `${runId}:stream` : null,
       status,
     },
+    title: userInstructionTitle(turn),
     status,
     phase: phaseFromStatus(status, args.taskProgress),
     activeToolName: toolCall?.name,
@@ -253,6 +259,19 @@ export function buildToolCapabilityViews(projection: TraceProjection): ToolCapab
   }
 
   return Array.from(byId.values()).slice(-12);
+}
+
+/** Session overview aggregation: keep the latest view of every tool/capability across all runs. */
+export function buildSessionToolCapabilityViews(projection: TraceProjection): ToolCapabilityView[] {
+  const byId = new Map<string, ToolCapabilityView>();
+  for (const turn of projection.turns) {
+    const turnProjection = { ...projection, turns: [turn] };
+    for (const view of buildToolCapabilityViews(turnProjection)) {
+      byId.delete(view.id);
+      byId.set(view.id, view);
+    }
+  }
+  return Array.from(byId.values());
 }
 
 type TraceToolCall = NonNullable<TraceTurn['nodes'][number]['toolCall']>;
@@ -400,6 +419,19 @@ export function buildMemoryActivityEvents(projection: TraceProjection): MemoryAc
   }
 
   return events.slice(-8);
+}
+
+/** Session overview aggregation: memory activity is cumulative across every run in this session. */
+export function buildSessionMemoryActivityEvents(projection: TraceProjection): MemoryActivityEvent[] {
+  const byId = new Map<string, MemoryActivityEvent>();
+  for (const turn of projection.turns) {
+    const turnProjection = { ...projection, turns: [turn] };
+    for (const event of buildMemoryActivityEvents(turnProjection)) {
+      byId.delete(event.memoryId);
+      byId.set(event.memoryId, event);
+    }
+  }
+  return Array.from(byId.values());
 }
 
 function outputPathFromResult(result?: ToolResult, toolName?: string): string | undefined {

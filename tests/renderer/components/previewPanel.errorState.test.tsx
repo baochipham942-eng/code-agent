@@ -77,3 +77,19 @@ describe('PreviewPanel 接线钉子 — catch 块真的走 toPreviewErrorState',
     expect(source).not.toContain('err instanceof Error ? err.message : pv.saveFailed');
   });
 });
+
+describe('PreviewPanel 文件头收敛', () => {
+  it('路径置顶且可复制，直接动作只留外部打开与更多，底部路径栏已删除', () => {
+    const source = readSource('src/renderer/components/PreviewPanel.tsx');
+    const header = source.slice(
+      source.indexOf('{/* Single header:'),
+      source.indexOf('{/* Content */}'),
+    );
+
+    expect(header).toContain('aria-label={pv.copyPath}');
+    expect(header).toContain('title={previewFilePath ?? activeTab.title}');
+    expect(header.match(/<ExternalLink/g)).toHaveLength(1);
+    expect(header.match(/<MoreHorizontal/g)).toHaveLength(1);
+    expect(source).not.toContain('Footer - File path');
+  });
+});

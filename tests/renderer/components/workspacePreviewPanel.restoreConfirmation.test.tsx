@@ -9,7 +9,6 @@ const mocks = vi.hoisted(() => ({
   invokeDomain: vi.fn(),
   addLibraryItem: vi.fn(),
   getProjectArtifacts: vi.fn(),
-  setSelectedId: vi.fn(),
 }));
 
 vi.mock('../../../src/renderer/hooks/useI18n', async () => {
@@ -30,8 +29,6 @@ vi.mock('../../../src/renderer/hooks/useWorkspacePreviewModel', () => ({
 
 vi.mock('../../../src/renderer/stores/appStore', () => ({
   useAppStore: (selector: (state: Record<string, unknown>) => unknown) => selector({
-    selectedWorkspacePreviewId: 'preview-1',
-    setSelectedWorkspacePreviewId: mocks.setSelectedId,
     setWorkingDirectory: vi.fn(),
   }),
 }));

@@ -6,6 +6,55 @@ import {
 } from '../../../src/renderer/utils/workspacePreview';
 
 describe('buildWorkspacePreviewItems', () => {
+  it('keeps an early-run artifact and a late-run file visible in the same session projection', () => {
+    const early: Message = {
+      id: 'early-artifact',
+      role: 'assistant',
+      content: '',
+      timestamp: 1,
+      artifacts: [{
+        id: 'first-document',
+        type: 'document',
+        title: 'first-run.md',
+        content: '# First run',
+        version: 1,
+      }],
+    };
+    const filler: Message[] = Array.from({ length: 65 }, (_, index) => ({
+      id: `filler-${index}`,
+      role: 'assistant' as const,
+      content: `round ${index}`,
+      timestamp: index + 2,
+    }));
+    const late: Message = {
+      id: 'late-file',
+      role: 'assistant',
+      content: '',
+      timestamp: 100,
+      toolCalls: [{
+        id: 'read-late',
+        name: 'Write',
+        arguments: { path: 'package.json' },
+        result: {
+          toolCallId: 'read-late',
+          success: true,
+          outputPath: 'package.json',
+          output: 'ok',
+        },
+      }],
+    };
+
+    const items = buildWorkspacePreviewItems({
+      messages: [early, ...filler, late],
+      workingDirectory: '/repo',
+    });
+
+    expect(items.map((item) => item.title)).toEqual(expect.arrayContaining([
+      'first-run.md',
+      'package.json',
+    ]));
+  });
+
   it('collects assistant artifacts as previewable workspace items', () => {
     const messages: Message[] = [
       {

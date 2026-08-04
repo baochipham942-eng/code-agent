@@ -61,6 +61,14 @@ describe('elevation 组装类（global.css）', () => {
     expect(globalCss).toMatch(/\.composer-elevated:focus-within\s*\{[^}]*border-color:\s*var\(--border-hover\)/);
   });
 
+  it('四主题 composer 默认态都透明，高对比主题不再保留默认描边豁免', () => {
+    const hcDark = readSrc('src/renderer/styles/themes/high-contrast-dark.css');
+    const hcLight = readSrc('src/renderer/styles/themes/high-contrast-light.css');
+    expect(globalCss).toMatch(/\.composer-elevated\s*\{[^}]*border:\s*1px solid transparent/);
+    expect(hcDark).not.toMatch(/composer-elevated:not\(:focus-within\)/);
+    expect(hcLight).not.toMatch(/composer-elevated:not\(:focus-within\)/);
+  });
+
   it('.chat-scroll-fade 提供 composer 上方渐隐 mask', () => {
     expect(globalCss).toMatch(/\.chat-scroll-fade\s*\{[^}]*mask-image:\s*linear-gradient/);
   });

@@ -284,8 +284,8 @@ export const WorkbenchTabs: React.FC<{ children?: React.ReactNode; focusable?: b
     const isLiveDev = previewTab?.kind === 'liveDev';
     return {
       id,
-      label: getFileName(path),
-      title: path,
+      label: previewTab?.title || getFileName(path),
+      title: previewTab?.title || path,
       icon: isLiveDev ? Globe2 : FileText,
       iconClassName: isLiveDev ? 'text-badge-success/80' : 'text-zinc-400',
       isDirty: previewTab ? previewTab.content !== previewTab.savedContent : false,

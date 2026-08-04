@@ -13,8 +13,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const appState = vi.hoisted(() => ({
   workingDirectory: '/repo/app',
   openPreview: vi.fn(),
+  openContentPreview: vi.fn(),
   openWorkspacePreview: vi.fn(),
-  setSelectedWorkspacePreviewId: vi.fn(),
 }));
 
 const sessionState = vi.hoisted(() => ({
@@ -145,6 +145,7 @@ beforeEach(() => {
   artifactOwnershipState.current = null;
   previewItemsState.items = [];
   appState.openPreview.mockReset();
+  appState.openContentPreview.mockReset();
   appState.openWorkspacePreview.mockReset();
 });
 
@@ -160,6 +161,15 @@ describe('四模块归位', () => {
       tone: 'success',
       artifactOwnership: [{ kind: 'file', label: 'report.md', path: '/repo/app/report.md', ownerKind: 'tool', ownerLabel: 'Write' }],
     };
+    previewItemsState.items = [{
+      id: 'file:/repo/app/report.md',
+      kind: 'document',
+      title: 'report.md',
+      status: 'ready',
+      createdAt: 1,
+      source: { kind: 'tool', label: 'Write' },
+      file: { path: '/repo/app/report.md', name: 'report.md' },
+    }] as never;
     setRun('completed');
 
     render(<TaskWorkspaceOverview />);
@@ -263,6 +273,14 @@ describe('产物模块：完成态收拢缩略行', () => {
       createdAt: 1,
       source: { kind: 'tool', label: 'image_generate' },
       file: { path: '/repo/app/pricing-chart.png', name: 'pricing-chart.png', size: 216_678 },
+    }, {
+      id: 'file:/repo/app/report.md',
+      kind: 'document',
+      title: 'report.md',
+      status: 'ready',
+      createdAt: 1,
+      source: { kind: 'tool', label: 'Write' },
+      file: { path: '/repo/app/report.md', name: 'report.md' },
     }] as never;
   });
 
@@ -297,23 +315,55 @@ describe('产物模块：完成态收拢缩略行', () => {
     expect(screen.getByTestId('overview-artifacts-module').querySelector('img')).toBeNull();
   });
 
-  it('点击缩略行进专注预览（沿用 selectedWorkspacePreviewId 链路）', () => {
+  it('点击缩略行一步直达文件 preview tab', () => {
     setRun('completed');
     render(<TaskWorkspaceOverview />);
 
     fireEvent.click(screen.getAllByTestId('overview-artifact-thumb')[0]);
-    expect(appState.openWorkspacePreview).toHaveBeenCalledWith('file:/repo/app/pricing-chart.png');
+    expect(appState.openPreview).toHaveBeenCalledWith('/repo/app/pricing-chart.png');
+    expect(appState.openWorkspacePreview).not.toHaveBeenCalled();
+  });
+
+  it('纯文本产物一步直达内容 preview tab；无预览体条目不渲染为按钮', () => {
+    previewItemsState.items = [{
+      id: 'process-output-1',
+      kind: 'trace',
+      title: '执行结果',
+      status: 'ready',
+      createdAt: 2,
+      source: { kind: 'tool', label: 'process' },
+      content: { summary: '三步已完成' },
+    }, {
+      id: 'empty-output-1',
+      kind: 'trace',
+      title: '空输出',
+      status: 'ready',
+      createdAt: 1,
+      source: { kind: 'tool', label: 'process' },
+    }] as never;
+    setRun('completed');
+    render(<TaskWorkspaceOverview />);
+
+    fireEvent.click(screen.getByRole('button', { name: /执行结果/ }));
+    expect(appState.openContentPreview).toHaveBeenCalledWith({
+      id: 'process-output-1',
+      title: '执行结果',
+      content: '三步已完成',
+      format: 'markdown',
+    });
+    expect(screen.getByTestId('overview-artifact-thumb-static').textContent).toContain('空输出');
   });
 
   it('产物标签为人话（内部 ID 兜底「未命名输出」）', () => {
-    artifactOwnershipState.current = {
-      turnId: 'turn-1',
-      turnNumber: 1,
-      tone: 'success',
-      artifactOwnership: [{
-        kind: 'artifact', label: 'tool-result-tool-775064011', ownerKind: 'tool', ownerLabel: 'Blob',
-      }] as never,
-    };
+    previewItemsState.items = [{
+      id: 'process-output-1',
+      kind: 'trace',
+      title: 'tool-result-tool-775064011',
+      status: 'ready',
+      createdAt: 1,
+      source: { kind: 'tool', label: 'Blob' },
+      content: { summary: 'done' },
+    }] as never;
     setRun('completed');
     render(<TaskWorkspaceOverview />);
 

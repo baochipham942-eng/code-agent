@@ -83,6 +83,9 @@ describe('overview artifact thumb strip routing', () => {
 
     fireEvent.click(screen.getByTestId('overview-artifact-thumb'));
 
-    expect(onOpenPreview).toHaveBeenCalledWith('file:/tmp/chart.png');
+    expect(onOpenPreview).toHaveBeenCalledWith(expect.objectContaining({
+      id: 'file:/tmp/chart.png',
+      file: { path: '/tmp/chart.png', name: 'chart.png' },
+    }));
   });
 });

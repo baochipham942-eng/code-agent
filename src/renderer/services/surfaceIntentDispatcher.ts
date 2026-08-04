@@ -24,7 +24,7 @@ export function openSurfaceForArtifact(input: {
   const appState = useAppStore.getState();
   switch (decision.view) {
     case 'workspace-preview':
-      appState.openWorkspacePreview(decision.itemId, { source: 'auto' });
+      appState.openWorkspacePreview({ source: 'auto' });
       break;
     case 'file-preview':
       appState.openPreview(decision.filePath, { source: 'auto' });

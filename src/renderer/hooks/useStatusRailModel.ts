@@ -49,7 +49,7 @@ function extractArtifacts(
     files.push({ path: normalized, name, isCore: CORE_EXTENSIONS.has(ext) });
   };
 
-  for (const message of messages.slice(-30).reverse()) {
+  for (const message of [...messages].reverse()) {
     if (!message.toolCalls) continue;
     for (const tc of message.toolCalls) {
       const args = tc.arguments as Record<string, unknown>;
@@ -273,7 +273,7 @@ export function useStatusRailModel(): StatusRailModel {
   // Context
   const context = useMemo<StatusRailContextModel>(() => {
     const buckets = computeBucketSummary(messages);
-    const items = extractContextItems(messages);
+    const items = extractContextItems(messages, Number.MAX_SAFE_INTEGER);
     if (!contextHealth) {
       return {
         currentTokens: 0,
@@ -311,7 +311,7 @@ export function useStatusRailModel(): StatusRailModel {
 
   // Outputs
   const outputs = useMemo<StatusRailOutputModel>(() => {
-    const files = extractArtifacts(messages, workingDirectory);
+    const files = extractArtifacts(messages, workingDirectory, 40);
     return { files, count: files.length };
   }, [messages, workingDirectory]);
 

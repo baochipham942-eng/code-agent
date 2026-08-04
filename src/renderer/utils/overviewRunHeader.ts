@@ -38,7 +38,7 @@ export function deriveRunOverviewTone(status: RunUiStatus): RunOverviewTone {
 }
 
 export interface OverviewRunHeaderModel {
-  /** 当前轮任务名：会话标题优先，缺失时退回 run.phase */
+  /** 当前轮任务名：run 用户指令优先，缺失时才退回会话标题 / run.phase */
   title: string;
   /** 当前步骤（run.phase），与 title 相同则不重复渲染；完成/异常态为 null（动作句消失） */
   phase: string | null;
@@ -68,7 +68,7 @@ export function buildOverviewRunHeaderModel(args: {
 
   const live = isLiveRunStatus(args.run.status);
   const tone = deriveRunOverviewTone(args.run.status);
-  const title = args.sessionTitle?.trim() || args.run.phase;
+  const title = args.run.title?.trim() || args.sessionTitle?.trim() || args.run.phase;
   const total = args.todoProgress?.total ?? 0;
   const completed = args.todoProgress?.completed ?? 0;
 

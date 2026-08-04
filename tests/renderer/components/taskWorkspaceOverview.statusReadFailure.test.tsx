@@ -13,8 +13,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const appState = {
   workingDirectory: '/repo/app',
   openPreview: vi.fn(),
+  openContentPreview: vi.fn(),
   openWorkspacePreview: vi.fn(),
-  setSelectedWorkspacePreviewId: vi.fn(),
 };
 
 const sessionState = {

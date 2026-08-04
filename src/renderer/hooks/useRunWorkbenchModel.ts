@@ -40,11 +40,11 @@ import {
 } from '../utils/sessionPresentation';
 import {
   buildLoopDecisionViews,
-  buildMemoryActivityEvents,
+  buildSessionMemoryActivityEvents,
   buildOutputArtifactViews,
   buildRunUiState,
   buildSessionTaskRecord,
-  buildToolCapabilityViews,
+  buildSessionToolCapabilityViews,
 } from '../utils/runWorkbenchProjection';
 import { useDurableSwarmRunDetail } from './useDurableSwarmRunDetail';
 
@@ -434,7 +434,7 @@ export function useRunWorkbenchModel(): RunWorkbenchModel {
     return {
       run,
       loopDecisions: buildLoopDecisionViews(projection),
-      tools: buildToolCapabilityViews(projection),
+      tools: buildSessionToolCapabilityViews(projection),
       tasks: [
         ...(sessionTask ? [sessionTask] : []),
         ...(workflowTask ? [workflowTask] : []),
@@ -445,7 +445,7 @@ export function useRunWorkbenchModel(): RunWorkbenchModel {
         agents: durableSwarmDetail?.agents ?? [],
         selectedAgentId: selectedSwarmAgentId,
       }).concat(workflowSubagents),
-      memoryActivities: buildMemoryActivityEvents(projection),
+      memoryActivities: buildSessionMemoryActivityEvents(projection),
       outputs: buildOutputArtifactViews(projection),
     };
   }, [

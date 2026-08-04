@@ -162,7 +162,37 @@ export async function handleTempUpload(req: Request, res: Response): Promise<voi
 }
 
 // ── Screenshot proxy (serves local screenshot files via HTTP) ──────────────
-export function handleScreenshot(req: Request, res: Response): void {
+export interface ScreenshotAccessScope {
+  /** Persisted sessions bound to a project directory. Only their artifact subtree is eligible. */
+  sessionWorkingDirectories?: readonly string[];
+}
+
+function isBoundSessionArtifactPath(
+  targetPath: string,
+  workingDirectories: readonly string[],
+): boolean {
+  for (const workingDirectory of workingDirectories) {
+    if (!workingDirectory?.trim()) continue;
+    const artifactRoot = path.resolve(workingDirectory, '.code-agent', 'artifacts');
+    if (!isPathWithinBase(targetPath, artifactRoot)) continue;
+    try {
+      // Lexical containment blocks ../; realpath containment also blocks an artifact-dir symlink
+      // or a symlinked file escaping the bound session's artifact subtree.
+      const realArtifactRoot = fs.realpathSync(artifactRoot);
+      const realTarget = fs.realpathSync(targetPath);
+      if (isPathWithinBase(realTarget, realArtifactRoot)) return true;
+    } catch {
+      // Missing roots/files are handled as denied here; the route must fail closed.
+    }
+  }
+  return false;
+}
+
+export function handleScreenshot(
+  req: Request,
+  res: Response,
+  accessScope: ScreenshotAccessScope = {},
+): void {
   const filePath = Array.isArray(req.query.path) ? req.query.path[0] : req.query.path;
 
   if (typeof filePath !== 'string' || filePath.trim().length === 0) {
@@ -190,6 +220,7 @@ export function handleScreenshot(req: Request, res: Response): void {
     || isPathWithinBase(resolved, path.join(userData, 'appshots'))
     || isPathWithinBase(resolved, path.join(userData, 'cache', PRESENTATION_PREVIEW_CACHE_DIRNAME))
     || isPathWithinBase(resolved, path.join(userData, 'work'))
+    || isBoundSessionArtifactPath(resolved, accessScope.sessionWorkingDirectories ?? [])
     || nativeDesktopPrefixes.some((prefix) => normalized.startsWith(prefix));
   const isImageExt = /\.(jpg|jpeg|png|webp|gif)$/i.test(resolved);
 

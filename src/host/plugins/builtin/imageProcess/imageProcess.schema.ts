@@ -13,7 +13,7 @@ export const imageProcessSchema: ToolSchema = {
 **操作类型：**
 - convert: 格式转换（PNG/JPG/WebP/AVIF/GIF）
 - compress: 无损或有损压缩
-- resize: 缩放到指定尺寸
+- resize: 在指定尺寸边界内按原始宽高比缩放（fit: inside，不放大）；实际尺寸未命中已指定边长时会明确报错并给出实际尺寸
 - upscale: 放大图片（使用 Lanczos 算法）
 
 **使用示例：**

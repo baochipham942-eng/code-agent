@@ -190,7 +190,7 @@ export function ToolCallDisplay({
         }}
       >
         <StatusIndicator status={status} quietError={quietError} />
-        <ToolHeader toolCall={toolCall} status={status} />
+        <ToolHeader toolCall={toolCall} status={status} showDetailName={expanded} />
       </div>
 
       {actionPreview && (

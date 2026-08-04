@@ -10,7 +10,11 @@ import type { ToolCall, ToolLiveOutput } from '@shared/contract';
 import { ToolCallDisplay } from './MessageBubble/ToolCallDisplay/index';
 import { summarizeTool } from './MessageBubble/ToolCallDisplay/summarizers';
 import { computeBashPreviewLines } from './MessageBubble/ToolCallDisplay/bashOutputPreview';
-import { humanizeToolGroupLabel, humanizeToolStep } from '../../../utils/humanizeToolStep';
+import {
+  humanizeToolGroupLabel,
+  humanizeToolStep,
+  isInternalStreamTool,
+} from '../../../utils/humanizeToolStep';
 import {
   formatToolDuration,
   isAutoLoadedRetry,
@@ -35,9 +39,18 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
   isStreamingTurn = false,
 }) => {
   const { t } = useI18n();
+  // 主流可见节点：过滤 ToolSearch 等纯内部动作（仍可在混合组的展开明细里看到）
+  const streamVisibleNodes = useMemo(
+    () => nodes.filter((n) => {
+      const name = n.toolCall?.name;
+      return !name || !isInternalStreamTool(name);
+    }),
+    [nodes],
+  );
   const label = useMemo(() => {
-    if (nodes.length === 1) {
-      const tc = nodes[0].toolCall;
+    if (streamVisibleNodes.length === 0) return '';
+    if (streamVisibleNodes.length === 1) {
+      const tc = streamVisibleNodes[0].toolCall;
       if (tc) return humanizeToolStep(
         tc.name,
         tc.args as Record<string, unknown> | undefined,
@@ -47,11 +60,11 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
         tc.result !== undefined && tc.success === false,
       );
     }
-    const names = nodes
+    const names = streamVisibleNodes
       .map((n) => n.toolCall?.name)
       .filter((x): x is string => !!x);
     return humanizeToolGroupLabel(names, t);
-  }, [nodes, t]);
+  }, [streamVisibleNodes, t]);
 
   const status = useMemo<'streaming' | 'partial' | 'error' | 'ok'>(() => {
     let hasError = false;
@@ -170,6 +183,12 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
     const total = toolCalls.reduce((sum, toolCall) => sum + (toolCall.result?.duration ?? 0), 0);
     return total > 0 ? formatToolDuration(total) : null;
   }, [toolCalls]);
+
+  // 纯内部动作组：不渲染主流行（对齐「内部流水不进用户主视角」）。
+  // 必须放在全部 hooks 之后，避免条件性调用 hooks。
+  if (streamVisibleNodes.length === 0 || !label) {
+    return null;
+  }
 
   return (
     <div className="my-0.5">

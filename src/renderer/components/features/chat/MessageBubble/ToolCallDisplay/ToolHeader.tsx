@@ -1,6 +1,6 @@
 // ============================================================================
 // ToolHeader - Humanized step sentence (shortDescription, or humanizeToolStep
-// fallback) + duration (no icon, no LoadingDots)
+// fallback) + optional clickable file path for right-pane preview
 // Status is expressed by parent StatusIndicator
 // ============================================================================
 
@@ -9,13 +9,21 @@ import type { ToolCall } from '@shared/contract';
 import { getToolStatusLabel } from './statusLabels';
 import type { ToolStatus } from './styles';
 import { isSemanticToolUIEnabled } from '../../../../../utils/featureFlags';
-import { humanizeToolStep } from '../../../../../utils/humanizeToolStep';
+import {
+  getToolFilePath,
+  humanizeToolStep,
+  isInternalStreamTool,
+  toolNameForDetail,
+} from '../../../../../utils/humanizeToolStep';
 import { TargetContextIcon } from './TargetContextIcon';
 import { useI18n } from '../../../../../hooks/useI18n';
+import { useAppStore } from '../../../../../stores/appStore';
 
 interface Props {
   toolCall: ToolCall;
   status: ToolStatus;
+  /** 展开态：内部工具名进次级小字 */
+  showDetailName?: boolean;
 }
 
 /**
@@ -34,8 +42,9 @@ function buildToolHeaderTitle(toolCall: ToolCall, displayName: string): string {
   return displayName;
 }
 
-export function ToolHeader({ toolCall, status }: Props) {
+export function ToolHeader({ toolCall, status, showDetailName = false }: Props) {
   const { t } = useI18n();
+  const openPreview = useAppStore((s) => s.openPreview);
   // 模型若提供了 shortDescription（产品视角语义标签），优先作为主标题展示；
   // 没有时 fallback 到 humanizeToolStep 合成的人话句子（读取了 xxx.md / 运行了命令 xxx），
   // 而不是裸露 "Read"/"Bash" 这类工具名——两条路径都已经是完整句子，不再需要
@@ -49,9 +58,25 @@ export function ToolHeader({ toolCall, status }: Props) {
     toolCall.result?.success === false,
   );
   const statusLabel = getToolStatusLabel(toolCall, status, t);
+  const filePath = getToolFilePath(
+    toolCall.name,
+    toolCall.arguments as Record<string, unknown> | undefined,
+  );
+  const showSecondaryName =
+    showDetailName
+    && (isInternalStreamTool(toolCall.name) || displayName === t.toolStepHumanize.fallback);
 
   // feature flag 关闭时不展示 target icon（与 shortDescription gating 同步）
   const showTargetIcon = isSemanticToolUIEnabled() && !!toolCall.targetContext?.kind;
+
+  const handleOpenPreview = (event: React.MouseEvent | React.KeyboardEvent) => {
+    if (!filePath) return;
+    event.preventDefault();
+    event.stopPropagation();
+    openPreview(filePath);
+  };
+
+  const title = buildToolHeaderTitle(toolCall, displayName);
 
   return (
     <div className="flex items-center gap-2 flex-1 min-w-0">
@@ -66,15 +91,38 @@ export function ToolHeader({ toolCall, status }: Props) {
         <TargetContextIcon targetContext={toolCall.targetContext} className="flex-shrink-0" />
       )}
 
-      {/* Tool name - always semibold, neutral color */}
-      {/* truncate + min-w-0 让长 shortDescription（如完整 Bash 命令）按 CSS 截断而不撑爆 layout；
-          title 暴露完整文本便于 hover 看全（包含 args.file_path 等附加上下文） */}
-      <span
-        className="text-zinc-200 font-semibold truncate min-w-0"
-        title={buildToolHeaderTitle(toolCall, displayName)}
-      >
-        {displayName}
-      </span>
+      {/* 有文件路径时主行可点进右栏预览（读取了/编辑了/写入了 …）；
+          点名字看文件，父行其余区域仍负责展开/折叠明细。 */}
+      {filePath ? (
+        <button
+          type="button"
+          data-testid="tool-header-open-preview"
+          className="text-zinc-200 font-semibold truncate min-w-0 text-left hover:text-white hover:underline underline-offset-2"
+          title={title}
+          aria-label={t.toolStepHumanize.openPreviewAria.replace('{path}', filePath)}
+          onClick={handleOpenPreview}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' || event.key === ' ') {
+              handleOpenPreview(event);
+            }
+          }}
+        >
+          {displayName}
+        </button>
+      ) : (
+        <span
+          className="text-zinc-200 font-semibold truncate min-w-0"
+          title={title}
+        >
+          {displayName}
+        </span>
+      )}
+
+      {showSecondaryName && (
+        <span className="flex-shrink-0 text-[10px] text-zinc-600 font-normal">
+          {toolNameForDetail(toolCall.name)}
+        </span>
+      )}
 
       {/* 单个工具的裸秒数已去掉：一屏里原来有轮级「用时 30s」和每工具「2.6s」两套
           没说明关系的时间。「这段花了多久」由组头那一处回答（带 hover 说明），

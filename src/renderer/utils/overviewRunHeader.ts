@@ -24,12 +24,31 @@ export function isLiveRunStatus(status: RunUiStatus): boolean {
   return LIVE_RUN_STATUSES.has(status);
 }
 
+/**
+ * 概览细进度线的三态（+等待确认子态）——状态点颜色与文案的唯一判据。
+ * waiting_approval 不单列第四态（2026-08-04 D3 拍板）：并入进行中，仅黄点 + 「等你确认」。
+ */
+export type RunOverviewTone = 'live' | 'waiting' | 'done' | 'error';
+
+export function deriveRunOverviewTone(status: RunUiStatus): RunOverviewTone {
+  if (status === 'waiting_approval') return 'waiting';
+  if (isLiveRunStatus(status)) return 'live';
+  if (status === 'completed') return 'done';
+  return 'error';
+}
+
 export interface OverviewRunHeaderModel {
   /** 当前轮任务名：会话标题优先，缺失时退回 run.phase */
   title: string;
-  /** 当前步骤（run.phase），与 title 相同则不重复渲染 */
+  /** 当前步骤（run.phase），与 title 相同则不重复渲染；完成/异常态为 null（动作句消失） */
   phase: string | null;
   status: RunUiStatus;
+  /** 三态判据：状态点颜色 + 文案差异 */
+  tone: RunOverviewTone;
+  /** 步骤计数（第 N 步 / 共 M 步）；无 TODO 为 null */
+  steps: { current: number; total: number } | null;
+  /** 异常态的人话结局键；非异常态为 null */
+  outcome: 'cancelled' | 'error' | null;
   /** 用时；起点未知时为 null（不假造 0） */
   elapsedMs: number | null;
   /** 活跃回合：秒表在走、给中断按钮 */
@@ -40,19 +59,33 @@ export function buildOverviewRunHeaderModel(args: {
   run: RunUiState;
   sessionTitle?: string | null;
   now: number;
+  /** TODO 进度（summarizeTodoProgress）；total=0 视为无 TODO，不出步骤段 */
+  todoProgress?: { completed: number; total: number } | null;
 }): OverviewRunHeaderModel | null {
   // 「有没有 run」只认 turn 的存在：run.status 在空会话里也默认 'completed'，
   // 拿状态判存在会给从没跑过的会话摆一条「已完成」表头。
   if (!args.run.identity.turnId) return null;
 
   const live = isLiveRunStatus(args.run.status);
+  const tone = deriveRunOverviewTone(args.run.status);
   const title = args.sessionTitle?.trim() || args.run.phase;
-  const phase = args.run.phase && args.run.phase !== title ? args.run.phase : null;
+  const total = args.todoProgress?.total ?? 0;
+  const completed = args.todoProgress?.completed ?? 0;
 
   return {
     title,
-    phase,
+    // 完成/异常态不摆当前动作句（异常态由 outcome 人话结局顶替）
+    phase: tone === 'live' || tone === 'waiting'
+      ? (args.run.phase && args.run.phase !== title ? args.run.phase : null)
+      : null,
     status: args.run.status,
+    tone,
+    steps: total > 0
+      ? { current: tone === 'done' ? total : Math.min(completed + 1, total), total }
+      : null,
+    outcome: tone === 'error'
+      ? (args.run.status === 'cancelled' ? 'cancelled' : 'error')
+      : null,
     elapsedMs: elapsedMs(args.run, live, args.now),
     live,
   };

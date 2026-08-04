@@ -31,6 +31,13 @@ export const workbenchTabsZh = {
     // T1 Run header：跑起来时置顶的进度与干预条
     overviewRunElapsedLabel: '已用时',
     overviewRunInterrupt: '中断',
+    // 概览四模块（2026-08-04 拍板二/三）：细进度线三态 + 步骤计数 + 人话结局
+    overviewRunStepProgress: '第 {current} 步 / 共 {total} 步',
+    overviewRunStepsDone: '已完成 · 共 {total} 步',
+    overviewRunWaitingApproval: '等你确认',
+    overviewRunOutcomeCancelled: '已中断',
+    overviewRunOutcomeError: '出错了',
+    overviewRunDotLabel: '任务状态：{status}',
     // T1 队列：跑中排队的用户消息
     overviewQueueLabel: '排队消息',
     overviewQueueSendNow: '立即发送',
@@ -107,6 +114,12 @@ export const workbenchTabsEn: typeof workbenchTabsZh = {
     overviewContextEmpty: 'No Skill, MCP, or Memory used in this turn',
     overviewRunElapsedLabel: 'Elapsed',
     overviewRunInterrupt: 'Interrupt',
+    overviewRunStepProgress: 'Step {current} of {total}',
+    overviewRunStepsDone: 'Done · {total} steps',
+    overviewRunWaitingApproval: 'Waiting for your confirmation',
+    overviewRunOutcomeCancelled: 'Interrupted',
+    overviewRunOutcomeError: 'Something went wrong',
+    overviewRunDotLabel: 'Task status: {status}',
     overviewQueueLabel: 'Queued messages',
     overviewQueueSendNow: 'Send now',
     overviewQueueRemove: 'Remove this queued message',

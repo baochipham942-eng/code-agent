@@ -68,8 +68,12 @@ export function useBackgroundTaskSync(options: UseBackgroundTaskSyncOptions = {}
       } catch (error) {
         // A failed ledger read cannot prove that a task is still running.
         // Freeze the last known projection and wait for an explicit user retry.
-        statusReadBlocked = true;
-        stopPoller?.();
+        // 0 rows ≠ failure（C.11）：store 未置位 readFailure 说明手头无任务，
+        // 轮询继续追平，不把空台账的一次读失败冻结成永久停摆。
+        if (useBackgroundTaskStore.getState().readFailure) {
+          statusReadBlocked = true;
+          stopPoller?.();
+        }
         throw error;
       }
     };

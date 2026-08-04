@@ -12,7 +12,6 @@ import { SendHorizontal, X } from 'lucide-react';
 import { useI18n } from '../../hooks/useI18n';
 import { useRunControlStore } from '../../stores/runControlStore';
 import { IconButton } from '../primitives';
-import { Card } from './Card';
 
 export const OverviewSteeringQueue: React.FC = () => {
   const { t } = useI18n();
@@ -22,13 +21,13 @@ export const OverviewSteeringQueue: React.FC = () => {
   // 队列空时不占主视线（工单：主视线是进度与干预，不是空壳瀑布）。
   if (queue.length === 0) return null;
 
+  // 去卡片化（2026-08-04 四模块）：紧随进度线其下的一小段列表，无卡片外壳。
   return (
-    <Card
-      title={t.workbenchTabs.overviewQueueLabel}
-      storageKey="overview-queue"
-      count={String(queue.length)}
-    >
-      <ul className="space-y-1" data-testid="overview-queue-rows">
+    <div className="mt-1.5" data-testid="overview-queue">
+      <div className="mb-0.5 px-0.5 text-[10px] font-medium uppercase tracking-wider text-zinc-500">
+        {t.workbenchTabs.overviewQueueLabel} · {queue.length}
+      </div>
+      <ul className="space-y-0.5" data-testid="overview-queue-rows">
         {queue.map((item) => (
           <li
             key={item.id}
@@ -74,6 +73,6 @@ export const OverviewSteeringQueue: React.FC = () => {
           </li>
         ))}
       </ul>
-    </Card>
+    </div>
   );
 };

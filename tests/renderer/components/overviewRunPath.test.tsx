@@ -210,7 +210,7 @@ describe('OverviewSteeringQueue', () => {
   });
 });
 
-describe('TaskWorkspaceOverview 诊断下沉', () => {
+describe('TaskWorkspaceOverview 四模块归位', () => {
   beforeEach(() => {
     window.localStorage.clear();
     useRunControlStore.setState({ queue: [], actions: null });
@@ -218,45 +218,13 @@ describe('TaskWorkspaceOverview 诊断下沉', () => {
     setRun(run({ status: 'running', startedAt: START }));
   });
 
-  it('诊断默认折叠，展开后 AgentTree 与上下文一条不少', () => {
-    const node = {
-      id: 'agent-1',
-      role: '调研员',
-      status: 'running',
-      statusLabel: '进行中',
-      children: [],
-      worktreeState: { kind: 'none' },
-      budgetSummary: {},
-      evidenceRefs: [],
-      sources: [],
-    };
-    const snapshot = {
-      generatedAt: START,
-      roots: [node],
-      nodes: [node],
-      summary: {
-        total: 1, running: 1, completed: 0, failed: 0,
-        cancelled: 0, blocked: 0, withWorktree: 0,
-      },
-    };
-    render(<TaskWorkspaceOverview agentTreeSnapshot={snapshot as never} />);
-
-    // 主视线里 Run header 在最前，诊断内容默认不占位
-    expect(screen.getByTestId('overview-run-header')).toBeTruthy();
-    expect(screen.queryByTestId('overview-diagnostics-body')).toBeNull();
-
-    fireEvent.click(screen.getByText('诊断详情'));
-
-    const body = screen.getByTestId('overview-diagnostics-body');
-    expect(body.textContent).toContain('调研员');
-  });
-
-  it('Run header 是主视线第一块，诊断在最后', () => {
-    render(<TaskWorkspaceOverview agentTreeSnapshot={null} />);
+  it('Run header 在主视线第一块，诊断 UI 不复存在（拍板三）', () => {
+    render(<TaskWorkspaceOverview />);
     const root = screen.getByTestId('task-workspace-overview');
     const blocks = Array.from(root.children);
 
-    expect(blocks[0]?.getAttribute('data-testid')).toBe('overview-run-header');
-    expect(blocks.at(-1)?.textContent).toContain('诊断详情');
+    expect(blocks[0]?.getAttribute('data-module')).toBe('task');
+    expect(screen.queryByTestId('overview-diagnostics-body')).toBeNull();
+    expect(screen.queryByText('诊断详情')).toBeNull();
   });
 });

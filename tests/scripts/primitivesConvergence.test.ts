@@ -62,8 +62,4 @@ describe('primitives convergence (EmptyState/Badge)', () => {
     });
   }
 
-  it('TaskPanel/Card.tsx 的 CardEmptyState 已退役', () => {
-    const src = readFileSync(join(RENDERER, 'components/TaskPanel/Card.tsx'), 'utf8');
-    expect(src).not.toContain('CardEmptyState');
-  });
 });

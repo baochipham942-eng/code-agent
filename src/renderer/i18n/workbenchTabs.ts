@@ -31,6 +31,14 @@ export const workbenchTabsZh = {
     // 上下文模块：解析不出人话名字时的兜底（内部 ID 禁漏，工单 A.5）
     overviewUnnamedOutput: '未命名输出',
     overviewUnknownCapability: '未知能力',
+    // 上下文模块类型小标（每行 = 类型小标 + 人话名）与「+N」展开尾行
+    overviewContextKindFile: '文件',
+    overviewContextKindSkill: '技能',
+    overviewContextKindMcp: 'MCP',
+    overviewContextKindConnector: '连接器',
+    overviewContextKindMemory: '记忆',
+    overviewContextKindComputer: '本机',
+    overviewContextShowMore: '展开剩余 {count} 项',
     // T1 Run header：跑起来时置顶的进度与干预条
     overviewRunElapsedLabel: '已用时',
     overviewRunInterrupt: '中断',
@@ -117,6 +125,13 @@ export const workbenchTabsEn: typeof workbenchTabsZh = {
     overviewContextEmpty: 'No Skill, MCP, or Memory used in this turn',
     overviewUnnamedOutput: 'Unnamed output',
     overviewUnknownCapability: 'Unknown capability',
+    overviewContextKindFile: 'File',
+    overviewContextKindSkill: 'Skill',
+    overviewContextKindMcp: 'MCP',
+    overviewContextKindConnector: 'Connector',
+    overviewContextKindMemory: 'Memory',
+    overviewContextKindComputer: 'Computer',
+    overviewContextShowMore: 'Show {count} more',
     overviewRunElapsedLabel: 'Elapsed',
     overviewRunInterrupt: 'Interrupt',
     overviewRunStepProgress: 'Step {current} of {total}',

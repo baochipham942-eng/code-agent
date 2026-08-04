@@ -1,12 +1,17 @@
-import { FileText } from 'lucide-react';
-import type { DeliverableCardView, WorkspacePreviewItem } from '@shared/contract';
+// ============================================================================
+// OutputArtifactRows —— 概览模块四「产物」：完成态收拢的一排缩略行
+// ----------------------------------------------------------------------------
+// 横向一排、超出折行不滚动；图片产物给真缩略图，缩略图解析失败降级为类型图标
+// + 文件名（不渲染灰底问号裂图）。标签一律人话：内部 ID 兜底「未命名输出」。
+// 跑中平铺列表已随四模块归位删除（2026-08-04 拍板二/三），本文件只剩缩略行。
+// ============================================================================
+
+import { useState } from 'react';
+import { File, FileText, Image as ImageIcon, Music, Video } from 'lucide-react';
+import type { WorkspacePreviewItem } from '@shared/contract';
 import type { TurnArtifactOwnershipItem } from '@shared/contract/turnTimeline';
-import type { ArtifactItem } from '../../hooks/useStatusRailModel';
-import { DeliverableCardList } from '../features/chat/MessageBubble/DeliverableCardList';
-import {
-  buildDeliverableCardFromWorkspaceItem,
-  buildTurnArtifactDeliverableCards,
-} from '../../utils/deliverables';
+import { humanContextLabel } from '../../utils/overviewLabels';
+import { resolveFileUrl } from '../../utils/resolveFileUrl';
 
 function resolveArtifactPath(path: string, workingDirectory?: string | null): string {
   const trimmed = path.trim();
@@ -39,138 +44,124 @@ function findPreviewItemForArtifact(
   return previewItems.find((item) => item.title === artifact.label) || null;
 }
 
-export const OutputFileRows = ({
-  files,
-  previewItems,
-  onOpenPreview,
-  onOpenFile,
-}: {
-  files: ArtifactItem[];
-  previewItems: WorkspacePreviewItem[];
-  onOpenPreview?: (itemId?: string | null) => void;
-  onOpenFile?: (path: string) => void;
-}) => {
-  return (
-    <div className="space-y-0.5">
-      {files.map((file) => (
-        <OutputFileRow
-          key={file.path}
-          file={file}
-          previewItem={findPreviewItemForPath(previewItems, file.path)}
-          onOpenPreview={onOpenPreview}
-          onOpenFile={onOpenFile}
-        />
-      ))}
-    </div>
-  );
-};
+function formatArtifactSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
 
-const OutputFileRow = ({
-  file,
+function artifactThumbIcon(label: string) {
+  const cls = 'h-3.5 w-3.5 flex-shrink-0';
+  const ext = label.includes('.') ? label.split('.').pop()?.toLowerCase() ?? '' : '';
+  if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'].includes(ext)) {
+    return <ImageIcon className={`${cls} text-badge-success`} />;
+  }
+  if (['mp3', 'wav', 'm4a', 'aac', 'flac', 'ogg'].includes(ext)) {
+    return <Music className={`${cls} text-badge-success`} />;
+  }
+  if (['mp4', 'webm', 'mov', 'mkv', 'avi'].includes(ext)) {
+    return <Video className={`${cls} text-badge-accent`} />;
+  }
+  if (['md', 'mdx', 'markdown', 'txt', 'pdf', 'doc', 'docx'].includes(ext)) {
+    return <FileText className={`${cls} text-zinc-400`} />;
+  }
+  return <File className={`${cls} text-zinc-500`} />;
+}
+
+const ArtifactThumb = ({
+  item,
   previewItem,
+  filePath,
+  unnamedLabel,
   onOpenPreview,
   onOpenFile,
 }: {
-  file: ArtifactItem;
+  item: TurnArtifactOwnershipItem;
   previewItem: WorkspacePreviewItem | null;
+  filePath: string | null;
+  unnamedLabel: string;
   onOpenPreview?: (itemId?: string | null) => void;
   onOpenFile?: (path: string) => void;
 }) => {
-  const row = (
-    <>
-      <FileText className="w-3.5 h-3.5 text-zinc-500 flex-shrink-0" />
-      <span className="text-xs text-zinc-400 truncate font-mono">{file.name}</span>
-    </>
-  );
+  const [imageFailed, setImageFailed] = useState(false);
+  const name = humanContextLabel(item.label || previewItem?.title, unnamedLabel);
+  const size = previewItem?.file?.size;
+  const showImage = previewItem?.kind === 'image' && Boolean(filePath) && !imageFailed;
 
-  if (onOpenFile) {
-    return (
-      <button
-        type="button"
-        onClick={() => onOpenFile(file.path)}
-        className="flex w-full items-center gap-2 rounded-md py-0.5 text-left hover:bg-white/[0.035]"
-        title={file.path}
-        data-testid="overview-artifact-file"
-      >
-        {row}
-      </button>
-    );
-  }
-
-  if (!previewItem || !onOpenPreview) {
-    return (
-      <div className="flex items-center gap-2 py-0.5" title={file.path}>
-        {row}
-      </div>
-    );
-  }
+  const handleClick = () => {
+    if (previewItem && onOpenPreview) {
+      onOpenPreview(previewItem.id);
+      return;
+    }
+    if (filePath && onOpenFile) {
+      onOpenFile(filePath);
+      return;
+    }
+    onOpenPreview?.(null);
+  };
 
   return (
     <button
       type="button"
-      onClick={() => onOpenPreview(previewItem.id)}
-      className="flex w-full items-center gap-2 rounded-md py-0.5 text-left hover:bg-white/[0.035]"
-      title={file.path}
+      data-testid="overview-artifact-thumb"
+      onClick={handleClick}
+      title={filePath || name}
+      className="flex min-w-0 items-center gap-2 rounded-lg bg-surface-subtle py-1.5 pl-1.5 pr-2.5 text-left transition-colors hover:bg-surface-hover"
     >
-      {row}
+      {showImage && filePath ? (
+        <img
+          src={resolveFileUrl(filePath)}
+          alt={name}
+          loading="lazy"
+          onError={() => setImageFailed(true)}
+          className="h-7 w-10 shrink-0 rounded object-cover"
+        />
+      ) : (
+        artifactThumbIcon(name)
+      )}
+      <span className="min-w-0">
+        <span className="block truncate text-xs text-zinc-200">{name}</span>
+        {size !== undefined && (
+          <span className="block text-[10px] text-zinc-600">{formatArtifactSize(size)}</span>
+        )}
+      </span>
     </button>
   );
 };
 
-export const CurrentTurnArtifactOwnershipCard = ({
-  artifactOwnership,
+export const ArtifactThumbStrip = ({
+  items,
   previewItems,
   workingDirectory,
+  unnamedLabel,
+  onOpenPreview,
   onOpenFile,
 }: {
-  artifactOwnership: TurnArtifactOwnershipItem[];
+  items: TurnArtifactOwnershipItem[];
   previewItems: WorkspacePreviewItem[];
   workingDirectory?: string | null;
+  unnamedLabel: string;
   onOpenPreview?: (itemId?: string | null) => void;
   onOpenFile?: (path: string) => void;
 }) => {
-  const fallbackCards = buildTurnArtifactDeliverableCards(artifactOwnership);
-  const rows = artifactOwnership.map((item, index) => {
-    const previewItem = findPreviewItemForArtifact(previewItems, item, workingDirectory);
-    const filePath = previewItem?.file?.path
-      || (item.path ? resolveArtifactPath(item.path, workingDirectory) : null);
-    const card = previewItem
-      ? buildDeliverableCardFromWorkspaceItem(previewItem)
-      : fallbackCards[index] || null;
-    return { item, index, filePath, card };
-  });
-
-  if (onOpenFile) {
-    return (
-      <div className="space-y-0.5">
-        {rows.map(({ item, index, filePath, card }) => {
-          const rowKey = `${item.kind}:${item.path || item.url || item.label}:${index}`;
-          if (filePath) {
-            return (
-              <button
-                key={rowKey}
-                type="button"
-                onClick={() => onOpenFile(filePath)}
-                className="flex w-full items-center gap-2 rounded-md py-0.5 text-left hover:bg-white/[0.035]"
-                title={filePath}
-                data-testid="overview-artifact-file"
-              >
-                <FileText className="h-3.5 w-3.5 flex-shrink-0 text-zinc-500" />
-                <span className="truncate font-mono text-xs text-zinc-400">{item.label}</span>
-              </button>
-            );
-          }
-          return card ? (
-            <DeliverableCardList key={rowKey} cards={[card]} className="" />
-          ) : null;
-        })}
-      </div>
-    );
-  }
-
-  const cards: DeliverableCardView[] = rows.flatMap(({ card }) => (card ? [card] : []));
-
   return (
-    <DeliverableCardList cards={cards} className="" />
+    <div className="flex flex-wrap gap-2">
+      {items.map((item, index) => {
+        const previewItem = findPreviewItemForArtifact(previewItems, item, workingDirectory);
+        const filePath = previewItem?.file?.path
+          || (item.path ? resolveArtifactPath(item.path, workingDirectory) : null);
+        return (
+          <ArtifactThumb
+            key={`${item.kind}:${item.path || item.url || item.label}:${index}`}
+            item={item}
+            previewItem={previewItem}
+            filePath={filePath}
+            unnamedLabel={unnamedLabel}
+            onOpenPreview={onOpenPreview}
+            onOpenFile={onOpenFile}
+          />
+        );
+      })}
+    </div>
   );
 };

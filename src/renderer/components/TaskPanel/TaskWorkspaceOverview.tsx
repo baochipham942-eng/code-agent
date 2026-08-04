@@ -1,6 +1,15 @@
+// ============================================================================
+// TaskWorkspaceOverview —— 概览四模块 · 任务上下文面板（2026-08-04 拍板二/三）
+// ----------------------------------------------------------------------------
+// 四个一级模块竖向堆叠，各回答一个用户问题：
+//   任务（在干什么：细进度线 + 排队消息）/ Todo（干到哪了）/ 上下文（用了什么）/
+//   产物（给了我什么：完成态收拢缩略行）。
+// 诊断 UI（AgentTree / 能力路由证据 / 详情入口）整体删除——数据照常写 DB，仅撤 UI。
+// 视觉：无卡片外壳、静态容器零边框（条款 B2），层级靠留白 + 字色阶梯。
+// ============================================================================
+
 import React, { useMemo, useState } from 'react';
 import { Loader2, AlertTriangle } from 'lucide-react';
-import type { AgentTreeSnapshot } from '@shared/contract/agentTree';
 import { CONFIG_DIR_DEV, CONFIG_DIR_NEW } from '@shared/constants/configDir';
 import { useAppStore } from '../../stores/appStore';
 import { useSessionStore } from '../../stores/sessionStore';
@@ -18,22 +27,19 @@ import type {
   TaskRecord,
   ToolCapabilityView,
 } from '../../types/runWorkbench';
+import type { TurnArtifactOwnershipItem } from '@shared/contract/turnTimeline';
 import { useI18n } from '../../hooks/useI18n';
-import { EmptyState } from '../primitives';
-import { WorkbenchPill } from '../workbench/WorkbenchPrimitives';
-import { AgentTreeView } from '../features/agentTree/AgentTreeView';
-import { Card } from './Card';
+import { humanContextLabel } from '../../utils/overviewLabels';
+import { isLiveRunStatus } from '../../utils/overviewRunHeader';
 import { OverviewRunHeader } from './OverviewRunHeader';
 import { OverviewSteeringQueue } from './OverviewSteeringQueue';
-import {
-  CurrentTurnArtifactOwnershipCard,
-  OutputFileRows,
-} from './OutputArtifactRows';
+import { ArtifactThumbStrip } from './OutputArtifactRows';
 import { TaskDashboardSummary } from './RunWorkbenchCards';
 
-// 后台任务状态台账读取失败时的独立失败块（替代任务摘要，不静默吞掉这个状态）。
-// 摘自已删除的 TaskMonitor.tsx——readFailure/requestStatusReadRetry 在全仓只有
-// 这一个消费点，删组件前把这份唯一的数据消费契约搬到 Overview 诊断二级承接。
+// 真读取失败（读取异常且确有任务在跑）在 Todo 模块位置内联一行错误 + 重试/取消
+// （拍板三后无详情二级可挂）。0 rows ≠ failure：store 侧已不置位，这里再做一层
+// 与「任务」模块完成态的互斥——run 非 live 时不允许同屏出现错误横幅
+// （2026-08-04 trace session_1785817007068_bb5753c3 实证两者同屏打架）。
 function StatusReadFailureBanner({
   isLoading,
   onRetry,
@@ -66,11 +72,7 @@ function StatusReadFailureBanner({
   const busy = isLoading || cancelling;
 
   return (
-    <div
-      className="rounded-md border border-badge-warning/20 bg-amber-500/[0.06] px-2.5 py-2"
-      role="status"
-      aria-live="polite"
-    >
+    <div role="status" aria-live="polite" className="px-0.5">
       <div className="flex items-start gap-2">
         <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-badge-warning" aria-hidden="true" />
         <div className="min-w-0 flex-1">
@@ -78,7 +80,7 @@ function StatusReadFailureBanner({
           <div className="mt-0.5 text-[11px] text-badge-warning/70">{m.statusReadFailedHint}</div>
         </div>
       </div>
-      <div className="mt-2 flex items-center gap-2">
+      <div className="mt-1.5 flex items-center gap-2 pl-5">
         <button
           type="button"
           onClick={onRetry}
@@ -101,7 +103,7 @@ function StatusReadFailureBanner({
         </button>
       </div>
       {cancelFailed && (
-        <div className="mt-2 text-[11px] text-badge-danger" role="alert">{m.cancelTaskFailed}</div>
+        <div className="mt-1.5 pl-5 text-[11px] text-badge-danger" role="alert">{m.cancelTaskFailed}</div>
       )}
     </div>
   );
@@ -179,18 +181,6 @@ function isInternalContextPath(path?: string): boolean {
   if (INTERNAL_CONTEXT_DIR_MARKERS.some((marker) => normalized.includes(marker))) return true;
   const name = normalized.split('/').filter(Boolean).pop() || '';
   return /tool[-_]?result/i.test(name);
-}
-
-/** 原始内部 ID（tool-result-tool-775064011… 这类）不得上屏（工单 A.5） */
-function looksLikeInternalId(label: string): boolean {
-  return /tool[-_ ]?(result|call)/i.test(label) || /\d{9,}/.test(label);
-}
-
-/** 解析不出人话名字时兜底「未命名输出/未知能力」，绝不兜底 ID */
-function humanContextLabel(label: string | undefined, fallback: string): string {
-  const trimmed = label?.trim() ?? '';
-  if (!trimmed || looksLikeInternalId(trimmed)) return fallback;
-  return trimmed;
 }
 
 /** MCP 按 server 去重：tool:mcp__<server>__<tool> → server 名 */
@@ -291,58 +281,106 @@ export function buildOverviewContextRows(args: {
   return Array.from(rows.values());
 }
 
-function contextTone(kind: OverviewContextKind): 'skill' | 'connector' | 'mcp' | 'info' | 'neutral' {
-  if (kind === 'skill') return 'skill';
-  if (kind === 'connector') return 'connector';
-  if (kind === 'mcp') return 'mcp';
-  if (kind === 'memory' || kind === 'computer') return 'info';
-  return 'neutral';
-}
+// ── 模块通用小标题：字色阶梯分界，不用分隔线（条款 B2/B4）─────────────────
 
-function contextKindLabel(kind: OverviewContextKind): string {
-  if (kind === 'skill') return 'Skill';
-  if (kind === 'mcp') return 'MCP';
-  if (kind === 'connector') return 'Connector';
-  if (kind === 'memory') return 'Memory';
-  if (kind === 'computer') return 'Computer';
-  return 'File';
-}
-
-function ContextRows({ rows }: { rows: OverviewContextRow[] }) {
+function ModuleLabel({ children }: { children: React.ReactNode }) {
   return (
-    <div className="space-y-0.5" data-testid="overview-context-rows">
-      {rows.map((row) => (
-        <div
-          key={row.id}
-          className="flex min-w-0 items-center gap-2 rounded-md px-1.5 py-1.5 hover:bg-white/[0.025]"
-          data-testid="overview-context-row"
-        >
-          <WorkbenchPill tone={contextTone(row.kind)}>
-            {contextKindLabel(row.kind)}
-          </WorkbenchPill>
-          <span className="min-w-0 flex-1 truncate text-xs text-zinc-300" title={row.label}>
-            {row.label}
-          </span>
-          {row.detail && (
-            <span className={`max-w-[110px] truncate text-[10px] ${
-              row.blocked ? 'text-badge-warning' : 'text-zinc-600'
-            }`}>
-              {row.detail}
-            </span>
-          )}
-        </div>
-      ))}
+    <div className="mb-1 px-0.5 text-[10px] font-medium uppercase tracking-wider text-zinc-500">
+      {children}
     </div>
   );
 }
 
-export interface TaskWorkspaceOverviewProps {
-  agentTreeSnapshot?: AgentTreeSnapshot | null;
+// ── 模块三 · 上下文：每项一行 = 类型小标 + 人话名（不套 chip 描边，B2）──────
+
+const CONTEXT_KIND_ORDER: OverviewContextKind[] = [
+  'file',
+  'skill',
+  'mcp',
+  'memory',
+  'computer',
+  'connector',
+];
+
+/** 每类最多 5 行，超出收「+N」尾行（点开展开，不滚动） */
+const CONTEXT_KIND_CAP = 5;
+
+function ContextRows({ rows }: { rows: OverviewContextRow[] }) {
+  const { t } = useI18n();
+  const wt = t.workbenchTabs;
+  const [expandedKinds, setExpandedKinds] = useState<ReadonlySet<string>>(new Set());
+
+  const kindLabels: Record<OverviewContextKind, string> = {
+    file: wt.overviewContextKindFile,
+    skill: wt.overviewContextKindSkill,
+    mcp: wt.overviewContextKindMcp,
+    connector: wt.overviewContextKindConnector,
+    memory: wt.overviewContextKindMemory,
+    computer: wt.overviewContextKindComputer,
+  };
+
+  const byKind = new Map<OverviewContextKind, OverviewContextRow[]>();
+  for (const row of rows) {
+    const list = byKind.get(row.kind) ?? [];
+    list.push(row);
+    byKind.set(row.kind, list);
+  }
+
+  return (
+    <div className="space-y-0.5" data-testid="overview-context-rows">
+      {CONTEXT_KIND_ORDER.map((kind) => {
+        const list = byKind.get(kind);
+        if (!list?.length) return null;
+        const isExpanded = expandedKinds.has(kind);
+        const visible = isExpanded ? list : list.slice(0, CONTEXT_KIND_CAP);
+        const overflow = list.length - visible.length;
+        return (
+          <React.Fragment key={kind}>
+            {visible.map((row) => (
+              <div
+                key={row.id}
+                className="flex min-w-0 items-baseline gap-2 px-0.5 py-0.5"
+                data-testid="overview-context-row"
+              >
+                <span className="w-9 shrink-0 text-[10px] text-zinc-500">
+                  {kindLabels[row.kind]}
+                </span>
+                <span
+                  className={`min-w-0 truncate text-xs ${
+                    row.blocked ? 'text-badge-warning' : 'text-zinc-300'
+                  }`}
+                  title={row.label}
+                >
+                  {row.label}
+                </span>
+                {row.detail && (
+                  <span className={`ml-auto max-w-[110px] shrink-0 truncate text-[10px] ${
+                    row.blocked ? 'text-badge-warning' : 'text-zinc-600'
+                  }`}>
+                    {row.detail}
+                  </span>
+                )}
+              </div>
+            ))}
+            {overflow > 0 && (
+              <button /* ds-allow:button: 「+N」展开尾行是超小文本按钮（text-[10px]），primitive 最小 sm 仍更大 */
+                type="button"
+                data-testid={`overview-context-more-${kind}`}
+                className="px-0.5 pl-11 text-[10px] text-zinc-500 hover:text-zinc-300"
+                aria-label={wt.overviewContextShowMore.replace('{count}', String(overflow))}
+                onClick={() => setExpandedKinds((prev) => new Set(prev).add(kind))}
+              >
+                +{overflow}
+              </button>
+            )}
+          </React.Fragment>
+        );
+      })}
+    </div>
+  );
 }
 
-export const TaskWorkspaceOverview: React.FC<TaskWorkspaceOverviewProps> = ({
-  agentTreeSnapshot,
-}) => {
+export const TaskWorkspaceOverview: React.FC = () => {
   const { t } = useI18n();
   const workingDirectory = useAppStore((state) => state.workingDirectory);
   const openFilePreview = useAppStore((state) => state.openPreview);
@@ -358,10 +396,6 @@ export const TaskWorkspaceOverview: React.FC<TaskWorkspaceOverviewProps> = ({
   const currentTurnArtifactOwnership = useCurrentTurnArtifactOwnership();
   const workspacePreviewItems = useWorkspacePreviewModel();
 
-  const todoProgress = useMemo(
-    () => summarizeTodoProgress(runWorkbench.tasks),
-    [runWorkbench.tasks],
-  );
   const contextRows = useMemo(
     () => buildOverviewContextRows({
       tools: runWorkbench.tools,
@@ -380,98 +414,103 @@ export const TaskWorkspaceOverview: React.FC<TaskWorkspaceOverviewProps> = ({
       t.workbenchTabs.overviewUnknownCapability,
     ],
   );
-  const agentCount = agentTreeSnapshot?.nodes.length ?? 0;
-  const artifactCount = currentTurnArtifactOwnership
-    ? currentTurnArtifactOwnership.artifactOwnership.length
-    : statusRail.outputs.count;
+
+  const runLive = isLiveRunStatus(runWorkbench.run.status);
+  // 「确有任务在跑」才配谈读取失败：0 rows（没有任务）是空态不是失败（C.11）
+  const hasActiveTasks = runWorkbench.tasks.some((task) => task.status === 'in_progress');
+  const showReadFailure = Boolean(readFailure) && runLive && hasActiveTasks;
+  const showTodoModule = showReadFailure || runWorkbench.tasks.length > 0;
+
+  // 产物条目源：当轮归属优先，退回 statusRail 输出文件（与旧产物卡同源）
+  const artifactItems: TurnArtifactOwnershipItem[] = useMemo(() => {
+    if (currentTurnArtifactOwnership) return currentTurnArtifactOwnership.artifactOwnership;
+    return statusRail.outputs.files.map((file) => ({
+      kind: 'file' as const,
+      label: file.name,
+      path: file.path,
+      ownerKind: 'tool' as const,
+      ownerLabel: '',
+    }));
+  }, [currentTurnArtifactOwnership, statusRail.outputs.files]);
+  // 跑中不铺产物列表；完成/终态收拢为一排缩略行（spec §模块四）
+  const showArtifacts = !runLive && artifactItems.length > 0;
 
   const openPreview = (itemId?: string | null) => {
     openWorkspacePreview(itemId ?? workspacePreviewItems[0]?.id ?? null);
   };
   const openFile = (path: string) => {
     // 概览只负责选产物；文件内容由右栏原生 preview tab 承载。
-    // 先清掉旧 workspace-preview 选择，用户切回概览时仍然看到三段工作台。
+    // 先清掉旧 workspace-preview 选择，用户切回概览时仍然看到四模块面板。
     setSelectedWorkspacePreviewId(null);
     openFilePreview(path);
   };
 
   return (
-    // T1 主路径顺序：Run header（进度与干预）→ 队列 → Todo → 产物 → 诊断（二级折叠）。
-    <div className="space-y-3" data-testid="task-workspace-overview">
-      <OverviewRunHeader />
+    <div className="space-y-4" data-testid="task-workspace-overview">
+      {/* 模块一 · 任务：细进度线一行 + 排队消息紧随其下 */}
+      <section data-module="task" aria-label={t.workbenchTabs.overviewProgressLabel}>
+        <OverviewRunHeader />
+        <OverviewSteeringQueue />
+      </section>
 
-      <OverviewSteeringQueue />
+      {/* 模块二 · Todo：计划步骤提为一级；无 TODO 整个模块不渲染 */}
+      {showTodoModule && (
+        <section
+          data-module="todo"
+          data-testid="overview-todo-module"
+          aria-label={t.workbenchTabs.overviewTodosLabel}
+        >
+          <ModuleLabel>{t.workbenchTabs.overviewTodosLabel}</ModuleLabel>
+          {showReadFailure ? (
+            <StatusReadFailureBanner
+              isLoading={backgroundTasksLoading}
+              onRetry={requestStatusReadRetry}
+              onCancel={() => {
+                if (!currentSessionId) return Promise.resolve();
+                return cancelTask(currentSessionId);
+              }}
+              canCancel={Boolean(currentSessionId)}
+            />
+          ) : (
+            <TaskDashboardSummary
+              tasks={runWorkbench.tasks}
+              run={runWorkbench.run}
+              showOutputRefs={false}
+            />
+          )}
+        </section>
+      )}
 
-      <Card
-        title={t.workbenchTabs.overviewTodosLabel}
-        storageKey="overview-todos"
-        count={readFailure ? undefined : todoProgress.label}
-        highlight={runWorkbench.tasks.some((task) => task.status === 'blocked')}
-      >
-        {readFailure ? (
-          <StatusReadFailureBanner
-            isLoading={backgroundTasksLoading}
-            onRetry={requestStatusReadRetry}
-            onCancel={() => {
-              if (!currentSessionId) return Promise.resolve();
-              return cancelTask(currentSessionId);
-            }}
-            canCancel={Boolean(currentSessionId)}
-          />
-        ) : (
-          <TaskDashboardSummary
-            tasks={runWorkbench.tasks}
-            run={runWorkbench.run}
-            showOutputRefs={false}
-          />
-        )}
-      </Card>
+      {/* 模块三 · 上下文：本次任务实际用到的文件/技能/MCP/记忆（准入规则过滤） */}
+      {contextRows.length > 0 && (
+        <section
+          data-module="context"
+          data-testid="overview-context-module"
+          aria-label={t.workbenchTabs.overviewContextLabel}
+        >
+          <ModuleLabel>{t.workbenchTabs.overviewContextLabel}</ModuleLabel>
+          <ContextRows rows={contextRows} />
+        </section>
+      )}
 
-      <Card
-        title={t.workbenchTabs.overviewArtifactsLabel}
-        storageKey="overview-artifacts"
-        count={artifactCount > 0 ? String(artifactCount) : undefined}
-      >
-        {currentTurnArtifactOwnership ? (
-          <CurrentTurnArtifactOwnershipCard
-            artifactOwnership={currentTurnArtifactOwnership.artifactOwnership}
+      {/* 模块四 · 产物：完成态收拢缩略行，点击进专注预览 */}
+      {showArtifacts && (
+        <section
+          data-module="artifacts"
+          data-testid="overview-artifacts-module"
+          aria-label={t.workbenchTabs.overviewArtifactsLabel}
+        >
+          <ModuleLabel>{t.workbenchTabs.overviewArtifactsLabel}</ModuleLabel>
+          <ArtifactThumbStrip
+            items={artifactItems}
             previewItems={workspacePreviewItems}
             workingDirectory={workingDirectory}
             onOpenPreview={openPreview}
             onOpenFile={openFile}
+            unnamedLabel={t.workbenchTabs.overviewUnnamedOutput}
           />
-        ) : statusRail.outputs.count > 0 ? (
-          <OutputFileRows
-            files={statusRail.outputs.files}
-            previewItems={workspacePreviewItems}
-            onOpenPreview={openPreview}
-            onOpenFile={openFile}
-          />
-        ) : (
-          <EmptyState variant="inline" text={t.previewWorkspace.workspacePreview.noArtifactsYet} />
-        )}
-      </Card>
-
-      {/* 诊断二级（T1）：AgentTree / 能力路由证据 / 上下文行对 power user 仍有价值，
-          内容一条不删，只是默认折叠、不再抢主视线（调研 §4.5）。 */}
-      <Card
-        title={t.workbenchTabs.overviewDiagnosticsLabel}
-        storageKey="overview-diagnostics"
-        defaultExpanded={false}
-        count={String(contextRows.length + agentCount)}
-      >
-        <div className="space-y-2" data-testid="overview-diagnostics-body">
-          <div className="text-[10px] font-medium uppercase tracking-wider text-zinc-600">
-            {t.workbenchTabs.overviewContextLabel}
-          </div>
-          <AgentTreeView snapshot={agentTreeSnapshot} />
-          {contextRows.length > 0 ? (
-            <ContextRows rows={contextRows} />
-          ) : (
-            <EmptyState variant="inline" text={t.workbenchTabs.overviewContextEmpty} />
-          )}
-        </div>
-      </Card>
+        </section>
+      )}
     </div>
   );
 };

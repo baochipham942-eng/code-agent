@@ -113,7 +113,6 @@ const MIGRATED: string[] = [
   'TaskPanel/orchestration/components.tsx',
   'TaskPanel/ContextInterventionPanel.tsx',
   'TaskPanel/ContextProvenancePanel.tsx',
-  'TaskPanel/Card.tsx',
   'TaskPanel/WorkingFolder.tsx',
   'TaskPanel/SwarmDependencyMap.tsx',
   'UpdateNotification.tsx',

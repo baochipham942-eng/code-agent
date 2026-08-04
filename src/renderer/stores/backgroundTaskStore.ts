@@ -60,14 +60,15 @@ export const useBackgroundTaskStore = create<BackgroundTaskStore>()((set) => ({
       // Preserve the last known task status. A ledger read failure does not mean
       // the task failed, and callers must stop automatic waiting until an
       // explicit retry succeeds.
-      set({
+      // 0 rows ≠ failure（2026-08-04 C.11）：手头没有任何任务时读失败只是
+      // 「没有任务」，不置用户可见的 readFailure；确有任务、状态无法确认时才置位。
+      set((state) => ({
         isLoading: false,
         error: message,
-        readFailure: {
-          message,
-          failedAt: Date.now(),
-        },
-      });
+        readFailure: state.tasks.length > 0
+          ? { message, failedAt: Date.now() }
+          : null,
+      }));
       throw error;
     }
   },

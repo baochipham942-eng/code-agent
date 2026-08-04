@@ -95,8 +95,15 @@ async function openOverviewView(page: Page): Promise<void> {
 // 首启三层遮罩（信任文件夹 → 连接模型 onboarding → 跳过后落在设置页），出现才点。
 // 与 design-canvas-conversational.e2e.spec.ts 同款，不复制会静默扑空。
 async function waitForAppReady(page: Page): Promise<void> {
+  // 在 goto 之前挂 waitForResponse（同 swarm-chain 的实证模式）——SSE 初始请求
+  // 可能紧跟页面加载发出，错过它后面注入的事件会被静默丢弃。
+  const ssePromise = page.waitForResponse(
+    (resp) => resp.url().includes('/api/events'),
+    { timeout: 20_000 },
+  );
   await page.goto('/');
   await expect(page.locator('.h-screen')).toBeVisible({ timeout: 15_000 });
+  await ssePromise;
   for (const name of ['信任并加载', '跳过，稍后在设置里配置']) {
     const btn = page.getByRole('button', { name });
     await btn.waitFor({ state: 'visible', timeout: 5_000 }).catch(() => {});

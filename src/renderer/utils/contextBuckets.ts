@@ -75,6 +75,8 @@ export interface ContextItem {
   bucket: ContextBucket;
   source: 'attachment' | 'tool';
   path?: string;
+  /** 工具调用失败（success === false）的条目——概览「上下文」模块准入规则要排除 */
+  failed?: boolean;
 }
 
 const FILE_TOOL_NAMES = new Set(['Read', 'Write', 'Edit', 'MultiEdit', 'NotebookRead', 'NotebookEdit']);
@@ -174,7 +176,15 @@ export function extractContextItems(messages: Message[], recentCount = 30): Cont
         const key = path ? `tool:file:${path}:${tc.name}` : `tool:${tc.name}:${label}`;
         if (seen.has(key)) continue;
         seen.add(key);
-        items.push({ id: key, label, detail, bucket, source: 'tool', path });
+        items.push({
+          id: key,
+          label,
+          detail,
+          bucket,
+          source: 'tool',
+          path,
+          failed: tc.result?.success === false || undefined,
+        });
       }
     }
   }

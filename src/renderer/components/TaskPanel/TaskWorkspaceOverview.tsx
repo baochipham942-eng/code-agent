@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Loader2, AlertTriangle } from 'lucide-react';
 import type { AgentTreeSnapshot } from '@shared/contract/agentTree';
+import { CONFIG_DIR_DEV, CONFIG_DIR_NEW } from '@shared/constants/configDir';
 import { useAppStore } from '../../stores/appStore';
 import { useSessionStore } from '../../stores/sessionStore';
 import { useBackgroundTaskStore } from '../../stores/backgroundTaskStore';
@@ -160,46 +161,74 @@ function memoryActionLabel(action: MemoryActivityEvent['action']): string {
   return 'used';
 }
 
+// ── 准入规则（2026-08-04 追加拍板）──────────────────────────────────────
+// 唯一准入判据 = 本次任务实际发生过调用/读写；「可用/已加载/已连接/被列出」不进。
+// 工具视图 id 形态区分来源：`tool:<name>` 是真实 tool_call 投影；`<kind>:<id>`
+// 只是能力范围（scope）里被列出/选中的条目。
+
+/** 内部数据目录（配置目录名与 shared 常量同源，renderer 可安全引用） */
+const INTERNAL_CONTEXT_DIR_MARKERS = [
+  `/${CONFIG_DIR_NEW}/`,
+  `/${CONFIG_DIR_DEV}/`,
+];
+
+/** 内部工件路径：app 数据目录内部文件、tool-result blob（spec §模块三 文件类反例） */
+function isInternalContextPath(path?: string): boolean {
+  if (!path) return false;
+  const normalized = path.replace(/\\/g, '/');
+  if (INTERNAL_CONTEXT_DIR_MARKERS.some((marker) => normalized.includes(marker))) return true;
+  const name = normalized.split('/').filter(Boolean).pop() || '';
+  return /tool[-_]?result/i.test(name);
+}
+
+/** 原始内部 ID（tool-result-tool-775064011… 这类）不得上屏（工单 A.5） */
+function looksLikeInternalId(label: string): boolean {
+  return /tool[-_ ]?(result|call)/i.test(label) || /\d{9,}/.test(label);
+}
+
+/** 解析不出人话名字时兜底「未命名输出/未知能力」，绝不兜底 ID */
+function humanContextLabel(label: string | undefined, fallback: string): string {
+  const trimmed = label?.trim() ?? '';
+  if (!trimmed || looksLikeInternalId(trimmed)) return fallback;
+  return trimmed;
+}
+
+/** MCP 按 server 去重：tool:mcp__<server>__<tool> → server 名 */
+function mcpServerName(toolId: string, label: string): string {
+  const name = toolId.startsWith('tool:') ? toolId.slice('tool:'.length) : label;
+  if (name.startsWith('mcp__')) {
+    const server = name.split('__')[1];
+    if (server) return server;
+  }
+  return label;
+}
+
+export interface OverviewContextFallbacks {
+  unnamedOutput: string;
+  unknownCapability: string;
+}
+
 export function buildOverviewContextRows(args: {
   tools: ToolCapabilityView[];
   memoryActivities: MemoryActivityEvent[];
   contextItems: FileContextItem[];
+  fallbacks: OverviewContextFallbacks;
 }): OverviewContextRow[] {
   const rows = new Map<string, OverviewContextRow>();
+  const { fallbacks } = args;
 
-  for (const tool of args.tools) {
-    const kind = contextKindFromTool(tool.source);
-    // Bash、Read 等执行流水属于 Todo 的当前动作，不再作为高层上下文重复展示。
-    if (!kind) continue;
-    const key = `${kind}:${tool.id}`;
-    rows.set(key, {
-      id: key,
-      kind,
-      label: tool.label,
-      detail: tool.callable ? undefined : tool.blockedReason || 'blocked',
-      blocked: !tool.callable,
-    });
-  }
-
-  for (const activity of args.memoryActivities) {
-    const key = `memory:${activity.memoryId}`;
-    rows.set(key, {
-      id: key,
-      kind: 'memory',
-      label: activity.filename || activity.title,
-      detail: memoryActionLabel(activity.action),
-    });
-  }
-
-  for (const item of args.contextItems) {
-    if (item.bucket !== 'files') continue;
+  // 文件：真实 Read/Write/Edit 过的用户可辨认文件 + 用户给的附件。
+  // 倒序遍历 = 类内最近使用在前；同一路径读又写只出一行（动作小标合并回时序）。
+  for (const item of [...args.contextItems].reverse()) {
+    if (item.bucket !== 'files' || item.failed) continue;
+    if (isInternalContextPath(item.path)) continue;
     const identity = item.path || item.label;
     const key = `file:${identity}`;
     const existing = rows.get(key);
     if (existing) {
       if (item.detail && existing.detail !== item.detail) {
         existing.detail = existing.detail
-          ? `${existing.detail} / ${item.detail}`
+          ? `${item.detail} / ${existing.detail}`
           : item.detail;
       }
       continue;
@@ -207,12 +236,59 @@ export function buildOverviewContextRows(args: {
     rows.set(key, {
       id: key,
       kind: 'file',
-      label: item.label,
+      label: humanContextLabel(item.label, fallbacks.unnamedOutput),
       detail: item.detail,
     });
   }
 
-  return Array.from(rows.values()).slice(0, 12);
+  // 技能：contextItems 的 rules 行只由真实 Skill 调用产生，label 是技能名；
+  // 仅出现在可用列表/被搜索到的不进，激活失败（failed）的不进。
+  for (const item of [...args.contextItems].reverse()) {
+    if (item.bucket !== 'rules' || item.source !== 'tool' || item.failed) continue;
+    const key = `skill:${item.label}`;
+    if (rows.has(key)) continue;
+    rows.set(key, {
+      id: key,
+      kind: 'skill',
+      label: humanContextLabel(item.label, fallbacks.unknownCapability),
+    });
+  }
+
+  // MCP / Connector / Computer：真实调用过（tool_call 投影）或被拒/失败（标黄保留）；
+  // 已连接但零调用的不进。memory 走 memoryActivities（带动作小标），不在此列。
+  for (const tool of [...args.tools].reverse()) {
+    const kind = contextKindFromTool(tool.source);
+    if (!kind || kind === 'skill' || kind === 'memory') continue;
+    const invoked = tool.id.startsWith('tool:');
+    if (!invoked && tool.callable) continue;
+    const label = humanContextLabel(
+      kind === 'mcp' ? mcpServerName(tool.id, tool.label) : tool.label,
+      fallbacks.unknownCapability,
+    );
+    const key = `${kind}:${label}`;
+    if (rows.has(key)) continue;
+    rows.set(key, {
+      id: key,
+      kind,
+      label,
+      detail: tool.callable ? undefined : tool.blockedReason || 'blocked',
+      blocked: !tool.callable,
+    });
+  }
+
+  // 记忆：本次任务真实读取/写入的条目，带 created/updated/used 动作小标
+  for (const activity of [...args.memoryActivities].reverse()) {
+    const key = `memory:${activity.memoryId}`;
+    if (rows.has(key)) continue;
+    rows.set(key, {
+      id: key,
+      kind: 'memory',
+      label: humanContextLabel(activity.filename || activity.title, fallbacks.unknownCapability),
+      detail: memoryActionLabel(activity.action),
+    });
+  }
+
+  return Array.from(rows.values());
 }
 
 function contextTone(kind: OverviewContextKind): 'skill' | 'connector' | 'mcp' | 'info' | 'neutral' {
@@ -291,8 +367,18 @@ export const TaskWorkspaceOverview: React.FC<TaskWorkspaceOverviewProps> = ({
       tools: runWorkbench.tools,
       memoryActivities: runWorkbench.memoryActivities,
       contextItems: statusRail.context.items,
+      fallbacks: {
+        unnamedOutput: t.workbenchTabs.overviewUnnamedOutput,
+        unknownCapability: t.workbenchTabs.overviewUnknownCapability,
+      },
     }),
-    [runWorkbench.memoryActivities, runWorkbench.tools, statusRail.context.items],
+    [
+      runWorkbench.memoryActivities,
+      runWorkbench.tools,
+      statusRail.context.items,
+      t.workbenchTabs.overviewUnnamedOutput,
+      t.workbenchTabs.overviewUnknownCapability,
+    ],
   );
   const agentCount = agentTreeSnapshot?.nodes.length ?? 0;
   const artifactCount = currentTurnArtifactOwnership

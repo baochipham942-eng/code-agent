@@ -28,6 +28,9 @@ export const workbenchTabsZh = {
     overviewContextLabel: '上下文',
     overviewArtifactsLabel: '产物',
     overviewContextEmpty: '本轮还没有使用 Skill、MCP 或 Memory',
+    // 上下文模块：解析不出人话名字时的兜底（内部 ID 禁漏，工单 A.5）
+    overviewUnnamedOutput: '未命名输出',
+    overviewUnknownCapability: '未知能力',
     // T1 Run header：跑起来时置顶的进度与干预条
     overviewRunElapsedLabel: '已用时',
     overviewRunInterrupt: '中断',
@@ -112,6 +115,8 @@ export const workbenchTabsEn: typeof workbenchTabsZh = {
     overviewContextLabel: 'Context',
     overviewArtifactsLabel: 'Deliverables',
     overviewContextEmpty: 'No Skill, MCP, or Memory used in this turn',
+    overviewUnnamedOutput: 'Unnamed output',
+    overviewUnknownCapability: 'Unknown capability',
     overviewRunElapsedLabel: 'Elapsed',
     overviewRunInterrupt: 'Interrupt',
     overviewRunStepProgress: 'Step {current} of {total}',

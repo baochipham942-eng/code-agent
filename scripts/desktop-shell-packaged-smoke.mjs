@@ -354,7 +354,86 @@ export function verifyPackagedDesktopShellEvidence(evidence) {
   return result;
 }
 
-async function collectEvidence({ dataDir, tauriDataDir, port, timeoutMs, startedAtMs }) {
+export function verifyPackagedDesktopShellHealthEvidence(evidence) {
+  const boot = isRecord(evidence?.boot) ? evidence.boot : null;
+  const staleBoot = isRecord(evidence?.staleBoot) ? evidence.staleBoot : null;
+  const health = isRecord(evidence?.health) ? evidence.health : null;
+  const failures = [];
+  const warnings = [];
+  const bootFile = evidence?.bootFile;
+  const healthUrl = evidence?.healthUrl;
+
+  if (!boot) {
+    pushFailure(failures, 'desktop_shell_boot_json_missing', 'desktop-shell-boot-latest.json was not readable.', { bootFile });
+    if (staleBoot) {
+      pushWarning(warnings, 'desktop_shell_boot_json_stale', 'A boot diagnostics file exists but does not match this smoke run.', {
+        bootFile,
+        staleBoot: {
+          webPort: staleBoot.webPort,
+          stage: staleBoot.stage,
+          generatedAt: staleBoot.generatedAt,
+        },
+      });
+    }
+  } else {
+    if (boot.stage === 'failed') {
+      pushFailure(failures, 'desktop_shell_boot_failed', 'Desktop shell boot reached the failed stage.', {
+        bootFile,
+        issues: boot.issues,
+      });
+    }
+    if (boot.healthMatchedBootToken !== true) {
+      pushFailure(failures, 'desktop_shell_boot_token_mismatch', 'The health response did not match this launch boot token.', {
+        bootFile,
+        healthMatchedBootToken: boot.healthMatchedBootToken,
+      });
+    }
+  }
+
+  if (!health) {
+    pushFailure(failures, 'desktop_shell_health_missing', '/api/health did not return JSON.', { healthUrl });
+  } else if (health.status !== 'ok') {
+    pushFailure(failures, 'desktop_shell_health_not_ok', `/api/health status is ${health.status ?? 'missing'}.`, {
+      healthUrl,
+      status: health.status,
+    });
+  }
+
+  if (boot?.webServerPid && health?.pid && boot.webServerPid !== health.pid) {
+    pushFailure(failures, 'desktop_shell_pid_mismatch', 'boot diagnostics and /api/health disagree on webServer pid.', {
+      bootWebServerPid: boot.webServerPid,
+      healthPid: health.pid,
+    });
+  }
+
+  return {
+    ok: failures.length === 0,
+    summary: {
+      evidenceReady: Boolean(boot && health),
+      bootFile,
+      healthUrl,
+      bootStage: boot?.stage ?? 'unknown',
+      staleBootStage: staleBoot?.stage,
+      port: boot?.webPort,
+      webServerPid: boot?.webServerPid ?? health?.pid,
+      webHealth: health?.status ?? 'unknown',
+      classificationStatus: failures.length === 0 ? 'ok' : 'failed',
+    },
+    failures,
+    warnings,
+    classification: {
+      status: failures.length === 0 ? 'ok' : 'failed',
+      issues: [],
+    },
+    evidence: {
+      boot: sanitizeBootEvidence(boot),
+      staleBoot: sanitizeBootEvidence(staleBoot),
+      health: sanitizeHealthEvidence(health),
+    },
+  };
+}
+
+async function collectEvidence({ dataDir, tauriDataDir, port, timeoutMs, startedAtMs, healthOnly }) {
   const baseUrl = `http://localhost:${port}`;
   const bootFile = path.join(tauriDataDir, 'logs', BOOT_FILE);
   const healthUrl = `${baseUrl}/api/health`;
@@ -375,6 +454,19 @@ async function collectEvidence({ dataDir, tauriDataDir, port, timeoutMs, started
     } catch {
       health = null;
     }
+    if (healthOnly) {
+      lastResult = verifyPackagedDesktopShellHealthEvidence({
+        boot,
+        staleBoot,
+        health,
+        bootFile,
+        healthUrl,
+      });
+      if (lastResult.ok) return lastResult;
+      await sleep(1000);
+      continue;
+    }
+
     const desktopShell = await readDomainDiagnostics(baseUrl, dataDir);
     lastResult = verifyPackagedDesktopShellEvidence({
       boot,
@@ -409,16 +501,19 @@ function parseCliArgs(args) {
     ? path.resolve(readArg(args, '--data-dir'))
     : fs.mkdtempSync(path.join(os.tmpdir(), 'agent-neo-desktop-smoke-'));
   const appPath = path.resolve(readArg(args, '--app') ?? defaultAppPath());
+  const port = Number(readArg(args, '--port') ?? randomPort());
   return {
     appPath,
     dataDir,
     tauriDataDir: readArg(args, '--tauri-data-dir')
       ? path.resolve(readArg(args, '--tauri-data-dir'))
       : defaultTauriAppDataDir(appPath),
-    port: Number(readArg(args, '--port') ?? randomPort()),
+    port,
+    appPort: Number(readArg(args, '--app-port') ?? port),
     timeoutMs: Number(readArg(args, '--timeout-ms') ?? DEFAULT_TIMEOUT_MS),
     skipLaunch: hasFlag(args, '--skip-launch'),
     keepRunning: hasFlag(args, '--keep-running'),
+    healthOnly: hasFlag(args, '--health-only'),
     json: hasFlag(args, '--json'),
     outFile: readArg(args, '--out') ? path.resolve(readArg(args, '--out')) : undefined,
   };
@@ -434,9 +529,11 @@ function usage() {
     '  --tauri-data-dir <dir>',
     '                      Tauri app data dir for desktop-shell-boot-latest.json. Defaults from bundle id.',
     '  --port <n>          Isolated CODE_AGENT_WEB_PORT. Defaults to a random high port.',
+    '  --app-port <n>      Port injected into the app. Defaults to --port; separate only for mutation testing.',
     '  --timeout-ms <n>    Default: 120000',
     '  --skip-launch      Do not launch the app; only probe the given data-dir/port.',
     '  --keep-running     Leave the launched app process running.',
+    '  --health-only      Require a fresh matching boot and healthy /api/health; skip full runtime diagnostics.',
     '  --out <file>        Write the JSON smoke result to a file.',
     '  --json              Print JSON.',
   ].join('\n');
@@ -498,7 +595,7 @@ async function main() {
     fs.mkdirSync(path.join(options.tauriDataDir, 'logs'), { recursive: true });
     const startedAtMs = Date.now();
     if (!options.skipLaunch) {
-      launched = launchApp(options.appPath, options.dataDir, options.port);
+      launched = launchApp(options.appPath, options.dataDir, options.appPort);
     }
 
     const result = await collectEvidence({ ...options, startedAtMs });

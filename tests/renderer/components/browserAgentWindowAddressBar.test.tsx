@@ -14,8 +14,8 @@ import type { SurfaceLiveFrameStreamState } from '../../../src/renderer/hooks/us
 
 type BrowserSessionState = ReturnType<typeof useWorkbenchBrowserSession>;
 
-const openHttpLinkInRail = vi.fn(() => true);
-const closeUserBrowserLinkRun = vi.fn(async () => undefined);
+const openHttpLinkInRail = vi.fn((_input: unknown) => true);
+const closeUserBrowserLinkRun = vi.fn(async (..._args: unknown[]) => undefined);
 
 let browserSessionState: BrowserSessionState;
 let pointerState: LiveAgentPointerState;

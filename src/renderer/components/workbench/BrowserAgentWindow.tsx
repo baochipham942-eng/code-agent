@@ -28,9 +28,9 @@ import { closeUserBrowserLinkRun, openHttpLinkInRail } from '../../services/user
 import { normalizeBrowserAddressInput } from '../../utils/browserAddressBar';
 
 // B1-R·R1：workbench「浏览器」tab = **一扇浏览器**，不是状态卡片堆。
-// 一条细 chrome（状态点 + 标题 + URL + ⋯）压顶，剩下全给实时画面；指针叠加直接画
-// 在画面上。profile 导入 / 扩展目录 / relay 启停 / 清 cookie 等高级管理仍只在 LocalOps，
-// 从 ⋯ 深链过去。
+// 一条细 chrome（状态点 + 标题 + ⋯）压顶，其下是用户地址栏（2026-08-04 工单，URL 显示
+// 唯一源），剩下全给实时画面；指针叠加直接画在画面上。profile 导入 / 扩展目录 /
+// relay 启停 / 清 cookie 等高级管理仍只在 LocalOps，从 ⋯ 深链过去。
 
 type Copy = ReturnType<typeof useI18n>['t']['workbenchTabs']['agentWindow'];
 

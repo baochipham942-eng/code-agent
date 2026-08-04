@@ -820,7 +820,7 @@ export const ChatView: React.FC = () => {
         <div className="shrink-0">
           {/* Semantic Research Indicator - 检测到需要深度研究时显示 */}
           {researchDetected && (
-            <div className="w-full px-4">
+            <div className="w-full chat-col-pad">
               <div className="mx-auto max-w-3xl">
                 <SemanticResearchIndicator
                   intent={researchDetected.intent}
@@ -992,7 +992,7 @@ export const StreamRecoveryBanner: React.FC<{
   }
 
   return (
-    <div className="px-4 pt-3">
+    <div className="chat-col-pad pt-3">
       {/* bar 内边距对齐 composer/摘要卡的 px-3：✕ 右缘 = −1(border)−12 = −13px，
           与摘要卡 ∨、发送 ↑ 同一条右轨（现象 9）。 */}
       <div className="max-w-3xl mx-auto flex items-start gap-3 rounded-lg border border-badge-warning/25 bg-amber-500/10 px-3 py-3 text-sm text-status-warning-soft">

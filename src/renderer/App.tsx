@@ -207,7 +207,7 @@ export const App: React.FC = () => {
   useEffect(() => {
     if (workbenchFocused && !showWorkbench) setWorkbenchFocused(false);
   }, [workbenchFocused, showWorkbench, setWorkbenchFocused]);
-  const appliedNarrowSidebarDefaultRef = useRef(false);
+  const autoCollapsedByNarrowRef = useRef(false);
 
   const [mcpElicitation, setMcpElicitation] = useState<MCPElicitationRequest | null>(null);
   const [mcpOAuthConsent, setMcpOAuthConsent] = useState<MCPOAuthConsentRequest | null>(null);
@@ -426,16 +426,21 @@ export const App: React.FC = () => {
     };
   }, [showModelOnboarding, loadActiveModelConfig]);
 
+  // 窄屏自动收起 ↔ 回宽屏自动还原：进窄屏时若侧栏开着就帮忙收起，并记住「是我们收的」；
+  // 回宽屏时只有仍处在我们自动收的状态才展开还原。期间用户手动 toggle 过（无论收还是放）
+  // 都以用户为准——不还原，否则会把用户的选择覆盖掉。
   useEffect(() => {
-    if (!isNarrowViewport) {
-      appliedNarrowSidebarDefaultRef.current = false;
+    if (isNarrowViewport) {
+      if (!sidebarCollapsed && !autoCollapsedByNarrowRef.current) {
+        autoCollapsedByNarrowRef.current = true;
+        setSidebarCollapsed(true);
+      }
       return;
     }
-
-    if (!appliedNarrowSidebarDefaultRef.current && !sidebarCollapsed) {
-      appliedNarrowSidebarDefaultRef.current = true;
-      setSidebarCollapsed(true);
+    if (autoCollapsedByNarrowRef.current && sidebarCollapsed) {
+      setSidebarCollapsed(false);
     }
+    autoCollapsedByNarrowRef.current = false;
   }, [isNarrowViewport, setSidebarCollapsed, sidebarCollapsed]);
 
   useEffect(() => {
@@ -888,9 +893,20 @@ export const App: React.FC = () => {
             而不是横贯窗口的一条上边。底色写在右栏容器上（唯一真源），
             TitleBar / FullScreenPage(inline) / ChatView / Workbench 都是它的透明子面。 */}
         <div className="flex-1 flex overflow-hidden">
-          {isSidebarVisible && (
-            <div className="flex flex-col w-60 bg-zinc-950 border-r border-zinc-800">
-              <Sidebar />
+          {/* 常驻挂载 + 宽度过渡：收起不再 unmount 闪没、展开不再瞬现。
+              外层做 240→0 裁切，内层保持 w-60 定宽——列表内容是被「遮住」而不是被挤扁，
+              聊天区宽度随 flex 连续跟随，居中内容列不横向猛跳。
+              分隔线画在内层：留在外层会在 w-0 时残留一条 1px 竖线。 */}
+          {isStandard && (
+            <div
+              className={`flex flex-col shrink-0 bg-zinc-950 overflow-hidden transition-[width] duration-200 ease-out motion-reduce:transition-none ${
+                sidebarCollapsed ? 'w-0' : 'w-60'
+              }`}
+              aria-hidden={sidebarCollapsed}
+            >
+              <div className="w-60 h-full flex flex-col border-r border-zinc-800">
+                <Sidebar />
+              </div>
             </div>
           )}
 

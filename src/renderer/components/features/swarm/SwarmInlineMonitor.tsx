@@ -125,7 +125,7 @@ export function SwarmInlineMonitor() {
   };
 
   return (
-    <div className="w-full shrink-0 px-4">
+    <div className="w-full shrink-0 chat-col-pad">
       <div className="mx-auto max-w-3xl rounded-lg border border-zinc-700/70 bg-zinc-900/95 backdrop-blur-sm shadow-xl text-xs">
         <div className="flex items-center gap-2 px-3 py-2">
           <Bot size={14} className="text-zinc-400" />

@@ -171,6 +171,14 @@ body.theme-switching * {
   background: var(--scrollbar-thumb);
 }
 
+/* 聊天列横向留白：聊天列里所有「px 外壳 + max-w-3xl 居中内核」统一用这个类。
+   窄列保持 16px（原 px-4 行为），列变宽时留白渐增到 48px，消除「全宽贴边 ↔ 768px 居中」
+   之间的硬台阶。% 相对聊天列宽，侧栏开合不影响对齐。 */
+.chat-col-pad {
+  padding-left: clamp(16px, 4%, 48px);
+  padding-right: clamp(16px, 4%, 48px);
+}
+
 /* Keep content pannable without showing nested bars in chat cards. */
 .scrollbar-hidden,
 .scrollbar-hidden * {

@@ -20,6 +20,7 @@ import { IPC_DOMAINS } from '@shared/ipc';
 
 import { InputArea, InputAreaRef } from './InputArea';
 import { QueuedRuntimeInputCard } from './QueuedRuntimeInputCard';
+import { ComposerSlot, SlotEntry } from './ComposerSlot';
 import { InputAddMenu } from './InputAddMenu';
 import { SendButton } from './SendButton';
 import { SuggestionBar } from './SuggestionBar';
@@ -892,7 +893,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
 
   return (
     <div
-      className={`px-4 pb-3 pt-0 transition-colors ${isDragOver ? 'bg-primary-500/5' : ''}`}
+      className={`chat-col-pad pb-[18.5px] pt-0 transition-colors ${isDragOver ? 'bg-primary-500/5' : ''}`}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
@@ -900,68 +901,163 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
       {/* Command Palette triggered by / */}
       <CommandPalette isOpen={showCommandPalette} onClose={() => setShowCommandPalette(false)} />
       <form ref={formRef} onSubmit={handleSubmit} className="max-w-3xl mx-auto">
-        {/* 会话内循环（/loop）运行状态条 */}
-        <LoopStatusBar sessionId={currentSessionId} />
-        {/* 定时任务对话式创建卡片（/schedule 不带参数时） */}
-        {scheduleComposerOpen && (
-          <ScheduleComposerCard
-            creating={creatingSchedule}
-            onSubmit={async (description, options) => {
-              setCreatingSchedule(true);
-              const ok = await runScheduleCreation(description, options);
-              setCreatingSchedule(false);
-              if (ok) setScheduleComposerOpen(false);
-            }}
-            onDismiss={() => setScheduleComposerOpen(false)}
-          />
-        )}
-        {goalConfirm && (
-          <GoalConfirmCard
-            initialGoal={goalConfirm.initialGoal}
-            verifyCandidates={goalVerifyCandidates}
-            submitting={submittingGoal}
-            onSubmit={async (draft) => {
-              setSubmittingGoal(true);
-              const parsed = goalComposerDraftToParsed(draft, t);
-              const ok = await startGoalRun(parsed, `/goal ${parsed.goal}`);
-              setSubmittingGoal(false);
-              if (!ok) setGoalConfirm({ initialGoal: parsed.goal });
-            }}
-            onDismiss={() => setGoalConfirm(null)}
-          />
-        )}
-        {seedComposer && (
-          <SeedComposerCard
-            kind={seedComposer.kind}
-            title={seedComposer.kind === 'team' ? t.seedComposer.teamTitle : t.seedComposer.roleTitle}
-            placeholder={seedComposer.kind === 'team' ? t.seedComposer.teamPlaceholder : t.seedComposer.rolePlaceholder}
-            initialText={seedComposer.initialText}
-            submitting={submittingSeedComposer}
-            onSubmit={async (text) => {
-              setSubmittingSeedComposer(true);
-              await submitSeedComposer(seedComposer.kind, text);
-              setSubmittingSeedComposer(false);
-              setSeedComposer(null);
-            }}
-            onDismiss={() => setSeedComposer(null)}
-          />
-        )}
-        {/* Plan 入口按钮 - 仅当有 Plan 时显示 */}
-        {hasPlan && onPlanClick && (
-          <button
-            type="button"
-            onClick={onPlanClick}
-            className="flex items-center gap-2 px-3 py-2 mb-2 bg-indigo-500/10 border border-badge-accent/20 rounded-lg hover:bg-indigo-500/20 transition-colors w-full text-left"
+        {/* 输入框上方那一格：全部占用者统一走 <ComposerSlot>/<SlotEntry id>。
+            层级登记与让位规则在 composerNoticeStore 的 COMPOSER_SLOT_LAYER；
+            裸挂任何未登记组件都会被 ComposerSlot 拒渲染（防以后又塞进来一个不声明层级的）。
+            拖放遮罩是绝对定位盖层、不参与这一格的堆叠，故留在容器外。 */}
+        <ComposerSlot>
+          {/* 会话内循环（/loop）运行状态条（L3 上下文层，组件自闸） */}
+          <SlotEntry id="loop-status">
+            <LoopStatusBar sessionId={currentSessionId} />
+          </SlotEntry>
+
+          {/* 定时任务对话式创建卡片（/schedule 不带参数时）（L1 阻塞决策层） */}
+          <SlotEntry id="schedule-composer" active={scheduleComposerOpen}>
+            {scheduleComposerOpen && (
+              <ScheduleComposerCard
+                creating={creatingSchedule}
+                onSubmit={async (description, options) => {
+                  setCreatingSchedule(true);
+                  const ok = await runScheduleCreation(description, options);
+                  setCreatingSchedule(false);
+                  if (ok) setScheduleComposerOpen(false);
+                }}
+                onDismiss={() => setScheduleComposerOpen(false)}
+              />
+            )}
+          </SlotEntry>
+
+          <SlotEntry id="goal-confirm" active={Boolean(goalConfirm)}>
+            {goalConfirm && (
+              <GoalConfirmCard
+                initialGoal={goalConfirm.initialGoal}
+                verifyCandidates={goalVerifyCandidates}
+                submitting={submittingGoal}
+                onSubmit={async (draft) => {
+                  setSubmittingGoal(true);
+                  const parsed = goalComposerDraftToParsed(draft, t);
+                  const ok = await startGoalRun(parsed, `/goal ${parsed.goal}`);
+                  setSubmittingGoal(false);
+                  if (!ok) setGoalConfirm({ initialGoal: parsed.goal });
+                }}
+                onDismiss={() => setGoalConfirm(null)}
+              />
+            )}
+          </SlotEntry>
+
+          <SlotEntry id="seed-composer" active={Boolean(seedComposer)}>
+            {seedComposer && (
+              <SeedComposerCard
+                kind={seedComposer.kind}
+                title={seedComposer.kind === 'team' ? t.seedComposer.teamTitle : t.seedComposer.roleTitle}
+                placeholder={seedComposer.kind === 'team' ? t.seedComposer.teamPlaceholder : t.seedComposer.rolePlaceholder}
+                initialText={seedComposer.initialText}
+                submitting={submittingSeedComposer}
+                onSubmit={async (text) => {
+                  setSubmittingSeedComposer(true);
+                  await submitSeedComposer(seedComposer.kind, text);
+                  setSubmittingSeedComposer(false);
+                  setSeedComposer(null);
+                }}
+                onDismiss={() => setSeedComposer(null)}
+              />
+            )}
+          </SlotEntry>
+
+          {/* Plan 入口按钮 - 仅当有 Plan 时显示（L4 建议层） */}
+          <SlotEntry id="plan-entry" active={Boolean(hasPlan && onPlanClick)}>
+            <button
+              type="button"
+              onClick={onPlanClick}
+              className="flex items-center gap-2 px-3 py-2 mb-2 bg-indigo-500/10 border border-badge-accent/20 rounded-lg hover:bg-indigo-500/20 transition-colors w-full text-left"
+            >
+              <FileText className="w-4 h-4 text-badge-accent" />
+              <span className="text-sm text-badge-accent">{t.chatInput.viewPlan}</span>
+            </button>
+          </SlotEntry>
+
+          {/* 文件处理中提示（L2 进行中层，组件自闸 + 自己走互斥表） */}
+          <SlotEntry id="upload">
+            <ComposerUploadStatus active={isUploading} />
+          </SlotEntry>
+
+          {/* Combo Skill suggestion card（L4 建议层） */}
+          <SlotEntry id="combo-skill" active={Boolean(comboSuggestion)}>
+            {comboSuggestion && (
+              <ComboSkillCard
+                suggestion={comboSuggestion}
+                onDismiss={() => setComboSuggestion(null)}
+                onSaved={() => setComboSuggestion(null)}
+              />
+            )}
+          </SlotEntry>
+
+          {/* 三张草稿确认卡（L1 阻塞决策层，组件自闸并自登记 notices） */}
+          <SlotEntry id="skill-draft">
+            <SkillDraftNotifications />
+          </SlotEntry>
+          <SlotEntry id="role-draft">
+            <RoleDraftNotifications />
+          </SlotEntry>
+          <SlotEntry id="team-recipe-draft">
+            <TeamRecipeDraftNotifications />
+          </SlotEntry>
+
+          {/* 成员条（L3 上下文层，组件自闸；被 L1 挤时自己收成摘要） */}
+          <SlotEntry id="member-bar">
+            <SessionMemberBar sessionId={currentSessionId ?? null} />
+          </SlotEntry>
+
+          {/* Suggestion Bar - show when input is empty（L4 建议层） */}
+          <SlotEntry id="suggestion-bar" active={value.trim().length === 0 && suggestions.length > 0}>
+            <SuggestionBar suggestions={suggestions} onSelect={handleSuggestionSelect} />
+          </SlotEntry>
+
+          {/* 能力建议条（L4 建议层） */}
+          <SlotEntry
+            id="capability-strip"
+            active={skillRecommendations.length > 0 || capabilitySuggestions.length > 0}
           >
-            <FileText className="w-4 h-4 text-badge-accent" />
-            <span className="text-sm text-badge-accent">{t.chatInput.viewPlan}</span>
-          </button>
-        )}
+            <CapabilitySuggestionStrip
+              skillRecommendations={skillRecommendations}
+              capabilitySuggestions={capabilitySuggestions}
+              onSkillMount={(recommendation) => {
+                void mountRecommendedSkill(recommendation);
+              }}
+              onSkillInstall={(recommendation) => {
+                void installRecommendedSkill(recommendation);
+              }}
+              onCapabilitySelect={() => {}}
+              installingSkillName={installingSkillName}
+            />
+          </SlotEntry>
 
-        {/* 文件处理中提示 */}
-        <ComposerUploadStatus active={isUploading} />
+          {/* 排队（引导）消息：输入框上方的独立卡片，不进输入框容器——进去会撑高输入区。
+              性质是上下文（L3）：它跟着「本轮还在跑」存在，不是要用户先决策的阻塞卡 */}
+          <SlotEntry id="queued-runtime-input" active={queuedRuntimeInputs.length > 0}>
+            <QueuedRuntimeInputCard
+              items={queuedRuntimeInputs}
+              isProcessing={Boolean(isProcessing)}
+              onSend={onSendQueuedRuntimeInput}
+              onCancel={async (id) => {
+                // 取消 = 这条没发出去，内容退回输入框，别让人重打一遍（真机反馈）。
+                const pending = queuedRuntimeInputs.find((item) => item.id === id);
+                const retracted = await onCancelQueuedRuntimeInput?.(id);
+                if (retracted && pending?.content) {
+                  setValue((current) => (current.trim() ? `${current} ${pending.content}` : pending.content));
+                }
+              }}
+            />
+          </SlotEntry>
 
-        {/* 拖放提示 */}
+          {/* 实时通话 chrome：live 时底栏扩展（打字/附件入口保留在下方原处，§7.2）
+              （L2 进行中层，组件自闸 + 自己走互斥表） */}
+          <SlotEntry id="voice">
+            <VoiceChrome sessionId={currentSessionId ?? null} />
+          </SlotEntry>
+        </ComposerSlot>
+
+        {/* 拖放提示：盖在输入区上的绝对定位遮罩，不是堆叠占用者，不进 ComposerSlot */}
         {isDragOver && (
           <div className="absolute inset-0 flex items-center justify-center bg-zinc-800-950/90 backdrop-blur-sm z-10 rounded-xl border-2 border-dashed border-accent-accessible">
             <div className="flex flex-col items-center gap-2 text-accent-accessible">
@@ -970,56 +1066,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
             </div>
           </div>
         )}
-
-        {/* Combo Skill suggestion card */}
-        {comboSuggestion && (
-          <ComboSkillCard
-            suggestion={comboSuggestion}
-            onDismiss={() => setComboSuggestion(null)}
-            onSaved={() => setComboSuggestion(null)}
-          />
-        )}
-
-        <SkillDraftNotifications />
-        <RoleDraftNotifications />
-        <TeamRecipeDraftNotifications />
-        <SessionMemberBar sessionId={currentSessionId ?? null} />
-
-        {/* Suggestion Bar - show when input is empty */}
-        {value.trim().length === 0 && suggestions.length > 0 && (
-          <SuggestionBar suggestions={suggestions} onSelect={handleSuggestionSelect} />
-        )}
-
-        <CapabilitySuggestionStrip
-          skillRecommendations={skillRecommendations}
-          capabilitySuggestions={capabilitySuggestions}
-          onSkillMount={(recommendation) => {
-            void mountRecommendedSkill(recommendation);
-          }}
-          onSkillInstall={(recommendation) => {
-            void installRecommendedSkill(recommendation);
-          }}
-          onCapabilitySelect={() => {}}
-          installingSkillName={installingSkillName}
-        />
-
-        {/* 排队（引导）消息：输入框上方的独立卡片，不进输入框容器——进去会撑高输入区 */}
-        <QueuedRuntimeInputCard
-          items={queuedRuntimeInputs}
-          isProcessing={Boolean(isProcessing)}
-          onSend={onSendQueuedRuntimeInput}
-          onCancel={async (id) => {
-            // 取消 = 这条没发出去，内容退回输入框，别让人重打一遍（真机反馈）。
-            const pending = queuedRuntimeInputs.find((item) => item.id === id);
-            const retracted = await onCancelQueuedRuntimeInput?.(id);
-            if (retracted && pending?.content) {
-              setValue((current) => (current.trim() ? `${current} ${pending.content}` : pending.content));
-            }
-          }}
-        />
-
-        {/* 实时通话 chrome：live 时底栏扩展（打字/附件入口保留在下方原处，§7.2） */}
-        <VoiceChrome sessionId={currentSessionId ?? null} />
 
         {/* composer 浮起（2026-07-28 品质感打磨）：L1 底 + 投影 + 聚焦描边微亮，
             与聊天内容拉开亮度层级，样式真源在 global.css .composer-elevated */}
@@ -1188,7 +1234,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
               右侧 时长 + 停止 + 发送）——不在输入框上方另悬浮一条，也就不会出现
               两个发送键（产品负责人 2026-07-27 真机反馈，形态对齐 Codex composer）。
               输入框本体全程可见可编辑。 */}
-          <div className="flex items-center gap-1 px-4 pb-3">
+          <div className="flex items-center gap-1 pl-4 pr-[7.5px] pb-[16.5px]">
             {/* "+" 二级菜单（Codex 风格 B+）— 收纳上传附件 + 能力入口 + 交互模式 */}
             <InputAddMenu
               onFileSelect={handleFileSelect}

@@ -91,7 +91,7 @@ export function WorkflowInlineMonitor() {
   };
 
   return (
-    <div className="w-full shrink-0 px-4">
+    <div className="w-full shrink-0 chat-col-pad">
       <div className="mx-auto max-w-3xl rounded-lg border border-zinc-700/70 bg-zinc-900/95 backdrop-blur-sm shadow-xl text-xs">
         <div className="flex items-center gap-2 px-3 py-2">
           <GitBranch size={14} className={snap.status === 'failed' ? 'text-badge-danger' : 'text-badge-info'} />

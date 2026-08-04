@@ -82,7 +82,7 @@ export function WorkflowLaunchCard() {
   return (
     <DecisionCard
       testId="workflow-launch-card"
-      className="w-full shrink-0 px-4 animate-slideUp"
+      className="w-full shrink-0 chat-col-pad animate-slideUp"
       tone="neutral"
       icon={<GitBranch className="w-4 h-4" />}
       title={w.title}

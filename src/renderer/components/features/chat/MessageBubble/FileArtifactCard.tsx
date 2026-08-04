@@ -93,7 +93,8 @@ export const FileArtifactCard: React.FC<Props> = ({ items, mediaContext }) => {
         return (
           <div
             key={`${item.sourceNodeId || ''}:${mediaAsset.path || mediaAsset.url || item.label}`}
-            className="overflow-hidden rounded-md border border-border-muted bg-surface-subtle transition-colors hover:border-border-muted hover:bg-surface-subtle"
+            /* 卡片跟着缩略图收宽（2026-08-04 产品负责人：别通栏），min-w 兜住头部文件名+尾部动作条 */
+            className="w-fit min-w-64 max-w-full overflow-hidden rounded-md border border-border-muted bg-surface-subtle transition-colors hover:border-border-muted hover:bg-surface-subtle"
             title={mediaAsset.path || mediaAsset.url || item.label}
           >
             <div className="flex items-center gap-2 px-2.5 py-1.5">

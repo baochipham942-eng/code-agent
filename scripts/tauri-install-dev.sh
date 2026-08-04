@@ -17,6 +17,9 @@ SIGNING_IDENTITY="${SIGNING_IDENTITY:-Code Agent Dev}"
 ENTITLEMENTS="$PROJECT_ROOT/src-tauri/Entitlements.plist"
 LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
 
+# shellcheck source=lib/tauri-app-resources.sh
+source "$SCRIPT_DIR/lib/tauri-app-resources.sh"
+
 strip_local_secrets() {
   local app_path="$1"
   local resources_root="$app_path/Contents/Resources/_up_"
@@ -143,7 +146,9 @@ cp -R "$SOURCE_APP" "/Applications/$APP_NAME.app"
 strip_local_secrets "/Applications/$APP_NAME.app"
 write_build_info
 resign_app_if_possible "/Applications/$APP_NAME.app"
-node "$PROJECT_ROOT/scripts/release-security-scan.mjs" "/Applications/$APP_NAME.app/Contents/Resources/_up_"
+INSTALLED_RESOURCES_ROOT="$(resolve_tauri_app_resources_root "/Applications/$APP_NAME.app")"
+node "$PROJECT_ROOT/scripts/release-security-scan.mjs" "$INSTALLED_RESOURCES_ROOT"
+bash "$PROJECT_ROOT/scripts/verify-tauri-dev-app.sh" "/Applications/$APP_NAME.app"
 echo "Installed to /Applications/$APP_NAME.app"
 mdimport "/Applications/$APP_NAME.app" 2>/dev/null || true
 

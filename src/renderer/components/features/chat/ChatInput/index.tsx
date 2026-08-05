@@ -119,6 +119,12 @@ export interface ChatInputProps {
   disabled?: boolean;
   /** 是否正在处理（用于显示停止按钮） */
   isProcessing?: boolean;
+  /**
+   * 主 loop 已 idle 但本会话仍有可停的后台工作（swarm 成员）。只影响主操作按钮形态，
+   * 不进 isProcessing —— isProcessing 还决定发送走 steer/排队分支，混进去会让
+   * 「主 loop 空闲时发新消息」被误路由成运行中补充。
+   */
+  hasStoppableBackgroundWork?: boolean;
   /** 运行中输入正在接入 */
   isInterrupting?: boolean;
   /** 停止处理回调 */
@@ -173,9 +179,14 @@ export function resolveLiveVoiceSlot(params: {
   phase: VoiceCallPhase;
   hasMessages: boolean;
   hadLiveVoice: boolean;
+  /**
+   * 主 loop 已 idle，但本会话还有能被停掉的后台工作（swarm 成员在跑）。
+   * 没有它时主 loop 一收尾按钮就变回发送键，用户再也点不到「停止全部」。
+   */
+  hasStoppableBackgroundWork?: boolean;
 }): LiveVoiceSlot {
   if (!params.sessionId || !params.enabled || params.phase !== 'idle') return 'none';
-  if (params.hasContent || params.isProcessing) return 'none';
+  if (params.hasContent || params.isProcessing || params.hasStoppableBackgroundWork) return 'none';
   if (params.hasMessages && !params.hadLiveVoice) return 'none';
   return 'primary';
 }
@@ -187,7 +198,7 @@ export function resolveComposerCoreActions(params: Parameters<typeof resolveLive
   const liveVoiceSlot = resolveLiveVoiceSlot(params);
   const primaryAction: ComposerCoreAction = liveVoiceSlot === 'primary'
     ? 'live-voice'
-    : params.isProcessing && !params.hasContent
+    : (params.isProcessing || params.hasStoppableBackgroundWork) && !params.hasContent
       ? 'stop'
       : 'send';
 
@@ -206,6 +217,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   onSteer,
   disabled,
   isProcessing,
+  hasStoppableBackgroundWork,
   isInterrupting,
   onStop,
   queuedRuntimeInputs = [],
@@ -930,6 +942,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     phase: liveVoiceCallPhase,
     hasMessages,
     hadLiveVoice: currentSessionHadLiveVoice,
+    hasStoppableBackgroundWork: Boolean(hasStoppableBackgroundWork),
   });
 
   return (
@@ -1356,7 +1369,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
                 <SendButton
                   key={action}
                   disabled={disabled && !isProcessing}
-                  isProcessing={isProcessing}
+                  // action==='stop' 已经含「无草稿」判定，所以这里不会误进排队发送分支。
+                  isProcessing={isProcessing || action === 'stop'}
                   isInterrupting={isInterrupting}
                   hasContent={hasContent}
                   type="submit"

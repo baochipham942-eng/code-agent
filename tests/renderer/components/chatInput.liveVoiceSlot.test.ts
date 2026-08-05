@@ -52,6 +52,48 @@ describe('resolveLiveVoiceSlot（composer 两项上限）', () => {
     expect(resolveLiveVoiceSlot({ ...BASE, enabled: false })).toBe('none');
     expect(resolveLiveVoiceSlot({ ...BASE, sessionId: null })).toBe('none');
   });
+
+  it('D1：主 loop idle 但成员还在后台跑时，主位让给停止而不是通话', () => {
+    expect(resolveLiveVoiceSlot({ ...BASE, hasStoppableBackgroundWork: true })).toBe('none');
+  });
+});
+
+// ============================================================================
+// D1 停止全部（2026-08-05）
+// ============================================================================
+// spawn_agent 超前台预算把成员转后台后，主 loop 本轮正常收尾、主会话回落 idle。
+// 此前主操作只看 isProcessing，于是发送键立刻变回发送形态——停止入口消失，
+// agentAppService.cancel 里现成的级联取消再也没人触发。
+describe('D1：主 loop idle + swarm 成员在跑', () => {
+  it('无草稿时主操作是停止（而不是发送）', () => {
+    expect(resolveComposerCoreActions({
+      ...BASE,
+      isProcessing: false,
+      hasStoppableBackgroundWork: true,
+    })).toEqual(['voice-input', 'stop']);
+  });
+
+  it('有草稿时仍是发送——主 loop 空闲，新消息该正常发出去而不是排队', () => {
+    expect(resolveComposerCoreActions({
+      ...BASE,
+      isProcessing: false,
+      hasContent: true,
+      hasStoppableBackgroundWork: true,
+    })).toEqual(['voice-input', 'send']);
+  });
+
+  it('没有后台工作时不改变原行为（回归护栏）', () => {
+    expect(resolveComposerCoreActions({
+      ...BASE,
+      isProcessing: false,
+      hasStoppableBackgroundWork: false,
+    })).toEqual(['voice-input', 'live-voice']);
+    expect(resolveComposerCoreActions({
+      ...BASE,
+      hasMessages: true,
+      isProcessing: false,
+    })).toEqual(['voice-input', 'send']);
+  });
 });
 
 describe('composer 核心操作区状态矩阵', () => {

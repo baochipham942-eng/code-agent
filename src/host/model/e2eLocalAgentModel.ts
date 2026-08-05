@@ -13,6 +13,13 @@ const E2E_TASK_CANCEL_CALL_ID = 'e2e-task-panel-cancel-old-path';
 const E2E_TASK_COMPLETE_RETAINED_CALL_ID = 'e2e-task-panel-complete-retained-path';
 const E2E_WEB_SEARCH_MARKER = 'E2E_WEB_SEARCH_TOOL';
 const E2E_WEB_SEARCH_CALL_ID = 'e2e-web-search-cloud-key';
+const E2E_COMMAND_CENTER_MARKER = 'E2E_SESSION_COMMAND_CENTER';
+const E2E_COMMAND_CENTER_SPAWN_CALL_ID = 'e2e-command-center-spawn';
+const E2E_COMMAND_CENTER_SECOND_CALL_ID = 'e2e-command-center-second';
+const E2E_COMMAND_CENTER_STATUS_CALL_ID = 'e2e-command-center-status';
+const E2E_COMMAND_CENTER_STEER_CALL_ID = 'e2e-command-center-steer';
+const E2E_BACKGROUND_APPROVAL_MARKER = 'E2E_BACKGROUND_APPROVAL';
+const E2E_BACKGROUND_APPROVAL_CALL_ID = 'e2e-background-approval';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -60,12 +67,21 @@ function hasWebSearchMarker(messages: ModelMessage[]): boolean {
   return messages.some((message) => getMessageText(message).includes(E2E_WEB_SEARCH_MARKER));
 }
 
+function hasCommandCenterMarker(messages: ModelMessage[]): boolean {
+  return messages.some((message) => getMessageText(message).includes(E2E_COMMAND_CENTER_MARKER));
+}
+
+function latestUserText(messages: ModelMessage[]): string {
+  const latest = [...messages].reverse().find((message) => message.role === 'user');
+  return latest ? getMessageText(latest) : '';
+}
+
 export function shouldUseE2ELocalAgentModelForMessages(
   messages: ModelMessage[],
   env: NodeJS.ProcessEnv = process.env,
 ): boolean {
   return shouldUseE2ELocalAgentModel(env)
-    || (env.CODE_AGENT_E2E === '1' && hasTaskPanelMarker(messages));
+    || (env.CODE_AGENT_E2E === '1' && (hasTaskPanelMarker(messages) || hasCommandCenterMarker(messages)));
 }
 
 function findToolResultContent(messages: ModelMessage[], toolCallId: string): string | null {
@@ -86,6 +102,163 @@ function extractCreatedTaskId(messages: ModelMessage[], toolCallId: string): str
 
 function taskManagerCall(id: string, args: Record<string, unknown>) {
   return { id, name: 'TaskManager', arguments: args };
+}
+
+function buildBackgroundApprovalE2EResponse(
+  messages: ModelMessage[],
+  tools: ToolDefinition[],
+  onStream?: StreamCallback,
+): ModelResponse | null {
+  if (!messages.some((message) => getMessageText(message).includes(E2E_BACKGROUND_APPROVAL_MARKER))) return null;
+  if (hasTool(tools, 'spawn_task')) return null;
+  const actualProvider = 'acceptance';
+  const actualModel = 'e2e-local-agent-model';
+  const result = findToolResultContent(messages, E2E_BACKGROUND_APPROVAL_CALL_ID);
+  if (result) {
+    const content = `E2E background approval completed. ${result}`;
+    onStream?.({ type: 'text', content });
+    onStream?.({ type: 'complete', finishReason: 'stop' });
+    return {
+      type: 'text', content, finishReason: 'stop', actualProvider, actualModel,
+      usage: { inputTokens: 140, outputTokens: 24 },
+    };
+  }
+  if (!hasTool(tools, 'AskUserQuestion')) {
+    const content = 'E2E background approval could not find AskUserQuestion.';
+    onStream?.({ type: 'text', content });
+    onStream?.({ type: 'complete', finishReason: 'stop' });
+    return {
+      type: 'text', content, finishReason: 'stop', actualProvider, actualModel,
+      usage: { inputTokens: 100, outputTokens: 16 },
+    };
+  }
+  const toolCall = {
+    id: E2E_BACKGROUND_APPROVAL_CALL_ID,
+    name: 'AskUserQuestion',
+    arguments: {
+      questions: [{
+        header: '后台审批',
+        question: '允许后台任务继续完成验收吗？',
+        options: [
+          { label: '允许（推荐）', description: '继续只读验收并回流结果。' },
+          { label: '拒绝', description: '终止本次后台验收。' },
+        ],
+        multiSelect: false,
+      }],
+    },
+  };
+  onStream?.({ type: 'tool_call_start', toolCall: { index: 0, id: toolCall.id, name: toolCall.name } });
+  onStream?.({ type: 'complete', finishReason: 'tool_calls' });
+  return {
+    type: 'tool_use',
+    content: 'Waiting for a real background approval response.',
+    toolCalls: [toolCall],
+    finishReason: 'tool_calls',
+    actualProvider,
+    actualModel,
+    usage: { inputTokens: 130, outputTokens: 36 },
+    contentParts: [{ type: 'tool_call', toolCallId: toolCall.id }],
+  };
+}
+
+function buildCommandCenterE2EResponse(
+  messages: ModelMessage[],
+  tools: ToolDefinition[],
+  onStream?: StreamCallback,
+): ModelResponse | null {
+  if (!hasCommandCenterMarker(messages)) return null;
+
+  const actualProvider = 'acceptance';
+  const actualModel = 'e2e-local-agent-model';
+  const userText = latestUserText(messages);
+  const statusRequested = userText.includes('STATUS');
+  const steerRequested = userText.includes('STEER');
+  const secondRequested = userText.includes('SECOND');
+  const callId = statusRequested
+    ? E2E_COMMAND_CENTER_STATUS_CALL_ID
+    : steerRequested
+      ? E2E_COMMAND_CENTER_STEER_CALL_ID
+      : secondRequested
+        ? E2E_COMMAND_CENTER_SECOND_CALL_ID
+        : E2E_COMMAND_CENTER_SPAWN_CALL_ID;
+  const toolName = statusRequested ? 'task_status' : steerRequested ? 'steer_task' : 'spawn_task';
+  const result = findToolResultContent(messages, callId);
+  if (result) {
+    const content = statusRequested
+      ? `E2E command center status completed. ${result}`
+      : `E2E command center dispatch accepted. ${result}`;
+    onStream?.({ type: 'text', content });
+    onStream?.({ type: 'complete', finishReason: 'stop' });
+    return {
+      type: 'text',
+      content,
+      finishReason: 'stop',
+      actualProvider,
+      actualModel,
+      usage: { inputTokens: 160, outputTokens: 28 },
+    };
+  }
+
+  if (!hasTool(tools, toolName)) {
+    const content = `E2E command center smoke could not find the ${toolName} tool.`;
+    onStream?.({ type: 'text', content });
+    onStream?.({ type: 'complete', finishReason: 'stop' });
+    return {
+      type: 'text',
+      content,
+      finishReason: 'stop',
+      actualProvider,
+      actualModel,
+      usage: { inputTokens: 120, outputTokens: 18 },
+    };
+  }
+
+  const toolCall = statusRequested
+    ? { id: callId, name: toolName, arguments: {} }
+    : steerRequested
+      ? {
+        id: callId,
+        name: toolName,
+        arguments: { target: '审批任务', instruction: '用户补充：审批通过后明确写出已收到转向要求。' },
+      }
+      : secondRequested
+        ? {
+          id: callId,
+          name: toolName,
+          arguments: {
+            title: '后台审批验收',
+            short_name: '审批任务',
+            lane_key: 'acceptance-approval',
+            submission_key: 'e2e-command-center-approval',
+            prompt: E2E_BACKGROUND_APPROVAL_MARKER,
+          },
+        }
+        : {
+      id: callId,
+      name: toolName,
+      arguments: {
+        title: '读取项目身份',
+        short_name: '项目身份',
+        lane_key: 'acceptance-read',
+        submission_key: 'e2e-command-center-project-identity',
+        prompt: '只读检查当前项目 package.json 的 name 与 version，并用一句话给出结论。',
+      },
+    };
+  onStream?.({
+    type: 'tool_call_start',
+    toolCall: { index: 0, id: toolCall.id, name: toolCall.name },
+  });
+  onStream?.({ type: 'complete', finishReason: 'tool_calls' });
+  return {
+    type: 'tool_use',
+    content: statusRequested ? 'Reading live command-center task status.' : 'Dispatching work through the command center.',
+    toolCalls: [toolCall],
+    finishReason: 'tool_calls',
+    actualProvider,
+    actualModel,
+    usage: { inputTokens: 150, outputTokens: 36 },
+    contentParts: [{ type: 'tool_call', toolCallId: toolCall.id }],
+  };
 }
 
 function buildTaskPanelE2EResponse(
@@ -313,6 +486,12 @@ export function buildE2ELocalAgentModelResponse(
   onStream?: StreamCallback,
   env: NodeJS.ProcessEnv = process.env,
 ): ModelResponse {
+  const backgroundApprovalResponse = buildBackgroundApprovalE2EResponse(messages, tools, onStream);
+  if (backgroundApprovalResponse) return backgroundApprovalResponse;
+
+  const commandCenterResponse = buildCommandCenterE2EResponse(messages, tools, onStream);
+  if (commandCenterResponse) return commandCenterResponse;
+
   const webSearchResponse = buildWebSearchE2EResponse(messages, tools, onStream);
   if (webSearchResponse) return webSearchResponse;
 

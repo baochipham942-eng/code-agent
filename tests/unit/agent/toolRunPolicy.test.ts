@@ -29,4 +29,21 @@ describe('toolRunPolicy', () => {
       tool('ask_user_question'),
     ], ctx).map((item) => item.name)).toEqual(['bash']);
   });
+
+  it('enforces a strict allowlist before a foreground brain can call tools', () => {
+    const ctx = {
+      allowedToolNames: ['spawn_task', 'task_status', 'AskUserQuestion'],
+      deniedToolNames: ['task_status'],
+    } as any;
+
+    expect(filterToolsByRunPolicy([
+      tool('spawn_task'),
+      tool('task_status'),
+      tool('AskUserQuestion'),
+      tool('bash'),
+    ], ctx).map((item) => item.name)).toEqual(['spawn_task', 'AskUserQuestion']);
+    expect(isToolDeniedForRun(ctx, 'bash')).toBe(true);
+    expect(isToolDeniedForRun(ctx, 'task_status')).toBe(true);
+    expect(isToolDeniedForRun(ctx, 'spawn_task')).toBe(false);
+  });
 });

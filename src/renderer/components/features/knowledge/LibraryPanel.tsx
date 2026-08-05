@@ -18,7 +18,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { BookOpen, ChevronDown, ChevronRight, Eye, FileText, Globe, Loader2, Package, Pencil, RefreshCw, Trash2, Upload, X } from 'lucide-react';
 import { LIBRARY_ITEM_KINDS, type LibraryItem, type LibraryItemKind } from '@shared/contract/library';
 import type { Project } from '@shared/contract/project';
-import { deleteLibraryItem, importLibraryFiles, listLibraryItems, setSessionPin, updateLibraryItem } from '../../../services/libraryClient';
+import { deleteLibraryItem, importLibraryFiles, listLibraryItems, updateLibraryItem } from '../../../services/libraryClient';
 import { listProjects } from '../../../services/projectClient';
 import ipcService from '../../../services/ipcService';
 import { useSessionStore } from '../../../stores/sessionStore';
@@ -36,6 +36,7 @@ import { Input } from '../../primitives/Input';
 import { Modal } from '../../primitives/Modal';
 import { Textarea } from '../../primitives/Textarea';
 import { BrandManager } from '../../design/BrandManager';
+import { DRAFT_SCOPE_KEY, useComposerStore } from '../../../stores/composerStore';
 
 const GLOBAL_SCOPE = 'global';
 const closeEmbeddedBrandManager = () => undefined;
@@ -268,11 +269,15 @@ export const LibraryPanel: React.FC = () => {
     setBringing(true);
     try {
       const ids = [...selectedIds];
+      // 走 #977 分槽意图：pin 挂草稿槽 → createSession 内 handoff 统一物化+广播。
+      // 修前是「建会话切页后再补写 pin」——页面先渲染、chip 晚几秒才出现（真机 2026-08-05）。
+      const composer = useComposerStore.getState();
+      composer.activateScope(DRAFT_SCOPE_KEY);
+      composer.setPendingPinItemIds(ids);
       const session = await useSessionStore.getState().createSession(
         t.library.bringSessionTitle.replace('{count}', String(ids.length)),
       );
       if (!session) throw new Error('createSession returned null');
-      await setSessionPin(session.id, ids);
       setSelectedIds(new Set());
       toast.success(t.library.bringSuccess);
     } catch (error) {

@@ -33,12 +33,13 @@ import type { RunRegistry } from '../runtime/runRegistry';
 import { getProjectSourceTrustFailureMarker } from '../services/project/projectSourceTrustError';
 import { getModelAuthFailureMarker } from '../model/errorClassifier';
 import { MULTIAGENT_TOOL_NAMES } from '../../shared/constants/tools';
+import { SESSION_COMMAND_CENTER_TOOL_NAMES } from '../../shared/constants/sessionCommandCenter';
 
 const logger = createLogger('TaskManager');
 const CONTEXT_ASSEMBLY_PERSISTED_MESSAGE = Symbol.for('code-agent.contextAssembly.persistedMessage');
 const AUXILIARY_RUN_SYSTEM_CONTEXT = [
   '你已经在一个独立后台任务槽里，必须亲自执行这件任务。',
-  '禁止调用、搜索或建议 Task、TaskManager、spawn_agent、AgentSpawn 等任务拆分工具；上层已经完成任务拆分。',
+  '禁止调用、搜索或建议 Task、TaskManager、spawn_agent、AgentSpawn、spawn_task、steer_task、cancel_task、task_status 等任务拆分或指挥台工具；上层已经完成任务拆分。',
   'AskUserQuestion 是已经加载的核心工具。用户要求它时，第一步直接调用；不得先用 ToolSearch 查它或任何任务拆分工具，也不要把工具名或 JSON 当文字输出。',
 ].join('\n');
 
@@ -316,6 +317,7 @@ export class TaskManager extends EventEmitter {
       const deniedToolNames = Array.from(new Set([
         ...(options?.deniedToolNames ?? []),
         ...MULTIAGENT_TOOL_NAMES,
+        ...SESSION_COMMAND_CENTER_TOOL_NAMES,
       ]));
       await orchestrator.sendMessage(
         message,
@@ -338,7 +340,14 @@ export class TaskManager extends EventEmitter {
       if (live?.status === 'cancelling') {
         this.emitEvent('task_cancelled', sessionId, { taskId });
       } else {
-        this.emitEvent('task_completed', sessionId, { taskId });
+        const messages = typeof orchestrator.getMessages === 'function'
+          ? orchestrator.getMessages()
+          : [];
+        const conclusion = [...messages]
+          .reverse()
+          .find((message) => message.role === 'assistant' && message.content?.trim())
+          ?.content?.trim();
+        this.emitEvent('task_completed', sessionId, { taskId, conclusion });
       }
     } catch (error) {
       const live = this.backgroundRuns.get(taskId);
@@ -380,6 +389,7 @@ export class TaskManager extends EventEmitter {
     const deniedToolNames = Array.from(new Set([
       ...(options?.deniedToolNames ?? []),
       ...MULTIAGENT_TOOL_NAMES,
+      ...SESSION_COMMAND_CENTER_TOOL_NAMES,
     ]));
     return run.orchestrator.interruptAndContinue(
       message,

@@ -579,7 +579,10 @@ describe('AgentAppService lifecycle routing', () => {
       'session-1',
       'continue in the child',
       undefined,
-      undefined,
+      expect.objectContaining({
+        allowedToolNames: expect.arrayContaining(['spawn_task', 'steer_task', 'cancel_task', 'task_status']),
+        turnSystemContext: expect.arrayContaining([expect.stringContaining('<session_command_center>')]),
+      }),
       expect.objectContaining({
         workbench: expect.objectContaining({ workingDirectory: '/isolated/child' }),
       }),
@@ -655,7 +658,10 @@ describe('AgentAppService lifecycle routing', () => {
       'session-orphan',
       '继续按新要求处理',
       undefined,
-      undefined,
+      expect.objectContaining({
+        allowedToolNames: expect.arrayContaining(['spawn_task', 'steer_task', 'cancel_task', 'task_status']),
+        turnSystemContext: expect.arrayContaining([expect.stringContaining('<session_command_center>')]),
+      }),
       undefined,
       'client-msg-2',
     );

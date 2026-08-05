@@ -37,5 +37,6 @@ export * from './autonomy';
 export * from './previewHealth';
 export * from './webServer';
 export * from './queuedInput';
+export * from './sessionCommandCenter';
 export * from './voice';
 export * from './doctor';

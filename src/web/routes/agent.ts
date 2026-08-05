@@ -24,6 +24,11 @@ import { createWebSessionStore } from '../helpers/webSessionStore';
 import { syncSupabaseSessionRow } from '../helpers/supabaseSessionSync';
 import { buildGoalContract } from '../../host/agent/goalModeController';
 import { buildWorkbenchCapabilityContextLines } from '../../host/app/workbenchTurnContext';
+import { SESSION_COMMAND_CENTER_BRAIN_CONTEXT } from '../../host/app/sessionCommandCenterBrain';
+import {
+  SESSION_COMMAND_CENTER_BRAIN_MAX_ITERATIONS,
+  SESSION_COMMAND_CENTER_BRAIN_TOOL_NAMES,
+} from '../../shared/constants/sessionCommandCenter';
 import { wrapWithTurnSystemContext } from '../../host/agent/turnScaffold';
 import { getLibraryService } from '../../host/services/library/libraryService';
 import {
@@ -92,6 +97,7 @@ import {
 } from '../../host/services/agentEngine/externalEngineResumeBuilders';
 import { IPC_CHANNELS } from '../../shared/ipc';
 import {
+  createOfflineAgentRunResponseSink,
   createWebQueuedInputDrain,
   releaseThenTriggerWebQueuedInputDrain,
 } from './webQueuedInputDrain';
@@ -210,9 +216,6 @@ function toWorkbenchMetadata(context?: ConversationEnvelopeContext): MessageMeta
   }
   if (context.runtimeInput) {
     workbench.runtimeInputMode = context.runtimeInput.mode;
-    if (context.runtimeInput.delivery) {
-      workbench.runtimeInputDelivery = context.runtimeInput.delivery;
-    }
   }
   if (context.voiceInput) {
     workbench.voiceInput = { ...context.voiceInput };
@@ -770,6 +773,18 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         logger.info('[AgentRouter] Goal mode activated', { verify: body.goal.verify, review: body.goal.review, allowSwarm: body.goal.allowSwarm, sessionId });
       }
 
+      const commandCenterBrain = !body.goal && !prompt.trimStart().startsWith('/');
+      if (commandCenterBrain) {
+        config.allowedToolNames = [...SESSION_COMMAND_CENTER_BRAIN_TOOL_NAMES];
+        config.maxIterations = Math.min(
+          config.maxIterations ?? SESSION_COMMAND_CENTER_BRAIN_MAX_ITERATIONS,
+          SESSION_COMMAND_CENTER_BRAIN_MAX_ITERATIONS,
+        );
+        config.systemPrompt = [config.systemPrompt, SESSION_COMMAND_CENTER_BRAIN_CONTEXT]
+          .filter((part): part is string => Boolean(part?.trim()))
+          .join('\n\n');
+      }
+
       const runModelConfig = {
         provider: config.modelConfig.provider,
         model: config.modelConfig.model,
@@ -1146,12 +1161,26 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
     const targetSessionId = activeLoop?.context.sessionId;
     const targetRunId = activeLoop?.context.runId;
 
-    if (
-      !targetSessionId
-      || !targetRunId
-      || !activeLoop?.isAttached
-      || activeLoop.cancellationRequested
-    ) {
+    if (!activeLoop && sessionId) {
+      const envelope: ConversationEnvelope = {
+        content,
+        sessionId,
+        clientMessageId,
+        attachments,
+        context,
+      };
+      res.json({ success: true, data: { outcome: 'steered' } });
+      void runAgentTurn(
+        buildQueuedAgentRunBody(envelope),
+        createOfflineAgentRunResponseSink(),
+        { connectedClient: false },
+      ).catch((error) => {
+        logger.error(`[AgentRouter] Failed to start foreground continuation for ${sessionId}:`, error);
+      });
+      return;
+    }
+
+    if (!targetSessionId || !targetRunId || !activeLoop?.isAttached || activeLoop.cancellationRequested) {
       res.status(409).json({
         success: false,
         error: {

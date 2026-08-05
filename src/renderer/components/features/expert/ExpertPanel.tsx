@@ -35,6 +35,7 @@ import { startCreateTeamChat } from '../../../utils/startCreateTeamChat';
 import { startCreateRoleChat } from '../../../utils/startCreateRoleChat';
 import { useAppStore } from '../../../stores/appStore';
 import { useComposerStore } from '../../../stores/composerStore';
+import { useTeamRecipeStore } from '../../../stores/teamRecipeStore';
 import { useI18n } from '../../../hooks/useI18n';
 import { toast } from '../../../hooks/useToast';
 import { Button } from '../../primitives/Button';
@@ -275,6 +276,9 @@ export const ExpertPanel: React.FC = () => {
   // 把配方预选进 composer（与 + 菜单「团队」子菜单同一动作）——成员条显示待命成员，
   // 用户自己在输入框输入主题，发送即启动整个团队。
   const openRecipe = (recipe: TeamRecipe) => {
+    // 成员条待命 pills 与发送启动都从全局 recipe store 找配方（找不到会静默降级成普通消息）；
+    // 专家页配方是本地 state，预选前必须把全局 store 灌上（web 端验证 2026-08-06 实测踩空）。
+    void useTeamRecipeStore.getState().refresh();
     useComposerStore.getState().setSelectedTeamRecipeId(recipe.id);
     const app = useAppStore.getState();
     app.setShowSettings(false);

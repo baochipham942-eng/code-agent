@@ -243,6 +243,10 @@ describe('ExpertPanel', () => {
 
     // 预选写进 composer（与 + 菜单「团队」子菜单同一动作），主题交给用户在输入框输入
     expect(useComposerStore.getState().selectedTeamRecipeId).toBe('product-spec');
+    // 全局 recipe store 必须被灌上——成员条待命 pills 与发送启动都从它找配方，
+    // 找不到会静默降级成普通消息（web 端验证 2026-08-06 实测踩空）
+    const { useTeamRecipeStore } = await import('../../../src/renderer/stores/teamRecipeStore');
+    await waitFor(() => expect(useTeamRecipeStore.getState().isLoaded).toBe(true));
     // 不再弹主题输入 Modal
     expect(screen.queryByPlaceholderText(teamZh.team.topicPlaceholder)).toBeNull();
     // 不建会话不发起（旧行为会先 createSession 再 launchRecipe）

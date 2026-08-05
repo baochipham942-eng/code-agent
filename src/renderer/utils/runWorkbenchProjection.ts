@@ -330,14 +330,15 @@ function actionFromText(value: string | undefined): MemoryAction | null {
 }
 
 function isMemoryTool(toolCall: TraceToolCall): boolean {
-  const lower = toolCall.name.toLowerCase();
+  // 同 StreamingIndicator：name 契约必填，但畸形节点会带 undefined 进渲染路径。
+  const lower = toolCall.name?.toLowerCase() ?? '';
   return lower.includes('memory') || lower.includes('remember') || lower.includes('recall');
 }
 
 function memoryActionFromToolCall(toolCall: TraceToolCall): MemoryAction | null {
   if (!isMemoryTool(toolCall)) return null;
 
-  const lowerName = toolCall.name.toLowerCase();
+  const lowerName = toolCall.name?.toLowerCase() ?? '';
   const explicitAction = stringValue(toolCall.args, ['action', 'operation', 'op']);
   const metadataAction = stringValue(toolCall.metadata, ['action', 'operation', 'op']);
   const action = actionFromText(explicitAction) || actionFromText(metadataAction);

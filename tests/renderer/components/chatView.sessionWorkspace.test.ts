@@ -80,9 +80,18 @@ vi.mock('../../../src/renderer/stores/modeStore', () => ({
     : { isPaused: false, setIsPaused: vi.fn() },
 }));
 
+const swarmStoreState = {
+  launchRequests: [] as unknown[],
+  statistics: { totalTokens: 0 },
+  // D1：ChatView 用这三项判断「主 loop idle 但成员还在跑」
+  agents: [] as Array<{ status: string }>,
+  isRunning: false,
+  activeSessionId: undefined as string | undefined,
+};
+
 vi.mock('../../../src/renderer/stores/swarmStore', () => ({
-  useSwarmStore: (selector?: (state: { launchRequests: unknown[]; statistics: { totalTokens: number } }) => unknown) =>
-    selector ? selector({ launchRequests: [], statistics: { totalTokens: 0 } }) : { launchRequests: [], statistics: { totalTokens: 0 } },
+  useSwarmStore: (selector?: (state: typeof swarmStoreState) => unknown) =>
+    selector ? selector(swarmStoreState) : swarmStoreState,
 }));
 
 vi.mock('../../../src/renderer/stores/localBridgeStore', () => ({

@@ -14,8 +14,14 @@ import type { SurfaceLiveFrameStreamState } from '../../../src/renderer/hooks/us
 
 type BrowserSessionState = ReturnType<typeof useWorkbenchBrowserSession>;
 
-const openHttpLinkInRail = vi.fn((_input: unknown) => true);
+const openHttpLinkInRailAsync = vi.fn(async (_input: unknown) => ({
+  conversationId: 'session-a',
+  runId: 'run-a',
+  surfaceSessionId: 'surface-user',
+  snapshot: { version: 1, conversationId: 'session-a', sessions: [], updatedAt: 1 },
+}));
 const closeUserBrowserLinkRun = vi.fn(async (..._args: unknown[]) => undefined);
+const controlUserBrowserHistory = vi.fn(async (..._args: unknown[]) => null);
 
 let browserSessionState: BrowserSessionState;
 let pointerState: LiveAgentPointerState;
@@ -31,8 +37,9 @@ vi.mock('../../../src/renderer/hooks/useSurfaceLiveFrames', () => ({
   useSurfaceLiveFrames: () => liveFrameState,
 }));
 vi.mock('../../../src/renderer/services/userBrowserLink', () => ({
-  openHttpLinkInRail: (input: unknown) => openHttpLinkInRail(input),
+  openHttpLinkInRailAsync: (input: unknown) => openHttpLinkInRailAsync(input),
   closeUserBrowserLinkRun: (...args: unknown[]) => closeUserBrowserLinkRun(...args),
+  controlUserBrowserHistory: (...args: unknown[]) => controlUserBrowserHistory(...args),
 }));
 
 function buildBrowserSessionState(overrides: Partial<BrowserSessionState> = {}): BrowserSessionState {
@@ -122,8 +129,15 @@ function typeAndEnter(value: string): void {
 
 describe('BrowserAgentWindow 地址栏（2026-08-04 工单）', () => {
   beforeEach(() => {
-    openHttpLinkInRail.mockClear();
+    openHttpLinkInRailAsync.mockClear();
+    openHttpLinkInRailAsync.mockResolvedValue({
+      conversationId: 'session-a',
+      runId: 'run-a',
+      surfaceSessionId: 'surface-user',
+      snapshot: { version: 1, conversationId: 'session-a', sessions: [], updatedAt: 1 },
+    });
     closeUserBrowserLinkRun.mockClear();
+    controlUserBrowserHistory.mockClear();
     useAppStore.setState({
       language: 'zh',
       showLocalOpsPanel: false,
@@ -148,7 +162,7 @@ describe('BrowserAgentWindow 地址栏（2026-08-04 工单）', () => {
 
   afterEach(() => cleanup());
 
-  it('空态下地址栏照常在：输入域名回车即补 https 并走 #926 同一条链接导航链路', () => {
+  it('空态下地址栏照常在：输入域名回车即补 https 并走 #926 同一条链接导航链路', async () => {
     render(<BrowserAgentWindow />);
 
     expect(screen.getByTestId('browser-agent-window-empty')).toBeTruthy();
@@ -157,11 +171,11 @@ describe('BrowserAgentWindow 地址栏（2026-08-04 工单）', () => {
 
     typeAndEnter('example.com');
 
-    expect(openHttpLinkInRail).toHaveBeenCalledWith({
+    await vi.waitFor(() => expect(openHttpLinkInRailAsync).toHaveBeenCalledWith({
       href: 'https://example.com/',
       conversationId: 'session-a',
       workspace: '/tmp/workspace-a',
-    });
+    }));
   });
 
   it('明显是搜索词的输入提示无效地址，不触发导航（本单不做搜索）', () => {
@@ -169,11 +183,11 @@ describe('BrowserAgentWindow 地址栏（2026-08-04 工单）', () => {
 
     typeAndEnter('hello world');
 
-    expect(openHttpLinkInRail).not.toHaveBeenCalled();
+    expect(openHttpLinkInRailAsync).not.toHaveBeenCalled();
     expect(screen.getByText(/不是有效网址/)).toBeTruthy();
   });
 
-  it('agent 忙（活跃 browser surface 属于 agent run）时回车先弹确认，确认前不导航', () => {
+  it('agent 忙（活跃 browser surface 属于 agent run）时回车先弹确认，确认前不导航', async () => {
     seedActiveAgentSession('agent-a');
     browserSessionState = buildBrowserSessionState({
       browserSurfaceSessionId: 'surface-1',
@@ -184,16 +198,16 @@ describe('BrowserAgentWindow 地址栏（2026-08-04 工单）', () => {
 
     typeAndEnter('example.com');
 
-    expect(openHttpLinkInRail).not.toHaveBeenCalled();
+    expect(openHttpLinkInRailAsync).not.toHaveBeenCalled();
     expect(screen.getByText('中断当前浏览任务？')).toBeTruthy();
 
     fireEvent.click(screen.getByText('中断并打开'));
 
-    expect(openHttpLinkInRail).toHaveBeenCalledWith({
+    await vi.waitFor(() => expect(openHttpLinkInRailAsync).toHaveBeenCalledWith({
       href: 'https://example.com/',
       conversationId: 'session-a',
       workspace: '/tmp/workspace-a',
-    });
+    }));
   });
 
   it('确认框取消则不导航', () => {
@@ -208,20 +222,20 @@ describe('BrowserAgentWindow 地址栏（2026-08-04 工单）', () => {
     typeAndEnter('example.com');
     fireEvent.click(screen.getByText('取消'));
 
-    expect(openHttpLinkInRail).not.toHaveBeenCalled();
+    expect(openHttpLinkInRailAsync).not.toHaveBeenCalled();
     expect(screen.queryByText('中断当前浏览任务？')).toBeNull();
   });
 
-  it('agent 空闲（无活跃 surface）时直接导航，不弹确认', () => {
+  it('agent 空闲（无活跃 surface）时直接导航，不弹确认', async () => {
     render(<BrowserAgentWindow />);
 
     typeAndEnter('example.com');
 
     expect(screen.queryByText('中断当前浏览任务？')).toBeNull();
-    expect(openHttpLinkInRail).toHaveBeenCalled();
+    await vi.waitFor(() => expect(openHttpLinkInRailAsync).toHaveBeenCalled());
   });
 
-  it('活跃 surface 是用户自己开的（user-browser-link）时不弹确认，直接导航', () => {
+  it('活跃 surface 是用户自己开的（user-browser-link）时不弹确认，直接导航', async () => {
     seedActiveAgentSession(SURFACE_USER_BROWSER_AGENT_ID);
     browserSessionState = buildBrowserSessionState({
       browserSurfaceSessionId: 'surface-1',
@@ -233,10 +247,10 @@ describe('BrowserAgentWindow 地址栏（2026-08-04 工单）', () => {
     typeAndEnter('example.com');
 
     expect(screen.queryByText('中断当前浏览任务？')).toBeNull();
-    expect(openHttpLinkInRail).toHaveBeenCalled();
+    await vi.waitFor(() => expect(openHttpLinkInRailAsync).toHaveBeenCalled());
   });
 
-  it('地址栏实时跟随页面跳转：activeUrl 变化且未在编辑时同步输入框', () => {
+  it('地址栏实时跟随页面跳转：activeUrl 变化且未在编辑时同步（常态只显域名）', () => {
     browserSessionState = buildBrowserSessionState({
       managedSession: {
         running: true,
@@ -248,7 +262,7 @@ describe('BrowserAgentWindow 地址栏（2026-08-04 工单）', () => {
     const { rerender } = render(<BrowserAgentWindow />);
 
     const input = screen.getByTestId('browser-agent-window-address-input') as HTMLInputElement;
-    expect(input.value).toBe('https://one.example/');
+    expect(input.value).toBe('one.example');
 
     browserSessionState = buildBrowserSessionState({
       managedSession: {
@@ -260,10 +274,10 @@ describe('BrowserAgentWindow 地址栏（2026-08-04 工单）', () => {
     });
     rerender(<BrowserAgentWindow />);
 
-    expect(input.value).toBe('https://two.example/');
+    expect(input.value).toBe('two.example');
   });
 
-  it('编辑中不被远端 URL 覆盖；失焦后回到当前页 URL', () => {
+  it('编辑中不被远端 URL 覆盖；聚焦展开完整 URL；失焦回到当前页域名', () => {
     browserSessionState = buildBrowserSessionState({
       managedSession: {
         running: true,
@@ -276,6 +290,8 @@ describe('BrowserAgentWindow 地址栏（2026-08-04 工单）', () => {
 
     const input = screen.getByTestId('browser-agent-window-address-input') as HTMLInputElement;
     fireEvent.focus(input);
+    // 聚焦后展开完整 URL
+    expect(input.value).toBe('https://one.example/');
     fireEvent.change(input, { target: { value: 'draft.example' } });
 
     browserSessionState = buildBrowserSessionState({
@@ -290,7 +306,7 @@ describe('BrowserAgentWindow 地址栏（2026-08-04 工单）', () => {
     expect(input.value).toBe('draft.example');
 
     fireEvent.blur(input);
-    expect(input.value).toBe('https://two.example/');
+    expect(input.value).toBe('two.example');
   });
 
   it('现场属于别的会话时地址栏禁用', () => {

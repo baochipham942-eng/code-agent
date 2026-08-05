@@ -154,12 +154,11 @@ describe('BrowserAgentWindow 终态留影', () => {
     expect(screen.queryByTestId('browser-agent-window-empty')).toBeNull();
     expect(screen.queryByTestId('browser-agent-window-terminal-summary')).toBeNull();
 
-    // chrome 条：title 恢复显示，状态点是灰的（灰点是对的，别改绿）；
-    // origin 显示收口在地址栏（2026-08-04 工单），chrome 条不再重复摆
-    const chrome = screen.getByTestId('browser-agent-window-chrome');
-    expect(chrome.textContent).toContain('Example Domain');
+    // chrome 标题行已删（2026-08-05 产品负责人：与页签重复）——标题只由页签承担，
+    // 状态点并入工具条：灰点是对的，别改绿；origin 显示收口在地址栏。
+    expect(screen.queryByTestId('browser-agent-window-chrome')).toBeNull();
     const addressInput = screen.getByTestId('browser-agent-window-address-input') as HTMLInputElement;
-    expect(addressInput.value).toBe('https://example.com');
+    expect(addressInput.value).toBe('example.com');
     const dot = screen.getByTestId('browser-agent-window-status-dot');
     expect(dot.getAttribute('title')).toBe('未启动');
     expect(dot.className).toContain('bg-zinc-600');

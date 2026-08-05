@@ -797,6 +797,22 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   handleVoiceTranscriptRef.current = handleVoiceTranscript;
   const handleSubmitRef = useRef(handleSubmit);
   handleSubmitRef.current = handleSubmit;
+  // 浏览器批注（N3）：appshotsStore 已写 pending 后，把 pin 文案塞进输入框并走主提交链路
+  // （appshot 附件/XML 与用户手动发送同路径）。必须挂在 handleSubmitRef 之后。
+  useEffect(() => {
+    const handleBrowserAnnotationSubmit = (e: Event) => {
+      const text = (e as CustomEvent<{ text?: string }>).detail?.text?.trim();
+      if (!text) return;
+      setValue(text);
+      window.setTimeout(() => {
+        void handleSubmitRef.current(undefined, { content: text });
+      }, 0);
+    };
+    window.addEventListener('browser-annotation:submit', handleBrowserAnnotationSubmit);
+    return () => {
+      window.removeEventListener('browser-annotation:submit', handleBrowserAnnotationSubmit);
+    };
+  }, [setValue]);
   const valueRef = useRef(value);
   valueRef.current = value;
   const dictationSendAfterTranscriptRef = useRef(false);

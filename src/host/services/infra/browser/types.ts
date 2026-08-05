@@ -14,6 +14,9 @@ export interface BrowserTab {
   page: Page;
   url: string;
   title: string;
+  /** Chromium 导航历史：无历史时工具条后退/前进置灰。 */
+  canGoBack?: boolean;
+  canGoForward?: boolean;
 }
 
 export interface ScreenshotResult {

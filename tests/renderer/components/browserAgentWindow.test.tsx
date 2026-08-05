@@ -147,12 +147,10 @@ describe('BrowserAgentWindow（B1-R·R1 图形化现场）', () => {
     expect(frame.className).toContain('object-contain');
     expect(screen.queryByTestId('browser-agent-window-empty')).toBeNull();
 
-    const chrome = screen.getByTestId('browser-agent-window-chrome');
-    expect(chrome.textContent).toContain('Example Domain');
-    // URL 显示已收口到地址栏（2026-08-04 工单）：chrome 条不再重复摆只读 URL
+    // chrome 标题行已删（2026-08-05：与页签重复，标题由页签独担）；URL 收口在地址栏
+    expect(screen.queryByTestId('browser-agent-window-chrome')).toBeNull();
     const addressInput = screen.getByTestId('browser-agent-window-address-input') as HTMLInputElement;
-    expect(addressInput.value).toBe('https://example.com/');
-    expect(chrome.textContent).not.toContain('https://example.com/');
+    expect(addressInput.value).toBe('example.com');
     expect(screen.getByTestId('browser-agent-window-status-dot').getAttribute('title')).toBe('运行中');
     // 指针叠加画在画面上
     expect(screen.getByLabelText(/Search/)).toBeTruthy();
@@ -182,10 +180,9 @@ describe('BrowserAgentWindow（B1-R·R1 图形化现场）', () => {
     render(<BrowserAgentWindow />);
 
     expect(screen.getByTestId('browser-agent-window-status-dot').getAttribute('title')).toBe('运行中');
-    const chrome = screen.getByTestId('browser-agent-window-chrome');
-    expect(chrome.textContent).toContain('Wikipedia');
+    // 标题行已删：surface 标题由页签承担（WorkbenchTabs），本组件只验状态点与地址栏
     const addressInput = screen.getByTestId('browser-agent-window-address-input') as HTMLInputElement;
-    expect(addressInput.value).toBe('https://wikipedia.org');
+    expect(addressInput.value).toBe('wikipedia.org');
   });
 
   it('managedSession 的 URL 与画面那扇窗不同源时只显示 origin，不显示另一扇窗的地址', () => {
@@ -202,9 +199,10 @@ describe('BrowserAgentWindow（B1-R·R1 图形化现场）', () => {
     render(<BrowserAgentWindow />);
 
     const addressInput = screen.getByTestId('browser-agent-window-address-input') as HTMLInputElement;
-    expect(addressInput.value).toBe('https://wikipedia.org');
+    expect(addressInput.value).toBe('wikipedia.org');
     expect(addressInput.value).not.toContain('other.example');
-    expect(screen.getByTestId('browser-agent-window-chrome').textContent).not.toContain('另一扇窗');
+    // 另一扇窗（全局单例）的标题不得在本组件任何位置泄漏
+    expect(screen.queryByText('另一扇窗')).toBeNull();
   });
 
   it('tab 不可见（右栏收起）时把 visible 传 false —— 节流护栏不许后台开流', () => {

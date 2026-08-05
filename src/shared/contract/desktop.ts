@@ -46,6 +46,8 @@ export interface ManagedBrowserTabSnapshot {
   id: string;
   url: string;
   title: string;
+  canGoBack?: boolean;
+  canGoForward?: boolean;
 }
 
 export interface ManagedBrowserAccountStateSummary {

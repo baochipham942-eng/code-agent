@@ -26,6 +26,7 @@ import {
   type BrowserProviderResolution,
 } from './browserProvider';
 import { BrowserLogger } from './browser/logger';
+import { refreshBrowserTabMetadata as refreshBrowserTabMetadataFields } from './browser/tabHistoryMetadata';
 import { browserRelayService } from './browserRelayService';
 import {
   applyStorageStateToPage,
@@ -1082,8 +1083,7 @@ export class BrowserService implements Disposable {
   }
 
   private async refreshTabMetadata(tab: BrowserTab): Promise<void> {
-    tab.url = tab.page.url();
-    tab.title = await tab.page.title().catch(() => tab.title);
+    await refreshBrowserTabMetadataFields(tab);
   }
 
   private cleanupCrashedBrowserProcess(): void {

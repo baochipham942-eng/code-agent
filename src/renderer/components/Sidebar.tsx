@@ -92,10 +92,11 @@ export const Sidebar: React.FC = () => {
         .catch(() => {});
     };
     const check = () => {
-      probe();
-      // macOS 全屏进出带过渡动画：resize 触发那一刻 isFullscreen() 可能还是旧值，
-      // 且动画收尾后不再来新事件——退出全屏时 logo 就残留在红绿灯底下（真机 2026-08-05）。
-      // 动画收尾后补两拍核实（清旧定时器防抖）。
+      // 乐观让位：resize 一来先按「非全屏」渲染——退出动画瞬间红绿灯就回位，
+      // 立刻查询还会读到旧值 true，logo 会多存在一拍压在灯上（真机 2026-08-05
+      // 「会一瞬间存在」）。进全屏的确认交给延迟拍：全屏里左上角本来就是空的，
+      // 品牌标晚 ~1s 挂上无感；退出让位则必须是瞬时的。
+      if (alive) setIsNativeFullscreen(false);
       while (timers.length) window.clearTimeout(timers.pop());
       timers.push(window.setTimeout(probe, 400), window.setTimeout(probe, 1200));
     };

@@ -26,6 +26,7 @@ import {
   type BrowserProviderResolution,
 } from './browserProvider';
 import { BrowserLogger } from './browser/logger';
+import { refreshBrowserTabMetadata as refreshBrowserTabMetadataFields } from './browser/tabHistoryMetadata';
 import { browserRelayService } from './browserRelayService';
 import {
   applyStorageStateToPage,
@@ -1082,26 +1083,7 @@ export class BrowserService implements Disposable {
   }
 
   private async refreshTabMetadata(tab: BrowserTab): Promise<void> {
-    tab.url = tab.page.url();
-    tab.title = await tab.page.title().catch(() => tab.title);
-    try {
-      const session = await tab.page.context().newCDPSession(tab.page);
-      try {
-        const history = await session.send('Page.getNavigationHistory') as {
-          currentIndex?: number;
-          entries?: unknown[];
-        };
-        const index = typeof history.currentIndex === 'number' ? history.currentIndex : 0;
-        const entries = Array.isArray(history.entries) ? history.entries : [];
-        tab.canGoBack = index > 0;
-        tab.canGoForward = index < entries.length - 1;
-      } finally {
-        await session.detach().catch(() => undefined);
-      }
-    } catch {
-      tab.canGoBack = false;
-      tab.canGoForward = false;
-    }
+    await refreshBrowserTabMetadataFields(tab);
   }
 
   private cleanupCrashedBrowserProcess(): void {

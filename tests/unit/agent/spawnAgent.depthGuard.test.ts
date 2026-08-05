@@ -163,10 +163,10 @@ const foregroundBackgroundSource = readFileSync(FOREGROUND_BACKGROUND_PATH, 'utf
     expect(checks.length).toBeGreaterThanOrEqual(2);
     expect(source).toMatch(/Spawn cancelled before agent registration/);
     expect(source).toMatch(
-      /cancelledBeforeApproval\s*=\s*getParallelCancellationResult\(\)[\s\S]*?requestDurableAgentTeamLaunchApproval\(/,
+      /cancelledBeforeApproval\s*=\s*getParallelCancellationResult\(context\.abortSignal\)[\s\S]*?requestDurableAgentTeamLaunchApproval\(/,
     );
     expect(source).toMatch(
-      /requestDurableAgentTeamLaunchApproval\([\s\S]*?cancelledAfterApproval\s*=\s*getParallelCancellationResult\(\)/,
+      /requestDurableAgentTeamLaunchApproval\([\s\S]*?cancelledAfterApproval\s*=\s*getParallelCancellationResult\(context\.abortSignal\)/,
     );
     expect(durableLaunchSource).toMatch(
       /addEventListener\(['"]abort['"],\s*cancelPendingLaunch[\s\S]*?launchGate\.requestApproval/,

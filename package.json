@@ -6,7 +6,8 @@
   "type": "module",
   "main": "dist/web/webServer.cjs",
   "bin": {
-    "code-agent": "./dist/cli/index.cjs"
+    "code-agent": "./dist/cli/index.cjs",
+    "neo": "./dist/cli/index.cjs"
   },
   "author": "Lin Chen",
   "license": "MIT",

@@ -585,21 +585,23 @@ export function projectTurns(
     }
   }
 
-  const pendingLaunchRequest = [...launchRequests]
-    .reverse()
-    .find((request) => request.status === 'pending' && request.sessionId === sessionId);
-  if (pendingLaunchRequest) {
+  // C4 / 施工单二 B：pending 投影轻量问答卡；resolved 后保留紧凑历史（不卸载节点）
+  const sessionLaunchRequests = launchRequests
+    .filter((request) => request.sessionId === sessionId)
+    .slice()
+    .sort((a, b) => a.requestedAt - b.requestedAt);
+  for (const launchRequest of sessionLaunchRequests) {
     const launchNode: TraceNode = {
-      id: `swarm-launch-${pendingLaunchRequest.id}`,
+      id: `swarm-launch-${launchRequest.id}`,
       type: 'swarm_launch_request',
-      content: pendingLaunchRequest.summary,
-      timestamp: pendingLaunchRequest.requestedAt,
-      launchRequest: pendingLaunchRequest,
+      content: launchRequest.summary,
+      timestamp: launchRequest.requestedAt,
+      launchRequest,
     };
 
     if (currentTurn) {
       currentTurn.nodes.push(launchNode);
-      currentTurn.endTime = pendingLaunchRequest.requestedAt;
+      currentTurn.endTime = Math.max(currentTurn.endTime ?? 0, launchRequest.requestedAt);
     } else {
       turnCounter++;
       currentTurn = {
@@ -607,8 +609,8 @@ export function projectTurns(
         turnId: `turn-${turnCounter}`,
         nodes: [launchNode],
         status: 'completed',
-        startTime: pendingLaunchRequest.requestedAt,
-        endTime: pendingLaunchRequest.requestedAt,
+        startTime: launchRequest.requestedAt,
+        endTime: launchRequest.requestedAt,
       };
       turns.push(currentTurn);
     }

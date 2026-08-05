@@ -126,6 +126,50 @@ describe('SessionMemberBar', () => {
     expect(screen.getByTestId('member-status-completed')).toBeTruthy();
   });
 
+  it('swarm 活跃时成员条右端显示 token 与停止全部，点击走 run-level cancel', async () => {
+    swarmState.activeSessionId = 'session-1';
+    swarmState.activeRunId = 'logical-run-1';
+    const durableAgents: SwarmRunAgentRecord[] = [
+      { ...agents[0], status: 'running', endTime: null, durationMs: null },
+      { ...agents[1], status: 'running', endTime: null, durationMs: null },
+    ];
+    const detail: SwarmRunDetail = {
+      run: {
+        ...run,
+        status: 'running',
+        endedAt: null,
+        completedCount: 0,
+        totalTokensIn: 1500,
+        totalTokensOut: 500,
+        totalToolCalls: 11,
+        parallelPeak: 2,
+        errorSummary: null,
+        aggregation: null,
+        tags: [],
+      },
+      agents: durableAgents,
+      events: [],
+    };
+    invokeMock.mockImplementation((channel: string) => {
+      if (channel === IPC_CHANNELS.SWARM_LIST_TRACE_RUNS) return Promise.resolve([{ ...run, status: 'running' }]);
+      if (channel === IPC_CHANNELS.SWARM_GET_TRACE_RUN_DETAIL) return Promise.resolve(detail);
+      if (channel === IPC_CHANNELS.SWARM_CANCEL_RUN) return Promise.resolve(true);
+      return Promise.resolve(null);
+    });
+
+    render(<SessionMemberBar sessionId="session-1" />);
+    await waitFor(() => expect(screen.getByTestId('member-bar-stop-all')).toBeTruthy());
+    expect(screen.getByTestId('member-bar-tokens').textContent).toContain('2.0K');
+
+    fireEvent.click(screen.getByTestId('member-bar-stop-all'));
+    await waitFor(() => {
+      expect(invokeMock).toHaveBeenCalledWith(IPC_CHANNELS.SWARM_CANCEL_RUN, {
+        sessionId: 'session-1',
+        runId: 'logical-run-1',
+      });
+    });
+  });
+
   // 预选是我们比 WorkBuddy 多做的一层：还没跑就先让用户看到这个团队由谁组成
   it('预选团队配方时铺出灰态名单（主理人在前）且不带状态徽标', async () => {
     useAgentRegistryStore.setState({

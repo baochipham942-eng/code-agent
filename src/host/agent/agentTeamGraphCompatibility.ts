@@ -24,7 +24,7 @@ export function createAgentTeamGraphCompatibility(input: {
         if (task) {
           input.emitter.agentAdded(input.scope, {
             id: task.id,
-            name: task.role,
+            name: task.name ?? task.role,
             role: task.role,
             dispatchedTask: task.task,
           });

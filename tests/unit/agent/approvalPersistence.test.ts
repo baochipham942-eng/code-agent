@@ -280,9 +280,10 @@ describe('SwarmLaunchApprovalGate persistence', () => {
   });
 
   it('persists cancellation on cancelAll()', async () => {
+    // 必须有写权限成员才会进入 pending；只读会立即 auto-approve（施工单二 B）
     const reqPromise = gate.requestApproval({
       scope: LAUNCH_SCOPE,
-      tasks: [{ id: 'a1', role: 'A1', task: 't1', tools: [], writeAccess: false }],
+      tasks: [{ id: 'a1', role: 'A1', task: 't1', tools: [], writeAccess: true }],
     });
     await new Promise((r) => setImmediate(r));
 

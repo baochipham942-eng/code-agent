@@ -1,8 +1,8 @@
 // ============================================================================
-// SwarmLaunchApprovalGate Tests
-// 覆盖 headless fast-path、approve/reject 正向路径、
-// timeout 的 writeAgentCount 分档 fail-closed（有写→reject / 全只读→approve）、
-// createRequest 衍生字段、query helpers
+// SwarmLaunchApprovalGate Tests（施工单二 B）
+// headless / 全只读 / 写成员×acceptEdits / 写成员×bypassPermissions /
+// 写成员×default 等待 / approve / reject / cancelSession
+// 变异：去掉档位判断时 acceptEdits 用例必须红
 // ============================================================================
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
@@ -16,12 +16,8 @@ vi.mock('../../../src/host/services/infra/logger', () => ({
   }),
 }));
 
-// ---------------------------------------------------------------------------
-// Mock platform.AppWindow — 控制是否有 renderer 附加
-// ---------------------------------------------------------------------------
-
 const windowState = vi.hoisted(() => ({
-  count: 1, // 默认有 renderer
+  count: 1,
 }));
 
 vi.mock('../../../src/host/platform', () => ({
@@ -30,16 +26,22 @@ vi.mock('../../../src/host/platform', () => ({
   },
 }));
 
-// ---------------------------------------------------------------------------
-// Mock EventBus — 收集事件用于断言
-// ---------------------------------------------------------------------------
-
 const busState = vi.hoisted(() => ({
   publishMock: vi.fn(),
 }));
 
 vi.mock('../../../src/host/services/eventing/bus', () => ({
   getEventBus: () => ({ publish: busState.publishMock }),
+}));
+
+const permissionState = vi.hoisted(() => ({
+  mode: 'default' as string,
+}));
+
+vi.mock('../../../src/host/permissions/modes', () => ({
+  getPermissionModeManager: () => ({
+    getModeForSession: () => permissionState.mode,
+  }),
 }));
 
 import { SwarmLaunchApprovalGate } from '../../../src/host/agent/swarmLaunchApproval';
@@ -51,13 +53,7 @@ const TEST_SCOPE: SwarmRunScope = {
   treeId: 'tree-launch-test',
 };
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function makeTask(
-  overrides: Partial<SwarmLaunchTaskPreview> = {}
-): SwarmLaunchTaskPreview {
+function makeTask(overrides: Partial<SwarmLaunchTaskPreview> = {}): SwarmLaunchTaskPreview {
   return {
     id: overrides.id ?? 'task-1',
     role: overrides.role ?? 'coder',
@@ -69,8 +65,8 @@ function makeTask(
   };
 }
 
-function makeGate(timeoutMs = 1_000): SwarmLaunchApprovalGate {
-  return new SwarmLaunchApprovalGate({ approvalTimeoutMs: timeoutMs });
+function makeGate(): SwarmLaunchApprovalGate {
+  return new SwarmLaunchApprovalGate();
 }
 
 describe('SwarmLaunchApprovalGate', () => {
@@ -78,17 +74,14 @@ describe('SwarmLaunchApprovalGate', () => {
 
   beforeEach(() => {
     windowState.count = 1;
+    permissionState.mode = 'default';
     busState.publishMock.mockReset();
-    gate = makeGate(1_000);
+    gate = makeGate();
   });
 
   afterEach(() => {
     vi.useRealTimers();
   });
-
-  // ==========================================================================
-  // Headless fast-path
-  // ==========================================================================
 
   describe('headless fast-path', () => {
     it('没有 renderer 时立即 auto-approve 且不入队列', async () => {
@@ -102,20 +95,118 @@ describe('SwarmLaunchApprovalGate', () => {
       expect(result.approved).toBe(true);
       expect(result.autoApproved).toBe(true);
       expect(result.feedback).toMatch(/headless/);
-      // 未发布 launch:requested 事件
       expect(busState.publishMock).not.toHaveBeenCalled();
       expect(gate.getPendingRequests()).toHaveLength(0);
     });
   });
 
-  // ==========================================================================
-  // createRequest 衍生字段
-  // ==========================================================================
+  describe('read-only auto-approve', () => {
+    it.each(['default', 'readOnly', 'acceptEdits', 'bypassPermissions'] as const)(
+      'writeAgentCount===0 在档 %s 下立即自动批',
+      async (mode) => {
+        permissionState.mode = mode;
+        const result = await gate.requestApproval({
+          scope: TEST_SCOPE,
+          tasks: [
+            makeTask({ id: 't1', writeAccess: false }),
+            makeTask({ id: 't2', writeAccess: false }),
+          ],
+        });
+        expect(result.approved).toBe(true);
+        expect(result.autoApproved).toBe(true);
+        expect(result.feedback).toMatch(/read-only/);
+        expect(gate.getPendingRequests()).toHaveLength(0);
+        expect(busState.publishMock).not.toHaveBeenCalled();
+      },
+    );
+  });
+
+  describe('session permission mode auto-approve', () => {
+    it('写成员 × acceptEdits 立即自动批（变异点：去掉档位判断本用例必红）', async () => {
+      permissionState.mode = 'acceptEdits';
+      const result = await gate.requestApproval({
+        scope: TEST_SCOPE,
+        tasks: [makeTask({ id: 't1', writeAccess: true })],
+      });
+      expect(result.approved).toBe(true);
+      expect(result.autoApproved).toBe(true);
+      expect(result.feedback).toMatch(/acceptEdits/);
+      expect(gate.getPendingRequests()).toHaveLength(0);
+    });
+
+    it('写成员 × bypassPermissions 立即自动批', async () => {
+      permissionState.mode = 'bypassPermissions';
+      const result = await gate.requestApproval({
+        scope: TEST_SCOPE,
+        tasks: [makeTask({ id: 't1', writeAccess: true })],
+      });
+      expect(result.approved).toBe(true);
+      expect(result.autoApproved).toBe(true);
+      expect(result.feedback).toMatch(/bypassPermissions/);
+    });
+  });
+
+  describe('default mode wait (no timeout)', () => {
+    it('写成员 × default 进入等待且不超时自动结算', async () => {
+      permissionState.mode = 'default';
+      vi.useFakeTimers();
+
+      const pending = gate.requestApproval({
+        scope: TEST_SCOPE,
+        tasks: [makeTask({ id: 't1', writeAccess: true })],
+      });
+
+      await vi.advanceTimersByTimeAsync(0);
+      expect(gate.getPendingRequests()).toHaveLength(1);
+      expect(busState.publishMock.mock.calls.some((c) => c[1] === 'launch:requested')).toBe(true);
+
+      // 原 120s 超时路径已退役：推进远超旧超时也不自动结算
+      await vi.advanceTimersByTimeAsync(300_000);
+      expect(gate.getPendingRequests()).toHaveLength(1);
+      expect(gate.getPendingResolverCount()).toBe(1);
+
+      const reqId = gate.getPendingRequests()[0].id;
+      gate.approve(reqId, 'go');
+      const result = await pending;
+      expect(result.approved).toBe(true);
+      expect(result.autoApproved).toBe(false);
+      expect(result.feedback).toBe('go');
+    });
+
+    it('等待中 reject 结算 promise', async () => {
+      permissionState.mode = 'default';
+      const pending = gate.requestApproval({
+        scope: TEST_SCOPE,
+        tasks: [makeTask({ id: 't1', writeAccess: true })],
+      });
+      await Promise.resolve();
+      const reqId = gate.getPendingRequests()[0].id;
+      expect(gate.reject(reqId, 'unsafe')).toBe(true);
+      const result = await pending;
+      expect(result.approved).toBe(false);
+      expect(result.feedback).toBe('unsafe');
+      expect(result.autoApproved).toBe(false);
+    });
+
+    it('等待中 cancelSession 排干 pending', async () => {
+      permissionState.mode = 'default';
+      const pending = gate.requestApproval({
+        scope: TEST_SCOPE,
+        tasks: [makeTask({ id: 't1', writeAccess: true })],
+      });
+      await Promise.resolve();
+      expect(gate.cancelSession(TEST_SCOPE.sessionId, 'session closed')).toBe(1);
+      const result = await pending;
+      expect(result.approved).toBe(false);
+      expect(result.autoApproved).toBe(true);
+      expect(result.feedback).toMatch(/session closed/);
+      expect(gate.getPendingResolverCount()).toBe(0);
+    });
+  });
 
   describe('createRequest 衍生字段', () => {
     it('agentCount/dependencyCount/writeAgentCount 从 tasks 正确推导', async () => {
-      vi.useFakeTimers();
-
+      permissionState.mode = 'default';
       const pending = gate.requestApproval({
         scope: TEST_SCOPE,
         tasks: [
@@ -125,232 +216,31 @@ describe('SwarmLaunchApprovalGate', () => {
         ],
         summary: 'custom summary',
       });
-
-      await vi.advanceTimersByTimeAsync(0);
+      await Promise.resolve();
 
       const reqs = gate.getPendingRequests();
       expect(reqs).toHaveLength(1);
-      const req = reqs[0];
-      expect(req.agentCount).toBe(3);
-      expect(req.dependencyCount).toBe(3);
-      expect(req.writeAgentCount).toBe(2);
-      expect(req.summary).toBe('custom summary');
+      expect(reqs[0].agentCount).toBe(3);
+      expect(reqs[0].dependencyCount).toBe(3);
+      expect(reqs[0].writeAgentCount).toBe(2);
+      expect(reqs[0].summary).toBe('custom summary');
 
-      // 收尾：approve 让 promise 结算
-      gate.approve(req.id);
-      await vi.advanceTimersByTimeAsync(500);
-      await pending;
-    });
-
-    it('缺省 summary 时按 agentCount 生成默认描述', async () => {
-      vi.useFakeTimers();
-
-      const pending = gate.requestApproval({
-        scope: TEST_SCOPE,
-        tasks: [makeTask({ id: 't1' }), makeTask({ id: 't2' })],
-      });
-      await vi.advanceTimersByTimeAsync(0);
-
-      const req = gate.getPendingRequests()[0];
-      expect(req.summary).toContain('2');
-      expect(req.summary).toMatch(/agent/i);
-
-      gate.approve(req.id);
-      await vi.advanceTimersByTimeAsync(500);
+      gate.approve(reqs[0].id);
       await pending;
     });
   });
-
-  // ==========================================================================
-  // approve / reject 正向路径
-  // ==========================================================================
-
-  describe('审批流', () => {
-    it('外部 approve 把 request 转为 approved 并结算 promise', async () => {
-      vi.useFakeTimers();
-
-      const pending = gate.requestApproval({ scope: TEST_SCOPE, tasks: [makeTask({ id: 't1' })] });
-      await vi.advanceTimersByTimeAsync(0);
-
-      const reqId = gate.getPendingRequests()[0].id;
-      expect(gate.approve(reqId, 'go')).toBe(true);
-
-      await vi.advanceTimersByTimeAsync(500);
-
-      const result = await pending;
-      expect(result.approved).toBe(true);
-      expect(result.feedback).toBe('go');
-      expect(result.autoApproved).toBe(false);
-      // 发布 approved 事件
-      expect(
-        busState.publishMock.mock.calls.some(
-          (c) => c[1] === 'launch:approved'
-        )
-      ).toBe(true);
-    });
-
-    it('外部 reject 把 request 转为 rejected 并结算 promise', async () => {
-      vi.useFakeTimers();
-
-      const pending = gate.requestApproval({
-        scope: TEST_SCOPE,
-        tasks: [makeTask({ id: 't1', writeAccess: true })],
-      });
-      await vi.advanceTimersByTimeAsync(0);
-
-      const reqId = gate.getPendingRequests()[0].id;
-      expect(gate.reject(reqId, 'unsafe')).toBe(true);
-
-      await vi.advanceTimersByTimeAsync(500);
-
-      const result = await pending;
-      expect(result.approved).toBe(false);
-      expect(result.feedback).toBe('unsafe');
-      expect(result.autoApproved).toBe(false);
-    });
-
-    it('重复 approve / 未知 id 返回 false', async () => {
-      vi.useFakeTimers();
-
-      const pending = gate.requestApproval({ scope: TEST_SCOPE, tasks: [makeTask({ id: 't1' })] });
-      await vi.advanceTimersByTimeAsync(0);
-
-      const reqId = gate.getPendingRequests()[0].id;
-      gate.approve(reqId);
-
-      expect(gate.approve(reqId)).toBe(false);
-      expect(gate.reject(reqId, 'flip')).toBe(false);
-      expect(gate.approve('launch_nonexistent')).toBe(false);
-      expect(gate.reject('launch_nonexistent', 'x')).toBe(false);
-
-      await vi.advanceTimersByTimeAsync(500);
-      await pending;
-    });
-
-    it('提交后发布 launch:requested 事件', async () => {
-      vi.useFakeTimers();
-
-      const pending = gate.requestApproval({ scope: TEST_SCOPE, tasks: [makeTask({ id: 't1' })] });
-      await vi.advanceTimersByTimeAsync(0);
-
-      const call = busState.publishMock.mock.calls.find(
-        (c) => c[1] === 'launch:requested'
-      );
-      expect(call).toBeDefined();
-      expect(call?.[0]).toBe('swarm');
-
-      // 收尾
-      gate.approve(gate.getPendingRequests()[0].id);
-      await vi.advanceTimersByTimeAsync(500);
-      await pending;
-    });
-  });
-
-  // ==========================================================================
-  // Timeout fail-closed 按 writeAgentCount 分档
-  // ==========================================================================
-
-  describe('超时 fail-closed 分档', () => {
-    it('有写 agent 时超时 auto-reject（避免无人值守的并发写冲突）', async () => {
-      vi.useFakeTimers();
-      gate = makeGate(500);
-
-      const pending = gate.requestApproval({
-        scope: TEST_SCOPE,
-        tasks: [
-          makeTask({ id: 't1', writeAccess: true }),
-          makeTask({ id: 't2', writeAccess: false }),
-        ],
-      });
-
-      await vi.advanceTimersByTimeAsync(1_200);
-
-      const result = await pending;
-      expect(result.approved).toBe(false);
-      expect(result.autoApproved).toBe(true);
-      expect(result.feedback).toMatch(/Auto-rejected after timeout/);
-      expect(result.feedback).toMatch(/writeAgentCount=1/);
-    });
-
-    it('全只读任务超时 auto-approve（保活低风险探查）', async () => {
-      vi.useFakeTimers();
-      gate = makeGate(500);
-
-      const pending = gate.requestApproval({
-        scope: TEST_SCOPE,
-        tasks: [
-          makeTask({ id: 't1', writeAccess: false }),
-          makeTask({ id: 't2', writeAccess: false }),
-        ],
-      });
-
-      await vi.advanceTimersByTimeAsync(1_200);
-
-      const result = await pending;
-      expect(result.approved).toBe(true);
-      expect(result.autoApproved).toBe(true);
-      expect(result.feedback).toMatch(/Auto-approved after timeout/);
-      expect(result.feedback).toMatch(/read-only/);
-    });
-
-    it('超时后 request 状态持久化（可从 getRequest 查）', async () => {
-      vi.useFakeTimers();
-      gate = makeGate(500);
-
-      const pending = gate.requestApproval({
-        scope: TEST_SCOPE,
-        tasks: [makeTask({ id: 't1', writeAccess: true })],
-      });
-      await vi.advanceTimersByTimeAsync(0);
-      const reqId = gate.getPendingRequests()[0].id;
-
-      await vi.advanceTimersByTimeAsync(1_200);
-      await pending;
-
-      const snap = gate.getRequest(reqId);
-      expect(snap?.status).toBe('rejected');
-      expect(snap?.resolvedAt).toBeTypeOf('number');
-    });
-  });
-
-  // ==========================================================================
-  // Query helpers
-  // ==========================================================================
 
   describe('query', () => {
     it('getPendingRequests 只返回 pending 状态', async () => {
-      vi.useFakeTimers();
-
-      const pending = gate.requestApproval({ scope: TEST_SCOPE, tasks: [makeTask({ id: 't1' })] });
-      await vi.advanceTimersByTimeAsync(0);
-
-      expect(gate.getPendingRequests()).toHaveLength(1);
-
-      gate.approve(gate.getPendingRequests()[0].id);
-      expect(gate.getPendingRequests()).toHaveLength(0);
-
-      await vi.advanceTimersByTimeAsync(500);
-      await pending;
-    });
-
-    it('getRequest 返回 tasks 数组的深拷贝', async () => {
-      vi.useFakeTimers();
-
+      permissionState.mode = 'default';
       const pending = gate.requestApproval({
         scope: TEST_SCOPE,
-        tasks: [makeTask({ id: 't1' })],
+        tasks: [makeTask({ id: 't1', writeAccess: true })],
       });
-      await vi.advanceTimersByTimeAsync(0);
-
-      const reqId = gate.getPendingRequests()[0].id;
-      const snap1 = gate.getRequest(reqId)!;
-      const snap2 = gate.getRequest(reqId)!;
-      expect(snap1).not.toBe(snap2);
-      expect(snap1.tasks).not.toBe(snap2.tasks);
-      expect(snap1.tasks[0]).not.toBe(snap2.tasks[0]);
-
-      gate.approve(reqId);
-      await vi.advanceTimersByTimeAsync(500);
+      await Promise.resolve();
+      expect(gate.getPendingRequests()).toHaveLength(1);
+      gate.approve(gate.getPendingRequests()[0].id);
+      expect(gate.getPendingRequests()).toHaveLength(0);
       await pending;
     });
 

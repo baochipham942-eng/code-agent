@@ -6,7 +6,7 @@ import { encodeGoalNotice } from '../../../src/renderer/components/features/chat
 import { encodeModelFallbackNotice } from '../../../src/renderer/components/features/chat/fallbackNotice';
 
 describe('projectTurns', () => {
-  it('projects the latest pending launch request into the last turn', () => {
+  it('projects session launch requests including resolved history and pending', () => {
     const messages: Message[] = [
       {
         id: 'user-1',
@@ -59,8 +59,11 @@ describe('projectTurns', () => {
       'user',
       'assistant_text',
       'swarm_launch_request',
+      'swarm_launch_request',
     ]);
-    expect(projection.turns[0].nodes[2]?.launchRequest?.id).toBe('launch-pending');
+    // C4：resolved 历史 + pending 都保留，按 requestedAt 升序
+    expect(projection.turns[0].nodes[2]?.launchRequest?.id).toBe('launch-old');
+    expect(projection.turns[0].nodes[3]?.launchRequest?.id).toBe('launch-pending');
   });
 
   it('projects model decisions onto assistant text nodes', () => {
@@ -357,7 +360,7 @@ describe('projectTurns', () => {
     expect(projection.turns[0].nodes[0]?.type).toBe('swarm_launch_request');
   });
 
-  it('does not project resolved launch requests into chat trace', () => {
+  it('keeps resolved launch requests as compact history in chat trace (C4)', () => {
     const launchRequests: SwarmLaunchRequest[] = [
       {
         id: 'launch-approved',
@@ -377,8 +380,9 @@ describe('projectTurns', () => {
 
     const projection = projectTurns([], 'session-3', false, launchRequests);
 
-    expect(projection.turns).toHaveLength(0);
-    expect(projection.activeTurnIndex).toBe(-1);
+    expect(projection.turns).toHaveLength(1);
+    expect(projection.turns[0].nodes[0]?.type).toBe('swarm_launch_request');
+    expect(projection.turns[0].nodes[0]?.launchRequest?.status).toBe('approved');
   });
 
   it('keeps the previous assistant turn active when a direct-routed user message is appended', () => {

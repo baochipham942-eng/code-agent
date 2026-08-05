@@ -395,7 +395,8 @@ describe('Swarm Chain Integration', () => {
             role: 'coder',
             task: 'do work',
             tools: ['Read'],
-            writeAccess: false,
+            // B 批新语义：全只读立即自动批不发 launch:requested，等待路径要有写成员
+            writeAccess: true,
           },
         ],
         summary: 'integration test',
@@ -418,7 +419,7 @@ describe('Swarm Chain Integration', () => {
     it('IPC approve-launch 触发 gate 状态转 approved 并 emit launch:approved', async () => {
       // 先制造一个 pending request
       void chain.launchGate.requestApproval({
-        tasks: [{ id: chain.agentId, role: 'coder', task: 'x', tools: ['Read'], writeAccess: false }],
+        tasks: [{ id: chain.agentId, role: 'coder', task: 'x', tools: ['Read'], writeAccess: true }],
         scope: chain.scope,
       });
 

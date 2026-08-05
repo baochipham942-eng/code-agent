@@ -129,12 +129,18 @@ const spawnInputSchema = {
     },
     agents: {
       type: 'array',
-      description: 'Array of agents for parallel execution',
+      description:
+        'Array of agents for parallel execution. When spawning multiple instances of the same role, give each a distinct name (e.g. 溯真-权威资料 / 溯真-行业研究) so the member bar can tell them apart.',
       items: {
         type: 'object',
         properties: {
           role: { type: 'string' },
           task: { type: 'string' },
+          name: {
+            type: 'string',
+            description:
+              'Optional display name for this agent instance. Prefer distinct names when the same role appears more than once (e.g. 溯真-权威资料 / 溯真-行业研究).',
+          },
           maxBudget: { type: 'number' },
           dependsOn: {
             type: 'array',

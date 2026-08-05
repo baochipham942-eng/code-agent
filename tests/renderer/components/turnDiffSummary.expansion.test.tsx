@@ -60,8 +60,8 @@ function makeTurn(overrides: Partial<TraceTurn> = {}): TraceTurn {
   } as TraceTurn;
 }
 
-// 文件行按钮：完整路径在 title 上，用 title 锚定最稳
-const fileRow = () => screen.getByTitle('/tmp/example.ts').closest('button')!;
+// 展开箭头与文件名已拆成两个按钮；展开态测箭头（aria-expanded）
+const expandBtn = () => screen.getByRole('button', { name: /展开改动|收起改动|Expand diff|Collapse diff/i });
 
 beforeEach(() => {
   mocks.invoke.mockReset();
@@ -75,34 +75,34 @@ afterEach(cleanup);
 describe('TurnDiffSummary 展开态稳定（X5.5-B2）', () => {
   it('执行中默认收起，程序不自动弹开', () => {
     render(<TurnDiffSummary turn={makeTurn()} />);
-    expect(fileRow().getAttribute('aria-expanded')).toBe('false');
+    expect(expandBtn().getAttribute('aria-expanded')).toBe('false');
   });
 
   it('手动展开活过重挂载（虚拟列表卸载/重挂载场景）', () => {
     const first = render(<TurnDiffSummary turn={makeTurn()} />);
-    fireEvent.click(fileRow());
-    expect(fileRow().getAttribute('aria-expanded')).toBe('true');
+    fireEvent.click(expandBtn());
+    expect(expandBtn().getAttribute('aria-expanded')).toBe('true');
 
     first.unmount();
 
     render(<TurnDiffSummary turn={makeTurn()} />);
-    expect(fileRow().getAttribute('aria-expanded')).toBe('true');
+    expect(expandBtn().getAttribute('aria-expanded')).toBe('true');
   });
 
   it('手动收起同样活过重挂载——程序不替用户改回', () => {
     const first = render(<TurnDiffSummary turn={makeTurn()} />);
-    fireEvent.click(fileRow()); // 展开
-    fireEvent.click(fileRow()); // 再收起
-    expect(fileRow().getAttribute('aria-expanded')).toBe('false');
+    fireEvent.click(expandBtn()); // 展开
+    fireEvent.click(expandBtn()); // 再收起
+    expect(expandBtn().getAttribute('aria-expanded')).toBe('false');
     first.unmount();
 
     // 先展开留着，再换个「会话」确认键控隔离：别的会话不继承展开态
     const second = render(<TurnDiffSummary turn={makeTurn()} />);
-    fireEvent.click(fileRow());
+    fireEvent.click(expandBtn());
     second.unmount();
 
     useSessionStore.setState({ currentSessionId: 'session-2' });
     render(<TurnDiffSummary turn={makeTurn()} />);
-    expect(fileRow().getAttribute('aria-expanded')).toBe('false');
+    expect(expandBtn().getAttribute('aria-expanded')).toBe('false');
   });
 });

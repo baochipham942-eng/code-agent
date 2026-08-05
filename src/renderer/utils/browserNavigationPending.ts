@@ -24,6 +24,14 @@ export function navigationTargetSettled(activeUrl: string | null | undefined, pe
       if (active.pathname === '/' && !active.search && !active.hash) return true;
       return active.href.startsWith(pending.origin);
     }
+    // 跨子域跳转（baidu.com → www.baidu.com）也算落地：主机尾部互为后缀即同站。
+    const activeHost = active.hostname.replace(/^www\./, '');
+    const pendingHost = pending.hostname.replace(/^www\./, '');
+    if (activeHost === pendingHost
+      || activeHost.endsWith(`.${pendingHost}`)
+      || pendingHost.endsWith(`.${activeHost}`)) {
+      return true;
+    }
     return false;
   } catch {
     return activeUrl === pendingUrl

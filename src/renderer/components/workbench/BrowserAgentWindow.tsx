@@ -266,8 +266,9 @@ export const BrowserAgentWindow: React.FC = () => {
         conversationId: override?.conversationId ?? currentSessionId,
         workspace: override?.workspace ?? workingDirectory,
       });
-      // 若此刻 activeUrl 已同源，effect 会清 pending；否则保持 pending 直到 URL 回写。
-      if (requestId === navRequestIdRef.current && navigationTargetSettled(activeUrl, url)) {
+      // openLinkInRail resolve = host 已受理导航并回写快照——pending 到此结束
+      // （2026-08-05 真机：baidu.com→www.baidu.com 跳转导致 settle 判定永假、「正在打开」卡死）。
+      if (requestId === navRequestIdRef.current) {
         setNavigationPending(null);
       }
     } catch (error) {
@@ -511,35 +512,6 @@ export const BrowserAgentWindow: React.FC = () => {
       data-testid="workbench-browser-view"
       className="flex h-full min-h-0 flex-col bg-zinc-950"
     >
-      <div
-        data-testid="browser-agent-window-chrome"
-        className="flex shrink-0 items-center gap-2 border-b border-white/[0.08] px-2.5 py-1.5"
-      >
-        <span
-          data-testid="browser-agent-window-status-dot"
-          title={running ? copy.running : copy.stopped}
-          className={`h-2 w-2 shrink-0 rounded-full ${
-            running ? 'bg-mark-success' : 'bg-zinc-600'
-          }`}
-        />
-        <span className="min-w-0 flex-1 truncate text-xs text-zinc-300" title={activeTitle || undefined}>
-          {activeTitle || copy.activeTabEmpty}
-        </span>
-        {!ownedByCurrentSession && (
-          <span
-            data-testid="browser-agent-window-foreign"
-            title={`${copy.foreignSessionTitle} · ${copy.foreignSessionHint}`}
-            className="ml-auto flex shrink-0 items-center gap-1 rounded-full border border-badge-warning/20 bg-amber-500/[0.06] px-2 py-0.5 text-[10px] text-badge-warning"
-          >
-            <Lock className="h-3 w-3" />
-            {copy.foreignSessionTitle}
-          </span>
-        )}
-        <div className={ownedByCurrentSession ? 'ml-auto' : ''}>
-          <OverflowMenu copy={copy} modeLabel={modeLabel} onOpenLocalOps={openAdvancedPanel} />
-        </div>
-      </div>
-
       {annotateMode && (
         <div
           data-testid="browser-agent-window-annotate-banner"
@@ -572,6 +544,13 @@ export const BrowserAgentWindow: React.FC = () => {
         data-testid="browser-agent-window-addressbar"
         className="flex shrink-0 items-center gap-1 border-b border-white/[0.08] px-2 py-1.5"
       >
+        <span
+          data-testid="browser-agent-window-status-dot"
+          title={running ? copy.running : copy.stopped}
+          className={`mx-1 h-2 w-2 shrink-0 rounded-full ${
+            running ? 'bg-mark-success' : 'bg-zinc-600'
+          }`}
+        />
         <IconButton
           icon={<ArrowLeft className="h-3.5 w-3.5" />}
           aria-label={copy.navBack}
@@ -672,6 +651,17 @@ export const BrowserAgentWindow: React.FC = () => {
           onClick={handleOpenExternal}
           data-testid="browser-agent-window-open-external"
         />
+        {!ownedByCurrentSession && (
+          <span
+            data-testid="browser-agent-window-foreign"
+            title={`${copy.foreignSessionTitle} · ${copy.foreignSessionHint}`}
+            className="flex shrink-0 items-center gap-1 rounded-full border border-badge-warning/20 bg-amber-500/[0.06] px-2 py-0.5 text-[10px] text-badge-warning"
+          >
+            <Lock className="h-3 w-3" />
+            {copy.foreignSessionTitle}
+          </span>
+        )}
+        <OverflowMenu copy={copy} modeLabel={modeLabel} onOpenLocalOps={openAdvancedPanel} />
       </div>
 
       <div

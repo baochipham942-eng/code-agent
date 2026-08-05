@@ -247,7 +247,7 @@ export const BrowserAgentWindow: React.FC = () => {
 
   // 导航落地：activeUrl 落到目标后清 pending。
   useEffect(() => {
-    if (!navigationPending || navigationPending.status !== 'pending') return;
+    if (navigationPending?.status !== 'pending') return;
     if (navigationTargetSettled(activeUrl, navigationPending.url)) {
       setNavigationPending(null);
       setAddressEditing(false);

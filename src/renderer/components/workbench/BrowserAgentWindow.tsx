@@ -387,12 +387,13 @@ export const BrowserAgentWindow: React.FC = () => {
   });
 
   const runHistoryAction = useCallback(async (action: 'back' | 'forward' | 'reload') => {
-    if (!currentSessionId || !workingDirectory) return;
+    // workspace 可空：host 兜底（快速对话无 cwd 时后退/刷新仍应可用，与 open 同口径）。
+    if (!currentSessionId) return;
     setToolbarBusy(action);
     try {
       await controlUserBrowserHistory({
         conversationId: currentSessionId,
-        workspace: workingDirectory,
+        workspace: workingDirectory ?? '',
         action,
       });
       await browserSession.refresh();

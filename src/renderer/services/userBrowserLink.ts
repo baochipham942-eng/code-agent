@@ -89,10 +89,11 @@ export async function controlUserBrowserHistory(input: {
   action: UserBrowserHistoryAction;
 }): Promise<SurfaceConversationSnapshotV1 | null> {
   const conversationId = input.conversationId?.trim();
-  const workspace = input.workspace?.trim();
+  // workspace 允许缺省：与 openLinkInRail 同口径，host 按会话/默认 work 目录兜底。
+  const workspace = input.workspace?.trim() ?? '';
   const bridge = domainBridge();
-  if (!bridge || !conversationId || !workspace) {
-    throw new Error('Browser history control requires conversation and workspace.');
+  if (!bridge || !conversationId) {
+    throw new Error('Browser history control requires conversation.');
   }
   const response = await bridge.invoke<SurfaceConversationSnapshotV1 | null>(
     IPC_DOMAINS.WORKSPACE,
@@ -115,10 +116,11 @@ export async function dispatchUserBrowserInput(input: {
   input: unknown;
 }): Promise<SurfaceConversationSnapshotV1 | null> {
   const conversationId = input.conversationId?.trim();
-  const workspace = input.workspace?.trim();
+  // workspace 允许缺省：快速对话无 cwd 时 host 兜底（R2：client 必填会零 dispatch）。
+  const workspace = input.workspace?.trim() ?? '';
   const bridge = domainBridge();
-  if (!bridge || !conversationId || !workspace) {
-    throw new Error('Browser input requires conversation and workspace.');
+  if (!bridge || !conversationId) {
+    throw new Error('Browser input requires conversation.');
   }
   const response = await bridge.invoke<SurfaceConversationSnapshotV1 | null>(
     IPC_DOMAINS.WORKSPACE,

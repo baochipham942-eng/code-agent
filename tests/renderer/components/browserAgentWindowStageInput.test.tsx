@@ -199,6 +199,36 @@ describe('BrowserAgentWindow 画面交互透传（P1）', () => {
     expect(payload.input.y).toBeCloseTo(360);
   });
 
+  // R2 真机：快速对话 workingDirectory=null，open 能导航但 client 曾因 workspace 必填
+  // 静默丢 click。本 case 若再要求 workspace 非空会立刻红。
+  it('快速对话无 workingDirectory 时点击仍会 dispatch', async () => {
+    useAppStore.setState({ workingDirectory: null });
+    render(<BrowserAgentWindow />);
+    const stage = screen.getByTestId('browser-agent-window-stage');
+    expect(stage.getAttribute('role')).toBe('application');
+    expect(stage.className).toContain('cursor-crosshair');
+    vi.spyOn(stage, 'getBoundingClientRect').mockReturnValue({
+      width: 640,
+      height: 360,
+      top: 0,
+      left: 0,
+      right: 640,
+      bottom: 360,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    });
+    fireEvent.click(stage, { clientX: 320, clientY: 180 });
+    await waitFor(() => expect(dispatchUserBrowserInput).toHaveBeenCalled());
+    const payload = dispatchUserBrowserInput.mock.calls[0][0] as {
+      conversationId: string;
+      workspace: string | null | undefined;
+      input: { kind: string };
+    };
+    expect(payload.conversationId).toBe('session-a');
+    expect(payload.input.kind).toBe('click');
+  });
+
   it('外会话不透传', async () => {
     browserSessionState = buildBrowserSessionState({ ownedByCurrentSession: false });
     render(<BrowserAgentWindow />);

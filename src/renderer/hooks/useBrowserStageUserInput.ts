@@ -84,11 +84,12 @@ export function useBrowserStageUserInput(
     || gate === 'needs-preempt-confirm';
 
   const send = useCallback(async (payload: UserBrowserInputPayload) => {
-    if (!conversationId || !workspace) return;
+    // workspace 可空：host 与 openLinkInRail 同兜底（快速对话无 cwd 仍可透传）。
+    if (!conversationId) return;
     try {
       await dispatchUserBrowserInput({
         conversationId,
-        workspace,
+        workspace: workspace ?? '',
         input: payload,
       });
     } catch {

@@ -760,6 +760,37 @@ async function handleExtractBrandFromImage(payload: { dataUrl?: string; imagePat
   return registryExtractBrand(input);
 }
 
+/**
+ * 用户浏览器链路（open / history / 画面透传）的 workspace 解析。
+ * 快速对话常无 workingDirectory：按会话目录 → 数据目录下 work/ 兜底，
+ * 三条 IPC 必须同口径，否则「能开页看得见画面，却点不动/退不了」
+ * （2026-08-05 R2 真机：open 有兜底、dispatch/history 没有）。
+ */
+async function resolveUserBrowserWorkspace(
+  conversationId: string | undefined,
+  workspace?: string | null,
+): Promise<string> {
+  let resolved = workspace?.trim() || undefined;
+  if (!resolved && conversationId?.trim()) {
+    try {
+      const { getSessionManager } = await import('../services/infra/sessionManager');
+      resolved = (await getSessionManager().getSession(conversationId.trim(), 1))?.workingDirectory ?? undefined;
+    } catch {
+      // DB 未初始化/会话缺失时不阻断：落到默认 work 目录（单测与冷启动同路径）
+      resolved = undefined;
+    }
+  }
+  if (!resolved) {
+    const pathMod = await import('path');
+    const osMod = await import('os');
+    const fsMod = await import('fs');
+    const dataDir = process.env.CODE_AGENT_DATA_DIR?.trim() || pathMod.join(osMod.homedir(), '.code-agent');
+    resolved = pathMod.join(dataDir, 'work');
+    await fsMod.promises.mkdir(resolved, { recursive: true });
+  }
+  return resolved;
+}
+
 // ----------------------------------------------------------------------------
 // Public Registration
 // ----------------------------------------------------------------------------
@@ -890,42 +921,50 @@ export function registerWorkspaceHandlers(
           // 空态自动建会话后 renderer 可能还没拿到 cwd：workspace 缺失时按会话解析，
           // 再兜底默认 work 目录（2026-08-05 产品负责人：浏览器空态输网址应直接可用）。
           const linkPayload = payload as { conversationId: string; url: string; workspace?: string };
-          let linkWorkspace = linkPayload.workspace?.trim();
-          if (!linkWorkspace && linkPayload.conversationId) {
-            const { getSessionManager } = await import('../services/infra/sessionManager');
-            linkWorkspace = (await getSessionManager().getSession(linkPayload.conversationId, 1))?.workingDirectory ?? undefined;
-          }
-          if (!linkWorkspace) {
-            const pathMod = await import('path');
-            const osMod = await import('os');
-            const fsMod = await import('fs');
-            const dataDir = process.env.CODE_AGENT_DATA_DIR?.trim() || pathMod.join(osMod.homedir(), '.code-agent');
-            linkWorkspace = pathMod.join(dataDir, 'work');
-            await fsMod.promises.mkdir(linkWorkspace, { recursive: true });
-          }
           data = await getUserBrowserLinks().open({
             conversationId: linkPayload.conversationId,
             url: linkPayload.url,
-            workspace: linkWorkspace,
+            workspace: await resolveUserBrowserWorkspace(
+              linkPayload.conversationId,
+              linkPayload.workspace,
+            ),
           });
           break;
         }
         case 'controlUserBrowserHistory': {
+          // 与 openLinkInRail 同兜底：快速对话 workingDirectory 为空时不能卡死后退/刷新
+          // （R2 真机：导航成功但 history 因 workspace 必填静默失败）。
           const historyPayload = payload as {
             conversationId: string;
-            workspace: string;
+            workspace?: string;
             action: 'back' | 'forward' | 'reload';
           };
-          data = await getUserBrowserLinks().history(historyPayload);
+          data = await getUserBrowserLinks().history({
+            conversationId: historyPayload.conversationId,
+            workspace: await resolveUserBrowserWorkspace(
+              historyPayload.conversationId,
+              historyPayload.workspace,
+            ),
+            action: historyPayload.action,
+          });
           break;
         }
         case 'dispatchUserBrowserInput': {
+          // 与 openLinkInRail 同兜底：画面透传不能要求用户先绑工作区
+          // （R2 真机：stage 可交互但 client/host 因空 workspace 零 dispatch）。
           const inputPayload = payload as {
             conversationId: string;
-            workspace: string;
+            workspace?: string;
             input: unknown;
           };
-          data = await getUserBrowserLinks().dispatchUserInput(inputPayload);
+          data = await getUserBrowserLinks().dispatchUserInput({
+            conversationId: inputPayload.conversationId,
+            workspace: await resolveUserBrowserWorkspace(
+              inputPayload.conversationId,
+              inputPayload.workspace,
+            ),
+            input: inputPayload.input,
+          });
           break;
         }
         case 'closeLinkInRail': {

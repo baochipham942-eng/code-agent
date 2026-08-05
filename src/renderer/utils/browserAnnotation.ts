@@ -108,7 +108,7 @@ export async function stampPinsOnScreenshot(
     ctx.arc(x, y, radius, 0, Math.PI * 2);
     ctx.fill();
     ctx.stroke();
-    ctx.fillStyle = '#ffffff';
+    ctx.fillStyle = 'rgb(255, 255, 255)';
     ctx.font = `bold ${Math.max(11, Math.round(radius * 1.1))}px sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';

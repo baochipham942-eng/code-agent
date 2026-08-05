@@ -5,6 +5,15 @@
 
 import type { VoiceTurnDetectionConfig } from '../contract/voice';
 
+/** ADR-054 Batch 2: 会话指挥台后台任务并发上限。 */
+export const SESSION_TASK_CONCURRENCY = {
+  global: 4,
+  perSession: 2,
+} as const;
+
+/** 同一任务 lane 同时只允许一个 run，后续任务按 lane 串行。 */
+export const SESSION_TASK_LANE_LIMIT = 1;
+
 /**
  * DashScope Qwen-Omni Realtime WebSocket 接入点。
  *

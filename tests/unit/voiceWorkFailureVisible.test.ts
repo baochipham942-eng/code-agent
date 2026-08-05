@@ -46,6 +46,15 @@ vi.mock('../../src/host/task', () => ({
     // 测到的就不是产品真实路径。
     observeAgentEvents: () => () => {},
     getSessionState: () => ({ status: runtime.status }),
+    startBackgroundTask: (
+      _taskId: string,
+      sessionId: string,
+      message: string,
+      attachments: unknown,
+      options: AgentRunOptions,
+    ) => runtime.startTask(sessionId, message, attachments, options),
+    cancelBackgroundTask: (_taskId: string) => runtime.cancelTask('session-1').then(() => true),
+    interruptBackgroundTask: (_taskId: string, message: string) => runtime.interruptAndContinue('session-1', message),
     startTask: runtime.startTask,
     interruptAndContinue: runtime.interruptAndContinue,
     cancelTask: runtime.cancelTask,
@@ -58,6 +67,9 @@ vi.mock('../../src/host/services/core/configService', () => ({
   getConfigService: () => ({ getSettings: () => ({ voice: { live: {} } }) }),
 }));
 vi.mock('../../src/host/services/planning/taskStore', () => ({ getIncompleteTasks: () => [] }));
+vi.mock('../../src/host/services/voice/voiceWorkEvidence', () => ({
+  resolveVoiceWorkOutcome: vi.fn(async () => 'done'),
+}));
 vi.mock('../../src/host/services/infra/sessionManager', () => ({
   getSessionManager: () => ({ getSession: async () => ({ messages: [] }) }),
 }));
@@ -142,6 +154,7 @@ describe('G1 语音派活失败必须被说出去', () => {
 
   it('挂断之后才死的活，失败出口仍然触发（UI 回流已断，留痕不许跟着断）', async () => {
     bind();
+    await flush();
     await spawn();
     const upsertsBeforeHangup = upserts.length;
 
@@ -170,12 +183,14 @@ describe('G1 语音派活失败必须被说出去', () => {
     bind();
     await spawn();
     runtime.emit('task_completed');
-    expect(failures).toHaveLength(0);
+    await flush();
+    expect(failures).toEqual([]);
 
     bind();
     await spawn();
+    expect(runtime.startTask).toHaveBeenCalledTimes(2);
     runtime.emit('task_cancelled');
-    expect(failures).toHaveLength(0);
+    expect(failures).toEqual([]);
   });
 
   it('失败出口自己抛异常，不影响还票（fail-safe，不是 fail-silent）', async () => {

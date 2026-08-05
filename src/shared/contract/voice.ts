@@ -43,6 +43,12 @@ export type VoiceWorkItemStatus = 'queued' | 'running' | 'done' | 'unverified' |
 export interface VoiceWorkItem {
   id: string;
   title: string;
+  /** 通话内稳定称呼；Batch 2 新记录始终为 2-4 字，旧记录可缺省。 */
+  shortName?: string;
+  /** 同目标/主题任务的串行 lane。 */
+  laneKey?: string;
+  /** 同一 brain turn 的派发幂等键。 */
+  submissionKey?: string;
   status: VoiceWorkItemStatus;
   /** 失败原因，供 UI 显示；其余状态没有 */
   detail?: string;

@@ -836,7 +836,10 @@ export class AgentAppServiceImpl implements AgentApplicationService {
     // 返回类型化结果而不是裸抛或静默丢弃。
     let outcome: PermissionDeliveryOutcome;
     try {
-      outcome = this.getOrchestratorOrThrow(sessionId).handlePermissionResponse(requestId, response);
+      const resolvedSessionId = this.resolveSessionId(sessionId);
+      outcome = resolvedSessionId
+        ? this.getTaskManager().handlePermissionResponse(resolvedSessionId, requestId, response)
+        : 'no_session';
     } catch (err) {
       if (closeDeadParkedApproval(requestId)) return 'no_orchestrator';
       throw err;

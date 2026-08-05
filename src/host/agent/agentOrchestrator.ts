@@ -1336,7 +1336,7 @@ export class AgentOrchestrator {
             workspace: runContext!.workspace,
             workspaceScope,
             cwd: runContext!.cwd,
-          })
+          }, options?.runRegistration)
         : undefined;
       await registeredRun?.attach(this.agentLoop);
 

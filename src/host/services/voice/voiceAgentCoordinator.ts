@@ -44,6 +44,23 @@ import {
   projectVoiceTaskTerminalResult,
   type VoiceTaskTerminalStatus,
 } from './voiceTaskResultProjector';
+import {
+  VoiceTaskSlotLedger,
+  getVoiceTaskConcurrencyPool,
+} from './voiceTaskSlotLedger';
+import {
+  resolveHistoricalVoiceTask,
+  resolveVoiceTaskReference,
+  voiceTaskOrdinal,
+} from './voiceTaskReference';
+import { promptUserInChat } from '../../tools/utils/userQuestionPrompt';
+import { diffCompletedVoiceTodos, readVoiceFailureMarker } from './voiceTaskEventProjection';
+import {
+  fallbackVoiceTaskShortName,
+  normalizeVoiceSpawnRequest,
+  type VoiceSpawnRequest,
+} from './voiceSpawnRequest';
+import { cancelVoiceManagedTask, getVoiceTaskManager } from './voiceTaskManagerBridge';
 
 const logger = createLogger('VoiceCoordinator');
 
@@ -61,7 +78,15 @@ export type VoiceIntent =
    * `replaceCurrent`：用户说的是「别等 X 了，改做 Y」——弃掉手上那件、换成这件。
    * 与 steer_task（改方向、不弃活）是两件事，路由判别写在 voiceRouting 的 prompt 里。
    */
-  | { kind: 'spawn_task'; title: string; prompt: string; replaceCurrent?: boolean }
+  | {
+      kind: 'spawn_task';
+      title: string;
+      prompt: string;
+      shortName?: string;
+      laneKey?: string;
+      submissionKey?: string;
+      replaceCurrent?: boolean;
+    }
   /**
    * `target`：用户点名了要作用在哪一件活上（get_active_tasks 列出的编号）。
    * 不给 = 手上正在跑的那件（原语义，零行为变化）。给了但对不上就拒绝，见 rejectMismatchedTarget。
@@ -134,7 +159,7 @@ interface PendingStop {
   /** 那件活的标题，超时回报时要说清是谁没停稳 */
   title: string;
   /** 停稳后要派的新活；undefined = 纯 cancel_task，不派新活 */
-  next?: { title: string; prompt: string };
+  next?: VoiceSpawnRequest;
   timer: NodeJS.Timeout;
   /** 已重发 cancel 的次数，上限 VOICE_STOP_CONFIRM_RETRIES */
   attempts: number;
@@ -152,12 +177,18 @@ interface LedgerState {
   narrate: ((narration: VoiceWorkNarration) => void) | null;
   endCall: () => void;
   items: Map<string, VoiceWorkItem>;
-  /** 当前等着状态迁移的那件活。一会话一 orchestrator，同时只可能有一件。 */
-  pendingId: string | null;
-  /** pendingId 那件活派出去的时刻。证据门据此排掉上一轮遗留的 completion summary。 */
-  pendingStartedAt: number;
+  slots: VoiceTaskSlotLedger;
+  runRequests: Map<string, VoiceSpawnRequest>;
+  pendingStartedAtById: Map<string, number>;
+  runConclusions: Map<string, string>;
+  /** 兼容旧 runtime 不带 taskId 的事件；生产后台 run 一律按事件里的 taskId 路由。 */
+  legacyEventFallbackId: string | null;
+  /** 旧事件兼容任务的派出时刻；真实任务使用 pendingStartedAtById。 */
+  legacyEventFallbackStartedAt: number;
   listener: (event: TaskManagerEvent) => void;
   listenerAttached: boolean;
+  /** 绑定 listener 的确切实例；解绑必须回到同一个 manager，避免跨 dispatch 串台。 */
+  taskManagerRef: Awaited<ReturnType<typeof getVoiceTaskManager>> | null;
   /** 用户此刻在看什么（§6.5 焦点上报）；决定 get_current_file_summary 答什么。 */
   focus: VoiceFocusContext | null;
   /** 近窗字幕原文（voiceSessionService 每落一条 final 就推一次），派活时随 run 一起交给执行侧。 */
@@ -170,7 +201,7 @@ interface LedgerState {
    */
   pendingScreen: AppshotCapture | null;
   /** 在途的「停旧的」请求；同时只可能有一件（通话是单路，手上也只有一件活）。 */
-  pendingStop: PendingStop | null;
+  pendingStops: Map<string, PendingStop>;
   /**
    * 被顶掉的活：终态**不念给用户听**（他刚亲口说「别做那个了」，回头再播一遍它的结局
    * 是噪音）。只压播报——onWorkFailed 留痕与落库照旧，屏幕那一路仍然说实话。
@@ -184,15 +215,15 @@ interface LedgerState {
    * 同一轮里两条同文案的 entry 会被折成一条——可接受:代价是少播一条进度,
    * 而不是播一条错的。
    */
-  todoSnapshot: Map<string, string>;
+  todoSnapshots: Map<string, Map<string, string>>;
   /**
    * 上一次看到的执行侧任务轨快照（按 task id 索引 status）。worth-hearing 靠它认
    * 「刚刚卡住」这个跃迁——task_update 每次带全量列表，不做差分就会把同一条卡点
    * 在后续每个事件里反复念一遍。
    */
-  taskSnapshot: Map<string, string>;
+  taskSnapshots: Map<string, Map<string, string>>;
   /** milestone 去重键的单调计数器。注入通道按 workItemId 去重，撞键就会静默丢播报。 */
-  milestoneSeq: number;
+  milestoneSeqById: Map<string, number>;
   /** agent 事件流的退订函数；与 listener 同寿命，落终态时一起摘。 */
   unobserveAgentEvents: (() => void) | null;
 }
@@ -200,11 +231,6 @@ interface LedgerState {
 // ponytail: 通话是全局单路（voiceSessionService 的互斥），一个模块级账本就够，
 // 不为「将来可能多路」预建 Map。
 let ledger: LedgerState | null = null;
-
-async function taskManager() {
-  const { getTaskManager } = await import('../../task');
-  return getTaskManager();
-}
 
 /** 会被念出来 / 落屏 / 发通知的那三档终态。cancelled 不在其中（用户自己叫停的）。 */
 type SettledOutcome = 'done' | 'unverified' | 'failed';
@@ -251,18 +277,23 @@ export function beginVoiceDispatch(binding: VoiceDispatchBinding): void {
     narrate: binding.onWorkNarration,
     endCall: binding.onEndCall,
     items: new Map(),
-    pendingId: null,
-    pendingStartedAt: 0,
+    slots: new VoiceTaskSlotLedger(binding.neoSessionId, getVoiceTaskConcurrencyPool()),
+    runRequests: new Map(),
+    pendingStartedAtById: new Map(),
+    runConclusions: new Map(),
+    legacyEventFallbackId: null,
+    legacyEventFallbackStartedAt: 0,
     listener: (event) => onTaskManagerEvent(event),
     listenerAttached: false,
+    taskManagerRef: null,
     focus: null,
     transcript: [],
     pendingScreen: null,
-    pendingStop: null,
+    pendingStops: new Map(),
     supersededIds: new Set(),
-    todoSnapshot: new Map(),
-    taskSnapshot: new Map(),
-    milestoneSeq: 0,
+    todoSnapshots: new Map(),
+    taskSnapshots: new Map(),
+    milestoneSeqById: new Map(),
     unobserveAgentEvents: null,
   };
 }
@@ -309,16 +340,17 @@ function buildTranscriptBlock(entries: VoiceTranscriptEntry[]): string | null {
 /** 第一件活派出去时才把生命周期 listener 挂上。 */
 async function ensureListener(state: LedgerState): Promise<void> {
   if (state.listenerAttached) return;
-  state.listenerAttached = true;
-  const tm = await taskManager();
+  const tm = await getVoiceTaskManager();
   tm.on('event', state.listener);
+  state.taskManagerRef = tm;
+  state.listenerAttached = true;
   // 中途进度（§2）走 agent 事件流旁路：TaskManagerEvent 只有 started/completed/error/
   // cancelled 四个业务事件，**没有进度信号**；进度在 agent 流的 todo_update 里。
   // 旁路接不上只该让用户听不到进度，**不该把派活整条链带走**——进度是锦上添花，
   // 接在必经之路上等于用一个可选功能给主功能做了单点故障。
   try {
-    state.unobserveAgentEvents = tm.observeAgentEvents((sessionId, event) => {
-      onAgentStreamEvent(state, sessionId, event);
+    state.unobserveAgentEvents = tm.observeAgentEvents((sessionId, event, taskId) => {
+      onAgentStreamEvent(state, sessionId, event, taskId);
     });
   } catch (err) {
     logger.warn('milestone bypass unavailable; dispatch continues without progress', {
@@ -347,12 +379,12 @@ export function endVoiceDispatch(): void {
 
 /** 撤掉在途的「停旧的」请求：停表 + 解除播报抑制。**不派任何新活。** */
 function abortPendingStop(state: LedgerState): void {
-  const stop = state.pendingStop;
-  if (!stop) return;
-  clearTimeout(stop.timer);
-  state.pendingStop = null;
-  state.supersededIds.delete(stop.workItemId);
-  logger.info('pending stop aborted', { workItemId: stop.workItemId, hadNext: !!stop.next });
+  for (const stop of state.pendingStops.values()) {
+    clearTimeout(stop.timer);
+    state.supersededIds.delete(stop.workItemId);
+  }
+  state.pendingStops.clear();
+  logger.info('pending stops aborted');
 }
 
 function detachIfSettled(force: boolean): void {
@@ -361,13 +393,14 @@ function detachIfSettled(force: boolean): void {
   const unsettled = [...state.items.values()].some((item) => !TERMINAL.includes(item.status));
   // pendingStop 在途 = 这条链还没走完（可能马上要 startRun），此刻丢账本会让新 run
   // 的生命周期事件全部落空。它和「有活没落终态」是同一类未结清。
-  if (!force && (unsettled || state.emit || state.pendingStop)) return;
-  if (state.pendingStop) clearTimeout(state.pendingStop.timer);
+  if (!force && (unsettled || state.emit || state.pendingStops.size > 0)) return;
+  if (force) state.slots.dispose();
+  for (const stop of state.pendingStops.values()) clearTimeout(stop.timer);
   state.unobserveAgentEvents?.();
   state.unobserveAgentEvents = null;
-  if (state.listenerAttached) {
-    void taskManager().then((tm) => tm.off('event', state.listener)).catch(() => undefined);
-  }
+  state.taskManagerRef?.off('event', state.listener);
+  state.taskManagerRef = null;
+  state.listenerAttached = false;
   ledger = null;
 }
 
@@ -415,13 +448,27 @@ function settle(
     }
   }
   // 每档终态都写统一 agent-result 记录；批 2 的短名指代与取消路由直接消费它。
-  void projectVoiceTaskTerminalResult(state.neoSessionId, settled, status, failure);
+  void projectVoiceTaskTerminalResult(
+    state.neoSessionId,
+    settled,
+    status,
+    failure,
+    state.runConclusions.get(id),
+  );
   getPermissionModeManager().clearLiveVoiceSession(state.neoSessionId, runHoldId(id));
-  if (state.pendingId === id) state.pendingId = null;
+  const startable = state.slots.settle(id);
+  state.pendingStartedAtById.delete(id);
+  state.runRequests.delete(id);
+  state.runConclusions.delete(id);
+  if (state.legacyEventFallbackId === id) state.legacyEventFallbackId = null;
   state.supersededIds.delete(id);
   // 硬门的兑现处：等的那件活落终态了，这才轮到 startRun。必须排在 detachIfSettled 之前，
   // 且 resolvePendingStop 全程把 pendingStop 挂着不放，账本才不会在派新活之前被丢掉。
   resolvePendingStop(state, id);
+  for (const slot of startable) {
+    const request = state.runRequests.get(slot.workItemId);
+    if (request) void launchAdmittedRun(state, slot.workItemId, request);
+  }
   detachIfSettled(false);
 }
 
@@ -449,19 +496,21 @@ function announceStop(state: LedgerState, kind: VoiceStopAnnouncementKind, title
  * 里它就是「这条链还没走完」的凭据，detachIfSettled 据此不丢账本。
  */
 function resolvePendingStop(state: LedgerState, settledId: string): void {
-  const stop = state.pendingStop;
-  if (stop?.workItemId !== settledId) return;
+  const stop = state.pendingStops.get(settledId);
+  if (!stop) return;
   clearTimeout(stop.timer);
+  state.pendingStops.delete(settledId);
   const next = stop.next;
   if (!next) {
-    state.pendingStop = null;
     logger.info('stop confirmed', { workItemId: stop.workItemId });
     announceStop(state, 'stopped', stop.title, stop.workItemId);
     return;
   }
   void (async () => {
     try {
-      const workItemId = await startRun(state, next.title, next.prompt);
+      const result = await startRun(state, next, { queueWhenFull: true });
+      const workItemId = result.workItemId;
+      if (!workItemId) throw new Error('replacement was not admitted');
       logger.info('replacement dispatched after stop confirmed', {
         supersededId: stop.workItemId,
         workItemId,
@@ -473,7 +522,6 @@ function resolvePendingStop(state: LedgerState, settledId: string): void {
       logger.warn('replacement failed to dispatch after stop confirmed', { message });
       announceStop(state, 'replace_timeout', next.title, stop.workItemId);
     } finally {
-      state.pendingStop = null;
       detachIfSettled(false);
     }
   })();
@@ -485,26 +533,26 @@ function resolvePendingStop(state: LedgerState, settledId: string): void {
  * 「不派新活」是本条链的全部意义：防双跑的门只有一道，就是「没确认停稳绝不 startRun」。
  * 这里宁可丢掉用户的替换意图（让他再说一次），也不能两件活同时跑。
  */
-function onStopTimeout(state: LedgerState): void {
+function onStopTimeout(state: LedgerState, workItemId: string): void {
   // 新通话已经换掉账本时，这张表属于上一通电话，不作数。
   if (ledger !== state) return;
-  const stop = state.pendingStop;
+  const stop = state.pendingStops.get(workItemId);
   if (!stop) return;
   if (stop.attempts < VOICE_STOP_CONFIRM_RETRIES) {
     stop.attempts += 1;
-    stop.timer = setTimeout(() => onStopTimeout(state), VOICE_STOP_CONFIRM_TIMEOUT_MS);
+    stop.timer = setTimeout(() => onStopTimeout(state, workItemId), VOICE_STOP_CONFIRM_TIMEOUT_MS);
     logger.warn('stop not confirmed, retrying cancel', {
       workItemId: stop.workItemId,
       attempt: stop.attempts,
     });
-    void taskManager()
-      .then((tm) => tm.cancelTask(state.neoSessionId))
+    void getVoiceTaskManager()
+      .then((tm) => cancelVoiceManagedTask(tm, state.neoSessionId, workItemId))
       .catch((err: unknown) => {
         logger.warn('retry cancel threw', { message: err instanceof Error ? err.message : 'unknown' });
       });
     return;
   }
-  state.pendingStop = null;
+  state.pendingStops.delete(workItemId);
   // 它没停成，还活着——它的结局仍然该念给用户听，解除抑制。
   state.supersededIds.delete(stop.workItemId);
   logger.warn('stop confirmation timed out, replacement NOT dispatched', {
@@ -519,20 +567,21 @@ function onStopTimeout(state: LedgerState): void {
 async function requestStop(
   state: LedgerState,
   target: { workItemId: string; title: string },
-  next?: { title: string; prompt: string },
+  next?: VoiceSpawnRequest,
 ): Promise<void> {
-  const tm = await taskManager();
+  const tm = await getVoiceTaskManager();
   if (next) state.supersededIds.add(target.workItemId);
-  state.pendingStop = {
+  const pendingStop: PendingStop = {
     workItemId: target.workItemId,
     title: target.title,
     ...(next ? { next } : {}),
-    timer: setTimeout(() => onStopTimeout(state), VOICE_STOP_CONFIRM_TIMEOUT_MS),
+    timer: setTimeout(() => onStopTimeout(state, target.workItemId), VOICE_STOP_CONFIRM_TIMEOUT_MS),
     attempts: 0,
   };
+  state.pendingStops.set(target.workItemId, pendingStop);
   logger.info('stop requested', { workItemId: target.workItemId, hasNext: !!next });
   try {
-    await tm.cancelTask(state.neoSessionId);
+    await cancelVoiceManagedTask(tm, state.neoSessionId, target.workItemId);
   } catch (err) {
     // 不在这里回报：超时那条路是「没停稳」的唯一出口，两处都说会让用户听到两遍。
     logger.warn('cancel threw, leaving it to the confirmation timer', {
@@ -550,10 +599,11 @@ async function requestStop(
  * 也不编一句它没说过的话。
  */
 async function narrateSettled(state: LedgerState, item: VoiceWorkItem, status: SettledOutcome): Promise<void> {
+  const recordedConclusion = state.runConclusions.get(item.id);
   try {
     const conclusion = status === 'failed'
       ? describeWorkFailure(item.detail, item.failure).spoken
-      : await readRunConclusion(state.neoSessionId);
+      : recordedConclusion ?? await readRunConclusion(state.neoSessionId);
     // await 之后 narrate 可能已被挂断置 null——此刻再念没人听。
     // **但也不能就这么算了**：那正是「说完就挂、活刚好这时跑完」这个最常见的场景，
     // 静默丢掉等于这条代偿链在它最该生效的时刻失效。落回通知那条路。
@@ -565,7 +615,7 @@ async function narrateSettled(state: LedgerState, item: VoiceWorkItem, status: S
     narrate(buildWorkNarration({
       workItemId: item.id,
       status,
-      title: item.title,
+      title: item.shortName ?? item.title,
       conclusion,
       ...(state.activeAgentId ? { agentId: state.activeAgentId } : {}),
     }));
@@ -587,30 +637,6 @@ async function readRunConclusion(neoSessionId: string): Promise<string> {
 
 function runHoldId(workItemId: string): string {
   return `run:${workItemId}`;
-}
-
-/**
- * TaskManager 事件的 data 是 unknown，标记要在这个边界上重新验形——生产者与消费者
- * 隔着一层无类型事件总线，只有这里能保证「进账本的标记确实是它自称的那个」。
- * 认不出的一律 undefined，让文案退回兜底，绝不半信半疑地当成已识别。
- */
-function readFailureMarker(raw: unknown): VoiceWorkFailureMarker | undefined {
-  if (!raw || typeof raw !== 'object') return undefined;
-  const marker = raw as { code?: unknown; kind?: unknown; provider?: unknown; model?: unknown };
-  if (
-    marker.code === 'PROJECT_SOURCE_TRUST'
-    && (marker.kind === 'source_missing' || marker.kind === 'identity_changed' || marker.kind === 'not_trusted')
-  ) {
-    return { code: 'PROJECT_SOURCE_TRUST', kind: marker.kind };
-  }
-  if (marker.code === 'MODEL_AUTH') {
-    return {
-      code: 'MODEL_AUTH',
-      ...(typeof marker.provider === 'string' && marker.provider ? { provider: marker.provider } : {}),
-      ...(typeof marker.model === 'string' && marker.model ? { model: marker.model } : {}),
-    };
-  }
-  return undefined;
 }
 
 /**
@@ -641,13 +667,21 @@ async function settleCompletedWithEvidence(
  * 只在「本会话 + 有正在跑的语音派活」时才产 milestone：其它会话、以及用户自己在
  * 键盘上发起的轮次，都不该往通话里插播。
  */
-function onAgentStreamEvent(state: LedgerState, sessionId: string, event: AgentEvent): void {
+function onAgentStreamEvent(
+  state: LedgerState,
+  sessionId: string,
+  event: AgentEvent,
+  taskId?: string,
+): void {
   if (ledger !== state) return;
   if (sessionId !== state.neoSessionId) return;
+  taskId ??= state.legacyEventFallbackId ?? undefined;
+  if (!taskId) return;
+  if (event.type === 'message' && event.data?.role === 'assistant' && event.data.content?.trim()) {
+    state.runConclusions.set(taskId, event.data.content);
+  }
   if (event.type !== 'todo_update' && event.type !== 'task_update') return;
-  const pendingId = state.pendingId;
-  if (!pendingId) return;
-  const item = state.items.get(pendingId);
+  const item = state.items.get(taskId);
   // 只给还在跑的活播进度；已落终态的活再播「这步做完了」就是在说过去的事。
   if (!item || TERMINAL.includes(item.status)) return;
 
@@ -656,7 +690,9 @@ function onAgentStreamEvent(state: LedgerState, sessionId: string, event: AgentE
     return;
   }
 
-  const completed = diffCompletedTodos(state.todoSnapshot, event.data as TodoItem[]);
+  const snapshot = state.todoSnapshots.get(taskId) ?? new Map<string, string>();
+  state.todoSnapshots.set(taskId, snapshot);
+  const completed = diffCompletedVoiceTodos(snapshot, event.data as TodoItem[]);
   if (!completed.length) return;
   const narrate = state.narrate;
   if (!narrate) return;
@@ -665,8 +701,8 @@ function onAgentStreamEvent(state: LedgerState, sessionId: string, event: AgentE
   const step = completed[completed.length - 1];
   if (!step) return;
   narrate(buildMilestoneNarration({
-    workItemId: `${pendingId}:milestone-${(state.milestoneSeq += 1)}`,
-    title: item.title,
+    workItemId: `${taskId}:milestone-${nextMilestoneSeq(state, taskId)}`,
+    title: item.shortName ?? item.title,
     step,
     ...(liveWorkCount(state) > 1 ? { attributed: true } : {}),
     ...(state.activeAgentId ? { agentId: state.activeAgentId } : {}),
@@ -693,13 +729,15 @@ function announceNewlyBlocked(state: LedgerState, item: VoiceWorkItem, tasks: Se
   if (!Array.isArray(tasks)) return;
   const narrate = state.narrate;
   let latest: SessionTask | undefined;
+  const snapshot = state.taskSnapshots.get(item.id) ?? new Map<string, string>();
+  state.taskSnapshots.set(item.id, snapshot);
   for (const task of tasks) {
     const id = typeof task?.id === 'string' ? task.id : '';
     if (!id) continue;
-    const previous = state.taskSnapshot.get(id);
+    const previous = snapshot.get(id);
     // 快照无条件更新（哪怕已挂断、哪怕这条不播）：漏记一轮，下次就会把一条早就卡着的
     // 任务当成「刚刚卡住」念出来。
-    state.taskSnapshot.set(id, task.status);
+    snapshot.set(id, task.status);
     if (task.status !== 'blocked' || previous === undefined || previous === 'blocked') continue;
     latest = task;
   }
@@ -708,13 +746,19 @@ function announceNewlyBlocked(state: LedgerState, item: VoiceWorkItem, tasks: Se
   // 同一拍连发多条会让这些 response.create 互相碰撞。少播一条，好过播乱一片。
   if (!narrate || !latest) return;
   narrate(buildBlockedNarration({
-    workItemId: `${item.id}:blocked-${(state.milestoneSeq += 1)}`,
-    title: item.title,
+    workItemId: `${item.id}:blocked-${nextMilestoneSeq(state, item.id)}`,
+    title: item.shortName ?? item.title,
     subject: latest.subject,
     // blockedReason 存的已经是过了清洗层的人话（机器噪音会被置空），这里不再洗一遍。
     reason: latest.blockedReason ?? '',
     ...(state.activeAgentId ? { agentId: state.activeAgentId } : {}),
   }));
+}
+
+function nextMilestoneSeq(state: LedgerState, workItemId: string): number {
+  const next = (state.milestoneSeqById.get(workItemId) ?? 0) + 1;
+  state.milestoneSeqById.set(workItemId, next);
+  return next;
 }
 
 /**
@@ -723,27 +767,13 @@ function announceNewlyBlocked(state: LedgerState, item: VoiceWorkItem, tasks: Se
  * 只认「上一次不是 completed、这一次是」这个**跃迁**，不认「当前是 completed」——
  * 后者会让同一条 entry 在每次 todo_update 里都被重新播报一遍。
  */
-function diffCompletedTodos(snapshot: Map<string, string>, todos: TodoItem[]): string[] {
-  if (!Array.isArray(todos)) return [];
-  const freshlyCompleted: string[] = [];
-  for (const todo of todos) {
-    const content = typeof todo?.content === 'string' ? todo.content.trim() : '';
-    if (!content) continue;
-    const previous = snapshot.get(content);
-    snapshot.set(content, todo.status);
-    if (todo.status === 'completed' && previous !== undefined && previous !== 'completed') {
-      freshlyCompleted.push(content);
-    }
-  }
-  return freshlyCompleted;
-}
-
 function onTaskManagerEvent(event: TaskManagerEvent): void {
   const state = ledger;
   if (event.sessionId !== state?.neoSessionId) return;
-  const pendingId = state.pendingId;
-  if (!pendingId) return;
-  const item = state.items.get(pendingId);
+  const data = event.data as { taskId?: unknown; error?: unknown; failure?: unknown } | undefined;
+  const workItemId = typeof data?.taskId === 'string' ? data.taskId : state.legacyEventFallbackId;
+  if (!workItemId) return;
+  const item = state.items.get(workItemId);
   if (!item) return;
 
   switch (event.type) {
@@ -753,16 +783,19 @@ function onTaskManagerEvent(event: TaskManagerEvent): void {
     case 'task_completed':
       // 「跑完了」不等于「做成了」。证据查完再落终态——查证要读盘，事件回调是同步的，
       // 所以这中间的一小段时间卡片停在 running（诚实：此刻我们确实还不知道结局）。
-      void settleCompletedWithEvidence(state, pendingId, state.pendingStartedAt);
+      void settleCompletedWithEvidence(
+        state,
+        workItemId,
+        state.pendingStartedAtById.get(workItemId) ?? state.legacyEventFallbackStartedAt,
+      );
       break;
     case 'task_error': {
-      const data = event.data as { error?: unknown; failure?: unknown } | undefined;
       const detail = typeof data?.error === 'string' ? data.error : '执行失败';
-      settle(state, pendingId, 'failed', detail, readFailureMarker(data?.failure));
+      settle(state, workItemId, 'failed', detail, readVoiceFailureMarker(data?.failure));
       break;
     }
     case 'task_cancelled':
-      settle(state, pendingId, 'cancelled');
+      settle(state, workItemId, 'cancelled');
       break;
     default:
       break;
@@ -788,7 +821,15 @@ export async function dispatchVoiceIntent(intent: VoiceIntent): Promise<string> 
     case 'capture_screen':
       return captureScreenContext(state);
     case 'spawn_task':
-      return spawnTask(state, intent.title, intent.prompt, intent.replaceCurrent);
+      return spawnTask(
+        state,
+        intent.title,
+        intent.prompt,
+        intent.shortName,
+        intent.laneKey,
+        intent.submissionKey,
+        intent.replaceCurrent,
+      );
     case 'steer_task':
       return steerTask(state, intent.instruction, intent.target);
     case 'cancel_task':
@@ -872,50 +913,103 @@ function newWorkItemId(): string {
   return `voice-work-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-async function startRun(state: LedgerState, title: string, prompt: string): Promise<string> {
-  const tm = await taskManager();
+function normalizeSpawnRequest(input: {
+  title: string;
+  prompt: string;
+  shortName?: string;
+  laneKey?: string;
+  submissionKey?: string;
+}): VoiceSpawnRequest {
+  return normalizeVoiceSpawnRequest(input, newWorkItemId());
+}
+
+type StartRunResult = {
+  outcome: 'started' | 'queued' | 'reused' | 'requires_choice';
+  workItemId?: string;
+};
+
+async function launchAdmittedRun(
+  state: LedgerState,
+  workItemId: string,
+  request: VoiceSpawnRequest,
+): Promise<void> {
+  const tm = await getVoiceTaskManager();
   await ensureListener(state);
   const { options, attachments } = await buildRunPayload(state);
-  const workItemId = newWorkItemId();
-  // 新的一件活从空快照起算：沿用上一件的快照会让新 run 首次 todo_update 里那些
-  // 「本来就是 completed」的 entry 被误判成刚刚完成，一开跑就播一串假进度。
-  // 任务轨同理：首次 task_update 只播种不播报（认跃迁要求上一次存在），
-  // 所以开跑时那些「本来就卡着」的任务不会被当成刚刚卡住一起涌出来。
-  state.todoSnapshot.clear();
-  state.taskSnapshot.clear();
   const speaker = resolveNarrationSpeaker(state.activeAgentId);
-  upsert(state, { id: workItemId, title, status: 'queued' });
+  const item = state.items.get(workItemId);
+  if (!item || TERMINAL.includes(item.status)) return;
+  upsert(state, { ...item, status: 'running' });
   // §4.3 三元组绑定：这一件活是哪通电话、哪条 Neo 会话派出去的。从日志就能还原
   // 「这句话属于哪个活的哪一轮」，不必再靠时间戳猜（原先记在 voiceSessionService 的
   // UI 回流回调上，账本拿到 voiceSessionId 之后挪到真正派活的这一处）。
   logger.info('voice work dispatched', {
     workItemId,
+    shortName: request.shortName,
+    laneKey: request.laneKey,
     voiceSessionId: state.voiceSessionId,
     neoSessionId: state.neoSessionId,
   });
   // §4.3 的三元组此前只进日志（#903）。派活是这条链的起点，遥测在这里落一条，
   // 后面口播/丢弃两类事件才有同一个 workItemId 可以对上。
   recordVoiceWorkEvent({ phase: 'dispatch', workItemId });
-  state.pendingId = workItemId;
-  state.pendingStartedAt = Date.now();
+  state.pendingStartedAtById.set(workItemId, Date.now());
+  // 兼容旧 TaskManager 事件没有 taskId 的宿主；新后台事件始终带精确 taskId。
+  state.legacyEventFallbackId = workItemId;
+  state.legacyEventFallbackStartedAt = state.pendingStartedAtById.get(workItemId) ?? Date.now();
   // D4：这张票的寿命跟着 run 走，不跟着通话走。终态事件或启动失败才还。
   getPermissionModeManager().markLiveVoiceSession(state.neoSessionId, runHoldId(workItemId));
-  void tm
-    // 第 5 个参数落在 startTask 建的那条 role:'user' 消息上。必须标记 voiceDispatch——
-    // prompt 是通话 brain 改写出来的，不是用户原话（用户原话是字幕那条），
-    // 不标就会顶着用户身份显示在右边。
-    .startTask(state.neoSessionId, prompt, attachments, options, {
-      // 署名和语音层回流用同一个解析器（voiceNarration），两处不许各算各的：
-      // 屏幕上写「牧之」而耳朵里听到别的名字，比不署名更糟。
-      voiceDispatch: { title, workItemId, ...(speaker ? { speaker } : {}) },
-    })
+  // prompt 是通话 brain 改写出来的，不是用户原话；metadata 让投影层按语音派活展示。
+  const metadata = {
+    voiceDispatch: { title: request.shortName, workItemId, ...(speaker ? { speaker } : {}) },
+  };
+  const runPromise = typeof tm.startBackgroundTask === 'function'
+    ? tm.startBackgroundTask(
+        workItemId,
+        state.neoSessionId,
+        request.prompt,
+        attachments,
+        options,
+        metadata,
+      )
+    : tm.startTask(state.neoSessionId, request.prompt, attachments, options, metadata);
+  void runPromise
     .catch((err: unknown) => {
       const detail = err instanceof Error ? err.message : 'unknown';
-      logger.warn('voice run failed to start', { title, message: detail });
+      logger.warn('voice run failed to start', { title: request.shortName, message: detail });
       // 派发失败必须回流：真机踩过「任务其实没跑起来，通话里却说已经做完了」。
       settle(state, workItemId, 'failed', detail);
     });
-  return workItemId;
+}
+
+async function startRun(
+  state: LedgerState,
+  request: VoiceSpawnRequest,
+  options: { queueWhenFull?: boolean } = {},
+): Promise<StartRunResult> {
+  const workItemId = newWorkItemId();
+  const admission = state.slots.admit({
+    workItemId,
+    sessionId: state.neoSessionId,
+    laneKey: request.laneKey,
+    submissionKey: request.submissionKey,
+  }, options);
+  if (admission.outcome === 'requires_choice') return { outcome: 'requires_choice' };
+  if (admission.outcome === 'reused') {
+    return { outcome: 'reused', workItemId: admission.slot.workItemId };
+  }
+
+  state.runRequests.set(workItemId, request);
+  upsert(state, {
+    id: workItemId,
+    title: request.title,
+    shortName: request.shortName,
+    laneKey: request.laneKey,
+    submissionKey: request.submissionKey,
+    status: 'queued',
+  });
+  if (admission.outcome === 'started') await launchAdmittedRun(state, workItemId, request);
+  return { outcome: admission.outcome, workItemId };
 }
 
 // 「通话结束补派」（P0-3 tail flush）已整条删除（产品负责人 2026-07-30 拍板）：
@@ -927,47 +1021,80 @@ async function spawnTask(
   state: LedgerState,
   title: string,
   prompt: string,
+  shortName?: string,
+  laneKey?: string,
+  submissionKey?: string,
   replaceCurrent?: boolean,
 ): Promise<string> {
-  const tm = await taskManager();
-  const status = tm.getSessionState(state.neoSessionId).status;
-  const busy = status === 'running' || status === 'queued' || status === 'paused' || status === 'cancelling';
-  if (busy) {
-    // 已经有一次「停旧的」在途：再来一次会把 pendingStop 覆盖掉，第一次的替换意图
-    // 就此蒸发（且它的定时器还挂着）。如实说，不排队。
-    if (state.pendingStop) {
-      return '上一件正在停，还没停稳，这次没有派新的。等我说停好了再讲一次要做什么。';
+  const request = normalizeSpawnRequest({ title, prompt, shortName, laneKey, submissionKey });
+  const running = [...state.items.values()].filter((item) => item.status === 'running');
+  const laneActive = running.find((item) => (
+    item.laneKey === request.laneKey && item.status === 'running'
+  )) ?? (replaceCurrent && !laneKey && running.length === 1 ? running[0] : undefined);
+  if (replaceCurrent && laneActive) {
+    if (state.pendingStops.has(laneActive.id)) {
+      return `「${laneActive.shortName ?? laneActive.title}」正在停，还没停稳，这次没有重复派发。`;
     }
-    if (!replaceCurrent) {
-      // 没有替换意图：维持 fail-closed 拒新，并给出两条出路。
-      return `现在还有一件活在跑，没有派新的。要改方向就说「改成……」，要停就说「别做了」。`;
-    }
-    const pendingId = state.pendingId;
-    const pending = pendingId ? state.items.get(pendingId) : undefined;
-    if (!pendingId || !pending) {
-      // 会话在跑，但账本里没有对应的 work item（不是语音派出去的活）。此时无从等待
-      // 「那件活」的终态事件，硬门无法成立——不猜、不派。
-      logger.warn('replace requested but no voice work item is pending', { status });
-      return '现在有一件不是我派的活在跑，我没法替你顶掉它。等它结束，或者你先手动停掉。';
-    }
-    await requestStop(state, { workItemId: pendingId, title: pending.title }, { title, prompt });
+    await requestStop(
+      state,
+      { workItemId: laneActive.id, title: laneActive.shortName ?? laneActive.title },
+      request,
+    );
     // 立即返回,不阻塞对话（拍板 2026-08-01 异步确认式）。**这里绝不能说新活已经开始**——
     // 它确实还没开始，而且可能永远不会开始（停不稳就不派）。台词只描述"正在停"这一件
     // 已经真发生的事，结果由后续注入的回报兑现。
     return [
-      `现在对用户说：「我正在把手上那件停下来，停稳了就开始做『${title}』。」就说这一个意思。`,
-      `**『${title}』现在还没有开始做**，不要说它已经开始、已经在跑、已经派出去了。`,
+      `现在对用户说：「我正在让『${laneActive.shortName ?? laneActive.title}』停下来，停稳了就开始做『${request.shortName}』。」就说这一个意思。`,
+      `**『${request.shortName}』现在还没有开始做**，不要说它已经开始、已经在跑、已经派出去了。`,
       '停稳没停稳、新活开没开始，都会以 [BACKEND] 开头的消息告诉你；在那之前你什么都不知道。',
       '用户如果追问，先调 get_active_tasks 看真实状态再回答。',
     ].join('\n');
   }
-  await startRun(state, title, prompt);
+  const result = await startRun(state, request);
+  if (result.outcome === 'reused') {
+    return `「${request.shortName}」是本轮重复派发，已复用原任务（reused），没有再开第二件。`;
+  }
+  if (result.outcome === 'queued') {
+    return `现在对用户说：「『${request.shortName}』已经排在同一条任务线后面，前一件结束就开始。」`;
+  }
+  if (result.outcome === 'requires_choice') {
+    offerOverflowChoice(state, request);
+    return '并发槽已经占满，已通过 AskUserQuestion 请用户选择排队或顶替哪一件；等待回答，不要替用户选。';
+  }
   // 谎报的根治（批 X ①，2026-07-30）：上一版返回「已经排上队，还在后台跑，没做完。
   // 别说已经完成」——「已排队」是个可润色的状态名词，离「已完成」只差一次善意润色，
   // 真机第三次撞到模型照说「已经建好了」。禁令加狠话是同一招的第三次，不再走。
   // 换成言语行为指令 + 认知协议：返回值不描述状态，只说「你下一句该说什么」，
   // 并把「完成」从可推断的状态收窄成协议事件（只认 [BACKEND] 回流）。
-  return spawnSpeechDirective(title);
+  return spawnSpeechDirective(request.shortName);
+}
+
+function offerOverflowChoice(state: LedgerState, request: VoiceSpawnRequest): void {
+  const active = [...state.items.values()].filter((item) => item.status === 'running');
+  const options = [
+    { label: '排队', description: '等任一槽位释放后自动开始。' },
+    ...active.map((item) => ({
+      label: `替换${item.shortName ?? item.title}`,
+      description: `先确认停止「${item.shortName ?? item.title}」，再开始「${request.shortName}」。`,
+    })),
+  ].slice(0, 3);
+  void promptUserInChat([{
+    header: '任务已满',
+    question: `「${request.shortName}」要排队，还是替换一件正在跑的任务？`,
+    options,
+  }], { sessionId: state.neoSessionId }).then(async (result) => {
+    if (result.status !== 'answered') return;
+    const answer = result.response?.answers?.['任务已满'];
+    if (answer === '排队') {
+      await startRun(state, request, { queueWhenFull: true });
+      return;
+    }
+    if (typeof answer !== 'string' || !answer.startsWith('替换')) return;
+    const shortName = answer.slice(2);
+    const target = active.find((item) => (item.shortName ?? item.title) === shortName);
+    if (!target || TERMINAL.includes(target.status)) return;
+    await requestStop(state, { workItemId: target.id, title: shortName }, request);
+  });
 }
 
 /**
@@ -1072,74 +1199,45 @@ async function captureScreenContext(state: LedgerState): Promise<string> {
  * 的代价是停错活。代价是号码会有断档（3 件跑完后新的一件是「4」），听着略怪但不会指错。
  */
 function ordinalOf(state: LedgerState, workItemId: string): number {
-  return [...state.items.keys()].indexOf(workItemId) + 1;
-}
-
-/** 编号/id → 那件活。认不出一律 undefined，绝不猜。 */
-function resolveTargetItem(state: LedgerState, target: string): VoiceWorkItem | undefined {
-  const byId = state.items.get(target);
-  if (byId) return byId;
-  // 只认「整串里恰好一个数字」（"2"、"2号"、"第2个"）。「1 或 2」这种有两个数字的
-  // 一律认不出——用户自己都没说定，我们更不该替他挑一个。
-  const matched = /^\D*(\d+)\D*$/.exec(target);
-  if (!matched?.[1]) return undefined;
-  const id = [...state.items.keys()][Number(matched[1]) - 1];
-  return id ? state.items.get(id) : undefined;
-}
-
-/**
- * 定向校验。**只在给了 target 时做事**——不给就返回 null 放行，走原来那条路，零行为变化。
- *
- * 返回字符串 = 拒绝的台词。查无此活、已经结束、或指到的不是手上那件，**一律拒绝，
- * 绝不退回当前活**：用户想停 2 号却把 1 号停了，比什么都不做糟得多。这道门是
- * fail-closed 的全部意义，把它改成「找不到就作用于当前活」就等于把门拆了。
- *
- * 为什么「不是手上那件」也要拒：通话这条线是单路的——TaskManager 的 cancel /
- * interruptAndContinue 都按会话粒度生效，根本没有「只停第 2 件」这种操作。能停的
- * 只有手上那件，所以这里只能如实说停不了，而不是假装停了别的。
- */
-function rejectMismatchedTarget(
-  state: LedgerState,
-  target: string | undefined,
-  action: '改方向' | '停',
-): string | null {
-  if (!target) return null;
-  const wanted = resolveTargetItem(state, target);
-  if (!wanted) {
-    return `我这边没有编号是「${target}」的活，什么都没动。先调 get_active_tasks 看一下有哪几件，再报编号。`;
-  }
-  if (TERMINAL.includes(wanted.status)) {
-    return `「${wanted.title}」已经${statusText(wanted.status)}了，不用再${action}它。`;
-  }
-  if (wanted.id !== state.pendingId) {
-    const current = state.pendingId ? state.items.get(state.pendingId) : undefined;
-    return [
-      `「${wanted.title}」不是我手上正在跑的那件，我${action}不了它——这通电话一次只握得住一件活。`,
-      current ? `现在跑的是「${current.title}」。` : '现在手上没有正在跑的活。',
-      '如实告诉用户这件事，不要说你已经动了它。',
-    ].join('');
-  }
-  return null;
+  return voiceTaskOrdinal([...state.items.values()], workItemId);
 }
 
 async function steerTask(state: LedgerState, instruction: string, target?: string): Promise<string> {
-  const mismatch = rejectMismatchedTarget(state, target, '改方向');
-  if (mismatch) return mismatch;
-  const tm = await taskManager();
-  const status = tm.getSessionState(state.neoSessionId).status;
-  const pending = state.pendingId ? state.items.get(state.pendingId) : undefined;
-
-  if (status !== 'running' && status !== 'queued' && status !== 'paused') {
-    // 没有在跑的活，「改成 X」就是「做 X」。开新的一件，别假装 steer 成功了。
-    const title = instruction.slice(0, 30);
-    await startRun(state, title, instruction);
-    // 同 spawnSpeechDirective 的口径（①）：不给「还在后台跑」这类可润色状态。
-    return `刚才没有在跑的活，「${title}」按新任务开始做了。\n${spawnSpeechDirective(title)}`;
+  const resolution = resolveVoiceTaskReference([...state.items.values()], target);
+  if (resolution.outcome === 'missing') {
+    if (target) {
+      const historical = resolveHistoricalVoiceTask([...state.items.values()], target);
+      if (historical && TERMINAL.includes(historical.status)) {
+        return `「${historical.shortName ?? historical.title}」已经${statusText(historical.status)}了，不用再改方向。`;
+      }
+      return `我这边没有编号是「${target}」的活在进行，什么都没改。先调 get_active_tasks 看一下。`;
+    }
+    const title = fallbackVoiceTaskShortName(instruction);
+    const request = normalizeSpawnRequest({ title, prompt: instruction });
+    const started = await startRun(state, request);
+    if (started.outcome === 'requires_choice') offerOverflowChoice(state, request);
+    return `刚才没有在跑的活，「${title}」按新任务处理。\n${spawnSpeechDirective(title)}`;
   }
-
+  if (resolution.outcome === 'ambiguous') {
+    offerTaskChoice(state, '改方向', resolution.candidates, async (item) => {
+      await steerTask(state, instruction, item.id);
+    });
+    return '没法唯一确定要改哪一件，已通过 AskUserQuestion 请用户按短名选择；什么都还没改。';
+  }
+  const pending = resolution.item;
+  if (pending.status === 'queued') {
+    const request = state.runRequests.get(pending.id);
+    if (!request) return `「${pending.shortName ?? pending.title}」还在排队，但任务载荷已经失效，什么都没改。`;
+    state.runRequests.set(pending.id, { ...request, prompt: `${request.prompt}\n\n补充要求：${instruction}` });
+    return `现在对用户说：「『${pending.shortName ?? pending.title}』还在排队，我已经把新要求补进去了。」`;
+  }
+  const tm = await getVoiceTaskManager();
   const { options, attachments } = await buildRunPayload(state);
-  await tm.interruptAndContinue(state.neoSessionId, instruction, attachments, options);
-  const title = pending?.title ?? '进行中的任务';
+  const outcome = typeof tm.interruptBackgroundTask === 'function'
+    ? await tm.interruptBackgroundTask(pending.id, instruction, attachments, options)
+    : await tm.interruptAndContinue(state.neoSessionId, instruction, attachments, options);
+  if (!outcome) return `「${pending.shortName ?? pending.title}」刚刚已经结束，什么都没改。`;
+  const title = pending.shortName ?? pending.title;
   return [
     `现在对用户说：「『${title}』我已经按你的新要求改了方向，做完马上告诉你。」`,
     '它的结果同样只以 [BACKEND] 消息为准；没收到就不是做完，被问进度先调 get_active_tasks。',
@@ -1165,29 +1263,59 @@ function endCall(state: LedgerState): string {
  * 谎报。现在返回值只说"正在停"（一件已经真发生的事），停没停稳由后续注入回报兑现。
  */
 async function cancelTask(state: LedgerState, target?: string): Promise<string> {
-  const mismatch = rejectMismatchedTarget(state, target, '停');
-  if (mismatch) return mismatch;
-  const tm = await taskManager();
-  const status = tm.getSessionState(state.neoSessionId).status;
-  if (status !== 'running' && status !== 'queued' && status !== 'paused') {
+  const resolution = resolveVoiceTaskReference([...state.items.values()], target);
+  if (resolution.outcome === 'missing') {
+    if (target) {
+      const historical = resolveHistoricalVoiceTask([...state.items.values()], target);
+      if (historical && TERMINAL.includes(historical.status)) {
+        return `「${historical.shortName ?? historical.title}」已经${statusText(historical.status)}了，不用再停它。`;
+      }
+      return `我这边没有编号是「${target}」的活在进行，什么都没停。先调 get_active_tasks 看一下。`;
+    }
     return '现在没有在跑的活，不用停。';
   }
-  if (state.pendingStop) {
-    return '已经在停了，还没停稳。停好了我会说。';
+  if (resolution.outcome === 'ambiguous') {
+    offerTaskChoice(state, '停止', resolution.candidates, async (item) => {
+      await cancelTask(state, item.id);
+    });
+    return '没法唯一确定要停哪一件，已通过 AskUserQuestion 请用户按短名选择；什么都还没停。';
   }
-  const pendingId = state.pendingId;
-  const pending = pendingId ? state.items.get(pendingId) : undefined;
-  if (!pendingId || !pending) {
-    // 不是语音派出去的活：照发 cancel，但没有可等的终态事件，不武装确认链，
-    // 也就不能承诺"停好了会告诉你"。
-    await tm.cancelTask(state.neoSessionId);
-    return '现在对用户说：「我已经发出了停止的指令。」不要说它已经停了——那件活不是我派的，我确认不了。';
+  const pending = resolution.item;
+  const name = pending.shortName ?? pending.title;
+  if (pending.status === 'queued') {
+    settle(state, pending.id, 'cancelled');
+    return `现在对用户说：「『${name}』还没开始，我已经把它从队列里取消了。」`;
   }
-  await requestStop(state, { workItemId: pendingId, title: pending.title });
+  if (state.pendingStops.has(pending.id)) return `「${name}」已经在停了，还没停稳。`;
+  await requestStop(state, { workItemId: pending.id, title: name });
   return [
-    `现在对用户说：「我正在让『${pending.title}』停下来。」就说这一个意思。`,
+    `现在对用户说：「我正在让『${name}』停下来。」就说这一个意思。`,
     '**不要说它已经停了**——停没停稳会以 [BACKEND] 开头的消息告诉你，在那之前你不知道。',
   ].join('\n');
+}
+
+function offerTaskChoice(
+  state: LedgerState,
+  action: '停止' | '改方向',
+  candidates: VoiceWorkItem[],
+  onSelected: (item: VoiceWorkItem) => Promise<void>,
+): void {
+  const options = candidates.slice(0, 3).map((item) => ({
+    label: item.shortName ?? item.title,
+    description: `${action}「${item.shortName ?? item.title}」。`,
+  }));
+  void promptUserInChat([{
+    header: action === '停止' ? '停哪件' : '改哪件',
+    question: `要${action}哪一件任务？`,
+    options,
+  }], { sessionId: state.neoSessionId }).then(async (result) => {
+    if (result.status !== 'answered') return;
+    const header = action === '停止' ? '停哪件' : '改哪件';
+    const answer = result.response?.answers?.[header];
+    if (typeof answer !== 'string') return;
+    const selected = candidates.find((item) => (item.shortName ?? item.title) === answer);
+    if (selected) await onSelected(selected);
+  });
 }
 
 // ============================================================================

@@ -39,6 +39,7 @@ import { detectHangupIntent } from './hangupIntent';
 import { decideVoiceInterrupt, shouldDisarmHangup } from './voiceTurnTaking';
 import {
   createNarrationState,
+  markNarrationDispatch,
   dismissNarrationsByPrefix,
   enqueueOrInjectNarration,
   flushNarrationQueue,
@@ -792,7 +793,7 @@ async function connectAndBind(
       if (active?.id === id && item.status === 'queued') {
         active.workItemCount += 1;
         // 首条进度的延迟基准（§2）：从这件活派出去那一刻起算。
-        active.narration.firstDispatchAt = Date.now();
+        markNarrationDispatch(active.narration, item.id);
         // §4.3 的三元组绑定日志已挪进 coordinator 的 startRun：账本现在自己拿得到
         // voiceSessionId，在真正派活那一处记，比在这条 UI 回流上转记准确。
       }

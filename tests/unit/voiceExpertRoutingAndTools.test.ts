@@ -309,7 +309,8 @@ describe('A4 窄工具 / H1 指挥台', () => {
     expect(result).toContain('[BACKEND]');
     expect(result).toContain('get_active_tasks');
     expect(result).not.toMatch(/排队|后台|完成了/);
-    expect(workItems.value).toEqual([expect.objectContaining({ title: '改大纲', status: 'queued' })]);
+    expect(workItems.value.at(-2)).toEqual(expect.objectContaining({ title: '改大纲', status: 'queued' }));
+    expect(workItems.value.at(-1)).toEqual(expect.objectContaining({ title: '改大纲', status: 'running' }));
     await vi.waitFor(() => expect(runtime.startTask).toHaveBeenCalled());
     expect(runtime.startTask.mock.calls.at(-1)?.[1]).toBe('把大纲改成三段');
     const options = lastRunOptions();
@@ -355,7 +356,8 @@ describe('A4 窄工具 / H1 指挥台', () => {
     bind();
 
     await executeVoiceTool('spawn_task', JSON.stringify({ title: '跑测试', prompt: '跑一下测试' }));
-    expect(workItems.value.at(-1)).toMatchObject({ status: 'queued' });
+    expect(workItems.value.at(-2)).toMatchObject({ status: 'queued' });
+    expect(workItems.value.at(-1)).toMatchObject({ status: 'running' });
 
     runtime.emit('task_started');
     expect(workItems.value.at(-1)).toMatchObject({ status: 'running' });
@@ -423,15 +425,14 @@ describe('A4 窄工具 / H1 指挥台', () => {
     expect(workItems.value.at(-1)).toMatchObject({ title: '删文件', status: 'cancelled' });
   });
 
-  it('已有活在跑时不再派新的，而是告诉用户两条出路', async () => {
+  it('已有活在跑时允许不同 lane 再派一件', async () => {
     bind();
     runtime.status = 'running';
 
     const result = await executeVoiceTool('spawn_task', JSON.stringify({ title: 'b', prompt: '再干一件' }));
 
-    expect(runtime.startTask).not.toHaveBeenCalled();
-    expect(result).toContain('改方向');
-    expect(result).toContain('别做了');
+    expect(runtime.startTask).toHaveBeenCalledTimes(1);
+    expect(result).toContain('我已经开始做');
   });
 
   it('没活跑时叫停不说谎（不谎报已经停了）', async () => {

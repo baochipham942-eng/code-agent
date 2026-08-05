@@ -68,6 +68,9 @@ export const VOICE_TOOL_DEFINITIONS: VoiceToolDefinition[] = [
       type: 'object',
       properties: {
         title: { type: 'string', description: '一句话任务标题，用于展示' },
+        short_name: { type: 'string', description: '2-4 个汉字的任务短名，用于播报、追问和取消，例如「周报」「机票」' },
+        lane_key: { type: 'string', description: '目标或主题 lane 的稳定键；继续处理同一对象时必须沿用同一个键' },
+        submission_key: { type: 'string', description: '本轮派发的稳定幂等键；同一轮重试必须原样复用' },
         prompt: { type: 'string', description: '给执行侧的完整指令，要包含用户的原话要点' },
         replace_current: {
           type: 'boolean',
@@ -76,7 +79,7 @@ export const VOICE_TOOL_DEFINITIONS: VoiceToolDefinition[] = [
             + '只是给正在跑的那件补充要求或改方向，用 steer_task，不要传这个。',
         },
       },
-      required: ['title', 'prompt'],
+      required: ['title', 'short_name', 'lane_key', 'submission_key', 'prompt'],
     },
   },
   {
@@ -163,12 +166,21 @@ function toIntent(name: string, rawArguments: string): VoiceIntent | string {
       if (!args) return '任务参数解析失败，请重说一遍要做什么。';
       const prompt = str(args.prompt);
       if (!prompt) return '缺少任务内容，没有派发。';
+      const shortName = str(args.short_name);
+      const laneKey = str(args.lane_key);
+      const submissionKey = str(args.submission_key);
+      if (shortName && (Array.from(shortName).length < 2 || Array.from(shortName).length > 4)) {
+        return '任务参数 short_name 必须是 2-4 个字，请重新起一个短名。';
+      }
       // 只认真正的 true。上游把布尔发成字符串 "false" 的情况不是没有，
       // 而 `!!'false'` 是 true——那会让「派一件新活」变成「顶掉正在跑的活」。
       const replaceCurrent = args.replace_current === true;
       return {
         kind: 'spawn_task',
         title: str(args.title) || prompt.slice(0, 30),
+        ...(shortName ? { shortName } : {}),
+        ...(laneKey ? { laneKey } : {}),
+        ...(submissionKey ? { submissionKey } : {}),
         prompt,
         ...(replaceCurrent ? { replaceCurrent } : {}),
       };

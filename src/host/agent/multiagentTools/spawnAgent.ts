@@ -41,6 +41,7 @@ import {
   getAgentContextLevel,
 } from '../subagentContextBuilder';
 import { getSwarmEventEmitter } from '../swarmEventPublisher';
+import { resolveAgentDisplayNames } from '../resolveAgentDisplayNames';
 import { checkReadonlyParentRule, type ParentContext } from '../childContext';
 import { getPermissionModeManager } from '../../permissions/modes';
 import { getSpawnGuard } from '../spawnGuard';
@@ -682,10 +683,10 @@ export function getAvailableAgents(): Array<{ id: string; name: string; descript
 // dispatch to executeSpawnAgent above.
 
 // Execute multiple agents in parallel using the ParallelAgentCoordinator
-export async function launchAgentTeam(agents: Array<{ role: string; task: string; maxBudget?: number; dependsOn?: string[] }>, context: SubagentExecutionContext): Promise<MultiagentExecutionResult> { return executeParallelAgents(agents, context); }
+export async function launchAgentTeam(agents: Array<{ role: string; task: string; name?: string; maxBudget?: number; dependsOn?: string[] }>, context: SubagentExecutionContext): Promise<MultiagentExecutionResult> { return executeParallelAgents(agents, context); }
 
 async function executeParallelAgents(
-  agents: Array<{ role: string; task: string; maxBudget?: number; dependsOn?: string[] }>,
+  agents: Array<{ role: string; task: string; name?: string; maxBudget?: number; dependsOn?: string[] }>,
   context: SubagentExecutionContext,
 ): Promise<MultiagentExecutionResult> {
   const isCancelledTaskError = (errorMessage?: string): boolean => {
@@ -804,6 +805,8 @@ async function executeParallelAgents(
   const readonlyDisabledTools = guard.getReadonlyDisabledTools();
   // 工具写只读的角色名（供审批卡显示 writeAccess，与下面的工具过滤同一判定，避免两处口径不一）。
   const toolReadonlyRoleNames = new Set<string>();
+  // A4：实例显示名 —— 模型 name 优先，同批 role 重复才 role-1/role-2
+  const displayNames = resolveAgentDisplayNames(agents);
 
   const tasks: AgentTask[] = agents.map((agent, index) => {
     const agentConfig = getPredefinedAgent(agent.role);
@@ -851,6 +854,7 @@ async function executeParallelAgents(
     return {
       id: taskId,
       role: agent.role,
+      name: displayNames[index],
       task: `[工作目录: ${cwd}] 所有文件路径基于此目录。\n\n${agent.task}`,
       systemPrompt,
       tools,

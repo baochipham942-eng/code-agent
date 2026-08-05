@@ -10,7 +10,7 @@ import {
 
 const logger = createLogger('SessionCommandCenter');
 
-export type SessionCommandTaskStatus = 'queued' | 'running' | 'cancelling' | 'completed' | 'failed' | 'cancelled';
+type SessionCommandTaskStatus = 'queued' | 'running' | 'cancelling' | 'completed' | 'failed' | 'cancelled';
 
 export interface SessionCommandTask {
   id: string;

@@ -9,5 +9,7 @@ export type {
   SessionTaskAdmission as VoiceTaskAdmission,
   SessionTaskSlot as VoiceTaskSlot,
   SessionTaskSlotInput as VoiceTaskSlotInput,
-  SessionTaskSlotStatus as VoiceTaskSlotStatus,
 } from '../commandCenter/sessionTaskSlotLedger';
+
+export type VoiceTaskSlotStatus = SessionTaskSlot['status'];
+import type { SessionTaskSlot } from '../commandCenter/sessionTaskSlotLedger';

@@ -3,7 +3,7 @@ import {
   SESSION_TASK_LANE_LIMIT,
 } from '../../../shared/constants/voice';
 
-export type SessionTaskSlotStatus = 'queued' | 'running' | 'settled';
+type SessionTaskSlotStatus = 'queued' | 'running' | 'settled';
 
 export interface SessionTaskSlotInput {
   workItemId: string;

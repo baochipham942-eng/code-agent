@@ -137,7 +137,7 @@ describe('成员对话页', () => {
         status: 'running',
         contextSnapshot: {
           currentTokens: 100, maxTokens: 1000, usagePercent: 10, messageCount: 3,
-          warningLevel: 'none', lastUpdated: 1, attachments: [], previews: [], truncatedMessages: 0,
+          warningLevel: 'normal', lastUpdated: 1, attachments: [], previews: [], truncatedMessages: 0,
           tools: ['Read', 'Bash'],
         },
       }),

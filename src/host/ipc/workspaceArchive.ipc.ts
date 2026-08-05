@@ -33,6 +33,22 @@ export interface WorkspaceExportBundlePayload {
   manifest?: Record<string, unknown>;
   outputDir?: string;
   workingDirectory?: string | null;
+  /** 发起导出的会话；相对路径按该会话 workingDirectory 解析 */
+  sessionId?: string | null;
+}
+
+export type ExportSessionWorkingDirectoryResolver = (
+  sessionId: string,
+) => string | null | undefined | Promise<string | null | undefined>;
+
+async function defaultResolveSessionWorkingDirectory(sessionId: string): Promise<string | null> {
+  try {
+    const { getDatabase } = await import('../services/core/databaseService');
+    const cwd = getDatabase().getSession(sessionId)?.workingDirectory?.trim();
+    return cwd || null;
+  } catch {
+    return null;
+  }
 }
 
 interface WorkspaceExportBundleResult {
@@ -110,12 +126,51 @@ function uniqueEntryName(baseName: string, used: Set<string>): string {
 
 function resolveBundlePath(filePath: string, workingDirectory?: string | null): string {
   if (path.isAbsolute(filePath)) return filePath;
-  return path.join(workingDirectory || process.cwd(), filePath);
+  // 打包态 process.cwd() 是 .app 只读内部路径，相对路径落到那里必错。
+  // 宁可 fail-loud，要求调用方传绝对路径或会话绑定 workingDirectory。
+  if (!workingDirectory?.trim()) {
+    throw new Error(
+      '导出相对路径需要会话工作目录：请传 payload.sessionId 或 workingDirectory，或改用绝对路径（已移除 process.cwd() 兜底）',
+    );
+  }
+  return path.join(workingDirectory, filePath);
+}
+
+/**
+ * 导出 base 目录解析优先级：
+ * 1. payload.workingDirectory
+ * 2. payload.sessionId → 会话绑定 workingDirectory
+ * 3. app 级 getWorkingDirectory（可选）
+ * 不再使用 process.cwd()——打包态是 .app 内部只读路径。
+ */
+export async function resolveExportWorkingDirectory(
+  payload: WorkspaceExportBundlePayload,
+  getAppService?: () => AgentApplicationService | null,
+  resolveSessionWorkingDirectory: ExportSessionWorkingDirectoryResolver = defaultResolveSessionWorkingDirectory,
+): Promise<string | null> {
+  const explicit = payload.workingDirectory?.trim();
+  if (explicit) return explicit;
+
+  const sessionId = payload.sessionId?.trim();
+  if (sessionId) {
+    try {
+      const sessionCwd = await resolveSessionWorkingDirectory(sessionId);
+      if (typeof sessionCwd === 'string' && sessionCwd.trim()) {
+        return sessionCwd.trim();
+      }
+    } catch {
+      // fall through
+    }
+  }
+
+  const appCwd = getAppService?.()?.getWorkingDirectory()?.trim();
+  return appCwd || null;
 }
 
 export async function handleExportBundle(
   payload: WorkspaceExportBundlePayload,
   getAppService?: () => AgentApplicationService | null,
+  resolveSessionWorkingDirectory: ExportSessionWorkingDirectoryResolver = defaultResolveSessionWorkingDirectory,
 ): Promise<WorkspaceExportBundleResult> {
   const fs = await import('fs/promises');
   const JSZip = require('jszip') as new () => {
@@ -128,9 +183,11 @@ export async function handleExportBundle(
     throw new Error('No files provided for export bundle');
   }
 
-  const workingDirectory = payload.workingDirectory?.trim()
-    || getAppService?.()?.getWorkingDirectory()
-    || process.cwd();
+  const workingDirectory = await resolveExportWorkingDirectory(
+    payload,
+    getAppService,
+    resolveSessionWorkingDirectory,
+  );
   const zip = new JSZip();
   const usedNames = new Set<string>();
   const manifestFiles: Array<Record<string, unknown>> = [];
@@ -138,6 +195,7 @@ export async function handleExportBundle(
 
   for (const file of files.slice(0, 100)) {
     if (!file?.path) continue;
+    // resolveBundlePath 对相对路径无 base 直接抛错（fail-loud，不进 skipped）
     const resolvedPath = resolveBundlePath(file.path, workingDirectory);
     try {
       const data = await fs.readFile(resolvedPath);

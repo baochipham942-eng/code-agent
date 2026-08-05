@@ -415,24 +415,27 @@ export async function handleCreateFolder(payload: { dirPath: string }): Promise<
   };
 }
 
-async function handleOpenPath(
+/**
+ * 打开本地路径。只接受绝对路径。
+ * 相对路径曾 resolve 到 app 级 cwd（多真源病灶），且调用方多数本就该传绝对路径；
+ * 拒相对路径 fail-loud，比多真源解析更简单可靠。
+ */
+export async function handleOpenPath(
   payload: { filePath: string },
-  getAppService: () => AgentApplicationService | null
+  _getAppService?: () => AgentApplicationService | null,
 ): Promise<string> {
   const { shell } = await import('../platform');
   const pathModule = await import('path');
-
-  let resolvedPath = payload.filePath;
-
-  // If path is relative, resolve it against working directory
-  if (!pathModule.isAbsolute(resolvedPath)) {
-    const workingDir = getAppService()?.getWorkingDirectory();
-    if (workingDir) {
-      resolvedPath = pathModule.join(workingDir, resolvedPath);
-    }
+  const filePath = typeof payload?.filePath === 'string' ? payload.filePath : '';
+  if (!filePath.trim()) {
+    throw new Error('openPath 需要非空的绝对路径');
   }
-
-  return shell.openPath(resolvedPath);
+  if (!pathModule.isAbsolute(filePath)) {
+    throw new Error(
+      `openPath 拒绝相对路径「${filePath}」：请在调用方先解析为绝对路径后再打开（避免落到错误的 app 级工作目录）`,
+    );
+  }
+  return shell.openPath(filePath);
 }
 
 // 打开 http(s) 外链到系统默认浏览器。走 IPC 桥（host 进程），不依赖 webview 里的
@@ -447,24 +450,25 @@ async function handleOpenExternal(payload: { url: string }): Promise<string> {
   return '';
 }
 
-async function handleShowItemInFolder(
+/**
+ * 在文件管理器中定位。只接受绝对路径（理由同 handleOpenPath）。
+ */
+export async function handleShowItemInFolder(
   payload: { filePath: string },
-  getAppService: () => AgentApplicationService | null
+  _getAppService?: () => AgentApplicationService | null,
 ): Promise<void> {
   const { shell } = await import('../platform');
   const pathModule = await import('path');
-
-  let resolvedPath = payload.filePath;
-
-  // If path is relative, resolve it against working directory
-  if (!pathModule.isAbsolute(resolvedPath)) {
-    const workingDir = getAppService()?.getWorkingDirectory();
-    if (workingDir) {
-      resolvedPath = pathModule.join(workingDir, resolvedPath);
-    }
+  const filePath = typeof payload?.filePath === 'string' ? payload.filePath : '';
+  if (!filePath.trim()) {
+    throw new Error('showItemInFolder 需要非空的绝对路径');
   }
-
-  shell.showItemInFolder(resolvedPath);
+  if (!pathModule.isAbsolute(filePath)) {
+    throw new Error(
+      `showItemInFolder 拒绝相对路径「${filePath}」：请在调用方先解析为绝对路径后再定位（避免落到错误的 app 级工作目录）`,
+    );
+  }
+  shell.showItemInFolder(filePath);
 }
 
 export async function handleDownloadFile(

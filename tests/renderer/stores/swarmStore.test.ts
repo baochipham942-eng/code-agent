@@ -187,6 +187,63 @@ describe('swarmStore', () => {
     });
   });
 
+  describe('discussion stream heartbeat filter (A2)', () => {
+    it('lastReport 为空且 status 未变时不写 eventLog', () => {
+      const store = useSwarmStore.getState();
+      store.handleEvent(evt('swarm:started', {}, 1000));
+      store.handleEvent(
+        evt('swarm:agent:added', { agentState: agent('a1', { status: 'running' }) }, 1100),
+      );
+      const before = useSwarmStore.getState().eventLog.length;
+
+      store.handleEvent(
+        evt('swarm:agent:updated', { agentState: agent('a1', { status: 'running' }) }, 1200),
+      );
+
+      const state = useSwarmStore.getState();
+      expect(state.eventLog).toHaveLength(before);
+      expect(state.agents[0]?.status).toBe('running');
+    });
+
+    it('有 lastReport 时照常进流', () => {
+      const store = useSwarmStore.getState();
+      store.handleEvent(evt('swarm:started', {}, 1000));
+      store.handleEvent(
+        evt('swarm:agent:added', { agentState: agent('a1', { status: 'running' }) }, 1100),
+      );
+      const before = useSwarmStore.getState().eventLog.length;
+
+      store.handleEvent(
+        evt(
+          'swarm:agent:updated',
+          { agentState: agent('a1', { status: 'running', lastReport: '找到 3 篇资料' }) },
+          1200,
+        ),
+      );
+
+      const state = useSwarmStore.getState();
+      expect(state.eventLog).toHaveLength(before + 1);
+      expect(state.eventLog.at(-1)?.summary).toBe('找到 3 篇资料');
+    });
+
+    it('status 变化即使无 lastReport 也进流', () => {
+      const store = useSwarmStore.getState();
+      store.handleEvent(evt('swarm:started', {}, 1000));
+      store.handleEvent(
+        evt('swarm:agent:added', { agentState: agent('a1', { status: 'ready' }) }, 1100),
+      );
+      const before = useSwarmStore.getState().eventLog.length;
+
+      store.handleEvent(
+        evt('swarm:agent:updated', { agentState: agent('a1', { status: 'running' }) }, 1200),
+      );
+
+      const state = useSwarmStore.getState();
+      expect(state.eventLog).toHaveLength(before + 1);
+      expect(state.eventLog.at(-1)?.title).toContain('running');
+    });
+  });
+
   describe('agent completion', () => {
     it('agent:completed 追加 CompletedAgentRun，保留上限 10 条', () => {
       const store = useSwarmStore.getState();

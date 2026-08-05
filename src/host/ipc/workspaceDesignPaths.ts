@@ -22,7 +22,7 @@ export function assertWithinDesignDir(p: string, label: string): void {
  */
 export function assertWithinDesignImportSource(
   p: string,
-  activeWorkspaceRoot?: string | null,
+  activeWorkspaceRoot?: string | null | Array<string | null | undefined>,
 ): string {
   if (!path.isAbsolute(p)) {
     throw new Error('sourcePath 必须是绝对路径，且位于当前工作目录或设计目录内');
@@ -36,10 +36,12 @@ export function assertWithinDesignImportSource(
   }
 
   const designRoot = path.resolve(getUserConfigDir(), 'design');
+  // 允许多个 root：app 级活跃工作目录之外，还要认**发起会话自己的工作目录**——
+  // 快速对话等会话的产物在会话级 cwd 下，与 app 级 cwd 不同（2026-08-05 真机：
+  // 「sourcePath 路径越界」误拦生成图进画布，工作目录多真源病灶又一例）。
+  const candidates = Array.isArray(activeWorkspaceRoot) ? activeWorkspaceRoot : [activeWorkspaceRoot];
   const allowedRoots = [
-    activeWorkspaceRoot?.trim() && path.isAbsolute(activeWorkspaceRoot)
-      ? activeWorkspaceRoot
-      : undefined,
+    ...candidates.map((root) => (root?.trim() && path.isAbsolute(root) ? root : undefined)),
     designRoot,
   ].filter((root): root is string => Boolean(root));
 

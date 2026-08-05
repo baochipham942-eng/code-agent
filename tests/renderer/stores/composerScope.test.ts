@@ -170,9 +170,8 @@ describe('composerStore scope switching', () => {
         selectedSkillIds: ['review-skill'],
         selectedConnectorIds: [],
         selectedMcpServerIds: [],
-        executionIntent: {
-          browserSessionMode: 'none',
-        },
+        // browserSessionMode 无浏览器会话时不写（类型只收 desktop|managed）
+        executionIntent: {},
       },
     });
 

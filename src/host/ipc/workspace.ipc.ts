@@ -886,11 +886,30 @@ export function registerWorkspaceHandlers(
         case 'openExternal':
           data = await handleOpenExternal(payload as { url: string });
           break;
-        case 'openLinkInRail':
-          data = await getUserBrowserLinks().open(
-            payload as { conversationId: string; url: string; workspace: string },
-          );
+        case 'openLinkInRail': {
+          // 空态自动建会话后 renderer 可能还没拿到 cwd：workspace 缺失时按会话解析，
+          // 再兜底默认 work 目录（2026-08-05 产品负责人：浏览器空态输网址应直接可用）。
+          const linkPayload = payload as { conversationId: string; url: string; workspace?: string };
+          let linkWorkspace = linkPayload.workspace?.trim();
+          if (!linkWorkspace && linkPayload.conversationId) {
+            const { getSessionManager } = await import('../services/infra/sessionManager');
+            linkWorkspace = (await getSessionManager().getSession(linkPayload.conversationId, 1))?.workingDirectory ?? undefined;
+          }
+          if (!linkWorkspace) {
+            const pathMod = await import('path');
+            const osMod = await import('os');
+            const fsMod = await import('fs');
+            const dataDir = process.env.CODE_AGENT_DATA_DIR?.trim() || pathMod.join(osMod.homedir(), '.code-agent');
+            linkWorkspace = pathMod.join(dataDir, 'work');
+            await fsMod.promises.mkdir(linkWorkspace, { recursive: true });
+          }
+          data = await getUserBrowserLinks().open({
+            conversationId: linkPayload.conversationId,
+            url: linkPayload.url,
+            workspace: linkWorkspace,
+          });
           break;
+        }
         case 'controlUserBrowserHistory': {
           const historyPayload = payload as {
             conversationId: string;

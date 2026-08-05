@@ -169,8 +169,28 @@ describe('BrowserAgentWindow 导航 pending 三态（N1）', () => {
     expect(input.value).not.toBe('');
   });
 
-  it('无会话前提：回车不进导航链路，显示人话提示而非内部英文错误（2026-08-05 真机）', async () => {
+  it('空态自动建会话：无会话回车静默新建会话并用它导航（2026-08-05 拍板）', async () => {
     useSessionStore.setState({ currentSessionId: null });
+    const createSession = vi.fn().mockResolvedValue({ id: 'session-auto', workingDirectory: '/tmp/auto-work' });
+    useSessionStore.setState({ createSession } as never);
+    openHttpLinkInRailAsync.mockResolvedValue({ snapshot: null });
+
+    render(<BrowserAgentWindow />);
+    typeAndEnter('baidu.com');
+
+    await vi.waitFor(() => {
+      expect(createSession).toHaveBeenCalled();
+      expect(openHttpLinkInRailAsync).toHaveBeenCalledWith(
+        expect.objectContaining({ conversationId: 'session-auto', href: 'https://baidu.com/' }),
+      );
+    });
+    expect(screen.queryByText(/Invalid browser navigation request/)).toBeNull();
+  });
+
+  it('空态建会话失败：落人话失败态而非内部英文错误', async () => {
+    useSessionStore.setState({ currentSessionId: null });
+    const createSession = vi.fn().mockResolvedValue(null);
+    useSessionStore.setState({ createSession } as never);
 
     render(<BrowserAgentWindow />);
     typeAndEnter('baidu.com');
@@ -179,6 +199,5 @@ describe('BrowserAgentWindow 导航 pending 三态（N1）', () => {
       expect(screen.getByText(/先新建一个会话/)).toBeTruthy();
     });
     expect(openHttpLinkInRailAsync).not.toHaveBeenCalled();
-    expect(screen.queryByText(/Invalid browser navigation request/)).toBeNull();
   });
 });

@@ -32,8 +32,9 @@ function validateOpenInput(input: OpenHttpLinkInRailInput): {
 } | null {
   const href = input.href?.trim();
   const conversationId = input.conversationId?.trim();
-  const workspace = input.workspace?.trim();
-  if (!href || !conversationId || !workspace || !/^https?:\/\//i.test(href)) {
+  // workspace 允许缺省：host 侧会按会话解析、再兜底默认 work 目录（空态自动建会话场景）。
+  const workspace = input.workspace?.trim() ?? '';
+  if (!href || !conversationId || !/^https?:\/\//i.test(href)) {
     return null;
   }
   return { href, conversationId, workspace };

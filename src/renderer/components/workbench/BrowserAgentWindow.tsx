@@ -254,7 +254,7 @@ export const BrowserAgentWindow: React.FC = () => {
     }
   }, [activeUrl, navigationPending]);
 
-  const navigateTo = useCallback(async (url: string) => {
+  const navigateTo = useCallback(async (url: string, override?: { conversationId: string; workspace?: string | null }) => {
     const requestId = ++navRequestIdRef.current;
     const previousUrl = activeUrl;
     setNavigationPending(createNavigationPending(url, previousUrl));
@@ -263,8 +263,8 @@ export const BrowserAgentWindow: React.FC = () => {
     try {
       await openHttpLinkInRailAsync({
         href: url,
-        conversationId: currentSessionId,
-        workspace: workingDirectory,
+        conversationId: override?.conversationId ?? currentSessionId,
+        workspace: override?.workspace ?? workingDirectory,
       });
       // 若此刻 activeUrl 已同源，effect 会清 pending；否则保持 pending 直到 URL 回写。
       if (requestId === navRequestIdRef.current && navigationTargetSettled(activeUrl, url)) {
@@ -289,13 +289,25 @@ export const BrowserAgentWindow: React.FC = () => {
     setAddressInvalid(false);
     // 立即乐观展示归一化 URL（即使还要弹中断确认）。
     setAddressDraft(normalized.url);
-    // 前置条件（2026-08-05 真机：无会话/无工作目录时曾抛内部英文错误）：
-    // 缺前提直接进失败态给人话，不进导航链路。
-    if (!currentSessionId || !workingDirectory) {
-      setNavigationPending(failNavigationPending(
-        createNavigationPending(normalized.url, activeUrl),
-        copy.navigationNeedsSession,
-      ));
+    // 空态自动建会话（2026-08-05 产品负责人：不该要求用户先建会话再打开网页）：
+    // 无会话时静默新建一个快速会话并绑定本次导航；建会话失败才落人话失败态。
+    if (!currentSessionId) {
+      setNavigationPending(createNavigationPending(normalized.url, activeUrl));
+      void (async () => {
+        try {
+          const session = await useSessionStore.getState().createSession(undefined, { workingDirectory: null });
+          if (!session) throw new Error(copy.navigationNeedsSession);
+          await navigateTo(normalized.url, {
+            conversationId: session.id,
+            workspace: session.workingDirectory ?? null,
+          });
+        } catch (error) {
+          setNavigationPending(failNavigationPending(
+            createNavigationPending(normalized.url, activeUrl),
+            error instanceof Error && error.message ? error.message : copy.navigationNeedsSession,
+          ));
+        }
+      })();
       return;
     }
     if (agentSurfaceBusy) {

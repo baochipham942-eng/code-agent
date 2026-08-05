@@ -111,6 +111,29 @@ export const LaunchRequestCard: React.FC<{ request: SwarmLaunchRequest }> = ({ r
             {request.feedback}
           </div>
         )}
+
+        {/* 2026-07-29 review P1 拍板：历史回看要能核对「当时批了什么」——默认折叠。 */}
+        {request.tasks.length > 0 && (
+          <details className="mt-2">
+            <summary className="cursor-pointer text-[11px] text-zinc-500 hover:text-zinc-300">
+              {s.detailToggle}（{request.agentCount}）
+            </summary>
+            <ul className="mt-2 space-y-1">
+              {request.tasks.map((task) => (
+                <li key={task.id} className="rounded bg-zinc-900/60 px-2 py-1.5 text-[11px] text-zinc-400">
+                  <span className="font-medium text-zinc-300">{task.role}</span>
+                  <span className={`ml-2 rounded-full px-1.5 py-0.5 text-[10px] ${
+                    task.writeAccess ? 'bg-amber-500/15 text-badge-warning' : 'bg-emerald-500/15 text-badge-success'
+                  }`}
+                  >
+                    {task.writeAccess ? s.taskWritable : s.taskReadOnly}
+                  </span>
+                  <p className="mt-0.5 line-clamp-2 text-zinc-500">{task.task}</p>
+                </li>
+              ))}
+            </ul>
+          </details>
+        )}
       </div>
     );
   }

@@ -32,7 +32,7 @@ import {
 } from './inAppArtifactPreviewHealth';
 import { loadPlaywrightChromium } from './playwrightRuntime';
 
-const logger = createLogger('ArtifactPreviewHealth');
+const logger = createLogger('ArtifactPreviewHealth', { lane: 'browser' });
 
 export type {
   ArtifactPreviewHealthDiagnostics,

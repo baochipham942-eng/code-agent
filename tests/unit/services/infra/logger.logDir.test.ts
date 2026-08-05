@@ -7,11 +7,11 @@ const originalLogDir = process.env.CODE_AGENT_LOG_DIR;
 const originalDataDir = process.env.CODE_AGENT_DATA_DIR;
 let tempRoot: string | null = null;
 
-async function waitForLogFile(filePath: string): Promise<string> {
+async function waitForLogFile(filePath: string, needle = 'log-dir-override-smoke'): Promise<string> {
   for (let attempt = 0; attempt < 20; attempt += 1) {
     try {
       const content = readFileSync(filePath, 'utf8');
-      if (content.includes('log-dir-override-smoke')) return content;
+      if (content.includes(needle)) return content;
     } catch {
       // wait for stream flush
     }
@@ -56,5 +56,48 @@ describe('logger file sink log directory', () => {
     const content = await waitForLogFile(logFile);
     expect(content).toContain('LoggerLogDirTest');
     expect(content).toContain('log-dir-override-smoke');
+  });
+
+  it('writes lane and active correlation without inventing startup identifiers', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const { createLogger, getCurrentLogFilePath } = await import('../../../../src/host/services/infra/logger');
+    const {
+      createChildRunTraceContext,
+      createRunTraceContext,
+      withRunTraceContext,
+    } = await import('../../../../src/host/telemetry/runTraceContext');
+    const logger = createLogger('MCPLoggerTest', { lane: 'mcp' });
+    const run = createRunTraceContext({
+      runId: 'run-logger',
+      sessionId: 'session-logger',
+      attempt: 1,
+      ownerEpoch: 1,
+      engine: 'native',
+      workspace: '/tmp/logger',
+      processInstanceId: 'process-logger',
+    });
+
+    logger.info('startup-without-correlation');
+    const turn = createChildRunTraceContext(run, { turnId: 'turn-logger' });
+    await withRunTraceContext(turn, async () => {
+      logger.info('turn-with-correlation');
+    });
+    await logger.dispose();
+
+    const content = await waitForLogFile(getCurrentLogFilePath(), 'turn-with-correlation');
+    const lines = content.trim().split('\n').map((line) => JSON.parse(line) as Record<string, unknown>);
+    const startup = lines.find((line) => line.message === 'startup-without-correlation');
+    const correlated = lines.find((line) => line.message === 'turn-with-correlation');
+    expect(startup).toMatchObject({ lane: 'mcp' });
+    expect(startup).not.toHaveProperty('sessionId');
+    expect(startup).not.toHaveProperty('turnId');
+    expect(correlated).toMatchObject({
+      lane: 'mcp',
+      runId: 'run-logger',
+      sessionId: 'session-logger',
+      turnId: 'turn-logger',
+      traceId: run.traceId,
+    });
+    expect(correlated).not.toHaveProperty('toolCallId');
   });
 });

@@ -9,7 +9,7 @@ import { Bubblewrap, getBubblewrap, type BubblewrapConfig, type BubblewrapStatus
 import { getSeatbelt, type SeatbeltConfig, type SeatbeltStatus } from './seatbelt';
 import { SANDBOX_TIMEOUTS } from '../../shared/constants';
 
-const logger = createLogger('SandboxManager');
+const logger = createLogger('SandboxManager', { lane: 'sandbox' });
 
 // ----------------------------------------------------------------------------
 // Types

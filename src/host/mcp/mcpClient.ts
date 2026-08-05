@@ -104,7 +104,7 @@ export { isSSEConfig } from './types';
 export { isHttpStreamableConfig } from './types';
 export { isInProcessConfig } from './types';
 
-const logger = createLogger('MCPClient');
+const logger = createLogger('MCPClient', { lane: 'mcp' });
 type OAuthFinishAuthTransport = Transport & {
   finishAuth?: (authorizationCode: string) => Promise<void>;
 };

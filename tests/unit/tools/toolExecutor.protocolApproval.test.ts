@@ -70,6 +70,12 @@ vi.mock('../../../src/host/services/infra/logger', () => ({
 
 const { ToolExecutor } = await import('../../../src/host/tools/toolExecutor');
 const { resetToolResolver } = await import('../../../src/host/tools/dispatch/toolResolver');
+const {
+  createChildRunTraceContext,
+  createRunTraceContext,
+  getActiveRunTraceContext,
+  withRunTraceContext,
+} = await import('../../../src/host/telemetry/runTraceContext');
 
 describe('ToolExecutor protocol approval reuse', () => {
   beforeEach(() => {
@@ -113,5 +119,48 @@ describe('ToolExecutor protocol approval reuse', () => {
     expect(result).toMatchObject({ success: true, output: 'ok' });
     expect(requestPermission).not.toHaveBeenCalled();
     expect(mocks.handlerExecute).toHaveBeenCalledOnce();
+  });
+
+  it('runs the tool pipeline inside the matching turn and tool-call context', async () => {
+    const seen: Array<ReturnType<typeof getActiveRunTraceContext>> = [];
+    mocks.handlerExecute.mockImplementation(async (args, _ctx, canUseTool) => {
+      seen.push(getActiveRunTraceContext());
+      const permission = await canUseTool('Bash', args);
+      return permission.allow
+        ? { ok: true, output: 'ok' }
+        : { ok: false, error: permission.reason };
+    });
+    const executor = new ToolExecutor({
+      workingDirectory: '/tmp',
+      requestPermission: vi.fn(async () => true),
+    });
+    executor.setAuditEnabled(false);
+    const run = createRunTraceContext({
+      runId: 'run-tool-context',
+      sessionId: 'session-tool-context',
+      attempt: 1,
+      ownerEpoch: 1,
+      engine: 'native',
+      workspace: '/tmp',
+      processInstanceId: 'process-tool-context',
+    });
+    const turn = createChildRunTraceContext(run, { turnId: 'turn-tool-context' });
+
+    await withRunTraceContext(turn, async () => {
+      await executor.execute('Bash', { command: 'git status' }, {
+        sessionId: 'session-tool-context',
+        turnId: 'turn-tool-context',
+        currentToolCallId: 'tool-call-context',
+      });
+      expect(getActiveRunTraceContext()).toEqual(turn);
+    });
+
+    expect(seen[0]).toMatchObject({
+      traceId: run.traceId,
+      sessionId: 'session-tool-context',
+      turnId: 'turn-tool-context',
+      toolCallId: 'tool-call-context',
+    });
+    expect(seen[0]?.spanId).not.toBe(turn.spanId);
   });
 });

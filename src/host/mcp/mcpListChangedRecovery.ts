@@ -11,7 +11,7 @@ import type {
 import { createLogger } from '../services/infra/logger';
 import { MCP_RESPONSE_CACHE_DEFAULT_TTL_MS } from './mcpTransport';
 
-const logger = createLogger('MCPListChangedRecovery');
+const logger = createLogger('MCPListChangedRecovery', { lane: 'mcp' });
 const RELISTEN_BACKOFF_MS = [250, 1_000, 4_000] as const;
 
 function mcpErrorCode(error: unknown): unknown {

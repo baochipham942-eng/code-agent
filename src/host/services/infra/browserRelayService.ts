@@ -199,7 +199,7 @@ class BrowserRelaySocket {
 }
 
 export class BrowserRelayService implements Disposable {
-  private readonly logger = createLogger('BrowserRelayService');
+  private readonly logger = createLogger('BrowserRelayService', { lane: 'browser' });
   private server: http.Server | null = null;
   private socket: BrowserRelaySocket | null = null;
   private pending = new Map<string, PendingCommand>();

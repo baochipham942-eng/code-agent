@@ -8,6 +8,7 @@ import { app } from '../platform';
 import { createLogger } from '../services/infra/logger';
 import { maskSensitiveData } from './sensitiveDetector';
 import { getUserConfigDir } from '../config/configPaths';
+import { getActiveRunTraceContext } from '../telemetry/runTraceContext';
 
 const logger = createLogger('AuditLogger');
 
@@ -41,6 +42,12 @@ export interface AuditEntry {
   eventType: AuditEventType;
   /** Session ID for correlation */
   sessionId: string;
+  /** Active turn correlation, when the event was emitted inside a turn. */
+  turnId?: string;
+  /** W3C trace identity shared with app logs and telemetry. */
+  traceId?: string;
+  /** Active tool invocation identity. */
+  toolCallId?: string;
   /** Tool or component name */
   toolName: string;
   /** Input parameters (sanitized) */
@@ -256,8 +263,12 @@ export class AuditLogger {
     }
 
     const now = new Date();
+    const correlation = getActiveRunTraceContext();
     const fullEntry: AuditEntry = {
       ...entry,
+      ...(correlation?.turnId ? { turnId: correlation.turnId } : {}),
+      ...(correlation?.traceId ? { traceId: correlation.traceId } : {}),
+      ...(correlation?.toolCallId ? { toolCallId: correlation.toolCallId } : {}),
       timestamp: now.getTime(),
       timestampISO: now.toISOString(),
       input: this.sanitizeInput(entry.input),

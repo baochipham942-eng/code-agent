@@ -28,7 +28,7 @@ import { getSecureStorage } from '../services/core/secureStorage';
 import { extractSecrets } from '../mcp/secretRef';
 import { createLogger } from '../services/infra/logger';
 
-const logger = createLogger('MCP.ipc');
+const logger = createLogger('MCP.ipc', { lane: 'mcp' });
 const activeMcpInstalls = new Map<string, AbortController>();
 
 class McpInstallInProgressError extends Error {

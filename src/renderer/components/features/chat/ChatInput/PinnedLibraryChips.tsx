@@ -60,7 +60,7 @@ export function PinnedLibraryChips() {
   if (!currentSessionId || pinnedItems.length === 0) return null;
 
   return (
-    <div className="mb-2 flex flex-wrap items-center gap-1.5 px-2" data-testid="pinned-library-chips">
+    <div className="mt-3 mb-2 flex flex-wrap items-center gap-1.5 px-2" data-testid="pinned-library-chips">
       {pinnedItems.map((item) => (
         // 删除交互与文件/capability chip 对齐（2026-07-29）：整颗点击不再删除，
         // 收敛到 hover 浮现的 × 按钮 + chip 聚焦后 Delete/Backspace。

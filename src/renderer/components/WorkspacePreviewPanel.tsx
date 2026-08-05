@@ -365,6 +365,8 @@ export const WorkspacePreviewPanel: React.FC<WorkspacePreviewPanelProps> = ({
     if (!selected?.file?.path) return;
     setAssetActionError(null);
     try {
+      const sessionWorkingDirectory = useSessionStore.getState().sessions
+        .find((session) => session.id === currentSessionId)?.workingDirectory ?? null;
       const response = await window.domainAPI?.invoke<{ filePath: string }>(
         IPC_DOMAINS.WORKSPACE,
         'exportBundle',
@@ -387,6 +389,8 @@ export const WorkspacePreviewPanel: React.FC<WorkspacePreviewPanelProps> = ({
             revision: selected.revision,
             quality: selected.quality,
           },
+          ...(currentSessionId ? { sessionId: currentSessionId } : {}),
+          ...(sessionWorkingDirectory ? { workingDirectory: sessionWorkingDirectory } : {}),
         },
       );
       if (response && !response.success) {

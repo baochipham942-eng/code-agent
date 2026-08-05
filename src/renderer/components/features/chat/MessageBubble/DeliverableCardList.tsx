@@ -465,6 +465,11 @@ export const DeliverableCardList: React.FC<Props> = ({ cards, className = 'mt-2'
             files: action.files,
             bundleName: action.bundleName,
             manifest: action.manifest,
+            // 相对路径文件项按发起会话的 workingDirectory 解析
+            ...(currentSessionId ? { sessionId: currentSessionId } : {}),
+            ...(currentSessionWorkingDirectory
+              ? { workingDirectory: currentSessionWorkingDirectory }
+              : {}),
           });
           if (response && !response.success) {
             throw new Error(response.error?.message || 'Export bundle failed');

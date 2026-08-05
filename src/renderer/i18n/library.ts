@@ -59,7 +59,7 @@ export const libraryZh = {
     bringIntoNewSession: '带进新会话',
     clearSelection: '清除选择',
     bringSessionTitle: '资料库资料（{count} 项）',
-    bringSuccess: '已带进新会话，输入框上方可看到',
+    bringSuccess: '已带进新会话，看输入框里的资料标签',
     bringFailed: '带进新会话失败，请重试',
   },
 };
@@ -120,7 +120,7 @@ export const libraryEn = {
     bringIntoNewSession: 'Bring into new session',
     clearSelection: 'Clear selection',
     bringSessionTitle: 'Library items ({count})',
-    bringSuccess: 'Brought into a new session — visible above the composer',
+    bringSuccess: 'Brought into a new session — see the chips in the composer',
     bringFailed: 'Failed to bring into a new session, please retry',
   },
 };

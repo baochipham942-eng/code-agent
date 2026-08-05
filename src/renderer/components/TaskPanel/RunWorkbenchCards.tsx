@@ -298,17 +298,44 @@ export const TaskDashboardSummary = ({
   );
 };
 
-export const SubagentRunRows = ({ subagents }: { subagents: SubagentRunView[] }) => {
+export const SubagentRunRows = ({
+  subagents,
+  onSelect,
+  selectableIds,
+}: {
+  subagents: SubagentRunView[];
+  /** 传入后成员行可点，点击直达成员视图。 */
+  onSelect?: (agentId: string) => void;
+  /** 能被成员视图解析出来的 id；不在其中的行保持静态，避免点了跳进空白页。 */
+  selectableIds?: ReadonlySet<string>;
+}) => {
   const { t } = useI18n();
   if (subagents.length === 0) return <EmptyState variant="inline" text={t.taskStatusPanels.runWorkbench.noSubagents} />;
 
   return (
     <div className="space-y-1.5">
-      {subagents.map((agent) => (
+      {subagents.map((agent) => {
+        const selectable = Boolean(onSelect) && (selectableIds?.has(agent.id) ?? true);
+        return (
         <div
           key={agent.id}
-          className="min-w-0 rounded-md bg-black/10 px-2.5 py-2"
+          className={`min-w-0 rounded-md bg-black/10 px-2.5 py-2 ${
+            selectable ? 'cursor-pointer transition-colors hover:bg-black/20' : ''
+          }`}
           data-testid="subagent-run-row"
+          data-selectable={selectable || undefined}
+          {...(selectable
+            ? {
+              role: 'button' as const,
+              tabIndex: 0,
+              onClick: () => onSelect?.(agent.id),
+              onKeyDown: (event: React.KeyboardEvent) => {
+                if (event.key !== 'Enter' && event.key !== ' ') return;
+                event.preventDefault();
+                onSelect?.(agent.id);
+              },
+            }
+            : {})}
         >
           <div className="flex min-w-0 items-center gap-2">
             <span className={`text-[10px] ${subagentStatusClass(agent.status)}`}>
@@ -333,7 +360,8 @@ export const SubagentRunRows = ({ subagents }: { subagents: SubagentRunView[] })
             </div>
           )}
         </div>
-      ))}
+        );
+      })}
     </div>
   );
 };

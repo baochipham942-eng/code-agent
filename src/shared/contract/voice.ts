@@ -39,10 +39,19 @@ export type VoiceWorkFailureMarker =
  * 之间只有一条判据：ADR-050 意义上的机器产物证据（见 voiceWorkEvidence.ts）。
  */
 export type VoiceWorkItemStatus = 'queued' | 'running' | 'done' | 'unverified' | 'failed' | 'cancelled';
+export type VoiceToolCallOrigin = 'function_call' | 'xml_fallback';
 
 export interface VoiceWorkItem {
   id: string;
   title: string;
+  /** 通话内稳定称呼；Batch 2 新记录始终为 2-4 字，旧记录可缺省。 */
+  shortName?: string;
+  /** 同目标/主题任务的串行 lane。 */
+  laneKey?: string;
+  /** 同一 brain turn 的派发幂等键。 */
+  submissionKey?: string;
+  /** Realtime 工具协议来源；用于核算原生调用与 XML 降级通道的命中率。 */
+  dispatchOrigin?: VoiceToolCallOrigin;
   status: VoiceWorkItemStatus;
   /** 失败原因，供 UI 显示；其余状态没有 */
   detail?: string;
@@ -142,7 +151,12 @@ export interface VoiceToolDefinition {
   type: 'function';
   name: string;
   description: string;
-  parameters: { type: 'object'; properties: Record<string, unknown>; required: string[] };
+  parameters: {
+    type: 'object';
+    properties: Record<string, unknown>;
+    required: string[];
+    additionalProperties?: boolean;
+  };
 }
 
 export interface VoiceSessionConfig {
@@ -357,7 +371,7 @@ export type VoiceTransportHandle =
        * server VAD 只切轮，不自动建回复；Host 在 final 语义决策后显式调用。
        * instructions 只约束这一次 response，避免取消后的旧回复目标压过最新用户要求。
        */
-      respond(instructions?: string): void;
+      respond(instructions?: string, toolChoice?: 'auto' | 'required'): void;
       /**
        * 把一条外部消息塞进实时会话并让模型就它开口（发言人协议回流，W6-2）。
        *
@@ -394,6 +408,11 @@ export interface VoiceTransport {
      * 未提供时 transport 不注册任何工具——「没接执行出口却把工具告诉模型」
      * 会让模型调了个永远没有结果的工具，比不给工具更糟。
      */
-    onToolCall?: (call: { callId: string; name: string; arguments: string }) => Promise<string>;
+    onToolCall?: (call: {
+      callId: string;
+      name: string;
+      arguments: string;
+      origin: VoiceToolCallOrigin;
+    }) => Promise<string>;
   }): Promise<VoiceTransportHandle>;
 }

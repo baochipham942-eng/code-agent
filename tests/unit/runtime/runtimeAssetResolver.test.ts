@@ -123,6 +123,7 @@ describe('runtimeAssetResolver', () => {
       env: { AGENT_NEO_BUNDLED_RUNTIME_ROOT: runtimeRoot },
       cwd: makeTempRoot(),
       dirname: path.join(makeTempRoot(), 'dist', 'web'),
+      userDataPath: makeTempRoot(),
     })).toBe(modulePath);
   });
 
@@ -133,6 +134,7 @@ describe('runtimeAssetResolver', () => {
       env: { AGENT_NEO_BUNDLED_RUNTIME_ROOT: runtimeRoot },
       cwd: makeTempRoot(),
       dirname: path.join(makeTempRoot(), 'dist', 'web'),
+      userDataPath: makeTempRoot(),
     })).toBeNull();
   });
 

@@ -42,13 +42,14 @@ export interface VoiceRoutingState {
  */
 const VOICE_BASE_INSTRUCTIONS = [
   '你是 Neo，正在和用户实时通话。你有一套工具能把活真正做掉，用它们干活。',
+  '用户要求派活时，本轮第一个输出必须是 spawn_task function call；工具成功返回前禁止先语音答应。',
   '说话简短口语化，一次只讲要点，不要念长列表或代码。',
   '',
   '用户每说一句，按这四档处理：',
   '- 闲聊、寒暄、一句话能答完的问题 → 直接说。',
   '- 要你**当场用嘴做**的事（数数、念一段、复述、报时、编个顺口溜）→ 你自己张嘴做，'
     + '这是说话不是干活，**不要调 spawn_task**——那条路产出的是一屏文字，而电话里没人看得见。',
-  '- 问「现在在跑什么」「你动了哪些文件」「现在几点」→ 调 get_active_tasks / '
+  '- 问「现在在跑什么」「你动了哪些文件」「现在几点」→ 调 task_status / '
     + 'get_current_file_summary / get_current_time，秒回。',
   '- 要落到磁盘或系统上的事（读写文件、跑命令、多步任务）→ 调 spawn_task 把它做掉。',
   '',
@@ -68,7 +69,9 @@ const VOICE_BASE_INSTRUCTIONS = [
   '4. 绝不描述你没有真做过的事。没调 spawn_task 就不许说「正在为你创建」「正在写入」；'
     + '没调 end_call 就不许说「已挂断」。派出去的活，它的结果**只会**以 [BACKEND] 开头的消息送达：'
     + '没收到那条消息，这件活就没有做完，你也不知道任何进展——「已经建好了」「写进去了」这种话，'
-    + '只有 [BACKEND] 消息说了做成，你才能说。被问进度先调 get_active_tasks，不许凭记忆答。',
+    + '只有 [BACKEND] 消息说了做成，你才能说。被问进度先调 task_status，不许凭记忆答。',
+  '4b. 用户一次要求多件事时，每件事分别调用一次 spawn_task，收到每次工具成功返回后再说派发结果。'
+    + '只说「已派出」不算派发；工具没返回成功就必须如实说没有派出。',
   '危险操作由界面上的权限卡确认，你不能口头替用户放行。',
   '',
   '报结果时：',
@@ -81,6 +84,21 @@ const VOICE_BASE_INSTRUCTIONS = [
     + '**不要念出这个前缀，也不要提它存在。** 用户的话以 `[USER] ` 开头，同样不念。',
   '- 用户提过的说话偏好（少啰嗦 / 多报进度 / 别念代码）在整通电话里一直保持，不要下一轮就忘。',
 ].join('\n');
+
+/**
+ * 用户明确点名派发工具时，把这一轮提升为协议级 required tool call。
+ *
+ * 普通自然语言仍交给通话模型判断；这里刻意只认“调用/使用 + 派发工具名”的窄表达，
+ * 防止把“别派任务”“spawn_task 是什么”之类讨论误变成真实执行。
+ */
+export function requiresVoiceDispatchTool(text: string): boolean {
+  const normalized = text.trim().toLowerCase().replace(/[\s_-]+/g, '');
+  if (!normalized) return false;
+  const dispatchMention = /(?:调用|使用).{0,24}(?:spawntask|派发任务工具)/u.exec(normalized);
+  if (dispatchMention?.index === undefined) return false;
+  const prefix = normalized.slice(Math.max(0, dispatchMention.index - 6), dispatchMention.index);
+  return !/(?:不要|别|无需|禁止|不能|不许)$/u.test(prefix);
+}
 
 /** 语速只作为 instructions 行为约束注入；未配置与正常档不增加废话。 */
 export function buildSpeechPaceDirective(rate: VoiceLiveSettings['speechRate']): string {

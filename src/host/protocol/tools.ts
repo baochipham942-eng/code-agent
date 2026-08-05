@@ -52,6 +52,11 @@ export interface ToolSchema {
   readonly category: ToolCategory;
   readonly permissionLevel: PermissionLevel;
   /**
+   * 覆盖默认权限推导。省略时仍按 permissionLevel !== 'read' 处理。
+   * 只用于工具本身就是用户确认入口的场景，避免“先批准提问，才能看到提问”的递归门。
+   */
+  readonly requiresPermission?: boolean;
+  /**
    * 声明依赖哪些 API key。Registry 启动时可做预校验，缺失则 schema 自动降级或标灰。
    * 例：['PERPLEXITY_API_KEY', 'EXA_API_KEY']（任一满足即可）
    */
@@ -108,6 +113,8 @@ export interface ToolContext {
   readonly workspaceScope?: WorkspaceScope;
   readonly workingDir: string;
   readonly abortSignal: AbortSignal;
+  /** 当前 run 的工具拒绝集，ToolSearch 不得借延迟加载把它们重新带回。 */
+  readonly deniedToolNames?: readonly string[];
 
   /** 轻量 logger 接口，不耦合 services/infra/logger 实现 */
   readonly logger: Logger;

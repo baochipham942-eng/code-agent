@@ -62,7 +62,7 @@ import {
 import { handleUnavailableToolCalls } from './messageProcessorUnavailableTools';
 import { recordMessageProcessorModelCallTelemetry } from './messageProcessorTelemetry';
 import { generateTruncationWarning } from './truncationPrompts';
-import { isToolDeniedForRun } from './toolRunPolicy';
+import { deniedToolRetryGuidance, isToolDeniedForRun } from './toolRunPolicy';
 import { attachTurnQualityMetadata } from './turnQuality';
 import { wasMessagePersistedByContextAssembly } from './contextAssembly/systemContextStack';
 const logger = createLogger('MessageProcessor');
@@ -619,7 +619,7 @@ export class MessageProcessor {
         [
           '<tool-run-policy>',
           `The previous tool call requested disabled tools for this run: ${deniedNames}.`,
-          'Continue without those tools. If you need user input, state the blocker in your final text instead of calling an interactive tool.',
+          deniedToolRetryGuidance(this.ctx),
           '</tool-run-policy>',
         ].join('\n'),
         'tool-policy-guard',

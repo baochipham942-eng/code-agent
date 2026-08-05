@@ -184,6 +184,10 @@ export interface AgentRunOptions {
   maxIterations?: number;
   /** Neo Tag approved work card runtime context. */
   neoTag?: import('../../shared/contract/tag').NeoTagRunContext;
+  /** 同一会话内的后台执行槽使用 auxiliary RunHandle，不替换会话主 run。 */
+  runRegistration?: 'primary' | 'auxiliary';
+  /** 已由上层分配独立执行槽时，禁止分析器再次进入 AutoAgent 扇出。 */
+  disableAutoAgent?: boolean;
 }
 
 // ============================================================================

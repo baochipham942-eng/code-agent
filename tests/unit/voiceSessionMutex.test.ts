@@ -521,7 +521,10 @@ describe('voiceSessionService 互斥与挂断', () => {
     });
 
     expect(respondMock).toHaveBeenCalledTimes(1);
-    expect(respondMock).toHaveBeenCalledWith(expect.stringContaining('等一下，改成从十倒数到一'));
+    expect(respondMock).toHaveBeenCalledWith(
+      expect.stringContaining('等一下，改成从十倒数到一'),
+      'auto',
+    );
 
     lastOnEvent?.({ type: 'response.created', responseId: 'resp-new' });
     lastOnEvent?.({
@@ -1851,6 +1854,32 @@ describe('中途进度节流闸（回放时间线）', () => {
     voiceDispatchProbe.narrate?.(milestone(3));
     expect(injectItem).toHaveBeenCalledTimes(2);
     ackNarration(client, milestone(3).workItemId);
+  });
+
+  it('两件并行活各算各的进度间隔，甲刚播过不压住乙', async () => {
+    const client = await dialThenFreezeClock('session-milestone-per-task');
+    dispatch();
+    voiceDispatchProbe.work?.({ id: 'work-2', title: '查风险', status: 'queued' });
+    await vi.advanceTimersByTimeAsync(VOICE_MILESTONE_FIRST_DELAY_MS + 1);
+    injectItem.mockClear();
+
+    voiceDispatchProbe.narrate?.(milestone(1));
+    ackNarration(client, milestone(1).workItemId);
+
+    const siblingMilestone = {
+      workItemId: 'work-2:milestone-1',
+      status: 'milestone' as const,
+      title: '查风险',
+      summary: '风险清单已经整理完。',
+    };
+    voiceDispatchProbe.narrate?.(siblingMilestone);
+
+    expect(injectItem).toHaveBeenCalledTimes(2);
+    expect(injectItem).toHaveBeenLastCalledWith(
+      `[BACKEND] ${siblingMilestone.summary}`,
+      siblingMilestone.workItemId,
+    );
+    ackNarration(client, siblingMilestone.workItemId);
   });
 
   it('每件活最多播上限条，之后一律沉默', async () => {

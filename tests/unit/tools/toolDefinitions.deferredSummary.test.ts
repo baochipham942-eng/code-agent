@@ -49,6 +49,14 @@ describe('getDeferredToolsSummary MCP name index (GAP-008)', () => {
     expect(summary).not.toContain('[mcp:');
   });
 
+  it('omits tools hidden by the current run denylist', () => {
+    const summary = getDeferredToolsSummary(['Task', 'workflow_orchestrate']);
+
+    expect(summary).not.toContain('Task:');
+    expect(summary).not.toContain('workflow_orchestrate:');
+    expect(summary).toContain('Browser');
+  });
+
   it('appends MCP tool name index grouped by server (names only, no schema)', () => {
     const service = getToolSearchService();
     service.registerMCPTools([

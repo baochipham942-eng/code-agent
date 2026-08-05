@@ -298,6 +298,18 @@ describe('toolSearchModule (native)', () => {
     });
   });
 
+  it('passes the run denylist into deferred tool discovery', async () => {
+    searchToolsMock.mockResolvedValue({ tools: [], loadedTools: [], totalCount: 0, hasMore: false });
+
+    await run({ query: 'select:AgentSpawn' }, makeCtx({ deniedToolNames: ['AgentSpawn'] }));
+
+    expect(searchToolsMock).toHaveBeenCalledWith('select:AgentSpawn', {
+      maxResults: 5,
+      includeMCP: true,
+      deniedToolNames: ['AgentSpawn'],
+    });
+  });
+
   describe('onProgress', () => {
     it('emits starting and completing stages', async () => {
       searchToolsMock.mockResolvedValue({ tools: [], loadedTools: [], totalCount: 0, hasMore: false });

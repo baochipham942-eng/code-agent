@@ -17,8 +17,8 @@ const question: UserQuestion = {
   ],
 };
 
-function request(questions: UserQuestion[] = [question]): UserQuestionRequest {
-  return { id: 'q-1', sessionId: 'session-1', questions, timestamp: 1 };
+function request(questions: UserQuestion[] = [question], id = 'q-1'): UserQuestionRequest {
+  return { id, sessionId: 'session-1', questions, timestamp: 1 };
 }
 
 const speak = vi.fn();
@@ -102,6 +102,48 @@ describe('voice question lifecycle', () => {
     expect(respond).toHaveBeenCalledWith({
       requestId: 'q-1',
       answers: { 处理方式: '批准方案', 发布时间: '明天' },
+    });
+  });
+
+  it('并行任务的问题按到达顺序排队，上一题回答后再念下一题', () => {
+    const respondSecond = vi.fn();
+    expect(bridge.offerVoiceQuestion(request([question], 'q-first'), respond)).toBe(true);
+    expect(bridge.offerVoiceQuestion(request([question], 'q-second'), respondSecond)).toBe(true);
+    expect(speak).toHaveBeenCalledTimes(1);
+
+    bridge.handleVoiceQuestionTranscript('session-1', '批准方案');
+    expect(respond).toHaveBeenCalledWith({
+      requestId: 'q-first',
+      answers: { 处理方式: '批准方案' },
+    });
+    expect(speak).toHaveBeenLastCalledWith(expect.objectContaining({
+      narrationId: 'voice-question:q-second:0:ask',
+    }));
+
+    bridge.handleVoiceQuestionTranscript('session-1', '退回修改');
+    expect(respondSecond).toHaveBeenCalledWith({
+      requestId: 'q-second',
+      answers: { 处理方式: '退回修改' },
+    });
+  });
+
+  it('共享 settle 回调重入取消当前 request 时只推进一次队列', () => {
+    const reentrantRespond = vi.fn((response: UserQuestionResponse) => {
+      bridge.cancelVoiceQuestion(response.requestId);
+    });
+    const respondSecond = vi.fn();
+    bridge.offerVoiceQuestion(request([question], 'q-first'), reentrantRespond);
+    bridge.offerVoiceQuestion(request([question], 'q-second'), respondSecond);
+
+    bridge.handleVoiceQuestionTranscript('session-1', '批准方案');
+    expect(speak).toHaveBeenLastCalledWith(expect.objectContaining({
+      narrationId: 'voice-question:q-second:0:ask',
+    }));
+
+    expect(bridge.handleVoiceQuestionTranscript('session-1', '退回修改')).toBe(true);
+    expect(respondSecond).toHaveBeenCalledWith({
+      requestId: 'q-second',
+      answers: { 处理方式: '退回修改' },
     });
   });
 });

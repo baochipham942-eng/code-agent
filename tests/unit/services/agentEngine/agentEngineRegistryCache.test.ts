@@ -3,6 +3,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 // 记录 execFile 调用次数，验证探测缓存：TTL 内重复 list() 不重复探测。
 const execFileCalls: string[] = [];
 
+const engineProbeCallCount = () => execFileCalls.filter((call) => (
+  !call.startsWith('defaults ') && !call.startsWith('sips ')
+)).length;
+
 vi.mock('child_process', () => ({
   execFile: (
     file: string,
@@ -39,15 +43,15 @@ describe('AgentEngineRegistry 探测缓存', () => {
     const registry = new AgentEngineRegistry({ cacheTtlMs: 5000, now: () => clock });
 
     await registry.list();
-    const afterFirst = execFileCalls.length;
+    const afterFirst = engineProbeCallCount();
     expect(afterFirst).toBeGreaterThan(0); // 首次真探测（which + --version × 2 引擎）
 
     await registry.list(); // TTL 内
-    expect(execFileCalls.length).toBe(afterFirst); // 零新增探测
+    expect(engineProbeCallCount()).toBe(afterFirst); // 零新增探测
 
     clock += 6000; // 越过 TTL
     await registry.list();
-    expect(execFileCalls.length).toBe(afterFirst * 2); // 重新探测
+    expect(engineProbeCallCount()).toBe(afterFirst * 2); // 重新探测
   });
 
   it('invalidate() 强制下次 list() 重新探测', async () => {
@@ -55,11 +59,11 @@ describe('AgentEngineRegistry 探测缓存', () => {
     const registry = new AgentEngineRegistry({ cacheTtlMs: 5000, now: () => clock });
 
     await registry.list();
-    const afterFirst = execFileCalls.length;
+    const afterFirst = engineProbeCallCount();
 
     registry.invalidate();
     await registry.list(); // 同一时刻但缓存已清
 
-    expect(execFileCalls.length).toBe(afterFirst * 2);
+    expect(engineProbeCallCount()).toBe(afterFirst * 2);
   });
 });

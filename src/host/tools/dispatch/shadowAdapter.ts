@@ -125,6 +125,7 @@ export function buildProtocolContext(input: ProtocolContextInput): ProtocolToolC
     workspaceScope: input.workspaceScope ?? input.legacyCtx.workspaceScope,
     workingDir: input.workingDirectory,
     abortSignal: input.abortSignal ?? new AbortController().signal,
+    deniedToolNames: legacy?.deniedToolNames as readonly string[] | undefined,
     agentId,
     logger: {
       debug: (msg, meta) => logger.debug(msg, meta),

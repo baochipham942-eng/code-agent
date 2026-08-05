@@ -26,7 +26,7 @@ import { isBashToolName, normalizeToolName } from './toolNames';
 import { finalizeSurfaceAwareToolResult } from './artifacts/surfaceExecutionToolResultPipeline';
 import { recordDecision } from './toolExecutorDecisionTrace';
 import { checkNeoTagToolGuard } from './neoTagToolGuard';
-import { getPermissionModeManager, type PermissionMode } from '../permissions/modes';
+import type { PermissionMode } from '../permissions/modes';
 import {
   readOnlyDenialError,
   readOnlyForcesConfirmationFor,
@@ -141,6 +141,8 @@ export interface ExecuteOptions {
   neoTag?: NeoTagRunContext;
   // Run-level cancellation signal propagated from the agent loop.
   abortSignal?: AbortSignal;
+  // Run-level tool denylist. Dynamic discovery must inherit the same boundary.
+  deniedToolNames?: readonly string[];
   // Subagent 执行策略 — 存在即表示这是 subagent 调用。
   // ToolExecutor 在权限决策前先过这道闸：工具白名单 + 收缩策略。
   // 策略只能收紧（deny），不能放宽：'deny' 直接拒，'ask' 继续走常规管道
@@ -440,6 +442,7 @@ export class ToolExecutor {
       workingDirectory: this.executionCwd,
       requestPermission: this.requestPermission,
       abortSignal: options.abortSignal,
+      deniedToolNames: options.deniedToolNames,
       planningService: options.planningService,
       modelConfig: options.modelConfig,
       // Plan Mode support (borrowed from Claude Code v2.0)

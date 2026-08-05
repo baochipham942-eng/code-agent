@@ -64,7 +64,7 @@ function schemaToDefinition(
     name: schema.name,
     description,
     inputSchema: schema.inputSchema,
-    requiresPermission: schema.permissionLevel !== 'read',
+    requiresPermission: schema.requiresPermission ?? schema.permissionLevel !== 'read',
     permissionLevel: mapPermissionLevel(schema.permissionLevel),
     // readOnly 探索档判定依赖：network 档只读工具直通，非只读强制确认
     readOnly: schema.readOnly === true,
@@ -190,9 +190,11 @@ export function withoutGenericMediaToolsInDesign(
  * GAP-008: MCP 工具只注入名字索引（按 server 分组），schema 通过 ToolSearch 按需加载，
  * 与 builtin deferred 工具执行同一条"工具多了要 defer"原则。
  */
-export function getDeferredToolsSummary(): string {
+export function getDeferredToolsSummary(deniedToolNames: readonly string[] = []): string {
+  const denied = new Set(deniedToolNames.map((name) => name.trim().toLowerCase()));
   const grouped = new Map<string, string[]>();
   for (const meta of DEFERRED_TOOLS_META) {
+    if (denied.has(meta.name.toLowerCase())) continue;
     const category = meta.tags[0] || 'other';
     if (!grouped.has(category)) grouped.set(category, []);
     grouped.get(category)!.push(`${meta.name}: ${meta.shortDescription}`);
@@ -207,6 +209,7 @@ export function getDeferredToolsSummary(): string {
   const mcpMetas = getToolSearchService().getMCPToolsMeta();
   const byServer = new Map<string, string[]>();
   for (const meta of mcpMetas) {
+    if (denied.has(meta.name.toLowerCase())) continue;
     const server = meta.mcpServer || 'unknown';
     if (!byServer.has(server)) byServer.set(server, []);
     byServer.get(server)!.push(meta.name);

@@ -33,11 +33,12 @@ async function resolveSummary(
   item: VoiceWorkItem,
   status: VoiceTaskTerminalStatus,
   failure?: VoiceWorkFailureMarker,
+  conclusion?: string,
 ): Promise<string> {
   if (status === 'failed') return describeWorkFailure(item.detail, failure).screen;
   if (status === 'cancelled') return toSpokenSummary(item.detail ?? '') || '任务已取消。';
-  const conclusion = toSpokenSummary(await readRunConclusion(neoSessionId));
-  if (conclusion) return conclusion;
+  const projectedConclusion = toSpokenSummary(conclusion ?? await readRunConclusion(neoSessionId));
+  if (projectedConclusion) return projectedConclusion;
   return status === 'done' ? '任务已完成。' : '任务已结束，但结果尚未核验。';
 }
 
@@ -50,9 +51,10 @@ export async function projectVoiceTaskTerminalResult(
   item: VoiceWorkItem,
   status: VoiceTaskTerminalStatus,
   failure?: VoiceWorkFailureMarker,
+  conclusion?: string,
 ): Promise<void> {
   try {
-    const summary = await resolveSummary(neoSessionId, item, status, failure);
+    const summary = await resolveSummary(neoSessionId, item, status, failure, conclusion);
     const resultStatus = projectedStatus(status);
     await getSessionManager().addMessageToSession(neoSessionId, {
       id: `voice-task-result-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -64,7 +66,7 @@ export async function projectVoiceTaskTerminalResult(
         backgroundTaskResult: {
           source: 'agent-result',
           taskId: item.id,
-          shortName: item.title,
+          shortName: item.shortName ?? item.title,
           status: resultStatus,
           summary,
         },

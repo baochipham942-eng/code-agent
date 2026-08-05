@@ -30,7 +30,7 @@ describe('media asset rendering', () => {
     );
 
     expect(html).toContain('放大查看');
-    expect(html).toContain('复制引用');
+    expect(html).toContain('复制图片'); // 2026-08-05 拍板：图片主复制动作=复制位图本体，引用复制为兜底
     expect(html).toContain('diagram');
     expect(html).toContain('file:///repo/assets/diagram.png');
     // 2026-08-02 拍板：正文图产物的操作条 hover 才浮现。三个无障碍兜底一个都不能被「简化」掉——
@@ -65,7 +65,7 @@ describe('media asset rendering', () => {
     expect(html).toContain('data-media-message-id="user-1"');
     // 2026-08-02 拍板：条上只露 修改/复制，查看/打开/保存/Finder 恒进 ⋯ 菜单
     // （菜单未展开时不渲染），故这里断言动作入口本身在场，而不是被收起项的文案。
-    expect(html).toContain('复制引用');
+    expect(html).toContain('复制图片'); // 2026-08-05 拍板：图片主复制动作=复制位图本体，引用复制为兜底
     expect(html).toContain('media-asset-overflow-more');
   });
 
@@ -239,7 +239,7 @@ describe('media asset rendering', () => {
     expect(html).toContain('render.png');
     expect(html).toContain('file:///repo/render.png');
     // 同上：查看/保存已收进 ⋯ 菜单。
-    expect(html).toContain('复制引用');
+    expect(html).toContain('复制图片'); // 2026-08-05 拍板：图片主复制动作=复制位图本体，引用复制为兜底
     expect(html).toContain('media-asset-overflow-more');
     expect(html).not.toContain('Also modified');
   });

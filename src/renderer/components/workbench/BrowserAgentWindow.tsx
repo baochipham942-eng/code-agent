@@ -1,5 +1,15 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ExternalLink, Lock, MoreHorizontal } from 'lucide-react';
+import {
+  ArrowLeft,
+  ArrowRight,
+  ExternalLink,
+  Loader2,
+  Lock,
+  MessageSquarePlus,
+  MoreHorizontal,
+  RefreshCw,
+  X,
+} from 'lucide-react';
 import { useAppStore } from '../../stores/appStore';
 import { useI18n } from '../../hooks/useI18n';
 import { useLiveAgentPointer } from '../../hooks/useLiveAgentPointer';
@@ -7,6 +17,7 @@ import { useSurfaceLiveFrames } from '../../hooks/useSurfaceLiveFrames';
 import { useWorkbenchBrowserSession } from '../../hooks/useWorkbenchBrowserSession';
 import { getPersistedSurfaceTerminalFrame } from '../../services/surfaceExecutionClient';
 import { useSessionStore } from '../../stores/sessionStore';
+import { useAppshotsStore } from '../../stores/appshotsStore';
 import {
   selectSurfaceExecutionRunSessionV1,
   selectActiveBrowserSurfaceSessionV1,
@@ -24,15 +35,42 @@ import type { SurfaceExecutionTranslationsV1 } from '../../i18n/surfaceExecution
 import { Button, GhostButton, IconButton, Input } from '../primitives';
 import { ConfirmDialog } from '../composites/ConfirmDialog';
 import { AgentPointerOverlay } from './AgentPointerOverlay';
-import { closeUserBrowserLinkRun, openHttpLinkInRail } from '../../services/userBrowserLink';
+import {
+  closeUserBrowserLinkRun,
+  controlUserBrowserHistory,
+  openHttpLinkInRailAsync,
+} from '../../services/userBrowserLink';
 import { normalizeBrowserAddressInput } from '../../utils/browserAddressBar';
+import { formatAddressBarDisplay, extractBrowserHostname } from '../../utils/browserAddressDisplay';
+import {
+  createNavigationPending,
+  failNavigationPending,
+  navigationTargetSettled,
+  shouldRestoreAddressOnBlur,
+  type BrowserNavigationPending,
+} from '../../utils/browserNavigationPending';
+import { resolveBrowserToolbarState } from '../../utils/browserToolbarState';
+import {
+  buildBrowserAnnotationCapture,
+  buildBrowserAnnotationMessageText,
+  stampPinsOnScreenshot,
+  type BrowserAnnotationPin,
+} from '../../utils/browserAnnotation';
+import { openExternalLink } from '../../utils/platform';
 
 // B1-R·R1：workbench「浏览器」tab = **一扇浏览器**，不是状态卡片堆。
 // 一条细 chrome（状态点 + 标题 + ⋯）压顶，其下是用户地址栏（2026-08-04 工单，URL 显示
 // 唯一源），剩下全给实时画面；指针叠加直接画在画面上。profile 导入 / 扩展目录 /
 // relay 启停 / 清 cookie 等高级管理仍只在 LocalOps，从 ⋯ 深链过去。
+// 二期：导航 pending（N1）+ 工具条（N2）+ 批注发 Agent（N3）。
 
 type Copy = ReturnType<typeof useI18n>['t']['workbenchTabs']['agentWindow'];
+
+function formatTemplate(template: string, vars: Record<string, string | number>): string {
+  return template.replace(/\{(\w+)\}/g, (match, key: string) => (
+    vars[key] !== undefined ? String(vars[key]) : match
+  ));
+}
 
 /** 摘要卡用时：startedAt → projection updatedAt（裁定用 updatedAt，cleanup completedAt 依赖事件到达） */
 function formatTerminalDuration(
@@ -188,14 +226,60 @@ export const BrowserAgentWindow: React.FC = () => {
   const [addressEditing, setAddressEditing] = useState(false);
   const [addressInvalid, setAddressInvalid] = useState(false);
   const [pendingInterruptUrl, setPendingInterruptUrl] = useState<string | null>(null);
-  // URL 回写：未在编辑时跟随页面跳转（数据源与既有只读显示同源）；编辑中不抢用户输入。
-  useEffect(() => {
-    if (!addressEditing) setAddressDraft(activeUrl ?? '');
-  }, [activeUrl, addressEditing]);
+  const [navigationPending, setNavigationPending] = useState<BrowserNavigationPending | null>(null);
+  const [toolbarBusy, setToolbarBusy] = useState<'back' | 'forward' | 'reload' | null>(null);
+  const [annotateMode, setAnnotateMode] = useState(false);
+  const [pins, setPins] = useState<BrowserAnnotationPin[]>([]);
+  const [activePinId, setActivePinId] = useState<string | null>(null);
+  const [pinDraft, setPinDraft] = useState('');
+  const [annotateError, setAnnotateError] = useState<string | null>(null);
+  const [annotateSending, setAnnotateSending] = useState(false);
+  const navRequestIdRef = useRef(0);
 
-  const navigateTo = useCallback((url: string) => {
-    openHttpLinkInRail({ href: url, conversationId: currentSessionId, workspace: workingDirectory });
-  }, [currentSessionId, workingDirectory]);
+  // URL 回写：pending 优先；未编辑且无 pending 时跟随页面跳转。
+  useEffect(() => {
+    if (navigationPending) {
+      setAddressDraft(navigationPending.url);
+      return;
+    }
+    if (!addressEditing) setAddressDraft(activeUrl ?? '');
+  }, [activeUrl, addressEditing, navigationPending]);
+
+  // 导航落地：activeUrl 落到目标后清 pending。
+  useEffect(() => {
+    if (navigationPending?.status !== 'pending') return;
+    if (navigationTargetSettled(activeUrl, navigationPending.url)) {
+      setNavigationPending(null);
+      setAddressEditing(false);
+    }
+  }, [activeUrl, navigationPending]);
+
+  const navigateTo = useCallback(async (url: string, override?: { conversationId: string; workspace?: string | null }) => {
+    const requestId = ++navRequestIdRef.current;
+    const previousUrl = activeUrl;
+    setNavigationPending(createNavigationPending(url, previousUrl));
+    setAddressDraft(url);
+    setAddressInvalid(false);
+    try {
+      await openHttpLinkInRailAsync({
+        href: url,
+        conversationId: override?.conversationId ?? currentSessionId,
+        workspace: override?.workspace ?? workingDirectory,
+      });
+      // openLinkInRail resolve = host 已受理导航并回写快照——pending 到此结束
+      // （2026-08-05 真机：baidu.com→www.baidu.com 跳转导致 settle 判定永假、「正在打开」卡死）。
+      if (requestId === navRequestIdRef.current) {
+        setNavigationPending(null);
+      }
+    } catch (error) {
+      if (requestId !== navRequestIdRef.current) return;
+      const message = error instanceof Error ? error.message : copy.navigationFailedGeneric;
+      setNavigationPending(failNavigationPending(
+        createNavigationPending(url, previousUrl),
+        message,
+      ));
+    }
+  }, [activeUrl, copy.navigationFailedGeneric, currentSessionId, workingDirectory]);
 
   const submitAddress = useCallback(() => {
     const normalized = normalizeBrowserAddressInput(addressDraft);
@@ -204,12 +288,35 @@ export const BrowserAgentWindow: React.FC = () => {
       return;
     }
     setAddressInvalid(false);
+    // 立即乐观展示归一化 URL（即使还要弹中断确认）。
+    setAddressDraft(normalized.url);
+    // 空态自动建会话（2026-08-05 产品负责人：不该要求用户先建会话再打开网页）：
+    // 无会话时静默新建一个快速会话并绑定本次导航；建会话失败才落人话失败态。
+    if (!currentSessionId) {
+      setNavigationPending(createNavigationPending(normalized.url, activeUrl));
+      void (async () => {
+        try {
+          const session = await useSessionStore.getState().createSession(undefined, { workingDirectory: null });
+          if (!session) throw new Error(copy.navigationNeedsSession);
+          await navigateTo(normalized.url, {
+            conversationId: session.id,
+            workspace: session.workingDirectory ?? null,
+          });
+        } catch (error) {
+          setNavigationPending(failNavigationPending(
+            createNavigationPending(normalized.url, activeUrl),
+            error instanceof Error && error.message ? error.message : copy.navigationNeedsSession,
+          ));
+        }
+      })();
+      return;
+    }
     if (agentSurfaceBusy) {
       setPendingInterruptUrl(normalized.url);
       return;
     }
-    navigateTo(normalized.url);
-  }, [addressDraft, agentSurfaceBusy, navigateTo]);
+    void navigateTo(normalized.url);
+  }, [activeUrl, addressDraft, agentSurfaceBusy, copy.navigationNeedsSession, currentSessionId, navigateTo, workingDirectory]);
 
   const liveStream = useSurfaceLiveFrames({
     conversationId: currentSessionId,
@@ -255,82 +362,332 @@ export const BrowserAgentWindow: React.FC = () => {
     ? browserSession.repairActions
     : [];
 
+  const canGoBack = Boolean(managedSession.activeTab?.canGoBack);
+  const canGoForward = Boolean(managedSession.activeTab?.canGoForward);
+  const toolbar = resolveBrowserToolbarState({
+    running,
+    hasUrl: Boolean(activeUrl),
+    canGoBack,
+    canGoForward,
+    ownedByCurrentSession,
+  });
+
+  const runHistoryAction = useCallback(async (action: 'back' | 'forward' | 'reload') => {
+    if (!currentSessionId || !workingDirectory) return;
+    setToolbarBusy(action);
+    try {
+      await controlUserBrowserHistory({
+        conversationId: currentSessionId,
+        workspace: workingDirectory,
+        action,
+      });
+      await browserSession.refresh();
+    } catch {
+      // 工具条失败不打断现场；session refresh 已尽力。
+    } finally {
+      setToolbarBusy(null);
+    }
+  }, [browserSession, currentSessionId, workingDirectory]);
+
+  const handleOpenExternal = useCallback(() => {
+    if (!activeUrl) return;
+    openExternalLink(activeUrl);
+  }, [activeUrl]);
+
+  const exitAnnotateMode = useCallback(() => {
+    setAnnotateMode(false);
+    setPins([]);
+    setActivePinId(null);
+    setPinDraft('');
+    setAnnotateError(null);
+    setAnnotateSending(false);
+  }, []);
+
+  const handleStageClickForAnnotate = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+    if (!annotateMode) return;
+    const target = event.currentTarget;
+    const rect = target.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return;
+    const xPercent = ((event.clientX - rect.left) / rect.width) * 100;
+    const yPercent = ((event.clientY - rect.top) / rect.height) * 100;
+    const nextIndex = pins.length === 0 ? 1 : Math.max(...pins.map((p) => p.index)) + 1;
+    const id = `pin-${Date.now().toString(36)}-${nextIndex}`;
+    const pin: BrowserAnnotationPin = {
+      id,
+      xPercent: Math.min(100, Math.max(0, xPercent)),
+      yPercent: Math.min(100, Math.max(0, yPercent)),
+      comment: '',
+      index: nextIndex,
+    };
+    setPins((prev) => [...prev, pin]);
+    setActivePinId(id);
+    setPinDraft('');
+    setAnnotateError(null);
+  }, [annotateMode, pins]);
+
+  const saveActivePinComment = useCallback(() => {
+    if (!activePinId) return;
+    setPins((prev) => prev.map((pin) => (
+      pin.id === activePinId ? { ...pin, comment: pinDraft.trim() } : pin
+    )));
+  }, [activePinId, pinDraft]);
+
+  const deleteActivePin = useCallback(() => {
+    if (!activePinId) return;
+    setPins((prev) => prev.filter((pin) => pin.id !== activePinId));
+    setActivePinId(null);
+    setPinDraft('');
+  }, [activePinId]);
+
+  const handleSendAnnotations = useCallback(async () => {
+    if (pins.length === 0) {
+      setAnnotateError(copy.annotateEmptyPins);
+      return;
+    }
+    const frameDataUrl = liveStream.frame?.dataUrl || terminalFrameDataUrl;
+    if (!frameDataUrl) {
+      setAnnotateError(copy.annotateNeedFrame);
+      return;
+    }
+    setAnnotateSending(true);
+    setAnnotateError(null);
+    try {
+      saveActivePinComment();
+      const pinsToSend = pins.map((pin) => (
+        pin.id === activePinId ? { ...pin, comment: pinDraft.trim() } : pin
+      ));
+      const stamped = await stampPinsOnScreenshot(frameDataUrl, pinsToSend);
+      const capture = buildBrowserAnnotationCapture({
+        pins: pinsToSend,
+        screenshotDataUrl: stamped,
+        pageUrl: activeUrl,
+        pageTitle: activeTitle,
+      });
+      const messageText = buildBrowserAnnotationMessageText({
+        pins: pinsToSend,
+        pageUrl: activeUrl,
+        pageTitle: activeTitle,
+      });
+      useAppshotsStore.getState().setPending(capture, currentSessionId);
+      // 注入 composer 文本并触发提交（ChatInput 监听 browser-annotation:submit，走 appshot 主路径）。
+      window.dispatchEvent(new CustomEvent('browser-annotation:submit', {
+        detail: { text: messageText },
+      }));
+      exitAnnotateMode();
+    } catch (error) {
+      setAnnotateError(error instanceof Error ? error.message : copy.navigationFailedGeneric);
+      setAnnotateSending(false);
+    }
+  }, [
+    activePinId,
+    activeTitle,
+    activeUrl,
+    copy.annotateEmptyPins,
+    copy.annotateNeedFrame,
+    copy.navigationFailedGeneric,
+    currentSessionId,
+    exitAnnotateMode,
+    liveStream.frame?.dataUrl,
+    pinDraft,
+    pins,
+    saveActivePinComment,
+    terminalFrameDataUrl,
+  ]);
+
+  const addressDisplayValue = formatAddressBarDisplay({
+    raw: addressDraft,
+    focused: addressEditing || Boolean(navigationPending),
+  });
+  const annotateHostLabel = extractBrowserHostname(activeUrl) || (activeUrl ? activeUrl : '…');
+
+  const isNavPending = navigationPending?.status === 'pending';
+  const navFailedMessage = navigationPending?.status === 'failed'
+    ? formatTemplate(copy.navigationFailed, {
+      error: navigationPending.error || copy.navigationFailedGeneric,
+    })
+    : null;
+
   return (
     <div
       data-testid="workbench-browser-view"
       className="flex h-full min-h-0 flex-col bg-zinc-950"
     >
+      {annotateMode && (
+        <div
+          data-testid="browser-agent-window-annotate-banner"
+          className="flex shrink-0 items-center gap-2 border-b border-badge-info/20 bg-sky-500/10 px-2.5 py-1.5"
+        >
+          <span className="min-w-0 flex-1 truncate text-xs text-badge-info">
+            {formatTemplate(copy.annotateBanner, { host: annotateHostLabel })}
+          </span>
+          <Button
+            variant="primary"
+            size="sm"
+            loading={annotateSending}
+            disabled={pins.length === 0 || annotateSending}
+            onClick={() => void handleSendAnnotations()}
+            data-testid="browser-agent-window-annotate-send"
+          >
+            {formatTemplate(copy.annotateSend, { count: pins.length })}
+          </Button>
+          <GhostButton
+            size="sm"
+            onClick={exitAnnotateMode}
+            data-testid="browser-agent-window-annotate-exit"
+          >
+            {copy.annotateExit}
+          </GhostButton>
+        </div>
+      )}
+
       <div
-        data-testid="browser-agent-window-chrome"
-        className="flex shrink-0 items-center gap-2 border-b border-white/[0.08] px-2.5 py-1.5"
+        data-testid="browser-agent-window-addressbar"
+        className="flex shrink-0 items-center gap-1 border-b border-white/[0.08] px-2 py-1.5"
       >
         <span
           data-testid="browser-agent-window-status-dot"
           title={running ? copy.running : copy.stopped}
-          className={`h-2 w-2 shrink-0 rounded-full ${
+          className={`mx-1 h-2 w-2 shrink-0 rounded-full ${
             running ? 'bg-mark-success' : 'bg-zinc-600'
           }`}
         />
-        <span className="min-w-0 flex-1 truncate text-xs text-zinc-300" title={activeTitle || undefined}>
-          {activeTitle || copy.activeTabEmpty}
-        </span>
+        <IconButton
+          icon={<ArrowLeft className="h-3.5 w-3.5" />}
+          aria-label={copy.navBack}
+          variant="default"
+          size="sm"
+          disabled={!toolbar.backEnabled || Boolean(toolbarBusy)}
+          loading={toolbarBusy === 'back'}
+          onClick={() => void runHistoryAction('back')}
+          data-testid="browser-agent-window-nav-back"
+        />
+        <IconButton
+          icon={<ArrowRight className="h-3.5 w-3.5" />}
+          aria-label={copy.navForward}
+          variant="default"
+          size="sm"
+          disabled={!toolbar.forwardEnabled || Boolean(toolbarBusy)}
+          loading={toolbarBusy === 'forward'}
+          onClick={() => void runHistoryAction('forward')}
+          data-testid="browser-agent-window-nav-forward"
+        />
+        <IconButton
+          icon={<RefreshCw className="h-3.5 w-3.5" />}
+          aria-label={copy.navReload}
+          variant="default"
+          size="sm"
+          disabled={!toolbar.reloadEnabled || Boolean(toolbarBusy)}
+          loading={toolbarBusy === 'reload'}
+          onClick={() => void runHistoryAction('reload')}
+          data-testid="browser-agent-window-nav-reload"
+        />
+        <div className="relative min-w-0 flex-1">
+          <Input
+            inputSize="sm"
+            aria-label={copy.addressBarLabel}
+            placeholder={copy.addressBarPlaceholder}
+            value={addressDisplayValue}
+            disabled={addressInputDisabled || isNavPending}
+            title={!ownedByCurrentSession ? copy.foreignSessionHint : (addressDraft || undefined)}
+            error={addressInvalid || navigationPending?.status === 'failed'}
+            errorMessage={
+              addressInvalid
+                ? copy.addressBarInvalid
+                : navFailedMessage || undefined
+            }
+            spellCheck={false}
+            autoComplete="off"
+            onChange={(event) => {
+              setAddressDraft(event.target.value);
+              if (addressInvalid) setAddressInvalid(false);
+              if (navigationPending?.status === 'failed') setNavigationPending(null);
+            }}
+            onFocus={() => setAddressEditing(true)}
+            onBlur={() => {
+              setAddressEditing(false);
+              setAddressInvalid(false);
+              if (shouldRestoreAddressOnBlur(navigationPending)) {
+                setAddressDraft(activeUrl ?? '');
+              }
+            }}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                submitAddress();
+              } else if (event.key === 'Escape') {
+                event.currentTarget.blur();
+              }
+            }}
+            data-testid="browser-agent-window-address-input"
+          />
+          {isNavPending && (
+            <span
+              data-testid="browser-agent-window-nav-spinner"
+              className="pointer-events-none absolute right-2 top-1/2 flex -translate-y-1/2 items-center gap-1 text-[10px] text-zinc-400"
+            >
+              <Loader2 className="h-3 w-3 animate-spin" />
+              {copy.navigatingStatus}
+            </span>
+          )}
+        </div>
+        <IconButton
+          icon={<MessageSquarePlus className="h-3.5 w-3.5" />}
+          aria-label={copy.annotate}
+          variant="default"
+          size="sm"
+          disabled={!toolbar.annotateEnabled || annotateMode}
+          onClick={() => {
+            setAnnotateMode(true);
+            setAnnotateError(null);
+          }}
+          data-testid="browser-agent-window-annotate"
+        />
+        <IconButton
+          icon={<ExternalLink className="h-3.5 w-3.5" />}
+          aria-label={copy.openExternal}
+          variant="default"
+          size="sm"
+          disabled={!toolbar.openExternalEnabled}
+          onClick={handleOpenExternal}
+          data-testid="browser-agent-window-open-external"
+        />
         {!ownedByCurrentSession && (
           <span
             data-testid="browser-agent-window-foreign"
             title={`${copy.foreignSessionTitle} · ${copy.foreignSessionHint}`}
-            className="ml-auto flex shrink-0 items-center gap-1 rounded-full border border-badge-warning/20 bg-amber-500/[0.06] px-2 py-0.5 text-[10px] text-badge-warning"
+            className="flex shrink-0 items-center gap-1 rounded-full border border-badge-warning/20 bg-amber-500/[0.06] px-2 py-0.5 text-[10px] text-badge-warning"
           >
             <Lock className="h-3 w-3" />
             {copy.foreignSessionTitle}
           </span>
         )}
-        <div className={ownedByCurrentSession ? 'ml-auto' : ''}>
-          <OverflowMenu copy={copy} modeLabel={modeLabel} onOpenLocalOps={openAdvancedPanel} />
-        </div>
-      </div>
-
-      <div
-        data-testid="browser-agent-window-addressbar"
-        className="flex shrink-0 items-center border-b border-white/[0.08] px-2.5 py-1.5"
-      >
-        <Input
-          inputSize="sm"
-          aria-label={copy.addressBarLabel}
-          placeholder={copy.addressBarPlaceholder}
-          value={addressDraft}
-          disabled={addressInputDisabled}
-          title={!ownedByCurrentSession ? copy.foreignSessionHint : undefined}
-          error={addressInvalid}
-          errorMessage={addressInvalid ? copy.addressBarInvalid : undefined}
-          spellCheck={false}
-          autoComplete="off"
-          onChange={(event) => {
-            setAddressDraft(event.target.value);
-            if (addressInvalid) setAddressInvalid(false);
-          }}
-          onFocus={() => setAddressEditing(true)}
-          onBlur={() => {
-            setAddressEditing(false);
-            setAddressInvalid(false);
-            setAddressDraft(activeUrl ?? '');
-          }}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter') {
-              event.preventDefault();
-              submitAddress();
-            } else if (event.key === 'Escape') {
-              event.currentTarget.blur();
-            }
-          }}
-          data-testid="browser-agent-window-address-input"
-        />
+        <OverflowMenu copy={copy} modeLabel={modeLabel} onOpenLocalOps={openAdvancedPanel} />
       </div>
 
       <div
         data-testid="browser-agent-window-stage"
         className="relative min-h-0 flex-1 overflow-hidden bg-black/40"
+        role={annotateMode ? 'button' : undefined}
+        tabIndex={annotateMode ? 0 : undefined}
+        aria-label={annotateMode ? copy.annotate : undefined}
+        onClick={annotateMode ? handleStageClickForAnnotate : undefined}
+        onKeyDown={annotateMode ? (event) => {
+          // 批注落点依赖鼠标坐标；键盘 Enter 仅用于焦点可达，不模拟坐标落点。
+          if (event.key === 'Escape') exitAnnotateMode();
+        } : undefined}
       >
-        {liveStream.frame ? (
+        {isNavPending && !liveStream.frame ? (
+          <div
+            data-testid="browser-agent-window-nav-pending"
+            className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center"
+          >
+            <Loader2 className="h-5 w-5 animate-spin text-badge-info" />
+            <div className="text-xs text-zinc-300">{copy.navigatingStatus}</div>
+            <div className="max-w-[320px] truncate text-[11px] text-zinc-500" title={navigationPending?.url}>
+              {navigationPending?.url}
+            </div>
+          </div>
+        ) : liveStream.frame ? (
           <img
             data-testid="browser-agent-window-frame"
             src={liveStream.frame.dataUrl}
@@ -433,7 +790,94 @@ export const BrowserAgentWindow: React.FC = () => {
             )}
           </div>
         )}
-        {pointerEvent && (
+
+        {annotateMode && pins.map((pin) => (
+          <button
+            key={pin.id}
+            type="button"
+            data-testid={`browser-agent-window-pin-${pin.index}`}
+            className={`absolute z-20 flex h-6 w-6 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border text-[11px] font-semibold shadow ${
+              pin.id === activePinId
+                ? 'border-white bg-sky-500 text-white'
+                : 'border-white/80 bg-sky-600/90 text-white'
+            }`}
+            style={{ left: `${pin.xPercent}%`, top: `${pin.yPercent}%` }}
+            onClick={(event) => {
+              event.stopPropagation();
+              setActivePinId(pin.id);
+              setPinDraft(pin.comment);
+            }}
+          >
+            {pin.index}
+          </button>
+        ))}
+
+        {annotateMode && activePinId && (
+          <div
+            data-testid="browser-agent-window-pin-editor"
+            className="absolute bottom-3 left-1/2 z-30 w-[min(320px,90%)] -translate-x-1/2 rounded-lg border border-white/10 bg-zinc-900/95 p-2 shadow-xl"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <div className="mb-1.5 flex items-center justify-between gap-2">
+              <span className="text-[11px] text-zinc-400">
+                pin{pins.find((p) => p.id === activePinId)?.index ?? ''}
+              </span>
+              <button
+                type="button"
+                className="rounded p-0.5 text-zinc-500 hover:text-zinc-200"
+                aria-label={copy.annotateExit}
+                onClick={() => {
+                  setActivePinId(null);
+                  setPinDraft('');
+                }}
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+            <Input
+              inputSize="sm"
+              value={pinDraft}
+              placeholder={copy.annotatePinPlaceholder}
+              onChange={(event) => setPinDraft(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  event.preventDefault();
+                  saveActivePinComment();
+                  setActivePinId(null);
+                }
+              }}
+              data-testid="browser-agent-window-pin-comment"
+            />
+            <div className="mt-1.5 flex justify-end gap-1.5">
+              <GhostButton
+                size="sm"
+                onClick={deleteActivePin}
+                data-testid="browser-agent-window-pin-delete"
+              >
+                {copy.annotatePinDelete}
+              </GhostButton>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => {
+                  saveActivePinComment();
+                  setActivePinId(null);
+                }}
+                data-testid="browser-agent-window-pin-save"
+              >
+                {copy.annotatePinSave}
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {annotateError && (
+          <div className="absolute left-1/2 top-3 z-30 -translate-x-1/2 rounded-md border border-red-500/30 bg-red-950/90 px-2 py-1 text-[11px] text-badge-danger">
+            {annotateError}
+          </div>
+        )}
+
+        {pointerEvent && !annotateMode && (
           <AgentPointerOverlay event={pointerEvent} live={livePointer.isLive} />
         )}
       </div>
@@ -448,7 +892,7 @@ export const BrowserAgentWindow: React.FC = () => {
         onConfirm={() => {
           const url = pendingInterruptUrl;
           setPendingInterruptUrl(null);
-          if (url) navigateTo(url);
+          if (url) void navigateTo(url);
         }}
         onCancel={() => setPendingInterruptUrl(null)}
       />

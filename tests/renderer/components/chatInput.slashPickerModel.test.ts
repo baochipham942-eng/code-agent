@@ -313,4 +313,17 @@ describe('slash picker model', () => {
       }),
     ]);
   });
+
+  it('中文/标点后触发 slash（2026-08-05 放宽）：句中加第二个 skill 不被路径守卫拦', () => {
+    expect(getTrailingSlashToken('帮我查一下/sk')).toMatchObject({ query: 'sk' });
+    expect(getTrailingSlashToken('先这样，/')).toMatchObject({ query: '' });
+  });
+
+  it('路径与分数仍不触发：字母/数字/._~- 紧跟的 / 不是命令', () => {
+    expect(getTrailingSlashToken('src/foo')).toBeNull();
+    expect(getTrailingSlashToken('3/4')).toBeNull();
+    expect(getTrailingSlashToken('~/work')).toBeNull();
+    expect(getTrailingSlashToken('./bin')).toBeNull();
+  });
+
 });

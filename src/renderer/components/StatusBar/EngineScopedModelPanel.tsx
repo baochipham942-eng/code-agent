@@ -12,6 +12,8 @@ export type EngineMenuView = 'models' | 'engines';
 export interface EngineScopedModelPanelProps {
   view: EngineMenuView;
   sources: readonly AgentEngineSourceDescriptor[];
+  /** 首次探测尚未返回（本机 CLI 探测要数秒）：列表区显示检测中而不是空白 */
+  sourcesLoading?: boolean;
   catalog: AgentEngineModelCatalog | null;
   currentEngine: AgentEngineKind;
   currentModel?: string;
@@ -24,6 +26,24 @@ export interface EngineScopedModelPanelProps {
   onOpenSettings: (tab: 'model' | 'agentEngine') => void;
 }
 
+// 无官方 logo 资产的引擎用「首字母 + 品牌色瓦片」区分彼此：满屏同一个终端图标
+// 读作「都没有 logo」（真机 2026-08-05）。真 logo 资产到位后配 manifest.iconAsset 即覆盖。
+// 前景一律中性 token（theme-blind 门拦亮档彩色前景类），区分度全靠底色。
+const ENGINE_TILE_PALETTE = [
+  'bg-sky-500/25',
+  'bg-violet-500/25',
+  'bg-amber-500/25',
+  'bg-emerald-500/25',
+  'bg-rose-500/25',
+  'bg-cyan-500/25',
+] as const;
+
+function engineTileClass(manifestId: string): string {
+  let hash = 0;
+  for (let i = 0; i < manifestId.length; i += 1) hash = (hash * 31 + manifestId.charCodeAt(i)) | 0;
+  return ENGINE_TILE_PALETTE[Math.abs(hash) % ENGINE_TILE_PALETTE.length]!;
+}
+
 function EngineIcon({ source }: { source: AgentEngineSourceDescriptor }) {
   return (
     <span
@@ -33,7 +53,12 @@ function EngineIcon({ source }: { source: AgentEngineSourceDescriptor }) {
       {source.iconAsset ? (
         <img src={source.iconAsset} alt="" className="h-8 w-8 object-contain" />
       ) : (
-        <Terminal className="h-8 w-8" aria-hidden="true" />
+        <span
+          aria-hidden="true"
+          className={`grid h-7 w-7 place-items-center rounded-lg text-sm font-semibold text-zinc-200 ${engineTileClass(source.manifestId)}`}
+        >
+          {source.label.trim().charAt(0).toUpperCase() || <Terminal className="h-4 w-4" />}
+        </span>
       )}
     </span>
   );
@@ -62,6 +87,7 @@ export function filterEngineSources(
 export function EngineScopedModelPanel({
   view,
   sources,
+  sourcesLoading = false,
   catalog,
   currentEngine,
   currentModel,
@@ -104,10 +130,20 @@ export function EngineScopedModelPanel({
           >
             <ArrowLeft className="h-4 w-4" />
           </button>
-          <div>
+          <div className="min-w-0 flex-1">
             <div className="text-xs font-medium text-zinc-100">选择执行引擎</div>
             <div className="text-[10px] text-zinc-500">先选引擎，再选择它真实可用的模型</div>
           </div>
+          <button
+            type="button"
+            onClick={() => onOpenSettings('agentEngine')}
+            className="grid h-7 w-7 shrink-0 place-items-center rounded text-zinc-400 hover:bg-zinc-700 hover:text-zinc-100"
+            aria-label="打开执行引擎设置"
+            title="执行引擎设置"
+            data-engine-settings-link
+          >
+            <Settings className="h-3.5 w-3.5" />
+          </button>
         </div>
         <div className="px-2 py-2">
           <label className="relative block">
@@ -123,7 +159,11 @@ export function EngineScopedModelPanel({
           </label>
         </div>
         <div className="max-h-72 overflow-y-auto px-1 pb-1" data-engine-scroll-list>
-          {filteredSources.length === 0 ? (
+          {sourcesLoading && filteredSources.length === 0 ? (
+            <div className="px-3 py-4 text-center text-xs text-zinc-500" data-engine-sources-loading>
+              正在检测本机可用的执行引擎…
+            </div>
+          ) : filteredSources.length === 0 ? (
             <div className="px-3 py-4 text-center text-xs text-zinc-500">无匹配引擎</div>
           ) : filteredSources.map((source) => {
             const selected = source.kind === currentEngine;

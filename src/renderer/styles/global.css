@@ -264,6 +264,13 @@ body.theme-switching * {
   box-shadow: none !important;
 }
 
+/* WKWebView 不给空的 contenteditable 画光标（没有可落的行盒；真机连拍取证 2026-08-05：
+   有字时光标正常闪、空框聚焦后零渲染）。用零宽空格伪元素撑出一个行盒——不进 DOM、
+   不进取值（extract 只读文本节点），一旦有内容 :empty 失效自动退场。 */
+.chat-composer-textarea:empty::before {
+  content: "\200B";
+}
+
 [data-model-search-input]:focus,
 [data-model-search-input]:focus-visible {
   outline: none !important;

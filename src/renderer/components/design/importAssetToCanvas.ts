@@ -43,10 +43,13 @@ export async function importAssetToCanvas(sourcePath: string): Promise<ImportAss
   const assetRel = `${DESIGN_WORKSPACE.CANVAS_ASSETS_DIR}/from-chat-${Date.now()}.${extFromPath(sourcePath)}`;
   const assetAbs = `${runDir}/${assetRel}`;
 
+  // 带上会话 id：host 侧要用它解析会话级工作目录进允许名单（会话产物不在 app 级 cwd 下）。
+  const { useSessionStore } = await import('../../stores/sessionStore');
+  const sessionId = useSessionStore.getState().currentSessionId ?? undefined;
   const res = await window.domainAPI?.invoke<{ path: string }>(
     IPC_DOMAINS.WORKSPACE,
     'importDesignImageFromPath',
-    { sourcePath, outputPath: assetAbs },
+    { sourcePath, outputPath: assetAbs, sessionId },
   );
   if (!res?.success) return { ok: false, error: res?.error?.message || '把图放进画布失败' };
 

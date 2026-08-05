@@ -562,6 +562,34 @@ describe('Sidebar review actions', () => {
     );
   });
 
+  it('saves the v2 diagnostics ZIP as binary and reports its full path', async () => {
+    domainInvokeMock.mockImplementation(async (domain: string, action: string) => {
+      if (domain === IPC_DOMAINS.SESSION && action === 'exportDiagnostics') {
+        return {
+          success: true,
+          data: { content: 'emlwLWJ5dGVz', suggestedFileName: 'neo-session-session--20260102-000100.zip', encoding: 'base64' },
+        };
+      }
+      if (domain === IPC_DOMAINS.WORKSPACE && action === 'saveBinaryToDownloads') {
+        return { success: true, data: { filePath: '/Users/alice/Downloads/neo-session-session--20260102-000100.zip' } };
+      }
+      return { success: true, data: null };
+    });
+    renderSidebarWithContextMenu();
+
+    const exportLogsAction = menuState.items.find((item) => item.label === '导出会话日志');
+    await exportLogsAction?.onClick();
+
+    expect(domainInvokeMock).toHaveBeenCalledWith(IPC_DOMAINS.WORKSPACE, 'saveBinaryToDownloads', {
+      fileName: 'neo-session-session--20260102-000100.zip',
+      base64: 'emlwLWJ5dGVz',
+    });
+    expect(showToastMock).toHaveBeenCalledWith(
+      'success',
+      expect.stringContaining('/Users/alice/Downloads/neo-session-session--20260102-000100.zip'),
+    );
+  });
+
   it('reuses the selected session workbench in the current session from context menu', async () => {
     renderSidebarWithContextMenu();
 

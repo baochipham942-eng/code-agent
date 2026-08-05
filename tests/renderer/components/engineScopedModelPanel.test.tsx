@@ -194,7 +194,9 @@ describe('engine-scoped model panel', () => {
     const slot = document.querySelector('[data-engine-icon-slot]');
     expect(slot?.className).toContain('h-8');
     expect(slot?.className).toContain('w-8');
-    expect(slot?.querySelector('svg')?.getAttribute('class')).toContain('h-8');
+    // 无 iconAsset 的引擎回退成「首字母品牌色瓦片」（2026-08-05：满屏同一终端图标读作都没有 logo）
+    expect(slot?.textContent).toBe('M');
+    expect(slot?.querySelector('span')?.className).toContain('rounded-lg');
   });
 
   it('shows the detected Kimi model name in the popup header and allows switching it', () => {

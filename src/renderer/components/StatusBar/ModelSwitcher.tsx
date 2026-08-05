@@ -39,6 +39,10 @@ import { useModeStore } from '../../stores/modeStore';
 import { trackRenderer } from '../../observability/posthogRenderer';
 import { POSTHOG_EVENTS } from '@shared/observability/posthog-events';
 import { Z_LAYERS } from '../../styles/zLayers';
+
+// 引擎探测结果的会话级缓存：探测要真跑本机 CLI（数秒），重开面板先展示上次结果再后台刷新，
+// 首次打开显示「检测中」而不是空白（真机 2026-08-05：空白太久被误读为没有引擎）。
+let engineSourcesCache: AgentEngineSourceDescriptor[] = [];
 import {
   buildProviderBillingSummary,
   buildProviderHealthSummary,
@@ -188,7 +192,8 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
   const anchorPendingRef = useRef(false);
   const [menuPos, setMenuPos] = useState<ModelSwitcherMenuPosition | null>(null);
   const [engineMenuView, setEngineMenuView] = useState<EngineMenuView>('models');
-  const [engineSources, setEngineSources] = useState<AgentEngineSourceDescriptor[]>([]);
+  const [engineSources, setEngineSources] = useState<AgentEngineSourceDescriptor[]>(() => engineSourcesCache);
+  const [engineSourcesLoading, setEngineSourcesLoading] = useState(engineSourcesCache.length === 0);
   const [engineCatalog, setEngineCatalog] = useState<AgentEngineModelCatalog | null>(null);
   const [busyEngineId, setBusyEngineId] = useState<string | null>(null);
   const sessionId = useSessionStore((s) => s.currentSessionId);
@@ -324,13 +329,16 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
     ]).then(([sourceResult, catalogResult]) => {
       if (cancelled) return;
       if (sourceResult?.success && Array.isArray(sourceResult.data)) {
+        engineSourcesCache = sourceResult.data;
         setEngineSources(sourceResult.data);
       }
       if (catalogResult?.success && catalogResult.data?.catalog) {
         setEngineCatalog(catalogResult.data.catalog);
       }
+      setEngineSourcesLoading(false);
     }).catch(() => {
       // 探测失败时保留当前会话触发器；不伪造来源或模型。
+      if (!cancelled) setEngineSourcesLoading(false);
     });
     return () => {
       cancelled = true;
@@ -723,7 +731,17 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
     setBusyEngineId(source.manifestId);
     try {
       const descriptor = descriptorResponse.data as Parameters<typeof buildModelSwitcherEngineSelection>[0];
-      const workingDirectory = session?.workingDirectory ?? appWorkingDirectory ?? undefined;
+      let workingDirectory = session?.workingDirectory ?? appWorkingDirectory ?? undefined;
+      // 外部 CLI 引擎必须有真实工作目录才能跑：会话（快速对话）和 app 级都没有时，
+      // 现场让用户选一个目录，而不是把 host 守卫的英文错误原样抛给用户（真机 2026-08-05）。
+      if (source.kind !== 'native' && !workingDirectory?.trim()) {
+        const picked = await window.domainAPI?.invoke<string | null>(IPC_DOMAINS.WORKSPACE, 'selectDirectory', {});
+        if (!picked?.success || !picked.data) {
+          toast.error('外部引擎需要一个工作目录才能运行，请先选择目录');
+          return;
+        }
+        workingDirectory = picked.data;
+      }
       await updateSessionEngine(
         sessionId,
         buildModelSwitcherEngineSelection(
@@ -796,6 +814,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
         <EngineScopedModelPanel
           view="engines"
           sources={engineSources}
+          sourcesLoading={engineSourcesLoading}
           catalog={engineCatalog}
           currentEngine={engine.kind}
           currentModel={engine.model}
@@ -812,6 +831,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
           <EngineScopedModelPanel
             view="models"
             sources={engineSources}
+            sourcesLoading={engineSourcesLoading}
             catalog={engineCatalog}
             currentEngine={engine.kind}
             currentModel={engine.model}

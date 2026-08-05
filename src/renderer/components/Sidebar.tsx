@@ -86,19 +86,26 @@ export const Sidebar: React.FC = () => {
     if (!isTauriMode()) return;
     let alive = true;
     const timers: number[] = [];
-    const probe = () => {
-      isNativeWindowFullscreen()
-        .then((v) => { if (alive) setIsNativeFullscreen(v); })
-        .catch(() => {});
+    // 判读规则（真机 2026-08-05 两轮迭代）：退出全屏动画期间 isFullscreen() 的
+    // true 是旧值且能拖过 1.2s——早拍采信 true 会把已让位的 logo 又翻回来压灯。
+    // 所以：false 永远可信、读到立即采信（进全屏方向的旧 false 只是晚挂标，无感）；
+    // true 只在 resize 后 ≥1.8s 的拍才采信（动画早已收尾，读到即真在全屏里）。
+    const probeAt = (delay: number) => {
+      timers.push(window.setTimeout(() => {
+        isNativeWindowFullscreen()
+          .then((v) => {
+            if (!alive) return;
+            if (!v) setIsNativeFullscreen(false);
+            else if (delay >= 1800) setIsNativeFullscreen(true);
+          })
+          .catch(() => {});
+      }, delay));
     };
     const check = () => {
-      // 乐观让位：resize 一来先按「非全屏」渲染——退出动画瞬间红绿灯就回位，
-      // 立刻查询还会读到旧值 true，logo 会多存在一拍压在灯上（真机 2026-08-05
-      // 「会一瞬间存在」）。进全屏的确认交给延迟拍：全屏里左上角本来就是空的，
-      // 品牌标晚 ~1s 挂上无感；退出让位则必须是瞬时的。
+      // 乐观让位：resize 一来先按「非全屏」渲染，退出瞬间红绿灯回位不被压。
       if (alive) setIsNativeFullscreen(false);
       while (timers.length) window.clearTimeout(timers.pop());
-      timers.push(window.setTimeout(probe, 400), window.setTimeout(probe, 1200));
+      [300, 900, 1800, 2600].forEach(probeAt);
     };
     check();
     window.addEventListener('resize', check);

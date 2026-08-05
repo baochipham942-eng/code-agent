@@ -505,12 +505,18 @@ export const App: React.FC = () => {
 
   const refreshFolderTrust = useCallback(async () => {
     try {
-      const evaluation = await invokeDomain<FolderTrustEvaluationView>(IPC_DOMAINS.FOLDER_TRUST, 'get');
+      // 带上当前会话 id：host 侧按会话绑定 workingDirectory 做信任评估
+      // （桌面 WEB_MODE 恒 true，不传 sessionId 会永远评到 <dataDir>/work）。
+      const evaluation = await invokeDomain<FolderTrustEvaluationView>(
+        IPC_DOMAINS.FOLDER_TRUST,
+        'get',
+        currentSessionId ? { sessionId: currentSessionId } : undefined,
+      );
       setFolderTrustEvaluation(needsFolderTrustDecision(evaluation) ? evaluation : null);
     } catch (error) {
       logger.warn('Failed to evaluate folder trust', { error });
     }
-  }, []);
+  }, [currentSessionId]);
 
   useEffect(() => {
     void refreshFolderTrust();
@@ -522,7 +528,10 @@ export const App: React.FC = () => {
       const evaluation = await invokeDomain<FolderTrustEvaluationView>(
         IPC_DOMAINS.FOLDER_TRUST,
         'set',
-        { state },
+        {
+          state,
+          ...(currentSessionId ? { sessionId: currentSessionId } : {}),
+        },
       );
       // 决定已生效（trusted 或 blocked）就关窗；只有 host 回报仍是未决定态才继续问。
       setFolderTrustEvaluation(needsFolderTrustDecision(evaluation) ? evaluation : null);
@@ -533,7 +542,7 @@ export const App: React.FC = () => {
     } finally {
       setFolderTrustBusy(false);
     }
-  }, [t]);
+  }, [currentSessionId, t]);
 
   // 应用启动时检查更新（强制更新检查）
   useEffect(() => {

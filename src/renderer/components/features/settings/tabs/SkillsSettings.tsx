@@ -24,6 +24,7 @@ import {
 import { createLogger } from '../../../../utils/logger';
 import { isWebMode } from '../../../../utils/platform';
 import { useAppStore } from '../../../../stores/appStore';
+import { useSessionStore } from '../../../../stores/sessionStore';
 import { useI18n } from '../../../../hooks/useI18n';
 import { WebModeBanner } from '../WebModeBanner';
 import { describeSkillIpcError, invokeSkillIPC, invokeSkillIPCOrThrow, isSkillFolderTrustError } from '../../../../services/invokeSkillIPC';
@@ -61,6 +62,7 @@ export const SkillsSettings: React.FC = () => {
   const skillsText = t.settings.skills.main;
   const settingsCapabilityFocus = useAppStore((state) => state.settingsCapabilityFocus);
   const clearSettingsCapabilityFocus = useAppStore((state) => state.clearSettingsCapabilityFocus);
+  const currentSessionId = useSessionStore((state) => state.currentSessionId);
   // 视图状态（默认「已安装」：先看自己的，再逛货架）
   // 默认落「发现安装」：新用户「已安装」多为空，发现视角是更好的第一屏；
   // 深链（settingsCapabilityFocus）与安装成功后仍会显式切到已安装
@@ -257,6 +259,7 @@ export const SkillsSettings: React.FC = () => {
       const evaluation = await ipcService.invokeDomain<FolderTrustEvaluationView>(
         IPC_DOMAINS.FOLDER_TRUST,
         'get',
+        currentSessionId ? { sessionId: currentSessionId } : undefined,
       );
       if (evaluation.state === 'trusted') {
         // 目录已被别处授权：不必弹窗，直接重试
@@ -277,7 +280,11 @@ export const SkillsSettings: React.FC = () => {
       const evaluation = await ipcService.invokeDomain<FolderTrustEvaluationView>(
         IPC_DOMAINS.FOLDER_TRUST,
         'set',
-        { state, decidedBy: 'skills-settings' },
+        {
+          state,
+          decidedBy: 'skills-settings',
+          ...(currentSessionId ? { sessionId: currentSessionId } : {}),
+        },
       );
       if (evaluation.state === 'trusted') {
         setTrustEvaluation(null);

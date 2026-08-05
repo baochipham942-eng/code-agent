@@ -85,14 +85,27 @@ export const Sidebar: React.FC = () => {
   useEffect(() => {
     if (!isTauriMode()) return;
     let alive = true;
-    const check = () => {
+    const timers: number[] = [];
+    const probe = () => {
       isNativeWindowFullscreen()
         .then((v) => { if (alive) setIsNativeFullscreen(v); })
         .catch(() => {});
     };
+    const check = () => {
+      probe();
+      // macOS 全屏进出带过渡动画：resize 触发那一刻 isFullscreen() 可能还是旧值，
+      // 且动画收尾后不再来新事件——退出全屏时 logo 就残留在红绿灯底下（真机 2026-08-05）。
+      // 动画收尾后补两拍核实（清旧定时器防抖）。
+      while (timers.length) window.clearTimeout(timers.pop());
+      timers.push(window.setTimeout(probe, 400), window.setTimeout(probe, 1200));
+    };
     check();
     window.addEventListener('resize', check);
-    return () => { alive = false; window.removeEventListener('resize', check); };
+    return () => {
+      alive = false;
+      window.removeEventListener('resize', check);
+      while (timers.length) window.clearTimeout(timers.pop());
+    };
   }, []);
   const trafficLightZone = isMacShell && isTauriMode() && !isNativeFullscreen;
   const sb = t.sidebar;

@@ -237,9 +237,13 @@ export const SidebarSessionList: React.FC<SidebarSessionListProps> = ({
                   onClick={() => setTierCollapsed(section.tier, !isCollapsed)}
                   className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
                 >
-                  <ChevronRight
-                    className={`h-3 w-3 shrink-0 text-zinc-600 transition-transform ${isCollapsed ? '' : 'rotate-90'}`}
-                  />
+                  {/* chevron 装进 16px 槽：字形仍 12，但槽宽与各行前导图标同宽，
+                      节头文字才落在 42 左轨上（实测修前 38，比空间名/能力区行文字左 4px）。 */}
+                  <span className="flex h-4 w-4 shrink-0 items-center justify-center">
+                    <ChevronRight
+                      className={`h-3 w-3 text-zinc-600 transition-transform ${isCollapsed ? '' : 'rotate-90'}`}
+                    />
+                  </span>
                   <span className="min-w-0 flex-1 truncate text-sm text-zinc-500">{tierLabels[section.tier]}</span>
                 </button>
                 {section.tier === 'space' && cloudBadge && (

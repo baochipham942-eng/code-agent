@@ -24,6 +24,7 @@ vi.mock('../../../src/renderer/services/ipcService', () => ({
 import { SkillsSettings } from '../../../src/renderer/components/features/settings/tabs/SkillsSettings';
 import type { InstalledSkill } from '../../../src/renderer/components/features/settings/tabs/SkillsInstalledTab';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
+import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
 import { invokeSkillIPC, invokeSkillIPCOrThrow } from '../../../src/renderer/services/invokeSkillIPC';
 import ipcService from '../../../src/renderer/services/ipcService';
 import { SKILL_CHANNELS } from '../../../src/shared/ipc/channels';
@@ -84,12 +85,15 @@ describe('SkillsSettings 目录信任门原地修复', () => {
     vi.mocked(invokeSkillIPC).mockResolvedValue([pdfSkill]);
     vi.mocked(invokeSkillIPCOrThrow).mockResolvedValue(undefined);
     mockInvokeDomain();
+    // folderTrust 评估对象按会话绑定；测试固定当前会话 id 以便断言 payload。
+    useSessionStore.setState({ currentSessionId: 'sess-skills-trust' });
   });
 
   afterEach(() => {
     cleanup();
     vi.clearAllMocks();
     useAppStore.setState({ settingsCapabilityFocus: null });
+    useSessionStore.setState({ currentSessionId: null });
   });
 
   it('信任类错误 → 错误条内联「确认信任」按钮且不自动消失；非信任错误 → 无按钮', async () => {
@@ -115,23 +119,28 @@ describe('SkillsSettings 目录信任门原地修复', () => {
     const select = await renderInstalledTab();
     fireEvent.change(select, { target: { value: 'on' } });
 
-    // ① 点「确认信任」→ FOLDER_TRUST get → 弹完整 FolderTrustDialog
+    // ① 点「确认信任」→ FOLDER_TRUST get（带当前会话 id）→ 弹完整 FolderTrustDialog
     fireEvent.click(await screen.findByText(skillsText.confirmTrust));
     await screen.findByText(zh.folderTrust.title);
     await waitFor(() =>
-      expect(vi.mocked(ipcService.invokeDomain)).toHaveBeenCalledWith(IPC_DOMAINS.FOLDER_TRUST, 'get'),
+      expect(vi.mocked(ipcService.invokeDomain)).toHaveBeenCalledWith(
+        IPC_DOMAINS.FOLDER_TRUST,
+        'get',
+        { sessionId: 'sess-skills-trust' },
+      ),
     );
     // 零危险项：说明文案 + identityChanged 警告条在，危险项清单不在
     expect(screen.getByText(zh.folderTrust.emptyDangerNote)).toBeTruthy();
     expect(screen.getByText(zh.folderTrust.identityChanged)).toBeTruthy();
     expect(document.querySelector('[data-testid="folder-trust-danger-list"]')).toBeNull();
 
-    // ② 弹窗内确认信任 → set trusted（decidedBy=skills-settings）
+    // ② 弹窗内确认信任 → set trusted（decidedBy=skills-settings + sessionId）
     fireEvent.click(screen.getByRole('button', { name: zh.folderTrust.trust }));
     await waitFor(() =>
       expect(vi.mocked(ipcService.invokeDomain)).toHaveBeenCalledWith(IPC_DOMAINS.FOLDER_TRUST, 'set', {
         state: 'trusted',
         decidedBy: 'skills-settings',
+        sessionId: 'sess-skills-trust',
       }),
     );
 

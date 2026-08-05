@@ -96,6 +96,7 @@ export const workbenchTabsZh = {
       navigatingStatus: '正在打开…',
       navigationFailed: '打开失败：{error}',
       navigationFailedGeneric: '打开失败，请检查网址后重试',
+      navigationNeedsSession: '还没有会话，先新建一个会话再打开网页',
       // 二期 N2：工具条
       navBack: '后退',
       navForward: '前进',
@@ -208,6 +209,7 @@ export const workbenchTabsEn: typeof workbenchTabsZh = {
       navigatingStatus: 'Opening…',
       navigationFailed: 'Failed to open: {error}',
       navigationFailedGeneric: 'Failed to open. Check the URL and try again.',
+      navigationNeedsSession: 'Create a conversation first, then open a page.',
       navBack: 'Back',
       navForward: 'Forward',
       navReload: 'Reload',

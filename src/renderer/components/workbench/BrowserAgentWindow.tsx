@@ -289,12 +289,21 @@ export const BrowserAgentWindow: React.FC = () => {
     setAddressInvalid(false);
     // 立即乐观展示归一化 URL（即使还要弹中断确认）。
     setAddressDraft(normalized.url);
+    // 前置条件（2026-08-05 真机：无会话/无工作目录时曾抛内部英文错误）：
+    // 缺前提直接进失败态给人话，不进导航链路。
+    if (!currentSessionId || !workingDirectory) {
+      setNavigationPending(failNavigationPending(
+        createNavigationPending(normalized.url, activeUrl),
+        copy.navigationNeedsSession,
+      ));
+      return;
+    }
     if (agentSurfaceBusy) {
       setPendingInterruptUrl(normalized.url);
       return;
     }
     void navigateTo(normalized.url);
-  }, [addressDraft, agentSurfaceBusy, navigateTo]);
+  }, [activeUrl, addressDraft, agentSurfaceBusy, copy.navigationNeedsSession, currentSessionId, navigateTo, workingDirectory]);
 
   const liveStream = useSurfaceLiveFrames({
     conversationId: currentSessionId,
@@ -554,7 +563,7 @@ export const BrowserAgentWindow: React.FC = () => {
         <IconButton
           icon={<ArrowLeft className="h-3.5 w-3.5" />}
           aria-label={copy.navBack}
-          variant="ghost"
+          variant="default"
           size="sm"
           disabled={!toolbar.backEnabled || Boolean(toolbarBusy)}
           loading={toolbarBusy === 'back'}
@@ -564,7 +573,7 @@ export const BrowserAgentWindow: React.FC = () => {
         <IconButton
           icon={<ArrowRight className="h-3.5 w-3.5" />}
           aria-label={copy.navForward}
-          variant="ghost"
+          variant="default"
           size="sm"
           disabled={!toolbar.forwardEnabled || Boolean(toolbarBusy)}
           loading={toolbarBusy === 'forward'}
@@ -574,7 +583,7 @@ export const BrowserAgentWindow: React.FC = () => {
         <IconButton
           icon={<RefreshCw className="h-3.5 w-3.5" />}
           aria-label={copy.navReload}
-          variant="ghost"
+          variant="default"
           size="sm"
           disabled={!toolbar.reloadEnabled || Boolean(toolbarBusy)}
           loading={toolbarBusy === 'reload'}
@@ -633,7 +642,7 @@ export const BrowserAgentWindow: React.FC = () => {
         <IconButton
           icon={<MessageSquarePlus className="h-3.5 w-3.5" />}
           aria-label={copy.annotate}
-          variant="ghost"
+          variant="default"
           size="sm"
           disabled={!toolbar.annotateEnabled || annotateMode}
           onClick={() => {
@@ -645,7 +654,7 @@ export const BrowserAgentWindow: React.FC = () => {
         <IconButton
           icon={<ExternalLink className="h-3.5 w-3.5" />}
           aria-label={copy.openExternal}
-          variant="ghost"
+          variant="default"
           size="sm"
           disabled={!toolbar.openExternalEnabled}
           onClick={handleOpenExternal}

@@ -168,4 +168,17 @@ describe('BrowserAgentWindow 导航 pending 三态（N1）', () => {
     expect(input.value).toBe('https://bad.example/');
     expect(input.value).not.toBe('');
   });
+
+  it('无会话前提：回车不进导航链路，显示人话提示而非内部英文错误（2026-08-05 真机）', async () => {
+    useSessionStore.setState({ currentSessionId: null });
+
+    render(<BrowserAgentWindow />);
+    typeAndEnter('baidu.com');
+
+    await vi.waitFor(() => {
+      expect(screen.getByText(/先新建一个会话/)).toBeTruthy();
+    });
+    expect(openHttpLinkInRailAsync).not.toHaveBeenCalled();
+    expect(screen.queryByText(/Invalid browser navigation request/)).toBeNull();
+  });
 });

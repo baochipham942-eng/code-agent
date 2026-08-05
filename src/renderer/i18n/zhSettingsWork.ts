@@ -579,6 +579,7 @@ export const zhSettingsWork = {
           archived: '归档',
         },
         kindLabels: {
+          directive: '用户规则',
           user: '用户',
           feedback: '反馈',
           project: '项目',

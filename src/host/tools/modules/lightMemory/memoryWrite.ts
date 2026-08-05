@@ -28,13 +28,19 @@ import {
 } from '../../../lightMemory/indexLoader';
 import { createFileArtifact, createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { guardSensitiveText } from '../../../security/sensitiveDataGuard';
+import { atomicWriteMemoryText } from '../../../memory/atomicMemoryFile';
+import {
+  assertDirectivePersistenceAuthorized,
+  requestDirectiveMemoryConfirmation,
+  type DirectiveMemoryConfirmationResult,
+} from '../../../memory/directiveMemoryConfirmation';
 import {
   writeScopedMemory,
   deleteScopedMemory,
   type ScopedMemoryTarget,
 } from '../../../services/roleAssets/roleAssetService';
 
-const VALID_TYPES = ['user', 'feedback', 'project', 'reference', 'skill'] as const;
+const VALID_TYPES = ['directive', 'user', 'feedback', 'project', 'reference', 'skill'] as const;
 type MemoryType = (typeof VALID_TYPES)[number];
 
 // Schema lives in memoryWrite.schema.ts (P0-7 single source of truth)
@@ -101,13 +107,42 @@ class MemoryWriteHandler implements ToolHandler<Record<string, unknown>, string>
       return { ok: false, error: scopedTarget.error, code: 'INVALID_ARGS' };
     }
 
+    let directiveConfirmation: DirectiveMemoryConfirmationResult | undefined;
+    if (action === 'write' && args.type === 'directive') {
+      if (scopedTarget) {
+        return {
+          ok: false,
+          error: 'Directive memory is user-level and only supports global scope.',
+          code: 'INVALID_ARGS',
+        };
+      }
+      if (!args.name || !args.description || !args.content) {
+        return {
+          ok: false,
+          error: 'write action requires: name, description, type, content',
+          code: 'INVALID_ARGS',
+        };
+      }
+      directiveConfirmation = await requestDirectiveMemoryConfirmation({
+        content: String(args.content || ''),
+        category: String(args.name || 'User directive'),
+      });
+      if (!directiveConfirmation.confirmed) {
+        return {
+          ok: false,
+          error: 'Directive memory was not explicitly confirmed by the user.',
+          code: 'PERMISSION_DENIED',
+        };
+      }
+    }
+
     try {
       const result = scopedTarget
         ? action === 'write'
           ? await executeScopedWrite(args, sanitized, scopedTarget, ctx)
           : await executeScopedDelete(sanitized, scopedTarget, ctx)
         : action === 'write'
-          ? await executeWrite(args, sanitized, ctx)
+          ? await executeWrite(args, sanitized, ctx, directiveConfirmation)
           : await executeDelete(sanitized, ctx);
       onProgress?.({ stage: 'completing', percent: 100 });
       if (result.ok) {
@@ -231,6 +266,7 @@ async function executeWrite(
   args: Record<string, unknown>,
   filename: string,
   ctx: ToolContext,
+  directiveConfirmation?: DirectiveMemoryConfirmationResult,
 ): Promise<ToolResult<string>> {
   const name = args.name as string | undefined;
   const description = args.description as string | undefined;
@@ -252,6 +288,7 @@ async function executeWrite(
       code: 'INVALID_ARGS',
     };
   }
+  assertDirectivePersistenceAuthorized(memType, directiveConfirmation?.confirmed === true);
 
   const memDir = await ensureMemoryDir();
   const filePath = path.join(memDir, filename);
@@ -265,12 +302,18 @@ async function executeWrite(
 name: ${safeName}
 description: ${safeDescription}
 type: ${memType}
----
+${directiveConfirmation ? `directive_confirmation: user\ndirective_confirmation_id: ${directiveConfirmation.requestId}\ndirective_confirmed_at: ${new Date(directiveConfirmation.respondedAt).toISOString()}\n` : ''}---
 
 ${safeContent}
 `;
 
-  await fs.writeFile(filePath, fileContent, 'utf-8');
+  await atomicWriteMemoryText(filePath, fileContent, {
+    validate: (written) => {
+      if (!written.startsWith('---\n') || !written.includes('\n---\n')) {
+        throw new Error('Memory frontmatter validation failed.');
+      }
+    },
+  });
   await updateIndex(filename, safeDescription);
   const artifact = await createFileArtifact(filePath, schema.name, ctx, {
     kind: 'text',
@@ -378,7 +421,7 @@ async function updateIndex(filename: string, description: string): Promise<void>
   // Append new entry
   lines.push(`- [${filename}](${filename}) — ${description}`);
 
-  await fs.writeFile(indexPath, lines.join('\n'), 'utf-8');
+  await atomicWriteMemoryText(indexPath, lines.join('\n'));
 }
 
 async function removeFromIndex(filename: string): Promise<void> {
@@ -388,7 +431,7 @@ async function removeFromIndex(filename: string): Promise<void> {
     const existing = await fs.readFile(indexPath, 'utf-8');
     const entryPattern = new RegExp(`^- \\[${escapeRegex(filename)}\\].*$`, 'gm');
     const updated = existing.replace(entryPattern, '').replace(/\n{3,}/g, '\n\n');
-    await fs.writeFile(indexPath, updated, 'utf-8');
+    await atomicWriteMemoryText(indexPath, updated);
   } catch {
     // INDEX.md doesn't exist — nothing to remove
   }

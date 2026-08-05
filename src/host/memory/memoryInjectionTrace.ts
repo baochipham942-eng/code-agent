@@ -1,4 +1,6 @@
 export type MemoryInjectionBlockType =
+  | 'user-directives'
+  | 'user-memory'
   | 'seed-memory'
   | 'memory_index'
   | 'memory_hint'

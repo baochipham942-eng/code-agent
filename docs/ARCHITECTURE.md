@@ -1,5 +1,6 @@
 # Agent Neo / Code Agent - 架构设计文档
 
+> 版本: 9.30 (9.29 + 2026-08-05 ADR-054 会话指挥台四批落地：文字/语音统一任务槽位、前台窄工具与持续输入、User Directives/User Memory 权限分块、随时开口快捷键引导、实时语音成本与单通上限)
 > 版本: 9.29 (9.28 + 2026-07-12~18 Durable Run 生产切换、Web/External 终态单一事实源、renderer 权限与工具事件投影、Skill IPC 类型合同、事件假 seam 清理、桌面启动分段与更新后 compile-cache 预热；详见 runtime safety as-built spec 与 ADR-037)
 > 版本: 9.28 (9.27 + 2026-06-26 Neo Tools evidence/control 收口：统一 EvidenceRef、goal verification card、Browser/Computer durable proof、Agent Pointer 可见化、background/subagent recovery plan、agent tree/worktree read-only review；当前合同已折入本文对应能力域与 ADR-029)
 > 版本: 9.27 (9.26 + 2026-06-22 设计 tab 4 媒介重规划 + 厚版演示稿全链路：引擎从 agent 工具抽 service、SlideData[] 单一真源、大纲编辑器/逐页预览/就地改字、4 增强〔品牌色注入 OKLCH→sRGB / AI 大纲 / LibreOffice 像素预览 / AI 配图模型可选〕，PR #260；详见 design-mode.md §15)
@@ -42,6 +43,7 @@
 | [Runtime Consolidation Snapshot](./architecture/runtime-consolidation-2026-05-31.md) | 2026-05-29~06-01 运行时收口 as-built：workflow、provider 控制、app-host 验收、observability、dead path 归属、product closure |
 | [Agent Architecture Debt Iteration](./architecture/agent-architecture-debt-iteration-plan-2026-05-31.md) | runtime ports、model/app-host 拆分、prompt/session/eval gates 的分阶段闭环 |
 | [Chat-Native Workbench](./architecture/workbench.md) | 聊天主链路能力工作台（ConversationEnvelope + InlineWorkbenchBar + Turn Timeline + Prompt Rewind），与 TaskPanel(sidecar) 分工 |
+| [Live Voice](./architecture/live-voice.md) | 会话内实时语音、随时开口全局快捷键、上游 token 用量、共享价表与单通成本上限 |
 | [Artifact Verification](./architecture/artifact-verification.md) | Game/Deck/Dashboard verifier、repair guard、ArtifactIssue、EvalReplayQualityReport、Admin Review Queue；旧 AcceptanceRunner / Delivery Review / Preview Feedback 已下线 |
 | [Activity Providers](./architecture/activity-providers.md) | OpenChronicle / Tauri Native Desktop / audio / screenshot-analysis 统一上下文 provider 边界 |
 | [Native App 集成](./architecture/native-app-integration.md) | Skill / Tool / Service / Connector / MCP 边界与调用链路；为什么 macOS 原生应用走 connector 不走 MCP |
@@ -114,6 +116,7 @@
 | 050 | MCP 配置里的凭据引用（`secureref:`） | accepted |
 | 051 | 能力中心连接器持久化到用户级，不绑工作目录 | accepted |
 | 053 | 通话态权限档跟随会话选择，不再抬严到 readOnly | accepted |
+| 054 | 会话=指挥台：前台持续可输入，文字与语音统一派活语义 | accepted |
 
 > **ADR-040 执行状态（2026-07-18）**：Word / PPT / Excel locator、共享 picker、generated-PPT resolver 与隐私安全 telemetry 已随 #377/#385 合入 `main`。Poppler `26.07.0` 双原生架构候选由 run `29412794021` 产出并发布到项目控制的不可变 OSS 前缀，`config/poppler-sidecar.lock.json` 已为 `ready`，Poppler promotion stop-ship 已解除；正式版本仍需走常规签名、公证、DMG 与安装版验收。
 
@@ -374,7 +377,7 @@ code-agent/
 | Per-agent Stop UI / 信号桥接 | `SwarmMonitor` 每个 agent 卡片可独立 Stop，走 `swarm:cancel-agent` IPC（`spawnGuard.cancel` 或 `parallelCoordinator.abortTask`）；`subagentExecutor` 用 `createChildAbortController` 把 parent abortSignal 与内部 timeout 单向桥接到子控制器，child abort 不反向传播 | `src/renderer/components/features/swarm/SwarmMonitor.tsx`、`src/host/ipc/swarm.ipc.ts`、`src/shared/constants/timeouts.ts`（`CANCELLATION_TIMEOUTS`） |
 | Computer-use MCP 入口归位（Level 1） | Computer + Screenshot 包装成 native ToolModule（`computer.ts` + `computer.schema.ts`），统一走 MCP 工具入口；handler 做权限检查后委托 legacy `ComputerTool.execute`，结果经 `adaptVisionLegacyResult` 适配。当前是 wrapper-mode，占位到 ToolModule 协议层，为后续 Level 2 原生重写留接口 | `src/host/tools/modules/vision/computer.ts`、`computer.schema.ts` |
 | Workbench 诊断面板群 | Context Health、Knowledge Memory Audit（`KnowledgeMemoryPanel` + `memory.ipc.ts` 的 `MemoryAuditRequest`/`serializedAuditMemory`）、Activity Entry（`ActivityPanel` + `activityContextProvider`）、Computer-use Diagnostics（`computerUseWorkbench.ts` + `computerSurface.ts`）、Time Capability（集中读 `timeouts.ts`）五类诊断面板进入聊天主链路；Workspace Preview 露出活动与工作区产物（`WorkspacePreviewPanel` + `memoryActivityNavigation`） | `src/renderer/components/features/{knowledge,activity}/*`、`src/renderer/components/WorkspacePreviewPanel.tsx`、`src/renderer/utils/computerUseWorkbench.ts` |
-| Runtime Steer | 运行中途用户输入经 `steer()` → `messageProcessor.injectSteerMessage()` 排队进当前轮次消息历史并持久化，置 `needsReinference=true` 下轮推理；guided UI 用 `RuntimeInputDelivery` 元数据标记 `queued_next_turn`；web host follow-up 在 `/web/routes/agent.ts` 接 `clientMessageId` 字段供 prompt rewind 溯源 | `src/host/agent/runtime/conversationRuntime.ts`、`messageProcessor.ts`、`src/web/routes/agent.ts` |
+| Runtime Steer | 运行中途用户输入经 `steer()` → `messageProcessor.injectSteerMessage()` 进入当前轮次消息历史并持久化，置 `needsReinference=true` 继续推理；guided UI 用 `RuntimeInputDelivery` 回显真实投递结果；web host follow-up 在 `/web/routes/agent.ts` 接 `clientMessageId` 字段供 prompt rewind 溯源 | `src/host/agent/runtime/conversationRuntime.ts`、`messageProcessor.ts`、`src/web/routes/agent.ts` |
 | Vision 模型切换 | `ZHIPU_VISION_MODEL` 切到免费档 `glm-4.1v-thinking-flash`（带推理链），8 个视觉模块（视觉分析 / 图像标注 / 截图 / PPT 生成等）统一从常量读取 | `src/shared/constants/models.ts` |
 | Context builder 工作目录边界 | 系统提示新增 `workingDirBoundaryInfo` 块，澄清三点：工作目录是相对路径基准而非任务边界、系统级查询可访问 home 绝对路径、续接指令保留上文任务作用域 | `src/host/agent/messageHandling/contextBuilder.ts` |
 | Channel / 本地活动隐私防火墙 | 渠道入站消息与本地桌面活动在落地/分发前统一脱敏：`channelPrivacyFirewall` 三模式（local-redact/allow-raw/off）+ 飞书 `feishuPrivacy` 接入 + `ChannelsSettings` 策略 UI；`localActivityPrivacyFirewall` 脱敏 `DesktopActivityEvent` 字段，`screenshotPrivacyRedactor` 用 sharp 做截图区域级 blur；`sensitiveDataGuard` 补 SSN / 信用卡（Luhn 校验）确定性 PII 脱敏；`native_desktop.rs` Rust 侧对称脱敏（URL 凭证 / home 路径 / email / 信用卡 Luhn） | `src/host/channels/privacy/channelPrivacyFirewall.ts`、`src/host/services/activity/localActivityPrivacyFirewall.ts`、`src/host/services/activity/screenshotPrivacyRedactor.ts`、`src/host/security/sensitiveDataGuard.ts`、`src-tauri/src/native_desktop.rs` |

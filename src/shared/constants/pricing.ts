@@ -8,6 +8,31 @@ export interface ModelPricingEntry {
   cacheWrite?: number;
 }
 
+export interface RealtimeVoicePricingEntry {
+  currency: 'CNY' | 'USD';
+  inputText: number;
+  inputAudio: number;
+  outputText: number;
+  outputAudio: number;
+  source: string;
+}
+
+/**
+ * Realtime voice modality pricing per 1M tokens. This table is the single
+ * source for in-call estimates; UI and bridges must not carry price literals.
+ */
+export const REALTIME_VOICE_PRICING_PER_1M: Record<string, RealtimeVoicePricingEntry> = {
+  // Alibaba Cloud Model Studio, Beijing list price (retrieved 2026-08-05).
+  'qwen3.5-omni-flash-realtime': {
+    currency: 'CNY',
+    inputText: 3.3,
+    inputAudio: 27,
+    outputText: 20,
+    outputAudio: 107,
+    source: 'https://help.aliyun.com/zh/model-studio/qwen3-5-omni-flash-realtime',
+  },
+};
+
 /** 无显式 cacheRead 价的模型按 input × 0.1 近似（Anthropic/DeepSeek/Moonshot 均为 ~0.1x 档） */
 export const DEFAULT_CACHE_READ_PRICE_RATIO = 0.1;
 /** 无显式 cacheWrite 价的模型按 input × 1.25 近似（Anthropic 5m ephemeral 档） */

@@ -110,6 +110,7 @@ vi.mock('../../../src/host/agent/sessionRecovery', () => ({
 
 vi.mock('../../../src/host/utils/seedMemoryInjector', () => ({
   buildPackedSeedMemory: vi.fn().mockResolvedValue(null),
+  buildPackedUserDirectives: vi.fn().mockResolvedValue(null),
   buildSeedMemoryBlock: vi.fn().mockReturnValue(null),
 }));
 
@@ -361,7 +362,11 @@ import {
 import type { RuntimeContext } from '../../../src/host/agent/runtime/runtimeContext';
 import type { StructuredOutputConfig } from '../../../src/host/agent/structuredOutput';
 import { GoalModeController } from '../../../src/host/agent/goalModeController';
-import { buildPackedSeedMemory, buildSeedMemoryBlock } from '../../../src/host/utils/seedMemoryInjector';
+import {
+  buildPackedSeedMemory,
+  buildPackedUserDirectives,
+  buildSeedMemoryBlock,
+} from '../../../src/host/utils/seedMemoryInjector';
 import {
   clearMemoryInjectionTracesForTest,
   listMemoryInjectionTraces,
@@ -492,6 +497,7 @@ describe('ConversationRuntime', () => {
     vi.clearAllMocks();
     clearMemoryInjectionTracesForTest();
     vi.mocked(buildPackedSeedMemory).mockResolvedValue(null);
+    vi.mocked(buildPackedUserDirectives).mockResolvedValue(null);
     vi.mocked(buildSeedMemoryBlock).mockReturnValue(null);
     activityMocks.getCurrentActivityContext.mockResolvedValue({
       generatedAtMs: 1_800_000,
@@ -1011,20 +1017,19 @@ describe('ConversationRuntime', () => {
       );
     });
 
-    it('records seed-memory injection trace when the seed block is injected', async () => {
+    it('records user-memory injection trace when the fallback memory block is injected', async () => {
       vi.mocked(buildSeedMemoryBlock).mockReturnValueOnce('## Stored Memories\n- [Preference]: Use concise Chinese');
 
       await runtime.initializeRun('hello');
 
       expect(modules.contextAssembly.injectSystemMessage).toHaveBeenCalledWith(
-        '<seed-memory>\n## Stored Memories\n- [Preference]: Use concise Chinese\n</seed-memory>',
-        'seed-memory',
+        expect.stringContaining('<user-memory>\nThis block contains personalization evidence only.'),
+        'user-memory',
       );
       expect(listMemoryInjectionTraces({ sessionId: 'test-session-1' })).toContainEqual(
         expect.objectContaining({
-          blockType: 'seed-memory',
+          blockType: 'user-memory',
           trigger: 'session_start',
-          chars: '## Stored Memories\n- [Preference]: Use concise Chinese'.length,
           injected: true,
           source: 'database-seed',
           count: 1,
@@ -1033,27 +1038,50 @@ describe('ConversationRuntime', () => {
       );
     });
 
-    it('prefers packed seed-memory and records the packer source', async () => {
+    it('injects user directives and ordinary memory as independent authority blocks', async () => {
+      vi.mocked(buildPackedUserDirectives).mockResolvedValue({
+        block: '## User Directives\n<memory-pack>\n- [1] Keep PRs fail closed\n</memory-pack>',
+        packed: { items: [{
+          entryId: 'directive-1', title: 'Keep PRs fail closed', kind: 'directive', scope: 'global',
+          status: 'active', score: 10, scoreReasons: [], source: { kind: 'light_file', sourceOfTruth: 'light_file' },
+          evidence: [], content: 'Keep PRs fail closed', originalChars: 20, packedChars: 20, truncated: false,
+        }], selectedCount: 1, totalCandidates: 1, budget: 800 } as any,
+      });
       // buildPackedSeedMemory 返回 { block, packed }（旧 buildPackedSeedMemoryBlock 返回纯字符串）
-      vi.mocked(buildPackedSeedMemory).mockResolvedValueOnce({
+      vi.mocked(buildPackedSeedMemory).mockResolvedValue({
         block: '## Packed Memories\n<memory-pack>\n- [1] Use concise Chinese\n</memory-pack>',
-        packed: { items: [], selectedCount: 1, totalCandidates: 1 } as any,
+        packed: { items: [{
+          entryId: 'memory-1', title: 'Concise', kind: 'user', scope: 'global', status: 'active',
+          score: 10, scoreReasons: [], source: { kind: 'light_file', sourceOfTruth: 'light_file' },
+          evidence: [], content: 'Use concise Chinese', originalChars: 19, packedChars: 19, truncated: false,
+        }], selectedCount: 1, totalCandidates: 1, budget: 800 } as any,
       });
 
       await runtime.initializeRun('memory query');
 
       expect(buildSeedMemoryBlock).not.toHaveBeenCalled();
       expect(modules.contextAssembly.injectSystemMessage).toHaveBeenCalledWith(
-        '<seed-memory>\n## Packed Memories\n<memory-pack>\n- [1] Use concise Chinese\n</memory-pack>\n</seed-memory>',
-        'seed-memory',
+        expect.stringContaining('<user-directives>\nThese are explicit user-decided rules.'),
+        'user-directives',
+      );
+      expect(modules.contextAssembly.injectSystemMessage).toHaveBeenCalledWith(
+        expect.stringContaining('<user-memory>\nThis block contains personalization evidence only.'),
+        'user-memory',
       );
       expect(listMemoryInjectionTraces({ sessionId: 'test-session-1' })).toContainEqual(
         expect.objectContaining({
-          blockType: 'seed-memory',
+          blockType: 'user-memory',
           trigger: 'session_start',
           source: 'memory-packer',
           count: 1,
           sessionId: 'test-session-1',
+        }),
+      );
+      expect(listMemoryInjectionTraces({ sessionId: 'test-session-1' })).toContainEqual(
+        expect.objectContaining({
+          blockType: 'user-directives',
+          source: 'directive-memory-packer',
+          count: 1,
         }),
       );
     });

@@ -246,7 +246,7 @@
 | 取消级联 | `CancellationReason` 区分 CASCADE（user-cancel / session-switch / parent-cancel）与 NON_CASCADE（child-error / timeout / idle-timeout / budget-exceeded）；`initiateShutdown` 四阶段 Signal→Grace→Flush→Force；idle watchdog 2 分钟无进展自动 abort；per-agent Stop UI + `swarm:cancel-agent` IPC；spawnGuard ↔ parent abortSignal 单向桥接 | [multiagent-system.md](./multiagent-system.md) |
 | Computer-use MCP 入口归位（Level 1） | Computer + Screenshot 暴露成独立 native ToolModule，统一走 MCP 工具入口；当前是 wrapper-mode，执行仍委托 legacy ComputerTool，并通过 `adaptVisionLegacyResult` 适配结果；Level 2 原生重写后再替换执行内核 | [tool-system.md](./tool-system.md) |
 | Workbench 诊断面板群 | Context Health、Knowledge Memory Audit、Activity Entry、Computer-use Diagnostics、Time Capability 五类诊断面板进入聊天主链路工作台；Workspace Preview 露出活动与工作区产物 | [workbench.md](./workbench.md) |
-| Runtime Steer | 运行中途用户输入通过 `injectSteerMessage` 排队到当前轮次消息历史，置 `needsReinference` 下轮推理；guided UI 用 `RuntimeInputDelivery` 标记 `queued_next_turn`；web host follow-up 带 `clientMessageId` | [agent-core.md](./agent-core.md) |
+| Runtime Steer | 运行中途用户输入通过 `injectSteerMessage` 进入当前轮次消息历史，置 `needsReinference` 继续推理；guided UI 用 `RuntimeInputDelivery` 回显真实投递结果；web host follow-up 带 `clientMessageId` | [agent-core.md](./agent-core.md) |
 | Vision 模型切换 | `ZHIPU_VISION_MODEL` 切到免费档 `glm-4.1v-thinking-flash`（带推理链），8 个视觉模块统一从常量读取 | — |
 | Channel / 本地活动隐私防火墙 | 渠道入站消息与本地桌面活动落地前统一脱敏：`channelPrivacyFirewall` 三模式（local-redact/allow-raw/off）+ 飞书接入，`localActivityPrivacyFirewall` + `screenshotPrivacyRedactor` 截图区域级 blur，`sensitiveDataGuard` 补 SSN / 信用卡 Luhn 脱敏，`native_desktop.rs` Rust 侧对称脱敏 | [sensitive-data-guard.md](./sensitive-data-guard.md) |
 

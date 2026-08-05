@@ -12,7 +12,7 @@
 // 绝不在 renderer 手搓 message 塞进 sessionStore。
 // ============================================================================
 
-import type { RendererVoiceFailureReport, VoiceMessageCode } from '@shared/contract/voice';
+import type { RendererVoiceFailureReport, VoiceMessageCode, VoiceTokenUsage } from '@shared/contract/voice';
 import { VOICE_DOWNSTREAM_SAMPLE_RATE, VOICE_FOCUS_REPORT_MIN_INTERVAL_MS, VOICE_RECONNECT_BACKOFF_MS, VOICE_PARTIAL_HANDOFF_MAX_WAIT_MS, VOICE_STREAM_WS_PATH, VOICE_SUBTITLE_REVEAL_INTERVAL_MS, VOICE_SUBTITLE_STALL_FLUSH_MS, VOICE_TEARDOWN_DRAIN_MS, VOICE_WS_CLOSE_TERMINAL } from '@shared/constants/voice';
 import type { AppSettings, Message, VoiceInputDeviceSettings } from '@shared/contract';
 import type { VoiceClientCommand, VoiceEvent } from '@shared/contract/voice';
@@ -38,6 +38,8 @@ import { computeRevealedSubtitle, resolvePartialRelease } from '../utils/voicePa
 import { selectVoiceFocusContext } from './voiceFocusContext';
 import { normalizeInterruptMode } from '../components/features/voice/voiceSettingsDerivation';
 import { toast } from '../hooks/useToast';
+import { QWEN_OMNI_REALTIME_MODEL } from '@shared/constants/voice';
+import { estimateRealtimeVoiceCost } from '@shared/pricing/estimateRealtimeVoiceCost';
 
 function getT() {
   return languages[useAppStore.getState().language] ?? languages.zh;
@@ -71,6 +73,9 @@ async function readVoiceRuntimeSettings(): Promise<{
   interruptMode: VoiceInterruptMode;
   echoCancellation: 'auto' | 'off';
   inputDevice?: VoiceInputDeviceSettings;
+  conversationModel: string;
+  costLimit: number | null;
+  costLimitAction: 'warn' | 'hangup';
 }> {
   try {
     const settings = await ipcService.invokeDomain<AppSettings>(IPC_DOMAINS.SETTINGS, 'get');
@@ -78,10 +83,35 @@ async function readVoiceRuntimeSettings(): Promise<{
       interruptMode: normalizeInterruptMode(settings.voice?.live?.interrupt),
       echoCancellation: settings.voice?.live?.echoCancellation ?? 'auto',
       inputDevice: normalizeVoiceInputDevice(settings.voice?.inputDevice),
+      conversationModel: settings.voice?.live?.conversationModel ?? QWEN_OMNI_REALTIME_MODEL,
+      costLimit: typeof settings.voice?.live?.callCostLimit === 'number'
+        && Number.isFinite(settings.voice.live.callCostLimit)
+        && settings.voice.live.callCostLimit > 0
+        ? settings.voice.live.callCostLimit
+        : null,
+      costLimitAction: settings.voice?.live?.callCostLimitAction ?? 'warn',
     };
   } catch {
-    return { interruptMode: 'server_vad', echoCancellation: 'auto' };
+    return {
+      interruptMode: 'server_vad',
+      echoCancellation: 'auto',
+      conversationModel: QWEN_OMNI_REALTIME_MODEL,
+      costLimit: null,
+      costLimitAction: 'warn',
+    };
   }
+}
+
+function addVoiceTokenUsage(current: VoiceTokenUsage, next: VoiceTokenUsage): VoiceTokenUsage {
+  return {
+    totalTokens: current.totalTokens + next.totalTokens,
+    inputTokens: current.inputTokens + next.inputTokens,
+    outputTokens: current.outputTokens + next.outputTokens,
+    inputAudioTokens: current.inputAudioTokens + next.inputAudioTokens,
+    inputTextTokens: current.inputTextTokens + next.inputTextTokens,
+    outputAudioTokens: current.outputAudioTokens + next.outputAudioTokens,
+    outputTextTokens: current.outputTextTokens + next.outputTextTokens,
+  };
 }
 
 /** final 落库是 host 的事；renderer 只重新拉一次消息让气泡/摘要卡自然进流。 */
@@ -127,6 +157,16 @@ class VoiceCallBridge {
   private cancelledResponseIds = new Set<string>();
   /** 同一次拨号每种失效只上报一次，避免 WebSocket error + close 双事件重复入账。 */
   private reportedFailureCodes = new Set<RendererVoiceFailureReport['code']>();
+  private conversationModel = QWEN_OMNI_REALTIME_MODEL;
+  private accumulatedUsage: VoiceTokenUsage = {
+    totalTokens: 0,
+    inputTokens: 0,
+    outputTokens: 0,
+    inputAudioTokens: 0,
+    inputTextTokens: 0,
+    outputAudioTokens: 0,
+    outputTextTokens: 0,
+  };
 
   private store() {
     return useVoiceCallStore.getState();
@@ -501,12 +541,30 @@ class VoiceCallBridge {
     this.pendingNarrationPlaybackId = null;
 
     const activeAgentId = readActiveAgentSessionMap()[sessionId];
-    const { interruptMode, echoCancellation, inputDevice } = await readVoiceRuntimeSettings();
+    const {
+      interruptMode,
+      echoCancellation,
+      inputDevice,
+      conversationModel,
+      costLimit,
+      costLimitAction,
+    } = await readVoiceRuntimeSettings();
     if (useVoiceCallStore.getState().phase !== 'idle') return; // await 期间状态被改，别抢
     this.inputDevice = inputDevice;
     this.interruptMode = interruptMode;
     this.echoCancellation = echoCancellation;
+    this.conversationModel = conversationModel;
+    this.accumulatedUsage = {
+      totalTokens: 0,
+      inputTokens: 0,
+      outputTokens: 0,
+      inputAudioTokens: 0,
+      inputTextTokens: 0,
+      outputAudioTokens: 0,
+      outputTextTokens: 0,
+    };
     this.store().dialStarted(sessionId, activeAgentId, interruptMode);
+    this.store().costConfigured(costLimit, costLimitAction);
     this.intentionalClose = false;
     this.hasGoneLive = false;
     this.reconnectAttempt = 0;
@@ -979,6 +1037,20 @@ class VoiceCallBridge {
         break;
       case 'response.done':
         if (event.responseId && this.cancelledResponseIds.has(event.responseId)) break;
+        if (event.usage) {
+          const alreadyExceeded = this.store().costLimitExceeded;
+          this.accumulatedUsage = addVoiceTokenUsage(this.accumulatedUsage, event.usage);
+          const estimate = estimateRealtimeVoiceCost(this.conversationModel, this.accumulatedUsage);
+          this.store().usageApplied(this.accumulatedUsage, estimate);
+          const costState = this.store();
+          if (!alreadyExceeded && costState.costLimitExceeded) {
+            const formatted = estimate
+              ? `${estimate.currency === 'CNY' ? '¥' : '$'}${estimate.amount.toFixed(4)}`
+              : '';
+            toast.warning(getT().voice.live.costLimitReached.replace('{cost}', formatted));
+            if (costState.costLimitAction === 'hangup') this.hangUp();
+          }
+        }
         this.store().eventApplied({
           assistantSpeaking: false,
           ttfa: { modelMs: event.ttfaModelMs, perceivedMs: event.ttfaPerceivedMs },

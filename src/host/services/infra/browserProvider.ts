@@ -135,6 +135,9 @@ export function buildSystemChromeCdpArgs(args: {
     '--disable-extensions',
     '--disable-setuid-sandbox',
     '--no-sandbox',
+    // R4：常规 stealth（去掉 AutomationControlled 标记）
+    '--disable-blink-features=AutomationControlled',
+    '--disable-infobars',
   ];
   if (args.mockKeychain) {
     chromeArgs.push('--use-mock-keychain');

@@ -48,6 +48,8 @@ export interface ManagedBrowserTabSnapshot {
   title: string;
   canGoBack?: boolean;
   canGoForward?: boolean;
+  /** 当前页 favicon；缺失时 renderer 回落 Globe 图标。 */
+  faviconUrl?: string | null;
 }
 
 export interface ManagedBrowserAccountStateSummary {

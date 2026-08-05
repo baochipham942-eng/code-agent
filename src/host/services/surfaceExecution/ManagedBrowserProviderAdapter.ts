@@ -8,12 +8,16 @@ import type {
   BrowserDomSnapshot,
   BrowserService,
 } from '../infra/browserService';
+import type { ManagedBrowserSessionState } from '../../../shared/contract/desktop';
 import type {
   SurfaceExecutionErrorV1,
   SurfaceObservationV1,
   SurfaceTargetRefV1,
 } from '../../../shared/contract/surfaceExecution';
 import { SURFACE_USER_BROWSER_AGENT_ID } from '../../../shared/contract/surfaceExecution';
+import { createLogger } from '../infra/logger';
+
+const organicNavLogger = createLogger('ManagedBrowserOrganicNav');
 import {
   getSurfaceExecutionRuntime,
   type SurfaceExecutionRuntime,
@@ -121,8 +125,18 @@ export function managedBrowserServiceKey(identity: SurfaceRuntimeIdentityV1): st
   ])}`;
 }
 
+const ORGANIC_NAV_REASONS = new Set([
+  'page_load',
+  'navigate',
+  'history',
+  'reload',
+]);
+
 export class ManagedBrowserProviderAdapter {
   private readonly bindings = new Map<string, ManagedBrowserBinding>();
+  /** 每个物理 BrowserService 只挂一条有机导航钩子 */
+  private readonly organicNavUnsubs = new WeakMap<BrowserService, () => void>();
+  private readonly organicNavInFlight = new WeakSet<BrowserService>();
 
   constructor(
     private readonly runtime: SurfaceExecutionRuntime = getSurfaceExecutionRuntime(),
@@ -150,6 +164,24 @@ export class ManagedBrowserProviderAdapter {
       if (binding.surfaceSessionId === surfaceSessionId) return binding;
     }
     return null;
+  }
+
+  /**
+   * UI/IPC 用的「当前画面那扇窗」会话状态。
+   * user-browser-link / agent surface 走独立 BrowserService，不是默认单例；
+   * getManagedBrowserSession 必须优先读绑定实例，否则地址栏/canGoBack 会卡在空单例上。
+   */
+  getPreferredUiSessionState(): ManagedBrowserSessionState | null {
+    let fallback: ManagedBrowserSessionState | null = null;
+    for (const binding of this.bindings.values()) {
+      if (!binding.browserService.isRunning() || !binding.browserService.getActiveTab()) continue;
+      const state = binding.browserService.getSessionState();
+      if (binding.identity.agentId === SURFACE_USER_BROWSER_AGENT_ID) {
+        return state;
+      }
+      fallback = state;
+    }
+    return fallback;
   }
 
   async execute(input: ManagedBrowserActionInput): Promise<ToolExecutionResult> {
@@ -309,6 +341,7 @@ export class ManagedBrowserProviderAdapter {
       },
     };
     this.bindings.set(key, binding);
+    this.ensureOrganicNavHook(browserService);
     try {
       const observed = await this.captureObservation(binding, {
         userSummary: 'Prepared an isolated managed Browser Surface session',
@@ -321,6 +354,43 @@ export class ManagedBrowserProviderAdapter {
     } catch (error) {
       await this.releaseBinding(key, binding).catch(() => undefined);
       throw error;
+    }
+  }
+
+  /**
+   * 有机跳转（用户透传点击/表单/重定向）不经 adapter.execute，但 page load 会
+   * emitSessionChanged。这里把 surface activeTarget（origin/title）与 tab 元数据对齐，
+   * 与 agent 显式 navigate 同源。
+   */
+  private ensureOrganicNavHook(browserService: BrowserService): void {
+    if (this.organicNavUnsubs.has(browserService)) return;
+    if (typeof browserService.onSessionChanged !== 'function') return;
+    const unsub = browserService.onSessionChanged((reason) => {
+      if (!ORGANIC_NAV_REASONS.has(reason)) return;
+      if (this.organicNavInFlight.has(browserService)) return;
+      this.organicNavInFlight.add(browserService);
+      void this.refreshBindingsAfterOrganicNav(browserService, reason)
+        .catch((error) => {
+          organicNavLogger.warn(`Organic nav surface refresh failed (${reason}): ${error}`);
+        })
+        .finally(() => {
+          this.organicNavInFlight.delete(browserService);
+        });
+    });
+    this.organicNavUnsubs.set(browserService, unsub);
+  }
+
+  private async refreshBindingsAfterOrganicNav(
+    browserService: BrowserService,
+    reason: string,
+  ): Promise<void> {
+    const targets = Array.from(this.bindings.values()).filter(
+      (binding) => binding.browserService === browserService,
+    );
+    for (const binding of targets) {
+      await this.captureObservation(binding, {
+        userSummary: `Observed managed browser after organic ${reason}`,
+      });
     }
   }
 

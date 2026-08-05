@@ -39,7 +39,11 @@ import {
   closeUserBrowserLinkRun,
   controlUserBrowserHistory,
   openHttpLinkInRailAsync,
+  setUserBrowserViewport,
 } from '../../services/userBrowserLink';
+import { useBrowserStageUserInput } from '../../hooks/useBrowserStageUserInput';
+import { BROWSER_STAGE_VIEWPORT } from '@shared/constants';
+import { resolveStageFollowPlan } from '@shared/utils/browserStageViewportFollow';
 import { normalizeBrowserAddressInput } from '../../utils/browserAddressBar';
 import { formatAddressBarDisplay, extractBrowserHostname } from '../../utils/browserAddressDisplay';
 import {
@@ -186,25 +190,22 @@ export const BrowserAgentWindow: React.FC = () => {
   ));
   const terminalTarget = terminalSurfaceSession?.session.activeTarget;
   const terminalBrowserTarget = terminalTarget?.kind === 'browser' ? terminalTarget : null;
-  // chrome 条必须描述**画面里那扇窗**。有 surface 会话时它才是画面的来源，
-  // managedSession 说的是另一个（全局单例）浏览器，直接用会周期性跳回「未启动」。
-  const managedUrl = preview?.url || managedSession.activeTab?.url || null;
+  // chrome 条必须描述**画面里那扇窗**。
+  // host getManagedBrowserSession 已优先 surface 绑定实例（user-browser-link 与 agent 同窗），
+  // page_load / framenavigated 会刷新 URL·title·canGoBack 并广播——managed tab 是实时真源。
+  // surface origin/title 仅在 managed 尚未回填时兜底；running 仍以 surface 会话存在为准
+  // （防默认单例 running=false 把状态点刷灰）。
+  const managedUrl = managedSession.activeTab?.url || preview?.url || null;
+  const managedTitle = managedSession.activeTab?.title || preview?.title || null;
   const running = Boolean(browserSurfaceSessionId) || managedSession.running;
-  const activeTitle = browserSurfaceSessionId
-    ? browserSurfaceTitle
-    : terminalSurfaceSession
-      ? terminalBrowserTarget?.title ?? null
-      : preview?.title || managedSession.activeTab?.title || null;
-  // surface 会话只报 origin（不含 path）。同源时才敢把 managedSession 的完整 URL 拿来
-  // 补全路径——不同源说明那是另一扇窗的地址，宁可只显示 origin 也不能显示错的。
-  // 终态会话同样只有 origin，刻意不补 path（reload 后 managedUrl 可能已是别的页面）。
-  const activeUrl = browserSurfaceSessionId
-    ? (managedUrl && browserSurfaceOrigin && managedUrl.startsWith(browserSurfaceOrigin)
-      ? managedUrl
-      : browserSurfaceOrigin)
-    : terminalSurfaceSession
-      ? terminalBrowserTarget?.origin ?? null
-      : managedUrl;
+  const activeTitle = managedTitle
+    || (browserSurfaceSessionId ? browserSurfaceTitle : null)
+    || (terminalSurfaceSession ? terminalBrowserTarget?.title ?? null : null);
+  // 有机跨域跳转（如 baidu → wappass）后 managedUrl 与 surface origin 不同源是正常的
+  // （同一扇窗），必须回写完整 URL；surface origin 只在 managed 空时兜底。
+  const activeUrl = managedUrl
+    || (browserSurfaceSessionId ? browserSurfaceOrigin : null)
+    || (terminalSurfaceSession ? terminalBrowserTarget?.origin ?? null : null);
   const pointerEvent = livePointer.event || livePointer.lastEvent;
   const modeLabel = browserSession.mode === 'managed'
     ? copy.modeManaged
@@ -235,6 +236,14 @@ export const BrowserAgentWindow: React.FC = () => {
   const [annotateError, setAnnotateError] = useState<string | null>(null);
   const [annotateSending, setAnnotateSending] = useState(false);
   const navRequestIdRef = useRef(0);
+  // R4：stage CSS 尺寸跟随视口 + 帧采集分辨率
+  const stageRef = useRef<HTMLDivElement | null>(null);
+  const [stageFollow, setStageFollow] = useState<{
+    viewport: { width: number; height: number };
+    capture: { maxWidth: number; maxHeight: number; quality: number };
+  } | null>(null);
+  const stageFollowPlanKeyRef = useRef<string>('');
+  const stageViewportPushedKeyRef = useRef<string>('');
 
   // URL 回写：pending 优先；未编辑且无 pending 时跟随页面跳转。
   useEffect(() => {
@@ -318,11 +327,86 @@ export const BrowserAgentWindow: React.FC = () => {
     void navigateTo(normalized.url);
   }, [activeUrl, addressDraft, agentSurfaceBusy, copy.navigationNeedsSession, currentSessionId, navigateTo, workingDirectory]);
 
+  // R4：ResizeObserver 去抖上报 stage CSS → setViewport + 帧采集 max 尺寸
+  useEffect(() => {
+    const el = stageRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return undefined;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const publish = (width: number, height: number) => {
+      const dpr = typeof window !== 'undefined' && Number.isFinite(window.devicePixelRatio)
+        ? window.devicePixelRatio
+        : 1;
+      const plan = resolveStageFollowPlan({ width, height }, dpr);
+      if (!plan) return;
+      const planKey = `${plan.viewport.width}x${plan.viewport.height}@${plan.capture.maxWidth}x${plan.capture.maxHeight}`;
+      if (stageFollowPlanKeyRef.current !== planKey) {
+        stageFollowPlanKeyRef.current = planKey;
+        setStageFollow(plan);
+      }
+      // 会话可能晚于 stage 量测就绪：单独按「会话+视口」去重推送，避免 key 已锁死零上报
+      if (currentSessionId && browserSurfaceSessionId && ownedByCurrentSession) {
+        const pushKey = `${currentSessionId}:${browserSurfaceSessionId}:${plan.viewport.width}x${plan.viewport.height}`;
+        if (stageViewportPushedKeyRef.current !== pushKey) {
+          stageViewportPushedKeyRef.current = pushKey;
+          void setUserBrowserViewport({
+            conversationId: currentSessionId,
+            workspace: workingDirectory ?? '',
+            width: plan.viewport.width,
+            height: plan.viewport.height,
+          }).catch(() => undefined);
+        }
+      }
+    };
+    const schedule = () => {
+      const rect = el.getBoundingClientRect();
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        publish(rect.width, rect.height);
+      }, BROWSER_STAGE_VIEWPORT.DEBOUNCE_MS);
+    };
+    const observer = new ResizeObserver(() => schedule());
+    observer.observe(el);
+    schedule();
+    return () => {
+      observer.disconnect();
+      if (timer) clearTimeout(timer);
+    };
+  }, [
+    browserSurfaceSessionId,
+    currentSessionId,
+    ownedByCurrentSession,
+    workingDirectory,
+    // 面板可见时再挂 observer；折叠时 stage 可能 0 尺寸
+    activeWorkbenchTab,
+    workbenchCollapsed,
+  ]);
+
   const liveStream = useSurfaceLiveFrames({
     conversationId: currentSessionId,
     surfaceSessionId: browserSurfaceSessionId,
     visible: activeWorkbenchTab === 'browser' && !workbenchCollapsed,
     sessionRunning: Boolean(browserSurfaceSessionId),
+    maxWidth: stageFollow?.capture.maxWidth ?? null,
+    maxHeight: stageFollow?.capture.maxHeight ?? null,
+  });
+
+  // 三期 P1 / R4：画面交互透传（点击/滚轮/键盘/拖拽）；坐标 content 优先跟随视口 CSS。
+  const stageInput = useBrowserStageUserInput({
+    conversationId: currentSessionId,
+    workspace: workingDirectory,
+    ownedByCurrentSession,
+    annotateMode,
+    ready: Boolean(liveStream.frame && browserSurfaceSessionId),
+    agentSurfaceBusy,
+    contentWidth: stageFollow?.viewport.width
+      ?? liveStream.frame?.width
+      ?? managedSession.viewport?.width
+      ?? null,
+    contentHeight: stageFollow?.viewport.height
+      ?? liveStream.frame?.height
+      ?? managedSession.viewport?.height
+      ?? null,
+    surfaceSessionId: browserSurfaceSessionId,
   });
 
   // 重启/刷新后内存 frameByScope 是空的：终态会话还在（host 投影恢复），试着从盘上
@@ -373,12 +457,13 @@ export const BrowserAgentWindow: React.FC = () => {
   });
 
   const runHistoryAction = useCallback(async (action: 'back' | 'forward' | 'reload') => {
-    if (!currentSessionId || !workingDirectory) return;
+    // workspace 可空：host 兜底（快速对话无 cwd 时后退/刷新仍应可用，与 open 同口径）。
+    if (!currentSessionId) return;
     setToolbarBusy(action);
     try {
       await controlUserBrowserHistory({
         conversationId: currentSessionId,
-        workspace: workingDirectory,
+        workspace: workingDirectory ?? '',
         action,
       });
       await browserSession.refresh();
@@ -665,16 +750,33 @@ export const BrowserAgentWindow: React.FC = () => {
       </div>
 
       <div
+        ref={stageRef}
         data-testid="browser-agent-window-stage"
-        className="relative min-h-0 flex-1 overflow-hidden bg-black/40"
-        role={annotateMode ? 'button' : undefined}
-        tabIndex={annotateMode ? 0 : undefined}
-        aria-label={annotateMode ? copy.annotate : undefined}
-        onClick={annotateMode ? handleStageClickForAnnotate : undefined}
-        onKeyDown={annotateMode ? (event) => {
-          // 批注落点依赖鼠标坐标；键盘 Enter 仅用于焦点可达，不模拟坐标落点。
-          if (event.key === 'Escape') exitAnnotateMode();
-        } : undefined}
+        className={`relative min-h-0 flex-1 overflow-hidden bg-black/40 outline-hidden ${
+          stageInput.interactive
+            ? 'cursor-default focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-500/50'
+            : ''
+        } ${stageInput.stageFocused && stageInput.interactive ? 'ring-2 ring-inset ring-sky-500/40' : ''}`}
+        role={annotateMode ? 'button' : stageInput.interactive ? 'application' : undefined}
+        tabIndex={annotateMode || stageInput.interactive ? 0 : undefined}
+        aria-label={annotateMode ? copy.annotate : stageInput.interactive ? copy.liveInteract : undefined}
+        onClick={annotateMode ? handleStageClickForAnnotate : stageInput.onStageClick}
+        onPointerDown={annotateMode ? undefined : stageInput.onStagePointerDown}
+        onPointerMove={annotateMode ? undefined : stageInput.onStagePointerMove}
+        onPointerUp={annotateMode ? undefined : stageInput.onStagePointerUp}
+        onPointerCancel={annotateMode ? undefined : stageInput.onStagePointerCancel}
+        onWheel={annotateMode ? undefined : stageInput.onStageWheel}
+        onKeyDown={annotateMode
+          ? (event) => {
+            // 批注落点依赖鼠标坐标；键盘 Enter 仅用于焦点可达，不模拟坐标落点。
+            if (event.key === 'Escape') exitAnnotateMode();
+          }
+          : stageInput.onStageKeyDown}
+        onCompositionEnd={annotateMode ? undefined : stageInput.onStageCompositionEnd}
+        onFocus={() => {
+          if (!annotateMode && stageInput.interactive) stageInput.setStageFocused(true);
+        }}
+        onBlur={() => stageInput.setStageFocused(false)}
       >
         {isNavPending && !liveStream.frame ? (
           <div
@@ -692,7 +794,10 @@ export const BrowserAgentWindow: React.FC = () => {
             data-testid="browser-agent-window-frame"
             src={liveStream.frame.dataUrl}
             alt={copy.livePicture}
-            className="h-full w-full object-contain"
+            draggable={false}
+            onDragStart={(event) => event.preventDefault()}
+            className="h-full w-full object-contain select-none"
+            style={{ userSelect: 'none', WebkitUserSelect: 'none' }}
           />
         ) : terminalSurfaceSession && terminalFrameDataUrl ? (
           // 终态留影：停流前移交进 store 的最后一帧，置灰 +「已结束」角标。
@@ -701,7 +806,10 @@ export const BrowserAgentWindow: React.FC = () => {
               data-testid="browser-agent-window-terminal-frame"
               src={terminalFrameDataUrl}
               alt={surfaceCopy.terminal.frameAlt}
-              className="h-full w-full object-contain grayscale opacity-60"
+              draggable={false}
+              onDragStart={(event) => event.preventDefault()}
+              className="h-full w-full object-contain select-none grayscale opacity-60"
+              style={{ userSelect: 'none', WebkitUserSelect: 'none' }}
             />
             <span
               data-testid="browser-agent-window-ended-badge"
@@ -883,18 +991,29 @@ export const BrowserAgentWindow: React.FC = () => {
       </div>
 
       <ConfirmDialog
-        isOpen={pendingInterruptUrl !== null}
+        isOpen={pendingInterruptUrl !== null || stageInput.pendingPreemptInput !== null}
         title={copy.interruptConfirmTitle}
         message={copy.interruptConfirmMessage}
         variant="warning"
-        confirmText={copy.interruptConfirmAction}
+        confirmText={
+          pendingInterruptUrl
+            ? copy.interruptConfirmAction
+            : copy.interruptConfirmOperate
+        }
         cancelText={copy.interruptConfirmCancel}
         onConfirm={() => {
-          const url = pendingInterruptUrl;
-          setPendingInterruptUrl(null);
-          if (url) void navigateTo(url);
+          if (pendingInterruptUrl) {
+            const url = pendingInterruptUrl;
+            setPendingInterruptUrl(null);
+            if (url) void navigateTo(url);
+            return;
+          }
+          stageInput.confirmPreempt();
         }}
-        onCancel={() => setPendingInterruptUrl(null)}
+        onCancel={() => {
+          setPendingInterruptUrl(null);
+          stageInput.cancelPreempt();
+        }}
       />
     </div>
   );

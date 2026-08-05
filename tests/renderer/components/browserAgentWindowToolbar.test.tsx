@@ -39,6 +39,8 @@ vi.mock('../../../src/renderer/services/userBrowserLink', () => ({
   openHttpLinkInRailAsync: (input: unknown) => openHttpLinkInRailAsync(input),
   closeUserBrowserLinkRun: (...args: unknown[]) => closeUserBrowserLinkRun(...args),
   controlUserBrowserHistory: (...args: unknown[]) => controlUserBrowserHistory(...args),
+  dispatchUserBrowserInput: vi.fn(async () => null),
+  setUserBrowserViewport: vi.fn(async () => null),
 }));
 vi.mock('../../../src/renderer/utils/platform', async () => {
   const actual = await vi.importActual<typeof import('../../../src/renderer/utils/platform')>(

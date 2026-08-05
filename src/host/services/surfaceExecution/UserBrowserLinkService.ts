@@ -1,9 +1,14 @@
 import { randomUUID } from 'node:crypto';
 import type { SurfaceConversationSnapshotV1 } from '../../../shared/contract/surfaceExecution';
 import { SURFACE_USER_BROWSER_AGENT_ID } from '../../../shared/contract/surfaceExecution';
+import {
+  validateUserBrowserInputPayload,
+  type UserBrowserInputPayload,
+} from '../../../shared/utils/userBrowserInputPayload';
 import { getApplicationRunRegistry } from '../../app/applicationRunRegistry';
 import type { RunHandle } from '../../runtime/runContext';
 import type { RunRegistry } from '../../runtime/runRegistry';
+import { dispatchUserBrowserInputOnPage } from '../infra/browser/userBrowserInputDispatch';
 import {
   getManagedBrowserProviderAdapter,
   type ManagedBrowserProviderAdapter,
@@ -34,6 +39,13 @@ export interface ControlUserBrowserHistoryInput {
   action: UserBrowserHistoryAction;
 }
 
+export interface DispatchUserBrowserInputInput {
+  conversationId: string;
+  workspace: string;
+  /** 原始 payload；服务端再走白名单校验，禁止任意 CDP 直通 */
+  input: unknown;
+}
+
 export interface UserBrowserLinkResult {
   conversationId: string;
   runId: string;
@@ -52,6 +64,23 @@ function requireHttpUrl(value: string): string {
   return parsed.href;
 }
 
+function browserActionForInput(payload: UserBrowserInputPayload): string {
+  switch (payload.kind) {
+    case 'click':
+      return 'click';
+    case 'wheel':
+      return 'scroll';
+    case 'key':
+      return 'press_key';
+    case 'insertText':
+      return 'type';
+    default: {
+      const _exhaustive: never = payload;
+      throw new Error(`Unsupported input kind: ${JSON.stringify(_exhaustive)}`);
+    }
+  }
+}
+
 export class UserBrowserLinkService {
   private readonly runs = new Map<string, UserBrowserRun>();
 
@@ -61,13 +90,7 @@ export class UserBrowserLinkService {
     private readonly adapter: UserBrowserAdapter = getManagedBrowserProviderAdapter(),
   ) {}
 
-  async open(input: OpenUserBrowserLinkInput): Promise<UserBrowserLinkResult> {
-    const conversationId = input.conversationId.trim();
-    const workspace = input.workspace.trim();
-    if (!conversationId || !workspace) {
-      throw new Error('User browser navigation requires conversationId and workspace.');
-    }
-    const url = requireHttpUrl(input.url);
+  private ensureRun(conversationId: string, workspace: string): UserBrowserRun {
     let run = this.runs.get(conversationId);
     if (!run) {
       const handle = this.registry.startAuxiliary({
@@ -85,6 +108,17 @@ export class UserBrowserLinkService {
       };
       this.runs.set(conversationId, run);
     }
+    return run;
+  }
+
+  async open(input: OpenUserBrowserLinkInput): Promise<UserBrowserLinkResult> {
+    const conversationId = input.conversationId.trim();
+    const workspace = input.workspace.trim();
+    if (!conversationId || !workspace) {
+      throw new Error('User browser navigation requires conversationId and workspace.');
+    }
+    const url = requireHttpUrl(input.url);
+    const run = this.ensureRun(conversationId, workspace);
 
     let result;
     try {
@@ -136,23 +170,7 @@ export class UserBrowserLinkService {
       throw new Error(`Unsupported browser history action: ${String(action)}`);
     }
 
-    let run = this.runs.get(conversationId);
-    if (!run) {
-      const handle = this.registry.startAuxiliary({
-        runId: `user-browser-link:${randomUUID()}`,
-        sessionId: conversationId,
-        workspace,
-      });
-      run = {
-        handle,
-        identity: {
-          conversationId,
-          runId: handle.context.runId,
-          agentId: SURFACE_USER_BROWSER_AGENT_ID,
-        },
-      };
-      this.runs.set(conversationId, run);
-    }
+    const run = this.ensureRun(conversationId, workspace);
 
     const result = await this.adapter.execute({
       identity: run.identity,
@@ -171,6 +189,55 @@ export class UserBrowserLinkService {
 
     if (!result.success) {
       throw new Error(result.error || `User browser ${action} failed.`);
+    }
+    return this.runtime.snapshotConversation(conversationId);
+  }
+
+  /**
+   * 用户在实时画面上的点击/滚轮/键盘透传。
+   * 会话归属：必须带 conversationId + workspace；与 history 同链路走 user-browser-link run，
+   * 与 agent 共享物理窗（ManagedBrowserProviderAdapter ensureBinding 共享语义）。
+   */
+  async dispatchUserInput(
+    input: DispatchUserBrowserInputInput,
+  ): Promise<SurfaceConversationSnapshotV1> {
+    const conversationId = input.conversationId.trim();
+    const workspace = input.workspace.trim();
+    if (!conversationId || !workspace) {
+      throw new Error('User browser input requires conversationId and workspace.');
+    }
+
+    const validated = validateUserBrowserInputPayload(input.input);
+    if (!validated.ok) {
+      throw new Error(validated.error);
+    }
+    const payload = validated.payload;
+    const action = browserActionForInput(payload);
+    const run = this.ensureRun(conversationId, workspace);
+
+    const result = await this.adapter.execute({
+      identity: run.identity,
+      operationId: `user-browser-link:input:${payload.kind}:${randomUUID()}`,
+      action,
+      // 只传白名单字段摘要给 runtime 记账；真正执行走 dispatch 白名单实现，无 CDP 方法字段。
+      params: { action, kind: payload.kind },
+      async executeProvider(_signal, browserService) {
+        const activeTab = browserService.getActiveTab();
+        if (!activeTab) throw new Error('No active browser tab.');
+        const viewport = browserService.getSessionState().viewport;
+        // 二次校验：用真实视口收紧坐标上界（防渲染层伪造超大坐标）
+        const again = validateUserBrowserInputPayload(payload, {
+          viewportWidth: viewport?.width,
+          viewportHeight: viewport?.height,
+        });
+        if (!again.ok) throw new Error(again.error);
+        await dispatchUserBrowserInputOnPage(activeTab.page, again.payload);
+        return { success: true, output: `User browser ${payload.kind}` };
+      },
+    });
+
+    if (!result.success) {
+      throw new Error(result.error || 'User browser input failed.');
     }
     return this.runtime.snapshotConversation(conversationId);
   }

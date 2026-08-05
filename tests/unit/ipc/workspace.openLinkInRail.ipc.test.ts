@@ -25,12 +25,18 @@ describe('workspace openLinkInRail wiring', () => {
       sessions: [],
       updatedAt: 1,
     }));
+    const dispatchUserInput = vi.fn(async () => ({
+      version: 1 as const,
+      conversationId: 'conversation-a',
+      sessions: [],
+      updatedAt: 1,
+    }));
     registerWorkspaceHandlers(
       ipcMain,
       () => null,
       () => null,
       () => null,
-      () => ({ open, end, history }),
+      () => ({ open, end, history, dispatchUserInput }),
     );
     const handler = handlers.get(IPC_DOMAINS.WORKSPACE);
     expect(handler).toBeDefined();

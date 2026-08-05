@@ -108,6 +108,32 @@ export async function controlUserBrowserHistory(input: {
   return response.data ?? null;
 }
 
+/** 画面交互透传（点击/滚轮/键盘/IME 整段文本）。失败抛错，调用方静默或记日志。 */
+export async function dispatchUserBrowserInput(input: {
+  conversationId: string | null | undefined;
+  workspace: string | null | undefined;
+  input: unknown;
+}): Promise<SurfaceConversationSnapshotV1 | null> {
+  const conversationId = input.conversationId?.trim();
+  const workspace = input.workspace?.trim();
+  const bridge = domainBridge();
+  if (!bridge || !conversationId || !workspace) {
+    throw new Error('Browser input requires conversation and workspace.');
+  }
+  const response = await bridge.invoke<SurfaceConversationSnapshotV1 | null>(
+    IPC_DOMAINS.WORKSPACE,
+    'dispatchUserBrowserInput',
+    { conversationId, workspace, input: input.input },
+  );
+  if (!response.success) {
+    throw new Error(response.error?.message || 'Browser input failed.');
+  }
+  if (response.data) {
+    useSurfaceExecutionStore.getState().setNativeSnapshot(conversationId, response.data);
+  }
+  return response.data ?? null;
+}
+
 export async function closeUserBrowserLinkRun(
   conversationId: string,
   reason: 'user' | 'session-switch',

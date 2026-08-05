@@ -40,6 +40,7 @@ import {
   controlUserBrowserHistory,
   openHttpLinkInRailAsync,
 } from '../../services/userBrowserLink';
+import { useBrowserStageUserInput } from '../../hooks/useBrowserStageUserInput';
 import { normalizeBrowserAddressInput } from '../../utils/browserAddressBar';
 import { formatAddressBarDisplay, extractBrowserHostname } from '../../utils/browserAddressDisplay';
 import {
@@ -323,6 +324,19 @@ export const BrowserAgentWindow: React.FC = () => {
     surfaceSessionId: browserSurfaceSessionId,
     visible: activeWorkbenchTab === 'browser' && !workbenchCollapsed,
     sessionRunning: Boolean(browserSurfaceSessionId),
+  });
+
+  // 三期 P1：画面交互透传（点击/滚轮/键盘）；agent 忙复用抢占确认，批注模式互斥。
+  const stageInput = useBrowserStageUserInput({
+    conversationId: currentSessionId,
+    workspace: workingDirectory,
+    ownedByCurrentSession,
+    annotateMode,
+    ready: Boolean(liveStream.frame && browserSurfaceSessionId),
+    agentSurfaceBusy,
+    contentWidth: liveStream.frame?.width ?? managedSession.viewport?.width ?? null,
+    contentHeight: liveStream.frame?.height ?? managedSession.viewport?.height ?? null,
+    surfaceSessionId: browserSurfaceSessionId,
   });
 
   // 重启/刷新后内存 frameByScope 是空的：终态会话还在（host 投影恢复），试着从盘上
@@ -666,15 +680,27 @@ export const BrowserAgentWindow: React.FC = () => {
 
       <div
         data-testid="browser-agent-window-stage"
-        className="relative min-h-0 flex-1 overflow-hidden bg-black/40"
-        role={annotateMode ? 'button' : undefined}
-        tabIndex={annotateMode ? 0 : undefined}
-        aria-label={annotateMode ? copy.annotate : undefined}
-        onClick={annotateMode ? handleStageClickForAnnotate : undefined}
-        onKeyDown={annotateMode ? (event) => {
-          // 批注落点依赖鼠标坐标；键盘 Enter 仅用于焦点可达，不模拟坐标落点。
-          if (event.key === 'Escape') exitAnnotateMode();
-        } : undefined}
+        className={`relative min-h-0 flex-1 overflow-hidden bg-black/40 outline-hidden ${
+          stageInput.interactive
+            ? 'cursor-crosshair focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-500/50'
+            : ''
+        } ${stageInput.stageFocused && stageInput.interactive ? 'ring-2 ring-inset ring-sky-500/40' : ''}`}
+        role={annotateMode ? 'button' : stageInput.interactive ? 'application' : undefined}
+        tabIndex={annotateMode || stageInput.interactive ? 0 : undefined}
+        aria-label={annotateMode ? copy.annotate : stageInput.interactive ? copy.liveInteract : undefined}
+        onClick={annotateMode ? handleStageClickForAnnotate : stageInput.onStageClick}
+        onWheel={annotateMode ? undefined : stageInput.onStageWheel}
+        onKeyDown={annotateMode
+          ? (event) => {
+            // 批注落点依赖鼠标坐标；键盘 Enter 仅用于焦点可达，不模拟坐标落点。
+            if (event.key === 'Escape') exitAnnotateMode();
+          }
+          : stageInput.onStageKeyDown}
+        onCompositionEnd={annotateMode ? undefined : stageInput.onStageCompositionEnd}
+        onFocus={() => {
+          if (!annotateMode && stageInput.interactive) stageInput.setStageFocused(true);
+        }}
+        onBlur={() => stageInput.setStageFocused(false)}
       >
         {isNavPending && !liveStream.frame ? (
           <div
@@ -883,18 +909,29 @@ export const BrowserAgentWindow: React.FC = () => {
       </div>
 
       <ConfirmDialog
-        isOpen={pendingInterruptUrl !== null}
+        isOpen={pendingInterruptUrl !== null || stageInput.pendingPreemptInput !== null}
         title={copy.interruptConfirmTitle}
         message={copy.interruptConfirmMessage}
         variant="warning"
-        confirmText={copy.interruptConfirmAction}
+        confirmText={
+          pendingInterruptUrl
+            ? copy.interruptConfirmAction
+            : copy.interruptConfirmOperate
+        }
         cancelText={copy.interruptConfirmCancel}
         onConfirm={() => {
-          const url = pendingInterruptUrl;
-          setPendingInterruptUrl(null);
-          if (url) void navigateTo(url);
+          if (pendingInterruptUrl) {
+            const url = pendingInterruptUrl;
+            setPendingInterruptUrl(null);
+            if (url) void navigateTo(url);
+            return;
+          }
+          stageInput.confirmPreempt();
         }}
-        onCancel={() => setPendingInterruptUrl(null)}
+        onCancel={() => {
+          setPendingInterruptUrl(null);
+          stageInput.cancelPreempt();
+        }}
       />
     </div>
   );

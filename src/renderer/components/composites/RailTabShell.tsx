@@ -9,7 +9,7 @@
 // 消费方：正常会话右栏 WorkbenchTabs、空间右栏 ProjectConfigRail。
 // ============================================================================
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Maximize2, Minimize2, type LucideIcon } from 'lucide-react';
 import { IconButton } from '../primitives/IconButton';
 
@@ -20,10 +20,42 @@ export interface RailTabItem {
   title?: string;
   icon?: LucideIcon;
   iconClassName?: string;
+  /**
+   * 动态图标 URL（浏览器 favicon）。有值时优先渲染 img；
+   * 加载失败自动回落 Lucide icon（Globe 等）。
+   */
+  iconSrc?: string | null;
   testId?: string;
   /** label 之后的内嵌内容（脏点/关闭 × 等）；交互事件自理 stopPropagation */
   suffix?: React.ReactNode;
 }
+
+const RailTabIcon: React.FC<{
+  icon?: LucideIcon;
+  iconSrc?: string | null;
+  iconClassName?: string;
+}> = ({ icon: Icon, iconSrc, iconClassName }) => {
+  const [failed, setFailed] = useState(false);
+  // URL 变化时重置失败态，避免上一页 favicon 失败把新页一起挡住
+  useEffect(() => {
+    setFailed(false);
+  }, [iconSrc]);
+
+  if (iconSrc && !failed) {
+    return (
+      <img
+        src={iconSrc}
+        alt=""
+        aria-hidden
+        data-testid="rail-tab-favicon"
+        className="h-3.5 w-3.5 flex-shrink-0 rounded-sm object-contain"
+        onError={() => setFailed(true)}
+      />
+    );
+  }
+  if (!Icon) return null;
+  return <Icon className={`h-3.5 w-3.5 flex-shrink-0 ${iconClassName ?? ''}`} />;
+};
 
 export interface RailTabShellProps {
   tabs: RailTabItem[];
@@ -97,7 +129,6 @@ export const RailTabShell: React.FC<RailTabShellProps> = ({
         className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto scrollbar-none"
       >
         {tabs.map((tab) => {
-          const Icon = tab.icon;
           const isActive = tab.id === activeTabId;
           return (
             <div
@@ -119,7 +150,11 @@ export const RailTabShell: React.FC<RailTabShellProps> = ({
                   : 'text-zinc-500 hover:bg-zinc-800/50 hover:text-zinc-300'
               }`}
             >
-              {Icon && <Icon className={`h-3.5 w-3.5 flex-shrink-0 ${tab.iconClassName ?? ''}`} />}
+              <RailTabIcon
+                icon={tab.icon}
+                iconSrc={tab.iconSrc}
+                iconClassName={tab.iconClassName}
+              />
               <span className="truncate">{tab.label}</span>
               {tab.suffix}
             </div>

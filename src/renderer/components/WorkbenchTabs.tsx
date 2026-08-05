@@ -99,6 +99,8 @@ interface TabMeta {
   title: string;
   icon: LucideIcon;
   iconClassName: string;
+  /** 浏览器页签 favicon；与动态标题同一数据源（managed session activeTab） */
+  iconSrc?: string | null;
   isDirty: boolean;
 }
 
@@ -218,6 +220,9 @@ export const WorkbenchTabs: React.FC<{ children?: React.ReactNode; focusable?: b
     || browserSession.preview?.url
     || browserSession.managedSession.activeTab?.url
     || t.workbenchTabs.browserTitle;
+  // 与动态标题同一 managed/preview 数据源；失败由 RailTabShell 回落 Globe
+  const browserFaviconUrl = browserSession.managedSession.activeTab?.faviconUrl
+    || null;
   // 「＋」弹出层只列还没打开的视图；切换/关闭都在 tab 条上直接完成。
   const [menuOpen, setMenuOpen] = useState(false);
   const [pendingClose, setPendingClose] = useState<TabMeta | null>(null);
@@ -267,6 +272,7 @@ export const WorkbenchTabs: React.FC<{ children?: React.ReactNode; focusable?: b
         title: browserTabTitle,
         icon: Globe2,
         iconClassName: 'text-badge-success/80',
+        iconSrc: browserFaviconUrl,
         isDirty: false,
       };
     }
@@ -356,6 +362,7 @@ export const WorkbenchTabs: React.FC<{ children?: React.ReactNode; focusable?: b
           label: meta.label,
           icon: meta.icon,
           iconClassName: meta.iconClassName,
+          iconSrc: meta.iconSrc,
           testId: `workbench-tab-${meta.id}`,
           suffix: (
             <>

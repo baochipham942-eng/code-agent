@@ -290,8 +290,7 @@ function getWorkbenchMetadata(message: CachedMessage): Record<string, unknown> |
 function isRuntimeSupplementMessage(message: CachedMessage): boolean {
   if (message.role !== 'user') return false;
   const workbench = getWorkbenchMetadata(message);
-  return workbench?.runtimeInputMode === 'supplement'
-    && workbench.runtimeInputDelivery !== 'queued_next_turn';
+  return workbench?.runtimeInputMode === 'supplement';
 }
 
 export function inferConversationTurnNumbers(messages: CachedMessage[]): Array<number | undefined> {

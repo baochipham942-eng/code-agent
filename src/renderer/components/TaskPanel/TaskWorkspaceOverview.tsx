@@ -2,7 +2,7 @@
 // TaskWorkspaceOverview —— 概览四模块 · 任务上下文面板（2026-08-04 拍板二/三）
 // ----------------------------------------------------------------------------
 // 四个一级模块竖向堆叠，各回答一个用户问题：
-//   任务（在干什么：细进度线 + 排队消息）/ Todo（干到哪了）/ 上下文（用了什么）/
+//   任务（在干什么：细进度线）/ Todo（干到哪了）/ 上下文（用了什么）/
 //   产物（给了我什么：完成态收拢缩略行）。
 // 诊断 UI（AgentTree / 能力路由证据 / 详情入口）整体删除——数据照常写 DB，仅撤 UI。
 // 视觉：无卡片外壳、静态容器零边框（条款 B2），层级靠留白 + 字色阶梯。
@@ -31,7 +31,6 @@ import { useI18n } from '../../hooks/useI18n';
 import { humanContextLabel } from '../../utils/overviewLabels';
 import { isLiveRunStatus } from '../../utils/overviewRunHeader';
 import { OverviewRunHeader } from './OverviewRunHeader';
-import { OverviewSteeringQueue } from './OverviewSteeringQueue';
 import { ArtifactThumbStrip } from './OutputArtifactRows';
 import { TaskDashboardSummary } from './RunWorkbenchCards';
 
@@ -458,10 +457,9 @@ export const TaskWorkspaceOverview: React.FC = () => {
 
   return (
     <div className="space-y-4" data-testid="task-workspace-overview">
-      {/* 模块一 · 任务：细进度线一行 + 排队消息紧随其下 */}
+      {/* 模块一 · 任务：细进度线一行 */}
       <section data-module="task" aria-label={t.workbenchTabs.overviewProgressLabel}>
         <OverviewRunHeader />
-        <OverviewSteeringQueue />
       </section>
 
       {/* 模块二 · Todo：计划步骤提为一级；无 TODO 整个模块不渲染 */}

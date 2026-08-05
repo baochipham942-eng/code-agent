@@ -10,7 +10,6 @@ import { PLAIN_CHAT_SUMMARY_LABEL } from '@shared/contract/sessionWorkspace';
 import { useI18n } from '../hooks/useI18n';
 import { useTaskActivity } from '../hooks/useTaskActivity';
 import { useWorkspacePreviewModel } from '../hooks/useWorkspacePreviewModel';
-import { useRunControlStore } from '../stores/runControlStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { TaskPanel } from './TaskPanel';
 
@@ -20,7 +19,6 @@ export const WorkbenchOverview: React.FC = () => {
   const { hasTaskActivity } = useTaskActivity();
   const workspacePreviewItems = useWorkspacePreviewModel();
   const hasArtifacts = workspacePreviewItems.length > 0;
-  const hasQueuedInputs = useRunControlStore((state) => state.queue.length > 0);
   // 最近一次任务现场摘要：纯对话（PLAIN_CHAT_SUMMARY_LABEL）不算产物现场，不挂预览。
   const recentSnapshotSummary = useSessionStore((state) => {
     const summary = state.sessions
@@ -29,9 +27,7 @@ export const WorkbenchOverview: React.FC = () => {
     return summary && summary !== PLAIN_CHAT_SUMMARY_LABEL ? summary : null;
   });
 
-  // 排队消息必须始终可达（T1）：中断后 run 活动信号会落回 false，但队列还在，
-  // 只按 hasTaskActivity 判空态会把「可见、可删、可立即发送」直接锁死在空态后面。
-  if (!hasTaskActivity && !hasArtifacts && !hasQueuedInputs) {
+  if (!hasTaskActivity && !hasArtifacts) {
     return (
       <div
         data-testid="workbench-overview-view"

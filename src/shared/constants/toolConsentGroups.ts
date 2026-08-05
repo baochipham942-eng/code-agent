@@ -60,6 +60,10 @@ export const TOOL_CONSENT_MAP: Readonly<Record<string, { group: ToolConsentGroup
   MemoryWrite: { group: 'memoryTask', effect: 'memory' },
   EpisodicRecall: { group: 'memoryTask', effect: 'memory' },
   TaskManager: { group: 'memoryTask', effect: 'task' },
+  spawn_task: { group: 'memoryTask', effect: 'task' },
+  steer_task: { group: 'memoryTask', effect: 'task' },
+  cancel_task: { group: 'memoryTask', effect: 'task' },
+  task_status: { group: 'memoryTask', effect: 'task' },
 
   WebSearch: { group: 'network', effect: 'webSearch' },
   WebFetch: { group: 'network', effect: 'webFetch' },

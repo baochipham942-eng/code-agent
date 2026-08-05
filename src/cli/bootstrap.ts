@@ -533,6 +533,7 @@ export function createAgentLoop(
     deniedToolNames: config.agentOverride && config.agentOverride.deniedToolNames.length > 0
       ? [...config.agentOverride.deniedToolNames]
       : undefined,
+    allowedToolNames: config.allowedToolNames,
     telemetryAdapter,
     // CLI 消息持久化回调（包含 tool_results）
     persistMessage: async (message: Message) => {

@@ -1236,7 +1236,10 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
               右侧 时长 + 停止 + 发送）——不在输入框上方另悬浮一条，也就不会出现
               两个发送键（产品负责人 2026-07-27 真机反馈，形态对齐 Codex composer）。
               输入框本体全程可见可编辑。 */}
-          <div className="flex items-center gap-1 px-4 pb-[16.5px]">
+          <div className="flex items-center gap-1 px-4 pb-2">
+            {/* pb-2(8) 不是 16 的笔误：行内图标是 16px 字形居中在 32px 点击盒里，
+                盒底自带 8px 隐形 chrome，8+8=16 才是肉眼看到的「图标到下边框」距离，
+                与左轨的 16 一致（左侧靠「+」的 -ml-2 补偿同一件事）。 */}
             {/* "+" 二级菜单（Codex 风格 B+）— 收纳上传附件 + 能力入口 + 交互模式 */}
             <InputAddMenu
               onFileSelect={handleFileSelect}

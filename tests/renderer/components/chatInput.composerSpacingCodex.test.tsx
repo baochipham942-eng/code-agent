@@ -48,8 +48,8 @@ describe('SendButton Codex 形态（28px 实心浅色正圆，全状态分支）
 describe('输入框间距（Codex 参考图像素扫描值）', () => {
   const source = readFileSync(CHAT_INPUT_PATH, 'utf8');
 
-  it('工具行内边距：左右对称 16 / 下 16.5（产品负责人 2026-08-05 拍板回对称——右 7.5 的理由只在发送键显示时成立，静止态右端是语音入口）', () => {
-    expect(source).toMatch(/flex items-center gap-1 px-4 pb-\[16\.5px\]/);
+  it('工具行内边距：左右对称 16 / 下 pb-2（产品负责人 2026-08-05 拍板：按「字形到边框」对齐——图标字形在 32px 点击盒里居中，盒底自带 8px chrome，8+8=16 才与左轨一致）', () => {
+    expect(source).toMatch(/flex items-center gap-1 px-4 pb-2/);
   });
 
   it('容器下边 → app 底部：18.5', () => {

@@ -447,8 +447,12 @@ export const InputArea = forwardRef<InputAreaRef, InputAreaProps>(
           className="hidden"
         />
 
-        {/* 文字区上方 chip（非文字流：@neo 续接 / appshot / pin 资料） */}
-        {chips ? <div className="px-4 pt-3 empty:hidden">{chips}</div> : null}
+        {/* 文字区上方 chip（非文字流：appshot / pin 资料）。
+            本容器不带任何 pt/mb：ComposerChipsRow 里的 appshot 锚点空闲时也常驻 DOM，
+            `empty:hidden` 对它永远不生效，容器级 padding 会在没 chip 时白占高度、
+            把正文顶离 16px 轨（真机 2026-08-05：placeholder 顶到 37px）。
+            可见间距由各 chip 自己的 mt 提供，空闲成本为零。 */}
+        {chips ? <div className="px-4">{chips}</div> : null}
 
         {/* 文本编辑区（contenteditable）：文字与内联 chip 按阅读顺序混排 */}
         <div className="relative">

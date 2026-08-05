@@ -26,6 +26,14 @@ export interface OpenUserBrowserLinkInput {
   workspace: string;
 }
 
+export type UserBrowserHistoryAction = 'back' | 'forward' | 'reload';
+
+export interface ControlUserBrowserHistoryInput {
+  conversationId: string;
+  workspace: string;
+  action: UserBrowserHistoryAction;
+}
+
 export interface UserBrowserLinkResult {
   conversationId: string;
   runId: string;
@@ -115,6 +123,56 @@ export class UserBrowserLinkService {
       surfaceSessionId,
       snapshot: this.runtime.snapshotConversation(conversationId),
     };
+  }
+
+  async history(input: ControlUserBrowserHistoryInput): Promise<SurfaceConversationSnapshotV1> {
+    const conversationId = input.conversationId.trim();
+    const workspace = input.workspace.trim();
+    if (!conversationId || !workspace) {
+      throw new Error('User browser history control requires conversationId and workspace.');
+    }
+    const action = input.action;
+    if (action !== 'back' && action !== 'forward' && action !== 'reload') {
+      throw new Error(`Unsupported browser history action: ${String(action)}`);
+    }
+
+    let run = this.runs.get(conversationId);
+    if (!run) {
+      const handle = this.registry.startAuxiliary({
+        runId: `user-browser-link:${randomUUID()}`,
+        sessionId: conversationId,
+        workspace,
+      });
+      run = {
+        handle,
+        identity: {
+          conversationId,
+          runId: handle.context.runId,
+          agentId: SURFACE_USER_BROWSER_AGENT_ID,
+        },
+      };
+      this.runs.set(conversationId, run);
+    }
+
+    const result = await this.adapter.execute({
+      identity: run.identity,
+      operationId: `user-browser-link:${action}:${randomUUID()}`,
+      action,
+      params: { action },
+      async executeProvider(_signal, browserService) {
+        const activeTab = browserService.getActiveTab();
+        if (!activeTab) throw new Error('No active browser tab.');
+        if (action === 'back') await browserService.goBack(activeTab.id);
+        else if (action === 'forward') await browserService.goForward(activeTab.id);
+        else await browserService.reload(activeTab.id);
+        return { success: true, output: `Browser ${action}` };
+      },
+    });
+
+    if (!result.success) {
+      throw new Error(result.error || `User browser ${action} failed.`);
+    }
+    return this.runtime.snapshotConversation(conversationId);
   }
 
   async end(

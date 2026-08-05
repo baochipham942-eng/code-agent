@@ -4,7 +4,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { IPC_DOMAINS } from '../../../src/shared/ipc';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
 import { useSurfaceExecutionStore } from '../../../src/renderer/stores/surfaceExecutionStore';
-import { openHttpLinkInRail } from '../../../src/renderer/services/userBrowserLink';
+import {
+  openHttpLinkInRail,
+  openHttpLinkInRailAsync,
+} from '../../../src/renderer/services/userBrowserLink';
 
 describe('openHttpLinkInRail', () => {
   const invoke = vi.fn();
@@ -51,5 +54,18 @@ describe('openHttpLinkInRail', () => {
       url: 'https://example.test/path',
       workspace: '/tmp/workspace',
     });
+  });
+
+  it('async path rejects when host returns failure (for N1 pending failed branch)', async () => {
+    invoke.mockResolvedValue({
+      success: false,
+      error: { message: 'navigate failed' },
+    });
+
+    await expect(openHttpLinkInRailAsync({
+      href: 'https://example.test/path',
+      conversationId: 'conversation-a',
+      workspace: '/tmp/workspace',
+    })).rejects.toThrow(/navigate failed|Failed to open/);
   });
 });

@@ -772,7 +772,7 @@ export function registerWorkspaceHandlers(
   getMainWindow: () => AppWindow | null,
   getAppService: () => AgentApplicationService | null,
   getConfigService: () => ConfigService | null,
-  getUserBrowserLinks: () => Pick<UserBrowserLinkService, 'open' | 'end'> = getUserBrowserLinkService,
+  getUserBrowserLinks: () => Pick<UserBrowserLinkService, 'open' | 'end' | 'history'> = getUserBrowserLinkService,
 ): void {
   // ========== New Domain Handler (TASK-04) ==========
   ipcMain.handle(IPC_DOMAINS.WORKSPACE, async (_, request: IPCRequest): Promise<IPCResponse> => {
@@ -891,6 +891,15 @@ export function registerWorkspaceHandlers(
             payload as { conversationId: string; url: string; workspace: string },
           );
           break;
+        case 'controlUserBrowserHistory': {
+          const historyPayload = payload as {
+            conversationId: string;
+            workspace: string;
+            action: 'back' | 'forward' | 'reload';
+          };
+          data = await getUserBrowserLinks().history(historyPayload);
+          break;
+        }
         case 'closeLinkInRail': {
           const closePayload = payload as { conversationId: string; reason?: 'user' | 'session-switch' };
           data = await getUserBrowserLinks().end(

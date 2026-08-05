@@ -35,6 +35,7 @@ import { useWorkbenchFocusStore } from '../stores/workbenchFocusStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { useI18n } from '../hooks/useI18n';
 import { useKeybindingsSettings } from '../hooks/useKeybindingsSettings';
+import { useWorkbenchBrowserSession } from '../hooks/useWorkbenchBrowserSession';
 import { claimDesignCanvasForSession } from './design/designCanvasLaunch';
 import { ConfirmDialog } from './composites/ConfirmDialog';
 import { RailTabShell } from './composites/RailTabShell';
@@ -207,6 +208,16 @@ export const WorkbenchTabs: React.FC<{ children?: React.ReactNode; focusable?: b
   const workbenchFocused = useWorkbenchFocusStore((s) => s.workbenchFocused);
   const setWorkbenchFocused = useWorkbenchFocusStore((s) => s.setWorkbenchFocused);
   const currentSessionId = useSessionStore((s) => s.currentSessionId);
+  // 二期 N2：浏览器页签动态显示当前页标题（无页面回落「浏览器」）。
+  const browserSession = useWorkbenchBrowserSession();
+  const browserTabLabel = browserSession.browserSurfaceTitle
+    || browserSession.preview?.title
+    || browserSession.managedSession.activeTab?.title
+    || t.workbenchTabs.browserLabel;
+  const browserTabTitle = browserSession.browserSurfaceOrigin
+    || browserSession.preview?.url
+    || browserSession.managedSession.activeTab?.url
+    || t.workbenchTabs.browserTitle;
   // 「＋」弹出层只列还没打开的视图；切换/关闭都在 tab 条上直接完成。
   const [menuOpen, setMenuOpen] = useState(false);
   const [pendingClose, setPendingClose] = useState<TabMeta | null>(null);
@@ -252,8 +263,8 @@ export const WorkbenchTabs: React.FC<{ children?: React.ReactNode; focusable?: b
     if (id === 'browser') {
       return {
         id,
-        label: t.workbenchTabs.browserLabel,
-        title: t.workbenchTabs.browserTitle,
+        label: browserTabLabel,
+        title: browserTabTitle,
         icon: Globe2,
         iconClassName: 'text-badge-success/80',
         isDirty: false,

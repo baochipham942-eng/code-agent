@@ -20,6 +20,10 @@ import type {
 import { IPC_CHANNELS } from '../../../shared/ipc';
 import { AppWindow, ipcHost } from '../../platform';
 import { INTERACTION_TIMEOUTS } from '../../../shared/constants';
+import {
+  cancelVoiceQuestion,
+  offerVoiceQuestion,
+} from '../../services/voice/voiceQuestionBridge';
 
 export type PromptUserStatus = 'answered' | 'declined' | 'no-renderer' | 'timeout' | 'aborted';
 
@@ -44,18 +48,22 @@ const pending = new Map<
 
 let handlerRegistered = false;
 
+function settleUserQuestionResponse(response: UserQuestionResponse): void {
+  const p = pending.get(response.requestId);
+  if (!p) return;
+  clearTimeout(p.timeout);
+  pending.delete(response.requestId);
+  cancelVoiceQuestion(response.requestId);
+  p.resolve(response);
+}
+
 function ensureResponseHandler(): void {
   if (handlerRegistered) return;
   handlerRegistered = true;
   ipcHost.handle(
     IPC_CHANNELS.USER_QUESTION_RESPONSE,
     async (_event, response: UserQuestionResponse) => {
-      const p = pending.get(response.requestId);
-      if (p) {
-        clearTimeout(p.timeout);
-        pending.delete(response.requestId);
-        p.resolve(response);
-      }
+      settleUserQuestionResponse(response);
     },
   );
 }
@@ -88,6 +96,7 @@ export async function promptUserInChat(
   const responsePromise = new Promise<UserQuestionResponse>((resolve, reject) => {
     const timeout = setTimeout(() => {
       pending.delete(request.id);
+      cancelVoiceQuestion(request.id);
       reject(new Error('timeout'));
     }, timeoutMs);
     pending.set(request.id, { resolve, timeout });
@@ -100,6 +109,7 @@ export async function promptUserInChat(
           if (p) {
             clearTimeout(p.timeout);
             pending.delete(request.id);
+            cancelVoiceQuestion(request.id);
             reject(new Error('aborted'));
           }
         },
@@ -110,11 +120,13 @@ export async function promptUserInChat(
 
   try {
     mainWindow.webContents.send(IPC_CHANNELS.USER_QUESTION_ASK, request);
+    offerVoiceQuestion(request, settleUserQuestionResponse);
   } catch (error) {
     const p = pending.get(request.id);
     if (p) {
       clearTimeout(p.timeout);
       pending.delete(request.id);
+      cancelVoiceQuestion(request.id);
     }
     throw error;
   }

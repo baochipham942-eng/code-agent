@@ -11,6 +11,10 @@ import {
   VOICE_MILESTONE_MAX_PER_WORK_ITEM,
   VOICE_MILESTONE_MIN_INTERVAL_MS,
   VOICE_MILESTONE_STALE_MS,
+  VOICE_NARRATION_MAX_RETRY_ATTEMPTS,
+  VOICE_NARRATION_PLAYBACK_ACK_TIMEOUT_MS,
+  VOICE_NARRATION_RETRY_BASE_MS,
+  VOICE_NARRATION_RETRY_MAX_MS,
 } from '../../../shared/constants/voice';
 import type { VoiceTransportHandle, VoiceWorkNarration } from '../../../shared/contract/voice';
 import { createLogger } from '../infra/logger';
@@ -61,7 +65,16 @@ interface PendingNarration {
 export interface NarrationState {
   userSpeaking: boolean;
   queue: Map<string, PendingNarration>;
-  inFlight: { narration: VoiceWorkNarration; rejectionCount: number } | null;
+  inFlight: {
+    narration: VoiceWorkNarration;
+    rejectionCount: number;
+    ackTimer: ReturnType<typeof setTimeout>;
+  } | null;
+  retryTimer: ReturnType<typeof setTimeout> | null;
+  retryPending: {
+    narration: VoiceWorkNarration;
+    rejectionCount: number;
+  } | null;
   spokenWorkItemIds: Set<string>;
   /** 每件活已经播出去的进度条数（§2 上限）。键是真实 workItemId，不是 milestone 合成键。 */
   milestoneCounts: Map<string, number>;
@@ -84,11 +97,50 @@ export function createNarrationState(): NarrationState {
     userSpeaking: false,
     queue: new Map(),
     inFlight: null,
+    retryTimer: null,
+    retryPending: null,
     spokenWorkItemIds: new Set(),
     milestoneCounts: new Map(),
     lastMilestoneAt: 0,
     firstDispatchAt: 0,
   };
+}
+
+function isTerminalNarration(
+  narration: VoiceWorkNarration,
+): narration is VoiceWorkNarration & { status: 'done' | 'unverified' | 'failed' } {
+  return narration.status === 'done'
+    || narration.status === 'unverified'
+    || narration.status === 'failed';
+}
+
+async function notifyUndeliveredTerminal(
+  session: NarrationSession,
+  narration: VoiceWorkNarration,
+  reason: string,
+): Promise<void> {
+  if (!isTerminalNarration(narration)) return;
+  try {
+    const { notificationService } = await import('../infra/notificationService');
+    notificationService.notifyVoiceWorkSettled({
+      sessionId: session.neoSessionId,
+      taskTitle: narration.title,
+      status: narration.status,
+      ...(narration.summary ? { detail: narration.summary } : {}),
+    });
+    logger.warn('undelivered terminal narration fell back to notification', {
+      voiceSessionId: session.id,
+      workItemId: narration.workItemId,
+      reason,
+    });
+  } catch (error) {
+    logger.warn('undelivered terminal narration notification failed', {
+      voiceSessionId: session.id,
+      workItemId: narration.workItemId,
+      reason,
+      message: error instanceof Error ? error.message : 'unknown',
+    });
+  }
 }
 
 /**
@@ -128,6 +180,15 @@ function formatNarration(narration: VoiceWorkNarration): string {
 
 function injectNarration(session: NarrationSession, narration: VoiceWorkNarration, rejectionCount = 0): void {
   if (session.narration.spokenWorkItemIds.has(narration.workItemId)) return;
+  if (session.narration.inFlight) {
+    session.narration.queue.set(narration.workItemId, {
+      narration,
+      suppressedTurns: 0,
+      rejectionCount,
+      enqueuedAt: Date.now(),
+    });
+    return;
+  }
   const { upstream } = session;
   if (upstream.kind !== 'relay') {
     // WebRTC 形态媒体不经 Host，注入通道要走 Renderer 的 data channel，尚未实现。
@@ -136,7 +197,7 @@ function injectNarration(session: NarrationSession, narration: VoiceWorkNarratio
     dropNarration(session, narration, 'no_inject_channel');
     return;
   }
-  upstream.injectItem(formatNarration(narration));
+  upstream.injectItem(formatNarration(narration), narration.workItemId);
   // §4.3：注入侧同样带三元组，与派活侧对上就能还原一条完整链路。
   logger.info('narration injected', {
     workItemId: narration.workItemId,
@@ -144,21 +205,105 @@ function injectNarration(session: NarrationSession, narration: VoiceWorkNarratio
     neoSessionId: session.neoSessionId,
     status: narration.status,
   });
-  session.narration.inFlight = { narration, rejectionCount };
-  session.narration.spokenWorkItemIds.add(narration.workItemId);
+  const ackTimer = setTimeout(() => {
+    const current = session.narration.inFlight;
+    if (current?.narration.workItemId !== narration.workItemId) return;
+    scheduleNarrationRetry(session, narration, rejectionCount, 'playback acknowledgement timed out');
+  }, VOICE_NARRATION_PLAYBACK_ACK_TIMEOUT_MS);
+  session.narration.inFlight = { narration, rejectionCount, ackTimer };
+}
+
+function markNarrationDelivered(session: NarrationSession, narrationId: string, reason: 'playback' | 'interrupt'): void {
+  const state = session.narration;
+  const current = state.inFlight;
+  if (current?.narration.workItemId !== narrationId) {
+    logger.warn('unmatched narration delivery acknowledgement', {
+      voiceSessionId: session.id,
+      narrationId,
+      reason,
+    });
+    return;
+  }
+  clearTimeout(current.ackTimer);
+  state.inFlight = null;
+  state.spokenWorkItemIds.add(narrationId);
   recordVoiceWorkEvent({
     phase: 'narration_spoken',
-    workItemId: milestoneOwner(narration.workItemId),
-    status: narration.status,
-    worthHearing: narration.worthHearing === true,
+    workItemId: milestoneOwner(narrationId),
+    status: current.narration.status,
+    worthHearing: current.narration.worthHearing === true,
   });
-  if (narration.status === 'milestone') {
-    const owner = milestoneOwner(narration.workItemId);
-    const state = session.narration;
+  if (current.narration.status === 'milestone') {
+    const owner = milestoneOwner(narrationId);
     state.milestoneCounts.set(owner, (state.milestoneCounts.get(owner) ?? 0) + 1);
-    // 间隔从**真正注入**那一刻起算，不从入队起算——被压住的那段时间不该消耗间隔额度。
     state.lastMilestoneAt = Date.now();
   }
+  logger.info('narration delivery confirmed', {
+    voiceSessionId: session.id,
+    workItemId: narrationId,
+    reason,
+  });
+  flushNarrationQueue(session);
+}
+
+function scheduleNarrationRetry(
+  session: NarrationSession,
+  narration: VoiceWorkNarration,
+  rejectionCount: number,
+  message: string,
+): void {
+  const state = session.narration;
+  if (state.inFlight?.narration.workItemId === narration.workItemId) {
+    clearTimeout(state.inFlight.ackTimer);
+    state.inFlight = null;
+  }
+  if (narration.status === 'milestone') {
+    dropNarration(session, narration, 'injection_rejected');
+    flushNarrationQueue(session);
+    return;
+  }
+  if (rejectionCount >= VOICE_NARRATION_MAX_RETRY_ATTEMPTS) {
+    logger.warn('narration delivery exhausted retries', {
+      voiceSessionId: session.id,
+      workItemId: narration.workItemId,
+      attempts: rejectionCount,
+      message,
+    });
+    dropNarration(session, narration, 'injection_retry_exhausted');
+    void notifyUndeliveredTerminal(session, narration, 'retry-exhausted');
+    flushNarrationQueue(session);
+    return;
+  }
+  const nextCount = rejectionCount + 1;
+  const delayMs = Math.min(
+    VOICE_NARRATION_RETRY_BASE_MS * (2 ** rejectionCount),
+    VOICE_NARRATION_RETRY_MAX_MS,
+  );
+  if (state.retryTimer) clearTimeout(state.retryTimer);
+  state.retryPending = { narration, rejectionCount: nextCount };
+  state.retryTimer = setTimeout(() => {
+    state.retryTimer = null;
+    state.retryPending = null;
+    if (state.spokenWorkItemIds.has(narration.workItemId)) return;
+    const upstreamResponding = session.upstream.kind === 'relay' && session.upstream.isResponding();
+    if (state.userSpeaking || upstreamResponding || state.inFlight) {
+      state.queue.set(narration.workItemId, {
+        narration,
+        suppressedTurns: 0,
+        rejectionCount: nextCount,
+        enqueuedAt: Date.now(),
+      });
+      return;
+    }
+    injectNarration(session, narration, nextCount);
+  }, delayMs);
+  logger.info('narration delivery retry scheduled', {
+    voiceSessionId: session.id,
+    workItemId: narration.workItemId,
+    attempt: nextCount,
+    delayMs,
+    message,
+  });
 }
 
 /**
@@ -234,7 +379,7 @@ export function enqueueOrInjectNarration(session: NarrationSession, narration: V
   const upstreamResponding = session.upstream.kind === 'relay' && session.upstream.isResponding();
   // 这里**没有** worthHearing 分支，而且不许长出来（R3 硬边界）：用户正在说话时，
   // 再重要的转折也只能排队等他说完。「重要」是相对其它播报说的，不是相对用户说的。
-  if (!state.userSpeaking && !upstreamResponding) {
+  if (!state.userSpeaking && !upstreamResponding && !state.inFlight && !state.retryTimer) {
     injectNarration(session, narration);
     return;
   }
@@ -258,6 +403,7 @@ export function markNarrationUserTurn(session: NarrationSession): void {
       dropNarration(session, pending.narration, 'user_speaking');
       continue;
     }
+    if (isTerminalNarration(pending.narration)) continue;
     pending.suppressedTurns += 1;
     if (pending.suppressedTurns < 2) continue;
     state.queue.delete(workItemId);
@@ -268,7 +414,7 @@ export function markNarrationUserTurn(session: NarrationSession): void {
 export function flushNarrationQueue(session: NarrationSession): void {
   const state = session.narration;
   state.userSpeaking = false;
-  state.inFlight = null;
+  if (state.inFlight || state.retryTimer) return;
   // 每次 response.done 只放一条。injectItem 会立即请求下一次 response，
   // 一次清空多条会让这些 response.create 互相碰撞。
   // 放行之前先把过期进度清掉：进度是过程量，滞留超过保质期就只会误导。
@@ -289,40 +435,60 @@ export function flushNarrationQueue(session: NarrationSession): void {
 export function handleNarrationInjectionRejected(session: NarrationSession, message: string): void {
   const state = session.narration;
   const failed = state.inFlight;
-  state.inFlight = null;
   if (!failed) {
     logger.warn('unmatched narration injection rejection', { voiceSessionId: session.id, message });
     return;
   }
   const { narration, rejectionCount } = failed;
-  if (rejectionCount >= 1) {
-    // workItemId 留在这条 warn 里：上游拒绝原因（message）只有这一条带，
-    // 排查时要靠它和 workItemId 一起才能定位是哪件活的哪次注入被拒。
-    logger.warn('narration injection dropped after retry', {
-      voiceSessionId: session.id,
-      workItemId: narration.workItemId,
-      message,
-    });
-    dropNarration(session, narration, 'injection_retry_exhausted');
-    return;
+  scheduleNarrationRetry(session, narration, rejectionCount, message);
+}
+
+export function handleNarrationPlaybackStarted(session: NarrationSession, narrationId: string): void {
+  markNarrationDelivered(session, narrationId, 'playback');
+}
+
+/** 用户主动打断正在播放的播报，按 ADR-054 视为已送达，不再补播。 */
+export function handleNarrationPlaybackInterrupted(session: NarrationSession): void {
+  const narrationId = session.narration.inFlight?.narration.workItemId;
+  if (narrationId) markNarrationDelivered(session, narrationId, 'interrupt');
+}
+
+/** 挂断前把仍未送达的终态转成系统通知，并释放所有计时器。 */
+export function settleNarrationsForTeardown(session: NarrationSession): void {
+  const state = session.narration;
+  const pending = [
+    ...(state.inFlight ? [state.inFlight.narration] : []),
+    ...(state.retryPending ? [state.retryPending.narration] : []),
+    ...[...state.queue.values()].map((entry) => entry.narration),
+  ];
+  if (state.inFlight) clearTimeout(state.inFlight.ackTimer);
+  if (state.retryTimer) clearTimeout(state.retryTimer);
+  state.inFlight = null;
+  state.retryTimer = null;
+  state.retryPending = null;
+  state.queue.clear();
+  const seen = new Set<string>();
+  for (const narration of pending) {
+    if (seen.has(narration.workItemId) || state.spokenWorkItemIds.has(narration.workItemId)) continue;
+    seen.add(narration.workItemId);
+    void notifyUndeliveredTerminal(session, narration, 'call-ended');
   }
-  // 进度被拒就丢，不重试:重试意味着过一会儿播一条更陈旧的进展,而它本来就是过程量。
-  // 被拒这次仍然算消耗掉一格额度——这个偏差是**故意偏向安静**的:进度这个功能的风险
-  // 是碎碎念,不是少说一句。
-  if (narration.status === 'milestone') {
-    dropNarration(session, narration, 'injection_rejected');
-    return;
+}
+
+/** 问题已回答或被文字卡接管时，撤掉对应未送达播报，避免稍后重复追问。 */
+export function dismissNarrationsByPrefix(session: NarrationSession, prefix: string): void {
+  const state = session.narration;
+  if (state.inFlight?.narration.workItemId.startsWith(prefix)) {
+    clearTimeout(state.inFlight.ackTimer);
+    state.inFlight = null;
   }
-  state.spokenWorkItemIds.delete(narration.workItemId);
-  state.queue.set(narration.workItemId, {
-    narration,
-    suppressedTurns: 0,
-    rejectionCount: rejectionCount + 1,
-    enqueuedAt: Date.now(),
-  });
-  logger.info('narration injection rejected; queued one retry', {
-    voiceSessionId: session.id,
-    workItemId: narration.workItemId,
-    message,
-  });
+  if (state.retryTimer && state.retryPending?.narration.workItemId.startsWith(prefix)) {
+    clearTimeout(state.retryTimer);
+    state.retryTimer = null;
+    state.retryPending = null;
+  }
+  for (const narrationId of state.queue.keys()) {
+    if (narrationId.startsWith(prefix)) state.queue.delete(narrationId);
+  }
+  flushNarrationQueue(session);
 }

@@ -11,11 +11,12 @@
 // 不双份）；发送失败 ChatView 侧回滚乐观消息。@neo 前缀原样透传，不特殊处理。
 // ============================================================================
 
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import type { Message } from '@shared/contract';
 import type { ConversationEnvelope } from '@shared/contract/conversationEnvelope';
 import type { Project } from '@shared/contract/project';
 import { generateMessageId } from '@shared/utils/id';
+import { useComposerStore, spaceScopeKey } from '../../../stores/composerStore';
 import { useProjectChatSeedStore } from '../../../stores/projectChatSeedStore';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { ChatInput } from '../chat/ChatInput';
@@ -29,6 +30,14 @@ const TITLE_MAX_LENGTH = 30;
 export const ProjectComposer: React.FC<ProjectComposerProps> = ({ project }) => {
   const [sending, setSending] = useState(false);
 
+  // 进入空间页 = 激活 space 槽：会话里配置的 skill/pin/专家不得漏进来；
+  // 离开时 activateScope 会把空间配置快照回去，回会话可还原。
+  useEffect(() => {
+    useComposerStore.getState().activateScope(spaceScopeKey(project?.id), {
+      workingDirectory: project?.workspacePath ?? null,
+    });
+  }, [project?.id, project?.workspacePath]);
+
   const handleSend = useCallback(async (envelope: ConversationEnvelope): Promise<boolean> => {
     const content = envelope.content.trim();
     if (!content && !(envelope.attachments?.length)) return false;
@@ -37,6 +46,7 @@ export const ProjectComposer: React.FC<ProjectComposerProps> = ({ project }) => 
     try {
       const titleSource = content || envelope.attachments?.[0]?.name || '';
       const title = titleSource.length > TITLE_MAX_LENGTH ? titleSource.slice(0, TITLE_MAX_LENGTH) : titleSource;
+      // createSession 内 handoffActiveScopeToSession：space 槽 → 新会话槽 + pin 物化 + 专家 bind
       const session = await useSessionStore.getState().createSession(title || undefined, {
         workingDirectory: project?.workspacePath ?? undefined,
       });
@@ -64,7 +74,12 @@ export const ProjectComposer: React.FC<ProjectComposerProps> = ({ project }) => 
 
   return (
     <div className="shrink-0 border-t border-zinc-800/70" data-testid="project-space-composer">
-      <ChatInput onSend={handleSend} disabled={sending} sessionless />
+      <ChatInput
+        onSend={handleSend}
+        disabled={sending}
+        sessionless
+        scopeProjectId={project?.id ?? null}
+      />
     </div>
   );
 };

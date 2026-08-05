@@ -439,7 +439,14 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
             <button
               type="button"
               onClick={() => {
-                window.domainAPI?.invoke('workspace', 'openPath', { filePath: text });
+                // host openPath 只接受绝对路径；相对路径在调用方先按工作目录解析。
+                let filePath = text;
+                if (filePath && !filePath.startsWith('/') && !filePath.startsWith('~')) {
+                  filePath = workingDirectory
+                    ? `${workingDirectory.replace(/\/+$/, '')}/${filePath.replace(/^\.?\//, '')}`
+                    : filePath;
+                }
+                void window.domainAPI?.invoke('workspace', 'openPath', { filePath });
               }}
               className="inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5 rounded-md bg-blue-500/10 text-badge-info hover:bg-blue-500/20 hover:text-badge-info border border-badge-info/20 hover:border-badge-info/40 transition-all cursor-pointer text-sm font-medium"
               title="打开文件"

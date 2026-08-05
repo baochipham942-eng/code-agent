@@ -46,6 +46,11 @@ vi.mock('../../../src/host/services/infra/browserService', () => ({ browserServi
 vi.mock('../../../src/host/services/infra/browserRelayService', () => ({ browserRelayService: svc.relay }));
 vi.mock('../../../src/host/platform', () => ({ shell: { openPath: (...a: unknown[]) => svc.openPath(...a) } }));
 vi.mock('../../../src/host/services/infra/logger', () => ({ createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }) }));
+vi.mock('../../../src/host/services/surfaceExecution/ManagedBrowserProviderAdapter', () => ({
+  getManagedBrowserProviderAdapter: () => ({
+    getPreferredUiSessionState: () => null,
+  }),
+}));
 
 type HandlerFn = (event: unknown, request: IPCRequest) => Promise<IPCResponse>;
 

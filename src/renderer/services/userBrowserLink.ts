@@ -89,10 +89,11 @@ export async function controlUserBrowserHistory(input: {
   action: UserBrowserHistoryAction;
 }): Promise<SurfaceConversationSnapshotV1 | null> {
   const conversationId = input.conversationId?.trim();
-  const workspace = input.workspace?.trim();
+  // workspace 允许缺省：与 openLinkInRail 同口径，host 按会话/默认 work 目录兜底。
+  const workspace = input.workspace?.trim() ?? '';
   const bridge = domainBridge();
-  if (!bridge || !conversationId || !workspace) {
-    throw new Error('Browser history control requires conversation and workspace.');
+  if (!bridge || !conversationId) {
+    throw new Error('Browser history control requires conversation.');
   }
   const response = await bridge.invoke<SurfaceConversationSnapshotV1 | null>(
     IPC_DOMAINS.WORKSPACE,
@@ -101,6 +102,65 @@ export async function controlUserBrowserHistory(input: {
   );
   if (!response.success) {
     throw new Error(response.error?.message || `Browser ${input.action} failed.`);
+  }
+  if (response.data) {
+    useSurfaceExecutionStore.getState().setNativeSnapshot(conversationId, response.data);
+  }
+  return response.data ?? null;
+}
+
+/** 面板 stage CSS 尺寸 → host setViewport（R4 视口跟随）。失败抛错。 */
+export async function setUserBrowserViewport(input: {
+  conversationId: string | null | undefined;
+  workspace: string | null | undefined;
+  width: number;
+  height: number;
+}): Promise<SurfaceConversationSnapshotV1 | null> {
+  const conversationId = input.conversationId?.trim();
+  const workspace = input.workspace?.trim() ?? '';
+  const bridge = domainBridge();
+  if (!bridge || !conversationId) {
+    throw new Error('Browser viewport requires conversation.');
+  }
+  const response = await bridge.invoke<SurfaceConversationSnapshotV1 | null>(
+    IPC_DOMAINS.WORKSPACE,
+    'setUserBrowserViewport',
+    {
+      conversationId,
+      workspace,
+      width: input.width,
+      height: input.height,
+    },
+  );
+  if (!response.success) {
+    throw new Error(response.error?.message || 'Browser setViewport failed.');
+  }
+  if (response.data) {
+    useSurfaceExecutionStore.getState().setNativeSnapshot(conversationId, response.data);
+  }
+  return response.data ?? null;
+}
+
+/** 画面交互透传（点击/滚轮/键盘/拖拽/IME 整段文本）。失败抛错，调用方静默或记日志。 */
+export async function dispatchUserBrowserInput(input: {
+  conversationId: string | null | undefined;
+  workspace: string | null | undefined;
+  input: unknown;
+}): Promise<SurfaceConversationSnapshotV1 | null> {
+  const conversationId = input.conversationId?.trim();
+  // workspace 允许缺省：快速对话无 cwd 时 host 兜底（R2：client 必填会零 dispatch）。
+  const workspace = input.workspace?.trim() ?? '';
+  const bridge = domainBridge();
+  if (!bridge || !conversationId) {
+    throw new Error('Browser input requires conversation.');
+  }
+  const response = await bridge.invoke<SurfaceConversationSnapshotV1 | null>(
+    IPC_DOMAINS.WORKSPACE,
+    'dispatchUserBrowserInput',
+    { conversationId, workspace, input: input.input },
+  );
+  if (!response.success) {
+    throw new Error(response.error?.message || 'Browser input failed.');
   }
   if (response.data) {
     useSurfaceExecutionStore.getState().setNativeSnapshot(conversationId, response.data);

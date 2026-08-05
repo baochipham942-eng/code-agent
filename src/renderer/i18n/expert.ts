@@ -44,6 +44,9 @@ export const expertZh = {
       collapsedWorking: '{count} 位成员工作中',
       collapsedDone: '{count} 位成员已完成',
       collapsedStandby: '{count} 位成员待命中',
+      recentActions: '最近动作',
+      runTrail: '运行轨迹',
+      noRecentActions: '还没开始动手',
     },
     workRecord: {
       title: '工作记录',
@@ -261,6 +264,9 @@ export const expertEn: typeof expertZh = {
       collapsedWorking: '{count} working',
       collapsedDone: '{count} done',
       collapsedStandby: '{count} on standby',
+      recentActions: 'Recent actions',
+      runTrail: 'Run trail',
+      noRecentActions: 'Nothing started yet',
     },
     workRecord: {
       title: 'Work record',

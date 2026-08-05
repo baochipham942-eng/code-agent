@@ -129,4 +129,67 @@ describe('成员对话页', () => {
     expect(useMemberViewStore.getState().viewingMemberId).toBeNull();
     expect(screen.queryByTestId('member-conversation-view')).toBeNull();
   });
+
+  // D2（2026-08-05）：成员视图此前只有「任务 + 产出 + 聚合计数」，中间全是黑箱。
+  it('滚动显示最近动作：工具名过人话化，最新的在最上面', async () => {
+    swarmState.agents = [
+      agentOf({
+        status: 'running',
+        contextSnapshot: {
+          currentTokens: 100, maxTokens: 1000, usagePercent: 10, messageCount: 3,
+          warningLevel: 'none', lastUpdated: 1, attachments: [], previews: [], truncatedMessages: 0,
+          tools: ['Read', 'Bash'],
+        },
+      }),
+    ];
+    useMemberViewStore.setState({ viewingMemberId: 'researcher' });
+
+    render(<MemberConversationView sessionId="session-1" />);
+    await waitFor(() => expect(screen.getByTestId('member-recent-actions')).toBeTruthy());
+
+    const actions = screen.getAllByTestId('member-recent-action');
+    expect(actions).toHaveLength(2);
+    // 倒序：最后用的工具排最前；且渲染的是人话不是裸工具名
+    expect(actions[0].textContent).toBe(zh.toolStepHumanize.bashFallback);
+    expect(actions[1].textContent).toBe(zh.toolStepHumanize.readFallback);
+    expect(screen.getByTestId('member-recent-actions').textContent).not.toContain('Bash');
+  });
+
+  it('还没动手时给空态文案，不留一个空壳区块', async () => {
+    useMemberViewStore.setState({ viewingMemberId: 'researcher' });
+
+    render(<MemberConversationView sessionId="session-1" />);
+    await waitFor(() => expect(screen.getByTestId('member-recent-actions')).toBeTruthy());
+    expect(screen.getByTestId('member-recent-actions').textContent).toContain(zh.expert.memberBar.noRecentActions);
+    expect(screen.queryAllByTestId('member-recent-action')).toHaveLength(0);
+  });
+
+  it('运行轨迹消费账本已落的生命周期事件，只取本成员 + run 级', async () => {
+    invokeMock.mockImplementation((channel: unknown) => {
+      if (channel === IPC_CHANNELS.SWARM_LIST_TRACE_RUNS) return Promise.resolve([ledgerRun]);
+      if (channel === IPC_CHANNELS.SWARM_GET_TRACE_RUN_DETAIL) {
+        return Promise.resolve({
+          ...ledgerDetail,
+          events: [
+            { id: 1, runId: 'run-1', seq: 1, timestamp: 1_000, eventType: 'swarm:started', agentId: null, level: 'info', title: '组队启动', summary: '' },
+            { id: 2, runId: 'run-1', seq: 2, timestamp: 2_000, eventType: 'swarm:agent:updated', agentId: 'researcher', level: 'info', title: '调研员开始工作', summary: '正在核对口径' },
+            { id: 3, runId: 'run-1', seq: 3, timestamp: 3_000, eventType: 'swarm:agent:updated', agentId: 'writer', level: 'info', title: '撰稿员开始工作', summary: '别人的轨迹' },
+          ],
+        });
+      }
+      return Promise.resolve(null);
+    });
+    useMemberViewStore.setState({ viewingMemberId: 'researcher' });
+
+    render(<MemberConversationView sessionId="session-1" />);
+    await waitFor(() => expect(screen.getByTestId('member-run-trail')).toBeTruthy());
+
+    const trail = screen.getByTestId('member-run-trail');
+    expect(trail.textContent).toContain('调研员开始工作');
+    expect(trail.textContent).toContain('正在核对口径');
+    expect(trail.textContent).toContain('组队启动');
+    expect(trail.textContent).not.toContain('别人的轨迹');
+    // 倒序：最新一条排最前
+    expect(screen.getAllByTestId('member-run-trail-event')[0].textContent).toContain('调研员开始工作');
+  });
 });

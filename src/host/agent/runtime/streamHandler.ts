@@ -16,7 +16,9 @@ import type { ContextAssembly } from './contextAssembly';
 import type { RunFinalizer } from './runFinalizer';
 import {
   createChildRunTraceContext,
+  enterRunTraceContext,
   getActiveRunTraceContext,
+  type RunTraceContext,
 } from '../../telemetry/runTraceContext';
 
 const logger = createLogger('StreamHandler');
@@ -110,12 +112,21 @@ export class StreamHandler {
     iterations: number,
     userMessage: string,
     langfuse: ReturnType<typeof getLangfuseService>,
-  ): void {
+  ): RunTraceContext | undefined {
     const activeRunTrace = getActiveRunTraceContext() ?? this.ctx.runTraceContext;
-    const iterationSpanId = activeRunTrace
-      ? createChildRunTraceContext(activeRunTrace, { agentId: this.ctx.agentId }).spanId
+    const turnId = generateMessageId();
+    const iterationTraceContext = activeRunTrace
+      ? createChildRunTraceContext(activeRunTrace, {
+        agentId: this.ctx.agentId,
+        turnId,
+        toolCallId: null,
+      })
+      : undefined;
+    const iterationSpanId = iterationTraceContext
+      ? iterationTraceContext.spanId
       : `iteration-${this.ctx.stats.traceId}-${iterations}`;
-    this.ctx.turn.beginTurn(generateMessageId(), iterationSpanId);
+    this.ctx.turn.beginTurn(turnId, iterationSpanId);
+    if (iterationTraceContext) enterRunTraceContext(iterationTraceContext);
     langfuse.startSpan(this.ctx.stats.traceId, this.ctx.turn.currentIterationSpanId, {
       name: `Iteration ${iterations}`,
       metadata: { iteration: iterations, turnId: this.ctx.turn.currentTurnId },
@@ -148,5 +159,7 @@ export class StreamHandler {
       this.contextAssembly.injectSystemMessage(goalCheckpoint, 'goal-checkpoint');
       logger.debug(`[AgentLoop] Goal checkpoint injected at iteration ${iterations}`);
     }
+
+    return iterationTraceContext;
   }
 }

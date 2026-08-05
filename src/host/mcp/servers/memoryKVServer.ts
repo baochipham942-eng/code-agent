@@ -10,7 +10,7 @@ import { InProcessMCPServer } from '../inProcessServer';
 import { createLogger } from '../../services/infra/logger';
 import type { ToolResult } from '../../../shared/contract';
 
-const logger = createLogger('MemoryKVServer');
+const logger = createLogger('MemoryKVServer', { lane: 'mcp' });
 
 // 存储数据结构
 interface KVEntry {

@@ -9,7 +9,7 @@ import {
   serializeRunTraceContext,
 } from '../telemetry/runTraceContext';
 
-const logger = createLogger('MCPTaskProtocol');
+const logger = createLogger('MCPTaskProtocol', { lane: 'mcp' });
 const DEFAULT_MAX_POLL_ATTEMPTS = 8;
 const DEFAULT_INITIAL_POLL_DELAY_MS = 250;
 const DEFAULT_MAX_POLL_DELAY_MS = 4_000;

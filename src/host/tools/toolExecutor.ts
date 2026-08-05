@@ -46,6 +46,11 @@ import { boundaryIdForRequestType } from './permissionBoundaryMapping';
 import { evaluateGuardFabricGate } from './guardFabricGate';
 import { completeArtifactLocatorGuardedWrite } from './artifacts/artifactLocatorHost';
 import { ensureFailedToolResultError } from './toolResultError';
+import {
+  createChildRunTraceContext,
+  getActiveRunTraceContext,
+  withRunTraceContext,
+} from '../telemetry/runTraceContext';
 
 const logger = createLogger('ToolExecutor');
 
@@ -269,6 +274,25 @@ export class ToolExecutor {
     toolName: string,
     rawParams: Record<string, unknown>,
     options: ExecuteOptions
+  ): Promise<ToolExecutionResult> {
+    const active = getActiveRunTraceContext();
+    if (!active) {
+      return this.executeInCorrelationContext(toolName, rawParams, options);
+    }
+    const toolTraceContext = createChildRunTraceContext(active, {
+      turnId: options.turnId?.trim() || active.turnId,
+      toolCallId: options.currentToolCallId?.trim() || null,
+    });
+    return withRunTraceContext(
+      toolTraceContext,
+      () => this.executeInCorrelationContext(toolName, rawParams, options),
+    );
+  }
+
+  private async executeInCorrelationContext(
+    toolName: string,
+    rawParams: Record<string, unknown>,
+    options: ExecuteOptions,
   ): Promise<ToolExecutionResult> {
     if (this.runContext && options.runId && options.runId !== this.runContext.runId) {
       return {
@@ -1046,6 +1070,11 @@ export class ToolExecutor {
       const duration = Date.now() - startTime;
 
       logger.debug('Tool result', { toolName: executionToolName, success: result.success, error: result.error });
+      logger.info('Tool execution completed', {
+        toolName: executionToolName,
+        success: result.success,
+        durationMs: duration,
+      });
 
       await completeArtifactLocatorGuardedWrite({
         success: result.success,

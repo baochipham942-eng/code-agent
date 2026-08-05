@@ -9,6 +9,7 @@ import { estimateTokens } from '../../../context/tokenOptimizer';
 import { getContextEventLedger } from '../../../context/contextEventLedger';
 import type { ContextAssemblyCtx } from './shared';
 import { persistRuntimeState } from '../runtimeStatePersistence';
+import { attachMessageCorrelation } from '../turnQuality';
 import {
   logger,
   MAX_PERSISTENT_SYSTEM_CONTEXT_TOKENS,
@@ -206,6 +207,7 @@ export function inferBufferedSystemMessageCategory(ctx: ContextAssemblyCtx, cont
 }
 
 export async function addAndPersistMessage(ctx: ContextAssemblyCtx, message: Message): Promise<void> {
+  message.metadata = attachMessageCorrelation(ctx.runtime, message.metadata);
   if (ctx.runtime.historyVisibility === 'meta') {
     message.isMeta = true;
   }

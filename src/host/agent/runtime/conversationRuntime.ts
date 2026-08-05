@@ -29,7 +29,10 @@ import { createLogger } from '../../services/infra/logger';
 import { createHookManager } from '../../hooks';
 import { getDiagnosticVersions } from '../../telemetry/diagnosticVersions';
 import { getContextWindow } from '../../../shared/constants';
-import { getActiveRunTraceContext } from '../../telemetry/runTraceContext';
+import {
+  enterRunTraceContext,
+  getActiveRunTraceContext,
+} from '../../telemetry/runTraceContext';
 
 import { writeTurnSnapshot } from './turnSnapshotWriter';
 import { maybePauseForStep } from './stepPause';
@@ -333,6 +336,7 @@ export class ConversationRuntime {
       return; // Early exit (step-by-step mode or hook blocked)
     }
     const { langfuse, isSimpleTask, genNum } = initResult;
+    const baseRunTraceContext = getActiveRunTraceContext() ?? this.ctx.runTraceContext;
 
     let iterations = 0;
     let userTurnId: string | undefined;
@@ -343,6 +347,7 @@ export class ConversationRuntime {
 
     try {
       while (!this.ctx.control.isCancelled && !this.ctx.control.isInterrupted && !this.ctx.circuitBreaker.isTripped() && iterations < this.ctx.maxIterations) {
+        if (baseRunTraceContext) enterRunTraceContext(baseRunTraceContext);
         await this.waitWhilePaused();
         if (this.ctx.control.isCancelled || this.ctx.control.isInterrupted) break;
 
@@ -471,7 +476,8 @@ export class ConversationRuntime {
         }
 
         // Setup iteration (turn ID, spans, events, goal checkpoints)
-        this.streamHandler.setupIteration(iterations, userMessage, langfuse);
+        const turnTraceContext = this.streamHandler.setupIteration(iterations, userMessage, langfuse);
+        if (turnTraceContext) enterRunTraceContext(turnTraceContext);
         if (iterations === 1) {
           userTurnId = this.ctx.turn.currentTurnId;
         }
@@ -691,6 +697,7 @@ export class ConversationRuntime {
       runError = error;
       await persistFailedRunContinuationContext(this.contextAssembly, userMessage, iterations, error);
     } finally {
+      if (baseRunTraceContext) enterRunTraceContext(baseRunTraceContext);
       this.ctx.control.markSettled();
       // forced-final 是 per-run 语义：正常路径由 handleTextResponse 在产出最终
       // 文本后清理，但空输出/异常/cancel 等退出路径会绕过它——若不在此兜底清理，

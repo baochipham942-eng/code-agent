@@ -17,6 +17,11 @@ import {
   resetAuditLogger,
   type AuditEntry,
 } from '../../../src/host/security/auditLogger';
+import {
+  createChildRunTraceContext,
+  createRunTraceContext,
+  withRunTraceContext,
+} from '../../../src/host/telemetry/runTraceContext';
 
 describe('AuditLogger', () => {
   let logger: AuditLogger;
@@ -119,6 +124,40 @@ describe('AuditLogger', () => {
           success: true,
         });
       }).not.toThrow();
+    });
+
+    it('adds active turn, trace, and tool call correlation', async () => {
+      const run = createRunTraceContext({
+        runId: 'run-audit',
+        sessionId: 'session-audit',
+        attempt: 1,
+        ownerEpoch: 1,
+        engine: 'native',
+        workspace: '/tmp/audit',
+        processInstanceId: 'process-audit',
+      });
+      const turn = createChildRunTraceContext(run, { turnId: 'turn-audit' });
+      const tool = createChildRunTraceContext(turn, { toolCallId: 'tool-audit' });
+
+      await withRunTraceContext(tool, async () => {
+        logger.logToolUsage({
+          sessionId: 'session-audit',
+          toolName: 'Bash',
+          input: { command: 'printf ok' },
+          duration: 1,
+          success: true,
+        });
+      });
+      logger.close();
+      await new Promise((resolve) => setTimeout(resolve, 25));
+
+      const result = await logger.query({ sessionId: 'session-audit' });
+      expect(result.entries[0]).toMatchObject({
+        sessionId: 'session-audit',
+        turnId: 'turn-audit',
+        traceId: run.traceId,
+        toolCallId: 'tool-audit',
+      });
     });
 
     it('should not throw when logging command execution', () => {

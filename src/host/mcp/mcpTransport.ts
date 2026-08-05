@@ -24,7 +24,7 @@ import type {
 } from './types';
 import { isStdioConfig, isSSEConfig, isHttpStreamableConfig } from './types';
 
-const logger = createLogger('MCPTransport');
+const logger = createLogger('MCPTransport', { lane: 'mcp' });
 export const MCP_TASKS_EXTENSION_ID = 'io.modelcontextprotocol/tasks';
 /**
  * Thirty seconds removes repeated registry round trips during reconnect/startup bursts without

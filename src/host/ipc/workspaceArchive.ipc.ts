@@ -195,13 +195,8 @@ export async function handleExportBundle(
 
   for (const file of files.slice(0, 100)) {
     if (!file?.path) continue;
-    let resolvedPath: string;
-    try {
-      resolvedPath = resolveBundlePath(file.path, workingDirectory);
-    } catch (error) {
-      // 相对路径无 base 时 fail-loud 整单失败，不静默 skip（否则会落到「无可读文件」模糊错误）
-      throw error;
-    }
+    // resolveBundlePath 对相对路径无 base 直接抛错（fail-loud，不进 skipped）
+    const resolvedPath = resolveBundlePath(file.path, workingDirectory);
     try {
       const data = await fs.readFile(resolvedPath);
       const stat = await fs.stat(resolvedPath);

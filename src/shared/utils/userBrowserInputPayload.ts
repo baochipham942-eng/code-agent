@@ -3,9 +3,9 @@
 
 import { BROWSER_STAGE_VIEWPORT } from '../constants';
 
-export type UserBrowserInputKind = 'click' | 'wheel' | 'key' | 'insertText' | 'drag';
+type UserBrowserInputKind = 'click' | 'wheel' | 'key' | 'insertText' | 'drag';
 
-export interface UserBrowserClickInput {
+interface UserBrowserClickInput {
   kind: 'click';
   x: number;
   y: number;
@@ -13,7 +13,7 @@ export interface UserBrowserClickInput {
   clickCount?: number;
 }
 
-export interface UserBrowserWheelInput {
+interface UserBrowserWheelInput {
   kind: 'wheel';
   deltaX: number;
   deltaY: number;
@@ -21,7 +21,7 @@ export interface UserBrowserWheelInput {
   y?: number;
 }
 
-export interface UserBrowserKeyInput {
+interface UserBrowserKeyInput {
   kind: 'key';
   key: string;
   code?: string;
@@ -33,13 +33,13 @@ export interface UserBrowserKeyInput {
   };
 }
 
-export interface UserBrowserInsertTextInput {
+interface UserBrowserInsertTextInput {
   kind: 'insertText';
   text: string;
 }
 
 /** 拖拽：起点 → 可选中间点 → 终点（host 走 mouse.down/move/up） */
-export interface UserBrowserDragInput {
+interface UserBrowserDragInput {
   kind: 'drag';
   fromX: number;
   fromY: number;

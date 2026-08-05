@@ -2,27 +2,40 @@
 // usePinnedLibraryItems - 本会话 pin 的资料（数据侧）
 // ============================================================================
 //
-// pin 闭环的数据一半：会话加载/切换时 getSessionPin 拉取；监听 libraryPinEvents
-// （@ 面板资料库组勾选/取消后即时刷新）。渲染已并入文字流内联 chip
-// （产品负责人 2026-08-05：pin 资料与文字同行，不再独立一行；此前的
-// PinnedLibraryChips 顶排组件随之退役），删除走 InlineComposerChip 统一交互，
-// removePin 乐观更新失败回滚。
+// pin 闭环的数据一半：
+// - 有 sessionId：getSessionPin 拉取（host 真源）+ libraryPinEvents 刷新
+// - 无 sessionId（草稿/空间槽）：读 composerStore.pendingPinItemIds（意图，创建会话时物化）
+// 渲染已并入文字流内联 chip（产品负责人 2026-08-05：pin 资料与文字同行）。
+//
 
 import { useCallback, useEffect, useState } from 'react';
 import type { LibraryItem } from '@shared/contract/library';
 import { getSessionPin, listLibraryItems, setSessionPin } from '../../../../services/libraryClient';
+import { useComposerStore } from '../../../../stores/composerStore';
 import { useI18n } from '../../../../hooks/useI18n';
 import { toast } from '../../../../hooks/useToast';
 import { LIBRARY_PIN_CHANGED_EVENT } from '../../knowledge/libraryPinEvents';
+
+async function resolveItemsByIds(itemIds: string[]): Promise<LibraryItem[]> {
+  if (itemIds.length === 0) return [];
+  try {
+    const all = await listLibraryItems();
+    const byId = new Map(all.map((item) => [item.id, item]));
+    return itemIds.map((id) => byId.get(id)).filter((item): item is LibraryItem => Boolean(item));
+  } catch {
+    return [];
+  }
+}
 
 export function usePinnedLibraryItems(currentSessionId: string | null): {
   pinnedItems: LibraryItem[];
   removePin: (itemId: string) => void;
 } {
   const { t } = useI18n();
+  const pendingPinItemIds = useComposerStore((s) => s.pendingPinItemIds);
   const [pinnedItems, setPinnedItems] = useState<LibraryItem[]>([]);
 
-  const load = useCallback(async (sessionId: string) => {
+  const loadSessionPins = useCallback(async (sessionId: string) => {
     try {
       const [pin, all] = await Promise.all([getSessionPin(sessionId), listLibraryItems()]);
       const byId = new Map(all.map((item) => [item.id, item]));
@@ -34,28 +47,40 @@ export function usePinnedLibraryItems(currentSessionId: string | null): {
   }, []);
 
   useEffect(() => {
-    if (!currentSessionId) {
-      setPinnedItems([]);
-      return;
+    if (currentSessionId) {
+      void loadSessionPins(currentSessionId);
+      const handleChanged = (event: Event) => {
+        if ((event as CustomEvent<string>).detail === currentSessionId) {
+          void loadSessionPins(currentSessionId);
+        }
+      };
+      window.addEventListener(LIBRARY_PIN_CHANGED_EVENT, handleChanged);
+      return () => window.removeEventListener(LIBRARY_PIN_CHANGED_EVENT, handleChanged);
     }
-    void load(currentSessionId);
-    const handleChanged = (event: Event) => {
-      if ((event as CustomEvent<string>).detail === currentSessionId) void load(currentSessionId);
+
+    // 草稿/空间：意图存在 composer 槽里
+    let cancelled = false;
+    void resolveItemsByIds(pendingPinItemIds).then((items) => {
+      if (!cancelled) setPinnedItems(items);
+    });
+    return () => {
+      cancelled = true;
     };
-    window.addEventListener(LIBRARY_PIN_CHANGED_EVENT, handleChanged);
-    return () => window.removeEventListener(LIBRARY_PIN_CHANGED_EVENT, handleChanged);
-  }, [currentSessionId, load]);
+  }, [currentSessionId, loadSessionPins, pendingPinItemIds]);
 
   const removePin = useCallback((itemId: string) => {
-    if (!currentSessionId) return;
-    setPinnedItems((prev) => {
-      const next = prev.filter((item) => item.id !== itemId);
-      setSessionPin(currentSessionId, next.map((item) => item.id)).catch(() => {
-        setPinnedItems(prev);
-        toast.error(t.library.pinFailed);
+    if (currentSessionId) {
+      setPinnedItems((prev) => {
+        const next = prev.filter((item) => item.id !== itemId);
+        setSessionPin(currentSessionId, next.map((item) => item.id)).catch(() => {
+          setPinnedItems(prev);
+          toast.error(t.library.pinFailed);
+        });
+        return next;
       });
-      return next;
-    });
+      return;
+    }
+    useComposerStore.getState().togglePendingPinItemId(itemId);
   }, [currentSessionId, t]);
 
   return { pinnedItems, removePin };

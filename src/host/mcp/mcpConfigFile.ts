@@ -19,7 +19,7 @@ import { getMcpScopedConfigPaths } from '../config/configPaths';
 import type { MCPServerConfig, MCPConfigScope } from './types';
 import { isProjectConfigTrusted } from '../security/folderTrustService';
 
-const logger = createLogger('MCPConfigFile');
+const logger = createLogger('MCPConfigFile', { lane: 'mcp' });
 
 /** Claude Code 兼容格式的 mcpServers 条目 */
 interface ClaudeCodeMcpEntry {

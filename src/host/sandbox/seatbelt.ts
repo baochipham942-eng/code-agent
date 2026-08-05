@@ -17,7 +17,7 @@ import { createLogger } from '../services/infra/logger';
 import { SANDBOX_TIMEOUTS } from '../../shared/constants';
 import { getSensitiveSandboxPaths, type SensitiveSandboxPath } from './sensitivePaths';
 
-const logger = createLogger('Seatbelt');
+const logger = createLogger('Seatbelt', { lane: 'sandbox' });
 
 // ----------------------------------------------------------------------------
 // Types

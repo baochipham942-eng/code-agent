@@ -21,7 +21,7 @@ import { createCodeIndexServer } from './servers/codeIndexServer';
 import { loadMcpConfigFiles } from './mcpConfigFile';
 import type { MCPClient } from './mcpClient';
 
-const logger = createLogger('MCPDefaultServers');
+const logger = createLogger('MCPDefaultServers', { lane: 'mcp' });
 
 // 重签后的 cua-driver 二进制。fetch 脚本把开发态产物放进 noindex staging，
 // Tauri 打包时再映射回 bundle 内 scripts/ 下的标准 .app 路径。

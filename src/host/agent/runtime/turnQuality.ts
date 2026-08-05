@@ -13,6 +13,7 @@ import type {
 import type { MessageMetadata } from '../../../shared/contract/message';
 import type { ModelResponse } from '../loopTypes';
 import type { RuntimeContext } from './runtimeContext';
+import { getActiveRunTraceContext } from '../../telemetry/runTraceContext';
 
 /** 2d: turn quality run 级记忆（ADR-038 批2d，owner=turnQuality） */
 export interface TurnQualityRunState { memory?: TurnQualityMemorySummary; }
@@ -321,5 +322,20 @@ export function attachTurnQualityMetadata(
   return {
     ...(metadata || {}),
     turnQuality: buildTurnQualitySummary(ctx, response),
+  };
+}
+
+export function attachMessageCorrelation(
+  _ctx: RuntimeContext,
+  metadata: MessageMetadata = {},
+): MessageMetadata {
+  const active = getActiveRunTraceContext();
+  if (!active?.turnId) return metadata;
+  return {
+    ...metadata,
+    correlation: {
+      turnId: active.turnId,
+      traceId: active.traceId,
+    },
   };
 }

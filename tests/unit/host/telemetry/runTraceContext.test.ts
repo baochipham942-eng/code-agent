@@ -4,6 +4,7 @@ import {
   bindRunTraceContext,
   createChildRunTraceContext,
   createRunTraceContext,
+  getCorrelationFields,
   getActiveRunTraceContext,
   restoreRunTraceContext,
   serializeRunTraceContext,
@@ -107,5 +108,35 @@ describe('RunTraceContext', () => {
     expect(restored).toEqual(traceContext);
     expect(JSON.stringify(serialized)).not.toMatch(/Bearer|cookie|apiKey|prompt/i);
     expect(serialized.traceparent).toMatch(/^00-[0-9a-f]{32}-[0-9a-f]{16}-0[01]$/);
+  });
+
+  it('returns only correlation fields that actually exist', async () => {
+    const run = create('run-correlation');
+    expect(getCorrelationFields()).toEqual({});
+
+    await withRunTraceContext(run, async () => {
+      expect(getCorrelationFields()).toMatchObject({
+        traceId: run.traceId,
+        spanId: run.spanId,
+        runId: 'run-correlation',
+        sessionId: 'session-1',
+      });
+      expect(getCorrelationFields()).not.toHaveProperty('turnId');
+      expect(getCorrelationFields()).not.toHaveProperty('toolCallId');
+
+      const turn = createChildRunTraceContext(run, { turnId: 'turn-1' });
+      await withRunTraceContext(turn, async () => {
+        expect(getCorrelationFields()).toMatchObject({ turnId: 'turn-1' });
+        expect(getCorrelationFields()).not.toHaveProperty('toolCallId');
+
+        const tool = createChildRunTraceContext(turn, { toolCallId: 'tool-1' });
+        await withRunTraceContext(tool, async () => {
+          expect(getCorrelationFields()).toMatchObject({
+            turnId: 'turn-1',
+            toolCallId: 'tool-1',
+          });
+        });
+      });
+    });
   });
 });

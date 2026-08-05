@@ -20,7 +20,7 @@ import type {
   ElicitationFieldSchema,
 } from '../../shared/contract';
 
-const logger = createLogger('MCPElicitation');
+const logger = createLogger('MCPElicitation', { lane: 'mcp' });
 
 // Pending elicitation requests awaiting user response
 const pendingElicitations = new Map<string, {

@@ -35,7 +35,7 @@ import {
 } from './browserActionResultProjection';
 import { maybeExecuteBrowserSurfaceInteraction } from './browserActionSurfaceInteractions';
 
-const logger = createLogger('BrowserAction');
+const logger = createLogger('BrowserAction', { lane: 'browser' });
 
 type BrowserActionType =
   | 'launch'

@@ -283,6 +283,11 @@ export interface AgentErrorMetadata {
 }
 
 export interface MessageMetadata {
+  /** Stable join keys for reconstructing a persisted message's runtime turn. */
+  correlation?: {
+    turnId: string;
+    traceId?: string;
+  };
   /**
    * 方案 §8.2 的用户输入来源；缺省视为 typed。
    * 注意：Message 顶层 source 是系统生产者来源，这是另一条轴。

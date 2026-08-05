@@ -8,12 +8,20 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { getUserDataPath } from '../../platform/appPaths';
 import { redactSecrets, sanitizeLogValue } from '../../security/secretRedaction';
+import { getCorrelationFields } from '../../telemetry/runTraceContext';
 
 export enum LogLevel {
   DEBUG = 0,
   INFO = 1,
   WARN = 2,
   ERROR = 3,
+}
+
+type LogLane = 'app' | 'mcp' | 'sandbox' | 'browser' | 'computer-use' | 'voice' | 'sync';
+
+interface LoggerOptions {
+  /** Omitted means the default app lane and is intentionally not persisted. */
+  lane?: LogLane;
 }
 
 // ----------------------------------------------------------------------------
@@ -114,6 +122,7 @@ function getLogStream(): fs.WriteStream | null {
 function writeToFile(
   level: string,
   context: string | undefined,
+  lane: LogLane | undefined,
   message: string,
   data: unknown[] | undefined,
 ): void {
@@ -127,8 +136,10 @@ function writeToFile(
       timestamp: new Date().toISOString(),
       level,
       context: context || undefined,
+      lane: lane && lane !== 'app' ? lane : undefined,
       message,
       data: data && data.length > 0 ? data : undefined,
+      ...getCorrelationFields(),
     });
 
     const stream = getLogStream();
@@ -148,9 +159,11 @@ function writeToFile(
 class Logger {
   private level: LogLevel;
   private context?: string;
+  private lane?: LogLane;
 
-  constructor(context?: string) {
+  constructor(context?: string, options: LoggerOptions = {}) {
     this.context = context;
+    this.lane = options.lane;
     // CLI 模式下默认只输出 ERROR，避免日志噪音污染交互界面
     // --debug 时恢复 DEBUG 级别
     // WEB 模式（webServer.cjs，由 webEnvInit 同时设置 CODE_AGENT_CLI_MODE 和
@@ -212,7 +225,7 @@ class Logger {
         && process.env.DEBUG !== 'true' && !process.argv.includes('--debug')) {
       // 仍然写文件，但不输出到 stderr
       if (level !== 'DEBUG') {
-        writeToFile(level, this.context, sanitizedMessage, sanitizedArgs.length > 0 ? sanitizedArgs : undefined);
+        writeToFile(level, this.context, this.lane, sanitizedMessage, sanitizedArgs.length > 0 ? sanitizedArgs : undefined);
       }
       return;
     }
@@ -230,7 +243,7 @@ class Logger {
 
     // Write to file for INFO and above (skip DEBUG in file)
     if (level !== 'DEBUG') {
-      writeToFile(level, this.context, sanitizedMessage, sanitizedArgs.length > 0 ? sanitizedArgs : undefined);
+      writeToFile(level, this.context, this.lane, sanitizedMessage, sanitizedArgs.length > 0 ? sanitizedArgs : undefined);
     }
   }
 
@@ -246,8 +259,8 @@ class Logger {
  * 创建带上下文的 Logger 实例
  * @param context 日志上下文（通常是类名或模块名）
  */
-export function createLogger(context: string): Logger {
-  return new Logger(context);
+export function createLogger(context: string, options: LoggerOptions = {}): Logger {
+  return new Logger(context, options);
 }
 
 /**

@@ -19,7 +19,7 @@ import {
 } from './artifactPreviewHealthEvaluator';
 import type { ArtifactPreviewHealthSummary } from './artifactPreviewHealth';
 
-const logger = createLogger('ArtifactPreviewHealth');
+const logger = createLogger('ArtifactPreviewHealth', { lane: 'browser' });
 
 export interface InAppArtifactPreviewHealthOptions extends ArtifactPreviewHealthOptions {
   browserService?: Pick<BrowserService, 'withIsolatedPage'>;

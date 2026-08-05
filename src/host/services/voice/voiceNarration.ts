@@ -90,13 +90,13 @@ const STOP_ANNOUNCEMENT_LINES: Record<VoiceStopAnnouncementKind, (title: string)
   replaced: (title) => [
     `现在对用户说：「手上那件已经收尾了，我开始做『${title}』了，做完马上告诉你。」`,
     `关于『${title}』你目前只知道「已经开始」。它的结果只会以 [BACKEND] 开头的消息送达；`,
-    '在收到那条消息之前，它没有做完，你也不知道任何进展。被问进度先调 get_active_tasks。',
+    '在收到那条消息之前，它没有做完，你也不知道任何进展。被问进度先调 task_status。',
   ].join('\n'),
-  stop_timeout: (title) => [
+  ['stop_timeout']: (title) => [
     `现在如实对用户说：「『${title}』我没能确认它停下来，它可能还在跑。」`,
     '不要说它已经停了。要停就请用户再说一次。',
   ].join('\n'),
-  replace_timeout: (title) => [
+  ['replace_timeout']: (title) => [
     `现在如实对用户说：「手上那件我没能确认它停下来，所以『${title}』我没有开始做。」`,
     '**这两件事都要说**：旧的没停稳、新的没派。绝不要说新的已经开始，也不要说旧的已经停了。',
     '要做就请用户再说一次。',

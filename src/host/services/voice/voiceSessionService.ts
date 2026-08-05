@@ -7,7 +7,7 @@
 // ============================================================================
 
 import type { WebSocket as WsSocket } from 'ws';
-import { resolveConversationModelOption, VOICE_DOWNSTREAM_SAMPLE_RATE, VOICE_END_CALL_GOODBYE_TIMEOUT_MS, VOICE_HANGUP_REACTION_WINDOW_MS, VOICE_INBOUND_AUDIO_STARTUP_TIMEOUT_MS, VOICE_RECONNECT_GRACE_MS, VOICE_SESSION_MAX_DURATION_MS, VOICE_TEARDOWN_DRAIN_MS, VOICE_TRANSCRIPT_MERGE_WINDOW_MS, VOICE_WS_CLOSE_TERMINAL } from '../../../shared/constants/voice';
+import { VOICE_DOWNSTREAM_SAMPLE_RATE, VOICE_END_CALL_GOODBYE_TIMEOUT_MS, VOICE_HANGUP_REACTION_WINDOW_MS, VOICE_INBOUND_AUDIO_STARTUP_TIMEOUT_MS, VOICE_RECONNECT_GRACE_MS, VOICE_SESSION_MAX_DURATION_MS, VOICE_TEARDOWN_DRAIN_MS, VOICE_TRANSCRIPT_MERGE_WINDOW_MS, VOICE_WS_CLOSE_TERMINAL } from '../../../shared/constants/voice';
 import {
   REALTIME_VOICE_PROVIDER_PROFILES,
   resolveRealtimeVoiceSelection,
@@ -26,7 +26,7 @@ import {
   getRealtimeVoiceProviderApiKey,
   resolveConfiguredRealtimeVoiceProfile,
 } from './customRealtimeVoiceProviders';
-import { resolveVoiceRouting } from './voiceRouting';
+import { requiresVoiceDispatchTool, resolveVoiceRouting } from './voiceRouting';
 import { beginVoiceDispatch, endVoiceDispatch, pushVoiceTranscript, setVoiceDispatchFocus } from './voiceAgentCoordinator';
 import { composeVoiceInstructions, focusChanged, type VoiceContinuityContext } from './voiceContextAssembler';
 import { isVoiceScreenContextSupported } from './voiceScreenContext';
@@ -268,7 +268,7 @@ function requestResponse(session: ActiveSession, userFinal: string): void {
         '只回应并严格执行用户最新一句话，不要继续被取消回复的目标或内容。',
         `用户最新一句话：${latest}`,
       ].join('\n')
-    : undefined);
+    : undefined, requiresVoiceDispatchTool(latest) ? 'required' : 'auto');
 }
 
 function findInterruptCandidateByItemId(
@@ -923,6 +923,12 @@ async function connectAndBind(
             // 抢在用户字幕前面到，那时挂断已成事实，再听到「不要挂断」也拦不住了。
             if (endCallRequested.value) endCallRequested.awaitingUserTurn = true;
           }
+          else if (voiceQuestionConsumed) {
+            // A consumed answer intentionally skips the normal realtime-model
+            // response, so no response.done will arrive to release a queued
+            // retry or the next question narration.
+            flushNarrationQueue(active);
+          }
           else if (event.type === 'response.done' && !cancelledResponse) flushNarrationQueue(active);
           else if (event.type === 'injection.rejected') handleNarrationInjectionRejected(active, event.message);
         }
@@ -1031,7 +1037,7 @@ async function connectAndBind(
         const socket = clientRef.current;
         if (socket.readyState === socket.OPEN) socket.send(frame, { binary: true });
       },
-      onToolCall: (call) => executeVoiceTool(call.name, call.arguments),
+      onToolCall: (call) => executeVoiceTool(call.name, call.arguments, call.origin),
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'connect failed';

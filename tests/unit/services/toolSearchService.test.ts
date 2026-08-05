@@ -86,6 +86,22 @@ describe('ToolSearchService loadable results', () => {
     expect(service.isToolLoaded('Task')).toBe(true);
   });
 
+  it('does not let ToolSearch reload a tool denied by the current run', async () => {
+    const service = new ToolSearchService();
+
+    const direct = await service.searchTools('select:AgentSpawn', {
+      deniedToolNames: ['AgentSpawn'],
+    });
+    const keyword = await service.searchTools('agent spawn', {
+      includeMCP: false,
+      deniedToolNames: ['AgentSpawn'],
+    });
+
+    expect(direct).toEqual({ tools: [], hasMore: false, totalCount: 0, loadedTools: [] });
+    expect(keyword.tools.map((tool) => tool.name)).not.toContain('AgentSpawn');
+    expect(service.getLoadedDeferredTools()).not.toContain('AgentSpawn');
+  });
+
   it('does not add core tools to the deferred loaded set during keyword search', async () => {
     const service = new ToolSearchService();
 

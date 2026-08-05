@@ -73,6 +73,10 @@ vi.mock('../../../src/host/services/infra/sessionManager', () => ({
   getSessionManager: () => sessionManagerState,
 }));
 
+vi.mock('../../../src/host/task/backgroundTaskSessionContext', () => ({
+  getBackgroundTaskSessionContext: (sessionId: string) => sessionManagerState.getSession(sessionId),
+}));
+
 vi.mock('../../../src/host/services/core/databaseService', () => ({
   getDatabase: () => dbState.db,
 }));
@@ -113,8 +117,31 @@ describe('TaskManager message event persistence', () => {
     const second = manager.startBackgroundTask('task-2', 'session-1', 'second');
     await vi.waitFor(() => expect(orchestratorMocks.sendMessage).toHaveBeenCalledTimes(2));
 
-    expect(orchestratorMocks.sendMessage.mock.calls[0][2]).toMatchObject({ runRegistration: 'auxiliary' });
-    expect(orchestratorMocks.sendMessage.mock.calls[1][2]).toMatchObject({ runRegistration: 'auxiliary' });
+    expect(orchestratorMocks.setWorkingDirectory).toHaveBeenNthCalledWith(
+      1,
+      '/tmp/project',
+      { syncWorkspaceServices: false },
+    );
+    expect(orchestratorMocks.setWorkingDirectory).toHaveBeenNthCalledWith(
+      2,
+      '/tmp/project',
+      { syncWorkspaceServices: false },
+    );
+    expect(orchestratorMocks.sendMessage.mock.calls[0][2]).toMatchObject({
+      runRegistration: 'auxiliary',
+      historyVisibility: 'meta',
+      disableAutoAgent: true,
+      deniedToolNames: expect.arrayContaining(['Task', 'TaskManager', 'spawn_agent', 'AgentSpawn']),
+      turnSystemContext: expect.arrayContaining([
+        expect.stringContaining('第一步直接调用'),
+      ]),
+    });
+    expect(orchestratorMocks.sendMessage.mock.calls[1][2]).toMatchObject({
+      runRegistration: 'auxiliary',
+      historyVisibility: 'meta',
+      disableAutoAgent: true,
+      deniedToolNames: expect.arrayContaining(['Task', 'TaskManager', 'spawn_agent', 'AgentSpawn']),
+    });
     expect(await manager.cancelBackgroundTask('task-1')).toBe(true);
     expect(manager.getBackgroundTaskState('task-1')).toEqual({ sessionId: 'session-1', status: 'cancelling' });
     expect(manager.getBackgroundTaskState('task-2')).toEqual({ sessionId: 'session-1', status: 'running' });

@@ -23,6 +23,7 @@ interface PendingVoiceQuestion {
 
 let binding: VoiceQuestionBinding | null = null;
 let pending: PendingVoiceQuestion | null = null;
+const queued: PendingVoiceQuestion[] = [];
 
 function normalize(value: string): string {
   return value.toLocaleLowerCase().replace(/[\s，。！？、,.!?：:；;（）()“”"'-]/g, '');
@@ -121,37 +122,89 @@ function speakCurrent(): void {
   if (!binding || !pending) return;
   const question = pending.request.questions[pending.index];
   if (!question) return;
+  const narrationId = `voice-question:${pending.request.id}:${pending.index}:${pending.fallbackAsked ? 'retry' : 'ask'}`;
+  logger.info('voice question narration requested', {
+    requestId: pending.request.id,
+    neoSessionId: binding.neoSessionId,
+    narrationId,
+    questionIndex: pending.index,
+    fallbackAsked: pending.fallbackAsked,
+  });
   binding.speak({
-    narrationId: `voice-question:${pending.request.id}:${pending.index}:${pending.fallbackAsked ? 'retry' : 'ask'}`,
+    narrationId,
     title: question.header,
     text: narrationText(question, pending.fallbackAsked),
   });
 }
 
+function advanceQueue(): void {
+  pending = queued.shift() ?? null;
+  if (pending) speakCurrent();
+}
+
 export function beginVoiceQuestionSession(next: VoiceQuestionBinding): void {
   binding = next;
+  queued.length = 0;
+  logger.info('voice question session bound', { neoSessionId: next.neoSessionId });
+}
+
+export function canOfferVoiceQuestion(neoSessionId: string | undefined): boolean {
+  return Boolean(binding && neoSessionId && binding.neoSessionId === neoSessionId);
 }
 
 export function endVoiceQuestionSession(neoSessionId: string): void {
   if (binding?.neoSessionId !== neoSessionId) return;
+  logger.info('voice question session unbound', {
+    neoSessionId,
+    pendingRequestId: pending?.request.id,
+    queuedCount: queued.length,
+  });
   binding = null;
   pending = null;
+  queued.length = 0;
 }
 
 export function offerVoiceQuestion(
   request: UserQuestionRequest,
   respond: (response: UserQuestionResponse) => void,
 ): boolean {
-  if (!binding || binding.neoSessionId !== request.sessionId || pending) return false;
-  pending = { request, index: 0, answers: {}, fallbackAsked: false, respond };
-  speakCurrent();
+  if (!binding || binding.neoSessionId !== request.sessionId) {
+    logger.warn('voice question route unavailable', {
+      requestId: request.id,
+      requestedSessionId: request.sessionId,
+      boundSessionId: binding?.neoSessionId,
+      hasBinding: Boolean(binding),
+    });
+    return false;
+  }
+  const offered = { request, index: 0, answers: {}, fallbackAsked: false, respond };
+  if (pending) {
+    queued.push(offered);
+    logger.info('voice question queued', {
+      requestId: request.id,
+      neoSessionId: binding.neoSessionId,
+      queuedCount: queued.length,
+    });
+  }
+  else {
+    pending = offered;
+    logger.info('voice question accepted', {
+      requestId: request.id,
+      neoSessionId: binding.neoSessionId,
+    });
+    speakCurrent();
+  }
   return true;
 }
 
 export function cancelVoiceQuestion(requestId: string): void {
-  if (pending?.request.id !== requestId) return;
-  binding?.dismiss(`voice-question:${requestId}:`);
-  pending = null;
+  if (pending?.request.id === requestId) {
+    binding?.dismiss(`voice-question:${requestId}:`);
+    advanceQueue();
+    return;
+  }
+  const queuedIndex = queued.findIndex((item) => item.request.id === requestId);
+  if (queuedIndex >= 0) queued.splice(queuedIndex, 1);
 }
 
 /** @returns true 表示该 final 是选项回答，调用方不得再让通话 brain 生成普通回复。 */
@@ -161,6 +214,11 @@ export function handleVoiceQuestionTranscript(neoSessionId: string, transcript: 
   if (!question) return false;
   const answer = matchVoiceQuestionAnswer(question, transcript);
   if (answer !== null) {
+    logger.info('voice question answer accepted', {
+      requestId: pending.request.id,
+      neoSessionId,
+      questionIndex: pending.index,
+    });
     binding.dismiss(`voice-question:${pending.request.id}:${pending.index}:`);
     pending.answers[question.header] = answer;
     pending.index += 1;
@@ -170,8 +228,12 @@ export function handleVoiceQuestionTranscript(neoSessionId: string, transcript: 
       return true;
     }
     const completed = pending;
+    // `respond` enters the shared prompt settlement synchronously, which calls
+    // cancelVoiceQuestion(requestId). Detach the completed item first so that
+    // settlement cannot advance the queue and make this frame advance it again.
     pending = null;
     completed.respond({ requestId: completed.request.id, answers: completed.answers });
+    advanceQueue();
     return true;
   }
 
@@ -191,6 +253,6 @@ export function handleVoiceQuestionTranscript(neoSessionId: string, transcript: 
     title: question.header,
     text: '我还是没能把回答唯一对应到选项。请在会话里的选项卡选择；不要替用户选择。',
   });
-  pending = null;
+  advanceQueue();
   return true;
 }

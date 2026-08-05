@@ -266,7 +266,7 @@ describe('对不上就 fail-closed —— 绝不退回作用于当前活', () =>
 
     expectNothingTouched();
     expect(reply).toContain('没有编号是「7」的活');
-    expect(reply).toContain('get_active_tasks');
+    expect(reply).toContain('task_status');
   });
 
   it('查无此编号的 steer 同样什么都不动', async () => {

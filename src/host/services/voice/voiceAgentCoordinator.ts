@@ -16,7 +16,7 @@
 import type { TaskManagerEvent } from '../../task/TaskManager';
 import type { AgentEvent } from '../../../shared/contract/agent';
 import type { SessionTask, TodoItem } from '../../../shared/contract/planning';
-import type { VoiceFocusContext, VoiceWorkFailureMarker, VoiceWorkItem, VoiceWorkItemStatus, VoiceWorkNarration } from '../../../shared/contract/voice';
+import type { VoiceFocusContext, VoiceToolCallOrigin, VoiceWorkFailureMarker, VoiceWorkItem, VoiceWorkItemStatus, VoiceWorkNarration } from '../../../shared/contract/voice';
 import type { AppshotCapture } from '../../../shared/contract/appshot';
 import { buildAppshotAttachment, buildAppshotXml } from '../../../shared/contract/appshot';
 import {
@@ -36,7 +36,6 @@ import { getPermissionModeManager } from '../../permissions/modes';
 import { getConfigService } from '../core/configService';
 import { buildBlockedNarration, buildMilestoneNarration, buildStopNarration, buildWorkNarration, resolveNarrationSpeaker, type VoiceStopAnnouncementKind } from './voiceNarration';
 import { describeWorkFailure } from './workFailureDescription';
-import { buildVocabularyBlock } from './voiceVocabulary';
 import { resolveVoiceWorkOutcome } from './voiceWorkEvidence';
 import { recordVoiceWorkEvent } from './voiceTelemetry';
 import { captureVoiceScreenContext, type VoiceScreenCaptureFailure } from './voiceScreenContext';
@@ -60,12 +59,18 @@ import {
   normalizeVoiceSpawnRequest,
   type VoiceSpawnRequest,
 } from './voiceSpawnRequest';
+import {
+  appendVoiceTranscript,
+  buildVoiceTranscriptBlock,
+  type VoiceTranscriptEntry,
+} from './voiceTranscriptHandoff';
+export type { VoiceTranscriptEntry } from './voiceTranscriptHandoff';
 import { cancelVoiceManagedTask, getVoiceTaskManager } from './voiceTaskManagerBridge';
 
 const logger = createLogger('VoiceCoordinator');
 
 /** 方案 §6.3。share_context 归批 H 的焦点上报（文本焦点，不含像素）。 */
-export type VoiceIntent =
+export type VoiceIntent = { origin?: VoiceToolCallOrigin } & (
   | { kind: 'status' }
   | { kind: 'recent_files' }
   /**
@@ -88,28 +93,14 @@ export type VoiceIntent =
       replaceCurrent?: boolean;
     }
   /**
-   * `target`：用户点名了要作用在哪一件活上（get_active_tasks 列出的编号）。
+   * `target`：用户点名了要作用在哪一件活上（task_status 列出的编号）。
    * 不给 = 手上正在跑的那件（原语义，零行为变化）。给了但对不上就拒绝，见 rejectMismatchedTarget。
    */
   | { kind: 'steer_task'; instruction: string; target?: string }
   | { kind: 'cancel_task'; target?: string }
   | { kind: 'end_call' }
-  | { kind: 'current_time' };
-
-/** 通话字幕的一条 final。近窗原文用它组装，不进 UI、不落盘。 */
-export interface VoiceTranscriptEntry {
-  role: 'user' | 'assistant';
-  text: string;
-}
-
-/**
- * 近窗字幕最多带几条 / 每条最多多少字。
- *
- * 挑 12 条：真机碎句案例里一件事被 VAD 切成 5 个用户片段 + 5 句助手追问 = 10 条，
- * 12 条能把一件事的来龙去脉整个装下，再多就开始把上一件事的尾巴也拖进来。
- */
-const TRANSCRIPT_WINDOW_ENTRIES = 12;
-const TRANSCRIPT_ENTRY_MAX_CHARS = 240;
+  | { kind: 'current_time' }
+);
 
 export interface VoiceDispatchBinding {
   neoSessionId: string;
@@ -314,27 +305,7 @@ export function setVoiceDispatchFocus(focus: VoiceFocusContext | null): void {
  */
 export function pushVoiceTranscript(entry: VoiceTranscriptEntry): void {
   if (!ledger) return;
-  const text = entry.text.trim();
-  if (!text) return;
-  ledger.transcript.push({ role: entry.role, text: text.slice(0, TRANSCRIPT_ENTRY_MAX_CHARS) });
-  if (ledger.transcript.length > TRANSCRIPT_WINDOW_ENTRIES) ledger.transcript.shift();
-}
-
-/** 近窗字幕拼成一段 system 上下文。空窗返回 null——没东西可说时不要塞空块进 run。 */
-function buildTranscriptBlock(entries: VoiceTranscriptEntry[]): string | null {
-  if (!entries.length) return null;
-  const vocabularyBlock = buildVocabularyBlock();
-  return [
-    '[Voice — 通话近窗字幕原文]',
-    '这件活来自一通实时语音通话。任务描述是语音层改写出来的，可能丢信息，也可能被语音识别写错。',
-    '下面是通话最近几轮的原始字幕（可能含半句、重复、同音错字）：',
-    ...entries.map((entry) => `${entry.role === 'user' ? '用户' : '助手'}：${entry.text}`),
-    '以字幕原文为准重建用户的真实意图。文件名/路径/专名明显是同音错写时（例：「a点text」= a.txt），',
-    '按上下文纠正后执行，并在结果里说明你是按什么理解做的。',
-    '**用户此刻在打电话，不在键盘前**：不要向他提问、不要弹选择框等他回答——他看不见也点不了。',
-    '信息不全就按最合理的默认做法先做完，然后在结果里一句话说明你按什么假设做的。',
-    ...(vocabularyBlock ? ['', vocabularyBlock] : []),
-  ].join('\n');
+  appendVoiceTranscript(ledger.transcript, entry);
 }
 
 /** 第一件活派出去时才把生命周期 listener 挂上。 */
@@ -829,6 +800,7 @@ export async function dispatchVoiceIntent(intent: VoiceIntent): Promise<string> 
         intent.laneKey,
         intent.submissionKey,
         intent.replaceCurrent,
+        intent.origin,
       );
     case 'steer_task':
       return steerTask(state, intent.instruction, intent.target);
@@ -872,7 +844,7 @@ async function buildRunPayload(state: LedgerState) {
     : null;
   // 近窗字幕走 turnSystemContext 而不是拼进 prompt：prompt 那条消息会原样显示在会话里，
   // 把带噪原文塞进去等于把内部载荷泄漏到用户眼前（本仓刚修过一轮 `<...>` 标签外泄）。
-  const transcriptBlock = buildTranscriptBlock(state.transcript);
+  const transcriptBlock = buildVoiceTranscriptBlock(state.transcript);
   // 屏幕上下文同理走 turnSystemContext——`<appshot>` 块是给模型看的载荷，不是用户的话。
   const screen = takePendingScreen(state);
   const screenBlock = screen ? buildAppshotXml(screen, 'voice') : null;
@@ -919,6 +891,7 @@ function normalizeSpawnRequest(input: {
   shortName?: string;
   laneKey?: string;
   submissionKey?: string;
+  origin?: VoiceToolCallOrigin;
 }): VoiceSpawnRequest {
   return normalizeVoiceSpawnRequest(input, newWorkItemId());
 }
@@ -1006,6 +979,7 @@ async function startRun(
     shortName: request.shortName,
     laneKey: request.laneKey,
     submissionKey: request.submissionKey,
+    ...(request.origin ? { dispatchOrigin: request.origin } : {}),
     status: 'queued',
   });
   if (admission.outcome === 'started') await launchAdmittedRun(state, workItemId, request);
@@ -1025,8 +999,9 @@ async function spawnTask(
   laneKey?: string,
   submissionKey?: string,
   replaceCurrent?: boolean,
+  origin?: VoiceToolCallOrigin,
 ): Promise<string> {
-  const request = normalizeSpawnRequest({ title, prompt, shortName, laneKey, submissionKey });
+  const request = normalizeSpawnRequest({ title, prompt, shortName, laneKey, submissionKey, origin });
   const running = [...state.items.values()].filter((item) => item.status === 'running');
   const laneActive = running.find((item) => (
     item.laneKey === request.laneKey && item.status === 'running'
@@ -1047,7 +1022,7 @@ async function spawnTask(
       `现在对用户说：「我正在让『${laneActive.shortName ?? laneActive.title}』停下来，停稳了就开始做『${request.shortName}』。」就说这一个意思。`,
       `**『${request.shortName}』现在还没有开始做**，不要说它已经开始、已经在跑、已经派出去了。`,
       '停稳没停稳、新活开没开始，都会以 [BACKEND] 开头的消息告诉你；在那之前你什么都不知道。',
-      '用户如果追问，先调 get_active_tasks 看真实状态再回答。',
+      '用户如果追问，先调 task_status 看真实状态再回答。',
     ].join('\n');
   }
   const result = await startRun(state, request);
@@ -1101,7 +1076,7 @@ function offerOverflowChoice(state: LedgerState, request: VoiceSpawnRequest): vo
  * 派活后回给通话 brain 的话（①）。三段缺一不可：
  * 1. 下一句台词（没有状态名词，无可润色空间）；
  * 2. 认知协议：结果只会以 [BACKEND] 消息送达，没收到就不存在「做完」；
- * 3. 进度问题强制落地 get_active_tasks，不许凭记忆答。
+ * 3. 进度问题强制落地 task_status，不许凭记忆答。
  */
 function spawnSpeechDirective(title: string): string {
   return [
@@ -1112,7 +1087,7 @@ function spawnSpeechDirective(title: string): string {
     `现在对用户说：「我已经开始做『${title}』了，做完马上告诉你。」就说这一个意思，不要再多说。`,
     '关于这件事你目前只知道「已经开始」。它的结果（做成或失败）只会以 [BACKEND] 开头的消息送达；',
     '在收到那条消息之前，它没有做完，你也不知道任何进展——不存在「应该差不多了」。',
-    '用户如果问「好了吗」「怎么样了」，先调 get_active_tasks 看真实状态再回答，不要凭记忆或猜测回答。',
+    '用户如果问「好了吗」「怎么样了」，先调 task_status 看真实状态再回答，不要凭记忆或猜测回答。',
   ].join('\n');
 }
 
@@ -1210,7 +1185,7 @@ async function steerTask(state: LedgerState, instruction: string, target?: strin
       if (historical && TERMINAL.includes(historical.status)) {
         return `「${historical.shortName ?? historical.title}」已经${statusText(historical.status)}了，不用再改方向。`;
       }
-      return `我这边没有编号是「${target}」的活在进行，什么都没改。先调 get_active_tasks 看一下。`;
+      return `我这边没有编号是「${target}」的活在进行，什么都没改。先调 task_status 看一下。`;
     }
     const title = fallbackVoiceTaskShortName(instruction);
     const request = normalizeSpawnRequest({ title, prompt: instruction });
@@ -1240,7 +1215,7 @@ async function steerTask(state: LedgerState, instruction: string, target?: strin
   const title = pending.shortName ?? pending.title;
   return [
     `现在对用户说：「『${title}』我已经按你的新要求改了方向，做完马上告诉你。」`,
-    '它的结果同样只以 [BACKEND] 消息为准；没收到就不是做完，被问进度先调 get_active_tasks。',
+    '它的结果同样只以 [BACKEND] 消息为准；没收到就不是做完，被问进度先调 task_status。',
   ].join('\n');
 }
 
@@ -1270,7 +1245,7 @@ async function cancelTask(state: LedgerState, target?: string): Promise<string> 
       if (historical && TERMINAL.includes(historical.status)) {
         return `「${historical.shortName ?? historical.title}」已经${statusText(historical.status)}了，不用再停它。`;
       }
-      return `我这边没有编号是「${target}」的活在进行，什么都没停。先调 get_active_tasks 看一下。`;
+      return `我这边没有编号是「${target}」的活在进行，什么都没停。先调 task_status 看一下。`;
     }
     return '现在没有在跑的活，不用停。';
   }

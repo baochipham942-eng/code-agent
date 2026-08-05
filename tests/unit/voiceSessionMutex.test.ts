@@ -521,7 +521,10 @@ describe('voiceSessionService 互斥与挂断', () => {
     });
 
     expect(respondMock).toHaveBeenCalledTimes(1);
-    expect(respondMock).toHaveBeenCalledWith(expect.stringContaining('等一下，改成从十倒数到一'));
+    expect(respondMock).toHaveBeenCalledWith(
+      expect.stringContaining('等一下，改成从十倒数到一'),
+      'auto',
+    );
 
     lastOnEvent?.({ type: 'response.created', responseId: 'resp-new' });
     lastOnEvent?.({

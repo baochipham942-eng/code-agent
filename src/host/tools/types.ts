@@ -33,6 +33,8 @@ export interface ToolContext {
 
   requestPermission: (request: PermissionRequestData) => Promise<boolean>;
   abortSignal?: AbortSignal;
+  /** 当前 run 的工具拒绝集；动态工具发现同样必须遵守。 */
+  deniedToolNames?: readonly string[];
   emit?: (event: string, data: unknown) => void;
   emitEvent?: (event: string, data: unknown) => void; // Alias for emit
   planningService?: unknown; // PlanningService instance for persistent planning

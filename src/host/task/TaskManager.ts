@@ -32,10 +32,15 @@ import { getModelSessionState } from '../session/modelSessionState';
 import type { RunRegistry } from '../runtime/runRegistry';
 import { getProjectSourceTrustFailureMarker } from '../services/project/projectSourceTrustError';
 import { getModelAuthFailureMarker } from '../model/errorClassifier';
-import { getSessionManager } from '../services/infra/sessionManager';
+import { MULTIAGENT_TOOL_NAMES } from '../../shared/constants/tools';
 
 const logger = createLogger('TaskManager');
 const CONTEXT_ASSEMBLY_PERSISTED_MESSAGE = Symbol.for('code-agent.contextAssembly.persistedMessage');
+const AUXILIARY_RUN_SYSTEM_CONTEXT = [
+  '你已经在一个独立后台任务槽里，必须亲自执行这件任务。',
+  '禁止调用、搜索或建议 Task、TaskManager、spawn_agent、AgentSpawn 等任务拆分工具；上层已经完成任务拆分。',
+  'AskUserQuestion 是已经加载的核心工具。用户要求它时，第一步直接调用；不得先用 ToolSearch 查它或任何任务拆分工具，也不要把工具名或 JSON 当文字输出。',
+].join('\n');
 
 function wasMessagePersistedByContextAssembly(message: Message): boolean {
   // marker 标记（同 systemContextStack.ts）：以 symbol 键读取，显式收窄到 symbol 索引类型而非 any
@@ -298,17 +303,35 @@ export class TaskManager extends EventEmitter {
     if (this.backgroundRuns.has(taskId)) throw new Error(`Background task ${taskId} is already running`);
 
     const orchestrator = this.createOrchestrator(sessionId, taskId);
-    const session = await getSessionManager().getSession(sessionId);
+    const { getBackgroundTaskSessionContext } = await import('./backgroundTaskSessionContext');
+    const session = await getBackgroundTaskSessionContext(sessionId);
     if (session?.messages.length) orchestrator.setMessages(session.messages);
-    if (session?.workingDirectory) orchestrator.setWorkingDirectory(session.workingDirectory);
+    if (session?.workingDirectory) {
+      orchestrator.setWorkingDirectory(session.workingDirectory, { syncWorkspaceServices: false });
+    }
 
     this.backgroundRuns.set(taskId, { taskId, sessionId, orchestrator, status: 'running' });
     this.emitEvent('task_started', sessionId, { taskId });
     try {
+      const deniedToolNames = Array.from(new Set([
+        ...(options?.deniedToolNames ?? []),
+        ...MULTIAGENT_TOOL_NAMES,
+      ]));
       await orchestrator.sendMessage(
         message,
         attachments,
-        { ...options, mode: options?.mode ?? 'normal', runRegistration: 'auxiliary' },
+        {
+          ...options,
+          mode: options?.mode ?? 'normal',
+          runRegistration: 'auxiliary',
+          historyVisibility: 'meta',
+          disableAutoAgent: true,
+          deniedToolNames,
+          turnSystemContext: [
+            ...(options?.turnSystemContext ?? []),
+            AUXILIARY_RUN_SYSTEM_CONTEXT,
+          ],
+        },
         messageMetadata,
       );
       const live = this.backgroundRuns.get(taskId);
@@ -353,11 +376,26 @@ export class TaskManager extends EventEmitter {
     options?: AgentRunOptions,
   ): Promise<SteerOrQueueOutcome | null> {
     const run = this.backgroundRuns.get(taskId);
-    if (!run || run.status !== 'running') return null;
+    if (run?.status !== 'running') return null;
+    const deniedToolNames = Array.from(new Set([
+      ...(options?.deniedToolNames ?? []),
+      ...MULTIAGENT_TOOL_NAMES,
+    ]));
     return run.orchestrator.interruptAndContinue(
       message,
       attachments,
-      { ...options, mode: options?.mode ?? 'normal', runRegistration: 'auxiliary' },
+      {
+        ...options,
+        mode: options?.mode ?? 'normal',
+        runRegistration: 'auxiliary',
+        historyVisibility: 'meta',
+        disableAutoAgent: true,
+        deniedToolNames,
+        turnSystemContext: [
+          ...(options?.turnSystemContext ?? []),
+          AUXILIARY_RUN_SYSTEM_CONTEXT,
+        ],
+      },
     );
   }
 

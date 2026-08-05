@@ -393,7 +393,7 @@ async function buildCachedDynamicSystemPrompt(ctx: ContextAssemblyCtx): Promise<
 
   // 注入延迟工具提示（能力发现块，GAP-023 提前到锦上添花块之前）
   if (!artifactRepairMode && !shouldInjectArtifactBrief && ctx.runtime.enableToolDeferredLoading) {
-    const deferredToolsSummary = getDeferredToolsSummary();
+    const deferredToolsSummary = getDeferredToolsSummary(ctx.runtime.deniedToolNames);
     if (deferredToolsSummary) {
       const deferredToolsBlock = `<deferred-tools>
 除了核心工具外，以下工具可通过 ToolSearch 发现和加载。当核心工具无法完成任务时（例如需要浏览器操作、截图、PPT/Excel 生成、图片分析等），你必须先用 ToolSearch 加载对应工具。

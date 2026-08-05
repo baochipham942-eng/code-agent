@@ -384,6 +384,9 @@ export const VOICE_NARRATION_MAX_RETRY_ATTEMPTS = 8;
 /** 外部文字/播报注入等待上游创建 response 的确认窗。 */
 export const VOICE_INJECTION_ACK_WINDOW_MS = 5_000;
 
+/** XML 工具降级块的最大字符数；超限直接拒绝，避免无界缓存模型输出。 */
+export const VOICE_XML_FALLBACK_MAX_CHARS = 16_384;
+
 /**
  * 回头找「这一轮的结论」时往回翻几条消息。一轮 run 的尾部是 assistant 收尾语，
  * 中间隔的是工具调用消息；30 条足够跨过一轮的工具流，又不至于把上一件活的结论捞回来。

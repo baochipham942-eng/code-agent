@@ -7,10 +7,24 @@ type TaskEvent = { type: string; sessionId: string; data?: unknown };
 const runtime = vi.hoisted(() => ({
   listeners: new Set<(event: TaskEvent) => void>(),
   observers: new Set<(sessionId: string, event: AgentEvent, taskId?: string) => void>(),
-  startBackgroundTask: vi.fn(async () => undefined),
-  cancelBackgroundTask: vi.fn(async () => true),
-  interruptBackgroundTask: vi.fn(async () => ({ outcome: 'steered' as const })),
-  promptUserInChat: vi.fn(async () => ({ status: 'timeout' as const })),
+  startBackgroundTask: vi.fn<(
+    taskId: string,
+    sessionId: string,
+    message: string,
+    attachments?: unknown[],
+    options?: unknown,
+    metadata?: unknown,
+  ) => Promise<void>>(async () => undefined),
+  cancelBackgroundTask: vi.fn<(taskId: string) => Promise<boolean>>(async () => true),
+  interruptBackgroundTask: vi.fn<(
+    taskId: string,
+    message: string,
+    attachments?: unknown[],
+    options?: unknown,
+  ) => Promise<{ outcome: 'steered' }>>(async () => ({ outcome: 'steered' as const })),
+  promptUserInChat: vi.fn<(request: unknown) => Promise<{ status: 'timeout' }>>(
+    async () => ({ status: 'timeout' as const }),
+  ),
   emit(type: string, taskId: string, data: Record<string, unknown> = {}) {
     for (const listener of this.listeners) {
       listener({ type, sessionId: 'session-1', data: { ...data, taskId } });
@@ -62,7 +76,7 @@ vi.mock('../../src/host/permissions/modes', () => ({
 vi.mock('../../src/host/agent/agentRegistry', () => ({ resolveAgent: () => undefined }));
 vi.mock('../../src/host/connectors', () => ({ getConnectorRegistry: () => ({ get: () => undefined }) }));
 
-const { beginVoiceDispatch, dispatchVoiceIntent, endVoiceDispatch } =
+const { beginVoiceDispatch, dispatchVoiceIntent, endVoiceDispatch, pushVoiceTranscript } =
   await import('../../src/host/services/voice/voiceAgentCoordinator');
 
 let workItems: VoiceWorkItem[];
@@ -105,6 +119,7 @@ beforeEach(() => {
 
 describe('voice multi-slot coordinator', () => {
   it('starts two different lanes in parallel', async () => {
+    pushVoiceTranscript({ role: 'user', text: '同时派两件需要澄清的活。' });
     await spawn(1);
     await spawn(2);
 
@@ -112,6 +127,8 @@ describe('voice multi-slot coordinator', () => {
     const ids = runtime.startBackgroundTask.mock.calls.map((call) => call[0] as string);
     expect(latest(ids[0])).toMatchObject({ shortName: '短名1', status: 'running' });
     expect(latest(ids[1])).toMatchObject({ shortName: '短名2', status: 'running' });
+    expect(JSON.stringify(runtime.startBackgroundTask.mock.calls[0][4]))
+      .toContain('需要澄清时调用 AskUserQuestion');
   });
 
   it('serializes the same lane until the first task settles', async () => {

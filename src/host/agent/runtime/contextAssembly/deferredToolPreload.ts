@@ -7,7 +7,7 @@ const logger = createLogger('ContextAssembly');
 
 type RuntimeForDeferredToolPreload = Pick<
   RuntimeContext,
-  'enableToolDeferredLoading' | 'executionIntent' | 'messages' | 'goalMode' | 'turn'
+  'enableToolDeferredLoading' | 'executionIntent' | 'messages' | 'goalMode' | 'turn' | 'deniedToolNames'
 >;
 
 // 意图正则守则（issue #322）：\b 对 . / - 等非单词字符也成立，"notes.md" 能穿过
@@ -111,7 +111,8 @@ export function getDeferredToolsToPreloadForTurn(
     }
   }
 
-  return Array.from(tools);
+  const denied = new Set((runtime.deniedToolNames ?? []).map((name) => resolveToolAlias(name).toLowerCase()));
+  return Array.from(tools).filter((name) => !denied.has(resolveToolAlias(name).toLowerCase()));
 }
 
 export function preloadDeferredToolsForTurn(

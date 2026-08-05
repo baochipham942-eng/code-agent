@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { useComposerStore } from '../../../src/renderer/stores/composerStore';
+import { DRAFT_SCOPE_KEY, useComposerStore } from '../../../src/renderer/stores/composerStore';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
 
 describe('composerStore', () => {
@@ -13,9 +13,21 @@ describe('composerStore', () => {
       selectedConnectorIds: [],
       selectedMcpServerIds: [],
       turnCapabilityScopeMode: 'auto',
+      selectedTeamRecipeId: null,
+      standbyExcludedMemberKeys: [],
+      pendingCommand: null,
+      pendingPinItemIds: [],
+      pendingActiveAgentId: null,
+      activeScopeKey: DRAFT_SCOPE_KEY,
+      slots: {},
       hydratedSessionId: null,
     });
-    useAppStore.setState({ previewTabs: [], activePreviewTabId: null });
+    useAppStore.setState({
+      previewTabs: [],
+      activePreviewTabId: null,
+      activeAgentId: null,
+      activeAgentSessionKey: null,
+    });
   });
 
   it('hydrates from session and resets routing state on session switch', () => {

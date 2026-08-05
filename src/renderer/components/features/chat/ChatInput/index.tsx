@@ -143,6 +143,11 @@ export interface ChatInputProps {
    * 走既有草稿态降级，不会绑到页面背后那个会话上发错配置。
    */
   sessionless?: boolean;
+  /**
+   * sessionless 时的项目 id（协作空间页）：@ 面板 pin 候选口径 = 本项目 ∪ 全局架。
+   * 有会话时忽略，改用 session.projectId。
+   */
+  scopeProjectId?: string | null;
 }
 
 // Imperative handle exposed to parent (e.g. ChatView drop zone)
@@ -209,6 +214,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   hasPlan,
   onPlanClick,
   sessionless = false,
+  scopeProjectId = null,
 }, ref) => {
   const { t } = useI18n();
   const [value, setValue] = useState('');
@@ -235,6 +241,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   const [slashFilter, setSlashFilter] = useState('');
   const [showSlashPopover, setShowSlashPopover] = useState(false);
   const currentSessionProjectId = useSessionStore((s) => s.sessions.find((x) => x.id === currentSessionId)?.projectId ?? null);
+  // 会话优先；草稿/空间用 scopeProjectId（空间页传入 project.id）
+  const pinScopeProjectId = currentSessionId ? currentSessionProjectId : scopeProjectId;
   const currentSessionHadLiveVoice = useSessionStore((s) => (
     s.sessions.find((session) => session.id === currentSessionId)?.metadata?.hadLiveVoice === true
   ));
@@ -633,7 +641,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   }, [currentSessionId]);
   const atMention = useAtMentionPanel({
     sessionId: currentSessionId ?? null,
-    projectId: currentSessionProjectId,
+    projectId: pinScopeProjectId,
     onFileSelect: handleAtFileSelect,
   });
   const { search: searchAtMention, dismiss: dismissAtMention } = atMention;

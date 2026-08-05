@@ -36,6 +36,7 @@ import {
 import { SUBAGENT_SUFFIXES, type CoreAgentId, isCoreAgent } from '../hybrid/coreAgents';
 import { isToolWriteReadonlyRole } from '../routingToolPolicy';
 import { SWARM_STATUS_REPORT_SUFFIX, parseStatusReport } from './statusReport';
+import { getParallelCancellationResult, isCancelledTaskError } from './parallelCancellation';
 import {
   SubagentContextBuilder,
   getAgentContextLevel,
@@ -45,7 +46,7 @@ import { resolveAgentDisplayNames } from '../resolveAgentDisplayNames';
 import { checkReadonlyParentRule, type ParentContext } from '../childContext';
 import { getPermissionModeManager } from '../../permissions/modes';
 import { getSpawnGuard } from '../spawnGuard';
-import { normalizeCancellationReason, routeFailureCode } from '../../../shared/contract/cancellation';
+import { routeFailureCode } from '../../../shared/contract/cancellation';
 import {
   AgentFailureCode,
   agentFailureCodeFromCancellationReason,
@@ -689,29 +690,6 @@ async function executeParallelAgents(
   agents: Array<{ role: string; task: string; name?: string; maxBudget?: number; dependsOn?: string[] }>,
   context: SubagentExecutionContext,
 ): Promise<MultiagentExecutionResult> {
-  const isCancelledTaskError = (errorMessage?: string): boolean => {
-    if (!errorMessage) return false;
-    const normalized = errorMessage.toLowerCase();
-    return normalized.includes('cancel') || normalized.includes('abort') || errorMessage.includes('取消');
-  };
-  const getParallelCancellationResult = (): MultiagentExecutionResult | null => {
-    if (!context.abortSignal?.aborted) return null;
-    const cancellationReason = normalizeCancellationReason(
-      context.abortSignal.reason,
-      'parent-cancel',
-    );
-    return {
-      success: false,
-      error: `Parallel launch cancelled (${String(context.abortSignal.reason ?? 'parent-cancel')})`,
-      metadata: {
-        cancellationReason,
-        failureRouting: routeFailureCode(cancellationReason),
-        failureCode: agentFailureCodeFromCancellationReason(cancellationReason)
-          ?? AgentFailureCode.CancelledByParent,
-      },
-    };
-  };
-
   if (!context.sessionId) {
     return {
       success: false,
@@ -903,7 +881,7 @@ async function executeParallelAgents(
     }
   }
 
-  const cancelledBeforeApproval = getParallelCancellationResult();
+  const cancelledBeforeApproval = getParallelCancellationResult(context.abortSignal);
   if (cancelledBeforeApproval) {
     await durableController.cancel('parent-cancel');
     await durableController.terminal('cancelled', 'parent-cancel');
@@ -945,7 +923,7 @@ async function executeParallelAgents(
     throw error;
   }
 
-  const cancelledAfterApproval = getParallelCancellationResult();
+  const cancelledAfterApproval = getParallelCancellationResult(context.abortSignal);
   if (cancelledAfterApproval) {
     await durableController.cancel('parent-cancel');
     await durableController.terminal('cancelled', 'parent-cancel');

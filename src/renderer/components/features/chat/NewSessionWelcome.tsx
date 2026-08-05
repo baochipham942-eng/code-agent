@@ -7,10 +7,11 @@ import type { Translations } from '../../../i18n';
 import { formatRelativeTime } from '../../../utils/i18nTime';
 import { isBlankNewSession, type SessionWithMeta } from '../../../stores/sessionStore';
 import { PlanetSphere } from '../../brand/PlanetSphere';
+import { usePinnedLibraryItems } from './ChatInput/PinnedLibraryChips';
 
 type ResumableSession = Pick<
   SessionWithMeta,
-  'title' | 'updatedAt' | 'messageCount' | 'turnCount' | 'isArchived' | 'status'
+  'id' | 'title' | 'updatedAt' | 'messageCount' | 'turnCount' | 'isArchived' | 'status'
 >;
 
 interface SuggestionItem {
@@ -75,6 +76,10 @@ export const NewSessionWelcome: React.FC<{
 }) => {
   const { t } = useI18n();
   const suggestions = buildDefaultSuggestions(t);
+  // 带着资料进来的会话不摆通用模板卡（贪吃蛇/图表与带入材料无关，真机 2026-08-05
+  // 「上方的示意和带入的材料没关系」）；后续可升级为按材料生成的建议。
+  const { pinnedItems } = usePinnedLibraryItems(session?.id ?? null);
+  const showSuggestions = pinnedItems.length === 0;
   const resumedSession = session && !isBlankNewSession(session) ? session : null;
   // 纯对话（无工作区）是默认形态，不必再标「空白会话」——用户反馈看不懂、是噪音。
   // 只有继承了项目/工作区上下文时才显示上下文标签（"项目会话 · name"），告诉用户这条会话带了上下文。
@@ -125,7 +130,7 @@ export const NewSessionWelcome: React.FC<{
           </div>
         )}
 
-        <div className="grid grid-cols-2 gap-3">
+        {showSuggestions && <div className="grid grid-cols-2 gap-3">
           {suggestions.map((suggestion, index) => (
             <SuggestionCard
               key={suggestion.title}
@@ -134,7 +139,7 @@ export const NewSessionWelcome: React.FC<{
               delay={100 + index * 60}
             />
           ))}
-        </div>
+        </div>}
       </div>
     </div>
   );

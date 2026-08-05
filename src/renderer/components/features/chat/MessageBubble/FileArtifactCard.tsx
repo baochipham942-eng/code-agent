@@ -102,15 +102,8 @@ export const FileArtifactCard: React.FC<Props> = ({ items, mediaContext }) => {
               <span className="min-w-0 flex-1 truncate text-xs font-medium text-zinc-100">
                 {item.label}
               </span>
-              <span
-                className={`flex-shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium ${
-                  status === 'created'
-                    ? 'bg-emerald-500/12 text-badge-success'
-                    : 'bg-amber-500/12 text-badge-warning'
-                }`}
-              >
-                {status === 'created' ? 'Created' : 'Modified'}
-              </span>
+              {/* 2026-08-05 产品负责人：媒体产物卡不摆文件状态角标——生成图被标 Modified 是错的，
+                  且英文黑话对用户零信息量；文件编辑状态由「已编辑文件」卡（TurnDiffSummary）负责。 */}
             </div>
 
             {mediaAsset.kind === 'image' && mediaSrc && (
@@ -138,8 +131,8 @@ export const FileArtifactCard: React.FC<Props> = ({ items, mediaContext }) => {
               </button>
             )}
 
-            <div className="flex items-center justify-between gap-2 border-t border-border-muted bg-black/10 px-2.5 py-1.5">
-              <span className="truncate text-[11px] text-zinc-500">{extractToolName(item.ownerLabel)}</span>
+            {/* 2026-08-05 产品负责人：尾行不摆内部工具名（image_generate 等），只留动作按钮 */}
+            <div className="flex items-center justify-end gap-2 border-t border-border-muted bg-black/10 px-2.5 py-1.5">
               <MediaAssetActionBar
                 asset={mediaAsset}
                 compact

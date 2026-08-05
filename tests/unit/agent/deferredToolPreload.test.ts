@@ -42,8 +42,8 @@ vi.mock('../../../src/host/services/infra/logger', () => ({
 }));
 
 function runtime(
-  overrides: Partial<Pick<RuntimeContext, 'enableToolDeferredLoading' | 'executionIntent' | 'messages' | 'turn'>>,
-): Pick<RuntimeContext, 'enableToolDeferredLoading' | 'executionIntent' | 'messages' | 'turn'> {
+  overrides: Partial<Pick<RuntimeContext, 'enableToolDeferredLoading' | 'executionIntent' | 'messages' | 'turn' | 'deniedToolNames'>>,
+): Pick<RuntimeContext, 'enableToolDeferredLoading' | 'executionIntent' | 'messages' | 'turn' | 'deniedToolNames'> {
   return {
     enableToolDeferredLoading: true,
     executionIntent: undefined,
@@ -250,6 +250,13 @@ describe('deferred tool preload', () => {
     expect(getDeferredToolsToPreloadForTurn(runtime({
       messages: [{ id: 'm1', role: 'user', content: '第一步调用 spawn_agent 起团队', timestamp: 1 }],
     }))).toContain('spawn_agent');
+  });
+
+  it('run denylist 中的延迟工具即使被点名也不预载', () => {
+    expect(getDeferredToolsToPreloadForTurn(runtime({
+      messages: [{ id: 'm1', role: 'user', content: '第一步调用 spawn_agent 起团队', timestamp: 1 }],
+      deniedToolNames: ['spawn_agent'],
+    }))).not.toContain('spawn_agent');
   });
 
   it('普通请求不预载 spawn_agent', () => {

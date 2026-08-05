@@ -266,7 +266,7 @@ describe('对不上就 fail-closed —— 绝不退回作用于当前活', () =>
 
     expectNothingTouched();
     expect(reply).toContain('没有编号是「7」的活');
-    expect(reply).toContain('get_active_tasks');
+    expect(reply).toContain('task_status');
   });
 
   it('查无此编号的 steer 同样什么都不动', async () => {
@@ -296,17 +296,16 @@ describe('对不上就 fail-closed —— 绝不退回作用于当前活', () =>
     expect(reply).toContain('不用再停它');
   });
 
-  it('指到还活着但不是手上那件：如实说停不了，当前那件毫发无伤', async () => {
+  it('指到任一存活任务：按件取消，不影响另一件', async () => {
     await spawnTwoLive();
     clearCalls();
 
     const reply = await dispatchVoiceIntent({ kind: 'cancel_task', target: '1' });
 
-    // 这是整条链存在的理由：宁可停不了，也不能把「停 1 号」办成「停 2 号」。
-    expectNothingTouched();
-    expect(reply).toContain('不是我手上正在跑的那件');
-    expect(reply).toContain('订机票');
-    expect(reply).toContain('不要说你已经动了它');
+    expect(runtime.cancelTask).toHaveBeenCalledTimes(1);
+    expect(runtime.startTask).not.toHaveBeenCalled();
+    expect(reply).toContain('写周报');
+    expect(reply).toContain('正在让');
   });
 
   it('一句里有两个数字（「1 或 2」）：认不出就拒绝，不替用户挑一个', async () => {

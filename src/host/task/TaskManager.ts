@@ -32,9 +32,15 @@ import { getModelSessionState } from '../session/modelSessionState';
 import type { RunRegistry } from '../runtime/runRegistry';
 import { getProjectSourceTrustFailureMarker } from '../services/project/projectSourceTrustError';
 import { getModelAuthFailureMarker } from '../model/errorClassifier';
+import { MULTIAGENT_TOOL_NAMES } from '../../shared/constants/tools';
 
 const logger = createLogger('TaskManager');
 const CONTEXT_ASSEMBLY_PERSISTED_MESSAGE = Symbol.for('code-agent.contextAssembly.persistedMessage');
+const AUXILIARY_RUN_SYSTEM_CONTEXT = [
+  '你已经在一个独立后台任务槽里，必须亲自执行这件任务。',
+  '禁止调用、搜索或建议 Task、TaskManager、spawn_agent、AgentSpawn 等任务拆分工具；上层已经完成任务拆分。',
+  'AskUserQuestion 是已经加载的核心工具。用户要求它时，第一步直接调用；不得先用 ToolSearch 查它或任何任务拆分工具，也不要把工具名或 JSON 当文字输出。',
+].join('\n');
 
 function wasMessagePersistedByContextAssembly(message: Message): boolean {
   // marker 标记（同 systemContextStack.ts）：以 symbol 键读取，显式收窄到 symbol 索引类型而非 any
@@ -101,6 +107,15 @@ interface OrchestratorWrapper {
   createdAt: number;
 }
 
+export type BackgroundTaskRunStatus = 'running' | 'cancelling';
+
+interface BackgroundTaskRun {
+  taskId: string;
+  sessionId: string;
+  orchestrator: AgentOrchestrator;
+  status: BackgroundTaskRunStatus;
+}
+
 // ============================================================================
 // Default Configuration
 // ============================================================================
@@ -144,6 +159,10 @@ export class TaskManager extends EventEmitter {
   private config: TaskManagerConfig;
   private semaphore: Semaphore;
   private activeOrchestrators: Map<string, OrchestratorWrapper> = new Map();
+  /** ADR-054：同一会话内按 taskId 隔离的后台 run。 */
+  private backgroundRuns = new Map<string, BackgroundTaskRun>();
+  /** permission requestId → 后台 taskId，保证审批只回到发起它的 run。 */
+  private backgroundPermissionOwners = new Map<string, string>();
   private activeModelSpecs = new Map<string, ConversationModelSpec>();
   private sessionStates: Map<string, SessionState> = new Map();
   private waitingQueue: string[] = [];
@@ -162,7 +181,7 @@ export class TaskManager extends EventEmitter {
    * 不能被抢。需要旁听这条流的模块（目前只有语音层）挂这里——只读、不影响主链、
    * 抛异常也吞掉，观察者绝不许把 agent 循环带崩。
    */
-  private agentEventObservers = new Set<(sessionId: string, event: AgentEvent) => void>();
+  private agentEventObservers = new Set<(sessionId: string, event: AgentEvent, taskId?: string) => void>();
   private runRegistry: RunRegistry | undefined;
 
   // 当前活跃会话 ID（用于 getAgentOrchestrator 兼容层）
@@ -264,6 +283,125 @@ export class TaskManager extends EventEmitter {
       // 加入队列
       await this.enqueueTask(sessionId, message, attachments, options, messageMetadata, clientMessageId);
     }
+  }
+
+  /**
+   * 在同一会话下启动一个独立后台 run。生命周期与控制键是 taskId，消息与审批仍归属
+   * 原 sessionId；run 注册为 auxiliary，因此不会抢走会话主 run 的控制句柄。
+   */
+  async startBackgroundTask(
+    taskId: string,
+    sessionId: string,
+    message: string,
+    attachments?: unknown[],
+    options?: AgentRunOptions,
+    messageMetadata?: MessageMetadata,
+  ): Promise<void> {
+    if (!this.configService || !this.onAgentEvent) {
+      throw new Error('TaskManager not initialized. Call initialize() first.');
+    }
+    if (this.backgroundRuns.has(taskId)) throw new Error(`Background task ${taskId} is already running`);
+
+    const orchestrator = this.createOrchestrator(sessionId, taskId);
+    const { getBackgroundTaskSessionContext } = await import('./backgroundTaskSessionContext');
+    const session = await getBackgroundTaskSessionContext(sessionId);
+    if (session?.messages.length) orchestrator.setMessages(session.messages);
+    if (session?.workingDirectory) {
+      orchestrator.setWorkingDirectory(session.workingDirectory, { syncWorkspaceServices: false });
+    }
+
+    this.backgroundRuns.set(taskId, { taskId, sessionId, orchestrator, status: 'running' });
+    this.emitEvent('task_started', sessionId, { taskId });
+    try {
+      const deniedToolNames = Array.from(new Set([
+        ...(options?.deniedToolNames ?? []),
+        ...MULTIAGENT_TOOL_NAMES,
+      ]));
+      await orchestrator.sendMessage(
+        message,
+        attachments,
+        {
+          ...options,
+          mode: options?.mode ?? 'normal',
+          runRegistration: 'auxiliary',
+          historyVisibility: 'meta',
+          disableAutoAgent: true,
+          deniedToolNames,
+          turnSystemContext: [
+            ...(options?.turnSystemContext ?? []),
+            AUXILIARY_RUN_SYSTEM_CONTEXT,
+          ],
+        },
+        messageMetadata,
+      );
+      const live = this.backgroundRuns.get(taskId);
+      if (live?.status === 'cancelling') {
+        this.emitEvent('task_cancelled', sessionId, { taskId });
+      } else {
+        this.emitEvent('task_completed', sessionId, { taskId });
+      }
+    } catch (error) {
+      const live = this.backgroundRuns.get(taskId);
+      if (live?.status === 'cancelling') {
+        this.emitEvent('task_cancelled', sessionId, { taskId });
+      } else {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        const failure = getProjectSourceTrustFailureMarker(error) ?? getModelAuthFailureMarker(error);
+        this.emitEvent('task_error', sessionId, {
+          taskId,
+          error: errorMessage,
+          ...(failure ? { failure } : {}),
+        });
+      }
+    } finally {
+      this.backgroundRuns.delete(taskId);
+      for (const [requestId, ownerTaskId] of this.backgroundPermissionOwners) {
+        if (ownerTaskId === taskId) this.backgroundPermissionOwners.delete(requestId);
+      }
+    }
+  }
+
+  async cancelBackgroundTask(taskId: string): Promise<boolean> {
+    const run = this.backgroundRuns.get(taskId);
+    if (!run) return false;
+    run.status = 'cancelling';
+    await run.orchestrator.cancel();
+    return true;
+  }
+
+  async interruptBackgroundTask(
+    taskId: string,
+    message: string,
+    attachments?: unknown[],
+    options?: AgentRunOptions,
+  ): Promise<SteerOrQueueOutcome | null> {
+    const run = this.backgroundRuns.get(taskId);
+    if (run?.status !== 'running') return null;
+    const deniedToolNames = Array.from(new Set([
+      ...(options?.deniedToolNames ?? []),
+      ...MULTIAGENT_TOOL_NAMES,
+    ]));
+    return run.orchestrator.interruptAndContinue(
+      message,
+      attachments,
+      {
+        ...options,
+        mode: options?.mode ?? 'normal',
+        runRegistration: 'auxiliary',
+        historyVisibility: 'meta',
+        disableAutoAgent: true,
+        deniedToolNames,
+        turnSystemContext: [
+          ...(options?.turnSystemContext ?? []),
+          AUXILIARY_RUN_SYSTEM_CONTEXT,
+        ],
+      },
+    );
+  }
+
+  getBackgroundTaskState(taskId: string): { sessionId: string; status: BackgroundTaskRunStatus } | undefined {
+    const run = this.backgroundRuns.get(taskId);
+    return run ? { sessionId: run.sessionId, status: run.status } : undefined;
   }
 
   /**
@@ -559,17 +697,17 @@ export class TaskManager extends EventEmitter {
    * 旁听 agent 事件流。返回退订函数——**调用方必须在用完时退订**，
    * 否则观察者会跟着模块级单例活到进程结束。
    */
-  observeAgentEvents(observer: (sessionId: string, event: AgentEvent) => void): () => void {
+  observeAgentEvents(observer: (sessionId: string, event: AgentEvent, taskId?: string) => void): () => void {
     this.agentEventObservers.add(observer);
     return () => { this.agentEventObservers.delete(observer); };
   }
 
   /** 广播给旁路观察者。单个观察者抛异常只留痕，绝不影响主链与其它观察者。 */
-  private notifyAgentEventObservers(sessionId: string, event: AgentEvent): void {
+  private notifyAgentEventObservers(sessionId: string, event: AgentEvent, taskId?: string): void {
     if (!this.agentEventObservers.size) return;
     for (const observer of [...this.agentEventObservers]) {
       try {
-        observer(sessionId, event);
+        observer(sessionId, event, taskId);
       } catch (error) {
         logger.warn('agent event observer threw', { error: String(error) });
       }
@@ -591,6 +729,14 @@ export class TaskManager extends EventEmitter {
     requestId: string,
     response: PermissionResponse
   ): PermissionDeliveryOutcome {
+    const backgroundTaskId = this.backgroundPermissionOwners.get(requestId);
+    if (backgroundTaskId) {
+      const background = this.backgroundRuns.get(backgroundTaskId);
+      if (background?.sessionId !== sessionId) return 'no_orchestrator';
+      const outcome = background.orchestrator.handlePermissionResponse(requestId, response);
+      if (outcome !== 'unknown_request') this.backgroundPermissionOwners.delete(requestId);
+      return outcome;
+    }
     const wrapper = this.activeOrchestrators.get(sessionId);
     if (!wrapper) {
       // 静默 return 是 2026-07-26「点了允许什么也没发生」的第二个藏身处：
@@ -851,25 +997,7 @@ export class TaskManager extends EventEmitter {
       logger.debug(`Creating new orchestrator for session ${sessionId}`);
 
       // 每个会话创建独立的 Orchestrator，确保完全隔离
-      const orchestrator = new AgentOrchestrator({
-        configService: this.configService!,
-        planningService: this.planningService,
-        runRegistry: this.runRegistry,
-        onEvent: async (event: AgentEvent) => this.handleAgentEvent(sessionId, event),
-        getHomeDir: () => app.getPath('home'),
-        broadcastDAGEvent: (event) => {
-          for (const win of AppWindow.getAllWindows()) {
-            if (!win.isDestroyed() && win.webContents) {
-              try {
-                win.webContents.send(DAG_CHANNELS.EVENT, event);
-              } catch (error) {
-                logger.warn('广播 DAG 事件到渲染进程失败', { error: String(error) });
-              }
-            }
-          }
-        },
-      });
-      orchestrator.setSessionId(sessionId);
+      const orchestrator = this.createOrchestrator(sessionId, sessionId);
 
       wrapper = {
         orchestrator,
@@ -884,12 +1012,37 @@ export class TaskManager extends EventEmitter {
     return wrapper;
   }
 
+  private createOrchestrator(sessionId: string, eventKey: string): AgentOrchestrator {
+    const configService = this.configService;
+    if (!configService) throw new Error('TaskManager not initialized. Call initialize() first.');
+    const orchestrator = new AgentOrchestrator({
+      configService,
+      planningService: this.planningService,
+      runRegistry: this.runRegistry,
+      onEvent: async (event: AgentEvent) => this.handleAgentEvent(sessionId, event, eventKey),
+      getHomeDir: () => app.getPath('home'),
+      broadcastDAGEvent: (event) => {
+        for (const win of AppWindow.getAllWindows()) {
+          if (!win.isDestroyed() && win.webContents) {
+            try {
+              win.webContents.send(DAG_CHANNELS.EVENT, event);
+            } catch (error) {
+              logger.warn('广播 DAG 事件到渲染进程失败', { error: String(error) });
+            }
+          }
+        }
+      },
+    });
+    orchestrator.setSessionId(sessionId);
+    return orchestrator;
+  }
+
   /**
    * Persist agent events to session storage (moved from createAgentRuntime.ts)
    * Handles message aggregation, tool call results, and desktop notifications.
    */
-  private async handleAgentEvent(sessionId: string, event: AgentEvent): Promise<void> {
-    const snapshot = this.messageDeltaAccumulator.apply(sessionId, event);
+  private async handleAgentEvent(sessionId: string, event: AgentEvent, eventKey = sessionId): Promise<void> {
+    const snapshot = this.messageDeltaAccumulator.apply(eventKey, event);
     if (event.type === 'message_delta' && !snapshot) {
       return;
     }
@@ -898,19 +1051,19 @@ export class TaskManager extends EventEmitter {
       || event.type === 'agent_complete'
       || event.type === 'agent_cancelled'
     )
-      ? this.messageDeltaAccumulator.getSnapshot(sessionId, true)
+      ? this.messageDeltaAccumulator.getSnapshot(eventKey, true)
       : null;
 
     if (finalSnapshot) {
       this.onAgentEvent!(sessionId, { type: 'message_snapshot', data: finalSnapshot });
     }
     this.onAgentEvent!(sessionId, event);
-    this.notifyAgentEventObservers(sessionId, event);
+    this.notifyAgentEventObservers(sessionId, event, eventKey === sessionId ? undefined : eventKey);
 
-    await this.persistEventToSession(sessionId, event, snapshot ?? finalSnapshot);
+    await this.persistEventToSession(sessionId, event, snapshot ?? finalSnapshot, eventKey);
 
     if (finalSnapshot) {
-      this.messageDeltaAccumulator.clear(sessionId);
+      this.messageDeltaAccumulator.clear(eventKey);
     }
   }
 
@@ -918,6 +1071,7 @@ export class TaskManager extends EventEmitter {
     sessionId: string,
     event: AgentEvent,
     snapshot?: MessageSnapshotData | null,
+    eventKey = sessionId,
   ): Promise<void> {
     try {
       const { getSessionManager, notificationService } = await import('../services');
@@ -925,7 +1079,7 @@ export class TaskManager extends EventEmitter {
       const sessionManager = getSessionManager();
 
       if (event.type === 'turn_start') {
-        this.turnStateBySession.set(sessionId, {
+        this.turnStateBySession.set(eventKey, {
           messageId: '',
           turnId: event.data.turnId,
           toolCalls: [],
@@ -934,7 +1088,7 @@ export class TaskManager extends EventEmitter {
       }
 
       if (event.type === 'message_delta' && event.data.role === 'assistant') {
-        let turnState = this.turnStateBySession.get(sessionId);
+        let turnState = this.turnStateBySession.get(eventKey);
         if (!turnState) {
           turnState = {
             messageId: '',
@@ -942,7 +1096,7 @@ export class TaskManager extends EventEmitter {
             toolCalls: [],
             content: '',
           };
-          this.turnStateBySession.set(sessionId, turnState);
+          this.turnStateBySession.set(eventKey, turnState);
         }
         if (event.data.turnId && !turnState.turnId) turnState.turnId = event.data.turnId;
         if (event.data.path === 'reasoning') {
@@ -960,10 +1114,10 @@ export class TaskManager extends EventEmitter {
       if (event.type === 'message' && event.data?.role === 'assistant') {
         const message = event.data;
 
-        let turnState = this.turnStateBySession.get(sessionId);
+        let turnState = this.turnStateBySession.get(eventKey);
         if (!turnState) {
           turnState = { messageId: '', toolCalls: [], content: '' };
-          this.turnStateBySession.set(sessionId, turnState);
+          this.turnStateBySession.set(eventKey, turnState);
         }
 
         if (message.toolCalls && message.toolCalls.length > 0) {
@@ -994,7 +1148,7 @@ export class TaskManager extends EventEmitter {
 
       // Update tool call results
       if (event.type === 'tool_call_end' && event.data) {
-        const turnState = this.turnStateBySession.get(sessionId);
+        const turnState = this.turnStateBySession.get(eventKey);
         const toolCallId = event.data.toolCallId;
 
         if (turnState?.messageId) {
@@ -1010,13 +1164,16 @@ export class TaskManager extends EventEmitter {
 
       // Reset turn state when turn ends or agent completes
       if (event.type === 'turn_end' || event.type === 'agent_complete' || event.type === 'agent_cancelled') {
-        this.turnStateBySession.delete(sessionId);
-        this.messageDeltaAccumulator.clear(sessionId);
+        this.turnStateBySession.delete(eventKey);
+        this.messageDeltaAccumulator.clear(eventKey);
       }
 
       // Send desktop notification on permission request (needs user input)
       if (event.type === 'permission_request' && event.data) {
         const req = event.data as { tool?: string; command?: string };
+        if (eventKey !== sessionId && 'id' in event.data && typeof event.data.id === 'string') {
+          this.backgroundPermissionOwners.set(event.data.id, eventKey);
+        }
         notificationService.notifyNeedsInput({
           sessionId,
           title: '需要授权',

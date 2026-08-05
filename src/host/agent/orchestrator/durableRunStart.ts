@@ -18,7 +18,9 @@ const logger = createLogger('DurableRunStart');
 export async function startRunPreferringDurable(
   registry: RunRegistry,
   input: CreateRunContextInput,
+  registration: 'primary' | 'auxiliary' = 'primary',
 ): Promise<RunHandle> {
+  if (registration === 'auxiliary') return registry.startAuxiliary(input);
   try {
     return await registry.startDurable(input);
   } catch (error) {

@@ -6,9 +6,27 @@ import { describe, expect, it } from 'vitest';
 import {
   BUILTIN_TOOL_READONLY_ROLES,
   READONLY_TOOL_DENYLIST,
+  buildLiveVoiceToolDenylist,
   buildRoutingToolDenylist,
   isToolWriteReadonlyRole,
 } from '../../../src/host/agent/routingToolPolicy';
+
+describe('buildLiveVoiceToolDenylist', () => {
+  const presenceTools = ['AskUserQuestion', 'ask_user_question', 'ConfirmGenerationCost'];
+
+  it('auxiliary voice run 只放行已有语音桥的选择题工具', () => {
+    expect(buildLiveVoiceToolDenylist(true, 'auxiliary', presenceTools))
+      .toEqual(['ConfirmGenerationCost']);
+  });
+
+  it('primary voice run 继续禁用全部在场工具', () => {
+    expect(buildLiveVoiceToolDenylist(true, 'primary', presenceTools)).toEqual(presenceTools);
+  });
+
+  it('非通话 run 不施加通话 denylist', () => {
+    expect(buildLiveVoiceToolDenylist(false, 'auxiliary', presenceTools)).toEqual([]);
+  });
+});
 
 describe('buildRoutingToolDenylist', () => {
   it('readonly agent → 拒掉全部文件写入工具（两种命名变体）', () => {

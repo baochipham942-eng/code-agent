@@ -75,6 +75,7 @@ describe('AskUserQuestion schema', () => {
     expect(askUserQuestionModule.schema.name).toBe('AskUserQuestion');
     expect(askUserQuestionModule.schema.category).toBe('planning');
     expect(askUserQuestionModule.schema.permissionLevel).toBe('execute');
+    expect(askUserQuestionModule.schema.requiresPermission).toBe(false);
     expect(askUserQuestionModule.schema.inputSchema.required).toEqual(['questions']);
   });
 

@@ -265,7 +265,7 @@ describe('A4 窄工具 / H1 指挥台', () => {
     // `end_call`（此前它说「已挂断」但通话还开着，是第二例「说了没做」）。
     // Phase 3 加了 `capture_screen_context`：它采屏但不落用户文件，零写权限的底线没破。
     expect(VOICE_TOOL_DEFINITIONS.map((tool) => tool.name)).toEqual([
-      'get_active_tasks',
+      'task_status',
       'get_current_file_summary',
       'capture_screen_context',
       'spawn_task',
@@ -280,12 +280,12 @@ describe('A4 窄工具 / H1 指挥台', () => {
     expect(params).not.toContain('command');
   });
 
-  it('get_active_tasks 报真实任务，空的时候明说没有', async () => {
+  it('task_status 报真实任务，空的时候明说没有', async () => {
     bind();
-    expect(await executeVoiceTool('get_active_tasks', '{}')).toContain('没有进行中的任务');
+    expect(await executeVoiceTool('task_status', '{}')).toContain('没有进行中的任务');
 
     incompleteTasks.value = [{ subject: '跑测试', status: 'in_progress' }];
-    expect(await executeVoiceTool('get_active_tasks', '{}')).toContain('跑测试');
+    expect(await executeVoiceTool('task_status', '{}')).toContain('跑测试');
   });
 
   it('get_current_file_summary 取会话里真发生过的文件动作', async () => {
@@ -299,17 +299,26 @@ describe('A4 窄工具 / H1 指挥台', () => {
     resolvedAgent.value = { id: 'muzhi', name: '牧之' };
     bind('muzhi');
 
-    const result = await executeVoiceTool('spawn_task', JSON.stringify({ title: '改大纲', prompt: '把大纲改成三段' }));
+    const result = await executeVoiceTool(
+      'spawn_task',
+      JSON.stringify({ title: '改大纲', prompt: '把大纲改成三段' }),
+      'xml_fallback',
+    );
 
     // ①（批 X）：返回值是言语行为指令 + 认知协议，不是状态描述——「已排队」这种
     // 状态名词会被通话 brain 润色成「已完成」（真机撞过三次）。钉三件事：
-    // 有下一句台词、结果只认 [BACKEND] 回流、进度问题落 get_active_tasks；
+    // 有下一句台词、结果只认 [BACKEND] 回流、进度问题落 task_status；
     // 且不给任何可润色的状态名词。
     expect(result).toContain('现在对用户说');
     expect(result).toContain('[BACKEND]');
-    expect(result).toContain('get_active_tasks');
+    expect(result).toContain('task_status');
     expect(result).not.toMatch(/排队|后台|完成了/);
-    expect(workItems.value).toEqual([expect.objectContaining({ title: '改大纲', status: 'queued' })]);
+    expect(workItems.value.at(-2)).toEqual(expect.objectContaining({ title: '改大纲', status: 'queued' }));
+    expect(workItems.value.at(-1)).toEqual(expect.objectContaining({
+      title: '改大纲',
+      status: 'running',
+      dispatchOrigin: 'xml_fallback',
+    }));
     await vi.waitFor(() => expect(runtime.startTask).toHaveBeenCalled());
     expect(runtime.startTask.mock.calls.at(-1)?.[1]).toBe('把大纲改成三段');
     const options = lastRunOptions();
@@ -355,7 +364,8 @@ describe('A4 窄工具 / H1 指挥台', () => {
     bind();
 
     await executeVoiceTool('spawn_task', JSON.stringify({ title: '跑测试', prompt: '跑一下测试' }));
-    expect(workItems.value.at(-1)).toMatchObject({ status: 'queued' });
+    expect(workItems.value.at(-2)).toMatchObject({ status: 'queued' });
+    expect(workItems.value.at(-1)).toMatchObject({ status: 'running' });
 
     runtime.emit('task_started');
     expect(workItems.value.at(-1)).toMatchObject({ status: 'running' });
@@ -423,15 +433,14 @@ describe('A4 窄工具 / H1 指挥台', () => {
     expect(workItems.value.at(-1)).toMatchObject({ title: '删文件', status: 'cancelled' });
   });
 
-  it('已有活在跑时不再派新的，而是告诉用户两条出路', async () => {
+  it('已有活在跑时允许不同 lane 再派一件', async () => {
     bind();
     runtime.status = 'running';
 
     const result = await executeVoiceTool('spawn_task', JSON.stringify({ title: 'b', prompt: '再干一件' }));
 
-    expect(runtime.startTask).not.toHaveBeenCalled();
-    expect(result).toContain('改方向');
-    expect(result).toContain('别做了');
+    expect(runtime.startTask).toHaveBeenCalledTimes(1);
+    expect(result).toContain('我已经开始做');
   });
 
   it('没活跑时叫停不说谎（不谎报已经停了）', async () => {

@@ -118,6 +118,8 @@ describe('P0-2 派活载荷带通话近窗字幕', () => {
     // 执行侧必须看得到用户的原话，包括 brain 改写时丢掉的「下载目录」和 ASR 的错字
     expect(context).toContain('下载目录里边');
     expect(context).toContain('a点text的文件');
+    expect(context).toContain('正式执行边界');
+    expect(context).toContain('派发指令已经被 Host 消费');
     // 原文只走 system 上下文，不许混进会显示给用户的那条消息
     expect(lastRun().message).toBe('创建 a.txt');
     expect(lastRun().message).not.toContain('通话近窗');
@@ -138,6 +140,36 @@ describe('P0-2 派活载荷带通话近窗字幕', () => {
     await executeVoiceTool('spawn_task', JSON.stringify({ title: 't', prompt: 'p' }));
 
     expect(systemContext()).not.toContain('通话近窗字幕原文');
+  });
+
+  it('派活外壳只把任务正文交给执行槽，避免辅助 run 再派一次', async () => {
+    pushVoiceTranscript({
+      role: 'user',
+      text: '请调用 spawn task，短名叫报告。任务内容是先问我是否继续，再生成报告。submission key 叫 report-1',
+    });
+
+    await executeVoiceTool('spawn_task', JSON.stringify({ title: '报告', prompt: '先问我是否继续，再生成报告' }));
+
+    const context = systemContext();
+    expect(context).toContain('用户：先问我是否继续，再生成报告。');
+    expect(context).not.toContain('请调用 spawn task');
+    expect(context).not.toContain('report-1');
+  });
+
+  it('把语音拆开的工具名规范成注册名后再交给执行槽', async () => {
+    pushVoiceTranscript({
+      role: 'user',
+      text: '请调用 spawn task。任务内容是第一步调用 ask user question，submission key 叫 report-2',
+    });
+
+    await executeVoiceTool('spawn_task', JSON.stringify({
+      title: '报告',
+      prompt: '第一步调用 ask_user_question',
+    }));
+
+    expect(lastRun().message).toBe('第一步调用 AskUserQuestion');
+    expect(systemContext()).toContain('用户：第一步调用 AskUserQuestion，');
+    expect(systemContext()).not.toContain('ask user question');
   });
 
   it('近窗存在时附带口述词表', async () => {

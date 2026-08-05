@@ -145,7 +145,7 @@ describe('buildOverviewRunHeaderModel 步骤计数与结局', () => {
 
 describe('OverviewRunHeader 细进度线', () => {
   beforeEach(() => {
-    useRunControlStore.setState({ queue: [], actions: null });
+    useRunControlStore.setState({ actions: null });
     useSessionStore.setState({ currentSessionId: 'session-a', sessions: [
       { id: 'session-a', title: '写周报' },
     ] as never });

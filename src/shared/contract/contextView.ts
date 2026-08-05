@@ -104,6 +104,8 @@ export const CONTEXT_INJECTION_SOURCES = [
   'recovered-work',
   'screen-memory',
   'desktop-activity',
+  'user-directives',
+  'user-memory',
   'seed-memory',
   'user-prompt-hook',
   'session-start-hook',

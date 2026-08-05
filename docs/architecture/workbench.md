@@ -6,6 +6,7 @@
 > Accio 对标分析见 `docs/analysis/2026-04-16-accio-vs-code-agent-core-differences.md`。
 > 架构决策见 [ADR-011](../decisions/011-chat-native-workbench.md)。
 > 2026-04-26 后的实现补充：Workbench B+ 信息架构、Live Preview V2-A/B、Browser/Computer productionization、Activity Providers、Semantic Tool UI、Hook Activity 与 Prompt Rewind 已写入本文。
+> 2026-08-05 后，会话指挥台按 ADR-054 成为文字与语音的统一前台；任务执行、审批、状态和控制共用同一组会话槽位。
 
 ## 0. 它解决什么
 
@@ -197,6 +198,19 @@ interface TurnQualitySummary {
 - Routing 的当前会话入口在 `InlineWorkbenchBar`，Live Preview 的低频入口在 `SessionActionsMenu`，不要把未挂载的 `AbilityMenu` 当作当前产品入口。
 
 ## 3. 数据流
+
+### 3.0 会话指挥台
+
+ADR-054 将会话前台固定为可持续输入的指挥面：当前 turn 的前台工具策略只允许短时、低副作用操作，耗时工作通过 `SessionTaskService` 进入后台槽位。文字派活与语音派活共用 `submissionKey` 幂等、全局/单会话并发上限、状态迁移和审批回注；用户可在任务运行中继续发消息、steer 或 stop。
+
+Renderer 不再维护旧的“下一轮排队”状态。新输入直接进入当前会话控制链，是否创建后台任务由统一调度合同决定；UI 只投影 `sessionTaskSlots` 和真实运行状态，不用排队文案制造第二套状态机。
+
+会话启动时，持久化知识按权限分成两个独立块：
+
+- `User Directives`：只接受用户通过 `MemoryConfirmModal` 明确确认的规则，优先于产品默认偏好；仍受 system/developer、安全、权限和工具策略约束，不能授权外部或破坏性动作。
+- `User Memory`：普通个性化证据，只作可错的上下文，不作为指令或授权。
+
+两块分别写入 `memoryInjectionTrace`。规则文件使用同目录临时文件、fsync、校验后 rename；坏的临时文件隔离为 `.corrupt-*`，不会进入活动记忆集合。规则可在记忆管理中删除，frontmatter 保留确认请求 ID 和时间。
 
 ### 3.1 发送链（普通 Auto / Parallel）
 

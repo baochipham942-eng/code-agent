@@ -9,6 +9,8 @@ import type { ModelProvider } from './model';
 import type { SessionMemoryMode } from './session';
 
 export type TurnQualityMemoryBlockType =
+  | 'user-directives'
+  | 'user-memory'
   | 'seed-memory'
   | 'memory_index'
   | 'memory_hint'

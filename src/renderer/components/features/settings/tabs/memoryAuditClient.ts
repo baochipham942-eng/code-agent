@@ -100,7 +100,7 @@ export interface MemoryAuditPayload {
 
 export interface MemoryInjectionTrace {
   id: string;
-  blockType: 'seed-memory' | 'memory_index' | 'memory_hint' | 'recent_conversations';
+  blockType: 'user-directives' | 'user-memory' | 'seed-memory' | 'memory_index' | 'memory_hint' | 'recent_conversations';
   trigger: string;
   chars: number;
   injected: boolean;

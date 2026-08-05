@@ -7,7 +7,8 @@
 // ============================================================================
 
 import { create } from 'zustand';
-import type { VoiceMessageCode, VoiceWorkItem } from '@shared/contract/voice';
+import type { VoiceMessageCode, VoiceTokenUsage, VoiceWorkItem } from '@shared/contract/voice';
+import type { RealtimeVoiceCostEstimate } from '@shared/pricing/estimateRealtimeVoiceCost';
 import type { VoiceLiveSettings } from '@shared/contract/settings';
 
 export type VoiceInterruptMode = NonNullable<VoiceLiveSettings['interrupt']>;
@@ -66,6 +67,11 @@ interface VoiceCallStoreState {
    *  存 code 而不是成品文案——文案的家在 i18n，host 只说「出了哪件事」。 */
   notice: VoiceCallError | null;
   ttfa: { modelMs?: number; perceivedMs?: number } | null;
+  tokenUsage: VoiceTokenUsage;
+  costEstimate: RealtimeVoiceCostEstimate | null;
+  costLimit: number | null;
+  costLimitAction: 'warn' | 'hangup';
+  costLimitExceeded: boolean;
 
   /** 以下动作只由 voiceCallBridge 调用 */
   dialStarted: (sessionId: string, activeAgentId: string | undefined, interruptMode: VoiceInterruptMode) => void;
@@ -87,6 +93,8 @@ interface VoiceCallStoreState {
     reconnecting: boolean,
     progress?: { attempt: number; maxAttempts: number },
   ) => void;
+  costConfigured: (limit: number | null, action: 'warn' | 'hangup') => void;
+  usageApplied: (usage: VoiceTokenUsage, estimate: RealtimeVoiceCostEstimate | null) => void;
   reset: () => void;
 }
 
@@ -111,6 +119,19 @@ const INITIAL = {
   error: null,
   notice: null,
   ttfa: null,
+  tokenUsage: {
+    totalTokens: 0,
+    inputTokens: 0,
+    outputTokens: 0,
+    inputAudioTokens: 0,
+    inputTextTokens: 0,
+    outputAudioTokens: 0,
+    outputTextTokens: 0,
+  },
+  costEstimate: null,
+  costLimit: null,
+  costLimitAction: 'warn' as const,
+  costLimitExceeded: false,
 };
 
 export const useVoiceCallStore = create<VoiceCallStoreState>((set) => ({
@@ -152,6 +173,14 @@ export const useVoiceCallStore = create<VoiceCallStoreState>((set) => ({
       reconnectAttempt: reconnecting ? progress?.attempt ?? 0 : 0,
       reconnectMaxAttempts: reconnecting ? progress?.maxAttempts ?? 0 : 0,
     }),
+  costConfigured: (costLimit, costLimitAction) => set({ costLimit, costLimitAction }),
+  usageApplied: (tokenUsage, costEstimate) => set((state) => ({
+    tokenUsage,
+    costEstimate,
+    costLimitExceeded: costEstimate !== null
+      && state.costLimit !== null
+      && costEstimate.amount >= state.costLimit,
+  })),
 
   reset: () => set({ ...INITIAL }),
 }));

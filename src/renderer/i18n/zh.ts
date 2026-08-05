@@ -767,6 +767,13 @@ export const zh = {
     confidence: '置信度',
     createdAt: '创建时间',
     saveHint: '按 Cmd/Ctrl + Enter 快速保存',
+    confirmMemoryTitle: '确认记忆',
+    confirmMemoryBody: 'AI 学到了以上内容，是否保存到记忆中？',
+    confirmDirectiveTitle: '确认用户规则',
+    confirmDirectiveBody: '保存后，这条规则会优先于产品默认偏好进入后续会话。它可在记忆管理中撤销，并保留写入记录。',
+    confirmSkip: '跳过',
+    confirmSave: '保存',
+    confirmDirectiveSave: '确认保存规则',
   },
 
 

@@ -27,7 +27,11 @@ vi.mock('../../../src/host/memory/memoryEntryRuntime', () => ({
   packMemoryEntries: mocks.packMemoryEntries,
 }));
 
-import { buildPackedSeedMemoryBlock, buildSeedMemoryBlock } from '../../../src/host/utils/seedMemoryInjector';
+import {
+  buildPackedSeedMemoryBlock,
+  buildPackedUserDirectives,
+  buildSeedMemoryBlock,
+} from '../../../src/host/utils/seedMemoryInjector';
 
 function memory(overrides: Partial<MemoryRecord>): MemoryRecord {
   return {
@@ -145,6 +149,27 @@ describe('seedMemoryInjector', () => {
       projectPath: '/repo/code-agent',
       sessionId: 'session-1',
       statuses: ['active'],
+      kinds: ['user', 'feedback', 'project', 'reference', 'session', 'pattern'],
     }), mocks.db);
+  });
+
+  it('packs directives independently without query relevance filtering', async () => {
+    mocks.packMemoryEntries.mockResolvedValueOnce({
+      items: [{ entryId: 'directive-1' }],
+      block: '<memory-pack>\n- [1] Keep PRs fail closed\n</memory-pack>',
+      totalChars: 62,
+    });
+
+    const result = await buildPackedUserDirectives({
+      projectPath: '/repo/code-agent',
+      sessionId: 'session-1',
+    });
+
+    expect(result?.block).toContain('## User Directives');
+    expect(mocks.packMemoryEntries).toHaveBeenCalledWith(expect.objectContaining({
+      kinds: ['directive'],
+      statuses: ['active'],
+    }), mocks.db);
+    expect(mocks.packMemoryEntries.mock.calls[0][0]).not.toHaveProperty('query');
   });
 });

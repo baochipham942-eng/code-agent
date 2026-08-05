@@ -191,6 +191,8 @@ export function inferBufferedSystemMessageCategory(ctx: ContextAssemblyCtx, cont
     'stop-hook',
     'truncation-recovery',
     'wrap-up',
+    'user-directives',
+    'user-memory',
     'seed-memory',
     'session-recovery',
     'checkpoint-nudge',

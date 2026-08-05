@@ -38,6 +38,7 @@ export interface MemoryItem {
 export type MemoryEntryStatus = 'candidate' | 'active' | 'rejected' | 'stale' | 'archived';
 
 export type MemoryEntryKind =
+  | 'directive'
   | 'user'
   | 'feedback'
   | 'project'
@@ -315,6 +316,8 @@ export interface MemoryConfirmRequest {
   category: string;
   /** 类型 */
   type: string;
+  /** directive = 用户明确拍板的规则；memory = 普通个性化记忆 */
+  authority?: 'directive' | 'memory';
   /** 置信度 */
   confidence: number;
   /** 时间戳 */

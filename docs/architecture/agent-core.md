@@ -496,7 +496,7 @@ per-agent Stop UI 见 [multiagent-system.md](./multiagent-system.md) 的取消�
 
 ### Runtime Steer（运行中途转向）
 
-用户在 agent 运行过程中插话不会取消整个 run。`ConversationRuntime.steer()` 先拒绝已经 settled 的 run；仍可转向时中止当前 inference，把消息注入内存并置 `needsReinference=true`，随后 **await** `messageProcessor.injectSteerMessage()` 的 SessionManager 落库。落库完成后 `steer()` 才 resolve，失败则向调用方传播，不能把未持久化输入报告为成功。`steerOrQueue()` 只在 `SteerRejectedError` / `SteerUnsupportedError` 时把原始 envelope 写入 durable `queued_inputs`，其他错误原样抛出；这条 lifecycle fence 避免 terminal settlement 后的晚到 steer 丢失。guided UI 用 `RuntimeInputDelivery` 元数据把消息标记为 `queued_next_turn`；web host 的 follow-up 接收并持久化 `clientMessageId`，为 prompt rewind 保留稳定标识。
+用户在 agent 运行过程中插话不会取消整个 run。`ConversationRuntime.steer()` 先拒绝已经 settled 的 run；仍可转向时中止当前 inference，把消息注入内存并置 `needsReinference=true`，随后 **await** `messageProcessor.injectSteerMessage()` 的 SessionManager 落库。落库完成后 `steer()` 才 resolve，失败则向调用方传播，不能把未持久化输入报告为成功。`steerOrQueue()` 只在 `SteerRejectedError` / `SteerUnsupportedError` 时把原始 envelope 写入 durable `queued_inputs`，其他错误原样抛出；这条 lifecycle fence 避免 terminal settlement 后的晚到 steer 丢失。guided UI 现在统一标记 `accepted` / `buffered_retry` / `foreground_busy` 等真实投递结果；web host 的 follow-up 接收并持久化 `clientMessageId`，为 prompt rewind 保留稳定标识。
 
 关键文件：`src/host/agent/runtime/conversationRuntime.ts`、`src/host/agent/runtime/messageProcessor.ts`、`src/host/runtime/steerQueueFence.ts`、`src/web/routes/agent.ts`、`src/shared/contract/conversationEnvelope.ts`（`clientMessageId`）。
 

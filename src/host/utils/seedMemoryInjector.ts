@@ -37,6 +37,15 @@ const MAX_SEED_CHARS = 800;
 /** Maximum characters per individual memory entry */
 const MAX_ENTRY_CHARS = 120;
 
+const USER_MEMORY_KINDS = [
+  'user',
+  'feedback',
+  'project',
+  'reference',
+  'session',
+  'pattern',
+] as const;
+
 // ----------------------------------------------------------------------------
 // Category display labels
 // ----------------------------------------------------------------------------
@@ -73,9 +82,7 @@ const CATEGORY_LABELS: Record<string, string> = {
 export function buildSeedMemoryBlock(projectPath?: string): string | null {
   try {
     const db = getDatabase();
-    if (!db?.isReady) {
-      return null;
-    }
+    if (!db?.isReady) return null;
 
     // Query recent memories, preferring high-confidence ones
     const decisions = (db.listMemories({
@@ -95,6 +102,10 @@ export function buildSeedMemoryBlock(projectPath?: string): string | null {
       orderDir: 'DESC',
     })
       .filter((memory) => memory.type !== 'desktop_activity')
+      .filter((memory) => {
+        const entry = memory.metadata?.memoryEntry;
+        return !(entry && typeof entry === 'object' && 'kind' in entry && entry.kind === 'directive');
+      })
       .filter((memory) => !shouldSuppressMemoryByInboxDecision(memory, decisions));
 
     if (!memories || memories.length === 0) {
@@ -160,9 +171,7 @@ export async function buildPackedSeedMemory(options: {
 }): Promise<{ block: string; packed: MemoryPackResult } | null> {
   try {
     const db = getDatabase();
-    if (!db?.isReady) {
-      return null;
-    }
+    const memoryDb = db?.isReady ? db : undefined;
 
     const packed = await packMemoryEntries({
       query: options.query,
@@ -170,10 +179,11 @@ export async function buildPackedSeedMemory(options: {
       sessionId: options.sessionId,
       excludeEntryIds: options.excludeEntryIds,
       statuses: ['active'],
+      kinds: [...USER_MEMORY_KINDS],
       maxItems: MAX_SEED_MEMORIES,
       perItemCharLimit: MAX_ENTRY_CHARS,
       totalCharBudget: MAX_SEED_CHARS,
-    }, db);
+    }, memoryDb);
 
     if (packed.items.length === 0 || !packed.block.trim()) {
       return null;
@@ -187,6 +197,34 @@ export async function buildPackedSeedMemory(options: {
     };
   } catch (error) {
     logger.warn('[SeedMemory] Failed to build packed seed memory block, falling back', { error: String(error) });
+    return null;
+  }
+}
+
+export async function buildPackedUserDirectives(options: {
+  projectPath?: string;
+  sessionId?: string;
+  excludeEntryIds?: string[];
+}): Promise<{ block: string; packed: MemoryPackResult } | null> {
+  try {
+    const db = getDatabase();
+    const memoryDb = db?.isReady ? db : undefined;
+    const packed = await packMemoryEntries({
+      projectPath: options.projectPath,
+      sessionId: options.sessionId,
+      excludeEntryIds: options.excludeEntryIds,
+      kinds: ['directive'],
+      statuses: ['active'],
+      maxItems: MAX_SEED_MEMORIES,
+      perItemCharLimit: MAX_ENTRY_CHARS,
+      totalCharBudget: MAX_SEED_CHARS,
+    }, memoryDb);
+    if (packed.items.length === 0 || !packed.block.trim()) return null;
+    const block = `## User Directives\n${packed.block}`;
+    logger.info(`[SeedMemory] Injecting ${packed.items.length} user directives (~${estimateTokens(block)} tokens)`);
+    return { block, packed };
+  } catch (error) {
+    logger.warn('[SeedMemory] Failed to build user directives block, skipping', { error: String(error) });
     return null;
   }
 }

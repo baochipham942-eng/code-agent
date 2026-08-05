@@ -49,6 +49,7 @@ import type {
   MemoryMirrorRebuildResult,
   MemoryPackRequest,
 } from '../../shared/contract/memory';
+import { respondToDirectiveMemoryConfirmation } from '../memory/directiveMemoryConfirmation';
 
 const logger = createLogger('MemoryIPC');
 
@@ -970,8 +971,7 @@ export function registerMemoryHandlers(ipcMain: IpcMain): void {
   /** @deprecated Use IPC_DOMAINS.MEMORY with action: 'getStats' */
   ipcMain.handle(IPC_CHANNELS.MEMORY_GET_STATS, async () => handleGetStats());
 
-  // Memory confirm response handler (Phase 3) — old notification system removed
-  ipcMain.handle(IPC_CHANNELS.MEMORY_CONFIRM_RESPONSE, async (_: unknown, _payload: { id: string; confirmed: boolean }) => {
-    // no-op: memoryNotification removed with old memory system
+  ipcMain.handle(IPC_CHANNELS.MEMORY_CONFIRM_RESPONSE, async (_: unknown, payload: { id: string; confirmed: boolean }) => {
+    respondToDirectiveMemoryConfirmation(payload.id, payload.confirmed);
   });
 }

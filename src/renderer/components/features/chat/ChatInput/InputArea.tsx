@@ -176,6 +176,12 @@ export const InputArea = forwardRef<InputAreaRef, InputAreaProps>(
     const emitChange = useCallback(() => {
       const root = editorRef.current;
       if (!root) return;
+      // 删光全部文字后 WebKit 会留一个占位 <br>：本编辑器换行走 '\n' 文本（见下方
+      // Shift+Enter 注释），<br> 只会是浏览器残留——不清掉它 extract 读成 '\n'，
+      // placeholder 被「非空」吞掉、光标也没有可落的文本节点（真机 2026-08-05）。
+      if (root.childNodes.length > 0 && (root.textContent ?? '') === '' && listChipMounts(root).length === 0) {
+        root.replaceChildren();
+      }
       const text = extractComposerPlainText(root);
       lastEmittedRef.current = text;
       lastCaretRef.current = getCaretPlainTextOffset(root) ?? text.length;

@@ -731,17 +731,9 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
     setBusyEngineId(source.manifestId);
     try {
       const descriptor = descriptorResponse.data as Parameters<typeof buildModelSwitcherEngineSelection>[0];
-      let workingDirectory = session?.workingDirectory ?? appWorkingDirectory ?? undefined;
-      // 外部 CLI 引擎必须有真实工作目录才能跑：会话（快速对话）和 app 级都没有时，
-      // 现场让用户选一个目录，而不是把 host 守卫的英文错误原样抛给用户（真机 2026-08-05）。
-      if (source.kind !== 'native' && !workingDirectory?.trim()) {
-        const picked = await window.domainAPI?.invoke<string | null>(IPC_DOMAINS.WORKSPACE, 'selectDirectory', {});
-        if (!picked?.success || !picked.data) {
-          toast.error('外部引擎需要一个工作目录才能运行，请先选择目录');
-          return;
-        }
-        workingDirectory = picked.data;
-      }
+      // 会话与 app 级都没有目录时不在这里拦：host 侧会兜到默认工作目录
+      // <dataDir>/work（产品负责人 2026-08-05 拍板：不弹目录选择器）。
+      const workingDirectory = session?.workingDirectory ?? appWorkingDirectory ?? undefined;
       await updateSessionEngine(
         sessionId,
         buildModelSwitcherEngineSelection(

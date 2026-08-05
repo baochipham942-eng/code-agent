@@ -18,6 +18,7 @@ import {
 } from '../../../shared/externalEngineManifest';
 import { createLogger } from '../infra/logger';
 import { getShellPath } from '../infra/shellEnvironment';
+import { resolveLocalAppIconDataUrl } from './localAppIcon';
 
 const logger = createLogger('AgentEngineRegistry');
 
@@ -100,11 +101,21 @@ export class AgentEngineRegistry {
     if (this.cache && this.cache.expiresAt > now) return;
 
     const probes = await Promise.all(this.manifests.map((manifest) => this.probeManifest(manifest)));
-    const sources = this.manifests.map((manifest, index) =>
-      this.buildSourceDescriptor(manifest, probes[index]));
+    // 无内置 iconAsset 的引擎从本机已装 .app 提取真图标（darwin；结果有进程级缓存）
+    const localIcons = await Promise.all(this.manifests.map((manifest) => (
+      manifest.iconAsset ? Promise.resolve(undefined) : resolveLocalAppIconDataUrl(manifest.macAppNames)
+    )));
+    const iconByManifestId = new Map(this.manifests.map((manifest, index) => [manifest.id, localIcons[index]]));
+    const sources = this.manifests.map((manifest, index) => {
+      const source = this.buildSourceDescriptor(manifest, probes[index]);
+      const localIcon = iconByManifestId.get(manifest.id);
+      return localIcon && !source.iconAsset ? { ...source, iconAsset: localIcon } : source;
+    });
     const descriptors = this.manifests.flatMap((manifest, index) => {
       if (!manifest.kind) return [];
-      return [this.buildEngineDescriptor(manifest, manifest.kind, probes[index], now)];
+      const descriptor = this.buildEngineDescriptor(manifest, manifest.kind, probes[index], now);
+      const localIcon = iconByManifestId.get(manifest.id);
+      return [localIcon && !descriptor.iconAsset ? { ...descriptor, iconAsset: localIcon } : descriptor];
     });
 
     this.cache = {

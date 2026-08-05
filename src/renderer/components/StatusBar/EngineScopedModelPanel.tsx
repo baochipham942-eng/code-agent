@@ -28,13 +28,14 @@ export interface EngineScopedModelPanelProps {
 
 // 无官方 logo 资产的引擎用「首字母 + 品牌色瓦片」区分彼此：满屏同一个终端图标
 // 读作「都没有 logo」（真机 2026-08-05）。真 logo 资产到位后配 manifest.iconAsset 即覆盖。
+// 前景一律中性 token（theme-blind 门拦亮档彩色前景类），区分度全靠底色。
 const ENGINE_TILE_PALETTE = [
-  'bg-sky-500/20 text-sky-300',
-  'bg-violet-500/20 text-violet-300',
-  'bg-amber-500/20 text-amber-300',
-  'bg-emerald-500/20 text-emerald-300',
-  'bg-rose-500/20 text-rose-300',
-  'bg-cyan-500/20 text-cyan-300',
+  'bg-sky-500/25',
+  'bg-violet-500/25',
+  'bg-amber-500/25',
+  'bg-emerald-500/25',
+  'bg-rose-500/25',
+  'bg-cyan-500/25',
 ] as const;
 
 function engineTileClass(manifestId: string): string {
@@ -54,7 +55,7 @@ function EngineIcon({ source }: { source: AgentEngineSourceDescriptor }) {
       ) : (
         <span
           aria-hidden="true"
-          className={`grid h-7 w-7 place-items-center rounded-lg text-sm font-semibold ${engineTileClass(source.manifestId)}`}
+          className={`grid h-7 w-7 place-items-center rounded-lg text-sm font-semibold text-zinc-200 ${engineTileClass(source.manifestId)}`}
         >
           {source.label.trim().charAt(0).toUpperCase() || <Terminal className="h-4 w-4" />}
         </span>

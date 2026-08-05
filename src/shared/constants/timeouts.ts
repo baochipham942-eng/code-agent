@@ -334,6 +334,12 @@ export const RENDERER_POLLING = {
   BACKGROUND_TASK_FALLBACK: 30_000,
   /** 后台任务失效推送去抖窗口 */
   BACKGROUND_TASK_INVALIDATION_DEBOUNCE: 200,
+  /**
+   * 后台任务台账连续读失败到「置黄条 + 停摆」之间的容忍次数。
+   * 一次抖动就冻结成永久停摆（要用户手动点重试）是 2026-08-05 C3 的实测症状；
+   * 退避重试到这个次数仍失败，才认定状态确实读不出来。
+   */
+  BACKGROUND_TASK_READ_FAILURE_THRESHOLD: 3,
   /** 任务状态同步轮询基础间隔 */
   TASK_SYNC_BASE: 5_000,
   /** 本地桥接健康检查轮询基础间隔 */

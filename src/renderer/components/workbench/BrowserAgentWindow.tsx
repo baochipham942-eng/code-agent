@@ -6,7 +6,6 @@ import {
   Loader2,
   Lock,
   MessageSquarePlus,
-  MoreHorizontal,
   RefreshCw,
   X,
 } from 'lucide-react';
@@ -35,6 +34,7 @@ import type { SurfaceExecutionTranslationsV1 } from '../../i18n/surfaceExecution
 import { Button, GhostButton, IconButton, Input } from '../primitives';
 import { ConfirmDialog } from '../composites/ConfirmDialog';
 import { AgentPointerOverlay } from './AgentPointerOverlay';
+import { BrowserAgentWindowOverflowMenu } from './BrowserAgentWindowOverflowMenu';
 import {
   closeUserBrowserLinkRun,
   controlUserBrowserHistory,
@@ -67,6 +67,7 @@ import { openExternalLink } from '../../utils/platform';
 // 唯一源），剩下全给实时画面；指针叠加直接画在画面上。profile 导入 / 扩展目录 /
 // relay 启停 / 清 cookie 等高级管理仍只在 LocalOps，从 ⋯ 深链过去。
 // 二期：导航 pending（N1）+ 工具条（N2）+ 批注发 Agent（N3）。
+// P1 账号态：⋯ 菜单 Cookie 导入见 BrowserAgentWindowOverflowMenu。
 
 type Copy = ReturnType<typeof useI18n>['t']['workbenchTabs']['agentWindow'];
 
@@ -88,61 +89,6 @@ function formatTerminalDuration(
   if (minutes < 60) return formatSurfaceExecutionCopy(copy.durationMinutes, { count: minutes });
   return formatSurfaceExecutionCopy(copy.durationHours, { count: Math.round(minutes / 60) });
 }
-
-const OverflowMenu: React.FC<{ copy: Copy; modeLabel: string; onOpenLocalOps: () => void }> = ({
-  copy,
-  modeLabel,
-  onOpenLocalOps,
-}) => {
-  const [open, setOpen] = useState(false);
-  const wrapperRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    if (!open) return undefined;
-    const onMouseDown = (event: MouseEvent) => {
-      if (!wrapperRef.current?.contains(event.target as Node)) setOpen(false);
-    };
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setOpen(false);
-    };
-    document.addEventListener('mousedown', onMouseDown);
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('mousedown', onMouseDown);
-      document.removeEventListener('keydown', onKey);
-    };
-  }, [open]);
-
-  return (
-    <div ref={wrapperRef} className="relative shrink-0">
-      <IconButton
-        icon={<MoreHorizontal className="h-3.5 w-3.5" />}
-        aria-label={copy.moreActions}
-        variant="ghost"
-        size="sm"
-        onClick={() => setOpen((value) => !value)}
-        data-testid="browser-agent-window-more"
-      />
-      {open && (
-        <div className="absolute right-0 top-full z-40 mt-1 w-52 rounded-lg border border-white/[0.1] bg-zinc-900/95 p-1 shadow-xl backdrop-blur">
-          <div className="px-2 py-1.5 text-[10px] text-zinc-500">{modeLabel}</div>
-          <GhostButton
-            size="sm"
-            className="w-full justify-start"
-            leftIcon={<ExternalLink className="h-3.5 w-3.5" />}
-            onClick={() => {
-              setOpen(false);
-              onOpenLocalOps();
-            }}
-            data-testid="browser-agent-window-open-local-ops"
-          >
-            {copy.openLocalOps}
-          </GhostButton>
-        </div>
-      )}
-    </div>
-  );
-};
 
 export const BrowserAgentWindow: React.FC = () => {
   const { t, language } = useI18n();
@@ -235,6 +181,10 @@ export const BrowserAgentWindow: React.FC = () => {
   const [pinDraft, setPinDraft] = useState('');
   const [annotateError, setAnnotateError] = useState<string | null>(null);
   const [annotateSending, setAnnotateSending] = useState(false);
+  const [cookieImportNotice, setCookieImportNotice] = useState<{
+    message: string;
+    kind: 'success' | 'error';
+  } | null>(null);
   const navRequestIdRef = useRef(0);
   // R4：stage CSS 尺寸跟随视口 + 帧采集分辨率
   const stageRef = useRef<HTMLDivElement | null>(null);
@@ -746,8 +696,33 @@ export const BrowserAgentWindow: React.FC = () => {
             {copy.foreignSessionTitle}
           </span>
         )}
-        <OverflowMenu copy={copy} modeLabel={modeLabel} onOpenLocalOps={openAdvancedPanel} />
+        <BrowserAgentWindowOverflowMenu
+          copy={copy}
+          modeLabel={modeLabel}
+          onOpenLocalOps={openAdvancedPanel}
+          onImportNotice={(message, kind) => setCookieImportNotice({ message, kind })}
+        />
       </div>
+      {cookieImportNotice && (
+        <div
+          data-testid="browser-agent-window-cookie-import-notice"
+          className={`flex shrink-0 items-center gap-2 border-b px-2.5 py-1.5 text-[11px] ${
+            cookieImportNotice.kind === 'success'
+              ? 'border-badge-success/20 bg-emerald-500/10 text-badge-success'
+              : 'border-badge-danger/20 bg-red-500/10 text-badge-danger'
+          }`}
+        >
+          <span className="min-w-0 flex-1 truncate">{cookieImportNotice.message}</span>
+          <button
+            type="button"
+            className="shrink-0 text-zinc-400 hover:text-zinc-200"
+            onClick={() => setCookieImportNotice(null)}
+            aria-label={copy.importCookiesCancel}
+          >
+            <X className="h-3 w-3" />
+          </button>
+        </div>
+      )}
 
       <div
         ref={stageRef}

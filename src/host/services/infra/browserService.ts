@@ -116,6 +116,8 @@ export {
   createManagedBrowserLease,
   createManagedBrowserSessionId,
   isManagedBrowserLeaseExpired,
+  listOrphanManagedBrowserSurfaceProfileDirs,
+  ORPHAN_MANAGED_BROWSER_SURFACE_PROFILE_POLICY,
   redactBrowserWorkbenchTraceParams,
   resolveManagedBrowserProfile,
   resolveManagedBrowserProxyConfig,

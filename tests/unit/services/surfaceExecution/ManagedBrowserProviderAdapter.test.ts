@@ -3,12 +3,16 @@ import type { BrowserService } from '../../../../src/host/services/infra/browser
 import { RunRegistry } from '../../../../src/host/runtime/runRegistry';
 import {
   ManagedBrowserProviderAdapter,
+  MANAGED_BROWSER_USER_PERSONAL_SERVICE_KEY,
+  isUserBrowserSurfaceIdentity,
+  managedBrowserProfileModeForIdentity,
   managedBrowserServiceKey,
 } from '../../../../src/host/services/surfaceExecution/ManagedBrowserProviderAdapter';
 import {
   SurfaceExecutionRuntime,
   type SurfaceRuntimeIdentityV1,
 } from '../../../../src/host/services/surfaceExecution/SurfaceExecutionRuntime';
+import { SURFACE_USER_BROWSER_AGENT_ID } from '../../../../src/shared/contract/surfaceExecution';
 
 function createFakeBrowser(failSnapshotAt?: number, options?: {
   sessionId?: string;
@@ -100,16 +104,124 @@ function createHarness(failSnapshotAt?: number) {
   };
   const fake = createFakeBrowser(failSnapshotAt);
   const release = vi.fn(async () => fake.close());
-  const acquire = vi.fn((_serviceKey: string) => fake.service);
+  const acquire = vi.fn((_serviceKey: string | null) => fake.service);
   const adapter = new ManagedBrowserProviderAdapter(runtime, acquire, release);
   return { registry, runtime, identity, fake, acquire, release, adapter };
 }
 
+describe('ManagedBrowserProviderAdapter profile selection (P0 auth-state)', () => {
+  it('user browse resolves to shared personal service key + persistent profile', () => {
+    const userIdentity: SurfaceRuntimeIdentityV1 = {
+      conversationId: 'conversation-a',
+      runId: 'run-user',
+      agentId: SURFACE_USER_BROWSER_AGENT_ID,
+    };
+    expect(isUserBrowserSurfaceIdentity(userIdentity)).toBe(true);
+    expect(managedBrowserServiceKey(userIdentity)).toBe(MANAGED_BROWSER_USER_PERSONAL_SERVICE_KEY);
+    expect(managedBrowserServiceKey(userIdentity)).toBe('__default__');
+    expect(managedBrowserProfileModeForIdentity(userIdentity)).toBe('persistent');
+    // Same personal key across conversations / runs (login survives reopen).
+    expect(managedBrowserServiceKey({
+      conversationId: 'conversation-b',
+      runId: 'run-user-2',
+      agentId: SURFACE_USER_BROWSER_AGENT_ID,
+    })).toBe(MANAGED_BROWSER_USER_PERSONAL_SERVICE_KEY);
+  });
+
+  it('agent tasks keep isolated surface service keys (reverse criterion)', () => {
+    const agentIdentity: SurfaceRuntimeIdentityV1 = {
+      conversationId: 'conversation-a',
+      runId: 'run-a',
+      agentId: 'agent-a',
+    };
+    expect(isUserBrowserSurfaceIdentity(agentIdentity)).toBe(false);
+    expect(managedBrowserServiceKey(agentIdentity)).toMatch(/^surface-/);
+    expect(managedBrowserServiceKey(agentIdentity)).not.toBe(MANAGED_BROWSER_USER_PERSONAL_SERVICE_KEY);
+    expect(managedBrowserProfileModeForIdentity(agentIdentity)).toBe('isolated');
+    // Different runs / agents never share the personal key.
+    expect(managedBrowserServiceKey({
+      ...agentIdentity,
+      runId: 'run-b',
+    })).not.toBe(managedBrowserServiceKey(agentIdentity));
+    expect(managedBrowserServiceKey({
+      ...agentIdentity,
+      agentId: 'agent-b',
+    })).not.toBe(managedBrowserServiceKey(agentIdentity));
+  });
+
+  it('mutation ≥2: flipping agentId away from user-browser-link loses personal profile selection', () => {
+    const personal = {
+      conversationId: 'c',
+      runId: 'r',
+      agentId: SURFACE_USER_BROWSER_AGENT_ID,
+    };
+    const flippedAgent = { ...personal, agentId: 'agent-x' };
+    const flippedEmpty = { ...personal, agentId: 'user-browser' }; // near-miss id
+    expect(managedBrowserServiceKey(personal)).toBe(MANAGED_BROWSER_USER_PERSONAL_SERVICE_KEY);
+    expect(managedBrowserProfileModeForIdentity(personal)).toBe('persistent');
+    // Mutation 1: any non-user agentId must not get personal key.
+    expect(managedBrowserServiceKey(flippedAgent)).not.toBe(MANAGED_BROWSER_USER_PERSONAL_SERVICE_KEY);
+    expect(managedBrowserProfileModeForIdentity(flippedAgent)).toBe('isolated');
+    // Mutation 2: near-miss id still isolated (no prefix match).
+    expect(managedBrowserServiceKey(flippedEmpty)).not.toBe(MANAGED_BROWSER_USER_PERSONAL_SERVICE_KEY);
+    expect(managedBrowserProfileModeForIdentity(flippedEmpty)).toBe('isolated');
+  });
+
+  it('user browse ensureSession uses persistent profileMode; agent uses isolated', async () => {
+    const userRegistry = new RunRegistry();
+    userRegistry.startAuxiliary({
+      runId: 'run-user',
+      sessionId: 'conversation-a',
+      workspace: process.cwd(),
+    });
+    const userRuntime = new SurfaceExecutionRuntime({ runRegistry: userRegistry });
+    const userFake = createFakeBrowser(undefined, { sessionId: 'user-session' });
+    const userAcquire = vi.fn((_key: string | null) => userFake.service);
+    const userAdapter = new ManagedBrowserProviderAdapter(
+      userRuntime,
+      userAcquire,
+      async () => undefined,
+    );
+    await userAdapter.execute({
+      identity: {
+        conversationId: 'conversation-a',
+        runId: 'run-user',
+        agentId: SURFACE_USER_BROWSER_AGENT_ID,
+      },
+      operationId: 'user-prep',
+      action: 'get_dom_snapshot',
+      params: { action: 'get_dom_snapshot' },
+      async executeProvider(_signal, browserService) {
+        return { success: true, metadata: { domSnapshot: await browserService.getDomSnapshot() } };
+      },
+    });
+    expect(userFake.ensureSession).toHaveBeenCalledWith('about:blank', expect.objectContaining({
+      profileMode: 'persistent',
+      leaseOwner: 'user-personal-browser',
+    }));
+    expect(userAcquire).toHaveBeenCalledWith(null);
+
+    const { identity, fake, acquire, adapter } = createHarness();
+    await adapter.execute({
+      identity,
+      operationId: 'agent-prep',
+      action: 'get_dom_snapshot',
+      params: { action: 'get_dom_snapshot' },
+      async executeProvider(_signal, browserService) {
+        return { success: true, metadata: { domSnapshot: await browserService.getDomSnapshot() } };
+      },
+    });
+    expect(fake.ensureSession).toHaveBeenCalledWith('about:blank', expect.objectContaining({
+      profileMode: 'isolated',
+      leaseOwner: 'surface:run-a',
+    }));
+    expect(acquire.mock.calls[0][0]).toMatch(/^surface-/);
+    expect(acquire.mock.calls[0][0]).not.toBe(MANAGED_BROWSER_USER_PERSONAL_SERVICE_KEY);
+  });
+});
+
 describe('ManagedBrowserProviderAdapter', () => {
   it('getPreferredUiSessionState returns the live surface-bound browser session', async () => {
-    const { SURFACE_USER_BROWSER_AGENT_ID } = await import(
-      '../../../../src/shared/contract/surfaceExecution'
-    );
     const registry = new RunRegistry();
     registry.startAuxiliary({
       runId: 'run-user',

@@ -301,13 +301,10 @@ export const TaskDashboardSummary = ({
 export const SubagentRunRows = ({
   subagents,
   onSelect,
-  selectableIds,
 }: {
   subagents: SubagentRunView[];
-  /** 传入后成员行可点，点击直达成员视图。 */
+  /** 传入后成员行可点，点击直达成员视图。调用方负责只传解析得出成员的行。 */
   onSelect?: (agentId: string) => void;
-  /** 能被成员视图解析出来的 id；不在其中的行保持静态，避免点了跳进空白页。 */
-  selectableIds?: ReadonlySet<string>;
 }) => {
   const { t } = useI18n();
   if (subagents.length === 0) return <EmptyState variant="inline" text={t.taskStatusPanels.runWorkbench.noSubagents} />;
@@ -315,7 +312,7 @@ export const SubagentRunRows = ({
   return (
     <div className="space-y-1.5">
       {subagents.map((agent) => {
-        const selectable = Boolean(onSelect) && (selectableIds?.has(agent.id) ?? true);
+        const selectable = Boolean(onSelect);
         return (
         <div
           key={agent.id}

@@ -450,17 +450,26 @@ describe('Todo 模块：组队会话成员级清单', () => {
     expect(memberViewState.setViewingMemberId).toHaveBeenCalledWith('agent-b');
   });
 
-  it('成员视图解析不出来的行保持静态，不会点进空白页', () => {
+  // workflow 子 agent 也在 runWorkbench.subagents 里，而 workflow 快照对「无 sessionId
+  // 的注入项」跨会话可见——不过滤就会让非组队会话也长出 Todo 模块（e2e 实测）。
+  it('只渲染本会话成员：解析不出成员的行整条不出现', () => {
     runWorkbenchState.subagents = members as never;
     memberPills.pills = [
       { key: 'agent-a', roleId: 'analyst', name: '知微', status: 'running', isLead: false },
     ];
 
     render(<TaskWorkspaceOverview />);
-    const rows = screen.getAllByTestId('subagent-run-row');
-    fireEvent.click(rows[1]);
+    expect(screen.getAllByTestId('subagent-run-row')).toHaveLength(1);
+    expect(screen.getByTestId('overview-todo-module').textContent).not.toContain('青禾');
+  });
 
-    expect(memberViewState.setViewingMemberId).not.toHaveBeenCalled();
+  it('一个成员都解析不出来时，Todo 模块不因 subagents 而出现', () => {
+    runWorkbenchState.subagents = members as never;
+    memberPills.pills = [];
+    runWorkbenchState.tasks = [];
+
+    render(<TaskWorkspaceOverview />);
+    expect(screen.queryByTestId('overview-todo-module')).toBeNull();
   });
 
   it('非组队会话且无 todos：Todo 模块不渲染（不再有伪造的「执行 xxx」条目）', () => {

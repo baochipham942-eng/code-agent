@@ -421,15 +421,17 @@ export const TaskWorkspaceOverview: React.FC = () => {
   const showReadFailure = Boolean(readFailure) && runLive && hasActiveTasks;
   // C2（2026-08-05）：组队会话的 Todo = 成员级清单。成员本身就是「干到哪了」的答案，
   // 主会话编排（结构化 todos）作为另一条挂在下面；工具执行只进任务行指针不进这里。
-  const subagents = runWorkbench.subagents;
-  const showTodoModule = showReadFailure || runWorkbench.tasks.length > 0 || subagents.length > 0;
-  // 点击直达成员视图。可点集合取自成员条同一份解析——MemberConversationView 就是按
-  // 它 find 的，不在里面的行点了只会跳进空白页，所以保持静态。
+  //
+  // 只认本会话的成员：runWorkbench.subagents 还混着 workflow 子 agent，而 workflow
+  // 快照对「无 sessionId 的注入项」是跨会话可见的，直接拿它判定会让非组队会话也长出
+  // Todo 模块。成员条那份解析（MemberConversationView 也按它 find）才是成员的定义，
+  // 交集之外的行既点不进去也不该占位。
   const memberPills = useSessionMembers(currentSessionId);
-  const selectableMemberIds = useMemo(
-    () => new Set(memberPills.map((pill) => pill.key)),
-    [memberPills],
-  );
+  const memberRows = useMemo(() => {
+    const keys = new Set(memberPills.map((pill) => pill.key));
+    return runWorkbench.subagents.filter((agent) => keys.has(agent.id));
+  }, [memberPills, runWorkbench.subagents]);
+  const showTodoModule = showReadFailure || runWorkbench.tasks.length > 0 || memberRows.length > 0;
 
   // Session 口径：产物跨全部 run 聚合；workspacePreviewItems 与当前会话 messages 同源，
   // 不再让最后一轮 ownership 覆盖前几轮产物。
@@ -497,15 +499,11 @@ export const TaskWorkspaceOverview: React.FC = () => {
             />
           ) : (
             <>
-              {subagents.length > 0 && (
-                <SubagentRunRows
-                  subagents={subagents}
-                  onSelect={setViewingMemberId}
-                  selectableIds={selectableMemberIds}
-                />
+              {memberRows.length > 0 && (
+                <SubagentRunRows subagents={memberRows} onSelect={setViewingMemberId} />
               )}
-              {(runWorkbench.tasks.length > 0 || subagents.length === 0) && (
-                <div className={subagents.length > 0 ? 'mt-1.5' : undefined}>
+              {(runWorkbench.tasks.length > 0 || memberRows.length === 0) && (
+                <div className={memberRows.length > 0 ? 'mt-1.5' : undefined}>
                   <TaskDashboardSummary
                     tasks={runWorkbench.tasks}
                     run={runWorkbench.run}

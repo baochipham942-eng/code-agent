@@ -129,6 +129,12 @@ export const VoiceChrome: React.FC<{ sessionId: string | null }> = ({ sessionId:
   const store = useVoiceCallStore();
   const visual = selectVoiceVisualState(store);
   const duration = useCallDuration(store.startedAt);
+  const costLabel = store.costEstimate
+    ? t.voice.live.estimatedCost.replace(
+        '{cost}',
+        `${store.costEstimate.currency === 'CNY' ? '¥' : '$'}${store.costEstimate.amount.toFixed(4)}`,
+      )
+    : t.voice.live.costUnavailable;
   useRegisterComposerInProgress('voice', visual !== 'idle');
   const isCurrentInProgress = useComposerNoticeStore((state) => (
     selectIsCurrentComposerInProgress(state, 'voice')
@@ -179,6 +185,9 @@ export const VoiceChrome: React.FC<{ sessionId: string | null }> = ({ sessionId:
           </span>
           <span className="shrink-0 opacity-50">&nbsp;·&nbsp;</span>
           <span className="min-w-0 truncate">{statusText}</span>
+          <span data-testid="voice-call-cost" className="ml-1.5 shrink-0 opacity-70">
+            · {costLabel}
+          </span>
           <span data-testid="voice-state-hint" className="ml-1.5 shrink-0 text-[9.5px] tracking-[0.05em] opacity-55">
             {t.voice.planet.hint[hintKey]}
           </span>

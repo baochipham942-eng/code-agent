@@ -79,6 +79,8 @@ export function memoryEntryKindForInboxKind(kind: string | undefined): MemoryEnt
 
 function memoryEntryKindForLightType(type: string): MemoryEntryKind {
   switch (type) {
+    case 'directive':
+      return 'directive';
     case 'user':
       return 'user';
     case 'feedback':
@@ -94,6 +96,8 @@ function memoryEntryKindForLightType(type: string): MemoryEntryKind {
 
 function lightTypeForMemoryEntryKind(kind: MemoryEntryKind): string {
   switch (kind) {
+    case 'directive':
+      return 'directive';
     case 'user':
       return 'user';
     case 'feedback':
@@ -112,6 +116,8 @@ function lightTypeForMemoryEntryKind(kind: MemoryEntryKind): string {
 
 function categoryForMemoryEntryKind(kind: MemoryEntryKind): string {
   switch (kind) {
+    case 'directive':
+      return 'user_requirement';
     case 'user':
       return 'preference';
     case 'feedback':
@@ -273,6 +279,7 @@ const VALID_ENTRY_STATUSES = new Set<MemoryEntryStatus>([
 ]);
 
 const VALID_ENTRY_KINDS = new Set<MemoryEntryKind>([
+  'directive',
   'user',
   'feedback',
   'project',

@@ -579,6 +579,7 @@ export const enSettingsWork = {
           archived: 'Archived',
         },
         kindLabels: {
+          directive: 'User directive',
           user: 'User',
           feedback: 'Feedback',
           project: 'Project',

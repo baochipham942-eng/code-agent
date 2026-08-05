@@ -169,6 +169,54 @@ describe('VoiceLiveSettingsSection', () => {
     availability.usage = { monthSeconds: 0, monthCalls: 0, monthFailedAttempts: 0 };
   });
 
+  it('保存单通成本上限和默认提醒动作', async () => {
+    settingsGet({ live: { callCostLimitAction: 'warn' } });
+    render(<VoiceLiveSettingsSection />);
+    const input = await screen.findByTestId('voice-cost-limit');
+
+    fireEvent.change(input, { target: { value: '0.25' } });
+    fireEvent.blur(input);
+    await waitFor(() => {
+      const saved = invokeDomainMock.mock.calls.filter((call) => call[1] === 'set').at(-1)?.[2] as Partial<AppSettings>;
+      expect(saved.voice?.live?.callCostLimit).toBe(0.25);
+      expect(saved.voice?.live?.callCostLimitAction).toBe('warn');
+    });
+  });
+
+  it('清空单通成本上限时显式保存 0，避免深合并保留旧值', async () => {
+    settingsGet({ live: { callCostLimit: 0.25, callCostLimitAction: 'warn' } });
+    render(<VoiceLiveSettingsSection />);
+    const input = await screen.findByTestId('voice-cost-limit');
+
+    fireEvent.change(input, { target: { value: '' } });
+    fireEvent.blur(input);
+    await waitFor(() => {
+      const saved = invokeDomainMock.mock.calls.filter((call) => call[1] === 'set').at(-1)?.[2] as Partial<AppSettings>;
+      expect(saved.voice?.live?.callCostLimit).toBe(0);
+    });
+  });
+
+  it('随时开口引导绑定无冲突全局键，并在冲突时拒绝覆盖', async () => {
+    settingsGet(undefined);
+    render(<VoiceLiveSettingsSection />);
+    const bind = await screen.findByTestId('voice-hotkey-bind');
+
+    fireEvent.click(bind);
+    fireEvent.keyDown(window, { key: 'a', ctrlKey: true, shiftKey: true });
+    expect(await screen.findByText(/冲突/)).toBeTruthy();
+    expect(invokeDomainMock.mock.calls.some((call) => call[1] === 'set')).toBe(false);
+
+    fireEvent.click(bind);
+    fireEvent.keyDown(window, { key: 'v', ctrlKey: true, shiftKey: true });
+    await waitFor(() => {
+      const saved = invokeDomainMock.mock.calls.filter((call) => call[1] === 'set').at(-1)?.[2] as Partial<AppSettings>;
+      expect(saved.keybindings?.bindings['voice.callToggle']).toEqual({
+        enabled: true,
+        accelerator: 'Ctrl+Shift+V',
+      });
+    });
+  });
+
   it('没有 token 数据时整段 token 估算不出现，中英文模板保持同一语义', async () => {
     availability.usage = { monthSeconds: 300, monthCalls: 1, monthFailedAttempts: 0 };
     settingsGet(undefined);

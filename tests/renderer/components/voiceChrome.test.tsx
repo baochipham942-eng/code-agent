@@ -90,6 +90,22 @@ describe('VoiceChrome 固定槽位', () => {
     expectAtMostTwoActions();
   });
 
+  it('通话中实时展示按上游 token 用量计算的预估成本', () => {
+    dialInto();
+    useVoiceCallStore.getState().usageApplied({
+      totalTokens: 2_000,
+      inputTokens: 1_000,
+      outputTokens: 1_000,
+      inputAudioTokens: 1_000,
+      inputTextTokens: 0,
+      outputAudioTokens: 1_000,
+      outputTextTokens: 0,
+    }, { amount: 0.134, currency: 'CNY', source: 'catalog' });
+    render(<VoiceChrome sessionId="session-1" />);
+
+    expect(screen.getByTestId('voice-call-cost').textContent).toContain('¥0.1340');
+  });
+
   it('在干活：统一显示“通话中 mm:ss”，不显示当前任务与剩余工作数，操作数为 2', () => {
     dialInto();
     const store = useVoiceCallStore.getState();

@@ -8,7 +8,7 @@
 // ============================================================================
 
 import React, { useEffect, useRef, useState } from 'react';
-import { Check, ShieldCheck } from 'lucide-react';
+import { Check, Keyboard, ShieldCheck } from 'lucide-react';
 import { IPC_DOMAINS } from '@shared/ipc';
 import type { AppSettings } from '@shared/contract';
 import { VOICE_LIVE_SETTINGS_UPDATED_EVENT } from '@shared/contract/voice';
@@ -26,6 +26,17 @@ import { Toggle } from '../../../primitives/Toggle';
 import { useVoiceLiveAvailability } from '../../voice/useVoiceLiveAvailability';
 import { deriveInterruptMode, deriveTurnDetection, deriveVadSensitivity } from '../../voice/voiceSettingsDerivation';
 import { resolveVoiceInputDevice } from '../../../../services/voiceAudioPipeline';
+import {
+  createDefaultKeybindingsSettings,
+  detectKeybindingConflicts,
+  detectKeybindingSystemWarnings,
+  eventToAccelerator,
+  formatShortcutForDisplay,
+  getCurrentKeybindingPlatform,
+  mergeKeybindingsWithDefaults,
+  type KeybindingsSettings,
+} from '@shared/keybindings';
+import { emitKeybindingsChanged } from '../../../../hooks/useKeybindingsSettings';
 
 const logger = createLogger('VoiceLiveSettings');
 
@@ -54,6 +65,13 @@ export const VoiceLiveSettingsSection: React.FC = () => {
   const [echoCancellation, setEchoCancellation] = useState<EchoCancellationMode>('auto');
   // 未配置 = normal（契约默认档），存量用户打开设置页不该看到"什么都没选"
   const [speechRate, setSpeechRate] = useState<SpeechRate>('normal');
+  const [costLimitInput, setCostLimitInput] = useState('');
+  const [costLimitAction, setCostLimitAction] = useState<'warn' | 'hangup'>('warn');
+  const [keybindings, setKeybindings] = useState<KeybindingsSettings>(() =>
+    createDefaultKeybindingsSettings(getCurrentKeybindingPlatform()),
+  );
+  const [recordingHotkey, setRecordingHotkey] = useState(false);
+  const [hotkeyMessage, setHotkeyMessage] = useState('');
   const [inputDevices, setInputDevices] = useState<MediaDeviceInfo[]>([]);
   const [inputDevice, setInputDevice] = useState<VoiceInputDeviceSettings | null>(null);
   const [inputDeviceAvailable, setInputDeviceAvailable] = useState<boolean | null>(null);
@@ -75,6 +93,12 @@ export const VoiceLiveSettingsSection: React.FC = () => {
         setExecutionModel(voice?.live?.executionModel);
         setEchoCancellation(voice?.live?.echoCancellation ?? 'auto');
         setSpeechRate(voice?.live?.speechRate ?? 'normal');
+        setCostLimitInput(voice?.live?.callCostLimit ? String(voice.live.callCostLimit) : '');
+        setCostLimitAction(voice?.live?.callCostLimitAction ?? 'warn');
+        setKeybindings(mergeKeybindingsWithDefaults(
+          settings.keybindings,
+          getCurrentKeybindingPlatform(),
+        ));
         setInputDevice(normalizeVoiceInputDevice(voice?.inputDevice) ?? null);
       })
       .catch((error) => logger.error('load voice live settings failed', error));
@@ -147,6 +171,10 @@ export const VoiceLiveSettingsSection: React.FC = () => {
     if (patch.vadSensitivity !== undefined) setSensitivity(patch.vadSensitivity);
     if (patch.echoCancellation !== undefined) setEchoCancellation(patch.echoCancellation);
     if (patch.speechRate !== undefined) setSpeechRate(patch.speechRate);
+    if ('callCostLimit' in patch) {
+      setCostLimitInput(patch.callCostLimit ? String(patch.callCostLimit) : '');
+    }
+    if (patch.callCostLimitAction !== undefined) setCostLimitAction(patch.callCostLimitAction);
 
     const nextInterrupt = patch.interrupt ?? interrupt;
     const nextSensitivity = patch.vadSensitivity ?? sensitivity;
@@ -164,6 +192,57 @@ export const VoiceLiveSettingsSection: React.FC = () => {
       logger.error('save voice live settings failed', error);
     }
   };
+
+  useEffect(() => {
+    if (!recordingHotkey) return;
+    const platform = getCurrentKeybindingPlatform();
+    const handleKeyDown = (event: KeyboardEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (event.key === 'Escape') {
+        setRecordingHotkey(false);
+        return;
+      }
+      const accelerator = eventToAccelerator(event, platform);
+      if (!accelerator) return;
+      const merged = mergeKeybindingsWithDefaults(keybindings, platform);
+      const next: KeybindingsSettings = {
+        ...merged,
+        bindings: {
+          ...merged.bindings,
+          'voice.callToggle': { enabled: true, accelerator },
+        },
+      };
+      const conflict = detectKeybindingConflicts(next, platform)
+        .find((entry) => entry.actionIds.includes('voice.callToggle'));
+      if (conflict) {
+        const labels = conflict.actionIds
+          .filter((id) => id !== 'voice.callToggle')
+          .map((id) => t.settings.keybindings.actions[id]?.label ?? id)
+          .join(' / ');
+        setHotkeyMessage(text.hotkeyGuideConflict.replace('{actions}', labels));
+        setRecordingHotkey(false);
+        return;
+      }
+      const systemWarning = detectKeybindingSystemWarnings(next, platform)
+        .find((entry) => entry.actionId === 'voice.callToggle');
+      if (systemWarning) {
+        setHotkeyMessage(text.hotkeyGuideSystemConflict);
+        setRecordingHotkey(false);
+        return;
+      }
+      setKeybindings(next);
+      setRecordingHotkey(false);
+      setHotkeyMessage(text.hotkeyGuideSaved);
+      void ipcService.invokeDomain(IPC_DOMAINS.SETTINGS, 'set', {
+        keybindings: next,
+      } as Partial<AppSettings>).then(() => emitKeybindingsChanged(next)).catch((error) => {
+        logger.error('save voice call hotkey failed', error);
+      });
+    };
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => window.removeEventListener('keydown', handleKeyDown, true);
+  }, [keybindings, recordingHotkey, t.settings.keybindings.actions, text]);
 
   /** 传 undefined = 回到「跟随会话默认引擎」（把键去掉，不是写一个空值）。 */
   const persistExecutionModel = async (next: VoiceLiveSettings['executionModel']) => {
@@ -207,6 +286,10 @@ export const VoiceLiveSettingsSection: React.FC = () => {
     if (inputDeviceAvailable === false) return text.inputDeviceUnavailable;
     return null;
   })();
+  const voiceHotkey = mergeKeybindingsWithDefaults(
+    keybindings,
+    getCurrentKeybindingPlatform(),
+  ).bindings['voice.callToggle'];
 
   return (
     <div className="space-y-6" data-testid="voice-live-settings">
@@ -221,6 +304,39 @@ export const VoiceLiveSettingsSection: React.FC = () => {
           onChange={(next) => void persist({ enabled: next })}
           aria-label={text.enableTitle}
         />
+      </div>
+
+      <div className="rounded-lg border border-zinc-700 bg-zinc-900/60 p-4" data-testid="voice-hotkey-onboarding">
+        <div className="flex items-start gap-3">
+          <Keyboard className="mt-0.5 h-4 w-4 shrink-0 text-zinc-400" />
+          <div className="min-w-0 flex-1">
+            <h3 className="text-sm font-medium text-zinc-200">{text.hotkeyGuideTitle}</h3>
+            <p className="mt-1 text-xs leading-5 text-zinc-500">{text.hotkeyGuideDescription}</p>
+            <div className="mt-3 flex items-center gap-3">
+              <button
+                type="button"
+                data-testid="voice-hotkey-bind"
+                onClick={() => {
+                  setHotkeyMessage('');
+                  setRecordingHotkey(true);
+                }}
+                className="rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-xs text-zinc-200 hover:border-zinc-600"
+              >
+                {recordingHotkey
+                  ? text.hotkeyGuideRecording
+                  : text.hotkeyGuideBind}
+              </button>
+              <span data-testid="voice-hotkey-current" className="text-xs text-zinc-400">
+                {voiceHotkey?.enabled && voiceHotkey.accelerator
+                  ? formatShortcutForDisplay(voiceHotkey.accelerator, getCurrentKeybindingPlatform())
+                  : text.hotkeyGuideUnbound}
+              </span>
+            </div>
+            {hotkeyMessage && (
+              <p role="status" className="mt-2 text-xs text-zinc-500">{hotkeyMessage}</p>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* 执行引擎（§6.1 双脑）：通话模型只负责听说，真干活是另一个模型，两者分开看分开配 */}
@@ -263,7 +379,44 @@ export const VoiceLiveSettingsSection: React.FC = () => {
         </div>
       </div>
 
-      {/* 本月通话用量：只记账不设限（方案 §5.4，产品负责人 2026-07-27 拍板） */}
+      <div className="border-t border-zinc-700 pt-4" data-testid="voice-cost-limit-settings">
+        <h3 className="mb-1 text-sm font-medium text-zinc-200">{text.costLimitTitle}</h3>
+        <p className="mb-3 text-xs leading-5 text-zinc-500">{text.costLimitDescription}</p>
+        <div className="grid grid-cols-2 gap-3">
+          <input
+            data-testid="voice-cost-limit"
+            type="number"
+            min="0"
+            step="0.01"
+            value={costLimitInput}
+            placeholder={text.costLimitPlaceholder}
+            onChange={(event) => setCostLimitInput(event.target.value)}
+            onBlur={() => {
+              const parsed = Number(costLimitInput);
+              void persist({
+                // ConfigService recursively merges optional fields, so omitting the key
+                // would retain an older limit. Persist 0 as the contract's explicit
+                // "disabled" value when the user clears or invalidates the input.
+                callCostLimit: Number.isFinite(parsed) && parsed > 0 ? parsed : 0,
+              });
+            }}
+            className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-accent-accessible"
+          />
+          <select
+            data-testid="voice-cost-limit-action"
+            value={costLimitAction}
+            onChange={(event) => void persist({
+              callCostLimitAction: event.target.value as 'warn' | 'hangup',
+            })}
+            className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-accent-accessible"
+          >
+            <option value="warn">{text.costLimitWarn}</option>
+            <option value="hangup">{text.costLimitHangup}</option>
+          </select>
+        </div>
+      </div>
+
+      {/* 本月通话用量：累计账本独立于可选的单通成本上限。 */}
       <div className="border-t border-zinc-700 pt-4">
         <h3 className="mb-1 text-sm font-medium text-zinc-200">{text.usageTitle}</h3>
         <p className="text-xs text-zinc-500" data-testid="voice-usage-summary">

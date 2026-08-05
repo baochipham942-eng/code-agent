@@ -14,6 +14,7 @@ import type {
 } from '../../../../../src/host/protocol/tools';
 
 const mockConfigDir = vi.hoisted(() => ({ dir: '' }));
+const directiveConfirmationMock = vi.hoisted(() => vi.fn());
 
 vi.mock('../../../../../src/host/config/configPaths', () => ({
   getUserConfigDir: () => mockConfigDir.dir,
@@ -26,6 +27,13 @@ vi.mock('../../../../../src/host/services/infra/logger', () => ({
     error: vi.fn(),
     debug: vi.fn(),
   }),
+}));
+
+vi.mock('../../../../../src/host/memory/directiveMemoryConfirmation', () => ({
+  requestDirectiveMemoryConfirmation: directiveConfirmationMock,
+  assertDirectivePersistenceAuthorized: (type: string, confirmed: boolean) => {
+    if (type === 'directive' && !confirmed) throw new Error('Directive memory requires explicit user confirmation.');
+  },
 }));
 
 import { memoryWriteModule } from '../../../../../src/host/tools/modules/lightMemory/memoryWrite';
@@ -62,6 +70,11 @@ describe('memoryWriteModule (native)', () => {
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'lm-write-native-'));
     mockConfigDir.dir = tmpDir;
     memDir = path.join(tmpDir, 'memory');
+    directiveConfirmationMock.mockResolvedValue({
+      requestId: 'directive-confirm-1',
+      confirmed: true,
+      respondedAt: Date.parse('2026-08-05T12:00:00.000Z'),
+    });
   });
 
   afterEach(async () => {
@@ -176,6 +189,26 @@ describe('memoryWriteModule (native)', () => {
   });
 
   describe('write action', () => {
+    it('persists a directive only after interactive confirmation and records the audit fields', async () => {
+      const result = await runWrite({
+        action: 'write',
+        filename: 'shipping_rule.md',
+        name: 'Shipping rule',
+        description: 'Use the standard ship gate',
+        type: 'directive',
+        content: 'Use ship for PR and merge.',
+      });
+
+      expect(result.ok).toBe(true);
+      expect(directiveConfirmationMock).toHaveBeenCalledWith(expect.objectContaining({
+        content: 'Use ship for PR and merge.',
+      }));
+      const raw = await fs.readFile(path.join(memDir, 'shipping_rule.md'), 'utf-8');
+      expect(raw).toContain('type: directive');
+      expect(raw).toContain('directive_confirmation_id: directive-confirm-1');
+      expect(raw).toContain('directive_confirmed_at: 2026-08-05T12:00:00.000Z');
+    });
+
     it('creates a memory file with frontmatter', async () => {
       const result = await runWrite({
         action: 'write',

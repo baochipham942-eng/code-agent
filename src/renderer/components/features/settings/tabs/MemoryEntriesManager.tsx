@@ -65,7 +65,7 @@ export interface MemoryEntryManagerRow {
 }
 
 const STATUS_OPTIONS: MemoryEntryStatus[] = ['candidate', 'active', 'rejected', 'stale', 'archived'];
-const KIND_OPTIONS: MemoryEntryKind[] = ['user', 'feedback', 'project', 'reference', 'session', 'pattern'];
+const KIND_OPTIONS: MemoryEntryKind[] = ['directive', 'user', 'feedback', 'project', 'reference', 'session', 'pattern'];
 
 export function getMemoryEntryStatusLabel(
   status: MemoryEntryStatus,

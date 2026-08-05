@@ -13,8 +13,18 @@ function deniedToolSet(ctx: RuntimeContext): Set<string> | null {
   return denied.length > 0 ? new Set(denied) : null;
 }
 
+function allowedToolSet(ctx: RuntimeContext): Set<string> | null {
+  const allowed = (ctx.allowedToolNames || [])
+    .map(normalizeToolName)
+    .filter(Boolean);
+  return allowed.length > 0 ? new Set(allowed) : null;
+}
+
 export function isToolDeniedForRun(ctx: RuntimeContext, toolName: string): boolean {
-  return deniedToolSet(ctx)?.has(normalizeToolName(toolName)) ?? false;
+  const normalized = normalizeToolName(toolName);
+  const allowed = allowedToolSet(ctx);
+  return (allowed ? !allowed.has(normalized) : false)
+    || (deniedToolSet(ctx)?.has(normalized) ?? false);
 }
 
 export function deniedToolRetryGuidance(ctx: RuntimeContext): string {
@@ -29,6 +39,10 @@ export function filterToolsByRunPolicy(
   ctx: RuntimeContext,
 ): ToolDefinition[] {
   const denied = deniedToolSet(ctx);
-  if (!denied) return tools;
-  return tools.filter((tool) => !denied.has(normalizeToolName(tool.name)));
+  const allowed = allowedToolSet(ctx);
+  if (!denied && !allowed) return tools;
+  return tools.filter((tool) => {
+    const normalized = normalizeToolName(tool.name);
+    return allowed?.has(normalized) !== false && denied?.has(normalized) !== true;
+  });
 }

@@ -12,14 +12,12 @@ import type {
   ComposerPromptCommandSelection,
   ConversationEnvelope,
   ConversationVoiceInputMetadata,
-  RuntimeInputMode,
 } from '@shared/contract/conversationEnvelope';
 import type { SteerOrQueueOutcome } from '@shared/contract/appService';
 import { UI } from '@shared/constants';
 import { IPC_DOMAINS } from '@shared/ipc';
 
 import { InputArea, InputAreaRef } from './InputArea';
-import { QueuedRuntimeInputCard } from './QueuedRuntimeInputCard';
 import { ComposerSlot, SlotEntry } from './ComposerSlot';
 import { InputAddMenu } from './InputAddMenu';
 import { SendButton } from './SendButton';
@@ -129,16 +127,6 @@ export interface ChatInputProps {
   isInterrupting?: boolean;
   /** 停止处理回调 */
   onStop?: () => void;
-  queuedRuntimeInputs?: Array<{
-    id: string;
-    content: string;
-    mode: RuntimeInputMode;
-    attachmentsCount: number;
-    createdAt: number;
-  }>;
-  /** @returns 是否真的撤回成功——成功才把内容退回输入框（已发出去的不能退）。 */
-  onCancelQueuedRuntimeInput?: (id: string) => void | Promise<boolean>;
-  onSendQueuedRuntimeInput?: (id: string) => void;
   /** 是否有 Plan */
   hasPlan?: boolean;
   /** 点击 Plan 入口 */
@@ -220,9 +208,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   hasStoppableBackgroundWork,
   isInterrupting,
   onStop,
-  queuedRuntimeInputs = [],
-  onCancelQueuedRuntimeInput,
-  onSendQueuedRuntimeInput,
   hasPlan,
   onPlanClick,
   sessionless = false,
@@ -759,7 +744,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   const resolvedPlaceholder = useMemo(() => {
     if (inputPlaceholder) return inputPlaceholder;
     if (!isProcessing) return undefined;
-    return t.chatInput.queuedGuidePlaceholder;
+    return t.chatInput.placeholderContinue;
   }, [inputPlaceholder, isProcessing, t]);
 
   // 提交发送管线（schedule/loop/goal/agent 命令分支 + appshot 注入 + ! shell 快捷 + 失败回滚）
@@ -1083,24 +1068,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
               }}
               onCapabilitySelect={() => {}}
               installingSkillName={installingSkillName}
-            />
-          </SlotEntry>
-
-          {/* 排队（引导）消息：输入框上方的独立卡片，不进输入框容器——进去会撑高输入区。
-              性质是上下文（L3）：它跟着「本轮还在跑」存在，不是要用户先决策的阻塞卡 */}
-          <SlotEntry id="queued-runtime-input" active={queuedRuntimeInputs.length > 0}>
-            <QueuedRuntimeInputCard
-              items={queuedRuntimeInputs}
-              isProcessing={Boolean(isProcessing)}
-              onSend={onSendQueuedRuntimeInput}
-              onCancel={async (id) => {
-                // 取消 = 这条没发出去，内容退回输入框，别让人重打一遍（真机反馈）。
-                const pending = queuedRuntimeInputs.find((item) => item.id === id);
-                const retracted = await onCancelQueuedRuntimeInput?.(id);
-                if (retracted && pending?.content) {
-                  setValue((current) => (current.trim() ? `${current} ${pending.content}` : pending.content));
-                }
-              }}
             />
           </SlotEntry>
 

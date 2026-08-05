@@ -64,7 +64,6 @@ describe('workbenchMetadataToEnvelopeContext', () => {
       designBrief: { intent: 'Keep the queue durable', source: 'manual' },
       executionIntent: { preferDesktopContext: true, allowBrowserAutomation: false },
       runtimeInputMode: 'redirect',
-      runtimeInputDelivery: 'queued_next_turn',
       voiceInput: { inputSource: 'voice', language: 'zh-CN', transcriptChars: 12 },
     };
 
@@ -86,7 +85,7 @@ describe('workbenchMetadataToEnvelopeContext', () => {
       turnCapabilityScopeMode: 'manual',
       designBrief: { intent: 'Keep the queue durable', source: 'manual' },
       executionIntent: { preferDesktopContext: true, allowBrowserAutomation: false },
-      runtimeInput: { mode: 'redirect', delivery: 'queued_next_turn' },
+      runtimeInput: { mode: 'redirect' },
       voiceInput: { inputSource: 'voice', language: 'zh-CN', transcriptChars: 12 },
     });
   });
@@ -172,7 +171,6 @@ describe('steerOrQueue', () => {
         routingMode: 'direct',
         targetAgentIds: ['agent-4'],
         runtimeInputMode: 'supplement',
-        runtimeInputDelivery: 'in_flight',
       },
     };
 
@@ -200,7 +198,7 @@ describe('steerOrQueue', () => {
       context: {
         workingDirectory: '/desktop-workspace',
         routing: { mode: 'direct', targetAgentIds: ['agent-4'] },
-        runtimeInput: { mode: 'supplement', delivery: 'in_flight' },
+        runtimeInput: { mode: 'supplement' },
       },
     });
   });
@@ -230,7 +228,7 @@ describe('queuePendingSteerMessages', () => {
     const metadata: MessageMetadata[] = [
       { workbench: { workingDirectory: '/one' } },
       { workbench: { selectedSkillIds: ['skill-two'] } },
-      { workbench: { runtimeInputMode: 'redirect', runtimeInputDelivery: 'queued_next_turn' } },
+      { workbench: { runtimeInputMode: 'redirect' } },
     ];
     const generatedIds = ['generated-1', 'generated-3'];
 
@@ -294,7 +292,7 @@ describe('queuePendingSteerMessages', () => {
           sessionId: 'session-pending',
           attachments: attachments[2],
           context: {
-            runtimeInput: { mode: 'redirect', delivery: 'queued_next_turn' },
+            runtimeInput: { mode: 'redirect' },
           },
         },
         now: 456,

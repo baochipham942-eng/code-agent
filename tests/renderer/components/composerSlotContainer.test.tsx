@@ -118,23 +118,19 @@ describe('ComposerSlot 容器', () => {
   });
 
   // ── 判据 5：L3 不让位 ──
-  it('L3 上下文层：L1 阻塞卡在场时排队引导卡照样渲染（不让位）', () => {
+  it('L3 上下文层：L1 阻塞卡在场时成员条照样渲染（不让位）', () => {
     render(
       <ComposerSlot>
-        {mountGated('queued-runtime-input', true)}
+        {mountGated('member-bar', true)}
       </ComposerSlot>,
     );
-    expect(screen.getByTestId('occupant-queued-runtime-input')).toBeTruthy();
+    expect(screen.getByTestId('occupant-member-bar')).toBeTruthy();
     act(() => { useComposerNoticeStore.getState().setNotice('role-draft', true); });
-    expect(screen.getByTestId('occupant-queued-runtime-input')).toBeTruthy();
+    expect(screen.getByTestId('occupant-member-bar')).toBeTruthy();
   });
 
-  it('L3 收缩判定：L1 阻塞卡在场时成员条收摘要，只有排队卡在场时不收', () => {
+  it('L3 收缩判定：L1 阻塞卡在场时成员条收摘要', () => {
     const collapsed = () => selectSlotCollapsed(useComposerNoticeStore.getState(), 'member-bar');
-    expect(collapsed()).toBe(false);
-
-    // 排队引导卡是 L3（上下文），不该把成员条挤成摘要
-    act(() => { useComposerNoticeStore.getState().setSlotActive('queued-runtime-input', true); });
     expect(collapsed()).toBe(false);
 
     act(() => { useComposerNoticeStore.getState().setNotice('team-recipe-draft', true); });
@@ -185,7 +181,6 @@ describe('ComposerSlot 容器', () => {
     act(() => {
       const store = useComposerNoticeStore.getState();
       store.setSlotActive('member-bar', true);
-      store.setSlotActive('queued-runtime-input', true);
     });
     expect(screen.getByTestId('occupant-combo-skill')).toBeTruthy();
   });

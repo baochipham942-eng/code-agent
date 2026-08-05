@@ -97,6 +97,7 @@ export interface RuntimeContext {
   readonly inferenceOptions?: InferenceOptions;
   readonly historyVisibility?: 'visible' | 'meta';
   readonly deniedToolNames?: string[];
+  readonly allowedToolNames?: string[];
 
   // --- Turn 级状态切片（ADR-038 批3a，写操作走 TurnState 方法）---
   readonly turn: TurnState;

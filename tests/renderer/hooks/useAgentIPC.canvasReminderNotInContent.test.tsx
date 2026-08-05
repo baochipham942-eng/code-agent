@@ -24,7 +24,7 @@ vi.mock('../../../src/renderer/services/typedInvoke', () => ({
   typedInvokeDomain: typedInvokeDomainMock,
 }));
 
-import { useAgentIPC, type QueuedRuntimeInput } from '../../../src/renderer/hooks/agent/useAgentIPC';
+import { useAgentIPC } from '../../../src/renderer/hooks/agent/useAgentIPC';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
 import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
 import { useSwarmStore } from '../../../src/renderer/stores/swarmStore';
@@ -38,7 +38,6 @@ function renderSendHook() {
     addMessage: useSessionStore.getState().addMessage,
     currentSessionId: SESSION_ID,
     currentTurnMessageIdRef: { current: null },
-    enqueueRuntimeInput: vi.fn<(input: QueuedRuntimeInput) => void>(),
     isProcessing: false,
     setIsProcessing: vi.fn(),
     setSessionProcessing: useAppStore.getState().setSessionProcessing,

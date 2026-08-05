@@ -149,7 +149,10 @@ describe('BrowserAgentWindow（B1-R·R1 图形化现场）', () => {
 
     const chrome = screen.getByTestId('browser-agent-window-chrome');
     expect(chrome.textContent).toContain('Example Domain');
-    expect(chrome.textContent).toContain('https://example.com/');
+    // URL 显示已收口到地址栏（2026-08-04 工单）：chrome 条不再重复摆只读 URL
+    const addressInput = screen.getByTestId('browser-agent-window-address-input') as HTMLInputElement;
+    expect(addressInput.value).toBe('https://example.com/');
+    expect(chrome.textContent).not.toContain('https://example.com/');
     expect(screen.getByTestId('browser-agent-window-status-dot').getAttribute('title')).toBe('运行中');
     // 指针叠加画在画面上
     expect(screen.getByLabelText(/Search/)).toBeTruthy();
@@ -181,7 +184,8 @@ describe('BrowserAgentWindow（B1-R·R1 图形化现场）', () => {
     expect(screen.getByTestId('browser-agent-window-status-dot').getAttribute('title')).toBe('运行中');
     const chrome = screen.getByTestId('browser-agent-window-chrome');
     expect(chrome.textContent).toContain('Wikipedia');
-    expect(chrome.textContent).toContain('https://wikipedia.org');
+    const addressInput = screen.getByTestId('browser-agent-window-address-input') as HTMLInputElement;
+    expect(addressInput.value).toBe('https://wikipedia.org');
   });
 
   it('managedSession 的 URL 与画面那扇窗不同源时只显示 origin，不显示另一扇窗的地址', () => {
@@ -197,10 +201,10 @@ describe('BrowserAgentWindow（B1-R·R1 图形化现场）', () => {
     });
     render(<BrowserAgentWindow />);
 
-    const chrome = screen.getByTestId('browser-agent-window-chrome');
-    expect(chrome.textContent).toContain('https://wikipedia.org');
-    expect(chrome.textContent).not.toContain('other.example');
-    expect(chrome.textContent).not.toContain('另一扇窗');
+    const addressInput = screen.getByTestId('browser-agent-window-address-input') as HTMLInputElement;
+    expect(addressInput.value).toBe('https://wikipedia.org');
+    expect(addressInput.value).not.toContain('other.example');
+    expect(screen.getByTestId('browser-agent-window-chrome').textContent).not.toContain('另一扇窗');
   });
 
   it('tab 不可见（右栏收起）时把 visible 传 false —— 节流护栏不许后台开流', () => {

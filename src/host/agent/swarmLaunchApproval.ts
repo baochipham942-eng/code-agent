@@ -1,6 +1,10 @@
 // ============================================================================
 // Swarm Launch Approval Gate - 并行编排启动前确认
 // ============================================================================
+// 施工单二 B：遵从会话权限档——
+// headless 自动批 → 全只读立即批 → acceptEdits/bypassPermissions 立即批
+// → 其余档等待用户（无超时自动拒/批；cancel*/hydrate 仍可排干 pending）。
+// ============================================================================
 
 import { AppWindow } from '../platform';
 import { createLogger } from '../services/infra/logger';
@@ -13,6 +17,7 @@ import type {
 } from '../../shared/contract/swarm';
 import { getSwarmRunScopeKey } from '../../shared/contract/swarm';
 import type { PendingApprovalRepository } from '../services/core/repositories/PendingApprovalRepository';
+import { getPermissionModeManager } from '../permissions/modes';
 import { getSwarmEventEmitter } from './swarmEventPublisher';
 
 const logger = createLogger('SwarmLaunchApprovalGate');
@@ -29,15 +34,13 @@ export class SwarmLaunchApprovalGate {
   private counter = 0;
   /** Resolvers for in-flight waitForDecision promises (event-driven wake-up) */
   private pendingResolvers = new Map<string, (result: SwarmLaunchApprovalResult) => void>();
-  private readonly approvalTimeoutMs: number;
   /**
    * 持久化仓库（ADR-010 #2）。null 表示 DB 未就绪 / 测试不需要持久化。
    */
   private persistRepo: PendingApprovalRepository | null = null;
 
-  constructor(options?: { approvalTimeoutMs?: number }) {
-    this.approvalTimeoutMs = options?.approvalTimeoutMs ?? 120_000;
-  }
+  /** 兼容旧调用方；超时自动拒/批已退役，options 忽略。 */
+  constructor(_options?: { approvalTimeoutMs?: number }) {}
 
   /**
    * 注入持久化 repo，并 hydrate 上次进程崩溃残留的 launch pending 行。
@@ -110,6 +113,22 @@ export class SwarmLaunchApprovalGate {
     return withApprovalTrace('agent_team_launch', () => this.requestApprovalInternal(params));
   }
 
+  private autoApproveResult(
+    request: SwarmLaunchRequest,
+    feedback: string,
+  ): SwarmLaunchApprovalResult {
+    request.status = 'approved';
+    request.feedback = feedback;
+    request.resolvedAt = Date.now();
+    logger.info(`Swarm launch auto-approved: ${request.id} (${feedback})`);
+    return {
+      approved: true,
+      feedback,
+      autoApproved: true,
+      request: { ...request, tasks: request.tasks.map((task) => ({ ...task })) },
+    };
+  }
+
   private async requestApprovalInternal(params: {
     tasks: SwarmLaunchTaskPreview[];
     summary?: string;
@@ -118,24 +137,33 @@ export class SwarmLaunchApprovalGate {
   }): Promise<SwarmLaunchApprovalResult> {
     const request = this.createRequest(params.tasks, params.scope, params.summary, params.requestId);
 
+    // 1) headless：无 renderer 立即批
     if (AppWindow.getAllWindows().length === 0) {
       logger.info(`No renderer available, auto-approving launch ${request.id}`);
-      request.status = 'approved';
-      request.feedback = 'Auto-approved (headless mode)';
-      request.resolvedAt = Date.now();
-      return {
-        approved: true,
-        feedback: request.feedback,
-        autoApproved: true,
-        request,
-      };
+      return this.autoApproveResult(request, 'Auto-approved (headless mode)');
     }
 
+    // 2) 全只读成员：任何权限档立即批（不再干等 120s）
+    if (request.writeAgentCount === 0) {
+      return this.autoApproveResult(request, 'Auto-approved (read-only agents)');
+    }
+
+    // 3) 会话档「替我审批 / 完全访问」：写成员也免批
+    // 档位以请求时刻为准（getModeForSession 含会话覆盖与钳制）
+    const permissionMode = getPermissionModeManager().getModeForSession(params.scope.sessionId);
+    if (permissionMode === 'acceptEdits' || permissionMode === 'bypassPermissions') {
+      return this.autoApproveResult(
+        request,
+        `Auto-approved (session permission mode: ${permissionMode})`,
+      );
+    }
+
+    // 4) 其余档：进等待，无超时自动拒/批；仅 approve/reject/cancel* 结算
     this.requests.set(request.id, request);
     this.safePersistInsert(request);
     getSwarmEventEmitter().launchRequested(request);
 
-    logger.info(`Swarm launch requested: ${request.id} (${request.agentCount} agents)`);
+    logger.info(`Swarm launch requested: ${request.id} (${request.agentCount} agents, mode=${permissionMode})`);
     return this.waitForDecision(request.id);
   }
 
@@ -340,68 +368,10 @@ export class SwarmLaunchApprovalGate {
     return request.sessionId === scope.sessionId && request.runId === scope.runId;
   }
 
+  /** 等待用户 approve/reject 或 cancel*；无超时自动结算。 */
   private waitForDecision(requestId: string): Promise<SwarmLaunchApprovalResult> {
     return new Promise<SwarmLaunchApprovalResult>((resolve) => {
       this.pendingResolvers.set(requestId, resolve);
-
-      // Fail-closed timeout 按 writeAgentCount 分档：
-      // - 存在 write agent → auto-reject（避免无人职守时并发写冲突）
-      // - 全只读 → auto-approve（保活低风险探查场景）
-      setTimeout(() => {
-        if (!this.pendingResolvers.has(requestId)) return;
-
-        const pending = this.requests.get(requestId);
-        if (!pending) {
-          this.pendingResolvers.delete(requestId);
-          resolve({
-            approved: false,
-            feedback: `Launch request not found at timeout: ${requestId}`,
-            autoApproved: true,
-            request: {
-              id: requestId,
-              sessionId: '__unknown__',
-              runId: '__unknown__',
-              treeId: '__unknown__',
-              status: 'rejected',
-              requestedAt: 0,
-              summary: '',
-              agentCount: 0,
-              dependencyCount: 0,
-              writeAgentCount: 0,
-              tasks: [],
-            },
-          });
-          return;
-        }
-
-        const hasWriteAgent = pending.writeAgentCount > 0;
-
-        if (hasWriteAgent) {
-          const rejectFeedback = `Auto-rejected after timeout (${this.approvalTimeoutMs}ms, writeAgentCount=${pending.writeAgentCount}). Write-capable swarm launches require explicit approval.`;
-          // 提前从 resolver 表移除避免 reject() 二次结算
-          this.pendingResolvers.delete(requestId);
-          this.reject(requestId, rejectFeedback);
-          logger.warn(`Swarm launch auto-rejected on timeout: ${requestId} (writeAgentCount=${pending.writeAgentCount})`);
-          resolve({
-            approved: false,
-            feedback: rejectFeedback,
-            autoApproved: true,
-            request: this.getRequest(requestId)!,
-          });
-          return;
-        }
-
-        const approveFeedback = `Auto-approved after timeout (${this.approvalTimeoutMs}ms, read-only swarm)`;
-        this.pendingResolvers.delete(requestId);
-        this.approve(requestId, approveFeedback);
-        logger.warn(`Swarm launch auto-approved on timeout (read-only): ${requestId}`);
-        resolve({
-          approved: true,
-          feedback: approveFeedback,
-          autoApproved: true,
-          request: this.getRequest(requestId)!,
-        });
-      }, this.approvalTimeoutMs);
     });
   }
 }

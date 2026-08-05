@@ -2,137 +2,32 @@
 // LaunchRequestCard —— swarm 启动审批卡（消息流内联，TraceNodeRenderer
 // swarm_launch_request 节点）
 //
-// 2026-07-29 拍板：pending 态视觉骨架统一迁移到 DecisionCard（与
-// AskUserQuestion 提问卡同形）——「批准启动 / 拒绝」变成选项行，底部
-// ghost 取消编排 + primary 确认（选中后才可点）。数据流/IPC 不变。
-// approved/rejected 态是消息流里的历史记录卡，维持紧凑形态，但 stats
-// 与 tasks 列表必须保留（默认折叠可展开）——历史回看要能核对「当时批了什么」。
+// 施工单二 B：pending 态改为轻量 inline 问答（一次问完「批准 N 个成员启动？」
+// + 任务摘要一句 + 批准/拒绝），复用 DecisionCard / UserQuestionCard 视觉骨架。
+// 重型 stats+任务清单决策区退役；approved/rejected 保留紧凑历史卡（C4）。
+// approve/reject 仍走 SWARM_APPROVE_LAUNCH / SWARM_REJECT_LAUNCH IPC。
 // ============================================================================
 
 import React, { useState } from 'react';
-import { GitBranch, ChevronDown, ChevronRight } from 'lucide-react';
+import { GitBranch } from 'lucide-react';
 import { IPC_CHANNELS } from '@shared/ipc';
-import type { SwarmLaunchRequest, SwarmLaunchTaskPreview } from '@shared/contract/swarm';
+import type { SwarmLaunchRequest } from '@shared/contract/swarm';
 import ipcService from '../../../services/ipcService';
 import { useSwarmStore } from '../../../stores/swarmStore';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { useI18n } from '../../../hooks/useI18n';
 import { DecisionCard, type DecisionOption } from '../../DecisionCard';
 
-// 给每个 agent 分配一种稳定颜色（按 task.id hash），让用户像 Codex 截图里
-// "Heisenberg (绿) / Rawls (紫)" 那样一眼区分不同 worker。
-const AGENT_COLORS = [
-  'text-badge-success',
-  'text-badge-accent',
-  'text-badge-info',
-  'text-badge-warning',
-  'text-badge-accent',
-  'text-badge-info',
-] as const;
-
-function agentColorFor(taskId: string): string {
-  let hash = 0;
-  for (let i = 0; i < taskId.length; i++) {
-    hash = (hash * 31 + taskId.charCodeAt(i)) | 0;
-  }
-  return AGENT_COLORS[Math.abs(hash) % AGENT_COLORS.length];
-}
-
-// Codex-style 完整 prompt 展示行，默认折叠 4 行，可点击展开看完整。
-const TaskPromptBlock: React.FC<{ task: SwarmLaunchTaskPreview; colorClass: string }> = ({ task, colorClass }) => {
-  const [expanded, setExpanded] = useState(false);
-  return (
-    <div>
-      <button
-        type="button"
-        className="mt-1.5 flex items-start gap-1 text-left text-zinc-400 hover:text-zinc-200 transition-colors w-full"
-        onClick={() => setExpanded(!expanded)}
-      >
-        {expanded ? <ChevronDown size={12} className="mt-0.5 flex-shrink-0" /> : <ChevronRight size={12} className="mt-0.5 flex-shrink-0" />}
-        <span className="text-[11px]">
-          Created <span className={`font-semibold ${colorClass}`}>{task.role}</span> with the instructions
-        </span>
-      </button>
-      <div className={`mt-1.5 text-xs leading-5 text-zinc-400 whitespace-pre-wrap ${expanded ? '' : 'line-clamp-4'}`}>
-        {task.task}
-      </div>
-    </div>
-  );
-};
-
-// 统计格（agent 数 / 依赖 / 写权限）：pending 决策区与 settled 历史卡共用
-const LaunchPlanStats: React.FC<{ request: SwarmLaunchRequest }> = ({ request }) => (
-  <div className="grid grid-cols-3 gap-2 text-[11px]">
-    <div className="rounded bg-zinc-800 px-2 py-1.5 text-zinc-400">
-      Agent <span className="ml-1 text-zinc-200">{request.agentCount}</span>
-    </div>
-    <div className="rounded bg-zinc-800 px-2 py-1.5 text-zinc-400">
-      依赖 <span className="ml-1 text-badge-info">{request.dependencyCount}</span>
-    </div>
-    <div className="rounded bg-zinc-800 px-2 py-1.5 text-zinc-400">
-      写权限 <span className="ml-1 text-badge-warning">{request.writeAgentCount}</span>
-    </div>
-  </div>
-);
-
-// 任务列表：pending 决策区与 settled 历史卡共用
-const LaunchTaskList: React.FC<{ tasks: SwarmLaunchTaskPreview[] }> = ({ tasks }) => (
-  <div className="space-y-2">
-    {tasks.map((task) => {
-      const agentColor = agentColorFor(task.id);
-      return (
-        <div key={task.id} className="rounded-lg border border-white/[0.04] bg-zinc-800 px-3 py-2">
-          <div className="flex items-center gap-2">
-            <span className={`rounded-full bg-zinc-700/80 px-1.5 py-0.5 text-[10px] uppercase tracking-wide font-semibold ${agentColor}`}>
-              {task.role}
-            </span>
-            <span
-              className={`rounded-full px-1.5 py-0.5 text-[10px] ${
-                task.writeAccess
-                  ? 'bg-amber-500/15 text-badge-warning'
-                  : 'bg-emerald-500/15 text-badge-success'
-              }`}
-            >
-              {task.writeAccess ? '可写' : '只读'}
-            </span>
-            {task.dependsOn && task.dependsOn.length > 0 && (
-              <span className="text-[10px] text-badge-info">
-                依赖 {task.dependsOn.join(', ')}
-              </span>
-            )}
-          </div>
-          <TaskPromptBlock task={task} colorClass={agentColor} />
-          <div className="mt-2 flex flex-wrap gap-1.5">
-            {task.tools.slice(0, 4).map((tool) => (
-              <span
-                key={`${task.id}-${tool}`}
-                className="rounded bg-zinc-900 px-1.5 py-0.5 font-mono text-[10px] text-zinc-500"
-              >
-                {tool}
-              </span>
-            ))}
-            {task.tools.length > 4 && (
-              <span className="text-[10px] text-zinc-600">+{task.tools.length - 4}</span>
-            )}
-          </div>
-        </div>
-      );
-    })}
-  </div>
-);
-
 export const LaunchRequestCard: React.FC<{ request: SwarmLaunchRequest }> = ({ request }) => {
   const { t } = useI18n();
-  const [feedback, setFeedback] = useState(request.feedback || '');
   const [submitting, setSubmitting] = useState<'approve' | 'reject' | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // DecisionCard 选项行选中态：'approve' | 'reject'
   const [selected, setSelected] = useState<string | null>(null);
 
   const s = t.decisionCard.swarm;
 
   const handleApprove = async () => {
-    if (submitting !== null) return; // 提交中防双发 IPC（review P1）
+    if (submitting !== null) return;
     const selectedSessionIdAtSubmit = useSessionStore.getState().currentSessionId;
     const activeRunIdAtSubmit = useSwarmStore.getState().activeRunId;
     setSubmitting('approve');
@@ -142,7 +37,6 @@ export const LaunchRequestCard: React.FC<{ request: SwarmLaunchRequest }> = ({ r
         sessionId: request.sessionId,
         runId: request.runId,
         requestId: request.id,
-        feedback: feedback.trim() || undefined,
       });
       if (!success) {
         setError(s.approveFailed);
@@ -165,14 +59,9 @@ export const LaunchRequestCard: React.FC<{ request: SwarmLaunchRequest }> = ({ r
     }
   };
 
-  const handleReject = async () => {
-    if (submitting !== null) return; // 提交中防双发 IPC（review P1）
-    const trimmed = feedback.trim();
-    if (!trimmed) {
-      setError(s.rejectReasonRequired);
-      return;
-    }
-
+  const handleReject = async (reason?: string) => {
+    if (submitting !== null) return;
+    const feedback = (reason?.trim() || s.defaultRejectReason);
     setSubmitting('reject');
     setError(null);
     try {
@@ -180,7 +69,7 @@ export const LaunchRequestCard: React.FC<{ request: SwarmLaunchRequest }> = ({ r
         sessionId: request.sessionId,
         runId: request.runId,
         requestId: request.id,
-        feedback: trimmed,
+        feedback,
       });
       if (!success) {
         setError(s.rejectFailed);
@@ -192,24 +81,26 @@ export const LaunchRequestCard: React.FC<{ request: SwarmLaunchRequest }> = ({ r
     }
   };
 
-  // approved / rejected = 消息流里的历史记录卡：维持紧凑形态，但 stats 与
-  // tasks 列表保留在默认折叠的 <details> 里——回看能核对「当时批了什么」（review P1）。
+  // approved / rejected = 消息流里的紧凑历史记录（C4：resolved 后节点不消失）
   if (request.status !== 'pending') {
     const badgeClass =
       request.status === 'approved'
         ? 'bg-emerald-500/15 text-badge-success'
         : 'bg-red-500/15 text-badge-danger';
     return (
-      <div className="rounded-lg border border-white/[0.04] bg-zinc-800/70 p-3">
+      <div
+        data-testid="swarm-launch-history"
+        className="rounded-lg border border-white/[0.04] bg-zinc-800/70 p-3"
+      >
         <div className="flex items-center gap-2">
           <GitBranch className="w-4 h-4 text-badge-accent" />
           <div className="text-sm text-zinc-100 font-medium">
             {request.status === 'approved'
-              ? `Spawning ${request.agentCount} agent${request.agentCount > 1 ? 's' : ''}`
-              : '已取消编排'}
+              ? s.historyApproved.replace('{count}', String(request.agentCount))
+              : s.historyRejected}
           </div>
           <span className={`ml-auto rounded-full px-1.5 py-0.5 text-[10px] ${badgeClass}`}>
-            {request.status === 'approved' ? '已启动' : '已取消'}
+            {request.status === 'approved' ? s.badgeApproved : s.badgeRejected}
           </span>
         </div>
 
@@ -220,16 +111,6 @@ export const LaunchRequestCard: React.FC<{ request: SwarmLaunchRequest }> = ({ r
             {request.feedback}
           </div>
         )}
-
-        <details className="mt-2">
-          <summary className="cursor-pointer text-[11px] text-zinc-500 hover:text-zinc-300">
-            {s.detailToggle}（{request.agentCount}）
-          </summary>
-          <div className="mt-2 space-y-2">
-            <LaunchPlanStats request={request} />
-            <LaunchTaskList tasks={request.tasks} />
-          </div>
-        </details>
       </div>
     );
   }
@@ -248,11 +129,9 @@ export const LaunchRequestCard: React.FC<{ request: SwarmLaunchRequest }> = ({ r
       title={s.title}
       question={s.question.replace('{count}', String(request.agentCount))}
       details={
-        <>
-          <div className="text-xs leading-5 text-zinc-400">{request.summary}</div>
-          <LaunchPlanStats request={request} />
-          <LaunchTaskList tasks={request.tasks} />
-        </>
+        <div className="text-xs leading-5 text-zinc-400 line-clamp-2">
+          {request.summary}
+        </div>
       }
       options={options}
       selectedId={selected}
@@ -265,17 +144,7 @@ export const LaunchRequestCard: React.FC<{ request: SwarmLaunchRequest }> = ({ r
       confirmLabel={t.decisionCard.confirm}
       cancelLabel={s.cancel}
       submitting={submitting !== null}
-      footerExtra={
-        <>
-          <textarea
-            value={feedback}
-            onChange={(event) => setFeedback(event.target.value)}
-            placeholder={s.feedbackPlaceholder}
-            className="min-h-[72px] w-full resize-y rounded-lg border border-zinc-700 bg-zinc-800 px-2.5 py-2 text-xs text-zinc-200 placeholder-zinc-600 outline-hidden transition-colors focus:border-zinc-500"
-          />
-          {error && <div className="mt-2 text-xs text-badge-danger">{error}</div>}
-        </>
-      }
+      footerExtra={error ? <div className="mt-2 text-xs text-badge-danger">{error}</div> : null}
     />
   );
 };

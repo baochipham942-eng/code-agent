@@ -53,8 +53,8 @@ describe('scoped swarm mutations', () => {
     };
     const view = render(<LaunchRequestCard request={request} />);
 
-    // DecisionCard 骨架：先选「批准启动」选项，再点 primary 确认
-    fireEvent.click(view.getByRole('button', { name: /批准启动/ }));
+    // 轻量 DecisionCard：先选「批准」选项，再点 primary 确认
+    fireEvent.click(view.getByRole('button', { name: /^批准/ }));
     fireEvent.click(view.getByRole('button', { name: '确认' }));
 
     await waitFor(() => {
@@ -87,7 +87,7 @@ describe('scoped swarm mutations', () => {
     };
     const view = render(<LaunchRequestCard request={request} />);
 
-    fireEvent.click(view.getByRole('button', { name: /批准启动/ }));
+    fireEvent.click(view.getByRole('button', { name: /^批准/ }));
     fireEvent.click(view.getByRole('button', { name: '确认' }));
     useSessionStore.setState({ currentSessionId: 'session-next' });
     useSwarmStore.getState().activateScope('session-next', 'run-next');
@@ -118,13 +118,9 @@ describe('scoped swarm mutations', () => {
     };
     const view = render(<LaunchRequestCard request={request} />);
 
-    // 先填反馈——若 Esc 触达 reject 路径会真实发出 REJECT IPC，断言才够锋利
-    fireEvent.change(view.getByPlaceholderText('可选说明；取消编排时填写原因'), {
-      target: { value: '在途防护验证' },
-    });
-    fireEvent.click(view.getByRole('button', { name: /批准启动/ }));
+    // 轻量卡无反馈框；选中批准后确认在途时 Esc/重复确认必须被吞
+    fireEvent.click(view.getByRole('button', { name: /^批准/ }));
     fireEvent.click(view.getByRole('button', { name: '确认' }));
-    // 确认在途：Esc（onCancel → reject 路径）与重复确认都必须被吞（review P1）
     fireEvent.keyDown(window, { key: 'Escape' });
     fireEvent.click(view.getByRole('button', { name: '确认' }));
 

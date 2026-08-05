@@ -40,6 +40,10 @@ import { buildVocabularyBlock } from './voiceVocabulary';
 import { resolveVoiceWorkOutcome } from './voiceWorkEvidence';
 import { recordVoiceWorkEvent } from './voiceTelemetry';
 import { captureVoiceScreenContext, type VoiceScreenCaptureFailure } from './voiceScreenContext';
+import {
+  projectVoiceTaskTerminalResult,
+  type VoiceTaskTerminalStatus,
+} from './voiceTaskResultProjector';
 
 const logger = createLogger('VoiceCoordinator');
 
@@ -376,7 +380,7 @@ function upsert(state: LedgerState, item: VoiceWorkItem): void {
 function settle(
   state: LedgerState,
   id: string,
-  status: VoiceWorkItemStatus,
+  status: VoiceTaskTerminalStatus,
   detail?: string,
   failure?: VoiceWorkFailureMarker,
 ): void {
@@ -410,11 +414,8 @@ function settle(
       void narrateSettled(state, settled, status);
     }
   }
-  // 屏幕这一路（X5.5-A2-a）：任务卡的结局必须来自 host 的判定，落库才活得过挂断和重启。
-  // 失败留痕走 voiceSessionService 既有那条（notice + 消息流），这里只补 done/unverified。
-  if (status === 'done' || status === 'unverified') {
-    void persistWorkOutcome(state.neoSessionId, settled, status);
-  }
+  // 每档终态都写统一 agent-result 记录；批 2 的短名指代与取消路由直接消费它。
+  void projectVoiceTaskTerminalResult(state.neoSessionId, settled, status, failure);
   getPermissionModeManager().clearLiveVoiceSession(state.neoSessionId, runHoldId(id));
   if (state.pendingId === id) state.pendingId = null;
   state.supersededIds.delete(id);
@@ -449,7 +450,7 @@ function announceStop(state: LedgerState, kind: VoiceStopAnnouncementKind, title
  */
 function resolvePendingStop(state: LedgerState, settledId: string): void {
   const stop = state.pendingStop;
-  if (!stop || stop.workItemId !== settledId) return;
+  if (stop?.workItemId !== settledId) return;
   clearTimeout(stop.timer);
   const next = stop.next;
   if (!next) {
@@ -570,38 +571,6 @@ async function narrateSettled(state: LedgerState, item: VoiceWorkItem, status: S
     }));
   } catch (err) {
     logger.warn('narrate settled failed', { message: err instanceof Error ? err.message : 'unknown' });
-  }
-}
-
-/**
- * 任务卡的结局落库（X5.5-A2-a）。
- *
- * 为什么非落库不可：`work.upsert` 是通话态事件，挂断就断；而任务卡活在会话记录里，
- * 关掉重开还要显示。不落库的话渲染侧只能自己从「这一轮完成了 + 有正文」反推「已完成」——
- * 那正是「模型说了句话就算做完」的那条反推，本批要拆掉的就是它。
- *
- * 消息本身不进对话（`role:'system'`，投影层只取 metadata 不成节点），它是给卡片看的
- * 结局印章，不是说给用户的话。落库失败只降级成「卡上不显示结局」，绝不影响还票和播报。
- */
-async function persistWorkOutcome(
-  neoSessionId: string,
-  item: VoiceWorkItem,
-  outcome: 'done' | 'unverified',
-): Promise<void> {
-  try {
-    await getSessionManager().addMessageToSession(neoSessionId, {
-      id: `voice-work-settled-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      role: 'system',
-      // 正文只作日志/兜底可读性；渲染一律读 metadata（靠正文反解标题是拿人话当协议）。
-      content: `语音派出的任务「${item.title}」${outcome === 'done' ? '已完成' : '已结束，产物待核验'}`,
-      timestamp: Date.now(),
-      metadata: {
-        source: 'voice',
-        voiceWorkSettled: { workItemId: item.id, title: item.title, outcome },
-      },
-    });
-  } catch (err) {
-    logger.warn('failed to persist work outcome', { message: err instanceof Error ? err.message : 'unknown' });
   }
 }
 

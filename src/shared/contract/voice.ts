@@ -207,7 +207,7 @@ export type VoiceEvent =
   | { type: 'user.transcript'; text: string; done: boolean; itemId?: string; candidateId?: string }
   /** 助手说的话的字幕 */
   | { type: 'assistant.transcript'; text: string; done: boolean; responseId?: string; itemId?: string }
-  | { type: 'response.created'; responseId: string }
+  | { type: 'response.created'; responseId: string; narrationId?: string }
   | { type: 'response.cancelled'; responseId: string; reason: 'interrupt' }
   /** 声学 onset 只是候选：Renderer 暂停播放，语义闸决策后再恢复或丢弃。 */
   | { type: 'speech.started'; candidateId?: string }
@@ -292,6 +292,8 @@ export type VoiceClientCommand =
       playedMs: number;
       queuedMs: number;
     }
+  /** Renderer 的播放管线已经接收该播报的首帧；Host 以此作为送达确认。 */
+  | { type: 'narration.playback_started'; narrationId: string }
   /** 焦点变化上报。节流后发；host 据此增量刷新 instructions（§6.5）。 */
   | { type: 'focus'; context: VoiceFocusContext }
   /**
@@ -363,7 +365,7 @@ export type VoiceTransportHandle =
        * 「刚发生了什么」，塞进 instructions 会让它变成永久人设的一部分，下一轮还在。
        * 角色用 user 而不是 assistant——模型只会顺着自己说过的话往下说，不会去转述它。
       */
-      injectItem(text: string): void;
+      injectItem(text: string, narrationId?: string): void;
       /**
        * 注入一条外部用户文字并等待上游确认 response.create 已被接受。
        * 只有 relay transport 提供这个确认面；拒绝或挂断会 reject，调用方必须回退，不能丢话。

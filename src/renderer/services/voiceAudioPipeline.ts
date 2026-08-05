@@ -159,6 +159,8 @@ export interface VoiceAudioPipelineCallbacks {
   onError?: (code: VoiceMessageCode, detail?: string) => void;
   /** 原生 sidecar 生命周期诊断码；不含音频或用户内容。 */
   onDiagnostic?: (code: string) => void;
+  /** 下行音频已经交给真实播放设备；每段响应的首帧由 bridge 自行去重。 */
+  onPlaybackStarted?: () => void;
 }
 
 /** WebView 与原生 AEC 管线共同向 voiceCallBridge 暴露的最小合同。 */
@@ -358,6 +360,7 @@ export class VoiceAudioPipeline implements VoiceAudioPipelineLike {
     node.connect(ctx.destination);
     if (this.nextStart < ctx.currentTime) this.nextStart = ctx.currentTime;
     node.start(this.nextStart);
+    this.callbacks.onPlaybackStarted?.();
     this.nextStart += buffer.duration;
     this.scheduled.push(node);
     node.onended = () => {

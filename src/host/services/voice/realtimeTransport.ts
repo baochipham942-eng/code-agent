@@ -7,6 +7,7 @@
 
 import WebSocket from 'ws';
 import {
+  VOICE_INJECTION_ACK_WINDOW_MS,
   VOICE_STALE_PREFIX_DEFAULTS_MS,
   VOICE_STALE_SILENCE_DEFAULTS_MS,
   VOICE_TURN_DETECTION_DEFAULT,
@@ -27,7 +28,6 @@ import { createLogger } from '../infra/logger';
 import { getHttpsAgent } from '../../model/providers/providerHttp';
 
 const logger = createLogger('RealtimeVoice');
-const INJECTION_ACK_WINDOW_MS = 5_000;
 const RESPONSE_IDLE_TIMEOUT_CODE = 'response_idle_timeout';
 // Realtime 协议族的 provider 不保证必发 session.updated；超时降级是预期路径，不是建连失败。
 const INITIAL_SESSION_HANDSHAKE_TIMEOUT_MS = 8_000;
@@ -402,6 +402,9 @@ export function createRealtimeTransport(profile: RealtimeVoiceProviderProfile): 
     let queuedResponseInstructions = '';
     let sentResponseInstructions = '';
     let pendingInjectionAt: number | null = null;
+    let pendingInjectionNarrationId: string | undefined;
+    let pendingInjectionToken = 0;
+    let injectionSequence = 0;
     let pendingInjectionAck: {
       resolve: () => void;
       reject: (error: Error) => void;
@@ -465,6 +468,8 @@ export function createRealtimeTransport(profile: RealtimeVoiceProviderProfile): 
       const pending = pendingInjectionAck;
       pendingInjectionAck = null;
       pendingInjectionAt = null;
+      pendingInjectionNarrationId = undefined;
+      pendingInjectionToken = 0;
       if (!pending) return;
       clearTimeout(pending.timer);
       if (error) pending.reject(error);
@@ -473,7 +478,11 @@ export function createRealtimeTransport(profile: RealtimeVoiceProviderProfile): 
     const rejectPendingInjection = (message: string): void => {
       settlePendingInjection(new Error(message));
     };
-    const sendInjectedItem = (text: string, waitForAck: boolean): Promise<void> | undefined => {
+    const sendInjectedItem = (
+      text: string,
+      waitForAck: boolean,
+      narrationId?: string,
+    ): Promise<void> | undefined => {
       if (ws.readyState !== WebSocket.OPEN) {
         if (waitForAck) return Promise.reject(new Error('voice upstream is not open'));
         return undefined;
@@ -483,21 +492,32 @@ export function createRealtimeTransport(profile: RealtimeVoiceProviderProfile): 
       // mistaken for a narration rejection (or vice versa).
       if (pendingInjectionAt !== null) {
         if (waitForAck) return Promise.reject(new Error('voice injection already in flight'));
+        queueMicrotask(() => onEvent({
+          type: 'injection.rejected',
+          message: 'voice injection already in flight',
+        }));
         return undefined;
       }
 
       pendingInjectionAt = Date.now();
+      pendingInjectionNarrationId = narrationId;
+      const injectionToken = pendingInjectionToken = ++injectionSequence;
       let ack: Promise<void> | undefined;
       if (waitForAck) {
         ack = new Promise<void>((resolve, reject) => {
           const timer = setTimeout(() => {
-            if (!pendingInjectionAck) return;
-            pendingInjectionAck = null;
-            pendingInjectionAt = null;
-            reject(new Error('voice injection acknowledgement timed out'));
-          }, INJECTION_ACK_WINDOW_MS);
+            if (!pendingInjectionAck || pendingInjectionToken !== injectionToken) return;
+            rejectPendingInjection('voice injection acknowledgement timed out');
+          }, VOICE_INJECTION_ACK_WINDOW_MS);
           pendingInjectionAck = { resolve, reject, timer };
         });
+      } else {
+        setTimeout(() => {
+          if (pendingInjectionToken !== injectionToken) return;
+          const message = 'voice injection acknowledgement timed out';
+          rejectPendingInjection(message);
+          onEvent({ type: 'injection.rejected', message });
+        }, VOICE_INJECTION_ACK_WINDOW_MS);
       }
 
       try {
@@ -587,10 +607,15 @@ export function createRealtimeTransport(profile: RealtimeVoiceProviderProfile): 
         case 'response.created': {
           clearResponseWatchdog();
           const responseId = responseIdOf(event, 'legacy-response');
+          const narrationId = pendingInjectionNarrationId;
           activeResponseId = responseId;
           responseCreateQueued = false;
           settlePendingInjection();
-          if (responseId) onEvent({ type: 'response.created', responseId });
+          if (responseId) onEvent({
+            type: 'response.created',
+            responseId,
+            ...(narrationId ? { narrationId } : {}),
+          });
           break;
         }
         case 'response.output_item.added': {
@@ -776,7 +801,7 @@ export function createRealtimeTransport(profile: RealtimeVoiceProviderProfile): 
             responseCreateQueued = false;
             queuedResponseInstructions = '';
             sentResponseInstructions = '';
-            pendingInjectionAt = null;
+            settlePendingInjection(new Error('voice session ended after idle timeout'));
             logger.info('upstream session ended after idle timeout', {
               code: event.error.code,
               message: event.error.message,
@@ -788,7 +813,7 @@ export function createRealtimeTransport(profile: RealtimeVoiceProviderProfile): 
           // 真正说明原因的只有 message。2026-07-26 真机踩到——现场只剩一个 COMMON_ERROR，
           // 解释在哪查不到（那句话当时只发给了渲染侧）。
           logger.warn('upstream error', { code: event.error?.code, message: event.error?.message });
-          if (pendingInjectionAt !== null && Date.now() - pendingInjectionAt <= INJECTION_ACK_WINDOW_MS) {
+          if (pendingInjectionAt !== null && Date.now() - pendingInjectionAt <= VOICE_INJECTION_ACK_WINDOW_MS) {
             const message = event.error?.message ?? 'injection rejected';
             rejectPendingInjection(message);
             onEvent({ type: 'injection.rejected', message });
@@ -886,12 +911,12 @@ export function createRealtimeTransport(profile: RealtimeVoiceProviderProfile): 
         queuedResponseInstructions = instructions?.trim() ?? '';
         sendResponseCreate();
       },
-      injectItem(text: string) {
+      injectItem(text: string, narrationId?: string) {
         // 与工具结果回灌同一套路：写进对话项后必须再发一次 response.create，
         // 否则模型收下了也不开口（handleToolCall 顶注是同一条踩坑）。
         // narration 继续使用这个 fire-and-forget 入口；用户文字走下面的 ack 入口，
         // 被拒时才能可靠回到 durable queue。
-        sendInjectedItem(text, false);
+        sendInjectedItem(text, false, narrationId);
       },
       injectItemWithAck(text: string) {
         const ack = sendInjectedItem(text, true);

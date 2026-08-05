@@ -1,7 +1,9 @@
-// 用户画面交互透传 payload 校验（浏览器三期 P1）。
-// 只接受白名单 kind + 有界坐标/滚轮/按键；禁止任意 CDP 方法字段。
+// 用户画面交互透传 payload 校验（浏览器三期 P1 / R4 drag）。
+// 只接受白名单 kind + 有界坐标/滚轮/按键/拖拽；禁止任意 CDP 方法字段。
 
-export type UserBrowserInputKind = 'click' | 'wheel' | 'key' | 'insertText';
+import { BROWSER_STAGE_VIEWPORT } from '../constants';
+
+export type UserBrowserInputKind = 'click' | 'wheel' | 'key' | 'insertText' | 'drag';
 
 export interface UserBrowserClickInput {
   kind: 'click';
@@ -36,11 +38,24 @@ export interface UserBrowserInsertTextInput {
   text: string;
 }
 
+/** 拖拽：起点 → 可选中间点 → 终点（host 走 mouse.down/move/up） */
+export interface UserBrowserDragInput {
+  kind: 'drag';
+  fromX: number;
+  fromY: number;
+  toX: number;
+  toY: number;
+  /** 中间路径点（有界）；缺省时 host 可线性插值 */
+  path?: Array<{ x: number; y: number }>;
+  button?: 'left' | 'right' | 'middle';
+}
+
 export type UserBrowserInputPayload =
   | UserBrowserClickInput
   | UserBrowserWheelInput
   | UserBrowserKeyInput
-  | UserBrowserInsertTextInput;
+  | UserBrowserInsertTextInput
+  | UserBrowserDragInput;
 
 export interface ValidateUserBrowserInputOptions {
   /** 视口宽（CSS px）；缺省时仍校验有限且非负 */
@@ -101,7 +116,13 @@ export function validateUserBrowserInputPayload(
   if (cdpError) return { ok: false, error: cdpError };
 
   const kind = raw.kind;
-  if (kind !== 'click' && kind !== 'wheel' && kind !== 'key' && kind !== 'insertText') {
+  if (
+    kind !== 'click'
+    && kind !== 'wheel'
+    && kind !== 'key'
+    && kind !== 'insertText'
+    && kind !== 'drag'
+  ) {
     return { ok: false, error: `Unsupported user browser input kind: ${String(kind)}` };
   }
 
@@ -181,6 +202,68 @@ export function validateUserBrowserInputPayload(
       };
     }
     return { ok: true, payload };
+  }
+
+  if (kind === 'drag') {
+    const fromX = finiteNumber(raw.fromX);
+    const fromY = finiteNumber(raw.fromY);
+    const toX = finiteNumber(raw.toX);
+    const toY = finiteNumber(raw.toY);
+    if (fromX === null || fromY === null || toX === null || toY === null) {
+      return { ok: false, error: 'Drag requires finite fromX/fromY/toX/toY.' };
+    }
+    if (
+      !clampCoord(fromX, options.viewportWidth)
+      || !clampCoord(fromY, options.viewportHeight)
+      || !clampCoord(toX, options.viewportWidth)
+      || !clampCoord(toY, options.viewportHeight)
+    ) {
+      return { ok: false, error: 'Drag coordinates out of bounds.' };
+    }
+    const button = raw.button === undefined
+      ? 'left'
+      : raw.button === 'left' || raw.button === 'right' || raw.button === 'middle'
+        ? raw.button
+        : null;
+    if (!button) return { ok: false, error: 'Invalid drag button.' };
+
+    let path: Array<{ x: number; y: number }> | undefined;
+    if (raw.path !== undefined) {
+      if (!Array.isArray(raw.path)) {
+        return { ok: false, error: 'Drag path must be an array of points.' };
+      }
+      if (raw.path.length > BROWSER_STAGE_VIEWPORT.DRAG_PATH_MAX_POINTS) {
+        return { ok: false, error: 'Drag path too long.' };
+      }
+      path = [];
+      for (const point of raw.path) {
+        if (!isRecord(point)) {
+          return { ok: false, error: 'Drag path points must be objects.' };
+        }
+        const x = finiteNumber(point.x);
+        const y = finiteNumber(point.y);
+        if (x === null || y === null) {
+          return { ok: false, error: 'Drag path points require finite x/y.' };
+        }
+        if (!clampCoord(x, options.viewportWidth) || !clampCoord(y, options.viewportHeight)) {
+          return { ok: false, error: 'Drag path coordinates out of bounds.' };
+        }
+        path.push({ x, y });
+      }
+    }
+
+    return {
+      ok: true,
+      payload: {
+        kind: 'drag',
+        fromX,
+        fromY,
+        toX,
+        toY,
+        button,
+        ...(path ? { path } : {}),
+      },
+    };
   }
 
   // insertText

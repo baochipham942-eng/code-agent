@@ -1,6 +1,14 @@
 import type { Page } from 'playwright';
 import type { UserBrowserInputPayload } from '../../../../shared/utils/userBrowserInputPayload';
 
+function mouseButton(
+  button: 'left' | 'right' | 'middle' | undefined,
+): 'left' | 'right' | 'middle' {
+  if (button === 'right') return 'right';
+  if (button === 'middle') return 'middle';
+  return 'left';
+}
+
 /**
  * 在已校验的 payload 上执行 Playwright 输入。禁止 CDP 任意方法直通。
  */
@@ -10,13 +18,8 @@ export async function dispatchUserBrowserInputOnPage(
 ): Promise<void> {
   switch (payload.kind) {
     case 'click': {
-      const button = payload.button === 'right'
-        ? 'right'
-        : payload.button === 'middle'
-          ? 'middle'
-          : 'left';
       await page.mouse.click(payload.x, payload.y, {
-        button,
+        button: mouseButton(payload.button),
         clickCount: payload.clickCount ?? 1,
       });
       return;
@@ -42,6 +45,29 @@ export async function dispatchUserBrowserInputOnPage(
     }
     case 'insertText': {
       await page.keyboard.insertText(payload.text);
+      return;
+    }
+    case 'drag': {
+      const button = mouseButton(payload.button);
+      await page.mouse.move(payload.fromX, payload.fromY);
+      await page.mouse.down({ button });
+      if (payload.path && payload.path.length > 0) {
+        for (const point of payload.path) {
+          await page.mouse.move(point.x, point.y);
+        }
+      } else {
+        // 无路径时线性插值若干步，避免瞬间 teleport（滑块类控件需要中间点）
+        const steps = 12;
+        for (let i = 1; i <= steps; i += 1) {
+          const t = i / steps;
+          await page.mouse.move(
+            payload.fromX + (payload.toX - payload.fromX) * t,
+            payload.fromY + (payload.toY - payload.fromY) * t,
+          );
+        }
+      }
+      await page.mouse.move(payload.toX, payload.toY);
+      await page.mouse.up({ button });
       return;
     }
     default: {

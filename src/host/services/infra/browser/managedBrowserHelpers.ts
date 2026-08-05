@@ -73,9 +73,52 @@ export function buildBrowserEnvironment(): Record<string, string> {
   return env;
 }
 
+/**
+ * 对齐近期桌面 Chrome 的 UA（R4 headless 风控缓解）。
+ * 非完整 stealth：只消「过时 UA」一眼特征；站点仍可凭 headless/CDP 指纹识破。
+ */
 export function getDefaultUserAgent(): string {
-  return 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+  return 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 }
+
+/** 托管浏览器启动时附加的常规 stealth 参数（成本内缓解，非对抗升级） */
+export const MANAGED_BROWSER_STEALTH_CHROME_ARGS = [
+  '--disable-blink-features=AutomationControlled',
+  '--disable-infobars',
+] as const;
+
+/**
+ * 隐藏 navigator.webdriver 等常见自动化标记（init script）。
+ * 剩余风险：WebGL/Audio/CDP 端口/无插件列表等仍可被检测。
+ */
+export const MANAGED_BROWSER_STEALTH_INIT_SCRIPT = `
+(() => {
+  try {
+    Object.defineProperty(Navigator.prototype, 'webdriver', {
+      get: () => undefined,
+      configurable: true,
+    });
+  } catch (_) { /* ignore */ }
+  try {
+    if (!window.chrome) {
+      Object.defineProperty(window, 'chrome', {
+        value: { runtime: {} },
+        configurable: true,
+      });
+    }
+  } catch (_) { /* ignore */ }
+  try {
+    const originalQuery = window.navigator.permissions && window.navigator.permissions.query;
+    if (typeof originalQuery === 'function') {
+      window.navigator.permissions.query = (parameters) => (
+        parameters && parameters.name === 'notifications'
+          ? Promise.resolve({ state: Notification.permission })
+          : originalQuery.call(window.navigator.permissions, parameters)
+      );
+    }
+  } catch (_) { /* ignore */ }
+})();
+`;
 
 export function summarizeBrowserUrlForLog(value: string): string {
   try {

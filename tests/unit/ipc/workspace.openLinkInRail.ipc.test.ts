@@ -2,6 +2,22 @@ import { describe, expect, it, vi } from 'vitest';
 import { IPC_DOMAINS, type IPCRequest } from '../../../src/shared/ipc';
 import { registerWorkspaceHandlers } from '../../../src/host/ipc/workspace.ipc';
 import type { IpcMain } from '../../../src/host/platform';
+import type { UserBrowserLinkService } from '../../../src/host/services/surfaceExecution/UserBrowserLinkService';
+import type { SurfaceConversationSnapshotV1 } from '../../../src/shared/contract/surfaceExecution';
+
+type UserBrowserLinks = Pick<
+  UserBrowserLinkService,
+  'open' | 'end' | 'history' | 'dispatchUserInput' | 'setViewport'
+>;
+
+function snapshot(conversationId: string): SurfaceConversationSnapshotV1 {
+  return {
+    version: 1,
+    conversationId,
+    sessions: [],
+    updatedAt: 1,
+  };
+}
 
 describe('workspace openLinkInRail wiring', () => {
   it('dispatches the renderer request to the user-owned browser service', async () => {
@@ -15,28 +31,26 @@ describe('workspace openLinkInRail wiring', () => {
       conversationId: 'conversation-a',
       runId: 'user-run',
       surfaceSessionId: 'surface-user',
-      snapshot: { version: 1 as const, conversationId: 'conversation-a', sessions: [], updatedAt: 1 },
+      snapshot: snapshot('conversation-a'),
     }));
-
     const end = vi.fn(async () => null);
-    const history = vi.fn(async () => ({
-      version: 1 as const,
-      conversationId: 'conversation-a',
-      sessions: [],
-      updatedAt: 1,
-    }));
-    const dispatchUserInput = vi.fn(async () => ({
-      version: 1 as const,
-      conversationId: 'conversation-a',
-      sessions: [],
-      updatedAt: 1,
-    }));
+    const history = vi.fn(async () => snapshot('conversation-a'));
+    const dispatchUserInput = vi.fn(async () => snapshot('conversation-a'));
+    const setViewport = vi.fn(async () => snapshot('conversation-a'));
+    const links: UserBrowserLinks = {
+      open,
+      end,
+      history,
+      dispatchUserInput,
+      setViewport,
+    };
+
     registerWorkspaceHandlers(
       ipcMain,
       () => null,
       () => null,
       () => null,
-      () => ({ open, end, history, dispatchUserInput }),
+      () => links,
     );
     const handler = handlers.get(IPC_DOMAINS.WORKSPACE);
     expect(handler).toBeDefined();
@@ -69,26 +83,30 @@ describe('workspace openLinkInRail wiring', () => {
         handlers.set(channel, handler);
       }),
     } as unknown as IpcMain;
-    const open = vi.fn(async () => null);
+    const open = vi.fn(async () => ({
+      conversationId: 'conversation-a',
+      runId: 'user-run',
+      surfaceSessionId: 'surface-user',
+      snapshot: snapshot('conversation-a'),
+    }));
     const end = vi.fn(async () => null);
-    const history = vi.fn(async () => ({
-      version: 1 as const,
-      conversationId: 'conversation-a',
-      sessions: [],
-      updatedAt: 1,
-    }));
-    const dispatchUserInput = vi.fn(async () => ({
-      version: 1 as const,
-      conversationId: 'conversation-a',
-      sessions: [],
-      updatedAt: 1,
-    }));
+    const history = vi.fn(async () => snapshot('conversation-a'));
+    const dispatchUserInput = vi.fn(async () => snapshot('conversation-a'));
+    const setViewport = vi.fn(async () => snapshot('conversation-a'));
+    const links: UserBrowserLinks = {
+      open,
+      end,
+      history,
+      dispatchUserInput,
+      setViewport,
+    };
+
     registerWorkspaceHandlers(
       ipcMain,
       () => null,
       () => null,
       () => null,
-      () => ({ open, end, history, dispatchUserInput }),
+      () => links,
     );
     const handler = handlers.get(IPC_DOMAINS.WORKSPACE);
     const response = await handler?.({}, {
@@ -101,11 +119,11 @@ describe('workspace openLinkInRail wiring', () => {
     } satisfies IPCRequest) as { success: boolean; error?: { message?: string } };
     expect(response.success).toBe(true);
     expect(dispatchUserInput).toHaveBeenCalledOnce();
-    const arg = dispatchUserInput.mock.calls[0]![0] as {
-      conversationId: string;
-      workspace: string;
-      input: unknown;
-    };
+    const dispatchCalls = dispatchUserInput.mock.calls as unknown as Array<[
+      { conversationId: string; workspace: string; input: unknown },
+    ]>;
+    expect(dispatchCalls.length).toBeGreaterThan(0);
+    const arg = dispatchCalls[0]![0];
     expect(arg.conversationId).toBe('conversation-a');
     // host 必须填入非空 workspace（会话目录或 dataDir/work 兜底），不能把空串原样传给 service
     expect(arg.workspace.trim().length).toBeGreaterThan(0);
@@ -121,7 +139,11 @@ describe('workspace openLinkInRail wiring', () => {
     } satisfies IPCRequest) as { success: boolean };
     expect(historyResponse.success).toBe(true);
     expect(history).toHaveBeenCalledOnce();
-    const historyArg = history.mock.calls[0]![0] as { workspace: string; action: string };
+    const historyCalls = history.mock.calls as unknown as Array<[
+      { workspace: string; action: string },
+    ]>;
+    expect(historyCalls.length).toBeGreaterThan(0);
+    const historyArg = historyCalls[0]![0];
     expect(historyArg.workspace.trim().length).toBeGreaterThan(0);
     expect(historyArg.action).toBe('back');
   });

@@ -84,6 +84,7 @@ import {
 import {
   MANAGED_BROWSER_ARTIFACT_DIR,
   MANAGED_BROWSER_ARTIFACT_ROOT_DIR,
+  MANAGED_BROWSER_STEALTH_INIT_SCRIPT,
   getDefaultUserAgent,
   getManagedBrowserProxyFingerprint,
   parseHostList,
@@ -988,6 +989,8 @@ export class BrowserService implements Disposable {
     if (!this.context) {
       throw new Error('Browser context was not created');
     }
+    // R4：再确保一次 stealth init（launch 路径已挂；CDP 复用旧 context 时补挂）
+    await this.context.addInitScript(MANAGED_BROWSER_STEALTH_INIT_SCRIPT).catch(() => undefined);
     await this.context.route('**/*', async (route) => {
       const url = route.request().url();
       if (!this.isUrlAllowed(url)) {

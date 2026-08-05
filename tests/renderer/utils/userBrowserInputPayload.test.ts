@@ -5,7 +5,7 @@ import {
 } from '../../../src/shared/utils/userBrowserInputPayload';
 
 describe('userBrowserInputPayload 校验', () => {
-  it('接受合法 click / wheel / key / insertText', () => {
+  it('接受合法 click / wheel / key / insertText / drag', () => {
     expect(validateUserBrowserInputPayload({
       kind: 'click', x: 10, y: 20, clickCount: 2,
     })).toMatchObject({
@@ -21,15 +21,40 @@ describe('userBrowserInputPayload 校验', () => {
     expect(validateUserBrowserInputPayload({
       kind: 'insertText', text: '百度搜索',
     }).ok).toBe(true);
+    expect(validateUserBrowserInputPayload({
+      kind: 'drag',
+      fromX: 10,
+      fromY: 20,
+      toX: 200,
+      toY: 25,
+      path: [{ x: 50, y: 22 }, { x: 120, y: 24 }],
+    })).toMatchObject({
+      ok: true,
+      payload: {
+        kind: 'drag',
+        fromX: 10,
+        fromY: 20,
+        toX: 200,
+        toY: 25,
+        button: 'left',
+      },
+    });
   });
 
-  it('拒绝越界坐标', () => {
+  it('拒绝越界坐标（含 drag）', () => {
     const out = validateUserBrowserInputPayload(
       { kind: 'click', x: 900, y: 10 },
       { viewportWidth: 800, viewportHeight: 600 },
     );
     expect(out.ok).toBe(false);
     if (!out.ok) expect(out.error).toMatch(/out of bounds/i);
+
+    const dragOut = validateUserBrowserInputPayload(
+      { kind: 'drag', fromX: 10, fromY: 10, toX: 900, toY: 10 },
+      { viewportWidth: 800, viewportHeight: 600 },
+    );
+    expect(dragOut.ok).toBe(false);
+    if (!dragOut.ok) expect(dragOut.error).toMatch(/out of bounds/i);
   });
 
   it('拒绝非法 keycode / 未知 kind', () => {

@@ -803,7 +803,10 @@ export function registerWorkspaceHandlers(
   getMainWindow: () => AppWindow | null,
   getAppService: () => AgentApplicationService | null,
   getConfigService: () => ConfigService | null,
-  getUserBrowserLinks: () => Pick<UserBrowserLinkService, 'open' | 'end' | 'history' | 'dispatchUserInput'> = getUserBrowserLinkService,
+  getUserBrowserLinks: () => Pick<
+    UserBrowserLinkService,
+    'open' | 'end' | 'history' | 'dispatchUserInput' | 'setViewport'
+  > = getUserBrowserLinkService,
 ): void {
   // ========== New Domain Handler (TASK-04) ==========
   ipcMain.handle(IPC_DOMAINS.WORKSPACE, async (_, request: IPCRequest): Promise<IPCResponse> => {
@@ -964,6 +967,25 @@ export function registerWorkspaceHandlers(
               inputPayload.workspace,
             ),
             input: inputPayload.input,
+          });
+          break;
+        }
+        case 'setUserBrowserViewport': {
+          // R4：stage CSS 尺寸跟随 → setViewport；workspace 与 open/dispatch 同兜底。
+          const viewportPayload = payload as {
+            conversationId: string;
+            workspace?: string;
+            width: number;
+            height: number;
+          };
+          data = await getUserBrowserLinks().setViewport({
+            conversationId: viewportPayload.conversationId,
+            workspace: await resolveUserBrowserWorkspace(
+              viewportPayload.conversationId,
+              viewportPayload.workspace,
+            ),
+            width: viewportPayload.width,
+            height: viewportPayload.height,
           });
           break;
         }

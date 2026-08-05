@@ -15,6 +15,8 @@ import type {
 import {
   buildBrowserEnvironment,
   getDefaultUserAgent,
+  MANAGED_BROWSER_STEALTH_CHROME_ARGS,
+  MANAGED_BROWSER_STEALTH_INIT_SCRIPT,
 } from './managedBrowserHelpers';
 
 type BrowserLaunchLogger = {
@@ -133,6 +135,8 @@ export async function launchSystemChromeCdpBrowser(
     proxy: getPlaywrightProxyOptions(input.proxy),
     userAgent: getDefaultUserAgent(),
   });
+  // 系统 Chrome CDP 路径也挂上 webdriver 隐藏脚本（与 bundled 对齐）
+  await context.addInitScript(MANAGED_BROWSER_STEALTH_INIT_SCRIPT).catch(() => undefined);
   return { browser, context, executable, cdpPort };
 }
 
@@ -157,6 +161,8 @@ export async function launchPlaywrightBundledBrowser(
     downloadsPath: input.downloadDir,
     ignoreHTTPSErrors: false,
     proxy: getPlaywrightProxyOptions(input.proxy),
+    // R4：去掉 Playwright 默认 --enable-automation，降低 navigator.webdriver 暴露
+    ignoreDefaultArgs: ['--enable-automation'],
     args: [
       '--no-sandbox',
       '--disable-setuid-sandbox',
@@ -165,10 +171,12 @@ export async function launchPlaywrightBundledBrowser(
       '--disable-background-networking',
       '--no-first-run',
       '--no-default-browser-check',
+      ...MANAGED_BROWSER_STEALTH_CHROME_ARGS,
     ],
     env: buildBrowserEnvironment(),
     userAgent: getDefaultUserAgent(),
   });
+  await context.addInitScript(MANAGED_BROWSER_STEALTH_INIT_SCRIPT).catch(() => undefined);
   return {
     browser: context.browser(),
     context,

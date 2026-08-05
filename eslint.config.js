@@ -230,6 +230,8 @@ export default tseslint.config(
     // builtinSkillsData.ts — 内置 skill 扁平目录（~2960 行纯数据），accessor 逻辑已分离至 builtinSkills.ts。
     // agentAppService / ChatInput/index / web/routes/agent — 编排与协议穿越边界（桌面/渲染/web 三条
     // 消息链路的汇聚口），2026-07-29 UX round2 后同 agentOrchestrator 类按汇聚口豁免。
+    // browserService.ts — 托管浏览器生命周期/标签/视口/输入汇聚口（system Chrome CDP + Playwright
+    // bundled 双路径）；helper 已拆到 browser/*，本文件仍是会话真源与 IPC 入口。
     files: [
       'src/host/services/skills/builtinSkillsData.ts',
       'src/host/agent/agentOrchestrator.ts',
@@ -237,6 +239,7 @@ export default tseslint.config(
       'src/host/services/core/databaseService.ts',
       'src/host/tools/toolExecutor.ts',
       'src/host/app/agentAppService.ts',
+      'src/host/services/infra/browserService.ts',
       'src/renderer/components/features/chat/ChatInput/index.tsx',
       'src/web/routes/agent.ts',
     ],

@@ -46,6 +46,13 @@ export interface DispatchUserBrowserInputInput {
   input: unknown;
 }
 
+export interface SetUserBrowserViewportInput {
+  conversationId: string;
+  workspace: string;
+  width: number;
+  height: number;
+}
+
 export interface UserBrowserLinkResult {
   conversationId: string;
   runId: string;
@@ -74,6 +81,8 @@ function browserActionForInput(payload: UserBrowserInputPayload): string {
       return 'press_key';
     case 'insertText':
       return 'type';
+    case 'drag':
+      return 'drag';
     default: {
       const _exhaustive: never = payload;
       throw new Error(`Unsupported input kind: ${JSON.stringify(_exhaustive)}`);
@@ -194,7 +203,40 @@ export class UserBrowserLinkService {
   }
 
   /**
-   * 用户在实时画面上的点击/滚轮/键盘透传。
+   * 面板 stage CSS 尺寸上报 → 托管浏览器 setViewport（R4 视口跟随，根治 letterbox）。
+   */
+  async setViewport(
+    input: SetUserBrowserViewportInput,
+  ): Promise<SurfaceConversationSnapshotV1> {
+    const conversationId = input.conversationId.trim();
+    const workspace = input.workspace.trim();
+    if (!conversationId || !workspace) {
+      throw new Error('User browser viewport requires conversationId and workspace.');
+    }
+    const width = Number(input.width);
+    const height = Number(input.height);
+    if (!Number.isFinite(width) || !Number.isFinite(height) || width < 1 || height < 1) {
+      throw new Error('User browser viewport requires positive finite width/height.');
+    }
+    const run = this.ensureRun(conversationId, workspace);
+    const result = await this.adapter.execute({
+      identity: run.identity,
+      operationId: `user-browser-link:set_viewport:${randomUUID()}`,
+      action: 'set_viewport',
+      params: { action: 'set_viewport', width, height },
+      async executeProvider(_signal, browserService) {
+        await browserService.setViewport(width, height);
+        return { success: true, output: `Viewport ${Math.round(width)}x${Math.round(height)}` };
+      },
+    });
+    if (!result.success) {
+      throw new Error(result.error || 'User browser setViewport failed.');
+    }
+    return this.runtime.snapshotConversation(conversationId);
+  }
+
+  /**
+   * 用户在实时画面上的点击/滚轮/键盘/拖拽透传。
    * 会话归属：必须带 conversationId + workspace；与 history 同链路走 user-browser-link run，
    * 与 agent 共享物理窗（ManagedBrowserProviderAdapter ensureBinding 共享语义）。
    */

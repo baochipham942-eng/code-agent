@@ -1,4 +1,5 @@
 import type { Page } from 'playwright';
+import { BROWSER_STAGE_VIEWPORT } from '../../../../shared/constants';
 
 // CDP Page.startScreencast 封装（B1-R·R1 图形化浏览器现场）。
 //
@@ -35,7 +36,8 @@ export interface PageScreencastHandle {
 export const DEFAULT_PAGE_SCREENCAST_OPTIONS: PageScreencastOptions = {
   maxWidth: 1024,
   maxHeight: 640,
-  quality: 55,
+  // R4：面板跟随后仍可能在 Retina 上放大；默认质量上调减轻糊感。
+  quality: BROWSER_STAGE_VIEWPORT.JPEG_QUALITY,
   everyNthFrame: 2,
   minIntervalMs: 100,
 };
@@ -49,8 +51,19 @@ export function clampScreencastBounds(
     return Math.min(max, Math.max(min, Math.round(value)));
   };
   return {
-    maxWidth: clamp(maxWidth, DEFAULT_PAGE_SCREENCAST_OPTIONS.maxWidth, 240, 1600),
-    maxHeight: clamp(maxHeight, DEFAULT_PAGE_SCREENCAST_OPTIONS.maxHeight, 160, 1200),
+    // R4：封顶对齐 CAPTURE_MAX_*（CSS×dpr 上报可到 2560 宽）
+    maxWidth: clamp(
+      maxWidth,
+      DEFAULT_PAGE_SCREENCAST_OPTIONS.maxWidth,
+      240,
+      BROWSER_STAGE_VIEWPORT.CAPTURE_MAX_WIDTH,
+    ),
+    maxHeight: clamp(
+      maxHeight,
+      DEFAULT_PAGE_SCREENCAST_OPTIONS.maxHeight,
+      160,
+      BROWSER_STAGE_VIEWPORT.CAPTURE_MAX_HEIGHT,
+    ),
   };
 }
 

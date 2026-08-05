@@ -109,7 +109,39 @@ export async function controlUserBrowserHistory(input: {
   return response.data ?? null;
 }
 
-/** 画面交互透传（点击/滚轮/键盘/IME 整段文本）。失败抛错，调用方静默或记日志。 */
+/** 面板 stage CSS 尺寸 → host setViewport（R4 视口跟随）。失败抛错。 */
+export async function setUserBrowserViewport(input: {
+  conversationId: string | null | undefined;
+  workspace: string | null | undefined;
+  width: number;
+  height: number;
+}): Promise<SurfaceConversationSnapshotV1 | null> {
+  const conversationId = input.conversationId?.trim();
+  const workspace = input.workspace?.trim() ?? '';
+  const bridge = domainBridge();
+  if (!bridge || !conversationId) {
+    throw new Error('Browser viewport requires conversation.');
+  }
+  const response = await bridge.invoke<SurfaceConversationSnapshotV1 | null>(
+    IPC_DOMAINS.WORKSPACE,
+    'setUserBrowserViewport',
+    {
+      conversationId,
+      workspace,
+      width: input.width,
+      height: input.height,
+    },
+  );
+  if (!response.success) {
+    throw new Error(response.error?.message || 'Browser setViewport failed.');
+  }
+  if (response.data) {
+    useSurfaceExecutionStore.getState().setNativeSnapshot(conversationId, response.data);
+  }
+  return response.data ?? null;
+}
+
+/** 画面交互透传（点击/滚轮/键盘/拖拽/IME 整段文本）。失败抛错，调用方静默或记日志。 */
 export async function dispatchUserBrowserInput(input: {
   conversationId: string | null | undefined;
   workspace: string | null | undefined;

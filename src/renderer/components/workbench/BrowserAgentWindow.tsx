@@ -39,8 +39,11 @@ import {
   closeUserBrowserLinkRun,
   controlUserBrowserHistory,
   openHttpLinkInRailAsync,
+  setUserBrowserViewport,
 } from '../../services/userBrowserLink';
 import { useBrowserStageUserInput } from '../../hooks/useBrowserStageUserInput';
+import { BROWSER_STAGE_VIEWPORT } from '@shared/constants';
+import { resolveStageFollowPlan } from '@shared/utils/browserStageViewportFollow';
 import { normalizeBrowserAddressInput } from '../../utils/browserAddressBar';
 import { formatAddressBarDisplay, extractBrowserHostname } from '../../utils/browserAddressDisplay';
 import {
@@ -233,6 +236,14 @@ export const BrowserAgentWindow: React.FC = () => {
   const [annotateError, setAnnotateError] = useState<string | null>(null);
   const [annotateSending, setAnnotateSending] = useState(false);
   const navRequestIdRef = useRef(0);
+  // R4：stage CSS 尺寸跟随视口 + 帧采集分辨率
+  const stageRef = useRef<HTMLDivElement | null>(null);
+  const [stageFollow, setStageFollow] = useState<{
+    viewport: { width: number; height: number };
+    capture: { maxWidth: number; maxHeight: number; quality: number };
+  } | null>(null);
+  const stageFollowPlanKeyRef = useRef<string>('');
+  const stageViewportPushedKeyRef = useRef<string>('');
 
   // URL 回写：pending 优先；未编辑且无 pending 时跟随页面跳转。
   useEffect(() => {
@@ -316,14 +327,70 @@ export const BrowserAgentWindow: React.FC = () => {
     void navigateTo(normalized.url);
   }, [activeUrl, addressDraft, agentSurfaceBusy, copy.navigationNeedsSession, currentSessionId, navigateTo, workingDirectory]);
 
+  // R4：ResizeObserver 去抖上报 stage CSS → setViewport + 帧采集 max 尺寸
+  useEffect(() => {
+    const el = stageRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return undefined;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const publish = (width: number, height: number) => {
+      const dpr = typeof window !== 'undefined' && Number.isFinite(window.devicePixelRatio)
+        ? window.devicePixelRatio
+        : 1;
+      const plan = resolveStageFollowPlan({ width, height }, dpr);
+      if (!plan) return;
+      const planKey = `${plan.viewport.width}x${plan.viewport.height}@${plan.capture.maxWidth}x${plan.capture.maxHeight}`;
+      if (stageFollowPlanKeyRef.current !== planKey) {
+        stageFollowPlanKeyRef.current = planKey;
+        setStageFollow(plan);
+      }
+      // 会话可能晚于 stage 量测就绪：单独按「会话+视口」去重推送，避免 key 已锁死零上报
+      if (currentSessionId && browserSurfaceSessionId && ownedByCurrentSession) {
+        const pushKey = `${currentSessionId}:${browserSurfaceSessionId}:${plan.viewport.width}x${plan.viewport.height}`;
+        if (stageViewportPushedKeyRef.current !== pushKey) {
+          stageViewportPushedKeyRef.current = pushKey;
+          void setUserBrowserViewport({
+            conversationId: currentSessionId,
+            workspace: workingDirectory ?? '',
+            width: plan.viewport.width,
+            height: plan.viewport.height,
+          }).catch(() => undefined);
+        }
+      }
+    };
+    const schedule = () => {
+      const rect = el.getBoundingClientRect();
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        publish(rect.width, rect.height);
+      }, BROWSER_STAGE_VIEWPORT.DEBOUNCE_MS);
+    };
+    const observer = new ResizeObserver(() => schedule());
+    observer.observe(el);
+    schedule();
+    return () => {
+      observer.disconnect();
+      if (timer) clearTimeout(timer);
+    };
+  }, [
+    browserSurfaceSessionId,
+    currentSessionId,
+    ownedByCurrentSession,
+    workingDirectory,
+    // 面板可见时再挂 observer；折叠时 stage 可能 0 尺寸
+    activeWorkbenchTab,
+    workbenchCollapsed,
+  ]);
+
   const liveStream = useSurfaceLiveFrames({
     conversationId: currentSessionId,
     surfaceSessionId: browserSurfaceSessionId,
     visible: activeWorkbenchTab === 'browser' && !workbenchCollapsed,
     sessionRunning: Boolean(browserSurfaceSessionId),
+    maxWidth: stageFollow?.capture.maxWidth ?? null,
+    maxHeight: stageFollow?.capture.maxHeight ?? null,
   });
 
-  // 三期 P1：画面交互透传（点击/滚轮/键盘）；agent 忙复用抢占确认，批注模式互斥。
+  // 三期 P1 / R4：画面交互透传（点击/滚轮/键盘/拖拽）；坐标 content 优先跟随视口 CSS。
   const stageInput = useBrowserStageUserInput({
     conversationId: currentSessionId,
     workspace: workingDirectory,
@@ -331,8 +398,14 @@ export const BrowserAgentWindow: React.FC = () => {
     annotateMode,
     ready: Boolean(liveStream.frame && browserSurfaceSessionId),
     agentSurfaceBusy,
-    contentWidth: liveStream.frame?.width ?? managedSession.viewport?.width ?? null,
-    contentHeight: liveStream.frame?.height ?? managedSession.viewport?.height ?? null,
+    contentWidth: stageFollow?.viewport.width
+      ?? liveStream.frame?.width
+      ?? managedSession.viewport?.width
+      ?? null,
+    contentHeight: stageFollow?.viewport.height
+      ?? liveStream.frame?.height
+      ?? managedSession.viewport?.height
+      ?? null,
     surfaceSessionId: browserSurfaceSessionId,
   });
 
@@ -677,16 +750,21 @@ export const BrowserAgentWindow: React.FC = () => {
       </div>
 
       <div
+        ref={stageRef}
         data-testid="browser-agent-window-stage"
         className={`relative min-h-0 flex-1 overflow-hidden bg-black/40 outline-hidden ${
           stageInput.interactive
-            ? 'cursor-crosshair focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-500/50'
+            ? 'cursor-default focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-500/50'
             : ''
         } ${stageInput.stageFocused && stageInput.interactive ? 'ring-2 ring-inset ring-sky-500/40' : ''}`}
         role={annotateMode ? 'button' : stageInput.interactive ? 'application' : undefined}
         tabIndex={annotateMode || stageInput.interactive ? 0 : undefined}
         aria-label={annotateMode ? copy.annotate : stageInput.interactive ? copy.liveInteract : undefined}
         onClick={annotateMode ? handleStageClickForAnnotate : stageInput.onStageClick}
+        onPointerDown={annotateMode ? undefined : stageInput.onStagePointerDown}
+        onPointerMove={annotateMode ? undefined : stageInput.onStagePointerMove}
+        onPointerUp={annotateMode ? undefined : stageInput.onStagePointerUp}
+        onPointerCancel={annotateMode ? undefined : stageInput.onStagePointerCancel}
         onWheel={annotateMode ? undefined : stageInput.onStageWheel}
         onKeyDown={annotateMode
           ? (event) => {
@@ -716,7 +794,10 @@ export const BrowserAgentWindow: React.FC = () => {
             data-testid="browser-agent-window-frame"
             src={liveStream.frame.dataUrl}
             alt={copy.livePicture}
-            className="h-full w-full object-contain"
+            draggable={false}
+            onDragStart={(event) => event.preventDefault()}
+            className="h-full w-full object-contain select-none"
+            style={{ userSelect: 'none', WebkitUserSelect: 'none' }}
           />
         ) : terminalSurfaceSession && terminalFrameDataUrl ? (
           // 终态留影：停流前移交进 store 的最后一帧，置灰 +「已结束」角标。
@@ -725,7 +806,10 @@ export const BrowserAgentWindow: React.FC = () => {
               data-testid="browser-agent-window-terminal-frame"
               src={terminalFrameDataUrl}
               alt={surfaceCopy.terminal.frameAlt}
-              className="h-full w-full object-contain grayscale opacity-60"
+              draggable={false}
+              onDragStart={(event) => event.preventDefault()}
+              className="h-full w-full object-contain select-none grayscale opacity-60"
+              style={{ userSelect: 'none', WebkitUserSelect: 'none' }}
             />
             <span
               data-testid="browser-agent-window-ended-badge"

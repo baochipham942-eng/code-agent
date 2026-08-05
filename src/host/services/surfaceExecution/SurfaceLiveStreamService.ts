@@ -48,6 +48,9 @@ interface ActiveStream {
   surfaceSessionId: string;
   handle: PageScreencastHandle;
   expiryTimer: NodeJS.Timeout;
+  /** 当前流采集上限，用于 R4 视口跟随换分辨率时判断是否要重开 */
+  maxWidth: number;
+  maxHeight: number;
 }
 
 export class SurfaceLiveStreamService {
@@ -62,7 +65,13 @@ export class SurfaceLiveStreamService {
   ) {}
 
   async start(request: SurfaceLiveStreamRequestV1): Promise<SurfaceLiveStreamStateV1> {
-    if (this.active?.surfaceSessionId === request.surfaceSessionId) {
+    const bounds = clampScreencastBounds(request.maxWidth, request.maxHeight);
+    // 同会话且采集尺寸未变：保持现流；尺寸变了（视口跟随）则重开。
+    if (
+      this.active?.surfaceSessionId === request.surfaceSessionId
+      && this.active.maxWidth === bounds.maxWidth
+      && this.active.maxHeight === bounds.maxHeight
+    ) {
       return { version: 1, surfaceSessionId: request.surfaceSessionId, streaming: true };
     }
     await this.stopActive('replaced');
@@ -81,7 +90,6 @@ export class SurfaceLiveStreamService {
       return this.refused(request.surfaceSessionId, 'no_active_page');
     }
 
-    const bounds = clampScreencastBounds(request.maxWidth, request.maxHeight);
     let handle: PageScreencastHandle;
     try {
       handle = await startPageScreencast(
@@ -115,6 +123,8 @@ export class SurfaceLiveStreamService {
       surfaceSessionId: request.surfaceSessionId,
       handle,
       expiryTimer,
+      maxWidth: bounds.maxWidth,
+      maxHeight: bounds.maxHeight,
     };
     return { version: 1, surfaceSessionId: request.surfaceSessionId, streaming: true };
   }

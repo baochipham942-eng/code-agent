@@ -1,4 +1,14 @@
-import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type MouseEvent, type WheelEvent } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type MouseEvent,
+  type PointerEvent as ReactPointerEvent,
+  type WheelEvent,
+} from 'react';
+import { BROWSER_STAGE_VIEWPORT } from '@shared/constants';
 import { mapDisplayPointToViewport } from '@shared/utils/browserFrameCoordinateMap';
 import type { UserBrowserInputPayload } from '@shared/utils/userBrowserInputPayload';
 import { dispatchUserBrowserInput } from '../services/userBrowserLink';
@@ -14,7 +24,7 @@ export interface BrowserStageUserInputOptions {
   annotateMode: boolean;
   ready: boolean;
   agentSurfaceBusy: boolean;
-  /** 实时帧内容尺寸（device CSS px） */
+  /** 实时帧/视口内容尺寸（device CSS px）；视口跟随后应等于 stage CSS */
   contentWidth: number | null;
   contentHeight: number | null;
   /** agent surface 会话 id 变化时重置抢占确认 */
@@ -28,15 +38,31 @@ export interface BrowserStageUserInputApi {
   pendingPreemptInput: UserBrowserInputPayload | null;
   confirmPreempt: () => void;
   cancelPreempt: () => void;
+  /** 兼容旧 click 路径；拖拽优先走 pointer 序列 */
   onStageClick: (event: MouseEvent<HTMLElement>) => void;
+  onStagePointerDown: (event: ReactPointerEvent<HTMLElement>) => void;
+  onStagePointerMove: (event: ReactPointerEvent<HTMLElement>) => void;
+  onStagePointerUp: (event: ReactPointerEvent<HTMLElement>) => void;
+  onStagePointerCancel: (event: ReactPointerEvent<HTMLElement>) => void;
   onStageWheel: (event: WheelEvent<HTMLElement>) => void;
   onStageKeyDown: (event: KeyboardEvent<HTMLElement>) => void;
   onStageCompositionEnd: (event: React.CompositionEvent<HTMLElement>) => void;
 }
 
+interface ActivePointerGesture {
+  pointerId: number;
+  startDisplay: { x: number; y: number };
+  startViewport: { x: number; y: number };
+  lastViewport: { x: number; y: number };
+  path: Array<{ x: number; y: number }>;
+  dragging: boolean;
+  button: 'left' | 'right' | 'middle';
+}
+
 /**
  * 画面交互透传：坐标映射 + 门控（外会话/批注/抢占）+ host dispatch。
  * 批注模式由调用方独占 onClick，本 hook 在 annotate 时 no-op。
+ * R4：pointer 序列支持 drag（mousedown→path→mouseup），click 在未达阈值时发出。
  */
 export function useBrowserStageUserInput(
   options: BrowserStageUserInputOptions,
@@ -57,6 +83,9 @@ export function useBrowserStageUserInput(
   const [interactionPreempted, setInteractionPreempted] = useState(false);
   const [pendingPreemptInput, setPendingPreemptInput] = useState<UserBrowserInputPayload | null>(null);
   const preemptSurfaceRef = useRef<string | null>(null);
+  const gestureRef = useRef<ActivePointerGesture | null>(null);
+  /** pointerup 已发过 click/drag 时吞掉随后合成的 click，避免双发 */
+  const suppressNextClickRef = useRef(false);
 
   // agent 空闲或 surface 切换时清抢占态
   useEffect(() => {
@@ -120,37 +149,167 @@ export function useBrowserStageUserInput(
     send,
   ]);
 
-  const mapClick = useCallback((event: MouseEvent<HTMLElement>): UserBrowserInputPayload | null => {
+  const mapPoint = useCallback((
+    event: { clientX: number; clientY: number; currentTarget: HTMLElement },
+  ): { display: { x: number; y: number }; viewport: { x: number; y: number } } | null => {
     if (!contentWidth || !contentHeight) return null;
     const rect = event.currentTarget.getBoundingClientRect();
     if (rect.width <= 0 || rect.height <= 0) return null;
+    const clientX = Number(event.clientX);
+    const clientY = Number(event.clientY);
+    if (!Number.isFinite(clientX) || !Number.isFinite(clientY)) return null;
+    const display = {
+      x: clientX - rect.left,
+      y: clientY - rect.top,
+    };
     const mapped = mapDisplayPointToViewport(
-      { x: event.clientX - rect.left, y: event.clientY - rect.top },
+      display,
       { width: rect.width, height: rect.height },
       { width: contentWidth, height: contentHeight },
     );
     if (!mapped) return null;
-    const clickCount = event.detail >= 2 ? 2 : 1;
-    const button = event.button === 2 ? 'right' : event.button === 1 ? 'middle' : 'left';
-    return {
-      kind: 'click',
-      x: mapped.x,
-      y: mapped.y,
-      button,
-      clickCount,
-    };
+    return { display, viewport: mapped };
   }, [contentHeight, contentWidth]);
 
   const onStageClick = useCallback((event: MouseEvent<HTMLElement>) => {
+    // pointer 序列已处理主路径；保留 click 仅作兜底（无 pointer 环境）。
     if (annotateMode) return;
-    // 右键留给系统菜单时仍可透传；preventDefault 避免选中拖影
+    if (suppressNextClickRef.current) {
+      suppressNextClickRef.current = false;
+      event.preventDefault();
+      return;
+    }
+    if (gestureRef.current) return;
     event.preventDefault();
     if (!interactive) return;
     event.currentTarget.focus();
     setStageFocused(true);
-    const payload = mapClick(event);
-    if (payload) route(payload);
-  }, [annotateMode, interactive, mapClick, route]);
+    const mapped = mapPoint(event);
+    if (!mapped) return;
+    const clickCount = event.detail >= 2 ? 2 : 1;
+    const button = event.button === 2 ? 'right' : event.button === 1 ? 'middle' : 'left';
+    route({
+      kind: 'click',
+      x: mapped.viewport.x,
+      y: mapped.viewport.y,
+      button,
+      clickCount,
+    });
+  }, [annotateMode, interactive, mapPoint, route]);
+
+  const onStagePointerDown = useCallback((event: ReactPointerEvent<HTMLElement>) => {
+    if (annotateMode || !interactive) return;
+    // 仅接受已知按键；button 缺省时按左键（jsdom / 部分合成事件）
+    if (
+      event.button !== undefined
+      && event.button !== 0
+      && event.button !== 1
+      && event.button !== 2
+    ) {
+      return;
+    }
+    const mapped = mapPoint(event);
+    if (!mapped) return;
+    event.preventDefault();
+    event.currentTarget.focus();
+    setStageFocused(true);
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    } catch {
+      // 部分环境不支持 capture，仍继续本地跟踪
+    }
+    const button = event.button === 2 ? 'right' : event.button === 1 ? 'middle' : 'left';
+    gestureRef.current = {
+      // jsdom 合成事件可能缺 pointerId；用 1 作为默认主指针
+      pointerId: typeof event.pointerId === 'number' ? event.pointerId : 1,
+      startDisplay: mapped.display,
+      startViewport: mapped.viewport,
+      lastViewport: mapped.viewport,
+      path: [],
+      dragging: false,
+      button,
+    };
+  }, [annotateMode, interactive, mapPoint]);
+
+  const onStagePointerMove = useCallback((event: ReactPointerEvent<HTMLElement>) => {
+    const gesture = gestureRef.current;
+    if (!gesture) return;
+    const eventPointerId = typeof event.pointerId === 'number' ? event.pointerId : 1;
+    if (gesture.pointerId !== eventPointerId) return;
+    if (annotateMode || !interactive) return;
+    const mapped = mapPoint(event);
+    if (!mapped) return;
+    const dx = mapped.display.x - gesture.startDisplay.x;
+    const dy = mapped.display.y - gesture.startDisplay.y;
+    const distance = Math.hypot(dx, dy);
+    if (!gesture.dragging && distance < BROWSER_STAGE_VIEWPORT.DRAG_THRESHOLD_PX) {
+      return;
+    }
+    gesture.dragging = true;
+    gesture.lastViewport = mapped.viewport;
+    if (gesture.path.length < BROWSER_STAGE_VIEWPORT.DRAG_PATH_MAX_POINTS) {
+      const last = gesture.path[gesture.path.length - 1];
+      // 去抖：与上一点过近则跳过
+      if (
+        !last
+        || Math.hypot(mapped.viewport.x - last.x, mapped.viewport.y - last.y) >= 1
+      ) {
+        gesture.path.push({ x: mapped.viewport.x, y: mapped.viewport.y });
+      }
+    }
+  }, [annotateMode, interactive, mapPoint]);
+
+  const finishPointerGesture = useCallback((
+    event: ReactPointerEvent<HTMLElement>,
+    cancelled: boolean,
+  ) => {
+    const gesture = gestureRef.current;
+    if (!gesture) return;
+    const eventPointerId = typeof event.pointerId === 'number' ? event.pointerId : 1;
+    if (gesture.pointerId !== eventPointerId) return;
+    gestureRef.current = null;
+    try {
+      if (event.currentTarget.hasPointerCapture?.(eventPointerId)) {
+        event.currentTarget.releasePointerCapture(eventPointerId);
+      }
+    } catch {
+      // ignore
+    }
+    if (annotateMode || !interactive || cancelled) return;
+    suppressNextClickRef.current = true;
+
+    if (gesture.dragging) {
+      const mapped = mapPoint(event);
+      const end = mapped?.viewport ?? gesture.lastViewport;
+      route({
+        kind: 'drag',
+        fromX: gesture.startViewport.x,
+        fromY: gesture.startViewport.y,
+        toX: end.x,
+        toY: end.y,
+        button: gesture.button,
+        ...(gesture.path.length > 0 ? { path: gesture.path } : {}),
+      });
+      return;
+    }
+
+    // 未达拖拽阈值 → 单击
+    route({
+      kind: 'click',
+      x: gesture.startViewport.x,
+      y: gesture.startViewport.y,
+      button: gesture.button,
+      clickCount: 1,
+    });
+  }, [annotateMode, interactive, mapPoint, route]);
+
+  const onStagePointerUp = useCallback((event: ReactPointerEvent<HTMLElement>) => {
+    finishPointerGesture(event, false);
+  }, [finishPointerGesture]);
+
+  const onStagePointerCancel = useCallback((event: ReactPointerEvent<HTMLElement>) => {
+    finishPointerGesture(event, true);
+  }, [finishPointerGesture]);
 
   const onStageWheel = useCallback((event: WheelEvent<HTMLElement>) => {
     if (annotateMode || !interactive) return;
@@ -158,15 +317,10 @@ export function useBrowserStageUserInput(
     let x: number | undefined;
     let y: number | undefined;
     if (contentWidth && contentHeight) {
-      const rect = event.currentTarget.getBoundingClientRect();
-      const mapped = mapDisplayPointToViewport(
-        { x: event.clientX - rect.left, y: event.clientY - rect.top },
-        { width: rect.width, height: rect.height },
-        { width: contentWidth, height: contentHeight },
-      );
+      const mapped = mapPoint(event);
       if (mapped) {
-        x = mapped.x;
-        y = mapped.y;
+        x = mapped.viewport.x;
+        y = mapped.viewport.y;
       }
     }
     route({
@@ -175,7 +329,7 @@ export function useBrowserStageUserInput(
       deltaY: event.deltaY,
       ...(x !== undefined && y !== undefined ? { x, y } : {}),
     });
-  }, [annotateMode, contentHeight, contentWidth, interactive, route]);
+  }, [annotateMode, contentHeight, contentWidth, interactive, mapPoint, route]);
 
   const onStageKeyDown = useCallback((event: KeyboardEvent<HTMLElement>) => {
     if (annotateMode) return;
@@ -239,6 +393,10 @@ export function useBrowserStageUserInput(
     confirmPreempt,
     cancelPreempt,
     onStageClick,
+    onStagePointerDown,
+    onStagePointerMove,
+    onStagePointerUp,
+    onStagePointerCancel,
     onStageWheel,
     onStageKeyDown,
     onStageCompositionEnd,

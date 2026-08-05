@@ -22,6 +22,7 @@ const openHttpLinkInRailAsync = vi.fn(async (_input: unknown) => ({
 const closeUserBrowserLinkRun = vi.fn(async (..._args: unknown[]) => undefined);
 const controlUserBrowserHistory = vi.fn(async (..._args: unknown[]) => null);
 const dispatchUserBrowserInput = vi.fn(async (_input: unknown) => null);
+const setUserBrowserViewport = vi.fn(async (_input: unknown) => null);
 
 let browserSessionState: BrowserSessionState;
 let pointerState: LiveAgentPointerState;
@@ -41,6 +42,7 @@ vi.mock('../../../src/renderer/services/userBrowserLink', () => ({
   closeUserBrowserLinkRun: (...args: unknown[]) => closeUserBrowserLinkRun(...args),
   controlUserBrowserHistory: (...args: unknown[]) => controlUserBrowserHistory(...args),
   dispatchUserBrowserInput: (input: unknown) => dispatchUserBrowserInput(input),
+  setUserBrowserViewport: (input: unknown) => setUserBrowserViewport(input),
 }));
 
 function buildBrowserSessionState(overrides: Partial<BrowserSessionState> = {}): BrowserSessionState {
@@ -137,6 +139,7 @@ describe('BrowserAgentWindow 画面交互透传（P1）', () => {
   beforeEach(() => {
     dispatchUserBrowserInput.mockClear();
     openHttpLinkInRailAsync.mockClear();
+    setUserBrowserViewport.mockClear();
     useAppStore.setState({
       language: 'zh',
       activeWorkbenchTab: 'browser',
@@ -206,7 +209,9 @@ describe('BrowserAgentWindow 画面交互透传（P1）', () => {
     render(<BrowserAgentWindow />);
     const stage = screen.getByTestId('browser-agent-window-stage');
     expect(stage.getAttribute('role')).toBe('application');
-    expect(stage.className).toContain('cursor-crosshair');
+    // R4 F4：可交互态用 default 箭头，不再用 crosshair（用户读成「加号」）
+    expect(stage.className).toContain('cursor-default');
+    expect(stage.className).not.toContain('cursor-crosshair');
     vi.spyOn(stage, 'getBoundingClientRect').mockReturnValue({
       width: 640,
       height: 360,
@@ -265,5 +270,48 @@ describe('BrowserAgentWindow 画面交互透传（P1）', () => {
 
     fireEvent.click(screen.getByText('中断并操作'));
     await waitFor(() => expect(dispatchUserBrowserInput).toHaveBeenCalled());
+  });
+
+  // R4 F3：pointer 拖过阈值应 dispatch drag，且帧 img 禁原生拖图
+  it('拖拽超过阈值时 dispatch drag，且 live frame 禁止 draggable', async () => {
+    render(<BrowserAgentWindow />);
+    const stage = screen.getByTestId('browser-agent-window-stage');
+    vi.spyOn(stage, 'getBoundingClientRect').mockReturnValue({
+      width: 640,
+      height: 360,
+      top: 0,
+      left: 0,
+      right: 640,
+      bottom: 360,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    });
+    const frame = screen.getByTestId('browser-agent-window-frame');
+    expect(frame.getAttribute('draggable')).toBe('false');
+
+    const pointer = (type: string, x: number, y: number) => {
+      const event = new MouseEvent(type, {
+        bubbles: true,
+        cancelable: true,
+        clientX: x,
+        clientY: y,
+        button: 0,
+        buttons: type === 'pointerup' ? 0 : 1,
+      });
+      Object.defineProperty(event, 'pointerId', { value: 1 });
+      fireEvent(stage, event);
+    };
+    pointer('pointerdown', 100, 180);
+    pointer('pointermove', 220, 180);
+    pointer('pointerup', 220, 180);
+
+    await waitFor(() => expect(dispatchUserBrowserInput).toHaveBeenCalled());
+    const payload = dispatchUserBrowserInput.mock.calls[0]![0] as {
+      input: { kind: string; fromX: number; toX: number };
+    };
+    expect(payload.input.kind).toBe('drag');
+    expect(Number.isFinite(payload.input.fromX)).toBe(true);
+    expect(payload.input.toX).toBeGreaterThan(payload.input.fromX);
   });
 });

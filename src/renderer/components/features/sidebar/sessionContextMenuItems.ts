@@ -275,7 +275,7 @@ export function buildSessionContextMenuItems(
       onClick: async () => {
         try {
           const response = await rejectAfter(
-            window.domainAPI?.invoke<{ content: string; suggestedFileName: string }>(
+            window.domainAPI?.invoke<{ content: string; suggestedFileName: string; encoding?: 'utf8' | 'base64' }>(
               IPC_DOMAINS.SESSION,
               'exportDiagnostics',
               { sessionId: session.id },
@@ -286,10 +286,23 @@ export function buildSessionContextMenuItems(
           if (!response?.success || !response.data?.content) {
             throw new Error(response?.error?.message || 'Failed to export session diagnostics');
           }
-          await saveExportToDownloads(
-            response.data.suggestedFileName || `session-log-${session.id}.json`,
-            response.data.content,
-          );
+          const suggestedFileName = response.data.suggestedFileName || `neo-session-${session.id.slice(0, 8)}.zip`;
+          if (response.data.encoding === 'base64') {
+            const saved = await window.domainAPI?.invoke<{ filePath: string }>(
+              IPC_DOMAINS.WORKSPACE,
+              'saveBinaryToDownloads',
+              { fileName: suggestedFileName, base64: response.data.content },
+            );
+            if (!saved?.success || !saved.data?.filePath) {
+              throw new Error(saved?.error?.message || 'Failed to save diagnostics package');
+            }
+            showToast('success', menu.exportSessionLogSavedPath.replace('{path}', saved.data.filePath));
+            void window.domainAPI?.invoke(IPC_DOMAINS.WORKSPACE, 'showItemInFolder', {
+              filePath: saved.data.filePath,
+            });
+          } else {
+            await saveExportToDownloads(suggestedFileName, response.data.content);
+          }
         } catch (error) {
           logger.error('Failed to export session diagnostics', error);
           const openedLogs = await openRuntimeLogsFolder();

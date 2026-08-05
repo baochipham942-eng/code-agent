@@ -358,8 +358,28 @@ function readLogTail(filePath: string): string | null {
  */
 export async function buildSessionLogExport(
   sessionId: string,
-  opts?: { storage?: TelemetryStorage; exportedAt?: number; logFilePath?: string; homeDir?: string },
+  opts?: {
+    storage?: TelemetryStorage;
+    exportedAt?: number;
+    logFilePath?: string;
+    homeDir?: string;
+    format?: 'package-v2' | 'legacy-json';
+  },
 ): Promise<SessionLogExport> {
+  if (opts?.format !== 'legacy-json') {
+    const { buildSessionPackage } = await import('../session/spine/packageBuilder');
+    const result = await buildSessionPackage(sessionId, {
+      storage: opts?.storage,
+      builtAt: opts?.exportedAt,
+      homeDir: opts?.homeDir,
+      privacyLevel: 'shareable',
+    });
+    return {
+      content: result.buffer.toString('base64'),
+      suggestedFileName: result.suggestedFileName,
+      encoding: 'base64',
+    };
+  }
   const bundle = await buildDiagnosticBundle(sessionId, { storage: opts?.storage });
   const sanitized = bundle ? sanitizeDiagnosticBundle(bundle, { homeDir: opts?.homeDir }) : null;
   const homeDir = opts?.homeDir ?? os.homedir();
@@ -380,5 +400,6 @@ export async function buildSessionLogExport(
   return {
     content,
     suggestedFileName: `neo-session-log-${sessionId.slice(0, 8)}-${date}.json`,
+    encoding: 'utf8',
   };
 }

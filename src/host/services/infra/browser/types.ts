@@ -17,6 +17,8 @@ export interface BrowserTab {
   /** Chromium 导航历史：无历史时工具条后退/前进置灰。 */
   canGoBack?: boolean;
   canGoForward?: boolean;
+  /** 当前页 favicon URL（http(s)/data）；拿不到为 null/undefined，页签回落 Globe。 */
+  faviconUrl?: string | null;
 }
 
 export interface ScreenshotResult {

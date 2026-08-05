@@ -7,6 +7,7 @@ import { Brain, Check, X, AlertTriangle } from 'lucide-react';
 import { Button } from '../../primitives';
 import type { PendingMemoryConfirm } from '../../../hooks/useMemoryLearning';
 import { getCategoryLabel, getTypeLabel } from '../../../hooks/useMemoryLearning';
+import { useI18n } from '../../../hooks/useI18n';
 
 interface MemoryConfirmModalProps {
   pending: PendingMemoryConfirm | null;
@@ -19,7 +20,9 @@ export const MemoryConfirmModal: React.FC<MemoryConfirmModalProps> = ({
   onConfirm,
   onDecline,
 }) => {
+  const { t } = useI18n();
   if (!pending) return null;
+  const isDirective = pending.authority === 'directive';
 
   const confidencePercent = Math.round(pending.confidence * 100);
 
@@ -29,7 +32,9 @@ export const MemoryConfirmModal: React.FC<MemoryConfirmModalProps> = ({
         {/* Header */}
         <div className="flex items-center gap-2 px-4 py-3 bg-zinc-800 border-b border-zinc-700">
           <Brain className="w-5 h-5 text-badge-accent" />
-          <span className="font-medium text-zinc-200">确认记忆</span>
+          <span className="font-medium text-zinc-200">
+            {isDirective ? t.memory.confirmDirectiveTitle : t.memory.confirmMemoryTitle}
+          </span>
           <span className="ml-auto flex items-center gap-1 text-xs text-badge-warning">
             <AlertTriangle className="w-3 h-3" />
             {confidencePercent}% 置信度
@@ -53,7 +58,7 @@ export const MemoryConfirmModal: React.FC<MemoryConfirmModalProps> = ({
           </div>
 
           <p className="text-xs text-zinc-500 mb-4">
-            AI 学到了以上内容，是否保存到记忆中？
+            {isDirective ? t.memory.confirmDirectiveBody : t.memory.confirmMemoryBody}
           </p>
 
           {/* Actions */}
@@ -65,7 +70,7 @@ export const MemoryConfirmModal: React.FC<MemoryConfirmModalProps> = ({
               className="flex-1 flex items-center justify-center gap-1.5"
             >
               <X className="w-4 h-4" />
-              跳过
+              {t.memory.confirmSkip}
             </Button>
             <Button
               variant="primary"
@@ -74,7 +79,7 @@ export const MemoryConfirmModal: React.FC<MemoryConfirmModalProps> = ({
               className="flex-1 flex items-center justify-center gap-1.5"
             >
               <Check className="w-4 h-4" />
-              保存
+              {isDirective ? t.memory.confirmDirectiveSave : t.memory.confirmSave}
             </Button>
           </div>
         </div>

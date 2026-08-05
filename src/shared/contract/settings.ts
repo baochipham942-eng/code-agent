@@ -48,6 +48,10 @@ export function resolveVoiceLiveEnabled(
 export interface VoiceLiveSettings {
   /** 总开关：undefined = 默认开启；false = Composer 不显示实时通话入口 */
   enabled?: boolean;
+  /** 单通实时语音预估成本上限；未配置或 <=0 = 不设限。 */
+  callCostLimit?: number;
+  /** 到限动作：默认只提醒；用户可显式改为自动挂断。 */
+  callCostLimitAction?: 'warn' | 'hangup';
   /**
    * 实时语音 Provider。存量配置没有该字段时读取为 DashScope；
    * 不在注册表里的值同样 fail-closed 到 DashScope。

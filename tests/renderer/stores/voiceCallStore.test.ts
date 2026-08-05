@@ -79,4 +79,26 @@ describe('voiceCallStore 动作', () => {
     expect(state.muted).toBe(false);
     expect(selectVoiceVisualState(state)).toBe('idle');
   });
+
+  it('按单通上限标记预估成本越界', () => {
+    const store = useVoiceCallStore.getState();
+    store.dialStarted('s1', undefined, 'server_vad');
+    store.costConfigured(0.05, 'warn');
+    store.usageApplied({
+      totalTokens: 1_000,
+      inputTokens: 500,
+      outputTokens: 500,
+      inputAudioTokens: 500,
+      inputTextTokens: 0,
+      outputAudioTokens: 500,
+      outputTextTokens: 0,
+    }, { amount: 0.067, currency: 'CNY', source: 'test' });
+
+    expect(useVoiceCallStore.getState()).toMatchObject({
+      costLimit: 0.05,
+      costLimitAction: 'warn',
+      costLimitExceeded: true,
+      costEstimate: { amount: 0.067, currency: 'CNY' },
+    });
+  });
 });

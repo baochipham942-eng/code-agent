@@ -57,6 +57,7 @@ export function buildManagedBrowserSessionState(args: {
         title: args.activeTab.title,
         canGoBack: Boolean(args.activeTab.canGoBack),
         canGoForward: Boolean(args.activeTab.canGoForward),
+        faviconUrl: args.activeTab.faviconUrl || null,
       }
       : null,
     mode: args.mode,

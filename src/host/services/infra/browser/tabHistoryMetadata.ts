@@ -25,9 +25,55 @@ export async function refreshBrowserTabHistoryFlags(tab: BrowserTab): Promise<vo
   }
 }
 
-/** URL/title + 历史可用态，供 BrowserService 导航后回写。 */
+/**
+ * 解析当前页 favicon：优先 document link[rel*=icon]，再兜底 origin/favicon.ico。
+ * 拿不到则置 null（renderer 回落 Globe 图标）。
+ */
+export async function refreshBrowserTabFavicon(tab: BrowserTab): Promise<void> {
+  const pageUrl = tab.page.url();
+  let originFallback: string | null = null;
+  try {
+    const parsed = new URL(pageUrl);
+    if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+      originFallback = `${parsed.origin}/favicon.ico`;
+    }
+  } catch {
+    originFallback = null;
+  }
+
+  try {
+    const href = await tab.page.evaluate(() => {
+      const pick = (rel: string): string | null => {
+        const el = document.querySelector<HTMLLinkElement>(`link[rel="${rel}"]`);
+        return el?.href || null;
+      };
+      return pick('icon')
+        || pick('shortcut icon')
+        || document.querySelector<HTMLLinkElement>('link[rel*="icon"]')?.href
+        || null;
+    }).catch(() => null);
+    if (typeof href === 'string' && href.trim()) {
+      try {
+        const absolute = new URL(href, pageUrl).href;
+        if (absolute.startsWith('http://') || absolute.startsWith('https://') || absolute.startsWith('data:')) {
+          tab.faviconUrl = absolute;
+          return;
+        }
+      } catch {
+        // fall through
+      }
+    }
+  } catch {
+    // fall through to origin fallback
+  }
+
+  tab.faviconUrl = originFallback;
+}
+
+/** URL/title + 历史可用态 + favicon，供 BrowserService 导航后回写。 */
 export async function refreshBrowserTabMetadata(tab: BrowserTab): Promise<void> {
   tab.url = tab.page.url();
   tab.title = await tab.page.title().catch(() => tab.title);
   await refreshBrowserTabHistoryFlags(tab);
+  await refreshBrowserTabFavicon(tab);
 }

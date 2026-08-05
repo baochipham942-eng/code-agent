@@ -25,6 +25,9 @@ export interface SurfaceLiveFrameStreamInput {
   visible: boolean;
   /** surface 会话是否在跑（终态会话不该继续烧帧） */
   sessionRunning: boolean;
+  /** R4：帧采集物理宽（stage CSS × dpr 封顶）；缺省用 host 默认 */
+  maxWidth?: number | null;
+  maxHeight?: number | null;
 }
 
 export interface SurfaceLiveFrameStreamState {
@@ -164,7 +167,7 @@ function handoffFrameToStore(
 export function useSurfaceLiveFrames(
   input: SurfaceLiveFrameStreamInput,
 ): SurfaceLiveFrameStreamState {
-  const { conversationId, surfaceSessionId } = input;
+  const { conversationId, surfaceSessionId, maxWidth, maxHeight } = input;
   const shouldStream = shouldStreamSurfaceFrames(input);
   const [frame, setFrame] = useState<SurfaceLiveFrameV1 | null>(null);
   const [streaming, setStreaming] = useState(false);
@@ -176,6 +179,13 @@ export function useSurfaceLiveFrames(
   // 最后一帧的内存持有：终态停流瞬间 setFrame(null) 会抹掉 state，这里留一份供移交 store。
   const lastFrameRef = useRef<SurfaceLiveFrameV1 | null>(null);
   const lastStoreWriteAtRef = useRef(0);
+  // 捕获尺寸：非法/空时不传，host 用默认；变化时 effect 重跑 → stop + start 换分辨率。
+  const captureMaxWidth = typeof maxWidth === 'number' && Number.isFinite(maxWidth) && maxWidth > 0
+    ? Math.round(maxWidth)
+    : undefined;
+  const captureMaxHeight = typeof maxHeight === 'number' && Number.isFinite(maxHeight) && maxHeight > 0
+    ? Math.round(maxHeight)
+    : undefined;
 
   useEffect(() => {
     if (!shouldStream || !conversationId || !surfaceSessionId) {
@@ -188,7 +198,13 @@ export function useSurfaceLiveFrames(
 
     activeSessionRef.current = surfaceSessionId;
     let cancelled = false;
-    const request = { version: 1 as const, conversationId, surfaceSessionId };
+    const request = {
+      version: 1 as const,
+      conversationId,
+      surfaceSessionId,
+      ...(captureMaxWidth !== undefined ? { maxWidth: captureMaxWidth } : {}),
+      ...(captureMaxHeight !== undefined ? { maxHeight: captureMaxHeight } : {}),
+    };
 
     const unsubscribe = ipcService.on(
       IPC_CHANNELS.SURFACE_LIVE_FRAME,
@@ -239,7 +255,7 @@ export function useSurfaceLiveFrames(
       void stopSurfaceLiveStream(request).catch(() => undefined);
       lastFrameRef.current = null;
     };
-  }, [conversationId, shouldStream, surfaceSessionId]);
+  }, [captureMaxHeight, captureMaxWidth, conversationId, shouldStream, surfaceSessionId]);
 
   return { frame, streaming, unavailableReason };
 }

@@ -32,6 +32,7 @@ import { shell } from '../platform';
 import { prepareRuntimeAssetOnDemand } from '../services/cloud/updateService';
 import { getRuntimeAssetsStatus } from '../runtime/runtimeAssetStatus';
 import { getBrowserProfileImportApprovalService } from '../services/surfaceExecution/BrowserProfileImportApprovalService';
+import { getManagedBrowserProviderAdapter } from '../services/surfaceExecution/ManagedBrowserProviderAdapter';
 
 // 音频采集完全走手动触发（录制按钮），不再自动检测会议 app。
 // 自动检测会让 ScreenCaptureKit 在用户未知情时拉起，macOS 统一标注为"屏幕共享"，体验错位。
@@ -128,7 +129,12 @@ export function registerDesktopHandlers(ipcMain: IpcMain): void {
           return { success: true, data: service.getCurrentContext() } satisfies IPCResponse<unknown>;
 
         case 'getManagedBrowserSession':
-          return { success: true, data: browserService.getSessionState() } satisfies IPCResponse<unknown>;
+          // 画面/地址栏读的是 surface 绑定那扇窗（user-browser-link 等），不是默认单例
+          return {
+            success: true,
+            data: getManagedBrowserProviderAdapter().getPreferredUiSessionState()
+              ?? browserService.getSessionState(),
+          } satisfies IPCResponse<unknown>;
 
         case 'ensureManagedBrowserSession': {
           const payload = request.payload as {

@@ -2,7 +2,7 @@
 
 - 状态：accepted
 - 日期：2026-08-04
-- 取代：C1/C2 批的 `queued_next_turn` 默认语义（2026-07-31，仅取代其「等前台 run 结束再作为下一轮发出」的 UX 语义，底层投递基建保留并改名分，见下）
+- 取代：C1/C2 批的“等前台 run 结束再作为下一轮发出”默认语义（2026-07-31；底层投递基建保留并改名分，见下）
 - 关联调研：`code-agent-private-archive/docs/competitive/qwen-audio-agent-借鉴清单.md`（含拍板记录）
 
 ## 背景
@@ -10,7 +10,7 @@
 Neo 当前存在两套「会话」语义：
 
 - **语音路已是指挥台**：`voiceAgentCoordinator` 只产 Intent（即答/派活/steer/取消/查状态），执行走 TaskManager 后台，进度以 `[BACKEND]` 注入播报，通话永不因任务阻塞。
-- **文字路是工作线程**：run 进行中新消息走 `queued_next_turn` 排队（`useAgentIPC.ts` `queueForNextTurn`），会话被执行占用。
+- **文字路曾是工作线程**：run 进行中新消息先进入下一轮队列，会话被执行占用。
 
 同一产品，用户换个输入方式，「会话」的含义就变了。竞品 qwen-audio-agent（阿里 Qwen 团队，前台 7 工具 + spawn 即接即转后台 FIFO）的调研照亮了这一不对齐。产品负责人 2026-08-04 拍板：**聊天式 agent 价值太低，Neo 的会话统一为指挥台**——这与对标 Manus 的产物主轴同向。
 
@@ -20,8 +20,8 @@ Neo 当前存在两套「会话」语义：
 2. **执行全部走账本任务**。每件活 = backgroundTaskLedger 一条任务（内部可 swarm 子 agent），任务终态写入会话消息记录（供指代消解与追问），结果经既有四通路回流（注入会话 / 通话播报 / 系统通知 / 飞书 TG）。
 3. **多槽并发**：通话与文字会话均支持多件活并行。并发上限进 `shared/constants`：全局 4、每会话 2（采用 qwen-audio-agent 生产验证值，其 `task-scheduler.mjs` 硬顶同为 4/2）。同主题后续任务经 **lane 串行**（laneKey + laneLimit=1，防「改 v2 的活和 v1 打架」）；spawn 带 **submissionKey 幂等**（同轮重复工具调用返回既有任务，不重复派活）。每任务有模型起的**短名**，播报、指代、取消一律用短名。
 4. **输入分发 = 模型判断**：后台有活时用户新输入，由 brain 判定是 steer 某件活、新任务、还是即答；歧义时走**既有 askUserQuestion 工具**确认——文字渲染为现有选项卡，语音渲染为模型把问题念出来、用户语音回答映射到选项。不新造确认交互。
-5. **`queued_next_turn` UX 语义退役，投递基建保留并改名分**（2026-08-04 专项调研定论）：
-   - **退役删除**：renderer `queueForNextTurn` 分支、契约里的 `delivery: 'queued_next_turn'` 标记、「排队中/立即发送」UI、drain 的「会话 idle 才触发」语义。
+5. **旧“下一轮排队”UX 语义退役，投递基建保留并改名分**（2026-08-04 专项调研定论）：
+   - **退役删除**：renderer 的下一轮分支、契约里的旧 delivery 标记、「排队中/立即发送」UI、drain 的「会话 idle 才触发」语义。
    - **保留（steer 的内脏，非兼容分支）**：`steerOrQueue`（收口在 `agentOrchestrator.ts`，语音 steer_task 最终也走它）、`QueuedInputRepository`、`queuePendingSteerMessagesOrWarn`（取消/打断时消息保全）、drain 泵（重试上限+失败告警+重启扫描）。统一名分为**输入投递层**（deliver-or-buffer）：向任何 run 投递消息，投不进就缓冲，可投即投。
    - **brain turn 流式中的连发**：走同一投递层（brain turn 也是 run）——能 steer 就并入当前思考，不能就缓冲数秒后自动投递，无用户可见排队态。
    - **目标任务已终态时缓冲区内未投递的 steer 消息**：不静默丢、不自动转新任务——带任务终态上下文回流给前台 brain 判断，歧义走 askUserQuestion。

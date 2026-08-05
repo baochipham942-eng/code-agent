@@ -86,6 +86,7 @@ export function recordTurnMemoryBlock(
 export function recordPackedSeedMemory(
   ctx: RuntimeContext,
   params: {
+    blockType?: TurnQualityMemoryBlock['blockType'];
     block: string;
     packed: MemoryPackResult;
     injected: boolean;
@@ -93,7 +94,7 @@ export function recordPackedSeedMemory(
   },
 ): void {
   recordTurnMemoryBlock(ctx, {
-    blockType: 'seed-memory',
+    blockType: params.blockType ?? 'seed-memory',
     trigger: 'session_start',
     source: params.source,
     injected: params.injected,

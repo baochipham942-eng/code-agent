@@ -765,6 +765,13 @@ export const en: Translations = {
     confidence: 'Confidence',
     createdAt: 'Created At',
     saveHint: 'Press Cmd/Ctrl + Enter to save',
+    confirmMemoryTitle: 'Confirm Memory',
+    confirmMemoryBody: 'AI learned the content above. Save it to memory?',
+    confirmDirectiveTitle: 'Confirm User Directive',
+    confirmDirectiveBody: 'Once saved, this rule takes priority over product defaults in future sessions. You can revoke it in Memory Management, and the write remains auditable.',
+    confirmSkip: 'Skip',
+    confirmSave: 'Save',
+    confirmDirectiveSave: 'Confirm Rule',
   },
 
 

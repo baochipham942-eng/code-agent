@@ -13,7 +13,7 @@ import {
   resolveRealtimeVoiceSelection,
   type RealtimeVoiceProviderProfile,
 } from '../../../shared/constants/realtimeVoiceProviders';
-import type { VoiceClientCommand, VoiceEvent, VoiceFocusContext, VoiceInterruptClassification, VoiceTokenUsage, VoiceTransportHandle, VoiceUserTextInjectionResult, VoiceWorkItem } from '../../../shared/contract/voice';
+import type { VoiceClientCommand, VoiceEvent, VoiceFocusContext, VoiceInterruptClassification, VoiceTokenUsage, VoiceTransportHandle, VoiceUserTextInjectionResult } from '../../../shared/contract/voice';
 import type { VoiceTransport } from '../../../shared/contract/voice';
 import { getDashscopeApiKey } from '../media/imageGenerationService';
 import { createLogger } from '../infra/logger';

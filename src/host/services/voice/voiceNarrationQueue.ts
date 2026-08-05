@@ -207,7 +207,7 @@ function injectNarration(session: NarrationSession, narration: VoiceWorkNarratio
   });
   const ackTimer = setTimeout(() => {
     const current = session.narration.inFlight;
-    if (!current || current.narration.workItemId !== narration.workItemId) return;
+    if (current?.narration.workItemId !== narration.workItemId) return;
     scheduleNarrationRetry(session, narration, rejectionCount, 'playback acknowledgement timed out');
   }, VOICE_NARRATION_PLAYBACK_ACK_TIMEOUT_MS);
   session.narration.inFlight = { narration, rejectionCount, ackTimer };
@@ -216,7 +216,7 @@ function injectNarration(session: NarrationSession, narration: VoiceWorkNarratio
 function markNarrationDelivered(session: NarrationSession, narrationId: string, reason: 'playback' | 'interrupt'): void {
   const state = session.narration;
   const current = state.inFlight;
-  if (!current || current.narration.workItemId !== narrationId) {
+  if (current?.narration.workItemId !== narrationId) {
     logger.warn('unmatched narration delivery acknowledgement', {
       voiceSessionId: session.id,
       narrationId,

@@ -25,7 +25,7 @@ let binding: VoiceQuestionBinding | null = null;
 let pending: PendingVoiceQuestion | null = null;
 
 function normalize(value: string): string {
-  return value.toLocaleLowerCase().replace(/[\s，。！？、,.!?：:；;（）()“”"'\-]/g, '');
+  return value.toLocaleLowerCase().replace(/[\s，。！？、,.!?：:；;（）()“”"'-]/g, '');
 }
 
 function editDistance(left: string, right: string): number {
@@ -156,7 +156,7 @@ export function cancelVoiceQuestion(requestId: string): void {
 
 /** @returns true 表示该 final 是选项回答，调用方不得再让通话 brain 生成普通回复。 */
 export function handleVoiceQuestionTranscript(neoSessionId: string, transcript: string): boolean {
-  if (!binding || binding.neoSessionId !== neoSessionId || !pending) return false;
+  if (binding?.neoSessionId !== neoSessionId || !pending) return false;
   const question = pending.request.questions[pending.index];
   if (!question) return false;
   const answer = matchVoiceQuestionAnswer(question, transcript);

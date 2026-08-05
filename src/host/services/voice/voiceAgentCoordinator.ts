@@ -450,7 +450,7 @@ function announceStop(state: LedgerState, kind: VoiceStopAnnouncementKind, title
  */
 function resolvePendingStop(state: LedgerState, settledId: string): void {
   const stop = state.pendingStop;
-  if (!stop || stop.workItemId !== settledId) return;
+  if (stop?.workItemId !== settledId) return;
   clearTimeout(stop.timer);
   const next = stop.next;
   if (!next) {

@@ -448,7 +448,7 @@ export class ParallelAgentCoordinator extends EventEmitter {
       const executionPromise = executor.execute({
         prompt: resolvedPrompt,
         config: {
-          name: task.role,
+          name: task.name ?? task.role,
           // 持久化角色资产绑定 key（并行路径下 role 即 agent 注册 id）
           roleId: task.role,
           systemPrompt: enhancedPrompt,

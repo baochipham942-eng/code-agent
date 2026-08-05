@@ -143,26 +143,24 @@ describe('TraceNodeRenderer launch request', () => {
     expect(html).toContain('coder');
   });
 
-  it('renders pending launch request as a decision card', () => {
+  it('renders pending launch request as a light decision card', () => {
     const html = renderToStaticMarkup(
       React.createElement(TraceNodeRenderer, {
         node: makeNode(makeLaunchRequest()),
       }),
     );
 
-    // 2026-07-29 拍板：启动审批卡统一迁移到 DecisionCard 骨架——
-    // 问题句 + 选项行（批准启动/拒绝）+ ghost 取消 + primary 确认。
-    expect(html).toContain('Swarm 启动审批');
-    expect(html).toContain('启动 Swarm · 3 个任务？');
+    // 施工单二 B：轻量 inline 问答——问题句 + 摘要一句 + 批准/拒绝，无重型任务清单
+    expect(html).toContain('启动团队');
+    expect(html).toContain('批准 3 个成员启动？');
     expect(html).toContain('准备启动 3 个 agent');
-    expect(html).toContain('批准启动');
+    expect(html).toContain('批准');
     expect(html).toContain('拒绝');
-    expect(html).toContain('取消编排');
+    expect(html).toContain('取消');
     expect(html).toContain('确认');
-    expect(html).toContain('builder');
-    expect(html).toContain('qa');
-    expect(html).toContain('bash');
-    expect(html).toContain('依赖 task-builder');
+    // 重型形态退役：不展开 per-task 工具/依赖列表
+    expect(html).not.toContain('依赖 task-builder');
+    expect(html).not.toContain('bash');
   });
 
   it('renders resolved request feedback without action buttons', () => {
@@ -177,16 +175,12 @@ describe('TraceNodeRenderer launch request', () => {
       }),
     );
 
-    expect(html).toContain('已启动');
+    expect(html).toContain('已批准');
     expect(html).toContain('按计划启动');
-    expect(html).not.toContain('开始执行');
-    expect(html).not.toContain('取消编排');
-    // review P1：settled 历史卡保留 stats + tasks（默认折叠在 <details> 里），
-    // 回看能核对「当时批了什么」
-    expect(html).toContain('编排详情');
-    expect(html).toContain('builder');
-    expect(html).toContain('qa');
-    expect(html).toContain('依赖 task-builder');
+    expect(html).not.toContain('确认');
+    // C4 紧凑历史：摘要 + feedback，不再展开任务清单
+    expect(html).toContain('准备启动 3 个 agent');
+    expect(html).not.toContain('依赖 task-builder');
   });
 
   it('renders user workbench routing badges inline', () => {

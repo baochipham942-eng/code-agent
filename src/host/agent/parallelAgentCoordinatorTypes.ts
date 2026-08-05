@@ -10,6 +10,8 @@ import type { SubagentResult } from './subagentExecutorTypes';
 export interface AgentTask {
   id: string;
   role: string;
+  /** 实例显示名（模型给 name 或同角色去重后的 role-N）；缺省时展示层回退 role */
+  name?: string;
   task: string;
   systemPrompt?: string;
   tools: string[];

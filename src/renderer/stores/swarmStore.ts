@@ -518,7 +518,11 @@ function reduceRunSnapshot(
       break;
   }
 
-  const eventLog = appendEventLog(snapshot.eventLog, buildTimelineEntry(event, snapshot.agents));
+  // 讨论流心跳过滤需要更新前 status；agents 名查找用更新后快照即可
+  const eventLog = appendEventLog(
+    snapshot.eventLog,
+    buildTimelineEntry(event, snapshot.agents, current.agents),
+  );
   snapshot = {
     ...snapshot,
     eventLog,
@@ -528,7 +532,11 @@ function reduceRunSnapshot(
   return { snapshot, completedRun };
 }
 
-function buildTimelineEntry(event: SwarmEvent, agents: SwarmAgentState[]): SwarmTimelineEvent | null {
+function buildTimelineEntry(
+  event: SwarmEvent,
+  agents: SwarmAgentState[],
+  previousAgents: SwarmAgentState[] = agents,
+): SwarmTimelineEvent | null {
   // agent 相关事件大部分通过 agentState 携带 id，而不是 event.data.agentId；
   // fallback 到 agentState.id 保证 timeline entry id 带上 agent 后缀，避免
   // appendEventLog 按 id 去重时把 swarm:agent:added-undefined 和
@@ -597,18 +605,32 @@ function buildTimelineEntry(event: SwarmEvent, agents: SwarmAgentState[]): Swarm
         tone: 'neutral',
         agentId,
       };
-    case 'swarm:agent:updated':
+    case 'swarm:agent:updated': {
+      // 过滤无信息量心跳：host 进度快照会高频 emit agentUpdated，
+      // lastReport 为空且 status 与更新前快照相同 → 不进讨论流（施工单二 A2）。
+      // 成员视图轨迹仍走 agents 快照更新，不依赖 timeline。
+      const nextStatus = event.data.agentState?.status;
+      const nextReport = event.data.agentState?.lastReport;
+      if (!nextReport) {
+        const previous = agentId
+          ? previousAgents.find((agent) => agent.id === agentId)
+          : undefined;
+        if (previous && nextStatus && previous.status === nextStatus) {
+          return null;
+        }
+      }
       return {
         id: `evt-${event.timestamp}-${event.type}-${agentId}`,
         sessionId,
         runId,
         type: event.type,
         timestamp: event.timestamp,
-        title: `${agentName ?? 'Agent'} ${event.data.agentState?.status ?? 'updated'}`,
-        summary: event.data.agentState?.lastReport || '状态已刷新',
-        tone: event.data.agentState?.status === 'running' ? 'warning' : 'neutral',
+        title: `${agentName ?? 'Agent'} ${nextStatus ?? 'updated'}`,
+        summary: nextReport || '状态已刷新',
+        tone: nextStatus === 'running' ? 'warning' : 'neutral',
         agentId,
       };
+    }
     case 'swarm:agent:completed':
       return {
         id: `evt-${event.timestamp}-${event.type}-${agentId}`,

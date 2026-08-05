@@ -20,12 +20,13 @@ const SCOPE_B: SwarmRunScope = {
   treeId: 'tree-b',
 };
 
+// writeAccess:true 才能进等待队列；只读成员在 B 语义下会立即自动批
 const TASK = {
   id: 'same-role-task',
   role: 'reviewer',
   task: 'review',
-  tools: ['Read'],
-  writeAccess: false,
+  tools: ['Write'],
+  writeAccess: true,
 };
 
 describe('SwarmLaunchApprovalGate run scope', () => {

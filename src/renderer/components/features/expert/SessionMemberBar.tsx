@@ -9,14 +9,14 @@
 // ============================================================================
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { X } from 'lucide-react';
+import { Square, X, Zap } from 'lucide-react';
 import { useSwarmStore } from '../../../stores/swarmStore';
 import { useComposerStore } from '../../../stores/composerStore';
 import { useTeamRecipeStore } from '../../../stores/teamRecipeStore';
 import { useAgentRegistryStore } from '../../../stores/agentRegistryStore';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { useI18n } from '../../../hooks/useI18n';
-import type { SwarmAgentState } from '@shared/contract/swarm';
+import type { AgentStatus, SwarmAgentState } from '@shared/contract/swarm';
 import type { SwarmRunAgentRecord } from '@shared/contract/swarmTrace';
 import { readPersistedTeamLead, teamRecipeMemberKey } from '@shared/contract/teamRecipe';
 import { useMemberViewStore } from '../../../stores/memberViewStore';
@@ -24,6 +24,22 @@ import { useComposerNoticeStore, selectSlotCollapsed } from '../../../stores/com
 import { useVoiceCallStore } from '../../../stores/voiceCallStore';
 import { RoleInitialAvatar } from './RoleInitialAvatar';
 import { useDurableSwarmRunDetail } from '../../../hooks/useDurableSwarmRunDetail';
+import { cancelSwarmRunOrFallback } from '../swarm/SwarmInlineMonitor';
+
+function isActiveAgentStatus(status: AgentStatus): boolean {
+  return status === 'pending' || status === 'ready' || status === 'running';
+}
+
+function standbyLike(pills: MemberPill[]): boolean {
+  return pills[0]?.status === 'standby';
+}
+
+// ponytail: 三行格式化，与 SwarmInlineMonitor 历史实现同口径，不提前抽 util
+function formatMemberBarTokens(tokens: number): string {
+  if (tokens < 1000) return String(tokens);
+  if (tokens < 1_000_000) return `${(tokens / 1000).toFixed(1)}K`;
+  return `${(tokens / 1_000_000).toFixed(2)}M`;
+}
 
 export function swarmRunAgentRecordToState(record: SwarmRunAgentRecord): SwarmAgentState {
   return {
@@ -149,9 +165,20 @@ export const SessionMemberBar: React.FC<{ sessionId: string | null }> = ({ sessi
   // 收成一行摘要而不是整条消失。判定收在 composerNoticeStore 一处，这里不自己数卡。
   const blockedByNotice = useComposerNoticeStore((state) => selectSlotCollapsed(state, 'member-bar'));
   const [expandedOverNotice, setExpandedOverNotice] = useState(false);
+  const [stopping, setStopping] = useState(false);
   // 通话中高亮通话身份（§6.7.7；只展示，点击切换 set_active_agent 是 Phase 2）
   const voiceCallLive = useVoiceCallStore((state) => state.phase === 'live' || state.phase === 'connecting');
   const voiceActiveAgentId = useVoiceCallStore((state) => state.activeAgentId);
+  const activeRunId = useSwarmStore((state) => state.activeRunId);
+  const durableDetail = useDurableSwarmRunDetail(sessionId);
+  const totalTokens = durableDetail
+    ? durableDetail.run.totalTokensIn + durableDetail.run.totalTokensOut
+    : 0;
+  const activeAgents = useMemo(
+    () => (durableDetail?.agents ?? []).filter((agent) => isActiveAgentStatus(agent.status)),
+    [durableDetail],
+  );
+  const showSwarmActions = !standbyLike(pills) && activeAgents.length > 0 && Boolean(sessionId && activeRunId);
 
   // 换会话必须退出成员视图，否则会拿上一个会话的成员去渲染这一个
   useEffect(() => { setViewingMemberId(null); }, [sessionId, setViewingMemberId]);
@@ -169,6 +196,19 @@ export const SessionMemberBar: React.FC<{ sessionId: string | null }> = ({ sessi
       return;
     }
     store.setStandbyExcludedMemberKeys([...store.standbyExcludedMemberKeys, pill.standbyKey]);
+  };
+
+  const handleStopAll = async () => {
+    if (stopping || !sessionId || !activeRunId || activeAgents.length === 0) return;
+    setStopping(true);
+    try {
+      await cancelSwarmRunOrFallback(
+        { sessionId, runId: activeRunId },
+        activeAgents.map((agent) => ({ id: agent.agentId })),
+      );
+    } finally {
+      setStopping(false);
+    }
   };
 
   if (pills.length === 0) return null;
@@ -306,6 +346,46 @@ export const SessionMemberBar: React.FC<{ sessionId: string | null }> = ({ sessi
           );
         })}
         {standby && <span className="shrink-0 text-[11px] text-zinc-500">{text.standbyHint}</span>}
+        {/* A3：停止全部 + token 迁到成员条右端；核心操作区只放停止一个动作 */}
+        {(totalTokens > 0 || showSwarmActions) && (
+          <div className="ml-auto flex shrink-0 items-center gap-2 pl-2">
+            {totalTokens > 0 && (
+              <span
+                data-testid="member-bar-tokens"
+                className="flex items-center gap-1 text-[11px] text-badge-info/80"
+                title={text.tokensTitle}
+              >
+                <Zap className="h-3 w-3" aria-hidden />
+                {formatMemberBarTokens(totalTokens)}
+              </span>
+            )}
+            {showSwarmActions && (
+              <button /* ds-allow:button: 成员条右端停止全部是图标级小按钮，Button primitive 无此紧凑变体 */
+                type="button"
+                data-testid="member-bar-stop-all"
+                onClick={() => { void handleStopAll(); }}
+                disabled={stopping || activeAgents.length === 0 || !sessionId || !activeRunId}
+                className={`rounded-full p-1 transition-colors ${
+                  stopping
+                    ? 'cursor-wait text-zinc-600'
+                    : 'text-zinc-400 hover:bg-zinc-700 hover:text-badge-danger'
+                } disabled:cursor-not-allowed disabled:opacity-50`}
+                title={
+                  stopping
+                    ? text.stopAllStopping
+                    : text.stopAllTitle.replace('{count}', String(activeAgents.length))
+                }
+                aria-label={
+                  stopping
+                    ? text.stopAllStopping
+                    : text.stopAllTitle.replace('{count}', String(activeAgents.length))
+                }
+              >
+                <Square className="h-3 w-3" aria-hidden />
+              </button>
+            )}
+          </div>
+        )}
       </div>
     </>
   );

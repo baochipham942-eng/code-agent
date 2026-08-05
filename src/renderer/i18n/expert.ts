@@ -44,6 +44,10 @@ export const expertZh = {
       collapsedWorking: '{count} 位成员工作中',
       collapsedDone: '{count} 位成员已完成',
       collapsedStandby: '{count} 位成员待命中',
+      stopAll: '停止全部',
+      stopAllTitle: '停止全部 {count} 个成员',
+      stopAllStopping: '正在停止…',
+      tokensTitle: '本次组队已花 Token（实时累计）',
     },
     workRecord: {
       title: '工作记录',
@@ -261,6 +265,10 @@ export const expertEn: typeof expertZh = {
       collapsedWorking: '{count} working',
       collapsedDone: '{count} done',
       collapsedStandby: '{count} on standby',
+      stopAll: 'Stop all',
+      stopAllTitle: 'Stop all {count} members',
+      stopAllStopping: 'Stopping…',
+      tokensTitle: 'Team tokens used so far (live total)',
     },
     workRecord: {
       title: 'Work record',

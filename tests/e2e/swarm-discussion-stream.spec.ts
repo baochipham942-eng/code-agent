@@ -2,7 +2,7 @@
 // E2E: swarm 讨论流（P1-3 多 agent 协作过程可见性）
 // ============================================================================
 // 验证 swarm:context:update 事件穿越真实链路（EventBus → SSE → swarmStore →
-// SwarmInlineMonitor）后，「讨论流」渲染出发现 / 决策 / 人话状态，且决策点高亮。
+// SwarmInlineMonitor 讨论流壳）后，「讨论流」渲染出发现 / 决策 / 人话状态，且决策点高亮。
 //
 // 真实路径同 swarm-chain.spec.ts：仅 POST /api/dev/emit-swarm-event 是 test-only，
 // 其余节点全是生产代码。
@@ -69,7 +69,7 @@ test('swarm:context:update 渲染成讨论流，决策点高亮', async ({ page,
   const treeId = `e2e-discussion-tree-${base}`;
   const agentId = `agent-researcher-${base}`;
 
-  // 1. swarm 启动 + 一个运行中 agent —— SwarmInlineMonitor 浮层才会渲染
+  // 1. swarm 启动 + 一个运行中 agent（成员条是唯一成员列表；讨论流壳按 eventLog 自显）
   await emitSwarmEvent(request, token, {
     type: 'swarm:started',
     sessionId,
@@ -90,9 +90,6 @@ test('swarm:context:update 渲染成讨论流，决策点高亮', async ({ page,
       agentState: { id: agentId, name: '研究员', role: 'researcher', status: 'running', iterations: 0, startTime: base + 1 },
     },
   });
-
-  // 浮层出现
-  await expect(page.getByText('background agent', { exact: false }).first()).toBeVisible({ timeout: 10_000 });
 
   // 2. SharedContext 协作过程：发现 / 决策 / 人话状态
   const findingMark = `e2e-finding-${base}`;

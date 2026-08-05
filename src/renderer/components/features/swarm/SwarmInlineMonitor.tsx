@@ -1,70 +1,16 @@
 // ============================================================================
-// SwarmInlineMonitor - 主消息流底部 sticky 浮层，跟踪所有活跃子 Agent
+// SwarmInlineMonitor - 讨论流浮层壳（施工单二 A3）
 // ============================================================================
-// 对照 Codex 截图："5 background agents (@ to tag agents)" 浮层一直挂在
-// ChatInput 之上，每个 agent 一行：彩色名字 + role + 状态 + Open 按钮。
-// CA 之前 swarm 状态藏在右侧 SwarmMonitor Tab，要切换才能看；这层让它跟随
-// 消息流一直可见，不强迫用户跳屏。
-//
-// 仅在 swarm 实际运行时（agents 列表有 active 的）显示，不污染普通对话。
+// 成员列表已收敛到 SessionMemberBar；停止全部 / totalTokens 也迁到成员条。
+// 本组件只保留 DiscussionStream 挂载壳 + cancelSwarmRunOrFallback 导出
+// （成员条与单测复用停止语义）。
 // ============================================================================
 
-import React, { useState } from 'react';
-import { Bot, ChevronUp, ChevronDown, Square, ExternalLink, Zap } from 'lucide-react';
-import { useSwarmStore } from '../../../stores/swarmStore';
+import type { SwarmAgentState, SwarmRunRef } from '@shared/contract/swarm';
 import { IPC_CHANNELS } from '@shared/ipc';
-import type { AgentStatus, SwarmAgentState, SwarmRunRef } from '@shared/contract/swarm';
 import ipcService from '../../../services/ipcService';
+import { useSwarmStore } from '../../../stores/swarmStore';
 import { DiscussionStream } from './DiscussionStream';
-import { AgentWorkRecordDialog } from './AgentWorkRecordDialog';
-import type { SwarmRunAgentRecord } from '@shared/contract/swarmTrace';
-import { useDurableSwarmRunDetail } from '../../../hooks/useDurableSwarmRunDetail';
-import { swarmRunAgentRecordToState } from '../expert/SessionMemberBar';
-
-const AGENT_COLORS = [
-  'text-badge-success',
-  'text-badge-accent',
-  'text-badge-info',
-  'text-badge-warning',
-  'text-badge-accent',
-  'text-badge-info',
-] as const;
-
-function colorFor(id: string): string {
-  let h = 0;
-  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) | 0;
-  return AGENT_COLORS[Math.abs(h) % AGENT_COLORS.length];
-}
-
-const STATUS_TEXT: Record<AgentStatus, string> = {
-  pending: '等待依赖',
-  ready: 'awaiting instruction',
-  running: 'is working',
-  completed: 'completed',
-  failed: 'failed',
-  cancelled: 'cancelled',
-};
-
-const STATUS_COLOR: Record<AgentStatus, string> = {
-  pending: 'text-zinc-500',
-  ready: 'text-badge-warning',
-  running: 'text-badge-success',
-  completed: 'text-zinc-500',
-  failed: 'text-badge-danger',
-  cancelled: 'text-zinc-500',
-};
-
-function isActive(s: AgentStatus): boolean {
-  return s === 'pending' || s === 'ready' || s === 'running';
-}
-
-// ponytail: 本地 3 行格式化，formatTokens 已在 SwarmMonitor/SwarmTraceHistory 各存一份
-// 且未导出，项目规则「三行重复优于过早抽象」故就地复制，不新起共享 util。
-function formatInlineTokens(tokens: number): string {
-  if (tokens < 1000) return String(tokens);
-  if (tokens < 1_000_000) return `${(tokens / 1000).toFixed(1)}K`;
-  return `${(tokens / 1_000_000).toFixed(2)}M`;
-}
 
 export async function cancelSwarmRunOrFallback(
   scope: SwarmRunRef,
@@ -86,122 +32,14 @@ export async function cancelSwarmRunOrFallback(
 }
 
 export function SwarmInlineMonitor() {
-  const activeSessionId = useSwarmStore((s) => s.activeSessionId);
-  const activeRunId = useSwarmStore((s) => s.activeRunId);
-  const durableDetail = useDurableSwarmRunDetail(activeSessionId ?? null);
-  const agents = durableDetail?.agents.map(swarmRunAgentRecordToState) ?? [];
-  const totalTokens = durableDetail
-    ? durableDetail.run.totalTokensIn + durableDetail.run.totalTokensOut
-    : 0;
-  const isRunning = durableDetail?.run.status === 'running';
-  const [collapsed, setCollapsed] = useState(false);
-  const [stopping, setStopping] = useState(false);
-  const [selectedAgent, setSelectedAgent] = useState<SwarmAgentState | null>(null);
-  const [selectedRecord, setSelectedRecord] = useState<SwarmRunAgentRecord | null>(null);
-  const [recordLoading, setRecordLoading] = useState(false);
-
-  const activeAgents = agents.filter((a) => isActive(a.status));
-  // swarm 没跑或没活跃 agent 时不渲染
-  if (!isRunning && activeAgents.length === 0) return null;
-  if (agents.length === 0) return null;
-
-  const handleStopAll = async () => {
-    if (stopping || activeAgents.length === 0 || !activeSessionId || !activeRunId) return;
-    setStopping(true);
-    try {
-      await cancelSwarmRunOrFallback(
-        { sessionId: activeSessionId, runId: activeRunId },
-        activeAgents,
-      );
-    } finally {
-      setStopping(false);
-    }
-  };
-
-  const openWorkRecord = (agent: SwarmAgentState) => {
-    setSelectedAgent(agent);
-    setSelectedRecord(durableDetail?.agents.find((item) => item.agentId === agent.id) ?? null);
-    setRecordLoading(false);
-  };
+  const eventLogLength = useSwarmStore((s) => (s.eventLog ?? []).length);
+  if (eventLogLength === 0) return null;
 
   return (
     <div className="w-full shrink-0 chat-col-pad">
       <div className="mx-auto max-w-3xl rounded-lg border border-zinc-700/70 bg-zinc-900/95 backdrop-blur-sm shadow-xl text-xs">
-        <div className="flex items-center gap-2 px-3 py-2">
-          <Bot size={14} className="text-zinc-400" />
-          <span className="text-zinc-300">
-            {activeAgents.length} background agent{activeAgents.length > 1 ? 's' : ''}
-          </span>
-          <span className="text-zinc-500">(@ to tag agents)</span>
-          <div className="ml-auto flex items-center gap-2">
-            {totalTokens > 0 && (
-              <span
-                className="flex items-center gap-1 text-badge-info/80"
-                title="本次组队已花 Token（实时累计）"
-              >
-                <Zap size={12} />
-                {formatInlineTokens(totalTokens)}
-              </span>
-            )}
-            <button
-              type="button"
-              onClick={handleStopAll}
-              disabled={stopping || activeAgents.length === 0 || !activeSessionId || !activeRunId}
-              className={`transition-colors ${
-                stopping
-                  ? 'text-zinc-600 cursor-wait'
-                  : 'text-zinc-400 hover:text-badge-danger'
-              } disabled:cursor-not-allowed disabled:opacity-50`}
-              title={stopping ? '正在停止…' : `停止全部 ${activeAgents.length} 个 agent`}
-            >
-              <Square size={12} />
-            </button>
-            <button
-              type="button"
-              onClick={() => setCollapsed(!collapsed)}
-              className="text-zinc-400 hover:text-zinc-200 transition-colors"
-              title={collapsed ? '展开' : '折叠'}
-            >
-              {collapsed ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-            </button>
-          </div>
-        </div>
-        {!collapsed && (
-          <>
-            <div className="border-t border-zinc-700/40 max-h-48 overflow-y-auto">
-              {agents.map((agent) => (
-                <SwarmAgentRow key={agent.id} agent={agent} onOpen={() => openWorkRecord(agent)} />
-              ))}
-            </div>
-            {/* 协作过程可见性（P1-3）：agent 间讨论 / 发现 / 决策 / 人话状态 */}
-            <DiscussionStream />
-          </>
-        )}
+        <DiscussionStream />
       </div>
-      {selectedAgent ? <AgentWorkRecordDialog agent={selectedAgent} record={selectedRecord} loading={recordLoading} onBack={() => setSelectedAgent(null)} /> : null}
-    </div>
-  );
-}
-
-function SwarmAgentRow({ agent, onOpen }: { agent: SwarmAgentState; onOpen: () => void }) {
-  const colorClass = colorFor(agent.id);
-
-  return (
-    <div className="flex items-center gap-2 px-3 py-1.5 hover:bg-zinc-800/40 transition-colors">
-      <span className={`font-semibold ${colorClass}`}>{agent.name || agent.id.slice(0, 8)}</span>
-      <span className="text-zinc-500">({agent.role})</span>
-      <span className={`${STATUS_COLOR[agent.status]} ${agent.status === 'running' ? 'italic' : ''}`}>
-        {STATUS_TEXT[agent.status]}
-      </span>
-      <button
-        type="button"
-        onClick={onOpen}
-        className="ml-auto flex items-center gap-1 text-zinc-500 hover:text-zinc-200 transition-colors"
-        title={`查看 ${agent.name || agent.id} 详情`}
-      >
-        Open
-        <ExternalLink size={10} />
-      </button>
     </div>
   );
 }

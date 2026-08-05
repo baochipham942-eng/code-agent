@@ -8,6 +8,7 @@ import { EventEmitter } from 'events';
 import type { VoiceEvent, VoiceTransport, VoiceTransportHandle, VoiceTurnDetectionConfig } from '../../src/shared/contract/voice';
 import {
   QWEN_OMNI_REALTIME_MODEL,
+  VOICE_INJECTION_ACK_WINDOW_MS,
   VOICE_UPSTREAM_RESPONSE_TIMEOUT_MS,
 } from '../../src/shared/constants/voice';
 import { REALTIME_VOICE_PROVIDER_PROFILES } from '../../src/shared/constants/realtimeVoiceProviders';
@@ -798,6 +799,58 @@ describe('VoiceTransport 契约（relay / direct 双跑）', () => {
     });
 
     await handle.close();
+  });
+
+  it('narration id 只投影到对应注入创建的 response', async () => {
+    const events: VoiceEvent[] = [];
+    const handle = await qwenOmniTransport.connect({
+      apiKey: 'test-key',
+      config: { neoSessionId: 's1' },
+      onEvent: (event) => events.push(event),
+      onAudio: vi.fn(),
+    });
+    if (handle.kind !== 'relay') throw new Error('unreachable');
+    const upstream = upstreams[upstreams.length - 1];
+
+    handle.injectItem('播报季度复盘', 'narration-1');
+    upstream.emit('message', JSON.stringify({ type: 'response.created', response_id: 'response-1' }));
+    expect(events.at(-1)).toEqual({
+      type: 'response.created',
+      responseId: 'response-1',
+      narrationId: 'narration-1',
+    });
+
+    upstream.emit('message', JSON.stringify({ type: 'response.done', response_id: 'response-1' }));
+    upstream.emit('message', JSON.stringify({ type: 'response.created', response_id: 'response-2' }));
+    expect(events.at(-1)).toEqual({ type: 'response.created', responseId: 'response-2' });
+    await handle.close();
+  });
+
+  it('fire-and-forget 播报未获 response.created 时释放注入锁并 fail-loud', async () => {
+    vi.useFakeTimers();
+    const events: VoiceEvent[] = [];
+    const connecting = qwenOmniTransport.connect({
+      apiKey: 'test-key',
+      config: { neoSessionId: 's1' },
+      onEvent: (event) => events.push(event),
+      onAudio: vi.fn(),
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    const handle = await connecting;
+    if (handle.kind !== 'relay') throw new Error('unreachable');
+    const upstream = upstreams[upstreams.length - 1];
+
+    handle.injectItem('第一次播报', 'narration-1');
+    await vi.advanceTimersByTimeAsync(VOICE_INJECTION_ACK_WINDOW_MS);
+    expect(events.at(-1)).toEqual({
+      type: 'injection.rejected',
+      message: 'voice injection acknowledgement timed out',
+    });
+
+    handle.injectItem('第二次播报', 'narration-1');
+    expect(upstream.sent.filter((raw) => JSON.parse(raw).type === 'conversation.item.create')).toHaveLength(2);
+    await handle.close();
+    vi.useRealTimers();
   });
 
   it('socket error 与 close 不受注入确认窗影响，仍是连接级事件', async () => {

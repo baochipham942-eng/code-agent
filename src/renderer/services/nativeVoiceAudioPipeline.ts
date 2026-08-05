@@ -131,6 +131,7 @@ export class NativeVoiceAudioPipeline implements VoiceAudioPipelineLike {
       .then(async () => {
         if (this.stopped || generation !== this.playbackGeneration) return;
         await writeNativeVoiceAecPlayback(data);
+        this.callbacks.onPlaybackStarted?.();
       })
       .catch(() => this.fail('NATIVE_AEC_PLAYBACK_FAILED'));
   }

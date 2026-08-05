@@ -69,11 +69,13 @@ describe('NativeVoiceAudioPipeline', () => {
   });
 
   it('下行、barge-in 与 PTT 门都走 Rust 控制通道', async () => {
-    const pipeline = new NativeVoiceAudioPipeline({ onFrame: vi.fn() });
+    const onPlaybackStarted = vi.fn();
+    const pipeline = new NativeVoiceAudioPipeline({ onFrame: vi.fn(), onPlaybackStarted });
     await pipeline.start();
 
     pipeline.enqueuePlayback(new Int16Array([1, 2, 3]));
     await vi.waitFor(() => expect(mocks.writePlayback).toHaveBeenCalledTimes(1));
+    expect(onPlaybackStarted).toHaveBeenCalledTimes(1);
 
     pipeline.clearPlayback();
     await vi.waitFor(() => expect(mocks.control).toHaveBeenCalledWith('clear'));

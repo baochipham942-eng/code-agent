@@ -362,6 +362,19 @@ export const VOICE_MILESTONE_FIRST_DELAY_MS = 800;
  */
 export const VOICE_MILESTONE_STALE_MS = 60_000;
 
+/** 播报注入后等待 Renderer 确认真正开始播放的窗口。 */
+export const VOICE_NARRATION_PLAYBACK_ACK_TIMEOUT_MS = 5_000;
+
+/** 未确认播报的指数退避基数与封顶；第 n 次等待为 base * 2^n。 */
+export const VOICE_NARRATION_RETRY_BASE_MS = 500;
+export const VOICE_NARRATION_RETRY_MAX_MS = 8_000;
+
+/** 终态播报最多重试次数；首次注入不计入 retries。 */
+export const VOICE_NARRATION_MAX_RETRY_ATTEMPTS = 8;
+
+/** 外部文字/播报注入等待上游创建 response 的确认窗。 */
+export const VOICE_INJECTION_ACK_WINDOW_MS = 5_000;
+
 /**
  * 回头找「这一轮的结论」时往回翻几条消息。一轮 run 的尾部是 assistant 收尾语，
  * 中间隔的是工具调用消息；30 条足够跨过一轮的工具流，又不至于把上一件活的结论捞回来。

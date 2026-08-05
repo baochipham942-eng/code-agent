@@ -102,6 +102,7 @@ import {
 import { getTrailingSlashToken } from './slashPickerModel';
 import type { InlineChipRef } from './composerRichTextModel';
 import type { InlineChipView } from './InlineComposerChip';
+import { usePinnedLibraryItems } from './PinnedLibraryChips';
 import { buildMentionAttachment } from './mentionAttachment';
 import { AgentChip } from './AgentChip';
 import { MountedConnectorIcons } from './MountedConnectorIcons';
@@ -372,6 +373,12 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   // 文字流内联 chip（WorkBuddy phrase chip 模型）：chip 是 store 的渲染，不是数据源。
   // 命令 → pendingCommand（teal）；当轮 skill → selectedSkillIds（sparkle）；
   // @ 文件 → attachments（文件类型图标）。视觉顺序由编辑器 DOM 里的挂载点位置决定。
+  // 本会话 pin 的资料并入文字流（产品负责人 2026-08-05：不再独立一行）
+  const { pinnedItems: pinnedLibraryItems, removePin: removeLibraryPin } = usePinnedLibraryItems(currentSessionId ?? null);
+  const pinnedLibraryItemsRef = useRef(pinnedLibraryItems);
+  pinnedLibraryItemsRef.current = pinnedLibraryItems;
+  const removeLibraryPinRef = useRef(removeLibraryPin);
+  removeLibraryPinRef.current = removeLibraryPin;
   const inlineChips = useMemo<InlineChipView[]>(() => {
     const chips: InlineChipView[] = [];
     if (pendingCommand) {
@@ -390,8 +397,11 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
         category: attachment.category,
       });
     }
+    for (const item of pinnedLibraryItems) {
+      chips.push({ key: `library:${item.id}`, kind: 'library', id: item.id, label: item.title });
+    }
     return chips;
-  }, [pendingCommand, selectedSkillIds, attachments, capabilityRegistry.items]);
+  }, [pendingCommand, selectedSkillIds, attachments, pinnedLibraryItems, capabilityRegistry.items]);
 
   // slash 面板选中后：光标前的触发词（/goal、/sk…）原位替换成 chip 挂载点。
   // 无触发词（+ 菜单等无光标来源）时 no-op——store 更新后编辑器对账会把 chip 补到末尾。
@@ -418,8 +428,12 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
       store.setSelectedSkillIds(store.selectedSkillIds.filter((id) => id !== chip.id));
       return;
     }
+    if (chip.kind === 'library') {
+      removeLibraryPin(chip.id);
+      return;
+    }
     setAttachments((prev) => prev.filter((attachment) => attachment.id !== chip.id));
-  }, []);
+  }, [removeLibraryPin]);
 
   // 浏览器侧删了 chip（框选删除 / 剪切）：DOM 现存的 chip key 回传，缺席的 store 条目同步移除。
   const handleInlineChipsChanged = useCallback((presentKeys: string[]) => {
@@ -437,6 +451,9 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
       const next = prev.filter((attachment) => present.has(`file:${attachment.id}`));
       return next.length === prev.length ? prev : next;
     });
+    for (const item of pinnedLibraryItemsRef.current) {
+      if (!present.has(`library:${item.id}`)) removeLibraryPinRef.current(item.id);
+    }
   }, []);
 
   const buildEnvelope = useChatInputEnvelope({
@@ -1252,7 +1269,10 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
               右侧 时长 + 停止 + 发送）——不在输入框上方另悬浮一条，也就不会出现
               两个发送键（产品负责人 2026-07-27 真机反馈，形态对齐 Codex composer）。
               输入框本体全程可见可编辑。 */}
-          <div className="flex items-center gap-1 pl-4 pr-[7.5px] pb-[16.5px]">
+          <div className="flex items-center gap-1 px-4 pb-2">
+            {/* pb-2(8) 不是 16 的笔误：行内图标是 16px 字形居中在 32px 点击盒里，
+                盒底自带 8px 隐形 chrome，8+8=16 才是肉眼看到的「图标到下边框」距离，
+                与左轨的 16 一致（左侧靠「+」的 -ml-2 补偿同一件事）。 */}
             {/* "+" 二级菜单（Codex 风格 B+）— 收纳上传附件 + 能力入口 + 交互模式 */}
             <InputAddMenu
               onFileSelect={handleFileSelect}

@@ -176,6 +176,12 @@ export const InputArea = forwardRef<InputAreaRef, InputAreaProps>(
     const emitChange = useCallback(() => {
       const root = editorRef.current;
       if (!root) return;
+      // 删光全部文字后 WebKit 会留一个占位 <br>：本编辑器换行走 '\n' 文本（见下方
+      // Shift+Enter 注释），<br> 只会是浏览器残留——不清掉它 extract 读成 '\n'，
+      // placeholder 被「非空」吞掉、光标也没有可落的文本节点（真机 2026-08-05）。
+      if (root.childNodes.length > 0 && (root.textContent ?? '') === '' && listChipMounts(root).length === 0) {
+        root.replaceChildren();
+      }
       const text = extractComposerPlainText(root);
       lastEmittedRef.current = text;
       lastCaretRef.current = getCaretPlainTextOffset(root) ?? text.length;
@@ -441,8 +447,12 @@ export const InputArea = forwardRef<InputAreaRef, InputAreaProps>(
           className="hidden"
         />
 
-        {/* 文字区上方 chip（非文字流：@neo 续接 / appshot / pin 资料） */}
-        {chips ? <div className="px-4 pt-3 empty:hidden">{chips}</div> : null}
+        {/* 文字区上方 chip（非文字流：appshot / pin 资料）。
+            本容器不带任何 pt/mb：ComposerChipsRow 里的 appshot 锚点空闲时也常驻 DOM，
+            `empty:hidden` 对它永远不生效，容器级 padding 会在没 chip 时白占高度、
+            把正文顶离 16px 轨（真机 2026-08-05：placeholder 顶到 37px）。
+            可见间距由各 chip 自己的 mt 提供，空闲成本为零。 */}
+        {chips ? <div className="px-4">{chips}</div> : null}
 
         {/* 文本编辑区（contenteditable）：文字与内联 chip 按阅读顺序混排 */}
         <div className="relative">
@@ -478,7 +488,7 @@ export const InputArea = forwardRef<InputAreaRef, InputAreaProps>(
             onPaste={handlePaste}
             onFocus={() => onFocusChange(true)}
             onBlur={() => onFocusChange(false)}
-            className={`chat-composer-textarea min-h-6 w-full cursor-text whitespace-pre-wrap break-words bg-transparent px-4 pt-4 pb-10 text-sm text-zinc-200 focus:outline-hidden focus-visible:outline-none focus-visible:ring-0 max-h-[200px] overflow-y-auto leading-relaxed ${disabled ? 'opacity-50' : ''}`}
+            className={`chat-composer-textarea min-h-6 w-full cursor-text whitespace-pre-wrap break-words bg-transparent px-4 pt-4 pb-4 text-sm text-zinc-200 focus:outline-hidden focus-visible:outline-none focus-visible:ring-0 max-h-[200px] overflow-y-auto leading-relaxed ${disabled ? 'opacity-50' : ''}`}
           />
           {/* 内联 chip 经 portal 填进各自的 contenteditable=false 挂载点 */}
           {portalTargets.map(({ chip, el }) => createPortal(

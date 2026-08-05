@@ -35,11 +35,6 @@ function getExt(fileName: string): string {
   return dot >= 0 ? fileName.slice(dot + 1).toLowerCase() : '';
 }
 
-function extractToolName(ownerLabel: string): string {
-  const parts = ownerLabel.split(' · ');
-  return parts[parts.length - 1] || ownerLabel;
-}
-
 function pickIcon(ext: string): React.ReactNode {
   const cls = 'h-3.5 w-3.5 flex-shrink-0';
   if (['md', 'mdx', 'txt'].includes(ext)) return <FileText className={`${cls} text-zinc-400`} />;
@@ -58,7 +53,6 @@ export const FileArtifactCard: React.FC<Props> = ({ items, mediaContext }) => {
     const nextMediaEntries: Array<{
       item: TurnArtifactOwnershipItem;
       ext: string;
-      status: 'created' | 'modified';
       mediaAsset: SessionMediaAsset;
     }> = [];
     const nonMediaItems: TurnArtifactOwnershipItem[] = [];
@@ -66,11 +60,9 @@ export const FileArtifactCard: React.FC<Props> = ({ items, mediaContext }) => {
     for (const item of items) {
       const mediaAsset = buildArtifactOwnershipMediaAsset(item, mediaContext);
       if (mediaAsset) {
-        const toolName = extractToolName(item.ownerLabel);
         nextMediaEntries.push({
           item,
           ext: getExt(item.label || item.path || ''),
-          status: toolName === 'Write' ? 'created' : 'modified',
           mediaAsset,
         });
       } else {
@@ -88,13 +80,15 @@ export const FileArtifactCard: React.FC<Props> = ({ items, mediaContext }) => {
 
   return (
     <div className="space-y-1.5">
-      {mediaEntries.map(({ item, ext, status, mediaAsset }) => {
+      {mediaEntries.map(({ item, ext, mediaAsset }) => {
         const mediaSrc = getRenderableMediaSrc(mediaAsset);
         return (
           <div
             key={`${item.sourceNodeId || ''}:${mediaAsset.path || mediaAsset.url || item.label}`}
-            /* 卡片跟着缩略图收宽（2026-08-04 产品负责人：别通栏），min-w 兜住头部文件名+尾部动作条 */
-            className="w-fit min-w-64 max-w-full overflow-hidden rounded-md border border-border-muted bg-surface-subtle transition-colors hover:border-border-muted hover:bg-surface-subtle"
+            /* 卡片跟着缩略图收宽（2026-08-04 产品负责人：别通栏），min-w 兜住头部文件名+尾部动作条。
+               overflow-visible：动作条的 ⋯ 溢出菜单朝卡片外弹，overflow-hidden 会把菜单整个裁掉
+               （2026-08-05 真机：「三个点点了没反应」）；圆角由尾行自己的 rounded-b 补。 */
+            className="w-fit min-w-64 max-w-full overflow-visible rounded-md border border-border-muted bg-surface-subtle transition-colors hover:border-border-muted hover:bg-surface-subtle"
             title={mediaAsset.path || mediaAsset.url || item.label}
           >
             <div className="flex items-center gap-2 px-2.5 py-1.5">
@@ -102,15 +96,8 @@ export const FileArtifactCard: React.FC<Props> = ({ items, mediaContext }) => {
               <span className="min-w-0 flex-1 truncate text-xs font-medium text-zinc-100">
                 {item.label}
               </span>
-              <span
-                className={`flex-shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium ${
-                  status === 'created'
-                    ? 'bg-emerald-500/12 text-badge-success'
-                    : 'bg-amber-500/12 text-badge-warning'
-                }`}
-              >
-                {status === 'created' ? 'Created' : 'Modified'}
-              </span>
+              {/* 2026-08-05 产品负责人：媒体产物卡不摆文件状态角标——生成图被标 Modified 是错的，
+                  且英文黑话对用户零信息量；文件编辑状态由「已编辑文件」卡（TurnDiffSummary）负责。 */}
             </div>
 
             {mediaAsset.kind === 'image' && mediaSrc && (
@@ -138,8 +125,9 @@ export const FileArtifactCard: React.FC<Props> = ({ items, mediaContext }) => {
               </button>
             )}
 
-            <div className="flex items-center justify-between gap-2 border-t border-border-muted bg-black/10 px-2.5 py-1.5">
-              <span className="truncate text-[11px] text-zinc-500">{extractToolName(item.ownerLabel)}</span>
+            {/* 2026-08-05 产品负责人：尾行不摆内部工具名（image_generate 等），只留动作按钮；
+                rounded-b 补回容器 overflow-visible 后损失的底角裁切 */}
+            <div className="flex items-center justify-end gap-2 rounded-b-[5px] border-t border-border-muted bg-black/10 px-2.5 py-1.5">
               <MediaAssetActionBar
                 asset={mediaAsset}
                 compact

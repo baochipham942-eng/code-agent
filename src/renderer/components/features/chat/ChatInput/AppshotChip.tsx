@@ -22,6 +22,8 @@ export interface AppshotChipProps {
   onRemove?: () => void;
   /** 飞入 handoff 前的占位态：结构已在 DOM（尺寸=落点），但整体不可见，handoff 后零位移显形 */
   reserved?: boolean;
+  /** 附加到根节点的类名（composer 里用 mt 提供显形后的上方呼吸空间） */
+  className?: string;
 }
 
 function textSourceLabel(t: Translations, source: AppshotTextSource): { label: string; className: string } {
@@ -35,7 +37,7 @@ function textSourceLabel(t: Translations, source: AppshotTextSource): { label: s
   }
 }
 
-export const AppshotChip: React.FC<AppshotChipProps> = ({ capture, onRemove, reserved = false }) => {
+export const AppshotChip: React.FC<AppshotChipProps> = ({ capture, onRemove, reserved = false, className = '' }) => {
   const { t } = useI18n();
   const [previewOpen, setPreviewOpen] = useState(false);
   const [view, setView] = useState<'image' | 'text'>('image');
@@ -60,7 +62,7 @@ export const AppshotChip: React.FC<AppshotChipProps> = ({ capture, onRemove, res
   return (
     <>
       <div
-        className={`relative group w-fit${reserved ? ' opacity-0' : ''}`}
+        className={`relative group w-fit${reserved ? ' opacity-0' : ''}${className ? ` ${className}` : ''}`}
         aria-hidden={reserved || undefined}
       >
         <button

@@ -69,6 +69,8 @@ export interface ExternalEngineManifest {
   summary: string;
   commandSummary?: string;
   iconAsset?: string;
+  /** 本机 .app 候选名（darwin）：host 探测时从已安装 app 提取真图标，未装回退首字母瓦片 */
+  macAppNames?: readonly string[];
   probe?: ExternalEngineProbeContract;
   adapter: ExternalEngineAdapterContract;
   modelSelection: ExternalEngineModelSelection;
@@ -149,6 +151,7 @@ const EXTERNAL_ENGINE_MANIFESTS: readonly ExternalEngineManifest[] = [
   },
   {
     id: 'claude_code',
+    macAppNames: ['Claude.app'],
     kind: 'claude_code',
     label: 'Claude Code',
     summary: '复用本机 Claude Code 登录态，以只读工具和流式事件执行。',
@@ -218,6 +221,7 @@ const EXTERNAL_ENGINE_MANIFESTS: readonly ExternalEngineManifest[] = [
   },
   {
     id: 'kimi_code',
+    macAppNames: ['Kimi.app'],
     kind: 'kimi_code',
     label: 'Kimi Code',
     summary: '复用本机 Kimi Code 登录态，通过归一化 stream-json 执行。',
@@ -268,6 +272,7 @@ const EXTERNAL_ENGINE_MANIFESTS: readonly ExternalEngineManifest[] = [
   },
   {
     id: 'codebuddy_code',
+    macAppNames: ['WorkBuddy.app', 'CodeBuddy.app'],
     kind: 'codebuddy_code',
     label: 'WorkBuddy',
     summary: '复用本机 WorkBuddy / CodeBuddy 官方账号，以禁用工具的流式会话执行。',
@@ -359,6 +364,7 @@ const EXTERNAL_ENGINE_MANIFESTS: readonly ExternalEngineManifest[] = [
   },
   {
     id: 'qoder_work',
+    macAppNames: ['Qoder.app'],
     label: 'Qoder Work',
     summary: '已检测本机 Qoder Work CLI；当前 CLI 尚未登录，执行与模型能力保持关闭。',
     commandSummary: 'qoderclicn -p -o stream-json --permission-mode dont_ask --tools ""',
@@ -405,6 +411,7 @@ const EXTERNAL_ENGINE_MANIFESTS: readonly ExternalEngineManifest[] = [
   },
   {
     id: 'comate_zulu',
+    macAppNames: ['Comate.app'],
     label: 'Comate / Zulu',
     summary: '已发现本机 CLI/HTTP/SSE 能力证据；生产 Adapter 尚未开放。',
     commandSummary: 'zulu run / zulu serve',
@@ -436,6 +443,7 @@ const EXTERNAL_ENGINE_MANIFESTS: readonly ExternalEngineManifest[] = [
   },
   {
     id: 'cursor_cli',
+    macAppNames: ['Cursor.app'],
     label: 'Cursor CLI',
     summary: '推荐项；尚无本仓实机协议证据，不会伪装成可执行引擎。',
     adapter: {

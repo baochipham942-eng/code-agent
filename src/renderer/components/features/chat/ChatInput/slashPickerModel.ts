@@ -115,7 +115,10 @@ export interface SlashPickerLabels {
 }
 
 export function getTrailingSlashToken(value: string): SlashTokenMatch | null {
-  const match = /(^|\s)\/([^\s/]*)$/.exec(value);
+  // 触发条件从「行首或空格后」放宽为「非路径字符后」：中文/标点后打 / 也要能唤起
+  // （真机 2026-08-05：句中加第二个 skill 被误判为不支持多 skill）。
+  // 字母/数字/._~-/ 之后仍不触发——保护 src/foo、./x、~/y、3/4 这类路径与分数。
+  const match = /(^|[^\w./~-])\/([^\s/]*)$/u.exec(value);
   if (!match) return null;
 
   const leading = match[1] ?? '';

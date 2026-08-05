@@ -973,12 +973,21 @@ export function registerWorkspaceHandlers(
         case 'importDesignImage':
           data = await handleImportDesignImage(payload as { dataUrl: string; outputPath: string });
           break;
-        case 'importDesignImageFromPath':
+        case 'importDesignImageFromPath': {
+          // 会话级 cwd 也要进允许名单：快速对话的图产物在会话工作目录下，
+          // 只认 app 级 cwd 会误拦（2026-08-05「sourcePath 路径越界」真机反馈）。
+          const importPayload = payload as { sourcePath: string; outputPath: string; sessionId?: string };
+          let sessionWorkingDirectory: string | undefined;
+          if (importPayload.sessionId) {
+            const { getSessionManager } = await import('../services/infra/sessionManager');
+            sessionWorkingDirectory = (await getSessionManager().getSession(importPayload.sessionId, 1))?.workingDirectory ?? undefined;
+          }
           data = await handleImportDesignImageFromPath(
-            payload as { sourcePath: string; outputPath: string },
-            getAppService()?.getWorkingDirectory(),
+            importPayload,
+            [sessionWorkingDirectory, getAppService()?.getWorkingDirectory()],
           );
           break;
+        }
         case 'expandDesignImage':
           data = await handleExpandDesignImage(
             payload as ExpandDesignImagePayload,

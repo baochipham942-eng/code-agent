@@ -51,7 +51,7 @@ describe('对话图产物按钮条：固定折叠规则', () => {
     // 常驻的两个主动作在场——正对照：它俩要是也不在，说明组件根本没渲染出来，
     // 下面「四个不在场」的断言就是假绿。
     expect(screen.getByTestId('media-asset-edit-in-canvas')).toBeTruthy();
-    expect(screen.getByTitle('复制引用')).toBeTruthy();
+    expect(screen.getByTitle('复制图片')).toBeTruthy(); // 2026-08-05 拍板：图片主复制动作=位图本体
 
     // ⋯ 必须在场
     expect(screen.getByTestId('media-asset-overflow-more')).toBeTruthy();

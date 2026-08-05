@@ -2,7 +2,6 @@ import type { RefObject } from 'react';
 import type { AppshotCapture } from '@shared/contract/appshot';
 import { useAppshotsStore } from '../../../../stores/appshotsStore';
 import { AppshotChip } from './AppshotChip';
-import { PinnedLibraryChips } from './PinnedLibraryChips';
 
 interface ComposerChipsRowProps {
   pendingAppshot: AppshotCapture | null;
@@ -29,9 +28,11 @@ export function ComposerChipsRow({ pendingAppshot, clearAppshot, appshotSlotRef 
   const reserved = useAppshotsStore((s) => s.phase === 'reserved');
   return (
     <>
-      {/* mb-2 恒定（不随 pending 有无变化）：保持锚点下缘到输入框的距离恒定，
-          否则空行上报的落点与 chip 出现后的真实位置差一个 margin */}
-      <div className="relative mb-2">
+      {/* 行上不带任何 margin/padding（两态恒为 0）：锚点下缘到输入框的距离只要求
+          「空/满两态一致」，不要求非零——之前的恒定 mb-2 在空闲时也占 8px，把正文
+          顶离 16px 轨（真机 2026-08-05）。chip 显形时的呼吸空间由正文区自己的 pt-4
+          提供（下方 16px），上方由 AppshotChip 的 mt-3 提供，都不进本行的盒高。 */}
+      <div className="relative">
         <div
           ref={appshotSlotRef}
           aria-hidden
@@ -40,13 +41,13 @@ export function ComposerChipsRow({ pendingAppshot, clearAppshot, appshotSlotRef 
         {pendingAppshot && (
           <AppshotChip
             key={pendingAppshot.requestId}
+            className="mt-3"
             capture={pendingAppshot}
             onRemove={clearAppshot}
             reserved={reserved}
           />
         )}
       </div>
-      <PinnedLibraryChips />
     </>
   );
 }

@@ -29,8 +29,6 @@ function item(detail?: string): VoiceWorkItem {
     id: 'voice-work-1',
     title: '季度复盘',
     status: 'running',
-    createdAt: 1,
-    updatedAt: 1,
     ...(detail ? { detail } : {}),
   };
 }

@@ -31,16 +31,14 @@ import {
 } from '../../../services/rolesClient';
 import { createTeamRecipe, deleteTeamRecipe, listTeamRecipes } from '../../../services/teamRecipeClient';
 import { inviteExpert } from '../../../utils/inviteExpert';
-import { launchTeamRecipe } from '../../../utils/launchTeamRecipe';
 import { startCreateTeamChat } from '../../../utils/startCreateTeamChat';
 import { startCreateRoleChat } from '../../../utils/startCreateRoleChat';
 import { useAppStore } from '../../../stores/appStore';
+import { useComposerStore } from '../../../stores/composerStore';
 import { useI18n } from '../../../hooks/useI18n';
 import { toast } from '../../../hooks/useToast';
 import { Button } from '../../primitives/Button';
 import { Badge } from '../../primitives/Badge';
-import { Input } from '../../primitives/Input';
-import { Modal } from '../../primitives/Modal';
 import { RoleAvatarTile } from './RoleAvatarTile';
 import { RolePackHealthNotice, RolePackShelf } from './RolePackShelf';
 import { TeamRecipeDetailPage } from './TeamRecipeDetailPage';
@@ -141,10 +139,8 @@ export const ExpertPanel: React.FC = () => {
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [busyRolePackId, setBusyRolePackId] = useState<string | null>(null);
   const [userRecipes, setUserRecipes] = useState<TeamRecipe[]>([]);
-  const [activeRecipe, setActiveRecipe] = useState<TeamRecipe | null>(null);
   const [selectedRecipe, setSelectedRecipe] = useState<{ recipe: TeamRecipe; editable: boolean } | null>(null);
   const [confirmingRecipeDelete, setConfirmingRecipeDelete] = useState<string | null>(null);
-  const [recipeTopic, setRecipeTopic] = useState('');
   const [pendingConsent, setPendingConsent] = useState<({ roleId: string } & NonNullable<RolePackActionResult['consent']>) | null>(null);
 
   const consentToolSummary = groupToolsForConsent(pendingConsent?.tools ?? []);
@@ -275,22 +271,14 @@ export const ExpertPanel: React.FC = () => {
     : categoryGroups.find((group) => group.key === activeCategory)?.entries ?? [];
   const rolePacksByRoleId = new Map(rolePacks.map((item) => [item.entry.roleId, item]));
 
+  // 请专家团=请专家同交互（负责人 2026-08-05 拍板）：不弹主题输入、不直接发起会话，
+  // 把配方预选进 composer（与 + 菜单「团队」子菜单同一动作）——成员条显示待命成员，
+  // 用户自己在输入框输入主题，发送即启动整个团队。
   const openRecipe = (recipe: TeamRecipe) => {
-    setActiveRecipe(recipe);
-    setRecipeTopic('');
-  };
-
-  const closeRecipe = () => {
-    setActiveRecipe(null);
-    setRecipeTopic('');
-  };
-
-  const launchActiveRecipe = async () => {
-    if (!activeRecipe || !recipeTopic.trim()) return;
-    const result = await launchTeamRecipe(activeRecipe.id, activeRecipe.name, recipeTopic.trim());
-    if (!result.ok) {
-      toast.error(t.team.launchFailed + (result.error ? `: ${result.error}` : ''));
-    }
+    useComposerStore.getState().setSelectedTeamRecipeId(recipe.id);
+    const app = useAppStore.getState();
+    app.setShowSettings(false);
+    app.setShowCapabilityHub(false);
   };
 
   const copyRecipe = async (recipe: TeamRecipe) => {
@@ -591,33 +579,6 @@ export const ExpertPanel: React.FC = () => {
         )}
       </div>
 
-      <Modal
-        isOpen={activeRecipe !== null}
-        onClose={closeRecipe}
-        title={activeRecipe?.name}
-        size="sm"
-        footer={(
-          <Button
-            variant="primary"
-            onClick={() => { void launchActiveRecipe(); }}
-            disabled={!recipeTopic.trim()}
-          >
-            {t.team.launch}
-          </Button>
-        )}
-      >
-        <div className="space-y-2">
-          <Input
-            autoFocus
-            value={recipeTopic}
-            placeholder={t.team.topicPlaceholder}
-            onChange={(event) => setRecipeTopic(event.target.value)}
-          />
-          {!recipeTopic.trim() ? (
-            <p className="text-xs text-zinc-500">{t.team.topicRequired}</p>
-          ) : null}
-        </div>
-      </Modal>
     </div>
   );
 };

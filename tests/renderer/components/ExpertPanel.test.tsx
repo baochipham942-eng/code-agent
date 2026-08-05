@@ -230,6 +230,29 @@ describe('ExpertPanel', () => {
     expect(within(screen.getByTestId('team-recipe-user-recipe-1')).getByText('详情')).toBeTruthy();
   });
 
+  it('「用这个团」把配方预选进 composer，不弹主题输入、不直接发起会话', async () => {
+    const { useComposerStore } = await import('../../../src/renderer/stores/composerStore');
+    useComposerStore.getState().setSelectedTeamRecipeId(null);
+    listTeamRecipes.mockResolvedValue([makeRecipe()]);
+    listRoles.mockResolvedValue([makeEntry()]);
+    render(<ExpertPanel />);
+    await waitFor(() => expect(screen.getByTestId('expert-card-牧之')).toBeTruthy());
+
+    fireEvent.click(screen.getByTestId('expert-tab-discover'));
+    fireEvent.click(within(screen.getByTestId('team-recipe-product-spec')).getByText('用这个团'));
+
+    // 预选写进 composer（与 + 菜单「团队」子菜单同一动作），主题交给用户在输入框输入
+    expect(useComposerStore.getState().selectedTeamRecipeId).toBe('product-spec');
+    // 不再弹主题输入 Modal
+    expect(screen.queryByPlaceholderText(teamZh.team.topicPlaceholder)).toBeNull();
+    // 不建会话不发起（旧行为会先 createSession 再 launchRecipe）
+    expect(invokeDomain).not.toHaveBeenCalledWith(
+      expect.stringMatching(/session/i),
+      'createSession',
+      expect.anything(),
+    );
+  });
+
   it('复制出厂配方后调用 recipeCreate 并直接进入编辑器', async () => {
     listRoles.mockResolvedValue([makeEntry()]);
     render(<ExpertPanel />);

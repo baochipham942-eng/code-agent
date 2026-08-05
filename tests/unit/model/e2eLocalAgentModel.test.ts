@@ -43,6 +43,38 @@ const taskManagerTool: ToolDefinition = {
   permissionLevel: 'write',
 };
 
+const spawnTaskTool: ToolDefinition = {
+  name: 'spawn_task',
+  description: 'Spawn a background task',
+  inputSchema: { type: 'object', properties: {} },
+  requiresPermission: false,
+  permissionLevel: 'write',
+};
+
+const taskStatusTool: ToolDefinition = {
+  name: 'task_status',
+  description: 'Read background task status',
+  inputSchema: { type: 'object', properties: {} },
+  requiresPermission: false,
+  permissionLevel: 'read',
+};
+
+const steerTaskTool: ToolDefinition = {
+  name: 'steer_task',
+  description: 'Steer a background task',
+  inputSchema: { type: 'object', properties: {} },
+  requiresPermission: false,
+  permissionLevel: 'write',
+};
+
+const askUserQuestionTool: ToolDefinition = {
+  name: 'AskUserQuestion',
+  description: 'Ask the user',
+  inputSchema: { type: 'object', properties: {} },
+  requiresPermission: false,
+  permissionLevel: 'execute',
+};
+
 describe('e2eLocalAgentModel', () => {
   it('requires both E2E env guards', () => {
     expect(shouldUseE2ELocalAgentModel({ CODE_AGENT_E2E: '1' })).toBe(false);
@@ -58,6 +90,103 @@ describe('e2eLocalAgentModel', () => {
 
     expect(shouldUseE2ELocalAgentModelForMessages(messages, {})).toBe(false);
     expect(shouldUseE2ELocalAgentModelForMessages(messages, { CODE_AGENT_E2E: '1' })).toBe(true);
+  });
+
+  it('drives foreground command-center dispatch and live status through real tools', () => {
+    const first = buildE2ELocalAgentModelResponse(
+      [{ role: 'user', content: 'E2E_SESSION_COMMAND_CENTER SPAWN' }],
+      [spawnTaskTool, taskStatusTool, steerTaskTool],
+      config,
+    );
+    expect(first.type).toBe('tool_use');
+    expect(first.toolCalls?.[0]).toMatchObject({
+      id: 'e2e-command-center-spawn',
+      name: 'spawn_task',
+      arguments: {
+        short_name: '项目身份',
+        lane_key: 'acceptance-read',
+      },
+    });
+
+    const accepted = buildE2ELocalAgentModelResponse(
+      [
+        { role: 'user', content: 'E2E_SESSION_COMMAND_CENTER SPAWN' },
+        { role: 'tool', toolCallId: 'e2e-command-center-spawn', content: 'accepted：后台任务已开始。' },
+      ],
+      [spawnTaskTool, taskStatusTool, steerTaskTool],
+      config,
+    );
+    expect(accepted.type).toBe('text');
+    expect(accepted.content).toContain('dispatch accepted');
+
+    const status = buildE2ELocalAgentModelResponse(
+      [{ role: 'user', content: 'E2E_SESSION_COMMAND_CENTER STATUS' }],
+      [spawnTaskTool, taskStatusTool, steerTaskTool],
+      config,
+    );
+    expect(status.toolCalls?.[0]).toMatchObject({
+      id: 'e2e-command-center-status',
+      name: 'task_status',
+      arguments: {},
+    });
+
+    const second = buildE2ELocalAgentModelResponse(
+      [{ role: 'user', content: 'E2E_SESSION_COMMAND_CENTER SECOND' }],
+      [spawnTaskTool, taskStatusTool, steerTaskTool],
+      config,
+    );
+    expect(second.toolCalls?.[0]).toMatchObject({
+      id: 'e2e-command-center-second',
+      name: 'spawn_task',
+      arguments: { short_name: '审批任务', prompt: 'E2E_BACKGROUND_APPROVAL' },
+    });
+
+    const steer = buildE2ELocalAgentModelResponse(
+      [{ role: 'user', content: 'E2E_SESSION_COMMAND_CENTER STEER' }],
+      [spawnTaskTool, taskStatusTool, steerTaskTool],
+      config,
+    );
+    expect(steer.toolCalls?.[0]).toMatchObject({
+      id: 'e2e-command-center-steer',
+      name: 'steer_task',
+      arguments: { target: '审批任务' },
+    });
+  });
+
+  it('pauses a real auxiliary model turn on AskUserQuestion until the background approval returns', () => {
+    const first = buildE2ELocalAgentModelResponse(
+      [{ role: 'user', content: 'E2E_BACKGROUND_APPROVAL' }],
+      [askUserQuestionTool],
+      config,
+    );
+    expect(first.toolCalls?.[0]).toMatchObject({
+      id: 'e2e-background-approval',
+      name: 'AskUserQuestion',
+    });
+
+    const completed = buildE2ELocalAgentModelResponse(
+      [
+        { role: 'user', content: 'E2E_BACKGROUND_APPROVAL' },
+        { role: 'tool', toolCallId: 'e2e-background-approval', content: 'User responses: [后台审批]: 允许（推荐）' },
+      ],
+      [askUserQuestionTool],
+      config,
+    );
+    expect(completed.type).toBe('text');
+    expect(completed.content).toContain('background approval completed');
+
+    const foregroundStatus = buildE2ELocalAgentModelResponse(
+      [
+        { role: 'user', content: 'E2E_BACKGROUND_APPROVAL' },
+        { role: 'user', content: 'E2E_SESSION_COMMAND_CENTER STATUS' },
+      ],
+      [askUserQuestionTool, spawnTaskTool, taskStatusTool],
+      config,
+    );
+    expect(foregroundStatus.toolCalls?.[0]).toMatchObject({
+      id: 'e2e-command-center-status',
+      name: 'task_status',
+    });
   });
 
   it('calls the real Read tool before producing the final eval response', () => {

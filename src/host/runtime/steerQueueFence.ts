@@ -67,7 +67,6 @@ export function workbenchMetadataToEnvelopeContext(
   if (workbench.runtimeInputMode) {
     context.runtimeInput = {
       mode: workbench.runtimeInputMode,
-      delivery: workbench.runtimeInputDelivery,
     };
   }
   if (workbench.voiceInput) {

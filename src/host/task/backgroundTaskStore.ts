@@ -12,6 +12,15 @@ import type {
 import { isTerminalTaskStatus } from '../../shared/contract/backgroundTask';
 import { buildBackgroundTaskRecoveryPlan } from './backgroundTaskRecoveryPlan';
 
+/**
+ * 终态任务台账只服务「最近跑过什么」，两条列表查询原本无 LIMIT 无清理，
+ * 全表扫描随使用单调增长（swarm 并发把写入放大后尤甚），而 renderer 每 3s 就读一次。
+ * 保留最近这么多条终态即可；再往前的历史不进这个面板。
+ */
+const TERMINAL_TASK_LIST_LIMIT = 200;
+/** 启动时把超出这个条数的老终态行删掉，别让表无限长。 */
+const TERMINAL_TASK_RETENTION = 500;
+
 interface PersistedTaskRow {
   task_json: string;
 }
@@ -78,6 +87,7 @@ export class NullBackgroundTaskStore implements BackgroundTaskStore {
 export class SqliteBackgroundTaskStore implements BackgroundTaskStore {
   constructor(private readonly db: BetterSqliteDatabase) {
     this.ensureSchema();
+    this.pruneTerminalTasks();
   }
 
   upsertTask(task: Task): void {
@@ -232,21 +242,35 @@ export class SqliteBackgroundTaskStore implements BackgroundTaskStore {
       SELECT task_json
       FROM background_task_terminal_tasks
       ORDER BY updated_at DESC
-    `).all() as PersistedTaskRow[];
+      LIMIT ?
+    `).all(TERMINAL_TASK_LIST_LIMIT) as PersistedTaskRow[];
 
     return rows
       .map((row) => parsePersistedTask(row.task_json))
       .filter((task): task is Task => Boolean(task));
   }
 
+  /** 启动时裁掉超出保留窗口的老终态行（列表只读最近 N 条，更老的谁也读不到）。 */
+  private pruneTerminalTasks(): void {
+    this.db.prepare(`
+      DELETE FROM background_task_terminal_tasks
+      WHERE id NOT IN (
+        SELECT id FROM background_task_terminal_tasks
+        ORDER BY updated_at DESC
+        LIMIT ?
+      )
+    `).run(TERMINAL_TASK_RETENTION);
+  }
+
   private loadCronTerminalTask(taskId: string): Task | null {
     const executionId = taskId.replace(/^cron:/, '');
-    const task = this.loadCronTerminalTasks()
+    // 按 id 定点取，不再整表捞回来再 find —— 单条查询没必要吃全表扫描。
+    const task = this.loadCronTerminalTasks({ executionId })
       .find((candidate) => candidate.id === `cron:${executionId}`);
     return task ? cloneTask(task) : null;
   }
 
-  private loadCronTerminalTasks(): Task[] {
+  private loadCronTerminalTasks(options: { executionId?: string } = {}): Task[] {
     if (!this.hasTable('cron_executions')) {
       return [];
     }
@@ -270,8 +294,13 @@ export class SqliteBackgroundTaskStore implements BackgroundTaskStore {
       FROM cron_executions e
       ${joinJobs ? 'LEFT JOIN cron_jobs j ON j.id = e.job_id' : ''}
       WHERE e.status IN ('completed', 'failed', 'cancelled', 'interrupted')
+      ${options.executionId ? 'AND e.id = ?' : ''}
       ORDER BY e.scheduled_at DESC
-    `).all() as CronTerminalRow[];
+      LIMIT ?
+    `).all(
+      ...(options.executionId ? [options.executionId] : []),
+      options.executionId ? 1 : TERMINAL_TASK_LIST_LIMIT,
+    ) as CronTerminalRow[];
 
     return rows.map(mapCronExecutionToTask);
   }

@@ -85,27 +85,6 @@ describe('TraceNodeRenderer launch request', () => {
     expect(html).not.toContain('private hidden thinking text');
   });
 
-  it('marks queued runtime steer user messages as guided dialogue', () => {
-    const html = renderToStaticMarkup(
-      React.createElement(TraceNodeRenderer, {
-        node: {
-          id: 'user-guided-1',
-          type: 'user',
-          content: '我说的不是评测，而是刚才你说不走的地方',
-          timestamp: 100,
-          metadata: {
-            workbench: {
-              runtimeInputMode: 'supplement',
-              runtimeInputDelivery: 'queued_next_turn',
-            },
-          },
-        } satisfies TraceNode,
-      }),
-    );
-
-    expect(html).toContain('已引导对话');
-  });
-
   it('renders the turn quality summary as a quiet model badge by default', () => {
     const html = renderToStaticMarkup(
       React.createElement(TraceNodeRenderer, {

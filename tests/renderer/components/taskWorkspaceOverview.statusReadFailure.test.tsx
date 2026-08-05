@@ -43,6 +43,7 @@ const runWorkbenchState = {
   ],
   tools: [] as Array<any>,
   memoryActivities: [] as Array<any>,
+  subagents: [] as Array<any>,
 };
 
 const backgroundTaskStore = {

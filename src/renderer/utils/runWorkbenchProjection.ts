@@ -330,14 +330,15 @@ function actionFromText(value: string | undefined): MemoryAction | null {
 }
 
 function isMemoryTool(toolCall: TraceToolCall): boolean {
-  const lower = toolCall.name.toLowerCase();
+  // 同 StreamingIndicator：name 契约必填，但畸形节点会带 undefined 进渲染路径。
+  const lower = toolCall.name?.toLowerCase() ?? '';
   return lower.includes('memory') || lower.includes('remember') || lower.includes('recall');
 }
 
 function memoryActionFromToolCall(toolCall: TraceToolCall): MemoryAction | null {
   if (!isMemoryTool(toolCall)) return null;
 
-  const lowerName = toolCall.name.toLowerCase();
+  const lowerName = toolCall.name?.toLowerCase() ?? '';
   const explicitAction = stringValue(toolCall.args, ['action', 'operation', 'op']);
   const metadataAction = stringValue(toolCall.metadata, ['action', 'operation', 'op']);
   const action = actionFromText(explicitAction) || actionFromText(metadataAction);
@@ -503,12 +504,6 @@ function todoStatus(status: TodoItem['status']): TaskRecord['steps'][number]['st
   if (status === 'completed') return 'completed';
   if (status === 'in_progress') return 'in_progress';
   return 'pending';
-}
-
-function taskProgressStepStatus(progress: TaskProgressData): TaskRecord['steps'][number]['status'] {
-  if (progress.phase === 'completed') return 'completed';
-  if (progress.phase === 'failed') return 'blocked';
-  return 'in_progress';
 }
 
 function sessionTaskPersistentStatus(status: SessionTask['status']): TaskRecord['steps'][number]['status'] {
@@ -679,20 +674,6 @@ function buildSessionTaskRecordFromSessionTasks(args: {
   };
 }
 
-function taskProgressTitle(progress: TaskProgressData): string {
-  if (progress.step?.trim()) return progress.step.trim();
-  if (progress.tool?.trim()) return `工具 ${progress.tool.trim()}`;
-  const labels: Record<TaskProgressData['phase'], string> = {
-    thinking: '分析请求中',
-    generating: '生成回复中',
-    tool_pending: '准备执行',
-    tool_running: '执行工具中',
-    completed: '回复完成',
-    failed: '任务失败',
-  };
-  return labels[progress.phase];
-}
-
 function taskProgressHint(progress?: TaskProgressData | null): string | undefined {
   if (!progress) return undefined;
   const details: string[] = [];
@@ -731,20 +712,11 @@ export function buildSessionTaskRecord(args: {
   const shouldPreserveCompletedTodos = args.runStatus === 'completed' && allTodosCompleted;
   if (runIsQuietFinished && !hasLiveTaskProgress && !shouldPreserveCompletedTodos) return null;
 
-  if (todos.length === 0 && args.taskProgress) {
-    const title = taskProgressTitle(args.taskProgress);
-    const status = taskProgressStepStatus(args.taskProgress);
-    return {
-      id: `${args.sessionId || 'session'}:progress`,
-      scope: 'session',
-      title,
-      status: status === 'completed' ? 'completed' : status === 'blocked' ? 'blocked' : 'in_progress',
-      steps: [{ title, status }],
-      ownerRunId: args.runId,
-      sourceThreadId: args.sessionId,
-      resumeHint: taskProgressHint(args.taskProgress),
-    };
-  }
+  // C2（2026-08-05）：没有结构化 todos 时不再拿 taskProgress.step 伪造一条 Todo。
+  // 那个 step 的兜底串来自 toolExecutionEngine 的 `执行 ${toolCall.name}`，于是
+  // 概览 Todo 长期显示「执行 bash」这种工具流水——工具执行只进任务行指针
+  // （OverviewRunHeader），不进 Todo。运行中的零反馈由 TaskDashboardSummary 的
+  // active-run-placeholder 兜，不需要伪造条目。
   if (todos.length === 0) return null;
   const active = todos.find((todo) => todo.status === 'in_progress') || todos.find((todo) => todo.status !== 'completed');
   const objective = todos.find((todo) => /^(?:明确)?任务目标[:：]/.test(todo.content.trim()));

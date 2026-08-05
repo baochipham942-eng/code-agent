@@ -148,7 +148,13 @@ export function registerBackgroundTaskLedgerHandlers(ipcMain: IpcMain): void {
           } satisfies IPCResponse;
       }
     } catch (error) {
-      logger.error('Background task ledger IPC error:', error);
+      // fail-loud：统一错误码会把原因抹平成一句「读取失败」，renderer 只能显示黄条。
+      // 出事的 action 和原始栈必须留在本地日志里，否则真机复发时无从定位。
+      logger.error('Background task ledger IPC error:', {
+        action,
+        message: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+      });
       return {
         success: false,
         error: {

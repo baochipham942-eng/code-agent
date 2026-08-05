@@ -376,7 +376,6 @@ export function projectTurns(
     if (
       msg.role === 'user'
       && runtimeInputMode === 'supplement'
-      && msg.metadata?.workbench?.runtimeInputDelivery !== 'queued_next_turn'
       && currentTurn
     ) {
       currentTurn.nodes.push({

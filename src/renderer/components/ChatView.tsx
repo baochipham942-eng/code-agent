@@ -84,15 +84,6 @@ import { buildProjectGoalChatStart } from '../utils/projectGoalChatSeed';
 import { isDragPointInsideVisibleRect } from '../utils/dragBounds';
 import { Image, AlertTriangle, MessageSquare, X } from 'lucide-react';
 
-export async function handleQueuedSteerOutcome(
-  currentSessionId: string | null,
-  hydrateQueuedRuntimeInputs: (sessionId: string) => Promise<void>,
-  queuedToastMessage: string,
-): Promise<void> {
-  toast.info(queuedToastMessage);
-  if (currentSessionId) await hydrateQueuedRuntimeInputs(currentSessionId);
-}
-
 export const ChatView: React.FC = () => {
   const { t } = useI18n();
   const appWorkingDirectory = useAppStore((state) => state.workingDirectory);
@@ -129,10 +120,6 @@ export const ChatView: React.FC = () => {
     researchDetected,
     dismissResearchDetected,
     isInterrupting,
-    queuedRuntimeInputs,
-    hydrateQueuedRuntimeInputs,
-    cancelQueuedRuntimeInput,
-    sendQueuedRuntimeInput,
   } = useAgent();
   const buildComposerContext = useComposerStore((state) => state.buildContext);
   const hydrateComposer = useComposerStore((state) => state.hydrateFromSession);
@@ -316,6 +303,21 @@ export const ChatView: React.FC = () => {
   // 历史选择：原 fallback 用全局 isProcessing 是为了向后兼容 Wave 5 之前的单任务模型，
   // 但多任务并行后这个 fallback 反而成了 state 跨 session 泄漏的源头
   const effectiveIsProcessing = isCurrentSessionProcessing || isCurrentSessionLocallyProcessing;
+
+  // D1 停止全部：spawn_agent 超前台预算会把成员转后台，主 loop 本轮正常收尾 →
+  // 主会话回落 idle → 发送键变回发送形态，「停止全部」的入口就此消失，
+  // agentAppService.cancel 里现成的级联（planApproval/launchApproval/spawnGuard.cancelSession/
+  // parallelCoordinators）根本没人触发。所以按钮形态要额外看「本会话还有活着的成员」。
+  // 只喂按钮形态，不并进 effectiveIsProcessing —— 后者还管 steer 路由、seed 消费、
+  // 回溯横幅禁用，并进去会把「主 loop 空闲时发新消息」误路由成运行中补充。
+  const swarmActiveSessionId = useSwarmStore((state) => state.activeSessionId);
+  const swarmIsRunning = useSwarmStore((state) => state.isRunning);
+  const swarmHasLiveAgents = useSwarmStore((state) => state.agents.some(
+    (agent) => agent.status === 'running' || agent.status === 'ready' || agent.status === 'pending',
+  ));
+  const hasStoppableSwarmWork = Boolean(currentSessionId)
+    && swarmActiveSessionId === currentSessionId
+    && (swarmIsRunning || swarmHasLiveAgents);
 
   // Bridge 拦截状态 (Phase 4)
   const [bridgePrompt, setBridgePrompt] = useState<{ toolName: string } | null>(null);
@@ -602,13 +604,8 @@ export const ChatView: React.FC = () => {
     submitSteerEnvelope(
       envelope,
       currentSessionId,
-      () => handleQueuedSteerOutcome(
-        currentSessionId,
-        hydrateQueuedRuntimeInputs,
-        t.chatInput.runtimeInputQueuedAfterAdjustment,
-      ),
     )
-  ), [currentSessionId, hydrateQueuedRuntimeInputs, t]);
+  ), [currentSessionId]);
 
   const handleSendMessage = useCallback(async (content: string, attachments?: MessageAttachment[]) => {
     return handleSendEnvelope(buildEnvelope(content, attachments));
@@ -895,11 +892,9 @@ export const ChatView: React.FC = () => {
               onSteer={handleSteerEnvelope}
               disabled={effectiveIsProcessing || isCreatingSession}
               isProcessing={effectiveIsProcessing}
+              hasStoppableBackgroundWork={hasStoppableSwarmWork}
               isInterrupting={isInterrupting}
               onStop={cancel}
-              queuedRuntimeInputs={queuedRuntimeInputs}
-              onCancelQueuedRuntimeInput={cancelQueuedRuntimeInput}
-              onSendQueuedRuntimeInput={sendQueuedRuntimeInput}
               hasPlan={false}
             />
           </div>

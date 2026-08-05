@@ -109,6 +109,8 @@ export interface AppServiceRunOptions {
   runtimeInput?: RuntimeInputIntent;
   /** 排队输入在 host 侧捕获的显式模型；旧 envelope 缺省时仍走会话/全局解析。 */
   modelSpec?: ConversationModelSpec;
+  /** Foreground command-center brain tool allowlist. Omitted for normal execution runs. */
+  allowedToolNames?: string[];
   /** /goal 自治模式：存在则本轮激活 goal 模式 */
   goal?: GoalRunInput;
   [key: string]: unknown;

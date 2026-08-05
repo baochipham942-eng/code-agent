@@ -11,13 +11,22 @@ import React, { useMemo } from 'react';
 import { Clock, Wrench, Zap } from 'lucide-react';
 import { useSwarmStore } from '../../../stores/swarmStore';
 import { useMemberViewStore } from '../../../stores/memberViewStore';
+import { useDurableSwarmRunDetail } from '../../../hooks/useDurableSwarmRunDetail';
 import { useI18n } from '../../../hooks/useI18n';
+import { humanizeToolStep } from '../../../utils/humanizeToolStep';
 import { RoleInitialAvatar } from './RoleInitialAvatar';
 import { useSessionMembers } from './SessionMemberBar';
+
+/** 轨迹只回看最近这几条：成员视图是「他现在在干嘛」，不是全量审计日志。 */
+const RUN_TRAIL_LIMIT = 12;
 
 function durationLabel(ms?: number | null): string {
   if (!ms) return '—';
   return `${Math.max(1, Math.round(ms / 1000))}s`;
+}
+
+function timeLabel(timestamp: number): string {
+  return new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 }
 
 export const MemberConversationView: React.FC<{ sessionId: string | null }> = ({ sessionId }) => {
@@ -27,9 +36,17 @@ export const MemberConversationView: React.FC<{ sessionId: string | null }> = ({
   const viewingMemberId = useMemberViewStore((state) => state.viewingMemberId);
   const messages = useSwarmStore((state) => state.messages);
   const members = useSessionMembers(sessionId);
+  const durableDetail = useDurableSwarmRunDetail(sessionId);
 
   const member = members.find((item) => item.key === viewingMemberId);
   const agent = member?.agent;
+  // useSessionMembers 以持久化账本为状态真相源，而 contextSnapshot 只活在 stream 里
+  // （账本不落它）。最近动作要的是「他此刻在干嘛」，所以这一项单独从 store 取实时的。
+  const liveContextSnapshot = useSwarmStore((state) => (
+    viewingMemberId
+      ? state.agents.find((item) => item.id === viewingMemberId)?.contextSnapshot
+      : undefined
+  ));
 
   // 过程消息只在运行中存在（账本只落任务和产出），取不到就只显示首尾两段
   const memberMessages = useMemo(() => {
@@ -37,6 +54,27 @@ export const MemberConversationView: React.FC<{ sessionId: string | null }> = ({
     const names = new Set([agent.id, agent.name, agent.role].filter(Boolean) as string[]);
     return messages.filter((message) => names.has(message.from) || names.has(message.to));
   }, [messages, agent]);
+
+  // D2 最近动作：contextSnapshot.tools 是执行器每轮真实用过的工具名（去重后最近 6 个），
+  // 经 task:progress → agentUpdated 一路活着送到 store。工具名对非程序员没意义，
+  // 过一遍聊天流那套 humanizeToolStep；没有 args 时它落到各类目的人话兜底句。
+  const recentActions = useMemo(() => {
+    const tools = (liveContextSnapshot ?? agent?.contextSnapshot)?.tools ?? [];
+    return [...tools].reverse().map((tool, index) => ({
+      key: `${tool}-${index}`,
+      label: humanizeToolStep(tool, undefined, t),
+    }));
+  }, [liveContextSnapshot, agent?.contextSnapshot, t]);
+
+  // D2 运行轨迹：粗粒度生命周期事件早就落库（SwarmRunEventRecord），此前全仓零消费。
+  // 只取这位成员的 + 不挂具体成员的 run 级事件，倒序滚动。
+  const runTrail = useMemo(() => {
+    const events = durableDetail?.events ?? [];
+    return events
+      .filter((event) => !event.agentId || event.agentId === agent?.id)
+      .slice(-RUN_TRAIL_LIMIT)
+      .reverse();
+  }, [durableDetail?.events, agent?.id]);
 
   if (!member || !agent) return null;
 
@@ -61,6 +99,47 @@ export const MemberConversationView: React.FC<{ sessionId: string | null }> = ({
             {agent.dispatchedTask || text.noTask}
           </div>
         </section>
+
+        {/* 过程可见（D2）：不再是「下发任务 → 黑箱 → 终局产出」，中间这段能滚动看见 */}
+        <section data-testid="member-recent-actions">
+          <h3 className="mb-1 text-xs font-medium text-zinc-400">{memberText.recentActions}</h3>
+          {recentActions.length === 0 ? (
+            <p className="text-xs text-zinc-500">{memberText.noRecentActions}</p>
+          ) : (
+            <ul className="space-y-1">
+              {recentActions.map((action) => (
+                <li
+                  key={action.key}
+                  data-testid="member-recent-action"
+                  className="truncate rounded-md bg-zinc-950/40 px-3 py-1.5 text-xs text-zinc-300"
+                >
+                  {action.label}
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+
+        {runTrail.length > 0 && (
+          <section data-testid="member-run-trail">
+            <h3 className="mb-1 text-xs font-medium text-zinc-400">{memberText.runTrail}</h3>
+            <ul className="max-h-48 space-y-1 overflow-y-auto">
+              {runTrail.map((event) => (
+                <li
+                  key={event.id}
+                  data-testid="member-run-trail-event"
+                  className="rounded-md bg-zinc-950/40 px-3 py-1.5 text-xs text-zinc-400"
+                >
+                  <span className="mr-2 font-mono text-[10px] text-zinc-500">{timeLabel(event.timestamp)}</span>
+                  <span className="text-zinc-300">{event.title}</span>
+                  {event.summary && event.summary !== event.title && (
+                    <p className="mt-0.5 truncate text-[11px] text-zinc-500">{event.summary}</p>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
 
         {memberMessages.length > 0 && (
           <section data-testid="member-process-messages">

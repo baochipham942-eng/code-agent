@@ -8,7 +8,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import type { TraceNode } from '@shared/contract/trace';
 import type { ToolCall } from '@shared/contract';
-import type { WorkbenchMessageMetadata } from '@shared/contract/conversationEnvelope';
 import type { TurnTimelineNode as TurnTimelinePayload, TurnTimelineTone } from '@shared/contract/turnTimeline';
 import { stripAppshotBlocks } from '@shared/contract/appshot';
 import { extractUserRequest, stripSystemReminderBlocks } from '@shared/utils/turnScaffold';
@@ -29,7 +28,7 @@ import { TurnQualityStrip } from './TurnQualityStrip';
 import { AgentErrorCard } from './AgentErrorCard';
 import { VoiceCallSummaryCard } from '../voice/VoiceCallSummaryCard';
 import { useSmoothStreamingText } from '../../../hooks/useSmoothStreamingText';
-import { Archive, AudioLines, ChevronDown, ChevronRight, AlertTriangle, Copy, Check, FileText, Link, GitBranch, RotateCcw, Wrench, CornerDownRight } from 'lucide-react';
+import { Archive, AudioLines, ChevronDown, ChevronRight, AlertTriangle, Copy, Check, FileText, Link, RotateCcw, Wrench } from 'lucide-react';
 import { UI } from '@shared/constants';
 import { humanizeToolError } from '../../../utils/toolExecutionPresentation';
 import { useI18n } from '../../../hooks/useI18n';
@@ -71,7 +70,6 @@ export const TraceNodeRenderer: React.FC<TraceNodeRendererProps> = ({
           sessionId={sessionId}
           content={node.content}
           attachments={attachments}
-          metadata={node.metadata?.workbench}
           sourceType={node.metadata?.source}
           suppressVoiceBadge={Boolean(inVoiceDispatchCard)}
           isNeoTagMessage={Boolean(node.metadata?.neoTag)}
@@ -131,7 +129,6 @@ const UserNode: React.FC<{
   sessionId?: string;
   content: string;
   attachments?: import('@shared/contract').MessageAttachment[];
-  metadata?: WorkbenchMessageMetadata;
   /** 输入来源（§8.2）：voice/dictation 的气泡加来源小标 */
   sourceType?: 'voice' | 'dictation' | 'typed';
   /** X5.5-D4：语音任务卡内抑制节点级「语音」小标（轮头已显示一次） */
@@ -139,9 +136,8 @@ const UserNode: React.FC<{
   isNeoTagMessage?: boolean;
   onRewind?: (messageId: string, content: string) => void;
   rewindDisabled?: boolean;
-}> = ({ messageId, sessionId, content, attachments, metadata, sourceType, suppressVoiceBadge, isNeoTagMessage, onRewind, rewindDisabled }) => {
+}> = ({ messageId, sessionId, content, attachments, sourceType, suppressVoiceBadge, isNeoTagMessage, onRewind, rewindDisabled }) => {
   const { t } = useI18n();
-  const isGuidedTurn = metadata?.runtimeInputDelivery === 'queued_next_turn';
   // 展示面还原：带 turnSystemContext 脚手架（<user_request> 包裹）的历史/泄漏消息只显示
   // 用户原话——包装是模型面，用户界面显示原话（UX round2 20f，定义在 shared/utils/turnScaffold）。
   // @neo 落库正文被剥了前缀（它兼任模型 prompt），渲染时补回展示，重启后也能看到带色的 @neo
@@ -165,12 +161,6 @@ const UserNode: React.FC<{
       {displayContent && (
         <div className="flex justify-end">
           <div className="max-w-[86%]">
-            {isGuidedTurn && (
-              <div className="mb-1 flex items-center justify-end gap-2 text-xs text-zinc-400">
-                <CornerDownRight className="h-3.5 w-3.5" />
-                <span>已引导对话</span>
-              </div>
-            )}
             {sourceType === 'voice' && !suppressVoiceBadge && (
               <div data-testid="voice-source-badge" className="mb-1 flex items-center justify-end gap-1 text-2xs text-zinc-500">
                 <AudioLines className="h-3 w-3" />

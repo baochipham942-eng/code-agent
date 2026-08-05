@@ -5,10 +5,28 @@
 
 import React, { Component, ErrorInfo, ReactNode } from 'react';
 import { AlertTriangle, RefreshCw } from 'lucide-react';
+import { IPC_DOMAINS } from '@shared/ipc';
 import { captureRendererException } from '../observability/sentryRenderer';
 import { languages } from '../i18n';
+import ipcService from '../services/ipcService';
 import { useAppStore } from '../stores/appStore';
 import { Button } from './primitives/Button';
+
+/** componentStack 整串能有上百行，落盘只留最靠近崩溃点的这几层。 */
+const COMPONENT_STACK_FRAMES = 8;
+
+export function summarizeComponentStack(
+  componentStack: string | null | undefined,
+  frames = COMPONENT_STACK_FRAMES,
+): string {
+  if (!componentStack) return '';
+  return componentStack
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .slice(0, frames)
+    .join('\n');
+}
 
 interface Props {
   children: ReactNode;
@@ -40,6 +58,18 @@ export class ErrorBoundary extends Component<Props, State> {
       tags: { surface: 'renderer', source: 'error-boundary' },
       extra: { componentStack: errorInfo.componentStack ?? undefined },
     });
+
+    // 同时落一份到后端 file logger（code-agent-*.log）：renderer logger 只走 console，
+    // 正式包 devtools 又是关的，此前渲染塌陷只有 Sentry 后台一条路，真机复发时本地无据可查。
+    // fire-and-forget，IPC 自身失败静默吞掉，绝不让日志再触发一次崩溃。
+    const stackSummary = summarizeComponentStack(errorInfo.componentStack);
+    void ipcService
+      .invokeDomain(IPC_DOMAINS.DIAGNOSTICS, 'logClientError', {
+        context: 'ErrorBoundary',
+        message: `${error.name}: ${error.message}`,
+        detail: [error.stack ?? '', stackSummary].filter(Boolean).join('\n--- componentStack ---\n'),
+      })
+      .catch(() => {});
   }
 
   handleRetry = () => {

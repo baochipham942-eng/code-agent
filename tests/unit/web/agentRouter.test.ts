@@ -2097,7 +2097,12 @@ describe('createAgentRouter', () => {
     expect(mockQueuedInputEnqueue).not.toHaveBeenCalled();
   });
 
-  it('rejects /api/interrupt when there is no active loop for the session', async () => {
+  it('starts a new foreground turn when only background work keeps the session busy', async () => {
+    mockCreateAgentLoop.mockImplementationOnce(() => ({
+      run: vi.fn(async () => undefined),
+      cancel: mockCancel,
+      steer: mockSteer,
+    }));
     const response = await fetch(`${baseUrl}/api/interrupt`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -2108,13 +2113,11 @@ describe('createAgentRouter', () => {
     });
     const body = await response.json();
 
-    expect(response.status).toBe(409);
-    expect(body).toMatchObject({
-      success: false,
-      error: {
-        code: 'NO_ACTIVE_RUN',
-      },
-    });
+    expect(response.ok).toBe(true);
+    expect(body).toEqual({ success: true, data: { outcome: 'steered' } });
+    await waitForAssertion(() => expect(mockCreateAgentLoop).toHaveBeenCalledTimes(1), 3000);
+    const messages = mockCreateAgentLoop.mock.calls[0]?.[2] as Array<{ role: string; content: string }>;
+    expect(messages.at(-1)).toMatchObject({ role: 'user', content: '补一句' });
     expect(mockSteer).not.toHaveBeenCalled();
   });
 

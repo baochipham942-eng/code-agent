@@ -47,7 +47,6 @@ export type ComposerSlotOccupantId =
   | 'seed-composer'
   | 'member-bar'
   | 'loop-status'
-  | 'queued-runtime-input'
   | 'suggestion-bar'
   | 'capability-strip'
   | 'combo-skill'
@@ -64,7 +63,6 @@ export const COMPOSER_SLOT_LAYER: Readonly<Record<ComposerSlotOccupantId, Compos
   upload: 2,
   'member-bar': 3,
   'loop-status': 3,
-  'queued-runtime-input': 3,
   'suggestion-bar': 4,
   'capability-strip': 4,
   'combo-skill': 4,

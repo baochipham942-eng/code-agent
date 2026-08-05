@@ -27,6 +27,10 @@ export const CORE_TOOLS: string[] = [
   'TaskManager',
   // 'TodoWrite', // 已移除
   'AskUserQuestion',
+  'spawn_task',
+  'steer_task',
+  'cancel_task',
+  'task_status',
 
   // Gen 4: 网络搜索
   'WebSearch',

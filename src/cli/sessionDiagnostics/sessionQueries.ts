@@ -63,7 +63,7 @@ function readJsonLines(directory: string, suffix: string): CorrelatedLine[] {
   if (!fs.existsSync(directory)) return [];
   const rows: CorrelatedLine[] = [];
   for (const name of fs.readdirSync(directory).filter((file) => file.endsWith(suffix)).sort()) {
-    let content = '';
+    let content: string;
     try {
       content = fs.readFileSync(path.join(directory, name), 'utf8');
     } catch {

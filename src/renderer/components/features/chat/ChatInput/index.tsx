@@ -1236,7 +1236,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
               右侧 时长 + 停止 + 发送）——不在输入框上方另悬浮一条，也就不会出现
               两个发送键（产品负责人 2026-07-27 真机反馈，形态对齐 Codex composer）。
               输入框本体全程可见可编辑。 */}
-          <div className="flex items-center gap-1 pl-4 pr-[7.5px] pb-[16.5px]">
+          <div className="flex items-center gap-1 px-4 pb-[16.5px]">
             {/* "+" 二级菜单（Codex 风格 B+）— 收纳上传附件 + 能力入口 + 交互模式 */}
             <InputAddMenu
               onFileSelect={handleFileSelect}

@@ -478,7 +478,7 @@ export const InputArea = forwardRef<InputAreaRef, InputAreaProps>(
             onPaste={handlePaste}
             onFocus={() => onFocusChange(true)}
             onBlur={() => onFocusChange(false)}
-            className={`chat-composer-textarea min-h-6 w-full cursor-text whitespace-pre-wrap break-words bg-transparent px-4 pt-4 pb-10 text-sm text-zinc-200 focus:outline-hidden focus-visible:outline-none focus-visible:ring-0 max-h-[200px] overflow-y-auto leading-relaxed ${disabled ? 'opacity-50' : ''}`}
+            className={`chat-composer-textarea min-h-6 w-full cursor-text whitespace-pre-wrap break-words bg-transparent px-4 pt-4 pb-4 text-sm text-zinc-200 focus:outline-hidden focus-visible:outline-none focus-visible:ring-0 max-h-[200px] overflow-y-auto leading-relaxed ${disabled ? 'opacity-50' : ''}`}
           />
           {/* 内联 chip 经 portal 填进各自的 contenteditable=false 挂载点 */}
           {portalTargets.map(({ chip, el }) => createPortal(

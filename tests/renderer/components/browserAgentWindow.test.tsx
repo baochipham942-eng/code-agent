@@ -185,13 +185,35 @@ describe('BrowserAgentWindow（B1-R·R1 图形化现场）', () => {
     expect(addressInput.value).toBe('wikipedia.org');
   });
 
-  it('managedSession 的 URL 与画面那扇窗不同源时只显示 origin，不显示另一扇窗的地址', () => {
+  it('有机跨域跳转后地址栏跟 managed tab（同窗实时元数据），不卡在旧 surface origin', () => {
+    // R3：baidu → wappass 等跨域有机跳转后，managedSession 与 surface origin 不同源是正常的
+    // （host 已保证 managed 优先 surface 绑定实例，不是另一扇默认单例窗）。
     browserSessionState = buildBrowserSessionState({
       managedSession: {
         running: true,
         tabCount: 1,
-        activeTab: { id: 'tab-1', title: '另一扇窗', url: 'https://other.example/secret' },
+        activeTab: {
+          id: 'tab-1',
+          title: '百度安全验证',
+          url: 'https://wappass.baidu.com/static/captcha/tuxing_v2.html',
+          canGoBack: true,
+        },
       },
+      browserSurfaceSessionId: 'surface-1',
+      browserSurfaceTitle: '百度一下，你就知道',
+      browserSurfaceOrigin: 'https://www.baidu.com',
+    });
+    render(<BrowserAgentWindow />);
+
+    const addressInput = screen.getByTestId('browser-agent-window-address-input') as HTMLInputElement;
+    expect(addressInput.value).toBe('wappass.baidu.com');
+    expect(addressInput.value).not.toBe('www.baidu.com');
+    expect((screen.getByTestId('browser-agent-window-nav-back') as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it('managed tab 尚未回填时才回落 surface origin', () => {
+    browserSessionState = buildBrowserSessionState({
+      managedSession: { running: false, tabCount: 0, activeTab: null },
       browserSurfaceSessionId: 'surface-1',
       browserSurfaceTitle: 'Wikipedia',
       browserSurfaceOrigin: 'https://wikipedia.org',
@@ -200,9 +222,6 @@ describe('BrowserAgentWindow（B1-R·R1 图形化现场）', () => {
 
     const addressInput = screen.getByTestId('browser-agent-window-address-input') as HTMLInputElement;
     expect(addressInput.value).toBe('wikipedia.org');
-    expect(addressInput.value).not.toContain('other.example');
-    // 另一扇窗（全局单例）的标题不得在本组件任何位置泄漏
-    expect(screen.queryByText('另一扇窗')).toBeNull();
   });
 
   it('tab 不可见（右栏收起）时把 visible 传 false —— 节流护栏不许后台开流', () => {

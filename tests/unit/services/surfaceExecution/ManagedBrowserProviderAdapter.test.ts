@@ -10,7 +10,10 @@ import {
   type SurfaceRuntimeIdentityV1,
 } from '../../../../src/host/services/surfaceExecution/SurfaceExecutionRuntime';
 
-function createFakeBrowser(failSnapshotAt?: number) {
+function createFakeBrowser(failSnapshotAt?: number, options?: {
+  sessionId?: string;
+  onSessionChanged?: (listener: (reason: string) => void) => () => void;
+}) {
   let running = false;
   let snapshot = 0;
   const ensureSession = vi.fn(async () => {
@@ -20,15 +23,34 @@ function createFakeBrowser(failSnapshotAt?: number) {
   const close = vi.fn(async () => {
     running = false;
   });
+  const sessionChangedListeners = new Set<(reason: string) => void>();
   const service = {
     ensureSession,
     isRunning: () => running,
     getActiveTab: () => running ? { id: 'managed-tab-1' } : null,
     getSessionState: () => ({
-      sessionId: 'managed-provider-session',
+      sessionId: options?.sessionId || 'managed-provider-session',
       profileId: 'isolated-profile',
       provider: 'system-chrome-cdp',
+      running,
+      tabCount: running ? 1 : 0,
+      activeTab: running
+        ? {
+          id: 'managed-tab-1',
+          url: snapshot <= 1 ? 'about:blank' : 'https://example.test/after',
+          title: snapshot <= 1 ? '' : 'Example',
+          canGoBack: snapshot > 1,
+          canGoForward: false,
+        }
+        : null,
     }),
+    onSessionChanged: options?.onSessionChanged || ((listener: (reason: string) => void) => {
+      sessionChangedListeners.add(listener);
+      return () => sessionChangedListeners.delete(listener);
+    }),
+    emitSessionChangedForTest: (reason: string) => {
+      for (const listener of sessionChangedListeners) listener(reason);
+    },
     getDomSnapshot: vi.fn(async () => {
       snapshot += 1;
       if (snapshot === failSnapshotAt) throw new Error('snapshot unavailable');
@@ -64,7 +86,7 @@ function createFakeBrowser(failSnapshotAt?: number) {
     }),
     close,
   };
-  return { service: service as unknown as BrowserService, ensureSession, close };
+  return { service: service as unknown as BrowserService, ensureSession, close, sessionChangedListeners, raw: service };
 }
 
 function createHarness(failSnapshotAt?: number) {
@@ -84,6 +106,67 @@ function createHarness(failSnapshotAt?: number) {
 }
 
 describe('ManagedBrowserProviderAdapter', () => {
+  it('getPreferredUiSessionState returns the live surface-bound browser session', async () => {
+    const { SURFACE_USER_BROWSER_AGENT_ID } = await import(
+      '../../../../src/shared/contract/surfaceExecution'
+    );
+    const registry = new RunRegistry();
+    registry.startAuxiliary({
+      runId: 'run-user',
+      sessionId: 'conversation-a',
+      workspace: process.cwd(),
+    });
+    const runtime = new SurfaceExecutionRuntime({ runRegistry: registry });
+    const userBrowser = createFakeBrowser(undefined, { sessionId: 'user-session' });
+    const adapter = new ManagedBrowserProviderAdapter(
+      runtime,
+      () => userBrowser.service,
+      async () => undefined,
+    );
+
+    expect(adapter.getPreferredUiSessionState()).toBeNull();
+
+    await adapter.execute({
+      identity: {
+        conversationId: 'conversation-a',
+        runId: 'run-user',
+        agentId: SURFACE_USER_BROWSER_AGENT_ID,
+      },
+      operationId: 'prep-user',
+      action: 'get_dom_snapshot',
+      params: { action: 'get_dom_snapshot' },
+      async executeProvider(_signal, browserService) {
+        return { success: true, metadata: { domSnapshot: await browserService.getDomSnapshot() } };
+      },
+    });
+
+    const preferred = adapter.getPreferredUiSessionState();
+    expect(preferred?.sessionId).toBe('user-session');
+    expect(preferred?.running).toBe(true);
+  });
+
+  it('organic page_load refreshes surface observation target', async () => {
+    const { identity, fake, adapter } = createHarness();
+    await adapter.execute({
+      identity,
+      operationId: 'prep-1',
+      action: 'get_dom_snapshot',
+      params: { action: 'get_dom_snapshot' },
+      async executeProvider(_signal, browserService) {
+        return { success: true, metadata: { domSnapshot: await browserService.getDomSnapshot() } };
+      },
+    });
+    const snapshotsBefore = (fake.service.getDomSnapshot as ReturnType<typeof vi.fn>).mock.calls.length;
+    // 模拟用户透传引发的有机跳转
+    fake.raw.emitSessionChangedForTest('page_load');
+    await vi.waitFor(() => {
+      expect((fake.service.getDomSnapshot as ReturnType<typeof vi.fn>).mock.calls.length)
+        .toBeGreaterThan(snapshotsBefore);
+    });
+    const binding = adapter.getBinding(identity);
+    expect(binding?.target.origin).toBe('https://example.test');
+  });
+
   it('binds the returned DOM target refs to the current Surface observation', async () => {
     const { identity, fake, adapter } = createHarness();
     const observed = await adapter.execute({

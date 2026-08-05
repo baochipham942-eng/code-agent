@@ -167,6 +167,8 @@ export class BrowserService implements Disposable {
   private targetRefs = new BrowserTargetRefRegistry();
   private pendingDialogs = new Map<string, BrowserPendingDialog>();
   private consoleErrors: string[] = [];
+  /** 页级导航/会话变化监听（surface adapter 有机跳转回写用） */
+  private sessionChangedListeners = new Set<(reason: ManagedBrowserSessionChangeReason) => void>();
   private networkFailures: string[] = [];
   private allowedHosts: string[];
   private blockedHosts: string[];
@@ -354,9 +356,31 @@ export class BrowserService implements Disposable {
     this.activeTabId = tabId;
 
     page.on('load', async () => {
-      await this.refreshTabMetadata(tab);
-      this.logger.log('DEBUG', `Page loaded: ${summarizeBrowserUrlForLog(tab.url)} - "${tab.title}"`);
-      this.emitSessionChanged('page_load');
+      try {
+        await this.refreshTabMetadata(tab);
+        this.logger.log('DEBUG', `Page loaded: ${summarizeBrowserUrlForLog(tab.url)} - "${tab.title}"`);
+        this.emitSessionChanged('page_load');
+      } catch (error) {
+        // 有机跳转（表单提交/点击链）依赖这条路径回写地址栏/历史；失败不能静默丢广播
+        this.logger.log('WARN', `Page load metadata refresh failed: ${error}`);
+        try {
+          tab.url = tab.page.url();
+          this.emitSessionChanged('page_load');
+        } catch {
+          // page already closed
+        }
+      }
+    });
+
+    // 主 frame 导航更早于 load：用户透传引发的跳转先回写 URL/历史，load 再补 title/favicon
+    page.on('framenavigated', async (frame) => {
+      if (frame !== page.mainFrame()) return;
+      try {
+        await this.refreshTabMetadata(tab);
+        this.emitSessionChanged('page_load');
+      } catch (error) {
+        this.logger.log('WARN', `Frame navigated metadata refresh failed: ${error}`);
+      }
     });
 
     page.on('dialog', (dialog) => {
@@ -1086,6 +1110,17 @@ export class BrowserService implements Disposable {
     await refreshBrowserTabMetadataFields(tab);
   }
 
+  /**
+   * 订阅会话变化（含有机 page_load）。返回取消订阅函数。
+   * ManagedBrowserProviderAdapter 用此把 surface activeTarget 与 tab 元数据对齐。
+   */
+  onSessionChanged(listener: (reason: ManagedBrowserSessionChangeReason) => void): () => void {
+    this.sessionChangedListeners.add(listener);
+    return () => {
+      this.sessionChangedListeners.delete(listener);
+    };
+  }
+
   private cleanupCrashedBrowserProcess(): void {
     this.browserProcess = null;
     this.browser = null;
@@ -1106,6 +1141,13 @@ export class BrowserService implements Disposable {
       });
     } catch (error) {
       this.logger.log('WARN', `Failed to broadcast managed browser session change (${reason}): ${error}`);
+    }
+    for (const listener of this.sessionChangedListeners) {
+      try {
+        listener(reason);
+      } catch (error) {
+        this.logger.log('WARN', `Managed browser session listener failed (${reason}): ${error}`);
+      }
     }
   }
 

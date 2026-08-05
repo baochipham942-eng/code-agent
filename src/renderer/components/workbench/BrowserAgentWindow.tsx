@@ -187,25 +187,22 @@ export const BrowserAgentWindow: React.FC = () => {
   ));
   const terminalTarget = terminalSurfaceSession?.session.activeTarget;
   const terminalBrowserTarget = terminalTarget?.kind === 'browser' ? terminalTarget : null;
-  // chrome 条必须描述**画面里那扇窗**。有 surface 会话时它才是画面的来源，
-  // managedSession 说的是另一个（全局单例）浏览器，直接用会周期性跳回「未启动」。
-  const managedUrl = preview?.url || managedSession.activeTab?.url || null;
+  // chrome 条必须描述**画面里那扇窗**。
+  // host getManagedBrowserSession 已优先 surface 绑定实例（user-browser-link 与 agent 同窗），
+  // page_load / framenavigated 会刷新 URL·title·canGoBack 并广播——managed tab 是实时真源。
+  // surface origin/title 仅在 managed 尚未回填时兜底；running 仍以 surface 会话存在为准
+  // （防默认单例 running=false 把状态点刷灰）。
+  const managedUrl = managedSession.activeTab?.url || preview?.url || null;
+  const managedTitle = managedSession.activeTab?.title || preview?.title || null;
   const running = Boolean(browserSurfaceSessionId) || managedSession.running;
-  const activeTitle = browserSurfaceSessionId
-    ? browserSurfaceTitle
-    : terminalSurfaceSession
-      ? terminalBrowserTarget?.title ?? null
-      : preview?.title || managedSession.activeTab?.title || null;
-  // surface 会话只报 origin（不含 path）。同源时才敢把 managedSession 的完整 URL 拿来
-  // 补全路径——不同源说明那是另一扇窗的地址，宁可只显示 origin 也不能显示错的。
-  // 终态会话同样只有 origin，刻意不补 path（reload 后 managedUrl 可能已是别的页面）。
-  const activeUrl = browserSurfaceSessionId
-    ? (managedUrl && browserSurfaceOrigin && managedUrl.startsWith(browserSurfaceOrigin)
-      ? managedUrl
-      : browserSurfaceOrigin)
-    : terminalSurfaceSession
-      ? terminalBrowserTarget?.origin ?? null
-      : managedUrl;
+  const activeTitle = managedTitle
+    || (browserSurfaceSessionId ? browserSurfaceTitle : null)
+    || (terminalSurfaceSession ? terminalBrowserTarget?.title ?? null : null);
+  // 有机跨域跳转（如 baidu → wappass）后 managedUrl 与 surface origin 不同源是正常的
+  // （同一扇窗），必须回写完整 URL；surface origin 只在 managed 空时兜底。
+  const activeUrl = managedUrl
+    || (browserSurfaceSessionId ? browserSurfaceOrigin : null)
+    || (terminalSurfaceSession ? terminalBrowserTarget?.origin ?? null : null);
   const pointerEvent = livePointer.event || livePointer.lastEvent;
   const modeLabel = browserSession.mode === 'managed'
     ? copy.modeManaged

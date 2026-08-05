@@ -73,12 +73,11 @@ describe('session search', () => {
         metadata: {
           workbench: {
             runtimeInputMode: 'supplement',
-            runtimeInputDelivery: 'queued_next_turn',
           },
         },
       },
     ];
 
-    expect(inferConversationTurnNumbers(messages)).toEqual([1, 1, 1, 1, 2]);
+    expect(inferConversationTurnNumbers(messages)).toEqual([1, 1, 1, 1, 1]);
   });
 });

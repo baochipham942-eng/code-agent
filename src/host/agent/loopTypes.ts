@@ -76,6 +76,8 @@ export interface AgentLoopConfig {
   historyVisibility?: 'visible' | 'meta';
   /** 当前 run 禁用的工具名。 */
   deniedToolNames?: string[];
+  /** 当前 run 的严格工具允许清单。 */
+  allowedToolNames?: string[];
   /** 工具执行日志回调 */
   onToolExecutionLog?: (log: { sessionId: string; toolCallId: string; toolName: string; args: Record<string, unknown>; result: import('../../shared/contract').ToolResult }) => void;
   /** CLI 模式下的消息持久化回调 */

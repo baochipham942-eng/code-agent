@@ -11,7 +11,6 @@ import type { CanvasSnapshot } from './canvasProposal';
 export type ConversationRoutingMode = 'auto' | 'direct' | 'parallel';
 export type BrowserSessionMode = 'none' | 'managed' | 'desktop';
 export type RuntimeInputMode = 'supplement' | 'redirect';
-export type RuntimeInputDelivery = 'in_flight' | 'queued_next_turn';
 export type TurnCapabilityScopeMode = 'auto' | 'manual';
 
 export interface ConversationModelSpec {
@@ -87,7 +86,6 @@ interface ConversationPendingCommand {
 
 export interface RuntimeInputIntent {
   mode: RuntimeInputMode;
-  delivery?: RuntimeInputDelivery;
 }
 
 export interface ConversationVoiceInputMetadata {
@@ -174,7 +172,6 @@ export interface WorkbenchMessageMetadata {
   designCodeHandoff?: DesignCodeHandoffContext;
   executionIntent?: ConversationExecutionIntent;
   runtimeInputMode?: RuntimeInputMode;
-  runtimeInputDelivery?: RuntimeInputDelivery;
   voiceInput?: ConversationVoiceInputMetadata;
   directRoutingDelivery?: DirectRoutingDeliverySnapshot;
   runCancellation?: {

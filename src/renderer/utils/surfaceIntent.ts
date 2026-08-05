@@ -72,8 +72,7 @@ export function deriveSurfaceIntentTurnId(messages: Message[]): string {
   for (const message of messages) {
     if (message.role !== 'user' || message.isMeta) continue;
     const workbench = message.metadata?.workbench;
-    const isCurrentTurnSupplement = workbench?.runtimeInputMode === 'supplement'
-      && workbench.runtimeInputDelivery !== 'queued_next_turn';
+    const isCurrentTurnSupplement = workbench?.runtimeInputMode === 'supplement';
     if (isCurrentTurnSupplement) continue;
     turnId = message.metadata?.neoTag?.sourceTurnId || message.id;
   }

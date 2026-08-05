@@ -173,11 +173,34 @@ import { attemptCompletionSchema } from './planning/attemptCompletion.schema';
 import { spaceListSchema } from './planning/spaceList.schema';
 import { spaceQuerySchema } from './planning/spaceQuery.schema';
 import { spaceCreateSchema } from './planning/spaceCreate.schema';
+import {
+  cancelTaskSchema,
+  spawnTaskSchema,
+  steerTaskSchema,
+  taskStatusSchema,
+} from './commandCenter/sessionCommandCenter.schema';
 
 export function registerMigratedTools(
   registry: ToolRegistry,
   platform: NodeJS.Platform = process.platform,
 ): void {
+  registry.register(
+    spawnTaskSchema,
+    async () => (await import('./commandCenter/sessionCommandCenter')).spawnTaskModule,
+  );
+  registry.register(
+    steerTaskSchema,
+    async () => (await import('./commandCenter/sessionCommandCenter')).steerTaskModule,
+  );
+  registry.register(
+    cancelTaskSchema,
+    async () => (await import('./commandCenter/sessionCommandCenter')).cancelTaskModule,
+  );
+  registry.register(
+    taskStatusSchema,
+    async () => (await import('./commandCenter/sessionCommandCenter')).taskStatusModule,
+  );
+
   // ── file/ batch 1 ─────────────────────────────────────────────────────
   registry.register(
     listDirectorySchema,

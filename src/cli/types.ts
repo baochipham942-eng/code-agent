@@ -49,6 +49,8 @@ export interface CLIConfig {
   goalContract?: GoalContract;
   /** 迭代数硬上限（角色主动性醒来等预算受限场景；不传用 AgentLoop 默认值） */
   maxIterations?: number;
+  /** 当前 run 可见的原生工具白名单；会话指挥台前台脑据此保持窄工具面。 */
+  allowedToolNames?: string[];
   /** 每轮执行意图（含 designCanvasActive 等）；web HTTP 路径据此透传到 RuntimeContext。 */
   executionIntent?: ConversationExecutionIntent;
   /** /agent 显式选择（preferredAgentId）；web/CLI 独立 run 路径据此换 prompt + 收窄工具。 */

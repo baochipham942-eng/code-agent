@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 //
-// T1 Overview 主路径：Run header 三态 / 队列投影 / 诊断下沉不丢内容。
+// T1 Overview 主路径：Run header 三态 / 诊断下沉不丢内容。
 
 import React from 'react';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
@@ -31,7 +31,6 @@ vi.mock('../../../src/renderer/hooks/useWorkspacePreviewModel', () => ({
 }));
 
 import { OverviewRunHeader } from '../../../src/renderer/components/TaskPanel/OverviewRunHeader';
-import { OverviewSteeringQueue } from '../../../src/renderer/components/TaskPanel/OverviewSteeringQueue';
 import { TaskWorkspaceOverview } from '../../../src/renderer/components/TaskPanel/TaskWorkspaceOverview';
 import { useRunControlStore } from '../../../src/renderer/stores/runControlStore';
 import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
@@ -112,7 +111,7 @@ describe('buildOverviewRunHeaderModel 三态', () => {
 
 describe('OverviewRunHeader', () => {
   beforeEach(() => {
-    useRunControlStore.setState({ queue: [], actions: null });
+    useRunControlStore.setState({ actions: null });
     useSessionStore.setState({ currentSessionId: 'session-a', sessions: [
       { id: 'session-a', title: '写周报' },
     ] as never });
@@ -131,7 +130,7 @@ describe('OverviewRunHeader', () => {
     setRun(run({ status: 'running', startedAt: START }));
     const interrupt = vi.fn();
     useRunControlStore.setState({
-      actions: { interrupt, retractQueued: vi.fn(), sendQueuedNow: vi.fn() },
+      actions: { interrupt },
     });
 
     render(<OverviewRunHeader />);
@@ -143,7 +142,7 @@ describe('OverviewRunHeader', () => {
   it('完成态不给中断按钮，但状态与用时仍在', () => {
     setRun(run({ status: 'completed', phase: '已完成', startedAt: START, endedAt: START + 5_000 }));
     useRunControlStore.setState({
-      actions: { interrupt: vi.fn(), retractQueued: vi.fn(), sendQueuedNow: vi.fn() },
+      actions: { interrupt: vi.fn() },
     });
 
     render(<OverviewRunHeader />);
@@ -161,59 +160,10 @@ describe('OverviewRunHeader', () => {
   });
 });
 
-describe('OverviewSteeringQueue', () => {
-  const actions = { interrupt: vi.fn(), retractQueued: vi.fn(), sendQueuedNow: vi.fn() };
-
-  beforeEach(() => {
-    actions.interrupt.mockReset();
-    actions.retractQueued.mockReset();
-    actions.sendQueuedNow.mockReset();
-    useRunControlStore.setState({ queue: [], actions });
-  });
-
-  it('空队列不占主视线', () => {
-    render(<OverviewSteeringQueue />);
-    expect(screen.queryByTestId('overview-queue-rows')).toBeNull();
-  });
-
-  it('每条排队消息一行，删除/立即发送各自调对应动作', () => {
-    useRunControlStore.setState({
-      queue: [
-        { id: 'q1', content: '再补一段结论', attachmentsCount: 0 },
-        { id: 'q2', content: '顺手改下标题', attachmentsCount: 2 },
-      ],
-    });
-
-    render(<OverviewSteeringQueue />);
-    expect(screen.getAllByTestId('overview-queue-row')).toHaveLength(2);
-    expect(screen.getByText('再补一段结论')).toBeTruthy();
-    expect(screen.getByText('2 个附件')).toBeTruthy();
-
-    fireEvent.click(screen.getByTestId('overview-queue-send-q1'));
-    fireEvent.click(screen.getByTestId('overview-queue-remove-q2'));
-
-    expect(actions.sendQueuedNow).toHaveBeenCalledWith('q1');
-    expect(actions.retractQueued).toHaveBeenCalledWith('q2');
-    // 两个动作不能互串
-    expect(actions.retractQueued).not.toHaveBeenCalledWith('q1');
-    expect(actions.sendQueuedNow).not.toHaveBeenCalledWith('q2');
-  });
-
-  it('发送失败的条目只留删除，不摆宿主已不接受的重发按钮', () => {
-    useRunControlStore.setState({
-      queue: [{ id: 'q3', content: '发不出去那条', attachmentsCount: 0, sendFailed: true }],
-    });
-
-    render(<OverviewSteeringQueue />);
-    expect(screen.queryByTestId('overview-queue-send-q3')).toBeNull();
-    expect(screen.getByTestId('overview-queue-remove-q3')).toBeTruthy();
-  });
-});
-
 describe('TaskWorkspaceOverview 四模块归位', () => {
   beforeEach(() => {
     window.localStorage.clear();
-    useRunControlStore.setState({ queue: [], actions: null });
+    useRunControlStore.setState({ actions: null });
     useSessionStore.setState({ currentSessionId: 'session-a', sessions: [] as never });
     setRun(run({ status: 'running', startedAt: START }));
   });

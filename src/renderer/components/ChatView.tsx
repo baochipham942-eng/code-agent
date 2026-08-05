@@ -84,15 +84,6 @@ import { buildProjectGoalChatStart } from '../utils/projectGoalChatSeed';
 import { isDragPointInsideVisibleRect } from '../utils/dragBounds';
 import { Image, AlertTriangle, MessageSquare, X } from 'lucide-react';
 
-export async function handleQueuedSteerOutcome(
-  currentSessionId: string | null,
-  hydrateQueuedRuntimeInputs: (sessionId: string) => Promise<void>,
-  queuedToastMessage: string,
-): Promise<void> {
-  toast.info(queuedToastMessage);
-  if (currentSessionId) await hydrateQueuedRuntimeInputs(currentSessionId);
-}
-
 export const ChatView: React.FC = () => {
   const { t } = useI18n();
   const appWorkingDirectory = useAppStore((state) => state.workingDirectory);
@@ -129,10 +120,6 @@ export const ChatView: React.FC = () => {
     researchDetected,
     dismissResearchDetected,
     isInterrupting,
-    queuedRuntimeInputs,
-    hydrateQueuedRuntimeInputs,
-    cancelQueuedRuntimeInput,
-    sendQueuedRuntimeInput,
   } = useAgent();
   const buildComposerContext = useComposerStore((state) => state.buildContext);
   const hydrateComposer = useComposerStore((state) => state.hydrateFromSession);
@@ -602,13 +589,8 @@ export const ChatView: React.FC = () => {
     submitSteerEnvelope(
       envelope,
       currentSessionId,
-      () => handleQueuedSteerOutcome(
-        currentSessionId,
-        hydrateQueuedRuntimeInputs,
-        t.chatInput.runtimeInputQueuedAfterAdjustment,
-      ),
     )
-  ), [currentSessionId, hydrateQueuedRuntimeInputs, t]);
+  ), [currentSessionId]);
 
   const handleSendMessage = useCallback(async (content: string, attachments?: MessageAttachment[]) => {
     return handleSendEnvelope(buildEnvelope(content, attachments));
@@ -897,9 +879,6 @@ export const ChatView: React.FC = () => {
               isProcessing={effectiveIsProcessing}
               isInterrupting={isInterrupting}
               onStop={cancel}
-              queuedRuntimeInputs={queuedRuntimeInputs}
-              onCancelQueuedRuntimeInput={cancelQueuedRuntimeInput}
-              onSendQueuedRuntimeInput={sendQueuedRuntimeInput}
               hasPlan={false}
             />
           </div>

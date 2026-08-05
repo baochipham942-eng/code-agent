@@ -1325,6 +1325,7 @@ export class AgentOrchestrator {
       maxIterations: options?.maxIterations,
       historyVisibility: options?.historyVisibility,
       deniedToolNames,
+      allowedToolNames: options?.allowedToolNames,
       telemetryAdapter,
       persistMessage: sessionId
         ? async (message: Message) => {

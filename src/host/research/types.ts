@@ -173,6 +173,8 @@ export interface AgentRunOptions {
   historyVisibility?: 'visible' | 'meta';
   /** 当前 run 禁用的工具名。用于后台/无人值守场景屏蔽交互工具。 */
   deniedToolNames?: string[];
+  /** 当前 run 唯一可见且可调用的工具名。用于前台 brain 等严格窄工具面。 */
+  allowedToolNames?: string[];
   toolScope?: import('../../shared/contract/conversationEnvelope').WorkbenchToolScope;
   executionIntent?: import('../../shared/contract/conversationEnvelope').ConversationExecutionIntent;
   runtimeInput?: import('../../shared/contract/conversationEnvelope').RuntimeInputIntent;

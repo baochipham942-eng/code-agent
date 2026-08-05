@@ -303,7 +303,7 @@ describe('别的都不标（标记必须稀缺）', () => {
   });
 
   it('没有正在跑的语音派活时，任务轨怎么变都不往通话里插播', async () => {
-    // 没派活 = pendingId 为空。用户自己在键盘上干的事不该插进电话。
+    // 没派活 = 没有语音任务 id。用户自己在键盘上干的事不该插进电话。
     await pushTasks([task({ id: 't1', status: 'in_progress' })]);
     await pushTasks([task({ id: 't1', status: 'blocked', blockedReason: '缺权限' })]);
 

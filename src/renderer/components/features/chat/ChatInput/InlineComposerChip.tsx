@@ -11,7 +11,7 @@
 //
 // 渲染方式：React portal 进 contenteditable=false 的 DOM 挂载点（见 composerRichTextModel）。
 
-import { Pin, Sparkles, Target, X } from 'lucide-react';
+import { BookOpen, Sparkles, Target, X } from 'lucide-react';
 import type { AttachmentCategory } from '../../../../../shared/contract';
 import { useI18n } from '../../../../hooks/useI18n';
 import { AttachmentIcon } from './AttachmentBar';
@@ -74,7 +74,7 @@ export function InlineComposerChip({
       ) : chip.kind === 'skill' ? (
         <Sparkles className="h-3.5 w-3.5 shrink-0 text-badge-success" aria-hidden />
       ) : chip.kind === 'library' ? (
-        <Pin className="h-3.5 w-3.5 shrink-0" aria-hidden />
+        <BookOpen className="h-3.5 w-3.5 shrink-0" aria-hidden />
       ) : (
         <AttachmentIcon category={chip.category ?? 'document'} className="h-3.5 w-3.5 shrink-0" />
       )}

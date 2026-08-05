@@ -34,7 +34,6 @@ function renderDirectHook() {
     addMessage: useSessionStore.getState().addMessage,
     currentSessionId: 'session-direct',
     currentTurnMessageIdRef: { current: null },
-    enqueueRuntimeInput: vi.fn(),
     isProcessing: false,
     setIsProcessing: vi.fn(),
     setSessionProcessing: vi.fn(),

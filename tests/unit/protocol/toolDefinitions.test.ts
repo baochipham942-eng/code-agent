@@ -89,6 +89,17 @@ describe('toolDefinitions deferred loading', () => {
     expect(names).toContain('Append');
   });
 
+  it('does not put a permission prompt in front of AskUserQuestion itself', () => {
+    const definition = getCoreToolDefinitions()
+      .find((candidate) => candidate.name === 'AskUserQuestion');
+
+    expect(definition).toMatchObject({
+      permissionLevel: 'execute',
+      requiresPermission: false,
+      requiresUserPresence: true,
+    });
+  });
+
   it('keeps core tools out of loaded deferred definitions after ToolSearch hits', async () => {
     const service = getToolSearchService();
     await service.searchTools('TaskManager', { maxResults: 3, includeMCP: false });

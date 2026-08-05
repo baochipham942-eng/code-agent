@@ -52,6 +52,15 @@ const taskStore = vi.hoisted(() => ({
   cancelTask: vi.fn(async () => {}),
 }));
 
+const memberViewState = vi.hoisted(() => ({
+  viewingMemberId: null as string | null,
+  setViewingMemberId: vi.fn(),
+}));
+
+const memberPills = vi.hoisted(() => ({
+  pills: [] as Array<{ key: string; roleId: string; name: string; status: string; isLead: boolean }>,
+}));
+
 const artifactOwnershipState = vi.hoisted(() => ({
   current: null as null | {
     turnId: string;
@@ -89,6 +98,16 @@ vi.mock('../../../src/renderer/stores/taskStore', () => ({
     selector ? selector(taskStore) : taskStore
   ),
 }));
+vi.mock('../../../src/renderer/stores/memberViewStore', () => ({
+  useMemberViewStore: (selector?: (state: typeof memberViewState) => unknown) => (
+    selector ? selector(memberViewState) : memberViewState
+  ),
+}));
+
+vi.mock('../../../src/renderer/components/features/expert/SessionMemberBar', () => ({
+  useSessionMembers: () => memberPills.pills,
+}));
+
 vi.mock('../../../src/renderer/hooks/useStatusRailModel', () => ({
   useStatusRailModel: () => statusRailState,
 }));
@@ -147,6 +166,9 @@ beforeEach(() => {
   appState.openPreview.mockReset();
   appState.openContentPreview.mockReset();
   appState.openWorkspacePreview.mockReset();
+  runWorkbenchState.subagents = [];
+  memberPills.pills = [];
+  memberViewState.setViewingMemberId.mockReset();
 });
 
 describe('四模块归位', () => {
@@ -199,7 +221,7 @@ describe('Todo 模块：readFailure 空态化与互斥（C.11）', () => {
     setRun('completed');
 
     render(<TaskWorkspaceOverview />);
-    expect(screen.queryByText('无法确认任务状态')).toBeNull();
+    expect(screen.queryByText('无法确认后台命令任务的状态')).toBeNull();
     expect(screen.queryByTestId('overview-todo-module')).toBeNull();
   });
 
@@ -212,7 +234,7 @@ describe('Todo 模块：readFailure 空态化与互斥（C.11）', () => {
 
     render(<TaskWorkspaceOverview />);
     const todoModule = screen.getByTestId('overview-todo-module');
-    expect(todoModule.textContent).toContain('无法确认任务状态');
+    expect(todoModule.textContent).toContain('无法确认后台命令任务的状态');
     expect(screen.queryByRole('button', { name: '重试读取' })).not.toBeNull();
     expect(screen.queryByRole('button', { name: '取消任务' })).not.toBeNull();
     // 不暴露内部错误原文
@@ -228,7 +250,7 @@ describe('Todo 模块：readFailure 空态化与互斥（C.11）', () => {
     setRun('completed');
 
     render(<TaskWorkspaceOverview />);
-    expect(screen.queryByText('无法确认任务状态')).toBeNull();
+    expect(screen.queryByText('无法确认后台命令任务的状态')).toBeNull();
   });
 });
 
@@ -370,5 +392,92 @@ describe('产物模块：完成态收拢缩略行', () => {
     const module = screen.getByTestId('overview-artifacts-module');
     expect(module.textContent).toContain('未命名输出');
     expect(module.textContent).not.toContain('775064011');
+  });
+});
+
+// ============================================================================
+// C2 概览 Todo 成员级全透明（2026-08-05）
+// ============================================================================
+// 此前 Todo 长期显示 `执行 bash` 这类工具流水（buildSessionTaskRecord 在没有
+// 结构化 todos 时拿 taskProgress.step 伪造一条，而 step 的兜底串来自
+// toolExecutionEngine 的 `执行 ${toolCall.name}`）；成员在跑什么完全不透明。
+describe('Todo 模块：组队会话成员级清单', () => {
+  const members = [
+    {
+      id: 'agent-a',
+      parentRunId: 'run-1',
+      role: '知微',
+      status: 'running',
+      inputSummary: '拉竞品数据',
+      lastOutput: '',
+    },
+    {
+      id: 'agent-b',
+      parentRunId: 'run-1',
+      role: '青禾',
+      status: 'completed',
+      inputSummary: '写摘要',
+      lastOutput: '已交稿',
+    },
+  ];
+
+  it('主会话没有结构化 todos 时，Todo 模块照样按成员铺清单', () => {
+    runWorkbenchState.subagents = members as never;
+    memberPills.pills = [
+      { key: 'agent-a', roleId: 'analyst', name: '知微', status: 'running', isLead: false },
+      { key: 'agent-b', roleId: 'writer', name: '青禾', status: 'completed', isLead: false },
+    ];
+
+    render(<TaskWorkspaceOverview />);
+
+    const todoModule = screen.getByTestId('overview-todo-module');
+    expect(todoModule.textContent).toContain('知微');
+    expect(todoModule.textContent).toContain('青禾');
+    expect(todoModule.textContent).toContain('拉竞品数据');
+    expect(screen.getAllByTestId('subagent-run-row')).toHaveLength(2);
+  });
+
+  it('点成员行直达成员视图', () => {
+    runWorkbenchState.subagents = members as never;
+    memberPills.pills = [
+      { key: 'agent-a', roleId: 'analyst', name: '知微', status: 'running', isLead: false },
+      { key: 'agent-b', roleId: 'writer', name: '青禾', status: 'completed', isLead: false },
+    ];
+
+    render(<TaskWorkspaceOverview />);
+    fireEvent.click(screen.getAllByTestId('subagent-run-row')[1]);
+
+    expect(memberViewState.setViewingMemberId).toHaveBeenCalledWith('agent-b');
+  });
+
+  // workflow 子 agent 也在 runWorkbench.subagents 里，而 workflow 快照对「无 sessionId
+  // 的注入项」跨会话可见——不过滤就会让非组队会话也长出 Todo 模块（e2e 实测）。
+  it('只渲染本会话成员：解析不出成员的行整条不出现', () => {
+    runWorkbenchState.subagents = members as never;
+    memberPills.pills = [
+      { key: 'agent-a', roleId: 'analyst', name: '知微', status: 'running', isLead: false },
+    ];
+
+    render(<TaskWorkspaceOverview />);
+    expect(screen.getAllByTestId('subagent-run-row')).toHaveLength(1);
+    expect(screen.getByTestId('overview-todo-module').textContent).not.toContain('青禾');
+  });
+
+  it('一个成员都解析不出来时，Todo 模块不因 subagents 而出现', () => {
+    runWorkbenchState.subagents = members as never;
+    memberPills.pills = [];
+    runWorkbenchState.tasks = [];
+
+    render(<TaskWorkspaceOverview />);
+    expect(screen.queryByTestId('overview-todo-module')).toBeNull();
+  });
+
+  it('非组队会话且无 todos：Todo 模块不渲染（不再有伪造的「执行 xxx」条目）', () => {
+    runWorkbenchState.subagents = [];
+    runWorkbenchState.tasks = [];
+
+    render(<TaskWorkspaceOverview />);
+
+    expect(screen.queryByTestId('overview-todo-module')).toBeNull();
   });
 });

@@ -132,6 +132,29 @@ describe('appService.cancel fan-out — AC-A (cascade) / AC-C (no cascade on chi
     expect(swarm.parallelCoordinators.abortSession).toHaveBeenCalledWith(sessionId, 'session-switch');
   });
 
+  // D1（2026-08-05）：成员转后台后主 loop 已 idle，此时按停止键走的就是这条无 reason
+  // 的调用。级联必须照常打到成员身上，否则「停止全部」只停了个空壳。
+  it('D1: cancel() with no reason still cascades while the main loop is idle', async () => {
+    const swarm = buildSwarmServicesMock();
+    registerSwarmServices(swarm as unknown as Parameters<typeof registerSwarmServices>[0]); // partial mock, intentionally missing fields
+    const sessionId = 'sess-idle-swarm-live';
+    const tm = buildTaskManagerMock(sessionId); // status: 'idle'
+    const svc = new AgentAppServiceImpl(
+      () => tm as never,
+      () => null,
+      () => sessionId,
+      () => {},
+    );
+
+    await svc.cancel(sessionId);
+
+    expect(tm.getSessionState).toHaveReturnedWith({ status: 'idle' });
+    expect(swarm.spawnGuard.cancelSession).toHaveBeenCalledWith(sessionId, 'user-cancel');
+    expect(swarm.parallelCoordinators.abortSession).toHaveBeenCalledWith(sessionId, 'user-cancel');
+    expect(swarm.planApproval.cancelSession).toHaveBeenCalledWith(sessionId, 'user-cancel');
+    expect(swarm.launchApproval.cancelSession).toHaveBeenCalledWith(sessionId, 'user-cancel');
+  });
+
   it('AC-C: child-error reason does NOT trigger cancelAll / abortAllRunning', async () => {
     const swarm = buildSwarmServicesMock();
     registerSwarmServices(swarm as unknown as Parameters<typeof registerSwarmServices>[0]); // partial mock, intentionally missing fields

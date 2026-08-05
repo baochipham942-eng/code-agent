@@ -10,7 +10,6 @@ import { useSessionStore } from '../../../stores/sessionStore';
 export async function submitSteerEnvelope(
   envelope: ConversationEnvelope,
   currentSessionId: string | null,
-  onQueued: () => Promise<void>,
 ): Promise<SteerOrQueueOutcome | undefined> {
   const clientMessageId = envelope.clientMessageId ?? generateMessageId();
   const steerEnvelope: ConversationEnvelope = {
@@ -25,7 +24,7 @@ export async function submitSteerEnvelope(
       'interrupt',
       steerEnvelope,
     );
-    if (outcome.outcome === 'steered') {
+    if (outcome.outcome === 'steered' || outcome.outcome === 'queued') {
       const userMessage: Message = {
         id: clientMessageId,
         role: 'user',
@@ -35,8 +34,6 @@ export async function submitSteerEnvelope(
         metadata: toMessageMetadata(steerEnvelope.context),
       };
       useSessionStore.getState().addMessage(userMessage);
-    } else {
-      await onQueued();
     }
     return outcome;
   } catch (error) {

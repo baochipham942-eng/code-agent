@@ -18,6 +18,7 @@ import {
 } from '../../../shared/constants/voice';
 import type { RealtimeVoiceProviderProfile } from '../../../shared/constants/realtimeVoiceProviders';
 import type {
+  VoiceToolCallOrigin,
   VoiceTokenUsage,
   VoiceTransport,
   VoiceTransportHandle,
@@ -26,6 +27,12 @@ import type {
 import { getConfigService } from '../core/configService';
 import { createLogger } from '../infra/logger';
 import { getHttpsAgent } from '../../model/providers/providerHttp';
+import { recordVoiceToolCall } from './voiceTelemetry';
+import {
+  mayBeVoiceXmlFallback,
+  parseVoiceXmlToolFallback,
+  validateVoiceToolArguments,
+} from './voiceXmlToolFallback';
 
 const logger = createLogger('RealtimeVoice');
 const RESPONSE_IDLE_TIMEOUT_CODE = 'response_idle_timeout';
@@ -399,8 +406,12 @@ export function createRealtimeTransport(profile: RealtimeVoiceProviderProfile): 
     const cancellingResponseIds = new Set<string>();
     const cancellingResponseItemIds = new Map<string, string>();
     let responseCreateQueued = false;
+    let responseCreateInFlight = false;
     let queuedResponseInstructions = '';
     let sentResponseInstructions = '';
+    let queuedResponseToolChoice: 'auto' | 'required' = 'auto';
+    let sentResponseToolChoice: 'auto' | 'required' = 'auto';
+    let sessionToolChoice: 'auto' | 'required' = 'auto';
     let pendingInjectionAt: number | null = null;
     let pendingInjectionNarrationId: string | undefined;
     let pendingInjectionToken = 0;
@@ -415,6 +426,20 @@ export function createRealtimeTransport(profile: RealtimeVoiceProviderProfile): 
     let modelUnresponsiveNotified = false;
     let speechStartedAt = 0;
     let currentCandidateId = '';
+    const heldXmlResponses = new Map<string, { audio: Buffer[]; transcript: string; itemId?: string }>();
+    const unclassifiedAudioByResponse = new Map<string, Buffer[]>();
+    const pendingXmlCalls = new Map<string, { name: string; arguments: string }>();
+    const toolOriginByResponse = new Map<string, VoiceToolCallOrigin>();
+    let xmlFallbackSequence = 0;
+
+    const updateSessionToolChoice = (toolChoice: 'auto' | 'required') => {
+      if (ws.readyState !== WebSocket.OPEN || sessionToolChoice === toolChoice) return;
+      sessionToolChoice = toolChoice;
+      ws.send(JSON.stringify({
+        type: 'session.update',
+        session: { tool_choice: toolChoice },
+      }));
+    };
 
     const clearResponseWatchdog = () => {
       if (responseWatchdogTimer) clearTimeout(responseWatchdogTimer);
@@ -442,6 +467,7 @@ export function createRealtimeTransport(profile: RealtimeVoiceProviderProfile): 
               ? { response: { instructions: sentResponseInstructions } }
               : {}),
           }));
+          responseCreateInFlight = true;
           scheduleResponseWatchdog();
           return;
         }
@@ -526,6 +552,7 @@ export function createRealtimeTransport(profile: RealtimeVoiceProviderProfile): 
           item: { type: 'message', role: 'user', content: [{ type: 'input_text', text }] },
         }));
         ws.send(JSON.stringify({ type: 'response.create' }));
+        responseCreateInFlight = true;
       } catch (error) {
         rejectPendingInjection(error instanceof Error ? error.message : 'voice injection failed');
       }
@@ -536,6 +563,9 @@ export function createRealtimeTransport(profile: RealtimeVoiceProviderProfile): 
       responseCreateQueued = false;
       sentResponseInstructions = queuedResponseInstructions;
       queuedResponseInstructions = '';
+      sentResponseToolChoice = queuedResponseToolChoice;
+      queuedResponseToolChoice = 'auto';
+      updateSessionToolChoice(sentResponseToolChoice);
       armResponseWatchdog();
       // 旧 assistant item 只能在当前用户 ASR final 已到、Host 明确请求新回复后删除。
       // 若在旧 response.done 当刻删，可能连正在提交的 input transcription 一起截断。
@@ -549,6 +579,7 @@ export function createRealtimeTransport(profile: RealtimeVoiceProviderProfile): 
           ? { response: { instructions: sentResponseInstructions } }
           : {}),
       }));
+      responseCreateInFlight = true;
       return true;
     };
 
@@ -556,9 +587,50 @@ export function createRealtimeTransport(profile: RealtimeVoiceProviderProfile): 
      * 工具结果回灌：写进对话项后必须再发一次 response.create，否则模型拿到结果也不开口。
      * 执行失败不抛回上游——把失败文案当结果说出去，比通话卡死好。
      */
-    async function handleToolCall(callId: string, name: string, args: string): Promise<void> {
+    async function handleToolCall(
+      callId: string,
+      name: string,
+      args: string,
+      origin: VoiceToolCallOrigin,
+      responseId: string,
+    ): Promise<void> {
       if (!onToolCall) return;
-      const output = await onToolCall({ callId, name, arguments: args })
+      const priorOrigin = toolOriginByResponse.get(responseId);
+      if (priorOrigin) {
+        logger.warn('duplicate realtime voice tool call ignored', {
+          provider: profile.id,
+          responseId,
+          origin,
+          priorOrigin,
+        });
+        recordVoiceToolCall({ provider: profile.id, origin, toolName: name, outcome: 'duplicate' });
+        return;
+      }
+      const validation = validateVoiceToolArguments(name, args, registeredTools);
+      if (!validation.ok) {
+        logger.warn('realtime voice tool call rejected', {
+          provider: profile.id,
+          responseId,
+          origin,
+          toolName: name,
+          reason: validation.reason,
+        });
+        recordVoiceToolCall({ provider: profile.id, origin, toolName: name, outcome: 'rejected' });
+        return;
+      }
+      toolOriginByResponse.set(responseId, origin);
+      logger.info('realtime voice tool call accepted', {
+        provider: profile.id,
+        responseId,
+        callId,
+        origin,
+        toolName: name,
+      });
+      recordVoiceToolCall({ provider: profile.id, origin, toolName: name, outcome: 'accepted' });
+      // required 只约束用户这一轮。工具结果后的二轮回复必须先恢复 auto，
+      // 否则模型会被迫再调一次工具，形成调用环。
+      updateSessionToolChoice('auto');
+      const output = await onToolCall({ callId, name, arguments: validation.arguments, origin })
         .catch((err: unknown) => `工具执行失败：${err instanceof Error ? err.message : 'unknown'}`);
       if (ws.readyState !== WebSocket.OPEN) return;
       ws.send(JSON.stringify({
@@ -566,6 +638,7 @@ export function createRealtimeTransport(profile: RealtimeVoiceProviderProfile): 
         item: { type: 'function_call_output', call_id: callId, output },
       }));
       ws.send(JSON.stringify({ type: 'response.create' }));
+      responseCreateInFlight = true;
     }
 
     // 上游到底回了什么，此前只有被 switch 命中的那几类才留痕；真机出现
@@ -606,9 +679,11 @@ export function createRealtimeTransport(profile: RealtimeVoiceProviderProfile): 
           break;
         case 'response.created': {
           clearResponseWatchdog();
+          responseCreateInFlight = false;
           const responseId = responseIdOf(event, 'legacy-response');
           const narrationId = pendingInjectionNarrationId;
           activeResponseId = responseId;
+          if (responseId) unclassifiedAudioByResponse.set(responseId, []);
           responseCreateQueued = false;
           settlePendingInjection();
           if (responseId) onEvent({
@@ -632,7 +707,14 @@ export function createRealtimeTransport(profile: RealtimeVoiceProviderProfile): 
               ttfaPerceivedMs = vadSilenceWindowMs !== undefined ? ttfaModelMs + vadSilenceWindowMs : undefined;
               logger.info('ttfa', { ttfaModelMs, ttfaPerceivedMs });
             }
-            onAudio(Buffer.from(event.delta, 'base64'));
+            const audio = Buffer.from(event.delta, 'base64');
+            const responseId = responseIdOf(event, activeResponseId);
+            const held = heldXmlResponses.get(responseId);
+            if (held) held.audio.push(audio);
+            else if (unclassifiedAudioByResponse.has(responseId)) {
+              unclassifiedAudioByResponse.get(responseId)?.push(audio);
+            }
+            else onAudio(audio);
           }
           break;
         case 'response.audio_transcript.delta':
@@ -642,13 +724,27 @@ export function createRealtimeTransport(profile: RealtimeVoiceProviderProfile): 
             if (responseId) {
               const itemId = responseItemIds.get(responseId) ?? event.item_id;
               if (itemId && !responseItemIds.has(responseId)) responseItemIds.set(responseId, itemId);
-              onEvent({
-                type: 'assistant.transcript',
-                text: event.delta,
-                done: false,
-                responseId,
-                ...(itemId ? { itemId } : {}),
-              });
+              const existing = heldXmlResponses.get(responseId);
+              const combined = `${existing?.transcript ?? ''}${event.delta}`;
+              if (existing || mayBeVoiceXmlFallback(combined)) {
+                const unclassifiedAudio = unclassifiedAudioByResponse.get(responseId) ?? [];
+                unclassifiedAudioByResponse.delete(responseId);
+                heldXmlResponses.set(responseId, {
+                  audio: existing?.audio ?? unclassifiedAudio,
+                  transcript: combined,
+                  ...(itemId ? { itemId } : {}),
+                });
+              } else {
+                for (const frame of unclassifiedAudioByResponse.get(responseId) ?? []) onAudio(frame);
+                unclassifiedAudioByResponse.delete(responseId);
+                onEvent({
+                  type: 'assistant.transcript',
+                  text: event.delta,
+                  done: false,
+                  responseId,
+                  ...(itemId ? { itemId } : {}),
+                });
+              }
             }
           }
           break;
@@ -659,13 +755,48 @@ export function createRealtimeTransport(profile: RealtimeVoiceProviderProfile): 
           if (responseId) {
             const itemId = responseItemIds.get(responseId) ?? event.item_id;
             if (itemId && !responseItemIds.has(responseId)) responseItemIds.set(responseId, itemId);
-            onEvent({
-              type: 'assistant.transcript',
-              text: typeof event.transcript === 'string' ? event.transcript : '',
-              done: true,
-              responseId,
-              ...(itemId ? { itemId } : {}),
-            });
+            const transcript = typeof event.transcript === 'string' ? event.transcript : '';
+            const held = heldXmlResponses.get(responseId);
+            if (held || mayBeVoiceXmlFallback(transcript)) {
+              unclassifiedAudioByResponse.delete(responseId);
+              const parsed = parseVoiceXmlToolFallback(transcript || held?.transcript || '', registeredTools);
+              heldXmlResponses.delete(responseId);
+              if (parsed.kind === 'accepted') {
+                pendingXmlCalls.set(responseId, { name: parsed.name, arguments: parsed.arguments });
+              } else if (parsed.kind === 'rejected') {
+                logger.warn('realtime voice XML fallback rejected', {
+                  provider: profile.id,
+                  responseId,
+                  reason: parsed.reason,
+                  ...(parsed.toolName ? { toolName: parsed.toolName } : {}),
+                });
+                recordVoiceToolCall({
+                  provider: profile.id,
+                  origin: 'xml_fallback',
+                  toolName: parsed.toolName ?? 'unknown',
+                  outcome: 'rejected',
+                });
+              } else {
+                for (const frame of held?.audio ?? []) onAudio(frame);
+                onEvent({
+                  type: 'assistant.transcript',
+                  text: transcript,
+                  done: true,
+                  responseId,
+                  ...(itemId ? { itemId } : {}),
+                });
+              }
+            } else {
+              for (const frame of unclassifiedAudioByResponse.get(responseId) ?? []) onAudio(frame);
+              unclassifiedAudioByResponse.delete(responseId);
+              onEvent({
+                type: 'assistant.transcript',
+                text: transcript,
+                done: true,
+                responseId,
+                ...(itemId ? { itemId } : {}),
+              });
+            }
           }
           break;
         }
@@ -762,7 +893,14 @@ export function createRealtimeTransport(profile: RealtimeVoiceProviderProfile): 
         }
         case 'response.function_call_arguments.done':
           if (onToolCall && typeof event.call_id === 'string' && typeof event.name === 'string') {
-            void handleToolCall(event.call_id, event.name, typeof event.arguments === 'string' ? event.arguments : '{}');
+            const responseId = responseIdOf(event, activeResponseId || 'legacy-response');
+            void handleToolCall(
+              event.call_id,
+              event.name,
+              typeof event.arguments === 'string' ? event.arguments : '{}',
+              'function_call',
+              responseId,
+            );
           }
           break;
         case 'response.done': {
@@ -776,9 +914,13 @@ export function createRealtimeTransport(profile: RealtimeVoiceProviderProfile): 
             });
           }
           if (responseId === activeResponseId) activeResponseId = '';
+          for (const frame of unclassifiedAudioByResponse.get(responseId) ?? []) onAudio(frame);
+          unclassifiedAudioByResponse.delete(responseId);
+          heldXmlResponses.delete(responseId);
           if (responseId) cancellingResponseIds.delete(responseId);
           if (responseId) responseItemIds.delete(responseId);
           pendingInjectionAt = null;
+          updateSessionToolChoice('auto');
           if (responseId) {
             onEvent({
               type: 'response.done',
@@ -787,6 +929,17 @@ export function createRealtimeTransport(profile: RealtimeVoiceProviderProfile): 
               ...(ttfaPerceivedMs !== undefined ? { ttfaPerceivedMs } : {}),
               ...(usage ? { usage } : {}),
             });
+          }
+          const xmlCall = pendingXmlCalls.get(responseId);
+          if (xmlCall) {
+            pendingXmlCalls.delete(responseId);
+            void handleToolCall(
+              `xml-fallback-${responseId}-${++xmlFallbackSequence}`,
+              xmlCall.name,
+              xmlCall.arguments,
+              'xml_fallback',
+              responseId,
+            );
           }
           if (responseCreateQueued) sendResponseCreate();
           break;
@@ -799,8 +952,12 @@ export function createRealtimeTransport(profile: RealtimeVoiceProviderProfile): 
             cancellingResponseItemIds.clear();
             responseItemIds.clear();
             responseCreateQueued = false;
+            responseCreateInFlight = false;
             queuedResponseInstructions = '';
             sentResponseInstructions = '';
+            queuedResponseToolChoice = 'auto';
+            sentResponseToolChoice = 'auto';
+            sessionToolChoice = 'auto';
             settlePendingInjection(new Error('voice session ended after idle timeout'));
             logger.info('upstream session ended after idle timeout', {
               code: event.error.code,
@@ -906,9 +1063,10 @@ export function createRealtimeTransport(profile: RealtimeVoiceProviderProfile): 
         responseCreateQueued = true;
         sendResponseCreate();
       },
-      respond(instructions?: string) {
+      respond(instructions?: string, toolChoice: 'auto' | 'required' = 'auto') {
         responseCreateQueued = true;
         queuedResponseInstructions = instructions?.trim() ?? '';
+        queuedResponseToolChoice = toolChoice;
         sendResponseCreate();
       },
       injectItem(text: string, narrationId?: string) {
@@ -923,7 +1081,7 @@ export function createRealtimeTransport(profile: RealtimeVoiceProviderProfile): 
         return ack ?? Promise.reject(new Error('voice injection was not sent'));
       },
       isResponding() {
-        return Boolean(activeResponseId);
+        return Boolean(activeResponseId || responseCreateInFlight);
       },
       interrupt() {
         if (ws.readyState !== WebSocket.OPEN || !activeResponseId) return null;

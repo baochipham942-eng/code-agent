@@ -141,6 +141,48 @@ describe('workspace.ipc create handlers', () => {
         skipped: [],
       });
     });
+
+    it('resolves relative file paths against the session workingDirectory', async () => {
+      const sessionCwd = join(workDir, 'session-project');
+      await mkdir(sessionCwd, { recursive: true });
+      await writeFile(join(sessionCwd, 'notes.md'), '# session notes\n');
+
+      const result = await handleExportBundle(
+        {
+          outputDir: workDir,
+          bundleName: 'session-rel.zip',
+          sessionId: 'sess-export-1',
+          files: [{ path: 'notes.md', name: 'notes.md', role: 'primary' }],
+        },
+        undefined,
+        async (sessionId) => (sessionId === 'sess-export-1' ? sessionCwd : null),
+      );
+
+      expect(result.fileCount).toBe(1);
+      expect(result.skippedCount).toBe(0);
+
+      const JSZip = await import('jszip');
+      const zip = await JSZip.default.loadAsync(await readFile(result.filePath));
+      expect(await zip.file('files/notes.md')?.async('string')).toBe('# session notes\n');
+      const manifest = JSON.parse(await zip.file('manifest.json')!.async('string')) as {
+        workingDirectory: string;
+        files: Array<{ path: string }>;
+      };
+      expect(manifest.workingDirectory).toBe(sessionCwd);
+      expect(manifest.files[0]?.path).toBe(join(sessionCwd, 'notes.md'));
+    });
+
+    it('fail-loud on relative paths when no session cwd can be resolved (no process.cwd fallback)', async () => {
+      await expect(handleExportBundle(
+        {
+          outputDir: workDir,
+          bundleName: 'no-cwd.zip',
+          files: [{ path: 'relative-only.md', name: 'relative-only.md' }],
+        },
+        () => null,
+        async () => null,
+      )).rejects.toThrow(/相对路径|sessionId|workingDirectory|绝对路径/);
+    });
   });
 
   describe('handleInspectArchive', () => {

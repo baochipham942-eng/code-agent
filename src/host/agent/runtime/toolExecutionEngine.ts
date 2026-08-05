@@ -795,6 +795,7 @@ export class ToolExecutionEngine {
           neoTag: this.ctx.neoTag,
           suppressBackgroundSubagentIdleWake: Boolean(this.ctx.goalMode?.isPending()),
           abortSignal: this.ctx.control.runAbortController?.signal,
+          deniedToolNames: this.ctx.deniedToolNames,
         }
       );
       clearInterval(progressInterval);

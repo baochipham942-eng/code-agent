@@ -80,8 +80,10 @@ export interface NarrationState {
   milestoneCounts: Map<string, number>;
   /** 上一条进度真正注入的时刻；间隔下限据此判。0 = 本通电话还没播过进度。 */
   lastMilestoneAt: number;
+  lastMilestoneAtByWorkItem: Map<string, number>;
   /** 本通电话第一次派活的时刻，用来兑现首条进度的最小延迟。 */
   firstDispatchAt: number;
+  firstDispatchAtByWorkItem: Map<string, number>;
 }
 
 /** 队列只认这一小块 session：id/上游用来注入与留痕，narration 是它自己的状态。 */
@@ -102,7 +104,9 @@ export function createNarrationState(): NarrationState {
     spokenWorkItemIds: new Set(),
     milestoneCounts: new Map(),
     lastMilestoneAt: 0,
+    lastMilestoneAtByWorkItem: new Map(),
     firstDispatchAt: 0,
+    firstDispatchAtByWorkItem: new Map(),
   };
 }
 
@@ -237,6 +241,7 @@ function markNarrationDelivered(session: NarrationSession, narrationId: string, 
     const owner = milestoneOwner(narrationId);
     state.milestoneCounts.set(owner, (state.milestoneCounts.get(owner) ?? 0) + 1);
     state.lastMilestoneAt = Date.now();
+    state.lastMilestoneAtByWorkItem.set(owner, state.lastMilestoneAt);
   }
   logger.info('narration delivery confirmed', {
     voiceSessionId: session.id,
@@ -357,15 +362,24 @@ function milestoneAllowed(session: NarrationSession, narration: VoiceWorkNarrati
     return true;
   }
   // 首条延迟：不让「我开始做 X 了」和第一条进度挤在同一口气里。
-  if (state.firstDispatchAt && now - state.firstDispatchAt < VOICE_MILESTONE_FIRST_DELAY_MS) {
+  const firstDispatchAt = state.firstDispatchAtByWorkItem.get(owner)
+    ?? (state.firstDispatchAtByWorkItem.size === 0 ? state.firstDispatchAt : 0);
+  if (firstDispatchAt && now - firstDispatchAt < VOICE_MILESTONE_FIRST_DELAY_MS) {
     dropNarration(session, narration, 'first_delay_window');
     return false;
   }
-  if (state.lastMilestoneAt && now - state.lastMilestoneAt < VOICE_MILESTONE_MIN_INTERVAL_MS) {
+  const lastMilestoneAt = state.lastMilestoneAtByWorkItem.get(owner)
+    ?? (state.lastMilestoneAtByWorkItem.size === 0 ? state.lastMilestoneAt : 0);
+  if (lastMilestoneAt && now - lastMilestoneAt < VOICE_MILESTONE_MIN_INTERVAL_MS) {
     dropNarration(session, narration, 'min_interval');
     return false;
   }
   return true;
+}
+
+export function markNarrationDispatch(state: NarrationState, workItemId: string, now = Date.now()): void {
+  state.firstDispatchAt = now;
+  state.firstDispatchAtByWorkItem.set(workItemId, now);
 }
 
 export function enqueueOrInjectNarration(session: NarrationSession, narration: VoiceWorkNarration): void {

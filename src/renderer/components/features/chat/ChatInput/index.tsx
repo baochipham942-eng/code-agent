@@ -12,14 +12,12 @@ import type {
   ComposerPromptCommandSelection,
   ConversationEnvelope,
   ConversationVoiceInputMetadata,
-  RuntimeInputMode,
 } from '@shared/contract/conversationEnvelope';
 import type { SteerOrQueueOutcome } from '@shared/contract/appService';
 import { UI } from '@shared/constants';
 import { IPC_DOMAINS } from '@shared/ipc';
 
 import { InputArea, InputAreaRef } from './InputArea';
-import { QueuedRuntimeInputCard } from './QueuedRuntimeInputCard';
 import { ComposerSlot, SlotEntry } from './ComposerSlot';
 import { InputAddMenu } from './InputAddMenu';
 import { SendButton } from './SendButton';
@@ -119,20 +117,16 @@ export interface ChatInputProps {
   disabled?: boolean;
   /** 是否正在处理（用于显示停止按钮） */
   isProcessing?: boolean;
+  /**
+   * 主 loop 已 idle 但本会话仍有可停的后台工作（swarm 成员）。只影响主操作按钮形态，
+   * 不进 isProcessing —— isProcessing 还决定发送走 steer/排队分支，混进去会让
+   * 「主 loop 空闲时发新消息」被误路由成运行中补充。
+   */
+  hasStoppableBackgroundWork?: boolean;
   /** 运行中输入正在接入 */
   isInterrupting?: boolean;
   /** 停止处理回调 */
   onStop?: () => void;
-  queuedRuntimeInputs?: Array<{
-    id: string;
-    content: string;
-    mode: RuntimeInputMode;
-    attachmentsCount: number;
-    createdAt: number;
-  }>;
-  /** @returns 是否真的撤回成功——成功才把内容退回输入框（已发出去的不能退）。 */
-  onCancelQueuedRuntimeInput?: (id: string) => void | Promise<boolean>;
-  onSendQueuedRuntimeInput?: (id: string) => void;
   /** 是否有 Plan */
   hasPlan?: boolean;
   /** 点击 Plan 入口 */
@@ -143,6 +137,11 @@ export interface ChatInputProps {
    * 走既有草稿态降级，不会绑到页面背后那个会话上发错配置。
    */
   sessionless?: boolean;
+  /**
+   * sessionless 时的项目 id（协作空间页）：@ 面板 pin 候选口径 = 本项目 ∪ 全局架。
+   * 有会话时忽略，改用 session.projectId。
+   */
+  scopeProjectId?: string | null;
 }
 
 // Imperative handle exposed to parent (e.g. ChatView drop zone)
@@ -168,9 +167,14 @@ export function resolveLiveVoiceSlot(params: {
   phase: VoiceCallPhase;
   hasMessages: boolean;
   hadLiveVoice: boolean;
+  /**
+   * 主 loop 已 idle，但本会话还有能被停掉的后台工作（swarm 成员在跑）。
+   * 没有它时主 loop 一收尾按钮就变回发送键，用户再也点不到「停止全部」。
+   */
+  hasStoppableBackgroundWork?: boolean;
 }): LiveVoiceSlot {
   if (!params.sessionId || !params.enabled || params.phase !== 'idle') return 'none';
-  if (params.hasContent || params.isProcessing) return 'none';
+  if (params.hasContent || params.isProcessing || params.hasStoppableBackgroundWork) return 'none';
   if (params.hasMessages && !params.hadLiveVoice) return 'none';
   return 'primary';
 }
@@ -182,7 +186,7 @@ export function resolveComposerCoreActions(params: Parameters<typeof resolveLive
   const liveVoiceSlot = resolveLiveVoiceSlot(params);
   const primaryAction: ComposerCoreAction = liveVoiceSlot === 'primary'
     ? 'live-voice'
-    : params.isProcessing && !params.hasContent
+    : (params.isProcessing || params.hasStoppableBackgroundWork) && !params.hasContent
       ? 'stop'
       : 'send';
 
@@ -201,14 +205,13 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   onSteer,
   disabled,
   isProcessing,
+  hasStoppableBackgroundWork,
   isInterrupting,
   onStop,
-  queuedRuntimeInputs = [],
-  onCancelQueuedRuntimeInput,
-  onSendQueuedRuntimeInput,
   hasPlan,
   onPlanClick,
   sessionless = false,
+  scopeProjectId = null,
 }, ref) => {
   const { t } = useI18n();
   const [value, setValue] = useState('');
@@ -235,6 +238,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   const [slashFilter, setSlashFilter] = useState('');
   const [showSlashPopover, setShowSlashPopover] = useState(false);
   const currentSessionProjectId = useSessionStore((s) => s.sessions.find((x) => x.id === currentSessionId)?.projectId ?? null);
+  // 会话优先；草稿/空间用 scopeProjectId（空间页传入 project.id）
+  const pinScopeProjectId = currentSessionId ? currentSessionProjectId : scopeProjectId;
   const currentSessionHadLiveVoice = useSessionStore((s) => (
     s.sessions.find((session) => session.id === currentSessionId)?.metadata?.hadLiveVoice === true
   ));
@@ -633,7 +638,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   }, [currentSessionId]);
   const atMention = useAtMentionPanel({
     sessionId: currentSessionId ?? null,
-    projectId: currentSessionProjectId,
+    projectId: pinScopeProjectId,
     onFileSelect: handleAtFileSelect,
   });
   const { search: searchAtMention, dismiss: dismissAtMention } = atMention;
@@ -739,7 +744,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   const resolvedPlaceholder = useMemo(() => {
     if (inputPlaceholder) return inputPlaceholder;
     if (!isProcessing) return undefined;
-    return t.chatInput.queuedGuidePlaceholder;
+    return t.chatInput.placeholderContinue;
   }, [inputPlaceholder, isProcessing, t]);
 
   // 提交发送管线（schedule/loop/goal/agent 命令分支 + appshot 注入 + ! shell 快捷 + 失败回滚）
@@ -922,6 +927,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     phase: liveVoiceCallPhase,
     hasMessages,
     hadLiveVoice: currentSessionHadLiveVoice,
+    hasStoppableBackgroundWork: Boolean(hasStoppableBackgroundWork),
   });
 
   return (
@@ -1062,24 +1068,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
               }}
               onCapabilitySelect={() => {}}
               installingSkillName={installingSkillName}
-            />
-          </SlotEntry>
-
-          {/* 排队（引导）消息：输入框上方的独立卡片，不进输入框容器——进去会撑高输入区。
-              性质是上下文（L3）：它跟着「本轮还在跑」存在，不是要用户先决策的阻塞卡 */}
-          <SlotEntry id="queued-runtime-input" active={queuedRuntimeInputs.length > 0}>
-            <QueuedRuntimeInputCard
-              items={queuedRuntimeInputs}
-              isProcessing={Boolean(isProcessing)}
-              onSend={onSendQueuedRuntimeInput}
-              onCancel={async (id) => {
-                // 取消 = 这条没发出去，内容退回输入框，别让人重打一遍（真机反馈）。
-                const pending = queuedRuntimeInputs.find((item) => item.id === id);
-                const retracted = await onCancelQueuedRuntimeInput?.(id);
-                if (retracted && pending?.content) {
-                  setValue((current) => (current.trim() ? `${current} ${pending.content}` : pending.content));
-                }
-              }}
             />
           </SlotEntry>
 
@@ -1348,7 +1336,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
                 <SendButton
                   key={action}
                   disabled={disabled && !isProcessing}
-                  isProcessing={isProcessing}
+                  // action==='stop' 已经含「无草稿」判定，所以这里不会误进排队发送分支。
+                  isProcessing={isProcessing || action === 'stop'}
                   isInterrupting={isInterrupting}
                   hasContent={hasContent}
                   type="submit"

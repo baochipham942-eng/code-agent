@@ -178,4 +178,21 @@ describe('narration delivery acknowledgement', () => {
     expect(injectItem).toHaveBeenCalledTimes(1);
     expect(session.narration.inFlight).toBeNull();
   });
+
+  it('语音问题消费 final transcript 后可显式放行排队的重问', () => {
+    const { session, injectItem } = fakeSession();
+    queue.markNarrationUserTurn(session);
+    queue.enqueueOrInjectNarration(session, {
+      workItemId: 'voice-question:q-1:0:retry',
+      status: 'announcement',
+      title: '处理方式',
+      summary: '请直接说选项名称或编号。',
+    });
+    expect(injectItem).not.toHaveBeenCalled();
+
+    queue.flushNarrationQueue(session);
+
+    expect(injectItem).toHaveBeenCalledTimes(1);
+    expect(session.narration.inFlight?.narration.workItemId).toBe('voice-question:q-1:0:retry');
+  });
 });

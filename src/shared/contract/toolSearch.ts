@@ -67,6 +67,9 @@ export interface ToolSearchOptions {
 
   /** 是否包含 MCP 工具（默认 true） */
   includeMCP?: boolean;
+
+  /** 当前 run 明确禁用的工具；搜索结果和延迟加载都必须排除。 */
+  deniedToolNames?: readonly string[];
 }
 
 /**

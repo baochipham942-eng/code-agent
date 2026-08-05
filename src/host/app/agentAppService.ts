@@ -68,6 +68,7 @@ import type {
   WorkbenchMessageMetadata,
 } from '../../shared/contract/conversationEnvelope';
 import { withWorkbenchTurnSystemContext } from './workbenchTurnContext';
+import { withSessionCommandCenterBrain } from './sessionCommandCenterBrain';
 import { getPermissionModeManager } from '../permissions/modes';
 import {
   exportSessionToMarkdown,
@@ -305,9 +306,6 @@ export class AgentAppServiceImpl implements AgentApplicationService {
     }
     if (context.runtimeInput) {
       metadata.runtimeInputMode = context.runtimeInput.mode;
-      if (context.runtimeInput.delivery) {
-        metadata.runtimeInputDelivery = context.runtimeInput.delivery;
-      }
     }
     if (context.voiceInput) {
       metadata.voiceInput = { ...context.voiceInput };
@@ -701,10 +699,13 @@ export class AgentAppServiceImpl implements AgentApplicationService {
         : envelope.context?.workingDirectory ?? effectiveWorkingDirectory ?? orchestrator?.getWorkingDirectory(),
     );
 
-    const options = withWorkbenchTurnSystemContext(
+    const workbenchOptions = withWorkbenchTurnSystemContext(
       envelope.options as AppServiceRunOptions | undefined,
       envelope.context,
     );
+    const options = envelope.content.trimStart().startsWith('/') || workbenchOptions?.goal
+      ? workbenchOptions
+      : withSessionCommandCenterBrain(workbenchOptions);
 
     // 云货架专家首跑：本轮档位钳到最严，让用户看见它每一步要干什么。
     // 必须挂在**主 agent 轮起点**——用户在输入框选中专家后说话，专家就是主 agent
@@ -836,7 +837,10 @@ export class AgentAppServiceImpl implements AgentApplicationService {
     // 返回类型化结果而不是裸抛或静默丢弃。
     let outcome: PermissionDeliveryOutcome;
     try {
-      outcome = this.getOrchestratorOrThrow(sessionId).handlePermissionResponse(requestId, response);
+      const resolvedSessionId = this.resolveSessionId(sessionId);
+      outcome = resolvedSessionId
+        ? this.getTaskManager().handlePermissionResponse(resolvedSessionId, requestId, response)
+        : 'no_session';
     } catch (err) {
       if (closeDeadParkedApproval(requestId)) return 'no_orchestrator';
       throw err;
@@ -866,10 +870,13 @@ export class AgentAppServiceImpl implements AgentApplicationService {
       resolvedSessionId,
       envelope.context?.workingDirectory ?? effectiveWorkingDirectory ?? orchestrator?.getWorkingDirectory(),
     );
-    const options = withWorkbenchTurnSystemContext(
+    const workbenchOptions = withWorkbenchTurnSystemContext(
       envelope.options as AppServiceRunOptions | undefined,
       envelope.context,
     );
+    const options = envelope.content.trimStart().startsWith('/') || workbenchOptions?.goal
+      ? workbenchOptions
+      : withSessionCommandCenterBrain(workbenchOptions);
     return tm.interruptAndContinue(
       resolvedSessionId,
       envelope.content,

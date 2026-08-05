@@ -13,7 +13,7 @@
 // title / summary / prompt / 路径一律不在这个类型里，想传也传不进来。
 // ============================================================================
 
-import type { VoiceWorkNarration } from '../../../shared/contract/voice';
+import type { VoiceProviderId, VoiceToolCallOrigin, VoiceWorkNarration } from '../../../shared/contract/voice';
 import { getTelemetryService } from '../../telemetry/telemetryService';
 import { createLogger } from '../infra/logger';
 
@@ -68,6 +68,32 @@ type VoiceWorkEvent =
       worthHearing: boolean;
       reason: VoiceNarrationDropReason;
     };
+
+export type VoiceToolCallOutcome = 'accepted' | 'rejected' | 'duplicate';
+
+/**
+ * 记录 Realtime 工具通道命中。provider + origin 可直接聚合 fallback 率；
+ * toolName 只允许注册工具名，调用方不得传参数或用户文本。
+ */
+export function recordVoiceToolCall(input: {
+  provider: VoiceProviderId;
+  origin: VoiceToolCallOrigin;
+  toolName: string;
+  outcome: VoiceToolCallOutcome;
+}): void {
+  try {
+    const telemetry = getTelemetryService();
+    const span = telemetry.startSpan('voice_tool_call', 'internal', {
+      'voice_tool.provider': input.provider,
+      'voice_tool.origin': input.origin,
+      'voice_tool.name': input.toolName,
+      'voice_tool.outcome': input.outcome,
+    });
+    telemetry.endSpan(span.spanId, input.outcome === 'rejected' ? 'error' : 'ok');
+  } catch (err) {
+    logger.warn('voice tool telemetry unavailable', { message: err instanceof Error ? err.message : 'unknown' });
+  }
+}
 
 /**
  * 记一次语音工作事件。

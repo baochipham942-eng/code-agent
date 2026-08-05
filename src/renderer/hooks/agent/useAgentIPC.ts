@@ -9,6 +9,7 @@ import type {
   WorkbenchMessageMetadata,
 } from '@shared/contract/conversationEnvelope';
 import type { MessageMetadata } from '@shared/contract/message';
+import type { SteerOrQueueOutcome } from '@shared/contract/appService';
 import { normalizeDesignBrief, type DesignBrief } from '@shared/contract/designBrief';
 import {
   formatDesignAcceptanceContractForPrompt,
@@ -22,8 +23,8 @@ import {
   type DesignCodeHandoffVariant,
 } from '@shared/contract/designHandoff';
 import { directionTokens } from '@/design/direction-tokens';
-import { IPC_CHANNELS } from '@shared/ipc';
-import { QueuedInputSchemas, VoiceSchemas } from '@shared/ipc/schemas';
+import { IPC_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
+import { VoiceSchemas } from '@shared/ipc/schemas';
 import type { SwarmAgentState } from '@shared/contract/swarm';
 import { createLogger } from '../../utils/logger';
 import { useAppStore } from '../../stores/appStore';
@@ -459,18 +460,6 @@ export async function requestCancelUntilSettled(input: {
   }
 }
 
-export interface QueuedRuntimeInput {
-  id: string;
-  sessionId: string;
-  envelope: ConversationEnvelope;
-  content: string;
-  mode: RuntimeInputMode;
-  attachmentsCount: number;
-  createdAt: number;
-  retryCount?: number;
-  sendFailed?: boolean;
-}
-
 export interface SendMessageOptions {
   silentFailure?: boolean;
 }
@@ -591,9 +580,6 @@ function toWorkbenchMetadata(
   }
   if (context.runtimeInput) {
     metadata.runtimeInputMode = context.runtimeInput.mode;
-    if (context.runtimeInput.delivery) {
-      metadata.runtimeInputDelivery = context.runtimeInput.delivery;
-    }
   }
   if (context.voiceInput) {
     metadata.voiceInput = { ...context.voiceInput };
@@ -614,7 +600,6 @@ interface UseAgentIPCArgs {
   addMessage: SessionStoreState['addMessage'];
   currentSessionId: string | null;
   currentTurnMessageIdRef: MutableRefObject<string | null>;
-  enqueueRuntimeInput: (input: QueuedRuntimeInput) => void;
   isProcessing: boolean;
   setIsProcessing: AppStoreState['setIsProcessing'];
   setSessionProcessing: AppStoreState['setSessionProcessing'];
@@ -624,14 +609,13 @@ export function useAgentIPC({
   addMessage,
   currentSessionId,
   currentTurnMessageIdRef,
-  enqueueRuntimeInput,
   isProcessing,
   setIsProcessing,
   setSessionProcessing,
 }: UseAgentIPCArgs) {
   // Send a message to the agent
   // Turn-based model: 不再预创建 placeholder，等待后端 turn_start 事件
-  // 运行中继续发送时，排队到当前回复结束后作为下一轮用户消息发送
+  // 运行中继续发送时，直接交给前台 brain；短暂拒收由 host 输入投递层缓冲重投。
   const sendMessage = useCallback(
     async (envelope: ConversationEnvelope, options?: SendMessageOptions) => {
       const { content, attachments, context } = envelope;
@@ -855,55 +839,42 @@ export function useAgentIPC({
         throw new Error('Session is already cancelling');
       }
 
-      // 排到下一轮：当前流式回复继续完成，这条等下一轮。
-      // 抽成函数是因为有两个入口——① 前端已知在跑；② 前端以为空闲、host 说这一轮还没
-      // 收干净（409）。后者同样不是失败，走同一条队列，run 一释放 drain 就把它发出去。
-      const queueForNextTurn = async (clientMessageId?: string): Promise<void> => {
+      const deliverToForegroundBrain = async (clientMessageId?: string): Promise<void> => {
         const runtimeInputMode = getRuntimeInputMode(contextWithDesignContext);
-        const queuedMessageId = clientMessageId ?? generateMessageId();
-        const queuedContext: ConversationEnvelopeContext | undefined = contextWithDesignContext
+        const messageId = clientMessageId ?? generateMessageId();
+        const runtimeContext: ConversationEnvelopeContext | undefined = contextWithDesignContext
           ? {
               ...contextWithDesignContext,
-              runtimeInput: { mode: runtimeInputMode, delivery: 'queued_next_turn' },
+              runtimeInput: { mode: runtimeInputMode },
             }
-          : { runtimeInput: { mode: runtimeInputMode, delivery: 'queued_next_turn' } };
-        const queuedEnvelope: ConversationEnvelope = {
+          : { runtimeInput: { mode: runtimeInputMode } };
+        const runtimeEnvelope: ConversationEnvelope = {
           ...envelope,
-          // 设计会话冷启动引导不在这里 prepend：排队项稍后由 sendQueuedRuntimeInput 重新走
-          // sendMessage(queued.envelope)，会在 auto 路径对 envelope.content 注入引导（避免双重 prepend）。
           content: envelope.content,
           attachments,
-          context: queuedContext,
-          clientMessageId: queuedMessageId,
+          context: runtimeContext,
+          clientMessageId: messageId,
           sessionId: effectiveSessionId!,
         };
         try {
-          const enqueueResponse = await typedInvokeDomain(QueuedInputSchemas.ENQUEUE, {
-            action: 'enqueue',
-            payload: {
-              id: queuedMessageId,
-              sessionId: effectiveSessionId!,
-              envelope: queuedEnvelope,
-            },
-          });
-          if (!enqueueResponse.success) {
-            throw new Error(enqueueResponse.error.message);
+          const outcome = await ipcService.invokeDomain<SteerOrQueueOutcome>(
+            IPC_DOMAINS.AGENT,
+            'interrupt',
+            runtimeEnvelope,
+          );
+          if (!useSessionStore.getState().messages.some((message) => message.id === messageId)) {
+            addMessage({
+              id: messageId,
+              role: 'user',
+              content: runtimeEnvelope.content,
+              attachments: runtimeEnvelope.attachments,
+              timestamp: Date.now(),
+              metadata: toMessageMetadata(runtimeContext),
+            });
           }
-          const persisted = enqueueResponse.data;
-          enqueueRuntimeInput({
-            id: persisted.id,
-            sessionId: persisted.sessionId,
-            envelope: persisted.envelope,
-            content: persisted.envelope.content,
-            mode: getRuntimeInputMode(persisted.envelope.context),
-            attachmentsCount: persisted.envelope.attachments?.length || 0,
-            createdAt: persisted.createdAt,
-            retryCount: persisted.retryCount,
-          });
-          // 入队结果由输入框上方的引导条自己呈现（「已引导 N 条 · 等待发送」），
-          // 再弹一条 toast 是同一件事说两遍。
+          logger.info('sendMessage - foreground input delivery accepted', { outcome: outcome.outcome });
         } catch (error) {
-          logger.error('Queued input enqueue failed', error);
+          logger.error('Foreground input delivery failed', error);
           addMessage({
             id: generateMessageId(),
             role: 'assistant',
@@ -940,7 +911,7 @@ export function useAgentIPC({
               logger.info('sendMessage - routed busy text into live voice call');
               return;
             }
-            logger.info('sendMessage - voice text injection fell back to durable queue', {
+            logger.info('sendMessage - voice text injection fell back to foreground input delivery', {
               reason: injection.success
                 ? injection.data.outcome === 'fallback' ? injection.data.reason : injection.data.outcome
                 : injection.error.code,
@@ -948,16 +919,16 @@ export function useAgentIPC({
           } catch (error) {
             // The typed path must have a durable escape hatch even if the voice
             // bridge itself is unavailable during teardown.
-            logger.warn('sendMessage - voice text injection failed; queueing input', {
+            logger.warn('sendMessage - voice text injection failed; using foreground input delivery', {
               message: error instanceof Error ? error.message : String(error),
             });
           }
         } else {
-          logger.info('sendMessage - session processing, queueing runtime input for next turn', {
+          logger.info('sendMessage - session processing, delivering runtime input to foreground brain', {
             isCurrentSessionProcessing,
           });
         }
-        await queueForNextTurn(voiceFallbackMessageId);
+        await deliverToForegroundBrain(voiceFallbackMessageId);
         return;
       }
 
@@ -1027,7 +998,7 @@ export function useAgentIPC({
               previousTaskState ?? { status: 'idle' },
             );
           }
-          await queueForNextTurn(userMessage.id);
+          await deliverToForegroundBrain(userMessage.id);
           return;
         }
         if (options?.silentFailure === true) {
@@ -1059,7 +1030,7 @@ export function useAgentIPC({
         });
       }
     },
-    [addMessage, enqueueRuntimeInput, setSessionProcessing, isProcessing, currentSessionId]
+    [addMessage, setSessionProcessing, isProcessing, currentSessionId]
   );
 
   // Cancel the current operation

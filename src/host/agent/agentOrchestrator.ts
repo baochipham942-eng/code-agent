@@ -56,7 +56,7 @@ import { getComboRecorder } from '../services/skills/comboRecorder';
 import { getPredefinedAgent } from './agentDefinition';
 import { resolveAgent as registryResolveAgent } from './agentRegistry';
 import { buildRoutingResolvedEventData } from './routingResolvedEvent';
-import { buildRoutingToolDenylist } from './routingToolPolicy';
+import { buildLiveVoiceToolDenylist, buildRoutingToolDenylist } from './routingToolPolicy';
 import { queuePendingSteerMessagesOrWarn, steerOrQueue, type SteerOrQueueOutcome } from '../runtime/steerQueueFence';
 import { startRunPreferringDurable } from './orchestrator/durableRunStart';
 import { getUserPresenceToolNames } from '../tools/dispatch/toolDefinitions';
@@ -605,13 +605,15 @@ export class AgentOrchestrator {
     }
   }
 
-  setWorkingDirectory(path: string): void {
+  setWorkingDirectory(path: string, options: { syncWorkspaceServices?: boolean } = {}): void {
     this.workingDirectory = path;
     this.isDefaultWorkingDirectory = false;
     this.toolExecutor.setWorkingDirectory(path);
     logger.info('Working directory changed to:', path);
-    this.initializeLSP(path);
-    this.updateSkillWatcher(path);
+    if (options.syncWorkspaceServices !== false) {
+      this.initializeLSP(path);
+      this.updateSkillWatcher(path);
+    }
   }
 
   getWorkingDirectory(): string {
@@ -983,6 +985,11 @@ export class AgentOrchestrator {
       const requirements = await requirementsAnalyzer.analyze(content, this.workingDirectory);
       const executionContent = this.applyTurnSystemContext(content, options, sessionId);
 
+      if (options?.disableAutoAgent) {
+        requirements.needsAutoAgent = false;
+        requirements.executionStrategy = 'sequential';
+      }
+
       if (this.delegateMode && !requirements.needsAutoAgent) {
         logger.info('[DelegateMode] Forcing auto agent mode — orchestrator will not execute tools directly');
         requirements.needsAutoAgent = true;
@@ -1221,9 +1228,11 @@ export class AgentOrchestrator {
           'EpisodicRecall',
         ]
       : (options?.deniedToolNames || []);
-    const liveVoiceDeniedToolNames = getPermissionModeManager().isLiveVoiceSession(sessionId)
-      ? getUserPresenceToolNames()
-      : [];
+    const liveVoiceDeniedToolNames = buildLiveVoiceToolDenylist(
+      getPermissionModeManager().isLiveVoiceSession(sessionId),
+      options?.runRegistration,
+      getUserPresenceToolNames(),
+    );
     const mergedDeniedToolNames = Array.from(new Set([
       ...baseDeniedToolNames,
       ...routingDeniedToolNames,
@@ -1269,7 +1278,10 @@ export class AgentOrchestrator {
           ? this.workingDirectory
           : workspaceScope.primaryRoot)
         : this.workingDirectory;
-      if (workspaceScope) {
+      // LSPManager / SkillWatcher 是 Host 级单例。辅助 run 若用自己的工作区反复重置它们，
+      // 会和主 run 互抢全局指针；真机上 LSP 重建还会卡住实时语音心跳。
+      // 辅助 run 仍然拿到独立 runContext 和正确 cwd，只是不改写这两个全局服务。
+      if (workspaceScope && options?.runRegistration !== 'auxiliary') {
         this.initializeLSP(
           workspaceScope.primaryRoot,
           workspaceScope.roots.map((root) => root.path),
@@ -1313,6 +1325,7 @@ export class AgentOrchestrator {
       maxIterations: options?.maxIterations,
       historyVisibility: options?.historyVisibility,
       deniedToolNames,
+      allowedToolNames: options?.allowedToolNames,
       telemetryAdapter,
       persistMessage: sessionId
         ? async (message: Message) => {
@@ -1336,7 +1349,7 @@ export class AgentOrchestrator {
             workspace: runContext!.workspace,
             workspaceScope,
             cwd: runContext!.cwd,
-          })
+          }, options?.runRegistration)
         : undefined;
       await registeredRun?.attach(this.agentLoop);
 

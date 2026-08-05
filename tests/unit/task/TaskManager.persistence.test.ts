@@ -15,6 +15,7 @@ const dbState = vi.hoisted(() => ({
 }));
 
 const orchestratorMocks = vi.hoisted(() => ({
+  configs: [] as Array<{ onEvent: (event: unknown) => Promise<void> }>,
   sendMessage: vi.fn(),
   interruptAndContinue: vi.fn(),
   cancel: vi.fn(),
@@ -28,6 +29,7 @@ const orchestratorMocks = vi.hoisted(() => ({
 }));
 
 vi.mock('../../../src/host/services/infra/logger', () => ({
+  logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
   createLogger: () => ({
     info: vi.fn(),
     warn: vi.fn(),
@@ -38,6 +40,9 @@ vi.mock('../../../src/host/services/infra/logger', () => ({
 
 vi.mock('../../../src/host/agent/agentOrchestrator', () => ({
   AgentOrchestrator: class {
+    constructor(config: { onEvent: (event: unknown) => Promise<void> }) {
+      orchestratorMocks.configs.push(config);
+    }
     sendMessage = (...args: unknown[]) => orchestratorMocks.sendMessage(...args);
     interruptAndContinue = (...args: unknown[]) => orchestratorMocks.interruptAndContinue(...args);
     cancel = () => orchestratorMocks.cancel();
@@ -64,6 +69,14 @@ vi.mock('../../../src/host/services', () => ({
   },
 }));
 
+vi.mock('../../../src/host/services/infra/sessionManager', () => ({
+  getSessionManager: () => sessionManagerState,
+}));
+
+vi.mock('../../../src/host/task/backgroundTaskSessionContext', () => ({
+  getBackgroundTaskSessionContext: (sessionId: string) => sessionManagerState.getSession(sessionId),
+}));
+
 vi.mock('../../../src/host/services/core/databaseService', () => ({
   getDatabase: () => dbState.db,
 }));
@@ -80,8 +93,94 @@ describe('TaskManager message event persistence', () => {
     dbState.db.isReady = true;
     dbState.db.updateSession.mockReset();
     for (const mock of Object.values(orchestratorMocks)) {
-      mock.mockReset();
+      if (typeof mock === 'function' && 'mockReset' in mock) mock.mockReset();
     }
+    orchestratorMocks.configs.length = 0;
+  });
+
+  it('runs two auxiliary tasks in one session and cancels only the addressed task', async () => {
+    const manager = new TaskManager({ maxConcurrentTasks: 1 });
+    manager.initialize({ configService: {} as never, onAgentEvent: vi.fn() });
+    sessionManagerState.getSession.mockResolvedValue({
+      messages: [],
+      workingDirectory: '/tmp/project',
+    });
+    const resolvers: Array<() => void> = [];
+    orchestratorMocks.sendMessage.mockImplementation(() => new Promise<void>((resolve) => {
+      resolvers.push(resolve);
+    }));
+    orchestratorMocks.cancel.mockResolvedValue(undefined);
+    const events: Array<{ type: string; data?: { taskId?: string } }> = [];
+    manager.on('event', (event) => events.push(event));
+
+    const first = manager.startBackgroundTask('task-1', 'session-1', 'first');
+    const second = manager.startBackgroundTask('task-2', 'session-1', 'second');
+    await vi.waitFor(() => expect(orchestratorMocks.sendMessage).toHaveBeenCalledTimes(2));
+
+    expect(orchestratorMocks.setWorkingDirectory).toHaveBeenNthCalledWith(
+      1,
+      '/tmp/project',
+      { syncWorkspaceServices: false },
+    );
+    expect(orchestratorMocks.setWorkingDirectory).toHaveBeenNthCalledWith(
+      2,
+      '/tmp/project',
+      { syncWorkspaceServices: false },
+    );
+    expect(orchestratorMocks.sendMessage.mock.calls[0][2]).toMatchObject({
+      runRegistration: 'auxiliary',
+      historyVisibility: 'meta',
+      disableAutoAgent: true,
+      deniedToolNames: expect.arrayContaining(['Task', 'TaskManager', 'spawn_agent', 'AgentSpawn']),
+      turnSystemContext: expect.arrayContaining([
+        expect.stringContaining('第一步直接调用'),
+      ]),
+    });
+    expect(orchestratorMocks.sendMessage.mock.calls[1][2]).toMatchObject({
+      runRegistration: 'auxiliary',
+      historyVisibility: 'meta',
+      disableAutoAgent: true,
+      deniedToolNames: expect.arrayContaining(['Task', 'TaskManager', 'spawn_agent', 'AgentSpawn']),
+    });
+    expect(await manager.cancelBackgroundTask('task-1')).toBe(true);
+    expect(manager.getBackgroundTaskState('task-1')).toEqual({ sessionId: 'session-1', status: 'cancelling' });
+    expect(manager.getBackgroundTaskState('task-2')).toEqual({ sessionId: 'session-1', status: 'running' });
+
+    resolvers[0]?.();
+    resolvers[1]?.();
+    await Promise.all([first, second]);
+    expect(events).toContainEqual(expect.objectContaining({ type: 'task_cancelled', data: { taskId: 'task-1' } }));
+    expect(events).toContainEqual(expect.objectContaining({ type: 'task_completed', data: { taskId: 'task-2' } }));
+  });
+
+  it('routes a background permission response to its exact auxiliary orchestrator', async () => {
+    const manager = new TaskManager({ maxConcurrentTasks: 1 });
+    manager.initialize({ configService: {} as never, onAgentEvent: vi.fn() });
+    sessionManagerState.getSession.mockResolvedValue({ messages: [] });
+    let resolveRun: (() => void) | undefined;
+    orchestratorMocks.sendMessage.mockImplementation(() => new Promise<void>((resolve) => {
+      resolveRun = resolve;
+    }));
+    orchestratorMocks.handlePermissionResponse.mockReturnValue('delivered');
+
+    const run = manager.startBackgroundTask('task-permission', 'session-1', 'needs approval');
+    await vi.waitFor(() => expect(orchestratorMocks.configs).toHaveLength(1));
+    await orchestratorMocks.configs[0].onEvent({
+      type: 'permission_request',
+      data: {
+        id: 'request-1',
+        sessionId: 'session-1',
+        type: 'command',
+        tool: 'Bash',
+        details: { command: 'true' },
+        timestamp: 1,
+      },
+    });
+
+    expect(manager.handlePermissionResponse('session-1', 'request-1', 'allow')).toBe('delivered');
+    expect(orchestratorMocks.handlePermissionResponse).toHaveBeenCalledWith('request-1', 'allow');
+    resolveRun?.();
+    await run;
   });
 
   it('does not insert a message event already persisted by ContextAssembly, while keeping tool result updates', async () => {

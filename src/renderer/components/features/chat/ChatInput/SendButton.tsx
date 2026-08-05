@@ -1,5 +1,5 @@
 // ============================================================================
-// SendButton - 发送按钮组件（含加载状态、停止功能和运行中排队发送）
+// SendButton - 发送按钮组件（含加载状态、停止功能和运行中转向）
 // ============================================================================
 
 import React from 'react';
@@ -9,7 +9,7 @@ import { useI18n } from '../../../../hooks/useI18n';
 export interface SendButtonProps {
   /** 是否禁用 */
   disabled?: boolean;
-  /** 是否正在处理（显示停止按钮或排队发送按钮） */
+  /** 是否正在处理（显示停止按钮或转向发送按钮） */
   isProcessing?: boolean;
   /** 运行中输入正在接入（显示旋转加载图标） */
   isInterrupting?: boolean;
@@ -29,7 +29,7 @@ export interface SendButtonProps {
  * 发送按钮 - 支持三种状态：
  * 1. 空闲时：显示发送按钮
  * 2. 处理中 + 无内容：显示停止按钮
- * 3. 处理中 + 有内容：显示排队发送按钮
+ * 3. 处理中 + 有内容：把输入发送给当前前台脑
  * 4. 运行中输入接入中：显示旋转加载图标
  */
 export const SendButton: React.FC<SendButtonProps> = ({
@@ -44,7 +44,7 @@ export const SendButton: React.FC<SendButtonProps> = ({
 }) => {
   const { t } = useI18n();
   // 直径 28（原 36）+ 正圆（原圆角方），对齐 Codex composer 参考图。醒目靠填充不靠尺寸。
-  // interrupting / 排队 / 停止 / 普通 四个图标分支共用这一个形态，只改其中一个等于没改。
+  // interrupting / 转向 / 停止 / 普通 四个图标分支共用这一个形态。
   // 配色仍走主题 token（bg-brand 等），不改成字面白色——浅色主题下 --zinc-900 是
   // rgb(250,250,250)，白底按钮压在上面约 1.02:1，等于隐形。
   const baseIconButtonClass = 'flex-shrink-0 h-7 w-7 rounded-full grid place-items-center transition-all duration-200 focus-visible:outline-hidden';
@@ -63,15 +63,15 @@ export const SendButton: React.FC<SendButtonProps> = ({
     );
   }
 
-  // 处理中 + 有内容：显示排队到下一轮按钮
+  // 处理中 + 有内容：把输入交给当前前台脑
   if (isProcessing && hasContent) {
     return (
       <button
         type={type}
         onClick={onClick}
         className={`${baseIconButtonClass} bg-brand text-white shadow-[0_10px_24px_var(--brand-primary-glow)] hover:bg-brand-hover active:scale-95`}
-        aria-label={t.chatInput.queueNextTurnAria}
-        title={t.chatInput.queueNextTurnAria}
+        aria-label={t.chatInput.steerCurrentTurnAria}
+        title={t.chatInput.steerCurrentTurnAria}
       >
         <ArrowUp className="h-3.5 w-3.5 stroke-[2.4]" />
       </button>

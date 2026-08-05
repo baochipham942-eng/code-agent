@@ -18,6 +18,21 @@ import {
 } from '@shared/contract/workbenchPreset';
 import { useAppStore, type LivePreviewSelectedElement } from './appStore';
 import type { PendingCommandSelection } from '../components/features/chat/ChatInput/pendingCommand';
+import { setSessionPin } from '../services/libraryClient';
+import { notifyLibraryPinChanged } from '../components/features/knowledge/libraryPinEvents';
+import {
+  DRAFT_SCOPE_KEY,
+  emptyComposerSlot,
+  isDraftOrSpaceScopeKey,
+  isSessionScopeKey,
+  planScopeHandoffToSession,
+  sessionIdFromScopeKey,
+  sessionScopeKey,
+  snapshotComposerSlot,
+  spaceScopeKey,
+  type ComposerScopeKey,
+  type ComposerSlotSnapshot,
+} from './composerScopeModel';
 
 // appStore 存的是 flat 结构（来自 LivePreviewFrame 的 toSelectedElement），
 // envelope 走 shared/livePreview/protocol.ts 的 nested SelectedElementInfo 形。
@@ -41,31 +56,87 @@ function readActiveLivePreviewSelection(): SelectedElementInfo | null {
   return toEnvelopeSelection(tab.selectedElement);
 }
 
-interface ComposerState {
-  workingDirectory: string | null;
-  routingMode: ConversationRoutingMode;
-  targetAgentIds: string[];
-  browserSessionMode: BrowserSessionMode;
-  selectedSkillIds: string[];
-  selectedConnectorIds: string[];
-  selectedMcpServerIds: string[];
-  turnCapabilityScopeMode: TurnCapabilityScopeMode;
+function readLiveSlot(state: Pick<ComposerState, keyof ComposerSlotSnapshot>): ComposerSlotSnapshot {
+  return snapshotComposerSlot({
+    workingDirectory: state.workingDirectory,
+    routingMode: state.routingMode,
+    targetAgentIds: state.targetAgentIds,
+    browserSessionMode: state.browserSessionMode,
+    selectedSkillIds: state.selectedSkillIds,
+    selectedConnectorIds: state.selectedConnectorIds,
+    selectedMcpServerIds: state.selectedMcpServerIds,
+    turnCapabilityScopeMode: state.turnCapabilityScopeMode,
+    selectedTeamRecipeId: state.selectedTeamRecipeId,
+    standbyExcludedMemberKeys: state.standbyExcludedMemberKeys,
+    pendingCommand: state.pendingCommand,
+    pendingPinItemIds: state.pendingPinItemIds,
+    pendingActiveAgentId: state.pendingActiveAgentId,
+  });
+}
+
+function liveFieldsFromSlot(slot: ComposerSlotSnapshot): ComposerSlotSnapshot {
+  return snapshotComposerSlot(slot);
+}
+
+/**
+ * 进入槽时同步专家选择：
+ * - 会话槽：走 per-session map（syncActiveAgentForSession）
+ * - 草稿/空间：断开 sessionKey，恢复槽内 pendingActiveAgentId（仅内存）
+ */
+function syncAgentForScope(key: ComposerScopeKey, slot: ComposerSlotSnapshot): void {
+  const app = useAppStore.getState();
+  if (isSessionScopeKey(key)) {
+    const sessionId = sessionIdFromScopeKey(key);
+    if (sessionId) app.syncActiveAgentForSession(sessionId);
+    return;
+  }
+  // 非会话：不要误写到上一个会话的 map
+  useAppStore.setState({
+    activeAgentSessionKey: null,
+    activeAgentId: slot.pendingActiveAgentId,
+  });
+}
+
+/**
+ * 离开草稿/空间前，把当前内存里的 activeAgentId 收进快照。
+ * 会话槽的专家真源是 map，不靠 slot.pendingActiveAgentId。
+ */
+function withAgentIntentForSnapshot(
+  key: ComposerScopeKey,
+  live: ComposerSlotSnapshot,
+): ComposerSlotSnapshot {
+  if (isSessionScopeKey(key)) {
+    return { ...live, pendingActiveAgentId: null };
+  }
+  return {
+    ...live,
+    pendingActiveAgentId: useAppStore.getState().activeAgentId,
+  };
+}
+
+interface ComposerState extends ComposerSlotSnapshot {
   /**
-   * 预选的团队配方 id：只是「待命」，成员条会先把名单铺出来，
-   * 真正启动发生在发送那一刻（输入的第一句话当主题）。
+   * 当前激活的上下文槽。切换时先快照再恢复；会话残留不得漏进空间/草稿。
    */
-  selectedTeamRecipeId: string | null;
+  activeScopeKey: ComposerScopeKey;
+  /** 非激活槽的快照表。 */
+  slots: Record<string, ComposerSlotSnapshot>;
   /**
-   * 待命名单里被 × 掉的成员键（member 的 id ?? roleId，lead 用 roleId）：
-   * 只是预选期的排除标记，发送启动团队时随 launchRecipe 传给 host 真正少起人。
+   * 兼容旧调用点：当前会话槽的 sessionId；草稿/空间为 null。
+   * hydrateFromSession 仍可写，语义 = activateScope(session|draft)。
    */
-  standbyExcludedMemberKeys: string[];
-  /**
-   * 待参数的 feature 命令 chip（2026-07-29 任务 17）：/goal /schedule /loop /workflow
-   * 选中后不往输入框留文本前缀，挂这里；发送时 useChatInputSubmit 拼回 `/${id} ` 走原解析。
-   */
-  pendingCommand: PendingCommandSelection | null;
   hydratedSessionId: string | null;
+  activateScope: (
+    key: ComposerScopeKey,
+    options?: { workingDirectory?: string | null },
+  ) => void;
+  /**
+   * 从草稿/空间发起新会话：把发起槽全部选择移交给 session 槽，
+   * pin 物化到 host，专家 bind 到新会话；发起槽清空。
+   */
+  handoffActiveScopeToSession: (newSessionId: string) => Promise<void>;
+  setPendingPinItemIds: (ids: string[]) => void;
+  togglePendingPinItemId: (itemId: string) => void;
   hydrateFromSession: (sessionId: string | null, workingDirectory: string | null) => void;
   applySessionWorkbenchPreset: (source: WorkbenchPresetSessionSource) => void;
   applyWorkbenchPreset: (preset: WorkbenchPreset | WorkbenchPresetContext) => void;
@@ -85,19 +156,13 @@ interface ComposerState {
   buildContext: () => ConversationEnvelopeContext | undefined;
 }
 
+const initialSlot = emptyComposerSlot();
+
 const initialComposerState = {
-  workingDirectory: null,
-  routingMode: 'auto' as const,
-  targetAgentIds: [],
-  browserSessionMode: 'none' as const,
-  selectedSkillIds: [],
-  selectedConnectorIds: [],
-  selectedMcpServerIds: [],
-  turnCapabilityScopeMode: 'auto' as const,
-  selectedTeamRecipeId: null,
-  standbyExcludedMemberKeys: [],
-  pendingCommand: null,
-  hydratedSessionId: null,
+  ...initialSlot,
+  activeScopeKey: DRAFT_SCOPE_KEY as ComposerScopeKey,
+  slots: {} as Record<string, ComposerSlotSnapshot>,
+  hydratedSessionId: null as string | null,
 };
 
 function getWorkbenchPresetContext(
@@ -129,37 +194,105 @@ function applyWorkbenchPresetContext(
 export const useComposerStore = create<ComposerState>((set, get) => ({
   ...initialComposerState,
 
-  hydrateFromSession: (sessionId, workingDirectory) =>
+  activateScope: (key, options) => {
+    const state = get();
+    if (state.activeScopeKey === key) {
+      if (options && 'workingDirectory' in options && options.workingDirectory !== state.workingDirectory) {
+        set({ workingDirectory: options.workingDirectory ?? null });
+      }
+      return;
+    }
+
+    const leaving = withAgentIntentForSnapshot(state.activeScopeKey, readLiveSlot(state));
+    const nextSlots: Record<string, ComposerSlotSnapshot> = {
+      ...state.slots,
+      [state.activeScopeKey]: leaving,
+    };
+
+    const stored = nextSlots[key];
+    const incoming = stored
+      ? liveFieldsFromSlot(stored)
+      : emptyComposerSlot(
+        options && 'workingDirectory' in options
+          ? { workingDirectory: options.workingDirectory ?? null }
+          : undefined,
+      );
+
+    if (options && 'workingDirectory' in options) {
+      incoming.workingDirectory = options.workingDirectory ?? null;
+    }
+
+    // 进入后该槽已是 live，表里可保留一份同源快照，避免后续读 slots[key] 空
+    nextSlots[key] = snapshotComposerSlot(incoming);
+
+    set({
+      ...incoming,
+      activeScopeKey: key,
+      slots: nextSlots,
+      hydratedSessionId: sessionIdFromScopeKey(key),
+    });
+    syncAgentForScope(key, incoming);
+  },
+
+  handoffActiveScopeToSession: async (newSessionId) => {
+    const state = get();
+    if (!newSessionId) return;
+
+    // 仅草稿/空间发起需要移交；已在会话里 create 新会话不抄技能/pin
+    if (!isDraftOrSpaceScopeKey(state.activeScopeKey)) {
+      get().activateScope(sessionScopeKey(newSessionId));
+      return;
+    }
+
+    const live = withAgentIntentForSnapshot(state.activeScopeKey, readLiveSlot(state));
+    const plan = planScopeHandoffToSession({
+      slots: state.slots,
+      sourceKey: state.activeScopeKey,
+      sourceLive: live,
+      newSessionId,
+    });
+
+    // 先落 live = 会话槽，避免后续 hydrate 看到空槽再清空
+    set({
+      ...plan.sessionSlot,
+      activeScopeKey: plan.sessionKey,
+      slots: plan.nextSlots,
+      hydratedSessionId: newSessionId,
+    });
+
+    if (plan.activeAgentId) {
+      useAppStore.getState().bindAgentForSession(newSessionId, plan.activeAgentId);
+    } else {
+      useAppStore.getState().syncActiveAgentForSession(newSessionId);
+    }
+
+    if (plan.pinItemIds.length > 0) {
+      try {
+        await setSessionPin(newSessionId, plan.pinItemIds);
+        notifyLibraryPinChanged(newSessionId);
+      } catch {
+        // pin 物化失败不阻断发会话；槽内已无 pending，用户可在会话里重 pin
+      }
+    }
+  },
+
+  setPendingPinItemIds: (ids) =>
+    set({ pendingPinItemIds: dedupeWorkbenchIds(ids) }),
+
+  togglePendingPinItemId: (itemId) =>
     set((state) => {
-      if (state.hydratedSessionId !== sessionId) {
-        return {
-          ...state,
-          hydratedSessionId: sessionId,
-          workingDirectory,
-          routingMode: 'auto',
-          targetAgentIds: [],
-          browserSessionMode: 'none',
-          selectedSkillIds: [],
-          selectedConnectorIds: [],
-          selectedMcpServerIds: [],
-          turnCapabilityScopeMode: 'auto',
-          // 换会话不该把上一个会话选的团队带过来
-          selectedTeamRecipeId: null,
-          standbyExcludedMemberKeys: [],
-          // 命令 chip 同样只隶属于当前会话的草稿
-          pendingCommand: null,
-        };
-      }
-
-      if (state.workingDirectory !== workingDirectory) {
-        return {
-          ...state,
-          workingDirectory,
-        };
-      }
-
-      return state;
+      const has = state.pendingPinItemIds.includes(itemId);
+      return {
+        pendingPinItemIds: has
+          ? state.pendingPinItemIds.filter((id) => id !== itemId)
+          : dedupeWorkbenchIds([...state.pendingPinItemIds, itemId]),
+      };
     }),
+
+  hydrateFromSession: (sessionId, workingDirectory) => {
+    const key = sessionId ? sessionScopeKey(sessionId) : DRAFT_SCOPE_KEY;
+    get().activateScope(key, { workingDirectory });
+  },
 
   applySessionWorkbenchPreset: (source) =>
     set((state) => ({
@@ -300,3 +433,6 @@ export const useComposerStore = create<ComposerState>((set, get) => ({
     return Object.keys(context).length > 0 ? context : undefined;
   },
 }));
+
+export { DRAFT_SCOPE_KEY, sessionScopeKey, spaceScopeKey };
+export type { ComposerScopeKey, ComposerSlotSnapshot };

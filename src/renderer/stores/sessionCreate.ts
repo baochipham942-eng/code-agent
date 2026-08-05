@@ -6,8 +6,22 @@ import { IPC_DOMAINS } from '@shared/ipc';
 import { createLogger } from '../utils/logger';
 import { useAppStore } from './appStore';
 import { useAppshotsStore } from './appshotsStore';
+import { useComposerStore } from './composerStore';
+import { isDraftOrSpaceScopeKey } from './composerScopeModel';
 
 const logger = createLogger('SessionCreate');
+
+/**
+ * 草稿/空间 composer 发起会话时，把发起槽的 skill/pin/专家意图移交给新会话。
+ * 已在会话槽内 create 则只 activate 新会话空槽，不抄上一会话配置。
+ */
+async function handoffComposerScopeIfNeeded(sessionId: string): Promise<void> {
+  try {
+    await useComposerStore.getState().handoffActiveScopeToSession(sessionId);
+  } catch (error) {
+    logger.warn('Failed to handoff composer scope to new session', { sessionId, error });
+  }
+}
 
 async function invokeSession<T>(action: string, payload?: unknown): Promise<T> {
   const response = await window.domainAPI?.invoke<T>(IPC_DOMAINS.SESSION, action, payload);
@@ -173,6 +187,10 @@ export async function executeCreateSession(
           }
         }
         useAppStore.getState().setWorkingDirectory(reusableSession.workingDirectory ?? null);
+        // 草稿/空间槽上「新任务」复用空白会话：同样移交 pin/专家/技能意图
+        if (isDraftOrSpaceScopeKey(useComposerStore.getState().activeScopeKey)) {
+          await handoffComposerScopeIfNeeded(reusableSession.id);
+        }
         // 复用空白草稿时刷新时间戳，避免侧边栏显示旧草稿的"3 天前"。
         set((state) => ({
           isLoading: false,
@@ -236,8 +254,20 @@ export async function executeCreateSession(
 
       invalidatePendingSessionSwitches();
       useAppStore.getState().setWorkingDirectory(newSessionWithMeta.workingDirectory ?? null);
-      // 新会话继承 draft 期（无会话时）的 agent 选择，其余情况从 per-session map 读取
-      useAppStore.getState().syncActiveAgentForSession(session.id, { inheritCurrent: !previousSessionId });
+      // 草稿/空间 → 新会话：composer 分槽移交（pin 物化 + 专家 bind + turn 选择）
+      // 须在 syncActiveAgent 之前，handoff 会先写 per-session agent map
+      const handedOffFromDraftOrSpace = isDraftOrSpaceScopeKey(
+        useComposerStore.getState().activeScopeKey,
+      );
+      if (handedOffFromDraftOrSpace) {
+        await handoffComposerScopeIfNeeded(session.id);
+      }
+      // 新会话继承 draft 期（无会话时）的 agent 选择，其余情况从 per-session map 读取。
+      // 已 handoff 时 map 已写好，inheritCurrent 再抄一次也无害；空间发起时 previousSessionId
+      // 可能仍是旧会话，必须靠 handoff 而非 inheritCurrent。
+      useAppStore.getState().syncActiveAgentForSession(session.id, {
+        inheritCurrent: !previousSessionId && !handedOffFromDraftOrSpace,
+      });
       useAppStore.getState().syncWorkbenchForSession(session.id);
       set({
         // host may broadcast SESSION_LIST_UPDATED before create() returns.

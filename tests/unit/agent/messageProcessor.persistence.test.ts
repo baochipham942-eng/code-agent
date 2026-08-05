@@ -311,6 +311,34 @@ describe('MessageProcessor persistence', () => {
     });
   });
 
+  it('keeps AskUserQuestion explicit when only task-splitting tools are denied', async () => {
+    const contextAssembly = {
+      injectSystemMessage: vi.fn(),
+    };
+    const processor = createProcessor({
+      stats: RunStatsState.forTest(),
+      deniedToolNames: ['Task', 'AgentSpawn'],
+      maxToolCallRetries: 2,
+      contextHealth: ContextHealthState.forTest(),
+    } as DeepPartial<RuntimeContext>, contextAssembly);
+
+    await expect(processor.handleToolResponse(
+      {
+        type: 'tool_use',
+        content: '',
+        toolCalls: [{ id: 'tool-task', name: 'Task', arguments: {} }],
+      } as ModelResponse,
+      false,
+      1,
+      { endSpan: vi.fn() },
+    )).resolves.toBe('continue');
+
+    expect(contextAssembly.injectSystemMessage).toHaveBeenCalledWith(
+      expect.stringContaining('AskUserQuestion remains available; call it directly'),
+      'tool-policy-guard',
+    );
+  });
+
   it('does not persist tool results when the run is cancelled after execution returns', async () => {
     const ctx = {
       artifact: ArtifactState.forTest(),

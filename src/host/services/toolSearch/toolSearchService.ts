@@ -82,17 +82,25 @@ export class ToolSearchService {
     options: ToolSearchOptions = {}
   ): Promise<ToolSearchResult> {
     const { maxResults = 5, includeMCP = true } = options;
+    const deniedToolNames = new Set(
+      (options.deniedToolNames ?? []).map((name) => normalizeToolName(name).toLowerCase()),
+    );
     const mode = this.parseQuery(query);
 
     logger.debug(`Searching tools: query="${query}", mode=${mode.type}`);
 
     // 直接选择模式
     if (mode.type === 'select') {
+      if (deniedToolNames.has(normalizeToolName(mode.toolName).toLowerCase())) {
+        logger.warn(`ToolSearch selection blocked by run policy: ${mode.toolName}`);
+        return { tools: [], hasMore: false, totalCount: 0, loadedTools: [] };
+      }
       return this.selectTool(mode.toolName);
     }
 
     // 获取所有可搜索的工具元数据
-    const allTools = this.getAllSearchableTools(includeMCP);
+    const allTools = this.getAllSearchableTools(includeMCP)
+      .filter((meta) => !deniedToolNames.has(normalizeToolName(meta.name).toLowerCase()));
 
     // 计算匹配分数
     const scored: Array<{ meta: DeferredToolMeta; score: number }> = [];

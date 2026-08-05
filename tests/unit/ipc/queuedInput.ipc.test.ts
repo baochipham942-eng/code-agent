@@ -80,7 +80,7 @@ describe('queued input IPC', () => {
   it('enqueue 返回还原后的 envelope 对象和 queued 状态', async () => {
     const response = await enqueue('input-1', {
       content: 'hello',
-      context: { runtimeInput: { mode: 'supplement', delivery: 'queued_next_turn' } },
+      context: { runtimeInput: { mode: 'supplement' } },
     });
 
     expect(response.success).toBe(true);
@@ -89,7 +89,7 @@ describe('queued input IPC', () => {
       sessionId: 'session-1',
       envelope: {
         content: 'hello',
-        context: { runtimeInput: { mode: 'supplement', delivery: 'queued_next_turn' } },
+        context: { runtimeInput: { mode: 'supplement' } },
       },
       status: 'queued',
       retryCount: 0,

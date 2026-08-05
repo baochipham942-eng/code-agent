@@ -460,7 +460,7 @@ describe('projectTurns', () => {
     ]);
   });
 
-  it('starts a new turn for queued runtime supplements', () => {
+  it('keeps foreground runtime supplements in the active turn', () => {
     const messages: Message[] = [
       {
         id: 'user-1',
@@ -482,7 +482,6 @@ describe('projectTurns', () => {
         metadata: {
           workbench: {
             runtimeInputMode: 'supplement',
-            runtimeInputDelivery: 'queued_next_turn',
           },
         },
       },
@@ -490,15 +489,13 @@ describe('projectTurns', () => {
 
     const projection = projectTurns(messages, 'session-4', true, []);
 
-    expect(projection.turns).toHaveLength(2);
+    expect(projection.turns).toHaveLength(1);
     expect(projection.turns[0].nodes.map((node) => node.id)).toEqual([
       'user-1',
       'assistant-1-text',
-    ]);
-    expect(projection.turns[1].nodes.map((node) => node.id)).toEqual([
       'user-2',
     ]);
-    expect(projection.activeTurnIndex).toBe(1);
+    expect(projection.activeTurnIndex).toBe(0);
   });
 
   it('keeps skill status inside the current turn instead of creating a new user turn', () => {

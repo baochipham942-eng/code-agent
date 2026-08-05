@@ -10,6 +10,7 @@
 // ============================================================================
 
 import { isCoreAgent } from './hybrid/coreAgents';
+import { ASK_USER_QUESTION_TOOL_NAMES } from '../../shared/constants/tools';
 
 /** 只读 agent 在主对话链路里被拒的文件写入工具（两种命名变体都收） */
 export const READONLY_TOOL_DENYLIST: readonly string[] = [
@@ -27,6 +28,21 @@ export function buildRoutingToolDenylist(
 ): string[] {
   if (!agent?.readonly) return [];
   return [...READONLY_TOOL_DENYLIST];
+}
+
+/**
+ * 实时通话的主 run 依旧隐藏需要 UI 在场的工具。语音派出的 auxiliary run 是例外：
+ * AskUserQuestion 已有语音念题和答案回传桥，必须放行它的两个别名，其他在场工具仍拒绝。
+ */
+export function buildLiveVoiceToolDenylist(
+  isLiveVoiceSession: boolean,
+  runRegistration: 'primary' | 'auxiliary' | undefined,
+  userPresenceToolNames: string[],
+): string[] {
+  if (!isLiveVoiceSession) return [];
+  if (runRegistration !== 'auxiliary') return userPresenceToolNames;
+  const bridged = new Set<string>(ASK_USER_QUESTION_TOOL_NAMES);
+  return userPresenceToolNames.filter((name) => !bridged.has(name));
 }
 
 /**

@@ -51,6 +51,26 @@ export const SANDBOX = {
   DEFAULT_TIMEOUT: 5000,
 } as const;
 
+/** AskUserQuestion 在 provider / 兼容层的两个等价名字。 */
+export const ASK_USER_QUESTION_TOOL_NAMES = ['AskUserQuestion', 'ask_user_question'] as const;
+
+/** 后台任务本身已经占用一个执行槽，不允许再从槽内派生子代理或创建平行任务面板。 */
+export const MULTIAGENT_TOOL_NAMES = [
+  'Task',
+  'TaskManager',
+  'spawn_agent',
+  'AgentSpawn',
+  'wait_agent',
+  'collect_agent',
+  'close_agent',
+  'send_input',
+  'agent_message',
+  'teammate',
+  'workflow_orchestrate',
+  'workflow',
+  'plan_review',
+] as const;
+
 /**
  * 工具结果落盘配置 (GAP-009)
  *

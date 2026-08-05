@@ -33,6 +33,10 @@ import { IPC_CHANNELS } from '../../../../src/shared/ipc';
 import type { UserQuestion, UserQuestionResponse } from '../../../../src/shared/contract';
 import type { CanUseToolFn, Logger, ToolContext } from '../../../../src/host/protocol/tools';
 import { formatCny } from '../../../../src/shared/media/imageCost';
+import {
+  beginVoiceQuestionSession,
+  endVoiceQuestionSession,
+} from '../../../../src/host/services/voice/voiceQuestionBridge';
 
 const Q: UserQuestion[] = [
   {
@@ -74,6 +78,29 @@ describe('promptUserInChat', () => {
     const r = await promptUserInChat(Q);
     expect(r.status).toBe('no-renderer');
     expect(sendMock).not.toHaveBeenCalled();
+  });
+
+  it('无通用 renderer 但有同会话语音桥 → 念题并等待语音回答', async () => {
+    const speak = vi.fn();
+    beginVoiceQuestionSession({
+      neoSessionId: 'voice-session',
+      dismiss: vi.fn(),
+      speak,
+    });
+    try {
+      const promise = promptUserInChat(Q, { sessionId: 'voice-session', timeoutMs: 5_000 });
+      await vi.waitFor(() => expect(speak).toHaveBeenCalledOnce());
+      expect(sendMock).not.toHaveBeenCalled();
+      const spoken = speak.mock.calls[0]?.[0];
+      expect(spoken).toEqual(expect.objectContaining({ title: '确认' }));
+      await responseHandlerRef.fn?.({}, {
+        requestId: spoken.narrationId.split(':')[1],
+        answers: { 确认: '继续' },
+      } as UserQuestionResponse);
+      await expect(promise).resolves.toEqual(expect.objectContaining({ status: 'answered' }));
+    } finally {
+      endVoiceQuestionSession('voice-session');
+    }
   });
 
   it('已 abort → status=aborted，不发 IPC', async () => {

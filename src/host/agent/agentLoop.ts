@@ -150,6 +150,7 @@ export class AgentLoop {
       inferenceOptions: config.inferenceOptions,
       historyVisibility: config.historyVisibility,
       deniedToolNames: config.deniedToolNames,
+      allowedToolNames: config.allowedToolNames,
       hookMessageBuffer: new HookMessageBuffer(),
       messageHistoryCompressor: new MessageHistoryCompressor(),
       autoCompressor: getAutoCompressor(),

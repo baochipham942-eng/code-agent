@@ -21,9 +21,13 @@ import { IPC_CHANNELS } from '../../../shared/ipc';
 import { AppWindow, ipcHost } from '../../platform';
 import { INTERACTION_TIMEOUTS } from '../../../shared/constants';
 import {
+  canOfferVoiceQuestion,
   cancelVoiceQuestion,
   offerVoiceQuestion,
 } from '../../services/voice/voiceQuestionBridge';
+import { createLogger } from '../../services/infra/logger';
+
+const logger = createLogger('UserQuestionPrompt');
 
 export type PromptUserStatus = 'answered' | 'declined' | 'no-renderer' | 'timeout' | 'aborted';
 
@@ -88,7 +92,9 @@ export async function promptUserInChat(
   };
 
   const mainWindow = AppWindow.getAllWindows()[0];
-  if (!mainWindow || !AppWindow.hasInteractiveRenderer()) {
+  const hasInteractiveRenderer = Boolean(mainWindow && AppWindow.hasInteractiveRenderer());
+  const hasVoiceQuestionRoute = canOfferVoiceQuestion(opts.sessionId);
+  if (!hasInteractiveRenderer && !hasVoiceQuestionRoute) {
     return { status: 'no-renderer' };
   }
 
@@ -119,8 +125,22 @@ export async function promptUserInChat(
   });
 
   try {
-    mainWindow.webContents.send(IPC_CHANNELS.USER_QUESTION_ASK, request);
-    offerVoiceQuestion(request, settleUserQuestionResponse);
+    if (hasInteractiveRenderer) {
+      mainWindow?.webContents.send(IPC_CHANNELS.USER_QUESTION_ASK, request);
+    }
+    const voiceOffered = offerVoiceQuestion(request, settleUserQuestionResponse);
+    if (!hasInteractiveRenderer && !voiceOffered) {
+      const p = pending.get(request.id);
+      if (p) {
+        clearTimeout(p.timeout);
+        pending.delete(request.id);
+      }
+      logger.warn('user question route disappeared before delivery', {
+        requestId: request.id,
+        sessionId: request.sessionId,
+      });
+      return { status: 'no-renderer' };
+    }
   } catch (error) {
     const p = pending.get(request.id);
     if (p) {

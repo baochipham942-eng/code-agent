@@ -78,6 +78,7 @@ export async function executeToolSearch(
     const result = await service.searchTools(query, {
       maxResults,
       includeMCP: true,
+      ...(ctx.deniedToolNames?.length ? { deniedToolNames: ctx.deniedToolNames } : {}),
     });
 
     onProgress?.({ stage: 'completing', percent: 100 });

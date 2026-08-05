@@ -236,6 +236,7 @@ describe('OpenAI Realtime provider profile', () => {
       callId: 'call-1',
       name: 'spawn_task',
       arguments: '{"title":"生成周报"}',
+      origin: 'function_call',
     }));
     await vi.waitFor(() => expect(upstream.sent.map((frame) => JSON.parse(frame))).toContainEqual({
         type: 'conversation.item.create',

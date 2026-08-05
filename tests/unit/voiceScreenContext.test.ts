@@ -173,7 +173,12 @@ describe('看屏进 Live（Appshots Phase 3）', () => {
   it('注册面：工具在目录里，schema 朴素到没有参数（通话 brain 零写权限）', () => {
     const tool = VOICE_TOOL_DEFINITIONS.find((item) => item.name === 'capture_screen_context');
     expect(tool).toBeDefined();
-    expect(tool?.parameters).toEqual({ type: 'object', properties: {}, required: [] });
+    expect(tool?.parameters).toEqual({
+      type: 'object',
+      properties: {},
+      required: [],
+      additionalProperties: false,
+    });
     // DashScope 对 tools 的支持按模型分化，复杂 schema 是静默降级的高发区（见 voiceTools 文件头）。
     expect(JSON.stringify(tool?.parameters)).not.toContain('enum');
     // 描述里必须写死「你看不到」——不写它，模型拍完就会顺嘴描述画面。

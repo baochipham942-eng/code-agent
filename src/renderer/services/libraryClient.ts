@@ -14,6 +14,7 @@ import type {
   SessionContextPin,
 } from '@shared/contract/library';
 import ipcService from './ipcService';
+import { notifyLibraryPinChanged } from '../components/features/knowledge/libraryPinEvents';
 
 export interface LibraryImportResult {
   items: LibraryItem[];
@@ -57,5 +58,9 @@ export async function getSessionPin(sessionId: string): Promise<SessionContextPi
 }
 
 export async function setSessionPin(sessionId: string, itemIds: string[]): Promise<SessionContextPin> {
-  return ipcService.invokeDomain<SessionContextPin>(IPC_DOMAINS.LIBRARY, 'setPin', { sessionId, itemIds });
+  const pin = await ipcService.invokeDomain<SessionContextPin>(IPC_DOMAINS.LIBRARY, 'setPin', { sessionId, itemIds });
+  // 写入方统一在此广播：资料库「带进新会话」曾漏发（先切会话后写 pin，chip 永不出现，
+  // 真机 2026-08-05——DB 已写入而 UI 不醒）。挪进共享函数后任何调用方都不会再漏。
+  notifyLibraryPinChanged(sessionId);
+  return pin;
 }

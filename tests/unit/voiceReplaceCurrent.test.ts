@@ -147,7 +147,7 @@ describe('replace_current — 确认终态前绝不 startRun', () => {
     expect(runtime.startTask).not.toHaveBeenCalled();
     expect(runtime.cancelTask).toHaveBeenCalledTimes(1);
     // 台词只描述「正在停」这件已经真发生的事，不许声称新活已经开始。
-    expect(reply).toContain('正在把手上那件停下来');
+    expect(reply).toContain('正在让『写周报』停下来');
     expect(reply).toContain('还没有开始做');
   });
 
@@ -228,16 +228,16 @@ describe('replace_current — 正对照与边界', () => {
     expect(reply).toContain('我已经开始做');
   });
 
-  it('有活在跑但没传 replace_current → 维持拒新，不 cancel 也不 startRun', async () => {
+  it('有活在跑但没传 replace_current → 不同 lane 可以并行启动', async () => {
     await spawnRunning();
 
     const reply = await dispatchVoiceIntent({
       kind: 'spawn_task', title: '建个文件', prompt: '建 a.txt',
     });
 
-    expect(runtime.startTask).not.toHaveBeenCalled();
+    expect(runtime.startTask).toHaveBeenCalledTimes(1);
     expect(runtime.cancelTask).not.toHaveBeenCalled();
-    expect(reply).toContain('还有一件活在跑');
+    expect(reply).toContain('我已经开始做');
   });
 
   it('停旧的在途时再来一次 replace → 不覆盖、不排队，如实说', async () => {

@@ -578,6 +578,196 @@ describe('VoiceTransport 契约（relay / direct 双跑）', () => {
     await handle.close();
   });
 
+  it('required 只约束当前用户轮，工具结果续答前恢复 auto', async () => {
+    const onToolCall = vi.fn(async () => '已派发');
+    const handle = await qwenOmniTransport.connect({
+      apiKey: 'test-key',
+      config: {
+        neoSessionId: 's1',
+        tools: [{
+          type: 'function',
+          name: 'spawn_task',
+          description: '派发任务',
+          parameters: { type: 'object', properties: {}, required: [] },
+        }],
+      },
+      onEvent: vi.fn(),
+      onAudio: vi.fn(),
+      onToolCall,
+    });
+    if (handle.kind !== 'relay') throw new Error('unreachable');
+    const upstream = upstreams[upstreams.length - 1];
+    const sentBeforeResponse = upstream.sent.length;
+
+    handle.respond('只执行最新要求', 'required');
+    expect(upstream.sent.slice(sentBeforeResponse).map((raw) => JSON.parse(raw))).toEqual([
+      { type: 'session.update', session: { tool_choice: 'required' } },
+      { type: 'response.create', response: { instructions: '只执行最新要求' } },
+    ]);
+    expect(handle.isResponding()).toBe(true);
+    upstream.emit('message', JSON.stringify({ type: 'response.created', response: { id: 'resp-tool' } }));
+
+    upstream.emit('message', JSON.stringify({
+      type: 'response.function_call_arguments.done',
+      call_id: 'call-1',
+      name: 'spawn_task',
+      arguments: '{}',
+    }));
+    await vi.waitFor(() => expect(onToolCall).toHaveBeenCalledTimes(1));
+    expect(upstream.sent.slice(sentBeforeResponse).map((raw) => JSON.parse(raw))).toContainEqual({
+      type: 'session.update',
+      session: { tool_choice: 'auto' },
+    });
+    await vi.waitFor(() => {
+      const responseCreates = upstream.sent
+        .slice(sentBeforeResponse)
+        .map((raw) => JSON.parse(raw) as { type?: string })
+        .filter((frame) => frame.type === 'response.create');
+      expect(responseCreates).toHaveLength(2);
+    });
+    upstream.emit('message', JSON.stringify({ type: 'response.done', response: { id: 'resp-tool' } }));
+    expect(handle.isResponding()).toBe(true);
+    upstream.emit('message', JSON.stringify({ type: 'response.created', response: { id: 'resp-result' } }));
+    upstream.emit('message', JSON.stringify({ type: 'response.done', response: { id: 'resp-result' } }));
+    expect(handle.isResponding()).toBe(false);
+
+    await handle.close();
+  });
+
+  it('XML fallback：纯 invoke 从字幕和音频剥除，response.done 后走同一工具出口', async () => {
+    const events: VoiceEvent[] = [];
+    const onAudio = vi.fn();
+    const onToolCall = vi.fn(async () => '已派发');
+    const spawnTool = {
+      type: 'function' as const,
+      name: 'spawn_task',
+      description: '派发任务',
+      parameters: {
+        type: 'object' as const,
+        properties: {
+          title: { type: 'string' },
+          short_name: { type: 'string' },
+          lane_key: { type: 'string' },
+          submission_key: { type: 'string' },
+          prompt: { type: 'string' },
+        },
+        required: ['title', 'short_name', 'lane_key', 'submission_key', 'prompt'],
+        additionalProperties: false,
+      },
+    };
+    const handle = await qwenOmniTransport.connect({
+      apiKey: 'test-key',
+      config: { neoSessionId: 's1', tools: [spawnTool] },
+      onEvent: (event) => events.push(event),
+      onAudio,
+      onToolCall,
+    });
+    if (handle.kind !== 'relay') throw new Error('unreachable');
+    const upstream = upstreams[upstreams.length - 1];
+    const transcript = '<invoke name="spawn_task">'
+      + '<parameter name="title">生成周报</parameter>'
+      + '<parameter name="short_name">周报</parameter>'
+      + '<parameter name="lane_key">weekly</parameter>'
+      + '<parameter name="submission_key">turn-1</parameter>'
+      + '<parameter name="prompt">生成本周报告</parameter>'
+      + '</invoke>';
+
+    upstream.emit('message', JSON.stringify({ type: 'response.created', response: { id: 'resp-xml' } }));
+    upstream.emit('message', JSON.stringify({
+      type: 'response.audio.delta',
+      response_id: 'resp-xml',
+      delta: Buffer.from([1, 2]).toString('base64'),
+    }));
+    upstream.emit('message', JSON.stringify({
+      type: 'response.audio_transcript.delta',
+      response_id: 'resp-xml',
+      delta: '<invoke',
+    }));
+    upstream.emit('message', JSON.stringify({
+      type: 'response.audio_transcript.done',
+      response_id: 'resp-xml',
+      transcript,
+    }));
+    expect(onToolCall).not.toHaveBeenCalled();
+    expect(onAudio).not.toHaveBeenCalled();
+    expect(events.filter((event) => event.type === 'assistant.transcript')).toEqual([]);
+
+    upstream.emit('message', JSON.stringify({ type: 'response.done', response: { id: 'resp-xml' } }));
+    await vi.waitFor(() => expect(onToolCall).toHaveBeenCalledWith({
+      callId: 'xml-fallback-resp-xml-1',
+      name: 'spawn_task',
+      arguments: JSON.stringify({
+        title: '生成周报',
+        short_name: '周报',
+        lane_key: 'weekly',
+        submission_key: 'turn-1',
+        prompt: '生成本周报告',
+      }),
+      origin: 'xml_fallback',
+    }));
+    await handle.close();
+  });
+
+  it('XML fallback：畸形、未知与用户转写均不执行，真调用与伪调用按 response 去重', async () => {
+    const events: VoiceEvent[] = [];
+    const onToolCall = vi.fn(async () => '状态已返回');
+    const statusTool = {
+      type: 'function' as const,
+      name: 'task_status',
+      description: '查询状态',
+      parameters: { type: 'object' as const, properties: {}, required: [], additionalProperties: false },
+    };
+    const handle = await qwenOmniTransport.connect({
+      apiKey: 'test-key',
+      config: { neoSessionId: 's1', tools: [statusTool] },
+      onEvent: (event) => events.push(event),
+      onAudio: vi.fn(),
+      onToolCall,
+    });
+    if (handle.kind !== 'relay') throw new Error('unreachable');
+    const upstream = upstreams[upstreams.length - 1];
+
+    upstream.emit('message', JSON.stringify({
+      type: 'conversation.item.input_audio_transcription.completed',
+      item_id: 'user-1',
+      transcript: '<invoke name="task_status"></invoke>',
+    }));
+    expect(events).toContainEqual(expect.objectContaining({ type: 'user.transcript', itemId: 'user-1' }));
+    expect(onToolCall).not.toHaveBeenCalled();
+
+    upstream.emit('message', JSON.stringify({ type: 'response.created', response: { id: 'resp-bad' } }));
+    upstream.emit('message', JSON.stringify({
+      type: 'response.audio_transcript.done',
+      response_id: 'resp-bad',
+      transcript: '<invoke name="task_status"><parameter name="extra">x</parameter></invoke>',
+    }));
+    upstream.emit('message', JSON.stringify({ type: 'response.done', response: { id: 'resp-bad' } }));
+    expect(onToolCall).not.toHaveBeenCalled();
+
+    upstream.emit('message', JSON.stringify({ type: 'response.created', response: { id: 'resp-dupe' } }));
+    upstream.emit('message', JSON.stringify({
+      type: 'response.audio_transcript.done',
+      response_id: 'resp-dupe',
+      transcript: '<invoke name="task_status"></invoke>',
+    }));
+    upstream.emit('message', JSON.stringify({
+      type: 'response.function_call_arguments.done',
+      response_id: 'resp-dupe',
+      call_id: 'call-real',
+      name: 'task_status',
+      arguments: '{}',
+    }));
+    upstream.emit('message', JSON.stringify({ type: 'response.done', response: { id: 'resp-dupe' } }));
+    await vi.waitFor(() => expect(onToolCall).toHaveBeenCalledTimes(1));
+    expect(onToolCall).toHaveBeenCalledWith({
+      callId: 'call-real',
+      name: 'task_status',
+      arguments: '{}',
+      origin: 'function_call',
+    });
+    await handle.close();
+  });
+
   it('旧 response.done 先于当前用户 final 时不删除 item、不截断 ASR', async () => {
     const handle = await qwenOmniTransport.connect({
       apiKey: 'test-key',
@@ -633,7 +823,7 @@ describe('VoiceTransport 契约（relay / direct 双跑）', () => {
     const sentBeforeCommit = upstream.sent.length;
 
     upstream.emit('message', JSON.stringify({ type: 'input_audio_buffer.committed' }));
-    handle.kind === 'relay' && handle.respond();
+    if (handle.kind === 'relay') handle.respond();
     await vi.advanceTimersByTimeAsync(VOICE_UPSTREAM_RESPONSE_TIMEOUT_MS);
 
     const firstTurnFrames = upstream.sent
@@ -652,7 +842,7 @@ describe('VoiceTransport 契约（relay / direct 双跑）', () => {
     expect(events.filter((event) => event.type === 'notice' && event.code === 'VOICE_MODEL_UNRESPONSIVE')).toHaveLength(1);
 
     upstream.emit('message', JSON.stringify({ type: 'input_audio_buffer.committed' }));
-    handle.kind === 'relay' && handle.respond();
+    if (handle.kind === 'relay') handle.respond();
     await vi.advanceTimersByTimeAsync(VOICE_UPSTREAM_RESPONSE_TIMEOUT_MS * 2);
     const responseCreates = upstream.sent
       .slice(sentBeforeCommit)
@@ -976,7 +1166,12 @@ describe('VoiceTransport 契约（relay / direct 双跑）', () => {
     }));
 
     await vi.waitFor(() => expect(upstream.sent.length).toBeGreaterThan(before + 1));
-    expect(onToolCall).toHaveBeenCalledWith({ callId: 'call_1', name: 'get_active_tasks', arguments: '{}' });
+    expect(onToolCall).toHaveBeenCalledWith({
+      callId: 'call_1',
+      name: 'get_active_tasks',
+      arguments: '{}',
+      origin: 'function_call',
+    });
     const emitted = upstream.sent.slice(before).map((raw) => JSON.parse(raw) as { type: string; item?: { call_id?: string; output?: string } });
     expect(emitted[0].item).toMatchObject({ call_id: 'call_1', output: '当前没有进行中的任务。' });
     expect(emitted[1].type).toBe('response.create');

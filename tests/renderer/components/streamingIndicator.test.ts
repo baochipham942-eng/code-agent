@@ -227,3 +227,44 @@ describe('getRunningSubagentCount', () => {
     expect(getRunningSubagentCount([toolNode('a', 'spawn_agent', true)])).toBe(0);
   });
 });
+
+// ============================================================================
+// C1 渲染挂止血（2026-08-05）
+// ============================================================================
+// 状态槽是渲染路径上的同步调用：这里抛 TypeError 会被 ChatView 的会话级
+// ErrorBoundary 接住，整块消息区塌成兜底页。name 在契约里必填，但持久化历史
+// 回放过的畸形节点会带 undefined 进来，所以判空是渲染路径的硬要求。
+describe('C1: 畸形 toolCall（name 缺失）不得让渲染路径抛错', () => {
+  const malformed = [
+    {
+      id: 'tc-no-name',
+      type: 'tool_call' as const,
+      content: '',
+      timestamp: 100,
+      // 故意违反契约：模拟历史消息回放出的畸形节点
+      toolCall: { id: 'x', args: {} } as unknown as NonNullable<TraceNode['toolCall']>,
+    },
+  ] satisfies TraceNode[];
+
+  it('getStreamingWaitingReason 不抛，且不误判成等子任务', () => {
+    expect(() => getStreamingWaitingReason(malformed, 'using_tools')).not.toThrow();
+    expect(getStreamingWaitingReason(malformed, 'using_tools')).toBeUndefined();
+  });
+
+  it('getRunningSubagentCount 不抛，畸形节点不计数', () => {
+    expect(() => getRunningSubagentCount(malformed)).not.toThrow();
+    expect(getRunningSubagentCount(malformed)).toBe(0);
+  });
+
+  it('正常节点的判定不受判空影响（回归护栏）', () => {
+    const healthy: TraceNode[] = [{
+      id: 'tc-spawn',
+      type: 'tool_call',
+      content: '',
+      timestamp: 100,
+      toolCall: { id: 'y', name: 'spawn_agent', args: {} },
+    }];
+    expect(getStreamingWaitingReason(healthy, 'using_tools')).toBe('subagent');
+    expect(getRunningSubagentCount(healthy)).toBe(1);
+  });
+});

@@ -241,4 +241,57 @@ describe('SqliteBackgroundTaskStore', () => {
     ]);
     expect(restartedLedger.drainNotifications('session-notice')).toEqual([]);
   });
+  // C3（2026-08-05）：终态台账原本两条列表查询都无 LIMIT 无清理，全表扫描随使用
+  // 单调增长，而 renderer 每 3s 就读一次；swarm 并发把写入放大后成为读失败诱因。
+  it('列表只返回最近 N 条终态，且启动时裁掉超出保留窗口的老行', async () => {
+    const dbPath = await createDbPath();
+    db = new Database(dbPath);
+    const store = new SqliteBackgroundTaskStore(db);
+    const ledger = new BackgroundTaskLedger({ store });
+
+    const TOTAL = 620;
+    for (let i = 0; i < TOTAL; i += 1) {
+      ledger.upsertTask({
+        id: `shell:bulk-${i}`,
+        kind: 'shell',
+        sessionId: 'session-bulk',
+        source: 'shell',
+        title: `job ${i}`,
+        status: 'completed',
+        createdAt: i,
+        updatedAt: i,
+        startedAt: i,
+        completedAt: i,
+        durationMs: 1,
+      });
+    }
+
+    const rowsBeforeRestart = (db.prepare(
+      'SELECT COUNT(*) AS n FROM background_task_terminal_tasks',
+    ).get() as { n: number }).n;
+    expect(rowsBeforeRestart).toBe(TOTAL);
+
+    // 列表查询封顶：不管表里多少行，读回来的都是最近的那批
+    expect(store.loadTerminalTasks().length).toBe(200);
+    expect(store.loadTerminalTasks()[0]?.id).toBe(`shell:bulk-${TOTAL - 1}`);
+
+    // 重开（= 下次启动）时裁掉保留窗口以外的老行
+    db.close();
+    db = new Database(dbPath);
+    new SqliteBackgroundTaskStore(db);
+    const rowsAfterRestart = (db.prepare(
+      'SELECT COUNT(*) AS n FROM background_task_terminal_tasks',
+    ).get() as { n: number }).n;
+    expect(rowsAfterRestart).toBe(500);
+
+    // 裁掉的是最老的，最近的必须还在
+    const survived = db.prepare(
+      'SELECT id FROM background_task_terminal_tasks WHERE id = ?',
+    ).get(`shell:bulk-${TOTAL - 1}`) as { id?: string } | undefined;
+    expect(survived?.id).toBe(`shell:bulk-${TOTAL - 1}`);
+    const pruned = db.prepare(
+      'SELECT id FROM background_task_terminal_tasks WHERE id = ?',
+    ).get('shell:bulk-0') as { id?: string } | undefined;
+    expect(pruned).toBeUndefined();
+  });
 });

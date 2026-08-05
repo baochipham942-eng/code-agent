@@ -648,7 +648,11 @@ describe('runWorkbenchProjection', () => {
     expect(task).toBeNull();
   });
 
-  it('keeps live task progress visible while a run is active', () => {
+  // C2（2026-08-05）：改判。没有结构化 todos 时不再拿 taskProgress.step 伪造 Todo——
+  // 那个 step 的兜底串是 toolExecutionEngine 的 `执行 ${toolCall.name}`，
+  // 于是概览 Todo 长期显示工具流水。工具执行只进任务行指针（OverviewRunHeader），
+  // 运行中的零反馈由 TaskDashboardSummary 的 active-run-placeholder 兜。
+  it('无结构化 todos 时不拿 taskProgress 伪造 Todo 条目', () => {
     const task = buildSessionTaskRecord({
       sessionId: 'session-1',
       runId: 'turn-1',
@@ -657,14 +661,31 @@ describe('runWorkbenchProjection', () => {
         turnId: 'turn-1',
         phase: 'tool_running',
         tool: 'MemoryWrite',
-        step: 'Writing memory',
+        step: '执行 bash',
       },
     });
 
-    expect(task).toMatchObject({
-      title: 'Writing memory',
-      status: 'in_progress',
+    expect(task).toBeNull();
+  });
+
+  it('有结构化 todos 时照常显示（非 swarm 会话不回归）', () => {
+    const task = buildSessionTaskRecord({
+      sessionId: 'session-1',
+      runId: 'turn-1',
+      runStatus: 'using_tools',
+      todos: [
+        { content: 'Ship the fix', activeForm: 'Shipping the fix', status: 'in_progress' },
+      ],
+      taskProgress: {
+        turnId: 'turn-1',
+        phase: 'tool_running',
+        tool: 'MemoryWrite',
+        step: '执行 bash',
+      },
     });
+
+    expect(task).toMatchObject({ title: 'Shipping the fix', status: 'in_progress' });
+    expect(task?.steps.map((step) => step.title)).toEqual(['Shipping the fix']);
   });
 
   // 依赖 A 后半截：run / tool 卡片此前把 raw 工具输出当 blockedReason 直接渲染。

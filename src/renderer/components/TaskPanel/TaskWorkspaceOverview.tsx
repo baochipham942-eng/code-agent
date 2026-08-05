@@ -32,7 +32,9 @@ import { humanContextLabel } from '../../utils/overviewLabels';
 import { isLiveRunStatus } from '../../utils/overviewRunHeader';
 import { OverviewRunHeader } from './OverviewRunHeader';
 import { ArtifactThumbStrip } from './OutputArtifactRows';
-import { TaskDashboardSummary } from './RunWorkbenchCards';
+import { SubagentRunRows, TaskDashboardSummary } from './RunWorkbenchCards';
+import { useMemberViewStore } from '../../stores/memberViewStore';
+import { useSessionMembers } from '../features/expert/SessionMemberBar';
 
 // 真读取失败（读取异常且确有任务在跑）在 Todo 模块位置内联一行错误 + 重试/取消
 // （拍板三后无详情二级可挂）。0 rows ≠ failure：store 侧已不置位，这里再做一层
@@ -388,6 +390,7 @@ export const TaskWorkspaceOverview: React.FC = () => {
   const backgroundTasksLoading = useBackgroundTaskStore((state) => state.isLoading);
   const requestStatusReadRetry = useBackgroundTaskStore((state) => state.requestStatusReadRetry);
   const cancelTask = useTaskStore((state) => state.cancelTask);
+  const setViewingMemberId = useMemberViewStore((state) => state.setViewingMemberId);
   const statusRail = useStatusRailModel();
   const runWorkbench = useRunWorkbenchModel();
   const workspacePreviewItems = useWorkspacePreviewModel();
@@ -415,7 +418,19 @@ export const TaskWorkspaceOverview: React.FC = () => {
   // 「确有任务在跑」才配谈读取失败：0 rows（没有任务）是空态不是失败（C.11）
   const hasActiveTasks = runWorkbench.tasks.some((task) => task.status === 'in_progress');
   const showReadFailure = Boolean(readFailure) && runLive && hasActiveTasks;
-  const showTodoModule = showReadFailure || runWorkbench.tasks.length > 0;
+  // C2（2026-08-05）：组队会话的 Todo = 成员级清单。成员本身就是「干到哪了」的答案，
+  // 主会话编排（结构化 todos）作为另一条挂在下面；工具执行只进任务行指针不进这里。
+  //
+  // 只认本会话的成员：runWorkbench.subagents 还混着 workflow 子 agent，而 workflow
+  // 快照对「无 sessionId 的注入项」是跨会话可见的，直接拿它判定会让非组队会话也长出
+  // Todo 模块。成员条那份解析（MemberConversationView 也按它 find）才是成员的定义，
+  // 交集之外的行既点不进去也不该占位。
+  const memberPills = useSessionMembers(currentSessionId);
+  const memberRows = useMemo(() => {
+    const keys = new Set(memberPills.map((pill) => pill.key));
+    return runWorkbench.subagents.filter((agent) => keys.has(agent.id));
+  }, [memberPills, runWorkbench.subagents]);
+  const showTodoModule = showReadFailure || runWorkbench.tasks.length > 0 || memberRows.length > 0;
 
   // Session 口径：产物跨全部 run 聚合；workspacePreviewItems 与当前会话 messages 同源，
   // 不再让最后一轮 ownership 覆盖前几轮产物。
@@ -481,11 +496,20 @@ export const TaskWorkspaceOverview: React.FC = () => {
               canCancel={Boolean(currentSessionId)}
             />
           ) : (
-            <TaskDashboardSummary
-              tasks={runWorkbench.tasks}
-              run={runWorkbench.run}
-              showOutputRefs={false}
-            />
+            <>
+              {memberRows.length > 0 && (
+                <SubagentRunRows subagents={memberRows} onSelect={setViewingMemberId} />
+              )}
+              {(runWorkbench.tasks.length > 0 || memberRows.length === 0) && (
+                <div className={memberRows.length > 0 ? 'mt-1.5' : undefined}>
+                  <TaskDashboardSummary
+                    tasks={runWorkbench.tasks}
+                    run={runWorkbench.run}
+                    showOutputRefs={false}
+                  />
+                </div>
+              )}
+            </>
           )}
         </section>
       )}

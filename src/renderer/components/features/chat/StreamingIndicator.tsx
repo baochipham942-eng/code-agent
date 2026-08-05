@@ -70,7 +70,9 @@ export function getStreamingWaitingReason(
       if (!toolCall || toolCall._streaming) return false;
       return toolCall.success === undefined && toolCall.result === undefined;
     });
-    const name = running?.toolCall?.name.toLowerCase();
+    // name 在契约里是必填，但持久化历史消息回放过的畸形节点会带 undefined 进来；
+    // 状态槽是渲染路径上的同步调用，抛在这里会把整块消息区塌成兜底页。
+    const name = running?.toolCall?.name?.toLowerCase();
     return name && SUBAGENT_WAIT_TOOLS.has(name) ? 'subagent' : undefined;
   }
   if (streamingStatus === 'drafting') return 'model';
@@ -85,7 +87,7 @@ export function getRunningSubagentCount(nodes: TraceNode[]): number {
     const toolCall = node.toolCall;
     if (!toolCall || toolCall._streaming) return false;
     if (toolCall.success !== undefined || toolCall.result !== undefined) return false;
-    return SUBAGENT_WAIT_TOOLS.has(toolCall.name.toLowerCase());
+    return SUBAGENT_WAIT_TOOLS.has(toolCall.name?.toLowerCase() ?? '');
   }).length;
 }
 

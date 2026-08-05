@@ -6,7 +6,7 @@ import { resolve } from 'node:path';
 import { SendButton } from '../../../src/renderer/components/features/chat/ChatInput/SendButton';
 
 // 2026-07-28 输入框打磨（任务 A）：对齐 Codex composer 参考图的像素扫描值。
-// 四个间距：容器下边→app 底部 18.5 / 工具行左 16 / 右 7.5（刻意不对称）/ 下 16.5；
+// 四个间距：容器下边→app 底部 18.5 / 工具行左右对称 16（2026-08-05 拍板收回 7.5 不对称）/ 下 16.5；
 // 按钮：直径 28（h-7 w-7）+ 正圆 + 实心浅色，interrupting/排队/停止/普通 四分支同形态。
 
 const CHAT_INPUT_PATH = resolve(
@@ -48,8 +48,8 @@ describe('SendButton Codex 形态（28px 实心浅色正圆，全状态分支）
 describe('输入框间距（Codex 参考图像素扫描值）', () => {
   const source = readFileSync(CHAT_INPUT_PATH, 'utf8');
 
-  it('工具行内边距：左 16 / 右 7.5 / 下 16.5（左右刻意不对称）', () => {
-    expect(source).toMatch(/flex items-center gap-1 pl-4 pr-\[7\.5px\] pb-\[16\.5px\]/);
+  it('工具行内边距：左右对称 16 / 下 16.5（产品负责人 2026-08-05 拍板回对称——右 7.5 的理由只在发送键显示时成立，静止态右端是语音入口）', () => {
+    expect(source).toMatch(/flex items-center gap-1 px-4 pb-\[16\.5px\]/);
   });
 
   it('容器下边 → app 底部：18.5', () => {

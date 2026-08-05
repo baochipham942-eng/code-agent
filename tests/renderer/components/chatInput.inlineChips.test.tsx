@@ -300,4 +300,19 @@ describe('InputArea 内联 chip', () => {
     expect(onChange).toHaveBeenLastCalledWith('第一行\n第二行');
     expect(extractComposerPlainText(editor)).toBe('第一行\n第二行');
   });
+
+  it('删光文字后 WebKit 残留的占位 <br> 被清掉：值回 ""、placeholder 回来（真机 2026-08-05）', () => {
+    const onChange = vi.fn();
+    render(<Harness initialValue="11" onChange={onChange} placeholder="继续描述…" />);
+
+    const editor = getEditor();
+    // 模拟 WebKit 删光后的 DOM 终态：文本没了，只剩一个占位 <br>
+    editor.replaceChildren(document.createElement('br'));
+    fireEvent.input(editor);
+
+    expect(onChange).toHaveBeenLastCalledWith('');
+    expect(editor.childNodes.length).toBe(0);
+    expect(editor.getAttribute('data-plain-text')).toBe('');
+    expect(screen.getByText('继续描述…')).toBeTruthy();
+  });
 });

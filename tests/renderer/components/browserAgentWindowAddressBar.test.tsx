@@ -40,6 +40,8 @@ vi.mock('../../../src/renderer/services/userBrowserLink', () => ({
   openHttpLinkInRailAsync: (input: unknown) => openHttpLinkInRailAsync(input),
   closeUserBrowserLinkRun: (...args: unknown[]) => closeUserBrowserLinkRun(...args),
   controlUserBrowserHistory: (...args: unknown[]) => controlUserBrowserHistory(...args),
+  dispatchUserBrowserInput: vi.fn(async () => null),
+  setUserBrowserViewport: vi.fn(async () => null),
 }));
 
 function buildBrowserSessionState(overrides: Partial<BrowserSessionState> = {}): BrowserSessionState {

@@ -656,7 +656,14 @@ export const BrowserAgentWindow: React.FC = () => {
       <div
         data-testid="browser-agent-window-stage"
         className="relative min-h-0 flex-1 overflow-hidden bg-black/40"
+        role={annotateMode ? 'button' : undefined}
+        tabIndex={annotateMode ? 0 : undefined}
+        aria-label={annotateMode ? copy.annotate : undefined}
         onClick={annotateMode ? handleStageClickForAnnotate : undefined}
+        onKeyDown={annotateMode ? (event) => {
+          // 批注落点依赖鼠标坐标；键盘 Enter 仅用于焦点可达，不模拟坐标落点。
+          if (event.key === 'Escape') exitAnnotateMode();
+        } : undefined}
       >
         {isNavPending && !liveStream.frame ? (
           <div
@@ -798,7 +805,7 @@ export const BrowserAgentWindow: React.FC = () => {
           <div
             data-testid="browser-agent-window-pin-editor"
             className="absolute bottom-3 left-1/2 z-30 w-[min(320px,90%)] -translate-x-1/2 rounded-lg border border-white/10 bg-zinc-900/95 p-2 shadow-xl"
-            onClick={(event) => event.stopPropagation()}
+            onMouseDown={(event) => event.stopPropagation()}
           >
             <div className="mb-1.5 flex items-center justify-between gap-2">
               <span className="text-[11px] text-zinc-400">

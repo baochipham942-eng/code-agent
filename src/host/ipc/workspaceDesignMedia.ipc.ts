@@ -435,7 +435,7 @@ async function assertReadableImageFile(sourcePath: string): Promise<FileHandle> 
  */
 export async function handleImportDesignImageFromPath(
   payload: { sourcePath: string; outputPath: string },
-  activeWorkspaceRoot?: string | null,
+  activeWorkspaceRoot?: string | null | Array<string | null | undefined>,
 ): Promise<{ path: string }> {
   if (!payload?.sourcePath || !payload?.outputPath) {
     throw new Error('importDesignImageFromPath 需要 sourcePath 与 outputPath');

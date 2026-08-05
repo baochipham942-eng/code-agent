@@ -77,6 +77,35 @@ export function getRenderableMediaSrc(asset: SessionMediaAsset): string {
   return asset.thumbnailUrl || '';
 }
 
+/**
+ * 复制图片本体到剪贴板（2026-08-05 产品负责人：「复制图片却是复制的图片地址」）。
+ * ClipboardItem 只稳定支持 image/png，非 png 经 canvas 转码；任何一步失败返回 false，
+ * 调用方兜底回退复制引用（路径），不静默。
+ */
+async function copyImageToClipboard(asset: SessionMediaAsset): Promise<boolean> {
+  const src = getRenderableMediaSrc(asset);
+  if (!src || asset.kind !== 'image' || typeof ClipboardItem === 'undefined') return false;
+  try {
+    const response = await fetch(src);
+    if (!response.ok) return false;
+    let blob = await response.blob();
+    if (blob.type !== 'image/png') {
+      const bitmap = await createImageBitmap(blob);
+      const canvas = document.createElement('canvas');
+      canvas.width = bitmap.width;
+      canvas.height = bitmap.height;
+      canvas.getContext('2d')?.drawImage(bitmap, 0, 0);
+      const png = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
+      if (!png) return false;
+      blob = png;
+    }
+    await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function getCopyReference(asset: SessionMediaAsset): string {
   if (asset.largeInlineData && !asset.path && !asset.url) {
     return getMediaAssetFileName(asset);
@@ -313,9 +342,16 @@ export function MediaAssetActionBar({
           className={buttonClass}
           onClick={(event) => {
             event.stopPropagation();
-            void copyPathToClipboard(getCopyReference(asset));
+            void (async () => {
+              // 图片复制位图本体；失败（协议不支持/转码失败）回退复制引用，并说清复制了什么。
+              if (await copyImageToClipboard(asset)) {
+                toast.success('图片已复制');
+                return;
+              }
+              await copyPathToClipboard(getCopyReference(asset));
+            })();
           }}
-          title="复制引用"
+          title={asset.kind === 'image' ? '复制图片' : '复制引用'}
         >
           <Copy className="h-3.5 w-3.5" />
           {!compact && <span>复制</span>}

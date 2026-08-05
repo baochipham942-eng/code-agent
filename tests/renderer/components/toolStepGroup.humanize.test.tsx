@@ -43,7 +43,7 @@ function failedWriteNode(): TraceNode {
 describe('ToolStepGroup — humanized step text', () => {
   it('shows a humanized Chinese sentence in the collapsed step row', () => {
     const html = renderToStaticMarkup(React.createElement(ToolStepGroup, { nodes: [readNode()] }));
-    expect(html).toContain('读取了 .../docs/report.md');
+    expect(html).toContain('读取了 …/docs/report.md');
   });
 
   it('keeps the original tool name and path visible in the expanded detail', () => {
@@ -51,7 +51,7 @@ describe('ToolStepGroup — humanized step text', () => {
       React.createElement(ToolStepGroup, { nodes: [readNode()], defaultExpanded: true }),
     );
     // Step row still shows the humanized sentence…
-    expect(html).toContain('读取了 .../docs/report.md');
+    expect(html).toContain('读取了 …/docs/report.md');
     // …while the expanded detail keeps the raw tool name and file path (info not dropped).
     expect(html).toContain('Read');
     expect(html).toContain('report.md');
@@ -63,7 +63,7 @@ describe('ToolStepGroup — humanized step text', () => {
     const html = renderToStaticMarkup(
       React.createElement(ToolStepGroup, { nodes: [failedWriteNode()] }),
     );
-    expect(html).toContain('写入 .../work/test3.txt');
+    expect(html).toContain('写入 …/work/test3.txt');
     expect(html).not.toContain('写入了');
   });
 

@@ -19,6 +19,8 @@ import {
   writeTurnDiffExpansion,
 } from '../../../../utils/turnDiffExpansionState';
 import { useI18n } from '../../../../hooks/useI18n';
+import { useAppStore } from '../../../../stores/appStore';
+import { formatDisplayPath } from '../../../../utils/displayPath';
 
 interface CheckpointListItem {
   id: string;
@@ -40,6 +42,7 @@ export const TurnDiffSummary: React.FC<TurnDiffSummaryProps> = ({ turn }) => {
     (s) => (s.sessions ?? []).find((session) => session.id === s.currentSessionId)?.workingDirectory ?? null,
   );
   const { t } = useI18n();
+  const openPreview = useAppStore((s) => s.openPreview);
 
   // 展开态提到组件外（模块级 Map，按 sessionId:turnId 键控）：消息流是虚拟列表，
   // 执行中自动滚动会卸载/重挂载本卡，组件内 useState 会被重置（X5.5-B2 根因）。
@@ -212,53 +215,56 @@ export const TurnDiffSummary: React.FC<TurnDiffSummaryProps> = ({ turn }) => {
         )}
       </div>
 
-      {/* File list */}
+      {/* File list：点名字 → 右栏预览；点箭头 → 展开 diff。两个动作分开。 */}
       <div>
         {fileChanges.map((fc) => {
           const expanded = expandedFiles.has(fc.filePath);
           // 相对当前工作目录显示。绝对路径下九成字符是与本次改动无关的前缀，
           // 目录/文件名的明暗分级被那段前缀吃掉，整条读起来就是一坨灰。
           // 完整路径仍留在 title 里——那时它是补充信息，不再是重复。
-          const shownPath = workingDirectory && fc.filePath.startsWith(`${workingDirectory}/`)
+          const relativePath = workingDirectory && fc.filePath.startsWith(`${workingDirectory}/`)
             ? fc.filePath.slice(workingDirectory.length + 1)
             : fc.filePath;
-          const fileName = shownPath.split('/').pop() || shownPath;
-          const dirPath = shownPath.slice(
-            0,
-            Math.max(0, shownPath.length - fileName.length - 1)
-          );
+          // 中段省略：禁止 CSS 尾部截断成 `…/artifacts/foo.m…`
+          const shownPath = formatDisplayPath(relativePath, 56);
+          const fileName = relativePath.split('/').pop() || relativePath;
           return (
             <div
               key={fc.filePath}
               className="border-b border-zinc-800 last:border-b-0"
             >
-              <button
-                onClick={() => toggleFile(fc.filePath)}
-                aria-expanded={expanded}
-                className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-zinc-800/50 transition-colors text-left"
-              >
-                {expanded ? (
-                  <ChevronDown className="w-3 h-3 text-zinc-500 flex-shrink-0" />
-                ) : (
-                  <ChevronRight className="w-3 h-3 text-zinc-500 flex-shrink-0" />
-                )}
-                <span
-                  className="text-xs font-mono truncate flex-1 min-w-0"
-                  title={fc.filePath}
+              <div className="flex w-full items-center gap-1 px-2 py-1.5 hover:bg-zinc-800/50 transition-colors">
+                <button
+                  type="button"
+                  onClick={() => toggleFile(fc.filePath)}
+                  aria-expanded={expanded}
+                  aria-label={expanded ? t.turnDiff.collapseDiff : t.turnDiff.expandDiff}
+                  className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded text-zinc-500 hover:bg-zinc-700 hover:text-zinc-300"
                 >
-                  {dirPath && <span className="text-zinc-600">{dirPath}/</span>}
-                  <span className="text-zinc-300">{fileName}</span>
+                  {expanded ? (
+                    <ChevronDown className="w-3 h-3" />
+                  ) : (
+                    <ChevronRight className="w-3 h-3" />
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => openPreview(fc.filePath)}
+                  title={fc.filePath}
+                  className="min-w-0 flex-1 text-left text-xs font-mono text-zinc-300 hover:text-white hover:underline"
+                >
+                  <span className="text-zinc-200">{shownPath}</span>
                   {fc.isNewFile && (
-                    <span className="ml-2 text-[10px] text-badge-success/80">
+                    <span className="ml-2 text-[10px] text-badge-success/80 no-underline">
                       {t.turnDiff.newFileBadge}
                     </span>
                   )}
                   {fc.editCount > 1 && (
-                    <span className="ml-2 text-[10px] text-zinc-500">
+                    <span className="ml-2 text-[10px] text-zinc-500 no-underline">
                       ×{fc.editCount}
                     </span>
                   )}
-                </span>
+                </button>
                 {fc.added > 0 && (
                   <span className="text-xs text-badge-success flex-shrink-0">
                     +{fc.added}
@@ -269,7 +275,7 @@ export const TurnDiffSummary: React.FC<TurnDiffSummaryProps> = ({ turn }) => {
                     -{fc.removed}
                   </span>
                 )}
-              </button>
+              </div>
               {expanded && (
                 <div className="px-3 pb-2 bg-zinc-900/30">
                   <DiffView

@@ -1,10 +1,11 @@
 // ============================================================================
 // humanizeToolStep — 把工具调用（工具名 + 参数）合成一句人话步骤文案
-// 消费方：ToolStepGroup 的步骤行主文案。原工具名/参数继续留在展开详情
-// （ToolHeader/ToolDetails）里，本模块只管折叠态那一行给非程序员用户看的话。
+// 消费方：ToolStepGroup 的步骤行主文案 + ToolHeader。原工具名/参数继续留在展开详情
+// 次级小字里，本模块管折叠态那一行给非程序员用户看的话。
 // ============================================================================
 
 import { isSemanticToolUIEnabled } from './featureFlags';
+import { formatDisplayPath } from './displayPath';
 import type { Translations } from '../i18n';
 
 const ARG_PREVIEW_MAX = 80;
@@ -16,11 +17,20 @@ function takePreview(value: unknown): string {
   return trimmed.slice(0, ARG_PREVIEW_MAX) + '…';
 }
 
-function shortenPath(path: string): string {
-  if (!path) return '';
-  const segments = path.split('/').filter(Boolean);
-  if (segments.length <= 2) return path;
-  return '.../' + segments.slice(-2).join('/');
+/** 路径专用：不走 takePreview 尾部截断，交给 formatDisplayPath 做中段省略 */
+function firstPath(args: Record<string, unknown>, keys: string[]): string {
+  for (const key of keys) {
+    const value = args[key];
+    if (typeof value !== 'string') continue;
+    const trimmed = value.trim();
+    if (!trimmed) continue;
+    // 清理偶发的参数串扰（file_path 后带 offset/limit）
+    const cleaned = trimmed.includes(' offset=') || trimmed.includes(' limit=')
+      ? trimmed.split(' ')[0]
+      : trimmed;
+    return formatDisplayPath(cleaned);
+  }
+  return '';
 }
 
 function firstString(args: Record<string, unknown>, keys: string[]): string {
@@ -29,6 +39,31 @@ function firstString(args: Record<string, unknown>, keys: string[]): string {
     if (preview) return preview;
   }
   return '';
+}
+
+/**
+ * 从工具参数里取完整文件路径（未做展示截断），供点击打开预览。
+ * 读/写/编类工具共用。
+ */
+export function getToolFilePath(
+  name: string,
+  args: Record<string, unknown> | undefined,
+): string | null {
+  if (!args) return null;
+  const category = classifyToolName(name);
+  if (category !== 'read' && category !== 'write' && category !== 'edit' && category !== 'listDir') {
+    return null;
+  }
+  for (const key of ['file_path', 'path']) {
+    const value = args[key];
+    if (typeof value === 'string' && value.trim()) {
+      const trimmed = value.trim();
+      return trimmed.includes(' offset=') || trimmed.includes(' limit=')
+        ? trimmed.split(' ')[0]
+        : trimmed;
+    }
+  }
+  return null;
 }
 
 // mcp 工具命名：现行 mcp__server__tool（双下划线），历史遗留 mcp_server_tool（单下划线），
@@ -59,8 +94,8 @@ type ToolCategory =
   | 'read' | 'write' | 'edit' | 'bash' | 'search' | 'listDir'
   | 'webSearch' | 'webFetch' | 'mcpChannel' | 'mcp'
   | 'subagentSpawn' | 'subagentMessage' | 'todo' | 'planUpdate' | 'planRead'
-  | 'skill' | 'screenshot' | 'computerUse' | 'browserAction'
-  | 'askUser' | 'memoryStore' | 'memorySearch' | 'unknown';
+  | 'taskManager' | 'skill' | 'screenshot' | 'computerUse' | 'browserAction'
+  | 'askUser' | 'memoryStore' | 'memorySearch' | 'toolSearch' | 'unknown';
 
 const READ_TOOLS = new Set(['Read', 'read_file', 'read_pdf', 'read_xlsx', 'ReadDocument']);
 const WRITE_TOOLS = new Set(['Write', 'write_file']);
@@ -78,13 +113,18 @@ const SUBAGENT_MESSAGE_TOOLS = new Set(['agent_message', 'send_input', 'wait_age
 const TODO_TOOLS = new Set(['todo_write']);
 const PLAN_UPDATE_TOOLS = new Set(['plan_update', 'Plan', 'PlanMode']);
 const PLAN_READ_TOOLS = new Set(['plan_read']);
-const SKILL_TOOLS = new Set(['skill']);
+// TaskManager：会话任务清单统一入口（create/list/update/replace/patch）
+const TASK_MANAGER_TOOLS = new Set(['TaskManager']);
+// Skill 工具 schema 名是 PascalCase `Skill`；历史小写也认
+const SKILL_TOOLS = new Set(['skill', 'Skill']);
 const SCREENSHOT_TOOLS = new Set(['screenshot']);
 const COMPUTER_TOOLS = new Set(['computer_use']);
 const BROWSER_TOOLS = new Set(['browser_action']);
 const ASK_USER_TOOLS = new Set(['AskUserQuestion']);
 const MEMORY_STORE_TOOLS = new Set(['memory_store']);
 const MEMORY_SEARCH_TOOLS = new Set(['memory_search']);
+// ToolSearch：工具目录检索，对用户零意义的纯内部动作，不进主流聚合行
+const TOOL_SEARCH_TOOLS = new Set(['ToolSearch', 'tool_search']);
 
 function classifyToolName(name: string): ToolCategory {
   if (READ_TOOLS.has(name)) return 'read';
@@ -100,6 +140,7 @@ function classifyToolName(name: string): ToolCategory {
   if (TODO_TOOLS.has(name)) return 'todo';
   if (PLAN_UPDATE_TOOLS.has(name)) return 'planUpdate';
   if (PLAN_READ_TOOLS.has(name)) return 'planRead';
+  if (TASK_MANAGER_TOOLS.has(name)) return 'taskManager';
   if (SKILL_TOOLS.has(name)) return 'skill';
   if (SCREENSHOT_TOOLS.has(name)) return 'screenshot';
   if (COMPUTER_TOOLS.has(name)) return 'computerUse';
@@ -107,9 +148,25 @@ function classifyToolName(name: string): ToolCategory {
   if (ASK_USER_TOOLS.has(name)) return 'askUser';
   if (MEMORY_STORE_TOOLS.has(name)) return 'memoryStore';
   if (MEMORY_SEARCH_TOOLS.has(name)) return 'memorySearch';
+  if (TOOL_SEARCH_TOOLS.has(name)) return 'toolSearch';
   const mcp = parseMcpName(name);
   if (mcp) return isMessagingMcpTool(mcp.server, mcp.tool) ? 'mcpChannel' : 'mcp';
   return 'unknown';
+}
+
+/**
+ * 纯内部动作：不出现在用户可见主流聚合行（可进展开明细次级小字）。
+ * 口径对齐「Bash/Read 执行流水不进上下文」——对用户零意义的运行时动作。
+ */
+export function isInternalStreamTool(name: string): boolean {
+  return classifyToolName(name) === 'toolSearch';
+}
+
+/**
+ * 展开明细次级小字：原始工具名（仅在展开态露出，不进主行）。
+ */
+export function toolNameForDetail(name: string): string {
+  return name;
 }
 
 /**
@@ -147,7 +204,9 @@ function matchesUiScript(text: string, t: Translations): boolean {
 /**
  * 把单个工具调用合成一句步骤人话。模型自写的 shortDescription（产品视角语义标签）
  * 优先级最高——比机械模板更贴近"在干什么"；没有（或语种与界面不一致）时按工具
- * 类目落到对应模板，未识别的工具兜底"使用了 <工具名>"（不裸露英文工具名之外的黑话）。
+ * 类目落到对应模板。
+ *
+ * 未识别工具兜底「执行了一个步骤」——内部工具名绝不进主行（只在展开明细次级小字）。
  *
  * failed=true（toolCall.result 已存在且 success===false）时，写/编类目不再输出过去时
  * 肯定式（「写入了/编辑了」）——它会与状态词「写入失败/编辑失败」同屏自相矛盾；
@@ -174,16 +233,16 @@ export function humanizeToolStep(
 
   switch (classifyToolName(name)) {
     case 'read': {
-      const target = shortenPath(firstString(a, ['file_path', 'path']));
+      const target = firstPath(a, ['file_path', 'path']);
       return target ? h.read.replace('{target}', target) : h.readFallback;
     }
     case 'write': {
-      const target = shortenPath(firstString(a, ['file_path', 'path']));
+      const target = firstPath(a, ['file_path', 'path']);
       if (failed) return target ? h.writeIntent.replace('{target}', target) : h.writeIntentFallback;
       return target ? h.write.replace('{target}', target) : h.writeFallback;
     }
     case 'edit': {
-      const target = shortenPath(firstString(a, ['file_path', 'path']));
+      const target = firstPath(a, ['file_path', 'path']);
       if (failed) return target ? h.editIntent.replace('{target}', target) : h.editIntentFallback;
       return target ? h.edit.replace('{target}', target) : h.editFallback;
     }
@@ -197,7 +256,7 @@ export function humanizeToolStep(
       return query ? h.search.replace('{query}', query) : h.searchFallback;
     }
     case 'listDir': {
-      const target = shortenPath(firstString(a, ['path']));
+      const target = firstPath(a, ['path']);
       return target ? h.listDir.replace('{target}', target) : h.listDirFallback;
     }
     case 'webSearch': {
@@ -210,13 +269,13 @@ export function humanizeToolStep(
     }
     case 'mcpChannel': {
       const mcp = parseMcpName(name);
-      if (!mcp) return h.fallback.replace('{name}', name);
+      if (!mcp) return h.fallback;
       const channel = h.channelNames[mcp.server] || mcp.server;
       return h.channelMessage.replace('{channel}', channel);
     }
     case 'mcp': {
       const mcp = parseMcpName(name);
-      if (!mcp) return h.fallback.replace('{name}', name);
+      if (!mcp) return h.fallback;
       return h.mcpTool.replace('{server}', mcp.server).replace('{tool}', mcp.tool);
     }
     case 'subagentSpawn': {
@@ -233,8 +292,11 @@ export function humanizeToolStep(
       return h.planUpdate;
     case 'planRead':
       return h.planRead;
+    case 'taskManager':
+      return h.taskManager;
     case 'skill': {
-      const skillName = firstString(a, ['skill', 'name']);
+      // Skill schema 用 command 传技能名；历史/别名可能用 skill / name
+      const skillName = firstString(a, ['command', 'skill', 'name']);
       return skillName ? h.skill.replace('{skill}', skillName) : h.skillFallback;
     }
     case 'screenshot':
@@ -249,22 +311,27 @@ export function humanizeToolStep(
       return h.memoryStore;
     case 'memorySearch':
       return h.memorySearch;
+    case 'toolSearch':
+      // 仅用于展开明细；主流聚合行会过滤 isInternalStreamTool
+      return h.toolSearch;
     default:
-      return h.fallback.replace('{name}', name);
+      // 主行绝不暴露内部工具名
+      return h.fallback;
   }
 }
 
 // ============================================================================
 // 多工具聚合（相邻工具调用折叠成一个 tool_group 时的组头文案）
-// ponytail: 按大类计数（查看/运行/联网/工具调用/子任务/其它），不细分到具体文件数 vs
-// 列表数 vs 搜索数——这层是折叠态的粗粒度概览，细节在展开态每个工具自己的人话行里。
-// 需要更细的分类计数时再拆 group 模板。
+// 动词桶 + 计数（Claude Code 式）。纯内部动作（ToolSearch）不进主流。
 // ============================================================================
 
-type GroupBucket = 'explored' | 'ran' | 'searchedWeb' | 'mcp' | 'subagent' | 'used';
+type GroupBucket = 'explored' | 'ran' | 'searchedWeb' | 'mcp' | 'subagent' | 'planned' | 'skill' | 'used';
 
-function groupBucketFor(category: ToolCategory): GroupBucket {
+function groupBucketFor(category: ToolCategory): GroupBucket | null {
   switch (category) {
+    case 'toolSearch':
+      // 主流不计数
+      return null;
     case 'read':
     case 'write':
     case 'edit':
@@ -283,6 +350,13 @@ function groupBucketFor(category: ToolCategory): GroupBucket {
     case 'subagentSpawn':
     case 'subagentMessage':
       return 'subagent';
+    case 'todo':
+    case 'planUpdate':
+    case 'planRead':
+    case 'taskManager':
+      return 'planned';
+    case 'skill':
+      return 'skill';
     default:
       return 'used';
   }
@@ -290,15 +364,20 @@ function groupBucketFor(category: ToolCategory): GroupBucket {
 
 /**
  * 把一组相邻工具调用聚合成一句人话概览，例如 "查看了 3 次内容、运行了 1 条命令"。
+ * ToolSearch 等纯内部动作被过滤，不进主流聚合语。
+ * 若过滤后无可见工具，返回空串（调用方应不渲染主流行 / 整组）。
  */
 export function humanizeToolGroupLabel(toolNames: string[], t: Translations): string {
   const counts = new Map<GroupBucket, number>();
   const order: GroupBucket[] = [];
   for (const name of toolNames) {
     const bucket = groupBucketFor(classifyToolName(name));
+    if (!bucket) continue;
     if (!counts.has(bucket)) order.push(bucket);
     counts.set(bucket, (counts.get(bucket) ?? 0) + 1);
   }
+
+  if (order.length === 0) return '';
 
   const g = t.toolStepHumanize.group;
   return order

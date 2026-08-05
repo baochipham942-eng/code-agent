@@ -154,10 +154,12 @@ describe('BrowserAgentWindow 终态留影', () => {
     expect(screen.queryByTestId('browser-agent-window-empty')).toBeNull();
     expect(screen.queryByTestId('browser-agent-window-terminal-summary')).toBeNull();
 
-    // chrome 条：title/origin 恢复显示，状态点是灰的（灰点是对的，别改绿）
+    // chrome 条：title 恢复显示，状态点是灰的（灰点是对的，别改绿）；
+    // origin 显示收口在地址栏（2026-08-04 工单），chrome 条不再重复摆
     const chrome = screen.getByTestId('browser-agent-window-chrome');
     expect(chrome.textContent).toContain('Example Domain');
-    expect(chrome.textContent).toContain('https://example.com');
+    const addressInput = screen.getByTestId('browser-agent-window-address-input') as HTMLInputElement;
+    expect(addressInput.value).toBe('https://example.com');
     const dot = screen.getByTestId('browser-agent-window-status-dot');
     expect(dot.getAttribute('title')).toBe('未启动');
     expect(dot.className).toContain('bg-zinc-600');

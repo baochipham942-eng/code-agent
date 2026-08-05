@@ -11,7 +11,7 @@
 //
 // 渲染方式：React portal 进 contenteditable=false 的 DOM 挂载点（见 composerRichTextModel）。
 
-import { Sparkles, Target, X } from 'lucide-react';
+import { Pin, Sparkles, Target, X } from 'lucide-react';
 import type { AttachmentCategory } from '../../../../../shared/contract';
 import { useI18n } from '../../../../hooks/useI18n';
 import { AttachmentIcon } from './AttachmentBar';
@@ -41,11 +41,15 @@ export function InlineComposerChip({
     ? t.pendingCommand.removeAria.replace('{name}', chip.label)
     : chip.kind === 'skill'
       ? t.selectedCapabilityChips.removeAria.replace('{name}', chip.label)
-      : t.chatInput.attachRemoveAria.replace('{name}', chip.label);
+      : chip.kind === 'library'
+        ? t.library.pinnedChipRemoveAria.replace('{title}', chip.label)
+        : t.chatInput.attachRemoveAria.replace('{name}', chip.label);
 
   const palette = chip.kind === 'command'
     ? 'border-badge-accent/30 bg-fuchsia-500/10 text-badge-accent hover:border-badge-accent/50'
-    : 'border-zinc-700 bg-zinc-800/70 text-zinc-200 hover:border-zinc-500';
+    : chip.kind === 'library'
+      ? 'border-badge-accent/30 bg-indigo-500/10 text-badge-accent hover:border-badge-accent/50'
+      : 'border-zinc-700 bg-zinc-800/70 text-zinc-200 hover:border-zinc-500';
   const closeHover = chip.kind === 'command'
     ? 'text-badge-accent hover:bg-fuchsia-400/20 hover:text-badge-accent'
     : 'text-zinc-400 hover:bg-zinc-600/70 hover:text-zinc-100';
@@ -69,6 +73,8 @@ export function InlineComposerChip({
         <CommandIcon className="h-3.5 w-3.5 shrink-0" aria-hidden />
       ) : chip.kind === 'skill' ? (
         <Sparkles className="h-3.5 w-3.5 shrink-0 text-badge-success" aria-hidden />
+      ) : chip.kind === 'library' ? (
+        <Pin className="h-3.5 w-3.5 shrink-0" aria-hidden />
       ) : (
         <AttachmentIcon category={chip.category ?? 'document'} className="h-3.5 w-3.5 shrink-0" />
       )}

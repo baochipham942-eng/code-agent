@@ -2,7 +2,6 @@ import type { RefObject } from 'react';
 import type { AppshotCapture } from '@shared/contract/appshot';
 import { useAppshotsStore } from '../../../../stores/appshotsStore';
 import { AppshotChip } from './AppshotChip';
-import { PinnedLibraryChips } from './PinnedLibraryChips';
 
 interface ComposerChipsRowProps {
   pendingAppshot: AppshotCapture | null;
@@ -49,7 +48,6 @@ export function ComposerChipsRow({ pendingAppshot, clearAppshot, appshotSlotRef 
           />
         )}
       </div>
-      <PinnedLibraryChips />
     </>
   );
 }

@@ -12,7 +12,7 @@
 // `value` = 全部文本节点拼接（不含 chip 的任何内容），chip 状态在 composerStore /
 // attachments 里，DOM 挂载点只是渲染。所有函数不依赖 React，可在 jsdom 直接单测。
 
-export type InlineChipKind = 'command' | 'skill' | 'file';
+export type InlineChipKind = 'command' | 'skill' | 'file' | 'library';
 
 export interface InlineChipRef {
   /** 唯一键：`${kind}:${id}`，DOM 挂载点与 store 条目的对账依据 */

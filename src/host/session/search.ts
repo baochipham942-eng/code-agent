@@ -28,8 +28,9 @@ const logger = createLogger('SessionSearch');
 /**
  * FTS 候选命中行（与 sessionRepositoryFtsSearch.SessionMessagesFtsHit 结构一致；
  * 此处重复定义以避免 host/session → services/core 的静态依赖）。
+ * 不导出：仅供 SessionSearchFtsSource 签名内部使用，避免新增死出口。
  */
-export interface SessionSearchFtsHit {
+interface SessionSearchFtsHit {
   messageId: string;
   sessionId: string;
   role: string;

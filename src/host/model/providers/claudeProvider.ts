@@ -20,6 +20,7 @@ import {
   normalizeClaudeBaseUrl,
 } from './shared';
 import { parseClaudeSSEEvent } from './wrappers/anthropicWrapper';
+import { extractToolCallMeta } from './toolCallMeta';
 import { normalizeClaudeUsage } from './wrappers/usageNormalization';
 import { MODEL_API_ENDPOINTS, API_VERSIONS, getModelMaxOutputTokens, PROVIDER_TIMEOUT } from '../../../shared/constants';
 
@@ -262,7 +263,7 @@ function claudeSSEStream(options: {
                   result.toolCalls = Array.from(toolCalls.values()).map((tc) => ({
                     id: tc.id,
                     name: tc.name,
-                    arguments: safeJsonParse(tc.arguments),
+                    ...extractToolCallMeta(safeJsonParse(tc.arguments)),
                   }));
                 }
                 if (contentParts.length > 1 || (contentParts.length === 1 && toolCalls.size > 0 && content)) {
@@ -317,7 +318,7 @@ function claudeSSEStream(options: {
             result.toolCalls = Array.from(toolCalls.values()).map((tc) => ({
               id: tc.id,
               name: tc.name,
-              arguments: safeJsonParse(tc.arguments),
+              ...extractToolCallMeta(safeJsonParse(tc.arguments)),
             }));
           }
           if (contentParts.length > 1 || (contentParts.length === 1 && toolCalls.size > 0 && content)) {

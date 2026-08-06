@@ -10,6 +10,7 @@ import { z } from 'zod';
 import type { ToolCall } from '../../../../shared/contract';
 import type { ModelResponse } from '../../types';
 import { logger } from '../providerRuntime';
+import { extractToolCallMeta } from '../toolCallMeta';
 import { normalizeGeminiUsage } from './usageNormalization';
 
 // ── parts ─────────────────────────────────────────────────────────────────
@@ -109,7 +110,7 @@ export function parseGeminiResponse(raw: unknown): ModelResponse {
     toolCalls.push({
       id: `gemini_${Date.now()}_${Math.random().toString(36).slice(2)}`,
       name: fc.functionCall.name,
-      arguments: fc.functionCall.args ?? {},
+      ...extractToolCallMeta(fc.functionCall.args ?? {}),
     });
   }
 

@@ -2,7 +2,7 @@
 // Shared Utilities for Model Providers
 // ============================================================================
 
-import type { ToolDefinition, ToolCall, ToolCallTargetContext } from '../../../shared/contract';
+import type { ToolDefinition, ToolCall } from '../../../shared/contract';
 import type { ModelMessage, ModelResponse, StreamCallback } from '../types';
 import { ContextLengthExceededError } from '../types';
 import { logger, safeJsonParse } from './providerRuntime';
@@ -23,6 +23,7 @@ export {
 } from './providerHttp';
 import { parseGeminiStreamChunk } from './wrappers/geminiWrapper';
 import { narrateCuaToolCall } from '../../mcp/cuaNarration';
+import { extractToolCallMeta } from './toolCallMeta';
 
 export { logger, safeJsonParse } from './providerRuntime';
 
@@ -846,24 +847,10 @@ export function buildToolCallFromAccumulator(tc: {
   // toolExecutionEngine 当解析错误软失败。真正的截断是**非空**坏 JSON，仍由上游
   // getIncompleteToolCallIds 的严格 JSON.parse 拦住，安全性不丢。
   const parsed = tc.arguments.trim() === '' ? {} : safeJsonParse(tc.arguments);
-  let args: Record<string, unknown> = {};
-  let shortDescription: string | undefined;
-  let targetContext: ToolCallTargetContext | undefined;
-  let expectedOutcome: string | undefined;
-
-  if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-    args = { ...(parsed as Record<string, unknown>) };
-    const meta = (args as { _meta?: unknown })._meta;
-    if (meta && typeof meta === 'object' && !Array.isArray(meta)) {
-      const m = meta as Record<string, unknown>;
-      if (typeof m.shortDescription === 'string') shortDescription = m.shortDescription;
-      if (typeof m.expectedOutcome === 'string') expectedOutcome = m.expectedOutcome;
-      if (m.targetContext && typeof m.targetContext === 'object' && !Array.isArray(m.targetContext)) {
-        targetContext = m.targetContext as ToolCallTargetContext;
-      }
-      delete (args as { _meta?: unknown })._meta;
-    }
-  }
+  const extracted = extractToolCallMeta(parsed);
+  const args = extracted.arguments;
+  let { shortDescription, targetContext } = extracted;
+  const { expectedOutcome } = extracted;
 
   // cua-driver computer-use 工具：模型几乎不 emit _meta，靠本地 AX 树缓存把
   // element_index 反查成人话（「点击『7』」）并填 app 图标 targetContext（§10）。
@@ -998,6 +985,7 @@ export async function handleGeminiStream(
   const decoder = new TextDecoder();
   let fullContent = '';
   let buffer = '';
+  const toolCalls: ToolCall[] = [];
 
   if (signal) {
     signal.addEventListener('abort', () => {
@@ -1034,10 +1022,26 @@ export async function handleGeminiStream(
 
         const chunk = parseGeminiStreamChunk(rawJson);
         if (!chunk) continue;
-        const text = chunk.candidates?.[0].content?.parts?.[0]?.text;
-        if (text) {
-          fullContent += text;
-          onStream({ type: 'text', content: text });
+        const parts = chunk.candidates?.[0].content?.parts ?? [];
+        for (const part of parts) {
+          if (part.text) {
+            fullContent += part.text;
+            onStream({ type: 'text', content: part.text });
+          }
+          if (part.functionCall) {
+            const index = toolCalls.length;
+            const id = `gemini_stream_${Date.now()}_${index}`;
+            const extracted = extractToolCallMeta(part.functionCall.args ?? {});
+            toolCalls.push({
+              id,
+              name: part.functionCall.name,
+              ...extracted,
+            });
+            onStream({
+              type: 'tool_call_start',
+              toolCall: { index, id, name: part.functionCall.name },
+            });
+          }
         }
       }
     }
@@ -1045,5 +1049,9 @@ export async function handleGeminiStream(
     reader.releaseLock();
   }
 
-  return { type: 'text', content: fullContent, toolCalls: [] };
+  return {
+    type: toolCalls.length > 0 ? 'tool_use' : 'text',
+    content: fullContent,
+    toolCalls,
+  };
 }

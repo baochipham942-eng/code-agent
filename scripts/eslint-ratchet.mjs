@@ -28,9 +28,15 @@ const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(scriptDir, '..');
 const eslintBin = path.join(repoRoot, 'node_modules', 'eslint', 'bin', 'eslint.js');
 
+// --no-config-lookup + 显式 --config：只用仓库根配置，不让 ESLint 10 去递归发现
+// 子目录里的 eslint.config.*。本地 `.worktrees/<branch>/admin-console/eslint.config.mjs`
+// 会被发现并 import `eslint-config-next`，而那些 worktree 没装 admin-console 依赖，
+// 于是门直接 ERR_MODULE_NOT_FOUND 崩掉（CI 无 worktree 所以只在本地复现）。
+// 对 src 的扫描结果与原来逐条相同（2026-08-06 实测：3038 files / 0 errors / 422 warnings
+// 两种调用完全一致），不放宽任何规则，只是不再被无关子包的配置带崩。
 const result = spawnSync(
   process.execPath,
-  [eslintBin, 'src', '--ext', '.ts,.tsx', '--format', 'json'],
+  [eslintBin, 'src', '--ext', '.ts,.tsx', '--format', 'json', '--no-config-lookup', '--config', 'eslint.config.js'],
   {
     cwd: repoRoot,
     encoding: 'utf8',

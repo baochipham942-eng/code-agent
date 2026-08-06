@@ -11,6 +11,7 @@
 // 数据源：主路径走已有的 SQLite FTS（session_messages_fts，trigram，覆盖全库），
 // 由 IPC 层惰性注入 SessionSearchFtsSource；短查询（低于 trigram 最小长度）、
 // caseSensitive / useRegex、或 DB 未就绪时回落内存 LRU 搜索（原行为）。
+// 短查询（低于 trigram 最小长度，如中文 2 字词）由数据源内部走全库 LIKE 兜底。
 // ============================================================================
 
 import { createLogger } from '../services/infra/logger';
@@ -51,11 +52,12 @@ export interface SessionSearchFtsSource {
       sessionIds?: string[];
       role?: string;
       limitCap?: number;
+      shortQueryFallback?: boolean;
     }
   ): SessionSearchFtsHit[];
   countSessionMessagesFts(
     query: string,
-    options?: { sessionIds?: string[]; role?: string }
+    options?: { sessionIds?: string[]; role?: string; shortQueryFallback?: boolean }
   ): { matches: number; sessions: number };
   getMessages(sessionId: string, limit?: number): Message[];
 }
@@ -407,7 +409,9 @@ function canUseFtsSource(
     typeof ftsSource.countSessionMessagesFts === 'function' &&
     !options.caseSensitive &&
     !options.useRegex &&
-    query.trim().length >= SESSION_SEARCH.FTS_MIN_QUERY_LENGTH
+    // 短查询不再排除：低于 trigram 最小长度时由数据源内部走全库 LIKE 兜底
+    // （中文 2 字词是最高频输入，排除掉等于退回只覆盖 LRU 缓存的老行为）。
+    query.trim().length > 0
   );
 }
 
@@ -486,6 +490,7 @@ function searchSessionsViaFts(
     role,
     limit: SESSION_SEARCH.FTS_CANDIDATE_LIMIT,
     limitCap: SESSION_SEARCH.FTS_CANDIDATE_LIMIT,
+    shortQueryFallback: true,
   });
 
   const allResults: SearchResult[] = [];
@@ -560,7 +565,7 @@ function searchSessionsViaFts(
   let totalSessions = sessionsWithMatches.size;
   let truncated: boolean;
   if (candidatesCapped && !hasMemoryOnlyFilters) {
-    const totals = ftsSource.countSessionMessagesFts(query, { sessionIds, role });
+    const totals = ftsSource.countSessionMessagesFts(query, { sessionIds, role, shortQueryFallback: true });
     totalMatches = Math.max(totals.matches, allResults.length);
     totalSessions = Math.max(totals.sessions, totalSessions);
     truncated = totalMatches > offset + limit;

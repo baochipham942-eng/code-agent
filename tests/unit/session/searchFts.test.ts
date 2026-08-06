@@ -202,6 +202,29 @@ describe('searchSessions — FTS 主路径', () => {
     expect(hit.snippet).toContain('**needle**');
   });
 
+  // trigram 至少 3 字符，中文 2 字词（最高频搜索输入）在 FTS 里恒为空召回。
+  // 短查询必须走全库 LIKE 兜底，否则退回只覆盖 LRU 缓存的老行为。
+  it('2 字中文短查询能搜到只存在于 DB 的老会话（LIKE 兜底）', () => {
+    insertSession(db, 'sess-short');
+    repo.addMessage('sess-short', makeMessage('s1', '这轮验收结论是通过', 'assistant', 1));
+
+    const result = searchSessions('验收', {}, cache, ftsSource);
+
+    expect(result.results).toHaveLength(1);
+    expect(result.results[0].sessionId).toBe('sess-short');
+    expect(result.totalMatches).toBe(1);
+    expect(result.sessionsWithMatches).toBe(1);
+    // UI 契约同样要保住：高亮与上下文片段不能因为走 LIKE 就没了
+    expect(result.results[0].snippet).toContain('**验收**');
+  });
+
+  it('短查询的 LIKE 兜底同样排除 is_meta 元消息', () => {
+    insertSession(db, 'sess-short-meta');
+    repo.addMessage('sess-short-meta', { ...makeMessage('sm1', '元消息里的验收字样', 'assistant', 1), isMeta: true });
+
+    expect(searchSessions('验收', {}, cache, ftsSource).results).toHaveLength(0);
+  });
+
   it('FTS 结果回填进缓存后，二次搜索走同一形状', () => {
     insertSession(db, 'sess-rehydrate');
     repo.addMessage('sess-rehydrate', makeMessage('m1', '重复检索的 needle 目标', 'user', 1));
@@ -319,7 +342,9 @@ describe('searchSessions — FTS 主路径', () => {
     expect(scoped.totalMatches).toBe(1);
   });
 
-  it('短查询（低于 trigram 最小长度）回落内存搜索', () => {
+  // 2026-08-06 行为变更：短查询原本回落内存搜索（只覆盖 LRU 缓存），
+  // 现改为走全库 LIKE 兜底——DB-only 的老会话也必须能命中。
+  it('短查询（低于 trigram 最小长度）走全库 LIKE，DB-only 会话可达', () => {
     insertSession(db, 'sess-short-db');
     repo.addMessage('sess-short-db', makeMessage('d1', '包含 ab 的 DB 会话', 'user', 1));
     cache.setSession({
@@ -332,8 +357,7 @@ describe('searchSessions — FTS 主路径', () => {
 
     const result = searchSessions('ab', {}, cache, ftsSource);
 
-    // 只命中缓存内会话；DB-only 会话不进入内存搜索范围
-    expect(result.results.map((r) => r.sessionId)).toEqual(['sess-short-cache']);
+    expect(result.results.map((r) => r.sessionId)).toContain('sess-short-db');
   });
 
   it('caseSensitive 回落内存搜索', () => {

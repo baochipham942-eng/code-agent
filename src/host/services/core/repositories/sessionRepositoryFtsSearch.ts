@@ -32,6 +32,13 @@ export interface SessionMessagesFtsSearchOptions {
   includeRewound?: boolean;
   /** limit 硬上限覆盖（默认 SESSION_SEARCH.FTS_QUERY_LIMIT_CAP，面向 agent 记忆侧） */
   limitCap?: number;
+  /**
+   * 短查询（低于 trigram 最小长度）改走全库 LIKE 而不是返回空。
+   * 中文 2 字词是最高频搜索输入，但 trigram 至少要 3 字符——UI 搜索必须传 true，
+   * 否则 2 字查询会退回只覆盖 LRU 缓存的老行为。
+   * 默认 false：agent 记忆侧维持原语义（短查询无召回），不受影响。
+   */
+  shortQueryFallback?: boolean;
 }
 
 /** session_messages_fts 命中计数选项 */
@@ -40,6 +47,8 @@ export interface SessionMessagesFtsCountOptions {
   sessionIds?: string[];
   role?: string;
   includeRewound?: boolean;
+  /** 见 SessionMessagesFtsSearchOptions.shortQueryFallback */
+  shortQueryFallback?: boolean;
 }
 
 function normalizeFtsQuery(raw: string): string {
@@ -76,13 +85,70 @@ function buildSessionMessagesFtsFilter(
   return { clause: conditions.length > 0 ? `AND ${conditions.join(' AND ')}` : '', params };
 }
 
+/**
+ * 短查询兜底：trigram 至少要 3 字符，2 字中文（最高频搜索输入）在 FTS 里恒为空召回。
+ * 这里直接对 messages 表做 LIKE，可见性过滤复用 visibleHistoryMessageWhere，
+ * 与 session_messages_fts 触发器的排除口径（is_meta / 循环噪音）保持一致。
+ */
+function buildShortQueryFilter(
+  options: SessionMessagesFtsSearchOptions | SessionMessagesFtsCountOptions
+): { clause: string; params: unknown[] } {
+  const conditions: string[] = [];
+  const params: unknown[] = [];
+  if (options.sessionIds && options.sessionIds.length > 0) {
+    conditions.push(`m.session_id IN (${options.sessionIds.map(() => '?').join(', ')})`);
+    params.push(...options.sessionIds);
+  } else if (options.sessionId) {
+    conditions.push('m.session_id = ?');
+    params.push(options.sessionId);
+  }
+  if (options.role) {
+    conditions.push('m.role = ?');
+    params.push(options.role);
+  }
+  return { clause: conditions.length > 0 ? `AND ${conditions.join(' AND ')}` : '', params };
+}
+
+function runShortQueryLikeSearch(
+  db: BetterSqlite3.Database,
+  trimmed: string,
+  options: SessionMessagesFtsSearchOptions
+): SessionMessagesFtsHit[] {
+  const filter = buildShortQueryFilter(options);
+  const limit = Math.max(1, Math.min(options.limit ?? 10, options.limitCap ?? SESSION_SEARCH.FTS_QUERY_LIMIT_CAP));
+  try {
+    const rows = db.prepare(`
+      SELECT m.id AS message_id, m.session_id, m.role, m.content, m.timestamp
+      FROM messages m
+      WHERE m.content LIKE ? ESCAPE '\\' ${filter.clause}
+        AND ${visibleHistoryMessageWhere('m')}
+      ORDER BY m.timestamp DESC
+      LIMIT ?
+    `).all(`%${escapeLikePattern(trimmed)}%`, ...filter.params, limit) as SQLiteRow[];
+    return rows.map((row) => ({
+      messageId: String(row.message_id ?? ''),
+      sessionId: String(row.session_id ?? ''),
+      role: String(row.role ?? ''),
+      content: String(row.content ?? ''),
+      timestamp: Number(row.timestamp ?? 0)
+    }));
+  } catch (err) {
+    logger.warn('[EpisodicFts] short-query LIKE search failed', { query: trimmed, error: err });
+    return [];
+  }
+}
+
+function escapeLikePattern(value: string): string {
+  return value.replace(/[\\%_]/g, (ch) => `\\${ch}`);
+}
+
 export function runSessionMessagesFtsSearch(db: BetterSqlite3.Database,
   query: string,
   options: SessionMessagesFtsSearchOptions = {}
 ): SessionMessagesFtsHit[] {
   const trimmed = query.trim();
   if (trimmed.length < SESSION_SEARCH.FTS_MIN_QUERY_LENGTH) {
-    return [];
+    return options.shortQueryFallback ? runShortQueryLikeSearch(db, trimmed, options) : [];
   }
 
   const ftsQuery = normalizeFtsQuery(trimmed);
@@ -138,7 +204,24 @@ export function runSessionMessagesFtsCount(db: BetterSqlite3.Database,
   const empty = { matches: 0, sessions: 0 };
   const trimmed = query.trim();
   if (trimmed.length < SESSION_SEARCH.FTS_MIN_QUERY_LENGTH) {
-    return empty;
+    if (!options.shortQueryFallback) {
+      return empty;
+    }
+    const filter = buildShortQueryFilter(options);
+    try {
+      const row = db.prepare(`
+        SELECT COUNT(*) AS matches, COUNT(DISTINCT m.session_id) AS sessions
+        FROM messages m
+        WHERE m.content LIKE ? ESCAPE '\\' ${filter.clause}
+          AND ${visibleHistoryMessageWhere('m')}
+      `).get(`%${escapeLikePattern(trimmed)}%`, ...filter.params) as SQLiteRow | undefined;
+      return row
+        ? { matches: Number(row.matches ?? 0), sessions: Number(row.sessions ?? 0) }
+        : empty;
+    } catch (err) {
+      logger.warn('[EpisodicFts] short-query LIKE count failed', { query: trimmed, error: err });
+      return empty;
+    }
   }
 
   const ftsQuery = normalizeFtsQuery(trimmed);

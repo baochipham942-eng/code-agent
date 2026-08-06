@@ -1,8 +1,17 @@
 // @vitest-environment jsdom
 // ============================================================================
-// ToolHeader 基线对齐：状态词（text-xs）与主文案（text-sm）同行混排时，
-// 容器必须 items-baseline 而不是 items-center（盒子居中对齐 ≠ 文字基线对齐，
-// 12px/14px 混排在 Retina 上差 1 个物理像素）；图标类元素补 self-center 防下沉。
+// ToolHeader 容器用 items-baseline：状态词（text-xs）与主文案同行混排时，按文字
+// 基线对齐而不是盒子中心对齐；图标不是文字，补 self-center 防它随基线下沉。
+//
+// ⚠️ 这是**防御性**断言，不要把它当成某个 bug 的修复凭据。
+// 2026-08-06 用户报的「状态词和文案没对齐」经真实浏览器实测，根因在
+// ToolStepGroup 组头（两段字的 font-family 不同 → 中文回退字体度量不同 → 基线差
+// 1px），**不在这里**；ToolHeader 当前字号组合（状态词 12px / 主文案 13px，同为
+// JetBrains Mono 栈）下 items-center 与 items-baseline 实测完全等价，都是 0 偏差。
+// 保留 items-baseline 的价值在于：将来任一侧字号改动时，基线对齐仍是正确语义。
+//
+// 真实排版几何由 tests/e2e/tool-group-header-alignment.spec.ts 把关——jsdom 不做
+// 布局，className 断言只能钉住"写了什么 class"，钉不住"渲染出来是不是齐的"。
 // ============================================================================
 import React from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';

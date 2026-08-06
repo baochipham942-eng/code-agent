@@ -165,6 +165,15 @@ rm -rf ~/.code-agent-dev/renderer-cache/active   # dev 侧热更新缓存同样�
 #   （2026-07-26 voice spike 实测；Dev 包要用的 key 必须复制进 ~/.code-agent-dev/.env）
 ```
 
+**新 worktree 开工先引导构建输入**（2026-08-06 起）：
+
+```bash
+bash scripts/worktree-bootstrap.sh <worktree路径>   # 缺省以主树为源，幂等，可重跑
+# 为什么：node_modules / sidecar 二进制 / dist/native 等都是 gitignored 的，新 worktree 里全缺。
+# 漏 node_modules 时 npx tsx 照跑（它自己去下载），但 vitest/tsc 会给一片假红——先引导再干活。
+# 脚本只软链只读输入、实体拷贝会被构建改写的输入（防写穿透污染主树），绝不写主树。
+```
+
 #### 多个 Dev 测试包并存（NEO_SLOT）
 
 几个 worktree 要同时验各自的包时，用 `NEO_SLOT` 分槽（缺省 = 槽 1 = 历史行为，不用改任何命令）：
@@ -196,11 +205,13 @@ NEO_DEV_FULL_LTO=1 HTTPS_PROXY=http://127.0.0.1:7897 npm run tauri:build:dev
 ```
 
 **本机已装 sccache 并全局启用**（`~/.cargo/config.toml` 的 `rustc-wrapper`）：新 worktree 的冷构建会
-命中缓存，不用手动配置。
+命中缓存，不用手动配置。缓存落 `~/.cache/sccache`、上限 4 GiB（配置在
+`~/Library/Application Support/Mozilla.sccache/config`）——**默认的 `~/Library/Caches/Mozilla.sccache`
++ 10 GiB 上限不能用**：那目录会被 macOS 在磁盘压力下清空，而 10 GiB 上限本身就是压力来源。
 
 **cua helper 跨 worktree 缓存**：重签好的 `Agent Neo Computer Use*.app` 落在 repo 根的
 `.tauri-resources.noindex/`（gitignore），每个 worktree 各要一份。现在会自动镜像到
-`~/Library/Caches/agent-neo/cua/`（`NEO_CUA_CACHE_DIR` 可改），新 worktree 首次打包直接从缓存恢复，
+`~/.cache/agent-neo/cua/`（`NEO_CUA_CACHE_DIR` 可改；**不放 `~/Library/Caches`**——macOS 会在磁盘压力下清空它，2026-08-06 实测被清过一次），新 worktree 首次打包直接从缓存恢复，
 不用再 `fetch-cua-driver.sh` 下载+重签。缓存命中仍校验 bundle id + 版本 + `codesign --verify --strict`，
 不符就照常报错让你去 fetch。
 

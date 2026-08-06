@@ -20,7 +20,9 @@ const limits = {
   // 2026-07-18 +1: scripts/tsc-tests-ratchet.mjs（tests/scripts tsc 棘轮门）。
   // 2026-08-04 +2: scripts/tauri-finalize-dev-bundle.mjs（Dev bundle 资源物化）+
   // scripts/verify-tauri-dev-app.sh（Dev 产物门：共享 inventory + health smoke）。
-  directScriptFiles: 144,
+  // 2026-08-06 +1: scripts/gen-dev-slot-conf.ts（按 NEO_SLOT 派生 Dev 槽位身份，
+  // package.json 的 tauri:gen-dev-slot-conf 稳定入口，被 tauri:package:dev 直接调用）。
+  directScriptFiles: 145,
   // 15: the Poppler promotion boundary is split across two workflows on purpose —
   // build-poppler-sidecar.yml only reviews candidates and can never publish, while
   // promote-poppler-sidecar.yml holds the OSS credentials and publishes them.

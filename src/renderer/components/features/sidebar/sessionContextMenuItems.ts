@@ -9,6 +9,7 @@ import {
   type WorkbenchPreset,
   type WorkbenchRecipe,
 } from '@shared/contract/workbenchPreset';
+import { shortSessionIdForFileName } from '@shared/utils/id';
 import type { SessionWithMeta } from '../../../stores/sessionStore';
 import type { ToastType } from '../../../stores/uiStore';
 import type { Translations } from '../../../i18n';
@@ -286,7 +287,8 @@ export function buildSessionContextMenuItems(
           if (!response?.success || !response.data?.content) {
             throw new Error(response?.error?.message || 'Failed to export session diagnostics');
           }
-          const suggestedFileName = response.data.suggestedFileName || `neo-session-${session.id.slice(0, 8)}.zip`;
+          const suggestedFileName = response.data.suggestedFileName
+            || `neo-session-${shortSessionIdForFileName(session.id)}.zip`;
           if (response.data.encoding === 'base64') {
             const saved = await window.domainAPI?.invoke<{ filePath: string }>(
               IPC_DOMAINS.WORKSPACE,

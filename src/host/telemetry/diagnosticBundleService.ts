@@ -15,6 +15,7 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import { getTelemetryStorage, type TelemetryStorage } from './telemetryStorage';
 import { getAppVersion } from '../platform/appPaths';
+import { shortSessionIdForFileName } from '../../shared/utils/id';
 import { createLogger, getCurrentLogFilePath } from '../services/infra/logger';
 import { getDatabase } from '../services/core/databaseService';
 import { scrubString } from '../../shared/observability/scrubEvent';
@@ -399,7 +400,7 @@ export async function buildSessionLogExport(
   const date = new Date(exportedAt).toISOString().split('T')[0];
   return {
     content,
-    suggestedFileName: `neo-session-log-${sessionId.slice(0, 8)}-${date}.json`,
+    suggestedFileName: `neo-session-log-${shortSessionIdForFileName(sessionId)}-${date}.json`,
     encoding: 'utf8',
   };
 }

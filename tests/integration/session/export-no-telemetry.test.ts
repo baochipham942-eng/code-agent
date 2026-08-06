@@ -82,7 +82,8 @@ describe('session export package v2', () => {
     expect(buildSessionTranscriptJsonl(SID, { db }).match(/"type":"message"/g)).toHaveLength(3);
     const zip = await JSZip.loadAsync(result.buffer);
     expect(Object.keys(zip.files)).toContain('transcript.jsonl');
-    expect(result.suggestedFileName).toMatch(/^neo-session-session--\d{8}-\d{6}\.zip$/);
+    // 短片段取 sessionId 尾部：前 8 位对 `session_*` 家族毫无区分度，会让两次导出互相覆盖。
+    expect(result.suggestedFileName).toMatch(/^neo-session-12345678-\d{8}-\d{6}\.zip$/);
   });
 
   it('T-privacy: shareable package scrubs credentials and home paths across messages and audit', async () => {

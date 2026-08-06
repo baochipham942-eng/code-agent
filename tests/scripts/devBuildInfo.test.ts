@@ -48,7 +48,10 @@ describe('dev build-info install gate', () => {
       'node scripts/tauri-finalize-dev-bundle.mjs',
     );
     expect(finalizer).toContain("'src-tauri/tauri.conf.json'");
-    expect(finalizer).toContain("'src-tauri/tauri.dev.conf.json'");
+    // 槽位配置是本次构建的真源；回退到模板 tauri.dev.conf.json 会让槽 2 的构建
+    // 去 finalize 槽 1 的 .app（productName 不同），静默同步到错误的包上。
+    expect(finalizer).toContain("'src-tauri/tauri.dev.slot.conf.json'");
+    expect(finalizer).not.toContain("'src-tauri/tauri.dev.conf.json'");
     expect(finalizer).toContain('codesign');
   });
 
@@ -64,9 +67,11 @@ describe('dev build-info install gate', () => {
     expect(cleanupIndex).toBeGreaterThan(verifyIndex);
     expect(verifier).toContain('tauri-resource-inventory.mjs');
     expect(verifier).toContain('desktop-shell-packaged-smoke.mjs');
-    expect(verifier).toContain('--port 8181');
+    // 冒烟端口跟随本槽：写死 8181 时装槽 2 会去探槽 1 的端口，撞上别人正在跑的包。
+    expect(verifier).toContain('--port "${DEV_APP_WEB_PORT:-8181}"');
     expect(verifier).toContain('--app-port "${DEV_APP_WEB_PORT:-8181}"');
     expect(verifier).toContain('--health-only');
+    expect(script).toContain('export DEV_APP_WEB_PORT');
   });
 
   it('fails the shared inventory when a required startup resource is missing', () => {

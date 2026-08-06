@@ -262,29 +262,14 @@ function rememberCancelledResponse(session: ActiveSession, responseId: string): 
 
 async function requestResponse(session: ActiveSession, userFinal: string): Promise<void> {
   if (session.upstream.kind !== 'relay') return;
-  const latest = userFinal.trim();
-  const route = resolveVoiceActionRoute(latest);
+  const latest = userFinal.trim(), route = resolveVoiceActionRoute(latest);
   if (route && session.voiceToolsAvailable) {
-    logger.info('voice action tool accepted', {
-      provider: session.upstream.provider,
-      origin: 'host_routed',
-      toolName: route.toolName,
-    });
+    logger.info('voice action tool accepted', { provider: session.upstream.provider, origin: 'host_routed', toolName: route.toolName });
     const output = await executeVoiceTool(route.toolName, route.rawArguments, 'host_routed');
     if (active?.id !== session.id || session.ending || session.upstream.kind !== 'relay') return;
-    session.upstream.respond([
-      'Host 已按用户最新一句话执行了对应工具。只简短说明工具结果，不要再次调用工具。',
-      `用户最新一句话：${latest}`,
-      `工具结果：${output}`,
-    ].join('\n'), 'auto');
-    return;
+    session.upstream.respond(`Host 已按用户最新一句话执行了对应工具。只简短说明工具结果，不要再次调用工具。\n用户最新一句话：${latest}\n工具结果：${output}`, 'auto'); return;
   }
-  session.upstream.respond(latest
-    ? [
-        '只回应并严格执行用户最新一句话，不要继续被取消回复的目标或内容。',
-        `用户最新一句话：${latest}`,
-      ].join('\n')
-    : undefined, requiresVoiceActionTool(latest) ? 'required' : 'auto');
+  const prompt = latest ? `只回应并严格执行用户最新一句话，不要继续被取消回复的目标或内容。\n用户最新一句话：${latest}` : undefined; session.upstream.respond(prompt, requiresVoiceActionTool(latest) ? 'required' : 'auto');
 }
 
 function findInterruptCandidateByItemId(

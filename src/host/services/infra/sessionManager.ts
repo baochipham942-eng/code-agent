@@ -4,9 +4,9 @@
 // ============================================================================
 
 import { AppWindow } from '../../platform';
-import { homedir } from 'node:os';
 import { getDatabase, type StoredSession } from '../core';
 import { getToolCache } from './toolCache';
+import { normalizePromptForBackfill, sanitizeModelConfigForSession } from './sessionManagerNormalization';
 import { getAuthService } from '../auth/authService';
 import { getSupabase, isSupabaseInitialized } from './supabaseService';
 import { IPC_CHANNELS } from '../../../shared/ipc';
@@ -93,15 +93,6 @@ interface ExistingUserMessageRow {
   content: string;
 }
 
-// SessionRepository 持久化只存 provider+model（apiKey 不入库）；剥离后让
-// SessionManager 返回的内存 session 与 DB 读回（fromRow）语义一致，避免
-// res.json(session) 在 webServer 路径把 apiKey 透传给客户端。
-function sanitizeModelConfigForSession(config: ModelConfig): ModelConfig {
-  const { apiKey: _omitted, ...rest } = config;
-  void _omitted;
-  return rest;
-}
-
 // ----------------------------------------------------------------------------
 // Session Manager
 // ----------------------------------------------------------------------------
@@ -121,26 +112,6 @@ export class SessionManager implements Disposable {
       workingDirectory: session.workingDirectory ?? null,
       provenance: session.workbenchProvenance
     });
-  }
-
-  private normalizePromptForBackfill(content: string): string {
-    return content
-      .replace(/\r\n/g, '\n')
-      .trim()
-      // auxiliary run 的 prompt 在消息表里可能已把 ~/ 展开成绝对主目录，而 telemetry
-      // 保留模型原文。两者语义相同；若不归一，会把已有 isMeta user 误补成一条可见
-      // user，破坏父会话 assistant(tool-call) / tool-result 的连续配对。
-      .replace(/~\//g, `${homedir()}/`)
-      .replace(/\bhttps?:\/\/[^\s<>"'`]+/giu, (rawUrl) => {
-        // telemetry_turns 没有保存 user message/clientMessageId，不能做稳定 ID join。
-        // 对两侧文本统一走 WHATWG URL canonicalization，消除补根路径斜杠、
-        // unicode host / punycode 等同一 URL 的序列化差异；解析失败则保持原文。
-        try {
-          return new URL(rawUrl).toString();
-        } catch {
-          return rawUrl;
-        }
-      });
   }
 
   private backfillMissingTelemetryUserPrompts(sessionId: string): number {
@@ -178,14 +149,14 @@ export class SessionManager implements Disposable {
 
       const remainingExistingCounts = new Map<string, number>();
       for (const row of existingRows) {
-        const key = this.normalizePromptForBackfill(row.content);
+        const key = normalizePromptForBackfill(row.content);
         remainingExistingCounts.set(key, (remainingExistingCounts.get(key) ?? 0) + 1);
       }
 
       let inserted = 0;
       for (const row of telemetryRows) {
         const content = row.user_prompt;
-        const key = this.normalizePromptForBackfill(content);
+        const key = normalizePromptForBackfill(content);
         const existingCount = remainingExistingCounts.get(key) ?? 0;
         if (existingCount > 0) {
           remainingExistingCounts.set(key, existingCount - 1);

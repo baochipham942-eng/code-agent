@@ -14,6 +14,7 @@ vi.mock('../../../src/renderer/hooks/useI18n', async () => {
 });
 
 import {
+  COMPOSER_CARET_ANCHOR,
   chipMountAfterCaret,
   chipMountBeforeCaret,
   createChipMount,
@@ -67,6 +68,46 @@ describe('composerRichTextModel', () => {
     expect(extractComposerPlainText(root)).toBe('开始做xxx');
   });
 
+  it('chip 两侧维持零宽光标锚，extract 与光标偏移都不计锚字符', () => {
+    const root = buildRoot();
+    const mount = insertChipAtPlainOffset(root, 0, goalChip);
+
+    expect(root.childNodes).toHaveLength(3);
+    expect(root.childNodes[0].textContent).toBe(COMPOSER_CARET_ANCHOR);
+    expect(root.childNodes[1]).toBe(mount);
+    expect(root.childNodes[2].textContent).toBe(COMPOSER_CARET_ANCHOR);
+    expect(extractComposerPlainText(root)).toBe('');
+
+    setSelection(root.childNodes[0], 1);
+    expect(getCaretPlainTextOffset(root)).toBe(0);
+    expect(chipMountAfterCaret(root)).toBe(mount);
+
+    setSelection(root.childNodes[2], 1);
+    expect(getCaretPlainTextOffset(root)).toBe(0);
+    expect(chipMountBeforeCaret(root)).toBe(mount);
+  });
+
+  it('光标锚与紧邻输入合并进同一文本节点后仍从值和偏移剔除', () => {
+    const mount = createChipMount(goalChip);
+    const after = document.createTextNode(`${COMPOSER_CARET_ANCHOR}后`);
+    const root = buildRoot(document.createTextNode(`前${COMPOSER_CARET_ANCHOR}`), mount, after);
+
+    expect(extractComposerPlainText(root)).toBe('前后');
+    setSelection(after, 1);
+    expect(getCaretPlainTextOffset(root)).toBe(1);
+    expect(chipMountBeforeCaret(root)).toBe(mount);
+  });
+
+  it('含光标锚的文本节点仍按纯文本偏移插入 chip', () => {
+    const text = document.createTextNode(`${COMPOSER_CARET_ANCHOR}后`);
+    const root = buildRoot(text);
+
+    const mount = insertChipAtPlainOffset(root, 0, goalChip);
+
+    expect(extractComposerPlainText(root)).toBe('后');
+    expect(mount.nextSibling?.nextSibling?.textContent).toBe('后');
+  });
+
   it('光标纯文本偏移与 chip 混排时往返一致', () => {
     const mount = createChipMount(goalChip);
     const root = buildRoot(document.createTextNode('开始'), mount, document.createTextNode('做xxx'));
@@ -86,7 +127,7 @@ describe('composerRichTextModel', () => {
     expect(extractComposerPlainText(root)).toBe('开始做');
     expect(listChipMounts(root)).toHaveLength(1);
     // chip 位于「开始」与「做」之间
-    expect(root.childNodes[1]).toBe(mount);
+    expect(root.childNodes[2]).toBe(mount);
     // 光标落在 chip 后：Backspace 应命中这颗 chip
     expect(chipMountBeforeCaret(root)).toBe(mount);
   });
@@ -135,8 +176,8 @@ describe('composerRichTextModel', () => {
     const root = buildRoot(document.createTextNode('开始做'));
     insertChipAtPlainOffset(root, 2, goalChip);
     expect(extractComposerPlainText(root)).toBe('开始做');
-    expect(root.childNodes).toHaveLength(3);
-    expect(root.childNodes[1]).toBe(listChipMounts(root)[0]);
+    expect(root.childNodes).toHaveLength(5);
+    expect(root.childNodes[2]).toBe(listChipMounts(root)[0]);
   });
 });
 
@@ -176,8 +217,9 @@ describe('InputArea 内联 chip', () => {
     expect(screen.getByText('docx')).toBeTruthy();
     expect(editor.getAttribute('data-plain-text')).toBe('开始用');
     expect(extractComposerPlainText(editor)).toBe('开始用');
-    // 无光标来源的 chip 补到文本末尾
-    expect(editor.lastChild).toBe(listChipMounts(editor)[0]);
+    // 无光标来源的 chip 补到文本末尾，末端保留 WebKit 光标锚
+    expect(editor.childNodes[editor.childNodes.length - 2]).toBe(listChipMounts(editor)[0]);
+    expect(editor.lastChild?.textContent).toBe(COMPOSER_CARET_ANCHOR);
   });
 
   it('Backspace 紧贴 chip：删 chip 并回调移除（不是删文本）', () => {

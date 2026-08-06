@@ -116,6 +116,31 @@ describe('SessionManager metadata guard (Codex audit R2)', () => {
     );
   });
 
+  it('broadcasts a resolved metadata snapshot for renderer-visible identity patches', async () => {
+    dbState.sessions = [{
+      id: 'session-1',
+      userId: 'user-1',
+      title: 'S',
+      metadata: { existing: true, hadLiveVoice: true },
+      updatedAt: 42,
+    }];
+    const manager = await makeManager();
+
+    await manager.patchSessionMetadata(
+      'session-1',
+      { hadLiveVoice: true },
+      { updatedAt: 42, notifyRenderer: true },
+    );
+
+    expect(sendMock).toHaveBeenCalledWith('session:updated', {
+      sessionId: 'session-1',
+      updates: {
+        metadata: { existing: true, hadLiveVoice: true },
+        updatedAt: 42,
+      },
+    });
+  });
+
   it('captures workspace evidence only for a final visible assistant reply without tool calls', async () => {
     dbState.sessions = [{
       id: 'session-1',

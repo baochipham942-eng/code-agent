@@ -1733,6 +1733,71 @@ describe('createAgentRouter', () => {
     expect(sessionMessages.size).toBe(50);
   });
 
+  it('excludes background meta prompts and rewound messages from web-native inference history', async () => {
+    await closeServer();
+    const getMessages = vi.fn(async () => [
+      {
+        id: 'visible-user',
+        role: 'user' as const,
+        content: '启动后台任务',
+        timestamp: 1,
+      },
+      {
+        id: 'spawn-call',
+        role: 'assistant' as const,
+        content: '',
+        timestamp: 2,
+        toolCalls: [{ id: 'spawn-1', name: 'spawn_task', arguments: { prompt: '后台调研' } }],
+      },
+      {
+        id: 'background-child-prompt',
+        role: 'user' as const,
+        content: '后台调研',
+        timestamp: 3,
+        isMeta: true,
+      },
+      {
+        id: 'spawn-result',
+        role: 'tool' as const,
+        content: 'accepted',
+        timestamp: 4,
+        toolResults: [{ toolCallId: 'spawn-1', content: 'accepted' }],
+      },
+      {
+        id: 'rewound-user',
+        role: 'user' as const,
+        content: '已经撤回的问题',
+        timestamp: 5,
+        visibility: 'rewound' as const,
+      },
+    ]);
+    mockCreateAgentLoop.mockImplementationOnce(() => ({
+      run: vi.fn(async () => undefined),
+      cancel: mockCancel,
+    }));
+    await startAgentApi({
+      tryGetSessionManager: async () => ({
+        getMessages,
+        getSession: vi.fn(async () => ({ workingDirectory: '/tmp/meta-history' })),
+      }),
+    });
+
+    const response = await fetch(`${baseUrl}/api/run`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ prompt: '珠峰多高？', sessionId: 'session-meta-history' }),
+    });
+    await response.text();
+
+    const messages = mockCreateAgentLoop.mock.calls[0]?.[2] as Array<{ id: string }>;
+    expect(messages.map((message) => message.id)).toEqual([
+      'visible-user',
+      'spawn-call',
+      'spawn-result',
+      expect.any(String),
+    ]);
+  });
+
   // 工单行为不变清单 #9：Supabase W5 保持 pre-persist user + run 后 assistant 的现状写序。
   it('keeps the Supabase sync path writing the user once before the run and the assistant after it', async () => {
     await closeServer();

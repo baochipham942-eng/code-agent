@@ -386,6 +386,78 @@ function safeParse(json: string): Record<string, unknown> {
   }
 }
 
+const DSML_PREFIX = '｜｜DSML｜｜';
+
+interface RecoveredDsmlToolCall {
+  name: string;
+  input: Record<string, unknown>;
+}
+
+/**
+ * DeepSeek 偶发把完整 DSML 工具块放进 generateText.text，同时 toolCalls 为空。
+ * 这时若把文本当完成结果，后台任务会谎报 completed，但 Write/Bash 等工具从未执行。
+ * 仅在完整闭合、工具名已注册、参数可完整解析时恢复；有 DSML 起始标记却不满足契约则
+ * fail-loud，禁止把半截工具调用伪装成普通文本成功。
+ */
+function recoverDeepSeekDsmlToolCalls(
+  text: string,
+  registeredToolNames: ReadonlySet<string>,
+): { content: string; calls: RecoveredDsmlToolCall[] } | null {
+  const blockOpen = `<${DSML_PREFIX}tool_calls>`;
+  const blockClose = `</${DSML_PREFIX}tool_calls>`;
+  const start = text.indexOf(blockOpen);
+  if (start < 0) return null;
+  const end = text.indexOf(blockClose, start + blockOpen.length);
+  if (end < 0) throw new Error('[AiSdkAdapter] DeepSeek returned an incomplete DSML tool_calls block');
+
+  const blockEnd = end + blockClose.length;
+  const body = text.slice(start + blockOpen.length, end);
+  const invokePattern = new RegExp(
+    `<${DSML_PREFIX}invoke name="([^"]+)">([\\s\\S]*?)<\\/${DSML_PREFIX}invoke>`,
+    'g',
+  );
+  const parameterPattern = new RegExp(
+    `<${DSML_PREFIX}parameter name="([^"]+)"(?: string="(true|false)")?>([\\s\\S]*?)<\\/${DSML_PREFIX}parameter>`,
+    'g',
+  );
+  const calls: RecoveredDsmlToolCall[] = [];
+  let invokeMatch: RegExpExecArray | null;
+  while ((invokeMatch = invokePattern.exec(body)) !== null) {
+    const [, name, parameterBody] = invokeMatch;
+    if (!registeredToolNames.has(name)) {
+      throw new Error(`[AiSdkAdapter] DeepSeek DSML referenced an unregistered tool: ${name}`);
+    }
+    const input: Record<string, unknown> = {};
+    let parameterMatch: RegExpExecArray | null;
+    while ((parameterMatch = parameterPattern.exec(parameterBody)) !== null) {
+      const [, parameterName, isString, rawValue] = parameterMatch;
+      if (Object.prototype.hasOwnProperty.call(input, parameterName)) {
+        throw new Error(`[AiSdkAdapter] DeepSeek DSML repeated parameter: ${parameterName}`);
+      }
+      if (isString === 'true') {
+        input[parameterName] = rawValue;
+      } else {
+        try {
+          input[parameterName] = JSON.parse(rawValue);
+        } catch {
+          throw new Error(`[AiSdkAdapter] DeepSeek DSML parameter is not valid JSON: ${parameterName}`);
+        }
+      }
+    }
+    if (parameterBody.replace(parameterPattern, '').trim()) {
+      throw new Error(`[AiSdkAdapter] DeepSeek DSML contained unparsed parameter content for tool: ${name}`);
+    }
+    calls.push({ name, input });
+  }
+  if (calls.length === 0 || body.replace(invokePattern, '').trim()) {
+    throw new Error('[AiSdkAdapter] DeepSeek DSML tool_calls block could not be parsed completely');
+  }
+  return {
+    content: `${text.slice(0, start)}${text.slice(blockEnd)}`.trim(),
+    calls,
+  };
+}
+
 // tool 结果消息的 toolCallId：顶层 m.toolCallId 或结构化 m.toolResults[0].toolCallId
 function toolMsgCallId(m: ModelMessage): string {
   if (m.toolCallId) return m.toolCallId;
@@ -400,44 +472,41 @@ function asInput(args: unknown): Record<string, unknown> {
   return {};
 }
 
-// AI SDK 严格要求 assistant(tool-call) 后【紧跟】其 tool-result，中间不能夹 system/user，否则抛
-// MissingToolResultsError（"Tool result is missing for tool call ..."）。但主 loop 会在 tool 执行期间
-// （tool-result 消息入列【前】）经 injectSystemMessage 注入 system 消息（post-tool hook / 失败告警 /
-// nudge / thinking step），使序列出现 assistant(tool-call) → system → tool(result)。这里把夹在
-// assistant tool-call 与其 tool-result 之间的 system / 无主 tool 消息移到 tool-result 之后，恢复合法配对。
+// AI SDK 严格要求 assistant(tool-call) 后【紧跟】其 tool-result，中间不能夹任何消息，否则抛
+// MissingToolResultsError（"Tool result is missing for tool call ..."）。主 loop 除了会在工具执行期间
+// 注入 system 消息，还允许实时 steer；此时新 user/assistant 消息也可能先于旧工具结果入列。
+// 因此不能只扫描到下一条 user/assistant 为止，而要按 toolCallId 在整段历史中找到结果并归位。
 // 对齐旧 OpenAI 路径 providers/shared.ts:sanitizeToolCallOrder（同一问题旧引擎已解决，迁移到 AI SDK 时漏带）。
 function reorderToolResultsAfterAssistant(messages: ModelMessage[]): ModelMessage[] {
+  const resultIndexesByCallId = new Map<string, number[]>();
+  for (let index = 0; index < messages.length; index++) {
+    const message = messages[index];
+    if (message.role !== 'tool') continue;
+    const callId = toolMsgCallId(message);
+    if (!callId) continue;
+    const indexes = resultIndexesByCallId.get(callId) ?? [];
+    indexes.push(index);
+    resultIndexesByCallId.set(callId, indexes);
+  }
+
+  const relocatedResultIndexes = new Set<number>();
   const out: ModelMessage[] = [];
-  let i = 0;
-  while (i < messages.length) {
+  for (let i = 0; i < messages.length; i++) {
+    if (relocatedResultIndexes.has(i)) continue;
     const msg = messages[i];
     const callIds = msg.role === 'assistant' ? (msg.toolCalls ?? []).map((tc) => tc.id) : [];
     if (callIds.length === 0) {
       out.push(msg);
-      i++;
       continue;
     }
+
     out.push(msg);
-    i++;
-    const expectedIds = new Set(callIds);
-    const toolResults: ModelMessage[] = [];
-    const deferred: ModelMessage[] = [];
-    while (i < messages.length) {
-      const next = messages[i];
-      const nextId = next.role === 'tool' ? toolMsgCallId(next) : '';
-      if (next.role === 'tool' && nextId && expectedIds.has(nextId)) {
-        toolResults.push(next);
-        expectedIds.delete(nextId);
-        i++;
-        if (expectedIds.size === 0) break; // 该 assistant 的所有 tool-call 都配到了结果
-      } else if (next.role === 'assistant' || next.role === 'user') {
-        break; // 进入新一轮，不跨轮次重排
-      } else {
-        deferred.push(next); // system / 无主 tool 消息 → 延后到 tool-result 之后
-        i++;
-      }
+    for (const callId of callIds) {
+      const resultIndex = resultIndexesByCallId.get(callId)?.find((index) => !relocatedResultIndexes.has(index));
+      if (resultIndex === undefined) continue;
+      out.push(messages[resultIndex]);
+      relocatedResultIndexes.add(resultIndex);
     }
-    out.push(...toolResults, ...deferred);
   }
   return out;
 }
@@ -782,12 +851,40 @@ async function generateViaAiSdk(params: {
     throw err;
   }
 
-  const toolCalls: ToolCall[] = (result.toolCalls ?? []).map((tc) => ({
+  let responseText = result.text;
+  let normalizedToolCalls = (result.toolCalls ?? []).map((tc) => ({
     id: tc.toolCallId,
     name: tc.toolName,
-    // AI SDK custom provider 的非流式入口与 wrapper 共用 envelope 解析器。
-    // `_meta` 只属于 UI 语义，不能落入工具业务参数。
-    ...extractToolCallMeta(tc.input ?? {}),
+    input: (tc.input ?? {}) as Record<string, unknown>,
+  }));
+  if (
+    normalizedToolCalls.length === 0
+    && config.provider === 'deepseek'
+    && aiTools
+    && responseText.includes(`<${DSML_PREFIX}tool_calls>`)
+  ) {
+    const recovered = recoverDeepSeekDsmlToolCalls(responseText, new Set(Object.keys(aiTools)));
+    if (recovered) {
+      responseText = recovered.content;
+      normalizedToolCalls = recovered.calls.map((call, index) => ({
+        id: `dsml_${Date.now()}_${index}`,
+        name: call.name,
+        input: call.input,
+      }));
+      logger.warn('[AiSdkAdapter] recovered DeepSeek DSML text as native tool calls', {
+        provider: config.provider,
+        model: config.model,
+        toolNames: recovered.calls.map((call) => call.name),
+      });
+    }
+  }
+
+  const toolCalls: ToolCall[] = normalizedToolCalls.map((tc) => ({
+    id: tc.id,
+    name: tc.name,
+    // AI SDK 是 custom provider（含 Token Rhythm / DeepSeek）的真实入口；这里必须与
+    // 手写 provider wrapper 共用同一个 envelope 解析器，避免 `_meta` 落入业务参数。
+    ...extractToolCallMeta(tc.input),
   }));
 
   logger.debug('inferenceViaAiSdk done', {
@@ -803,12 +900,12 @@ async function generateViaAiSdk(params: {
   // 下游据此把 assistant.content 建成数组；缺了会建成字符串，Neo 转换器下一轮
   // 对其 .content.filter 崩（"r.content.filter is not a function"）。对齐契约。
   const contentParts: NonNullable<ModelResponse['contentParts']> = [];
-  if (result.text) contentParts.push({ type: 'text', text: result.text });
+  if (responseText) contentParts.push({ type: 'text', text: responseText });
   for (const tc of toolCalls) contentParts.push({ type: 'tool_call', toolCallId: tc.id });
 
   return {
     type: toolCalls.length > 0 ? 'tool_use' : 'text',
-    content: result.text,
+    content: responseText,
     toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
     contentParts: contentParts.length > 0 ? contentParts : undefined,
     thinking: result.reasoningText || undefined,

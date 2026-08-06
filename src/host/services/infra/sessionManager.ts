@@ -6,6 +6,7 @@
 import { AppWindow } from '../../platform';
 import { getDatabase, type StoredSession } from '../core';
 import { getToolCache } from './toolCache';
+import { normalizePromptForBackfill, sanitizeModelConfigForSession } from './sessionManagerNormalization';
 import { getAuthService } from '../auth/authService';
 import { getSupabase, isSupabaseInitialized } from './supabaseService';
 import { IPC_CHANNELS } from '../../../shared/ipc';
@@ -92,15 +93,6 @@ interface ExistingUserMessageRow {
   content: string;
 }
 
-// SessionRepository 持久化只存 provider+model（apiKey 不入库）；剥离后让
-// SessionManager 返回的内存 session 与 DB 读回（fromRow）语义一致，避免
-// res.json(session) 在 webServer 路径把 apiKey 透传给客户端。
-function sanitizeModelConfigForSession(config: ModelConfig): ModelConfig {
-  const { apiKey: _omitted, ...rest } = config;
-  void _omitted;
-  return rest;
-}
-
 // ----------------------------------------------------------------------------
 // Session Manager
 // ----------------------------------------------------------------------------
@@ -120,22 +112,6 @@ export class SessionManager implements Disposable {
       workingDirectory: session.workingDirectory ?? null,
       provenance: session.workbenchProvenance
     });
-  }
-
-  private normalizePromptForBackfill(content: string): string {
-    return content
-      .replace(/\r\n/g, '\n')
-      .trim()
-      .replace(/\bhttps?:\/\/[^\s<>"'`]+/giu, (rawUrl) => {
-        // telemetry_turns 没有保存 user message/clientMessageId，不能做稳定 ID join。
-        // 对两侧文本统一走 WHATWG URL canonicalization，消除补根路径斜杠、
-        // unicode host / punycode 等同一 URL 的序列化差异；解析失败则保持原文。
-        try {
-          return new URL(rawUrl).toString();
-        } catch {
-          return rawUrl;
-        }
-      });
   }
 
   private backfillMissingTelemetryUserPrompts(sessionId: string): number {
@@ -173,14 +149,14 @@ export class SessionManager implements Disposable {
 
       const remainingExistingCounts = new Map<string, number>();
       for (const row of existingRows) {
-        const key = this.normalizePromptForBackfill(row.content);
+        const key = normalizePromptForBackfill(row.content);
         remainingExistingCounts.set(key, (remainingExistingCounts.get(key) ?? 0) + 1);
       }
 
       let inserted = 0;
       for (const row of telemetryRows) {
         const content = row.user_prompt;
-        const key = this.normalizePromptForBackfill(content);
+        const key = normalizePromptForBackfill(content);
         const existingCount = remainingExistingCounts.get(key) ?? 0;
         if (existingCount > 0) {
           remainingExistingCounts.set(key, existingCount - 1);
@@ -753,7 +729,16 @@ export class SessionManager implements Disposable {
   async patchSessionMetadata(
     sessionId: string,
     patch: Record<string, unknown>,
-    options?: { modelConfig?: { provider: string; model: string }; updatedAt?: number },
+    options?: {
+      modelConfig?: { provider: string; model: string };
+      updatedAt?: number;
+      /**
+       * Broadcast the resolved metadata snapshot when the patch changes a
+       * renderer-visible session identity. Generic host-only metadata patches
+       * stay quiet so their patch semantics cannot be mistaken for a merge.
+       */
+      notifyRenderer?: boolean;
+    },
   ): Promise<boolean> {
     const db = getDatabase();
     const ownerId = this.currentOwnerUserId();
@@ -761,6 +746,8 @@ export class SessionManager implements Disposable {
     const patched = db.patchSessionMetadata(sessionId, patch, options);
     if (!patched) return false;
 
+    let resolvedMetadata: Record<string, unknown> | undefined;
+    const resolvedUpdatedAt = options?.updatedAt ?? Date.now();
     if (this.sessionCache.has(sessionId)) {
       const cached = this.sessionCache.get(sessionId)!;
       const metadata = { ...(cached.metadata ?? {}) };
@@ -771,12 +758,24 @@ export class SessionManager implements Disposable {
       Object.assign(cached, {
         metadata,
         ...(options?.modelConfig ? { modelConfig: { ...cached.modelConfig, ...options.modelConfig } } : {}),
-        updatedAt: options?.updatedAt ?? Date.now(),
+        updatedAt: resolvedUpdatedAt,
+      });
+      resolvedMetadata = metadata;
+    } else if (options?.notifyRenderer) {
+      resolvedMetadata = db.getSession(sessionId, { userId: ownerId })?.metadata;
+    }
+
+    if (options?.notifyRenderer && resolvedMetadata) {
+      // 广播完整快照，避免把 patch 中的 null 删除语义交给 renderer 的整量 merge。
+      this.notifySessionUpdated(sessionId, {
+        metadata: resolvedMetadata,
+        updatedAt: resolvedUpdatedAt,
       });
     }
 
-    // 不广播 SESSION_UPDATED：patch 语义（值 null=删 key）与前端整量 merge 语义不同，
-    // 且 modelOverride 标记是 host 内部状态，前端经 getModelOverride 读取。
+    // 默认不广播 SESSION_UPDATED：patch 语义（值 null=删 key）与前端整量 merge 语义不同，
+    // 且 modelOverride 标记是 host 内部状态，前端经 getModelOverride 读取。只有明确标成
+    // renderer-visible 的身份变更才走上面的完整快照广播。
     db.logAuditEvent('session_metadata_patched', { sessionId, keys: Object.keys(patch) }, sessionId);
     return true;
   }

@@ -55,4 +55,35 @@ describe('backgroundTaskSessionContext', () => {
       ],
     });
   });
+
+  it('drops consumed text command-center turns while preserving ordinary foreground context', async () => {
+    getSession.mockResolvedValue({
+      messages: [
+        { id: 'plain-user', role: 'user', content: '珠峰多高', timestamp: 1 },
+        { id: 'plain-assistant', role: 'assistant', content: '8848.86 米', timestamp: 2 },
+        { id: 'dispatch-user', role: 'user', content: '再派一件后台任务', timestamp: 3 },
+        {
+          id: 'dispatch-assistant',
+          role: 'assistant',
+          content: '交给后台',
+          timestamp: 4,
+          toolCalls: [{ id: 'spawn-call', name: 'spawn_task', arguments: { prompt: '调研 Vue' } }],
+        },
+        {
+          id: 'dispatch-result',
+          role: 'tool',
+          content: 'accepted',
+          timestamp: 5,
+          toolResults: [{ toolCallId: 'spawn-call', success: true, output: 'accepted' }],
+        },
+      ],
+    });
+
+    await expect(getBackgroundTaskSessionContext('session-text')).resolves.toEqual({
+      messages: [
+        expect.objectContaining({ id: 'plain-user' }),
+        expect.objectContaining({ id: 'plain-assistant' }),
+      ],
+    });
+  });
 });

@@ -25,29 +25,34 @@ function record(step, ok, detail = {}) {
 }
 
 function makeUtteranceWavs(outDir) {
-  const firstTask = [
-    '请立即调用英文名 spawn task 的派发任务工具，不要自己做，工具成功前不要说已派出。',
-    '短名叫报告，目标线叫工单报告。',
-    '任务内容是第一步必须直接调用 Ask User Question 工具问我是否继续，选项只有继续和停止。',
-    '不要搜索工具，不要派子任务。',
-    '我回答继续后，等待一百八十秒，再回复报告完成。',
-    'submission key 固定叫 batch2-report，同一句重听也必须使用这个键。',
-  ].join('');
+  const firstTask = process.env.ADR054_BATCH2_STATUS_STEER === '1'
+    ? [
+      '请调用 spawn task。',
+      'title 填工单报告，short name 填报告，lane key 填工单报告，submission key 填 batch2-report。',
+      'prompt 填：先用 Ask User Question 问继续还是停止；继续后用 Bash 执行 sleep 180，再回复报告完成。',
+    ].join('')
+    : [
+      '请调用 spawn task。',
+      'title 填工单报告，short name 填报告，lane key 填工单报告，submission key 填 batch2-report。',
+      'prompt 填：立即用 Bash 执行 sleep 300；命令结束后回复报告完成。不要调用其他工具。',
+    ].join('');
   const secondTask = [
-    '请再调用一次英文名 spawn task 的派发任务工具，这件和报告用不同任务线并行执行。',
-    '短名叫查询，目标线叫资料查询。',
-    '任务内容是第一步必须直接调用 Ask User Question 工具问我是否继续，选项只有继续和停止。',
-    '不要搜索工具，不要派子任务。',
-    '我回答继续后，立即回复查询完成。',
-    'submission key 固定叫 batch2-query，同一句重听也必须使用这个键。',
+    '请再调用 spawn task。',
+    'title 填资料查询，short name 填查询，lane key 填资料查询，submission key 填 batch2-query。',
+    'prompt 填：先用 Bash 执行 sleep 45；然后用 Ask User Question 问现在完成还是继续等待；',
+    '我答完成后回复查询完成。',
   ].join('');
   const utterances = {
     firstTask,
     firstContinue: '继续。',
     secondTask,
-    ambiguousCancel: '停掉一个任务。',
-    cancelReport: '报告。',
-    secondContinue: '继续。',
+    ambiguousCancel: '请停止一个任务。请取消一个任务。停掉一个任务。',
+    // 单音节级短回答在真实 server VAD 下偶尔只留下半个词；重复完整短名仍然验证
+    // “按短名命中”，同时给 ASR 足够的稳定语音帧。
+    cancelReport: '报告任务。请停止报告任务。',
+    finishQuery: '完成。',
+    steerQuery: '查询那件继续改成跳过等待，直接回复查询改向完成。',
+    statusReport: '报告那件现在怎么样了？请查真实状态再回答。',
   };
   const wavs = {};
   for (const [name, utterance] of Object.entries(utterances)) {
@@ -336,20 +341,24 @@ async function main() {
     );
 
     await playUntilDispatch(page, probe, wavs.firstTask, 1, 'first dispatch');
-    await waitForNextDeliveredQuestion(
-      page,
-      probe,
-      questionRequestIds,
-      120_000,
-      'first task question',
-    );
-    await playUtterance(page, wavs.firstContinue);
-    await probe.waitForCount(
-      (event) => event.message === 'voice question answer accepted',
-      1,
-      20_000,
-      'first task answer',
-    );
+    if (process.env.ADR054_BATCH2_STATUS_STEER === '1') {
+      await waitForNextDeliveredQuestion(
+        page,
+        probe,
+        questionRequestIds,
+        120_000,
+        'first task question',
+      );
+      await playUtterance(page, wavs.firstContinue);
+      await probe.waitForCount(
+        (event) => event.message === 'voice question answer accepted',
+        1,
+        20_000,
+        'first task answer',
+      );
+    } else {
+      await page.waitForTimeout(2_000);
+    }
 
     const dispatches = await playUntilDispatch(page, probe, wavs.secondTask, 2, 'second dispatch');
     const dispatched = dispatches.slice(0, 2).map((event) => eventData(event));
@@ -366,6 +375,54 @@ async function main() {
       return counts;
     }, {});
     record('tool.channels', acceptedToolCalls.length >= 2, { channelCounts, acceptedToolCalls });
+
+    if (process.env.ADR054_BATCH2_STATUS_STEER === '1') {
+      // 双派发落账后立即验证控制路径，避免把执行模型是否严格遵守提问文案
+      // 变成 steer/status 场景的无关前置。
+      await playUtterance(page, wavs.steerQuery);
+      const steer = await probe.waitFor(
+        (event) => (event.message === 'realtime voice tool call accepted'
+            || event.message === 'voice action tool accepted')
+          && eventData(event).toolName === 'steer_task',
+        30_000,
+        'spoken follow-up routed to steer_task',
+      );
+      await page.waitForTimeout(2_000);
+      probe.pump();
+      const dispatchCountAfterSteer = probe.events.filter(
+        (event) => event.message === 'voice work dispatched',
+      ).length;
+      record('followup.same-lane-serialized', dispatchCountAfterSteer === 2, {
+        steer: eventData(steer),
+        dispatchCountAfterSteer,
+        targetLane: dispatched[1].laneKey,
+        targetWorkItemId: dispatched[1].workItemId,
+      });
+
+      await playUtterance(page, wavs.statusReport);
+      const statusCall = await probe.waitFor(
+        (event) => (event.message === 'realtime voice tool call accepted'
+            || event.message === 'voice action tool accepted')
+          && eventData(event).toolName === 'task_status',
+        30_000,
+        'short-name status query',
+      );
+      await page.waitForTimeout(8_000);
+      const messages = await api(page, 'GET', `/api/sessions/${encodeURIComponent(sessionId)}/messages?limit=300`);
+      const statusReply = [...(messages?.data ?? [])].reverse().find(
+        (entry) => entry?.role === 'assistant'
+          && entry?.metadata?.source === 'voice'
+          && /报告/.test(String(entry?.content ?? '')),
+      );
+      record('status.short-name-route', Boolean(statusReply), {
+        statusCall: eventData(statusCall),
+        reply: statusReply?.content,
+      });
+      await page.screenshot({ path: path.join(scenarioDir, 'status-steer-final.png'), fullPage: true });
+      await page.locator('[data-testid="voice-end"]').click().catch(() => undefined);
+      record('summary', true, { evidenceDir: OUT_DIR, sessionId, dispatched, statusReply: statusReply?.content });
+      return;
+    }
 
     await playUtterance(page, wavs.ambiguousCancel);
     const cancellationQuestion = await waitForNextDeliveredQuestion(
@@ -406,24 +463,31 @@ async function main() {
     const stopped = dispatched.find((item) => item.workItemId === stoppedId);
     record('cancel.short-name-route', stopped?.workItemId === dispatched[0]?.workItemId, { stoppedId, stopped });
 
-    const secondTaskQuestion = await waitForNextDeliveredQuestion(
+    record('questions.voice-rendered', questionRequestIds.size === 1, {
+      requestIds: [...questionRequestIds],
+    });
+    await probe.waitForCount(
+      (event) => event.message === 'voice question answer accepted',
+      1,
+      20_000,
+      'cancellation selection',
+    );
+
+    // 被取消的是“报告”。“查询”的第二次提问仍能送达并接受回答，才证明取消没有
+    // 误伤兄弟任务；不使用“等待 N 秒”这类模型无法可靠执行的自然语言计时。
+    const survivingSiblingQuestion = await waitForNextDeliveredQuestion(
       page,
       probe,
       questionRequestIds,
-      300_000,
-      'two task questions plus ambiguous cancel clarification',
+      120_000,
+      'surviving sibling second question',
     );
-    record('questions.voice-rendered', questionRequestIds.size === 3, {
-      requestIds: [...questionRequestIds],
-      secondTaskNarrationId: secondTaskQuestion.narrationId,
-    });
-
-    await playUtterance(page, wavs.secondContinue);
+    await playUtterance(page, wavs.finishQuery);
     await probe.waitForCount(
       (event) => event.message === 'voice question answer accepted',
-      3,
+      2,
       20_000,
-      'second task answer',
+      'surviving sibling answer',
     );
 
     const terminalResults = await waitForTerminalResults(page, sessionId, 2);
@@ -433,7 +497,12 @@ async function main() {
 
     await page.screenshot({ path: path.join(scenarioDir, 'final.png'), fullPage: true });
     await page.locator('[data-testid="voice-end"]').click().catch(() => undefined);
-    record('summary', true, { evidenceDir: OUT_DIR, sessionId, terminalResults });
+    record('summary', true, {
+      evidenceDir: OUT_DIR,
+      sessionId,
+      survivingSiblingNarrationId: survivingSiblingQuestion.narrationId,
+      terminalResults,
+    });
   } finally {
     if (originalExecutionModel !== undefined) {
       await setExecutionModel(page, originalExecutionModel).catch(() => undefined);

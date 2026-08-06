@@ -7,6 +7,7 @@ import {
   SessionTaskSlotLedger,
   getSessionTaskConcurrencyPool,
 } from './sessionTaskSlotLedger';
+import { getBackgroundTaskLedger } from '../../task/backgroundTaskLedger';
 
 const logger = createLogger('SessionCommandCenter');
 
@@ -27,6 +28,9 @@ export interface SessionCommandTask {
   summary?: string;
   attachments?: MessageAttachment[];
   options?: AgentRunOptions;
+  parentRunId?: string;
+  parentTurnId?: string;
+  toolCallId?: string;
 }
 
 export interface SpawnSessionTaskInput {
@@ -39,6 +43,9 @@ export interface SpawnSessionTaskInput {
   queueWhenFull?: boolean;
   attachments?: MessageAttachment[];
   options?: AgentRunOptions;
+  parentRunId?: string;
+  parentTurnId?: string;
+  toolCallId?: string;
 }
 
 export type SpawnSessionTaskResult =
@@ -122,8 +129,12 @@ export class SessionCommandCenter {
       updatedAt: now,
       attachments: input.attachments,
       options: input.options,
+      parentRunId: input.parentRunId,
+      parentTurnId: input.parentTurnId,
+      toolCallId: input.toolCallId,
     };
     this.tasks(input.sessionId).set(id, task);
+    this.projectTask(task);
     if (admission.outcome === 'started') this.launch(task);
     return { outcome: admission.outcome, task: { ...task } };
   }
@@ -229,12 +240,19 @@ export class SessionCommandCenter {
   private launch(task: SessionCommandTask): void {
     task.status = 'running';
     task.updatedAt = Date.now();
+    this.projectTask(task);
     void this.manager.startBackgroundTask(
       task.id,
       task.sessionId,
       task.prompt,
       task.attachments,
-      task.options,
+      {
+        ...task.options,
+        mode: task.options?.mode ?? 'normal',
+        runRegistration: 'auxiliary',
+        runId: task.id,
+        parentRunId: task.parentRunId,
+      },
       undefined,
     ).catch((error) => {
       void this.settle(task, 'failed', error instanceof Error ? error.message : String(error));
@@ -280,6 +298,7 @@ export class SessionCommandCenter {
       status === 'completed' ? '任务已完成。' : status === 'cancelled' ? '任务已取消。' : '任务执行失败。',
     );
     task.updatedAt = Date.now();
+    this.projectTask(task);
 
     try {
       await this.projectTerminalResult(task, status);
@@ -293,6 +312,42 @@ export class SessionCommandCenter {
     for (const slot of this.ledger(task.sessionId).settle(task.id)) {
       const next = this.tasks(task.sessionId).get(slot.workItemId);
       if (next) this.launch(next);
+    }
+  }
+
+  private projectTask(task: SessionCommandTask): void {
+    try {
+      getBackgroundTaskLedger().upsertTask({
+        id: task.id,
+        kind: 'session_command_task',
+        source: 'session_command_center',
+        sessionId: task.sessionId,
+        parentTurnId: task.parentTurnId,
+        toolCallId: task.toolCallId,
+        runId: task.id,
+        title: task.title,
+        summary: task.summary,
+        status: task.status === 'cancelling' ? 'running' : task.status,
+        createdAt: task.createdAt,
+        updatedAt: task.updatedAt,
+        startedAt: task.status === 'running' ? task.updatedAt : undefined,
+        completedAt: TERMINAL.has(task.status) ? task.updatedAt : undefined,
+        ...(task.status === 'failed' && task.detail
+          ? { failure: { message: task.detail, reason: 'session_command_task_failed' } }
+          : {}),
+        metadata: {
+          shortName: task.shortName,
+          laneKey: task.laneKey,
+          submissionKey: task.submissionKey,
+          parentRunId: task.parentRunId,
+          childRunId: task.id,
+        },
+      });
+    } catch (error) {
+      logger.warn('Failed to project session command task into background ledger', {
+        taskId: task.id,
+        message: error instanceof Error ? error.message : String(error),
+      });
     }
   }
 }

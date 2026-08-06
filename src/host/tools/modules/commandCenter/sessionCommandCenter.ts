@@ -82,6 +82,9 @@ export async function executeSpawnTask(
       toolScope: ctx.toolScope,
       executionIntent: ctx.executionIntent,
     },
+    parentRunId: ctx.runId,
+    parentTurnId: ctx.turnId,
+    toolCallId: ctx.currentToolCallId,
   });
   onProgress?.({ stage: 'completing', percent: 100 });
   if (result.outcome === 'requires_choice') {

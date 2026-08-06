@@ -351,6 +351,8 @@ export class DurableRunRepository implements DurableRunStores {
       if (changed.changes !== 1) throw new Error('Terminal write fenced by stale owner');
       this.db.prepare(`UPDATE durable_run_attempts SET status = 'ended', ended_at = ? WHERE run_id = ? AND attempt = ?`)
         .run(input.terminalAt, input.runId, input.attempt);
+      this.db.prepare(`UPDATE durable_run_children SET status = ?, terminal_at = ? WHERE child_run_id = ?`)
+        .run(input.status, input.terminalAt, input.runId);
       return next;
     })();
   }

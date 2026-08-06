@@ -45,8 +45,9 @@ use native_desktop::{
 use agent_halo::{agent_halo_hide, agent_halo_mode, agent_halo_show, AgentHaloState};
 use pip::{pip_control, pip_controls, pip_frame, pip_hide, pip_show};
 
-/// 生产通道 webServer 端口；测试包用 DEV_WEB_PORT 以便与生产包同时运行。
+/// 生产通道 webServer 端口；测试包用 `PROD_WEB_PORT + 槽位号` 以便与生产包、以及彼此同时运行。
 const PROD_WEB_PORT: u16 = 8180;
+/// dev 槽 1 的端口（历史默认）。槽 N 的端口由 channel_web_port 从 identifier 推导。
 const DEV_WEB_PORT: u16 = 8181;
 const HEALTH_TIMEOUT: Duration = Duration::from_secs(90);
 /// healthcheck 轮询间隔。webServer 就绪窗口实测 0.8s(warm)~3.7s(cold)，健康端点在
@@ -533,7 +534,7 @@ fn token_fingerprint(token: &str) -> String {
 }
 
 fn desktop_shell_channel(bundle_id: Option<&str>, is_debug: bool) -> &'static str {
-    if is_debug || bundle_id.is_some_and(|id| id.ends_with(".dev")) {
+    if is_debug || bundle_id.is_some_and(|id| dev_slot(id).is_some()) {
         "dev"
     } else {
         "prod"
@@ -956,32 +957,51 @@ fn web_server_node_env() -> &'static str {
     }
 }
 
-/// 测试/开发通道的数据目录名，与生产 `.code-agent` 并存、互不污染。
+/// 测试/开发通道的数据目录名（槽 1），与生产 `.code-agent` 并存、互不污染。
+/// 槽 N>1 在其后追加槽号：`.code-agent-dev2`…
 const DEV_DATA_DIR_NAME: &str = ".code-agent-dev";
+/// dev 槽位上限，与 src/shared/devSlot.ts 的 MAX_DEV_SLOT 一致。
+const MAX_DEV_SLOT: u16 = 9;
 
-/// 数据隔离通道：identifier 以 `.dev` 结尾（打包测试包）或 debug 构建（`cargo tauri dev`）
-/// 都视为 dev 通道，数据落到 `.code-agent-dev`。
-fn is_dev_data_channel(identifier: &str, is_debug: bool) -> bool {
-    is_debug || identifier.ends_with(".dev")
+/// 从 bundle identifier 反推 dev 槽位号：`.dev` = 1，`.dev2`…`.dev9` = 2…9，非 dev 返回 None。
+///
+/// 只认严格形态。`.developer` / `.dev-old` / `.dev0` / `.dev02` 一律**不算** dev 通道——
+/// 这里判错的代价不是少个端口，是测试包直接写进生产数据目录 `~/.code-agent`。
+///
+/// TS 侧同源实现在 src/shared/devSlot.ts 的 devSlotFromBundleId()，两边必须一起改。
+fn dev_slot(identifier: &str) -> Option<u16> {
+    let digits = &identifier[identifier.rfind(".dev")? + ".dev".len()..];
+    if digits.is_empty() {
+        return Some(1);
+    }
+    if digits.starts_with('0') || !digits.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    let slot = digits.parse::<u16>().ok()?;
+    (1..=MAX_DEV_SLOT).contains(&slot).then_some(slot)
 }
 
 /// 根据 bundle identifier 与构建 profile 推导测试/开发通道的数据目录。
+/// identifier 带 `.dev[N]` 后缀（打包测试包）走对应槽位，debug 构建（`cargo tauri dev`，
+/// identifier 仍是生产值）按槽 1 处理。
 /// 返回 `Some(dir)` 表示应把 `CODE_AGENT_DATA_DIR` 设为该目录；`None` 表示沿用生产默认。
 fn dev_channel_data_dir(identifier: &str, is_debug: bool, home: Option<&Path>) -> Option<PathBuf> {
-    if !is_dev_data_channel(identifier, is_debug) {
-        return None;
-    }
-    Some(home?.join(DEV_DATA_DIR_NAME))
+    let slot = dev_slot(identifier).or(if is_debug { Some(1) } else { None })?;
+    let name = if slot == 1 {
+        DEV_DATA_DIR_NAME.to_string()
+    } else {
+        format!("{DEV_DATA_DIR_NAME}{slot}")
+    };
+    Some(home?.join(name))
 }
 
-/// webServer 监听端口：**只按 `.dev` identifier 切到 8181**（打包测试包，与生产 8180 并存
-/// 可同时运行）。`cargo tauri dev` 虽是 dev 数据通道，但 devUrl 与 beforeDevCommand 起的
-/// webServer 固定 8180，故端口仍走 8180，避免调试态白屏。
+/// webServer 监听端口：**只按 `.dev[N]` identifier 切到 8180+N**（打包测试包，与生产 8180
+/// 以及彼此并存可同时运行）。`cargo tauri dev` 虽是 dev 数据通道，但 devUrl 与
+/// beforeDevCommand 起的 webServer 固定 8180，故端口仍走 8180，避免调试态白屏。
 fn channel_web_port(identifier: &str) -> u16 {
-    if identifier.ends_with(".dev") {
-        DEV_WEB_PORT
-    } else {
-        PROD_WEB_PORT
+    match dev_slot(identifier) {
+        Some(slot) => PROD_WEB_PORT + slot,
+        None => PROD_WEB_PORT,
     }
 }
 
@@ -2005,7 +2025,7 @@ mod runtime_env_tests {
     use super::{
         bundled_node_candidates, channel_web_port, desktop_shell_channel,
         desktop_shell_event_payload, desktop_shell_resource_preflight, dev_channel_data_dir,
-        parse_port_holder_pids, previous_boot_failure_from_value,
+        dev_slot, parse_port_holder_pids, previous_boot_failure_from_value,
         renderer_navigation_failure_message,
         required_resource_failures, web_server_node_env, web_server_runtime_env,
         DesktopShellBootDiagnostics, DesktopShellBootStage, DesktopShellResourceStatus,
@@ -2100,14 +2120,54 @@ mod runtime_env_tests {
             dev_channel_data_dir("com.linchen.code-agent.dev", false, None),
             None
         );
+        // 槽 2：数据目录带槽号，与槽 1 / 生产三方并存
+        assert_eq!(
+            dev_channel_data_dir("com.linchen.code-agent.dev2", false, Some(&home)),
+            Some(PathBuf::from("/Users/x/.code-agent-dev2"))
+        );
+        assert_eq!(
+            dev_channel_data_dir("com.linchen.code-agent.dev9", false, Some(&home)),
+            Some(PathBuf::from("/Users/x/.code-agent-dev9"))
+        );
+    }
+
+    #[test]
+    fn dev_slot_only_accepts_strict_suffixes() {
+        // `.dev` = 槽 1（历史形态），`.devN` = 槽 N
+        assert_eq!(dev_slot("com.linchen.code-agent.dev"), Some(1));
+        assert_eq!(dev_slot("com.linchen.code-agent.dev1"), Some(1));
+        assert_eq!(dev_slot("com.linchen.code-agent.dev9"), Some(9));
+        // 生产 identifier 不是 dev
+        assert_eq!(dev_slot("com.linchen.code-agent"), None);
+        // 近似形态一律拒绝——判错的代价是测试包写进生产数据目录
+        assert_eq!(dev_slot("com.linchen.code-agent.developer"), None);
+        assert_eq!(dev_slot("com.linchen.code-agent.dev-old"), None);
+        assert_eq!(dev_slot("com.linchen.code-agent.dev0"), None);
+        assert_eq!(dev_slot("com.linchen.code-agent.dev02"), None);
+        // 越界槽号拒绝，不静默开一套新数据目录
+        assert_eq!(dev_slot("com.linchen.code-agent.dev10"), None);
     }
 
     #[test]
     fn channel_web_port_only_splits_on_dev_identifier() {
         // 打包测试包（.dev）→ 8181，与生产 8180 并存可同时运行
         assert_eq!(channel_web_port("com.linchen.code-agent.dev"), DEV_WEB_PORT);
+        // 槽 N → 8180+N，槽之间也不抢端口
+        assert_eq!(
+            channel_web_port("com.linchen.code-agent.dev2"),
+            PROD_WEB_PORT + 2
+        );
+        assert_eq!(
+            channel_web_port("com.linchen.code-agent.dev9"),
+            PROD_WEB_PORT + 9
+        );
         // 生产包 → 8180
         assert_eq!(channel_web_port("com.linchen.code-agent"), PROD_WEB_PORT);
+        // 非严格 dev 后缀退回生产端口（与 dev_slot 判据一致）
+        assert_eq!(
+            channel_web_port("com.linchen.code-agent.developer"),
+            PROD_WEB_PORT
+        );
         // 注意：端口不按 debug 切——cargo tauri dev 用生产 identifier，仍走 8180
         // 以匹配 devUrl 与 beforeDevCommand 起的 webServer，避免白屏。
     }

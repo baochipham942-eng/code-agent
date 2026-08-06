@@ -25,7 +25,6 @@
 
 set -euo pipefail
 
-CUA_DRIVER_VERSION="0.14.2"
 # 重签身份：默认本机 Developer ID；CI 用 CUA_SIGN_IDENTITY 覆盖为 secret 注入的证书。
 CUA_SIGN_IDENTITY="${CUA_SIGN_IDENTITY:-Developer ID Application: jay lem (D7CVTJ72NV)}"
 

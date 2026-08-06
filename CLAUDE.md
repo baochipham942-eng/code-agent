@@ -165,6 +165,34 @@ rm -rf ~/.code-agent-dev/renderer-cache/active   # dev 侧热更新缓存同样�
 #   （2026-07-26 voice spike 实测；Dev 包要用的 key 必须复制进 ~/.code-agent-dev/.env）
 ```
 
+#### 多个 Dev 测试包并存（NEO_SLOT）
+
+几个 worktree 要同时验各自的包时，用 `NEO_SLOT` 分槽（缺省 = 槽 1 = 历史行为，不用改任何命令）：
+
+```bash
+NEO_SLOT=2 HTTPS_PROXY=http://127.0.0.1:7897 npm run tauri:build:dev
+rm -rf ~/.code-agent-dev2/renderer-cache/active
+curl -s http://127.0.0.1:8182/ | grep -oE 'assets/index-[^"]*\.js'
+```
+
+| NEO_SLOT | 安装槽 | identifier | 端口 | 数据目录 |
+|---|---|---|---|---|
+| 1（缺省） | `Agent Neo Dev.app` | `…code-agent.dev` | 8181 | `~/.code-agent-dev` |
+| 2 | `Agent Neo Dev 2.app` | `…code-agent.dev2` | 8182 | `~/.code-agent-dev2` |
+| N（≤9） | `Agent Neo Dev N.app` | `…code-agent.devN` | 8180+N | `~/.code-agent-devN` |
+
+四个维度全部由 identifier 的 `.dev[N]` 后缀派生（Rust `dev_slot()` 是运行时真源，TS 同源实现在
+`src/shared/devSlot.ts`），`npm run tauri:gen-dev-slot-conf` 按 `NEO_SLOT` 生成
+`src-tauri/tauri.dev.slot.conf.json` + `.dev-slot.json`（都 gitignore），安装/冒烟脚本从后者读槽名与端口。
+**槽间不共用**：数据目录、密钥、renderer 缓存都是独立的一套；换槽等于一台新机器，key 要重新配。
+CUA helper 仍只分 production / dev（所有槽共用 dev 那份），槽间各授权一次 TCC。
+
+**cua helper 跨 worktree 缓存**：重签好的 `Agent Neo Computer Use*.app` 落在 repo 根的
+`.tauri-resources.noindex/`（gitignore），每个 worktree 各要一份。现在会自动镜像到
+`~/Library/Caches/agent-neo/cua/`（`NEO_CUA_CACHE_DIR` 可改），新 worktree 首次打包直接从缓存恢复，
+不用再 `fetch-cua-driver.sh` 下载+重签。缓存命中仍校验 bundle id + 版本 + `codesign --verify --strict`，
+不符就照常报错让你去 fetch。
+
 <details><summary>生产包覆盖安装（仅验签名/更新链路时用，会覆盖 /Applications 里的生产 app）</summary>
 
 ```bash

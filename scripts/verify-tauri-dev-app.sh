@@ -12,7 +12,7 @@ RESOURCES_ROOT="$(resolve_tauri_app_resources_root "$APP_PATH")"
 node "$PROJECT_ROOT/scripts/tauri-resource-inventory.mjs" --root "$RESOURCES_ROOT"
 node "$PROJECT_ROOT/scripts/desktop-shell-packaged-smoke.mjs" \
   --app "$APP_PATH" \
-  --port 8181 \
+  --port "${DEV_APP_WEB_PORT:-8181}" \
   --app-port "${DEV_APP_WEB_PORT:-8181}" \
   --health-only \
   --timeout-ms "${DEV_SMOKE_TIMEOUT_MS:-120000}"

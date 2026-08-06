@@ -182,6 +182,37 @@ describe('toAiMessages —— tool-call/tool-result 配对排序', () => {
     expect(ai.slice(assistantIndex + 1, assistantIndex + 6).every((message) => message.role === 'tool')).toBe(true);
   });
 
+  it('上一 turn 的 tool result 延迟到再次派活之后：两组结果仍按 toolCallId 分别归位', async () => {
+    const messages: ModelMessage[] = [
+      { role: 'system', content: 'system prompt' },
+      { role: 'user', content: '先派报告任务' },
+      {
+        role: 'assistant',
+        content: '',
+        toolCalls: [{ id: 'call_report', name: 'Task', arguments: '{}' }],
+      } as ModelMessage,
+      { role: 'user', content: '再派查询任务' },
+      {
+        role: 'assistant',
+        content: '',
+        toolCalls: [{ id: 'call_query', name: 'Task', arguments: '{}' }],
+      } as ModelMessage,
+      { role: 'tool', content: 'report dispatched', toolCallId: 'call_report' } as ModelMessage,
+      { role: 'tool', content: 'query dispatched', toolCallId: 'call_query' } as ModelMessage,
+    ];
+
+    const ai = await captureAiMessages(messages);
+    expect(() => assertAiSdkToolPairing(ai)).not.toThrow();
+    const assistantIndexes = ai
+      .map((message, index) => message.role === 'assistant' && Array.isArray(message.content) ? index : -1)
+      .filter((index) => index >= 0);
+    expect(assistantIndexes).toHaveLength(2);
+    expect(assistantIndexes.map((index) => ai[index + 1]?.role)).toEqual(['tool', 'tool']);
+    expect(assistantIndexes.map((index) => (
+      (ai[index + 1]?.content as Array<{ toolCallId?: string }>)[0]?.toolCallId
+    ))).toEqual(['call_report', 'call_query']);
+  });
+
   it('已正确排序（assistant → tool → system）：保持有效，不回归', async () => {
     const messages: ModelMessage[] = [
       { role: 'system', content: 'system prompt' },

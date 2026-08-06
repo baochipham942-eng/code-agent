@@ -46,6 +46,7 @@ export const writeSchema: ToolSchema = {
   },
   category: 'fs',
   permissionLevel: 'write',
+  pathAuthority: [{ kind: 'path', pathParameter: 'file_path' }],
   readOnly: false,
   allowInPlanMode: false,
 };

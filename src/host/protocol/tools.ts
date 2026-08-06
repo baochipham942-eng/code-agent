@@ -15,7 +15,11 @@
 //    只依赖 @shared/contract 和本层 protocol/events
 // ============================================================================
 
-import type { JSONSchema } from '@shared/contract';
+import type {
+  DirectiveMemoryWriteGrant,
+  JSONSchema,
+  ToolPathAuthorityDescriptor,
+} from '@shared/contract';
 import type {
   ConversationExecutionIntent,
   WorkbenchToolScope,
@@ -51,6 +55,8 @@ export interface ToolSchema {
   readonly inputSchema: JSONSchema;
   readonly category: ToolCategory;
   readonly permissionLevel: PermissionLevel;
+  /** 文件写目标的声明式来源；不按工具名枚举权限。 */
+  readonly pathAuthority?: readonly ToolPathAuthorityDescriptor[];
   /**
    * 覆盖默认权限推导。省略时仍按 permissionLevel !== 'read' 处理。
    * 只用于工具本身就是用户确认入口的场景，避免“先批准提问，才能看到提问”的递归门。
@@ -195,6 +201,8 @@ export interface ToolContext {
   readonly executionIntent?: ConversationExecutionIntent;
   /** Run-scoped trace context, injected by the dispatch boundary. */
   readonly traceContext?: unknown;
+  /** ToolExecutor 针对本次记忆目录写入签发的一次性授权。 */
+  readonly directiveMemoryWriteGrant?: DirectiveMemoryWriteGrant;
 }
 
 // ----------------------------------------------------------------------------

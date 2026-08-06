@@ -10,6 +10,7 @@
 
 import { BrowserService, browserService as defaultBrowserService } from './browserService';
 
+/** Pool key for the default / personal managed browser singleton. */
 const DEFAULT_AGENT_KEY = '__default__';
 const DEFAULT_MAX_NAMED_AGENTS = 4;
 

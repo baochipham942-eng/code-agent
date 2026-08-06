@@ -8,7 +8,10 @@ import type {
   BrowserDomSnapshot,
   BrowserService,
 } from '../infra/browserService';
-import type { ManagedBrowserSessionState } from '../../../shared/contract/desktop';
+import type {
+  ManagedBrowserProfileMode,
+  ManagedBrowserSessionState,
+} from '../../../shared/contract/desktop';
 import type {
   SurfaceExecutionErrorV1,
   SurfaceObservationV1,
@@ -28,9 +31,20 @@ import { SurfaceExecutionRuntimeError } from './SurfaceExecutionRuntimeError';
 const DEFAULT_PROVIDER = 'system-chrome-cdp';
 const SURFACE_PROFILE_TTL_MS = 30 * 60_000;
 
+/**
+ * User-driven browser (address bar / takeover) reuses the pool default service so
+ * login state lands in the shared personal profile directory
+ * (`MANAGED_BROWSER_PERSISTENT_PROFILE_ID` / `managed-browser-profile`).
+ * Agent batch tasks keep run-scoped isolated service keys.
+ * Keep as a string literal (not re-export from browserPool) so partial mocks of
+ * browserPool in unit tests do not break adapter module load.
+ */
+export const MANAGED_BROWSER_USER_PERSONAL_SERVICE_KEY = '__default__';
+
 interface ManagedBrowserBinding {
   identity: SurfaceRuntimeIdentityV1;
   serviceKey: string;
+  profileMode: ManagedBrowserProfileMode;
   browserService: BrowserService;
   provider: string;
   providerGeneration: string;
@@ -117,12 +131,34 @@ export function surfaceIdentityFromToolContext(
   };
 }
 
+/** True when this surface identity is the user-driven browser link (not an agent run). */
+export function isUserBrowserSurfaceIdentity(
+  identity: Pick<SurfaceRuntimeIdentityV1, 'agentId'>,
+): boolean {
+  return identity.agentId === SURFACE_USER_BROWSER_AGENT_ID;
+}
+
+/**
+ * Pool key for BrowserService acquisition.
+ * - User browse → shared personal service (default pool key → persistent profile dir)
+ * - Agent task → run-scoped isolation key (`surface-<hash>`)
+ */
 export function managedBrowserServiceKey(identity: SurfaceRuntimeIdentityV1): string {
+  if (isUserBrowserSurfaceIdentity(identity)) {
+    return MANAGED_BROWSER_USER_PERSONAL_SERVICE_KEY;
+  }
   return `surface-${hashIdentity([
     identity.conversationId,
     identity.runId,
     identity.agentId,
   ])}`;
+}
+
+/** Profile mode for a new binding of this identity (sharing may reuse an existing mode). */
+export function managedBrowserProfileModeForIdentity(
+  identity: Pick<SurfaceRuntimeIdentityV1, 'agentId'>,
+): ManagedBrowserProfileMode {
+  return isUserBrowserSurfaceIdentity(identity) ? 'persistent' : 'isolated';
 }
 
 const ORGANIC_NAV_REASONS = new Set([
@@ -140,14 +176,16 @@ export class ManagedBrowserProviderAdapter {
 
   constructor(
     private readonly runtime: SurfaceExecutionRuntime = getSurfaceExecutionRuntime(),
-    private readonly acquireBrowser: (serviceKey: string) => BrowserService = getBrowserService,
+    private readonly acquireBrowser: (serviceKey: string | null) => BrowserService = getBrowserService,
     private readonly releaseBrowser: (serviceKey: string) => Promise<void> = (serviceKey) => (
       browserPool.releaseAgent(serviceKey)
     ),
   ) {}
 
   getBrowserService(identity: SurfaceRuntimeIdentityV1): BrowserService {
-    return this.acquireBrowser(managedBrowserServiceKey(identity));
+    const key = managedBrowserServiceKey(identity);
+    // Default pool key is acquired via null so BrowserService keeps unsuffixed personal profile.
+    return this.acquireBrowser(key === MANAGED_BROWSER_USER_PERSONAL_SERVICE_KEY ? null : key);
   }
 
   getBinding(identity: SurfaceRuntimeIdentityV1): Readonly<ManagedBrowserBinding> | null {
@@ -301,9 +339,7 @@ export class ManagedBrowserProviderAdapter {
     // Sharing is deliberately limited to pairs involving the user run: two agent runs in
     // one conversation stay isolated exactly as before, because the rail only ever shows
     // one of them and silent cross-navigation is worse than an unseen second window.
-    const isUserRun = (owner: SurfaceRuntimeIdentityV1) => (
-      owner.agentId === SURFACE_USER_BROWSER_AGENT_ID
-    );
+    const isUserRun = isUserBrowserSurfaceIdentity;
     const shared = Array.from(this.bindings.values()).find((binding) => (
       binding.identity.conversationId === identity.conversationId
       && (isUserRun(identity) || isUserRun(binding.identity))
@@ -311,10 +347,19 @@ export class ManagedBrowserProviderAdapter {
       && Boolean(binding.browserService.getActiveTab())
     ));
     const serviceKey = shared?.serviceKey || managedBrowserServiceKey(identity);
-    const browserService = shared?.browserService || this.acquireBrowser(serviceKey);
+    const profileMode = shared?.profileMode || managedBrowserProfileModeForIdentity(identity);
+    const browserService = shared?.browserService
+      || this.acquireBrowser(
+        serviceKey === MANAGED_BROWSER_USER_PERSONAL_SERVICE_KEY ? null : serviceKey,
+      );
+    const leaseOwner = isUserRun(identity)
+      ? 'user-personal-browser'
+      : `surface:${identity.runId}`;
+    // Do not force profileMode when reusing a live shared window — switching while
+    // running throws in BrowserService.launch.
     await browserService.ensureSession('about:blank', {
-      profileMode: 'isolated',
-      leaseOwner: `surface:${identity.runId}`,
+      ...(shared ? {} : { profileMode }),
+      leaseOwner,
       leaseTtlMs: SURFACE_PROFILE_TTL_MS,
     });
     const state = browserService.getSessionState();
@@ -323,6 +368,7 @@ export class ManagedBrowserProviderAdapter {
     const binding: ManagedBrowserBinding = {
       identity: { ...identity },
       serviceKey,
+      profileMode: (state.profileMode as ManagedBrowserProfileMode | undefined) || profileMode,
       browserService,
       provider,
       providerGeneration: `managed-generation:${hashIdentity([
@@ -344,7 +390,9 @@ export class ManagedBrowserProviderAdapter {
     this.ensureOrganicNavHook(browserService);
     try {
       const observed = await this.captureObservation(binding, {
-        userSummary: 'Prepared an isolated managed Browser Surface session',
+        userSummary: binding.profileMode === 'persistent'
+          ? 'Prepared a personal managed Browser Surface session'
+          : 'Prepared an isolated managed Browser Surface session',
       });
       this.runtime.registerCleanup(prepared.subject, async () => {
         await this.releaseBinding(key, binding);
@@ -409,7 +457,11 @@ export class ManagedBrowserProviderAdapter {
       candidate.serviceKey === binding.serviceKey
       && candidate.browserService === binding.browserService
     ));
-    if (!stillShared) await this.releaseBrowser(binding.serviceKey);
+    // Personal/default pool entry is never released here — login state must survive
+    // surface cleanup and app-visible session ends (BrowserPool no-ops default key).
+    if (!stillShared && binding.serviceKey !== MANAGED_BROWSER_USER_PERSONAL_SERVICE_KEY) {
+      await this.releaseBrowser(binding.serviceKey);
+    }
   }
 
   private async captureObservation(
@@ -512,7 +564,7 @@ export class ManagedBrowserProviderAdapter {
         ...(surface.observation ? { surfaceObservationV1: surface.observation } : {}),
         ...(surface.actionResult ? { surfaceExecutionActionResultV1: surface.actionResult } : {}),
         surfaceExecutionEventsV1: surface.events,
-        managedProfileMode: 'isolated',
+        managedProfileMode: binding.profileMode,
       },
     };
   }

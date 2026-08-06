@@ -65,9 +65,10 @@ export async function applyManagedBrowserCookies(
   host: ManagedBrowserCookieHost,
   cookies: PlaywrightCookieSeed[],
 ): Promise<ManagedBrowserAccountStateSummary> {
-  // Preserve the owning Surface profile mode. A run-scoped isolated Managed
-  // session may import explicitly approved cookies without becoming persistent.
-  await host.ensureRunning({ mode: 'visible' });
+  // Product entry (P0/P1) imports into the shared personal profile so login
+  // survives reopen. If a surface already owns an isolated session on this
+  // service, ensureRunning will refuse the mode switch — caller must close first.
+  await host.ensureRunning({ mode: 'visible', profileMode: 'persistent' });
   await host.ensureActiveTab();
   if (cookies.length > 0) {
     await host.getContext().addCookies(cookies as Parameters<BrowserContext['addCookies']>[0]);
@@ -109,7 +110,7 @@ export async function clearManagedBrowserCookiesViaService(
   service: BrowserService,
 ): Promise<ManagedBrowserAccountStateSummary> {
   const host = createHostFromBrowserService(service);
-  await host.ensureRunning({ mode: 'visible' });
+  await host.ensureRunning({ mode: 'visible', profileMode: 'persistent' });
   await host.getContext().clearCookies();
   const accountState = await host.getAccountStateSummary();
   host.logInfo('Cleared managed browser cookies.');

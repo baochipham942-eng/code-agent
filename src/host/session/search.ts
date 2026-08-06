@@ -7,9 +7,15 @@
 // - Metadata-based filtering
 // - Relevance scoring and ranking
 // - Search result highlighting
+//
+// 数据源：主路径走已有的 SQLite FTS（session_messages_fts，trigram，覆盖全库），
+// 由 IPC 层惰性注入 SessionSearchFtsSource；短查询（低于 trigram 最小长度）、
+// caseSensitive / useRegex、或 DB 未就绪时回落内存 LRU 搜索（原行为）。
 // ============================================================================
 
 import { createLogger } from '../services/infra/logger';
+import { SESSION_SEARCH } from '../../shared/constants';
+import type { Message } from '../../shared/contract';
 import {
   SessionLocalCache,
   CachedSession,
@@ -18,6 +24,40 @@ import {
 } from './localCache';
 
 const logger = createLogger('SessionSearch');
+
+/**
+ * FTS 候选命中行（与 sessionRepositoryFtsSearch.SessionMessagesFtsHit 结构一致；
+ * 此处重复定义以避免 host/session → services/core 的静态依赖）。
+ */
+export interface SessionSearchFtsHit {
+  messageId: string;
+  sessionId: string;
+  role: string;
+  content: string;
+  timestamp: number;
+}
+
+/**
+ * UI 会话搜索的 FTS 数据源（DatabaseService 的结构子集，由 IPC 层惰性注入）。
+ * isReady 在每次搜索时现查，DB 未就绪则回落内存搜索。
+ */
+export interface SessionSearchFtsSource {
+  readonly isReady: boolean;
+  searchSessionMessagesFts(
+    query: string,
+    options?: {
+      limit?: number;
+      sessionIds?: string[];
+      role?: string;
+      limitCap?: number;
+    }
+  ): SessionSearchFtsHit[];
+  countSessionMessagesFts(
+    query: string,
+    options?: { sessionIds?: string[]; role?: string }
+  ): { matches: number; sessions: number };
+  getMessages(sessionId: string, limit?: number): Message[];
+}
 
 /**
  * Search query options
@@ -323,14 +363,245 @@ export function inferConversationTurnNumbers(messages: CachedMessage[]): Array<n
 }
 
 /**
+ * 按当前排序档位比较两条结果（relevance/date/session + asc/desc），两条搜索路径共用。
+ */
+function compareSearchResults(
+  a: SearchResult,
+  b: SearchResult,
+  sortBy: 'relevance' | 'date' | 'session',
+  sortOrder: 'asc' | 'desc'
+): number {
+  let comparison: number;
+
+  switch (sortBy) {
+    case 'date':
+      comparison = a.message.timestamp - b.message.timestamp;
+      break;
+    case 'session':
+      comparison = a.sessionId.localeCompare(b.sessionId);
+      break;
+    case 'relevance':
+    default:
+      comparison = a.relevance - b.relevance;
+  }
+
+  return sortOrder === 'desc' ? -comparison : comparison;
+}
+
+/**
+ * 是否可走 FTS 主路径：数据源就绪 + 查询达到 trigram 最小长度 +
+ * 未请求内存-only 能力（caseSensitive / useRegex）。
+ */
+function canUseFtsSource(
+  query: string,
+  options: SearchOptions,
+  ftsSource: SessionSearchFtsSource | undefined
+): ftsSource is SessionSearchFtsSource {
+  return Boolean(
+    ftsSource &&
+    ftsSource.isReady &&
+    !options.caseSensitive &&
+    !options.useRegex &&
+    query.trim().length >= SESSION_SEARCH.FTS_MIN_QUERY_LENGTH
+  );
+}
+
+function isCacheableSearchMessage(
+  message: Message
+): message is Message & { role: CachedMessage['role'] } {
+  return message.role === 'user' || message.role === 'assistant' || message.role === 'system';
+}
+
+/**
+ * 取会话消息（优先 LRU 缓存；未命中时从 DB 回填窗口并写入缓存，
+ * 与 session.ipc.ts 的 hydrateCrossSessionSearchCache 同一形状）。
+ */
+function getOrHydrateSearchSession(
+  sessionId: string,
+  cache: SessionLocalCache,
+  ftsSource: SessionSearchFtsSource
+): CachedSession | undefined {
+  const cached = cache.getSession(sessionId);
+  if (cached) return cached;
+
+  try {
+    const messages: CachedMessage[] = ftsSource
+      .getMessages(sessionId, SESSION_SEARCH.HYDRATE_MESSAGE_LIMIT)
+      .filter(isCacheableSearchMessage)
+      .map((message) => ({
+        id: message.id,
+        role: message.role,
+        content: message.content,
+        timestamp: message.timestamp,
+        metadata: message.metadata as Record<string, unknown> | undefined,
+        toolCalls: message.toolCalls,
+        toolResults: message.toolResults,
+      }));
+    const startedAt = messages[0]?.timestamp ?? Date.now();
+    const session: CachedSession = {
+      sessionId,
+      messages,
+      startedAt,
+      lastActivityAt: messages[messages.length - 1]?.timestamp ?? startedAt,
+      totalTokens: 0,
+    };
+    cache.setSession(session);
+    return session;
+  } catch (error) {
+    logger.warn('Failed to hydrate session from DB for FTS search', { sessionId, error });
+    return undefined;
+  }
+}
+
+/**
+ * FTS 主路径：全库召回候选 → 内存内做高亮定位 / relevance / 过滤 / 排序。
+ * totalMatches / sessionsWithMatches 在候选触顶时用 FTS COUNT 反映全量，
+ * 不再只反映缓存内数量。
+ */
+function searchSessionsViaFts(
+  query: string,
+  options: SearchOptions,
+  cache: SessionLocalCache,
+  ftsSource: SessionSearchFtsSource,
+  startTime: number
+): SearchResults {
+  const {
+    limit = 50,
+    offset = 0,
+    role,
+    sessionIds,
+    minRelevance = 0,
+    includeContext = 50,
+    sortBy = 'relevance',
+    sortOrder = 'desc',
+  } = options;
+
+  const hits = ftsSource.searchSessionMessagesFts(query, {
+    sessionIds,
+    role,
+    limit: SESSION_SEARCH.FTS_CANDIDATE_LIMIT,
+    limitCap: SESSION_SEARCH.FTS_CANDIDATE_LIMIT,
+  });
+
+  const allResults: SearchResult[] = [];
+  const sessionsWithMatches = new Set<string>();
+  const turnNumbersBySession = new Map<string, Array<number | undefined>>();
+
+  for (const hit of hits) {
+    const session = getOrHydrateSearchSession(hit.sessionId, cache, ftsSource);
+    if (!session) continue;
+
+    let turnNumbers = turnNumbersBySession.get(hit.sessionId);
+    if (!turnNumbers) {
+      turnNumbers = inferConversationTurnNumbers(session.messages);
+      turnNumbersBySession.set(hit.sessionId, turnNumbers);
+    }
+
+    // 命中消息超出回填窗口时，用 FTS 行兜底构造结果（跳转走 messageId，
+    // messageIndex = -1 由 renderer 按「位置未知」展示），保证老消息可达。
+    let messageIndex = session.messages.findIndex((m) => m.id === hit.messageId);
+    let message: CachedMessage;
+    let turnNumber: number | undefined;
+    if (messageIndex >= 0) {
+      message = session.messages[messageIndex];
+      turnNumber = turnNumbers[messageIndex];
+    } else {
+      if (hit.role !== 'user' && hit.role !== 'assistant' && hit.role !== 'system') continue;
+      message = {
+        id: hit.messageId,
+        role: hit.role,
+        content: hit.content,
+        timestamp: hit.timestamp,
+      };
+      messageIndex = -1;
+      turnNumber = undefined;
+    }
+
+    if (!passesDateFilter(message, options)) continue;
+
+    const matches = findMatches(message.content, query, {
+      caseSensitive: false,
+      useRegex: false,
+      includeContext,
+    });
+    // FTS 命中但子串定位失败（大小写折叠差异等边界），保守跳过
+    if (matches.length === 0) continue;
+
+    const relevance = calculateRelevance(message.content, query, matches, message);
+    if (relevance < minRelevance) continue;
+
+    sessionsWithMatches.add(hit.sessionId);
+
+    allResults.push({
+      sessionId: hit.sessionId,
+      message,
+      messageIndex,
+      turnNumber,
+      matches,
+      relevance,
+      snippet: generateSnippet(message.content, matches),
+    });
+  }
+
+  allResults.sort((a, b) => compareSearchResults(a, b, sortBy, sortOrder));
+
+  // 全量计数：候选未触顶时内存结果就是全集；触顶且无内存-only 过滤
+  // （日期 / minRelevance）时，用 FTS COUNT 如实报告全量。
+  const candidatesCapped = hits.length >= SESSION_SEARCH.FTS_CANDIDATE_LIMIT;
+  const hasMemoryOnlyFilters =
+    options.startDate !== undefined || options.endDate !== undefined || minRelevance > 0;
+
+  let totalMatches = allResults.length;
+  let totalSessions = sessionsWithMatches.size;
+  let truncated: boolean;
+  if (candidatesCapped && !hasMemoryOnlyFilters) {
+    const totals = ftsSource.countSessionMessagesFts(query, { sessionIds, role });
+    totalMatches = Math.max(totals.matches, allResults.length);
+    totalSessions = Math.max(totals.sessions, totalSessions);
+    truncated = totalMatches > offset + limit;
+  } else {
+    // 触顶但带内存-only 过滤时无法精确计数，保守标记 truncated
+    truncated = candidatesCapped || totalMatches > offset + limit;
+  }
+
+  const paginatedResults = allResults.slice(offset, offset + limit);
+  const searchTime = Date.now() - startTime;
+
+  logger.debug('FTS search completed', {
+    query,
+    candidates: hits.length,
+    totalMatches,
+    sessionsWithMatches: totalSessions,
+    searchTime,
+  });
+
+  return {
+    query,
+    totalMatches,
+    sessionsWithMatches: totalSessions,
+    results: paginatedResults,
+    searchTime,
+    truncated,
+  };
+}
+
+/**
  * Search sessions for a query
+ *
+ * 主路径走 SQLite FTS（ftsSource 就绪且查询满足 trigram 最小长度时）；
+ * 否则回落内存 LRU 缓存搜索（原行为）。
  */
 export function searchSessions(
   query: string,
   options: SearchOptions = {},
-  cache: SessionLocalCache = getDefaultCache()
+  cache: SessionLocalCache = getDefaultCache(),
+  ftsSource?: SessionSearchFtsSource
 ): SearchResults {
   const startTime = Date.now();
+
+  if (canUseFtsSource(query, options, ftsSource)) {
+    return searchSessionsViaFts(query, options, cache, ftsSource, startTime);
+  }
 
   const {
     limit = 50,
@@ -396,23 +667,7 @@ export function searchSessions(
   }
 
   // Sort results
-  allResults.sort((a, b) => {
-    let comparison: number;
-
-    switch (sortBy) {
-      case 'date':
-        comparison = a.message.timestamp - b.message.timestamp;
-        break;
-      case 'session':
-        comparison = a.sessionId.localeCompare(b.sessionId);
-        break;
-      case 'relevance':
-      default:
-        comparison = a.relevance - b.relevance;
-    }
-
-    return sortOrder === 'desc' ? -comparison : comparison;
-  });
+  allResults.sort((a, b) => compareSearchResults(a, b, sortBy, sortOrder));
 
   // Apply pagination
   const paginatedResults = allResults.slice(offset, offset + limit);
@@ -541,20 +796,35 @@ export function getSessionsByDateRange(
 export class SessionSearchManager {
   private cache: SessionLocalCache;
   private defaultOptions: SearchOptions;
+  private ftsSource?: SessionSearchFtsSource;
 
   constructor(options: {
     cache?: SessionLocalCache;
     defaultSearchOptions?: SearchOptions;
+    ftsSource?: SessionSearchFtsSource;
   } = {}) {
     this.cache = options.cache || getDefaultCache();
     this.defaultOptions = options.defaultSearchOptions || {};
+    this.ftsSource = options.ftsSource;
   }
 
   /**
    * Search sessions
+   *
+   * 可通过 ftsSource 参数（或构造时注入）走 FTS 主路径；
+   * 未注入 / DB 未就绪 / 短查询 / caseSensitive / useRegex 时回落内存搜索。
    */
-  search(query: string, options?: SearchOptions): SearchResults {
-    return searchSessions(query, { ...this.defaultOptions, ...options }, this.cache);
+  search(
+    query: string,
+    options?: SearchOptions,
+    ftsSource?: SessionSearchFtsSource
+  ): SearchResults {
+    return searchSessions(
+      query,
+      { ...this.defaultOptions, ...options },
+      this.cache,
+      ftsSource ?? this.ftsSource
+    );
   }
 
   /**

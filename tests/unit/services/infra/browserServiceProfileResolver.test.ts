@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest';
 import {
   createManagedBrowserLease,
   isManagedBrowserLeaseExpired,
+  listOrphanManagedBrowserSurfaceProfileDirs,
+  ORPHAN_MANAGED_BROWSER_SURFACE_PROFILE_POLICY,
   resolveManagedBrowserProfile,
   resolveManagedBrowserProxyConfig,
   shouldCleanupManagedBrowserProfile,
@@ -69,6 +71,30 @@ describe('browser service profile resolver', () => {
       temporary: true,
       isolatedRootDir: path.join('/tmp', 'code-agent-managed-browser-'),
     })).toBe(false);
+  });
+
+  it('lists orphan managed-browser-profile-surface-* dirs without deleting (list-only policy)', () => {
+    expect(ORPHAN_MANAGED_BROWSER_SURFACE_PROFILE_POLICY.action).toBe('list-only');
+    expect(ORPHAN_MANAGED_BROWSER_SURFACE_PROFILE_POLICY.matchPrefix)
+      .toBe('managed-browser-profile-surface-');
+    const userDataDir = path.join('/tmp', 'code-agent-user-data-orphans');
+    const listed = listOrphanManagedBrowserSurfaceProfileDirs(userDataDir, {
+      existsSync: () => true,
+      readdirSync: () => [
+        'managed-browser-profile',
+        'managed-browser-profile-surface-abc123',
+        'managed-browser-profile-surface-def456',
+        'other-dir',
+        'managed-browser-profile-agent-x',
+      ],
+    });
+    expect(listed).toEqual([
+      path.join(userDataDir, 'managed-browser-profile-surface-abc123'),
+      path.join(userDataDir, 'managed-browser-profile-surface-def456'),
+    ]);
+    // Shared personal dir and non-surface suffixes are not orphans under this policy.
+    expect(listed.some((entry) => entry.endsWith('managed-browser-profile'))).toBe(false);
+    expect(listed.some((entry) => entry.includes('agent-x'))).toBe(false);
   });
 
   it('creates managed browser leases with clamped TTL and expiry checks', () => {

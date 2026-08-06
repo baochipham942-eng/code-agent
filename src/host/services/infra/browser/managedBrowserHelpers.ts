@@ -281,6 +281,37 @@ export function shouldCleanupManagedBrowserProfile(profile: Pick<ManagedBrowserP
     && isPathInsideRoot(profile.profileDir, profile.isolatedRootDir || '');
 }
 
+/**
+ * List leftover personal-profile-looking dirs created when surface identities used
+ * persistent mode with a surface-hashed agent suffix (`managed-browser-profile-surface-*`).
+ * Strategy: list only — never silently delete (user may still want cookies/history).
+ */
+export function listOrphanManagedBrowserSurfaceProfileDirs(
+  userDataDir: string,
+  deps: { readdirSync?: (dir: string) => string[]; existsSync?: (path: string) => boolean } = {},
+): string[] {
+  const existsSync = deps.existsSync ?? fs.existsSync;
+  const readdirSync = deps.readdirSync ?? ((dir: string) => fs.readdirSync(dir));
+  if (!existsSync(userDataDir)) return [];
+  const prefix = `${MANAGED_BROWSER_PERSISTENT_PROFILE_ID}-surface-`;
+  try {
+    return readdirSync(userDataDir)
+      .filter((name) => name.startsWith(prefix))
+      .map((name) => path.join(userDataDir, name))
+      .sort();
+  } catch {
+    return [];
+  }
+}
+
+/** Orphan surface-profile cleanup policy (explicit; no auto-delete). */
+export const ORPHAN_MANAGED_BROWSER_SURFACE_PROFILE_POLICY = {
+  matchPrefix: `${MANAGED_BROWSER_PERSISTENT_PROFILE_ID}-surface-`,
+  action: 'list-only' as const,
+  rationale:
+    'Surface-hashed personal profile dirs may still hold user cookies/history; list for operator review, never silent rm.',
+};
+
 function normalizeProxyBypass(value: string[] | string | null | undefined): string[] {
   const items = Array.isArray(value)
     ? value

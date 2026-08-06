@@ -187,6 +187,17 @@ curl -s http://127.0.0.1:8182/ | grep -oE 'assets/index-[^"]*\.js'
 **槽间不共用**：数据目录、密钥、renderer 缓存都是独立的一套；换槽等于一台新机器，key 要重新配。
 CUA helper 仍只分 production / dev（所有槽共用 dev 那份），槽间各授权一次 TCC。
 
+**dev 包默认关 LTO**：`tauri:package:dev` 默认给 cargo 传 `CARGO_PROFILE_RELEASE_LTO=false CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16`
+（实测冷构建省 54%，体积只涨 0.5%；LTO 是发版优化，对验行为的测试包是纯浪费）。要验启动性能/时序时
+加 `NEO_DEV_FULL_LTO=1` 切回与发版包同构的 LTO 全开构建：
+
+```bash
+NEO_DEV_FULL_LTO=1 HTTPS_PROXY=http://127.0.0.1:7897 npm run tauri:build:dev
+```
+
+**本机已装 sccache 并全局启用**（`~/.cargo/config.toml` 的 `rustc-wrapper`）：新 worktree 的冷构建会
+命中缓存，不用手动配置。
+
 **cua helper 跨 worktree 缓存**：重签好的 `Agent Neo Computer Use*.app` 落在 repo 根的
 `.tauri-resources.noindex/`（gitignore），每个 worktree 各要一份。现在会自动镜像到
 `~/Library/Caches/agent-neo/cua/`（`NEO_CUA_CACHE_DIR` 可改），新 worktree 首次打包直接从缓存恢复，

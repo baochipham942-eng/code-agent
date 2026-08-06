@@ -63,3 +63,20 @@ describe('空态首屏：真新会话给欢迎页，恢复的历史会话写明�
     expect(screen.queryByTestId('neo-brand-mark')).toBeNull();
   });
 });
+
+// 通用建议卡的准入（2026-08-06 拍板）：只服务「不知道干什么」的空会话。会话带了
+// 上下文——资料库材料 pin 进来、或从空间/项目进来——就不摆，用户是带着目的来的，
+// 与他手上的事无关的卡是噪音。不做「按材料生成建议」，不为此加模型调用。
+describe('通用建议卡：有上下文就不摆', () => {
+  afterEach(() => cleanup());
+
+  it('纯新会话（无工作区、无 pin 材料）摆建议卡', () => {
+    render(<NewSessionWelcome onSend={() => {}} workingDirectory={null} />);
+    expect(screen.queryByText('做个能玩的小游戏')).not.toBeNull();
+  });
+
+  it('从空间/项目进来（带 workingDirectory）不摆建议卡', () => {
+    render(<NewSessionWelcome onSend={() => {}} workingDirectory="/repo/app" />);
+    expect(screen.queryByText('做个能玩的小游戏')).toBeNull();
+  });
+});

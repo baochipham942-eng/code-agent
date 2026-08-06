@@ -218,10 +218,13 @@ describe('ChatView session shell', () => {
     expect(html).toContain('flex-1 min-h-0 flex overflow-hidden relative');
     expect(html).toContain('flex-1 min-h-0 flex flex-col min-w-0');
     expect(html).toContain('flex-1 min-h-0 overflow-hidden');
-    expect(html).toContain('做个能玩的小游戏');
-    expect(html).toContain('出一张可交互数据图表');
-    expect(html).toContain('搜一份最新行业简报');
-    expect(html).toContain('梳理磁盘空间占用');
+    // 2026-08-06 拍板：会话带了上下文（这个夹具带工作区 /repo/code-agent）就不摆通用
+    // 建议卡——用户是带着目的进来的，贪吃蛇/图表这类与他手上的事无关的卡是噪音。
+    // 建议卡本身的内容契约（4 条、标题、prompt）由本文件下方独立用例继续守着。
+    expect(html).not.toContain('做个能玩的小游戏');
+    expect(html).not.toContain('出一张可交互数据图表');
+    expect(html).not.toContain('搜一份最新行业简报');
+    expect(html).not.toContain('梳理磁盘空间占用');
     // 2026-08-01 起：这个夹具是**历史**会话（有标题、有消息计数），空态首屏不再给它
     // 通用欢迎页——冷启动自动恢复的历史会话此前与真新会话不可区分，用户以为自己新开
     // 了一条，首条消息接进了旧会话。会话标题因此获准出现在这一句消歧文案里；

@@ -932,6 +932,17 @@ describe('macOS release fail-closed gates', () => {
     // （bundle id + 版本 + codesign --strict），否则等于把供应链锁定绕过去了。
     expect(cuaChannel).toContain('CUA_CACHE_DIR');
     expect(cuaChannel).toContain('NEO_CUA_CACHE_DIR');
+    // 缓存**不能**落 ~/Library/Caches：macOS 允许在磁盘压力下清空它，而触发条件恰好是
+    // 「大量构建」——这份缓存最该起作用的时候。2026-08-06 实测整个 agent-neo 缓存根被清掉。
+    // 只断言赋值那一行：文件里的警示注释本身就含 "Library/Caches"，全文匹配会误伤。
+    const cacheDirAssignment = cuaChannel
+      .split('\n')
+      .find((line) => line.startsWith('CUA_CACHE_DIR='));
+    expect(cacheDirAssignment).toBeDefined();
+    expect(cacheDirAssignment).toContain('${HOME}/.cache/agent-neo/cua');
+    expect(cacheDirAssignment).not.toContain('Library/Caches');
+    // 缓存没兜住时要能分辨成因（没播过种 / 被清掉 / 校验不过），否则三种情况长得一模一样
+    expect(stageCuaDriver).toContain('cache_diagnosis');
     expect(stageCuaDriver).toContain('app_ready "${CUA_CACHED_APP}"');
     expect(stageCuaDriver).toContain('app_ready "${STAGED_APP}"');
 

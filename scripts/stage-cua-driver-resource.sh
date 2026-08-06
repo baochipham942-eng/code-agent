@@ -101,11 +101,25 @@ if app_ready "${CUA_CACHED_APP}"; then
   echo "[stage-cua-driver-resource] 机器级缓存不可用，回退到 fetch: ${CUA_CACHED_APP}" >&2
 fi
 
+# 缓存为什么没兜住，要说清楚。只报 "missing staged" 的话，三种成因（从没播过种 / 目录被清掉 /
+# 缓存里那份校验不过）看起来一模一样，而处置完全不同——2026-08-06 就因为分不清，
+# 花了一轮排查才发现是 macOS 把整个缓存根目录清了。
+cache_diagnosis() {
+  if [[ ! -d "${CUA_CACHE_DIR}" ]]; then
+    echo "缓存目录不存在（${CUA_CACHE_DIR}）——本机还没播过种，或它被清掉了"
+  elif [[ ! -d "${CUA_CACHED_APP}" ]]; then
+    echo "缓存目录在，但没有本渠道那份（${CUA_CACHED_APP}）"
+  else
+    echo "缓存里那份未通过校验（bundle id / 版本 ${CUA_DRIVER_VERSION} / codesign 之一不符）：${CUA_CACHED_APP}"
+  fi
+}
+
 # 换渠道后必须带同一个 NEO_CHANNEL 去 fetch，否则重建出来的还是另一个渠道的产物。
 CHANNEL_PREFIX=""
 [[ "${NEO_CHANNEL:-production}" == "production" ]] || CHANNEL_PREFIX="NEO_CHANNEL=${NEO_CHANNEL} "
 cat >&2 <<EOF
 [stage-cua-driver-resource] missing staged ${CUA_APP_NAME}.app (bundle id ${CUA_BUNDLE_ID})
+机器级缓存: $(cache_diagnosis)
 Run one of:
   ${CHANNEL_PREFIX}CUA_FETCH_UPSTREAM=1 bash scripts/fetch-cua-driver.sh
   ${CHANNEL_PREFIX}bash scripts/fetch-cua-driver.sh

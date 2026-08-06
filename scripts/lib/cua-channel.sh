@@ -40,5 +40,10 @@ esac
 #
 # 缓存是**加速**不是真源：命中后仍走 app_ready()（bundle id + codesign --verify --strict），
 # 校验不过就当没有，继续报错让操作者去 fetch。
-CUA_CACHE_DIR="${NEO_CUA_CACHE_DIR:-${HOME}/Library/Caches/agent-neo/cua}"
+#
+# ⚠️ 路径**不能**放 `~/Library/Caches`（2026-08-06 实测踩坑）：那是 macOS 明确允许在磁盘
+# 压力下清理的目录，而触发条件恰好是「大量构建」——也就是这份缓存最该起作用的时候。
+# 当天 `~/Library/Caches/agent-neo` 与 `~/Library/Caches/Mozilla.sccache` 被同时清空。
+# 这份缓存的价值 = 省掉一次上游下载 + Developer ID 重签 + Apple 时间戳往返，不是可丢数据。
+CUA_CACHE_DIR="${NEO_CUA_CACHE_DIR:-${HOME}/.cache/agent-neo/cua}"
 CUA_CACHED_APP="${CUA_CACHE_DIR}/${CUA_APP_NAME}.app"

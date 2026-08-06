@@ -189,4 +189,4 @@ DEV_DATA_DIR_NAME="$(read_slot_field dataDirName)" || exit 1
 rm -rf "$HOME/$DEV_DATA_DIR_NAME/renderer-cache/active"
 echo "[install-dev] 已清本槽热更新缓存 ~/$DEV_DATA_DIR_NAME/renderer-cache/active"
 
-echo "Done. 测试包独立运行（数据目录 ~/$DEV_DATA_DIR_NAME）：open '/Applications/$APP_NAME.app'"
+echo "Done. 测试包独立运行（数据目录 ~/${DEV_DATA_DIR_NAME}）：open '/Applications/${APP_NAME}.app'"

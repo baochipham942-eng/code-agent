@@ -103,7 +103,9 @@ describe('dev build-info install gate', () => {
     expect(script).toContain('rm -rf "$HOME/$DEV_DATA_DIR_NAME/renderer-cache/active"');
     expect(script).not.toMatch(/rm -rf "\$HOME\/\$DEV_DATA_DIR_NAME\/renderer-cache"/);
     // 结尾提示语用真实槽位数据目录，不写死 ~/.code-agent-dev（槽 2 是 ~/.code-agent-dev2）
-    expect(script).toContain('数据目录 ~/$DEV_DATA_DIR_NAME');
+    // 花括号是必须的：裸 $VAR 紧跟全角字符时 bash 3.2 会把「）」吃进变量名，
+    // shell-fail-loud-lint 会因此报红（本批 CI 实测踩到）。
+    expect(script).toContain('数据目录 ~/${DEV_DATA_DIR_NAME}');
     expect(script).not.toContain('数据目录 ~/.code-agent-dev）：open');
   });
 

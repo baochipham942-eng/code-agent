@@ -3,8 +3,11 @@ import { publishBackgroundSubagentVisibility, resolveSingleSpawnRunScope } from 
 import { getEventBus } from '../../../src/host/services/eventing/bus';
 import type { BusEvent } from '../../../src/host/protocol/events/busTypes';
 import type { SubagentResult } from '../../../src/host/agent/subagentExecutorTypes';
-import { createScopedSwarmAgentId, type SwarmEvent } from '../../../src/shared/contract/swarm';
-import { getSpawnGuard, resetSpawnGuard } from '../../../src/host/agent/spawnGuard';
+import type { SwarmEvent } from '../../../src/shared/contract/swarm';
+import {
+  resetSingleSpawnVisibilityRegistry,
+  resolveSingleSpawnVisibility,
+} from '../../../src/host/agent/singleSpawnVisibilityRegistry';
 import { selectHasStoppableSwarmWork, useSwarmStore } from '../../../src/renderer/stores/swarmStore';
 
 function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
@@ -27,7 +30,7 @@ describe('single spawn background visibility', () => {
   afterEach(() => {
     unsubscribe?.();
     useSwarmStore.getState().reset();
-    resetSpawnGuard();
+    resetSingleSpawnVisibilityRegistry();
   });
 
   it('emitted single-agent lifecycle makes the existing composer stop predicate live, then clears it', async () => {
@@ -70,20 +73,33 @@ describe('single spawn background visibility', () => {
     });
   });
 
-  it('registers the degenerate run scope so the existing run-level stop cancels the agent', () => {
+  it('routes the synthetic visibility run to the stable legacy agent id only while work is live', async () => {
     const scope = resolveSingleSpawnRunScope({
       sessionId: 'session-single',
       runId: 'native-parent',
     }, 'session-single', 'agent_dynamic_cancel');
     expect(scope).toBeDefined();
-    const controller = new AbortController();
     const work = deferred<SubagentResult>();
-    const agentId = createScopedSwarmAgentId(scope!, 'agent_dynamic_cancel');
-    const guard = getSpawnGuard();
-    guard.register(agentId, 'dynamic', 'long task', work.promise, controller, { scope });
+    const agentId = 'agent_dynamic_cancel';
+    publishBackgroundSubagentVisibility({
+      promise: work.promise,
+      scope,
+      agentId,
+      agentName: 'Cancelable Agent',
+      role: 'dynamic',
+      task: 'long task',
+      startedAt: 100,
+      ownsRunLifecycle: true,
+    });
 
-    expect(guard.cancelRun(scope!)).toBe(1);
-    expect(controller.signal.aborted).toBe(true);
-    expect(guard.get(agentId, scope)?.status).toBe('cancelled');
+    expect(resolveSingleSpawnVisibility(scope!)).toEqual({
+      scope,
+      agentIds: [agentId],
+    });
+
+    work.resolve({ success: true, output: 'done', toolsUsed: [], iterations: 1 });
+    await work.promise;
+    await Promise.resolve();
+    expect(resolveSingleSpawnVisibility(scope!)).toBeUndefined();
   });
 });

@@ -6,6 +6,7 @@ import { getUserConfigDir } from '../../host/config/configPaths';
 import { ReadOnlySessionDatabase } from '../sessionDiagnostics/readOnlySessionDb';
 import { buildFailureDigest, buildTimeline } from '../sessionDiagnostics/sessionQueries';
 import { loadSessionPackageBuilder } from '../sessionDiagnostics/sessionPackageAdapter';
+import { shortSessionIdForFileName } from '../../shared/utils/id';
 
 function writeJson(value: unknown): void {
   process.stdout.write(`${JSON.stringify(value, null, 2)}\n`);
@@ -148,7 +149,10 @@ const exportCommand = new Command('export')
             db: db.getNativeDatabase(),
             privacyLevel: options.privacy as 'shareable' | 'full_local',
           });
-          const outputPath = path.join(options.out, `neo-session-${sessionId.slice(0, 8)}-transcript.jsonl`);
+          const outputPath = path.join(
+            options.out,
+            `neo-session-${shortSessionIdForFileName(sessionId)}-transcript.jsonl`,
+          );
           fs.writeFileSync(outputPath, jsonl, { mode: 0o600 });
           process.stdout.write(`${outputPath}\n`);
           return;

@@ -16,6 +16,7 @@ import { buildSessionLedger } from '../../services/core/sessionLedgerProjection'
 import { readSessionCost, readSwarmRunsForSession } from '../../services/core/sessionLedgerSources';
 import { buildDiagnosticBundle, gatherEnvFingerprint, sanitizeDiagnosticBundle } from '../../telemetry/diagnosticBundleService';
 import { exportSessionToMarkdown } from '../exportMarkdown';
+import { shortSessionIdForFileName } from '../../../shared/utils/id';
 import { extractLogWindow, sessionWindowDateKeys } from './logWindowExtractor';
 import { sanitizePackageText, sanitizePackageValue, type SessionPackagePrivacyLevel } from './packageSanitizer';
 import { projectSessionTranscript, transcriptToJsonl, type TranscriptProjectionResult } from './transcriptProjector';
@@ -184,7 +185,7 @@ function readTelemetrySummary(bundle: Awaited<ReturnType<typeof buildDiagnosticB
 
 function fileName(sessionId: string, builtAt: number): string {
   const stamp = new Date(builtAt).toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 15);
-  return `neo-session-${sessionId.slice(0, 8)}-${stamp}.zip`;
+  return `neo-session-${shortSessionIdForFileName(sessionId)}-${stamp}.zip`;
 }
 
 /** Reusable app/CLI entry point: one readonly DB input, one in-memory ZIP output. */

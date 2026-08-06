@@ -109,3 +109,13 @@ export function generateSessionId(): string {
 export function generatePermissionRequestId(): string {
   return `perm-${uuidv4()}`;
 }
+
+/**
+ * 取会话 ID 的可辨识短片段，用于导出文件名。
+ * 必须取尾部：`session_<时间戳>_<hash>` 的前 8 位恒为 `session_`，
+ * 本机 5029 个会话里前 8 位只有 95 个不同值，后 8 位有 5024 个。
+ */
+export function shortSessionIdForFileName(sessionId: string): string {
+  // 保留 `-` 和 `_`（文件名安全），但剔除 `.` 与路径分隔符，避免遍历与扩展名歧义。
+  return sessionId.replace(/[^A-Za-z0-9_-]/g, '').slice(-8) || 'session';
+}

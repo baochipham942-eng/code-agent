@@ -29,12 +29,31 @@ export type ToolTag =
  */
 export type ToolSource = 'builtin' | 'mcp' | 'dynamic';
 
+/**
+ * 声明工具的文件写目标来自哪里，供路径 authority 在 dispatch 前统一裁决。
+ * 这是 effect 元数据，不是工具名白名单；新增写能力必须声明自己的目标来源。
+ */
+export type ToolPathAuthorityDescriptor =
+  | { kind: 'path'; pathParameter: string }
+  | { kind: 'shell'; commandParameter: string }
+  | { kind: 'global-memory'; pathParameter: string };
+
+export interface DirectiveMemoryWriteGrant {
+  authority: 'directive-memory-write';
+  fingerprint: string;
+  requestId: string;
+  confirmedAt: number;
+}
+
 export interface ToolDefinition {
   name: string;
   description: string;
   inputSchema: JSONSchema;
   requiresPermission: boolean;
   permissionLevel: PermissionLevel;
+
+  /** 文件写目标的声明式来源；路径 authority 统一消费。 */
+  pathAuthority?: readonly ToolPathAuthorityDescriptor[];
 
   /**
    * 只读工具标记（来自 protocol schema readOnly / MCP readOnlyHint）。

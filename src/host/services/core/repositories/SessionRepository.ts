@@ -900,10 +900,7 @@ export class SessionRepository {
     return this.ftsRepo.searchSessionMessagesFts(query, options);
   }
 
-  countSessionMessagesFts(
-    query: string,
-    options: SessionMessagesFtsCountOptions = {},
-  ): { matches: number; sessions: number } {
+  countSessionMessagesFts(query: string, options: SessionMessagesFtsCountOptions = {}) {
     return this.ftsRepo.countSessionMessagesFts(query, options);
   }
 

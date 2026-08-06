@@ -80,6 +80,7 @@ import {
 import { resolveStickyStrictSkillInvocation } from './conversationRuntimeStickySkill';
 import { buildStrictToolsetNotice } from '../../tools/skillBoundaryScope';
 import { extractUserRequest } from '../turnScaffold';
+import { TOOL_ARGS_REPAIR_MAX_ATTEMPTS } from '../../../shared/constants/repair';
 
 
 const logger = createLogger('AgentLoop');
@@ -339,6 +340,7 @@ export class ConversationRuntime {
     const baseRunTraceContext = getActiveRunTraceContext() ?? this.ctx.runTraceContext;
 
     let iterations = 0;
+    let softValidationRetries = 0;
     let userTurnId: string | undefined;
     let terminal: RunTerminalInfo = { status: 'completed' };
     let runError: unknown;
@@ -648,6 +650,18 @@ export class ConversationRuntime {
             this.contextAssembly.injectSystemMessage(doomCheck.nudge, 'stagnation-guard');
           }
           const toolAction = await this.messageProcessor.handleToolResponse(response, wasForceExecuted, iterations, langfuse);
+          if (
+            toolAction === 'continue-soft-validation'
+            && softValidationRetries < TOOL_ARGS_REPAIR_MAX_ATTEMPTS
+          ) {
+            softValidationRetries++;
+            iterations--;
+            logger.info('[AgentLoop] Tool schema repair uses its separate retry pool', {
+              softValidationRetries,
+              limit: TOOL_ARGS_REPAIR_MAX_ATTEMPTS,
+            });
+            continue;
+          }
           if (toolAction === 'continue') continue;
         }
 

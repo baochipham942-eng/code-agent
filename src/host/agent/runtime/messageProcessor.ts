@@ -53,6 +53,7 @@ import { getHandoffProposalService } from '../../handoff/handoffProposalService'
 import { extractHandoffProposalTail } from '../../handoff/handoffTail';
 import {
   buildForcedFinalAssistantContent,
+  hasOnlySoftValidationFailures,
   isArtifactDirectoryBootstrapOnly,
   isArtifactRepairTargetFileRead,
   sanitizeToolArgumentsForObservation,
@@ -607,7 +608,7 @@ export class MessageProcessor {
     wasForceExecuted: boolean,
     iterations: number,
     langfuse: LangfuseSpanFacade,
-  ): Promise<'continue' | 'break'> {
+  ): Promise<'continue' | 'continue-soft-validation' | 'break'> {
     const toolCalls = response.toolCalls ?? [];
     const requestedToolNames = toolCalls.map((toolCall) => toolCall.name).join(', ');
 
@@ -1130,7 +1131,7 @@ export class MessageProcessor {
     }
 
     logger.debug(` >>>>>> Iteration ${iterations} END (continuing) <<<<<<`);
-    return 'continue';
+    return hasOnlySoftValidationFailures(toolResults) ? 'continue-soft-validation' : 'continue';
   }
 
   /**

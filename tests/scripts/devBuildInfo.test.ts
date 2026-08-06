@@ -94,6 +94,44 @@ describe('dev build-info install gate', () => {
     expect(red.stderr).toContain('dist/renderer/index.html');
   });
 
+  it('clears only this slot renderer hot-update cache after install', () => {
+    const script = readInstallScript();
+
+    // 槽名从 .dev-slot.json 读，不在 shell 里另算一遍
+    expect(script).toContain('read_slot_field dataDirName');
+    // 只删 renderer-cache/active，不删整个 renderer-cache/
+    expect(script).toContain('rm -rf "$HOME/$DEV_DATA_DIR_NAME/renderer-cache/active"');
+    expect(script).not.toMatch(/rm -rf "\$HOME\/\$DEV_DATA_DIR_NAME\/renderer-cache"/);
+    // 结尾提示语用真实槽位数据目录，不写死 ~/.code-agent-dev（槽 2 是 ~/.code-agent-dev2）
+    // 花括号是必须的：裸 $VAR 紧跟全角字符时 bash 3.2 会把「）」吃进变量名，
+    // shell-fail-loud-lint 会因此报红（本批 CI 实测踩到）。
+    expect(script).toContain('数据目录 ~/${DEV_DATA_DIR_NAME}');
+    expect(script).not.toContain('数据目录 ~/.code-agent-dev）：open');
+  });
+
+  it('has no DMG detach leftovers (bundle.targets is app-only)', () => {
+    const script = readInstallScript();
+
+    // bundle.targets 已是 ["app"]，不产 DMG；且 "$APP_NAME"* 前缀 glob 会让槽 1 命中槽 2 的卷
+    expect(script).not.toContain('hdiutil detach');
+    expect(script).not.toContain('/Volumes/');
+  });
+
+  it('disables LTO for dev packages by default with a NEO_DEV_FULL_LTO escape hatch', () => {
+    const packageJson = JSON.parse(readFileSync(resolve(repoRoot, 'package.json'), 'utf8')) as {
+      scripts?: Record<string, string>;
+    };
+    const devScript = packageJson.scripts?.['tauri:package:dev'];
+
+    // 默认关 LTO；NEO_DEV_FULL_LTO=1 时不带这两个变量，让 Cargo.toml 的发版配置生效
+    expect(devScript).toContain('NEO_DEV_FULL_LTO');
+    expect(devScript).toContain('CARGO_PROFILE_RELEASE_LTO=false');
+    expect(devScript).toContain('CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16');
+    // 发版链路一律不带 LTO 覆盖
+    expect(packageJson.scripts?.['tauri:package']).not.toContain('CARGO_PROFILE_RELEASE');
+    expect(packageJson.scripts?.['tauri:release:bundle']).not.toContain('CARGO_PROFILE_RELEASE');
+  });
+
   it('writes build-info after copying the app and before resigning it', () => {
     const script = readInstallScript();
     const copyIndex = script.indexOf('cp -R "$SOURCE_APP" "/Applications/$APP_NAME.app"');

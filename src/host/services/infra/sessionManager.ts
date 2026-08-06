@@ -4,6 +4,7 @@
 // ============================================================================
 
 import { AppWindow } from '../../platform';
+import { homedir } from 'node:os';
 import { getDatabase, type StoredSession } from '../core';
 import { getToolCache } from './toolCache';
 import { getAuthService } from '../auth/authService';
@@ -126,6 +127,10 @@ export class SessionManager implements Disposable {
     return content
       .replace(/\r\n/g, '\n')
       .trim()
+      // auxiliary run 的 prompt 在消息表里可能已把 ~/ 展开成绝对主目录，而 telemetry
+      // 保留模型原文。两者语义相同；若不归一，会把已有 isMeta user 误补成一条可见
+      // user，破坏父会话 assistant(tool-call) / tool-result 的连续配对。
+      .replace(/~\//g, `${homedir()}/`)
       .replace(/\bhttps?:\/\/[^\s<>"'`]+/giu, (rawUrl) => {
         // telemetry_turns 没有保存 user message/clientMessageId，不能做稳定 ID join。
         // 对两侧文本统一走 WHATWG URL canonicalization，消除补根路径斜杠、
@@ -753,7 +758,16 @@ export class SessionManager implements Disposable {
   async patchSessionMetadata(
     sessionId: string,
     patch: Record<string, unknown>,
-    options?: { modelConfig?: { provider: string; model: string }; updatedAt?: number },
+    options?: {
+      modelConfig?: { provider: string; model: string };
+      updatedAt?: number;
+      /**
+       * Broadcast the resolved metadata snapshot when the patch changes a
+       * renderer-visible session identity. Generic host-only metadata patches
+       * stay quiet so their patch semantics cannot be mistaken for a merge.
+       */
+      notifyRenderer?: boolean;
+    },
   ): Promise<boolean> {
     const db = getDatabase();
     const ownerId = this.currentOwnerUserId();
@@ -761,6 +775,8 @@ export class SessionManager implements Disposable {
     const patched = db.patchSessionMetadata(sessionId, patch, options);
     if (!patched) return false;
 
+    let resolvedMetadata: Record<string, unknown> | undefined;
+    const resolvedUpdatedAt = options?.updatedAt ?? Date.now();
     if (this.sessionCache.has(sessionId)) {
       const cached = this.sessionCache.get(sessionId)!;
       const metadata = { ...(cached.metadata ?? {}) };
@@ -771,12 +787,24 @@ export class SessionManager implements Disposable {
       Object.assign(cached, {
         metadata,
         ...(options?.modelConfig ? { modelConfig: { ...cached.modelConfig, ...options.modelConfig } } : {}),
-        updatedAt: options?.updatedAt ?? Date.now(),
+        updatedAt: resolvedUpdatedAt,
+      });
+      resolvedMetadata = metadata;
+    } else if (options?.notifyRenderer) {
+      resolvedMetadata = db.getSession(sessionId, { userId: ownerId })?.metadata;
+    }
+
+    if (options?.notifyRenderer && resolvedMetadata) {
+      // 广播完整快照，避免把 patch 中的 null 删除语义交给 renderer 的整量 merge。
+      this.notifySessionUpdated(sessionId, {
+        metadata: resolvedMetadata,
+        updatedAt: resolvedUpdatedAt,
       });
     }
 
-    // 不广播 SESSION_UPDATED：patch 语义（值 null=删 key）与前端整量 merge 语义不同，
-    // 且 modelOverride 标记是 host 内部状态，前端经 getModelOverride 读取。
+    // 默认不广播 SESSION_UPDATED：patch 语义（值 null=删 key）与前端整量 merge 语义不同，
+    // 且 modelOverride 标记是 host 内部状态，前端经 getModelOverride 读取。只有明确标成
+    // renderer-visible 的身份变更才走上面的完整快照广播。
     db.logAuditEvent('session_metadata_patched', { sessionId, keys: Object.keys(patch) }, sessionId);
     return true;
   }

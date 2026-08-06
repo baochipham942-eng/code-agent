@@ -112,7 +112,7 @@ const { beginVoiceDispatch, endVoiceDispatch, dispatchVoiceIntent } =
   await import('../../src/host/services/voice/voiceAgentCoordinator');
 const { toSpokenSummary, resolveNarrationSpeaker } =
   await import('../../src/host/services/voice/voiceNarration');
-const { requiresVoiceDispatchTool, resolveVoiceRouting } = await import('../../src/host/services/voice/voiceRouting');
+const { requiresVoiceActionTool, resolveVoiceActionRoute, resolveVoiceRouting } = await import('../../src/host/services/voice/voiceRouting');
 
 type Narration = { workItemId: string; status: string; title: string; summary: string; speaker?: { displayName: string } };
 
@@ -390,10 +390,29 @@ describe('④ prompt 不许把分层暴露给用户', () => {
     expect(instructions).toContain('工具没返回成功就必须如实说没有派出');
   });
 
-  it('明确点名派发工具才升级为 required，否定和讨论保持 auto', () => {
-    expect(requiresVoiceDispatchTool('请立即调用英文名 spawn task 的派发任务工具')).toBe(true);
-    expect(requiresVoiceDispatchTool('请再使用 spawn_task 派一件活')).toBe(true);
-    expect(requiresVoiceDispatchTool('不要调用 spawn task')).toBe(false);
-    expect(requiresVoiceDispatchTool('spawn_task 是什么')).toBe(false);
+  it('派发与已派任务的控制指令升级为 required，否定和讨论保持 auto', () => {
+    expect(requiresVoiceActionTool('请立即调用英文名 spawn task 的派发任务工具')).toBe(true);
+    expect(requiresVoiceActionTool('请再使用 spawn_task 派一件活')).toBe(true);
+    expect(requiresVoiceActionTool('查询那件继续改成跳过等待')).toBe(true);
+    expect(requiresVoiceActionTool('报告那件现在怎么样了')).toBe(true);
+    expect(requiresVoiceActionTool('停掉一个任务')).toBe(true);
+    expect(requiresVoiceActionTool('不要调用 spawn task')).toBe(false);
+    expect(requiresVoiceActionTool('spawn_task 是什么')).toBe(false);
+  });
+
+  it('明确的语音控制语句由 Host 确定性路由，并保留短名目标', () => {
+    expect(resolveVoiceActionRoute('查询那件继续改成跳过等待')).toEqual({
+      toolName: 'steer_task',
+      rawArguments: JSON.stringify({ instruction: '查询那件继续改成跳过等待', target: '查询' }),
+    });
+    expect(resolveVoiceActionRoute('报告那件现在怎么样了')).toEqual({
+      toolName: 'task_status',
+      rawArguments: '{}',
+    });
+    expect(resolveVoiceActionRoute('停掉一个任务')).toEqual({
+      toolName: 'cancel_task',
+      rawArguments: '{}',
+    });
+    expect(resolveVoiceActionRoute('我们讨论一下任务状态设计')).toBeUndefined();
   });
 });

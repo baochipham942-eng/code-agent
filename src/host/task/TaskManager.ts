@@ -47,6 +47,10 @@ function wasMessagePersistedByContextAssembly(message: Message): boolean {
   // marker 标记（同 systemContextStack.ts）：以 symbol 键读取，显式收窄到 symbol 索引类型而非 any
   return Boolean((message as unknown as Record<symbol, unknown>)[CONTEXT_ASSEMBLY_PERSISTED_MESSAGE]);
 }
+
+function isInferenceHistoryMessage(message: Message): boolean {
+  return !message.isMeta && message.visibility !== 'rewound';
+}
 // ============================================================================
 // Types
 // ============================================================================
@@ -651,15 +655,21 @@ export class TaskManager extends EventEmitter {
    * @param messages - 历史消息数组
    */
   setSessionContext(sessionId: string, messages: Message[]): void {
+    // auxiliary run 的中间消息与工具结果会以 isMeta=true 回写到同一会话，供审计和
+    // 任务状态投影使用，但不能重新灌进前台 orchestrator 的模型历史。否则用户在后台
+    // 任务运行期间重新打开会话后，序列会变成：
+    // assistant(spawn_task) -> meta user(child prompt) -> tool(spawn accepted)，
+    // AI SDK 会把本来存在的 tool result 判成缺失，后续正常聊天直接失败。
+    const inferenceMessages = messages.filter(isInferenceHistoryMessage);
     const wrapper = this.activeOrchestrators.get(sessionId);
     if (wrapper) {
-      wrapper.orchestrator.setMessages(messages);
-      logger.debug(`Session context set for ${sessionId}, ${messages.length} messages`);
+      wrapper.orchestrator.setMessages(inferenceMessages);
+      logger.debug(`Session context set for ${sessionId}, ${inferenceMessages.length} inference messages`);
     } else {
       // 如果 Orchestrator 还不存在，先创建再设置
       const newWrapper = this.getOrCreateOrchestrator(sessionId);
-      newWrapper.orchestrator.setMessages(messages);
-      logger.debug(`Created orchestrator and set context for ${sessionId}, ${messages.length} messages`);
+      newWrapper.orchestrator.setMessages(inferenceMessages);
+      logger.debug(`Created orchestrator and set context for ${sessionId}, ${inferenceMessages.length} inference messages`);
     }
   }
 

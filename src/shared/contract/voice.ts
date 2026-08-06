@@ -39,7 +39,7 @@ export type VoiceWorkFailureMarker =
  * 之间只有一条判据：ADR-050 意义上的机器产物证据（见 voiceWorkEvidence.ts）。
  */
 export type VoiceWorkItemStatus = 'queued' | 'running' | 'done' | 'unverified' | 'failed' | 'cancelled';
-export type VoiceToolCallOrigin = 'function_call' | 'xml_fallback';
+export type VoiceToolCallOrigin = 'function_call' | 'xml_fallback' | 'host_routed';
 
 export interface VoiceWorkItem {
   id: string;

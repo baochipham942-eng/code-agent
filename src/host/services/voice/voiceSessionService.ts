@@ -26,7 +26,7 @@ import {
   getRealtimeVoiceProviderApiKey,
   resolveConfiguredRealtimeVoiceProfile,
 } from './customRealtimeVoiceProviders';
-import { requiresVoiceDispatchTool, resolveVoiceRouting } from './voiceRouting';
+import { requiresVoiceActionTool, resolveVoiceActionRoute, resolveVoiceRouting } from './voiceRouting';
 import { beginVoiceDispatch, endVoiceDispatch, pushVoiceTranscript, setVoiceDispatchFocus } from './voiceAgentCoordinator';
 import { composeVoiceInstructions, focusChanged, type VoiceContinuityContext } from './voiceContextAssembler';
 import { isVoiceScreenContextSupported } from './voiceScreenContext';
@@ -260,15 +260,31 @@ function rememberCancelledResponse(session: ActiveSession, responseId: string): 
   }
 }
 
-function requestResponse(session: ActiveSession, userFinal: string): void {
+async function requestResponse(session: ActiveSession, userFinal: string): Promise<void> {
   if (session.upstream.kind !== 'relay') return;
   const latest = userFinal.trim();
+  const route = resolveVoiceActionRoute(latest);
+  if (route && session.voiceToolsAvailable) {
+    logger.info('voice action tool accepted', {
+      provider: session.upstream.provider,
+      origin: 'host_routed',
+      toolName: route.toolName,
+    });
+    const output = await executeVoiceTool(route.toolName, route.rawArguments, 'host_routed');
+    if (active?.id !== session.id || session.ending || session.upstream.kind !== 'relay') return;
+    session.upstream.respond([
+      'Host 已按用户最新一句话执行了对应工具。只简短说明工具结果，不要再次调用工具。',
+      `用户最新一句话：${latest}`,
+      `工具结果：${output}`,
+    ].join('\n'), 'auto');
+    return;
+  }
   session.upstream.respond(latest
     ? [
         '只回应并严格执行用户最新一句话，不要继续被取消回复的目标或内容。',
         `用户最新一句话：${latest}`,
       ].join('\n')
-    : undefined, requiresVoiceDispatchTool(latest) ? 'required' : 'auto');
+    : undefined, requiresVoiceActionTool(latest) ? 'required' : 'auto');
 }
 
 function findInterruptCandidateByItemId(
@@ -303,7 +319,7 @@ function evaluateInterrupt(
   const resolved = resolveInterruptCandidate(session, identity);
   const candidateId = resolved?.candidateId;
   if (!candidateId) {
-    if (stage === 'final' && text.trim()) requestResponse(session, text);
+    if (stage === 'final' && text.trim()) void requestResponse(session, text);
     return;
   }
   const candidate = resolved.candidate;
@@ -355,7 +371,7 @@ function evaluateInterrupt(
 
   if (stage === 'final' && decision.shouldRespond && !candidate.responseRequested) {
     candidate.responseRequested = true;
-    requestResponse(session, text);
+    void requestResponse(session, text);
   }
 }
 
@@ -469,7 +485,7 @@ async function persistTranscript(
  */
 function markSessionHadLiveVoice(neoSessionId: string): void {
   void getSessionManager()
-    .patchSessionMetadata(neoSessionId, { hadLiveVoice: true })
+    .patchSessionMetadata(neoSessionId, { hadLiveVoice: true }, { notifyRenderer: true })
     .catch((err: unknown) => {
       logger.warn('failed to mark session as live-voice', {
         message: err instanceof Error ? err.message : 'unknown',

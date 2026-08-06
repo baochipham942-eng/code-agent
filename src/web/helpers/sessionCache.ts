@@ -33,6 +33,8 @@ export interface CachedMessage {
   artifacts?: Artifact[];
   attachments?: MessageAttachment[];
   metadata?: Message['metadata'];
+  visibility?: Message['visibility'];
+  isMeta?: boolean;
 }
 
 export interface InMemorySession {
@@ -111,6 +113,8 @@ export function toCachedSessionMessages(messages: Message[]): CachedMessage[] {
         artifacts: message.artifacts,
         attachments: sanitizeAttachmentsForPersistence(message.attachments),
         metadata: message.metadata,
+        ...(message.visibility ? { visibility: message.visibility } : {}),
+        ...(message.isMeta ? { isMeta: true } : {}),
       };
     })
     .filter((message): message is CachedMessage => Boolean(message));

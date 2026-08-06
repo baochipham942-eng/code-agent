@@ -98,6 +98,38 @@ describe('TaskManager message event persistence', () => {
     orchestratorMocks.configs.length = 0;
   });
 
+  it('excludes auxiliary meta history when rehydrating the foreground orchestrator', () => {
+    const manager = new TaskManager({ maxConcurrentTasks: 1 });
+    manager.initialize({ configService: {} as never, onAgentEvent: vi.fn() });
+    const messages: Message[] = [
+      { id: 'user-1', role: 'user', content: 'start task', timestamp: 1 },
+      {
+        id: 'assistant-spawn',
+        role: 'assistant',
+        content: 'starting',
+        timestamp: 2,
+        toolCalls: [{ id: 'call-spawn', name: 'spawn_task', arguments: {} }],
+      },
+      { id: 'child-prompt', role: 'user', content: 'child work', timestamp: 3, isMeta: true },
+      {
+        id: 'spawn-result',
+        role: 'tool',
+        content: 'accepted',
+        timestamp: 4,
+        toolResults: [{ toolCallId: 'call-spawn', success: true, output: 'accepted' }],
+      },
+      { id: 'rewound', role: 'assistant', content: 'old branch', timestamp: 5, visibility: 'rewound' },
+    ];
+
+    manager.setSessionContext('session-1', messages);
+
+    expect(orchestratorMocks.setMessages).toHaveBeenCalledWith([
+      messages[0],
+      messages[1],
+      messages[3],
+    ]);
+  });
+
   it('runs two auxiliary tasks in one session and cancels only the addressed task', async () => {
     const manager = new TaskManager({ maxConcurrentTasks: 1 });
     manager.initialize({ configService: {} as never, onAgentEvent: vi.fn() });

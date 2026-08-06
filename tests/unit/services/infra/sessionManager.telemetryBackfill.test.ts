@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { homedir } from 'node:os';
 
 const telemetryRows: Array<{ id: string; user_prompt: string; start_time: number }> = [];
 const existingRows: Array<{ content: string }> = [];
@@ -101,5 +102,21 @@ describe('SessionManager telemetry user prompt backfill', () => {
         content: '检查 https://example.org/',
       }),
     }]);
+  });
+
+  it('does not backfill an auxiliary meta prompt whose home path was expanded during persistence', async () => {
+    existingRows.push({
+      content: `调研 React 19.2 并写入 ${homedir()}/react-19.2-summary.md`,
+    });
+    telemetryRows.push({
+      id: 'auxiliary-home-path',
+      user_prompt: '调研 React 19.2 并写入 ~/react-19.2-summary.md',
+      start_time: 1_785_600_000_300,
+    });
+
+    await expect(backfill()).resolves.toBe(0);
+
+    expect(dbMock.addMessage).not.toHaveBeenCalled();
+    expect(insertedMessages).toHaveLength(0);
   });
 });

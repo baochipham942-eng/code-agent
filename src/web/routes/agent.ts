@@ -858,7 +858,14 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
 
       // 加载历史消息 + 当前用户消息
       const cachedHistory = await sessionStore.loadSessionHistoryForRun(sessionId);
-      const history = cachedHistory.map(({
+      // The web-native route hydrates the shared session projection directly. Background
+      // child prompts are persisted there as meta messages, but they must never enter the
+      // foreground model transcript: doing so can split an assistant tool call from its
+      // tool result and make the provider reject the next user turn as malformed history.
+      const inferenceHistory = cachedHistory.filter(
+        (message) => !message.isMeta && message.visibility !== 'rewound',
+      );
+      const history = inferenceHistory.map(({
         id,
         role,
         content,

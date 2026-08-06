@@ -75,3 +75,11 @@ export function isArtifactDirectoryBootstrapOnly(toolCall: ToolCall, result: Too
   if (!command) return false;
   return /^mkdir\s+-p\s+/.test(command);
 }
+
+export function hasOnlySoftValidationFailures(results: ToolResult[]): boolean {
+  return results.length > 0 && results.every((result) => (
+    !result.success
+    && result.metadata?.validationFailed === true
+    && result.metadata?.repairExhausted !== true
+  ));
+}

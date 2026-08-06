@@ -425,8 +425,13 @@ export const TaskWorkspaceOverview: React.FC = () => {
   // 快照对「无 sessionId 的注入项」是跨会话可见的，直接拿它判定会让非组队会话也长出
   // Todo 模块。成员条那份解析（MemberConversationView 也按它 find）才是成员的定义，
   // 交集之外的行既点不进去也不该占位。
+  // 概览这份成员级 Todo 只服务**组队**会话（≥2 名成员）。单个后台 agent（单发
+  // spawn 转后台）的可见性由成员条承担——它在那儿能看能停，概览再铺一行既重复，
+  // 又会让「账本里躺着一名成员」的普通会话凭空长出 Todo 模块（2026-08-06 拍板 C；
+  // e2e workbench-overview-preview-first 两次抓到这个形态）。
   const memberPills = useSessionMembers(currentSessionId);
   const memberRows = useMemo(() => {
+    if (memberPills.length < 2) return [];
     const keys = new Set(memberPills.map((pill) => pill.key));
     return runWorkbench.subagents.filter((agent) => keys.has(agent.id));
   }, [memberPills, runWorkbench.subagents]);

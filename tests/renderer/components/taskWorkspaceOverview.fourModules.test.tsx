@@ -453,14 +453,37 @@ describe('Todo 模块：组队会话成员级清单', () => {
   // workflow 子 agent 也在 runWorkbench.subagents 里，而 workflow 快照对「无 sessionId
   // 的注入项」跨会话可见——不过滤就会让非组队会话也长出 Todo 模块（e2e 实测）。
   it('只渲染本会话成员：解析不出成员的行整条不出现', () => {
+    // 组队成员是 a/b，subagents 里额外混进一个解析不出成员的 c（workflow 注入项）
+    runWorkbenchState.subagents = [
+      ...members,
+      {
+        id: 'agent-c',
+        parentRunId: 'run-1',
+        role: '外来项',
+        status: 'running',
+        inputSummary: '不属于本会话',
+        lastOutput: '',
+      },
+    ] as never;
+    memberPills.pills = [
+      { key: 'agent-a', roleId: 'analyst', name: '知微', status: 'running', isLead: false },
+      { key: 'agent-b', roleId: 'writer', name: '青禾', status: 'completed', isLead: false },
+    ];
+
+    render(<TaskWorkspaceOverview />);
+    expect(screen.getAllByTestId('subagent-run-row')).toHaveLength(2);
+    expect(screen.getByTestId('overview-todo-module').textContent).not.toContain('外来项');
+  });
+
+  it('只有一个成员时 Todo 不铺成员清单（单发可见性归成员条，2026-08-06 拍板 C）', () => {
     runWorkbenchState.subagents = members as never;
     memberPills.pills = [
       { key: 'agent-a', roleId: 'analyst', name: '知微', status: 'running', isLead: false },
     ];
+    runWorkbenchState.tasks = [];
 
     render(<TaskWorkspaceOverview />);
-    expect(screen.getAllByTestId('subagent-run-row')).toHaveLength(1);
-    expect(screen.getByTestId('overview-todo-module').textContent).not.toContain('青禾');
+    expect(screen.queryByTestId('overview-todo-module')).toBeNull();
   });
 
   it('一个成员都解析不出来时，Todo 模块不因 subagents 而出现', () => {

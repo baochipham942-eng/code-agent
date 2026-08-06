@@ -104,6 +104,7 @@ export interface AgentTeamParentProjectionInput {
   logicalOperationId: string;
   sideEffect: boolean;
   now: number;
+  initialStatus?: 'created' | 'running';
 }
 
 export interface AgentTeamParentTerminalInput {

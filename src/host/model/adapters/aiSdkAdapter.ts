@@ -20,6 +20,7 @@
 
 import { generateText, streamText, jsonSchema, tool as aiTool } from 'ai';
 import { normalizeAiSdkUsage } from '../providers/wrappers/usageNormalization';
+import { extractToolCallMeta } from '../providers/toolCallMeta';
 import type {
   LanguageModel,
   ModelMessage as AiModelMessage,
@@ -784,8 +785,9 @@ async function generateViaAiSdk(params: {
   const toolCalls: ToolCall[] = (result.toolCalls ?? []).map((tc) => ({
     id: tc.toolCallId,
     name: tc.toolName,
-    // 对齐 openaiWrapper：arguments 为已解析对象
-    arguments: (tc.input ?? {}) as ToolCall['arguments'],
+    // AI SDK custom provider 的非流式入口与 wrapper 共用 envelope 解析器。
+    // `_meta` 只属于 UI 语义，不能落入工具业务参数。
+    ...extractToolCallMeta(tc.input ?? {}),
   }));
 
   logger.debug('inferenceViaAiSdk done', {
@@ -876,7 +878,7 @@ function buildStreamResponse(acc: StreamAccumulator, config: ModelConfig): Model
       id: t.id,
       name: t.name,
       // 权威 input（已解析对象）优先；provider 未在 tool-call 给 input 时回落解析累积的 argsText。
-      arguments: (t.input ?? safeParse(t.argsText)) as ToolCall['arguments'],
+      ...extractToolCallMeta(t.input ?? safeParse(t.argsText)),
     }));
 
   logger.debug('inferenceViaAiSdk done', {

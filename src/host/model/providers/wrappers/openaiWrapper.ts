@@ -13,6 +13,7 @@ import { z } from 'zod';
 import type { ToolCall } from '../../../../shared/contract';
 import type { ModelResponse } from '../../types';
 import { logger, safeJsonParse } from '../providerRuntime';
+import { extractToolCallMeta } from '../toolCallMeta';
 import { normalizeOpenAIUsage } from './usageNormalization';
 
 // ── helpers ───────────────────────────────────────────────────────────────
@@ -242,10 +243,11 @@ export function parseOpenAIResponse(raw: unknown): ModelResponse {
         return { type: 'text', content };
       }
 
+      const extracted = extractToolCallMeta(args);
       toolCalls.push({
         id: tc.id,
         name: normalizedName,
-        arguments: args,
+        ...extracted,
       });
     }
 
@@ -292,13 +294,14 @@ export function parseOpenAIResponse(raw: unknown): ModelResponse {
     const args = safeJsonParse(argsStr);
     if (!args.__parseError) {
       logger.info(' Parsed text-based tool call:', toolName);
+      const extracted = extractToolCallMeta(args);
       return {
         type: 'tool_use',
         toolCalls: [
           {
             id: `text-${Date.now()}`,
             name: toolName,
-            arguments: args,
+            ...extracted,
           },
         ],
         ...(usage ? { usage } : {}),

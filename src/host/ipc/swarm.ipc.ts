@@ -19,6 +19,10 @@ import type { Message } from '../../shared/contract';
 import type { SwarmRunDetail } from '../../shared/contract/swarmTrace';
 import { getSwarmServices } from '../agent/swarmServices';
 import { getSwarmEventEmitter } from '../agent/swarmEventPublisher';
+import {
+  hasSingleSpawnVisibilityAgent,
+  resolveSingleSpawnVisibility,
+} from '../agent/singleSpawnVisibilityRegistry';
 import { createLogger } from '../services/infra/logger';
 import { getSessionManager } from '../services';
 import { getEventBus } from '../services/eventing/bus';
@@ -91,13 +95,14 @@ function hasExplicitSwarmScope(event: unknown): event is SwarmEvent {
 function resolveRunScope(ref: SwarmRunRef): SwarmRunScope | null {
   const coordinator = getSwarmServices().parallelCoordinators.getByRun(ref);
   const scope = coordinator?.getScope();
-  if (!scope || !isSameSwarmRun(scope, ref)) return null;
-  return scope;
+  if (scope && isSameSwarmRun(scope, ref)) return scope;
+  return resolveSingleSpawnVisibility(ref)?.scope ?? null;
 }
 
 function resolveAgentScope(ref: SwarmAgentRef): SwarmRunScope | null {
   const scope = resolveRunScope(ref);
   const parsed = parseScopedSwarmAgentId(ref.agentId);
+  if (scope && hasSingleSpawnVisibilityAgent(ref, ref.agentId)) return scope;
   if (
     !scope
     || parsed?.scope.sessionId !== scope.sessionId
@@ -347,6 +352,9 @@ export function registerSwarmHandlers(
       services.planApproval.cancelRun(scope, 'swarm_cancelled');
       services.launchApproval.cancelRun(scope, 'swarm_cancelled');
       services.spawnGuard.cancelRun(scope, 'swarm_cancelled');
+      for (const agentId of resolveSingleSpawnVisibility(scope)?.agentIds ?? []) {
+        services.spawnGuard.cancel(agentId);
+      }
       services.parallelCoordinators.abortRun(scope, 'swarm_cancelled');
       getSwarmEventEmitter().cancelled(scope);
       services.parallelCoordinators.finalize(scope, 'cancelled');
@@ -363,13 +371,16 @@ export function registerSwarmHandlers(
       const scope = resolveAgentScope(payload);
       if (!scope) return false;
       const coordinator = services.parallelCoordinators.get(scope);
-      if (!coordinator) return false;
       const cancelledPlanCount = services.planApproval.cancelAgent(payload, 'user-cancel');
       // Do not short-circuit these calls. One logical agent may be represented
       // in both SpawnGuard and the parallel coordinator while an approval is
       // pending, and every waiter/executor must receive the cancellation.
-      const spawnCancelled = services.spawnGuard.cancel(payload.agentId, payload);
-      const coordinatorCancelled = coordinator.abortTask(payload.agentId);
+      const singleSpawn = hasSingleSpawnVisibilityAgent(payload, payload.agentId);
+      const spawnCancelled = services.spawnGuard.cancel(
+        payload.agentId,
+        singleSpawn ? undefined : payload,
+      );
+      const coordinatorCancelled = coordinator?.abortTask(payload.agentId) ?? false;
       const cancelled = cancelledPlanCount > 0 || spawnCancelled || coordinatorCancelled;
 
       if (cancelled) {

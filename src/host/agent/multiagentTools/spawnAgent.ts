@@ -85,7 +85,7 @@ import {
   requestDurableAgentTeamLaunchApproval,
   prepareAgentTeamDurableController,
 } from '../agentTeamDurableLaunch';
-import { adoptForegroundSubagent, delegateSpawnAgentWorktreeCleanup, finalizeForegroundSpawnAgentWorktree, raceForegroundBlockingBudget, resolveForegroundBlockingBudgetMs, validateForegroundBlockingBudget } from './spawnAgentForegroundBackground';
+import { adoptForegroundSubagent, delegateSpawnAgentWorktreeCleanup, finalizeForegroundSpawnAgentWorktree, publishBackgroundSubagentVisibility, raceForegroundBlockingBudget, resolveForegroundBlockingBudgetMs, resolveSingleSpawnRunScope, validateForegroundBlockingBudget } from './spawnAgentForegroundBackground';
 
 /**
  * spawn_agent / AgentSpawn protocol-native execution service.
@@ -501,6 +501,7 @@ export async function executeSpawnAgent(
             role,
             context,
             treeId,
+            task,
             agentStartedAt,
             foregroundBlockingBudgetMs,
           });
@@ -580,6 +581,18 @@ Stats:
         });
         registeredWithGuard = true;
         slotLease = undefined;
+
+        const visibilityScope = resolveSingleSpawnRunScope(context, treeId, agentId);
+        publishBackgroundSubagentVisibility({
+          promise,
+          scope: visibilityScope,
+          agentId,
+          agentName,
+          role: role || 'dynamic',
+          task,
+          startedAt: Date.now(),
+          ownsRunLifecycle: !context.swarmRunScope,
+        });
 
         // Background worktree cleanup: register onComplete callback
         delegateWorktreeCleanup();

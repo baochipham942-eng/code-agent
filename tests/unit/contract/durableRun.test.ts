@@ -120,6 +120,28 @@ describe('Durable Run contract', () => {
     }))).toThrow(/active child/);
   });
 
+  it('allows a completed foreground turn to retain an accepted auxiliary child', () => {
+    expect(() => assertRunEnvelope(validEnvelope({
+      status: 'completed',
+      terminal: { status: 'completed', eventSeq: 3, at: 1_200 },
+      pendingOperations: [{
+        runId: 'run-1',
+        operationId: 'agent-team:run-child',
+        attempt: 1,
+        kind: 'child_run',
+        status: 'succeeded',
+        idempotencyKey: 'run-1:run-child',
+        sideEffect: true,
+        resultRef: 'auxiliary-child:run-child:accepted',
+        preparedAt: 1_050,
+        updatedAt: 1_100,
+      }],
+      childRuns: [{
+        parentRunId: 'run-1', childRunId: 'run-child', relation: 'agent', status: 'running', createdAt: 1_050,
+      }],
+    }))).not.toThrow();
+  });
+
   it('rejects a self-referencing child and validates parent identity', () => {
     expect(() => createChildRunRef({
       parentRunId: 'run-1', childRunId: 'run-1', relation: 'agent', now: 10,

@@ -188,6 +188,10 @@ export interface AgentRunOptions {
   neoTag?: import('../../shared/contract/tag').NeoTagRunContext;
   /** 同一会话内的后台执行槽使用 auxiliary RunHandle，不替换会话主 run。 */
   runRegistration?: 'primary' | 'auxiliary';
+  /** 后台槽预分配的稳定 run id；与任务台账 id 共用。 */
+  runId?: string;
+  /** auxiliary durable run 的父 run。存在时必须建立真实父子投影。 */
+  parentRunId?: string;
   /** 已由上层分配独立执行槽时，禁止分析器再次进入 AutoAgent 扇出。 */
   disableAutoAgent?: boolean;
 }

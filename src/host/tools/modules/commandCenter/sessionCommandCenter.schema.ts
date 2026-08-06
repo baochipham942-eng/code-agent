@@ -12,7 +12,7 @@ export const spawnTaskSchema: ToolSchema = {
     type: 'object',
     properties: {
       title: { type: 'string', description: '用户可读的一句话任务标题。' },
-      short_name: { type: 'string', description: '2-4 个汉字的任务短名，用于状态、转向和取消。' },
+      short_name: { type: 'string', description: '2-4 个字符的任务短名，中文或英文均可，例如「周报」「RR」。超过 4 字符时系统会稳定归一化。' },
       lane_key: { type: 'string', description: '目标或主题的稳定 lane；继续处理同一对象必须沿用。' },
       submission_key: { type: 'string', description: '当前 turn 内稳定的幂等键；同一次派发重试必须原样复用。' },
       prompt: { type: 'string', description: '给后台执行侧的完整自包含指令，保留用户原话中的目标、约束和验收要求。' },

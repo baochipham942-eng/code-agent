@@ -368,4 +368,35 @@ describe('searchSessions — FTS 主路径', () => {
 
     expect(result.results.map((r) => r.sessionId)).toEqual(['sess-notready-cache']);
   });
+
+  // 数据源是 IPC 层惰性注入的结构接口，运行时可能拿到只实现旧接口的
+  // DatabaseService 子集（CLI / web 等形态）。缺方法必须回落而不是抛。
+  it('数据源 isReady 但缺 FTS 方法时回落内存搜索，不抛异常', () => {
+    insertSession(db, 'sess-partial');
+    repo.addMessage('sess-partial', makeMessage('d1', 'partial needle in db', 'user', 1));
+    cache.setSession({
+      sessionId: 'sess-partial-cache',
+      startedAt: 1,
+      lastActivityAt: 1,
+      totalTokens: 0,
+      messages: [{ id: 'c1', role: 'user', content: 'partial needle in cache', timestamp: 1 }],
+    });
+
+    // 两个方法各缺一个单独成例，保证两条守卫都被独立钉住：
+    // 只写一个「两者都缺」的用例时，摘掉任一守卫另一条仍会拦住，变异验证不转红。
+    const missingSearch = {
+      isReady: true,
+      countSessionMessagesFts: ftsSource.countSessionMessagesFts,
+    } as unknown as SessionSearchFtsSource;
+    const missingCount = {
+      isReady: true,
+      searchSessionMessagesFts: ftsSource.searchSessionMessagesFts,
+    } as unknown as SessionSearchFtsSource;
+
+    for (const source of [missingSearch, missingCount]) {
+      expect(() => searchSessions('partial', {}, cache, source)).not.toThrow();
+      expect(searchSessions('partial', {}, cache, source).results.map((r) => r.sessionId))
+        .toEqual(['sess-partial-cache']);
+    }
+  });
 });

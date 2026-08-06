@@ -401,6 +401,10 @@ function canUseFtsSource(
   return Boolean(
     ftsSource &&
     ftsSource.isReady &&
+    // 结构接口由 IPC 层惰性注入，运行时可能拿到只实现旧接口的 DatabaseService
+    // 子集（CLI / web 等形态）。缺方法时必须回落内存 LRU，不能让搜索直接抛。
+    typeof ftsSource.searchSessionMessagesFts === 'function' &&
+    typeof ftsSource.countSessionMessagesFts === 'function' &&
     !options.caseSensitive &&
     !options.useRegex &&
     query.trim().length >= SESSION_SEARCH.FTS_MIN_QUERY_LENGTH

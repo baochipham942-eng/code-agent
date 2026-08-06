@@ -1246,8 +1246,9 @@ export class AgentOrchestrator {
       ? `${baseSystemPrompt}\n\n${options.neoTag.promptLayer}`
       : baseSystemPrompt;
 
-    const nativeRunId = `run-${generateMessageId()}`;
+    const nativeRunId = options?.runId?.trim() || `run-${generateMessageId()}`;
     let registeredRun: RunHandle | undefined;
+    let runCompletedNormally = false;
     let rolePresetSessionId: string | undefined;
     try {
       // 本轮专家自带的审批档（详情页「安全」页写进 agent.md 的 permission-override）。
@@ -1349,7 +1350,7 @@ export class AgentOrchestrator {
             workspace: runContext!.workspace,
             workspaceScope,
             cwd: runContext!.cwd,
-          }, options?.runRegistration)
+          }, options?.runRegistration, options?.parentRunId)
         : undefined;
       await registeredRun?.attach(this.agentLoop);
 
@@ -1369,6 +1370,7 @@ export class AgentOrchestrator {
       const runPromise = this.agentLoop.run(effectiveContent, content);
       this.activeRunPromise = runPromise;
       await runPromise;
+      runCompletedNormally = true;
       logger.info('========== Agent loop completed normally ==========');
 
       // Check for combo skill suggestion after loop completes
@@ -1386,6 +1388,25 @@ export class AgentOrchestrator {
       // 只钳这一轮：下一轮换成别的专家（或回到主会话）时回到会话自己的档。
       if (rolePresetSessionId) {
         getPermissionModeManager().clearRolePresetSession(rolePresetSessionId);
+      }
+      if (
+        registeredRun
+        && options?.runRegistration === 'auxiliary'
+        && options.parentRunId
+        && this.runRegistry?.hasDurableOwner(nativeRunId)
+      ) {
+        await this.runRegistry.terminalDurable(nativeRunId, {
+          status: runCompletedNormally ? 'completed' : 'failed',
+          now: Date.now(),
+          reason: runCompletedNormally ? undefined : 'auxiliary_run_failed',
+          event: {
+            type: runCompletedNormally ? 'auxiliary_run_completed' : 'auxiliary_run_failed',
+            payload: { parentRunId: options.parentRunId, sessionId },
+            recordedAt: Date.now(),
+          },
+        }, registeredRun).catch((error) => {
+          logger.error('Failed to persist auxiliary durable terminal state', error);
+        });
       }
       if (registeredRun) this.runRegistry?.unregister(nativeRunId, registeredRun);
       this.lastSerializedCompressionState = this.agentLoop?.getSerializedCompressionState()

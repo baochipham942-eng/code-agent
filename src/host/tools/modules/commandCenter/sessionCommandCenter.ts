@@ -19,6 +19,26 @@ function stringArg(args: Record<string, unknown>, key: string): string {
   return typeof args[key] === 'string' ? args[key].trim() : '';
 }
 
+/** Keep the UI/reference key compact even when a provider emits an English phrase. */
+export function normalizeSessionTaskShortName(value: string, title: string): string {
+  const compact = value.replace(/\s+/g, '').trim();
+  const chars = Array.from(compact);
+  if (chars.length >= 2 && chars.length <= 4) return compact;
+
+  if (chars.length > 4) {
+    const words = compact.match(/[A-Z][a-z0-9]*|[a-z0-9]+/g);
+    if (words && words.length >= 2) {
+      const initials = words.map((word) => Array.from(word)[0]).join('').toUpperCase();
+      if (Array.from(initials).length >= 2 && Array.from(initials).length <= 4) return initials;
+    }
+    return chars.slice(0, 4).join('');
+  }
+
+  const titleChars = Array.from(title.replace(/\s+/g, '').trim());
+  const fallback = [...chars, ...titleChars, ...Array.from('任务')].slice(0, 4).join('');
+  return Array.from(fallback).length >= 2 ? fallback : '任务';
+}
+
 function requireSession(ctx: ToolContext): ToolResult<string> | string {
   return ctx.sessionId?.trim() || { ok: false, error: 'No active session', code: 'DOMAIN_ERROR' };
 }
@@ -54,17 +74,14 @@ export async function executeSpawnTask(
   const session = requireSession(ctx);
   if (typeof session !== 'string') return session;
   const title = stringArg(args, 'title');
-  const shortName = stringArg(args, 'short_name');
+  const rawShortName = stringArg(args, 'short_name');
   const laneKey = stringArg(args, 'lane_key');
   const submissionKey = stringArg(args, 'submission_key');
   const prompt = stringArg(args, 'prompt');
-  if (!title || !shortName || !laneKey || !submissionKey || !prompt) {
+  if (!title || !rawShortName || !laneKey || !submissionKey || !prompt) {
     return { ok: false, error: 'title, short_name, lane_key, submission_key and prompt are required', code: 'INVALID_ARGS' };
   }
-  const shortNameLength = Array.from(shortName).length;
-  if (shortNameLength < 2 || shortNameLength > 4) {
-    return { ok: false, error: 'short_name must contain 2-4 characters', code: 'INVALID_ARGS' };
-  }
+  const shortName = normalizeSessionTaskShortName(rawShortName, title);
   if (ctx.abortSignal.aborted) return { ok: false, error: 'aborted', code: 'ABORTED' };
 
   onProgress?.({ stage: 'starting', detail: shortName });
@@ -82,6 +99,9 @@ export async function executeSpawnTask(
       toolScope: ctx.toolScope,
       executionIntent: ctx.executionIntent,
     },
+    parentRunId: ctx.runId,
+    parentTurnId: ctx.turnId,
+    toolCallId: ctx.currentToolCallId,
   });
   onProgress?.({ stage: 'completing', percent: 100 });
   if (result.outcome === 'requires_choice') {

@@ -6,6 +6,10 @@ import {
   type SessionCommandTask,
 } from '../../../src/host/services/commandCenter/sessionCommandCenter';
 import { resetSessionTaskConcurrencyPoolForTest } from '../../../src/host/services/commandCenter/sessionTaskSlotLedger';
+import {
+  getBackgroundTaskLedger,
+  resetBackgroundTaskLedgerForTest,
+} from '../../../src/host/task/backgroundTaskLedger';
 
 class FakeTaskManager extends EventEmitter {
   startBackgroundTask = vi.fn().mockResolvedValue(undefined);
@@ -29,7 +33,51 @@ function input(index: number, laneKey = `lane-${index}`) {
 }
 
 describe('SessionCommandCenter', () => {
-  beforeEach(() => resetSessionTaskConcurrencyPoolForTest());
+  beforeEach(() => {
+    resetSessionTaskConcurrencyPoolForTest();
+    resetBackgroundTaskLedgerForTest();
+  });
+
+  it('projects one stable identity across task control, UI ledger and durable relation metadata', async () => {
+    const manager = new FakeTaskManager();
+    const center = new SessionCommandCenter(manager as unknown as TaskManager, {
+      projectTerminalResult: vi.fn(),
+    });
+    const spawned = await center.spawn({
+      ...input(1),
+      parentRunId: 'run-parent-1',
+      parentTurnId: 'turn-parent-1',
+      toolCallId: 'call-spawn-1',
+    });
+    if (spawned.outcome === 'requires_choice') throw new Error('unexpected admission result');
+
+    expect(manager.startBackgroundTask).toHaveBeenCalledWith(
+      spawned.task.id,
+      'session-a',
+      '执行任务 1',
+      undefined,
+      expect.objectContaining({
+        runRegistration: 'auxiliary',
+        runId: spawned.task.id,
+        parentRunId: 'run-parent-1',
+      }),
+      undefined,
+    );
+    expect(getBackgroundTaskLedger().listTasks({ sessionId: 'session-a' })).toEqual([
+      expect.objectContaining({
+        id: spawned.task.id,
+        runId: spawned.task.id,
+        parentTurnId: 'turn-parent-1',
+        toolCallId: 'call-spawn-1',
+        status: 'running',
+        metadata: expect.objectContaining({
+          parentRunId: 'run-parent-1',
+          childRunId: spawned.task.id,
+        }),
+      }),
+    ]);
+    center.dispose();
+  });
 
   it('enforces lanes, session capacity and idempotent submissions', async () => {
     const manager = new FakeTaskManager();

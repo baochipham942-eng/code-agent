@@ -77,6 +77,10 @@ import {
 } from './inferenceArtifactRepair';
 import { withNativeModelOperation } from './nativeModelCheckpoint';
 import { runInferenceWithTelemetry } from './inferenceTelemetry';
+import {
+  applyCommandCenterPreannounce,
+  emitCommandCenterToolStart,
+} from './sessionCommandCenterPreannounce';
 // provider fallback 机制已抽到 inferenceProviderFallback.ts；以下两个为历史公开导出，
 // 测试从本模块取，保持 re-export 兼容。
 export { buildAiSdkAdaptiveFallbackInfo, runAiSdkInferenceWithProviderFallback };
@@ -757,6 +761,7 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
 
     // Reset partial content accumulator for this inference call
     ctx.runtime.turn.resetStreamedContent();
+    let commandCenterPreannounce = '';
     const contentStreamFilter = createHandoffTailStreamFilter((text) =>
       emitAssistantMessageDelta(ctx, 'content', text)
     );
@@ -772,14 +777,26 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
         // 推理模型的思考过程 (glm-4.7 等)
         emitAssistantMessageDelta(ctx, 'reasoning', chunk.content);
       } else if (chunk.type === 'tool_call_start') {
-        ctx.runtime.onEvent({
-          type: 'stream_tool_call_start',
-          data: {
-            index: chunk.toolCall?.index,
-            id: chunk.toolCall?.id,
-            name: chunk.toolCall?.name,
-            turnId: ctx.runtime.turn.currentTurnId,
+        const latestUserMessage = [...modelMessages].reverse().find((message) => message.role === 'user');
+        commandCenterPreannounce = emitCommandCenterToolStart({
+          toolName: chunk.toolCall?.name,
+          commandCenterEnabled: ctx.runtime.allowedToolNames?.includes('spawn_task') === true,
+          streamedContent: ctx.runtime.turn.lastStreamedContent,
+          existingPreannounce: commandCenterPreannounce,
+          userMessage: extractUserRequestText(latestUserMessage),
+          emitPreview: (preview) => {
+            ctx.runtime.turn.appendStreamedContent(preview);
+            emitAssistantMessageDelta(ctx, 'content', preview);
           },
+          emitToolStart: () => ctx.runtime.onEvent({
+            type: 'stream_tool_call_start',
+            data: {
+              index: chunk.toolCall?.index,
+              id: chunk.toolCall?.id,
+              name: chunk.toolCall?.name,
+              turnId: ctx.runtime.turn.currentTurnId,
+            },
+          }),
         });
       } else if (chunk.type === 'tool_call_delta') {
         ctx.runtime.onEvent({
@@ -853,6 +870,7 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
       stopArtifactProgress();
     }
     contentStreamFilter.flush();
+    response = applyCommandCenterPreannounce(response, commandCenterPreannounce);
     if (pendingCapabilityFallback && !response.fallback) {
       response.actualProvider = pendingCapabilityFallback.to.provider;
       response.actualModel = pendingCapabilityFallback.to.model;

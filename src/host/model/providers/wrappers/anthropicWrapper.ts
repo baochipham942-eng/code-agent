@@ -14,6 +14,7 @@ import { z } from 'zod';
 import type { ToolCall } from '../../../../shared/contract';
 import type { ModelResponse, ResponseContentPart } from '../../types';
 import { logger } from '../providerRuntime';
+import { extractToolCallMeta } from '../toolCallMeta';
 import { normalizeClaudeUsage } from './usageNormalization';
 
 // ── content blocks (text | tool_use | thinking | server_tool_use) ────────
@@ -235,7 +236,7 @@ export function parseClaudeResponse(raw: unknown): ModelResponse {
     const toolCalls: ToolCall[] = toolUseBlocks.map((b) => ({
       id: b.id,
       name: b.name,
-      arguments: b.input ?? {},
+      ...extractToolCallMeta(b.input ?? {}),
     }));
     const response: ModelResponse = { type: 'tool_use', toolCalls, ...(usage ? { usage } : {}) };
     // content blocks 已是真实顺序：按序合成 contentParts，保留 text/tool 交错，并带回前导文本。

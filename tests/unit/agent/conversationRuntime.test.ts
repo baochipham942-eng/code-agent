@@ -1325,6 +1325,43 @@ describe('ConversationRuntime', () => {
       );
     });
 
+    it('uses a separate bounded pool for correctable schema failures so accepted dispatch can finish normally', async () => {
+      ctx.maxIterations = 3;
+      const mp = (runtime as unknown as {
+        messageProcessor: {
+          detectAndForceExecuteTextToolCall: ReturnType<typeof vi.fn>;
+          handleToolResponse: ReturnType<typeof vi.fn>;
+        };
+      }).messageProcessor;
+      mp.detectAndForceExecuteTextToolCall.mockImplementation((response: unknown) => ({
+        shouldContinue: false,
+        response,
+        wasForceExecuted: false,
+      }));
+      mp.handleToolResponse
+        .mockResolvedValueOnce('continue-soft-validation')
+        .mockResolvedValueOnce('continue');
+      modules.contextAssembly.inference
+        .mockResolvedValueOnce({
+          type: 'tool_use',
+          toolCalls: [{ id: 'invalid-1', name: 'spawn_task', arguments: {} }],
+        })
+        .mockResolvedValueOnce({
+          type: 'tool_use',
+          toolCalls: [{ id: 'accepted-1', name: 'spawn_task', arguments: { short_name: '研究' } }],
+        })
+        .mockImplementationOnce(async () => {
+          expect(ctx.control.forceFinalResponseReason).toBeUndefined();
+          return { type: 'text', content: '后台任务已开始。' };
+        });
+
+      await runtime.run('研究 React');
+
+      expect(modules.contextAssembly.inference).toHaveBeenCalledTimes(3);
+      expect(mp.handleToolResponse).toHaveBeenCalledTimes(2);
+      expect(ctx.control.forceFinalResponseReason).toBeUndefined();
+    });
+
     it('clears forced-final flags on run exit even when the final inference returns empty (codex audit R2)', async () => {
       ctx.maxIterations = 2;
       const mp = (runtime as unknown as {

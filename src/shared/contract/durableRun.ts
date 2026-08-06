@@ -294,7 +294,19 @@ export function assertRunEnvelope(envelope: RunEnvelope): void {
         (operation) => !['succeeded', 'failed', 'abandoned'].includes(operation.status),
       );
       if (unresolvedOperation) throw new Error('completed runs cannot contain unresolved operations');
-      const activeChild = envelope.childRuns?.find((child) => !isTerminalRunStatus(child.status));
+      // Detached/auxiliary children may legitimately outlive the foreground parent turn.
+      // Their launch operation is marked succeeded at accepted time, while the child run
+      // itself remains queryable as running. Ordinary agent-team children still block a
+      // completed parent until their child_run operation reaches a terminal outcome.
+      const activeChild = envelope.childRuns?.find((child) => {
+        if (isTerminalRunStatus(child.status)) return false;
+        return !envelope.pendingOperations?.some((operation) => (
+          operation.kind === 'child_run'
+          && operation.operationId === `agent-team:${child.childRunId}`
+          && operation.status === 'succeeded'
+          && operation.resultRef === `auxiliary-child:${child.childRunId}:accepted`
+        ));
+      });
       if (activeChild) throw new Error('completed runs cannot contain active child runs');
     }
   } else if (envelope.terminal) {

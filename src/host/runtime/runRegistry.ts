@@ -115,6 +115,106 @@ export class RunRegistry implements AgentTeamDurableParentHost {
     return handle;
   }
 
+  /**
+   * Start a durable native child without replacing the session's foreground control owner.
+   * The child run id is also the command-center task id, so UI, task control and durable
+   * persistence can be joined without heuristics.
+   */
+  async startAuxiliaryDurableChild(
+    input: CreateRunContextInput,
+    parentRunId: string,
+    now = Date.now(),
+  ): Promise<RunHandle> {
+    const context = createRunContext(input);
+    await this.prepareAgentTeamChild({
+      parentRunId,
+      teamRunId: context.runId,
+      treeId: context.runId,
+      logicalOperationId: context.runId,
+      sideEffect: true,
+      now,
+      initialStatus: 'running',
+    });
+    let created;
+    try {
+      created = await this.requireKernel().createNativeRun({
+        runId: context.runId,
+        sessionId: context.sessionId,
+        parentRunId,
+        now,
+      });
+      await this.projectAuxiliaryChildAccepted(parentRunId, context.runId, now);
+    } catch (error) {
+      await this.projectAgentTeamChildTerminal({
+        parentRunId,
+        teamRunId: context.runId,
+        status: 'failed',
+        resultRef: `auxiliary-child:${context.runId}:start-failed`,
+        now,
+      }).catch(() => undefined);
+      throw error;
+    }
+    const traceContext = createRunTraceContext({
+      runId: context.runId,
+      sessionId: context.sessionId,
+      attempt: created.attempt.attempt,
+      ownerEpoch: created.owner.epoch,
+      engine: created.envelope.engine.kind,
+      workspace: context.workspace,
+      parentRunId,
+      processInstanceId: created.owner.processInstanceId,
+    });
+    const handle = createRunHandle(context, traceContext);
+    this.registerHandle(handle, false);
+    this.durableOwners.set(context.runId, { owner: created.owner, attempt: created.attempt.attempt });
+    this.durableEnvelopes.set(context.runId, created.envelope);
+    this.durableTraceContexts.set(context.runId, traceContext);
+    this.startAttemptSpan(traceContext, { 'run.parent_id': parentRunId, 'run.auxiliary': true });
+    this.startHeartbeat(context.runId, created.owner, now);
+    return handle;
+  }
+
+  private async projectAuxiliaryChildAccepted(
+    parentRunId: string,
+    childRunId: string,
+    now: number,
+  ): Promise<void> {
+    const envelope = this.durableEnvelopes.get(parentRunId);
+    if (!envelope) throw new Error(`Native parent projection unavailable: ${parentRunId}`);
+    const operationId = `agent-team:${childRunId}`;
+    const pendingOperations = (envelope.pendingOperations ?? []).map((operation) => (
+      operation.operationId === operationId
+        ? {
+            ...operation,
+            status: 'succeeded' as const,
+            resultRef: `auxiliary-child:${childRunId}:accepted`,
+            updatedAt: now,
+          }
+        : operation
+    ));
+    const previousState = this.durableCheckpointStates.get(parentRunId);
+    await this.checkpointDurable(parentRunId, {
+      now,
+      status: envelope.status === 'waiting' || envelope.status === 'paused' || envelope.status === 'recovering'
+        ? envelope.status
+        : 'running',
+      state: mergeAgentTeamProjectionState(previousState, {
+        teamRunId: childRunId,
+        treeId: childRunId,
+        operationId,
+        status: 'accepted',
+        resultRef: `auxiliary-child:${childRunId}:accepted`,
+      }),
+      pendingOperations,
+      childRuns: envelope.childRuns,
+      events: [{
+        type: 'auxiliary_child_accepted',
+        payload: { childRunId, operationId },
+        recordedAt: now,
+      }],
+    });
+  }
+
   /** Durable Native entry point. Existing synchronous start() remains for compatibility callers. */
   async startDurable(input: CreateRunContextInput, now = Date.now()): Promise<RunHandle> {
     const kernel = this.requireKernel();
@@ -411,6 +511,7 @@ export class RunRegistry implements AgentTeamDurableParentHost {
       childRunId: input.teamRunId,
       relation: 'agent',
       now: input.now,
+      initialStatus: input.initialStatus,
     });
     const pendingOperations = existingOperation
       ? [...(envelope.pendingOperations ?? [])]

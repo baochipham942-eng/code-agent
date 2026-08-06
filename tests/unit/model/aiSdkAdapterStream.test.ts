@@ -68,6 +68,44 @@ beforeEach(() => {
 });
 
 describe('inferenceViaAiSdk —— 流式映射', () => {
+  it.each([
+    {
+      label: 'object',
+      meta: {
+        shortDescription: '读取入口文件',
+        targetContext: { kind: 'file', label: 'a.ts' },
+        expectedOutcome: '拿到源码',
+      },
+      expectedMeta: {
+        shortDescription: '读取入口文件',
+        targetContext: { kind: 'file', label: 'a.ts' },
+        expectedOutcome: '拿到源码',
+      },
+    },
+    { label: 'string', meta: 'invalid', expectedMeta: {} },
+    { label: 'array', meta: ['invalid'], expectedMeta: {} },
+    { label: 'null', meta: null, expectedMeta: {} },
+  ])('AI SDK 流式 $label _meta：剥离业务参数并提取合法语义', async ({ meta, expectedMeta }) => {
+    vi.mocked(streamText).mockReturnValue(fakeStream([
+      { type: 'tool-call', toolCallId: 'call_meta', toolName: 'Read', input: { path: 'a.ts', _meta: meta } },
+      { type: 'finish', finishReason: 'tool-calls', totalUsage: { inputTokens: 1, outputTokens: 1 } },
+    ]));
+
+    const res = await inferenceViaAiSdk(
+      [{ role: 'user', content: 'read' }],
+      [READ_TOOL],
+      CONFIG,
+      makeCollector().onStream,
+    );
+
+    expect(res.toolCalls).toEqual([{
+      id: 'call_meta',
+      name: 'Read',
+      arguments: { path: 'a.ts' },
+      ...expectedMeta,
+    }]);
+  });
+
   it('text + 流式 tool-call：逐字 emit + 累积成 tool_use ModelResponse', async () => {
     vi.mocked(streamText).mockReturnValue(fakeStream([
       { type: 'text-delta', id: 't', text: 'Hello ' },
@@ -322,6 +360,42 @@ describe('inferenceViaAiSdk —— emittedOutput 闸门重试', () => {
 });
 
 describe('inferenceViaAiSdk —— 路径选择', () => {
+  it.each([
+    {
+      label: 'object',
+      meta: {
+        shortDescription: '读取入口文件',
+        targetContext: { kind: 'file', label: 'a.ts' },
+        expectedOutcome: '拿到源码',
+      },
+      expectedMeta: {
+        shortDescription: '读取入口文件',
+        targetContext: { kind: 'file', label: 'a.ts' },
+        expectedOutcome: '拿到源码',
+      },
+    },
+    { label: 'string', meta: 'invalid', expectedMeta: {} },
+    { label: 'array', meta: ['invalid'], expectedMeta: {} },
+    { label: 'null', meta: null, expectedMeta: {} },
+  ])('AI SDK 非流式 $label _meta：剥离业务参数并提取合法语义', async ({ meta, expectedMeta }) => {
+    vi.mocked(generateText).mockResolvedValue({
+      text: '',
+      toolCalls: [{ toolCallId: 'call_meta', toolName: 'Read', input: { path: 'a.ts', _meta: meta } }],
+      reasoningText: '',
+      usage: { inputTokens: 1, outputTokens: 1 },
+      finishReason: 'tool-calls',
+    } as unknown as Awaited<ReturnType<typeof generateText>>);
+
+    const res = await inferenceViaAiSdk([{ role: 'user', content: 'read' }], [READ_TOOL], CONFIG);
+
+    expect(res.toolCalls).toEqual([{
+      id: 'call_meta',
+      name: 'Read',
+      arguments: { path: 'a.ts' },
+      ...expectedMeta,
+    }]);
+  });
+
   it('forceNonStreaming:true → 走 generateText（非流式），不碰 streamText', async () => {
     vi.mocked(generateText).mockResolvedValue({
       text: 'non-stream',

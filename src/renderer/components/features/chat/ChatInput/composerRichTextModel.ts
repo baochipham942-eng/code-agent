@@ -25,12 +25,61 @@ export interface InlineChipRef {
 const COMPOSER_CHIP_KEY_ATTR = 'data-composer-chip-key';
 const COMPOSER_CHIP_KIND_ATTR = 'data-composer-chip-kind';
 const COMPOSER_CHIP_ID_ATTR = 'data-composer-chip-id';
+export const COMPOSER_CARET_ANCHOR = '\u200B';
 
 function isChipMount(node: Node | null | undefined): boolean {
   return Boolean(
     node?.nodeType === 1
     && (node as HTMLElement).hasAttribute?.(COMPOSER_CHIP_KEY_ATTR),
   );
+}
+
+function isCaretAnchor(node: Node | null | undefined): node is Text {
+  return node?.nodeType === 3 && (node as Text).data === COMPOSER_CARET_ANCHOR;
+}
+
+function plainText(value: string): string {
+  return value.replaceAll(COMPOSER_CARET_ANCHOR, '');
+}
+
+function plainTextLength(value: string): number {
+  return plainText(value).length;
+}
+
+function physicalOffsetAtPlainOffset(value: string, plainOffset: number): number {
+  let seen = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    if (value[index] !== COMPOSER_CARET_ANCHOR) {
+      if (seen === plainOffset) return index;
+      seen += 1;
+    }
+  }
+  return value.length;
+}
+
+function insertMountWithCaretAnchors(parent: Node, mount: HTMLElement, before: Node | null): void {
+  parent.insertBefore(document.createTextNode(COMPOSER_CARET_ANCHOR), before);
+  parent.insertBefore(mount, before);
+  parent.insertBefore(document.createTextNode(COMPOSER_CARET_ANCHOR), before);
+}
+
+function ensureCaretAnchors(mount: HTMLElement): void {
+  const parent = mount.parentNode;
+  if (!parent) return;
+  if (!isCaretAnchor(mount.previousSibling)) {
+    parent.insertBefore(document.createTextNode(COMPOSER_CARET_ANCHOR), mount);
+  }
+  if (!isCaretAnchor(mount.nextSibling)) {
+    parent.insertBefore(document.createTextNode(COMPOSER_CARET_ANCHOR), mount.nextSibling);
+  }
+}
+
+function removeMountAndOrphanedAnchors(mount: HTMLElement): void {
+  const before = isCaretAnchor(mount.previousSibling) ? mount.previousSibling : null;
+  const after = isCaretAnchor(mount.nextSibling) ? mount.nextSibling : null;
+  mount.remove();
+  if (before && !isChipMount(before.previousSibling)) before.remove();
+  if (after && !isChipMount(after.nextSibling)) after.remove();
 }
 
 export function createChipMount(chip: InlineChipRef): HTMLElement {
@@ -62,7 +111,7 @@ export function findChipMount(root: HTMLElement, key: string): HTMLElement | nul
 
 /** 子树的纯文本长度（chip 零宽，<br> 记 1，防御浏览器可能产生的嵌套块）。 */
 function plainLength(node: Node): number {
-  if (node.nodeType === 3) return (node as Text).data.length;
+  if (node.nodeType === 3) return plainTextLength((node as Text).data);
   if (isChipMount(node)) return 0;
   const el = node as HTMLElement;
   if (el.tagName === 'BR') return 1;
@@ -76,7 +125,7 @@ export function extractComposerPlainText(root: HTMLElement): string {
   let out = '';
   const walk = (node: Node): void => {
     if (node.nodeType === 3) {
-      out += (node as Text).data;
+      out += plainText((node as Text).data);
       return;
     }
     if (node.nodeType !== 1) return;
@@ -107,7 +156,7 @@ export function getCaretPlainTextOffset(root: HTMLElement): number | null {
   const walk = (node: Node): boolean => {
     if (node === anchorNode) {
       if (node.nodeType === 3) {
-        acc += anchorOffset;
+        acc += plainTextLength((node as Text).data.slice(0, anchorOffset));
       } else {
         for (let i = 0; i < anchorOffset; i += 1) {
           acc += plainLength(node.childNodes[i]);
@@ -116,7 +165,7 @@ export function getCaretPlainTextOffset(root: HTMLElement): number | null {
       return true;
     }
     if (node.nodeType === 3) {
-      acc += (node as Text).data.length;
+      acc += plainTextLength((node as Text).data);
       return false;
     }
     if (isChipMount(node)) return false;
@@ -152,9 +201,9 @@ export function setCaretPlainTextOffset(root: HTMLElement, offset: number): void
   for (let i = 0; i < children.length; i += 1) {
     const child = children[i];
     if (child.nodeType === 3) {
-      const len = (child as Text).data.length;
+      const len = plainTextLength((child as Text).data);
       if (offset <= acc + len) {
-        applyCaretPosition(child, offset - acc);
+        applyCaretPosition(child, physicalOffsetAtPlainOffset((child as Text).data, offset - acc));
         return;
       }
       acc += len;
@@ -179,11 +228,13 @@ export function deletePlainTextRange(root: HTMLElement, start: number, end: numb
     for (const child of Array.from(parent.childNodes)) {
       if (child.nodeType === 3) {
         const text = child as Text;
-        const len = text.data.length;
+        const len = plainTextLength(text.data);
         const s = Math.max(start - acc, 0);
         const e = Math.min(end - acc, len);
         if (e > s) {
-          const next = text.data.slice(0, s) + text.data.slice(e);
+          const physicalStart = physicalOffsetAtPlainOffset(text.data, s);
+          const physicalEnd = physicalOffsetAtPlainOffset(text.data, e);
+          const next = text.data.slice(0, physicalStart) + text.data.slice(physicalEnd);
           if (next) text.data = next;
           else text.remove();
         }
@@ -210,16 +261,16 @@ export function insertChipAtPlainOffset(root: HTMLElement, offset: number, chip:
   for (let i = 0; i < children.length; i += 1) {
     const child = children[i];
     if (child.nodeType === 3) {
-      const len = (child as Text).data.length;
+      const len = plainTextLength((child as Text).data);
       if (offset <= acc + len) {
-        const at = offset - acc;
+        const at = physicalOffsetAtPlainOffset((child as Text).data, offset - acc);
         if (at <= 0) {
-          root.insertBefore(mount, child);
-        } else if (at >= len) {
-          root.insertBefore(mount, child.nextSibling);
+          insertMountWithCaretAnchors(root, mount, child);
+        } else if (at >= (child as Text).data.length) {
+          insertMountWithCaretAnchors(root, mount, child.nextSibling);
         } else {
           const after = (child as Text).splitText(at);
-          root.insertBefore(mount, after);
+          insertMountWithCaretAnchors(root, mount, after);
         }
         return mount;
       }
@@ -228,19 +279,19 @@ export function insertChipAtPlainOffset(root: HTMLElement, offset: number, chip:
     }
     if (isChipMount(child)) {
       if (offset <= acc) {
-        root.insertBefore(mount, child);
+        insertMountWithCaretAnchors(root, mount, child.previousSibling && isCaretAnchor(child.previousSibling) ? child.previousSibling : child);
         return mount;
       }
       continue;
     }
     const len = plainLength(child);
     if (offset <= acc) {
-      root.insertBefore(mount, child);
+      insertMountWithCaretAnchors(root, mount, child);
       return mount;
     }
     acc += len;
   }
-  root.appendChild(mount);
+  insertMountWithCaretAnchors(root, mount, null);
   return mount;
 }
 
@@ -253,15 +304,15 @@ export function replaceRangeWithChipMount(root: HTMLElement, start: number, end:
 }
 
 function setCaretAfterMount(root: HTMLElement, mount: HTMLElement): void {
-  const index = Array.prototype.indexOf.call(root.childNodes, mount);
-  applyCaretPosition(root, index + 1);
+  ensureCaretAnchors(mount);
+  applyCaretPosition(mount.nextSibling as Text, 1);
 }
 
 /** 删除 chip 挂载点，光标落在 chip 原位置（删除后继续打字的落点）。 */
 export function removeChipMountWithCaret(root: HTMLElement, mount: HTMLElement): void {
   const index = Array.prototype.indexOf.call(root.childNodes, mount);
-  mount.remove();
-  applyCaretPosition(root, Math.max(index, 0));
+  removeMountAndOrphanedAnchors(mount);
+  applyCaretPosition(root, Math.min(Math.max(index - 1, 0), root.childNodes.length));
 }
 
 /** 光标紧贴 chip 之后（Backspace 应删 chip）时返回该挂载点。 */
@@ -277,7 +328,7 @@ export function chipMountBeforeCaret(root: HTMLElement): HTMLElement | null {
     return isChipMount(prev) ? (prev as HTMLElement) : null;
   }
   if (node.nodeType === 3) {
-    if (offset > 0) return null;
+    if (plainTextLength((node as Text).data.slice(0, offset)) > 0) return null;
     const prev = node.previousSibling;
     return isChipMount(prev) ? (prev as HTMLElement) : null;
   }
@@ -297,7 +348,7 @@ export function chipMountAfterCaret(root: HTMLElement): HTMLElement | null {
     return isChipMount(next) ? (next as HTMLElement) : null;
   }
   if (node.nodeType === 3) {
-    if (offset < (node as Text).data.length) return null;
+    if (plainTextLength((node as Text).data.slice(offset)) > 0) return null;
     const next = node.nextSibling;
     return isChipMount(next) ? (next as HTMLElement) : null;
   }
@@ -327,18 +378,22 @@ export function rebuildComposerText(root: HTMLElement, value: string): void {
   for (const child of Array.from(root.childNodes)) {
     if (!isChipMount(child)) (child as HTMLElement | Text).remove();
   }
-  if (!value) return;
-  const textNode = document.createTextNode(value);
-  root.insertBefore(textNode, root.firstChild);
+  if (value) {
+    const textNode = document.createTextNode(value);
+    root.insertBefore(textNode, root.firstChild);
+  }
+  listChipMounts(root).forEach(ensureCaretAnchors);
 }
 
 /** store → DOM 对账：移除已不在清单里的挂载点，缺失的补到末尾。 */
 export function syncChipMounts(root: HTMLElement, chips: InlineChipRef[]): void {
   const wanted = new Set(chips.map((chip) => chip.key));
   for (const mount of listChipMounts(root)) {
-    if (!wanted.has(mount.getAttribute(COMPOSER_CHIP_KEY_ATTR) ?? '')) mount.remove();
+    if (!wanted.has(mount.getAttribute(COMPOSER_CHIP_KEY_ATTR) ?? '')) removeMountAndOrphanedAnchors(mount);
   }
   for (const chip of chips) {
-    if (!findChipMount(root, chip.key)) root.appendChild(createChipMount(chip));
+    const existing = findChipMount(root, chip.key);
+    if (existing) ensureCaretAnchors(existing);
+    else insertMountWithCaretAnchors(root, createChipMount(chip), null);
   }
 }

@@ -76,14 +76,17 @@ export const NewSessionWelcome: React.FC<{
 }) => {
   const { t } = useI18n();
   const suggestions = buildDefaultSuggestions(t);
-  // 带着资料进来的会话不摆通用模板卡（贪吃蛇/图表与带入材料无关，真机 2026-08-05
-  // 「上方的示意和带入的材料没关系」）；后续可升级为按材料生成的建议。
   const { pinnedItems } = usePinnedLibraryItems(session?.id ?? null);
-  const showSuggestions = pinnedItems.length === 0;
   const resumedSession = session && !isBlankNewSession(session) ? session : null;
   // 纯对话（无工作区）是默认形态，不必再标「空白会话」——用户反馈看不懂、是噪音。
   // 只有继承了项目/工作区上下文时才显示上下文标签（"项目会话 · name"），告诉用户这条会话带了上下文。
   const hasWorkspaceContext = Boolean(workingDirectory?.trim());
+  // 通用模板卡（贪吃蛇/图表…）只服务「不知道干什么」的空会话：给个起点。
+  // 会话一旦带了上下文——资料库材料 pin 进来、或从空间/项目进来——用户是带着目的
+  // 来的，这几张与他手上的事无关的卡就是噪音（真机 2026-08-05「上方的示意和带入的
+  // 材料没关系」）。2026-08-06 拍板：不做「按材料生成建议」，不为此加模型调用，
+  // 有上下文就直接不摆。
+  const showSuggestions = pinnedItems.length === 0 && !hasWorkspaceContext;
   const contextLabel = hasWorkspaceContext ? formatNewSessionContextLabel(t, workingDirectory) : null;
   const contextDetails = hasWorkspaceContext
     ? buildNewSessionContextDetails(t, workbenchSnapshot)

@@ -165,6 +165,15 @@ rm -rf ~/.code-agent-dev/renderer-cache/active   # dev 侧热更新缓存同样�
 #   （2026-07-26 voice spike 实测；Dev 包要用的 key 必须复制进 ~/.code-agent-dev/.env）
 ```
 
+**新 worktree 开工先引导构建输入**（2026-08-06 起）：
+
+```bash
+bash scripts/worktree-bootstrap.sh <worktree路径>   # 缺省以主树为源，幂等，可重跑
+# 为什么：node_modules / sidecar 二进制 / dist/native 等都是 gitignored 的，新 worktree 里全缺。
+# 漏 node_modules 时 npx tsx 照跑（它自己去下载），但 vitest/tsc 会给一片假红——先引导再干活。
+# 脚本只软链只读输入、实体拷贝会被构建改写的输入（防写穿透污染主树），绝不写主树。
+```
+
 #### 多个 Dev 测试包并存（NEO_SLOT）
 
 几个 worktree 要同时验各自的包时，用 `NEO_SLOT` 分槽（缺省 = 槽 1 = 历史行为，不用改任何命令）：

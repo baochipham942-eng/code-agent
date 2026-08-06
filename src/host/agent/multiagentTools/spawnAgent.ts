@@ -85,7 +85,7 @@ import {
   requestDurableAgentTeamLaunchApproval,
   prepareAgentTeamDurableController,
 } from '../agentTeamDurableLaunch';
-import { adoptForegroundSubagent, delegateSpawnAgentWorktreeCleanup, finalizeForegroundSpawnAgentWorktree, raceForegroundBlockingBudget, resolveForegroundBlockingBudgetMs, validateForegroundBlockingBudget } from './spawnAgentForegroundBackground';
+import { adoptForegroundSubagent, delegateSpawnAgentWorktreeCleanup, finalizeForegroundSpawnAgentWorktree, publishBackgroundSubagentVisibility, raceForegroundBlockingBudget, resolveForegroundBlockingBudgetMs, resolveSingleSpawnRunScope, validateForegroundBlockingBudget } from './spawnAgentForegroundBackground';
 
 /**
  * spawn_agent / AgentSpawn protocol-native execution service.
@@ -262,8 +262,9 @@ export async function executeSpawnAgent(
 
     // Generate agent ID
     const localAgentId = `agent_${role || 'dynamic'}_${randomUUID()}`;
-    const agentId = context.swarmRunScope
-      ? createScopedSwarmAgentId(context.swarmRunScope, localAgentId)
+    const singleRunScope = resolveSingleSpawnRunScope(context, treeId, localAgentId);
+    const agentId = singleRunScope
+      ? createScopedSwarmAgentId(singleRunScope, localAgentId)
       : localAgentId;
 
     // Defensive check: ensure sessionId is available for task tool sharing
@@ -334,7 +335,7 @@ export async function executeSpawnAgent(
     try {
       slotLease = await guard.acquireSlot({
         treeId,
-        scope: context.swarmRunScope,
+        scope: singleRunScope,
         timeoutMs: context.spawnQueueTimeoutMs,
         signal: abortController.signal,
       });
@@ -426,7 +427,7 @@ export async function executeSpawnAgent(
         spawnDepth: childDepth,
         spawnMaxDepth: context.spawnMaxDepth,
         spawnTreeId: treeId,
-        swarmRunScope: context.swarmRunScope,
+        swarmRunScope: singleRunScope,
         spawnQueueTimeoutMs: context.spawnQueueTimeoutMs,
         spawnParentStartedAt: context.spawnParentStartedAt,
         spawnParentTimeoutMs: context.spawnParentTimeoutMs,
@@ -485,7 +486,7 @@ export async function executeSpawnAgent(
           treeId,
           parentId: context.spawnParentAgentId,
           slotAcquired: true,
-          scope: context.swarmRunScope,
+          scope: singleRunScope,
         });
         registeredWithGuard = true;
         slotLease = undefined;
@@ -501,6 +502,8 @@ export async function executeSpawnAgent(
             role,
             context,
             treeId,
+            task,
+            visibilityScope: singleRunScope,
             agentStartedAt,
             foregroundBlockingBudgetMs,
           });
@@ -538,7 +541,7 @@ Stats:
               agentId,
               cost: result.cost,
               tokensUsed: result.tokensUsed,
-              ...(context.swarmRunScope ?? {}),
+              ...(singleRunScope ?? {}),
             },
           };
         } else {
@@ -550,7 +553,7 @@ Stats:
               agentId,
               cost: result.cost,
               tokensUsed: result.tokensUsed,
-              ...(context.swarmRunScope ?? {}),
+              ...(singleRunScope ?? {}),
               cancellationReason: result.cancellationReason,
               failureCode: result.failureCode
                 ?? agentFailureCodeFromCancellationReason(result.cancellationReason)
@@ -576,10 +579,21 @@ Stats:
           treeId,
           parentId: context.spawnParentAgentId,
           slotAcquired: true,
-          scope: context.swarmRunScope,
+          scope: singleRunScope,
         });
         registeredWithGuard = true;
         slotLease = undefined;
+
+        publishBackgroundSubagentVisibility({
+          promise,
+          scope: singleRunScope,
+          agentId,
+          agentName,
+          role: role || 'dynamic',
+          task,
+          startedAt: Date.now(),
+          ownsRunLifecycle: !context.swarmRunScope,
+        });
 
         // Background worktree cleanup: register onComplete callback
         delegateWorktreeCleanup();
@@ -596,7 +610,7 @@ Stats:
 - Status: running
 - Mode: ${isDynamicMode ? 'dynamic' : 'declarative'}
 - Running agents: ${guard.getRunningCount(
-          context.swarmRunScope ?? (context.sessionId ? { sessionId: context.sessionId } : undefined),
+          singleRunScope ?? (context.sessionId ? { sessionId: context.sessionId } : undefined),
         )}${isolationNote}
 
 Use wait_agent to block until done, or close_agent to cancel.`,

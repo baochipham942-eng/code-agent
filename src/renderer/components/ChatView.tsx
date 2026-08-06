@@ -11,7 +11,7 @@ import { useSessionStore } from '../stores/sessionStore';
 import { useSessionUIStore } from '../stores/sessionUIStore';
 import { useStreamingMessageAccumulatorStore } from '../stores/streamingMessageAccumulatorStore';
 import { useTaskStore } from '../stores/taskStore';
-import { useSwarmStore } from '../stores/swarmStore';
+import { selectHasStoppableSwarmWork, useSwarmStore } from '../stores/swarmStore';
 import {
   ensureNeoWorkCardLiveUpdates,
   isNeoWorkCardAwaitingRuntimeTerminal,
@@ -310,14 +310,8 @@ export const ChatView: React.FC = () => {
   // parallelCoordinators）根本没人触发。所以按钮形态要额外看「本会话还有活着的成员」。
   // 只喂按钮形态，不并进 effectiveIsProcessing —— 后者还管 steer 路由、seed 消费、
   // 回溯横幅禁用，并进去会把「主 loop 空闲时发新消息」误路由成运行中补充。
-  const swarmActiveSessionId = useSwarmStore((state) => state.activeSessionId);
-  const swarmIsRunning = useSwarmStore((state) => state.isRunning);
-  const swarmHasLiveAgents = useSwarmStore((state) => state.agents.some(
-    (agent) => agent.status === 'running' || agent.status === 'ready' || agent.status === 'pending',
-  ));
-  const hasStoppableSwarmWork = Boolean(currentSessionId)
-    && swarmActiveSessionId === currentSessionId
-    && (swarmIsRunning || swarmHasLiveAgents);
+  const hasStoppableSwarmWork = useSwarmStore((state) =>
+    selectHasStoppableSwarmWork(state, currentSessionId));
 
   // Bridge 拦截状态 (Phase 4)
   const [bridgePrompt, setBridgePrompt] = useState<{ toolName: string } | null>(null);

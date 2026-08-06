@@ -126,6 +126,35 @@ describe('SessionMemberBar', () => {
     expect(screen.getByTestId('member-status-completed')).toBeTruthy();
   });
 
+  it('单个后台 Agent 也进入成员条，不要求组成两人 Team', async () => {
+    const singleAgent = { ...agents[0], status: 'running' as const, endTime: null, durationMs: null };
+    const detail: SwarmRunDetail = {
+      run: {
+        ...run,
+        status: 'running',
+        endedAt: null,
+        totalAgents: 1,
+        completedCount: 0,
+        totalToolCalls: 0,
+        parallelPeak: 1,
+        errorSummary: null,
+        aggregation: null,
+        tags: [],
+      },
+      agents: [singleAgent],
+      events: [],
+    };
+    invokeMock.mockImplementation((channel: string) => {
+      if (channel === IPC_CHANNELS.SWARM_LIST_TRACE_RUNS) return Promise.resolve([{ ...run, status: 'running', totalAgents: 1 }]);
+      if (channel === IPC_CHANNELS.SWARM_GET_TRACE_RUN_DETAIL) return Promise.resolve(detail);
+      return Promise.resolve(null);
+    });
+
+    render(<SessionMemberBar sessionId="session-1" />);
+    await waitFor(() => expect(screen.getByTestId('member-pill-researcher')).toBeTruthy());
+    expect(screen.getAllByTestId('member-status-running')).toHaveLength(1);
+  });
+
   it('swarm 活跃时成员条右端显示 token 与停止全部，点击走 run-level cancel', async () => {
     swarmState.activeSessionId = 'session-1';
     swarmState.activeRunId = 'logical-run-1';

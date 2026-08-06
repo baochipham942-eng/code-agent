@@ -105,7 +105,7 @@ export function useSessionMembers(sessionId: string | null): MemberPill[] {
     return readPersistedTeamLead(session?.metadata)?.roleId ?? null;
   });
   const durableDetail = useDurableSwarmRunDetail(sessionId);
-  const persistedAgents = durableDetail?.agents.length && durableDetail.agents.length >= 2
+  const persistedAgents = durableDetail?.agents.length
     ? durableDetail.agents
     : [];
 

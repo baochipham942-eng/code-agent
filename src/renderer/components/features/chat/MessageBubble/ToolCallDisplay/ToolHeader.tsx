@@ -79,7 +79,10 @@ export function ToolHeader({ toolCall, status, showDetailName = false }: Props) 
   const title = buildToolHeaderTitle(toolCall, displayName);
 
   return (
-    <div className="flex items-center gap-2 flex-1 min-w-0">
+    // 状态词 text-xs(12px) 与主文案 text-sm(14px) 同行混排：items-center 对齐的是
+    // 盒子中心而非文字基线，基线会错开 0.5px（Retina 上 1 个物理像素），故用
+    // items-baseline；图标不是文字，基线对齐会下沉，补 self-center。
+    <div className="flex items-baseline gap-2 flex-1 min-w-0">
       {/* 状态词只在带结果数据时出现（getToolStatusLabel 成功且无数据时返回 null）：
           否则与主文案的动词重复。成败由左侧 StatusIndicator 表达。 */}
       {statusLabel && (
@@ -88,7 +91,7 @@ export function ToolHeader({ toolCall, status, showDetailName = false }: Props) 
 
       {/* Target context icon — 让用户一眼认出"在操作哪个 app/服务" */}
       {showTargetIcon && (
-        <TargetContextIcon targetContext={toolCall.targetContext} className="flex-shrink-0" />
+        <TargetContextIcon targetContext={toolCall.targetContext} className="flex-shrink-0 self-center" />
       )}
 
       {/* 有文件路径时主行可点进右栏预览（读取了/编辑了/写入了 …）；

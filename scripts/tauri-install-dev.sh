@@ -12,7 +12,29 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 BUNDLE_DIR="$PROJECT_ROOT/src-tauri/target/release/bundle"
-APP_NAME="${APP_NAME:-Agent Neo Dev}"
+SLOT_META="$PROJECT_ROOT/src-tauri/.dev-slot.json"
+# 槽名与端口都从 gen-dev-slot-conf 生成的元数据里读，不在 shell 里再实现一遍后缀规则——
+# 两处各算一遍就会在换槽时错开，表现是"打好的包找不到"或"装到了别的槽上"。
+if [ ! -f "$SLOT_META" ]; then
+  echo "Error: 找不到 ${SLOT_META}（先跑 npm run tauri:package:dev）" >&2
+  exit 1
+fi
+read_slot_field() {
+  SLOT_META="$SLOT_META" SLOT_FIELD="$1" node -e '
+    const fs = require("fs");
+    const meta = JSON.parse(fs.readFileSync(process.env.SLOT_META, "utf8"));
+    const value = meta[process.env.SLOT_FIELD];
+    if (value === undefined || value === null || value === "") {
+      console.error(`slot metadata has no ${process.env.SLOT_FIELD}`);
+      process.exit(1);
+    }
+    process.stdout.write(String(value));
+  '
+}
+APP_NAME="${APP_NAME:-$(read_slot_field productName)}" || exit 1
+# 打包后冒烟用本槽端口，否则装槽 2 时会去探 8181，撞上别人正在跑的槽 1。
+DEV_APP_WEB_PORT="${DEV_APP_WEB_PORT:-$(read_slot_field webPort)}" || exit 1
+export DEV_APP_WEB_PORT
 SIGNING_IDENTITY="${SIGNING_IDENTITY:-Code Agent Dev}"
 ENTITLEMENTS="$PROJECT_ROOT/src-tauri/Entitlements.plist"
 LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
@@ -129,8 +151,10 @@ write_build_info() {
   '
 }
 
-# 只关掉测试包实例，不碰生产
-pkill -f "$APP_NAME" 2>/dev/null || true
+# 只关掉**本槽**的测试包实例，不碰生产、也不碰别的槽。
+# 别用 `pkill -f "$APP_NAME"`：槽 1 的名字 "Agent Neo Dev" 是槽 2 "Agent Neo Dev 2" 的前缀，
+# 装槽 1 会顺手杀掉别人正在验的槽 2。带上 .app/Contents/MacOS/ 让两者不再互相命中。
+pkill -f "$APP_NAME.app/Contents/MacOS/" 2>/dev/null || true
 sleep 1
 
 SOURCE_APP="$BUNDLE_DIR/macos/$APP_NAME.app"

@@ -292,6 +292,41 @@ describe('desktop shell diagnostics aggregator', () => {
     expect(diagnostics.channelIsolation?.checks.every((check) => check.status === 'ok')).toBe(true);
   });
 
+  it('holds a higher dev slot to its own port and data dir', async () => {
+    state.userData = path.join(root, '.code-agent-dev2');
+    fs.mkdirSync(path.join(state.userData, 'logs'), { recursive: true });
+    process.env.CODE_AGENT_BUNDLE_ID = 'com.linchen.code-agent.dev2';
+    process.env.CODE_AGENT_WEB_PORT = '8182';
+    globalThis.fetch = vi.fn(async () => new Response('{}', { status: 500 })) as unknown as typeof fetch;
+
+    const diagnostics = await getDesktopShellDiagnostics();
+
+    expect(diagnostics.channelIsolation).toMatchObject({
+      channel: 'dev',
+      status: 'ok',
+      bundleId: 'com.linchen.code-agent.dev2',
+      webPort: 8182,
+      expectedWebPort: 8182,
+    });
+    expect(diagnostics.channelIsolation?.checks.every((check) => check.status === 'ok')).toBe(true);
+  });
+
+  it('warns when a dev slot runs on another slot data dir', async () => {
+    // 串槽 = 两个测试包共用一套库。只判「是不是 dev 目录」会把这种情况放过去。
+    state.userData = path.join(root, '.code-agent-dev');
+    fs.mkdirSync(path.join(state.userData, 'logs'), { recursive: true });
+    process.env.CODE_AGENT_BUNDLE_ID = 'com.linchen.code-agent.dev2';
+    process.env.CODE_AGENT_WEB_PORT = '8182';
+    globalThis.fetch = vi.fn(async () => new Response('{}', { status: 500 })) as unknown as typeof fetch;
+
+    const diagnostics = await getDesktopShellDiagnostics();
+
+    expect(diagnostics.channelIsolation?.status).toBe('warning');
+    expect(
+      diagnostics.channelIsolation?.checks.find((check) => check.id === 'data-dir')?.status,
+    ).toBe('warning');
+  });
+
   it('reads Tauri boot diagnostics from the explicit packaged app data path', async () => {
     const tauriDataDir = path.join(root, 'tauri-app-data');
     const bootFile = path.join(tauriDataDir, 'logs', 'desktop-shell-boot-latest.json');

@@ -891,7 +891,6 @@ describe('macOS release fail-closed gates', () => {
     expect(sources.some((resource) => resource.startsWith('../scripts/Agent Neo Computer Use.app'))).toBe(false);
 
     expect(fetchCuaDriver).toContain('.tauri-resources.noindex');
-    expect(fetchCuaDriver).toContain('CUA_DRIVER_VERSION="0.14.2"');
     expect(fetchCuaDriver).toContain('cua-driver-rs-v${CUA_DRIVER_VERSION}');
     expect(fetchCuaDriver).toContain('efc8f88a2f6e7424ab68d080331fd6aa94ef699153f2631d7a9214515151098c');
     // 同一 release 还有个只含裸二进制的 -binary.tar.gz（31209b5f…），拿错会静默失败。
@@ -920,6 +919,21 @@ describe('macOS release fail-closed gates', () => {
     expect(stageCuaDriver).toContain('source "${SCRIPT_DIR}/lib/cua-channel.sh"');
     expect(fetchCuaDriver).not.toContain('CUA_BUNDLE_ID="com.agentneo.computeruse"');
     expect(stageCuaDriver).not.toContain('CUA_BUNDLE_ID="com.agentneo.computeruse"');
+
+    // 版本锁定常量同样只有一个源头：stage 侧要拿它判「手上这份 .app 版本还对不对」，
+    // 否则一份签名有效的旧版本会被当成就绪直接打进包里。
+    expect(cuaChannel).toContain('CUA_DRIVER_VERSION="0.14.2"');
+    expect(fetchCuaDriver).not.toContain('CUA_DRIVER_VERSION="');
+    expect(stageCuaDriver).toContain('CFBundleShortVersionString');
+    expect(stageCuaDriver).toContain('${CUA_DRIVER_VERSION}');
+
+    // 机器级缓存：staged helper 在 repo 根且被 gitignore，每个 worktree 各要一份。
+    // 缓存让新 worktree 首次构建自动补齐（零网络零签名），但**必须**仍过 app_ready
+    // （bundle id + 版本 + codesign --strict），否则等于把供应链锁定绕过去了。
+    expect(cuaChannel).toContain('CUA_CACHE_DIR');
+    expect(cuaChannel).toContain('NEO_CUA_CACHE_DIR');
+    expect(stageCuaDriver).toContain('app_ready "${CUA_CACHED_APP}"');
+    expect(stageCuaDriver).toContain('app_ready "${STAGED_APP}"');
 
     // dev 包必须打自己那份 helper，否则 cargo tauri build 找不到资源 / 运行时回退
     // 到 PATH 上的裸 cua-driver。

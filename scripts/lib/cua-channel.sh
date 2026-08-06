@@ -12,6 +12,11 @@
 # TS 侧同源实现在 src/shared/cuaHelperChannel.ts，两边必须一起改。
 # ============================================================================
 
+# 锁定的上游 cua-driver 版本。放这里而不是只留在 fetch 脚本里，是因为 stage 脚本要拿它
+# 判断「手上这份 .app 还算不算数」——只验 bundle id + 签名的话，一份旧版本的 .app 会被
+# 当成就绪直接用掉（跨 worktree 缓存后这条会从"理论上"变成"经常"）。
+CUA_DRIVER_VERSION="0.14.2"
+
 case "${NEO_CHANNEL:-production}" in
   production)
     CUA_BUNDLE_ID="com.agentneo.computeruse"
@@ -26,3 +31,14 @@ case "${NEO_CHANNEL:-production}" in
     exit 1
     ;;
 esac
+
+# ── 机器级 staged helper 缓存 ────────────────────────────────────────────────
+# 重签好的 .app 落在 repo 根的 .tauri-resources.noindex/（gitignore），所以**每个
+# worktree 各要一份**：新开一个 worktree 打 dev 包就会卡在 "missing staged app"，
+# 只能手动从别的树拷，或重跑一遍 fetch（下载上游 + Developer ID 重签 + Apple 时间戳，
+# 时间戳服务还会间歇失败）。缓存放在 worktree 之外，让第一次构建自动补齐、零网络零签名。
+#
+# 缓存是**加速**不是真源：命中后仍走 app_ready()（bundle id + codesign --verify --strict），
+# 校验不过就当没有，继续报错让操作者去 fetch。
+CUA_CACHE_DIR="${NEO_CUA_CACHE_DIR:-${HOME}/Library/Caches/agent-neo/cua}"
+CUA_CACHED_APP="${CUA_CACHE_DIR}/${CUA_APP_NAME}.app"

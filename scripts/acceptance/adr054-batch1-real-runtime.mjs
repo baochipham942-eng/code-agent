@@ -12,6 +12,7 @@ import { chromium } from 'playwright';
 
 const BASE_URL = process.env.CODE_AGENT_URL?.trim() || 'http://127.0.0.1:8181';
 const DATA_DIR = process.env.CODE_AGENT_DATA_DIR?.trim() || path.join(os.homedir(), '.code-agent-dev');
+const EXPECTED_ROOT = process.env.ADR054_EXPECTED_ROOT?.trim() || process.cwd();
 const LOG_PATH = path.join(DATA_DIR, 'logs', `code-agent-${new Date().toISOString().slice(0, 10)}.log`);
 const OUT_DIR = process.env.ADR054_EVIDENCE_DIR?.trim()
   || path.join(os.tmpdir(), `adr054-batch1-real-runtime-${Date.now()}`);
@@ -32,7 +33,7 @@ function makeWav(outPath, shortName) {
   ).join('，');
   const text = [
     `请派一个后台任务，短名叫${shortName}。`,
-    '任务只需要回复一句投递验证完成，不调用任何工具，不修改任何文件。',
+    '任务必须调用 Write 工具把“投递验证完成”写入当前工作目录的 hangup-voice-proof.txt，然后回复一句投递验证完成。',
     '[[slnc 2500]]',
     filler,
     '[[slnc 6000]]',
@@ -286,18 +287,25 @@ async function startScenario({ name, hangUpWithPendingTerminal }) {
 
 async function main() {
   const health = await fetch(`${BASE_URL}/api/health`).then((response) => response.json());
-  record('runtime.build', health?.status === 'ok' && health?.build?.branch === 'codex/session-command-center-batch1', {
+  record('runtime.build', health?.status === 'ok' && health?.serverRoot === EXPECTED_ROOT, {
     pid: health?.pid,
+    serverRoot: health?.serverRoot,
+    expectedRoot: EXPECTED_ROOT,
     build: health?.build,
     rendererServe: health?.rendererServe,
   });
 
-  const acceptanceModel = { provider: 'minimax', model: 'MiniMax-M3' };
+  const acceptanceModel = { provider: 'deepseek', model: 'deepseek-v4-pro' };
   const originalExecutionModel = await readAndSetExecutionModel(acceptanceModel);
   record('runtime.execution-model', true, { acceptanceModel, originalExecutionModel });
   try {
-    const delivered = await startScenario({ name: 'suppressed-then-delivered', hangUpWithPendingTerminal: false });
-    const hungUp = await startScenario({ name: 'hangup-notification', hangUpWithPendingTerminal: true });
+    const only = process.env.ADR054_BATCH1_ONLY?.trim();
+    const delivered = only === 'hangup-notification'
+      ? null
+      : await startScenario({ name: 'suppressed-then-delivered', hangUpWithPendingTerminal: false });
+    const hungUp = only === 'suppressed-then-delivered'
+      ? null
+      : await startScenario({ name: 'hangup-notification', hangUpWithPendingTerminal: true });
     record('summary', true, { evidenceDir: OUT_DIR, delivered, hungUp });
   } finally {
     await readAndSetExecutionModel(originalExecutionModel);

@@ -16,17 +16,21 @@ import type {
   RendererServeDecision,
   WebHealthResponse,
 } from '../../shared/contract';
+import {
+  devSlotDataDirName,
+  devSlotFromBundleId,
+  devSlotFromDataDirName,
+  devSlotWebPort,
+  PROD_BUNDLE_ID,
+  PROD_WEB_PORT,
+} from '../../shared/devSlot';
 import { app } from '../platform';
 import { getRuntimeAssetsStatus } from '../runtime/runtimeAssetStatus';
 import { readRendererBundleStatus, resolveRendererServeDecision } from '../services/renderer/rendererBundleCache';
 
 const BOOT_DIAGNOSTICS_FILE = 'desktop-shell-boot-latest.json';
 const BOOT_DIAGNOSTICS_PATH_ENV = 'AGENT_NEO_TAURI_BOOT_DIAGNOSTICS_FILE';
-const DEFAULT_WEB_PORT = 8180;
-const DEV_WEB_PORT = 8181;
-const PROD_BUNDLE_ID = 'com.linchen.code-agent';
-const DEV_BUNDLE_ID = 'com.linchen.code-agent.dev';
-const DEV_DATA_DIR_NAME = '.code-agent-dev';
+const DEFAULT_WEB_PORT = PROD_WEB_PORT;
 
 const BUNDLED_NODE_PATHS = [
   ['dist', 'bundled-node', 'bin', 'node'],
@@ -114,8 +118,8 @@ function inferDesktopShellChannel(input: {
   dataDir: string;
   env?: NodeJS.ProcessEnv;
 }): DesktopShellChannel {
-  if (input.bundleId === DEV_BUNDLE_ID) return 'dev';
-  if (path.basename(input.dataDir) === DEV_DATA_DIR_NAME) return 'dev';
+  if (devSlotFromBundleId(input.bundleId) !== null) return 'dev';
+  if (devSlotFromDataDirName(path.basename(input.dataDir)) !== null) return 'dev';
   if (input.env?.NODE_ENV === 'development') return 'dev';
   return 'prod';
 }
@@ -128,17 +132,23 @@ function getChannelIsolation(input: {
 }): DesktopShellChannelIsolation {
   const env = input.env ?? process.env;
   const channel = inferDesktopShellChannel({ ...input, env });
-  const packagedDev = input.bundleId === DEV_BUNDLE_ID;
+  const slot = devSlotFromBundleId(input.bundleId);
+  const packagedDev = slot !== null;
   const debugDev = channel === 'dev' && !packagedDev && env.NODE_ENV === 'development';
-  const expectedWebPort = packagedDev ? DEV_WEB_PORT : DEFAULT_WEB_PORT;
+  const expectedWebPort = slot === null ? DEFAULT_WEB_PORT : devSlotWebPort(slot);
   const dataDirBase = path.basename(input.dataDir);
+  // 打包 dev 包要求数据目录**正好**是本槽的那个：槽 2 落在 `.code-agent-dev` 就是串槽，
+  // 两个测试包共用一套库——只判「是不是 dev 目录」会把这种情况放过去。
+  const dataDirOk = packagedDev
+    ? dataDirBase === devSlotDataDirName(slot)
+    : channel === 'dev'
+      ? devSlotFromDataDirName(dataDirBase) !== null
+      : devSlotFromDataDirName(dataDirBase) === null;
   const checks: DesktopShellChannelIsolationCheck[] = [
     {
       id: 'data-dir',
       label: 'data dir',
-      status: channel === 'dev'
-        ? dataDirBase === DEV_DATA_DIR_NAME ? 'ok' : 'warning'
-        : dataDirBase === DEV_DATA_DIR_NAME ? 'warning' : 'ok',
+      status: dataDirOk ? 'ok' : 'warning',
       detail: input.dataDir,
     },
     {

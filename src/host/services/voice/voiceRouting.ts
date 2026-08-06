@@ -86,12 +86,59 @@ const VOICE_BASE_INSTRUCTIONS = [
 ].join('\n');
 
 /**
- * 用户明确点名派发工具时，把这一轮提升为协议级 required tool call。
+ * 用户明确点名派发工具，或对已派任务发出改向/查询/取消指令时，把这一轮提升为
+ * 协议级 required tool call。后者若仍留在 auto，Realtime 模型可能只口头答应，
+ * 后台任务却继续跑旧方向。
  *
  * 普通自然语言仍交给通话模型判断；这里刻意只认“调用/使用 + 派发工具名”的窄表达，
  * 防止把“别派任务”“spawn_task 是什么”之类讨论误变成真实执行。
  */
-export function requiresVoiceDispatchTool(text: string): boolean {
+export interface VoiceActionRoute {
+  toolName: 'steer_task' | 'task_status' | 'cancel_task';
+  rawArguments: string;
+}
+
+function explicitTarget(prefix: string): string | undefined {
+  const target = prefix
+    .replace(/^(?:请|麻烦|现在|把|帮我|给我)+/u, '')
+    .replace(/(?:的)?$/u, '')
+    .trim();
+  return target && target.length <= 12 ? target : undefined;
+}
+
+/**
+ * Qwen Omni Realtime 的 tool_choice 只支持 auto/none，无法用 required 约束控制轮。
+ * 明确的改项、状态和取消语句在 Host 侧直接落到窄工具；派新任务仍由模型补齐结构化参数。
+ */
+export function resolveVoiceActionRoute(text: string): VoiceActionRoute | undefined {
+  const normalized = text.trim().toLowerCase().replace(/[\s_-]+/g, '');
+  if (!normalized) return undefined;
+
+  const steer = /^(.*?)(?:那件|这件|任务|活).{0,16}(?:继续)?(?:改成|改为|调整为|补充|追加)/u.exec(normalized)
+    ?? /^(.*?)(?:继续|顺便|再).{0,8}(?:改成|改为|调整|补充|追加)/u.exec(normalized);
+  if (steer) {
+    const target = explicitTarget(steer[1] ?? '');
+    return {
+      toolName: 'steer_task',
+      rawArguments: JSON.stringify({ instruction: text.trim(), ...(target ? { target } : {}) }),
+    };
+  }
+
+  if (/(?:那件|这件|任务|活).{0,12}(?:怎么样|怎样了|什么状态|进度|好了吗|做完了吗)/u.test(normalized)) {
+    return { toolName: 'task_status', rawArguments: '{}' };
+  }
+
+  const cancel = /(?:停掉|停止|取消)(.*)$/u.exec(normalized);
+  if (cancel && /(?:一个|这件|那件|任务|活)/u.test(cancel[1] ?? '')) {
+    const target = explicitTarget((cancel[1] ?? '').replace(/^(?:一个|这件|那件)/u, '').replace(/(?:任务|活)$/u, ''));
+    return { toolName: 'cancel_task', rawArguments: JSON.stringify(target ? { target } : {}) };
+  }
+
+  return undefined;
+}
+
+export function requiresVoiceActionTool(text: string): boolean {
+  if (resolveVoiceActionRoute(text)) return true;
   const normalized = text.trim().toLowerCase().replace(/[\s_-]+/g, '');
   if (!normalized) return false;
   const dispatchMention = /(?:调用|使用).{0,24}(?:spawntask|派发任务工具)/u.exec(normalized);

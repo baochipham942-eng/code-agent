@@ -1769,7 +1769,11 @@ describe('实时语音会话标记（生产者接线）', () => {
     const client = new FakeClient();
     await attachVoiceClient(client as never, 'session-badge');
 
-    await vi.waitFor(() => expect(patchSessionMetadata).toHaveBeenCalledWith('session-badge', { hadLiveVoice: true }));
+    await vi.waitFor(() => expect(patchSessionMetadata).toHaveBeenCalledWith(
+      'session-badge',
+      { hadLiveVoice: true },
+      { notifyRenderer: true },
+    ));
   });
 });
 

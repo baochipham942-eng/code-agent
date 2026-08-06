@@ -360,6 +360,58 @@ describe('inferenceViaAiSdk —— emittedOutput 闸门重试', () => {
 });
 
 describe('inferenceViaAiSdk —— 路径选择', () => {
+  it('DeepSeek 非流式把完整 DSML 文本恢复为真实工具调用并剥离 _meta', async () => {
+    vi.mocked(generateText).mockResolvedValue({
+      text: [
+        '我现在写入文件。',
+        '<｜｜DSML｜｜tool_calls>',
+        '<｜｜DSML｜｜invoke name="Read">',
+        '<｜｜DSML｜｜parameter name="path" string="true">a.ts</｜｜DSML｜｜parameter>',
+        '<｜｜DSML｜｜parameter name="_meta" string="false">{"shortDescription":"读取入口"}</｜｜DSML｜｜parameter>',
+        '</｜｜DSML｜｜invoke>',
+        '</｜｜DSML｜｜tool_calls>',
+      ].join('\n'),
+      toolCalls: [],
+      reasoningText: '',
+      usage: { inputTokens: 1, outputTokens: 1 },
+      finishReason: 'stop',
+    } as unknown as Awaited<ReturnType<typeof generateText>>);
+
+    const res = await inferenceViaAiSdk(
+      [{ role: 'user', content: 'read' }],
+      [READ_TOOL],
+      { ...CONFIG, provider: 'deepseek', model: 'deepseek-v4-pro' },
+    );
+
+    expect(res).toMatchObject({
+      type: 'tool_use',
+      content: '我现在写入文件。',
+      toolCalls: [{
+        id: expect.stringMatching(/^dsml_/),
+        name: 'Read',
+        arguments: { path: 'a.ts' },
+        shortDescription: '读取入口',
+      }],
+    });
+    expect(res.content).not.toContain('DSML');
+  });
+
+  it('DeepSeek 非流式遇到半截 DSML 时 fail-loud，不把假工具调用当成功文本', async () => {
+    vi.mocked(generateText).mockResolvedValue({
+      text: '<｜｜DSML｜｜tool_calls><｜｜DSML｜｜invoke name="Read">',
+      toolCalls: [],
+      reasoningText: '',
+      usage: { inputTokens: 1, outputTokens: 1 },
+      finishReason: 'stop',
+    } as unknown as Awaited<ReturnType<typeof generateText>>);
+
+    await expect(inferenceViaAiSdk(
+      [{ role: 'user', content: 'read' }],
+      [READ_TOOL],
+      { ...CONFIG, provider: 'deepseek', model: 'deepseek-v4-pro' },
+    )).rejects.toThrow('incomplete DSML tool_calls block');
+  });
+
   it.each([
     {
       label: 'object',

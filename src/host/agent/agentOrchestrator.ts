@@ -291,10 +291,15 @@ export class AgentOrchestrator {
       await this.runDeepResearchMode(content, options, sessionAwareOnEvent, modelConfig);
     } else if (mode === 'normal') {
       const analysis = analyzeTask(content);
-      if (analysis.taskType === 'research') {
+      // An auxiliary slot has already been explicitly split and receives a constrained
+      // tool surface. Auto-routing it into DeepResearch would silently switch providers
+      // and bypass those run-level tool constraints, so keep it on the standard loop.
+      if (!options?.disableAutoAgent && analysis.taskType === 'research') {
         logger.info('Auto-detected research task (keyword match), routing to deep research pipeline');
         await this.runDeepResearchMode(content, options, sessionAwareOnEvent, modelConfig);
       } else if (
+        !options?.disableAutoAgent
+        &&
         !['code', 'data', 'ppt', 'image', 'video'].includes(analysis.taskType)
         && needsLlmIntentClassification(content)
       ) {

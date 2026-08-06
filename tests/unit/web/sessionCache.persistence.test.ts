@@ -59,6 +59,30 @@ describe('toCachedSessionMessages metadata 保留', () => {
     expect(cached[0]?.metadata).toEqual(metadata);
   });
 
+  it('preserves inference-boundary markers needed to exclude meta and rewound history', () => {
+    const cached = toCachedSessionMessages([
+      {
+        id: 'meta-message',
+        role: 'user',
+        content: '后台子任务提示',
+        timestamp: 100,
+        isMeta: true,
+      } as Message,
+      {
+        id: 'rewound-message',
+        role: 'user',
+        content: '已撤回',
+        timestamp: 101,
+        visibility: 'rewound',
+      } as Message,
+    ]);
+
+    expect(cached).toEqual([
+      expect.objectContaining({ id: 'meta-message', isMeta: true }),
+      expect.objectContaining({ id: 'rewound-message', visibility: 'rewound' }),
+    ]);
+  });
+
   // 工单行为不变清单 #5：持久化消息转缓存时所有富字段原样保留。
   it('preserves thinking, contentParts, artifacts, attachments and metadata together', () => {
     const richMessage = {

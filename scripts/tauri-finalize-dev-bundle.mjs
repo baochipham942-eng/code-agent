@@ -9,18 +9,27 @@ import { globSync } from 'glob';
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(scriptDir, '..');
 const tauriRoot = path.join(repoRoot, 'src-tauri');
-const defaultApp = path.join(
-  tauriRoot,
-  'target/release/bundle/macos/Agent Neo Dev.app',
-);
+// 按槽位生成的配置（scripts/gen-dev-slot-conf.ts 产出），productName 决定产物名。
+// 不回退到模板 tauri.dev.conf.json：槽 2 的产物叫 "Agent Neo Dev 2.app"，
+// 回退会让本脚本去 finalize 槽 1 的包——沉默地把资源同步到错误的 app 上。
+const SLOT_CONF = 'src-tauri/tauri.dev.slot.conf.json';
 
 function readJson(relativePath) {
   return JSON.parse(fs.readFileSync(path.join(repoRoot, relativePath), 'utf8'));
 }
 
+if (!fs.existsSync(path.join(repoRoot, SLOT_CONF))) {
+  throw new Error(`Missing ${SLOT_CONF}; run \`npm run tauri:gen-dev-slot-conf\` first`);
+}
+const devConf = readJson(SLOT_CONF);
+const defaultApp = path.join(
+  tauriRoot,
+  `target/release/bundle/macos/${devConf.productName}.app`,
+);
+
 function mergedDevResources() {
   const base = readJson('src-tauri/tauri.conf.json').bundle?.resources ?? {};
-  const overlay = readJson('src-tauri/tauri.dev.conf.json').bundle?.resources ?? {};
+  const overlay = devConf.bundle?.resources ?? {};
   const merged = { ...base };
   for (const [source, target] of Object.entries(overlay)) {
     if (target === null) delete merged[source];

@@ -855,7 +855,7 @@ async function generateViaAiSdk(params: {
   let normalizedToolCalls = (result.toolCalls ?? []).map((tc) => ({
     id: tc.toolCallId,
     name: tc.toolName,
-    input: tc.input ?? {},
+    input: (tc.input ?? {}) as Record<string, unknown>,
   }));
   if (
     normalizedToolCalls.length === 0

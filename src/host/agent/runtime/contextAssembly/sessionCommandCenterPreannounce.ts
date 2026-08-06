@@ -11,7 +11,7 @@ export interface CommandCenterToolStartInput {
   emitToolStart(): void;
 }
 
-export function buildCommandCenterPreannounce(userMessage: string): string {
+function buildCommandCenterPreannounce(userMessage: string): string {
   const request = extractUserRequest(userMessage).replace(/\s+/g, ' ').trim();
   const taskLabel = Array.from(request).slice(0, 28).join('');
   return taskLabel

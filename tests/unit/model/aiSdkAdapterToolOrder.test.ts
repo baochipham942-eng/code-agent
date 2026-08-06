@@ -151,6 +151,37 @@ describe('toAiMessages —— tool-call/tool-result 配对排序', () => {
     expect(() => assertAiSdkToolPairing(ai)).not.toThrow();
   });
 
+  it('实时 steer 把 user/assistant 插到并行 tool results 前：按 id 跨轮归位且不触发 MissingToolResults', async () => {
+    const messages: ModelMessage[] = [
+      { role: 'system', content: 'system prompt' },
+      { role: 'user', content: '执行五个工具' },
+      {
+        role: 'assistant',
+        content: '',
+        toolCalls: Array.from({ length: 5 }, (_, index) => ({
+          id: `call_0${index}`,
+          name: 'Task',
+          arguments: '{}',
+        })),
+      } as ModelMessage,
+      { role: 'system', content: '<tool-progress>still running</tool-progress>' },
+      { role: 'assistant', content: '旧方向的阶段性文字' },
+      { role: 'user', content: '改一下，只保留 Activity' },
+      { role: 'system', content: '<steer>direction changed</steer>' },
+      ...Array.from({ length: 5 }, (_, index) => ({
+        role: 'tool',
+        content: `result ${index}`,
+        toolCallId: `call_0${index}`,
+      } as ModelMessage)),
+      { role: 'system', content: '<auto-continuation>请按新方向继续</auto-continuation>' },
+    ];
+
+    const ai = await captureAiMessages(messages);
+    expect(() => assertAiSdkToolPairing(ai)).not.toThrow();
+    const assistantIndex = ai.findIndex((message) => message.role === 'assistant' && Array.isArray(message.content));
+    expect(ai.slice(assistantIndex + 1, assistantIndex + 6).every((message) => message.role === 'tool')).toBe(true);
+  });
+
   it('已正确排序（assistant → tool → system）：保持有效，不回归', async () => {
     const messages: ModelMessage[] = [
       { role: 'system', content: 'system prompt' },

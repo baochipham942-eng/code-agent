@@ -28,6 +28,9 @@ export interface RunTraceContext {
   readonly agentId?: string;
   readonly parentRunId?: string;
   readonly processInstanceId: string;
+  readonly turnId: string | null;
+  readonly toolCallId: string | null;
+  readonly surface?: string;
 }
 
 export interface CreateRunTraceContextInput {
@@ -41,6 +44,9 @@ export interface CreateRunTraceContextInput {
   agentId?: string;
   parentRunId?: string;
   processInstanceId: string;
+  turnId?: string | null;
+  toolCallId?: string | null;
+  surface?: string;
   traceId?: string;
   spanId?: string;
   traceFlags?: number;
@@ -111,6 +117,9 @@ export function createRunTraceContext(input: CreateRunTraceContextInput): RunTra
     agentId: input.agentId?.trim() || undefined,
     parentRunId: input.parentRunId?.trim() || undefined,
     processInstanceId: requireText(input.processInstanceId, 'processInstanceId'),
+    turnId: input.turnId?.trim() || null,
+    toolCallId: input.toolCallId?.trim() || null,
+    surface: input.surface?.trim() || undefined,
   });
 }
 
@@ -119,7 +128,7 @@ export function createChildRunTraceContext(
   overrides: Partial<Pick<
     RunTraceContext,
     'runId' | 'sessionId' | 'attempt' | 'ownerEpoch' | 'engine' | 'workspaceFingerprint'
-    | 'agentId' | 'parentRunId' | 'processInstanceId'
+    | 'agentId' | 'parentRunId' | 'processInstanceId' | 'turnId' | 'toolCallId' | 'surface'
   >> = {},
 ): RunTraceContext {
   return createRunTraceContext({
@@ -157,6 +166,30 @@ export function withRunTraceContext<T>(
 
 export function getActiveRunTraceContext(): RunTraceContext | undefined {
   return contextStorage.getStore()?.getValue(RUN_TRACE_CONTEXT_KEY) as RunTraceContext | undefined;
+}
+
+/**
+ * Replace the active correlation context for the remainder of the current async chain.
+ * Long-lived run loops use this at turn boundaries; child async work keeps the snapshot
+ * that was active when it was created.
+ */
+export function enterRunTraceContext(runTraceContext: RunTraceContext): void {
+  contextStorage.enterWith(asOtelContext(runTraceContext));
+}
+
+/** Structured fields shared by file logs and other correlation-aware sinks. */
+export function getCorrelationFields(): Record<string, string> {
+  const active = getActiveRunTraceContext();
+  if (!active) return {};
+  return {
+    traceId: active.traceId,
+    spanId: active.spanId,
+    runId: active.runId,
+    sessionId: active.sessionId,
+    ...(active.turnId ? { turnId: active.turnId } : {}),
+    ...(active.toolCallId ? { toolCallId: active.toolCallId } : {}),
+    ...(active.surface ? { surface: active.surface } : {}),
+  };
 }
 
 export function bindRunTraceContext<TArgs extends unknown[], TResult>(
@@ -218,5 +251,8 @@ export function restoreRunTraceContext(value: unknown): RunTraceContext {
       readString(record, 'processInstanceId') ?? '',
       'processInstanceId',
     ),
+    turnId: readString(record, 'turnId') ?? null,
+    toolCallId: readString(record, 'toolCallId') ?? null,
+    surface: readString(record, 'surface'),
   });
 }

@@ -5,7 +5,7 @@ import type { MCPOAuthConsentRequest, MCPOAuthConsentResponse } from '../../shar
 
 export const MCP_OAUTH_CONSENT_TIMEOUT_MS = 2 * 60 * 1000;
 
-const logger = createLogger('MCPOAuthConsent');
+const logger = createLogger('MCPOAuthConsent', { lane: 'mcp' });
 
 type ConsentDecision = 'authorize' | 'decline';
 

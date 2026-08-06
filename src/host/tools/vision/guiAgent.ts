@@ -14,7 +14,7 @@ import { MODEL_API_ENDPOINTS } from '../../../shared/constants';
 import { TOOL_DEPENDENCY_HINTS } from '../modules/_helpers/dependencyHints';
 
 const execAsync = promisify(exec);
-const logger = createLogger('GUIAgent');
+const logger = createLogger('GUIAgent', { lane: 'computer-use' });
 
 const SCREENSHOT_PATH = path.join(os.tmpdir(), 'gui_agent_screenshot.png');
 

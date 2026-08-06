@@ -35,6 +35,8 @@ export class TelemetryStorage {
   private stmtCache = new Map<string, Database.Statement>();
   private dbUnavailable = false; // 标记 DB 不可用，避免重复报错
 
+  constructor(private readonly dbOverride?: Database.Database) {}
+
   static getInstance(): TelemetryStorage {
     if (!this.instance) {
       this.instance = new TelemetryStorage();
@@ -43,6 +45,7 @@ export class TelemetryStorage {
   }
 
   private getDb(): Database.Database {
+    if (this.dbOverride) return this.dbOverride;
     const db = getDatabase().getDb();
     if (!db) throw new Error('Database not initialized');
     return db;
@@ -59,6 +62,7 @@ export class TelemetryStorage {
 
   /** CLI 模式下 DB 可能不可用，静默跳过存储 */
   private isDbAvailable(): boolean {
+    if (this.dbOverride) return true;
     if (this.dbUnavailable) return false;
     try {
       const dbService = getDatabase();

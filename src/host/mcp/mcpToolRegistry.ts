@@ -29,7 +29,7 @@ import {
 import { isMcpToolReadOnly } from './mcpToolSafety';
 import { MCP_TASKS_EXTENSION_ID } from './mcpTransport';
 
-const logger = createLogger('MCPToolRegistry');
+const logger = createLogger('MCPToolRegistry', { lane: 'mcp' });
 
 interface MCPToolRegistryCallOptions {
   timeoutMs?: number;

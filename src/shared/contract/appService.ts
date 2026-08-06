@@ -170,10 +170,11 @@ export interface SessionMarkdownExport {
   };
 }
 
-/** 会话诊断日志导出（脱敏诊断包 + 当天本地日志尾部，JSON 串） */
+/** 会话诊断导出；v2 ZIP 通过 base64 跨 IPC，legacy JSON 保留一版。 */
 export interface SessionLogExport {
   content: string;
   suggestedFileName: string;
+  encoding?: 'utf8' | 'base64';
 }
 
 export interface PromptRewindDraft {

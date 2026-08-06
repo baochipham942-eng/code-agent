@@ -204,6 +204,8 @@ export const MEMORY_TIMEOUTS = {
   LLM_SUMMARIZE: 30_000,
   /** 触发器超时 */
   TRIGGER: 5_000,
+  /** 用户规则写入确认弹窗等待上限 */
+  DIRECTIVE_CONFIRM: 120_000,
 } as const;
 
 /** 测试运行器超时 */

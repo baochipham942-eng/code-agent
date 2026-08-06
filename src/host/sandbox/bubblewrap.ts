@@ -18,7 +18,7 @@ import { createLogger } from '../services/infra/logger';
 import { SANDBOX_TIMEOUTS } from '../../shared/constants';
 import { getSensitiveSandboxPaths, type SensitiveSandboxPath } from './sensitivePaths';
 
-const logger = createLogger('Bubblewrap');
+const logger = createLogger('Bubblewrap', { lane: 'sandbox' });
 
 // ----------------------------------------------------------------------------
 // Types

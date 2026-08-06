@@ -15,6 +15,8 @@ const DANGEROUS_CLOSING_TAGS = [
   '</system>',
   '</contextual-memory>',
   '</seed-memory>',
+  '</user-directives>',
+  '</user-memory>',
   '</current-plan>',
 ];
 

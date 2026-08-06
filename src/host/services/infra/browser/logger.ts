@@ -1,7 +1,7 @@
 import { logCollector } from '../../../mcp/logCollector.js';
 import { createLogger } from '../logger';
 
-const serviceLogger = createLogger('BrowserService');
+const serviceLogger = createLogger('BrowserService', { lane: 'browser' });
 
 export class BrowserLogger {
   private logs: string[] = [];

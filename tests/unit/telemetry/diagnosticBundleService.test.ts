@@ -300,7 +300,7 @@ describe('buildDiagnosticBundle', () => {
     fs.writeFileSync(logFile, `{"level":"WARN","message":"[openai] API 错误: 404","data":"key sk-abcd1234efgh"}\n`);
     try {
       const result = await buildSessionLogExport('sess-2', {
-        storage, exportedAt: 1718000000000, logFilePath: logFile,
+        storage, exportedAt: 1718000000000, logFilePath: logFile, format: 'legacy-json',
       });
       const parsed = JSON.parse(result.content) as { sessionId: string; bundle: { session: { id: string } } | null; logTail: string | null };
       expect(parsed.sessionId).toBe('sess-2');
@@ -311,7 +311,7 @@ describe('buildDiagnosticBundle', () => {
       expect(result.suggestedFileName).toMatch(/^neo-session-log-sess-2-\d{4}-\d{2}-\d{2}\.json$/);
 
       // 会话不在 telemetry 存储（telemetry 关闭/历史会话）→ bundle null，日志尾部仍在
-      const missing = await buildSessionLogExport('nope', { storage, logFilePath: logFile });
+      const missing = await buildSessionLogExport('nope', { storage, logFilePath: logFile, format: 'legacy-json' });
       const missingParsed = JSON.parse(missing.content) as { bundle: unknown; logTail: string | null };
       expect(missingParsed.bundle).toBeNull();
       expect(missingParsed.logTail).toContain('API 错误');

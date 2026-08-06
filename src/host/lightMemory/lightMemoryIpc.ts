@@ -8,6 +8,8 @@ import * as path from 'path';
 import { getMemoryDir, getMemoryIndexPath } from './indexLoader';
 import type { MemoryEntryStatus } from '../../shared/contract/memory';
 import { LIGHT_MEMORY } from '../../shared/constants';
+import { atomicWriteMemoryText } from '../memory/atomicMemoryFile';
+import { assertDirectivePersistenceAuthorized } from '../memory/directiveMemoryConfirmation';
 // Logger available for future use: createLogger('LightMemoryIPC')
 
 export { getMemoryIndexPath };
@@ -253,7 +255,10 @@ export async function writeLightMemoryFile(input: {
   status?: MemoryEntryStatus;
   source?: string;
   schemaVersion?: number;
+  /** Only the interactive directive confirmation path may set this. */
+  directiveConfirmedByUser?: boolean;
 }): Promise<LightMemoryFile> {
+  assertDirectivePersistenceAuthorized(input.type, input.directiveConfirmedByUser === true);
   const dir = getMemoryDir();
   await fs.mkdir(dir, { recursive: true });
 
@@ -275,7 +280,12 @@ export async function writeLightMemoryFile(input: {
   const body = input.content.trim();
   const fileContent = `---\n${frontmatter}\n---\n\n${body}\n`;
   const filePath = path.join(dir, filename);
-  await fs.writeFile(filePath, fileContent, 'utf-8');
+  await atomicWriteMemoryText(filePath, fileContent, {
+    validate: (written) => {
+      const issue = frontmatterHealthIssue(parseFrontmatter(written));
+      if (issue) throw new Error(`Invalid Light Memory file: ${issue}`);
+    },
+  });
 
   const written = await readMemoryFile(filename);
   if (!written) {
@@ -303,7 +313,7 @@ export async function deleteMemoryFile(filename: string): Promise<boolean> {
     const existing = await fs.readFile(indexPath, 'utf-8');
     const pattern = new RegExp(`^- \\[${sanitized.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\].*$`, 'gm');
     const updated = existing.replace(pattern, '').replace(/\n{3,}/g, '\n\n');
-    await fs.writeFile(indexPath, updated, 'utf-8');
+    await atomicWriteMemoryText(indexPath, updated);
   } catch {
     // INDEX.md might not exist
   }
@@ -465,7 +475,7 @@ export async function rebuildLightMemoryIndex(): Promise<LightMemoryRebuildResul
     ...indexEntries.map((entry) => `- [${entry.filename}](${entry.filename}) — ${entry.description}`),
     '',
   ];
-  await fs.writeFile(indexPath, lines.join('\n'), 'utf-8');
+  await atomicWriteMemoryText(indexPath, lines.join('\n'));
 
   return {
     indexPath,

@@ -15,7 +15,7 @@ import type {
   PromptRegistration,
 } from './types';
 
-const logger = createLogger('InProcessMCPServer');
+const logger = createLogger('InProcessMCPServer', { lane: 'mcp' });
 
 // ----------------------------------------------------------------------------
 // InProcessMCPServer - 进程内 MCP 服务器基类

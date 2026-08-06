@@ -2,6 +2,11 @@ import { describe, expect, it, vi } from 'vitest';
 import { StreamHandler } from '../../../src/host/agent/runtime/streamHandler';
 import { TurnState } from '../../../src/host/agent/runtime/turnState';
 import { RunStatsState } from '../../../src/host/agent/runtime/runStatsState';
+import {
+  createRunTraceContext,
+  getActiveRunTraceContext,
+  withRunTraceContext,
+} from '../../../src/host/telemetry/runTraceContext';
 
 vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({
@@ -75,5 +80,42 @@ describe('StreamHandler', () => {
         isMeta: true,
       }),
     });
+  });
+
+  it('enters a turn-scoped child context when the iteration begins', async () => {
+    const run = createRunTraceContext({
+      runId: 'run-stream',
+      sessionId: 'session-stream',
+      attempt: 1,
+      ownerEpoch: 1,
+      engine: 'native',
+      workspace: '/tmp/stream',
+      processInstanceId: 'process-stream',
+    });
+    const ctx = {
+      runTraceContext: run,
+      modelConfig: { provider: 'test-provider', model: 'test-model' },
+      onEvent: vi.fn(),
+      stats: RunStatsState.forTest({ traceId: run.traceId } as never),
+      turn: TurnState.forTest(),
+      goalTracker: { getGoalCheckpoint: vi.fn().mockReturnValue(null) },
+    };
+    const handler = new StreamHandler(
+      ctx as any,
+      { injectSystemMessage: vi.fn() } as any,
+      { emitTaskProgress: vi.fn(), emitTaskStats: vi.fn() } as any,
+    );
+
+    await withRunTraceContext(run, async () => {
+      const turn = handler.setupIteration(1, 'check', { startSpan: vi.fn() } as any);
+      expect(turn).toMatchObject({
+        traceId: run.traceId,
+        sessionId: 'session-stream',
+        turnId: ctx.turn.currentTurnId,
+        toolCallId: null,
+      });
+      expect(getActiveRunTraceContext()).toEqual(turn);
+    });
+    expect(getActiveRunTraceContext()).toBeUndefined();
   });
 });

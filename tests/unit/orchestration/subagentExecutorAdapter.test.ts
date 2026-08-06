@@ -63,6 +63,8 @@ describe('SubagentExecutorAdapter', () => {
           traceFlags: 1,
           traceState: undefined,
           parentRunId: undefined,
+          turnId: null,
+          toolCallId: null,
         } : undefined,
       }),
     });

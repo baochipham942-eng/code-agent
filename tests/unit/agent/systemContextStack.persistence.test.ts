@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Message } from '../../../src/shared/contract';
+import {
+  createChildRunTraceContext,
+  createRunTraceContext,
+  withRunTraceContext,
+} from '../../../src/host/telemetry/runTraceContext';
 
 const sessionManagerState = vi.hoisted(() => ({
   addMessage: vi.fn(),
@@ -99,5 +104,36 @@ describe('systemContextStack.addAndPersistMessage', () => {
     expect(message.isMeta).toBe(true);
     expect(ctx.runtime.messages).toEqual([message]);
     expect(sessionManagerState.addMessageToSession).toHaveBeenCalledWith('runtime-session-1', message);
+  });
+
+  it('persists actual turn and trace correlation with tool messages', async () => {
+    const ctx = makeCtx('runtime-session-1');
+    const message: Message = {
+      id: 'message-tool-1',
+      role: 'tool',
+      content: '[{"toolCallId":"tool-1","success":true}]',
+      timestamp: 123,
+      toolResults: [{ toolCallId: 'tool-1', success: true }],
+    };
+    const run = createRunTraceContext({
+      runId: 'run-1',
+      sessionId: 'runtime-session-1',
+      attempt: 1,
+      ownerEpoch: 1,
+      engine: 'native',
+      workspace: '/tmp/context-stack',
+      processInstanceId: 'process-1',
+    });
+    const turn = createChildRunTraceContext(run, { turnId: 'turn-1' });
+
+    await withRunTraceContext(turn, () => addAndPersistMessage(ctx, message));
+
+    expect(message.metadata).toMatchObject({
+      correlation: { turnId: 'turn-1', traceId: run.traceId },
+    });
+    expect(sessionManagerState.addMessageToSession).toHaveBeenCalledWith(
+      'runtime-session-1',
+      expect.objectContaining({ metadata: message.metadata }),
+    );
   });
 });

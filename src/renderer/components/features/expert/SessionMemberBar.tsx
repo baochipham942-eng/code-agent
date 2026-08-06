@@ -105,7 +105,13 @@ export function useSessionMembers(sessionId: string | null): MemberPill[] {
     return readPersistedTeamLead(session?.metadata)?.roleId ?? null;
   });
   const durableDetail = useDurableSwarmRunDetail(sessionId);
-  const persistedAgents = durableDetail?.agents.length && durableDetail.agents.length >= 2
+  // 账本必须自证属于本会话再采信。原先靠「至少 2 个成员」间接挡住外会话的 run
+  // （单 agent 的陈旧 run 挤进来会把别人的成员画到这条上，e2e 实测过：
+  // swarm-chain 的 e2e-scout 出现在 workbench-overview 新建的会话里）。
+  // 单发后台 agent 也要进成员条，数量门槛就挡不住了 —— 改用 sessionId 硬校验，
+  // 既放行单发，又把跨会话泄漏堵死在数据自证这一层。
+  const persistedAgents = durableDetail?.agents.length
+    && durableDetail.run.sessionId === sessionId
     ? durableDetail.agents
     : [];
 

@@ -2,8 +2,11 @@ import type { SubagentResult } from '../subagentExecutorTypes';
 import type { SubagentExecutionContext } from '../subagentExecutorTypes';
 import type { ManagedAgent } from '../spawnGuard';
 import type { MultiagentExecutionResult } from '../multiagentExecutionTypes';
+import type { SwarmRunScope } from '../../../shared/contract/swarm';
 import { getBackgroundSubagentRegistry } from '../backgroundSubagentRegistry';
 import { scheduleBackgroundSubagentIdleWake } from '../backgroundSubagentIdleWake';
+import { getSwarmEventEmitter } from '../swarmEventPublisher';
+import { registerSingleSpawnVisibility } from '../singleSpawnVisibilityRegistry';
 import { cleanupAgentWorktree, discardAgentWorktree } from '../agentWorktree';
 import { AgentFailureCode } from '../../../shared/contract/agentFailure';
 import { SUBAGENT_EXECUTION_TIMEOUTS } from '../../../shared/constants';
@@ -50,6 +53,77 @@ export async function raceForegroundBlockingBudget(
   }
 }
 
+export function resolveSingleSpawnRunScope(
+  context: Pick<SubagentExecutionContext, 'sessionId' | 'runId' | 'swarmRunScope'>,
+  treeId: string,
+  localAgentId: string,
+): SwarmRunScope | undefined {
+  if (context.swarmRunScope) return context.swarmRunScope;
+  if (!context.sessionId) return undefined;
+  return {
+    sessionId: context.sessionId,
+    runId: `single_${localAgentId}`,
+    treeId,
+    ...(context.runId ? { parentNativeRunId: context.runId } : {}),
+  };
+}
+
+export function publishBackgroundSubagentVisibility(options: {
+  promise: Promise<SubagentResult>;
+  scope?: SwarmRunScope;
+  agentId: string;
+  agentName: string;
+  role: string;
+  task: string;
+  startedAt: number;
+  ownsRunLifecycle: boolean;
+}): void {
+  const { promise, scope, agentId, agentName, role, task, startedAt, ownsRunLifecycle } = options;
+  if (!scope) return;
+
+  const unregisterVisibility = ownsRunLifecycle
+    ? registerSingleSpawnVisibility(scope, agentId)
+    : undefined;
+  const emitter = getSwarmEventEmitter();
+  if (ownsRunLifecycle) emitter.started(scope, 1);
+  emitter.agentAdded(scope, { id: agentId, name: agentName, role, dispatchedTask: task });
+  emitter.agentUpdated(scope, agentId, { status: 'running', startTime: startedAt });
+
+  const finishRun = (failed: boolean): void => {
+    if (!ownsRunLifecycle) return;
+    emitter.completed(scope, {
+      total: 1,
+      completed: failed ? 0 : 1,
+      failed: failed ? 1 : 0,
+      parallelPeak: 1,
+      totalTime: Math.max(0, Date.now() - startedAt),
+    });
+  };
+
+  void promise.then(
+    (result) => {
+      if (result.success) {
+        emitter.agentCompleted(scope, agentId, result.output);
+        finishRun(false);
+        unregisterVisibility?.();
+        return;
+      }
+      if (result.cancellationReason) {
+        emitter.agentCancelled(scope, agentId, result.error || result.cancellationReason);
+      } else {
+        emitter.agentFailed(scope, agentId, result.error || 'Subagent failed');
+      }
+      finishRun(true);
+      unregisterVisibility?.();
+    },
+    (error) => {
+      emitter.agentFailed(scope, agentId, error instanceof Error ? error.message : String(error));
+      finishRun(true);
+      unregisterVisibility?.();
+    },
+  );
+}
+
 export function adoptForegroundSubagent(options: {
   promise: Promise<SubagentResult>;
   agentId: string;
@@ -57,10 +131,12 @@ export function adoptForegroundSubagent(options: {
   role: string | undefined;
   context: SubagentExecutionContext;
   treeId: string;
+  task: string;
   agentStartedAt: number;
   foregroundBlockingBudgetMs: number;
 }): MultiagentExecutionResult {
-  const { promise, agentId, agentName, role, context, treeId, agentStartedAt, foregroundBlockingBudgetMs } = options;
+  const { promise, agentId, agentName, role, context, treeId, task, agentStartedAt, foregroundBlockingBudgetMs } = options;
+  const visibilityScope = resolveSingleSpawnRunScope(context, treeId, agentId);
   getBackgroundSubagentRegistry().adopt(promise, {
     agentId,
     sessionId: context.sessionId,
@@ -71,6 +147,16 @@ export function adoptForegroundSubagent(options: {
     suppressIdleWake: Boolean(context.suppressBackgroundSubagentIdleWake),
     ...(context.suppressBackgroundSubagentIdleWake ? { suppressReason: 'goal-loop' as const } : {}),
     onComplete: scheduleBackgroundSubagentIdleWake,
+  });
+  publishBackgroundSubagentVisibility({
+    promise,
+    scope: visibilityScope,
+    agentId,
+    agentName,
+    role: role || 'dynamic',
+    task,
+    startedAt: agentStartedAt,
+    ownsRunLifecycle: !context.swarmRunScope,
   });
   return {
     success: true,
@@ -86,7 +172,7 @@ Use collect_agent("${agentId}") to fetch the result.`,
       background: true,
       transferredToBackground: true,
       foregroundBlockingBudgetMs,
-      ...(context.swarmRunScope ?? {}),
+      ...(visibilityScope ?? {}),
     },
   };
 }

@@ -105,6 +105,17 @@ export interface SwarmStore extends SwarmExecutionState {
 
 type SwarmStateSnapshot = Omit<SwarmStore, 'activateScope' | 'handleEvent' | 'reset'>;
 
+export function selectHasStoppableSwarmWork(
+  state: Pick<SwarmStore, 'activeSessionId' | 'isRunning' | 'agents'>,
+  sessionId?: string | null,
+): boolean {
+  return Boolean(sessionId)
+    && state.activeSessionId === sessionId
+    && (state.isRunning || state.agents.some(
+      (agent) => agent.status === 'running' || agent.status === 'ready' || agent.status === 'pending',
+    ));
+}
+
 const MAX_MESSAGES = 40;
 const MAX_EVENT_LOG = 80;
 

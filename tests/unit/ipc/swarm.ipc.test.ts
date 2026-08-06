@@ -115,6 +115,10 @@ import type {
   SwarmRunListItem,
 } from '../../../src/shared/contract/swarmTrace';
 import { registerSwarmHandlers } from '../../../src/host/ipc/swarm.ipc';
+import {
+  registerSingleSpawnVisibility,
+  resetSingleSpawnVisibilityRegistry,
+} from '../../../src/host/agent/singleSpawnVisibilityRegistry';
 
 const scopeA: SwarmRunScope = {
   sessionId: 'session-a',
@@ -178,6 +182,7 @@ describe('swarm.ipc run-scoped control plane', () => {
   beforeEach(() => {
     platformState.reset();
     vi.clearAllMocks();
+    resetSingleSpawnVisibilityRegistry();
 
     coordinatorA.getScope.mockReturnValue(scopeA);
     coordinatorB.getScope.mockReturnValue(scopeB);
@@ -454,6 +459,59 @@ describe('swarm.ipc run-scoped control plane', () => {
     expect(coordinatorRegistryState.finalize).toHaveBeenCalledWith(scopeA, 'cancelled');
     expect(swarmEmitterState.cancelled).toHaveBeenCalledWith(scopeA);
     expect(coordinatorB.abortTask).not.toHaveBeenCalled();
+  });
+
+  it('cancels a visible single spawn by stable legacy agent id without creating a coordinator', async () => {
+    const singleScope: SwarmRunScope = {
+      sessionId: 'session-single',
+      runId: 'single_agent_dynamic_1',
+      treeId: 'session-single',
+      parentNativeRunId: 'native-parent',
+    };
+    const unregister = registerSingleSpawnVisibility(singleScope, 'agent_dynamic_1');
+    coordinatorRegistryState.getByRun.mockReturnValue(undefined);
+    coordinatorRegistryState.get.mockReturnValue(undefined);
+    coordinatorRegistryState.abortRun.mockReturnValue(false);
+    spawnGuardState.cancel.mockReturnValueOnce(true);
+
+    const result = await handler('swarm:cancel-run')({}, {
+      sessionId: singleScope.sessionId,
+      runId: singleScope.runId,
+    } as never);
+
+    expect(result).toBe(true);
+    expect(spawnGuardState.cancelRun).toHaveBeenCalledWith(singleScope, 'swarm_cancelled');
+    expect(spawnGuardState.cancel).toHaveBeenCalledWith('agent_dynamic_1');
+    expect(coordinatorRegistryState.abortRun).toHaveBeenCalledWith(singleScope, 'swarm_cancelled');
+    expect(swarmEmitterState.cancelled).toHaveBeenCalledWith(singleScope);
+    unregister();
+  });
+
+  it('cancels one visible single spawn without requiring a scoped agent id', async () => {
+    const singleScope: SwarmRunScope = {
+      sessionId: 'session-single',
+      runId: 'single_agent_dynamic_2',
+      treeId: 'session-single',
+    };
+    const unregister = registerSingleSpawnVisibility(singleScope, 'agent_dynamic_2');
+    coordinatorRegistryState.getByRun.mockReturnValue(undefined);
+    coordinatorRegistryState.get.mockReturnValue(undefined);
+    spawnGuardState.cancel.mockReturnValueOnce(true);
+
+    const result = await handler('swarm:cancel-agent')({}, {
+      sessionId: singleScope.sessionId,
+      runId: singleScope.runId,
+      agentId: 'agent_dynamic_2',
+    } as never);
+
+    expect(result).toBe(true);
+    expect(spawnGuardState.cancel).toHaveBeenCalledWith('agent_dynamic_2', undefined);
+    expect(swarmEmitterState.agentCancelled).toHaveBeenCalledWith(
+      singleScope,
+      'agent_dynamic_2',
+      'Cancelled by user',
+    );
+    unregister();
   });
 
   it('fails closed when terminal-run mutations are replayed after live cleanup', async () => {

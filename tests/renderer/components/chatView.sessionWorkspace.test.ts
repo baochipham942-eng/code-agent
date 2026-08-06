@@ -92,6 +92,16 @@ const swarmStoreState = {
 vi.mock('../../../src/renderer/stores/swarmStore', () => ({
   useSwarmStore: (selector?: (state: typeof swarmStoreState) => unknown) =>
     selector ? selector(swarmStoreState) : swarmStoreState,
+  // 判定抽成了共享 selector（ChatView 与成员条同一真源），整模块 mock 必须一并导出，
+  // 否则 ChatView 渲染即抛 "No export is defined on the mock"。
+  selectHasStoppableSwarmWork: (
+    state: typeof swarmStoreState,
+    sessionId?: string | null,
+  ) => Boolean(sessionId)
+    && state.activeSessionId === sessionId
+    && (state.isRunning || state.agents.some(
+      (agent) => agent.status === 'running' || agent.status === 'ready' || agent.status === 'pending',
+    )),
 }));
 
 vi.mock('../../../src/renderer/stores/localBridgeStore', () => ({

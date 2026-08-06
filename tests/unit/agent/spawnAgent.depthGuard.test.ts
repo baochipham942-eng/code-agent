@@ -135,6 +135,18 @@ const foregroundBackgroundSource = readFileSync(FOREGROUND_BACKGROUND_PATH, 'utf
     expect(source).not.toMatch(/raced\.kind === ['"]timeout['"][\s\S]{0,500}abortController\.abort/);
   });
 
+  it('普通单 spawn 保持 legacy runtime identity，只在后台分支创建可见性 scope', () => {
+    expect(source).toMatch(
+      /const agentId = context\.swarmRunScope[\s\S]{0,180}createScopedSwarmAgentId\(context\.swarmRunScope, localAgentId\)[\s\S]{0,80}: localAgentId/,
+    );
+    expect(source).toMatch(
+      /else \{[\s\S]*?guard\.register\([\s\S]*?scope: context\.swarmRunScope,[\s\S]*?const visibilityScope = resolveSingleSpawnRunScope\(/,
+    );
+    expect(foregroundBackgroundSource).toMatch(
+      /const visibilityScope = resolveSingleSpawnRunScope\([\s\S]*?getBackgroundSubagentRegistry\(\)\.adopt\(/,
+    );
+  });
+
   it('转后台复用 onComplete cleanup 委派，避免前后重复 cleanup', () => {
     expect(source).toMatch(/const delegateWorktreeCleanup = \(\): void =>/);
     expect(source).toMatch(/worktreeCleanupDelegated \|\| worktreeFinalized/);

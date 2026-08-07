@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import { IPC_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
 import type { AppSettings } from '@shared/contract';
+import { useAuthStore } from '../../../../stores/authStore';
 import { isWebMode } from '../../../../utils/platform';
 import { WebModeBanner } from '../WebModeBanner';
 import { SettingsDetails, SettingsPage, SettingsSection } from '../SettingsLayout';
@@ -234,6 +235,7 @@ function getRuleRows(ruleSummary: PermissionRuleSummary, text: GeneralSettingsTe
 export const GeneralSettings: React.FC = () => {
   const { t } = useI18n();
   const generalText = t.settings.general.permissions;
+  const isAdmin = useAuthStore((state) => state.user?.isAdmin === true);
   const [permissionMode, setPermissionMode] = useState<PermissionMode>('default');
   const [inheritance, setInheritance] = useState<InheritanceMode>('strict-inherit');
   const [denyRules, setDenyRules] = useState<string>('');
@@ -292,6 +294,10 @@ export const GeneralSettings: React.FC = () => {
       const success = await ipcService.invoke(IPC_CHANNELS.PERMISSION_SET_MODE, newMode);
       if (success) {
         setPermissionMode(newMode);
+      } else {
+        // host 侧非抛异常地拒绝了切换（如 bypassPermissions 未带审批标记）——之前这里
+        // 完全静默，用户点了按钮却看不到任何反馈。
+        toast.error(generalText.setModeFailedPrefix + generalText.unknownError);
       }
     } catch (error) {
       toast.error(generalText.setModeFailedPrefix + getErrorMessage(error, generalText.unknownError));
@@ -398,6 +404,12 @@ export const GeneralSettings: React.FC = () => {
         title={generalText.controlPlane.title}
         description={generalText.controlPlane.description}
       >
+        {!isAdmin && (
+          <div className="flex items-start gap-2 rounded-lg border border-zinc-700/70 bg-zinc-800/60 p-3 text-xs text-zinc-400">
+            <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-zinc-500" />
+            <span>{generalText.adminOnlySwitchHint}</span>
+          </div>
+        )}
         <div className="rounded-lg border border-zinc-700/70 bg-zinc-900/60">
           <div className="grid grid-cols-2 gap-px border-b border-zinc-700/60 bg-zinc-800/80 lg:grid-cols-4">
             {[
@@ -475,8 +487,9 @@ export const GeneralSettings: React.FC = () => {
                         <div className="flex justify-end">
                           <button
                             type="button"
-                            disabled={isWebMode() || row.selected}
+                            disabled={isWebMode() || row.selected || !isAdmin}
                             onClick={() => handlePermissionModeSelect(row)}
+                            title={!isAdmin && !row.selected ? generalText.adminOnlySwitchHint : undefined}
                             className="rounded border border-zinc-700 bg-zinc-800 px-2.5 py-1.5 text-zinc-200 hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-50"
                           >
                             {row.actionLabel}

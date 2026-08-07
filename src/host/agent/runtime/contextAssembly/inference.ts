@@ -18,7 +18,7 @@ import { filterToolDefinitionsByWorkbenchScope } from '../../../tools/workbenchT
 import { filterToolDefinitionsByStrictSkillBoundary } from '../../../tools/skillBoundaryScope';
 import { trackNode } from '../../../observability/posthogNode';
 import { POSTHOG_EVENTS } from '../../../../shared/observability/posthog-events';
-import { filterToolsByRunPolicy } from '../toolRunPolicy';
+import { filterToolsByRunPolicyObserved } from '../toolRunPolicy';
 import {
   stripImagesFromMessages,
   extractUserRequestText,
@@ -435,7 +435,9 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
       after: tools.length,
     });
   }
-  tools = filterToolsByRunPolicy(tools, ctx.runtime);
+  // 收窄可观测性（narrowedBy: 'run_policy'）与 A6/A8 对齐，实现挪进 toolRunPolicy.ts
+  // 就近维护，避免本文件（god-file 守门 max-lines: 1000）被这几行推过线。
+  tools = filterToolsByRunPolicyObserved(tools, ctx.runtime);
   if (isArtifactRepairMode(ctx)) {
     const before = tools.length;
     const phase = ctx.runtime.artifact.repairGuard?.phase ?? 'initial_repair';

@@ -236,7 +236,10 @@ describe('githubPrModule (native)', () => {
       execResponses.push({ match: 'git branch --show-current', result: { stdout: 'main\n', stderr: '' } });
       const result = await run({ action: 'create' });
       expect(result.ok).toBe(false);
-      if (!result.ok) expect(result.code).toBe('INVALID_ARGS');
+      if (!result.ok) {
+        expect(result.code).toBe('PR_ON_DEFAULT_BRANCH');
+        expect(result.meta).toEqual({ branch: 'main' });
+      }
     });
 
     it('blocks creation with uncommitted changes', async () => {
@@ -244,7 +247,7 @@ describe('githubPrModule (native)', () => {
       execResponses.push({ match: 'git status --porcelain', result: { stdout: ' M file.ts\n', stderr: '' } });
       const result = await run({ action: 'create' });
       expect(result.ok).toBe(false);
-      if (!result.ok) expect(result.code).toBe('INVALID_ARGS');
+      if (!result.ok) expect(result.code).toBe('PR_UNCOMMITTED_CHANGES');
     });
   });
 

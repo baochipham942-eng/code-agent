@@ -41,6 +41,7 @@ vi.mock('../../../src/host/services/renderer/rendererBundleCache', async (import
 import {
   getDesktopShellDiagnostics,
   getDesktopShellResourceChecks,
+  resolveDesktopShellLogDir,
 } from '../../../src/host/diagnostics/desktopShellDiagnostics';
 
 describe('desktop shell diagnostics aggregator', () => {
@@ -377,5 +378,30 @@ describe('desktop shell diagnostics aggregator', () => {
       diagnosticFile: bootFile,
     });
     expect(diagnostics.app.dataDir).toBe(state.userData);
+  });
+});
+
+describe('resolveDesktopShellLogDir', () => {
+  it('prefers the explicit boot diagnostics path env when set', () => {
+    const dir = resolveDesktopShellLogDir({
+      AGENT_NEO_TAURI_BOOT_DIAGNOSTICS_FILE: '/data/app/logs/desktop-shell-boot-latest.json',
+    } as NodeJS.ProcessEnv);
+    expect(dir).toBe(path.resolve('/data/app/logs'));
+  });
+
+  it('falls back to the platform app-data path derived from the bundle identifier', () => {
+    const home = os.homedir();
+    const macDir = resolveDesktopShellLogDir({ CODE_AGENT_BUNDLE_ID: 'com.linchen.code-agent.dev' } as NodeJS.ProcessEnv);
+    if (process.platform === 'win32') {
+      expect(macDir.toLowerCase()).toContain('com.linchen.code-agent.dev');
+    } else {
+      expect(macDir).toBe(path.join(home, 'Library', 'Application Support', 'com.linchen.code-agent.dev', 'logs'));
+    }
+  });
+
+  it('falls back to the PROD_BUNDLE_ID constant when no bundle id env is set', () => {
+    const dir = resolveDesktopShellLogDir({} as NodeJS.ProcessEnv);
+    expect(dir).toContain('com.linchen.code-agent');
+    expect(dir.endsWith(path.join('com.linchen.code-agent', 'logs'))).toBe(true);
   });
 });

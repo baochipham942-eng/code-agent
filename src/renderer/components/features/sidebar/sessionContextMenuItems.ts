@@ -25,9 +25,9 @@ import type { ContextMenuItem } from './SessionContextMenu';
 
 const logger = createLogger('Sidebar');
 
-const SESSION_DIAGNOSTICS_EXPORT_TIMEOUT_MS = 12_000;
+export const SESSION_DIAGNOSTICS_EXPORT_TIMEOUT_MS = 12_000;
 
-function rejectAfter<T>(promise: Promise<T>, timeoutMs: number, timeoutMessage: string): Promise<T> {
+export function rejectAfter<T>(promise: Promise<T>, timeoutMs: number, timeoutMessage: string): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<never>((_, reject) => {
     timer = setTimeout(() => reject(new Error(timeoutMessage)), timeoutMs);

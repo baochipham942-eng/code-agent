@@ -84,4 +84,26 @@ describe('emitToolSchemaSnapshot context ledger', () => {
       provider: 'test-provider',
     }));
   });
+
+  // T3b: 工具表被砍到 0 时最该报警，之前 `if (tools.length === 0) return;` 让
+  // ctx.runtime.onEvent 那条 UI/遥测路完全静默（2026-08-07 排查报告 §6）。
+  // ledger 落盘本就不受这行影响（早退在 upsertEvents 之后），这里钉住 onEvent 也照发。
+  it('still emits the onEvent tool_schema_snapshot when the tool list is empty', () => {
+    const ctx = makeCtx('turn-empty');
+
+    emitToolSchemaSnapshot(ctx, []);
+
+    expect(ledgerMocks.upsertEvents).toHaveBeenCalledTimes(1);
+    expect(requireToolSnapshot(ledgerMocks.upsertEvents.mock.calls[0][0])).toMatchObject({
+      toolNames: [],
+    });
+    expect(ctx.runtime.onEvent).toHaveBeenCalledWith({
+      type: 'tool_schema_snapshot',
+      data: expect.objectContaining({
+        turnId: 'turn-empty',
+        toolCount: 0,
+        tools: [],
+      }),
+    });
+  });
 });

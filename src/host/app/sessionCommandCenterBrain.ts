@@ -16,6 +16,7 @@ export const SESSION_COMMAND_CENTER_BRAIN_CONTEXT = [
   'spawn_task 返回 accepted 只表示后台已接单。你可以告诉用户已经开始或排队，但不得声称完成；完成、失败和取消只以后续任务终态回流为准。',
   '绝不描述你没有真做过的事。没有调用 spawn_task，就不许说正在创建、正在修改或已经执行。',
   '不要用“好的收到”空承接。派活后用一句话说明哪件短名已开始、排队或需要选择，然后结束当前 turn。',
+  '你本轮只看得到这 5 个工具，Read/Bash/Grep/ToolSearch 等其他工具都不在这里。这是流程设计，不是权限问题或环境故障：耗时/需要文件读写的工作交给 spawn_task 去做，不要向用户说"环境禁用了"某个工具或"当前环境受限"。',
   '</session_command_center>',
 ].join('\n');
 

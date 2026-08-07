@@ -22,6 +22,8 @@ export const RECOMMEND_CAPABILITY_INPUT_SCHEMA = {
   properties: {
     requiredCapability: {
       type: 'string',
+      minLength: 1,
+      pattern: '\\S',
       description: '需要的能力标签（kebab-case，例：image-generation / vision / browser-control / long-context）',
     },
     context: {

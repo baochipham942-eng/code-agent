@@ -168,6 +168,77 @@ describe('humanizeToolError — code 优先（metadata.code 命中登记表）',
     const h2 = humanizeToolError(undefined, 'Write', zh, { code: 'WORKBENCH_SCOPE_DENIED' });
     expect(h2?.summary).toBe(zh.toolErrors.codes.WORKBENCH_SCOPE_DENIED.summary);
   });
+
+  it('P1 迁移的 6 个 code 全部命中各自文案', () => {
+    const cases: Array<[string, string]> = [
+      ['AMEND_PUSHED', 'amend'],
+      ['NO_PROJECT', 'Project'],
+      ['UPDATE_FAILED', '授权写入失败'],
+      ['PR_UNCOMMITTED_CHANGES', '未提交'],
+    ];
+    for (const [code, snippet] of cases) {
+      const h = humanizeToolError('host 原文', 'Bash', zh, { code });
+      expect(h?.summary).toContain(snippet);
+    }
+  });
+});
+
+describe('humanizeToolError — 带参 code 的 {param} 插值', () => {
+  it('有参 → 填进 summary（{branch}）', () => {
+    const h = humanizeToolError('host 原文', 'Bash', zh, {
+      code: 'PR_ON_DEFAULT_BRANCH',
+      branch: 'main',
+    });
+    expect(h?.summary).toBe('当前在默认分支 main，不能从这里创建 PR');
+    expect(h?.summary).not.toContain('{branch}');
+  });
+
+  it('多参 → summary/detail 各自填对（{dependency}/{installHint}）', () => {
+    const h = humanizeToolError('host 原文', 'Bash', zh, {
+      code: 'ENV_DEPENDENCY_MISSING',
+      dependency: 'Ghostscript',
+      installHint: 'brew install ghostscript',
+    });
+    expect(h?.summary).toBe('缺少依赖 Ghostscript，无法执行');
+    expect(h?.detail).toBe('请先安装：brew install ghostscript，装好后重试。');
+  });
+
+  it('缺参 → 占位符原样保留，不替成 undefined', () => {
+    const h = humanizeToolError('host 原文', 'Bash', zh, { code: 'PR_ON_DEFAULT_BRANCH' });
+    expect(h?.summary).toBe(zh.toolErrors.codes.PR_ON_DEFAULT_BRANCH.summary);
+    expect(h?.summary).toContain('{branch}');
+    expect(h?.summary).not.toContain('undefined');
+  });
+
+  it('畸形参数值（对象/数组/null）→ 占位符原样保留', () => {
+    for (const bad of [{}, [], null] as unknown[]) {
+      const h = humanizeToolError('host 原文', 'Bash', zh, {
+        code: 'PR_ON_DEFAULT_BRANCH',
+        branch: bad,
+      });
+      expect(h?.summary).toContain('{branch}');
+      expect(h?.summary).not.toContain('undefined');
+    }
+  });
+
+  it('脱敏：换行/控制字符剥离，超长截断（host 值→UI 通道不放大原文）', () => {
+    const h = humanizeToolError('host 原文', 'Bash', zh, {
+      code: 'PR_ON_DEFAULT_BRANCH',
+      branch: 'main\nsecond-lineevil',
+    });
+    expect(h?.summary).toBe('当前在默认分支 main，不能从这里创建 PR');
+
+    const long = humanizeToolError('host 原文', 'Bash', zh, {
+      code: 'PR_ON_DEFAULT_BRANCH',
+      branch: 'b'.repeat(200),
+    });
+    expect(long?.summary).toContain(`${'b'.repeat(77)}...`);
+  });
+
+  it('metadata 畸形时带参 code 不受影响（无参 code 仍出静态文案）', () => {
+    const h = humanizeToolError('host 原文', 'Bash', zh, { code: 'AMEND_PUSHED', branch: 42 });
+    expect(h?.summary).toBe(zh.toolErrors.codes.AMEND_PUSHED.summary);
+  });
 });
 
 describe('humanizeToolError — 正则兜底（metadata 缺失/未登记时与改前逐条一致）', () => {

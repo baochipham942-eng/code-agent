@@ -28,6 +28,7 @@ import {
   hasMatchingDirectiveMemoryWriteGrant,
 } from '../../memory/directiveMemoryPathAuthority';
 import { DIRECTIVE_MEMORY_WRITE_NO_GRANT_ERROR } from '../../memory/directiveMemoryMessages';
+import { validateToolInputSchema, formatToolSchemaValidationError } from '../toolSchemaValidator';
 
 export interface ToolResolver {
   /** 当前 registry 里所有已注册 tool 的 name */
@@ -96,6 +97,18 @@ class ProtocolToolResolver implements ToolResolver {
           code: 'DIRECTIVE_MEMORY_CONFIRMATION_REQUIRED',
           targets: directiveMemoryAssessment.targets,
         },
+      };
+    }
+
+    // Schema 护栏：docEdit 等路径直接调 resolver.execute，绕过 ToolExecutor 的
+    // 校验（toolExecutor.ts 里那道），这里与 directive-memory 门同层重做一次
+    // （防御纵深，与 executor 侧有意重复）。删掉工具内部手写校验的前提是本门必跑。
+    const schemaIssues = validateToolInputSchema(definition.inputSchema, args);
+    if (schemaIssues.length > 0) {
+      return {
+        success: false,
+        error: formatToolSchemaValidationError(dispatchName, schemaIssues),
+        metadata: { code: 'ARG_VALIDATION_FAILED' },
       };
     }
 

@@ -198,6 +198,7 @@ export const zhSettingsCore = {
         useAction: '使用',
         ruleCountSuffix: ' 条',
         highestPriorityPrefix: '最高优先级：',
+        adminOnlySwitchHint: '切换权限模式需要管理员权限，当前账号无法操作。',
         permissionModes: {
           default: {
             title: permissionVocabularyZh.ask,

@@ -10,10 +10,11 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  MoreHorizontal, RotateCcw, TimerReset, Eye, Download, FolderOpen, Play, ClipboardList,
+  MoreHorizontal, RotateCcw, TimerReset, Eye, Download, FolderOpen, Play, ClipboardList, ScrollText,
 } from 'lucide-react';
 import type { StructuredReplay } from '@shared/contract/evaluation';
 import { IPC_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
+import { shortSessionIdForFileName } from '@shared/utils/id';
 import { useAppStore } from '../stores/appStore';
 import { useAuthStore } from '../stores/authStore';
 import { useSessionStore } from '../stores/sessionStore';
@@ -31,6 +32,10 @@ import { copyPathToClipboard, openExternalLink } from '../utils/platform';
 import ipcService from '../services/ipcService';
 import { IconButton } from './primitives';
 import { SessionReplaySummaryDialog } from './features/sidebar/SessionReplaySummaryDialog';
+import {
+  rejectAfter,
+  SESSION_DIAGNOSTICS_EXPORT_TIMEOUT_MS,
+} from './features/sidebar/sessionContextMenuItems';
 import { useI18n } from '../hooks/useI18n';
 
 export const SessionActionsMenu: React.FC = () => {
@@ -168,6 +173,51 @@ export const SessionActionsMenu: React.FC = () => {
     }
   }, [currentSessionId, close, showToast]);
 
+  const handleExportDiagnostics = useCallback(async () => {
+    if (!currentSessionId) return;
+    close();
+    try {
+      const response = await rejectAfter(
+        window.domainAPI?.invoke<{ content: string; suggestedFileName: string; encoding?: 'utf8' | 'base64' }>(
+          IPC_DOMAINS.SESSION,
+          'exportDiagnostics',
+          { sessionId: currentSessionId },
+        ) ?? Promise.resolve(undefined),
+        SESSION_DIAGNOSTICS_EXPORT_TIMEOUT_MS,
+        sam.exportDiagnosticsTimeout,
+      );
+      if (!response?.success || !response.data?.content) {
+        throw new Error(response?.error?.message || 'Failed to export session diagnostics');
+      }
+      const suggestedFileName = response.data.suggestedFileName
+        || `neo-session-${shortSessionIdForFileName(currentSessionId)}.zip`;
+      if (response.data.encoding === 'base64') {
+        const saved = await window.domainAPI?.invoke<{ filePath: string }>(
+          IPC_DOMAINS.WORKSPACE,
+          'saveBinaryToDownloads',
+          { fileName: suggestedFileName, base64: response.data.content },
+        );
+        if (!saved?.success || !saved.data?.filePath) {
+          throw new Error(saved?.error?.message || 'Failed to save diagnostics package');
+        }
+        showToast('success', sam.exportDiagnosticsSavedPath.replace('{path}', saved.data.filePath));
+        void window.domainAPI?.invoke(IPC_DOMAINS.WORKSPACE, 'showItemInFolder', {
+          filePath: saved.data.filePath,
+        });
+      } else {
+        const blob = new Blob([response.data.content], { type: 'application/zip' });
+        const url = URL.createObjectURL(blob);
+        const anchor = document.createElement('a');
+        anchor.href = url;
+        anchor.download = suggestedFileName;
+        anchor.click();
+        URL.revokeObjectURL(url);
+      }
+    } catch (error) {
+      showToast('error', sam.exportDiagnosticsFailed.replace('{message}', error instanceof Error ? error.message : String(error)));
+    }
+  }, [currentSessionId, close, showToast, sam]);
+
   const handleReopenWorkspace = useCallback(async () => {
     if (!sessionWorkingDirectory) return;
     close();
@@ -291,6 +341,12 @@ export const SessionActionsMenu: React.FC = () => {
     label: sam.exportMarkdownLabel,
     icon: <Download className="h-3.5 w-3.5" />,
     onClick: handleExportMarkdown,
+  });
+  items.push({
+    key: 'export-diagnostics',
+    label: sam.exportDiagnosticsLabel,
+    icon: <ScrollText className="h-3.5 w-3.5" />,
+    onClick: () => { void handleExportDiagnostics(); },
   });
   if (showReopenWorkspace) {
     items.push({

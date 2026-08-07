@@ -224,8 +224,12 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
             aria-label={t.toolGroup.statusPartial}
           />
         )}
+        {/* 状态词必须与右侧标签用同一套字体栈（都 font-mono）。两段本来就都是 11px，
+            但状态词原先继承 body 的 Inter、标签是 JetBrains Mono；两个栈的中文回退字体
+            度量不同，同一行里基线实测差 1px（真实组件 web 量：现状 −1px，统一字体后 0px）。
+            这不是 align-items 的问题——改 items-baseline 对它无效，必须统一字体栈。 */}
         {status !== 'ok' && (
-          <span className={`flex-shrink-0 ${getToolGroupStatusClass(status, hasEscalatedError)}`}>{getToolGroupStatusLabel(status, t)}</span>
+          <span className={`flex-shrink-0 font-mono ${getToolGroupStatusClass(status, hasEscalatedError)}`}>{getToolGroupStatusLabel(status, t)}</span>
         )}
         <span className="min-w-0 flex-1 truncate font-mono">{label}</span>
         {recoveredCount > 0 && (

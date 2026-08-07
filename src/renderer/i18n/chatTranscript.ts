@@ -244,8 +244,10 @@ toolStepHumanize: {
   memorySearch: '搜索了记忆',
   // 纯内部动作（ToolSearch）：只进展开明细，不进主流聚合
   toolSearch: '查找了可用工具',
-  // 未知工具主行：不暴露内部名；原名只在展开明细次级小字
+  // 未知工具主行：带上工具名，否则失败时纯占位没有信息量；
+  // 纯内部动作（isInternalStreamTool）仍走 fallback 不露内部名
   fallback: '执行了一个步骤',
+  fallbackWithTool: '{tool} 执行了一个步骤',
   openPreview: '预览',
   openPreviewAria: '在右栏预览 {path}',
   group: {
@@ -721,8 +723,11 @@ toolStepHumanize: {
   memorySearch: 'Searched memory',
   // Internal-only (ToolSearch): expanded detail only, never main-stream aggregate
   toolSearch: 'Looked up available tools',
-  // Unknown tools: main line never exposes internal name
+  // Unknown tools: main line carries the tool name — a bare placeholder says
+  // nothing when the call fails. Pure internal actions (isInternalStreamTool)
+  // still use the nameless fallback.
   fallback: 'Ran a step',
+  fallbackWithTool: '{tool} ran a step',
   openPreview: 'Preview',
   openPreviewAria: 'Open preview for {path}',
   group: {

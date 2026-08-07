@@ -153,6 +153,7 @@ describe('ToolExecutor directive memory path authority', () => {
       requestId: 'directive-denied',
       confirmed: false,
       respondedAt: Date.now(),
+      timedOut: false,
     });
     const executor = new ToolExecutor({ workingDirectory: '/tmp', requestPermission: vi.fn(async () => true) });
     executor.setAuditEnabled(false);
@@ -168,6 +169,7 @@ describe('ToolExecutor directive memory path authority', () => {
       requestId: 'directive-approved',
       confirmed: true,
       respondedAt: Date.now(),
+      timedOut: false,
     });
     const executor = new ToolExecutor({ workingDirectory: '/tmp', requestPermission: vi.fn(async () => true) });
     executor.setAuditEnabled(false);

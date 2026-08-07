@@ -47,6 +47,7 @@ import { evaluateGuardFabricGate } from './guardFabricGate';
 import { completeArtifactLocatorGuardedWrite } from './artifacts/artifactLocatorHost';
 import { ensureFailedToolResultError } from './toolResultError';
 import { requestDirectiveMemoryConfirmation } from '../memory/directiveMemoryConfirmation';
+import { directiveMemoryConfirmationFailureError } from '../memory/directiveMemoryMessages';
 import {
   assessDirectiveMemoryWrite,
   createDirectiveMemoryWriteGrant,
@@ -448,7 +449,8 @@ export class ToolExecutor {
       if (!confirmation.confirmed) {
         return {
           success: false,
-          error: 'Persistent memory write requires explicit user confirmation.',
+          // 文案唯一来源在 memory/directiveMemoryMessages.ts（超时/拒绝分流）
+          error: directiveMemoryConfirmationFailureError(confirmation),
           metadata: {
             code: 'DIRECTIVE_MEMORY_CONFIRMATION_REQUIRED',
             targets: directiveMemoryAssessment.targets,

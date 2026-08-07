@@ -33,6 +33,7 @@ import {
   assertDirectivePersistenceAuthorized,
   type DirectiveMemoryConfirmationResult,
 } from '../../../memory/directiveMemoryConfirmation';
+import { DIRECTIVE_MEMORY_WRITE_NO_GRANT_ERROR } from '../../../memory/directiveMemoryMessages';
 import {
   writeScopedMemory,
   deleteScopedMemory,
@@ -112,7 +113,8 @@ class MemoryWriteHandler implements ToolHandler<Record<string, unknown>, string>
       if (grant?.authority !== 'directive-memory-write') {
         return {
           ok: false,
-          error: 'Persistent memory write requires explicit user confirmation.',
+          // 文案唯一来源在 memory/directiveMemoryMessages.ts
+          error: DIRECTIVE_MEMORY_WRITE_NO_GRANT_ERROR,
           code: 'PERMISSION_DENIED',
         };
       }
@@ -120,6 +122,7 @@ class MemoryWriteHandler implements ToolHandler<Record<string, unknown>, string>
         requestId: grant.requestId,
         confirmed: true,
         respondedAt: grant.confirmedAt,
+        timedOut: false,
       };
     }
     if (action === 'write' && args.type === 'directive') {

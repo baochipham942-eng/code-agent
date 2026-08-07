@@ -145,10 +145,32 @@ describe('humanizeToolStep — per-category snapshots (zh)', () => {
     expect(humanizeToolStep('memory_search', {}, zh)).toBe('搜索了记忆');
   });
 
-  it('unknown tool: main line never exposes the internal tool name', () => {
+  // 未识别工具的兜底主行必须带工具名——否则失败时用户面对一句纯占位，
+  // 得展开才知道是 MemoryWrite 还是别的。纯内部动作（isInternalStreamTool）
+  // 不适用此规则，见下方 ToolSearch 用例。
+  it('unknown tool: 兜底主行带上工具名', () => {
     const line = humanizeToolStep('some_future_tool', {}, zh);
-    expect(line).toBe('执行了一个步骤');
-    expect(line).not.toContain('some_future_tool');
+    expect(line).toBe('some_future_tool 执行了一个步骤');
+    expect(line).toContain('some_future_tool');
+  });
+
+  it('unknown tool failed: 失败行主文案包含工具名（MemoryWrite 场景）', () => {
+    const line = humanizeToolStep('MemoryWrite', { action: 'write', filename: 'x.md' }, zh, undefined, true);
+    expect(line).toBe('MemoryWrite 执行了一个步骤');
+    expect(line).toContain('MemoryWrite');
+  });
+
+  it('unknown tool failed (en): 失败行主文案包含工具名', () => {
+    expect(humanizeToolStep('MemoryWrite', {}, en, undefined, true)).toBe('MemoryWrite ran a step');
+  });
+
+  // 钉住原规矩：isInternalStreamTool 命中的纯内部动作（ToolSearch）仍不带内部名进主行。
+  it('internal stream tool: 兜底仍不暴露内部名', () => {
+    for (const name of ['ToolSearch', 'tool_search']) {
+      expect(isInternalStreamTool(name)).toBe(true);
+      const line = humanizeToolStep(name, {}, zh);
+      expect(line).not.toContain(name);
+    }
   });
 
   it('shortDescription wins over the template when it matches the UI language', () => {
@@ -164,9 +186,9 @@ describe('humanizeToolStep — shortDescription 语种不符时退回模板', ()
       .toBe('写入了 gear.txt');
   });
 
-  it('中文界面下未识别的工具也退回中文兜底（不露工具名）', () => {
+  it('中文界面下未识别的工具退回中文兜底（带工具名）', () => {
     expect(humanizeToolStep('some_future_tool', {}, zh, 'Did something'))
-      .toBe('执行了一个步骤');
+      .toBe('some_future_tool 执行了一个步骤');
   });
 
   it('英文界面拒绝中文 shortDescription，走模板', () => {
@@ -184,7 +206,7 @@ describe('humanizeToolStep — en locale parity', () => {
   it('renders the same categories in English', () => {
     expect(humanizeToolStep('Read', { file_path: 'report.md' }, en)).toBe('Read report.md');
     expect(humanizeToolStep('Bash', { command: 'ls src/' }, en)).toBe('Ran command ls src/');
-    expect(humanizeToolStep('unknown_tool', {}, en)).toBe('Ran a step');
+    expect(humanizeToolStep('unknown_tool', {}, en)).toBe('unknown_tool ran a step');
     expect(humanizeToolStep('TaskManager', {}, en)).toBe('Updated tasks');
     expect(humanizeToolStep('mcp__lark__im_v1_message_create', {}, en)).toBe('Sent a message in Lark');
   });

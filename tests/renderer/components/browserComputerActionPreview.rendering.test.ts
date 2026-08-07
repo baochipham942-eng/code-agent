@@ -72,7 +72,7 @@ describe('browser/computer action preview rendering', () => {
       }),
     );
 
-    expect(html).toContain('Action');
+    expect(html).toContain('操作');
     expect(html).toContain('点击页面元素');
     expect(html).toContain('#submit');
     expect(html).toContain('托管浏览器动作');

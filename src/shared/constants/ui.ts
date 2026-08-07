@@ -40,6 +40,13 @@ export const UI = {
   TOOL_DURATION_MIN_VISIBLE_MS: 1000,
 } as const;
 
+/**
+ * 侧栏会话列表分页页大小：首屏与每次「加载更多」各取这么多条。
+ * 仓储层按 updated_at DESC 做 limit/offset 分页；不要把本值调成无限大——
+ * 侧栏无虚拟化，几千个会话 DOM 节点会拖垮渲染（2026-08-07 工单结论）。
+ */
+export const SESSION_LIST_PAGE_SIZE = 50;
+
 /** 窗口配置 */
 export const WINDOW = {
   /** 默认宽度 */

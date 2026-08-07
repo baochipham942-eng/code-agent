@@ -199,6 +199,20 @@ export type SteerOrQueueOutcome =
   | { outcome: 'queued'; queuedInputId: string };
 
 /**
+ * 会话列表查询参数（侧栏分页用）。
+ * - limit/offset：仓储层 updated_at DESC 分页；不传则由 host 吃默认页大小。
+ * - includeArchived：归档会话混入同一列表（按 updated_at 混排）。
+ * - archivedOnly：只取归档会话（优先级高于 includeArchived）——侧栏「已归档」
+ *   过滤器走这条路径，归档分页才能独立成立，不再靠前端从混合页里挑。
+ */
+export interface SessionListQueryOptions {
+  includeArchived?: boolean;
+  archivedOnly?: boolean;
+  limit?: number;
+  offset?: number;
+}
+
+/**
  * AgentApplicationService — IPC handler 的唯一业务依赖
  *
  * 设计原则：
@@ -222,7 +236,7 @@ export interface AgentApplicationService {
   createSession(config?: CreateSessionConfig): Promise<Session>;
   loadSession(sessionId: string): Promise<Session>;
   deleteSession(sessionId: string): Promise<void>;
-  listSessions(options?: { includeArchived?: boolean }): Promise<Session[]>;
+  listSessions(options?: SessionListQueryOptions): Promise<Session[]>;
   updateSession(sessionId: string, updates: Partial<Session>): Promise<void>;
   archiveSession(sessionId: string): Promise<Session | null>;
   unarchiveSession(sessionId: string): Promise<Session | null>;

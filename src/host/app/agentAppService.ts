@@ -17,6 +17,7 @@ import type {
   PromptRewindResult,
   RestoreWorkspaceFilesAtCheckpointRequest,
   RestoreWorkspaceFilesAtCheckpointResult,
+  SessionListQueryOptions,
 } from '../../shared/contract/appService';
 import type {
   Message,
@@ -915,8 +916,15 @@ export class AgentAppServiceImpl implements AgentApplicationService {
     return this.sessionLifecycle.deleteSession(sessionId);
   }
 
-  async listSessions(options?: { includeArchived?: boolean }): Promise<Session[]> {
-    const sessions = await getSessionManager().listSessions({ includeArchived: options?.includeArchived });
+  async listSessions(options?: SessionListQueryOptions): Promise<Session[]> {
+    // limit/offset/archivedOnly 原样透传给 SessionManager（侧栏分页 2026-08-07）；
+    // 不传时 host 吃默认页大小，行为与改动前一致。
+    const sessions = await getSessionManager().listSessions({
+      includeArchived: options?.includeArchived,
+      archivedOnly: options?.archivedOnly,
+      limit: options?.limit,
+      offset: options?.offset,
+    });
     return Promise.all(sessions.map((session) => this.withDurableSessionReplayPayload(session)));
   }
 

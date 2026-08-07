@@ -20,7 +20,8 @@
 // 2026-07-31 X6 realtime provider 通用化移除 2 个旧死出口，收到 2687。
 // 2026-08-07 诊断包导出：appDiagnosticsBundleBuilder.ts 三个只在本文件内用的
 // interface（AppDiagnosticsFileEntry/RendererCacheManifestEntry/AppDiagnosticsManifest）
-// 去掉多余 export，收到 2686。
+// 去掉多余 export，本地收到 2686；但 CI 环境恒比本地多解析出 1 处（2687），
+// 基线以 CI 口径为准取 2687——收基线前必须用 CI 实跑数校对，别用本地数。
 // knip 版本锁 6.24.0（未入 devDependencies，避免 lockfile/共享 node_modules 变更；
 // CI 与本地统一走 npx knip@6.24.0，升版本须同步重测基线）。
 //
@@ -29,7 +30,7 @@
 import { spawnSync } from 'node:child_process';
 import process from 'node:process';
 
-const BASELINE_MAX = 2686;
+const BASELINE_MAX = 2687;
 const KNIP_VERSION = '6.24.0';
 
 const result = spawnSync(

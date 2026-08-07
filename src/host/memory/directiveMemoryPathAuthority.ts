@@ -203,7 +203,16 @@ function genericDeclaredPathAssessment(
 
 export function assessDirectiveMemoryWrite(input: AssessInput): DirectiveMemoryWriteAssessment {
   const memoryDir = resolveCanonicalRunPath(getMemoryDir());
-  const genericTargets = input.definition.permissionLevel === 'write'
+  // 通用扫描对**所有非 read 工具**生效。原先门在 permissionLevel === 'write' 上，
+  // 而落盘能力根本不跟着这个档位走：screenshot_page / ppt_generate 是 'network' 档
+  // 却带 output_path，git_worktree 是 'execute' 档却带 path——三个都能把文件落进记忆
+  // 目录而一声不吭。bash 也正因为是 'execute' 档，通用扫描对它返回空，只能靠 #1005
+  // 补的那行显式声明兜住。
+  //
+  // 翻成「非 read 一律扫」而不是继续按名字给工具补声明：新增工具默认被扫，漏的是
+  // 「参数名不像路径」那一类（命令字符串、自造参数名），那类仍需显式 pathAuthority。
+  // read 档不写盘，扫了只是白费 + 徒增误报。
+  const genericTargets = input.definition.permissionLevel !== 'read'
     ? genericDeclaredPathAssessment(input.params, input.workingDirectory, memoryDir)
     : [];
   const targets = [

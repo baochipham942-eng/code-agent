@@ -179,6 +179,57 @@ describe('角色轴 · 两条通路口径一致（web 不一致的老病不许�
 
 // ── 只读工具：读取内容不进产物（清单在 metadata 兜底通道上仍承重）──────────
 
+describe('角色轴 · 未登记 / 缺失 kind 不得让产物消失', () => {
+  // 🔴 回归：初版把未登记 kind 兜成 material，`kind: 'html'` 的 Write 产物直接从产物区蒸发。
+  // 四个 material 类型全都显式登记，未登记的按定义不可能是过程材料；而 normalize 在
+  // kind 缺失时会填 'artifact'，兜 material 等于让所有没写 kind 的真产物消失。
+  it('未登记的 kind（html）仍进产物', () => {
+    const { deliverables } = chatSplit('Write', {
+      artifactId: 'a-html', kind: 'html', sourceTool: 'Write', name: 'Preview', path: '/repo/app/preview.html',
+    });
+    expect(deliverables.map((i) => i.path)).toEqual(['/repo/app/preview.html']);
+  });
+
+  it('kind 缺失被 normalize 填成 artifact 时仍进产物', () => {
+    const { deliverables } = chatSplit('Write', {
+      artifactId: 'a-none', kind: 'artifact', sourceTool: 'Write', name: 'out.md', path: '/repo/app/out.md',
+    });
+    expect(deliverables.map((i) => i.path)).toEqual(['/repo/app/out.md']);
+  });
+});
+
+describe('角色轴 · outputPath 与 metadata 路径的区别对待', () => {
+  // 🔴 回归：收窄兜底通道时曾把 toolCall.outputPath 一起跳过，导致「既写文件又产 artifact」
+  // 的工具丢掉那个文件。outputPath 是工具**声明的产出**，语义明确，不该被 artifact 的
+  // 存在与否影响；模糊的是 metadata 里的 filePath/imagePath（可能是输入）。
+  it('工具同时有 outputPath 和 artifact 时，outputPath 的文件仍进产物', () => {
+    const turn = turnWith('report_tool', {
+      artifact: {
+        artifactId: 'a-img', kind: 'image', sourceTool: 'report_tool', path: '/repo/app/chart.png',
+      },
+    });
+    turn.nodes[1].toolCall!.outputPath = '/repo/app/report.md';
+
+    const paths = buildArtifactOwnershipItems(turn)
+      .filter((i) => i.role === 'deliverable')
+      .map((i) => i.path);
+
+    expect(paths).toContain('/repo/app/report.md');
+    expect(paths).toContain('/repo/app/chart.png');
+  });
+
+  it('产了 artifact 时，metadata.imagePath（可能是输入）不再兜底进产物', () => {
+    const items = buildArtifactOwnershipItems(turnWith('image_analyze', {
+      artifact: {
+        artifactId: 'a-note', kind: 'text', sourceTool: 'image_analyze', path: '/repo/app/note.md',
+      },
+      imagePath: '/repo/app/source.png',
+    }));
+
+    expect(items.map((i) => i.path)).not.toContain('/repo/app/source.png');
+  });
+});
+
 describe('角色轴 · 只读工具的读取路径不混进产物', () => {
   it('read 的 metadata.filePath 不生成产物条目', () => {
     const items = buildArtifactOwnershipItems(

@@ -47,14 +47,23 @@ function isArtifactRole(value: string | undefined): value is ArtifactRole {
 }
 
 /**
- * 解析产物的角色：产出点的显式 role 覆盖优先，否则查 kind 登记表；
- * 登记表里没有的 kind（含 normalize 兜底出来的 'artifact' 等脏值）fail-closed 归 material。
+ * 解析产物的角色：产出点的显式 role 覆盖优先，否则查 kind 登记表。
+ *
+ * **未登记的 kind 归 deliverable，不是 material**——这条容易想反，理由：
+ * 四个 material 类型（process-output / process-log / web / search）**全都显式登记在表里**，
+ * 所以一个没登记的 kind 按定义就不可能是过程材料。反过来兜 material 的代价是
+ * 「产物静默消失」：`normalizeToolArtifactCandidate` 在 kind 缺失时会填 `'artifact'`，
+ * 任何没写 kind 的真产物都会因此从产物区蒸发（实测抓到：`kind: 'html'` 的 Write 产物消失）。
+ * 丢用户的交付物，比多摆一条杂项严重得多。
+ *
+ * fail-closed 的意图由 `text: 'material'` 这条承担（含混轴不进产物），
+ * 不靠惩罚未知 kind 来实现。
  */
 export function resolveArtifactRole(artifact: { kind: string; role?: string }): ArtifactRole {
   if (isArtifactRole(artifact.role)) {
     return artifact.role;
   }
-  return ARTIFACT_KIND_ROLE_REGISTRY[artifact.kind as ToolArtifactKind] ?? 'material';
+  return ARTIFACT_KIND_ROLE_REGISTRY[artifact.kind as ToolArtifactKind] ?? 'deliverable';
 }
 
 /** 单一判据：只有 deliverable 才进产物列表。聊天流与概览两条通路都调它，不许各判各的。 */

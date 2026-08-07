@@ -142,20 +142,27 @@ export function buildArtifactOwnershipItems(
     // 一律以角色轴为准，不再扫 outputPath / metadata 路径，否则 imageAnalyze 的 imagePath
     // （来源图）这类读取路径会绕过角色判据混进产物。
     // 清单（isReadOnlyArtifactTool）只在这条兜底通道上继续承重。
-    if (toolArtifacts.length === 0 && !isReadOnlyArtifactTool(node.toolCall.name)) {
-      if (node.toolCall.outputPath) {
-        const outputPath = node.toolCall.outputPath;
-        addItem({
-          kind: 'file',
-          label: basename(outputPath),
-          ownerKind: 'tool',
-          ownerLabel: toolOwnerLabel,
-          role: 'deliverable',
-          path: outputPath,
-          sourceNodeId: node.id,
-        }, `file:${outputPath}`);
-      }
+    const isReadOnlyTool = isReadOnlyArtifactTool(node.toolCall.name);
 
+    // toolCall.outputPath 是工具**声明的产出**（"我写了这个文件"），语义明确，
+    // 无论有没有 artifact 都照收——它不是那种"可能是输入"的模糊路径。
+    if (!isReadOnlyTool && node.toolCall.outputPath) {
+      const outputPath = node.toolCall.outputPath;
+      addItem({
+        kind: 'file',
+        label: basename(outputPath),
+        ownerKind: 'tool',
+        ownerLabel: toolOwnerLabel,
+        role: 'deliverable',
+        path: outputPath,
+        sourceNodeId: node.id,
+      }, `file:${outputPath}`);
+    }
+
+    // metadata 里的 filePath / imagePath / videoPath 才是模糊的——它们可能是**输入**
+    // （imageAnalyze 读的来源图就在 imagePath 里）。所以只在完全没产出 ToolArtifact 时
+    // 才拿它们兜底；产了 artifact 的一律以角色轴为准。
+    if (toolArtifacts.length === 0 && !isReadOnlyTool) {
       for (const path of collectMetadataPaths(node.toolCall.metadata)) {
         addItem({
           kind: 'file',

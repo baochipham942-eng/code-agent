@@ -30,6 +30,11 @@ import * as sidecarState from './sessionRepositorySidecarState';
 import { getLatestUserAuthorId as readLatestUserAuthorId } from './sessionRepositoryParsers';
 import { ConversationBranchRepository } from './ConversationBranchRepository';
 import { SessionFtsRepository } from './SessionFtsRepository';
+import type {
+  SessionMessagesFtsCountOptions,
+  SessionMessagesFtsHit,
+  SessionMessagesFtsSearchOptions,
+} from './sessionRepositoryFtsSearch';
 import {
   patchSessionMetadataAtomically,
   type SessionMetadataPatchOptions,
@@ -890,19 +895,13 @@ export class SessionRepository {
   // FTS 查询与回填由独立仓储实现，保留此处公开兼容 API。
   searchSessionMessagesFts(
     query: string,
-    options: {
-      limit?: number;
-      sessionId?: string;
-      includeRewound?: boolean;
-    } = {},
-  ): Array<{
-    messageId: string;
-    sessionId: string;
-    role: string;
-    content: string;
-    timestamp: number;
-  }> {
+    options: SessionMessagesFtsSearchOptions = {},
+  ): SessionMessagesFtsHit[] {
     return this.ftsRepo.searchSessionMessagesFts(query, options);
+  }
+
+  countSessionMessagesFts(query: string, options: SessionMessagesFtsCountOptions = {}) {
+    return this.ftsRepo.countSessionMessagesFts(query, options);
   }
 
   backfillSessionMessagesFts(): number {

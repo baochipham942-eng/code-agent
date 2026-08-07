@@ -9,7 +9,6 @@ import { IPC_CHANNELS, IPC_DOMAINS, type SessionStatusUpdateEvent, type SessionR
 import { useStatusStore } from './statusStore';
 import type { BackgroundSessionInfo, BackgroundTaskUpdateEvent } from '@shared/contract/sessionState';
 import { createLogger } from '../utils/logger';
-import { sessionsSignature } from '../utils/sessionListSignature';
 import { hydrateToolCallResults } from '../utils/messageHydration';
 import { mergeStreamSnapshotIntoMessages } from '../utils/streamRecoveryMessage';
 import ipcService from '../services/ipcService';
@@ -23,6 +22,7 @@ import {
   forgetConversationFramesInMemory,
 } from './sessionTerminalFrames';
 import { executeCreateSession } from './sessionCreate';
+import { bumpSessionsLocalVersion, executeLoadOlderSessions, executeLoadSessions } from './sessionListPagination';
 
 const logger = createLogger('SessionStore');
 
@@ -44,15 +44,8 @@ async function invokeAgentEngine<T>(action: string, payload?: unknown): Promise<
 
 // switchSession 竞态保护计数器
 let _switchCounter = 0;
-/**
- * 会话列表本地乐观变更版本号（归档/取消归档/删除时 +1）。
- * 根因（2026-08-01 归档连点无响应）：host 每次归档都广播 SESSION_LIST_UPDATED，
- * 而 invokeDomain 的 in-flight dedupe 会把第二次广播触发的 loadSessions 并进
- * 第一次的在途 list 请求——拿到的是归档前的陈旧快照并写回 store，把刚乐观移除
- * 的行复活。loadSessions 落地前比对本版本号：在途期间发生过本地变更就丢弃快照
- * 重取，而不是把陈旧列表写回。
- */
-let _sessionsLocalVersion = 0;
+// 会话列表本地乐观变更版本号已迁到 sessionListPagination（god-file 门，本文件只留接线）：
+// bumpSessionsLocalVersion 在归档/删除等乐观变更处调用；loadSessions 落地前比对版本号丢弃陈旧快照。
 /** In-flight createSession promise — send path awaits to rebind to the new session. */
 let _pendingSessionCreate: Promise<Session | null> | null = null;
 
@@ -241,6 +234,10 @@ interface SessionState {
   backgroundSessions: BackgroundSessionInfo[];
   hasOlderMessages: boolean;
   isLoadingOlder: boolean;
+  /** 侧栏会话列表分页：DB 里还有未加载的更早会话（按 updated_at DESC 翻页）。 */
+  hasOlderSessions: boolean;
+  /** 侧栏会话列表「加载更多」在途。 */
+  isLoadingOlderSessions: boolean;
   pendingUserQuestionsBySessionId: Map<string, UserQuestionRequest[]>;
   // 当前会话锁定的 design brief（来自 question-form 提交，仅运行时内存态，不进 DB）
   sessionDesignBriefs: Map<string, DesignBrief>;
@@ -248,6 +245,8 @@ interface SessionState {
 
 interface SessionActions {
   loadSessions: (options?: { silent?: boolean }) => Promise<void>;
+  /** 侧栏分页：按 offset 追加下一页更早的会话（实现见 sessionListPagination）。 */
+  loadOlderSessions: () => Promise<void>;
   createSession: (title?: string, options?: CreateSessionOptions) => Promise<Session | null>;
   /** In-flight createSession promise, if any — send path awaits this to rebind to the new session. */
   getPendingSessionCreate: () => Promise<Session | null> | null;
@@ -306,50 +305,20 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
     backgroundSessions: [],
     hasOlderMessages: false,
     isLoadingOlder: false,
+    hasOlderSessions: false,
+    isLoadingOlderSessions: false,
     pendingUserQuestionsBySessionId: new Map<string, UserQuestionRequest[]>(),
     sessionDesignBriefs: new Map<string, DesignBrief>(),
 
     getPendingSessionCreate: () => _pendingSessionCreate,
 
     loadSessions: async (options) => {
-      // silent：后台刷新（云端同步广播）不动 isLoading，避免侧栏白刷一帧。
-      const silent = options?.silent ?? false;
-      const { filter } = useSessionUIStore.getState();
-      if (!silent) set({ isLoading: true, error: null });
-      // 在途期间若发生本地乐观变更（归档/删除等），拿到的是陈旧快照——落地前比对。
-      const localVersionAtStart = _sessionsLocalVersion;
-      try {
-        const includeArchived = filter === 'archived' || filter === 'all';
-        const sessions = await invokeSession<Session[]>('list', { includeArchived });
+      // 实现已迁到 sessionListPagination（侧栏分页 + god-file 门，此处只留接线）。
+      return executeLoadSessions({ get, set }, options);
+    },
 
-        if (localVersionAtStart !== _sessionsLocalVersion) {
-          // 快照陈旧（典型：归档①的广播触发本次 list，归档②在在途期间已乐观移除，
-          // 且 dedupe 把归档②的广播并进本次请求）——丢弃重取，别把旧列表写回。
-          return get().loadSessions(options);
-        }
-
-        let sessionsWithMeta: SessionWithMeta[] = (sessions || []).map((session) =>
-          normalizeSession(session as Session & { messageCount?: number; turnCount?: number })
-        );
-
-        if (filter === 'active' || filter === 'archived') {
-          sessionsWithMeta = sessionsWithMeta.filter(s => filter === 'archived' ? s.isArchived : !s.isArchived);
-        }
-
-        // 闪烁修复：数据签名不变就保留旧引用、跳过 setState，避免云端同步广播触发侧栏整树重渲染。
-        if (sessionsSignature(get().sessions) === sessionsSignature(sessionsWithMeta)) {
-          if (!silent) set({ isLoading: false });
-          return;
-        }
-
-        set({ sessions: sessionsWithMeta, isLoading: false });
-      } catch (error) {
-        logger.error('Failed to load sessions', error);
-        set({
-          error: error instanceof Error ? error.message : 'Failed to load sessions',
-          isLoading: false
-        });
-      }
+    loadOlderSessions: async () => {
+      return executeLoadOlderSessions({ get, set });
     },
 
     createSession: async (title?: string, options?: CreateSessionOptions) => {
@@ -528,7 +497,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
         const { currentSessionId, sessions } = get();
         const newSessions = sessions.filter((s) => s.id !== sessionId);
 
-        _sessionsLocalVersion += 1;
+        bumpSessionsLocalVersion();
         if (currentSessionId === sessionId) {
           if (newSessions.length > 0) {
             set({ sessions: newSessions });
@@ -553,8 +522,8 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
       const previousSessions = sessions;
 
       // 乐观更新（2026-08-01 归档连点无响应）：行先消失/置标，IPC 失败再回滚。
-      // 版本号 +1 让在途的 loadSessions 识别自己拿到的是陈旧快照（见 _sessionsLocalVersion）。
-      _sessionsLocalVersion += 1;
+      // 版本号 +1 让在途的 loadSessions 识别自己拿到的是陈旧快照（见 sessionListPagination）。
+      bumpSessionsLocalVersion();
       if (filter === 'active') {
         set({ sessions: sessions.filter((s) => s.id !== sessionId) });
       } else {
@@ -587,7 +556,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
       } catch (error) {
         logger.error('Failed to archive session', error);
         // 回滚乐观移除（版本号再 +1：回滚本身也是一次本地变更）。
-        _sessionsLocalVersion += 1;
+        bumpSessionsLocalVersion();
         set({
           sessions: previousSessions,
           error: error instanceof Error ? error.message : 'Failed to archive session',
@@ -602,7 +571,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
         const { filter } = useSessionUIStore.getState();
         const { sessions } = get();
 
-        _sessionsLocalVersion += 1;
+        bumpSessionsLocalVersion();
         if (filter === 'archived') {
           set({
             sessions: sessions.filter((s) => s.id !== sessionId),
@@ -1066,6 +1035,8 @@ function clearSessionStateForAuthChange(): void {
     backgroundSessions: [],
     hasOlderMessages: false,
     isLoadingOlder: false,
+    hasOlderSessions: false,
+    isLoadingOlderSessions: false,
     pendingUserQuestionsBySessionId: new Map<string, UserQuestionRequest[]>(),
     sessionDesignBriefs: new Map<string, DesignBrief>(),
   });

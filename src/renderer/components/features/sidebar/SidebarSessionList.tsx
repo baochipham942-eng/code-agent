@@ -7,8 +7,10 @@
 import React, { useCallback } from 'react';
 import { ChevronRight, Cloud, Loader2, Plus } from 'lucide-react';
 import { PLAIN_CHAT_SUMMARY_LABEL } from '@shared/contract/sessionWorkspace';
+import { SESSION_LIST_PAGE_SIZE } from '@shared/constants';
 import { useI18n } from '../../../hooks/useI18n';
 import { useAppStore } from '../../../stores/appStore';
+import { useSessionStore } from '../../../stores/sessionStore';
 import { useSessionUIStore, type SessionStatusFilter } from '../../../stores/sessionUIStore';
 import type { SessionWithMeta } from '../../../stores/sessionStore';
 import { localeForLanguage } from '../../../utils/i18nTime';
@@ -88,6 +90,12 @@ export const SidebarSessionList: React.FC<SidebarSessionListProps> = ({
   const collapsedTiers = useSessionUIStore((state) => state.collapsedTiers);
   const setTierCollapsed = useSessionUIStore((state) => state.setTierCollapsed);
   const openProjectSpacePage = useAppStore((state) => state.openProjectSpacePage);
+  // 会话列表分页（2026-08-07：侧栏原只加载最近 50 条，历史会话翻不到）——
+  // 三态页脚：加载中转圈 / 还有更早会话给「加载更多」钮 / 已翻到底给明确收尾文案。
+  const loadedSessionCount = useSessionStore((state) => state.sessions.length);
+  const hasOlderSessions = useSessionStore((state) => state.hasOlderSessions);
+  const isLoadingOlderSessions = useSessionStore((state) => state.isLoadingOlderSessions);
+  const loadOlderSessions = useSessionStore((state) => state.loadOlderSessions);
   // 项目抽屉行数据装配随列表区一起迁出（god-file 治理第二刀）：全部依赖都在
   // sessionItemProps / i18n 里，Sidebar 主文件不再持有这段映射。
   const {
@@ -339,6 +347,28 @@ export const SidebarSessionList: React.FC<SidebarSessionListProps> = ({
             </section>
             );
           })}
+          {/* 分页页脚（2026-08-07 工单）：加载中转圈 / 还有更早会话给「加载更多」钮 /
+              翻到底给明确收尾文案，不静默。只在分组列表分支渲染；搜索/筛选空态分支
+              不出现——前端过滤只覆盖已加载页，继续翻页才可能命中更多（取舍见报告）。 */}
+          {isLoadingOlderSessions ? (
+            <div className="flex items-center justify-center gap-2 py-2" data-testid="sidebar-sessions-loading-more">
+              <Loader2 className="h-3.5 w-3.5 animate-spin text-zinc-500" />
+              <span className="text-xs text-zinc-500">{sb.loading}</span>
+            </div>
+          ) : hasOlderSessions ? (
+            <button /* ds-allow:button: 列表尾部分页触发器，行式文本钮（同分组头折叠行形态），Button primitive 居中动作钮不适配 */
+              type="button"
+              data-testid="sidebar-load-older-sessions"
+              onClick={() => void loadOlderSessions()}
+              className="mx-1 rounded px-2 py-1.5 text-center text-xs text-zinc-500 hover:bg-zinc-700/50 hover:text-zinc-300 focus:outline-hidden"
+            >
+              {sb.loadOlderSessions}
+            </button>
+          ) : loadedSessionCount > SESSION_LIST_PAGE_SIZE ? (
+            <p className="py-1 text-center text-[11px] text-zinc-600" data-testid="sidebar-sessions-all-loaded">
+              {sb.allSessionsLoaded}
+            </p>
+          ) : null}
         </div>
       )}
     </div>

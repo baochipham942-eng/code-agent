@@ -13,6 +13,8 @@ export interface DirectiveMemoryConfirmationResult {
   requestId: string;
   confirmed: boolean;
   respondedAt: number;
+  /** true = 确认窗口超时自动关闭（用户可能没看到）；false = 用户明确点了确认/拒绝 */
+  timedOut: boolean;
 }
 
 const pending = new Map<string, PendingDirectiveConfirmation>();
@@ -35,7 +37,7 @@ export async function requestDirectiveMemoryConfirmation(input: {
   return new Promise<DirectiveMemoryConfirmationResult>((resolve) => {
     const timer = setTimeout(() => {
       pending.delete(id);
-      resolve({ requestId: id, confirmed: false, respondedAt: Date.now() });
+      resolve({ requestId: id, confirmed: false, respondedAt: Date.now(), timedOut: true });
     }, MEMORY_TIMEOUTS.DIRECTIVE_CONFIRM);
     pending.set(id, { resolve, timer });
     broadcastToRenderer(IPC_CHANNELS.MEMORY_CONFIRM_REQUEST, request);
@@ -47,7 +49,7 @@ export function respondToDirectiveMemoryConfirmation(id: string, confirmed: bool
   if (!entry) return false;
   pending.delete(id);
   clearTimeout(entry.timer);
-  entry.resolve({ requestId: id, confirmed, respondedAt: Date.now() });
+  entry.resolve({ requestId: id, confirmed, respondedAt: Date.now(), timedOut: false });
   return true;
 }
 

@@ -27,6 +27,7 @@ import {
   assessDirectiveMemoryWrite,
   hasMatchingDirectiveMemoryWriteGrant,
 } from '../../memory/directiveMemoryPathAuthority';
+import { DIRECTIVE_MEMORY_WRITE_NO_GRANT_ERROR } from '../../memory/directiveMemoryMessages';
 
 export interface ToolResolver {
   /** 当前 registry 里所有已注册 tool 的 name */
@@ -89,7 +90,8 @@ class ProtocolToolResolver implements ToolResolver {
     )) {
       return {
         success: false,
-        error: 'Persistent memory write requires explicit user confirmation.',
+        // 文案唯一来源在 memory/directiveMemoryMessages.ts
+        error: DIRECTIVE_MEMORY_WRITE_NO_GRANT_ERROR,
         metadata: {
           code: 'DIRECTIVE_MEMORY_CONFIRMATION_REQUIRED',
           targets: directiveMemoryAssessment.targets,

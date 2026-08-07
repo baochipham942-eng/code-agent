@@ -9,7 +9,7 @@
 // ============================================================================
 
 import React, { useMemo, useState } from 'react';
-import { Loader2, AlertTriangle } from 'lucide-react';
+import { Loader2, AlertTriangle, ChevronDown, ChevronRight, Link2 } from 'lucide-react';
 import { CONFIG_DIR_DEV, CONFIG_DIR_NEW } from '@shared/constants/configDir';
 import { useAppStore } from '../../stores/appStore';
 import { useSessionStore } from '../../stores/sessionStore';
@@ -20,7 +20,7 @@ import {
   useStatusRailModel,
   type StatusRailContextModel,
 } from '../../hooks/useStatusRailModel';
-import { useWorkspacePreviewModel } from '../../hooks/useWorkspacePreviewModel';
+import { useWorkspacePreviewModelState } from '../../hooks/useWorkspacePreviewModel';
 import type {
   MemoryActivityEvent,
   TaskRecord,
@@ -393,7 +393,11 @@ export const TaskWorkspaceOverview: React.FC = () => {
   const setViewingMemberId = useMemberViewStore((state) => state.setViewingMemberId);
   const statusRail = useStatusRailModel();
   const runWorkbench = useRunWorkbenchModel();
-  const workspacePreviewItems = useWorkspacePreviewModel();
+  const {
+    items: workspacePreviewItems,
+    materialItems: workspaceMaterialItems,
+  } = useWorkspacePreviewModelState();
+  const [materialsOpen, setMaterialsOpen] = useState(false);
 
   const contextRows = useMemo(
     () => buildOverviewContextRows({
@@ -446,6 +450,8 @@ export const TaskWorkspaceOverview: React.FC = () => {
       path: item.file?.path,
       ownerKind: item.source.kind === 'tool' ? 'tool' as const : 'assistant' as const,
       ownerLabel: item.source.label || '',
+      // sections.items 只装 deliverable（buildWorkspacePreviewSections 已按角色轴分过流）
+      role: 'deliverable' as const,
     }));
   }, [workspacePreviewItems]);
   // 跑中不铺产物列表；完成/终态收拢为一排缩略行（spec §模块四）
@@ -547,6 +553,50 @@ export const TaskWorkspaceOverview: React.FC = () => {
             onOpenFile={openFile}
             unnamedLabel={t.workbenchTabs.overviewUnnamedOutput}
           />
+        </section>
+      )}
+
+      {/* 模块四对称区 · 过程材料：material 角色（来源/检索结果/读取内容），默认折叠，
+          复用聊天流「来源」区的交互范式（折叠 + 计数 + ChevronRight/Down + Link2） */}
+      {!runLive && workspaceMaterialItems.length > 0 && (
+        <section
+          data-module="materials"
+          data-testid="overview-materials-module"
+          aria-label={t.workbenchTabs.overviewMaterialsLabel}
+        >
+          <button
+            type="button"
+            data-testid="overview-materials-toggle"
+            onClick={() => setMaterialsOpen((v) => !v)}
+            className="flex w-full items-center gap-1.5 px-0.5 text-[10px] font-medium uppercase tracking-wider text-zinc-500 transition-colors hover:text-zinc-300"
+          >
+            {materialsOpen ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+            <Link2 className="h-3 w-3" />
+            <span>{t.workbenchTabs.overviewMaterialsLabel}</span>
+            <span className="normal-case text-zinc-600">({workspaceMaterialItems.length})</span>
+          </button>
+          {materialsOpen && (
+            <div className="mt-1 space-y-0.5" data-testid="overview-materials-list">
+              {workspaceMaterialItems.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  data-testid="overview-materials-row"
+                  onClick={() => (item.file?.path ? openFile(item.file.path) : openPreview(item))}
+                  className="flex w-full min-w-0 items-baseline gap-2 px-0.5 py-0.5 text-left transition-colors hover:bg-white/[0.03]"
+                >
+                  <span className="min-w-0 truncate text-xs text-zinc-400" title={item.title}>
+                    {item.title}
+                  </span>
+                  {item.subtitle && (
+                    <span className="ml-auto max-w-[110px] shrink-0 truncate text-[10px] text-zinc-600">
+                      {item.subtitle}
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
         </section>
       )}
     </div>

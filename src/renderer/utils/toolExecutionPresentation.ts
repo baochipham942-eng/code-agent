@@ -169,10 +169,108 @@ function classifyToolError(error: string): ToolErrorClassification | null {
 }
 
 /**
+ * host 侧已下发 metadata.code 的门（toolExecutor.ts / toolResolver.ts），与 i18n
+ * `toolErrors.codes` 的键一一对应——本单只登记、不新造 code。登记的都是运行内
+ * agent 可自行恢复的门（换路径/换工具/重新发起确认），一律不升级全局 banner。
+ */
+type RegisteredToolErrorCode = keyof Translations['toolErrors']['codes'];
+
+const REGISTERED_TOOL_ERROR_CODES: ReadonlySet<RegisteredToolErrorCode> = new Set([
+  'DIRECTIVE_MEMORY_CONFIRMATION_REQUIRED',
+  'WORKBENCH_SCOPE_DENIED',
+  'PROJECT_SOURCE_READ_ONLY',
+  'RUN_CONTEXT_MISMATCH',
+  'RUN_WORKSPACE_BOUNDARY',
+  'AMEND_PUSHED',
+  'NO_PROJECT',
+  'UPDATE_FAILED',
+  'PR_ON_DEFAULT_BRANCH',
+  'PR_UNCOMMITTED_CHANGES',
+  'ENV_DEPENDENCY_MISSING',
+]);
+
+/**
+ * metadata.code 分流（code 优先于正则）。畸形 metadata（null / 非对象 / code 非字符串 /
+ * 未登记的 code）一律返回 null，由调用方退回正则兜底——「永不空白」靠这条降级链兜住，
+ * 任何输入都不会在这里崩掉或吞掉错误。
+ */
+function resolveRegisteredCode(
+  metadata: Record<string, unknown> | null | undefined,
+): RegisteredToolErrorCode | null {
+  if (!metadata || typeof metadata !== 'object') return null;
+  const code = metadata.code;
+  if (typeof code !== 'string' || code.length === 0) return null;
+  // Set 成员判定不做类型收窄，命中登记表后收窄是安全的
+  return (REGISTERED_TOOL_ERROR_CODES as ReadonlySet<string>).has(code)
+    ? (code as RegisteredToolErrorCode)
+    : null;
+}
+
+/**
+ * metadata 值 → UI 文案的插值清洗。这是一条新的「host 值 → UI」通道，
+ * 而 08-07 的泄漏事故（组头兜底直接截原始 error，漏出邮箱）就发生在这类通道上。
+ *
+ * ⚠️ 澄清一个容易误传的说法：`summarizeTool` **没有**脱敏管线（它不 import 任何
+ * redaction）。它安全靠的是**构造**——只输出固定词表 + 窄提取字段（action、
+ * hostname、agentType），从不透传自由文本。仓里的 sanitizeBrowserComputerMetadata
+ * 只挂在导出 / action preview 路径，聊天流这条路上没有。
+ *
+ * 所以这里守的是同一个性质，不是同一个函数：**暴露面必须被我们自己写的 i18n
+ * 模板锁死**。只有模板里写出来的 {key} 会被替换，值限 string/number、只取首行、
+ * 剥控制字符、80 字截断；取不到或清洗后为空一律保留占位符原样，绝不替成 'undefined'。
+ *
+ * 🔴 因此：**新增 {param} 前先确认该字段不是浏览器/计算机工具的自由文本产物**
+ * （URL、页面文本、错误原文）。那类值必须先过 browserComputerRedaction，
+ * 或者干脆不进模板。
+ */
+function sanitizeCodeParamValue(value: unknown): string | null {
+  if (typeof value !== 'string' && typeof value !== 'number') return null;
+  // eslint-disable-next-line no-control-regex -- 有意剥离控制字符
+  const text = String(value).split('\n')[0].replace(/[\u0000-\u001f\u007f]/g, '').trim();
+  if (!text) return null;
+  return text.length > 80 ? `${text.slice(0, 77)}...` : text;
+}
+
+/**
+ * code 文案的 {param} 插值（写法对齐 quota 分支的 `{sources}` replace）。
+ * metadata 里没有对应字段、或值清洗后不可用 → 占位符原样保留。
+ */
+function interpolateCodeCopy(
+  template: string,
+  metadata: Record<string, unknown> | null | undefined,
+): string {
+  if (!metadata || !template.includes('{')) return template;
+  return template.replace(/\{([a-zA-Z]+)\}/g, (placeholder, key: string) => {
+    if (!(key in metadata)) return placeholder;
+    return sanitizeCodeParamValue(metadata[key]) ?? placeholder;
+  });
+}
+
+/**
  * 把工具的原始报错翻成人话 + 可操作提示。识别不了的返回 null（让调用方退回原始展示）。
  * 目标：报错说人话、可操作，而不是把 HTTP 401/402/429/503 + JSON 糊用户一脸。
+ *
+ * 分流顺序（硬约定）：
+ *   1. metadata.code 命中登记表 → 用 code 的 i18n 文案（不依赖 error 文本，为空也出人话）；
+ *   2. 否则退回 classifyToolError 正则分类；
+ *   3. 再否则返回 null（调用方展示原始 error，第三方/MCP/模型原始报错走的就是这条）。
  */
-export function humanizeToolError(error: string | undefined, _toolName: string | undefined, t: Translations): HumanizedToolError | null {
+export function humanizeToolError(
+  error: string | undefined,
+  _toolName: string | undefined,
+  t: Translations,
+  metadata?: Record<string, unknown> | null,
+): HumanizedToolError | null {
+  // 1. code 优先：host 已登记的错误码直接用 code 文案，不经正则（正则降为兜底）
+  const code = resolveRegisteredCode(metadata);
+  if (code) {
+    const copy = t.toolErrors.codes[code];
+    return {
+      summary: interpolateCodeCopy(copy.summary, metadata),
+      detail: copy.detail ? interpolateCodeCopy(copy.detail, metadata) : undefined,
+    };
+  }
+  // 2. 正则兜底（原有分类，逐条不变）
   if (!error?.trim()) return null;
   const classification = classifyToolError(error);
   if (!classification) return null;
@@ -216,6 +314,9 @@ export function humanizeToolError(error: string | undefined, _toolName: string |
 export function isEscalatedToolError(toolCall: Pick<ToolCall, 'result'>): boolean {
   const result = toolCall.result;
   if (result?.success !== false) return false;
+  // 与 humanizeToolError 同一套分流：code 已登记的门一律不升级（运行内可恢复），不进正则——
+  // 否则 error 文本碰巧撞上 401/402 正则时会出现「文案是 code 的、样式却顶红展开」的分裂。
+  if (resolveRegisteredCode(result.metadata)) return false;
   const errorText = result.error || (typeof result.output === 'string' ? result.output : '');
   if (!errorText?.trim()) return false;
   return classifyToolError(errorText)?.escalate === true;

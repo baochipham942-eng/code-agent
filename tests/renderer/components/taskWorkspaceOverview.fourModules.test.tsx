@@ -119,6 +119,8 @@ vi.mock('../../../src/renderer/hooks/useCurrentTurnArtifactOwnership', () => ({
 }));
 vi.mock('../../../src/renderer/hooks/useWorkspacePreviewModel', () => ({
   useWorkspacePreviewModel: () => previewItemsState.items,
+  // 角色轴（ADR-055）：概览改用 …State 取 { items, materialItems }；替身要跟上新导出
+  useWorkspacePreviewModelState: () => ({ items: previewItemsState.items, materialItems: [], currentTurnArtifacts: null }),
 }));
 vi.mock('../../../src/renderer/services/ipcService', () => ({
   default: { invoke: vi.fn(), isAvailable: () => false },

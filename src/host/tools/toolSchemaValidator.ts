@@ -10,6 +10,9 @@ type JsonSchemaNode = {
   description?: string;
   enum?: unknown[];
   format?: 'uri' | 'email' | 'date' | 'date-time' | string;
+  minLength?: number;
+  pattern?: string;
+  minimum?: number;
   items?: JsonSchemaNode;
   properties?: Record<string, JsonSchemaNode>;
   required?: string[];
@@ -21,6 +24,7 @@ type ToolSchemaValidationCategory =
   | 'type_mismatch'
   | 'enum_mismatch'
   | 'format_mismatch'
+  | 'constraint_violation'
   | 'additional_property';
 
 interface ToolSchemaValidationIssue {
@@ -34,6 +38,59 @@ export function validateToolInputSchema(inputSchema: unknown, params: unknown): 
   const issues: ToolSchemaValidationIssue[] = [];
   validateSchemaNode(inputSchema as JsonSchemaNode, params, '$', issues);
   return issues;
+}
+
+/**
+ * 剥掉 schema 未声明的字段，返回剥离后的入参和被剥掉的路径。
+ *
+ * 为什么不硬拒：#985 硬拒掉的是**我们自己没剥干净的 `_meta`**，不是模型传错东西。
+ * 真库实测（2026-08-07）——#997 修好剥离链路前，52.2% 的工具调用带着 `_meta` 进
+ * executor；硬拒等于把内部 bug 的代价转嫁成用户看见的工具报错。剥离放行 + 上报，
+ * 诊断价值不丢，线上不失败。模型自造字段（`maxChars` 之类）本来也只是被工具忽略，
+ * 剥掉与现状等价。
+ *
+ * 只在 `additionalProperties === false` 的对象节点上剥，与 validateSchemaNode
+ * 判定同一个条件、走同一套路径口径——validator 报了什么，这里就剥什么。
+ */
+export function stripUndeclaredToolParams(
+  inputSchema: unknown,
+  params: unknown,
+): { params: unknown; removedPaths: string[] } {
+  const removedPaths: string[] = [];
+  const stripped = stripSchemaNode(inputSchema as JsonSchemaNode, params, '$', removedPaths);
+  return { params: stripped, removedPaths };
+}
+
+function stripSchemaNode(
+  schema: JsonSchemaNode | undefined,
+  value: unknown,
+  path: string,
+  removedPaths: string[],
+): unknown {
+  if (!schema) return value;
+
+  if (Array.isArray(value)) {
+    if (!schema.items) return value;
+    return value.map((item, index) => stripSchemaNode(schema.items, item, `${path}[${index}]`, removedPaths));
+  }
+
+  if (!isRecord(value)) return value;
+
+  const properties = schema.properties ?? {};
+  const next: Record<string, unknown> = {};
+  for (const [key, childValue] of Object.entries(value)) {
+    const declared = Object.prototype.hasOwnProperty.call(properties, key);
+    if (!declared) {
+      if (schema.additionalProperties === false) {
+        removedPaths.push(joinSchemaPath(path, key));
+        continue;
+      }
+      next[key] = childValue;
+      continue;
+    }
+    next[key] = stripSchemaNode(properties[key], childValue, joinSchemaPath(path, key), removedPaths);
+  }
+  return next;
 }
 
 function validateSchemaNode(
@@ -69,6 +126,35 @@ function validateSchemaNode(
       expected: `format ${schema.format}`,
       bad_value: formatBadValue(value),
       category: 'format_mismatch',
+    });
+  }
+
+  // 约束类关键字（minLength / pattern / minimum）：type 已过但值越界，
+  // 统一归 constraint_violation，与 type_mismatch 区分（值类型没错，是不满足约束）。
+  if (schema.minLength !== undefined && typeof value === 'string' && value.length < schema.minLength) {
+    issues.push({
+      field_path: path,
+      expected: `minLength ${schema.minLength}`,
+      bad_value: formatBadValue(value),
+      category: 'constraint_violation',
+    });
+  }
+
+  if (schema.pattern !== undefined && typeof value === 'string' && !matchesPattern(value, schema.pattern)) {
+    issues.push({
+      field_path: path,
+      expected: `pattern ${schema.pattern}`,
+      bad_value: formatBadValue(value),
+      category: 'constraint_violation',
+    });
+  }
+
+  if (schema.minimum !== undefined && typeof value === 'number' && value < schema.minimum) {
+    issues.push({
+      field_path: path,
+      expected: `minimum ${schema.minimum}`,
+      bad_value: formatBadValue(value),
+      category: 'constraint_violation',
     });
   }
 
@@ -172,6 +258,15 @@ function jsonValueEquals(a: unknown, b: unknown): boolean {
     return JSON.stringify(a) === JSON.stringify(b);
   } catch {
     return false;
+  }
+}
+
+function matchesPattern(value: string, pattern: string): boolean {
+  try {
+    return new RegExp(pattern).test(value);
+  } catch {
+    // 非法正则按不拦处理（schema 作者的错误不该把调用方 fail-closed 挡死）
+    return true;
   }
 }
 

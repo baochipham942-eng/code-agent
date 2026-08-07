@@ -559,8 +559,14 @@ export class SessionRepository {
   // --------------------------------------------------------------------------
 
   addMessage(sessionId: string, message: Message, options?: MessageWriteOptions): void {
+    // 'remote' = 云端回填/水合（例如懒加载读路径发现本地无消息时拉云端补齐）：
+    // 这条消息本该已经存在于本地（可能是并发回填、也可能是本地已存在但因
+    // rewound/hidden 而不计入 active 计数），此时本地状态优先，直接忽略这次
+    // 写入即可——绝不能用 REPLACE 覆盖本地可能更新的状态（如撤回标记）。
+    // 'local'（默认）保持严格 INSERT：同 id 冲突意味着真实的 ID 生成 bug，必须报错。
+    const insertVerb = options?.syncOrigin === 'remote' ? 'INSERT OR IGNORE' : 'INSERT';
     const stmt = this.db.prepare(`
-      INSERT INTO messages (
+      ${insertVerb} INTO messages (
         id, session_id, role, content, timestamp, tool_calls, tool_results,
         attachments, thinking, effort_level, synced_at, content_parts, metadata, is_meta,
         compaction, visibility, hidden_by_rewind_id, hidden_at
@@ -573,7 +579,7 @@ export class SessionRepository {
 
     const toolCallsForStorage = ensureToolCallShortDescription(message.toolCalls);
     const write = (): void => {
-      stmt.run(
+      const result = stmt.run(
         message.id,
         sessionId,
         message.role,
@@ -593,6 +599,8 @@ export class SessionRepository {
         message.hiddenByRewindId ?? null,
         message.hiddenAt ?? null,
       );
+      // OR IGNORE 命中冲突时 changes === 0：消息已存在，本地状态保持不变，无需再动账本/时间戳。
+      if (result.changes === 0) return;
 
       if (this.conversationBranchRepo && !options?.skipConversationLedger) {
         const persistedRow = this.db.prepare(`

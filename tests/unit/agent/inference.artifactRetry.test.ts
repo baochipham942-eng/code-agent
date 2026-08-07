@@ -7,11 +7,15 @@ import { ControlState } from '../../../src/host/agent/runtime/controlState';
 import { ContextHealthState } from '../../../src/host/agent/runtime/contextHealthState';
 import { RunStatsState } from '../../../src/host/agent/runtime/runStatsState';
 import { ArtifactState } from '../../../src/host/agent/runtime/artifactState';
+import { trackNode } from '../../../src/host/observability/posthogNode';
+import { POSTHOG_EVENTS } from '../../../src/shared/observability/posthog-events';
 
 const { mockGetApiKey, mockGetSettings } = vi.hoisted(() => ({
   mockGetApiKey: vi.fn(() => 'mock-key'),
   mockGetSettings: vi.fn(() => ({ models: { providers: {} } })),
 }));
+
+vi.mock('../../../src/host/observability/posthogNode', () => ({ trackNode: vi.fn() }));
 
 vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({
@@ -704,6 +708,31 @@ describe('contextAssembly inference artifact retry', () => {
         message: '已用视觉模型 mimo-v2-omni 读取图片，继续由 mimo-v2.5-pro 回答。',
       },
     });
+  });
+
+  it('T3b: narrows tools by allowedToolNames (run policy) and reports observability like strict_skill/artifact_repair', async () => {
+    const ctx = buildCtx({
+      allowedToolNames: ['Read', 'Task'],
+    });
+    ctx.runtime.modelRouter.inference = vi.fn().mockResolvedValue({
+      type: 'text',
+      content: 'ok',
+      finishReason: 'stop',
+    });
+
+    await inference(ctx);
+
+    const [, tools] = vi.mocked(ctx.runtime.modelRouter.inference).mock.calls[0];
+    expect(tools.map((tool: { name: string }) => tool.name).sort()).toEqual(['Read', 'Task']);
+    expect(vi.mocked(trackNode)).toHaveBeenCalledWith(
+      POSTHOG_EVENTS.TOOL_SCOPE_NARROWED,
+      expect.objectContaining({
+        sessionId: 'session-1',
+        narrowedBy: 'run_policy',
+        before: mockToolDefinitions.length,
+        after: 2,
+      }),
+    );
   });
 
   it('narrows visible tools during artifact repair mode before a patch exists', async () => {

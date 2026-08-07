@@ -115,14 +115,22 @@ describe('xlwingsExecuteModule (native)', () => {
       executePythonScriptMock.mockResolvedValue({ xlwings_available: false, excel_available: true });
       const result = await run({ operation: 'check' });
       expect(result.ok).toBe(false);
-      if (!result.ok) expect(result.error).toContain('xlwings 未安装');
+      if (!result.ok) {
+        expect(result.error).toContain('xlwings 未安装');
+        expect(result.code).toBe('ENV_DEPENDENCY_MISSING');
+        expect(result.meta).toEqual({ dependency: 'xlwings', installHint: 'pip install xlwings' });
+      }
     });
 
     it('reports Excel missing', async () => {
       executePythonScriptMock.mockResolvedValue({ xlwings_available: true, excel_available: false });
       const result = await run({ operation: 'check' });
       expect(result.ok).toBe(false);
-      if (!result.ok) expect(result.error).toContain('Excel 不可用');
+      if (!result.ok) {
+        expect(result.error).toContain('Excel 不可用');
+        expect(result.code).toBe('ENV_DEPENDENCY_MISSING');
+        expect(result.meta).toEqual({ dependency: 'Microsoft Excel', installHint: 'install Microsoft Excel' });
+      }
     });
 
     it('reports environment ready when both available', async () => {

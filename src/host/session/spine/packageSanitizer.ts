@@ -32,3 +32,26 @@ export function sanitizePackageText(
   if (privacyLevel === 'full_local') return value;
   return scrubString(value, { homeDir });
 }
+
+const SENSITIVE_CONFIG_KEY_PARTS = ['key', 'token', 'secret', 'password', 'credential'];
+
+function isSensitiveConfigKey(key: string): boolean {
+  const normalized = key.toLowerCase();
+  return SENSITIVE_CONFIG_KEY_PARTS.some((part) => normalized.includes(part));
+}
+
+/**
+ * 按字段名（含 key/token/secret/password/credential 子串，大小写不敏感）整段抹除。
+ * 用于 config.json 一类"字段名即敏感标记"的结构化配置导出——`sanitizePackageValue`
+ * 只按值内容做正则脱敏，抓不住形如 `apiKey: "plain-looking-string"` 这种值本身不像
+ * 密钥形态的字段，需要按 key 名先过一遍。
+ */
+export function redactSensitiveKeyedFields(value: unknown, depth = 0): unknown {
+  if (depth > MAX_DEPTH) return '[truncated]';
+  if (Array.isArray(value)) return value.map((item) => redactSensitiveKeyedFields(item, depth + 1));
+  if (!value || typeof value !== 'object') return value;
+  return Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([key, child]) => [
+    key,
+    isSensitiveConfigKey(key) ? '[REDACTED]' : redactSensitiveKeyedFields(child, depth + 1),
+  ]));
+}

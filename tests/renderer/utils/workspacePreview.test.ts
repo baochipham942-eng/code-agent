@@ -2,10 +2,10 @@ import { describe, expect, it } from 'vitest';
 import type { Message, PermissionRequest } from '../../../src/shared/contract';
 import {
   buildWorkspacePreviewHtmlSrcdoc,
-  buildWorkspacePreviewItems,
+  buildWorkspacePreviewSections,
 } from '../../../src/renderer/utils/workspacePreview';
 
-describe('buildWorkspacePreviewItems', () => {
+describe('buildWorkspacePreviewSections', () => {
   it('keeps an early-run artifact and a late-run file visible in the same session projection', () => {
     const early: Message = {
       id: 'early-artifact',
@@ -44,7 +44,7 @@ describe('buildWorkspacePreviewItems', () => {
       }],
     };
 
-    const items = buildWorkspacePreviewItems({
+    const { items } = buildWorkspacePreviewSections({
       messages: [early, ...filler, late],
       workingDirectory: '/repo',
     });
@@ -81,7 +81,7 @@ describe('buildWorkspacePreviewItems', () => {
       },
     ];
 
-    const items = buildWorkspacePreviewItems({ messages });
+    const { items } = buildWorkspacePreviewSections({ messages });
 
     expect(items.map((item) => [item.kind, item.title])).toEqual([
       ['spreadsheet', 'Budget Sheet'],
@@ -124,7 +124,7 @@ describe('buildWorkspacePreviewItems', () => {
       },
     ];
 
-    const items = buildWorkspacePreviewItems({
+    const { items } = buildWorkspacePreviewSections({
       messages,
       workingDirectory: '/repo/app',
     });
@@ -171,6 +171,8 @@ describe('buildWorkspacePreviewItems', () => {
                 artifact: {
                   artifactId: 'a1',
                   kind: 'text',
+                  // 角色轴（2026-08-07）：kind=text 默认归 material，Write 在产出侧显式标 deliverable
+                  role: 'deliverable',
                   sourceTool: 'Write',
                   name: 'index.html',
                   path: '/Users/x/.code-agent/work/todo-app/index.html',
@@ -182,7 +184,7 @@ describe('buildWorkspacePreviewItems', () => {
       },
     ];
 
-    const items = buildWorkspacePreviewItems({ messages });
+    const { items } = buildWorkspacePreviewSections({ messages });
     const htmlItem = items.find((i) => i.title === 'index.html');
     expect(htmlItem).toBeTruthy();
     expect(htmlItem).toMatchObject({
@@ -226,7 +228,7 @@ describe('buildWorkspacePreviewItems', () => {
       },
     ];
 
-    const items = buildWorkspacePreviewItems({
+    const { items } = buildWorkspacePreviewSections({
       messages,
       workingDirectory: '/repo/app',
     });
@@ -276,9 +278,12 @@ describe('buildWorkspacePreviewItems', () => {
       },
     ];
 
-    const items = buildWorkspacePreviewItems({ messages });
+    // 角色轴（2026-08-07）：kind=web 默认归 material——历史 URL 产物不再进产物列表，
+    // 而是进「过程材料」区（与聊天流「来源」同一判据，web 口径不一致在此修掉）。
+    const { items, materialItems } = buildWorkspacePreviewSections({ messages });
 
-    expect(items).toContainEqual(expect.objectContaining({
+    expect(items).toEqual([]);
+    expect(materialItems).toContainEqual(expect.objectContaining({
       id: 'tool-artifact:tool-deploy:preview-url',
       kind: 'web_snapshot',
       title: 'Preview URL',
@@ -308,6 +313,8 @@ describe('buildWorkspacePreviewItems', () => {
                   {
                     artifactId: 'artifact-html-v3',
                     kind: 'text',
+                    // 角色轴：同上，Write 产出侧显式标 deliverable
+                    role: 'deliverable',
                     sourceTool: 'Write',
                     name: 'index.html',
                     path: 'dist/index.html',
@@ -335,7 +342,7 @@ describe('buildWorkspacePreviewItems', () => {
       },
     ];
 
-    const items = buildWorkspacePreviewItems({
+    const { items } = buildWorkspacePreviewSections({
       messages,
       workingDirectory: '/repo/app',
     });
@@ -424,7 +431,7 @@ describe('buildWorkspacePreviewItems', () => {
       },
     ];
 
-    const items = buildWorkspacePreviewItems({
+    const { items } = buildWorkspacePreviewSections({
       messages,
       workingDirectory: '/repo/app',
     });
@@ -466,7 +473,7 @@ describe('buildWorkspacePreviewItems', () => {
       },
     ];
 
-    const items = buildWorkspacePreviewItems({
+    const { items } = buildWorkspacePreviewSections({
       messages,
       workingDirectory: '/repo/app',
     });
@@ -500,7 +507,7 @@ describe('buildWorkspacePreviewItems', () => {
       },
     };
 
-    const items = buildWorkspacePreviewItems({
+    const { items } = buildWorkspacePreviewSections({
       messages: [],
       pendingPermissionRequest: request,
     });
@@ -526,7 +533,7 @@ describe('buildWorkspacePreviewItems', () => {
   });
 
   it('collects current-turn artifact ownership and resolves relative paths', () => {
-    const items = buildWorkspacePreviewItems({
+    const { items } = buildWorkspacePreviewSections({
       messages: [],
       workingDirectory: '/repo/app',
       currentTurnArtifacts: {
@@ -534,6 +541,7 @@ describe('buildWorkspacePreviewItems', () => {
         artifactOwnership: [
           {
             kind: 'file',
+            role: 'deliverable' as const,
             label: 'out.csv',
             ownerKind: 'tool',
             ownerLabel: 'analyst · Write',
@@ -558,7 +566,7 @@ describe('buildWorkspacePreviewItems', () => {
   // 助手产物时，ownership 会造一条同名的无内容 trace 条目、priority 70 压过带正文的 40，
   // 右栏默认那一屏于是显示「暂无预览内容」，切换器还把一个产物算成两个。
   it('drops the contentless current-turn duplicate so the默认那一屏 keeps the artifact body', () => {
-    const items = buildWorkspacePreviewItems({
+    const { items } = buildWorkspacePreviewSections({
       messages: [
         {
           id: 'msg-1',
@@ -575,6 +583,7 @@ describe('buildWorkspacePreviewItems', () => {
         artifactOwnership: [
           {
             kind: 'artifact',
+            role: 'deliverable' as const,
             label: '第一版流程图',
             ownerKind: 'assistant',
             ownerLabel: 'Assistant',
@@ -592,13 +601,14 @@ describe('buildWorkspacePreviewItems', () => {
   });
 
   it('keeps a contentless current-turn artifact when nothing else carries that artifact', () => {
-    const items = buildWorkspacePreviewItems({
+    const { items } = buildWorkspacePreviewSections({
       messages: [],
       currentTurnArtifacts: {
         turnNumber: 1,
         artifactOwnership: [
           {
             kind: 'artifact',
+            role: 'deliverable' as const,
             label: '子代理产物',
             ownerKind: 'assistant',
             ownerLabel: 'Assistant',

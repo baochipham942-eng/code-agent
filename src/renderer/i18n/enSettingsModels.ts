@@ -258,6 +258,7 @@ export const enSettingsModels = {
       title: 'System diagnostics',
       pageDescription: 'Checks 9 categories of system health — environment, network, config, database and more. Failures link to one-click fixes.',
       exportLogs: 'Export logs',
+      exportBundle: 'Export diagnostics bundle',
       rerun: 'Run again',
       start: 'Start diagnostics',
       empty: 'Click the button below to start system diagnostics',
@@ -267,6 +268,8 @@ export const enSettingsModels = {
         failedPrefix: 'Diagnostics failed: ',
         copied: 'Diagnostics report copied to clipboard',
         copyFailed: 'Copy failed',
+        bundleExportedPath: 'Diagnostics bundle exported: {path}',
+        bundleExportFailed: 'Failed to export diagnostics bundle: {message}',
       },
       categoryLabels: {
         environment: 'Runtime environment',

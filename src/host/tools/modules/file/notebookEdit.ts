@@ -134,18 +134,14 @@ class NotebookEditHandler implements ToolHandler<Record<string, unknown>, string
     canUseTool: CanUseToolFn,
     onProgress?: ToolProgressFn,
   ): Promise<ToolResult<string>> {
-    const notebookPath = args.notebook_path as string | undefined;
+    // notebook_path / new_source 的“必填 + string”由 inputSchema 保证
+    // （executor/resolver 两层 schema 门），此处不再手写重复校验。
+    const notebookPath = args.notebook_path as string;
     const cellId = args.cell_id as string | undefined;
-    const newSource = args.new_source as string | undefined;
+    const newSource = args.new_source as string;
     const cellType = args.cell_type as 'code' | 'markdown' | undefined;
     const editMode = (args.edit_mode as 'replace' | 'insert' | 'delete' | undefined) ?? 'replace';
 
-    if (!notebookPath || typeof notebookPath !== 'string') {
-      return { ok: false, error: 'notebook_path 必须是字符串', code: 'INVALID_ARGS' };
-    }
-    if (typeof newSource !== 'string') {
-      return { ok: false, error: 'new_source 必须是字符串', code: 'INVALID_ARGS' };
-    }
     if (!path.isAbsolute(notebookPath)) {
       return { ok: false, error: `notebook_path must be an absolute path, got: ${notebookPath}`, code: 'INVALID_ARGS' };
     }
@@ -272,6 +268,7 @@ class NotebookEditHandler implements ToolHandler<Record<string, unknown>, string
 
     const artifact = await createFileArtifact(resolvedPath, schema.name, ctx, {
       kind: 'text',
+      role: 'deliverable',
       mimeType: 'application/x-ipynb+json',
       metadata: {
         action: actualEditMode,

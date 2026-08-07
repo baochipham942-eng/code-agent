@@ -34,6 +34,7 @@ import { addTokenUsage, recordVoiceCall } from './voiceUsageLedger';
 import { consumeVoiceCallFailure, observeVoiceEventFailure, persistVoiceCallFailure } from './voiceFailurePersistence';
 import { VOICE_TOOL_DEFINITIONS, executeVoiceTool } from './voiceTools';
 import type { VoiceLiveSettings } from '../../../shared/contract/settings';
+import type { SystemEventMessageMetadata } from '../../../shared/contract/systemEventRegistry';
 import { reportVoiceWorkFailure } from './voiceWorkFailureReporter';
 import { detectHangupIntent } from './hangupIntent';
 import { decideVoiceInterrupt, shouldDisarmHangup } from './voiceTurnTaking';
@@ -609,7 +610,7 @@ async function teardown(reason: string): Promise<void> {
           endedAt,
           transcriptCount: session.transcriptCounter.count,
         },
-      },
+      } satisfies SystemEventMessageMetadata,
     });
   } catch (err) {
     logger.warn('failed to persist call summary', { message: err instanceof Error ? err.message : 'unknown' });

@@ -1,4 +1,5 @@
 import type { VoiceEvent, VoiceWorkItem } from '../../../shared/contract/voice';
+import type { SystemEventMessageMetadata } from '../../../shared/contract/systemEventRegistry';
 import { getSessionManager } from '../infra/sessionManager';
 import { createLogger } from '../infra/logger';
 import { describeWorkFailure } from './workFailureDescription';
@@ -42,7 +43,7 @@ export async function reportVoiceWorkFailure(input: {
           title: input.item.title,
           ...(failure.detail ? { detail: failure.detail } : {}),
         },
-      },
+      } satisfies SystemEventMessageMetadata,
     });
   } catch (error) {
     logger.warn('failed to persist work failure', {

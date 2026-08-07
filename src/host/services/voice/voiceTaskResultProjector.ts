@@ -1,4 +1,5 @@
 import type { VoiceWorkFailureMarker, VoiceWorkItem } from '../../../shared/contract/voice';
+import type { SystemEventMessageMetadata } from '../../../shared/contract/systemEventRegistry';
 import { getSessionManager } from '../infra/sessionManager';
 import { createLogger } from '../infra/logger';
 import { describeWorkFailure } from './workFailureDescription';
@@ -73,7 +74,7 @@ export async function projectVoiceTaskTerminalResult(
         ...(status === 'done' || status === 'unverified'
           ? { voiceWorkSettled: { workItemId: item.id, title: item.title, outcome: status } }
           : {}),
-      },
+      } satisfies SystemEventMessageMetadata,
     });
   } catch (error) {
     logger.warn('failed to project voice task terminal result', {

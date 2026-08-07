@@ -31,7 +31,6 @@ import { guardSensitiveText } from '../../../security/sensitiveDataGuard';
 import { atomicWriteMemoryText } from '../../../memory/atomicMemoryFile';
 import {
   assertDirectivePersistenceAuthorized,
-  requestDirectiveMemoryConfirmation,
   type DirectiveMemoryConfirmationResult,
 } from '../../../memory/directiveMemoryConfirmation';
 import {
@@ -108,6 +107,21 @@ class MemoryWriteHandler implements ToolHandler<Record<string, unknown>, string>
     }
 
     let directiveConfirmation: DirectiveMemoryConfirmationResult | undefined;
+    if (!scopedTarget) {
+      const grant = ctx.directiveMemoryWriteGrant;
+      if (grant?.authority !== 'directive-memory-write') {
+        return {
+          ok: false,
+          error: 'Persistent memory write requires explicit user confirmation.',
+          code: 'PERMISSION_DENIED',
+        };
+      }
+      directiveConfirmation = {
+        requestId: grant.requestId,
+        confirmed: true,
+        respondedAt: grant.confirmedAt,
+      };
+    }
     if (action === 'write' && args.type === 'directive') {
       if (scopedTarget) {
         return {
@@ -123,17 +137,7 @@ class MemoryWriteHandler implements ToolHandler<Record<string, unknown>, string>
           code: 'INVALID_ARGS',
         };
       }
-      directiveConfirmation = await requestDirectiveMemoryConfirmation({
-        content: String(args.content || ''),
-        category: String(args.name || 'User directive'),
-      });
-      if (!directiveConfirmation.confirmed) {
-        return {
-          ok: false,
-          error: 'Directive memory was not explicitly confirmed by the user.',
-          code: 'PERMISSION_DENIED',
-        };
-      }
+      assertDirectivePersistenceAuthorized(args.type, directiveConfirmation?.confirmed === true);
     }
 
     try {

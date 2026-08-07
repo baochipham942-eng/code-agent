@@ -155,6 +155,7 @@ export function buildProtocolContext(input: ProtocolContextInput): ProtocolToolC
     toolScope: legacy?.toolScope as ProtocolToolContext['toolScope'],
     executionIntent: legacy?.executionIntent as ProtocolToolContext['executionIntent'],
     traceContext: getActiveRunTraceContext(),
+    directiveMemoryWriteGrant: input.legacyCtx.directiveMemoryWriteGrant,
   };
 }
 

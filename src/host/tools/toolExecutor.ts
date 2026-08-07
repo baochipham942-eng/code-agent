@@ -46,6 +46,11 @@ import { boundaryIdForRequestType } from './permissionBoundaryMapping';
 import { evaluateGuardFabricGate } from './guardFabricGate';
 import { completeArtifactLocatorGuardedWrite } from './artifacts/artifactLocatorHost';
 import { ensureFailedToolResultError } from './toolResultError';
+import { requestDirectiveMemoryConfirmation } from '../memory/directiveMemoryConfirmation';
+import {
+  assessDirectiveMemoryWrite,
+  createDirectiveMemoryWriteGrant,
+} from '../memory/directiveMemoryPathAuthority';
 import {
   createChildRunTraceContext,
   getActiveRunTraceContext,
@@ -426,6 +431,36 @@ export class ToolExecutor {
       };
     }
 
+    // 记忆目录是 directive authority 边界。按 schema 声明的写 effect 判定，
+    // 必须先于 Skill 预授权、安全命令和 classifier，任何自动放行都不能越过。
+    const directiveMemoryAssessment = assessDirectiveMemoryWrite({
+      definition: toolDef,
+      params,
+      workingDirectory: this.executionCwd,
+      agentRole: options.agentRole,
+    });
+    let directiveMemoryWriteGrant: import('../../shared/contract').DirectiveMemoryWriteGrant | undefined;
+    if (directiveMemoryAssessment.requiresConfirmation) {
+      const confirmation = await requestDirectiveMemoryConfirmation({
+        category: `Persistent memory write: ${executionToolName}`,
+        content: directiveMemoryAssessment.preview,
+      });
+      if (!confirmation.confirmed) {
+        return {
+          success: false,
+          error: 'Persistent memory write requires explicit user confirmation.',
+          metadata: {
+            code: 'DIRECTIVE_MEMORY_CONFIRMATION_REQUIRED',
+            targets: directiveMemoryAssessment.targets,
+          },
+        };
+      }
+      directiveMemoryWriteGrant = createDirectiveMemoryWriteGrant(
+        directiveMemoryAssessment,
+        confirmation,
+      );
+    }
+
     const permStartTime = Date.now();
     const executionTopology = options.executionTopology ?? this.executionTopology;
     let guardFabricForcesApproval = false;
@@ -500,6 +535,7 @@ export class ToolExecutor {
       toolScope: options.toolScope,
       executionIntent: options.executionIntent,
       neoTag: options.neoTag,
+      directiveMemoryWriteGrant,
     };
 
     if (options.neoTag) {

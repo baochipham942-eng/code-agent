@@ -60,15 +60,9 @@ export async function executeRecommendCapability(
   onProgress?: ToolProgressFn,
 ): Promise<ToolResult<string>> {
   const typed = args as RecommendArgs;
-  const required = typed.requiredCapability;
-  if (typeof required !== 'string' || required.trim().length === 0) {
-    return {
-      ok: false,
-      error: 'requiredCapability 参数必须是非空字符串（kebab-case capability 标签）',
-      code: 'INVALID_ARGS',
-    };
-  }
-  const requiredCapability = required.trim();
+  // requiredCapability 的“必填 + 非空白字符串”由 inputSchema 保证
+  // （minLength + pattern，executor/resolver 两层 schema 门）；trim 结果仍要保留。
+  const requiredCapability = (typed.requiredCapability as string).trim();
 
   const permit = await canUseTool(schema.name, args);
   if (!permit.allow) {

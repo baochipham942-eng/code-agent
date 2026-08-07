@@ -43,10 +43,9 @@ export async function executeToolSearch(
   canUseTool: CanUseToolFn,
   onProgress?: ToolProgressFn,
 ): Promise<ToolResult<string>> {
-  const query = args.query;
-  if (typeof query !== 'string' || query.trim().length === 0) {
-    return { ok: false, error: 'query 参数必须是非空字符串', code: 'INVALID_ARGS' };
-  }
+  // query 的“必填 + 非空白字符串”由 inputSchema 保证（minLength + pattern），
+  // executor/resolver 两层 schema 门拦坏输入，此处不再手写重复校验。
+  const query = args.query as string;
 
   const rawMax = args.max_results;
   const maxResults = Math.min(

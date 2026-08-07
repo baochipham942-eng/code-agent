@@ -1,4 +1,5 @@
 import type { VoiceCallFailureCode, VoiceCallFailurePhase, VoiceEvent } from '../../../shared/contract/voice';
+import type { SystemEventMessageMetadata } from '../../../shared/contract/systemEventRegistry';
 import { getSessionManager } from '../infra/sessionManager';
 import { createLogger } from '../infra/logger';
 import { recordVoiceCallFailure } from './voiceUsageLedger';
@@ -46,7 +47,7 @@ export async function persistVoiceCallFailure(input: PersistVoiceCallFailureInpu
           neoSessionId: input.neoSessionId,
           ...(input.voiceSessionId ? { voiceSessionId: input.voiceSessionId } : {}),
         },
-      },
+      } satisfies SystemEventMessageMetadata,
     });
   } catch (err) {
     logger.warn('failed to persist call failure', {

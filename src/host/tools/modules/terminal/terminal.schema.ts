@@ -98,6 +98,12 @@ ${ROUTING}`,
   },
   category: 'shell',
   permissionLevel: 'execute',
+  // 注入的 input 会带 \r 送进用户的活 shell（terminal.ts:337），和 bash 一样能把路径
+  // 藏在命令字符串里（`echo x > ~/.../memory/foo.md`）——通用参数扫描按参数名匹配，
+  // 抓不住命令内部的重定向目标，必须和 bash 同款显式声明。
+  // 上面 description 承诺「same command safety checks and approval flow as bash」，
+  // 在补上这行之前，记忆路径权威这一环并不在其中。
+  pathAuthority: [{ kind: 'shell', commandParameter: 'input' }],
   readOnly: false,
   allowInPlanMode: false,
 };

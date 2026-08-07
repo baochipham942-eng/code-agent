@@ -149,8 +149,9 @@ export function ToolDetails({ toolCall, compact, mediaContext }: Props) {
   const { t } = useI18n();
 
   // 报错说人话：识别得了的错误（如搜索源额度耗尽）给一行摘要 + 去设置入口，原始报错折叠。
+  // metadata.code 命中登记表的门（如工作台范围拦截）优先用 code 文案，正则降为兜底。
   const humanError = result && !result.success
-    ? humanizeToolError(result.error, name, t)
+    ? humanizeToolError(result.error, name, t, result.metadata)
     : null;
 
   // Check if this is Edit tool

@@ -22,13 +22,28 @@ import { Disposable, getServiceRegistry } from '../services/serviceRegistry';
 import { app } from '../platform';
 import { getTelemetryStorage } from './telemetryStorage';
 import { scrubString } from '../../shared/observability/scrubEvent';
+import { TELEMETRY_UPLOAD_RESILIENCE } from '../../shared/constants';
 import type { TelemetryDiagnosticBundleRecord, TelemetryFeedback, TelemetryRendererBundleAttempt, TelemetrySession, TelemetryTurn } from '../../shared/contract/telemetry';
 
 const logger = createLogger('TelemetryUploader');
 
-const DEFAULT_INTERVAL_MS = 5 * 60 * 1000; // 5min，对齐 syncService
 const BATCH_SIZE = 200;
 const MAX_UPLOAD_ERROR_LENGTH = 500;
+
+/**
+ * Postgres/PostgREST 错误码中「重试到天荒地老也不会自愈」的一类：策略/权限类拒绝。
+ * 42501 = insufficient_privilege（含 RLS WITH CHECK 拒绝）——需要服务端策略/schema 修好，
+ * 不是客户端换个时机重试就能过。命中后立即熔断（阈值降到 1），不必等 N 次积累。
+ */
+const NON_RETRYABLE_POSTGREST_CODES = new Set(['42501']);
+
+function getPostgrestErrorCode(error: unknown): string | null {
+  if (error && typeof error === 'object' && 'code' in error) {
+    const code = (error as { code?: unknown }).code;
+    return typeof code === 'string' ? code : null;
+  }
+  return null;
+}
 
 export interface TelemetryUploadHealth {
   lastUploadAt: number | null;
@@ -65,7 +80,8 @@ function getAppVersion(): string | null {
 
 export class TelemetryUploaderService implements Disposable {
   private deviceId: string;
-  private timer: ReturnType<typeof setInterval> | null = null;
+  private timer: ReturnType<typeof setTimeout> | null = null;
+  private uploadEpoch = 0; // startAutoUpload() 每次递增，防止 stop 后又 start 时旧调度链复活
   private uploading = false;
   private enabled = true; // 运行时开关（telemetry.cloudUpload.enabled）
   private authSkipLogged = false; // 2a(ADR-030): auth-gated skip 只记一次，避免每 5min 刷日志
@@ -75,6 +91,15 @@ export class TelemetryUploaderService implements Disposable {
     lastUploadErrorAt: null,
     uploadFailureCount: 0,
   };
+
+  // T5(2026-08-07) 指数退避 + 熔断状态：见 TELEMETRY_UPLOAD_RESILIENCE 注释
+  private currentIntervalMs: number = TELEMETRY_UPLOAD_RESILIENCE.BASE_INTERVAL_MS;
+  private lastFailureSignature: string | null = null;
+  private consecutiveSameFailureCount = 0;
+  private circuitBreakerTrippedSignature: string | null = null;
+  // 当前这轮 upload() 是否失败过、失败签名是什么——upload() 开头重置，finally 里结算
+  private roundFailureSignature: string | null = null;
+  private roundFailureIsNonRetryable = false;
 
   constructor() {
     this.deviceId = getSecureStorage().getDeviceId();
@@ -88,24 +113,98 @@ export class TelemetryUploaderService implements Disposable {
     return { ...this.uploadHealth };
   }
 
-  private recordUploadFailure(scope: string, error: unknown): void {
+  private recordUploadFailure(scope: string, error: unknown, options: { skipErrorLog?: boolean } = {}): void {
+    const code = getPostgrestErrorCode(error);
+    const signature = `${scope}:${code ?? 'unknown'}`;
+    this.roundFailureSignature = signature;
+    this.roundFailureIsNonRetryable = code !== null && NON_RETRYABLE_POSTGREST_CODES.has(code);
+
     this.uploadHealth.lastUploadError = summarizeUploadError(scope, error);
     this.uploadHealth.lastUploadErrorAt = Date.now();
     this.uploadHealth.uploadFailureCount += 1;
+
+    if (options.skipErrorLog) return; // 调用方（如顶层 catch）已经自己打过日志
+
+    // 熔断已对这个签名生效：不再逐条打 ERROR 刷屏，健康状态仍照常记录。
+    if (this.circuitBreakerTrippedSignature === signature) {
+      logger.debug(`Telemetry upload still failing (circuit breaker active): ${signature}`);
+    } else {
+      logger.error(`Failed to push ${scope}`, { error });
+    }
   }
 
-  startAutoUpload(intervalMs: number = DEFAULT_INTERVAL_MS): void {
+  /**
+   * 每轮 upload() 收尾时结算退避/熔断状态：
+   * - 本轮无失败 → 重置回基础间隔
+   * - 本轮失败且与上轮同因 → 计数 +1，间隔按 BACKOFF_FACTOR 指数增长（封顶 MAX_INTERVAL_MS）
+   * - 42501 这类不可重试错误一次就熔断（阈值 1），其余错误容忍 CIRCUIT_BREAKER_THRESHOLD 次抖动
+   * 熔断只降频 + 降噪，不永久停用：服务端一旦修好，同进程会在下一次（更长的）间隔后自愈。
+   */
+  private updateResilienceState(): void {
+    const { BASE_INTERVAL_MS, BACKOFF_FACTOR, MAX_INTERVAL_MS, CIRCUIT_BREAKER_THRESHOLD } = TELEMETRY_UPLOAD_RESILIENCE;
+
+    if (!this.roundFailureSignature) {
+      if (this.consecutiveSameFailureCount > 0) {
+        logger.info('Telemetry upload recovered, backoff reset', {
+          previousFailureCount: this.consecutiveSameFailureCount,
+          previousSignature: this.lastFailureSignature,
+        });
+      }
+      this.currentIntervalMs = BASE_INTERVAL_MS;
+      this.consecutiveSameFailureCount = 0;
+      this.lastFailureSignature = null;
+      this.circuitBreakerTrippedSignature = null;
+      return;
+    }
+
+    const signature = this.roundFailureSignature;
+    if (signature === this.lastFailureSignature) {
+      this.consecutiveSameFailureCount += 1;
+    } else {
+      this.lastFailureSignature = signature;
+      this.consecutiveSameFailureCount = 1;
+      this.circuitBreakerTrippedSignature = null;
+    }
+
+    this.currentIntervalMs = Math.min(
+      MAX_INTERVAL_MS,
+      BASE_INTERVAL_MS * BACKOFF_FACTOR ** Math.max(0, this.consecutiveSameFailureCount - 1),
+    );
+
+    const threshold = this.roundFailureIsNonRetryable ? 1 : CIRCUIT_BREAKER_THRESHOLD;
+    if (this.consecutiveSameFailureCount >= threshold && this.circuitBreakerTrippedSignature !== signature) {
+      this.circuitBreakerTrippedSignature = signature;
+      logger.warn(
+        `Telemetry upload circuit breaker tripped: ${this.consecutiveSameFailureCount} 次连续同因失败（${signature}），` +
+        `已降频至每 ${Math.round(this.currentIntervalMs / 1000)}s 重试一次，同因失败不再逐条打印错误日志，直到恢复或换因。`,
+      );
+    }
+  }
+
+  startAutoUpload(intervalMs: number = TELEMETRY_UPLOAD_RESILIENCE.BASE_INTERVAL_MS): void {
     if (this.timer) return;
-    // 立即跑一次（非阻塞），随后定时
-    void this.upload().catch((err) => logger.error('Initial telemetry upload failed', err as Error));
-    this.timer = setInterval(() => {
-      void this.upload().catch((err) => logger.error('Telemetry upload failed', err as Error));
-    }, intervalMs);
+    this.currentIntervalMs = intervalMs;
+    this.uploadEpoch += 1;
+    this.scheduleNext(0, this.uploadEpoch);
+  }
+
+  /** 自调度链：每轮跑完根据退避状态决定下一次延迟，而非固定 setInterval。 */
+  private scheduleNext(delayMs: number, epoch: number): void {
+    this.timer = setTimeout(() => {
+      void this.upload()
+        .catch((err) => logger.error('Telemetry upload failed', err as Error))
+        .finally(() => {
+          // stopAutoUpload() 期间（this.timer === null）或期间又被重新 start（epoch 变了）都不再续期，
+          // 防止旧调度链和新调度链并存导致上传频率翻倍。
+          if (this.timer === null || epoch !== this.uploadEpoch) return;
+          this.scheduleNext(this.currentIntervalMs, epoch);
+        });
+    }, delayMs);
   }
 
   stopAutoUpload(): void {
     if (this.timer) {
-      clearInterval(this.timer);
+      clearTimeout(this.timer);
       this.timer = null;
     }
   }
@@ -127,6 +226,8 @@ export class TelemetryUploaderService implements Disposable {
     this.authSkipLogged = false;
 
     this.uploading = true;
+    this.roundFailureSignature = null;
+    this.roundFailureIsNonRetryable = false;
     try {
       let uploadFailed = false;
       const storage = getTelemetryStorage();
@@ -148,7 +249,6 @@ export class TelemetryUploaderService implements Disposable {
             { onConflict: 'id' },
           );
         if (sessionError) {
-          logger.error('Failed to push telemetry_sessions', { error: sessionError });
           this.recordUploadFailure('telemetry_sessions', sessionError);
           return 0; // 会话没写成功就不标记已同步，下轮重试
         }
@@ -169,7 +269,6 @@ export class TelemetryUploaderService implements Disposable {
           .from('telemetry_turns')
           .upsert(turnRows.slice(i, i + BATCH_SIZE), { onConflict: 'id' });
         if (turnError) {
-          logger.error('Failed to push telemetry_turns', { error: turnError });
           this.recordUploadFailure('telemetry_turns', turnError);
           turnUploadFailed = true;
           uploadFailed = true;
@@ -194,7 +293,6 @@ export class TelemetryUploaderService implements Disposable {
             { onConflict: 'id' },
           );
         if (feedbackError) {
-          logger.error('Failed to push telemetry_feedback', { error: feedbackError });
           this.recordUploadFailure('telemetry_feedback', feedbackError);
           uploadFailed = true;
         } else {
@@ -213,7 +311,6 @@ export class TelemetryUploaderService implements Disposable {
             { onConflict: 'id' },
           );
         if (rendererBundleError) {
-          logger.error('Failed to push telemetry_renderer_bundle_attempts', { error: rendererBundleError });
           this.recordUploadFailure('telemetry_renderer_bundle_attempts', rendererBundleError);
           uploadFailed = true;
         } else {
@@ -231,7 +328,6 @@ export class TelemetryUploaderService implements Disposable {
             { onConflict: 'id' },
           );
         if (diagError) {
-          logger.error('Failed to push telemetry_diagnostic_bundles', { error: diagError });
           this.recordUploadFailure('telemetry_diagnostic_bundles', diagError);
           uploadFailed = true;
         } else {
@@ -248,9 +344,10 @@ export class TelemetryUploaderService implements Disposable {
       return sessions.length;
     } catch (err) {
       logger.error('Telemetry upload error', err as Error);
-      this.recordUploadFailure('telemetry_upload', err);
+      this.recordUploadFailure('telemetry_upload', err, { skipErrorLog: true });
       return 0;
     } finally {
+      this.updateResilienceState();
       this.uploading = false;
     }
   }

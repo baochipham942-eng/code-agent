@@ -373,6 +373,7 @@ class WriteHandler implements ToolHandler<Record<string, unknown>, string> {
               `**建议**: 请使用 edit_file 工具追加剩余代码，或重新生成完整文件。`,
             meta: {
               artifact: await createFileArtifact(resolvedPath, schema.name, ctx, {
+                role: 'deliverable',
                 metadata: {
                   action: action.toLowerCase(),
                   completenessIssues: check.issues,
@@ -414,6 +415,7 @@ class WriteHandler implements ToolHandler<Record<string, unknown>, string> {
         output,
         meta: {
           artifact: await createFileArtifact(resolvedPath, schema.name, ctx, {
+            role: 'deliverable',
             metadata: {
               action: action.toLowerCase(),
               contentLength: content.length,

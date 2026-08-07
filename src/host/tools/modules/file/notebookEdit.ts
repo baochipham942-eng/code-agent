@@ -272,6 +272,7 @@ class NotebookEditHandler implements ToolHandler<Record<string, unknown>, string
 
     const artifact = await createFileArtifact(resolvedPath, schema.name, ctx, {
       kind: 'text',
+      role: 'deliverable',
       mimeType: 'application/x-ipynb+json',
       metadata: {
         action: actualEditMode,

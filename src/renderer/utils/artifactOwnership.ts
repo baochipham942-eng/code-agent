@@ -3,6 +3,7 @@ import {
   collectToolArtifactsFromMetadata,
   type NormalizedToolArtifactMeta,
 } from '@shared/contract/artifactBlob';
+import { resolveArtifactRole } from '@shared/contract/artifactRoleRegistry';
 import type {
   TurnArtifactKind,
   TurnArtifactOwnershipItem,
@@ -28,11 +29,6 @@ function collectMetadataPaths(metadata?: Record<string, unknown>): string[] {
   }
   return paths;
 }
-
-const NON_DELIVERABLE_TOOL_ARTIFACT_KINDS = new Set<NormalizedToolArtifactMeta['kind']>([
-  'process-output',
-  'process-log',
-]);
 
 const READ_ONLY_ARTIFACT_TOOL_NAMES = new Set([
   'read',
@@ -61,19 +57,6 @@ export function isReadOnlyArtifactOwnershipItem(item: TurnArtifactOwnershipItem)
   if (item.ownerKind !== 'tool') return false;
   const ownerTool = item.ownerLabel.split('·').pop()?.trim();
   return isReadOnlyArtifactTool(ownerTool);
-}
-
-function shouldProjectToolArtifact(
-  artifact: NormalizedToolArtifactMeta,
-  fallbackToolName: string,
-): boolean {
-  if (NON_DELIVERABLE_TOOL_ARTIFACT_KINDS.has(artifact.kind)) {
-    return false;
-  }
-  if (isReadOnlyArtifactTool(artifact.sourceTool || fallbackToolName)) {
-    return false;
-  }
-  return Boolean(artifact.path || artifact.url);
 }
 
 function kindForToolArtifact(artifact: NormalizedToolArtifactMeta): TurnArtifactKind {
@@ -133,6 +116,8 @@ export function buildArtifactOwnershipItems(
           label: artifact.title || artifact.type,
           ownerKind: 'assistant',
           ownerLabel: primaryAgent || 'Assistant',
+          // 模型显式创建的 artifact 本身就是交付物
+          role: 'deliverable',
           sourceNodeId: node.id,
         }, `artifact:${node.id}:${artifact.id}`);
       }
@@ -151,8 +136,16 @@ export function buildArtifactOwnershipItems(
     const toolOwnerLabel = primaryAgent
       ? `${primaryAgent} · ${node.toolCall.name}`
       : node.toolCall.name;
+    const toolArtifacts = collectToolArtifactsFromMetadata(node.toolCall.metadata);
+
+    // metadata 路径兜底通道：只对完全没产出 ToolArtifact 的调用生效——产了 artifact 的
+    // 一律以角色轴为准，不再扫 outputPath / metadata 路径，否则 imageAnalyze 的 imagePath
+    // （来源图）这类读取路径会绕过角色判据混进产物。
+    // 清单（isReadOnlyArtifactTool）只在这条兜底通道上继续承重。
     const isReadOnlyTool = isReadOnlyArtifactTool(node.toolCall.name);
 
+    // toolCall.outputPath 是工具**声明的产出**（"我写了这个文件"），语义明确，
+    // 无论有没有 artifact 都照收——它不是那种"可能是输入"的模糊路径。
     if (!isReadOnlyTool && node.toolCall.outputPath) {
       const outputPath = node.toolCall.outputPath;
       addItem({
@@ -160,26 +153,39 @@ export function buildArtifactOwnershipItems(
         label: basename(outputPath),
         ownerKind: 'tool',
         ownerLabel: toolOwnerLabel,
+        role: 'deliverable',
         path: outputPath,
         sourceNodeId: node.id,
       }, `file:${outputPath}`);
     }
 
-    if (!isReadOnlyTool) {
+    // metadata 里的 filePath / imagePath / videoPath 才是模糊的——它们可能是**输入**
+    // （imageAnalyze 读的来源图就在 imagePath 里）。所以只在完全没产出 ToolArtifact 时
+    // 才拿它们兜底；产了 artifact 的一律以角色轴为准。
+    if (toolArtifacts.length === 0 && !isReadOnlyTool) {
       for (const path of collectMetadataPaths(node.toolCall.metadata)) {
         addItem({
           kind: 'file',
           label: basename(path),
           ownerKind: 'tool',
           ownerLabel: toolOwnerLabel,
+          role: 'deliverable',
           path,
           sourceNodeId: node.id,
         }, `file:${path}`);
       }
     }
 
-    for (const artifact of collectToolArtifactsFromMetadata(node.toolCall.metadata)) {
-      if (!shouldProjectToolArtifact(artifact, node.toolCall.name)) {
+    for (const artifact of toolArtifacts) {
+      if (!artifact.path && !artifact.url) {
+        continue;
+      }
+
+      // 只读工具的产出一条都不上屏——这与角色轴是**两件正交的事**：
+      // 角色轴管「分类」（交付物 vs 过程材料），只读清单管「读取动作要不要上屏」。
+      // 读文件/列目录的内容既不是交付物，也不值得占「来源」区（既有产品决策，
+      // 由 shouldProjectToolArtifact 承担，角色轴不取代它）。
+      if (isReadOnlyArtifactTool(artifact.sourceTool || node.toolCall.name)) {
         continue;
       }
 
@@ -188,6 +194,8 @@ export function buildArtifactOwnershipItems(
         label: artifact.label,
         ownerKind: 'tool',
         ownerLabel: ownerLabelForToolArtifact(artifact, node.toolCall.name, primaryAgent),
+        // 角色轴单一判据：deliverable 进产物区，material 进「来源」区（见 artifactRoleRegistry）
+        role: resolveArtifactRole(artifact),
         path: artifact.path,
         url: artifact.url,
         sourceNodeId: node.id,

@@ -17,6 +17,7 @@ import {
 } from '../../../utils/humanizeToolStep';
 import {
   formatToolDuration,
+  humanizeToolError,
   isAutoLoadedRetry,
   isEscalatedToolError,
 } from '../../../utils/toolExecutionPresentation';
@@ -344,10 +345,11 @@ export function tailTruncateLiveOutput(live: ToolLiveOutput | undefined): ToolLi
 }
 
 /**
- * 组头摘要（P0 #1 失败去重）：
+ * 组头摘要（P0 #1 失败去重 + P0 接缝「单工具失败不说空话」）：
  *  · 多工具 → 计数（"N failed / M empty / K completed"），保留；
- *  · 单工具且失败 → null：错误**只**由下方工具 cell 单处渲染（红 glyph + 一行 humanize），
- *    组头不再重复同一条错误文本（去掉 summarizeTool 对失败返回的错误首行）；
+ *  · 单工具且失败 → 简短摘要：优先 humanizeToolError 的 code/兜底分类 summary，
+ *    分不出类别就截取原始 error 首行（128 个工具里 101 个没有专属状态词，
+ *    组头只剩「失败 + 执行了一个步骤」等于没说话，必须展开才知道发生了什么）；
  *  · 单工具其它（成功/空）→ summarizeTool 的结果摘要（如「找到 3 个文件」），保留。
  * 纯函数，便于单测。
  */
@@ -355,8 +357,25 @@ export function buildToolGroupHeadSummary(toolCalls: ToolCall[], t: Translations
   if (toolCalls.length === 0) return null;
   if (toolCalls.length > 1) return summarizeToolGroupResults(toolCalls, t);
   const only = toolCalls[0];
-  if (only.result?.success === false) return null;
+  if (only.result?.success === false) return summarizeSingleFailure(only, t);
   return summarizeTool(only);
+}
+
+/**
+ * 单工具失败的组头摘要降级链：code 文案 summary → 正则兜底分类 summary → 原始 error 首行。
+ * 组头只有一行、靠 CSS truncate——summarizeTool 的失败分支自带首行提取 + 80 字截断；
+ * browser/computer 在 summarizeTool 内部优先走专属脱敏摘要（原始 error 可能含用户键入的
+ * 敏感文本，绝不能进组头 DOM）。失败但完全没有 error 文本时返回 null（组头仍有状态词
+ * +步骤文案，不空白——此时 summarizeTool 会落到按成功设计的工具摘要，对失败是误导）。
+ */
+function summarizeSingleFailure(toolCall: ToolCall, t: Translations): string | null {
+  const result = toolCall.result;
+  if (!result) return null;
+  const errorText = result.error || (typeof result.output === 'string' ? result.output : '');
+  const humanized = humanizeToolError(errorText, toolCall.name, t, result.metadata);
+  if (humanized) return humanized.summary;
+  if (!errorText.trim()) return null;
+  return summarizeTool(toolCall);
 }
 
 function summarizeToolGroupResults(toolCalls: ToolCall[], t: Translations): string | null {

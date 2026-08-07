@@ -7,6 +7,7 @@
 import { isSemanticToolUIEnabled } from './featureFlags';
 import { formatDisplayPath } from './displayPath';
 import type { Translations } from '../i18n';
+import type { ToolCallTargetContext } from '@shared/contract';
 
 const ARG_PREVIEW_MAX = 80;
 
@@ -390,4 +391,79 @@ export function humanizeToolGroupLabel(toolNames: string[], t: Translations): st
   return order
     .map((bucket) => g[bucket].replace('{count}', String(counts.get(bucket))))
     .join('、');
+}
+
+// ============================================================================
+// targetContext 推导（2026-08-07）
+// ============================================================================
+// 原来这个字段是让模型在 `_meta` 里填的。真库数据说它不该由模型填：
+//   - 它渲染出来是 TargetContextIcon 里**由 kind 唯一决定的一个 12px 图标**，
+//     `label` 只进 aria-label、从不作为可见文字出现；
+//   - 模型给 18 个工具里的 7 个填出自相矛盾的 kind（Bash→file/app、
+//     WebSearch→browser/mcp_server、AskUserQuestion→app/file/memory）；
+//   - 而它填对的那 11 个，全是从工具名就能推出来的。
+// 所以改成这里推导，模型侧的 schema 与提示词同步删掉（省 ~1.8K token/请求）。
+//
+// 复用上面的 classifyToolName，**不新建工具名表**——新工具进了那边的集合，
+// 这边自动跟上；没进的落到 'unknown' → 返回 undefined（无图标）。
+// 2026-07 起 5357 次真实调用实测：browser 36.9% / file 27.0% / mcp_server 0.5%，
+// 其余 35.5% 无图标。无图标是正确行为，不是缺口——Bash 的目标是一条命令，
+// 不是可图标化的实体，那正是 shortDescription 存在的理由。
+//
+// app kind 刻意不在这里推：它是唯一带真信息的 kind（NSWorkspace 真 app logo），
+// 需要 bundleId，由宿主的 cuaNarration 推导后写进 ToolCall，这里不抢。
+// ============================================================================
+
+const TOOL_CATEGORY_TO_TARGET_KIND: Partial<Record<ToolCategory, ToolCallTargetContext['kind']>> = {
+  read: 'file',
+  write: 'file',
+  edit: 'file',
+  search: 'file',
+  listDir: 'file',
+  webSearch: 'browser',
+  webFetch: 'browser',
+  browserAction: 'browser',
+  screenshot: 'browser',
+  mcp: 'mcp_server',
+  mcpChannel: 'mcp_server',
+  memoryStore: 'memory',
+  memorySearch: 'memory',
+};
+
+/** label 只进 aria-label（屏幕阅读器），不作为可见文字渲染。 */
+function targetLabelFor(
+  kind: ToolCallTargetContext['kind'],
+  name: string,
+  args: Record<string, unknown> | undefined,
+): string | undefined {
+  if (kind === 'mcp_server') return parseMcpName(name)?.server;
+  if (kind === 'file') {
+    const path = getToolFilePath(name, args) ?? firstPath(args ?? {}, ['file_path', 'path', 'pattern']);
+    if (!path) return undefined;
+    return path.split('/').filter(Boolean).pop() || path;
+  }
+  if (kind === 'browser') {
+    const url = firstString(args ?? {}, ['url']);
+    if (!url) return undefined;
+    try {
+      return new URL(url).hostname || undefined;
+    } catch {
+      return undefined;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * 从工具名 + 入参推 targetContext。推不出来返回 undefined——**不许兜底成某个
+ * kind**，`TargetContextIcon` 拿不到 kind 就不渲染，那是正确行为。
+ */
+export function deriveToolTargetContext(
+  name: string,
+  args: Record<string, unknown> | undefined,
+): ToolCallTargetContext | undefined {
+  const kind = TOOL_CATEGORY_TO_TARGET_KIND[classifyToolName(name)];
+  if (!kind) return undefined;
+  const label = targetLabelFor(kind, name, args);
+  return label ? { kind, label } : { kind };
 }

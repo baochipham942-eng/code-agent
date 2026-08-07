@@ -18,6 +18,7 @@ import {
   sanitizeLargeTextToolArguments,
 } from '../../../shared/utils/browserComputerRedaction';
 import { buildAgentPointerTimeline } from '../../../shared/utils/agentPointerEvidence';
+import { getAttachmentId } from '../../../shared/utils/messageAttachments';
 import * as fs from 'fs';
 
 const logger = createLogger('MessageConverter');
@@ -258,102 +259,118 @@ export function buildMultimodalContent(
 
   // Process each attachment by category
   for (const attachment of attachments) {
-    const category = attachment.category || (attachment.type === 'image' ? 'image' : 'other');
-    if (!attachment.data && category !== 'image' && !canProcessAttachmentWithoutData(category)) continue;
-    if (!attachment.data && !attachment.path && !attachment.pptJson && !attachment.archiveManifest) continue;
+    try {
+      const category = attachment.category || (attachment.type === 'image' ? 'image' : 'other');
+      if (!attachment.data && category !== 'image' && !canProcessAttachmentWithoutData(category)) continue;
+      if (!attachment.data && !attachment.path && !attachment.pptJson && !attachment.archiveManifest) continue;
 
-    // Check total size limit
-    if (totalAttachmentChars >= MAX_TOTAL_ATTACHMENT_CHARS) {
+      // Check total size limit
+      if (totalAttachmentChars >= MAX_TOTAL_ATTACHMENT_CHARS) {
+        contents.push({
+          type: 'text',
+          text: `⚠️ 附件内容已达上限，跳过: ${attachment.name}`,
+        });
+        continue;
+      }
+
+      switch (category) {
+        case 'image': {
+          const result = processImageAttachment(attachment, contents);
+          if (!result) continue;
+          break;
+        }
+
+        case 'audio':
+        case 'video': {
+          const contentText = processMediaAttachment(attachment);
+          totalAttachmentChars += contentText.length;
+          contents.push({ type: 'text', text: contentText });
+          break;
+        }
+
+        case 'pdf': {
+          const contentText = processPdfAttachment(attachment);
+          totalAttachmentChars += contentText.length;
+          contents.push({ type: 'text', text: contentText });
+          break;
+        }
+
+        case 'code': {
+          const contentText = processCodeAttachment(attachment);
+          totalAttachmentChars += contentText.length;
+          contents.push({ type: 'text', text: contentText });
+          break;
+        }
+
+        case 'data': {
+          const contentText = processDataAttachment(attachment);
+          totalAttachmentChars += contentText.length;
+          contents.push({ type: 'text', text: contentText });
+          break;
+        }
+
+        case 'html': {
+          const contentText = processHtmlAttachment(attachment);
+          totalAttachmentChars += contentText.length;
+          contents.push({ type: 'text', text: contentText });
+          break;
+        }
+
+        case 'text': {
+          const contentText = processTextAttachment(attachment);
+          totalAttachmentChars += contentText.length;
+          contents.push({ type: 'text', text: contentText });
+          break;
+        }
+
+        case 'excel': {
+          const contentText = processExcelAttachment(attachment);
+          totalAttachmentChars += contentText.length;
+          contents.push({ type: 'text', text: contentText });
+          break;
+        }
+
+        case 'presentation': {
+          const contentText = processPresentationAttachment(attachment);
+          totalAttachmentChars += contentText.length;
+          contents.push({ type: 'text', text: contentText });
+          break;
+        }
+
+        case 'archive': {
+          const contentText = processArchiveAttachment(attachment);
+          totalAttachmentChars += contentText.length;
+          contents.push({ type: 'text', text: contentText });
+          break;
+        }
+
+        case 'folder': {
+          const contentText = processFolderAttachment(attachment);
+          totalAttachmentChars += contentText.length;
+          contents.push({ type: 'text', text: contentText });
+          break;
+        }
+
+        default: {
+          const contentText = processDefaultAttachment(attachment);
+          totalAttachmentChars += contentText.length;
+          contents.push({ type: 'text', text: contentText });
+        }
+      }
+    } catch (error) {
+      // fail-loud，不留裸 TypeError：单个附件的字段缺陷（如历史脏数据缺 id）不该
+      // 拖垮整条后台任务/主对话轮次。记录到具体哪个附件、什么类别，再退化成一条
+      // 文本占位，让轮次能继续跑完（2026-08-07 spawn_task TypeError 真机实录）。
+      logger.error('[MessageConverter] Failed to process attachment, skipping with fallback text', {
+        attachmentId: getAttachmentId(attachment) || '(missing id)',
+        attachmentName: attachment?.name,
+        category: attachment?.category,
+        error: error instanceof Error ? error.message : String(error),
+      });
       contents.push({
         type: 'text',
-        text: `⚠️ 附件内容已达上限，跳过: ${attachment.name}`,
+        text: `⚠️ 附件处理失败，已跳过: ${attachment?.name ?? '未知附件'}`,
       });
-      continue;
-    }
-
-    switch (category) {
-      case 'image': {
-        const result = processImageAttachment(attachment, contents);
-        if (!result) continue;
-        break;
-      }
-
-      case 'audio':
-      case 'video': {
-        const contentText = processMediaAttachment(attachment);
-        totalAttachmentChars += contentText.length;
-        contents.push({ type: 'text', text: contentText });
-        break;
-      }
-
-      case 'pdf': {
-        const contentText = processPdfAttachment(attachment);
-        totalAttachmentChars += contentText.length;
-        contents.push({ type: 'text', text: contentText });
-        break;
-      }
-
-      case 'code': {
-        const contentText = processCodeAttachment(attachment);
-        totalAttachmentChars += contentText.length;
-        contents.push({ type: 'text', text: contentText });
-        break;
-      }
-
-      case 'data': {
-        const contentText = processDataAttachment(attachment);
-        totalAttachmentChars += contentText.length;
-        contents.push({ type: 'text', text: contentText });
-        break;
-      }
-
-      case 'html': {
-        const contentText = processHtmlAttachment(attachment);
-        totalAttachmentChars += contentText.length;
-        contents.push({ type: 'text', text: contentText });
-        break;
-      }
-
-      case 'text': {
-        const contentText = processTextAttachment(attachment);
-        totalAttachmentChars += contentText.length;
-        contents.push({ type: 'text', text: contentText });
-        break;
-      }
-
-      case 'excel': {
-        const contentText = processExcelAttachment(attachment);
-        totalAttachmentChars += contentText.length;
-        contents.push({ type: 'text', text: contentText });
-        break;
-      }
-
-      case 'presentation': {
-        const contentText = processPresentationAttachment(attachment);
-        totalAttachmentChars += contentText.length;
-        contents.push({ type: 'text', text: contentText });
-        break;
-      }
-
-      case 'archive': {
-        const contentText = processArchiveAttachment(attachment);
-        totalAttachmentChars += contentText.length;
-        contents.push({ type: 'text', text: contentText });
-        break;
-      }
-
-      case 'folder': {
-        const contentText = processFolderAttachment(attachment);
-        totalAttachmentChars += contentText.length;
-        contents.push({ type: 'text', text: contentText });
-        break;
-      }
-
-      default: {
-        const contentText = processDefaultAttachment(attachment);
-        totalAttachmentChars += contentText.length;
-        contents.push({ type: 'text', text: contentText });
-      }
     }
   }
 
@@ -392,7 +409,7 @@ function processImageAttachment(
 ): boolean {
   let base64Data = attachment.data;
   let mediaType = attachment.mimeType;
-  const isAppshot = attachment.id.startsWith('appshot-');
+  const isAppshot = getAttachmentId(attachment).startsWith('appshot-');
   const pathHint = attachment.path && !isAppshot ? `\n路径: ${attachment.path}` : '';
   const appshotGuidance = isAppshot
     ? '这是 Appshot 截图，窗口文本已在同一条消息的 <appshot> 上下文中提供；如果当前模型不能直接看图，请优先根据该文本回答，不要要求读取本地图片路径。'

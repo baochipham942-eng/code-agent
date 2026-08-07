@@ -83,6 +83,60 @@ describe('message attachment conversion', () => {
     expect(serialized).not.toContain('可读取的本地图片路径');
   });
 
+  it('does not throw when an image attachment is missing its id (legacy/corrupted history data)', () => {
+    // 真机实录 2026-08-07：spawn_task 后台任务继承父会话历史时带上一条缺 id 的
+    // 历史图片附件（sanitizeAttachmentForPersistence 透传 attachment.id，脏数据落库后
+    // 就是 undefined），buildMultimodalContent 内部对 attachment.id 的裸访问
+    // `.startsWith('appshot-')` 直接炸穿整条后台任务执行链路，报出裸 TypeError：
+    // "Cannot read properties of undefined (reading 'startsWith')"。
+    const attachmentMissingId = {
+      type: 'image',
+      category: 'image',
+      name: '手动导入截图.png',
+      size: 128,
+      mimeType: 'image/png',
+      data: 'data:image/png;base64,aGVsbG8=',
+      path: '/tmp/manual-import.png',
+      // id 字段缺失 —— 类型标注为必填 string，但运行时数据不保证遵守。
+    } as unknown as MessageAttachment;
+
+    expect(() => buildMultimodalContent('看看这个', [attachmentMissingId])).not.toThrow();
+
+    const content = buildMultimodalContent('看看这个', [attachmentMissingId]);
+    // 缺 id 不等于 appshot，应按普通图片继续处理（不是 fail-loud 兜底的错误占位）。
+    expect(content.some((part) => part.type === 'image')).toBe(true);
+    const imageHint = content.find((part) =>
+      part.type === 'text' && part.text?.includes('image_analyze')
+    );
+    expect(imageHint?.text).toContain('image_analyze');
+  });
+
+  it('fail-loud: an attachment that still throws mid-processing is skipped with context, not a bare TypeError', () => {
+    // category 由 attachment.type 兜底为非法值，触发默认分支的 processDefaultAttachment，
+    // 用一个会在字符串插值/字段访问上抛错的 getter 制造真实运行时异常，验证 catch 兜底
+    // 记录上下文（附件名/类别）并退化为文本占位，而不是让异常冒穿整条消息构建。
+    const attachment: MessageAttachment = {
+      id: 'broken-1',
+      type: 'file',
+      category: 'unknown_category_forcing_default' as unknown as MessageAttachment['category'],
+      name: 'broken.bin',
+      size: 10,
+      mimeType: 'application/octet-stream',
+      data: 'data:application/octet-stream;base64,AAAA',
+    };
+    Object.defineProperty(attachment, 'path', {
+      get() {
+        throw new Error('simulated corrupted field access');
+      },
+    });
+
+    let content: ReturnType<typeof buildMultimodalContent> = [];
+    expect(() => {
+      content = buildMultimodalContent('看看这个', [attachment]);
+    }).not.toThrow();
+    expect(content.some((part) => part.type === 'text' && part.text?.includes('附件处理失败'))).toBe(true);
+  });
+
   it('summarizes persisted audio and video attachments without leaking base64 data into model text', () => {
     const audio: MessageAttachment = {
       id: 'audio-1',

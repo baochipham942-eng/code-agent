@@ -37,16 +37,24 @@ vi.mock('../../../src/renderer/stores/appStore', () => ({
   }),
 }));
 
+const uiPreviewItem = {
+  id: 'artifact:ui',
+  kind: 'generic_html',
+  title: 'UI 原型',
+  status: 'ready',
+  createdAt: 1,
+  source: { kind: 'message', label: 'Assistant' },
+  content: { html: '<main>UI</main>' },
+};
+
 vi.mock('../../../src/renderer/hooks/useWorkspacePreviewModel', () => ({
-  useWorkspacePreviewModel: () => [{
-    id: 'artifact:ui',
-    kind: 'generic_html',
-    title: 'UI 原型',
-    status: 'ready',
-    createdAt: 1,
-    source: { kind: 'message', label: 'Assistant' },
-    content: { html: '<main>UI</main>' },
-  }],
+  useWorkspacePreviewModel: () => [uiPreviewItem],
+  // 角色轴（ADR-055）：概览改用 …State 取 { items, materialItems }；替身要跟上新导出
+  useWorkspacePreviewModelState: () => ({
+    items: [uiPreviewItem],
+    materialItems: [],
+    currentTurnArtifacts: null,
+  }),
 }));
 
 vi.mock('../../../src/renderer/stores/sessionStore', () => {

@@ -25,6 +25,7 @@ function makeNode(items: TurnArtifactOwnershipItem[]): TraceNode {
 
 const linkItem = (label: string): TurnArtifactOwnershipItem => ({
   kind: 'link',
+  role: 'material' as const,
   label,
   ownerKind: 'tool',
   ownerLabel: 'WebFetch',
@@ -33,6 +34,7 @@ const linkItem = (label: string): TurnArtifactOwnershipItem => ({
 
 const fileItem = (label: string): TurnArtifactOwnershipItem => ({
   kind: 'file',
+  role: 'deliverable' as const,
   label,
   ownerKind: 'assistant',
   ownerLabel: 'Write',
@@ -80,7 +82,7 @@ describe('Sources (纯链接来源) 视觉降级 — 不长得像交付物卡', 
       <TraceNodeRenderer
         node={makeNode([
           linkItem('aiapps.com'),
-          { kind: 'artifact', label: '报告.pdf', ownerKind: 'assistant', ownerLabel: 'Assistant' },
+          { kind: 'artifact', role: 'deliverable' as const, label: '报告.pdf', ownerKind: 'assistant', ownerLabel: 'Assistant' },
         ])}
       />,
     );

@@ -55,6 +55,7 @@ describe('TurnCard artifact fold boundary', () => {
             tone: 'success',
             artifactOwnership: [{
               kind: 'file',
+              role: 'deliverable' as const,
               label: 'report.md',
               ownerKind: 'assistant',
               ownerLabel: 'Neo',

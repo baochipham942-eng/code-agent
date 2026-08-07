@@ -117,6 +117,7 @@
 | 051 | 能力中心连接器持久化到用户级，不绑工作目录 | accepted |
 | 053 | 通话态权限档跟随会话选择，不再抬严到 readOnly | accepted |
 | 054 | 会话=指挥台：前台持续可输入，文字与语音统一派活语义 | accepted |
+| 055 | 产物角色轴：deliverable/material/receipt 登记制取代反推式识别 | accepted |
 
 > **ADR-040 执行状态（2026-07-18）**：Word / PPT / Excel locator、共享 picker、generated-PPT resolver 与隐私安全 telemetry 已随 #377/#385 合入 `main`。Poppler `26.07.0` 双原生架构候选由 run `29412794021` 产出并发布到项目控制的不可变 OSS 前缀，`config/poppler-sidecar.lock.json` 已为 `ready`，Poppler promotion stop-ship 已解除；正式版本仍需走常规签名、公证、DMG 与安装版验收。
 

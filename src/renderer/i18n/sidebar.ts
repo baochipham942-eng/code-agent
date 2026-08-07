@@ -49,6 +49,9 @@ export const sidebarZh = {
     noStatusSessions: '当前没有{label}会话',
     noMatchedSessions: '这片星域没有信号',
     statusMatchFallback: '匹配',
+    // 分页（加载更早的历史会话）
+    loadOlderSessions: '加载更早的会话',
+    allSessionsLoaded: '已加载全部会话',
     // 多选栏
     selectedCount: '已选 {count} 个',
     cancel: '取消',
@@ -365,6 +368,9 @@ export const sidebarEn: typeof sidebarZh = {
     noStatusSessions: 'No {label} sessions right now',
     noMatchedSessions: 'No signals in this sector',
     statusMatchFallback: 'Matched',
+    // Pagination (loading older history sessions)
+    loadOlderSessions: 'Load older sessions',
+    allSessionsLoaded: 'All sessions loaded',
     selectedCount: '{count} selected',
     cancel: 'Cancel',
     delete: 'Delete',

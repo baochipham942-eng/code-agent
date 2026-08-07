@@ -4,7 +4,11 @@
 // ============================================================================
 
 import { useMemo } from 'react';
-import type { Message } from '@shared/contract';
+import type { Message, MessageMetadata } from '@shared/contract';
+import {
+  findRegisteredSystemEvent,
+  findUnregisteredSystemEventKeys,
+} from '@shared/contract/systemEventRegistry';
 import type { NeoWorkCardDetail } from '@shared/contract/tag';
 import type { TraceProjection, TraceTurn, TraceNode } from '@shared/contract/trace';
 import type { SwarmLaunchRequest } from '@shared/contract/swarm';
@@ -258,118 +262,60 @@ export function projectTurns(
       continue;
     }
 
-    // 语音通话摘要（§7.5 投影合流）：role=system 但带 voiceCallSummary，是通话的唯一
-    // 摘要条目（host 挂断时落库，生产者唯一）。ownership 显式归 voice——不进通用
-    // system 黑洞，也不许渲染侧再造第二条摘要。
-    if (msg.role === 'system' && msg.metadata?.voiceCallSummary) {
-      const node: TraceNode = {
-        id: msg.id,
-        type: 'system',
-        content: msg.content,
-        timestamp: msg.timestamp,
-        subtype: 'voice_call_summary',
-        metadata: msg.metadata,
-      };
-      if (currentTurn) {
-        currentTurn.nodes.push(node);
-        currentTurn.endTime = msg.timestamp;
-      } else {
-        turnCounter++;
-        turns.push({
-          turnNumber: turnCounter,
-          turnId: `turn-${turnCounter}`,
-          nodes: [node],
-          status: 'completed',
-          startTime: msg.timestamp,
-          endTime: msg.timestamp,
-        });
-      }
-      continue;
-    }
-
-    // 通话本身失败留痕（T3）：建连失败 / 通话中断时 host 落一条带 `metadata.voiceCallFailure`
-    // 的 role:'system' 消息。**这行 T9 起就一直在写，但投影层没放行**——白名单漏了它，于是
-    // 落到下面「system 一律 skip」那道总闸里：模型读得到（上下文装配走 DB），用户屏幕上
-    // 一片空白，事后翻历史也找不回。当下只有一个几秒就消失的 toast，通话条又随挂断一起收走。
-    // 归位方式与 voiceCallSummary 同级：通话级事件，挂当前轮，没有轮就独立成轮。
-    if (msg.role === 'system' && msg.metadata?.voiceCallFailure) {
-      const node: TraceNode = {
-        id: msg.id,
-        type: 'system',
-        subtype: 'error',
-        content: msg.content,
-        timestamp: msg.timestamp,
-        metadata: msg.metadata,
-      };
-      if (currentTurn) {
-        currentTurn.nodes.push(node);
-        currentTurn.endTime = msg.timestamp;
-      } else {
-        turnCounter++;
-        turns.push({
-          turnNumber: turnCounter,
-          turnId: `turn-${turnCounter}`,
-          nodes: [node],
-          status: 'completed',
-          startTime: msg.timestamp,
-          endTime: msg.timestamp,
-        });
-      }
-      continue;
-    }
-
-    // 语音派活失败留痕（W6-5）：派出的 run 失败时 host 落一条带
-    // `metadata.voiceWorkFailure` 的 role:'system' 消息。它不是对话内容，
-    // 但**是那张任务卡的结局证据**——按 workItemId 对回对应的 voiceDispatch 轮，
-    // 投成该轮内的 error 节点，任务卡据此如实显示失败。
-    // 对不上就挂当前轮，一个轮都没有就独立成轮——失败记录绝不丢，也不留在半空。
-    if (msg.role === 'system' && msg.metadata?.voiceWorkFailure) {
-      const failedWorkItemId = msg.metadata.voiceWorkFailure.workItemId;
-      {
-        const node: TraceNode = {
-          id: msg.id,
-          type: 'system',
-          subtype: 'error',
-          content: msg.content,
-          timestamp: msg.timestamp,
-          metadata: msg.metadata,
-        };
-        const matchedTurn = [...turns]
-          .reverse()
-          .find((turn) => turn.nodes.some((n) => n.metadata?.voiceDispatch?.workItemId === failedWorkItemId));
-        const hostTurn = matchedTurn ?? currentTurn;
-        if (hostTurn) {
-          hostTurn.nodes.push(node);
-          hostTurn.endTime = msg.timestamp;
-        } else {
-          turnCounter++;
-          turns.push({
-            turnNumber: turnCounter,
-            turnId: `turn-${turnCounter}`,
-            nodes: [node],
-            status: 'completed',
-            startTime: msg.timestamp,
-            endTime: msg.timestamp,
-          });
-        }
+    // 用户可见 system 事件：登记制（P0-2）。role:'system' 的落库消息默认是只给模型看的
+    // 内部指令（真库 635 条 metadata 全 NULL），谁该给用户看由写入侧的登记表
+    //（shared/contract/systemEventRegistry）决定，这里只查表：
+    // - 已登记：按表里的呈现类型/挂轮策略投影（通话摘要、通话失败 #908、派活失败 W6-5、
+    //   派活结局印章 X5.5-A2-a）；
+    // - 未登记但带「事件性」metadata 键：开发档 console.error（契约测试同步报红），
+    //   意思是「有人新写了用户可见事件却没登记」；生产档维持现状跳过。
+    // 总闸不拆：未匹配的 system 消息一律 continue，绝不外泄给用户。
+    if (msg.role === 'system') {
+      const event = findRegisteredSystemEvent(msg.metadata);
+      if (!event) {
+        reportUnregisteredSystemEventMetadata(msg);
         continue;
       }
-    }
-
-    // 语音派活的结局印章（X5.5-A2-a）：host 查过产物证据后落的一条 role:'system' 消息。
-    // 它不是对话内容，不成节点——只把结局盖到它属于的那一轮上，任务卡据此报结局。
-    // 对不上任何一轮就丢弃：宁可卡上不显示结局，也不能把印章盖到别人的活头上。
-    if (msg.role === 'system' && msg.metadata?.voiceWorkSettled) {
-      const settled = msg.metadata.voiceWorkSettled;
-      const matchedTurn = [...turns]
-        .reverse()
-        .find((turn) => turn.nodes.some((n) => n.metadata?.voiceDispatch?.workItemId === settled.workItemId));
-      if (matchedTurn) matchedTurn.voiceWorkOutcome = settled.outcome;
+      const { spec, payload } = event;
+      // settle 类（派活结局印章 X5.5-A2-a）：不是对话内容，不成节点——只把结局盖到
+      // 按 workItemId 对回的派活轮上，任务卡据此报结局。对不上任何一轮就丢弃：
+      // 宁可卡上不显示结局，也不能把印章盖到别人的活头上。
+      if (spec.presentation === 'settle') {
+        const settled = payload as NonNullable<MessageMetadata['voiceWorkSettled']>;
+        const matchedTurn = findVoiceWorkTurn(turns, settled.workItemId);
+        if (matchedTurn) matchedTurn.voiceWorkOutcome = settled.outcome;
+        continue;
+      }
+      const node: TraceNode = {
+        id: msg.id,
+        type: 'system',
+        subtype: spec.subtype,
+        content: msg.content,
+        timestamp: msg.timestamp,
+        metadata: msg.metadata,
+      };
+      // matched-turn（派活失败 W6-5）：按 workItemId 对回 voiceDispatch 派活轮，
+      // 对不上退当前轮，一个轮都没有就独立成轮——失败记录绝不丢，也不留在半空。
+      // current-turn（通话摘要 §7.5 / 通话失败 T3-#908）：通话级事件，挂当前轮。
+      const hostTurn = spec.attach === 'matched-turn'
+        ? findVoiceWorkTurn(turns, (payload as { workItemId?: string }).workItemId) ?? currentTurn
+        : currentTurn;
+      if (hostTurn) {
+        hostTurn.nodes.push(node);
+        hostTurn.endTime = msg.timestamp;
+      } else {
+        turnCounter++;
+        turns.push({
+          turnNumber: turnCounter,
+          turnId: `turn-${turnCounter}`,
+          nodes: [node],
+          status: 'completed',
+          startTime: msg.timestamp,
+          endTime: msg.timestamp,
+        });
+      }
       continue;
     }
-
-    // System messages → skip (nudges, recovery hints)
-    if (msg.role === 'system') continue;
 
     // Runtime supplements are part of the in-flight task, not a new turn.
     const runtimeInputMode = msg.metadata?.workbench?.runtimeInputMode;
@@ -686,6 +632,40 @@ export function projectTurns(
     activeTurnIndex,
   };
   });
+}
+
+/** 按 workItemId 倒查最近的 voiceDispatch 派活轮（matched-turn 挂轮策略专用）。 */
+function findVoiceWorkTurn(turns: TraceTurn[], workItemId: string | undefined): TraceTurn | undefined {
+  if (!workItemId) return undefined;
+  return [...turns]
+    .reverse()
+    .find((turn) => turn.nodes.some((n) => n.metadata?.voiceDispatch?.workItemId === workItemId));
+}
+
+/**
+ * 开发档判定：与 typedInvoke.shouldValidateResponse 同例——Vite dev build 为 true，
+ * 单测/Node 环境兜底 NODE_ENV。生产档对未登记键维持现状静默跳过。
+ */
+function isDevBuild(): boolean {
+  const env = (import.meta as unknown as { env?: { DEV?: boolean } }).env;
+  if (env && typeof env.DEV === 'boolean') return env.DEV;
+  return typeof process !== 'undefined' && process.env?.NODE_ENV !== 'production';
+}
+
+/**
+ * 未登记哨兵（P0-2）：role:'system' 消息带了「事件性」metadata 键却没在登记表里，
+ * 说明有人新写了用户可见事件却漏了登记——开发档立刻报错（契约测试同步报红），
+ * 不再像 #908 那样静默丢到 11 个 PR 后才被真机撞见。生产档按现状跳过，不改线上行为。
+ */
+function reportUnregisteredSystemEventMetadata(msg: Message): void {
+  if (!msg.metadata || !isDevBuild()) return;
+  const keys = findUnregisteredSystemEventKeys(msg.metadata);
+  if (keys.length === 0) return;
+  console.error(
+    `[useTurnProjection] role:'system' 消息带未登记的 metadata 键：${keys.join(', ')}（消息 ${msg.id}）。`
+    + '若是用户可见事件，请在 shared/contract/systemEventRegistry 的 USER_VISIBLE_SYSTEM_EVENT_REGISTRY 登记；'
+    + '若是内部投影，登记进 INTERNAL_SYSTEM_METADATA_KEYS。生产档按现状跳过。',
+  );
 }
 
 /**

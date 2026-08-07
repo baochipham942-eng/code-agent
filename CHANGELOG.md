@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.31.0] - 2026-08-07
+
+自 v0.30.0 起 main 累计 63 个提交 / 49 个 PR。核心是 ADR-054「会话=指挥台」——前台永不被执行占用、文字与语音统一派活语义，属新增能力，故按 minor 发布。
+
+### Added
+
+- **ADR-054 会话=指挥台**（#982、#985、#978、#964、#997、#998、#1005）：文字路与语音路统一派活语义，前台 run 不再占用会话。`spawn_task` / `steer_task` / `cancel_task` / `task_status` 四工具走 lane + submission_key 幂等；短名（2-4 字符）作为用户可指认的任务句柄，目标不唯一时先 AskUserQuestion 澄清再动手，绝不回落作用于「当前活」。旧「等前台 run 结束再作为下一轮发出」的 UX 语义退役，底层投递基建保留并改名分。
+  - 三轮真机验收（A1–C3 全 PASS）暴露的三个根因：① `_meta` 信封泄漏进工具执行参数（见 Fixed）；② 后台子任务的 user 消息灌进父会话推理历史，排序器遇到 user 即止步 ⇒ 存在的 tool result 被误判缺失（`Tool result is missing`），修复点在会话恢复边界——`isMeta` 审计消息继续留 DB 与界面投影，但不再回灌前台模型历史；③ AI SDK 要求 assistant(tool-call) 后紧跟 tool-result，主 loop 的 system 注入与实时 steer 都会插队，故改为按 `toolCallId` 在整段历史中定位并归位，不能只扫到下一条 user/assistant 为止。
+- **浏览器二期/三期 + 账号态**（#971、#984、#992、#962）：侧栏浏览器现场、用户地址栏（回车导航、agent 忙确认、URL 回写）、个人 profile 共享与 Cookie 导入入口。
+- **Swarm 链路收敛**（#981、#983、#993）：停止全部、渲染挂止血、任务黄条、概览 Todo 成员级、过程可见；审批 UX；单 spawn 转后台的可见性登记。
+- **日志能力三切片**（#987、#988、#991）：运行时 correlation context（复用既有 `runTraceContext`，不另造一套）、会话导出包 v2、CLI 本地会话诊断。
+- **概览四模块重构**（#960）：任务 / Todo / 上下文 / 产物分区，诊断 UI 删除。
+- **上下文分槽**（#977）：会话 / 空间 / 草稿互不串扰，发起会话自动移交挂载。
+- **Dev 测试包多槽并存**（#1000、#1001、#1004、#1006）：bundle identifier `.dev[N]` 推导槽位（`.dev` = 槽 1，`.dev2`…`.dev9`），Rust 侧 `dev_slot()` 与 TS 侧 `devSlotFromBundleId()` 同源双实现并各自钉单测——近似形态（`.developer` / `.dev-old` / `.dev0` / `.dev02`）一律拒绝，判错的代价是测试包写进生产数据目录。附 worktree 构建输入引导脚本；cua helper 缓存挪出 `~/Library/Caches`（该目录会被 macOS 清空）。
+
+### Fixed
+
+- **`_meta` 信封泄漏进工具执行参数**（#998）：`injectMetaIntoInputSchema` 把 `_meta` 注入每个工具的 inputSchema，执行前必须剥离；剥离原先只写在 SSE 流式一条路（`buildToolCallFromAccumulator`），另有 7 处直接构造 ToolCall——openaiWrapper / anthropicWrapper / geminiWrapper / claudeProvider ×2 / aiSdkAdapter ×2。`spawn_task` 是全仓极少数设 `additionalProperties: false` 的 schema，成为第一个把这条陈年泄漏从静默变硬拒的调用点（真机表现为「参数校验失败」连挂两次才成功）。收口到 `providers/toolCallMeta.ts` 的 `extractToolCallMeta` 单一 chokepoint，并加 `toolCallMetaStaticContract` 测试——用 TS AST（非正则）扫 providers/ 与 adapters/ 下全部 ToolCall 构造点，**扫描命中 0 个候选时显式失败**，禁止在测量失效时静默放行。第一轮人工枚举漏了 claudeProvider 两处，正是这道门补齐的。
+- **工具组组头状态词与标签基线错位 1px**（#1002）：两段字都是 11px，但状态词继承 body 的 Inter、标签是 `font-mono`(JetBrains Mono)；两个栈都不含中文字形，各自回退到不同的系统 CJK 字体，度量不一致 ⇒ 基线差 1px，中文方块字下肉眼可见。统一字体栈修复（不是 `align-items` 问题——改 `items-baseline` 对它无效）。附 e2e：直接落库造一条带失败工具调用的消息，让真实 `ToolStepGroup` 渲出组头再量真实基线；jsdom 不做布局，className 断言钉不住排版几何。
+- **会话搜索与列表**（#1003、#1007）：搜索接 FTS（含中文 2 字词兜底），侧栏列表分页、三过滤器下沉 SQL——历史会话此前搜不到也翻不到。
+- **专家团「用这个团」三处失联**（#986、#989、#990）：预选前灌全局 recipe store，待命 pills 与发送启动都依赖它找配方；出厂专家团并入渲染端配方目录；交互对齐「请 TA 来」——预选进 composer，不弹主题输入、不直接发起会话。
+- **Composer 批**（#966、#969、#970、#972、#973、#976、#994）：静止态四边一致；删光文字后 placeholder 与光标不回来（WebKit 残留占位 `<br>`）；空闲态上边距回 16px（chips 槽位的常驻锚点让 `empty:hidden` 永不生效）；空输入框画不出光标（WKWebView 不给空 contenteditable 画光标，用 `:empty::before` 零宽空格补行盒）；pin 资料并入文字流内联 chip、句中 slash 触发放宽；光标不再落进内联 chip 内部。
+- **资料库带入新会话**（#979、#980）：chip 不出现——`setSessionPin` 统一广播；改走分槽移交提速；有材料时收起通用模板卡。
+- **欢迎页建议卡**（#995）：会话带了上下文（资料 pin 或空间/项目工作区）就不摆通用建议卡。
+- **工具表达统一**（#963）、**产物卡**（#961、#968）：产物卡跟随缩略图收宽不再通栏；动作条三连修。
+- **引擎选择器**（#974）、**侧栏层级与全屏 logo**（#965、#973）、**工作目录多处真相不一致**（#975）、**v0.30.0 真机缺陷批**（#958）、**桌面包资源完整性校验**（#959）。
+- **本地 lint 门长期失效**（#999）：`.worktrees/` 位于仓库目录内，ESLint 10 会递归发现子目录的 `eslint.config.*`，把每个 worktree 里的 `admin-console/eslint.config.mjs` 都加载一遍；那些 worktree 未装 admin-console 依赖 ⇒ `npm run lint` 与 eslint 棘轮一律 `ERR_MODULE_NOT_FOUND` 崩掉（主树装依赖只能救一个 worktree）。给 lint 脚本与棘轮门加 `--no-config-lookup` + 显式 `--config`，只用仓库根配置；对 `src` 的扫描结果与原来逐条相同，不放宽任何规则。
+
 ## [0.30.0] - 2026-08-03
 
 自 v0.29.2 起 main 累计 80 个提交。新增终端、浏览器现场、品牌换标、高对比主题、设计画布编排等能力，故按 minor 发布。

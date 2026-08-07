@@ -36,19 +36,19 @@ import {
 const DEFAULT_WINDOW_DAYS = 7;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-export interface AppDiagnosticsFileEntry {
+interface AppDiagnosticsFileEntry {
   path: string;
   sha256: string;
   bytes: number;
 }
 
-export interface RendererCacheManifestEntry {
+interface RendererCacheManifestEntry {
   path: string;
   bytes: number;
   mtime: string;
 }
 
-export interface AppDiagnosticsManifest {
+interface AppDiagnosticsManifest {
   schemaVersion: 1;
   generatedAt: number;
   appVersion: string;

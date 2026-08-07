@@ -40,7 +40,7 @@ describe('ToolHeader target 图标', () => {
   });
 
   it('流式态（工具名已知、arguments 还空着）也有图标，只是没 label', () => {
-    render(<ToolHeader toolCall={call({ name: 'Read', arguments: {} })} status="running" />);
+    render(<ToolHeader toolCall={call({ name: 'Read', arguments: {} })} status="pending" />);
     expect(screen.getByLabelText('File')).toBeTruthy();
   });
 
@@ -52,6 +52,18 @@ describe('ToolHeader target 图标', () => {
     })} status="success" />);
     // emoji 分支带 aria-label=label
     expect(screen.getByLabelText('WeChat')).toBeTruthy();
+  });
+
+  it('两边都有值时宿主/历史值赢——这条才真的钉住优先级', () => {
+    // 上一条（computer_use）钉不住：它推导出 undefined，两种优先级结果一样，
+    // 把 `??` 顺序反过来测试照样绿。必须挑一个**两边都有值**的形态。
+    render(<ToolHeader toolCall={call({
+      name: 'Read',
+      arguments: { file_path: '/a/b.ts' },
+      targetContext: { kind: 'file', label: '历史标签' },
+    })} status="success" />);
+    expect(screen.getByLabelText('历史标签')).toBeTruthy();
+    expect(screen.queryByLabelText('b.ts')).toBeNull();
   });
 
   it('「无目标」的工具不长图标——Bash 的目标是一条命令，不是可图标化的实体', () => {

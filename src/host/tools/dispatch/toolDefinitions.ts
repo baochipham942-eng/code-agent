@@ -191,7 +191,17 @@ export function withoutGenericMediaToolsInDesign(
  * GAP-008: MCP 工具只注入名字索引（按 server 分组），schema 通过 ToolSearch 按需加载，
  * 与 builtin deferred 工具执行同一条"工具多了要 defer"原则。
  */
-export function getDeferredToolsSummary(deniedToolNames: readonly string[] = []): string {
+export function getDeferredToolsSummary(
+  deniedToolNames: readonly string[] = [],
+  allowedToolNames?: readonly string[],
+): string {
+  // T3b: allowlist 收窄（如会话指挥台前台 brain）下，若 ToolSearch 本身不在允许集里，
+  // 模型物理上加载不了任何延迟工具——继续宣传"可通过 ToolSearch 加载 X"只会诱导模型
+  // 反复尝试一条走不通的路，然后把失败误报成"环境禁用了 X"（2026-08-07 排查报告 §2/§7.4-1）。
+  if (allowedToolNames && allowedToolNames.length > 0) {
+    const allowed = new Set(allowedToolNames.map((name) => name.trim().toLowerCase()));
+    if (!allowed.has('toolsearch')) return '';
+  }
   const denied = new Set(deniedToolNames.map((name) => name.trim().toLowerCase()));
   const grouped = new Map<string, string[]>();
   for (const meta of DEFERRED_TOOLS_META) {

@@ -1013,6 +1013,30 @@ describe('ContextAssembly.buildModelMessages()', () => {
     expect(systemPrompt).not.toContain('<memory_hint>');
   });
 
+  // T3b: 会话指挥台前台 brain 靠 ctx.runtime.allowedToolNames 收窄工具表，getDeferredToolsSummary
+  // 必须拿到这个 allowlist 才能判断"要不要还宣传用 ToolSearch 加载的话术"（2026-08-07 排查报告 §7.4-1）。
+  it('passes the run allowlist through to getDeferredToolsSummary', async () => {
+    vi.mocked(getDeferredToolsSummary).mockReturnValueOnce('');
+
+    const ctx = buildRuntimeContext({
+      enableToolDeferredLoading: true,
+      allowedToolNames: ['spawn_task', 'steer_task', 'cancel_task', 'task_status', 'AskUserQuestion'],
+      messages: [buildMessage('user-gap023-allowlist', 'user', '帮我查一下今天的天气')],
+    });
+
+    const assembly = new ContextAssembly(ctx as never);
+    const modelMessages = await assembly.buildModelMessages();
+    const systemPrompt = modelMessages[0].content as string;
+
+    expect(getDeferredToolsSummary).toHaveBeenCalledWith(
+      ctx.deniedToolNames,
+      ['spawn_task', 'steer_task', 'cancel_task', 'task_status', 'AskUserQuestion'],
+    );
+    // allowlist 收窄下 summary 为空字符串（真实实现在没有 ToolSearch 的 allowlist 下返回 ''），
+    // 整个 <deferred-tools> 块不应出现——不再宣传取不到的延迟工具。
+    expect(systemPrompt).not.toContain('<deferred-tools>');
+  });
+
   it('injects compact game contract and skips optional prompt blocks for game artifact generation tasks', async () => {
     vi.mocked(getPromptForTask).mockReturnValueOnce('base '.repeat(4800));
     vi.mocked(needsGenerativeUI).mockReturnValueOnce(true);

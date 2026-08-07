@@ -175,7 +175,11 @@ describe('pdfCompressModule (native)', () => {
       );
       const result = await run({ input_path: 'a.pdf' });
       expect(result.ok).toBe(false);
-      if (!result.ok) expect(result.error).toContain('未找到 Ghostscript');
+      if (!result.ok) {
+        expect(result.error).toContain('未找到 Ghostscript');
+        expect(result.code).toBe('ENV_DEPENDENCY_MISSING');
+        expect(result.meta).toEqual({ dependency: 'Ghostscript', installHint: 'brew install ghostscript' });
+      }
     });
   });
 

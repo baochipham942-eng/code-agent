@@ -258,19 +258,15 @@ class VisualEditHandler implements ToolHandler<VisualEditArgs, VisualEditOutput>
     canUseTool: CanUseToolFn,
     onProgress?: ToolProgressFn,
   ): Promise<ToolResult<VisualEditOutput>> {
-    const rawFile = args.file;
-    const line = args.line;
-    const userIntent = (args.userIntent ?? '').trim();
-
-    if (!rawFile || typeof rawFile !== 'string') {
-      return { ok: false, error: 'file 必须是字符串路径', code: 'INVALID_ARGS' };
-    }
-    if (typeof line !== 'number' || !Number.isFinite(line) || line < 1) {
-      return { ok: false, error: 'line 必须是正整数', code: 'INVALID_ARGS' };
-    }
-    if (!userIntent) {
-      return { ok: false, error: 'userIntent 不能为空', code: 'INVALID_ARGS' };
-    }
+    // file / line / userIntent 的必填与类型/约束由 inputSchema 保证
+    // （executor/resolver 两层 schema 门：file string、line integer>=1、
+    // userIntent 非空白），此处不再手写重复校验。
+    //
+    // userIntent 不在这里取局部量：喂给视觉模型的 prompt 走的是 `selected: args`
+    // 里的原始 args.userIntent（见 buildPrompt 的 selected.userIntent），
+    // 原来那个 trim 过的局部常量只服务于已删除的非空校验，删掉不影响行为。
+    const rawFile = args.file as string;
+    const line = args.line as number;
 
     const permit = await canUseTool(schema.name, args as Record<string, unknown>);
     if (!permit.allow) {

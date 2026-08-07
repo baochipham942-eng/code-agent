@@ -115,6 +115,8 @@ export async function executePdfCompress(
 macOS:   brew install ghostscript
 Ubuntu:  sudo apt-get install ghostscript
 Windows: 从 https://www.ghostscript.com 下载安装`,
+        code: 'ENV_DEPENDENCY_MISSING',
+        meta: { dependency: 'Ghostscript', installHint: 'brew install ghostscript' },
       };
     }
 

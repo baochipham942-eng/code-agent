@@ -77,6 +77,11 @@ function getRulesForPrompt(): string[] {
 // ----------------------------------------------------------------------------
 // Tool Call Envelope Conventions (产品视角语义元数据)
 // ----------------------------------------------------------------------------
+// 2026-08-07：targetContext 从这份约定里拿掉了（schema 侧同步移除）。它的可见产出
+// 只是一个由 kind 决定的 12px 图标，宿主能从工具名推出来（deriveToolTargetContext），
+// 让模型填反而 7/18 个工具填得自相矛盾。这里和 shared.ts 的 META_PROPERTY_SCHEMA
+// 必须同增同减——prompt 教一个 schema 里没有的字段，OpenAI strict 模式会直接报错。
+//
 // 让模型在每次 tool_call 的 arguments 中嵌入 _meta envelope，frontend parser
 // 会自动剥离 _meta 并写入 ToolCall 顶层（不会进入工具真实执行参数），UI 用它
 // 把"在干什么 + 在操作什么"展示给用户，像看一段安静的工作录像。
@@ -97,7 +102,6 @@ export const TOOL_ENVELOPE_CONVENTIONS = `## Tool Call Envelope（强制语义�
   "command": "echo hello world",
   "_meta": {
     "shortDescription": "Print hello world to verify shell setup",
-    "targetContext": { "kind": "app", "label": "Terminal" },
     "expectedOutcome": "stdout 输出 hello world"
   }
 }
@@ -110,7 +114,6 @@ export const TOOL_ENVELOPE_CONVENTIONS = `## Tool Call Envelope（强制语义�
   "query": "claude code agent loop",
   "_meta": {
     "shortDescription": "Search Exa for Claude Code agent loop docs",
-    "targetContext": { "kind": "mcp_server", "label": "Exa", "iconHint": "exa" },
     "expectedOutcome": "返回 5-10 个相关搜索结果"
   }
 }
@@ -122,12 +125,6 @@ export const TOOL_ENVELOPE_CONVENTIONS = `## Tool Call Envelope（强制语义�
   （它会直接显示在界面上给用户看，中文对话里出现英文短语等于没翻译）：
   - ✅ "打开百度搜索 Claude" / "读取 MEMORY.md 里的 Clash Verge 配置"
   - ❌ "browser_click" / "Reading file"（不要用工具内部命名，不要用与对话不同的语言）
-- **targetContext.kind** —— 取值：
-  - \`app\`（Computer Use，label = app 名，iconHint = bundle_id）
-  - \`browser\`（Browser Use，label = 页面标题/域名）
-  - \`mcp_server\`（MCP 调用，label = server 名，iconHint = server slug）
-  - \`file\`（文件操作，label = 文件名）
-  - \`memory\`（memory 引用，label = "<文件>:<行号>"）
 - **expectedOutcome** —— 一句话描述成功后大概看到什么（可选但推荐）
 
 ### 引用约定

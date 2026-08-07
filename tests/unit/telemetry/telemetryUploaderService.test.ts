@@ -16,8 +16,15 @@ const mocks = vi.hoisted(() => {
     markDiagnosticBundlesSynced: vi.fn(),
     markSessionsSynced: vi.fn(),
   };
+  const logger = {
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
+  };
   return {
     storage,
+    logger,
     getCurrentUser: vi.fn(),
     isSupabaseInitialized: vi.fn(),
     from: vi.fn(),
@@ -38,11 +45,7 @@ vi.mock('../../../src/host/services/core', () => ({
 }));
 
 vi.mock('../../../src/host/services/infra/logger', () => ({
-  createLogger: () => ({
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-  }),
+  createLogger: () => mocks.logger,
 }));
 
 vi.mock('../../../src/host/services/serviceRegistry', () => ({
@@ -357,5 +360,67 @@ describe('TelemetryUploaderService', () => {
     ]);
     expect(String(attemptUpsert?.rows[0]?.error_message)).not.toContain(os.homedir());
     expect(mocks.storage.markRendererBundleAttemptsSynced).toHaveBeenCalledWith(['attempt-1']);
+  });
+
+  describe('T5 resilience: backoff + circuit breaker on persistent 4xx/policy failures', () => {
+    it('classifies 42501 (RLS) as non-retryable and trips the circuit breaker on the very first hit', async () => {
+      // 42501 = insufficient_privilege（含 RLS WITH CHECK 拒绝）：需要服务端策略修好，
+      // 不是客户端多试几次就能过，所以熔断阈值是 1，不必像普通抖动那样等 N 次。
+      mocks.from.mockImplementation((table: string) => ({
+        upsert: vi.fn(async () => ({
+          error: table === 'telemetry_sessions'
+            ? { code: '42501', message: 'new row violates row-level security policy for table "telemetry_sessions"' }
+            : null,
+        })),
+      }));
+
+      const { TelemetryUploaderService } = await import('../../../src/host/telemetry/telemetryUploaderService');
+      const service = new TelemetryUploaderService();
+
+      await service.upload();
+      expect(mocks.logger.error).toHaveBeenCalledTimes(1);
+      expect(mocks.logger.error).toHaveBeenCalledWith('Failed to push telemetry_sessions', expect.anything());
+      expect(mocks.logger.warn).toHaveBeenCalledTimes(1);
+      expect(String(mocks.logger.warn.mock.calls[0][0])).toContain('circuit breaker tripped');
+
+      // 第二轮同因失败：不再逐条打 ERROR 刷屏，改走 debug；也不再重复打摘要 WARN。
+      await service.upload();
+      expect(mocks.logger.error).toHaveBeenCalledTimes(1);
+      expect(mocks.logger.warn).toHaveBeenCalledTimes(1);
+      expect(mocks.logger.debug).toHaveBeenCalled();
+
+      // 健康状态仍然照常累积失败计数，观测性不受熔断影响。
+      expect(service.getUploadHealth().uploadFailureCount).toBe(2);
+    });
+
+    it('tolerates transient (non-42501) errors for a few rounds before tripping, and resets on recovery', async () => {
+      let shouldFail = true;
+      mocks.from.mockImplementation((table: string) => ({
+        upsert: vi.fn(async () => ({
+          error: table === 'telemetry_sessions' && shouldFail
+            ? { code: '08006', message: 'connection failure' }
+            : null,
+        })),
+      }));
+
+      const { TelemetryUploaderService } = await import('../../../src/host/telemetry/telemetryUploaderService');
+      const service = new TelemetryUploaderService();
+
+      // CIRCUIT_BREAKER_THRESHOLD = 3：前两次同因失败只应记 ERROR，不应触发熔断摘要。
+      await service.upload();
+      await service.upload();
+      expect(mocks.logger.error).toHaveBeenCalledTimes(2);
+      expect(mocks.logger.warn).not.toHaveBeenCalled();
+
+      // 第三次达到阈值，触发熔断摘要。
+      await service.upload();
+      expect(mocks.logger.warn).toHaveBeenCalledTimes(1);
+
+      // 服务端恢复后下一轮成功：健康状态记录成功时间，且不再是失败态。
+      shouldFail = false;
+      const uploaded = await service.upload();
+      expect(uploaded).toBeGreaterThanOrEqual(0);
+      expect(service.getUploadHealth().lastUploadAt).not.toBeNull();
+    });
   });
 });

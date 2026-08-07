@@ -67,6 +67,7 @@ vi.mock('../../../../../src/host/tools/web/search/contentExtractor', () => ({
 }));
 
 import { webSearchModule } from '../../../../../src/host/tools/modules/network/webSearch';
+import { validateToolInputSchema } from '../../../../../src/host/tools/toolSchemaValidator';
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
@@ -149,16 +150,12 @@ afterEach(() => {
 });
 
 describe('webSearchModule (native)', () => {
-  it('rejects missing query before asking permission', async () => {
-    const canUseTool = vi.fn(async () => ({ allow: true })) as CanUseToolFn;
-
-    const result = await run({}, makeCtx(), canUseTool);
-
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.code).toBe('INVALID_ARGS');
-    }
-    expect(canUseTool).not.toHaveBeenCalled();
+  it('missing query is rejected by the schema layer (P1 §1.3 #9)', () => {
+    // handler 内的手写校验已删；缺 query 由 executor/resolver 的 schema 门拦截。
+    const issues = validateToolInputSchema(webSearchModule.schema.inputSchema, {});
+    expect(issues.some((i) => i.field_path === 'query' && i.category === 'missing_required')).toBe(true);
+    const empty = validateToolInputSchema(webSearchModule.schema.inputSchema, { query: '' });
+    expect(empty.some((i) => i.field_path === 'query' && i.category === 'constraint_violation')).toBe(true);
   });
 
   it('runs native routing and returns structured result metadata', async () => {

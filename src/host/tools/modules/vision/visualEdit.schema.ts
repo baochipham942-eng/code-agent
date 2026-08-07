@@ -21,7 +21,8 @@ export const visualEditSchema: ToolSchema = {
         description: 'Absolute path of the source file. Comes from Live Preview click-to-source.',
       },
       line: {
-        type: 'number',
+        type: 'integer',
+        minimum: 1,
         description: '1-indexed line where the selected element is rendered.',
       },
       column: {
@@ -42,6 +43,8 @@ export const visualEditSchema: ToolSchema = {
       },
       userIntent: {
         type: 'string',
+        minLength: 1,
+        pattern: '\\S',
         description: 'Natural-language description of what to change. Example: "把选中按钮改成红色"',
       },
       screenshotBase64: {

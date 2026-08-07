@@ -10,6 +10,9 @@ type JsonSchemaNode = {
   description?: string;
   enum?: unknown[];
   format?: 'uri' | 'email' | 'date' | 'date-time' | string;
+  minLength?: number;
+  pattern?: string;
+  minimum?: number;
   items?: JsonSchemaNode;
   properties?: Record<string, JsonSchemaNode>;
   required?: string[];
@@ -21,6 +24,7 @@ type ToolSchemaValidationCategory =
   | 'type_mismatch'
   | 'enum_mismatch'
   | 'format_mismatch'
+  | 'constraint_violation'
   | 'additional_property';
 
 interface ToolSchemaValidationIssue {
@@ -125,6 +129,35 @@ function validateSchemaNode(
     });
   }
 
+  // 约束类关键字（minLength / pattern / minimum）：type 已过但值越界，
+  // 统一归 constraint_violation，与 type_mismatch 区分（值类型没错，是不满足约束）。
+  if (schema.minLength !== undefined && typeof value === 'string' && value.length < schema.minLength) {
+    issues.push({
+      field_path: path,
+      expected: `minLength ${schema.minLength}`,
+      bad_value: formatBadValue(value),
+      category: 'constraint_violation',
+    });
+  }
+
+  if (schema.pattern !== undefined && typeof value === 'string' && !matchesPattern(value, schema.pattern)) {
+    issues.push({
+      field_path: path,
+      expected: `pattern ${schema.pattern}`,
+      bad_value: formatBadValue(value),
+      category: 'constraint_violation',
+    });
+  }
+
+  if (schema.minimum !== undefined && typeof value === 'number' && value < schema.minimum) {
+    issues.push({
+      field_path: path,
+      expected: `minimum ${schema.minimum}`,
+      bad_value: formatBadValue(value),
+      category: 'constraint_violation',
+    });
+  }
+
   if (Array.isArray(value)) {
     if (schema.items) {
       value.forEach((item, index) => validateSchemaNode(schema.items, item, `${path}[${index}]`, issues));
@@ -225,6 +258,15 @@ function jsonValueEquals(a: unknown, b: unknown): boolean {
     return JSON.stringify(a) === JSON.stringify(b);
   } catch {
     return false;
+  }
+}
+
+function matchesPattern(value: string, pattern: string): boolean {
+  try {
+    return new RegExp(pattern).test(value);
+  } catch {
+    // 非法正则按不拦处理（schema 作者的错误不该把调用方 fail-closed 挡死）
+    return true;
   }
 }
 

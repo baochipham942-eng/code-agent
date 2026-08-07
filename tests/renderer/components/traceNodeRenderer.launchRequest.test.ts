@@ -740,7 +740,7 @@ describe('TraceNodeRenderer launch request', () => {
       }),
     );
 
-    expect(html).toContain('Skills');
+    expect(html).toContain('技能');
     expect(html).toContain('lark-doc');
     expect(html).toContain('已触发');
     expect(html).not.toContain('debug-skill-source');

@@ -304,6 +304,7 @@ class EditHandler implements ToolHandler<Record<string, unknown>, string> {
       ctx.logger.info('Edit done', { filePath, edits: edits.length, totalReplacements });
 
       const artifact = await createFileArtifact(filePath, schema.name, ctx, {
+        role: 'deliverable',
         metadata: {
           action: 'edit',
           operation: 'multi_edit',

@@ -38,7 +38,7 @@ import { isRunPathInsideWorkspace, resolveCanonicalRunPath, type RunContext } fr
 import { resolveWorkspacePath } from '../runtime/workspaceScope';
 import { isDangerousCommand, sanitizeToolParams, toolMatchesPatternSet, truncateToolOutput } from './toolExecutorHelpers';
 import { prepareNativeToolCheckpoint } from './nativeToolCheckpoint';
-import { annotateToolExecution, requestPermissionWithTelemetry } from './toolExecutionTelemetry';
+import { annotateToolExecution, reportUndeclaredToolParams, requestPermissionWithTelemetry } from './toolExecutionTelemetry';
 import { recordCachedToolReplay } from './cachedToolReplay';
 import { createToolExecutionLedger } from './toolExecutionLedger';
 import { type ExecutionTopology } from '../permissions';
@@ -60,7 +60,7 @@ import {
 
 const logger = createLogger('ToolExecutor');
 
-import { validateToolInputSchema, formatToolSchemaValidationError } from './toolSchemaValidator';
+import { validateToolInputSchema, formatToolSchemaValidationError, stripUndeclaredToolParams } from './toolSchemaValidator';
 
 // ----------------------------------------------------------------------------
 // Types
@@ -334,7 +334,7 @@ export class ToolExecutor {
         metadata: { code: 'RUN_WORKSPACE_BOUNDARY' },
       };
     }
-    const params = boundParams.params;
+    let params = boundParams.params;
     logger.debug('Executing tool', {
       toolName: requestedToolName,
       normalizedToolName: normalizedRequestedToolName,
@@ -423,13 +423,32 @@ export class ToolExecutor {
 
     // Executor-level schema guardrail: direct ToolExecutor callers may bypass the
     // agent runtime's lighter validator, so keep this fail-closed before permission/dispatch.
+    // 分档（2026-08-07）：type/enum/format/required 照旧硬拒；未声明字段改成剥离放行
+    // + 上报——真库实测那类"多余字段"里 84% 是我们自己没剥干净的 `_meta`（#985），
+    // 硬拒等于把内部 bug 的代价转嫁成用户看见的工具报错。
     const schemaIssues = validateToolInputSchema(toolDef.inputSchema, params);
-    if (schemaIssues.length > 0) {
-      logger.warn('Tool call failed schema validation', { toolName: executionToolName, requestedToolName, issues: schemaIssues });
+    const blockingIssues = schemaIssues.filter((issue) => issue.category !== 'additional_property');
+    if (blockingIssues.length > 0) {
+      logger.warn('Tool call failed schema validation', { toolName: executionToolName, requestedToolName, issues: blockingIssues });
       return {
         success: false,
-        error: formatToolSchemaValidationError(executionToolName, schemaIssues),
+        error: formatToolSchemaValidationError(executionToolName, blockingIssues),
       };
+    }
+    // 未声明字段不硬拒：剥离后放行 + 上报（生产档），开发档额外 fail-loud。
+    if (schemaIssues.length > 0) {
+      const stripped = stripUndeclaredToolParams(toolDef.inputSchema, params);
+      logger.warn('Tool call carried undeclared params', {
+        toolName: executionToolName,
+        requestedToolName,
+        removedPaths: stripped.removedPaths,
+      });
+      reportUndeclaredToolParams({
+        toolName: executionToolName,
+        removedPaths: stripped.removedPaths,
+        toolCallId: options.currentToolCallId,
+      });
+      params = stripped.params as Record<string, unknown>;
     }
 
     // 记忆目录是 directive authority 边界。按 schema 声明的写 effect 判定，

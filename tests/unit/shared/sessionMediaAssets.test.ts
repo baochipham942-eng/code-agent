@@ -280,6 +280,7 @@ describe('session media assets', () => {
   it('builds media assets from artifact ownership image files', () => {
     const asset = buildArtifactOwnershipMediaAsset({
       kind: 'file',
+      role: 'deliverable' as const,
       label: 'render.png',
       ownerKind: 'tool',
       ownerLabel: 'image_process',

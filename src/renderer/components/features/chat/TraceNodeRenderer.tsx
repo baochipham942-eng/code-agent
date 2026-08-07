@@ -760,17 +760,19 @@ const ArtifactOwnershipNode: React.FC<{ timeline: TurnTimelinePayload; sessionId
   // Sources（溯源来源）默认折叠：保留可信/溯源能力但不扰民（产品决策，林晨 2026-06-29）。
   const [sourcesOpen, setSourcesOpen] = useState(false);
   const items = (timeline.artifactOwnership || [])
-    .filter((item) => !isReadOnlyArtifactOwnershipItem(item));
+    .filter((item) => !isReadOnlyArtifactOwnershipItem(item))
+    // receipt（动作回执）本期不上屏，只标语义
+    .filter((item) => item.role !== 'receipt');
   if (items.length === 0) return null;
 
-  // 来源（WebFetch 抓取的链接）始终从产物里拆出来、单独降级成安静 Sources：
-  // 它是过程性引用，不是模型「产物」。Outputs 绿卡只放真产物（文件 + artifact/note），
-  // 避免搜索网站被混进交付物卡里当产物。
-  const linkItems = items.filter((i) => i.kind === 'link');
-  const outputItems = items.filter((i) => i.kind !== 'link');
+  // 分流判据 = 角色轴（2026-08-07）：material（来源、检索结果、读取内容）降级进安静的
+  // 「来源」区，deliverable 才进产物绿卡。以前按 kind === 'link' 判，只接住了 WebFetch
+  // 的链接，memoryWrite 写的记忆文件这类 material 会漏进产物卡。
+  const materialItems = items.filter((i) => i.role === 'material');
+  const outputItems = items.filter((i) => i.role !== 'material');
   const fileItems = outputItems.filter((i) => i.kind === 'file');
   const nonFileOutputItems = outputItems.filter((i) => i.kind !== 'file'); // artifact / note
-  const hasLinks = linkItems.length > 0;
+  const hasMaterials = materialItems.length > 0;
 
   const turnId = timeline.id.endsWith('-artifact-ownership')
     ? timeline.id.slice(0, -'-artifact-ownership'.length)
@@ -780,7 +782,7 @@ const ArtifactOwnershipNode: React.FC<{ timeline: TurnTimelinePayload; sessionId
     : undefined;
 
   // 纯文件、且无来源：保持原来的一行入口（无标题/无强调边框）。
-  if (outputItems.length > 0 && nonFileOutputItems.length === 0 && !hasLinks) {
+  if (outputItems.length > 0 && nonFileOutputItems.length === 0 && !hasMaterials) {
     return <FileArtifactCard items={fileItems} mediaContext={mediaContext} />;
   }
 
@@ -797,7 +799,7 @@ const ArtifactOwnershipNode: React.FC<{ timeline: TurnTimelinePayload; sessionId
     </div>
   ) : null;
 
-  const sourcesBlock = hasLinks ? (
+  const sourcesBlock = hasMaterials ? (
     <div className={`rounded-lg border px-3 py-2 border-border-muted bg-surface-subtle ${outputsCard ? 'mt-1.5' : ''}`}>
       <button
         type="button"
@@ -807,9 +809,9 @@ const ArtifactOwnershipNode: React.FC<{ timeline: TurnTimelinePayload; sessionId
         {sourcesOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
         <Link className="h-3.5 w-3.5 text-zinc-400" />
         <span>{t.turnSections.sources}</span>
-        <span className="text-zinc-500">({linkItems.length})</span>
+        <span className="text-zinc-500">({materialItems.length})</span>
       </button>
-      {sourcesOpen && <ArtifactItemPills items={linkItems} className="mt-1.5" />}
+      {sourcesOpen && <ArtifactItemPills items={materialItems} className="mt-1.5" />}
     </div>
   ) : null;
 

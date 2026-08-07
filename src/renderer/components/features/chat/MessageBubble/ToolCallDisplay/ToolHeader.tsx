@@ -10,6 +10,7 @@ import { getToolStatusLabel } from './statusLabels';
 import type { ToolStatus } from './styles';
 import { isSemanticToolUIEnabled } from '../../../../../utils/featureFlags';
 import {
+  deriveToolTargetContext,
   getToolFilePath,
   humanizeToolStep,
   isInternalStreamTool,
@@ -66,8 +67,13 @@ export function ToolHeader({ toolCall, status, showDetailName = false }: Props) 
     showDetailName
     && (isInternalStreamTool(toolCall.name) || displayName === t.toolStepHumanize.fallback);
 
+  // targetContext 不再由模型填（2026-08-07 从 _meta schema 与提示词里拿掉）。
+  // 优先用 ToolCall 上已有的——那是宿主侧 cuaNarration 推的 app kind（真 app logo，
+  // 这里推不出来），以及历史落库的行；没有才按工具名推。
+  const targetContext = toolCall.targetContext
+    ?? deriveToolTargetContext(toolCall.name, toolCall.arguments as Record<string, unknown> | undefined);
   // feature flag 关闭时不展示 target icon（与 shortDescription gating 同步）
-  const showTargetIcon = isSemanticToolUIEnabled() && !!toolCall.targetContext?.kind;
+  const showTargetIcon = isSemanticToolUIEnabled() && !!targetContext?.kind;
 
   const handleOpenPreview = (event: React.MouseEvent | React.KeyboardEvent) => {
     if (!filePath) return;
@@ -91,7 +97,7 @@ export function ToolHeader({ toolCall, status, showDetailName = false }: Props) 
 
       {/* Target context icon — 让用户一眼认出"在操作哪个 app/服务" */}
       {showTargetIcon && (
-        <TargetContextIcon targetContext={toolCall.targetContext} className="flex-shrink-0 self-center" />
+        <TargetContextIcon targetContext={targetContext} className="flex-shrink-0 self-center" />
       )}
 
       {/* 有文件路径时主行可点进右栏预览（读取了/编辑了/写入了 …）；

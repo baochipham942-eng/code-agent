@@ -206,7 +206,9 @@ function matchesUiScript(text: string, t: Translations): boolean {
  * 优先级最高——比机械模板更贴近"在干什么"；没有（或语种与界面不一致）时按工具
  * 类目落到对应模板。
  *
- * 未识别工具兜底「执行了一个步骤」——内部工具名绝不进主行（只在展开明细次级小字）。
+ * 未识别工具兜底把工具名带进主行（「MemoryWrite 执行了一个步骤」）——纯占位文案
+ * 在失败时没有任何信息量。例外只有 isInternalStreamTool 命中的纯内部动作
+ * （ToolSearch 这类），它们的主行仍不暴露内部名（只在展开明细次级小字）。
  *
  * failed=true（toolCall.result 已存在且 success===false）时，写/编类目不再输出过去时
  * 肯定式（「写入了/编辑了」）——它会与状态词「写入失败/编辑失败」同屏自相矛盾；
@@ -314,9 +316,14 @@ export function humanizeToolStep(
     case 'toolSearch':
       // 仅用于展开明细；主流聚合行会过滤 isInternalStreamTool
       return h.toolSearch;
-    default:
-      // 主行绝不暴露内部工具名
-      return h.fallback;
+    default: {
+      // 「内部工具名绝不进主行」这条规矩只针对 isInternalStreamTool（ToolSearch 这类
+      // 对用户零意义的纯内部动作）——不是一刀切到所有未识别工具。
+      if (isInternalStreamTool(name)) return h.fallback;
+      // 其余未识别工具：把工具名带进主行。否则失败时用户面对一句纯占位
+      // 「执行了一个步骤」，得展开才知道是 MemoryWrite 还是别的、为什么失败。
+      return h.fallbackWithTool.replace('{tool}', name);
+    }
   }
 }
 

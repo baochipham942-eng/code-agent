@@ -208,32 +208,36 @@ export function normalizeJsonSchema(schema: JsonSchemaNode | undefined | null): 
 // 工具执行参数。
 // ----------------------------------------------------------------------------
 
+// 这段描述是**每个工具**都复制一份的常驻开销：22 个核心工具的定义本体合计
+// 7473 token，注入后的 _meta 再加 6094 token —— 占整包 44.9%（2026-08-07 用
+// gpt-tokenizer 实测）。所以这里的措辞按 token 算钱，写够意思即可，别写作文。
+// 删字段要先看真库填充率：#997 修好 _meta 剥离链路后，targetContext 42.8%、
+// expectedOutcome 39.5% 都在被模型填、也都在 UI 上被渲染（TargetContextIcon /
+// toolExecutionPresentation.errorWithOutcome），不是死重量。
 const META_PROPERTY_SCHEMA = {
   type: 'object',
-  description:
-    '【强制字段】产品视角语义元数据，给前端 UI 展示"在干什么"。前端会自动剥离这个字段，不进入工具真实执行参数。每次工具调用都必须填 _meta.shortDescription。',
+  description: '【必填】给用户看的语义元数据，会被剥离，不进入工具执行参数。',
   properties: {
     shortDescription: {
       type: 'string',
       description:
-        '一句话动词短语，描述当前这次调用做什么（用户视角的产品语义）。会直接显示给用户，必须用与用户对话相同的语言。例：好 "打开百度搜索 Claude"，差 "browser_click"。不要用工具内部命名。',
+        '一句话动词短语，说明这次调用在做什么，用与用户对话相同的语言。例："打开百度搜索 Claude"。别用工具内部命名。',
     },
     targetContext: {
       type: 'object',
-      description: '操作目标的上下文',
+      description: '操作目标',
       properties: {
         kind: {
           type: 'string',
           enum: ['app', 'browser', 'mcp_server', 'file', 'memory'],
-          description: 'app=Computer Use 操作目标 / browser / mcp_server=MCP 调用 / file / memory',
         },
-        label: { type: 'string', description: '显示名（如 "WeChat" / "Exa" / "MEMORY.md"）' },
+        label: { type: 'string', description: '显示名，如 WeChat / MEMORY.md' },
         iconHint: { type: 'string', description: '可选：bundleId / domain / server slug' },
       },
     },
     expectedOutcome: {
       type: 'string',
-      description: '可选：成功后大致看到什么',
+      description: '可选：成功后会看到什么',
     },
   },
   required: ['shortDescription'],

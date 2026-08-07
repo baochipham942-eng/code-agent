@@ -181,6 +181,14 @@ export function buildArtifactOwnershipItems(
         continue;
       }
 
+      // 只读工具的产出一条都不上屏——这与角色轴是**两件正交的事**：
+      // 角色轴管「分类」（交付物 vs 过程材料），只读清单管「读取动作要不要上屏」。
+      // 读文件/列目录的内容既不是交付物，也不值得占「来源」区（既有产品决策，
+      // 由 shouldProjectToolArtifact 承担，角色轴不取代它）。
+      if (isReadOnlyArtifactTool(artifact.sourceTool || node.toolCall.name)) {
+        continue;
+      }
+
       addItem({
         kind: kindForToolArtifact(artifact),
         label: artifact.label,

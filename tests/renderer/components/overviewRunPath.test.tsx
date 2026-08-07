@@ -28,6 +28,8 @@ vi.mock('../../../src/renderer/hooks/useCurrentTurnArtifactOwnership', () => ({
 }));
 vi.mock('../../../src/renderer/hooks/useWorkspacePreviewModel', () => ({
   useWorkspacePreviewModel: () => [],
+  // 角色轴（ADR-055）：概览改用 …State 取 { items, materialItems }；替身要跟上新导出
+  useWorkspacePreviewModelState: () => ({ items: [], materialItems: [], currentTurnArtifacts: null }),
 }));
 
 import { OverviewRunHeader } from '../../../src/renderer/components/TaskPanel/OverviewRunHeader';

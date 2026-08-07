@@ -1028,8 +1028,9 @@ describe('ContextAssembly.buildModelMessages()', () => {
     const modelMessages = await assembly.buildModelMessages();
     const systemPrompt = modelMessages[0].content as string;
 
+    // deniedToolNames 未在本用例的 overrides 里传，真实透传值是 undefined
     expect(getDeferredToolsSummary).toHaveBeenCalledWith(
-      ctx.deniedToolNames,
+      undefined,
       ['spawn_task', 'steer_task', 'cancel_task', 'task_status', 'AskUserQuestion'],
     );
     // allowlist 收窄下 summary 为空字符串（真实实现在没有 ToolSearch 的 allowlist 下返回 ''），

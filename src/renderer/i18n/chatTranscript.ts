@@ -478,6 +478,32 @@ toolErrors: {
       summary: '命令只能在工作区范围内执行',
       detail: '指定的工作目录越出了工作区 Project Sources 边界。',
     },
+    // 以下 code 的 summary/detail 可带 {param} 占位符，由 metadata 同名字段填入
+    // （humanizeToolError 的 code 分支负责替换，缺参时占位符原样保留）。
+    AMEND_PUSHED: {
+      summary: '上一次提交已推送到远程，不能再 amend',
+      detail: 'amend 会改写已公开的提交历史；请创建一个新提交。',
+    },
+    NO_PROJECT: {
+      summary: '当前会话未绑定 Project，无法新增目录授权',
+      detail: '请先在项目设置里建立 Project，再重试授权。',
+    },
+    UPDATE_FAILED: {
+      summary: '授权写入失败：Project 状态已变化',
+      detail: '请重试一次；若仍失败，刷新会话后再试。',
+    },
+    PR_ON_DEFAULT_BRANCH: {
+      summary: '当前在默认分支 {branch}，不能从这里创建 PR',
+      detail: '先切到一个功能分支，再重新创建 PR。',
+    },
+    PR_UNCOMMITTED_CHANGES: {
+      summary: '有未提交的更改，不能创建 PR',
+      detail: '先提交（commit）这些更改，再创建 PR。',
+    },
+    ENV_DEPENDENCY_MISSING: {
+      summary: '缺少依赖 {dependency}，无法执行',
+      detail: '请先安装：{installHint}，装好后重试。',
+    },
   },
 },
 

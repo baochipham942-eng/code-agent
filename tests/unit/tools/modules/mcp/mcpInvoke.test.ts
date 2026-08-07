@@ -29,6 +29,7 @@ vi.mock('../../../../../src/host/mcp/mcpClient', () => ({
 }));
 
 import { mcpInvokeModule } from '../../../../../src/host/tools/modules/mcp/mcpInvoke';
+import { validateToolInputSchema } from '../../../../../src/host/tools/toolSchemaValidator';
 
 // -----------------------------------------------------------------------------
 // Helpers
@@ -114,25 +115,25 @@ describe('mcpInvokeModule (native)', () => {
   });
 
   describe('validation & errors', () => {
-    it('rejects missing server', async () => {
-      const result = await run({ tool: 'read_file' });
-      expect(result.ok).toBe(false);
-      if (!result.ok) {
-        expect(result.code).toBe('INVALID_ARGS');
-        expect(result.error).toContain('server 和 tool');
-      }
+    // P1 §1.3 #3：server/tool 的必填校验已从 handler 删除，改由
+    // executor/resolver 的 schema 门（inputSchema.required）统一拦截。
+    it('missing server is rejected by the schema layer', () => {
+      const issues = validateToolInputSchema(mcpInvokeModule.schema.inputSchema, { tool: 'read_file' });
+      expect(issues.some((i) => i.field_path === 'server' && i.category === 'missing_required')).toBe(true);
     });
 
-    it('rejects missing tool', async () => {
-      const result = await run({ server: 'fs' });
-      expect(result.ok).toBe(false);
-      if (!result.ok) expect(result.code).toBe('INVALID_ARGS');
+    it('missing tool is rejected by the schema layer', () => {
+      const issues = validateToolInputSchema(mcpInvokeModule.schema.inputSchema, { server: 'fs' });
+      expect(issues.some((i) => i.field_path === 'tool' && i.category === 'missing_required')).toBe(true);
     });
 
-    it('rejects empty server string', async () => {
+    it('empty server string falls through to the not-connected error', async () => {
+      // schema 只保证 string（工单 #3 判为直接删，不补 minLength）；
+      // 空串走到连接检查，报 NOT_INITIALIZED 而非崩溃。
+      getMCPClientMock.mockReturnValue(makeMockClient({ isConnected: vi.fn().mockReturnValue(false) }));
       const result = await run({ server: '', tool: 'read_file' });
       expect(result.ok).toBe(false);
-      if (!result.ok) expect(result.code).toBe('INVALID_ARGS');
+      if (!result.ok) expect(result.code).toBe('NOT_INITIALIZED');
     });
 
     it('returns PERMISSION_DENIED when canUseTool denies', async () => {

@@ -29,6 +29,7 @@ vi.mock('../../../../../src/host/mcp/mcpClient', () => ({
 }));
 
 import { toolSearchModule } from '../../../../../src/host/tools/modules/search/toolSearch';
+import { validateToolInputSchema } from '../../../../../src/host/tools/toolSchemaValidator';
 
 // -----------------------------------------------------------------------------
 // Helpers
@@ -90,22 +91,21 @@ describe('toolSearchModule (native)', () => {
   });
 
   describe('validation & errors', () => {
-    it('rejects missing query', async () => {
-      const result = await run({});
-      expect(result.ok).toBe(false);
-      if (!result.ok) expect(result.code).toBe('INVALID_ARGS');
+    // P1 §1.3 #7：query 的必填/非空白/类型校验已从 handler 删除，
+    // 改由 executor/resolver 的 schema 门统一拦截。
+    it('missing query is rejected by the schema layer', () => {
+      const issues = validateToolInputSchema(toolSearchModule.schema.inputSchema, {});
+      expect(issues.some((i) => i.field_path === 'query' && i.category === 'missing_required')).toBe(true);
     });
 
-    it('rejects empty query string', async () => {
-      const result = await run({ query: '   ' });
-      expect(result.ok).toBe(false);
-      if (!result.ok) expect(result.code).toBe('INVALID_ARGS');
+    it('whitespace-only query is rejected by the schema layer', () => {
+      const issues = validateToolInputSchema(toolSearchModule.schema.inputSchema, { query: '   ' });
+      expect(issues.some((i) => i.field_path === 'query' && i.category === 'constraint_violation')).toBe(true);
     });
 
-    it('rejects non-string query', async () => {
-      const result = await run({ query: 123 });
-      expect(result.ok).toBe(false);
-      if (!result.ok) expect(result.code).toBe('INVALID_ARGS');
+    it('non-string query is rejected by the schema layer', () => {
+      const issues = validateToolInputSchema(toolSearchModule.schema.inputSchema, { query: 123 });
+      expect(issues.some((i) => i.field_path === 'query' && i.category === 'type_mismatch')).toBe(true);
     });
 
     it('returns PERMISSION_DENIED when canUseTool denies', async () => {

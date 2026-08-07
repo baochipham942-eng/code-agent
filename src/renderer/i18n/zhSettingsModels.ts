@@ -259,6 +259,7 @@ export const zhSettingsModels = {
       title: '系统诊断',
       pageDescription: '检查运行环境、网络、配置、数据库等 9 类系统状态；失败项可直接跳转修复。',
       exportLogs: '导出日志',
+      exportBundle: '导出诊断包',
       rerun: '重新诊断',
       start: '开始诊断',
       empty: '点击下方按钮开始系统诊断',
@@ -268,6 +269,8 @@ export const zhSettingsModels = {
         failedPrefix: '诊断失败: ',
         copied: '诊断报告已复制到剪贴板',
         copyFailed: '复制失败',
+        bundleExportedPath: '诊断包已导出：{path}',
+        bundleExportFailed: '导出诊断包失败：{message}',
       },
       categoryLabels: {
         environment: '运行环境',

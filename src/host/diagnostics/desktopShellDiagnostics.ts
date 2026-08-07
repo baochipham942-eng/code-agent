@@ -1,4 +1,5 @@
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import type {
   DesktopShellBootDiagnostics,
@@ -31,6 +32,10 @@ import { readRendererBundleStatus, resolveRendererServeDecision } from '../servi
 const BOOT_DIAGNOSTICS_FILE = 'desktop-shell-boot-latest.json';
 const BOOT_DIAGNOSTICS_PATH_ENV = 'AGENT_NEO_TAURI_BOOT_DIAGNOSTICS_FILE';
 const DEFAULT_WEB_PORT = PROD_WEB_PORT;
+
+/** 与 src-tauri/src/main.rs 的 SHELL_EVENTS_FILE 常量同名，两者写同一个 `<app_data_dir>/logs` 目录。 */
+export const DESKTOP_SHELL_EVENTS_FILE = 'desktop-shell-events.ndjson';
+export const DESKTOP_SHELL_BOOT_DIAGNOSTICS_FILE = BOOT_DIAGNOSTICS_FILE;
 
 const BUNDLED_NODE_PATHS = [
   ['dist', 'bundled-node', 'bin', 'node'],
@@ -237,6 +242,25 @@ export function getDesktopShellResourceChecks(options: {
 function bootDiagnosticsPath(dataDir: string, env: NodeJS.ProcessEnv = process.env): string {
   const explicitPath = env[BOOT_DIAGNOSTICS_PATH_ENV]?.trim();
   return explicitPath ? path.resolve(explicitPath) : path.join(dataDir, 'logs', BOOT_DIAGNOSTICS_FILE);
+}
+
+/**
+ * Tauri 壳（boot 诊断 + shell events）落盘目录：Rust 侧写 `app_data_dir()/logs`，
+ * 该目录由 bundle identifier 派生，**不等于** Node 侧 `getUserDataPath()`（后者走
+ * `CODE_AGENT_DATA_DIR`/`~/.code-agent`，两者在生产态是两个不同目录）。
+ * 优先读 Rust 通过 `AGENT_NEO_TAURI_BOOT_DIAGNOSTICS_FILE` 传入的真实路径（webServer
+ * 由 Tauri 拉起时总会带这个 env）；拿不到时按平台 + identifier 常量兜底计算，
+ * 不硬编码 bundle id 字面量（取 `CODE_AGENT_BUNDLE_ID` env，缺省回退 `PROD_BUNDLE_ID`）。
+ */
+export function resolveDesktopShellLogDir(env: NodeJS.ProcessEnv = process.env): string {
+  const explicitBootPath = env[BOOT_DIAGNOSTICS_PATH_ENV]?.trim();
+  if (explicitBootPath) return path.dirname(path.resolve(explicitBootPath));
+
+  const identifier = env.CODE_AGENT_BUNDLE_ID?.trim() || PROD_BUNDLE_ID;
+  const base = process.platform === 'win32'
+    ? (env.APPDATA?.trim() || path.join(os.homedir(), 'AppData', 'Roaming'))
+    : path.join(os.homedir(), 'Library', 'Application Support');
+  return path.join(base, identifier, 'logs');
 }
 
 function readBootDiagnostics(dataDir: string, env: NodeJS.ProcessEnv = process.env): DesktopShellBootDiagnostics | null {

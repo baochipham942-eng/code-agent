@@ -45,6 +45,7 @@ let mockExecuteResult: { success: boolean; output?: string; error?: string } | E
   output: 'Test output',
 };
 let mockExecuteCalls = 0;
+let mockExecuteParams: Record<string, unknown> | undefined;
 
 vi.mock('../../src/host/tools/dispatch/toolResolver', () => ({
   getToolResolver: () => ({
@@ -53,8 +54,9 @@ vi.mock('../../src/host/tools/dispatch/toolResolver', () => ({
       mockToolDef && mockToolDef.name === name ? mockToolDef : undefined,
     listDefinitions: () => (mockToolDef ? [mockToolDef] : []),
     has: (name: string) => mockToolDef?.name === name,
-    execute: vi.fn().mockImplementation(async () => {
+    execute: vi.fn().mockImplementation(async (_name: string, params: Record<string, unknown>) => {
       mockExecuteCalls += 1;
+      mockExecuteParams = params;
       if (mockExecuteResult instanceof Error) throw mockExecuteResult;
       return mockExecuteResult;
     }),
@@ -85,6 +87,7 @@ describe('ToolExecutor', () => {
     mockToolDef = undefined;
     mockExecuteResult = { success: true, output: 'Test output' };
     mockExecuteCalls = 0;
+    mockExecuteParams = undefined;
     permissionCalls = [];
     permissionReturn = true;
 
@@ -329,7 +332,14 @@ describe('ToolExecutor', () => {
       expect(result.error).toContain('field_path=timestamp');
     });
 
-    it('additionalProperties=false 应该阻止额外字段并短路执行', async () => {
+    // ------------------------------------------------------------------
+    // additionalProperties=false 的分档（2026-08-07）
+    // ------------------------------------------------------------------
+    // 曾经是硬拒。#985 硬拒掉的其实是**我们自己没剥干净的 _meta**——真库实测
+    // #997 修好剥离链路之前，52.2% 的工具调用带着 _meta 进 executor。硬拒 =
+    // 把内部 bug 的代价转嫁成用户看见的工具报错，所以改成剥离放行 + 上报。
+    // 其它类别（type/enum/format/required）照旧硬拒，不受影响。
+    it('未声明字段：剥离后放行，不再硬拒', async () => {
       setMockTool({
         inputSchema: {
           type: 'object',
@@ -342,13 +352,130 @@ describe('ToolExecutor', () => {
 
       const result = await executor.execute('test_tool', { file_path: '/tmp/a.xlsx', unexpected: true }, {});
 
+      expect(result.success).toBe(true);
+      expect(mockExecuteCalls).toBe(1);
+    });
+
+    it('未声明字段不会被静默带进工具业务参数（#985 原始症状）', async () => {
+      setMockTool({
+        inputSchema: {
+          type: 'object',
+          properties: {
+            file_path: { type: 'string' },
+          },
+          additionalProperties: false,
+        },
+      });
+
+      await executor.execute('test_tool', {
+        file_path: '/tmp/a.xlsx',
+        _meta: { shortDescription: '写文件' },
+      }, {});
+
+      expect(mockExecuteParams).toEqual({ file_path: '/tmp/a.xlsx' });
+      expect(mockExecuteParams).not.toHaveProperty('_meta');
+    });
+
+    it('开发档对未声明字段 fail-loud（只报工具名和键名，不报值）', async () => {
+      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const previousEnv = process.env.NODE_ENV;
+      process.env.NODE_ENV = 'development';
+      try {
+        setMockTool({
+          inputSchema: {
+            type: 'object',
+            properties: { file_path: { type: 'string' } },
+            additionalProperties: false,
+          },
+        });
+
+        await executor.execute('test_tool', { file_path: '/tmp/a.xlsx', secret_token: 'sk-live-XYZ' }, {});
+
+        expect(consoleError).toHaveBeenCalledTimes(1);
+        const message = String(consoleError.mock.calls[0][0]);
+        expect(message).toContain('test_tool');
+        expect(message).toContain('secret_token');
+        expect(message).not.toContain('sk-live-XYZ');
+      } finally {
+        process.env.NODE_ENV = previousEnv;
+        consoleError.mockRestore();
+      }
+    });
+
+    it('生产档对未声明字段不吼，照样剥离放行', async () => {
+      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const previousEnv = process.env.NODE_ENV;
+      process.env.NODE_ENV = 'production';
+      try {
+        setMockTool({
+          inputSchema: {
+            type: 'object',
+            properties: { file_path: { type: 'string' } },
+            additionalProperties: false,
+          },
+        });
+
+        const result = await executor.execute('test_tool', { file_path: '/tmp/a.xlsx', unexpected: true }, {});
+
+        expect(result.success).toBe(true);
+        expect(mockExecuteParams).toEqual({ file_path: '/tmp/a.xlsx' });
+        expect(consoleError).not.toHaveBeenCalled();
+      } finally {
+        process.env.NODE_ENV = previousEnv;
+        consoleError.mockRestore();
+      }
+    });
+
+    it('嵌套对象与数组元素里的未声明字段一样剥掉', async () => {
+      setMockTool({
+        inputSchema: {
+          type: 'object',
+          properties: {
+            options: {
+              type: 'object',
+              properties: { depth: { type: 'number' } },
+              additionalProperties: false,
+            },
+            edits: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: { path: { type: 'string' } },
+                additionalProperties: false,
+              },
+            },
+          },
+        },
+      });
+
+      await executor.execute('test_tool', {
+        options: { depth: 1, bogus: 'x' },
+        edits: [{ path: '/a', bogus: 'y' }],
+      }, {});
+
+      expect(mockExecuteParams).toEqual({
+        options: { depth: 1 },
+        edits: [{ path: '/a' }],
+      });
+    });
+
+    it('未声明字段放行不影响其它类别硬拒（同一次调用两种问题并存）', async () => {
+      setMockTool({
+        inputSchema: {
+          type: 'object',
+          properties: { file_path: { type: 'string' } },
+          required: ['file_path'],
+          additionalProperties: false,
+        },
+      });
+
+      const result = await executor.execute('test_tool', { unexpected: true }, {});
+
       expect(result.success).toBe(false);
-      expect(result.error).toContain('field_path=unexpected');
-      expect(result.error).toContain('expected=no additional properties');
-      expect(result.error).toContain('bad_value=true');
-      expect(result.error).toContain('category=additional_property');
+      expect(result.error).toContain('category=missing_required');
+      // 硬拒文案里不再混入 additional_property，否则模型会去修一个我们本来就放行的东西
+      expect(result.error).not.toContain('category=additional_property');
       expect(mockExecuteCalls).toBe(0);
-      expect(permissionCalls.length).toBe(0);
     });
 
     it('联合 type 应该允许 read_xlsx 的数字 sheet 索引', async () => {

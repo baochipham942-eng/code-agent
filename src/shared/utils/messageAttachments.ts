@@ -34,7 +34,14 @@ function isLargeDataUrl(value: unknown): value is string {
   return isDataUrl(value) && value.length > MAX_PERSISTED_DATA_URL_CHARS;
 }
 
-function getAttachmentId(attachment: MessageAttachment): string {
+/**
+ * 附件 id 在类型上是必填 string，但持久化/回放链路里跑出来的实际数据不一定守规矩
+ * （sanitizeAttachmentForPersistence 原样透传 attachment.id，历史脏数据落库后 id 可能
+ * 是 undefined）。任何要按 id 前缀分流（如识别 appshot- 截图）的地方都必须走这个函数，
+ * 不能直接 `attachment.id.startsWith(...)`——2026-08-07 真机实录：converter.ts 里的裸访问
+ * 让一条缺 id 的历史附件炸穿了整条 spawn_task 后台执行链路，见 messageHandling/converter.ts。
+ */
+export function getAttachmentId(attachment: MessageAttachment): string {
   return typeof attachment.id === 'string' ? attachment.id : '';
 }
 

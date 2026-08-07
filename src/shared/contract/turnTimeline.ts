@@ -188,6 +188,12 @@ export interface TurnArtifactOwnershipItem {
   label: string;
   ownerKind: TurnArtifactOwnerKind;
   ownerLabel: string;
+  /**
+   * 角色轴：deliverable 进产物区，material 进「来源」区，receipt 本期不上屏。
+   * **必填**：可选会让「新增分支忘了填」静默漏进产物（fail-open），正是本轴要消灭的失效形态。
+   * 必填后漏填 = tsc 报红。旧数据由读取侧兜底，不靠这里的可选性兼容。
+   */
+  role: 'deliverable' | 'material' | 'receipt';
   path?: string;
   url?: string;
   sourceNodeId?: string;

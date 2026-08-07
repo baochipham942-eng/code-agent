@@ -13,6 +13,7 @@ describe('overview artifact thumb strip routing', () => {
       <ArtifactThumbStrip
         items={[{
           kind: 'file',
+          role: 'deliverable' as const,
           label: 'allow-me.txt',
           ownerKind: 'tool',
           ownerLabel: 'Write',
@@ -38,6 +39,7 @@ describe('overview artifact thumb strip routing', () => {
       <ArtifactThumbStrip
         items={[{
           kind: 'file',
+          role: 'deliverable' as const,
           label: 'report.html',
           ownerKind: 'tool',
           ownerLabel: 'Write',
@@ -62,6 +64,7 @@ describe('overview artifact thumb strip routing', () => {
       <ArtifactThumbStrip
         items={[{
           kind: 'file',
+          role: 'deliverable' as const,
           label: 'chart.png',
           ownerKind: 'tool',
           ownerLabel: 'image_generate',

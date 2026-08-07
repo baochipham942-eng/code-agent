@@ -19,7 +19,7 @@ import type { MessageMetadata } from './message';
 import type { TraceNode } from './trace';
 
 /** 呈现类型：error / info / summary 投成节点；settle 不成节点，只把结局盖到所属轮上。 */
-export type SystemEventPresentation = 'error' | 'info' | 'summary' | 'settle';
+type SystemEventPresentation = 'error' | 'info' | 'summary' | 'settle';
 
 export interface UserVisibleSystemEventSpec {
   presentation: SystemEventPresentation;
@@ -57,8 +57,8 @@ void _registryKeysExist;
  * 允许出现在 role:'system' 消息上、但不构成用户可见事件的 metadata 键（内部投影用，
  * 投影层静默跳过）。写 system 消息时用到本档以外的未登记键，开发档会报错。
  */
-export const INTERNAL_SYSTEM_METADATA_KEYS = ['backgroundTaskResult'] as const;
-export type InternalSystemMetadataKey = (typeof INTERNAL_SYSTEM_METADATA_KEYS)[number];
+const INTERNAL_SYSTEM_METADATA_KEYS = ['backgroundTaskResult'] as const;
+type InternalSystemMetadataKey = (typeof INTERNAL_SYSTEM_METADATA_KEYS)[number];
 
 /** 通用标注轴（任何 role 的消息都可能带），不参与 system 事件的登记判定。 */
 const SYSTEM_METADATA_ANNOTATION_KEYS: ReadonlySet<string> = new Set([

@@ -2821,16 +2821,17 @@ export class DatabaseService extends DurableRunDatabaseSupport {
   }
   searchSessionMessagesFts(
     query: string,
-    options?: { limit?: number; sessionId?: string; includeRewound?: boolean }
-  ): Array<{
-    messageId: string;
-    sessionId: string;
-    role: string;
-    content: string;
-    timestamp: number;
-  }> {
+    options?: Parameters<import('./repositories').SessionRepository['searchSessionMessagesFts']>[1]
+  ): ReturnType<import('./repositories').SessionRepository['searchSessionMessagesFts']> {
     this.ensureDb();
     return this.sessionRepo.searchSessionMessagesFts(query, options);
+  }
+  countSessionMessagesFts(
+    query: string,
+    options?: Parameters<import('./repositories').SessionRepository['countSessionMessagesFts']>[1]
+  ): ReturnType<import('./repositories').SessionRepository['countSessionMessagesFts']> {
+    this.ensureDb();
+    return this.sessionRepo.countSessionMessagesFts(query, options);
   }
   searchTranscriptFts(
     query: string,

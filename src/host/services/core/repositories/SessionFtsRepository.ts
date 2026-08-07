@@ -8,7 +8,12 @@ import {
   rowToMessage,
   visibleHistoryMessageWhere,
 } from './sessionRepositoryParsers';
-import { runSessionMessagesFtsSearch, runTranscriptFtsSearch } from './sessionRepositoryFtsSearch';
+import { runSessionMessagesFtsCount, runSessionMessagesFtsSearch, runTranscriptFtsSearch } from './sessionRepositoryFtsSearch';
+import type {
+  SessionMessagesFtsCountOptions,
+  SessionMessagesFtsHit,
+  SessionMessagesFtsSearchOptions,
+} from './sessionRepositoryFtsSearch';
 
 const logger = createLogger('SessionFtsRepository');
 
@@ -19,19 +24,16 @@ export class SessionFtsRepository {
 
   searchSessionMessagesFts(
     query: string,
-    options: {
-      limit?: number;
-      sessionId?: string;
-      includeRewound?: boolean;
-    } = {},
-  ): Array<{
-    messageId: string;
-    sessionId: string;
-    role: string;
-    content: string;
-    timestamp: number;
-  }> {
+    options: SessionMessagesFtsSearchOptions = {},
+  ): SessionMessagesFtsHit[] {
     return runSessionMessagesFtsSearch(this.db, query, options);
+  }
+
+  countSessionMessagesFts(
+    query: string,
+    options: SessionMessagesFtsCountOptions = {},
+  ): { matches: number; sessions: number } {
+    return runSessionMessagesFtsCount(this.db, query, options);
   }
 
   backfillSessionMessagesFts(): number {

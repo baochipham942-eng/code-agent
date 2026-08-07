@@ -349,6 +349,70 @@ describe('SessionRepository — Episodic FTS5', () => {
     });
     expect(allAttempts.map((row) => row.messageId)).toEqual(['m3']);
   });
+
+  it('honors sessionIds array scope filter', () => {
+    insertSession(db, 'sess-C');
+    repo.addMessage('sess-A', makeMessage('m1', 'pipeline migration checklist'));
+    repo.addMessage('sess-B', makeMessage('m2', 'pipeline migration runbook'));
+    repo.addMessage('sess-C', makeMessage('m3', 'pipeline migration retro'));
+
+    const scoped = repo.searchSessionMessagesFts('pipeline', {
+      sessionIds: ['sess-A', 'sess-C'],
+    });
+    expect(scoped.map((row) => row.messageId).sort()).toEqual(['m1', 'm3']);
+
+    // sessionIds 与 sessionId 同时给时，sessionIds 优先
+    const both = repo.searchSessionMessagesFts('pipeline', {
+      sessionId: 'sess-B',
+      sessionIds: ['sess-A'],
+    });
+    expect(both.map((row) => row.messageId)).toEqual(['m1']);
+  });
+
+  it('honors role filter', () => {
+    repo.addMessage('sess-A', makeMessage('m1', 'grafana dashboard question', 'user'));
+    repo.addMessage('sess-A', makeMessage('m2', 'grafana dashboard answer', 'assistant'));
+
+    const userOnly = repo.searchSessionMessagesFts('grafana', { role: 'user' });
+    expect(userOnly.map((row) => row.messageId)).toEqual(['m1']);
+
+    const assistantOnly = repo.searchSessionMessagesFts('grafana', { role: 'assistant' });
+    expect(assistantOnly.map((row) => row.messageId)).toEqual(['m2']);
+  });
+
+  it('honors limitCap override beyond the default hard cap', () => {
+    for (let i = 0; i < 60; i++) {
+      repo.addMessage('sess-A', makeMessage('m' + i, `bulkcap keyword ${i}`));
+    }
+
+    const defaultCapped = repo.searchSessionMessagesFts('bulkcap', { limit: 999 });
+    expect(defaultCapped.length).toBeLessThanOrEqual(50);
+
+    const raised = repo.searchSessionMessagesFts('bulkcap', { limit: 500, limitCap: 500 });
+    expect(raised.length).toBe(60);
+  });
+
+  it('countSessionMessagesFts reports full totals beyond the limit', () => {
+    insertSession(db, 'sess-C');
+    for (let i = 0; i < 60; i++) {
+      repo.addMessage('sess-A', makeMessage('a' + i, `fullcount keyword ${i}`, 'user'));
+    }
+    repo.addMessage('sess-B', makeMessage('b1', 'fullcount keyword from B', 'assistant'));
+    repo.addMessage('sess-C', makeMessage('c1', 'unrelated noise'));
+
+    const total = repo.countSessionMessagesFts('fullcount');
+    expect(total).toEqual({ matches: 61, sessions: 2 });
+
+    const scoped = repo.countSessionMessagesFts('fullcount', { sessionIds: ['sess-B'] });
+    expect(scoped).toEqual({ matches: 1, sessions: 1 });
+
+    const userOnly = repo.countSessionMessagesFts('fullcount', { role: 'user' });
+    expect(userOnly).toEqual({ matches: 60, sessions: 1 });
+
+    // 短查询与无命中返回零
+    expect(repo.countSessionMessagesFts('飞')).toEqual({ matches: 0, sessions: 0 });
+    expect(repo.countSessionMessagesFts('不存在的词')).toEqual({ matches: 0, sessions: 0 });
+  });
 });
 
 describe('SessionRepository — destructive checkpoint Fork retirement', () => {

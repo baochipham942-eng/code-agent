@@ -17,11 +17,12 @@ import {
   type AdminReviewQueueItem,
 } from '../../shared/contract/productClosure';
 import { disposeTerminalSession } from '../services/terminal/terminalSessionManager';
-import { getDefaultSearchManager } from '../session/search';
+import { getDefaultSearchManager, type SessionSearchFtsSource } from '../session/search';
 import {
   getDefaultCache,
   type CachedMessage,
 } from '../session/localCache';
+import { SESSION_SEARCH } from '../../shared/constants';
 import { createLogger } from '../services/infra/logger';
 import { assertAdminAccess } from './adminGuard';
 import { getArtifactIssueRepository } from '../services/core/repositories/ArtifactIssueRepository';
@@ -36,7 +37,6 @@ import { getUserBrowserLinkService } from '../services/surfaceExecution/UserBrow
 type SessionMemoryContext = unknown;
 
 const logger = createLogger('SessionIPC');
-const CROSS_SESSION_SEARCH_MESSAGE_LIMIT = 500;
 
 // ----------------------------------------------------------------------------
 // Public Registration
@@ -414,7 +414,7 @@ async function hydrateCrossSessionSearchCache(sessionIds: string[]): Promise<voi
 
   for (const sessionId of missingSessionIds) {
     try {
-      const messages = database.getMessages(sessionId, CROSS_SESSION_SEARCH_MESSAGE_LIMIT);
+      const messages = database.getMessages(sessionId, SESSION_SEARCH.HYDRATE_MESSAGE_LIMIT);
       const cachedMessages: CachedMessage[] = messages
         .filter(isCacheableMessage)
         .map((message) => ({
@@ -444,6 +444,24 @@ async function hydrateCrossSessionSearchCache(sessionIds: string[]): Promise<voi
   }
 }
 
+/**
+ * 惰性解析 FTS 数据源（与 hydrateCrossSessionSearchCache 同款动态 import，
+ * 避免 IPC 模块加载期引入 databaseService）。DB 未就绪 / 不可用时返回
+ * undefined，搜索回落内存 LRU 路径。
+ */
+async function resolveSessionSearchFtsSource(): Promise<SessionSearchFtsSource | undefined> {
+  try {
+    const { getDatabase } = await import('../services/core/databaseService');
+    const database = getDatabase();
+    return database.isReady ? database : undefined;
+  } catch (error) {
+    logger.warn('FTS source unavailable for cross-session search, falling back to in-memory cache', {
+      error,
+    });
+    return undefined;
+  }
+}
+
 export async function performCrossSessionSearch(
   query: string,
   options: CrossSessionSearchOptions | undefined,
@@ -457,6 +475,9 @@ export async function performCrossSessionSearch(
     await hydrateCrossSessionSearchCache(options.sessionIds);
   }
 
+  // FTS 数据源（全库检索）；DB 不可用时回落内存 LRU 搜索（原行为）
+  const ftsSource = await resolveSessionSearchFtsSource();
+
   const searchManager = getDefaultSearchManager();
   const searchResults = searchManager.search(query, {
     limit: options?.limit ?? 30,
@@ -466,7 +487,7 @@ export async function performCrossSessionSearch(
     sortBy: 'relevance',
     sortOrder: 'desc',
     includeContext: 80,
-  });
+  }, ftsSource);
 
   // Build session title map from app service
   const sessionTitleMap: Map<string, string> = new Map();

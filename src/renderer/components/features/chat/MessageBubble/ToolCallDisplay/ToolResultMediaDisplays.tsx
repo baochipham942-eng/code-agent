@@ -9,6 +9,7 @@ import { ExternalLink, Folder, Image as ImageIcon, FileText, Play, Video } from 
 import type { AgentPointerEvent } from '@shared/contract';
 import type { SessionMediaAsset } from '@shared/utils/sessionMediaAssets';
 import { isWebMode, copyPathToClipboard } from '../../../../../utils/platform';
+import { useI18n } from '../../../../../hooks/useI18n';
 import { resolveFileUrl } from '../../../../../utils/resolveFileUrl';
 import { AgentPointerOverlay } from '../../../../workbench/AgentPointerOverlay';
 import {
@@ -27,6 +28,7 @@ interface ImageResultDisplayProps {
 }
 
 export function ImageResultDisplay({ imagePath, imageBase64, asset, pointerEvent }: ImageResultDisplayProps) {
+  const { t } = useI18n();
   const [imageError, setImageError] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
   const [lightboxAsset, setLightboxAsset] = useState<SessionMediaAsset | null>(null);
@@ -97,7 +99,7 @@ export function ImageResultDisplay({ imagePath, imageBase64, asset, pointerEvent
                   className="flex items-center gap-1 px-2 py-1 rounded-lg bg-gray-700/50 text-zinc-300 hover:bg-gray-600/50 text-xs"
                 >
                   <ExternalLink className="w-3 h-3" />
-                  Open
+                  {t.toolDisplay.open}
                 </button>
               )}
             </div>
@@ -129,7 +131,7 @@ export function ImageResultDisplay({ imagePath, imageBase64, asset, pointerEvent
         {pointerEvent && <AgentPointerOverlay event={pointerEvent} compact={!isExpanded} />}
         {!isExpanded && (
           <div className="absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-gray-900/80 to-transparent flex items-end justify-center pb-1">
-            <span className="text-xs text-zinc-400">Click to expand</span>
+            <span className="text-xs text-zinc-400">{t.toolDisplay.clickToExpand}</span>
           </div>
         )}
       </div>
@@ -150,7 +152,7 @@ export function ImageResultDisplay({ imagePath, imageBase64, asset, pointerEvent
               className="flex items-center gap-1 px-2 py-1 rounded-lg bg-gray-700/50 text-zinc-300 hover:bg-gray-600/50 text-xs"
             >
               <ExternalLink className="w-3 h-3" />
-              Open
+              {t.toolDisplay.open}
             </button>
             <button
               onClick={handleShowInFolder}
@@ -261,6 +263,7 @@ export function FileResultDisplay({
   canPreview,
   onPreview,
 }: FileResultDisplayProps) {
+  const { t } = useI18n();
   const fileName = filePath.split('/').pop() || filePath;
   const ext = fileName.split('.').pop()?.toLowerCase() || '';
 
@@ -320,7 +323,7 @@ export function FileResultDisplay({
             className="flex items-center gap-1 px-2 py-1 rounded-lg bg-blue-500/20 text-badge-info hover:bg-blue-500/30 text-xs"
           >
             <Play className="w-3 h-3" />
-            Preview
+            {t.toolDisplay.preview}
           </button>
         )}
         <button
@@ -328,7 +331,7 @@ export function FileResultDisplay({
           className="flex items-center gap-1 px-2 py-1 rounded-lg bg-gray-700/50 text-zinc-300 hover:bg-gray-600/50 text-xs"
         >
           <ExternalLink className="w-3 h-3" />
-          Open
+          {t.toolDisplay.open}
         </button>
         <button
           onClick={handleShowInFolder}

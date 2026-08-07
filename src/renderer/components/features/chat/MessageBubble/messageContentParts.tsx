@@ -9,6 +9,7 @@ import { UI } from '@shared/constants';
 import type { Components } from 'react-markdown';
 import { useAppStore } from '../../../../stores/appStore';
 import { useSessionStore } from '../../../../stores/sessionStore';
+import { useI18n } from '../../../../hooks/useI18n';
 import { SETTINGS_TAB_IDS, type SettingsTab } from '../../../../utils/settingsTabs';
 import {
   recordStreamingPerformanceCounter,
@@ -244,6 +245,7 @@ export const CodeBlock = memo(function CodeBlock({
   language: string;
   code: string;
 }) {
+  const { t } = useI18n();
   const renderStartedAt = typeof performance !== 'undefined' && typeof performance.now === 'function'
     ? performance.now()
     : Date.now();
@@ -360,7 +362,7 @@ export const CodeBlock = memo(function CodeBlock({
             }`}
             title={wrapLines ? '取消换行' : '自动换行'}
           >
-            Wrap
+            {t.toolDisplay.wrap}
           </button>
           {/* Copy */}
           <button
@@ -370,12 +372,12 @@ export const CodeBlock = memo(function CodeBlock({
             {copied ? (
               <>
                 <Check className="w-3.5 h-3.5 text-badge-success" />
-                <span className="text-badge-success">Copied!</span>
+                <span className="text-badge-success">{t.toolDisplay.copied}</span>
               </>
             ) : (
               <>
                 <Copy className="w-3.5 h-3.5" />
-                <span>Copy</span>
+                <span>{t.toolDisplay.copy}</span>
               </>
             )}
           </button>

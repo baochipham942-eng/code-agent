@@ -19,11 +19,14 @@ import http from 'http';
 import os from 'os';
 import path from 'path';
 import { setTimeout as delay } from 'timers/promises';
+import { describeChildExit, isAbnormalExit, isChildGone } from './childProcessState';
 
 const repoRoot = process.cwd();
 const CLOUD_MARKER = 'CLOUD-E2E-MARKER';
 
 type StartedServer = {
+  /** 场景标签，进所有报错和日志——否则 5 个场景死在哪个都看不出来 */
+  label: string;
   baseUrl: string;
   token: string;
   child: ChildProcessByStdio<null, Readable, Readable>;
@@ -69,6 +72,7 @@ function extractToken(output: string, port: number): string | null {
 }
 
 async function startServer(
+  label: string,
   dataDir: string,
   extraEnv: Record<string, string> = {},
 ): Promise<StartedServer> {
@@ -92,16 +96,22 @@ async function startServer(
   child.stderr.on('data', (c) => chunks.push(String(c)));
 
   const server: StartedServer = {
+    label,
     baseUrl: `http://127.0.0.1:${port}`,
     token: '',
     child,
     output: () => chunks.join('').slice(-40_000),
   };
+  console.log(`[${label}] webServer starting pid=${child.pid} port=${port}`);
 
   const deadline = Date.now() + 60_000;
   while (Date.now() < deadline) {
-    if (server.child.exitCode !== null) {
-      throw new Error(`webServer exited early (${server.child.exitCode})\n${server.output()}`);
+    // 必须用 isChildGone：被信号打死（如 V8 断言的 SIGABRT）时 exitCode 仍是 null，
+    // 只看 exitCode 会把已崩溃的子进程当成还在启动，空转到 timeout 报错走人。
+    if (isChildGone(server.child)) {
+      throw new Error(
+        `[${label}] webServer exited early (${describeChildExit(server.child)})\n${server.output()}`,
+      );
     }
     const token = extractToken(server.output(), port);
     if (token) {
@@ -116,18 +126,35 @@ async function startServer(
     await delay(200);
   }
   await stopServer(server).catch(() => undefined);
-  throw new Error(`timed out waiting for webServer\n${server.output()}`);
+  throw new Error(
+    `[${label}] timed out waiting for webServer (${describeChildExit(server.child)})\n${server.output()}`,
+  );
 }
 
 async function stopServer(server: StartedServer): Promise<void> {
-  if (server.child.exitCode !== null) return;
-  server.child.kill('SIGTERM');
+  const { child, label } = server;
+
+  // 我们动手之前它就没了 = 异常，不是正常收尾。静默 return 会把崩溃现场丢掉。
+  if (isChildGone(child)) {
+    console.warn(`[${label}] webServer 在收尾前已终止（${describeChildExit(child)}）`);
+    if (isAbnormalExit(child)) console.warn(`[${label}] 子进程输出尾部:\n${server.output()}`);
+    return;
+  }
+
+  child.kill('SIGTERM');
   const deadline = Date.now() + 5_000;
   while (Date.now() < deadline) {
-    if (server.child.exitCode !== null) return;
+    if (isChildGone(child)) {
+      // 收到 SIGTERM 后不是干净退出（如退出路径上崩了）同样要留证据
+      if (isAbnormalExit(child)) {
+        console.warn(`[${label}] webServer 退出异常（${describeChildExit(child)}）:\n${server.output()}`);
+      }
+      return;
+    }
     await delay(100);
   }
-  server.child.kill('SIGKILL');
+  console.warn(`[${label}] SIGTERM 后 5s 未退出，升级 SIGKILL（${describeChildExit(child)}）`);
+  child.kill('SIGKILL');
 }
 
 async function fetchRoot(server: StartedServer): Promise<string> {
@@ -197,7 +224,7 @@ async function main(): Promise<void> {
   {
     const dataDir = await mkdtemp(path.join(os.tmpdir(), 'rb-e2e-active-'));
     await writeActive(dataDir, true);
-    const server = await startServer(dataDir);
+    const server = await startServer('场景1', dataDir);
     try {
       const html = await fetchRoot(server);
       assert(html.includes(CLOUD_MARKER), '场景1 应 serve 云端 active 版（含 CLOUD marker）');
@@ -212,7 +239,7 @@ async function main(): Promise<void> {
   // ── 场景2：无 active → 回包内基线（builtin，无 CLOUD marker）───────
   {
     const dataDir = await mkdtemp(path.join(os.tmpdir(), 'rb-e2e-builtin-'));
-    const server = await startServer(dataDir, {
+    const server = await startServer('场景2', dataDir, {
       CODE_AGENT_RENDERER_BUNDLE_CHANNEL: 'beta',
     });
     try {
@@ -238,7 +265,7 @@ async function main(): Promise<void> {
   {
     const dataDir = await mkdtemp(path.join(os.tmpdir(), 'rb-e2e-unhealthy-'));
     await writeActive(dataDir, false);
-    const server = await startServer(dataDir);
+    const server = await startServer('场景3', dataDir);
     try {
       const html = await fetchRoot(server);
       assert(!html.includes(CLOUD_MARKER), '场景3 不应含 CLOUD marker');
@@ -254,7 +281,7 @@ async function main(): Promise<void> {
   {
     const dataDir = await mkdtemp(path.join(os.tmpdir(), 'rb-e2e-disabled-'));
     await writeActive(dataDir, true);
-    const server = await startServer(dataDir, {
+    const server = await startServer('场景4', dataDir, {
       CODE_AGENT_DISABLE_RENDERER_HOT_UPDATE: '1',
     });
     try {
@@ -272,7 +299,7 @@ async function main(): Promise<void> {
   // ── 场景5：非法 channel → status fail closed 暴露配置错误 ──────────
   {
     const dataDir = await mkdtemp(path.join(os.tmpdir(), 'rb-e2e-invalid-channel-'));
-    const server = await startServer(dataDir, {
+    const server = await startServer('场景5', dataDir, {
       CODE_AGENT_RENDERER_BUNDLE_CHANNEL: '../beta',
     });
     try {

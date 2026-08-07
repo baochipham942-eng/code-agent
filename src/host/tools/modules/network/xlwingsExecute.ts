@@ -119,10 +119,20 @@ export async function executeXlwingsExecute(
     if (operation === 'check') {
       const env = await checkEnvironment();
       if (!env.xlwings) {
-        return { ok: false, error: 'xlwings 未安装。请运行: pip install xlwings' };
+        return {
+          ok: false,
+          error: 'xlwings 未安装。请运行: pip install xlwings',
+          code: 'ENV_DEPENDENCY_MISSING',
+          meta: { dependency: 'xlwings', installHint: 'pip install xlwings' },
+        };
       }
       if (!env.excel) {
-        return { ok: false, error: 'Excel 不可用。请确保已安装 Microsoft Excel。' };
+        return {
+          ok: false,
+          error: 'Excel 不可用。请确保已安装 Microsoft Excel。',
+          code: 'ENV_DEPENDENCY_MISSING',
+          meta: { dependency: 'Microsoft Excel', installHint: 'install Microsoft Excel' },
+        };
       }
       onProgress?.({ stage: 'completing', percent: 100 });
       return {

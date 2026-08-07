@@ -135,6 +135,199 @@ describe('toolExecutionPresentation', () => {
   });
 });
 
+describe('humanizeToolError — code 优先（metadata.code 命中登记表）', () => {
+  it('登记的 code 用 code 文案，不走正则分类（error 文本会被判成 quota 也压不过 code）', () => {
+    const h = humanizeToolError('402 Payment Required: insufficient balance 余额不足', 'Write', zh, {
+      code: 'DIRECTIVE_MEMORY_CONFIRMATION_REQUIRED',
+    });
+    expect(h).not.toBeNull();
+    expect(h?.summary).toBe(zh.toolErrors.codes.DIRECTIVE_MEMORY_CONFIRMATION_REQUIRED.summary);
+    expect(h?.detail).toBe(zh.toolErrors.codes.DIRECTIVE_MEMORY_CONFIRMATION_REQUIRED.detail);
+    // code 文案不属于正则七类，不带 kind/settingsHint
+    expect(h?.kind).toBeUndefined();
+    expect(h?.settingsHint).toBeUndefined();
+  });
+
+  it('五个已登记 code 全部命中各自文案', () => {
+    const cases: Array<[string, string]> = [
+      ['DIRECTIVE_MEMORY_CONFIRMATION_REQUIRED', '全局记忆'],
+      ['WORKBENCH_SCOPE_DENIED', '工作台范围'],
+      ['PROJECT_SOURCE_READ_ONLY', '只读'],
+      ['RUN_CONTEXT_MISMATCH', '运行上下文'],
+      ['RUN_WORKSPACE_BOUNDARY', '工作区'],
+    ];
+    for (const [code, snippet] of cases) {
+      const h = humanizeToolError('host 原文', 'Bash', zh, { code });
+      expect(h?.summary).toContain(snippet);
+    }
+  });
+
+  it('code 命中时不依赖 error 文本：error 为空也出人话（永不空白）', () => {
+    const h = humanizeToolError('', 'Write', zh, { code: 'RUN_CONTEXT_MISMATCH' });
+    expect(h?.summary).toBe(zh.toolErrors.codes.RUN_CONTEXT_MISMATCH.summary);
+    const h2 = humanizeToolError(undefined, 'Write', zh, { code: 'WORKBENCH_SCOPE_DENIED' });
+    expect(h2?.summary).toBe(zh.toolErrors.codes.WORKBENCH_SCOPE_DENIED.summary);
+  });
+
+  it('P1 迁移的 6 个 code 全部命中各自文案', () => {
+    const cases: Array<[string, string]> = [
+      ['AMEND_PUSHED', 'amend'],
+      ['NO_PROJECT', 'Project'],
+      ['UPDATE_FAILED', '授权写入失败'],
+      ['PR_UNCOMMITTED_CHANGES', '未提交'],
+    ];
+    for (const [code, snippet] of cases) {
+      const h = humanizeToolError('host 原文', 'Bash', zh, { code });
+      expect(h?.summary).toContain(snippet);
+    }
+  });
+});
+
+describe('humanizeToolError — 带参 code 的 {param} 插值', () => {
+  it('有参 → 填进 summary（{branch}）', () => {
+    const h = humanizeToolError('host 原文', 'Bash', zh, {
+      code: 'PR_ON_DEFAULT_BRANCH',
+      branch: 'main',
+    });
+    expect(h?.summary).toBe('当前在默认分支 main，不能从这里创建 PR');
+    expect(h?.summary).not.toContain('{branch}');
+  });
+
+  it('多参 → summary/detail 各自填对（{dependency}/{installHint}）', () => {
+    const h = humanizeToolError('host 原文', 'Bash', zh, {
+      code: 'ENV_DEPENDENCY_MISSING',
+      dependency: 'Ghostscript',
+      installHint: 'brew install ghostscript',
+    });
+    expect(h?.summary).toBe('缺少依赖 Ghostscript，无法执行');
+    expect(h?.detail).toBe('请先安装：brew install ghostscript，装好后重试。');
+  });
+
+  it('缺参 → 占位符原样保留，不替成 undefined', () => {
+    const h = humanizeToolError('host 原文', 'Bash', zh, { code: 'PR_ON_DEFAULT_BRANCH' });
+    expect(h?.summary).toBe(zh.toolErrors.codes.PR_ON_DEFAULT_BRANCH.summary);
+    expect(h?.summary).toContain('{branch}');
+    expect(h?.summary).not.toContain('undefined');
+  });
+
+  it('畸形参数值（对象/数组/null）→ 占位符原样保留', () => {
+    for (const bad of [{}, [], null] as unknown[]) {
+      const h = humanizeToolError('host 原文', 'Bash', zh, {
+        code: 'PR_ON_DEFAULT_BRANCH',
+        branch: bad,
+      });
+      expect(h?.summary).toContain('{branch}');
+      expect(h?.summary).not.toContain('undefined');
+    }
+  });
+
+  it('脱敏：换行/控制字符剥离，超长截断（host 值→UI 通道不放大原文）', () => {
+    const h = humanizeToolError('host 原文', 'Bash', zh, {
+      code: 'PR_ON_DEFAULT_BRANCH',
+      branch: 'main\nsecond-lineevil',
+    });
+    expect(h?.summary).toBe('当前在默认分支 main，不能从这里创建 PR');
+
+    const long = humanizeToolError('host 原文', 'Bash', zh, {
+      code: 'PR_ON_DEFAULT_BRANCH',
+      branch: 'b'.repeat(200),
+    });
+    expect(long?.summary).toContain(`${'b'.repeat(77)}...`);
+  });
+
+  it('metadata 畸形时带参 code 不受影响（无参 code 仍出静态文案）', () => {
+    const h = humanizeToolError('host 原文', 'Bash', zh, { code: 'AMEND_PUSHED', branch: 42 });
+    expect(h?.summary).toBe(zh.toolErrors.codes.AMEND_PUSHED.summary);
+  });
+});
+
+describe('humanizeToolError — 正则兜底（metadata 缺失/未登记时与改前逐条一致）', () => {
+  // 固化改前的真实错误样本：quota、429、401、超时、网络，以及一条完全无法分类的
+  const samples: Array<[string, string]> = [
+    ['perplexity: HTTP 401: {"error":{"message":"You exceeded your current quota","type":"insufficient_quota"}}', 'quota'],
+    ['Error: HTTP 429 Too Many Requests', 'rate_limit'],
+    ['401 Unauthorized: invalid api key', 'auth'],
+    ['Request timed out after 90000ms', 'timeout'],
+    ['fetch failed: ECONNRESET', 'network'],
+  ];
+
+  it.each(samples)('空 metadata 时分类结果与无 metadata 完全一致：%s', (raw, kind) => {
+    const withEmpty = humanizeToolError(raw, 'WebFetch', zh, {});
+    const baseline = humanizeToolError(raw, 'WebFetch', zh);
+    expect(withEmpty).toEqual(baseline);
+    expect(withEmpty?.kind).toBe(kind);
+  });
+
+  it('未登记的 code 仍走正则分类', () => {
+    const h = humanizeToolError('Error: HTTP 429 Too Many Requests', 'WebFetch', zh, { code: 'SOME_FUTURE_CODE' });
+    expect(h?.kind).toBe('rate_limit');
+    expect(h?.summary).toBe(zh.toolErrors.rateLimit.summary);
+  });
+
+  it('完全无法分类的错误带 metadata 也仍返回 null（调用方展示原文）', () => {
+    expect(humanizeToolError('TypeError: cannot read property foo of undefined', undefined, zh, {})).toBeNull();
+    expect(humanizeToolError('TypeError: cannot read property foo of undefined', undefined, zh, { code: 'UNKNOWN' })).toBeNull();
+  });
+});
+
+describe('humanizeToolError — 畸形 metadata 不崩、一律退回兜底', () => {
+  const malformed = [
+    null,
+    42,
+    'not-an-object',
+    { code: 123 },
+    { code: null },
+    { code: '' },
+    { code: 'NOT_REGISTERED' },
+  ].map((m) => m as unknown as Record<string, unknown> | null);
+
+  it.each(malformed)('畸形 metadata %#：可分类错误仍走正则，不可分类仍返回 null', (meta) => {
+    expect(() => humanizeToolError('Error: HTTP 429 Too Many Requests', 'WebFetch', zh, meta)).not.toThrow();
+    expect(humanizeToolError('Error: HTTP 429 Too Many Requests', 'WebFetch', zh, meta)?.kind).toBe('rate_limit');
+    expect(humanizeToolError('TypeError: boom', undefined, zh, meta)).toBeNull();
+  });
+});
+
+describe('isEscalatedToolError — code 与正则同一套分流', () => {
+  it('登记 code 不升级：即使 error 文本本身会被正则判成需介入', () => {
+    const tc = makeToolCall({
+      name: 'Write',
+      result: {
+        toolCallId: 'tc',
+        success: false,
+        error: '401 Unauthorized: invalid api key',
+        metadata: { code: 'RUN_CONTEXT_MISMATCH' },
+      },
+    });
+    expect(isEscalatedToolError(tc)).toBe(false);
+  });
+
+  it('登记 code 且无 error 文本时不崩、不升级', () => {
+    const tc = makeToolCall({
+      name: 'Write',
+      result: {
+        toolCallId: 'tc',
+        success: false,
+        metadata: { code: 'PROJECT_SOURCE_READ_ONLY' },
+      },
+    });
+    expect(isEscalatedToolError(tc)).toBe(false);
+  });
+
+  it('未登记 code 不影响既有判定（401 仍升级）', () => {
+    const tc = makeToolCall({
+      name: 'WebSearch',
+      result: {
+        toolCallId: 'tc',
+        success: false,
+        error: '401 Unauthorized: invalid api key',
+        metadata: { code: 'SOME_FUTURE_CODE' },
+      },
+    });
+    expect(isEscalatedToolError(tc)).toBe(true);
+  });
+});
+
 describe('isEscalatedToolError（P0 失败去噪：区分需用户介入 vs agent 探索性失败）', () => {
   it('鉴权失效需要用户介入，应升级', () => {
     const tc = makeToolCall({

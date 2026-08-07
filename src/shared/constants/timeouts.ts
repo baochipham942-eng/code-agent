@@ -376,3 +376,20 @@ export const CRON_GUARDRAILS = {
   /** 循环任务连续失败达到此次数后自动停用（防静默烧钱死循环） */
   MAX_CONSECUTIVE_FAILURES: 5,
 } as const;
+
+/**
+ * Telemetry uploader 韧性护栏（T5，2026-08-07）：持续 4xx/策略类失败（如 RLS 42501）
+ * 指数退避 + 熔断降噪，避免固定 5min 无退避重试把同一条错误刷屏一整天。
+ * 42501 这类错误不会因为「再试一次」自愈（需服务端策略/schema 修好），但也不是永久身份
+ * 错配——服务端修好后同进程要能自愈，所以退避有上限，不做一次性永久停用。
+ */
+export const TELEMETRY_UPLOAD_RESILIENCE = {
+  /** 基础重试间隔（对齐 syncService 既有节奏） */
+  BASE_INTERVAL_MS: 5 * 60 * 1000,
+  /** 退避倍率：每多一次同因失败，下一次间隔 *= 此值 */
+  BACKOFF_FACTOR: 2,
+  /** 退避上限：最长间隔不超过此值，保证服务端修好后进程能在合理时间内自愈 */
+  MAX_INTERVAL_MS: 2 * 60 * 60 * 1000,
+  /** 连续同因失败达到此次数即视为熔断：仅记一条摘要日志，后续同因失败不再逐条打印 */
+  CIRCUIT_BREAKER_THRESHOLD: 3,
+} as const;

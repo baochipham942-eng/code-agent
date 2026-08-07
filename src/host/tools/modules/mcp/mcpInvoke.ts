@@ -126,17 +126,10 @@ export async function executeMcpInvoke(
   onProgress?: ToolProgressFn,
 ): Promise<ToolResult<string>> {
   // ── 参数校验 ────────────────────────────────────────────
-  const server = args.server;
-  const tool = args.tool;
-  if (typeof server !== 'string' || server.length === 0 ||
-      typeof tool !== 'string' || tool.length === 0) {
-    return {
-      ok: false,
-      error: '缺少必需参数: server 和 tool',
-      code: 'INVALID_ARGS',
-      meta: { action: 'invoke', resultKind: 'process-output', count: 0, truncated: false, errorCode: 'INVALID_ARGS' },
-    };
-  }
+  // server / tool 的“必填 + string”由 inputSchema 保证（executor/resolver
+  // 两层 schema 门），此处不再手写重复校验。
+  const server = args.server as string;
+  const tool = args.tool as string;
   const toolArgsRaw = args.arguments;
   const toolArgs: Record<string, unknown> =
     toolArgsRaw && typeof toolArgsRaw === 'object' && !Array.isArray(toolArgsRaw)

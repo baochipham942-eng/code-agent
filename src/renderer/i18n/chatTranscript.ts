@@ -454,6 +454,57 @@ toolErrors: {
   autoLoaded: {
     summary: '工具已自动加载，正在用正确参数重试',
   },
+  // host 侧已带 metadata.code 的门（toolExecutor.ts / toolResolver.ts，键即 host 下发的
+  // code 原文，不新造 code）——code 命中时优先于上方正则分类用这里的文案；未登记 code /
+  // 没有 metadata 的错误仍走正则兜底，分不出类别的由调用方展示原始报错（永不空白）。
+  codes: {
+    DIRECTIVE_MEMORY_CONFIRMATION_REQUIRED: {
+      summary: '写入全局记忆需要你本人确认',
+      detail: '这次没有写入；需要保存的话重新发起，并在确认窗口里点「确认」。',
+    },
+    WORKBENCH_SCOPE_DENIED: {
+      summary: '当前工作台范围不允许使用这个工具',
+      detail: '工具被工作台范围拦截；调整范围或改用范围内的工具。',
+    },
+    PROJECT_SOURCE_READ_ONLY: {
+      summary: '项目来源是只读的，无法写入',
+      detail: '该目录以只读挂载；写入请改用工作区内的可写路径。',
+    },
+    RUN_CONTEXT_MISMATCH: {
+      summary: '运行上下文不匹配，这次调用已被拦截',
+      detail: '这次调用不属于当前运行；刷新会话后重试。',
+    },
+    RUN_WORKSPACE_BOUNDARY: {
+      summary: '命令只能在工作区范围内执行',
+      detail: '指定的工作目录越出了工作区 Project Sources 边界。',
+    },
+    // 以下 code 的 summary/detail 可带 {param} 占位符，由 metadata 同名字段填入
+    // （humanizeToolError 的 code 分支负责替换，缺参时占位符原样保留）。
+    AMEND_PUSHED: {
+      summary: '上一次提交已推送到远程，不能再 amend',
+      detail: 'amend 会改写已公开的提交历史；请创建一个新提交。',
+    },
+    NO_PROJECT: {
+      summary: '当前会话未绑定 Project，无法新增目录授权',
+      detail: '请先在项目设置里建立 Project，再重试授权。',
+    },
+    UPDATE_FAILED: {
+      summary: '授权写入失败：Project 状态已变化',
+      detail: '请重试一次；若仍失败，刷新会话后再试。',
+    },
+    PR_ON_DEFAULT_BRANCH: {
+      summary: '当前在默认分支 {branch}，不能从这里创建 PR',
+      detail: '先切到一个功能分支，再重新创建 PR。',
+    },
+    PR_UNCOMMITTED_CHANGES: {
+      summary: '有未提交的更改，不能创建 PR',
+      detail: '先提交（commit）这些更改，再创建 PR。',
+    },
+    ENV_DEPENDENCY_MISSING: {
+      summary: '缺少依赖 {dependency}，无法执行',
+      detail: '请先安装：{installHint}，装好后重试。',
+    },
+  },
 },
 
 // 工具恢复提示（ToolCallDisplay 的 getToolRecoveryHint，仅失败/中断/已产出场景展示）
@@ -953,6 +1004,59 @@ toolErrors: {
   },
   autoLoaded: {
     summary: 'Tool was auto-loaded and is retrying with the correct arguments',
+  },
+  // Gates the host already tags with metadata.code (toolExecutor.ts / toolResolver.ts; keys
+  // are the verbatim host codes — no new codes are coined here). A registered code takes
+  // priority over the regex classification above; unregistered codes / missing metadata fall
+  // back to the regex path, and unclassifiable errors keep the raw text (never blank).
+  codes: {
+    DIRECTIVE_MEMORY_CONFIRMATION_REQUIRED: {
+      summary: 'Writing to global memory needs your confirmation',
+      detail: 'Nothing was written. To save it, ask again and click "Confirm" in the confirmation window.',
+    },
+    WORKBENCH_SCOPE_DENIED: {
+      summary: 'This tool is not allowed in the current workbench scope',
+      detail: 'The tool was blocked by the workbench scope; adjust the scope or use an allowed tool.',
+    },
+    PROJECT_SOURCE_READ_ONLY: {
+      summary: 'This project source is read-only and cannot be written',
+      detail: 'The directory is mounted read-only; write to a writable path inside the workspace instead.',
+    },
+    RUN_CONTEXT_MISMATCH: {
+      summary: 'Run context mismatch; this call was blocked',
+      detail: 'The call does not belong to the current run; refresh the session and retry.',
+    },
+    RUN_WORKSPACE_BOUNDARY: {
+      summary: 'Commands can only run inside the workspace',
+      detail: 'The requested working directory is outside the workspace Project Sources boundary.',
+    },
+    // The codes below may carry {param} placeholders in summary/detail, filled from
+    // same-named metadata fields (humanizeToolError's code branch does the
+    // interpolation; missing params keep the placeholder verbatim).
+    AMEND_PUSHED: {
+      summary: 'The last commit was already pushed; amend is blocked',
+      detail: 'Amending would rewrite published history; create a new commit instead.',
+    },
+    NO_PROJECT: {
+      summary: 'This session is not bound to a Project, so directory access cannot be granted',
+      detail: 'Create a Project in project settings first, then retry the grant.',
+    },
+    UPDATE_FAILED: {
+      summary: 'Grant write failed: the Project state changed',
+      detail: 'Retry once; if it still fails, refresh the session and try again.',
+    },
+    PR_ON_DEFAULT_BRANCH: {
+      summary: 'On the default branch {branch}; cannot create a PR from here',
+      detail: 'Switch to a feature branch first, then create the PR again.',
+    },
+    PR_UNCOMMITTED_CHANGES: {
+      summary: 'There are uncommitted changes; cannot create a PR',
+      detail: 'Commit these changes first, then create the PR.',
+    },
+    ENV_DEPENDENCY_MISSING: {
+      summary: 'Missing dependency {dependency}; cannot run',
+      detail: 'Install it first: {installHint}, then retry.',
+    },
   },
 },
 

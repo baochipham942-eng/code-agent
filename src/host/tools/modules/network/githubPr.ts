@@ -175,13 +175,18 @@ async function handleCreate(
   if (branch === 'main' || branch === 'master') {
     return {
       ok: false,
-      error: `当前在 ${branch} 分支，不能从默认分支创建 PR。请先切换到功能分支。`,
-      code: 'INVALID_ARGS',
+      error: `当前在 ${branch} 分支，不能从默认分支创建 PR。请先切换到功能分支再重试，不要在默认分支上重复调用 create。`,
+      code: 'PR_ON_DEFAULT_BRANCH',
+      meta: { branch },
     };
   }
 
   if (await hasUncommittedChanges(cwd)) {
-    return { ok: false, error: '有未提交的更改。请先 commit 后再创建 PR。', code: 'INVALID_ARGS' };
+    return {
+      ok: false,
+      error: '有未提交的更改。请先 commit（或 stash）后再创建 PR，提交完成前不要重试 create。',
+      code: 'PR_UNCOMMITTED_CHANGES',
+    };
   }
 
   if (!(await isUpstreamConfigured(cwd, branch))) {

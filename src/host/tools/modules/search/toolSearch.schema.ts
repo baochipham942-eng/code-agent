@@ -10,6 +10,8 @@ export const TOOL_SEARCH_INPUT_SCHEMA = {
   properties: {
     query: {
       type: 'string',
+      minLength: 1,
+      pattern: '\\S',
       description: '搜索查询。支持关键字、"select:工具名" 或 "+必须词 关键字"',
     },
     max_results: {

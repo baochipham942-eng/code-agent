@@ -63,6 +63,8 @@ describe('buildArtifactOwnershipItems', () => {
     expect(items).toEqual([
       {
         kind: 'artifact',
+        // 角色轴（ADR-055）：模型显式创建的 artifact 本身就是交付物
+        role: 'deliverable',
         label: 'Execution Chart',
         ownerKind: 'assistant',
         ownerLabel: 'reviewer',
@@ -70,6 +72,7 @@ describe('buildArtifactOwnershipItems', () => {
       },
       {
         kind: 'file',
+        role: 'deliverable',
         label: 'preview.png',
         ownerKind: 'tool',
         ownerLabel: 'reviewer · Write',
@@ -140,6 +143,8 @@ describe('buildArtifactOwnershipItems', () => {
     expect(items).toEqual([
       {
         kind: 'file',
+        // outputPath 是工具声明的产出，恒 deliverable（ADR-055）
+        role: 'deliverable',
         label: 'report.md',
         ownerKind: 'tool',
         ownerLabel: 'WebFetch',
@@ -148,6 +153,7 @@ describe('buildArtifactOwnershipItems', () => {
       },
       {
         kind: 'file',
+        role: 'deliverable', // kind=image → deliverable
         label: 'Hero preview',
         ownerKind: 'tool',
         ownerLabel: 'image_generate',
@@ -157,6 +163,8 @@ describe('buildArtifactOwnershipItems', () => {
       },
       {
         kind: 'link',
+        // kind=web → material：抓取的页面是过程材料，降级进「来源」区不进产物
+        role: 'material',
         label: 'Spec page',
         ownerKind: 'tool',
         ownerLabel: 'WebFetch',
@@ -202,6 +210,7 @@ describe('buildArtifactOwnershipItems', () => {
     expect(items).toEqual([
       {
         kind: 'file',
+        role: 'deliverable',
         label: 'chart.png',
         ownerKind: 'tool',
         ownerLabel: 'Write',
@@ -260,9 +269,13 @@ describe('buildArtifactOwnershipItems', () => {
       ],
     } satisfies TraceTurn);
 
-    expect(items).toEqual([
+    // ADR-055 起本函数返回**带 role 的全集**，交付/材料的分流由消费端按 role 做。
+    // 所以这里断言的不再是「process 输出不在返回值里」，而是更强的一条：
+    // 它们即便被返回，也一律带 role='material'，永远进不了产物区。
+    expect(items.filter((i) => i.role === 'deliverable')).toEqual([
       {
         kind: 'file',
+        role: 'deliverable',
         label: 'Preview',
         ownerKind: 'tool',
         ownerLabel: 'Write',
@@ -271,6 +284,7 @@ describe('buildArtifactOwnershipItems', () => {
         sourceNodeId: 'tool-3',
       },
     ]);
+    expect(items.filter((i) => i.role !== 'material').map((i) => i.label)).toEqual(['Preview']);
   });
 
   it('keeps MemoryRead files out of the deliverable artifact list', () => {
@@ -310,7 +324,11 @@ describe('buildArtifactOwnershipItems', () => {
       ],
     } satisfies TraceTurn);
 
-    expect(items).toEqual([]);
+    // 同上：MemoryRead 的读取内容（kind=text ⇒ material）不再从返回值里消失，
+    // 而是带 role='material' 返回。产物区一条都不该有。
+    // （UI 层另有 isReadOnlyArtifactOwnershipItem 过滤，只读工具的材料连「来源」区也不摆。）
+    expect(items.filter((i) => i.role === 'deliverable')).toEqual([]);
+    expect(items.every((i) => i.role === 'material')).toBe(true);
   });
 
   it('caps unified tool artifact metadata before projecting ownership items', () => {

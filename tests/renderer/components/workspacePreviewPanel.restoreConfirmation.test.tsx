@@ -16,15 +16,23 @@ vi.mock('../../../src/renderer/hooks/useI18n', async () => {
   return { useI18n: () => ({ t: zh, language: 'zh' }) };
 });
 
+const planPreviewItem = {
+  id: 'preview-1',
+  title: '项目方案',
+  kind: 'document',
+  status: 'ready',
+  source: { messageId: 'message-1', label: '第一版' },
+  file: { path: '/workspace/plan.md', name: 'plan.md' },
+};
+
 vi.mock('../../../src/renderer/hooks/useWorkspacePreviewModel', () => ({
-  useWorkspacePreviewModel: () => [{
-    id: 'preview-1',
-    title: '项目方案',
-    kind: 'document',
-    status: 'ready',
-    source: { messageId: 'message-1', label: '第一版' },
-    file: { path: '/workspace/plan.md', name: 'plan.md' },
-  }],
+  useWorkspacePreviewModel: () => [planPreviewItem],
+  // 角色轴（ADR-055）：概览改用 …State 取 { items, materialItems }；替身要跟上新导出
+  useWorkspacePreviewModelState: () => ({
+    items: [planPreviewItem],
+    materialItems: [],
+    currentTurnArtifacts: null,
+  }),
 }));
 
 vi.mock('../../../src/renderer/stores/appStore', () => ({

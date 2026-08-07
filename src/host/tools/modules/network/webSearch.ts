@@ -226,10 +226,9 @@ class WebSearchHandler implements ToolHandler<Record<string, unknown>, string> {
     canUseTool: CanUseToolFn,
     onProgress?: ToolProgressFn,
   ): Promise<ToolResult<string>> {
-    const query = typeof args.query === 'string' ? args.query : undefined;
-    if (!query || query.length === 0) {
-      return { ok: false, error: 'WebSearch 需要 query 参数（非空字符串）', code: 'INVALID_ARGS' };
-    }
+    // query 的“必填 + 非空字符串”由 inputSchema 保证（required + minLength，
+    // executor/resolver 两层 schema 门），此处不再手写重复校验。
+    const query = args.query as string;
 
     const permit = await canUseTool(schema.name, args);
     if (!permit.allow) {
@@ -239,7 +238,7 @@ class WebSearchHandler implements ToolHandler<Record<string, unknown>, string> {
       return { ok: false, error: 'aborted', code: 'ABORTED' };
     }
 
-    onProgress?.({ stage: 'starting', detail: query ? `WebSearch ${query.slice(0, 40)}` : 'WebSearch' });
+    onProgress?.({ stage: 'starting', detail: `WebSearch ${query.slice(0, 40)}` });
 
     const count = Math.min(Math.max((args.count as number | undefined) || 5, 1), 10);
     const parallel = (args.parallel as boolean | undefined) ?? true;

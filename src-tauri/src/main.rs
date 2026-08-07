@@ -312,6 +312,664 @@ fn force_kill(child: &mut Child, reason: &str) -> (String, Option<String>) {
     (reason.to_string(), wait_status)
 }
 
+// ============================================================================
+// Windows 孤儿进程收割（T2 工单，2026-08-07）
+//
+// 根因：mac/linux 上「本进程正常退出」靠 SIGTERM/SIGKILL（`terminate_child`）
+// 主动收 webServer；但真机孤儿（连续 3 代 msedgewebview2，最老存活 4 天）
+// 来自**任务管理器"结束任务"/进程崩溃**——这类情况下本进程的任何清理代码
+// 都不会跑，只能靠：
+//   1. webServer(node.exe) 自己监听 stdin EOF 自杀（webServer.ts 已有，
+//      `Command::stdin(Stdio::piped())` 保证父进程消失时子进程收到 EOF）；
+//   2. WebView2 的浏览器/GPU/渲染子进程不是我们 `Command::spawn()` 出来的，
+//      没有那根 stdin 管道，只能靠 WebView2 自己的心跳检测宿主存活——真机
+//      证据说明这条心跳不可靠。
+//
+// 两条孤儿分走两条不同的认领路径，刻意不合并成一套：
+//
+// 1. **webServer(node.exe)** ——已有更强的现成机制：
+//    `stale_web_server_port_holders`/`clear_stale_web_server_port`（此前
+//    Windows 分支是永远返回空的 stub，本单补上 `netstat -ano` 实现）。
+//    「谁占着我们的固定端口」是精确且不与其他槽冲突的身份证据，不需要
+//    再造一套。**不**把 webServer 也塞进下面的 Job Object 认领文件——
+//    "node.exe" 是极通用的运行时文件名（VS Code / 其他 Electron 应用都会
+//    有一堆常驻 node.exe），pid 复用后镜像名照样能对上，用它当身份核对
+//    形同虚设，反而可能错杀不相干的进程。
+//
+// 2. **WebView2 的浏览器/GPU/渲染子进程**不是我们 `Command::spawn()` 出来
+//    的，没有 pid、没有端口，只能借 Job Object 只读枚举发现，收割语义
+//    复用本仓已有的孤儿 PTY 收割模式
+//    (`src/host/services/terminal/terminalSessionManager.ts:143-152`)：
+//    落盘 {pid, ownerPid, 身份标记} + 启动时三道核对，不新造第二套语义：
+//      a. ownerPid（记账时的宿主 Tauri 进程）现在必须已经死了——否则可能
+//         是另一个仍在运行的实例正常持有的子进程，误杀等于砍别人正在用
+//         的东西；
+//      b. pid 现在报告的进程镜像名仍是 "msedgewebview2.exe"；
+//      c. pid 现在的完整命令行仍带着记账时的 WebView2 数据目录
+//         （`--user-data-dir=<路径>`，精确路径匹配，见
+//         `command_line_contains_data_dir`）。**b 单独不够**："msedgewebview2.exe"
+//         不是我们独有的进程名——Teams/Outlook/系统 Edge 的 WebView2 都用
+//         同一个可执行文件，pid 被系统回收给别家应用（宿主重启后尤其常见）
+//         时 a+b 会同时通过，必须靠 c 的绝对路径匹配排除。c 不是"按进程名
+//         /cmdline 宽匹配"（错题本禁的是前缀式近似匹配，例如 `.dev` 撞上
+//         `.dev2`）——数据目录是每个通道独有的绝对路径，`command_line_contains_data_dir`
+//         要求路径后紧跟分隔符/引号/结尾，是精确边界匹配。
+//    Job Object 本身：把本进程加入一个 Job，之后 CreateProcess 出的子孙
+//    进程默认继承成员身份（Windows 8+ 支持嵌套 Job，WebView2 不会给自己
+//    的子进程设 CREATE_BREAKAWAY_FROM_JOB），用
+//    `QueryInformationJobObject` 只读枚举当前成员 pid 即可发现它们。
+//    **特意不设 JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE**：终止动作一律走上面
+//    三道认领核对后的显式 taskkill，不依赖内核在本进程句柄关闭时自动杀光
+//    整个 Job——那样会在「本进程正常退出但 webServer 优雅关库还没走完」的
+//    窗口里（例如应用内更新触发的 restart），把 stdin-EOF 优雅关闭合同
+//    截断，在本可以善终的场景里制造硬杀。
+// ============================================================================
+
+#[cfg(target_os = "windows")]
+static WINDOWS_CONTAINMENT_JOB: std::sync::OnceLock<isize> = std::sync::OnceLock::new();
+
+/// 把本进程加入一个匿名 Job（不设 KILL_ON_JOB_CLOSE），让之后本进程直接
+/// 或间接 CreateProcess 出的子孙都继承 Job 成员身份，供 `enumerate_job_member_pids`
+/// 只读枚举。必须在 Tauri 创建任何窗口/webServer 子进程之前完成，故在
+/// `main()` 最开头调用。
+#[cfg(target_os = "windows")]
+fn install_windows_process_containment() {
+    use windows_sys::Win32::System::JobObjects::{AssignProcessToJobObject, CreateJobObjectW};
+    use windows_sys::Win32::System::Threading::GetCurrentProcess;
+
+    // SAFETY: 两个指针参数按 Win32 文档允许为 null（匿名、无安全属性的
+    // Job）；AssignProcessToJobObject 的两个句柄都是本次调用刚拿到的有效
+    // 句柄，GetCurrentProcess 返回的伪句柄无需关闭。
+    unsafe {
+        let job = CreateJobObjectW(std::ptr::null(), std::ptr::null());
+        if job.is_null() {
+            eprintln!(
+                "windows process containment: CreateJobObjectW failed ({})",
+                std::io::Error::last_os_error()
+            );
+            return;
+        }
+        if AssignProcessToJobObject(job, GetCurrentProcess()) == 0 {
+            eprintln!(
+                "windows process containment: AssignProcessToJobObject failed ({})",
+                std::io::Error::last_os_error()
+            );
+            return;
+        }
+        let _ = WINDOWS_CONTAINMENT_JOB.set(job as isize);
+    }
+    // job 句柄故意不关闭：随本进程退出被内核自动回收，回收本身不触发任何
+    // 终止动作（没设 KILL_ON_JOB_CLOSE）。
+}
+
+#[cfg(not(target_os = "windows"))]
+fn install_windows_process_containment() {}
+
+/// 只读枚举当前 Job 成员 pid（含本进程自身）。查询失败/未曾成功加入 Job
+/// 一律返回空——枚举只是发现孤儿候选的手段，不是收割判定本身，静默降级
+/// 不会导致误杀，只会导致「这次没发现」。
+#[cfg(target_os = "windows")]
+fn enumerate_job_member_pids() -> Vec<u32> {
+    use windows_sys::Win32::System::JobObjects::{
+        JobObjectBasicProcessIdList, QueryInformationJobObject, JOBOBJECT_BASIC_PROCESS_ID_LIST,
+    };
+
+    let Some(&job_raw) = WINDOWS_CONTAINMENT_JOB.get() else {
+        return Vec::new();
+    };
+    let job = job_raw as windows_sys::Win32::Foundation::HANDLE;
+
+    // WebView2 + webServer 正常远小于 128 个子孙进程；一次性给够容量，
+    // 容量不够时只是少枚举几个（NumberOfProcessIdsInList 会小于
+    // NumberOfAssignedProcesses），不影响正确性只影响覆盖率。
+    const MAX_TRACKED: usize = 128;
+    let ids_offset = std::mem::offset_of!(JOBOBJECT_BASIC_PROCESS_ID_LIST, ProcessIdList);
+    let buffer_len = ids_offset + MAX_TRACKED * std::mem::size_of::<usize>();
+    let mut buffer = vec![0u8; buffer_len];
+    let mut returned_len: u32 = 0;
+
+    // SAFETY: buffer 按「头部字段 + MAX_TRACKED 个尾随 pid 槽位」分配，size
+    // 按整块缓冲区长度传入——这是 Win32 变长结构体（此处是
+    // JOBOBJECT_BASIC_PROCESS_ID_LIST.ProcessIdList: [usize; 1] 的 C 变长
+    // 数组惯用法）的标准调用方式。
+    let ok = unsafe {
+        QueryInformationJobObject(
+            job,
+            JobObjectBasicProcessIdList,
+            buffer.as_mut_ptr() as *mut core::ffi::c_void,
+            buffer_len as u32,
+            &mut returned_len,
+        )
+    };
+    if ok == 0 {
+        return Vec::new();
+    }
+
+    // SAFETY: 调用成功后头部字段已被内核填充，count 已用 MAX_TRACKED 封顶，
+    // 不会越界读 buffer。
+    let header = unsafe { &*(buffer.as_ptr() as *const JOBOBJECT_BASIC_PROCESS_ID_LIST) };
+    let count = (header.NumberOfProcessIdsInList as usize).min(MAX_TRACKED);
+
+    let mut pids = Vec::with_capacity(count);
+    let usize_len = std::mem::size_of::<usize>();
+    for i in 0..count {
+        let offset = ids_offset + i * usize_len;
+        let mut raw = [0u8; std::mem::size_of::<usize>()];
+        raw.copy_from_slice(&buffer[offset..offset + usize_len]);
+        pids.push(usize::from_ne_bytes(raw) as u32);
+    }
+    pids
+}
+
+#[cfg(not(target_os = "windows"))]
+fn enumerate_job_member_pids() -> Vec<u32> {
+    Vec::new()
+}
+
+/// 一条落盘的「认领记录」：记账时的 pid + 进程镜像名 + 数据目录标记 +
+/// 宿主进程 id。结构与 `terminalSessionManager.ts` 的 `PersistedTerminalPid`
+/// 一一对应，只是多了 `data_dir`（见下方 `claimed_windows_orphans` 为什么
+/// 需要它）。
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+struct ClaimedWindowsProcess {
+    pid: u32,
+    /// 记账时这个 pid 报告的进程镜像名（如 "msedgewebview2.exe"）。
+    image_name: String,
+    /// 记账时本实例的 WebView2 数据目录（`app_local_data_dir()`，Tauri 强制
+    /// 传给 WebView2 的 `--user-data-dir`）。收割时核对目标 pid 现在的完整
+    /// 命令行是否仍带着这个路径——见下方为什么仅镜像名不够。
+    data_dir: String,
+    owner_pid: u32,
+}
+
+/// 纯函数：只按认领收割，三道核对缺一不可——喂伪进程清单即可单测，不摸
+/// 文件系统/系统调用。
+///   1. owner 必须已死（且不是当前进程自己）；
+///   2. pid 现在的镜像名仍与记账时一致；
+///   3. pid 现在的完整命令行仍带着记账时的数据目录路径。
+///
+/// **为什么镜像名不够、必须加第 3 道**："msedgewebview2.exe" 不是我们独有
+/// 的进程名——Teams/Outlook/系统 Edge 的 WebView2 都用同一个可执行文件。
+/// 一旦我们记账的 pid 被系统回收给别家应用的 msedgewebview2.exe（宿主重启
+/// 后尤其常见），前两道核对（owner 已死 + 镜像名匹配）全部通过，会 taskkill
+/// 别人家的进程。WebView2 子进程的命令行必带 `--user-data-dir=<路径>`，
+/// 这是我们通道独有的绝对路径，用它做精确匹配（`command_line_contains_data_dir`
+/// 要求路径后紧跟分隔符/引号/结尾，不是任意子串）——这不是"按进程名/cmdline
+/// 宽匹配"（错题本禁止的是前缀式近似匹配，例如 `.dev` 撞上 `.dev2`），而是
+/// 对一个绝对路径做精确边界匹配，是强判据。
+fn claimed_windows_orphans(
+    claims: &[ClaimedWindowsProcess],
+    current_pid: u32,
+    is_owner_alive: impl Fn(u32) -> bool,
+    live_image_name: impl Fn(u32) -> Option<String>,
+    live_command_line: impl Fn(u32) -> Option<String>,
+) -> Vec<u32> {
+    claims
+        .iter()
+        .filter(|claim| claim.owner_pid != current_pid && !is_owner_alive(claim.owner_pid))
+        .filter(|claim| {
+            live_image_name(claim.pid)
+                .is_some_and(|name| name.eq_ignore_ascii_case(&claim.image_name))
+        })
+        .filter(|claim| {
+            live_command_line(claim.pid)
+                .is_some_and(|cmdline| command_line_contains_data_dir(&cmdline, &claim.data_dir))
+        })
+        .map(|claim| claim.pid)
+        .collect()
+}
+
+/// `command_line` 里是否精确带着 `data_dir` 这个路径段——数据目录后面必须
+/// 紧跟路径分隔符、引号或直接是命令行结尾，不能是任意前缀命中。防止
+/// `...code-agent.dev` 被 `...code-agent.dev2` 这种前缀撞上（错题本：
+/// pkill 前缀互相命中的同一类坑，这里换成了精确路径匹配版本）。
+fn command_line_contains_data_dir(command_line: &str, data_dir: &str) -> bool {
+    if data_dir.is_empty() {
+        return false;
+    }
+    let mut search_from = 0;
+    while let Some(offset) = command_line[search_from..].find(data_dir) {
+        let match_start = search_from + offset;
+        let match_end = match_start + data_dir.len();
+        let boundary_ok = command_line[match_end..]
+            .chars()
+            .next()
+            .map(|next_char| matches!(next_char, '\\' | '/' | '"' | '\'' | ' '))
+            .unwrap_or(true); // 数据目录就是命令行的结尾
+        if boundary_ok {
+            return true;
+        }
+        search_from = match_start + 1;
+    }
+    false
+}
+
+/// 解析 `tasklist /FI "PID eq N" /FO CSV /NH` 的一行：
+/// `"image.exe","1234","Console","1","1,234 K"`。字段两侧带引号；/FI 已经
+/// 按 pid 过滤，直接取第一个字段去掉引号即可，不需要完整 CSV 语法解析器
+/// （工作集字段本身含逗号，逐字段 `split(',')` 会切错，这也是不用它的
+/// 原因）。
+fn parse_tasklist_csv_image_name(output: &str, expected_pid: u32) -> Option<String> {
+    for line in output.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let mut fields = line.split("\",\"");
+        let image_name = fields.next()?.trim_start_matches('"');
+        let pid_field = fields.next()?;
+        if pid_field.parse::<u32>().ok()? == expected_pid {
+            return Some(image_name.to_string());
+        }
+    }
+    None
+}
+
+#[cfg(target_os = "windows")]
+fn windows_command_no_window(program: &str) -> Command {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    let mut command = Command::new(program);
+    command.creation_flags(CREATE_NO_WINDOW);
+    command
+}
+
+/// 查 pid 现在的镜像名；pid 不存在（已死）返回 None。
+#[cfg(target_os = "windows")]
+fn windows_tasklist_image_name(pid: u32) -> Option<String> {
+    let output = windows_command_no_window("tasklist")
+        .args(["/FI", &format!("PID eq {pid}"), "/FO", "CSV", "/NH"])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    parse_tasklist_csv_image_name(&String::from_utf8_lossy(&output.stdout), pid)
+}
+
+#[cfg(target_os = "windows")]
+fn windows_process_is_alive(pid: u32) -> bool {
+    windows_tasklist_image_name(pid).is_some()
+}
+
+/// 查 pid 现在的完整命令行。`tasklist` 不暴露 cmdline，这里改用
+/// PowerShell 的 CIM（`Win32_Process.CommandLine`）——只在 webview2 第三道
+/// 核对（数据目录精确匹配）里用，且只对已经通过前两道核对的少量候选 pid
+/// 调用，不是批量扫描。pid 不存在/查询失败返回 None。
+#[cfg(target_os = "windows")]
+fn windows_process_command_line(pid: u32) -> Option<String> {
+    let script = format!("(Get-CimInstance Win32_Process -Filter \"ProcessId={pid}\").CommandLine");
+    let output = windows_command_no_window("powershell")
+        .args(["-NoProfile", "-NonInteractive", "-Command", &script])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let text = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if text.is_empty() {
+        None
+    } else {
+        Some(text)
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn claimed_processes_file_path(app: &tauri::AppHandle) -> Option<PathBuf> {
+    app.path()
+        .app_data_dir()
+        .ok()
+        .map(strip_verbatim_prefix)
+        .map(|dir| dir.join("windows-process-claims.json"))
+}
+
+#[cfg(target_os = "windows")]
+fn read_claimed_processes(path: &Path) -> Vec<ClaimedWindowsProcess> {
+    std::fs::read_to_string(path)
+        .ok()
+        .and_then(|raw| serde_json::from_str(&raw).ok())
+        .unwrap_or_default()
+}
+
+#[cfg(target_os = "windows")]
+fn write_claimed_processes(path: &Path, claims: &[ClaimedWindowsProcess]) {
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    if let Ok(json) = serde_json::to_string(claims) {
+        let _ = std::fs::write(path, json);
+    }
+}
+
+/// 启动时调用：收割上一代崩溃/被强杀留下的 WebView2 子孙孤儿（webServer
+/// 走独立的端口认领机制，见 `stale_web_server_port_holders`，不经过这条
+/// 路径——理由见文件头注释）。三道核对见 `claimed_windows_orphans`。返回
+/// 实际收割的 pid，供落 shell event。
+#[cfg(target_os = "windows")]
+fn reap_stale_windows_processes(app: &tauri::AppHandle) -> Vec<u32> {
+    let Some(path) = claimed_processes_file_path(app) else {
+        return Vec::new();
+    };
+    let claims = read_claimed_processes(&path);
+    if claims.is_empty() {
+        return Vec::new();
+    }
+
+    let current_pid = std::process::id();
+    let reaped = claimed_windows_orphans(
+        &claims,
+        current_pid,
+        windows_process_is_alive,
+        windows_tasklist_image_name,
+        windows_process_command_line,
+    );
+
+    for pid in &reaped {
+        let _ = windows_command_no_window("taskkill")
+            .args(["/PID", &pid.to_string(), "/T", "/F"])
+            .status();
+    }
+
+    // 收割过的从账上抹掉；没收割的（owner 还活着 / 身份对不上）原样留着，
+    // 交给它们各自的下一次启动再核。
+    let reaped_set: HashSet<u32> = reaped.iter().copied().collect();
+    let survivors: Vec<ClaimedWindowsProcess> = claims
+        .into_iter()
+        .filter(|claim| !reaped_set.contains(&claim.pid))
+        .collect();
+    write_claimed_processes(&path, &survivors);
+
+    reaped
+}
+
+#[cfg(not(target_os = "windows"))]
+fn reap_stale_windows_processes(_app: &tauri::AppHandle) -> Vec<u32> {
+    Vec::new()
+}
+
+/// renderer 首帧就绪后调用：WebView2 的浏览器/渲染子进程此时必已存在，借
+/// Job Object 只读枚举把它们的 pid 落盘，供下次启动收割本次实例万一被
+/// 强杀/崩溃后留下的孤儿。best-effort：任何一步失败都只是「这次没落到
+/// 账」，不影响窗口正常展示。
+///
+/// **故意不收 webServer 的 pid**：它已经有一套更强的现成机制——
+/// `stale_web_server_port_holders`/`clear_stale_web_server_port`（本单刚补
+/// 上 Windows 分支）按「谁占着我们的固定端口」认领，端口号是精确且不会
+/// 冲突的身份证据。webServer 走端口，WebView2 走 Job Object，两条认领路径
+/// 分工明确，不重叠。
+///
+/// `data_dir` 用 `app_local_data_dir()`——Tauri 在 Windows/Linux 上强制把
+/// 这个目录（`resolve(identifier, BaseDirectory::LocalData)`）当
+/// `webview_attributes.data_directory` 传给 WebView2，也就是它每个子进程
+/// 命令行里 `--user-data-dir=` 后面那串路径。用它而不是 `app_data_dir()`
+/// （二者在 Windows 上分别是 Local/Roaming，不是同一个目录）。
+#[cfg(target_os = "windows")]
+fn capture_windows_process_claims(app: &tauri::AppHandle) {
+    let Some(path) = claimed_processes_file_path(app) else {
+        return;
+    };
+    let Some(data_dir) = app
+        .path()
+        .app_local_data_dir()
+        .ok()
+        .map(strip_verbatim_prefix)
+        .map(|dir| path_to_string(&dir))
+    else {
+        return;
+    };
+    let current_pid = std::process::id();
+
+    let mut claims = Vec::new();
+    for pid in enumerate_job_member_pids() {
+        if pid == current_pid {
+            continue;
+        }
+        if let Some(image_name) = windows_tasklist_image_name(pid) {
+            claims.push(ClaimedWindowsProcess {
+                pid,
+                image_name,
+                data_dir: data_dir.clone(),
+                owner_pid: current_pid,
+            });
+        }
+    }
+
+    write_claimed_processes(&path, &claims);
+}
+
+#[cfg(not(target_os = "windows"))]
+fn capture_windows_process_claims(_app: &tauri::AppHandle) {}
+
+#[cfg(test)]
+mod windows_process_reap_tests {
+    use super::{
+        claimed_windows_orphans, command_line_contains_data_dir, parse_tasklist_csv_image_name,
+        parse_windows_netstat_port_holders, ClaimedWindowsProcess,
+    };
+
+    const OUR_DATA_DIR: &str = r"C:\Users\x\AppData\Local\com.linchen.code-agent.dev";
+    const OUR_CMDLINE: &str = r#""C:\Program Files\...\msedgewebview2.exe" --user-data-dir="C:\Users\x\AppData\Local\com.linchen.code-agent.dev\EBWebView""#;
+
+    fn claim(pid: u32, image_name: &str, owner_pid: u32) -> ClaimedWindowsProcess {
+        ClaimedWindowsProcess {
+            pid,
+            image_name: image_name.to_string(),
+            data_dir: OUR_DATA_DIR.to_string(),
+            owner_pid,
+        }
+    }
+
+    #[test]
+    fn reaps_only_when_all_three_gates_pass() {
+        let claims = vec![claim(100, "msedgewebview2.exe", 1)];
+        let reaped = claimed_windows_orphans(
+            &claims,
+            999,
+            |_owner| false,
+            |pid| (pid == 100).then(|| "msedgewebview2.exe".to_string()),
+            |pid| (pid == 100).then(|| OUR_CMDLINE.to_string()),
+        );
+        assert_eq!(reaped, vec![100]);
+    }
+
+    #[test]
+    fn skips_when_owner_still_alive() {
+        // 另一个仍在运行的实例正常持有的子进程——即便镜像名/数据目录都
+        // 匹配，owner 活着就说明这不是孤儿，绝不能杀。
+        let claims = vec![claim(100, "msedgewebview2.exe", 1)];
+        let reaped = claimed_windows_orphans(
+            &claims,
+            999,
+            |_owner| true,
+            |pid| (pid == 100).then(|| "msedgewebview2.exe".to_string()),
+            |pid| (pid == 100).then(|| OUR_CMDLINE.to_string()),
+        );
+        assert!(reaped.is_empty());
+    }
+
+    #[test]
+    fn skips_when_pid_reused_by_different_image() {
+        // owner 已死，但 100 号 pid 现在是别的进程（系统复用）——身份核不
+        // 对就不杀，宁可漏收也不能误杀。
+        let claims = vec![claim(100, "msedgewebview2.exe", 1)];
+        let reaped = claimed_windows_orphans(
+            &claims,
+            999,
+            |_owner| false,
+            |pid| (pid == 100).then(|| "unrelated-app.exe".to_string()),
+            |pid| (pid == 100).then(|| OUR_CMDLINE.to_string()),
+        );
+        assert!(reaped.is_empty());
+    }
+
+    #[test]
+    fn skips_when_pid_reused_by_a_different_apps_webview2() {
+        // 红线场景：owner 已死、镜像名同样是 "msedgewebview2.exe"（Teams/
+        // Outlook/系统 Edge 都用这个名字），但目标 pid 现在的命令行指向
+        // 别家应用自己的数据目录——绝不能只凭镜像名就 taskkill。
+        let claims = vec![claim(100, "msedgewebview2.exe", 1)];
+        let other_apps_cmdline =
+            r#""C:\Program Files\...\msedgewebview2.exe" --user-data-dir="C:\Users\x\AppData\Local\Microsoft\Teams\EBWebView""#;
+        let reaped = claimed_windows_orphans(
+            &claims,
+            999,
+            |_owner| false,
+            |pid| (pid == 100).then(|| "msedgewebview2.exe".to_string()),
+            |pid| (pid == 100).then(|| other_apps_cmdline.to_string()),
+        );
+        assert!(reaped.is_empty());
+    }
+
+    #[test]
+    fn skips_when_command_line_unavailable() {
+        // 查不到命令行（进程已死/查询失败）——和查不到镜像名一样，宁可
+        // 漏收也不能杀。
+        let claims = vec![claim(100, "msedgewebview2.exe", 1)];
+        let reaped = claimed_windows_orphans(
+            &claims,
+            999,
+            |_owner| false,
+            |pid| (pid == 100).then(|| "msedgewebview2.exe".to_string()),
+            |_pid| None,
+        );
+        assert!(reaped.is_empty());
+    }
+
+    #[test]
+    fn skips_when_pid_no_longer_exists() {
+        let claims = vec![claim(100, "msedgewebview2.exe", 1)];
+        let reaped = claimed_windows_orphans(&claims, 999, |_owner| false, |_pid| None, |_pid| {
+            None
+        });
+        assert!(reaped.is_empty());
+    }
+
+    #[test]
+    fn skips_claims_owned_by_current_process() {
+        // 记账的 owner 就是当前正在跑的这个实例自己——不是「上一代」，不
+        // 该被 startup reap 碰。
+        let claims = vec![claim(100, "msedgewebview2.exe", 999)];
+        let reaped = claimed_windows_orphans(
+            &claims,
+            999,
+            |_owner| false,
+            |_pid| Some("msedgewebview2.exe".to_string()),
+            |_pid| Some(OUR_CMDLINE.to_string()),
+        );
+        assert!(reaped.is_empty());
+    }
+
+    #[test]
+    fn does_not_cross_slot_collide_on_owner_pid() {
+        // 多个 claim 各自独立核对，互不影响——防止「一个 owner 判断污染
+        // 另一条记录」这类合并逻辑错误。
+        let claims = vec![
+            claim(100, "msedgewebview2.exe", 1),
+            claim(200, "msedgewebview2.exe", 2),
+        ];
+        let reaped = claimed_windows_orphans(
+            &claims,
+            999,
+            |owner| owner == 2, // 只有 owner=2 还活着
+            |pid| (pid == 100 || pid == 200).then(|| "msedgewebview2.exe".to_string()),
+            |pid| (pid == 100 || pid == 200).then(|| OUR_CMDLINE.to_string()),
+        );
+        assert_eq!(reaped, vec![100]);
+    }
+
+    #[test]
+    fn data_dir_boundary_match_ignores_prefix_collision() {
+        // 错题本同款坑的精确路径版本："...code-agent.dev" 不能被
+        // "...code-agent.dev2\EBWebView" 前缀命中——必须紧跟分隔符/引号/
+        // 结尾才算命中。
+        let dev_slot_1 = r"C:\Users\x\AppData\Local\com.linchen.code-agent.dev";
+        let dev_slot_2_cmdline =
+            r#"--user-data-dir="C:\Users\x\AppData\Local\com.linchen.code-agent.dev2\EBWebView""#;
+        assert!(!command_line_contains_data_dir(
+            dev_slot_2_cmdline,
+            dev_slot_1
+        ));
+
+        let dev_slot_1_cmdline =
+            r#"--user-data-dir="C:\Users\x\AppData\Local\com.linchen.code-agent.dev\EBWebView""#;
+        assert!(command_line_contains_data_dir(
+            dev_slot_1_cmdline,
+            dev_slot_1
+        ));
+    }
+
+    #[test]
+    fn data_dir_match_rejects_empty_marker() {
+        assert!(!command_line_contains_data_dir("anything at all", ""));
+    }
+
+    #[test]
+    fn parses_tasklist_csv_image_name() {
+        let output = "\"node.exe\",\"4242\",\"Console\",\"1\",\"12,345 K\"\r\n";
+        assert_eq!(
+            parse_tasklist_csv_image_name(output, 4242),
+            Some("node.exe".to_string())
+        );
+    }
+
+    #[test]
+    fn tasklist_csv_returns_none_for_other_pid() {
+        let output = "\"node.exe\",\"4242\",\"Console\",\"1\",\"12,345 K\"\r\n";
+        assert_eq!(parse_tasklist_csv_image_name(output, 1), None);
+    }
+
+    #[test]
+    fn tasklist_csv_handles_empty_output() {
+        assert_eq!(parse_tasklist_csv_image_name("", 4242), None);
+    }
+
+    #[test]
+    fn netstat_finds_listener_on_matching_port() {
+        let output = "\
+  Proto  Local Address          Foreign Address        State           PID
+  TCP    0.0.0.0:8180           0.0.0.0:0              LISTENING       4242
+  TCP    127.0.0.1:8180         127.0.0.1:55000        ESTABLISHED     4242
+";
+        assert_eq!(
+            parse_windows_netstat_port_holders(output, 8180, 999),
+            vec![4242]
+        );
+    }
+
+    #[test]
+    fn netstat_ignores_client_connections_to_the_port() {
+        // 客户端连到我们端口的连接：本地地址是临时端口、外部地址才是
+        // 8180——不该被当成「持有端口」的进程。
+        let output = "  TCP    127.0.0.1:55321        127.0.0.1:8180         ESTABLISHED     1111\n";
+        assert!(parse_windows_netstat_port_holders(output, 8180, 999).is_empty());
+    }
+
+    #[test]
+    fn netstat_excludes_current_process_and_dedupes() {
+        let output = "\
+  TCP    0.0.0.0:8180           0.0.0.0:0              LISTENING       999
+  TCP    0.0.0.0:8180           0.0.0.0:0              LISTENING       4242
+  TCP    127.0.0.1:8180         127.0.0.1:1           ESTABLISHED     4242
+";
+        assert_eq!(
+            parse_windows_netstat_port_holders(output, 8180, 999),
+            vec![4242]
+        );
+    }
+
+    #[test]
+    fn netstat_does_not_confuse_similar_port_prefixes() {
+        // 8180 与 18180、81800 不能互相命中——ends_with 的冒号前缀已经
+        // 保证这点，这里钉一条回归测试。
+        let output = "\
+  TCP    0.0.0.0:18180          0.0.0.0:0              LISTENING       1
+  TCP    0.0.0.0:81800          0.0.0.0:0              LISTENING       2
+";
+        assert!(parse_windows_netstat_port_holders(output, 8180, 999).is_empty());
+    }
+}
+
 fn unique_paths(paths: Vec<PathBuf>) -> Vec<PathBuf> {
     let mut seen = HashSet::new();
     let mut result = Vec::new();
@@ -480,7 +1138,56 @@ fn stale_web_server_port_holders(port: u16) -> Result<Vec<u32>, String> {
     Ok(parse_port_holder_pids(&stdout, std::process::id()))
 }
 
-#[cfg(not(any(target_os = "macos", target_os = "linux")))]
+/// 解析 `netstat -ano -p TCP` 的一行，取「本地地址」端口等于 `port` 的行
+/// 的 PID（最后一个空白分隔字段——TCP 行末尾就是 PID）。只匹配本地地址
+/// 端口，天然排除只是「连到这个端口」的客户端连接（它们的本地地址端口
+/// 是临时端口，不等于 `port`）；不依赖 State 列的 LISTENING 文案，规避
+/// 非英文 Windows 下该文案被本地化导致的漏判。
+fn parse_windows_netstat_port_holders(output: &str, port: u16, current_pid: u32) -> Vec<u32> {
+    let port_suffix = format!(":{port}");
+    let mut seen = HashSet::new();
+    output
+        .lines()
+        .map(str::trim)
+        .filter(|line| line.len() >= 3 && line[..3].eq_ignore_ascii_case("tcp"))
+        .filter_map(|line| {
+            let mut fields = line.split_whitespace();
+            let _proto = fields.next()?;
+            let local_addr = fields.next()?;
+            if !local_addr.ends_with(&port_suffix) {
+                return None;
+            }
+            fields.last()?.parse::<u32>().ok()
+        })
+        .filter(|pid| *pid != current_pid)
+        .filter(|pid| seen.insert(*pid))
+        .collect()
+}
+
+/// Windows 版 `stale_web_server_port_holders`：mac/linux 用 lsof，Windows
+/// 没有 lsof，改用系统自带的 netstat（此前该函数在 Windows 上是永远返回
+/// 空的 stub，等于「打包启动前清理上一代残留 webServer」这道保险在
+/// Windows 上完全没生效——T2 工单排查项之一）。
+#[cfg(target_os = "windows")]
+fn stale_web_server_port_holders(port: u16) -> Result<Vec<u32>, String> {
+    let output = windows_command_no_window("netstat")
+        .args(["-ano", "-p", "TCP"])
+        .output()
+        .map_err(|error| format!("Failed to inspect localhost:{port}: {error}"))?;
+
+    if !output.status.success() && output.stdout.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    Ok(parse_windows_netstat_port_holders(
+        &stdout,
+        port,
+        std::process::id(),
+    ))
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
 fn stale_web_server_port_holders(_port: u16) -> Result<Vec<u32>, String> {
     Ok(Vec::new())
 }
@@ -2867,6 +3574,18 @@ fn present_main_window(app: &AppHandle, via: &str) {
             }
         });
     }
+    // T2 工单：首帧就绪意味着 WebView2 的浏览器/渲染子进程此时必已存在，
+    // 借这个时机把它们的 pid 落盘认领，供下次启动收割本次实例万一被强杀/
+    // 崩溃后留下的孤儿（webServer 走独立的端口认领机制，不落这个文件，
+    // 见 `capture_windows_process_claims` 注释）。放后台线程：涉及若干次
+    // tasklist 子进程调用，不能挡在窗口展示的关键路径上。
+    #[cfg(target_os = "windows")]
+    {
+        let app = app.clone();
+        thread::spawn(move || {
+            capture_windows_process_claims(&app);
+        });
+    }
 }
 
 /// renderer 首帧+初始数据就绪信号的 invoke 直连通道。
@@ -3041,6 +3760,11 @@ fn setup_global_shortcut(app: &tauri::App) -> Result<(), Box<dyn std::error::Err
 }
 
 fn main() {
+    // T2 工单：必须在 Tauri 创建任何窗口（含 WebView2）/webServer 子进程之前
+    // 完成，否则后创建的子孙进程赶不上加入 Job（见函数注释）。非 Windows 平台
+    // 是空操作。
+    install_windows_process_containment();
+
     let app = tauri::Builder::default()
         // single-instance 必须在其他 plugin 之前注册：后启动的进程会直接退出，
         // 并把 argv/cwd 传给已运行的实例，由 callback 聚焦已有窗口。
@@ -3113,6 +3837,23 @@ fn main() {
             apply_channel_env(&app.handle());
             let mut boot_diagnostics = new_boot_diagnostics(&app.handle());
             write_boot_diagnostics(&app.handle(), &boot_diagnostics);
+
+            // T2 工单：收割上一代崩溃/被强杀留下的 WebView2 子孙孤儿（非
+            // Windows 平台是空操作，返回空 vec）。webServer 自己的陈旧端口
+            // 占用由下面 `spawn_web_server_recording` 内的
+            // `clear_stale_web_server_port` 单独处理（本单已补上 Windows
+            // 分支），两条认领路径互不依赖，谁先谁后都不影响正确性。
+            let reaped_orphans = reap_stale_windows_processes(&app.handle());
+            if !reaped_orphans.is_empty() {
+                write_shell_event(
+                    &app.handle(),
+                    &boot_diagnostics,
+                    "warning",
+                    "desktop-shell-stale-windows-process-reaped",
+                    "reaped orphaned process(es) claimed by a previous instance",
+                    Some(serde_json::json!({ "pids": reaped_orphans })),
+                );
+            }
 
             if cfg!(debug_assertions) && is_server_running() {
                 // Server already running (e.g. started by Tauri beforeDevCommand in dev mode).

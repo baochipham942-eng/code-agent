@@ -78,18 +78,10 @@ describe('requestDirectiveMemoryConfirmation — 超时与拒绝要可区分', (
 
 describe('directiveMemoryConfirmationFailureError — 超时/拒绝文案分流', () => {
   it('超时与拒绝产生不同的 error 文案', () => {
-    const timeoutError = directiveMemoryConfirmationFailureError({
-      requestId: 'r1',
-      confirmed: false,
-      respondedAt: 0,
-      timedOut: true,
-    });
-    const declinedError = directiveMemoryConfirmationFailureError({
-      requestId: 'r2',
-      confirmed: false,
-      respondedAt: 1,
-      timedOut: false,
-    });
+    // 签名是 Pick<DirectiveMemoryConfirmationResult, 'timedOut'>——只读这一个字段，
+    // 传完整结果对象会触发对象字面量的多余属性检查（TS2353）。按签名给最小入参。
+    const timeoutError = directiveMemoryConfirmationFailureError({ timedOut: true });
+    const declinedError = directiveMemoryConfirmationFailureError({ timedOut: false });
 
     expect(timeoutError).toBe(DIRECTIVE_MEMORY_CONFIRMATION_TIMEOUT_ERROR);
     expect(declinedError).toBe(DIRECTIVE_MEMORY_CONFIRMATION_DECLINED_ERROR);

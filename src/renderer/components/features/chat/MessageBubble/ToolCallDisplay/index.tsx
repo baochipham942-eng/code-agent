@@ -509,9 +509,10 @@ function getActionPreviewRiskClass(risk: BrowserComputerActionPreview['risk']): 
 }
 
 function BrowserComputerActionPreviewLine({ preview }: { preview: BrowserComputerActionPreview }) {
+  const { t } = useI18n();
   return (
     <div className="ml-6 mt-0.5 mb-0.5 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-zinc-500">
-      <span className="text-zinc-600">Action</span>
+      <span className="text-zinc-600">{t.toolDisplay.action}</span>
       <span className="text-zinc-300">{preview.summary}</span>
       {preview.target && (
         <>

@@ -18,6 +18,10 @@
 // 2026-07-27 批 G 清掉新组件的无人 default 转出口 + 未用类型出口，收到 2692。
 // 2026-07-27 Fork/Rewind 清掉 78 处新增死出口（含 23 处 repository barrel 转口），收到 2690。
 // 2026-07-31 X6 realtime provider 通用化移除 2 个旧死出口，收到 2687。
+// 2026-08-07 诊断包导出：appDiagnosticsBundleBuilder.ts 三个只在本文件内用的
+// interface（AppDiagnosticsFileEntry/RendererCacheManifestEntry/AppDiagnosticsManifest）
+// 去掉多余 export，本地收到 2686；但 CI 环境恒比本地多解析出 1 处（2687），
+// 基线以 CI 口径为准取 2687——收基线前必须用 CI 实跑数校对，别用本地数。
 // knip 版本锁 6.24.0（未入 devDependencies，避免 lockfile/共享 node_modules 变更；
 // CI 与本地统一走 npx knip@6.24.0，升版本须同步重测基线）。
 //

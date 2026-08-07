@@ -182,6 +182,7 @@ const CAPABILITY_DOMAIN_ACTIONS = {
     'decisions',
     'desktopShell',
     'execPolicy',
+    'exportAppBundle',
     'logClientError',
   ],
   [IPC_DOMAINS.GENERATIVE_UI]: [

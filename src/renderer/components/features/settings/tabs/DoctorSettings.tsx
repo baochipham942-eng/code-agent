@@ -21,11 +21,12 @@ import {
   Package,
   ChevronDown,
   ChevronRight,
-  ClipboardCopy,
+  Download,
   RefreshCw,
   Stethoscope,
   Wrench,
 } from 'lucide-react';
+import { IPC_DOMAINS } from '@shared/ipc';
 import { Button, IconButton } from '../../../primitives';
 import { SettingsPage } from '../SettingsLayout';
 import type { DoctorFixCode } from '@shared/constants/doctor';
@@ -159,6 +160,7 @@ export const DoctorSettings: React.FC = () => {
     runCategory,
   } = useDoctorStore();
   const [fixingCode, setFixingCode] = useState<DoctorFixCode | null>(null);
+  const [isExporting, setIsExporting] = useState(false);
 
   // 进页面时复用已有报告（如启动静默快检的结果）；没有则自动跑全量
   useEffect(() => {
@@ -180,13 +182,36 @@ export const DoctorSettings: React.FC = () => {
     }
   };
 
-  const handleExport = () => {
-    if (!report) return;
-    const json = JSON.stringify(report, null, 2);
-    navigator.clipboard.writeText(json).then(
-      () => toast.success(doctorText.toast.copied),
-      () => toast.error(doctorText.toast.copyFailed),
-    );
+  const handleExport = async () => {
+    if (!report || isExporting) return;
+    setIsExporting(true);
+    try {
+      const response = await window.domainAPI?.invoke<{ content: string; suggestedFileName: string }>(
+        IPC_DOMAINS.DIAGNOSTICS,
+        'exportAppBundle',
+        { doctorReport: report },
+      );
+      if (!response?.success || !response.data?.content) {
+        throw new Error(response?.error?.message || 'Failed to export diagnostics bundle');
+      }
+      const saved = await window.domainAPI?.invoke<{ filePath: string }>(
+        IPC_DOMAINS.WORKSPACE,
+        'saveBinaryToDownloads',
+        { fileName: response.data.suggestedFileName, base64: response.data.content },
+      );
+      if (!saved?.success || !saved.data?.filePath) {
+        throw new Error(saved?.error?.message || 'Failed to save diagnostics bundle');
+      }
+      toast.success(doctorText.toast.bundleExportedPath.replace('{path}', saved.data.filePath));
+      void window.domainAPI?.invoke(IPC_DOMAINS.WORKSPACE, 'showItemInFolder', { filePath: saved.data.filePath });
+    } catch (error) {
+      toast.error(doctorText.toast.bundleExportFailed.replace(
+        '{message}',
+        error instanceof Error ? error.message : String(error),
+      ));
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   const groupedItems: Array<[DoctorCategory, DoctorItem[]]> = (() => {
@@ -207,8 +232,15 @@ export const DoctorSettings: React.FC = () => {
       actions={
         <div className="flex items-center gap-2">
           {report && (
-            <Button variant="ghost" size="sm" onClick={handleExport} leftIcon={<ClipboardCopy className="w-3.5 h-3.5" />}>
-              {doctorText.exportLogs}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => void handleExport()}
+              loading={isExporting}
+              disabled={isExporting}
+              leftIcon={<Download className="w-3.5 h-3.5" />}
+            >
+              {doctorText.exportBundle}
             </Button>
           )}
           <Button

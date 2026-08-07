@@ -256,6 +256,23 @@ export function registerDiagnosticsHandlers(ipcMain: IpcMain): void {
           return { success: true, data: await getDesktopShellDiagnostics() };
         }
 
+        // app 级诊断包导出（Doctor 页「导出诊断包」）：host 日志 + Tauri 壳 boot/events +
+        // audit + 脱敏 config + 环境指纹 + renderer-cache 清单 + 可选 Doctor 报告，打成 zip。
+        // renderer 侧已有报告时随 payload 带上，避免再跑一次全量体检。
+        case 'exportAppBundle': {
+          const payload = (request.payload ?? {}) as { doctorReport?: unknown };
+          const { buildAppDiagnosticsBundle } = await import('../diagnostics/appDiagnosticsBundleBuilder');
+          const result = await buildAppDiagnosticsBundle({ doctorReport: payload.doctorReport });
+          return {
+            success: true,
+            data: {
+              content: result.buffer.toString('base64'),
+              suggestedFileName: result.suggestedFileName,
+              encoding: 'base64' as const,
+            },
+          };
+        }
+
         // /cost — 预算状态
         case 'budget': {
           const { getBudgetService } = await import('../services/core/budgetService');

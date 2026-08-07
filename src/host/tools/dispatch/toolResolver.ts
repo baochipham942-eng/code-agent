@@ -23,6 +23,10 @@ import { buildProtocolContext, buildCanUseToolFromLegacy } from './shadowAdapter
 import { isToolNameAllowedByWorkbenchScope } from '../workbenchToolScope';
 import { getMCPClient } from '../../mcp';
 import { ensureFailedToolResultError } from '../toolResultError';
+import {
+  assessDirectiveMemoryWrite,
+  hasMatchingDirectiveMemoryWriteGrant,
+} from '../../memory/directiveMemoryPathAuthority';
 
 export interface ToolResolver {
   /** 当前 registry 里所有已注册 tool 的 name */
@@ -72,6 +76,26 @@ class ProtocolToolResolver implements ToolResolver {
       return { success: false, error: `tool not registered: ${name}` };
     }
     const dispatchName = definition.name;
+
+    const directiveMemoryAssessment = assessDirectiveMemoryWrite({
+      definition,
+      params: args,
+      workingDirectory: ctx.workingDirectory,
+      agentRole: ctx.agentRole,
+    });
+    if (!hasMatchingDirectiveMemoryWriteGrant(
+      directiveMemoryAssessment,
+      ctx.directiveMemoryWriteGrant,
+    )) {
+      return {
+        success: false,
+        error: 'Persistent memory write requires explicit user confirmation.',
+        metadata: {
+          code: 'DIRECTIVE_MEMORY_CONFIRMATION_REQUIRED',
+          targets: directiveMemoryAssessment.targets,
+        },
+      };
+    }
 
     if (!isToolNameAllowedByWorkbenchScope(dispatchName, ctx.toolScope)) {
       return {

@@ -61,6 +61,7 @@ Git: NEVER \`--force\` push or \`--no-verify\` unless explicitly requested.`,
   },
   category: 'shell',
   permissionLevel: 'execute',
+  pathAuthority: [{ kind: 'shell', commandParameter: 'command' }],
   readOnly: false,
   allowInPlanMode: false,
 };

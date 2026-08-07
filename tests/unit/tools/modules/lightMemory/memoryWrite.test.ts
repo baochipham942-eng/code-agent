@@ -50,6 +50,12 @@ function makeCtx(overrides: Partial<ToolContext> = {}): ToolContext {
     abortSignal: ctrl.signal,
     logger: makeLogger(),
     emit: () => void 0,
+    directiveMemoryWriteGrant: {
+      authority: 'directive-memory-write',
+      fingerprint: 'unit-test',
+      requestId: 'directive-confirm-1',
+      confirmedAt: Date.parse('2026-08-05T12:00:00.000Z'),
+    },
     ...overrides,
   };
 }
@@ -186,6 +192,23 @@ describe('memoryWriteModule (native)', () => {
       expect(result.ok).toBe(false);
       if (!result.ok) expect(result.code).toBe('ABORTED');
     });
+
+    it('fails closed when a global write reaches the handler without a path-authority grant', async () => {
+      const handler = await memoryWriteModule.createHandler();
+      const result = await handler.execute(
+        {
+          action: 'write',
+          filename: 'x.md',
+          name: 'X',
+          description: 'd',
+          type: 'user',
+          content: 'c',
+        },
+        makeCtx({ directiveMemoryWriteGrant: undefined }),
+        allowAll,
+      );
+      expect(result).toMatchObject({ ok: false, code: 'PERMISSION_DENIED' });
+    });
   });
 
   describe('write action', () => {
@@ -200,9 +223,7 @@ describe('memoryWriteModule (native)', () => {
       });
 
       expect(result.ok).toBe(true);
-      expect(directiveConfirmationMock).toHaveBeenCalledWith(expect.objectContaining({
-        content: 'Use ship for PR and merge.',
-      }));
+      expect(directiveConfirmationMock).not.toHaveBeenCalled();
       const raw = await fs.readFile(path.join(memDir, 'shipping_rule.md'), 'utf-8');
       expect(raw).toContain('type: directive');
       expect(raw).toContain('directive_confirmation_id: directive-confirm-1');

@@ -63,6 +63,7 @@ export const memoryWriteSchema: ToolSchema = {
   },
   category: 'fs',
   permissionLevel: 'write',
+  pathAuthority: [{ kind: 'global-memory', pathParameter: 'filename' }],
   readOnly: false,
   allowInPlanMode: true,
 };

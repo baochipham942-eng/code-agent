@@ -41,6 +41,12 @@ function makeCtx(overrides: Partial<ToolContext> = {}): ToolContext {
     abortSignal: ctrl.signal,
     logger: makeLogger(),
     emit: () => void 0,
+    directiveMemoryWriteGrant: {
+      authority: 'directive-memory-write',
+      fingerprint: 'unit-test',
+      requestId: 'directive-confirm-scope',
+      confirmedAt: Date.parse('2026-08-06T00:00:00.000Z'),
+    },
     ...overrides,
   };
 }

@@ -3,6 +3,7 @@
 // ============================================================================
 
 import type {
+  DirectiveMemoryWriteGrant,
   ToolDefinition,
 } from '../../shared/contract';
 import type { PermissionBoundaryRef } from '../../shared/contract/permissionBoundary';
@@ -146,6 +147,8 @@ export interface ToolContext {
   executionIntent?: ConversationExecutionIntent;
   /** Approved Neo Tag work card runtime context. */
   neoTag?: import('../../shared/contract/tag').NeoTagRunContext;
+  /** 绑定本次参数与目标的记忆目录写授权，不得跨工具调用复用。 */
+  directiveMemoryWriteGrant?: DirectiveMemoryWriteGrant;
 }
 
 export interface PermissionRequestData {

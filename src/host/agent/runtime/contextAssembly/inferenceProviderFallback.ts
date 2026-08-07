@@ -9,7 +9,7 @@ import type { StreamCallback, InferenceOptions, ModelResponse as RouterModelResp
 import type { ModelConfig, ModelProvider } from '../../../../shared/contract/model';
 import type { ModelDecisionEventData, ModelFallbackInfo, ModelFallbackTraceStep } from '../../../../shared/contract/modelDecision';
 import { buildModelProviderIdentity } from '../../../model/modelDecision';
-import { classifyProviderFallbackReason, formatFallbackReason, getFallbackChainForRequest } from '../../../model/modelRouterPolicy';
+import { classifyProviderFallbackReason, formatFallbackReason, getFallbackChainForRequest, type ProviderFallbackCategory } from '../../../model/modelRouterPolicy';
 import { getProviderHealthMonitor } from '../../../model/providerHealthMonitor';
 import { isFallbackEligible } from '../../../model/providers/retryStrategy';
 import type { ContextAssemblyCtx } from './shared';
@@ -136,6 +136,81 @@ function attachModelFallbackToError(error: unknown, fallback: ModelFallbackInfo)
   const wrapped = new Error(String(error));
   (wrapped as Error & { modelFallback?: ModelFallbackInfo }).modelFallback = fallback;
   throw wrapped;
+}
+
+// ============================================================================
+// 视觉预处理失败诊断（T7）：识图预处理链路对每个候选模型的失败分类 + 用户可见提示。
+// 复用既有 provider fallback 的分类器/toast 通道，而非另起一套——见 modelRouterPolicy
+// 的 classifyProviderFallbackReason（超时/限流/额度/认证/网络等）与 ProviderStatusNotice
+// 的 provider:fallback toast 订阅。
+// ============================================================================
+
+export interface VisionPreflightAttempt {
+  provider: string;
+  model: string;
+  category: ProviderFallbackCategory;
+  detail: string;
+}
+
+/** 分类 + 落日志一步做完，调用点（inference.ts 的候选循环）只留一行。 */
+export function classifyAndLogVisionPreflightFailure(
+  provider: string,
+  model: string,
+  error: unknown,
+): VisionPreflightAttempt {
+  const message = getErrorMessage(error);
+  const attempt: VisionPreflightAttempt = {
+    provider,
+    model,
+    category: classifyProviderFallbackReason(message, getErrorCode(error)),
+    detail: formatFallbackReason(message),
+  };
+  logger.warn(`[Fallback] 视觉预处理失败（${attempt.provider}/${attempt.model}, category=${attempt.category}）：${attempt.detail}，尝试下一个识图模型`);
+  return attempt;
+}
+
+/**
+ * 识图预处理全部未成功时的汇总日志——区分"零候选"（一个已配 Key 的识图模型都没有，
+ * 2026-08-07 真机场景的实际根因）和"候选都配了但调用报错"，别再用同一句笼统文案盖过去。
+ */
+export function logVisionPreflightExhausted(hadCandidates: boolean, attempts: VisionPreflightAttempt[]): void {
+  if (!hadCandidates) {
+    logger.warn('[Fallback] 未找到已配置 API Key 的识图模型（零候选），图片将转换为文字描述');
+    return;
+  }
+  logger.warn(`[Fallback] 所有已配置的识图模型预处理均失败或不可用（尝试了 ${attempts.length} 个：${attempts.map((a) => `${a.provider}/${a.model}[${a.category}]`).join(', ')}）`);
+}
+
+/**
+ * 识图预处理全失败（含"零候选"——一个已配 Key 的识图模型都没有）时，给用户一条
+ * 可见 toast。走已上线的 provider:fallback 通道（ProviderStatusNotice 订阅），
+ * category 用 'vision_no_key' / 'vision_unavailable' 两个新值区分"零候选"和
+ * "候选都报错了"，渲染侧据此给出不同文案（前者引导去设置配 Key，后者提示重试/查网络）。
+ * from/to 都是当前主模型——vision 预处理不切换主模型，只是没能读到图。
+ */
+export async function broadcastVisionPreflightUnavailable(
+  config: { provider: string; model: string },
+  detail: { category: 'vision_no_key' | 'vision_unavailable'; attempts: VisionPreflightAttempt[] },
+): Promise<void> {
+  try {
+    const { broadcastToRenderer } = await import('../../../platform/windowBridge');
+    broadcastToRenderer?.('provider:fallback', {
+      from: { provider: config.provider, model: config.model },
+      to: { provider: config.provider, model: config.model },
+      reason: detail.category,
+      category: detail.category,
+      tried: detail.attempts.map((attempt) => ({
+        provider: attempt.provider,
+        model: attempt.model,
+        status: 'tried' as const,
+        reason: 'vision_preflight_failed',
+        category: attempt.category,
+        detail: attempt.detail,
+      })),
+    });
+  } catch {
+    /* toast 是 best-effort，不影响主链路 */
+  }
 }
 
 async function broadcastAiSdkProviderFallback(fallback: ModelFallbackInfo): Promise<void> {

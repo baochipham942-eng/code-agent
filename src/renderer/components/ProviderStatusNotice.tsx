@@ -9,6 +9,16 @@ import { IPC_CHANNELS, type ProviderFallbackEvent } from '@shared/ipc';
 import type { ModelFallbackStrategy } from '@shared/contract';
 import { useI18n } from '../hooks/useI18n';
 import type { Translations } from '../i18n';
+import { useAppStore } from '../stores/appStore';
+
+// T7：识图预处理全失败是两个新 category，语义上不是"从 A 切到 B"（没有目标模型），
+// 走独立的 message + 「去设置」action，不套用 from/to 模板。
+const VISION_UNAVAILABLE_CATEGORIES = new Set(['vision_no_key', 'vision_unavailable']);
+
+export function formatVisionUnavailableToast(category: string, t: Translations): string {
+  const pf = t.notices.providerFallback;
+  return category === 'vision_no_key' ? pf.visionNoKeyToast : pf.visionUnavailableToast;
+}
 
 function fallbackCategoryLabel(category: string | undefined, pf: Translations['notices']['providerFallback']): string {
   switch (category) {
@@ -74,6 +84,13 @@ export function ProviderStatusNotice(): null {
     const unsubscribe = ipcService.on(
       IPC_CHANNELS.PROVIDER_FALLBACK,
       (event: ProviderFallbackEvent) => {
+        if (event.category && VISION_UNAVAILABLE_CATEGORIES.has(event.category)) {
+          toast.warning(formatVisionUnavailableToast(event.category, t), {
+            label: t.notices.providerFallback.visionSetupAction,
+            onClick: () => useAppStore.getState().openSettingsTab('model'),
+          });
+          return;
+        }
         toast.info(formatProviderFallbackToast(event, t));
       }
     );

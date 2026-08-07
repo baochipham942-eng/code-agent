@@ -71,6 +71,11 @@ export const noticesZh = {
       actionSwitched: '已切换到',
       toastNoStrategy: '{from} {category}，已自动切换到 {to} 继续任务',
       toastWithStrategy: '{strategy}：{from} {category}，{action} {to} 继续任务',
+      // T7：识图预处理全失败时的用户提示。visionNoKey = 一个已配 Key 的识图模型都没有
+      // （多半是选了模型但没填 Key）；visionUnavailable = 配了但调用本身失败（网络/额度/超时）。
+      visionNoKeyToast: '这张图片没能被识别：还没有配置支持读图的模型。去设置里加一个识图模型（免费的智谱 GLM-4.6V Flash 也可以）。',
+      visionUnavailableToast: '这张图片没能被识别：已配置的识图模型暂时都调不通，可能是网络或额度问题，稍后再试或去设置检查一下。',
+      visionSetupAction: '去配置识图模型',
     },
   },
 };
@@ -139,6 +144,9 @@ export const noticesEn: typeof noticesZh = {
       actionSwitched: 'switched to',
       toastNoStrategy: '{from} {category}; automatically switched to {to} to continue',
       toastWithStrategy: '{strategy}: {from} {category}, {action} {to} to continue',
+      visionNoKeyToast: "This image couldn't be read: no image-recognition model is set up yet. Add one in settings (the free Zhipu GLM-4.6V Flash works too).",
+      visionUnavailableToast: "This image couldn't be read: the configured image-recognition models are all unreachable right now, likely a network or quota issue. Try again later or check settings.",
+      visionSetupAction: 'Set up an image model',
     },
   },
 };

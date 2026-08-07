@@ -99,6 +99,15 @@ vi.mock('../../../src/host/prompts/builder', () => ({
   needsArtifactTaskBrief: vi.fn((message: string) => /生成|html|game|write|create|build/i.test(message)),
 }));
 
+const { mockBroadcastToRenderer } = vi.hoisted(() => ({
+  mockBroadcastToRenderer: vi.fn(),
+}));
+
+// T7：识图预处理全失败时的用户 toast 走 provider:fallback 广播（ProviderStatusNotice 订阅）。
+vi.mock('../../../src/host/platform/windowBridge', () => ({
+  broadcastToRenderer: mockBroadcastToRenderer,
+}));
+
 function buildCtx(overrides: Partial<ContextAssemblyCtx['runtime']> = {}): ContextAssemblyCtx {
   const onEvent = vi.fn();
   const inferenceMock = overrides.artifact?.repairGuard
@@ -704,6 +713,117 @@ describe('contextAssembly inference artifact retry', () => {
         message: '已用视觉模型 mimo-v2-omni 读取图片，继续由 mimo-v2.5-pro 回答。',
       },
     });
+  });
+
+  // T7：识图预处理链路全失败——两条真机复现路径。区分"零候选"（一个已配 Key 的识图
+  // 模型都没有，真机 2026-08-07 那次的实际根因）和"候选都配了但调用报错"（网络/额度/超时）。
+  it('reports zero vision candidates as vision_no_key, not a generic "all failed" toast', async () => {
+    const ctx = buildCtx({
+      modelConfig: {
+        provider: 'longcat',
+        model: 'LongCat-2.0',
+        apiKey: 'longcat-key',
+        temperature: 0.7,
+        maxTokens: 131072,
+        // adaptive 缺省（显式模型），复现真机日志「不启用 vision 整轮模型切换」那一支
+      },
+    } as any);
+    ctx.buildModelMessages = vi.fn().mockResolvedValue([
+      { role: 'system', content: 'system' },
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: '看这张截图' },
+          { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'base64data' } },
+        ],
+      },
+    ]);
+    ctx.runtime.modelRouter.inference = vi.fn().mockResolvedValueOnce({
+      type: 'text',
+      content: 'ok',
+      finishReason: 'stop',
+    });
+    ctx.runtime.modelRouter.detectRequiredCapabilities = vi.fn().mockReturnValue(['vision']);
+    ctx.runtime.modelRouter.getModelInfo = vi.fn().mockReturnValue({
+      supportsVision: false,
+      supportsTool: true,
+      capabilities: ['general'],
+    });
+    // 零候选：没有一个视觉模型配了 Key（真机 2026-08-07 的实际根因——routing.vision 选了
+    // xiaomi/mimo-v2-omni，但从没填过 Key，zhipu/其它 provider 同样零 Key）
+    ctx.runtime.modelRouter.getVisionPreflightCandidates = vi.fn().mockReturnValue([]);
+
+    await inference(ctx);
+    // broadcastVisionPreflightUnavailable 是 fire-and-forget（void，内含一次动态 import），
+    // 给它一个宏任务把动态 import 的 promise 链走完，再断言。
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(mockBroadcastToRenderer).toHaveBeenCalledWith('provider:fallback', expect.objectContaining({
+      from: { provider: 'longcat', model: 'LongCat-2.0' },
+      to: { provider: 'longcat', model: 'LongCat-2.0' },
+      category: 'vision_no_key',
+      tried: [],
+    }));
+    const [mainMessages] = vi.mocked(ctx.runtime.modelRouter.inference).mock.calls[0];
+    expect(JSON.stringify(mainMessages)).not.toContain('"type":"image"');
+  });
+
+  it('reports all-candidates-failed as vision_unavailable with per-provider error categories', async () => {
+    const ctx = buildCtx({
+      modelConfig: {
+        provider: 'longcat',
+        model: 'LongCat-2.0',
+        apiKey: 'longcat-key',
+        temperature: 0.7,
+        maxTokens: 131072,
+      },
+    } as any);
+    ctx.buildModelMessages = vi.fn().mockResolvedValue([
+      { role: 'system', content: 'system' },
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: '看这张截图' },
+          { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'base64data' } },
+        ],
+      },
+    ]);
+    // 第一次调用是识图预处理候选（会失败），第二次是主模型最终作答
+    ctx.runtime.modelRouter.inference = vi.fn()
+      .mockRejectedValueOnce(new Error('401 Unauthorized: invalid api key'))
+      .mockResolvedValueOnce({ type: 'text', content: 'ok', finishReason: 'stop' });
+    ctx.runtime.modelRouter.detectRequiredCapabilities = vi.fn().mockReturnValue(['vision']);
+    ctx.runtime.modelRouter.getModelInfo = vi.fn().mockReturnValue({
+      supportsVision: false,
+      supportsTool: true,
+      capabilities: ['general'],
+    });
+    ctx.runtime.modelRouter.getVisionPreflightCandidates = vi.fn().mockReturnValue([{
+      provider: 'zhipu',
+      model: 'glm-4.6v-flash',
+      apiKey: 'zhipu-key',
+      maxTokens: 8192,
+    }]);
+
+    await inference(ctx);
+    // broadcastVisionPreflightUnavailable 是 fire-and-forget（void，内含一次动态 import），
+    // 给它一个宏任务把动态 import 的 promise 链走完，再断言。
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(mockBroadcastToRenderer).toHaveBeenCalledWith('provider:fallback', expect.objectContaining({
+      from: { provider: 'longcat', model: 'LongCat-2.0' },
+      to: { provider: 'longcat', model: 'LongCat-2.0' },
+      category: 'vision_unavailable',
+      tried: [
+        expect.objectContaining({
+          provider: 'zhipu',
+          model: 'glm-4.6v-flash',
+          category: 'auth',
+        }),
+      ],
+    }));
+    const [mainMessages] = vi.mocked(ctx.runtime.modelRouter.inference).mock.calls[1];
+    expect(JSON.stringify(mainMessages)).not.toContain('"type":"image"');
   });
 
   it('narrows visible tools during artifact repair mode before a patch exists', async () => {

@@ -152,21 +152,33 @@ CREATE POLICY "Users select own diagnostic bundles" ON public.telemetry_diagnost
 - **`npm run typecheck`**：通过，零错误。
 - **`npx eslint src/host/telemetry/telemetryUploaderService.ts
   src/shared/constants/timeouts.ts`**：零 error / 零 warning。
-- **`npm run lint:eslint-ratchet`**：通过（全仓棘轮门，含 warnings 计数），无新增。
+- **`npm run lint:eslint-ratchet`**（全仓棘轮门，前台实跑到底，非估算）：
+  扫描 3103 个文件，`errors current=0 baseline=0 delta=0`，
+  `warnings current=416 baseline=416 delta=0` —— 两条基线均持平，无新增。
 - **全仓 grep 引用**：`DEFAULT_INTERVAL_MS`（被删的旧局部常量）全仓零残留引用；
   `TELEMETRY_UPLOAD_RESILIENCE` 只有新增的两个文件引用；`startAutoUpload`/
   `stopAutoUpload`/`TelemetryUploaderService`/`getTelemetryUploaderService` 的全部
   调用点（`privacyGate.ts`、`telemetry.ipc.ts`、`webServer.ts`、
   `devTelemetrySeedRoutes.ts`）逐一读过，均通过公开方法调用，未依赖已改动的内部
   调度实现细节，无需同步改动。
-- **单测**：`tests/unit/telemetry/telemetryUploaderService.test.ts`（5 条既有 + 新增
-  2 条）+ `tests/unit/services/privacyGate.test.ts` + `tests/scripts/
-  privacySwitchWiring.test.ts` —— **14 passed / 0 failed / 0 skipped**（子集，
-  telemetry 相关全部文件）。新增两条覆盖：① 42501 一次即熔断 + 后续同因降级为
-  debug、健康计数不受影响；② 非 42501 抖动容忍 `CIRCUIT_BREAKER_THRESHOLD-1` 次
-  后才熔断、恢复后状态清零。
-- **全量 vitest**：已在后台跑 `npx vitest run`（无过滤），结果见下方"最终回复"里的
-  实测计数（写报告时仍在跑，此处先占位说明证据来源）。
+- **telemetry 子集单测**：`tests/unit/telemetry/telemetryUploaderService.test.ts`
+  （5 条既有 + 新增 2 条）+ `tests/unit/services/privacyGate.test.ts` + `tests/
+  scripts/privacySwitchWiring.test.ts` —— **14 passed / 0 failed / 0 skipped**。
+  新增两条覆盖：① 42501 一次即熔断 + 后续同因降级为 debug、健康计数不受影响；
+  ② 非 42501 抖动容忍 `CIRCUIT_BREAKER_THRESHOLD-1` 次后才熔断、恢复后状态清零。
+- **全量 `npx vitest run`（前台实跑到底，569.5s，机器为串行施工模式、单 agent
+  独占，非估算/非过滤）**：
+  **Test Files: 1 failed | 2236 passed | 5 skipped（共 2242）**
+  **Tests: 5 failed | 19289 passed | 7 skipped | 55 todo（共 19356）**
+  5 个失败全部在 `tests/unit/services/capabilities/capabilityCenterService.test.ts`
+  （MCP 注册表信任元数据/远程注册表签名相关，4 条 30000ms 测试超时 + 1 条 mock
+  调用次数断言），与本次改动的 telemetry 上传/退避逻辑无任何代码路径交集，
+  且该文件在改动前也不受本次 diff 影响（`git diff --stat` 只涉及 4 个 telemetry/
+  timeouts 文件）。另有 1 条 `tests/agent/agentOrchestrator.test.ts` 的
+  `EnvironmentTeardownError`（unhandled rejection，rpc 关闭时序问题），同样与本次
+  改动无关，且不计入上面 5 个失败测试（vitest 单独计入 "1 error"）。判断这批失败
+  是环境负载/既有 flaky（30s 超时形态典型于资源竞争），不是本次改动引入——本次
+  改动触碰的 4 个文件均未出现在失败列表里。
 - **证据档位**：
   - RLS 根因（§1）—— **real-runtime**：真实 Postgres + GoTrue + PostgREST 容器 +
     真实签发 JWT + 真实 HTTP 请求复现，不是 mock 也不是静态推理。
@@ -174,6 +186,8 @@ CREATE POLICY "Users select own diagnostic bundles" ON public.telemetry_diagnost
     logger 之后跑退避/熔断状态机的行为断言，不是端到端真机验证；未跑真机验证是因为
     B 部分尚未部署，真机验证要等策略修好后才有意义（届时应该另开一轮真机回归确认
     telemetry 真的能落库）。
+  - 全量 vitest / eslint-ratchet —— **real-runtime**：本机前台实跑到完整退出码，
+    非管道截断、非过滤器摘要（按用户全局纪律，凡涉及"完整性判断"一律用原始输出）。
   - 未做变异测试：新增的两条测试是结构性状态机行为门（断言 warn/error/debug 调用
     次数和时机），已经直接对着"退避倍率""熔断阈值""同因判定"这些分支落子，屏蔽掉
     任何一个分支都会让对应断言失败，判断是不需要额外变异验证。

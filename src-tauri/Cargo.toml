@@ -32,6 +32,11 @@ objc2-foundation = { version = "0.3", features = ["NSData", "NSDictionary", "NSG
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
+# T2 Windows 进程收割：Job Object 只读枚举 WebView2 子孙进程（不设
+# KILL_ON_JOB_CLOSE，见 main.rs 顶部注释）+ tasklist/netstat 认领核对。
+[target.'cfg(target_os = "windows")'.dependencies]
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_Security", "Win32_System_JobObjects", "Win32_System_Threading"] }
+
 [profile.release]
 panic = "abort"
 codegen-units = 1

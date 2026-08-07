@@ -226,6 +226,7 @@ describe('media asset rendering', () => {
         items={[
           {
             kind: 'file',
+            role: 'deliverable' as const,
             label: 'render.png',
             ownerKind: 'tool',
             ownerLabel: 'image_process',
@@ -365,6 +366,7 @@ describe('media asset rendering', () => {
                 artifactOwnership: [
                   {
                     kind: 'file',
+                    role: 'deliverable' as const,
                     label: 'old-render.png',
                     ownerKind: 'tool',
                     ownerLabel: 'image_process',

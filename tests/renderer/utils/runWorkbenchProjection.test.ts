@@ -93,6 +93,7 @@ const projection: TraceProjection = {
             tone: 'success',
             artifactOwnership: [{
               kind: 'file',
+              role: 'deliverable' as const,
               label: 'plan.md',
               ownerKind: 'tool',
               ownerLabel: 'Write',
@@ -237,6 +238,7 @@ describe('runWorkbenchProjection', () => {
                 artifactOwnership: [
                   {
                     kind: 'file',
+                    role: 'deliverable' as const,
                     label: 'configParser.ts',
                     ownerKind: 'tool',
                     ownerLabel: 'Read',

@@ -558,6 +558,7 @@ describe('TraceNodeRenderer launch request', () => {
       artifactOwnership: [
         {
           kind: 'file',
+          role: 'deliverable' as const,
           label: 'report.md',
           ownerKind: 'tool',
           ownerLabel: 'reviewer · Write',

@@ -541,6 +541,7 @@ describe('buildWorkspacePreviewSections', () => {
         artifactOwnership: [
           {
             kind: 'file',
+            role: 'deliverable' as const,
             label: 'out.csv',
             ownerKind: 'tool',
             ownerLabel: 'analyst · Write',
@@ -582,6 +583,7 @@ describe('buildWorkspacePreviewSections', () => {
         artifactOwnership: [
           {
             kind: 'artifact',
+            role: 'deliverable' as const,
             label: '第一版流程图',
             ownerKind: 'assistant',
             ownerLabel: 'Assistant',
@@ -606,6 +608,7 @@ describe('buildWorkspacePreviewSections', () => {
         artifactOwnership: [
           {
             kind: 'artifact',
+            role: 'deliverable' as const,
             label: '子代理产物',
             ownerKind: 'assistant',
             ownerLabel: 'Assistant',

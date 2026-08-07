@@ -22,7 +22,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   getArtifactIssuesByArtifactId: vi.fn(),
-  buildWorkspacePreviewItems: vi.fn(),
+  buildWorkspacePreviewSections: vi.fn(),
   useCurrentTurnArtifactOwnership: vi.fn(),
 }));
 
@@ -31,7 +31,7 @@ vi.mock('../../../src/renderer/services/projectClient', () => ({
 }));
 
 vi.mock('../../../src/renderer/utils/workspacePreview', () => ({
-  buildWorkspacePreviewItems: mocks.buildWorkspacePreviewItems,
+  buildWorkspacePreviewSections: mocks.buildWorkspacePreviewSections,
 }));
 
 vi.mock('../../../src/renderer/hooks/useCurrentTurnArtifactOwnership', () => ({
@@ -74,9 +74,10 @@ beforeEach(() => {
     turnNumber: 1,
     artifactOwnership: {},
   }));
-  mocks.buildWorkspacePreviewItems.mockImplementation(() => ([
-    { id: 'item-1', kind: 'file', revision: { artifactId: 'artifact-1' } },
-  ]));
+  mocks.buildWorkspacePreviewSections.mockImplementation(() => ({
+    items: [{ id: 'item-1', kind: 'file', revision: { artifactId: 'artifact-1' } }],
+    materialItems: [],
+  }));
 });
 
 afterEach(() => {
@@ -100,9 +101,10 @@ describe('useWorkspacePreviewModelState 不因上游换身份而自激', () => {
     const view = render(<Probe />);
     expect(mocks.getArtifactIssuesByArtifactId).toHaveBeenCalledTimes(1);
 
-    mocks.buildWorkspacePreviewItems.mockImplementation(() => ([
-      { id: 'item-2', kind: 'file', revision: { artifactId: 'artifact-2' } },
-    ]));
+    mocks.buildWorkspacePreviewSections.mockImplementation(() => ({
+      items: [{ id: 'item-2', kind: 'file', revision: { artifactId: 'artifact-2' } }],
+      materialItems: [],
+    }));
     view.rerender(<Probe />);
 
     expect(mocks.getArtifactIssuesByArtifactId).toHaveBeenCalledTimes(2);
@@ -110,9 +112,10 @@ describe('useWorkspacePreviewModelState 不因上游换身份而自激', () => {
   });
 
   it('没有 artifact 时也不许每渲染重置一次状态（空集合同样要稳定）', () => {
-    mocks.buildWorkspacePreviewItems.mockImplementation(() => ([
-      { id: 'item-1', kind: 'question_form' },
-    ]));
+    mocks.buildWorkspacePreviewSections.mockImplementation(() => ({
+      items: [{ id: 'item-1', kind: 'question_form' }],
+      materialItems: [],
+    }));
 
     const view = render(<Probe />);
     for (let i = 0; i < 5; i++) view.rerender(<Probe />);

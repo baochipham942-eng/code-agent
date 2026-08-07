@@ -40,6 +40,8 @@ vi.mock('../../../src/renderer/hooks/useI18n', async () => {
 
 vi.mock('../../../src/renderer/hooks/useWorkspacePreviewModel', () => ({
   useWorkspacePreviewModel: () => mocks.items,
+  // 角色轴（ADR-055）：概览改用 …State 取 { items, materialItems }；替身要跟上新导出
+  useWorkspacePreviewModelState: () => ({ items: mocks.items, materialItems: [], currentTurnArtifacts: null }),
 }));
 
 vi.mock('../../../src/renderer/stores/appStore', () => ({

@@ -17,6 +17,8 @@ vi.mock('../../../src/renderer/hooks/useDisclosure', () => ({
 }));
 vi.mock('../../../src/renderer/hooks/useWorkspacePreviewModel', () => ({
   useWorkspacePreviewModel: () => [],
+  // 角色轴（ADR-055）：概览改用 …State 取 { items, materialItems }；替身要跟上新导出
+  useWorkspacePreviewModelState: () => ({ items: [], materialItems: [], currentTurnArtifacts: null }),
 }));
 vi.mock('../../../src/renderer/stores/workbenchPresetStore', () => {
   const useWorkbenchPresetStore = (selector: (s: { presets: unknown[]; recipes: unknown[] }) => unknown) =>

@@ -340,21 +340,26 @@ fn force_kill(child: &mut Child, reason: &str) -> (String, Option<String>) {
 //    的，没有 pid、没有端口，只能借 Job Object 只读枚举发现，收割语义
 //    复用本仓已有的孤儿 PTY 收割模式
 //    (`src/host/services/terminal/terminalSessionManager.ts:143-152`)：
-//    落盘 {pid, ownerPid, 身份标记} + 启动时两道核对，不新造第二套语义：
+//    落盘 {pid, ownerPid, 身份标记} + 启动时三道核对，不新造第二套语义：
 //      a. ownerPid（记账时的宿主 Tauri 进程）现在必须已经死了——否则可能
 //         是另一个仍在运行的实例正常持有的子进程，误杀等于砍别人正在用
 //         的东西；
-//      b. pid 现在报告的进程镜像名仍是 "msedgewebview2.exe"——防 pid 被
-//         系统复用后指向了不相干的进程（这个文件名足够独特，不像
-//         node.exe 那样通用，`tasklist /FI "PID eq N"` 查镜像名同样是按
-//         身份核对，不是按进程名/cmdline 宽匹配——错题本：按名字/字符串
-//         宽匹配会在 Dev/生产多槽并存时互杀）。
+//      b. pid 现在报告的进程镜像名仍是 "msedgewebview2.exe"；
+//      c. pid 现在的完整命令行仍带着记账时的 WebView2 数据目录
+//         （`--user-data-dir=<路径>`，精确路径匹配，见
+//         `command_line_contains_data_dir`）。**b 单独不够**："msedgewebview2.exe"
+//         不是我们独有的进程名——Teams/Outlook/系统 Edge 的 WebView2 都用
+//         同一个可执行文件，pid 被系统回收给别家应用（宿主重启后尤其常见）
+//         时 a+b 会同时通过，必须靠 c 的绝对路径匹配排除。c 不是"按进程名
+//         /cmdline 宽匹配"（错题本禁的是前缀式近似匹配，例如 `.dev` 撞上
+//         `.dev2`）——数据目录是每个通道独有的绝对路径，`command_line_contains_data_dir`
+//         要求路径后紧跟分隔符/引号/结尾，是精确边界匹配。
 //    Job Object 本身：把本进程加入一个 Job，之后 CreateProcess 出的子孙
 //    进程默认继承成员身份（Windows 8+ 支持嵌套 Job，WebView2 不会给自己
 //    的子进程设 CREATE_BREAKAWAY_FROM_JOB），用
 //    `QueryInformationJobObject` 只读枚举当前成员 pid 即可发现它们。
 //    **特意不设 JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE**：终止动作一律走上面
-//    两道认领核对后的显式 taskkill，不依赖内核在本进程句柄关闭时自动杀光
+//    三道认领核对后的显式 taskkill，不依赖内核在本进程句柄关闭时自动杀光
 //    整个 Job——那样会在「本进程正常退出但 webServer 优雅关库还没走完」的
 //    窗口里（例如应用内更新触发的 restart），把 stdin-EOF 优雅关闭合同
 //    截断，在本可以善终的场景里制造硬杀。
@@ -461,27 +466,44 @@ fn enumerate_job_member_pids() -> Vec<u32> {
     Vec::new()
 }
 
-/// 一条落盘的「认领记录」：记账时的 pid + 进程镜像名 + 宿主进程 id。结构
-/// 与 `terminalSessionManager.ts` 的 `PersistedTerminalPid` 一一对应。
+/// 一条落盘的「认领记录」：记账时的 pid + 进程镜像名 + 数据目录标记 +
+/// 宿主进程 id。结构与 `terminalSessionManager.ts` 的 `PersistedTerminalPid`
+/// 一一对应，只是多了 `data_dir`（见下方 `claimed_windows_orphans` 为什么
+/// 需要它）。
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 struct ClaimedWindowsProcess {
     pid: u32,
-    /// 记账时这个 pid 报告的进程镜像名（如 "node.exe"、"msedgewebview2.exe"），
-    /// 收割时用来核对 pid 是否被系统复用。
+    /// 记账时这个 pid 报告的进程镜像名（如 "msedgewebview2.exe"）。
     image_name: String,
+    /// 记账时本实例的 WebView2 数据目录（`app_local_data_dir()`，Tauri 强制
+    /// 传给 WebView2 的 `--user-data-dir`）。收割时核对目标 pid 现在的完整
+    /// 命令行是否仍带着这个路径——见下方为什么仅镜像名不够。
+    data_dir: String,
     owner_pid: u32,
 }
 
-/// 纯函数：只按认领收割，两道核对缺一不可——喂伪进程清单即可单测，不摸
+/// 纯函数：只按认领收割，三道核对缺一不可——喂伪进程清单即可单测，不摸
 /// 文件系统/系统调用。
 ///   1. owner 必须已死（且不是当前进程自己）；
-///   2. pid 现在的镜像名仍与记账时一致。
+///   2. pid 现在的镜像名仍与记账时一致；
+///   3. pid 现在的完整命令行仍带着记账时的数据目录路径。
+///
+/// **为什么镜像名不够、必须加第 3 道**："msedgewebview2.exe" 不是我们独有
+/// 的进程名——Teams/Outlook/系统 Edge 的 WebView2 都用同一个可执行文件。
+/// 一旦我们记账的 pid 被系统回收给别家应用的 msedgewebview2.exe（宿主重启
+/// 后尤其常见），前两道核对（owner 已死 + 镜像名匹配）全部通过，会 taskkill
+/// 别人家的进程。WebView2 子进程的命令行必带 `--user-data-dir=<路径>`，
+/// 这是我们通道独有的绝对路径，用它做精确匹配（`command_line_contains_data_dir`
+/// 要求路径后紧跟分隔符/引号/结尾，不是任意子串）——这不是"按进程名/cmdline
+/// 宽匹配"（错题本禁止的是前缀式近似匹配，例如 `.dev` 撞上 `.dev2`），而是
+/// 对一个绝对路径做精确边界匹配，是强判据。
 fn claimed_windows_orphans(
     claims: &[ClaimedWindowsProcess],
     current_pid: u32,
     is_owner_alive: impl Fn(u32) -> bool,
     live_image_name: impl Fn(u32) -> Option<String>,
+    live_command_line: impl Fn(u32) -> Option<String>,
 ) -> Vec<u32> {
     claims
         .iter()
@@ -490,8 +512,37 @@ fn claimed_windows_orphans(
             live_image_name(claim.pid)
                 .is_some_and(|name| name.eq_ignore_ascii_case(&claim.image_name))
         })
+        .filter(|claim| {
+            live_command_line(claim.pid)
+                .is_some_and(|cmdline| command_line_contains_data_dir(&cmdline, &claim.data_dir))
+        })
         .map(|claim| claim.pid)
         .collect()
+}
+
+/// `command_line` 里是否精确带着 `data_dir` 这个路径段——数据目录后面必须
+/// 紧跟路径分隔符、引号或直接是命令行结尾，不能是任意前缀命中。防止
+/// `...code-agent.dev` 被 `...code-agent.dev2` 这种前缀撞上（错题本：
+/// pkill 前缀互相命中的同一类坑，这里换成了精确路径匹配版本）。
+fn command_line_contains_data_dir(command_line: &str, data_dir: &str) -> bool {
+    if data_dir.is_empty() {
+        return false;
+    }
+    let mut search_from = 0;
+    while let Some(offset) = command_line[search_from..].find(data_dir) {
+        let match_start = search_from + offset;
+        let match_end = match_start + data_dir.len();
+        let boundary_ok = command_line[match_end..]
+            .chars()
+            .next()
+            .map(|next_char| matches!(next_char, '\\' | '/' | '"' | '\'' | ' '))
+            .unwrap_or(true); // 数据目录就是命令行的结尾
+        if boundary_ok {
+            return true;
+        }
+        search_from = match_start + 1;
+    }
+    false
 }
 
 /// 解析 `tasklist /FI "PID eq N" /FO CSV /NH` 的一行：
@@ -542,6 +593,28 @@ fn windows_process_is_alive(pid: u32) -> bool {
     windows_tasklist_image_name(pid).is_some()
 }
 
+/// 查 pid 现在的完整命令行。`tasklist` 不暴露 cmdline，这里改用
+/// PowerShell 的 CIM（`Win32_Process.CommandLine`）——只在 webview2 第三道
+/// 核对（数据目录精确匹配）里用，且只对已经通过前两道核对的少量候选 pid
+/// 调用，不是批量扫描。pid 不存在/查询失败返回 None。
+#[cfg(target_os = "windows")]
+fn windows_process_command_line(pid: u32) -> Option<String> {
+    let script = format!("(Get-CimInstance Win32_Process -Filter \"ProcessId={pid}\").CommandLine");
+    let output = windows_command_no_window("powershell")
+        .args(["-NoProfile", "-NonInteractive", "-Command", &script])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let text = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if text.is_empty() {
+        None
+    } else {
+        Some(text)
+    }
+}
+
 #[cfg(target_os = "windows")]
 fn claimed_processes_file_path(app: &tauri::AppHandle) -> Option<PathBuf> {
     app.path()
@@ -571,7 +644,7 @@ fn write_claimed_processes(path: &Path, claims: &[ClaimedWindowsProcess]) {
 
 /// 启动时调用：收割上一代崩溃/被强杀留下的 WebView2 子孙孤儿（webServer
 /// 走独立的端口认领机制，见 `stale_web_server_port_holders`，不经过这条
-/// 路径——理由见文件头注释）。两道核对见 `claimed_windows_orphans`。返回
+/// 路径——理由见文件头注释）。三道核对见 `claimed_windows_orphans`。返回
 /// 实际收割的 pid，供落 shell event。
 #[cfg(target_os = "windows")]
 fn reap_stale_windows_processes(app: &tauri::AppHandle) -> Vec<u32> {
@@ -589,6 +662,7 @@ fn reap_stale_windows_processes(app: &tauri::AppHandle) -> Vec<u32> {
         current_pid,
         windows_process_is_alive,
         windows_tasklist_image_name,
+        windows_process_command_line,
     );
 
     for pid in &reaped {
@@ -622,14 +696,26 @@ fn reap_stale_windows_processes(_app: &tauri::AppHandle) -> Vec<u32> {
 /// **故意不收 webServer 的 pid**：它已经有一套更强的现成机制——
 /// `stale_web_server_port_holders`/`clear_stale_web_server_port`（本单刚补
 /// 上 Windows 分支）按「谁占着我们的固定端口」认领，端口号是精确且不会
-/// 冲突的身份证据。这里的 `image_name` 核对（tasklist 查镜像名）对
-/// "msedgewebview2.exe" 这种独特文件名成立，但对 "node.exe" 不成立——
-/// 那是极通用的运行时文件名，VS Code /其他 Electron 应用同样会有一堆
-/// node.exe 常驻，pid 复用后镜像名照样能对上，会错杀不相干的进程。两条
-/// 认领路径分工明确，不重叠：webServer 走端口，WebView2 走 Job Object。
+/// 冲突的身份证据。webServer 走端口，WebView2 走 Job Object，两条认领路径
+/// 分工明确，不重叠。
+///
+/// `data_dir` 用 `app_local_data_dir()`——Tauri 在 Windows/Linux 上强制把
+/// 这个目录（`resolve(identifier, BaseDirectory::LocalData)`）当
+/// `webview_attributes.data_directory` 传给 WebView2，也就是它每个子进程
+/// 命令行里 `--user-data-dir=` 后面那串路径。用它而不是 `app_data_dir()`
+/// （二者在 Windows 上分别是 Local/Roaming，不是同一个目录）。
 #[cfg(target_os = "windows")]
 fn capture_windows_process_claims(app: &tauri::AppHandle) {
     let Some(path) = claimed_processes_file_path(app) else {
+        return;
+    };
+    let Some(data_dir) = app
+        .path()
+        .app_local_data_dir()
+        .ok()
+        .map(strip_verbatim_prefix)
+        .map(|dir| path_to_string(&dir))
+    else {
         return;
     };
     let current_pid = std::process::id();
@@ -643,6 +729,7 @@ fn capture_windows_process_claims(app: &tauri::AppHandle) {
             claims.push(ClaimedWindowsProcess {
                 pid,
                 image_name,
+                data_dir: data_dir.clone(),
                 owner_pid: current_pid,
             });
         }
@@ -657,40 +744,46 @@ fn capture_windows_process_claims(_app: &tauri::AppHandle) {}
 #[cfg(test)]
 mod windows_process_reap_tests {
     use super::{
-        claimed_windows_orphans, parse_tasklist_csv_image_name, parse_windows_netstat_port_holders,
-        ClaimedWindowsProcess,
+        claimed_windows_orphans, command_line_contains_data_dir, parse_tasklist_csv_image_name,
+        parse_windows_netstat_port_holders, ClaimedWindowsProcess,
     };
+
+    const OUR_DATA_DIR: &str = r"C:\Users\x\AppData\Local\com.linchen.code-agent.dev";
+    const OUR_CMDLINE: &str = r#""C:\Program Files\...\msedgewebview2.exe" --user-data-dir="C:\Users\x\AppData\Local\com.linchen.code-agent.dev\EBWebView""#;
 
     fn claim(pid: u32, image_name: &str, owner_pid: u32) -> ClaimedWindowsProcess {
         ClaimedWindowsProcess {
             pid,
             image_name: image_name.to_string(),
+            data_dir: OUR_DATA_DIR.to_string(),
             owner_pid,
         }
     }
 
     #[test]
-    fn reaps_only_when_owner_dead_and_identity_matches() {
-        let claims = vec![claim(100, "node.exe", 1)];
+    fn reaps_only_when_all_three_gates_pass() {
+        let claims = vec![claim(100, "msedgewebview2.exe", 1)];
         let reaped = claimed_windows_orphans(
             &claims,
             999,
             |_owner| false,
-            |pid| (pid == 100).then(|| "node.exe".to_string()),
+            |pid| (pid == 100).then(|| "msedgewebview2.exe".to_string()),
+            |pid| (pid == 100).then(|| OUR_CMDLINE.to_string()),
         );
         assert_eq!(reaped, vec![100]);
     }
 
     #[test]
     fn skips_when_owner_still_alive() {
-        // 另一个仍在运行的实例正常持有的子进程——即便镜像名匹配，owner
-        // 活着就说明这不是孤儿，绝不能杀。
-        let claims = vec![claim(100, "node.exe", 1)];
+        // 另一个仍在运行的实例正常持有的子进程——即便镜像名/数据目录都
+        // 匹配，owner 活着就说明这不是孤儿，绝不能杀。
+        let claims = vec![claim(100, "msedgewebview2.exe", 1)];
         let reaped = claimed_windows_orphans(
             &claims,
             999,
             |_owner| true,
-            |pid| (pid == 100).then(|| "node.exe".to_string()),
+            |pid| (pid == 100).then(|| "msedgewebview2.exe".to_string()),
+            |pid| (pid == 100).then(|| OUR_CMDLINE.to_string()),
         );
         assert!(reaped.is_empty());
     }
@@ -705,14 +798,50 @@ mod windows_process_reap_tests {
             999,
             |_owner| false,
             |pid| (pid == 100).then(|| "unrelated-app.exe".to_string()),
+            |pid| (pid == 100).then(|| OUR_CMDLINE.to_string()),
+        );
+        assert!(reaped.is_empty());
+    }
+
+    #[test]
+    fn skips_when_pid_reused_by_a_different_apps_webview2() {
+        // 红线场景：owner 已死、镜像名同样是 "msedgewebview2.exe"（Teams/
+        // Outlook/系统 Edge 都用这个名字），但目标 pid 现在的命令行指向
+        // 别家应用自己的数据目录——绝不能只凭镜像名就 taskkill。
+        let claims = vec![claim(100, "msedgewebview2.exe", 1)];
+        let other_apps_cmdline =
+            r#""C:\Program Files\...\msedgewebview2.exe" --user-data-dir="C:\Users\x\AppData\Local\Microsoft\Teams\EBWebView""#;
+        let reaped = claimed_windows_orphans(
+            &claims,
+            999,
+            |_owner| false,
+            |pid| (pid == 100).then(|| "msedgewebview2.exe".to_string()),
+            |pid| (pid == 100).then(|| other_apps_cmdline.to_string()),
+        );
+        assert!(reaped.is_empty());
+    }
+
+    #[test]
+    fn skips_when_command_line_unavailable() {
+        // 查不到命令行（进程已死/查询失败）——和查不到镜像名一样，宁可
+        // 漏收也不能杀。
+        let claims = vec![claim(100, "msedgewebview2.exe", 1)];
+        let reaped = claimed_windows_orphans(
+            &claims,
+            999,
+            |_owner| false,
+            |pid| (pid == 100).then(|| "msedgewebview2.exe".to_string()),
+            |_pid| None,
         );
         assert!(reaped.is_empty());
     }
 
     #[test]
     fn skips_when_pid_no_longer_exists() {
-        let claims = vec![claim(100, "node.exe", 1)];
-        let reaped = claimed_windows_orphans(&claims, 999, |_owner| false, |_pid| None);
+        let claims = vec![claim(100, "msedgewebview2.exe", 1)];
+        let reaped = claimed_windows_orphans(&claims, 999, |_owner| false, |_pid| None, |_pid| {
+            None
+        });
         assert!(reaped.is_empty());
     }
 
@@ -720,10 +849,14 @@ mod windows_process_reap_tests {
     fn skips_claims_owned_by_current_process() {
         // 记账的 owner 就是当前正在跑的这个实例自己——不是「上一代」，不
         // 该被 startup reap 碰。
-        let claims = vec![claim(100, "node.exe", 999)];
-        let reaped = claimed_windows_orphans(&claims, 999, |_owner| false, |_pid| {
-            Some("node.exe".to_string())
-        });
+        let claims = vec![claim(100, "msedgewebview2.exe", 999)];
+        let reaped = claimed_windows_orphans(
+            &claims,
+            999,
+            |_owner| false,
+            |_pid| Some("msedgewebview2.exe".to_string()),
+            |_pid| Some(OUR_CMDLINE.to_string()),
+        );
         assert!(reaped.is_empty());
     }
 
@@ -731,14 +864,44 @@ mod windows_process_reap_tests {
     fn does_not_cross_slot_collide_on_owner_pid() {
         // 多个 claim 各自独立核对，互不影响——防止「一个 owner 判断污染
         // 另一条记录」这类合并逻辑错误。
-        let claims = vec![claim(100, "node.exe", 1), claim(200, "node.exe", 2)];
+        let claims = vec![
+            claim(100, "msedgewebview2.exe", 1),
+            claim(200, "msedgewebview2.exe", 2),
+        ];
         let reaped = claimed_windows_orphans(
             &claims,
             999,
             |owner| owner == 2, // 只有 owner=2 还活着
-            |pid| (pid == 100 || pid == 200).then(|| "node.exe".to_string()),
+            |pid| (pid == 100 || pid == 200).then(|| "msedgewebview2.exe".to_string()),
+            |pid| (pid == 100 || pid == 200).then(|| OUR_CMDLINE.to_string()),
         );
         assert_eq!(reaped, vec![100]);
+    }
+
+    #[test]
+    fn data_dir_boundary_match_ignores_prefix_collision() {
+        // 错题本同款坑的精确路径版本："...code-agent.dev" 不能被
+        // "...code-agent.dev2\EBWebView" 前缀命中——必须紧跟分隔符/引号/
+        // 结尾才算命中。
+        let dev_slot_1 = r"C:\Users\x\AppData\Local\com.linchen.code-agent.dev";
+        let dev_slot_2_cmdline =
+            r#"--user-data-dir="C:\Users\x\AppData\Local\com.linchen.code-agent.dev2\EBWebView""#;
+        assert!(!command_line_contains_data_dir(
+            dev_slot_2_cmdline,
+            dev_slot_1
+        ));
+
+        let dev_slot_1_cmdline =
+            r#"--user-data-dir="C:\Users\x\AppData\Local\com.linchen.code-agent.dev\EBWebView""#;
+        assert!(command_line_contains_data_dir(
+            dev_slot_1_cmdline,
+            dev_slot_1
+        ));
+    }
+
+    #[test]
+    fn data_dir_match_rejects_empty_marker() {
+        assert!(!command_line_contains_data_dir("anything at all", ""));
     }
 
     #[test]

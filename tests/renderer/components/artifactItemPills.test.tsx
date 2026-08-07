@@ -24,6 +24,7 @@ function makeNode(items: TurnArtifactOwnershipItem[]): TraceNode {
 
 const artifactItem = (label: string): TurnArtifactOwnershipItem => ({
   kind: 'artifact',
+  role: 'deliverable' as const,
   label,
   ownerKind: 'assistant',
   ownerLabel: 'Assistant',
@@ -76,6 +77,7 @@ describe('ArtifactItemPills 产物行（非 link 项）', () => {
         node={makeNode([
           {
             kind: 'link',
+            role: 'material' as const,
             label: 'example.com',
             ownerKind: 'tool',
             ownerLabel: 'WebFetch',

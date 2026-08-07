@@ -111,6 +111,7 @@ class AppendHandler implements ToolHandler<Record<string, unknown>, string> {
           `${final ? ', final chunk' : ''})`,
         meta: {
           artifact: await createFileArtifact(resolvedPath, schema.name, ctx, {
+            role: 'deliverable',
             metadata: {
               final,
               appendedChars: content.length,

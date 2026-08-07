@@ -33,6 +33,44 @@ export function annotateToolExecution(input: {
   }
 }
 
+/**
+ * 工具入参里出现 schema 未声明字段时的分档上报。
+ *
+ * 生产档：只上报，不失败——剥离后照常执行（见 stripUndeclaredToolParams 的理由）。
+ * 开发档：额外 console.error 吼一嗓子，让我们自己注入/剥离链路上的洞在开发期就
+ * 现形，而不是像 #985 那样等线上工具报错才被撞见。
+ *
+ * 只记工具名 + 键名，**不记值**——入参里可能有路径、命令、文件内容。
+ */
+export function reportUndeclaredToolParams(input: {
+  toolName: string;
+  removedPaths: string[];
+  toolCallId?: string;
+}): void {
+  if (input.removedPaths.length === 0) return;
+  const keys = input.removedPaths.join(', ');
+
+  try {
+    const toolSpan = findToolSpan(input.toolCallId);
+    if (toolSpan) {
+      getTelemetryService().updateSpan(toolSpan.spanId, {
+        'tool.undeclared_params': keys,
+        'tool.undeclared_params_count': input.removedPaths.length,
+      });
+    }
+  } catch {
+    // Telemetry is best-effort and never changes tool execution.
+  }
+
+  if (process.env.NODE_ENV !== 'production') {
+    console.error(
+      `[ToolExecutor] ${input.toolName} 的入参带了 schema 未声明的字段：${keys}。`
+      + '已剥离后放行（生产档同样放行并上报）。若这些字段来自我们自己的注入/剥离链路'
+      + '（如 _meta），说明剥离有洞，请修链路而不是放宽 schema。',
+    );
+  }
+}
+
 // ============================================================================
 // 等人审批的时间不算工具耗时
 // ============================================================================

@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 import type { Message } from '../../../src/shared/contract';
 import type { TraceTurn } from '../../../src/shared/contract/trace';
 import { buildArtifactOwnershipItems } from '../../../src/renderer/utils/artifactOwnership';
-import { buildWorkspacePreviewItems } from '../../../src/renderer/utils/workspacePreview';
+import { buildWorkspacePreviewSections } from '../../../src/renderer/utils/workspacePreview';
 
 function turnWithToolCall(toolCall: NonNullable<TraceTurn['nodes'][number]['toolCall']>): TraceTurn {
   return {
@@ -89,7 +89,7 @@ describe('产物条目生成门槛：失败调用不建条目', () => {
       },
     ];
 
-    const items = buildWorkspacePreviewItems({ messages, workingDirectory: '/repo/app' });
+    const { items } = buildWorkspacePreviewSections({ messages, workingDirectory: '/repo/app' });
 
     expect(items).toEqual([]);
   });

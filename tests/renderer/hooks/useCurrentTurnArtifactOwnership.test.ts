@@ -28,6 +28,7 @@ describe('extractCurrentTurnArtifactOwnership', () => {
                 artifactOwnership: [
                   {
                     kind: 'file',
+                    role: 'deliverable' as const,
                     label: 'old-report.md',
                     ownerKind: 'tool',
                     ownerLabel: 'Write',
@@ -57,12 +58,14 @@ describe('extractCurrentTurnArtifactOwnership', () => {
                 artifactOwnership: [
                   {
                     kind: 'artifact',
+                    role: 'deliverable' as const,
                     label: 'Execution Chart',
                     ownerKind: 'assistant',
                     ownerLabel: 'reviewer',
                   },
                   {
                     kind: 'file',
+                    role: 'deliverable' as const,
                     label: 'report.md',
                     ownerKind: 'tool',
                     ownerLabel: 'reviewer · Write',
@@ -81,10 +84,12 @@ describe('extractCurrentTurnArtifactOwnership', () => {
       artifactOwnership: [
         {
           kind: 'artifact',
+          role: 'deliverable' as const,
           label: 'Execution Chart',
         },
         {
           kind: 'file',
+          role: 'deliverable' as const,
           label: 'report.md',
         },
       ],
@@ -116,6 +121,7 @@ describe('extractCurrentTurnArtifactOwnership', () => {
                 artifactOwnership: [
                   {
                     kind: 'file',
+                    role: 'deliverable' as const,
                     label: 'old-report.md',
                     ownerKind: 'tool',
                     ownerLabel: 'Write',
@@ -211,6 +217,9 @@ describe('extractCurrentTurnArtifactOwnership', () => {
       artifactOwnership: [
         {
           kind: 'file',
+          // 产出方声明 kind='web' ⇒ 角色轴判 material（ADR-055）：抓取的页面是过程材料，
+          // 落「来源」区不进产物。产出方若真要交付它，该自己声明 role: 'deliverable'。
+          role: 'material' as const,
           label: 'research.md',
           ownerKind: 'tool',
           ownerLabel: 'analyst · web_fetch',
@@ -246,6 +255,7 @@ describe('extractCurrentTurnArtifactOwnership', () => {
                 artifactOwnership: [
                   {
                     kind: 'file',
+                    role: 'deliverable' as const,
                     label: 'report.md',
                     ownerKind: 'tool',
                     ownerLabel: 'Write',
@@ -295,6 +305,7 @@ describe('extractCurrentTurnArtifactOwnership', () => {
     expect(extractCurrentTurnArtifactOwnership(projection)?.artifactOwnership).toEqual([
       {
         kind: 'file',
+        role: 'deliverable' as const,
         label: 'report.md',
         ownerKind: 'tool',
         ownerLabel: 'Write',
@@ -302,6 +313,7 @@ describe('extractCurrentTurnArtifactOwnership', () => {
       },
       {
         kind: 'link',
+        role: 'material' as const,
         label: 'Source page',
         ownerKind: 'tool',
         ownerLabel: 'web_fetch',
@@ -379,6 +391,7 @@ describe('extractCurrentTurnArtifactOwnership', () => {
                 artifactOwnership: [
                   {
                     kind: 'file',
+                    role: 'deliverable' as const,
                     label: 'jsonc.ts',
                     ownerKind: 'tool',
                     ownerLabel: 'Read',

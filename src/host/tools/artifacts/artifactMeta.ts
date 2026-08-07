@@ -8,6 +8,7 @@ import * as path from 'path';
 import { createHash } from 'crypto';
 import type { ToolContext } from '../../protocol/tools';
 import type { ToolArtifact, ToolArtifactKind } from '../../../shared/contract/artifactBlob';
+import type { ArtifactRole } from '../../../shared/contract/artifactRoleRegistry';
 
 const TEXT_EXTENSIONS = new Set([
   '.txt', '.md', '.markdown', '.json', '.jsonl', '.js', '.jsx', '.ts', '.tsx',
@@ -136,6 +137,7 @@ export async function createFileArtifact(
   return {
     artifactId: overrides.artifactId ?? makeArtifactId(idBasis),
     kind,
+    role: overrides.role,
     sourceTool,
     createdAt: overrides.createdAt ?? new Date().toISOString(),
     sessionId: overrides.sessionId ?? ctx?.sessionId,
@@ -157,6 +159,7 @@ export async function createFileArtifact(
 export function createVirtualArtifact(input: {
   sourceTool: string;
   kind: ToolArtifactKind;
+  role?: ArtifactRole;
   sessionId?: string;
   name?: string;
   url?: string;
@@ -169,6 +172,7 @@ export function createVirtualArtifact(input: {
   return {
     artifactId: makeArtifactId(idBasis),
     kind: input.kind,
+    role: input.role,
     sourceTool: input.sourceTool,
     createdAt: new Date().toISOString(),
     sessionId: input.sessionId,

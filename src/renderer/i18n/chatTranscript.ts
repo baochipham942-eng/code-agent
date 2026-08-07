@@ -454,6 +454,31 @@ toolErrors: {
   autoLoaded: {
     summary: '工具已自动加载，正在用正确参数重试',
   },
+  // host 侧已带 metadata.code 的门（toolExecutor.ts / toolResolver.ts，键即 host 下发的
+  // code 原文，不新造 code）——code 命中时优先于上方正则分类用这里的文案；未登记 code /
+  // 没有 metadata 的错误仍走正则兜底，分不出类别的由调用方展示原始报错（永不空白）。
+  codes: {
+    DIRECTIVE_MEMORY_CONFIRMATION_REQUIRED: {
+      summary: '写入全局记忆需要你本人确认',
+      detail: '这次没有写入；需要保存的话重新发起，并在确认窗口里点「确认」。',
+    },
+    WORKBENCH_SCOPE_DENIED: {
+      summary: '当前工作台范围不允许使用这个工具',
+      detail: '工具被工作台范围拦截；调整范围或改用范围内的工具。',
+    },
+    PROJECT_SOURCE_READ_ONLY: {
+      summary: '项目来源是只读的，无法写入',
+      detail: '该目录以只读挂载；写入请改用工作区内的可写路径。',
+    },
+    RUN_CONTEXT_MISMATCH: {
+      summary: '运行上下文不匹配，这次调用已被拦截',
+      detail: '这次调用不属于当前运行；刷新会话后重试。',
+    },
+    RUN_WORKSPACE_BOUNDARY: {
+      summary: '命令只能在工作区范围内执行',
+      detail: '指定的工作目录越出了工作区 Project Sources 边界。',
+    },
+  },
 },
 
 // 工具恢复提示（ToolCallDisplay 的 getToolRecoveryHint，仅失败/中断/已产出场景展示）
@@ -953,6 +978,32 @@ toolErrors: {
   },
   autoLoaded: {
     summary: 'Tool was auto-loaded and is retrying with the correct arguments',
+  },
+  // Gates the host already tags with metadata.code (toolExecutor.ts / toolResolver.ts; keys
+  // are the verbatim host codes — no new codes are coined here). A registered code takes
+  // priority over the regex classification above; unregistered codes / missing metadata fall
+  // back to the regex path, and unclassifiable errors keep the raw text (never blank).
+  codes: {
+    DIRECTIVE_MEMORY_CONFIRMATION_REQUIRED: {
+      summary: 'Writing to global memory needs your confirmation',
+      detail: 'Nothing was written. To save it, ask again and click "Confirm" in the confirmation window.',
+    },
+    WORKBENCH_SCOPE_DENIED: {
+      summary: 'This tool is not allowed in the current workbench scope',
+      detail: 'The tool was blocked by the workbench scope; adjust the scope or use an allowed tool.',
+    },
+    PROJECT_SOURCE_READ_ONLY: {
+      summary: 'This project source is read-only and cannot be written',
+      detail: 'The directory is mounted read-only; write to a writable path inside the workspace instead.',
+    },
+    RUN_CONTEXT_MISMATCH: {
+      summary: 'Run context mismatch; this call was blocked',
+      detail: 'The call does not belong to the current run; refresh the session and retry.',
+    },
+    RUN_WORKSPACE_BOUNDARY: {
+      summary: 'Commands can only run inside the workspace',
+      detail: 'The requested working directory is outside the workspace Project Sources boundary.',
+    },
   },
 },
 

@@ -4,7 +4,7 @@ import { useAppStore } from '../stores/appStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { useCurrentTurnArtifactOwnership } from './useCurrentTurnArtifactOwnership';
 import type { CurrentTurnArtifactOwnershipView } from './useCurrentTurnArtifactOwnership';
-import { buildWorkspacePreviewItems } from '../utils/workspacePreview';
+import { buildWorkspacePreviewSections } from '../utils/workspacePreview';
 import { getArtifactIssuesByArtifactId } from '../services/projectClient';
 
 const ACTIVE_ISSUE_STATUSES = new Set(['open', 'accepted', 'in_progress']);
@@ -66,6 +66,7 @@ function mergeRepositoryIssueQuality(
 
 export interface WorkspacePreviewModelState {
   items: WorkspacePreviewItem[];
+  materialItems: WorkspacePreviewItem[];
   currentTurnArtifacts: CurrentTurnArtifactOwnershipView | null;
 }
 
@@ -83,8 +84,8 @@ export function useWorkspacePreviewModelState(): WorkspacePreviewModelState {
   const lockedBrief = currentSessionId ? sessionDesignBriefs.get(currentSessionId) : undefined;
   const [artifactIssues, setArtifactIssues] = useState<Record<string, ArtifactIssue[]>>({});
 
-  const baseItems = useMemo(() => (
-    buildWorkspacePreviewItems({
+  const sections = useMemo(() => (
+    buildWorkspacePreviewSections({
       messages,
       workingDirectory,
       pendingPermissionRequest,
@@ -96,6 +97,8 @@ export function useWorkspacePreviewModelState(): WorkspacePreviewModelState {
         : null,
     })
   ), [currentTurnArtifacts, messages, pendingPermissionRequest, workingDirectory]);
+  const baseItems = sections.items;
+  const materialItems = sections.materialItems;
 
   // 必须按「id 集合的内容」稳定，不能按 baseItems 的身份稳定。
   // baseItems 的上游（currentTurnArtifacts ← 当前轮投影）每渲染都换身份，所以直接
@@ -144,8 +147,8 @@ export function useWorkspacePreviewModelState(): WorkspacePreviewModelState {
   }, [artifactIssues, baseItems, lockedBrief]);
 
   return useMemo(
-    () => ({ items, currentTurnArtifacts }),
-    [currentTurnArtifacts, items],
+    () => ({ items, materialItems, currentTurnArtifacts }),
+    [currentTurnArtifacts, items, materialItems],
   );
 }
 

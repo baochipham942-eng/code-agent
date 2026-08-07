@@ -197,6 +197,7 @@ describe('deliverable card projection', () => {
     const cards = buildTurnArtifactDeliverableCards([
       {
         kind: 'file',
+        role: 'deliverable' as const,
         label: 'diagram.png',
         ownerKind: 'tool',
         ownerLabel: 'designer · Write',

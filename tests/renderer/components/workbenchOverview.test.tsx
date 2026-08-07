@@ -35,6 +35,8 @@ vi.mock('../../../src/renderer/hooks/useTaskActivity', async (importOriginal) =>
 });
 vi.mock('../../../src/renderer/hooks/useWorkspacePreviewModel', () => ({
   useWorkspacePreviewModel: () => previewItems.items,
+  // 角色轴（ADR-055）：概览改用 …State 取 { items, materialItems }；替身要跟上新导出
+  useWorkspacePreviewModelState: () => ({ items: previewItems.items, materialItems: [], currentTurnArtifacts: null }),
 }));
 vi.mock('../../../src/renderer/stores/sessionStore', () => ({
   useSessionStore: (selector: (state: typeof sessionState) => unknown) => selector(sessionState),

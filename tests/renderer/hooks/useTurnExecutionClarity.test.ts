@@ -261,6 +261,7 @@ describe('buildTurnExecutionClarityProjection', () => {
     expect(artifactNode?.turnTimeline?.artifactOwnership).toEqual([
       {
         kind: 'link',
+        role: 'material' as const,
         label: 'Search results',
         ownerKind: 'tool',
         ownerLabel: 'WebSearch',
@@ -424,6 +425,7 @@ describe('buildTurnExecutionClarityProjection', () => {
     expect(artifactNode?.turnTimeline?.artifactOwnership).toEqual([
       {
         kind: 'link',
+        role: 'material' as const,
         label: 'Source page',
         ownerKind: 'tool',
         ownerLabel: 'WebFetch',
@@ -433,6 +435,7 @@ describe('buildTurnExecutionClarityProjection', () => {
       },
       {
         kind: 'file',
+        role: 'deliverable' as const,
         label: 'Fetched PDF',
         ownerKind: 'tool',
         ownerLabel: 'WebFetch',

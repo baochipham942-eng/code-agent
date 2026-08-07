@@ -2,6 +2,8 @@
 // Tool Artifact / Blob Contract
 // ============================================================================
 
+import type { ArtifactRole } from './artifactRoleRegistry';
+
 export type ToolArtifactKind =
   | 'text'
   | 'binary'
@@ -18,6 +20,8 @@ export type ToolArtifactKind =
 export interface ToolArtifact {
   artifactId: string;
   kind: ToolArtifactKind;
+  /** 角色轴显式覆盖：产出点确知该 artifact 的角色时标注；缺省走 kind 登记表（见 artifactRoleRegistry）。 */
+  role?: ArtifactRole;
   sourceTool: string;
   createdAt: string;
   sessionId?: string;
@@ -37,6 +41,7 @@ export const TOOL_ARTIFACT_METADATA_LIMIT = 12;
 export interface NormalizedToolArtifactMeta {
   artifactId?: string;
   kind: string;
+  role?: ArtifactRole;
   sourceTool?: string;
   label: string;
   name?: string;
@@ -77,6 +82,10 @@ function labelFromUrl(url: string): string {
   }
 }
 
+function normalizeRole(value: unknown): ArtifactRole | undefined {
+  return value === 'deliverable' || value === 'material' || value === 'receipt' ? value : undefined;
+}
+
 function normalizeToolArtifactCandidate(value: unknown): NormalizedToolArtifactMeta | undefined {
   if (!isRecord(value)) {
     return undefined;
@@ -84,6 +93,7 @@ function normalizeToolArtifactCandidate(value: unknown): NormalizedToolArtifactM
 
   const metadata = isRecord(value.metadata) ? value.metadata : undefined;
   const kind = stringField(value, 'kind') || 'artifact';
+  const role = normalizeRole(value.role);
   const sourceTool = stringField(value, 'sourceTool');
   const artifactId = stringField(value, 'artifactId');
   const path = stringField(value, 'path');
@@ -110,6 +120,7 @@ function normalizeToolArtifactCandidate(value: unknown): NormalizedToolArtifactM
   return {
     artifactId,
     kind,
+    role,
     sourceTool,
     label,
     name,

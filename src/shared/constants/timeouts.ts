@@ -393,3 +393,15 @@ export const TELEMETRY_UPLOAD_RESILIENCE = {
   /** 连续同因失败达到此次数即视为熔断：仅记一条摘要日志，后续同因失败不再逐条打印 */
   CIRCUIT_BREAKER_THRESHOLD: 3,
 } as const;
+
+/**
+ * webServer 优雅关闭（T1，2026-08-07）：Rust 侧的宽限期（GRACEFUL_SHUTDOWN_TIMEOUT，
+ * src-tauri/src/main.rs）到点就 SIGKILL，关库 close() 是这段时间里唯一不能省的一步——
+ * 前面的清理任务（durableRunRuntime.shutdown / devServerManager.disposeAll）任一卡住，
+ * 都会把预算吃光，最后仍被硬杀，留下陈旧 -wal/-shm。所以给它们各自封顶，超时就跳过，
+ * 绝不挡住关库。
+ */
+export const WEB_SERVER_SHUTDOWN_TIMEOUTS = {
+  /** 单个关库前清理步骤的超时上限 (ms) */
+  STEP_MS: 1_000,
+} as const;

@@ -43,7 +43,7 @@ async function invokeSession<T>(action: string, payload?: unknown): Promise<T> {
  */
 let _sessionsLocalVersion = 0;
 
-export function getSessionsLocalVersion(): number {
+function getSessionsLocalVersion(): number {
   return _sessionsLocalVersion;
 }
 
@@ -77,7 +77,7 @@ function normalizeSession(session: Session & { messageCount?: number; turnCount?
 }
 
 /** store 切片最小依赖（结构化类型，sessionStore 的 get/set 天然兼容）。 */
-export interface SessionListPaginationSlice {
+interface SessionListPaginationSlice {
   sessions: SessionListMeta[];
   isLoading: boolean;
   error: string | null;
@@ -85,7 +85,7 @@ export interface SessionListPaginationSlice {
   isLoadingOlderSessions: boolean;
 }
 
-export interface SessionListPaginationDeps {
+interface SessionListPaginationDeps {
   get: () => SessionListPaginationSlice;
   set: (partial: Partial<SessionListPaginationSlice>) => void;
 }
@@ -97,7 +97,7 @@ export interface SessionListPaginationDeps {
  *   否则混合分页下归档会话被摊薄到可能整页为零、翻不到底；
  * - all：归档与未归档按 updated_at 混排分页。
  */
-export function buildSessionListQuery(filter: SessionFilter, offset: number, limit: number): SessionListQueryOptions {
+function buildSessionListQuery(filter: SessionFilter, offset: number, limit: number): SessionListQueryOptions {
   if (filter === 'archived') {
     return { archivedOnly: true, offset, limit };
   }

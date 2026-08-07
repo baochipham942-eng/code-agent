@@ -57,6 +57,33 @@ describe('getDeferredToolsSummary MCP name index (GAP-008)', () => {
     expect(summary).toContain('Browser');
   });
 
+  // T3b: 会话指挥台前台 brain 把工具表收窄到一个不含 ToolSearch 的 allowlist 时，
+  // 模型物理上加载不了任何延迟工具——继续宣传"用 ToolSearch 加载 X"只会诱导模型
+  // 反复尝试一条走不通的路（2026-08-07 排查报告 §2/§7.4-1）。
+  it('suppresses the entire summary when an allowlist is active without ToolSearch', () => {
+    const summary = getDeferredToolsSummary([], ['spawn_task', 'steer_task', 'cancel_task', 'task_status', 'AskUserQuestion']);
+
+    expect(summary).toBe('');
+  });
+
+  it('is case-insensitive when checking the allowlist for ToolSearch', () => {
+    const summary = getDeferredToolsSummary([], ['toolsearch']);
+
+    expect(summary).not.toBe('');
+    expect(summary).toContain('Browser');
+  });
+
+  it('keeps listing deferred tools when the allowlist includes ToolSearch', () => {
+    const summary = getDeferredToolsSummary([], ['ToolSearch', 'Bash']);
+
+    expect(summary).toContain('Browser');
+  });
+
+  it('keeps listing deferred tools when no allowlist is active (undefined/empty)', () => {
+    expect(getDeferredToolsSummary([], undefined)).toContain('Browser');
+    expect(getDeferredToolsSummary([], [])).toContain('Browser');
+  });
+
   it('appends MCP tool name index grouped by server (names only, no schema)', () => {
     const service = getToolSearchService();
     service.registerMCPTools([

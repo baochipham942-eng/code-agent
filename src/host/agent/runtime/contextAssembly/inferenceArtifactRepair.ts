@@ -159,7 +159,8 @@ export function emitToolSchemaSnapshot(ctx: ContextAssemblyCtx, tools: ToolDefin
       timestamp,
     },
   ]);
-  if (tools.length === 0) return;
+  // T3b: 工具表被砍到 0 时最该报警，之前这里直接 return 让 UI/遥测那条路静默
+  // （2026-08-07 排查报告 §6）——0 工具也照发，toolCount:0 由下游消费者按空表处理。
   ctx.runtime.onEvent({
     type: 'tool_schema_snapshot',
     data: {

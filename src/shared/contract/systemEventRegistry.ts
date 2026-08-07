@@ -48,9 +48,9 @@ export const USER_VISIBLE_SYSTEM_EVENT_REGISTRY = {
 export type UserVisibleSystemEventKey = keyof typeof USER_VISIBLE_SYSTEM_EVENT_REGISTRY;
 
 // 登记表的键必须是 MessageMetadata 上真实存在的键——登记了一个契约里没有的键在编译期报错。
-type _AssertRegistryKeysExistInMessageMetadata =
+type AssertRegistryKeysExistInMessageMetadata =
   UserVisibleSystemEventKey extends keyof MessageMetadata ? true : never;
-const _registryKeysExist: _AssertRegistryKeysExistInMessageMetadata = true;
+const _registryKeysExist: AssertRegistryKeysExistInMessageMetadata = true;
 void _registryKeysExist;
 
 /**

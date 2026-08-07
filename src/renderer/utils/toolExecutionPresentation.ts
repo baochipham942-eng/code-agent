@@ -181,6 +181,12 @@ const REGISTERED_TOOL_ERROR_CODES: ReadonlySet<RegisteredToolErrorCode> = new Se
   'PROJECT_SOURCE_READ_ONLY',
   'RUN_CONTEXT_MISMATCH',
   'RUN_WORKSPACE_BOUNDARY',
+  'AMEND_PUSHED',
+  'NO_PROJECT',
+  'UPDATE_FAILED',
+  'PR_ON_DEFAULT_BRANCH',
+  'PR_UNCOMMITTED_CHANGES',
+  'ENV_DEPENDENCY_MISSING',
 ]);
 
 /**
@@ -198,6 +204,35 @@ function resolveRegisteredCode(
   return (REGISTERED_TOOL_ERROR_CODES as ReadonlySet<string>).has(code)
     ? (code as RegisteredToolErrorCode)
     : null;
+}
+
+/**
+ * metadata 值 → UI 文案的插值清洗（硬护栏：这是一条新的 host 值→UI 通道）。
+ * 与 summarizeTool 对 host 原文的处理对齐：只取首行、剥控制字符、80 字截断，
+ * 防止换行/超长/控制序列混进组头或详情文案。非字符串/数字、清洗后为空的值
+ * 返回 null —— 调用方据此保留占位符原样，绝不替成 'undefined'。
+ */
+function sanitizeCodeParamValue(value: unknown): string | null {
+  if (typeof value !== 'string' && typeof value !== 'number') return null;
+  // eslint-disable-next-line no-control-regex -- 有意剥离控制字符
+  const text = String(value).split('\n')[0].replace(/[\u0000-\u001f\u007f]/g, '').trim();
+  if (!text) return null;
+  return text.length > 80 ? `${text.slice(0, 77)}...` : text;
+}
+
+/**
+ * code 文案的 {param} 插值（写法对齐 quota 分支的 `{sources}` replace）。
+ * metadata 里没有对应字段、或值清洗后不可用 → 占位符原样保留。
+ */
+function interpolateCodeCopy(
+  template: string,
+  metadata: Record<string, unknown> | null | undefined,
+): string {
+  if (!metadata || !template.includes('{')) return template;
+  return template.replace(/\{([a-zA-Z]+)\}/g, (placeholder, key: string) => {
+    if (!(key in metadata)) return placeholder;
+    return sanitizeCodeParamValue(metadata[key]) ?? placeholder;
+  });
 }
 
 /**
@@ -219,7 +254,10 @@ export function humanizeToolError(
   const code = resolveRegisteredCode(metadata);
   if (code) {
     const copy = t.toolErrors.codes[code];
-    return { summary: copy.summary, detail: copy.detail };
+    return {
+      summary: interpolateCodeCopy(copy.summary, metadata),
+      detail: copy.detail ? interpolateCodeCopy(copy.detail, metadata) : undefined,
+    };
   }
   // 2. 正则兜底（原有分类，逐条不变）
   if (!error?.trim()) return null;

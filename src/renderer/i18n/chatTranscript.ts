@@ -1030,6 +1030,33 @@ toolErrors: {
       summary: 'Commands can only run inside the workspace',
       detail: 'The requested working directory is outside the workspace Project Sources boundary.',
     },
+    // The codes below may carry {param} placeholders in summary/detail, filled from
+    // same-named metadata fields (humanizeToolError's code branch does the
+    // interpolation; missing params keep the placeholder verbatim).
+    AMEND_PUSHED: {
+      summary: 'The last commit was already pushed; amend is blocked',
+      detail: 'Amending would rewrite published history; create a new commit instead.',
+    },
+    NO_PROJECT: {
+      summary: 'This session is not bound to a Project, so directory access cannot be granted',
+      detail: 'Create a Project in project settings first, then retry the grant.',
+    },
+    UPDATE_FAILED: {
+      summary: 'Grant write failed: the Project state changed',
+      detail: 'Retry once; if it still fails, refresh the session and try again.',
+    },
+    PR_ON_DEFAULT_BRANCH: {
+      summary: 'On the default branch {branch}; cannot create a PR from here',
+      detail: 'Switch to a feature branch first, then create the PR again.',
+    },
+    PR_UNCOMMITTED_CHANGES: {
+      summary: 'There are uncommitted changes; cannot create a PR',
+      detail: 'Commit these changes first, then create the PR.',
+    },
+    ENV_DEPENDENCY_MISSING: {
+      summary: 'Missing dependency {dependency}; cannot run',
+      detail: 'Install it first: {installHint}, then retry.',
+    },
   },
 },
 

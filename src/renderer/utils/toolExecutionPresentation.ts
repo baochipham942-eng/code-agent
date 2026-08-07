@@ -207,10 +207,21 @@ function resolveRegisteredCode(
 }
 
 /**
- * metadata 值 → UI 文案的插值清洗（硬护栏：这是一条新的 host 值→UI 通道）。
- * 与 summarizeTool 对 host 原文的处理对齐：只取首行、剥控制字符、80 字截断，
- * 防止换行/超长/控制序列混进组头或详情文案。非字符串/数字、清洗后为空的值
- * 返回 null —— 调用方据此保留占位符原样，绝不替成 'undefined'。
+ * metadata 值 → UI 文案的插值清洗。这是一条新的「host 值 → UI」通道，
+ * 而 08-07 的泄漏事故（组头兜底直接截原始 error，漏出邮箱）就发生在这类通道上。
+ *
+ * ⚠️ 澄清一个容易误传的说法：`summarizeTool` **没有**脱敏管线（它不 import 任何
+ * redaction）。它安全靠的是**构造**——只输出固定词表 + 窄提取字段（action、
+ * hostname、agentType），从不透传自由文本。仓里的 sanitizeBrowserComputerMetadata
+ * 只挂在导出 / action preview 路径，聊天流这条路上没有。
+ *
+ * 所以这里守的是同一个性质，不是同一个函数：**暴露面必须被我们自己写的 i18n
+ * 模板锁死**。只有模板里写出来的 {key} 会被替换，值限 string/number、只取首行、
+ * 剥控制字符、80 字截断；取不到或清洗后为空一律保留占位符原样，绝不替成 'undefined'。
+ *
+ * 🔴 因此：**新增 {param} 前先确认该字段不是浏览器/计算机工具的自由文本产物**
+ * （URL、页面文本、错误原文）。那类值必须先过 browserComputerRedaction，
+ * 或者干脆不进模板。
  */
 function sanitizeCodeParamValue(value: unknown): string | null {
   if (typeof value !== 'string' && typeof value !== 'number') return null;

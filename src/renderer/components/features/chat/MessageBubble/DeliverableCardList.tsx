@@ -37,7 +37,7 @@ interface Props {
   className?: string;
 }
 
-function iconForKind(kind: string): React.ReactNode {
+export function iconForKind(kind: string): React.ReactNode {
   const cls = 'h-3.5 w-3.5 flex-shrink-0';
   switch (kind) {
     case 'chart':

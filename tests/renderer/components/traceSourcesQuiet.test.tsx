@@ -48,8 +48,8 @@ describe('Sources (纯链接来源) 视觉降级 — 不长得像交付物卡', 
     const html = renderToStaticMarkup(
       <TraceNodeRenderer node={makeNode([linkItem('xingyun3d.csdn.net'), linkItem('aiapps.com')])} />,
     );
-    // 折叠头：Sources 标签 + 计数 + link 图标
-    expect(html).toContain('Sources');
+    // 折叠头：「来源」标签 + 计数 + link 图标（默认语言 zh）
+    expect(html).toContain('来源');
     expect(html).toContain('(2)');
     expect(html).toContain('lucide-link');
     // 折叠态不显示条目域名
@@ -68,14 +68,14 @@ describe('Sources (纯链接来源) 视觉降级 — 不长得像交付物卡', 
       <TraceNodeRenderer node={makeNode([linkItem('xingyun3d.csdn.net'), linkItem('aiapps.com')])} />,
     );
     const toggle = Array.from(container.querySelectorAll('button'))
-      .find((b) => b.textContent?.includes('Sources'));
+      .find((b) => b.textContent?.includes('来源'));
     expect(toggle).toBeTruthy();
     fireEvent.click(toggle!);
     expect(container.textContent).toContain('xingyun3d.csdn.net');
     expect(container.textContent).toContain('aiapps.com');
   });
 
-  it('含真实产物（artifact）时仍标 Outputs、保留强调色（不受本次降级影响）', () => {
+  it('含真实产物（artifact）时仍标「产物」、保留强调色（不受本次降级影响）', () => {
     const html = renderToStaticMarkup(
       <TraceNodeRenderer
         node={makeNode([
@@ -84,31 +84,31 @@ describe('Sources (纯链接来源) 视觉降级 — 不长得像交付物卡', 
         ])}
       />,
     );
-    expect(html).toContain('Outputs');
+    expect(html).toContain('产物');
     expect(html).toContain('border-badge-success');
   });
 
-  it('文件+来源混合：文件进绿 Outputs，WebFetch 来源拆出到独立中性 Sources 块（不当产物）', () => {
+  it('文件+来源混合：文件进绿「产物」，WebFetch 来源拆出到独立中性「来源」块（不当产物）', () => {
     const html = renderToStaticMarkup(
       <TraceNodeRenderer node={makeNode([fileItem('简报.md'), linkItem('sohu.com'), linkItem('cnyes.com')])} />,
     );
-    // 两个区块都在：绿 Outputs（真文件产物）+ 中性 Sources（来源链接，默认折叠）
-    expect(html).toContain('Outputs');
-    expect(html).toContain('Sources');
-    expect(html).toContain('border-badge-success'); // Outputs 绿
-    expect(html).toContain('border-border-muted'); // Sources 中性灰
-    // Sources 区出现在 Outputs 之后（来源在产物下方、降级呈现）
-    expect(html.indexOf('Outputs')).toBeLessThan(html.indexOf('Sources'));
-    // 文件产物直接可见；来源域名折叠在 Sources 头后
+    // 两个区块都在：绿「产物」（真文件产物）+ 中性「来源」（来源链接，默认折叠）
+    expect(html).toContain('产物');
+    expect(html).toContain('来源');
+    expect(html).toContain('border-badge-success'); // 产物卡绿
+    expect(html).toContain('border-border-muted'); // 来源卡中性灰
+    // 来源区出现在产物之后（来源在产物下方、降级呈现）
+    expect(html.indexOf('产物')).toBeLessThan(html.indexOf('来源'));
+    // 文件产物直接可见；来源域名折叠在「来源」头后
     expect(html).toContain('简报.md');
     expect(html).not.toContain('sohu.com');
 
-    // 点开 Sources 后来源域名可见（且不混进 Outputs 卡）
+    // 点开「来源」后来源域名可见（且不混进产物卡）
     const { container } = render(
       <TraceNodeRenderer node={makeNode([fileItem('简报.md'), linkItem('sohu.com'), linkItem('cnyes.com')])} />,
     );
     const toggle = Array.from(container.querySelectorAll('button'))
-      .find((b) => b.textContent?.includes('Sources'));
+      .find((b) => b.textContent?.includes('来源'));
     fireEvent.click(toggle!);
     expect(container.textContent).toContain('sohu.com');
     expect(container.textContent).toContain('cnyes.com');

@@ -64,7 +64,7 @@ export function registerSessionHandlers(
 
       switch (action) {
         case 'list':
-          data = await requireAppService().listSessions(payload as { includeArchived?: boolean } | undefined);
+          data = await requireAppService().listSessions(payload as import('../../shared/contract/appService').SessionListQueryOptions | undefined);
           break;
         case 'create':
           data = await requireAppService().createSession(payload as import('../../shared/contract/appService').CreateSessionConfig);

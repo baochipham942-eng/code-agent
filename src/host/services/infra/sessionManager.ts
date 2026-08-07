@@ -10,6 +10,7 @@ import { normalizePromptForBackfill, sanitizeModelConfigForSession } from './ses
 import { getAuthService } from '../auth/authService';
 import { getSupabase, isSupabaseInitialized } from './supabaseService';
 import { IPC_CHANNELS } from '../../../shared/ipc';
+import { SESSION_LIST_PAGE_SIZE } from '@shared/constants';
 import type { Session, Message, ModelConfig, TodoItem, NeoUIExportSnapshotV1 } from '../../../shared/contract';
 import { toGenerativeUIExportSnapshot } from '../generativeUI/generativeUIExport';
 import { getGenerativeUIRepository } from '../generativeUI/generativeUIRepositoryAccess';
@@ -81,6 +82,8 @@ export interface SessionListOptions {
   offset?: number;
   searchQuery?: string;
   includeArchived?: boolean;
+  /** 只取归档会话（侧栏「已归档」过滤器的独立分页路径，优先于 includeArchived） */
+  archivedOnly?: boolean;
 }
 
 interface TelemetryUserPromptRow {
@@ -491,10 +494,12 @@ export class SessionManager implements Disposable {
    */
   async listSessions(options: SessionListOptions = {}): Promise<StoredSession[]> {
     const db = getDatabase();
-    const { limit = 50, offset = 0, includeArchived = false } = options;
+    const { limit = SESSION_LIST_PAGE_SIZE, offset = 0, includeArchived = false, archivedOnly = false } = options;
     const ownerId = this.currentOwnerUserId();
 
-    let sessions = db.listSessions(limit, offset, includeArchived, ownerId);
+    // archivedOnly：归档过滤器的独立分页路径——直接在 SQL 层只取归档页，
+    // 不再拉混合页回前端挑（混合分页下归档会话会被摊薄到翻不到）。
+    let sessions = archivedOnly ? db.listArchivedSessions(limit, offset, ownerId) : db.listSessions(limit, offset, includeArchived, ownerId);
 
     // 搜索过滤
     if (options.searchQuery) {

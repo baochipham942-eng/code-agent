@@ -40,6 +40,7 @@ Features:
     properties: {
       query: {
         type: 'string',
+        minLength: 1,
         description: 'The search query. REQUIRED and must be a non-empty string. Never omit or pass an empty value.',
       },
       count: {

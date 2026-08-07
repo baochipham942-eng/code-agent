@@ -9,6 +9,7 @@ import type {
   WorkspacePreviewStatus,
 } from '@shared/contract';
 import { collectToolArtifactsFromMetadata } from '@shared/contract/artifactBlob';
+import { resolveArtifactRole } from '@shared/contract/artifactRoleRegistry';
 import { normalizeDesignBrief } from '@shared/contract/designBrief';
 import type { TurnArtifactOwnershipItem } from '@shared/contract/turnTimeline';
 import { getFileExtension, isPreviewable } from './previewable';
@@ -23,7 +24,7 @@ const FILE_METADATA_KEYS = [
   'pdfPath',
 ];
 
-export interface BuildWorkspacePreviewItemsInput {
+export interface BuildWorkspacePreviewSectionsInput {
   messages: Message[];
   workingDirectory?: string | null;
   pendingPermissionRequest?: PermissionRequest | null;
@@ -32,6 +33,12 @@ export interface BuildWorkspacePreviewItemsInput {
     artifactOwnership: TurnArtifactOwnershipItem[];
   } | null;
   limit?: number;
+}
+
+/** 概览两区：items = 交付物（deliverable），materialItems = 过程材料（material）。receipt 不上屏。 */
+export interface WorkspacePreviewSections {
+  items: WorkspacePreviewItem[];
+  materialItems: WorkspacePreviewItem[];
 }
 
 export type WorkspacePreviewRuntimeStatus = 'booting' | 'ready' | 'error';
@@ -554,6 +561,7 @@ function collectMessageArtifacts(
 
 function collectToolOutputs(
   items: WorkspacePreviewItem[],
+  materialItems: WorkspacePreviewItem[],
   seen: Set<string>,
   messages: Message[],
   workingDirectory?: string | null,
@@ -585,7 +593,12 @@ function collectToolOutputs(
         addItem(items, seen, previewItem, `previewItem:${previewItem.id}`);
       }
 
-      for (const artifact of collectToolArtifactsFromMetadata(result.metadata)) {
+      const toolArtifacts = collectToolArtifactsFromMetadata(result.metadata);
+      for (const artifact of toolArtifacts) {
+        // 角色轴单一判据：deliverable 进产物区，material 进「过程材料」区，receipt 不上屏
+        const role = resolveArtifactRole(artifact);
+        if (role === 'receipt') continue;
+        const target = role === 'deliverable' ? items : materialItems;
         if (artifact.path) {
           const path = resolvePath(artifact.path, workingDirectory);
           if (!path) continue;
@@ -594,7 +607,7 @@ function collectToolOutputs(
           const revision = revisionFromArtifact(artifact, path);
           const revisionId = revisionIdentity(revision);
           const itemId = revisionId ? `file:${path}:${revisionId}` : `file:${path}`;
-          addItem(items, seen, {
+          addItem(target, seen, {
             id: itemId,
             kind: fileKindForPath(path),
             title,
@@ -625,7 +638,7 @@ function collectToolOutputs(
           const itemId = revisionId
             ? `url:${artifact.url}:${revisionId}`
             : toolArtifactPreviewItemId(toolCall.id, artifact.artifactId, artifact.url);
-          addItem(items, seen, {
+          addItem(target, seen, {
             id: itemId,
             kind: artifact.kind === 'web' ? 'web_snapshot' : 'file',
             title: artifact.label,
@@ -647,35 +660,40 @@ function collectToolOutputs(
         }
       }
 
-      const paths = new Set<string>();
-      if (result.outputPath) paths.add(result.outputPath);
-      for (const key of FILE_METADATA_KEYS) {
-        const value = result.metadata?.[key];
-        if (typeof value === 'string' && value.trim()) {
-          paths.add(value.trim());
+      // metadata 路径兜底通道：只对完全没产出 ToolArtifact 的调用生效——产了 artifact 的
+      // 一律以角色轴为准，不再扫 outputPath / metadata 路径，否则 imageAnalyze 的 imagePath
+      // （来源图）这类读取路径会绕过角色判据混进产物。
+      if (toolArtifacts.length === 0) {
+        const paths = new Set<string>();
+        if (result.outputPath) paths.add(result.outputPath);
+        for (const key of FILE_METADATA_KEYS) {
+          const value = result.metadata?.[key];
+          if (typeof value === 'string' && value.trim()) {
+            paths.add(value.trim());
+          }
         }
-      }
 
-      for (const rawPath of paths) {
-        const path = resolvePath(rawPath, workingDirectory);
-        if (!path) continue;
-        const title = basename(path);
-        addItem(items, seen, {
-          id: `file:${path}`,
-          kind: fileKindForPath(path),
-          title,
-          subtitle: toolCall.name,
-          status: statusFromSuccess(result.success),
-          createdAt: message.timestamp,
-          source,
-          file: {
-            path,
-            name: title,
-            size: typeof result.metadata?.fileSize === 'number' ? result.metadata.fileSize : undefined,
-          },
-          actions: actionsForFile(path),
-          priority: 30,
-        }, `file:${path}`);
+        for (const rawPath of paths) {
+          const path = resolvePath(rawPath, workingDirectory);
+          if (!path) continue;
+          const title = basename(path);
+          addItem(items, seen, {
+            id: `file:${path}`,
+            kind: fileKindForPath(path),
+            title,
+            subtitle: toolCall.name,
+            status: statusFromSuccess(result.success),
+            createdAt: message.timestamp,
+            source,
+            file: {
+              path,
+              name: title,
+              size: typeof result.metadata?.fileSize === 'number' ? result.metadata.fileSize : undefined,
+            },
+            actions: actionsForFile(path),
+            priority: 30,
+          }, `file:${path}`);
+        }
       }
 
     }
@@ -725,16 +743,20 @@ function collectPermissionPreview(
 
 function collectCurrentTurnArtifacts(
   items: WorkspacePreviewItem[],
+  materialItems: WorkspacePreviewItem[],
   seen: Set<string>,
-  currentTurnArtifacts: BuildWorkspacePreviewItemsInput['currentTurnArtifacts'],
+  currentTurnArtifacts: BuildWorkspacePreviewSectionsInput['currentTurnArtifacts'],
   workingDirectory?: string | null,
 ): void {
   if (!currentTurnArtifacts) return;
   for (const artifact of currentTurnArtifacts.artifactOwnership) {
+    // 角色轴分流：receipt 不上屏；material 进「过程材料」区；缺 role 的旧数据按 deliverable 兜底
+    if (artifact.role === 'receipt') continue;
+    const target = artifact.role === 'material' ? materialItems : items;
     if (artifact.path) {
       const path = resolvePath(artifact.path, workingDirectory);
       const title = basename(path);
-      addItem(items, seen, {
+      addItem(target, seen, {
         id: `turn-file:${currentTurnArtifacts.turnNumber}:${path}`,
         kind: fileKindForPath(path),
         title,
@@ -754,7 +776,7 @@ function collectCurrentTurnArtifacts(
       continue;
     }
 
-    addItem(items, seen, {
+    addItem(target, seen, {
       id: `turn-artifact:${currentTurnArtifacts.turnNumber}:${artifact.sourceNodeId || artifact.label}`,
       kind: artifact.kind === 'link' ? 'file' : 'trace',
       title: artifact.label,
@@ -805,23 +827,28 @@ function dropContentlessDuplicates(items: WorkspacePreviewItem[]): WorkspacePrev
   ));
 }
 
-export function buildWorkspacePreviewItems(input: BuildWorkspacePreviewItemsInput): WorkspacePreviewItem[] {
+export function buildWorkspacePreviewSections(input: BuildWorkspacePreviewSectionsInput): WorkspacePreviewSections {
   const items: WorkspacePreviewItem[] = [];
+  const materialItems: WorkspacePreviewItem[] = [];
   const seen = new Set<string>();
   // Overview uses a session-wide contract: artifacts from early runs stay visible after later runs.
   // The output list is still capped below, so scanning the current session does not expand the UI.
   const messages = input.messages;
 
   collectPermissionPreview(items, seen, input.pendingPermissionRequest);
-  collectCurrentTurnArtifacts(items, seen, input.currentTurnArtifacts, input.workingDirectory);
-  collectToolOutputs(items, seen, messages, input.workingDirectory);
+  collectCurrentTurnArtifacts(items, materialItems, seen, input.currentTurnArtifacts, input.workingDirectory);
+  collectToolOutputs(items, materialItems, seen, messages, input.workingDirectory);
   collectMessageArtifacts(items, seen, messages);
 
-  return dropContentlessDuplicates(items)
-    .sort((left, right) => {
-      const byPriority = (right.priority ?? 0) - (left.priority ?? 0);
-      if (byPriority !== 0) return byPriority;
-      return right.createdAt - left.createdAt;
-    })
-    .slice(0, input.limit ?? 40);
+  const byPriorityThenRecency = (left: WorkspacePreviewItem, right: WorkspacePreviewItem) => {
+    const byPriority = (right.priority ?? 0) - (left.priority ?? 0);
+    if (byPriority !== 0) return byPriority;
+    return right.createdAt - left.createdAt;
+  };
+  const limit = input.limit ?? 40;
+
+  return {
+    items: dropContentlessDuplicates(items).sort(byPriorityThenRecency).slice(0, limit),
+    materialItems: materialItems.sort(byPriorityThenRecency).slice(0, limit),
+  };
 }

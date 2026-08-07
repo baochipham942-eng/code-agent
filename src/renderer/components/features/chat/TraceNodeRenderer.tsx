@@ -20,6 +20,8 @@ import { ExpandableContent } from './ExpandableContent';
 import { LaunchRequestCard } from '../swarm/LaunchRequestCard';
 import { WorkbenchPill } from '../../workbench/WorkbenchPrimitives';
 import { isReadOnlyArtifactOwnershipItem } from '../../../utils/artifactOwnership';
+import { kindForTurnArtifact } from '../../../utils/deliverables';
+import { iconForKind } from './MessageBubble/DeliverableCardList';
 import { SkillStatusMessage } from './MessageBubble/SkillStatusMessage';
 import { GoalNoticeMessage } from './MessageBubble/GoalNoticeMessage';
 import { FallbackBanner } from './MessageBubble/FallbackBanner';
@@ -695,6 +697,7 @@ function getSkillActionLabel(action: string): string {
 }
 
 const SkillActivityNode: React.FC<{ timeline: TurnTimelinePayload }> = ({ timeline }) => {
+  const { t } = useI18n();
   const activity = timeline.skillActivity;
   if (!activity || activity.items.length === 0) return null;
 
@@ -702,7 +705,7 @@ const SkillActivityNode: React.FC<{ timeline: TurnTimelinePayload }> = ({ timeli
     <div className={`rounded-lg border px-3 py-2 ${getTimelineContainerClass(timeline.tone)}`}>
       <div className="mb-1 flex items-center gap-2 text-[11px] text-zinc-300">
         <Wrench className="h-3.5 w-3.5 text-badge-accent" />
-        <span>Skills</span>
+        <span>{t.turnSections.skills}</span>
         <span className="text-zinc-500">{activity.summary.replace(/^Skill\s*/, '')}</span>
       </div>
       <div className="mt-2 space-y-1.5">
@@ -731,12 +734,21 @@ const ArtifactItemPills: React.FC<{ items: ArtifactItem[]; className?: string }>
   <div className={`space-y-1.5 ${className ?? ''}`}>
     {items.map((item, index) => (
       <div key={`${item.kind}-${item.label}-${index}`} className="flex items-center gap-2 rounded-md bg-black/10 px-2.5 py-2">
-        <WorkbenchPill tone={item.kind === 'artifact' ? 'info' : 'neutral'}>
-          {item.kind === 'artifact' ? 'Artifact' : item.kind === 'link' ? 'Link' : 'Note'}
-        </WorkbenchPill>
+        {item.kind === 'link' ? (
+          // link 项在折叠的「来源」区里，Link 徽章 + 来源工具名次行对溯源场景是对的，保持现状。
+          <WorkbenchPill tone="neutral">Link</WorkbenchPill>
+        ) : (
+          // 非 link 项：按扩展名的文件类型图标替掉 Artifact/Note 徽章——产物卡里
+          // 文档/表格/演示稿必须一眼可辨，「Artifact」对非程序员用户零意义。
+          iconForKind(kindForTurnArtifact(item))
+        )}
         <div className="min-w-0 flex-1">
           <div className="truncate text-xs text-zinc-100">{item.label}</div>
-          <div className="truncate text-[11px] text-zinc-500">{item.ownerLabel}</div>
+          {/* 非 link 项的 ownerLabel 恒为「Assistant」类零信息文案，不渲染次行；
+              link 项的次行是抓取来源（WebFetch 等），有信息量，保留。 */}
+          {item.kind === 'link' && (
+            <div className="truncate text-[11px] text-zinc-500">{item.ownerLabel}</div>
+          )}
         </div>
       </div>
     ))}
@@ -744,6 +756,7 @@ const ArtifactItemPills: React.FC<{ items: ArtifactItem[]; className?: string }>
 );
 
 const ArtifactOwnershipNode: React.FC<{ timeline: TurnTimelinePayload; sessionId?: string }> = ({ timeline, sessionId }) => {
+  const { t } = useI18n();
   // Sources（溯源来源）默认折叠：保留可信/溯源能力但不扰民（产品决策，林晨 2026-06-29）。
   const [sourcesOpen, setSourcesOpen] = useState(false);
   const items = (timeline.artifactOwnership || [])
@@ -775,7 +788,7 @@ const ArtifactOwnershipNode: React.FC<{ timeline: TurnTimelinePayload; sessionId
     <div className={`rounded-lg border px-3 py-2 ${getTimelineContainerClass(timeline.tone)}`}>
       <div className="mb-1.5 flex items-center gap-2 text-[11px] text-zinc-400">
         <FileText className="h-3.5 w-3.5 text-badge-success" />
-        <span>Outputs</span>
+        <span>{t.turnSections.outputs}</span>
       </div>
       {fileItems.length > 0 && <FileArtifactCard items={fileItems} mediaContext={mediaContext} />}
       {nonFileOutputItems.length > 0 && (
@@ -793,7 +806,7 @@ const ArtifactOwnershipNode: React.FC<{ timeline: TurnTimelinePayload; sessionId
       >
         {sourcesOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
         <Link className="h-3.5 w-3.5 text-zinc-400" />
-        <span>Sources</span>
+        <span>{t.turnSections.sources}</span>
         <span className="text-zinc-500">({linkItems.length})</span>
       </button>
       {sourcesOpen && <ArtifactItemPills items={linkItems} className="mt-1.5" />}

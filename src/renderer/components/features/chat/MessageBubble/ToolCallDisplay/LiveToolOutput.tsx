@@ -1,5 +1,6 @@
 import type { ToolCall } from '@shared/contract';
 import { computeBashPreviewLines } from './bashOutputPreview';
+import { useI18n } from '../../../../../hooks/useI18n';
 
 const ESC = String.fromCharCode(27);
 const BEL = String.fromCharCode(7);
@@ -22,6 +23,7 @@ function formatLiveToolOutput(toolCall: ToolCall): string {
 }
 
 export function LiveToolOutput({ toolCall }: { toolCall: ToolCall }) {
+  const { t } = useI18n();
   const liveOutput = formatLiveToolOutput(toolCall);
   if (!liveOutput) return null;
 
@@ -33,7 +35,7 @@ export function LiveToolOutput({ toolCall }: { toolCall: ToolCall }) {
   return (
     <div className="animate-fadeIn">
       <div className="flex items-center gap-2 text-xs font-medium text-gray-500 mb-2">
-        <span>Live output</span>
+        <span>{t.toolDisplay.liveOutput}</span>
         <div className="flex-1 h-px bg-gray-700/50" />
       </div>
       <pre className="text-xs text-zinc-400 bg-gray-900/50 rounded-lg p-3 overflow-x-auto scrollbar-hidden border border-gray-800/50 whitespace-pre-wrap break-words">

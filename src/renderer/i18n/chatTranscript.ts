@@ -503,9 +503,32 @@ livePreview: {
   openExternal: '在默认浏览器打开',
   loadingPage: '正在加载中…',
 },
+// 回合时间线区块标题（TraceNodeRenderer 的 ArtifactOwnershipNode / SkillActivityNode）。
+// 产物卡面向非程序员协作者，不用 Outputs/Sources/Skills 这类英文技术词。
+turnSections: {
+  outputs: '产物',
+  sources: '来源',
+  skills: '技能',
+},
+
 // 分叉子会话首段用户输入上方的轻量来源提示（取代原顶部分支导航栏）。
 forkSourceHint: {
   source: '由此分支 · {parentTitle} · 锚点 {anchorId}',
+},
+
+// 工具调用展示（LiveToolOutput / ToolDetails / ToolResultMediaDisplays / CodeBlock / AbilityMenu）的零碎 UI 文案。
+toolDisplay: {
+  liveOutput: '实时输出',
+  diff: '改动对比',
+  hide: '收起',
+  args: '参数',
+  action: '操作',
+  copied: '已复制',
+  copy: '复制',
+  wrap: '换行',
+  clickToExpand: '点击展开',
+  open: '打开',
+  preview: '预览',
 }
 };
 
@@ -1008,7 +1031,28 @@ livePreview: {
   openExternal: 'Open in default browser',
   loadingPage: 'Loading…',
 },
+// Turn timeline section titles (TraceNodeRenderer's ArtifactOwnershipNode / SkillActivityNode).
+turnSections: {
+  outputs: 'Outputs',
+  sources: 'Sources',
+  skills: 'Skills',
+},
+
 forkSourceHint: {
   source: 'Branched from · {parentTitle} · anchor {anchorId}',
+},
+
+toolDisplay: {
+  liveOutput: 'Live output',
+  diff: 'Diff',
+  hide: 'Hide',
+  args: 'Arguments',
+  action: 'Action',
+  copied: 'Copied!',
+  copy: 'Copy',
+  wrap: 'Wrap',
+  clickToExpand: 'Click to expand',
+  open: 'Open',
+  preview: 'Preview',
 }
 };

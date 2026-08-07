@@ -83,7 +83,7 @@ jobs:
     runs-on: ubuntu-latest
     # 15 而非 10：主链路子集 ~200s + 新增的 playwright 浏览器安装 ~1-2min，
     # 原上限对满载 runner 已经偏紧（实测单轮跑到失败就用了 5m25s）。
-    timeout-minutes: 15
+    timeout-minutes: 25
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -188,7 +188,8 @@ jobs:
         # 三次都把 main 弄红，靠 push 后的检测门事后发现。
         # 成本实测（本机 darwin）：tests/renderer 468 文件 2954 用例 89.9s，同机主链路子集
         # 187.9s、CI 上 199s（比例 1.06）→ 推算 CI 上约 +95s。本 job 原 7m44s → 约 9m20s，
-        # 距 timeout-minutes: 15 仍有约 5.5 分钟余量。
+        # 注：此处余量数字是 2026-07 写的，与 08-06 观测（13.5min/15min）不符，没人在盯真实时长。
+        # 2026-08-07 起 timeout 抬到 25min，先解除假红压力，真实时长另行观测。
         # 其余长尾（tests/scripts 之外的 unit 子目录、security、integration 等）仍留给
         # 检测门兜底——这依然是明说的覆盖边界，不是以为跑全了。
         #
@@ -291,7 +292,7 @@ jobs:
     # tests/** 等代码 PR，docs-only PR 不会触发整条 workflow，CI 成本可控；workflow_dispatch 仍可
     # 手动跑。full 仍受 `needs: smoke` 门控——smoke 失败则跳过。
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     outputs:
       status: ${{ steps.result.outputs.status }}
     steps:

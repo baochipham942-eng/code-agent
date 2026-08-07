@@ -588,9 +588,12 @@ function secondaryActionsForTurnArtifact(item: TurnArtifactOwnershipItem): Deliv
   return actions;
 }
 
-function kindForTurnArtifact(item: TurnArtifactOwnershipItem): string {
-  if (item.path) {
-    const ext = getFileExtension(item.path);
+// 扩展名来源优先 path，无 path 时退到 label（kind === 'artifact' 的项通常只有
+// label 带扩展名，如「Q3 产品策略报告.docx」）——在这一个根因位置兜，调用方不再各自判。
+export function kindForTurnArtifact(item: TurnArtifactOwnershipItem): string {
+  const source = item.path || item.label;
+  if (source) {
+    const ext = getFileExtension(source);
     if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'].includes(ext)) return 'image';
     if (['mp3', 'wav', 'm4a', 'aac', 'flac', 'ogg'].includes(ext)) return 'audio';
     if (['mp4', 'webm', 'mov', 'mkv', 'avi'].includes(ext)) return 'video';

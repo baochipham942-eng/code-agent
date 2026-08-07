@@ -197,13 +197,13 @@ export function ToolDetails({ toolCall, compact, mediaContext }: Props) {
       {isEditFile && editFileArgs && showDiff && !isEmptyEdit && (
         <div className="animate-fadeIn">
           <div className="flex items-center gap-2 text-xs font-medium text-gray-500 mb-2">
-            <span>Diff</span>
+            <span>{t.toolDisplay.diff}</span>
             <div className="flex-1 h-px bg-gray-700/50" />
             <button
               onClick={() => setShowDiff(false)}
               className="text-gray-500 hover:text-zinc-300 px-2 transition-colors"
             >
-              Hide
+              {t.toolDisplay.hide}
             </button>
           </div>
           <DiffView
@@ -225,7 +225,7 @@ export function ToolDetails({ toolCall, compact, mediaContext }: Props) {
           ) : (
             <>
               <div className="flex items-center gap-2 text-xs font-medium text-gray-500 mb-2">
-                <span>Arguments</span>
+                <span>{t.toolDisplay.args}</span>
                 <div className="flex-1 h-px bg-gray-700/50" />
                 {isEditFile && !showDiff && (
                   <button

@@ -217,7 +217,7 @@ export const AbilityMenu: React.FC<AbilityMenuProps> = ({ disabled = false, defa
               data-testid="ability-menu-live-preview-open"
               className="flex-shrink-0 rounded-md bg-primary-500/15 px-3 py-1.5 text-xs text-badge-accent transition-colors hover:bg-primary-500/25"
             >
-              Open
+              {t.toolDisplay.open}
             </button>
           </div>
 

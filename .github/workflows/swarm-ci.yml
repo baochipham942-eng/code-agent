@@ -50,10 +50,14 @@ on:
       - 'scripts/design-system-zindex-allowlist.json'
       - 'scripts/check-token-integrity.mjs'
       - 'scripts/check-copy.mjs'
+      - 'scripts/host-chinese-error-ratchet.mjs'
       - 'tailwind.config.js'
       - 'scripts/knip-ratchet.mjs'
+      - 'scripts/knip-production-ratchet.mjs'
       - 'scripts/eslint-ratchet.mjs'
       - 'knip.json'
+      - 'knip.production.json'
+      - 'knip.production-strict.json'
       - 'scripts/architecture-debt-report.mjs'
       - 'eslint.config.js'
       - 'scripts/build-renderer-bundle.mjs'
@@ -87,6 +91,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+        with:
+          # strict production reachability compares PR additions with the real main merge-base.
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v5
@@ -156,6 +163,11 @@ jobs:
           node scripts/check-design-system.mjs
           node scripts/check-token-integrity.mjs
           node scripts/check-copy.mjs
+
+      - name: Host Chinese error literal ratchet
+        # P2 工具错误文案分层保护门：只扫描 host/tools + host/memory 的 error 属性，
+        # 含中文字符串字面量的存量只降不升。脚本对 0 文件、0 目标和 TS 解析失败 fail loud。
+        run: node scripts/host-chinese-error-ratchet.mjs
 
       - name: Script gates (vitest tests/scripts)
         # tests/scripts 下的守门测试（designSystemGate / architectureDebtReport /
@@ -257,9 +269,8 @@ jobs:
         run: node scripts/knip-ratchet.mjs
 
       - name: Knip production-reachability ratchet
-        # 第二 profile：entry 只放发行版入口（不含 tests/**），报"从生产入口完全走不到的
-        # 文件"。上一道门的 entry 含 tests，"有测试"恰是这类孤儿的伪装色——2026-07-25 孤儿
-        # 审计实测三个已确认孤儿喂给上一道门一个都没进网。基线见脚本头注。
+        # legacy profile 锁 66 存量；strict profile 关闭自动测试/plugin 入口，只拦相对 main
+        # 新增且从发行版入口完全走不到的源码。完整历史用于解析真实 merge-base。
         run: node scripts/knip-production-ratchet.mjs
 
       - name: ESLint error/warning ratchet

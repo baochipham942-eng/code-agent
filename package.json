@@ -20,6 +20,7 @@
     "codegen:game-skills": "node scripts/generate-game-skill-content.mjs",
     "lint": "eslint src --ext .ts,.tsx --no-config-lookup --config eslint.config.js",
     "lint:eslint-ratchet": "node scripts/eslint-ratchet.mjs",
+    "lint:host-chinese-error-ratchet": "node scripts/host-chinese-error-ratchet.mjs",
     "lint:shell-fail-loud": "node scripts/shell-fail-loud-lint.mjs",
     "debt:report": "node scripts/architecture-debt-report.mjs",
     "gates:local": "node scripts/gates-local.mjs",

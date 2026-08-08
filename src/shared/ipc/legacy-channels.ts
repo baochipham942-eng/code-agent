@@ -413,6 +413,9 @@ export const IPC_CHANNELS = {
   // Budget alert broadcast (预算逼近预警/超限 → renderer toast)
   BUDGET_ALERT: 'budget:alert',
 
+  // Agent notice broadcast (host 主动通知用户的结构化事件 → renderer toast，比照 budget:alert)
+  AGENT_NOTICE: 'agent:notice',
+
   // Agent Registry change broadcast (custom .md agents 热加载推送到所有窗口)
   AGENTS_CHANGED: 'agents:changed',
 } as const;

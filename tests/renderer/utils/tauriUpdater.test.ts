@@ -10,6 +10,7 @@ const checkMock = vi.fn();
 const getVersionMock = vi.fn();
 const openUrlMock = vi.fn();
 const relaunchMock = vi.fn();
+const invokeMock = vi.fn();
 
 vi.mock('@tauri-apps/plugin-updater', () => ({
   check: (...args: unknown[]) => checkMock(...args),
@@ -22,6 +23,9 @@ vi.mock('@tauri-apps/plugin-opener', () => ({
 }));
 vi.mock('@tauri-apps/plugin-process', () => ({
   relaunch: (...args: unknown[]) => relaunchMock(...args),
+}));
+vi.mock('@tauri-apps/api/core', () => ({
+  invoke: (...args: unknown[]) => invokeMock(...args),
 }));
 
 afterEach(() => {
@@ -60,14 +64,22 @@ describe('tauriUpdater (plugin-based)', () => {
     expect(info.checkFailed).toBeUndefined();
   });
 
-  it('downloads, installs, reports progress, then auto-relaunches', async () => {
-    const downloadAndInstall = vi.fn(async (onEvent?: (e: unknown) => void) => {
+  it('downloads, shuts down webServer before install, reports progress, then auto-relaunches', async () => {
+    const callOrder: string[] = [];
+    const download = vi.fn(async (onEvent?: (e: unknown) => void) => {
+      callOrder.push('download');
       onEvent?.({ event: 'Started', data: { contentLength: 100 } });
       onEvent?.({ event: 'Progress', data: { chunkLength: 40 } });
       onEvent?.({ event: 'Progress', data: { chunkLength: 60 } });
       onEvent?.({ event: 'Finished' });
     });
-    checkMock.mockResolvedValue({ currentVersion: '0.16.93', version: '0.16.94', downloadAndInstall });
+    const install = vi.fn(async () => {
+      callOrder.push('install');
+    });
+    invokeMock.mockImplementation(async (cmd: string) => {
+      callOrder.push(`invoke:${cmd}`);
+    });
+    checkMock.mockResolvedValue({ currentVersion: '0.16.93', version: '0.16.94', download, install });
     relaunchMock.mockResolvedValue(undefined);
 
     const phases: string[] = [];
@@ -77,11 +89,36 @@ describe('tauriUpdater (plugin-based)', () => {
       if (p.phase === 'download') lastDownloaded = p.downloaded;
     });
 
-    expect(downloadAndInstall).toHaveBeenCalledTimes(1);
+    expect(download).toHaveBeenCalledTimes(1);
+    expect(install).toHaveBeenCalledTimes(1);
+    expect(invokeMock).toHaveBeenCalledWith('shutdown_web_server_for_update');
+    // 跨端合同要求的顺序：先落盘字节，再优雅停 webServer，再 install（Windows 上此后不返回），
+    // 最后才预热 compile cache——install 之前磁盘上还是旧包，那时预热等于预热旧代码。
+    expect(callOrder).toEqual([
+      'download',
+      'invoke:shutdown_web_server_for_update',
+      'install',
+      'invoke:warm_compile_cache_after_install',
+    ]);
     expect(lastDownloaded).toBe(100);
     expect(phases).toContain('download');
     expect(phases).toContain('install');
     expect(phases).toContain('relaunch');
+    expect(relaunchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('relaunches to recover webServer when install() fails (mac/Linux only path)', async () => {
+    const download = vi.fn(async () => {});
+    const install = vi.fn(async () => {
+      throw new Error('signature verification failed');
+    });
+    invokeMock.mockResolvedValue(undefined);
+    checkMock.mockResolvedValue({ currentVersion: '0.16.93', version: '0.16.94', download, install });
+    relaunchMock.mockResolvedValue(undefined);
+
+    await expect(tauriInstallUpdate()).resolves.toBeUndefined();
+
+    expect(install).toHaveBeenCalledTimes(1);
     expect(relaunchMock).toHaveBeenCalledTimes(1);
   });
 

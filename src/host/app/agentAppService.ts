@@ -70,6 +70,7 @@ import type {
 } from '../../shared/contract/conversationEnvelope';
 import { withWorkbenchTurnSystemContext } from './workbenchTurnContext';
 import { withSessionCommandCenterBrain } from './sessionCommandCenterBrain';
+import { isSessionCommandCenterTurn } from '../../shared/constants/sessionCommandCenter';
 import { getPermissionModeManager } from '../permissions/modes';
 import {
   exportSessionToMarkdown,
@@ -704,9 +705,12 @@ export class AgentAppServiceImpl implements AgentApplicationService {
       envelope.options as AppServiceRunOptions | undefined,
       envelope.context,
     );
-    const options = envelope.content.trimStart().startsWith('/') || workbenchOptions?.goal
-      ? workbenchOptions
-      : withSessionCommandCenterBrain(workbenchOptions);
+    const options = isSessionCommandCenterTurn({
+      prompt: envelope.content,
+      hasGoal: Boolean(workbenchOptions?.goal),
+    })
+      ? withSessionCommandCenterBrain(workbenchOptions)
+      : workbenchOptions;
 
     // 云货架专家首跑：本轮档位钳到最严，让用户看见它每一步要干什么。
     // 必须挂在**主 agent 轮起点**——用户在输入框选中专家后说话，专家就是主 agent
@@ -875,9 +879,12 @@ export class AgentAppServiceImpl implements AgentApplicationService {
       envelope.options as AppServiceRunOptions | undefined,
       envelope.context,
     );
-    const options = envelope.content.trimStart().startsWith('/') || workbenchOptions?.goal
-      ? workbenchOptions
-      : withSessionCommandCenterBrain(workbenchOptions);
+    const options = isSessionCommandCenterTurn({
+      prompt: envelope.content,
+      hasGoal: Boolean(workbenchOptions?.goal),
+    })
+      ? withSessionCommandCenterBrain(workbenchOptions)
+      : workbenchOptions;
     return tm.interruptAndContinue(
       resolvedSessionId,
       envelope.content,

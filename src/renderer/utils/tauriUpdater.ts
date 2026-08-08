@@ -2,13 +2,11 @@
  * Tauri-native update service.
  *
  * 历史上这里调用 app 自定义命令（check_for_update / install_update / ...），
- * 但本 app 的渲染器是从 remote origin（http://localhost:8180，本地 webServer）加载的，
- * Tauri 2 的 ACL 不会把 app 自定义命令授权给 remote origin，导致
- * `invoke('check_for_update')` 被 "not allowed by ACL" 直接拒绝、检查更新永远失败。
- *
- * 修复：改用 tauri-updater 官方插件的 JS API。capability 已显式授权 `updater:*`
- * 给 localhost:8180，插件命令（plugin:updater|check / download-and-install）不受该限制，
- * 既能恢复检查，又保留原生一键下载安装。
+ * 但本 app 的渲染器是从 remote origin（http://localhost:8180，本地 webServer）加载的。
+ * `src-tauri/permissions/app-commands.toml` 出现之后，app 自定义命令可以按 ACL
+ * 白名单授权给 remote origin（`allow-renderer-commands`），所以 `shutdown_web_server_for_update`
+ * 这类 app 命令是可以被本文件调用的；而 tauri-updater 官方插件的 check/download/install
+ * 命令本身走插件自己的权限体系（`updater:allow-*`），不受这条 ACL 影响，两者并存使用。
  */
 
 import type { UpdateInfo } from '@shared/contract';
@@ -59,17 +57,30 @@ export interface UpdateInstallProgress {
 }
 
 /**
- * 下载并安装更新（插件原生流程：拉取签名包 → 校验 pubkey → 安装 → 自动重启进新版本）。
+ * 下载并安装更新（download → 优雅停 webServer → install → relaunch）。
  * onProgress 回调用于在 UI 上展示下载进度；安装完成后调用 relaunch() 自动重启，无需用户手动退出。
+ *
+ * 为什么 download 和 install 分两步调、中间插一次 invoke（而不是一次
+ * `downloadAndInstall`）：Windows 上 tauri-plugin-updater 的 install 在 crate 内部
+ * ShellExecuteW 拉起 NSIS 安装程序之后直接 `std::process::exit(0)`
+ * （tauri-plugin-updater-2.10.1 updater.rs:865），控制流永不返回——`relaunch()` 执行
+ * 不到，Tauri 的 `RunEvent::Exit` 也不会来，我们 spawn 的 webServer 子进程就被
+ * Windows 硬杀（TerminateProcess），来不及 flush/checkpoint，留下陈旧 -wal/-shm
+ * （2026-08-07 Windows 真机实测坐实）。插件的 JS 路径也没有入口覆盖它的
+ * `on_before_exit` 钩子，只能由渲染器在 install 之前显式调 Rust 命令
+ * `shutdown_web_server_for_update` 优雅停机。顺序不能换：
+ *   - 必须在 download 之后——下载期间渲染器还要靠 webServer 服务，提前停会打瘫页面；
+ *   - 必须在 install 之前——Windows 上 install() 之后没有任何我们的代码会再执行。
  */
 export async function tauriInstallUpdate(
   onProgress?: (progress: UpdateInstallProgress) => void,
 ): Promise<void> {
   const { check } = await import('@tauri-apps/plugin-updater');
-  // 必须在 downloadAndInstall 之前预加载 relaunch：downloadAndInstall 会替换整个 app bundle
-  // （含 webServer 正在服务的 renderer chunk，hash 会变），之后再动态 import 会因旧 chunk 404
-  // 报 "Importing a module script failed"。提前把模块取到内存即可规避。
+  // 必须在 download 之前预加载 relaunch：install 会替换整个 app bundle（含 webServer
+  // 正在服务的 renderer chunk，hash 会变），之后再动态 import 会因旧 chunk 404 报
+  // "Importing a module script failed"。提前把模块取到内存即可规避。
   const { relaunch } = await import('@tauri-apps/plugin-process');
+  const { invoke } = await import('@tauri-apps/api/core');
   const update = await check();
   if (!update) {
     throw new Error('No update available to install');
@@ -77,7 +88,7 @@ export async function tauriInstallUpdate(
 
   let downloaded = 0;
   let total: number | undefined;
-  await update.downloadAndInstall((event) => {
+  await update.download((event) => {
     switch (event.event) {
       case 'Started':
         total = event.data.contentLength;
@@ -94,7 +105,33 @@ export async function tauriInstallUpdate(
     }
   });
 
-  // 安装完成 → 自动重启进新版本（relaunch 已在前面预加载，避免 bundle 替换后再 import 失败）
+  // 字节已落盘，现在优雅停 webServer（幂等：即便 mac/Linux 后面走 RunEvent::Exit
+  // 再收尾一次也是 no-op）。宽限期内没退才由 Rust 侧 SIGKILL 兜底。
+  await invoke('shutdown_web_server_for_update');
+
+  try {
+    // Windows：此调用不返回（crate 内部 std::process::exit(0)）。
+    await update.install();
+  } catch (installError) {
+    // mac/Linux 才可能走到这里（如签名校验失败）：webServer 已经停了，"僵尸自愈"
+    // （recreate_main_window）只在主窗口被销毁重建时触发，覆盖不了这个场景，所以
+    // 显式 relaunch() 把 app 重启回当前版本，让 Rust 侧 setup() 重新拉起 webServer。
+    console.error('[updater] install failed, relaunching to recover webServer:', installError);
+    await relaunch();
+    return;
+  }
+
+  // C1 编译缓存预热：新 bundle 此刻才真正落盘（install() 之前磁盘上还是旧包，那时预热
+  // 等于预热旧代码），所以钩子只能挂在 install 之后、relaunch 之前这一格。
+  // Windows 走不到这里——install() 内部 std::process::exit(0)，进程与新包首启之间
+  // 没有任何我们的代码窗口，那边更新后首启注定是冷的（结构性限制，非缺陷）。
+  // best-effort：Rust 侧自带 20s 超时兜底，这里再包一层 catch，绝不因为预热失败挡住重启。
+  try {
+    await invoke('warm_compile_cache_after_install');
+  } catch (warmError) {
+    console.warn('[updater] compile cache warmup skipped:', warmError);
+  }
+
   onProgress?.({ phase: 'relaunch', downloaded: total ?? downloaded, total });
   await relaunch();
 }

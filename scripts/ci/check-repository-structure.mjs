@@ -24,14 +24,20 @@ const limits = {
   // package.json 的 tauri:gen-dev-slot-conf 稳定入口，被 tauri:package:dev 直接调用）。
   // 2026-08-06 +1: scripts/worktree-bootstrap.sh（新 worktree 构建输入引导：软链只读输入 +
   // 实体拷贝可写输入，CLAUDE.md「本地 dogfood 打包」小节指向的稳定手工入口）。
-  directScriptFiles: 146,
+  // 2026-08-08 +1: scripts/host-chinese-error-ratchet.mjs（P2 host 中文 error
+  // 字面量棘轮，package / gates:local / swarm-ci 共用的稳定入口）。
+  directScriptFiles: 147,
   // 15: the Poppler promotion boundary is split across two workflows on purpose —
   // build-poppler-sidecar.yml only reviews candidates and can never publish, while
   // promote-poppler-sidecar.yml holds the OSS credentials and publishes them.
   // 16: main-full-gate.yml is the post-merge combo-break detector (full tsc + full
   // vitest on main push) — PR gates run shards, so cross-PR combination breakage
   // (4 incidents on 2026-07-17 alone) was previously invisible until the next PR.
-  workflows: 16,
+  // 17: rust-ci.yml — src-tauri/** was in no workflow's paths filter, so a pure Rust
+  // PR passed through with **zero** checks (found 2026-08-07 during the Windows hang
+  // battle). It cannot fold into swarm-ci.yml: paths filters are workflow-level, so
+  // reusing that file would run the whole TS suite for every Rust-only change.
+  workflows: 17,
 };
 
 const navigationFiles = [

@@ -5,6 +5,7 @@ import type {
   ContextInjectionSource,
 } from '../../../context/contextEventLedger';
 import { getSessionManager } from '../../../services';
+import type { SystemEventMessageMetadata } from '../../../../shared/contract/systemEventRegistry';
 import { estimateTokens } from '../../../context/tokenOptimizer';
 import { getContextEventLedger } from '../../../context/contextEventLedger';
 import type { ContextAssemblyCtx } from './shared';
@@ -277,6 +278,26 @@ export async function addAndPersistMessage(ctx: ContextAssemblyCtx, message: Mes
       hasCallback: !!ctx.runtime.persistMessage,
     });
   }
+}
+
+/**
+ * 乙类落点（2026-08-08 notification 事件零消费者工单）：模型这次做了什么补救动作的过程
+ * 说明，写成落库的 `role:'system'` 消息，登记进 USER_VISIBLE_SYSTEM_EVENT_REGISTRY 的
+ * agentRecoveryNotice 项，回看对话时可见、不弹窗打断。addAndPersistMessage 内部已吞掉
+ * 持久化失败（只 warn），这里不用再包 try/catch。
+ */
+export async function writeAgentRecoveryNotice(
+  ctx: ContextAssemblyCtx,
+  kind: NonNullable<SystemEventMessageMetadata['agentRecoveryNotice']>['kind'],
+  content: string,
+): Promise<void> {
+  await addAndPersistMessage(ctx, {
+    id: ctx.generateId(),
+    role: 'system',
+    content,
+    timestamp: Date.now(),
+    metadata: { agentRecoveryNotice: { kind } } satisfies SystemEventMessageMetadata,
+  });
 }
 
 export function recordContextEventsForMessage(ctx: ContextAssemblyCtx, message: Message): void {

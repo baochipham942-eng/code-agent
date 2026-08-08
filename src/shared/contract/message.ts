@@ -330,6 +330,14 @@ export interface MessageMetadata {
    * 这条消息不进对话（投影层只取 metadata，不成节点）。
    */
   voiceWorkSettled?: { workItemId: string; title: string; outcome: 'done' | 'unverified' };
+  /**
+   * 模型这次做了什么补救动作的过程说明（`role:'system'`，2026-08-08 notification 事件
+   * 零消费者工单乙类）：视觉降级为纯文本 / artifact 生成流中断切非流式重试 / 已用视觉模型
+   * 预处理读图 / 交付时仍有显式任务未完成。用户回看对话时想看到，不该弹窗打断——挂当前轮。
+   */
+  agentRecoveryNotice?: {
+    kind: 'vision_tool_unsupported' | 'artifact_stream_retry' | 'vision_preflight_used' | 'unresolved_tasks';
+  };
   /** 后台任务统一终态投影，供后续 turn 做短名指代与状态追问。 */
   backgroundTaskResult?: {
     source: 'agent-result';

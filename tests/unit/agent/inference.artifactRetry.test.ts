@@ -168,6 +168,10 @@ function buildCtx(overrides: Partial<ContextAssemblyCtx['runtime']> = {}): Conte
       { role: 'user', content: '生成一个单文件 HTML game' },
     ]),
     checkAndAutoCompress: vi.fn(),
+    // 乙类落点（2026-08-08 notification 事件零消费者工单）：writeAgentRecoveryNotice
+    // 需要这两个来落一条 role:'system' 消息到 ctx.runtime.messages。
+    generateId: vi.fn(() => 'recovery-notice-id'),
+    recordContextEventsForMessage: vi.fn(),
   } as any;
 }
 
@@ -617,12 +621,16 @@ describe('contextAssembly inference artifact retry', () => {
       undefined,
       { forceNonStreaming: true, disableProviderTransientRetry: true },
     );
-    expect(ctx.runtime.onEvent).toHaveBeenCalledWith({
-      type: 'notification',
-      data: {
-        message: '生成文件时模型流中断，正在切换到更稳的非流式方式重试。',
-      },
-    });
+    // 乙类落点：不再走零消费者的 notification 事件，改成登记制 system 消息（回看对话可见）。
+    expect(ctx.runtime.messages).toContainEqual(
+      expect.objectContaining({
+        role: 'system',
+        content: '生成文件时模型流中断，正在切换到更稳的非流式方式重试。',
+        metadata: expect.objectContaining({
+          agentRecoveryNotice: { kind: 'artifact_stream_retry' },
+        }),
+      }),
+    );
     expect(ctx.taskProgress.emitTaskProgress).toHaveBeenCalledWith(
       'generating',
       '模型流中断，正在用非流式方式重试 artifact 生成...',
@@ -711,12 +719,16 @@ describe('contextAssembly inference artifact retry', () => {
     expect(JSON.stringify(mainMessages)).toContain('[视觉预处理结果]');
     expect(JSON.stringify(mainMessages)).toContain('图片里是一个应用截图。');
     expect(JSON.stringify(mainMessages)).not.toContain('"type":"image"');
-    expect(ctx.runtime.onEvent).toHaveBeenCalledWith({
-      type: 'notification',
-      data: {
-        message: '已用视觉模型 mimo-v2-omni 读取图片，继续由 mimo-v2.5-pro 回答。',
-      },
-    });
+    // 乙类落点：不再走零消费者的 notification 事件，改成登记制 system 消息（回看对话可见）。
+    expect(ctx.runtime.messages).toContainEqual(
+      expect.objectContaining({
+        role: 'system',
+        content: '已用视觉模型 mimo-v2-omni 读取图片，继续由 mimo-v2.5-pro 回答。',
+        metadata: expect.objectContaining({
+          agentRecoveryNotice: { kind: 'vision_preflight_used' },
+        }),
+      }),
+    );
   });
 
   // T7：识图预处理链路全失败——两条真机复现路径。区分"零候选"（一个已配 Key 的识图

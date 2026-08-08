@@ -273,9 +273,23 @@ impl AppState {
     }
 }
 
-/// 先发 SIGTERM 让 webServer 自己走干净关库路径，轮询最多 GRACEFUL_SHUTDOWN_TIMEOUT
-/// 等它退出；超时才 SIGKILL 兜底。exit_reason 区分 graceful/forced，是事后判断
-/// 「这次退出干不干净」的唯一证据。
+/// 已经发出「请自行退出」的信号之后：轮询等它退，超时才 SIGKILL 兜底。
+/// unix / not(unix) 两个 `terminate_child` 共用同一份超时策略，避免两处各自漂移。
+/// exit_reason 区分 graceful/forced，是事后判断「这次退出干不干净」的唯一证据。
+fn wait_then_force_kill(child: &mut Child, graceful_reason: &str) -> (String, Option<String>) {
+    let deadline = Instant::now() + GRACEFUL_SHUTDOWN_TIMEOUT;
+    while Instant::now() < deadline {
+        match child.try_wait() {
+            Ok(Some(status)) => return (graceful_reason.to_string(), Some(status.to_string())),
+            Ok(None) => thread::sleep(GRACEFUL_SHUTDOWN_POLL_INTERVAL),
+            Err(_) => break,
+        }
+    }
+
+    force_kill(child, "forced-sigkill-timeout")
+}
+
+/// 先发 SIGTERM 让 webServer 自己走干净关库路径，再交给 `wait_then_force_kill` 轮询等它退。
 #[cfg(unix)]
 fn terminate_child(child: &mut Child) -> (String, Option<String>) {
     let pid = child.id() as i32;
@@ -285,23 +299,23 @@ fn terminate_child(child: &mut Child) -> (String, Option<String>) {
         return force_kill(child, "forced-sigkill-sigterm-send-failed");
     }
 
-    let deadline = Instant::now() + GRACEFUL_SHUTDOWN_TIMEOUT;
-    while Instant::now() < deadline {
-        match child.try_wait() {
-            Ok(Some(status)) => return ("graceful-sigterm".to_string(), Some(status.to_string())),
-            Ok(None) => thread::sleep(GRACEFUL_SHUTDOWN_POLL_INTERVAL),
-            Err(_) => break,
-        }
-    }
-
-    force_kill(child, "forced-sigkill-timeout")
+    wait_then_force_kill(child, "graceful-sigterm")
 }
 
-/// Windows 没有 POSIX 信号语义，TerminateProcess（Child::kill）本身就是强杀；
-/// 优雅关闭需要 CREATE_NEW_PROCESS_GROUP + CTRL_BREAK_EVENT，超出本单范围。
+/// Windows 没有 POSIX 信号，TerminateProcess（Child::kill）不给子进程任何收尾机会。
+/// 但 webServer 本来就监听 stdin EOF 自杀（`webServer.ts` 的 `process.stdin.on('end')`，
+/// spawn 时的 `.stdin(Stdio::piped())` 就是为它准备的），所以这里关掉 stdin 写端
+/// 当作「请自行退出」，再走与 unix 同一套轮询 + 超时兜底。
+/// 不用 CREATE_NEW_PROCESS_GROUP + CTRL_BREAK_EVENT：那要 unsafe winapi + 改 spawn flags
+/// （已带 CREATE_NO_WINDOW，叠加还得另验），而 stdin EOF 这条通路是现成且已在用的。
 #[cfg(not(unix))]
 fn terminate_child(child: &mut Child) -> (String, Option<String>) {
-    force_kill(child, "forced-sigkill-no-signal-support")
+    // take() 取出 ChildStdin，出作用域即关闭管道写端 → 子进程 stdin 收到 EOF。
+    if child.stdin.take().is_none() {
+        return force_kill(child, "forced-sigkill-no-stdin-pipe");
+    }
+
+    wait_then_force_kill(child, "graceful-stdin-eof")
 }
 
 fn force_kill(child: &mut Child, reason: &str) -> (String, Option<String>) {
@@ -967,6 +981,57 @@ mod windows_process_reap_tests {
   TCP    0.0.0.0:81800          0.0.0.0:0              LISTENING       2
 ";
         assert!(parse_windows_netstat_port_holders(output, 8180, 999).is_empty());
+    }
+}
+
+// 本地档，不是 CI 门（`.github/workflows/` 全仓 grep `cargo test` 零命中）。
+// unix-only：起真子进程验编排，Windows 分支的 stdin-EOF 行为只有 static-contract 档证据。
+#[cfg(all(test, unix))]
+mod terminate_child_tests {
+    use super::terminate_child;
+    use std::process::{Command, Stdio};
+    use std::{thread, time::Duration};
+
+    /// 让 shell 有时间跑到 `trap` 那一行再发信号，否则会跟「装 trap」赛跑：
+    /// SIGTERM 在 trap 生效前打到默认处理上，把 ignore 场景误判成 graceful。
+    fn let_shell_install_trap() {
+        thread::sleep(Duration::from_millis(100));
+    }
+
+    #[test]
+    fn sigterm_handled_by_child_reports_graceful() {
+        let mut child = Command::new("sh")
+            .arg("-c")
+            .arg("trap 'exit 0' TERM; while :; do sleep 0.1; done")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("failed to spawn trap-TERM test child");
+        let_shell_install_trap();
+
+        let (exit_reason, wait_status) = terminate_child(&mut child);
+
+        assert_eq!(exit_reason, "graceful-sigterm");
+        assert!(wait_status.is_some());
+    }
+
+    #[test]
+    fn sigterm_ignored_by_child_falls_back_to_forced_kill() {
+        let mut child = Command::new("sh")
+            .arg("-c")
+            .arg("trap '' TERM; while :; do sleep 0.1; done")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("failed to spawn trap-ignore test child");
+        let_shell_install_trap();
+
+        let (exit_reason, wait_status) = terminate_child(&mut child);
+
+        assert_eq!(exit_reason, "forced-sigkill-timeout");
+        assert!(wait_status.is_some());
     }
 }
 
@@ -2167,6 +2232,22 @@ fn cleanup_server(app: &tauri::AppHandle) {
     if let Some(cleanup) = app.state::<AppState>().cleanup() {
         write_process_cleanup_event(app, cleanup);
     }
+}
+
+/// 更新安装前显式优雅停 webServer。
+///
+/// 为什么需要它：Windows 上 tauri-plugin-updater 的 install 在 crate 内部
+/// ShellExecuteW 起 NSIS 之后直接 std::process::exit(0)（tauri-plugin-updater-2.10.1
+/// updater.rs:865），控制流永不返回 → 渲染器的 relaunch() 执行不到 → RunEvent::Exit
+/// 不会来 → cleanup_server 一次都不跑（2026-08-07 Windows 真机：该次启动的
+/// webServerPid 在 desktop-shell-events.ndjson 里没有 cleanup 记录）。插件的 JS 路径
+/// 也没有入口覆盖它的 on_before_exit。所以只能由渲染器在 install 之前显式调这一下。
+///
+/// 幂等：AppState::cleanup() 是 take() 语义，之后 RunEvent::Exit 再调一次是 no-op。
+/// mac 上这一步同样会跑（此后 relaunch 走 request_restart，cleanup 已被 take，无副作用）。
+#[tauri::command]
+fn shutdown_web_server_for_update(app: tauri::AppHandle) {
+    cleanup_server(&app);
 }
 
 fn install_signal_handler(app: &tauri::AppHandle) {
@@ -3795,6 +3876,7 @@ fn main() {
             check_for_update,
             install_update,
             open_update_url,
+            shutdown_web_server_for_update,
             desktop_get_capabilities,
             desktop_get_permission_status,
             desktop_get_frontmost_context,

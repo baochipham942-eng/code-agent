@@ -24,6 +24,12 @@ export interface SessionCommandTask {
   prompt: string;
   workspaceScope: WorkspaceScope;
   status: SessionCommandTaskStatus;
+  attempt: number;
+  retryOf?: {
+    taskId: string;
+    status: Extract<SessionCommandTaskStatus, 'failed' | 'cancelled'>;
+    detail?: string;
+  };
   createdAt: number;
   updatedAt: number;
   detail?: string;
@@ -118,6 +124,10 @@ export class SessionCommandCenter {
       return { outcome: 'reused', task: { ...reused } };
     }
 
+    const retryOfId = admission.slot.attempt > 1
+      ? this.previousTaskId(input.sessionId, input.submissionKey, admission.slot.workItemId)
+      : undefined;
+    const retryOf = retryOfId ? this.tasks(input.sessionId).get(retryOfId) : undefined;
     const now = Date.now();
     const task: SessionCommandTask = {
       id,
@@ -129,6 +139,16 @@ export class SessionCommandCenter {
       prompt: input.prompt,
       workspaceScope: input.workspaceScope,
       status: admission.outcome === 'started' ? 'running' : 'queued',
+      attempt: admission.slot.attempt,
+      ...(retryOf && (retryOf.status === 'failed' || retryOf.status === 'cancelled')
+        ? {
+          retryOf: {
+            taskId: retryOf.id,
+            status: retryOf.status,
+            ...(retryOf.detail ? { detail: retryOf.detail } : {}),
+          },
+        }
+        : {}),
       createdAt: now,
       updatedAt: now,
       attachments: input.attachments,
@@ -314,7 +334,7 @@ export class SessionCommandCenter {
       });
     }
 
-    for (const slot of this.ledger(task.sessionId).settle(task.id)) {
+    for (const slot of this.ledger(task.sessionId).settle(task.id, status)) {
       const next = this.tasks(task.sessionId).get(slot.workItemId);
       if (next) this.launch(next);
     }
@@ -344,6 +364,8 @@ export class SessionCommandCenter {
           shortName: task.shortName,
           laneKey: task.laneKey,
           submissionKey: task.submissionKey,
+          attempt: task.attempt,
+          retryOf: task.retryOf,
           parentRunId: task.parentRunId,
           childRunId: task.id,
         },
@@ -354,6 +376,13 @@ export class SessionCommandCenter {
         message: error instanceof Error ? error.message : String(error),
       });
     }
+  }
+
+  private previousTaskId(sessionId: string, submissionKey: string, currentTaskId: string): string | undefined {
+    const previous = this.list(sessionId)
+      .filter((task) => task.submissionKey === submissionKey && task.id !== currentTaskId)
+      .at(-1);
+    return previous?.id;
   }
 }
 

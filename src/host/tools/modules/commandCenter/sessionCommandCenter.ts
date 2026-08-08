@@ -8,6 +8,7 @@ import type {
 } from '../../../protocol/tools';
 import type { MessageAttachment } from '../../../../shared/contract';
 import { getSessionCommandCenter, type SessionTaskReferenceResult } from '../../../services/commandCenter/sessionCommandCenter';
+import type { SpawnSessionTaskResult } from '../../../services/commandCenter/sessionCommandCenter';
 import { resolveBackgroundWorkspaceAuthority } from '../../../task/backgroundWorkspaceAuthority';
 import {
   cancelTaskSchema,
@@ -64,6 +65,20 @@ async function permit(
   return decision.allow
     ? null
     : { ok: false, error: `permission denied: ${decision.reason}`, code: 'PERMISSION_DENIED' };
+}
+
+export function describeDelegateTaskResult(result: Exclude<SpawnSessionTaskResult, { outcome: 'requires_choice' }>): string {
+  const { task } = result;
+  const retryContext = task.retryOf
+    ? `这是第 ${task.attempt} 次尝试；上一次 [${task.retryOf.status}]${task.retryOf.detail ? `：${task.retryOf.detail}` : '。'}`
+    : '';
+  if (result.outcome === 'reused') {
+    return `reused：复用「${task.shortName}」(${task.id})，当前状态 [${task.status}]${task.detail ? `：${task.detail}` : '。'}${task.attempt > 1 ? `这是第 ${task.attempt} 次尝试。` : ''}`;
+  }
+  if (result.outcome === 'queued') {
+    return `queued：已把「${task.shortName}」(${task.id}) 放进同一任务线，前序任务结束后自动开始。${retryContext}`;
+  }
+  return `accepted：后台任务「${task.shortName}」(${task.id}) 已开始。accepted 不等于完成；结果只以后续任务终态回流为准。${retryContext}`;
 }
 
 export async function executeDelegateTask(
@@ -127,15 +142,12 @@ export async function executeDelegateTask(
     };
   }
   if (result.outcome === 'reused') {
-    return { ok: true, output: `reused：复用「${result.task.shortName}」(${result.task.id})，没有重复派发。` };
+    return { ok: true, output: describeDelegateTaskResult(result) };
   }
   if (result.outcome === 'queued') {
-    return { ok: true, output: `queued：已把「${result.task.shortName}」(${result.task.id}) 放进同一任务线，前序任务结束后自动开始。` };
+    return { ok: true, output: describeDelegateTaskResult(result) };
   }
-  return {
-    ok: true,
-    output: `accepted：后台任务「${result.task.shortName}」(${result.task.id}) 已开始。accepted 不等于完成；结果只以后续任务终态回流为准。`,
-  };
+  return { ok: true, output: describeDelegateTaskResult(result) };
 }
 
 export async function executeSteerTask(

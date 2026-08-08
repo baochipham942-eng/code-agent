@@ -6,6 +6,7 @@ import {
   type SessionCommandTask,
 } from '../../../src/host/services/commandCenter/sessionCommandCenter';
 import { resetSessionTaskConcurrencyPoolForTest } from '../../../src/host/services/commandCenter/sessionTaskSlotLedger';
+import { describeDelegateTaskResult } from '../../../src/host/tools/modules/commandCenter/sessionCommandCenter';
 import {
   getBackgroundTaskLedger,
   resetBackgroundTaskLedgerForTest,
@@ -140,6 +141,36 @@ describe('SessionCommandCenter', () => {
       { status: 'completed' },
       { status: 'running' },
     ]);
+    center.dispose();
+  });
+
+  it('retries a failed submission key as a new attempt and preserves the failure in its receipt', async () => {
+    const manager = new FakeTaskManager();
+    const center = new SessionCommandCenter(manager as unknown as TaskManager, {
+      projectTerminalResult: vi.fn(),
+    });
+    const first = await center.spawn(input(1));
+    if (first.outcome === 'requires_choice') throw new Error('unexpected admission result');
+
+    manager.emitTask({
+      type: 'task_error',
+      sessionId: 'session-a',
+      data: { taskId: first.task.id, error: '上游超时' },
+    });
+    await vi.waitFor(() => expect(center.list('session-a')[0]).toMatchObject({ status: 'failed' }));
+
+    const retry = await center.spawn({ ...input(2), submissionKey: 'submission-1' });
+    if (retry.outcome === 'requires_choice') throw new Error('unexpected admission result');
+    expect(retry).toMatchObject({
+      outcome: 'started',
+      task: {
+        attempt: 2,
+        retryOf: { taskId: first.task.id, status: 'failed', detail: '上游超时' },
+      },
+    });
+    expect(retry.task.id).not.toBe(first.task.id);
+    expect(center.list('session-a')).toHaveLength(2);
+    expect(describeDelegateTaskResult(retry)).toContain('上一次 [failed]：上游超时');
     center.dispose();
   });
 

@@ -427,7 +427,12 @@ function settle(
     state.runConclusions.get(id),
   );
   getPermissionModeManager().clearLiveVoiceSession(state.neoSessionId, runHoldId(id));
-  const startable = state.slots.settle(id);
+  // 语音的终态四档要映射到账本的三档：只有真正做完（done/unverified）才算 completed，
+  // 否则 failed/cancelled 必须如实落账——账本据此决定同 submissionKey 能不能重试。
+  const startable = state.slots.settle(
+    id,
+    status === 'failed' ? 'failed' : status === 'cancelled' ? 'cancelled' : 'completed',
+  );
   state.pendingStartedAtById.delete(id);
   state.runRequests.delete(id);
   state.runConclusions.delete(id);

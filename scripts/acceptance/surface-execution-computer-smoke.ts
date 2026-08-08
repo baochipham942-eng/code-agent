@@ -55,6 +55,7 @@ import {
   printJson,
   printKeyValue,
 } from './_helpers.ts';
+import { isChildGone } from './childProcessState.ts';
 import {
   surfaceAcceptanceCampaignProofFields,
   surfaceAcceptanceSourceFingerprint,
@@ -472,13 +473,14 @@ async function startForegroundSentinel(tmpRoot: string, sequence: number): Promi
 }
 
 async function stopTargetFixture(fixture: TargetFixture | null): Promise<void> {
-  if (!fixture || fixture.process.exitCode !== null) return;
-  fixture.process.kill('SIGTERM');
-  const exited = await Promise.race([
-    new Promise<boolean>((resolveExit) => fixture.process.once('exit', () => resolveExit(true))),
-    new Promise<boolean>((resolveTimeout) => setTimeout(() => resolveTimeout(false), 1_000)),
-  ]);
-  if (!exited && fixture.process.exitCode === null) fixture.process.kill('SIGKILL');
+  if (!fixture || isChildGone(fixture.process)) return;
+  const { process: child } = fixture;
+  child.kill('SIGTERM');
+  if (await waitFor(() => isChildGone(child), 1_000)) return;
+  child.kill('SIGKILL');
+  if (!await waitFor(() => isChildGone(child), 1_000)) {
+    throw new Error(`Fixture process did not terminate after SIGKILL (pid=${child.pid ?? 'unknown'})`);
+  }
 }
 
 function createGate(label: string): DelayGate {
@@ -1619,7 +1621,7 @@ async function main(): Promise<void> {
     }
     try {
       await stopTargetFixture(fixture);
-      assertions.fixtureTerminated = fixture ? fixture.process.exitCode !== null || fixture.process.killed : true;
+      assertions.fixtureTerminated = fixture ? isChildGone(fixture.process) : true;
     } catch (fixtureError) {
       assertions.fixtureTerminated = false;
       evidence.fixtureCleanupError = errorMessage(fixtureError);
@@ -1627,7 +1629,7 @@ async function main(): Promise<void> {
     try {
       for (const sentinel of foregroundSentinels) await stopTargetFixture(sentinel);
       assertions.foregroundSentinelsTerminated = foregroundSentinels.every((sentinel) => (
-        sentinel.process.exitCode !== null || sentinel.process.killed
+        isChildGone(sentinel.process)
       ));
     } catch (sentinelError) {
       assertions.foregroundSentinelsTerminated = false;

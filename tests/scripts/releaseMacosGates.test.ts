@@ -650,12 +650,25 @@ describe('macOS release fail-closed gates', () => {
     }
   });
 
+  // 承重方向是 push ⊆ pull_request：能在 main 上触发发包的路径，必须在 PR 上先被
+  // 这条 workflow 的 smoke 跑过一遍，否则就是「合进去才发现门是红的，而包已经发了」。
+  // 反方向（PR 独有）不承重——多跑一道门而已，不会发版。
+  //
+  // 2026-08-08 起 package.json / package-lock.json 只进 PR 侧：热更链路 10% 间歇性挂
+  // 的根因是依赖（better-sqlite3 在 Node 24 上的原生断言崩了 webServer 子进程），而
+  // 改依赖的 PR 触发不到这条 workflow，缺陷只能等合进 main 由 publish 腿吃到。
+  // 不进 push 侧是因为那条腿真往 OSS 发包，不该被无关依赖变更带着发版。
+  // 白名单是显式的：写在这里之外的 PR 独有路径仍然判红，防漂移。
+  const PULL_REQUEST_ONLY_PATHS = ['package.json', 'package-lock.json'];
+
   it('keeps renderer hot-update PR and push path filters in sync', () => {
     const triggers = readWorkflowTriggers('.github/workflows/renderer-bundle.yml');
     const pullRequestPaths = triggers.pull_request.paths ?? [];
     const pushPaths = triggers.push.paths ?? [];
     const pushTags = triggers.push.tags ?? [];
-    const onlyPullRequest = pullRequestPaths.filter((entry) => !pushPaths.includes(entry));
+    const onlyPullRequest = pullRequestPaths.filter(
+      (entry) => !pushPaths.includes(entry) && !PULL_REQUEST_ONLY_PATHS.includes(entry),
+    );
     const onlyPush = pushPaths.filter((entry) => !pullRequestPaths.includes(entry));
     const requiredProductionPaths = [
       'scripts/control-plane-smoke.mjs',
@@ -671,6 +684,11 @@ describe('macOS release fail-closed gates', () => {
     expect(onlyPullRequest).toEqual([]);
     expect(onlyPush).toEqual([]);
     expect(pushTags).toContain('v*');
+    // 白名单不许变僵尸：写在里面却没真出现在 PR 侧，说明该条已被删，白名单要跟着删。
+    for (const path of PULL_REQUEST_ONLY_PATHS) {
+      expect(pullRequestPaths).toContain(path);
+      expect(pushPaths).not.toContain(path);
+    }
     for (const path of requiredProductionPaths) {
       expect(pullRequestPaths).toContain(path);
       expect(pushPaths).toContain(path);

@@ -7,6 +7,7 @@ import { promisify } from 'util';
 import { AppWindow } from '../platform';
 import { v4 as uuidv4 } from 'uuid';
 import { IPC_CHANNELS } from '../../shared/ipc';
+import type { AgentNoticeEvent } from '../../shared/ipc/handlers';
 import type {
   HeartbeatConfig,
   HeartbeatStatus,
@@ -545,30 +546,27 @@ export class HeartbeatService {
     );
 
     if (alert.ipc) {
-      const event = {
-        type: 'notification' as const,
-        data: {
-          message: `[Heartbeat] ${config.name}: ${checkResult.error || 'Check failed'}`,
-          heartbeatId: config.id,
-          status: status.status,
+      const event: AgentNoticeEvent = {
+        reasonCode: 'heartbeat_check_failed',
+        params: {
+          name: config.name,
+          error: checkResult.error || 'Check failed',
           consecutiveFailures: status.consecutiveFailures,
         },
       };
 
       for (const window of AppWindow.getAllWindows()) {
-        window.webContents.send(IPC_CHANNELS.AGENT_EVENT, event);
+        window.webContents.send(IPC_CHANNELS.AGENT_NOTICE, event);
       }
     }
 
     if (alert.notification) {
+      const event: AgentNoticeEvent = {
+        reasonCode: 'heartbeat_status_alert',
+        params: { name: config.name, status: status.status },
+      };
       for (const window of AppWindow.getAllWindows()) {
-        window.webContents.send(IPC_CHANNELS.AGENT_EVENT, {
-          type: 'notification',
-          data: {
-            message: `[Heartbeat Alert] ${config.name} is ${status.status}`,
-            heartbeatId: config.id,
-          },
-        });
+        window.webContents.send(IPC_CHANNELS.AGENT_NOTICE, event);
       }
 
       notificationService.notifyTaskComplete({

@@ -3,7 +3,7 @@ import type { VoiceToolDefinition } from '../../../shared/contract/voice';
 import { validateToolInputSchema } from '../../tools/toolSchemaValidator';
 
 export const VOICE_XML_FALLBACK_TOOL_NAMES = [
-  'spawn_task',
+  'delegate_task',
   'steer_task',
   'cancel_task',
   'task_status',

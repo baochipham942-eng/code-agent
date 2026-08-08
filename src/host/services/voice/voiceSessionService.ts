@@ -390,7 +390,7 @@ function isPureToolTagText(text: string): boolean {
  * 上一条落库的用户字幕（R5 合并用）。VAD 会把一句话切成几轮，消息流里就成了几条碎片。
  *
  * 合并是**落库后回头并入**，不是攒着晚点写：近窗（派活时执行侧重建意图的原文）、
- * 挂断闸、字幕 UI 全都吃这条 final 的到达时刻，晚 2 秒等于让紧跟的 spawn_task
+ * 挂断闸、字幕 UI 全都吃这条 final 的到达时刻，晚 2 秒等于让紧跟的 delegate_task
  * 看不到用户最后那句话。所以照常立即写，下一条来得够快就把上一条改掉。
  */
 interface TranscriptMergeState {

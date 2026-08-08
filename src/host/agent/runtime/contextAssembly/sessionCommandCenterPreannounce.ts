@@ -23,7 +23,7 @@ function buildCommandCenterPreannounce(userMessage: string): string {
 export function emitCommandCenterToolStart(input: CommandCenterToolStartInput): string {
   let preannounce = input.existingPreannounce;
   if (
-    input.toolName === 'spawn_task'
+    input.toolName === 'delegate_task'
     && input.commandCenterEnabled
     && !input.streamedContent.trim()
     && !preannounce

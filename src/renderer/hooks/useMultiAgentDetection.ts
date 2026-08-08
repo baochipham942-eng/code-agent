@@ -29,7 +29,11 @@ export interface MultiAgentInfo {
 // Tool names that indicate multi-agent collaboration
 const AGENT_SPAWN_TOOLS = ['spawn_agent', 'agent_create', 'create_agent'];
 const AGENT_COMMUNICATION_TOOLS = ['agent_message', 'agent_send', 'send_to_agent'];
-const TASK_DELEGATION_TOOLS = ['task', 'delegate_task', 'assign_task'];
+// 注意：这里**不能**含指挥台的 delegate_task。它派出去的是单条后台任务，与「多 Agent 协作」
+// 正交——前者是前台把副作用交给后台，后者是多个 Agent 互相通信协作。混进来会让每一次普通派活
+// 都点亮 TaskPanel 的多 Agent 协作视图。（本行原本凭空写着 'delegate_task'，
+// 2026-08-08 指挥台真的用了这个名字，故摘除；反向断言在 useMultiAgentDetection.test.ts。）
+const TASK_DELEGATION_TOOLS = ['task', 'assign_task'];
 const ORCHESTRATION_TOOLS = ['workflow_orchestrate', 'orchestrate', 'coordinate_agents'];
 
 // All multi-agent related tools

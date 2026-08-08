@@ -580,7 +580,7 @@ describe('AgentAppService lifecycle routing', () => {
       'continue in the child',
       undefined,
       expect.objectContaining({
-        allowedToolNames: expect.arrayContaining(['spawn_task', 'steer_task', 'cancel_task', 'task_status']),
+        allowedToolNames: expect.arrayContaining(['delegate_task', 'steer_task', 'cancel_task', 'task_status']),
         turnSystemContext: expect.arrayContaining([expect.stringContaining('<session_command_center>')]),
       }),
       expect.objectContaining({
@@ -659,7 +659,7 @@ describe('AgentAppService lifecycle routing', () => {
       '继续按新要求处理',
       undefined,
       expect.objectContaining({
-        allowedToolNames: expect.arrayContaining(['spawn_task', 'steer_task', 'cancel_task', 'task_status']),
+        allowedToolNames: expect.arrayContaining(['delegate_task', 'steer_task', 'cancel_task', 'task_status']),
         turnSystemContext: expect.arrayContaining([expect.stringContaining('<session_command_center>')]),
       }),
       undefined,

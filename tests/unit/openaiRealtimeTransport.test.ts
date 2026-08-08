@@ -216,7 +216,7 @@ describe('OpenAI Realtime provider profile', () => {
         neoSessionId: 'neo-1',
         tools: [{
           type: 'function',
-          name: 'spawn_task',
+          name: 'delegate_task',
           description: 'Create a task',
           parameters: { type: 'object', properties: {}, required: [] },
         }],
@@ -229,12 +229,12 @@ describe('OpenAI Realtime provider profile', () => {
     upstream.emit('message', JSON.stringify({
       type: 'response.function_call_arguments.done',
       call_id: 'call-1',
-      name: 'spawn_task',
+      name: 'delegate_task',
       arguments: '{"title":"生成周报"}',
     }));
     await vi.waitFor(() => expect(onToolCall).toHaveBeenCalledWith({
       callId: 'call-1',
-      name: 'spawn_task',
+      name: 'delegate_task',
       arguments: '{"title":"生成周报"}',
       origin: 'function_call',
     }));

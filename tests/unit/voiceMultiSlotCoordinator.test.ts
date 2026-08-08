@@ -84,7 +84,7 @@ let narrations: VoiceWorkNarration[];
 
 function spawn(index: number, laneKey = `lane-${index}`, submissionKey = `turn-${index}`) {
   return dispatchVoiceIntent({
-    kind: 'spawn_task',
+    kind: 'delegate_task',
     title: `任务${index}`,
     shortName: `短名${index}`,
     laneKey,

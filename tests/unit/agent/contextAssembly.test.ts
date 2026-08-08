@@ -1020,7 +1020,7 @@ describe('ContextAssembly.buildModelMessages()', () => {
 
     const ctx = buildRuntimeContext({
       enableToolDeferredLoading: true,
-      allowedToolNames: ['spawn_task', 'steer_task', 'cancel_task', 'task_status', 'AskUserQuestion'],
+      allowedToolNames: ['delegate_task', 'steer_task', 'cancel_task', 'task_status', 'AskUserQuestion'],
       messages: [buildMessage('user-gap023-allowlist', 'user', '帮我查一下今天的天气')],
     });
 
@@ -1031,7 +1031,7 @@ describe('ContextAssembly.buildModelMessages()', () => {
     // deniedToolNames 未在本用例的 overrides 里传，真实透传值是 undefined
     expect(getDeferredToolsSummary).toHaveBeenCalledWith(
       undefined,
-      ['spawn_task', 'steer_task', 'cancel_task', 'task_status', 'AskUserQuestion'],
+      ['delegate_task', 'steer_task', 'cancel_task', 'task_status', 'AskUserQuestion'],
     );
     // allowlist 收窄下 summary 为空字符串（真实实现在没有 ToolSearch 的 allowlist 下返回 ''），
     // 整个 <deferred-tools> 块不应出现——不再宣传取不到的延迟工具。

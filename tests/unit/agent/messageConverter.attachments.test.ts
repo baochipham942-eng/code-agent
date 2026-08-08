@@ -84,7 +84,7 @@ describe('message attachment conversion', () => {
   });
 
   it('does not throw when an image attachment is missing its id (legacy/corrupted history data)', () => {
-    // 真机实录 2026-08-07：spawn_task 后台任务继承父会话历史时带上一条缺 id 的
+    // 真机实录 2026-08-07：delegate_task 后台任务继承父会话历史时带上一条缺 id 的
     // 历史图片附件（sanitizeAttachmentForPersistence 透传 attachment.id，脏数据落库后
     // 就是 undefined），buildMultimodalContent 内部对 attachment.id 的裸访问
     // `.startsWith('appshot-')` 直接炸穿整条后台任务执行链路，报出裸 TypeError：

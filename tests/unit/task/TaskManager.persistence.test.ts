@@ -108,7 +108,7 @@ describe('TaskManager message event persistence', () => {
         role: 'assistant',
         content: 'starting',
         timestamp: 2,
-        toolCalls: [{ id: 'call-spawn', name: 'spawn_task', arguments: {} }],
+        toolCalls: [{ id: 'call-spawn', name: 'delegate_task', arguments: {} }],
       },
       { id: 'child-prompt', role: 'user', content: 'child work', timestamp: 3, isMeta: true },
       {

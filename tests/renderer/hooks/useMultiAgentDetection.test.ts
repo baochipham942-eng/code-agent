@@ -39,6 +39,13 @@ describe('isMultiAgentToolCall', () => {
   it('普通工具不算多 Agent', () => {
     expect(isMultiAgentToolCall(tc('read'))).toBe(false);
   });
+
+  // 指挥台前台派活派出去的是单条后台任务，不是多 Agent 协作——混进 MULTI_AGENT_TOOLS 会让
+  // 每次普通派活都点亮 TaskPanel 的协作视图。这条断言是钉子：删掉 TASK_DELEGATION_TOOLS 里
+  // 那个凭空写的 'delegate_task' 本身不会让任何测试报红，所以必须显式钉住，防止被加回去。
+  it('指挥台派活不算多 Agent（正交的两件事别互相顶替）', () => {
+    expect(isMultiAgentToolCall(tc('delegate_task'))).toBe(false);
+  });
 });
 
 describe('extractAgentName', () => {

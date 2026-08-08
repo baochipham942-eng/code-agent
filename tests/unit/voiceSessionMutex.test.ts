@@ -1662,7 +1662,7 @@ describe('焦点上报刷新 instructions（批 H）', () => {
       type: 'focus', context: { filePath: '/repo/a.ts' },
     })), false);
 
-    expect(updateInstructions.mock.calls[0][0]).toContain('spawn_task');
+    expect(updateInstructions.mock.calls[0][0]).toContain('delegate_task');
   });
 });
 

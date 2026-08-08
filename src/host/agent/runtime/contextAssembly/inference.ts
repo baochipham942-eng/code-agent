@@ -772,7 +772,7 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
         const latestUserMessage = [...modelMessages].reverse().find((message) => message.role === 'user');
         commandCenterPreannounce = emitCommandCenterToolStart({
           toolName: chunk.toolCall?.name,
-          commandCenterEnabled: ctx.runtime.allowedToolNames?.includes('spawn_task') === true,
+          commandCenterEnabled: ctx.runtime.allowedToolNames?.includes('delegate_task') === true,
           streamedContent: ctx.runtime.turn.lastStreamedContent,
           existingPreannounce: commandCenterPreannounce,
           userMessage: extractUserRequestText(latestUserMessage),

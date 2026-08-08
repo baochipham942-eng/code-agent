@@ -1344,11 +1344,11 @@ describe('ConversationRuntime', () => {
       modules.contextAssembly.inference
         .mockResolvedValueOnce({
           type: 'tool_use',
-          toolCalls: [{ id: 'invalid-1', name: 'spawn_task', arguments: {} }],
+          toolCalls: [{ id: 'invalid-1', name: 'delegate_task', arguments: {} }],
         })
         .mockResolvedValueOnce({
           type: 'tool_use',
-          toolCalls: [{ id: 'accepted-1', name: 'spawn_task', arguments: { short_name: '研究' } }],
+          toolCalls: [{ id: 'accepted-1', name: 'delegate_task', arguments: { short_name: '研究' } }],
         })
         .mockImplementationOnce(async () => {
           expect(ctx.control.forceFinalResponseReason).toBeUndefined();

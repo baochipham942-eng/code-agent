@@ -175,7 +175,7 @@ afterEach(() => {
 
 describe('派活落一条 dispatch 事件', () => {
   it('带真实 workItemId，且不带活儿名', async () => {
-    await dispatchVoiceIntent({ kind: 'spawn_task', title: '写季度复盘', prompt: '写一份季度复盘' });
+    await dispatchVoiceIntent({ kind: 'delegate_task', title: '写季度复盘', prompt: '写一份季度复盘' });
 
     const dispatched = voiceSpans().filter((s) => s.attributes['voice_work.phase'] === 'dispatch');
     expect(dispatched).toHaveLength(1);

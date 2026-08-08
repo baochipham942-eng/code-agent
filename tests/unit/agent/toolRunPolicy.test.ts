@@ -32,18 +32,18 @@ describe('toolRunPolicy', () => {
 
   it('enforces a strict allowlist before a foreground brain can call tools', () => {
     const ctx = {
-      allowedToolNames: ['spawn_task', 'task_status', 'AskUserQuestion'],
+      allowedToolNames: ['delegate_task', 'task_status', 'AskUserQuestion'],
       deniedToolNames: ['task_status'],
     } as any;
 
     expect(filterToolsByRunPolicy([
-      tool('spawn_task'),
+      tool('delegate_task'),
       tool('task_status'),
       tool('AskUserQuestion'),
       tool('bash'),
-    ], ctx).map((item) => item.name)).toEqual(['spawn_task', 'AskUserQuestion']);
+    ], ctx).map((item) => item.name)).toEqual(['delegate_task', 'AskUserQuestion']);
     expect(isToolDeniedForRun(ctx, 'bash')).toBe(true);
     expect(isToolDeniedForRun(ctx, 'task_status')).toBe(true);
-    expect(isToolDeniedForRun(ctx, 'spawn_task')).toBe(false);
+    expect(isToolDeniedForRun(ctx, 'delegate_task')).toBe(false);
   });
 });

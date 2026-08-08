@@ -1747,7 +1747,7 @@ describe('createAgentRouter', () => {
         role: 'assistant' as const,
         content: '',
         timestamp: 2,
-        toolCalls: [{ id: 'spawn-1', name: 'spawn_task', arguments: { prompt: '后台调研' } }],
+        toolCalls: [{ id: 'spawn-1', name: 'delegate_task', arguments: { prompt: '后台调研' } }],
       },
       {
         id: 'background-child-prompt',

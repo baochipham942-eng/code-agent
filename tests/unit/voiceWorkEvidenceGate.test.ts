@@ -132,7 +132,7 @@ function bind(): void {
 
 async function spawnAndComplete(): Promise<void> {
   runtime.status = 'idle';
-  await dispatchVoiceIntent({ kind: 'spawn_task', title: '建个文件', prompt: '建一个 a.txt' });
+  await dispatchVoiceIntent({ kind: 'delegate_task', title: '建个文件', prompt: '建一个 a.txt' });
   runtime.emit('task_completed');
   // 证据查询是异步的（读 run 级 completion summary），终态落在它之后。
   await new Promise((resolve) => setTimeout(resolve, 0));
@@ -233,7 +233,7 @@ describe('接线：task_completed 之后真的去查了证据', () => {
     readLatestCompletionSummaryRecord.mockResolvedValue(recordOf());
     bind();
     runtime.status = 'idle';
-    await dispatchVoiceIntent({ kind: 'spawn_task', title: '建个文件', prompt: '建一个 a.txt' });
+    await dispatchVoiceIntent({ kind: 'delegate_task', title: '建个文件', prompt: '建一个 a.txt' });
     endVoiceDispatch(); // 挂断：播报通道断，通知通道接手
     runtime.emit('task_completed');
     await new Promise((resolve) => setTimeout(resolve, 0));

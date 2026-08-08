@@ -60,6 +60,9 @@ export const TOOL_CONSENT_MAP: Readonly<Record<string, { group: ToolConsentGroup
   MemoryWrite: { group: 'memoryTask', effect: 'memory' },
   EpisodicRecall: { group: 'memoryTask', effect: 'memory' },
   TaskManager: { group: 'memoryTask', effect: 'task' },
+  delegate_task: { group: 'memoryTask', effect: 'task' },
+  // 旧名保留：历史会话的 tool_calls 里存的是 spawn_task（2026-08-08 改名前），
+  // 回看旧会话时仍要能归到同一审批组。
   spawn_task: { group: 'memoryTask', effect: 'task' },
   steer_task: { group: 'memoryTask', effect: 'task' },
   cancel_task: { group: 'memoryTask', effect: 'task' },

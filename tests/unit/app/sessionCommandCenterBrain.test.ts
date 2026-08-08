@@ -60,10 +60,10 @@ describe('SESSION_COMMAND_CENTER_BRAIN_CONTEXT design notice', () => {
     expect(SESSION_COMMAND_CENTER_BRAIN_CONTEXT).not.toContain('只看得到这 5 个工具');
   });
 
-  it('still routes side-effecting work to spawn_task', () => {
-    expect(SESSION_COMMAND_CENTER_BRAIN_CONTEXT).toContain('spawn_task');
+  it('still routes side-effecting work to delegate_task', () => {
+    expect(SESSION_COMMAND_CENTER_BRAIN_CONTEXT).toContain('delegate_task');
     // 写/跑命令/联网这三类必须仍被点名为「派活」——正向说法，不点名缺哪个工具
-    expect(SESSION_COMMAND_CENTER_BRAIN_CONTEXT).toMatch(/写文件[、，].*跑命令[、，].*spawn_task/);
+    expect(SESSION_COMMAND_CENTER_BRAIN_CONTEXT).toMatch(/写文件[、，].*跑命令[、，].*delegate_task/);
   });
 
   // B 组（先读一轮再写）的 FAIL 与 A 组（新会话直接写）的 PASS 差了两个变量：读过 + 指代。

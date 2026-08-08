@@ -116,7 +116,7 @@ function begin(): void {
 /** 派一件活并让它跑起来。 */
 async function spawnRunning(title: string): Promise<void> {
   runtime.status = 'idle';
-  await dispatchVoiceIntent({ kind: 'spawn_task', title, prompt: `做${title}` });
+  await dispatchVoiceIntent({ kind: 'delegate_task', title, prompt: `做${title}` });
   runtime.emit('task_started');
   runtime.status = 'running';
 }
@@ -131,7 +131,7 @@ async function spawnRunning(title: string): Promise<void> {
 async function spawnTwoLive(): Promise<void> {
   await spawnRunning('写周报');
   runtime.status = 'idle';
-  await dispatchVoiceIntent({ kind: 'spawn_task', title: '订机票', prompt: '订机票' });
+  await dispatchVoiceIntent({ kind: 'delegate_task', title: '订机票', prompt: '订机票' });
   runtime.emit('task_started');
   runtime.status = 'running';
 }
@@ -191,7 +191,7 @@ describe('get_active_tasks — 可指挥的带编号，不可指挥的不带', (
     runtime.status = 'idle';
     runtime.emit('task_completed');
     await vi.advanceTimersByTimeAsync(0);
-    await dispatchVoiceIntent({ kind: 'spawn_task', title: '订机票', prompt: '订机票' });
+    await dispatchVoiceIntent({ kind: 'delegate_task', title: '订机票', prompt: '订机票' });
 
     const reply = await dispatchVoiceIntent({ kind: 'status' });
 

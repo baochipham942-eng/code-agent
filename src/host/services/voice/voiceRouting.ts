@@ -42,35 +42,35 @@ export interface VoiceRoutingState {
  */
 const VOICE_BASE_INSTRUCTIONS = [
   '你是 Neo，正在和用户实时通话。你有一套工具能把活真正做掉，用它们干活。',
-  '用户要求派活时，本轮第一个输出必须是 spawn_task function call；工具成功返回前禁止先语音答应。',
+  '用户要求派活时，本轮第一个输出必须是 delegate_task function call；工具成功返回前禁止先语音答应。',
   '说话简短口语化，一次只讲要点，不要念长列表或代码。',
   '',
   '用户每说一句，按这四档处理：',
   '- 闲聊、寒暄、一句话能答完的问题 → 直接说。',
   '- 要你**当场用嘴做**的事（数数、念一段、复述、报时、编个顺口溜）→ 你自己张嘴做，'
-    + '这是说话不是干活，**不要调 spawn_task**——那条路产出的是一屏文字，而电话里没人看得见。',
+    + '这是说话不是干活，**不要调 delegate_task**——那条路产出的是一屏文字，而电话里没人看得见。',
   '- 问「现在在跑什么」「你动了哪些文件」「现在几点」→ 调 task_status / '
     + 'get_current_file_summary / get_current_time，秒回。',
-  '- 要落到磁盘或系统上的事（读写文件、跑命令、多步任务）→ 调 spawn_task 把它做掉。',
+  '- 要落到磁盘或系统上的事（读写文件、跑命令、多步任务）→ 调 delegate_task 把它做掉。',
   '',
   '四条硬规矩：',
-  '1. 不要自己预判这件事能不能做、该不该做。调 spawn_task 交出去，由它判断。绝不因为「我可能做不了」就拒绝或推脱。',
+  '1. 不要自己预判这件事能不能做、该不该做。调 delegate_task 交出去，由它判断。绝不因为「我可能做不了」就拒绝或推脱。',
   '2. 用户的话被切碎、只说了半句时，把最近几轮连起来理解；凑得出一件事就派出去。'
-    + 'spawn_task 拿得到这通电话的完整字幕，缺的细节会按最合理的默认补上。'
+    + 'delegate_task 拿得到这通电话的完整字幕，缺的细节会按最合理的默认补上。'
     + '**绝不要在派活指令里写「需要询问用户」**——用户在打电话，没法回答弹窗。',
   '3. **派完之后用户又补充了细节**（补文件名、补内容、改要求），立刻调 steer_task 把新信息追进那件活，'
     + '不要只是嘴上应一声——那件活已经开跑了，光答应改变不了它正在做什么。',
   '3b. **有活在跑时，先分清用户是要「改」还是要「换」**：',
   '   - 还要那件活，只是要求变了 →「顺便把标题也改了」「不是这样，应该用中文」→ steer_task。',
   '   - 不要那件活了，改做另一件 →「别等它了，先帮我建个文件」「算了，换成写周报」「停下，改做…」'
-    + '→ spawn_task 并传 replace_current=true。',
+    + '→ delegate_task 并传 replace_current=true。',
   '   判据是**旧的那件还要不要**：还要就 steer，不要了就 replace。分不清就问一句「那件还要吗」，'
     + '别自己挑一个——挑错的代价是用户的活被白扔掉，或者两件活一起跑。',
-  '4. 绝不描述你没有真做过的事。没调 spawn_task 就不许说「正在为你创建」「正在写入」；'
+  '4. 绝不描述你没有真做过的事。没调 delegate_task 就不许说「正在为你创建」「正在写入」；'
     + '没调 end_call 就不许说「已挂断」。派出去的活，它的结果**只会**以 [BACKEND] 开头的消息送达：'
     + '没收到那条消息，这件活就没有做完，你也不知道任何进展——「已经建好了」「写进去了」这种话，'
     + '只有 [BACKEND] 消息说了做成，你才能说。被问进度先调 task_status，不许凭记忆答。',
-  '4b. 用户一次要求多件事时，每件事分别调用一次 spawn_task，收到每次工具成功返回后再说派发结果。'
+  '4b. 用户一次要求多件事时，每件事分别调用一次 delegate_task，收到每次工具成功返回后再说派发结果。'
     + '只说「已派出」不算派发；工具没返回成功就必须如实说没有派出。',
   '危险操作由界面上的权限卡确认，你不能口头替用户放行。',
   '',
@@ -91,7 +91,7 @@ const VOICE_BASE_INSTRUCTIONS = [
  * 后台任务却继续跑旧方向。
  *
  * 普通自然语言仍交给通话模型判断；这里刻意只认“调用/使用 + 派发工具名”的窄表达，
- * 防止把“别派任务”“spawn_task 是什么”之类讨论误变成真实执行。
+ * 防止把“别派任务”“delegate_task 是什么”之类讨论误变成真实执行。
  */
 export interface VoiceActionRoute {
   toolName: 'steer_task' | 'task_status' | 'cancel_task';
@@ -141,7 +141,11 @@ export function requiresVoiceActionTool(text: string): boolean {
   if (resolveVoiceActionRoute(text)) return true;
   const normalized = text.trim().toLowerCase().replace(/[\s_-]+/g, '');
   if (!normalized) return false;
-  const dispatchMention = /(?:调用|使用).{0,24}(?:spawntask|派发任务工具)/u.exec(normalized);
+  // 这里匹配的是 normalized 形态（已去掉空格/下划线/连字符并小写），所以工具改名时
+  // 按 `spawn_task` / `spawnTask` 做的全仓替换扫不到它——2026-08-08 改名就漏在这里，
+  // 靠 voiceSpeakerProtocol 的用例才照出来。新增派活工具名必须同步这一条。
+  // 旧名 spawntask 保留：用户和模型都可能沿用旧叫法。
+  const dispatchMention = /(?:调用|使用).{0,24}(?:delegatetask|spawntask|派发任务工具)/u.exec(normalized);
   if (dispatchMention?.index === undefined) return false;
   const prefix = normalized.slice(Math.max(0, dispatchMention.index - 6), dispatchMention.index);
   return !/(?:不要|别|无需|禁止|不能|不许)$/u.test(prefix);

@@ -39,7 +39,7 @@ describe.each(metaShapes)('tool-call _meta chokepoint / $name', ({ value, semant
   it('strips _meta from streaming accumulator output', () => {
     const result = buildToolCallFromAccumulator({
       id: 'stream-1',
-      name: 'spawn_task',
+      name: 'delegate_task',
       arguments: JSON.stringify({ task: 'research', _meta: value }),
     });
     expectStripped(result, semantic);
@@ -54,7 +54,7 @@ describe.each(metaShapes)('tool-call _meta chokepoint / $name', ({ value, semant
             id: 'openai-1',
             type: 'function',
             function: {
-              name: 'spawn_task',
+              name: 'delegate_task',
               arguments: JSON.stringify({ task: 'research', _meta: value }),
             },
           }],
@@ -71,7 +71,7 @@ describe.each(metaShapes)('tool-call _meta chokepoint / $name', ({ value, semant
       content: [{
         type: 'tool_use',
         id: 'claude-1',
-        name: 'spawn_task',
+        name: 'delegate_task',
         input: { task: 'research', _meta: value },
       }],
     });
@@ -84,7 +84,7 @@ describe.each(metaShapes)('tool-call _meta chokepoint / $name', ({ value, semant
         content: {
           parts: [{
             functionCall: {
-              name: 'spawn_task',
+              name: 'delegate_task',
               args: { task: 'research', _meta: value },
             },
           }],
@@ -100,7 +100,7 @@ describe.each(metaShapes)('tool-call _meta chokepoint / $name', ({ value, semant
         content: {
           parts: [{
             functionCall: {
-              name: 'spawn_task',
+              name: 'delegate_task',
               args: { task: 'research', _meta: value },
             },
           }],

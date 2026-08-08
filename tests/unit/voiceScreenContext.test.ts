@@ -4,7 +4,7 @@
 //   · 注册面：工具在目录里、schema 朴素（零参数），零写权限的底线没破；
 //   · fail-closed 三态：无权限 / 采集抛错 / 正常，前两态必须**明说没拍到**并指路开权限，
 //     且明令不许描述画面——这条链最坏的失败不是拍不到，是拍不到却回一句像成功的话；
-//   · 附着真到位：spawn_task 那一轮的 `startTask(attachments)` 里真有 appshot 图片附件，
+//   · 附着真到位：delegate_task 那一轮的 `startTask(attachments)` 里真有 appshot 图片附件，
 //     turnSystemContext 里真有 `<appshot>` 块。只断言工具返回文本等于什么都没测。
 //
 // 采集服务整块被替掉：CI 没有屏幕录制权限，真跑一次 screencapture 就是一个必挂的用例。
@@ -202,7 +202,7 @@ describe('看屏进 Live（Appshots Phase 3）', () => {
     expect(spoken).toContain('屏幕录制');
     expect(spoken).toContain('不许描述屏幕上有什么');
     // 没拍到就不许留下任何可附着的东西：随后的派活必须是干净的。
-    await executeVoiceTool('spawn_task', JSON.stringify({ title: '改标题', prompt: '把标题改成 A' }));
+    await executeVoiceTool('delegate_task', JSON.stringify({ title: '改标题', prompt: '把标题改成 A' }));
     expect(lastStartTaskAttachments()).toBeUndefined();
   });
 
@@ -245,7 +245,7 @@ describe('看屏进 Live（Appshots Phase 3）', () => {
   it('附着真到位：派活那一轮的附件里有 appshot 图，system 上下文里有 <appshot> 块', async () => {
     capture.result = stagedCapture();
     await executeVoiceTool('capture_screen_context', '{}');
-    await executeVoiceTool('spawn_task', JSON.stringify({ title: '照着屏幕改', prompt: '把屏幕上这个按钮改成蓝色' }));
+    await executeVoiceTool('delegate_task', JSON.stringify({ title: '照着屏幕改', prompt: '把屏幕上这个按钮改成蓝色' }));
 
     const attachments = lastStartTaskAttachments();
     expect(attachments).toHaveLength(1);
@@ -264,7 +264,7 @@ describe('看屏进 Live（Appshots Phase 3）', () => {
 
   it('改方向那一轮同样带得上（steer 也是执行侧的一轮）', async () => {
     runtime.status = 'idle';
-    await executeVoiceTool('spawn_task', JSON.stringify({ title: '先跑一件', prompt: '随便做点什么' }));
+    await executeVoiceTool('delegate_task', JSON.stringify({ title: '先跑一件', prompt: '随便做点什么' }));
     runtime.status = 'running';
     capture.result = stagedCapture();
     await executeVoiceTool('capture_screen_context', '{}');
@@ -280,7 +280,7 @@ describe('看屏进 Live（Appshots Phase 3）', () => {
   it('一次性：拍一次只跟着一轮走，后面的活不再拖着同一张旧图', async () => {
     capture.result = stagedCapture();
     await executeVoiceTool('capture_screen_context', '{}');
-    await executeVoiceTool('spawn_task', JSON.stringify({ title: '第一件', prompt: '照屏幕改' }));
+    await executeVoiceTool('delegate_task', JSON.stringify({ title: '第一件', prompt: '照屏幕改' }));
     expect(lastStartTaskAttachments()).toHaveLength(1);
 
     runtime.emit('task_completed');
@@ -288,7 +288,7 @@ describe('看屏进 Live（Appshots Phase 3）', () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
     runtime.status = 'idle';
 
-    await executeVoiceTool('spawn_task', JSON.stringify({ title: '第二件', prompt: '跟屏幕没关系的活' }));
+    await executeVoiceTool('delegate_task', JSON.stringify({ title: '第二件', prompt: '跟屏幕没关系的活' }));
     expect(lastStartTaskAttachments()).toBeUndefined();
     expect(lastStartTaskSystemContext().some((block) => block.includes('<appshot'))).toBe(false);
   });
@@ -296,7 +296,7 @@ describe('看屏进 Live（Appshots Phase 3）', () => {
   it('过了保质期就不附：宁可执行侧说没看到图，也不喂它一张过期的屏幕', async () => {
     capture.result = stagedCapture({ capturedAtMs: Date.now() - VOICE_SCREEN_CONTEXT_TTL_MS - 1 });
     await executeVoiceTool('capture_screen_context', '{}');
-    await executeVoiceTool('spawn_task', JSON.stringify({ title: '很久以后的活', prompt: '做点别的' }));
+    await executeVoiceTool('delegate_task', JSON.stringify({ title: '很久以后的活', prompt: '做点别的' }));
 
     expect(lastStartTaskAttachments()).toBeUndefined();
   });
@@ -307,7 +307,7 @@ describe('看屏进 Live（Appshots Phase 3）', () => {
     endVoiceDispatch();
     bind();
 
-    await executeVoiceTool('spawn_task', JSON.stringify({ title: '下一通电话里的活', prompt: '做点什么' }));
+    await executeVoiceTool('delegate_task', JSON.stringify({ title: '下一通电话里的活', prompt: '做点什么' }));
     expect(lastStartTaskAttachments()).toBeUndefined();
   });
 });

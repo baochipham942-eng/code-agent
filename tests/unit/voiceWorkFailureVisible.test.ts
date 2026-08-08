@@ -118,7 +118,7 @@ function bind(): void {
 
 async function spawn(title = '建个文件'): Promise<void> {
   runtime.status = 'idle';
-  await dispatchVoiceIntent({ kind: 'spawn_task', title, prompt: '建一个 test-b.txt' });
+  await dispatchVoiceIntent({ kind: 'delegate_task', title, prompt: '建一个 test-b.txt' });
 }
 
 async function flush(): Promise<void> {

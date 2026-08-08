@@ -196,6 +196,43 @@ curl -s http://127.0.0.1:8182/ | grep -oE 'assets/index-[^"]*\.js'
 **槽间不共用**：数据目录、密钥、renderer 缓存都是独立的一套；换槽等于一台新机器，key 要重新配。
 CUA helper 仍只分 production / dev（所有槽共用 dev 那份），槽间各授权一次 TCC。
 
+**槽是共享池，没有归属**：现有的槽谁都可以领来用，用之前抹掉数据目录即可。
+**没有「我的槽」这回事**——包括槽 1，它也是验证池的一员，不是谁的私产。
+
+##### 什么时候**不该**开新槽（2026-08-08 立规）
+
+> **「要干净状态」不是开新槽的理由。**
+> 干净状态 = `rm -rf ~/.code-agent-devN`，bundle id 不变，**TCC 授权原样保留**。
+> 新槽 = 新 bundle identifier = macOS 眼里一个全新的 app = **零授权**，
+> 辅助功能 / 屏幕录制 / 输入监控全要重新手工点一遍，
+> 而弹框上写的是「Agent Neo Dev N 想要…」，跟你正在验的事对不上号，很难反应过来。
+
+**唯一该扩池的理由：需要同时跑多个测试包**（各自独立端口与数据目录，互不打架）。
+池子大小 = 最大并发验证数，不是历史验证次数。
+
+`scripts/gen-dev-slot-conf.ts` 有一道门守着这条：请求一个**这台机器没见过的槽**
+（既没装 app、也没有数据目录）而池里还有可复用的槽时，直接报红并列出可复用的槽 +
+抹数据目录的命令。确实要扩池就显式声明，扩出来的槽**永久保留、别卸**：
+
+```bash
+NEO_SLOT=4 NEO_SLOT_NEW=1 HTTPS_PROXY=http://127.0.0.1:7897 npm run tauri:build:dev
+```
+
+（池成员按「已装 app **或** 存在数据目录」取并集判定：抹数据目录不掉出池，卸了 app 也不掉出池
+——TCC 记录按 bundle id 留在系统里，重装不用重新授权。全新机器池为空时放行，不挡第一次构建。）
+
+##### 用完怎么回收
+
+**只清数据目录，不卸 app。** app 卸了下次并发还得重装重授权，留着是零成本的。
+
+```bash
+rm -rf ~/.code-agent-devN          # 释放空间 + 下次直接得到干净状态
+```
+
+数据目录会长得比想象中大（实测槽 1 攒到 813M：`code-agent.db` 393M、
+`managed-browser-profile` 157M、`appshots` 48M）。清之前扫一眼
+`appshots/` `design/` 里有没有别的工单还在引的证据文件。
+
 **dev 包默认关 LTO**：`tauri:package:dev` 默认给 cargo 传 `CARGO_PROFILE_RELEASE_LTO=false CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16`
 （实测冷构建省 54%，体积只涨 0.5%；LTO 是发版优化，对验行为的测试包是纯浪费）。要验启动性能/时序时
 加 `NEO_DEV_FULL_LTO=1` 切回与发版包同构的 LTO 全开构建：

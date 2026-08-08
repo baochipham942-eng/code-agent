@@ -43,6 +43,7 @@ import { ToastContainer } from './components/Toast';
 import { ProviderStatusNotice } from './components/ProviderStatusNotice';
 import { SessionExpiredNotice } from './components/SessionExpiredNotice';
 import { BudgetAlertNotice } from './components/BudgetAlertNotice';
+import { AgentNoticeToast } from './components/AgentNoticeToast';
 import { FolderTrustDialog, needsFolderTrustDecision, type FolderTrustEvaluationView } from './components/FolderTrustDialog';
 import { useTheme } from './hooks/useTheme';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
@@ -894,6 +895,7 @@ export const App: React.FC = () => {
       <ToastContainer />
       <ProviderStatusNotice />
       <BudgetAlertNotice />
+      <AgentNoticeToast />
       <SessionExpiredNotice />
       <div className="h-screen flex flex-col bg-zinc-950 text-zinc-200">
         {/* 左右结构（2026-07-27 拍板「右侧标题栏和下面样式上打通」，参照 Codex）：

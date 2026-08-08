@@ -85,6 +85,8 @@ import { resolveSessionWorkspaceScope } from '../services/sessionFork/workspace'
 import { getAuthService } from '../services/auth/authService';
 import { getDatabase } from '../services/core/databaseService';
 import { wrapWithTurnSystemContext } from './turnScaffold';
+import { IPC_CHANNELS } from '../../shared/ipc';
+import type { AgentNoticeEvent } from '../../shared/ipc/handlers';
 
 export type { AgentOrchestratorConfig } from './orchestrator/types';
 
@@ -93,6 +95,19 @@ const logger = createLogger('AgentOrchestrator');
 /** 归一化审批响应为「放行/拒绝」。allow_standing（B4 铸权）在放行语义上等价 allow。 */
 function isApproveResponse(response: PermissionResponse): boolean {
   return response === 'allow' || response === 'allow_session' || response === 'allow_standing';
+}
+
+/**
+ * agent:notice 广播（比照 inferenceProviderFallback.ts 的 broadcastAiSdkProviderFallback）。
+ * 动态 import windowBridge，best-effort，不影响主链路。
+ */
+async function broadcastAgentNotice(event: AgentNoticeEvent): Promise<void> {
+  try {
+    const { broadcastToRenderer } = await import('../platform/windowBridge');
+    broadcastToRenderer?.(IPC_CHANNELS.AGENT_NOTICE, event);
+  } catch {
+    /* toast 是 best-effort，不影响主链路 */
+  }
 }
 
 interface PendingSteerMessage {
@@ -1000,10 +1015,7 @@ export class AgentOrchestrator {
         requirements.needsAutoAgent = true;
         requirements.executionStrategy = requirements.executionStrategy || 'parallel';
         requirements.confidence = Math.max(requirements.confidence, 0.8);
-        onEvent({
-          type: 'notification',
-          data: { message: 'Delegate 模式：任务将委派给子 Agent 执行' },
-        });
+        void broadcastAgentNotice({ reasonCode: 'delegate_mode_active' });
       }
 
       if (requirements.needsAutoAgent) {
@@ -1156,11 +1168,9 @@ export class AgentOrchestrator {
         data: buildRoutingResolvedEventData(routingResolution, { requestedAgentId, timestamp: Date.now() }),
       });
 
-      onEvent({
-        type: 'notification',
-        data: {
-          message: `使用 Agent: ${routingResolution.agent.name}`,
-        },
+      void broadcastAgentNotice({
+        reasonCode: 'agent_routed',
+        params: { agentName: routingResolution.agent.name },
       });
     } else {
       onEvent({

@@ -1,16 +1,23 @@
 #!/usr/bin/env npx tsx
 // ============================================================================
-// 持久化角色资产 E2E 验收（docs/designs/persistent-role-assets.md §8 的 4 条标准）
+// 持久化角色资产 E2E 验收（persistent-role-assets 设计文档 §8 的 4 条标准）
 // ============================================================================
 //
-// 与 agent-team-smoke 不同，本脚本走【真实模型】（主 agent + 子代理 + 写回判断），
-// 因此需要 ~/.code-agent/.env 里有 DEEPSEEK_API_KEY 和 ZHIPU_API_KEY，且不能进 CI。
+// ⚠️ 设计文档已随 ca01f3fef「产品策略类文档移出公开仓库」迁至 private-archive：
+//    code-agent-private-archive/docs/designs/persistent-role-assets.md。
+//    公开仓里按原路径解析不到——**这不代表本脚本作废**。2026-08-08 复核：
+//    role assets 命中 42 个源文件，功能在核心链路上活着。
+//
+// 💰 与 agent-team-smoke 不同，本脚本走【真实模型】（主 agent + 子代理 + 写回判断），
+// **会产生 API 费用**；需要 ~/.code-agent/.env 里有 DEEPSEEK_API_KEY 和 ZHIPU_API_KEY，
+// 且不能进 CI。
 //
 // 隔离策略：HOME 指向临时目录 → 角色/记忆全部写入假 HOME，不污染真实 ~/.code-agent；
 // 只把模型 API key 相关的 .env 行拷贝进假 HOME。
 //
 // 用法：
-//   npm run build:web && npx tsx scripts/acceptance/role-assets-e2e.ts
+//   npm run acceptance:role-assets
+//   （等价于 npm run build:web && npx tsx scripts/acceptance/role-assets-e2e.ts）
 //
 // 4 条验收标准：
 //   1. 用研究员做一次调研 → 角色记忆出现条目 → 重启应用 → 再用研究员 → 引用上次的记忆
@@ -21,13 +28,14 @@
 
 import { spawn, type ChildProcessByStdio } from 'child_process';
 import type { Readable } from 'node:stream';
-import { access, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'fs/promises';
+import { access, mkdir, mkdtemp, readFile, readdir, writeFile } from 'fs/promises';
 import { constants, createWriteStream, readFileSync } from 'fs';
 import * as crypto from 'crypto';
 import http from 'http';
 import os from 'os';
 import path from 'path';
 import { setTimeout as delay } from 'timers/promises';
+import { describeChildExit, isAbnormalExit, isChildGone } from './childProcessState';
 
 // ----------------------------------------------------------------------------
 // 配置
@@ -132,8 +140,10 @@ async function waitForServer(server: StartedServer, port: number): Promise<void>
   const deadline = Date.now() + 90_000;
   let lastError = '';
   while (Date.now() < deadline) {
-    if (server.child.exitCode !== null) {
-      throw new Error(`webServer exited early with ${server.child.exitCode}\n${server.output()}`);
+    if (isChildGone(server.child)) {
+      throw new Error(
+        `[role-assets] webServer exited early (${describeChildExit(server.child)})\n${server.output()}`,
+      );
     }
     const token = extractStartupToken(server.output(), port);
     if (token) {
@@ -204,14 +214,25 @@ async function startServer(env: E2EEnv): Promise<StartedServer> {
 }
 
 async function stopServer(server: StartedServer): Promise<void> {
-  if (server.child.exitCode !== null) return;
-  server.child.kill('SIGTERM');
+  const { child } = server;
+  if (isChildGone(child)) {
+    console.warn(`[role-assets] webServer 在收尾前已终止（${describeChildExit(child)}）`);
+    if (isAbnormalExit(child)) console.warn(`[role-assets] 子进程输出尾部:\n${server.output()}`);
+    return;
+  }
+  child.kill('SIGTERM');
   const deadline = Date.now() + 5_000;
   while (Date.now() < deadline) {
-    if (server.child.exitCode !== null) return;
+    if (isChildGone(child)) {
+      if (isAbnormalExit(child)) {
+        console.warn(`[role-assets] webServer 退出异常（${describeChildExit(child)}）:\n${server.output()}`);
+      }
+      return;
+    }
     await delay(100);
   }
-  server.child.kill('SIGKILL');
+  console.warn(`[role-assets] SIGTERM 后 5s 未退出，升级 SIGKILL（${describeChildExit(child)}）`);
+  child.kill('SIGKILL');
 }
 
 // ----------------------------------------------------------------------------

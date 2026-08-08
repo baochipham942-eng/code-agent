@@ -88,6 +88,8 @@
     "acceptance:admin-review-queue": "npm run build:web && npm_config_cache=/tmp/code-agent-npm-cache npx tsx scripts/acceptance/admin-review-queue-smoke.ts",
     "acceptance:manual-compact": "npm run build:web && npx tsx scripts/acceptance/manual-compact-smoke.ts",
     "acceptance:agent-team": "npm run build:web && npx tsx scripts/acceptance/agent-team-smoke.ts",
+    "acceptance:role-proactivity": "echo '[cost] 走真实模型，会产生 API 费用；不能进 CI' && npm run build:web && npx tsx scripts/acceptance/role-proactivity-e2e.ts",
+    "acceptance:role-assets": "echo '[cost] 走真实模型，会产生 API 费用；需 ~/.code-agent/.env 里 DEEPSEEK_API_KEY + ZHIPU_API_KEY；不能进 CI' && npm run build:web && npx tsx scripts/acceptance/role-assets-e2e.ts",
     "acceptance:real-agent-replay-eval": "npx tsx scripts/acceptance/real-agent-replay-eval-smoke.ts",
     "acceptance:paid-real-model-replay-eval": "npx tsx scripts/acceptance/paid-real-model-replay-eval-smoke.ts",
     "acceptance:product-closure": "npx vitest run tests/unit/contract/productClosure.test.ts tests/unit/contract/scriptRun.test.ts tests/unit/ipc/workflow.ipc.test.ts tests/unit/agent/scriptRuntime/runService.test.ts tests/unit/tools/modules/multiagent/workflow.test.ts tests/renderer/stores/workflowStore.test.ts tests/renderer/hooks/useRunWorkbenchModel.test.ts tests/unit/evaluation/experimentAdapter.test.ts tests/unit/services/databaseSchema.experiments.test.ts tests/unit/services/ArtifactIssueRepository.test.ts tests/unit/handoff/handoffProposalService.test.ts tests/unit/handoff/longTaskRecoveryProposal.test.ts tests/unit/tools/permissionClassifier.test.ts tests/unit/tools/toolExecutor.decisionTrace.test.ts tests/unit/tools/toolExecutor.writeIsolation.test.ts",

@@ -78,7 +78,7 @@ import { runAutoAgentMode } from './orchestrator/autoAgentRunner';
 import { setSessionTodos, syncTodosToSessionTasks } from './todoParser';
 import { resolveNeoTagModelIntent } from '../services/project/neoTagModelIntentResolver';
 import { createRunContext, type RunHandle } from '../runtime/runContext';
-import { selectBackgroundWorkspaceScope } from '../task/backgroundWorkspaceAuthority';
+import { selectBackgroundWorkspaceScope } from '../runtime/workspaceAuthority';
 import type { RunRegistry } from '../runtime/runRegistry';
 import { getProjectService } from '../services/project/projectService';
 import { resolveWorkspacePath } from '../runtime/workspaceScope';

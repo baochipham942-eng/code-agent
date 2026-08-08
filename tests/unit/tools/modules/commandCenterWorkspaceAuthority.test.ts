@@ -1,3 +1,6 @@
+import os from 'node:os';
+import path from 'node:path';
+import { createRunContext } from '../../../../src/host/runtime/runContext';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { CanUseToolFn, ToolContext } from '../../../../src/host/protocol/tools';
 import {
@@ -7,7 +10,7 @@ import {
 import {
   resolveBackgroundWorkspaceAuthority,
   selectBackgroundWorkspaceScope,
-} from '../../../../src/host/task/backgroundWorkspaceAuthority';
+} from '../../../../src/host/runtime/workspaceAuthority';
 import { executeDelegateTask } from '../../../../src/host/tools/modules/commandCenter/sessionCommandCenter';
 import { createWorkspaceScope } from '../../../../src/host/runtime/workspaceScope';
 
@@ -140,5 +143,50 @@ describe('delegate_task workspace authority', () => {
       error: '没有可写的项目根，请先选择项目或添加目录。',
       code: 'WORKSPACE_REQUIRED',
     });
+  });
+});
+
+// ============================================================================
+// 丙案（产品负责人 2026-08-08 拍板）：cwd 仍是写边界的合法来源，但必须过宽度校验。
+//
+// 依据①竞品一致：Claude Code 继承父会话 cwd、Codex CLI 用启动 cwd + writable_roots、
+// Aider 用 cwd 所在 git 仓根、Cline/Zed 用打开的文件夹——没有一家要求先注册「项目」。
+// 依据②真库切窗：无 project_id 的 1933 个会话里，working_directory 是「具体目录」的有
+// 1914 个、HOME 本身 1 个、无目录 18 个。判「无 scope 就无写边界」会误伤那 1914 个。
+//
+// 这一组钉的是 createRunContext 这一层：没有显式 workspaceScope 时，
+// 校验通过的 cwd 要成为写边界，校验不过的必须落空（下游 classifier 判 W3 ask）。
+// ============================================================================
+describe('createRunContext 的 cwd 兜底必须过宽度校验', () => {
+  const base = { runId: 'run-cwd-boundary', sessionId: 'session-cwd-boundary' };
+
+  it('具体项目目录：成为写边界（这是 1914 个会话不受影响的保证）', () => {
+    const run = createRunContext({ ...base, workspace: '/tmp/neo-real-project' });
+    // 断言锚「边界建起来了、且就是这个目录」，不锚字面量——macOS 上 /tmp 是
+    // /private/tmp 的符号链接，runContext 刻意做规范化（防 symlink 被中途改指向）。
+    expect(run.workspaceScope).toBeDefined();
+    expect(run.workspaceScope?.primaryRoot).toBe(run.workspace);
+    expect(run.workspaceScope?.primaryRoot.endsWith('/neo-real-project')).toBe(true);
+  });
+
+  it('$HOME 本身：不得成为写边界', () => {
+    const run = createRunContext({ ...base, workspace: os.homedir() });
+    expect(run.workspaceScope).toBeUndefined();
+  });
+
+  it('产品数据目录：不得成为写边界', () => {
+    const run = createRunContext({ ...base, workspace: path.join(os.homedir(), '.code-agent', 'work') });
+    expect(run.workspaceScope).toBeUndefined();
+  });
+
+  it('敏感目录的祖先：不得成为写边界', () => {
+    const run = createRunContext({ ...base, workspace: path.dirname(os.homedir()) });
+    expect(run.workspaceScope).toBeUndefined();
+  });
+
+  it('校验不过时 run 仍然起得来（不许打死只读后台任务）', () => {
+    const run = createRunContext({ ...base, workspace: os.homedir() });
+    expect(run.runId).toBe(base.runId);
+    expect(run.cwd).toBeTruthy();
   });
 });

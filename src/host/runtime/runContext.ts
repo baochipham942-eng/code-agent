@@ -4,6 +4,7 @@ import { lstatSync, readlinkSync, realpathSync } from 'node:fs';
 import type { MessageAttachment, MessageMetadata } from '../../shared/contract';
 import type { RunTraceContext } from '../telemetry/runTraceContext';
 import type { WorkspaceScope } from '../../shared/contract/project';
+import { resolveBackgroundWorkspaceAuthority } from './workspaceAuthority';
 import {
   isPathWithinRoot,
   resolveWorkspacePath,
@@ -144,7 +145,16 @@ export function createRunContext(input: CreateRunContextInput): RunContext {
     input.workspace?.trim() || input.workspaceScope?.primaryRoot || input.cwd || '',
     'workspace',
   ));
-  const workspaceScope = input.workspaceScope;
+  // 没有显式 Project Source 时，cwd 仍然可以当写边界——竞品一致如此（Claude Code 继承父会话
+  // cwd、Codex CLI 用启动 cwd + writable_roots、Aider 用 cwd 所在 git 仓根、Cline/Zed 用打开的
+  // 文件夹），**没有一家要求先注册「项目」才给写权限**。真库切窗也印证：无 project_id 的 1933
+  // 个会话里 1914 个 working_directory 是具体项目目录，直接判「无写边界」会误伤这 1914 个。
+  //
+  // 原来的问题从来不是「cwd 不该当边界」，而是**兜底时没有任何宽度校验**，以致 $HOME、
+  // /Users、<dataDir> 也能当边界。所以这里不是删掉兜底，而是让它先过校验（判据与
+  // delegate_task 前置预检同一份，见 workspaceAuthority.ts，不许另造第二份）。
+  const workspaceScope = input.workspaceScope
+    ?? resolveBackgroundWorkspaceAuthority({ workspace: requestedWorkspace });
   const workspace = workspaceScope?.primaryRoot ?? requestedWorkspace;
   const cwd = resolveCanonicalRunPath(input.cwd?.trim() || workspace);
   if (workspaceScope && !resolveWorkspacePath(workspaceScope, cwd, 'read')) {

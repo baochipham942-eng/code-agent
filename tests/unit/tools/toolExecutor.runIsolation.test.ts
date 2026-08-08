@@ -113,11 +113,17 @@ describe('ToolExecutor per-run workspace isolation', () => {
       executionOptions(run),
     );
     expect(write).toMatchObject({ success: true });
-    expect(permissionRequests).toContainEqual(expect.objectContaining({
-      type: 'file_write',
-      boundary: { id: 'file.external_write', reason: expect.any(String) },
-      sessionId: run.sessionId,
-    }));
+    // 丙案（产品负责人 2026-08-08 拍板）：没有显式 Project Source 时，**校验通过的 cwd
+    // 仍然是合法写边界**——竞品一致如此，且真库里无 project_id 的会话有 1914 个 cwd 是
+    // 具体项目目录，判「无边界」会把它们全部误伤。这里的 workspace 是 tempRoot 下的具体
+    // 目录，校验能过，所以项目内写走 W1 自动放行，不该产生审批请求。
+    //
+    // 「cwd 太宽就没有写边界」那条的覆盖在两处：
+    // - 判据层 tests/unit/tools/modules/commandCenterWorkspaceAuthority.test.ts
+    //   （$HOME / 数据目录 / 祖先路径三类各一条）
+    // - 分类器层 tests/unit/tools/permissionClassifier.test.ts
+    //   「classifies every write as W3 when no authoritative workspace exists」
+    expect(permissionRequests).toEqual([]);
   });
 
   it('keeps authoritative project writes on the W1 auto-approval path', async () => {

@@ -9,7 +9,7 @@ import type {
 import type { MessageAttachment } from '../../../../shared/contract';
 import { getSessionCommandCenter, type SessionTaskReferenceResult } from '../../../services/commandCenter/sessionCommandCenter';
 import type { SpawnSessionTaskResult } from '../../../services/commandCenter/sessionCommandCenter';
-import { resolveBackgroundWorkspaceAuthority } from '../../../task/backgroundWorkspaceAuthority';
+import { resolveBackgroundWorkspaceAuthority } from '../../../runtime/workspaceAuthority';
 import {
   cancelTaskSchema,
   delegateTaskSchema,

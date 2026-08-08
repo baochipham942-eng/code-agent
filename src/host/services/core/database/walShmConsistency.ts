@@ -1,15 +1,21 @@
 // ============================================================================
-// WAL / -shm 一致性检查（只报警，不修复）
+// WAL / -shm 一致性保障（发现过小就**补大**，不删除）
 // ----------------------------------------------------------------------------
 // 2026-07-31 事故：覆盖安装时 0.27.0 的 webServer 被 SIGKILL，留下一个 32KB 的陈旧
 // `-shm`（1 个 wal-index region）。下次启动 VACUUM 把 6 万+ 页刷进 WAL，SQLite 映射到
 // 第 2、3 个 region 时越过了 shm 文件 EOF → pagein EINVAL → SIGBUS，启动直接崩。
 //
-// **刻意不做自动修复**（删陈旧 shm）：判断"没有其他连接持有这个 shm"不可靠——本项目
-// 已知一个 data dir 可能被两个 host 共写且尚未修复。判错就是删掉别人正在映射的 shm，
-// 制造出与本次事故一模一样的 SIGBUS。这个门比它防的 bug 更难写对。
+// **仍然刻意不删陈旧 shm**：判断「没有其他连接持有这个 shm」不可靠——本项目已知一个
+// data dir 可能被两个 host 共写。判错就是删掉别人正在映射的 shm，制造出与本次事故
+// 一模一样的 SIGBUS。
 //
-// 所以这里只做一件事：开库前发现尺寸对不上就记 ERROR，让下次同类事故一眼可判。
+// 2026-08-08 拍板取「丙案」：**把 shm 补大到应有尺寸**（ftruncate 扩大）。
+// 关键性质——扩大一个文件**不会**让任何已有 mmap 失效：既有映射的页偏移不变，扩大只是
+// 在原 EOF 之后追加可映射的页。所以这一步**不需要先证明自己独占**，与"删除"这个动作
+// 的风险结构完全不同。补出来的空洞读回全零，正是一个刚扩容的 wal-index region 应有的
+// 样子；SQLite 会按 WAL 自行重建索引内容。
+//
+// 修不动（只读挂载、权限不足等）时不抛异常：照旧记 ERROR，退回「只报警」的老行为。
 // ============================================================================
 
 import * as fs from 'fs';
@@ -77,10 +83,10 @@ function readWalPageBytes(walPath: string): number {
 }
 
 /**
- * 开库前的一致性检查。**只记 ERROR，不做任何修复**，永不抛。
- * 返回 mismatch 详情供调用方（诊断/测试）使用。
+ * 开库前的一致性保障：发现 -shm 比 WAL 所需的小，就把它补大到应有尺寸（永不删除、永不抛）。
+ * 返回 mismatch 详情供调用方（诊断/测试）使用；返回 null 表示本来就一致。
  */
-export function checkWalShmConsistency(dbPath: string, logger: Logger): WalShmMismatch | null {
+export function ensureWalShmConsistency(dbPath: string, logger: Logger): WalShmMismatch | null {
   const walPath = `${dbPath}-wal`;
   const shmPath = `${dbPath}-shm`;
   let walBytes: number;
@@ -99,13 +105,23 @@ export function checkWalShmConsistency(dbPath: string, logger: Logger): WalShmMi
   });
   if (!mismatch) return null;
 
-  logger.error(
-    '[DatabaseService] WAL/-shm size mismatch detected before opening the database — '
-    + 'the wal-index is smaller than the WAL requires. This is the signature of the 2026-07-31 SIGBUS '
-    + '(stale -shm left behind by a SIGKILL\'d webServer). NOT auto-repaired on purpose: deleting a -shm '
-    + 'another live connection is mapping would cause the very same crash. '
-    + `wal=${mismatch.walBytes}B shm=${mismatch.shmBytes}B (expected >= ${mismatch.expectedShmBytes}B) `
-    + `pageSize=${mismatch.pageBytes}B walFrames=${mismatch.walFrames} db=${dbPath}`,
-  );
+  const context = `wal=${mismatch.walBytes}B shm=${mismatch.shmBytes}B `
+    + `(expected >= ${mismatch.expectedShmBytes}B) pageSize=${mismatch.pageBytes}B `
+    + `walFrames=${mismatch.walFrames} db=${dbPath}`;
+
+  try {
+    fs.truncateSync(shmPath, mismatch.expectedShmBytes);
+    logger.warn(
+      '[DatabaseService] stale -shm was smaller than the WAL requires (signature of the 2026-07-31 SIGBUS) — '
+      + 'grown to the required size before opening. Growing never invalidates another process\'s existing '
+      + `mapping, so this needs no exclusivity proof (deleting the file would). ${context}`,
+    );
+  } catch (error) {
+    logger.error(
+      '[DatabaseService] WAL/-shm size mismatch detected before opening the database and the repair '
+      + '(growing the wal-index) failed — the next large write may map past EOF and SIGBUS. '
+      + `${context} error=${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
   return mismatch;
 }

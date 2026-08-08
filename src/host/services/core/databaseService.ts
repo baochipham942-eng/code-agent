@@ -13,7 +13,7 @@ import { applySchema } from './database/schema';
 import { applyConversationBranchSchema } from './database/schemaConversationBranch';
 import { applySessionForkPortabilitySchema } from './database/schemaSessionForkPortability';
 import { applyIndexes } from './database/indexes';
-import { checkWalShmConsistency } from './database/walShmConsistency';
+import { ensureWalShmConsistency } from './database/walShmConsistency';
 import { applySessionsMigrations, applyTelemetryTurnsMigrations, applyEvaluationCleanupMigration } from './database/migrations';
 import { DurableRunDatabaseSupport } from './database/durableRunDatabaseSupport';
 
@@ -333,8 +333,8 @@ export class DatabaseService extends DurableRunDatabaseSupport {
 
     const { step, summary } = createInitStepTimer();
 
-    // 开库前的 -shm 一致性检查：只报警不修复（见 walShmConsistency.ts 顶部注释）
-    checkWalShmConsistency(this.dbPath, logger);
+    // 开库前的 -shm 一致性保障：过小就补大，永不删除（见 walShmConsistency.ts 顶部注释）
+    ensureWalShmConsistency(this.dbPath, logger);
 
     try {
       this.db = new Database(this.dbPath);

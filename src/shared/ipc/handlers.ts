@@ -714,6 +714,8 @@ export interface IpcEventHandlers {
   [IPC_CHANNELS.PROVIDER_FALLBACK]: (event: ProviderFallbackEvent) => void;
   // Budget alert events (预算逼近预警/超限)
   [IPC_CHANNELS.BUDGET_ALERT]: (event: BudgetAlertEvent) => void;
+  // Agent notice events（host 主动通知用户，结构化 reason code，渲染侧按 i18n 模板出 toast）
+  [IPC_CHANNELS.AGENT_NOTICE]: (event: AgentNoticeEvent) => void;
   // Agent Registry change broadcast (custom .md agents 热加载推送)
   [IPC_CHANNELS.AGENTS_CHANGED]: (event: AgentsChangedEvent) => void;
 }
@@ -734,4 +736,25 @@ export interface BudgetAlertEvent {
   maxBudget: number;
   usagePercentage: number;
   message?: string;
+}
+
+/**
+ * agent:notice —— host 主动通知用户的结构化事件（比照 ProviderFallbackEvent/BudgetAlertEvent）。
+ * 发 reason code + 参数，不发拼好的中文原文；renderer 侧按 i18n 模板渲染，见 AgentNoticeToast.tsx。
+ * 2026-08-08 从 AgentEvent 的 'notification' 分支迁出（那条通路桌面 renderer 端零消费者）。
+ */
+export interface AgentNoticeEvent {
+  reasonCode:
+    | 'heartbeat_check_failed'
+    | 'heartbeat_status_alert'
+    | 'auto_agent_awaiting_approval'
+    | 'delegate_mode_active'
+    | 'agent_routed';
+  params?: {
+    name?: string;
+    error?: string;
+    consecutiveFailures?: number;
+    status?: string;
+    agentName?: string;
+  };
 }

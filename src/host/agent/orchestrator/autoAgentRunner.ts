@@ -21,8 +21,23 @@ import { GraphEventCompatibilityAdapter } from '../../orchestration/graphEventCo
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { getAutoAgentDurableRuntime } from '../autoAgentDurableRuntime';
+import { IPC_CHANNELS } from '../../../shared/ipc';
+import type { AgentNoticeEvent } from '../../../shared/ipc/handlers';
 
 const logger = createLogger('AutoAgentRunner');
+
+/**
+ * agent:notice 广播（比照 inferenceProviderFallback.ts 的 broadcastAiSdkProviderFallback）。
+ * 动态 import windowBridge，best-effort，不影响主链路。
+ */
+async function broadcastAgentNotice(event: AgentNoticeEvent): Promise<void> {
+  try {
+    const { broadcastToRenderer } = await import('../../platform/windowBridge');
+    broadcastToRenderer?.(IPC_CHANNELS.AGENT_NOTICE, event);
+  } catch {
+    /* toast 是 best-effort，不影响主链路 */
+  }
+}
 
 export interface AutoAgentRunnerDeps {
   workingDirectory: string;
@@ -131,10 +146,7 @@ export async function runAutoAgentMode(
   // 如果需要审批，等待用户确认
   if (taskListManager.getState().requireApproval) {
     logger.info('[TaskList] Waiting for user approval before execution...');
-    onEvent({
-      type: 'notification',
-      data: { message: '任务列表已生成，等待审批...' },
-    });
+    void broadcastAgentNotice({ reasonCode: 'auto_agent_awaiting_approval' });
     try {
       await Promise.all(taskItems.map(t => taskListManager.waitForApproval(t.id)));
     } catch {

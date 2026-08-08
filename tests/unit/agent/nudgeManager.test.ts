@@ -46,6 +46,7 @@ vi.mock('fs', async (importOriginal) => {
 import { NudgeManager, isTaskMutationToolCall } from '../../../src/host/agent/nudgeManager';
 import type { NudgeCheckContext } from '../../../src/host/agent/nudgeManager';
 import { GoalTracker } from '../../../src/host/agent/goalTracker';
+import { logCollector } from '../../../src/host/mcp/logCollector';
 
 // ── Helpers ──
 
@@ -57,7 +58,6 @@ function createMockContext(overrides: Partial<NudgeCheckContext> = {}): NudgeChe
     iterations: 1,
     workingDirectory: '/tmp/test',
     injectSystemMessage: vi.fn(),
-    onEvent: vi.fn(),
     goalTracker: {
       isInitialized: () => false,
       getGoalSummary: () => ({ goal: '', completed: [], pending: [] }),
@@ -97,14 +97,12 @@ describe('NudgeManager', () => {
 
       expect(result).toBe(true);
       expect(ctx.injectSystemMessage).toHaveBeenCalledTimes(1);
-      // The nudge message should be injected (content comes from antiPatternDetector)
-      expect(ctx.onEvent).toHaveBeenCalledWith(
-        expect.objectContaining({
-          type: 'notification',
-          data: expect.objectContaining({
-            message: expect.stringContaining('只读模式'),
-          }),
-        }),
+      // The nudge message should be injected (content comes from antiPatternDetector);
+      // 丙类收口（2026-08-08 notification 零消费者工单）：不再弹零消费者的 notification
+      // 事件，改为只留诊断日志——断言落在 logCollector.agent 上。
+      expect(logCollector.agent).toHaveBeenCalledWith(
+        'INFO',
+        expect.stringContaining('Read-only stop pattern detected'),
       );
     });
 
@@ -140,13 +138,6 @@ describe('NudgeManager', () => {
       expect(injectedMessage).not.toContain('立即执行修改');
       expect(injectedMessage).not.toContain('edit_file');
       expect(injectedMessage).not.toContain('write_file');
-      expect(ctx.onEvent).toHaveBeenCalledWith(
-        expect.objectContaining({
-          data: expect.objectContaining({
-            message: expect.stringContaining('收束证据'),
-          }),
-        }),
-      );
     });
 
     it('keeps mutation wording when implementation is expected', () => {
@@ -311,22 +302,9 @@ describe('NudgeManager', () => {
       expect(manager.runNudgeChecks(ctx)).toBe(false);
     });
 
-    it('reports the task-gate cap (3) in the notification denominator, not the todo cap (codex audit R1 LOW)', () => {
-      manager.reset([], '把这些任务完成并更新 task 状态', '/tmp/test', []);
-      mockGetIncompleteTasks.mockReturnValue([{ id: 't1', subject: 'open', status: 'pending' }]);
-      const ctx = createMockContext({ isSimpleTaskMode: false, toolsUsedInTurn: ['write_file'] });
-
-      manager.runNudgeChecks(ctx);
-      manager.runNudgeChecks(ctx);
-      manager.runNudgeChecks(ctx);
-
-      const lastNotify = (ctx.onEvent as ReturnType<typeof vi.fn>).mock.calls
-        .map((c) => c[0])
-        .filter((e) => e.type === 'notification')
-        .pop();
-      expect(lastNotify.data.message).toContain('(3/3)');
-    });
-
+    // 「报告口径用 taskGate 上限(3) 而非 todo 上限(2)」的原始回归点（codex audit R1 LOW）
+    // 曾靠断言 notification 文案里的 "(3/3)" 验证；notification 事件已在丙类收口中删除
+    // （2026-08-08），该行为改由下面这条用例直接断言「第 4 次才放行停止」来保护。
     it('allows up to 3 reentries for open tasks then lets the model stop (MiMo main cap)', () => {
       manager.reset([], '把这些任务完成并更新 task 状态', '/tmp/test', []);
       mockGetIncompleteTasks.mockReturnValue([{ id: 't1', subject: 'never done', status: 'pending' }]);

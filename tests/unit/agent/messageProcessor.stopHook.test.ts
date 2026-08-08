@@ -47,6 +47,7 @@ vi.mock('../../../src/host/mcp/logCollector.js', () => ({
   },
 }));
 
+import { logCollector } from '../../../src/host/mcp/logCollector.js';
 import { MessageProcessor } from '../../../src/host/agent/runtime/messageProcessor';
 import { TurnState } from '../../../src/host/agent/runtime/turnState';
 import { ControlState } from '../../../src/host/agent/runtime/controlState';
@@ -194,12 +195,11 @@ describe('MessageProcessor user stop hook (GAP-006)', () => {
     expect(action).toBe('break');
     expect(triggerStop).toHaveBeenCalledWith('任务已完成，所有测试通过。', 'runtime-session-1', true);
     expect(processor.guardStateForTest.userStopHookBlockCount).toBe(STOP_HOOK.USER_MAX_RETRIES + 1);
-    // 安全阀触发时通知用户
-    expect(ctx.onEvent).toHaveBeenCalledWith(
-      expect.objectContaining({
-        type: 'notification',
-        data: expect.objectContaining({ message: expect.stringContaining('重试上限') }),
-      }),
+    // 安全阀触发时留诊断日志（丙类收口，2026-08-08 notification 零消费者工单：
+    // 不再弹零消费者的 notification 事件，改成只留 logCollector.agent）。
+    expect(logCollector.agent).toHaveBeenCalledWith(
+      'WARN',
+      expect.stringContaining('max retries'),
     );
     // 完成路径正常收尾
     expect(contextAssembly.addAndPersistMessage).toHaveBeenCalledWith(

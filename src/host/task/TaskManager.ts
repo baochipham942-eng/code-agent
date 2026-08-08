@@ -28,6 +28,7 @@ import { MessageDeltaAccumulator } from '../protocol/messageDeltaAccumulator';
 import type { SteerOrQueueOutcome } from '../runtime/steerQueueFence';
 import type { ConversationModelSpec } from '../../shared/contract/conversationEnvelope';
 import type { SessionStatus as PersistedSessionStatus } from '../../shared/contract/session';
+import type { WorkspaceScope } from '../../shared/contract/project';
 import { getModelSessionState } from '../session/modelSessionState';
 import type { RunRegistry } from '../runtime/runRegistry';
 import { getProjectSourceTrustFailureMarker } from '../services/project/projectSourceTrustError';
@@ -301,6 +302,7 @@ export class TaskManager extends EventEmitter {
     attachments?: unknown[],
     options?: AgentRunOptions,
     messageMetadata?: MessageMetadata,
+    workspaceScope?: WorkspaceScope,
   ): Promise<void> {
     if (!this.configService || !this.onAgentEvent) {
       throw new Error('TaskManager not initialized. Call initialize() first.');
@@ -308,6 +310,7 @@ export class TaskManager extends EventEmitter {
     if (this.backgroundRuns.has(taskId)) throw new Error(`Background task ${taskId} is already running`);
 
     const orchestrator = this.createOrchestrator(sessionId, taskId);
+    if (workspaceScope) orchestrator.setWorkspaceScopeAuthority(workspaceScope);
     const { getBackgroundTaskSessionContext } = await import('./backgroundTaskSessionContext');
     const session = await getBackgroundTaskSessionContext(sessionId);
     if (session?.messages.length) orchestrator.setMessages(session.messages);

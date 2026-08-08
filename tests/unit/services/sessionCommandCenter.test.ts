@@ -10,6 +10,14 @@ import {
   getBackgroundTaskLedger,
   resetBackgroundTaskLedgerForTest,
 } from '../../../src/host/task/backgroundTaskLedger';
+import { createWorkspaceScope } from '../../../src/host/runtime/workspaceScope';
+
+const PROJECT_SCOPE = createWorkspaceScope('project-session-a', [{
+  sourceId: 'source-session-a',
+  path: '/tmp/session-a-project',
+  role: 'primary',
+  access: 'read_write',
+}]);
 
 class FakeTaskManager extends EventEmitter {
   startBackgroundTask = vi.fn().mockResolvedValue(undefined);
@@ -29,6 +37,7 @@ function input(index: number, laneKey = `lane-${index}`) {
     laneKey,
     submissionKey: `submission-${index}`,
     prompt: `执行任务 ${index}`,
+    workspaceScope: PROJECT_SCOPE,
   };
 }
 
@@ -62,6 +71,7 @@ describe('SessionCommandCenter', () => {
         parentRunId: 'run-parent-1',
       }),
       undefined,
+      PROJECT_SCOPE,
     );
     expect(getBackgroundTaskLedger().listTasks({ sessionId: 'session-a' })).toEqual([
       expect.objectContaining({

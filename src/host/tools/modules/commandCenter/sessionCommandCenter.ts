@@ -8,12 +8,15 @@ import type {
 } from '../../../protocol/tools';
 import type { MessageAttachment } from '../../../../shared/contract';
 import { getSessionCommandCenter, type SessionTaskReferenceResult } from '../../../services/commandCenter/sessionCommandCenter';
+import { resolveBackgroundWorkspaceAuthority } from '../../../task/backgroundWorkspaceAuthority';
 import {
   cancelTaskSchema,
   delegateTaskSchema,
   steerTaskSchema,
   taskStatusSchema,
 } from './sessionCommandCenter.schema';
+
+const WORKSPACE_REQUIRED_MESSAGE = '没有可写的项目根，请先选择项目或添加目录。';
 
 function stringArg(args: Record<string, unknown>, key: string): string {
   return typeof args[key] === 'string' ? args[key].trim() : '';
@@ -83,6 +86,17 @@ export async function executeDelegateTask(
   }
   const shortName = normalizeSessionTaskShortName(rawShortName, title);
   if (ctx.abortSignal.aborted) return { ok: false, error: 'aborted', code: 'ABORTED' };
+  const workspaceScope = resolveBackgroundWorkspaceAuthority({
+    workspace: ctx.workspace,
+    workspaceScope: ctx.workspaceScope,
+  });
+  if (!workspaceScope) {
+    return {
+      ok: false,
+      error: WORKSPACE_REQUIRED_MESSAGE,
+      code: 'WORKSPACE_REQUIRED',
+    };
+  }
 
   onProgress?.({ stage: 'starting', detail: shortName });
   const result = await getSessionCommandCenter().spawn({
@@ -92,6 +106,7 @@ export async function executeDelegateTask(
     laneKey,
     submissionKey,
     prompt,
+    workspaceScope,
     queueWhenFull: args.queue_when_full === true,
     attachments: ctx.subagent?.attachments as MessageAttachment[] | undefined,
     options: {

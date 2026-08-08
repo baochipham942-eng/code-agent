@@ -1,4 +1,5 @@
 import type { MessageAttachment } from '../../../shared/contract';
+import type { WorkspaceScope } from '../../../shared/contract/project';
 import type { AgentRunOptions } from '../../research/types';
 import { getSessionManager } from '../infra/sessionManager';
 import { createLogger } from '../infra/logger';
@@ -21,6 +22,7 @@ export interface SessionCommandTask {
   laneKey: string;
   submissionKey: string;
   prompt: string;
+  workspaceScope: WorkspaceScope;
   status: SessionCommandTaskStatus;
   createdAt: number;
   updatedAt: number;
@@ -40,6 +42,7 @@ export interface SpawnSessionTaskInput {
   laneKey: string;
   submissionKey: string;
   prompt: string;
+  workspaceScope: WorkspaceScope;
   queueWhenFull?: boolean;
   attachments?: MessageAttachment[];
   options?: AgentRunOptions;
@@ -124,6 +127,7 @@ export class SessionCommandCenter {
       laneKey: input.laneKey,
       submissionKey: input.submissionKey,
       prompt: input.prompt,
+      workspaceScope: input.workspaceScope,
       status: admission.outcome === 'started' ? 'running' : 'queued',
       createdAt: now,
       updatedAt: now,
@@ -254,6 +258,7 @@ export class SessionCommandCenter {
         parentRunId: task.parentRunId,
       },
       undefined,
+      task.workspaceScope,
     ).catch((error) => {
       void this.settle(task, 'failed', error instanceof Error ? error.message : String(error));
     });

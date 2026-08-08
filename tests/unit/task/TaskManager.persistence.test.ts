@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Message } from '../../../src/shared/contract';
+import { createWorkspaceScope } from '../../../src/host/runtime/workspaceScope';
 
 const sessionManagerState = vi.hoisted(() => ({
   addMessageToSession: vi.fn(),
@@ -25,6 +26,7 @@ const orchestratorMocks = vi.hoisted(() => ({
   setPlanningService: vi.fn(),
   setMessages: vi.fn(),
   setWorkingDirectory: vi.fn(),
+  setWorkspaceScopeAuthority: vi.fn(),
   handlePermissionResponse: vi.fn(),
 }));
 
@@ -52,6 +54,7 @@ vi.mock('../../../src/host/agent/agentOrchestrator', () => ({
     setPlanningService = (...args: unknown[]) => orchestratorMocks.setPlanningService(...args);
     setMessages = (...args: unknown[]) => orchestratorMocks.setMessages(...args);
     setWorkingDirectory = (...args: unknown[]) => orchestratorMocks.setWorkingDirectory(...args);
+    setWorkspaceScopeAuthority = (...args: unknown[]) => orchestratorMocks.setWorkspaceScopeAuthority(...args);
     handlePermissionResponse = (...args: unknown[]) => orchestratorMocks.handlePermissionResponse(...args);
   },
 }));
@@ -144,10 +147,23 @@ describe('TaskManager message event persistence', () => {
     orchestratorMocks.cancel.mockResolvedValue(undefined);
     const events: Array<{ type: string; data?: { taskId?: string } }> = [];
     manager.on('event', (event) => events.push(event));
+    const foregroundScope = createWorkspaceScope('foreground-project', [{
+      sourceId: 'foreground-primary',
+      path: '/tmp/project',
+      role: 'primary',
+      access: 'read_write',
+    }]);
 
-    const first = manager.startBackgroundTask('task-1', 'session-1', 'first');
-    const second = manager.startBackgroundTask('task-2', 'session-1', 'second');
+    const first = manager.startBackgroundTask(
+      'task-1', 'session-1', 'first', undefined, undefined, undefined, foregroundScope,
+    );
+    const second = manager.startBackgroundTask(
+      'task-2', 'session-1', 'second', undefined, undefined, undefined, foregroundScope,
+    );
     await vi.waitFor(() => expect(orchestratorMocks.sendMessage).toHaveBeenCalledTimes(2));
+
+    expect(orchestratorMocks.setWorkspaceScopeAuthority).toHaveBeenNthCalledWith(1, foregroundScope);
+    expect(orchestratorMocks.setWorkspaceScopeAuthority).toHaveBeenNthCalledWith(2, foregroundScope);
 
     expect(orchestratorMocks.setWorkingDirectory).toHaveBeenNthCalledWith(
       1,

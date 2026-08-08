@@ -151,11 +151,15 @@ vi.mock('../../src/host/services', () => ({
 // 本文件其余用例都不碰真 AgentLoop（orchestrator.agentLoop 一律是 null 或 stub）。
 const agentLoopProbe = vi.hoisted(() => ({
   onRun: undefined as undefined | (() => void),
-  lastConfig: undefined as undefined | { deniedToolNames?: string[] },
+  lastConfig: undefined as undefined | {
+    deniedToolNames?: string[];
+    toolExecutor?: { runContext?: { workspace?: string } };
+    workspaceScope?: { primaryRoot: string };
+  },
 }));
 vi.mock('../../src/host/agent/agentLoop', () => ({
   AgentLoop: class {
-    constructor(config: { deniedToolNames?: string[] }) {
+    constructor(config: NonNullable<typeof agentLoopProbe.lastConfig>) {
       agentLoopProbe.lastConfig = config;
     }
     async run(): Promise<void> { agentLoopProbe.onRun?.(); }
@@ -216,6 +220,7 @@ import type { ConfigService } from '../../src/host/services/core/configService';
 import type { AgentEvent, Message, MessageAttachment } from '../../src/shared/contract';
 import type { AgentRunOptions } from '../../src/host/research/types';
 import { getAllToolDefinitions } from '../../src/host/tools/dispatch/toolDefinitions';
+import { createWorkspaceScope } from '../../src/host/runtime/workspaceScope';
 
 // 部分目标是 private 方法 / 内部状态，特征测试经类型逃逸访问（测试专用）
 interface OrchestratorInternals {
@@ -238,7 +243,7 @@ interface OrchestratorInternals {
 function internals(o: AgentOrchestrator): OrchestratorInternals {
   return o as unknown as OrchestratorInternals;
 }
-function lastAgentLoopConfig(): { deniedToolNames?: string[] } | undefined {
+function lastAgentLoopConfig(): typeof agentLoopProbe.lastConfig {
   return agentLoopProbe.lastConfig;
 }
 function makeMessage(id: string, role: Message['role'], content: string): Message {
@@ -320,6 +325,47 @@ describe('AgentOrchestrator', () => {
     it('getWorkingDirectory 应该返回当前目录', () => {
       const dir = orchestrator.getWorkingDirectory();
       expect(dir).toBeTruthy();
+    });
+
+    it('后台 runContext workspace 等于前台当轮固化的项目根', async () => {
+      const foregroundScope = createWorkspaceScope('foreground-project', [{
+        sourceId: 'foreground-primary',
+        path: '/tmp/foreground-project',
+        role: 'primary',
+        access: 'read_write',
+      }]);
+      orchestrator.setWorkingDirectory('/tmp/code-agent-test/work', { syncWorkspaceServices: false });
+      orchestrator.setWorkspaceScopeAuthority(foregroundScope);
+
+      await (orchestrator as unknown as {
+        runStandardAgentLoop(
+          content: string,
+          onEvent: (event: AgentEvent) => void,
+          modelConfig: unknown,
+          sessionId: string,
+          executionContent: string | undefined,
+          toolScope: unknown,
+          executionIntent: unknown,
+          options: AgentRunOptions,
+        ): Promise<void>;
+      }).runStandardAgentLoop(
+        '修改项目',
+        mockOnEvent,
+        { provider: 'deepseek', model: 'deepseek-chat' },
+        'background-session',
+        undefined,
+        undefined,
+        undefined,
+        {
+          mode: 'normal',
+          runRegistration: 'auxiliary',
+          runId: 'background-run',
+        },
+      );
+
+      expect(lastAgentLoopConfig()?.workspaceScope).toBe(foregroundScope);
+      expect(lastAgentLoopConfig()?.toolExecutor?.runContext?.workspace)
+        .toBe(foregroundScope.primaryRoot);
     });
   });
 

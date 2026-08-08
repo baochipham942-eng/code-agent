@@ -1,0 +1,61 @@
+name: Release Evidence Producer Gate
+
+# 独立门：paths 是 workflow 级过滤条件。把这些发版证据脚本并进 swarm-ci.yml，
+# 会让一批纯脚本 PR 触发整套 Swarm CI；这里用窄 workflow 覆盖证据产出器、共享依赖和
+# 校验器，只验证类型与静态/单元合同。证据新鲜度属于 tag 发版闸，不适合 PR 常驻检查。
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'scripts/perf/long-session-browser-smoke.ts'
+      - 'scripts/acceptance/tool-cancel-smoke.ts'
+      - 'scripts/acceptance/agent-runtime-app-host-smoke.ts'
+      - 'scripts/acceptance/childProcessState.ts'
+      - 'scripts/acceptance/_helpers.ts'
+      - 'scripts/acceptance/browser-computer-system-chrome.ts'
+      - 'scripts/check-provider-runtime-release-evidence.ts'
+      - '.github/workflows/release-evidence-gate.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/perf/long-session-browser-smoke.ts'
+      - 'scripts/acceptance/tool-cancel-smoke.ts'
+      - 'scripts/acceptance/agent-runtime-app-host-smoke.ts'
+      - 'scripts/acceptance/childProcessState.ts'
+      - 'scripts/acceptance/_helpers.ts'
+      - 'scripts/acceptance/browser-computer-system-chrome.ts'
+      - 'scripts/check-provider-runtime-release-evidence.ts'
+      - '.github/workflows/release-evidence-gate.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: release-evidence-gate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  type-and-contracts:
+    name: Evidence producer type + contract gates
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Typecheck ratchet (tests + scripts)
+        run: node scripts/tsc-tests-ratchet.mjs
+
+      - name: Release evidence and child-process contracts
+        run: >-
+          npx vitest run
+          tests/scripts/checkProviderRuntimeReleaseEvidence.test.ts
+          tests/scripts/childProcessState.test.ts

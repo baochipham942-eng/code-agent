@@ -40,7 +40,9 @@ const limits = {
   // PR passed through with **zero** checks (found 2026-08-07 during the Windows hang
   // battle). It cannot fold into swarm-ci.yml: paths filters are workflow-level, so
   // reusing that file would run the whole TS suite for every Rust-only change.
-  workflows: 17,
+  // 18: release-evidence-gate.yml — the three release evidence producers and their
+  // validator now have a narrow type + contract gate without widening swarm-ci.yml.
+  workflows: 18,
 };
 
 const navigationFiles = [

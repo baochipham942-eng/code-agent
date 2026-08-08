@@ -1,13 +1,21 @@
 #!/usr/bin/env npx tsx
 // ============================================================================
-// 角色主动性 E2E 验收（docs/designs/role-proactivity.md §9 的 5 条标准）
+// 角色主动性 E2E 验收（role-proactivity 设计文档 §9 的 5 条标准）
 // ============================================================================
 //
-// 走【真实模型】（醒来实例 + 写回判断），不能进 CI。
+// ⚠️ 设计文档已随 ca01f3fef「产品策略类文档移出公开仓库」迁至 private-archive：
+//    code-agent-private-archive/docs/designs/role-proactivity.md（§9 验收标准完整保留）。
+//    公开仓里按原路径 docs/designs/role-proactivity.md 解析不到——**这不代表本脚本作废**。
+//    2026-08-08 复核：proactivity 命中 11 个源文件，落在 subagentExecutor / runtimeContext /
+//    runFinalizer / agentAppService，功能在核心链路上活着。
+//
+// 💰 走【真实模型】（醒来实例 + 写回判断）**会产生 API 费用**，不能进 CI。
+//
 // 隔离策略与 role-assets-e2e.ts 相同：HOME 指向临时目录。
 //
 // 用法：
-//   npm run build:web && npx tsx scripts/acceptance/role-proactivity-e2e.ts
+//   npm run acceptance:role-proactivity
+//   （等价于 npm run build:web && npx tsx scripts/acceptance/role-proactivity-e2e.ts）
 //
 // 默认模型：xiaomi/mimo-v2.5-pro（不限流；XIAOMI_API_KEY 从真实 ~/.code-agent/.env 读取）
 //
@@ -27,6 +35,7 @@ import http from 'http';
 import os from 'os';
 import path from 'path';
 import { setTimeout as delay } from 'timers/promises';
+import { describeChildExit, isAbnormalExit, isChildGone } from './childProcessState';
 
 // ----------------------------------------------------------------------------
 // 配置
@@ -103,8 +112,10 @@ async function waitForServer(server: StartedServer, port: number): Promise<void>
   const deadline = Date.now() + 90_000;
   let lastError = '';
   while (Date.now() < deadline) {
-    if (server.child.exitCode !== null) {
-      throw new Error(`webServer exited early with ${server.child.exitCode}\n${server.output()}`);
+    if (isChildGone(server.child)) {
+      throw new Error(
+        `[role-proactivity] webServer exited early (${describeChildExit(server.child)})\n${server.output()}`,
+      );
     }
     const token = extractStartupToken(server.output(), port);
     if (token) {
@@ -171,14 +182,25 @@ async function startServer(env: E2EEnv): Promise<StartedServer> {
 }
 
 async function stopServer(server: StartedServer): Promise<void> {
-  if (server.child.exitCode !== null) return;
-  server.child.kill('SIGTERM');
+  const { child } = server;
+  if (isChildGone(child)) {
+    console.warn(`[role-proactivity] webServer 在收尾前已终止（${describeChildExit(child)}）`);
+    if (isAbnormalExit(child)) console.warn(`[role-proactivity] 子进程输出尾部:\n${server.output()}`);
+    return;
+  }
+  child.kill('SIGTERM');
   const deadline = Date.now() + 5_000;
   while (Date.now() < deadline) {
-    if (server.child.exitCode !== null) return;
+    if (isChildGone(child)) {
+      if (isAbnormalExit(child)) {
+        console.warn(`[role-proactivity] webServer 退出异常（${describeChildExit(child)}）:\n${server.output()}`);
+      }
+      return;
+    }
     await delay(100);
   }
-  server.child.kill('SIGKILL');
+  console.warn(`[role-proactivity] SIGTERM 后 5s 未退出，升级 SIGKILL（${describeChildExit(child)}）`);
+  child.kill('SIGKILL');
 }
 
 // ----------------------------------------------------------------------------

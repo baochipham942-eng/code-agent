@@ -8,6 +8,8 @@ import http from 'http';
 import os from 'os';
 import path from 'path';
 import { setTimeout as delay } from 'timers/promises';
+import { describeChildExit, isAbnormalExit, isChildGone } from './childProcessState';
+import { parseScopedSwarmAgentId } from '../../src/shared/contract/swarm';
 
 type ApiFailure = {
   error?: string | { message?: string };
@@ -91,8 +93,10 @@ async function waitForServer(server: StartedServer, port: number): Promise<void>
   let lastError = '';
 
   while (Date.now() < deadline) {
-    if (server.child.exitCode !== null) {
-      throw new Error(`webServer exited early with ${server.child.exitCode}\n${server.output()}`);
+    if (isChildGone(server.child)) {
+      throw new Error(
+        `[agent-team] webServer exited early (${describeChildExit(server.child)})\n${server.output()}`,
+      );
     }
 
     const token = extractStartupToken(server.output(), port);
@@ -111,7 +115,9 @@ async function waitForServer(server: StartedServer, port: number): Promise<void>
     await delay(250);
   }
 
-  throw new Error(`Timed out waiting for webServer. Last error: ${lastError}\n${server.output()}`);
+  throw new Error(
+    `[agent-team] timed out waiting for webServer (${describeChildExit(server.child)}). Last error: ${lastError}\n${server.output()}`,
+  );
 }
 
 async function startServer(dataDir: string): Promise<StartedServer> {
@@ -155,15 +161,27 @@ async function startServer(dataDir: string): Promise<StartedServer> {
 }
 
 async function stopServer(server: StartedServer): Promise<void> {
-  if (server.child.exitCode !== null) return;
+  const { child } = server;
 
-  server.child.kill('SIGTERM');
+  if (isChildGone(child)) {
+    console.warn(`[agent-team] webServer 在收尾前已终止（${describeChildExit(child)}）`);
+    if (isAbnormalExit(child)) console.warn(`[agent-team] 子进程输出尾部:\n${server.output()}`);
+    return;
+  }
+
+  child.kill('SIGTERM');
   const deadline = Date.now() + 5_000;
   while (Date.now() < deadline) {
-    if (server.child.exitCode !== null) return;
+    if (isChildGone(child)) {
+      if (isAbnormalExit(child)) {
+        console.warn(`[agent-team] webServer 退出异常（${describeChildExit(child)}）:\n${server.output()}`);
+      }
+      return;
+    }
     await delay(100);
   }
-  server.child.kill('SIGKILL');
+  console.warn(`[agent-team] SIGTERM 后 5s 未退出，升级 SIGKILL（${describeChildExit(child)}）`);
+  child.kill('SIGKILL');
 }
 
 function readError(payload: ApiFailure): string | undefined {
@@ -193,8 +211,15 @@ async function requestJson<T>(
   return payload;
 }
 
+// 服务端下发的是 createScopedSwarmAgentId 编出来的作用域 id
+// （swarm-agent.v1.<sessionId>.<runId>.<treeId>.<localAgentId>，各段 base64url），
+// 本脚本按 dep-root / message-agent 这类本地 id 找任务。裸字符串相等在 Team 作用域化之后
+// 永远匹配不上，会以 "Missing task dep-root" 的形式报出来 —— 与真因无关。
+// 用共享契约里的解析器还原本地 id，别在这里手写一份 base64 拆解。
 function findTask(summary: SmokeScenarioSummary, taskId: string): SmokeTaskResult {
-  const task = summary.results.find((item) => item.taskId === taskId);
+  const task = summary.results.find((item) => (
+    item.taskId === taskId || parseScopedSwarmAgentId(item.taskId)?.localAgentId === taskId
+  ));
   if (!task) {
     throw new Error(`Missing task ${taskId}: ${JSON.stringify(summary)}`);
   }
